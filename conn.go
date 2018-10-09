@@ -146,6 +146,7 @@ type Conn struct {
 	version         uint8
 	currentKeyspace string
 	host            *HostInfo
+	supported       map[string][]string
 
 	session *Session
 
@@ -227,7 +228,7 @@ func (s *Session) dial(host *HostInfo, cfg *ConnConfig, errorHandler ConnErrorHa
 	}
 	defer cancel()
 
-	frameTicker := make(chan struct{}, 1)
+	frameTicker := make(chan struct{}, 2)
 	startupErr := make(chan error)
 	go func() {
 		for range frameTicker {
@@ -301,6 +302,10 @@ func (c *Conn) Read(p []byte) (n int, err error) {
 }
 
 func (c *Conn) startup(ctx context.Context, frameTicker chan struct{}) error {
+	if err := c.options(ctx, frameTicker); err != nil {
+		return err
+	}
+
 	m := map[string]string{
 		"CQL_VERSION": c.cfg.CQLVersion,
 	}
@@ -334,6 +339,32 @@ func (c *Conn) startup(ctx context.Context, frameTicker chan struct{}) error {
 		return c.authenticateHandshake(ctx, v, frameTicker)
 	default:
 		return NewErrProtocol("Unknown type of response to startup frame: %s", v)
+	}
+}
+
+func (c *Conn) options(ctx context.Context, frameTicker chan struct{}) error {
+	select {
+	case frameTicker <- struct{}{}:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	framer, err := c.exec(context.Background(), &writeOptionsFrame{}, nil)
+	if err != nil {
+		return err
+	}
+
+	frame, err := framer.parseFrame()
+	if err != nil {
+		return err
+	}
+
+	switch v := frame.(type) {
+	case *supportedFrame:
+		c.supported = v.supported
+		return nil
+	default:
+		return NewErrProtocol("Unknown type of response to options frame: %s", v)
 	}
 }
 
