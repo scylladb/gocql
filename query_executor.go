@@ -115,7 +115,7 @@ func (q *queryExecutor) run(qry ExecutableQuery, specWG *sync.WaitGroup, results
 			continue
 		}
 
-		conn := pool.Pick()
+		conn := pool.Pick(hostResponse.Token())
 		if conn == nil {
 			continue
 		}
