@@ -18,7 +18,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/gocql/gocql/internal/lru"
+	"github.com/scylladb/gocql/internal/lru"
 )
 
 // Session is the interface used by users to interact with the database.
