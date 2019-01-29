@@ -38,7 +38,17 @@ With glide you can use repo option:
   repo: git@github.com:scylladb/gocql.git
 ```
 
-With new Go modules using forks is not yet supported [golang/go#26904](https://github.com/golang/go/issues/26904).
+With new Go modules you can use replace command:
+
+```
+go mod edit -replace=github.com/gocql/gocql=github.com/scylladb/gocql@{version}
+```
+where `version` is your intended version to be used. As gocql is currently not versioned you have to specify
+version in following format `v0.0.0-%Y%m%d%H%M%S-{commit_sha:12}`.  
+Full example:
+```
+go mod edit -replace=github.com/gocql/gocql=github.com/scylladb/gocql@v0.0.0-20181030092923-dc6f47ffd978
+```
 
 Configuration
 -------------
