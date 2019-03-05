@@ -85,6 +85,44 @@ func TestScyllaConnPickerHammerPickNilToken(t *testing.T) {
 	wg.Wait()
 }
 
+func TestScyllaConnPickerRemove(t *testing.T) {
+	t.Parallel()
+
+	s := scyllaConnPicker{
+		nrShards:  4,
+		msbIgnore: 12,
+	}
+
+	conn := mockConn("0")
+	s.Put(conn)
+	s.Put(mockConn("1"))
+
+	if s.nrConns != 2 {
+		t.Error("added 2 connections, expected connection count to be 2")
+	}
+
+	s.Remove(conn)
+	if s.nrConns != 1 {
+		t.Errorf("removed 1 connection, expected connection count to be 1 but was %d", s.nrConns)
+	}
+
+	if s.conns[0] != nil {
+		t.Errorf("Expected %v to be removed from it's position", conn)
+	}
+}
+
+func mockConn(shard string) *Conn {
+	return &Conn{
+		supported: map[string][]string{
+			"SCYLLA_SHARD":               {shard},
+			"SCYLLA_NR_SHARDS":           {"4"},
+			"SCYLLA_SHARDING_IGNORE_MSB": {"12"},
+			"SCYLLA_PARTITIONER":         {"org.apache.cassandra.dht.Murmur3Partitioner"},
+			"SCYLLA_SHARDING_ALGORITHM":  {"biased-token-round-robin"},
+		},
+	}
+}
+
 func TestScyllaConnPickerShardOf(t *testing.T) {
 	t.Parallel()
 

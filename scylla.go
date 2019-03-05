@@ -117,7 +117,11 @@ func (p *scyllaConnPicker) Remove(conn *Conn) {
 	if gocqlDebug {
 		Logger.Printf("scylla: %s remove shard %d connection", conn.Address(), s.shard)
 	}
-	p.conns[s.shard] = nil
+
+	if p.conns[s.shard] != nil {
+		p.conns[s.shard] = nil
+		p.nrConns--
+	}
 }
 
 func (p *scyllaConnPicker) Close() {
