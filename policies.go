@@ -424,14 +424,14 @@ func TokenAwareHostPolicy(fallback HostSelectionPolicy, opts ...func(*tokenAware
 // and the pointer in clusterMeta updated to point to the new value.
 type clusterMeta struct {
 	// replicas is map[keyspace]map[token]hosts
-	replicas map[string]map[token][]*HostInfo
+	replicas  map[string]map[token][]*HostInfo
 	tokenRing *tokenRing
 }
 
 type tokenAwareHostPolicy struct {
-	fallback    HostSelectionPolicy
+	fallback            HostSelectionPolicy
 	getKeyspaceMetadata func(keyspace string) (*KeyspaceMetadata, error)
-	getKeyspaceName func() string
+	getKeyspaceName     func() string
 
 	shuffleReplicas          bool
 	nonLocalReplicasFallback bool
@@ -446,7 +446,7 @@ type tokenAwareHostPolicy struct {
 
 func (t *tokenAwareHostPolicy) Init(s *Session) {
 	t.getKeyspaceMetadata = s.KeyspaceMetadata
-	t.getKeyspaceName = func() string {return s.cfg.Keyspace}
+	t.getKeyspaceName = func() string { return s.cfg.Keyspace }
 }
 
 func (t *tokenAwareHostPolicy) IsLocal(host *HostInfo) bool {
@@ -600,7 +600,7 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 		return t.fallback.Pick(qry)
 	}
 
-	primaryEndpoint, token := meta.tokenRing.GetHostForPartitionKey(routingKey)
+	primaryEndpoint, token, _ := meta.tokenRing.GetHostForPartitionKey(routingKey)
 	if primaryEndpoint == nil || token == nil {
 		return t.fallback.Pick(qry)
 	}
@@ -637,7 +637,7 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 
 				if h.IsUp() && !t.fallback.IsLocal(h) {
 					used[h] = true
-					return (*selectedHost)(h)
+					return selectedHost{info: h, token: token}
 				}
 			}
 		}

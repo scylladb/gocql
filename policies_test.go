@@ -57,13 +57,13 @@ func TestHostPolicy_RoundRobin(t *testing.T) {
 func TestHostPolicy_TokenAware(t *testing.T) {
 	policy := TokenAwareHostPolicy(RoundRobinHostPolicy())
 	policyInternal := policy.(*tokenAwareHostPolicy)
-	policyInternal.getKeyspaceName = func() string {return "myKeyspace"}
+	policyInternal.getKeyspaceName = func() string { return "myKeyspace" }
 	policyInternal.getKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {
 		return nil, errors.New("not initalized")
 	}
 
 	query := &Query{}
-	query.getKeyspace = func() string{return "myKeyspace"}
+	query.getKeyspace = func() string { return "myKeyspace" }
 
 	iter := policy.Pick(nil)
 	if iter == nil {
@@ -96,6 +96,14 @@ func TestHostPolicy_TokenAware(t *testing.T) {
 		t.Errorf("Expected peer 1 but was %s", actual.Info().ConnectAddress())
 	}
 
+	if actual := policy.Pick(query)(); !actual.Info().ConnectAddress().Equal(hosts[2].ConnectAddress()) {
+		t.Errorf("Expected peer 2 but was %s", actual.Info().ConnectAddress())
+	}
+
+	if actual := policy.Pick(query)(); !actual.Info().ConnectAddress().Equal(hosts[3].ConnectAddress()) {
+		t.Errorf("Expected peer 3 but was %s", actual.Info().ConnectAddress())
+	}
+
 	policy.SetPartitioner("OrderedPartitioner")
 
 	policyInternal.getKeyspaceMetadata = func(keyspaceName string) (*KeyspaceMetadata, error) {
@@ -103,10 +111,10 @@ func TestHostPolicy_TokenAware(t *testing.T) {
 			return nil, fmt.Errorf("unknown keyspace: %s", keyspaceName)
 		}
 		return &KeyspaceMetadata{
-			Name: "myKeyspace",
+			Name:          "myKeyspace",
 			StrategyClass: "SimpleStrategy",
-			StrategyOptions: map[string]interface{} {
-				"class": "SimpleStrategy",
+			StrategyOptions: map[string]interface{}{
+				"class":              "SimpleStrategy",
 				"replication_factor": 2,
 			},
 		}, nil
@@ -130,15 +138,19 @@ func TestHostPolicy_TokenAware(t *testing.T) {
 	if actual := iter(); !actual.Info().ConnectAddress().Equal(hosts[1].ConnectAddress()) {
 		t.Errorf("Expected peer 1 but was %s", actual.Info().ConnectAddress())
 	}
-	// rest are round robin
 	if actual := iter(); !actual.Info().ConnectAddress().Equal(hosts[2].ConnectAddress()) {
 		t.Errorf("Expected peer 2 but was %s", actual.Info().ConnectAddress())
+	}
+	// rest are round robin
+	if actual := iter(); !actual.Info().ConnectAddress().Equal(hosts[0].ConnectAddress()) {
+		t.Errorf("Expected peer 0 but was %s", actual.Info().ConnectAddress())
 	}
 	if actual := iter(); !actual.Info().ConnectAddress().Equal(hosts[3].ConnectAddress()) {
 		t.Errorf("Expected peer 3 but was %s", actual.Info().ConnectAddress())
 	}
-	if actual := iter(); !actual.Info().ConnectAddress().Equal(hosts[0].ConnectAddress()) {
-		t.Errorf("Expected peer 0 but was %s", actual.Info().ConnectAddress())
+	// and end of hosts
+	if actual := iter(); actual != nil {
+		t.Errorf("Expected no more hosts but was %s", actual.Info().ConnectAddress())
 	}
 }
 
@@ -211,7 +223,7 @@ func TestHostPolicy_RoundRobin_NilHostInfo(t *testing.T) {
 func TestHostPolicy_TokenAware_NilHostInfo(t *testing.T) {
 	policy := TokenAwareHostPolicy(RoundRobinHostPolicy())
 	policyInternal := policy.(*tokenAwareHostPolicy)
-	policyInternal.getKeyspaceName = func() string {return "myKeyspace"}
+	policyInternal.getKeyspaceName = func() string { return "myKeyspace" }
 	policyInternal.getKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {
 		return nil, errors.New("not initialized")
 	}
@@ -228,7 +240,7 @@ func TestHostPolicy_TokenAware_NilHostInfo(t *testing.T) {
 	policy.SetPartitioner("OrderedPartitioner")
 
 	query := &Query{}
-	query.getKeyspace = func() string {return "myKeyspace"}
+	query.getKeyspace = func() string { return "myKeyspace" }
 	query.RoutingKey([]byte("20"))
 
 	iter := policy.Pick(query)
@@ -448,20 +460,19 @@ func TestHostPolicy_DCAwareRR(t *testing.T) {
 
 }
 
-
 // Tests of the token-aware host selection policy implementation with a
 // DC aware round-robin host selection policy fallback
 // with {"class": "NetworkTopologyStrategy", "a": 1, "b": 1, "c": 1} replication.
 func TestHostPolicy_TokenAware_DCAwareRR(t *testing.T) {
 	policy := TokenAwareHostPolicy(DCAwareRoundRobinPolicy("local"))
 	policyInternal := policy.(*tokenAwareHostPolicy)
-	policyInternal.getKeyspaceName = func() string {return "myKeyspace"}
+	policyInternal.getKeyspaceName = func() string { return "myKeyspace" }
 	policyInternal.getKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {
 		return nil, errors.New("not initialized")
 	}
 
 	query := &Query{}
-	query.getKeyspace = func() string {return "myKeyspace"}
+	query.getKeyspace = func() string { return "myKeyspace" }
 
 	iter := policy.Pick(nil)
 	if iter == nil {
@@ -504,17 +515,16 @@ func TestHostPolicy_TokenAware_DCAwareRR(t *testing.T) {
 
 	policy.SetPartitioner("OrderedPartitioner")
 
-
 	policyInternal.getKeyspaceMetadata = func(keyspaceName string) (*KeyspaceMetadata, error) {
 		if keyspaceName != "myKeyspace" {
 			return nil, fmt.Errorf("unknown keyspace: %s", keyspaceName)
 		}
 		return &KeyspaceMetadata{
-			Name: "myKeyspace",
+			Name:          "myKeyspace",
 			StrategyClass: "NetworkTopologyStrategy",
-			StrategyOptions: map[string]interface{} {
-				"class": "NetworkTopologyStrategy",
-				"local": 1,
+			StrategyOptions: map[string]interface{}{
+				"class":   "NetworkTopologyStrategy",
+				"local":   1,
 				"remote1": 1,
 				"remote2": 1,
 			},
@@ -576,13 +586,13 @@ func TestHostPolicy_TokenAware_DCAwareRR(t *testing.T) {
 func TestHostPolicy_TokenAware_DCAwareRR2(t *testing.T) {
 	policy := TokenAwareHostPolicy(DCAwareRoundRobinPolicy("local"))
 	policyInternal := policy.(*tokenAwareHostPolicy)
-	policyInternal.getKeyspaceName = func() string {return "myKeyspace"}
+	policyInternal.getKeyspaceName = func() string { return "myKeyspace" }
 	policyInternal.getKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {
 		return nil, errors.New("not initialized")
 	}
 
 	query := &Query{}
-	query.getKeyspace = func() string {return "myKeyspace"}
+	query.getKeyspace = func() string { return "myKeyspace" }
 
 	iter := policy.Pick(nil)
 	if iter == nil {
@@ -634,11 +644,11 @@ func TestHostPolicy_TokenAware_DCAwareRR2(t *testing.T) {
 			return nil, fmt.Errorf("unknown keyspace: %s", keyspaceName)
 		}
 		return &KeyspaceMetadata{
-			Name: "myKeyspace",
+			Name:          "myKeyspace",
 			StrategyClass: "NetworkTopologyStrategy",
-			StrategyOptions: map[string]interface{} {
-				"class": "NetworkTopologyStrategy",
-				"local": 2,
+			StrategyOptions: map[string]interface{}{
+				"class":   "NetworkTopologyStrategy",
+				"local":   2,
 				"remote1": 2,
 				"remote2": 2,
 			},
@@ -696,13 +706,13 @@ func TestHostPolicy_TokenAware_DCAwareRR2(t *testing.T) {
 func TestHostPolicy_TokenAware_DCAwareRR_NonLocalFallback(t *testing.T) {
 	policy := TokenAwareHostPolicy(DCAwareRoundRobinPolicy("local"), NonLocalReplicasFallback())
 	policyInternal := policy.(*tokenAwareHostPolicy)
-	policyInternal.getKeyspaceName = func() string {return "myKeyspace"}
+	policyInternal.getKeyspaceName = func() string { return "myKeyspace" }
 	policyInternal.getKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {
 		return nil, errors.New("not initialized")
 	}
 
 	query := &Query{}
-	query.getKeyspace = func() string {return "myKeyspace"}
+	query.getKeyspace = func() string { return "myKeyspace" }
 
 	iter := policy.Pick(nil)
 	if iter == nil {
@@ -750,11 +760,11 @@ func TestHostPolicy_TokenAware_DCAwareRR_NonLocalFallback(t *testing.T) {
 			return nil, fmt.Errorf("unknown keyspace: %s", keyspaceName)
 		}
 		return &KeyspaceMetadata{
-			Name: "myKeyspace",
+			Name:          "myKeyspace",
 			StrategyClass: "NetworkTopologyStrategy",
-			StrategyOptions: map[string]interface{} {
-				"class": "NetworkTopologyStrategy",
-				"local": 1,
+			StrategyOptions: map[string]interface{}{
+				"class":   "NetworkTopologyStrategy",
+				"local":   1,
 				"remote1": 1,
 				"remote2": 1,
 			},
