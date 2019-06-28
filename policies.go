@@ -395,6 +395,18 @@ func ShuffleReplicas() func(*tokenAwareHostPolicy) {
 	}
 }
 
+// NonLocalReplicasFallback enables fallback to replicas that are not considered local.
+//
+// TokenAwareHostPolicy used with DCAwareHostPolicy fallback first selects replicas by partition key in local DC, then
+// falls back to other nodes in the local DC. Enabling NonLocalReplicasFallback causes TokenAwareHostPolicy
+// to first select replicas by partition key in local DC, then replicas by partition key in remote DCs and fall back
+// to other nodes in local DC.
+func NonLocalReplicasFallback() func(policy *tokenAwareHostPolicy) {
+	return func(t *tokenAwareHostPolicy) {
+		t.nonLocalReplicasFallback = true
+	}
+}
+
 // TokenAwareHostPolicy is a token aware host selection policy, where hosts are
 // selected based on the partition key, so queries are sent to the host which
 // owns the partition. Fallback is used when routing information is not available.
@@ -420,7 +432,8 @@ type tokenAwareHostPolicy struct {
 	tokenRing atomic.Value // *tokenRing
 	keyspaces atomic.Value // *keyspaceMeta
 
-	shuffleReplicas bool
+	shuffleReplicas          bool
+	nonLocalReplicasFallback bool
 }
 
 func (t *tokenAwareHostPolicy) Init(s *Session) {
@@ -573,6 +586,7 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 	var (
 		fallbackIter NextHost
 		i            int
+		j            int
 	)
 
 	used := make(map[*HostInfo]bool, len(replicas))
@@ -584,6 +598,18 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 			if h.IsUp() && t.fallback.IsLocal(h) {
 				used[h] = true
 				return selectedHost{info: h, token: token}
+			}
+		}
+
+		if t.nonLocalReplicasFallback {
+			for j < len(replicas) {
+				h := replicas[j]
+				j++
+
+				if h.IsUp() && !t.fallback.IsLocal(h) {
+					used[h] = true
+					return selectedHost{info: h, token: token}
+				}
 			}
 		}
 
