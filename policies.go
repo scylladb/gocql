@@ -427,7 +427,8 @@ type tokenAwareHostPolicy struct {
 	mu          sync.RWMutex
 	partitioner string
 	fallback    HostSelectionPolicy
-	session     *Session
+	getKeyspaceMetadata func(keyspace string) (*KeyspaceMetadata, error)
+	getKeyspaceName func() string
 
 	tokenRing atomic.Value // *tokenRing
 	keyspaces atomic.Value // *keyspaceMeta
@@ -437,7 +438,8 @@ type tokenAwareHostPolicy struct {
 }
 
 func (t *tokenAwareHostPolicy) Init(s *Session) {
-	t.session = s
+	t.getKeyspaceMetadata = s.KeyspaceMetadata
+	t.getKeyspaceName = func() string {return s.cfg.Keyspace}
 }
 
 func (t *tokenAwareHostPolicy) IsLocal(host *HostInfo) bool {
@@ -459,7 +461,7 @@ func (t *tokenAwareHostPolicy) updateKeyspaceMetadata(keyspace string) {
 		replicas: make(map[string]map[token][]*HostInfo, size),
 	}
 
-	ks, err := t.session.KeyspaceMetadata(keyspace)
+	ks, err := t.getKeyspaceMetadata(keyspace)
 	if err == nil {
 		strat := getStrategy(ks)
 		if strat != nil {
@@ -495,16 +497,12 @@ func (t *tokenAwareHostPolicy) SetPartitioner(partitioner string) {
 
 func (t *tokenAwareHostPolicy) AddHost(host *HostInfo) {
 	t.HostUp(host)
-	if t.session != nil { // disable for unit tests
-		t.updateKeyspaceMetadata(t.session.cfg.Keyspace)
-	}
+	t.updateKeyspaceMetadata(t.getKeyspaceName())
 }
 
 func (t *tokenAwareHostPolicy) RemoveHost(host *HostInfo) {
 	t.HostDown(host)
-	if t.session != nil { // disable for unit tests
-		t.updateKeyspaceMetadata(t.session.cfg.Keyspace)
-	}
+	t.updateKeyspaceMetadata(t.getKeyspaceName())
 }
 
 func (t *tokenAwareHostPolicy) HostUp(host *HostInfo) {
