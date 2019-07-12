@@ -129,7 +129,7 @@ func TestHostPolicy_TokenAware(t *testing.T) {
 			orderedToken("50"): {hosts[2], hosts[3]},
 			orderedToken("75"): {hosts[3], hosts[0]},
 		},
-	}, policyInternal.keyspaces.Load().(*keyspaceMeta).replicas)
+	}, policyInternal.metadata.Load().(*clusterMeta).replicas)
 
 	// now the token ring is configured
 	query.RoutingKey([]byte("20"))
@@ -550,7 +550,7 @@ func TestHostPolicy_TokenAware_DCAwareRR(t *testing.T) {
 			orderedToken("55"): {hosts[10], hosts[11], hosts[0]},
 			orderedToken("60"): {hosts[11], hosts[0], hosts[1]},
 		},
-	}, policyInternal.keyspaces.Load().(*keyspaceMeta).replicas)
+	}, policyInternal.metadata.Load().(*clusterMeta).replicas)
 
 	// now the token ring is configured
 	query.RoutingKey([]byte("23"))
@@ -669,7 +669,7 @@ func TestHostPolicy_TokenAware_DCAwareRR_NonLocalFallback(t *testing.T) {
 			orderedToken("55"): {hosts[10], hosts[11], hosts[0]},
 			orderedToken("60"): {hosts[11], hosts[0], hosts[1]},
 		},
-	}, policyInternal.keyspaces.Load().(*keyspaceMeta).replicas)
+	}, policyInternal.metadata.Load().(*clusterMeta).replicas)
 
 	// now the token ring is configured
 	query.RoutingKey([]byte("18"))
