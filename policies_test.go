@@ -675,7 +675,7 @@ func TestHostPolicy_TokenAware_DCAwareRR2(t *testing.T) {
 			orderedToken("55"): {hosts[10], hosts[11], hosts[0], hosts[1], hosts[2], hosts[3]},
 			orderedToken("60"): {hosts[11], hosts[0], hosts[1], hosts[2], hosts[3], hosts[4]},
 		},
-	}, policyInternal.keyspaces.Load().(*keyspaceMeta).replicas)
+	}, policyInternal.getMetadataReadOnly().replicas)
 
 	// now the token ring is configured
 	query.RoutingKey([]byte("23"))
