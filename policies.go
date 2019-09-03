@@ -600,12 +600,12 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 		return t.fallback.Pick(qry)
 	}
 
-	primaryEndpoint, token, _ := meta.tokenRing.GetHostForPartitionKey(routingKey)
+	primaryEndpoint, token, endToken := meta.tokenRing.GetHostForPartitionKey(routingKey)
 	if primaryEndpoint == nil || token == nil {
 		return t.fallback.Pick(qry)
 	}
 
-	replicas, ok := meta.getReplicas(qry.Keyspace(), token)
+	replicas, ok := meta.getReplicas(qry.Keyspace(), endToken)
 	if !ok {
 		replicas = []*HostInfo{primaryEndpoint}
 	} else if t.shuffleReplicas {
