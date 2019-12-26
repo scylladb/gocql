@@ -231,6 +231,7 @@ func (p *scyllaConnPicker) closeExcessConns() {
 }
 
 func (p *scyllaConnPicker) randomConn() *Conn {
+	atomic.CompareAndSwapInt32(&p.pos, math.MaxInt32, int32(0))
 	idx := int(atomic.AddInt32(&p.pos, 1))
 	for i := 0; i < len(p.conns); i++ {
 		if conn := p.conns[(idx+i)%len(p.conns)]; conn != nil {
