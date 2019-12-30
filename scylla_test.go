@@ -145,7 +145,7 @@ func TestScyllaRandomConnPIcker(t *testing.T) {
 		s := &scyllaConnPicker{
 			nrShards:  4,
 			msbIgnore: 12,
-			pos: math.MaxInt32,
+			pos: math.MaxUint64,
 			conns: []*Conn{nil, mockConn("1")},
 		}
 
@@ -158,7 +158,7 @@ func TestScyllaRandomConnPIcker(t *testing.T) {
 		s := &scyllaConnPicker{
 			nrShards:  4,
 			msbIgnore: 12,
-			pos: math.MaxInt32,
+			pos: math.MaxUint64,
 			conns: []*Conn{nil, mockConn("1")},
 		}
 
@@ -169,8 +169,8 @@ func TestScyllaRandomConnPIcker(t *testing.T) {
 		}
 		wg.Wait()
 
-		if s.pos != 9 {
-			t.Fatalf("expected position to be 9 | actual %d", s.pos)
+		if s.pos != 8 {
+			t.Fatalf("expected position to be 8 | actual %d", s.pos)
 		}
 	})
 }
