@@ -1,10 +1,27 @@
 package gocql
 
 import (
+	"math"
 	"runtime"
 	"sync"
 	"testing"
 )
+
+func TestRandomConn(t *testing.T) {
+	conns := make([]*Conn, 10)
+	conns[5] = &Conn{}
+	scp := scyllaConnPicker{
+		conns: conns,
+		pos:   math.MaxUint32 - 4,
+	}
+
+	for i := 0; i < 10; i++ {
+		c := scp.randomConn()
+		if c == nil {
+			t.Errorf("invalid random connection")
+		}
+	}
+}
 
 func TestScyllaConnPickerPickNilToken(t *testing.T) {
 	t.Parallel()
