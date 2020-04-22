@@ -161,6 +161,7 @@ const (
 
 	// prepare flags
 	flagWithPreparedKeyspace uint32 = 0x01
+	flagLWT                  int    = 0x80000000
 
 	// header flags
 	flagCompress      byte = 0x01
@@ -934,6 +935,9 @@ func (f *framer) readTypeInfo() TypeInfo {
 type preparedMetadata struct {
 	resultMetadata
 
+	// LWT query detected
+	lwt bool
+
 	// proto v4+
 	pkeyColumns []int
 }
@@ -961,6 +965,8 @@ func (f *framer) parsePreparedMetadata() preparedMetadata {
 		}
 		meta.pkeyColumns = pkeys
 	}
+
+	meta.lwt = meta.flags&flagLWT == flagLWT
 
 	if meta.flags&flagHasMorePages == flagHasMorePages {
 		meta.pagingState = copyBytes(f.readBytes())
