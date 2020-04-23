@@ -145,8 +145,8 @@ func TestScyllaRandomConnPIcker(t *testing.T) {
 		s := &scyllaConnPicker{
 			nrShards:  4,
 			msbIgnore: 12,
-			pos: math.MaxUint64,
-			conns: []*Conn{nil, mockConn("1")},
+			pos:       math.MaxUint64,
+			conns:     []*Conn{nil, mockConn("1")},
 		}
 
 		if s.Pick(token(nil)) == nil {
@@ -158,8 +158,8 @@ func TestScyllaRandomConnPIcker(t *testing.T) {
 		s := &scyllaConnPicker{
 			nrShards:  4,
 			msbIgnore: 12,
-			pos: math.MaxUint64,
-			conns: []*Conn{nil, mockConn("1")},
+			pos:       math.MaxUint64,
+			conns:     []*Conn{nil, mockConn("1")},
 		}
 
 		var wg sync.WaitGroup
