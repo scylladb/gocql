@@ -1953,7 +1953,7 @@ func TestEmptyTimestamp(t *testing.T) {
 		t.Errorf("time.Time bind variable should still be empty (was %s)", timeVal)
 	}
 }
-
+q
 // Integration test of the routing key calculation
 func TestRoutingKey(t *testing.T) {
 	session := createSession(t)
