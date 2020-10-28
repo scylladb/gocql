@@ -1,0 +1,38 @@
+name: CI
+
+on: push
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-go@v2
+      - uses: actions/cache@v2
+        id: gomod-cache
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('go.mod') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+      - uses: actions/cache@v2
+        id: ccm-cache
+        with:
+          path: ~/.ccm/repository
+          key: ${{ runner.os }}-${{ hashFiles('install_test_deps.sh') }}
+
+      - name: Run go vet
+        run: go vet
+
+      - name: Install CCM
+        if: steps.ccm-cache.outputs.cache-hit != 'true'
+        run: ./install_test_deps.sh gocql/gocql
+
+      - name: Run integration tests
+        env:
+          PATH=${PATH}:${HOME}/.local/bin
+          GOMAXPROCS=2
+          CASS=scylladb/scylla:4.0.0
+          AUTH=false
+        run: |
+          ./integration.sh ${CASS} ${AUTH}
