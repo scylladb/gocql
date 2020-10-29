@@ -3,8 +3,7 @@
 # Copyright (C) 2017 ScyllaDB
 #
 
-SCYLLA_IMAGE=${SCYLLA_IMAGE}
-AUTH=${AUTH}
+readonly SCYLLA_IMAGE=${SCYLLA_IMAGE}
 
 set -eu -o pipefail
 
@@ -12,7 +11,7 @@ set -eu -o pipefail
 scylla_liveset="192.168.100.11,192.168.100.12"
 
 function scylla_up() {
-  local exec="docker-compose exec -T"
+  local -r exec="docker-compose exec -T"
 
   echo "==> Running Scylla ${SCYLLA_IMAGE}"
   docker pull ${SCYLLA_IMAGE}
@@ -39,25 +38,12 @@ function scylla_restart() {
   scylla_up
 }
 
-function run_scylla_tests() {
-  local clusterSize=2
-  local cversion="3.11.4"
-  local proto=4
-  local args="-gocql.timeout=60s -proto=${proto} -rf=3 -clusterSize=${clusterSize} -autowait=2000ms -compressor=snappy -gocql.cversion=${cversion} -cluster=${scylla_liveset}) ./..."
-  echo "Args: $args"
+scylla_restart
 
-  scylla_restart
+readonly clusterSize=2
+readonly cversion="3.11.4"
+readonly proto=4
+readonly args="-gocql.timeout=60s -proto=${proto} -rf=3 -clusterSize=${clusterSize} -autowait=2000ms -compressor=snappy -gocql.cversion=${cversion} -cluster=${scylla_liveset}"
 
-  local go_test="go test -v -timeout=5m -race ${args}"
-  if [[ "${AUTH}" == true ]]; then
-    ${go_test} -tags "integration gocql_debug" -run=TestAuthentication -runauth
-  else
-    ${go_test} -tags "cassandra scylla gocql_debug"
-    scylla_restart
-    ${go_test} -tags "integration scylla gocql_debug"
-    scylla_restart
-    ${go_test} -tags "ccm gocql_debug"
-  fi
-}
-
-run_scylla_tests
+echo "==> Running $* tests with args: ${args}"
+go test -timeout=5m -race -tags="$*" ${args} ./...

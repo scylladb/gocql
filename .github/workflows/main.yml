@@ -11,6 +11,8 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    env:
+      SCYLLA_IMAGE: scylladb/scylla:4.0.0
     steps:
       - uses: actions/checkout@v2
       - uses: actions/setup-go@v2
@@ -32,9 +34,6 @@ jobs:
           DOCKER_COMPOSE_VERSION: 1.25.5
         run: sudo curl -L "https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
 
-      - name: Run integration tests
-        env:
-          SCYLLA_IMAGE: scylladb/scylla:4.0.0
-          AUTH: false
-        run: |
-          ./integration.sh
+      - run: ./integration.sh cassandra scylla
+      - run: ./integration.sh integration scylla
+      - run: ./integration.sh ccm
