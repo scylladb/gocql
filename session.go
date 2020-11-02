@@ -1550,6 +1550,8 @@ func (iter *Iter) NumRows() int {
 	return iter.numRows
 }
 
+// nextIter holds state for fetching a single page in an iterator.
+// single page might be attempted multiple times due to retries.
 type nextIter struct {
 	qry   *Query
 	pos   int
@@ -2027,7 +2029,6 @@ type ObservedQuery struct {
 	Err error
 
 	// Attempt is the index of attempt at executing this query.
-	// An attempt might be either retry or fetching next page of a query.
 	// The first attempt is number zero and any retries have non-zero attempt number.
 	Attempt int
 }
@@ -2060,7 +2061,6 @@ type ObservedBatch struct {
 	Metrics *hostMetrics
 
 	// Attempt is the index of attempt at executing this query.
-	// An attempt might be either retry or fetching next page of a query.
 	// The first attempt is number zero and any retries have non-zero attempt number.
 	Attempt int
 }
