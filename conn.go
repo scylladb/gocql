@@ -524,6 +524,13 @@ func (c *Conn) closeWithError(err error) {
 		// TODO(zariel): is it a good idea to do this?
 		c.errorHandler.HandleError(c, cerr, true)
 	}
+
+	if c.session.disconnectObserver != nil {
+		c.session.disconnectObserver.ObserveDisconnect(ObservedDisconnect{
+			Host: c.host,
+			Err:  err,
+		})
+	}
 }
 
 func (c *Conn) close() error {
