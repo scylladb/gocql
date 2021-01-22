@@ -173,15 +173,23 @@ func (s *Session) connect(ctx context.Context, host *HostInfo, errorHandler Conn
 	return s.dial(ctx, host, s.connCfg, errorHandler)
 }
 
+func (s *Session) connectWithDialer(ctx context.Context, host *HostInfo, errorHandler ConnErrorHandler, dialer Dialer) (*Conn, error) {
+	return s.dialWithDialer(ctx, host, s.connCfg, errorHandler, dialer)
+}
+
 // dial establishes a connection to a Cassandra node and notifies the session's connectObserver.
 func (s *Session) dial(ctx context.Context, host *HostInfo, connConfig *ConnConfig, errorHandler ConnErrorHandler) (*Conn, error) {
+	return s.dialWithDialer(ctx, host, connConfig, errorHandler, connConfig.Dialer)
+}
+
+func (s *Session) dialWithDialer(ctx context.Context, host *HostInfo, connConfig *ConnConfig, errorHandler ConnErrorHandler, dialer Dialer) (*Conn, error) {
 	var obs ObservedConnect
 	if s.connectObserver != nil {
 		obs.Host = host
 		obs.Start = time.Now()
 	}
 
-	conn, err := s.dialWithoutObserver(ctx, host, connConfig, errorHandler)
+	conn, err := s.dialWithoutObserver(ctx, host, connConfig, errorHandler, dialer)
 
 	if s.connectObserver != nil {
 		obs.End = time.Now()
@@ -195,7 +203,7 @@ func (s *Session) dial(ctx context.Context, host *HostInfo, connConfig *ConnConf
 // dialWithoutObserver establishes connection to a Cassandra node.
 //
 // dialWithoutObserver does not notify the connection observer, so you most probably want to call dial() instead.
-func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *ConnConfig, errorHandler ConnErrorHandler) (*Conn, error) {
+func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *ConnConfig, errorHandler ConnErrorHandler, dialer Dialer) (*Conn, error) {
 	ip := host.ConnectAddress()
 	port := host.port
 
@@ -206,7 +214,6 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 		panic(fmt.Sprintf("host missing port: %v", port))
 	}
 
-	dialer := cfg.Dialer
 	if dialer == nil {
 		d := &net.Dialer{
 			Timeout: cfg.ConnectTimeout,
@@ -1072,7 +1079,7 @@ type inflightPrepare struct {
 }
 
 func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer) (*preparedStatment, error) {
-	stmtCacheKey := c.session.stmtsLRU.keyFor(c.addr, c.currentKeyspace, stmt)
+	stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostnameAndPort(), c.currentKeyspace, stmt)
 	flight, ok := c.session.stmtsLRU.execIfMissing(stmtCacheKey, func(lru *lru.Cache) *inflightPrepare {
 		flight := &inflightPrepare{
 			done: make(chan struct{}),
@@ -1236,7 +1243,9 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 		}
 
 		// Set "lwt" property in the query if it is present in preparedMetadata
-		qry.lwt = info.request.lwt
+		qry.routingInfo.mu.Lock()
+		qry.routingInfo.lwt = info.request.lwt
+		qry.routingInfo.mu.Unlock()
 	} else {
 		frame = &writeQueryFrame{
 			statement:     qry.stmt,
@@ -1310,7 +1319,7 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 		// is not consistent with regards to its schema.
 		return iter
 	case *RequestErrUnprepared:
-		stmtCacheKey := c.session.stmtsLRU.keyFor(c.addr, c.currentKeyspace, qry.stmt)
+		stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostnameAndPort(), c.currentKeyspace, qry.stmt)
 		c.session.stmtsLRU.evictPreparedID(stmtCacheKey, x.StatementId)
 		return c.executeQuery(ctx, qry)
 	case error:
@@ -1442,7 +1451,9 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) *Iter {
 
 	// The batch is considered to be conditional if even one of the
 	// statements is conditional.
-	batch.lwt = hasLwtEntries
+	batch.routingInfo.mu.Lock()
+	batch.routingInfo.lwt = hasLwtEntries
+	batch.routingInfo.mu.Unlock()
 
 	// TODO: should batch support tracing?
 	framer, err := c.exec(batch.Context(), req, nil)
@@ -1461,7 +1472,7 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) *Iter {
 	case *RequestErrUnprepared:
 		stmt, found := stmts[string(x.StatementId)]
 		if found {
-			key := c.session.stmtsLRU.keyFor(c.addr, c.currentKeyspace, stmt)
+			key := c.session.stmtsLRU.keyFor(c.host.HostnameAndPort(), c.currentKeyspace, stmt)
 			c.session.stmtsLRU.evictPreparedID(key, x.StatementId)
 		}
 		return c.executeBatch(ctx, batch)

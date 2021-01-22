@@ -72,6 +72,49 @@ if localDC != "" {
 }
 ```
 
+### Shard-aware port
+
+This version of gocql supports a more robust method of establishing connection for each shard by using _shard aware port_ for native transport.
+It greatly reduces time and the number of connections needed to establish a connection per shard in some cases - ex. when many clients connect at once, or when there are non-shard-aware clients connected to the same cluster.
+
+If you are using a custom Dialer and if your nodes expose the shard-aware port, it is highly recommended to update it so that it uses a specific source port when connecting.
+
+- If you are using a custom `net.Dialer`, you can make your dialer honor the source port by wrapping it in a `gocql.ScyllaShardAwareDialer`:
+  ```go
+  oldDialer := net.Dialer{...}
+  clusterConfig.Dialer := &gocql.ScyllaShardAwareDialer{oldDialer}
+  ```
+- If you are using a custom type implementing `gocql.Dialer`, you can get the source port by using the `gocql.ScyllaGetSourcePort` function.
+  An example:
+  ```go
+  func (d *myDialer) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+      sourcePort := gocql.ScyllaGetSourcePort(ctx)
+      localAddr, err := net.ResolveTCPAddr(network, fmt.Sprintf(":%d", sourcePort))
+      if err != nil {
+          return nil, err
+      }
+	  d := &net.Dialer{LocalAddr: localAddr}
+	  return d.DialContext(ctx, network, addr)
+  }
+  ```
+  The source port might be already bound by another connection on your system.
+  In such case, you should return an appropriate error so that the driver can retry with a different port suitable for the shard it tries to connect to.
+
+  - If you are using `net.Dialer.DialContext`, this function will return an error in case the source port is unavailable, and you can just return that error from your custom `Dialer`.
+  - Otherwise, if you detect that the source port is unavailable, you can either return `gocql.ErrScyllaSourcePortAlreadyInUse` or `syscall.EADDRINUSE`.
+
+For this feature to work correctly, you need to make sure the following conditions are met:
+
+- Your cluster nodes are configured to listen on the shard-aware port (`native_shard_aware_transport_port` option),
+- Your cluster nodes are not behind a NAT which changes source ports,
+- If you have a custom Dialer, it connects from the correct source port (see the guide above).
+
+The feature is designed to gracefully fall back to the using the non-shard-aware port when it detects that some of the above conditions are not met.
+The driver will print a warning about misconfigured address translation if it detects it.
+Issues with shard-aware port not being reachable are not reported in non-debug mode, because there is no way to detect it without false positives.
+
+If you suspect that this feature is causing you problems, you can completely disable it by setting the `ClusterConfig.DisableShardAwarePort` flag to false.
+
 ---
 
 Package gocql implements a fast and robust Cassandra client for the
