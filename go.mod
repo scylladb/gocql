@@ -6,8 +6,10 @@ require (
 	github.com/golang/snappy v0.0.0-20170215233205-553a64147049
 	github.com/google/go-cmp v0.4.0
 	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed
+	github.com/klauspost/cpuid/v2 v2.0.3
 	github.com/kr/pretty v0.1.0 // indirect
 	github.com/stretchr/testify v1.3.0 // indirect
+	golang.org/x/sys v0.0.0-20210124154548-22da62e12c0c
 	gopkg.in/inf.v0 v0.9.1
 )
 
