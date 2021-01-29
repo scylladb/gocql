@@ -26,10 +26,9 @@ func TestAggregateMetadata(t *testing.T) {
 	if aggregates == nil {
 		t.Fatal("failed to query aggregate metadata, nil returned")
 	}
-	if len(aggregates) != 1 {
-		t.Fatal("expected only a single aggregate")
+	if len(aggregates) != 2 {
+		t.Fatal("expected two aggregates")
 	}
-	aggregate := aggregates[0]
 
 	expectedAggregrate := AggregateMetadata{
 		Keyspace:      "gocql_test",
@@ -54,8 +53,12 @@ func TestAggregateMetadata(t *testing.T) {
 		expectedAggregrate.InitCond = string([]byte{0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0})
 	}
 
-	if !reflect.DeepEqual(aggregate, expectedAggregrate) {
-		t.Fatalf("aggregate is %+v, but expected %+v", aggregate, expectedAggregrate)
+	if !reflect.DeepEqual(aggregates[0], expectedAggregrate) {
+		t.Fatalf("aggregate 'average' is %+v, but expected %+v", aggregates[0], expectedAggregrate)
+	}
+	expectedAggregrate.Name = "average2"
+	if !reflect.DeepEqual(aggregates[1], expectedAggregrate) {
+		t.Fatalf("aggregate 'average2' is %+v, but expected %+v", aggregates[1], expectedAggregrate)
 	}
 }
 
@@ -323,7 +326,17 @@ func TestKeyspaceMetadata(t *testing.T) {
 
 	aggregate, found := keyspaceMetadata.Aggregates["average"]
 	if !found {
-		t.Fatal("failed to find the aggreate in metadata")
+		t.Fatal("failed to find the aggregate 'average' in metadata")
+	}
+	if aggregate.FinalFunc.Name != "avgfinal" {
+		t.Fatalf("expected final function %s, but got %s", "avgFinal", aggregate.FinalFunc.Name)
+	}
+	if aggregate.StateFunc.Name != "avgstate" {
+		t.Fatalf("expected state function %s, but got %s", "avgstate", aggregate.StateFunc.Name)
+	}
+	aggregate, found = keyspaceMetadata.Aggregates["average2"]
+	if !found {
+		t.Fatal("failed to find the aggregate 'average2' in metadata")
 	}
 	if aggregate.FinalFunc.Name != "avgfinal" {
 		t.Fatalf("expected final function %s, but got %s", "avgFinal", aggregate.FinalFunc.Name)
@@ -336,13 +349,42 @@ func TestKeyspaceMetadata(t *testing.T) {
 	if !found {
 		t.Fatal("failed to find the view in metadata")
 	}
+	_, found = keyspaceMetadata.UserTypes["basicview"]
+	if !found {
+		t.Fatal("failed to find the types in metadata")
+	}
+	textType := TypeText
+	if flagCassVersion.Before(3, 0, 0) {
+		textType = TypeVarchar
+	}
+	expectedType := UserTypeMetadata{
+		Keyspace:   "gocql_test",
+		Name:       "basicview",
+		FieldNames: []string{"birthday", "nationality", "weight", "height"},
+		FieldTypes: []TypeInfo{
+			NativeType{typ: TypeTimestamp},
+			NativeType{typ: textType},
+			NativeType{typ: textType},
+			NativeType{typ: textType},
+		},
+	}
+	if !reflect.DeepEqual(*keyspaceMetadata.UserTypes["basicview"], expectedType) {
+		t.Fatalf("type is %+v, but expected %+v", keyspaceMetadata.UserTypes["basicview"], expectedType)
+	}
 	if flagCassVersion.Major >= 3 {
 		materializedView, found := keyspaceMetadata.MaterializedViews["view_view"]
 		if !found {
-			t.Fatal("failed to find the materialized view in metadata")
+			t.Fatal("failed to find materialized view view_view in metadata")
 		}
 		if materializedView.BaseTable.Name != "view_table" {
 			t.Fatalf("expected name: %s, materialized view base table name: %s", "view_table", materializedView.BaseTable.Name)
+		}
+		materializedView, found = keyspaceMetadata.MaterializedViews["view_view2"]
+		if !found {
+			t.Fatal("failed to find materialized view view_view2 in metadata")
+		}
+		if materializedView.BaseTable.Name != "view_table2" {
+			t.Fatalf("expected name: %s, materialized view base table name: %s", "view_table2", materializedView.BaseTable.Name)
 		}
 	}
 }
@@ -670,10 +712,10 @@ func TestMaterializedViewMetadata(t *testing.T) {
 	if materializedViews == nil {
 		t.Fatal("failed to query view metadata, nil returned")
 	}
-	if len(materializedViews) != 1 {
-		t.Fatal("expected one view")
+	if len(materializedViews) != 2 {
+		t.Fatal("expected two views")
 	}
-	expectedView := MaterializedViewMetadata{
+	expectedView1 := MaterializedViewMetadata{
 		Keyspace:                "gocql_test",
 		Name:                    "view_view",
 		baseTableName:           "view_table",
@@ -690,11 +732,32 @@ func TestMaterializedViewMetadata(t *testing.T) {
 		IncludeAllColumns:       false, MaxIndexInterval: 2048, MemtableFlushPeriodInMs: 0, MinIndexInterval: 128, ReadRepairChance: 0,
 		SpeculativeRetry: "99PERCENTILE",
 	}
+	expectedView2 := MaterializedViewMetadata{
+		Keyspace:                "gocql_test",
+		Name:                    "view_view2",
+		baseTableName:           "view_table2",
+		BloomFilterFpChance:     0.01,
+		Caching:                 map[string]string{"keys": "ALL", "rows_per_partition": "NONE"},
+		Comment:                 "",
+		Compaction:              map[string]string{"class": "org.apache.cassandra.db.compaction.SizeTieredCompactionStrategy", "max_threshold": "32", "min_threshold": "4"},
+		Compression:             map[string]string{"chunk_length_in_kb": "64", "class": "org.apache.cassandra.io.compress.LZ4Compressor"},
+		CrcCheckChance:          1,
+		DcLocalReadRepairChance: 0.1,
+		DefaultTimeToLive:       0,
+		Extensions:              map[string]string{},
+		GcGraceSeconds:          864000,
+		IncludeAllColumns:       false, MaxIndexInterval: 2048, MemtableFlushPeriodInMs: 0, MinIndexInterval: 128, ReadRepairChance: 0,
+		SpeculativeRetry: "99PERCENTILE",
+	}
 
-	expectedView.BaseTableId = materializedViews[0].BaseTableId
-	expectedView.Id = materializedViews[0].Id
-
-	if !reflect.DeepEqual(materializedViews[0], expectedView) {
-		t.Fatalf("materialized view is %+v, but expected %+v", materializedViews[0], expectedView)
+	expectedView1.BaseTableId = materializedViews[0].BaseTableId
+	expectedView1.Id = materializedViews[0].Id
+	if !reflect.DeepEqual(materializedViews[0], expectedView1) {
+		t.Fatalf("materialized view is %+v, but expected %+v", materializedViews[0], expectedView1)
+	}
+	expectedView2.BaseTableId = materializedViews[1].BaseTableId
+	expectedView2.Id = materializedViews[1].Id
+	if !reflect.DeepEqual(materializedViews[1], expectedView2) {
+		t.Fatalf("materialized view is %+v, but expected %+v", materializedViews[1], expectedView2)
 	}
 }

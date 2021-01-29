@@ -1797,8 +1797,8 @@ func TestMarshalTuple(t *testing.T) {
 				if got.A != "foo" {
 					t.Errorf("expected A string to be %v, got %v", "foo", got.A)
 				}
-				if *got.B != "" {
-					t.Errorf("expected B string to be empty, got %v", *got.B)
+				if got.B != nil {
+					t.Errorf("expected B string to be nil, got %v", *got.B)
 				}
 			},
 		},
@@ -1827,7 +1827,9 @@ func TestMarshalTuple(t *testing.T) {
 			check: func(t *testing.T, v interface{}) {
 				got := v.(*[2]*string)
 				checkString(t, "foo", *(got[0]))
-				checkString(t, "", *(got[1]))
+				if got[1] != nil {
+					t.Errorf("expected string to be nil, got %v", *got[1])
+				}
 			},
 		},
 	}
@@ -1883,7 +1885,7 @@ func TestUnmarshalTuple(t *testing.T) {
 			return
 		}
 
-		if *tmp.A != "" || *tmp.B != "foo" {
+		if tmp.A != nil || *tmp.B != "foo" {
 			t.Errorf("unmarshalTest: expected [nil, foo], got [%v, %v]", *tmp.A, *tmp.B)
 		}
 	})
@@ -1913,7 +1915,7 @@ func TestUnmarshalTuple(t *testing.T) {
 			return
 		}
 
-		if *tmp[0] != "" || *tmp[1] != "foo" {
+		if tmp[0] != nil || *tmp[1] != "foo" {
 			t.Errorf("unmarshalTest: expected [nil, foo], got [%v, %v]", *tmp[0], *tmp[1])
 		}
 	})
