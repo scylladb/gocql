@@ -121,7 +121,8 @@ func NewTokenAwareLatencyHostPolicy(options TokenAwareLatencyHostPolicyOptions) 
 		return nil, fmt.Errorf("tokenawarelatency: RemoteDatacenterPenalty must be positive")
 	}
 	if options.RemoteDatacenterPenalty > 0 && options.LocalDatacenter == "" {
-		return nil, fmt.Errorf("tokenawarelatency: RemoteDatacenterPenalty required LocalDatacenter to be set")
+		return nil,
+			fmt.Errorf("tokenawarelatency: non-zero RemoteDatacenterPenalty requires LocalDatacenter to be set")
 	}
 	return &TokenAwareLatencyHostPolicy{
 		hosts:                   make(map[string]*tokenAwareLatencyHost),
