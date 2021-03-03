@@ -723,6 +723,55 @@ func TestContext_Timeout(t *testing.T) {
 	}
 }
 
+func TestContext_CanceledBeforeExec(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var reqCount uint64
+
+	srv := newTestServerOpts{
+		addr:     "127.0.0.1:0",
+		protocol: defaultProto,
+		recvHook: func(f *framer) {
+			if f.header.op == opStartup || f.header.op == opOptions {
+				// ignore statup and heartbeat messages
+				return
+			}
+			atomic.AddUint64(&reqCount, 1)
+		},
+	}.newServer(t, ctx)
+
+	defer srv.Stop()
+
+	cluster := testCluster(defaultProto, srv.Address)
+	cluster.Timeout = 5 * time.Second
+	db, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	startupRequestCount := atomic.LoadUint64(&reqCount)
+
+	ctx, cancel = context.WithCancel(ctx)
+	cancel()
+
+	err = db.Query("timeout").WithContext(ctx).Exec()
+	if err != context.Canceled {
+		t.Fatalf("expected to get context cancel error: %v got %v", context.Canceled, err)
+	}
+
+	// Queries are executed by separate goroutine and we don't have a synchronization point that would allow us to
+	// check if a request was sent or not.
+	// Fall back to waiting a little bit.
+	time.Sleep(100 * time.Millisecond)
+
+	queryRequestCount := atomic.LoadUint64(&reqCount) - startupRequestCount
+	if queryRequestCount != 0 {
+		t.Fatalf("expected that no request is sent to server, sent %d requests", queryRequestCount)
+	}
+}
+
 // tcpConnPair returns a matching set of a TCP client side and server side connection.
 func tcpConnPair() (s, c net.Conn, err error) {
 	l, err := net.Listen("tcp", "localhost:0")
@@ -936,7 +985,23 @@ func NewTestServerWithAddress(addr string, t testing.TB, protocol uint8, ctx con
 }
 
 func NewTestServerWithAddressAndSupportedFactory(addr string, t testing.TB, protocol uint8, ctx context.Context, supportedFactory testSupportedFactory) *TestServer {
-	laddr, err := net.ResolveTCPAddr("tcp", addr)
+	return newTestServerOpts{
+		addr:             addr,
+		protocol:         protocol,
+		supportedFactory: supportedFactory,
+	}.newServer(t, ctx)
+}
+
+type newTestServerOpts struct {
+	addr     string
+	protocol uint8
+	recvHook func(*framer)
+
+	supportedFactory testSupportedFactory
+}
+
+func (nts newTestServerOpts) newServer(t testing.TB, ctx context.Context) *TestServer {
+	laddr, err := net.ResolveTCPAddr("tcp", nts.addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -947,7 +1012,7 @@ func NewTestServerWithAddressAndSupportedFactory(addr string, t testing.TB, prot
 	}
 
 	headerSize := 8
-	if protocol > protoVersion2 {
+	if nts.protocol > protoVersion2 {
 		headerSize = 9
 	}
 
@@ -956,12 +1021,13 @@ func NewTestServerWithAddressAndSupportedFactory(addr string, t testing.TB, prot
 		Address:    listen.Addr().String(),
 		listen:     listen,
 		t:          t,
-		protocol:   protocol,
+		protocol:   nts.protocol,
 		headerSize: headerSize,
 		ctx:        ctx,
 		cancel:     cancel,
 
-		supportedFactory: supportedFactory,
+		supportedFactory: nts.supportedFactory,
+		onRecv:           nts.recvHook,
 	}
 
 	go srv.closeWatch()
@@ -1024,7 +1090,6 @@ type TestServer struct {
 	Address          string
 	TimeoutOnStartup int32
 	t                testing.TB
-	nreq             uint64
 	listen           net.Listener
 	nKillReq         int64
 	compressor       Compressor
@@ -1038,6 +1103,9 @@ type TestServer struct {
 	quit   chan struct{}
 	mu     sync.Mutex
 	closed bool
+
+	// onRecv is a hook point for tests, called in receive loop.
+	onRecv func(*framer)
 }
 
 type testSupportedFactory func(conn net.Conn) map[string][]string
@@ -1088,7 +1156,9 @@ func (srv *TestServer) serve() {
 					return
 				}
 
-				atomic.AddUint64(&srv.nreq, 1)
+				if srv.onRecv != nil {
+					srv.onRecv(framer)
+				}
 
 				go srv.process(framer, exts)
 			}
