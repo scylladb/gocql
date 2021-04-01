@@ -80,6 +80,19 @@ func (p PasswordAuthenticator) Success(data []byte) error {
 	return nil
 }
 
+// SslOptions configures TLS use.
+//
+// Warning: Due to historical reasons, the SslOptions is insecure by default, so you need to set EnableHostVerification
+// to true if no Config is set. Most users should set SslOptions.Config to a *tls.Config.
+// SslOptions and Config.InsecureSkipVerify interact as follows:
+//
+//  Config.InsecureSkipVerify | EnableHostVerification | Result
+//  Config is nil             | false                  | do not verify host
+//  Config is nil             | true                   | verify host
+//  false                     | false                  | verify host
+//  true                      | false                  | do not verify host
+//  false                     | true                   | verify host
+//  true                      | true                   | verify host
 type SslOptions struct {
 	*tls.Config
 
@@ -89,9 +102,12 @@ type SslOptions struct {
 	CertPath string
 	KeyPath  string
 	CaPath   string //optional depending on server config
-	// If you want to verify the hostname and server cert (like a wildcard for cass cluster) then you should turn this on
-	// This option is basically the inverse of InSecureSkipVerify
-	// See InSecureSkipVerify in http://golang.org/pkg/crypto/tls/ for more info
+	// If you want to verify the hostname and server cert (like a wildcard for cass cluster) then you should turn this
+	// on.
+	// This option is basically the inverse of tls.Config.InsecureSkipVerify.
+	// See InsecureSkipVerify in http://golang.org/pkg/crypto/tls/ for more info.
+	//
+	// See SslOptions documentation to see how EnableHostVerification interacts with the provided tls.Config.
 	EnableHostVerification bool
 }
 
@@ -1508,10 +1524,11 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) *Iter {
 }
 
 func (c *Conn) query(ctx context.Context, statement string, values ...interface{}) (iter *Iter) {
-	q := c.session.Query(statement, values...).Consistency(One)
-	q.trace = nil
+	q := c.session.Query(statement, values...).Consistency(One).Trace(nil)
 	q.skipPrepare = true
 	q.disableSkipMetadata = true
+	// we want to keep the query on this connection
+	q.conn = c
 	return c.executeQuery(ctx, q)
 }
 
