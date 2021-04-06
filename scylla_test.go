@@ -194,7 +194,7 @@ func TestScyllaLWTExtParsing(t *testing.T) {
 		// mock connection without cql extensions, expected not to have
 		// the `flagLWT` field being set in the framer created out of it
 		conn := mockConn(0)
-		f := newFramerWithExts(conn, conn, conn.compressor, conn.version, conn.cqlProtoExts)
+		f := newFramerWithExts(conn.compressor, conn.version, conn.cqlProtoExts)
 		if f.flagLWT != 0 {
 			t.Error("expected to have LWT flag uninitialized after framer init")
 		}
@@ -210,7 +210,7 @@ func TestScyllaLWTExtParsing(t *testing.T) {
 				lwtOptMetaBitMask: 1,
 			},
 		}
-		framerWithLwtExt := newFramerWithExts(conn, conn, conn.compressor, conn.version, conn.cqlProtoExts)
+		framerWithLwtExt := newFramerWithExts(conn.compressor, conn.version, conn.cqlProtoExts)
 		if framerWithLwtExt.flagLWT == 0 {
 			t.Error("expected to have LWT flag to be set after framer init")
 		}
