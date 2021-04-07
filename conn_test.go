@@ -1,7 +1,7 @@
 // Copyright (c) 2012 The gocql Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
-// +build all unit
+//-----// build all unit
 
 package gocql
 
@@ -845,43 +845,44 @@ func TestWriteCoalescing(t *testing.T) {
 			t.Errorf("unexpected read error: %v", err)
 		}
 	}()
+	enqueued := make(chan struct{})
+	resetTimer := make(chan struct{})
 	w := &writeCoalescer{
+		writeCh: make(chan writeRequest),
 		c:       client,
-		writeCh: make(chan struct{}),
-		cond:    sync.NewCond(&sync.Mutex{}),
 		quit:    ctx.Done(),
-		running: true,
+		timeout: 500 * time.Millisecond,
+		testEnqueuedHook: func() {
+			enqueued <- struct{}{}
+		},
+		testFlushedHook: func() {
+			client.Close()
+		},
 	}
+	timerC := make(chan time.Time, 1)
+	go func() {
+		w.writeFlusherImpl(timerC, func() { resetTimer <- struct{}{} })
+	}()
 
 	go func() {
-		if _, err := w.Write([]byte("one")); err != nil {
+		if _, err := w.writeContext(context.Background(), []byte("one")); err != nil {
 			t.Error(err)
 		}
 	}()
 
 	go func() {
-		if _, err := w.Write([]byte("two")); err != nil {
+		if _, err := w.writeContext(context.Background(), []byte("two")); err != nil {
 			t.Error(err)
 		}
 	}()
 
-	bufMutex.Lock()
-	if buf.Len() != 0 {
-		t.Fatalf("expected buffer to be empty have: %v", buf.String())
-	}
-	bufMutex.Unlock()
+	<-enqueued
+	<-resetTimer
+	<-enqueued
 
-	for true {
-		w.cond.L.Lock()
-		if len(w.buffers) == 2 {
-			w.cond.L.Unlock()
-			break
-		}
-		w.cond.L.Unlock()
-	}
+	// flush
+	timerC <- time.Now()
 
-	w.flush()
-	client.Close()
 	<-done
 
 	if got := buf.String(); got != "onetwo" && got != "twoone" {
@@ -909,7 +910,7 @@ func TestWriteCoalescing_WriteAfterClose(t *testing.T) {
 	w := newWriteCoalescer(client, 0, 5*time.Millisecond, ctx.Done())
 
 	// ensure 1 write works
-	if _, err := w.Write([]byte("one")); err != nil {
+	if _, err := w.writeContext(context.Background(), []byte("one")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -923,7 +924,7 @@ func TestWriteCoalescing_WriteAfterClose(t *testing.T) {
 	cancel()
 	client.Close() // close client conn too, since server won't see the answer anyway.
 
-	if _, err := w.Write([]byte("two")); err == nil {
+	if _, err := w.writeContext(context.Background(), []byte("two")); err == nil {
 		t.Fatal("expected to get error for write after closing")
 	} else if err != io.EOF {
 		t.Fatalf("expected to get EOF got %v", err)
