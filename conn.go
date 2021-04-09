@@ -115,6 +115,7 @@ type ConnConfig struct {
 	ProtoVersion   int
 	CQLVersion     string
 	Timeout        time.Duration
+	WriteTimeout   time.Duration
 	ConnectTimeout time.Duration
 	Dialer         Dialer
 	Compressor     Compressor
@@ -153,6 +154,7 @@ type Conn struct {
 	w    contextWriter
 
 	timeout        time.Duration
+	writeTimeout   time.Duration
 	cfg            *ConnConfig
 	frameObserver  FrameHeaderObserver
 	streamObserver StreamObserver
@@ -267,6 +269,11 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 		conn = tconn
 	}
 
+	writeTimeout := cfg.Timeout
+	if cfg.WriteTimeout > 0 {
+		writeTimeout = cfg.WriteTimeout
+	}
+
 	ctx, cancel := context.WithCancel(ctx)
 	c := &Conn{
 		conn:          conn,
@@ -283,13 +290,14 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 		frameObserver: s.frameObserver,
 		w: &deadlineContextWriter{
 			w:         conn,
-			timeout:   cfg.Timeout,
+			timeout:   writeTimeout,
 			semaphore: make(chan struct{}, 1),
 			quit:      make(chan struct{}),
 		},
 		ctx:            ctx,
 		cancel:         cancel,
 		streamObserver: s.streamObserver,
+		writeTimeout:   writeTimeout,
 	}
 
 	if err := c.init(ctx); err != nil {
@@ -326,7 +334,7 @@ func (c *Conn) init(ctx context.Context) error {
 
 	// dont coalesce startup frames
 	if c.session.cfg.WriteCoalesceWaitTime > 0 && !c.cfg.disableCoalesce {
-		c.w = newWriteCoalescer(c.conn, c.timeout, c.session.cfg.WriteCoalesceWaitTime, ctx.Done())
+		c.w = newWriteCoalescer(c.conn, c.writeTimeout, c.session.cfg.WriteCoalesceWaitTime, ctx.Done())
 	}
 
 	go c.serve(ctx)
