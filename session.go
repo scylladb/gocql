@@ -74,6 +74,8 @@ type Session struct {
 
 	closeMu  sync.RWMutex
 	isClosed bool
+
+	logger StdLogger
 }
 
 var queryPool = &sync.Pool{
@@ -82,14 +84,14 @@ var queryPool = &sync.Pool{
 	},
 }
 
-func addrsToHosts(addrs []string, defaultPort int) ([]*HostInfo, error) {
+func addrsToHosts(addrs []string, defaultPort int, logger StdLogger) ([]*HostInfo, error) {
 	var hosts []*HostInfo
 	for _, hostport := range addrs {
 		resolvedHosts, err := hostInfo(hostport, defaultPort)
 		if err != nil {
 			// Try other hosts if unable to resolve DNS name
 			if _, ok := err.(*net.DNSError); ok {
-				Logger.Printf("gocql: dns error: %v\n", err)
+				logger.Printf("gocql: dns error: %v\n", err)
 				continue
 			}
 			return nil, err
@@ -128,6 +130,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		disconnectObserver: cfg.DisconnectObserver,
 		ctx:                ctx,
 		cancel:             cancel,
+		logger:             cfg.logger(),
 	}
 
 	// Close created resources on error otherwise they'll leak
@@ -140,8 +143,8 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 
 	s.schemaDescriber = newSchemaDescriber(s)
 
-	s.nodeEvents = newEventDebouncer("NodeEvents", s.handleNodeEvent)
-	s.schemaEvents = newEventDebouncer("SchemaEvents", s.handleSchemaEvent)
+	s.nodeEvents = newEventDebouncer("NodeEvents", s.handleNodeEvent, s.logger)
+	s.schemaEvents = newEventDebouncer("SchemaEvents", s.handleSchemaEvent, s.logger)
 
 	s.routingKeyInfoCache.lru = lru.New(cfg.MaxRoutingKeyInfo)
 
@@ -189,7 +192,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 }
 
 func (s *Session) init() error {
-	hosts, err := addrsToHosts(s.cfg.Hosts, s.cfg.Port)
+	hosts, err := addrsToHosts(s.cfg.Hosts, s.cfg.Port, s.logger)
 	if err != nil {
 		return err
 	}
@@ -358,7 +361,7 @@ func (s *Session) reconnectDownedHosts(intv time.Duration) {
 				for _, h := range hosts {
 					buf.WriteString("[" + h.ConnectAddress().String() + ":" + h.State().String() + "]")
 				}
-				Logger.Println(buf.String())
+				s.logger.Println(buf.String())
 			}
 
 			for _, h := range hosts {

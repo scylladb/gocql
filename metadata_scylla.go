@@ -567,11 +567,11 @@ func getColumnMetadata(session *Session, keyspaceName string) ([]ColumnMetadata,
 	return columns, nil
 }
 
-func getTypeInfo(t string) TypeInfo {
+func getTypeInfo(t string, logger StdLogger) TypeInfo {
 	if strings.HasPrefix(t, apacheCassandraTypePrefix) {
 		t = apacheToCassandraType(t)
 	}
-	return getCassandraType(t)
+	return getCassandraType(t, logger)
 }
 
 // query for type metadata in the system_schema.types

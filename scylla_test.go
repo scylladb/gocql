@@ -14,6 +14,7 @@ func TestScyllaConnPickerPickNilToken(t *testing.T) {
 	s := scyllaConnPicker{
 		nrShards:  4,
 		msbIgnore: 12,
+		logger:    &defaultLogger{},
 	}
 
 	t.Run("no conns", func(t *testing.T) {
@@ -64,16 +65,19 @@ func hammerConnPicker(t *testing.T, wg *sync.WaitGroup, s *scyllaConnPicker, loo
 func TestScyllaConnPickerHammerPickNilToken(t *testing.T) {
 	t.Parallel()
 
+	log := &defaultLogger{}
+
 	s := scyllaConnPicker{
 		nrShards:  4,
 		msbIgnore: 12,
+		logger:    log,
 	}
 	s.conns = make([]*Conn, 100)
 	for i := range s.conns {
 		if i%7 == 0 {
 			continue
 		}
-		s.conns[i] = &Conn{}
+		s.conns[i] = &Conn{logger: log}
 	}
 
 	n := runtime.GOMAXPROCS(0)
@@ -93,6 +97,7 @@ func TestScyllaConnPickerRemove(t *testing.T) {
 	s := scyllaConnPicker{
 		nrShards:  4,
 		msbIgnore: 12,
+		logger:    &defaultLogger{},
 	}
 
 	conn := mockConn(0)
@@ -122,6 +127,7 @@ func mockConn(shard int) *Conn {
 			partitioner:       "org.apache.cassandra.dht.Murmur3Partitioner",
 			shardingAlgorithm: "biased-token-round-robin",
 		},
+		logger: &defaultLogger{},
 	}
 }
 
@@ -131,6 +137,7 @@ func TestScyllaConnPickerShardOf(t *testing.T) {
 	s := scyllaConnPicker{
 		nrShards:  4,
 		msbIgnore: 12,
+		logger:    &defaultLogger{},
 	}
 	for _, test := range scyllaShardOfTests {
 		if shard := s.shardOf(int64Token(test.token)); shard != test.shard {
@@ -148,6 +155,7 @@ func TestScyllaRandomConnPIcker(t *testing.T) {
 			msbIgnore: 12,
 			pos:       math.MaxUint64,
 			conns:     []*Conn{nil, mockConn(1)},
+			logger:    &defaultLogger{},
 		}
 
 		if s.Pick(token(nil)) == nil {
@@ -161,6 +169,7 @@ func TestScyllaRandomConnPIcker(t *testing.T) {
 			msbIgnore: 12,
 			pos:       math.MaxUint64,
 			conns:     []*Conn{nil, mockConn(1)},
+			logger:    &defaultLogger{},
 		}
 
 		var wg sync.WaitGroup
@@ -194,7 +203,7 @@ func TestScyllaLWTExtParsing(t *testing.T) {
 		// mock connection without cql extensions, expected not to have
 		// the `flagLWT` field being set in the framer created out of it
 		conn := mockConn(0)
-		f := newFramerWithExts(conn.compressor, conn.version, conn.cqlProtoExts)
+		f := newFramerWithExts(conn.compressor, conn.version, conn.cqlProtoExts, &defaultLogger{})
 		if f.flagLWT != 0 {
 			t.Error("expected to have LWT flag uninitialized after framer init")
 		}
@@ -210,7 +219,7 @@ func TestScyllaLWTExtParsing(t *testing.T) {
 				lwtOptMetaBitMask: 1,
 			},
 		}
-		framerWithLwtExt := newFramerWithExts(conn.compressor, conn.version, conn.cqlProtoExts)
+		framerWithLwtExt := newFramerWithExts(conn.compressor, conn.version, conn.cqlProtoExts, conn.logger)
 		if framerWithLwtExt.flagLWT == 0 {
 			t.Error("expected to have LWT flag to be set after framer init")
 		}

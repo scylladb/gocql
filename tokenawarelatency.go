@@ -346,7 +346,7 @@ func (t *TokenAwareLatencyHostPolicy) updateReplicasLoop(ks *tokenAwareLatencyKe
 			continue
 		}
 
-		strategy := getStrategy(metadata)
+		strategy := getStrategy(metadata, t.logger)
 		var replicas tokenRingReplicas
 
 		if strategy != nil {

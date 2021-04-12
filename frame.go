@@ -400,14 +400,14 @@ func newFramer(compressor Compressor, version byte) *framer {
 	return f
 }
 
-func newFramerWithExts(compressor Compressor, version byte, cqlProtoExts []cqlProtocolExtension) *framer {
+func newFramerWithExts(compressor Compressor, version byte, cqlProtoExts []cqlProtocolExtension, logger StdLogger) *framer {
 
 	f := newFramer(compressor, version)
 
 	if lwtExt := findCQLProtoExtByName(cqlProtoExts, lwtAddMetadataMarkKey); lwtExt != nil {
 		castedExt, ok := lwtExt.(*lwtAddMetadataMarkExt)
 		if !ok {
-			Logger.Println(
+			logger.Println(
 				fmt.Errorf("Failed to cast CQL protocol extension identified by name %s to type %T",
 					lwtAddMetadataMarkKey, lwtAddMetadataMarkExt{}))
 			return f

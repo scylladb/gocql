@@ -122,9 +122,17 @@ type ConnConfig struct {
 	Authenticator  Authenticator
 	AuthProvider   func(h *HostInfo) (Authenticator, error)
 	Keepalive      time.Duration
+	Logger         StdLogger
 
 	tlsConfig       *tls.Config
 	disableCoalesce bool
+}
+
+func (c *ConnConfig) logger() StdLogger {
+	if c.Logger == nil {
+		return Logger
+	}
+	return c.Logger
 }
 
 type ConnErrorHandler interface {
@@ -184,6 +192,8 @@ type Conn struct {
 	cancel context.CancelFunc
 
 	timeouts int64
+
+	logger StdLogger
 }
 
 // connect establishes a connection to a Cassandra node using session's connection config.
@@ -298,6 +308,7 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 		cancel:         cancel,
 		streamObserver: s.streamObserver,
 		writeTimeout:   writeTimeout,
+		logger:         cfg.logger(),
 	}
 
 	if err := c.init(ctx); err != nil {
@@ -447,8 +458,8 @@ func (s *startupCoordinator) options(ctx context.Context) error {
 	}
 	// Keep raw supported multimap for debug purposes
 	s.conn.supported = v.supported
-	s.conn.scyllaSupported = parseSupported(s.conn.supported)
-	s.conn.cqlProtoExts = parseCQLProtocolExtensions(s.conn.supported)
+	s.conn.scyllaSupported = parseSupported(s.conn.supported, s.conn.logger)
+	s.conn.cqlProtoExts = parseCQLProtocolExtensions(s.conn.supported, s.conn.logger)
 
 	return s.startup(ctx)
 }
@@ -707,7 +718,7 @@ func (c *Conn) recv(ctx context.Context) error {
 		return fmt.Errorf("gocql: frame header stream is beyond call expected bounds: %d", head.stream)
 	} else if head.stream == -1 {
 		// TODO: handle cassandra event frames, we shouldnt get any currently
-		framer := newFramerWithExts(c.compressor, c.version, c.cqlProtoExts)
+		framer := newFramerWithExts(c.compressor, c.version, c.cqlProtoExts, c.logger)
 		if err := framer.readFrame(c, &head); err != nil {
 			return err
 		}
@@ -716,7 +727,7 @@ func (c *Conn) recv(ctx context.Context) error {
 	} else if head.stream <= 0 {
 		// reserved stream that we dont use, probably due to a protocol error
 		// or a bug in Cassandra, this should be an error, parse it and return.
-		framer := newFramerWithExts(c.compressor, c.version, c.cqlProtoExts)
+		framer := newFramerWithExts(c.compressor, c.version, c.cqlProtoExts, c.logger)
 		if err := framer.readFrame(c, &head); err != nil {
 			return err
 		}
@@ -736,7 +747,7 @@ func (c *Conn) recv(ctx context.Context) error {
 	delete(c.calls, head.stream)
 	c.mu.Unlock()
 	if call == nil || !ok {
-		Logger.Printf("gocql: received response for stream which has no handler: header=%v\n", head)
+		c.logger.Printf("gocql: received response for stream which has no handler: header=%v\n", head)
 		return c.discardFrame(head)
 	} else if head.stream != call.streamID {
 		panic(fmt.Sprintf("call has incorrect streamID: got %d expected %d", call.streamID, head.stream))
@@ -1030,7 +1041,7 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*fram
 	}
 
 	// resp is basically a waiting semaphore protecting the framer
-	framer := newFramerWithExts(c.compressor, c.version, c.cqlProtoExts)
+	framer := newFramerWithExts(c.compressor, c.version, c.cqlProtoExts, c.logger)
 
 	call := &callReq{
 		timeout:  make(chan struct{}),
@@ -1446,7 +1457,7 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 		iter := &Iter{framer: framer}
 		if err := c.awaitSchemaAgreement(ctx); err != nil {
 			// TODO: should have this behind a flag
-			Logger.Println(err)
+			c.logger.Println(err)
 		}
 		// dont return an error from this, might be a good idea to give a warning
 		// though. The impact of this returning an error would be that the cluster
@@ -1660,7 +1671,7 @@ func (c *Conn) awaitSchemaAgreement(ctx context.Context) (err error) {
 				goto cont
 			}
 			if !isValidPeer(host) || host.schemaVersion == "" {
-				Logger.Printf("invalid peer or peer with empty schema_version: peer=%q", host)
+				c.logger.Printf("invalid peer or peer with empty schema_version: peer=%q", host)
 				continue
 			}
 
