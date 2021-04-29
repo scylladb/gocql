@@ -1077,7 +1077,12 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*fram
 	err := req.buildFrame(framer, stream)
 	if err != nil {
 		// We failed to serialize the frame into a buffer.
-		// This should not affect the connection, we just free the current call.
+		// This should not affect the connection as we didn't write anything. We just free the current call.
+		c.mu.Lock()
+		delete(c.calls, call.streamID)
+		c.mu.Unlock()
+		// We need to release the stream after we remove the call from c.calls, otherwise the existingCall != nil
+		// check above could fail.
 		c.releaseStream(call)
 		return nil, err
 	}
@@ -1085,8 +1090,13 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*fram
 	n, err := c.w.writeContext(ctx, framer.buf)
 	if err != nil {
 		if (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) && n == 0 {
-			// We didn't start to write this frame.
+			// We have not started to write this frame.
 			// Release the stream as no response can come from the server on the stream.
+			c.mu.Lock()
+			delete(c.calls, call.streamID)
+			c.mu.Unlock()
+			// We need to release the stream after we remove the call from c.calls, otherwise the existingCall != nil
+			// check above could fail.
 			c.releaseStream(call)
 		} else {
 			// closeWithError will block waiting for this stream to either receive a response
