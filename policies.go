@@ -400,6 +400,8 @@ type tokenAwareHostPolicy struct {
 }
 
 func (t *tokenAwareHostPolicy) Init(s *Session) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	t.getKeyspaceMetadata = s.KeyspaceMetadata
 	t.getKeyspaceName = func() string { return s.cfg.Keyspace }
 }
