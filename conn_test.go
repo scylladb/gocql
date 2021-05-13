@@ -974,7 +974,10 @@ func TestFrameHeaderObserver(t *testing.T) {
 }
 
 func NewTestServerWithAddress(addr string, t testing.TB, protocol uint8, ctx context.Context) *TestServer {
-	return NewTestServerWithAddressAndSupportedFactory(addr, t, protocol, ctx, nil)
+	return newTestServerOpts{
+		addr:     addr,
+		protocol: protocol,
+	}.newServer(t, ctx)
 }
 
 func NewTestServerWithAddressAndSupportedFactory(addr string, t testing.TB, protocol uint8, ctx context.Context, supportedFactory testSupportedFactory) *TestServer {
@@ -986,11 +989,10 @@ func NewTestServerWithAddressAndSupportedFactory(addr string, t testing.TB, prot
 }
 
 type newTestServerOpts struct {
-	addr     string
-	protocol uint8
-	recvHook func(*framer)
-
+	addr             string
+	protocol         uint8
 	supportedFactory testSupportedFactory
+	recvHook         func(*framer)
 }
 
 func (nts newTestServerOpts) newServer(t testing.TB, ctx context.Context) *TestServer {
