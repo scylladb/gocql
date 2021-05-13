@@ -661,8 +661,7 @@ func (r *ringDescriber) refreshRing() error {
 		}
 
 		if host, ok := r.session.ring.addHostIfMissing(h); !ok {
-			r.session.pool.addHost(h)
-			r.session.policy.AddHost(h)
+			r.session.startPoolFill(h)
 		} else {
 			host.update(h)
 		}

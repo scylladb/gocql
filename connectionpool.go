@@ -402,7 +402,7 @@ func (pool *hostConnPool) fill() {
 			return
 		}
 		// notify the session that this node is connected
-		go pool.session.handleNodeUp(pool.host.ConnectAddress(), pool.port)
+		go pool.session.handleNodeConnected(pool.host)
 
 		// filled one, let's reload it to see if it has changed
 		pool.mu.RLock()
@@ -419,7 +419,7 @@ func (pool *hostConnPool) fill() {
 
 		if err == nil && startCount > 0 {
 			// notify the session that this node is connected again
-			go pool.session.handleNodeUp(pool.host.ConnectAddress(), pool.port)
+			go pool.session.handleNodeConnected(pool.host)
 		}
 	}()
 }
