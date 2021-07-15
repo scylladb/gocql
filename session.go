@@ -1694,6 +1694,7 @@ type Batch struct {
 	CustomPayload         map[string][]byte
 	rt                    RetryPolicy
 	spec                  SpeculativeExecutionPolicy
+	trace                 Tracer
 	observer              BatchObserver
 	session               *Session
 	serialCons            Consistency
@@ -1727,6 +1728,7 @@ func (s *Session) NewBatch(typ BatchType) *Batch {
 		Type:             typ,
 		rt:               s.cfg.RetryPolicy,
 		serialCons:       s.cfg.SerialConsistency,
+		trace:            s.trace,
 		observer:         s.batchObserver,
 		session:          s,
 		Cons:             s.cons,
@@ -1739,6 +1741,13 @@ func (s *Session) NewBatch(typ BatchType) *Batch {
 
 	s.mu.RUnlock()
 	return batch
+}
+
+// Trace enables tracing of this batch. Look at the documentation of the
+// Tracer interface to learn more about tracing.
+func (b *Batch) Trace(trace Tracer) *Batch {
+	b.trace = trace
+	return b
 }
 
 // Observer enables batch-level observer on this batch.
