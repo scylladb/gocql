@@ -288,6 +288,28 @@ func (t *TokenAwareLatencyHostPolicy) HostDown(host *HostInfo) {
 	// no-op. We check host.IsUp() where necessary instead.
 }
 
+type TokenAwareLatencyHostInfo struct {
+	// Host information.
+	Host *HostInfo
+
+	// Latency currently recorded for this host.
+	Latency time.Duration
+
+	// LatencyOk is true if Latency is valid.
+	LatencyOk bool
+}
+
+// Hosts returns a snapshot of all hosts and their recorded latencies for observability purposes.
+func (t *TokenAwareLatencyHostPolicy) Hosts() []TokenAwareLatencyHostInfo {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	out := make([]TokenAwareLatencyHostInfo, 0, len(t.hosts))
+	for _, host := range t.hosts {
+		out = append(out, host.export())
+	}
+	return out
+}
+
 // resetRing replaces the token ring with a new one.
 // Must be called with t.mu lock held for writing.
 func (t *TokenAwareLatencyHostPolicy) resetRing() error {
@@ -697,6 +719,18 @@ func (th *tokenAwareLatencyHost) latency() (t time.Duration, ok bool) {
 		return 0, false
 	}
 	return sum / time.Duration(sumWeights), true
+}
+
+// export a read-only static copy of this host for observability purposes.
+func (th *tokenAwareLatencyHost) export() TokenAwareLatencyHostInfo {
+	th.mu.RLock()
+	defer th.mu.RUnlock()
+	lat, ok := th.latency()
+	return TokenAwareLatencyHostInfo{
+		Host:      th.hostInfo,
+		Latency:   lat,
+		LatencyOk: ok,
+	}
 }
 
 // recordLatency tracks the latency data point for this host.
