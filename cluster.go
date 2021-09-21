@@ -51,7 +51,7 @@ type ClusterConfig struct {
 	WriteTimeout       time.Duration                            // timeout for writing a query. defaults to Timeout if not specified.
 	Port               int                                      // port (default: 9042)
 	Keyspace           string                                   // initial keyspace (optional)
-	NumConns           int                                      // number of connections per host (default: 2)
+	NumConns           int                                      // number of connections per host (default: 2), this option has no effect when working with Scylla - instead, one connection for each shard will be created
 	Consistency        Consistency                              // default consistency level (default: Quorum)
 	Compressor         Compressor                               // compression algorithm (default: nil)
 	Authenticator      Authenticator                            // authenticator (default: nil)
@@ -173,6 +173,7 @@ type ClusterConfig struct {
 
 	// internal config for testing
 	disableControlConn bool
+	disableInit        bool
 }
 
 type Dialer interface {

@@ -273,7 +273,8 @@ type hostConnPool struct {
 	connPicker ConnPicker
 	closed     bool
 	filling    bool
-	logger     StdLogger
+
+	logger StdLogger
 }
 
 func (h *hostConnPool) String() string {
