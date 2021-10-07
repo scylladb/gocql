@@ -297,7 +297,7 @@ func newHostConnPool(session *Session, host *HostInfo, port, size int,
 		connPicker: nopConnPicker{},
 		filling:    false,
 		closed:     false,
-		logger:   session.logger,
+		logger:     session.logger,
 	}
 
 	// the pool is not filled or connected
@@ -542,12 +542,21 @@ func (pool *hostConnPool) connect() (err error) {
 }
 
 func (pool *hostConnPool) initConnPicker(conn *Conn) {
-	if _, ok := pool.connPicker.(nopConnPicker); !ok {
+	if isScyllaConn(conn) {
+		if oldPicker, ok := pool.connPicker.(*scyllaConnPicker); ok {
+			if oldPicker.nrShards == conn.scyllaSupported.nrShards {
+				return
+			}
+			oldPicker.Close()
+		} else if _, ok := pool.connPicker.(nopConnPicker); !ok {
+			return
+		}
+
+		pool.connPicker = newScyllaConnPicker(conn)
 		return
 	}
 
-	if isScyllaConn(conn) {
-		pool.connPicker = newScyllaConnPicker(conn)
+	if _, ok := pool.connPicker.(nopConnPicker); !ok {
 		return
 	}
 
