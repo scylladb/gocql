@@ -51,6 +51,7 @@ type ClusterConfig struct {
 	Port               int                                      // port (default: 9042)
 	Keyspace           string                                   // initial keyspace (optional)
 	NumConns           int                                      // number of connections per host (default: 2), this option has no effect when working with Scylla - instead, one connection for each shard will be created
+	MaxStreams         int                                      // maximal number of streams per TCP connection
 	Consistency        Consistency                              // default consistency level (default: Quorum)
 	Compressor         Compressor                               // compression algorithm (default: nil)
 	Authenticator      Authenticator                            // authenticator (default: nil)
