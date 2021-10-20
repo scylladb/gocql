@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"sync"
 	"testing"
+
+	"github.com/gocql/gocql/internal/streams"
 )
 
 func TestScyllaConnPickerPickNilToken(t *testing.T) {
@@ -18,21 +20,27 @@ func TestScyllaConnPickerPickNilToken(t *testing.T) {
 	}
 
 	t.Run("no conns", func(t *testing.T) {
-		s.conns = []*Conn{{}}
+		s.conns = []*Conn{{
+			streams: streams.New(protoVersion4),
+		}}
 		if s.Pick(token(nil)) != s.conns[0] {
 			t.Fatal("expected connection")
 		}
 	})
 
 	t.Run("one shard", func(t *testing.T) {
-		s.conns = []*Conn{{}}
+		s.conns = []*Conn{{
+			streams: streams.New(protoVersion4),
+		}}
 		if s.Pick(token(nil)) != s.conns[0] {
 			t.Fatal("expected connection")
 		}
 	})
 
 	t.Run("multiple shards", func(t *testing.T) {
-		s.conns = []*Conn{nil, {}}
+		s.conns = []*Conn{nil, {
+			streams: streams.New(protoVersion4),
+		}}
 		if s.Pick(token(nil)) != s.conns[1] {
 			t.Fatal("expected connection")
 		}
@@ -77,7 +85,10 @@ func TestScyllaConnPickerHammerPickNilToken(t *testing.T) {
 		if i%7 == 0 {
 			continue
 		}
-		s.conns[i] = &Conn{logger: log}
+		s.conns[i] = &Conn{
+			logger:  log,
+			streams: streams.New(protoVersion4),
+		}
 	}
 
 	n := runtime.GOMAXPROCS(0)
@@ -120,6 +131,7 @@ func TestScyllaConnPickerRemove(t *testing.T) {
 
 func mockConn(shard int) *Conn {
 	return &Conn{
+		streams: streams.New(protoVersion4),
 		scyllaSupported: scyllaSupported{
 			shard:             shard,
 			nrShards:          4,
