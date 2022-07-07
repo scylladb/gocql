@@ -9,8 +9,10 @@ require (
 	github.com/klauspost/cpuid/v2 v2.0.3
 	github.com/kr/pretty v0.1.0 // indirect
 	github.com/stretchr/testify v1.3.0 // indirect
-	golang.org/x/sys v0.0.0-20210124154548-22da62e12c0c
+	golang.org/x/net v0.0.0-20220526153639-5463443f8c37
+	golang.org/x/sys v0.0.0-20220520151302-bc2c85ada10a
 	gopkg.in/inf.v0 v0.9.1
+	sigs.k8s.io/yaml v1.3.0
 )
 
 go 1.13

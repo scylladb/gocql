@@ -164,27 +164,37 @@ func (s *Session) handleNodeEvent(frames []frame) {
 			s.logger.Printf("gocql: dispatching event: %+v\n", f)
 		}
 
+		// ignore events we received if they were disabled
+		// see https://github.com/gocql/gocql/issues/1591
 		switch f.change {
 		case "NEW_NODE":
-			s.handleNewNode(f.host, f.port)
+			if !s.cfg.Events.DisableTopologyEvents {
+				s.handleNewNode(f.host, f.port)
+			}
 		case "REMOVED_NODE":
-			s.handleRemovedNode(f.host, f.port)
+			if !s.cfg.Events.DisableTopologyEvents {
+				s.handleRemovedNode(f.host, f.port)
+			}
 		case "MOVED_NODE":
 		// java-driver handles this, not mentioned in the spec
 		// TODO(zariel): refresh token map
 		case "UP":
-			s.handleNodeUp(f.host, f.port)
+			if !s.cfg.Events.DisableNodeStatusEvents {
+				s.handleNodeUp(f.host, f.port)
+			}
 		case "DOWN":
-			s.handleNodeDown(f.host, f.port)
+			if !s.cfg.Events.DisableNodeStatusEvents {
+				s.handleNodeDown(f.host, f.port)
+			}
 		}
 	}
 }
 
-func (s *Session) addNewNode(ip net.IP, port int) {
+func (s *Session) addNewNode(hostID UUID) {
 	// Get host info and apply any filters to the host
-	hostInfo, err := s.hostSource.getHostInfo(ip, port)
+	hostInfo, err := s.hostSource.getHostInfo(hostID)
 	if err != nil {
-		s.logger.Printf("gocql: events: unable to fetch host info for (%s:%d): %v\n", ip, port, err)
+		s.logger.Printf("gocql: events: unable to fetch host info for hostID: %q: %v\n", hostID, err)
 		return
 	} else if hostInfo == nil {
 		// ignore if it's null because we couldn't find it
@@ -213,15 +223,14 @@ func (s *Session) handleNewNode(ip net.IP, port int) {
 		s.logger.Printf("gocql: Session.handleNewNode: %s:%d\n", ip.String(), port)
 	}
 
-	ip, port = s.cfg.translateAddressPort(ip, port)
-
-	// if we already have the host and it's already up, then do nothing
-	host := s.ring.getHost(ip)
-	if host != nil && host.IsUp() {
+	host, ok := s.ring.getHostByIP(ip.String())
+	if ok && host.IsUp() {
 		return
 	}
 
-	s.addNewNode(ip, port)
+	if err := s.hostSource.refreshRing(); err != nil && gocqlDebug {
+		s.logger.Printf("gocql: Session.handleNewNode: failed to refresh ring: %w\n", err.Error())
+	}
 }
 
 func (s *Session) handleRemovedNode(ip net.IP, port int) {
@@ -229,23 +238,22 @@ func (s *Session) handleRemovedNode(ip net.IP, port int) {
 		s.logger.Printf("gocql: Session.handleRemovedNode: %s:%d\n", ip.String(), port)
 	}
 
-	ip, port = s.cfg.translateAddressPort(ip, port)
-
 	// we remove all nodes but only add ones which pass the filter
-	host := s.ring.getHost(ip)
-	if host == nil {
-		host = &HostInfo{connectAddress: ip, port: port}
-	}
-	s.ring.removeHost(ip)
+	host, ok := s.ring.getHostByIP(ip.String())
+	hostID := host.HostID()
+	if ok {
+		s.ring.removeHost(hostID)
 
-	host.setState(NodeDown)
-	if !s.cfg.filterHost(host) {
-		s.policy.RemoveHost(host)
-		s.pool.removeHost(ip)
+		host.setState(NodeDown)
+		if !s.cfg.filterHost(host) {
+			s.policy.RemoveHost(host)
+			s.pool.removeHost(hostID)
+		}
+
 	}
 
-	if !s.cfg.IgnorePeerAddr {
-		s.hostSource.refreshRing()
+	if err := s.hostSource.refreshRing(); err != nil && gocqlDebug {
+		s.logger.Println("failed to refresh ring:", err)
 	}
 }
 
@@ -254,11 +262,8 @@ func (s *Session) handleNodeUp(eventIp net.IP, eventPort int) {
 		s.logger.Printf("gocql: Session.handleNodeUp: %s:%d\n", eventIp.String(), eventPort)
 	}
 
-	ip, port := s.cfg.translateAddressPort(eventIp, eventPort)
-
-	host := s.ring.getHost(ip)
-	if host == nil {
-		s.addNewNode(ip, port)
+	host, ok := s.ring.getHostByIP(eventIp.String())
+	if !ok {
 		return
 	}
 
@@ -295,16 +300,15 @@ func (s *Session) handleNodeDown(ip net.IP, port int) {
 		s.logger.Printf("gocql: Session.handleNodeDown: %s:%d\n", ip.String(), port)
 	}
 
-	host := s.ring.getHost(ip)
-	if host == nil {
-		host = &HostInfo{connectAddress: ip, port: port}
-	}
+	host, ok := s.ring.getHostByIP(ip.String())
+	if ok {
+		host.setState(NodeDown)
+		if s.cfg.filterHost(host) {
+			return
+		}
 
-	host.setState(NodeDown)
-	if s.cfg.filterHost(host) {
-		return
+		s.policy.HostDown(host)
+		hostID := host.HostID()
+		s.pool.removeHost(hostID)
 	}
-
-	s.policy.HostDown(host)
-	s.pool.hostDown(ip)
 }

@@ -1,8 +1,6 @@
-gocql
-=====
+# Scylla shard-aware fork of gocql/gocql
 
 ![Build](https://github.com/scylladb/gocql/workflows/Build/badge.svg)
-[![GoDoc](https://godoc.org/github.com/scylladb/gocql?status.svg)](https://godoc.org/github.com/scylladb/gocql)
 
 This is a fork of [gocql](https://github.com/gocql/gocql) package that we created at Scylla.
 It contains extensions to tokenAwareHostPolicy supported by the Scylla 2.3 and onwards.
@@ -15,40 +13,28 @@ There are open pull requests to merge the functionality to the upstream project:
 * [gocql/gocql#1210](https://github.com/gocql/gocql/pull/1210)
 * [gocql/gocql#1211](https://github.com/gocql/gocql/pull/1211).
 
+It also provides support for shard aware ports, a faster way to connect to all shards, details available in [blogpost](https://www.scylladb.com/2021/04/27/connect-faster-to-scylla-with-a-shard-aware-port/).
+
 Installation
 ------------
 
-This is a drop-in replacement to gocql, to use it vendor as `github.com/gocql/gocql`.
+This is a drop-in replacement to gocql, it reuses the `github.com/gocql/gocql` import path.
 
-With `dep` you can use source option:
-
-```
-[[constraint]]
-  name = "github.com/gocql/gocql"
-  source = "git@github.com:scylladb/gocql.git"
-  branch = "master"
-```
-
-With glide you can use repo option:
+Add the following line to your project `go.mod` file.
 
 ```
-- package: github.com/gocql/gocql
-  vcs: git
-  version: master
-  repo: git@github.com:scylladb/gocql.git
+replace github.com/gocql/gocql => github.com/scylladb/gocql latest
 ```
 
-With new Go modules you can use replace command:
+and run 
 
 ```
-go mod edit -replace=github.com/gocql/gocql=github.com/scylladb/gocql@{version}
+go mod tidy
 ```
-where `version` is your intended version to be used. As gocql is currently not versioned you have to specify
-version in following format `v0.0.0-%Y%m%d%H%M%S-{commit_sha:12}`.  
-Full example:
-```
-go mod edit -replace=github.com/gocql/gocql=github.com/scylladb/gocql@v0.0.0-20181030092923-dc6f47ffd978
-```
+
+to evaluate `latest` to a concrete tag.
+
+Your project now uses the Scylla driver fork, make sure you are using the `TokenAwareHostPolicy` to enable the shard-awareness, continue reading for details.
 
 Configuration
 -------------
