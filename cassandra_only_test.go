@@ -1,3 +1,4 @@
+//go:build (all || cassandra) && !scylla
 // +build all cassandra
 // +build !scylla
 
