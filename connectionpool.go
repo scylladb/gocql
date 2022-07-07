@@ -452,9 +452,8 @@ func (pool *hostConnPool) fillingStopped(err error) {
 
 	pool.mu.Lock()
 	pool.filling = false
-	count := len(pool.conns)
+	count := pool.size
 	host := pool.host
-	port := pool.port
 	pool.mu.Unlock()
 
 	// if we errored and the size is now zero, make sure the host is marked as down
@@ -464,7 +463,7 @@ func (pool *hostConnPool) fillingStopped(err error) {
 	}
 	if err != nil && count == 0 {
 		if pool.session.cfg.ConvictionPolicy.AddFailure(err, host) {
-			pool.session.handleNodeDown(host.ConnectAddress(), port)
+			pool.session.handleNodeDown(host.ConnectAddress(), host.Port())
 		}
 	}
 }

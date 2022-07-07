@@ -167,6 +167,28 @@ func shuffleHosts(hosts []*HostInfo) []*HostInfo {
 	return shuffled
 }
 
+func (c *controlConn) shuffleDial(endpoints []*HostInfo) (*Conn, error) {
+	// shuffle endpoints so not all drivers will connect to the same initial
+	// node.
+	shuffled := shuffleHosts(endpoints)
+
+	cfg := *c.session.connCfg
+	cfg.disableCoalesce = true
+
+	var err error
+	for _, host := range shuffled {
+		var conn *Conn
+		conn, err = c.session.dial(c.session.ctx, host, &cfg, c)
+		if err == nil {
+			return conn, nil
+		}
+
+		c.session.logger.Printf("gocql: unable to dial control conn %v:%v: %v\n", host.ConnectAddress(), host.Port(), err)
+	}
+
+	return nil, err
+}
+
 // this is going to be version dependant and a nightmare to maintain :(
 var protocolSupportRe = regexp.MustCompile(`the lowest supported version is \d+ and the greatest is (\d+)$`)
 
