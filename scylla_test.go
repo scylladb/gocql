@@ -189,7 +189,8 @@ func pickLoop(t *testing.T, s *scyllaConnPicker, c int, wg *sync.WaitGroup) {
 	t.Helper()
 	for i := 0; i < c; i++ {
 		if s.Pick(token(nil)) == nil {
-			t.Fatal("expected connection")
+			t.Log("expected connection")
+			t.Fail()
 		}
 	}
 	wg.Done()
