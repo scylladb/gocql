@@ -1,3 +1,4 @@
+//go:build (all || cassandra) && !scylla
 // +build all cassandra
 // +build !scylla
 
@@ -115,7 +116,15 @@ func TestDiscoverViaProxy(t *testing.T) {
 
 	session.pool.mu.RLock()
 	for _, host := range clusterHosts {
-		if _, ok := session.pool.hostConnPools[host]; !ok {
+		found := false
+		for _, hi := range session.pool.hostConnPools {
+			if hi.host.ConnectAddress().String() == host {
+				found = true
+				break
+			}
+		}
+
+		if !found {
 			t.Errorf("missing host in pool after discovery: %q", host)
 		}
 	}

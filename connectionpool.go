@@ -84,38 +84,58 @@ type policyConnPool struct {
 
 	mu            sync.RWMutex
 	hostConnPools map[string]*hostConnPool
-
-	endpoints []string
 }
 
 func connConfig(cfg *ClusterConfig) (*ConnConfig, error) {
 	var (
-		err       error
-		tlsConfig *tls.Config
+		err        error
+		hostDialer HostDialer
 	)
 
-	// TODO(zariel): move tls config setup into session init.
-	if cfg.SslOpts != nil {
-		tlsConfig, err = setupTLSConfig(cfg.SslOpts)
-		if err != nil {
-			return nil, err
+	hostDialer = cfg.HostDialer
+	var tlsConfig *tls.Config
+	if hostDialer == nil {
+		// TODO(zariel): move tls config setup into session init.
+		if cfg.SslOpts != nil {
+			tlsConfig, err = setupTLSConfig(cfg.SslOpts)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		dialer := cfg.Dialer
+		if dialer == nil {
+			d := &net.Dialer{
+				Timeout: cfg.ConnectTimeout,
+			}
+			if cfg.SocketKeepalive > 0 {
+				d.KeepAlive = cfg.SocketKeepalive
+			}
+			dialer = d
+		}
+
+		hostDialer = &scyllaDialer{
+			dialer:    dialer,
+			logger:    cfg.logger(),
+			tlsConfig: tlsConfig,
+			cfg:       cfg,
 		}
 	}
 
 	return &ConnConfig{
-		ProtoVersion:    cfg.ProtoVersion,
-		CQLVersion:      cfg.CQLVersion,
-		Timeout:         cfg.Timeout,
-		WriteTimeout:    cfg.WriteTimeout,
-		ConnectTimeout:  cfg.ConnectTimeout,
-		Dialer:          cfg.Dialer,
-		Compressor:      cfg.Compressor,
-		Authenticator:   cfg.Authenticator,
-		AuthProvider:    cfg.AuthProvider,
-		Keepalive:       cfg.SocketKeepalive,
-		Logger:          cfg.logger(),
-		tlsConfig:       tlsConfig,
-		disableCoalesce: tlsConfig != nil, // write coalescing doesn't work with framing on top of TCP like in TLS.
+		ProtoVersion:   cfg.ProtoVersion,
+		CQLVersion:     cfg.CQLVersion,
+		Timeout:        cfg.Timeout,
+		WriteTimeout:   cfg.WriteTimeout,
+		ConnectTimeout: cfg.ConnectTimeout,
+		Dialer:         cfg.Dialer,
+		HostDialer:     hostDialer,
+		Compressor:     cfg.Compressor,
+		Authenticator:  cfg.Authenticator,
+		AuthProvider:   cfg.AuthProvider,
+		Keepalive:      cfg.SocketKeepalive,
+		Logger:         cfg.logger(),
+		tlsConfig:      tlsConfig,
 	}, nil
 }
 
@@ -129,9 +149,6 @@ func newPolicyConnPool(session *Session) *policyConnPool {
 		hostConnPools: map[string]*hostConnPool{},
 	}
 
-	pool.endpoints = make([]string, len(session.cfg.Hosts))
-	copy(pool.endpoints, session.cfg.Hosts)
-
 	return pool
 }
 
@@ -140,8 +157,8 @@ func (p *policyConnPool) SetHosts(hosts []*HostInfo) {
 	defer p.mu.Unlock()
 
 	toRemove := make(map[string]struct{})
-	for addr := range p.hostConnPools {
-		toRemove[addr] = struct{}{}
+	for hostID := range p.hostConnPools {
+		toRemove[hostID] = struct{}{}
 	}
 
 	pools := make(chan *hostConnPool)
@@ -151,10 +168,10 @@ func (p *policyConnPool) SetHosts(hosts []*HostInfo) {
 			// don't create a connection pool for a down host
 			continue
 		}
-		ip := host.ConnectAddress().String()
-		if _, exists := p.hostConnPools[ip]; exists {
+		hostID := host.HostID()
+		if _, exists := p.hostConnPools[hostID]; exists {
 			// still have this host, so don't remove it
-			delete(toRemove, ip)
+			delete(toRemove, hostID)
 			continue
 		}
 
@@ -177,7 +194,7 @@ func (p *policyConnPool) SetHosts(hosts []*HostInfo) {
 		createCount--
 		if pool.Size() > 0 {
 			// add pool only if there a connections available
-			p.hostConnPools[string(pool.host.ConnectAddress())] = pool
+			p.hostConnPools[pool.host.HostID()] = pool
 		}
 	}
 
@@ -200,9 +217,9 @@ func (p *policyConnPool) Size() int {
 }
 
 func (p *policyConnPool) getPool(host *HostInfo) (pool *hostConnPool, ok bool) {
-	ip := host.ConnectAddress().String()
+	hostID := host.HostID()
 	p.mu.RLock()
-	pool, ok = p.hostConnPools[ip]
+	pool, ok = p.hostConnPools[hostID]
 	p.mu.RUnlock()
 	return
 }
@@ -219,9 +236,9 @@ func (p *policyConnPool) Close() {
 }
 
 func (p *policyConnPool) addHost(host *HostInfo) {
-	ip := host.ConnectAddress().String()
+	hostID := host.HostID()
 	p.mu.Lock()
-	pool, ok := p.hostConnPools[ip]
+	pool, ok := p.hostConnPools[hostID]
 	if !ok {
 		pool = newHostConnPool(
 			p.session,
@@ -231,32 +248,25 @@ func (p *policyConnPool) addHost(host *HostInfo) {
 			p.keyspace,
 		)
 
-		p.hostConnPools[ip] = pool
+		p.hostConnPools[hostID] = pool
 	}
 	p.mu.Unlock()
 
 	pool.fill()
 }
 
-func (p *policyConnPool) removeHost(ip net.IP) {
-	k := ip.String()
+func (p *policyConnPool) removeHost(hostID string) {
 	p.mu.Lock()
-	pool, ok := p.hostConnPools[k]
+	pool, ok := p.hostConnPools[hostID]
 	if !ok {
 		p.mu.Unlock()
 		return
 	}
 
-	delete(p.hostConnPools, k)
+	delete(p.hostConnPools, hostID)
 	p.mu.Unlock()
 
 	go pool.Close()
-}
-
-func (p *policyConnPool) hostDown(ip net.IP) {
-	// TODO(zariel): mark host as down so we can try to connect to it later, for
-	// now just treat it has removed.
-	p.removeHost(ip)
 }
 
 // hostConnPool is a connection pool for a single host.
@@ -264,8 +274,6 @@ func (p *policyConnPool) hostDown(ip net.IP) {
 type hostConnPool struct {
 	session  *Session
 	host     *HostInfo
-	port     int
-	addr     string
 	size     int
 	keyspace string
 	// protection for connPicker, closed, filling
@@ -291,8 +299,6 @@ func newHostConnPool(session *Session, host *HostInfo, port, size int,
 	pool := &hostConnPool{
 		session:    session,
 		host:       host,
-		port:       port,
-		addr:       (&net.TCPAddr{IP: host.ConnectAddress(), Port: host.Port()}).String(),
 		size:       size,
 		keyspace:   keyspace,
 		connPicker: nopConnPicker{},
@@ -393,13 +399,7 @@ func (pool *hostConnPool) fill() {
 
 		if err != nil {
 			// probably unreachable host
-			pool.fillingStopped(true)
-
-			// this is call with the connection pool mutex held, this call will
-			// then recursively try to lock it again. FIXME
-			if pool.session.cfg.ConvictionPolicy.AddFailure(err, pool.host) {
-				go pool.session.handleNodeDown(pool.host.ConnectAddress(), pool.port)
-			}
+			pool.fillingStopped(err)
 			return
 		}
 		// notify the session that this node is connected
@@ -416,7 +416,7 @@ func (pool *hostConnPool) fill() {
 		err := pool.connectMany(fillCount)
 
 		// mark the end of filling
-		pool.fillingStopped(err != nil)
+		pool.fillingStopped(err)
 
 		if err == nil && startCount > 0 {
 			// notify the session that this node is connected again
@@ -430,17 +430,20 @@ func (pool *hostConnPool) logConnectErr(err error) {
 		// connection refused
 		// these are typical during a node outage so avoid log spam.
 		if gocqlDebug {
-			pool.logger.Printf("unable to dial %q: %v\n", pool.host.ConnectAddress(), err)
+			pool.logger.Printf("gocql: unable to dial %q: %v\n", pool.host, err)
 		}
 	} else if err != nil {
 		// unexpected error
-		pool.logger.Printf("error: failed to connect to %s due to error: %v", pool.addr, err)
+		pool.logger.Printf("error: failed to connect to %q due to error: %v", pool.host, err)
 	}
 }
 
 // transition back to a not-filling state.
-func (pool *hostConnPool) fillingStopped(hadError bool) {
-	if hadError {
+func (pool *hostConnPool) fillingStopped(err error) {
+	if err != nil {
+		if gocqlDebug {
+			pool.logger.Printf("gocql: filling stopped %q: %v\n", pool.host.ConnectAddress(), err)
+		}
 		// wait for some time to avoid back-to-back filling
 		// this provides some time between failed attempts
 		// to fill the pool for the host to recover
@@ -449,7 +452,20 @@ func (pool *hostConnPool) fillingStopped(hadError bool) {
 
 	pool.mu.Lock()
 	pool.filling = false
+	count := pool.size
+	host := pool.host
 	pool.mu.Unlock()
+
+	// if we errored and the size is now zero, make sure the host is marked as down
+	// see https://github.com/gocql/gocql/issues/1614
+	if gocqlDebug {
+		pool.logger.Printf("gocql: conns of pool after stopped %q: %v\n", host.ConnectAddress(), count)
+	}
+	if err != nil && count == 0 {
+		if pool.session.cfg.ConvictionPolicy.AddFailure(err, host) {
+			pool.session.handleNodeDown(host.ConnectAddress(), host.Port())
+		}
+	}
 }
 
 // connectMany creates new connections concurrent.
@@ -484,11 +500,8 @@ func (pool *hostConnPool) connectMany(count int) error {
 // create a new connection to the host and add it to the pool
 func (pool *hostConnPool) connect() (err error) {
 	pool.mu.Lock()
-	dialer := pool.connPicker.GetCustomDialer()
+	shardID, nrShards := pool.connPicker.NextShard()
 	pool.mu.Unlock()
-	if dialer == nil {
-		dialer = pool.session.cfg.Dialer
-	}
 
 	// TODO: provide a more robust connection retry mechanism, we should also
 	// be able to detect hosts that come up by trying to connect to downed ones.
@@ -496,7 +509,7 @@ func (pool *hostConnPool) connect() (err error) {
 	var conn *Conn
 	reconnectionPolicy := pool.session.cfg.ReconnectionPolicy
 	for i := 0; i < reconnectionPolicy.GetMaxRetries(); i++ {
-		conn, err = pool.session.connectWithDialer(pool.session.ctx, pool.host, pool, dialer)
+		conn, err = pool.session.connectShard(pool.session.ctx, pool.host, pool, shardID, nrShards)
 		if err == nil {
 			break
 		}
@@ -508,7 +521,7 @@ func (pool *hostConnPool) connect() (err error) {
 			}
 		}
 		if gocqlDebug {
-			pool.logger.Printf("connection failed %q: %v, reconnecting with %T\n",
+			pool.logger.Printf("gocql: connection failed %q: %v, reconnecting with %T\n",
 				pool.host.ConnectAddress(), err, reconnectionPolicy)
 		}
 		time.Sleep(reconnectionPolicy.GetInterval(i))
