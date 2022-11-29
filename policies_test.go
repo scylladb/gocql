@@ -816,7 +816,7 @@ func TestHostPolicy_TokenAware_RackAware(t *testing.T) {
 	policyWithFallbackInternal.getKeyspaceName = policyInternal.getKeyspaceName
 	policyWithFallbackInternal.getKeyspaceMetadata = policyInternal.getKeyspaceMetadata
 
-	query := &Query{}
+	query := &Query{routingInfo: &queryRoutingInfo{}}
 	query.getKeyspace = func() string { return keyspace }
 
 	iter := policy.Pick(nil)
