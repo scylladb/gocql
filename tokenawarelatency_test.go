@@ -377,3 +377,106 @@ func TestHostPolicy_TokenAwareLatency_NetworkStrategy_SlowKeyspaceMetadata(t *te
 	expected := []string{"03", "00", "01", "02", "04", "05", "06", "07", "08", "09", "10", "11"}
 	assertDeepEqual(t, "selected hosts", expected, selectedHostList)
 }
+
+func TestUpdateLatency(t *testing.T) {
+	baseLatency := 1 * time.Second
+	datacenterPenalty := 10 * time.Millisecond
+	rackPenalty := 1 * time.Millisecond
+
+	tests := []struct {
+		name            string
+		hostDC          string
+		hostRack        string
+		localDC         string
+		localRack       string
+		expectedLatency time.Duration
+		expectedLocal   bool
+	}{
+		{
+			name:            "no info",
+			hostDC:          "",
+			hostRack:        "",
+			localDC:         "",
+			localRack:       "",
+			expectedLatency: baseLatency,
+			expectedLocal:   false,
+		},
+		{
+			name:            "no penalty configured",
+			hostDC:          "dca",
+			hostRack:        "racka",
+			localDC:         "",
+			localRack:       "",
+			expectedLatency: baseLatency,
+			expectedLocal:   false,
+		},
+		{
+			name:            "dc penalty, local",
+			hostDC:          "dca",
+			hostRack:        "rackb",
+			localDC:         "dca",
+			localRack:       "",
+			expectedLatency: baseLatency,
+			expectedLocal:   true,
+		},
+		{
+			name:            "dc penalty, remote",
+			hostDC:          "dcb",
+			hostRack:        "rackb",
+			localDC:         "dca",
+			localRack:       "",
+			expectedLatency: baseLatency + datacenterPenalty,
+			expectedLocal:   false,
+		},
+		{
+			name:            "rack penalty, local",
+			hostDC:          "dca",
+			hostRack:        "racka",
+			localDC:         "dca",
+			localRack:       "racka",
+			expectedLatency: baseLatency,
+			expectedLocal:   true,
+		},
+		{
+			name:            "rack penalty, local dc, remote rack",
+			hostDC:          "dca",
+			hostRack:        "rackb",
+			localDC:         "dca",
+			localRack:       "racka",
+			expectedLatency: baseLatency + rackPenalty,
+			expectedLocal:   false,
+		},
+		{
+			name:            "rack penalty, remote dc",
+			hostDC:          "dcb",
+			hostRack:        "racka",
+			localDC:         "dca",
+			localRack:       "racka",
+			expectedLatency: baseLatency + datacenterPenalty,
+			expectedLocal:   false,
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			host := &HostInfo{
+				hostId:         "00",
+				connectAddress: net.IPv4(10, 0, 0, 1),
+				tokens:         []string{"05"},
+				dataCenter:     test.hostDC,
+				rack:           test.hostRack,
+			}
+			var rv tokenAwareLatencyHostStats
+			rv.latency = 1 * time.Second
+			rv.updateLatency(host, test.localDC, test.localRack, datacenterPenalty, rackPenalty)
+			if rv.latency != test.expectedLatency {
+				t.Logf("expected latency %s, got %s", test.expectedLatency.String(), rv.latency.String())
+				t.Fail()
+			}
+			if rv.local != test.expectedLocal {
+				t.Logf("expected local %v, got %v", test.expectedLocal, rv.local)
+				t.Fail()
+			}
+		})
+	}
+}
