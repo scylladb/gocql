@@ -35,14 +35,26 @@ type TokenAwareLatencyHostPolicyOptions struct {
 	// Defaults to 5 minutes.
 	DecayPeriod time.Duration
 
-	// LocalDatacenter is name of the local datacenter.
+	// LocalDatacenter is the name of the datacenter that is closest to this client.
+	// Required if RemoteDatacenterPenalty or RemoteRackPenalty is non-zero.
 	LocalDatacenter string
+
+	// LocalRack is the name of rack that is closest to this client.
+	// Required if RemoteRackPenalty is non-zero.
+	LocalRack string
 
 	// RemoteDatacenterPenalty is latency duration that is added to the measurement of nodes in remote datacenter.
 	// In other words, how much less latency a remote node must have to consider switching to it instead of a node
 	// in local DC. Can be used to prefer local DC in case cross-DC traffic costs more money or if the latency is
 	// too variable.
 	RemoteDatacenterPenalty time.Duration
+
+	// RemoteRackPenalty is latency duration that is added to the measurement of nodes in remote rack in local
+	// datacenter.
+	// In other words, how much less latency a remote node must have to consider switching to it instead of a node
+	// in local rack. Can be used to prefer local rack in case cross-rack traffic costs more money or if the latency is
+	// too variable.
+	RemoteRackPenalty time.Duration
 }
 
 // TokenAwareLatencyHostPolicy is a token aware host selection policy that takes latency into account.
@@ -72,8 +84,12 @@ type TokenAwareLatencyHostPolicy struct {
 	decayPeriod time.Duration
 	// localDatacenter is name of the local datacenter.
 	localDatacenter string
+	// localRack is name of the local rack.
+	localRack string
 	// remoteDatacenterPenalty is added to the latency of nodes in remote datacenters.
 	remoteDatacenterPenalty time.Duration
+	// remoteRackPenalty is added to the latency of nodes in remote racks of local datacenter.
+	remoteRackPenalty time.Duration
 
 	// stopChan is closed when Stop is called.
 	stopChan chan struct{}
@@ -124,6 +140,14 @@ func NewTokenAwareLatencyHostPolicy(options TokenAwareLatencyHostPolicyOptions) 
 		return nil,
 			fmt.Errorf("tokenawarelatency: non-zero RemoteDatacenterPenalty requires LocalDatacenter to be set")
 	}
+	if options.RemoteRackPenalty > 0 && options.LocalDatacenter == "" {
+		return nil,
+			fmt.Errorf("tokenawarelatency: non-zero RemoteRackPenalty requires LocalDatacenter to be set")
+	}
+	if options.RemoteRackPenalty > 0 && options.LocalRack == "" {
+		return nil,
+			fmt.Errorf("tokenawarelatency: non-zero RemoteRackPenalty requires LocalRack to be set")
+	}
 	return &TokenAwareLatencyHostPolicy{
 		hosts:                   make(map[string]*tokenAwareLatencyHost),
 		keyspaces:               make(map[string]*tokenAwareLatencyKeyspace),
@@ -132,7 +156,9 @@ func NewTokenAwareLatencyHostPolicy(options TokenAwareLatencyHostPolicyOptions) 
 		explorationPortion:      options.ExplorationPortion,
 		decayPeriod:             options.DecayPeriod,
 		localDatacenter:         options.LocalDatacenter,
+		localRack:               options.LocalRack,
 		remoteDatacenterPenalty: options.RemoteDatacenterPenalty,
+		remoteRackPenalty:       options.RemoteRackPenalty,
 	}, nil
 }
 
@@ -482,12 +508,7 @@ func (t *TokenAwareLatencyHostPolicy) hostsToChooseFrom(used map[*tokenAwareLate
 		h.mu.RLock()
 		rv.latency, rv.latencyOk = h.latency()
 		h.mu.RUnlock()
-		if t.localDatacenter != "" {
-			rv.local = replica.DataCenter() == t.localDatacenter
-			if !rv.local {
-				rv.latency += t.remoteDatacenterPenalty
-			}
-		}
+		rv.updateLatency(replica, t.localDatacenter, t.localRack, t.remoteDatacenterPenalty, t.remoteRackPenalty)
 		chooseFrom = append(chooseFrom, rv)
 	}
 	if len(chooseFrom) > 0 {
@@ -508,15 +529,30 @@ func (t *TokenAwareLatencyHostPolicy) hostsToChooseFrom(used map[*tokenAwareLate
 		if !rv.hostInfo.IsUp() {
 			continue
 		}
-		if t.localDatacenter != "" {
-			rv.local = rv.hostInfo.DataCenter() == t.localDatacenter
-			if !rv.local {
-				rv.latency += t.remoteDatacenterPenalty
-			}
-		}
+		rv.updateLatency(rv.hostInfo, t.localDatacenter, t.localRack, t.remoteDatacenterPenalty, t.remoteRackPenalty)
 		chooseFrom = append(chooseFrom, rv)
 	}
 	return chooseFrom
+}
+
+func (rv *tokenAwareLatencyHostStats) updateLatency(host *HostInfo, localDCName, localRackName string,
+	remoteDCPenalty, remoteRackPenalty time.Duration) {
+	if localDCName == "" {
+		return
+	}
+	isLocalDC := host.DataCenter() == localDCName
+	// if local rack is not specified, treat all nodes in local DC as local.
+	isLocalRack := true
+	if localRackName != "" {
+		isLocalRack = host.Rack() == localRackName
+	}
+	rv.local = isLocalDC && isLocalRack
+	switch {
+	case !isLocalDC:
+		rv.latency += remoteDCPenalty
+	case !isLocalRack:
+		rv.latency += remoteRackPenalty
+	}
 }
 
 // hostInfoSlice converts t.hosts to a slice of *HostInfo.
