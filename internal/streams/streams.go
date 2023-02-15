@@ -24,7 +24,10 @@ func New(protocol int) *IDGenerator {
 	if protocol > 2 {
 		maxStreams = 32768
 	}
+	return NewLimited(maxStreams)
+}
 
+func NewLimited(maxStreams int) *IDGenerator {
 	buckets := maxStreams / 64
 	// reserve stream 0
 	streams := make([]uint64, buckets)
