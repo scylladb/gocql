@@ -345,10 +345,10 @@ func (p *scyllaConnPicker) maybeReplaceWithLessBusyConnection(c *Conn) *Conn {
 		return c
 	}
 	alternative := p.leastBusyConn()
-	if alternative == nil || alternative.AvailableStreams() * 120 > c.AvailableStreams() * 100 {
-		return c
-	} else {
+	if alternative != nil && alternative.InUseStreams() * 100 < c.InUseStreams() * 80 {
 		return alternative
+	} else {
+		return c
 	}
 }
 
