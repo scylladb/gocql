@@ -77,6 +77,24 @@ type ClusterConfig struct {
 	// Default: 128 for older CQL versions
 	MaxRequestsPerConn int
 
+	// Threshold for the number of inflight requests per connection
+	// after which the connection is considered as heavy loaded
+	// Default: 512
+	HeavyLoadedConnectionThreshold int
+
+	// When a connection is considered as heavy loaded, the driver
+	// could switch to the least loaded connection for the same node.
+	// The switch will happen if the other connection is at least
+	// HeavyLoadedSwitchConnectionPercentage percentage less busy
+	// (in terms of inflight requests).
+	//
+	// For the default value of 20%, if the heavy loaded connection
+	// has 100 inflight requests, the switch will happen only if the
+	// least busy connection has less than 80 inflight requests.
+	//
+	// Default: 20%
+	HeavyLoadedSwitchConnectionPercentage int
+
 	// Default consistency level.
 	// Default: Quorum
 	Consistency Consistency
@@ -267,6 +285,8 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		ConnectTimeout:         600 * time.Millisecond,
 		Port:                   9042,
 		NumConns:               2,
+		HeavyLoadedConnectionThreshold: 512,
+		HeavyLoadedSwitchConnectionPercentage: 20,
 		Consistency:            Quorum,
 		MaxPreparedStmts:       defaultMaxPreparedStmts,
 		MaxRoutingKeyInfo:      1000,

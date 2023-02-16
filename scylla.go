@@ -345,7 +345,7 @@ func (p *scyllaConnPicker) maybeReplaceWithLessBusyConnection(c *Conn) *Conn {
 		return c
 	}
 	alternative := p.leastBusyConn()
-	if alternative != nil && alternative.InUseStreams() * 100 < c.InUseStreams() * 80 {
+	if alternative != nil && alternative.InUseStreams() * 100 < c.InUseStreams() * (100 - c.session.cfg.HeavyLoadedSwitchConnectionPercentage) {
 		return alternative
 	} else {
 		return c
@@ -353,7 +353,7 @@ func (p *scyllaConnPicker) maybeReplaceWithLessBusyConnection(c *Conn) *Conn {
 }
 
 func isHeavyLoaded(c *Conn) bool {
-    return c.streams.NumStreams / 2 > c.AvailableStreams();
+    return c.InUseStreams() > c.session.cfg.HeavyLoadedConnectionThreshold
 }
 
 func (p *scyllaConnPicker) leastBusyConn() *Conn {
