@@ -452,7 +452,7 @@ func (pool *hostConnPool) fillingStopped(err error) {
 
 	pool.mu.Lock()
 	pool.filling = false
-	count := pool.size
+	count, _ := pool.connPicker.Size()
 	host := pool.host
 	pool.mu.Unlock()
 
@@ -583,6 +583,10 @@ func (pool *hostConnPool) HandleError(conn *Conn, err error, closed bool) {
 	if pool.closed {
 		// pool closed
 		return
+	}
+
+	if gocqlDebug {
+		pool.logger.Printf("gocql: pool connection error %q: %v\n", conn.addr, err)
 	}
 
 	pool.connPicker.Remove(conn)

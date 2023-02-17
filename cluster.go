@@ -56,7 +56,6 @@ type ClusterConfig struct {
 	Timeout time.Duration
 
 	// Initial connection timeout, used during initial dial to server (default: 600ms)
-	// Initial connection timeout, used during initial dial to server (default: 600ms)
 	// ConnectTimeout is used to set up the default dialer and is ignored if Dialer or HostDialer is provided.
 	ConnectTimeout time.Duration
 
@@ -73,6 +72,11 @@ type ClusterConfig struct {
 	// Number of connections per host.
 	// Default: 2
 	NumConns int
+
+	// Maximum number of inflight requests allowed per connection.
+	// Default: 32768 for CQL v3 and newer
+	// Default: 128 for older CQL versions
+	MaxRequestsPerConn int
 
 	// Default consistency level.
 	// Default: Quorum

@@ -2218,7 +2218,6 @@ func marshalUDT(info TypeInfo, value interface{}) ([]byte, error) {
 		var buf []byte
 		for _, e := range udt.Elements {
 			val, ok := v[e.Name]
-
 			var data []byte
 
 			if ok {
