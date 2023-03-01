@@ -1111,22 +1111,26 @@ func (q *Query) execute(ctx context.Context, conn *Conn) *Iter {
 	return conn.executeQuery(ctx, q)
 }
 
-func (q *Query) attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
+func (q *Query) attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo, shard int, token token) {
 	latency := end.Sub(start)
 	attempt, metricsForHost := q.metrics.attempt(1, latency, host, q.observer != nil)
 
 	if q.observer != nil {
+		scyllaToken, _ := token.(int64Token)
+
 		q.observer.ObserveQuery(q.Context(), ObservedQuery{
-			Keyspace:  keyspace,
-			Statement: q.stmt,
-			Values:    q.values,
-			Start:     start,
-			End:       end,
-			Rows:      iter.numRows,
-			Host:      host,
-			Metrics:   metricsForHost,
-			Err:       iter.err,
-			Attempt:   attempt,
+			Keyspace:    keyspace,
+			Statement:   q.stmt,
+			Values:      q.values,
+			Start:       start,
+			End:         end,
+			Rows:        iter.numRows,
+			Host:        host,
+			ScyllaShard: shard,
+			ScyllaToken: int64(scyllaToken),
+			Metrics:     metricsForHost,
+			Err:         iter.err,
+			Attempt:     attempt,
 		})
 	}
 }
@@ -1930,7 +1934,7 @@ func (b *Batch) WithTimestamp(timestamp int64) *Batch {
 	return b
 }
 
-func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
+func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo, shard int, token token) {
 	latency := end.Sub(start)
 	attempt, metricsForHost := b.metrics.attempt(1, latency, host, b.observer != nil)
 
@@ -1946,6 +1950,8 @@ func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter, host 
 		values[i] = entry.Args
 	}
 
+	scyllaToken, _ := token.(int64Token)
+
 	b.observer.ObserveBatch(b.Context(), ObservedBatch{
 		Keyspace:   keyspace,
 		Statements: statements,
@@ -1953,10 +1959,12 @@ func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter, host 
 		Start:      start,
 		End:        end,
 		// Rows not used in batch observations // TODO - might be able to support it when using BatchCAS
-		Host:    host,
-		Metrics: metricsForHost,
-		Err:     iter.err,
-		Attempt: attempt,
+		Host:        host,
+		ScyllaShard: shard,
+		ScyllaToken: int64(scyllaToken),
+		Metrics:     metricsForHost,
+		Err:         iter.err,
+		Attempt:     attempt,
 	})
 }
 
@@ -2176,6 +2184,12 @@ type ObservedQuery struct {
 	// Host is the informations about the host that performed the query
 	Host *HostInfo
 
+	// ScyllaShard is the shard number that performed the batch.
+	ScyllaShard int
+
+	// ScyllaToken is the token that was used.
+	ScyllaToken int64
+
 	// The metrics per this host
 	Metrics *hostMetrics
 
@@ -2212,6 +2226,12 @@ type ObservedBatch struct {
 
 	// Host is the informations about the host that performed the batch
 	Host *HostInfo
+
+	// ScyllaShard is the shard number that performed the batch.
+	ScyllaShard int
+
+	// ScyllaToken is the token that was used.
+	ScyllaToken int64
 
 	// Err is the error in the batch query.
 	// It only tracks network errors or errors of bad cassandra syntax, in particular selects with no match return nil error
