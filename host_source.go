@@ -132,8 +132,7 @@ type HostInfo struct {
 	schemaVersion              string
 	tokens                     []string
 
-	scyllaShardAwarePort    uint16
-	scyllaShardAwarePortTLS uint16
+	scyllaSupported scyllaSupported
 }
 
 func (h *HostInfo) Equal(host *HostInfo) bool {
@@ -442,8 +441,7 @@ func (h *HostInfo) String() string {
 func (h *HostInfo) setScyllaSupported(s scyllaSupported) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.scyllaShardAwarePort = s.shardAwarePort
-	h.scyllaShardAwarePortTLS = s.shardAwarePortSSL
+	h.scyllaSupported = s
 }
 
 // ScyllaShardAwarePort returns the shard aware port of this host.
@@ -451,7 +449,7 @@ func (h *HostInfo) setScyllaSupported(s scyllaSupported) {
 func (h *HostInfo) ScyllaShardAwarePort() uint16 {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	return h.scyllaShardAwarePort
+	return h.scyllaSupported.shardAwarePort
 }
 
 // ScyllaShardAwarePortTLS returns the TLS-enabled shard aware port of this host.
@@ -459,7 +457,15 @@ func (h *HostInfo) ScyllaShardAwarePort() uint16 {
 func (h *HostInfo) ScyllaShardAwarePortTLS() uint16 {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	return h.scyllaShardAwarePortTLS
+	return h.scyllaSupported.shardAwarePortSSL
+}
+
+// ScyllaNrShards returns count of shards this host has.
+// Returns zero if the shard count is not known.
+func (h *HostInfo) ScyllaNrShards() int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.scyllaSupported.nrShards
 }
 
 // Polls system.peers at a specific interval to find new hosts
