@@ -7,8 +7,8 @@ package gocql
 import (
 	"bytes"
 	"encoding/binary"
-	"errors"
 	"fmt"
+	"github.com/pkg/errors"
 	"math"
 	"math/big"
 	"math/bits"
@@ -1174,6 +1174,9 @@ func unmarshalDecimal(info TypeInfo, data []byte, value interface{}) error {
 	case Unmarshaler:
 		return v.UnmarshalCQL(info, data)
 	case *inf.Dec:
+		if len(data) < 4 {
+			return unmarshalErrorf("inf.Dec needs at least 4 bytes, while value has only %d", len(data))
+		}
 		scale := decInt(data[0:4])
 		unscaled := decBigInt2C(data[4:], nil)
 		*v = *inf.NewDecBig(unscaled, inf.Scale(scale))
@@ -1448,7 +1451,10 @@ func unmarshalDuration(info TypeInfo, data []byte, value interface{}) error {
 			}
 			return nil
 		}
-		months, days, nanos := decVints(data)
+		months, days, nanos, err := decVints(data)
+		if err != nil {
+			return unmarshalErrorf("failed to unmarshal %s into %T: %s", info, value, err.Error())
+		}
 		*v = Duration{
 			Months:      months,
 			Days:        days,
@@ -1459,25 +1465,40 @@ func unmarshalDuration(info TypeInfo, data []byte, value interface{}) error {
 	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
 }
 
-func decVints(data []byte) (int32, int32, int64) {
-	month, i := decVint(data)
-	days, j := decVint(data[i:])
-	nanos, _ := decVint(data[i+j:])
-	return int32(month), int32(days), nanos
+func decVints(data []byte) (int32, int32, int64, error) {
+	month, i, err := decVint(data, 0)
+	if err != nil {
+		return 0, 0, 0, errors.Wrapf(err, "failed to extract month")
+	}
+	days, i, err := decVint(data, i)
+	if err != nil {
+		return 0, 0, 0, errors.Wrapf(err, "failed to extract days")
+	}
+	nanos, _, err := decVint(data, i)
+	if err != nil {
+		return 0, 0, 0, errors.Wrapf(err, "failed to extract nanoseconds")
+	}
+	return int32(month), int32(days), nanos, err
 }
 
-func decVint(data []byte) (int64, int) {
-	firstByte := data[0]
+func decVint(data []byte, start int) (int64, int, error) {
+	if len(data) <= start {
+		return 0, 0, errors.Errorf("premature data end at %d", len(data))
+	}
+	firstByte := data[start]
 	if firstByte&0x80 == 0 {
-		return decIntZigZag(uint64(firstByte)), 1
+		return decIntZigZag(uint64(firstByte)), start + 1, nil
 	}
 	numBytes := bits.LeadingZeros32(uint32(^firstByte)) - 24
 	ret := uint64(firstByte & (0xff >> uint(numBytes)))
-	for i := 0; i < numBytes; i++ {
+	if len(data) < start+numBytes+1 {
+		return 0, 0, errors.Errorf("data expect to have %d bytes, but it has only %d", start+numBytes+1, len(data))
+	}
+	for i := start; i < start+numBytes; i++ {
 		ret <<= 8
 		ret |= uint64(data[i+1] & 0xff)
 	}
-	return decIntZigZag(ret), numBytes + 1
+	return decIntZigZag(ret), start + numBytes + 1, nil
 }
 
 func decIntZigZag(n uint64) int64 {
