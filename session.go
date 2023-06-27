@@ -1081,16 +1081,18 @@ func (q *Query) attempt(keyspace string, end, start time.Time, iter *Iter, host 
 
 	if q.observer != nil {
 		q.observer.ObserveQuery(q.Context(), ObservedQuery{
-			Keyspace:  keyspace,
-			Statement: q.stmt,
-			Values:    q.values,
-			Start:     start,
-			End:       end,
-			Rows:      iter.numRows,
-			Host:      host,
-			Metrics:   metricsForHost,
-			Err:       iter.err,
-			Attempt:   attempt,
+			Keyspace:          keyspace,
+			Statement:         q.stmt,
+			Values:            q.values,
+			Start:             start,
+			End:               end,
+			Rows:              iter.numRows,
+			Host:              host,
+			Metrics:           metricsForHost,
+			Err:               iter.err,
+			Attempt:           attempt,
+			Consistency:       q.cons,
+			SerialConsistency: q.serialCons,
 		})
 	}
 }
@@ -1904,10 +1906,12 @@ func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter, host 
 		Start:      start,
 		End:        end,
 		// Rows not used in batch observations // TODO - might be able to support it when using BatchCAS
-		Host:    host,
-		Metrics: metricsForHost,
-		Err:     iter.err,
-		Attempt: attempt,
+		Host:              host,
+		Metrics:           metricsForHost,
+		Err:               iter.err,
+		Attempt:           attempt,
+		Consistency:       b.Cons,
+		SerialConsistency: b.serialCons,
 	})
 }
 
@@ -2139,6 +2143,12 @@ type ObservedQuery struct {
 	// Attempt is the index of attempt at executing this query.
 	// The first attempt is number zero and any retries have non-zero attempt number.
 	Attempt int
+
+	// Consistency level of the query.
+	Consistency Consistency
+
+	// SerialConsistency level of the query.
+	SerialConsistency SerialConsistency
 }
 
 // QueryObserver is the interface implemented by query observers / stat collectors.
@@ -2176,6 +2186,12 @@ type ObservedBatch struct {
 	// Attempt is the index of attempt at executing this query.
 	// The first attempt is number zero and any retries have non-zero attempt number.
 	Attempt int
+
+	// Consistency of the batch.
+	Consistency Consistency
+
+	// SerialConsistency of the batch.
+	SerialConsistency SerialConsistency
 }
 
 // BatchObserver is the interface implemented by batch observers / stat collectors.
