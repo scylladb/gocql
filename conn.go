@@ -34,6 +34,7 @@ var (
 		"com.ericsson.bss.cassandra.ecaudit.auth.AuditAuthenticator",
 		"com.scylladb.auth.SaslauthdAuthenticator",
 		"com.scylladb.auth.TransitionalAuthenticator",
+		"com.instaclustr.cassandra.auth.InstaclustrPasswordAuthenticator",
 	}
 )
 
@@ -467,7 +468,9 @@ func (s *startupCoordinator) options(ctx context.Context) error {
 
 func (s *startupCoordinator) startup(ctx context.Context) error {
 	m := map[string]string{
-		"CQL_VERSION": s.conn.cfg.CQLVersion,
+		"CQL_VERSION":    s.conn.cfg.CQLVersion,
+		"DRIVER_NAME":    driverName,
+		"DRIVER_VERSION": driverVersion,
 	}
 
 	if s.conn.compressor != nil {
@@ -1433,9 +1436,11 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 			customPayload: qry.customPayload,
 		}
 
-		// Set "lwt" property in the query if it is present in preparedMetadata
+		// Set "lwt", keyspace", "table" property in the query if it is present in preparedMetadata
 		qry.routingInfo.mu.Lock()
 		qry.routingInfo.lwt = info.request.lwt
+		qry.routingInfo.keyspace = info.request.keyspace
+		qry.routingInfo.table = info.request.table
 		qry.routingInfo.mu.Unlock()
 	} else {
 		frame = &writeQueryFrame{
@@ -1731,6 +1736,10 @@ func (c *Conn) querySystemPeers(ctx context.Context, version cassVersion) *Iter 
 	}
 }
 
+func (c *Conn) querySystemLocal(ctx context.Context) *Iter {
+	return c.query(ctx, "SELECT * FROM system.local WHERE key='local'")
+}
+
 func (c *Conn) awaitSchemaAgreement(ctx context.Context) (err error) {
 	const localSchemas = "SELECT schema_version FROM system.local WHERE key='local'"
 
@@ -1799,22 +1808,6 @@ func (c *Conn) awaitSchemaAgreement(ctx context.Context) (err error) {
 
 	// not exported
 	return fmt.Errorf("gocql: cluster schema versions not consistent: %+v", schemas)
-}
-
-func (c *Conn) localHostInfo(ctx context.Context) (*HostInfo, error) {
-	row, err := c.query(ctx, "SELECT * FROM system.local WHERE key='local'").rowMap()
-	if err != nil {
-		return nil, err
-	}
-
-	port := c.conn.RemoteAddr().(*net.TCPAddr).Port
-	// TODO(zariel): avoid doing this here
-	host, err := c.session.hostInfoFromMap(row, &HostInfo{hostname: c.host.connectAddress.String(), connectAddress: c.host.connectAddress, port: port})
-	if err != nil {
-		return nil, err
-	}
-
-	return c.session.ring.addOrUpdate(host), nil
 }
 
 var (

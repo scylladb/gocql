@@ -44,6 +44,7 @@ type Session struct {
 	frameObserver       FrameHeaderObserver
 	streamObserver      StreamObserver
 	hostSource          *ringDescriber
+	ringRefresher       *refreshDebouncer
 	stmtsLRU            *preparedLRU
 
 	connCfg *ConnConfig
@@ -74,8 +75,10 @@ type Session struct {
 
 	// sessionStateMu protects isClosed and isInitialized.
 	sessionStateMu sync.RWMutex
-	// isClosed is true once Session.Close is called.
+	// isClosed is true once Session.Close is finished.
 	isClosed bool
+	// isClosing bool is true once Session.Close is started.
+	isClosing bool
 	// isInitialized is true once Session.init succeeds.
 	// you can use initialized() to read the value.
 	isInitialized bool
@@ -85,14 +88,14 @@ type Session struct {
 
 var queryPool = &sync.Pool{
 	New: func() interface{} {
-		return &Query{routingInfo: &queryRoutingInfo{}}
+		return &Query{routingInfo: &queryRoutingInfo{}, refCount: 1}
 	},
 }
 
 func addrsToHosts(addrs []string, defaultPort int, logger StdLogger) ([]*HostInfo, error) {
 	var hosts []*HostInfo
-	for _, hostport := range addrs {
-		resolvedHosts, err := hostInfo(hostport, defaultPort)
+	for _, hostaddr := range addrs {
+		resolvedHosts, err := hostInfo(hostaddr, defaultPort)
 		if err != nil {
 			// Try other hosts if unable to resolve DNS name
 			if _, ok := err.(*net.DNSError); ok {
@@ -154,6 +157,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	s.routingKeyInfoCache.lru = lru.New(cfg.MaxRoutingKeyInfo)
 
 	s.hostSource = &ringDescriber{session: s}
+	s.ringRefresher = newRefreshDebouncer(ringRefreshDebounceTime, func() error { return refreshRing(s.hostSource) })
 
 	if cfg.PoolConfig.HostSelectionPolicy == nil {
 		cfg.PoolConfig.HostSelectionPolicy = RoundRobinHostPolicy()
@@ -478,11 +482,12 @@ func (s *Session) Bind(stmt string, b func(q *QueryInfo) ([]interface{}, error))
 func (s *Session) Close() {
 
 	s.sessionStateMu.Lock()
-	defer s.sessionStateMu.Unlock()
-	if s.isClosed {
+	if s.isClosing {
+		s.sessionStateMu.Unlock()
 		return
 	}
-	s.isClosed = true
+	s.isClosing = true
+	s.sessionStateMu.Unlock()
 
 	if s.pool != nil {
 		s.pool.Close()
@@ -500,9 +505,17 @@ func (s *Session) Close() {
 		s.schemaEvents.stop()
 	}
 
+	if s.ringRefresher != nil {
+		s.ringRefresher.stop()
+	}
+
 	if s.cancel != nil {
 		s.cancel()
 	}
+
+	s.sessionStateMu.Lock()
+	s.isClosed = true
+	s.sessionStateMu.Unlock()
 }
 
 func (s *Session) Closed() bool {
@@ -632,8 +645,8 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyI
 		return nil, nil
 	}
 
-	table := info.request.columns[0].Table
-	keyspace := info.request.columns[0].Keyspace
+	table := info.request.table
+	keyspace := info.request.keyspace
 
 	partitioner, err := scyllaGetTablePartitioner(s, keyspace, table)
 	if err != nil {
@@ -654,6 +667,8 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyI
 			types:       types,
 			lwt:         info.request.lwt,
 			partitioner: partitioner,
+			keyspace:    keyspace,
+			table:       table,
 		}
 
 		inflight.value = routingKeyInfo
@@ -689,6 +704,8 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyI
 		types:       make([]TypeInfo, size),
 		lwt:         info.request.lwt,
 		partitioner: partitioner,
+		keyspace:    keyspace,
+		table:       table,
 	}
 
 	for keyIndex, keyColumn := range partitionKey {
@@ -914,6 +931,7 @@ type Query struct {
 	idempotent            bool
 	customPayload         map[string][]byte
 	metrics               *queryMetrics
+	refCount              uint32
 
 	disableAutoPage bool
 
@@ -939,6 +957,10 @@ type queryRoutingInfo struct {
 
 	// If not nil, represents a custom partitioner for the table.
 	partitioner partitioner
+
+	keyspace string
+
+	table string
 }
 
 func (qri *queryRoutingInfo) isLWT() bool {
@@ -975,6 +997,12 @@ func (q *Query) defaultsFromSession() {
 // Statement returns the statement that was used to generate this query.
 func (q Query) Statement() string {
 	return q.stmt
+}
+
+// Values returns the values passed in via Bind.
+// This can be used by a wrapper type that needs to access the bound values.
+func (q Query) Values() []interface{} {
+	return q.values
 }
 
 // String implements the stringer interface.
@@ -1146,12 +1174,21 @@ func (q *Query) Keyspace() string {
 	if q.getKeyspace != nil {
 		return q.getKeyspace()
 	}
+	if q.routingInfo.keyspace != "" {
+		return q.routingInfo.keyspace
+	}
+
 	if q.session == nil {
 		return ""
 	}
 	// TODO(chbannis): this should be parsed from the query or we should let
 	// this be set by users.
 	return q.session.cfg.Keyspace
+}
+
+// Table returns name of the table the query will be executed against.
+func (q *Query) Table() string {
+	return q.routingInfo.table
 }
 
 // GetRoutingKey gets the routing key to use for routing this query. If
@@ -1175,10 +1212,13 @@ func (q *Query) GetRoutingKey() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if routingKeyInfo != nil {
 		q.routingInfo.mu.Lock()
 		q.routingInfo.lwt = routingKeyInfo.lwt
 		q.routingInfo.partitioner = routingKeyInfo.partitioner
+		q.routingInfo.keyspace = routingKeyInfo.keyspace
+		q.routingInfo.table = routingKeyInfo.table
 		q.routingInfo.mu.Unlock()
 	}
 	return createRoutingKey(routingKeyInfo, q.values)
@@ -1402,13 +1442,32 @@ func (q *Query) MapScanCAS(dest map[string]interface{}) (applied bool, err error
 //	qry.Exec()
 //	qry.Release()
 func (q *Query) Release() {
-	q.reset()
-	queryPool.Put(q)
+	q.decRefCount()
 }
 
 // reset zeroes out all fields of a query so that it can be safely pooled.
 func (q *Query) reset() {
-	*q = Query{routingInfo: &queryRoutingInfo{}}
+	*q = Query{routingInfo: &queryRoutingInfo{}, refCount: 1}
+}
+
+func (q *Query) incRefCount() {
+	atomic.AddUint32(&q.refCount, 1)
+}
+
+func (q *Query) decRefCount() {
+	if res := atomic.AddUint32(&q.refCount, ^uint32(0)); res == 0 {
+		// do release
+		q.reset()
+		queryPool.Put(q)
+	}
+}
+
+func (q *Query) borrowForExecution() {
+	q.incRefCount()
+}
+
+func (q *Query) releaseAfterExecution() {
+	q.decRefCount()
 }
 
 // Iter represents an iterator that can be used to iterate over all rows that
@@ -1787,6 +1846,11 @@ func (b *Batch) Keyspace() string {
 	return b.keyspace
 }
 
+// Batch has no reasonable eqivalent of Query.Table().
+func (b *Batch) Table() string {
+	return b.routingInfo.table
+}
+
 // Attempts returns the number of attempts made to execute the batch.
 func (b *Batch) Attempts() int {
 	return b.metrics.attempts()
@@ -2038,6 +2102,16 @@ func createRoutingKey(routingKeyInfo *routingKeyInfo, values []interface{}) ([]b
 	return routingKey, nil
 }
 
+func (b *Batch) borrowForExecution() {
+	// empty, because Batch has no equivalent of Query.Release()
+	// that would race with speculative executions.
+}
+
+func (b *Batch) releaseAfterExecution() {
+	// empty, because Batch has no equivalent of Query.Release()
+	// that would race with speculative executions.
+}
+
 type BatchType byte
 
 const (
@@ -2071,8 +2145,10 @@ type routingKeyInfoLRU struct {
 }
 
 type routingKeyInfo struct {
-	indexes     []int
-	types       []TypeInfo
+	indexes  []int
+	types    []TypeInfo
+	keyspace string
+	table    string
 	lwt         bool
 	partitioner partitioner
 }
@@ -2147,6 +2223,7 @@ func (t *traceWriter) Trace(traceId []byte) {
 		activity  string
 		source    string
 		elapsed   int
+		thread    string
 	)
 
 	t.mu.Lock()
@@ -2155,13 +2232,13 @@ func (t *traceWriter) Trace(traceId []byte) {
 	fmt.Fprintf(t.w, "Tracing session %016x (coordinator: %s, duration: %v):\n",
 		traceId, coordinator, time.Duration(duration)*time.Microsecond)
 
-	iter = t.session.control.query(`SELECT event_id, activity, source, source_elapsed
+	iter = t.session.control.query(`SELECT event_id, activity, source, source_elapsed, thread
 			FROM system_traces.events
 			WHERE session_id = ?`, traceId)
 
-	for iter.Scan(&timestamp, &activity, &source, &elapsed) {
-		fmt.Fprintf(t.w, "%s: %s (source: %s, elapsed: %d)\n",
-			timestamp.Format("2006/01/02 15:04:05.999999"), activity, source, elapsed)
+	for iter.Scan(&timestamp, &activity, &source, &elapsed, &thread) {
+		fmt.Fprintf(t.w, "%s: %s [%s] (source: %s, elapsed: %d)\n",
+			timestamp.Format("2006/01/02 15:04:05.999999"), activity, thread, source, elapsed)
 	}
 
 	if err := iter.Close(); err != nil {
