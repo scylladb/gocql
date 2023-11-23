@@ -1,3 +1,4 @@
+//go:build !cassandra || scylla
 // +build !cassandra scylla
 
 // Copyright (c) 2015 The gocql Authors. All rights reserved.
@@ -83,7 +84,7 @@ type ColumnMetadata struct {
 	Name            string
 	ComponentIndex  int
 	Kind            ColumnKind
-	Type            string
+	Type            TypeInfo
 	ClusteringOrder string
 	Order           ColumnOrder
 	Index           ColumnIndexMetadata
@@ -121,7 +122,7 @@ type TypeMetadata struct {
 	Keyspace   string
 	Name       string
 	FieldNames []string
-	FieldTypes []string
+	FieldTypes []TypeInfo
 }
 
 type IndexMetadata struct {
@@ -548,14 +549,16 @@ func getColumnMetadata(session *Session, keyspaceName string) ([]ColumnMetadata,
 	iter := session.control.query(stmt, keyspaceName)
 	column := ColumnMetadata{Keyspace: keyspaceName}
 
+	var columnType string
 	for iter.MapScan(map[string]interface{}{
 		"table_name":       &column.Table,
 		"column_name":      &column.Name,
 		"clustering_order": &column.ClusteringOrder,
-		"type":             &column.Type,
+		"type":             &columnType,
 		"kind":             &column.Kind,
 		"position":         &column.ComponentIndex,
 	}) {
+		column.Type = getCassandraType(columnType, session.logger)
 		columns = append(columns, column)
 		column = ColumnMetadata{Keyspace: keyspaceName}
 	}
@@ -565,6 +568,13 @@ func getColumnMetadata(session *Session, keyspaceName string) ([]ColumnMetadata,
 	}
 
 	return columns, nil
+}
+
+func getTypeInfo(t string, logger StdLogger) TypeInfo {
+	if strings.HasPrefix(t, apacheCassandraTypePrefix) {
+		t = apacheToCassandraType(t)
+	}
+	return getCassandraType(t, logger)
 }
 
 // query for type metadata in the system_schema.types
@@ -579,13 +589,20 @@ func getTypeMetadata(session *Session, keyspaceName string) ([]TypeMetadata, err
 	var types []TypeMetadata
 	tm := TypeMetadata{Keyspace: keyspaceName}
 
+	var fieldTypes []string
+
 	for iter.MapScan(map[string]interface{}{
 		"type_name":   &tm.Name,
 		"field_names": &tm.FieldNames,
-		"field_types": &tm.FieldTypes,
+		"field_types": &fieldTypes,
 	}) {
+		tm.FieldTypes = make([]TypeInfo, len(fieldTypes))
+		for i, fieldType := range fieldTypes {
+			tm.FieldTypes[i] = getTypeInfo(fieldType, session.logger)
+		}
 		types = append(types, tm)
 		tm = TypeMetadata{Keyspace: keyspaceName}
+		fieldTypes = nil
 	}
 
 	if err := iter.Close(); err != nil {

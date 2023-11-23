@@ -1,4 +1,6 @@
+//go:build !cassandra
 // +build !cassandra
+
 // Copyright (C) 2017 ScyllaDB
 
 package gocql
@@ -71,7 +73,7 @@ func (km *KeyspaceMetadata) typesSortedTopologically() []*TypeMetadata {
 	}
 	sort.Slice(sortedTypes, func(i, j int) bool {
 		for _, ft := range sortedTypes[j].FieldTypes {
-			if strings.Contains(ft, sortedTypes[i].Name) {
+			if strings.Contains(ft.Custom(), sortedTypes[i].Name) {
 				return true
 			}
 		}
@@ -494,12 +496,12 @@ type scyllaEncryptionOptions struct {
 
 // UnmarshalBinary deserializes blob into scyllaEncryptionOptions.
 // Format:
-//  * 4 bytes - size of KV map
-//  Size times:
-//  * 4 bytes - length of key
-//  * len_of_key bytes - key
-//  * 4 bytes - length of value
-//  * len_of_value bytes - value
+//   - 4 bytes - size of KV map
+//     Size times:
+//   - 4 bytes - length of key
+//   - len_of_key bytes - key
+//   - 4 bytes - length of value
+//   - len_of_value bytes - value
 func (enc *scyllaEncryptionOptions) UnmarshalBinary(data []byte) error {
 	size := binary.LittleEndian.Uint32(data[0:4])
 
