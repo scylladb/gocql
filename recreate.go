@@ -73,7 +73,7 @@ func (km *KeyspaceMetadata) typesSortedTopologically() []*TypeMetadata {
 	}
 	sort.Slice(sortedTypes, func(i, j int) bool {
 		for _, ft := range sortedTypes[j].FieldTypes {
-			if strings.Contains(ft.Custom(), sortedTypes[i].Name) {
+			if strings.Contains(ft.Type().String(), sortedTypes[i].Name) {
 				return true
 			}
 		}
