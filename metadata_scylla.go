@@ -534,7 +534,7 @@ func getTableMetadata(session *Session, keyspaceName string) ([]TableMetadata, e
 		}
 		err := iter.Close()
 		if errFrame, ok := err.(errorFrame); ok && errFrame.Code() == ErrCodeInvalid {
-			session.logger.Printf("%v: maybe because the node is cassandra, let's ignore scylla table options", err)
+			session.logger.Printf("%v: probably because of a cassandra node. ignoring scylla table options", err)
 			break
 		}
 		if err != nil && err != ErrNotFound {
