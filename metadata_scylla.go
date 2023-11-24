@@ -532,7 +532,12 @@ func getTableMetadata(session *Session, keyspaceName string) ([]TableMetadata, e
 			tables[i].Options.Partitioner = table.Options.Partitioner
 			tables[i].Options.InMemory = table.Options.InMemory
 		}
-		if err := iter.Close(); err != nil && err != ErrNotFound {
+		err := iter.Close()
+		if errFrame, ok := err.(errorFrame); ok && errFrame.Code() == ErrCodeInvalid {
+			session.logger.Printf("%v: maybe because the node is cassandra, let's ignore scylla table options", err)
+			break
+		}
+		if err != nil && err != ErrNotFound {
 			return nil, fmt.Errorf("error querying scylla table schema: %v", err)
 		}
 	}
