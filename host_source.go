@@ -410,9 +410,25 @@ func (h *HostInfo) IsUp() bool {
 }
 
 func (h *HostInfo) HostnameAndPort() string {
+	// Fast path: in most cases hostname is not empty
+	var (
+		hostname string
+		port     int
+	)
+	h.mu.RLock()
+	hostname = h.hostname
+	port = h.port
+	h.mu.RUnlock()
+
+	if hostname != "" {
+		return net.JoinHostPort(hostname, strconv.Itoa(port))
+	}
+
+	// Slow path: hostname is empty
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if h.hostname == "" {
+	if h.hostname == "" { // recheck is hostname empty
+		// if yes - fill it
 		addr, _ := h.connectAddressLocked()
 		h.hostname = addr.String()
 	}
@@ -420,6 +436,17 @@ func (h *HostInfo) HostnameAndPort() string {
 }
 
 func (h *HostInfo) Hostname() string {
+	// Fast path: in most cases hostname is not empty
+	var hostname string
+	h.mu.RLock()
+	hostname = h.hostname
+	h.mu.RUnlock()
+
+	if hostname != "" {
+		return hostname
+	}
+
+	// Slow path: hostname is empty
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.hostname == "" {
