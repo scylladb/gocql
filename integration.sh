@@ -12,7 +12,7 @@ function scylla_up() {
 
   echo "==> Running Scylla ${SCYLLA_IMAGE}"
   docker pull ${SCYLLA_IMAGE}
-  docker compose up -d --wait || docker compose ps --format json | jq -M 'select(.Health == "unhealthy") | .Service' | xargs docker compose logs && exit 1
+  docker compose up -d --wait
 }
 
 function scylla_down() {
