@@ -583,12 +583,21 @@ func (pool *hostConnPool) connect() (err error) {
 }
 
 func (pool *hostConnPool) initConnPicker(conn *Conn) {
-	if _, ok := pool.connPicker.(nopConnPicker); !ok {
+	if isScyllaConn(conn) {
+		if oldPicker, ok := pool.connPicker.(*scyllaConnPicker); ok {
+			if oldPicker.nrShards == conn.scyllaSupported.nrShards {
+				return
+			}
+			oldPicker.Close()
+		} else if _, ok := pool.connPicker.(nopConnPicker); !ok {
+			return
+		}
+
+		pool.connPicker = newScyllaConnPicker(conn)
 		return
 	}
 
-	if isScyllaConn(conn) {
-		pool.connPicker = newScyllaConnPicker(conn)
+	if _, ok := pool.connPicker.(nopConnPicker); !ok {
 		return
 	}
 
