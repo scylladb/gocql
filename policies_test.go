@@ -556,7 +556,7 @@ func expectNoMoreHosts(t *testing.T, iter NextHost) {
 }
 
 func TestHostPolicy_DCAwareRR(t *testing.T) {
-	p := DCAwareRoundRobinPolicy("local")
+	p := DCAwareRoundRobinPolicy("local", HostPolicyOptionEnableDCFailover)
 
 	hosts := [...]*HostInfo{
 		{hostId: "0", connectAddress: net.ParseIP("10.0.0.1"), dataCenter: "local"},
@@ -606,7 +606,7 @@ func TestHostPolicy_DCAwareRR(t *testing.T) {
 // with {"class": "NetworkTopologyStrategy", "a": 1, "b": 1, "c": 1} replication.
 func TestHostPolicy_TokenAware(t *testing.T) {
 	const keyspace = "myKeyspace"
-	policy := TokenAwareHostPolicy(DCAwareRoundRobinPolicy("local"))
+	policy := TokenAwareHostPolicy(DCAwareRoundRobinPolicy("local", HostPolicyOptionEnableDCFailover))
 	policyInternal := policy.(*tokenAwareHostPolicy)
 	policyInternal.getKeyspaceName = func() string { return keyspace }
 	policyInternal.getKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {
@@ -708,7 +708,7 @@ func TestHostPolicy_TokenAware(t *testing.T) {
 // with {"class": "NetworkTopologyStrategy", "a": 2, "b": 2, "c": 2} replication.
 func TestHostPolicy_TokenAware_NetworkStrategy(t *testing.T) {
 	const keyspace = "myKeyspace"
-	policy := TokenAwareHostPolicy(DCAwareRoundRobinPolicy("local"), NonLocalReplicasFallback())
+	policy := TokenAwareHostPolicy(DCAwareRoundRobinPolicy("local", HostPolicyOptionEnableDCFailover), NonLocalReplicasFallback())
 	policyInternal := policy.(*tokenAwareHostPolicy)
 	policyInternal.getKeyspaceName = func() string { return keyspace }
 	policyInternal.getKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {
@@ -797,7 +797,7 @@ func TestHostPolicy_TokenAware_NetworkStrategy(t *testing.T) {
 }
 
 func TestHostPolicy_RackAwareRR(t *testing.T) {
-	p := RackAwareRoundRobinPolicy("local", "b")
+	p := RackAwareRoundRobinPolicy("local", "b", HostPolicyOptionEnableDCFailover)
 
 	hosts := [...]*HostInfo{
 		{hostId: "0", connectAddress: net.ParseIP("10.0.0.1"), dataCenter: "local", rack: "a"},
@@ -829,8 +829,8 @@ func TestHostPolicy_RackAwareRR(t *testing.T) {
 // DC & Rack aware round-robin host selection policy fallback
 func TestHostPolicy_TokenAware_RackAware(t *testing.T) {
 	const keyspace = "myKeyspace"
-	policy := TokenAwareHostPolicy(RackAwareRoundRobinPolicy("local", "b"))
-	policyWithFallback := TokenAwareHostPolicy(RackAwareRoundRobinPolicy("local", "b"), NonLocalReplicasFallback())
+	policy := TokenAwareHostPolicy(RackAwareRoundRobinPolicy("local", "b", HostPolicyOptionEnableDCFailover))
+	policyWithFallback := TokenAwareHostPolicy(RackAwareRoundRobinPolicy("local", "b", HostPolicyOptionEnableDCFailover), NonLocalReplicasFallback())
 
 	policyInternal := policy.(*tokenAwareHostPolicy)
 	policyInternal.getKeyspaceName = func() string { return keyspace }
@@ -960,7 +960,7 @@ func TestHostPolicy_TokenAware_RackAware(t *testing.T) {
 }
 
 func TestHostPolicy_TokenAware_Issue1274(t *testing.T) {
-	policy := TokenAwareHostPolicy(DCAwareRoundRobinPolicy("local"))
+	policy := TokenAwareHostPolicy(DCAwareRoundRobinPolicy("local", HostPolicyOptionEnableDCFailover))
 	policyInternal := policy.(*tokenAwareHostPolicy)
 	policyInternal.getKeyspaceName = func() string { return "myKeyspace" }
 	policyInternal.getKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {
@@ -1038,7 +1038,7 @@ func TestHostPolicy_TokenAware_Issue1274(t *testing.T) {
 
 func TestTokenAwarePolicyReset(t *testing.T) {
 	policy := TokenAwareHostPolicy(
-		RackAwareRoundRobinPolicy("local", "b"),
+		RackAwareRoundRobinPolicy("local", "b", HostPolicyOptionEnableDCFailover),
 		NonLocalReplicasFallback(),
 	)
 	policyInternal := policy.(*tokenAwareHostPolicy)
@@ -1083,7 +1083,7 @@ func TestTokenAwarePolicyReset(t *testing.T) {
 
 func TestTokenAwarePolicyResetInSessionClose(t *testing.T) {
 	policy := TokenAwareHostPolicy(
-		RackAwareRoundRobinPolicy("local", "b"),
+		RackAwareRoundRobinPolicy("local", "b", HostPolicyOptionEnableDCFailover),
 		NonLocalReplicasFallback(),
 	)
 	policyInternal := policy.(*tokenAwareHostPolicy)
