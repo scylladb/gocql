@@ -120,9 +120,8 @@ func addrsToHosts(addrs []string, defaultPort int, logger StdLogger) ([]*HostInf
 // NewSession wraps an existing Node.
 func NewSession(cfg ClusterConfig) (*Session, error) {
 	if err := cfg.Validate(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("gocql: unable to create session: cluster config validation failed: %v", err)
 	}
-
 	// TODO: we should take a context in here at some point
 	ctx, cancel := context.WithCancel(context.TODO())
 

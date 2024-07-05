@@ -99,6 +99,76 @@ func TestScyllaConnPickerHammerPickNilToken(t *testing.T) {
 	wg.Wait()
 }
 
+func TestScyllaConnPicker(t *testing.T) {
+	t.Parallel()
+
+	t.Run("maybeReplaceWithLessBusyConnection", func(t *testing.T) {
+
+		cfg := ClusterConfig{
+			HeavyLoadedSwitchConnectionPercentage: 30,
+			HeavyLoadedConnectionThreshold:        100,
+		}
+
+		tcases := []struct {
+			name         string
+			streamsInUse [3]int32
+			expected     int
+		}{
+			{
+				name:         "all connections below threshold",
+				streamsInUse: [3]int32{99, 98, 97},
+				expected:     0,
+			},
+			{
+				name:         "all connections in threshold, but none is switchable",
+				streamsInUse: [3]int32{110, 109, 108},
+				expected:     0,
+			},
+			{
+				name:         "all connections in threshold, one is below threshold",
+				streamsInUse: [3]int32{110, 109, 70},
+				expected:     2,
+			},
+			{
+				name:         "all connections in threshold, one is above threshold, but below switchable percentage",
+				streamsInUse: [3]int32{210, 130, 209},
+				expected:     1,
+			},
+		}
+
+		for _, tcase := range tcases {
+			t.Run(tcase.name, func(t *testing.T) {
+				s := scyllaConnPicker{
+					nrShards:  4,
+					msbIgnore: 12,
+				}
+
+				conns := [3]*Conn{
+					mockConn(0),
+					mockConn(1),
+					mockConn(2),
+				}
+
+				for _, conn := range conns {
+					conn.session.cfg = cfg
+					s.Put(conn)
+				}
+
+				for id, inUse := range tcase.streamsInUse {
+					streams.SetStreamsInUse(conns[id].streams, inUse)
+				}
+
+				expectedConn := conns[tcase.expected]
+
+				c := s.maybeReplaceWithLessBusyConnection(conns[0])
+				if c != expectedConn {
+					t.Errorf("expected connection from shard %d, got %d", expectedConn.scyllaSupported.shard, c.scyllaSupported.shard)
+				}
+			})
+		}
+	})
+}
+
 func TestScyllaConnPickerRemove(t *testing.T) {
 	t.Parallel()
 
@@ -135,6 +205,7 @@ func mockConn(shard int) *Conn {
 			partitioner:       "org.apache.cassandra.dht.Murmur3Partitioner",
 			shardingAlgorithm: "biased-token-round-robin",
 		},
+		session: &Session{},
 	}
 }
 

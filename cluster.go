@@ -7,6 +7,7 @@ package gocql
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"time"
 )
@@ -92,6 +93,24 @@ type ClusterConfig struct {
 	// Default: 32768 for CQL v3 and newer
 	// Default: 128 for older CQL versions
 	MaxRequestsPerConn int
+
+	// Threshold for the number of inflight requests per connection
+	// after which the connection is considered as heavy loaded
+	// Default: 512
+	HeavyLoadedConnectionThreshold int
+
+	// When a connection is considered as heavy loaded, the driver
+	// could switch to the least loaded connection for the same node.
+	// The switch will happen if the other connection is at least
+	// HeavyLoadedSwitchConnectionPercentage percentage less busy
+	// (in terms of inflight requests).
+	//
+	// For the default value of 20%, if the heavy loaded connection
+	// has 100 inflight requests, the switch will happen only if the
+	// least busy connection has less than 80 inflight requests.
+	//
+	// Default: 20%
+	HeavyLoadedSwitchConnectionPercentage int
 
 	// Default consistency level.
 	// Default: Quorum
@@ -291,27 +310,29 @@ type Dialer interface {
 // the same host, and will not mark the node being down or up from events.
 func NewCluster(hosts ...string) *ClusterConfig {
 	cfg := &ClusterConfig{
-		Hosts:                        hosts,
-		CQLVersion:                   "3.0.0",
-		Timeout:                      11 * time.Second,
-		ConnectTimeout:               11 * time.Second,
-		Port:                         9042,
-		NumConns:                     2,
-		Consistency:                  Quorum,
-		MaxPreparedStmts:             defaultMaxPreparedStmts,
-		MaxRoutingKeyInfo:            1000,
-		PageSize:                     5000,
-		DefaultTimestamp:             true,
-		DriverName:                   defaultDriverName,
-		DriverVersion:                defaultDriverVersion,
-		MaxWaitSchemaAgreement:       60 * time.Second,
-		ReconnectInterval:            60 * time.Second,
-		ConvictionPolicy:             &SimpleConvictionPolicy{},
-		ReconnectionPolicy:           &ConstantReconnectionPolicy{MaxRetries: 3, Interval: 1 * time.Second},
-		InitialReconnectionPolicy:    &NoReconnectionPolicy{},
-		SocketKeepalive:              15 * time.Second,
-		WriteCoalesceWaitTime:        200 * time.Microsecond,
-		MetadataSchemaRequestTimeout: 60 * time.Second,
+		Hosts:                                 hosts,
+		CQLVersion:                            "3.0.0",
+		Timeout:                               11 * time.Second,
+		ConnectTimeout:                        11 * time.Second,
+		Port:                                  9042,
+		NumConns:                              2,
+		Consistency:                           Quorum,
+		MaxPreparedStmts:                      defaultMaxPreparedStmts,
+		MaxRoutingKeyInfo:                     1000,
+		PageSize:                              5000,
+		DefaultTimestamp:                      true,
+		DriverName:                            defaultDriverName,
+		DriverVersion:                         defaultDriverVersion,
+		MaxWaitSchemaAgreement:                60 * time.Second,
+		ReconnectInterval:                     60 * time.Second,
+		ConvictionPolicy:                      &SimpleConvictionPolicy{},
+		ReconnectionPolicy:                    &ConstantReconnectionPolicy{MaxRetries: 3, Interval: 1 * time.Second},
+		InitialReconnectionPolicy:             &NoReconnectionPolicy{},
+		SocketKeepalive:                       15 * time.Second,
+		WriteCoalesceWaitTime:                 200 * time.Microsecond,
+		MetadataSchemaRequestTimeout:          60 * time.Second,
+		HeavyLoadedConnectionThreshold:        512,
+		HeavyLoadedSwitchConnectionPercentage: 20,
 	}
 
 	return cfg
@@ -372,6 +393,14 @@ func (cfg *ClusterConfig) Validate() error {
 
 	if cfg.InitialReconnectionPolicy.GetMaxRetries() <= 0 {
 		return errors.New("ReconnectionPolicy.GetMaxRetries returns non-positive number")
+	}
+
+	if cfg.HeavyLoadedSwitchConnectionPercentage > 100 || cfg.HeavyLoadedSwitchConnectionPercentage < 0 {
+		return fmt.Errorf("HeavyLoadedSwitchConnectionPercentage must be between 0 and 100, got %d", cfg.HeavyLoadedSwitchConnectionPercentage)
+	}
+
+	if cfg.HeavyLoadedConnectionThreshold < 0 {
+		return fmt.Errorf("HeavyLoadedConnectionThreshold must be greater than or equal to 0, got %d", cfg.HeavyLoadedConnectionThreshold)
 	}
 
 	return nil
