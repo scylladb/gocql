@@ -15,7 +15,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-module github.com/gocql/gocql/lz4
+// The module path uses github.com/scylladb/gocql/lz4 rather than the parent module's
+// github.com/gocql/gocql prefix because upstream (apache) deleted this sub-module before
+// the append-style Compressor API was introduced — no published pseudo-version with the
+// new API exists under the old path. The parent module's root go.mod uses a replace
+// directive to resolve this locally until this change is available as a pseudo-version.
+module github.com/scylladb/gocql/lz4
 
 go 1.25.0
 
