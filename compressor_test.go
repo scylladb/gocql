@@ -97,13 +97,13 @@ func TestSnappyCompressor(t *testing.T) {
 		str := "My Test String"
 		//Test Encoding with S2 library, Snappy compatible encoding.
 		expected := s2.EncodeSnappy(nil, []byte(str))
-		if res, err := c.Encode([]byte(str)); err != nil {
+		if res, err := c.AppendCompressedWithLength(nil, []byte(str)); err != nil {
 			t.Fatalf("failed to encode '%v' with error %v", str, err)
 		} else if bytes.Compare(expected, res) != 0 {
 			t.Fatal("failed to match the expected encoded value with the result encoded value.")
 		}
 
-		val, err := c.Encode([]byte(str))
+		val, err := c.AppendCompressedWithLength(nil, []byte(str))
 		if err != nil {
 			t.Fatalf("failed to encode '%v' with error '%v'", str, err)
 		}
@@ -111,7 +111,7 @@ func TestSnappyCompressor(t *testing.T) {
 		//Test Decoding with S2 library, Snappy compatible encoding.
 		if expected, err := s2.Decode(nil, val); err != nil {
 			t.Fatalf("failed to decode '%v' with error %v", val, err)
-		} else if res, err := c.Decode(val); err != nil {
+		} else if res, err := c.AppendDecompressedWithLength(nil, val); err != nil {
 			t.Fatalf("failed to decode '%v' with error %v", val, err)
 		} else if bytes.Compare(expected, res) != 0 {
 			t.Fatal("failed to match the expected decoded value with the result decoded value.")
@@ -127,11 +127,11 @@ func TestSnappyCompressor(t *testing.T) {
 				t.Run(frame.Name, func(t *testing.T) {
 					t.Parallel()
 
-					encoded, err := c.Encode(frame.Frame)
+					encoded, err := c.AppendCompressedWithLength(nil, frame.Frame)
 					if err != nil {
 						t.Fatalf("failed to encode frame %s", frame.Name)
 					}
-					decoded, err := c.Decode(encoded)
+					decoded, err := c.AppendDecompressedWithLength(nil, encoded)
 					if err != nil {
 						t.Fatalf("failed to decode frame %s", frame.Name)
 					}
@@ -150,7 +150,7 @@ func TestSnappyCompressor(t *testing.T) {
 				t.Run(frame.Name, func(t *testing.T) {
 					t.Parallel()
 
-					decoded, err := c.Decode(frame.Frame)
+					decoded, err := c.AppendDecompressedWithLength(nil, frame.Frame)
 					if err != nil {
 						t.Fatalf("failed to decode frame %s", frame.Name)
 					}
@@ -170,7 +170,7 @@ func BenchmarkSnappyCompressor(b *testing.B) {
 		for _, frame := range frameExamples.Responses {
 			b.Run(frame.Name, func(b *testing.B) {
 				for x := 0; x < b.N; x++ {
-					_, _ = c.Decode(frame.Frame)
+					_, _ = c.AppendDecompressedWithLength(nil, frame.Frame)
 				}
 			})
 		}
@@ -180,7 +180,7 @@ func BenchmarkSnappyCompressor(b *testing.B) {
 		for _, frame := range frameExamples.Requests {
 			b.Run(frame.Name, func(b *testing.B) {
 				for x := 0; x < b.N; x++ {
-					_, _ = c.Encode(frame.Frame)
+					_, _ = c.AppendCompressedWithLength(nil, frame.Frame)
 				}
 			})
 		}
