@@ -710,11 +710,20 @@ func (s *Session) findTabletReplicasForToken(keyspace, table string, token int64
 	return s.metadataDescriber.metadata.tabletsMetadata.FindReplicasForToken(keyspace, table, token)
 }
 
-// returns routing key indexes and type info
-func (s *Session) routingKeyInfo(ctx context.Context, stmt string, requestTimeout time.Duration) (*routingKeyInfo, error) {
+// Returns routing key indexes and type info.
+// If keyspace == "" it uses the keyspace which is specified in Cluster.Keyspace
+func (s *Session) routingKeyInfo(ctx context.Context, stmt string, keyspace string) (*routingKeyInfo, error) {
+	if keyspace == "" {
+		keyspace = s.cfg.Keyspace
+	}
+
+	routingKeyInfoCacheKey := keyspace + stmt
+
 	s.routingKeyInfoCache.mu.Lock()
 
-	entry, cached := s.routingKeyInfoCache.lru.Get(stmt)
+	// Using here keyspace + stmt as a cache key because
+	// the query keyspace could be overridden via SetKeyspace
+	entry, cached := s.routingKeyInfoCache.lru.Get(routingKeyInfoCacheKey)
 	if cached {
 		// done accessing the cache
 		s.routingKeyInfoCache.mu.Unlock()
@@ -738,7 +747,7 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string, requestTimeou
 	inflight := new(inflightCachedEntry)
 	inflight.wg.Add(1)
 	defer inflight.wg.Done()
-	s.routingKeyInfoCache.lru.Add(stmt, inflight)
+	s.routingKeyInfoCache.lru.Add(routingKeyInfoCacheKey, inflight)
 	s.routingKeyInfoCache.mu.Unlock()
 
 	var (
@@ -754,7 +763,7 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string, requestTimeou
 	}
 
 	// get the query info for the statement
-	info, inflight.err = conn.prepareStatement(ctx, stmt, nil, requestTimeout)
+	info, inflight.err = conn.prepareStatement(ctx, stmt, nil, keyspace)
 	if inflight.err != nil {
 		// don't cache this error
 		s.routingKeyInfoCache.Remove(stmt)
@@ -770,7 +779,9 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string, requestTimeou
 	}
 
 	table := info.request.table
-	keyspace := info.request.keyspace
+	if info.request.keyspace != "" {
+		keyspace = info.request.keyspace
+	}
 
 	partitioner, err := scyllaGetTablePartitioner(s, keyspace, table)
 	if err != nil {
@@ -1098,6 +1109,8 @@ type Query struct {
 	skipPrepare           bool
 	disableSkipMetadata   bool
 	defaultTimestamp      bool
+	keyspace              string
+	nowInSecondsValue     *int
 }
 
 type queryRoutingInfo struct {
@@ -1322,6 +1335,9 @@ func (q *Query) Keyspace() string {
 	if q.routingInfo.keyspace != "" {
 		return q.routingInfo.keyspace
 	}
+	if q.keyspace != "" {
+		return q.keyspace
+	}
 
 	if q.session == nil {
 		return ""
@@ -1357,7 +1373,7 @@ func (q *Query) GetRoutingKey() ([]byte, error) {
 	}
 
 	// try to determine the routing key
-	routingKeyInfo, err := q.session.routingKeyInfo(q.Context(), q.stmt, q.requestTimeout)
+	routingKeyInfo, err := q.session.routingKeyInfo(q.Context(), q.stmt, q.keyspace)
 	if err != nil {
 		return nil, err
 	}
@@ -1673,6 +1689,24 @@ func (q *Query) GetHostID() string {
 	return q.hostID
 }
 
+// SetKeyspace will enable keyspace flag on the query.
+// It allows to specify the keyspace that the query should be executed in
+//
+// Only available on protocol >= 5.
+func (q *Query) SetKeyspace(keyspace string) *Query {
+	q.keyspace = keyspace
+	return q
+}
+
+// WithNowInSeconds will enable the with now_in_seconds flag on the query.
+// Also, it allows to define now_in_seconds value.
+//
+// Only available on protocol >= 5.
+func (q *Query) WithNowInSeconds(now int) *Query {
+	q.nowInSecondsValue = &now
+	return q
+}
+
 // Iter represents an iterator that can be used to iterate over all rows that
 // were returned by a query. The iterator might send additional queries to the
 // database during the iteration if paging was enabled.
@@ -1979,30 +2013,32 @@ func (n *nextIter) fetch() *Iter {
 }
 
 type Batch struct {
-	context  context.Context
-	rt       RetryPolicy
-	spec     SpeculativeExecutionPolicy
-	trace    Tracer
-	observer BatchObserver
+	context               context.Context
+	rt                    RetryPolicy
+	spec                  SpeculativeExecutionPolicy
+	trace                 Tracer
+	observer              BatchObserver
+	Type                  BatchType
+	Entries               []BatchEntry
+	Cons                  Consistency
+	routingKey            []byte
+	CustomPayload         map[string][]byte
+	session               *Session
+	serialCons            Consistency
+	defaultTimestamp      bool
+	defaultTimestampValue int64
+	cancelBatch           func()
+	keyspace              string
+	metrics               *queryMetrics
+	nowInSeconds          *int
+
 	// routingInfo is a pointer because Query can be copied and copyable struct can't hold a mutex.
-	routingInfo   *queryRoutingInfo
-	metrics       *queryMetrics
-	cancelBatch   func()
-	CustomPayload map[string][]byte
-	session       *Session
-	keyspace      string
+	routingInfo *queryRoutingInfo
 	// hostID specifies the host on which the query should be executed.
 	// If it is empty, then the host is picked by HostSelectionPolicy
-	hostID                string
-	routingKey            []byte
-	Entries               []BatchEntry
-	defaultTimestampValue int64
+	hostID string
 	// requestTimeout is a timeout on waiting for response from serve
-	requestTimeout   time.Duration
-	serialCons       Consistency
-	Cons             Consistency
-	defaultTimestamp bool
-	Type             BatchType
+	requestTimeout time.Duration
 }
 
 // NewBatch creates a new batch operation using defaults defined in the cluster
@@ -2264,7 +2300,7 @@ func (b *Batch) GetRoutingKey() ([]byte, error) {
 		return nil, nil
 	}
 	// try to determine the routing key
-	routingKeyInfo, err := b.session.routingKeyInfo(b.Context(), entry.Stmt, b.GetRequestTimeout())
+	routingKeyInfo, err := b.session.routingKeyInfo(b.Context(), entry.Stmt, b.keyspace)
 	if err != nil {
 		return nil, err
 	}
@@ -2350,6 +2386,24 @@ func (b *Batch) SetHostID(hostID string) *Batch {
 // GetHostID satisfies ExecutableQuery interface but does noop.
 func (b *Batch) GetHostID() string {
 	return b.hostID
+}
+
+// SetKeyspace will enable keyspace flag on the query.
+// It allows to specify the keyspace that the query should be executed in
+//
+// Only available on protocol >= 5.
+func (b *Batch) SetKeyspace(keyspace string) *Batch {
+	b.keyspace = keyspace
+	return b
+}
+
+// WithNowInSeconds will enable the with now_in_seconds flag on the query.
+// Also, it allows to define now_in_seconds value.
+//
+// Only available on protocol >= 5.
+func (b *Batch) WithNowInSeconds(now int) *Batch {
+	b.nowInSeconds = &now
+	return b
 }
 
 type BatchType byte
