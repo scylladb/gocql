@@ -20,6 +20,8 @@ import (
 	"unicode"
 
 	inf "gopkg.in/inf.v0"
+
+	"github.com/gocql/gocql/internal/testcmdline"
 )
 
 func TestEmptyHosts(t *testing.T) {
@@ -2126,8 +2128,8 @@ func TestGetKeyspaceMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error converting string to int with err: %v", err)
 	}
-	if rfInt != *flagRF {
-		t.Errorf("Expected replication factor to be %d but was %d", *flagRF, rfInt)
+	if rfInt != *testcmdline.RF {
+		t.Errorf("Expected replication factor to be %d but was %d", *testcmdline.RF, rfInt)
 	}
 }
 
@@ -2494,8 +2496,8 @@ func TestUnmarshallNestedTypes(t *testing.T) {
 }
 
 func TestSchemaReset(t *testing.T) {
-	if flagCassVersion.Major == 0 || flagCassVersion.Before(2, 1, 3) {
-		t.Skipf("skipping TestSchemaReset due to CASSANDRA-7910 in Cassandra <2.1.3 version=%v", flagCassVersion)
+	if testcmdline.CassVersion.Major == 0 || testcmdline.CassVersion.Before(2, 1, 3) {
+		t.Skipf("skipping TestSchemaReset due to CASSANDRA-7910 in Cassandra <2.1.3 version=%v", testcmdline.CassVersion)
 	}
 
 	cluster := createCluster()
@@ -2560,7 +2562,7 @@ func TestCreateSession_DontSwallowError(t *testing.T) {
 		t.Fatal("expected to get an error for unsupported protocol")
 	}
 
-	if flagCassVersion.Major < 3 {
+	if testcmdline.CassVersion.Major < 3 {
 		// TODO: we should get a distinct error type here which include the underlying
 		// cassandra error about the protocol version, for now check this here.
 		if !strings.Contains(err.Error(), "Invalid or unsupported protocol version") {

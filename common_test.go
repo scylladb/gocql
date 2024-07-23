@@ -1,7 +1,6 @@
 package gocql
 
 import (
-	"flag"
 	"fmt"
 	"log"
 	"net"
@@ -10,41 +9,24 @@ import (
 	"sync"
 	"testing"
 	"time"
-)
 
-var (
-	flagCluster          = flag.String("cluster", "127.0.0.1", "a comma-separated list of host:port tuples")
-	flagMultiNodeCluster = flag.String("multiCluster", "127.0.0.2", "a comma-separated list of host:port tuples")
-	flagProto            = flag.Int("proto", 0, "protcol version")
-	flagCQL              = flag.String("cql", "3.0.0", "CQL version")
-	flagRF               = flag.Int("rf", 1, "replication factor for test keyspace")
-	clusterSize          = flag.Int("clusterSize", 1, "the expected size of the cluster")
-	flagRetry            = flag.Int("retries", 5, "number of times to retry queries")
-	flagAutoWait         = flag.Duration("autowait", 1000*time.Millisecond, "time to wait for autodiscovery to fill the hosts poll")
-	flagRunSslTest       = flag.Bool("runssl", false, "Set to true to run ssl test")
-	flagRunAuthTest      = flag.Bool("runauth", false, "Set to true to run authentication test")
-	flagCompressTest     = flag.String("compressor", "", "compressor to use")
-	flagTimeout          = flag.Duration("gocql.timeout", 5*time.Second, "sets the connection `timeout` for all operations")
-
-	flagCassVersion cassVersion
+	"github.com/gocql/gocql/internal/testcmdline"
 )
 
 func init() {
-	flag.Var(&flagCassVersion, "gocql.cversion", "the cassandra version being tested against")
-
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
 }
 
 func getClusterHosts() []string {
-	return strings.Split(*flagCluster, ",")
+	return strings.Split(*testcmdline.Cluster, ",")
 }
 
 func getMultiNodeClusterHosts() []string {
-	return strings.Split(*flagMultiNodeCluster, ",")
+	return strings.Split(*testcmdline.MultiNodeCluster, ",")
 }
 
 func addSslOptions(cluster *ClusterConfig) *ClusterConfig {
-	if *flagRunSslTest {
+	if *testcmdline.RunSslTest {
 		cluster.Port = 9142
 		cluster.SslOpts = &SslOptions{
 			CertPath:               "testdata/pki/gocql.crt",
@@ -81,21 +63,21 @@ func createTable(s *Session, table string) error {
 func createCluster(opts ...func(*ClusterConfig)) *ClusterConfig {
 	clusterHosts := getClusterHosts()
 	cluster := NewCluster(clusterHosts...)
-	cluster.ProtoVersion = *flagProto
-	cluster.CQLVersion = *flagCQL
-	cluster.Timeout = *flagTimeout
+	cluster.ProtoVersion = *testcmdline.Proto
+	cluster.CQLVersion = *testcmdline.CQL
+	cluster.Timeout = *testcmdline.Timeout
 	cluster.Consistency = Quorum
 	cluster.MaxWaitSchemaAgreement = 2 * time.Minute // travis might be slow
-	if *flagRetry > 0 {
-		cluster.RetryPolicy = &SimpleRetryPolicy{NumRetries: *flagRetry}
+	if *testcmdline.Retry > 0 {
+		cluster.RetryPolicy = &SimpleRetryPolicy{NumRetries: *testcmdline.Retry}
 	}
 
-	switch *flagCompressTest {
+	switch *testcmdline.CompressTest {
 	case "snappy":
 		cluster.Compressor = &SnappyCompressor{}
 	case "":
 	default:
-		panic("invalid compressor: " + *flagCompressTest)
+		panic("invalid compressor: " + *testcmdline.CompressTest)
 	}
 
 	cluster = addSslOptions(cluster)
@@ -110,21 +92,21 @@ func createCluster(opts ...func(*ClusterConfig)) *ClusterConfig {
 func createMultiNodeCluster(opts ...func(*ClusterConfig)) *ClusterConfig {
 	clusterHosts := getMultiNodeClusterHosts()
 	cluster := NewCluster(clusterHosts...)
-	cluster.ProtoVersion = *flagProto
-	cluster.CQLVersion = *flagCQL
-	cluster.Timeout = *flagTimeout
+	cluster.ProtoVersion = *testcmdline.Proto
+	cluster.CQLVersion = *testcmdline.CQL
+	cluster.Timeout = *testcmdline.Timeout
 	cluster.Consistency = Quorum
 	cluster.MaxWaitSchemaAgreement = 2 * time.Minute // travis might be slow
-	if *flagRetry > 0 {
-		cluster.RetryPolicy = &SimpleRetryPolicy{NumRetries: *flagRetry}
+	if *testcmdline.Retry > 0 {
+		cluster.RetryPolicy = &SimpleRetryPolicy{NumRetries: *testcmdline.Retry}
 	}
 
-	switch *flagCompressTest {
+	switch *testcmdline.CompressTest {
 	case "snappy":
 		cluster.Compressor = &SnappyCompressor{}
 	case "":
 	default:
-		panic("invalid compressor: " + *flagCompressTest)
+		panic("invalid compressor: " + *testcmdline.CompressTest)
 	}
 
 	cluster = addSslOptions(cluster)
@@ -156,7 +138,7 @@ func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string) {
 	WITH replication = {
 		'class' : 'SimpleStrategy',
 		'replication_factor' : %d
-	}`, keyspace, *flagRF))
+	}`, keyspace, *testcmdline.RF))
 
 	if err != nil {
 		panic(fmt.Sprintf("unable to create keyspace: %v", err))
@@ -232,7 +214,7 @@ func createViews(t *testing.T, session *Session) {
 }
 
 func createMaterializedViews(t *testing.T, session *Session) {
-	if flagCassVersion.Before(3, 0, 0) {
+	if testcmdline.CassVersion.Before(3, 0, 0) {
 		return
 	}
 	if err := session.Query(`CREATE TABLE IF NOT EXISTS gocql_test.view_table (

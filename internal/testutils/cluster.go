@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gocql/gocql"
+	"github.com/gocql/gocql/internal/testcmdline"
 )
 
 var initOnce sync.Once
@@ -22,21 +23,21 @@ func CreateSession(tb testing.TB, opts ...func(config *gocql.ClusterConfig)) *go
 func CreateCluster(opts ...func(*gocql.ClusterConfig)) *gocql.ClusterConfig {
 	clusterHosts := getClusterHosts()
 	cluster := gocql.NewCluster(clusterHosts...)
-	cluster.ProtoVersion = *flagProto
-	cluster.CQLVersion = *flagCQL
-	cluster.Timeout = *flagTimeout
+	cluster.ProtoVersion = *testcmdline.Proto
+	cluster.CQLVersion = *testcmdline.CQL
+	cluster.Timeout = *testcmdline.Timeout
 	cluster.Consistency = gocql.Quorum
 	cluster.MaxWaitSchemaAgreement = 2 * time.Minute // travis might be slow
-	if *flagRetry > 0 {
-		cluster.RetryPolicy = &gocql.SimpleRetryPolicy{NumRetries: *flagRetry}
+	if *testcmdline.Retry > 0 {
+		cluster.RetryPolicy = &gocql.SimpleRetryPolicy{NumRetries: *testcmdline.Retry}
 	}
 
-	switch *flagCompressTest {
+	switch *testcmdline.CompressTest {
 	case "snappy":
 		cluster.Compressor = &gocql.SnappyCompressor{}
 	case "":
 	default:
-		panic("invalid compressor: " + *flagCompressTest)
+		panic("invalid compressor: " + *testcmdline.CompressTest)
 	}
 
 	cluster = addSslOptions(cluster)
@@ -69,7 +70,7 @@ func createSessionFromCluster(cluster *gocql.ClusterConfig, tb testing.TB) *gocq
 }
 
 func getClusterHosts() []string {
-	return strings.Split(*flagCluster, ",")
+	return strings.Split(*testcmdline.Cluster, ",")
 }
 
 func createKeyspace(tb testing.TB, cluster *gocql.ClusterConfig, keyspace string) {
@@ -92,7 +93,7 @@ func createKeyspace(tb testing.TB, cluster *gocql.ClusterConfig, keyspace string
 	WITH replication = {
 		'class' : 'SimpleStrategy',
 		'replication_factor' : %d
-	}`, keyspace, *flagRF))
+	}`, keyspace, *testcmdline.RF))
 
 	if err != nil {
 		panic(fmt.Sprintf("unable to create keyspace: %v", err))
@@ -120,7 +121,7 @@ func CreateTable(s *gocql.Session, table string) error {
 }
 
 func addSslOptions(cluster *gocql.ClusterConfig) *gocql.ClusterConfig {
-	if *flagRunSslTest {
+	if *testcmdline.RunSslTest {
 		cluster.Port = 9142
 		cluster.SslOpts = &gocql.SslOptions{
 			CertPath:               "testdata/pki/gocql.crt",

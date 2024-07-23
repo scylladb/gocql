@@ -1,31 +1,27 @@
-package testutils
+package testcmdline
 
 import (
 	"flag"
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/gocql/gocql"
 )
 
 var (
-	flagCluster          = flag.String("cluster", "127.0.0.1", "a comma-separated list of host:port tuples")
-	flagMultiNodeCluster = flag.String("multiCluster", "127.0.0.2", "a comma-separated list of host:port tuples")
-	flagProto            = flag.Int("proto", 0, "protcol version")
-	flagCQL              = flag.String("cql", "3.0.0", "CQL version")
-	flagRF               = flag.Int("rf", 1, "replication factor for test keyspace")
-	clusterSize          = flag.Int("clusterSize", 1, "the expected size of the cluster")
-	flagRetry            = flag.Int("retries", 5, "number of times to retry queries")
-	flagAutoWait         = flag.Duration("autowait", 1000*time.Millisecond, "time to wait for autodiscovery to fill the hosts poll")
-	flagRunSslTest       = flag.Bool("runssl", false, "Set to true to run ssl test")
-	flagRunAuthTest      = flag.Bool("runauth", false, "Set to true to run authentication test")
-	flagCompressTest     = flag.String("compressor", "", "compressor to use")
-	flagTimeout          = flag.Duration("gocql.timeout", 5*time.Second, "sets the connection `timeout` for all operations")
-
-	flagCassVersion cassVersion
+	Cluster          = flag.String("cluster", "127.0.0.1", "a comma-separated list of host:port tuples")
+	MultiNodeCluster = flag.String("multiCluster", "127.0.0.2", "a comma-separated list of host:port tuples")
+	Proto            = flag.Int("proto", 0, "protcol version")
+	CQL              = flag.String("cql", "3.0.0", "CQL version")
+	RF               = flag.Int("rf", 1, "replication factor for test keyspace")
+	ClusterSize      = flag.Int("clusterSize", 1, "the expected size of the cluster")
+	Retry            = flag.Int("retries", 5, "number of times to retry queries")
+	AutoWait         = flag.Duration("autowait", 1000*time.Millisecond, "time to wait for autodiscovery to fill the hosts poll")
+	RunSslTest       = flag.Bool("runssl", false, "Set to true to run ssl test")
+	RunAuthTest      = flag.Bool("runauth", false, "Set to true to run authentication test")
+	CompressTest     = flag.String("compressor", "", "compressor to use")
+	Timeout          = flag.Duration("gocql.timeout", 5*time.Second, "sets the connection `timeout` for all operations")
+	CassVersion      cassVersion
 )
 
 type cassVersion struct {
@@ -37,11 +33,7 @@ func (c *cassVersion) Set(v string) error {
 		return nil
 	}
 
-	return c.UnmarshalCQL(nil, []byte(v))
-}
-
-func (c *cassVersion) UnmarshalCQL(info gocql.TypeInfo, data []byte) error {
-	return c.unmarshal(data)
+	return c.unmarshal([]byte(v))
 }
 
 func (c *cassVersion) unmarshal(data []byte) error {
@@ -108,7 +100,5 @@ func (c cassVersion) nodeUpDelay() time.Duration {
 }
 
 func init() {
-	flag.Var(&flagCassVersion, "gocql.cversion", "the cassandra version being tested against")
-
-	log.SetFlags(log.Lshortfile | log.LstdFlags)
+	flag.Var(&CassVersion, "gocql.cversion", "the cassandra version being tested against")
 }
