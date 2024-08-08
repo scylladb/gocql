@@ -1289,6 +1289,22 @@ type ReconnectionPolicy interface {
 	GetMaxRetries() int
 }
 
+// NoReconnectionPolicy is a policy to have no retry.
+//
+// Examples of usage:
+//
+//	cluster.InitialReconnectionPolicy = &NoReconnectionPolicy{}
+type NoReconnectionPolicy struct {
+}
+
+func (c *NoReconnectionPolicy) GetInterval(currentRetry int) time.Duration {
+	return time.Duration(0)
+}
+
+func (c *NoReconnectionPolicy) GetMaxRetries() int {
+	return 1
+}
+
 // ConstantReconnectionPolicy has simple logic for returning a fixed reconnection interval.
 //
 // Examples of usage:

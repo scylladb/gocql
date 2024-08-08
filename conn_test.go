@@ -14,6 +14,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"github.com/google/go-cmp/cmp"
 	"io"
 	"io/ioutil"
 	"math/rand"
@@ -720,6 +721,84 @@ func TestContext_Timeout(t *testing.T) {
 	err = db.Query("timeout").WithContext(ctx).Exec()
 	if err != context.Canceled {
 		t.Fatalf("expected to get context cancel error: %v got %v", context.Canceled, err)
+	}
+}
+
+type TestReconnectionPolicy struct {
+	NumRetries       int
+	GetIntervalCalls []int
+}
+
+func (c *TestReconnectionPolicy) GetInterval(currentRetry int) time.Duration {
+	c.GetIntervalCalls = append(c.GetIntervalCalls, currentRetry)
+	return time.Duration(0)
+}
+
+func (c *TestReconnectionPolicy) GetMaxRetries() int {
+	return c.NumRetries
+}
+
+func TestInitialRetryPolicy(t *testing.T) {
+	t.Parallel()
+
+	tcase := []struct {
+		NumRetries               int
+		ProtoVersion             int
+		ExpectedGetIntervalCalls []int
+		ExpectedErr              string
+	}{
+		{
+			NumRetries:               1,
+			ProtoVersion:             0,
+			ExpectedGetIntervalCalls: nil,
+			ExpectedErr:              "gocql: unable to create session: unable to connect to the cluster, last error: unable to discover protocol version:"},
+		{
+			NumRetries:               2,
+			ProtoVersion:             0,
+			ExpectedGetIntervalCalls: []int{1},
+			ExpectedErr:              "gocql: unable to create session: unable to connect to the cluster, last error: unable to discover protocol version:"},
+		{
+			NumRetries:               3,
+			ProtoVersion:             0,
+			ExpectedGetIntervalCalls: []int{1, 2},
+			ExpectedErr:              "gocql: unable to create session: unable to connect to the cluster, last error: unable to discover protocol version:"},
+		{
+			NumRetries:               1,
+			ProtoVersion:             4,
+			ExpectedGetIntervalCalls: nil,
+			ExpectedErr:              "gocql: unable to create session: unable to connect to the cluster, last error: unable to create control connection: unable to connect to initial hosts:"},
+		{
+			NumRetries:               2,
+			ProtoVersion:             4,
+			ExpectedGetIntervalCalls: []int{1},
+			ExpectedErr:              "gocql: unable to create session: unable to connect to the cluster, last error: unable to create control connection: unable to connect to initial hosts:"},
+		{
+			NumRetries:               3,
+			ProtoVersion:             4,
+			ExpectedGetIntervalCalls: []int{1, 2},
+			ExpectedErr:              "gocql: unable to create session: unable to connect to the cluster, last error: unable to create control connection: unable to connect to initial hosts:"},
+	}
+
+	for id := range tcase {
+		tc := tcase[id]
+		t.Run(fmt.Sprintf("NumRetries=%d_ProtocolVersion=%d", tc.NumRetries, tc.ProtoVersion), func(t *testing.T) {
+			t.Parallel()
+
+			cluster := NewCluster("127.254.254.254")
+			policy := &TestReconnectionPolicy{NumRetries: tc.NumRetries}
+			cluster.InitialReconnectionPolicy = policy
+			cluster.ProtoVersion = tc.ProtoVersion
+			_, err := cluster.CreateSession()
+			if err == nil {
+				t.Fatal("expected to get an error")
+			}
+			if !strings.Contains(err.Error(), tc.ExpectedErr) {
+				t.Errorf("expected error to contain %q got %q", tc.ExpectedErr, err.Error())
+			}
+			if !cmp.Equal(tc.ExpectedGetIntervalCalls, policy.GetIntervalCalls) {
+				t.Errorf("expected GetInterval calls to be (%+v) but was (%+v) instead", tc.ExpectedGetIntervalCalls, policy.GetIntervalCalls)
+			}
+		})
 	}
 }
 

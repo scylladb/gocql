@@ -119,6 +119,9 @@ type ClusterConfig struct {
 	// Default reconnection policy to use for reconnecting before trying to mark host as down.
 	ReconnectionPolicy ReconnectionPolicy
 
+	// A reconnection policy to use for reconnecting when connecting to the cluster first time.
+	InitialReconnectionPolicy ReconnectionPolicy
+
 	// The keepalive period to use, enabled if > 0 (default: 15 seconds)
 	// SocketKeepalive is used to set up the default dialer and is ignored if Dialer or HostDialer is provided.
 	SocketKeepalive time.Duration
@@ -305,6 +308,7 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		ReconnectInterval:            60 * time.Second,
 		ConvictionPolicy:             &SimpleConvictionPolicy{},
 		ReconnectionPolicy:           &ConstantReconnectionPolicy{MaxRetries: 3, Interval: 1 * time.Second},
+		InitialReconnectionPolicy:    &NoReconnectionPolicy{},
 		SocketKeepalive:              15 * time.Second,
 		WriteCoalesceWaitTime:        200 * time.Microsecond,
 		MetadataSchemaRequestTimeout: 60 * time.Second,
@@ -343,6 +347,34 @@ func (cfg *ClusterConfig) translateAddressPort(addr net.IP, port int) (net.IP, i
 
 func (cfg *ClusterConfig) filterHost(host *HostInfo) bool {
 	return !(cfg.HostFilter == nil || cfg.HostFilter.Accept(host))
+}
+
+func (cfg *ClusterConfig) Validate() error {
+	if len(cfg.Hosts) == 0 {
+		return ErrNoHosts
+	}
+
+	if cfg.Authenticator != nil && cfg.AuthProvider != nil {
+		return errors.New("Can't use both Authenticator and AuthProvider in cluster config.")
+	}
+
+	if cfg.InitialReconnectionPolicy == nil {
+		return errors.New("InitialReconnectionPolicy is nil")
+	}
+
+	if cfg.InitialReconnectionPolicy.GetMaxRetries() <= 0 {
+		return errors.New("InitialReconnectionPolicy.GetMaxRetries returns non-positive number")
+	}
+
+	if cfg.ReconnectionPolicy == nil {
+		return errors.New("ReconnectionPolicy is nil")
+	}
+
+	if cfg.InitialReconnectionPolicy.GetMaxRetries() <= 0 {
+		return errors.New("ReconnectionPolicy.GetMaxRetries returns non-positive number")
+	}
+
+	return nil
 }
 
 var (

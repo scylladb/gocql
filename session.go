@@ -119,14 +119,8 @@ func addrsToHosts(addrs []string, defaultPort int, logger StdLogger) ([]*HostInf
 
 // NewSession wraps an existing Node.
 func NewSession(cfg ClusterConfig) (*Session, error) {
-	// Check that hosts in the ClusterConfig is not empty
-	if len(cfg.Hosts) < 1 {
-		return nil, ErrNoHosts
-	}
-
-	// Check that either Authenticator is set or AuthProvider, not both
-	if cfg.Authenticator != nil && cfg.AuthProvider != nil {
-		return nil, errors.New("Can't use both Authenticator and AuthProvider in cluster config.")
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
 
 	// TODO: we should take a context in here at some point
@@ -220,22 +214,45 @@ func (s *Session) init() error {
 
 	if !s.cfg.disableControlConn {
 		s.control = createControlConn(s)
-		if s.cfg.ProtoVersion == 0 {
-			proto, err := s.control.discoverProtocol(hosts)
-			if err != nil {
-				return fmt.Errorf("unable to discover protocol version: %v", err)
-			} else if proto == 0 {
-				return errors.New("unable to discovery protocol version")
+		reconnectionPolicy := s.cfg.InitialReconnectionPolicy
+		var lastErr error
+		for i := 0; i < reconnectionPolicy.GetMaxRetries(); i++ {
+			lastErr = nil
+			if i != 0 {
+				time.Sleep(reconnectionPolicy.GetInterval(i))
 			}
 
-			// TODO(zariel): we really only need this in 1 place
-			s.cfg.ProtoVersion = proto
-			s.connCfg.ProtoVersion = proto
+			if s.cfg.ProtoVersion == 0 {
+				proto, err := s.control.discoverProtocol(hosts)
+				if err != nil {
+					err = fmt.Errorf("unable to discover protocol version: %v\n", err)
+					if gocqlDebug {
+						s.logger.Println(err.Error())
+					}
+					lastErr = err
+					continue
+				} else if proto == 0 {
+					return errors.New("unable to discovery protocol version")
+				}
+
+				// TODO(zariel): we really only need this in 1 place
+				s.cfg.ProtoVersion = proto
+				s.connCfg.ProtoVersion = proto
+			}
+
+			if err := s.control.connect(hosts); err != nil {
+				err = fmt.Errorf("unable to create control connection: %v\n", err)
+				if gocqlDebug {
+					s.logger.Println(err.Error())
+				}
+				lastErr = err
+				continue
+			}
+		}
+		if lastErr != nil {
+			return fmt.Errorf("unable to connect to the cluster, last error: %v", lastErr.Error())
 		}
 
-		if err := s.control.connect(hosts); err != nil {
-			return err
-		}
 		conn := s.control.getConn().conn
 		conn.mu.Lock()
 		s.tabletsRoutingV1 = conn.isTabletSupported()
