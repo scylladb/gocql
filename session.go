@@ -2254,31 +2254,32 @@ type traceWriter struct {
 	session *Session
 	w       io.Writer
 	mu      sync.Mutex
+
+	maxAttempts   int
+	sleepInterval time.Duration
 }
 
 // NewTraceWriter returns a simple Tracer implementation that outputs
 // the event log in a textual format.
 func NewTraceWriter(session *Session, w io.Writer) Tracer {
-	return &traceWriter{session: session, w: w}
+	return &traceWriter{session: session, w: w, maxAttempts: 5, sleepInterval: 3 * time.Millisecond}
+}
+
+func (t *traceWriter) SetMaxAttempts(maxAttempts int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	t.maxAttempts = maxAttempts
+}
+
+func (t *traceWriter) SetSleepInterval(sleepInterval time.Duration) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	t.sleepInterval = sleepInterval
 }
 
 func (t *traceWriter) Trace(traceId []byte) {
-	var (
-		coordinator string
-		duration    int
-	)
-	iter := t.session.control.query(`SELECT coordinator, duration
-			FROM system_traces.sessions
-			WHERE session_id = ?`, traceId)
-
-	iter.Scan(&coordinator, &duration)
-	if err := iter.Close(); err != nil {
-		t.mu.Lock()
-		fmt.Fprintln(t.w, "Error:", err)
-		t.mu.Unlock()
-		return
-	}
-
 	var (
 		timestamp time.Time
 		activity  string
@@ -2289,6 +2290,51 @@ func (t *traceWriter) Trace(traceId []byte) {
 
 	t.mu.Lock()
 	defer t.mu.Unlock()
+
+	fetchAttempts := 1
+	if t.maxAttempts > 0 {
+		fetchAttempts = t.maxAttempts
+	}
+
+	for i := 0; i < fetchAttempts; i++ {
+		isDone := false
+		iter := t.session.control.query(`SELECT event_id, activity, source, source_elapsed, thread
+			FROM system_traces.events
+			WHERE session_id = ?`, traceId)
+
+		for iter.Scan(&timestamp, &activity, &source, &elapsed, &thread) {
+			if strings.Contains(activity, "Done processing") {
+				isDone = true
+				break
+			}
+		}
+
+		if err := iter.Close(); err != nil {
+			fmt.Fprintln(t.w, "Error:", err)
+			return
+		}
+
+		if isDone || i == fetchAttempts-1 {
+			break
+		}
+
+		time.Sleep(t.sleepInterval)
+	}
+
+	var (
+		coordinator string
+		duration    int
+	)
+
+	iter := t.session.control.query(`SELECT coordinator, duration
+		FROM system_traces.sessions
+		WHERE session_id = ?`, traceId)
+
+	iter.Scan(&coordinator, &duration)
+	if err := iter.Close(); err != nil {
+		fmt.Fprintln(t.w, "Error:", err)
+		return
+	}
 
 	fmt.Fprintf(t.w, "Tracing session %016x (coordinator: %s, duration: %v):\n",
 		traceId, coordinator, time.Duration(duration)*time.Microsecond)
