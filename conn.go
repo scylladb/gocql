@@ -1615,6 +1615,10 @@ func (c *Conn) AvailableStreams() int {
 	return c.streams.Available()
 }
 
+func (c *Conn) StreamsInUse() int {
+	return c.streams.InUse()
+}
+
 func (c *Conn) UseKeyspace(keyspace string) error {
 	q := &writeQueryFrame{statement: `USE "` + keyspace + `"`}
 	q.params.consistency = c.session.cons

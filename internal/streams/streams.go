@@ -144,3 +144,8 @@ func (s *IDGenerator) Available() int {
 func (s *IDGenerator) InUse() int {
 	return int(atomic.LoadInt32(&s.inuseStreams))
 }
+
+// SetStreamsInUse sets streams in use counter, to be used for testing only
+func SetStreamsInUse(s *IDGenerator, val int32) {
+	atomic.StoreInt32(&s.inuseStreams, val)
+}
