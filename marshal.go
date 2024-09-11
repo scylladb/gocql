@@ -175,7 +175,7 @@ func Marshal(info TypeInfo, value interface{}) ([]byte, error) {
 //	CQL type                                | Go type (value)         | Note
 //	varchar, ascii, blob, text              | *string                 |
 //	varchar, ascii, blob, text              | *[]byte                 | non-nil buffer is reused
-//	bool                                    | *bool                   |
+//	boolean                                 | *bool                   |
 //	tinyint, smallint, int, bigint, counter | *integer types          |
 //	tinyint, smallint, int, bigint, counter | *big.Int                |
 //	tinyint, smallint, int, bigint, counter | *string                 | formatted as base 10 number
