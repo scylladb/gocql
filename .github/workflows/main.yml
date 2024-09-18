@@ -15,7 +15,9 @@ jobs:
       SCYLLA_IMAGE: scylladb/scylla:6.0.0
     steps:
       - uses: actions/checkout@v2
-      - uses: actions/setup-go@v2
+      - uses: actions/setup-go@v5
+        with:
+            go-version-file: go.mod
       - uses: actions/cache@v2
         id: gomod-cache
         with:
