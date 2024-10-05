@@ -53,14 +53,12 @@ jobs:
           fi
 
       - name: Start Jenkins job
-        uses: sylwiaszunejko/jenkins_client@main
+        uses: scylladb-actions/jenkins-client@v0.1.0
         with:
-          jenkins_job_name: 'scylla-drivers/gocql/extended-ci/longevity-large-partition-asymmetric-cluster-3h-test'
-          jenkins_job_parameters: '{"email_recipients": "scylla-drivers@scylladb.com", "scylla_version": "${{ steps.scylla-version.outputs.value }}", "extra_environment_variables": "SCT_STRESS_IMAGE.scylla-bench=scylladb/gocql-extended-ci:scylla-bench-${{ github.event.pull_request.head.sha }}"}'
-          jenkins_base_url: 'https://jenkins.scylladb.com/'
-          jenkins_user: ${{ secrets.JENKINS_USERNAME }}
-          jenkins_password: ${{ secrets.JENKINS_TOKEN }}
-          wait_for_result: 'True'
-          polling_interval: '120'
-          polling_timeout: '14000'
-          queue_max_timeout: '14000'
+          job_name: 'scylla-drivers/gocql/extended-ci/longevity-large-partition-asymmetric-cluster-3h-test'
+          job_parameters: '{"email_recipients": "scylla-drivers@scylladb.com", "scylla_version": "${{ steps.scylla-version.outputs.value }}", "extra_environment_variables": "SCT_STRESS_IMAGE.scylla-bench=scylladb/gocql-extended-ci:scylla-bench-${{ github.event.pull_request.head.sha }}"}'
+          base_url: 'https://jenkins.scylladb.com/'
+          user: ${{ secrets.JENKINS_USERNAME }}
+          password: ${{ secrets.JENKINS_TOKEN }}
+          wait_timeout: 1h
+          polling_interval: 1s
