@@ -181,11 +181,11 @@ func EncReflect(v reflect.Value) ([]byte, error) {
 		}
 		n, err := strconv.ParseInt(val, 10, 64)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal counter: can not marshal %#v %s", v.Interface(), err)
+			return nil, fmt.Errorf("failed to marshal counter: can not marshal (%T)(%[1]v) %s", v.Interface(), err)
 		}
 		return encInt64(n), nil
 	default:
-		return nil, fmt.Errorf("failed to marshal counter: unsupported value type (%T)(%#[1]v)", v.Interface())
+		return nil, fmt.Errorf("failed to marshal counter: unsupported value type (%T)(%[1]v)", v.Interface())
 	}
 }
 
