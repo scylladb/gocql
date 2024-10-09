@@ -6,10 +6,12 @@ package gocql
 import (
 	"testing"
 	"time"
+
+	"github.com/gocql/gocql/internal/testcmdline"
 )
 
 func TestBatch_Errors(t *testing.T) {
-	if *flagProto == 1 {
+	if *testcmdline.Proto == 1 {
 	}
 
 	session := createSession(t)

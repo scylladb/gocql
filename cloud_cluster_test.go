@@ -16,13 +16,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gocql/gocql"
-	"github.com/gocql/gocql/scyllacloud"
 	"sigs.k8s.io/yaml"
+
+	"github.com/gocql/gocql"
+	"github.com/gocql/gocql/internal/testcmdline"
+	"github.com/gocql/gocql/scyllacloud"
 )
 
 func TestCloudConnection(t *testing.T) {
-	if !*gocql.FlagRunSslTest {
+	if !*testcmdline.RunSslTest {
 		t.Skip("Skipping because SSL is not enabled on cluster")
 	}
 
