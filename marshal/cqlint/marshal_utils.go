@@ -157,7 +157,7 @@ func EncString(v string) ([]byte, error) {
 
 	n, err := strconv.ParseInt(v, 10, 32)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal int: can not marshal %#v %s", v, err)
+		return nil, fmt.Errorf("failed to marshal int: can not marshal (%T)(%[1]v) %s", v, err)
 	}
 	return []byte{byte(n >> 24), byte(n >> 16), byte(n >> 8), byte(n)}, nil
 }
@@ -178,7 +178,7 @@ func EncReflect(v reflect.Value) ([]byte, error) {
 	case reflect.String:
 		return EncString(v.String())
 	default:
-		return nil, fmt.Errorf("failed to marshal int: unsupported value type (%T)(%#[1]v)", v.Interface())
+		return nil, fmt.Errorf("failed to marshal int: unsupported value type (%T)(%[1]v)", v.Interface())
 	}
 }
 
