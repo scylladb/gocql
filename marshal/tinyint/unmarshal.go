@@ -71,7 +71,7 @@ func Unmarshal(data []byte, value interface{}) error {
 		rv := reflect.ValueOf(value)
 		rt := rv.Type()
 		if rt.Kind() != reflect.Ptr {
-			return fmt.Errorf("failed to unmarshal tinyint: unsupported value type %#v", value)
+			return fmt.Errorf("failed to unmarshal tinyint: unsupported value type (%T)(%[1]v)", v)
 		}
 		if rt.Elem().Kind() != reflect.Ptr {
 			return DecReflect(data, rv)
