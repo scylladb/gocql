@@ -11,7 +11,7 @@ import (
 var errWrongDataLen = fmt.Errorf("failed to unmarshal tinyint: the length of the data should less or equal then 1")
 
 func errNilReference(v interface{}) error {
-	return fmt.Errorf("failed to unmarshal tinyint: can not unmarshal into nil reference %#v)", v)
+	return fmt.Errorf("failed to unmarshal tinyint: can not unmarshal into nil reference(%T)(%[1]v)", v)
 }
 
 func DecInt8(p []byte, v *int8) error {
@@ -451,7 +451,7 @@ func DecReflect(p []byte, v reflect.Value) error {
 	case reflect.String:
 		return decReflectString(p, v)
 	default:
-		return fmt.Errorf("failed to unmarshal tinyint: unsupported value type %#v)", v.Interface())
+		return fmt.Errorf("failed to unmarshal tinyint: unsupported value type (%T)(%[1]v)", v.Interface())
 	}
 }
 
@@ -468,7 +468,7 @@ func DecReflectR(p []byte, v reflect.Value) error {
 	case reflect.String:
 		return decReflectStringR(p, v)
 	default:
-		return fmt.Errorf("failed to unmarshal tinyint: unsupported value type (%T)(%#[1]v)", v.Interface())
+		return fmt.Errorf("failed to unmarshal tinyint: unsupported value type (%T)(%[1]v)", v.Interface())
 	}
 }
 
