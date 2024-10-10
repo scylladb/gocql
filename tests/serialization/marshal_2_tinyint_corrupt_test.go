@@ -1,6 +1,7 @@
 package serialization_test
 
 import (
+	"math"
 	"math/big"
 	"testing"
 
@@ -44,11 +45,11 @@ func TestMarshalTinyintCorrupt(t *testing.T) {
 
 			serialization.NegativeMarshalSet{
 				Values: mod.Values{
-					int16(128), int32(128), int64(128), int(128),
-					"128", *big.NewInt(128),
-					int16(-129), int32(-129), int64(-129), int(-129),
-					"-129", *big.NewInt(-129),
-					uint16(256), uint32(256), uint64(256), uint(256),
+					int16(math.MaxInt8 + 1), int32(math.MaxInt8 + 1), int64(math.MaxInt8 + 1), int(math.MaxInt8 + 1),
+					uint8(math.MaxInt8 + 1), uint16(math.MaxInt8 + 1), uint32(math.MaxInt8 + 1), uint64(math.MaxInt8 + 1), uint(math.MaxInt8 + 1),
+					"128", *big.NewInt(math.MaxInt8 + 1),
+					int16(math.MinInt8 - 1), int32(math.MinInt8 - 1), int64(math.MinInt8 - 1), int(math.MinInt8 - 1),
+					"-129", *big.NewInt(math.MinInt8 - 1),
 				}.AddVariants(mod.All...),
 			}.Run("big_vals", t, marshal)
 
@@ -64,6 +65,20 @@ func TestMarshalTinyintCorrupt(t *testing.T) {
 					"", *big.NewInt(0),
 				}.AddVariants(mod.All...),
 			}.Run("big_data", t, unmarshal)
+
+			serialization.NegativeUnmarshalSet{
+				Data: []byte("\xff"),
+				Values: mod.Values{
+					uint8(0), uint16(0), uint32(0), uint64(0), uint(0),
+				}.AddVariants(mod.All...),
+			}.Run("neg_uints-1", t, unmarshal)
+
+			serialization.NegativeUnmarshalSet{
+				Data: []byte("\x80"),
+				Values: mod.Values{
+					uint8(0), uint16(0), uint32(0), uint64(0), uint(0),
+				}.AddVariants(mod.All...),
+			}.Run("neg_uints-128", t, unmarshal)
 		})
 	}
 }

@@ -81,6 +81,9 @@ func EncIntR(v *int) ([]byte, error) {
 }
 
 func EncUint8(v uint8) ([]byte, error) {
+	if v > math.MaxInt8 {
+		return nil, fmt.Errorf("failed to marshal tinyint: value %#v out of range", v)
+	}
 	return []byte{v}, nil
 }
 
@@ -92,7 +95,7 @@ func EncUint8R(v *uint8) ([]byte, error) {
 }
 
 func EncUint16(v uint16) ([]byte, error) {
-	if v > math.MaxUint8 {
+	if v > math.MaxInt8 {
 		return nil, fmt.Errorf("failed to marshal tinyint: value %#v out of range", v)
 	}
 	return []byte{byte(v)}, nil
@@ -106,7 +109,7 @@ func EncUint16R(v *uint16) ([]byte, error) {
 }
 
 func EncUint32(v uint32) ([]byte, error) {
-	if v > math.MaxUint8 {
+	if v > math.MaxInt8 {
 		return nil, fmt.Errorf("failed to marshal tinyint: value %#v out of range", v)
 	}
 	return []byte{byte(v)}, nil
@@ -120,7 +123,7 @@ func EncUint32R(v *uint32) ([]byte, error) {
 }
 
 func EncUint64(v uint64) ([]byte, error) {
-	if v > math.MaxUint8 {
+	if v > math.MaxInt8 {
 		return nil, fmt.Errorf("failed to marshal tinyint: value %#v out of range", v)
 	}
 	return []byte{byte(v)}, nil
@@ -134,7 +137,7 @@ func EncUint64R(v *uint64) ([]byte, error) {
 }
 
 func EncUint(v uint) ([]byte, error) {
-	if v > math.MaxUint8 {
+	if v > math.MaxInt8 {
 		return nil, fmt.Errorf("failed to marshal tinyint: value %#v out of range", v)
 	}
 	return []byte{byte(v)}, nil
@@ -190,11 +193,9 @@ func EncReflect(v reflect.Value) ([]byte, error) {
 			return nil, fmt.Errorf("failed to marshal tinyint: value (%T)(%[1]v) out of range", v.Interface())
 		}
 		return []byte{byte(val)}, nil
-	case reflect.Uint8:
-		return []byte{byte(v.Uint())}, nil
-	case reflect.Uint, reflect.Uint64, reflect.Uint32, reflect.Uint16:
+	case reflect.Uint, reflect.Uint64, reflect.Uint32, reflect.Uint16, reflect.Uint8:
 		val := v.Uint()
-		if val > math.MaxUint8 {
+		if val > math.MaxInt8 {
 			return nil, fmt.Errorf("failed to marshal tinyint: value (%T)(%[1]v) out of range", v.Interface())
 		}
 		return []byte{byte(val)}, nil

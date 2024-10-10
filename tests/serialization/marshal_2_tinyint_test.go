@@ -102,11 +102,6 @@ func TestMarshalTinyint(t *testing.T) {
 				Data:   []byte("\x80"),
 				Values: mod.Values{int8(-128), int16(-128), int32(-128), int64(-128), int(-128), "-128", *big.NewInt(-128)}.AddVariants(mod.All...),
 			}.Run("-128", t, marshal, unmarshal)
-
-			serialization.PositiveSet{
-				Data:   []byte("\xff"),
-				Values: mod.Values{uint8(255), uint16(255), uint32(255), uint64(255), uint(255)}.AddVariants(mod.All...),
-			}.Run("255", t, marshal, unmarshal)
 		})
 	}
 }
