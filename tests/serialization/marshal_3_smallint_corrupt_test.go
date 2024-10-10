@@ -1,6 +1,7 @@
 package serialization_test
 
 import (
+	"math"
 	"math/big"
 	"testing"
 
@@ -43,11 +44,11 @@ func TestMarshalSmallintCorrupt(t *testing.T) {
 		t.Run(tSuite.name, func(t *testing.T) {
 			serialization.NegativeMarshalSet{
 				Values: mod.Values{
-					int32(32768), int64(32768), int(32768),
-					"32768", *big.NewInt(32768),
-					int32(-32769), int64(-32769), int(-32769),
-					"-32769", *big.NewInt(-32769),
-					uint32(65536), uint64(65536), uint(65536),
+					int32(math.MaxInt16 + 1), int64(math.MaxInt16 + 1), int(math.MaxInt16 + 1),
+					uint16(math.MaxInt16 + 1), uint32(math.MaxInt16 + 1), uint64(math.MaxInt16 + 1), uint(math.MaxInt16 + 1),
+					"32768", *big.NewInt(math.MaxInt16 + 1),
+					int32(math.MinInt16 - 1), int64(math.MinInt16 - 1), int(math.MinInt16 - 1),
+					"-32769", *big.NewInt(math.MinInt16 - 1),
 				}.AddVariants(mod.All...),
 			}.Run("big_vals", t, marshal)
 
@@ -102,6 +103,34 @@ func TestMarshalSmallintCorrupt(t *testing.T) {
 				Data:   []byte("\xff\xff"),
 				Values: mod.Values{uint8(0)}.AddVariants(mod.All...),
 			}.Run("small_type_uint_65535", t, unmarshal)
+
+			serialization.NegativeUnmarshalSet{
+				Data: []byte("\xff\xff"),
+				Values: mod.Values{
+					uint8(0), uint16(0), uint32(0), uint64(0), uint(0),
+				}.AddVariants(mod.All...),
+			}.Run("neg_uints-1", t, unmarshal)
+
+			serialization.NegativeUnmarshalSet{
+				Data: []byte("\xff\x80"),
+				Values: mod.Values{
+					uint8(0), uint16(0), uint32(0), uint64(0), uint(0),
+				}.AddVariants(mod.All...),
+			}.Run("neg_uints_minInt8", t, unmarshal)
+
+			serialization.NegativeUnmarshalSet{
+				Data: []byte("\xff\x7f"),
+				Values: mod.Values{
+					uint8(0), uint16(0), uint32(0), uint64(0), uint(0),
+				}.AddVariants(mod.All...),
+			}.Run("neg_uints_minInt8-1", t, unmarshal)
+
+			serialization.NegativeUnmarshalSet{
+				Data: []byte("\x80\x00"),
+				Values: mod.Values{
+					uint8(0), uint16(0), uint32(0), uint64(0), uint(0),
+				}.AddVariants(mod.All...),
+			}.Run("neg_uints_minInt16", t, unmarshal)
 		})
 	}
 }

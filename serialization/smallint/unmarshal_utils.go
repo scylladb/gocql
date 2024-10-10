@@ -24,7 +24,7 @@ func DecInt8(p []byte, v *int8) error {
 	case 2:
 		val := decInt16(p)
 		if val > math.MaxInt8 || val < math.MinInt8 {
-			return fmt.Errorf("failed to unmarshal smallint: to unmarshal into int8, the data should be in the int8 range")
+			return fmt.Errorf("failed to unmarshal smallint: to unmarshal into int8, the data value should be in the int8 range")
 		}
 		*v = int8(val)
 	default:
@@ -162,7 +162,7 @@ func DecUint8(p []byte, v *uint8) error {
 		*v = 0
 	case 2:
 		if p[0] != 0 {
-			return fmt.Errorf("failed to unmarshal smallint: to unmarshal into uint8, the data should be in the uint8 range")
+			return fmt.Errorf("failed to unmarshal smallint: to unmarshal into uint8, the data value should be in the uint8 range")
 		}
 		*v = p[1]
 	default:
@@ -191,6 +191,9 @@ func DecUint16(p []byte, v *uint16) error {
 	case 0:
 		*v = 0
 	case 2:
+		if p[0] > math.MaxInt8 {
+			return fmt.Errorf("failed to unmarshal smallint: to unmarshal into uint16, the data value should be positive")
+		}
 		*v = uint16(p[0])<<8 | uint16(p[1])
 	default:
 		return errWrongDataLen
@@ -218,6 +221,9 @@ func DecUint32(p []byte, v *uint32) error {
 	case 0:
 		*v = 0
 	case 2:
+		if p[0] > math.MaxInt8 {
+			return fmt.Errorf("failed to unmarshal smallint: to unmarshal into uint32, the data value should be positive")
+		}
 		*v = uint32(p[0])<<8 | uint32(p[1])
 	default:
 		return errWrongDataLen
@@ -245,6 +251,9 @@ func DecUint64(p []byte, v *uint64) error {
 	case 0:
 		*v = 0
 	case 2:
+		if p[0] > math.MaxInt8 {
+			return fmt.Errorf("failed to unmarshal smallint: to unmarshal into uint64, the data value should be positive")
+		}
 		*v = decUint64(p)
 	default:
 		return errWrongDataLen
@@ -272,6 +281,9 @@ func DecUint(p []byte, v *uint) error {
 	case 0:
 		*v = 0
 	case 2:
+		if p[0] > math.MaxInt8 {
+			return fmt.Errorf("failed to unmarshal smallint: to unmarshal into uint, the data value should be positive")
+		}
 		*v = uint(p[0])<<8 | uint(p[1])
 	default:
 		return errWrongDataLen
@@ -388,7 +400,7 @@ func decReflectInt8(p []byte, v reflect.Value) error {
 	case 2:
 		val := decInt16(p)
 		if val > math.MaxInt8 || val < math.MinInt8 {
-			return fmt.Errorf("failed to unmarshal smallint: to unmarshal into %T, the data should be in the int8 range", v.Interface())
+			return fmt.Errorf("failed to unmarshal smallint: to unmarshal into %T, the data value should be in the int8 range", v.Interface())
 		}
 		v.SetInt(int64(val))
 	default:
@@ -415,7 +427,7 @@ func decReflectUint8(p []byte, v reflect.Value) error {
 		v.SetUint(0)
 	case 2:
 		if p[0] != 0 {
-			return fmt.Errorf("failed to unmarshal smallint: to unmarshal into %T, the data should be in the uint8 range", v.Interface())
+			return fmt.Errorf("failed to unmarshal smallint: to unmarshal into %T, the data value should be in the uint8 range", v.Interface())
 		}
 		v.SetUint(uint64(p[1]))
 	default:
@@ -429,7 +441,11 @@ func decReflectUints(p []byte, v reflect.Value) error {
 	case 0:
 		v.SetUint(0)
 	case 2:
-		v.SetUint(decUint64(p))
+		val := decUint64(p)
+		if val > math.MaxInt16 {
+			return fmt.Errorf("failed to unmarshal smallint: to unmarshal into %T, the data value should be positive", v.Interface())
+		}
+		v.SetUint(val)
 	default:
 		return errWrongDataLen
 	}

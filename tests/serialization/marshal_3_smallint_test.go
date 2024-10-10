@@ -160,13 +160,6 @@ func TestMarshalSmallint(t *testing.T) {
 					"256", *big.NewInt(256),
 				}.AddVariants(mod.All...),
 			}.Run("maxUint8+1", t, marshal, unmarshal)
-
-			serialization.PositiveSet{
-				Data: []byte("\xff\xff"),
-				Values: mod.Values{
-					uint16(65535), uint32(65535), uint64(65535), uint(65535),
-				}.AddVariants(mod.All...),
-			}.Run("maxUint16", t, marshal, unmarshal)
 		})
 	}
 }

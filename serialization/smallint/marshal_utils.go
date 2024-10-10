@@ -53,7 +53,7 @@ func EncInt64(v int64) ([]byte, error) {
 	if v > math.MaxInt16 || v < math.MinInt16 {
 		return nil, fmt.Errorf("failed to marshal smallint: value %#v out of range", v)
 	}
-	return []byte{byte(v >> 8), byte(v)}, nil
+	return encInt64(v), nil
 }
 
 func EncInt64R(v *int64) ([]byte, error) {
@@ -89,6 +89,9 @@ func EncUint8R(v *uint8) ([]byte, error) {
 }
 
 func EncUint16(v uint16) ([]byte, error) {
+	if v > math.MaxInt16 {
+		return nil, fmt.Errorf("failed to marshal smallint: value %#v out of range", v)
+	}
 	return []byte{byte(v >> 8), byte(v)}, nil
 }
 
@@ -100,7 +103,7 @@ func EncUint16R(v *uint16) ([]byte, error) {
 }
 
 func EncUint32(v uint32) ([]byte, error) {
-	if v > math.MaxUint16 {
+	if v > math.MaxInt16 {
 		return nil, fmt.Errorf("failed to marshal smallint: value %#v out of range", v)
 	}
 	return []byte{byte(v >> 8), byte(v)}, nil
@@ -114,10 +117,10 @@ func EncUint32R(v *uint32) ([]byte, error) {
 }
 
 func EncUint64(v uint64) ([]byte, error) {
-	if v > math.MaxUint16 {
+	if v > math.MaxInt16 {
 		return nil, fmt.Errorf("failed to marshal smallint: value %#v out of range", v)
 	}
-	return []byte{byte(v >> 8), byte(v)}, nil
+	return encUint64(v), nil
 }
 
 func EncUint64R(v *uint64) ([]byte, error) {
@@ -128,7 +131,7 @@ func EncUint64R(v *uint64) ([]byte, error) {
 }
 
 func EncUint(v uint) ([]byte, error) {
-	if v > math.MaxUint16 {
+	if v > math.MaxInt16 {
 		return nil, fmt.Errorf("failed to marshal smallint: value %#v out of range", v)
 	}
 	return []byte{byte(v >> 8), byte(v)}, nil
@@ -177,10 +180,22 @@ func EncStringR(v *string) ([]byte, error) {
 
 func EncReflect(v reflect.Value) ([]byte, error) {
 	switch v.Type().Kind() {
-	case reflect.Int, reflect.Int64, reflect.Int32, reflect.Int16, reflect.Int8:
-		return EncInt64(v.Int())
-	case reflect.Uint, reflect.Uint64, reflect.Uint32, reflect.Uint16, reflect.Uint8:
-		return EncUint64(v.Uint())
+	case reflect.Int16, reflect.Int8:
+		return encInt64(v.Int()), nil
+	case reflect.Int, reflect.Int64, reflect.Int32:
+		val := v.Int()
+		if val > math.MaxInt16 || val < math.MinInt16 {
+			return nil, fmt.Errorf("failed to marshal smallint: value (%T)(%[1]v) out of range", v.Interface())
+		}
+		return encInt64(val), nil
+	case reflect.Uint8:
+		return encUint64(v.Uint()), nil
+	case reflect.Uint, reflect.Uint64, reflect.Uint32, reflect.Uint16:
+		val := v.Uint()
+		if val > math.MaxInt16 {
+			return nil, fmt.Errorf("failed to marshal smallint: value (%T)(%[1]v) out of range", v.Interface())
+		}
+		return encUint64(val), nil
 	case reflect.String:
 		return EncString(v.String())
 	default:
@@ -196,5 +211,13 @@ func EncReflectR(v reflect.Value) ([]byte, error) {
 }
 
 func encInt16(v int16) []byte {
+	return []byte{byte(v >> 8), byte(v)}
+}
+
+func encInt64(v int64) []byte {
+	return []byte{byte(v >> 8), byte(v)}
+}
+
+func encUint64(v uint64) []byte {
 	return []byte{byte(v >> 8), byte(v)}
 }
