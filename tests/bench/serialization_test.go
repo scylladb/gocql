@@ -462,4 +462,253 @@ func BenchmarkSerialization(b *testing.B) {
 			})
 		})
 	})
+
+	b.Run("CustomTypes", func(b *testing.B) {
+		b.Run("SimpleTypes", func(b *testing.B) {
+			b.Run("Int", func(b *testing.B) {
+				type CustomInt int
+				tType := gocql.NewNativeType(4, gocql.TypeInt, "")
+				var val = CustomInt(42)
+				b.Run("Marshal", func(b *testing.B) {
+					for i := 0; i < b.N; i++ {
+						_, err := gocql.Marshal(tType, val)
+						if err != nil {
+							b.Fatal(err)
+						}
+					}
+				})
+				marshaled, err := gocql.Marshal(tType, val)
+				if err != nil {
+					b.Fatal(err)
+				}
+				b.Run("Unmarshal", func(b *testing.B) {
+					for i := 0; i < b.N; i++ {
+						var unmarshaled CustomInt
+						err = gocql.Unmarshal(tType, marshaled, &unmarshaled)
+						if err != nil {
+							b.Fatal(err)
+						}
+					}
+				})
+			})
+
+			cases := []struct {
+				name string
+				size int
+			}{
+				{"Small-100b", 100},
+				{"Medium-1kb", 1024},
+				{"Big-1M", 1024 * 1024},
+				{"Huge-10M", 10 * 1024 * 1024},
+			}
+
+			type CustomBlob []byte
+
+			for _, c := range cases {
+				b.Run("Blob"+c.name, func(b *testing.B) {
+					tType := gocql.NewNativeType(4, gocql.TypeBlob, "")
+					val := CustomBlob(generateRandomBinaryData(c.size))
+					b.Run("Marshal", func(b *testing.B) {
+						for i := 0; i < b.N; i++ {
+							_, err := gocql.Marshal(tType, val)
+							if err != nil {
+								b.Fatal(err)
+							}
+						}
+					})
+					marshaled, err := gocql.Marshal(tType, val)
+					if err != nil {
+						b.Fatal(err)
+					}
+					b.Run("Unmarshal", func(b *testing.B) {
+						for i := 0; i < b.N; i++ {
+							var unmarshaled CustomBlob
+							err = gocql.Unmarshal(tType, marshaled, &unmarshaled)
+							if err != nil {
+								b.Fatal(err)
+							}
+						}
+					})
+				})
+			}
+
+			type CustomString string
+
+			for _, c := range cases {
+				b.Run("Text"+c.name, func(b *testing.B) {
+					tType := gocql.NewNativeType(4, gocql.TypeText, "")
+					val := CustomString(generateRandomJSON(c.size))
+					b.Run("Marshal", func(b *testing.B) {
+						for i := 0; i < b.N; i++ {
+							_, err := gocql.Marshal(tType, val)
+							if err != nil {
+								b.Fatal(err)
+							}
+						}
+					})
+					marshaled, err := gocql.Marshal(tType, val)
+					if err != nil {
+						b.Fatal(err)
+					}
+					b.Run("Unmarshal", func(b *testing.B) {
+						for i := 0; i < b.N; i++ {
+							var unmarshaled CustomString
+							err = gocql.Unmarshal(tType, marshaled, &unmarshaled)
+							if err != nil {
+								b.Fatal(err)
+							}
+						}
+					})
+				})
+			}
+
+			b.Run("Duration", func(b *testing.B) {
+				tType := gocql.NewNativeType(4, gocql.TypeDuration, "")
+				type CustomDuration int64
+				val := CustomDuration(5 * time.Minute)
+				b.Run("Marshal", func(b *testing.B) {
+					for i := 0; i < b.N; i++ {
+						_, err := gocql.Marshal(tType, val)
+						if err != nil {
+							b.Fatal(err)
+						}
+					}
+				})
+				marshaled, err := gocql.Marshal(tType, val)
+				if err != nil {
+					b.Fatal(err)
+				}
+				b.Run("Unmarshal", func(b *testing.B) {
+					b.Skip("not supported yet")
+					for i := 0; i < b.N; i++ {
+						var unmarshaled CustomDuration
+						err = gocql.Unmarshal(tType, marshaled, &unmarshaled)
+						if err != nil {
+							b.Fatal(err)
+						}
+					}
+				})
+			})
+
+			b.Run("Timestamp", func(b *testing.B) {
+				tType := gocql.NewNativeType(4, gocql.TypeTimestamp, "")
+				type CustomTimestamp int64
+				val := CustomTimestamp(time.Now().Unix())
+				b.Run("Marshal", func(b *testing.B) {
+					for i := 0; i < b.N; i++ {
+						_, err := gocql.Marshal(tType, val)
+						if err != nil {
+							b.Fatal(err)
+						}
+					}
+				})
+				marshaled, err := gocql.Marshal(tType, val)
+				if err != nil {
+					b.Fatal(err)
+				}
+				b.Run("Unmarshal", func(b *testing.B) {
+					for i := 0; i < b.N; i++ {
+						var unmarshaled CustomTimestamp
+						err = gocql.Unmarshal(tType, marshaled, &unmarshaled)
+						if err != nil {
+							b.Fatal(err)
+						}
+					}
+				})
+			})
+		})
+
+		b.Run("ComplexTypes", func(b *testing.B) {
+			b.Run("List", func(b *testing.B) {
+				tType := gocql.CollectionType{
+					NativeType: gocql.NewNativeType(4, gocql.TypeList, ""),
+					Elem:       gocql.NewNativeType(4, gocql.TypeText, ""),
+				}
+				type CustomList []string
+				val := CustomList{"foo", "bar", "baz"}
+				b.Run("Marshal", func(b *testing.B) {
+					for i := 0; i < b.N; i++ {
+						_, err := gocql.Marshal(tType, val)
+						if err != nil {
+							b.Fatal(err)
+						}
+					}
+				})
+				marshaled, err := gocql.Marshal(tType, val)
+				if err != nil {
+					b.Fatal(err)
+				}
+				b.Run("Unmarshal", func(b *testing.B) {
+					for i := 0; i < b.N; i++ {
+						var unmarshaled CustomList
+						err = gocql.Unmarshal(tType, marshaled, &unmarshaled)
+						if err != nil {
+							b.Fatal(err)
+						}
+					}
+				})
+			})
+
+			b.Run("Map", func(b *testing.B) {
+				tType := gocql.CollectionType{
+					NativeType: gocql.NewNativeType(4, gocql.TypeMap, ""),
+					Key:        gocql.NewNativeType(4, gocql.TypeVarchar, ""),
+					Elem:       gocql.NewNativeType(4, gocql.TypeInt, ""),
+				}
+				type CustomMap map[string]int
+				val := CustomMap{"a": 1, "b": 2}
+				b.Run("Marshal", func(b *testing.B) {
+					for i := 0; i < b.N; i++ {
+						_, err := gocql.Marshal(tType, val)
+						if err != nil {
+							b.Fatal(err)
+						}
+					}
+				})
+				marshaled, err := gocql.Marshal(tType, val)
+				if err != nil {
+					b.Fatal(err)
+				}
+				b.Run("Unmarshal", func(b *testing.B) {
+					for i := 0; i < b.N; i++ {
+						var unmarshaled CustomMap
+						err = gocql.Unmarshal(tType, marshaled, &unmarshaled)
+						if err != nil {
+							b.Fatal(err)
+						}
+					}
+				})
+			})
+
+			b.Run("Set", func(b *testing.B) {
+				tType := gocql.CollectionType{
+					NativeType: gocql.NewNativeType(4, gocql.TypeList, ""),
+					Elem:       gocql.NewNativeType(4, gocql.TypeInt, ""),
+				}
+				type CustomSet []int
+				val := CustomSet{1, 2}
+				b.Run("Marshal", func(b *testing.B) {
+					for i := 0; i < b.N; i++ {
+						_, err := gocql.Marshal(tType, val)
+						if err != nil {
+							b.Fatal(err)
+						}
+					}
+				})
+				marshaled, err := gocql.Marshal(tType, val)
+				if err != nil {
+					b.Fatal(err)
+				}
+				b.Run("Unmarshal", func(b *testing.B) {
+					for i := 0; i < b.N; i++ {
+						var unmarshaled CustomSet
+						err = gocql.Unmarshal(tType, marshaled, &unmarshaled)
+						if err != nil {
+							b.Fatal(err)
+						}
+					}
+				})
+			})
+		})
+	})
 }
