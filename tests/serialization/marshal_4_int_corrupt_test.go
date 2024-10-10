@@ -7,7 +7,7 @@ import (
 	"github.com/gocql/gocql"
 	"github.com/gocql/gocql/internal/tests/serialization"
 	"github.com/gocql/gocql/internal/tests/serialization/mod"
-	"github.com/gocql/gocql/marshal/cqlint"
+	"github.com/gocql/gocql/serialization/cqlint"
 )
 
 func TestMarshalIntCorrupt(t *testing.T) {

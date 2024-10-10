@@ -7,7 +7,7 @@ import (
 	"github.com/gocql/gocql"
 	"github.com/gocql/gocql/internal/tests/serialization"
 	"github.com/gocql/gocql/internal/tests/serialization/mod"
-	"github.com/gocql/gocql/marshal/bigint"
+	"github.com/gocql/gocql/serialization/bigint"
 )
 
 func TestMarshalBigIntCorrupt(t *testing.T) {

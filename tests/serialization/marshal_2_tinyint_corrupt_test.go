@@ -7,7 +7,7 @@ import (
 	"github.com/gocql/gocql"
 	"github.com/gocql/gocql/internal/tests/serialization"
 	"github.com/gocql/gocql/internal/tests/serialization/mod"
-	"github.com/gocql/gocql/marshal/tinyint"
+	"github.com/gocql/gocql/serialization/tinyint"
 )
 
 func TestMarshalTinyintCorrupt(t *testing.T) {

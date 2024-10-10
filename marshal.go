@@ -20,11 +20,11 @@ import (
 
 	"gopkg.in/inf.v0"
 
-	"github.com/gocql/gocql/marshal/bigint"
-	"github.com/gocql/gocql/marshal/counter"
-	"github.com/gocql/gocql/marshal/cqlint"
-	"github.com/gocql/gocql/marshal/smallint"
-	"github.com/gocql/gocql/marshal/tinyint"
+	"github.com/gocql/gocql/serialization/bigint"
+	"github.com/gocql/gocql/serialization/counter"
+	"github.com/gocql/gocql/serialization/cqlint"
+	"github.com/gocql/gocql/serialization/smallint"
+	"github.com/gocql/gocql/serialization/tinyint"
 )
 
 var (
