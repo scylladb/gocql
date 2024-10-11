@@ -111,7 +111,10 @@ func EncUint32R(v *uint32) ([]byte, error) {
 }
 
 func EncUint64(v uint64) ([]byte, error) {
-	return []byte{byte(v >> 56), byte(v >> 48), byte(v >> 40), byte(v >> 32), byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v)}, nil
+	if v > math.MaxInt64 {
+		return nil, fmt.Errorf("failed to marshal bigint: value %#v out of range", v)
+	}
+	return encUint64(v), nil
 }
 
 func EncUint64R(v *uint64) ([]byte, error) {
@@ -122,6 +125,9 @@ func EncUint64R(v *uint64) ([]byte, error) {
 }
 
 func EncUint(v uint) ([]byte, error) {
+	if v > math.MaxInt64 {
+		return nil, fmt.Errorf("failed to marshal bigint: value %#v out of range", v)
+	}
 	return []byte{byte(v >> 56), byte(v >> 48), byte(v >> 40), byte(v >> 32), byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v)}, nil
 }
 
@@ -172,8 +178,14 @@ func EncReflect(v reflect.Value) ([]byte, error) {
 	switch v.Kind() {
 	case reflect.Int, reflect.Int64, reflect.Int32, reflect.Int16, reflect.Int8:
 		return EncInt64(v.Int())
-	case reflect.Uint, reflect.Uint64, reflect.Uint32, reflect.Uint16, reflect.Uint8:
-		return EncUint64(v.Uint())
+	case reflect.Uint32, reflect.Uint16, reflect.Uint8:
+		return encUint64(v.Uint()), nil
+	case reflect.Uint, reflect.Uint64:
+		val := v.Uint()
+		if val > math.MaxInt64 {
+			return nil, fmt.Errorf("failed to marshal bigint: value (%T)(%[1]v) out of range", v.Interface())
+		}
+		return encUint64(val), nil
 	case reflect.String:
 		val := v.String()
 		if val == "" {
@@ -197,5 +209,9 @@ func EncReflectR(v reflect.Value) ([]byte, error) {
 }
 
 func encInt64(v int64) []byte {
+	return []byte{byte(v >> 56), byte(v >> 48), byte(v >> 40), byte(v >> 32), byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v)}
+}
+
+func encUint64(v uint64) []byte {
 	return []byte{byte(v >> 56), byte(v >> 48), byte(v >> 40), byte(v >> 32), byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v)}
 }
