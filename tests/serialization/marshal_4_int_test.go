@@ -164,6 +164,40 @@ func TestMarshalInt(t *testing.T) {
 			}.Run("minInt16-1", t, marshal, unmarshal)
 
 			serialization.PositiveSet{
+				Data: []byte("\x00\x7f\xff\xff"),
+				Values: mod.Values{
+					int32(8388607), int64(8388607), int(8388607),
+					uint32(8388607), uint64(8388607), uint(8388607),
+					"8388607", *big.NewInt(8388607),
+				}.AddVariants(mod.All...),
+			}.Run("maxInt24", t, marshal, unmarshal)
+
+			serialization.PositiveSet{
+				Data: []byte("\xff\x80\x00\x00"),
+				Values: mod.Values{
+					int32(-8388608), int64(-8388608), int(-8388608),
+					"-8388608", *big.NewInt(-8388608),
+				}.AddVariants(mod.All...),
+			}.Run("minInt24", t, marshal, unmarshal)
+
+			serialization.PositiveSet{
+				Data: []byte("\x00\x80\x00\x00"),
+				Values: mod.Values{
+					int32(8388608), int64(8388608), int(8388608),
+					uint32(8388608), uint64(8388608), uint(8388608),
+					"8388608", *big.NewInt(8388608),
+				}.AddVariants(mod.All...),
+			}.Run("maxInt24+1", t, marshal, unmarshal)
+
+			serialization.PositiveSet{
+				Data: []byte("\xff\x7f\xff\xff"),
+				Values: mod.Values{
+					int32(-8388609), int64(-8388609), int(-8388609),
+					"-8388609", *big.NewInt(-8388609),
+				}.AddVariants(mod.All...),
+			}.Run("minInt24-1", t, marshal, unmarshal)
+
+			serialization.PositiveSet{
 				Data: []byte("\x7f\xff\xff\xff"),
 				Values: mod.Values{
 					int32(2147483647), int64(2147483647), int(2147483647),
@@ -217,11 +251,22 @@ func TestMarshalInt(t *testing.T) {
 			}.Run("maxUint16+1", t, marshal, unmarshal)
 
 			serialization.PositiveSet{
-				Data: []byte("\xff\xff\xff\xff"),
+				Data: []byte("\x00\xff\xff\xff"),
 				Values: mod.Values{
-					uint32(4294967295), uint64(4294967295), uint(4294967295),
+					uint32(16777215), uint64(16777215), uint(16777215),
+					int32(16777215), int64(16777215), int(16777215),
+					"16777215", *big.NewInt(16777215),
 				}.AddVariants(mod.All...),
-			}.Run("maxUint32", t, marshal, unmarshal)
+			}.Run("maxUint24", t, marshal, unmarshal)
+
+			serialization.PositiveSet{
+				Data: []byte("\x01\x00\x00\x00"),
+				Values: mod.Values{
+					uint32(16777216), uint64(16777216), uint(16777216),
+					int32(16777216), int64(16777216), int(16777216),
+					"16777216", *big.NewInt(16777216),
+				}.AddVariants(mod.All...),
+			}.Run("maxUint24+1", t, marshal, unmarshal)
 		})
 	}
 }
