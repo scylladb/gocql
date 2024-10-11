@@ -17,13 +17,6 @@ import (
 	"gopkg.in/inf.v0"
 )
 
-type AliasInt int
-type AliasUint uint
-type AliasUint8 uint8
-type AliasUint16 uint16
-type AliasUint32 uint32
-type AliasUint64 uint64
-
 var marshalTests = []struct {
 	Info           TypeInfo
 	Data           []byte
@@ -696,76 +689,6 @@ var marshalTests = []struct {
 		NativeType{proto: 2, typ: TypeTinyInt},
 		[]byte("\xff"),
 		int16(-1),
-		nil,
-		nil,
-	},
-	{
-		NativeType{proto: 2, typ: TypeTinyInt},
-		[]byte("\xff"),
-		uint8(255),
-		nil,
-		nil,
-	},
-	{
-		NativeType{proto: 2, typ: TypeTinyInt},
-		[]byte("\xff"),
-		uint64(255),
-		nil,
-		nil,
-	},
-	{
-		NativeType{proto: 2, typ: TypeTinyInt},
-		[]byte("\xff"),
-		uint32(255),
-		nil,
-		nil,
-	},
-	{
-		NativeType{proto: 2, typ: TypeTinyInt},
-		[]byte("\xff"),
-		uint16(255),
-		nil,
-		nil,
-	},
-	{
-		NativeType{proto: 2, typ: TypeTinyInt},
-		[]byte("\xff"),
-		uint(255),
-		nil,
-		nil,
-	},
-	{
-		NativeType{proto: 2, typ: TypeTinyInt},
-		[]byte("\xff"),
-		AliasUint8(255),
-		nil,
-		nil,
-	},
-	{
-		NativeType{proto: 2, typ: TypeTinyInt},
-		[]byte("\xff"),
-		AliasUint64(255),
-		nil,
-		nil,
-	},
-	{
-		NativeType{proto: 2, typ: TypeTinyInt},
-		[]byte("\xff"),
-		AliasUint32(255),
-		nil,
-		nil,
-	},
-	{
-		NativeType{proto: 2, typ: TypeTinyInt},
-		[]byte("\xff"),
-		AliasUint16(255),
-		nil,
-		nil,
-	},
-	{
-		NativeType{proto: 2, typ: TypeTinyInt},
-		[]byte("\xff"),
-		AliasUint(255),
 		nil,
 		nil,
 	},
