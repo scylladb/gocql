@@ -163,6 +163,40 @@ func TestMarshalCounter(t *testing.T) {
 			}.Run("minInt16-1", t, marshal, unmarshal)
 
 			serialization.PositiveSet{
+				Data: []byte("\x00\x00\x00\x00\x00\x7f\xff\xff"),
+				Values: mod.Values{
+					int32(8388607), int64(8388607), int(8388607),
+					uint32(8388607), uint64(8388607), uint(8388607),
+					"8388607", *big.NewInt(8388607),
+				}.AddVariants(mod.All...),
+			}.Run("maxInt24", t, marshal, unmarshal)
+
+			serialization.PositiveSet{
+				Data: []byte("\xff\xff\xff\xff\xff\x80\x00\x00"),
+				Values: mod.Values{
+					int32(-8388608), int64(-8388608), int(-8388608),
+					"-8388608", *big.NewInt(-8388608),
+				}.AddVariants(mod.All...),
+			}.Run("minInt24", t, marshal, unmarshal)
+
+			serialization.PositiveSet{
+				Data: []byte("\x00\x00\x00\x00\x00\x80\x00\x00"),
+				Values: mod.Values{
+					int32(8388608), int64(8388608), int(8388608),
+					uint32(8388608), uint64(8388608), uint(8388608),
+					"8388608", *big.NewInt(8388608),
+				}.AddVariants(mod.All...),
+			}.Run("maxInt24+1", t, marshal, unmarshal)
+
+			serialization.PositiveSet{
+				Data: []byte("\xff\xff\xff\xff\xff\x7f\xff\xff"),
+				Values: mod.Values{
+					int32(-8388609), int64(-8388609), int(-8388609),
+					"-8388609", *big.NewInt(-8388609),
+				}.AddVariants(mod.All...),
+			}.Run("minInt24-1", t, marshal, unmarshal)
+
+			serialization.PositiveSet{
 				Data: []byte("\x00\x00\x00\x00\x7f\xff\xff\xff"),
 				Values: mod.Values{
 					int32(2147483647), int64(2147483647), int(2147483647),
@@ -195,6 +229,108 @@ func TestMarshalCounter(t *testing.T) {
 					"-2147483649", *big.NewInt(-2147483649),
 				}.AddVariants(mod.All...),
 			}.Run("minInt32-1", t, marshal, unmarshal)
+
+			serialization.PositiveSet{
+				Data: []byte("\x00\x00\x00\x7f\xff\xff\xff\xff"),
+				Values: mod.Values{
+					int64(549755813887), int(549755813887),
+					uint64(549755813887), uint(549755813887),
+					"549755813887", *big.NewInt(549755813887),
+				}.AddVariants(mod.All...),
+			}.Run("maxInt40", t, marshal, unmarshal)
+
+			serialization.PositiveSet{
+				Data: []byte("\xff\xff\xff\x80\x00\x00\x00\x00"),
+				Values: mod.Values{
+					int64(-549755813888), int(-549755813888),
+					"-549755813888", *big.NewInt(-549755813888),
+				}.AddVariants(mod.All...),
+			}.Run("minInt40", t, marshal, unmarshal)
+
+			serialization.PositiveSet{
+				Data: []byte("\x00\x00\x00\x80\x00\x00\x00\x00"),
+				Values: mod.Values{
+					int64(549755813888), int(549755813888),
+					uint64(549755813888), uint(549755813888),
+					"549755813888", *big.NewInt(549755813888),
+				}.AddVariants(mod.All...),
+			}.Run("maxInt40+1", t, marshal, unmarshal)
+
+			serialization.PositiveSet{
+				Data: []byte("\xff\xff\xff\x7f\xff\xff\xff\xff"),
+				Values: mod.Values{
+					int64(-549755813889), int(-549755813889),
+					"-549755813889", *big.NewInt(-549755813889),
+				}.AddVariants(mod.All...),
+			}.Run("minInt40-1", t, marshal, unmarshal)
+
+			serialization.PositiveSet{
+				Data: []byte("\x00\x00\x7f\xff\xff\xff\xff\xff"),
+				Values: mod.Values{
+					int64(140737488355327), int(140737488355327),
+					uint64(140737488355327), uint(140737488355327),
+					"140737488355327", *big.NewInt(140737488355327),
+				}.AddVariants(mod.All...),
+			}.Run("maxInt48", t, marshal, unmarshal)
+
+			serialization.PositiveSet{
+				Data: []byte("\xff\xff\x80\x00\x00\x00\x00\x00"),
+				Values: mod.Values{
+					int64(-140737488355328), int(-140737488355328),
+					"-140737488355328", *big.NewInt(-140737488355328),
+				}.AddVariants(mod.All...),
+			}.Run("minInt48", t, marshal, unmarshal)
+
+			serialization.PositiveSet{
+				Data: []byte("\x00\x00\x80\x00\x00\x00\x00\x00"),
+				Values: mod.Values{
+					int64(140737488355328), int(140737488355328),
+					uint64(140737488355328), uint(140737488355328),
+					"140737488355328", *big.NewInt(140737488355328),
+				}.AddVariants(mod.All...),
+			}.Run("maxInt48+1", t, marshal, unmarshal)
+
+			serialization.PositiveSet{
+				Data: []byte("\xff\xff\x7f\xff\xff\xff\xff\xff"),
+				Values: mod.Values{
+					int64(-140737488355329), int(-140737488355329),
+					"-140737488355329", *big.NewInt(-140737488355329),
+				}.AddVariants(mod.All...),
+			}.Run("minInt48-1", t, marshal, unmarshal)
+
+			serialization.PositiveSet{
+				Data: []byte("\x00\x7f\xff\xff\xff\xff\xff\xff"),
+				Values: mod.Values{
+					int64(36028797018963967), int(36028797018963967),
+					uint64(36028797018963967), uint(36028797018963967),
+					"36028797018963967", *big.NewInt(36028797018963967),
+				}.AddVariants(mod.All...),
+			}.Run("maxInt56", t, marshal, unmarshal)
+
+			serialization.PositiveSet{
+				Data: []byte("\xff\x80\x00\x00\x00\x00\x00\x00"),
+				Values: mod.Values{
+					int64(-36028797018963968), int(-36028797018963968),
+					"-36028797018963968", *big.NewInt(-36028797018963968),
+				}.AddVariants(mod.All...),
+			}.Run("minInt56", t, marshal, unmarshal)
+
+			serialization.PositiveSet{
+				Data: []byte("\x00\x80\x00\x00\x00\x00\x00\x00"),
+				Values: mod.Values{
+					int64(36028797018963968), int(36028797018963968),
+					uint64(36028797018963968), uint(36028797018963968),
+					"36028797018963968", *big.NewInt(36028797018963968),
+				}.AddVariants(mod.All...),
+			}.Run("maxInt56+1", t, marshal, unmarshal)
+
+			serialization.PositiveSet{
+				Data: []byte("\xff\x7f\xff\xff\xff\xff\xff\xff"),
+				Values: mod.Values{
+					int64(-36028797018963969), int(-36028797018963969),
+					"-36028797018963969", *big.NewInt(-36028797018963969),
+				}.AddVariants(mod.All...),
+			}.Run("minInt56-1", t, marshal, unmarshal)
 
 			serialization.PositiveSet{
 				Data: []byte("\x7f\xff\xff\xff\xff\xff\xff\xff"),
@@ -250,6 +386,24 @@ func TestMarshalCounter(t *testing.T) {
 			}.Run("maxUint16+1", t, marshal, unmarshal)
 
 			serialization.PositiveSet{
+				Data: []byte("\x00\x00\x00\x00\x00\xff\xff\xff"),
+				Values: mod.Values{
+					uint32(16777215), uint64(16777215), uint(16777215),
+					int32(16777215), int64(16777215), int(16777215),
+					"16777215", *big.NewInt(16777215),
+				}.AddVariants(mod.All...),
+			}.Run("maxUint24", t, marshal, unmarshal)
+
+			serialization.PositiveSet{
+				Data: []byte("\x00\x00\x00\x00\x01\x00\x00\x00"),
+				Values: mod.Values{
+					uint32(16777216), uint64(16777216), uint(16777216),
+					int32(16777216), int64(16777216), int(16777216),
+					"16777216", *big.NewInt(16777216),
+				}.AddVariants(mod.All...),
+			}.Run("maxUint24+1", t, marshal, unmarshal)
+
+			serialization.PositiveSet{
 				Data: []byte("\x00\x00\x00\x00\xff\xff\xff\xff"),
 				Values: mod.Values{
 					uint32(4294967295), uint64(4294967295), uint(4294967295),
@@ -268,11 +422,58 @@ func TestMarshalCounter(t *testing.T) {
 			}.Run("maxUint32+1", t, marshal, unmarshal)
 
 			serialization.PositiveSet{
-				Data: []byte("\xff\xff\xff\xff\xff\xff\xff\xff"),
+				Data: []byte("\x00\x00\x00\xff\xff\xff\xff\xff"),
 				Values: mod.Values{
-					uint64(18446744073709551615), uint(18446744073709551615),
+					uint64(1099511627775), uint(1099511627775),
+					int64(1099511627775), int(1099511627775),
+					"1099511627775", *big.NewInt(1099511627775),
 				}.AddVariants(mod.All...),
-			}.Run("maxUint64", t, marshal, unmarshal)
+			}.Run("maxUint40", t, marshal, unmarshal)
+
+			serialization.PositiveSet{
+				Data: []byte("\x00\x00\x01\x00\x00\x00\x00\x00"),
+				Values: mod.Values{
+					uint64(1099511627776), uint(1099511627776),
+					int64(1099511627776), int(1099511627776),
+					"1099511627776", *big.NewInt(1099511627776),
+				}.AddVariants(mod.All...),
+			}.Run("maxUint40+1", t, marshal, unmarshal)
+
+			serialization.PositiveSet{
+				Data: []byte("\x00\x00\xff\xff\xff\xff\xff\xff"),
+				Values: mod.Values{
+					uint64(281474976710655), uint(281474976710655),
+					int64(281474976710655), int(281474976710655),
+					"281474976710655", *big.NewInt(281474976710655),
+				}.AddVariants(mod.All...),
+			}.Run("maxUint48", t, marshal, unmarshal)
+
+			serialization.PositiveSet{
+				Data: []byte("\x00\x01\x00\x00\x00\x00\x00\x00"),
+				Values: mod.Values{
+					uint64(281474976710656), uint(281474976710656),
+					int64(281474976710656), int(281474976710656),
+					"281474976710656", *big.NewInt(281474976710656),
+				}.AddVariants(mod.All...),
+			}.Run("maxUint48+1", t, marshal, unmarshal)
+
+			serialization.PositiveSet{
+				Data: []byte("\x00\xff\xff\xff\xff\xff\xff\xff"),
+				Values: mod.Values{
+					uint64(72057594037927935), uint(72057594037927935),
+					int64(72057594037927935), int(72057594037927935),
+					"72057594037927935", *big.NewInt(72057594037927935),
+				}.AddVariants(mod.All...),
+			}.Run("maxUint56", t, marshal, unmarshal)
+
+			serialization.PositiveSet{
+				Data: []byte("\x01\x00\x00\x00\x00\x00\x00\x00"),
+				Values: mod.Values{
+					uint64(72057594037927936), uint(72057594037927936),
+					int64(72057594037927936), int(72057594037927936),
+					"72057594037927936", *big.NewInt(72057594037927936),
+				}.AddVariants(mod.All...),
+			}.Run("maxUint56+1", t, marshal, unmarshal)
 		})
 	}
 }

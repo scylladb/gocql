@@ -24,7 +24,7 @@ func DecInt8(p []byte, v *int8) error {
 	case 8:
 		val := decInt64(p)
 		if val > math.MaxInt8 || val < math.MinInt8 {
-			return fmt.Errorf("failed to unmarshal counter: to unmarshal into int8, the data should be in the int8 range")
+			return fmt.Errorf("failed to unmarshal counter: to unmarshal into int8, the data value should be in the int8 range")
 		}
 		*v = int8(val)
 	default:
@@ -47,7 +47,7 @@ func DecInt8R(p []byte, v **int8) error {
 	case 8:
 		val := decInt64(p)
 		if val > math.MaxInt8 || val < math.MinInt8 {
-			return fmt.Errorf("failed to unmarshal counter: to unmarshal into int8, the data should be in the int8 range")
+			return fmt.Errorf("failed to unmarshal counter: to unmarshal into int8, the data value should be in the int8 range")
 		}
 		tmp := int8(val)
 		*v = &tmp
@@ -67,7 +67,7 @@ func DecInt16(p []byte, v *int16) error {
 	case 8:
 		val := decInt64(p)
 		if val > math.MaxInt16 || val < math.MinInt16 {
-			return fmt.Errorf("failed to unmarshal counter: to unmarshal into int16, the data should be in the int16 range")
+			return fmt.Errorf("failed to unmarshal counter: to unmarshal into int16, the data value should be in the int16 range")
 		}
 		*v = int16(val)
 	default:
@@ -90,7 +90,7 @@ func DecInt16R(p []byte, v **int16) error {
 	case 8:
 		val := decInt64(p)
 		if val > math.MaxInt16 || val < math.MinInt16 {
-			return fmt.Errorf("failed to unmarshal counter: to unmarshal into int16, the data should be in the int16 range")
+			return fmt.Errorf("failed to unmarshal counter: to unmarshal into int16, the data value should be in the int16 range")
 		}
 		tmp := int16(val)
 		*v = &tmp
@@ -110,7 +110,7 @@ func DecInt32(p []byte, v *int32) error {
 	case 8:
 		val := decInt64(p)
 		if val > math.MaxInt32 || val < math.MinInt32 {
-			return fmt.Errorf("failed to unmarshal counter: to unmarshal into int32, the data should be in the int32 range")
+			return fmt.Errorf("failed to unmarshal counter: to unmarshal into int32, the data value should be in the int32 range")
 		}
 		*v = int32(val)
 	default:
@@ -133,7 +133,7 @@ func DecInt32R(p []byte, v **int32) error {
 	case 8:
 		val := decInt64(p)
 		if val > math.MaxInt32 || val < math.MinInt32 {
-			return fmt.Errorf("failed to unmarshal counter: to unmarshal into int32, the data should be in the int32 range")
+			return fmt.Errorf("failed to unmarshal counter: to unmarshal into int32, the data value should be in the int32 range")
 		}
 		tmp := int32(val)
 		*v = &tmp
@@ -222,7 +222,7 @@ func DecUint8(p []byte, v *uint8) error {
 		*v = 0
 	case 8:
 		if p[0] != 0 || p[1] != 0 || p[2] != 0 || p[3] != 0 || p[4] != 0 || p[5] != 0 || p[6] != 0 {
-			return fmt.Errorf("failed to unmarshal counter: to unmarshal into uint8, the data should be in the uint8 range")
+			return fmt.Errorf("failed to unmarshal counter: to unmarshal into uint8, the data value should be in the uint8 range")
 		}
 		*v = p[7]
 	default:
@@ -244,7 +244,7 @@ func DecUint8R(p []byte, v **uint8) error {
 		}
 	case 8:
 		if p[0] != 0 || p[1] != 0 || p[2] != 0 || p[3] != 0 || p[4] != 0 || p[5] != 0 || p[6] != 0 {
-			return fmt.Errorf("failed to unmarshal counter: to unmarshal into uint8, the data should be in the uint8 range")
+			return fmt.Errorf("failed to unmarshal counter: to unmarshal into uint8, the data value should be in the uint8 range")
 		}
 		val := p[7]
 		*v = &val
@@ -263,7 +263,7 @@ func DecUint16(p []byte, v *uint16) error {
 		*v = 0
 	case 8:
 		if p[0] != 0 || p[1] != 0 || p[2] != 0 || p[3] != 0 || p[4] != 0 || p[5] != 0 {
-			return fmt.Errorf("failed to unmarshal counter: to unmarshal into uint16, the data should be in the uint16 range")
+			return fmt.Errorf("failed to unmarshal counter: to unmarshal into uint16, the data value should be in the uint16 range")
 		}
 		*v = uint16(p[6])<<8 | uint16(p[7])
 	default:
@@ -285,7 +285,7 @@ func DecUint16R(p []byte, v **uint16) error {
 		}
 	case 8:
 		if p[0] != 0 || p[1] != 0 || p[2] != 0 || p[3] != 0 || p[4] != 0 || p[5] != 0 {
-			return fmt.Errorf("failed to unmarshal counter: to unmarshal into uint16, the data should be in the uint16 range")
+			return fmt.Errorf("failed to unmarshal counter: to unmarshal into uint16, the data value should be in the uint16 range")
 		}
 		val := uint16(p[6])<<8 | uint16(p[7])
 		*v = &val
@@ -304,7 +304,7 @@ func DecUint32(p []byte, v *uint32) error {
 		*v = 0
 	case 8:
 		if p[0] != 0 || p[1] != 0 || p[2] != 0 || p[3] != 0 {
-			return fmt.Errorf("failed to unmarshal counter: to unmarshal into uint32, the data should be in the uint32 range")
+			return fmt.Errorf("failed to unmarshal counter: to unmarshal into uint32, the data value should be in the uint32 range")
 		}
 		*v = uint32(p[4])<<24 | uint32(p[5])<<16 | uint32(p[6])<<8 | uint32(p[7])
 	default:
@@ -326,7 +326,7 @@ func DecUint32R(p []byte, v **uint32) error {
 		}
 	case 8:
 		if p[0] != 0 || p[1] != 0 || p[2] != 0 || p[3] != 0 {
-			return fmt.Errorf("failed to unmarshal counter: to unmarshal into uint32, the data should be in the uint32 range")
+			return fmt.Errorf("failed to unmarshal counter: to unmarshal into uint32, the data value should be in the uint32 range")
 		}
 		val := uint32(p[4])<<24 | uint32(p[5])<<16 | uint32(p[6])<<8 | uint32(p[7])
 		*v = &val
@@ -344,6 +344,9 @@ func DecUint64(p []byte, v *uint64) error {
 	case 0:
 		*v = 0
 	case 8:
+		if p[0] > math.MaxInt8 {
+			return fmt.Errorf("failed to unmarshal counter: to unmarshal into uint64, the data value should be positive")
+		}
 		*v = decUint64(p)
 	default:
 		return errWrongDataLen
@@ -363,6 +366,9 @@ func DecUint64R(p []byte, v **uint64) error {
 			*v = new(uint64)
 		}
 	case 8:
+		if p[0] > math.MaxInt8 {
+			return fmt.Errorf("failed to unmarshal counter: to unmarshal into uint64, the data value should be positive")
+		}
 		val := decUint64(p)
 		*v = &val
 	default:
@@ -379,6 +385,9 @@ func DecUint(p []byte, v *uint) error {
 	case 0:
 		*v = 0
 	case 8:
+		if p[0] > math.MaxInt8 {
+			return fmt.Errorf("failed to unmarshal counter: to unmarshal into uint, the data value should be positive")
+		}
 		*v = uint(p[0])<<56 | uint(p[1])<<48 | uint(p[2])<<40 | uint(p[3])<<32 | uint(p[4])<<24 | uint(p[5])<<16 | uint(p[6])<<8 | uint(p[7])
 	default:
 		return errWrongDataLen
@@ -398,6 +407,9 @@ func DecUintR(p []byte, v **uint) error {
 			*v = new(uint)
 		}
 	case 8:
+		if p[0] > math.MaxInt8 {
+			return fmt.Errorf("failed to unmarshal counter: to unmarshal into uint, the data value should be positive")
+		}
 		val := uint(p[0])<<56 | uint(p[1])<<48 | uint(p[2])<<40 | uint(p[3])<<32 | uint(p[4])<<24 | uint(p[5])<<16 | uint(p[6])<<8 | uint(p[7])
 		*v = &val
 	default:
@@ -516,7 +528,7 @@ func decReflectInt8(p []byte, v reflect.Value) error {
 	case 8:
 		val := decInt64(p)
 		if val > math.MaxInt8 || val < math.MinInt8 {
-			return fmt.Errorf("failed to unmarshal counter: to unmarshal into %T, the data should be in the int8 range", v.Interface())
+			return fmt.Errorf("failed to unmarshal counter: to unmarshal into %T, the data value should be in the int8 range", v.Interface())
 		}
 		v.SetInt(val)
 	default:
@@ -532,7 +544,7 @@ func decReflectInt16(p []byte, v reflect.Value) error {
 	case 8:
 		val := decInt64(p)
 		if val > math.MaxInt16 || val < math.MinInt16 {
-			return fmt.Errorf("failed to unmarshal counter: to unmarshal into %T, the data should be in the int16 range", v.Interface())
+			return fmt.Errorf("failed to unmarshal counter: to unmarshal into %T, the data value should be in the int16 range", v.Interface())
 		}
 		v.SetInt(val)
 	default:
@@ -548,7 +560,7 @@ func decReflectInt32(p []byte, v reflect.Value) error {
 	case 8:
 		val := decInt64(p)
 		if val > math.MaxInt32 || val < math.MinInt32 {
-			return fmt.Errorf("failed to unmarshal counter: to unmarshal into %T, the data should be in the int32 range", v.Interface())
+			return fmt.Errorf("failed to unmarshal counter: to unmarshal into %T, the data value should be in the int32 range", v.Interface())
 		}
 		v.SetInt(val)
 	default:
@@ -575,7 +587,7 @@ func decReflectUint8(p []byte, v reflect.Value) error {
 		v.SetUint(0)
 	case 8:
 		if p[0] != 0 || p[1] != 0 || p[2] != 0 || p[3] != 0 || p[4] != 0 || p[5] != 0 || p[6] != 0 {
-			return fmt.Errorf("failed to unmarshal counter: to unmarshal into %T, the data should be in the uint8 range", v.Interface())
+			return fmt.Errorf("failed to unmarshal counter: to unmarshal into %T, the data value should be in the uint8 range", v.Interface())
 		}
 		v.SetUint(uint64(p[7]))
 	default:
@@ -590,7 +602,7 @@ func decReflectUint16(p []byte, v reflect.Value) error {
 		v.SetUint(0)
 	case 8:
 		if p[0] != 0 || p[1] != 0 || p[2] != 0 || p[3] != 0 || p[4] != 0 || p[5] != 0 {
-			return fmt.Errorf("failed to unmarshal counter: to unmarshal into %T, the data should be in the uint16 range", v.Interface())
+			return fmt.Errorf("failed to unmarshal counter: to unmarshal into %T, the data value should be in the uint16 range", v.Interface())
 		}
 		v.SetUint(uint64(p[6])<<8 | uint64(p[7]))
 	default:
@@ -605,7 +617,7 @@ func decReflectUint32(p []byte, v reflect.Value) error {
 		v.SetUint(0)
 	case 8:
 		if p[0] != 0 || p[1] != 0 || p[2] != 0 || p[3] != 0 {
-			return fmt.Errorf("failed to unmarshal counter: to unmarshal into %T, the data should be in the uint32 range", v.Interface())
+			return fmt.Errorf("failed to unmarshal counter: to unmarshal into %T, the data value should be in the uint32 range", v.Interface())
 		}
 		v.SetUint(uint64(p[4])<<24 | uint64(p[5])<<16 | uint64(p[6])<<8 | uint64(p[7]))
 	default:
@@ -619,6 +631,9 @@ func decReflectUints(p []byte, v reflect.Value) error {
 	case 0:
 		v.SetUint(0)
 	case 8:
+		if p[0] > math.MaxInt8 {
+			return fmt.Errorf("failed to unmarshal counter: to unmarshal into %T, the data value should be positive", v.Interface())
+		}
 		v.SetUint(decUint64(p))
 	default:
 		return errWrongDataLen
@@ -678,7 +693,7 @@ func decReflectInt8R(p []byte, v reflect.Value) error {
 	case 8:
 		val := decInt64(p)
 		if val > math.MaxInt8 || val < math.MinInt8 {
-			return fmt.Errorf("failed to unmarshal counter: to unmarshal into %T, the data should be in the int8 range", v.Interface())
+			return fmt.Errorf("failed to unmarshal counter: to unmarshal into %T, the data value should be in the int8 range", v.Interface())
 		}
 		newVal := reflect.New(v.Type().Elem().Elem())
 		newVal.Elem().SetInt(val)
@@ -696,7 +711,7 @@ func decReflectInt16R(p []byte, v reflect.Value) error {
 	case 8:
 		val := decInt64(p)
 		if val > math.MaxInt16 || val < math.MinInt16 {
-			return fmt.Errorf("failed to unmarshal counter: to unmarshal into %T, the data should be in the int16 range", v.Interface())
+			return fmt.Errorf("failed to unmarshal counter: to unmarshal into %T, the data value should be in the int16 range", v.Interface())
 		}
 		newVal := reflect.New(v.Type().Elem().Elem())
 		newVal.Elem().SetInt(val)
@@ -714,7 +729,7 @@ func decReflectInt32R(p []byte, v reflect.Value) error {
 	case 8:
 		val := decInt64(p)
 		if val > math.MaxInt32 || val < math.MinInt32 {
-			return fmt.Errorf("failed to unmarshal counter: to unmarshal into %T, the data should be in the int32 range", v.Interface())
+			return fmt.Errorf("failed to unmarshal counter: to unmarshal into %T, the data value should be in the int32 range", v.Interface())
 		}
 		newVal := reflect.New(v.Type().Elem().Elem())
 		newVal.Elem().SetInt(val)
@@ -746,7 +761,7 @@ func decReflectUint8R(p []byte, v reflect.Value) error {
 	case 8:
 		newVal := reflect.New(v.Type().Elem().Elem())
 		if p[0] != 0 || p[1] != 0 || p[2] != 0 || p[3] != 0 || p[4] != 0 || p[5] != 0 || p[6] != 0 {
-			return fmt.Errorf("failed to unmarshal counter: to unmarshal into %T, the data should be in the uint8 range", v.Interface())
+			return fmt.Errorf("failed to unmarshal counter: to unmarshal into %T, the data value should be in the uint8 range", v.Interface())
 		}
 		newVal.Elem().SetUint(uint64(p[7]))
 		v.Elem().Set(newVal)
@@ -763,7 +778,7 @@ func decReflectUint16R(p []byte, v reflect.Value) error {
 	case 8:
 		newVal := reflect.New(v.Type().Elem().Elem())
 		if p[0] != 0 || p[1] != 0 || p[2] != 0 || p[3] != 0 || p[4] != 0 || p[5] != 0 {
-			return fmt.Errorf("failed to unmarshal counter: to unmarshal into %T, the data should be in the uint16 range", v.Interface())
+			return fmt.Errorf("failed to unmarshal counter: to unmarshal into %T, the data value should be in the uint16 range", v.Interface())
 		}
 		newVal.Elem().SetUint(uint64(p[6])<<8 | uint64(p[7]))
 		v.Elem().Set(newVal)
@@ -780,7 +795,7 @@ func decReflectUint32R(p []byte, v reflect.Value) error {
 	case 8:
 		newVal := reflect.New(v.Type().Elem().Elem())
 		if p[0] != 0 || p[1] != 0 || p[2] != 0 || p[3] != 0 {
-			return fmt.Errorf("failed to unmarshal counter: to unmarshal into %T, the data should be in the uint32 range", v.Interface())
+			return fmt.Errorf("failed to unmarshal counter: to unmarshal into %T, the data value should be in the uint32 range", v.Interface())
 		}
 		newVal.Elem().SetUint(uint64(p[4])<<24 | uint64(p[5])<<16 | uint64(p[6])<<8 | uint64(p[7]))
 		v.Elem().Set(newVal)
@@ -795,6 +810,9 @@ func decReflectUintsR(p []byte, v reflect.Value) error {
 	case 0:
 		v.Elem().Set(decReflectNullableR(p, v))
 	case 8:
+		if p[0] > math.MaxInt8 {
+			return fmt.Errorf("failed to unmarshal counter: to unmarshal into %T, the data value should be positive", v.Interface())
+		}
 		val := reflect.New(v.Type().Elem().Elem())
 		val.Elem().SetUint(decUint64(p))
 		v.Elem().Set(val)

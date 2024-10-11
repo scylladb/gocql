@@ -1,6 +1,7 @@
 package serialization_test
 
 import (
+	"math"
 	"math/big"
 	"testing"
 
@@ -44,8 +45,9 @@ func TestMarshalCounterCorrupt(t *testing.T) {
 			Values: mod.Values{
 				"9223372036854775808",
 				"-9223372036854775809",
-				*big.NewInt(0).Add(big.NewInt(9223372036854775807), big.NewInt(1)),
-				*big.NewInt(0).Add(big.NewInt(-9223372036854775808), big.NewInt(-1)),
+				uint64(math.MaxInt64 + 1), uint(math.MaxInt64 + 1),
+				*big.NewInt(0).Add(big.NewInt(math.MaxInt64), big.NewInt(1)),
+				*big.NewInt(0).Add(big.NewInt(math.MinInt64), big.NewInt(-1)),
 			}.AddVariants(mod.All...),
 		}.Run("big_vals", t, marshal)
 
@@ -129,5 +131,116 @@ func TestMarshalCounterCorrupt(t *testing.T) {
 			Data:   []byte("\xff\xff\xff\xff\xff\xff\xff\xff"),
 			Values: mod.Values{uint8(0), uint16(0), uint32(0)}.AddVariants(mod.All...),
 		}.Run("small_type_uint_max", t, unmarshal)
+		serialization.NegativeUnmarshalSet{
+			Data: []byte("\xff\xff\xff\xff\xff\xff\xff\xff"),
+			Values: mod.Values{
+				uint8(0), uint16(0), uint32(0), uint64(0), uint(0),
+			}.AddVariants(mod.All...),
+		}.Run("neg_uints-1", t, unmarshal)
+
+		serialization.NegativeUnmarshalSet{
+			Data: []byte("\xff\xff\xff\xff\xff\xff\xff\x80"),
+			Values: mod.Values{
+				uint8(0), uint16(0), uint32(0), uint64(0), uint(0),
+			}.AddVariants(mod.All...),
+		}.Run("neg_uints_minInt8", t, unmarshal)
+
+		serialization.NegativeUnmarshalSet{
+			Data: []byte("\xff\xff\xff\xff\xff\xff\xff\x7f"),
+			Values: mod.Values{
+				uint8(0), uint16(0), uint32(0), uint64(0), uint(0),
+			}.AddVariants(mod.All...),
+		}.Run("neg_uints_minInt8-1", t, unmarshal)
+
+		serialization.NegativeUnmarshalSet{
+			Data: []byte("\xff\xff\xff\xff\xff\xff\x80\x00"),
+			Values: mod.Values{
+				uint8(0), uint16(0), uint32(0), uint64(0), uint(0),
+			}.AddVariants(mod.All...),
+		}.Run("neg_uints_minInt16", t, unmarshal)
+
+		serialization.NegativeUnmarshalSet{
+			Data: []byte("\xff\xff\xff\xff\xff\xff\x7f\xff"),
+			Values: mod.Values{
+				uint8(0), uint16(0), uint32(0), uint64(0), uint(0),
+			}.AddVariants(mod.All...),
+		}.Run("neg_uints_minInt16-1", t, unmarshal)
+
+		serialization.NegativeUnmarshalSet{
+			Data: []byte("\xff\xff\xff\xff\xff\x80\x00\x00"),
+			Values: mod.Values{
+				uint8(0), uint16(0), uint32(0), uint64(0), uint(0),
+			}.AddVariants(mod.All...),
+		}.Run("neg_uints_minInt24", t, unmarshal)
+
+		serialization.NegativeUnmarshalSet{
+			Data: []byte("\xff\xff\xff\xff\xff\x7f\xff\xff"),
+			Values: mod.Values{
+				uint8(0), uint16(0), uint32(0), uint64(0), uint(0),
+			}.AddVariants(mod.All...),
+		}.Run("neg_uints_minInt24-1", t, unmarshal)
+
+		serialization.NegativeUnmarshalSet{
+			Data: []byte("\xff\xff\xff\xff\x80\x00\x00\x00"),
+			Values: mod.Values{
+				uint8(0), uint16(0), uint32(0), uint64(0), uint(0),
+			}.AddVariants(mod.All...),
+		}.Run("neg_uints_minInt36", t, unmarshal)
+
+		serialization.NegativeUnmarshalSet{
+			Data: []byte("\xff\xff\xff\xff\x7f\xff\xff\xff"),
+			Values: mod.Values{
+				uint8(0), uint16(0), uint32(0), uint64(0), uint(0),
+			}.AddVariants(mod.All...),
+		}.Run("neg_uints_minInt36-1", t, unmarshal)
+
+		serialization.NegativeUnmarshalSet{
+			Data: []byte("\xff\xff\xff\x80\x00\x00\x00\x00"),
+			Values: mod.Values{
+				uint8(0), uint16(0), uint32(0), uint64(0), uint(0),
+			}.AddVariants(mod.All...),
+		}.Run("neg_uints_minInt40", t, unmarshal)
+
+		serialization.NegativeUnmarshalSet{
+			Data: []byte("\xff\xff\xff\x7f\xff\xff\xff\xff"),
+			Values: mod.Values{
+				uint8(0), uint16(0), uint32(0), uint64(0), uint(0),
+			}.AddVariants(mod.All...),
+		}.Run("neg_uints_minInt40-1", t, unmarshal)
+
+		serialization.NegativeUnmarshalSet{
+			Data: []byte("\xff\xff\x80\x00\x00\x00\x00\x00"),
+			Values: mod.Values{
+				uint8(0), uint16(0), uint32(0), uint64(0), uint(0),
+			}.AddVariants(mod.All...),
+		}.Run("neg_uints_minInt48", t, unmarshal)
+
+		serialization.NegativeUnmarshalSet{
+			Data: []byte("\xff\xff\x7f\xff\xff\xff\xff\xff"),
+			Values: mod.Values{
+				uint8(0), uint16(0), uint32(0), uint64(0), uint(0),
+			}.AddVariants(mod.All...),
+		}.Run("neg_uints_minInt48-1", t, unmarshal)
+
+		serialization.NegativeUnmarshalSet{
+			Data: []byte("\xff\x80\x00\x00\x00\x00\x00\x00"),
+			Values: mod.Values{
+				uint8(0), uint16(0), uint32(0), uint64(0), uint(0),
+			}.AddVariants(mod.All...),
+		}.Run("neg_uints_minInt56", t, unmarshal)
+
+		serialization.NegativeUnmarshalSet{
+			Data: []byte("\xff\x7f\xff\xff\xff\xff\xff\xff"),
+			Values: mod.Values{
+				uint8(0), uint16(0), uint32(0), uint64(0), uint(0),
+			}.AddVariants(mod.All...),
+		}.Run("neg_uints_minInt56-1", t, unmarshal)
+
+		serialization.NegativeUnmarshalSet{
+			Data: []byte("\x80\x00\x00\x00\x00\x00\x00\x00"),
+			Values: mod.Values{
+				uint8(0), uint16(0), uint32(0), uint64(0), uint(0),
+			}.AddVariants(mod.All...),
+		}.Run("neg_uints_minInt64", t, unmarshal)
 	}
 }
