@@ -1900,8 +1900,8 @@ func TestVarint(t *testing.T) {
 	}
 
 	err := session.Query("SELECT test FROM varint_test").Scan(&result64)
-	if err == nil || strings.Index(err.Error(), "out of range") == -1 {
-		t.Errorf("expected out of range error since value is too big for int64")
+	if err == nil || strings.Index(err.Error(), "the data value should be in the int64 range") == -1 {
+		t.Errorf("expected out of range error since value is too big for int64, result:%d", result64)
 	}
 
 	// value not set in cassandra, leave bind variable empty
