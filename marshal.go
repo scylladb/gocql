@@ -14,7 +14,6 @@ import (
 	"math/bits"
 	"net"
 	"reflect"
-	"strconv"
 	"strings"
 	"time"
 
@@ -25,6 +24,7 @@ import (
 	"github.com/gocql/gocql/serialization/cqlint"
 	"github.com/gocql/gocql/serialization/smallint"
 	"github.com/gocql/gocql/serialization/tinyint"
+	"github.com/gocql/gocql/serialization/varint"
 )
 
 var (
@@ -166,7 +166,7 @@ func Marshal(info TypeInfo, value interface{}) ([]byte, error) {
 	case TypeUUID, TypeTimeUUID:
 		return marshalUUID(info, value)
 	case TypeVarint:
-		return marshalVarint(info, value)
+		return marshalVarint(value)
 	case TypeInet:
 		return marshalInet(info, value)
 	case TypeTuple:
@@ -250,7 +250,7 @@ func Unmarshal(info TypeInfo, data []byte, value interface{}) error {
 	case TypeCounter:
 		return unmarshalCounter(data, value)
 	case TypeVarint:
-		return unmarshalVarint(info, data, value)
+		return unmarshalVarint(data, value)
 	case TypeSmallInt:
 		return unmarshalSmallInt(data, value)
 	case TypeTinyInt:
@@ -438,84 +438,11 @@ func marshalCounter(value interface{}) ([]byte, error) {
 		return nil, wrapMarshalError(err, "marshal error")
 	}
 	return data, nil
-
-}
-
-func marshalBigIntOld(info TypeInfo, value interface{}) ([]byte, error) {
-	switch v := value.(type) {
-	case Marshaler:
-		return v.MarshalCQL(info)
-	case unsetColumn:
-		return nil, nil
-	case int:
-		return encBigInt(int64(v)), nil
-	case uint:
-		if uint64(v) > math.MaxInt64 {
-			return nil, marshalErrorf("marshal bigint: value %d out of range", v)
-		}
-		return encBigInt(int64(v)), nil
-	case int64:
-		return encBigInt(v), nil
-	case uint64:
-		return encBigInt(int64(v)), nil
-	case int32:
-		return encBigInt(int64(v)), nil
-	case uint32:
-		return encBigInt(int64(v)), nil
-	case int16:
-		return encBigInt(int64(v)), nil
-	case uint16:
-		return encBigInt(int64(v)), nil
-	case int8:
-		return encBigInt(int64(v)), nil
-	case uint8:
-		return encBigInt(int64(v)), nil
-	case big.Int:
-		return encBigInt2C(&v), nil
-	case string:
-		i, err := strconv.ParseInt(value.(string), 10, 64)
-		if err != nil {
-			return nil, marshalErrorf("can not marshal string to bigint: %s", err)
-		}
-		return encBigInt(i), nil
-	}
-
-	if value == nil {
-		return nil, nil
-	}
-
-	rv := reflect.ValueOf(value)
-	switch rv.Type().Kind() {
-	case reflect.Int, reflect.Int64, reflect.Int32, reflect.Int16, reflect.Int8:
-		v := rv.Int()
-		return encBigInt(v), nil
-	case reflect.Uint, reflect.Uint64, reflect.Uint32, reflect.Uint16, reflect.Uint8:
-		v := rv.Uint()
-		if v > math.MaxInt64 {
-			return nil, marshalErrorf("marshal bigint: value %d out of range", v)
-		}
-		return encBigInt(int64(v)), nil
-	}
-	return nil, marshalErrorf("can not marshal %T into %s", value, info)
 }
 
 func encBigInt(x int64) []byte {
 	return []byte{byte(x >> 56), byte(x >> 48), byte(x >> 40), byte(x >> 32),
 		byte(x >> 24), byte(x >> 16), byte(x >> 8), byte(x)}
-}
-
-func bytesToInt64(data []byte) (ret int64) {
-	for i := range data {
-		ret |= int64(data[i]) << (8 * uint(len(data)-i-1))
-	}
-	return ret
-}
-
-func bytesToUint64(data []byte) (ret uint64) {
-	for i := range data {
-		ret |= uint64(data[i]) << (8 * uint(len(data)-i-1))
-	}
-	return ret
 }
 
 func unmarshalCounter(data []byte, value interface{}) error {
@@ -557,279 +484,19 @@ func unmarshalTinyInt(data []byte, value interface{}) error {
 	return nil
 }
 
-func unmarshalVarint(info TypeInfo, data []byte, value interface{}) error {
-	switch v := value.(type) {
-	case *big.Int:
-		return unmarshalIntlike(info, 0, data, value)
-	case *uint64:
-		if len(data) == 9 && data[0] == 0 {
-			*v = bytesToUint64(data[1:])
-			return nil
-		}
+func unmarshalVarint(data []byte, value interface{}) error {
+	if err := varint.Unmarshal(data, value); err != nil {
+		return wrapUnmarshalError(err, "unmarshal error")
 	}
-
-	if len(data) > 8 {
-		return unmarshalErrorf("unmarshal int: varint value %v out of range for %T (use big.Int)", data, value)
-	}
-
-	int64Val := bytesToInt64(data)
-	if len(data) > 0 && len(data) < 8 && data[0]&0x80 > 0 {
-		int64Val -= (1 << uint(len(data)*8))
-	}
-	return unmarshalIntlike(info, int64Val, data, value)
+	return nil
 }
 
-func marshalVarint(info TypeInfo, value interface{}) ([]byte, error) {
-	var (
-		retBytes []byte
-		err      error
-	)
-
-	switch v := value.(type) {
-	case unsetColumn:
-		return nil, nil
-	case uint64:
-		if v > uint64(math.MaxInt64) {
-			retBytes = make([]byte, 9)
-			binary.BigEndian.PutUint64(retBytes[1:], v)
-		} else {
-			retBytes = make([]byte, 8)
-			binary.BigEndian.PutUint64(retBytes, v)
-		}
-	default:
-		retBytes, err = marshalBigIntOld(info, value)
+func marshalVarint(value interface{}) ([]byte, error) {
+	data, err := varint.Marshal(value)
+	if err != nil {
+		return nil, wrapMarshalError(err, "marshal error")
 	}
-
-	if err == nil {
-		// trim down to most significant byte
-		i := 0
-		for ; i < len(retBytes)-1; i++ {
-			b0 := retBytes[i]
-			if b0 != 0 && b0 != 0xFF {
-				break
-			}
-
-			b1 := retBytes[i+1]
-			if b0 == 0 && b1 != 0 {
-				if b1&0x80 == 0 {
-					i++
-				}
-				break
-			}
-
-			if b0 == 0xFF && b1 != 0xFF {
-				if b1&0x80 > 0 {
-					i++
-				}
-				break
-			}
-		}
-		retBytes = retBytes[i:]
-	}
-
-	return retBytes, err
-}
-
-func unmarshalIntlike(info TypeInfo, int64Val int64, data []byte, value interface{}) error {
-	switch v := value.(type) {
-	case *int:
-		if ^uint(0) == math.MaxUint32 && (int64Val < math.MinInt32 || int64Val > math.MaxInt32) {
-			return unmarshalErrorf("unmarshal int: value %d out of range for %T", int64Val, *v)
-		}
-		*v = int(int64Val)
-		return nil
-	case *uint:
-		unitVal := uint64(int64Val)
-		switch info.Type() {
-		case TypeInt:
-			*v = uint(unitVal) & 0xFFFFFFFF
-		case TypeSmallInt:
-			*v = uint(unitVal) & 0xFFFF
-		case TypeTinyInt:
-			*v = uint(unitVal) & 0xFF
-		default:
-			if ^uint(0) == math.MaxUint32 && (int64Val < 0 || int64Val > math.MaxUint32) {
-				return unmarshalErrorf("unmarshal int: value %d out of range for %T", unitVal, *v)
-			}
-			*v = uint(unitVal)
-		}
-		return nil
-	case *int64:
-		*v = int64Val
-		return nil
-	case *uint64:
-		switch info.Type() {
-		case TypeInt:
-			*v = uint64(int64Val) & 0xFFFFFFFF
-		case TypeSmallInt:
-			*v = uint64(int64Val) & 0xFFFF
-		case TypeTinyInt:
-			*v = uint64(int64Val) & 0xFF
-		default:
-			*v = uint64(int64Val)
-		}
-		return nil
-	case *int32:
-		if int64Val < math.MinInt32 || int64Val > math.MaxInt32 {
-			return unmarshalErrorf("unmarshal int: value %d out of range for %T", int64Val, *v)
-		}
-		*v = int32(int64Val)
-		return nil
-	case *uint32:
-		switch info.Type() {
-		case TypeInt:
-			*v = uint32(int64Val) & 0xFFFFFFFF
-		case TypeSmallInt:
-			*v = uint32(int64Val) & 0xFFFF
-		case TypeTinyInt:
-			*v = uint32(int64Val) & 0xFF
-		default:
-			if int64Val < 0 || int64Val > math.MaxUint32 {
-				return unmarshalErrorf("unmarshal int: value %d out of range for %T", int64Val, *v)
-			}
-			*v = uint32(int64Val) & 0xFFFFFFFF
-		}
-		return nil
-	case *int16:
-		if int64Val < math.MinInt16 || int64Val > math.MaxInt16 {
-			return unmarshalErrorf("unmarshal int: value %d out of range for %T", int64Val, *v)
-		}
-		*v = int16(int64Val)
-		return nil
-	case *uint16:
-		switch info.Type() {
-		case TypeSmallInt:
-			*v = uint16(int64Val) & 0xFFFF
-		case TypeTinyInt:
-			*v = uint16(int64Val) & 0xFF
-		default:
-			if int64Val < 0 || int64Val > math.MaxUint16 {
-				return unmarshalErrorf("unmarshal int: value %d out of range for %T", int64Val, *v)
-			}
-			*v = uint16(int64Val) & 0xFFFF
-		}
-		return nil
-	case *int8:
-		if int64Val < math.MinInt8 || int64Val > math.MaxInt8 {
-			return unmarshalErrorf("unmarshal int: value %d out of range for %T", int64Val, *v)
-		}
-		*v = int8(int64Val)
-		return nil
-	case *uint8:
-		if info.Type() != TypeTinyInt && (int64Val < 0 || int64Val > math.MaxUint8) {
-			return unmarshalErrorf("unmarshal int: value %d out of range for %T", int64Val, *v)
-		}
-		*v = uint8(int64Val) & 0xFF
-		return nil
-	case *big.Int:
-		decBigInt2C(data, v)
-		return nil
-	case *string:
-		*v = strconv.FormatInt(int64Val, 10)
-		return nil
-	}
-
-	rv := reflect.ValueOf(value)
-	if rv.Kind() != reflect.Ptr {
-		return unmarshalErrorf("can not unmarshal into non-pointer %T", value)
-	}
-	rv = rv.Elem()
-
-	switch rv.Type().Kind() {
-	case reflect.Int:
-		if ^uint(0) == math.MaxUint32 && (int64Val < math.MinInt32 || int64Val > math.MaxInt32) {
-			return unmarshalErrorf("unmarshal int: value %d out of range", int64Val)
-		}
-		rv.SetInt(int64Val)
-		return nil
-	case reflect.Int64:
-		rv.SetInt(int64Val)
-		return nil
-	case reflect.Int32:
-		if int64Val < math.MinInt32 || int64Val > math.MaxInt32 {
-			return unmarshalErrorf("unmarshal int: value %d out of range", int64Val)
-		}
-		rv.SetInt(int64Val)
-		return nil
-	case reflect.Int16:
-		if int64Val < math.MinInt16 || int64Val > math.MaxInt16 {
-			return unmarshalErrorf("unmarshal int: value %d out of range", int64Val)
-		}
-		rv.SetInt(int64Val)
-		return nil
-	case reflect.Int8:
-		if int64Val < math.MinInt8 || int64Val > math.MaxInt8 {
-			return unmarshalErrorf("unmarshal int: value %d out of range", int64Val)
-		}
-		rv.SetInt(int64Val)
-		return nil
-	case reflect.Uint:
-		unitVal := uint64(int64Val)
-		switch info.Type() {
-		case TypeInt:
-			rv.SetUint(unitVal & 0xFFFFFFFF)
-		case TypeSmallInt:
-			rv.SetUint(unitVal & 0xFFFF)
-		case TypeTinyInt:
-			rv.SetUint(unitVal & 0xFF)
-		default:
-			if ^uint(0) == math.MaxUint32 && (int64Val < 0 || int64Val > math.MaxUint32) {
-				return unmarshalErrorf("unmarshal int: value %d out of range for %s", unitVal, rv.Type())
-			}
-			rv.SetUint(unitVal)
-		}
-		return nil
-	case reflect.Uint64:
-		unitVal := uint64(int64Val)
-		switch info.Type() {
-		case TypeInt:
-			rv.SetUint(unitVal & 0xFFFFFFFF)
-		case TypeSmallInt:
-			rv.SetUint(unitVal & 0xFFFF)
-		case TypeTinyInt:
-			rv.SetUint(unitVal & 0xFF)
-		default:
-			rv.SetUint(unitVal)
-		}
-		return nil
-	case reflect.Uint32:
-		unitVal := uint64(int64Val)
-		switch info.Type() {
-		case TypeInt:
-			rv.SetUint(unitVal & 0xFFFFFFFF)
-		case TypeSmallInt:
-			rv.SetUint(unitVal & 0xFFFF)
-		case TypeTinyInt:
-			rv.SetUint(unitVal & 0xFF)
-		default:
-			if int64Val < 0 || int64Val > math.MaxUint32 {
-				return unmarshalErrorf("unmarshal int: value %d out of range for %s", int64Val, rv.Type())
-			}
-			rv.SetUint(unitVal & 0xFFFFFFFF)
-		}
-		return nil
-	case reflect.Uint16:
-		unitVal := uint64(int64Val)
-		switch info.Type() {
-		case TypeSmallInt:
-			rv.SetUint(unitVal & 0xFFFF)
-		case TypeTinyInt:
-			rv.SetUint(unitVal & 0xFF)
-		default:
-			if int64Val < 0 || int64Val > math.MaxUint16 {
-				return unmarshalErrorf("unmarshal int: value %d out of range for %s", int64Val, rv.Type())
-			}
-			rv.SetUint(unitVal & 0xFFFF)
-		}
-		return nil
-	case reflect.Uint8:
-		if info.Type() != TypeTinyInt && (int64Val < 0 || int64Val > math.MaxUint8) {
-			return unmarshalErrorf("unmarshal int: value %d out of range for %s", int64Val, rv.Type())
-		}
-		rv.SetUint(uint64(int64Val) & 0xff)
-		return nil
-	}
-	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
+	return data, nil
 }
 
 func decBigInt(data []byte) int64 {
