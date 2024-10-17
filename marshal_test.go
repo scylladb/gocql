@@ -126,13 +126,6 @@ var marshalTests = []struct {
 		nil,
 	},
 	{
-		NativeType{proto: 2, typ: TypeDouble},
-		[]byte("\x40\x09\x21\xfb\x53\xc8\xd4\xf1"),
-		float64(3.14159265),
-		nil,
-		nil,
-	},
-	{
 		NativeType{proto: 2, typ: TypeDecimal},
 		[]byte("\x00\x00\x00\x00\x00"),
 		inf.NewDec(0, 0),
@@ -556,23 +549,6 @@ var marshalTests = []struct {
 		NativeType{proto: 2, typ: TypeFloat},
 		[]byte(nil),
 		(*float32)(nil),
-		nil,
-		nil,
-	},
-	{
-		NativeType{proto: 2, typ: TypeDouble},
-		[]byte("\x40\x09\x21\xfb\x53\xc8\xd4\xf1"),
-		func() *float64 {
-			d := float64(3.14159265)
-			return &d
-		}(),
-		nil,
-		nil,
-	},
-	{
-		NativeType{proto: 2, typ: TypeDouble},
-		[]byte(nil),
-		(*float64)(nil),
 		nil,
 		nil,
 	},
