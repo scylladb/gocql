@@ -23,6 +23,7 @@ import (
 	"github.com/gocql/gocql/serialization/bigint"
 	"github.com/gocql/gocql/serialization/counter"
 	"github.com/gocql/gocql/serialization/cqlint"
+	"github.com/gocql/gocql/serialization/double"
 	"github.com/gocql/gocql/serialization/float"
 	"github.com/gocql/gocql/serialization/smallint"
 	"github.com/gocql/gocql/serialization/tinyint"
@@ -153,7 +154,7 @@ func Marshal(info TypeInfo, value interface{}) ([]byte, error) {
 	case TypeFloat:
 		return marshalFloat(value)
 	case TypeDouble:
-		return marshalDouble(info, value)
+		return marshalDouble(value)
 	case TypeDecimal:
 		return marshalDecimal(info, value)
 	case TypeTime:
@@ -259,7 +260,7 @@ func Unmarshal(info TypeInfo, data []byte, value interface{}) error {
 	case TypeFloat:
 		return unmarshalFloat(data, value)
 	case TypeDouble:
-		return unmarshalDouble(info, data, value)
+		return unmarshalDouble(data, value)
 	case TypeDecimal:
 		return unmarshalDecimal(info, data, value)
 	case TypeTime:
@@ -915,45 +916,20 @@ func unmarshalFloat(data []byte, value interface{}) error {
 	return nil
 }
 
-func marshalDouble(info TypeInfo, value interface{}) ([]byte, error) {
-	switch v := value.(type) {
-	case Marshaler:
-		return v.MarshalCQL(info)
-	case unsetColumn:
-		return nil, nil
-	case float64:
-		return encBigInt(int64(math.Float64bits(v))), nil
+func marshalDouble(value interface{}) ([]byte, error) {
+	data, err := double.Marshal(value)
+	if err != nil {
+		return nil, wrapMarshalError(err, "marshal error")
 	}
-	if value == nil {
-		return nil, nil
-	}
-	rv := reflect.ValueOf(value)
-	switch rv.Type().Kind() {
-	case reflect.Float64:
-		return encBigInt(int64(math.Float64bits(rv.Float()))), nil
-	}
-	return nil, marshalErrorf("can not marshal %T into %s", value, info)
+	return data, nil
 }
 
-func unmarshalDouble(info TypeInfo, data []byte, value interface{}) error {
-	switch v := value.(type) {
-	case Unmarshaler:
-		return v.UnmarshalCQL(info, data)
-	case *float64:
-		*v = math.Float64frombits(uint64(decBigInt(data)))
-		return nil
+func unmarshalDouble(data []byte, value interface{}) error {
+	err := double.Unmarshal(data, value)
+	if err != nil {
+		return wrapUnmarshalError(err, "unmarshal error")
 	}
-	rv := reflect.ValueOf(value)
-	if rv.Kind() != reflect.Ptr {
-		return unmarshalErrorf("can not unmarshal into non-pointer %T", value)
-	}
-	rv = rv.Elem()
-	switch rv.Type().Kind() {
-	case reflect.Float64:
-		rv.SetFloat(math.Float64frombits(uint64(decBigInt(data))))
-		return nil
-	}
-	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
+	return nil
 }
 
 func marshalDecimal(info TypeInfo, value interface{}) ([]byte, error) {
