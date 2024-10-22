@@ -1921,3 +1921,57 @@ type ErrSchemaMismatch struct {
 func (e *ErrSchemaMismatch) Error() string {
 	return fmt.Sprintf("gocql: cluster schema versions not consistent: %+v", e.schemas)
 }
+
+func NewMockNetConn() net.Conn {
+	return &mockNetConn{}
+}
+
+type mockNetConn struct{}
+
+func (m *mockNetConn) Read(p []byte) (n int, err error) {
+	// data := []byte("test receive")
+	// n = copy(p, data)
+	return n, nil
+}
+
+func (m *mockNetConn) Write(p []byte) (n int, err error) {
+	return len(p), nil
+}
+
+func (m *mockNetConn) Close() error {
+	return nil
+}
+
+func (m *mockNetConn) LocalAddr() net.Addr {
+	return nil
+}
+
+func (m *mockNetConn) RemoteAddr() net.Addr {
+	return nil
+}
+
+func (m *mockNetConn) SetDeadline(t time.Time) error {
+	return nil
+}
+
+func (m *mockNetConn) SetReadDeadline(t time.Time) error {
+	return nil
+}
+
+func (m *mockNetConn) SetWriteDeadline(t time.Time) error {
+	return nil
+}
+
+func NewMockConn() *Conn {
+	return &Conn{
+		conn: NewMockNetConn(),
+		w: &deadlineContextWriter{
+			w:         NewMockNetConn(),
+			timeout:   0,
+			semaphore: make(chan struct{}, 1),
+			quit:      make(chan struct{}),
+		},
+		timeout: 0,
+		r:       bufio.NewReader(NewMockNetConn()),
+	}
+}
