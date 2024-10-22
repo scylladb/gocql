@@ -14,7 +14,10 @@ var (
 )
 
 func EncInt8(v int8) ([]byte, error) {
-	return encInt32(int32(v)), nil
+	if v < 0 {
+		return []byte{255, 255, 255, byte(v)}, nil
+	}
+	return []byte{0, 0, 0, byte(v)}, nil
 }
 
 func EncInt8R(v *int8) ([]byte, error) {
@@ -25,7 +28,10 @@ func EncInt8R(v *int8) ([]byte, error) {
 }
 
 func EncInt16(v int16) ([]byte, error) {
-	return encInt32(int32(v)), nil
+	if v < 0 {
+		return []byte{255, 255, byte(v >> 8), byte(v)}, nil
+	}
+	return []byte{0, 0, byte(v >> 8), byte(v)}, nil
 }
 
 func EncInt16R(v *int16) ([]byte, error) {
@@ -36,7 +42,7 @@ func EncInt16R(v *int16) ([]byte, error) {
 }
 
 func EncInt32(v int32) ([]byte, error) {
-	return encInt32(v), nil
+	return []byte{byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v)}, nil
 }
 
 func EncInt32R(v *int32) ([]byte, error) {
@@ -50,7 +56,7 @@ func EncInt64(v int64) ([]byte, error) {
 	if v > math.MaxInt32 || v < math.MinInt32 {
 		return nil, fmt.Errorf("failed to marshal int: value %#v out of range", v)
 	}
-	return []byte{byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v)}, nil
+	return encInt64(v), nil
 }
 
 func EncInt64R(v *int64) ([]byte, error) {
@@ -111,7 +117,7 @@ func EncUint64(v uint64) ([]byte, error) {
 	if v > math.MaxUint32 {
 		return nil, fmt.Errorf("failed to marshal int: value %#v out of range", v)
 	}
-	return []byte{byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v)}, nil
+	return encUint64(v), nil
 }
 
 func EncUint64R(v *uint64) ([]byte, error) {
@@ -139,15 +145,17 @@ func EncBigInt(v big.Int) ([]byte, error) {
 	if v.Cmp(maxBigInt) == 1 || v.Cmp(minBigInt) == -1 {
 		return nil, fmt.Errorf("failed to marshal int: value (%T)(%s) out of range", v, v.String())
 	}
-	n := v.Int64()
-	return []byte{byte(n >> 24), byte(n >> 16), byte(n >> 8), byte(n)}, nil
+	return encInt64(v.Int64()), nil
 }
 
 func EncBigIntR(v *big.Int) ([]byte, error) {
 	if v == nil {
 		return nil, nil
 	}
-	return EncBigInt(*v)
+	if v.Cmp(maxBigInt) == 1 || v.Cmp(minBigInt) == -1 {
+		return nil, fmt.Errorf("failed to marshal int: value (%T)(%s) out of range", v, v.String())
+	}
+	return encInt64(v.Int64()), nil
 }
 
 func EncString(v string) ([]byte, error) {
@@ -159,7 +167,7 @@ func EncString(v string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal int: can not marshal (%T)(%[1]v) %s", v, err)
 	}
-	return []byte{byte(n >> 24), byte(n >> 16), byte(n >> 8), byte(n)}, nil
+	return encInt64(n), nil
 }
 
 func EncStringR(v *string) ([]byte, error) {
@@ -171,12 +179,50 @@ func EncStringR(v *string) ([]byte, error) {
 
 func EncReflect(v reflect.Value) ([]byte, error) {
 	switch v.Type().Kind() {
-	case reflect.Int, reflect.Int64, reflect.Int32, reflect.Int16, reflect.Int8:
-		return EncInt64(v.Int())
-	case reflect.Uint, reflect.Uint64, reflect.Uint32, reflect.Uint16, reflect.Uint8:
-		return EncUint64(v.Uint())
+	case reflect.Int8:
+		val := v.Int()
+		if val < 0 {
+			return []byte{255, 255, 255, byte(val)}, nil
+		}
+		return []byte{0, 0, 0, byte(val)}, nil
+	case reflect.Int16:
+		val := v.Int()
+		if val < 0 {
+			return []byte{255, 255, byte(val >> 8), byte(val)}, nil
+		}
+		return []byte{0, 0, byte(val >> 8), byte(val)}, nil
+	case reflect.Int32:
+		return encInt64(v.Int()), nil
+	case reflect.Int, reflect.Int64:
+		val := v.Int()
+		if val > math.MaxInt32 || val < math.MinInt32 {
+			return nil, fmt.Errorf("failed to marshal int: value (%T)(%[1]v) out of range", v.Interface())
+		}
+		return encInt64(val), nil
+	case reflect.Uint8:
+		return []byte{0, 0, 0, byte(v.Uint())}, nil
+	case reflect.Uint16:
+		val := v.Uint()
+		return []byte{0, 0, byte(val >> 8), byte(val)}, nil
+	case reflect.Uint32:
+		return encUint64(v.Uint()), nil
+	case reflect.Uint, reflect.Uint64:
+		val := v.Uint()
+		if val > math.MaxUint32 {
+			return nil, fmt.Errorf("failed to marshal int: value (%T)(%[1]v) out of range", v.Interface())
+		}
+		return encUint64(val), nil
 	case reflect.String:
-		return EncString(v.String())
+		val := v.String()
+		if val == "" {
+			return nil, nil
+		}
+
+		n, err := strconv.ParseInt(val, 10, 32)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal int: can not marshal (%T)(%[1]v) %s", v.Interface(), err)
+		}
+		return encInt64(n), nil
 	default:
 		return nil, fmt.Errorf("failed to marshal int: unsupported value type (%T)(%[1]v)", v.Interface())
 	}
@@ -189,6 +235,10 @@ func EncReflectR(v reflect.Value) ([]byte, error) {
 	return EncReflect(v.Elem())
 }
 
-func encInt32(v int32) []byte {
+func encInt64(v int64) []byte {
+	return []byte{byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v)}
+}
+
+func encUint64(v uint64) []byte {
 	return []byte{byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v)}
 }
