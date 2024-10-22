@@ -7,58 +7,90 @@ import (
 	"github.com/gocql/gocql"
 	"github.com/gocql/gocql/internal/tests/serialization"
 	"github.com/gocql/gocql/internal/tests/serialization/mod"
+	"github.com/gocql/gocql/serialization/double"
 )
 
 func TestMarshalDouble(t *testing.T) {
-	tType := gocql.NewNativeType(4, gocql.TypeDouble, "")
-
-	marshal := func(i interface{}) ([]byte, error) { return gocql.Marshal(tType, i) }
-	unmarshal := func(bytes []byte, i interface{}) error {
-		return gocql.Unmarshal(tType, bytes, i)
+	type testSuite struct {
+		name      string
+		marshal   func(interface{}) ([]byte, error)
+		unmarshal func(bytes []byte, i interface{}) error
 	}
 
-	serialization.PositiveSet{
-		Data:   nil,
-		Values: mod.Values{(*float64)(nil)}.AddVariants(mod.CustomType),
-	}.Run("[nil]nullable", t, marshal, unmarshal)
+	tType := gocql.NewNativeType(4, gocql.TypeDouble, "")
 
-	serialization.PositiveSet{
-		Data:   nil,
-		Values: mod.Values{float64(0)}.AddVariants(mod.CustomType),
-	}.Run("[nil]unmarshal", t, nil, unmarshal)
+	testSuites := [2]testSuite{
+		{
+			name:      "serialization.double",
+			marshal:   double.Marshal,
+			unmarshal: double.Unmarshal,
+		},
+		{
+			name: "glob",
+			marshal: func(i interface{}) ([]byte, error) {
+				return gocql.Marshal(tType, i)
+			},
+			unmarshal: func(bytes []byte, i interface{}) error {
+				return gocql.Unmarshal(tType, bytes, i)
+			},
+		},
+	}
 
-	serialization.PositiveSet{
-		Data:   make([]byte, 0),
-		Values: mod.Values{float64(0)}.AddVariants(mod.All...),
-	}.Run("[]unmarshal", t, nil, unmarshal)
+	for _, tSuite := range testSuites {
+		marshal := tSuite.marshal
+		unmarshal := tSuite.unmarshal
 
-	serialization.PositiveSet{
-		Data:   []byte("\x00\x00\x00\x00\x00\x00\x00\x00"),
-		Values: mod.Values{float64(0)}.AddVariants(mod.All...),
-	}.Run("zeros", t, marshal, unmarshal)
+		t.Run(tSuite.name, func(t *testing.T) {
 
-	serialization.PositiveSet{
-		Data:   []byte("\x7f\xef\xff\xff\xff\xff\xff\xff"),
-		Values: mod.Values{float64(math.MaxFloat64)}.AddVariants(mod.All...),
-	}.Run("max", t, marshal, unmarshal)
+			serialization.PositiveSet{
+				Data:   nil,
+				Values: mod.Values{(*float64)(nil)}.AddVariants(mod.CustomType),
+			}.Run("[nil]nullable", t, marshal, unmarshal)
 
-	serialization.PositiveSet{
-		Data:   []byte("\x00\x00\x00\x00\x00\x00\x00\x01"),
-		Values: mod.Values{float64(math.SmallestNonzeroFloat64)}.AddVariants(mod.All...),
-	}.Run("smallest", t, marshal, unmarshal)
+			serialization.PositiveSet{
+				Data:   nil,
+				Values: mod.Values{float64(0)}.AddVariants(mod.CustomType),
+			}.Run("[nil]unmarshal", t, nil, unmarshal)
 
-	serialization.PositiveSet{
-		Data:   []byte("\x7f\xf0\x00\x00\x00\x00\x00\x00"),
-		Values: mod.Values{float64(math.Inf(1))}.AddVariants(mod.All...),
-	}.Run("inf+", t, marshal, unmarshal)
+			serialization.PositiveSet{
+				Data:   make([]byte, 0),
+				Values: mod.Values{float64(0)}.AddVariants(mod.All...),
+			}.Run("[]unmarshal", t, nil, unmarshal)
 
-	serialization.PositiveSet{
-		Data:   []byte("\xff\xf0\x00\x00\x00\x00\x00\x00"),
-		Values: mod.Values{float64(math.Inf(-1))}.AddVariants(mod.All...),
-	}.Run("inf-", t, marshal, unmarshal)
+			serialization.PositiveSet{
+				Data:   []byte("\x00\x00\x00\x00\x00\x00\x00\x00"),
+				Values: mod.Values{float64(0)}.AddVariants(mod.All...),
+			}.Run("zeros", t, marshal, unmarshal)
 
-	serialization.PositiveSet{
-		Data:   []byte("\x7f\xf8\x00\x00\x00\x00\x00\x01"),
-		Values: mod.Values{float64(math.NaN())}.AddVariants(mod.All...),
-	}.Run("nan", t, marshal, unmarshal)
+			serialization.PositiveSet{
+				Data:   []byte("\x7f\xef\xff\xff\xff\xff\xff\xff"),
+				Values: mod.Values{float64(math.MaxFloat64)}.AddVariants(mod.All...),
+			}.Run("max", t, marshal, unmarshal)
+
+			serialization.PositiveSet{
+				Data:   []byte("\x00\x00\x00\x00\x00\x00\x00\x01"),
+				Values: mod.Values{float64(math.SmallestNonzeroFloat64)}.AddVariants(mod.All...),
+			}.Run("smallest", t, marshal, unmarshal)
+
+			serialization.PositiveSet{
+				Data:   []byte("\x7f\xf0\x00\x00\x00\x00\x00\x00"),
+				Values: mod.Values{float64(math.Inf(1))}.AddVariants(mod.All...),
+			}.Run("inf+", t, marshal, unmarshal)
+
+			serialization.PositiveSet{
+				Data:   []byte("\xff\xf0\x00\x00\x00\x00\x00\x00"),
+				Values: mod.Values{float64(math.Inf(-1))}.AddVariants(mod.All...),
+			}.Run("inf-", t, marshal, unmarshal)
+
+			serialization.PositiveSet{
+				Data:   []byte("\x7f\xf8\x00\x00\x00\x00\x00\x01"),
+				Values: mod.Values{float64(math.NaN())}.AddVariants(mod.All...),
+			}.Run("nan", t, marshal, unmarshal)
+
+			serialization.PositiveSet{
+				Data:   []byte("\x40\x09\x21\xfb\x53\xc8\xd4\xf1"),
+				Values: mod.Values{float64(3.14159265)}.AddVariants(mod.All...),
+			}.Run("pi", t, marshal, unmarshal)
+		})
+	}
 }
