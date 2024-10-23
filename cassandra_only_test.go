@@ -13,6 +13,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/gocql/gocql/internal/testcmdline"
 )
 
 func TestDiscoverViaProxy(t *testing.T) {
@@ -204,8 +206,8 @@ func TestGetKeyspaceMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error converting string to int with err: %v", err)
 	}
-	if rfInt != *flagRF {
-		t.Errorf("Expected replication factor to be %d but was %d", *flagRF, rfInt)
+	if rfInt != *testcmdline.RF {
+		t.Errorf("Expected replication factor to be %d but was %d", *testcmdline.RF, rfInt)
 	}
 }
 
@@ -431,7 +433,7 @@ func TestViewMetadata(t *testing.T) {
 	}
 
 	textType := TypeText
-	if flagCassVersion.Before(3, 0, 0) {
+	if testcmdline.CassVersion.Before(3, 0, 0) {
 		textType = TypeVarchar
 	}
 
@@ -453,7 +455,7 @@ func TestViewMetadata(t *testing.T) {
 }
 
 func TestMaterializedViewMetadata(t *testing.T) {
-	if flagCassVersion.Before(3, 0, 0) {
+	if testcmdline.CassVersion.Before(3, 0, 0) {
 		return
 	}
 	session := createSession(t)
@@ -552,7 +554,7 @@ func TestAggregateMetadata(t *testing.T) {
 	}
 
 	// In this case cassandra is returning a blob
-	if flagCassVersion.Before(3, 0, 0) {
+	if testcmdline.CassVersion.Before(3, 0, 0) {
 		expectedAggregrate.InitCond = string([]byte{0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0})
 	}
 
@@ -736,7 +738,7 @@ func TestKeyspaceMetadata(t *testing.T) {
 		t.Fatal("failed to find the types in metadata")
 	}
 	textType := TypeText
-	if flagCassVersion.Before(3, 0, 0) {
+	if testcmdline.CassVersion.Before(3, 0, 0) {
 		textType = TypeVarchar
 	}
 	expectedType := UserTypeMetadata{
@@ -753,7 +755,7 @@ func TestKeyspaceMetadata(t *testing.T) {
 	if !reflect.DeepEqual(*keyspaceMetadata.UserTypes["basicview"], expectedType) {
 		t.Fatalf("type is %+v, but expected %+v", keyspaceMetadata.UserTypes["basicview"], expectedType)
 	}
-	if flagCassVersion.Major >= 3 {
+	if testcmdline.CassVersion.Major >= 3 {
 		materializedView, found := keyspaceMetadata.MaterializedViews["view_view"]
 		if !found {
 			t.Fatal("failed to find materialized view view_view in metadata")
