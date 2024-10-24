@@ -21,11 +21,14 @@ import (
 	"gopkg.in/inf.v0"
 
 	"github.com/gocql/gocql/serialization/bigint"
+	"github.com/gocql/gocql/serialization/blob"
 	"github.com/gocql/gocql/serialization/counter"
 	"github.com/gocql/gocql/serialization/cqlint"
 	"github.com/gocql/gocql/serialization/float"
 	"github.com/gocql/gocql/serialization/smallint"
+	"github.com/gocql/gocql/serialization/text"
 	"github.com/gocql/gocql/serialization/tinyint"
+	"github.com/gocql/gocql/serialization/varchar"
 )
 
 var (
@@ -136,8 +139,14 @@ func Marshal(info TypeInfo, value interface{}) ([]byte, error) {
 	}
 
 	switch info.Type() {
-	case TypeVarchar, TypeAscii, TypeBlob, TypeText:
-		return marshalVarchar(info, value)
+	case TypeVarchar:
+		return marshalVarchar(value)
+	case TypeText:
+		return marshalText(value)
+	case TypeBlob:
+		return marshalVarchar(value)
+	case TypeAscii:
+		return marshalVarcharOld(info, value)
 	case TypeBoolean:
 		return marshalBool(info, value)
 	case TypeTinyInt:
@@ -240,8 +249,14 @@ func Unmarshal(info TypeInfo, data []byte, value interface{}) error {
 	}
 
 	switch info.Type() {
-	case TypeVarchar, TypeAscii, TypeBlob, TypeText:
-		return unmarshalVarchar(info, data, value)
+	case TypeVarchar:
+		return unmarshalVarchar(data, value)
+	case TypeText:
+		return unmarshalVarchar(data, value)
+	case TypeBlob:
+		return unmarshalVarchar(data, value)
+	case TypeAscii:
+		return unmarshalVarcharOld(info, data, value)
 	case TypeBoolean:
 		return unmarshalBool(info, data, value)
 	case TypeInt:
@@ -318,7 +333,54 @@ func unmarshalNullable(info TypeInfo, data []byte, value interface{}) error {
 	return Unmarshal(info, data, newValue.Interface())
 }
 
-func marshalVarchar(info TypeInfo, value interface{}) ([]byte, error) {
+func marshalVarchar(value interface{}) ([]byte, error) {
+	data, err := varchar.Marshal(value)
+	if err != nil {
+		return nil, wrapMarshalError(err, "marshal error")
+	}
+	return data, nil
+}
+func marshalText(value interface{}) ([]byte, error) {
+	data, err := text.Marshal(value)
+	if err != nil {
+		return nil, wrapMarshalError(err, "marshal error")
+	}
+	return data, nil
+}
+
+func marshalBlob(value interface{}) ([]byte, error) {
+	data, err := blob.Marshal(value)
+	if err != nil {
+		return nil, wrapMarshalError(err, "marshal error")
+	}
+	return data, nil
+}
+
+func unmarshalVarchar(data []byte, value interface{}) error {
+	err := varchar.Unmarshal(data, value)
+	if err != nil {
+		return wrapUnmarshalError(err, "unmarshal error")
+	}
+	return nil
+}
+
+func unmarshalText(data []byte, value interface{}) error {
+	err := text.Unmarshal(data, value)
+	if err != nil {
+		return wrapUnmarshalError(err, "unmarshal error")
+	}
+	return nil
+}
+
+func unmarshalBlob(data []byte, value interface{}) error {
+	err := blob.Unmarshal(data, value)
+	if err != nil {
+		return wrapUnmarshalError(err, "unmarshal error")
+	}
+	return nil
+}
+
+func marshalVarcharOld(info TypeInfo, value interface{}) ([]byte, error) {
 	switch v := value.(type) {
 	case Marshaler:
 		return v.MarshalCQL(info)
@@ -346,7 +408,7 @@ func marshalVarchar(info TypeInfo, value interface{}) ([]byte, error) {
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
 }
 
-func unmarshalVarchar(info TypeInfo, data []byte, value interface{}) error {
+func unmarshalVarcharOld(info TypeInfo, data []byte, value interface{}) error {
 	switch v := value.(type) {
 	case Unmarshaler:
 		return v.UnmarshalCQL(info, data)
