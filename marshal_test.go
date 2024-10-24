@@ -32,55 +32,6 @@ var marshalTests = []struct {
 	UnmarshalError error
 }{
 	{
-		NativeType{proto: 2, typ: TypeVarchar},
-		[]byte("hello world"),
-		[]byte("hello world"),
-		nil,
-		nil,
-	},
-	{
-		NativeType{proto: 2, typ: TypeVarchar},
-		[]byte("hello world"),
-		"hello world",
-		nil,
-		nil,
-	},
-	{
-		NativeType{proto: 2, typ: TypeVarchar},
-		[]byte(nil),
-		[]byte(nil),
-		nil,
-		nil,
-	},
-	{
-		NativeType{proto: 2, typ: TypeVarchar},
-		[]byte("hello world"),
-		MyString("hello world"),
-		nil,
-		nil,
-	},
-	{
-		NativeType{proto: 2, typ: TypeVarchar},
-		[]byte("HELLO WORLD"),
-		CustomString("hello world"),
-		nil,
-		nil,
-	},
-	{
-		NativeType{proto: 2, typ: TypeBlob},
-		[]byte("hello\x00"),
-		[]byte("hello\x00"),
-		nil,
-		nil,
-	},
-	{
-		NativeType{proto: 2, typ: TypeBlob},
-		[]byte(nil),
-		[]byte(nil),
-		nil,
-		nil,
-	},
-	{
 		NativeType{proto: 2, typ: TypeTimeUUID},
 		[]byte{0x3d, 0xcd, 0x98, 0x0, 0xf3, 0xd9, 0x11, 0xbf, 0x86, 0xd4, 0xb8, 0xe8, 0x56, 0x2c, 0xc, 0xd0},
 		func() UUID {
@@ -321,7 +272,7 @@ var marshalTests = []struct {
 		},
 		[]byte("\x00\x01\x00\x03foo\x00\x05\x01\x02\x03\x04\x05"),
 		map[string]interface{}{
-			"foo": []byte{0x01, 0x02, 0x03, 0x04, 0x05},
+			"foo": string([]byte{0x01, 0x02, 0x03, 0x04, 0x05}),
 		},
 		nil,
 		nil,
@@ -457,23 +408,6 @@ var marshalTests = []struct {
 		NativeType{proto: 2, typ: TypeInet},
 		[]byte("\xfe\x80\x00\x00\x00\x00\x00\x00\x02\x02\xb3\xff\xfe\x1e\x83\x29"),
 		net.ParseIP("fe80::202:b3ff:fe1e:8329"),
-		nil,
-		nil,
-	},
-	{
-		NativeType{proto: 2, typ: TypeVarchar},
-		[]byte("nullable string"),
-		func() *string {
-			value := "nullable string"
-			return &value
-		}(),
-		nil,
-		nil,
-	},
-	{
-		NativeType{proto: 2, typ: TypeVarchar},
-		[]byte(nil),
-		(*string)(nil),
 		nil,
 		nil,
 	},
@@ -631,23 +565,6 @@ var marshalTests = []struct {
 		nil,
 	},
 	{
-		NativeType{proto: 2, typ: TypeVarchar},
-		[]byte("HELLO WORLD"),
-		func() *CustomString {
-			customString := CustomString("hello world")
-			return &customString
-		}(),
-		nil,
-		nil,
-	},
-	{
-		NativeType{proto: 2, typ: TypeVarchar},
-		[]byte(nil),
-		(*CustomString)(nil),
-		nil,
-		nil,
-	},
-	{
 		NativeType{proto: 2, typ: TypeTinyInt},
 		[]byte("\x7f"),
 		127, // math.MaxInt8
@@ -742,23 +659,6 @@ var marshalTests = []struct {
 		NativeType{proto: 2, typ: TypeTinyInt},
 		[]byte("\xff"),
 		AliasUint(255),
-		nil,
-		nil,
-	},
-	{
-		NativeType{proto: 2, typ: TypeBlob},
-		[]byte(nil),
-		([]byte)(nil),
-		nil,
-		nil,
-	},
-	{
-		NativeType{proto: 2, typ: TypeVarchar},
-		[]byte{},
-		func() interface{} {
-			var s string
-			return &s
-		}(),
 		nil,
 		nil,
 	},
@@ -1866,7 +1766,7 @@ func BenchmarkUnmarshalVarchar(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if err := unmarshalVarchar(NativeType{}, src, &dst); err != nil {
+		if err := unmarshalVarchar(src, &dst); err != nil {
 			b.Fatal(err)
 		}
 	}

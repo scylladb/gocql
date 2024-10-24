@@ -6,25 +6,68 @@ import (
 	"github.com/gocql/gocql"
 	"github.com/gocql/gocql/internal/tests/serialization"
 	"github.com/gocql/gocql/internal/tests/serialization/mod"
+	"github.com/gocql/gocql/serialization/blob"
+	"github.com/gocql/gocql/serialization/text"
+	"github.com/gocql/gocql/serialization/varchar"
 )
 
 func TestMarshalTexts(t *testing.T) {
-	tTypes := []gocql.NativeType{
-		gocql.NewNativeType(4, gocql.TypeVarchar, ""),
-		gocql.NewNativeType(4, gocql.TypeText, ""),
-		gocql.NewNativeType(4, gocql.TypeBlob, ""),
+	type testSuite struct {
+		name      string
+		marshal   func(interface{}) ([]byte, error)
+		unmarshal func(bytes []byte, i interface{}) error
 	}
 
-	// unmarshall `zero` data into ([]byte)(nil), (*[]byte)(*[nil])
-	brokenZeroSlices := serialization.GetTypes(make([]byte, 0), (*[]byte)(nil))
+	testSuites := []testSuite{
+		{
+			name:      "serialization.varchar",
+			marshal:   varchar.Marshal,
+			unmarshal: varchar.Unmarshal,
+		},
+		{
+			name:      "serialization.text",
+			marshal:   text.Marshal,
+			unmarshal: text.Unmarshal,
+		},
+		{
+			name:      "serialization.blob",
+			marshal:   blob.Marshal,
+			unmarshal: blob.Unmarshal,
+		},
+		{
+			name: "glob.varchar",
+			marshal: func(i interface{}) ([]byte, error) {
+				return gocql.Marshal(gocql.NewNativeType(4, gocql.TypeVarchar, ""), i)
+			},
+			unmarshal: func(bytes []byte, i interface{}) error {
+				return gocql.Unmarshal(gocql.NewNativeType(4, gocql.TypeVarchar, ""), bytes, i)
+			},
+		},
+		{
+			name: "glob.text",
+			marshal: func(i interface{}) ([]byte, error) {
+				return gocql.Marshal(gocql.NewNativeType(4, gocql.TypeText, ""), i)
+			},
+			unmarshal: func(bytes []byte, i interface{}) error {
+				return gocql.Unmarshal(gocql.NewNativeType(4, gocql.TypeText, ""), bytes, i)
+			},
+		},
+		{
+			name: "glob.blob",
+			marshal: func(i interface{}) ([]byte, error) {
+				return gocql.Marshal(gocql.NewNativeType(4, gocql.TypeBlob, ""), i)
+			},
+			unmarshal: func(bytes []byte, i interface{}) error {
+				return gocql.Unmarshal(gocql.NewNativeType(4, gocql.TypeBlob, ""), bytes, i)
+			},
+		},
+	}
 
-	for _, tType := range tTypes {
-		marshal := func(i interface{}) ([]byte, error) { return gocql.Marshal(tType, i) }
-		unmarshal := func(bytes []byte, i interface{}) error {
-			return gocql.Unmarshal(tType, bytes, i)
-		}
+	for _, tSuite := range testSuites {
+		marshal := tSuite.marshal
+		unmarshal := tSuite.unmarshal
 
-		t.Run(tType.String(), func(t *testing.T) {
+		t.Run(tSuite.name, func(t *testing.T) {
 			serialization.PositiveSet{
 				Data: nil,
 				Values: mod.Values{
@@ -40,9 +83,8 @@ func TestMarshalTexts(t *testing.T) {
 			}.Run("[nil]unmarshal", t, nil, unmarshal)
 
 			serialization.PositiveSet{
-				Data:                 make([]byte, 0),
-				Values:               mod.Values{make([]byte, 0), ""}.AddVariants(mod.All...),
-				BrokenUnmarshalTypes: brokenZeroSlices,
+				Data:   make([]byte, 0),
+				Values: mod.Values{make([]byte, 0), ""}.AddVariants(mod.All...),
 			}.Run("[]unmarshal", t, nil, unmarshal)
 
 			serialization.PositiveSet{
