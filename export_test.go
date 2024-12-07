@@ -3,7 +3,6 @@
 
 package gocql
 
-var FlagRunSslTest = flagRunSslTest
 var CreateCluster = createCluster
 var TestLogger = &testLogger{}
 var WaitUntilPoolsStopFilling = waitUntilPoolsStopFilling
