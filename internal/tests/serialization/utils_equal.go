@@ -60,10 +60,16 @@ func equalVals(in1, in2 interface{}) bool {
 		return vin1.Cmp(vin2) == 0
 	case inf.Dec:
 		vin2 := in2.(inf.Dec)
-		return vin1.Cmp(&vin2) == 0
+		if vin1.Scale() != vin2.Scale() {
+			return false
+		}
+		return vin1.UnscaledBig().Cmp(vin2.UnscaledBig()) == 0
 	case *inf.Dec:
 		vin2 := in2.(*inf.Dec)
-		return vin1.Cmp(vin2) == 0
+		if vin1.Scale() != vin2.Scale() {
+			return false
+		}
+		return vin1.UnscaledBig().Cmp(vin2.UnscaledBig()) == 0
 	case fmt.Stringer:
 		vin2 := in2.(fmt.Stringer)
 		return vin1.String() == vin2.String()

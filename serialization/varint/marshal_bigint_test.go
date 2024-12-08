@@ -47,7 +47,7 @@ func TestEnc2BigInt(t *testing.T) {
 				t.Fatalf("%d\nexpected:%x\nreceived:%x", i, expected, received)
 			}
 
-			received = encInt64(i)
+			received = EncInt64Ext(i)
 			if !bytes.Equal(expected, received) {
 				t.Fatalf("%d\nexpected:%x\nreceived:%x", i, expected, received)
 			}
@@ -64,7 +64,7 @@ func TestEnc2BigInt(t *testing.T) {
 				t.Fatalf("%d\nexpected:%x\nreceived:%x", i, expected, received)
 			}
 
-			received = encInt64(i)
+			received = EncInt64Ext(i)
 			if !bytes.Equal(expected, received) {
 				t.Fatalf("%d\nexpected:%x\nreceived:%x", i, expected, received)
 			}

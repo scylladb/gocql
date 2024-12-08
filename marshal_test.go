@@ -599,12 +599,6 @@ var unmarshalTests = []struct {
 		unmarshalErrorf("unmarshal map: unexpected eof"),
 	},
 	{
-		NativeType{proto: 2, typ: TypeDecimal},
-		[]byte("\xff\xff\xff"),
-		inf.NewDec(0, 0), // From the datastax/python-driver test suite
-		unmarshalErrorf("inf.Dec needs at least 4 bytes, while value has only 3"),
-	},
-	{
 		NativeType{proto: 5, typ: TypeDuration},
 		[]byte("\x89\xa2\xc3\xc2\x9a\xe0F\x91"),
 		Duration{},

@@ -34,14 +34,14 @@ func EncInt32R(v *int32) ([]byte, error) {
 }
 
 func EncInt64(v int64) ([]byte, error) {
-	return encInt64(v), nil
+	return EncInt64Ext(v), nil
 }
 
 func EncInt64R(v *int64) ([]byte, error) {
 	if v == nil {
 		return nil, nil
 	}
-	return encInt64(*v), nil
+	return EncInt64Ext(*v), nil
 }
 
 func EncInt(v int) ([]byte, error) {
@@ -79,7 +79,7 @@ func encInt32(v int32) []byte {
 	return []byte{byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v)}
 }
 
-func encInt64(v int64) []byte {
+func EncInt64Ext(v int64) []byte {
 	if v <= maxInt8 && v >= minInt8 {
 		return []byte{byte(v)}
 	}

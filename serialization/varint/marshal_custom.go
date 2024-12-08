@@ -55,11 +55,11 @@ func encReflectString(v reflect.Value) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal varint: can not marshal (%T)(%[1]v), %s", v.Interface(), err)
 		}
-		return encInt64(n), nil
+		return EncInt64Ext(n), nil
 	case len(val) <= 20:
 		n, err := strconv.ParseInt(val, 10, 64)
 		if err == nil {
-			return encInt64(n), nil
+			return EncInt64Ext(n), nil
 		}
 
 		t, ok := new(big.Int).SetString(val, 10)
