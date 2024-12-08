@@ -46,11 +46,11 @@ func EncString(v string) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal varint: can not marshal %#v, %s", v, err)
 		}
-		return encInt64(n), nil
+		return EncInt64Ext(n), nil
 	case len(v) <= 20:
 		n, err := strconv.ParseInt(v, 10, 64)
 		if err == nil {
-			return encInt64(n), nil
+			return EncInt64Ext(n), nil
 		}
 
 		t, ok := new(big.Int).SetString(v, 10)
