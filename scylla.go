@@ -282,8 +282,8 @@ func parseCQLProtocolExtensions(supported map[string][]string) []cqlProtocolExte
 }
 
 // isScyllaConn checks if conn is suitable for scyllaConnPicker.
-func isScyllaConn(conn *Conn) bool {
-	return conn.scyllaSupported.nrShards != 0
+func (conn *Conn) isScyllaConn() bool {
+	return conn.getScyllaSupported().nrShards != 0
 }
 
 // scyllaConnPicker is a specialised ConnPicker that selects connections based

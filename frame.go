@@ -344,6 +344,12 @@ type FrameHeaderObserver interface {
 	ObserveFrameHeader(context.Context, ObservedFrameHeader)
 }
 
+type framerInterface interface {
+	ReadBytesInternal() ([]byte, error)
+	GetCustomPayload() map[string][]byte
+	GetHeaderWarnings() []string
+}
+
 // a framer is responsible for reading, writing and parsing frames on a single stream
 type framer struct {
 	proto byte
@@ -1866,7 +1872,7 @@ func (f *framer) readStringList() []string {
 	return l
 }
 
-func (f *framer) readBytesInternal() ([]byte, error) {
+func (f *framer) ReadBytesInternal() ([]byte, error) {
 	size := f.readInt()
 	if size < 0 {
 		return nil, nil
@@ -1883,7 +1889,7 @@ func (f *framer) readBytesInternal() ([]byte, error) {
 }
 
 func (f *framer) readBytes() []byte {
-	l, err := f.readBytesInternal()
+	l, err := f.ReadBytesInternal()
 	if err != nil {
 		panic(err)
 	}
@@ -2013,6 +2019,14 @@ func (f *framer) writeCustomPayload(customPayload *map[string][]byte) {
 		}
 		f.writeBytesMap(*customPayload)
 	}
+}
+
+func (f *framer) GetCustomPayload() map[string][]byte {
+	return f.customPayload
+}
+
+func (f *framer) GetHeaderWarnings() []string {
+	return f.header.warnings
 }
 
 // these are protocol level binary types

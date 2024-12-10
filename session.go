@@ -57,7 +57,7 @@ type Session struct {
 
 	mu sync.RWMutex
 
-	control *controlConn
+	control controlConnection
 
 	// event handlers
 	nodeEvents   *eventDebouncer
@@ -151,8 +151,10 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 
 	s.routingKeyInfoCache.lru = lru.New(cfg.MaxRoutingKeyInfo)
 
-	s.hostSource = &ringDescriber{session: s}
-	s.ringRefresher = newRefreshDebouncer(ringRefreshDebounceTime, func() error { return refreshRing(s.hostSource) })
+	s.hostSource = &ringDescriber{cfg: &s.cfg, logger: s.logger}
+	s.ringRefresher = newRefreshDebouncer(ringRefreshDebounceTime, func() error {
+		return s.refreshRing()
+	})
 
 	if cfg.PoolConfig.HostSelectionPolicy == nil {
 		cfg.PoolConfig.HostSelectionPolicy = RoundRobinHostPolicy()
@@ -251,13 +253,15 @@ func (s *Session) init() error {
 			return fmt.Errorf("unable to connect to the cluster, last error: %v", lastErr.Error())
 		}
 
-		conn := s.control.getConn().conn
+		conn := s.control.getConn().conn.(*Conn)
 		conn.mu.Lock()
 		s.tabletsRoutingV1 = conn.isTabletSupported()
-		if s.cfg.MetadataSchemaRequestTimeout > time.Duration(0) && isScyllaConn(conn) {
+		if s.cfg.MetadataSchemaRequestTimeout > time.Duration(0) && conn.isScyllaConn() {
 			s.usingTimeoutClause = " USING TIMEOUT " + strconv.FormatInt(int64(s.cfg.MetadataSchemaRequestTimeout.Milliseconds()), 10) + "ms"
 		}
 		conn.mu.Unlock()
+
+		s.hostSource.setControlConn(s.control)
 
 		if !s.cfg.DisableInitialHostLookup {
 			var partitioner string
@@ -403,9 +407,8 @@ func (s *Session) AwaitSchemaAgreement(ctx context.Context) error {
 	if s.cfg.disableControlConn {
 		return errNoControl
 	}
-	return s.control.withConn(func(conn *Conn) *Iter {
-		return &Iter{err: conn.awaitSchemaAgreement(ctx)}
-	}).err
+	ch := s.control.getConn()
+	return (&Iter{err: ch.conn.awaitSchemaAgreement(ctx)}).err
 }
 
 func (s *Session) reconnectDownedHosts(intv time.Duration) {
@@ -973,7 +976,7 @@ type Query struct {
 	trace                 Tracer
 	observer              QueryObserver
 	session               *Session
-	conn                  *Conn
+	conn                  ConnInterface
 	rt                    RetryPolicy
 	spec                  SpeculativeExecutionPolicy
 	binding               func(q *QueryInfo) ([]interface{}, error)
@@ -1548,7 +1551,7 @@ type Iter struct {
 	next    *nextIter
 	host    *HostInfo
 
-	framer *framer
+	framer framerInterface
 	closed int32
 }
 
@@ -1687,7 +1690,7 @@ func (iter *Iter) Scanner() Scanner {
 }
 
 func (iter *Iter) readColumn() ([]byte, error) {
-	return iter.framer.readBytesInternal()
+	return iter.framer.ReadBytesInternal()
 }
 
 // Scan consumes the next row of the iterator and copies the columns of the
@@ -1753,7 +1756,7 @@ func (iter *Iter) Scan(dest ...interface{}) bool {
 // See https://datastax.github.io/java-driver/manual/custom_payloads/
 func (iter *Iter) GetCustomPayload() map[string][]byte {
 	if iter.framer != nil {
-		return iter.framer.customPayload
+		return iter.framer.GetCustomPayload()
 	}
 	return nil
 }
@@ -1763,7 +1766,7 @@ func (iter *Iter) GetCustomPayload() map[string][]byte {
 // This is only available starting with CQL Protocol v4.
 func (iter *Iter) Warnings() []string {
 	if iter.framer != nil {
-		return iter.framer.header.warnings
+		return iter.framer.GetHeaderWarnings()
 	}
 	return nil
 }

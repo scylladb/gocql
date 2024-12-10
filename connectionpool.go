@@ -528,7 +528,7 @@ func (pool *hostConnPool) initConnPicker(conn *Conn) {
 		return
 	}
 
-	if isScyllaConn(conn) {
+	if conn.isScyllaConn() {
 		pool.connPicker = newScyllaConnPicker(conn)
 		return
 	}
