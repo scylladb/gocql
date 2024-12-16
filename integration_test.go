@@ -10,16 +10,18 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/gocql/gocql/internal/testcmdline"
 )
 
 // TestAuthentication verifies that gocql will work with a host configured to only accept authenticated connections
 func TestAuthentication(t *testing.T) {
 
-	if *flagProto < 2 {
+	if *testcmdline.Proto < 2 {
 		t.Skip("Authentication is not supported with protocol < 2")
 	}
 
-	if !*flagRunAuthTest {
+	if !*testcmdline.RunAuthTest {
 		t.Skip("Authentication is not configured in the target cluster")
 	}
 
@@ -61,21 +63,21 @@ func TestRingDiscovery(t *testing.T) {
 	session := createSessionFromCluster(cluster, t)
 	defer session.Close()
 
-	if *clusterSize > 1 {
+	if *testcmdline.ClusterSize > 1 {
 		// wait for autodiscovery to update the pool with the list of known hosts
-		time.Sleep(*flagAutoWait)
+		time.Sleep(*testcmdline.AutoWait)
 	}
 
 	session.pool.mu.RLock()
 	defer session.pool.mu.RUnlock()
 	size := len(session.pool.hostConnPools)
 
-	if *clusterSize != size {
+	if *testcmdline.ClusterSize != size {
 		for p, pool := range session.pool.hostConnPools {
 			t.Logf("p=%q host=%v ips=%s", p, pool.host, pool.host.ConnectAddress().String())
 
 		}
-		t.Errorf("Expected a cluster size of %d, but actual size was %d", *clusterSize, size)
+		t.Errorf("Expected a cluster size of %d, but actual size was %d", *testcmdline.ClusterSize, size)
 	}
 }
 
