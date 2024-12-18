@@ -160,6 +160,10 @@ func (s *SimpleRetryPolicy) AttemptLWT(q RetryableQuery) bool {
 }
 
 func (s *SimpleRetryPolicy) GetRetryType(err error) RetryType {
+	var executedErr *PotentiallyExecutedNotIdempotentError
+	if errors.As(err, &executedErr) {
+		return Rethrow
+	}
 	return RetryNextHost
 }
 
@@ -168,6 +172,10 @@ func (s *SimpleRetryPolicy) GetRetryType(err error) RetryType {
 // even timeouts if other clients send statements touching the same
 // partition to the original node at the same time.
 func (s *SimpleRetryPolicy) GetRetryTypeLWT(err error) RetryType {
+	var executedErr *PotentiallyExecutedNotIdempotentError
+	if errors.As(err, &executedErr) {
+		return Rethrow
+	}
 	return Retry
 }
 
@@ -208,6 +216,10 @@ func getExponentialTime(min time.Duration, max time.Duration, attempts int) time
 }
 
 func (e *ExponentialBackoffRetryPolicy) GetRetryType(err error) RetryType {
+	var executedErr *PotentiallyExecutedNotIdempotentError
+	if errors.As(err, &executedErr) {
+		return Rethrow
+	}
 	return RetryNextHost
 }
 
@@ -216,6 +228,10 @@ func (e *ExponentialBackoffRetryPolicy) GetRetryType(err error) RetryType {
 // even timeouts if other clients send statements touching the same
 // partition to the original node at the same time.
 func (e *ExponentialBackoffRetryPolicy) GetRetryTypeLWT(err error) RetryType {
+	var executedErr *PotentiallyExecutedNotIdempotentError
+	if errors.As(err, &executedErr) {
+		return Rethrow
+	}
 	return Retry
 }
 
@@ -250,6 +266,11 @@ func (d *DowngradingConsistencyRetryPolicy) Attempt(q RetryableQuery) bool {
 }
 
 func (d *DowngradingConsistencyRetryPolicy) GetRetryType(err error) RetryType {
+	var executedErr *PotentiallyExecutedNotIdempotentError
+	if errors.As(err, &executedErr) {
+		return Rethrow
+	}
+
 	switch t := err.(type) {
 	case *RequestErrUnavailable:
 		if t.Alive > 0 {

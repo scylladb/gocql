@@ -115,45 +115,61 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, hostIter Ne
 
 	var lastErr error
 	var iter *Iter
+	var conn *Conn
 	for selectedHost != nil {
 		host := selectedHost.Info()
 		if host == nil || !host.IsUp() {
-			selectedHost = hostIter()
-			continue
+			if rt == nil {
+				selectedHost = hostIter()
+				lastErr = ErrHostDown
+				continue
+			}
+		} else {
+			pool, ok := q.pool.getPool(host)
+			if !ok {
+				if rt == nil {
+					selectedHost = hostIter()
+					lastErr = ErrNoPool
+					continue
+				}
+			} else {
+				conn = pool.Pick(selectedHost.Token(), qry)
+				if conn == nil {
+					if rt == nil {
+						selectedHost = hostIter()
+						lastErr = ErrNoConnectionsInPool
+						continue
+					}
+				} else {
+					iter = q.attemptQuery(ctx, qry, conn)
+					iter.host = selectedHost.Info()
+					// Update host
+					switch iter.err {
+					case context.Canceled, context.DeadlineExceeded, ErrNotFound:
+						// those errors represents logical errors, they should not count
+						// toward removing a node from the pool
+						selectedHost.Mark(nil)
+						return iter
+					default:
+						selectedHost.Mark(iter.err)
+					}
+
+					// Exit if the query was successful
+					// or no retry policy defined
+					if iter.err == nil || rt == nil {
+						return iter
+					}
+
+					lastErr = iter.err
+
+					if customErr, ok := iter.err.(*QueryError); ok && customErr.potentiallyExecuted && !qry.IsIdempotent() {
+						lastErr = &PotentiallyExecutedNotIdempotentError{err: customErr.err}
+					}
+				}
+			}
 		}
 
-		pool, ok := q.pool.getPool(host)
-		if !ok {
-			selectedHost = hostIter()
-			continue
-		}
-
-		conn := pool.Pick(selectedHost.Token(), qry)
-		if conn == nil {
-			selectedHost = hostIter()
-			continue
-		}
-
-		iter = q.attemptQuery(ctx, qry, conn)
-		iter.host = selectedHost.Info()
-		// Update host
-		switch iter.err {
-		case context.Canceled, context.DeadlineExceeded, ErrNotFound:
-			// those errors represents logical errors, they should not count
-			// toward removing a node from the pool
-			selectedHost.Mark(nil)
-			return iter
-		default:
-			selectedHost.Mark(iter.err)
-		}
-
-		// Exit if the query was successful
-		// or no retry policy defined
-		if iter.err == nil || rt == nil {
-			return iter
-		}
-
-		// or retry policy decides to not retry anymore
+		// Exit if retry policy decides to not retry anymore
 		if use_lwt_rt {
 			if !lwt_rt.AttemptLWT(qry) {
 				return iter
@@ -164,13 +180,11 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, hostIter Ne
 			}
 		}
 
-		lastErr = iter.err
-
 		var retry_type RetryType
 		if use_lwt_rt {
-			retry_type = lwt_rt.GetRetryTypeLWT(iter.err)
+			retry_type = lwt_rt.GetRetryTypeLWT(lastErr)
 		} else {
-			retry_type = rt.GetRetryType(iter.err)
+			retry_type = rt.GetRetryType(lastErr)
 		}
 
 		// If query is unsuccessful, check the error with RetryPolicy to retry
