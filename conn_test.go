@@ -311,7 +311,7 @@ func TestCancel(t *testing.T) {
 	wg.Add(1)
 
 	go func() {
-		if err := qry.Exec(); err != context.Canceled {
+		if err := qry.Exec(); !errors.Is(err, context.Canceled) {
 			t.Fatalf("expected to get context cancel error: '%v', got '%v'", context.Canceled, err)
 		}
 		wg.Done()
@@ -456,6 +456,10 @@ func (t *testRetryPolicy) Attempt(qry RetryableQuery) bool {
 	return qry.Attempts() <= t.NumRetries
 }
 func (t *testRetryPolicy) GetRetryType(err error) RetryType {
+	var executedErr *QueryError
+	if errors.As(err, &executedErr) && executedErr.PotentiallyExecuted() && !executedErr.IsIdempotent() {
+		return Rethrow
+	}
 	return Retry
 }
 
@@ -573,7 +577,7 @@ func TestQueryTimeout(t *testing.T) {
 
 	select {
 	case err := <-ch:
-		if err != ErrTimeoutNoResponse {
+		if !errors.Is(err, ErrTimeoutNoResponse) {
 			t.Fatalf("expected to get %v for timeout got %v", ErrTimeoutNoResponse, err)
 		}
 	case <-time.After(40*time.Millisecond + db.cfg.Timeout):
@@ -667,8 +671,8 @@ func TestQueryTimeoutClose(t *testing.T) {
 		t.Fatal("timedout waiting to get a response once cluster is closed")
 	}
 
-	if err != ErrConnectionClosed {
-		t.Fatalf("expected to get %v got %v", ErrConnectionClosed, err)
+	if !errors.Is(err, ErrConnectionClosed) {
+		t.Fatalf("expected to get %v or an error wrapping it, got %v", ErrConnectionClosed, err)
 	}
 }
 
@@ -721,7 +725,7 @@ func TestContext_Timeout(t *testing.T) {
 	cancel()
 
 	err = db.Query("timeout").WithContext(ctx).Exec()
-	if err != context.Canceled {
+	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected to get context cancel error: %v got %v", context.Canceled, err)
 	}
 }
@@ -838,7 +842,7 @@ func TestContext_CanceledBeforeExec(t *testing.T) {
 	cancel()
 
 	err = db.Query("timeout").WithContext(ctx).Exec()
-	if err != context.Canceled {
+	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected to get context cancel error: %v got %v", context.Canceled, err)
 	}
 

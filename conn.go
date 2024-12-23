@@ -1101,13 +1101,13 @@ func (c *Conn) addCall(call *callReq) error {
 
 func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*framer, error) {
 	if ctxErr := ctx.Err(); ctxErr != nil {
-		return nil, ctxErr
+		return nil, &QueryError{err: ctxErr, potentiallyExecuted: false}
 	}
 
 	// TODO: move tracer onto conn
 	stream, ok := c.streams.GetStream()
 	if !ok {
-		return nil, ErrNoStreams
+		return nil, &QueryError{err: ErrNoStreams, potentiallyExecuted: false}
 	}
 
 	// resp is basically a waiting semaphore protecting the framer
@@ -1125,7 +1125,7 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*fram
 	}
 
 	if err := c.addCall(call); err != nil {
-		return nil, err
+		return nil, &QueryError{err: err, potentiallyExecuted: false}
 	}
 
 	// After this point, we need to either read from call.resp or close(call.timeout)
@@ -1157,7 +1157,7 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*fram
 		// We need to release the stream after we remove the call from c.calls, otherwise the existingCall != nil
 		// check above could fail.
 		c.releaseStream(call)
-		return nil, err
+		return nil, &QueryError{err: err, potentiallyExecuted: false}
 	}
 
 	n, err := c.w.writeContext(ctx, framer.buf)
@@ -1185,7 +1185,7 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*fram
 			// send a frame on, with all the streams used up and not returned.
 			c.closeWithError(err)
 		}
-		return nil, err
+		return nil, &QueryError{err: err, potentiallyExecuted: true}
 	}
 
 	var timeoutCh <-chan time.Time
@@ -1222,7 +1222,7 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*fram
 				// connection to close.
 				c.releaseStream(call)
 			}
-			return nil, resp.err
+			return nil, &QueryError{err: resp.err, potentiallyExecuted: true}
 		}
 		// dont release the stream if detect a timeout as another request can reuse
 		// that stream and get a response for the old request, which we have no
@@ -1233,20 +1233,20 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*fram
 		defer c.releaseStream(call)
 
 		if v := resp.framer.header.version.version(); v != c.version {
-			return nil, NewErrProtocol("unexpected protocol version in response: got %d expected %d", v, c.version)
+			return nil, &QueryError{err: NewErrProtocol("unexpected protocol version in response: got %d expected %d", v, c.version), potentiallyExecuted: true}
 		}
 
 		return resp.framer, nil
 	case <-timeoutCh:
 		close(call.timeout)
 		c.handleTimeout()
-		return nil, ErrTimeoutNoResponse
+		return nil, &QueryError{err: ErrTimeoutNoResponse, potentiallyExecuted: true}
 	case <-ctxDone:
 		close(call.timeout)
-		return nil, ctx.Err()
+		return nil, &QueryError{err: ctx.Err(), potentiallyExecuted: true}
 	case <-c.ctx.Done():
 		close(call.timeout)
-		return nil, ErrConnectionClosed
+		return nil, &QueryError{err: ErrConnectionClosed, potentiallyExecuted: true}
 	}
 }
 
@@ -1906,11 +1906,14 @@ func (c *Conn) awaitSchemaAgreement(ctx context.Context) error {
 }
 
 var (
-	ErrQueryArgLength    = errors.New("gocql: query argument length mismatch")
-	ErrTimeoutNoResponse = errors.New("gocql: no response received from cassandra within timeout period")
-	ErrTooManyTimeouts   = errors.New("gocql: too many query timeouts on the connection")
-	ErrConnectionClosed  = errors.New("gocql: connection closed waiting for response")
-	ErrNoStreams         = errors.New("gocql: no streams available on connection")
+	ErrQueryArgLength      = errors.New("gocql: query argument length mismatch")
+	ErrTimeoutNoResponse   = errors.New("gocql: no response received from cassandra within timeout period")
+	ErrTooManyTimeouts     = errors.New("gocql: too many query timeouts on the connection")
+	ErrConnectionClosed    = errors.New("gocql: connection closed waiting for response")
+	ErrNoStreams           = errors.New("gocql: no streams available on connection")
+	ErrHostDown            = errors.New("gocql: host is nil or down")
+	ErrNoPool              = errors.New("gocql: host does not have a pool")
+	ErrNoConnectionsInPool = errors.New("gocql: host pool does not have connections")
 )
 
 type ErrSchemaMismatch struct {
@@ -1919,4 +1922,26 @@ type ErrSchemaMismatch struct {
 
 func (e *ErrSchemaMismatch) Error() string {
 	return fmt.Sprintf("gocql: cluster schema versions not consistent: %+v", e.schemas)
+}
+
+type QueryError struct {
+	err                 error
+	potentiallyExecuted bool
+	isIdempotent        bool
+}
+
+func (e *QueryError) IsIdempotent() bool {
+	return e.isIdempotent
+}
+
+func (e *QueryError) PotentiallyExecuted() bool {
+	return e.potentiallyExecuted
+}
+
+func (e *QueryError) Error() string {
+	return fmt.Sprintf("%s (potentially executed: %v)", e.err.Error(), e.potentiallyExecuted)
+}
+
+func (e *QueryError) Unwrap() error {
+	return e.err
 }
