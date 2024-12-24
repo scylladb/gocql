@@ -32,20 +32,6 @@ var marshalTests = []struct {
 	UnmarshalError error
 }{
 	{
-		NativeType{proto: 2, typ: TypeBoolean},
-		[]byte("\x00"),
-		false,
-		nil,
-		nil,
-	},
-	{
-		NativeType{proto: 2, typ: TypeBoolean},
-		[]byte("\x01"),
-		true,
-		nil,
-		nil,
-	},
-	{
 		NativeType{proto: 2, typ: TypeDecimal},
 		[]byte("\x00\x00\x00\x00\x00"),
 		inf.NewDec(0, 0),
@@ -300,33 +286,6 @@ var marshalTests = []struct {
 		NativeType{proto: 2, typ: TypeInet},
 		[]byte("\xfe\x80\x00\x00\x00\x00\x00\x00\x02\x02\xb3\xff\xfe\x1e\x83\x29"),
 		net.ParseIP("fe80::202:b3ff:fe1e:8329"),
-		nil,
-		nil,
-	},
-	{
-		NativeType{proto: 2, typ: TypeBoolean},
-		[]byte("\x00"),
-		func() *bool {
-			b := false
-			return &b
-		}(),
-		nil,
-		nil,
-	},
-	{
-		NativeType{proto: 2, typ: TypeBoolean},
-		[]byte("\x01"),
-		func() *bool {
-			b := true
-			return &b
-		}(),
-		nil,
-		nil,
-	},
-	{
-		NativeType{proto: 2, typ: TypeBoolean},
-		[]byte(nil),
-		(*bool)(nil),
 		nil,
 		nil,
 	},

@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/gocql/gocql/serialization/boolean"
 	"math"
 	"math/big"
 	"math/bits"
@@ -154,7 +155,7 @@ func Marshal(info TypeInfo, value interface{}) ([]byte, error) {
 	case TypeAscii:
 		return marshalAscii(value)
 	case TypeBoolean:
-		return marshalBool(info, value)
+		return marshalBool(value)
 	case TypeTinyInt:
 		return marshalTinyInt(value)
 	case TypeSmallInt:
@@ -266,7 +267,7 @@ func Unmarshal(info TypeInfo, data []byte, value interface{}) error {
 	case TypeAscii:
 		return unmarshalAscii(data, value)
 	case TypeBoolean:
-		return unmarshalBool(info, data, value)
+		return unmarshalBool(data, value)
 	case TypeInt:
 		return unmarshalInt(data, value)
 	case TypeBigInt:
@@ -525,61 +526,19 @@ func decBigInt(data []byte) int64 {
 		int64(data[6])<<8 | int64(data[7])
 }
 
-func marshalBool(info TypeInfo, value interface{}) ([]byte, error) {
-	switch v := value.(type) {
-	case Marshaler:
-		return v.MarshalCQL(info)
-	case unsetColumn:
-		return nil, nil
-	case bool:
-		return encBool(v), nil
+func marshalBool(value interface{}) ([]byte, error) {
+	data, err := boolean.Marshal(value)
+	if err != nil {
+		return nil, wrapMarshalError(err, "marshal error")
 	}
-
-	if value == nil {
-		return nil, nil
-	}
-
-	rv := reflect.ValueOf(value)
-	switch rv.Type().Kind() {
-	case reflect.Bool:
-		return encBool(rv.Bool()), nil
-	}
-	return nil, marshalErrorf("can not marshal %T into %s", value, info)
+	return data, nil
 }
 
-func encBool(v bool) []byte {
-	if v {
-		return []byte{1}
+func unmarshalBool(data []byte, value interface{}) error {
+	if err := boolean.Unmarshal(data, value); err != nil {
+		return wrapUnmarshalError(err, "unmarshal error")
 	}
-	return []byte{0}
-}
-
-func unmarshalBool(info TypeInfo, data []byte, value interface{}) error {
-	switch v := value.(type) {
-	case Unmarshaler:
-		return v.UnmarshalCQL(info, data)
-	case *bool:
-		*v = decBool(data)
-		return nil
-	}
-	rv := reflect.ValueOf(value)
-	if rv.Kind() != reflect.Ptr {
-		return unmarshalErrorf("can not unmarshal into non-pointer %T", value)
-	}
-	rv = rv.Elem()
-	switch rv.Type().Kind() {
-	case reflect.Bool:
-		rv.SetBool(decBool(data))
-		return nil
-	}
-	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
-}
-
-func decBool(v []byte) bool {
-	if len(v) == 0 {
-		return false
-	}
-	return v[0] != 0
+	return nil
 }
 
 func marshalFloat(value interface{}) ([]byte, error) {
