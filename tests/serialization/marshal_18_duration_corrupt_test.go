@@ -20,9 +20,6 @@ func TestMarshalDurationCorrupt(t *testing.T) {
 		return gocql.Unmarshal(tType, bytes, i)
 	}
 
-	// unmarshal `gocql.Duration` with data which more cql values (int32,int32,int64) size does not return an error
-	brokenDuration := serialization.GetTypes(gocql.Duration{}, &gocql.Duration{})
-
 	serialization.NegativeMarshalSet{
 		Values: mod.Values{
 			"23123113", "sda",
@@ -34,7 +31,6 @@ func TestMarshalDurationCorrupt(t *testing.T) {
 		Values: mod.Values{
 			int64(0), time.Duration(0), "", gocql.Duration{},
 		}.AddVariants(mod.All...),
-		BrokenTypes: brokenDuration,
 	}.Run("big_data_month1", t, unmarshal)
 
 	serialization.NegativeUnmarshalSet{
@@ -42,7 +38,6 @@ func TestMarshalDurationCorrupt(t *testing.T) {
 		Values: mod.Values{
 			int64(0), time.Duration(0), "", gocql.Duration{},
 		}.AddVariants(mod.All...),
-		BrokenTypes: brokenDuration,
 	}.Run("big_data_month2", t, unmarshal)
 
 	serialization.NegativeUnmarshalSet{
@@ -50,7 +45,6 @@ func TestMarshalDurationCorrupt(t *testing.T) {
 		Values: mod.Values{
 			int64(0), time.Duration(0), "", gocql.Duration{},
 		}.AddVariants(mod.All...),
-		BrokenTypes: brokenDuration,
 	}.Run("big_data_day1", t, unmarshal)
 
 	serialization.NegativeUnmarshalSet{
@@ -58,31 +52,41 @@ func TestMarshalDurationCorrupt(t *testing.T) {
 		Values: mod.Values{
 			int64(0), time.Duration(0), "", gocql.Duration{},
 		}.AddVariants(mod.All...),
-		BrokenTypes: brokenDuration,
 	}.Run("big_data_day2", t, unmarshal)
 
 	serialization.NegativeUnmarshalSet{
-		Data: []byte("\x00\x00\xff\xff\xff\xff\xff\xff\xff\xff\xfe"),
+		Data: []byte("\x00\x01\xff\xff\xff\xff\xff\xff\xff\xff\xff"),
 		Values: mod.Values{
-			int64(0), time.Duration(0), "", gocql.Duration{},
+			int64(0), time.Duration(0), "",
 		}.AddVariants(mod.All...),
-		BrokenTypes: brokenDuration,
 	}.Run("big_data_nano1", t, unmarshal)
 
 	serialization.NegativeUnmarshalSet{
-		Data: []byte("\x00\x00\xff\xff\xff\xff\xff\xff\xff\xff\xff"),
+		Data: []byte("\x01\x00\xff\xff\xff\xff\xff\xff\xff\xff\xff"),
 		Values: mod.Values{
-			int64(0), time.Duration(0), "", gocql.Duration{},
+			int64(0), time.Duration(0), "",
 		}.AddVariants(mod.All...),
-		BrokenTypes: brokenDuration,
 	}.Run("big_data_nano2", t, unmarshal)
+
+	serialization.NegativeUnmarshalSet{
+		Data: []byte("\x01\x00\x41\xfd\xfc\x9b\xc5\xc4\x9e\x00\x00"),
+		Values: mod.Values{
+			int64(0), time.Duration(0), "",
+		}.AddVariants(mod.All...),
+	}.Run("big_data_nano3", t, unmarshal)
+
+	serialization.NegativeUnmarshalSet{
+		Data: []byte("\x00\xc3\x41\xfd\xfc\x9b\xc5\xc4\x9e\x00\x01"),
+		Values: mod.Values{
+			int64(0), time.Duration(0), "",
+		}.AddVariants(mod.All...),
+	}.Run("big_data_nano4", t, unmarshal)
 
 	serialization.NegativeUnmarshalSet{
 		Data: []byte("\x00\x00\x00\x00"),
 		Values: mod.Values{
 			int64(0), time.Duration(0), "", gocql.Duration{},
 		}.AddVariants(mod.All...),
-		BrokenTypes: brokenDuration,
 	}.Run("big_data_len1", t, unmarshal)
 
 	serialization.NegativeUnmarshalSet{
@@ -90,7 +94,6 @@ func TestMarshalDurationCorrupt(t *testing.T) {
 		Values: mod.Values{
 			int64(0), time.Duration(0), "", gocql.Duration{},
 		}.AddVariants(mod.All...),
-		BrokenTypes: brokenDuration,
 	}.Run("big_data_len2", t, unmarshal)
 
 	serialization.NegativeUnmarshalSet{
@@ -98,7 +101,6 @@ func TestMarshalDurationCorrupt(t *testing.T) {
 		Values: mod.Values{
 			int64(0), time.Duration(0), "", gocql.Duration{},
 		}.AddVariants(mod.All...),
-		BrokenTypes: brokenDuration,
 	}.Run("big_data_len3", t, unmarshal)
 
 	serialization.NegativeUnmarshalSet{
@@ -107,6 +109,13 @@ func TestMarshalDurationCorrupt(t *testing.T) {
 			int64(0), time.Duration(0), "", gocql.Duration{},
 		}.AddVariants(mod.All...),
 	}.Run("small_data_len1", t, unmarshal)
+
+	serialization.NegativeUnmarshalSet{
+		Data: []byte("\x00"),
+		Values: mod.Values{
+			int64(0), time.Duration(0), "", gocql.Duration{},
+		}.AddVariants(mod.All...),
+	}.Run("small_data_len2", t, unmarshal)
 
 	serialization.NegativeUnmarshalSet{
 		Data: []byte("\xf0\xff\xff\xff\xfe\x00"),
@@ -121,4 +130,25 @@ func TestMarshalDurationCorrupt(t *testing.T) {
 			int64(0), time.Duration(0), "", gocql.Duration{},
 		}.AddVariants(mod.All...),
 	}.Run("small_data_len3", t, unmarshal)
+
+	serialization.NegativeUnmarshalSet{
+		Data: []byte("\x00\x00\xff\xff\xff\xff\xff\xff\xff\xff"),
+		Values: mod.Values{
+			int64(0), time.Duration(0), "", gocql.Duration{},
+		}.AddVariants(mod.All...),
+	}.Run("small_data_len_nanos", t, unmarshal)
+
+	serialization.NegativeUnmarshalSet{
+		Data: []byte("\x00\xf0\xff\xff\xff\x00"),
+		Values: mod.Values{
+			int64(0), time.Duration(0), "", gocql.Duration{},
+		}.AddVariants(mod.All...),
+	}.Run("small_data_len_days", t, unmarshal)
+
+	serialization.NegativeUnmarshalSet{
+		Data: []byte("\xf0\xff\xff\xff\x00\x00"),
+		Values: mod.Values{
+			int64(0), time.Duration(0), "", gocql.Duration{},
+		}.AddVariants(mod.All...),
+	}.Run("small_data_len_months", t, unmarshal)
 }
