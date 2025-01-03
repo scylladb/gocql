@@ -79,6 +79,8 @@ type Session struct {
 	// isInitialized is true once Session.init succeeds.
 	// you can use initialized() to read the value.
 	isInitialized bool
+	initErr       error
+	readyCh       chan error
 
 	logger StdLogger
 
@@ -114,8 +116,7 @@ func addrsToHosts(addrs []string, defaultPort int, logger StdLogger) ([]*HostInf
 	return hosts, nil
 }
 
-// NewSession wraps an existing Node.
-func NewSession(cfg ClusterConfig) (*Session, error) {
+func newSessionCommon(cfg ClusterConfig) (*Session, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("gocql: unable to create session: cluster config validation failed: %v", err)
 	}
@@ -132,6 +133,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		ctx:             ctx,
 		cancel:          cancel,
 		logger:          cfg.logger(),
+		readyCh:         make(chan error, 1),
 	}
 
 	// Close created resources on error otherwise they'll leak
@@ -181,6 +183,16 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	}
 	s.connCfg = connCfg
 
+	return s, nil
+}
+
+// NewSession wraps an existing Node.
+func NewSession(cfg ClusterConfig) (*Session, error) {
+	s, err := newSessionCommon(cfg)
+	if err != nil {
+		return nil, err
+	}
+
 	if err = s.init(); err != nil {
 		if err == ErrNoConnectionsStarted {
 			//This error used to be generated inside NewSession & returned directly
@@ -192,9 +204,28 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		}
 	}
 
-	if err = s.policy.IsOperational(s); err != nil {
-		return nil, fmt.Errorf("gocql: unable to create session: %v", err)
+	s.readyCh <- nil
+	close(s.readyCh)
+
+	return s, nil
+}
+
+func NewSessionNonBlocking(cfg ClusterConfig) (*Session, error) {
+	s, err := newSessionCommon(cfg)
+	if err != nil {
+		return nil, err
 	}
+
+	go func() {
+		if initErr := s.init(); initErr != nil {
+			s.sessionStateMu.Lock()
+			s.initErr = fmt.Errorf("gocql: unable to create session: %v", initErr)
+			s.sessionStateMu.Unlock()
+		}
+
+		s.readyCh <- s.initErr
+		close(s.readyCh)
+	}()
 
 	return s, nil
 }
@@ -387,6 +418,10 @@ func (s *Session) init() error {
 		s.policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: s.cfg.Keyspace})
 	}
 
+	if err = s.policy.IsOperational(s); err != nil {
+		return fmt.Errorf("gocql: unable to create session: %v", err)
+	}
+
 	s.sessionStateMu.Lock()
 	s.isInitialized = true
 	s.sessionStateMu.Unlock()
@@ -403,6 +438,9 @@ func (s *Session) init() error {
 func (s *Session) AwaitSchemaAgreement(ctx context.Context) error {
 	if s.cfg.disableControlConn {
 		return errNoControl
+	}
+	if err := s.Ready(); err != nil {
+		return err
 	}
 	ch := s.control.getConn()
 	return (&Iter{err: ch.conn.awaitSchemaAgreement(ctx)}).err
@@ -570,10 +608,31 @@ func (s *Session) initialized() bool {
 	return initialized
 }
 
+func (s *Session) Ready() error {
+	s.sessionStateMu.RLock()
+	err := ErrSessionNotReady
+	if s.isInitialized || s.initErr != nil {
+		err = s.initErr
+	}
+	s.sessionStateMu.RUnlock()
+	return err
+}
+
+func (s *Session) WaitUntilReady() error {
+	err, ok := <-s.readyCh
+	if !ok {
+		return nil
+	}
+	return err
+}
+
 func (s *Session) executeQuery(qry *Query) (it *Iter) {
 	// fail fast
 	if s.Closed() {
 		return &Iter{err: ErrSessionClosed}
+	}
+	if err := s.Ready(); err != nil {
+		return &Iter{err: err}
 	}
 
 	iter, err := s.executor.executeQuery(qry)
@@ -599,6 +658,8 @@ func (s *Session) KeyspaceMetadata(keyspace string) (*KeyspaceMetadata, error) {
 	// fail fast
 	if s.Closed() {
 		return nil, ErrSessionClosed
+	} else if err := s.Ready(); err != nil {
+		return nil, err
 	} else if keyspace == "" {
 		return nil, ErrNoKeyspace
 	}
@@ -611,6 +672,8 @@ func (s *Session) TabletsMetadata() (TabletInfoList, error) {
 	// fail fast
 	if s.Closed() {
 		return nil, ErrSessionClosed
+	} else if err := s.Ready(); err != nil {
+		return nil, err
 	} else if !s.tabletsRoutingV1 {
 		return nil, ErrTabletsNotUsed
 	}
@@ -797,6 +860,9 @@ func (s *Session) executeBatch(batch *Batch) *Iter {
 	// fail fast
 	if s.Closed() {
 		return &Iter{err: ErrSessionClosed}
+	}
+	if err := s.Ready(); err != nil {
+		return &Iter{err: err}
 	}
 
 	// Prevent the execution of the batch if greater than the limit
@@ -2364,6 +2430,7 @@ var (
 	ErrKeyspaceDoesNotExist = errors.New("keyspace does not exist")
 	ErrNoMetadata           = errors.New("no metadata available")
 	ErrTabletsNotUsed       = errors.New("tablets not used")
+	ErrSessionNotReady      = errors.New("session is not ready yet")
 )
 
 type ErrProtocol struct{ error }

@@ -340,6 +340,10 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 	return NewSession(*cfg)
 }
 
+func (cfg *ClusterConfig) CreateSessionNonBlocking() (*Session, error) {
+	return NewSessionNonBlocking(*cfg)
+}
+
 // translateAddressPort is a helper method that will use the given AddressTranslator
 // if defined, to translate the given address and port into a possibly new address
 // and port, If no AddressTranslator or if an error occurs, the given address and

@@ -46,6 +46,11 @@ func testShardAwarePortNoReconnections(t *testing.T, makeCluster makeClusterTest
 			}
 			defer sess.Close()
 
+			if err = sess.WaitUntilReady(); err != nil {
+				cancel()
+				return
+			}
+
 			if err := waitUntilPoolsStopFilling(ctx, sess, 10*time.Second); err != nil {
 				cancel()
 				return
@@ -118,6 +123,10 @@ func testShardAwarePortMaliciousNAT(t *testing.T, makeCluster makeClusterTestFun
 	}
 	defer sess.Close()
 
+	if err = sess.WaitUntilReady(); err != nil {
+		t.Fatalf("an error occurred while initializing a session: %s", err)
+	}
+
 	// In this situation we are guaranteed that the connection will miss one
 	// shard at this point. The first connection receives a random shard,
 	// then we establish N-1 connections, targeting remaining shards.
@@ -149,6 +158,10 @@ func testShardAwarePortUnreachable(t *testing.T, makeCluster makeClusterTestFunc
 		t.Fatalf("an error occurred while creating a session: %s", err)
 	}
 	defer sess.Close()
+
+	if err = sess.WaitUntilReady(); err != nil {
+		t.Fatalf("an error occurred while initializing a session: %s", err)
+	}
 
 	// In this situation, the connecting to the shard-aware port will fail,
 	// but connections to the non-shard-aware port will succeed. This test
@@ -186,6 +199,10 @@ func testShardAwarePortUnusedIfNotEnabled(t *testing.T, makeCluster makeClusterT
 		t.Fatalf("an error occurred while creating a session: %s", err)
 	}
 	defer sess.Close()
+
+	if err = sess.WaitUntilReady(); err != nil {
+		t.Fatalf("an error occurred while initializing a session: %s", err)
+	}
 
 	if err := waitUntilPoolsStopFilling(context.Background(), sess, 10*time.Second); err != nil {
 		t.Fatal(err)

@@ -68,16 +68,16 @@ func TestSessionAPI(t *testing.T) {
 	}
 
 	itr := s.executeQuery(qry)
-	if itr.err != ErrNoConnections {
-		t.Fatalf("expected itr.err to be '%v', got '%v'", ErrNoConnections, itr.err)
+	if itr.err != ErrSessionNotReady {
+		t.Fatalf("expected itr.err to be '%v', got '%v'", ErrSessionNotReady, itr.err)
 	}
 
 	testBatch := s.NewBatch(LoggedBatch)
 	testBatch.Query("test")
 	err := s.ExecuteBatch(testBatch)
 
-	if err != ErrNoConnections {
-		t.Fatalf("expected session.ExecuteBatch to return '%v', got '%v'", ErrNoConnections, err)
+	if err != ErrSessionNotReady {
+		t.Fatalf("expected session.ExecuteBatch to return '%v', got '%v'", ErrSessionNotReady, err)
 	}
 
 	s.Close()
