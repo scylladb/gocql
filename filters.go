@@ -29,9 +29,9 @@ func DenyAllFilter() HostFilter {
 	})
 }
 
-// DataCentreHostFilter filters all hosts such that they are in the same data centre
+// DataCenterHostFilter filters all hosts such that they are in the same data centre
 // as the supplied data centre.
-func DataCentreHostFilter(dataCentre string) HostFilter {
+func DataCenterHostFilter(dataCentre string) HostFilter {
 	return HostFilterFunc(func(host *HostInfo) bool {
 		return host.DataCenter() == dataCentre
 	})
