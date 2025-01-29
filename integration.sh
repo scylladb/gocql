@@ -39,7 +39,7 @@ readonly args="-gocql.timeout=60s -proto=${proto} -rf=${clusterSize} -clusterSiz
 readonly tabletArgs="-gocql.timeout=60s -proto=${proto} -rf=1 -clusterSize=${multiNodeClusterSize} -autowait=2000ms -compressor=snappy -gocql.cversion=${cversion} -multiCluster=${scylla_tablet_liveset}"
 
 if [[ "$*" == *"tablet"* ]];
-then 
+then
   echo "==> Running tablet tests with args: ${tabletArgs}"
   go test -timeout=5m -race -tags="tablet" ${tabletArgs} ./...
 fi

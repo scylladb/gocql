@@ -6,7 +6,7 @@
 
 </div>
 
-<h1 align="center"> 
+<h1 align="center">
 
 Scylla Shard-Aware Fork of [apache/cassandra-gocql-driver](https://github.com/apache/cassandra-gocql-driver)
 
@@ -65,7 +65,7 @@ to evaluate `latest` to a concrete tag.
 
 Your project now uses the Scylla driver fork, make sure you are using the `TokenAwareHostPolicy` to enable the shard-awareness, continue reading for details.
 
-## 3. Quick Start  
+## 3. Quick Start
 
 Spawn a ScyllaDB Instance using Docker Run command:
 
@@ -109,7 +109,7 @@ func main() {
 
 ## 4. Data Types
 
-Here's an list of all ScyllaDB Types reflected in the GoCQL environment: 
+Here's an list of all ScyllaDB Types reflected in the GoCQL environment:
 
 | ScyllaDB Type    | Go Type            |
 | ---------------- | ------------------ |
