@@ -497,7 +497,7 @@ func TestPagingWithBind(t *testing.T) {
 func TestCAS(t *testing.T) {
 	cluster := createCluster()
 	cluster.SerialConsistency = LocalSerial
-	session := createSessionFromCluster(cluster, t)
+	session := createSessionFromClusterTabletsDisabled(cluster, t)
 	defer session.Close()
 
 	if session.cfg.ProtoVersion == 1 {
@@ -669,7 +669,7 @@ func TestDurationType(t *testing.T) {
 }
 
 func TestMapScanCAS(t *testing.T) {
-	session := createSession(t)
+	session := createSessionFromClusterTabletsDisabled(createCluster(), t)
 	defer session.Close()
 
 	if session.cfg.ProtoVersion == 1 {
@@ -1240,7 +1240,7 @@ func TestScanWithNilArguments(t *testing.T) {
 }
 
 func TestScanCASWithNilArguments(t *testing.T) {
-	session := createSession(t)
+	session := createSessionFromClusterTabletsDisabled(createCluster(), t)
 	defer session.Close()
 
 	if session.cfg.ProtoVersion == 1 {
@@ -1709,7 +1709,7 @@ func TestPrepare_PreparedCacheKey(t *testing.T) {
 
 	// create a second keyspace
 	cluster2 := createCluster()
-	createKeyspace(t, cluster2, "gocql_test2")
+	createKeyspace(t, cluster2, "gocql_test2", false)
 	cluster2.Keyspace = "gocql_test2"
 	session2, err := cluster2.CreateSession()
 	if err != nil {

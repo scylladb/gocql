@@ -136,7 +136,7 @@ func createMultiNodeCluster(opts ...func(*ClusterConfig)) *ClusterConfig {
 	return cluster
 }
 
-func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string) {
+func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string, disableTablets bool) {
 	// TODO: tb.Helper()
 	c := *cluster
 	c.Keyspace = "system"
@@ -152,22 +152,28 @@ func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string) {
 		panic(fmt.Sprintf("unable to drop keyspace: %v", err))
 	}
 
-	err = createTable(session, fmt.Sprintf(`CREATE KEYSPACE %s
+	query := fmt.Sprintf(`CREATE KEYSPACE %s
 	WITH replication = {
 		'class' : 'NetworkTopologyStrategy',
 		'replication_factor' : %d
-	}`, keyspace, *flagRF))
+	}`, keyspace, *flagRF)
+
+	if disableTablets {
+		query += " AND tablets = {'enabled': false}"
+	}
+
+	err = createTable(session, query)
 
 	if err != nil {
 		panic(fmt.Sprintf("unable to create keyspace: %v", err))
 	}
 }
 
-func createSessionFromCluster(cluster *ClusterConfig, tb testing.TB) *Session {
+func createSessionFromClusterHelper(cluster *ClusterConfig, tb testing.TB, tabletsDisabled bool) *Session {
 	// Drop and re-create the keyspace once. Different tests should use their own
 	// individual tables, but can assume that the table does not exist before.
 	initOnce.Do(func() {
-		createKeyspace(tb, cluster, "gocql_test")
+		createKeyspace(tb, cluster, "gocql_test", tabletsDisabled)
 	})
 
 	cluster.Keyspace = "gocql_test"
@@ -181,6 +187,14 @@ func createSessionFromCluster(cluster *ClusterConfig, tb testing.TB) *Session {
 	}
 
 	return session
+}
+
+func createSessionFromClusterTabletsDisabled(cluster *ClusterConfig, tb testing.TB) *Session {
+	return createSessionFromClusterHelper(cluster, tb, true)
+}
+
+func createSessionFromCluster(cluster *ClusterConfig, tb testing.TB) *Session {
+	return createSessionFromClusterHelper(cluster, tb, false)
 }
 
 func createSessionFromMultiNodeCluster(cluster *ClusterConfig, tb testing.TB) *Session {

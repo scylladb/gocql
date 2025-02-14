@@ -130,7 +130,7 @@ func TestHostFilterInitial(t *testing.T) {
 func TestWriteFailure(t *testing.T) {
 	t.Skip("skipped due to unknown purpose")
 	cluster := createCluster()
-	createKeyspace(t, cluster, "test")
+	createKeyspace(t, cluster, "test", false)
 	cluster.Keyspace = "test"
 	session, err := cluster.CreateSession()
 	if err != nil {
