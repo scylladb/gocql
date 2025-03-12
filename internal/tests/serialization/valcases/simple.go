@@ -833,6 +833,7 @@ var simpleTypesCases = SimpleTypes{
 				Data: []byte("\xf0\xff\xff\xff\xfe\xf0\xff\xff\xff\xfe\xff\xff\xff\xff\xff\xff\xff\xff\xfe"),
 				LangCases: []LangCase{
 					{LangType: "duration", Value: duration.Duration{Days: math.MaxInt32, Months: math.MaxInt32, Nanoseconds: math.MaxInt64}},
+					{LangType: "string", Value: "178956970y7mo306783378w1d2562047h47m16.854775807s"},
 				},
 			},
 			{
@@ -840,6 +841,7 @@ var simpleTypesCases = SimpleTypes{
 				Data: []byte("\xf0\xff\xff\xff\xff\xf0\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"),
 				LangCases: []LangCase{
 					{LangType: "duration", Value: duration.Duration{Days: math.MinInt32, Months: math.MinInt32, Nanoseconds: math.MinInt64}},
+					{LangType: "string", Value: "-178956970y8mo306783378w2d2562047h47m16.854775808s"},
 				},
 			},
 			{
@@ -847,6 +849,7 @@ var simpleTypesCases = SimpleTypes{
 				Data: []byte("\x02\x02\x02"),
 				LangCases: []LangCase{
 					{LangType: "duration", Value: duration.Duration{Days: 1, Months: 1, Nanoseconds: 1}},
+					{LangType: "string", Value: "1mo1d1ns"},
 				},
 			},
 			{
@@ -854,6 +857,7 @@ var simpleTypesCases = SimpleTypes{
 				Data: []byte("\x01\x01\x01"),
 				LangCases: []LangCase{
 					{LangType: "duration", Value: duration.Duration{Days: -1, Months: -1, Nanoseconds: -1}},
+					{LangType: "string", Value: "-1mo1d1ns"},
 				},
 			},
 			{
@@ -863,7 +867,7 @@ var simpleTypesCases = SimpleTypes{
 					{LangType: "duration", Value: duration.Duration{Days: 106751, Months: 0, Nanoseconds: 85636854775807}},
 					{LangType: "int64", Value: int64(math.MaxInt64)},
 					{LangType: "time.Duration", Value: time.Duration(math.MaxInt64)},
-					{LangType: "string", Value: "2562047h47m16.854775807s"},
+					{LangType: "string", Value: "15250w1d23h47m16.854775807s"},
 				},
 			},
 			{
@@ -873,7 +877,7 @@ var simpleTypesCases = SimpleTypes{
 					{LangType: "duration", Value: duration.Duration{Days: -106751, Months: 0, Nanoseconds: -85636854775808}},
 					{LangType: "int64", Value: int64(math.MinInt64)},
 					{LangType: "time.Duration", Value: time.Duration(math.MinInt64)},
-					{LangType: "string", Value: "-2562047h47m16.854775808s"},
+					{LangType: "string", Value: "-15250w1d23h47m16.854775808s"},
 				},
 			},
 			{
