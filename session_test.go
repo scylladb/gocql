@@ -29,6 +29,7 @@ package gocql
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"testing"
@@ -355,5 +356,79 @@ func TestIsUseStatement(t *testing.T) {
 		if v != tc.exp {
 			t.Fatalf("expected %v but got %v for statement %q", tc.exp, v, tc.input)
 		}
+	}
+}
+
+type simpleTestRetryPolycy struct {
+	RetryType  RetryType
+	NumRetries int
+}
+
+func (p *simpleTestRetryPolycy) Attempt(q RetryableQuery) bool {
+	return q.Attempts() <= p.NumRetries
+}
+
+func (p *simpleTestRetryPolycy) GetRetryType(err error) RetryType {
+	var executedErr *QueryError
+	if errors.As(err, &executedErr) && !executedErr.IsIdempotent() {
+		return Ignore
+	}
+	return p.RetryType
+}
+
+// TestRetryType_IgnoreRethrow verify that with Ignore/Rethrow retry types:
+// - retries stopped
+// - return error is nil on Ignore
+// - return error is not nil on Rethrow
+// - observed error is not nil
+func TestRetryType_IgnoreRethrow(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	var observedErr error
+	var observedAttempts int
+
+	resetObserved := func() {
+		observedErr = nil
+		observedAttempts = 0
+	}
+
+	observer := funcQueryObserver(func(ctx context.Context, o ObservedQuery) {
+		observedErr = o.Err
+		observedAttempts++
+	})
+
+	for i, caseParams := range []struct {
+		retries   int
+		retryType RetryType
+	}{
+		{0, Ignore},  // check that error ignored even on last attempt
+		{1, Ignore},  // check that ignore stops retries
+		{1, Rethrow}, // check that rethrow stops retries
+	} {
+		retryPolicy := &simpleTestRetryPolycy{RetryType: caseParams.retryType, NumRetries: caseParams.retries}
+
+		err := session.Query("INSERT INTO gocql_test.invalid_table(value) VALUES(1)").Idempotent(true).RetryPolicy(retryPolicy).Observer(observer).Exec()
+
+		switch caseParams.retryType {
+		case Rethrow:
+			if err == nil {
+				t.Fatalf("case %d [%v] Expected unconfigured table error, got: nil", i, caseParams.retryType)
+			}
+		case Ignore:
+			if err != nil {
+				t.Fatalf("case %d [%v] Expected no error, got: %s", i, caseParams.retryType, err)
+			}
+		}
+
+		if observedErr == nil {
+			t.Fatalf("case %d expected unconfigured table error in Obserer, got: nil", i)
+		}
+
+		if observedAttempts > 1 {
+			t.Fatalf("case %d expected one attempt, got: %d", i, observedAttempts)
+		}
+
+		resetObserved()
 	}
 }
