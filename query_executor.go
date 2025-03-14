@@ -235,13 +235,14 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, hostIter Ne
 		switch retryType {
 		case Retry:
 			// retry on the same host
-			continue
-		case Rethrow, Ignore:
-			return iter
 		case RetryNextHost:
 			// retry on the next host
 			selectedHost = hostIter()
-			continue
+		case Ignore:
+			iter.err = nil
+			return iter
+		case Rethrow:
+			return iter
 		default:
 			// Undefined? Return nil and error, this will panic in the requester
 			return &Iter{err: ErrUnknownRetryType}
