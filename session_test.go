@@ -29,6 +29,7 @@ package gocql
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"testing"
@@ -367,7 +368,11 @@ func (p *simpleTestRetryPolycy) Attempt(q RetryableQuery) bool {
 	return q.Attempts() <= p.NumRetries
 }
 
-func (p *simpleTestRetryPolycy) GetRetryType(error) RetryType {
+func (p *simpleTestRetryPolycy) GetRetryType(err error) RetryType {
+	var executedErr *QueryError
+	if errors.As(err, &executedErr) && !executedErr.IsIdempotent() {
+		return Ignore
+	}
 	return p.RetryType
 }
 
@@ -393,32 +398,35 @@ func TestRetryType_IgnoreRethrow(t *testing.T) {
 		observedAttempts++
 	})
 
-	for _, caseParams := range []struct {
+	for i, caseParams := range []struct {
 		retries   int
 		retryType RetryType
 	}{
 		{0, Ignore},  // check that error ignored even on last attempt
-		{1, Ignore},  // check thet ignore stops retries
-		{1, Rethrow}, // check thet rethrow stops retries
+		{1, Ignore},  // check that ignore stops retries
+		{1, Rethrow}, // check that rethrow stops retries
 	} {
 		retryPolicy := &simpleTestRetryPolycy{RetryType: caseParams.retryType, NumRetries: caseParams.retries}
 
 		err := session.Query("INSERT INTO gocql_test.invalid_table(value) VALUES(1)").Idempotent(true).RetryPolicy(retryPolicy).Observer(observer).Exec()
 
-		if err != nil && caseParams.retryType == Ignore {
-			t.Fatalf("[%v] Expected no error, got: %s", caseParams.retryType, err)
-		}
-
-		if err == nil && caseParams.retryType == Rethrow {
-			t.Fatalf("[%v] Expected unconfigured table error, got: nil", caseParams.retryType)
+		switch caseParams.retryType {
+		case Rethrow:
+			if err == nil {
+				t.Fatalf("case %d [%v] Expected unconfigured table error, got: nil", i, caseParams.retryType)
+			}
+		case Ignore:
+			if err != nil {
+				t.Fatalf("case %d [%v] Expected no error, got: %s", i, caseParams.retryType, err)
+			}
 		}
 
 		if observedErr == nil {
-			t.Fatal("Expected unconfigured table error in Obserer, got: nil")
+			t.Fatalf("case %d expected unconfigured table error in Obserer, got: nil", i)
 		}
 
 		if observedAttempts > 1 {
-			t.Fatalf("Expected one attempt, got: %d", observedAttempts)
+			t.Fatalf("case %d expected one attempt, got: %d", i, observedAttempts)
 		}
 
 		resetObserved()

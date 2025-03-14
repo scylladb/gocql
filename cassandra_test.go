@@ -32,7 +32,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"math"
 	"math/big"
 	"net"
@@ -1214,7 +1213,11 @@ func (*MyRetryPolicy) Attempt(q RetryableQuery) bool {
 	return true
 }
 
-func (*MyRetryPolicy) GetRetryType(error) RetryType {
+func (*MyRetryPolicy) GetRetryType(err error) RetryType {
+	var executedErr *QueryError
+	if errors.As(err, &executedErr) && !executedErr.IsIdempotent() {
+		return Ignore
+	}
 	return Retry
 }
 
