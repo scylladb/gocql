@@ -1510,14 +1510,6 @@ type TypeInfo interface {
 	Version() byte
 	Custom() string
 
-	// New creates a pointer to an empty version of whatever type
-	// is referenced by the TypeInfo receiver.
-	//
-	// If there is no corresponding Go type for the CQL type, New panics.
-	//
-	// Deprecated: Use NewWithError instead.
-	New() interface{}
-
 	// NewWithError creates a pointer to an empty version of whatever type
 	// is referenced by the TypeInfo receiver.
 	//
@@ -1541,14 +1533,6 @@ func (t NativeType) NewWithError() (interface{}, error) {
 		return nil, err
 	}
 	return reflect.New(typ).Interface(), nil
-}
-
-func (t NativeType) New() interface{} {
-	val, err := t.NewWithError()
-	if err != nil {
-		panic(err.Error())
-	}
-	return val
 }
 
 func (s NativeType) Type() Type {
@@ -1592,14 +1576,6 @@ func (t CollectionType) NewWithError() (interface{}, error) {
 		return nil, err
 	}
 	return reflect.New(typ).Interface(), nil
-}
-
-func (t CollectionType) New() interface{} {
-	val, err := t.NewWithError()
-	if err != nil {
-		panic(err.Error())
-	}
-	return val
 }
 
 func (c CollectionType) String() string {
@@ -1646,14 +1622,6 @@ func (t TupleTypeInfo) NewWithError() (interface{}, error) {
 	return reflect.New(typ).Interface(), nil
 }
 
-func (t TupleTypeInfo) New() interface{} {
-	val, err := t.NewWithError()
-	if err != nil {
-		panic(err.Error())
-	}
-	return val
-}
-
 type UDTField struct {
 	Name string
 	Type TypeInfo
@@ -1681,14 +1649,6 @@ func (u UDTTypeInfo) NewWithError() (interface{}, error) {
 		return nil, err
 	}
 	return reflect.New(typ).Interface(), nil
-}
-
-func (u UDTTypeInfo) New() interface{} {
-	val, err := u.NewWithError()
-	if err != nil {
-		panic(err.Error())
-	}
-	return val
 }
 
 func (u UDTTypeInfo) String() string {

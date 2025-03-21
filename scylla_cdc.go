@@ -22,9 +22,11 @@ const (
 	scyllaCDCExtensionName      = "cdc"
 )
 
-type scyllaCDCPartitioner struct{}
+type scyllaCDCPartitioner struct {
+	logger StdLogger
+}
 
-var _ Partitioner = scyllaCDCPartitioner{}
+var _ Partitioner = scyllaCDCPartitioner{logger: &defaultLogger{}}
 
 func (p scyllaCDCPartitioner) Name() string {
 	return scyllaCDCPartitionerName
@@ -35,7 +37,7 @@ func (p scyllaCDCPartitioner) Hash(partitionKey []byte) Token {
 		// The key is too short to extract any sensible token,
 		// so return the min token instead
 		if gocqlDebug {
-			Logger.Printf("scylla: cdc partition key too short: %d < 8", len(partitionKey))
+			p.logger.Printf("scylla: cdc partition key too short: %d < 8", len(partitionKey))
 		}
 		return scyllaCDCMinToken
 	}
@@ -48,7 +50,7 @@ func (p scyllaCDCPartitioner) Hash(partitionKey []byte) Token {
 		if len(partitionKey) != scyllaCDCPartitionKeyLength {
 			// The token has unrecognized format, but the first quadword
 			// should be the token value that we want
-			Logger.Printf("scylla: wrong size of cdc partition key: %d", len(partitionKey))
+			p.logger.Printf("scylla: wrong size of cdc partition key: %d", len(partitionKey))
 		}
 
 		lowerQword := binary.BigEndian.Uint64(partitionKey[8:])
@@ -56,7 +58,7 @@ func (p scyllaCDCPartitioner) Hash(partitionKey []byte) Token {
 		if version < scyllaCDCMinSupportedVersion || version > scyllaCDCMaxSupportedVersion {
 			// We don't support this version yet,
 			// the token may be wrong
-			Logger.Printf(
+			p.logger.Printf(
 				"scylla: unsupported version: %d is not in range [%d, %d]",
 				version,
 				scyllaCDCMinSupportedVersion,

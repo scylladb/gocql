@@ -292,17 +292,6 @@ func ParseConsistencyWrapper(s string) (consistency Consistency, err error) {
 	return
 }
 
-// MustParseConsistency is the same as ParseConsistency except it returns
-// an error (never). It is kept here since breaking changes are not good.
-// DEPRECATED: use ParseConsistency if you want a panic on parse error.
-func MustParseConsistency(s string) (Consistency, error) {
-	c, err := ParseConsistencyWrapper(s)
-	if err != nil {
-		panic(err)
-	}
-	return c, nil
-}
-
 const (
 	apacheCassandraTypePrefix = "org.apache.cassandra.db.marshal."
 )
@@ -430,15 +419,15 @@ func newFramer(compressor Compressor, version byte) *framer {
 	return f
 }
 
-func newFramerWithExts(compressor Compressor, version byte, cqlProtoExts []cqlProtocolExtension) *framer {
+func newFramerWithExts(compressor Compressor, version byte, cqlProtoExts []cqlProtocolExtension, logger StdLogger) *framer {
 
 	f := newFramer(compressor, version)
 
 	if lwtExt := findCQLProtoExtByName(cqlProtoExts, lwtAddMetadataMarkKey); lwtExt != nil {
 		castedExt, ok := lwtExt.(*lwtAddMetadataMarkExt)
 		if !ok {
-			Logger.Println(
-				fmt.Errorf("Failed to cast CQL protocol extension identified by name %s to type %T",
+			logger.Println(
+				fmt.Errorf("failed to cast CQL protocol extension identified by name %s to type %T",
 					lwtAddMetadataMarkKey, lwtAddMetadataMarkExt{}))
 			return f
 		}
@@ -448,8 +437,8 @@ func newFramerWithExts(compressor Compressor, version byte, cqlProtoExts []cqlPr
 	if rateLimitErrorExt := findCQLProtoExtByName(cqlProtoExts, rateLimitError); rateLimitErrorExt != nil {
 		castedExt, ok := rateLimitErrorExt.(*rateLimitExt)
 		if !ok {
-			Logger.Println(
-				fmt.Errorf("Failed to cast CQL protocol extension identified by name %s to type %T",
+			logger.Println(
+				fmt.Errorf("failed to cast CQL protocol extension identified by name %s to type %T",
 					rateLimitError, rateLimitExt{}))
 			return f
 		}
@@ -459,8 +448,8 @@ func newFramerWithExts(compressor Compressor, version byte, cqlProtoExts []cqlPr
 	if tabletsExt := findCQLProtoExtByName(cqlProtoExts, tabletsRoutingV1); tabletsExt != nil {
 		_, ok := tabletsExt.(*tabletsRoutingV1Ext)
 		if !ok {
-			Logger.Println(
-				fmt.Errorf("Failed to cast CQL protocol extension identified by name %s to type %T",
+			logger.Println(
+				fmt.Errorf("failed to cast CQL protocol extension identified by name %s to type %T",
 					tabletsRoutingV1, tabletsRoutingV1Ext{}))
 			return f
 		}
