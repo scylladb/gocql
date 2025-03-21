@@ -157,7 +157,7 @@ type ConnConfig struct {
 
 func (c *ConnConfig) logger() StdLogger {
 	if c.Logger == nil {
-		return Logger
+		return &defaultLogger{}
 	}
 	return c.Logger
 }
@@ -171,14 +171,6 @@ type connErrorHandlerFn func(conn *Conn, err error, closed bool)
 func (fn connErrorHandlerFn) HandleError(conn *Conn, err error, closed bool) {
 	fn(conn, err, closed)
 }
-
-// If not zero, how many timeouts we will allow to occur before the connection is closed
-// and restarted. This is to prevent a single query timeout from killing a connection
-// which may be serving more queries just fine.
-// Default is 0, should not be changed concurrently with queries.
-//
-// Deprecated.
-var TimeoutLimit int64 = 0
 
 type ConnInterface interface {
 	Close()
@@ -506,9 +498,9 @@ func (s *startupCoordinator) options(ctx context.Context) error {
 	}
 	// Keep raw supported multimap for debug purposes
 	s.conn.supported = v.supported
-	s.conn.scyllaSupported = parseSupported(s.conn.supported)
+	s.conn.scyllaSupported = parseSupported(s.conn.supported, s.conn.logger)
 	s.conn.host.setScyllaSupported(s.conn.scyllaSupported)
-	s.conn.cqlProtoExts = parseCQLProtocolExtensions(s.conn.supported)
+	s.conn.cqlProtoExts = parseCQLProtocolExtensions(s.conn.supported, s.conn.logger)
 
 	return s.startup(ctx)
 }
@@ -782,7 +774,7 @@ func (c *Conn) recv(ctx context.Context) error {
 		return fmt.Errorf("gocql: frame header stream is beyond call expected bounds: %d", head.stream)
 	} else if head.stream == -1 {
 		// TODO: handle cassandra event frames, we shouldnt get any currently
-		framer := newFramerWithExts(c.compressor, c.version, c.cqlProtoExts)
+		framer := newFramerWithExts(c.compressor, c.version, c.cqlProtoExts, c.logger)
 		c.setTabletSupported(framer.tabletsRoutingV1)
 		if err := framer.readFrame(c, &head); err != nil {
 			return err
@@ -792,7 +784,7 @@ func (c *Conn) recv(ctx context.Context) error {
 	} else if head.stream <= 0 {
 		// reserved stream that we dont use, probably due to a protocol error
 		// or a bug in Cassandra, this should be an error, parse it and return.
-		framer := newFramerWithExts(c.compressor, c.version, c.cqlProtoExts)
+		framer := newFramerWithExts(c.compressor, c.version, c.cqlProtoExts, c.logger)
 		c.setTabletSupported(framer.tabletsRoutingV1)
 		if err := framer.readFrame(c, &head); err != nil {
 			return err
@@ -823,7 +815,7 @@ func (c *Conn) recv(ctx context.Context) error {
 		panic(fmt.Sprintf("call has incorrect streamID: got %d expected %d", call.streamID, head.stream))
 	}
 
-	framer := newFramerWithExts(c.compressor, c.version, c.cqlProtoExts)
+	framer := newFramerWithExts(c.compressor, c.version, c.cqlProtoExts, c.logger)
 
 	err = framer.readFrame(c, &head)
 	if err != nil {
@@ -863,7 +855,7 @@ func (c *Conn) releaseStream(call *callReq) {
 }
 
 func (c *Conn) handleTimeout() {
-	if TimeoutLimit > 0 && atomic.AddInt64(&c.timeouts, 1) > TimeoutLimit {
+	if atomic.AddInt64(&c.timeouts, 1) > 0 {
 		c.closeWithError(ErrTooManyTimeouts)
 	}
 }
@@ -1129,7 +1121,7 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*fram
 	}
 
 	// resp is basically a waiting semaphore protecting the framer
-	framer := newFramerWithExts(c.compressor, c.version, c.cqlProtoExts)
+	framer := newFramerWithExts(c.compressor, c.version, c.cqlProtoExts, c.logger)
 	c.setTabletSupported(framer.tabletsRoutingV1)
 
 	call := &callReq{
