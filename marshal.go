@@ -123,7 +123,7 @@ func (d *DirectUnmarshal) UnmarshalCQL(_ TypeInfo, data []byte) error {
 //	tinyint, smallint, int      | integer types      |
 //	tinyint, smallint, int      | string             | formatted as base 10 number
 //	bigint, counter             | integer types      |
-//	bigint, counter             | big.Int            |
+//	bigint, counter             | big.Int            | value limited as int64
 //	bigint, counter             | string             | formatted as base 10 number
 //	float                       | float32            |
 //	double                      | float64            |
@@ -156,6 +156,9 @@ func (d *DirectUnmarshal) UnmarshalCQL(_ TypeInfo, data []byte) error {
 //	duration                    | time.Duration      |
 //	duration                    | gocql.Duration     |
 //	duration                    | string             | parsed with time.ParseDuration
+//
+// The marshal/unmarshal error provides a list of supported types when an unsupported type is attempted.
+
 func Marshal(info TypeInfo, value interface{}) ([]byte, error) {
 	if info.Version() < protoVersion1 {
 		panic("protocol version not set")

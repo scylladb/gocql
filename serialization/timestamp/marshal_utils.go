@@ -46,9 +46,9 @@ func EncReflect(v reflect.Value) ([]byte, error) {
 		if v.Type().String() == "gocql.unsetColumn" {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("failed to marshal timestamp: unsupported value type (%T)(%[1]v)", v.Interface())
+		return nil, fmt.Errorf("failed to marshal timestamp: unsupported value type (%T)(%[1]v), supported types: ~int64, time.Time, unsetColumn", v.Interface())
 	default:
-		return nil, fmt.Errorf("failed to marshal timestamp: unsupported value type (%T)(%[1]v)", v.Interface())
+		return nil, fmt.Errorf("failed to marshal timestamp: unsupported value type (%T)(%[1]v), supported types: ~int64, time.Time, unsetColumn", v.Interface())
 	}
 }
 
