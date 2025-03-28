@@ -351,6 +351,7 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		MetadataSchemaRequestTimeout: 60 * time.Second,
 		DisableSkipMetadata:          true,
 		WarningsHandlerBuilder:       DefaultWarningHandlerBuilder,
+		Logger:                       &defaultLogger{},
 	}
 
 	return cfg

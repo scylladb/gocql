@@ -185,7 +185,7 @@ func DecReflect(p []byte, v reflect.Value) error {
 	case reflect.String:
 		return decReflectString(p, v)
 	default:
-		return fmt.Errorf("failed to unmarshal decimal: unsupported value type (%T)(%#[1]v)", v.Interface())
+		return fmt.Errorf("failed to unmarshal decimal: unsupported value type (%T)(%#[1]v), supported types: ~string, inf.Dec", v.Interface())
 	}
 }
 
@@ -198,7 +198,7 @@ func DecReflectR(p []byte, v reflect.Value) error {
 	case reflect.String:
 		return decReflectStringR(p, v)
 	default:
-		return fmt.Errorf("failed to unmarshal decimal: unsupported value type (%T)(%[1]v)", v.Interface())
+		return fmt.Errorf("failed to unmarshal decimal: unsupported value type (%T)(%[1]v), supported types: ~string, inf.Dec", v.Interface())
 	}
 }
 

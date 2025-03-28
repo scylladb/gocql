@@ -94,7 +94,7 @@ func DecReflect(p []byte, v reflect.Value) error {
 	case reflect.Int64:
 		return decReflectInt64(p, v)
 	default:
-		return fmt.Errorf("failed to unmarshal timestamp: unsupported value type (%T)(%[1]v)", v.Interface())
+		return fmt.Errorf("failed to unmarshal timestamp: unsupported value type (%T)(%[1]v), supported types: ~int64, time.Time", v.Interface())
 	}
 }
 
@@ -119,7 +119,7 @@ func DecReflectR(p []byte, v reflect.Value) error {
 	case reflect.Int64:
 		return decReflectIntsR(p, v)
 	default:
-		return fmt.Errorf("failed to unmarshal timestamp: unsupported value type (%T)(%[1]v)", v.Interface())
+		return fmt.Errorf("failed to unmarshal timestamp: unsupported value type (%T)(%[1]v), supported types: ~int64, time.Time", v.Interface())
 	}
 }
 
