@@ -1045,7 +1045,10 @@ func TestSkipMetadata(t *testing.T) {
 	srv := NewTestServer(t, protoVersion4, ctx)
 	defer srv.Stop()
 
-	db, err := newTestSession(protoVersion4, srv.Address)
+	cfg := testCluster(protoVersion4, srv.Address)
+	cfg.DisableSkipMetadata = false
+
+	db, err := cfg.CreateSession()
 	if err != nil {
 		t.Fatalf("NewCluster: %v", err)
 	}
