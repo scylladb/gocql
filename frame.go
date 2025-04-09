@@ -273,7 +273,6 @@ func (c *Consistency) UnmarshalText(text []byte) error {
 	default:
 		return fmt.Errorf("invalid consistency %q", string(text))
 	}
-
 	return nil
 }
 

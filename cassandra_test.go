@@ -690,6 +690,92 @@ func TestCAS(t *testing.T) {
 	}
 }
 
+func TestConsistencySerial(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	type testStruct struct {
+		name               string
+		id                 int
+		consistency        Consistency
+		expectedPanicValue string
+	}
+
+	testCases := []testStruct{
+		{
+			name:               "Any",
+			consistency:        Any,
+			expectedPanicValue: "Serial consistency can only be SERIAL or LOCAL_SERIAL got ANY",
+		}, {
+			name:               "One",
+			consistency:        One,
+			expectedPanicValue: "Serial consistency can only be SERIAL or LOCAL_SERIAL got ONE",
+		}, {
+			name:               "Two",
+			consistency:        Two,
+			expectedPanicValue: "Serial consistency can only be SERIAL or LOCAL_SERIAL got TWO",
+		}, {
+			name:               "Three",
+			consistency:        Three,
+			expectedPanicValue: "Serial consistency can only be SERIAL or LOCAL_SERIAL got THREE",
+		}, {
+			name:               "Quorum",
+			consistency:        Quorum,
+			expectedPanicValue: "Serial consistency can only be SERIAL or LOCAL_SERIAL got QUORUM",
+		}, {
+			name:               "LocalQuorum",
+			consistency:        LocalQuorum,
+			expectedPanicValue: "Serial consistency can only be SERIAL or LOCAL_SERIAL got LOCAL_QUORUM",
+		}, {
+			name:               "EachQuorum",
+			consistency:        EachQuorum,
+			expectedPanicValue: "Serial consistency can only be SERIAL or LOCAL_SERIAL got EACH_QUORUM",
+		}, {
+			name:               "Serial",
+			id:                 8,
+			consistency:        Serial,
+			expectedPanicValue: "",
+		}, {
+			name:               "LocalSerial",
+			id:                 9,
+			consistency:        LocalSerial,
+			expectedPanicValue: "",
+		}, {
+			name:               "LocalOne",
+			consistency:        LocalOne,
+			expectedPanicValue: "Serial consistency can only be SERIAL or LOCAL_SERIAL got LOCAL_ONE",
+		},
+	}
+
+	err := session.Query("CREATE TABLE IF NOT EXISTS gocql_test.consistency_serial (id int PRIMARY KEY)").Exec()
+	if err != nil {
+		t.Fatalf("can't create consistency_serial table:%v", err)
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.expectedPanicValue == "" {
+				err = session.Query("INSERT INTO gocql_test.consistency_serial (id) VALUES (?)", tc.id).SerialConsistency(tc.consistency).Exec()
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				var receivedID int
+				err = session.Query("SELECT * FROM gocql_test.consistency_serial WHERE id=?", tc.id).Scan(&receivedID)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				require.Equal(t, tc.id, receivedID)
+			} else {
+				require.PanicsWithValue(t, tc.expectedPanicValue, func() {
+					session.Query("INSERT INTO gocql_test.consistency_serial (id) VALUES (?)", tc.id).SerialConsistency(tc.consistency)
+				})
+			}
+		})
+	}
+}
+
 func TestDurationType(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
@@ -2779,7 +2865,6 @@ func TestUnsetColBatch(t *testing.T) {
 	}
 	var id, mInt, count int
 	var mText string
-
 	if err := session.Query("SELECT count(*) FROM gocql_test.batchUnsetInsert;").Scan(&count); err != nil {
 		t.Fatalf("Failed to select with err: %v", err)
 	} else if count != 2 {
@@ -2812,5 +2897,54 @@ func TestQuery_NamedValues(t *testing.T) {
 	var value string
 	if err := session.Query("SELECT VALUE from gocql_test.named_query WHERE id = :id", NamedValue("id", 1)).Scan(&value); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// This test ensures that queries are sent to the specified host only
+func TestQuery_SetHostID(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	hosts := session.GetHosts()
+
+	const iterations = 5
+	for _, expectedHost := range hosts {
+		for i := 0; i < iterations; i++ {
+			var actualHostID string
+			err := session.Query("SELECT host_id FROM system.local").
+				SetHostID(expectedHost.HostID()).
+				Scan(&actualHostID)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if expectedHost.HostID() != actualHostID {
+				t.Fatalf("Expected query to be executed on host %s, but it was executed on %s",
+					expectedHost.HostID(),
+					actualHostID,
+				)
+			}
+		}
+	}
+
+	// ensuring properly handled invalid host id
+	err := session.Query("SELECT host_id FROM system.local").
+		SetHostID("[invalid]").
+		Exec()
+	if !errors.Is(err, ErrNoPool) {
+		t.Fatalf("Expected error to be: %v, but got %v", ErrNoPool, err)
+	}
+
+	// ensuring that the driver properly handles the case
+	// when specified host for the query is down
+	host := hosts[0]
+	pool, _ := session.pool.getPoolByHostID(host.HostID())
+	// simulating specified host is down
+	pool.host.setState(NodeDown)
+	err = session.Query("SELECT host_id FROM system.local").
+		SetHostID(host.HostID()).
+		Exec()
+	if !errors.Is(err, ErrHostDown) {
+		t.Fatalf("Expected error to be: %v, but got %v", ErrHostDown, err)
 	}
 }
