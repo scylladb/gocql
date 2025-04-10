@@ -390,6 +390,34 @@ func (host selectedHost) Token() Token {
 
 func (host selectedHost) Mark(err error) {}
 
+func newSingleHost(info *HostInfo, maxRetries byte, retryDelay time.Duration) *singleHost {
+	return &singleHost{info: info, maxRetries: maxRetries, delay: retryDelay}
+}
+
+type singleHost struct {
+	retry      byte
+	maxRetries byte
+	delay      time.Duration
+	info       *HostInfo
+}
+
+func (s *singleHost) selectHost() SelectedHost {
+	if s.retry >= s.maxRetries {
+		return nil
+	}
+	if s.retry > 0 && s.delay > 0 {
+		time.Sleep(s.delay)
+	}
+	s.retry++
+	return s
+}
+
+func (s singleHost) Info() *HostInfo { return s.info }
+
+func (s singleHost) Token() Token { return nil }
+
+func (s singleHost) Mark(error) {}
+
 // NextHost is an iteration function over picked hosts
 type NextHost func() SelectedHost
 
