@@ -1831,6 +1831,15 @@ func (f *framer) readShort() (n uint16) {
 	return
 }
 
+func (f *framer) readShortConsistency() (n Consistency) {
+	if len(f.buf) < 2 {
+		panic(fmt.Errorf("not enough bytes in buffer to read consistency require 2 got: %d", len(f.buf)))
+	}
+	n = Consistency(f.buf[0])<<8 | Consistency(f.buf[1])
+	f.buf = f.buf[2:]
+	return
+}
+
 func (f *framer) readString() (s string) {
 	size := f.readShort()
 
@@ -1953,7 +1962,7 @@ func (f *framer) readInet() (net.IP, int) {
 }
 
 func (f *framer) readConsistency() Consistency {
-	return Consistency(f.readShort())
+	return f.readShortConsistency()
 }
 
 func (f *framer) readBytesMap() map[string][]byte {
