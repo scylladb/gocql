@@ -916,13 +916,13 @@ func (f *framer) readTypeInfo() TypeInfo {
 
 	switch simple.typ {
 	case TypeTuple:
-		n := f.readShort()
+		n := f.readShortInt()
 		tuple := TupleTypeInfo{
 			NativeType: simple,
 			Elems:      make([]TypeInfo, n),
 		}
 
-		for i := 0; i < int(n); i++ {
+		for i := 0; i < n; i++ {
 			tuple.Elems[i] = f.readTypeInfo()
 		}
 
@@ -935,9 +935,9 @@ func (f *framer) readTypeInfo() TypeInfo {
 		udt.KeySpace = f.readString()
 		udt.Name = f.readString()
 
-		n := f.readShort()
+		n := f.readShortInt()
 		udt.Elements = make([]UDTField, n)
-		for i := 0; i < int(n); i++ {
+		for i := 0; i < n; i++ {
 			field := &udt.Elements[i]
 			field.Name = f.readString()
 			field.Type = f.readTypeInfo()
@@ -995,7 +995,7 @@ func (f *framer) parsePreparedMetadata() preparedMetadata {
 		pkeyCount := f.readInt()
 		pkeys := make([]int, pkeyCount)
 		for i := 0; i < pkeyCount; i++ {
-			pkeys[i] = int(f.readShort())
+			pkeys[i] = f.readShortInt()
 		}
 		meta.pkeyColumns = pkeys
 	}
@@ -1831,10 +1831,19 @@ func (f *framer) readShort() (n uint16) {
 	return
 }
 
-func (f *framer) readString() (s string) {
-	size := f.readShort()
+func (f *framer) readShortInt() (n int) {
+	if len(f.buf) < 2 {
+		panic(fmt.Errorf("not enough bytes in buffer to read short require 2 got: %d", len(f.buf)))
+	}
+	n = int(f.buf[0])<<8 | int(f.buf[1])
+	f.buf = f.buf[2:]
+	return
+}
 
-	if len(f.buf) < int(size) {
+func (f *framer) readString() (s string) {
+	size := f.readShortInt()
+
+	if len(f.buf) < size {
 		panic(fmt.Errorf("not enough bytes in buffer to read string require %d got: %d", size, len(f.buf)))
 	}
 
@@ -1856,10 +1865,10 @@ func (f *framer) readLongString() (s string) {
 }
 
 func (f *framer) readStringList() []string {
-	size := f.readShort()
+	size := f.readShortInt()
 
 	l := make([]string, size)
-	for i := 0; i < int(size); i++ {
+	for i := 0; i < size; i++ {
 		l[i] = f.readString()
 	}
 
@@ -1892,8 +1901,8 @@ func (f *framer) readBytes() []byte {
 }
 
 func (f *framer) readShortBytes() []byte {
-	size := f.readShort()
-	if len(f.buf) < int(size) {
+	size := f.readShortInt()
+	if len(f.buf) < size {
 		panic(fmt.Errorf("not enough bytes in buffer to read short bytes: require %d got %d", size, len(f.buf)))
 	}
 
@@ -1934,10 +1943,10 @@ func (f *framer) readConsistency() Consistency {
 }
 
 func (f *framer) readBytesMap() map[string][]byte {
-	size := f.readShort()
+	size := f.readShortInt()
 	m := make(map[string][]byte, size)
 
-	for i := 0; i < int(size); i++ {
+	for i := 0; i < size; i++ {
 		k := f.readString()
 		v := f.readBytes()
 		m[k] = v
@@ -1947,10 +1956,10 @@ func (f *framer) readBytesMap() map[string][]byte {
 }
 
 func (f *framer) readStringMultiMap() map[string][]string {
-	size := f.readShort()
+	size := f.readShortInt()
 	m := make(map[string][]string, size)
 
-	for i := 0; i < int(size); i++ {
+	for i := 0; i < size; i++ {
 		k := f.readString()
 		v := f.readStringList()
 		m[k] = v
