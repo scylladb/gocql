@@ -57,14 +57,14 @@ func TestMarshalsTimestamp(t *testing.T) {
 			serialization.PositiveSet{
 				Data: nil,
 				Values: mod.Values{
-					int64(0), zeroTimestamp,
+					int64(0), time.Time{},
 				}.AddVariants(mod.CustomType),
 			}.Run("[nil]unmarshal", t, nil, unmarshal)
 
 			serialization.PositiveSet{
 				Data: make([]byte, 0),
 				Values: mod.Values{
-					int64(0), zeroTimestamp,
+					int64(0), time.Time{},
 				}.AddVariants(mod.All...),
 			}.Run("[]unmarshal", t, nil, unmarshal)
 
