@@ -55,7 +55,8 @@ func DecTime(p []byte, v *time.Time) error {
 	}
 	switch len(p) {
 	case 0:
-		*v = zeroTimestamp
+		// supposed to be zero timestamp `time.UnixMilli(0).UTC()`, but for backward compatibility mapped to zero time
+		*v = time.Time{}
 	case 8:
 		*v = decTime(p)
 	default:
@@ -73,7 +74,8 @@ func DecTimeR(p []byte, v **time.Time) error {
 		if p == nil {
 			*v = nil
 		} else {
-			val := zeroTimestamp
+			// supposed to be zero timestamp `time.UnixMilli(0).UTC()`, but for backward compatibility mapped to zero time
+			val := time.Time{}
 			*v = &val
 		}
 	case 8:
