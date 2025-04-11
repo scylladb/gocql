@@ -57,28 +57,31 @@ func TestFuzzBugs(t *testing.T) {
 			"0000000000000"),
 	}
 
-	for i, test := range tests {
-		t.Logf("test %d input: %q", i, test)
+	protos := [3]byte{2, 4, 5}
+	for _, p := range protos {
+		for i, test := range tests {
+			t.Logf("test %d input: %q", i, test)
 
-		r := bytes.NewReader(test)
-		head, err := readHeader(r, make([]byte, 9))
-		if err != nil {
-			continue
+			r := bytes.NewReader(test)
+			head, err := readHeader(p, r, make([]byte, 9))
+			if err != nil {
+				continue
+			}
+
+			framer := newFramer(nil, byte(head.version))
+			err = framer.readFrame(r, &head)
+			if err != nil {
+				continue
+			}
+
+			frame, err := framer.parseFrame()
+			if err != nil {
+				continue
+			}
+
+			t.Errorf("(%d,%d) expected to fail for input % X", p, i, test)
+			t.Errorf("(%d,%d) frame=%+#v", p, i, frame)
 		}
-
-		framer := newFramer(nil, byte(head.version))
-		err = framer.readFrame(r, &head)
-		if err != nil {
-			continue
-		}
-
-		frame, err := framer.parseFrame()
-		if err != nil {
-			continue
-		}
-
-		t.Errorf("(%d) expected to fail for input % X", i, test)
-		t.Errorf("(%d) frame=%+#v", i, frame)
 	}
 }
 
@@ -120,7 +123,7 @@ func TestFrameReadTooLong(t *testing.T) {
 		t.Fatalf("expected to get %v got %v", ErrFrameTooBig, err)
 	}
 
-	head, err = readHeader(r, make([]byte, 8))
+	head, err = readHeader(byte(head.version), r, make([]byte, 8))
 	if err != nil {
 		t.Fatal(err)
 	}

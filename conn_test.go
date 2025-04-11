@@ -721,6 +721,7 @@ func TestStream0(t *testing.T) {
 		r:       bufio.NewReader(&buf),
 		streams: streams.New(protoVersion4),
 		logger:  &defaultLogger{},
+		version: uint8(protoVersion4),
 	}
 
 	err := conn.recv(context.Background())
@@ -1523,7 +1524,7 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 
 func (srv *TestServer) readFrame(conn net.Conn) (*framer, error) {
 	buf := make([]byte, srv.headerSize)
-	head, err := readHeader(conn, buf)
+	head, err := readHeader(srv.protocol, conn, buf)
 	if err != nil {
 		return nil, err
 	}

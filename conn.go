@@ -751,7 +751,11 @@ func (c *Conn) recv(ctx context.Context) error {
 
 	headStartTime := time.Now()
 	// were just reading headers over and over and copy bodies
-	head, err := readHeader(c.r, c.headerBuf[:])
+	head, err := readHeader(c.version, c.r, c.headerBuf[:])
+	if head.version.request() {
+		return NewErrProtocol("got a request frame from server: %v", head.version)
+	}
+
 	headEndTime := time.Now()
 	if err != nil {
 		return err

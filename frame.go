@@ -462,51 +462,52 @@ type frame interface {
 	Header() frameHeader
 }
 
-func readHeader(r io.Reader, p []byte) (head frameHeader, err error) {
-	_, err = io.ReadFull(r, p[:1])
+func readHeader(connProto byte, r io.Reader, p []byte) (head frameHeader, err error) {
+	if connProto == 2 {
+		head, err = readHeaderProto2(r, p)
+	} else {
+		head, err = readHeaderProtoAll(r, p)
+	}
+
+	if err != nil {
+		return
+	}
+
+	if head.version.version() != connProto {
+		return frameHeader{}, fmt.Errorf("gocql: connection and response protocol versions are different, connection %d, response %d", connProto, head.version.version())
+	}
+	return
+}
+
+func readHeaderProto2(r io.Reader, p []byte) (head frameHeader, err error) {
+	n, err := io.ReadFull(r, p[:8])
 	if err != nil {
 		return frameHeader{}, err
+	} else if n != 8 {
+		return frameHeader{}, fmt.Errorf("not enough bytes to read header require 8 got: %d", n)
 	}
-
-	version := p[0] & protoVersionMask
-
-	if version < protoVersion1 || version > protoVersion5 {
-		return frameHeader{}, fmt.Errorf("gocql: unsupported protocol response version: %d", version)
-	}
-
-	headSize := 9
-	if version < protoVersion3 {
-		headSize = 8
-	}
-
-	_, err = io.ReadFull(r, p[1:headSize])
-	if err != nil {
-		return frameHeader{}, err
-	}
-
-	p = p[:headSize]
 
 	head.version = protoVersion(p[0])
 	head.flags = p[1]
+	head.stream = int(int8(p[2]))
+	head.op = frameOp(p[3])
+	head.length = int(readInt(p[4:]))
+	return head, nil
+}
 
-	if version > protoVersion2 {
-		if len(p) != 9 {
-			return frameHeader{}, fmt.Errorf("not enough bytes to read header require 9 got: %d", len(p))
-		}
-
-		head.stream = int(int16(p[2])<<8 | int16(p[3]))
-		head.op = frameOp(p[4])
-		head.length = int(readInt(p[5:]))
-	} else {
-		if len(p) != 8 {
-			return frameHeader{}, fmt.Errorf("not enough bytes to read header require 8 got: %d", len(p))
-		}
-
-		head.stream = int(int8(p[2]))
-		head.op = frameOp(p[3])
-		head.length = int(readInt(p[4:]))
+func readHeaderProtoAll(r io.Reader, p []byte) (head frameHeader, err error) {
+	n, err := io.ReadFull(r, p[:9])
+	if err != nil {
+		return frameHeader{}, err
+	} else if n != 9 {
+		return frameHeader{}, fmt.Errorf("not enough bytes to read header require 9 got: %d", n)
 	}
 
+	head.version = protoVersion(p[0])
+	head.flags = p[1]
+	head.stream = int(int16(p[2])<<8 | int16(p[3]))
+	head.op = frameOp(p[4])
+	head.length = int(readInt(p[5:]))
 	return head, nil
 }
 
