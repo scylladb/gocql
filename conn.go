@@ -192,46 +192,44 @@ type Conn struct {
 	r    *bufio.Reader
 	w    contextWriter
 
-	timeout        time.Duration
-	writeTimeout   time.Duration
-	cfg            *ConnConfig
-	frameObserver  FrameHeaderObserver
-	streamObserver StreamObserver
+	addr string
 
 	headerBuf [maxFrameHeaderSize]byte
 
 	streams *streams.IDGenerator
-	mu      sync.Mutex
 	// calls stores a map from stream ID to callReq.
 	// This map is protected by mu.
 	// calls should not be used when closed is true, calls is set to nil when closed=true.
 	calls map[int]*callReq
 
-	errorHandler ConnErrorHandler
-	compressor   Compressor
-	auth         Authenticator
-	addr         string
-
-	version         uint8
-	currentKeyspace string
-	host            *HostInfo
 	supported       map[string][]string
 	scyllaSupported scyllaSupported
 	cqlProtoExts    []cqlProtocolExtension
-	isSchemaV2      bool
+	host            *HostInfo
+	session         *Session
+	cfg             *ConnConfig
+	errorHandler    ConnErrorHandler
+	compressor      Compressor
+	auth            Authenticator
+	logger          StdLogger
+	frameObserver   FrameHeaderObserver
+	streamObserver  StreamObserver
 
-	session *Session
-
-	// true if connection close process for the connection started.
-	// closed is protected by mu.
-	closed bool
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	timeouts int64
+	currentKeyspace string
+	timeout         time.Duration
+	writeTimeout    time.Duration
+	timeouts        int64
+	version         uint8
+	isSchemaV2      bool
 
-	logger           StdLogger
+	// true if connection close process for the connection started.
+	// closed is protected by mu.
+	closed           bool
 	tabletsRoutingV1 int32
+	mu               sync.Mutex
 }
 
 func (c *Conn) getIsSchemaV2() bool {
@@ -1313,10 +1311,9 @@ type preparedStatment struct {
 }
 
 type inflightPrepare struct {
-	done chan struct{}
-	err  error
-
 	preparedStatment *preparedStatment
+	err error
+	done chan struct{}
 }
 
 func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer) (*preparedStatment, error) {
@@ -1867,11 +1864,11 @@ func getSchemaAgreement(queryLocalSchemasRows []string, querySystemPeersRows []s
 }
 
 type schemaAgreementHost struct {
-	DataCenter    string
-	Rack          string
 	HostID        UUID
 	SchemaVersion UUID
 	RPCAddress    string
+	DataCenter    string
+	Rack          string
 }
 
 func (h *schemaAgreementHost) IsValid() bool {

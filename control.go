@@ -75,12 +75,12 @@ type controlConn struct {
 	state        int32
 	reconnecting int32
 
+	quit chan struct{}
+
 	session *Session
 	conn    atomic.Value
 
 	retry RetryPolicy
-
-	quit chan struct{}
 }
 
 func (c *controlConn) getSession() *Session {

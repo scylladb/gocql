@@ -21,8 +21,8 @@ func NewRecordDialer(dir string) *RecordDialer {
 }
 
 type RecordDialer struct {
-	dir string
 	net.Dialer
+	dir string
 }
 
 func (d *RecordDialer) DialContext(ctx context.Context, network, addr string) (conn net.Conn, err error) {
@@ -57,9 +57,9 @@ func NewConnectionRecorder(fname string, conn net.Conn) (net.Conn, error) {
 }
 
 type FrameWriter struct {
-	new       bool
-	to_record int
 	record    dialer.Record
+	to_record int
+	new       bool
 }
 
 func (f *FrameWriter) Write(b []byte, n int, file *os.File) (err error) {
@@ -102,9 +102,9 @@ func (f *FrameWriter) Write(b []byte, n int, file *os.File) (err error) {
 }
 
 type ConnectionRecorder struct {
+	orig         net.Conn
 	fd_writes    *os.File
 	fd_reads     *os.File
-	orig         net.Conn
 	read_record  FrameWriter
 	write_record FrameWriter
 }

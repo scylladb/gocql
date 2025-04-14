@@ -52,31 +52,27 @@ import (
 // and automatically sets a default consistency level on all operations
 // that do not have a consistency level set.
 type Session struct {
-	cons                Consistency
-	pageSize            int
-	prefetch            float64
-	routingKeyInfoCache routingKeyInfoLRU
-	metadataDescriber   *metadataDescriber
-	trace               Tracer
-	queryObserver       QueryObserver
-	batchObserver       BatchObserver
-	connectObserver     ConnectObserver
-	frameObserver       FrameHeaderObserver
-	streamObserver      StreamObserver
-	hostSource          *ringDescriber
-	ringRefresher       *debounce.RefreshDebouncer
-	stmtsLRU            *preparedLRU
-
-	connCfg *ConnConfig
-
-	executor *queryExecutor
 	pool     *policyConnPool
 	policy   HostSelectionPolicy
+	executor *queryExecutor
+	connCfg  *ConnConfig
 
-	mu sync.RWMutex
+	cfg                 ClusterConfig
+	metadataDescriber   *metadataDescriber
+	routingKeyInfoCache routingKeyInfoLRU
+	stmtsLRU            *preparedLRU
 
+	// Observers
+	trace           Tracer
+	queryObserver   QueryObserver
+	batchObserver   BatchObserver
+	connectObserver ConnectObserver
+	frameObserver   FrameHeaderObserver
+	streamObserver  StreamObserver
+
+	hostSource                *ringDescriber
+	ringRefresher             *debounce.RefreshDebouncer
 	control controlConnection
-
 	// event handlers
 	nodeEvents   *eventDebouncer
 	schemaEvents *eventDebouncer
@@ -84,12 +80,16 @@ type Session struct {
 	// ring metadata
 	useSystemSchema           bool
 	hasAggregatesAndFunctions bool
+	tabletsRoutingV1 	  bool
+	usingTimeoutClause 	  string
 
-	cfg ClusterConfig
+	ctx            context.Context
+	cancel         context.CancelFunc
+	readyCh        chan struct{}
+	logger         StdLogger
+	warningHandler WarningHandler
 
-	ctx    context.Context
-	cancel context.CancelFunc
-
+	mu sync.RWMutex
 	// sessionStateMu protects isClosed and isInitialized.
 	sessionStateMu sync.RWMutex
 	// isClosed is true once Session.Close is finished.
@@ -100,14 +100,10 @@ type Session struct {
 	// you can use initialized() to read the value.
 	isInitialized bool
 	initErr       error
-	readyCh       chan struct{}
 
-	logger StdLogger
-
-	tabletsRoutingV1 bool
-
-	usingTimeoutClause string
-	warningHandler     WarningHandler
+	cons     Consistency
+	pageSize int
+	prefetch float64
 }
 
 var queryPool = &sync.Pool{
@@ -964,12 +960,12 @@ func (s *Session) MapExecuteBatchCAS(batch *Batch, dest map[string]interface{}) 
 }
 
 type hostMetrics struct {
+	// TotalLatency is the sum of attempt latencies for this host in nanoseconds.
+	TotalLatency int64
+
 	// Attempts is count of how many times this query has been attempted for this host.
 	// An attempt is either a retry or fetching next page of results.
 	Attempts int
-
-	// TotalLatency is the sum of attempt latencies for this host in nanoseconds.
-	TotalLatency int64
 }
 
 type queryMetrics struct {
@@ -1064,38 +1060,40 @@ func (qm *queryMetrics) attempt(addAttempts int, addLatency time.Duration,
 
 // Query represents a CQL statement that can be executed.
 type Query struct {
-	stmt                  string
-	values                []interface{}
-	cons                  Consistency
-	pageSize              int
-	routingKey            []byte
-	pageState             []byte
-	prefetch              float64
-	trace                 Tracer
-	observer              QueryObserver
-	session               *Session
-	conn                  ConnInterface
-	rt                    RetryPolicy
-	spec                  SpeculativeExecutionPolicy
-	binding               func(q *QueryInfo) ([]interface{}, error)
-	serialCons            Consistency
-	defaultTimestamp      bool
-	defaultTimestampValue int64
-	disableSkipMetadata   bool
-	context               context.Context
-	idempotent            bool
-	customPayload         map[string][]byte
-	metrics               *queryMetrics
 	refCount              uint32
+	pageSize              int
+	defaultTimestampValue int64
+	prefetch              float64
 
-	disableAutoPage bool
+	stmt          string
+	values        []interface{}
+	routingKey    []byte
+	pageState     []byte
+	trace         Tracer
+	observer      QueryObserver
+	session       *Session
+	conn          ConnInterface
+	rt            RetryPolicy
+	spec          SpeculativeExecutionPolicy
+	binding       func(q *QueryInfo) ([]interface{}, error)
+	serialCons    Consistency
+	cons          Consistency
+	context       context.Context
+	customPayload map[string][]byte
+	metrics       *queryMetrics
 
-	// getKeyspace is field so that it can be overriden in tests
-	getKeyspace func() string
+	defaultTimestamp    bool
+	disableSkipMetadata bool
+	idempotent          bool
+
+	disableAutoPage     bool
 
 	// used by control conn queries to prevent triggering a write to systems
 	// tables in AWS MCS see
 	skipPrepare bool
+
+	// getKeyspace is field so that it can be overriden in tests
+	getKeyspace func() string
 
 	// routingInfo is a pointer because Query can be copied and copyable struct can't hold a mutex.
 	routingInfo *queryRoutingInfo
@@ -1109,16 +1107,15 @@ type queryRoutingInfo struct {
 	// mu protects contents of queryRoutingInfo.
 	mu sync.RWMutex
 
+	// If not nil, represents a custom partitioner for the table.
+	partitioner Partitioner
+
 	// "lwt" denotes the query being an LWT operation
 	// In effect if the query is of the form "INSERT/UPDATE/DELETE ... IF ..."
 	// For more details see https://docs.scylladb.com/using-scylla/lwt/
 	lwt bool
 
-	// If not nil, represents a custom partitioner for the table.
-	partitioner Partitioner
-
 	keyspace string
-
 	table string
 }
 
@@ -1666,14 +1663,13 @@ func (q *Query) GetHostID() string {
 // were returned by a query. The iterator might send additional queries to the
 // database during the iteration if paging was enabled.
 type Iter struct {
-	err     error
-	pos     int
 	meta    resultMetadata
-	numRows int
-	next    *nextIter
 	host    *HostInfo
-
 	framer framerInterface
+	next    *nextIter
+	err     error
+	numRows int
+	pos     int
 	closed int32
 }
 
@@ -1943,10 +1939,10 @@ func (iter *Iter) NumRows() int {
 // single page might be attempted multiple times due to retries.
 type nextIter struct {
 	qry   *Query
+	next  *Iter
 	pos   int
 	oncea sync.Once
 	once  sync.Once
-	next  *Iter
 }
 
 func (n *nextIter) fetchAsync() {
@@ -1970,22 +1966,23 @@ func (n *nextIter) fetch() *Iter {
 
 type Batch struct {
 	Type                  BatchType
-	Entries               []BatchEntry
 	Cons                  Consistency
-	routingKey            []byte
-	CustomPayload         map[string][]byte
-	rt                    RetryPolicy
-	spec                  SpeculativeExecutionPolicy
-	trace                 Tracer
-	observer              BatchObserver
-	session               *Session
 	serialCons            Consistency
-	defaultTimestamp      bool
 	defaultTimestampValue int64
-	context               context.Context
-	cancelBatch           func()
-	keyspace              string
-	metrics               *queryMetrics
+	defaultTimestamp      bool
+
+	Entries       []BatchEntry
+	routingKey    []byte
+	CustomPayload map[string][]byte
+	rt            RetryPolicy
+	spec          SpeculativeExecutionPolicy
+	trace         Tracer
+	observer      BatchObserver
+	session       *Session
+	context       context.Context
+	cancelBatch   func()
+	keyspace      string
+	metrics       *queryMetrics
 
 	// routingInfo is a pointer because Query can be copied and copyable struct can't hold a mutex.
 	routingInfo *queryRoutingInfo
@@ -2332,15 +2329,15 @@ const (
 type BatchEntry struct {
 	Stmt       string
 	Args       []interface{}
-	Idempotent bool
 	binding    func(q *QueryInfo) ([]interface{}, error)
+	Idempotent bool
 }
 
 type ColumnInfo struct {
+	TypeInfo TypeInfo
 	Keyspace string
 	Table    string
 	Name     string
-	TypeInfo TypeInfo
 }
 
 func (c ColumnInfo) String() string {
@@ -2349,17 +2346,17 @@ func (c ColumnInfo) String() string {
 
 // routing key indexes LRU cache
 type routingKeyInfoLRU struct {
-	lru *lru.Cache
 	mu  sync.Mutex
+	lru *lru.Cache
 }
 
 type routingKeyInfo struct {
-	indexes     []int
+	partitioner Partitioner
 	types       []TypeInfo
+	indexes     []int
 	keyspace    string
 	table       string
 	lwt         bool
-	partitioner Partitioner
 }
 
 func (r *routingKeyInfo) String() string {
@@ -2395,31 +2392,29 @@ func (s *Session) GetHosts() []*HostInfo {
 }
 
 type ObservedQuery struct {
-	Keyspace  string
-	Statement string
-
-	// Values holds a slice of bound values for the query.
-	// Do not modify the values here, they are shared with multiple goroutines.
-	Values []interface{}
-
-	Start time.Time // time immediately before the query was called
-	End   time.Time // time immediately after the query returned
-
-	// Rows is the number of rows in the current iter.
-	// In paginated queries, rows from previous scans are not counted.
-	// Rows is not used in batch queries and remains at the default value
-	Rows int
+	Start   time.Time    // time immediately before the query was called
+	End     time.Time    // time immediately after the query returned
 
 	// Host is the informations about the host that performed the query
-	Host *HostInfo
+	Host    *HostInfo
 
 	// The metrics per this host
 	Metrics *hostMetrics
 
 	// Err is the error in the query.
 	// It only tracks network errors or errors of bad cassandra syntax, in particular selects with no match return nil error
-	Err error
+	Err       error
 
+	Keyspace  string
+	Statement string
+
+	// Values holds a slice of bound values for the query.
+	// Do not modify the values here, they are shared with multiple goroutines.
+	Values []interface{}
+	// Rows is the number of rows in the current iter.
+	// In paginated queries, rows from previous scans are not counted.
+	// Rows is not used in batch queries and remains at the default value
+	Rows int
 	// Attempt is the index of attempt at executing this query.
 	// The first attempt is number zero and any retries have non-zero attempt number.
 	Attempt int
@@ -2434,14 +2429,6 @@ type QueryObserver interface {
 }
 
 type ObservedBatch struct {
-	Keyspace   string
-	Statements []string
-
-	// Values holds a slice of bound values for each statement.
-	// Values[i] are bound values passed to Statements[i].
-	// Do not modify the values here, they are shared with multiple goroutines.
-	Values [][]interface{}
-
 	Start time.Time // time immediately before the batch query was called
 	End   time.Time // time immediately after the batch query returned
 
@@ -2454,7 +2441,13 @@ type ObservedBatch struct {
 
 	// The metrics per this host
 	Metrics *hostMetrics
+	Keyspace   string
+	Statements []string
 
+	// Values holds a slice of bound values for each statement.
+	// Values[i] are bound values passed to Statements[i].
+	// Do not modify the values here, they are shared with multiple goroutines.
+	Values [][]interface{}
 	// Attempt is the index of attempt at executing this query.
 	// The first attempt is number zero and any retries have non-zero attempt number.
 	Attempt int
@@ -2471,11 +2464,11 @@ type BatchObserver interface {
 }
 
 type ObservedConnect struct {
-	// Host is the information about the host about to connect
-	Host *HostInfo
-
 	Start time.Time // time immediately before the dial is called
 	End   time.Time // time immediately after the dial returned
+
+	// Host is the information about the host about to connect
+	Host *HostInfo
 
 	// Err is the connection error (if any)
 	Err error

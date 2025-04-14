@@ -14,8 +14,8 @@ type ringDescriber struct {
 	cfg             *ClusterConfig
 	logger          StdLogger
 	mu              sync.RWMutex
-	prevHosts       []*HostInfo
 	prevPartitioner string
+	prevHosts       []*HostInfo
 
 	// hosts are the set of all hosts in the cassandra ring that we know of.
 	// key of map is host_id.

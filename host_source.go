@@ -152,7 +152,6 @@ type HostInfo struct {
 	// TODO(zariel): reduce locking maybe, not all values will change, but to ensure
 	// that we are thread safe use a mutex to access all fields.
 	mu                         sync.RWMutex
-	hostname                   string
 	peer                       net.IP
 	broadcastAddress           net.IP
 	listenAddress              net.IP
@@ -160,22 +159,23 @@ type HostInfo struct {
 	preferredIP                net.IP
 	connectAddress             net.IP
 	untranslatedConnectAddress net.IP
-	port                       int
+	hostname                   string
 	dataCenter                 string
 	rack                       string
 	hostId                     string
 	workload                   string
-	graph                      bool
 	dseVersion                 string
 	partitioner                string
 	clusterName                string
-	version                    cassVersion
-	state                      nodeState
 	schemaVersion              string
-	tokens                     []string
 
+	tokens                  []string
+	version                 cassVersion
+	port                    int
+	state                   nodeState
 	scyllaShardAwarePort    uint16
 	scyllaShardAwarePortTLS uint16
+	graph                   bool
 }
 
 func (h *HostInfo) Equal(host *HostInfo) bool {

@@ -52,12 +52,12 @@ type SetTablets interface {
 type policyConnPool struct {
 	session *Session
 
+	mu            sync.RWMutex
+	hostConnPools map[string]*hostConnPool
+
 	port     int
 	numConns int
 	keyspace string
-
-	mu            sync.RWMutex
-	hostConnPools map[string]*hostConnPool
 }
 
 func connConfig(cfg *ClusterConfig) (*ConnConfig, error) {
@@ -253,16 +253,16 @@ func (p *policyConnPool) removeHost(hostID string) {
 type hostConnPool struct {
 	session  *Session
 	host     *HostInfo
-	size     int
-	keyspace string
-	// protection for connPicker, closed, filling
-	mu         sync.RWMutex
 	connPicker ConnPicker
-	closed     bool
-	filling    bool
+	logger StdLogger
 	debouncer  *debounce.SimpleDebouncer
 
-	logger StdLogger
+	keyspace string
+	size     int
+	// protection for connPicker, closed, filling
+	mu      sync.RWMutex
+	filling bool
+	closed  bool
 }
 
 func (h *hostConnPool) String() string {

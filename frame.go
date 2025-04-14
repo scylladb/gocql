@@ -48,8 +48,8 @@ type unsetColumn struct{}
 var UnsetValue = unsetColumn{}
 
 type namedValue struct {
-	name  string
 	value interface{}
+	name  string
 }
 
 // NamedValue produce a value which will bind to the named parameter in a query
@@ -306,11 +306,11 @@ func readInt(p []byte) int32 {
 }
 
 type frameHeader struct {
+	length   int
+	stream   int
 	version  protoVersion
 	flags    byte
-	stream   int
 	op       frameOp
-	length   int
 	warnings []string
 }
 
@@ -325,12 +325,6 @@ func (f frameHeader) Header() frameHeader {
 const defaultBufSize = 128
 
 type ObservedFrameHeader struct {
-	Version protoVersion
-	Flags   byte
-	Stream  int16
-	Opcode  frameOp
-	Length  int32
-
 	// StartHeader is the time we started reading the frame header off the network connection.
 	Start time.Time
 	// EndHeader is the time we finished reading the frame header off the network connection.
@@ -338,6 +332,12 @@ type ObservedFrameHeader struct {
 
 	// Host is Host of the connection the frame header was read from.
 	Host *HostInfo
+
+	Length  int32
+	Stream  int16
+	Flags   byte
+	Opcode  frameOp
+	Version protoVersion
 }
 
 func (f ObservedFrameHeader) String() string {
@@ -362,9 +362,10 @@ type framerInterface interface {
 type framer struct {
 	proto byte
 	// flags are for outgoing flags, enabling compression and tracing etc
-	flags    byte
-	compres  Compressor
-	headSize int
+	flags                 byte
+	flagLWT               int
+	rateLimitingErrorCode int
+	headSize              int
 	// if this frame was read then the header will be here
 	header *frameHeader
 
@@ -378,10 +379,9 @@ type framer struct {
 	buf []byte
 
 	customPayload map[string][]byte
+	compres       Compressor
 
-	flagLWT               int
-	rateLimitingErrorCode int
-	tabletsRoutingV1      bool
+	tabletsRoutingV1 bool
 }
 
 func newFramer(compressor Compressor, version byte) *framer {
@@ -964,11 +964,11 @@ func (f *framer) readTypeInfo() TypeInfo {
 type preparedMetadata struct {
 	resultMetadata
 
-	// LWT query detected
-	lwt bool
-
 	// proto v4+
 	pkeyColumns []int
+
+	// LWT query detected
+	lwt bool
 
 	keyspace string
 
@@ -1039,18 +1039,17 @@ func (f *framer) parsePreparedMetadata() preparedMetadata {
 }
 
 type resultMetadata struct {
-	flags int
-
-	// only if flagPageState
-	pagingState []byte
-
-	columns  []ColumnInfo
 	colCount int
 
 	// this is a count of the total number of columns which can be scanned,
 	// it is at minimum len(columns) but may be larger, for instance when a column
 	// is a UDT or tuple.
 	actualColCount int
+	flags          int
+
+	// only if flagPageState
+	pagingState []byte
+	columns     []ColumnInfo
 }
 
 func (r *resultMetadata) morePages() bool {
@@ -1156,11 +1155,10 @@ func (f *framer) parseResultFrame() (frame, error) {
 }
 
 type resultRowsFrame struct {
-	frameHeader
-
-	meta resultMetadata
 	// dont parse the rows here as we only need to do it once
 	numRows int
+	meta    resultMetadata
+	frameHeader
 }
 
 func (f *resultRowsFrame) String() string {
@@ -1406,9 +1404,9 @@ func (f *framer) parseAuthChallengeFrame() frame {
 type statusChangeEventFrame struct {
 	frameHeader
 
-	change string
 	host   net.IP
 	port   int
+	change string
 }
 
 func (t statusChangeEventFrame) String() string {
@@ -1480,18 +1478,15 @@ type queryValues struct {
 }
 
 type queryParams struct {
-	consistency Consistency
-	// v2+
-	skipMeta          bool
-	values            []queryValues
-	pageSize          int
-	pagingState       []byte
-	serialConsistency Consistency
-	// v3+
-	defaultTimestamp      bool
+	consistency           Consistency
+	serialConsistency     Consistency
 	defaultTimestampValue int64
-	// v5+
-	keyspace string
+	pageSize              int
+	values                []queryValues
+	pagingState           []byte
+	keyspace              string // v5+
+	skipMeta              bool   // v2+
+	defaultTimestamp      bool   // v3+
 }
 
 func (q queryParams) String() string {
@@ -1595,11 +1590,10 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 }
 
 type writeQueryFrame struct {
-	statement string
-	params    queryParams
-
 	// v4+
 	customPayload map[string][]byte
+	statement     string
+	params        queryParams
 }
 
 func (w *writeQueryFrame) String() string {
@@ -1634,10 +1628,9 @@ func (f frameWriterFunc) buildFrame(framer *framer, streamID int) error {
 
 type writeExecuteFrame struct {
 	preparedID []byte
-	params     queryParams
 
-	// v4+
-	customPayload map[string][]byte
+	customPayload map[string][]byte // v4+
+	params        queryParams
 }
 
 func (e *writeExecuteFrame) String() string {
@@ -1676,23 +1669,20 @@ func (f *framer) writeExecuteFrame(streamID int, preparedID []byte, params *quer
 // TODO: can we replace BatchStatemt with batchStatement? As they prety much
 // duplicate each other
 type batchStatment struct {
+	values     []queryValues
 	preparedID []byte
 	statement  string
-	values     []queryValues
 }
 
 type writeBatchFrame struct {
-	typ         BatchType
-	statements  []batchStatment
-	consistency Consistency
+	statements []batchStatment
 
-	// v3+
-	serialConsistency     Consistency
-	defaultTimestamp      bool
-	defaultTimestampValue int64
-
-	//v4+
-	customPayload map[string][]byte
+	customPayload         map[string][]byte // v4+
+	defaultTimestampValue int64             // v3+
+	serialConsistency     Consistency       // v3+
+	consistency           Consistency
+	typ                   BatchType
+	defaultTimestamp      bool // v3+
 }
 
 func (w *writeBatchFrame) buildFrame(framer *framer, streamID int) error {

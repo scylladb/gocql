@@ -31,15 +31,13 @@ import (
 )
 
 type eventDebouncer struct {
-	name   string
 	timer  *time.Timer
-	mu     sync.Mutex
-	events []frame
-
 	callback func([]frame)
 	quit     chan struct{}
-
 	logger StdLogger
+	mu     sync.Mutex
+	events []frame
+	name   string
 }
 
 func newEventDebouncer(name string, eventHandler func([]frame), logger StdLogger) *eventDebouncer {
@@ -175,9 +173,9 @@ func (s *Session) handleTableChange(keyspace, table, change string) {
 // would itself be dropped/ignored, as the node is not yet known).
 func (s *Session) handleNodeEvent(frames []frame) {
 	type nodeEvent struct {
-		change string
 		host   net.IP
 		port   int
+		change string
 	}
 
 	topologyEventReceived := false

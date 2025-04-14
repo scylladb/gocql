@@ -196,12 +196,12 @@ type RequestErrUnprepared struct {
 
 type RequestErrReadFailure struct {
 	errorFrame
+	ErrorMap    ErrorMap
 	Consistency Consistency
 	Received    int
 	BlockFor    int
 	NumFailures int
 	DataPresent bool
-	ErrorMap    ErrorMap
 }
 
 type RequestErrFunctionFailure struct {
