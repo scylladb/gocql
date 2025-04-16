@@ -18,14 +18,14 @@ import (
 // frame.
 // FIXME: Should also follow `cqlProtocolExtension` interface.
 type scyllaSupported struct {
+	msbIgnore         uint64
 	shard             int
 	nrShards          int
-	msbIgnore         uint64
-	partitioner       string
-	shardingAlgorithm string
+	lwtFlagMask       int
 	shardAwarePort    uint16
 	shardAwarePortSSL uint16
-	lwtFlagMask       int
+	partitioner       string
+	shardingAlgorithm string
 }
 
 // CQL Protocol extension interface for Scylla.
@@ -299,21 +299,20 @@ func (conn *Conn) isScyllaConn() bool {
 // it tries to make, the shard that it aims to connect to is chosen
 // in a round-robin fashion.
 type scyllaConnPicker struct {
-	address                string
-	hostId                 string
-	shardAwareAddress      string
-	conns                  []*Conn
-	excessConns            []*Conn
-	nrConns                int
-	nrShards               int
-	msbIgnore              uint64
-	pos                    uint64
-	lastAttemptedShard     int
-	shardAwarePortDisabled bool
-	logger                 StdLogger
-
+	address           string
+	hostId            string
+	shardAwareAddress string
+	logger            StdLogger
+	conns             []*Conn
+	excessConns       []*Conn
 	// Used to disable new connections to the shard-aware port temporarily
 	disableShardAwarePortUntil *atomic.Value
+	nrConns                    int
+	nrShards                   int
+	lastAttemptedShard         int
+	pos                        uint64
+	msbIgnore                  uint64
+	shardAwarePortDisabled     bool
 }
 
 func newScyllaConnPicker(conn *Conn, logger StdLogger) *scyllaConnPicker {
@@ -658,9 +657,9 @@ type ShardDialer interface {
 // A dialer which dials a particular shard
 type scyllaDialer struct {
 	dialer    Dialer
-	logger    StdLogger
 	tlsConfig *tls.Config
 	cfg       *ClusterConfig
+	logger    StdLogger
 }
 
 const scyllaShardAwarePortFallbackDuration time.Duration = 5 * time.Minute

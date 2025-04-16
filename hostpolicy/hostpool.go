@@ -28,8 +28,8 @@ func HostPool(hp hostpool.HostPool) gocql.HostSelectionPolicy {
 
 type hostPoolHostPolicy struct {
 	hp      hostpool.HostPool
-	mu      sync.RWMutex
 	hostMap map[string]*gocql.HostInfo
+	mu      sync.RWMutex
 }
 
 func (r *hostPoolHostPolicy) Init(*gocql.Session)                       {}
@@ -129,8 +129,8 @@ func (r *hostPoolHostPolicy) Pick(qry gocql.ExecutableQuery) gocql.NextHost {
 // selectedHostPoolHost is a host returned by the hostPoolHostPolicy and
 // implements the SelectedHost interface
 type selectedHostPoolHost struct {
-	policy *hostPoolHostPolicy
 	info   *gocql.HostInfo
+	policy *hostPoolHostPolicy
 	hostR  hostpool.HostPoolResponse
 }
 

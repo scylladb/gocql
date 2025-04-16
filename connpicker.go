@@ -21,9 +21,9 @@ type ConnPicker interface {
 }
 
 type defaultConnPicker struct {
-	conns []*Conn
 	pos   uint32
 	size  int
+	conns []*Conn
 	mu    sync.RWMutex
 }
 

@@ -39,8 +39,8 @@ import (
 
 // cowHostList implements a copy on write host list, its equivalent type is []*HostInfo
 type cowHostList struct {
-	list atomic.Value
 	mu   sync.Mutex
+	list atomic.Value
 }
 
 func (c *cowHostList) String() string {
@@ -199,8 +199,8 @@ func (s *SimpleRetryPolicy) GetRetryTypeLWT(err error) RetryType {
 
 // ExponentialBackoffRetryPolicy sleeps between attempts
 type ExponentialBackoffRetryPolicy struct {
-	NumRetries int
 	Min, Max   time.Duration
+	NumRetries int
 }
 
 func (e *ExponentialBackoffRetryPolicy) Attempt(q RetryableQuery) bool {
@@ -395,10 +395,10 @@ func newSingleHost(info *HostInfo, maxRetries byte, retryDelay time.Duration) *s
 }
 
 type singleHost struct {
-	retry      byte
-	maxRetries byte
-	delay      time.Duration
 	info       *HostInfo
+	delay      time.Duration
+	maxRetries byte
+	retry      byte
 }
 
 func (s *singleHost) selectHost() SelectedHost {
@@ -513,22 +513,21 @@ type clusterMeta struct {
 var MAX_IN_FLIGHT_THRESHOLD int = 10
 
 type tokenAwareHostPolicy struct {
+	metadata atomic.Value // *clusterMeta
+	hosts    cowHostList
+	// mu protects writes to hosts, partitioner, metadata.
+	// reads can be unlocked as long as they are not used for updating state later.	
+	mu       sync.Mutex
+
+	logger   StdLogger
+
 	fallback            HostSelectionPolicy
 	getKeyspaceMetadata func(keyspace string) (*KeyspaceMetadata, error)
 	getKeyspaceName     func() string
+	partitioner         string
 
 	shuffleReplicas          bool
 	nonLocalReplicasFallback bool
-
-	// mu protects writes to hosts, partitioner, metadata.
-	// reads can be unlocked as long as they are not used for updating state later.
-	mu          sync.Mutex
-	hosts       cowHostList
-	partitioner string
-	metadata    atomic.Value // *clusterMeta
-
-	logger StdLogger
-
 	avoidSlowReplicas bool
 }
 
@@ -864,10 +863,10 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 }
 
 type dcAwareRR struct {
-	local             string
+	lastUsedHostIdx   uint64
 	localHosts        cowHostList
 	remoteHosts       cowHostList
-	lastUsedHostIdx   uint64
+	local             string
 	disableDCFailover bool
 }
 
@@ -1000,9 +999,9 @@ type rackAwareRR struct {
 	// keep it first in the struct. Do not move it or add new struct members
 	// before it.
 	lastUsedHostIdx   uint64
+	hosts             []cowHostList
 	localDC           string
 	localRack         string
-	hosts             []cowHostList
 	disableDCFailover bool
 }
 
@@ -1097,9 +1096,9 @@ func SingleHostReadyPolicy(p HostSelectionPolicy) *singleHostReadyPolicy {
 }
 
 type singleHostReadyPolicy struct {
-	HostSelectionPolicy
-	ready    bool
 	readyMux sync.Mutex
+	HostSelectionPolicy
+	ready bool
 }
 
 func (s *singleHostReadyPolicy) HostUp(host *HostInfo) {
