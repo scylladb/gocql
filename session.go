@@ -116,10 +116,10 @@ var queryPool = &sync.Pool{
 	},
 }
 
-func addrsToHosts(addrs []string, defaultPort int, logger StdLogger) ([]*HostInfo, error) {
+func addrsToHosts(resolver DNSResolver, addrs []string, defaultPort int, logger StdLogger) ([]*HostInfo, error) {
 	var hosts []*HostInfo
 	for _, hostaddr := range addrs {
-		resolvedHosts, err := hostInfo(hostaddr, defaultPort)
+		resolvedHosts, err := hostInfo(resolver, hostaddr, defaultPort)
 		if err != nil {
 			// Try other hosts if unable to resolve DNS name
 			if _, ok := err.(*net.DNSError); ok {
@@ -259,7 +259,7 @@ func (s *Session) init() error {
 		return nil
 	}
 
-	hosts, err := addrsToHosts(s.cfg.Hosts, s.cfg.Port, s.logger)
+	hosts, err := addrsToHosts(s.cfg.DNSResolver, s.cfg.Hosts, s.cfg.Port, s.logger)
 	if err != nil {
 		return err
 	}

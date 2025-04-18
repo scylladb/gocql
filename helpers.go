@@ -27,7 +27,6 @@ package gocql
 import (
 	"fmt"
 	"math/big"
-	"net"
 	"reflect"
 	"strings"
 	"time"
@@ -466,14 +465,4 @@ func copyBytes(p []byte) []byte {
 	b := make([]byte, len(p))
 	copy(b, p)
 	return b
-}
-
-var failDNS = false
-
-func LookupIP(host string) ([]net.IP, error) {
-	if failDNS {
-		return nil, &net.DNSError{}
-	}
-	return net.LookupIP(host)
-
 }

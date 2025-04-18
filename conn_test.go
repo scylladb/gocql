@@ -57,6 +57,12 @@ const (
 	defaultProto = protoVersion2
 )
 
+type brokenDNSResolver struct{}
+
+func (b brokenDNSResolver) LookupIP(host string) ([]net.IP, error) {
+	return nil, &net.DNSError{}
+}
+
 func TestApprove(t *testing.T) {
 	tests := map[bool]bool{
 		approve("org.apache.cassandra.auth.PasswordAuthenticator", []string{}):                                             true,
@@ -184,12 +190,12 @@ func newTestSession(proto protoVersion, addresses ...string) (*Session, error) {
 	return testCluster(proto, addresses...).CreateSession()
 }
 
+var _ DNSResolver = brokenDNSResolver{}
+
 func TestDNSLookupConnected(t *testing.T) {
 	log := &testLogger{}
 
 	// Override the defaul DNS resolver and restore at the end
-	failDNS = true
-	defer func() { failDNS = false }()
 
 	srv := NewTestServer(t, defaultProto, context.Background())
 	defer srv.Stop()
@@ -198,6 +204,7 @@ func TestDNSLookupConnected(t *testing.T) {
 	cluster.Logger = log
 	cluster.ProtoVersion = int(defaultProto)
 	cluster.disableControlConn = true
+	cluster.DNSResolver = brokenDNSResolver{}
 
 	// CreateSession() should attempt to resolve the DNS name "cassandraX.invalid"
 	// and fail, but continue to connect via srv.Address
@@ -215,13 +222,12 @@ func TestDNSLookupError(t *testing.T) {
 	log := &testLogger{}
 
 	// Override the defaul DNS resolver and restore at the end
-	failDNS = true
-	defer func() { failDNS = false }()
 
 	cluster := NewCluster("cassandra1.invalid", "cassandra2.invalid")
 	cluster.Logger = log
 	cluster.ProtoVersion = int(defaultProto)
 	cluster.disableControlConn = true
+	cluster.DNSResolver = brokenDNSResolver{}
 
 	// CreateSession() should attempt to resolve each DNS name "cassandraX.invalid"
 	// and fail since it could not resolve any dns entries
@@ -1251,7 +1257,7 @@ func (srv *TestServer) session() (*Session, error) {
 }
 
 func (srv *TestServer) host() *HostInfo {
-	hosts, err := hostInfo(srv.Address, 9042)
+	hosts, err := hostInfo(nil, srv.Address, 9042)
 	if err != nil {
 		srv.t.Fatal(err)
 	}

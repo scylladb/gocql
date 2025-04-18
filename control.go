@@ -31,7 +31,6 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
-	"os"
 	"regexp"
 	"strconv"
 	"sync"
@@ -142,9 +141,7 @@ func (c *controlConn) heartBeat() {
 	}
 }
 
-var hostLookupPreferV4 = os.Getenv("GOCQL_HOST_LOOKUP_PREFER_V4") == "true"
-
-func hostInfo(addr string, defaultPort int) ([]*HostInfo, error) {
+func hostInfo(resolver DNSResolver, addr string, defaultPort int) ([]*HostInfo, error) {
 	var port int
 	host, portStr, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -168,24 +165,11 @@ func hostInfo(addr string, defaultPort int) ([]*HostInfo, error) {
 	}
 
 	// Look up host in DNS
-	ips, err := LookupIP(host)
+	ips, err := resolver.LookupIP(host)
 	if err != nil {
 		return nil, err
 	} else if len(ips) == 0 {
 		return nil, fmt.Errorf("no IP's returned from DNS lookup for %q", addr)
-	}
-
-	// Filter to v4 addresses if any present
-	if hostLookupPreferV4 {
-		var preferredIPs []net.IP
-		for _, v := range ips {
-			if v4 := v.To4(); v4 != nil {
-				preferredIPs = append(preferredIPs, v4)
-			}
-		}
-		if len(preferredIPs) != 0 {
-			ips = preferredIPs
-		}
 	}
 
 	for _, ip := range ips {
@@ -442,7 +426,7 @@ func (c *controlConn) attemptReconnect() (*Conn, error) {
 	c.session.logger.Printf("gocql: control falling back to initial contact points.\n")
 	// Fallback to initial contact points, as it may be the case that all known initialHosts
 	// changed their IPs while keeping the same hostname(s).
-	initialHosts, resolvErr := addrsToHosts(c.session.cfg.Hosts, c.session.cfg.Port, c.session.logger)
+	initialHosts, resolvErr := addrsToHosts(c.session.cfg.DNSResolver, c.session.cfg.Hosts, c.session.cfg.Port, c.session.logger)
 	if resolvErr != nil {
 		return nil, fmt.Errorf("resolve contact points' hostnames: %v", resolvErr)
 	}

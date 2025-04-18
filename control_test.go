@@ -33,8 +33,7 @@ import (
 )
 
 func TestHostInfo_Lookup(t *testing.T) {
-	hostLookupPreferV4 = true
-	defer func() { hostLookupPreferV4 = false }()
+	resolver := NewSimpleDNSResolver(true)
 
 	tests := [...]struct {
 		addr string
@@ -45,7 +44,7 @@ func TestHostInfo_Lookup(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		hosts, err := hostInfo(test.addr, 1)
+		hosts, err := hostInfo(resolver, test.addr, 1)
 		if err != nil {
 			t.Errorf("%d: %v", i, err)
 			continue

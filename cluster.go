@@ -32,6 +32,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net"
+	"os"
 	"sync/atomic"
 	"time"
 )
@@ -311,7 +312,45 @@ type ClusterConfig struct {
 	// internal config for testing
 	disableControlConn bool
 	disableInit        bool
+
+	DNSResolver DNSResolver
 }
+
+type DNSResolver interface {
+	LookupIP(host string) ([]net.IP, error)
+}
+
+type SimpleDNSResolver struct {
+	hostLookupPreferV4 bool
+}
+
+func NewSimpleDNSResolver(hostLookupPreferV4 bool) *SimpleDNSResolver {
+	return &SimpleDNSResolver{
+		hostLookupPreferV4,
+	}
+}
+
+func (r SimpleDNSResolver) LookupIP(host string) ([]net.IP, error) {
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return nil, err
+	}
+	// Filter to v4 addresses if any present
+	if r.hostLookupPreferV4 {
+		var preferredIPs []net.IP
+		for _, v := range ips {
+			if v4 := v.To4(); v4 != nil {
+				preferredIPs = append(preferredIPs, v4)
+			}
+		}
+		if len(preferredIPs) != 0 {
+			ips = preferredIPs
+		}
+	}
+	return ips, nil
+}
+
+var defaultDnsResolver = NewSimpleDNSResolver(os.Getenv("GOCQL_HOST_LOOKUP_PREFER_V4") == "true")
 
 type Dialer interface {
 	DialContext(ctx context.Context, network, addr string) (net.Conn, error)
@@ -352,6 +391,7 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		DisableSkipMetadata:          true,
 		WarningsHandlerBuilder:       DefaultWarningHandlerBuilder,
 		Logger:                       &defaultLogger{},
+		DNSResolver:                  defaultDnsResolver,
 	}
 
 	return cfg
@@ -505,6 +545,10 @@ func (cfg *ClusterConfig) Validate() error {
 
 	if cfg.SerialConsistency > 0 && !cfg.SerialConsistency.IsSerial() {
 		return fmt.Errorf("the default SerialConsistency level is not allowed to be anything else but SERIAL or LOCAL_SERIAL. Recived value: %v", cfg.SerialConsistency)
+	}
+
+	if cfg.DNSResolver == nil {
+		return fmt.Errorf("DNSResolver is empty")
 	}
 
 	return cfg.ValidateAndInitSSL()
