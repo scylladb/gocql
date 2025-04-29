@@ -5,17 +5,49 @@ on:
     branches:
       - master
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [ opened, synchronize, reopened ]
+
+env:
+  CCM_VERSION: "4621dfee5ad73956b831091a8b863d100d25c610"
 
 jobs:
   build:
-    name: Build
+    name: Unit tests
     runs-on: ubuntu-latest
-    env:
-      SCYLLA_IMAGE: scylladb/scylla:6.1.1
+    strategy:
+      matrix:
+        go: [ '1.22', '1.23' ]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v4
+        with:
+          go-version: ${{ matrix.go }}
+      - run: go vet ./...
+      - name: Run unit tests
+        run: go test -v -tags unit -race ./...
+  integration-cassandra:
+    timeout-minutes: 15
+    needs:
+      - build
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go: [ '1.22', '1.23' ]
+        cassandra_version: [ '4.1.6', '5.0.3' ]
+        auth: [ "false" ]
+        compressor: [ "no-compression", "snappy" ]
+        tags: [  "integration" ]
+        proto_version: [ "4", "5" ]
+        exclude:
+          - proto_version: "5"
+            compressor: "snappy"
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-go@v2
+        with:
+          go-version: ${{ matrix.go }}
       - uses: actions/cache@v4
         id: gomod-cache
         with:
@@ -23,19 +55,67 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('go.mod') }}
           restore-keys: |
             ${{ runner.os }}-go-
-
-      - run: go vet ./...
-
-      - name: Run unit tests
-        run: go test -tags unit -race ./...
-
       - name: Setup environment
         uses: ./.github/actions/setup-environment
-        with:
-          ccm_version: 'master'
-          java_version: '11'
-          docker_compose_version: '2.20.0'
+      - name: Start cassandra nodes
+        run: |
+          source ~/venv/bin/activate
+          VERSION=${{ matrix.cassandra_version }}
+          keypath="$(pwd)/testdata/pki"
+          conf=(
+              "client_encryption_options.enabled: true"
+              "client_encryption_options.keystore: $keypath/.keystore"
+              "client_encryption_options.keystore_password: cassandra"
+              "client_encryption_options.require_client_auth: true"
+              "client_encryption_options.truststore: $keypath/.truststore"
+              "client_encryption_options.truststore_password: cassandra"
+              "concurrent_reads: 2"
+              "concurrent_writes: 2"
+              "write_request_timeout_in_ms: 5000"
+              "read_request_timeout_in_ms: 5000"
+          )
 
-      - run: sudo sh -c "echo 2097152 >> /proc/sys/fs/aio-max-nr"
-      - run: ./integration.sh integration
-      - run: ./integration.sh ccm
+          if [[ $VERSION == 3.*.* ]]; then
+              conf+=(
+                "rpc_server_type: sync"
+                "rpc_min_threads: 2"
+                "rpc_max_threads: 2"
+                "enable_user_defined_functions: true"
+                "enable_materialized_views: true"
+              )
+          elif [[ $VERSION == 4.0.* ]]; then
+              conf+=(
+                "enable_user_defined_functions: true"
+                "enable_materialized_views: true"
+              )
+          else
+              conf+=(
+                "user_defined_functions_enabled: true"
+                "materialized_views_enabled: true"
+              )
+          fi
+
+          ccm remove test || true
+
+          ccm create test -v $VERSION -n 3 -d --vnodes --jvm_arg="-Xmx256m -XX:NewSize=100m"
+          ccm updateconf "${conf[@]}"
+
+          export JVM_EXTRA_OPTS=" -Dcassandra.test.fail_writes_ks=test -Dcassandra.custom_query_handler_class=org.apache.cassandra.cql3.CustomPayloadMirroringQueryHandler"
+
+          ccm start --wait-for-binary-proto --verbose
+          ccm status
+          ccm node1 nodetool status
+
+          echo "args=$args" >> $GITHUB_ENV
+          echo "JVM_EXTRA_OPTS=$JVM_EXTRA_OPTS" >> $GITHUB_ENV
+      - name: Integration tests
+        run: |
+          source ~/venv/bin/activate
+          export JVM_EXTRA_OPTS="${{env.JVM_EXTRA_OPTS}}"
+          export VERSION=${{ matrix.cassandra_version }}
+          set -eu -o pipefail
+          
+          readonly args="-gocql.timeout=60s -proto=${{ matrix.proto_version }} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${{ matrix.compressor }} -gocql.cversion=$VERSION -cluster=$(ccm liveset)"
+          
+          echo "==> Running ${{ matrix.tags }} tests with args: ${args}"
+          go test -v -timeout=5m -race -tags=${{ matrix.tags }} ${args} ./...
