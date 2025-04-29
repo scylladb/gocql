@@ -227,7 +227,7 @@ func (c *controlConn) discoverProtocol(hosts []*HostInfo) (int, error) {
 	hosts = shuffleHosts(hosts)
 
 	connCfg := *c.session.connCfg
-	connCfg.ProtoVersion = 4 // TODO: define maxProtocol
+	connCfg.ProtoVersion = 5 // TODO: define maxProtocol
 
 	handler := connErrorHandlerFn(func(c *Conn, err error, closed bool) {
 		// we should never get here, but if we do it means we connected to a
@@ -306,7 +306,7 @@ func (c *controlConn) setupConn(conn *Conn) error {
 	// we need up-to-date host info for the filterHost call below
 	iter := conn.querySystem(context.TODO(), qrySystemLocal)
 	defaultPort := 9042
-	if tcpAddr, ok := conn.conn.RemoteAddr().(*net.TCPAddr); ok {
+	if tcpAddr, ok := conn.r.RemoteAddr().(*net.TCPAddr); ok {
 		defaultPort = tcpAddr.Port
 	}
 	host, err := hostInfoFromIter(iter, conn.host.connectAddress, defaultPort, c.session.cfg.translateAddressPort)
