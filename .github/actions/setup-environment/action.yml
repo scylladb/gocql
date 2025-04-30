@@ -44,12 +44,9 @@ runs:
         VENV_DIR="$HOME/venv"
         python3 -m venv $VENV_DIR
         source $VENV_DIR/bin/activate
-        pip install setuptools==77.0.3
+        pip install setuptools
         pip install --upgrade pip
         
-        echo "Installing CCM Scylla..."
-        pip install "git+https://github.com/scylladb/scylla-ccm.git@master"
-
         echo "Installing CCM Cassandra..."
         pip install "git+https://github.com/riptano/ccm.git@${CCM_VERSION}"
 

@@ -97,12 +97,12 @@ jobs:
 
           ccm remove test || true
 
-          ccm create test -v $VERSION -n 3 -d --vnodes --jvm_arg="-Xmx256m -XX:NewSize=100m"
+          ccm create test -v $VERSION -n 3 -d --jvm_arg="-Xmx256m -XX:NewSize=100m"
           ccm updateconf "${conf[@]}"
 
           export JVM_EXTRA_OPTS=" -Dcassandra.test.fail_writes_ks=test -Dcassandra.custom_query_handler_class=org.apache.cassandra.cql3.CustomPayloadMirroringQueryHandler"
 
-          ccm start --wait-for-binary-proto --verbose
+          ccm start --wait-for-binary-proto
           ccm status
           ccm node1 nodetool status
 
@@ -115,7 +115,7 @@ jobs:
           export VERSION=${{ matrix.cassandra_version }}
           set -eu -o pipefail
           
-          readonly args="-gocql.timeout=60s -proto=${{ matrix.proto_version }} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${{ matrix.compressor }} -gocql.cversion=$VERSION -cluster=$(ccm liveset)"
+          readonly args="-gocql.timeout=60s -runssl -proto=${{ matrix.proto_version }} -rf=1 -clusterSize=3 -autowait=2000ms -compressor=${{ matrix.compressor }} -gocql.cversion=$VERSION -cluster=$(ccm liveset)"
           
           echo "==> Running ${{ matrix.tags }} tests with args: ${args}"
           go test -v -timeout=5m -race -tags=${{ matrix.tags }} ${args} ./...
