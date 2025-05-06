@@ -400,10 +400,7 @@ func newFramer(compressor Compressor, version byte) *framer {
 
 	version &= protoVersionMask
 
-	headSize := 8
-	if version > protoVersion2 {
-		headSize = 9
-	}
+	headSize := 9
 
 	f.compres = compressor
 	f.proto = version
@@ -475,9 +472,6 @@ func readHeader(r io.Reader, p []byte) (head frameHeader, err error) {
 	}
 
 	headSize := 9
-	if version < protoVersion3 {
-		headSize = 8
-	}
 
 	_, err = io.ReadFull(r, p[1:headSize])
 	if err != nil {
@@ -489,23 +483,13 @@ func readHeader(r io.Reader, p []byte) (head frameHeader, err error) {
 	head.version = protoVersion(p[0])
 	head.flags = p[1]
 
-	if version > protoVersion2 {
-		if len(p) != 9 {
-			return frameHeader{}, fmt.Errorf("not enough bytes to read header require 9 got: %d", len(p))
-		}
-
-		head.stream = int(int16(p[2])<<8 | int16(p[3]))
-		head.op = frameOp(p[4])
-		head.length = int(readInt(p[5:]))
-	} else {
-		if len(p) != 8 {
-			return frameHeader{}, fmt.Errorf("not enough bytes to read header require 8 got: %d", len(p))
-		}
-
-		head.stream = int(int8(p[2]))
-		head.op = frameOp(p[3])
-		head.length = int(readInt(p[4:]))
+	if len(p) != 9 {
+		return frameHeader{}, fmt.Errorf("not enough bytes to read header require 9 got: %d", len(p))
 	}
+
+	head.stream = int(int16(p[2])<<8 | int16(p[3]))
+	head.op = frameOp(p[4])
+	head.length = int(readInt(p[5:]))
 
 	return head, nil
 }
@@ -755,26 +739,15 @@ func (f *framer) readErrorMap() (errMap ErrorMap) {
 }
 
 func (f *framer) writeHeader(flags byte, op frameOp, stream int) {
-	if f.proto <= protoVersion2 {
-		f.buf = append(f.buf[:0],
-			f.proto, flags, byte(stream),
-			// pad out length
-			byte(op), 0, 0, 0, 0,
-		)
-	} else {
-		f.buf = append(f.buf[:0],
-			f.proto, flags, byte(stream>>8), byte(stream),
-			// pad out length
-			byte(op), 0, 0, 0, 0,
-		)
-	}
+	f.buf = append(f.buf[:0],
+		f.proto, flags, byte(stream>>8), byte(stream),
+		// pad out length
+		byte(op), 0, 0, 0, 0,
+	)
 }
 
 func (f *framer) setLength(length int) {
 	p := 5
-	if f.proto <= protoVersion2 {
-		p = 4
-	}
 
 	f.buf[p+0] = byte(length >> 24)
 	f.buf[p+1] = byte(length >> 16)
@@ -1210,10 +1183,6 @@ func (f *framer) parseResultPrepared() frame {
 		reqMeta:     f.parsePreparedMetadata(),
 	}
 
-	if f.proto < protoVersion2 {
-		return frame
-	}
-
 	frame.respMeta = f.parseResultMetadata()
 
 	return frame
@@ -1269,85 +1238,64 @@ type schemaChangeAggregate struct {
 }
 
 func (f *framer) parseResultSchemaChange() frame {
-	if f.proto <= protoVersion2 {
-		change := f.readString()
-		keyspace := f.readString()
-		table := f.readString()
+	change := f.readString()
+	target := f.readString()
 
-		if table != "" {
-			return &schemaChangeTable{
-				frameHeader: *f.header,
-				change:      change,
-				keyspace:    keyspace,
-				object:      table,
-			}
-		} else {
-			return &schemaChangeKeyspace{
-				frameHeader: *f.header,
-				change:      change,
-				keyspace:    keyspace,
-			}
+	// TODO: could just use a separate type for each target
+	switch target {
+	case "KEYSPACE":
+		frame := &schemaChangeKeyspace{
+			frameHeader: *f.header,
+			change:      change,
 		}
-	} else {
-		change := f.readString()
-		target := f.readString()
 
-		// TODO: could just use a separate type for each target
-		switch target {
-		case "KEYSPACE":
-			frame := &schemaChangeKeyspace{
-				frameHeader: *f.header,
-				change:      change,
-			}
+		frame.keyspace = f.readString()
 
-			frame.keyspace = f.readString()
-
-			return frame
-		case "TABLE":
-			frame := &schemaChangeTable{
-				frameHeader: *f.header,
-				change:      change,
-			}
-
-			frame.keyspace = f.readString()
-			frame.object = f.readString()
-
-			return frame
-		case "TYPE":
-			frame := &schemaChangeType{
-				frameHeader: *f.header,
-				change:      change,
-			}
-
-			frame.keyspace = f.readString()
-			frame.object = f.readString()
-
-			return frame
-		case "FUNCTION":
-			frame := &schemaChangeFunction{
-				frameHeader: *f.header,
-				change:      change,
-			}
-
-			frame.keyspace = f.readString()
-			frame.name = f.readString()
-			frame.args = f.readStringList()
-
-			return frame
-		case "AGGREGATE":
-			frame := &schemaChangeAggregate{
-				frameHeader: *f.header,
-				change:      change,
-			}
-
-			frame.keyspace = f.readString()
-			frame.name = f.readString()
-			frame.args = f.readStringList()
-
-			return frame
-		default:
-			panic(fmt.Errorf("gocql: unknown SCHEMA_CHANGE target: %q change: %q", target, change))
+		return frame
+	case "TABLE":
+		frame := &schemaChangeTable{
+			frameHeader: *f.header,
+			change:      change,
 		}
+
+		frame.keyspace = f.readString()
+		frame.object = f.readString()
+
+		return frame
+	case "TYPE":
+		frame := &schemaChangeType{
+			frameHeader: *f.header,
+			change:      change,
+		}
+
+		frame.keyspace = f.readString()
+		frame.object = f.readString()
+
+		return frame
+	case "FUNCTION":
+		frame := &schemaChangeFunction{
+			frameHeader: *f.header,
+			change:      change,
+		}
+
+		frame.keyspace = f.readString()
+		frame.name = f.readString()
+		frame.args = f.readStringList()
+
+		return frame
+	case "AGGREGATE":
+		frame := &schemaChangeAggregate{
+			frameHeader: *f.header,
+			change:      change,
+		}
+
+		frame.keyspace = f.readString()
+		frame.name = f.readString()
+		frame.args = f.readStringList()
+
+		return frame
+	default:
+		panic(fmt.Errorf("gocql: unknown SCHEMA_CHANGE target: %q change: %q", target, change))
 	}
 
 }
@@ -1526,15 +1474,13 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 	names := false
 
 	// protoV3 specific things
-	if f.proto > protoVersion2 {
-		if opts.defaultTimestamp {
-			flags |= flagDefaultTimestamp
-		}
+	if opts.defaultTimestamp {
+		flags |= flagDefaultTimestamp
+	}
 
-		if len(opts.values) > 0 && opts.values[0].name != "" {
-			flags |= flagWithNameValues
-			names = true
-		}
+	if len(opts.values) > 0 && opts.values[0].name != "" {
+		flags |= flagWithNameValues
+		names = true
 	}
 
 	if opts.keyspace != "" {
@@ -1578,7 +1524,7 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 		f.writeConsistency(opts.serialConsistency)
 	}
 
-	if f.proto > protoVersion2 && opts.defaultTimestamp {
+	if opts.defaultTimestamp {
 		// timestamp in microseconds
 		var ts int64
 		if opts.defaultTimestampValue != 0 {
@@ -1725,7 +1671,7 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 		f.writeShort(uint16(len(b.values)))
 		for j := range b.values {
 			col := b.values[j]
-			if f.proto > protoVersion2 && col.name != "" {
+			if col.name != "" {
 				// TODO: move this check into the caller and set a flag on writeBatchFrame
 				// to indicate using named values
 				if f.proto <= protoVersion5 {
@@ -1744,33 +1690,31 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 
 	f.writeConsistency(w.consistency)
 
-	if f.proto > protoVersion2 {
-		if w.serialConsistency > 0 {
-			flags |= flagWithSerialConsistency
-		}
-		if w.defaultTimestamp {
-			flags |= flagDefaultTimestamp
-		}
+	if w.serialConsistency > 0 {
+		flags |= flagWithSerialConsistency
+	}
+	if w.defaultTimestamp {
+		flags |= flagDefaultTimestamp
+	}
 
-		if f.proto > protoVersion4 {
-			f.writeUint(uint32(flags))
+	if f.proto > protoVersion4 {
+		f.writeUint(uint32(flags))
+	} else {
+		f.writeByte(flags)
+	}
+
+	if w.serialConsistency > 0 {
+		f.writeConsistency(w.serialConsistency)
+	}
+
+	if w.defaultTimestamp {
+		var ts int64
+		if w.defaultTimestampValue != 0 {
+			ts = w.defaultTimestampValue
 		} else {
-			f.writeByte(flags)
+			ts = time.Now().UnixNano() / 1000
 		}
-
-		if w.serialConsistency > 0 {
-			f.writeConsistency(w.serialConsistency)
-		}
-
-		if w.defaultTimestamp {
-			var ts int64
-			if w.defaultTimestampValue != 0 {
-				ts = w.defaultTimestampValue
-			} else {
-				ts = time.Now().UnixNano() / 1000
-			}
-			f.writeLong(ts)
-		}
+		f.writeLong(ts)
 	}
 
 	return f.finish()
