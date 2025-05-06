@@ -197,10 +197,10 @@ func newSessionCommon(cfg ClusterConfig) (*Session, error) {
 	s.frameObserver = cfg.FrameHeaderObserver
 	s.streamObserver = cfg.StreamObserver
 
-	//Check the TLS Config before trying to connect to anything external
+	// Check the TLS Config before trying to connect to anything external
 	connCfg, err := connConfig(&s.cfg)
 	if err != nil {
-		//TODO: Return a typed error
+		// TODO: Return a typed error
 		return nil, fmt.Errorf("gocql: unable to create session: %v", err)
 	}
 	s.connCfg = connCfg
@@ -219,8 +219,8 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 
 	if err = s.init(); err != nil {
 		if err == ErrNoConnectionsStarted {
-			//This error used to be generated inside NewSession & returned directly
-			//Forward it on up to be backwards compatible
+			// This error used to be generated inside NewSession & returned directly
+			// Forward it on up to be backwards compatible
 			return nil, ErrNoConnectionsStarted
 		} else {
 			// TODO(zariel): dont wrap this error in fmt.Errorf, return a typed error
@@ -269,42 +269,39 @@ func (s *Session) init() error {
 	if !s.cfg.disableControlConn {
 		s.control = createControlConn(s)
 		reconnectionPolicy := s.cfg.InitialReconnectionPolicy
-		var lastErr error
+		var err error
 		for i := 0; i < reconnectionPolicy.GetMaxRetries(); i++ {
-			lastErr = nil
-			if i != 0 {
+			if i == 0 {
+				// first run
+				if s.cfg.ProtoVersion == 0 {
+					proto, err := s.control.discoverProtocol(hosts)
+					if err != nil {
+						err = fmt.Errorf("unable to discover protocol version: %v\n", err)
+						if gocqlDebug {
+							s.logger.Println(err.Error())
+						}
+						continue
+					} else if proto == 0 {
+						return errors.New("unable to discovery protocol version")
+					}
+
+					s.cfg.ProtoVersion = proto
+					s.connCfg.ProtoVersion = proto
+				}
+			} else {
 				time.Sleep(reconnectionPolicy.GetInterval(i))
 			}
 
-			if s.cfg.ProtoVersion == 0 {
-				proto, err := s.control.discoverProtocol(hosts)
-				if err != nil {
-					err = fmt.Errorf("unable to discover protocol version: %v\n", err)
-					if gocqlDebug {
-						s.logger.Println(err.Error())
-					}
-					lastErr = err
-					continue
-				} else if proto == 0 {
-					return errors.New("unable to discovery protocol version")
-				}
-
-				// TODO(zariel): we really only need this in 1 place
-				s.cfg.ProtoVersion = proto
-				s.connCfg.ProtoVersion = proto
+			err = s.control.connect(hosts)
+			if err == nil {
+				break
 			}
-
-			if err := s.control.connect(hosts); err != nil {
-				err = fmt.Errorf("unable to create control connection: %v\n", err)
-				if gocqlDebug {
-					s.logger.Println(err.Error())
-				}
-				lastErr = err
-				continue
+			if gocqlDebug {
+				s.logger.Printf("unable to create control connection: %v\n", err)
 			}
 		}
-		if lastErr != nil {
-			return fmt.Errorf("unable to connect to the cluster, last error: %v", lastErr.Error())
+		if err != nil {
+			return fmt.Errorf("unable to connect to the cluster, last error: %v", err.Error())
 		}
 
 		conn := s.control.getConn().conn.(*Conn)
