@@ -271,29 +271,30 @@ func (s *Session) init() error {
 		reconnectionPolicy := s.cfg.InitialReconnectionPolicy
 		var err error
 		for i := 0; i < reconnectionPolicy.GetMaxRetries(); i++ {
-			if i == 0 {
-				// first run
-				if s.cfg.ProtoVersion == 0 {
-					proto, err := s.control.discoverProtocol(hosts)
-					if err != nil {
-						err = fmt.Errorf("unable to discover protocol version: %v\n", err)
-						if gocqlDebug {
-							s.logger.Println(err.Error())
-						}
-						continue
-					} else if proto == 0 {
-						return errors.New("unable to discovery protocol version")
-					}
-
-					s.cfg.ProtoVersion = proto
-					s.connCfg.ProtoVersion = proto
-				}
-			} else {
+			if i != 0 {
 				time.Sleep(reconnectionPolicy.GetInterval(i))
+			}
+
+			if s.cfg.ProtoVersion == 0 {
+				proto, err := s.control.discoverProtocol(hosts)
+				if err != nil {
+					err = fmt.Errorf("unable to discover protocol version: %v\n", err)
+					if gocqlDebug {
+						s.logger.Println(err.Error())
+					}
+					continue
+				} else if proto == 0 {
+					return errors.New("unable to discovery protocol version")
+				}
+
+				// TODO(zariel): we really only need this in 1 place
+				s.cfg.ProtoVersion = proto
+				s.connCfg.ProtoVersion = proto
 			}
 
 			err = s.control.connect(hosts)
 			if err == nil {
+				// Succesfully connected
 				break
 			}
 			if gocqlDebug {
