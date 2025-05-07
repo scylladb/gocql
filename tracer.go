@@ -19,10 +19,9 @@ type Tracer interface {
 type TraceWriter struct {
 	session *Session
 	w       io.Writer
-	mu      sync.Mutex
-
 	maxAttempts   int
 	sleepInterval time.Duration
+	mu      sync.Mutex
 }
 
 // NewTraceWriter returns a simple Tracer implementation that outputs
@@ -123,8 +122,8 @@ func (t *TraceWriter) Trace(traceId []byte) {
 
 type TracerEnhanced struct {
 	session  *Session
-	traceIDs [][]byte
 	mu       sync.Mutex
+	traceIDs [][]byte
 }
 
 func NewTracer(session *Session) *TracerEnhanced {
@@ -186,9 +185,9 @@ func (t *TracerEnhanced) GetCoordinatorTime(traceId []byte) (string, time.Durati
 
 type TraceEntry struct {
 	Timestamp time.Time
+	Elapsed   int
 	Activity  string
 	Source    string
-	Elapsed   int
 	Thread    string
 }
 
