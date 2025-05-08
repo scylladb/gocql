@@ -29,6 +29,8 @@ require (
 require (
 	github.com/bitly/go-hostpool v0.0.0-20171023180738-a3a6125de932 // indirect
 	github.com/bmizerany/assert v0.0.0-20160611221934-b7ed37b82869 // indirect
+	github.com/gocql/gocql/lz4 v0.0.0-20250218124249-65e2cafa8c46
+	github.com/golang/snappy v1.0.0
 	github.com/kr/pretty v0.1.0 // indirect
 	github.com/stretchr/testify v1.9.0 // indirect
 )
@@ -38,6 +40,10 @@ retract (
 	v1.9.0 // tag from kiwicom/gocql added by mistake to scylladb/gocql
 	v1.8.1 // tag from kiwicom/gocql added by mistake to scylladb/gocql
 	v1.8.0 // tag from kiwicom/gocql added by mistake to scylladb/gocql
+)
+
+replace (
+	github.com/gocql/gocql/lz4 => ./lz4
 )
 
 go 1.13

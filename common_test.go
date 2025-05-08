@@ -34,6 +34,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/gocql/gocql/lz4"
 )
 
 var (
@@ -49,7 +51,8 @@ var (
 	flagCompressTest  = flag.String("compressor", "", "compressor to use")
 	flagTimeout       = flag.Duration("gocql.timeout", 5*time.Second, "sets the connection `timeout` for all operations")
 	flagClusterSocket = flag.String("cluster-socket", "", "nodes socket files separated by colon")
-	flagCassVersion   cassVersion
+
+	flagCassVersion cassVersion
 )
 
 func init() {
@@ -219,7 +222,9 @@ func createCluster(opts ...func(*ClusterConfig)) *ClusterConfig {
 	switch *flagCompressTest {
 	case "snappy":
 		cluster.Compressor = &SnappyCompressor{}
-	case "":
+	case "lz4":
+		cluster.Compressor = &lz4.LZ4Compressor{}
+	case "no-compression":
 	default:
 		panic("invalid compressor: " + *flagCompressTest)
 	}
