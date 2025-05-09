@@ -331,11 +331,6 @@ func (s *Session) init() error {
 			}
 
 			hosts = filteredHosts
-
-			if s.tabletsRoutingV1 {
-				tablets := tablets.TabletInfoList{}
-				s.metadataDescriber.setTablets(tablets)
-			}
 		}
 
 		newer, _ := checkSystemSchema(s.control)
@@ -722,8 +717,8 @@ func (s *Session) getConn() *Conn {
 	return nil
 }
 
-func (s *Session) getTablets() tablets.TabletInfoList {
-	return s.metadataDescriber.getTablets()
+func (s *Session) findTabletReplicasForToken(keyspace, table string, token int64) []tablets.ReplicaInfo {
+	return s.metadataDescriber.metadata.tabletsMetadata.FindReplicasForToken(keyspace, table, token)
 }
 
 // returns routing key indexes and type info

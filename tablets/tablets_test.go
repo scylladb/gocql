@@ -383,7 +383,7 @@ func TestRemoveTabletsWithHost(t *testing.T) {
 		[]ReplicaInfo{{tests.RandomUUID(), 9}, {removed_host_id, 8}, {tests.RandomUUID(), 3}},
 	}}
 
-	tablets = tablets.RemoveTabletsWithHostFromTabletsList(removed_host_id)
+	tablets = tablets.RemoveTabletsWithHost(removed_host_id)
 
 	tests.AssertEqual(t, "TabletsList length", 1, len(tablets))
 }
@@ -411,7 +411,7 @@ func TestRemoveTabletsWithKeyspace(t *testing.T) {
 		[]ReplicaInfo{{tests.RandomUUID(), 9}, {tests.RandomUUID(), 8}, {tests.RandomUUID(), 3}},
 	}}
 
-	tablets = tablets.RemoveTabletsWithKeyspaceFromTabletsList("removed_ks")
+	tablets = tablets.RemoveTabletsWithKeyspace("removed_ks")
 
 	tests.AssertEqual(t, "TabletsList length", 1, len(tablets))
 }

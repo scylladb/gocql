@@ -740,14 +740,10 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 	var replicas []*HostInfo
 
 	if session := qry.GetSession(); session != nil && session.tabletsRoutingV1 && isInt64Token {
-		tablets := session.metadataDescriber.getTablets()
-
-		// Search for tablets with Keyspace and Table from the Query
-		l, r := tablets.FindTablets(qry.Keyspace(), qry.Table())
-		if l != -1 {
-			tablet := tablets.FindTabletForToken(int64(tokenCasted), l, r)
+		tabletReplicas := session.findTabletReplicasForToken(qry.Keyspace(), qry.Table(), int64(tokenCasted))
+		if len(tabletReplicas) != 0 {
 			hosts := t.hosts.get()
-			for _, replica := range tablet.Replicas() {
+			for _, replica := range tabletReplicas {
 				for _, host := range hosts {
 					if host.hostId == replica.HostID() {
 						replicas = append(replicas, host)
