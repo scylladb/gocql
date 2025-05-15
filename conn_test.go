@@ -54,7 +54,7 @@ import (
 )
 
 const (
-	defaultProto = protoVersion2
+	defaultProto = protoVersion3
 )
 
 type brokenDNSResolver struct{}
@@ -1162,10 +1162,7 @@ func (nts newTestServerOpts) newServer(t testing.TB, ctx context.Context) *TestS
 		t.Fatal(err)
 	}
 
-	headerSize := 8
-	if nts.protocol > protoVersion2 {
-		headerSize = 9
-	}
+	headerSize := 9
 
 	ctx, cancel := context.WithCancel(ctx)
 	srv := &TestServer{
@@ -1214,10 +1211,7 @@ func NewSSLTestServerWithSupportedFactory(t testing.TB, protocol uint8, ctx cont
 		t.Fatal(err)
 	}
 
-	headerSize := 8
-	if protocol > protoVersion2 {
-		headerSize = 9
-	}
+	headerSize := 9
 
 	ctx, cancel := context.WithCancel(ctx)
 	srv := &TestServer{

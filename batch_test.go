@@ -39,10 +39,6 @@ func TestBatch_Errors(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if session.cfg.ProtoVersion < protoVersion2 {
-		t.Skip("atomic batches not supported. Please use Cassandra >= 2.0")
-	}
-
 	if err := createTable(session, `CREATE TABLE gocql_test.batch_errors (id int primary key, val inet)`); err != nil {
 		t.Fatal(err)
 	}

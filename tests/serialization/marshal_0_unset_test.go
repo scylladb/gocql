@@ -18,7 +18,7 @@ func TestMarshalUnsetColumn(t *testing.T) {
 		err     bool
 	}
 
-	elem := gocql.NewNativeType(2, gocql.TypeSmallInt, "")
+	elem := gocql.NewNativeType(3, gocql.TypeSmallInt, "")
 	cases := []tCase{
 		{gocql.NewNativeType(4, gocql.TypeBoolean, ""), true, false},
 		{gocql.NewNativeType(4, gocql.TypeTinyInt, ""), true, false},
@@ -42,12 +42,9 @@ func TestMarshalUnsetColumn(t *testing.T) {
 		{gocql.NewNativeType(4, gocql.TypeDate, ""), true, false},
 		{gocql.NewNativeType(4, gocql.TypeDuration, ""), true, false},
 
-		{gocql.NewCollectionType(gocql.NewNativeType(2, gocql.TypeList, ""), nil, elem), true, false},
-		{gocql.NewCollectionType(gocql.NewNativeType(2, gocql.TypeSet, ""), nil, elem), true, false},
 		{gocql.NewCollectionType(gocql.NewNativeType(3, gocql.TypeList, ""), nil, elem), true, false},
 		{gocql.NewCollectionType(gocql.NewNativeType(3, gocql.TypeSet, ""), nil, elem), true, false},
 
-		{gocql.NewCollectionType(gocql.NewNativeType(2, gocql.TypeMap, ""), nil, elem), true, false},
 		{gocql.NewCollectionType(gocql.NewNativeType(3, gocql.TypeMap, ""), elem, elem), true, false},
 
 		{gocql.NewUDTType(3, "udt1", "", gocql.UDTField{Name: "1", Type: elem}), true, true},

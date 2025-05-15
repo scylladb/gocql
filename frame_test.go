@@ -91,7 +91,7 @@ func TestFrameWriteTooLong(t *testing.T) {
 		t.Skip("skipping test in travis due to memory pressure with the race detecor")
 	}
 
-	framer := newFramer(nil, 2)
+	framer := newFramer(nil, 3)
 
 	framer.writeHeader(0, opStartup, 1)
 	framer.writeBytes(make([]byte, maxFrameSize+1))
@@ -111,14 +111,14 @@ func TestFrameReadTooLong(t *testing.T) {
 	r := &bytes.Buffer{}
 	r.Write(make([]byte, maxFrameSize+1))
 	// write a new header right after this frame to verify that we can read it
-	r.Write([]byte{0x02, 0x00, 0x00, byte(opReady), 0x00, 0x00, 0x00, 0x00})
+	r.Write([]byte{0x03, 0x00, 0x00, 0x00, byte(opReady), 0x00, 0x00, 0x00, 0x00})
 
-	framer := newFramer(nil, 2)
+	framer := newFramer(nil, 3)
 
 	head := frameHeader{
-		version: 2,
+		version: 3,
 		op:      opReady,
-		length:  r.Len() - 8,
+		length:  r.Len() - 9,
 	}
 
 	err := framer.readFrame(r, &head)
@@ -126,7 +126,7 @@ func TestFrameReadTooLong(t *testing.T) {
 		t.Fatalf("expected to get %v got %v", ErrFrameTooBig, err)
 	}
 
-	head, err = readHeader(r, make([]byte, 8))
+	head, err = readHeader(r, make([]byte, 9))
 	if err != nil {
 		t.Fatal(err)
 	}
