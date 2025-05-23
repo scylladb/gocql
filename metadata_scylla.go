@@ -478,12 +478,12 @@ func (s *metadataDescriber) getSchema(keyspaceName string) (*KeyspaceMetadata, e
 	return metadata, nil
 }
 
-func (s *metadataDescriber) getTablets() tablets.TabletInfoList {
-	return s.metadata.tabletsMetadata.Get()
+func (s *metadataDescriber) getTablets(keyspace, table string) tablets.TabletInfoList {
+	return s.metadata.tabletsMetadata.Get(keyspace, table)
 }
 
-func (s *metadataDescriber) AddTablet(tablet *tablets.TabletInfo) {
-	s.metadata.tabletsMetadata.AddTablet(tablet)
+func (s *metadataDescriber) AddTablet(keyspace, table string, tablet *tablets.TabletInfo) {
+	s.metadata.tabletsMetadata.AddTablet(keyspace, table, tablet)
 }
 
 // RemoveTabletsWithHost removes tablets that contains given host.
