@@ -466,6 +466,12 @@ func ShuffleReplicas() func(*tokenAwareHostPolicy) {
 	}
 }
 
+func DontShuffleReplicas() func(*tokenAwareHostPolicy) {
+	return func(t *tokenAwareHostPolicy) {
+		t.shuffleReplicas = false
+	}
+}
+
 // AvoidSlowReplicas enabled avoiding slow replicas
 //
 // TokenAwareHostPolicy normally does not check how busy replica is, with avoidSlowReplicas enabled it avoids replicas
@@ -493,7 +499,10 @@ func NonLocalReplicasFallback() func(policy *tokenAwareHostPolicy) {
 // selected based on the partition key, so queries are sent to the host which
 // owns the partition. Fallback is used when routing information is not available.
 func TokenAwareHostPolicy(fallback HostSelectionPolicy, opts ...func(*tokenAwareHostPolicy)) HostSelectionPolicy {
-	p := &tokenAwareHostPolicy{fallback: fallback}
+	p := &tokenAwareHostPolicy{
+		fallback:        fallback,
+		shuffleReplicas: true,
+	}
 	for _, opt := range opts {
 		opt(p)
 	}
