@@ -757,7 +757,11 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 	if len(replicas) == 0 {
 		ht := meta.replicas[qry.Keyspace()].replicasFor(token)
 		if ht != nil {
-			replicas = ht.hosts
+			// Clone ht.hosts, otherwise, if shuffling or avoidSlowReplicas is enabled, it will update ht.hosts
+			replicas = make([]*HostInfo, len(ht.hosts))
+			for id, replica := range ht.hosts {
+				replicas[id] = replica
+			}
 		}
 	}
 
