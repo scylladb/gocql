@@ -180,7 +180,7 @@ func newSessionCommon(cfg ClusterConfig) (*Session, error) {
 	})
 
 	if cfg.PoolConfig.HostSelectionPolicy == nil {
-		cfg.PoolConfig.HostSelectionPolicy = RoundRobinHostPolicy()
+		cfg.PoolConfig.HostSelectionPolicy = TokenAwareHostPolicy(RoundRobinHostPolicy())
 	}
 	s.pool = cfg.PoolConfig.buildPool(s)
 
