@@ -31,7 +31,7 @@ VALIDITY=36500
 # Generate 4096-bit unencrypted RSA private key using aes256
 function generatePrivateKey() {
     base=$1
-    rm -fv ${base}.key
+    rm -fv ${base}.key || true
     echo "Generating private key ${base}.key"
     # Generate Private Key
     openssl genrsa -aes256 -out ${base}.key -passout pass:cassandra 4096
@@ -43,7 +43,7 @@ function generatePrivateKey() {
 # Generate a X509 Certificate signed by the generated CA
 function generateCASignedCert() {
     base=$1
-    rm -fv ${base}.csr ${base}.crt
+    rm -fv ${base}.csr ${base}.crt || true
     # Generate Certificate Signing Request
     echo "Generating certificate signing request ${base}.csr"
     openssl req -new -key ${base}.key -out ${base}.csr -config ${base}.cnf
@@ -52,7 +52,7 @@ function generateCASignedCert() {
     openssl x509 -req -in ${base}.csr -CA ca.crt -CAkey ca.key \
                  -CAcreateserial -out ${base}.crt -days $VALIDITY \
                  -extensions req_ext -extfile ${base}.cnf -text
-    rm -fv ${base}.csr
+    rm -fv ${base}.csr || true
 }
 
 # CA
@@ -60,13 +60,13 @@ function generateCASignedCert() {
 generatePrivateKey ca
 # Generate CA Certificate
 echo "Generating CA certificate ca.crt"
-rm -fv ca.crt
+rm -fv ca.crt || true
 openssl req -x509 -new -nodes -key ca.key -days $VALIDITY \
             -out ca.crt -config ca.cnf -text
 
 # Import CA certificate into JKS truststore so it can be used by Cassandra.
 echo "Generating truststore .truststore for Cassandra"
-rm -fv .truststore
+rm -fv .truststore || true
 keytool -import -keystore .truststore -trustcacerts \
         -file ca.crt -alias ca -storetype JKS \
         -storepass cassandra -noprompt
@@ -84,14 +84,14 @@ generateCASignedCert cassandra
 # Import cassandra private key and certificate into a PKCS12 keystore
 # and to a JKS keystore so it can be used by cassandra.
 echo "Generating cassandra.p12 and .keystore for Cassandra"
-rm -fv cassandra.p12
+rm -fv cassandra.p12 || true
 openssl pkcs12 -export -in cassandra.crt -inkey cassandra.key \
                -out cassandra.p12 -name cassandra \
                -CAfile ca.crt -caname ca \
                -password pass:cassandra \
                -noiter -nomaciter
 
-rm -fv .keystore
+rm -fv .keystore || true
 keytool -importkeystore -srckeystore cassandra.p12 -srcstoretype PKCS12 \
 	-srcstorepass cassandra -srcalias cassandra \
 	-destkeystore .keystore -deststoretype JKS \

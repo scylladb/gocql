@@ -122,6 +122,7 @@ test-integration-scylla: scylla-start
 
 test-unit: .prepare-pki
 	@echo "Run unit tests"
+	@go clean -testcache
 	go test -v -tags unit -timeout=5m -race ./...
 
 check:
@@ -187,4 +188,6 @@ install-scylla-ccm:
 	@[ -f "testdata/pki/cassandra.key" ] || (echo "Generating new PKI" && cd testdata/pki/ && bash ./generate_certs.sh)
 
 generate-pki:
-	@echo "Generating new PKI" && cd testdata/pki/ && bash ./generate_certs.sh
+	@echo "Generating new PKI"
+	@rm -f testdata/pki/.keystore testdata/pki/.truststore testdata/pki/*.p12 testdata/pki/*.key testdata/pki/*.crt || true
+	@cd testdata/pki/ && bash ./generate_certs.sh
