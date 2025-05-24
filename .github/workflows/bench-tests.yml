@@ -1,0 +1,27 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  bench-tests:
+    if: contains(github.event.pull_request.labels.*.name, 'run-benchmark-tests')
+    name: Run benchmark tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+      - uses: actions/cache@v4
+        id: gomod-cache
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('go.mod') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Run benchmark tests
+        run: make test-bench

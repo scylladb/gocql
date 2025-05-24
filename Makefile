@@ -124,6 +124,16 @@ test-unit: .prepare-pki
 	@echo "Run unit tests"
 	go test -v -tags unit -timeout=5m -race ./...
 
+test-bench:
+	@echo "Run benchmark tests"
+	@go test -bench=. -benchmem -run=^$ ./... | tee >/tmp/gocql-benchmark-results
+	@if [[ -n "${GITHUB_STEP_SUMMARY}" ]]; then \
+		echo "### Benchmark Results" >> $GITHUB_STEP_SUMMARY; \
+		echo '```' >> $GITHUB_STEP_SUMMARY; \
+		cat /tmp/gocql-benchmark-results >> $GITHUB_STEP_SUMMARY; \
+		echo '```' >> $GITHUB_STEP_SUMMARY; \
+	fi
+
 check:
 	@echo "Run go vet linter"
 	go vet --tags "unit all ccm cassandra integration" ./...
