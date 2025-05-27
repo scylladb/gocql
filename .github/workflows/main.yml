@@ -28,3 +28,6 @@ jobs:
 
       - name: Run CCM integration suite
         run: TEST_INTEGRATION_TAGS="ccm gocql_debug" make test-integration-scylla
+
+      - name: Run benchmarks
+        run: make test-bench

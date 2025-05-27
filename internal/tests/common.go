@@ -3,6 +3,7 @@ package tests
 import (
 	"fmt"
 	"reflect"
+	"strconv"
 	"testing"
 
 	"github.com/google/uuid"
@@ -42,4 +43,22 @@ func RandomUUID() string {
 		panic(fmt.Sprintf("failed to generate UUID: %s", err.Error()))
 	}
 	return val.String()
+}
+
+// GetHosts generates a slice of host names with the format "host0", "host1", ..., "hostN-1",
+// where N is the specified hostCount.
+//
+// Parameters:
+//
+//	hostCount - the number of host names to generate.
+//
+// Returns:
+//
+//	A slice of strings containing host names.
+func GetHosts(hostCount int) []string {
+	hosts := make([]string, hostCount)
+	for i := 0; i < hostCount; i++ {
+		hosts[i] = "host" + strconv.Itoa(i)
+	}
+	return hosts
 }
