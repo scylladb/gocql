@@ -1540,13 +1540,11 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 			if err != nil {
 				return &Iter{err: err}
 			}
-			tabletBuilder.KeyspaceName = qry.routingInfo.keyspace
-			tabletBuilder.TableName = qry.routingInfo.table
 			tablet, err := tabletBuilder.Build()
 			if err != nil {
 				return &Iter{err: err}
 			}
-			c.session.metadataDescriber.AddTablet(tablet)
+			c.session.metadataDescriber.AddTablet(qry.routingInfo.keyspace, qry.routingInfo.table, tablet)
 		}
 	}
 
