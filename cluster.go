@@ -322,10 +322,34 @@ type DNSResolver interface {
 	LookupIP(host string) ([]net.IP, error)
 }
 
-type ApplicationInfo struct {
-	ApplicationName    string
-	ApplicationVersion string
-	ClientID           string
+type ApplicationInfo interface {
+	UpdateStartupOptions(map[string]string)
+}
+
+type StaticApplicationInfo struct {
+	applicationName    string
+	applicationVersion string
+	clientID           string
+}
+
+func NewStaticApplicationInfo(name, version, clientID string) *StaticApplicationInfo {
+	return &StaticApplicationInfo{
+		applicationName:    name,
+		applicationVersion: version,
+		clientID:           clientID,
+	}
+}
+
+func (i *StaticApplicationInfo) UpdateStartupOptions(opts map[string]string) {
+	if i.applicationName != "" {
+		opts["APPLICATION_NAME"] = i.applicationName
+	}
+	if i.applicationVersion != "" {
+		opts["APPLICATION_VERSION"] = i.applicationVersion
+	}
+	if i.clientID != "" {
+		opts["CLIENT_ID"] = i.clientID
+	}
 }
 
 type SimpleDNSResolver struct {

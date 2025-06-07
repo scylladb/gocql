@@ -148,6 +148,109 @@ func TestHostFilterInitial(t *testing.T) {
 	tests.AssertEqual(t, "len(clusterHosts)-1 != len(rr.hosts.get())", len(clusterHosts)-1, len(rr.hosts.get()))
 }
 
+func TestApplicationInformation(t *testing.T) {
+	cluster := createCluster()
+	s, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatalf("ApplicationInformation error: %s", err)
+	}
+	var clientsTableName string
+	for _, tableName := range []string{"system_views.clients", "system.clients"} {
+		iter := s.Query("select client_options from " + tableName).Iter()
+		_, err = iter.SliceMap()
+		if err == nil {
+			clientsTableName = tableName
+			break
+		}
+	}
+
+	if clientsTableName == "" {
+		t.Skip("Skipping because server does have `client_options` in clients table")
+	}
+
+	tcases := []struct {
+		testName string
+		name     string
+		version  string
+		clientID string
+	}{
+		{
+			testName: "full",
+			name:     "my-application",
+			version:  "1.0.0",
+			clientID: "my-client-id",
+		},
+		{
+			testName: "empty",
+		},
+		{
+			testName: "name-only",
+			name:     "my-application",
+		},
+		{
+			testName: "version-only",
+			version:  "1.0.0",
+		},
+		{
+			testName: "client-id-only",
+			clientID: "my-client-id",
+		},
+	}
+	for _, tcase := range tcases {
+		t.Run(tcase.testName, func(t *testing.T) {
+			cluster := createCluster()
+			cluster.ApplicationInfo = NewStaticApplicationInfo(tcase.name, tcase.version, tcase.clientID)
+			s, err := cluster.CreateSession()
+			if err != nil {
+				t.Fatalf("failed to connect to the cluster: %s", err)
+			}
+			defer s.Close()
+
+			var row map[string]string
+			iter := s.Query("select client_options from " + clientsTableName).Iter()
+			found := false
+			for iter.Scan(&row) {
+				if tcase.name != "" {
+					if row["APPLICATION_NAME"] != tcase.name {
+						continue
+					}
+				} else {
+					if _, ok := row["APPLICATION_NAME"]; ok {
+						continue
+					}
+				}
+				if tcase.version != "" {
+					if row["APPLICATION_VERSION"] != tcase.version {
+						continue
+					}
+				} else {
+					if _, ok := row["APPLICATION_VERSION"]; ok {
+						continue
+					}
+				}
+				if tcase.clientID != "" {
+					if row["CLIENT_ID"] != tcase.clientID {
+						continue
+					}
+				} else {
+					if _, ok := row["CLIENT_ID"]; ok {
+						continue
+					}
+				}
+				found = true
+				break
+			}
+			if iter.Close() != nil {
+				t.Fatalf("failed to execute query: %s", iter.Close().Error())
+			}
+			if !found {
+				t.Fatalf("failed to find the application info row")
+			}
+		})
+	}
+
+}
+
 func TestWriteFailure(t *testing.T) {
 	t.Skip("skipped due to unknown purpose")
 	cluster := createCluster()

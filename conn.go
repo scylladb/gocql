@@ -513,14 +513,8 @@ func (s *startupCoordinator) startup(ctx context.Context) error {
 		"DRIVER_VERSION": s.conn.session.cfg.DriverVersion,
 	}
 
-	if s.conn.session.cfg.ApplicationInfo.ApplicationName != "" {
-		m["APPLICATION_NAME"] = s.conn.session.cfg.ApplicationInfo.ApplicationName
-	}
-	if s.conn.session.cfg.ApplicationInfo.ApplicationVersion != "" {
-		m["APPLICATION_VERSION"] = s.conn.session.cfg.ApplicationInfo.ApplicationVersion
-	}
-	if s.conn.session.cfg.ApplicationInfo.ClientID != "" {
-		m["CLIENT_ID"] = s.conn.session.cfg.ApplicationInfo.ClientID
+	if s.conn.session.cfg.ApplicationInfo != nil {
+		s.conn.session.cfg.ApplicationInfo.UpdateStartupOptions(m)
 	}
 
 	if s.conn.compressor != nil {
