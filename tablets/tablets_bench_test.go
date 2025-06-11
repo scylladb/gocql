@@ -13,26 +13,19 @@ const tabletsCountMedium = 1500
 
 func BenchmarkTabletInfoList(b *testing.B) {
 	hosts := tests.GenerateHostNames(3)
-	tlist := createTablets("k", "t", hosts, 2, tabletsCountMedium, tabletsCountMedium)
-	tlist2 := createTablets("k", "t2", hosts, 2, tabletsCountMedium, tabletsCountMedium)
-	tlist3 := createTablets("k", "t3", hosts, 2, tabletsCountMedium, tabletsCountMedium)
+	tlist := createTablets(hosts, 2, tabletsCountMedium, tabletsCountMedium)
+	tlist2 := createTablets(hosts, 2, tabletsCountMedium, tabletsCountMedium)
+	tlist3 := createTablets(hosts, 2, tabletsCountMedium, tabletsCountMedium)
 	tlist = append(tlist, tlist2...)
 	tlist = append(tlist, tlist3...)
 
 	b.ResetTimer()
 
-	b.Run("FindTablets", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			tlist.FindTablets("k", "t3")
-		}
-	})
-
 	b.Run("FindTabletForToken", func(b *testing.B) {
 		tokens := tests.RandomTokens(getThreadSafeRnd(), b.N)
-		l, r := tlist.FindTablets("k", "t3")
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			tlist.FindTabletForToken(tokens[i], l, r)
+			tlist.FindTabletForToken(tokens[i])
 		}
 	})
 
@@ -47,18 +40,16 @@ func BenchmarkTabletInfoList(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				token := int64(indexes[i]) * multiplier
 				tlist = tlist.AddTabletToTabletsList(&TabletInfo{
-					keyspaceName: "k",
-					tableName:    "t3",
-					firstToken:   token - multiplier,
-					lastToken:    token,
-					replicas:     replicas,
+					firstToken: token - multiplier,
+					lastToken:  token,
+					replicas:   replicas,
 				})
 			}
 		})
 
 		b.Run("NewTable", func(b *testing.B) {
 			runtime.GC()
-			tl := createTablets("k", "t1", tests.GenerateHostNames(3), 2, tabletsCountMedium, tabletsCountMedium)
+			tl := createTablets(tests.GenerateHostNames(3), 2, tabletsCountMedium, tabletsCountMedium)
 			indexes := tests.ShuffledIndexes(getRnd(), b.N)
 			multiplier := int64(math.MaxUint64 / uint64(b.N))
 			replicas := []ReplicaInfo{{hostId: "h1"}, {hostId: "h2"}, {hostId: "h3"}}
@@ -66,11 +57,9 @@ func BenchmarkTabletInfoList(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				token := int64(indexes[i]) * multiplier
 				tl = tl.AddTabletToTabletsList(&TabletInfo{
-					keyspaceName: "k",
-					tableName:    "t3",
-					firstToken:   token - multiplier,
-					lastToken:    token,
-					replicas:     replicas,
+					firstToken: token - multiplier,
+					lastToken:  token,
+					replicas:   replicas,
 				})
 			}
 		})
@@ -151,18 +140,18 @@ func runSingleCowTabletListTest(b *testing.B, hostsCount, parallelism, rf, total
 	removeKs := "ksremove"
 	removeTable := "tremove"
 	repGen := NewReplicaSetGenerator(hosts, rf)
-	readyTablets := createTablets(removeKs, removeTable, hosts, rf, totalTablets, tokenRangeCount64)
+	readyTablets := createTablets(hosts, rf, totalTablets, tokenRangeCount64)
 	b.SetParallelism(parallelism)
 	tl := NewCowTabletList()
 	rnd := getThreadSafeRnd()
 	opID := atomic.Int64{}
 
 	if prepopulate {
-		tl.BulkAddTablets(createTablets(targetKS, targetTable, hosts, rf, totalTablets, tokenRangeCount64))
+		tl.BulkAddTablets(targetKS, targetTable, createTablets(hosts, rf, totalTablets, tokenRangeCount64))
 	}
 
 	for i := 0; i < extraTables; i++ {
-		tl.BulkAddTablets(createTablets(targetKS, fmt.Sprintf("table-%d", i), hosts, rf, totalTablets, tokenRangeCount64))
+		tl.BulkAddTablets(targetKS, fmt.Sprintf("table-%d", i), createTablets(hosts, rf, totalTablets, tokenRangeCount64))
 	}
 
 	runtime.GC()
@@ -176,20 +165,18 @@ func runSingleCowTabletListTest(b *testing.B, hostsCount, parallelism, rf, total
 				// If there is no tablet for token, emulate update, same way it is usually happening
 				firstToken := (token / tokenRangeCount64) * tokenRangeCount64
 				lastToken := firstToken + tokenRangeCount64
-				tl.AddTablet(&TabletInfo{
-					keyspaceName: targetKS,
-					tableName:    targetTable,
-					firstToken:   firstToken,
-					lastToken:    lastToken,
-					replicas:     repGen.Next(),
+				tl.AddTablet(targetKS, targetTable, &TabletInfo{
+					firstToken: firstToken,
+					lastToken:  lastToken,
+					replicas:   repGen.Next(),
 				})
 			}
 			if ratios.opRemoveTable == 0 || ((ratios.opRemoveTable != -1) && id%ratios.opRemoveTable == 0) {
-				tl.BulkAddTablets(readyTablets)
+				tl.BulkAddTablets(removeKs, removeTable, readyTablets)
 				tl.RemoveTabletsWithTableFromTabletsList(targetKS, removeTable)
 			}
 			if ratios.opRemoveKeyspace == 0 || ((ratios.opRemoveKeyspace != -1) && id%ratios.opRemoveKeyspace == 0) {
-				tl.BulkAddTablets(readyTablets)
+				tl.BulkAddTablets(removeKs, removeTable, readyTablets)
 				tl.RemoveTabletsWithKeyspace(removeKs)
 			}
 			if ratios.opRemoveHost == 0 || ((ratios.opRemoveHost != -1) && id%ratios.opRemoveHost == 0) {
