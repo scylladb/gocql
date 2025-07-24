@@ -1,0 +1,5 @@
+===========
+Sample page
+===========
+
+Lorem ipsum.
