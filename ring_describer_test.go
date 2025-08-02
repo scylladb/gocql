@@ -6,11 +6,11 @@ package gocql
 import (
 	"context"
 	"fmt"
-	"github.com/gocql/gocql/internal/tests"
+	"github.com/scylladb/gocql/v2/internal/tests"
 	"net"
 	"testing"
 
-	"github.com/gocql/gocql/internal/tests/mock"
+	"github.com/scylladb/gocql/v2/internal/tests/mock"
 )
 
 func TestGetClusterPeerInfoZeroToken(t *testing.T) {

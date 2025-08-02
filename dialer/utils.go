@@ -1,7 +1,7 @@
 package dialer
 
 import (
-	"github.com/gocql/gocql/internal/murmur"
+	"github.com/scylladb/gocql/v2/internal/murmur"
 )
 
 type Record struct {

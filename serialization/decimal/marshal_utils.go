@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gocql/gocql/serialization/varint"
+	"github.com/scylladb/gocql/v2/serialization/varint"
 )
 
 func EncInfDec(v inf.Dec) ([]byte, error) {

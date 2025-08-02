@@ -28,7 +28,7 @@ import (
 	"bytes"
 	"sync"
 
-	"github.com/gocql/gocql/internal/lru"
+	"github.com/scylladb/gocql/v2/internal/lru"
 )
 
 const defaultMaxPreparedStmts = 1000

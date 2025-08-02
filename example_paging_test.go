@@ -28,7 +28,7 @@ import (
 	"fmt"
 	"log"
 
-	gocql "github.com/gocql/gocql"
+	gocql "github.com/scylladb/gocql/v2"
 )
 
 // Example_paging demonstrates how to manually fetch pages and use page state.

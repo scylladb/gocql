@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"strconv"
 
-	"github.com/gocql/gocql/serialization/varint"
+	"github.com/scylladb/gocql/v2/serialization/varint"
 )
 
 var errWrongDataLen = fmt.Errorf("failed to unmarshal decimal: the length of the data should be 0 or more than 5")

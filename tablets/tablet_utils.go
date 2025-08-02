@@ -1,7 +1,7 @@
 package tablets
 
 import (
-	"github.com/gocql/gocql/internal/tests"
+	"github.com/scylladb/gocql/v2/internal/tests"
 	"math"
 	"math/rand"
 	"sync/atomic"

@@ -9,7 +9,7 @@ import (
 	"net"
 	"net/url"
 
-	"github.com/gocql/gocql"
+	"github.com/scylladb/gocql/v2"
 	"golang.org/x/net/proxy"
 )
 

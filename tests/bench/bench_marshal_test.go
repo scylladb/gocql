@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/brianvoe/gofakeit/v6"
-	"github.com/gocql/gocql"
+	"github.com/scylladb/gocql/v2"
 )
 
 func generateRandomBinaryData(size int) []byte {
