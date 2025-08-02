@@ -137,7 +137,7 @@ func TestSnappyCompressor(t *testing.T) {
 					}
 
 					if bytes.Compare(decoded, frame.Frame) != 0 {
-						t.Fatalf("failed to match the decoded value with the original value")
+						t.Fatal("failed to match the decoded value with the original value")
 					}
 					t.Logf("Compression rate %f", float64(len(encoded))/float64(len(frame.Frame)))
 				})
@@ -156,7 +156,7 @@ func TestSnappyCompressor(t *testing.T) {
 					}
 
 					if len(decoded) == 0 {
-						t.Fatalf("frame was decoded to empty slice")
+						t.Fatal("frame was decoded to empty slice")
 					}
 				})
 			}

@@ -100,7 +100,7 @@ func TestUseStatementError(t *testing.T) {
 
 	if err := session.Query("USE gocql_test").Exec(); err != nil {
 		if err != ErrUseStmt {
-			t.Fatalf("expected ErrUseStmt, got " + err.Error())
+			t.Fatalf("expected ErrUseStmt, got %v", err)
 		}
 	} else {
 		t.Fatal("expected err, got nil.")
@@ -561,7 +561,7 @@ func TestCAS(t *testing.T) {
 
 	if _, err := session.Query(`DELETE FROM cas_table WHERE title = ? and revid = ? IF last_modified = ?`,
 		title, revid, tenSecondsLater).ScanCAS(); !strings.HasPrefix(err.Error(), "gocql: not enough columns to scan into") {
-		t.Fatalf("delete: was expecting count mismatch error but got: %q", err.Error())
+		t.Fatalf("delete: was expecting count mismatch error but got: %v", err)
 	}
 
 	if applied, err := session.Query(`DELETE FROM cas_table WHERE title = ? and revid = ? IF last_modified = ?`,

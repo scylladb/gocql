@@ -54,7 +54,7 @@ func TestAuthentication(t *testing.T) {
 	session, err := cluster.CreateSession()
 
 	if err != nil {
-		t.Fatalf("Authentication error: %s", err)
+		t.Fatalf("Authentication error: %v", err)
 	}
 
 	session.Close()
@@ -241,10 +241,10 @@ func TestApplicationInformation(t *testing.T) {
 				break
 			}
 			if iter.Close() != nil {
-				t.Fatalf("failed to execute query: %s", iter.Close().Error())
+				t.Fatalf("failed to execute query: %v", iter.Close())
 			}
 			if !found {
-				t.Fatalf("failed to find the application info row")
+				t.Fatal("failed to find the application info row")
 			}
 		})
 	}

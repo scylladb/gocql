@@ -214,7 +214,7 @@ func TestErrorBroadcaster_MultipleListeners(t *testing.T) {
 	}()
 	wg.Wait()
 	if loadedVal := result.Load(); loadedVal != nil {
-		t.Errorf(loadedVal.(error).Error())
+		t.Error(loadedVal.(error).Error())
 	}
 }
 
@@ -249,6 +249,6 @@ func TestErrorBroadcaster_StopWithoutBroadcast(t *testing.T) {
 	}()
 	wg.Wait()
 	if loadedVal := result.Load(); loadedVal != nil {
-		t.Errorf(loadedVal.(error).Error())
+		t.Error(loadedVal.(error).Error())
 	}
 }
