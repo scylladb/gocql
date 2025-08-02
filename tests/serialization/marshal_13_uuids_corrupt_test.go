@@ -6,11 +6,11 @@ package serialization_test
 import (
 	"testing"
 
-	"github.com/gocql/gocql"
-	"github.com/gocql/gocql/internal/tests/serialization"
-	"github.com/gocql/gocql/internal/tests/serialization/mod"
-	"github.com/gocql/gocql/serialization/timeuuid"
-	"github.com/gocql/gocql/serialization/uuid"
+	"github.com/scylladb/gocql/v2"
+	"github.com/scylladb/gocql/v2/internal/tests/serialization"
+	"github.com/scylladb/gocql/v2/internal/tests/serialization/mod"
+	"github.com/scylladb/gocql/v2/serialization/timeuuid"
+	"github.com/scylladb/gocql/v2/serialization/uuid"
 )
 
 func TestMarshalUUIDsMustFail(t *testing.T) {

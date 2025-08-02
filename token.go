@@ -37,7 +37,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gocql/gocql/internal/murmur"
+	"github.com/scylladb/gocql/v2/internal/murmur"
 )
 
 // a token partitioner

@@ -30,7 +30,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"github.com/gocql/gocql/tablets"
+	"github.com/scylladb/gocql/v2/tablets"
 	"io"
 	"io/ioutil"
 	"net"
@@ -40,8 +40,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gocql/gocql/internal/lru"
-	"github.com/gocql/gocql/internal/streams"
+	"github.com/scylladb/gocql/v2/internal/lru"
+	"github.com/scylladb/gocql/v2/internal/streams"
 )
 
 // approve the authenticator with the list of allowed authenticators. If the provided list is empty,

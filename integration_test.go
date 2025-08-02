@@ -31,7 +31,7 @@ package gocql
 import (
 	"context"
 	"errors"
-	"github.com/gocql/gocql/internal/tests"
+	"github.com/scylladb/gocql/v2/internal/tests"
 	"reflect"
 	"testing"
 	"time"

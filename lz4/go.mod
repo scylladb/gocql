@@ -15,7 +15,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-module github.com/gocql/gocql/lz4
+module github.com/scylladb/gocql/lz4
 
 go 1.24
 

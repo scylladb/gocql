@@ -26,13 +26,13 @@ package gocql
 
 import (
 	"fmt"
-	"github.com/gocql/gocql/tablets"
+	"github.com/scylladb/gocql/v2/tablets"
 	"math/rand"
 	"net"
 	"sync"
 	"time"
 
-	"github.com/gocql/gocql/debounce"
+	"github.com/scylladb/gocql/v2/debounce"
 )
 
 // interface to implement to receive the host information

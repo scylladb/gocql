@@ -3,7 +3,7 @@ package serialization
 import (
 	"bytes"
 	"fmt"
-	"github.com/gocql/gocql/internal/tests/serialization/mod"
+	"github.com/scylladb/gocql/v2/internal/tests/serialization/mod"
 	"gopkg.in/inf.v0"
 	"math/big"
 	"reflect"

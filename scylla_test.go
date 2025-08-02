@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gocql/gocql/internal/streams"
+	"github.com/scylladb/gocql/v2/internal/streams"
 )
 
 func TestScyllaConnPickerPickNilToken(t *testing.T) {

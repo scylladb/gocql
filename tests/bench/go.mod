@@ -1,10 +1,10 @@
-module github.com/gocql/gocql/bench_test
+module github.com/scylladb/gocql/bench_test
 
 go 1.24
 
 require (
 	github.com/brianvoe/gofakeit/v6 v6.28.0
-	github.com/gocql/gocql v1.7.0
+	github.com/scylladb/gocql/v2 v2.0.0
 )
 
 require (
@@ -13,4 +13,4 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 )
 
-replace github.com/gocql/gocql => ../..
+replace github.com/scylladb/gocql/v2 => ../..

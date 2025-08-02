@@ -29,7 +29,7 @@ import (
 	"fmt"
 	"log"
 
-	gocql "github.com/gocql/gocql"
+	gocql "github.com/scylladb/gocql/v2"
 )
 
 // MyUDTUnmarshaler implements UDTUnmarshaler.

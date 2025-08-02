@@ -34,7 +34,7 @@ import (
 
 	"github.com/klauspost/compress/s2"
 
-	"github.com/gocql/gocql"
+	"github.com/scylladb/gocql/v2"
 )
 
 type frameExample struct {

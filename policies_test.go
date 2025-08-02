@@ -34,7 +34,7 @@ package gocql
 import (
 	"errors"
 	"fmt"
-	"github.com/gocql/gocql/internal/tests"
+	"github.com/scylladb/gocql/v2/internal/tests"
 	"net"
 	"sort"
 	"strings"

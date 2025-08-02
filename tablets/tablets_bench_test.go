@@ -2,7 +2,7 @@ package tablets
 
 import (
 	"fmt"
-	"github.com/gocql/gocql/internal/tests"
+	"github.com/scylladb/gocql/v2/internal/tests"
 	"math"
 	"runtime"
 	"sync/atomic"

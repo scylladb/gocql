@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/gocql/gocql/internal/tests"
+	"github.com/scylladb/gocql/v2/internal/tests"
 )
 
 func TestCreateTablets(t *testing.T) {

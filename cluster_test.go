@@ -28,7 +28,7 @@
 package gocql
 
 import (
-	"github.com/gocql/gocql/internal/tests"
+	"github.com/scylladb/gocql/v2/internal/tests"
 	"net"
 	"reflect"
 	"testing"
