@@ -5,7 +5,6 @@ package gocql
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 )
@@ -68,24 +67,24 @@ func TestTokenAwareHostPolicy(t *testing.T) {
 func testIfPolicyInitializedProperly(t *testing.T, cluster *ClusterConfig, policy *tokenAwareHostPolicy) {
 	_, err := cluster.CreateSession()
 	if err != nil {
-		t.Fatalf(fmt.Errorf("faled to create session: %v", err).Error())
+		t.Fatalf("faled to create session: %s", err.Error())
 	}
 	md := policy.getMetadataReadOnly()
 	if md == nil {
-		t.Fatalf("tokenAwareHostPolicy has no metadata")
+		t.Fatal("tokenAwareHostPolicy has no metadata")
 	}
 	if len(md.tokenRing.tokens) == 0 {
-		t.Fatalf("tokenAwareHostPolicy metadata has no tokens")
+		t.Fatal("tokenAwareHostPolicy metadata has no tokens")
 	}
 	if len(md.tokenRing.hosts) == 0 {
-		t.Fatalf("tokenAwareHostPolicy metadata has no hosts")
+		t.Fatal("tokenAwareHostPolicy metadata has no hosts")
 	}
 	if md.tokenRing.partitioner == nil {
-		t.Fatalf("tokenAwareHostPolicy metadata has no partitioner")
+		t.Fatal("tokenAwareHostPolicy metadata has no partitioner")
 	}
 	if cluster.Keyspace != "" {
 		if len(md.replicas[cluster.Keyspace]) == 0 {
-			t.Fatalf("tokenAwareHostPolicy metadata has no replicas in target keyspace")
+			t.Fatal("tokenAwareHostPolicy metadata has no replicas in target keyspace")
 		}
 	}
 }

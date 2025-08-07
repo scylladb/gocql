@@ -6,7 +6,7 @@ package tablets
 import (
 	"testing"
 
-	"github.com/gocql/gocql/internal/tests"
+	"github.com/scylladb/gocql/v2/internal/tests"
 )
 
 var tablets = TabletInfoList{

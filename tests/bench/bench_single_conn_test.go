@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/gocql/gocql"
-	"github.com/gocql/gocql/dialer/recorder"
-	"github.com/gocql/gocql/dialer/replayer"
+	"github.com/scylladb/gocql/v2"
+	"github.com/scylladb/gocql/v2/dialer/recorder"
+	"github.com/scylladb/gocql/v2/dialer/replayer"
 )
 
 func InitializeCluster() error {

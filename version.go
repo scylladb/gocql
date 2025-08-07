@@ -27,7 +27,7 @@ package gocql
 import "runtime/debug"
 
 const (
-	mainPackage = "github.com/gocql/gocql"
+	mainPackage = "github.com/scylladb/gocql/v2"
 )
 
 var defaultDriverVersion string

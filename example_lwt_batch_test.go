@@ -29,7 +29,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/gocql/gocql"
+	"github.com/scylladb/gocql/v2"
 )
 
 // ExampleSession_MapExecuteBatchCAS demonstrates how to execute a batch lightweight transaction.

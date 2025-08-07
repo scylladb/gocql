@@ -22,8 +22,8 @@ This eliminates passing data between shards and significantly reduces latency.
 
 There are open pull requests to merge the functionality to the upstream project:
 
-* [gocql/gocql#1210](https://github.com/gocql/gocql/pull/1210)
-* [gocql/gocql#1211](https://github.com/gocql/gocql/pull/1211).
+* [gocql/gocql#1210](https://github.com/scylladb/gocql/v2/pull/1210)
+* [gocql/gocql#1211](https://github.com/scylladb/gocql/v2/pull/1211).
 
 It also provides support for shard aware ports, a faster way to connect to all shards, details available in [blogpost](https://www.scylladb.com/2021/04/27/connect-faster-to-scylla-with-a-shard-aware-port/).
 
@@ -40,32 +40,39 @@ It also provides support for shard aware ports, a faster way to connect to all s
   - [5.2 Iterator](#52-iterator)
 - [6. Contributing](#6-contributing)
 
-## 1. Sunsetting Model
+## Sunsetting Model
 
 > [!WARNING]
 > In general, the gocql team will focus on supporting the current and previous versions of Go. gocql may still work with older versions of Go, but official support for these versions will have been sunset.
 
-## 2. Installation
+## Installation
 
-This is a drop-in replacement to gocql, it reuses the `github.com/gocql/gocql` import path.
-
-Add the following line to your project `go.mod` file.
-
-```mod
-replace github.com/gocql/gocql => github.com/scylladb/gocql latest
-```
-
-and run
-
+Import package:
 ```sh
-go mod tidy
+go get github.com/scylladb-solutions/gocql/v2
 ```
 
-to evaluate `latest` to a concrete tag.
+And you ready to go.
 
-Your project now uses the Scylla driver fork, make sure you are using the `TokenAwareHostPolicy` to enable the shard-awareness, continue reading for details.
+## Migrate from v1
 
-## 3. Quick Start
+To migrate from v1 follow steps:
+1. Upgrade go to at least `1.24`
+2. In `go.mod` replace `github.com/gocql/gocql` with `github.com/scylladb-solutions/gocql/v2` with proper version.
+3. In `go.mod` remove `replace` directive for `github.com/gocql/gocql`.
+4. Run `go mod tidy`
+5. Resolve conflicts
+
+## Migrate from [gocql/gocql](https://github.com/gocql/gocql) or [apache/cassandra-gocql-driver](https://github.com/apache/cassandra-gocql-driver)
+
+To switch from other driver forks following steps:
+1. Replace any references from `github.com/gocql/gocql` to `github.com/scylladb-solutions/gocql/v2` in the code and `go.mod`
+2. Run `go mod tidy`
+3. Resolve conflicts
+
+APIs of all forks are similar, but there could be some differences, resolve conflicts manually.
+
+## Quick Start
 
 Spawn a ScyllaDB Instance using Docker Run command:
 
@@ -82,7 +89,7 @@ package main
 
 import (
     "fmt"
-    "github.com/gocql/gocql"
+    "github.com/scylladb/gocql/v2"
 )
 
 func main() {
@@ -107,9 +114,9 @@ func main() {
 }
 ```
 
-## 4. Data Types
+## Data Types
 
-Here's an list of all CQL Types reflected in the GoCQL environment:
+Here's a list of all CQL Types reflected in the GoCQL environment:
 
 | ScyllaDB Type    | Go Type            |
 | ---------------- | ------------------ |
@@ -137,7 +144,7 @@ Here's an list of all CQL Types reflected in the GoCQL environment:
 | `varchar`        | `string`           |
 | `varint`         | `int64`            |
 
-## 5. Configuration
+## Configuration
 
 In order to make shard-awareness work, token aware host selection policy has to be enabled.
 Please make sure that the gocql configuration has `PoolConfig.HostSelectionPolicy` properly set like in the example below.
@@ -163,7 +170,7 @@ if localDC != "" {
 // c.NumConns = 4
 ```
 
-### 5.1 Shard-aware port
+### Shard-aware port
 
 This version of gocql supports a more robust method of establishing connection for each shard by using _shard aware port_ for native transport.
 It greatly reduces time and the number of connections needed to establish a connection per shard in some cases - ex. when many clients connect at once, or when there are non-shard-aware clients connected to the same cluster.
@@ -210,7 +217,7 @@ Issues with shard-aware port not being reachable are not reported in non-debug m
 
 If you suspect that this feature is causing you problems, you can completely disable it by setting the `ClusterConfig.DisableShardAwarePort` flag to true.
 
-### 5.2 Iterator
+### Iterator
 
 Paging is a way to parse large result sets in smaller chunks.
 The driver provides an iterator to simplify this process.
@@ -237,6 +244,6 @@ In case of range and `ALLOW FILTERING` queries server can send empty responses f
 That is why you should never consider empty response as the end of the result set.
 Always check `iter.Scan()` result to know if there are more results, or `Iter.LastPage()` to know if the last page was reached.
 
-## 6. Contributing
+## Contributing
 
 If you have any interest to be contributing in this GoCQL Fork, please read the [CONTRIBUTING.md](CONTRIBUTING.md) before initialize any Issue or Pull Request.

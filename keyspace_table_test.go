@@ -30,7 +30,7 @@ package gocql
 import (
 	"context"
 	"fmt"
-	"github.com/gocql/gocql/internal/tests"
+	"github.com/scylladb/gocql/v2/internal/tests"
 	"testing"
 )
 

@@ -12,7 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/gocql/gocql/tablets"
+	"github.com/scylladb/gocql/v2/tablets"
 )
 
 // schema metadata for a keyspace
