@@ -758,15 +758,18 @@ func (f *framer) finish() error {
 		}
 
 		// TODO: only compress frames which are big enough
-		compressed, err := f.compres.Encode(f.buf[headSize:])
+		compressed, compressedLength, err := f.compres.Encode(f.buf[headSize:])
 		if err != nil {
 			return err
 		}
 
 		f.buf = append(f.buf[:headSize], compressed...)
+		// Use the returned length to set the frame length instead of recalculating
+		f.setLength(compressedLength)
+	} else {
+		length := len(f.buf) - headSize
+		f.setLength(length)
 	}
-	length := len(f.buf) - headSize
-	f.setLength(length)
 
 	return nil
 }

@@ -30,7 +30,7 @@ import (
 
 type Compressor interface {
 	Name() string
-	Encode(data []byte) ([]byte, error)
+	Encode(data []byte) ([]byte, int, error)
 	Decode(data []byte) ([]byte, error)
 }
 
@@ -44,8 +44,9 @@ func (s SnappyCompressor) Name() string {
 	return "snappy"
 }
 
-func (s SnappyCompressor) Encode(data []byte) ([]byte, error) {
-	return s2.EncodeSnappy(nil, data), nil
+func (s SnappyCompressor) Encode(data []byte) ([]byte, int, error) {
+	encoded := s2.EncodeSnappy(nil, data)
+	return encoded, len(encoded), nil
 }
 
 func (s SnappyCompressor) Decode(data []byte) ([]byte, error) {

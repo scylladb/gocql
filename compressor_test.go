@@ -97,15 +97,20 @@ func TestSnappyCompressor(t *testing.T) {
 		str := "My Test String"
 		//Test Encoding with S2 library, Snappy compatible encoding.
 		expected := s2.EncodeSnappy(nil, []byte(str))
-		if res, err := c.Encode([]byte(str)); err != nil {
+		if res, length, err := c.Encode([]byte(str)); err != nil {
 			t.Fatalf("failed to encode '%v' with error %v", str, err)
 		} else if bytes.Compare(expected, res) != 0 {
 			t.Fatal("failed to match the expected encoded value with the result encoded value.")
+		} else if length != len(res) {
+			t.Fatalf("returned length %d does not match actual length %d", length, len(res))
 		}
 
-		val, err := c.Encode([]byte(str))
+		val, valLength, err := c.Encode([]byte(str))
 		if err != nil {
 			t.Fatalf("failed to encode '%v' with error '%v'", str, err)
+		}
+		if valLength != len(val) {
+			t.Fatalf("returned length %d does not match actual length %d", valLength, len(val))
 		}
 
 		//Test Decoding with S2 library, Snappy compatible encoding.
@@ -127,9 +132,12 @@ func TestSnappyCompressor(t *testing.T) {
 				t.Run(frame.Name, func(t *testing.T) {
 					t.Parallel()
 
-					encoded, err := c.Encode(frame.Frame)
+					encoded, encodedLength, err := c.Encode(frame.Frame)
 					if err != nil {
 						t.Fatalf("failed to encode frame %s", frame.Name)
+					}
+					if encodedLength != len(encoded) {
+						t.Fatalf("returned length %d does not match actual length %d for frame %s", encodedLength, len(encoded), frame.Name)
 					}
 					decoded, err := c.Decode(encoded)
 					if err != nil {
@@ -180,7 +188,7 @@ func BenchmarkSnappyCompressor(b *testing.B) {
 		for _, frame := range frameExamples.Requests {
 			b.Run(frame.Name, func(b *testing.B) {
 				for x := 0; x < b.N; x++ {
-					_, _ = c.Encode(frame.Frame)
+					_, _, _ = c.Encode(frame.Frame)
 				}
 			})
 		}

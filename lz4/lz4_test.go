@@ -51,8 +51,9 @@ func TestLZ4Compressor(t *testing.T) {
 	require.Nil(t, decoded)
 
 	original := []byte("My Test String")
-	encoded, err := c.Encode(original)
+	encoded, encodedLength, err := c.Encode(original)
 	require.NoError(t, err)
+	require.Equal(t, len(encoded), encodedLength, "returned length should match actual length")
 	decoded, err = c.Decode(encoded)
 	require.NoError(t, err)
 	require.Equal(t, original, decoded)
