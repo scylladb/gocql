@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gocql/gocql"
-	"github.com/gocql/gocql/internal/tests/serialization"
-	"github.com/gocql/gocql/internal/tests/serialization/mod"
-	"github.com/gocql/gocql/serialization/date"
+	"github.com/scylladb/gocql/v2"
+	"github.com/scylladb/gocql/v2/internal/tests/serialization"
+	"github.com/scylladb/gocql/v2/internal/tests/serialization/mod"
+	"github.com/scylladb/gocql/v2/serialization/date"
 )
 
 func TestMarshalsDate(t *testing.T) {

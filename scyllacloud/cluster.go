@@ -8,7 +8,7 @@ import (
 	"net"
 	"os"
 
-	"github.com/gocql/gocql"
+	"github.com/scylladb/gocql/v2"
 	"sigs.k8s.io/yaml"
 )
 

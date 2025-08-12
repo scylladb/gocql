@@ -29,7 +29,7 @@ import (
 	"log"
 	"sort"
 
-	gocql "github.com/gocql/gocql"
+	gocql "github.com/scylladb/gocql/v2"
 )
 
 // Example_set demonstrates how to use sets.

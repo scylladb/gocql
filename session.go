@@ -38,9 +38,9 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/gocql/gocql/debounce"
-	"github.com/gocql/gocql/internal/lru"
-	"github.com/gocql/gocql/tablets"
+	"github.com/scylladb/gocql/v2/debounce"
+	"github.com/scylladb/gocql/v2/internal/lru"
+	"github.com/scylladb/gocql/v2/tablets"
 )
 
 // Session is the interface used by users to interact with the database.
