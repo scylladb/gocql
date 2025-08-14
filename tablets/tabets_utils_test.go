@@ -10,7 +10,7 @@ import (
 func TestCreateTablets(t *testing.T) {
 	t.Run("BasicDistribution", func(t *testing.T) {
 		hosts := tests.GenerateHostNames(3)
-		tl := createTablets("ks", "tbl", hosts, 2, 6, 6)
+		tl := createTablets(hosts, 2, 6, 6)
 		if len(tl) != 6 {
 			t.Errorf("expected 6 tablets, got %d", len(tl))
 		}
@@ -31,7 +31,7 @@ func TestCreateTablets(t *testing.T) {
 
 	t.Run("SingleTabletFullRange", func(t *testing.T) {
 		hosts := tests.GenerateHostNames(3)
-		tl := createTablets("ks", "tbl", hosts, 3, 1, 1)
+		tl := createTablets(hosts, 3, 1, 1)
 		t0 := tl[0]
 		if t0.firstToken != math.MinInt64 {
 			t.Errorf("unexpected firstToken: %d", t0.firstToken)
