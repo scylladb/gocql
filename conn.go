@@ -195,8 +195,8 @@ type Conn struct {
 
 	systemRequestTimeout time.Duration
 	usingTimeoutClause   string
-	readTimeout          time.Duration
-	writeTimeout         time.Duration
+	readTimeout          atomic.Int64
+	writeTimeout         atomic.Int64
 	cfg                  *ConnConfig
 	frameObserver        FrameHeaderObserver
 	streamObserver       StreamObserver
@@ -260,10 +260,10 @@ func (c *Conn) finalizeConnection() {
 	// When connection just created all timeouts are set to `cfg.ConnectTimeout`
 	// It is done to make sure that connection is easy to establish when users set very low `WriteTimeout` and/or `Timeout`
 	// This method sets timeouts to `operational` values after connection successfully created
-	c.writeTimeout = c.cfg.WriteTimeout
-	c.readTimeout = c.cfg.ReadTimeout
+	c.writeTimeout.Store(int64(c.cfg.WriteTimeout))
+	c.readTimeout.Store(int64(c.cfg.ReadTimeout))
 	c.setSystemRequestTimeout(c.session.cfg.MetadataSchemaRequestTimeout)
-	c.w.setFinalWriteTimeout(c.cfg.WriteTimeout)
+	c.w.setWriteTimeout(c.cfg.WriteTimeout)
 }
 
 func (c *Conn) getScyllaSupported() scyllaSupported {
@@ -352,7 +352,6 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 		frameObserver: s.frameObserver,
 		w: &deadlineContextWriter{
 			w:         dialedHost.Conn,
-			timeout:   cfg.ConnectTimeout,
 			semaphore: make(chan struct{}, 1),
 			quit:      make(chan struct{}),
 		},
@@ -360,8 +359,6 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 		cancel:               cancel,
 		logger:               cfg.logger(),
 		streamObserver:       s.streamObserver,
-		writeTimeout:         cfg.ConnectTimeout,
-		readTimeout:          cfg.ConnectTimeout,
 		systemRequestTimeout: cfg.ConnectTimeout,
 	}
 
@@ -382,6 +379,10 @@ func (s *Session) streamIDGenerator() *streams.IDGenerator {
 }
 
 func (c *Conn) init(ctx context.Context, dialedHost *DialedHost) error {
+	c.readTimeout.Store(int64(c.cfg.ConnectTimeout))
+	c.writeTimeout.Store(int64(c.cfg.ConnectTimeout))
+	c.w.setWriteTimeout(c.cfg.ConnectTimeout)
+
 	if c.session.cfg.AuthProvider != nil {
 		var err error
 		c.auth, err = c.cfg.AuthProvider(c.host)
@@ -422,11 +423,12 @@ func (c *Conn) Write(p []byte) (n int, err error) {
 
 func (c *Conn) Read(p []byte) (n int, err error) {
 	const maxAttempts = 5
+	timeout := c.readTimeout.Load()
 
 	for i := 0; i < maxAttempts; i++ {
 		var nn int
-		if c.readTimeout > 0 {
-			err = c.conn.SetReadDeadline(time.Now().Add(c.readTimeout))
+		if timeout > 0 {
+			err = c.conn.SetReadDeadline(time.Now().Add(time.Duration(timeout)))
 			if err != nil {
 				return 0, err
 			}
@@ -775,7 +777,7 @@ func (c *Conn) recv(ctx context.Context) error {
 
 	// read a full header, ignore timeouts, as this is being ran in a loop
 	// TODO: TCP level deadlines? or just query level deadlines?
-	if c.readTimeout > 0 {
+	if c.readTimeout.Load() > 0 {
 		c.conn.SetReadDeadline(time.Time{})
 	}
 
@@ -921,7 +923,7 @@ type contextWriter interface {
 	// data in p, even temporarily.
 	writeContext(ctx context.Context, p []byte) (n int, err error)
 
-	setFinalWriteTimeout(timeout time.Duration)
+	setWriteTimeout(timeout time.Duration)
 }
 
 type deadlineWriter interface {
@@ -931,7 +933,7 @@ type deadlineWriter interface {
 
 type deadlineContextWriter struct {
 	w       deadlineWriter
-	timeout time.Duration
+	timeout atomic.Int64
 	// semaphore protects critical section for SetWriteDeadline/Write.
 	// It is a channel with capacity 1.
 	semaphore chan struct{}
@@ -940,8 +942,8 @@ type deadlineContextWriter struct {
 	quit chan struct{}
 }
 
-func (c *deadlineContextWriter) setFinalWriteTimeout(timeout time.Duration) {
-	c.timeout = timeout
+func (c *deadlineContextWriter) setWriteTimeout(timeout time.Duration) {
+	c.timeout.Store(int64(timeout))
 }
 
 // writeContext implements contextWriter.
@@ -960,8 +962,9 @@ func (c *deadlineContextWriter) writeContext(ctx context.Context, p []byte) (int
 		<-c.semaphore
 	}()
 
-	if c.timeout > 0 {
-		err := c.w.SetWriteDeadline(time.Now().Add(c.timeout))
+	timeout := c.timeout.Load()
+	if timeout > 0 {
+		err := c.w.SetWriteDeadline(time.Now().Add(time.Duration(timeout)))
 		if err != nil {
 			return 0, err
 		}
@@ -975,8 +978,8 @@ func newWriteCoalescer(conn deadlineWriter, writeTimeout, coalesceDuration time.
 		writeCh: make(chan writeRequest),
 		c:       conn,
 		quit:    quit,
-		timeout: writeTimeout,
 	}
+	wc.setWriteTimeout(writeTimeout)
 	go wc.writeFlusher(coalesceDuration)
 	return wc
 }
@@ -989,14 +992,14 @@ type writeCoalescer struct {
 	quit    <-chan struct{}
 	writeCh chan writeRequest
 
-	timeout time.Duration
+	timeout atomic.Int64
 
 	testEnqueuedHook func()
 	testFlushedHook  func()
 }
 
-func (w *writeCoalescer) setFinalWriteTimeout(timeout time.Duration) {
-	w.timeout = timeout
+func (w *writeCoalescer) setWriteTimeout(timeout time.Duration) {
+	w.timeout.Store(int64(timeout))
 }
 
 type writeRequest struct {
@@ -1088,8 +1091,9 @@ func (w *writeCoalescer) writeFlusherImpl(timerC <-chan time.Time, resetTimer fu
 
 func (w *writeCoalescer) flush(resultChans []chan<- writeResult, buffers net.Buffers) {
 	// Flush everything we have so far.
-	if w.timeout > 0 {
-		err := w.c.SetWriteDeadline(time.Now().Add(w.timeout))
+	timeout := w.timeout.Load()
+	if timeout > 0 {
+		err := w.c.SetWriteDeadline(time.Now().Add(time.Duration(timeout)))
 		if err != nil {
 			for i := range resultChans {
 				resultChans[i] <- writeResult{
