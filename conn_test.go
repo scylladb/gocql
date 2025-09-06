@@ -973,7 +973,6 @@ func TestWriteCoalescing(t *testing.T) {
 		writeCh: make(chan writeRequest),
 		c:       client,
 		quit:    ctx.Done(),
-		timeout: 500 * time.Millisecond,
 		testEnqueuedHook: func() {
 			enqueued <- struct{}{}
 		},
@@ -981,6 +980,7 @@ func TestWriteCoalescing(t *testing.T) {
 			client.Close()
 		},
 	}
+	w.setWriteTimeout(500 * time.Millisecond)
 	timerC := make(chan time.Time, 1)
 	go func() {
 		w.writeFlusherImpl(timerC, func() { resetTimer <- struct{}{} })
