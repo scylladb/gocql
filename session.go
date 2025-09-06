@@ -687,7 +687,7 @@ func (s *Session) KeyspaceMetadata(keyspace string) (*KeyspaceMetadata, error) {
 }
 
 // TabletsMetadata returns the metadata about tablets
-func (s *Session) TabletsMetadata() (tablets.TabletInfoList, error) {
+func (s *Session) TabletsMetadata(keyspace, table string) (tablets.TabletInfoList, error) {
 	// fail fast
 	if s.Closed() {
 		return nil, ErrSessionClosed
@@ -697,7 +697,7 @@ func (s *Session) TabletsMetadata() (tablets.TabletInfoList, error) {
 		return nil, ErrTabletsNotUsed
 	}
 
-	return s.metadataDescriber.getTablets(), nil
+	return s.metadataDescriber.getTablets(keyspace, table), nil
 }
 
 func (s *Session) getConn() *Conn {

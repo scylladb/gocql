@@ -2,8 +2,8 @@ package tablets
 
 import (
 	"fmt"
+	"strings"
 	"sync"
-	"sync/atomic"
 )
 
 type ReplicaInfo struct {
@@ -21,11 +21,9 @@ func (r ReplicaInfo) ShardID() int {
 }
 
 type TabletInfoBuilder struct {
-	KeyspaceName string
-	TableName    string
-	FirstToken   int64
-	LastToken    int64
-	Replicas     [][]interface{}
+	FirstToken int64
+	LastToken  int64
+	Replicas   [][]interface{}
 }
 
 func NewTabletInfoBuilder() TabletInfoBuilder {
@@ -55,24 +53,16 @@ func (b TabletInfoBuilder) Build() (*TabletInfo, error) {
 	}
 
 	return &TabletInfo{
-		keyspaceName: b.KeyspaceName,
-		tableName:    b.TableName,
-		firstToken:   b.FirstToken,
-		lastToken:    b.LastToken,
-		replicas:     tabletReplicas,
+		firstToken: b.FirstToken,
+		lastToken:  b.LastToken,
+		replicas:   tabletReplicas,
 	}, nil
 }
 
 type TabletInfo struct {
-	keyspaceName string
-	tableName    string
-	firstToken   int64
-	lastToken    int64
-	replicas     []ReplicaInfo
-}
-
-func (t *TabletInfo) KeyspaceName() string {
-	return t.keyspaceName
+	firstToken int64
+	lastToken  int64
+	replicas   []ReplicaInfo
 }
 
 func (t *TabletInfo) FirstToken() int64 {
@@ -83,47 +73,14 @@ func (t *TabletInfo) LastToken() int64 {
 	return t.lastToken
 }
 
-func (t *TabletInfo) TableName() string {
-	return t.tableName
-}
-
 func (t *TabletInfo) Replicas() []ReplicaInfo {
+	if t == nil {
+		return nil
+	}
 	return t.replicas
 }
 
 type TabletInfoList []*TabletInfo
-
-// FindTablets returns the range [l, r] of indices within the TabletInfoList
-// that correspond to consecutive tablets matching the given keyspace and table.
-//
-// If no matching tablets are found, both l and r are set to -1.
-// The search stops at the first non-matching tablet after finding the first match.
-//
-// Parameters:
-//
-//	keyspace - the name of the keyspace to match.
-//	table    - the name of the table to match.
-//
-// Returns:
-//
-//	l - the index of the first matching tablet.
-//	r - the index of the last matching tablet in the contiguous block.
-func (t TabletInfoList) FindTablets(keyspace string, table string) (int, int) {
-	l := -1
-	r := -1
-	for i, tablet := range t {
-		if tablet.KeyspaceName() == keyspace && tablet.TableName() == table {
-			if l == -1 {
-				l = i
-			}
-			r = i
-		} else if l != -1 {
-			break
-		}
-	}
-
-	return l, r
-}
 
 // AddTabletToTabletsList inserts a new tablet into the TabletInfoList while preserving sorted order
 // and removing any existing overlapping tablets for the same keyspace and table.
@@ -141,13 +98,11 @@ func (t TabletInfoList) FindTablets(keyspace string, table string) (int, int) {
 //
 //	A new TabletInfoList with the given tablet inserted and any overlapping tablets removed.
 func (t TabletInfoList) AddTabletToTabletsList(tablet *TabletInfo) TabletInfoList {
-	l, r := t.FindTablets(tablet.keyspaceName, tablet.tableName)
-	if l == -1 && r == -1 {
-		l = 0
-		r = 0
-	} else {
-		r = r + 1
+	if len(t) == 0 {
+		return append(t, tablet)
 	}
+	l := 0
+	r := len(t)
 
 	l1, r1 := l, r
 	l2, r2 := l1, r1
@@ -209,15 +164,13 @@ func (t TabletInfoList) AddTabletToTabletsList(tablet *TabletInfo) TabletInfoLis
 //
 //	A new TabletInfoList with the given tablets inserted and any overlapping tablets removed.
 func (t TabletInfoList) BulkAddTabletsToTabletsList(tablets []*TabletInfo) TabletInfoList {
+	if len(t) == 0 {
+		return append(t, tablets...)
+	}
 	firstToken := tablets[0].FirstToken()
 	lastToken := tablets[len(tablets)-1].LastToken()
-	l, r := t.FindTablets(tablets[0].keyspaceName, tablets[0].tableName)
-	if l == -1 && r == -1 {
-		l = 0
-		r = 0
-	} else {
-		r = r + 1
-	}
+	l := 0
+	r := len(t)
 
 	l1, r1 := l, r
 	l2, r2 := l1, r1
@@ -298,57 +251,6 @@ func (t TabletInfoList) RemoveTabletsWithHost(hostID string) TabletInfoList {
 	return t
 }
 
-// RemoveTabletsWithKeyspace returns a new TabletInfoList excluding all tablets
-// that belong to the specified keyspace.
-//
-// It filters out any tablet whose keyspace name matches the given keyspace.
-//
-// Parameters:
-//
-//	keyspace - the name of the keyspace to remove.
-//
-// Returns:
-//
-//	A new TabletInfoList without tablets from the specified keyspace.
-func (t TabletInfoList) RemoveTabletsWithKeyspace(keyspace string) TabletInfoList {
-	filteredTablets := make([]*TabletInfo, 0, len(t))
-
-	for _, tablet := range t {
-		if tablet.keyspaceName != keyspace {
-			filteredTablets = append(filteredTablets, tablet)
-		}
-	}
-
-	t = filteredTablets
-	return t
-}
-
-// RemoveTabletsWithTableFromTabletsList returns a new TabletInfoList excluding all tablets
-// that belong to the specified keyspace and table.
-//
-// It filters out any tablet whose keyspace and table name both match the provided values.
-//
-// Parameters:
-//
-//	keyspace - the name of the keyspace to remove.
-//	table    - the name of the table to remove.
-//
-// Returns:
-//
-//	A new TabletInfoList without tablets from the specified keyspace and table.
-func (t TabletInfoList) RemoveTabletsWithTableFromTabletsList(keyspace string, table string) TabletInfoList {
-	filteredTablets := make([]*TabletInfo, 0, len(t))
-
-	for _, tablet := range t {
-		if !(tablet.keyspaceName == keyspace && tablet.tableName == table) {
-			filteredTablets = append(filteredTablets, tablet)
-		}
-	}
-
-	t = filteredTablets
-	return t
-}
-
 // FindTabletForToken performs a binary search within the specified range [l, r)
 // of the TabletInfoList to find the tablet that owns the given token.
 //
@@ -364,7 +266,12 @@ func (t TabletInfoList) RemoveTabletsWithTableFromTabletsList(keyspace string, t
 // Returns:
 //
 //	A pointer to the TabletInfo that owns the token.
-func (t TabletInfoList) FindTabletForToken(token int64, l int, r int) *TabletInfo {
+func (t TabletInfoList) FindTabletForToken(token int64) *TabletInfo {
+	if len(t) == 0 {
+		return nil
+	}
+	l := 0
+	r := len(t) - 1
 	for l < r {
 		var m int
 		if r*l > 0 {
@@ -382,68 +289,102 @@ func (t TabletInfoList) FindTabletForToken(token int64, l int, r int) *TabletInf
 	return t[l]
 }
 
+func tabletKey(keyspace, table string) string {
+	return keyspace + ":" + table
+}
+
 // CowTabletList is a copy-on-write wrapper around a TabletInfoList.
 // It allows concurrent reads without locking by storing the list atomically,
 // while ensuring writes are serialized via a mutex to avoid lost updates.
 type CowTabletList struct {
-	list      atomic.Value // Stores the current TabletInfoList
-	writeLock sync.Mutex   // Ensures exclusive access during write operations
+	tableMap  sync.Map
+	writeLock sync.RWMutex
 }
 
 // NewCowTabletList creates a new CowTabletList instance initialized with an empty TabletInfoList.
 func NewCowTabletList() CowTabletList {
-	list := atomic.Value{}
-	list.Store(make(TabletInfoList, 0))
-	return CowTabletList{
-		list: list,
-	}
-}
-
-// Get returns the current snapshot of the tablet list.
-// It is safe for concurrent use.
-func (c *CowTabletList) Get() TabletInfoList {
-	return c.list.Load().(TabletInfoList)
-}
-
-// set replaces the current tablet list with the provided one.
-// It is not safe for concurrent use and should be called only from within a locked context.
-func (c *CowTabletList) set(tablets TabletInfoList) {
-	c.list.Store(tablets)
+	return CowTabletList{}
 }
 
 // AddTablet adds a single tablet to the list in a thread-safe manner.
-func (c *CowTabletList) AddTablet(tablet *TabletInfo) {
+func (c *CowTabletList) AddTablet(keyspaceName, tableName string, tablet *TabletInfo) {
 	c.writeLock.Lock()
 	defer c.writeLock.Unlock()
-	c.set(c.Get().AddTabletToTabletsList(tablet))
+	key := tabletKey(keyspaceName, tableName)
+	tl, ok := c.tableMap.Load(key)
+	if !ok {
+		c.tableMap.Store(key, TabletInfoList{tablet})
+		return
+	}
+	casted, ok := tl.(TabletInfoList)
+	if !ok {
+		c.tableMap.Store(key, TabletInfoList{tablet})
+	}
+	c.tableMap.Store(key, casted.AddTabletToTabletsList(tablet))
 }
 
 // BulkAddTablets adds multiple tablets to the list in a single atomic update.
-func (c *CowTabletList) BulkAddTablets(tablets []*TabletInfo) {
+func (c *CowTabletList) BulkAddTablets(keyspaceName, tableName string, tablets []*TabletInfo) {
 	c.writeLock.Lock()
 	defer c.writeLock.Unlock()
-	c.set(c.Get().BulkAddTabletsToTabletsList(tablets))
+	key := tabletKey(keyspaceName, tableName)
+	tl, ok := c.tableMap.Load(key)
+	if !ok {
+		c.tableMap.Store(key, TabletInfoList(tablets))
+		return
+	}
+	casted, ok := tl.(TabletInfoList)
+	if !ok {
+		c.tableMap.Store(key, TabletInfoList(tablets))
+	}
+	c.tableMap.Store(key, casted.BulkAddTabletsToTabletsList(tablets))
+}
+
+// Get returns tablets for give keyspace and table
+func (c *CowTabletList) Get(keyspace, table string) TabletInfoList {
+	c.writeLock.RLock()
+	defer c.writeLock.RUnlock()
+	tl, ok := c.tableMap.Load(tabletKey(keyspace, table))
+	if !ok {
+		return nil
+	}
+	casted, ok := tl.(TabletInfoList)
+	if !ok {
+		return nil
+	}
+	return casted
 }
 
 // RemoveTabletsWithHost removes all tablets associated with the specified host ID.
 func (c *CowTabletList) RemoveTabletsWithHost(hostID string) {
 	c.writeLock.Lock()
 	defer c.writeLock.Unlock()
-	c.set(c.Get().RemoveTabletsWithHost(hostID))
+	c.tableMap.Range(func(key, value interface{}) bool {
+		tl, ok := value.(TabletInfoList)
+		if ok {
+			c.tableMap.Store(key, tl.RemoveTabletsWithHost(hostID))
+		}
+		return true
+	})
 }
 
 // RemoveTabletsWithKeyspace removes all tablets belonging to the given keyspace.
 func (c *CowTabletList) RemoveTabletsWithKeyspace(keyspace string) {
 	c.writeLock.Lock()
 	defer c.writeLock.Unlock()
-	c.set(c.Get().RemoveTabletsWithKeyspace(keyspace))
+	c.tableMap.Range(func(key, value interface{}) bool {
+		if strings.HasPrefix(key.(string), keyspace) {
+			c.tableMap.Delete(key)
+		}
+		return true
+	})
 }
 
 // RemoveTabletsWithTableFromTabletsList removes all tablets for the specified keyspace and table.
 func (c *CowTabletList) RemoveTabletsWithTableFromTabletsList(keyspace string, table string) {
 	c.writeLock.Lock()
 	defer c.writeLock.Unlock()
-	c.set(c.Get().RemoveTabletsWithTableFromTabletsList(keyspace, table))
+	c.tableMap.Delete(tabletKey(keyspace, table))
 }
 
 // FindReplicasForToken returns the replica set responsible for the given token,
@@ -459,10 +400,13 @@ func (c *CowTabletList) FindReplicasForToken(keyspace, table string, token int64
 // FindTabletForToken locates the tablet that covers the given token
 // for the specified keyspace and table. Returns nil if not found.
 func (c *CowTabletList) FindTabletForToken(keyspace, table string, token int64) *TabletInfo {
-	tablets := c.Get()
-	l, r := tablets.FindTablets(keyspace, table)
-	if l == -1 {
+	tl, ok := c.tableMap.Load(tabletKey(keyspace, table))
+	if !ok {
 		return nil
 	}
-	return tablets.FindTabletForToken(token, l, r)
+	casted, ok := tl.(TabletInfoList)
+	if !ok {
+		return nil
+	}
+	return casted.FindTabletForToken(token)
 }
