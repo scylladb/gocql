@@ -32,9 +32,12 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	randv2 "math/rand/v2"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/cenkalti/backoff/v4"
 )
 
 // cowHostList implements a copy on write host list, its equivalent type is []*HostInfo
@@ -318,6 +321,239 @@ func (d *DowngradingConsistencyRetryPolicy) GetRetryType(err error) RetryType {
 
 func (e *ExponentialBackoffRetryPolicy) napTime(attempts int) time.Duration {
 	return getExponentialTime(e.Min, e.Max, attempts)
+}
+
+// These constants are choosen such that the total sum of all time intervals
+// exceeds ScyllaDB starting time on a local host (i.e. 2-3 seconds).
+const (
+	DefaultHostRepetitions     = 6
+	DefaultInitialInterval     = 500 * time.Millisecond
+	DefaultRandomizationFactor = backoff.DefaultRandomizationFactor
+	DefaultRetryLimit          = 5 // Nodes per DC.
+)
+
+func sampleUniform(lo, hi float64) float64 {
+	length := hi - lo
+	return lo + randv2.Float64()*length //nolint:gosec // Pure math.
+}
+
+// ConstantBackOffOpts is a function type used to configure ConstantBackOff
+// options.
+type ConstantBackOffOpts func(*ConstantBackOff)
+
+// ConstantBackOff implements constant interval backoff with some jitter.
+type ConstantBackOff struct {
+	Interval            time.Duration
+	RandomizationFactor float64
+}
+
+var _ backoff.BackOff = new(ConstantBackOff)
+
+func NewConstantBackOff(opts ...ConstantBackOffOpts) *ConstantBackOff {
+	cbo := &ConstantBackOff{
+		Interval:            DefaultInitialInterval,
+		RandomizationFactor: DefaultRandomizationFactor,
+	}
+	for _, fn := range opts {
+		fn(cbo)
+	}
+	return cbo
+}
+
+func (b *ConstantBackOff) NextBackOff() time.Duration {
+	if b.RandomizationFactor == 0.0 {
+		return b.Interval
+	}
+	lo := float64(b.Interval) * (1 - b.RandomizationFactor)
+	hi := float64(b.Interval) * (1 + b.RandomizationFactor)
+	return time.Duration(sampleUniform(lo, hi))
+}
+
+func (b *ConstantBackOff) Reset() {}
+
+// StickyRetryPolicyOpts is a function type used to configure StikyRetryPolicy
+// options.
+type StickyRetryPolicyOpts func(*StickyRetryPolicy)
+
+// WithConstIntraBackoff sets constant sleeping interval for a single host.
+func WithConstIntraBackoff(dur time.Duration, factor float64) StickyRetryPolicyOpts {
+	return func(p *StickyRetryPolicy) {
+		p.IntraBackoff = &ConstantBackOff{
+			Interval:            dur,
+			RandomizationFactor: factor,
+		}
+	}
+}
+
+// WithExponentialInterBackoff sets backoff policy between hosts.
+func WithExponentialInterBackoff(opts ...backoff.ExponentialBackOffOpts) StickyRetryPolicyOpts {
+	return func(p *StickyRetryPolicy) {
+		p.InterBackoff = backoff.NewExponentialBackOff(opts...)
+	}
+}
+
+// WithHostRepetitions sets the number of attempts to use the current host.
+func WithHostRepetitions(num int) StickyRetryPolicyOpts {
+	return func(p *StickyRetryPolicy) {
+		p.NumRepetitions = num
+	}
+}
+
+// WithRetryLimit sets the maximal number of calls to inter-host backoff.
+func WithRetryLimit(num int) StickyRetryPolicyOpts {
+	return func(p *StickyRetryPolicy) {
+		p.RetryLimit = num
+	}
+}
+
+// StickyRetryPolicy implements RetryPolicy. It is based on two retry policies.
+// The first one (main) is exponential backoff for RetryNextHost. The second
+// one is a plain and simple repetetion policy for the same host, i.e. Retry.
+//
+// The idea is that we first do some retries for a specific host until its
+// retry limit is exceeded. Then we switch to the next host, try the newly
+// selected host until a query is executed or retry limit is exhausted. And so
+// on, and so on.
+//
+// Scylla driver uses RetryPolicy as follows. First, it decides whether another
+// attempt should be taken or not. It considers only history of a specific
+// RetryableQuery but not its current execution status.
+//
+//	if !policy.Attempts(query) {
+//		return err
+//	}
+//	switch policy.GetRetryType(err) {
+//		...
+//	}
+//
+// Moreover, retry policy must sleep in Attempts() since it is contextualized
+// with query context.Context.
+//
+// In fact, lengths of sleeping interval comprises a direct sum of inter and
+// intra backoffs. Resulting time intervals for defaults are shown in the table
+// below.
+//
+// ix   host     retry_type   dur     lb     ub  total
+// ---------------------------------------------------
+//
+//	 0  scylla-a Retry       0.50  0.250  0.750   0.50
+//	 1                       0.50  0.250  0.750   1.00
+//	 2                       0.50  0.250  0.750   1.50
+//	 3                       0.50  0.250  0.750   2.00
+//	 4                       0.50  0.250  0.750   2.50
+//	 5                       0.50  0.250  0.750   3.00
+//	 6  scylla-b RetryNext   0.50  0.250  0.750   3.50
+//	 7           Retry       0.50  0.250  0.750   4.00
+//	 8                       0.50  0.250  0.750   4.50
+//	 9                       0.50  0.250  0.750   5.00
+//	10                       0.50  0.250  0.750   5.50
+//	11                       0.50  0.250  0.750   6.00
+//	12  scylla-c RetryNext   0.75  0.375  1.125   6.75
+//	13           Retry       0.50  0.250  0.750   7.25
+//	14                       0.50  0.250  0.750   7.75
+//	15                       0.50  0.250  0.750   8.25
+//	16                       0.50  0.250  0.750   8.75
+//	17                       0.50  0.250  0.750   9.25
+type StickyRetryPolicy struct {
+	// Backoff policy among hosts.
+	InterBackoff backoff.BackOff
+	// Backoff policy for a host.
+	IntraBackoff backoff.BackOff
+	// Initial retry type.
+	RetryType RetryType
+
+	// NumRepetitions means a number of times we try the current host (i.e.
+	// `Retry` retry type).
+	NumRepetitions int
+	// RetryLimit is a maximal number of hosts used in rotation.
+	RetryLimit int
+
+	startTime time.Time
+}
+
+func NewStickyRetryPolicy(opts ...StickyRetryPolicyOpts) *StickyRetryPolicy {
+	policy := &StickyRetryPolicy{
+		InterBackoff: backoff.NewExponentialBackOff(
+			backoff.WithInitialInterval(DefaultInitialInterval),
+		),
+		IntraBackoff: &ConstantBackOff{
+			Interval:            DefaultInitialInterval,
+			RandomizationFactor: DefaultRandomizationFactor,
+		},
+		NumRepetitions: DefaultHostRepetitions,
+		RetryType:      Retry,
+		RetryLimit:     DefaultRetryLimit,
+	}
+	for _, fn := range opts {
+		fn(policy)
+	}
+	return policy
+}
+
+func (p *StickyRetryPolicy) Attempt(q RetryableQuery) bool {
+	if q.Attempts() > p.getTotalRetryLimit() {
+		return false
+	}
+
+	var dur time.Duration
+	switch p.updateRetryType(q.Attempts() - 1) {
+	case Retry:
+		dur = p.IntraBackoff.NextBackOff()
+	case RetryNextHost:
+		p.IntraBackoff.Reset()
+		dur = p.InterBackoff.NextBackOff()
+	}
+
+	select {
+	case <-time.After(dur):
+		return true
+	case <-q.Context().Done():
+		return false
+	}
+}
+
+// GetElapsedTime returns the elapsed time since first invokation of
+// Attempts().
+func (p *StickyRetryPolicy) GetElapsedTime() time.Duration {
+	return time.Since(p.startTime)
+}
+
+// GetRetryType manages how query execution driver deals with underlying
+// connection pool.
+//
+// The following erros can occurs during frame parsing and query execution in
+// general: standard io errors, Scylla's io related errors, Scylla's, rate
+// limit error, ErrConnectionClosed, ErrCodeUnavailable, ErrCodeWriteTimeout,
+// ErrCodeWriteFailure, ErrCodeReadTimeout, ErrCodeReadFailure. Also, gocql
+// does not exposed some server-side errors like ErrCodeBootstrapping,
+// ErrCodeOverloaded, ErrCodeServer (see parseFrame routine in frame.go).
+//
+// [1]: See Apache Cassandra Spec v5.
+// https://github.com/apache/cassandra/blob/trunk/doc/native_protocol_v5.spec
+func (p *StickyRetryPolicy) GetRetryType(err error) RetryType {
+	switch err {
+	case ErrConnectionClosed:
+		return RetryNextHost
+	default:
+		return p.RetryType
+	}
+}
+
+func (p *StickyRetryPolicy) getTotalRetryLimit() int {
+	return p.NumRepetitions * p.RetryLimit
+}
+
+func (p *StickyRetryPolicy) updateRetryType(numAttempts int) RetryType {
+	// Decide whether we retry on the current host or on the next one.
+	if numAttempts == 0 {
+		p.startTime = time.Now() // System clocks.
+		p.RetryType = Retry      // We always start with simple retry.
+	} else if numAttempts%p.NumRepetitions == 0 {
+		p.RetryType = RetryNextHost
+	} else {
+		p.RetryType = Retry
+	}
+	return p.RetryType
 }
 
 type HostStateNotifier interface {
