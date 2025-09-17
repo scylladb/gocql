@@ -491,9 +491,9 @@ func (h toCQLHelpers) partitionKeyString(pks, cks []*ColumnMetadata) string {
 
 type scyllaEncryptionOptions struct {
 	CipherAlgorithm   string `json:"cipher_algorithm"`
-	SecretKeyStrength int    `json:"secret_key_strength"`
 	KeyProvider       string `json:"key_provider"`
 	SecretKeyFile     string `json:"secret_key_file"`
+	SecretKeyStrength int    `json:"secret_key_strength"`
 }
 
 // UnmarshalBinary deserializes blob into scyllaEncryptionOptions.

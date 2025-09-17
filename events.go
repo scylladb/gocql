@@ -31,15 +31,13 @@ import (
 )
 
 type eventDebouncer struct {
-	name   string
-	timer  *time.Timer
-	mu     sync.Mutex
-	events []frame
-
+	logger   StdLogger
+	timer    *time.Timer
 	callback func([]frame)
 	quit     chan struct{}
-
-	logger StdLogger
+	name     string
+	events   []frame
+	mu       sync.Mutex
 }
 
 func newEventDebouncer(name string, eventHandler func([]frame), logger StdLogger) *eventDebouncer {

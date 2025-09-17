@@ -140,20 +140,19 @@ type SslOptions struct {
 }
 
 type ConnConfig struct {
-	ProtoVersion   int
-	CQLVersion     string
-	WriteTimeout   time.Duration
-	ReadTimeout    time.Duration
-	ConnectTimeout time.Duration
-	Dialer         Dialer
-	HostDialer     HostDialer
-	Compressor     Compressor
-	Authenticator  Authenticator
-	AuthProvider   func(h *HostInfo) (Authenticator, error)
-	Keepalive      time.Duration
-	Logger         StdLogger
-
+	Dialer          Dialer
+	Logger          StdLogger
+	Authenticator   Authenticator
+	Compressor      Compressor
+	HostDialer      HostDialer
+	AuthProvider    func(h *HostInfo) (Authenticator, error)
 	tlsConfig       *tls.Config
+	CQLVersion      string
+	ConnectTimeout  time.Duration
+	ReadTimeout     time.Duration
+	WriteTimeout    time.Duration
+	ProtoVersion    int
+	Keepalive       time.Duration
 	disableCoalesce bool
 }
 
@@ -189,52 +188,43 @@ type ConnInterface interface {
 // queries, but users are usually advised to use a more reliable, higher
 // level API.
 type Conn struct {
-	conn net.Conn
-	r    *bufio.Reader
-	w    contextWriter
-
-	systemRequestTimeout time.Duration
-	usingTimeoutClause   string
-	readTimeout          atomic.Int64
-	writeTimeout         atomic.Int64
-	cfg                  *ConnConfig
-	frameObserver        FrameHeaderObserver
-	streamObserver       StreamObserver
-
-	headerBuf [headSize]byte
-
-	streams *streams.IDGenerator
-	mu      sync.Mutex
+	auth           Authenticator
+	streamObserver StreamObserver
+	w              contextWriter
+	logger         StdLogger
+	frameObserver  FrameHeaderObserver
+	ctx            context.Context
+	errorHandler   ConnErrorHandler
+	compressor     Compressor
+	conn           net.Conn
+	cfg            *ConnConfig
+	supported      map[string][]string
+	streams        *streams.IDGenerator
+	host           *HostInfo
 	// calls stores a map from stream ID to callReq.
 	// This map is protected by mu.
 	// calls should not be used when closed is true, calls is set to nil when closed=true.
-	calls map[int]*callReq
-
-	errorHandler ConnErrorHandler
-	compressor   Compressor
-	auth         Authenticator
-	addr         string
-
-	version         uint8
-	currentKeyspace string
-	host            *HostInfo
-	supported       map[string][]string
-	scyllaSupported scyllaSupported
-	cqlProtoExts    []cqlProtocolExtension
-	isSchemaV2      bool
-
-	session *Session
-
+	calls                map[int]*callReq
+	r                    *bufio.Reader
+	session              *Session
+	cancel               context.CancelFunc
+	addr                 string
+	usingTimeoutClause   string
+	currentKeyspace      string
+	cqlProtoExts         []cqlProtocolExtension
+	scyllaSupported      scyllaSupported
+	systemRequestTimeout time.Duration
+	writeTimeout         atomic.Int64
+	timeouts             int64
+	readTimeout          atomic.Int64
+	mu                   sync.Mutex
+	tabletsRoutingV1     int32
+	headerBuf            [headSize]byte
 	// true if connection close process for the connection started.
 	// closed is protected by mu.
-	closed bool
-	ctx    context.Context
-	cancel context.CancelFunc
-
-	timeouts int64
-
-	logger           StdLogger
-	tabletsRoutingV1 int32
+	closed     bool
+	isSchemaV2 bool
+	version    uint8
 }
 
 func (c *Conn) getIsSchemaV2() bool {
@@ -887,16 +877,13 @@ func (c *Conn) releaseStream(call *callReq) {
 }
 
 type callReq struct {
+	// streamObserverContext is notified about events regarding this stream
+	streamObserverContext StreamObserverContext
 	// resp will receive the frame that was sent as a response to this stream.
 	resp     chan callResp
 	timeout  chan struct{} // indicates to recv() that a call has timed out
-	streamID int           // current stream in use
-
-	timer *time.Timer
-
-	// streamObserverContext is notified about events regarding this stream
-	streamObserverContext StreamObserverContext
-
+	timer    *time.Timer
+	streamID int // current stream in use
 	// streamObserverEndOnce ensures that either StreamAbandoned or StreamFinished is called,
 	// but not both.
 	streamObserverEndOnce sync.Once
@@ -932,14 +919,13 @@ type deadlineWriter interface {
 }
 
 type deadlineContextWriter struct {
-	w       deadlineWriter
-	timeout atomic.Int64
+	w deadlineWriter
 	// semaphore protects critical section for SetWriteDeadline/Write.
 	// It is a channel with capacity 1.
 	semaphore chan struct{}
-
 	// quit closed once the connection is closed.
-	quit chan struct{}
+	quit    chan struct{}
+	timeout atomic.Int64
 }
 
 func (c *deadlineContextWriter) setWriteTimeout(timeout time.Duration) {
@@ -985,17 +971,13 @@ func newWriteCoalescer(conn deadlineWriter, writeTimeout, coalesceDuration time.
 }
 
 type writeCoalescer struct {
-	c deadlineWriter
-
-	mu sync.Mutex
-
-	quit    <-chan struct{}
-	writeCh chan writeRequest
-
-	timeout atomic.Int64
-
+	c                deadlineWriter
+	quit             <-chan struct{}
+	writeCh          chan writeRequest
 	testEnqueuedHook func()
 	testFlushedHook  func()
+	timeout          atomic.Int64
+	mu               sync.Mutex
 }
 
 func (w *writeCoalescer) setWriteTimeout(timeout time.Duration) {
@@ -1010,8 +992,8 @@ type writeRequest struct {
 }
 
 type writeResult struct {
-	n   int
 	err error
+	n   int
 }
 
 // writeContext implements contextWriter.
@@ -1345,8 +1327,8 @@ type StreamObserverContext interface {
 
 type preparedStatment struct {
 	id       []byte
-	request  preparedMetadata
 	response resultMetadata
+	request  preparedMetadata
 }
 
 type inflightPrepare struct {
@@ -1869,9 +1851,9 @@ func getSchemaAgreement(queryLocalSchemasRows []string, querySystemPeersRows []s
 type schemaAgreementHost struct {
 	DataCenter    string
 	Rack          string
+	RPCAddress    string
 	HostID        UUID
 	SchemaVersion UUID
-	RPCAddress    string
 }
 
 func (h *schemaAgreementHost) IsValid() bool {

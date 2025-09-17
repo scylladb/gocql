@@ -395,10 +395,10 @@ func newSingleHost(info *HostInfo, maxRetries byte, retryDelay time.Duration) *s
 }
 
 type singleHost struct {
+	info       *HostInfo
+	delay      time.Duration
 	retry      byte
 	maxRetries byte
-	delay      time.Duration
-	info       *HostInfo
 }
 
 func (s *singleHost) selectHost() SelectedHost {
@@ -522,23 +522,20 @@ type clusterMeta struct {
 var MAX_IN_FLIGHT_THRESHOLD int = 10
 
 type tokenAwareHostPolicy struct {
-	fallback            HostSelectionPolicy
+	fallback HostSelectionPolicy
+	// atomic store for *clusterMeta
+	metadata            atomic.Value
+	logger              StdLogger
 	getKeyspaceMetadata func(keyspace string) (*KeyspaceMetadata, error)
 	getKeyspaceName     func() string
-
-	shuffleReplicas          bool
-	nonLocalReplicasFallback bool
-
+	hosts               cowHostList
+	partitioner         string
 	// mu protects writes to hosts, partitioner, metadata.
 	// reads can be unlocked as long as they are not used for updating state later.
-	mu          sync.Mutex
-	hosts       cowHostList
-	partitioner string
-	metadata    atomic.Value // *clusterMeta
-
-	logger StdLogger
-
-	avoidSlowReplicas bool
+	mu                       sync.Mutex
+	shuffleReplicas          bool
+	nonLocalReplicasFallback bool
+	avoidSlowReplicas        bool
 }
 
 func (t *tokenAwareHostPolicy) Init(s *Session) {
@@ -1011,14 +1008,14 @@ func (d *dcAwareRR) Pick(q ExecutableQuery) NextHost {
 // a different rack, before hosts in all other datacenters
 
 type rackAwareRR struct {
+	localDC   string
+	localRack string
+	hosts     []cowHostList
 	// lastUsedHostIdx keeps the index of the last used host.
 	// It is accessed atomically and needs to be aligned to 64 bits, so we
 	// keep it first in the struct. Do not move it or add new struct members
 	// before it.
 	lastUsedHostIdx   uint64
-	localDC           string
-	localRack         string
-	hosts             []cowHostList
 	disableDCFailover bool
 }
 

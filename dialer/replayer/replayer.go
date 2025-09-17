@@ -40,12 +40,12 @@ func NewConnectionReplayer(fname string) (net.Conn, error) {
 }
 
 type ConnectionReplayer struct {
+	gotRequest            chan struct{}
 	frames                []*FrameRecorded
 	frameIdsToReplay      []int
 	streamIdsToReplay     []int
 	frameIdx              int
 	frameResponsePosition int
-	gotRequest            chan struct{}
 	closed                bool
 }
 
@@ -220,6 +220,6 @@ func loadResponseFramesFromFiles(read_file, write_file string) ([]*FrameRecorded
 }
 
 type FrameRecorded struct {
-	Hash     int64
 	Response []byte
+	Hash     int64
 }
