@@ -11,116 +11,116 @@ import (
 
 var tablets = TabletInfoList{
 	{
-		"test1",
-		"table1",
-		-7917529027641081857,
-		-6917529027641081857,
-		[]ReplicaInfo{{tests.RandomUUID(), 9}},
+		keyspaceName: "test1",
+		tableName:    "table1",
+		replicas:     []ReplicaInfo{{tests.RandomUUID(), 9}},
+		firstToken:   -7917529027641081857,
+		lastToken:    -6917529027641081857,
 	},
 	{
-		"test1",
-		"table1",
-		-6917529027641081857,
-		-4611686018427387905,
-		[]ReplicaInfo{{tests.RandomUUID(), 8}},
+		keyspaceName: "test1",
+		tableName:    "table1",
+		replicas:     []ReplicaInfo{{tests.RandomUUID(), 8}},
+		firstToken:   -6917529027641081857,
+		lastToken:    -4611686018427387905,
 	},
 	{
-		"test1",
-		"table1",
-		-4611686018427387905,
-		-2305843009213693953,
-		[]ReplicaInfo{{tests.RandomUUID(), 9}},
+		keyspaceName: "test1",
+		tableName:    "table1",
+		replicas:     []ReplicaInfo{{tests.RandomUUID(), 9}},
+		firstToken:   -4611686018427387905,
+		lastToken:    -2305843009213693953,
 	},
 	{
-		"test1",
-		"table1",
-		-2305843009213693953,
-		-1,
-		[]ReplicaInfo{{tests.RandomUUID(), 8}},
+		keyspaceName: "test1",
+		tableName:    "table1",
+		replicas:     []ReplicaInfo{{tests.RandomUUID(), 8}},
+		firstToken:   -2305843009213693953,
+		lastToken:    -1,
 	},
 	{
-		"test1",
-		"table1",
-		-1,
-		2305843009213693951,
-		[]ReplicaInfo{{tests.RandomUUID(), 3}},
+		keyspaceName: "test1",
+		tableName:    "table1",
+		replicas:     []ReplicaInfo{{tests.RandomUUID(), 3}},
+		firstToken:   -1,
+		lastToken:    2305843009213693951,
 	},
 	{
-		"test1",
-		"table1",
-		2305843009213693951,
-		4611686018427387903,
-		[]ReplicaInfo{{tests.RandomUUID(), 3}},
+		keyspaceName: "test1",
+		tableName:    "table1",
+		replicas:     []ReplicaInfo{{tests.RandomUUID(), 3}},
+		firstToken:   2305843009213693951,
+		lastToken:    4611686018427387903,
 	},
 	{
-		"test1",
-		"table1",
-		4611686018427387903,
-		6917529027641081855,
-		[]ReplicaInfo{{tests.RandomUUID(), 7}},
+		keyspaceName: "test1",
+		tableName:    "table1",
+		replicas:     []ReplicaInfo{{tests.RandomUUID(), 7}},
+		firstToken:   4611686018427387903,
+		lastToken:    6917529027641081855,
 	},
 	{
-		"test1",
-		"table1",
-		6917529027641081855,
-		9223372036854775807,
-		[]ReplicaInfo{{tests.RandomUUID(), 7}},
+		keyspaceName: "test1",
+		tableName:    "table1",
+		replicas:     []ReplicaInfo{{tests.RandomUUID(), 7}},
+		firstToken:   6917529027641081855,
+		lastToken:    9223372036854775807,
 	},
 	{
-		"test2",
-		"table1",
-		-7917529027641081857,
-		-6917529027641081857,
-		[]ReplicaInfo{{tests.RandomUUID(), 9}},
+		keyspaceName: "test2",
+		tableName:    "table1",
+		replicas:     []ReplicaInfo{{tests.RandomUUID(), 9}},
+		firstToken:   -7917529027641081857,
+		lastToken:    -6917529027641081857,
 	},
 	{
-		"test2",
-		"table1",
-		-6917529027641081857,
-		-4611686018427387905,
-		[]ReplicaInfo{{tests.RandomUUID(), 8}},
+		keyspaceName: "test2",
+		tableName:    "table1",
+		replicas:     []ReplicaInfo{{tests.RandomUUID(), 8}},
+		firstToken:   -6917529027641081857,
+		lastToken:    -4611686018427387905,
 	},
 	{
-		"test2",
-		"table1",
-		-4611686018427387905,
-		-2305843009213693953,
-		[]ReplicaInfo{{tests.RandomUUID(), 9}},
+		keyspaceName: "test2",
+		tableName:    "table1",
+		replicas:     []ReplicaInfo{{tests.RandomUUID(), 9}},
+		firstToken:   -4611686018427387905,
+		lastToken:    -2305843009213693953,
 	},
 	{
-		"test2",
-		"table1",
-		-2305843009213693953,
-		-1,
-		[]ReplicaInfo{{tests.RandomUUID(), 8}},
+		keyspaceName: "test2",
+		tableName:    "table1",
+		replicas:     []ReplicaInfo{{tests.RandomUUID(), 8}},
+		firstToken:   -2305843009213693953,
+		lastToken:    -1,
 	},
 	{
-		"test2",
-		"table1",
-		-1,
-		2305843009213693951,
-		[]ReplicaInfo{{tests.RandomUUID(), 3}},
+		keyspaceName: "test2",
+		tableName:    "table1",
+		replicas:     []ReplicaInfo{{tests.RandomUUID(), 3}},
+		firstToken:   -1,
+		lastToken:    2305843009213693951,
 	},
 	{
-		"test2",
-		"table1",
-		2305843009213693951,
-		4611686018427387903,
-		[]ReplicaInfo{{tests.RandomUUID(), 3}},
+		keyspaceName: "test2",
+		tableName:    "table1",
+		replicas:     []ReplicaInfo{{tests.RandomUUID(), 3}},
+		firstToken:   2305843009213693951,
+		lastToken:    4611686018427387903,
 	},
 	{
-		"test2",
-		"table1",
-		4611686018427387903,
-		6917529027641081855,
-		[]ReplicaInfo{{tests.RandomUUID(), 7}},
+		keyspaceName: "test2",
+		tableName:    "table1",
+		replicas:     []ReplicaInfo{{tests.RandomUUID(), 7}},
+		firstToken:   4611686018427387903,
+		lastToken:    6917529027641081855,
 	},
 	{
-		"test2",
-		"table1",
-		6917529027641081855,
-		9223372036854775807,
-		[]ReplicaInfo{{tests.RandomUUID(), 7}},
+		keyspaceName: "test2",
+		tableName:    "table1",
+		replicas:     []ReplicaInfo{{tests.RandomUUID(), 7}},
+		firstToken:   6917529027641081855,
+		lastToken:    9223372036854775807,
 	},
 }
 
@@ -171,11 +171,11 @@ func TestAddTabletToEmptyTablets(t *testing.T) {
 	tablets := TabletInfoList{}
 
 	tablets = tablets.AddTabletToTabletsList(&TabletInfo{
-		"test_ks",
-		"test_tb",
-		-6917529027641081857,
-		-4611686018427387905,
-		[]ReplicaInfo{},
+		keyspaceName: "test_ks",
+		tableName:    "test_tb",
+		replicas:     []ReplicaInfo{},
+		firstToken:   -6917529027641081857,
+		lastToken:    -4611686018427387905,
 	})
 
 	tests.AssertTrue(t, "Token range in tablets table not correct", CompareRanges(tablets, [][]int64{{-6917529027641081857, -4611686018427387905}}))
@@ -185,19 +185,19 @@ func TestAddTabletAtTheBeggining(t *testing.T) {
 	t.Parallel()
 
 	tablets := TabletInfoList{{
-		"test_ks",
-		"test_tb",
-		-6917529027641081857,
-		-4611686018427387905,
-		[]ReplicaInfo{},
+		keyspaceName: "test_ks",
+		tableName:    "test_tb",
+		replicas:     []ReplicaInfo{},
+		firstToken:   -6917529027641081857,
+		lastToken:    -4611686018427387905,
 	}}
 
 	tablets = tablets.AddTabletToTabletsList(&TabletInfo{
-		"test_ks",
-		"test_tb",
-		-8611686018427387905,
-		-7917529027641081857,
-		[]ReplicaInfo{},
+		keyspaceName: "test_ks",
+		tableName:    "test_tb",
+		replicas:     []ReplicaInfo{},
+		firstToken:   -8611686018427387905,
+		lastToken:    -7917529027641081857,
 	})
 
 	tests.AssertTrue(t, "Token range in tablets table not correct",
@@ -208,19 +208,19 @@ func TestAddTabletAtTheEnd(t *testing.T) {
 	t.Parallel()
 
 	tablets := TabletInfoList{{
-		"test_ks",
-		"test_tb",
-		-6917529027641081857,
-		-4611686018427387905,
-		[]ReplicaInfo{},
+		keyspaceName: "test_ks",
+		tableName:    "test_tb",
+		replicas:     []ReplicaInfo{},
+		firstToken:   -6917529027641081857,
+		lastToken:    -4611686018427387905,
 	}}
 
 	tablets = tablets.AddTabletToTabletsList(&TabletInfo{
-		"test_ks",
-		"test_tb",
-		-1,
-		2305843009213693951,
-		[]ReplicaInfo{},
+		keyspaceName: "test_ks",
+		tableName:    "test_tb",
+		replicas:     []ReplicaInfo{},
+		firstToken:   -1,
+		lastToken:    2305843009213693951,
 	})
 
 	tests.AssertTrue(t, "Token range in tablets table not correct", CompareRanges(tablets, [][]int64{{-6917529027641081857, -4611686018427387905},
@@ -231,25 +231,25 @@ func TestAddTabletInTheMiddle(t *testing.T) {
 	t.Parallel()
 
 	tablets := TabletInfoList{{
-		"test_ks",
-		"test_tb",
-		-6917529027641081857,
-		-4611686018427387905,
-		[]ReplicaInfo{},
+		keyspaceName: "test_ks",
+		tableName:    "test_tb",
+		replicas:     []ReplicaInfo{},
+		firstToken:   -6917529027641081857,
+		lastToken:    -4611686018427387905,
 	}, {
-		"test_ks",
-		"test_tb",
-		-1,
-		2305843009213693951,
-		[]ReplicaInfo{},
+		keyspaceName: "test_ks",
+		tableName:    "test_tb",
+		replicas:     []ReplicaInfo{},
+		firstToken:   -1,
+		lastToken:    2305843009213693951,
 	}}
 
 	tablets = tablets.AddTabletToTabletsList(&TabletInfo{
-		"test_ks",
-		"test_tb",
-		-4611686018427387905,
-		-2305843009213693953,
-		[]ReplicaInfo{},
+		keyspaceName: "test_ks",
+		tableName:    "test_tb",
+		replicas:     []ReplicaInfo{},
+		firstToken:   -4611686018427387905,
+		lastToken:    -2305843009213693953,
 	})
 
 	tests.AssertTrue(t, "Token range in tablets table not correct", CompareRanges(tablets, [][]int64{{-6917529027641081857, -4611686018427387905},
@@ -261,37 +261,37 @@ func TestAddTabletIntersecting(t *testing.T) {
 	t.Parallel()
 
 	tablets := TabletInfoList{{
-		"test_ks",
-		"test_tb",
-		-6917529027641081857,
-		-4611686018427387905,
-		[]ReplicaInfo{},
+		keyspaceName: "test_ks",
+		tableName:    "test_tb",
+		replicas:     []ReplicaInfo{},
+		firstToken:   -6917529027641081857,
+		lastToken:    -4611686018427387905,
 	}, {
-		"test_ks",
-		"test_tb",
-		-4611686018427387905,
-		-2305843009213693953,
-		[]ReplicaInfo{},
+		keyspaceName: "test_ks",
+		tableName:    "test_tb",
+		replicas:     []ReplicaInfo{},
+		firstToken:   -4611686018427387905,
+		lastToken:    -2305843009213693953,
 	}, {
-		"test_ks",
-		"test_tb",
-		-2305843009213693953,
-		-1,
-		[]ReplicaInfo{},
+		keyspaceName: "test_ks",
+		tableName:    "test_tb",
+		replicas:     []ReplicaInfo{},
+		firstToken:   -2305843009213693953,
+		lastToken:    -1,
 	}, {
-		"test_ks",
-		"test_tb",
-		-1,
-		2305843009213693951,
-		[]ReplicaInfo{},
+		keyspaceName: "test_ks",
+		tableName:    "test_tb",
+		replicas:     []ReplicaInfo{},
+		firstToken:   -1,
+		lastToken:    2305843009213693951,
 	}}
 
 	tablets = tablets.AddTabletToTabletsList(&TabletInfo{
-		"test_ks",
-		"test_tb",
-		-3611686018427387905,
-		-6,
-		[]ReplicaInfo{},
+		keyspaceName: "test_ks",
+		tableName:    "test_tb",
+		replicas:     []ReplicaInfo{},
+		firstToken:   -3611686018427387905,
+		lastToken:    -6,
 	})
 
 	tests.AssertTrue(t, "Token range in tablets table not correct",
@@ -304,25 +304,25 @@ func TestAddTabletIntersectingWithFirst(t *testing.T) {
 	t.Parallel()
 
 	tablets := TabletInfoList{{
-		"test_ks",
-		"test_tb",
-		-8611686018427387905,
-		-7917529027641081857,
-		[]ReplicaInfo{},
+		keyspaceName: "test_ks",
+		tableName:    "test_tb",
+		replicas:     []ReplicaInfo{},
+		firstToken:   -8611686018427387905,
+		lastToken:    -7917529027641081857,
 	}, {
-		"test_ks",
-		"test_tb",
-		-6917529027641081857,
-		-4611686018427387905,
-		[]ReplicaInfo{},
+		keyspaceName: "test_ks",
+		tableName:    "test_tb",
+		replicas:     []ReplicaInfo{},
+		firstToken:   -6917529027641081857,
+		lastToken:    -4611686018427387905,
 	}}
 
 	tablets = tablets.AddTabletToTabletsList(&TabletInfo{
-		"test_ks",
-		"test_tb",
-		-8011686018427387905,
-		-7987529027641081857,
-		[]ReplicaInfo{},
+		keyspaceName: "test_ks",
+		tableName:    "test_tb",
+		replicas:     []ReplicaInfo{},
+		firstToken:   -8011686018427387905,
+		lastToken:    -7987529027641081857,
 	})
 
 	tests.AssertTrue(t, "Token range in tablets table not correct", CompareRanges(tablets, [][]int64{{-8011686018427387905, -7987529027641081857},
@@ -333,25 +333,25 @@ func TestAddTabletIntersectingWithLast(t *testing.T) {
 	t.Parallel()
 
 	tablets := TabletInfoList{{
-		"test_ks",
-		"test_tb",
-		-8611686018427387905,
-		-7917529027641081857,
-		[]ReplicaInfo{},
+		keyspaceName: "test_ks",
+		tableName:    "test_tb",
+		replicas:     []ReplicaInfo{},
+		firstToken:   -8611686018427387905,
+		lastToken:    -7917529027641081857,
 	}, {
-		"test_ks",
-		"test_tb",
-		-6917529027641081857,
-		-4611686018427387905,
-		[]ReplicaInfo{},
+		keyspaceName: "test_ks",
+		tableName:    "test_tb",
+		replicas:     []ReplicaInfo{},
+		firstToken:   -6917529027641081857,
+		lastToken:    -4611686018427387905,
 	}}
 
 	tablets = tablets.AddTabletToTabletsList(&TabletInfo{
-		"test_ks",
-		"test_tb",
-		-5011686018427387905,
-		-2987529027641081857,
-		[]ReplicaInfo{},
+		keyspaceName: "test_ks",
+		tableName:    "test_tb",
+		replicas:     []ReplicaInfo{},
+		firstToken:   -5011686018427387905,
+		lastToken:    -2987529027641081857,
 	})
 
 	tests.AssertTrue(t, "Token range in tablets table not correct", CompareRanges(tablets, [][]int64{{-8611686018427387905, -7917529027641081857},
@@ -364,23 +364,23 @@ func TestRemoveTabletsWithHost(t *testing.T) {
 	removed_host_id := tests.RandomUUID()
 
 	tablets := TabletInfoList{{
-		"test_ks",
-		"test_tb",
-		-8611686018427387905,
-		-7917529027641081857,
-		[]ReplicaInfo{{tests.RandomUUID(), 9}, {tests.RandomUUID(), 8}, {tests.RandomUUID(), 3}},
+		keyspaceName: "test_ks",
+		tableName:    "test_tb",
+		firstToken:   -8611686018427387905,
+		lastToken:    -7917529027641081857,
+		replicas:     []ReplicaInfo{{tests.RandomUUID(), 9}, {tests.RandomUUID(), 8}, {tests.RandomUUID(), 3}},
 	}, {
-		"test_ks",
-		"test_tb",
-		-6917529027641081857,
-		-4611686018427387905,
-		[]ReplicaInfo{{removed_host_id, 9}, {tests.RandomUUID(), 8}, {tests.RandomUUID(), 3}},
+		keyspaceName: "test_ks",
+		tableName:    "test_tb",
+		firstToken:   -6917529027641081857,
+		lastToken:    -4611686018427387905,
+		replicas:     []ReplicaInfo{{removed_host_id, 9}, {tests.RandomUUID(), 8}, {tests.RandomUUID(), 3}},
 	}, {
-		"test_ks",
-		"test_tb",
-		-4611686018427387905,
-		-2305843009213693953,
-		[]ReplicaInfo{{tests.RandomUUID(), 9}, {removed_host_id, 8}, {tests.RandomUUID(), 3}},
+		keyspaceName: "test_ks",
+		tableName:    "test_tb",
+		firstToken:   -4611686018427387905,
+		lastToken:    -2305843009213693953,
+		replicas:     []ReplicaInfo{{tests.RandomUUID(), 9}, {removed_host_id, 8}, {tests.RandomUUID(), 3}},
 	}}
 
 	tablets = tablets.RemoveTabletsWithHost(removed_host_id)
@@ -392,23 +392,23 @@ func TestRemoveTabletsWithKeyspace(t *testing.T) {
 	t.Parallel()
 
 	tablets := TabletInfoList{{
-		"removed_ks",
-		"test_tb",
-		-8611686018427387905,
-		-7917529027641081857,
-		[]ReplicaInfo{{tests.RandomUUID(), 9}, {tests.RandomUUID(), 8}, {tests.RandomUUID(), 3}},
+		keyspaceName: "removed_ks",
+		tableName:    "test_tb",
+		firstToken:   -8611686018427387905,
+		lastToken:    -7917529027641081857,
+		replicas:     []ReplicaInfo{{tests.RandomUUID(), 9}, {tests.RandomUUID(), 8}, {tests.RandomUUID(), 3}},
 	}, {
-		"removed_ks",
-		"test_tb",
-		-6917529027641081857,
-		-4611686018427387905,
-		[]ReplicaInfo{{tests.RandomUUID(), 9}, {tests.RandomUUID(), 8}, {tests.RandomUUID(), 3}},
+		keyspaceName: "removed_ks",
+		tableName:    "test_tb",
+		firstToken:   -6917529027641081857,
+		lastToken:    -4611686018427387905,
+		replicas:     []ReplicaInfo{{tests.RandomUUID(), 9}, {tests.RandomUUID(), 8}, {tests.RandomUUID(), 3}},
 	}, {
-		"test_ks",
-		"test_tb",
-		-4611686018427387905,
-		-2305843009213693953,
-		[]ReplicaInfo{{tests.RandomUUID(), 9}, {tests.RandomUUID(), 8}, {tests.RandomUUID(), 3}},
+		keyspaceName: "test_ks",
+		tableName:    "test_tb",
+		firstToken:   -4611686018427387905,
+		lastToken:    -2305843009213693953,
+		replicas:     []ReplicaInfo{{tests.RandomUUID(), 9}, {tests.RandomUUID(), 8}, {tests.RandomUUID(), 3}},
 	}}
 
 	tablets = tablets.RemoveTabletsWithKeyspace("removed_ks")
@@ -420,23 +420,23 @@ func TestRemoveTabletsWithTable(t *testing.T) {
 	t.Parallel()
 
 	tablets := TabletInfoList{{
-		"test_ks",
-		"test_tb",
-		-8611686018427387905,
-		-7917529027641081857,
-		[]ReplicaInfo{{tests.RandomUUID(), 9}, {tests.RandomUUID(), 8}, {tests.RandomUUID(), 3}},
+		keyspaceName: "test_ks",
+		tableName:    "test_tb",
+		firstToken:   -8611686018427387905,
+		lastToken:    -7917529027641081857,
+		replicas:     []ReplicaInfo{{tests.RandomUUID(), 9}, {tests.RandomUUID(), 8}, {tests.RandomUUID(), 3}},
 	}, {
-		"test_ks",
-		"test_tb",
-		-6917529027641081857,
-		-4611686018427387905,
-		[]ReplicaInfo{{tests.RandomUUID(), 9}, {tests.RandomUUID(), 8}, {tests.RandomUUID(), 3}},
+		keyspaceName: "test_ks",
+		tableName:    "test_tb",
+		firstToken:   -6917529027641081857,
+		lastToken:    -4611686018427387905,
+		replicas:     []ReplicaInfo{{tests.RandomUUID(), 9}, {tests.RandomUUID(), 8}, {tests.RandomUUID(), 3}},
 	}, {
-		"test_ks",
-		"removed_tb",
-		-4611686018427387905,
-		-2305843009213693953,
-		[]ReplicaInfo{{tests.RandomUUID(), 9}, {tests.RandomUUID(), 8}, {tests.RandomUUID(), 3}},
+		keyspaceName: "test_ks",
+		tableName:    "removed_tb",
+		firstToken:   -4611686018427387905,
+		lastToken:    -2305843009213693953,
+		replicas:     []ReplicaInfo{{tests.RandomUUID(), 9}, {tests.RandomUUID(), 8}, {tests.RandomUUID(), 3}},
 	}}
 
 	tablets = tablets.RemoveTabletsWithTableFromTabletsList("test_ks", "removed_tb")

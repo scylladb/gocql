@@ -73,15 +73,12 @@ type controlConnection interface {
 // Ensure that the atomic variable is aligned to a 64bit boundary
 // so that atomic operations can be applied on 32bit architectures.
 type controlConn struct {
+	conn         atomic.Value
+	retry        RetryPolicy
+	session      *Session
+	quit         chan struct{}
 	state        int32
 	reconnecting int32
-
-	session *Session
-	conn    atomic.Value
-
-	retry RetryPolicy
-
-	quit chan struct{}
 }
 
 func (c *controlConn) getSession() *Session {

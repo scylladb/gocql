@@ -31,12 +31,11 @@ import (
 )
 
 type OneConnTestServer struct {
-	Err  error
-	Addr net.IP
-	Port int
-
+	Err        error
 	listener   net.Listener
 	acceptChan chan struct{}
+	Addr       net.IP
+	Port       int
 	mu         sync.Mutex
 	closed     bool
 }

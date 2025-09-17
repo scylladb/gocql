@@ -56,8 +56,10 @@ const (
 )
 
 type cassVersion struct {
-	Major, Minor, Patch int
-	Qualifier           string
+	Qualifier string
+	Major     int
+	Minor     int
+	Patch     int
 }
 
 func (c *cassVersion) Set(v string) error {
@@ -149,33 +151,32 @@ func (c cassVersion) nodeUpDelay() time.Duration {
 }
 
 type HostInfo struct {
+	dseVersion                 string
+	hostId                     string
+	dataCenter                 string
+	schemaVersion              string
+	hostname                   string
+	clusterName                string
+	partitioner                string
+	rack                       string
+	workload                   string
+	tokens                     []string
+	preferredIP                net.IP
+	broadcastAddress           net.IP
+	rpcAddress                 net.IP
+	untranslatedConnectAddress net.IP
+	peer                       net.IP
+	listenAddress              net.IP
+	connectAddress             net.IP
+	version                    cassVersion
+	port                       int
 	// TODO(zariel): reduce locking maybe, not all values will change, but to ensure
 	// that we are thread safe use a mutex to access all fields.
-	mu                         sync.RWMutex
-	hostname                   string
-	peer                       net.IP
-	broadcastAddress           net.IP
-	listenAddress              net.IP
-	rpcAddress                 net.IP
-	preferredIP                net.IP
-	connectAddress             net.IP
-	untranslatedConnectAddress net.IP
-	port                       int
-	dataCenter                 string
-	rack                       string
-	hostId                     string
-	workload                   string
-	graph                      bool
-	dseVersion                 string
-	partitioner                string
-	clusterName                string
-	version                    cassVersion
-	state                      nodeState
-	schemaVersion              string
-	tokens                     []string
-
+	mu                      sync.RWMutex
+	state                   nodeState
 	scyllaShardAwarePort    uint16
 	scyllaShardAwarePortTLS uint16
+	graph                   bool
 }
 
 func (h *HostInfo) Equal(host *HostInfo) bool {

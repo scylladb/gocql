@@ -14,9 +14,9 @@ func TestMarshalVarIntCorrupt(t *testing.T) {
 	t.Parallel()
 
 	type testSuite struct {
-		name      string
 		marshal   func(interface{}) ([]byte, error)
 		unmarshal func(bytes []byte, i interface{}) error
+		name      string
 	}
 
 	tType := gocql.NewNativeType(4, gocql.TypeVarint, "")

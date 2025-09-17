@@ -5,8 +5,8 @@ import (
 )
 
 type Record struct {
-	StreamID int    `json:"stream_id"`
 	Data     []byte `json:"data"`
+	StreamID int    `json:"stream_id"`
 }
 
 type frameOp byte

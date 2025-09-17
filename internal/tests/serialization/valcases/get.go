@@ -8,8 +8,8 @@ type SimpleTypes []SimpleTypeCases
 
 type SimpleTypeCases struct {
 	CQLName string
-	CQLType int
 	Cases   []SimpleTypeCase
+	CQLType int
 }
 
 type SimpleTypeCase struct {
@@ -19,8 +19,8 @@ type SimpleTypeCase struct {
 }
 
 type LangCase struct {
-	LangType  string
 	Value     interface{}
+	LangType  string
 	ErrInsert bool
 	ErrSelect bool
 }

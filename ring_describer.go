@@ -10,18 +10,17 @@ import (
 
 // Polls system.peers at a specific interval to find new hosts
 type ringDescriber struct {
-	control         controlConnection
-	cfg             *ClusterConfig
-	logger          StdLogger
-	mu              sync.RWMutex
-	prevHosts       []*HostInfo
-	prevPartitioner string
-
+	control controlConnection
+	logger  StdLogger
+	cfg     *ClusterConfig
 	// hosts are the set of all hosts in the cassandra ring that we know of.
 	// key of map is host_id.
 	hosts map[string]*HostInfo
 	// hostIPToUUID maps host native address to host_id.
-	hostIPToUUID map[string]string
+	hostIPToUUID    map[string]string
+	prevPartitioner string
+	prevHosts       []*HostInfo
+	mu              sync.RWMutex
 }
 
 func (r *ringDescriber) setControlConn(c controlConnection) {

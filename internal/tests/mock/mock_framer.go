@@ -1,8 +1,8 @@
 package mock
 
 type MockFramer struct {
-	pos  int
 	Data [][]byte
+	pos  int
 }
 
 func (m *MockFramer) ReadBytesInternal() ([]byte, error) {

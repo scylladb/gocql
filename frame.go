@@ -48,8 +48,8 @@ type unsetColumn struct{}
 var UnsetValue = unsetColumn{}
 
 type namedValue struct {
-	name  string
 	value interface{}
+	name  string
 }
 
 // NamedValue produce a value which will bind to the named parameter in a query
@@ -304,12 +304,12 @@ func readInt(p []byte) int32 {
 }
 
 type frameHeader struct {
+	warnings []string
+	stream   int
+	length   int
 	version  protoVersion
 	flags    byte
-	stream   int
 	op       frameOp
-	length   int
-	warnings []string
 }
 
 func (f frameHeader) String() string {
@@ -323,19 +323,17 @@ func (f frameHeader) Header() frameHeader {
 const defaultBufSize = 128
 
 type ObservedFrameHeader struct {
-	Version protoVersion
-	Flags   byte
-	Stream  int16
-	Opcode  frameOp
-	Length  int32
-
 	// StartHeader is the time we started reading the frame header off the network connection.
 	Start time.Time
 	// EndHeader is the time we finished reading the frame header off the network connection.
 	End time.Time
-
 	// Host is Host of the connection the frame header was read from.
-	Host *HostInfo
+	Host    *HostInfo
+	Length  int32
+	Stream  int16
+	Version protoVersion
+	Flags   byte
+	Opcode  frameOp
 }
 
 func (f ObservedFrameHeader) String() string {
@@ -360,27 +358,22 @@ const headSize = 9
 
 // a framer is responsible for reading, writing and parsing frames on a single stream
 type framer struct {
-	proto byte
-	// flags are for outgoing flags, enabling compression and tracing etc
-	flags   byte
 	compres Compressor
 	// if this frame was read then the header will be here
-	header *frameHeader
-
+	header        *frameHeader
+	customPayload map[string][]byte
 	// if tracing flag is set this is not nil
 	traceID []byte
-
 	// holds a ref to the whole byte slice for buf so that it can be reset to
 	// 0 after a read.
-	readBuffer []byte
-
-	buf []byte
-
-	customPayload map[string][]byte
-
+	readBuffer            []byte
+	buf                   []byte
 	flagLWT               int
 	rateLimitingErrorCode int
-	tabletsRoutingV1      bool
+	proto                 byte
+	// flags are for outgoing flags, enabling compression and tracing etc
+	flags            byte
+	tabletsRoutingV1 bool
 }
 
 func newFramer(compressor Compressor, version byte) *framer {
@@ -800,9 +793,8 @@ func (f *framer) parseReadyFrame() frame {
 }
 
 type supportedFrame struct {
-	frameHeader
-
 	supported map[string][]string
+	frameHeader
 }
 
 // TODO: if we move the body buffer onto the frameHeader then we only need a single
@@ -831,9 +823,9 @@ func (w *writeStartupFrame) buildFrame(f *framer, streamID int) error {
 }
 
 type writePrepareFrame struct {
+	customPayload map[string][]byte
 	statement     string
 	keyspace      string
-	customPayload map[string][]byte
 }
 
 func (w *writePrepareFrame) buildFrame(f *framer, streamID int) error {
@@ -927,17 +919,13 @@ func (f *framer) readTypeInfo() TypeInfo {
 }
 
 type preparedMetadata struct {
-	resultMetadata
-
-	// LWT query detected
-	lwt bool
-
+	keyspace string
+	table    string
 	// proto v4+
 	pkeyColumns []int
-
-	keyspace string
-
-	table string
+	resultMetadata
+	// LWT query detected
+	lwt bool
 }
 
 func (r preparedMetadata) String() string {
@@ -1004,17 +992,13 @@ func (f *framer) parsePreparedMetadata() preparedMetadata {
 }
 
 type resultMetadata struct {
-	flags int
-
-	// only if flagPageState
 	pagingState []byte
-
-	columns  []ColumnInfo
-	colCount int
-
 	// this is a count of the total number of columns which can be scanned,
 	// it is at minimum len(columns) but may be larger, for instance when a column
 	// is a UDT or tuple.
+	columns        []ColumnInfo
+	flags          int
+	colCount       int
 	actualColCount int
 }
 
@@ -1145,8 +1129,8 @@ func (f *framer) parseResultRows() frame {
 }
 
 type resultKeyspaceFrame struct {
-	frameHeader
 	keyspace string
+	frameHeader
 }
 
 func (r *resultKeyspaceFrame) String() string {
@@ -1161,11 +1145,10 @@ func (f *framer) parseResultSetKeyspace() frame {
 }
 
 type resultPreparedFrame struct {
-	frameHeader
-
 	preparedID []byte
-	reqMeta    preparedMetadata
 	respMeta   resultMetadata
+	frameHeader
+	reqMeta preparedMetadata
 }
 
 func (f *framer) parseResultPrepared() frame {
@@ -1181,10 +1164,9 @@ func (f *framer) parseResultPrepared() frame {
 }
 
 type schemaChangeKeyspace struct {
-	frameHeader
-
 	change   string
 	keyspace string
+	frameHeader
 }
 
 func (f schemaChangeKeyspace) String() string {
@@ -1192,11 +1174,10 @@ func (f schemaChangeKeyspace) String() string {
 }
 
 type schemaChangeTable struct {
-	frameHeader
-
 	change   string
 	keyspace string
 	object   string
+	frameHeader
 }
 
 func (f schemaChangeTable) String() string {
@@ -1204,29 +1185,26 @@ func (f schemaChangeTable) String() string {
 }
 
 type schemaChangeType struct {
-	frameHeader
-
 	change   string
 	keyspace string
 	object   string
+	frameHeader
 }
 
 type schemaChangeFunction struct {
-	frameHeader
-
 	change   string
 	keyspace string
 	name     string
 	args     []string
+	frameHeader
 }
 
 type schemaChangeAggregate struct {
-	frameHeader
-
 	change   string
 	keyspace string
 	name     string
 	args     []string
+	frameHeader
 }
 
 func (f *framer) parseResultSchemaChange() frame {
@@ -1293,9 +1271,8 @@ func (f *framer) parseResultSchemaChange() frame {
 }
 
 type authenticateFrame struct {
-	frameHeader
-
 	class string
+	frameHeader
 }
 
 func (a *authenticateFrame) String() string {
@@ -1310,9 +1287,8 @@ func (f *framer) parseAuthenticateFrame() frame {
 }
 
 type authSuccessFrame struct {
-	frameHeader
-
 	data []byte
+	frameHeader
 }
 
 func (a *authSuccessFrame) String() string {
@@ -1327,9 +1303,8 @@ func (f *framer) parseAuthSuccessFrame() frame {
 }
 
 type authChallengeFrame struct {
-	frameHeader
-
 	data []byte
+	frameHeader
 }
 
 func (a *authChallengeFrame) String() string {
@@ -1344,11 +1319,10 @@ func (f *framer) parseAuthChallengeFrame() frame {
 }
 
 type statusChangeEventFrame struct {
-	frameHeader
-
 	change string
 	host   net.IP
-	port   int
+	frameHeader
+	port int
 }
 
 func (t statusChangeEventFrame) String() string {
@@ -1357,11 +1331,10 @@ func (t statusChangeEventFrame) String() string {
 
 // essentially the same as statusChange
 type topologyChangeEventFrame struct {
-	frameHeader
-
 	change string
 	host   net.IP
-	port   int
+	frameHeader
+	port int
 }
 
 func (t topologyChangeEventFrame) String() string {
@@ -1412,26 +1385,21 @@ func (f *framer) writeAuthResponseFrame(streamID int, data []byte) error {
 }
 
 type queryValues struct {
-	value []byte
-
-	// optional name, will set With names for values flag
 	name    string
+	value   []byte
 	isUnset bool
 }
 
 type queryParams struct {
-	consistency Consistency
-	// v2+
-	skipMeta          bool
-	values            []queryValues
-	pageSize          int
-	pagingState       []byte
-	serialConsistency Consistency
-	// v3+
-	defaultTimestamp      bool
+	keyspace              string
+	values                []queryValues
+	pagingState           []byte
+	pageSize              int
 	defaultTimestampValue int64
-	// v5+
-	keyspace string
+	consistency           Consistency
+	serialConsistency     Consistency
+	skipMeta              bool
+	defaultTimestamp      bool
 }
 
 func (q queryParams) String() string {
@@ -1529,11 +1497,9 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 }
 
 type writeQueryFrame struct {
-	statement string
-	params    queryParams
-
-	// v4+
 	customPayload map[string][]byte
+	statement     string
+	params        queryParams
 }
 
 func (w *writeQueryFrame) String() string {
@@ -1567,11 +1533,9 @@ func (f frameWriterFunc) buildFrame(framer *framer, streamID int) error {
 }
 
 type writeExecuteFrame struct {
-	preparedID []byte
-	params     queryParams
-
-	// v4+
 	customPayload map[string][]byte
+	preparedID    []byte
+	params        queryParams
 }
 
 func (e *writeExecuteFrame) String() string {
@@ -1603,17 +1567,13 @@ type batchStatment struct {
 }
 
 type writeBatchFrame struct {
-	typ         BatchType
-	statements  []batchStatment
-	consistency Consistency
-
-	// v3+
-	serialConsistency     Consistency
-	defaultTimestamp      bool
+	customPayload         map[string][]byte
+	statements            []batchStatment
 	defaultTimestampValue int64
-
-	//v4+
-	customPayload map[string][]byte
+	consistency           Consistency
+	serialConsistency     Consistency
+	typ                   BatchType
+	defaultTimestamp      bool
 }
 
 func (w *writeBatchFrame) buildFrame(framer *framer, streamID int) error {

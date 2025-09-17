@@ -34,13 +34,12 @@ const bucketBits = 64
 
 // IDGenerator tracks and allocates streams which are in use.
 type IDGenerator struct {
+	// streams is a bitset where each bit represents a stream, a 1 implies in use
+	streams      []uint64
 	NumStreams   int
 	inuseStreams int32
 	numBuckets   uint32
-
-	// streams is a bitset where each bit represents a stream, a 1 implies in use
-	streams []uint64
-	offset  uint32
+	offset       uint32
 }
 
 func New() *IDGenerator {

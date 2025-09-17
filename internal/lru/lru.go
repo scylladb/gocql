@@ -50,21 +50,19 @@ import "container/list"
 // specialized with string keys to avoid the allocations caused by wrapping them
 // in interface{}.
 type Cache struct {
-	// MaxEntries is the maximum number of cache entries before
-	// an item is evicted. Zero means no limit.
-	MaxEntries int
-
 	// OnEvicted optionally specifies a callback function to be
 	// executed when an entry is purged from the cache.
 	OnEvicted func(key string, value interface{})
-
-	ll    *list.List
-	cache map[string]*list.Element
+	ll        *list.List
+	cache     map[string]*list.Element
+	// MaxEntries is the maximum number of cache entries before
+	// an item is evicted. Zero means no limit.
+	MaxEntries int
 }
 
 type entry struct {
-	key   string
 	value interface{}
+	key   string
 }
 
 // New creates a new Cache.
@@ -89,7 +87,7 @@ func (c *Cache) Add(key string, value interface{}) {
 		ee.Value.(*entry).value = value
 		return
 	}
-	ele := c.ll.PushFront(&entry{key, value})
+	ele := c.ll.PushFront(&entry{key: key, value: value})
 	c.cache[key] = ele
 	if c.MaxEntries != 0 && c.ll.Len() > c.MaxEntries {
 		c.RemoveOldest()

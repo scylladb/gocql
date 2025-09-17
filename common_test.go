@@ -75,8 +75,8 @@ func addSslOptions(cluster *ClusterConfig) *ClusterConfig {
 }
 
 type OnceManager struct {
-	mu        sync.Mutex
 	keyspaces map[string]*sync.Once
+	mu        sync.Mutex
 }
 
 func NewOnceManager() *OnceManager {

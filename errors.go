@@ -118,10 +118,9 @@ type RequestError interface {
 }
 
 type errorFrame struct {
-	frameHeader
-
-	code    int
 	message string
+	frameHeader
+	code int
 }
 
 func (e errorFrame) Code() int {
@@ -154,21 +153,21 @@ func (e *RequestErrUnavailable) String() string {
 type ErrorMap map[string]uint16
 
 type RequestErrWriteTimeout struct {
+	WriteType string
 	errorFrame
-	Consistency Consistency
 	Received    int
 	BlockFor    int
-	WriteType   string
+	Consistency Consistency
 }
 
 type RequestErrWriteFailure struct {
+	ErrorMap  ErrorMap
+	WriteType string
 	errorFrame
-	Consistency Consistency
 	Received    int
 	BlockFor    int
 	NumFailures int
-	WriteType   string
-	ErrorMap    ErrorMap
+	Consistency Consistency
 }
 
 type RequestErrCDCWriteFailure struct {
@@ -177,38 +176,38 @@ type RequestErrCDCWriteFailure struct {
 
 type RequestErrReadTimeout struct {
 	errorFrame
-	Consistency Consistency
 	Received    int
 	BlockFor    int
+	Consistency Consistency
 	DataPresent byte
 }
 
 type RequestErrAlreadyExists struct {
-	errorFrame
 	Keyspace string
 	Table    string
+	errorFrame
 }
 
 type RequestErrUnprepared struct {
-	errorFrame
 	StatementId []byte
+	errorFrame
 }
 
 type RequestErrReadFailure struct {
+	ErrorMap ErrorMap
 	errorFrame
-	Consistency Consistency
 	Received    int
 	BlockFor    int
 	NumFailures int
+	Consistency Consistency
 	DataPresent bool
-	ErrorMap    ErrorMap
 }
 
 type RequestErrFunctionFailure struct {
-	errorFrame
 	Keyspace string
 	Function string
 	ArgTypes []string
+	errorFrame
 }
 
 // RequestErrCASWriteUnknown is distinct error for ErrCodeCasWriteUnknown.

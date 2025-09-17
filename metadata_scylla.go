@@ -17,9 +17,6 @@ import (
 
 // schema metadata for a keyspace
 type KeyspaceMetadata struct {
-	Name            string
-	DurableWrites   bool
-	StrategyClass   string
 	StrategyOptions map[string]interface{}
 	Tables          map[string]*TableMetadata
 	Functions       map[string]*FunctionMetadata
@@ -27,41 +24,44 @@ type KeyspaceMetadata struct {
 	Types           map[string]*TypeMetadata
 	Indexes         map[string]*IndexMetadata
 	Views           map[string]*ViewMetadata
+	Name            string
+	StrategyClass   string
 	CreateStmts     string
+	DurableWrites   bool
 }
 
 // schema metadata for a table (a.k.a. column family)
 type TableMetadata struct {
+	Columns           map[string]*ColumnMetadata
+	Extensions        map[string]interface{}
 	Keyspace          string
 	Name              string
 	PartitionKey      []*ColumnMetadata
 	ClusteringColumns []*ColumnMetadata
-	Columns           map[string]*ColumnMetadata
 	OrderedColumns    []string
-	Options           TableMetadataOptions
 	Flags             []string
-	Extensions        map[string]interface{}
+	Options           TableMetadataOptions
 }
 
 type TableMetadataOptions struct {
-	BloomFilterFpChance     float64
 	Caching                 map[string]string
-	Comment                 string
 	Compaction              map[string]string
 	Compression             map[string]string
-	CrcCheckChance          float64
-	DcLocalReadRepairChance float64
-	DefaultTimeToLive       int
+	CDC                     map[string]string
+	SpeculativeRetry        string
+	Comment                 string
+	Version                 string
+	Partitioner             string
 	GcGraceSeconds          int
 	MaxIndexInterval        int
 	MemtableFlushPeriodInMs int
 	MinIndexInterval        int
 	ReadRepairChance        float64
-	SpeculativeRetry        string
-	CDC                     map[string]string
+	BloomFilterFpChance     float64
+	DefaultTimeToLive       int
+	DcLocalReadRepairChance float64
+	CrcCheckChance          float64
 	InMemory                bool
-	Partitioner             string
-	Version                 string
 }
 
 func (t *TableMetadataOptions) Equals(other *TableMetadataOptions) bool {
@@ -97,34 +97,33 @@ func (t *TableMetadataOptions) Equals(other *TableMetadataOptions) bool {
 }
 
 type ViewMetadata struct {
-	KeyspaceName            string
-	ViewName                string
-	BaseTableID             string
+	Columns                 map[string]*ColumnMetadata
+	Extensions              map[string]interface{}
+	WhereClause             string
 	BaseTableName           string
 	ID                      string
-	IncludeAllColumns       bool
-	Columns                 map[string]*ColumnMetadata
+	KeyspaceName            string
+	BaseTableID             string
+	ViewName                string
 	OrderedColumns          []string
 	PartitionKey            []*ColumnMetadata
 	ClusteringColumns       []*ColumnMetadata
-	WhereClause             string
 	Options                 TableMetadataOptions
-	Extensions              map[string]interface{}
 	DcLocalReadRepairChance float64 // After Scylla 4.2 by default read_repair turned off
 	ReadRepairChance        float64 // After Scylla 4.2 by default read_repair turned off
+	IncludeAllColumns       bool
 }
 
-// schema metadata for a column
 type ColumnMetadata struct {
+	Index           ColumnIndexMetadata
 	Keyspace        string
 	Table           string
 	Name            string
-	ComponentIndex  int
-	Kind            ColumnKind
 	Type            string
 	ClusteringOrder string
+	ComponentIndex  int
+	Kind            ColumnKind
 	Order           ColumnOrder
-	Index           ColumnIndexMetadata
 }
 
 func (c *ColumnMetadata) Equals(other *ColumnMetadata) bool {
@@ -147,27 +146,26 @@ func (c *ColumnMetadata) Equals(other *ColumnMetadata) bool {
 type FunctionMetadata struct {
 	Keyspace          string
 	Name              string
-	ArgumentTypes     []string
-	ArgumentNames     []string
 	Body              string
-	CalledOnNullInput bool
 	Language          string
 	ReturnType        string
+	ArgumentTypes     []string
+	ArgumentNames     []string
+	CalledOnNullInput bool
 }
 
 // AggregateMetadata holds metadata for aggregate constructs
 type AggregateMetadata struct {
 	Keyspace      string
 	Name          string
-	ArgumentTypes []string
-	FinalFunc     FunctionMetadata
 	InitCond      string
 	ReturnType    string
-	StateFunc     FunctionMetadata
 	StateType     string
-
-	stateFunc string
-	finalFunc string
+	stateFunc     string
+	finalFunc     string
+	ArgumentTypes []string
+	FinalFunc     FunctionMetadata
+	StateFunc     FunctionMetadata
 }
 
 // TypeMetadata holds the metadata for views.
@@ -352,9 +350,9 @@ const (
 )
 
 type ColumnIndexMetadata struct {
+	Options map[string]interface{}
 	Name    string
 	Type    string
-	Options map[string]interface{}
 }
 
 func (c *ColumnIndexMetadata) Equals(other *ColumnIndexMetadata) bool {
@@ -446,10 +444,9 @@ type Metadata struct {
 
 // queries the cluster for schema information for a specific keyspace and for tablets
 type metadataDescriber struct {
-	session *Session
-	mu      sync.Mutex
-
+	session  *Session
 	metadata *Metadata
+	mu       sync.Mutex
 }
 
 // creates a session bound schema describer which will query and cache

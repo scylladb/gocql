@@ -57,9 +57,9 @@ func NewConnectionRecorder(fname string, conn net.Conn) (net.Conn, error) {
 }
 
 type FrameWriter struct {
-	new       bool
-	to_record int
 	record    dialer.Record
+	to_record int
+	new       bool
 }
 
 func (f *FrameWriter) Write(b []byte, n int, file *os.File) (err error) {

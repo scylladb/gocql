@@ -1493,9 +1493,10 @@ type TypeInfo interface {
 }
 
 type NativeType struct {
-	proto  byte
+	//only used for TypeCustom
+	custom string
 	typ    Type
-	custom string // only used for TypeCustom
+	proto  byte
 }
 
 func NewNativeType(proto byte, typ Type, custom string) NativeType {
@@ -1540,9 +1541,11 @@ func NewCollectionType(m NativeType, key, elem TypeInfo) CollectionType {
 }
 
 type CollectionType struct {
+	// Key is used only for TypeMap
+	Key TypeInfo
+	// Elem is used for TypeMap, TypeList and TypeSet
+	Elem TypeInfo
 	NativeType
-	Key  TypeInfo // only used for TypeMap
-	Elem TypeInfo // only used for TypeMap, TypeList and TypeSet
 }
 
 func (t CollectionType) NewWithError() (interface{}, error) {
@@ -1574,8 +1577,8 @@ func NewTupleType(n NativeType, elems ...TypeInfo) TupleTypeInfo {
 }
 
 type TupleTypeInfo struct {
-	NativeType
 	Elems []TypeInfo
+	NativeType
 }
 
 func (t TupleTypeInfo) String() string {
@@ -1598,8 +1601,8 @@ func (t TupleTypeInfo) NewWithError() (interface{}, error) {
 }
 
 type UDTField struct {
-	Name string
 	Type TypeInfo
+	Name string
 }
 
 func NewUDTType(proto byte, name, keySpace string, elems ...UDTField) UDTTypeInfo {
@@ -1612,10 +1615,10 @@ func NewUDTType(proto byte, name, keySpace string, elems ...UDTField) UDTTypeInf
 }
 
 type UDTTypeInfo struct {
-	NativeType
 	KeySpace string
 	Name     string
 	Elements []UDTField
+	NativeType
 }
 
 func (t UDTTypeInfo) NewWithError() (interface{}, error) {
