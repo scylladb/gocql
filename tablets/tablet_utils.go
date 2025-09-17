@@ -140,18 +140,16 @@ func getRnd() *rand.Rand {
 //
 //	A TabletInfoList containing 'count' tablets, each with its own token range
 //	and a replica set selected using a round-robin combination generator.
-func createTablets(ks, table string, hosts []string, rf, count int, tokenRangeCount int64) TabletInfoList {
+func createTablets(hosts []string, rf, count int, tokenRangeCount int64) TabletInfoList {
 	out := make([]*TabletInfo, count)
 	step := math.MaxUint64 / uint64(tokenRangeCount)
 	repGen := NewReplicaSetGenerator(hosts, rf)
 	firstToken := int64(math.MinInt64)
 	for i := 0; i < count; i++ {
 		out[i] = &TabletInfo{
-			keyspaceName: ks,
-			tableName:    table,
-			firstToken:   firstToken,
-			lastToken:    firstToken + int64(step),
-			replicas:     repGen.Next(),
+			firstToken: firstToken,
+			lastToken:  firstToken + int64(step),
+			replicas:   repGen.Next(),
 		}
 		firstToken = firstToken + int64(step)
 	}
