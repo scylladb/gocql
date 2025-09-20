@@ -531,11 +531,16 @@ func TestUnmarshalTuple(t *testing.T) {
 func TestMarshalUDTMap(t *testing.T) {
 	t.Parallel()
 
-	typeInfo := UDTTypeInfo{NativeType{proto: protoVersion3, typ: TypeUDT}, "", "xyz", []UDTField{
-		{Name: "x", Type: NativeType{proto: protoVersion3, typ: TypeInt}},
-		{Name: "y", Type: NativeType{proto: protoVersion3, typ: TypeInt}},
-		{Name: "z", Type: NativeType{proto: protoVersion3, typ: TypeInt}},
-	}}
+	typeInfo := UDTTypeInfo{
+		KeySpace: "",
+		Name:     "xyz",
+		Elements: []UDTField{
+			{Name: "x", Type: NativeType{proto: protoVersion3, typ: TypeInt}},
+			{Name: "y", Type: NativeType{proto: protoVersion3, typ: TypeInt}},
+			{Name: "z", Type: NativeType{proto: protoVersion3, typ: TypeInt}},
+		},
+		NativeType: NativeType{proto: protoVersion3, typ: TypeUDT},
+	}
 
 	t.Run("partially bound", func(t *testing.T) {
 		value := map[string]interface{}{
@@ -588,11 +593,16 @@ func TestMarshalUDTMap(t *testing.T) {
 func TestMarshalUDTStruct(t *testing.T) {
 	t.Parallel()
 
-	typeInfo := UDTTypeInfo{NativeType{proto: protoVersion3, typ: TypeUDT}, "", "xyz", []UDTField{
-		{Name: "x", Type: NativeType{proto: protoVersion3, typ: TypeInt}},
-		{Name: "y", Type: NativeType{proto: protoVersion3, typ: TypeInt}},
-		{Name: "z", Type: NativeType{proto: protoVersion3, typ: TypeInt}},
-	}}
+	typeInfo := UDTTypeInfo{
+		KeySpace: "",
+		Name:     "xyz",
+		Elements: []UDTField{
+			{Name: "x", Type: NativeType{proto: protoVersion3, typ: TypeInt}},
+			{Name: "y", Type: NativeType{proto: protoVersion3, typ: TypeInt}},
+			{Name: "z", Type: NativeType{proto: protoVersion3, typ: TypeInt}},
+		},
+		NativeType: NativeType{proto: protoVersion3, typ: TypeUDT},
+	}
 
 	type xyzStruct struct {
 		X int32 `cql:"x"`

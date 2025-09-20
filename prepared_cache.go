@@ -35,8 +35,8 @@ const defaultMaxPreparedStmts = 1000
 
 // preparedLRU is the prepared statement cache
 type preparedLRU struct {
-	mu  sync.Mutex
 	lru *lru.Cache
+	mu  sync.Mutex
 }
 
 func (p *preparedLRU) clear() {

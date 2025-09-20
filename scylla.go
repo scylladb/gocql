@@ -18,14 +18,14 @@ import (
 // frame.
 // FIXME: Should also follow `cqlProtocolExtension` interface.
 type scyllaSupported struct {
+	partitioner       string
+	shardingAlgorithm string
 	shard             int
 	nrShards          int
 	msbIgnore         uint64
-	partitioner       string
-	shardingAlgorithm string
+	lwtFlagMask       int
 	shardAwarePort    uint16
 	shardAwarePortSSL uint16
-	lwtFlagMask       int
 }
 
 // CQL Protocol extension interface for Scylla.
@@ -299,21 +299,20 @@ func (c *Conn) isScyllaConn() bool {
 // it tries to make, the shard that it aims to connect to is chosen
 // in a round-robin fashion.
 type scyllaConnPicker struct {
-	address                string
-	hostId                 string
-	shardAwareAddress      string
-	conns                  []*Conn
-	excessConns            []*Conn
-	nrConns                int
-	nrShards               int
-	msbIgnore              uint64
-	pos                    uint64
-	lastAttemptedShard     int
-	shardAwarePortDisabled bool
-	logger                 StdLogger
-
-	// Used to disable new connections to the shard-aware port temporarily
+	logger StdLogger
+	// disableShardAwarePortUntil is used to temporarily disable new connections to the shard-aware port temporarily
 	disableShardAwarePortUntil *atomic.Value
+	hostId                     string
+	shardAwareAddress          string
+	address                    string
+	conns                      []*Conn
+	excessConns                []*Conn
+	nrShards                   int
+	pos                        uint64
+	lastAttemptedShard         int
+	msbIgnore                  uint64
+	nrConns                    int
+	shardAwarePortDisabled     bool
 }
 
 func newScyllaConnPicker(conn *Conn, logger StdLogger) *scyllaConnPicker {

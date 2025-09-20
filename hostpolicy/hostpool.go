@@ -28,8 +28,8 @@ func HostPool(hp hostpool.HostPool) gocql.HostSelectionPolicy {
 
 type hostPoolHostPolicy struct {
 	hp      hostpool.HostPool
-	mu      sync.RWMutex
 	hostMap map[string]*gocql.HostInfo
+	mu      sync.RWMutex
 }
 
 func (r *hostPoolHostPolicy) Init(*gocql.Session)                       {}

@@ -52,61 +52,49 @@ import (
 // and automatically sets a default consistency level on all operations
 // that do not have a consistency level set.
 type Session struct {
-	cons                Consistency
+	policy          HostSelectionPolicy
+	warningHandler  WarningHandler
+	control         controlConnection
+	ctx             context.Context
+	logger          StdLogger
+	trace           Tracer
+	queryObserver   QueryObserver
+	batchObserver   BatchObserver
+	connectObserver ConnectObserver
+	frameObserver   FrameHeaderObserver
+	streamObserver  StreamObserver
+	initErr         error
+	hostSource      *ringDescriber
+	// event handlers
+	nodeEvents          *eventDebouncer
+	cancel              context.CancelFunc
+	pool                *policyConnPool
+	ringRefresher       *debounce.RefreshDebouncer
+	readyCh             chan struct{}
+	executor            *queryExecutor
+	stmtsLRU            *preparedLRU
+	schemaEvents        *eventDebouncer
+	metadataDescriber   *metadataDescriber
+	connCfg             *ConnConfig
+	routingKeyInfoCache routingKeyInfoLRU
+	cfg                 ClusterConfig
 	pageSize            int
 	prefetch            float64
-	routingKeyInfoCache routingKeyInfoLRU
-	metadataDescriber   *metadataDescriber
-	trace               Tracer
-	queryObserver       QueryObserver
-	batchObserver       BatchObserver
-	connectObserver     ConnectObserver
-	frameObserver       FrameHeaderObserver
-	streamObserver      StreamObserver
-	hostSource          *ringDescriber
-	ringRefresher       *debounce.RefreshDebouncer
-	stmtsLRU            *preparedLRU
-
-	connCfg *ConnConfig
-
-	executor *queryExecutor
-	pool     *policyConnPool
-	policy   HostSelectionPolicy
-
+	// sessionStateMu protects isClosed and isInitialized.
 	mu sync.RWMutex
-
-	control controlConnection
-
-	// event handlers
-	nodeEvents   *eventDebouncer
-	schemaEvents *eventDebouncer
-
-	// ring metadata
-	useSystemSchema           bool
-	hasAggregatesAndFunctions bool
-
-	cfg ClusterConfig
-
-	ctx    context.Context
-	cancel context.CancelFunc
-
 	// sessionStateMu protects isClosed and isInitialized.
 	sessionStateMu sync.RWMutex
+	cons           Consistency
 	// isClosed is true once Session.Close is finished.
 	isClosed bool
 	// isClosing bool is true once Session.Close is started.
 	isClosing bool
 	// isInitialized is true once Session.init succeeds.
 	// you can use initialized() to read the value.
-	isInitialized bool
-	initErr       error
-	readyCh       chan struct{}
-
-	logger StdLogger
-
-	tabletsRoutingV1 bool
-
-	warningHandler WarningHandler
+	isInitialized             bool
+	hasAggregatesAndFunctions bool
+	useSystemSchema           bool
+	tabletsRoutingV1          bool
 }
 
 var queryPool = &sync.Pool{
@@ -976,11 +964,11 @@ type hostMetrics struct {
 }
 
 type queryMetrics struct {
-	l sync.RWMutex
 	m map[string]*hostMetrics
 	// totalAttempts is total number of attempts.
-	// Equal to sum of all hostMetrics' Attempts.
+	// Equal to sum of all hostMetrics' Attempts
 	totalAttempts int
+	l             sync.RWMutex
 }
 
 // preFilledQueryMetrics initializes new queryMetrics based on per-host supplied data.
@@ -1075,65 +1063,55 @@ func (qm *queryMetrics) attempt(addAttempts int, addLatency time.Duration,
 
 // Query represents a CQL statement that can be executed.
 type Query struct {
-	stmt                  string
-	values                []interface{}
-	cons                  Consistency
-	pageSize              int
-	routingKey            []byte
-	pageState             []byte
-	prefetch              float64
-	trace                 Tracer
-	observer              QueryObserver
-	session               *Session
-	conn                  ConnInterface
-	rt                    RetryPolicy
-	spec                  SpeculativeExecutionPolicy
-	binding               func(q *QueryInfo) ([]interface{}, error)
-	serialCons            Consistency
-	defaultTimestamp      bool
-	defaultTimestampValue int64
-	disableSkipMetadata   bool
-	context               context.Context
-	idempotent            bool
-	customPayload         map[string][]byte
-	metrics               *queryMetrics
-	refCount              uint32
-
-	disableAutoPage bool
-
+	trace    Tracer
+	context  context.Context
+	spec     SpeculativeExecutionPolicy
+	rt       RetryPolicy
+	conn     ConnInterface
+	observer QueryObserver
+	metrics  *queryMetrics
+	session  *Session
+	// Timeout on waiting for response from server
+	customPayload map[string][]byte
 	// getKeyspace is field so that it can be overriden in tests
 	getKeyspace func() string
-
-	// used by control conn queries to prevent triggering a write to systems
-	// tables in AWS MCS see
-	skipPrepare bool
-
 	// routingInfo is a pointer because Query can be copied and copyable struct can't hold a mutex.
 	routingInfo *queryRoutingInfo
-
+	binding     func(q *QueryInfo) ([]interface{}, error)
 	// hostID specifies the host on which the query should be executed.
 	// If it is empty, then the host is picked by HostSelectionPolicy
-	hostID string
-
-	// Timeout on waiting for response from server
-	requestTimeout time.Duration
+	hostID     string
+	stmt       string
+	routingKey []byte
+	values     []interface{}
+	pageState  []byte
+	// requestTimeout is a timeout on waiting for response from server
+	requestTimeout        time.Duration
+	defaultTimestampValue int64
+	prefetch              float64
+	pageSize              int
+	refCount              uint32
+	cons                  Consistency
+	serialCons            Consistency
+	disableAutoPage       bool
+	idempotent            bool
+	skipPrepare           bool
+	disableSkipMetadata   bool
+	defaultTimestamp      bool
 }
 
 type queryRoutingInfo struct {
+	// partitioner is a reference to a Partitioner instance
+	// If nil default partitioner will be used.
+	partitioner Partitioner
+	keyspace    string
+	table       string
 	// mu protects contents of queryRoutingInfo.
 	mu sync.RWMutex
-
 	// "lwt" denotes the query being an LWT operation
 	// In effect if the query is of the form "INSERT/UPDATE/DELETE ... IF ..."
 	// For more details see https://docs.scylladb.com/using-scylla/lwt/
 	lwt bool
-
-	// If not nil, represents a custom partitioner for the table.
-	partitioner Partitioner
-
-	keyspace string
-
-	table string
 }
 
 func (qri *queryRoutingInfo) isLWT() bool {
@@ -1700,14 +1678,13 @@ func (q *Query) GetHostID() string {
 // database during the iteration if paging was enabled.
 type Iter struct {
 	err     error
-	pos     int
-	meta    resultMetadata
-	numRows int
+	framer  framerInterface
 	next    *nextIter
 	host    *HostInfo
-
-	framer framerInterface
-	closed int32
+	meta    resultMetadata
+	pos     int
+	numRows int
+	closed  int32
 }
 
 // Host returns the host which the query was sent to.
@@ -1976,10 +1953,10 @@ func (iter *Iter) NumRows() int {
 // single page might be attempted multiple times due to retries.
 type nextIter struct {
 	qry   *Query
+	next  *Iter
 	pos   int
 	oncea sync.Once
 	once  sync.Once
-	next  *Iter
 }
 
 func (n *nextIter) fetchAsync() {
@@ -2002,33 +1979,30 @@ func (n *nextIter) fetch() *Iter {
 }
 
 type Batch struct {
-	Type                  BatchType
-	Entries               []BatchEntry
-	Cons                  Consistency
-	routingKey            []byte
-	CustomPayload         map[string][]byte
-	rt                    RetryPolicy
-	spec                  SpeculativeExecutionPolicy
-	trace                 Tracer
-	observer              BatchObserver
-	session               *Session
-	serialCons            Consistency
-	defaultTimestamp      bool
-	defaultTimestampValue int64
-	context               context.Context
-	cancelBatch           func()
-	keyspace              string
-	metrics               *queryMetrics
-
+	context  context.Context
+	rt       RetryPolicy
+	spec     SpeculativeExecutionPolicy
+	trace    Tracer
+	observer BatchObserver
 	// routingInfo is a pointer because Query can be copied and copyable struct can't hold a mutex.
-	routingInfo *queryRoutingInfo
-
+	routingInfo   *queryRoutingInfo
+	metrics       *queryMetrics
+	cancelBatch   func()
+	CustomPayload map[string][]byte
+	session       *Session
+	keyspace      string
 	// hostID specifies the host on which the query should be executed.
 	// If it is empty, then the host is picked by HostSelectionPolicy
-	hostID string
-
-	// Timeout on waiting for response from server
-	requestTimeout time.Duration
+	hostID                string
+	routingKey            []byte
+	Entries               []BatchEntry
+	defaultTimestampValue int64
+	// requestTimeout is a timeout on waiting for response from serve
+	requestTimeout   time.Duration
+	serialCons       Consistency
+	Cons             Consistency
+	defaultTimestamp bool
+	Type             BatchType
 }
 
 // NewBatch creates a new batch operation using defaults defined in the cluster
@@ -2387,17 +2361,17 @@ const (
 )
 
 type BatchEntry struct {
+	binding    func(q *QueryInfo) ([]interface{}, error)
 	Stmt       string
 	Args       []interface{}
 	Idempotent bool
-	binding    func(q *QueryInfo) ([]interface{}, error)
 }
 
 type ColumnInfo struct {
+	TypeInfo TypeInfo
 	Keyspace string
 	Table    string
 	Name     string
-	TypeInfo TypeInfo
 }
 
 func (c ColumnInfo) String() string {
@@ -2411,12 +2385,12 @@ type routingKeyInfoLRU struct {
 }
 
 type routingKeyInfo struct {
-	indexes     []int
-	types       []TypeInfo
+	partitioner Partitioner
 	keyspace    string
 	table       string
+	indexes     []int
+	types       []TypeInfo
 	lwt         bool
-	partitioner Partitioner
 }
 
 func (r *routingKeyInfo) String() string {
@@ -2441,9 +2415,9 @@ func (r *routingKeyInfoLRU) Max(max int) {
 }
 
 type inflightCachedEntry struct {
-	wg    sync.WaitGroup
 	err   error
 	value interface{}
+	wg    sync.WaitGroup
 }
 
 // GetHosts return a list of hosts in the ring the driver knows of.
@@ -2452,31 +2426,27 @@ func (s *Session) GetHosts() []*HostInfo {
 }
 
 type ObservedQuery struct {
+	// Start is a time when the query was attempted
+	Start time.Time
+	// End is a time when the query attempt was completed
+	End time.Time
+	// Err is the error in the query.
+	// It only tracks network errors or errors of bad cassandra syntax, in particular selects with no match return nil error
+	// Do not modify the values here, they are shared with multiple goroutines.
+	Err error
+	// Host is a reference to the host where the query was executed.
+	Host *HostInfo
+	// Metrics is the metrics for this attempt
+	Metrics   *hostMetrics
 	Keyspace  string
 	Statement string
-
 	// Values holds a slice of bound values for the query.
 	// Do not modify the values here, they are shared with multiple goroutines.
 	Values []interface{}
-
-	Start time.Time // time immediately before the query was called
-	End   time.Time // time immediately after the query returned
-
 	// Rows is the number of rows in the current iter.
 	// In paginated queries, rows from previous scans are not counted.
 	// Rows is not used in batch queries and remains at the default value
 	Rows int
-
-	// Host is the informations about the host that performed the query
-	Host *HostInfo
-
-	// The metrics per this host
-	Metrics *hostMetrics
-
-	// Err is the error in the query.
-	// It only tracks network errors or errors of bad cassandra syntax, in particular selects with no match return nil error
-	Err error
-
 	// Attempt is the index of attempt at executing this query.
 	// The first attempt is number zero and any retries have non-zero attempt number.
 	Attempt int
@@ -2491,27 +2461,23 @@ type QueryObserver interface {
 }
 
 type ObservedBatch struct {
+	// Start is a time when the batch was attempted
+	Start time.Time
+	// End is a time when the batch attempt was completed
+	End time.Time
+	// Err is the error in the batch query.
+	// It only tracks network errors or errors of bad cassandra syntax, in particular selects with no match return nil error
+	Err error
+	// Host is a reference to the host where the batch was executed.
+	Host *HostInfo
+	// Metrics is the metrics for this attempt
+	Metrics    *hostMetrics
 	Keyspace   string
 	Statements []string
-
 	// Values holds a slice of bound values for each statement.
 	// Values[i] are bound values passed to Statements[i].
 	// Do not modify the values here, they are shared with multiple goroutines.
 	Values [][]interface{}
-
-	Start time.Time // time immediately before the batch query was called
-	End   time.Time // time immediately after the batch query returned
-
-	// Host is the informations about the host that performed the batch
-	Host *HostInfo
-
-	// Err is the error in the batch query.
-	// It only tracks network errors or errors of bad cassandra syntax, in particular selects with no match return nil error
-	Err error
-
-	// The metrics per this host
-	Metrics *hostMetrics
-
 	// Attempt is the index of attempt at executing this query.
 	// The first attempt is number zero and any retries have non-zero attempt number.
 	Attempt int
@@ -2545,8 +2511,8 @@ type ConnectObserver interface {
 }
 
 type Error struct {
-	Code    int
 	Message string
+	Code    int
 }
 
 func (e Error) Error() string {
