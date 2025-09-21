@@ -25,7 +25,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            /home/runner/.cache/pip
+            /home/runner/.ccm/scylla-repository
+            /home/runner/.ccm/repository
+            /home/runner/.sdkman
+            testdata/pki
+            bin/
+          # CCM, scylla, cassandra and java versions are in Makefile
+          key: pr-check-${{ runner.os }}-${{ hashFiles('Makefile') }}
+
       - uses: actions/setup-go@v6
+        with:
+          cache-dependency-path: |
+            lz4/go.sum
+            tests/bench/go.sum
+            go.sum
 
       - name: Run linters
         run: make check
