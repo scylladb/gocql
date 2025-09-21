@@ -1,3 +1,4 @@
+SHELL=bash
 # Global variables
 # You can set these variables from the command line.
 POETRY        = poetry
@@ -19,7 +20,20 @@ all: dirhtml
 # Setup commands
 .PHONY: setupenv
 setupenv:
-	pip install -q poetry==2.2.0
+	@while IFS= read -r line; do \
+      if [[ "$${line}" =~ ^[[:space:]]*requires[[:space:]]*= ]]; then\
+        content="$${line#*=}";\
+        content="$${content//[[:space:]]/}";\
+        content="$${content#[}";\
+        content="$${content%]}";\
+        IFS=',' read -ra items <<< "$$content";\
+        for item in "$${items[@]}"; do\
+          item="$${item%\"}";\
+          item="$${item#\"}";\
+          pip install "$$item";\
+        done;\
+      fi;\
+    done < pyproject.toml
 
 .PHONY: setup
 setup:
