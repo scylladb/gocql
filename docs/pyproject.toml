@@ -17,5 +17,5 @@ sphinx-sitemap = "^2.6.0"
 redirects_cli ="^0.1.3"
 
 [build-system]
-requires = ["poetry>=1.8.0"]
+requires = ["poetry==2.2.0"]
 build-backend = "poetry.masonry.api"
