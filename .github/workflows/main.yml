@@ -54,9 +54,130 @@ jobs:
 
       - run: sudo sh -c "echo 2097152 >> /proc/sys/fs/aio-max-nr"
 
-      - name: Run integration suite
+  test-integration-scylla:
+    name: Integration Tests On Scylla
+    runs-on: ubuntu-latest
+    needs: build
+    strategy:
+      matrix:
+        scylla-version: [LATEST, PRIOR, LTS-LATEST, LTS-PRIOR]
+      fail-fast: false
+    env:
+      SCYLLA_VERSION: ${{ matrix.scylla-version }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            /home/runner/.cache/pip
+            /home/runner/.sdkman
+            testdata/pki
+            bin/
+          # CCM, pip and java versions are in Makefile
+          key: pr-check-${{ runner.os }}-${{ hashFiles('Makefile') }}
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            lz4/go.sum
+            tests/bench/go.sum
+            go.sum
+
+      - name: Get scylla version
+        id: scylla-version
+        run: make resolve-scylla-version
+
+      - name: Pull CCM image from the cache
+        uses: actions/cache/restore@v4
+        id: ccm-cache
+        with:
+          path: ~/.ccm/repository
+          key: ccm-scylla-${{ runner.os }}-${{ steps.scylla-version.outputs.value }}
+
+      - name: Download ScyllaDB (${{ steps.scylla-version.outputs.value }}) image
+        if: steps.ccm-cache.outputs.cache-hit != 'true'
+        run: make download-scylla
+
+      - name: Save CCM ScyllaDB image into the cache
+        if: steps.ccm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.ccm/repository
+          key: ccm-scylla-${{ runner.os }}-${{ steps.scylla-version.outputs.value }}
+
+      - name: Run integration suite with ScyllaDB ${{ matrix.scylla-version }}(${{ steps.scylla-version.outputs.value }})
         run: make test-integration-scylla
 
-      - name: Run CCM integration suite
+      - name: Run CCM integration suite with ScyllaDB ${{ matrix.scylla-version }}(${{ steps.scylla-version.outputs.value }})
+        run: TEST_INTEGRATION_TAGS="ccm gocql_debug" make test-integration-scylla
+
+  test-integration-cassandra:
+    name: Integration Tests On Cassandra
+    runs-on: ubuntu-latest
+    needs: build
+    strategy:
+      matrix:
+        cassandra-version: [5-LATEST, 4-LATEST]
+      fail-fast: false
+    env:
+      CASSANDRA_VERSION: ${{ matrix.cassandra-version }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            /home/runner/.cache/pip
+            /home/runner/.sdkman
+            testdata/pki
+            bin/
+          # CCM, python and java versions are in Makefile
+          key: pr-check-${{ runner.os }}-${{ hashFiles('Makefile') }}
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            lz4/go.sum
+            tests/bench/go.sum
+            go.sum
+
+      - name: Get cassandra version
+        id: cassandra-version
+        run: make resolve-cassandra-version
+
+      - name: Pull CCM image from the cache
+        uses: actions/cache/restore@v4
+        id: ccm-cache
+        with:
+          path: ~/.ccm/repository
+          key: ccm-cassandra-${{ runner.os }}-${{ steps.cassandra-version.outputs.value }}
+
+      - name: Download Cassandra (${{ steps.cassandra-version.outputs.value }}) image
+        if: steps.ccm-cache.outputs.cache-hit != 'true'
+        run: make download-cassandra
+
+      - name: Save CCM Cassandra image into the cache
+        if: steps.ccm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.ccm/repository
+          key: ccm-cassandra-${{ runner.os }}-${{ steps.cassandra-version.outputs.value }}
+
+      - name: Run integration suite with Cassandra ${{ matrix.cassandra-version }}(${{ steps.cassandra-version.outputs.value }})
+        run: make test-integration-cassandra
+
+      - name: Run CCM integration suite with Cassandra ${{ matrix.cassandra-version }}(${{ steps.cassandra-version.outputs.value }})
         run: TEST_INTEGRATION_TAGS="ccm gocql_debug" make test-integration-scylla
 
