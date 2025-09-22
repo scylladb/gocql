@@ -3,8 +3,8 @@ MAKEFILE_PATH := $(abspath $(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
 KEY_PATH = ${MAKEFILE_PATH}/testdata/pki
 BIN_DIR := "${MAKEFILE_PATH}/bin"
 
-CASSANDRA_VERSION ?= 4.1.6
-SCYLLA_VERSION ?= release:6.1.1
+CASSANDRA_VERSION ?= LATEST
+SCYLLA_VERSION ?= LATEST
 GOLANGCI_VERSION = 2.1.6
 
 TEST_CQL_PROTOCOL ?= 4
@@ -81,6 +81,11 @@ cassandra-start: .prepare-pki .prepare-cassandra-ccm .prepare-java
 	@if [ -d ${CCM_CONFIG_DIR}/${CCM_CASSANDRA_CLUSTER_NAME} ] && ccm switch ${CCM_CASSANDRA_CLUSTER_NAME} 2>/dev/null 1>&2 && ccm status | grep UP 2>/dev/null 1>&2; then \
 		echo "Cassandra cluster is already started"; \
   	else \
+		if [[ "${CASSANDRA_VERSION}" == "LATEST" ); then\
+			CASSANDRA_VERSION=5.0.5
+		elif [[ "${CASSANDRA_VERSION}" == "PRIOR" ); then\
+			CASSANDRA_VERSION=4.1.10
+		fi; \
 		echo "Start cassandra ${CASSANDRA_VERSION} cluster"; \
 		ccm stop ${CCM_CASSANDRA_CLUSTER_NAME} 2>/dev/null 1>&2 || true; \
 		ccm remove ${CCM_CASSANDRA_CLUSTER_NAME} 2>/dev/null 1>&2 || true; \
@@ -95,10 +100,17 @@ scylla-start: .prepare-pki .prepare-scylla-ccm .prepare-java
 	@if [ -d ${CCM_CONFIG_DIR}/${CCM_SCYLLA_CLUSTER_NAME} ] && ccm switch ${CCM_SCYLLA_CLUSTER_NAME} 2>/dev/null 1>&2 && ccm status | grep UP 2>/dev/null 1>&2; then \
 		echo "Scylla cluster is already started"; \
   	else \
-		echo "Start scylla ${SCYLLA_VERSION} cluster"; \
+		if [[ "$(SCYLLA_VERSION)" == "LTS-LATEST" ]]; then\
+			SCYLLA_VERSION=release:2025.1;\
+		elif [[ "$(SCYLLA_VERSION)" == "LTS-PRIOR" ]]; then\
+			SCYLLA_VERSION=release:2024.1;\
+		elif [[ "$(SCYLLA_VERSION)" == "LATEST" ]]; then\
+			SCYLLA_VERSION=release:2025.3;\
+		fi; \
+		echo "Start scylla $(SCYLLA_VERSION)($${SCYLLA_VERSION}) cluster"; \
 		ccm stop ${CCM_SCYLLA_CLUSTER_NAME} 2>/dev/null 1>&2 || true; \
 		ccm remove ${CCM_SCYLLA_CLUSTER_NAME} 2>/dev/null 1>&2 || true; \
-		ccm create ${CCM_SCYLLA_CLUSTER_NAME} -i ${CCM_SCYLLA_IP_PREFIX} --scylla -v ${SCYLLA_VERSION} -n 3 -d --jvm_arg="--smp 2 --memory 1G --experimental-features udf --enable-user-defined-functions true" && \
+		ccm create ${CCM_SCYLLA_CLUSTER_NAME} -i ${CCM_SCYLLA_IP_PREFIX} --scylla -v $${SCYLLA_VERSION} -n 3 -d --jvm_arg="--smp 2 --memory 1G --experimental-features udf --enable-user-defined-functions true" && \
 		ccm updateconf ${SCYLLA_CONFIG} && \
 		ccm start --wait-for-binary-proto --wait-other-notice --verbose && \
 		ccm status && \

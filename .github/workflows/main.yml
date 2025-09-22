@@ -53,9 +53,43 @@ jobs:
 
       - run: sudo sh -c "echo 2097152 >> /proc/sys/fs/aio-max-nr"
 
-      - name: Run integration suite
+  test-integration:
+    name: Integration Tests On Scylla
+    runs-on: ubuntu-latest
+    needs: build
+    strategy:
+      matrix:
+        scylla_version: [LTS-LATEST, LTS-PRIOR, LATEST]
+      fail-fast: false
+    env:
+      SCYLLA_VERSION: ${{ matrix.scylla_version }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            /home/runner/.cache/pip
+            /home/runner/.ccm/scylla-repository
+            /home/runner/.ccm/repository
+            /home/runner/.sdkman
+            testdata/pki
+            bin/
+          # CCM, scylla, cassandra and java versions are in Makefile
+          key: pr-check-${{ runner.os }}-${{ hashFiles('Makefile') }}
+
+      - uses: actions/setup-go@v6
+        with:
+          cache-dependency-path: |
+            lz4/go.sum
+            tests/bench/go.sum
+            go.sum
+
+      - run: sudo sh -c "echo 2097152 >> /proc/sys/fs/aio-max-nr"
+
+      - name: Run integration suite with ScyllaDB ${{ matrix.scylla_version }}
         run: make test-integration-scylla
 
-      - name: Run CCM integration suite
+      - name: Run CCM integration suite with ScyllaDB ${{ matrix.scylla_version }}
         run: TEST_INTEGRATION_TAGS="ccm gocql_debug" make test-integration-scylla
 
