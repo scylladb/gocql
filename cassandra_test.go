@@ -101,7 +101,7 @@ func TestUseStatementError(t *testing.T) {
 
 	if err := session.Query("USE gocql_test").Exec(); err != nil {
 		if err != ErrUseStmt {
-			t.Fatalf("expected ErrUseStmt, got " + err.Error())
+			t.Fatalf("expected ErrUseStmt, got: %v", err)
 		}
 	} else {
 		t.Fatal("expected err, got nil.")

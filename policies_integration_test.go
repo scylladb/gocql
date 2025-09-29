@@ -5,7 +5,6 @@ package gocql
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 )
@@ -68,7 +67,7 @@ func TestTokenAwareHostPolicy(t *testing.T) {
 func testIfPolicyInitializedProperly(t *testing.T, cluster *ClusterConfig, policy *tokenAwareHostPolicy) {
 	_, err := cluster.CreateSession()
 	if err != nil {
-		t.Fatalf(fmt.Errorf("faled to create session: %v", err).Error())
+		t.Fatalf("faled to create session: %v", err)
 	}
 	md := policy.getMetadataReadOnly()
 	if md == nil {
