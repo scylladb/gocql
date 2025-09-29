@@ -103,9 +103,9 @@ scylla-start: .prepare-pki .prepare-scylla-ccm .prepare-java
 		ccm start --wait-for-binary-proto --wait-other-notice --verbose && \
 		ccm status && \
 		ccm node1 nodetool status && \
-		sudo chmod 0777 ${CCM_CONFIG_DIR}/${CCM_SCYLLA_CLUSTER_NAME}/node1/cql.m && \
-		sudo chmod 0777 ${CCM_CONFIG_DIR}/${CCM_SCYLLA_CLUSTER_NAME}/node2/cql.m && \
-		sudo chmod 0777 ${CCM_CONFIG_DIR}/${CCM_SCYLLA_CLUSTER_NAME}/node3/cql.m; \
+		(sudo chmod 0777 ${CCM_CONFIG_DIR}/${CCM_SCYLLA_CLUSTER_NAME}/node1/cql.m | true ) && \
+		(sudo chmod 0777 ${CCM_CONFIG_DIR}/${CCM_SCYLLA_CLUSTER_NAME}/node2/cql.m | true ) && \
+		(sudo chmod 0777 ${CCM_CONFIG_DIR}/${CCM_SCYLLA_CLUSTER_NAME}/node3/cql.m | true ) \
 	fi
 
 cassandra-stop: .prepare-cassandra-ccm
@@ -124,7 +124,12 @@ test-integration-cassandra: cassandra-start
 
 test-integration-scylla: scylla-start
 	@echo "Run integration tests for proto ${TEST_CQL_PROTOCOL} on scylla ${SCYLLA_IMAGE}"
-	go test -v ${TEST_OPTS} -tags "${TEST_INTEGRATION_TAGS}" -cluster-socket ${CCM_CONFIG_DIR}/${CCM_SCYLLA_CLUSTER_NAME}/node1/cql.m -timeout=5m -gocql.timeout=60s -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$$(ccm node1 versionfrombuild) -cluster=$$(ccm liveset) ./...
+	@if [[ -f "${CCM_CONFIG_DIR}/${CCM_SCYLLA_CLUSTER_NAME}/node1/cql.m" ]]; then \
+  		CLUSTER_SOCKET = "-cluster-socket ${CCM_CONFIG_DIR}/${CCM_SCYLLA_CLUSTER_NAME}/node1/cql.m"; \
+  	else \
+  		echo "Cluster socket is not found"; \
+	fi; \
+	go test -v ${TEST_OPTS} -tags "${TEST_INTEGRATION_TAGS}" $${CLUSTER_SOCKET} -timeout=5m -gocql.timeout=60s -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$$(ccm node1 versionfrombuild) -cluster=$$(ccm liveset) ./...
 
 test-unit: .prepare-pki
 	@echo "Run unit tests"
