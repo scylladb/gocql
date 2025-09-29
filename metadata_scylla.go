@@ -808,7 +808,8 @@ func getKeyspaceMetadata(session *Session, keyspaceName string) (*KeyspaceMetada
 	return keyspace, nil
 }
 
-// query for table metadata in the system_schema.tables and system_schema.scylla_tables
+// query for table metadata in the system_schema.tables, and system_schema.scylla_tables
+// if connected to ScyllaDB
 func getTableMetadata(session *Session, keyspaceName string) ([]TableMetadata, error) {
 	if !session.useSystemSchema {
 		return nil, nil
@@ -843,6 +844,10 @@ func getTableMetadata(session *Session, keyspaceName string) ([]TableMetadata, e
 	err := iter.Close()
 	if err != nil && err != ErrNotFound {
 		return nil, fmt.Errorf("error querying table schema: %v", err)
+	}
+
+	if session.getConn() == nil || !session.getConn().isScyllaConn() {
+		return tables, nil
 	}
 
 	stmt = `SELECT * FROM system_schema.scylla_tables WHERE keyspace_name = ? AND table_name = ?`
