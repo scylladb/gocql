@@ -871,7 +871,7 @@ func (c *Conn) releaseStream(call *callReq) {
 	}
 }
 
-func (c *Conn) handleTimeout() {
+func (c *Conn) handleTimeout() { // TODO: Investigate unused warning
 	if atomic.AddInt64(&c.timeouts, 1) > 0 {
 		c.closeWithError(ErrTooManyTimeouts)
 	}
@@ -1688,9 +1688,9 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 
 		frame = &writeExecuteFrame{
 			preparedID:       info.id,
+			resultMetadataID: info.resultMetadataID,
 			params:           params,
 			customPayload:    qry.customPayload,
-			resultMetadataID: info.resultMetadataID,
 		}
 
 		// Set "lwt", keyspace", "table" property in the query if it is present in preparedMetadata
