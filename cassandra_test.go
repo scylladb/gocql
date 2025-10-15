@@ -3061,7 +3061,7 @@ func TestPrepareExecuteMetadataChangedFlag(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if session.cfg.ProtoVersion < protoVersion5 {
+	if session.cfg.ProtoVersion < protoVersion5 { // TODO: extend to support Scylla's metadata ID extension
 		t.Skip("Metadata_changed mechanism is only available in proto > 4")
 	}
 

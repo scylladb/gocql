@@ -140,7 +140,7 @@ func TestFrameReadTooLong(t *testing.T) {
 }
 
 func Test_framer_writeExecuteFrame(t *testing.T) {
-	framer := newFramer(nil, protoVersion5)
+	framer := newFramer(nil, protoVersion5) // TODO: extend to support Scylla's metadata ID extension
 	nowInSeconds := 123
 	frame := writeExecuteFrame{
 		preparedID:       []byte{1, 2, 3},

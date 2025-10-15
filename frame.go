@@ -380,8 +380,9 @@ type framer struct {
 	rateLimitingErrorCode int
 	proto                 byte
 	// flags are for outgoing flags, enabling compression and tracing etc
-	flags            byte
-	tabletsRoutingV1 bool
+	flags               byte
+	tabletsRoutingV1    bool
+	scyllaUseMetadataId bool
 }
 
 func newFramer(compressor Compressor, version byte) *framer {
@@ -445,6 +446,17 @@ func newFramerWithExts(compressor Compressor, version byte, cqlProtoExts []cqlPr
 			return f
 		}
 		f.tabletsRoutingV1 = true
+	}
+
+	if metadataIdExt := findCQLProtoExtByName(cqlProtoExts, scyllaUseMetadataId); metadataIdExt != nil {
+		_, ok := metadataIdExt.(*scyllaUseMetadataIdExt)
+		if !ok {
+			logger.Println(
+				fmt.Errorf("failed to cast CQL protocol extension identified by name %s to type %T",
+					scyllaUseMetadataId, scyllaUseMetadataIdExt{}))
+			return f
+		}
+		f.scyllaUseMetadataId = true
 	}
 
 	return f
@@ -1174,7 +1186,7 @@ func (f *framer) parseResultPrepared() frame {
 		preparedID:  f.readShortBytes(),
 	}
 
-	if f.proto > protoVersion4 {
+	if f.proto > protoVersion4 || f.scyllaUseMetadataId {
 		frame.resultMetadataID = copyBytes(f.readShortBytes())
 	}
 
@@ -1592,7 +1604,7 @@ func (f *framer) writeExecuteFrame(streamID int, preparedID, resultMetadataID []
 	f.writeCustomPayload(customPayload)
 	f.writeShortBytes(preparedID)
 
-	if f.proto > protoVersion4 {
+	if f.proto > protoVersion4 || f.scyllaUseMetadataId {
 		f.writeShortBytes(resultMetadataID)
 	}
 
