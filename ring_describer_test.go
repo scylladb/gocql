@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net"
 	"testing"
-	"time"
 
 	"github.com/gocql/gocql/internal/tests"
 
@@ -94,7 +93,7 @@ func TestGetClusterPeerInfoZeroToken(t *testing.T) {
 type mockConnection struct{}
 
 func (*mockConnection) Close() {}
-func (*mockConnection) exec(ctx context.Context, req frameBuilder, tracer Tracer, requestTimeout time.Duration) (*framer, error) {
+func (*mockConnection) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*framer, error) {
 	return nil, nil
 }
 func (*mockConnection) awaitSchemaAgreement(ctx context.Context) error     { return nil }
