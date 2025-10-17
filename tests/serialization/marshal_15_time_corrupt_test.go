@@ -17,7 +17,7 @@ import (
 func TestMarshalTimeCorrupt(t *testing.T) {
 	t.Parallel()
 
-	tType := gocql.NewNativeType(4, gocql.TypeTime, "")
+	tType := gocql.NewNativeType(4, gocql.TypeTime)
 
 	type testSuite struct {
 		name      string

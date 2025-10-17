@@ -15,8 +15,8 @@ import (
 func TestMarshalMapV3Corrupt(t *testing.T) {
 	t.Parallel()
 
-	elem := gocql.NewNativeType(3, gocql.TypeSmallInt, "")
-	tType := gocql.NewCollectionType(gocql.NewNativeType(3, gocql.TypeMap, ""), elem, elem)
+	elem := gocql.NewNativeType(3, gocql.TypeSmallInt)
+	tType := gocql.NewCollectionType(gocql.NewNativeType(3, gocql.TypeMap), elem, elem)
 
 	//unmarshal data than bigger the normal data, does not return error.
 	brokenBigData := serialization.GetTypes(mod.Values{

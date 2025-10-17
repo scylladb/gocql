@@ -16,7 +16,7 @@ import (
 func TestMarshalsInet(t *testing.T) {
 	t.Parallel()
 
-	tType := gocql.NewNativeType(4, gocql.TypeInet, "")
+	tType := gocql.NewNativeType(4, gocql.TypeInet)
 
 	type testSuite struct {
 		name      string

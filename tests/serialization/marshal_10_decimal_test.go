@@ -20,7 +20,7 @@ import (
 func TestMarshalDecimal(t *testing.T) {
 	t.Parallel()
 
-	tType := gocql.NewNativeType(4, gocql.TypeDecimal, "")
+	tType := gocql.NewNativeType(4, gocql.TypeDecimal)
 
 	type testSuite struct {
 		name      string

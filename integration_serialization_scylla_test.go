@@ -67,7 +67,7 @@ func checkTypeMarshal(t *testing.T, tc valcases.SimpleTypeCases) {
 	cqlName := tc.CQLName
 	t.Run(cqlName, func(t *testing.T) {
 		tp := Type(tc.CQLType)
-		cqlType := NewNativeType(4, tp, "")
+		cqlType := NewNativeType(4, tp)
 
 		for _, valCase := range tc.Cases {
 			for _, langCase := range valCase.LangCases {
@@ -89,7 +89,7 @@ func checkTypeUnmarshal(t *testing.T, tc valcases.SimpleTypeCases) {
 	cqlName := tc.CQLName
 	t.Run(cqlName, func(t *testing.T) {
 		tp := Type(tc.CQLType)
-		cqlType := NewNativeType(4, tp, "")
+		cqlType := NewNativeType(4, tp)
 
 		for _, valCase := range tc.Cases {
 			for _, langCase := range valCase.LangCases {
@@ -115,7 +115,7 @@ func checkTypeInsertSelect(t *testing.T, session *Session, insertStmt, selectStm
 	cqlName := tc.CQLName
 	t.Run(cqlName, func(t *testing.T) {
 		tp := Type(tc.CQLType)
-		cqlType := NewNativeType(4, tp, "")
+		cqlType := NewNativeType(4, tp)
 
 		for _, valCase := range tc.Cases {
 			valCaseName := valCase.Name

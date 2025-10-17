@@ -19,7 +19,7 @@ func TestMarshalVarIntCorrupt(t *testing.T) {
 		name      string
 	}
 
-	tType := gocql.NewNativeType(4, gocql.TypeVarint, "")
+	tType := gocql.NewNativeType(4, gocql.TypeVarint)
 
 	testSuites := [2]testSuite{
 		{

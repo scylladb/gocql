@@ -22,7 +22,7 @@ func TestMarshalCounterCorrupt(t *testing.T) {
 		unmarshal func(bytes []byte, i interface{}) error
 	}
 
-	tType := gocql.NewNativeType(4, gocql.TypeCounter, "")
+	tType := gocql.NewNativeType(4, gocql.TypeCounter)
 
 	testSuites := [2]testSuite{
 		{

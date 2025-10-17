@@ -18,7 +18,7 @@ func TestMarshalDecimalCorrupt(t *testing.T) {
 		name      string
 	}
 
-	tType := gocql.NewNativeType(4, gocql.TypeDecimal, "")
+	tType := gocql.NewNativeType(4, gocql.TypeDecimal)
 
 	testSuites := [2]testSuite{
 		{

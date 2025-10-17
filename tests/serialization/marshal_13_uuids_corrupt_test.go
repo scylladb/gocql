@@ -17,8 +17,8 @@ func TestMarshalUUIDsMustFail(t *testing.T) {
 	t.Parallel()
 
 	tTypes := []gocql.NativeType{
-		gocql.NewNativeType(4, gocql.TypeUUID, ""),
-		gocql.NewNativeType(4, gocql.TypeTimeUUID, ""),
+		gocql.NewNativeType(4, gocql.TypeUUID),
+		gocql.NewNativeType(4, gocql.TypeTimeUUID),
 	}
 
 	type testSuite struct {

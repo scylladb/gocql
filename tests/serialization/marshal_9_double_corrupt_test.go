@@ -21,7 +21,7 @@ func TestMarshalDoubleCorrupt(t *testing.T) {
 		unmarshal func(bytes []byte, i interface{}) error
 	}
 
-	tType := gocql.NewNativeType(4, gocql.TypeDouble, "")
+	tType := gocql.NewNativeType(4, gocql.TypeDouble)
 
 	testSuites := [2]testSuite{
 		{

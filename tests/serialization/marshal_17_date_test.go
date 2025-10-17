@@ -17,7 +17,7 @@ import (
 func TestMarshalsDate(t *testing.T) {
 	t.Parallel()
 
-	tType := gocql.NewNativeType(4, gocql.TypeDate, "")
+	tType := gocql.NewNativeType(4, gocql.TypeDate)
 
 	type testSuite struct {
 		name      string

@@ -22,7 +22,7 @@ func TestMarshalBigIntCorrupt(t *testing.T) {
 		unmarshal func(bytes []byte, i interface{}) error
 	}
 
-	tType := gocql.NewNativeType(4, gocql.TypeBigInt, "")
+	tType := gocql.NewNativeType(4, gocql.TypeBigInt)
 
 	testSuites := [2]testSuite{
 		{
