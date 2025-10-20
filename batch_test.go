@@ -29,9 +29,10 @@ package gocql
 
 import (
 	"fmt"
-	"github.com/stretchr/testify/require"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestBatch_Errors(t *testing.T) {

@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-package gocql
+package crc
 
 import (
 	"testing"

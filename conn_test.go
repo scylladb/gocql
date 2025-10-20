@@ -968,7 +968,10 @@ func newTestExecConn(t *testing.T, w contextWriter) (*Conn, net.Conn) {
 	c := newTestConnWithFramerPool()
 	c.ctx = ctx
 	c.cancel = cancel
-	c.conn = client
+	c.r = &connReader{
+		conn: client,
+		r:    bufio.NewReader(client),
+	}
 	c.w = w
 	c.logger = nopLogger{}
 	c.errorHandler = connErrorHandlerFn(func(*Conn, error, bool) {})
@@ -1585,7 +1588,7 @@ func TestPrepareBatchMetadataMultipleKeyspaceTables(t *testing.T) {
 	}
 
 	stmt := "BEGIN BATCH INSERT INTO ks1.tbl1 (col1) VALUES (?) INSERT INTO ks2.tbl2 (col2) VALUES (?) APPLY BATCH"
-	info, err := conn.prepareStatement(ctx, stmt, nil, time.Second)
+	info, err := conn.prepareStatement(ctx, stmt, nil, "", time.Second)
 	if err != nil {
 		t.Fatalf("prepareStatement failed: %v", err)
 	}

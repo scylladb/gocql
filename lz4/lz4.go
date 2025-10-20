@@ -72,7 +72,7 @@ func (s LZ4Compressor) AppendDecompressedWithLength(dst, src []byte) ([]byte, er
 	}
 	uncompressedLength := binary.BigEndian.Uint32(src[:dataLengthSize])
 	if uncompressedLength == 0 {
-		return nil, nil
+		return dst, nil
 	}
 	oldDstLen := len(dst)
 	dst = grow(dst, int(uncompressedLength))
@@ -97,7 +97,7 @@ func (s LZ4Compressor) AppendCompressed(dst, src []byte) ([]byte, error) {
 
 func (s LZ4Compressor) AppendDecompressed(dst, src []byte, uncompressedLength uint32) ([]byte, error) {
 	if uncompressedLength == 0 {
-		return nil, nil
+		return dst, nil
 	}
 	oldDstLen := len(dst)
 	dst = grow(dst, int(uncompressedLength))
@@ -105,7 +105,7 @@ func (s LZ4Compressor) AppendDecompressed(dst, src []byte, uncompressedLength ui
 	return dst[:oldDstLen+n], err
 }
 
-// grow grows b to guaranty space for n elements, if needed.
+// grow grows b to guarantee space for n elements, if needed.
 func grow(b []byte, n int) []byte {
 	oldLen := len(b)
 	if cap(b)-oldLen < n {
