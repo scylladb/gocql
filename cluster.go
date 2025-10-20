@@ -565,6 +565,10 @@ func (cfg *ClusterConfig) Validate() error {
 		return errors.New("ConnectTimeout should be positive time.Duration or zero")
 	}
 
+	if cfg.ReadTimeout < 0 {
+		return errors.New("ReadTimeout should be positive time.Duration or zero")
+	}
+
 	if cfg.MetadataSchemaRequestTimeout < 0 {
 		return errors.New("MetadataSchemaRequestTimeout should be positive time.Duration or zero")
 	}
@@ -583,6 +587,14 @@ func (cfg *ClusterConfig) Validate() error {
 
 	if cfg.ProtoVersion < 0 {
 		return errors.New("ProtoVersion should be positive number or zero")
+	}
+
+	if cfg.ProtoVersion >= 5 {
+		_, isSnappyValue := cfg.Compressor.(SnappyCompressor)
+		_, isSnappyPtr := cfg.Compressor.(*SnappyCompressor)
+		if isSnappyValue || isSnappyPtr {
+			return errors.New("SnappyCompressor does not support protocol v5 segment framing; use LZ4Compressor or no compression with ProtoVersion >= 5")
+		}
 	}
 
 	if !cfg.DisableSkipMetadata {

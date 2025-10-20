@@ -25,6 +25,8 @@
 package gocql
 
 import (
+	"errors"
+
 	"github.com/klauspost/compress/s2"
 )
 
@@ -69,9 +71,9 @@ func (s SnappyCompressor) AppendDecompressedWithLength(dst, src []byte) ([]byte,
 }
 
 func (s SnappyCompressor) AppendCompressed(dst, src []byte) ([]byte, error) {
-	panic("SnappyCompressor.AppendCompressed is not supported")
+	return nil, errors.New("gocql: AppendCompressed is not supported for SnappyCompressor")
 }
 
 func (s SnappyCompressor) AppendDecompressed(dst, src []byte, decompressedLength uint32) ([]byte, error) {
-	panic("SnappyCompressor.AppendDecompressed is not supported")
+	return nil, errors.New("gocql: AppendDecompressed is not supported for SnappyCompressor")
 }
