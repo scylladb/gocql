@@ -968,7 +968,10 @@ func newTestExecConn(t *testing.T, w contextWriter) (*Conn, net.Conn) {
 	c := newTestConnWithFramerPool()
 	c.ctx = ctx
 	c.cancel = cancel
-	c.conn = client
+	c.r = &connReader{
+		conn: client,
+		r:    bufio.NewReader(client),
+	}
 	c.w = w
 	c.logger = nopLogger{}
 	c.errorHandler = connErrorHandlerFn(func(*Conn, error, bool) {})
@@ -1585,7 +1588,7 @@ func TestPrepareBatchMetadataMultipleKeyspaceTables(t *testing.T) {
 	}
 
 	stmt := "BEGIN BATCH INSERT INTO ks1.tbl1 (col1) VALUES (?) INSERT INTO ks2.tbl2 (col2) VALUES (?) APPLY BATCH"
-	info, err := conn.prepareStatement(ctx, stmt, nil, time.Second)
+	info, err := conn.prepareStatement(ctx, stmt, nil, "", time.Second)
 	if err != nil {
 		t.Fatalf("prepareStatement failed: %v", err)
 	}
@@ -2571,4 +2574,134 @@ func TestConnProcessAllFramesInSingleSegment(t *testing.T) {
 	case err := <-errCh:
 		require.NoError(t, err)
 	}
+}
+
+// deadlineRecordingConn is a net.Conn whose SetReadDeadline calls are recorded
+// so tests can assert the exact sequence of deadline values passed.
+//
+// Read blocks until proceed is closed, then returns (0, io.EOF). A sync.Once
+// guards the close of readEntered so that repeated Read calls (e.g. from
+// bufio's internal retry logic) do not panic.
+type deadlineRecordingConn struct {
+	readEnteredOnce sync.Once
+	readEntered     chan struct{} // closed on first Read entry
+	proceed         chan struct{} // close to unblock Read
+
+	mu        sync.Mutex
+	deadlines []time.Time // all values passed to SetReadDeadline, in order
+}
+
+var _ net.Conn = (*deadlineRecordingConn)(nil)
+
+func (c *deadlineRecordingConn) SetReadDeadline(t time.Time) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.deadlines = append(c.deadlines, t)
+	return nil
+}
+
+func (c *deadlineRecordingConn) Read(p []byte) (int, error) {
+	c.readEnteredOnce.Do(func() { close(c.readEntered) })
+	<-c.proceed
+	return 0, io.EOF
+}
+
+func (c *deadlineRecordingConn) Write(p []byte) (int, error)        { return 0, io.ErrClosedPipe }
+func (c *deadlineRecordingConn) Close() error                       { return nil }
+func (c *deadlineRecordingConn) LocalAddr() net.Addr                { return nil }
+func (c *deadlineRecordingConn) RemoteAddr() net.Addr               { return nil }
+func (c *deadlineRecordingConn) SetDeadline(t time.Time) error      { return nil }
+func (c *deadlineRecordingConn) SetWriteDeadline(t time.Time) error { return nil }
+
+// TestRecvSegmentDisarmsReadDeadlineOnIdleConn verifies that recvSegment
+// calls SetReadDeadline(time.Time{}) on the underlying connection before
+// attempting to read the first segment bytes, and restores the configured
+// ReadTimeout on the connReader afterwards.
+//
+// This exercises the fix for the idle proto-v5 connection timeout regression:
+// without the disarm, connReader.Read re-arms the deadline on every call, so
+// a short ReadTimeout fires on a healthy idle connection and serve() drops it.
+func TestRecvSegmentDisarmsReadDeadlineOnIdleConn(t *testing.T) {
+	t.Parallel()
+
+	const configuredTimeout = 5 * time.Millisecond
+
+	mock := &deadlineRecordingConn{
+		readEntered: make(chan struct{}),
+		proceed:     make(chan struct{}),
+	}
+
+	cr := &connReader{
+		conn: mock,
+		r:    bufio.NewReader(mock),
+	}
+	cr.SetTimeout(configuredTimeout)
+
+	w := &deadlineContextWriter{
+		w:         mock,
+		semaphore: make(chan struct{}, 1),
+		quit:      make(chan struct{}),
+	}
+
+	c := &Conn{
+		r:       cr,
+		calls:   make(map[int]*callReq),
+		version: protoVersion5,
+		streams: streams.New(),
+		w:       w,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- c.recvSegment(ctx) }()
+
+	// Wait until connReader.Read has been entered — at this point
+	// SetReadDeadline(zero) has already been called and SetTimeout(0) has
+	// already been applied, but the restore has not yet happened.
+	select {
+	case <-mock.readEntered:
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for recvSegment to enter Read")
+	}
+
+	// --- assertions valid while recvSegment is blocked inside Read ---
+
+	// SetReadDeadline must have been called exactly once with the zero time.
+	mock.mu.Lock()
+	deadlines := append([]time.Time(nil), mock.deadlines...)
+	mock.mu.Unlock()
+
+	require.Len(t, deadlines, 1, "expected exactly one SetReadDeadline call before the segment read")
+	require.True(t, deadlines[0].IsZero(),
+		"SetReadDeadline should be called with zero time to disarm the deadline; got %v", deadlines[0])
+
+	// connReader timeout must be zeroed so that connReader.Read does not
+	// re-arm the deadline while blocking for segment data.
+	require.Equal(t, time.Duration(0), cr.GetTimeout(),
+		"connReader timeout should be zeroed while recvSegment blocks on the initial segment read")
+
+	// Unblock Read — mock returns (0, io.EOF), which terminates recvSegment.
+	close(mock.proceed)
+
+	select {
+	case err := <-errCh:
+		// io.EOF is the expected outcome: we fed no bytes so recvSegment has
+		// nothing to parse and propagates the EOF from the mock.
+		// The critical invariant is that the error is NOT ErrReadHeaderTimeout:
+		// io.EOF is a clean close, not a timeout, so serve() must treat it as fatal.
+		require.ErrorIs(t, err, io.EOF,
+			"recvSegment should propagate io.EOF from a closed read, not misclassify it")
+		require.False(t, errors.Is(err, ErrReadHeaderTimeout),
+			"io.EOF must not be wrapped as ErrReadHeaderTimeout")
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for recvSegment to return after Read was unblocked")
+	}
+
+	// --- assertions valid after recvSegment has returned ---
+
+	// Timeout must be restored to its original value regardless of the error path.
+	require.Equal(t, configuredTimeout, cr.GetTimeout(),
+		"connReader timeout should be restored to its configured value after recvSegment returns")
 }

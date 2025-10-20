@@ -46,12 +46,16 @@ func addQueryParams(frame []byte, index int) int {
 	index = index + 2
 
 	//use query flags
-	var flags byte
+	var flags uint32
 	if frame[0] > 0x04 {
-		flags = frame[index+3]
+		// For protocol v5+, flags are a 4-byte big-endian uint32
+		flags = uint32(frame[index])<<24 |
+			uint32(frame[index+1])<<16 |
+			uint32(frame[index+2])<<8 |
+			uint32(frame[index+3])
 		index = index + 4
 	} else {
-		flags = frame[index]
+		flags = uint32(frame[index])
 		index = index + 1
 	}
 

@@ -811,12 +811,12 @@ func (s *Session) findTabletReplicasUnsafeForToken(keyspace, table string, token
 
 // Returns routing key indexes and type info.
 // If keyspace == "" it uses the keyspace which is specified in Cluster.Keyspace
-func (s *Session) routingKeyInfo(ctx context.Context, stmt string, keyspace string) (*routingKeyInfo, error) {
+func (s *Session) routingKeyInfo(ctx context.Context, stmt string, keyspace string, requestTimeout time.Duration) (*routingKeyInfo, error) {
 	if keyspace == "" {
 		keyspace = s.cfg.Keyspace
 	}
 
-	routingKeyInfoCacheKey := keyspace + stmt
+	routingKeyInfoCacheKey := keyspace + "\x00" + stmt
 
 	s.routingKeyInfoCache.mu.Lock()
 
@@ -862,10 +862,10 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string, keyspace stri
 	}
 
 	// get the query info for the statement
-	info, inflight.err = conn.prepareStatement(ctx, stmt, nil, keyspace)
+	info, inflight.err = conn.prepareStatement(ctx, stmt, nil, keyspace, requestTimeout)
 	if inflight.err != nil {
 		// don't cache this error
-		s.routingKeyInfoCache.Remove(stmt)
+		s.routingKeyInfoCache.Remove(routingKeyInfoCacheKey)
 		return nil, inflight.err
 	}
 
@@ -892,10 +892,10 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string, keyspace stri
 
 	partitioner, err := scyllaGetTablePartitioner(s, keyspace, table)
 	if err != nil {
-		// don't cache this error, but make sure all waiters see the same failure.
+		// don't cache this error
 		inflight.err = err
-		s.routingKeyInfoCache.Remove(stmt)
-		return nil, err
+		s.routingKeyInfoCache.Remove(routingKeyInfoCacheKey)
+		return nil, inflight.err
 	}
 
 	if len(info.request.pkeyColumns) > 0 {
@@ -923,7 +923,7 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string, keyspace stri
 	tableMetadata, inflight.err = s.TableMetadata(keyspace, table)
 	if inflight.err != nil {
 		// don't cache this error
-		s.routingKeyInfoCache.Remove(stmt)
+		s.routingKeyInfoCache.Remove(routingKeyInfoCacheKey)
 		return nil, inflight.err
 	}
 
@@ -1215,13 +1215,14 @@ type Query struct {
 	observer          QueryObserver
 	metrics           *queryMetrics
 	session           *Session
-	// Timeout on waiting for response from server
-	customPayload map[string][]byte
+	customPayload     map[string][]byte
 	// getKeyspace is field so that it can be overriden in tests
 	getKeyspace func() string
 	// routingInfo is a pointer because Query can be copied and copyable struct can't hold a mutex.
-	routingInfo *queryRoutingInfo
-	binding     func(q *QueryInfo) ([]any, error)
+	routingInfo       *queryRoutingInfo
+	binding           func(q *QueryInfo) ([]any, error)
+	nowInSecondsValue *int
+	keyspace          string
 	// hostID specifies the host on which the query should be executed.
 	// If it is empty, then the host is picked by HostSelectionPolicy
 	hostID     string
@@ -1243,8 +1244,6 @@ type Query struct {
 	skipPrepare                bool
 	disableSkipMetadata        bool
 	defaultTimestamp           bool
-	keyspace                   string
-	nowInSecondsValue          *int
 	// prepareCache caches whether shouldPrepare has been computed.
 	// Since q.stmt is immutable after construction, the result never
 	// changes. Accessed atomically because speculative execution may
@@ -1522,7 +1521,7 @@ func (q *Query) GetRoutingKey() ([]byte, error) {
 	}
 
 	// try to determine the routing key
-	routingKeyInfo, err := q.session.routingKeyInfo(q.Context(), q.stmt, q.keyspace)
+	routingKeyInfo, err := q.session.routingKeyInfo(q.Context(), q.stmt, q.keyspace, q.requestTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -2514,32 +2513,31 @@ func (n *nextIter) fetch() *Iter {
 }
 
 type Batch struct {
-	context               context.Context
-	rt                    RetryPolicy
-	spec                  SpeculativeExecutionPolicy
-	trace                 Tracer
-	observer              BatchObserver
-	Type                  BatchType
-	Entries               []BatchEntry
-	Cons                  Consistency
-	routingKey            []byte
-	CustomPayload         map[string][]byte
-	session               *Session
-	serialCons            Consistency
-	defaultTimestamp      bool
-	defaultTimestampValue int64
-	cancelBatch           func()
-	keyspace              string
-	metrics               *queryMetrics
-	nowInSeconds          *int
-
+	rt          RetryPolicy
+	spec        SpeculativeExecutionPolicy
+	trace       Tracer
+	observer    BatchObserver
+	context     context.Context
+	cancelBatch func()
 	// routingInfo is a pointer because Query can be copied and copyable struct can't hold a mutex.
-	routingInfo *queryRoutingInfo
+	routingInfo   *queryRoutingInfo
+	nowInSeconds  *int
+	metrics       *queryMetrics
+	CustomPayload map[string][]byte
+	session       *Session
+	keyspace      string
 	// hostID specifies the host on which the query should be executed.
 	// If it is empty, then the host is picked by HostSelectionPolicy
-	hostID string
-	// requestTimeout is a timeout on waiting for response from serve
-	requestTimeout time.Duration
+	hostID                string
+	routingKey            []byte
+	Entries               []BatchEntry
+	defaultTimestampValue int64
+	// requestTimeout is a timeout on waiting for response from server
+	requestTimeout   time.Duration
+	serialCons       Consistency
+	Cons             Consistency
+	defaultTimestamp bool
+	Type             BatchType
 }
 
 // NewBatch creates a new batch operation using defaults defined in the cluster
@@ -2801,7 +2799,7 @@ func (b *Batch) GetRoutingKey() ([]byte, error) {
 		return nil, nil
 	}
 	// try to determine the routing key
-	routingKeyInfo, err := b.session.routingKeyInfo(b.Context(), entry.Stmt, b.keyspace)
+	routingKeyInfo, err := b.session.routingKeyInfo(b.Context(), entry.Stmt, b.keyspace, b.GetRequestTimeout())
 	if err != nil {
 		return nil, err
 	}
