@@ -712,7 +712,7 @@ func (s *Session) findTabletReplicasForToken(keyspace, table string, token int64
 
 // Returns routing key indexes and type info.
 // If keyspace == "" it uses the keyspace which is specified in Cluster.Keyspace
-func (s *Session) routingKeyInfo(ctx context.Context, stmt string, keyspace string) (*routingKeyInfo, error) {
+func (s *Session) routingKeyInfo(ctx context.Context, stmt string, keyspace string, requestTimeout time.Duration) (*routingKeyInfo, error) {
 	if keyspace == "" {
 		keyspace = s.cfg.Keyspace
 	}
@@ -763,7 +763,7 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string, keyspace stri
 	}
 
 	// get the query info for the statement
-	info, inflight.err = conn.prepareStatement(ctx, stmt, nil, keyspace)
+	info, inflight.err = conn.prepareStatement(ctx, stmt, nil, keyspace, requestTimeout)
 	if inflight.err != nil {
 		// don't cache this error
 		s.routingKeyInfoCache.Remove(stmt)
@@ -1074,43 +1074,42 @@ func (qm *queryMetrics) attempt(addAttempts int, addLatency time.Duration,
 
 // Query represents a CQL statement that can be executed.
 type Query struct {
-	trace    Tracer
-	context  context.Context
-	spec     SpeculativeExecutionPolicy
-	rt       RetryPolicy
-	conn     ConnInterface
-	observer QueryObserver
-	metrics  *queryMetrics
-	session  *Session
-	// Timeout on waiting for response from server
+	trace         Tracer
+	context       context.Context
+	spec          SpeculativeExecutionPolicy
+	rt            RetryPolicy
+	conn          ConnInterface
+	observer      QueryObserver
 	customPayload map[string][]byte
+	session       *Session
 	// getKeyspace is field so that it can be overriden in tests
 	getKeyspace func() string
 	// routingInfo is a pointer because Query can be copied and copyable struct can't hold a mutex.
-	routingInfo *queryRoutingInfo
-	binding     func(q *QueryInfo) ([]interface{}, error)
+	routingInfo       *queryRoutingInfo
+	binding           func(q *QueryInfo) ([]interface{}, error)
+	metrics           *queryMetrics
+	nowInSecondsValue *int
+	keyspace          string
 	// hostID specifies the host on which the query should be executed.
 	// If it is empty, then the host is picked by HostSelectionPolicy
-	hostID     string
-	stmt       string
-	routingKey []byte
-	values     []interface{}
-	pageState  []byte
-	// requestTimeout is a timeout on waiting for response from server
-	requestTimeout        time.Duration
+	hostID                string
+	stmt                  string
+	routingKey            []byte
+	pageState             []byte
+	values                []interface{}
 	defaultTimestampValue int64
 	prefetch              float64
 	pageSize              int
-	refCount              uint32
-	cons                  Consistency
-	serialCons            Consistency
-	disableAutoPage       bool
-	idempotent            bool
-	skipPrepare           bool
-	disableSkipMetadata   bool
-	defaultTimestamp      bool
-	keyspace              string
-	nowInSecondsValue     *int
+	// requestTimeout is a timeout on waiting for response from server
+	requestTimeout      time.Duration
+	refCount            uint32
+	serialCons          Consistency
+	cons                Consistency
+	idempotent          bool
+	skipPrepare         bool
+	disableSkipMetadata bool
+	defaultTimestamp    bool
+	disableAutoPage     bool
 }
 
 type queryRoutingInfo struct {
@@ -1373,7 +1372,7 @@ func (q *Query) GetRoutingKey() ([]byte, error) {
 	}
 
 	// try to determine the routing key
-	routingKeyInfo, err := q.session.routingKeyInfo(q.Context(), q.stmt, q.keyspace)
+	routingKeyInfo, err := q.session.routingKeyInfo(q.Context(), q.stmt, q.keyspace, q.requestTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -2013,32 +2012,31 @@ func (n *nextIter) fetch() *Iter {
 }
 
 type Batch struct {
-	context               context.Context
-	rt                    RetryPolicy
-	spec                  SpeculativeExecutionPolicy
-	trace                 Tracer
-	observer              BatchObserver
-	Type                  BatchType
-	Entries               []BatchEntry
-	Cons                  Consistency
-	routingKey            []byte
-	CustomPayload         map[string][]byte
-	session               *Session
-	serialCons            Consistency
-	defaultTimestamp      bool
-	defaultTimestampValue int64
-	cancelBatch           func()
-	keyspace              string
-	metrics               *queryMetrics
-	nowInSeconds          *int
-
+	rt          RetryPolicy
+	spec        SpeculativeExecutionPolicy
+	trace       Tracer
+	observer    BatchObserver
+	context     context.Context
+	cancelBatch func()
 	// routingInfo is a pointer because Query can be copied and copyable struct can't hold a mutex.
-	routingInfo *queryRoutingInfo
+	routingInfo   *queryRoutingInfo
+	nowInSeconds  *int
+	metrics       *queryMetrics
+	CustomPayload map[string][]byte
+	session       *Session
+	keyspace      string
 	// hostID specifies the host on which the query should be executed.
 	// If it is empty, then the host is picked by HostSelectionPolicy
-	hostID string
-	// requestTimeout is a timeout on waiting for response from serve
-	requestTimeout time.Duration
+	hostID                string
+	routingKey            []byte
+	Entries               []BatchEntry
+	defaultTimestampValue int64
+	// requestTimeout is a timeout on waiting for response from server
+	requestTimeout   time.Duration
+	serialCons       Consistency
+	Cons             Consistency
+	defaultTimestamp bool
+	Type             BatchType
 }
 
 // NewBatch creates a new batch operation using defaults defined in the cluster
@@ -2300,7 +2298,7 @@ func (b *Batch) GetRoutingKey() ([]byte, error) {
 		return nil, nil
 	}
 	// try to determine the routing key
-	routingKeyInfo, err := b.session.routingKeyInfo(b.Context(), entry.Stmt, b.keyspace)
+	routingKeyInfo, err := b.session.routingKeyInfo(b.Context(), entry.Stmt, b.keyspace, b.GetRequestTimeout())
 	if err != nil {
 		return nil, err
 	}

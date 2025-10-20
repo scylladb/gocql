@@ -36,6 +36,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/gocql/gocql/internal/crc"
 )
 
 type unsetColumn struct{}
@@ -374,7 +376,6 @@ type framer struct {
 	// 0 after a read.
 	readBuffer            []byte
 	buf                   []byte
-	headSize              int
 	flagLWT               int
 	rateLimitingErrorCode int
 	proto                 byte
@@ -759,7 +760,7 @@ func (f *framer) finish() error {
 		}
 
 		// TODO: only compress frames which are big enough
-		compressed, err := f.compres.AppendCompressedWithLength(nil, f.buf[f.headSize:])
+		compressed, err := f.compres.AppendCompressedWithLength(nil, f.buf[headSize:])
 		if err != nil {
 			return err
 		}
@@ -1004,11 +1005,10 @@ type resultMetadata struct {
 	// it is at minimum len(columns) but may be larger, for instance when a column
 	// is a UDT or tuple.
 	columns        []ColumnInfo
+	newMetadataID  []byte
 	flags          int
 	colCount       int
 	actualColCount int
-
-	newMetadataID []byte
 }
 
 func (r *resultMetadata) morePages() bool {
@@ -1122,9 +1122,8 @@ func (f *framer) parseResultFrame() (frame, error) {
 }
 
 type resultRowsFrame struct {
-	frameHeader
-
 	meta resultMetadata
+	frameHeader
 	// dont parse the rows here as we only need to do it once
 	numRows int
 }
@@ -1162,11 +1161,11 @@ func (f *framer) parseResultSetKeyspace() frame {
 }
 
 type resultPreparedFrame struct {
-	preparedID []byte
-	respMeta   resultMetadata
-	frameHeader
-	reqMeta          preparedMetadata
+	preparedID       []byte
 	resultMetadataID []byte
+	respMeta         resultMetadata
+	frameHeader
+	reqMeta preparedMetadata
 }
 
 func (f *framer) parseResultPrepared() frame {
@@ -1418,6 +1417,7 @@ type queryValues struct {
 }
 
 type queryParams struct {
+	nowInSeconds          *int
 	keyspace              string
 	values                []queryValues
 	pagingState           []byte
@@ -1427,7 +1427,6 @@ type queryParams struct {
 	serialConsistency     Consistency
 	skipMeta              bool
 	defaultTimestamp      bool
-	nowInSeconds          *int // v5+
 }
 
 func (q queryParams) String() string {
@@ -1437,10 +1436,6 @@ func (q queryParams) String() string {
 
 func (f *framer) writeQueryParams(opts *queryParams) {
 	f.writeConsistency(opts.consistency)
-
-	if f.proto == protoVersion1 {
-		return
-	}
 
 	var flags uint32
 	names := false
@@ -1575,11 +1570,10 @@ func (f frameWriterFunc) buildFrame(framer *framer, streamID int) error {
 }
 
 type writeExecuteFrame struct {
-	customPayload map[string][]byte
-	preparedID    []byte
-	params        queryParams
-	// v5+
+	customPayload    map[string][]byte
+	preparedID       []byte
 	resultMetadataID []byte
+	params           queryParams
 }
 
 func (e *writeExecuteFrame) String() string {
@@ -1602,20 +1596,7 @@ func (f *framer) writeExecuteFrame(streamID int, preparedID, resultMetadataID []
 		f.writeShortBytes(resultMetadataID)
 	}
 
-	if f.proto > protoVersion1 {
-		f.writeQueryParams(params)
-	} else {
-		n := len(params.values)
-		f.writeShort(uint16(n))
-		for i := 0; i < n; i++ {
-			if params.values[i].isUnset {
-				f.writeUnset()
-			} else {
-				f.writeBytes(params.values[i].value)
-			}
-		}
-		f.writeConsistency(params.consistency)
-	}
+	f.writeQueryParams(params)
 
 	return f.finish()
 }
@@ -1629,15 +1610,15 @@ type batchStatment struct {
 }
 
 type writeBatchFrame struct {
-	customPayload         map[string][]byte //v4+
+	customPayload         map[string][]byte
+	nowInSeconds          *int
+	keyspace              string
 	statements            []batchStatment
 	defaultTimestampValue int64
 	consistency           Consistency
 	serialConsistency     Consistency
 	typ                   BatchType
 	defaultTimestamp      bool
-	keyspace              string //v5+
-	nowInSeconds          *int   //v5+
 }
 
 func (w *writeBatchFrame) buildFrame(framer *framer, streamID int) error {
@@ -1689,13 +1670,11 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 
 	f.writeConsistency(w.consistency)
 
-	if f.proto > protoVersion2 {
-		if w.serialConsistency > 0 {
-			flags |= flagWithSerialConsistency
-		}
-		if w.defaultTimestamp {
-			flags |= flagDefaultTimestamp
-		}
+	if w.serialConsistency > 0 {
+		flags |= flagWithSerialConsistency
+	}
+	if w.defaultTimestamp {
+		flags |= flagDefaultTimestamp
 	}
 
 	if w.keyspace != "" {
@@ -2174,7 +2153,7 @@ func readUncompressedSegment(r io.Reader) ([]byte, bool, error) {
 	}
 
 	// Compute and verify the header CRC24
-	computedHeaderCRC24 := Crc24(header[:headerSize])
+	computedHeaderCRC24 := crc.Crc24(header[:headerSize])
 	readHeaderCRC24 := uint32(header[3]) | uint32(header[4])<<8 | uint32(header[5])<<16
 	if computedHeaderCRC24 != readHeaderCRC24 {
 		return nil, false, fmt.Errorf("gocql: crc24 mismatch in frame header, computed: %d, got: %d", computedHeaderCRC24, readHeaderCRC24)
@@ -2196,7 +2175,7 @@ func readUncompressedSegment(r io.Reader) ([]byte, bool, error) {
 		return nil, false, fmt.Errorf("gocql: failed to read payload crc32, err: %w", err)
 	}
 
-	computedPayloadCRC32 := Crc32(payload)
+	computedPayloadCRC32 := crc.Crc32(payload)
 	readPayloadCRC32 := binary.LittleEndian.Uint32(header[:crc32Size])
 	if computedPayloadCRC32 != readPayloadCRC32 {
 		return nil, false, fmt.Errorf("gocql: payload crc32 mismatch, computed: %d, got: %d", computedPayloadCRC32, readPayloadCRC32)
@@ -2232,17 +2211,17 @@ func newUncompressedSegment(payload []byte, isSelfContained bool) ([]byte, error
 	segment[2] = byte(headerInt >> 16)
 
 	// Calculate CRC24 for the first 3 bytes of the header
-	crc := Crc24(segment[:3])
+	checksum := crc.Crc24(segment[:3])
 
 	// Encode CRC24 into the next 3 bytes of the header
-	segment[3] = byte(crc)
-	segment[4] = byte(crc >> 8)
-	segment[5] = byte(crc >> 16)
+	segment[3] = byte(checksum)
+	segment[4] = byte(checksum >> 8)
+	segment[5] = byte(checksum >> 16)
 
 	copy(segment[headerSize:], payload) // Copy the payload to the segment
 
 	// Calculate CRC32 for the payload
-	payloadCRC32 := Crc32(payload)
+	payloadCRC32 := crc.Crc32(payload)
 	binary.LittleEndian.PutUint32(segment[headerSize+payloadLen:], payloadCRC32)
 
 	return segment, nil
@@ -2295,7 +2274,7 @@ func newCompressedSegment(uncompressedPayload []byte, isSelfContained bool, comp
 	buf.Write(headerBuf[:headerSize])
 
 	// Compute and write the CRC24 checksum of the first 5 bytes
-	headerChecksum := Crc24(headerBuf[:headerSize])
+	headerChecksum := crc.Crc24(headerBuf[:headerSize])
 
 	// LittleEndian 3 bytes
 	headerBuf[0] = byte(headerChecksum)
@@ -2306,7 +2285,7 @@ func newCompressedSegment(uncompressedPayload []byte, isSelfContained bool, comp
 	buf.Write(compressedPayload)
 
 	// Compute and write the CRC32 checksum of the payload
-	payloadChecksum := Crc32(compressedPayload)
+	payloadChecksum := crc.Crc32(compressedPayload)
 	binary.LittleEndian.PutUint32(headerBuf[:], payloadChecksum)
 	buf.Write(headerBuf[:4])
 
@@ -2326,7 +2305,7 @@ func readCompressedSegment(r io.Reader, compressor Compressor) ([]byte, bool, er
 
 	// Reading checksum from frame header
 	readHeaderChecksum := uint32(headerBuf[5]) | uint32(headerBuf[6])<<8 | uint32(headerBuf[7])<<16
-	if computedHeaderChecksum := Crc24(headerBuf[:headerSize]); computedHeaderChecksum != readHeaderChecksum {
+	if computedHeaderChecksum := crc.Crc24(headerBuf[:headerSize]); computedHeaderChecksum != readHeaderChecksum {
 		return nil, false, fmt.Errorf("gocql: crc24 mismatch in frame header, read: %d, computed: %d", readHeaderChecksum, computedHeaderChecksum)
 	}
 
@@ -2350,7 +2329,7 @@ func readCompressedSegment(r io.Reader, compressor Compressor) ([]byte, bool, er
 
 	// Ensuring if payload checksum matches
 	readPayloadChecksum := binary.LittleEndian.Uint32(headerBuf[:crc32Size])
-	if computedPayloadChecksum := Crc32(compressedPayload); readPayloadChecksum != computedPayloadChecksum {
+	if computedPayloadChecksum := crc.Crc32(compressedPayload); readPayloadChecksum != computedPayloadChecksum {
 		return nil, false, fmt.Errorf("gocql: crc32 mismatch in payload, read: %d, computed: %d", readPayloadChecksum, computedPayloadChecksum)
 	}
 
