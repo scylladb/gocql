@@ -1762,7 +1762,7 @@ func TestQueryInfo(t *testing.T) {
 	defer session.Close()
 
 	conn := getRandomConn(t, session)
-	info, err := conn.prepareStatement(context.Background(), "SELECT release_version, host_id FROM system.local WHERE key = ?", nil, conn.currentKeyspace)
+	info, err := conn.prepareStatement(context.Background(), "SELECT release_version, host_id FROM system.local WHERE key = ?", nil, conn.currentKeyspace, time.Second)
 
 	if err != nil {
 		t.Fatalf("Failed to execute query for preparing statement: %v", err)
@@ -2665,7 +2665,7 @@ func TestRoutingKey(t *testing.T) {
 
 	initCacheSize := session.routingKeyInfoCache.lru.Len()
 
-	routingKeyInfo, err := session.routingKeyInfo(context.Background(), "SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?", "")
+	routingKeyInfo, err := session.routingKeyInfo(context.Background(), "SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?", "", time.Second)
 	if err != nil {
 		t.Fatalf("failed to get routing key info due to error: %v", err)
 	}
@@ -2693,7 +2693,7 @@ func TestRoutingKey(t *testing.T) {
 		context.Background(),
 		"SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?",
 		// Routing info will be pulled from cached prepared statement, it should work with minimal timeout
-		"")
+		"", time.Nanosecond)
 	if err != nil {
 		t.Fatalf("failed to get routing key info due to error: %v", err)
 	}
@@ -2730,7 +2730,7 @@ func TestRoutingKey(t *testing.T) {
 	routingKeyInfo, err = session.routingKeyInfo(
 		context.Background(),
 		"SELECT * FROM test_composite_routing_key WHERE second_id=? AND first_id=?",
-		"")
+		"", time.Second)
 	if err != nil {
 		t.Fatalf("failed to get routing key info due to error: %v", err)
 	}
@@ -2838,7 +2838,7 @@ func TestNegativeStream(t *testing.T) {
 		return f.finish()
 	})
 
-	frame, err := conn.exec(context.Background(), writer, nil)
+	frame, err := conn.exec(context.Background(), writer, nil, time.Second)
 	if err == nil {
 		t.Fatalf("expected to get an error on stream %d", stream)
 	} else if frame != nil {
@@ -3275,6 +3275,7 @@ func TestQuery_WithNowInSeconds(t *testing.T) {
 }
 
 func TestQuery_SetKeyspace(t *testing.T) {
+	const keyspace = "gocql_query_keyspace_override_test"
 	session := createSession(t)
 	defer session.Close()
 
@@ -3282,20 +3283,20 @@ func TestQuery_SetKeyspace(t *testing.T) {
 		t.Skip("keyspace for QUERY message is not supported in protocol < 5")
 	}
 
-	const keyspaceStmt = `
-		CREATE KEYSPACE IF NOT EXISTS gocql_query_keyspace_override_test 
+	keyspaceStmt := fmt.Sprintf(`
+		CREATE KEYSPACE IF NOT EXISTS %s
 		WITH replication = {
 			'class': 'SimpleStrategy', 
 			'replication_factor': '1'
 		};
-`
+	`, keyspace)
 
 	err := session.Query(keyspaceStmt).Exec()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = createTable(session, "CREATE TABLE IF NOT EXISTS gocql_query_keyspace_override_test.query_keyspace(id int, value text, PRIMARY KEY (id))")
+	err = createTable(session, fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s.query_keyspace(id int, value text, PRIMARY KEY (id))", keyspace))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3304,7 +3305,8 @@ func TestQuery_SetKeyspace(t *testing.T) {
 	expectedText := "text"
 
 	// Testing PREPARE message
-	err = session.Query("INSERT INTO gocql_query_keyspace_override_test.query_keyspace (id, value) VALUES (?, ?)", expectedID, expectedText).Exec()
+	err = session.Query("INSERT INTO query_keyspace (id, value) VALUES (?, ?)", expectedID, expectedText).
+		SetKeyspace(keyspace).Exec()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3314,8 +3316,8 @@ func TestQuery_SetKeyspace(t *testing.T) {
 		text string
 	)
 
-	q := session.Query("SELECT * FROM gocql_query_keyspace_override_test.query_keyspace").
-		SetKeyspace("gocql_query_keyspace_override_test")
+	q := session.Query("SELECT * FROM query_keyspace").
+		SetKeyspace(keyspace)
 	err = q.Scan(&id, &text)
 	if err != nil {
 		t.Fatal(err)
@@ -3328,8 +3330,8 @@ func TestQuery_SetKeyspace(t *testing.T) {
 	id = 0
 	text = ""
 
-	q = session.Query("SELECT * FROM gocql_query_keyspace_override_test.query_keyspace").
-		SetKeyspace("gocql_query_keyspace_override_test")
+	q = session.Query("SELECT * FROM query_keyspace").
+		SetKeyspace(keyspace)
 	q.skipPrepare = true
 	err = q.Scan(&id, &text)
 	if err != nil {
@@ -3352,7 +3354,7 @@ func TestLargeSizeQuery(t *testing.T) {
 
 	longString := strings.Repeat("a", 500_000)
 
-	err := session.Query("INSERT INTO gocql_test.large_size_query (id, text_col) VALUES (?, ?)", "1", longString).Exec()
+	err := session.Query("INSERT INTO gocql_test.large_size_query (id, text_col) VALUES (?, ?)", 1, longString).Exec()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3381,13 +3383,13 @@ func TestQueryCompressionNotWorthIt(t *testing.T) {
 	}
 
 	str := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$%^&*()_+"
-	err := session.Query("INSERT INTO gocql_test.large_size_query (id, text_col) VALUES (?, ?)", "1", str).Exec()
+	err := session.Query("INSERT INTO gocql_test.compression_now_worth_it (id, text_col) VALUES (?, ?)", 1, str).Exec()
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	var result string
-	err = session.Query("SELECT text_col FROM gocql_test.large_size_query").Scan(&result)
+	err = session.Query("SELECT text_col FROM gocql_test.compression_now_worth_it WHERE id = ?", 1).Scan(&result)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3411,7 +3413,7 @@ func TestPrepareExecuteMetadataChangedFlag(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if session.cfg.ProtoVersion < protoVersion5 {
+	if session.cfg.ProtoVersion < protoVersion5 || (*flagDistribution == "scylla" && flagCassVersion.Before(2025, 3, 0)) {
 		t.Skip("Metadata_changed mechanism is only available in proto > 4")
 	}
 
@@ -3534,7 +3536,6 @@ func TestPrepareExecuteMetadataChangedFlag(t *testing.T) {
 	queryAfterTableAltering2.conn = conn
 	iter = queryAfterTableAltering2.Iter()
 	handleRows(iter)
-	err = iter.Close()
 
 	inflight, _ = session.stmtsLRU.get(stmtCacheKey)
 	preparedStatementAfterTableAltering2 := inflight.preparedStatment
@@ -3543,13 +3544,13 @@ func TestPrepareExecuteMetadataChangedFlag(t *testing.T) {
 
 	require.Equal(t, preparedStatementAfterTableAltering.resultMetadataID, preparedStatementAfterTableAltering2.resultMetadataID)
 	require.NotEqual(t, preparedStatementAfterTableAltering.response, preparedStatementAfterTableAltering2.response) // METADATA_CHANGED flag
-	require.True(t, preparedStatementAfterTableAltering2.response.flags&flagMetaDataChanged != 0)
+	require.True(t, preparedStatementAfterTableAltering2.response.flags&frm.FlagMetaDataChanged != 0)
 
 	// Executing prepared stmt and expecting that C* won't return
 	// Metadata_changed because the table is not being changed.
 	queryAfterTableAltering3 := session.Query(selectStmt).WithContext(ctx)
 	queryAfterTableAltering3.conn = conn
-	iter = queryAfterTableAltering2.Iter()
+	iter = queryAfterTableAltering3.Iter()
 	handleRows(iter)
 
 	// Ensuring metadata of prepared stmt is not changed
@@ -3668,7 +3669,7 @@ func TestRoutingKeyCacheUsesOverriddenKeyspace(t *testing.T) {
 	require.NoError(t, err)
 
 	// Ensuring that the cache contains the query with default ks
-	routingKeyInfo1 := getRoutingKeyInfo("gocql_test" + b1.Entries[0].Stmt)
+	routingKeyInfo1 := getRoutingKeyInfo("gocql_test" + "\x00" + b1.Entries[0].Stmt)
 	require.Equal(t, "gocql_test", routingKeyInfo1.keyspace)
 
 	// Running batch in gocql_test_routing_key_cache ks
@@ -3679,7 +3680,7 @@ func TestRoutingKeyCacheUsesOverriddenKeyspace(t *testing.T) {
 	require.NoError(t, err)
 
 	// Ensuring that the cache contains the query with gocql_test_routing_key_cache ks
-	routingKeyInfo2 := getRoutingKeyInfo("gocql_test_routing_key_cache" + b2.Entries[0].Stmt)
+	routingKeyInfo2 := getRoutingKeyInfo("gocql_test_routing_key_cache" + "\x00" + b2.Entries[0].Stmt)
 	require.Equal(t, "gocql_test_routing_key_cache", routingKeyInfo2.keyspace)
 
 	const selectStmt = "SELECT * FROM routing_key_cache_uses_overridden_ks WHERE id=?"
