@@ -1762,7 +1762,7 @@ func TestQueryInfo(t *testing.T) {
 	defer session.Close()
 
 	conn := getRandomConn(t, session)
-	info, err := conn.prepareStatement(context.Background(), "SELECT release_version, host_id FROM system.local WHERE key = ?", nil, conn.currentKeyspace)
+	info, err := conn.prepareStatement(context.Background(), "SELECT release_version, host_id FROM system.local WHERE key = ?", nil, conn.currentKeyspace, time.Second)
 
 	if err != nil {
 		t.Fatalf("Failed to execute query for preparing statement: %v", err)
@@ -2316,7 +2316,7 @@ func TestRoutingKey(t *testing.T) {
 
 	initCacheSize := session.routingKeyInfoCache.lru.Len()
 
-	routingKeyInfo, err := session.routingKeyInfo(context.Background(), "SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?", "")
+	routingKeyInfo, err := session.routingKeyInfo(context.Background(), "SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?", "", time.Second)
 	if err != nil {
 		t.Fatalf("failed to get routing key info due to error: %v", err)
 	}
@@ -2344,7 +2344,7 @@ func TestRoutingKey(t *testing.T) {
 		context.Background(),
 		"SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?",
 		// Routing info will be pulled from cached prepared statement, it should work with minimal timeout
-		"")
+		"", time.Nanosecond)
 	if err != nil {
 		t.Fatalf("failed to get routing key info due to error: %v", err)
 	}
@@ -2381,7 +2381,7 @@ func TestRoutingKey(t *testing.T) {
 	routingKeyInfo, err = session.routingKeyInfo(
 		context.Background(),
 		"SELECT * FROM test_composite_routing_key WHERE second_id=? AND first_id=?",
-		"")
+		"", time.Second)
 	if err != nil {
 		t.Fatalf("failed to get routing key info due to error: %v", err)
 	}
@@ -2489,7 +2489,7 @@ func TestNegativeStream(t *testing.T) {
 		return f.finish()
 	})
 
-	frame, err := conn.exec(context.Background(), writer, nil)
+	frame, err := conn.exec(context.Background(), writer, nil, time.Second)
 	if err == nil {
 		t.Fatalf("expected to get an error on stream %d", stream)
 	} else if frame != nil {
