@@ -27,7 +27,7 @@ func TestBatch_WithServerTimeout_Unit(t *testing.T) {
 	// Test that WithServerTimeout sets the serverTimeout field correctly
 	cluster := NewCluster("localhost")
 	cluster.Keyspace = "test"
-	
+
 	// Create a mock session (we're just testing the API, not execution)
 	session := &Session{
 		cfg: ClusterConfig{
@@ -37,18 +37,18 @@ func TestBatch_WithServerTimeout_Unit(t *testing.T) {
 		},
 		cons: Quorum,
 	}
-	
+
 	batch := session.Batch(LoggedBatch)
-	
+
 	// Verify serverTimeout is initially zero
 	if batch.serverTimeout != 0 {
 		t.Errorf("expected initial serverTimeout to be 0, got %v", batch.serverTimeout)
 	}
-	
+
 	// Set server timeout
 	timeout := 500 * time.Millisecond
 	batch.WithServerTimeout(timeout)
-	
+
 	// Verify serverTimeout was set
 	if batch.serverTimeout != timeout {
 		t.Errorf("expected serverTimeout to be %v, got %v", timeout, batch.serverTimeout)
@@ -65,24 +65,24 @@ func TestBatch_WithServerTimeout_Chaining(t *testing.T) {
 		},
 		cons: Quorum,
 	}
-	
+
 	batch := session.Batch(UnloggedBatch).
 		WithServerTimeout(500 * time.Millisecond).
 		WithTimestamp(12345).
 		SerialConsistency(LocalSerial)
-	
+
 	if batch.serverTimeout != 500*time.Millisecond {
 		t.Errorf("expected serverTimeout to be 500ms, got %v", batch.serverTimeout)
 	}
-	
+
 	if batch.defaultTimestampValue != 12345 {
 		t.Errorf("expected timestamp to be 12345, got %v", batch.defaultTimestampValue)
 	}
-	
+
 	if batch.serialCons != LocalSerial {
 		t.Errorf("expected serial consistency to be LocalSerial, got %v", batch.serialCons)
 	}
-	
+
 	if batch.Type != UnloggedBatch {
 		t.Errorf("expected batch type to be UnloggedBatch, got %v", batch.Type)
 	}

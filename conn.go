@@ -1687,7 +1687,7 @@ func (c *Conn) UseKeyspace(keyspace string) error {
 // supported in the binary batch protocol.
 func (c *Conn) executeBatchAsQuery(ctx context.Context, batch *Batch) (iter *Iter) {
 	var buf strings.Builder
-	
+
 	// Start the batch statement
 	switch batch.Type {
 	case LoggedBatch:
@@ -1699,7 +1699,7 @@ func (c *Conn) executeBatchAsQuery(ctx context.Context, batch *Batch) (iter *Ite
 	default:
 		return &Iter{err: fmt.Errorf("unknown batch type: %v", batch.Type)}
 	}
-	
+
 	// Add USING clause for server timeout and/or timestamp
 	usingClauses := make([]string, 0, 2)
 	if batch.serverTimeout > 0 {
@@ -1715,13 +1715,13 @@ func (c *Conn) executeBatchAsQuery(ctx context.Context, batch *Batch) (iter *Ite
 		}
 		usingClauses = append(usingClauses, fmt.Sprintf("TIMESTAMP %d", ts))
 	}
-	
+
 	if len(usingClauses) > 0 {
 		buf.WriteString(" USING ")
 		buf.WriteString(strings.Join(usingClauses, " AND "))
 	}
 	buf.WriteString(" ")
-	
+
 	// Add each statement
 	var allArgs []interface{}
 	for _, entry := range batch.Entries {
@@ -1745,15 +1745,15 @@ func (c *Conn) executeBatchAsQuery(ctx context.Context, batch *Batch) (iter *Ite
 		} else {
 			args = entry.Args
 		}
-		
+
 		buf.WriteString(entry.Stmt)
 		buf.WriteString("; ")
 		allArgs = append(allArgs, args...)
 	}
-	
+
 	// End the batch statement
 	buf.WriteString("APPLY BATCH")
-	
+
 	// Create a query with the batch statement
 	q := &Query{
 		stmt:             buf.String(),
@@ -1773,7 +1773,7 @@ func (c *Conn) executeBatchAsQuery(ctx context.Context, batch *Batch) (iter *Ite
 		requestTimeout:   batch.requestTimeout,
 		skipPrepare:      true, // Must skip prepare for batch queries
 	}
-	
+
 	return c.executeQuery(ctx, q)
 }
 
