@@ -1682,6 +1682,101 @@ func (c *Conn) UseKeyspace(keyspace string) error {
 	return nil
 }
 
+// executeBatchAsQuery executes a batch using text-based CQL query format.
+// This is used when server timeout is specified, as USING TIMEOUT is not
+// supported in the binary batch protocol.
+func (c *Conn) executeBatchAsQuery(ctx context.Context, batch *Batch) (iter *Iter) {
+	var buf strings.Builder
+	
+	// Start the batch statement
+	switch batch.Type {
+	case LoggedBatch:
+		buf.WriteString("BEGIN BATCH")
+	case UnloggedBatch:
+		buf.WriteString("BEGIN UNLOGGED BATCH")
+	case CounterBatch:
+		buf.WriteString("BEGIN COUNTER BATCH")
+	default:
+		return &Iter{err: fmt.Errorf("unknown batch type: %v", batch.Type)}
+	}
+	
+	// Add USING clause for server timeout and/or timestamp
+	usingClauses := make([]string, 0, 2)
+	if batch.serverTimeout > 0 {
+		timeoutMs := batch.serverTimeout.Milliseconds()
+		usingClauses = append(usingClauses, fmt.Sprintf("TIMEOUT %dms", timeoutMs))
+	}
+	if batch.defaultTimestamp {
+		var ts int64
+		if batch.defaultTimestampValue != 0 {
+			ts = batch.defaultTimestampValue
+		} else {
+			ts = time.Now().UnixNano() / 1000
+		}
+		usingClauses = append(usingClauses, fmt.Sprintf("TIMESTAMP %d", ts))
+	}
+	
+	if len(usingClauses) > 0 {
+		buf.WriteString(" USING ")
+		buf.WriteString(strings.Join(usingClauses, " AND "))
+	}
+	buf.WriteString(" ")
+	
+	// Add each statement
+	var allArgs []interface{}
+	for _, entry := range batch.Entries {
+		// Handle bound values
+		var args []interface{}
+		if entry.binding != nil {
+			// For bound queries, we need to prepare the statement to get column info
+			info, err := c.prepareStatement(ctx, entry.Stmt, batch.trace, batch.GetRequestTimeout())
+			if err != nil {
+				return &Iter{err: err}
+			}
+			args, err = entry.binding(&QueryInfo{
+				Id:          info.id,
+				Args:        info.request.columns,
+				Rval:        info.response.columns,
+				PKeyColumns: info.request.pkeyColumns,
+			})
+			if err != nil {
+				return &Iter{err: err}
+			}
+		} else {
+			args = entry.Args
+		}
+		
+		buf.WriteString(entry.Stmt)
+		buf.WriteString("; ")
+		allArgs = append(allArgs, args...)
+	}
+	
+	// End the batch statement
+	buf.WriteString("APPLY BATCH")
+	
+	// Create a query with the batch statement
+	q := &Query{
+		stmt:             buf.String(),
+		values:           allArgs,
+		cons:             batch.Cons,
+		session:          c.session,
+		context:          ctx,
+		serialCons:       batch.serialCons,
+		defaultTimestamp: false, // Already handled in the CQL string
+		trace:            batch.trace,
+		observer:         nil, // Batch observer is different from query observer
+		routingInfo:      batch.routingInfo,
+		metrics:          batch.metrics,
+		rt:               batch.rt,
+		spec:             batch.spec,
+		customPayload:    batch.CustomPayload,
+		requestTimeout:   batch.requestTimeout,
+		skipPrepare:      true, // Must skip prepare for batch queries
+	}
+	
+	return c.executeQuery(ctx, q)
+}
+
 func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 	defer func() {
 		if iter == nil || c.session == nil {
@@ -1692,6 +1787,12 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 			c.session.warningHandler.HandleWarnings(batch, iter.host, warnings)
 		}
 	}()
+
+	// If serverTimeout is set, execute the batch as a text-based CQL query
+	// because USING TIMEOUT is not supported in the binary batch protocol
+	if batch.serverTimeout > 0 {
+		return c.executeBatchAsQuery(ctx, batch)
+	}
 
 	n := len(batch.Entries)
 	req := &writeBatchFrame{

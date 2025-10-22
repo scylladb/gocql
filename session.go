@@ -1999,6 +1999,8 @@ type Batch struct {
 	defaultTimestampValue int64
 	// requestTimeout is a timeout on waiting for response from serve
 	requestTimeout   time.Duration
+	// serverTimeout is the server-side timeout for the batch operation (USING TIMEOUT)
+	serverTimeout    time.Duration
 	serialCons       Consistency
 	Cons             Consistency
 	defaultTimestamp bool
@@ -2216,6 +2218,23 @@ func (b *Batch) DefaultTimestamp(enable bool) *Batch {
 func (b *Batch) WithTimestamp(timestamp int64) *Batch {
 	b.DefaultTimestamp(true)
 	b.defaultTimestampValue = timestamp
+	return b
+}
+
+// WithServerTimeout sets the server-side timeout for the batch operation.
+// This adds a USING TIMEOUT clause to the batch statement.
+// This is a ScyllaDB-specific feature.
+//
+// The timeout is specified as a time.Duration and will be converted to
+// milliseconds in the resulting CQL statement.
+//
+// Example:
+//   batch := session.Batch(gocql.LoggedBatch)
+//   batch.WithServerTimeout(500 * time.Millisecond)
+//   batch.Query("INSERT INTO users (id, name) VALUES (?, ?)", 1, "Alice")
+//   batch.Exec()
+func (b *Batch) WithServerTimeout(timeout time.Duration) *Batch {
+	b.serverTimeout = timeout
 	return b
 }
 
