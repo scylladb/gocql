@@ -27,6 +27,10 @@ func TestCloudConnection(t *testing.T) {
 		t.Skip("Skipping because SSL is not enabled on cluster")
 	}
 
+	if *gocql.FlagDistribution != "scylla" {
+		t.Skip("Skipping because it is designed for scylla, but running on something else")
+	}
+
 	const (
 		sslPort        = 9142
 		datacenterName = "datacenter1"
