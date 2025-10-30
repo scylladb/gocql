@@ -52,6 +52,7 @@ const (
 	lwtAddMetadataMarkKey = "SCYLLA_LWT_ADD_METADATA_MARK"
 	rateLimitError        = "SCYLLA_RATE_LIMIT_ERROR"
 	tabletsRoutingV1      = "TABLETS_ROUTING_V1"
+	scyllaUseMetadataId   = "SCYLLA_USE_METADATA_ID"
 )
 
 // "tabletsRoutingV1" CQL Protocol Extension.
@@ -186,6 +187,33 @@ func (ext *lwtAddMetadataMarkExt) name() string {
 	return lwtAddMetadataMarkKey
 }
 
+// "SCYLLA_USE_METADATA_ID" CQL Protocol Extension.
+// Enables storing and updating metadata IDs for prepared statements, similar to CQL v5.
+// When negotiated, the driver tracks metadata changes and updates cached metadata accordingly.
+type scyllaUseMetadataIdExt struct {
+}
+
+var _ cqlProtocolExtension = &scyllaUseMetadataIdExt{}
+
+func newScyllaUseMetadataIdExt(supported map[string][]string) *scyllaUseMetadataIdExt {
+	if _, found := supported[scyllaUseMetadataId]; found {
+		return &scyllaUseMetadataIdExt{}
+	}
+	return nil
+}
+
+// name implements cqlProtocolExtension.
+func (ext *scyllaUseMetadataIdExt) name() string {
+	return scyllaUseMetadataId
+}
+
+// serialize implements cqlProtocolExtension.
+func (ext *scyllaUseMetadataIdExt) serialize() map[string]string {
+	return map[string]string{
+		scyllaUseMetadataId: "",
+	}
+}
+
 func parseSupported(supported map[string][]string, logger StdLogger) scyllaSupported {
 	const (
 		scyllaShard             = "SCYLLA_SHARD"
@@ -276,6 +304,11 @@ func parseCQLProtocolExtensions(supported map[string][]string, logger StdLogger)
 	tabletsExt := newTabletsRoutingV1Ext(supported)
 	if tabletsExt != nil {
 		exts = append(exts, tabletsExt)
+	}
+
+	scyllaUseMetadataId := newScyllaUseMetadataIdExt(supported)
+	if scyllaUseMetadataId != nil {
+		exts = append(exts, scyllaUseMetadataId)
 	}
 
 	return exts
