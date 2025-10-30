@@ -513,6 +513,10 @@ func (cfg *ClusterConfig) Validate() error {
 		return errors.New("ConnectTimeout should be positive time.Duration or zero")
 	}
 
+	if cfg.ReadTimeout < 0 {
+		return errors.New("ReadTimeout should be positive time.Duration or zero")
+	}
+
 	if cfg.MetadataSchemaRequestTimeout < 0 {
 		return errors.New("MetadataSchemaRequestTimeout should be positive time.Duration or zero")
 	}
