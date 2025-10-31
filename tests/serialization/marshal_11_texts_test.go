@@ -42,28 +42,28 @@ func TestMarshalTexts(t *testing.T) {
 		{
 			name: "glob.varchar",
 			marshal: func(i interface{}) ([]byte, error) {
-				return gocql.Marshal(gocql.NewNativeType(4, gocql.TypeVarchar, ""), i)
+				return gocql.Marshal(gocql.NewNativeType(4, gocql.TypeVarchar), i)
 			},
 			unmarshal: func(bytes []byte, i interface{}) error {
-				return gocql.Unmarshal(gocql.NewNativeType(4, gocql.TypeVarchar, ""), bytes, i)
+				return gocql.Unmarshal(gocql.NewNativeType(4, gocql.TypeVarchar), bytes, i)
 			},
 		},
 		{
 			name: "glob.text",
 			marshal: func(i interface{}) ([]byte, error) {
-				return gocql.Marshal(gocql.NewNativeType(4, gocql.TypeText, ""), i)
+				return gocql.Marshal(gocql.NewNativeType(4, gocql.TypeText), i)
 			},
 			unmarshal: func(bytes []byte, i interface{}) error {
-				return gocql.Unmarshal(gocql.NewNativeType(4, gocql.TypeText, ""), bytes, i)
+				return gocql.Unmarshal(gocql.NewNativeType(4, gocql.TypeText), bytes, i)
 			},
 		},
 		{
 			name: "glob.blob",
 			marshal: func(i interface{}) ([]byte, error) {
-				return gocql.Marshal(gocql.NewNativeType(4, gocql.TypeBlob, ""), i)
+				return gocql.Marshal(gocql.NewNativeType(4, gocql.TypeBlob), i)
 			},
 			unmarshal: func(bytes []byte, i interface{}) error {
-				return gocql.Unmarshal(gocql.NewNativeType(4, gocql.TypeBlob, ""), bytes, i)
+				return gocql.Unmarshal(gocql.NewNativeType(4, gocql.TypeBlob), bytes, i)
 			},
 		},
 	}

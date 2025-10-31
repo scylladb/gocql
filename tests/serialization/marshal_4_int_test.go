@@ -22,7 +22,7 @@ func TestMarshalInt(t *testing.T) {
 		unmarshal func(bytes []byte, i interface{}) error
 	}
 
-	tType := gocql.NewNativeType(4, gocql.TypeInt, "")
+	tType := gocql.NewNativeType(4, gocql.TypeInt)
 
 	testSuites := [2]testSuite{
 		{

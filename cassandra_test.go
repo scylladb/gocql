@@ -664,21 +664,21 @@ func TestCAS(t *testing.T) {
 	}
 
 	failBatch = session.Batch(LoggedBatch)
-	failBatch.Query("UPDATE cas_table SET last_modified = DATEOF(NOW()) WHERE title='_foo' AND revid=3e4ad2f1-73a4-11e5-9381-29463d90c3f0 IF last_modified = ?", modified)
+	failBatch.Query("UPDATE cas_table SET last_modified = TOTIMESTAMP(NOW()) WHERE title='_foo' AND revid=3e4ad2f1-73a4-11e5-9381-29463d90c3f0 IF last_modified = ?", modified)
 	if _, _, err := session.ExecuteBatchCAS(failBatch, new(bool)); err == nil {
 		t.Fatal("update should have errored")
 	}
 	// make sure MapScanCAS does not panic when MapScan fails
 	casMap = make(map[string]interface{})
 	casMap["last_modified"] = false
-	if _, err := session.Query(`UPDATE cas_table SET last_modified = DATEOF(NOW()) WHERE title='_foo' AND revid=3e4ad2f1-73a4-11e5-9381-29463d90c3f0 IF last_modified = ?`,
+	if _, err := session.Query(`UPDATE cas_table SET last_modified = TOTIMESTAMP(NOW()) WHERE title='_foo' AND revid=3e4ad2f1-73a4-11e5-9381-29463d90c3f0 IF last_modified = ?`,
 		modified).MapScanCAS(casMap); err == nil {
 		t.Fatal("update should hvae errored", err)
 	}
 
 	// make sure MapExecuteBatchCAS does not panic when MapScan fails
 	failBatch = session.Batch(LoggedBatch)
-	failBatch.Query("UPDATE cas_table SET last_modified = DATEOF(NOW()) WHERE title='_foo' AND revid=3e4ad2f1-73a4-11e5-9381-29463d90c3f0 IF last_modified = ?", modified)
+	failBatch.Query("UPDATE cas_table SET last_modified = TOTIMESTAMP(NOW()) WHERE title='_foo' AND revid=3e4ad2f1-73a4-11e5-9381-29463d90c3f0 IF last_modified = ?", modified)
 	casMap = make(map[string]interface{})
 	casMap["last_modified"] = false
 	if _, _, err := session.MapExecuteBatchCAS(failBatch, casMap); err == nil {

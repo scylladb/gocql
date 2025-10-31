@@ -16,7 +16,7 @@ import (
 func TestMarshalBooleanCorrupt(t *testing.T) {
 	t.Parallel()
 
-	tType := gocql.NewNativeType(4, gocql.TypeBoolean, "")
+	tType := gocql.NewNativeType(4, gocql.TypeBoolean)
 
 	type testSuite struct {
 		name      string

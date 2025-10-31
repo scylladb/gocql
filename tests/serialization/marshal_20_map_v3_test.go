@@ -14,8 +14,8 @@ import (
 func TestMarshalMapV3(t *testing.T) {
 	t.Parallel()
 
-	elem := gocql.NewNativeType(3, gocql.TypeSmallInt, "")
-	tType := gocql.NewCollectionType(gocql.NewNativeType(3, gocql.TypeMap, ""), elem, elem)
+	elem := gocql.NewNativeType(3, gocql.TypeSmallInt)
+	tType := gocql.NewCollectionType(gocql.NewNativeType(3, gocql.TypeMap), elem, elem)
 
 	refInt16 := func(v int16) *int16 { return &v }
 	refModInt16 := func(v mod.Int16) *mod.Int16 { return &v }

@@ -17,7 +17,7 @@ import (
 func TestMarshalsTimestamp(t *testing.T) {
 	t.Parallel()
 
-	tType := gocql.NewNativeType(4, gocql.TypeTimestamp, "")
+	tType := gocql.NewNativeType(4, gocql.TypeTimestamp)
 
 	type testSuite struct {
 		name      string

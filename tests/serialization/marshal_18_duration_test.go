@@ -14,7 +14,7 @@ import (
 )
 
 func TestMarshalsDuration(t *testing.T) {
-	tType := gocql.NewNativeType(4, gocql.TypeDuration, "")
+	tType := gocql.NewNativeType(4, gocql.TypeDuration)
 
 	const nanoDay = 24 * 60 * 60 * 1000 * 1000 * 1000
 

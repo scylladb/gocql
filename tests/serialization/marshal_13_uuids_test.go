@@ -17,8 +17,8 @@ func TestMarshalUUIDs(t *testing.T) {
 	t.Parallel()
 
 	tTypes := []gocql.NativeType{
-		gocql.NewNativeType(4, gocql.TypeUUID, ""),
-		gocql.NewNativeType(4, gocql.TypeTimeUUID, ""),
+		gocql.NewNativeType(4, gocql.TypeUUID),
+		gocql.NewNativeType(4, gocql.TypeTimeUUID),
 	}
 
 	type testSuite struct {
@@ -124,7 +124,7 @@ func TestMarshalUUIDs(t *testing.T) {
 func TestMarshalTimeUUID(t *testing.T) {
 	t.Parallel()
 
-	tType := gocql.NewNativeType(4, gocql.TypeTimeUUID, "")
+	tType := gocql.NewNativeType(4, gocql.TypeTimeUUID)
 
 	type testSuite struct {
 		name      string

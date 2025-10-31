@@ -14,11 +14,11 @@ import (
 func TestMarshalSetListV3(t *testing.T) {
 	t.Parallel()
 
-	elem := gocql.NewNativeType(3, gocql.TypeSmallInt, "")
+	elem := gocql.NewNativeType(3, gocql.TypeSmallInt)
 
 	tTypes := []gocql.TypeInfo{
-		gocql.NewCollectionType(gocql.NewNativeType(3, gocql.TypeList, ""), nil, elem),
-		gocql.NewCollectionType(gocql.NewNativeType(3, gocql.TypeSet, ""), nil, elem),
+		gocql.NewCollectionType(gocql.NewNativeType(3, gocql.TypeList), nil, elem),
+		gocql.NewCollectionType(gocql.NewNativeType(3, gocql.TypeSet), nil, elem),
 	}
 
 	// unmarshal `zero` data return an error

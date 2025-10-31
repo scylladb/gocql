@@ -15,7 +15,7 @@ import (
 func TestMarshalAsciiMustFail(t *testing.T) {
 	t.Parallel()
 
-	tType := gocql.NewNativeType(4, gocql.TypeAscii, "")
+	tType := gocql.NewNativeType(4, gocql.TypeAscii)
 
 	type testSuite struct {
 		name      string

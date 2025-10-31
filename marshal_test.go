@@ -30,6 +30,7 @@ package gocql
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"math"
 	"math/big"
 	"net"
@@ -426,23 +427,22 @@ func TestMarshalTuple(t *testing.T) {
 		},
 	}
 
-	for _, tc := range testCases {
+	for i, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			data, err := Marshal(info, tc.value)
 			if err != nil {
-				t.Errorf("marshalTest: %v", err)
+				t.Errorf("marshalTest[%d]: %v", i, err)
 				return
 			}
-
 			if !bytes.Equal(data, tc.expected) {
-				t.Errorf("marshalTest: expected %x (%v), got %x (%v)",
-					tc.expected, decBigInt(tc.expected), data, decBigInt(data))
+				t.Errorf("marshalTest[%d]: expected %x, got %x",
+					i, tc.expected, data)
 				return
 			}
 
 			err = Unmarshal(info, data, tc.checkValue)
 			if err != nil {
-				t.Errorf("unmarshalTest: %v", err)
+				t.Errorf("unmarshalTest[%d]: %v", i, err)
 				return
 			}
 
@@ -786,6 +786,37 @@ func TestReadCollectionSize(t *testing.T) {
 				if size != test.expectedSize {
 					t.Fatalf("Expected size of %d, but got %d", test.expectedSize, size)
 				}
+			}
+		})
+	}
+}
+
+func TestReadUnsignedVInt(t *testing.T) {
+	tests := []struct {
+		decodedInt  uint64
+		encodedVint []byte
+	}{
+		{
+			decodedInt:  0,
+			encodedVint: []byte{0},
+		},
+		{
+			decodedInt:  100,
+			encodedVint: []byte{100},
+		},
+		{
+			decodedInt:  256000,
+			encodedVint: []byte{195, 232, 0},
+		},
+	}
+	for _, test := range tests {
+		t.Run(fmt.Sprintf("%d", test.decodedInt), func(t *testing.T) {
+			actual, _, err := readUnsignedVInt(test.encodedVint)
+			if err != nil {
+				t.Fatalf("Expected no error, got %v", err)
+			}
+			if actual != test.decodedInt {
+				t.Fatalf("Expected %d, but got %d", test.decodedInt, actual)
 			}
 		})
 	}

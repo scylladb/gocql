@@ -29,6 +29,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"math/bits"
 	"reflect"
 	"unsafe"
 
@@ -228,6 +229,10 @@ func Marshal(info TypeInfo, value interface{}) ([]byte, error) {
 		return marshalDate(value)
 	case TypeDuration:
 		return marshalDuration(value)
+	case TypeCustom:
+		if vector, ok := info.(VectorType); ok {
+			return marshalVector(vector, value)
+		}
 	}
 
 	// TODO(tux21b): add the remaining types
@@ -335,6 +340,10 @@ func Unmarshal(info TypeInfo, data []byte, value interface{}) error {
 		return unmarshalDate(data, value)
 	case TypeDuration:
 		return unmarshalDuration(data, value)
+	case TypeCustom:
+		if vector, ok := info.(VectorType); ok {
+			return unmarshalVector(vector, data, value)
+		}
 	}
 
 	// TODO(tux21b): add the remaining types
@@ -520,16 +529,6 @@ func marshalVarint(value interface{}) ([]byte, error) {
 		return nil, wrapMarshalError(err, "marshal error")
 	}
 	return data, nil
-}
-
-func decBigInt(data []byte) int64 {
-	if len(data) != 8 {
-		return 0
-	}
-	return int64(data[0])<<56 | int64(data[1])<<48 |
-		int64(data[2])<<40 | int64(data[3])<<32 |
-		int64(data[4])<<24 | int64(data[5])<<16 |
-		int64(data[6])<<8 | int64(data[7])
 }
 
 func marshalBool(value interface{}) ([]byte, error) {
@@ -813,6 +812,177 @@ func unmarshalList(info TypeInfo, data []byte, value interface{}) error {
 		return nil
 	}
 	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
+}
+
+func marshalVector(info VectorType, value interface{}) ([]byte, error) {
+	if value == nil {
+		return nil, nil
+	} else if _, ok := value.(unsetColumn); ok {
+		return nil, nil
+	}
+
+	rv := reflect.ValueOf(value)
+	t := rv.Type()
+	k := t.Kind()
+	if k == reflect.Slice && rv.IsNil() {
+		return nil, nil
+	}
+
+	switch k {
+	case reflect.Slice, reflect.Array:
+		buf := &bytes.Buffer{}
+		n := rv.Len()
+		if n != info.Dimensions {
+			return nil, marshalErrorf("expected vector with %d dimensions, received %d", info.Dimensions, n)
+		}
+
+		isLengthType := isVectorVariableLengthType(info.SubType)
+		for i := 0; i < n; i++ {
+			item, err := Marshal(info.SubType, rv.Index(i).Interface())
+			if err != nil {
+				return nil, err
+			}
+			if isLengthType {
+				writeUnsignedVInt(buf, uint64(len(item)))
+			}
+			buf.Write(item)
+		}
+		return buf.Bytes(), nil
+	}
+	return nil, marshalErrorf("can not marshal %T into %s. Accepted types: slice, array.", value, info)
+}
+
+func unmarshalVector(info VectorType, data []byte, value interface{}) error {
+	rv := reflect.ValueOf(value)
+	if rv.Kind() != reflect.Ptr {
+		return unmarshalErrorf("can not unmarshal into non-pointer %T", value)
+	}
+	rv = rv.Elem()
+	t := rv.Type()
+	if t.Kind() == reflect.Interface {
+		if t.NumMethod() != 0 {
+			return unmarshalErrorf("can not unmarshal into non-empty interface %T", value)
+		}
+		t = reflect.TypeOf(info.Zero())
+	}
+
+	k := t.Kind()
+	switch k {
+	case reflect.Slice, reflect.Array:
+		if data == nil {
+			if k == reflect.Array {
+				return unmarshalErrorf("unmarshal vector: can not store nil in array value")
+			}
+			if rv.IsNil() {
+				return nil
+			}
+			rv.Set(reflect.Zero(t))
+			return nil
+		}
+		if k == reflect.Array {
+			if rv.Len() != info.Dimensions {
+				return unmarshalErrorf("unmarshal vector: array of size %d cannot store vector of %d dimensions", rv.Len(), info.Dimensions)
+			}
+		} else {
+			rv.Set(reflect.MakeSlice(t, info.Dimensions, info.Dimensions))
+			if rv.Kind() == reflect.Interface {
+				rv = rv.Elem()
+			}
+		}
+		elemSize := len(data) / info.Dimensions
+		isLengthType := isVectorVariableLengthType(info.SubType)
+		for i := 0; i < info.Dimensions; i++ {
+			offset := 0
+			if isLengthType {
+				m, p, err := readUnsignedVInt(data)
+				if err != nil {
+					return err
+				}
+				elemSize = int(m)
+				offset = p
+			}
+			if offset > 0 {
+				data = data[offset:]
+			}
+			var unmarshalData []byte
+			if elemSize >= 0 {
+				if len(data) < elemSize {
+					return unmarshalErrorf("unmarshal vector: unexpected eof")
+				}
+				unmarshalData = data[:elemSize]
+				data = data[elemSize:]
+			}
+			err := Unmarshal(info.SubType, unmarshalData, rv.Index(i).Addr().Interface())
+			if err != nil {
+				return unmarshalErrorf("failed to unmarshal %s into %T: %s", info.SubType, unmarshalData, err.Error())
+			}
+		}
+		return nil
+	}
+	return unmarshalErrorf("can not unmarshal %s into %T. Accepted types: *slice, *array, *interface{}.", info, value)
+}
+
+// isVectorVariableLengthType determines if a type requires explicit length serialization within a vector.
+// Variable-length types need their length encoded before the actual data to allow proper deserialization.
+// Fixed-length types, on the other hand, don't require this kind of length prefix.
+func isVectorVariableLengthType(elemType TypeInfo) bool {
+	switch elemType.Type() {
+	case TypeVarchar, TypeAscii, TypeBlob, TypeText,
+		TypeCounter,
+		TypeDuration, TypeDate, TypeTime,
+		TypeDecimal, TypeSmallInt, TypeTinyInt, TypeVarint,
+		TypeInet,
+		TypeList, TypeSet, TypeMap, TypeUDT, TypeTuple:
+		return true
+	case TypeCustom:
+		if vecType, ok := elemType.(VectorType); ok {
+			return isVectorVariableLengthType(vecType.SubType)
+		}
+		return true
+	}
+	return false
+}
+
+func writeUnsignedVInt(buf *bytes.Buffer, v uint64) {
+	numBytes := computeUnsignedVIntSize(v)
+	if numBytes <= 1 {
+		buf.WriteByte(byte(v))
+		return
+	}
+
+	extraBytes := numBytes - 1
+	var tmp = make([]byte, numBytes)
+	for i := extraBytes; i >= 0; i-- {
+		tmp[i] = byte(v)
+		v >>= 8
+	}
+	tmp[0] |= byte(^(0xff >> uint(extraBytes)))
+	buf.Write(tmp)
+}
+
+func readUnsignedVInt(data []byte) (uint64, int, error) {
+	if len(data) <= 0 {
+		return 0, 0, errors.New("unexpected eof")
+	}
+	firstByte := data[0]
+	if firstByte&0x80 == 0 {
+		return uint64(firstByte), 1, nil
+	}
+	numBytes := bits.LeadingZeros32(uint32(^firstByte)) - 24
+	ret := uint64(firstByte & (0xff >> uint(numBytes)))
+	if len(data) < numBytes+1 {
+		return 0, 0, fmt.Errorf("data expect to have %d bytes, but it has only %d", numBytes+1, len(data))
+	}
+	for i := 0; i < numBytes; i++ {
+		ret <<= 8
+		ret |= uint64(data[i+1] & 0xff)
+	}
+	return ret, numBytes + 1, nil
+}
+
+func computeUnsignedVIntSize(v uint64) int {
+	lead0 := bits.LeadingZeros64(v)
+	return (639 - lead0*9) >> 6
 }
 
 func marshalMap(info TypeInfo, value interface{}) ([]byte, error) {
@@ -1499,7 +1669,11 @@ type NativeType struct {
 	proto  byte
 }
 
-func NewNativeType(proto byte, typ Type, custom string) NativeType {
+func NewNativeType(proto byte, typ Type) NativeType {
+	return NativeType{proto: proto, typ: typ, custom: ""}
+}
+
+func NewCustomType(proto byte, typ Type, custom string) NativeType {
 	return NativeType{proto: proto, typ: typ, custom: custom}
 }
 
@@ -1546,6 +1720,21 @@ type CollectionType struct {
 	// Elem is used for TypeMap, TypeList and TypeSet
 	Elem TypeInfo
 	NativeType
+}
+
+type VectorType struct {
+	SubType TypeInfo
+	NativeType
+	Dimensions int
+}
+
+// Zero returns the zero value for the vector CQL type.
+func (v VectorType) Zero() interface{} {
+	t, e := v.SubType.NewWithError()
+	if e != nil {
+		return nil
+	}
+	return reflect.Zero(reflect.SliceOf(reflect.TypeOf(t))).Interface()
 }
 
 func (t CollectionType) NewWithError() (interface{}, error) {
