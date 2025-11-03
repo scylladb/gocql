@@ -2926,6 +2926,7 @@ func TestQuery_WithNowInSeconds(t *testing.T) {
 }
 
 func TestQuery_SetKeyspace(t *testing.T) {
+	const keyspace = "gocql_query_keyspace_override_test"
 	session := createSession(t)
 	defer session.Close()
 
@@ -2933,20 +2934,20 @@ func TestQuery_SetKeyspace(t *testing.T) {
 		t.Skip("keyspace for QUERY message is not supported in protocol < 5")
 	}
 
-	const keyspaceStmt = `
-		CREATE KEYSPACE IF NOT EXISTS gocql_query_keyspace_override_test 
+	keyspaceStmt := fmt.Sprintf(`
+		CREATE KEYSPACE IF NOT EXISTS %s
 		WITH replication = {
 			'class': 'SimpleStrategy', 
 			'replication_factor': '1'
 		};
-`
+	`, keyspace)
 
 	err := session.Query(keyspaceStmt).Exec()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = createTable(session, "CREATE TABLE IF NOT EXISTS gocql_query_keyspace_override_test.query_keyspace(id int, value text, PRIMARY KEY (id))")
+	err = createTable(session, fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s.query_keyspace(id int, value text, PRIMARY KEY (id))", keyspace))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2955,7 +2956,8 @@ func TestQuery_SetKeyspace(t *testing.T) {
 	expectedText := "text"
 
 	// Testing PREPARE message
-	err = session.Query("INSERT INTO gocql_query_keyspace_override_test.query_keyspace (id, value) VALUES (?, ?)", expectedID, expectedText).Exec()
+	err = session.Query("INSERT INTO gocql_query_keyspace_override_test.query_keyspace (id, value) VALUES (?, ?)", expectedID, expectedText).
+		SetKeyspace(keyspace).Exec()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2965,8 +2967,8 @@ func TestQuery_SetKeyspace(t *testing.T) {
 		text string
 	)
 
-	q := session.Query("SELECT * FROM gocql_query_keyspace_override_test.query_keyspace").
-		SetKeyspace("gocql_query_keyspace_override_test")
+	q := session.Query("SELECT * FROM query_keyspace").
+		SetKeyspace(keyspace)
 	err = q.Scan(&id, &text)
 	if err != nil {
 		t.Fatal(err)
@@ -2979,8 +2981,8 @@ func TestQuery_SetKeyspace(t *testing.T) {
 	id = 0
 	text = ""
 
-	q = session.Query("SELECT * FROM gocql_query_keyspace_override_test.query_keyspace").
-		SetKeyspace("gocql_query_keyspace_override_test")
+	q = session.Query("SELECT * FROM query_keyspace").
+		SetKeyspace(keyspace)
 	q.skipPrepare = true
 	err = q.Scan(&id, &text)
 	if err != nil {
@@ -3062,7 +3064,7 @@ func TestPrepareExecuteMetadataChangedFlag(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if session.cfg.ProtoVersion < protoVersion5 {
+	if session.cfg.ProtoVersion < protoVersion5 || (*flagDistribution == "scylla" && flagCassVersion.Before(2025, 3, 0)) {
 		t.Skip("Metadata_changed mechanism is only available in proto > 4")
 	}
 
