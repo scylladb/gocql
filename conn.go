@@ -678,6 +678,10 @@ func (c *Conn) serve(ctx context.Context) {
 	var err error
 	for err == nil {
 		err = c.recv(ctx, true)
+		if errors.Is(err, ErrReadHeaderTimeout) {
+			c.logger.Print("gocql: read header timeout") // TODO: Provide more details from wrapped error?
+			continue
+		}
 	}
 
 	c.closeWithError(err)
@@ -761,12 +765,6 @@ func (c *Conn) recv(ctx context.Context, startupCompleted bool) error {
 
 func (c *Conn) processFrame(ctx context.Context, r io.Reader) error {
 	// not safe for concurrent reads
-
-	// read a full header, ignore timeouts, as this is being ran in a loop
-	// TODO: TCP level deadlines? or just query level deadlines?
-	if c.r.GetTimeout() > 0 {
-		c.r.SetReadDeadline(time.Time{})
-	}
 
 	headStartTime := time.Now()
 	// were just reading headers over and over and copy bodies
@@ -969,7 +967,14 @@ func (c *Conn) processAllFramesInSegment(ctx context.Context, r *bytes.Reader) e
 
 // ConnReader is like net.Conn but also allows to set timeout duration.
 type ConnReader interface {
-	net.Conn
+	// Read reads data from the connection.
+	Read(p []byte) (n int, err error)
+
+	// Close closes the connection.
+	Close() error
+
+	// RemoteAddr returns the remote network address, if known.
+	RemoteAddr() net.Addr
 
 	// SetTimeout sets timeout duration for reading data form conn
 	SetTimeout(timeout time.Duration)
@@ -1018,24 +1023,8 @@ func (c *connReader) Close() error {
 	return c.conn.Close()
 }
 
-func (c *connReader) LocalAddr() net.Addr {
-	return c.conn.LocalAddr()
-}
-
 func (c *connReader) RemoteAddr() net.Addr {
 	return c.conn.RemoteAddr()
-}
-
-func (c *connReader) SetDeadline(t time.Time) error {
-	return c.conn.SetDeadline(t)
-}
-
-func (c *connReader) SetReadDeadline(t time.Time) error {
-	return c.conn.SetReadDeadline(t)
-}
-
-func (c *connReader) SetWriteDeadline(t time.Time) error {
-	return c.conn.SetWriteDeadline(t)
 }
 
 func (c *connReader) SetTimeout(timeout time.Duration) {

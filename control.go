@@ -231,7 +231,7 @@ func (c *controlConn) discoverProtocol(hosts []*HostInfo) (int, error) {
 	hosts = shuffleHosts(hosts)
 
 	connCfg := *c.session.connCfg
-	connCfg.ProtoVersion = protoVersion4 // TODO: define maxProtocol
+	connCfg.ProtoVersion = protoVersion5 // TODO: define maxProtocol
 
 	handler := connErrorHandlerFn(func(c *Conn, err error, closed bool) {
 		// we should never get here, but if we do it means we connected to a

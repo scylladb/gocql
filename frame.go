@@ -304,7 +304,8 @@ const (
 )
 
 var (
-	ErrFrameTooBig = errors.New("frame length is bigger than the maximum allowed")
+	ErrFrameTooBig       = errors.New("frame length is bigger than the maximum allowed")
+	ErrReadHeaderTimeout = errors.New("unable to read frame header")
 )
 
 func readInt(p []byte) int32 {
@@ -457,6 +458,9 @@ type frame interface {
 func readHeader(r io.Reader, p []byte) (head frameHeader, err error) {
 	_, err = io.ReadFull(r, p[:1])
 	if err != nil {
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			return frameHeader{}, fmt.Errorf("%w: %w", ErrReadHeaderTimeout, err)
+		}
 		return frameHeader{}, err
 	}
 
