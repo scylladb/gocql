@@ -140,44 +140,95 @@ func TestFrameReadTooLong(t *testing.T) {
 }
 
 func Test_framer_writeExecuteFrame(t *testing.T) {
-	framer := newFramer(nil, protoVersion5) // TODO: extend to support Scylla's metadata ID extension
-	nowInSeconds := 123
-	frame := writeExecuteFrame{
-		preparedID:       []byte{1, 2, 3},
-		resultMetadataID: []byte{4, 5, 6},
-		customPayload: map[string][]byte{
-			"key1": []byte("value1"),
+	tests := []struct {
+		name                string
+		protoVersion        byte
+		scyllaUseMetadataId bool
+		resultMetadataID    []byte
+	}{
+		{
+			name:                "protoVersion4 with ScyllaUseMetadataId false",
+			protoVersion:        protoVersion4,
+			scyllaUseMetadataId: false,
+			resultMetadataID:    []byte{},
 		},
-		params: queryParams{
-			nowInSeconds: &nowInSeconds,
-			keyspace:     "test_keyspace",
+		{
+			name:                "protoVersion4 with ScyllaUseMetadataId true",
+			protoVersion:        protoVersion4,
+			scyllaUseMetadataId: true,
+			resultMetadataID:    []byte{4, 5, 6},
+		},
+		{
+			name:                "protoVersion4 with ScyllaUseMetadataId true & nil resultMetadataID",
+			protoVersion:        protoVersion4,
+			scyllaUseMetadataId: true,
+			resultMetadataID:    []byte{}, // Value when resultMetadataID of resultPreparedFrame is nil (result of copyBytes(nil))
+		},
+		{
+			name:                "protoVersion5 with resultMetadataID support",
+			protoVersion:        protoVersion5,
+			scyllaUseMetadataId: false,
+			resultMetadataID:    []byte{4, 5, 6},
 		},
 	}
 
-	err := framer.writeExecuteFrame(123, frame.preparedID, frame.resultMetadataID, &frame.params, &frame.customPayload)
-	if err != nil {
-		t.Fatal(err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			framer := newFramer(nil, tt.protoVersion)
+			if tt.scyllaUseMetadataId {
+				framer.scyllaUseMetadataId = true
+			}
+
+			nowInSeconds := 123
+			var params queryParams
+			if tt.protoVersion >= protoVersion5 {
+				params = queryParams{
+					nowInSeconds: &nowInSeconds,
+					keyspace:     "test_keyspace",
+				}
+			} else {
+				params = queryParams{}
+			}
+			frame := writeExecuteFrame{
+				preparedID:       []byte{1, 2, 3},
+				resultMetadataID: tt.resultMetadataID,
+				customPayload: map[string][]byte{
+					"key1": []byte("value1"),
+				},
+				params: params,
+			}
+
+			err := framer.writeExecuteFrame(123, frame.preparedID, frame.resultMetadataID, &frame.params, &frame.customPayload)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// skipping header
+			framer.buf = framer.buf[9:]
+
+			assertDeepEqual(t, "customPayload", frame.customPayload, framer.readBytesMap())
+			assertDeepEqual(t, "preparedID", frame.preparedID, framer.readShortBytes())
+
+			if tt.protoVersion >= protoVersion5 || tt.scyllaUseMetadataId {
+				assertDeepEqual(t, "resultMetadataID", frame.resultMetadataID, framer.readShortBytes())
+			}
+
+			assertDeepEqual(t, "constistency", frame.params.consistency, Consistency(framer.readShort()))
+
+			if tt.protoVersion >= protoVersion5 {
+				flags := framer.readInt()
+				if flags&int(flagWithNowInSeconds) != int(flagWithNowInSeconds) {
+					t.Fatal("expected flagNowInSeconds to be set, but it is not")
+				}
+
+				if flags&int(flagWithKeyspace) != int(flagWithKeyspace) {
+					t.Fatal("expected flagWithKeyspace to be set, but it is not")
+				}
+				assertDeepEqual(t, "keyspace", frame.params.keyspace, framer.readString())
+				assertDeepEqual(t, "nowInSeconds", nowInSeconds, framer.readInt())
+			}
+		})
 	}
-
-	// skipping header
-	framer.buf = framer.buf[9:]
-
-	assertDeepEqual(t, "customPayload", frame.customPayload, framer.readBytesMap())
-	assertDeepEqual(t, "preparedID", frame.preparedID, framer.readShortBytes())
-	assertDeepEqual(t, "resultMetadataID", frame.resultMetadataID, framer.readShortBytes())
-	assertDeepEqual(t, "constistency", frame.params.consistency, Consistency(framer.readShort()))
-
-	flags := framer.readInt()
-	if flags&int(flagWithNowInSeconds) != int(flagWithNowInSeconds) {
-		t.Fatal("expected flagNowInSeconds to be set, but it is not")
-	}
-
-	if flags&int(flagWithKeyspace) != int(flagWithKeyspace) {
-		t.Fatal("expected flagWithKeyspace to be set, but it is not")
-	}
-
-	assertDeepEqual(t, "keyspace", frame.params.keyspace, framer.readString())
-	assertDeepEqual(t, "nowInSeconds", nowInSeconds, framer.readInt())
 }
 
 func Test_framer_writeBatchFrame(t *testing.T) {

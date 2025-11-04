@@ -408,6 +408,7 @@ func newFramer(compressor Compressor, version byte) *framer {
 	f.traceID = nil
 
 	f.tabletsRoutingV1 = false
+	f.scyllaUseMetadataId = false
 
 	return f
 }
