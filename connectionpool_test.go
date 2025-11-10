@@ -32,6 +32,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"net"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -123,7 +124,20 @@ type errorConn struct {
 }
 
 func (e errorConn) Close() error {
+	if e.Conn != nil {
+		_ = e.Conn.Close()
+	}
 	return errors.New("mock close error")
+}
+
+type reentrantPickerErrorHandler struct {
+	picker *defaultConnPicker
+	calls  int32
+}
+
+func (h *reentrantPickerErrorHandler) HandleError(conn *Conn, err error, closed bool) {
+	atomic.AddInt32(&h.calls, 1)
+	h.picker.Remove(conn)
 }
 
 // TestHostConnPoolCloseDeadlock verifies that hostConnPool.Close() does not
@@ -182,6 +196,43 @@ func TestHostConnPoolCloseDeadlock(t *testing.T) {
 		// Success — Close returned without deadlocking.
 	case <-time.After(5 * time.Second):
 		t.Fatal("hostConnPool.Close() deadlocked: timed out after 5 seconds")
+	}
+}
+
+func TestDefaultConnPickerCloseErrorDoesNotReenterHandler(t *testing.T) {
+	t.Parallel()
+
+	picker := newDefaultConnPicker(1)
+	handler := &reentrantPickerErrorHandler{picker: picker}
+	ctx, cancel := context.WithCancel(context.Background())
+	server, client := net.Pipe()
+	defer server.Close()
+
+	conn := &Conn{
+		conn:         errorConn{Conn: client},
+		errorHandler: handler,
+		cancel:       cancel,
+		ctx:          ctx,
+		logger:       nopLogger{},
+	}
+	if err := picker.Put(conn); err != nil {
+		t.Fatalf("put conn: %v", err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		picker.Close()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("defaultConnPicker.Close() deadlocked after connection close error")
+	}
+
+	if calls := atomic.LoadInt32(&handler.calls); calls != 0 {
+		t.Fatalf("expected graceful close error to skip HandleError, got %d calls", calls)
 	}
 }
 

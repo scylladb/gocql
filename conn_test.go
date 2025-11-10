@@ -975,6 +975,32 @@ func newTestExecConn(t *testing.T, w contextWriter) (*Conn, net.Conn) {
 	return c, server
 }
 
+type recordingConnErrorHandler struct {
+	calls int32
+	errs  chan error
+}
+
+func (h *recordingConnErrorHandler) HandleError(_ *Conn, err error, _ bool) {
+	atomic.AddInt32(&h.calls, 1)
+	if h.errs != nil {
+		select {
+		case h.errs <- err:
+		default:
+		}
+	}
+}
+
+func newTestServeConn(t *testing.T, handler ConnErrorHandler) (*Conn, net.Conn) {
+	t.Helper()
+
+	c, server := newTestExecConn(t, testContextWriter{})
+	c.r = bufio.NewReader(c.conn)
+	if handler != nil {
+		c.errorHandler = handler
+	}
+	return c, server
+}
+
 func waitForSingleCall(t *testing.T, c *Conn) *callReq {
 	t.Helper()
 
@@ -1221,6 +1247,62 @@ func TestExecCloseWithError(t *testing.T) {
 		}
 	})
 
+	t.Run("GracefulCloseErrorDoesNotCallHandler", func(t *testing.T) {
+		writeStarted := make(chan struct{})
+		var writeStartedOnce sync.Once
+		handler := &recordingConnErrorHandler{}
+		c, server := newTestExecConn(t, testContextWriter{
+			onWrite: func() {
+				writeStartedOnce.Do(func() {
+					close(writeStarted)
+				})
+			},
+		})
+		c.conn = errorConn{Conn: c.conn}
+		c.errorHandler = handler
+		defer server.Close()
+
+		errCh := make(chan error, 1)
+		go func() {
+			_, err := c.exec(context.Background(), frameWriterFunc(func(f *framer, streamID int) error {
+				f.buf = append(f.buf[:0], 'x')
+				return nil
+			}), nil, 0)
+			errCh <- err
+		}()
+
+		select {
+		case <-writeStarted:
+		case <-time.After(2 * time.Second):
+			t.Fatal("exec never reached the write path")
+		}
+
+		closeDone := make(chan struct{})
+		go func() {
+			c.Close()
+			close(closeDone)
+		}()
+
+		select {
+		case err := <-errCh:
+			if !errors.Is(err, ErrConnectionClosed) {
+				t.Fatalf("expected graceful close error %v, got %v", ErrConnectionClosed, err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("exec deadlocked after graceful Close")
+		}
+
+		select {
+		case <-closeDone:
+		case <-time.After(2 * time.Second):
+			t.Fatal("Close deadlocked after net.Conn.Close failure")
+		}
+
+		if calls := atomic.LoadInt32(&handler.calls); calls != 0 {
+			t.Fatalf("expected graceful Close to skip HandleError after close failure, got %d calls", calls)
+		}
+	})
+
 	t.Run("TimeoutUnblocksAbandonRecvCall", func(t *testing.T) {
 		c, server := newTestExecConn(t, testContextWriter{})
 		defer server.Close()
@@ -1379,6 +1461,131 @@ func TestExecCloseWithError(t *testing.T) {
 			t.Fatal("expected in-flight calls to be detached on Close")
 		}
 	})
+}
+
+func TestServeShutdownReadErrorDoesNotCallHandler(t *testing.T) {
+	t.Parallel()
+
+	handler := &recordingConnErrorHandler{errs: make(chan error, 1)}
+	c, server := newTestServeConn(t, handler)
+	c.conn = errorConn{Conn: c.conn}
+	defer server.Close()
+
+	serveDone := make(chan struct{})
+	go func() {
+		c.serve(c.ctx)
+		close(serveDone)
+	}()
+
+	writeStarted := make(chan struct{})
+	errCh := make(chan error, 1)
+	c.w = testContextWriter{
+		onWrite: func() {
+			select {
+			case writeStarted <- struct{}{}:
+			default:
+			}
+		},
+	}
+	go func() {
+		_, err := c.exec(context.Background(), frameWriterFunc(func(f *framer, streamID int) error {
+			f.buf = append(f.buf[:0], 'x')
+			return nil
+		}), nil, 0)
+		errCh <- err
+	}()
+
+	select {
+	case <-writeStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("exec never reached the write path")
+	}
+
+	c.Close()
+
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, ErrConnectionClosed) {
+			t.Fatalf("expected shutdown error %v, got %v", ErrConnectionClosed, err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("exec did not unblock after shutdown")
+	}
+
+	select {
+	case <-serveDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("serve did not exit after local shutdown")
+	}
+
+	select {
+	case err := <-handler.errs:
+		t.Fatalf("expected shutdown read error to skip HandleError, got %v", err)
+	default:
+	}
+}
+
+func TestServeUnexpectedReadErrorCallsHandler(t *testing.T) {
+	t.Parallel()
+
+	handler := &recordingConnErrorHandler{errs: make(chan error, 1)}
+	c, server := newTestServeConn(t, handler)
+
+	serveDone := make(chan struct{})
+	go func() {
+		c.serve(c.ctx)
+		close(serveDone)
+	}()
+
+	if err := server.Close(); err != nil {
+		t.Fatalf("close peer: %v", err)
+	}
+
+	select {
+	case <-handler.errs:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected unexpected read failure to call HandleError")
+	}
+
+	select {
+	case <-serveDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("serve did not exit after unexpected read failure")
+	}
+
+	if !c.Closed() {
+		t.Fatal("expected connection to be closed after unexpected read failure")
+	}
+}
+
+func TestServeCanceledContextUnexpectedReadErrorCallsHandler(t *testing.T) {
+	t.Parallel()
+
+	handler := &recordingConnErrorHandler{errs: make(chan error, 1)}
+	c, server := newTestServeConn(t, handler)
+
+	serveDone := make(chan struct{})
+	go func() {
+		c.serve(c.ctx)
+		close(serveDone)
+	}()
+
+	c.cancel()
+	if err := server.Close(); err != nil {
+		t.Fatalf("close peer: %v", err)
+	}
+
+	select {
+	case <-handler.errs:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected read failure after context cancel to call HandleError")
+	}
+
+	select {
+	case <-serveDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("serve did not exit after context-canceled read failure")
+	}
 }
 
 // tcpConnPair returns a matching set of a TCP client side and server side connection.

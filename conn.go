@@ -694,24 +694,24 @@ func (c *Conn) closeWithError(err error) {
 	c.calls = nil
 	c.mu.Unlock()
 
-	var cerr error
 	if err == nil {
 		// Graceful closes do not inject an error into call.resp, so cancel the
 		// connection first to unblock any exec() calls before waiting for them.
 		c.cancel()
-		cerr = c.close()
+		_ = c.conn.Close()
+	}
+
+	respErr := err
+	if respErr == nil {
+		respErr = ErrConnectionClosed
 	}
 
 	for _, req := range callsToClose {
-		if err != nil {
-			// We need to send the error to all waiting queries.
-			select {
-			case req.resp <- callResp{err: err}:
-				// exec() received the error. Wait for it to finish touching the callReq
-				// before recycling it.
-			case <-req.timeout:
-				// exec() already timed out and returned.
-			}
+		// Wake all waiting queries. Graceful closes use a stable shutdown error,
+		// while non-graceful closes preserve the error that closed the connection.
+		select {
+		case req.resp <- callResp{err: respErr}:
+		case <-req.timeout:
 		}
 		req.waitExecDone("closeWithError")
 		if req.streamObserverContext != nil {
@@ -731,14 +731,11 @@ func (c *Conn) closeWithError(err error) {
 
 	if err != nil {
 		c.cancel()
-		cerr = c.close()
+		_ = c.conn.Close()
 	}
 
 	if err != nil {
 		c.errorHandler.HandleError(c, err, true)
-	} else if cerr != nil {
-		// TODO(zariel): is it a good idea to do this?
-		c.errorHandler.HandleError(c, cerr, true)
 	}
 }
 
@@ -754,12 +751,15 @@ func (c *Conn) setTabletSupported(val bool) {
 	atomic.StoreInt32(&c.tabletsRoutingV1, intVal)
 }
 
-func (c *Conn) close() error {
-	return c.conn.Close()
-}
-
 func (c *Conn) Close() {
 	c.closeWithError(nil)
+}
+
+func (c *Conn) shouldTreatRecvErrorAsShutdown(ctx context.Context, err error) bool {
+	if err == nil {
+		return false
+	}
+	return c.Closed()
 }
 
 // Serve starts the stream multiplexer for this connection, which is required
@@ -769,6 +769,11 @@ func (c *Conn) serve(ctx context.Context) {
 	var err error
 	for err == nil {
 		err = c.recv(ctx)
+	}
+
+	if c.shouldTreatRecvErrorAsShutdown(ctx, err) {
+		c.closeWithError(nil)
+		return
 	}
 
 	c.closeWithError(err)
