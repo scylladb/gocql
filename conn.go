@@ -630,17 +630,16 @@ func (c *Conn) closeWithError(err error) {
 	// We should attempt to deliver the error back to the caller if it
 	// exists. However, don't block c.mu while we are delivering the
 	// error to outstanding calls.
-	if err != nil {
-		callsToClose = c.calls
-		// It is safe to change c.calls to nil. Nobody should use it after c.closed is set to true.
-		c.calls = nil
-	}
+
+	callsToClose = c.calls
+	// It is safe to change c.calls to nil. Nobody should use it after c.closed is set to true.
+	c.calls = nil
 	c.mu.Unlock()
 
 	for _, req := range callsToClose {
 		// we need to send the error to all waiting queries.
 		select {
-		case req.resp <- callResp{err: err}:
+		case req.resp <- callResp{err: ErrConnectionClosed}:
 		case <-req.timeout:
 		}
 		if req.streamObserverContext != nil {
