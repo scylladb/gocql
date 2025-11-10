@@ -655,13 +655,10 @@ func (c *Conn) closeWithError(err error) {
 
 	// if error was nil then unblock the quit channel
 	c.cancel()
-	cerr := c.close()
+	_ = c.conn.Close()
 
 	if err != nil {
 		c.errorHandler.HandleError(c, err, true)
-	} else if cerr != nil {
-		// TODO(zariel): is it a good idea to do this?
-		c.errorHandler.HandleError(c, cerr, true)
 	}
 }
 
@@ -675,10 +672,6 @@ func (c *Conn) setTabletSupported(val bool) {
 		intVal = 1
 	}
 	atomic.StoreInt32(&c.tabletsRoutingV1, intVal)
-}
-
-func (c *Conn) close() error {
-	return c.conn.Close()
 }
 
 func (c *Conn) Close() {
