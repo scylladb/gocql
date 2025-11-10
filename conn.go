@@ -640,7 +640,9 @@ func (c *Conn) closeWithError(err error) {
 		// we need to send the error to all waiting queries.
 		select {
 		case req.resp <- callResp{err: ErrConnectionClosed}:
-		case <-req.timeout:
+		default:
+			// Either reading thread is gone or resp is already written
+			// In both cases no need to do anything
 		}
 		if req.streamObserverContext != nil {
 			req.streamObserverEndOnce.Do(func() {
@@ -1173,9 +1175,6 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, reques
 
 	err := req.buildFrame(framer, stream)
 	if err != nil {
-		// closeWithError will block waiting for this stream to either receive a response
-		// or for us to timeout.
-		close(call.timeout)
 		// We failed to serialize the frame into a buffer.
 		// This should not affect the connection as we didn't write anything. We just free the current call.
 		c.mu.Lock()
@@ -1191,10 +1190,6 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, reques
 
 	n, err := c.w.writeContext(ctx, framer.buf)
 	if err != nil {
-		// closeWithError will block waiting for this stream to either receive a response
-		// or for us to timeout, close the timeout chan here. Im not entirely sure
-		// but we should not get a response after an error on the write side.
-		close(call.timeout)
 		if (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) && n == 0 {
 			// We have not started to write this frame.
 			// Release the stream as no response can come from the server on the stream.
