@@ -337,9 +337,9 @@ func (pool *hostConnPool) Close() {
 	defer pool.mu.Unlock()
 
 	if !pool.closed {
+		pool.closed = true
 		pool.connPicker.Close()
 	}
-	pool.closed = true
 }
 
 // Fill the connection pool
