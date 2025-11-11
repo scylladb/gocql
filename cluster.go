@@ -371,7 +371,7 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		ReadTimeout:                   11 * time.Second,
 		WriteTimeout:                  11 * time.Second,
 		Port:                          9042,
-		MaxExcessShardConnectionsRate: 10,
+		MaxExcessShardConnectionsRate: 2,
 		NumConns:                      2,
 		Consistency:                   Quorum,
 		MaxPreparedStmts:              defaultMaxPreparedStmts,
