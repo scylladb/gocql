@@ -206,6 +206,11 @@ type ClusterConfig struct {
 	// Also, it describes a maximum number of connections at the same time.
 	// Default: 2
 	NumConns int
+	// The gocql driver may hold excess shard connections to reuse them when existing connections are dropped.
+	// This configuration variable defines the limit for such excess connections. Once the limit is reached,
+	// gocql starts dropping any additional excess connections.
+	// The limit is computed as `MaxExcessShardConnectionsRate` * <number_of_shards>.
+	MaxExcessShardConnectionsRate float32
 	// Maximum cache size for prepared statements globally for gocql.
 	// Default: 1000
 	MaxPreparedStmts int
@@ -359,33 +364,34 @@ type Dialer interface {
 // the same host, and will not mark the node being down or up from events.
 func NewCluster(hosts ...string) *ClusterConfig {
 	cfg := &ClusterConfig{
-		Hosts:                        hosts,
-		CQLVersion:                   "3.0.0",
-		Timeout:                      11 * time.Second,
-		ConnectTimeout:               60 * time.Second,
-		ReadTimeout:                  11 * time.Second,
-		WriteTimeout:                 11 * time.Second,
-		Port:                         9042,
-		NumConns:                     2,
-		Consistency:                  Quorum,
-		MaxPreparedStmts:             defaultMaxPreparedStmts,
-		MaxRoutingKeyInfo:            1000,
-		PageSize:                     5000,
-		DefaultTimestamp:             true,
-		DriverName:                   defaultDriverName,
-		DriverVersion:                defaultDriverVersion,
-		MaxWaitSchemaAgreement:       60 * time.Second,
-		ReconnectInterval:            60 * time.Second,
-		ConvictionPolicy:             &SimpleConvictionPolicy{},
-		ReconnectionPolicy:           &ConstantReconnectionPolicy{MaxRetries: 3, Interval: 1 * time.Second},
-		InitialReconnectionPolicy:    &NoReconnectionPolicy{},
-		SocketKeepalive:              15 * time.Second,
-		WriteCoalesceWaitTime:        200 * time.Microsecond,
-		MetadataSchemaRequestTimeout: 60 * time.Second,
-		DisableSkipMetadata:          true,
-		WarningsHandlerBuilder:       DefaultWarningHandlerBuilder,
-		Logger:                       &defaultLogger{},
-		DNSResolver:                  defaultDnsResolver,
+		Hosts:                         hosts,
+		CQLVersion:                    "3.0.0",
+		Timeout:                       11 * time.Second,
+		ConnectTimeout:                60 * time.Second,
+		ReadTimeout:                   11 * time.Second,
+		WriteTimeout:                  11 * time.Second,
+		Port:                          9042,
+		MaxExcessShardConnectionsRate: 10,
+		NumConns:                      2,
+		Consistency:                   Quorum,
+		MaxPreparedStmts:              defaultMaxPreparedStmts,
+		MaxRoutingKeyInfo:             1000,
+		PageSize:                      5000,
+		DefaultTimestamp:              true,
+		DriverName:                    defaultDriverName,
+		DriverVersion:                 defaultDriverVersion,
+		MaxWaitSchemaAgreement:        60 * time.Second,
+		ReconnectInterval:             60 * time.Second,
+		ConvictionPolicy:              &SimpleConvictionPolicy{},
+		ReconnectionPolicy:            &ConstantReconnectionPolicy{MaxRetries: 3, Interval: 1 * time.Second},
+		InitialReconnectionPolicy:     &NoReconnectionPolicy{},
+		SocketKeepalive:               15 * time.Second,
+		WriteCoalesceWaitTime:         200 * time.Microsecond,
+		MetadataSchemaRequestTimeout:  60 * time.Second,
+		DisableSkipMetadata:           true,
+		WarningsHandlerBuilder:        DefaultWarningHandlerBuilder,
+		Logger:                        &defaultLogger{},
+		DNSResolver:                   defaultDnsResolver,
 	}
 
 	return cfg
@@ -543,6 +549,10 @@ func (cfg *ClusterConfig) Validate() error {
 
 	if cfg.DNSResolver == nil {
 		return fmt.Errorf("DNSResolver is empty")
+	}
+
+	if cfg.MaxExcessShardConnectionsRate < 0 {
+		return fmt.Errorf("MaxExcessShardConnectionsRate should be positive number or zero")
 	}
 
 	return cfg.ValidateAndInitSSL()

@@ -313,6 +313,7 @@ type scyllaConnPicker struct {
 	msbIgnore                  uint64
 	nrConns                    int
 	shardAwarePortDisabled     bool
+	excessConnsLimitRate       float32
 }
 
 func newScyllaConnPicker(conn *Conn, logger StdLogger) *scyllaConnPicker {
@@ -349,6 +350,7 @@ func newScyllaConnPicker(conn *Conn, logger StdLogger) *scyllaConnPicker {
 		lastAttemptedShard:     0,
 		shardAwarePortDisabled: conn.session.cfg.DisableShardAwarePort,
 		logger:                 logger,
+		excessConnsLimitRate:   conn.session.cfg.MaxExcessShardConnectionsRate,
 
 		disableShardAwarePortUntil: new(atomic.Value),
 	}
@@ -510,12 +512,10 @@ func (p *scyllaConnPicker) Put(conn *Conn) {
 }
 
 func (p *scyllaConnPicker) shouldCloseExcessConns() bool {
-	const maxExcessConnsFactor = 10
-
 	if p.nrConns >= p.nrShards {
 		return true
 	}
-	return len(p.excessConns) > maxExcessConnsFactor*p.nrShards
+	return len(p.excessConns) > int(p.excessConnsLimitRate*float32(p.nrShards))
 }
 
 func (p *scyllaConnPicker) Remove(conn *Conn) {
