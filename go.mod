@@ -18,6 +18,7 @@
 module github.com/gocql/gocql
 
 require (
+	github.com/gocql/gocql/lz4 v0.0.0-20250218124249-65e2cafa8c46
 	github.com/google/go-cmp v0.7.0
 	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed
 	github.com/klauspost/compress v1.18.1
@@ -28,6 +29,7 @@ require (
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/pierrec/lz4/v4 v4.1.22 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
@@ -49,3 +51,6 @@ retract (
 )
 
 go 1.25.0
+
+// Temporary replace directive to use a forked lz4 package with necessary fixes
+replace github.com/gocql/gocql/lz4 => github.com/nikagra/gocql/lz4 v0.0.0-20251021122040-80e11378087b
