@@ -176,6 +176,7 @@ type HostInfo struct {
 	state                   nodeState
 	scyllaShardAwarePort    uint16
 	scyllaShardAwarePortTLS uint16
+	scyllaShardCount        int
 	graph                   bool
 }
 
@@ -488,8 +489,10 @@ func (h *HostInfo) String() string {
 func (h *HostInfo) setScyllaSupported(s scyllaSupported) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	h.partitioner = s.partitioner
 	h.scyllaShardAwarePort = s.shardAwarePort
 	h.scyllaShardAwarePortTLS = s.shardAwarePortSSL
+	h.scyllaShardCount = s.nrShards
 }
 
 // ScyllaShardAwarePort returns the shard aware port of this host.
@@ -506,6 +509,13 @@ func (h *HostInfo) ScyllaShardAwarePortTLS() uint16 {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.scyllaShardAwarePortTLS
+}
+
+// ScyllaShardCount returns count of shards on the node.
+func (h *HostInfo) ScyllaShardCount() int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.scyllaShardCount
 }
 
 // Returns true if we are using system_schema.keyspaces instead of system.schema_keyspaces

@@ -8,17 +8,6 @@ package gocql
 
 import "fmt"
 
-func (pool *hostConnPool) MissingConnections() (int, error) {
-	pool.mu.Lock()
-	defer pool.mu.Unlock()
-
-	if pool.closed {
-		return 0, fmt.Errorf("pool is closed")
-	}
-	_, missing := pool.connPicker.Size()
-	return missing, nil
-}
-
 func (p *policyConnPool) MissingConnections() (int, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -27,9 +16,9 @@ func (p *policyConnPool) MissingConnections() (int, error) {
 
 	// close the pools
 	for _, pool := range p.hostConnPools {
-		missing, err := pool.MissingConnections()
-		if err != nil {
-			return 0, err
+		missing := pool.GetShardCount() - pool.GetConnectionCount()
+		if pool.IsClosed() {
+			return 0, fmt.Errorf("pool for %s is closed", pool.host.HostID())
 		}
 		total += missing
 	}

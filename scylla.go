@@ -518,6 +518,18 @@ func (p *scyllaConnPicker) shouldCloseExcessConns() bool {
 	return len(p.excessConns) > int(p.excessConnsLimitRate*float32(p.nrShards))
 }
 
+func (p *scyllaConnPicker) GetConnectionCount() int {
+	return p.nrConns
+}
+
+func (p *scyllaConnPicker) GetExcessConnectionCount() int {
+	return len(p.excessConns)
+}
+
+func (p *scyllaConnPicker) GetShardCount() int {
+	return p.nrShards
+}
+
 func (p *scyllaConnPicker) Remove(conn *Conn) {
 	shard := conn.scyllaSupported.shard
 

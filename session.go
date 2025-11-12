@@ -2425,6 +2425,47 @@ func (s *Session) GetHosts() []*HostInfo {
 	return s.hostSource.getHostsList()
 }
 
+type HostInformation interface {
+	Peer() net.IP
+	ConnectAddress() net.IP
+	UntranslatedConnectAddress() net.IP
+	BroadcastAddress() net.IP
+	ListenAddress() net.IP
+	RPCAddress() net.IP
+	PreferredIP() net.IP
+	DataCenter() string
+	Rack() string
+	HostID() string
+	WorkLoad() string
+	Partitioner() string
+	ClusterName() string
+	Tokens() []string
+	Port() int
+	IsUp() bool
+	ScyllaShardAwarePort() uint16
+	ScyllaShardAwarePortTLS() uint16
+	ScyllaShardCount() int
+}
+
+type HostPoolInfo interface {
+	GetConnectionCount() int
+	GetExcessConnectionCount() int
+	GetShardCount() int
+	String() string
+	InFlight() int
+	Host() HostInformation
+	IsClosed() bool
+}
+
+func (s *Session) GetHostPoolByID(hostID string) HostPoolInfo {
+	hostPool, _ := s.pool.getPoolByHostID(hostID)
+	return hostPool
+}
+
+func (s *Session) IterateHostPools(iter func(info HostPoolInfo) bool) {
+	s.pool.iteratePool(iter)
+}
+
 type ObservedQuery struct {
 	// Start is a time when the query was attempted
 	Start time.Time

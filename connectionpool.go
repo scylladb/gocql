@@ -203,6 +203,16 @@ func (p *policyConnPool) getPoolByHostID(hostID string) (pool *hostConnPool, ok 
 	return
 }
 
+func (p *policyConnPool) iteratePool(iter func(info HostPoolInfo) bool) {
+	p.mu.RLock()
+	for _, pool := range p.hostConnPools {
+		if !iter(pool) {
+			break
+		}
+	}
+	p.mu.RUnlock()
+}
+
 func (p *policyConnPool) Close() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -264,12 +274,12 @@ type hostConnPool struct {
 	filling bool
 }
 
-func (h *hostConnPool) String() string {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	size, _ := h.connPicker.Size()
+func (pool *hostConnPool) String() string {
+	pool.mu.RLock()
+	defer pool.mu.RUnlock()
+	size, _ := pool.connPicker.Size()
 	return fmt.Sprintf("[filling=%v closed=%v conns=%v size=%v host=%v]",
-		h.filling, h.closed, size, h.size, h.host)
+		pool.filling, pool.closed, size, pool.size, pool.host)
 }
 
 func newHostConnPool(session *Session, host *HostInfo, port, size int,
@@ -586,4 +596,32 @@ func (pool *hostConnPool) HandleError(conn *Conn, err error, closed bool) {
 
 	pool.connPicker.Remove(conn)
 	go pool.fill_debounce()
+}
+
+func (pool *hostConnPool) GetConnectionCount() int {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+	return pool.connPicker.GetConnectionCount()
+}
+
+func (pool *hostConnPool) GetExcessConnectionCount() int {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+	return pool.connPicker.GetExcessConnectionCount()
+}
+
+func (pool *hostConnPool) GetShardCount() int {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+	return pool.connPicker.GetShardCount()
+}
+
+func (pool *hostConnPool) Host() HostInformation {
+	return pool.host
+}
+
+func (pool *hostConnPool) IsClosed() bool {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+	return pool.closed
 }

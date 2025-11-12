@@ -18,6 +18,10 @@ type ConnPicker interface {
 	// nrShard specifies how many shards the host has.
 	// If nrShards is zero, the caller shouldn't use shard-aware port.
 	NextShard() (shardID, nrShards int)
+
+	GetConnectionCount() int
+	GetExcessConnectionCount() int
+	GetShardCount() int
 }
 
 type defaultConnPicker struct {
@@ -25,6 +29,21 @@ type defaultConnPicker struct {
 	pos   uint32
 	size  int
 	mu    sync.RWMutex
+}
+
+func (p *defaultConnPicker) GetConnectionCount() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.conns)
+}
+
+func (p *defaultConnPicker) GetExcessConnectionCount() int {
+	return 0
+}
+
+func (p *defaultConnPicker) GetShardCount() int {
+	// It is not supposed to be used for scylla nodes and therefore does not know anything about shards count
+	return 0
 }
 
 func newDefaultConnPicker(size int) *defaultConnPicker {
@@ -110,6 +129,18 @@ func (*defaultConnPicker) NextShard() (shardID, nrShards int) {
 // hostConnPool is created to allow deferring creation of the actual ConnPicker
 // to the point where we have first connection.
 type nopConnPicker struct{}
+
+func (p nopConnPicker) GetConnectionCount() int {
+	return 0
+}
+
+func (p nopConnPicker) GetExcessConnectionCount() int {
+	return 0
+}
+
+func (p nopConnPicker) GetShardCount() int {
+	return 0
+}
 
 func (nopConnPicker) Pick(Token, ExecutableQuery) *Conn {
 	return nil
