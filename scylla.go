@@ -452,22 +452,25 @@ func (p *scyllaConnPicker) shardOf(token int64Token) int {
 	return int(sum >> 32)
 }
 
-func (p *scyllaConnPicker) Put(conn *Conn) {
+func (p *scyllaConnPicker) Put(conn *Conn) error {
 	var (
 		nrShards = conn.scyllaSupported.nrShards
 		shard    = conn.scyllaSupported.shard
 	)
 
 	if nrShards == 0 {
-		panic(fmt.Sprintf("scylla: %s not a sharded connection", p.address))
+		return errors.New("server reported that it has no shards")
 	}
 
-	if nrShards != len(p.conns) {
-		if nrShards != p.nrShards {
-			panic(fmt.Sprintf("scylla: %s invalid number of shards", p.address))
+	if nrShards != p.nrShards {
+		if gocqlDebug {
+			p.logger.Printf("scylla: %s shard count changed from %d to %d, rebuilding connection pool",
+				p.address, p.nrShards, nrShards)
 		}
+		p.handleShardTopologyChange(conn, nrShards)
+	} else if nrShards != len(p.conns) {
 		conns := p.conns
-		p.conns = make([]*Conn, nrShards, nrShards)
+		p.conns = make([]*Conn, nrShards)
 		copy(p.conns, conns)
 	}
 
@@ -508,6 +511,45 @@ func (p *scyllaConnPicker) Put(conn *Conn) {
 
 	if p.shouldCloseExcessConns() {
 		p.closeExcessConns()
+	}
+
+	return nil
+}
+
+func (p *scyllaConnPicker) handleShardTopologyChange(newConn *Conn, newShardCount int) {
+	oldShardCount := p.nrShards
+	oldConns := make([]*Conn, len(p.conns))
+	copy(oldConns, p.conns)
+
+	if gocqlDebug {
+		p.logger.Printf("scylla: %s handling shard topology change from %d to %d", p.address, oldShardCount, newShardCount)
+	}
+
+	newConns := make([]*Conn, newShardCount)
+	var toClose []*Conn
+	migratedCount := 0
+
+	for i, conn := range oldConns {
+		if conn != nil && i < newShardCount {
+			newConns[i] = conn
+			migratedCount++
+		} else if conn != nil {
+			toClose = append(toClose, conn)
+		}
+	}
+
+	p.nrShards = newShardCount
+	p.msbIgnore = newConn.scyllaSupported.msbIgnore
+	p.conns = newConns
+	p.nrConns = migratedCount
+	p.lastAttemptedShard = 0
+
+	if len(toClose) > 0 {
+		go closeConns(toClose...)
+	}
+
+	if gocqlDebug {
+		p.logger.Printf("scylla: %s migrated %d/%d connections to new shard topology, closing %d excess connections", p.address, migratedCount, len(oldConns), len(toClose))
 	}
 }
 

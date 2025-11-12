@@ -8,7 +8,7 @@ import (
 
 type ConnPicker interface {
 	Pick(Token, ExecutableQuery) *Conn
-	Put(*Conn)
+	Put(*Conn) error
 	Remove(conn *Conn)
 	InFlight() int
 	Size() (int, int)
@@ -96,10 +96,11 @@ func (p *defaultConnPicker) Pick(Token, ExecutableQuery) *Conn {
 	return leastBusyConn
 }
 
-func (p *defaultConnPicker) Put(conn *Conn) {
+func (p *defaultConnPicker) Put(conn *Conn) error {
 	p.mu.Lock()
 	p.conns = append(p.conns, conn)
 	p.mu.Unlock()
+	return nil
 }
 
 func (*defaultConnPicker) NextShard() (shardID, nrShards int) {
@@ -115,7 +116,8 @@ func (nopConnPicker) Pick(Token, ExecutableQuery) *Conn {
 	return nil
 }
 
-func (nopConnPicker) Put(*Conn) {
+func (nopConnPicker) Put(*Conn) error {
+	return nil
 }
 
 func (nopConnPicker) Remove(conn *Conn) {

@@ -45,7 +45,7 @@ func (s *Session) MissingConnections() (int, error) {
 
 type ConnPickerIntegration interface {
 	Pick(Token, ExecutableQuery) *Conn
-	Put(*Conn)
+	Put(*Conn) error
 	Remove(conn *Conn)
 	InFlight() int
 	Size() (int, int)
