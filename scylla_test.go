@@ -7,10 +7,15 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"net"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/gocql/gocql/internal/streams"
 )
@@ -128,19 +133,6 @@ func TestScyllaConnPickerRemove(t *testing.T) {
 	}
 }
 
-func mockConn(shard int) *Conn {
-	return &Conn{
-		streams: streams.New(),
-		scyllaSupported: scyllaSupported{
-			shard:             shard,
-			nrShards:          4,
-			msbIgnore:         12,
-			partitioner:       "org.apache.cassandra.dht.Murmur3Partitioner",
-			shardingAlgorithm: "biased-token-round-robin",
-		},
-	}
-}
-
 func TestScyllaConnPickerShardOf(t *testing.T) {
 	t.Parallel()
 
@@ -155,7 +147,7 @@ func TestScyllaConnPickerShardOf(t *testing.T) {
 	}
 }
 
-func TestScyllaRandomConnPIcker(t *testing.T) {
+func TestScyllaRandomConnPicker(t *testing.T) {
 	t.Parallel()
 
 	t.Run("max iterations", func(t *testing.T) {
@@ -326,5 +318,162 @@ func TestScyllaPortIterator(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestScyllaConnPickerHandleShardTopologyChange(t *testing.T) {
+	tests := []struct {
+		name             string
+		initialShards    int
+		newShards        int
+		initialConns     []int // shard IDs of initial connections
+		expectedMigrated int
+		expectedClosed   int
+	}{
+		{
+			name:             "shard increase from 4 to 8",
+			initialShards:    4,
+			newShards:        8,
+			initialConns:     []int{0, 2, 3},
+			expectedMigrated: 3, // All initial connections survive
+			expectedClosed:   0,
+		},
+		{
+			name:             "shard decrease from 8 to 4",
+			initialShards:    8,
+			newShards:        4,
+			initialConns:     []int{0, 2, 5, 7},
+			expectedMigrated: 2, // Only shards 0, 2 survive
+			expectedClosed:   2, // Shards 5, 7 get closed
+		},
+		{
+			name:             "no change same count",
+			initialShards:    8,
+			newShards:        8,
+			initialConns:     []int{1, 3, 5},
+			expectedMigrated: 4, // All initial connections survive + new one
+			expectedClosed:   0,
+		},
+		{
+			name:             "massive decrease from 16 to 2",
+			initialShards:    16,
+			newShards:        2,
+			initialConns:     []int{0, 1, 5, 8, 12, 15},
+			expectedMigrated: 2, // Only shards 0, 1 survive
+			expectedClosed:   4, // Shards 5, 8, 12, 15 get closed
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			logger := &testLogger{}
+			picker := &scyllaConnPicker{
+				logger:                     logger,
+				disableShardAwarePortUntil: new(atomic.Value),
+				hostId:                     "test-host-id",
+				shardAwareAddress:          "192.168.1.1:19042", // Shard-aware port
+				address:                    "192.168.1.1:9042",  // Regular port
+				conns:                      make([]*Conn, tt.initialShards),
+				excessConns:                make([]*Conn, 0),
+				nrShards:                   tt.initialShards,
+				msbIgnore:                  12,
+				nrConns:                    0,
+				pos:                        0,
+				lastAttemptedShard:         0,
+				shardAwarePortDisabled:     false,
+				excessConnsLimitRate:       0.1,
+			}
+			picker.disableShardAwarePortUntil.Store(time.Time{})
+
+			var connectionsToCheck []*Conn
+
+			// Add initial connections
+			for _, shardID := range tt.initialConns {
+				conn := mockConnForPicker(shardID, tt.initialShards)
+				err := picker.Put(conn)
+				require.NoError(t, err)
+
+				if shardID >= tt.newShards {
+					connectionsToCheck = append(connectionsToCheck, conn)
+				}
+			}
+
+			// Verify initial state
+			assert.Equal(t, tt.initialShards, picker.nrShards)
+			assert.Equal(t, len(tt.initialConns), picker.nrConns)
+
+			// Execute topology change
+			newConn := mockConnForPicker(0, tt.newShards)
+			err := picker.Put(newConn)
+			require.NoError(t, err)
+
+			// Allow background goroutine to complete
+			time.Sleep(50 * time.Millisecond)
+
+			// Verify new topology
+			assert.Equal(t, tt.newShards, picker.nrShards)
+			assert.Equal(t, len(picker.conns), tt.newShards)
+
+			// Count migrated connections
+			migratedCount := 0
+			for _, conn := range picker.conns {
+				if conn != nil {
+					migratedCount++
+				}
+			}
+
+			assert.Equal(t, tt.expectedMigrated, migratedCount)
+
+			// Verify connections that should be closed are actually closed
+			closedCount := 0
+			for _, conn := range connectionsToCheck {
+				if conn.Closed() {
+					closedCount++
+				}
+			}
+
+			assert.Equal(t, tt.expectedClosed, closedCount,
+				"Expected %d connections to be closed, but %d were closed",
+				tt.expectedClosed, closedCount)
+		})
+	}
+}
+
+func mockConn(shard int) *Conn {
+	return &Conn{
+		streams: streams.New(),
+		scyllaSupported: scyllaSupported{
+			shard:             shard,
+			nrShards:          4,
+			msbIgnore:         12,
+			partitioner:       "org.apache.cassandra.dht.Murmur3Partitioner",
+			shardingAlgorithm: "biased-token-round-robin",
+		},
+	}
+}
+
+func mockConnForPicker(shard, nrShards int) *Conn {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	conn1, conn2 := net.Pipe()
+	_ = conn2.Close()
+
+	return &Conn{
+		scyllaSupported: scyllaSupported{
+			shard:     shard,
+			nrShards:  nrShards,
+			msbIgnore: 12,
+		},
+		conn:    conn1,
+		addr:    fmt.Sprintf("192.168.1.%d:9042", shard+1),
+		closed:  false,
+		mu:      sync.Mutex{},
+		logger:  &testLogger{},
+		ctx:     ctx,
+		cancel:  cancel,
+		calls:   make(map[int]*callReq),
+		streams: streams.New(),
 	}
 }
