@@ -164,7 +164,10 @@ func hostInfo(resolver DNSResolver, translateAddressPort addressTranslateFn, add
 			translatePort := port
 			if translateAddressPort != nil {
 				// empty hostID signals that it is an initial contact endpoint
-				translatedAddress, translatePort = translateAddressPort("", ip, port)
+				translatedAddress, translatePort, err = translateAddressPort("", ip, port)
+				if err != nil {
+					return nil, err
+				}
 			}
 			hh := HostInfoBuilder{
 				HostId:                     MustRandomUUID().String(),
@@ -192,7 +195,10 @@ func hostInfo(resolver DNSResolver, translateAddressPort addressTranslateFn, add
 			translatePort := port
 			if translateAddressPort != nil {
 				// empty hostID signals that it is an initial contact endpoint
-				translatedAddress, translatePort = translateAddressPort("", ip, port)
+				translatedAddress, translatePort, err = translateAddressPort("", ip, port)
+				if err != nil {
+					return nil, err
+				}
 			}
 			hh := HostInfoBuilder{
 				HostId:                     MustRandomUUID().String(),
@@ -338,7 +344,7 @@ func (c *controlConn) setupConn(conn *Conn) error {
 		return err
 	}
 
-	host = c.session.hostSource.addOrUpdate(host)
+	//host = c.session.hostSource.addOrUpdate(host)
 
 	if c.session.cfg.filterHost(host) {
 		return fmt.Errorf("host was filtered: %v", host.ConnectAddress())
@@ -390,6 +396,9 @@ func (c *controlConn) registerEvents(conn *Conn) error {
 	}
 	if !c.session.cfg.Events.DisableSchemaEvents {
 		events = append(events, "SCHEMA_CHANGE")
+	}
+	if c.session.cfg.ClientRoutesConfig != nil {
+		events = append(events, "CLIENT_ROUTES_CHANGE")
 	}
 
 	if len(events) == 0 {
@@ -468,7 +477,7 @@ func (c *controlConn) attemptReconnect() error {
 	c.session.logger.Printf("gocql: control falling back to initial contact points.\n")
 	// Fallback to initial contact points, as it may be the case that all known initialHosts
 	// changed their IPs while keeping the same hostname(s).
-	initialHosts, resolvErr := resolveInitialEndpoints(c.session.cfg.DNSResolver, c.session.cfg.translateAddressPort, c.session.cfg.Hosts, c.session.cfg.Port, c.session.logger)
+	initialHosts, resolvErr := resolveInitialEndpoints(c.session.cfg.DNSResolver, c.session.cfg.translateAddressPort, c.session.cfg.Hosts, c.session.cfg.Port)
 	if resolvErr != nil {
 		return fmt.Errorf("resolve contact points' hostnames: %v", resolvErr)
 	}

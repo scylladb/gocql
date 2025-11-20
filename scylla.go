@@ -16,10 +16,10 @@ import (
 	"github.com/gocql/gocql/internal/debug"
 )
 
-// scyllaSupported represents Scylla connection options as sent in SUPPORTED
+// ScyllaFeaturesInfo represents Scylla connection options as sent in SUPPORTED
 // frame.
 // FIXME: Should also follow `cqlProtocolExtension` interface.
-type scyllaSupported struct {
+type ScyllaFeaturesInfo struct {
 	partitioner       string
 	shardingAlgorithm string
 	shard             int
@@ -188,7 +188,7 @@ func (ext *lwtAddMetadataMarkExt) name() string {
 	return lwtAddMetadataMarkKey
 }
 
-func parseSupported(supported map[string][]string, logger StdLogger) scyllaSupported {
+func parseSupported(supported map[string][]string, logger StdLogger) ScyllaFeaturesInfo {
 	const (
 		scyllaShard             = "SCYLLA_SHARD"
 		scyllaNrShards          = "SCYLLA_NR_SHARDS"
@@ -200,7 +200,7 @@ func parseSupported(supported map[string][]string, logger StdLogger) scyllaSuppo
 	)
 
 	var (
-		si  scyllaSupported
+		si  ScyllaFeaturesInfo
 		err error
 	)
 
@@ -256,7 +256,7 @@ func parseSupported(supported map[string][]string, logger StdLogger) scyllaSuppo
 			logger.Printf("scylla: unsupported sharding configuration, partitioner=%s, algorithm=%s, no_shards=%d, msb_ignore=%d",
 				si.partitioner, si.shardingAlgorithm, si.nrShards, si.msbIgnore)
 		}
-		return scyllaSupported{}
+		return ScyllaFeaturesInfo{}
 	}
 
 	return si
@@ -318,7 +318,7 @@ type scyllaConnPicker struct {
 	excessConnsLimitRate       float32
 }
 
-func newScyllaConnPicker(conn *Conn, logger StdLogger) *scyllaConnPicker {
+func newScyllaConnPicker(conn *Conn, logger StdLogger) (*scyllaConnPicker, error) {
 	addr := conn.Address()
 	hostId := conn.host.hostId
 
@@ -339,7 +339,10 @@ func newScyllaConnPicker(conn *Conn, logger StdLogger) *scyllaConnPicker {
 
 	var shardAwareAddress string
 	if shardAwarePort != 0 {
-		tIP, tPort := conn.session.cfg.translateAddressPort(conn.host.HostID(), conn.host.UntranslatedConnectAddress(), int(shardAwarePort))
+		tIP, tPort, err := conn.session.cfg.translateAddressPort(conn.host.HostID(), conn.host.UntranslatedConnectAddress(), int(shardAwarePort))
+		if err != nil {
+			return nil, err
+		}
 		shardAwareAddress = net.JoinHostPort(tIP.String(), strconv.Itoa(tPort))
 	}
 
@@ -355,7 +358,7 @@ func newScyllaConnPicker(conn *Conn, logger StdLogger) *scyllaConnPicker {
 		excessConnsLimitRate:   conn.session.cfg.MaxExcessShardConnectionsRate,
 
 		disableShardAwarePortUntil: new(atomic.Value),
-	}
+	}, nil
 }
 
 func (p *scyllaConnPicker) Pick(t Token, qry ExecutableQuery) *Conn {
@@ -753,7 +756,10 @@ func (sd *scyllaDialer) DialShard(ctx context.Context, host *HostInfo, shardID, 
 
 	var shardAwareAddress string
 	if shardAwarePort != 0 {
-		tIP, tPort := sd.cfg.translateAddressPort(host.HostID(), host.UntranslatedConnectAddress(), int(shardAwarePort))
+		tIP, tPort, err := sd.cfg.translateAddressPort(host.HostID(), host.UntranslatedConnectAddress(), int(shardAwarePort))
+		if err != nil {
+			return nil, err
+		}
 		shardAwareAddress = net.JoinHostPort(tIP.String(), strconv.Itoa(tPort))
 	}
 

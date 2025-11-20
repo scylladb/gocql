@@ -197,6 +197,25 @@ func (b HostInfoBuilder) Build() HostInfo {
 	}
 }
 
+type Host interface {
+	Peer() net.IP
+	ConnectAddress() net.IP
+	UntranslatedConnectAddress() net.IP
+	BroadcastAddress() net.IP
+	ListenAddress() net.IP
+	RPCAddress() net.IP
+	PreferredIP() net.IP
+	DataCenter() string
+	Rack() string
+	HostID() string
+	WorkLoad() string
+	Graph() bool
+	DSEVersion() string
+	Partitioner() string
+	ClusterName() string
+	GetScyllaInfo() ScyllaFeaturesInfo
+}
+
 type HostInfo struct {
 	dseVersion                 string
 	hostId                     string
@@ -219,12 +238,10 @@ type HostInfo struct {
 	port                       int
 	// TODO(zariel): reduce locking maybe, not all values will change, but to ensure
 	// that we are thread safe use a mutex to access all fields.
-	mu                      sync.RWMutex
-	state                   nodeState
-	scyllaShardAwarePort    uint16
-	scyllaShardAwarePortTLS uint16
-	scyllaShardCount        int
-	graph                   bool
+	mu                 sync.RWMutex
+	state              nodeState
+	graph              bool
+	scyllaFeaturesInfo ScyllaFeaturesInfo
 }
 
 func (h *HostInfo) Equal(host *HostInfo) bool {
@@ -518,13 +535,11 @@ func (h *HostInfo) String() string {
 		h.port, h.dataCenter, h.rack, h.hostId, h.version, h.state, len(h.tokens))
 }
 
-func (h *HostInfo) setScyllaSupported(s scyllaSupported) {
+func (h *HostInfo) setScyllaSupported(s ScyllaFeaturesInfo) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.partitioner = s.partitioner
-	h.scyllaShardAwarePort = s.shardAwarePort
-	h.scyllaShardAwarePortTLS = s.shardAwarePortSSL
-	h.scyllaShardCount = s.nrShards
+	h.scyllaFeaturesInfo = s
 }
 
 // ScyllaShardAwarePort returns the shard aware port of this host.
@@ -532,7 +547,7 @@ func (h *HostInfo) setScyllaSupported(s scyllaSupported) {
 func (h *HostInfo) ScyllaShardAwarePort() uint16 {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	return h.scyllaShardAwarePort
+	return h.scyllaFeaturesInfo.shardAwarePort
 }
 
 // ScyllaShardAwarePortTLS returns the TLS-enabled shard aware port of this host.
@@ -540,14 +555,14 @@ func (h *HostInfo) ScyllaShardAwarePort() uint16 {
 func (h *HostInfo) ScyllaShardAwarePortTLS() uint16 {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	return h.scyllaShardAwarePortTLS
+	return h.scyllaFeaturesInfo.shardAwarePortSSL
 }
 
 // ScyllaShardCount returns count of shards on the node.
 func (h *HostInfo) ScyllaShardCount() int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	return h.scyllaShardCount
+	return h.scyllaFeaturesInfo.nrShards
 }
 
 // Returns true if we are using system_schema.keyspaces instead of system.schema_keyspaces
@@ -680,8 +695,20 @@ func hostInfoFromMap(row map[string]interface{}, host *HostInfo, translateAddres
 		// Not sure what the port field will be called until the JIRA issue is complete
 	}
 
-	host.untranslatedConnectAddress = host.ConnectAddress()
-	ip, port := translateAddressPort(host.HostID(), host.untranslatedConnectAddress, host.port)
+	if host.broadcastAddress != nil {
+		host.untranslatedConnectAddress = host.broadcastAddress
+	} else if host.listenAddress != nil {
+		host.untranslatedConnectAddress = host.listenAddress
+	} else if host.rpcAddress != nil {
+		host.untranslatedConnectAddress = host.rpcAddress
+	} else if host.connectAddress != nil {
+		host.untranslatedConnectAddress = host.connectAddress
+	}
+
+	ip, port, err := translateAddressPort(host.HostID(), host.untranslatedConnectAddress, host.port)
+	if err != nil {
+		return nil, err
+	}
 	host.connectAddress = ip
 	host.port = port
 

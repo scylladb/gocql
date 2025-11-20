@@ -125,7 +125,8 @@ type ClusterConfig struct {
 	SslOpts *SslOptions
 	// An Authenticator factory. Can be used to create alternative authenticators.
 	// Default: nil
-	AuthProvider func(h *HostInfo) (Authenticator, error)
+	AuthProvider       func(h *HostInfo) (Authenticator, error)
+	ClientRoutesConfig *ClientRoutesConfig
 	// The version of the driver that is going to be reported to the server.
 	// Defaulted to current library version
 	DriverVersion string
@@ -423,29 +424,35 @@ func (cfg *ClusterConfig) CreateSessionNonBlocking() (*Session, error) {
 	return NewSessionNonBlocking(*cfg)
 }
 
-type addressTranslateFn func(hostID string, addr net.IP, port int) (net.IP, int)
+type addressTranslateFn func(hostID string, addr net.IP, port int) (net.IP, int, error)
 
 // translateAddressPort is a helper method that will use the given AddressTranslator
 // if defined, to translate the given address and port into a possibly new address
 // and port, If no AddressTranslator or if an error occurs, the given address and
 // port will be returned.
-func (cfg *ClusterConfig) translateAddressPort(hostID string, addr net.IP, port int) (net.IP, int) {
+func (cfg *ClusterConfig) translateAddressPort(hostID string, addr net.IP, port int) (net.IP, int, error) {
 	if cfg.AddressTranslator == nil || len(addr) == 0 {
-		return addr, port
+		return addr, port, nil
 	}
 	translatorV2, ok := cfg.AddressTranslator.(AddressTranslatorV2)
 	if !ok {
 		newAddr, newPort := cfg.AddressTranslator.Translate(addr, port)
 		if debug.Enabled {
-			cfg.logger().Printf("gocql: translating address '%v:%d' to '%v:%d'", addr, port, newAddr, newPort)
+			cfg.logger().Printf("gocql: translated hostID %q with address '%v:%d' to '%v:%d'", hostID, addr, port, newAddr, newPort)
 		}
-		return newAddr, newPort
+		return newAddr, newPort, nil
 	}
-	newAddr, newPort := translatorV2.TranslateWithHostID(hostID, addr, port)
+	newAddr, newPort, err := translatorV2.TranslateWithHostID(hostID, addr, port)
+	if err != nil {
+		if debug.Enabled {
+			cfg.logger().Printf("gocql: failed to translate hostID %q with address '%v:%d' to '%v:%d'", hostID, addr, port, newAddr, newPort)
+		}
+		return newAddr, newPort, err
+	}
 	if debug.Enabled {
-		cfg.logger().Printf("gocql: translating address '%v:%d' to '%v:%d'", addr, port, newAddr, newPort)
+		cfg.logger().Printf("gocql: translated hostID %q with address '%v:%d' to '%v:%d'", hostID, addr, port, newAddr, newPort)
 	}
-	return newAddr, newPort
+	return newAddr, newPort, nil
 }
 
 func (cfg *ClusterConfig) filterHost(host *HostInfo) bool {
@@ -471,6 +478,69 @@ func (cfg *ClusterConfig) getActualTLSConfig() *tls.Config {
 		return nil
 	}
 	return val.Clone()
+}
+
+type ClusterOption func(*ClusterConfig)
+
+func (cfg *ClusterConfig) WithOptions(opts ...ClusterOption) *ClusterConfig {
+	for _, opt := range opts {
+		opt(cfg)
+	}
+	return cfg
+}
+
+type ClientRoutesOption func(*ClientRoutesConfig)
+
+func WithMaxResolverConcurrency(val int) func(*ClientRoutesConfig) {
+	return func(cfg *ClientRoutesConfig) {
+		cfg.MaxResolverConcurrency = val
+	}
+}
+
+func WithResolveHealthyEndpointPeriod(val time.Duration) func(*ClientRoutesConfig) {
+	return func(cfg *ClientRoutesConfig) {
+		cfg.ResolveHealthyEndpointPeriod = val
+	}
+}
+
+func WithEndpoints(endpoints ...ClientRoutesEndpoint) func(*ClientRoutesConfig) {
+	return func(cfg *ClientRoutesConfig) {
+		cfg.Endpoints = endpoints
+	}
+}
+
+func WithTable(tableName string) func(*ClientRoutesConfig) {
+	return func(cfg *ClientRoutesConfig) {
+		cfg.TableName = tableName
+	}
+}
+
+func WithClientRoutes(opts ...ClientRoutesOption) func(*ClusterConfig) {
+	pmCfg := ClientRoutesConfig{
+		// Don't resolve healthy nodes by default
+		ResolveHealthyEndpointPeriod: 0,
+		MaxResolverConcurrency:       1,
+		TableName:                    "system.client_routes",
+		DNSResolver: newSimplePortMuxResolver(
+			time.Minute,
+			time.Millisecond*500,
+			defaultDnsResolver,
+		),
+	}
+	for _, opt := range opts {
+		opt(&pmCfg)
+	}
+	return func(cfg *ClusterConfig) {
+		cfg.ClientRoutesConfig = &pmCfg
+		if len(cfg.Hosts) == 0 {
+			for _, ep := range pmCfg.Endpoints {
+				if ep.connectionAddr != "" {
+					cfg.Hosts = append(cfg.Hosts, ep.connectionAddr)
+				}
+			}
+		}
+		// TODO: cfg.ControlConnectionOnlyToInitialNodes
+	}
 }
 
 func (cfg *ClusterConfig) Validate() error {
@@ -559,7 +629,7 @@ func (cfg *ClusterConfig) Validate() error {
 	}
 
 	if !cfg.DisableSkipMetadata {
-		cfg.Logger.Println("warning: enabling skipping metadata can lead to unpredictible results when executing query and altering columns involved in the query.")
+		cfg.Logger.Println("warning: enabling skipping metadata can lead to unpredictable results when executing query and altering columns involved in the query.")
 	}
 
 	if cfg.SerialConsistency > 0 && !cfg.SerialConsistency.IsSerial() {
@@ -572,6 +642,10 @@ func (cfg *ClusterConfig) Validate() error {
 
 	if cfg.MaxExcessShardConnectionsRate < 0 {
 		return fmt.Errorf("MaxExcessShardConnectionsRate should be positive number or zero")
+	}
+
+	if err := cfg.ClientRoutesConfig.Validate(); err != nil {
+		return fmt.Errorf("ClientRoutesConfig is invalid: %v", err)
 	}
 
 	return cfg.ValidateAndInitSSL()

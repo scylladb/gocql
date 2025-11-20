@@ -54,16 +54,17 @@ func IdentityTranslator() AddressTranslator {
 // for instance, to translate public IPs to private IPs.
 type AddressTranslatorV2 interface {
 	AddressTranslator
-	TranslateWithHostID(hostID string, addr net.IP, port int) (net.IP, int)
+	TranslateWithHostID(hostID string, addr net.IP, port int) (net.IP, int, error)
 }
 
-type AddressTranslatorFuncV2 func(hostID string, addr net.IP, port int) (net.IP, int)
+type AddressTranslatorFuncV2 func(hostID string, addr net.IP, port int) (net.IP, int, error)
 
 func (fn AddressTranslatorFuncV2) Translate(addr net.IP, port int) (net.IP, int) {
-	return fn("", addr, port)
+	newIP, newPort, _ := fn("", addr, port)
+	return newIP, newPort
 }
 
-func (fn AddressTranslatorFuncV2) TranslateWithHostID(hostID string, addr net.IP, port int) (net.IP, int) {
+func (fn AddressTranslatorFuncV2) TranslateWithHostID(hostID string, addr net.IP, port int) (net.IP, int, error) {
 	return fn(hostID, addr, port)
 }
 

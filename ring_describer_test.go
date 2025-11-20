@@ -56,8 +56,8 @@ func TestGetClusterPeerInfoZeroToken(t *testing.T) {
 		},
 	}
 
-	translateAddressPort := func(hostID string, addr net.IP, port int) (net.IP, int) {
-		return addr, port
+	translateAddressPort := func(hostID string, addr net.IP, port int) (net.IP, int, error) {
+		return addr, port, nil
 	}
 
 	var logger StdLogger
@@ -288,9 +288,9 @@ func (*mockConnection) querySystem(ctx context.Context, query string, values ...
 	return nil
 }
 
-func (*mockConnection) getIsSchemaV2() bool                 { return false }
-func (*mockConnection) setSchemaV2(s bool)                  {}
-func (*mockConnection) getScyllaSupported() scyllaSupported { return scyllaSupported{} }
+func (*mockConnection) getIsSchemaV2() bool                    { return false }
+func (*mockConnection) setSchemaV2(s bool)                     {}
+func (*mockConnection) getScyllaSupported() ScyllaFeaturesInfo { return ScyllaFeaturesInfo{} }
 
 type mockControlConn struct{}
 

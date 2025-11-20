@@ -444,7 +444,7 @@ func TestScyllaConnPickerHandleShardCountChange(t *testing.T) {
 func mockConn(shard int) *Conn {
 	return &Conn{
 		streams: streams.New(),
-		scyllaSupported: scyllaSupported{
+		scyllaSupported: ScyllaFeaturesInfo{
 			shard:             shard,
 			nrShards:          4,
 			msbIgnore:         12,
@@ -461,7 +461,7 @@ func mockConnForPicker(shard, nrShards int) *Conn {
 	_ = conn2.Close()
 
 	return &Conn{
-		scyllaSupported: scyllaSupported{
+		scyllaSupported: ScyllaFeaturesInfo{
 			shard:     shard,
 			nrShards:  nrShards,
 			msbIgnore: 12,

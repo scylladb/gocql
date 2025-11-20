@@ -155,7 +155,7 @@ func BenchmarkSingleConnectionInsert(b *testing.B) {
 }
 
 func TestMain(m *testing.M) {
-	update := flag.Bool("update-golden", false, "Update golden files")
+	update := flag.Bool("update-golden", false, "UpdateIfNewer golden files")
 	flag.Parse()
 	if *update {
 		err := InitializeCluster()

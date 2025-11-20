@@ -550,11 +550,17 @@ func (pool *hostConnPool) connect() (err error) {
 	}
 
 	// lazily initialize the connPicker when we know the required type
-	pool.initConnPicker(conn)
+	if err := pool.initConnPicker(conn); err != nil {
+		conn.Close()
+		if debug.Enabled {
+			pool.logger.Printf("gocql: failed to initialize connection picker: %s", err.Error())
+		}
+		return nil
+	}
 	if err := pool.connPicker.Put(conn); err != nil {
 		conn.Close()
 		if debug.Enabled {
-			pool.logger.Printf("gocql: pool connection was not added to the pool: %w", err)
+			pool.logger.Printf("gocql: pool connection was not added to the pool: %s", err.Error())
 		}
 		return nil
 	}
@@ -563,17 +569,22 @@ func (pool *hostConnPool) connect() (err error) {
 	return nil
 }
 
-func (pool *hostConnPool) initConnPicker(conn *Conn) {
+func (pool *hostConnPool) initConnPicker(conn *Conn) error {
 	if _, ok := pool.connPicker.(nopConnPicker); !ok {
-		return
+		return nil
 	}
 
 	if conn.isScyllaConn() {
-		pool.connPicker = newScyllaConnPicker(conn, pool.logger)
-		return
+		connPicker, err := newScyllaConnPicker(conn, pool.logger)
+		if err != nil {
+			return err
+		}
+		pool.connPicker = connPicker
+		return nil
 	}
 
 	pool.connPicker = newDefaultConnPicker(pool.size)
+	return nil
 }
 
 // handle any error from a Conn

@@ -182,7 +182,7 @@ type ConnInterface interface {
 	querySystem(ctx context.Context, query string, values ...interface{}) *Iter
 	getIsSchemaV2() bool
 	setSchemaV2(s bool)
-	getScyllaSupported() scyllaSupported
+	getScyllaSupported() ScyllaFeaturesInfo
 }
 
 // Conn is a single connection to a Cassandra node. It can be used to execute
@@ -213,7 +213,7 @@ type Conn struct {
 	usingTimeoutClause   string
 	currentKeyspace      string
 	cqlProtoExts         []cqlProtocolExtension
-	scyllaSupported      scyllaSupported
+	scyllaSupported      ScyllaFeaturesInfo
 	systemRequestTimeout time.Duration
 	writeTimeout         atomic.Int64
 	timeouts             int64
@@ -257,7 +257,7 @@ func (c *Conn) finalizeConnection() {
 	c.w.setWriteTimeout(c.cfg.WriteTimeout)
 }
 
-func (c *Conn) getScyllaSupported() scyllaSupported {
+func (c *Conn) getScyllaSupported() ScyllaFeaturesInfo {
 	return c.scyllaSupported
 }
 

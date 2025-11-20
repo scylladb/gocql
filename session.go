@@ -68,30 +68,31 @@ type Session struct {
 	streamObserver            StreamObserver
 	initErr                   error
 	nodeEvents                *eventDebouncer
-	cancel                    context.CancelFunc
+	stmtsLRU                  *preparedLRU
 	hostSource                *ringDescriber
 	pool                      *policyConnPool
 	ringRefresher             *debounce.RefreshDebouncer
 	readyCh                   chan struct{}
 	executor                  *queryExecutor
-	stmtsLRU                  *preparedLRU
+	cancel                    context.CancelFunc
 	schemaEvents              *eventDebouncer
 	metadataDescriber         *metadataDescriber
 	eventBus                  *eventbus.EventBus[events.Event]
 	connCfg                   *ConnConfig
+	clientRoutesHandler       *ClientRoutesHandler
 	routingKeyInfoCache       routingKeyInfoLRU
 	cfg                       ClusterConfig
-	pageSize                  int
 	prefetch                  float64
+	pageSize                  int
 	mu                        sync.RWMutex
 	sessionStateMu            sync.RWMutex
 	cons                      Consistency
-	isClosed                  bool
 	isClosing                 bool
-	isInitialized             bool
 	hasAggregatesAndFunctions bool
 	useSystemSchema           bool
 	tabletsRoutingV1          bool
+	isInitialized             bool
+	isClosed                  bool
 }
 
 var queryPool = &sync.Pool{
@@ -100,23 +101,19 @@ var queryPool = &sync.Pool{
 	},
 }
 
-func resolveInitialEndpoints(resolver DNSResolver, translateAddressPort addressTranslateFn, addrs []string, defaultPort int, logger StdLogger) ([]*HostInfo, error) {
+func resolveInitialEndpoints(resolver DNSResolver, translateAddressPort addressTranslateFn, addrs []string, defaultPort int) ([]*HostInfo, error) {
 	var hosts []*HostInfo
+	var errs []error
 	for _, hostaddr := range addrs {
 		resolvedHosts, err := hostInfo(resolver, translateAddressPort, hostaddr, defaultPort)
 		if err != nil {
-			// Try other hosts if unable to resolve DNS name
-			if _, ok := err.(*net.DNSError); ok {
-				logger.Printf("gocql: dns error: %v\n", err)
-				continue
-			}
-			return nil, err
+			errs = append(errs, fmt.Errorf("failed to build host from initial endpoint %s : %w", hostaddr, err))
+			continue
 		}
-
 		hosts = append(hosts, resolvedHosts...)
 	}
 	if len(hosts) == 0 {
-		return nil, errors.New("failed to resolve any of the provided hostnames")
+		return nil, fmt.Errorf("failed to resolve any of the initial endpoints, errors: %w", errors.Join(errs...))
 	}
 	return hosts, nil
 }
@@ -140,6 +137,10 @@ func newSessionCommon(cfg ClusterConfig) (*Session, error) {
 		cancel:          cancel,
 		logger:          cfg.logger(),
 		readyCh:         make(chan struct{}, 1),
+	}
+
+	if cfg.ClientRoutesConfig != nil {
+		s.clientRoutesHandler = NewPortMuxAddressTranslator(*cfg.ClientRoutesConfig, s.logger)
 	}
 
 	// Close created resources on error otherwise they'll leak
@@ -258,7 +259,7 @@ func (s *Session) init() error {
 		return nil
 	}
 
-	hosts, err := resolveInitialEndpoints(s.cfg.DNSResolver, s.cfg.translateAddressPort, s.cfg.Hosts, s.cfg.Port, s.logger)
+	hosts, err := resolveInitialEndpoints(s.cfg.DNSResolver, s.cfg.translateAddressPort, s.cfg.Hosts, s.cfg.Port)
 	if err != nil {
 		return err
 	}
@@ -310,6 +311,10 @@ func (s *Session) init() error {
 		conn.mu.Unlock()
 
 		s.hostSource.setControlConn(s.control)
+
+		if s.clientRoutesHandler != nil {
+			s.clientRoutesHandler.Initialize(s)
+		}
 
 		if !s.cfg.DisableInitialHostLookup {
 			var newHosts []*HostInfo
@@ -431,7 +436,6 @@ func (s *Session) init() error {
 	s.sessionStateMu.Lock()
 	s.isInitialized = true
 	s.sessionStateMu.Unlock()
-
 	return nil
 }
 
@@ -603,6 +607,10 @@ func (s *Session) Close() {
 
 	if s.cancel != nil {
 		s.cancel()
+	}
+
+	if s.clientRoutesHandler != nil {
+		s.clientRoutesHandler.Stop()
 	}
 
 	s.sessionStateMu.Lock()
