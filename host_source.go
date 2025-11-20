@@ -650,7 +650,16 @@ func hostInfoFromMap(row map[string]interface{}, host *HostInfo, translateAddres
 		// Not sure what the port field will be called until the JIRA issue is complete
 	}
 
-	host.untranslatedConnectAddress = host.ConnectAddress()
+	if host.broadcastAddress != nil {
+		host.untranslatedConnectAddress = host.broadcastAddress
+	} else if host.listenAddress != nil {
+		host.untranslatedConnectAddress = host.listenAddress
+	} else if host.rpcAddress != nil {
+		host.untranslatedConnectAddress = host.rpcAddress
+	} else if host.connectAddress != nil {
+		host.untranslatedConnectAddress = host.connectAddress
+	}
+
 	ip, port := translateAddressPort(host.HostID(), host.untranslatedConnectAddress, host.port)
 	host.connectAddress = ip
 	host.port = port

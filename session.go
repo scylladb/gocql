@@ -92,6 +92,20 @@ type Session struct {
 	hasAggregatesAndFunctions bool
 	useSystemSchema           bool
 	tabletsRoutingV1          bool
+	satelites                 []SessionSatellite
+	addressTranslator         *PortMuxAddressTranslator
+}
+
+type SessionSatellite interface {
+	Initialize(*Session) (SessionSatelliteInstance, error)
+	Name() string
+}
+
+type SessionSatelliteInstance interface {
+	Initialize(*Session) error
+	Name() string
+	Start()
+	Stop()
 }
 
 var queryPool = &sync.Pool{
@@ -142,6 +156,10 @@ func newSessionCommon(cfg ClusterConfig) (*Session, error) {
 		readyCh:         make(chan struct{}, 1),
 	}
 
+	if cfg.PortMuxConfig.Enabled {
+		s.addressTranslator = NewPortMuxAddressTranslator(cfg.PortMuxConfig, s.logger)
+	}
+
 	// Close created resources on error otherwise they'll leak
 	var err error
 	defer func() {
@@ -187,7 +205,7 @@ func newSessionCommon(cfg ClusterConfig) (*Session, error) {
 	s.streamObserver = cfg.StreamObserver
 
 	//Check the TLS Config before trying to connect to anything external
-	connCfg, err := connConfig(&s.cfg)
+	connCfg, err := connConfig(&s.cfg, s.translateAddressPort)
 	if err != nil {
 		//TODO: Return a typed error
 		return nil, fmt.Errorf("gocql: unable to create session: %v", err)
@@ -310,6 +328,10 @@ func (s *Session) init() error {
 		conn.mu.Unlock()
 
 		s.hostSource.setControlConn(s.control)
+
+		if s.addressTranslator != nil {
+			s.addressTranslator.Initialize(s)
+		}
 
 		if !s.cfg.DisableInitialHostLookup {
 			var newHosts []*HostInfo
@@ -441,7 +463,6 @@ func (s *Session) init() error {
 	s.sessionStateMu.Lock()
 	s.isInitialized = true
 	s.sessionStateMu.Unlock()
-
 	return nil
 }
 
@@ -460,6 +481,13 @@ func (s *Session) AwaitSchemaAgreement(ctx context.Context) error {
 	}
 	ch := s.control.getConn()
 	return (&Iter{err: ch.conn.awaitSchemaAgreement(ctx)}).err
+}
+
+func (s *Session) translateAddressPort(hostID string, addr net.IP, port int) (net.IP, int) {
+	if s.addressTranslator != nil {
+		return s.addressTranslator.Translate(hostID, addr, port)
+	}
+	return addr, port
 }
 
 func (s *Session) reconnectDownedHosts(intv time.Duration) {

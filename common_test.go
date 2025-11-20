@@ -415,7 +415,7 @@ func createAggregate(t *testing.T, session *Session) {
 }
 
 func staticAddressTranslator(newAddr net.IP, newPort int) AddressTranslator {
-	return AddressTranslatorFunc(func(addr net.IP, port int) (net.IP, int) {
+	return AddressTranslatorFunc(func(_ string, addr net.IP, port int) (net.IP, int) {
 		return newAddr, newPort
 	})
 }

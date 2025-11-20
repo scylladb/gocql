@@ -321,12 +321,12 @@ func (c *controlConn) setupConn(conn *Conn) error {
 	if tcpAddr, ok := conn.conn.RemoteAddr().(*net.TCPAddr); ok {
 		defaultPort = tcpAddr.Port
 	}
-	host, err := hostInfoFromIter(iter, conn.host.connectAddress, defaultPort, c.session.cfg.translateAddressPort)
+	host, err := hostInfoFromIter(iter, conn.host.connectAddress, defaultPort, c.session.translateAddressPort)
 	if err != nil {
 		return err
 	}
 
-	host = c.session.hostSource.addOrUpdate(host)
+	//host = c.session.hostSource.addOrUpdate(host)
 
 	if c.session.cfg.filterHost(host) {
 		return fmt.Errorf("host was filtered: %v", host.ConnectAddress())
@@ -378,6 +378,9 @@ func (c *controlConn) registerEvents(conn *Conn) error {
 	}
 	if !c.session.cfg.Events.DisableSchemaEvents {
 		events = append(events, "SCHEMA_CHANGE")
+	}
+	if c.session.cfg.PortMuxConfig.Enabled {
+		events = append(events, "CONNECTION_METADATA_CHANGE")
 	}
 
 	if len(events) == 0 {

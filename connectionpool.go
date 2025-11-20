@@ -61,7 +61,7 @@ type policyConnPool struct {
 	mu            sync.RWMutex
 }
 
-func connConfig(cfg *ClusterConfig) (*ConnConfig, error) {
+func connConfig(cfg *ClusterConfig, translateAddressPort func(hostID string, addr net.IP, port int) (net.IP, int)) (*ConnConfig, error) {
 	hostDialer := cfg.HostDialer
 
 	if hostDialer == nil {
@@ -77,10 +77,11 @@ func connConfig(cfg *ClusterConfig) (*ConnConfig, error) {
 		}
 
 		hostDialer = &scyllaDialer{
-			dialer:    dialer,
-			logger:    cfg.logger(),
-			tlsConfig: cfg.getActualTLSConfig(),
-			cfg:       cfg,
+			dialer:               dialer,
+			logger:               cfg.logger(),
+			tlsConfig:            cfg.getActualTLSConfig(),
+			cfg:                  cfg,
+			translateAddressPort: translateAddressPort,
 		}
 	}
 
