@@ -37,6 +37,7 @@ import (
 	"time"
 
 	"github.com/gocql/gocql/internal/debug"
+	"github.com/gocql/gocql/internal/eventbus"
 )
 
 const defaultDriverName = "ScyllaDB GoCQL Driver"
@@ -283,6 +284,8 @@ type ClusterConfig struct {
 	// address in system.local or system.peers returns 127.0.0.1, the peer will be
 	// set to 10.0.0.1 which is what will be used to connect to.
 	IgnorePeerAddr bool
+	// An event bus configuration
+	EventBusConfig eventbus.EventBusConfig
 }
 
 type DNSResolver interface {
@@ -365,6 +368,7 @@ type Dialer interface {
 // resolves to more than 1 IP address then the driver may connect multiple times to
 // the same host, and will not mark the node being down or up from events.
 func NewCluster(hosts ...string) *ClusterConfig {
+	logger := &defaultLogger{}
 	cfg := &ClusterConfig{
 		Hosts:                         hosts,
 		CQLVersion:                    "3.0.0",
@@ -392,8 +396,11 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		MetadataSchemaRequestTimeout:  60 * time.Second,
 		DisableSkipMetadata:           true,
 		WarningsHandlerBuilder:        DefaultWarningHandlerBuilder,
-		Logger:                        &defaultLogger{},
+		Logger:                        logger,
 		DNSResolver:                   defaultDnsResolver,
+		EventBusConfig: eventbus.EventBusConfig{
+			InputEventsQueueSize: 10240,
+		},
 	}
 
 	return cfg

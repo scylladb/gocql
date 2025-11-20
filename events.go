@@ -29,6 +29,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gocql/gocql/events"
 	"github.com/gocql/gocql/internal/debug"
 	frm "github.com/gocql/gocql/internal/frame"
 )
@@ -107,6 +108,16 @@ func (e *eventDebouncer) debounce(frame frame) {
 	e.mu.Unlock()
 }
 
+func (s *Session) publishEvent(event events.Event) {
+	if s.eventBus == nil {
+		return
+	}
+
+	if !s.eventBus.PublishEvent(event) {
+		s.logger.Printf("can't publish event, eventbus is full, increase Cluster.EventBusConfig.InputEventsQueueSize; event is dropped")
+	}
+}
+
 func (s *Session) handleEvent(framer *framer) {
 	frame, err := framer.parseFrame()
 	if err != nil {
@@ -116,6 +127,10 @@ func (s *Session) handleEvent(framer *framer) {
 
 	if debug.Enabled {
 		s.logger.Printf("gocql: handling frame: %v\n", frame)
+	}
+
+	if event := events.FrameToEvent(frame); event != nil {
+		s.publishEvent(event)
 	}
 
 	switch f := frame.(type) {

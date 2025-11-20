@@ -38,7 +38,9 @@ import (
 	"unicode"
 
 	"github.com/gocql/gocql/debounce"
+	"github.com/gocql/gocql/events"
 	"github.com/gocql/gocql/internal/debug"
+	"github.com/gocql/gocql/internal/eventbus"
 	"github.com/gocql/gocql/internal/lru"
 	"github.com/gocql/gocql/tablets"
 )
@@ -53,45 +55,39 @@ import (
 // and automatically sets a default consistency level on all operations
 // that do not have a consistency level set.
 type Session struct {
-	policy          HostSelectionPolicy
-	warningHandler  WarningHandler
-	control         controlConnection
-	ctx             context.Context
-	logger          StdLogger
-	trace           Tracer
-	queryObserver   QueryObserver
-	batchObserver   BatchObserver
-	connectObserver ConnectObserver
-	frameObserver   FrameHeaderObserver
-	streamObserver  StreamObserver
-	initErr         error
-	hostSource      *ringDescriber
-	// event handlers
-	nodeEvents          *eventDebouncer
-	cancel              context.CancelFunc
-	pool                *policyConnPool
-	ringRefresher       *debounce.RefreshDebouncer
-	readyCh             chan struct{}
-	executor            *queryExecutor
-	stmtsLRU            *preparedLRU
-	schemaEvents        *eventDebouncer
-	metadataDescriber   *metadataDescriber
-	connCfg             *ConnConfig
-	routingKeyInfoCache routingKeyInfoLRU
-	cfg                 ClusterConfig
-	pageSize            int
-	prefetch            float64
-	// sessionStateMu protects isClosed and isInitialized.
-	mu sync.RWMutex
-	// sessionStateMu protects isClosed and isInitialized.
-	sessionStateMu sync.RWMutex
-	cons           Consistency
-	// isClosed is true once Session.Close is finished.
-	isClosed bool
-	// isClosing bool is true once Session.Close is started.
-	isClosing bool
-	// isInitialized is true once Session.init succeeds.
-	// you can use initialized() to read the value.
+	warningHandler            WarningHandler
+	queryObserver             QueryObserver
+	control                   controlConnection
+	ctx                       context.Context
+	logger                    StdLogger
+	trace                     Tracer
+	policy                    HostSelectionPolicy
+	batchObserver             BatchObserver
+	connectObserver           ConnectObserver
+	frameObserver             FrameHeaderObserver
+	streamObserver            StreamObserver
+	initErr                   error
+	nodeEvents                *eventDebouncer
+	cancel                    context.CancelFunc
+	hostSource                *ringDescriber
+	pool                      *policyConnPool
+	ringRefresher             *debounce.RefreshDebouncer
+	readyCh                   chan struct{}
+	executor                  *queryExecutor
+	stmtsLRU                  *preparedLRU
+	schemaEvents              *eventDebouncer
+	metadataDescriber         *metadataDescriber
+	eventBus                  *eventbus.EventBus[events.Event]
+	connCfg                   *ConnConfig
+	routingKeyInfoCache       routingKeyInfoLRU
+	cfg                       ClusterConfig
+	pageSize                  int
+	prefetch                  float64
+	mu                        sync.RWMutex
+	sessionStateMu            sync.RWMutex
+	cons                      Consistency
+	isClosed                  bool
+	isClosing                 bool
 	isInitialized             bool
 	hasAggregatesAndFunctions bool
 	useSystemSchema           bool
@@ -155,6 +151,11 @@ func newSessionCommon(cfg ClusterConfig) (*Session, error) {
 	}()
 
 	s.metadataDescriber = newMetadataDescriber(s)
+
+	s.eventBus = eventbus.New[events.Event](cfg.EventBusConfig, cfg.Logger)
+	if err = s.eventBus.Start(); err != nil {
+		return nil, fmt.Errorf("gocql: unable to create session: %v", err)
+	}
 
 	s.nodeEvents = newEventDebouncer("NodeEvents", s.handleNodeEvent, s.logger)
 	s.schemaEvents = newEventDebouncer("SchemaEvents", s.handleSchemaEvent, s.logger)
@@ -240,6 +241,16 @@ func NewSessionNonBlocking(cfg ClusterConfig) (*Session, error) {
 	}()
 
 	return s, nil
+}
+
+// SubscribeToEvents adds a new subscriber to the event bus.
+// name: subscriber name
+// queueSize: buffer size for the subscriber events, when buffer is overflowed events are dropped
+// filter: optional filter function (can be nil to receive all events)
+//
+// Returns a Subscriber instance that provides access to events and a Stop method.
+func (s *Session) SubscribeToEvents(name string, queueSize int, filter eventbus.FilterFunc[events.Event]) *eventbus.Subscriber[events.Event] {
+	return s.eventBus.Subscribe(name, queueSize, filter)
 }
 
 func (s *Session) init() error {
@@ -590,6 +601,10 @@ func (s *Session) Close() {
 
 	if s.schemaEvents != nil {
 		s.schemaEvents.stop()
+	}
+
+	if s.eventBus != nil {
+		_ = s.eventBus.Stop()
 	}
 
 	if s.ringRefresher != nil {

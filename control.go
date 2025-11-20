@@ -37,6 +37,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/gocql/gocql/events"
 	"github.com/gocql/gocql/internal/debug"
 	frm "github.com/gocql/gocql/internal/frame"
 )
@@ -337,8 +338,21 @@ func (c *controlConn) setupConn(conn *Conn) error {
 		conn: conn,
 		host: host,
 	}
-
-	c.conn.Store(ch)
+	old, _ := c.conn.Swap(ch).(*connHost)
+	var oldHost events.HostInfo
+	if old != nil && old.host != nil {
+		oldHost.HostID = old.host.HostID()
+		oldHost.Host = old.host.ConnectAddress()
+		oldHost.Port = old.host.Port()
+	}
+	c.session.publishEvent(&events.ControlConnectionRecreatedEvent{
+		OldHost: oldHost,
+		NewHost: events.HostInfo{
+			HostID: host.HostID(),
+			Host:   host.ConnectAddress(),
+			Port:   host.Port(),
+		},
+	})
 	if c.session.initialized() {
 		// We connected to control conn, so add the connect the host in pool as well.
 		// Notify session we can start trying to connect to the node.
@@ -465,6 +479,13 @@ func (c *controlConn) attemptReconnectToAnyOfHosts(hosts []*HostInfo) error {
 			continue
 		}
 		conn.finalizeConnection()
+		c.session.publishEvent(&events.ControlConnectionRecreatedEvent{
+			NewHost: events.HostInfo{
+				Host:   host.ConnectAddress(),
+				Port:   host.Port(),
+				HostID: host.HostID(),
+			},
+		})
 		return nil
 	}
 	return fmt.Errorf("unable to connect to any known node: %v", hosts)
