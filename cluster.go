@@ -35,6 +35,8 @@ import (
 	"os"
 	"sync/atomic"
 	"time"
+
+	"github.com/gocql/gocql/internal/debug"
 )
 
 const defaultDriverName = "ScyllaDB GoCQL Driver"
@@ -423,7 +425,7 @@ func (cfg *ClusterConfig) translateAddressPort(addr net.IP, port int) (net.IP, i
 		return addr, port
 	}
 	newAddr, newPort := cfg.AddressTranslator.Translate(addr, port)
-	if gocqlDebug {
+	if debug.Enabled {
 		cfg.logger().Printf("gocql: translating address '%v:%d' to '%v:%d'", addr, port, newAddr, newPort)
 	}
 	return newAddr, newPort

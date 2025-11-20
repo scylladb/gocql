@@ -4,6 +4,8 @@ import (
 	"encoding/binary"
 	"math"
 	"strings"
+
+	"github.com/gocql/gocql/internal/debug"
 )
 
 // cdc partitioner
@@ -36,7 +38,7 @@ func (p scyllaCDCPartitioner) Hash(partitionKey []byte) Token {
 	if len(partitionKey) < 8 {
 		// The key is too short to extract any sensible token,
 		// so return the min token instead
-		if gocqlDebug {
+		if debug.Enabled {
 			p.logger.Printf("scylla: cdc partition key too short: %d < 8", len(partitionKey))
 		}
 		return scyllaCDCMinToken
@@ -44,7 +46,7 @@ func (p scyllaCDCPartitioner) Hash(partitionKey []byte) Token {
 
 	upperQword := binary.BigEndian.Uint64(partitionKey[0:])
 
-	if gocqlDebug {
+	if debug.Enabled {
 		// In debug mode, do some more checks
 
 		if len(partitionKey) != scyllaCDCPartitionKeyLength {

@@ -38,6 +38,7 @@ import (
 	"unicode"
 
 	"github.com/gocql/gocql/debounce"
+	"github.com/gocql/gocql/internal/debug"
 	"github.com/gocql/gocql/internal/lru"
 	"github.com/gocql/gocql/tablets"
 )
@@ -266,7 +267,7 @@ func (s *Session) init() error {
 				proto, err = s.control.discoverProtocol(hosts)
 				if err != nil {
 					err = fmt.Errorf("unable to discover protocol version: %v\n", err)
-					if gocqlDebug {
+					if debug.Enabled {
 						s.logger.Println(err.Error())
 					}
 					continue
@@ -281,7 +282,7 @@ func (s *Session) init() error {
 
 			if err = s.control.connect(hosts); err != nil {
 				err = fmt.Errorf("unable to create control connection: %v\n", err)
-				if gocqlDebug {
+				if debug.Enabled {
 					s.logger.Println(err.Error())
 				}
 				continue
@@ -460,7 +461,7 @@ func (s *Session) reconnectDownedHosts(intv time.Duration) {
 			hosts := s.hostSource.getHostsList()
 
 			// Print session.hostSource for debug.
-			if gocqlDebug {
+			if debug.Enabled {
 				buf := bytes.NewBufferString("Session.hostSource:")
 				for _, h := range hosts {
 					buf.WriteString("[" + h.ConnectAddress().String() + ":" + h.State().String() + "]")

@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/gocql/gocql/internal/debug"
 )
 
 // scyllaSupported represents Scylla connection options as sent in SUPPORTED
@@ -108,7 +110,7 @@ func newRateLimitExt(supported map[string][]string, logger StdLogger) *rateLimit
 					errorCode int
 				)
 				if errorCode, err = strconv.Atoi(splitVal[1]); err != nil {
-					if gocqlDebug {
+					if debug.Enabled {
 						logger.Printf("scylla: failed to parse %s value %v: %s", rateLimitErrorCode, splitVal[1], err)
 						return nil
 					}
@@ -162,7 +164,7 @@ func newLwtAddMetaMarkExt(supported map[string][]string, logger StdLogger) *lwtA
 					bitMask int
 				)
 				if bitMask, err = strconv.Atoi(splitVal[1]); err != nil {
-					if gocqlDebug {
+					if debug.Enabled {
 						logger.Printf("scylla: failed to parse %s value %v: %s", lwtOptMetaBitMaskKey, splitVal[1], err)
 						return nil
 					}
@@ -204,21 +206,21 @@ func parseSupported(supported map[string][]string, logger StdLogger) scyllaSuppo
 
 	if s, ok := supported[scyllaShard]; ok {
 		if si.shard, err = strconv.Atoi(s[0]); err != nil {
-			if gocqlDebug {
+			if debug.Enabled {
 				logger.Printf("scylla: failed to parse %s value %v: %s", scyllaShard, s, err)
 			}
 		}
 	}
 	if s, ok := supported[scyllaNrShards]; ok {
 		if si.nrShards, err = strconv.Atoi(s[0]); err != nil {
-			if gocqlDebug {
+			if debug.Enabled {
 				logger.Printf("scylla: failed to parse %s value %v: %s", scyllaNrShards, s, err)
 			}
 		}
 	}
 	if s, ok := supported[scyllaShardingIgnoreMSB]; ok {
 		if si.msbIgnore, err = strconv.ParseUint(s[0], 10, 64); err != nil {
-			if gocqlDebug {
+			if debug.Enabled {
 				logger.Printf("scylla: failed to parse %s value %v: %s", scyllaShardingIgnoreMSB, s, err)
 			}
 		}
@@ -232,7 +234,7 @@ func parseSupported(supported map[string][]string, logger StdLogger) scyllaSuppo
 	}
 	if s, ok := supported[scyllaShardAwarePort]; ok {
 		if shardAwarePort, err := strconv.ParseUint(s[0], 10, 16); err != nil {
-			if gocqlDebug {
+			if debug.Enabled {
 				logger.Printf("scylla: failed to parse %s value %v: %s", scyllaShardAwarePort, s, err)
 			}
 		} else {
@@ -241,7 +243,7 @@ func parseSupported(supported map[string][]string, logger StdLogger) scyllaSuppo
 	}
 	if s, ok := supported[scyllaShardAwarePortSSL]; ok {
 		if shardAwarePortSSL, err := strconv.ParseUint(s[0], 10, 16); err != nil {
-			if gocqlDebug {
+			if debug.Enabled {
 				logger.Printf("scylla: failed to parse %s value %v: %s", scyllaShardAwarePortSSL, s, err)
 			}
 		} else {
@@ -250,7 +252,7 @@ func parseSupported(supported map[string][]string, logger StdLogger) scyllaSuppo
 	}
 
 	if si.partitioner != "org.apache.cassandra.dht.Murmur3Partitioner" || si.shardingAlgorithm != "biased-token-round-robin" || si.nrShards == 0 || si.msbIgnore == 0 {
-		if gocqlDebug {
+		if debug.Enabled {
 			logger.Printf("scylla: unsupported sharding configuration, partitioner=%s, algorithm=%s, no_shards=%d, msb_ignore=%d",
 				si.partitioner, si.shardingAlgorithm, si.nrShards, si.msbIgnore)
 		}
@@ -324,7 +326,7 @@ func newScyllaConnPicker(conn *Conn, logger StdLogger) *scyllaConnPicker {
 		panic(fmt.Sprintf("scylla: %s not a sharded connection", addr))
 	}
 
-	if gocqlDebug {
+	if debug.Enabled {
 		logger.Printf("scylla: %s new conn picker sharding options %+v", addr, conn.scyllaSupported)
 	}
 
@@ -494,14 +496,14 @@ func (p *scyllaConnPicker) Put(conn *Conn) {
 			closeConns(conn)
 		} else {
 			p.excessConns = append(p.excessConns, conn)
-			if gocqlDebug {
+			if debug.Enabled {
 				p.logger.Printf("scylla: %s put shard %d excess connection total: %d missing: %d excess: %d", p.address, shard, p.nrConns, p.nrShards-p.nrConns, len(p.excessConns))
 			}
 		}
 	} else {
 		p.conns[shard] = conn
 		p.nrConns++
-		if gocqlDebug {
+		if debug.Enabled {
 			p.logger.Printf("scylla: %s put shard %d connection total: %d missing: %d", p.address, shard, p.nrConns, p.nrShards-p.nrConns)
 		}
 	}
@@ -536,12 +538,12 @@ func (p *scyllaConnPicker) Remove(conn *Conn) {
 	if conn.scyllaSupported.nrShards == 0 {
 		// It is possible for Remove to be called before the connection is added to the pool.
 		// Ignoring these connections here is safe.
-		if gocqlDebug {
+		if debug.Enabled {
 			p.logger.Printf("scylla: %s has unknown sharding state, ignoring it", p.address)
 		}
 		return
 	}
-	if gocqlDebug {
+	if debug.Enabled {
 		p.logger.Printf("scylla: %s remove shard %d connection", p.address, shard)
 	}
 
@@ -572,7 +574,7 @@ func (p *scyllaConnPicker) Close() {
 
 func (p *scyllaConnPicker) closeConns() {
 	if len(p.conns) == 0 {
-		if gocqlDebug {
+		if debug.Enabled {
 			p.logger.Printf("scylla: %s no connections to close", p.address)
 		}
 		return
@@ -582,7 +584,7 @@ func (p *scyllaConnPicker) closeConns() {
 	p.conns = nil
 	p.nrConns = 0
 
-	if gocqlDebug {
+	if debug.Enabled {
 		p.logger.Printf("scylla: %s closing %d connections", p.address, len(conns))
 	}
 	go closeConns(conns...)
@@ -590,7 +592,7 @@ func (p *scyllaConnPicker) closeConns() {
 
 func (p *scyllaConnPicker) closeExcessConns() {
 	if len(p.excessConns) == 0 {
-		if gocqlDebug {
+		if debug.Enabled {
 			p.logger.Printf("scylla: %s no excess connections to close", p.address)
 		}
 		return
@@ -599,7 +601,7 @@ func (p *scyllaConnPicker) closeExcessConns() {
 	conns := p.excessConns
 	p.excessConns = nil
 
-	if gocqlDebug {
+	if debug.Enabled {
 		p.logger.Printf("scylla: %s closing %d excess connections", p.address, len(conns))
 	}
 	go closeConns(conns...)
@@ -713,7 +715,7 @@ func (sd *scyllaDialer) DialShard(ctx context.Context, host *HostInfo, shardID, 
 		shardAwareAddress = net.JoinHostPort(tIP.String(), strconv.Itoa(tPort))
 	}
 
-	if gocqlDebug {
+	if debug.Enabled {
 		sd.logger.Printf("scylla: connecting to shard %d", shardID)
 	}
 
@@ -750,7 +752,7 @@ func (sd *scyllaDialer) dialShardAware(ctx context.Context, addr, shardAwareAddr
 				// just after we tried the first connection.
 				// We can't avoid false positives here, so I'm putting it
 				// behind a debug flag.
-				if gocqlDebug {
+				if debug.Enabled {
 					sd.logger.Printf(
 						"scylla: %s couldn't connect to shard-aware address while the non-shard-aware address %s is available; this might be an issue with ",
 						addr,

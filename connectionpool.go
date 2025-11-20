@@ -31,6 +31,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gocql/gocql/internal/debug"
 	"github.com/gocql/gocql/tablets"
 
 	"github.com/gocql/gocql/debounce"
@@ -432,7 +433,7 @@ func (pool *hostConnPool) logConnectErr(err error) {
 	if opErr, ok := err.(*net.OpError); ok && (opErr.Op == "dial" || opErr.Op == "read") {
 		// connection refused
 		// these are typical during a node outage so avoid log spam.
-		if gocqlDebug {
+		if debug.Enabled {
 			pool.logger.Printf("unable to dial %q: %v\n", pool.host, err)
 		}
 	} else if err != nil {
@@ -444,7 +445,7 @@ func (pool *hostConnPool) logConnectErr(err error) {
 // transition back to a not-filling state.
 func (pool *hostConnPool) fillingStopped(err error) {
 	if err != nil {
-		if gocqlDebug {
+		if debug.Enabled {
 			pool.logger.Printf("gocql: filling stopped %q: %v\n", pool.host.ConnectAddress(), err)
 		}
 		// wait for some time to avoid back-to-back filling
@@ -462,7 +463,7 @@ func (pool *hostConnPool) fillingStopped(err error) {
 
 	// if we errored and the size is now zero, make sure the host is marked as down
 	// see https://github.com/apache/cassandra-gocql-driver/issues/1614
-	if gocqlDebug {
+	if debug.Enabled {
 		pool.logger.Printf("gocql: conns of pool after stopped %q: %v\n", host.ConnectAddress(), count)
 	}
 	if err != nil && count == 0 {
@@ -524,7 +525,7 @@ func (pool *hostConnPool) connect() (err error) {
 				break
 			}
 		}
-		if gocqlDebug {
+		if debug.Enabled {
 			pool.logger.Printf("gocql: connection failed %q: %v, reconnecting with %T\n",
 				pool.host.ConnectAddress(), err, reconnectionPolicy)
 		}
@@ -590,7 +591,7 @@ func (pool *hostConnPool) HandleError(conn *Conn, err error, closed bool) {
 		return
 	}
 
-	if gocqlDebug {
+	if debug.Enabled {
 		pool.logger.Printf("gocql: pool connection error %q: %v\n", conn.addr, err)
 	}
 

@@ -28,6 +28,8 @@ import (
 	"net"
 	"sync"
 	"time"
+
+	"github.com/gocql/gocql/internal/debug"
 )
 
 type eventDebouncer struct {
@@ -111,7 +113,7 @@ func (s *Session) handleEvent(framer *framer) {
 		return
 	}
 
-	if gocqlDebug {
+	if debug.Enabled {
 		s.logger.Printf("gocql: handling frame: %v\n", frame)
 	}
 
@@ -201,7 +203,7 @@ func (s *Session) handleNodeEvent(frames []frame) {
 	}
 
 	for _, f := range sEvents {
-		if gocqlDebug {
+		if debug.Enabled {
 			s.logger.Printf("gocql: dispatching status change event: %+v\n", f)
 		}
 
@@ -221,7 +223,7 @@ func (s *Session) handleNodeEvent(frames []frame) {
 }
 
 func (s *Session) handleNodeUp(eventIp net.IP, eventPort int) {
-	if gocqlDebug {
+	if debug.Enabled {
 		s.logger.Printf("gocql: Session.handleNodeUp: %s:%d\n", eventIp.String(), eventPort)
 	}
 
@@ -248,7 +250,7 @@ func (s *Session) startPoolFill(host *HostInfo) {
 }
 
 func (s *Session) handleNodeConnected(host *HostInfo) {
-	if gocqlDebug {
+	if debug.Enabled {
 		s.logger.Printf("gocql: Session.handleNodeConnected: %s:%d\n", host.ConnectAddress(), host.Port())
 	}
 
@@ -260,7 +262,7 @@ func (s *Session) handleNodeConnected(host *HostInfo) {
 }
 
 func (s *Session) handleNodeDown(ip net.IP, port int) {
-	if gocqlDebug {
+	if debug.Enabled {
 		s.logger.Printf("gocql: Session.handleNodeDown: %s:%d\n", ip.String(), port)
 	}
 

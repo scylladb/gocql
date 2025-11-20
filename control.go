@@ -36,6 +36,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/gocql/gocql/internal/debug"
 )
 
 var (
@@ -523,7 +525,7 @@ func (c *controlConn) runQuery(qry *Query) (iter *Iter) {
 		qry.conn = ch.conn
 		iter = ch.conn.executeQuery(context.TODO(), qry)
 
-		if gocqlDebug && iter.err != nil {
+		if debug.Enabled && iter.err != nil {
 			c.session.logger.Printf("control: error executing %q: %v\n", qry.stmt, iter.err)
 		}
 

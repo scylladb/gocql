@@ -1,5 +1,5 @@
-//go:build !gocql_debug
-// +build !gocql_debug
+//go:build gocql_debug
+// +build gocql_debug
 
 /*
  * Licensed to the Apache Software Foundation (ASF) under one
@@ -25,6 +25,6 @@
  * See the NOTICE file distributed with this work for additional information.
  */
 
-package gocql
+package debug
 
-const gocqlDebug = false
+const Enabled = true
