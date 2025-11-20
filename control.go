@@ -144,7 +144,7 @@ func (c *controlConn) heartBeat() {
 	}
 }
 
-func hostInfo(resolver DNSResolver, translateAddressPort func(addr net.IP, port int) (net.IP, int), addr string, defaultPort int) ([]*HostInfo, error) {
+func hostInfo(resolver DNSResolver, translateAddressPort func(hostID string, addr net.IP, port int) (net.IP, int), addr string, defaultPort int) ([]*HostInfo, error) {
 	var port int
 	host, portStr, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -165,7 +165,7 @@ func hostInfo(resolver DNSResolver, translateAddressPort func(addr net.IP, port 
 			hh := &HostInfo{hostname: host, connectAddress: ip, port: port}
 			hh.untranslatedConnectAddress = ip
 			if translateAddressPort != nil {
-				hh.connectAddress, hh.port = translateAddressPort(ip, port)
+				hh.connectAddress, hh.port = translateAddressPort("", ip, port)
 			}
 			hosts = append(hosts, hh)
 			return hosts, nil
@@ -185,7 +185,7 @@ func hostInfo(resolver DNSResolver, translateAddressPort func(addr net.IP, port 
 			hh := &HostInfo{hostname: host, connectAddress: ip, port: port}
 			hh.untranslatedConnectAddress = ip
 			if translateAddressPort != nil {
-				hh.connectAddress, hh.port = translateAddressPort(ip, port)
+				hh.connectAddress, hh.port = translateAddressPort("", ip, port)
 			}
 			hosts = append(hosts, hh)
 		}
@@ -319,12 +319,12 @@ func (c *controlConn) setupConn(conn *Conn) error {
 	if tcpAddr, ok := conn.conn.RemoteAddr().(*net.TCPAddr); ok {
 		defaultPort = tcpAddr.Port
 	}
-	host, err := hostInfoFromIter(iter, conn.host.connectAddress, defaultPort, c.session.cfg.translateAddressPort)
+	host, err := hostInfoFromIter(iter, conn.host.connectAddress, defaultPort, c.session.translateAddressPort)
 	if err != nil {
 		return err
 	}
 
-	host = c.session.hostSource.addOrUpdate(host)
+	//host = c.session.hostSource.addOrUpdate(host)
 
 	if c.session.cfg.filterHost(host) {
 		return fmt.Errorf("host was filtered: %v", host.ConnectAddress())
@@ -376,6 +376,9 @@ func (c *controlConn) registerEvents(conn *Conn) error {
 	}
 	if !c.session.cfg.Events.DisableSchemaEvents {
 		events = append(events, "SCHEMA_CHANGE")
+	}
+	if c.session.cfg.PortMuxConfig.Enabled {
+		events = append(events, "CONNECTION_METADATA_CHANGE")
 	}
 
 	if len(events) == 0 {
@@ -454,7 +457,7 @@ func (c *controlConn) attemptReconnect() error {
 	c.session.logger.Printf("gocql: control falling back to initial contact points.\n")
 	// Fallback to initial contact points, as it may be the case that all known initialHosts
 	// changed their IPs while keeping the same hostname(s).
-	initialHosts, resolvErr := addrsToHosts(c.session.cfg.DNSResolver, c.session.cfg.translateAddressPort, c.session.cfg.Hosts, c.session.cfg.Port, c.session.logger)
+	initialHosts, resolvErr := addrsToHosts(c.session.cfg.DNSResolver, c.session.translateAddressPort, c.session.cfg.Hosts, c.session.cfg.Port, c.session.logger)
 	if resolvErr != nil {
 		return fmt.Errorf("resolve contact points' hostnames: %v", resolvErr)
 	}

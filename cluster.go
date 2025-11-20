@@ -286,6 +286,7 @@ type ClusterConfig struct {
 	IgnorePeerAddr bool
 	// An event bus configuration
 	EventBusConfig eventbus.EventBusConfig
+	PortMuxConfig  PortMuxConfig
 }
 
 type DNSResolver interface {
@@ -427,11 +428,11 @@ func (cfg *ClusterConfig) CreateSessionNonBlocking() (*Session, error) {
 // if defined, to translate the given address and port into a possibly new address
 // and port, If no AddressTranslator or if an error occurs, the given address and
 // port will be returned.
-func (cfg *ClusterConfig) translateAddressPort(addr net.IP, port int) (net.IP, int) {
+func (cfg *ClusterConfig) translateAddressPort(hostID string, addr net.IP, port int) (net.IP, int) {
 	if cfg.AddressTranslator == nil || len(addr) == 0 {
 		return addr, port
 	}
-	newAddr, newPort := cfg.AddressTranslator.Translate(addr, port)
+	newAddr, newPort := cfg.AddressTranslator.Translate(hostID, addr, port)
 	if debug.Enabled {
 		cfg.logger().Printf("gocql: translating address '%v:%d' to '%v:%d'", addr, port, newAddr, newPort)
 	}
@@ -461,6 +462,70 @@ func (cfg *ClusterConfig) getActualTLSConfig() *tls.Config {
 		return nil
 	}
 	return val.Clone()
+}
+
+type ClusterOption func(*ClusterConfig)
+
+func (cfg *ClusterConfig) WithOptions(opts ...ClusterOption) *ClusterConfig {
+	for _, opt := range opts {
+		opt(cfg)
+	}
+	return cfg
+}
+
+type PortMuxOption func(*PortMuxConfig)
+
+func WithMaxResolverConcurrency(val int) func(*PortMuxConfig) {
+	return func(cfg *PortMuxConfig) {
+		cfg.MaxResolverConcurrency = val
+	}
+}
+
+func WithResolveHealthyEndpointPeriod(val time.Duration) func(*PortMuxConfig) {
+	return func(cfg *PortMuxConfig) {
+		cfg.ResolveHealthyEndpointPeriod = val
+	}
+}
+
+func WithEndpoints(endpoints ...PrivateLinkEndpoint) func(*PortMuxConfig) {
+	return func(cfg *PortMuxConfig) {
+		cfg.Endpoints = endpoints
+	}
+}
+
+func WithTable(tableName string) func(*PortMuxConfig) {
+	return func(cfg *PortMuxConfig) {
+		cfg.TableName = tableName
+	}
+}
+
+func WithPortMux(opts ...PortMuxOption) func(*ClusterConfig) {
+	pmCfg := PortMuxConfig{
+		Enabled: true,
+		// Don't resolve healthy nodes by default
+		ResolveHealthyEndpointPeriod: 0,
+		MaxResolverConcurrency:       1,
+		TableName:                    "system.connection_metadata",
+		DNSResolver: newSimplePortMuxResolver(
+			time.Minute,
+			time.Millisecond*500,
+			defaultDnsResolver,
+		),
+	}
+	for _, opt := range opts {
+		opt(&pmCfg)
+	}
+	return func(cfg *ClusterConfig) {
+		cfg.PortMuxConfig = pmCfg
+		if len(cfg.Hosts) == 0 {
+			for _, ep := range pmCfg.Endpoints {
+				if ep.connectionAddr != "" {
+					cfg.Hosts = append(cfg.Hosts, ep.connectionAddr)
+				}
+			}
+		}
+		// TODO: cfg.ControlConnectionOnlyToInitialNodes
+	}
 }
 
 func (cfg *ClusterConfig) Validate() error {
@@ -549,7 +614,7 @@ func (cfg *ClusterConfig) Validate() error {
 	}
 
 	if !cfg.DisableSkipMetadata {
-		cfg.Logger.Println("warning: enabling skipping metadata can lead to unpredictible results when executing query and altering columns involved in the query.")
+		cfg.Logger.Println("warning: enabling skipping metadata can lead to unpredictable results when executing query and altering columns involved in the query.")
 	}
 
 	if cfg.SerialConsistency > 0 && !cfg.SerialConsistency.IsSerial() {
@@ -562,6 +627,10 @@ func (cfg *ClusterConfig) Validate() error {
 
 	if cfg.MaxExcessShardConnectionsRate < 0 {
 		return fmt.Errorf("MaxExcessShardConnectionsRate should be positive number or zero")
+	}
+
+	if err := cfg.PortMuxConfig.Validate(); err != nil {
+		return fmt.Errorf("PortMuxConfig is invalid: %v", err)
 	}
 
 	return cfg.ValidateAndInitSSL()

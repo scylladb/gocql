@@ -1125,6 +1125,13 @@ func (f *framer) parseEventFrame() frame {
 	case "SCHEMA_CHANGE":
 		// this should work for all versions
 		return f.parseResultSchemaChange()
+	case "CONNECTION_METADATA_CHANGE":
+		return &frm.ConnectionMetadataChanged{
+			FrameHeader:   *f.header,
+			ChangeType:    f.readString(),
+			ConnectionIDs: f.readStringList(),
+			HostIDs:       f.readStringList(),
+		}
 	default:
 		panic(fmt.Errorf("gocql: unknown event type: %q", eventType))
 	}

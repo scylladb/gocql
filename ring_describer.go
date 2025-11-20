@@ -38,7 +38,7 @@ func (r *ringDescriber) getLocalHostInfo(conn ConnInterface) (*HostInfo, error) 
 		return nil, errNoControl
 	}
 
-	host, err := hostInfoFromIter(iter, nil, r.cfg.Port, r.cfg.translateAddressPort)
+	host, err := hostInfoFromIter(iter, nil, r.cfg.Port, r.control.getSession().translateAddressPort)
 	if err != nil {
 		return nil, fmt.Errorf("could not retrieve local host info: %w", err)
 	}
@@ -64,10 +64,10 @@ func (r *ringDescriber) getClusterPeerInfo(localHost *HostInfo, c ConnInterface)
 		return nil, fmt.Errorf("unable to fetch peer host info: %s", err)
 	}
 
-	return getPeersFromQuerySystemPeers(rows, r.cfg.Port, r.cfg.translateAddressPort, r.logger)
+	return getPeersFromQuerySystemPeers(rows, r.cfg.Port, r.control.getSession().translateAddressPort, r.logger)
 }
 
-func getPeersFromQuerySystemPeers(querySystemPeerRows []map[string]interface{}, port int, translateAddressPort func(addr net.IP, port int) (net.IP, int), logger StdLogger) ([]*HostInfo, error) {
+func getPeersFromQuerySystemPeers(querySystemPeerRows []map[string]interface{}, port int, translateAddressPort func(hostID string, addr net.IP, port int) (net.IP, int), logger StdLogger) ([]*HostInfo, error) {
 	var peers []*HostInfo
 
 	for _, row := range querySystemPeerRows {
@@ -167,7 +167,7 @@ func (r *ringDescriber) getHostInfo(hostID UUID) (*HostInfo, error) {
 			}
 
 			for _, row := range rows {
-				h, err := hostInfoFromMap(row, &HostInfo{port: r.cfg.Port}, r.cfg.translateAddressPort)
+				h, err := hostInfoFromMap(row, &HostInfo{port: r.cfg.Port}, r.control.getSession().translateAddressPort)
 				if err != nil {
 					return nil, err
 				}

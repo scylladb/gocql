@@ -538,7 +538,7 @@ func checkSystemSchema(control controlConnection) (bool, error) {
 
 // Given a map that represents a row from either system.local or system.peers
 // return as much information as we can in *HostInfo
-func hostInfoFromMap(row map[string]interface{}, host *HostInfo, translateAddressPort func(addr net.IP, port int) (net.IP, int)) (*HostInfo, error) {
+func hostInfoFromMap(row map[string]interface{}, host *HostInfo, translateAddressPort func(hostID string, addr net.IP, port int) (net.IP, int)) (*HostInfo, error) {
 	const assertErrorMsg = "Assertion failed for %s"
 	var ok bool
 
@@ -650,15 +650,24 @@ func hostInfoFromMap(row map[string]interface{}, host *HostInfo, translateAddres
 		// Not sure what the port field will be called until the JIRA issue is complete
 	}
 
-	host.untranslatedConnectAddress = host.ConnectAddress()
-	ip, port := translateAddressPort(host.untranslatedConnectAddress, host.port)
+	if host.broadcastAddress != nil {
+		host.untranslatedConnectAddress = host.broadcastAddress
+	} else if host.listenAddress != nil {
+		host.untranslatedConnectAddress = host.listenAddress
+	} else if host.rpcAddress != nil {
+		host.untranslatedConnectAddress = host.rpcAddress
+	} else if host.connectAddress != nil {
+		host.untranslatedConnectAddress = host.connectAddress
+	}
+
+	ip, port := translateAddressPort(host.hostId, host.untranslatedConnectAddress, host.port)
 	host.connectAddress = ip
 	host.port = port
 
 	return host, nil
 }
 
-func hostInfoFromIter(iter *Iter, connectAddress net.IP, defaultPort int, translateAddressPort func(addr net.IP, port int) (net.IP, int)) (*HostInfo, error) {
+func hostInfoFromIter(iter *Iter, connectAddress net.IP, defaultPort int, translateAddressPort func(hostID string, addr net.IP, port int) (net.IP, int)) (*HostInfo, error) {
 	rows, err := iter.SliceMap()
 	if err != nil {
 		// TODO(zariel): make typed error

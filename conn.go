@@ -1821,7 +1821,7 @@ const qrySystemPeersV2 = "SELECT * FROM system.peers_v2"
 
 const qrySystemLocal = "SELECT * FROM system.local WHERE key='local'"
 
-func getSchemaAgreement(queryLocalSchemasRows []string, querySystemPeersRows []schemaAgreementHost, connectAddress net.IP, port int, translateAddressPort func(addr net.IP, port int) (net.IP, int), logger StdLogger) (err error) {
+func getSchemaAgreement(queryLocalSchemasRows []string, querySystemPeersRows []schemaAgreementHost, connectAddress net.IP, port int, translateAddressPort func(hostID string, addr net.IP, port int) (net.IP, int), logger StdLogger) (err error) {
 	versions := make(map[string]struct{})
 
 	for _, row := range querySystemPeersRows {
@@ -1917,7 +1917,7 @@ func (c *Conn) awaitSchemaAgreement(ctx context.Context) error {
 			return err
 		}
 
-		err = getSchemaAgreement(schemaVersions, hosts, addr, c.session.cfg.Port, c.session.cfg.translateAddressPort, c.logger)
+		err = getSchemaAgreement(schemaVersions, hosts, addr, c.session.cfg.Port, c.session.translateAddressPort, c.logger)
 
 		if err == ErrConnectionClosed || err == nil {
 			return err

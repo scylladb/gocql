@@ -33,18 +33,18 @@ type AddressTranslator interface {
 	// Translate will translate the provided address and/or port to another
 	// address and/or port. If no translation is possible, Translate will return the
 	// address and port provided to it.
-	Translate(addr net.IP, port int) (net.IP, int)
+	Translate(hostID string, addr net.IP, port int) (net.IP, int)
 }
 
-type AddressTranslatorFunc func(addr net.IP, port int) (net.IP, int)
+type AddressTranslatorFunc func(hostID string, addr net.IP, port int) (net.IP, int)
 
-func (fn AddressTranslatorFunc) Translate(addr net.IP, port int) (net.IP, int) {
-	return fn(addr, port)
+func (fn AddressTranslatorFunc) Translate(hostID string, addr net.IP, port int) (net.IP, int) {
+	return fn(hostID, addr, port)
 }
 
 // IdentityTranslator will do nothing but return what it was provided. It is essentially a no-op.
 func IdentityTranslator() AddressTranslator {
-	return AddressTranslatorFunc(func(addr net.IP, port int) (net.IP, int) {
+	return AddressTranslatorFunc(func(hostID string, addr net.IP, port int) (net.IP, int) {
 		return addr, port
 	})
 }

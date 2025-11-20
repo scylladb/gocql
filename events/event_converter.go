@@ -81,7 +81,12 @@ func FrameToEvent(f interface{}) Event {
 			Aggregate: frame.Name,
 			Arguments: frame.Args,
 		}
-
+	case *frm.ConnectionMetadataChanged:
+		return &ConnectionMetadataChangedEvent{
+			ChangeType:    frame.ChangeType,
+			ConnectionIDs: frame.ConnectionIDs,
+			HostIDs:       frame.HostIDs,
+		}
 	default:
 		return nil
 	}

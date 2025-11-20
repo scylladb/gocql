@@ -339,7 +339,7 @@ func newScyllaConnPicker(conn *Conn, logger StdLogger) *scyllaConnPicker {
 
 	var shardAwareAddress string
 	if shardAwarePort != 0 {
-		tIP, tPort := conn.session.cfg.translateAddressPort(conn.host.UntranslatedConnectAddress(), int(shardAwarePort))
+		tIP, tPort := conn.session.translateAddressPort(conn.host.HostID(), conn.host.UntranslatedConnectAddress(), int(shardAwarePort))
 		shardAwareAddress = net.JoinHostPort(tIP.String(), strconv.Itoa(tPort))
 	}
 
@@ -663,10 +663,11 @@ type ShardDialer interface {
 
 // A dialer which dials a particular shard
 type scyllaDialer struct {
-	dialer    Dialer
-	logger    StdLogger
-	tlsConfig *tls.Config
-	cfg       *ClusterConfig
+	dialer               Dialer
+	logger               StdLogger
+	tlsConfig            *tls.Config
+	cfg                  *ClusterConfig
+	translateAddressPort func(hostID string, addr net.IP, port int) (net.IP, int)
 }
 
 const scyllaShardAwarePortFallbackDuration time.Duration = 5 * time.Minute
@@ -711,7 +712,7 @@ func (sd *scyllaDialer) DialShard(ctx context.Context, host *HostInfo, shardID, 
 
 	var shardAwareAddress string
 	if shardAwarePort != 0 {
-		tIP, tPort := sd.cfg.translateAddressPort(host.UntranslatedConnectAddress(), int(shardAwarePort))
+		tIP, tPort := sd.translateAddressPort(host.HostID(), host.UntranslatedConnectAddress(), int(shardAwarePort))
 		shardAwareAddress = net.JoinHostPort(tIP.String(), strconv.Itoa(tPort))
 	}
 

@@ -39,6 +39,31 @@ import (
 	"github.com/gocql/gocql/internal/tests"
 )
 
+func TestPrivateLink(t *testing.T) {
+	cl := NewCluster("172.22.0.5").WithOptions(
+		WithPortMux(
+			WithTable("pl.connection_metadata"),
+			WithEndpoints(PrivateLinkEndpoint{
+				connectionID: "1",
+			}),
+		),
+	)
+	s, err := cl.CreateSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for hostID, pool := range s.pool.hostConnPools {
+		if pool.Host().ConnectAddress().String() != "172.22.0.5" {
+			t.Errorf("host %s connected to the wrong address %s", hostID, pool.Host().ConnectAddress().String())
+		}
+		_, missing := pool.connPicker.Size()
+		if missing != 0 {
+			t.Errorf("host %s connected to the wrong address %s", hostID, pool.Host().ConnectAddress().String())
+		}
+	}
+}
+
 // TestAuthentication verifies that gocql will work with a host configured to only accept authenticated connections
 func TestAuthentication(t *testing.T) {
 
