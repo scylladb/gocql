@@ -30,6 +30,8 @@ package gocql
 import (
 	"net"
 	"testing"
+
+	frm "github.com/gocql/gocql/internal/frame"
 )
 
 func TestHostInfo_Lookup(t *testing.T) {
@@ -68,21 +70,21 @@ func TestParseProtocol(t *testing.T) {
 	}{
 		{
 			err: &protocolError{
-				frame: errorFrame{
-					code:    0x10,
-					message: "Invalid or unsupported protocol version (5); the lowest supported version is 3 and the greatest is 4",
+				frame: frm.ErrorFrame{
+					Code:    0x10,
+					Message: "Invalid or unsupported protocol version (5); the lowest supported version is 3 and the greatest is 4",
 				},
 			},
 			proto: protoVersion4,
 		},
 		{
 			err: &protocolError{
-				frame: errorFrame{
-					frameHeader: frameHeader{
-						version: 0x83,
+				frame: frm.ErrorFrame{
+					FrameHeader: frm.FrameHeader{
+						Version: 0x83,
 					},
-					code:    0x10,
-					message: "Invalid or unsupported protocol version: 5",
+					Code:    0x10,
+					Message: "Invalid or unsupported protocol version: 5",
 				},
 			},
 			proto: protoVersion3,

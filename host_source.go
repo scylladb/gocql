@@ -32,6 +32,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	frm "github.com/gocql/gocql/internal/frame"
 )
 
 var (
@@ -522,8 +524,8 @@ func (h *HostInfo) ScyllaShardCount() int {
 func checkSystemSchema(control controlConnection) (bool, error) {
 	iter := control.querySystem("SELECT * FROM system_schema.keyspaces")
 	if err := iter.err; err != nil {
-		if errf, ok := err.(*errorFrame); ok {
-			if errf.code == ErrCodeSyntax {
+		if errf, ok := err.(*frm.ErrorFrame); ok {
+			if errf.Code == ErrCodeSyntax {
 				return false, nil
 			}
 		}

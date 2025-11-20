@@ -1,6 +1,7 @@
 package dialer
 
 import (
+	frm "github.com/gocql/gocql/internal/frame"
 	"github.com/gocql/gocql/internal/murmur"
 )
 
@@ -29,23 +30,6 @@ const (
 	opAuthChallenge frameOp = 0x0E
 	opAuthResponse  frameOp = 0x0F
 	opAuthSuccess   frameOp = 0x10
-
-	// query flags
-	flagValues                byte = 0x01
-	flagSkipMetaData          byte = 0x02
-	flagPageSize              byte = 0x04
-	flagWithPagingState       byte = 0x08
-	flagWithSerialConsistency byte = 0x10
-	flagDefaultTimestamp      byte = 0x20
-	flagWithNameValues        byte = 0x40
-	flagWithKeyspace          byte = 0x80
-
-	// header flags
-	flagCompress      byte = 0x01
-	flagTracing       byte = 0x02
-	flagCustomPayload byte = 0x04
-	flagWarning       byte = 0x08
-	flagBetaProtocol  byte = 0x10
 )
 
 func addBytes(frame []byte, index int) int {
@@ -75,12 +59,12 @@ func addQueryParams(frame []byte, index int) int {
 
 	// protoV3 specific things
 	if frame[0] > 0x02 {
-		if flags&flagValues == flagValues && flags&flagWithNameValues == flagWithNameValues {
+		if flags&frm.FlagValues == frm.FlagValues && flags&frm.FlagWithNameValues == frm.FlagWithNameValues {
 			names = true
 		}
 	}
 
-	if flags&flagValues == flagValues {
+	if flags&frm.FlagValues == frm.FlagValues {
 		valuesLen := int(frame[index])<<8 | int(frame[index+1])
 		index = index + 2
 
@@ -94,15 +78,15 @@ func addQueryParams(frame []byte, index int) int {
 		}
 	}
 
-	if flags&flagPageSize == flagPageSize {
+	if flags&frm.FlagPageSize == frm.FlagPageSize {
 		index = index + 4
 	}
 
-	if flags&flagWithPagingState == flagWithPagingState {
+	if flags&frm.FlagWithPagingState == frm.FlagWithPagingState {
 		index = addBytes(frame, index)
 	}
 
-	if flags&flagWithSerialConsistency == flagWithSerialConsistency {
+	if flags&frm.FlagWithSerialConsistency == frm.FlagWithSerialConsistency {
 		index = index + 2
 	}
 
@@ -157,7 +141,7 @@ func GetFrameHash(frame []byte) int64 {
 		return murmur.Murmur3H1(frame)
 	case byte(opQuery):
 		index := addHeader(p)
-		if frame[1]&flagCustomPayload == flagCustomPayload {
+		if frame[1]&frm.FlagCustomPayload == frm.FlagCustomPayload {
 			index = addCustomPayload(frame, index, p)
 		}
 		endIndex := index
@@ -165,7 +149,7 @@ func GetFrameHash(frame []byte) int64 {
 		return murmur.Murmur3H1(frame[index:endIndex])
 	case byte(opExecute):
 		index := addHeader(p)
-		if frame[1]&flagCustomPayload == flagCustomPayload {
+		if frame[1]&frm.FlagCustomPayload == frm.FlagCustomPayload {
 			index = addCustomPayload(frame, index, p)
 		}
 

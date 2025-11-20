@@ -61,7 +61,7 @@ func BenchmarkParseRowsFrame(b *testing.B) {
 		framer := &framer{
 			header: &frameHeader{
 				version: protoVersion4 | 0x80,
-				op:      opResult,
+				op:      frm.OpResult,
 				length:  len(data),
 			},
 			buf: data,

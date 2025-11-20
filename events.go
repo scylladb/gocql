@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/gocql/gocql/internal/debug"
+	frm "github.com/gocql/gocql/internal/frame"
 )
 
 type eventDebouncer struct {
@@ -118,11 +119,11 @@ func (s *Session) handleEvent(framer *framer) {
 	}
 
 	switch f := frame.(type) {
-	case *schemaChangeKeyspace, *schemaChangeFunction,
-		*schemaChangeTable, *schemaChangeAggregate, *schemaChangeType:
+	case *frm.SchemaChangeKeyspace, *frm.SchemaChangeFunction,
+		*frm.SchemaChangeTable, *frm.SchemaChangeAggregate, *frm.SchemaChangeType:
 
 		s.schemaEvents.debounce(frame)
-	case *topologyChangeEventFrame, *statusChangeEventFrame:
+	case *frm.TopologyChangeEventFrame, *frm.StatusChangeEventFrame:
 		s.nodeEvents.debounce(frame)
 	default:
 		s.logger.Printf("gocql: invalid event frame (%T): %v\n", f, f)
@@ -133,18 +134,18 @@ func (s *Session) handleSchemaEvent(frames []frame) {
 	// TODO: debounce events
 	for _, frame := range frames {
 		switch f := frame.(type) {
-		case *schemaChangeKeyspace:
-			s.metadataDescriber.clearSchema(f.keyspace)
-			s.handleKeyspaceChange(f.keyspace, f.change)
-		case *schemaChangeTable:
-			s.metadataDescriber.clearSchema(f.keyspace)
-			s.handleTableChange(f.keyspace, f.object, f.change)
-		case *schemaChangeAggregate:
-			s.metadataDescriber.clearSchema(f.keyspace)
-		case *schemaChangeFunction:
-			s.metadataDescriber.clearSchema(f.keyspace)
-		case *schemaChangeType:
-			s.metadataDescriber.clearSchema(f.keyspace)
+		case *frm.SchemaChangeKeyspace:
+			s.metadataDescriber.clearSchema(f.Keyspace)
+			s.handleKeyspaceChange(f.Keyspace, f.Change)
+		case *frm.SchemaChangeTable:
+			s.metadataDescriber.clearSchema(f.Keyspace)
+			s.handleTableChange(f.Keyspace, f.Object, f.Change)
+		case *frm.SchemaChangeAggregate:
+			s.metadataDescriber.clearSchema(f.Keyspace)
+		case *frm.SchemaChangeFunction:
+			s.metadataDescriber.clearSchema(f.Keyspace)
+		case *frm.SchemaChangeType:
+			s.metadataDescriber.clearSchema(f.Keyspace)
 		}
 	}
 }
@@ -186,15 +187,15 @@ func (s *Session) handleNodeEvent(frames []frame) {
 
 	for _, frame := range frames {
 		switch f := frame.(type) {
-		case *topologyChangeEventFrame:
+		case *frm.TopologyChangeEventFrame:
 			topologyEventReceived = true
-		case *statusChangeEventFrame:
-			event, ok := sEvents[f.host.String()]
+		case *frm.StatusChangeEventFrame:
+			event, ok := sEvents[f.Host.String()]
 			if !ok {
-				event = &nodeEvent{change: f.change, host: f.host, port: f.port}
-				sEvents[f.host.String()] = event
+				event = &nodeEvent{change: f.Change, host: f.Host, port: f.Port}
+				sEvents[f.Host.String()] = event
 			}
-			event.change = f.change
+			event.change = f.Change
 		}
 	}
 

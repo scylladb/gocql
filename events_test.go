@@ -31,6 +31,8 @@ import (
 	"net"
 	"sync"
 	"testing"
+
+	frm "github.com/gocql/gocql/internal/frame"
 )
 
 func TestEventDebounce(t *testing.T) {
@@ -48,10 +50,10 @@ func TestEventDebounce(t *testing.T) {
 	defer debouncer.stop()
 
 	for i := 0; i < eventCount; i++ {
-		debouncer.debounce(&statusChangeEventFrame{
-			change: "UP",
-			host:   net.IPv4(127, 0, 0, 1),
-			port:   9042,
+		debouncer.debounce(&frm.StatusChangeEventFrame{
+			Change: "UP",
+			Host:   net.IPv4(127, 0, 0, 1),
+			Port:   9042,
 		})
 	}
 

@@ -43,6 +43,7 @@ import (
 	"time"
 	"unicode"
 
+	frm "github.com/gocql/gocql/internal/frame"
 	"github.com/gocql/gocql/internal/tests"
 
 	"github.com/stretchr/testify/require"
@@ -2484,7 +2485,7 @@ func TestNegativeStream(t *testing.T) {
 
 	const stream = -50
 	writer := frameWriterFunc(func(f *framer, streamID int) error {
-		f.writeHeader(0, opOptions, stream)
+		f.writeHeader(0, frm.OpOptions, stream)
 		return f.finish()
 	})
 

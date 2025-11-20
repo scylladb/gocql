@@ -17,6 +17,8 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+
+	frm "github.com/gocql/gocql/internal/frame"
 )
 
 var updateGolden = flag.Bool("update-golden", false, "update golden files")
@@ -223,7 +225,7 @@ func isDescribeKeyspaceSupported(t *testing.T, s *Session) bool {
 
 	err := s.control.query(fmt.Sprintf(`DESCRIBE KEYSPACE system WITH INTERNALS`)).Close()
 	if err != nil {
-		if errFrame, ok := err.(errorFrame); ok && errFrame.code == ErrCodeSyntax {
+		if errFrame, ok := err.(frm.ErrorFrame); ok && errFrame.Code == ErrCodeSyntax {
 			// DESCRIBE KEYSPACE is not supported on older versions of Cassandra and Scylla
 			// For such case schema statement is going to be recreated on the client side
 			return false

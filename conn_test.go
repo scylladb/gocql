@@ -50,6 +50,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 
+	frm "github.com/gocql/gocql/internal/frame"
+
 	"github.com/gocql/gocql/internal/streams"
 )
 
@@ -102,7 +104,7 @@ func TestJoinHostPort(t *testing.T) {
 	}
 }
 
-func testCluster(proto protoVersion, addresses ...string) *ClusterConfig {
+func testCluster(proto frm.ProtoVersion, addresses ...string) *ClusterConfig {
 	cluster := NewCluster(addresses...)
 	cluster.ProtoVersion = int(proto)
 	cluster.disableControlConn = true
@@ -153,7 +155,7 @@ func TestSSLSimpleNoClientCert(t *testing.T) {
 	}
 }
 
-func createTestSslCluster(addr string, proto protoVersion, useClientCert bool) *ClusterConfig {
+func createTestSslCluster(addr string, proto frm.ProtoVersion, useClientCert bool) *ClusterConfig {
 	cluster := testCluster(proto, addr)
 	sslOpts := &SslOptions{
 		CaPath:                 "testdata/pki/ca.crt",
@@ -187,7 +189,7 @@ func TestClosed(t *testing.T) {
 	}
 }
 
-func newTestSession(proto protoVersion, addresses ...string) (*Session, error) {
+func newTestSession(proto frm.ProtoVersion, addresses ...string) (*Session, error) {
 	return testCluster(proto, addresses...).CreateSession()
 }
 
@@ -721,8 +723,8 @@ func TestStream0(t *testing.T) {
 
 	var buf bytes.Buffer
 	f := newFramer(nil, protoVersion4)
-	f.writeHeader(0, opResult, 0)
-	f.writeInt(resultKindVoid)
+	f.writeHeader(0, frm.OpResult, 0)
+	f.writeInt(frm.ResultKindVoid)
 	f.buf[0] |= 0x80
 	if err := f.finish(); err != nil {
 		t.Fatal(err)
@@ -858,7 +860,7 @@ func TestContext_CanceledBeforeExec(t *testing.T) {
 		addr:     "127.0.0.1:0",
 		protocol: defaultProto,
 		recvHook: func(f *framer) {
-			if f.header.op == opStartup || f.header.op == opOptions {
+			if f.header.Op == frm.OpStartup || f.header.Op == frm.OpOptions {
 				// ignore statup and heartbeat messages
 				return
 			}
@@ -1115,7 +1117,7 @@ func TestFrameHeaderObserver(t *testing.T) {
 	}
 
 	frames := observer.getFrames()
-	expFrames := []frameOp{opSupported, opReady, opResult}
+	expFrames := []frm.Op{frm.OpSupported, frm.OpReady, frm.OpResult}
 	if len(frames) != len(expFrames) {
 		t.Fatalf("Expected to receive %d frames, instead received %d", len(expFrames), len(frames))
 	}
@@ -1256,7 +1258,7 @@ type TestServer struct {
 type testSupportedFactory func(conn net.Conn) map[string][]string
 
 func (srv *TestServer) session() (*Session, error) {
-	return testCluster(protoVersion(srv.protocol), srv.Address).CreateSession()
+	return testCluster(frm.ProtoVersion(srv.protocol), srv.Address).CreateSession()
 }
 
 func (srv *TestServer) host() *HostInfo {
@@ -1351,8 +1353,8 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 	}
 	respFrame := newFramer(nil, reqFrame.proto)
 
-	switch head.op {
-	case opStartup:
+	switch head.Op {
+	case frm.OpStartup:
 		if atomic.LoadInt32(&srv.TimeoutOnStartup) > 0 {
 			// Do not respond to startup command
 			// wait until we get a cancel signal
@@ -1361,11 +1363,11 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 				return
 			}
 		}
-		respFrame.writeHeader(0, opReady, head.stream)
-	case opOptions:
-		respFrame.writeHeader(0, opSupported, head.stream)
+		respFrame.writeHeader(0, frm.OpReady, head.Stream)
+	case frm.OpOptions:
+		respFrame.writeHeader(0, frm.OpSupported, head.Stream)
 		respFrame.writeStringMultiMap(exts)
-	case opQuery:
+	case frm.OpQuery:
 		query := reqFrame.readLongString()
 		first := query
 		if n := strings.Index(query, " "); n > 0 {
@@ -1374,22 +1376,22 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 		switch strings.ToLower(first) {
 		case "kill":
 			atomic.AddInt64(&srv.nKillReq, 1)
-			respFrame.writeHeader(0, opError, head.stream)
+			respFrame.writeHeader(0, frm.OpError, head.Stream)
 			respFrame.writeInt(0x1001)
 			respFrame.writeString("query killed")
 		case "use":
-			respFrame.writeInt(resultKindKeyspace)
+			respFrame.writeInt(frm.ResultKindKeyspace)
 			respFrame.writeString(strings.TrimSpace(query[3:]))
 		case "void":
-			respFrame.writeHeader(0, opResult, head.stream)
-			respFrame.writeInt(resultKindVoid)
+			respFrame.writeHeader(0, frm.OpResult, head.Stream)
+			respFrame.writeInt(frm.ResultKindVoid)
 		case "timeout":
 			<-srv.ctx.Done()
 			return
 		case "slow":
 			go func() {
-				respFrame.writeHeader(0, opResult, head.stream)
-				respFrame.writeInt(resultKindVoid)
+				respFrame.writeHeader(0, frm.OpResult, head.Stream)
+				respFrame.writeInt(frm.ResultKindVoid)
 				respFrame.buf[0] = srv.protocol | 0x80
 				select {
 				case <-srv.ctx.Done():
@@ -1403,24 +1405,24 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 		case "speculative":
 			atomic.AddInt64(&srv.nKillReq, 1)
 			if atomic.LoadInt64(&srv.nKillReq) > 3 {
-				respFrame.writeHeader(0, opResult, head.stream)
-				respFrame.writeInt(resultKindVoid)
+				respFrame.writeHeader(0, frm.OpResult, head.Stream)
+				respFrame.writeInt(frm.ResultKindVoid)
 				respFrame.writeString("speculative query success on the node " + srv.Address)
 			} else {
-				respFrame.writeHeader(0, opError, head.stream)
+				respFrame.writeHeader(0, frm.OpError, head.Stream)
 				respFrame.writeInt(0x1001)
 				respFrame.writeString("speculative error")
 				rand.Seed(time.Now().UnixNano())
 				<-time.After(time.Millisecond * 120)
 			}
 		default:
-			respFrame.writeHeader(0, opResult, head.stream)
-			respFrame.writeInt(resultKindVoid)
+			respFrame.writeHeader(0, frm.OpResult, head.Stream)
+			respFrame.writeInt(frm.ResultKindVoid)
 		}
-	case opError:
-		respFrame.writeHeader(0, opError, head.stream)
+	case frm.OpError:
+		respFrame.writeHeader(0, frm.OpError, head.Stream)
 		respFrame.buf = append(respFrame.buf, reqFrame.buf...)
-	case opPrepare:
+	case frm.OpPrepare:
 		query := reqFrame.readLongString()
 		name := strings.TrimPrefix(query, "select ")
 		if n := strings.Index(name, " "); n > 0 {
@@ -1428,8 +1430,8 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 		}
 		switch strings.ToLower(name) {
 		case "nometadata":
-			respFrame.writeHeader(0, opResult, head.stream)
-			respFrame.writeInt(resultKindPrepared)
+			respFrame.writeHeader(0, frm.OpResult, head.Stream)
+			respFrame.writeInt(frm.ResultKindPrepared)
 			// <id>
 			respFrame.writeShortBytes(binary.BigEndian.AppendUint64(nil, 1))
 			// <metadata>
@@ -1439,11 +1441,11 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 				respFrame.writeInt(0) // <pk_count>
 			}
 			// <result_metadata>
-			respFrame.writeInt(int32(flagNoMetaData)) // <flags>
+			respFrame.writeInt(int32(frm.FlagNoMetaData)) // <flags>
 			respFrame.writeInt(0)
 		case "metadata":
-			respFrame.writeHeader(0, opResult, head.stream)
-			respFrame.writeInt(resultKindPrepared)
+			respFrame.writeHeader(0, frm.OpResult, head.Stream)
+			respFrame.writeInt(frm.ResultKindPrepared)
 			// <id>
 			respFrame.writeShortBytes(binary.BigEndian.AppendUint64(nil, 2))
 			// <metadata>
@@ -1453,8 +1455,8 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 				respFrame.writeInt(0) // <pk_count>
 			}
 			// <result_metadata>
-			respFrame.writeInt(int32(flagGlobalTableSpec)) // <flags>
-			respFrame.writeInt(1)                          // <columns_count>
+			respFrame.writeInt(int32(frm.FlagGlobalTableSpec)) // <flags>
+			respFrame.writeInt(1)                              // <columns_count>
 			// <global_table_spec>
 			respFrame.writeString("keyspace")
 			respFrame.writeString("table")
@@ -1462,11 +1464,11 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 			respFrame.writeString("col0")             // <name>
 			respFrame.writeShort(uint16(TypeBoolean)) // <type>
 		default:
-			respFrame.writeHeader(0, opError, head.stream)
+			respFrame.writeHeader(0, frm.OpError, head.Stream)
 			respFrame.writeInt(0)
 			respFrame.writeString("unsupported query: " + name)
 		}
-	case opExecute:
+	case frm.OpExecute:
 		b := reqFrame.readShortBytes()
 		id := binary.BigEndian.Uint64(b)
 		// <query_parameters>
@@ -1480,13 +1482,13 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 		}
 		switch id {
 		case 1:
-			if flags&flagSkipMetaData != 0 {
-				respFrame.writeHeader(0, opError, head.stream)
+			if flags&frm.FlagSkipMetaData != 0 {
+				respFrame.writeHeader(0, frm.OpError, head.Stream)
 				respFrame.writeInt(0)
 				respFrame.writeString("skip metadata unexpected")
 			} else {
-				respFrame.writeHeader(0, opResult, head.stream)
-				respFrame.writeInt(resultKindRows)
+				respFrame.writeHeader(0, frm.OpResult, head.Stream)
+				respFrame.writeInt(frm.ResultKindRows)
 				// <metadata>
 				respFrame.writeInt(0) // <flags>
 				respFrame.writeInt(0) // <columns_count>
@@ -1494,27 +1496,27 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 				respFrame.writeInt(0)
 			}
 		case 2:
-			if flags&flagSkipMetaData != 0 {
-				respFrame.writeHeader(0, opResult, head.stream)
-				respFrame.writeInt(resultKindRows)
+			if flags&frm.FlagSkipMetaData != 0 {
+				respFrame.writeHeader(0, frm.OpResult, head.Stream)
+				respFrame.writeInt(frm.ResultKindRows)
 				// <metadata>
 				respFrame.writeInt(0) // <flags>
 				respFrame.writeInt(0) // <columns_count>
 				// <rows_count>
 				respFrame.writeInt(0)
 			} else {
-				respFrame.writeHeader(0, opError, head.stream)
+				respFrame.writeHeader(0, frm.OpError, head.Stream)
 				respFrame.writeInt(0)
 				respFrame.writeString("skip metadata expected")
 			}
 		default:
-			respFrame.writeHeader(0, opError, head.stream)
+			respFrame.writeHeader(0, frm.OpError, head.Stream)
 			respFrame.writeInt(ErrCodeUnprepared)
 			respFrame.writeString("unprepared")
 			respFrame.writeShortBytes(binary.BigEndian.AppendUint64(nil, id))
 		}
 	default:
-		respFrame.writeHeader(0, opError, head.stream)
+		respFrame.writeHeader(0, frm.OpError, head.Stream)
 		respFrame.writeInt(0)
 		respFrame.writeString("not supported")
 	}
@@ -1544,10 +1546,10 @@ func (srv *TestServer) readFrame(conn net.Conn) (*framer, error) {
 	}
 
 	// should be a request frame
-	if head.version.response() {
-		return nil, fmt.Errorf("expected to read a request frame got version: %v", head.version)
-	} else if head.version.version() != srv.protocol {
-		return nil, fmt.Errorf("expected to read protocol version 0x%x got 0x%x", srv.protocol, head.version.version())
+	if head.Version.Response() {
+		return nil, fmt.Errorf("expected to read a request frame got version: %v", head.Version)
+	} else if head.Version.Version() != srv.protocol {
+		return nil, fmt.Errorf("expected to read protocol version 0x%x got 0x%x", srv.protocol, head.Version.Version())
 	}
 
 	return framer, nil

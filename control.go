@@ -38,6 +38,7 @@ import (
 	"time"
 
 	"github.com/gocql/gocql/internal/debug"
+	frm "github.com/gocql/gocql/internal/frame"
 )
 
 var (
@@ -124,7 +125,7 @@ func (c *controlConn) heartBeat() {
 		}
 
 		switch resp.(type) {
-		case *supportedFrame:
+		case *frm.SupportedFrame:
 			// Everything ok
 			sleepTime = 30 * time.Second
 			continue
@@ -216,7 +217,7 @@ func parseProtocolFromError(err error) int {
 	matches := protocolSupportRe.FindAllStringSubmatch(err.Error(), -1)
 	if len(matches) != 1 || len(matches[0]) != 2 {
 		if verr, ok := err.(*protocolError); ok {
-			return int(verr.frame.Header().version.version())
+			return int(verr.frame.Header().Version.Version())
 		}
 		return 0
 	}
@@ -378,7 +379,7 @@ func (c *controlConn) registerEvents(conn *Conn) error {
 	frame, err := framer.parseFrame()
 	if err != nil {
 		return err
-	} else if _, ok := frame.(*readyFrame); !ok {
+	} else if _, ok := frame.(*frm.ReadyFrame); !ok {
 		return fmt.Errorf("unexpected frame in response to register: got %T: %v\n", frame, frame)
 	}
 

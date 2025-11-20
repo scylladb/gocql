@@ -24,7 +24,11 @@
 
 package gocql
 
-import "fmt"
+import (
+	"fmt"
+
+	frm "github.com/gocql/gocql/internal/frame"
+)
 
 // See CQL Binary Protocol v5, section 8 for more details.
 // https://github.com/apache/cassandra/blob/7337fc0/doc/native_protocol_v5.spec
@@ -117,30 +121,8 @@ type RequestError interface {
 	Error() string
 }
 
-type errorFrame struct {
-	message string
-	frameHeader
-	code int
-}
-
-func (e errorFrame) Code() int {
-	return e.code
-}
-
-func (e errorFrame) Message() string {
-	return e.message
-}
-
-func (e errorFrame) Error() string {
-	return e.Message()
-}
-
-func (e errorFrame) String() string {
-	return fmt.Sprintf("[error code=%x message=%q]", e.code, e.message)
-}
-
 type RequestErrUnavailable struct {
-	errorFrame
+	frm.ErrorFrame
 	Consistency Consistency
 	Required    int
 	Alive       int
@@ -154,7 +136,7 @@ type ErrorMap map[string]uint16
 
 type RequestErrWriteTimeout struct {
 	WriteType string
-	errorFrame
+	frm.ErrorFrame
 	Received    int
 	BlockFor    int
 	Consistency Consistency
@@ -163,7 +145,7 @@ type RequestErrWriteTimeout struct {
 type RequestErrWriteFailure struct {
 	ErrorMap  ErrorMap
 	WriteType string
-	errorFrame
+	frm.ErrorFrame
 	Received    int
 	BlockFor    int
 	NumFailures int
@@ -171,11 +153,11 @@ type RequestErrWriteFailure struct {
 }
 
 type RequestErrCDCWriteFailure struct {
-	errorFrame
+	frm.ErrorFrame
 }
 
 type RequestErrReadTimeout struct {
-	errorFrame
+	frm.ErrorFrame
 	Received    int
 	BlockFor    int
 	Consistency Consistency
@@ -185,17 +167,17 @@ type RequestErrReadTimeout struct {
 type RequestErrAlreadyExists struct {
 	Keyspace string
 	Table    string
-	errorFrame
+	frm.ErrorFrame
 }
 
 type RequestErrUnprepared struct {
 	StatementId []byte
-	errorFrame
+	frm.ErrorFrame
 }
 
 type RequestErrReadFailure struct {
 	ErrorMap ErrorMap
-	errorFrame
+	frm.ErrorFrame
 	Received    int
 	BlockFor    int
 	NumFailures int
@@ -207,21 +189,21 @@ type RequestErrFunctionFailure struct {
 	Keyspace string
 	Function string
 	ArgTypes []string
-	errorFrame
+	frm.ErrorFrame
 }
 
 // RequestErrCASWriteUnknown is distinct error for ErrCodeCasWriteUnknown.
 //
 // See https://github.com/apache/cassandra/blob/7337fc0/doc/native_protocol_v5.spec#L1387-L1397
 type RequestErrCASWriteUnknown struct {
-	errorFrame
+	frm.ErrorFrame
 	Consistency Consistency
 	Received    int
 	BlockFor    int
 }
 
 type UnknownServerError struct {
-	errorFrame
+	frm.ErrorFrame
 }
 
 type OpType uint8
@@ -232,7 +214,7 @@ const (
 )
 
 type RequestErrRateLimitReached struct {
-	errorFrame
+	frm.ErrorFrame
 	OpType                OpType
 	RejectedByCoordinator bool
 }
