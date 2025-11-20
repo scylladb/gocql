@@ -19,13 +19,13 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Check out the scylla-bench repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           repository: scylladb/scylla-bench
           path: scylla-bench
 
       - name: Checkout GoCQL PR Repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.ref }}
