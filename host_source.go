@@ -538,7 +538,7 @@ func checkSystemSchema(control controlConnection) (bool, error) {
 
 // Given a map that represents a row from either system.local or system.peers
 // return as much information as we can in *HostInfo
-func hostInfoFromMap(row map[string]interface{}, host *HostInfo, translateAddressPort func(addr net.IP, port int) (net.IP, int)) (*HostInfo, error) {
+func hostInfoFromMap(row map[string]interface{}, host *HostInfo, translateAddressPort addressTranslateFn) (*HostInfo, error) {
 	const assertErrorMsg = "Assertion failed for %s"
 	var ok bool
 
@@ -651,14 +651,14 @@ func hostInfoFromMap(row map[string]interface{}, host *HostInfo, translateAddres
 	}
 
 	host.untranslatedConnectAddress = host.ConnectAddress()
-	ip, port := translateAddressPort(host.untranslatedConnectAddress, host.port)
+	ip, port := translateAddressPort(host.HostID(), host.untranslatedConnectAddress, host.port)
 	host.connectAddress = ip
 	host.port = port
 
 	return host, nil
 }
 
-func hostInfoFromIter(iter *Iter, connectAddress net.IP, defaultPort int, translateAddressPort func(addr net.IP, port int) (net.IP, int)) (*HostInfo, error) {
+func hostInfoFromIter(iter *Iter, connectAddress net.IP, defaultPort int, translateAddressPort addressTranslateFn) (*HostInfo, error) {
 	rows, err := iter.SliceMap()
 	if err != nil {
 		// TODO(zariel): make typed error

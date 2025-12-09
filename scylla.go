@@ -339,7 +339,7 @@ func newScyllaConnPicker(conn *Conn, logger StdLogger) *scyllaConnPicker {
 
 	var shardAwareAddress string
 	if shardAwarePort != 0 {
-		tIP, tPort := conn.session.cfg.translateAddressPort(conn.host.UntranslatedConnectAddress(), int(shardAwarePort))
+		tIP, tPort := conn.session.cfg.translateAddressPort(conn.host.HostID(), conn.host.UntranslatedConnectAddress(), int(shardAwarePort))
 		shardAwareAddress = net.JoinHostPort(tIP.String(), strconv.Itoa(tPort))
 	}
 
@@ -753,7 +753,7 @@ func (sd *scyllaDialer) DialShard(ctx context.Context, host *HostInfo, shardID, 
 
 	var shardAwareAddress string
 	if shardAwarePort != 0 {
-		tIP, tPort := sd.cfg.translateAddressPort(host.UntranslatedConnectAddress(), int(shardAwarePort))
+		tIP, tPort := sd.cfg.translateAddressPort(host.HostID(), host.UntranslatedConnectAddress(), int(shardAwarePort))
 		shardAwareAddress = net.JoinHostPort(tIP.String(), strconv.Itoa(tPort))
 	}
 

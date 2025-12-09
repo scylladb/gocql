@@ -48,3 +48,23 @@ func IdentityTranslator() AddressTranslator {
 		return addr, port
 	})
 }
+
+// AddressTranslatorV2 provides a way to translate node addresses (and ports) that are
+// discovered or received as a node event. This can be useful in an ec2 environment,
+// for instance, to translate public IPs to private IPs.
+type AddressTranslatorV2 interface {
+	AddressTranslator
+	TranslateWithHostID(hostID string, addr net.IP, port int) (net.IP, int)
+}
+
+type AddressTranslatorFuncV2 func(hostID string, addr net.IP, port int) (net.IP, int)
+
+func (fn AddressTranslatorFuncV2) Translate(addr net.IP, port int) (net.IP, int) {
+	return fn("", addr, port)
+}
+
+func (fn AddressTranslatorFuncV2) TranslateWithHostID(hostID string, addr net.IP, port int) (net.IP, int) {
+	return fn(hostID, addr, port)
+}
+
+var _ AddressTranslatorV2 = AddressTranslatorFuncV2(nil)
