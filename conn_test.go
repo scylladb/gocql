@@ -1581,19 +1581,12 @@ func TestGetSchemaAgreement(t *testing.T) {
 		},
 	}
 
-	translateAddressPort := func(addr net.IP, port int) (net.IP, int) {
-		return addr, port
-	}
-
 	var logger StdLogger
 
 	t.Run("SchemaNotConsistent", func(t *testing.T) {
 		err := getSchemaAgreement(
 			[]string{"875a938a-a695-11ef-4314-85c8ef0ebaa2"},
 			peersRows,
-			net.ParseIP("127.0.0.1"),
-			9042,
-			translateAddressPort,
 			logger,
 		)
 
@@ -1604,9 +1597,6 @@ func TestGetSchemaAgreement(t *testing.T) {
 		err := getSchemaAgreement(
 			[]string{"af810386-a694-11ef-81fa-3aea73156247"},
 			peersRows,
-			net.ParseIP("127.0.0.1"),
-			9042,
-			translateAddressPort,
 			logger,
 		)
 
@@ -1618,9 +1608,6 @@ func TestGetSchemaAgreement(t *testing.T) {
 		err := getSchemaAgreement(
 			[]string{"af810386-a694-11ef-81fa-3aea73156247"},
 			peersRows,
-			net.ParseIP("127.0.0.1"),
-			9042,
-			translateAddressPort,
 			logger,
 		)
 
