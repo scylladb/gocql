@@ -20,6 +20,10 @@ func (r ReplicaInfo) ShardID() int {
 	return r.shardId
 }
 
+func (r ReplicaInfo) String() string {
+	return fmt.Sprintf("ReplicaInfo{hostId:%s, shardId:%d}", r.hostId, r.shardId)
+}
+
 type TabletInfoBuilder struct {
 	KeyspaceName string
 	TableName    string

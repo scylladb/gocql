@@ -47,7 +47,12 @@ func TestTablets(t *testing.T) {
 		for attempt := 1; true; attempt++ {
 			iter := session.Query(`SELECT pk, ck, v FROM test_tablets WHERE pk = ?;`, i).WithContext(ctx).Consistency(One).Iter()
 			if payload := iter.GetCustomPayload(); payload != nil {
-				if _, ok := payload["tablets-routing-v1"]; ok {
+				if hint, ok := payload["tablets-routing-v1"]; ok {
+					tablet, err := unmarshalTabletHint(hint, 4, "", "")
+					if err != nil {
+						t.Fatalf("failed to extract tablet information: %s", err.Error())
+					}
+					t.Logf("%s", tablet.Replicas())
 					if attempt >= 3 {
 						t.Fatalf("Tablet hint from the server should not be sent")
 					}

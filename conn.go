@@ -1538,30 +1538,8 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 	}
 
 	if len(framer.customPayload) > 0 {
-		if tabletInfo, ok := framer.customPayload["tablets-routing-v1"]; ok {
-			tabletBuilder := tablets.NewTabletInfoBuilder()
-			err = Unmarshal(TupleTypeInfo{
-				NativeType: NativeType{proto: c.version, typ: TypeTuple},
-				Elems: []TypeInfo{
-					NativeType{typ: TypeBigInt},
-					NativeType{typ: TypeBigInt},
-					CollectionType{
-						NativeType: NativeType{proto: c.version, typ: TypeList},
-						Elem: TupleTypeInfo{
-							NativeType: NativeType{proto: c.version, typ: TypeTuple},
-							Elems: []TypeInfo{
-								NativeType{proto: c.version, typ: TypeUUID},
-								NativeType{proto: c.version, typ: TypeInt},
-							}},
-					},
-				},
-			}, tabletInfo, []interface{}{&tabletBuilder.FirstToken, &tabletBuilder.LastToken, &tabletBuilder.Replicas})
-			if err != nil {
-				return &Iter{err: err}
-			}
-			tabletBuilder.KeyspaceName = qry.routingInfo.keyspace
-			tabletBuilder.TableName = qry.routingInfo.table
-			tablet, err := tabletBuilder.Build()
+		if hint, ok := framer.customPayload["tablets-routing-v1"]; ok {
+			tablet, err := unmarshalTabletHint(hint, c.version, qry.routingInfo.keyspace, qry.routingInfo.table)
 			if err != nil {
 				return &Iter{err: err}
 			}
@@ -1965,4 +1943,30 @@ func (e *QueryError) Error() string {
 
 func (e *QueryError) Unwrap() error {
 	return e.err
+}
+
+func unmarshalTabletHint(hint []byte, v uint8, keyspace, table string) (*tablets.TabletInfo, error) {
+	tabletBuilder := tablets.NewTabletInfoBuilder()
+	err := Unmarshal(TupleTypeInfo{
+		NativeType: NativeType{proto: v, typ: TypeTuple},
+		Elems: []TypeInfo{
+			NativeType{typ: TypeBigInt},
+			NativeType{typ: TypeBigInt},
+			CollectionType{
+				NativeType: NativeType{proto: v, typ: TypeList},
+				Elem: TupleTypeInfo{
+					NativeType: NativeType{proto: v, typ: TypeTuple},
+					Elems: []TypeInfo{
+						NativeType{proto: v, typ: TypeUUID},
+						NativeType{proto: v, typ: TypeInt},
+					}},
+			},
+		},
+	}, hint, []interface{}{&tabletBuilder.FirstToken, &tabletBuilder.LastToken, &tabletBuilder.Replicas})
+	if err != nil {
+		return nil, err
+	}
+	tabletBuilder.KeyspaceName = keyspace
+	tabletBuilder.TableName = table
+	return tabletBuilder.Build()
 }
