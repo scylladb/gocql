@@ -44,7 +44,7 @@ const (
 	ClusterEventTypeSchemaChangeFunction
 	// ClusterEventTypeSchemaChangeAggregate represents an aggregate schema change
 	ClusterEventTypeSchemaChangeAggregate
-	// ClusterEventTypeConnectionMetadataChanged represents an event of update of `system.connection_metadata` table
+	// ClusterEventTypeConnectionMetadataChanged represents an event of update of `system.client_routes` table
 	ClusterEventTypeConnectionMetadataChanged
 	// SessionEventTypeControlConnectionRecreated is fired when the session loses it's control connection to the cluster and has just been re-established it.
 	SessionEventTypeControlConnectionRecreated

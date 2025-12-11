@@ -42,7 +42,7 @@ import (
 func TestPrivateLink(t *testing.T) {
 	cl := NewCluster("172.22.0.5").WithOptions(
 		WithPortMux(
-			WithTable("pl.connection_metadata"),
+			WithTable("pl.client_routes"),
 			WithEndpoints(PrivateLinkEndpoint{
 				connectionID: "1",
 			}),

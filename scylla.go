@@ -339,7 +339,6 @@ func newScyllaConnPicker(conn *Conn, logger StdLogger) *scyllaConnPicker {
 
 	var shardAwareAddress string
 	if shardAwarePort != 0 {
-		tIP, tPort := conn.session.cfg.translateAddressPort(conn.host.HostID(), conn.host.UntranslatedConnectAddress(), int(shardAwarePort))
 		tIP, tPort := conn.session.translateAddressPort(conn.host.HostID(), conn.host.UntranslatedConnectAddress(), int(shardAwarePort))
 		shardAwareAddress = net.JoinHostPort(tIP.String(), strconv.Itoa(tPort))
 	}

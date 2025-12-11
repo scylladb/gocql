@@ -17,7 +17,7 @@ func TestGetHostPortMapping(t *testing.T) {
 	createKeyspace(t, createCluster(), "gocql_test", true)
 	defer session.Close()
 
-	if err := createTable(session, `CREATE TABLE gocql_test.connection_metadata (
+	if err := createTable(session, `CREATE TABLE gocql_test.client_routes (
     connection_id uuid,
     host_id uuid,
     Address text,
@@ -47,7 +47,7 @@ func TestGetHostPortMapping(t *testing.T) {
 		ip := net.ParseIP(fmt.Sprintf("127.0.0.%d", id+1))
 		for _, connectionID := range connectionIDs {
 			err := session.Query(
-				`INSERT INTO gocql_test.connection_metadata (
+				`INSERT INTO gocql_test.client_routes (
                                             connection_id, host_id, Address, port, tls_port, alternator_port, alternator_https_port, Datacenter, Rack) 
 						VALUES (?, ?, ?, 9042, 9142, 0, 0, 'dc1', ?);`,
 				connectionID, hostID, ip.String(), rack,
@@ -61,8 +61,6 @@ func TestGetHostPortMapping(t *testing.T) {
 				Address:       ip.String(),
 				CQLPort:       9042,
 				SecureCQLPort: 9142,
-				Datacenter:    "dc1",
-				Rack:          rack,
 			})
 		}
 	}
@@ -77,35 +75,35 @@ func TestGetHostPortMapping(t *testing.T) {
 		{
 			name: "get-all",
 			method: func(controlConnection) ([]UnresolvedConnectionMetadata, error) {
-				return getHostPortMappingFromCluster(session.control, "gocql_test.connection_metadata", nil, nil)
+				return getHostPortMappingFromCluster(session.control, "gocql_test.client_routes", nil, nil)
 			},
 			expected: expected,
 		},
 		{
 			name: "get-all-hosts",
 			method: func(controlConnection) ([]UnresolvedConnectionMetadata, error) {
-				return getHostPortMappingFromCluster(session.control, "gocql_test.connection_metadata", connectionIDs, nil)
+				return getHostPortMappingFromCluster(session.control, "gocql_test.client_routes", connectionIDs, nil)
 			},
 			expected: expected,
 		},
 		{
 			name: "get-all-connections",
 			method: func(controlConnection) ([]UnresolvedConnectionMetadata, error) {
-				return getHostPortMappingFromCluster(session.control, "gocql_test.connection_metadata", nil, hostIDs)
+				return getHostPortMappingFromCluster(session.control, "gocql_test.client_routes", nil, hostIDs)
 			},
 			expected: expected,
 		},
 		{
 			name: "get-concrete",
 			method: func(controlConnection) ([]UnresolvedConnectionMetadata, error) {
-				return getHostPortMappingFromCluster(session.control, "gocql_test.connection_metadata", connectionIDs, hostIDs)
+				return getHostPortMappingFromCluster(session.control, "gocql_test.client_routes", connectionIDs, hostIDs)
 			},
 			expected: expected,
 		},
 		{
 			name: "get-concrete-host",
 			method: func(controlConnection) ([]UnresolvedConnectionMetadata, error) {
-				return getHostPortMappingFromCluster(session.control, "gocql_test.connection_metadata", connectionIDs, hostIDs)
+				return getHostPortMappingFromCluster(session.control, "gocql_test.client_routes", connectionIDs, hostIDs)
 			},
 			expected: expected,
 		},

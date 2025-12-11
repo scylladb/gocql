@@ -67,33 +67,33 @@ type Session struct {
 	frameObserver             FrameHeaderObserver
 	streamObserver            StreamObserver
 	initErr                   error
-	nodeEvents                *eventDebouncer
+	executor                  *queryExecutor
 	cancel                    context.CancelFunc
 	hostSource                *ringDescriber
 	pool                      *policyConnPool
 	ringRefresher             *debounce.RefreshDebouncer
 	readyCh                   chan struct{}
-	executor                  *queryExecutor
+	nodeEvents                *eventDebouncer
 	stmtsLRU                  *preparedLRU
 	schemaEvents              *eventDebouncer
 	metadataDescriber         *metadataDescriber
 	eventBus                  *eventbus.EventBus[events.Event]
 	connCfg                   *ConnConfig
-	routingKeyInfoCache       routingKeyInfoLRU
+	addressTranslator         *PortMuxAddressTranslator
 	cfg                       ClusterConfig
-	pageSize                  int
+	routingKeyInfoCache       routingKeyInfoLRU
+	satelites                 []SessionSatellite
 	prefetch                  float64
+	pageSize                  int
 	mu                        sync.RWMutex
 	sessionStateMu            sync.RWMutex
 	cons                      Consistency
-	isClosed                  bool
 	isClosing                 bool
-	isInitialized             bool
 	hasAggregatesAndFunctions bool
 	useSystemSchema           bool
 	tabletsRoutingV1          bool
-	satelites                 []SessionSatellite
-	addressTranslator         *PortMuxAddressTranslator
+	isInitialized             bool
+	isClosed                  bool
 }
 
 type SessionSatellite interface {
@@ -485,7 +485,7 @@ func (s *Session) AwaitSchemaAgreement(ctx context.Context) error {
 
 func (s *Session) translateAddressPort(hostID string, addr net.IP, port int) (net.IP, int) {
 	if s.addressTranslator != nil {
-		return s.addressTranslator.Translate(hostID, addr, port)
+		return s.addressTranslator.TranslateWithHost(hostID, addr, port)
 	}
 	return addr, port
 }

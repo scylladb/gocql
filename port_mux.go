@@ -16,11 +16,11 @@ import (
 )
 
 type PrivateLinkEndpoint struct {
-	// Scylla Cloud ConnectionID to read from `system.connection_metadata`
+	// Scylla Cloud ConnectionID to read from `system.client_routes`
 	connectionID string
 
 	// Ip Address or DNS name of the AWS endpoint
-	// Could stay empty, in this case driver will pick it up from system.connection_metadata table
+	// Could stay empty, in this case driver will pick it up from system.client_routes table
 	connectionAddr string
 }
 
@@ -44,14 +44,12 @@ func (l *PrivateLinkEndpointList) GetConnectionAddr(connectionID string) string 
 }
 
 type PortMuxConfig struct {
-	Enabled   bool
-	Endpoints PrivateLinkEndpointList
-	// MaxResolverConcurrency limits how many host/port records are resolved in parallel; zero or negative means sequential.
-	MaxResolverConcurrency int
-	TableName              string
-	// Time after which it will try to re-resolve healthy endpoint, if it is zero it does not re-resolve healthy endpoints.
-	ResolveHealthyEndpointPeriod time.Duration
 	DNSResolver                  PortMuxResolver
+	TableName                    string
+	Endpoints                    PrivateLinkEndpointList
+	MaxResolverConcurrency       int
+	ResolveHealthyEndpointPeriod time.Duration
+	Enabled                      bool
 	BlockUnknownConnectionIDs    bool
 }
 
@@ -80,8 +78,6 @@ type UnresolvedConnectionMetadata struct {
 	Address       string
 	CQLPort       uint16
 	SecureCQLPort uint16
-	Datacenter    string
-	Rack          string
 }
 
 // SameHost returns true if both records targets same host and connection id
@@ -96,14 +92,12 @@ func (u UnresolvedConnectionMetadata) Equal(o UnresolvedConnectionMetadata) bool
 
 func (u UnresolvedConnectionMetadata) String() string {
 	return fmt.Sprintf(
-		"UnresolvedConnectionMetadata{ConnectionID=%s, HostID=%s, Address=%s, CQLPort=%d, SecureCQLPort=%d, Datacenter=%s, Rack=%s}",
+		"UnresolvedConnectionMetadata{ConnectionID=%s, HostID=%s, Address=%s, CQLPort=%d, SecureCQLPort=%d}",
 		u.ConnectionID,
 		u.HostID,
 		u.Address,
 		u.CQLPort,
 		u.SecureCQLPort,
-		u.Datacenter,
-		u.Rack,
 	)
 }
 
@@ -146,10 +140,10 @@ func (l *UnresolvedConnectionMetadataList) MergeWithResolved(resolved ResolvedCo
 }
 
 type ResolvedConnectionMetadata struct {
+	updateTime time.Time
 	UnresolvedConnectionMetadata
 	allKnownIPs   []net.IP
 	currentIP     net.IP
-	updateTime    time.Time
 	forcedResolve bool
 }
 
@@ -162,14 +156,12 @@ func (u ResolvedConnectionMetadata) String() string {
 	}
 
 	return fmt.Sprintf(
-		"ResolvedConnectionMetadata{ConnectionID=%s, HostID=%s, Address=%s, CQLPort=%d, SecureCQLPort=%d, Datacenter=%s, Rack=%s, CurrentIP=%s}",
+		"ResolvedConnectionMetadata{ConnectionID=%s, HostID=%s, Address=%s, CQLPort=%d, SecureCQLPort=%d, CurrentIP=%s}",
 		u.ConnectionID,
 		u.HostID,
 		u.Address,
 		u.CQLPort,
 		u.SecureCQLPort,
-		u.Datacenter,
-		u.Rack,
 		ip,
 	)
 }
@@ -215,13 +207,13 @@ func (l *ResolvedConnectionMetadataList) MergeWithUnresolved(unresolved Unresolv
 }
 
 type ResolvedEndpoint struct {
+	updateTime    time.Time
 	connectionID  string
 	dc            string
 	rack          string
 	address       string
 	allKnown      []net.IP
 	currentIP     net.IP
-	updateTime    time.Time
 	forcedResolve bool
 }
 
@@ -238,11 +230,10 @@ type resolvedCacheRecord struct {
 // a minimal period between successive resolutions of the same address.
 type simplePortMuxResolver struct {
 	resolver         DNSResolver
+	cache            map[string]resolvedCacheRecord
 	minResolvePeriod time.Duration
 	cachingTime      time.Duration
-
-	mu    sync.RWMutex
-	cache map[string]resolvedCacheRecord
+	mu               sync.RWMutex
 }
 
 func newSimplePortMuxResolver(minResolvePeriod, cachingTime time.Duration, resolver DNSResolver) *simplePortMuxResolver {
@@ -300,14 +291,13 @@ func (r *simplePortMuxResolver) Resolve(endpoint ResolvedConnectionMetadata) (al
 }
 
 type PortMuxAddressTranslator struct {
-	cfg               PortMuxConfig
 	log               StdLogger
 	c                 controlConnection
 	sub               *eventbus.Subscriber[events.Event]
 	resolvedEndpoints atomic.Pointer[ResolvedConnectionMetadataList]
-
-	updateTasks chan updateTask
-	closeChan   chan struct{}
+	updateTasks       chan updateTask
+	closeChan         chan struct{}
+	cfg               PortMuxConfig
 }
 
 // Translate implements old AddressTranslator interface
@@ -344,9 +334,9 @@ func (p *PortMuxAddressTranslator) getResolveHostPortMapping() ResolvedConnectio
 var never = time.Unix(1<<63-1, 0)
 
 type updateTask struct {
+	result        chan error
 	connectionIDs []string
 	hostIDs       []string
-	result        chan error
 }
 
 func (p *PortMuxAddressTranslator) Start() {
@@ -578,7 +568,7 @@ var _ AddressTranslator = &PortMuxAddressTranslator{}
 func getHostPortMappingFromCluster(c controlConnection, table string, connectionIDs []string, hostIDs []string) (UnresolvedConnectionMetadataList, error) {
 	var res UnresolvedConnectionMetadataList
 
-	stmt := []string{fmt.Sprintf("select connection_id, host_id, Address, port, tls_port, datacenter, rack from %s", table)}
+	stmt := []string{fmt.Sprintf("select connection_id, host_id, address, port, tls_port from %s", table)}
 	var bounds []interface{}
 	if connectionIDs != nil {
 		var inClause []string
@@ -608,7 +598,7 @@ func getHostPortMappingFromCluster(c controlConnection, table string, connection
 
 	iter := c.query(strings.Join(stmt, " "), bounds...)
 	var rec UnresolvedConnectionMetadata
-	for iter.Scan(&rec.ConnectionID, &rec.HostID, &rec.Address, &rec.CQLPort, &rec.SecureCQLPort, &rec.Datacenter, &rec.Rack) {
+	for iter.Scan(&rec.ConnectionID, &rec.HostID, &rec.Address, &rec.CQLPort, &rec.SecureCQLPort) {
 		res = append(res, rec)
 	}
 	if err := iter.Close(); err != nil {

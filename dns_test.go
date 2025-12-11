@@ -134,7 +134,7 @@ func TestDNS(t *testing.T) {
 			clusterHosts = append(clusterHosts, fromAddress.String())
 		}
 
-		c.AddressTranslator = AddressTranslatorFunc(func(_ string, addr net.IP, port int) (net.IP, int) {
+		c.AddressTranslator = AddressTranslatorFunc(func(addr net.IP, port int) (net.IP, int) {
 			for id, host := range fromAddresses {
 				if host.Equal(addr) {
 					return toAddresses[id], port

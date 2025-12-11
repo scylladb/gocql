@@ -62,231 +62,69 @@ func (p PoolConfig) buildPool(session *Session) *policyConnPool {
 // behavior to fit the most common use cases. Applications that require a
 // different setup must implement their own cluster.
 type ClusterConfig struct {
-	// BatchObserver will set the provided batch observer on all queries created from this session.
-	// Use it to collect metrics / stats from batch queries by providing an implementation of BatchObserver.
-	BatchObserver BatchObserver
-	// Dialer will be used to establish all connections created for this Cluster.
-	// If not provided, a default dialer configured with ConnectTimeout will be used.
-	// Dialer is ignored if HostDialer is provided.
-	Dialer Dialer
-	// ApplicationInfo reports application information to the server by inserting it into options of the STARTUP frame
-	ApplicationInfo ApplicationInfo
-	// DNSResolver Resolves DNS names to IP addresses
-	DNSResolver DNSResolver
-	// Logger for this ClusterConfig.
-	// If not specified, defaults to the gocql.defaultLogger.
-	Logger StdLogger
-	// HostDialer will be used to establish all connections for this Cluster.
-	// Unlike Dialer, HostDialer is responsible for setting up the entire connection, including the TLS session.
-	// To support shard-aware port, HostDialer should implement ShardDialer.
-	// If not provided, Dialer will be used instead.
-	HostDialer HostDialer
-	// StreamObserver will be notified of stream state changes.
-	// This can be used to track in-flight protocol requests and responses.
-	StreamObserver StreamObserver
-	// FrameHeaderObserver will set the provided frame header observer on all frames' headers created from this session.
-	// Use it to collect metrics / stats from frames by providing an implementation of FrameHeaderObserver.
-	FrameHeaderObserver FrameHeaderObserver
-	// ConnectObserver will set the provided connect observer on all queries
-	// created from this session.
-	ConnectObserver ConnectObserver
-	// QueryObserver will set the provided query observer on all queries created from this session.
-	// Use it to collect metrics / stats from queries by providing an implementation of QueryObserver.
-	QueryObserver QueryObserver
-	// AddressTranslator will translate addresses found on peer discovery and/or
-	// node change events.
-	AddressTranslator AddressTranslator
-	// HostFilter will filter all incoming events for host, any which don't pass
-	// the filter will be ignored. If set will take precedence over any options set
-	// via Discovery
-	HostFilter HostFilter
-	// Compression algorithm.
-	// Default: nil
-	Compressor Compressor
-	// Default: nil
-	Authenticator Authenticator
-	actualSslOpts atomic.Value
-	// PoolConfig configures the underlying connection pool, allowing the
-	// configuration of host selection and connection selection policies.
-	PoolConfig PoolConfig
-	// Default retry policy to use for queries.
-	// Default: SimpleRetryPolicy{NumRetries: 3}.
-	RetryPolicy RetryPolicy
-	// ConvictionPolicy decides whether to mark host as down based on the error and host info.
-	// Default: SimpleConvictionPolicy
-	ConvictionPolicy ConvictionPolicy
-	// Default reconnection policy to use for reconnecting before trying to mark host as down.
-	ReconnectionPolicy ReconnectionPolicy
-	// A reconnection policy to use for reconnecting when connecting to the cluster first time.
-	InitialReconnectionPolicy ReconnectionPolicy
-	WarningsHandlerBuilder    WarningHandlerBuilder
-	// SslOpts configures TLS use when HostDialer is not set.
-	// SslOpts is ignored if HostDialer is set.
-	SslOpts *SslOptions
-	// An Authenticator factory. Can be used to create alternative authenticators.
-	// Default: nil
-	AuthProvider func(h *HostInfo) (Authenticator, error)
-	// The version of the driver that is going to be reported to the server.
-	// Defaulted to current library version
-	DriverVersion string
-	// The name of the driver that is going to be reported to the server.
-	// Default: "ScyllaDB GoLang Driver"
-	DriverName string
-	// Initial keyspace. Optional.
-	Keyspace string
-	// CQL version (default: 3.0.0)
-	CQLVersion string
-	// addresses for the initial connections. It is recommended to use the value set in
-	// the Cassandra config for broadcast_address or listen_address, an IP address not
-	// a domain name. This is because events from Cassandra will use the configured IP
-	// address, which is used to index connected hosts. If the domain name specified
-	// resolves to more than 1 IP address then the driver may connect multiple times to
-	// the same host, and will not mark the node being down or up from events.
-	Hosts []string
-	// The time to wait for frames before flushing the frames connection to Cassandra.
-	// Can help reduce syscall overhead by making less calls to write. Set to 0 to
-	// disable.
-	//
-	// (default: 200 microseconds)
-	WriteCoalesceWaitTime time.Duration
-	// WriteTimeout limits the time the driver waits to write a request to a network connection.
-	// WriteTimeout should be lower than or equal to Timeout.
-	// WriteTimeout defaults to the value of Timeout.
-	WriteTimeout time.Duration
-	// The keepalive period to use, enabled if > 0 (default: 15 seconds)
-	// SocketKeepalive is used to set up the default dialer and is ignored if Dialer or HostDialer is provided.
-	SocketKeepalive time.Duration
-	// If not zero, gocql attempt to reconnect known DOWN nodes in every ReconnectInterval.
-	ReconnectInterval time.Duration
-	// The maximum amount of time to wait for schema agreement in a cluster after
-	// receiving a schema change frame. (default: 60s)
-	MaxWaitSchemaAgreement time.Duration
-	// ProtoVersion sets the version of the native protocol to use, this will
-	// enable features in the driver for specific protocol versions, generally this
-	// should be set to a known version (2,3,4) for the cluster being connected to.
-	//
-	// If it is 0 or unset (the default) then the driver will attempt to discover the
-	// highest supported protocol for the cluster. In clusters with nodes of different
-	// versions the protocol selected is not defined (ie, it can be any of the supported in the cluster)
-	ProtoVersion int
-	// Maximum number of inflight requests allowed per connection.
-	// Default: 32768 for CQL v3 and newer
-	// Default: 128 for older CQL versions
-	MaxRequestsPerConn int
-	// Timeout defines the maximum time to wait for a single server response.
-	// The default is 11 seconds, which is slightly higher than the default
-	// server-side timeout for most query types.
-	//
-	// When a session creates a Query or Batch, it inherits this timeout as
-	// the request timeout.
-	//
-	// Important notes:
-	// 1. This value should be greater than the server timeout for all queries
-	//    you execute. Otherwise, you risk creating retry storms: the server
-	//    may still be processing the request while the client times out and retries.
-	// 2. This timeout does not apply during initial connection setup.
-	//    For that, see ConnectTimeout.
-	Timeout time.Duration
-	// The timeout for the requests to the schema tables. (default: 60s)
-	MetadataSchemaRequestTimeout time.Duration
-	// ConnectTimeout limits the time spent during connection setup.
-	// During initial connection setup, internal queries, AUTH requests will return an error if the client
-	// does not receive a response within the ConnectTimeout period.
-	// ConnectTimeout is applied to the connection setup queries independently.
-	// ConnectTimeout also limits the duration of dialing a new TCP connection
-	// in case there is no Dialer nor HostDialer configured.
-	// ConnectTimeout has a default value of 11 seconds.
-	ConnectTimeout time.Duration
-	// Port used when dialing.
-	// Default: 9042
-	Port int
-	// The size of the connection pool for each host.
-	// The pool filling runs in separate gourutine during the session initialization phase.
-	// gocql will always try to get 1 connection on each host pool
-	// during session initialization AND it will attempt
-	// to fill each pool afterward asynchronously if NumConns > 1.
-	// Notice: There is no guarantee that pool filling will be finished in the initialization phase.
-	// Also, it describes a maximum number of connections at the same time.
-	// Default: 2
-	NumConns int
-	// The gocql driver may hold excess shard connections to reuse them when existing connections are dropped.
-	// This configuration variable defines the limit for such excess connections. Once the limit is reached,
-	// gocql starts dropping any additional excess connections.
-	// The limit is computed as `MaxExcessShardConnectionsRate` * <number_of_shards>.
+	BatchObserver                 BatchObserver
+	Dialer                        Dialer
+	ApplicationInfo               ApplicationInfo
+	DNSResolver                   DNSResolver
+	Logger                        StdLogger
+	HostDialer                    HostDialer
+	StreamObserver                StreamObserver
+	FrameHeaderObserver           FrameHeaderObserver
+	ConnectObserver               ConnectObserver
+	QueryObserver                 QueryObserver
+	AddressTranslator             AddressTranslator
+	HostFilter                    HostFilter
+	Compressor                    Compressor
+	Authenticator                 Authenticator
+	actualSslOpts                 atomic.Value
+	PoolConfig                    PoolConfig
+	RetryPolicy                   RetryPolicy
+	ConvictionPolicy              ConvictionPolicy
+	ReconnectionPolicy            ReconnectionPolicy
+	InitialReconnectionPolicy     ReconnectionPolicy
+	WarningsHandlerBuilder        WarningHandlerBuilder
+	SslOpts                       *SslOptions
+	AuthProvider                  func(h *HostInfo) (Authenticator, error)
+	PortMuxConfig                 PortMuxConfig
+	DriverVersion                 string
+	DriverName                    string
+	Keyspace                      string
+	CQLVersion                    string
+	Hosts                         []string
+	WriteCoalesceWaitTime         time.Duration
+	WriteTimeout                  time.Duration
+	SocketKeepalive               time.Duration
+	ReconnectInterval             time.Duration
+	MaxWaitSchemaAgreement        time.Duration
+	ProtoVersion                  int
+	MaxRequestsPerConn            int
+	Timeout                       time.Duration
+	MetadataSchemaRequestTimeout  time.Duration
+	ConnectTimeout                time.Duration
+	Port                          int
+	NumConns                      int
+	MaxPreparedStmts              int
+	PageSize                      int
+	MaxRoutingKeyInfo             int
+	ReadTimeout                   time.Duration
+	EventBusConfig                eventbus.EventBusConfig
 	MaxExcessShardConnectionsRate float32
-	// Maximum cache size for prepared statements globally for gocql.
-	// Default: 1000
-	MaxPreparedStmts int
-	// Default page size to use for created sessions.
-	// Default: 5000
-	PageSize int
-	// Maximum cache size for query info about statements for each session.
-	// Default: 1000
-	MaxRoutingKeyInfo int
-	// ReadTimeout limits the time the driver waits for data from the connection.
-	// It has only one purpose, identify faulty connection early and drop it.
-	// Default: 11 Seconds
-	ReadTimeout time.Duration
-	// Consistency for the serial part of queries, values can be either SERIAL or LOCAL_SERIAL.
-	// Default: unset
-	SerialConsistency Consistency
-	// Default consistency level.
-	// Default: Quorum
-	Consistency Consistency
-	// Configure events the driver will register for
-	Events struct {
-		// disable registering for status events (node up/down)
+	SerialConsistency             Consistency
+	Consistency                   Consistency
+	Events                        struct {
 		DisableNodeStatusEvents bool
-		// disable registering for topology events (node added/removed/moved)
-		DisableTopologyEvents bool
-		// disable registering for schema events (keyspace/table/function removed/created/updated)
-		DisableSchemaEvents bool
+		DisableTopologyEvents   bool
+		DisableSchemaEvents     bool
 	}
-	// Default idempotence for queries
-	DefaultIdempotence bool
-	// Sends a client side timestamp for all requests which overrides the timestamp at which it arrives at the server.
-	// Default: true, only enabled for protocol 3 and above.
-	DefaultTimestamp bool
-	// DisableSkipMetadata will override the internal result metadata cache so that the driver does not
-	// send skip_metadata for queries, this means that the result will always contain
-	// the metadata to parse the rows and will not reuse the metadata from the prepared
-	// statement.
-	//
-	// See https://issues.apache.org/jira/browse/CASSANDRA-10786
-	// See https://github.com/scylladb/scylladb/issues/20860
-	//
-	// Default: true
-	DisableSkipMetadata bool
-	// DisableShardAwarePort will prevent the driver from connecting to Scylla's shard-aware port,
-	// even if there are nodes in the cluster that support it.
-	//
-	// It is generally recommended to leave this option turned off because gocql can use
-	// the shard-aware port to make the process of establishing more robust.
-	// However, if you have a cluster with nodes which expose shard-aware port
-	// but the port is unreachable due to network configuration issues, you can use
-	// this option to work around the issue. Set it to true only if you neither can fix
-	// your network nor disable shard-aware port on your nodes.
-	DisableShardAwarePort bool
-	// If DisableInitialHostLookup then the driver will not attempt to get host info
-	// from the system.peers table, this will mean that the driver will connect to
-	// hosts supplied and will not attempt to lookup the hosts information, this will
-	// mean that data_center, rack and token information will not be available and as
-	// such host filtering and token aware query routing will not be available.
+	DefaultIdempotence       bool
+	DefaultTimestamp         bool
+	DisableSkipMetadata      bool
+	DisableShardAwarePort    bool
 	DisableInitialHostLookup bool
-	// internal config for testing
-	disableControlConn bool
-	disableInit        bool
-	// If IgnorePeerAddr is true and the address in system.peers does not match
-	// the supplied host by either initial hosts or discovered via events then the
-	// host will be replaced with the supplied address.
-	//
-	// For example if an event comes in with host=10.0.0.1 but when looking up that
-	// address in system.local or system.peers returns 127.0.0.1, the peer will be
-	// set to 10.0.0.1 which is what will be used to connect to.
-	IgnorePeerAddr bool
-	// An event bus configuration
-	EventBusConfig eventbus.EventBusConfig
-	PortMuxConfig  PortMuxConfig
+	disableControlConn       bool
+	disableInit              bool
+	IgnorePeerAddr           bool // disable registering for status events (node up/down)
+	// disable registering for schema events (keyspace/table/function removed/created/updated)
 }
 
 type DNSResolver interface {
@@ -515,7 +353,7 @@ func WithPortMux(opts ...PortMuxOption) func(*ClusterConfig) {
 		// Don't resolve healthy nodes by default
 		ResolveHealthyEndpointPeriod: 0,
 		MaxResolverConcurrency:       1,
-		TableName:                    "system.connection_metadata",
+		TableName:                    "system.client_routes",
 		DNSResolver: newSimplePortMuxResolver(
 			time.Minute,
 			time.Millisecond*500,
