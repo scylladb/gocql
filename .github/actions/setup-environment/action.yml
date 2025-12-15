@@ -14,13 +14,13 @@ runs:
   using: "composite"
   steps:
     - name: Set up cache for SDKMAN
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: ~/.sdkman
         key: ${{ runner.os }}-sdkman
 
     - name: Set up cache for PIP
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: ~/.cache/pip
         key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}

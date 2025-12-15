@@ -26,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: |
             /home/runner/.cache/pip
@@ -71,7 +71,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: |
             /home/runner/.cache/pip
@@ -94,7 +94,7 @@ jobs:
         run: make resolve-scylla-version
 
       - name: Pull CCM image from the cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         id: ccm-cache
         with:
           path: ~/.ccm/repository
@@ -106,7 +106,7 @@ jobs:
 
       - name: Save CCM ScyllaDB image into the cache
         if: steps.ccm-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: ~/.ccm/repository
           key: ccm-scylla-${{ runner.os }}-${{ steps.scylla-version.outputs.value }}
@@ -135,7 +135,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: |
             /home/runner/.cache/pip
@@ -158,7 +158,7 @@ jobs:
         run: make resolve-cassandra-version
 
       - name: Pull CCM image from the cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         id: ccm-cache
         with:
           path: ~/.ccm/repository
@@ -170,7 +170,7 @@ jobs:
 
       - name: Save CCM Cassandra image into the cache
         if: steps.ccm-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: ~/.ccm/repository
           key: ccm-cassandra-${{ runner.os }}-${{ steps.cassandra-version.outputs.value }}
