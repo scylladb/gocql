@@ -110,10 +110,11 @@ func TestHostSNIDialer_InvalidConnectionConfig(t *testing.T) {
 			name:       "unknown host datacenter",
 			connConfig: newBasicConnectionConf("127.0.0.1:9142", serverCertPem, clientCertPem, clientKeyPem),
 			hostInfo: func() *gocql.HostInfo {
-				hi := &gocql.HostInfo{}
-				hi.SetDatacenter("unknown-datacenter")
-				hi.SetHostID("host-id")
-				return hi
+				hi := gocql.HostInfoBuilder{
+					DataCenter: "unknown-datacenter",
+					HostId:     "host-id",
+				}.Build()
+				return &hi
 			}(),
 			expectedError: fmt.Errorf(`datacenter "unknown-datacenter" configuration not found in connection bundle`),
 		},
@@ -167,10 +168,11 @@ func TestHostSNIDialer_ServerNameIdentifiers(t *testing.T) {
 		{
 			name: "host SNI when host is known",
 			hostInfo: func() *gocql.HostInfo {
-				hi := &gocql.HostInfo{}
-				hi.SetHostID("host-1-uuid")
-				hi.SetDatacenter("us-east-1")
-				return hi
+				hi := gocql.HostInfoBuilder{
+					DataCenter: "us-east-1",
+					HostId:     "host-1-uuid",
+				}.Build()
+				return &hi
 			}(),
 			connConfig: newBasicConnectionConf,
 			expectedSNI: func(_ *ConnectionConfig) string {

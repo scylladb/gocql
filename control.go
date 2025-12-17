@@ -157,19 +157,23 @@ func hostInfo(resolver DNSResolver, translateAddressPort addressTranslateFn, add
 		}
 	}
 
-	var hosts []*HostInfo
-
 	// Check if host is a literal IP address
 	if ip := net.ParseIP(host); ip != nil {
 		if validIpAddr(ip) {
-			hh := &HostInfo{hostname: host, connectAddress: ip, port: port}
-			hh.untranslatedConnectAddress = ip
+			translatedAddress := ip
+			translatePort := port
 			if translateAddressPort != nil {
 				// empty hostID signals that it is an initial contact endpoint
-				hh.connectAddress, hh.port = translateAddressPort("", ip, port)
+				translatedAddress, translatePort = translateAddressPort("", ip, port)
 			}
-			hosts = append(hosts, hh)
-			return hosts, nil
+			hh := HostInfoBuilder{
+				HostId:                     MustRandomUUID().String(),
+				Hostname:                   host,
+				UntranslatedConnectAddress: ip,
+				ConnectAddress:             translatedAddress,
+				Port:                       translatePort,
+			}.Build()
+			return []*HostInfo{&hh}, nil
 		}
 	}
 
@@ -181,15 +185,23 @@ func hostInfo(resolver DNSResolver, translateAddressPort addressTranslateFn, add
 		return nil, fmt.Errorf("no IP's returned from DNS lookup for %q", addr)
 	}
 
+	var hosts []*HostInfo
 	for _, ip := range ips {
 		if validIpAddr(ip) {
-			hh := &HostInfo{hostname: host, connectAddress: ip, port: port}
-			hh.untranslatedConnectAddress = ip
+			translatedAddress := ip
+			translatePort := port
 			if translateAddressPort != nil {
 				// empty hostID signals that it is an initial contact endpoint
-				hh.connectAddress, hh.port = translateAddressPort("", ip, port)
+				translatedAddress, translatePort = translateAddressPort("", ip, port)
 			}
-			hosts = append(hosts, hh)
+			hh := HostInfoBuilder{
+				HostId:                     MustRandomUUID().String(),
+				Hostname:                   host,
+				UntranslatedConnectAddress: ip,
+				ConnectAddress:             translatedAddress,
+				Port:                       translatePort,
+			}.Build()
+			hosts = append(hosts, &hh)
 		}
 	}
 

@@ -152,6 +152,51 @@ func (c cassVersion) nodeUpDelay() time.Duration {
 	return 10 * time.Second
 }
 
+type HostInfoBuilder struct {
+	DseVersion                 string
+	HostId                     string
+	DataCenter                 string
+	SchemaVersion              string
+	Hostname                   string
+	ClusterName                string
+	Partitioner                string
+	Rack                       string
+	Workload                   string
+	Tokens                     []string
+	PreferredIP                net.IP
+	BroadcastAddress           net.IP
+	RpcAddress                 net.IP
+	UntranslatedConnectAddress net.IP
+	Peer                       net.IP
+	ListenAddress              net.IP
+	ConnectAddress             net.IP
+	Version                    cassVersion
+	Port                       int
+}
+
+func (b HostInfoBuilder) Build() HostInfo {
+	return HostInfo{
+		dseVersion:                 b.DseVersion,
+		hostId:                     b.HostId,
+		dataCenter:                 b.DataCenter,
+		schemaVersion:              b.SchemaVersion,
+		hostname:                   b.Hostname,
+		clusterName:                b.ClusterName,
+		partitioner:                b.Partitioner,
+		rack:                       b.Rack,
+		workload:                   b.Workload,
+		tokens:                     b.Tokens,
+		preferredIP:                b.PreferredIP,
+		broadcastAddress:           b.BroadcastAddress,
+		rpcAddress:                 b.RpcAddress,
+		untranslatedConnectAddress: b.UntranslatedConnectAddress,
+		listenAddress:              b.ListenAddress,
+		connectAddress:             b.ConnectAddress,
+		version:                    b.Version,
+		port:                       b.Port,
+	}
+}
+
 type HostInfo struct {
 	dseVersion                 string
 	hostId                     string
@@ -241,8 +286,7 @@ func (h *HostInfo) nodeToNodeAddress() net.IP {
 }
 
 // Returns the address that should be used to connect to the host.
-// If you wish to override this, use an AddressTranslator or
-// use a HostFilter to SetConnectAddress()
+// If you wish to override this, use an AddressTranslator
 func (h *HostInfo) ConnectAddress() net.IP {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -276,14 +320,6 @@ func (h *HostInfo) UntranslatedConnectAddress() net.IP {
 		return addr
 	}
 	panic(fmt.Sprintf("no valid connect address for host: %v. Is your cluster configured correctly?", h))
-}
-
-func (h *HostInfo) SetConnectAddress(address net.IP) *HostInfo {
-	// TODO(zariel): should this not be exported?
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.connectAddress = address
-	return h
 }
 
 func (h *HostInfo) BroadcastAddress() net.IP {
@@ -328,12 +364,6 @@ func (h *HostInfo) HostID() string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.hostId
-}
-
-func (h *HostInfo) SetHostID(hostID string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.hostId = hostID
 }
 
 func (h *HostInfo) WorkLoad() string {

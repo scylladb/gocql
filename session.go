@@ -337,16 +337,6 @@ func (s *Session) init() error {
 		s.policy.SetPartitioner(partitioner)
 	}
 
-	for _, host := range hosts {
-		// In case when host lookup is disabled and when we are in unit tests,
-		// host are not discovered, and we are missing host ID information used
-		// by internal logic.
-		// Associate random UUIDs here with all hosts missing this information.
-		if len(host.HostID()) == 0 {
-			host.SetHostID(MustRandomUUID().String())
-		}
-	}
-
 	hostMap := make(map[string]*HostInfo, len(hosts))
 	for _, host := range hosts {
 		hostMap[host.HostID()] = host
