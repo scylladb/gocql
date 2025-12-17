@@ -20,7 +20,7 @@ module github.com/gocql/gocql/lz4
 go 1.25.0
 
 require (
-	github.com/pierrec/lz4/v4 v4.1.22
+	github.com/pierrec/lz4/v4 v4.1.23
 	github.com/stretchr/testify v1.11.1
 )
 
