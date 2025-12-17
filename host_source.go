@@ -188,7 +188,7 @@ func (h *HostInfo) Equal(host *HostInfo) bool {
 		return true
 	}
 
-	return h.HostID() == host.HostID() && h.ConnectAddressAndPort() == host.ConnectAddressAndPort()
+	return h.HostID() == host.HostID() && h.ConnectAddress().Equal(host.ConnectAddress()) && h.Port() == host.Port()
 }
 
 func (h *HostInfo) Peer() net.IP {
@@ -251,17 +251,6 @@ func (h *HostInfo) ConnectAddress() net.IP {
 		return addr
 	}
 	panic(fmt.Sprintf("no valid connect address for host: %v. Is your cluster configured correctly?", h))
-}
-
-// ConnectAddressWithError same as ConnectAddress, but an error instead of panic.
-func (h *HostInfo) ConnectAddressWithError() (net.IP, error) {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-
-	if addr, source := h.connectAddressLocked(); source != "invalid" {
-		return addr, nil
-	}
-	return nil, fmt.Errorf("no valid connect address for host: %v", h)
 }
 
 func (h *HostInfo) UntranslatedConnectAddress() net.IP {
@@ -466,13 +455,6 @@ func (h *HostInfo) IsUp() bool {
 func (h *HostInfo) IsBusy(s *Session) bool {
 	pool, ok := s.pool.getPool(h)
 	return ok && h != nil && pool.InFlight() >= MAX_IN_FLIGHT_THRESHOLD
-}
-
-func (h *HostInfo) ConnectAddressAndPort() string {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	addr, _ := h.connectAddressLocked()
-	return net.JoinHostPort(addr.String(), strconv.Itoa(h.port))
 }
 
 func (h *HostInfo) String() string {

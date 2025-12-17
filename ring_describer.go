@@ -2,7 +2,6 @@ package gocql
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sync"
 )
@@ -136,56 +135,6 @@ func (r *ringDescriber) GetHostsFromSystem() ([]*HostInfo, string, error) {
 	r.prevPartitioner = partitioner
 
 	return hosts, partitioner, nil
-}
-
-// Given an ip/port return HostInfo for the specified ip/port
-func (r *ringDescriber) getHostInfo(hostID UUID) (*HostInfo, error) {
-	var host *HostInfo
-	for _, table := range []string{"system.peers", "system.local"} {
-		ch := r.control.getConn()
-		var iter *Iter
-		if ch.host.HostID() == hostID.String() {
-			host = ch.host
-			iter = nil
-		}
-
-		if table == "system.peers" {
-			if ch.conn.getIsSchemaV2() {
-				iter = ch.conn.querySystem(context.TODO(), qrySystemPeersV2)
-			} else {
-				iter = ch.conn.querySystem(context.TODO(), qrySystemPeers)
-			}
-		} else {
-			iter = ch.conn.querySystem(context.TODO(), fmt.Sprintf("SELECT * FROM %s WHERE key='local'", table))
-		}
-
-		if iter != nil {
-			rows, err := iter.SliceMap()
-			if err != nil {
-				return nil, err
-			}
-
-			for _, row := range rows {
-				h, err := hostInfoFromMap(row, &HostInfo{port: r.cfg.Port}, r.cfg.translateAddressPort)
-				if err != nil {
-					return nil, err
-				}
-
-				if h.HostID() == hostID.String() {
-					host = h
-					break
-				}
-			}
-		}
-	}
-
-	if host == nil {
-		return nil, errors.New("unable to fetch host info: invalid control connection")
-	} else if host.invalidConnectAddr() {
-		return nil, fmt.Errorf("host ConnectAddress invalid ip=%v: %v", host.connectAddress, host)
-	}
-
-	return host, nil
 }
 
 func (r *ringDescriber) getHostByIP(ip string) (*HostInfo, bool) {
