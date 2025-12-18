@@ -34,7 +34,6 @@ import (
 	"io/ioutil"
 	"net"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -58,16 +57,6 @@ func approve(authenticator string, approvedAuthenticators []string) bool {
 		}
 	}
 	return false
-}
-
-// JoinHostPort is a utility to return an address string that can be used
-// by `gocql.Conn` to form a connection with a host.
-func JoinHostPort(addr string, port int) string {
-	addr = strings.TrimSpace(addr)
-	if _, _, err := net.SplitHostPort(addr); err != nil {
-		addr = net.JoinHostPort(addr, strconv.Itoa(port))
-	}
-	return addr
 }
 
 type Authenticator interface {
