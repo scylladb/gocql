@@ -469,8 +469,9 @@ func (h *HostInfo) IsBusy(s *Session) bool {
 }
 
 func (h *HostInfo) ConnectAddressAndPort() string {
-	h.mu.Lock()
-	defer h.mu.Unlock()
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
 	addr, _ := h.connectAddressLocked()
 	return net.JoinHostPort(addr.String(), strconv.Itoa(h.port))
 }
