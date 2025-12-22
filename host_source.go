@@ -487,6 +487,15 @@ func (h *HostInfo) IsBusy(s *Session) bool {
 	return ok && h != nil && pool.InFlight() >= MAX_IN_FLIGHT_THRESHOLD
 }
 
+// ConnectAddressAndPort returns "{ConnectAddress}:{Port}"
+// Deprecated: Use ConnectAddress and Port separately.
+func (h *HostInfo) ConnectAddressAndPort() string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	addr, _ := h.connectAddressLocked()
+	return net.JoinHostPort(addr.String(), strconv.Itoa(h.port))
+}
+
 func (h *HostInfo) String() string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
