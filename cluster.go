@@ -534,8 +534,8 @@ func WithClientRoutes(opts ...ClientRoutesOption) func(*ClusterConfig) {
 		cfg.ClientRoutesConfig = &pmCfg
 		if len(cfg.Hosts) == 0 {
 			for _, ep := range pmCfg.Endpoints {
-				if ep.connectionAddr != "" {
-					cfg.Hosts = append(cfg.Hosts, ep.connectionAddr)
+				if ep.ConnectionAddr != "" {
+					cfg.Hosts = append(cfg.Hosts, ep.ConnectionAddr)
 				}
 			}
 		}

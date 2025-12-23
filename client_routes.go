@@ -17,11 +17,11 @@ import (
 
 type ClientRoutesEndpoint struct {
 	// Scylla Cloud ConnectionID to read from `system.client_routes`
-	connectionID string
+	ConnectionID string
 
 	// Ip Address or DNS name of the AWS endpoint
 	// Could stay empty, in this case driver will pick it up from system.client_routes table
-	connectionAddr string
+	ConnectionAddr string
 }
 
 type ClientRoutesEndpointList []ClientRoutesEndpoint
@@ -29,15 +29,15 @@ type ClientRoutesEndpointList []ClientRoutesEndpoint
 func (l *ClientRoutesEndpointList) GetAllConnectionIDs() []string {
 	var ids []string
 	for _, endpoint := range *l {
-		ids = append(ids, endpoint.connectionID)
+		ids = append(ids, endpoint.ConnectionID)
 	}
 	return ids
 }
 
 func (l *ClientRoutesEndpointList) GetConnectionAddr(connectionID string) string {
 	for _, endpoint := range *l {
-		if endpoint.connectionID == connectionID {
-			return endpoint.connectionAddr
+		if endpoint.ConnectionID == connectionID {
+			return endpoint.ConnectionAddr
 		}
 	}
 	return ""
@@ -419,8 +419,8 @@ type updateTask struct {
 func (p *ClientRoutesHandler) Initialize(s *Session) {
 	connectionIDs := make([]string, 0, len(p.cfg.Endpoints))
 	for _, ep := range p.cfg.Endpoints {
-		if ep.connectionID != "" {
-			connectionIDs = append(connectionIDs, ep.connectionID)
+		if ep.ConnectionID != "" {
+			connectionIDs = append(connectionIDs, ep.ConnectionID)
 		}
 	}
 	p.c = s.control
@@ -543,8 +543,8 @@ func (p *ClientRoutesHandler) startReadingEvents() {
 	if p.cfg.BlockUnknownConnectionIDs {
 		connectionIDs = make([]string, 0, len(p.cfg.Endpoints))
 		for _, ep := range p.cfg.Endpoints {
-			if ep.connectionID != "" {
-				connectionIDs = append(connectionIDs, ep.connectionID)
+			if ep.ConnectionID != "" {
+				connectionIDs = append(connectionIDs, ep.ConnectionID)
 			}
 		}
 	}
@@ -570,7 +570,7 @@ func (p *ClientRoutesHandler) startReadingEvents() {
 							continue
 						}
 						if slices.ContainsFunc(p.cfg.Endpoints, func(ep ClientRoutesEndpoint) bool {
-							return ep.connectionID == connectionID
+							return ep.ConnectionID == connectionID
 						}) {
 							newConnectionIDs = append(newConnectionIDs, connectionID)
 						}

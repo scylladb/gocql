@@ -44,7 +44,7 @@ func TestPrivateLink(t *testing.T) {
 		WithClientRoutes(
 			WithTable("pl.client_routes"),
 			WithEndpoints(ClientRoutesEndpoint{
-				connectionID: "1",
+				ConnectionID: "1",
 			}),
 		),
 	)
