@@ -305,7 +305,6 @@ type scyllaConnPicker struct {
 	// disableShardAwarePortUntil is used to temporarily disable new connections to the shard-aware port temporarily
 	disableShardAwarePortUntil *atomic.Value
 	hostId                     string
-	shardAwareAddress          string
 	address                    string
 	conns                      []*Conn
 	excessConns                []*Conn
@@ -320,7 +319,6 @@ type scyllaConnPicker struct {
 
 func newScyllaConnPicker(conn *Conn, logger StdLogger) *scyllaConnPicker {
 	addr := conn.Address()
-	hostId := conn.host.hostId
 
 	if conn.scyllaSupported.nrShards == 0 {
 		panic(fmt.Sprintf("scylla: %s not a sharded connection", addr))
@@ -330,23 +328,9 @@ func newScyllaConnPicker(conn *Conn, logger StdLogger) *scyllaConnPicker {
 		logger.Printf("scylla: %s new conn picker sharding options %+v", addr, conn.scyllaSupported)
 	}
 
-	var shardAwarePort uint16
-	if conn.session.connCfg.tlsConfig != nil {
-		shardAwarePort = conn.scyllaSupported.shardAwarePortSSL
-	} else {
-		shardAwarePort = conn.scyllaSupported.shardAwarePort
-	}
-
-	var shardAwareAddress string
-	if shardAwarePort != 0 {
-		tIP, tPort := conn.session.cfg.translateAddressPort(conn.host.HostID(), conn.host.UntranslatedConnectAddress(), int(shardAwarePort))
-		shardAwareAddress = net.JoinHostPort(tIP.String(), strconv.Itoa(tPort))
-	}
-
 	return &scyllaConnPicker{
 		address:                addr,
-		hostId:                 hostId,
-		shardAwareAddress:      shardAwareAddress,
+		hostId:                 conn.host.hostId,
 		nrShards:               conn.scyllaSupported.nrShards,
 		msbIgnore:              conn.scyllaSupported.msbIgnore,
 		lastAttemptedShard:     0,
@@ -477,7 +461,7 @@ func (p *scyllaConnPicker) Put(conn *Conn) error {
 	}
 
 	if c := p.conns[shard]; c != nil {
-		if conn.addr == p.shardAwareAddress {
+		if conn.isShardAware {
 			// A connection made to the shard-aware port resulted in duplicate
 			// connection to the same shard being made. Because this is never
 			// intentional, it suggests that a NAT or AddressTranslator
@@ -485,9 +469,8 @@ func (p *scyllaConnPicker) Put(conn *Conn) error {
 			// the shard-aware port to return connection to the shard
 			// that we requested. Fall back to non-shard-aware port for some time.
 			p.logger.Printf(
-				"scylla: %s connection to shard-aware address %s resulted in wrong shard being assigned; please check that you are not behind a NAT or AddressTranslater which changes source ports; falling back to non-shard-aware port for %v",
+				"scylla: connection to shard-aware address %s resulted in wrong shard being assigned; please check that you are not behind a NAT or AddressTranslater which changes source ports; falling back to non-shard-aware port for %v",
 				p.address,
-				p.shardAwareAddress,
 				scyllaShardAwarePortFallbackDuration,
 			)
 			until := time.Now().Add(scyllaShardAwarePortFallbackDuration)
