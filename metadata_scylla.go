@@ -336,12 +336,6 @@ const (
 	IndexKindCustom = "CUSTOM"
 )
 
-const (
-	TableFlagDense    = "dense"
-	TableFlagSuper    = "super"
-	TableFlagCompound = "compound"
-)
-
 // the ordering of the column with regard to its comparator
 type ColumnOrder bool
 
