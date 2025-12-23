@@ -124,8 +124,13 @@ resolve-cassandra-version: .prepare-get-version
 	fi
 
 	if [[ -z "$${CASSANDRA_VERSION_RESOLVED}" ]]; then
-		echo "Failed to resolve Cassandra ${CASSANDRA_VERSION}"
-		exit 1
+		echo "There is no ${CASSANDRA_VERSION} Cassandra version"
+		if [[ -n "$${GITHUB_ENV}" ]]; then
+			echo "value=NOT-FOUND" >>$${GITHUB_OUTPUT}
+			echo "CASSANDRA_VERSION_RESOLVED=NOT-FOUND" >>$${GITHUB_ENV}
+			exit 0
+		fi
+		exit 2
 	fi
 
 	echo "Resolved Cassandra ${CASSANDRA_VERSION} to $${CASSANDRA_VERSION_RESOLVED}"
@@ -164,8 +169,13 @@ resolve-scylla-version: .prepare-get-version
 	fi
 
 	if [[ -z "$${SCYLLA_VERSION_RESOLVED}" ]]; then
-		echo "Failed to resolve ScyllaDB '${SCYLLA_VERSION}'"
-		exit 1
+		echo "There is no ${SCYLLA_VERSION} ScyllaDB version"
+		if [[ -n "$${GITHUB_ENV}" ]]; then
+			echo "value=NOT-FOUND" >>$${GITHUB_OUTPUT}
+			echo "SCYLLA_VERSION_RESOLVED=NOT-FOUND" >>$${GITHUB_ENV}
+			exit 0
+		fi
+		exit 2
 	fi
 
 	echo "Resolved ScyllaDB ${SCYLLA_VERSION} to $${SCYLLA_VERSION_RESOLVED}"

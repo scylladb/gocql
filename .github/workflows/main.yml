@@ -95,26 +95,29 @@ jobs:
 
       - name: Pull CCM image from the cache
         uses: actions/cache/restore@v5
+        if: steps.scylla-version.outputs.value != 'NOT-FOUND'
         id: ccm-cache
         with:
           path: ~/.ccm/repository
           key: ccm-scylla-${{ runner.os }}-${{ steps.scylla-version.outputs.value }}
 
       - name: Download ScyllaDB (${{ steps.scylla-version.outputs.value }}) image
-        if: steps.ccm-cache.outputs.cache-hit != 'true'
+        if: steps.ccm-cache.outputs.cache-hit != 'true' && steps.scylla-version.outputs.value != 'NOT-FOUND'
         run: make download-scylla
 
       - name: Save CCM ScyllaDB image into the cache
-        if: steps.ccm-cache.outputs.cache-hit != 'true'
+        if: steps.ccm-cache.outputs.cache-hit != 'true' && steps.scylla-version.outputs.value != 'NOT-FOUND'
         uses: actions/cache/save@v5
         with:
           path: ~/.ccm/repository
           key: ccm-scylla-${{ runner.os }}-${{ steps.scylla-version.outputs.value }}
 
       - name: Run integration suite with ScyllaDB ${{ matrix.scylla-version }}(${{ steps.scylla-version.outputs.value }})
+        if: steps.scylla-version.outputs.value != 'NOT-FOUND'
         run: make test-integration-scylla
 
       - name: Run CCM integration suite with ScyllaDB ${{ matrix.scylla-version }}(${{ steps.scylla-version.outputs.value }})
+        if: steps.scylla-version.outputs.value != 'NOT-FOUND'
         run: TEST_INTEGRATION_TAGS="ccm gocql_debug" make test-integration-scylla
 
   test-integration-cassandra:
@@ -159,25 +162,28 @@ jobs:
 
       - name: Pull CCM image from the cache
         uses: actions/cache/restore@v5
+        if: steps.cassandra-version.outputs.value != 'NOT-FOUND'
         id: ccm-cache
         with:
           path: ~/.ccm/repository
           key: ccm-cassandra-${{ runner.os }}-${{ steps.cassandra-version.outputs.value }}
 
       - name: Download Cassandra (${{ steps.cassandra-version.outputs.value }}) image
-        if: steps.ccm-cache.outputs.cache-hit != 'true'
+        if: steps.ccm-cache.outputs.cache-hit != 'true' && steps.cassandra-version.outputs.value != 'NOT-FOUND'
         run: make download-cassandra
 
       - name: Save CCM Cassandra image into the cache
-        if: steps.ccm-cache.outputs.cache-hit != 'true'
+        if: steps.ccm-cache.outputs.cache-hit != 'true' && steps.cassandra-version.outputs.value != 'NOT-FOUND'
         uses: actions/cache/save@v5
         with:
           path: ~/.ccm/repository
           key: ccm-cassandra-${{ runner.os }}-${{ steps.cassandra-version.outputs.value }}
 
       - name: Run integration suite with Cassandra ${{ matrix.cassandra-version }}(${{ steps.cassandra-version.outputs.value }})
+        if: steps.cassandra-version.outputs.value != 'NOT-FOUND'
         run: make test-integration-cassandra
 
       - name: Run CCM integration suite with Cassandra ${{ matrix.cassandra-version }}(${{ steps.cassandra-version.outputs.value }})
+        if: steps.cassandra-version.outputs.value != 'NOT-FOUND'
         run: TEST_INTEGRATION_TAGS="ccm gocql_debug" make test-integration-scylla
 
