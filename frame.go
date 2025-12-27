@@ -26,6 +26,7 @@ package gocql
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -185,7 +186,7 @@ var (
 )
 
 func readInt(p []byte) int32 {
-	return int32(p[0])<<24 | int32(p[1])<<16 | int32(p[2])<<8 | int32(p[3])
+	return int32(binary.BigEndian.Uint32(p[:4]))
 }
 
 const defaultBufSize = 128
@@ -340,7 +341,7 @@ func readHeader(r io.Reader, p []byte) (head frm.FrameHeader, err error) {
 		return frm.FrameHeader{}, fmt.Errorf("not enough bytes to read header require 9 got: %d", len(p))
 	}
 
-	head.Stream = int(int16(p[2])<<8 | int16(p[3]))
+	head.Stream = int(int16(binary.BigEndian.Uint16(p[2:4])))
 	head.Op = frm.Op(p[4])
 	head.Length = int(readInt(p[5:]))
 
@@ -1461,7 +1462,7 @@ func (f *framer) readInt() (n int) {
 		panic(fmt.Errorf("not enough bytes in buffer to read int require 4 got: %d", len(f.buf)))
 	}
 
-	n = int(int32(f.buf[0])<<24 | int32(f.buf[1])<<16 | int32(f.buf[2])<<8 | int32(f.buf[3]))
+	n = int(int32(binary.BigEndian.Uint32(f.buf[:4])))
 	f.buf = f.buf[4:]
 	return
 }
@@ -1470,7 +1471,7 @@ func (f *framer) readShort() (n uint16) {
 	if len(f.buf) < 2 {
 		panic(fmt.Errorf("not enough bytes in buffer to read short require 2 got: %d", len(f.buf)))
 	}
-	n = uint16(f.buf[0])<<8 | uint16(f.buf[1])
+	n = binary.BigEndian.Uint16(f.buf[:2])
 	f.buf = f.buf[2:]
 	return
 }
