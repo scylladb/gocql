@@ -106,6 +106,15 @@ func TestSetupTLSConfig(t *testing.T) {
 				t.Fatalf("got %v, but expected %v", tlsConfig.InsecureSkipVerify,
 					test.expectedInsecureSkipVerify)
 			}
+
+			// Verify that VerifyPeerCertificate is set when InsecureSkipVerify is false
+			if !tlsConfig.InsecureSkipVerify && tlsConfig.VerifyPeerCertificate == nil {
+				t.Fatal("VerifyPeerCertificate should be set when InsecureSkipVerify is false")
+			}
+			// Verify that VerifyPeerCertificate is not set when InsecureSkipVerify is true
+			if tlsConfig.InsecureSkipVerify && tlsConfig.VerifyPeerCertificate != nil {
+				t.Fatal("VerifyPeerCertificate should not be set when InsecureSkipVerify is true")
+			}
 		})
 	}
 }
