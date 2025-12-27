@@ -11,6 +11,7 @@ testdata/pki/.truststore
 testdata/pki/*.crt
 testdata/pki/*.key
 testdata/pki/*.p12
+testdata/pki/*.srl
 
 docs/_build/
 docs/source/.doctrees
