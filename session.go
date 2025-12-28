@@ -67,18 +67,18 @@ type Session struct {
 	streamObserver            StreamObserver
 	ctx                       context.Context
 	control                   controlConnection
+	stmtsLRU                  *preparedLRU
 	connCfg                   *ConnConfig
-	readyCh                   chan struct{}
-	hostSource                *ringDescriber
 	pool                      *policyConnPool
 	ringRefresher             *debounce.RefreshDebouncer
 	cancel                    context.CancelFunc
 	executor                  *queryExecutor
-	stmtsLRU                  *preparedLRU
+	readyCh                   chan struct{}
 	schemaEvents              *eventDebouncer
 	metadataDescriber         *metadataDescriber
 	eventBus                  *eventbus.EventBus[events.Event]
 	nodeEvents                *eventDebouncer
+	hostSource                *ringDescriber
 	routingKeyInfoCache       routingKeyInfoLRU
 	cfg                       ClusterConfig
 	prefetch                  float64
@@ -1068,7 +1068,7 @@ func (qm *queryMetrics) attempt(addAttempts int, addLatency time.Duration,
 
 // Query represents a CQL statement that can be executed.
 type Query struct {
-	// 8-byte aligned fields (pointers, interfaces, strings, slices, int64, float64, time.Duration)
+	// 8-byte aligned fields (pointers, interfaces, strings, slices, int64, float64)
 	trace    Tracer
 	context  context.Context
 	spec     SpeculativeExecutionPolicy
@@ -1082,20 +1082,20 @@ type Query struct {
 	// getKeyspace is field so that it can be overriden in tests
 	getKeyspace func() string
 	// routingInfo is a pointer because Query can be copied and copyable struct can't hold a mutex.
-	routingInfo *queryRoutingInfo
-	binding     func(q *QueryInfo) ([]interface{}, error)
-	hostID      string
-	stmt        string
-	routingKey  []byte
-	values      []interface{}
-	pageState   []byte
-	// requestTimeout is a timeout on waiting for response from server
+	routingInfo           *queryRoutingInfo
+	binding               func(q *QueryInfo) ([]interface{}, error)
+	hostID                string
+	stmt                  string
+	routingKey            []byte
+	values                []interface{}
+	pageState             []byte
 	requestTimeout        time.Duration
 	defaultTimestampValue int64
 	prefetch              float64
-	// 4-byte aligned fields (int, uint32, Consistency)
-	pageSize   int
-	refCount   uint32
+	// 4-byte aligned fields (int, uint32)
+	pageSize int
+	refCount uint32
+	// 2-byte aligned fields (uint16)
 	cons       Consistency
 	serialCons Consistency
 	// 1-byte aligned fields (bool)
