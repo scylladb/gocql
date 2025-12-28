@@ -214,7 +214,7 @@ func TestSetupTLSConfigStrictValidation(t *testing.T) {
 			EnableHostVerification: true,
 		}
 
-		tlsConfig, err := setupTLSConfig(opts)
+		tlsConfig, err := setupTLSConfig(opts, &defaultLogger{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -233,7 +233,7 @@ func TestSetupTLSConfigStrictValidation(t *testing.T) {
 			EnableHostVerification: false,
 		}
 
-		tlsConfig, err := setupTLSConfig(opts)
+		tlsConfig, err := setupTLSConfig(opts, &defaultLogger{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -254,7 +254,7 @@ func TestSetupTLSConfigStrictValidation(t *testing.T) {
 			},
 		}
 
-		tlsConfig, err := setupTLSConfig(opts)
+		tlsConfig, err := setupTLSConfig(opts, &defaultLogger{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -265,6 +265,26 @@ func TestSetupTLSConfigStrictValidation(t *testing.T) {
 
 		if tlsConfig.VerifyPeerCertificate == nil {
 			t.Error("expected VerifyPeerCertificate to be set")
+		}
+	})
+
+	t.Run("VerifyPeerCertificate not set when DisableStrictCertificateValidation is true", func(t *testing.T) {
+		opts := &SslOptions{
+			EnableHostVerification:             true,
+			DisableStrictCertificateValidation: true,
+		}
+
+		tlsConfig, err := setupTLSConfig(opts, &defaultLogger{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if tlsConfig.InsecureSkipVerify {
+			t.Error("expected InsecureSkipVerify to be false")
+		}
+
+		if tlsConfig.VerifyPeerCertificate != nil {
+			t.Error("expected VerifyPeerCertificate to not be set when DisableStrictCertificateValidation is true")
 		}
 	})
 }

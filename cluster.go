@@ -456,7 +456,7 @@ func (cfg *ClusterConfig) ValidateAndInitSSL() error {
 	if cfg.SslOpts == nil {
 		return nil
 	}
-	actualTLSConfig, err := setupTLSConfig(cfg.SslOpts)
+	actualTLSConfig, err := setupTLSConfig(cfg.SslOpts, cfg.logger())
 	if err != nil {
 		return fmt.Errorf("failed to initialize ssl configuration: %s", err.Error())
 	}
@@ -583,7 +583,7 @@ var (
 	ErrHostQueryFailed      = errors.New("unable to populate Hosts")
 )
 
-func setupTLSConfig(sslOpts *SslOptions) (*tls.Config, error) {
+func setupTLSConfig(sslOpts *SslOptions, logger StdLogger) (*tls.Config, error) {
 	//  Config.InsecureSkipVerify | EnableHostVerification | Result
 	//  Config is nil             | true                   | verify host
 	//  Config is nil             | false                  | do not verify host
@@ -631,11 +631,17 @@ func setupTLSConfig(sslOpts *SslOptions) (*tls.Config, error) {
 		tlsConfig.Certificates = append(tlsConfig.Certificates, mycert)
 	}
 
-	// Add strict certificate chain validation
+	// Add strict certificate chain validation unless explicitly disabled
 	// This ensures that the entire certificate chain is properly validated,
 	// not just that one intermediate certificate is trusted.
-	if !tlsConfig.InsecureSkipVerify {
+	if !tlsConfig.InsecureSkipVerify && !sslOpts.DisableStrictCertificateValidation {
 		tlsConfig.VerifyPeerCertificate = strictVerifyPeerCertificate(tlsConfig.RootCAs)
+	} else if sslOpts.DisableStrictCertificateValidation {
+		// Emit deprecation warning
+		if logger != nil {
+			logger.Println("gocql: WARNING - DisableStrictCertificateValidation is deprecated and will be removed in a future version. " +
+				"Please ensure your certificate chains are properly configured to work with strict validation.")
+		}
 	}
 
 	return tlsConfig, nil
