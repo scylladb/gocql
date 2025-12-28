@@ -1068,7 +1068,7 @@ func (qm *queryMetrics) attempt(addAttempts int, addLatency time.Duration,
 
 // Query represents a CQL statement that can be executed.
 type Query struct {
-	// 8-byte aligned fields (pointers, interfaces, int64, float64, time.Duration)
+	// 8-byte aligned fields (pointers, interfaces, strings, slices, int64, float64, time.Duration)
 	trace    Tracer
 	context  context.Context
 	spec     SpeculativeExecutionPolicy
@@ -1093,11 +1093,10 @@ type Query struct {
 	requestTimeout        time.Duration
 	defaultTimestampValue int64
 	prefetch              float64
-	// 4-byte aligned fields (int, uint32)
-	pageSize int
-	refCount uint32
-	cons     Consistency
-	// serialCons is Consistency which is int in size
+	// 4-byte aligned fields (int, uint32, Consistency)
+	pageSize   int
+	refCount   uint32
+	cons       Consistency
 	serialCons Consistency
 	// 1-byte aligned fields (bool)
 	disableAutoPage     bool
@@ -1964,7 +1963,7 @@ type nextIter struct {
 	// 8-byte aligned fields (pointers)
 	qry  *Query
 	next *Iter
-	// Sync.Once values
+	// sync.Once values
 	oncea sync.Once
 	once  sync.Once
 	// 4-byte aligned fields (int)
