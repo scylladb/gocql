@@ -631,17 +631,19 @@ func setupTLSConfig(sslOpts *SslOptions, logger StdLogger) (*tls.Config, error) 
 		tlsConfig.Certificates = append(tlsConfig.Certificates, mycert)
 	}
 
+	// Emit deprecation warning if the option is used
+	if sslOpts.DisableStrictCertificateValidation {
+		if logger != nil {
+			logger.Println("gocql: WARNING - DisableStrictCertificateValidation is deprecated and will be removed in a future version. " +
+				"Please ensure your certificate chains are properly configured to work with strict validation.")
+		}
+	}
+
 	// Add strict certificate chain validation unless explicitly disabled
 	// This ensures that the entire certificate chain is properly validated,
 	// not just that one intermediate certificate is trusted.
 	if !tlsConfig.InsecureSkipVerify && !sslOpts.DisableStrictCertificateValidation {
 		tlsConfig.VerifyPeerCertificate = strictVerifyPeerCertificate(tlsConfig.RootCAs)
-	} else if sslOpts.DisableStrictCertificateValidation {
-		// Emit deprecation warning
-		if logger != nil {
-			logger.Println("gocql: WARNING - DisableStrictCertificateValidation is deprecated and will be removed in a future version. " +
-				"Please ensure your certificate chains are properly configured to work with strict validation.")
-		}
 	}
 
 	return tlsConfig, nil
