@@ -55,10 +55,9 @@ import (
 // and automatically sets a default consistency level on all operations
 // that do not have a consistency level set.
 type Session struct {
+	initErr                   error
 	warningHandler            WarningHandler
 	queryObserver             QueryObserver
-	control                   controlConnection
-	ctx                       context.Context
 	logger                    StdLogger
 	trace                     Tracer
 	policy                    HostSelectionPolicy
@@ -66,25 +65,26 @@ type Session struct {
 	connectObserver           ConnectObserver
 	frameObserver             FrameHeaderObserver
 	streamObserver            StreamObserver
-	initErr                   error
-	nodeEvents                *eventDebouncer
-	cancel                    context.CancelFunc
+	ctx                       context.Context
+	control                   controlConnection
+	connCfg                   *ConnConfig
+	readyCh                   chan struct{}
 	hostSource                *ringDescriber
 	pool                      *policyConnPool
 	ringRefresher             *debounce.RefreshDebouncer
-	readyCh                   chan struct{}
+	cancel                    context.CancelFunc
 	executor                  *queryExecutor
 	stmtsLRU                  *preparedLRU
 	schemaEvents              *eventDebouncer
 	metadataDescriber         *metadataDescriber
 	eventBus                  *eventbus.EventBus[events.Event]
-	connCfg                   *ConnConfig
+	nodeEvents                *eventDebouncer
 	routingKeyInfoCache       routingKeyInfoLRU
 	cfg                       ClusterConfig
-	pageSize                  int
 	prefetch                  float64
-	mu                        sync.RWMutex
+	pageSize                  int
 	sessionStateMu            sync.RWMutex
+	mu                        sync.RWMutex
 	cons                      Consistency
 	isClosed                  bool
 	isClosing                 bool
@@ -961,20 +961,19 @@ func (s *Session) MapExecuteBatchCAS(batch *Batch, dest map[string]interface{}) 
 }
 
 type hostMetrics struct {
+	// TotalLatency is the sum of attempt latencies for this host in nanoseconds.
+	TotalLatency int64
 	// Attempts is count of how many times this query has been attempted for this host.
 	// An attempt is either a retry or fetching next page of results.
 	Attempts int
-
-	// TotalLatency is the sum of attempt latencies for this host in nanoseconds.
-	TotalLatency int64
 }
 
 type queryMetrics struct {
 	m map[string]*hostMetrics
+	l sync.RWMutex
 	// totalAttempts is total number of attempts.
 	// Equal to sum of all hostMetrics' Attempts
 	totalAttempts int
-	l             sync.RWMutex
 }
 
 // preFilledQueryMetrics initializes new queryMetrics based on per-host supplied data.
@@ -1069,6 +1068,7 @@ func (qm *queryMetrics) attempt(addAttempts int, addLatency time.Duration,
 
 // Query represents a CQL statement that can be executed.
 type Query struct {
+	// 8-byte aligned fields (pointers, interfaces, int64, float64, time.Duration)
 	trace    Tracer
 	context  context.Context
 	spec     SpeculativeExecutionPolicy
@@ -1084,26 +1084,27 @@ type Query struct {
 	// routingInfo is a pointer because Query can be copied and copyable struct can't hold a mutex.
 	routingInfo *queryRoutingInfo
 	binding     func(q *QueryInfo) ([]interface{}, error)
-	// hostID specifies the host on which the query should be executed.
-	// If it is empty, then the host is picked by HostSelectionPolicy
-	hostID     string
-	stmt       string
-	routingKey []byte
-	values     []interface{}
-	pageState  []byte
+	hostID      string
+	stmt        string
+	routingKey  []byte
+	values      []interface{}
+	pageState   []byte
 	// requestTimeout is a timeout on waiting for response from server
 	requestTimeout        time.Duration
 	defaultTimestampValue int64
 	prefetch              float64
-	pageSize              int
-	refCount              uint32
-	cons                  Consistency
-	serialCons            Consistency
-	disableAutoPage       bool
-	idempotent            bool
-	skipPrepare           bool
-	disableSkipMetadata   bool
-	defaultTimestamp      bool
+	// 4-byte aligned fields (int, uint32)
+	pageSize int
+	refCount uint32
+	cons     Consistency
+	// serialCons is Consistency which is int in size
+	serialCons Consistency
+	// 1-byte aligned fields (bool)
+	disableAutoPage     bool
+	idempotent          bool
+	skipPrepare         bool
+	disableSkipMetadata bool
+	defaultTimestamp    bool
 }
 
 type queryRoutingInfo struct {
@@ -1683,11 +1684,13 @@ func (q *Query) GetHostID() string {
 // were returned by a query. The iterator might send additional queries to the
 // database during the iteration if paging was enabled.
 type Iter struct {
-	err     error
-	framer  framerInterface
-	next    *nextIter
-	host    *HostInfo
-	meta    resultMetadata
+	// 8-byte aligned fields (pointers, interfaces)
+	err    error
+	framer framerInterface
+	next   *nextIter
+	host   *HostInfo
+	meta   resultMetadata
+	// 4-byte aligned fields (int, int32)
 	pos     int
 	numRows int
 	closed  int32
@@ -1958,11 +1961,14 @@ func (iter *Iter) NumRows() int {
 // nextIter holds state for fetching a single page in an iterator.
 // single page might be attempted multiple times due to retries.
 type nextIter struct {
-	qry   *Query
-	next  *Iter
-	pos   int
+	// 8-byte aligned fields (pointers)
+	qry  *Query
+	next *Iter
+	// Sync.Once values
 	oncea sync.Once
 	once  sync.Once
+	// 4-byte aligned fields (int)
+	pos int
 }
 
 func (n *nextIter) fetchAsync() {
@@ -1985,6 +1991,7 @@ func (n *nextIter) fetch() *Iter {
 }
 
 type Batch struct {
+	// 8-byte aligned fields (pointers, interfaces, int64, time.Duration)
 	context  context.Context
 	rt       RetryPolicy
 	spec     SpeculativeExecutionPolicy
@@ -2004,11 +2011,13 @@ type Batch struct {
 	Entries               []BatchEntry
 	defaultTimestampValue int64
 	// requestTimeout is a timeout on waiting for response from serve
-	requestTimeout   time.Duration
-	serialCons       Consistency
-	Cons             Consistency
+	requestTimeout time.Duration
+	// 4-byte aligned fields (Consistency, BatchType which are int-based)
+	serialCons Consistency
+	Cons       Consistency
+	Type       BatchType
+	// 1-byte aligned fields (bool)
 	defaultTimestamp bool
-	Type             BatchType
 }
 
 // NewBatch creates a new batch operation using defaults defined in the cluster

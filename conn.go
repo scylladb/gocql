@@ -141,8 +141,8 @@ type ConnConfig struct {
 	ConnectTimeout  time.Duration
 	ReadTimeout     time.Duration
 	WriteTimeout    time.Duration
-	ProtoVersion    int
 	Keepalive       time.Duration
+	ProtoVersion    int
 	disableCoalesce bool
 }
 
@@ -178,43 +178,38 @@ type ConnInterface interface {
 // queries, but users are usually advised to use a more reliable, higher
 // level API.
 type Conn struct {
-	auth           Authenticator
-	streamObserver StreamObserver
-	w              contextWriter
-	logger         StdLogger
-	frameObserver  FrameHeaderObserver
-	ctx            context.Context
-	errorHandler   ConnErrorHandler
-	compressor     Compressor
-	conn           net.Conn
-	cfg            *ConnConfig
-	supported      map[string][]string
-	streams        *streams.IDGenerator
-	host           *HostInfo
-	// calls stores a map from stream ID to callReq.
-	// This map is protected by mu.
-	// calls should not be used when closed is true, calls is set to nil when closed=true.
+	conn                 net.Conn
+	auth                 Authenticator
+	streamObserver       StreamObserver
+	w                    contextWriter
+	logger               StdLogger
+	frameObserver        FrameHeaderObserver
+	ctx                  context.Context
+	errorHandler         ConnErrorHandler
+	compressor           Compressor
+	cfg                  *ConnConfig
+	cancel               context.CancelFunc
+	supported            map[string][]string
+	streams              *streams.IDGenerator
+	host                 *HostInfo
 	calls                map[int]*callReq
 	r                    *bufio.Reader
 	session              *Session
-	cancel               context.CancelFunc
+	currentKeyspace      string
 	addr                 string
 	usingTimeoutClause   string
-	currentKeyspace      string
 	cqlProtoExts         []cqlProtocolExtension
 	scyllaSupported      scyllaSupported
-	systemRequestTimeout time.Duration
-	writeTimeout         atomic.Int64
 	timeouts             int64
+	writeTimeout         atomic.Int64
+	systemRequestTimeout time.Duration
 	readTimeout          atomic.Int64
 	mu                   sync.Mutex
 	tabletsRoutingV1     int32
 	headerBuf            [headSize]byte
-	// true if connection close process for the connection started.
-	// closed is protected by mu.
-	closed     bool
-	isSchemaV2 bool
-	version    uint8
+	closed               bool
+	isSchemaV2           bool
+	version              uint8
 }
 
 func (c *Conn) getIsSchemaV2() bool {
@@ -870,13 +865,13 @@ type callReq struct {
 	// streamObserverContext is notified about events regarding this stream
 	streamObserverContext StreamObserverContext
 	// resp will receive the frame that was sent as a response to this stream.
-	resp     chan callResp
-	timeout  chan struct{} // indicates to recv() that a call has timed out
-	timer    *time.Timer
-	streamID int // current stream in use
+	resp    chan callResp
+	timeout chan struct{} // indicates to recv() that a call has timed out
+	timer   *time.Timer
 	// streamObserverEndOnce ensures that either StreamAbandoned or StreamFinished is called,
 	// but not both.
 	streamObserverEndOnce sync.Once
+	streamID              int // current stream in use
 }
 
 type callResp struct {
