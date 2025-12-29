@@ -49,12 +49,30 @@ func IdentityTranslator() AddressTranslator {
 	})
 }
 
+type AddressTranslatorHostInfo interface {
+	HostID() string
+	Rack() string
+	DataCenter() string
+	BroadcastAddress() net.IP
+	ListenAddress() net.IP
+	RPCAddress() net.IP
+	PreferredIP() net.IP
+	Peer() net.IP
+	UntranslatedConnectAddress() net.IP
+	Port() int
+	Partitioner() string
+	ClusterName() string
+	ScyllaShardAwarePort() uint16
+	ScyllaShardAwarePortTLS() uint16
+	ScyllaShardCount() int
+}
+
 // AddressTranslatorV2 provides a way to translate node addresses (and ports) that are
 // discovered or received as a node event. This can be useful in an ec2 environment,
 // for instance, to translate public IPs to private IPs.
 type AddressTranslatorV2 interface {
 	AddressTranslator
-	TranslateWithHostID(hostID string, addr AddressPort) AddressPort
+	TranslateHost(host AddressTranslatorHostInfo) AddressPort
 	TranslateInitialEndpoint(host string, addr AddressPort) AddressPort
 }
 
@@ -72,8 +90,11 @@ func (fn AddressTranslatorFuncV2) Translate(addr net.IP, port int) (net.IP, int)
 	return res.Address, int(res.Port)
 }
 
-func (fn AddressTranslatorFuncV2) TranslateWithHostID(hostID string, addr AddressPort) AddressPort {
-	return fn(hostID, addr)
+func (fn AddressTranslatorFuncV2) TranslateHost(host AddressTranslatorHostInfo) AddressPort {
+	return fn("", AddressPort{
+		Address: host.UntranslatedConnectAddress(),
+		Port:    uint16(host.Port()),
+	})
 }
 
 var _ AddressTranslatorV2 = AddressTranslatorFuncV2(nil)

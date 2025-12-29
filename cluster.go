@@ -480,24 +480,30 @@ func (cfg *ClusterConfig) translateInitialEndpoint(host string, addr AddressPort
 // if defined, to translate the given address and port into a possibly new address
 // and port, If no AddressTranslator or if an error occurs, the given address and
 // port will be returned.
-func (cfg *ClusterConfig) translateAddressPort(hostID string, addr AddressPort) AddressPort {
-	if cfg.AddressTranslator == nil || !addr.IsValid() {
-		return addr
+func (cfg *ClusterConfig) translateAddressPort(host *HostInfo) AddressPort {
+	addr := host.UntranslatedConnectAddress()
+	port := host.Port()
+
+	if cfg.AddressTranslator == nil || len(addr) == 0 || addr.IsUnspecified() {
+		return AddressPort{
+			Address: addr,
+			Port:    uint16(port),
+		}
 	}
 	translatorV2, ok := cfg.AddressTranslator.(AddressTranslatorV2)
 	if !ok {
-		newAddr, newPort := cfg.AddressTranslator.Translate(addr.Address, int(addr.Port))
+		newAddr, newPort := cfg.AddressTranslator.Translate(addr, port)
 		if debug.Enabled {
-			cfg.logger().Printf("gocql: translating address %q to '%v:%d'", addr, newAddr, newPort)
+			cfg.logger().Printf("gocql: translating address '%s:%d' to '%v:%d'", addr, port, newAddr, newPort)
 		}
 		return AddressPort{
 			Address: newAddr,
 			Port:    uint16(newPort),
 		}
 	}
-	newAddr := translatorV2.TranslateWithHostID(hostID, addr)
+	newAddr := translatorV2.TranslateHost(host)
 	if debug.Enabled {
-		cfg.logger().Printf("gocql: translating address %q to %q", addr, newAddr)
+		cfg.logger().Printf("gocql: translating address '%s:%d' to %q", addr, port, newAddr)
 	}
 	return newAddr
 }

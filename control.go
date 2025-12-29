@@ -165,22 +165,6 @@ func translateAndResolveInitialEndpoint(resolver DNSResolver, translateAddressPo
 				Hostname:       host,
 				ConnectAddress: ip,
 				Port:           port,
-				TranslatedAddresses: &translatedAddresses{
-					CQL: AddressPort{
-						Address: ip,
-						Port:    uint16(port),
-					},
-				},
-			}
-			if translateAddressPort != nil {
-				addr, err := translateAddressPort(host, AddressPort{
-					Address: ip,
-					Port:    uint16(port),
-				})
-				if err != nil {
-					return nil, err
-				}
-				hb.TranslatedAddresses.CQL = addr
 			}
 			hh := hb.Build()
 			return []*HostInfo{&hh}, nil
@@ -203,22 +187,6 @@ func translateAndResolveInitialEndpoint(resolver DNSResolver, translateAddressPo
 				Hostname:       host,
 				ConnectAddress: ip,
 				Port:           port,
-				TranslatedAddresses: &translatedAddresses{
-					CQL: AddressPort{
-						Address: ip,
-						Port:    uint16(port),
-					},
-				},
-			}
-			if translateAddressPort != nil {
-				addr, err := translateAddressPort(host, AddressPort{
-					Address: ip,
-					Port:    uint16(port),
-				})
-				if err != nil {
-					return nil, err
-				}
-				hb.TranslatedAddresses.CQL = addr
 			}
 			hh := hb.Build()
 			hosts = append(hosts, &hh)

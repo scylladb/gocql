@@ -162,7 +162,7 @@ func (a *AddressPort) Equal(o AddressPort) bool {
 }
 
 func (a *AddressPort) IsValid() bool {
-	return a.Address != nil && !a.Address.IsUnspecified() && a.Port != 0
+	return len(a.Address) != 0 && !a.Address.IsUnspecified() && a.Port != 0
 }
 
 func (a *AddressPort) String() string {

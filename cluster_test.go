@@ -71,10 +71,11 @@ func TestClusterConfig_translateAddressAndPort_NilTranslator(t *testing.T) {
 
 	cfg := NewCluster()
 	tests.AssertNil(t, "cluster config address translator", cfg.AddressTranslator)
-	newAddr := cfg.translateAddressPort("", AddressPort{
-		Address: net.ParseIP("10.0.0.1"),
-		Port:    uint16(1234),
-	})
+	hh := HostInfoBuilder{
+		ConnectAddress: net.ParseIP("10.0.0.1"),
+		Port:           1234,
+	}.Build()
+	newAddr := cfg.translateAddressPort(&hh)
 	tests.AssertTrue(t, "same address as provided", net.ParseIP("10.0.0.1").Equal(newAddr.Address))
 	tests.AssertEqual(t, "translated host and port", uint16(1234), newAddr.Port)
 }
@@ -84,10 +85,11 @@ func TestClusterConfig_translateAddressAndPort_EmptyAddr(t *testing.T) {
 
 	cfg := NewCluster()
 	cfg.AddressTranslator = staticAddressTranslator(net.ParseIP("10.10.10.10"), 5432)
-	newAddr := cfg.translateAddressPort("", AddressPort{
-		Address: []byte{},
-		Port:    0,
-	})
+	hh := HostInfoBuilder{
+		ConnectAddress: []byte{},
+		Port:           0,
+	}.Build()
+	newAddr := cfg.translateAddressPort(&hh)
 	tests.AssertTrue(t, "translated address is still empty", len(newAddr.Address) == 0)
 	tests.AssertEqual(t, "translated port", uint16(0), newAddr.Port)
 }
@@ -97,10 +99,11 @@ func TestClusterConfig_translateAddressAndPort_Success(t *testing.T) {
 
 	cfg := NewCluster()
 	cfg.AddressTranslator = staticAddressTranslator(net.ParseIP("10.10.10.10"), 5432)
-	newAddr := cfg.translateAddressPort("", AddressPort{
-		Address: net.ParseIP("10.0.0.1"),
-		Port:    2345,
-	})
+	hh := HostInfoBuilder{
+		ConnectAddress: net.ParseIP("10.0.0.1"),
+		Port:           2345,
+	}.Build()
+	newAddr := cfg.translateAddressPort(&hh)
 	tests.AssertTrue(t, "translated address", net.ParseIP("10.10.10.10").Equal(newAddr.Address))
 	tests.AssertEqual(t, "translated port", uint16(5432), newAddr.Port)
 }
