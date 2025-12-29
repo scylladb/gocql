@@ -55,9 +55,14 @@ func IdentityTranslator() AddressTranslator {
 type AddressTranslatorV2 interface {
 	AddressTranslator
 	TranslateWithHostID(hostID string, addr AddressPort) AddressPort
+	TranslateInitialEndpoint(host string, addr AddressPort) AddressPort
 }
 
 type AddressTranslatorFuncV2 func(hostID string, addr AddressPort) AddressPort
+
+func (fn AddressTranslatorFuncV2) TranslateInitialEndpoint(host string, addr AddressPort) AddressPort {
+	return fn(host, addr)
+}
 
 func (fn AddressTranslatorFuncV2) Translate(addr net.IP, port int) (net.IP, int) {
 	res := fn("", AddressPort{
