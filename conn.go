@@ -260,9 +260,9 @@ func (c *Conn) initFramerConfig() {
 			c.logger.Println(
 				fmt.Errorf("failed to cast CQL protocol extension identified by name %s to type %T",
 					lwtAddMetadataMarkKey, lwtAddMetadataMarkExt{}))
-		} else {
-			c.framerFlagLWT = castedExt.lwtOptMetaBitMask
+			return
 		}
+		c.framerFlagLWT = castedExt.lwtOptMetaBitMask
 	}
 
 	if rateLimitErrorExt := findCQLProtoExtByName(c.cqlProtoExts, rateLimitError); rateLimitErrorExt != nil {
@@ -271,9 +271,9 @@ func (c *Conn) initFramerConfig() {
 			c.logger.Println(
 				fmt.Errorf("failed to cast CQL protocol extension identified by name %s to type %T",
 					rateLimitError, rateLimitExt{}))
-		} else {
-			c.framerRateLimitingErrorCode = castedExt.rateLimitErrorCode
+			return
 		}
+		c.framerRateLimitingErrorCode = castedExt.rateLimitErrorCode
 	}
 
 	if tabletsExt := findCQLProtoExtByName(c.cqlProtoExts, tabletsRoutingV1); tabletsExt != nil {
@@ -282,9 +282,9 @@ func (c *Conn) initFramerConfig() {
 			c.logger.Println(
 				fmt.Errorf("failed to cast CQL protocol extension identified by name %s to type %T",
 					tabletsRoutingV1, tabletsRoutingV1Ext{}))
-		} else {
-			c.framerTabletsRoutingV1 = true
+			return
 		}
+		c.framerTabletsRoutingV1 = true
 	}
 }
 
