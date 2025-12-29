@@ -210,6 +210,11 @@ type Conn struct {
 	mu                   sync.Mutex
 	tabletsRoutingV1     int32
 	headerBuf            [headSize]byte
+	// Framer configuration fields extracted from cqlProtoExts during initialization
+	// These are used to avoid rebuilding framer configuration on every frame operation
+	framerFlagLWT               int
+	framerRateLimitingErrorCode int
+	framerTabletsRoutingV1      bool
 	// true if connection close process for the connection started.
 	// closed is protected by mu.
 	closed     bool
@@ -233,6 +238,53 @@ func (c *Conn) setSystemRequestTimeout(t time.Duration) {
 func (c *Conn) recalculateSystemRequestTimeout() {
 	if c.systemRequestTimeout > time.Duration(0) && c.isScyllaConn() {
 		c.usingTimeoutClause = " USING TIMEOUT " + strconv.FormatInt(c.systemRequestTimeout.Milliseconds(), 10) + "ms"
+	}
+}
+
+// newFramer creates a new framer with the connection's cached configuration.
+// This avoids re-parsing cqlProtoExts on every frame operation.
+func (c *Conn) newFramer() *framer {
+	f := newFramer(c.compressor, c.version)
+	f.flagLWT = c.framerFlagLWT
+	f.rateLimitingErrorCode = c.framerRateLimitingErrorCode
+	f.tabletsRoutingV1 = c.framerTabletsRoutingV1
+	return f
+}
+
+// initFramerConfig extracts and caches framer configuration from cqlProtoExts.
+// This should be called once after cqlProtoExts is initialized.
+func (c *Conn) initFramerConfig() {
+	if lwtExt := findCQLProtoExtByName(c.cqlProtoExts, lwtAddMetadataMarkKey); lwtExt != nil {
+		castedExt, ok := lwtExt.(*lwtAddMetadataMarkExt)
+		if !ok {
+			c.logger.Println(
+				fmt.Errorf("failed to cast CQL protocol extension identified by name %s to type %T",
+					lwtAddMetadataMarkKey, lwtAddMetadataMarkExt{}))
+		} else {
+			c.framerFlagLWT = castedExt.lwtOptMetaBitMask
+		}
+	}
+
+	if rateLimitErrorExt := findCQLProtoExtByName(c.cqlProtoExts, rateLimitError); rateLimitErrorExt != nil {
+		castedExt, ok := rateLimitErrorExt.(*rateLimitExt)
+		if !ok {
+			c.logger.Println(
+				fmt.Errorf("failed to cast CQL protocol extension identified by name %s to type %T",
+					rateLimitError, rateLimitExt{}))
+		} else {
+			c.framerRateLimitingErrorCode = castedExt.rateLimitErrorCode
+		}
+	}
+
+	if tabletsExt := findCQLProtoExtByName(c.cqlProtoExts, tabletsRoutingV1); tabletsExt != nil {
+		_, ok := tabletsExt.(*tabletsRoutingV1Ext)
+		if !ok {
+			c.logger.Println(
+				fmt.Errorf("failed to cast CQL protocol extension identified by name %s to type %T",
+					tabletsRoutingV1, tabletsRoutingV1Ext{}))
+		} else {
+			c.framerTabletsRoutingV1 = true
+		}
 	}
 }
 
@@ -509,6 +561,7 @@ func (s *startupCoordinator) options(ctx context.Context) error {
 	s.conn.recalculateSystemRequestTimeout()
 	s.conn.host.setScyllaSupported(s.conn.scyllaSupported)
 	s.conn.cqlProtoExts = parseCQLProtocolExtensions(s.conn.supported, s.conn.logger)
+	s.conn.initFramerConfig()
 
 	return s.startup(ctx)
 }
@@ -786,7 +839,7 @@ func (c *Conn) recv(ctx context.Context) error {
 		return fmt.Errorf("gocql: frame header stream is beyond call expected bounds: %d", head.Stream)
 	} else if head.Stream == -1 {
 		// TODO: handle cassandra event frames, we shouldnt get any currently
-		framer := newFramerWithExts(c.compressor, c.version, c.cqlProtoExts, c.logger)
+		framer := c.newFramer()
 		c.setTabletSupported(framer.tabletsRoutingV1)
 		if err := framer.readFrame(c, &head); err != nil {
 			return err
@@ -796,7 +849,7 @@ func (c *Conn) recv(ctx context.Context) error {
 	} else if head.Stream <= 0 {
 		// reserved stream that we dont use, probably due to a protocol error
 		// or a bug in Cassandra, this should be an error, parse it and return.
-		framer := newFramerWithExts(c.compressor, c.version, c.cqlProtoExts, c.logger)
+		framer := c.newFramer()
 		c.setTabletSupported(framer.tabletsRoutingV1)
 		if err := framer.readFrame(c, &head); err != nil {
 			return err
@@ -827,7 +880,7 @@ func (c *Conn) recv(ctx context.Context) error {
 		panic(fmt.Sprintf("call has incorrect streamID: got %d expected %d", call.streamID, head.Stream))
 	}
 
-	framer := newFramerWithExts(c.compressor, c.version, c.cqlProtoExts, c.logger)
+	framer := c.newFramer()
 
 	err = framer.readFrame(c, &head)
 	if err != nil {
@@ -1131,7 +1184,7 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, reques
 	}
 
 	// resp is basically a waiting semaphore protecting the framer
-	framer := newFramerWithExts(c.compressor, c.version, c.cqlProtoExts, c.logger)
+	framer := c.newFramer()
 	c.setTabletSupported(framer.tabletsRoutingV1)
 
 	call := &callReq{
