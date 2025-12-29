@@ -212,8 +212,8 @@ type Conn struct {
 	headerBuf            [headSize]byte
 	// Framer configuration fields extracted from cqlProtoExts during initialization
 	// These are used to avoid rebuilding framer configuration on every frame operation
-	framerFlagLWT               int
-	framerRateLimitingErrorCode int
+	framerFlagLWT               int32
+	framerRateLimitingErrorCode int32
 	framerTabletsRoutingV1      bool
 	// true if connection close process for the connection started.
 	// closed is protected by mu.
@@ -245,8 +245,8 @@ func (c *Conn) recalculateSystemRequestTimeout() {
 // This avoids re-parsing cqlProtoExts on every frame operation.
 func (c *Conn) newFramer() *framer {
 	f := newFramer(c.compressor, c.version)
-	f.flagLWT = c.framerFlagLWT
-	f.rateLimitingErrorCode = c.framerRateLimitingErrorCode
+	f.flagLWT = int(c.framerFlagLWT)
+	f.rateLimitingErrorCode = int(c.framerRateLimitingErrorCode)
 	f.tabletsRoutingV1 = c.framerTabletsRoutingV1
 	return f
 }
@@ -262,7 +262,7 @@ func (c *Conn) initFramerConfig() {
 					lwtAddMetadataMarkKey, lwtAddMetadataMarkExt{}))
 			return
 		}
-		c.framerFlagLWT = castedExt.lwtOptMetaBitMask
+		c.framerFlagLWT = int32(castedExt.lwtOptMetaBitMask)
 	}
 
 	if rateLimitErrorExt := findCQLProtoExtByName(c.cqlProtoExts, rateLimitError); rateLimitErrorExt != nil {
@@ -273,7 +273,7 @@ func (c *Conn) initFramerConfig() {
 					rateLimitError, rateLimitExt{}))
 			return
 		}
-		c.framerRateLimitingErrorCode = castedExt.rateLimitErrorCode
+		c.framerRateLimitingErrorCode = int32(castedExt.rateLimitErrorCode)
 	}
 
 	if tabletsExt := findCQLProtoExtByName(c.cqlProtoExts, tabletsRoutingV1); tabletsExt != nil {
