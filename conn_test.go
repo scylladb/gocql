@@ -207,8 +207,13 @@ func TestDNSLookupConnected(t *testing.T) {
 		t.Fatal("CreateSession() should have connected")
 	}
 
+<<<<<<< HEAD
 	if !strings.Contains(log.String(), "failed to resolve endpoint") {
 		t.Fatalf("Expected to receive 'failed to resolve endpoint' log message  - got '%s' instead", log.String())
+=======
+	if !strings.Contains(log.String(), "failed to resolve and translate endpoint") {
+		t.Fatalf("Expected to receive 'failed to resolve and translate endpoint' log message  - got '%s' instead", log.String())
+>>>>>>> 5831973 (Stop translating initial endpoints)
 	}
 }
 
