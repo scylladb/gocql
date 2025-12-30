@@ -48,7 +48,7 @@ func TestHostInfo_Lookup(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		hosts, err := translateAndResolveInitialEndpoint(resolver, nil, test.addr, 1)
+		hosts, err := resolveInitialEndpoint(resolver, test.addr, 1)
 		if err != nil {
 			t.Errorf("%d: %v", i, err)
 			continue

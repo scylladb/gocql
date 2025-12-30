@@ -69,7 +69,7 @@ func NewSingleHostQueryExecutor(cfg *ClusterConfig) (e SingleHostQueryExecutor, 
 	}
 
 	var hosts []*HostInfo
-	if hosts, err = translateAndResolveInitialEndpoints(c.DNSResolver, c.translateAddressPort, c.Hosts, c.Port, c.Logger); err != nil {
+	if hosts, err = resolveInitialEndpoints(c.DNSResolver, c.Hosts, c.Port, c.Logger); err != nil {
 		err = fmt.Errorf("addrs to hosts: %w", err)
 		return
 	}

@@ -730,8 +730,10 @@ func (sd *scyllaDialer) DialShard(ctx context.Context, host *HostInfo, shardID, 
 	translatedInfo := host.getTranslatedConnectionInfo()
 	if translatedInfo != nil {
 		addr = translatedInfo.CQL.ToNetAddr()
-		if sd.tlsConfig != nil && translatedInfo.ShardAwareTLS.IsValid() {
-			shardAwareAddr = translatedInfo.ShardAwareTLS.ToNetAddr()
+		if sd.tlsConfig != nil {
+			if translatedInfo.ShardAwareTLS.IsValid() {
+				shardAwareAddr = translatedInfo.ShardAwareTLS.ToNetAddr()
+			}
 		} else if translatedInfo.ShardAware.IsValid() {
 			shardAwareAddr = translatedInfo.ShardAware.ToNetAddr()
 		}
