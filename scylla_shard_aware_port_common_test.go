@@ -226,27 +226,11 @@ func testShardAwarePortUnusedIfNotEnabled(t *testing.T, makeCluster makeClusterT
 	}
 }
 
-func checkIfShardAwarePortIsExposed(pool *hostConnPool, useTLS bool) bool {
-	return getShardAwareAddress(pool, useTLS) != ""
-}
-
 func getShardAwarePort(pool *hostConnPool, useTLS bool) uint16 {
-	addr := getShardAwareAddress(pool, useTLS)
-	if addr == "" {
-		return 0
+	if useTLS {
+		return pool.Host().ScyllaShardAwarePortTLS()
 	}
-
-	_, portS, _ := net.SplitHostPort(addr)
-	port, _ := strconv.Atoi(portS)
-	return uint16(port)
-}
-
-func getShardAwareAddress(pool *hostConnPool, useTLS bool) string {
-	picker, ok := pool.connPicker.(*scyllaConnPicker)
-	if !ok {
-		return ""
-	}
-	return picker.shardAwareAddress
+	return pool.Host().ScyllaShardAwarePort()
 }
 
 func triggerPoolsRefill(sess *Session) {

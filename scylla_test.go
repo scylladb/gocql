@@ -377,8 +377,7 @@ func TestScyllaConnPickerHandleShardCountChange(t *testing.T) {
 				logger:                     logger,
 				disableShardAwarePortUntil: new(atomic.Value),
 				hostId:                     "test-host-id",
-				shardAwareAddress:          "192.168.1.1:19042", // Shard-aware port
-				address:                    "192.168.1.1:9042",  // Regular port
+				address:                    "192.168.1.1:9042", // Regular port
 				conns:                      make([]*Conn, tt.initialShards),
 				excessConns:                make([]*Conn, 0),
 				nrShards:                   tt.initialShards,
