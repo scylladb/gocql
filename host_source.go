@@ -173,78 +173,89 @@ func (a *AddressPort) ToNetAddr() string {
 	return net.JoinHostPort(a.Address.String(), strconv.Itoa(int(a.Port)))
 }
 
+type translatedAddresses struct {
+	CQL           AddressPort
+	ShardAware    AddressPort
+	ShardAwareTLS AddressPort
+}
+
+func (h translatedAddresses) Equal(o *translatedAddresses) bool {
+	return h.CQL.Equal(o.CQL) && h.ShardAware.Equal(o.ShardAware) && h.ShardAwareTLS.Equal(o.ShardAwareTLS)
+}
+
 type HostInfoBuilder struct {
-	DseVersion                 string
-	HostId                     string
-	DataCenter                 string
-	SchemaVersion              string
-	Hostname                   string
-	ClusterName                string
-	Partitioner                string
-	Rack                       string
-	Workload                   string
-	Tokens                     []string
-	PreferredIP                net.IP
-	BroadcastAddress           net.IP
-	RpcAddress                 net.IP
-	UntranslatedConnectAddress net.IP
-	Peer                       net.IP
-	ListenAddress              net.IP
-	ConnectAddress             net.IP
-	Version                    cassVersion
-	Port                       int
+	TranslatedAddresses *translatedAddresses
+	Workload            string
+	HostId              string
+	SchemaVersion       string
+	Hostname            string
+	ClusterName         string
+	Partitioner         string
+	Rack                string
+	DseVersion          string
+	DataCenter          string
+	ConnectAddress      net.IP
+	BroadcastAddress    net.IP
+	PreferredIP         net.IP
+	RpcAddress          net.IP
+	Peer                net.IP
+	ListenAddress       net.IP
+	Tokens              []string
+	Version             cassVersion
+	Port                int
 }
 
 func (b HostInfoBuilder) Build() HostInfo {
 	return HostInfo{
-		dseVersion:                 b.DseVersion,
-		hostId:                     b.HostId,
-		dataCenter:                 b.DataCenter,
-		schemaVersion:              b.SchemaVersion,
-		hostname:                   b.Hostname,
-		clusterName:                b.ClusterName,
-		partitioner:                b.Partitioner,
-		rack:                       b.Rack,
-		workload:                   b.Workload,
-		tokens:                     b.Tokens,
-		preferredIP:                b.PreferredIP,
-		broadcastAddress:           b.BroadcastAddress,
-		rpcAddress:                 b.RpcAddress,
-		untranslatedConnectAddress: b.UntranslatedConnectAddress,
-		listenAddress:              b.ListenAddress,
-		connectAddress:             b.ConnectAddress,
-		version:                    b.Version,
-		port:                       b.Port,
+		dseVersion:          b.DseVersion,
+		hostId:              b.HostId,
+		dataCenter:          b.DataCenter,
+		schemaVersion:       b.SchemaVersion,
+		hostname:            b.Hostname,
+		clusterName:         b.ClusterName,
+		partitioner:         b.Partitioner,
+		rack:                b.Rack,
+		workload:            b.Workload,
+		tokens:              b.Tokens,
+		preferredIP:         b.PreferredIP,
+		broadcastAddress:    b.BroadcastAddress,
+		rpcAddress:          b.RpcAddress,
+		connectAddress:      b.ConnectAddress,
+		listenAddress:       b.ListenAddress,
+		translatedAddresses: b.TranslatedAddresses,
+		version:             b.Version,
+		port:                b.Port,
+		peer:                b.Peer,
 	}
 }
 
 type HostInfo struct {
-	dseVersion                 string
-	hostId                     string
-	dataCenter                 string
-	schemaVersion              string
-	hostname                   string
-	clusterName                string
-	partitioner                string
-	rack                       string
-	workload                   string
-	tokens                     []string
-	preferredIP                net.IP
-	broadcastAddress           net.IP
-	rpcAddress                 net.IP
-	untranslatedConnectAddress net.IP
-	peer                       net.IP
-	listenAddress              net.IP
-	connectAddress             net.IP
-	version                    cassVersion
-	port                       int
+	translatedAddresses *translatedAddresses
+	dseVersion          string
+	hostId              string
+	dataCenter          string
+	schemaVersion       string
+	hostname            string
+	clusterName         string
+	partitioner         string
+	rack                string
+	workload            string
+	rpcAddress          net.IP
+	tokens              []string
+	preferredIP         net.IP
+	peer                net.IP
+	listenAddress       net.IP
+	connectAddress      net.IP
+	broadcastAddress    net.IP
+	version             cassVersion
+	scyllaShardCount    int
+	port                int
 	// TODO(zariel): reduce locking maybe, not all values will change, but to ensure
 	// that we are thread safe use a mutex to access all fields.
 	mu                      sync.RWMutex
 	state                   nodeState
 	scyllaShardAwarePort    uint16
 	scyllaShardAwarePortTLS uint16
-	scyllaShardCount        int
 	graph                   bool
 }
 
@@ -275,7 +286,9 @@ func validIpAddr(addr net.IP) bool {
 }
 
 func (h *HostInfo) connectAddressLocked() (net.IP, string) {
-	if validIpAddr(h.connectAddress) {
+	if h.translatedAddresses != nil && h.translatedAddresses.CQL.IsValid() {
+		return h.translatedAddresses.CQL.Address, "connect_address"
+	} else if validIpAddr(h.connectAddress) {
 		return h.connectAddress, "connect_address"
 	} else if validIpAddr(h.rpcAddress) {
 		return h.rpcAddress, "rpc_adress"
@@ -288,6 +301,19 @@ func (h *HostInfo) connectAddressLocked() (net.IP, string) {
 		return h.peer, "peer"
 	}
 	return net.IPv4zero, "invalid"
+}
+
+func (h *HostInfo) getDriverFacingIpAddressLocked() net.IP {
+	if validIpAddr(h.rpcAddress) {
+		return h.rpcAddress
+	} else if validIpAddr(h.preferredIP) {
+		return h.preferredIP
+	} else if validIpAddr(h.broadcastAddress) {
+		return h.broadcastAddress
+	} else if validIpAddr(h.peer) {
+		return h.peer
+	}
+	return net.IPv4zero
 }
 
 // nodeToNodeAddress returns address broadcasted between node to nodes.
@@ -321,15 +347,7 @@ func (h *HostInfo) ConnectAddress() net.IP {
 func (h *HostInfo) UntranslatedConnectAddress() net.IP {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-
-	if len(h.untranslatedConnectAddress) != 0 {
-		return h.untranslatedConnectAddress
-	}
-
-	if addr, _ := h.connectAddressLocked(); validIpAddr(addr) {
-		return addr
-	}
-	panic(fmt.Sprintf("no valid connect address for host: %v. Is your cluster configured correctly?", h))
+	return h.connectAddress
 }
 
 func (h *HostInfo) BroadcastAddress() net.IP {
@@ -562,6 +580,18 @@ func (h *HostInfo) ScyllaShardCount() int {
 	return h.scyllaShardCount
 }
 
+func (h *HostInfo) setTranslatedConnectionInfo(info translatedAddresses) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.translatedAddresses = &info
+}
+
+func (h *HostInfo) getTranslatedConnectionInfo() *translatedAddresses {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.translatedAddresses
+}
+
 // Returns true if we are using system_schema.keyspaces instead of system.schema_keyspaces
 func checkSystemSchema(control controlConnection) (bool, error) {
 	iter := control.querySystem("SELECT * FROM system_schema.keyspaces")
@@ -580,9 +610,11 @@ func checkSystemSchema(control controlConnection) (bool, error) {
 
 // Given a map that represents a row from either system.local or system.peers
 // return as much information as we can in *HostInfo
-func hostInfoFromMap(row map[string]interface{}, host *HostInfo, translateAddressPort addressTranslateFn) (*HostInfo, error) {
+func hostInfoFromMap(row map[string]interface{}, defaultPort int) (*HostInfo, error) {
 	const assertErrorMsg = "Assertion failed for %s"
 	var ok bool
+
+	host := HostInfo{}
 
 	// Default to our connected port if the cluster doesn't have port information
 	for key, value := range row {
@@ -692,18 +724,15 @@ func hostInfoFromMap(row map[string]interface{}, host *HostInfo, translateAddres
 		// Not sure what the port field will be called until the JIRA issue is complete
 	}
 
-	host.untranslatedConnectAddress = host.ConnectAddress()
-	translated := translateAddressPort(host.HostID(), AddressPort{
-		Address: host.untranslatedConnectAddress,
-		Port:    uint16(host.port),
-	})
-	host.connectAddress = translated.Address
-	host.port = int(translated.Port)
+	if host.port == 0 {
+		host.port = defaultPort
+	}
 
-	return host, nil
+	host.connectAddress = host.getDriverFacingIpAddressLocked()
+	return &host, nil
 }
 
-func hostInfoFromIter(iter *Iter, connectAddress net.IP, defaultPort int, translateAddressPort addressTranslateFn) (*HostInfo, error) {
+func hostInfoFromIter(iter *Iter, defaultPort int) (*HostInfo, error) {
 	rows, err := iter.SliceMap()
 	if err != nil {
 		// TODO(zariel): make typed error
@@ -714,7 +743,7 @@ func hostInfoFromIter(iter *Iter, connectAddress net.IP, defaultPort int, transl
 		return nil, errors.New("query returned 0 rows")
 	}
 
-	host, err := hostInfoFromMap(rows[0], &HostInfo{connectAddress: connectAddress, port: defaultPort}, translateAddressPort)
+	host, err := hostInfoFromMap(rows[0], defaultPort)
 	if err != nil {
 		return nil, err
 	}
@@ -757,7 +786,7 @@ func (s *Session) refreshRing() error {
 			if !ok {
 				return fmt.Errorf("get existing host=%s from prevHosts: %w", h, ErrCannotFindHost)
 			}
-			if h.connectAddress.Equal(existing.connectAddress) && h.nodeToNodeAddress().Equal(existing.nodeToNodeAddress()) {
+			if h.UntranslatedConnectAddress().Equal(existing.UntranslatedConnectAddress()) && h.nodeToNodeAddress().Equal(existing.nodeToNodeAddress()) {
 				// no host IP change
 				host.update(h)
 			} else {

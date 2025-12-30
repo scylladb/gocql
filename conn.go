@@ -271,12 +271,44 @@ func (s *Session) dial(ctx context.Context, host *HostInfo, connConfig *ConnConf
 	return s.dialShard(ctx, host, connConfig, errorHandler, 0, 0)
 }
 
+func (s *Session) translateHostAddresses(host *HostInfo) translatedAddresses {
+	addr := host.UntranslatedConnectAddress()
+	resultedInfo := translatedAddresses{
+		CQL: s.cfg.translateAddressPort(host.HostID(), AddressPort{
+			Address: addr,
+			Port:    uint16(host.Port()),
+		}),
+	}
+	if port := host.ScyllaShardAwarePort(); port != 0 {
+		resultedInfo.ShardAware = s.cfg.translateAddressPort(host.HostID(),
+			AddressPort{
+				Address: addr,
+				Port:    port,
+			})
+	}
+	if port := host.ScyllaShardAwarePortTLS(); port != 0 {
+		resultedInfo.ShardAwareTLS = s.cfg.translateAddressPort(host.HostID(),
+			AddressPort{
+				Address: addr,
+				Port:    port,
+			})
+	}
+	return resultedInfo
+}
+
 // dialShard establishes a connection to a host/shard and notifies the session's connectObserver.
 // If nrShards is zero, shard-aware dialing is disabled.
 // note: every connection needs to get `conn.finalizeConnection` called on it when initialization process is done
 func (s *Session) dialShard(ctx context.Context, host *HostInfo, connConfig *ConnConfig, errorHandler ConnErrorHandler,
 	shardID, nrShards int) (*Conn, error) {
 	var obs ObservedConnect
+
+	current := host.getTranslatedConnectionInfo()
+	updated := s.translateHostAddresses(host)
+	if current == nil || !updated.Equal(current) {
+		host.setTranslatedConnectionInfo(updated)
+	}
+
 	if s.connectObserver != nil {
 		obs.Host = host
 		obs.Start = time.Now()

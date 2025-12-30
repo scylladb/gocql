@@ -144,7 +144,7 @@ func (c *controlConn) heartBeat() {
 	}
 }
 
-func hostInfo(resolver DNSResolver, translateAddressPort addressTranslateFn, addr string, defaultPort int) ([]*HostInfo, error) {
+func translateAndResolveInitialEndpoint(resolver DNSResolver, translateAddressPort addressTranslateFn, addr string, defaultPort int) ([]*HostInfo, error) {
 	var port int
 	host, portStr, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -160,24 +160,26 @@ func hostInfo(resolver DNSResolver, translateAddressPort addressTranslateFn, add
 	// Check if host is a literal IP address
 	if ip := net.ParseIP(host); ip != nil {
 		if validIpAddr(ip) {
-			translatedAddress := ip
-			translatePort := port
+			hb := HostInfoBuilder{
+				HostId:         MustRandomUUID().String(),
+				Hostname:       host,
+				ConnectAddress: ip,
+				Port:           port,
+				TranslatedAddresses: &translatedAddresses{
+					CQL: AddressPort{
+						Address: ip,
+						Port:    uint16(port),
+					},
+				},
+			}
 			if translateAddressPort != nil {
 				// empty hostID signals that it is an initial contact endpoint
-				translated := translateAddressPort("", AddressPort{
+				hb.TranslatedAddresses.CQL = translateAddressPort("", AddressPort{
 					Address: ip,
 					Port:    uint16(port),
 				})
-				translatedAddress = translated.Address
-				translatePort = int(translated.Port)
 			}
-			hh := HostInfoBuilder{
-				HostId:                     MustRandomUUID().String(),
-				Hostname:                   host,
-				UntranslatedConnectAddress: ip,
-				ConnectAddress:             translatedAddress,
-				Port:                       translatePort,
-			}.Build()
+			hh := hb.Build()
 			return []*HostInfo{&hh}, nil
 		}
 	}
@@ -193,24 +195,26 @@ func hostInfo(resolver DNSResolver, translateAddressPort addressTranslateFn, add
 	var hosts []*HostInfo
 	for _, ip := range ips {
 		if validIpAddr(ip) {
-			translatedAddress := ip
-			translatePort := port
+			hb := HostInfoBuilder{
+				HostId:         MustRandomUUID().String(),
+				Hostname:       host,
+				ConnectAddress: ip,
+				Port:           port,
+				TranslatedAddresses: &translatedAddresses{
+					CQL: AddressPort{
+						Address: ip,
+						Port:    uint16(port),
+					},
+				},
+			}
 			if translateAddressPort != nil {
 				// empty hostID signals that it is an initial contact endpoint
-				translated := translateAddressPort("", AddressPort{
+				hb.TranslatedAddresses.CQL = translateAddressPort("", AddressPort{
 					Address: ip,
 					Port:    uint16(port),
 				})
-				translatedAddress = translated.Address
-				translatePort = int(translated.Port)
 			}
-			hh := HostInfoBuilder{
-				HostId:                     MustRandomUUID().String(),
-				Hostname:                   host,
-				UntranslatedConnectAddress: ip,
-				ConnectAddress:             translatedAddress,
-				Port:                       translatePort,
-			}.Build()
+			hh := hb.Build()
 			hosts = append(hosts, &hh)
 		}
 	}
@@ -339,16 +343,10 @@ type connHost struct {
 func (c *controlConn) setupConn(conn *Conn) error {
 	// we need up-to-date host info for the filterHost call below
 	iter := conn.querySystem(context.TODO(), qrySystemLocal)
-	defaultPort := 9042
-	if tcpAddr, ok := conn.conn.RemoteAddr().(*net.TCPAddr); ok {
-		defaultPort = tcpAddr.Port
-	}
-	host, err := hostInfoFromIter(iter, conn.host.connectAddress, defaultPort, c.session.cfg.translateAddressPort)
+	host, err := hostInfoFromIter(iter, c.session.cfg.Port)
 	if err != nil {
 		return err
 	}
-
-	host = c.session.hostSource.addOrUpdate(host)
 
 	if c.session.cfg.filterHost(host) {
 		return fmt.Errorf("host was filtered: %v", host.ConnectAddress())
@@ -478,7 +476,7 @@ func (c *controlConn) attemptReconnect() error {
 	c.session.logger.Printf("gocql: control falling back to initial contact points.\n")
 	// Fallback to initial contact points, as it may be the case that all known initialHosts
 	// changed their IPs while keeping the same hostname(s).
-	initialHosts, resolvErr := resolveInitialEndpoints(c.session.cfg.DNSResolver, c.session.cfg.translateAddressPort, c.session.cfg.Hosts, c.session.cfg.Port, c.session.logger)
+	initialHosts, resolvErr := translateAndResolveInitialEndpoints(c.session.cfg.DNSResolver, c.session.cfg.translateAddressPort, c.session.cfg.Hosts, c.session.cfg.Port, c.session.logger)
 	if resolvErr != nil {
 		return fmt.Errorf("resolve contact points' hostnames: %v", resolvErr)
 	}

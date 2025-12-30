@@ -726,28 +726,22 @@ func (sd *scyllaDialer) DialShard(ctx context.Context, host *HostInfo, shardID, 
 
 	iter := newScyllaPortIterator(shardID, nrShards)
 	addr := net.JoinHostPort(ip.String(), strconv.Itoa(port))
-
-	var shardAwarePort uint16
-	if sd.tlsConfig != nil {
-		shardAwarePort = host.ScyllaShardAwarePortTLS()
-	} else {
-		shardAwarePort = host.ScyllaShardAwarePort()
-	}
-
-	var shardAwareAddress string
-	if shardAwarePort != 0 {
-		translated := sd.cfg.translateAddressPort(host.HostID(), AddressPort{
-			Address: host.UntranslatedConnectAddress(),
-			Port:    shardAwarePort,
-		})
-		shardAwareAddress = net.JoinHostPort(translated.Address.String(), strconv.Itoa(int(translated.Port)))
+	shardAwareAddr := ""
+	translatedInfo := host.getTranslatedConnectionInfo()
+	if translatedInfo != nil {
+		addr = translatedInfo.CQL.ToNetAddr()
+		if sd.tlsConfig != nil && translatedInfo.ShardAwareTLS.IsValid() {
+			shardAwareAddr = translatedInfo.ShardAwareTLS.ToNetAddr()
+		} else if translatedInfo.ShardAware.IsValid() {
+			shardAwareAddr = translatedInfo.ShardAware.ToNetAddr()
+		}
 	}
 
 	if debug.Enabled {
 		sd.logger.Printf("scylla: connecting to shard %d", shardID)
 	}
 
-	conn, err := sd.dialShardAware(ctx, addr, shardAwareAddress, iter)
+	conn, err := sd.dialShardAware(ctx, addr, shardAwareAddr, iter)
 	if err != nil {
 		return nil, err
 	}

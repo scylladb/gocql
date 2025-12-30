@@ -36,7 +36,7 @@ func (r *ringDescriber) getLocalHostInfo(conn ConnInterface) (*HostInfo, error) 
 		return nil, errNoControl
 	}
 
-	host, err := hostInfoFromIter(iter, nil, r.cfg.Port, r.cfg.translateAddressPort)
+	host, err := hostInfoFromIter(iter, r.cfg.Port)
 	if err != nil {
 		return nil, fmt.Errorf("could not retrieve local host info: %w", err)
 	}
@@ -62,15 +62,15 @@ func (r *ringDescriber) getClusterPeerInfo(localHost *HostInfo, c ConnInterface)
 		return nil, fmt.Errorf("unable to fetch peer host info: %s", err)
 	}
 
-	return getPeersFromQuerySystemPeers(rows, r.cfg.Port, r.cfg.translateAddressPort, r.logger)
+	return getPeersFromQuerySystemPeers(rows, r.cfg.Port, r.logger)
 }
 
-func getPeersFromQuerySystemPeers(querySystemPeerRows []map[string]interface{}, port int, translateAddressPort addressTranslateFn, logger StdLogger) ([]*HostInfo, error) {
+func getPeersFromQuerySystemPeers(querySystemPeerRows []map[string]interface{}, defaultPort int, logger StdLogger) ([]*HostInfo, error) {
 	var peers []*HostInfo
 
 	for _, row := range querySystemPeerRows {
 		// extract all available info about the peer
-		host, err := hostInfoFromMap(row, &HostInfo{port: port}, translateAddressPort)
+		host, err := hostInfoFromMap(row, defaultPort)
 		if err != nil {
 			return nil, err
 		} else if !isValidPeer(host) {
@@ -180,7 +180,7 @@ func (r *ringDescriber) addOrUpdate(host *HostInfo) *HostInfo {
 }
 
 func (r *ringDescriber) addHostIfMissing(host *HostInfo) (*HostInfo, bool) {
-	if host.invalidConnectAddr() {
+	if !validIpAddr(host.ConnectAddress()) {
 		panic(fmt.Sprintf("invalid host: %v", host))
 	}
 	hostID := host.HostID()

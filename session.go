@@ -100,10 +100,10 @@ var queryPool = &sync.Pool{
 	},
 }
 
-func resolveInitialEndpoints(resolver DNSResolver, translateAddressPort addressTranslateFn, addrs []string, defaultPort int, logger StdLogger) ([]*HostInfo, error) {
+func translateAndResolveInitialEndpoints(resolver DNSResolver, translateAddressPort addressTranslateFn, addrs []string, defaultPort int, logger StdLogger) ([]*HostInfo, error) {
 	var hosts []*HostInfo
 	for _, hostaddr := range addrs {
-		resolvedHosts, err := hostInfo(resolver, translateAddressPort, hostaddr, defaultPort)
+		resolvedHosts, err := translateAndResolveInitialEndpoint(resolver, translateAddressPort, hostaddr, defaultPort)
 		if err != nil {
 			// Try other hosts if unable to resolve DNS name
 			if _, ok := err.(*net.DNSError); ok {
@@ -258,7 +258,7 @@ func (s *Session) init() error {
 		return nil
 	}
 
-	hosts, err := resolveInitialEndpoints(s.cfg.DNSResolver, s.cfg.translateAddressPort, s.cfg.Hosts, s.cfg.Port, s.logger)
+	hosts, err := translateAndResolveInitialEndpoints(s.cfg.DNSResolver, s.cfg.translateAddressPort, s.cfg.Hosts, s.cfg.Port, s.logger)
 	if err != nil {
 		return err
 	}

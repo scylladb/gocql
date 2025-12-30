@@ -56,16 +56,11 @@ func TestGetClusterPeerInfoZeroToken(t *testing.T) {
 		},
 	}
 
-	translateAddressPort := func(hostID string, addr AddressPort) AddressPort {
-		return addr
-	}
-
 	var logger StdLogger
 	t.Run("OmitOneZeroTokenNode", func(t *testing.T) {
 		peers, err := getPeersFromQuerySystemPeers(
 			peersRows,
 			9042,
-			translateAddressPort,
 			logger,
 		)
 
@@ -80,7 +75,6 @@ func TestGetClusterPeerInfoZeroToken(t *testing.T) {
 		peers, err := getPeersFromQuerySystemPeers(
 			peersRows,
 			9042,
-			translateAddressPort,
 			logger,
 		)
 
