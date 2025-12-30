@@ -215,7 +215,7 @@ type Conn struct {
 	framerFlagLWT               int32
 	framerRateLimitingErrorCode int32
 	framerTabletsRoutingV1      bool
-	isShardAware         bool
+	isShardAware                bool
 	// true if connection close process for the connection started.
 	// closed is protected by mu.
 	closed     bool
