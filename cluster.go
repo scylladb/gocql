@@ -423,13 +423,13 @@ func (cfg *ClusterConfig) CreateSessionNonBlocking() (*Session, error) {
 	return NewSessionNonBlocking(*cfg)
 }
 
-type addressTranslateFn func(hostID string, addr AddressPort) AddressPort
+type addressTranslateFn func(host *HostInfo, addr AddressPort) AddressPort
 
 // translateAddressPort is a helper method that will use the given AddressTranslator
 // if defined, to translate the given address and port into a possibly new address
 // and port, If no AddressTranslator or if an error occurs, the given address and
 // port will be returned.
-func (cfg *ClusterConfig) translateAddressPort(hostID string, addr AddressPort) AddressPort {
+func (cfg *ClusterConfig) translateAddressPort(host *HostInfo, addr AddressPort) AddressPort {
 	if cfg.AddressTranslator == nil || !addr.IsValid() {
 		return addr
 	}
@@ -444,7 +444,7 @@ func (cfg *ClusterConfig) translateAddressPort(hostID string, addr AddressPort) 
 			Port:    uint16(newPort),
 		}
 	}
-	newAddr := translatorV2.TranslateWithHostID(hostID, addr)
+	newAddr := translatorV2.TranslateHost(host, addr)
 	if debug.Enabled {
 		cfg.logger().Printf("gocql: translating address %q to %q", addr, newAddr)
 	}
