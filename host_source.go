@@ -152,6 +152,27 @@ func (c cassVersion) nodeUpDelay() time.Duration {
 	return 10 * time.Second
 }
 
+type AddressPort struct {
+	Address net.IP
+	Port    uint16
+}
+
+func (a *AddressPort) Equal(o AddressPort) bool {
+	return a.Address.Equal(o.Address) && a.Port == o.Port
+}
+
+func (a *AddressPort) IsValid() bool {
+	return a.Address != nil && !a.Address.IsUnspecified() && a.Port != 0
+}
+
+func (a *AddressPort) String() string {
+	return fmt.Sprintf("%s:%d", a.Address, a.Port)
+}
+
+func (a *AddressPort) ToNetAddr() string {
+	return net.JoinHostPort(a.Address.String(), strconv.Itoa(int(a.Port)))
+}
+
 type HostInfoBuilder struct {
 	DseVersion                 string
 	HostId                     string

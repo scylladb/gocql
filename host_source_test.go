@@ -159,3 +159,209 @@ func TestHostInfo_ConnectAddress(t *testing.T) {
 		})
 	}
 }
+
+func TestAddressPort(t *testing.T) {
+	t.Parallel()
+
+	t.Run("IsValid", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name     string
+			addr     AddressPort
+			expected bool
+		}{
+			{
+				name:     "valid IPv4 address with port",
+				addr:     AddressPort{Address: net.IPv4(127, 0, 0, 1), Port: 9042},
+				expected: true,
+			},
+			{
+				name:     "valid IPv6 address with port",
+				addr:     AddressPort{Address: net.ParseIP("::1"), Port: 9042},
+				expected: true,
+			},
+			{
+				name:     "nil address",
+				addr:     AddressPort{Address: nil, Port: 9042},
+				expected: false,
+			},
+			{
+				name:     "unspecified IPv4 address",
+				addr:     AddressPort{Address: net.IPv4zero, Port: 9042},
+				expected: false,
+			},
+			{
+				name:     "unspecified IPv6 address",
+				addr:     AddressPort{Address: net.IPv6unspecified, Port: 9042},
+				expected: false,
+			},
+			{
+				name:     "zero port",
+				addr:     AddressPort{Address: net.IPv4(127, 0, 0, 1), Port: 0},
+				expected: false,
+			},
+			{
+				name:     "nil address and zero port",
+				addr:     AddressPort{Address: nil, Port: 0},
+				expected: false,
+			},
+			{
+				name:     "empty AddressPort",
+				addr:     AddressPort{},
+				expected: false,
+			},
+		}
+
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				result := test.addr.IsValid()
+				if result != test.expected {
+					t.Errorf("IsValid() = %v, expected %v for %+v", result, test.expected, test.addr)
+				}
+			})
+		}
+	})
+
+	t.Run("Equal", func(t *testing.T) {
+		t.Parallel()
+
+		addr1 := AddressPort{Address: net.IPv4(127, 0, 0, 1), Port: 9042}
+		addr2 := AddressPort{Address: net.IPv4(127, 0, 0, 1), Port: 9042}
+		addr3 := AddressPort{Address: net.IPv4(192, 168, 1, 1), Port: 9042}
+		addr4 := AddressPort{Address: net.IPv4(127, 0, 0, 1), Port: 9043}
+
+		tests := []struct {
+			name     string
+			a        AddressPort
+			b        AddressPort
+			expected bool
+		}{
+			{
+				name:     "equal addresses and ports",
+				a:        addr1,
+				b:        addr2,
+				expected: true,
+			},
+			{
+				name:     "different addresses, same port",
+				a:        addr1,
+				b:        addr3,
+				expected: false,
+			},
+			{
+				name:     "same address, different ports",
+				a:        addr1,
+				b:        addr4,
+				expected: false,
+			},
+			{
+				name:     "IPv6 addresses equal",
+				a:        AddressPort{Address: net.ParseIP("::1"), Port: 9042},
+				b:        AddressPort{Address: net.ParseIP("::1"), Port: 9042},
+				expected: true,
+			},
+			{
+				name:     "empty",
+				a:        AddressPort{},
+				b:        AddressPort{},
+				expected: true,
+			},
+			{
+				name:     "empty, non-empty",
+				a:        AddressPort{},
+				b:        AddressPort{Address: net.ParseIP("::1"), Port: 9042},
+				expected: false,
+			},
+		}
+
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				result := test.a.Equal(test.b)
+				if result != test.expected {
+					t.Errorf("Equal() = %v, expected %v for a=%+v, b=%+v", result, test.expected, test.a, test.b)
+				}
+			})
+		}
+	})
+
+	t.Run("String", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name     string
+			addr     AddressPort
+			expected string
+		}{
+			{
+				name:     "IPv4 address",
+				addr:     AddressPort{Address: net.IPv4(127, 0, 0, 1), Port: 9042},
+				expected: "127.0.0.1:9042",
+			},
+			{
+				name:     "IPv6 address",
+				addr:     AddressPort{Address: net.ParseIP("::1"), Port: 9042},
+				expected: "::1:9042",
+			},
+			{
+				name:     "different port",
+				addr:     AddressPort{Address: net.IPv4(192, 168, 1, 1), Port: 8080},
+				expected: "192.168.1.1:8080",
+			},
+			{
+				name:     "nil address",
+				addr:     AddressPort{Address: nil, Port: 9042},
+				expected: "<nil>:9042",
+			},
+		}
+
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				result := test.addr.String()
+				if result != test.expected {
+					t.Errorf("String() = %q, expected %q", result, test.expected)
+				}
+			})
+		}
+	})
+
+	t.Run("ToNetAddr", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name     string
+			addr     AddressPort
+			expected string
+		}{
+			{
+				name:     "IPv4 address",
+				addr:     AddressPort{Address: net.IPv4(127, 0, 0, 1), Port: 9042},
+				expected: "127.0.0.1:9042",
+			},
+			{
+				name:     "IPv6 address",
+				addr:     AddressPort{Address: net.ParseIP("::1"), Port: 9042},
+				expected: "[::1]:9042",
+			},
+			{
+				name:     "IPv6 address with zone",
+				addr:     AddressPort{Address: net.ParseIP("fe80::1"), Port: 9043},
+				expected: "[fe80::1]:9043",
+			},
+			{
+				name:     "different port",
+				addr:     AddressPort{Address: net.IPv4(192, 168, 1, 1), Port: 8080},
+				expected: "192.168.1.1:8080",
+			},
+		}
+
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				result := test.addr.ToNetAddr()
+				if result != test.expected {
+					t.Errorf("ToNetAddr() = %q, expected %q", result, test.expected)
+				}
+			})
+		}
+	})
+}
