@@ -207,8 +207,11 @@ type Conn struct {
 	mu                   sync.Mutex
 	tabletsRoutingV1     int32
 	headerBuf            [headSize]byte
+	// true if connection close process for the connection started.
+	// closed is protected by mu.
 	closed               bool
 	isSchemaV2           bool
+	isShardAware         bool
 	version              uint8
 }
 
@@ -300,7 +303,10 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 		dialedHost *DialedHost
 		err        error
 	)
+
+	isShardAware := false
 	if ok && nrShards > 0 {
+		isShardAware = true
 		dialedHost, err = shardDialer.DialShard(ctx, host, shardID, nrShards)
 	} else {
 		dialedHost, err = cfg.HostDialer.DialHost(ctx, host)
@@ -317,6 +323,7 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 		cfg:           cfg,
 		calls:         make(map[int]*callReq),
 		version:       uint8(cfg.ProtoVersion),
+		isShardAware:  isShardAware,
 		addr:          dialedHost.Conn.RemoteAddr().String(),
 		errorHandler:  errorHandler,
 		compressor:    cfg.Compressor,
