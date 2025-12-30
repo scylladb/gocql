@@ -141,8 +141,8 @@ type ConnConfig struct {
 	ConnectTimeout  time.Duration
 	ReadTimeout     time.Duration
 	WriteTimeout    time.Duration
-	Keepalive       time.Duration
 	ProtoVersion    int
+	Keepalive       time.Duration
 	disableCoalesce bool
 }
 
