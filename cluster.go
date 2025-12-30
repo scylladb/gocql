@@ -441,7 +441,11 @@ func (cfg *ClusterConfig) translateAddressPort(hostID string, addr net.IP, port 
 		}
 		return newAddr, newPort
 	}
-	newAddr, newPort := translatorV2.TranslateWithHostID(hostID, addr, port)
+	result := translatorV2.TranslateWithHostID(hostID, AddressPort{
+		Address: addr,
+		Port:    uint16(port),
+	})
+	newAddr, newPort := result.Address, int(result.Port)
 	if debug.Enabled {
 		cfg.logger().Printf("gocql: translating address '%v:%d' to '%v:%d'", addr, port, newAddr, newPort)
 	}
