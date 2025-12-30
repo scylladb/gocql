@@ -218,11 +218,13 @@ type HostInfo struct {
 	version                    cassVersion
 	port                       int
 	scyllaShardCount           int
-	mu                         sync.RWMutex
-	state                      nodeState
-	scyllaShardAwarePort       uint16
-	scyllaShardAwarePortTLS    uint16
-	graph                      bool
+	// TODO(zariel): reduce locking maybe, not all values will change, but to ensure
+	// that we are thread safe use a mutex to access all fields.
+	mu                      sync.RWMutex
+	state                   nodeState
+	scyllaShardAwarePort    uint16
+	scyllaShardAwarePortTLS uint16
+	graph                   bool
 }
 
 func (h *HostInfo) Equal(host *HostInfo) bool {

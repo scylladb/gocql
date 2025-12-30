@@ -1082,13 +1082,16 @@ type Query struct {
 	// getKeyspace is field so that it can be overriden in tests
 	getKeyspace func() string
 	// routingInfo is a pointer because Query can be copied and copyable struct can't hold a mutex.
-	routingInfo           *queryRoutingInfo
-	binding               func(q *QueryInfo) ([]interface{}, error)
-	hostID                string
-	stmt                  string
-	routingKey            []byte
-	values                []interface{}
-	pageState             []byte
+	routingInfo *queryRoutingInfo
+	binding     func(q *QueryInfo) ([]interface{}, error)
+	// hostID specifies the host on which the query should be executed.
+	// If it is empty, then the host is picked by HostSelectionPolicy
+	hostID     string
+	stmt       string
+	routingKey []byte
+	values     []interface{}
+	pageState  []byte
+	// requestTimeout is a timeout on waiting for response from server
 	requestTimeout        time.Duration
 	defaultTimestampValue int64
 	prefetch              float64

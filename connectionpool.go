@@ -266,10 +266,11 @@ type hostConnPool struct {
 	host       *HostInfo
 	debouncer  *debounce.SimpleDebouncer
 	keyspace   string
-	mu         sync.RWMutex
-	size       int
-	closed     bool
-	filling    bool
+	// protection for connPicker, closed, filling
+	mu      sync.RWMutex
+	size    int
+	closed  bool
+	filling bool
 }
 
 func (pool *hostConnPool) String() string {
