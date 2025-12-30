@@ -209,10 +209,10 @@ type Conn struct {
 	headerBuf            [headSize]byte
 	// true if connection close process for the connection started.
 	// closed is protected by mu.
-	closed               bool
-	isSchemaV2           bool
-	isShardAware         bool
-	version              uint8
+	closed       bool
+	isSchemaV2   bool
+	isShardAware bool
+	version      uint8
 }
 
 func (c *Conn) getIsSchemaV2() bool {
