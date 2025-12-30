@@ -164,7 +164,12 @@ func hostInfo(resolver DNSResolver, translateAddressPort addressTranslateFn, add
 			translatePort := port
 			if translateAddressPort != nil {
 				// empty hostID signals that it is an initial contact endpoint
-				translatedAddress, translatePort = translateAddressPort("", ip, port)
+				translated := translateAddressPort("", AddressPort{
+					Address: ip,
+					Port:    uint16(port),
+				})
+				translatedAddress = translated.Address
+				translatePort = int(translated.Port)
 			}
 			hh := HostInfoBuilder{
 				HostId:                     MustRandomUUID().String(),
@@ -192,7 +197,12 @@ func hostInfo(resolver DNSResolver, translateAddressPort addressTranslateFn, add
 			translatePort := port
 			if translateAddressPort != nil {
 				// empty hostID signals that it is an initial contact endpoint
-				translatedAddress, translatePort = translateAddressPort("", ip, port)
+				translated := translateAddressPort("", AddressPort{
+					Address: ip,
+					Port:    uint16(port),
+				})
+				translatedAddress = translated.Address
+				translatePort = int(translated.Port)
 			}
 			hh := HostInfoBuilder{
 				HostId:                     MustRandomUUID().String(),

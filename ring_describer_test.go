@@ -56,8 +56,8 @@ func TestGetClusterPeerInfoZeroToken(t *testing.T) {
 		},
 	}
 
-	translateAddressPort := func(hostID string, addr net.IP, port int) (net.IP, int) {
-		return addr, port
+	translateAddressPort := func(hostID string, addr AddressPort) AddressPort {
+		return addr
 	}
 
 	var logger StdLogger

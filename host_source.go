@@ -693,9 +693,12 @@ func hostInfoFromMap(row map[string]interface{}, host *HostInfo, translateAddres
 	}
 
 	host.untranslatedConnectAddress = host.ConnectAddress()
-	ip, port := translateAddressPort(host.HostID(), host.untranslatedConnectAddress, host.port)
-	host.connectAddress = ip
-	host.port = port
+	translated := translateAddressPort(host.HostID(), AddressPort{
+		Address: host.untranslatedConnectAddress,
+		Port:    uint16(host.port),
+	})
+	host.connectAddress = translated.Address
+	host.port = int(translated.Port)
 
 	return host, nil
 }

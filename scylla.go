@@ -736,8 +736,11 @@ func (sd *scyllaDialer) DialShard(ctx context.Context, host *HostInfo, shardID, 
 
 	var shardAwareAddress string
 	if shardAwarePort != 0 {
-		tIP, tPort := sd.cfg.translateAddressPort(host.HostID(), host.UntranslatedConnectAddress(), int(shardAwarePort))
-		shardAwareAddress = net.JoinHostPort(tIP.String(), strconv.Itoa(tPort))
+		translated := sd.cfg.translateAddressPort(host.HostID(), AddressPort{
+			Address: host.UntranslatedConnectAddress(),
+			Port:    shardAwarePort,
+		})
+		shardAwareAddress = net.JoinHostPort(translated.Address.String(), strconv.Itoa(int(translated.Port)))
 	}
 
 	if debug.Enabled {
