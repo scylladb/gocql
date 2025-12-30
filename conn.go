@@ -178,20 +178,23 @@ type ConnInterface interface {
 // queries, but users are usually advised to use a more reliable, higher
 // level API.
 type Conn struct {
-	conn                 net.Conn
-	auth                 Authenticator
-	streamObserver       StreamObserver
-	w                    contextWriter
-	logger               StdLogger
-	frameObserver        FrameHeaderObserver
-	ctx                  context.Context
-	errorHandler         ConnErrorHandler
-	compressor           Compressor
-	cfg                  *ConnConfig
-	cancel               context.CancelFunc
-	supported            map[string][]string
-	streams              *streams.IDGenerator
-	host                 *HostInfo
+	conn           net.Conn
+	auth           Authenticator
+	streamObserver StreamObserver
+	w              contextWriter
+	logger         StdLogger
+	frameObserver  FrameHeaderObserver
+	ctx            context.Context
+	errorHandler   ConnErrorHandler
+	compressor     Compressor
+	cfg            *ConnConfig
+	cancel         context.CancelFunc
+	supported      map[string][]string
+	streams        *streams.IDGenerator
+	host           *HostInfo
+	// calls stores a map from stream ID to callReq.
+	// This map is protected by mu.
+	// calls should not be used when closed is true, calls is set to nil when closed=true.
 	calls                map[int]*callReq
 	r                    *bufio.Reader
 	session              *Session
