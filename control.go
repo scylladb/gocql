@@ -144,7 +144,7 @@ func (c *controlConn) heartBeat() {
 	}
 }
 
-func translateAndResolveInitialEndpoint(resolver DNSResolver, translateAddressPort initialEndpointTranslateFn, addr string, defaultPort int) ([]*HostInfo, error) {
+func resolveInitialEndpoint(resolver DNSResolver, addr string, defaultPort int) ([]*HostInfo, error) {
 	var port int
 	host, portStr, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -450,7 +450,7 @@ func (c *controlConn) attemptReconnect() error {
 	c.session.logger.Printf("gocql: control falling back to initial contact points.\n")
 	// Fallback to initial contact points, as it may be the case that all known initialHosts
 	// changed their IPs while keeping the same hostname(s).
-	initialHosts, resolvErr := translateAndResolveInitialEndpoints(c.session.cfg.DNSResolver, c.session.cfg.translateInitialEndpoint, c.session.cfg.Hosts, c.session.cfg.Port, c.session.logger)
+	initialHosts, resolvErr := resolveInitialEndpoints(c.session.cfg.DNSResolver, c.session.cfg.Hosts, c.session.cfg.Port, c.session.logger)
 	if resolvErr != nil {
 		return fmt.Errorf("resolve contact points' hostnames: %v", resolvErr)
 	}

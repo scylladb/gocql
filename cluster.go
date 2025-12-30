@@ -423,64 +423,11 @@ func (cfg *ClusterConfig) CreateSessionNonBlocking() (*Session, error) {
 	return NewSessionNonBlocking(*cfg)
 }
 
-type addressTranslateFn func(hostID string, addr AddressPort) AddressPort
-
-type initialEndpointTranslateFn func(host string, addr AddressPort) (AddressPort, error)
-
-// translateAndResolveInitialEndpoint is a helper method that will use the given AddressTranslator
+// translateHostAddresses is a helper method that will use the given AddressTranslator
 // if defined, to translate the given address and port into a possibly new address
 // and port, If no AddressTranslator or if an error occurs, the given address and
 // port will be returned.
-func (cfg *ClusterConfig) resolveAndTranslateInitialEndpoint(host string) ([]AddressPort, error) {
-	addresses, err := cfg.DNSResolver.LookupIP(host)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve host %s: %w", host, err)
-	}
-
-	var res []AddressPort
-	var errs []error
-	for _, addr := range addresses {
-		translated, err := cfg.translateInitialEndpoint(host, AddressPort{
-			Address: addr,
-			Port:    0,
-		})
-		if err != nil {
-			errs = append(errs, fmt.Errorf("failed to resolve host %s: %w", host, err))
-			continue
-		}
-		res = append(res, translated)
-	}
-
-	return res, errors.Join(errs...)
-}
-
-func (cfg *ClusterConfig) translateInitialEndpoint(host string, addr AddressPort) (AddressPort, error) {
-	if cfg.AddressTranslator == nil || !addr.IsValid() {
-		return addr, nil
-	}
-	translatorV2, ok := cfg.AddressTranslator.(AddressTranslatorV2)
-	if !ok {
-		newAddr, newPort := cfg.AddressTranslator.Translate(addr.Address, int(addr.Port))
-		if debug.Enabled {
-			cfg.logger().Printf("gocql: translating address %q to '%v:%d'", addr, newAddr, newPort)
-		}
-		return AddressPort{
-			Address: newAddr,
-			Port:    uint16(newPort),
-		}, nil
-	}
-	newAddr := translatorV2.TranslateInitialEndpoint(host, addr)
-	if debug.Enabled {
-		cfg.logger().Printf("gocql: translating address %q to %q", addr, newAddr)
-	}
-	return newAddr, nil
-}
-
-// translateAddressPort is a helper method that will use the given AddressTranslator
-// if defined, to translate the given address and port into a possibly new address
-// and port, If no AddressTranslator or if an error occurs, the given address and
-// port will be returned.
-func (cfg *ClusterConfig) translateAddressPort(host *HostInfo) AddressPort {
+func (cfg *ClusterConfig) translateHostAddresses(host *HostInfo) AddressPort {
 	addr := host.UntranslatedConnectAddress()
 	port := host.Port()
 

@@ -100,14 +100,15 @@ var queryPool = &sync.Pool{
 	},
 }
 
-func translateAndResolveInitialEndpoints(resolver DNSResolver, translateAddressPort initialEndpointTranslateFn, addrs []string, defaultPort int, logger StdLogger) ([]*HostInfo, error) {
+func resolveInitialEndpoints(resolver DNSResolver, addrs []string, defaultPort int, logger StdLogger) ([]*HostInfo, error) {
 	var hosts []*HostInfo
 	var errs []error
 	for _, hostaddr := range addrs {
-		resolvedHosts, err := translateAndResolveInitialEndpoint(resolver, translateAddressPort, hostaddr, defaultPort)
+		resolvedHosts, err := resolveInitialEndpoint(resolver, hostaddr, defaultPort)
 		if err != nil {
+			err = fmt.Errorf("failed to resolve and translate endpoint %q: %w", hostaddr, err)
 			errs = append(errs, err)
-			logger.Printf("failed to resolve and translate endpoint %s: %v", hostaddr, err)
+			logger.Println(err.Error())
 			continue
 		}
 		hosts = append(hosts, resolvedHosts...)
@@ -255,7 +256,7 @@ func (s *Session) init() error {
 		return nil
 	}
 
-	hosts, err := translateAndResolveInitialEndpoints(s.cfg.DNSResolver, s.cfg.translateInitialEndpoint, s.cfg.Hosts, s.cfg.Port, s.logger)
+	hosts, err := resolveInitialEndpoints(s.cfg.DNSResolver, s.cfg.Hosts, s.cfg.Port, s.logger)
 	if err != nil {
 		return err
 	}
