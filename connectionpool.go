@@ -56,9 +56,9 @@ type policyConnPool struct {
 	session       *Session
 	hostConnPools map[string]*hostConnPool
 	keyspace      string
+	mu            sync.RWMutex
 	port          int
 	numConns      int
-	mu            sync.RWMutex
 }
 
 func connConfig(cfg *ClusterConfig) (*ConnConfig, error) {
@@ -266,11 +266,10 @@ type hostConnPool struct {
 	host       *HostInfo
 	debouncer  *debounce.SimpleDebouncer
 	keyspace   string
+	mu         sync.RWMutex
 	size       int
-	// protection for connPicker, closed, filling
-	mu      sync.RWMutex
-	closed  bool
-	filling bool
+	closed     bool
+	filling    bool
 }
 
 func (pool *hostConnPool) String() string {

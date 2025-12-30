@@ -877,9 +877,9 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 }
 
 type dcAwareRR struct {
-	local             string
 	localHosts        cowHostList
 	remoteHosts       cowHostList
+	local             string
 	lastUsedHostIdx   uint64
 	disableDCFailover bool
 }

@@ -198,6 +198,7 @@ func (b HostInfoBuilder) Build() HostInfo {
 }
 
 type HostInfo struct {
+	workload                   string
 	dseVersion                 string
 	hostId                     string
 	dataCenter                 string
@@ -206,25 +207,22 @@ type HostInfo struct {
 	clusterName                string
 	partitioner                string
 	rack                       string
-	workload                   string
-	tokens                     []string
-	preferredIP                net.IP
 	broadcastAddress           net.IP
+	listenAddress              net.IP
+	preferredIP                net.IP
+	connectAddress             net.IP
 	rpcAddress                 net.IP
 	untranslatedConnectAddress net.IP
 	peer                       net.IP
-	listenAddress              net.IP
-	connectAddress             net.IP
+	tokens                     []string
 	version                    cassVersion
 	port                       int
-	// TODO(zariel): reduce locking maybe, not all values will change, but to ensure
-	// that we are thread safe use a mutex to access all fields.
-	mu                      sync.RWMutex
-	state                   nodeState
-	scyllaShardAwarePort    uint16
-	scyllaShardAwarePortTLS uint16
-	scyllaShardCount        int
-	graph                   bool
+	scyllaShardCount           int
+	mu                         sync.RWMutex
+	state                      nodeState
+	scyllaShardAwarePort       uint16
+	scyllaShardAwarePortTLS    uint16
+	graph                      bool
 }
 
 func (h *HostInfo) Equal(host *HostInfo) bool {
