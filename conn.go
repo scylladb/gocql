@@ -272,26 +272,23 @@ func (s *Session) dial(ctx context.Context, host *HostInfo, connConfig *ConnConf
 }
 
 func (s *Session) translateHostAddresses(host *HostInfo) translatedAddresses {
-	addr := host.UntranslatedConnectAddress()
 	resultedInfo := translatedAddresses{
-		CQL: s.cfg.translateAddressPort(host.HostID(), AddressPort{
-			Address: addr,
+		CQL: s.cfg.translateAddressPort(host, AddressPort{
+			Address: host.UntranslatedConnectAddress(),
 			Port:    uint16(host.Port()),
 		}),
 	}
 	if port := host.ScyllaShardAwarePort(); port != 0 {
-		resultedInfo.ShardAware = s.cfg.translateAddressPort(host.HostID(),
-			AddressPort{
-				Address: addr,
-				Port:    port,
-			})
+		resultedInfo.ShardAware = s.cfg.translateAddressPort(host, AddressPort{
+			Address: host.UntranslatedConnectAddress(),
+			Port:    port,
+		})
 	}
 	if port := host.ScyllaShardAwarePortTLS(); port != 0 {
-		resultedInfo.ShardAwareTLS = s.cfg.translateAddressPort(host.HostID(),
-			AddressPort{
-				Address: addr,
-				Port:    port,
-			})
+		resultedInfo.ShardAwareTLS = s.cfg.translateAddressPort(host, AddressPort{
+			Address: host.UntranslatedConnectAddress(),
+			Port:    port,
+		})
 	}
 	return resultedInfo
 }
