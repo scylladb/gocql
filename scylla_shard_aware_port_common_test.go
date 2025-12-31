@@ -62,7 +62,7 @@ func testShardAwarePortNoReconnections(t *testing.T, makeCluster makeClusterTest
 
 			hosts := sess.hostSource.getHostsList()
 			for _, host := range hosts {
-				t.Logf("checking host %q hostID: %q", host.hostname, host.hostId)
+				t.Logf("checking host %s:%d hostID: %q", host.ConnectAddress(), host.Port(), host.hostId)
 				hostPool, ok := sess.pool.getPool(host)
 				if !ok {
 					pushErr(fmt.Errorf("host %q hostID not found", host.hostname))

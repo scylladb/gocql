@@ -100,23 +100,21 @@ var queryPool = &sync.Pool{
 	},
 }
 
-func translateAndResolveInitialEndpoints(resolver DNSResolver, translateAddressPort addressTranslateFn, addrs []string, defaultPort int, logger StdLogger) ([]*HostInfo, error) {
+func resolveInitialEndpoints(resolver DNSResolver, addrs []string, defaultPort int, logger StdLogger) ([]*HostInfo, error) {
 	var hosts []*HostInfo
+	var errs []error
 	for _, hostaddr := range addrs {
-		resolvedHosts, err := translateAndResolveInitialEndpoint(resolver, translateAddressPort, hostaddr, defaultPort)
+		resolvedHosts, err := resolveInitialEndpoint(resolver, hostaddr, defaultPort)
 		if err != nil {
-			// Try other hosts if unable to resolve DNS name
-			if _, ok := err.(*net.DNSError); ok {
-				logger.Printf("gocql: dns error: %v\n", err)
-				continue
-			}
-			return nil, err
+			err = fmt.Errorf("failed to resolve endpoint %q: %w", hostaddr, err)
+			errs = append(errs, err)
+			logger.Println(err.Error())
+			continue
 		}
-
 		hosts = append(hosts, resolvedHosts...)
 	}
 	if len(hosts) == 0 {
-		return nil, errors.New("failed to resolve any of the provided hostnames")
+		return nil, fmt.Errorf("failed to resolve any of the provided hostnames: %w", errors.Join(errs...))
 	}
 	return hosts, nil
 }
@@ -258,7 +256,7 @@ func (s *Session) init() error {
 		return nil
 	}
 
-	hosts, err := translateAndResolveInitialEndpoints(s.cfg.DNSResolver, s.cfg.translateAddressPort, s.cfg.Hosts, s.cfg.Port, s.logger)
+	hosts, err := resolveInitialEndpoints(s.cfg.DNSResolver, s.cfg.Hosts, s.cfg.Port, s.logger)
 	if err != nil {
 		return err
 	}

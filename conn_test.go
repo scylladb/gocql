@@ -62,7 +62,12 @@ const (
 type brokenDNSResolver struct{}
 
 func (b brokenDNSResolver) LookupIP(host string) ([]net.IP, error) {
-	return nil, &net.DNSError{}
+	err := errors.New("this error comes from mocked broken resolver")
+	return nil, &net.DNSError{
+		UnwrapErr: err,
+		Err:       err.Error(),
+		Server:    host,
+	}
 }
 
 func TestApprove(t *testing.T) {
@@ -202,8 +207,8 @@ func TestDNSLookupConnected(t *testing.T) {
 		t.Fatal("CreateSession() should have connected")
 	}
 
-	if !strings.Contains(log.String(), "gocql: dns error") {
-		t.Fatalf("Expected to receive dns error log message  - got '%s' instead", log.String())
+	if !strings.Contains(log.String(), "failed to resolve endpoint") {
+		t.Fatalf("Expected to receive 'failed to resolve endpoint' log message  - got '%s' instead", log.String())
 	}
 }
 
@@ -211,8 +216,9 @@ func TestDNSLookupError(t *testing.T) {
 	log := &testLogger{}
 
 	// Override the defaul DNS resolver and restore at the end
+	hosts := []string{"cassandra1.invalid", "cassandra2.invalid"}
 
-	cluster := NewCluster("cassandra1.invalid", "cassandra2.invalid")
+	cluster := NewCluster(hosts...)
 	cluster.Logger = log
 	cluster.ProtoVersion = int(defaultProto)
 	cluster.disableControlConn = true
@@ -225,12 +231,19 @@ func TestDNSLookupError(t *testing.T) {
 		t.Fatal("CreateSession() should have returned an error")
 	}
 
-	if !strings.Contains(log.String(), "gocql: dns error") {
-		t.Fatalf("Expected to receive dns error log message  - got '%s' instead", log.String())
+	if !strings.Contains(log.String(), "failed to resolve endpoint") {
+		t.Fatalf("Expected to receive 'failed to resolve endpoint' log message  - got '%s' instead", log.String())
 	}
 
-	if err.Error() != "gocql: unable to create session: failed to resolve any of the provided hostnames" {
-		t.Fatalf("Expected CreateSession() to fail with message  - got '%s' instead", err.Error())
+	if !strings.Contains(err.Error(), "unable to create session: failed to resolve any of the provided hostnames") {
+		t.Fatalf("Expected CreateSession() to fail with error message that contains 'unable to create session: failed to resolve any of the provided hostnames'")
+	}
+
+	for _, host := range hosts {
+		expected := fmt.Sprintf("failed to resolve endpoint \"%s\": lookup  on %s: this error comes from mocked broken resolver", host, host)
+		if !strings.Contains(err.Error(), expected) {
+			t.Fatalf("Expected to fail with error message that contains '%s'", expected)
+		}
 	}
 }
 
@@ -1248,7 +1261,7 @@ func (srv *TestServer) session() (*Session, error) {
 }
 
 func (srv *TestServer) host() *HostInfo {
-	hosts, err := translateAndResolveInitialEndpoint(nil, nil, srv.Address, 9042)
+	hosts, err := resolveInitialEndpoint(nil, srv.Address, 9042)
 	if err != nil {
 		srv.t.Fatal(err)
 	}
