@@ -270,46 +270,6 @@ func newFramer(compressor Compressor, version byte) *framer {
 	return f
 }
 
-func newFramerWithExts(compressor Compressor, version byte, cqlProtoExts []cqlProtocolExtension, logger StdLogger) *framer {
-
-	f := newFramer(compressor, version)
-
-	if lwtExt := findCQLProtoExtByName(cqlProtoExts, lwtAddMetadataMarkKey); lwtExt != nil {
-		castedExt, ok := lwtExt.(*lwtAddMetadataMarkExt)
-		if !ok {
-			logger.Println(
-				fmt.Errorf("failed to cast CQL protocol extension identified by name %s to type %T",
-					lwtAddMetadataMarkKey, lwtAddMetadataMarkExt{}))
-			return f
-		}
-		f.flagLWT = castedExt.lwtOptMetaBitMask
-	}
-
-	if rateLimitErrorExt := findCQLProtoExtByName(cqlProtoExts, rateLimitError); rateLimitErrorExt != nil {
-		castedExt, ok := rateLimitErrorExt.(*rateLimitExt)
-		if !ok {
-			logger.Println(
-				fmt.Errorf("failed to cast CQL protocol extension identified by name %s to type %T",
-					rateLimitError, rateLimitExt{}))
-			return f
-		}
-		f.rateLimitingErrorCode = castedExt.rateLimitErrorCode
-	}
-
-	if tabletsExt := findCQLProtoExtByName(cqlProtoExts, tabletsRoutingV1); tabletsExt != nil {
-		_, ok := tabletsExt.(*tabletsRoutingV1Ext)
-		if !ok {
-			logger.Println(
-				fmt.Errorf("failed to cast CQL protocol extension identified by name %s to type %T",
-					tabletsRoutingV1, tabletsRoutingV1Ext{}))
-			return f
-		}
-		f.tabletsRoutingV1 = true
-	}
-
-	return f
-}
-
 type frame interface {
 	Header() frm.FrameHeader
 }
