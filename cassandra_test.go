@@ -1142,6 +1142,49 @@ func TestMapScanWithRefMap(t *testing.T) {
 
 }
 
+func TestMapScanWithRefMap2(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+	if err := createTable(session, `CREATE TABLE gocql_test.scan_map_ref_table2 (
+			testtext       text PRIMARY KEY,
+			testint        int,
+		)`); err != nil {
+		t.Fatal("create table:", err)
+	}
+	m := make(map[string]interface{})
+	m["testtext"] = "testtext"
+	m["testint"] = 100
+
+	if err := session.Query(`INSERT INTO scan_map_ref_table2 (testtext, testint) values (?,?)`,
+		m["testtext"], m["testint"]).Exec(); err != nil {
+		t.Fatal("insert:", err)
+	}
+
+	var testText string
+	ret := map[string]interface{}{
+		"testtext": &testText,
+		// testint is not set here.
+	}
+	iter := session.Query(`SELECT * FROM scan_map_ref_table2`).Iter()
+	if ok := iter.MapScan(ret); !ok {
+		t.Fatal("select:", iter.Close())
+	}
+
+	if ret["testtext"].(*string) != &testText {
+		t.Fatal("returned testtext is not the same string pointer")
+	}
+
+	iter = session.Query(`SELECT * FROM scan_map_ref_table2`).Iter()
+	if ok := iter.MapScan(ret); !ok {
+		t.Fatal("select:", iter.Close())
+	}
+
+	// Verify the pointer is still preserved after second call
+	if ret["testtext"].(*string) != &testText {
+		t.Fatal("returned testtext is not the same string pointer after second call")
+	}
+}
+
 func TestMapScan(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()

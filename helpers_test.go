@@ -300,3 +300,113 @@ func TestGetCassandraType(t *testing.T) {
 		})
 	}
 }
+
+func TestRowMapPreservesPointers(t *testing.T) {
+	t.Parallel()
+
+	// Test that rowMap preserves pointer types in the map
+	var testString string
+	var testInt int
+
+	// Simulate MapScan: pre-populate the map with pointers
+	m := map[string]interface{}{
+		"text_col": &testString,
+		"int_col":  &testInt,
+	}
+
+	rowData := RowData{
+		Columns: []string{"text_col", "int_col"},
+		Values:  []interface{}{&testString, &testInt},
+	}
+
+	// Simulate what Scan does - populate the values
+	testString = "hello"
+	testInt = 42
+
+	rowData.rowMap(m)
+
+	// Verify that pointers are preserved in the map
+	textPtr, ok := m["text_col"].(*string)
+	if !ok {
+		t.Fatalf("expected *string in map, got %T", m["text_col"])
+	}
+	if textPtr != &testString {
+		t.Fatal("pointer in map is not the same as original pointer")
+	}
+
+	intPtr, ok := m["int_col"].(*int)
+	if !ok {
+		t.Fatalf("expected *int in map, got %T", m["int_col"])
+	}
+	if intPtr != &testInt {
+		t.Fatal("pointer in map is not the same as original pointer")
+	}
+}
+
+func TestRowMapNonPointers(t *testing.T) {
+	t.Parallel()
+
+	// Test that rowMap still works correctly for non-pointer values
+	testString := "hello"
+	testInt := 42
+
+	rowData := RowData{
+		Columns: []string{"text_col", "int_col"},
+		Values:  []interface{}{testString, testInt},
+	}
+
+	m := make(map[string]interface{})
+	rowData.rowMap(m)
+
+	// Verify that non-pointer values are still dereferenced/copied correctly
+	if m["text_col"] != "hello" {
+		t.Fatalf("expected 'hello' in map, got %v", m["text_col"])
+	}
+
+	if m["int_col"] != 42 {
+		t.Fatalf("expected 42 in map, got %v", m["int_col"])
+	}
+}
+
+func TestRowMapMixedPointers(t *testing.T) {
+	t.Parallel()
+
+	// Test mixed case: some columns provided with pointers, some not
+	var providedText string
+	providedText = "provided"
+
+	// Simulate RowData with pointers
+	var defaultInt int
+	defaultInt = 42
+
+	// Pre-populate map with only one pointer (simulating partial MapScan input)
+	m := map[string]interface{}{
+		"text_col": &providedText,
+		// int_col is NOT in the map initially
+	}
+
+	rowData := RowData{
+		Columns: []string{"text_col", "int_col"},
+		Values:  []interface{}{&providedText, &defaultInt},
+	}
+
+	rowData.rowMap(m)
+
+	// Verify that the provided pointer is preserved
+	textPtr, ok := m["text_col"].(*string)
+	if !ok {
+		t.Fatalf("expected *string for text_col, got %T", m["text_col"])
+	}
+	if textPtr != &providedText {
+		t.Fatal("text_col pointer is not the same as original pointer")
+	}
+
+	// Verify that the non-provided column gets the dereferenced value
+	intVal, ok := m["int_col"].(int)
+	if !ok {
+		t.Fatalf("expected int for int_col, got %T", m["int_col"])
+	}
+	if intVal != 42 {
+		t.Fatalf("expected 42 for int_col, got %v", intVal)
+	}
+}
