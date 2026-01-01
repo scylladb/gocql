@@ -155,7 +155,31 @@
 // Instead of dividing hosts with two tiers (local datacenter and remote datacenters) it divides hosts into three
 // (the local rack, the rest of the local datacenter, and everything else).
 //
-// RackAwareRoundRobinPolicy can be combined with TokenAwareHostPolicy in the same way as DCAwareRoundRobinPolicy.
+// For example, to route queries to a specific rack within a datacenter:
+//
+//	cluster := gocql.NewCluster("192.168.1.1", "192.168.1.2", "192.168.1.3")
+//	cluster.PoolConfig.HostSelectionPolicy = gocql.RackAwareRoundRobinPolicy("dc1", "rack1")
+//
+// RackAwareRoundRobinPolicy can be combined with TokenAwareHostPolicy in the same way as DCAwareRoundRobinPolicy:
+//
+//	cluster := gocql.NewCluster("192.168.1.1", "192.168.1.2", "192.168.1.3")
+//	cluster.PoolConfig.HostSelectionPolicy = gocql.TokenAwareHostPolicy(gocql.RackAwareRoundRobinPolicy("dc1", "rack1"))
+//
+// # AWS-specific considerations
+//
+// When using rack-aware policies with AWS, note that Availability Zone (AZ) names like "us-east-1a" are not consistent
+// between different AWS accounts. The same physical AZ may have different names in different accounts.
+//
+// For consistent rack-aware routing in AWS, you should use AZ IDs instead of AZ names. AZ IDs (e.g., "use1-az1") are
+// consistent identifiers across AWS accounts for the same physical location.
+//
+// To configure your Cassandra or ScyllaDB nodes with AZ IDs, you can retrieve the AZ ID using AWS CLI or APIs.
+// For more information, see AWS documentation on AZ IDs: https://docs.aws.amazon.com/ram/latest/userguide/working-with-az-ids.html
+//
+// Example configuration for AWS using AZ IDs:
+//
+//	cluster := gocql.NewCluster("192.168.1.1", "192.168.1.2", "192.168.1.3")
+//	cluster.PoolConfig.HostSelectionPolicy = gocql.RackAwareRoundRobinPolicy("us-east-1", "use1-az1")
 //
 // # Executing queries
 //
