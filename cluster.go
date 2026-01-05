@@ -650,9 +650,9 @@ func setupTLSConfig(sslOpts *SslOptions, logger StdLogger) (*tls.Config, error) 
 }
 
 // strictVerifyPeerCertificate returns a VerifyPeerCertificate callback that performs
-// strict certificate chain validation. Unlike Go's default behavior which accepts
-// a chain if any intermediate certificate is trusted, this ensures the entire chain
-// up to a trusted root certificate is valid.
+// certificate chain validation by explicitly calling cert.Verify(). This ensures that
+// the certificate chain is properly validated against the configured root CAs and
+// intermediate certificates, rather than relying on Go's default TLS behavior.
 func strictVerifyPeerCertificate(rootCAs *x509.CertPool) func([][]byte, [][]*x509.Certificate) error {
 	return func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
 		if len(rawCerts) == 0 {
@@ -684,30 +684,9 @@ func strictVerifyPeerCertificate(rootCAs *x509.CertPool) func([][]byte, [][]*x50
 			KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		}
 
-		chains, err := cert.Verify(opts)
+		_, err = cert.Verify(opts)
 		if err != nil {
 			return fmt.Errorf("certificate verification failed: %v", err)
-		}
-
-		// Ensure that the chain terminates at a trusted root certificate
-		if len(chains) == 0 {
-			return errors.New("no valid certificate chains found")
-		}
-
-		// Verify that each chain ends with a certificate that's in our RootCAs pool
-		// This ensures we don't accept chains that terminate at an intermediate cert
-		for _, chain := range chains {
-			if len(chain) == 0 {
-				continue
-			}
-
-			// The last certificate in the chain should be the root
-			rootCert := chain[len(chain)-1]
-
-			// Verify this root is self-signed (characteristic of root CAs)
-			if err := rootCert.CheckSignatureFrom(rootCert); err != nil {
-				return fmt.Errorf("certificate chain does not terminate at a self-signed root: %v", err)
-			}
 		}
 
 		return nil
