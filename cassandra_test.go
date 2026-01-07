@@ -3196,7 +3196,7 @@ func TestPrepareExecuteMetadataChangedFlag(t *testing.T) {
 
 	require.Equal(t, preparedStatementAfterTableAltering.resultMetadataID, preparedStatementAfterTableAltering2.resultMetadataID)
 	require.NotEqual(t, preparedStatementAfterTableAltering.response, preparedStatementAfterTableAltering2.response) // METADATA_CHANGED flag
-	require.True(t, preparedStatementAfterTableAltering2.response.flags&flagMetaDataChanged != 0)
+	require.True(t, preparedStatementAfterTableAltering2.response.flags&frm.FlagMetaDataChanged != 0)
 
 	// Executing prepared stmt and expecting that C* won't return
 	// Metadata_changed because the table is not being changed.
