@@ -949,12 +949,11 @@ func (c *Conn) recvSegment(ctx context.Context) error {
 	}
 
 	const frameHeaderLength = 9
-	buf := bytes.NewBuffer(make([]byte, 0, head.length+frameHeaderLength))
+	buf := bytes.NewBuffer(make([]byte, 0, head.Length+frameHeaderLength))
 	buf.Write(frame)
 
 	// Computing how many bytes of message left to read
-	bytesToRead := head.length - len(frame) + frameHeaderLength
-
+	bytesToRead := head.Length - len(frame) + frameHeaderLength
 	err = c.recvPartialFrames(buf, bytesToRead)
 	if err != nil {
 		return err

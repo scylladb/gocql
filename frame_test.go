@@ -33,9 +33,10 @@ import (
 	"os"
 	"testing"
 
-	frm "github.com/gocql/gocql/internal/frame"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	frm "github.com/gocql/gocql/internal/frame"
 )
 
 func TestFuzzBugs(t *testing.T) {
@@ -169,11 +170,11 @@ func Test_framer_writeExecuteFrame(t *testing.T) {
 	assertDeepEqual(t, "constistency", frame.params.consistency, Consistency(framer.readShort()))
 
 	flags := framer.readInt()
-	if flags&int(flagWithNowInSeconds) != int(flagWithNowInSeconds) {
+	if flags&int(frm.FlagWithNowInSeconds) != int(frm.FlagWithNowInSeconds) {
 		t.Fatal("expected flagNowInSeconds to be set, but it is not")
 	}
 
-	if flags&int(flagWithKeyspace) != int(flagWithKeyspace) {
+	if flags&int(frm.FlagWithKeyspace) != int(frm.FlagWithKeyspace) {
 		t.Fatal("expected flagWithKeyspace to be set, but it is not")
 	}
 
@@ -205,7 +206,7 @@ func Test_framer_writeBatchFrame(t *testing.T) {
 	assertDeepEqual(t, "consistency", frame.consistency, Consistency(framer.readShort()))
 
 	flags := framer.readInt()
-	if flags&int(flagWithNowInSeconds) != int(flagWithNowInSeconds) {
+	if flags&int(frm.FlagWithNowInSeconds) != int(frm.FlagWithNowInSeconds) {
 		t.Fatal("expected flagNowInSeconds to be set, but it is not")
 	}
 

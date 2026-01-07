@@ -165,42 +165,6 @@ func (f frameOp) String() string {
 	}
 }
 
-const (
-	// result kind
-	resultKindVoid          = 1
-	resultKindRows          = 2
-	resultKindKeyspace      = 3
-	resultKindPrepared      = 4
-	resultKindSchemaChanged = 5
-
-	// rows flags
-	flagGlobalTableSpec int = 0x01
-	flagHasMorePages    int = 0x02
-	flagNoMetaData      int = 0x04
-	flagMetaDataChanged int = 0x08
-
-	// query flags
-	flagValues                uint32 = 0x01
-	flagSkipMetaData          uint32 = 0x02
-	flagPageSize              uint32 = 0x04
-	flagWithPagingState       uint32 = 0x08
-	flagWithSerialConsistency uint32 = 0x10
-	flagDefaultTimestamp      uint32 = 0x20
-	flagWithNameValues        uint32 = 0x40
-	flagWithKeyspace          uint32 = 0x80
-	flagWithNowInSeconds      uint32 = 0x100
-
-	// prepare flags
-	flagWithPreparedKeyspace uint32 = 0x01
-
-	// header flags
-	flagCompress      byte = 0x01
-	flagTracing       byte = 0x02
-	flagCustomPayload byte = 0x04
-	flagWarning       byte = 0x08
-	flagBetaProtocol  byte = 0x10
-)
-
 // DEPRECATED use Consistency type, SerialConsistency is now an alias for backwards compatibility.
 type SerialConsistency = Consistency
 
@@ -1013,7 +977,7 @@ func (r *resultMetadata) morePages() bool {
 }
 
 func (r *resultMetadata) noMetaData() bool {
-	return r.flags&flagNoMetaData == flagNoMetaData
+	return r.flags&frm.FlagNoMetaData == frm.FlagNoMetaData
 }
 
 func (r resultMetadata) String() string {
@@ -1053,7 +1017,7 @@ func (f *framer) parseResultMetadata() resultMetadata {
 		meta.pagingState = f.readBytesCopy()
 	}
 
-	if f.proto > protoVersion4 && meta.flags&flagMetaDataChanged == flagMetaDataChanged {
+	if f.proto > protoVersion4 && meta.flags&frm.FlagMetaDataChanged == frm.FlagMetaDataChanged {
 		meta.newMetadataID = copyBytes(f.readShortBytes())
 	}
 
@@ -1159,11 +1123,11 @@ func (f *framer) parseResultSetKeyspace() frame {
 }
 
 type resultPreparedFrame struct {
-	preparedID []byte
-	respMeta   resultMetadata
-	frm.FrameHeader
-	reqMeta          preparedMetadata
+	preparedID       []byte
 	resultMetadataID []byte
+	respMeta         resultMetadata
+	frm.FrameHeader
+	reqMeta preparedMetadata
 }
 
 func (f *framer) parseResultPrepared() frame {
@@ -1361,14 +1325,14 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 		if f.proto < protoVersion5 {
 			panic(fmt.Errorf("the keyspace can only be set with protocol 5 or higher"))
 		}
-		flags |= flagWithKeyspace
+		flags |= frm.FlagWithKeyspace
 	}
 
 	if opts.nowInSeconds != nil {
 		if f.proto < protoVersion5 {
 			panic(fmt.Errorf("now_in_seconds can only be set with protocol 5 or higher"))
 		}
-		flags |= flagWithNowInSeconds
+		flags |= frm.FlagWithNowInSeconds
 	}
 
 	if f.proto > protoVersion4 {
@@ -1572,14 +1536,14 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 		if f.proto < protoVersion5 {
 			panic(fmt.Errorf("the keyspace can only be set with protocol 5 or higher"))
 		}
-		flags |= flagWithKeyspace
+		flags |= frm.FlagWithKeyspace
 	}
 
 	if w.nowInSeconds != nil {
 		if f.proto < protoVersion5 {
 			panic(fmt.Errorf("now_in_seconds can only be set with protocol 5 or higher"))
 		}
-		flags |= flagWithNowInSeconds
+		flags |= frm.FlagWithNowInSeconds
 	}
 
 	if f.proto > protoVersion4 {
