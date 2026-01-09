@@ -68,30 +68,32 @@ type Session struct {
 	streamObserver            StreamObserver
 	initErr                   error
 	nodeEvents                *eventDebouncer
-	cancel                    context.CancelFunc
+	stmtsLRU                  *preparedLRU
 	hostSource                *ringDescriber
 	pool                      *policyConnPool
 	ringRefresher             *debounce.RefreshDebouncer
 	readyCh                   chan struct{}
 	executor                  *queryExecutor
-	stmtsLRU                  *preparedLRU
+	cancel                    context.CancelFunc
 	schemaEvents              *eventDebouncer
 	metadataDescriber         *metadataDescriber
 	eventBus                  *eventbus.EventBus[events.Event]
 	connCfg                   *ConnConfig
+	clientRoutesHandler       *ClientRoutesHandler
 	routingKeyInfoCache       routingKeyInfoLRU
+	addressTranslator         AddressTranslator
 	cfg                       ClusterConfig
-	pageSize                  int
 	prefetch                  float64
+	pageSize                  int
 	mu                        sync.RWMutex
 	sessionStateMu            sync.RWMutex
 	cons                      Consistency
-	isClosed                  bool
 	isClosing                 bool
-	isInitialized             bool
 	hasAggregatesAndFunctions bool
 	useSystemSchema           bool
 	tabletsRoutingV1          bool
+	isInitialized             bool
+	isClosed                  bool
 }
 
 var queryPool = &sync.Pool{
@@ -128,16 +130,22 @@ func newSessionCommon(cfg ClusterConfig) (*Session, error) {
 	ctx, cancel := context.WithCancel(context.TODO())
 
 	s := &Session{
-		cons:            cfg.Consistency,
-		prefetch:        0.25,
-		cfg:             cfg,
-		pageSize:        cfg.PageSize,
-		stmtsLRU:        &preparedLRU{lru: lru.New(cfg.MaxPreparedStmts)},
-		connectObserver: cfg.ConnectObserver,
-		ctx:             ctx,
-		cancel:          cancel,
-		logger:          cfg.logger(),
-		readyCh:         make(chan struct{}, 1),
+		cons:              cfg.Consistency,
+		prefetch:          0.25,
+		cfg:               cfg,
+		pageSize:          cfg.PageSize,
+		stmtsLRU:          &preparedLRU{lru: lru.New(cfg.MaxPreparedStmts)},
+		connectObserver:   cfg.ConnectObserver,
+		ctx:               ctx,
+		cancel:            cancel,
+		logger:            cfg.logger(),
+		readyCh:           make(chan struct{}, 1),
+		addressTranslator: cfg.AddressTranslator,
+	}
+
+	if cfg.ClientRoutesConfig != nil {
+		s.clientRoutesHandler = NewClientRoutesAddressTranslator(*cfg.ClientRoutesConfig, s.cfg.DNSResolver, s.logger)
+		s.addressTranslator = s.clientRoutesHandler
 	}
 
 	// Close created resources on error otherwise they'll leak
@@ -308,6 +316,10 @@ func (s *Session) init() error {
 		conn.mu.Unlock()
 
 		s.hostSource.setControlConn(s.control)
+
+		if s.clientRoutesHandler != nil {
+			s.clientRoutesHandler.Initialize(s)
+		}
 
 		if !s.cfg.DisableInitialHostLookup {
 			var newHosts []*HostInfo
@@ -603,6 +615,10 @@ func (s *Session) Close() {
 		s.cancel()
 	}
 
+	if s.clientRoutesHandler != nil {
+		s.clientRoutesHandler.Stop()
+	}
+
 	s.sessionStateMu.Lock()
 	s.isClosed = true
 	s.sessionStateMu.Unlock()
@@ -708,6 +724,32 @@ func (s *Session) getConn() *Conn {
 	}
 
 	return nil
+}
+
+// translateAddressPort is a helper method that will use the given AddressTranslator
+// if defined, to translate the given address and port into a possibly new address
+// and port, If no AddressTranslator or if an error occurs, the given address and
+// port will be returned.
+func (s *Session) translateAddressPort(host *HostInfo, addr AddressPort) AddressPort {
+	if s.addressTranslator == nil || !addr.IsValid() {
+		return addr
+	}
+	translatorV2, ok := s.addressTranslator.(AddressTranslatorV2)
+	if !ok {
+		newAddr, newPort := s.addressTranslator.Translate(addr.Address, int(addr.Port))
+		if debug.Enabled {
+			s.cfg.logger().Printf("gocql: translating address %q to '%v:%d'", addr, newAddr, newPort)
+		}
+		return AddressPort{
+			Address: newAddr,
+			Port:    uint16(newPort),
+		}
+	}
+	newAddr := translatorV2.TranslateHost(host, addr)
+	if debug.Enabled {
+		s.cfg.logger().Printf("gocql: translating address %q to %q", addr, newAddr)
+	}
+	return newAddr
 }
 
 func (s *Session) findTabletReplicasForToken(keyspace, table string, token int64) []tablets.ReplicaInfo {

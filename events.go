@@ -140,6 +140,8 @@ func (s *Session) handleEvent(framer *framer) {
 		s.schemaEvents.debounce(frame)
 	case *frm.TopologyChangeEventFrame, *frm.StatusChangeEventFrame:
 		s.nodeEvents.debounce(frame)
+	case *frm.ClientRoutesChanged:
+		break
 	default:
 		s.logger.Printf("gocql: invalid event frame (%T): %v\n", f, f)
 	}

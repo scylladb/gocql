@@ -257,6 +257,19 @@ func (u UUID) Bytes() []byte {
 	return u[:]
 }
 
+// Less returns true if u < v in lexicographical order.
+func (u UUID) Less(v UUID) bool {
+	for i := 0; i < len(u); i++ {
+		if u[i] < v[i] {
+			return true
+		}
+		if u[i] > v[i] {
+			return false
+		}
+	}
+	return false
+}
+
 var emptyUUID = UUID{}
 
 func (u UUID) IsEmpty() bool {
