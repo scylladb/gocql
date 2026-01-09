@@ -248,15 +248,13 @@ type HostInfo struct {
 	connectAddress      net.IP
 	broadcastAddress    net.IP
 	version             cassVersion
-	scyllaShardCount    int
+	scyllaFeatures      ScyllaHostFeatures
 	port                int
 	// TODO(zariel): reduce locking maybe, not all values will change, but to ensure
 	// that we are thread safe use a mutex to access all fields.
-	mu                      sync.RWMutex
-	state                   nodeState
-	scyllaShardAwarePort    uint16
-	scyllaShardAwarePortTLS uint16
-	graph                   bool
+	mu    sync.RWMutex
+	state nodeState
+	graph bool
 }
 
 func (h *HostInfo) Equal(host *HostInfo) bool {
@@ -415,7 +413,10 @@ func (h *HostInfo) DSEVersion() string {
 func (h *HostInfo) Partitioner() string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	return h.partitioner
+	if h.partitioner != "" {
+		return h.partitioner
+	}
+	return h.scyllaFeatures.partitioner
 }
 
 func (h *HostInfo) ClusterName() string {
@@ -548,13 +549,16 @@ func (h *HostInfo) String() string {
 		h.port, h.dataCenter, h.rack, h.hostId, h.version, h.state, len(h.tokens))
 }
 
-func (h *HostInfo) setScyllaSupported(s scyllaSupported) {
+func (h *HostInfo) setScyllaFeatures(s ScyllaHostFeatures) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.partitioner = s.partitioner
-	h.scyllaShardAwarePort = s.shardAwarePort
-	h.scyllaShardAwarePortTLS = s.shardAwarePortSSL
-	h.scyllaShardCount = s.nrShards
+	h.scyllaFeatures = s
+}
+
+func (h *HostInfo) ScyllaFeatures() ScyllaHostFeatures {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.scyllaFeatures
 }
 
 // ScyllaShardAwarePort returns the shard aware port of this host.
@@ -562,7 +566,7 @@ func (h *HostInfo) setScyllaSupported(s scyllaSupported) {
 func (h *HostInfo) ScyllaShardAwarePort() uint16 {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	return h.scyllaShardAwarePort
+	return h.scyllaFeatures.ShardAwarePort()
 }
 
 // ScyllaShardAwarePortTLS returns the TLS-enabled shard aware port of this host.
@@ -570,14 +574,14 @@ func (h *HostInfo) ScyllaShardAwarePort() uint16 {
 func (h *HostInfo) ScyllaShardAwarePortTLS() uint16 {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	return h.scyllaShardAwarePortTLS
+	return h.scyllaFeatures.ShardAwarePortTLS()
 }
 
 // ScyllaShardCount returns count of shards on the node.
 func (h *HostInfo) ScyllaShardCount() int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	return h.scyllaShardCount
+	return h.scyllaFeatures.ShardsCount()
 }
 
 func (h *HostInfo) setTranslatedConnectionInfo(info translatedAddresses) {

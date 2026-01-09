@@ -443,12 +443,14 @@ func TestScyllaConnPickerHandleShardCountChange(t *testing.T) {
 func mockConn(shard int) *Conn {
 	return &Conn{
 		streams: streams.New(),
-		scyllaSupported: scyllaSupported{
-			shard:             shard,
-			nrShards:          4,
-			msbIgnore:         12,
-			partitioner:       "org.apache.cassandra.dht.Murmur3Partitioner",
-			shardingAlgorithm: "biased-token-round-robin",
+		scyllaSupported: ScyllaConnectionFeatures{
+			shard: shard,
+			ScyllaHostFeatures: ScyllaHostFeatures{
+				nrShards:          4,
+				msbIgnore:         12,
+				partitioner:       "org.apache.cassandra.dht.Murmur3Partitioner",
+				shardingAlgorithm: "biased-token-round-robin",
+			},
 		},
 	}
 }
@@ -460,10 +462,12 @@ func mockConnForPicker(shard, nrShards int) *Conn {
 	_ = conn2.Close()
 
 	return &Conn{
-		scyllaSupported: scyllaSupported{
-			shard:     shard,
-			nrShards:  nrShards,
-			msbIgnore: 12,
+		scyllaSupported: ScyllaConnectionFeatures{
+			shard: shard,
+			ScyllaHostFeatures: ScyllaHostFeatures{
+				nrShards:  nrShards,
+				msbIgnore: 12,
+			},
 		},
 		conn:    conn1,
 		addr:    fmt.Sprintf("192.168.1.%d:9042", shard+1),

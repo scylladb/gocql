@@ -282,9 +282,11 @@ func (*mockConnection) querySystem(ctx context.Context, query string, values ...
 	return nil
 }
 
-func (*mockConnection) getIsSchemaV2() bool                 { return false }
-func (*mockConnection) setSchemaV2(s bool)                  {}
-func (*mockConnection) getScyllaSupported() scyllaSupported { return scyllaSupported{} }
+func (*mockConnection) getIsSchemaV2() bool { return false }
+func (*mockConnection) setSchemaV2(s bool)  {}
+func (*mockConnection) getScyllaSupported() ScyllaConnectionFeatures {
+	return ScyllaConnectionFeatures{}
+}
 
 type mockControlConn struct{}
 

@@ -171,7 +171,7 @@ type ConnInterface interface {
 	querySystem(ctx context.Context, query string, values ...interface{}) *Iter
 	getIsSchemaV2() bool
 	setSchemaV2(s bool)
-	getScyllaSupported() scyllaSupported
+	getScyllaSupported() ScyllaConnectionFeatures
 }
 
 // Conn is a single connection to a Cassandra node. It can be used to execute
@@ -202,7 +202,7 @@ type Conn struct {
 	usingTimeoutClause   string
 	currentKeyspace      string
 	cqlProtoExts         []cqlProtocolExtension
-	scyllaSupported      scyllaSupported
+	scyllaSupported      ScyllaConnectionFeatures
 	systemRequestTimeout time.Duration
 	writeTimeout         atomic.Int64
 	timeouts             int64
@@ -247,7 +247,7 @@ func (c *Conn) finalizeConnection() {
 	c.w.setWriteTimeout(c.cfg.WriteTimeout)
 }
 
-func (c *Conn) getScyllaSupported() scyllaSupported {
+func (c *Conn) getScyllaSupported() ScyllaConnectionFeatures {
 	return c.scyllaSupported
 }
 
@@ -278,13 +278,14 @@ func (s *Session) translateHostAddresses(host *HostInfo) translatedAddresses {
 			Port:    uint16(host.Port()),
 		}),
 	}
-	if port := host.ScyllaShardAwarePort(); port != 0 {
+	scyllaFeatures := host.ScyllaFeatures()
+	if port := scyllaFeatures.ShardAwarePort(); port != 0 {
 		resultedInfo.ShardAware = s.cfg.translateAddressPort(host, AddressPort{
 			Address: host.UntranslatedConnectAddress(),
 			Port:    port,
 		})
 	}
-	if port := host.ScyllaShardAwarePortTLS(); port != 0 {
+	if port := scyllaFeatures.ShardAwarePortTLS(); port != 0 {
 		resultedInfo.ShardAwareTLS = s.cfg.translateAddressPort(host, AddressPort{
 			Address: host.UntranslatedConnectAddress(),
 			Port:    port,
@@ -541,7 +542,9 @@ func (s *startupCoordinator) options(ctx context.Context) error {
 	s.conn.supported = v.Supported
 	s.conn.scyllaSupported = parseSupported(s.conn.supported, s.conn.logger)
 	s.conn.recalculateSystemRequestTimeout()
-	s.conn.host.setScyllaSupported(s.conn.scyllaSupported)
+	if current := s.conn.host.ScyllaFeatures(); current != s.conn.scyllaSupported.ScyllaHostFeatures {
+		s.conn.host.setScyllaFeatures(s.conn.scyllaSupported.ScyllaHostFeatures)
+	}
 	s.conn.cqlProtoExts = parseCQLProtocolExtensions(s.conn.supported, s.conn.logger)
 
 	return s.startup(ctx)
