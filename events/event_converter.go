@@ -81,7 +81,12 @@ func FrameToEvent(f interface{}) Event {
 			Aggregate: frame.Name,
 			Arguments: frame.Args,
 		}
-
+	case *frm.ClientRoutesChanged:
+		return &ClientRoutesChangedEvent{
+			ChangeType:    frame.ChangeType,
+			ConnectionIDs: frame.ConnectionIDs,
+			HostIDs:       frame.HostIDs,
+		}
 	default:
 		return nil
 	}

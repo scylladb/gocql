@@ -229,6 +229,24 @@ func (b HostInfoBuilder) Build() HostInfo {
 	}
 }
 
+type Host interface {
+	Peer() net.IP
+	ConnectAddress() net.IP
+	UntranslatedConnectAddress() net.IP
+	BroadcastAddress() net.IP
+	ListenAddress() net.IP
+	RPCAddress() net.IP
+	PreferredIP() net.IP
+	DataCenter() string
+	Rack() string
+	HostID() string
+	WorkLoad() string
+	Graph() bool
+	DSEVersion() string
+	Partitioner() string
+	ClusterName() string
+}
+
 type HostInfo struct {
 	translatedAddresses *translatedAddresses
 	dseVersion          string

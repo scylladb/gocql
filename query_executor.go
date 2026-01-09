@@ -201,7 +201,7 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, hostIter Ne
 		}
 		iter = q.attemptQuery(ctx, qry, conn)
 		iter.host = selectedHost.Info()
-		// Update host
+		// UpdateIfNewer host
 		if iter.err == nil {
 			return iter, RetryType(255)
 		}
