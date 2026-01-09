@@ -469,7 +469,6 @@ func (r *RowData) rowMap(m map[string]interface{}) {
 				continue
 			}
 		}
-		
 		// For columns not originally in the map or with non-pointer values, dereference
 		val := dereference(r.Values[i])
 		if valVal := reflect.ValueOf(val); valVal.Kind() == reflect.Slice && !valVal.IsNil() {
