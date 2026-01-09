@@ -458,22 +458,19 @@ func getApacheCassandraType(class string) Type {
 
 func (r *RowData) rowMap(m map[string]interface{}) {
 	for i, column := range r.Columns {
-		origVal := reflect.ValueOf(r.Values[i])
-		// Check if this column's value was originally a pointer provided by the user
-		// If the map already contains this column with a pointer that matches r.Values[i],
-		// then it was provided by the user and should be preserved
-		if origVal.Kind() == reflect.Ptr && !origVal.IsNil() {
-			if existingVal, exists := m[column]; exists {
-				existingPtrVal := reflect.ValueOf(existingVal)
-				// If the existing value is a pointer and it's the same pointer, preserve it
-				if existingPtrVal.Kind() == reflect.Ptr && existingPtrVal.Pointer() == origVal.Pointer() {
-					// Keep the user-provided pointer in the map
-					m[column] = r.Values[i]
-					continue
-				}
+		// Check if the map originally had a pointer for this column
+		// If so, preserve the pointer in the map after scanning
+		if originalVal, exists := m[column]; exists {
+			originalReflectVal := reflect.ValueOf(originalVal)
+			if originalReflectVal.Kind() == reflect.Ptr {
+				// User provided a pointer, keep it in the map
+				// After Scan, r.Values[i] contains the same pointer with updated data
+				m[column] = r.Values[i]
+				continue
 			}
 		}
-		// For all other cases, dereference the value
+		
+		// For columns not originally in the map or with non-pointer values, dereference
 		val := dereference(r.Values[i])
 		if valVal := reflect.ValueOf(val); valVal.Kind() == reflect.Slice && !valVal.IsNil() {
 			valCopy := reflect.MakeSlice(valVal.Type(), valVal.Len(), valVal.Cap())

@@ -1107,13 +1107,22 @@ func TestMapScanWithRefMap(t *testing.T) {
 	if ok := iter.MapScan(ret); !ok {
 		t.Fatal("select:", iter.Close())
 	} else {
-		if ret["testtext"] != "testtext" {
+		// After MapScan, pointers provided in the map are preserved
+		textPtr, ok := ret["testtext"].(*string)
+		if !ok {
+			t.Fatalf("expected *string for testtext, got %T", ret["testtext"])
+		}
+		if *textPtr != "testtext" {
 			t.Fatal("returned testtext did not match")
 		}
-		f := ret["testfullname"].(FullName)
-		if f.FirstName != "John" || f.LastName != "Doe" {
+		fullNamePtr, ok := ret["testfullname"].(*FullName)
+		if !ok {
+			t.Fatalf("expected *FullName for testfullname, got %T", ret["testfullname"])
+		}
+		if fullNamePtr.FirstName != "John" || fullNamePtr.LastName != "Doe" {
 			t.Fatal("returned testfullname did not match")
 		}
+		// testint was not in the original map, so it gets the dereferenced value
 		if ret["testint"] != 100 {
 			t.Fatal("returned testinit did not match")
 		}
