@@ -16,18 +16,81 @@ import (
 	"github.com/gocql/gocql/internal/debug"
 )
 
-// scyllaSupported represents Scylla connection options as sent in SUPPORTED
+// ScyllaFeatures represents Scylla connection options as sent in SUPPORTED
 // frame.
 // FIXME: Should also follow `cqlProtocolExtension` interface.
-type scyllaSupported struct {
-	partitioner       string
+type ScyllaConnectionFeatures struct {
+	ScyllaHostFeatures
+	// Comes from SCYLLA_SHARD
+	shard int
+}
+
+func (f ScyllaConnectionFeatures) Shard() int {
+	return f.shard
+}
+
+type ScyllaHostFeatures struct {
+	// Comes from SCYLLA_PARTITIONER
+	partitioner string
+	// Comes from SCYLLA_SHARDING_ALGORITHM
 	shardingAlgorithm string
-	shard             int
-	nrShards          int
-	msbIgnore         uint64
-	lwtFlagMask       int
-	shardAwarePort    uint16
-	shardAwarePortSSL uint16
+	// Comes from SCYLLA_NR_SHARDS
+	nrShards int
+	// Comes from SCYLLA_SHARDING_IGNORE_MSB
+	msbIgnore uint64
+	// Comes from SCYLLA_LWT_ADD_METADATA_MARK.LWT_OPTIMIZATION_META_BIT_MASK
+	lwtFlagMask int
+	// Comes from SCYLLA_RATE_LIMIT_ERROR.ERROR_CODE
+	rateLimitErrorCode int
+	// Comes from SCYLLA_SHARD_AWARE_PORT
+	shardAwarePort uint16
+	// Comes from SCYLLA_SHARD_AWARE_PORT_SSL
+	shardAwarePortTLS uint16
+	// Comes from SCYLLA_USE_METADATA_ID
+	// Signals that host supports proper prepared statement metadata invalidation read more at:
+	// https://github.com/scylladb/scylladb/issues/20860
+	// https://github.com/scylladb/scylladb/pull/23292
+	isMetadataIDSupported bool
+}
+
+func (f ScyllaHostFeatures) IsPresent() bool {
+	return f.nrShards != 0
+}
+
+func (f ScyllaHostFeatures) Partitioner() string {
+	return f.partitioner
+}
+
+func (f ScyllaHostFeatures) ShardingAlgorithm() string {
+	return f.shardingAlgorithm
+}
+
+func (f ScyllaHostFeatures) ShardsCount() int {
+	return f.nrShards
+}
+
+func (f ScyllaHostFeatures) MSBIgnore() uint64 {
+	return f.msbIgnore
+}
+
+func (f ScyllaHostFeatures) LWTFlagMask() int {
+	return f.lwtFlagMask
+}
+
+func (f ScyllaHostFeatures) ShardAwarePort() uint16 {
+	return f.shardAwarePort
+}
+
+func (f ScyllaHostFeatures) ShardAwarePortTLS() uint16 {
+	return f.shardAwarePortTLS
+}
+
+func (f ScyllaHostFeatures) RateLimitErrorCode() int {
+	return f.rateLimitErrorCode
+}
+
+func (f ScyllaHostFeatures) IsMetadataIDSupported() bool {
+	return f.isMetadataIDSupported
 }
 
 // CQL Protocol extension interface for Scylla.
@@ -188,7 +251,7 @@ func (ext *lwtAddMetadataMarkExt) name() string {
 	return lwtAddMetadataMarkKey
 }
 
-func parseSupported(supported map[string][]string, logger StdLogger) scyllaSupported {
+func parseSupported(supported map[string][]string, logger StdLogger) ScyllaConnectionFeatures {
 	const (
 		scyllaShard             = "SCYLLA_SHARD"
 		scyllaNrShards          = "SCYLLA_NR_SHARDS"
@@ -197,10 +260,11 @@ func parseSupported(supported map[string][]string, logger StdLogger) scyllaSuppo
 		scyllaShardingIgnoreMSB = "SCYLLA_SHARDING_IGNORE_MSB"
 		scyllaShardAwarePort    = "SCYLLA_SHARD_AWARE_PORT"
 		scyllaShardAwarePortSSL = "SCYLLA_SHARD_AWARE_PORT_SSL"
+		scyllaUseMetadataID     = "SCYLLA_USE_METADATA_ID"
 	)
 
 	var (
-		si  scyllaSupported
+		si  ScyllaConnectionFeatures
 		err error
 	)
 
@@ -242,13 +306,25 @@ func parseSupported(supported map[string][]string, logger StdLogger) scyllaSuppo
 		}
 	}
 	if s, ok := supported[scyllaShardAwarePortSSL]; ok {
-		if shardAwarePortSSL, err := strconv.ParseUint(s[0], 10, 16); err != nil {
+		if shardAwarePortTLS, err := strconv.ParseUint(s[0], 10, 16); err != nil {
 			if debug.Enabled {
 				logger.Printf("scylla: failed to parse %s value %v: %s", scyllaShardAwarePortSSL, s, err)
 			}
 		} else {
-			si.shardAwarePortSSL = uint16(shardAwarePortSSL)
+			si.shardAwarePortTLS = uint16(shardAwarePortTLS)
 		}
+	}
+
+	if lwtInfo := newLwtAddMetaMarkExt(supported, logger); lwtInfo != nil {
+		si.lwtFlagMask = lwtInfo.lwtOptMetaBitMask
+	}
+
+	if rateLimitInfo := newRateLimitExt(supported, logger); rateLimitInfo != nil {
+		si.rateLimitErrorCode = rateLimitInfo.rateLimitErrorCode
+	}
+
+	if _, ok := supported[scyllaUseMetadataID]; ok {
+		si.isMetadataIDSupported = true
 	}
 
 	if si.partitioner != "org.apache.cassandra.dht.Murmur3Partitioner" || si.shardingAlgorithm != "biased-token-round-robin" || si.nrShards == 0 || si.msbIgnore == 0 {
@@ -256,7 +332,7 @@ func parseSupported(supported map[string][]string, logger StdLogger) scyllaSuppo
 			logger.Printf("scylla: unsupported sharding configuration, partitioner=%s, algorithm=%s, no_shards=%d, msb_ignore=%d",
 				si.partitioner, si.shardingAlgorithm, si.nrShards, si.msbIgnore)
 		}
-		return scyllaSupported{}
+		return ScyllaConnectionFeatures{}
 	}
 
 	return si
