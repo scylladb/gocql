@@ -136,3 +136,29 @@ func TestFrameReadTooLong(t *testing.T) {
 		t.Fatalf("expected to get header %v got %v", frm.OpReady, head.Op)
 	}
 }
+
+func TestParseEventFrame_ClientRoutesChanged(t *testing.T) {
+	t.Parallel()
+
+	fr := newFramer(nil, protoVersion4)
+	fr.header = &frm.FrameHeader{Version: protoVersion4}
+	fr.writeString("CLIENT_ROUTES_CHANGE")
+	fr.writeString("UPDATED")
+	fr.writeStringList([]string{"c1", ""})
+	fr.writeStringList([]string{})
+
+	frame := fr.parseEventFrame()
+	evt, ok := frame.(*frm.ClientRoutesChanged)
+	if !ok {
+		t.Fatalf("expected ClientRoutesChanged frame, got %T", frame)
+	}
+	if evt.ChangeType != "UPDATED" {
+		t.Fatalf("ChangeType = %v, want UPDATED", evt.ChangeType)
+	}
+	if len(evt.ConnectionIDs) != 2 || evt.ConnectionIDs[1] != "" {
+		t.Fatalf("ConnectionIDs = %v, want [c1 \"\"]", evt.ConnectionIDs)
+	}
+	if len(evt.HostIDs) != 0 {
+		t.Fatalf("HostIDs = %v, want empty", evt.HostIDs)
+	}
+}

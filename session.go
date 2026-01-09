@@ -68,31 +68,32 @@ type Session struct {
 	streamObserver            StreamObserver
 	initErr                   error
 	nodeEvents                *eventDebouncer
-	cancel                    context.CancelFunc
+	stmtsLRU                  *preparedLRU
 	hostSource                *ringDescriber
 	pool                      *policyConnPool
 	ringRefresher             *debounce.RefreshDebouncer
 	readyCh                   chan struct{}
 	executor                  *queryExecutor
-	stmtsLRU                  *preparedLRU
+	cancel                    context.CancelFunc
 	schemaEvents              *eventDebouncer
 	metadataDescriber         *metadataDescriber
 	eventBus                  *eventbus.EventBus[events.Event]
 	connCfg                   *ConnConfig
+	clientRoutesHandler       *ClientRoutesHandler
 	routingKeyInfoCache       routingKeyInfoLRU
 	addressTranslator         AddressTranslator
 	cfg                       ClusterConfig
-	pageSize                  int
 	prefetch                  float64
+	pageSize                  int
 	mu                        sync.RWMutex
 	sessionStateMu            sync.RWMutex
 	cons                      Consistency
-	isClosed                  bool
 	isClosing                 bool
-	isInitialized             bool
 	hasAggregatesAndFunctions bool
 	useSystemSchema           bool
 	tabletsRoutingV1          bool
+	isInitialized             bool
+	isClosed                  bool
 }
 
 var queryPool = &sync.Pool{
@@ -140,6 +141,11 @@ func newSessionCommon(cfg ClusterConfig) (*Session, error) {
 		logger:            cfg.logger(),
 		addressTranslator: cfg.AddressTranslator,
 		readyCh:           make(chan struct{}, 1),
+	}
+
+	if cfg.ClientRoutesConfig != nil {
+		s.clientRoutesHandler = NewClientRoutesAddressTranslator(*cfg.ClientRoutesConfig, s.cfg.DNSResolver, s.cfg.SslOpts != nil, s.logger)
+		s.addressTranslator = s.clientRoutesHandler
 	}
 
 	// Close created resources on error otherwise they'll leak
@@ -277,7 +283,7 @@ func (s *Session) init() error {
 				var proto int
 				proto, err = s.control.discoverProtocol(hosts)
 				if err != nil {
-					err = fmt.Errorf("unable to discover protocol version: %v\n", err)
+					err = fmt.Errorf("unable to discover protocol version: %w\n", err)
 					if debug.Enabled {
 						s.logger.Println(err.Error())
 					}
@@ -292,7 +298,7 @@ func (s *Session) init() error {
 			}
 
 			if err = s.control.connect(hosts); err != nil {
-				err = fmt.Errorf("unable to create control connection: %v\n", err)
+				err = fmt.Errorf("unable to create control connection: %w\n", err)
 				if debug.Enabled {
 					s.logger.Println(err.Error())
 				}
@@ -301,7 +307,7 @@ func (s *Session) init() error {
 			break
 		}
 		if err != nil {
-			return fmt.Errorf("unable to connect to the cluster, last error: %v", err.Error())
+			return fmt.Errorf("unable to connect to the cluster, last error: %w", err)
 		}
 
 		conn := s.control.getConn().conn.(*Conn)
@@ -310,6 +316,12 @@ func (s *Session) init() error {
 		conn.mu.Unlock()
 
 		s.hostSource.setControlConn(s.control)
+
+		if s.clientRoutesHandler != nil {
+			if err = s.clientRoutesHandler.Initialize(s); err != nil {
+				return fmt.Errorf("unable to initialize client routes handler: %w", err)
+			}
+		}
 
 		if !s.cfg.DisableInitialHostLookup {
 			var newHosts []*HostInfo
@@ -610,6 +622,10 @@ func (s *Session) Close() {
 
 	if s.cancel != nil {
 		s.cancel()
+	}
+
+	if s.clientRoutesHandler != nil {
+		s.clientRoutesHandler.Stop()
 	}
 
 	s.sessionStateMu.Lock()

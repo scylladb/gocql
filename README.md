@@ -37,7 +37,8 @@ It also provides support for shard aware ports, a faster way to connect to all s
 - [4. Data Types](#4-data-types)
 - [5. Configuration](#5-configuration)
   - [5.1 Shard-aware port](#51-shard-aware-port)
-  - [5.2 Iterator](#52-iterator)
+  - [5.2 Client routes (PrivateLink)](#52-client-routes-privatelink)
+  - [5.3 Iterator](#53-iterator)
 - [6. Contributing](#6-contributing)
 
 ## 1. Sunsetting Model
@@ -210,7 +211,27 @@ Issues with shard-aware port not being reachable are not reported in non-debug m
 
 If you suspect that this feature is causing you problems, you can completely disable it by setting the `ClusterConfig.DisableShardAwarePort` flag to true.
 
-### 5.2 Iterator
+### 5.2 Client routes (PrivateLink)
+
+Scylla Cloud exposes a `system.client_routes` table that maps hosts to PrivateLink endpoints.
+When configured, the driver can resolve and connect to the per-host PrivateLink address instead of using the public host IP.
+
+Use `WithClientRoutes` to enable it and pass the connection IDs you receive from Scylla Cloud:
+
+```go
+cluster := gocql.NewCluster("private-link.dns.name")
+cluster.WithOptions(
+	gocql.WithClientRoutes(
+		gocql.WithEndpoints(
+			gocql.ClientRoutesEndpoint{ConnectionID: "your-connection-id"},
+		),
+	),
+)
+```
+
+If you also want to seed the cluster with PrivateLink hostnames, provide `ConnectionAddr` values in the endpoints list.
+
+### 5.3 Iterator
 
 Paging is a way to parse large result sets in smaller chunks.
 The driver provides an iterator to simplify this process.

@@ -157,19 +157,19 @@ type AddressPort struct {
 	Port    uint16
 }
 
-func (a *AddressPort) Equal(o AddressPort) bool {
+func (a AddressPort) Equal(o AddressPort) bool {
 	return a.Address.Equal(o.Address) && a.Port == o.Port
 }
 
-func (a *AddressPort) IsValid() bool {
+func (a AddressPort) IsValid() bool {
 	return len(a.Address) != 0 && !a.Address.IsUnspecified() && a.Port != 0
 }
 
-func (a *AddressPort) String() string {
+func (a AddressPort) String() string {
 	return fmt.Sprintf("%s:%d", a.Address, a.Port)
 }
 
-func (a *AddressPort) ToNetAddr() string {
+func (a AddressPort) ToNetAddr() string {
 	return net.JoinHostPort(a.Address.String(), strconv.Itoa(int(a.Port)))
 }
 

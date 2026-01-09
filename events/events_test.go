@@ -153,6 +153,24 @@ func TestSchemaChangeAggregateEvent(t *testing.T) {
 	t.Logf("SchemaChangeAggregateEvent.String() = %s", str)
 }
 
+func TestClientRoutesChangedEvent(t *testing.T) {
+	event := &ClientRoutesChangedEvent{
+		ChangeType:    "UPDATED",
+		ConnectionIDs: []string{"c1"},
+		HostIDs:       []string{},
+	}
+
+	if event.Type() != ClusterEventTypeClientRoutesChanged {
+		t.Errorf("Type() = %v, want %v", event.Type(), ClusterEventTypeClientRoutesChanged)
+	}
+
+	str := event.String()
+	if str == "" {
+		t.Error("String() returned empty string")
+	}
+	t.Logf("ClientRoutesChangedEvent.String() = %s", str)
+}
+
 func TestEventInterface(t *testing.T) {
 	events := []Event{
 		&TopologyChangeEvent{Change: "NEW_NODE", Host: net.ParseIP("127.0.0.1"), Port: 9042},
@@ -162,10 +180,11 @@ func TestEventInterface(t *testing.T) {
 		&SchemaChangeTypeEvent{Change: "DROPPED", Keyspace: "ks", TypeName: "typ"},
 		&SchemaChangeFunctionEvent{Change: "CREATED", Keyspace: "ks", Function: "fn", Arguments: []string{}},
 		&SchemaChangeAggregateEvent{Change: "UPDATED", Keyspace: "ks", Aggregate: "agg", Arguments: []string{}},
+		&ClientRoutesChangedEvent{ChangeType: "UPDATED", ConnectionIDs: []string{"c1"}, HostIDs: []string{}},
 	}
 
 	for _, event := range events {
-		if event.Type() < ClusterEventTypeTopologyChange || event.Type() > ClusterEventTypeSchemaChangeAggregate {
+		if event.Type() < ClusterEventTypeTopologyChange || event.Type() > ClusterEventTypeClientRoutesChanged {
 			t.Errorf("Invalid event type: %v", event.Type())
 		}
 		if event.String() == "" {

@@ -44,6 +44,8 @@ const (
 	ClusterEventTypeSchemaChangeFunction
 	// ClusterEventTypeSchemaChangeAggregate represents an aggregate schema change
 	ClusterEventTypeSchemaChangeAggregate
+	// ClusterEventTypeClientRoutesChanged represents an event of update of `system.client_routes` table
+	ClusterEventTypeClientRoutesChanged
 	// SessionEventTypeControlConnectionRecreated is fired when the session loses it's control connection to the cluster and has just been re-established it.
 	SessionEventTypeControlConnectionRecreated
 )
@@ -63,6 +65,8 @@ func (t EventType) IsClusterEvent() bool {
 	case ClusterEventTypeSchemaChangeFunction:
 		return true
 	case ClusterEventTypeSchemaChangeAggregate:
+		return true
+	case ClusterEventTypeClientRoutesChanged:
 		return true
 	default:
 		return false
@@ -85,6 +89,8 @@ func (t EventType) String() string {
 		return "CLUSTER<SCHEMA_CHANGE_FUNCTION>"
 	case ClusterEventTypeSchemaChangeAggregate:
 		return "CLUSTER<SCHEMA_CHANGE_AGGREGATE>"
+	case ClusterEventTypeClientRoutesChanged:
+		return "CLUSTER<CLIENT_ROUTES_CHANGE>"
 	case SessionEventTypeControlConnectionRecreated:
 		return "SESSION<CONTROL_CONNECTION_RECREATED>"
 	default:
@@ -242,6 +248,27 @@ func (e *SchemaChangeAggregateEvent) Type() EventType {
 func (e *SchemaChangeAggregateEvent) String() string {
 	return fmt.Sprintf("SchemaChangeAggregate{change=%s, keyspace=%s, aggregate=%s, args=%v}",
 		e.Change, e.Keyspace, e.Aggregate, e.Arguments)
+}
+
+// ClientRoutesChangedEvent represents an aggregate schema change
+type ClientRoutesChangedEvent struct {
+	// Change is the type of change (UPDATED)
+	ChangeType string
+	// List of connection ids involved into update
+	ConnectionIDs []string
+	// List of host ids involved into update
+	HostIDs []string
+}
+
+// Type returns ClusterEventTypeClientRoutesChanged
+func (e *ClientRoutesChangedEvent) Type() EventType {
+	return ClusterEventTypeClientRoutesChanged
+}
+
+// String returns a string representation of the event
+func (e *ClientRoutesChangedEvent) String() string {
+	return fmt.Sprintf("ConnectionMetadataChanged{changeType=%s, ConnectionIDs=%s, HostIDs=%s}",
+		e.ChangeType, e.ConnectionIDs, e.HostIDs)
 }
 
 type HostInfo struct {

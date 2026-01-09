@@ -124,7 +124,8 @@ type ClusterConfig struct {
 	SslOpts *SslOptions
 	// An Authenticator factory. Can be used to create alternative authenticators.
 	// Default: nil
-	AuthProvider func(h *HostInfo) (Authenticator, error)
+	AuthProvider       func(h *HostInfo) (Authenticator, error)
+	ClientRoutesConfig *ClientRoutesConfig
 	// The version of the driver that is going to be reported to the server.
 	// Defaulted to current library version
 	DriverVersion string
@@ -447,6 +448,65 @@ func (cfg *ClusterConfig) getActualTLSConfig() *tls.Config {
 	return val.Clone()
 }
 
+type ClusterOption func(*ClusterConfig)
+
+func (cfg *ClusterConfig) WithOptions(opts ...ClusterOption) *ClusterConfig {
+	for _, opt := range opts {
+		opt(cfg)
+	}
+	return cfg
+}
+
+type ClientRoutesOption func(*ClientRoutesConfig)
+
+func WithMaxResolverConcurrency(val int) func(*ClientRoutesConfig) {
+	return func(cfg *ClientRoutesConfig) {
+		cfg.MaxResolverConcurrency = val
+	}
+}
+
+func WithResolveHealthyEndpointPeriod(val time.Duration) func(*ClientRoutesConfig) {
+	return func(cfg *ClientRoutesConfig) {
+		cfg.ResolveHealthyEndpointPeriod = val
+	}
+}
+
+func WithEndpoints(endpoints ...ClientRoutesEndpoint) func(*ClientRoutesConfig) {
+	return func(cfg *ClientRoutesConfig) {
+		cfg.Endpoints = endpoints
+	}
+}
+
+func WithTable(tableName string) func(*ClientRoutesConfig) {
+	return func(cfg *ClientRoutesConfig) {
+		cfg.TableName = tableName
+	}
+}
+
+func WithClientRoutes(opts ...ClientRoutesOption) func(*ClusterConfig) {
+	pmCfg := ClientRoutesConfig{
+		// Don't resolve healthy nodes by default
+		ResolveHealthyEndpointPeriod: 0,
+		MaxResolverConcurrency:       1,
+		TableName:                    "system.client_routes",
+		ResolverCacheDuration:        time.Millisecond * 500,
+	}
+	for _, opt := range opts {
+		opt(&pmCfg)
+	}
+	return func(cfg *ClusterConfig) {
+		cfg.ClientRoutesConfig = &pmCfg
+		if len(cfg.Hosts) == 0 {
+			for _, ep := range pmCfg.Endpoints {
+				if ep.ConnectionAddr != "" {
+					cfg.Hosts = append(cfg.Hosts, ep.ConnectionAddr)
+				}
+			}
+		}
+		// TODO: cfg.ControlConnectionOnlyToInitialNodes
+	}
+}
+
 func (cfg *ClusterConfig) Validate() error {
 	if len(cfg.Hosts) == 0 {
 		return ErrNoHosts
@@ -533,7 +593,7 @@ func (cfg *ClusterConfig) Validate() error {
 	}
 
 	if !cfg.DisableSkipMetadata {
-		cfg.Logger.Println("warning: enabling skipping metadata can lead to unpredictible results when executing query and altering columns involved in the query.")
+		cfg.Logger.Println("warning: enabling skipping metadata can lead to unpredictable results when executing query and altering columns involved in the query.")
 	}
 
 	if cfg.SerialConsistency > 0 && !cfg.SerialConsistency.IsSerial() {
@@ -546,6 +606,15 @@ func (cfg *ClusterConfig) Validate() error {
 
 	if cfg.MaxExcessShardConnectionsRate < 0 {
 		return fmt.Errorf("MaxExcessShardConnectionsRate should be positive number or zero")
+	}
+
+	if cfg.ClientRoutesConfig != nil {
+		if cfg.AddressTranslator != nil {
+			return fmt.Errorf("AddressTranslator and ClientRoutesConfig should not be set at the same time")
+		}
+		if err := cfg.ClientRoutesConfig.Validate(); err != nil {
+			return fmt.Errorf("ClientRoutesConfig is invalid: %v", err)
+		}
 	}
 
 	return cfg.ValidateAndInitSSL()

@@ -233,6 +233,13 @@ type SchemaChangeAggregate struct {
 	FrameHeader
 }
 
+type ClientRoutesChanged struct {
+	ChangeType    string
+	ConnectionIDs []string
+	HostIDs       []string
+	FrameHeader
+}
+
 type AuthenticateFrame struct {
 	Class string
 	FrameHeader

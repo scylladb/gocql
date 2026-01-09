@@ -265,3 +265,34 @@ func TestFrameToEvent_NonEventFrame(t *testing.T) {
 		t.Errorf("FrameToEvent(non-event) = %v, want nil", event)
 	}
 }
+
+func TestFrameToEvent_ClientRoutesChanged(t *testing.T) {
+	frame := &frm.ClientRoutesChanged{
+		ChangeType:    "UPDATED",
+		ConnectionIDs: []string{"c1", ""},
+		HostIDs:       []string{},
+	}
+
+	event := events.FrameToEvent(frame)
+	if event == nil {
+		t.Fatal("FrameToEvent returned nil")
+	}
+
+	clientEvent, ok := event.(*events.ClientRoutesChangedEvent)
+	if !ok {
+		t.Fatalf("Expected *ClientRoutesChangedEvent, got %T", event)
+	}
+
+	if clientEvent.ChangeType != "UPDATED" {
+		t.Errorf("ChangeType = %v, want UPDATED", clientEvent.ChangeType)
+	}
+	if len(clientEvent.ConnectionIDs) != 2 || clientEvent.ConnectionIDs[1] != "" {
+		t.Errorf("ConnectionIDs = %v, want [c1 \"\"]", clientEvent.ConnectionIDs)
+	}
+	if len(clientEvent.HostIDs) != 0 {
+		t.Errorf("HostIDs = %v, want empty", clientEvent.HostIDs)
+	}
+	if clientEvent.Type() != events.ClusterEventTypeClientRoutesChanged {
+		t.Errorf("Type() = %v, want ClusterEventTypeClientRoutesChanged", clientEvent.Type())
+	}
+}

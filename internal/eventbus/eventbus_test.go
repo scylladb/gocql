@@ -358,6 +358,35 @@ func TestChannelClosedOnStop(t *testing.T) {
 	}
 }
 
+func TestSubscriberStopAfterEventBusStop(t *testing.T) {
+	eb := New[int](
+		EventBusConfig{
+			InputEventsQueueSize: 10,
+		}, nil)
+	err := eb.Start()
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	sub := eb.Subscribe("test", 10, nil)
+
+	err = eb.Stop()
+	if err != nil {
+		t.Fatalf("Stop failed: %v", err)
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("Stop should not panic after eventbus Stop: %v", r)
+		}
+	}()
+
+	err = sub.Stop()
+	if err != ErrSubscriberNotFound {
+		t.Fatalf("Expected ErrSubscriberNotFound, got: %v", err)
+	}
+}
+
 func TestChannelClosedOnUnsubscribe(t *testing.T) {
 	eb := New[int](
 		EventBusConfig{
