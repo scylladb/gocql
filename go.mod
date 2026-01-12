@@ -21,7 +21,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed
 	github.com/klauspost/compress v1.18.2
-	golang.org/x/net v0.48.0
+	golang.org/x/net v0.49.0
 	gopkg.in/inf.v0 v0.9.1
 	sigs.k8s.io/yaml v1.6.0
 )
