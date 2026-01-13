@@ -271,25 +271,28 @@ func (s *Session) dial(ctx context.Context, host *HostInfo, connConfig *ConnConf
 	return s.dialShard(ctx, host, connConfig, errorHandler, 0, 0)
 }
 
-func (s *Session) translateHostAddresses(host *HostInfo) translatedAddresses {
+func translateHostAddresses(addressTranslator AddressTranslator, host *HostInfo, logger StdLogger) translatedAddresses {
 	resultedInfo := translatedAddresses{
-		CQL: s.cfg.translateAddressPort(host, AddressPort{
-			Address: host.UntranslatedConnectAddress(),
-			Port:    uint16(host.Port()),
-		}),
+		CQL: translateAddressPort(addressTranslator, host,
+			AddressPort{
+				Address: host.UntranslatedConnectAddress(),
+				Port:    uint16(host.Port()),
+			}, logger),
 	}
 	scyllaFeatures := host.ScyllaFeatures()
 	if port := scyllaFeatures.ShardAwarePort(); port != 0 {
-		resultedInfo.ShardAware = s.cfg.translateAddressPort(host, AddressPort{
-			Address: host.UntranslatedConnectAddress(),
-			Port:    port,
-		})
+		resultedInfo.ShardAware = translateAddressPort(addressTranslator, host,
+			AddressPort{
+				Address: host.UntranslatedConnectAddress(),
+				Port:    port,
+			}, logger)
 	}
 	if port := scyllaFeatures.ShardAwarePortTLS(); port != 0 {
-		resultedInfo.ShardAwareTLS = s.cfg.translateAddressPort(host, AddressPort{
-			Address: host.UntranslatedConnectAddress(),
-			Port:    port,
-		})
+		resultedInfo.ShardAwareTLS = translateAddressPort(addressTranslator, host,
+			AddressPort{
+				Address: host.UntranslatedConnectAddress(),
+				Port:    port,
+			}, logger)
 	}
 	return resultedInfo
 }
@@ -302,7 +305,7 @@ func (s *Session) dialShard(ctx context.Context, host *HostInfo, connConfig *Con
 	var obs ObservedConnect
 
 	current := host.getTranslatedConnectionInfo()
-	updated := s.translateHostAddresses(host)
+	updated := translateHostAddresses(s.addressTranslator, host, s.logger)
 	if current == nil || !updated.Equal(current) {
 		host.setTranslatedConnectionInfo(updated)
 	}

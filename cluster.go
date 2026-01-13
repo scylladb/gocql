@@ -36,7 +36,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gocql/gocql/internal/debug"
 	"github.com/gocql/gocql/internal/eventbus"
 )
 
@@ -421,34 +420,6 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 
 func (cfg *ClusterConfig) CreateSessionNonBlocking() (*Session, error) {
 	return NewSessionNonBlocking(*cfg)
-}
-
-type addressTranslateFn func(host *HostInfo, addr AddressPort) AddressPort
-
-// translateAddressPort is a helper method that will use the given AddressTranslator
-// if defined, to translate the given address and port into a possibly new address
-// and port, If no AddressTranslator or if an error occurs, the given address and
-// port will be returned.
-func (cfg *ClusterConfig) translateAddressPort(host *HostInfo, addr AddressPort) AddressPort {
-	if cfg.AddressTranslator == nil || !addr.IsValid() {
-		return addr
-	}
-	translatorV2, ok := cfg.AddressTranslator.(AddressTranslatorV2)
-	if !ok {
-		newAddr, newPort := cfg.AddressTranslator.Translate(addr.Address, int(addr.Port))
-		if debug.Enabled {
-			cfg.logger().Printf("gocql: translating address %q to '%v:%d'", addr, newAddr, newPort)
-		}
-		return AddressPort{
-			Address: newAddr,
-			Port:    uint16(newPort),
-		}
-	}
-	newAddr := translatorV2.TranslateHost(host, addr)
-	if debug.Enabled {
-		cfg.logger().Printf("gocql: translating address %q to %q", addr, newAddr)
-	}
-	return newAddr
 }
 
 func (cfg *ClusterConfig) filterHost(host *HostInfo) bool {

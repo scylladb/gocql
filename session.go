@@ -80,6 +80,7 @@ type Session struct {
 	eventBus                  *eventbus.EventBus[events.Event]
 	connCfg                   *ConnConfig
 	routingKeyInfoCache       routingKeyInfoLRU
+	addressTranslator         AddressTranslator
 	cfg                       ClusterConfig
 	pageSize                  int
 	prefetch                  float64
@@ -128,16 +129,17 @@ func newSessionCommon(cfg ClusterConfig) (*Session, error) {
 	ctx, cancel := context.WithCancel(context.TODO())
 
 	s := &Session{
-		cons:            cfg.Consistency,
-		prefetch:        0.25,
-		cfg:             cfg,
-		pageSize:        cfg.PageSize,
-		stmtsLRU:        &preparedLRU{lru: lru.New(cfg.MaxPreparedStmts)},
-		connectObserver: cfg.ConnectObserver,
-		ctx:             ctx,
-		cancel:          cancel,
-		logger:          cfg.logger(),
-		readyCh:         make(chan struct{}, 1),
+		cons:              cfg.Consistency,
+		prefetch:          0.25,
+		cfg:               cfg,
+		pageSize:          cfg.PageSize,
+		stmtsLRU:          &preparedLRU{lru: lru.New(cfg.MaxPreparedStmts)},
+		connectObserver:   cfg.ConnectObserver,
+		ctx:               ctx,
+		cancel:            cancel,
+		logger:            cfg.logger(),
+		addressTranslator: cfg.AddressTranslator,
+		readyCh:           make(chan struct{}, 1),
 	}
 
 	// Close created resources on error otherwise they'll leak
@@ -956,6 +958,32 @@ func (s *Session) MapExecuteBatchCAS(batch *Batch, dest map[string]interface{}) 
 	// if MapScan failed. Although Close just returns err, using Close
 	// here might be confusing as we are not actually closing the iter
 	return applied, iter, iter.err
+}
+
+// translateAddressPort is a helper method that will use the given AddressTranslator
+// if defined, to translate the given address and port into a possibly new address
+// and port, If no AddressTranslator or if an error occurs, the given address and
+// port will be returned.
+func translateAddressPort(addressTranslator AddressTranslator, host *HostInfo, addr AddressPort, logger StdLogger) AddressPort {
+	if addressTranslator == nil || !addr.IsValid() {
+		return addr
+	}
+	translatorV2, ok := addressTranslator.(AddressTranslatorV2)
+	if !ok {
+		newAddr, newPort := addressTranslator.Translate(addr.Address, int(addr.Port))
+		if debug.Enabled {
+			logger.Printf("gocql: translating address %q to '%v:%d'", addr, newAddr, newPort)
+		}
+		return AddressPort{
+			Address: newAddr,
+			Port:    uint16(newPort),
+		}
+	}
+	newAddr := translatorV2.TranslateHost(host, addr)
+	if debug.Enabled {
+		logger.Printf("gocql: translating address %q to %q", addr, newAddr)
+	}
+	return newAddr
 }
 
 type hostMetrics struct {

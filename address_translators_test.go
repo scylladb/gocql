@@ -65,3 +65,57 @@ func TestIdentityAddressTranslator_HostProvided(t *testing.T) {
 	}
 	tests.AssertEqual(t, "translated port", 9042, port)
 }
+
+func TestTranslateHostAddresses_NoScyllaPorts(t *testing.T) {
+	t.Parallel()
+
+	translator := AddressTranslatorFunc(func(addr net.IP, port int) (net.IP, int) {
+		return net.ParseIP("10.10.10.10"), 9142
+	})
+	host := HostInfoBuilder{
+		ConnectAddress: net.ParseIP("10.0.0.1"),
+		Port:           9042,
+	}.Build()
+
+	translated := translateHostAddresses(translator, &host, nil)
+
+	tests.AssertTrue(t, "translated CQL address", net.ParseIP("10.10.10.10").Equal(translated.CQL.Address))
+	tests.AssertEqual(t, "translated CQL port", uint16(9142), translated.CQL.Port)
+	tests.AssertTrue(t, "shard aware empty address", len(translated.ShardAware.Address) == 0)
+	tests.AssertEqual(t, "shard aware empty port", uint16(0), translated.ShardAware.Port)
+	tests.AssertTrue(t, "shard aware tls empty address", len(translated.ShardAwareTLS.Address) == 0)
+	tests.AssertEqual(t, "shard aware tls empty port", uint16(0), translated.ShardAwareTLS.Port)
+}
+
+func TestTranslateHostAddresses_WithScyllaPorts(t *testing.T) {
+	t.Parallel()
+
+	translatedIP := net.ParseIP("192.0.2.10")
+	translator := AddressTranslatorFuncV2(func(hostID string, addr AddressPort) AddressPort {
+		if hostID != "host-id" {
+			t.Errorf("expected host id %q, got %q", "host-id", hostID)
+		}
+		return AddressPort{
+			Address: translatedIP,
+			Port:    addr.Port + 1,
+		}
+	})
+	host := HostInfoBuilder{
+		ConnectAddress: net.ParseIP("10.0.0.1"),
+		Port:           9042,
+		HostId:         "host-id",
+	}.Build()
+	host.setScyllaFeatures(ScyllaHostFeatures{
+		shardAwarePort:    19042,
+		shardAwarePortTLS: 19043,
+	})
+
+	translated := translateHostAddresses(translator, &host, nil)
+
+	tests.AssertTrue(t, "translated CQL address", translatedIP.Equal(translated.CQL.Address))
+	tests.AssertEqual(t, "translated CQL port", uint16(9043), translated.CQL.Port)
+	tests.AssertTrue(t, "translated shard aware address", translatedIP.Equal(translated.ShardAware.Address))
+	tests.AssertEqual(t, "translated shard aware port", uint16(19043), translated.ShardAware.Port)
+	tests.AssertTrue(t, "translated shard aware tls address", translatedIP.Equal(translated.ShardAwareTLS.Address))
+	tests.AssertEqual(t, "translated shard aware tls port", uint16(19044), translated.ShardAwareTLS.Port)
+}
