@@ -161,7 +161,7 @@ func resolveInitialEndpoint(resolver DNSResolver, addr string, defaultPort int) 
 	if ip := net.ParseIP(host); ip != nil {
 		if validIpAddr(ip) {
 			hb := HostInfoBuilder{
-				HostId:         MustRandomUUID().String(),
+				// Fake hosts for initial endpoints do not need HostID
 				Hostname:       host,
 				ConnectAddress: ip,
 				Port:           port,
@@ -183,7 +183,7 @@ func resolveInitialEndpoint(resolver DNSResolver, addr string, defaultPort int) 
 	for _, ip := range ips {
 		if validIpAddr(ip) {
 			hb := HostInfoBuilder{
-				HostId:         MustRandomUUID().String(),
+				// Fake hosts for initial endpoints do not need HostID
 				Hostname:       host,
 				ConnectAddress: ip,
 				Port:           port,

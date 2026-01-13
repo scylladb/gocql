@@ -329,6 +329,13 @@ func (s *Session) init() error {
 		newer, _ := checkSystemSchema(s.control)
 		s.useSystemSchema = newer
 		defer conn.finalizeConnection()
+	} else {
+		// For testing purposes we populate host ids
+		for _, host := range hosts {
+			if len(host.hostId) == 0 {
+				host.hostId = MustRandomUUID().String()
+			}
+		}
 	}
 
 	if partitioner != "" {

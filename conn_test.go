@@ -461,6 +461,10 @@ func TestQueryMultinodeWithMetrics(t *testing.T) {
 			}
 		}
 
+		if host == nil {
+			t.Fatalf("failed to observe host info for address %v", ip)
+		}
+
 		queryMetric := qry.metrics.hostMetrics(host)
 		observedMetrics := observer.GetMetrics(host)
 
