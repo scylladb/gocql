@@ -783,6 +783,11 @@ func (sd *scyllaDialer) DialHost(ctx context.Context, host *HostInfo) (*DialedHo
 	}
 
 	addr := net.JoinHostPort(ip.String(), strconv.Itoa(port))
+	translatedInfo := host.getTranslatedConnectionInfo()
+	if translatedInfo != nil {
+		addr = translatedInfo.CQL.ToNetAddr()
+	}
+
 	conn, err := sd.dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return nil, err

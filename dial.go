@@ -71,6 +71,11 @@ func (hd *defaultHostDialer) DialHost(ctx context.Context, host *HostInfo) (*Dia
 	}
 
 	addr := net.JoinHostPort(ip.String(), strconv.Itoa(port))
+	translatedInfo := host.getTranslatedConnectionInfo()
+	if translatedInfo != nil {
+		addr = translatedInfo.CQL.ToNetAddr()
+	}
+
 	conn, err := hd.dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return nil, err
