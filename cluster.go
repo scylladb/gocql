@@ -684,11 +684,49 @@ func strictVerifyPeerCertificate(rootCAs *x509.CertPool) func([][]byte, [][]*x50
 			KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		}
 
-		_, err = cert.Verify(opts)
+		chains, err := cert.Verify(opts)
 		if err != nil {
-			return fmt.Errorf("certificate verification failed: %v", err)
+			// Provide detailed information about which certificate failed
+			return fmt.Errorf("certificate verification failed for subject=%q, issuer=%q: %v",
+				cert.Subject.String(), cert.Issuer.String(), err)
 		}
 
-		return nil
+		// Ensure at least one valid chain was found
+		if len(chains) == 0 {
+			return fmt.Errorf("no valid certificate chains found for subject=%q", cert.Subject.String())
+		}
+
+		// Verify that all certificates in at least one chain are properly connected
+		// This ensures every certificate is signed by the next one in the chain
+		for _, chain := range chains {
+			if len(chain) == 0 {
+				continue
+			}
+
+			// Verify each certificate in the chain is signed by its parent
+			chainValid := true
+			for i := 0; i < len(chain)-1; i++ {
+				// Check if cert[i] is signed by cert[i+1]
+				if err := chain[i].CheckSignatureFrom(chain[i+1]); err != nil {
+					chainValid = false
+					break
+				}
+			}
+
+			// If we found a valid chain where all certificates are properly signed, we're good
+			if chainValid {
+				// Also verify the root certificate in this chain is self-signed
+				rootCert := chain[len(chain)-1]
+				if err := rootCert.CheckSignatureFrom(rootCert); err != nil {
+					// This root is not self-signed, continue checking other chains
+					continue
+				}
+				// Found a valid chain with proper signatures all the way to a self-signed root
+				return nil
+			}
+		}
+
+		// No valid chain found where all certificates are properly signed
+		return fmt.Errorf("no valid certificate chain found with proper signatures for subject=%q", cert.Subject.String())
 	}
 }
