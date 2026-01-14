@@ -144,14 +144,13 @@ func TestStrictVerifyPeerCertificate(t *testing.T) {
 			intermediateCA.Raw,
 		}
 
-		// When an intermediate CA is placed in the root pool, cert.Verify() will
-		// accept it as a trusted root and the verification will succeed.
-		// This is actually standard Go behavior - the "strictness" comes from
-		// the fact that we're explicitly calling cert.Verify() with properly
-		// configured Roots and Intermediates pools.
+		// When an intermediate CA is placed in the root pool, our strict validation
+		// should reject it because the intermediate is not self-signed (not a true root CA).
+		// This prevents the security issue where trusting an intermediate as a root
+		// allows that intermediate to issue certificates for any domain.
 		err := verifyFunc(rawCerts, nil)
-		if err != nil {
-			t.Errorf("unexpected error: %v", err)
+		if err == nil {
+			t.Error("expected error when intermediate CA is in root pool (not a self-signed root)")
 		}
 	})
 
