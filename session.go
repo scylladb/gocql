@@ -971,26 +971,32 @@ func (s *Session) MapExecuteBatchCAS(batch *Batch, dest map[string]interface{}) 
 // if defined, to translate the given address and port into a possibly new address
 // and port, If no AddressTranslator or if an error occurs, the given address and
 // port will be returned.
-func translateAddressPort(addressTranslator AddressTranslator, host *HostInfo, addr AddressPort, logger StdLogger) AddressPort {
+func translateAddressPort(addressTranslator AddressTranslator, host *HostInfo, addr AddressPort, logger StdLogger) (AddressPort, error) {
 	if addressTranslator == nil || !addr.IsValid() {
-		return addr
+		return addr, nil
 	}
 	translatorV2, ok := addressTranslator.(AddressTranslatorV2)
 	if !ok {
 		newAddr, newPort := addressTranslator.Translate(addr.Address, int(addr.Port))
 		if debug.Enabled {
-			logger.Printf("gocql: translating address %q to '%v:%d'", addr, newAddr, newPort)
+			logger.Printf("gocql: translated address %q to '%v:%d'", addr, newAddr, newPort)
 		}
 		return AddressPort{
 			Address: newAddr,
 			Port:    uint16(newPort),
+		}, nil
+	}
+	newAddr, err := translatorV2.TranslateHost(host, addr)
+	if err != nil {
+		if debug.Enabled {
+			logger.Printf("gocql: failed to translate address %q: %s", addr, err.Error())
 		}
+		return addr, err
 	}
-	newAddr := translatorV2.TranslateHost(host, addr)
 	if debug.Enabled {
-		logger.Printf("gocql: translating address %q to %q", addr, newAddr)
+		logger.Printf("gocql: translated address %q to %q", addr, newAddr)
 	}
-	return newAddr
+	return newAddr, nil
 }
 
 type hostMetrics struct {

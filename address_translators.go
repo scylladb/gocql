@@ -72,7 +72,7 @@ type AddressTranslatorHostInfo interface {
 // for instance, to translate public IPs to private IPs.
 type AddressTranslatorV2 interface {
 	AddressTranslator
-	TranslateHost(host AddressTranslatorHostInfo, addr AddressPort) AddressPort
+	TranslateHost(host AddressTranslatorHostInfo, addr AddressPort) (AddressPort, error)
 }
 
 type AddressTranslatorFuncV2 func(hostID string, addr AddressPort) AddressPort
@@ -85,8 +85,8 @@ func (fn AddressTranslatorFuncV2) Translate(addr net.IP, port int) (net.IP, int)
 	return res.Address, int(res.Port)
 }
 
-func (fn AddressTranslatorFuncV2) TranslateHost(host AddressTranslatorHostInfo, addr AddressPort) AddressPort {
-	return fn(host.HostID(), addr)
+func (fn AddressTranslatorFuncV2) TranslateHost(host AddressTranslatorHostInfo, addr AddressPort) (AddressPort, error) {
+	return fn(host.HostID(), addr), nil
 }
 
 var _ AddressTranslatorV2 = AddressTranslatorFuncV2(nil)

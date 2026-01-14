@@ -271,30 +271,42 @@ func (s *Session) dial(ctx context.Context, host *HostInfo, connConfig *ConnConf
 	return s.dialShard(ctx, host, connConfig, errorHandler, 0, 0)
 }
 
-func translateHostAddresses(addressTranslator AddressTranslator, host *HostInfo, logger StdLogger) translatedAddresses {
-	resultedInfo := translatedAddresses{
-		CQL: translateAddressPort(addressTranslator, host,
-			AddressPort{
-				Address: host.UntranslatedConnectAddress(),
-				Port:    uint16(host.Port()),
-			}, logger),
+func translateHostAddresses(addressTranslator AddressTranslator, host *HostInfo, logger StdLogger) (translatedAddresses, error) {
+	addr, err := translateAddressPort(addressTranslator, host, AddressPort{
+		Address: host.UntranslatedConnectAddress(),
+		Port:    uint16(host.Port()),
+	}, logger)
+	if err != nil {
+		return translatedAddresses{}, fmt.Errorf("unable to translate regular cql address: %w", err)
 	}
+	resultedInfo := translatedAddresses{
+		CQL: addr,
+	}
+
 	scyllaFeatures := host.ScyllaFeatures()
 	if port := scyllaFeatures.ShardAwarePort(); port != 0 {
-		resultedInfo.ShardAware = translateAddressPort(addressTranslator, host,
+		addr, err = translateAddressPort(addressTranslator, host,
 			AddressPort{
 				Address: host.UntranslatedConnectAddress(),
 				Port:    port,
 			}, logger)
+		if err != nil {
+			return translatedAddresses{}, fmt.Errorf("unable to translate shard aware address: %w", err)
+		}
+		resultedInfo.ShardAware = addr
 	}
 	if port := scyllaFeatures.ShardAwarePortTLS(); port != 0 {
-		resultedInfo.ShardAwareTLS = translateAddressPort(addressTranslator, host,
+		addr, err = translateAddressPort(addressTranslator, host,
 			AddressPort{
 				Address: host.UntranslatedConnectAddress(),
 				Port:    port,
 			}, logger)
+		if err != nil {
+			return translatedAddresses{}, fmt.Errorf("unable to translate shard aware tls address: %w", err)
+		}
+		resultedInfo.ShardAwareTLS = addr
 	}
-	return resultedInfo
+	return resultedInfo, nil
 }
 
 // dialShard establishes a connection to a host/shard and notifies the session's connectObserver.
@@ -305,7 +317,10 @@ func (s *Session) dialShard(ctx context.Context, host *HostInfo, connConfig *Con
 	var obs ObservedConnect
 
 	current := host.getTranslatedConnectionInfo()
-	updated := translateHostAddresses(s.addressTranslator, host, s.logger)
+	updated, err := translateHostAddresses(s.addressTranslator, host, s.logger)
+	if err != nil {
+		return nil, err
+	}
 	if current == nil || !updated.Equal(current) {
 		host.setTranslatedConnectionInfo(updated)
 	}

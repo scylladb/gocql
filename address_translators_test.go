@@ -77,8 +77,9 @@ func TestTranslateHostAddresses_NoScyllaPorts(t *testing.T) {
 		Port:           9042,
 	}.Build()
 
-	translated := translateHostAddresses(translator, &host, nil)
+	translated, err := translateHostAddresses(translator, &host, nil)
 
+	tests.AssertNil(t, "should return no error", err)
 	tests.AssertTrue(t, "translated CQL address", net.ParseIP("10.10.10.10").Equal(translated.CQL.Address))
 	tests.AssertEqual(t, "translated CQL port", uint16(9142), translated.CQL.Port)
 	tests.AssertTrue(t, "shard aware empty address", len(translated.ShardAware.Address) == 0)
@@ -110,8 +111,9 @@ func TestTranslateHostAddresses_WithScyllaPorts(t *testing.T) {
 		shardAwarePortTLS: 19043,
 	})
 
-	translated := translateHostAddresses(translator, &host, nil)
+	translated, err := translateHostAddresses(translator, &host, nil)
 
+	tests.AssertNil(t, "should return no error", err)
 	tests.AssertTrue(t, "translated CQL address", translatedIP.Equal(translated.CQL.Address))
 	tests.AssertEqual(t, "translated CQL port", uint16(9043), translated.CQL.Port)
 	tests.AssertTrue(t, "translated shard aware address", translatedIP.Equal(translated.ShardAware.Address))
