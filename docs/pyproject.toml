@@ -9,7 +9,7 @@ package-mode = false
 python = ">=3.11,<3.14"
 pygments = "^2.19.2"
 sphinx-scylladb-theme = "^1.8.2"
-myst-parser = "^4.0.1"
+myst-parser = "^5.0.0"
 sphinx-autobuild = "^2025.0.0"
 Sphinx = "^8.0.0"
 sphinx-multiversion-scylla = "^0.3.2"
