@@ -158,7 +158,7 @@ func (eb *EventBus[T]) Stop() error {
 	for _, sub := range eb.subscribers {
 		close(sub.ch)
 	}
-
+	eb.subscribers = nil
 	return nil
 }
 
