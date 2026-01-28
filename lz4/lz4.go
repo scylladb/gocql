@@ -50,8 +50,7 @@ func (s LZ4Compressor) Name() string {
 func (s LZ4Compressor) Encode(data []byte) ([]byte, error) {
 	dataLen := len(data)
 	buf := make([]byte, lz4.CompressBlockBound(dataLen)+4)
-	var compressor lz4.Compressor
-	n, err := compressor.CompressBlock(data, buf[4:])
+	n, err := lz4.CompressBlock(data, buf[4:], nil)
 	// According to lz4.CompressBlock doc, it doesn't fail as long as the dst
 	// buffer length is at least lz4.CompressBlockBound(len(data))) bytes, but
 	// we check for error anyway just to be thorough.
