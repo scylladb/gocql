@@ -675,18 +675,19 @@ func (c *Conn) closeWithError(err error) {
 	// We should attempt to deliver the error back to the caller if it
 	// exists. However, don't block c.mu while we are delivering the
 	// error to outstanding calls.
-	if err != nil {
-		callsToClose = c.calls
-		// It is safe to change c.calls to nil. Nobody should use it after c.closed is set to true.
-		c.calls = nil
-	}
+
+	callsToClose = c.calls
+	// It is safe to change c.calls to nil. Nobody should use it after c.closed is set to true.
+	c.calls = nil
 	c.mu.Unlock()
 
 	for _, req := range callsToClose {
 		// we need to send the error to all waiting queries.
 		select {
-		case req.resp <- callResp{err: err}:
-		case <-req.timeout:
+		case req.resp <- callResp{err: ErrConnectionClosed}:
+		default:
+			// Either reading thread is gone or resp is already written
+			// In both cases no need to do anything
 		}
 		if req.streamObserverContext != nil {
 			req.streamObserverEndOnce.Do(func() {
@@ -699,13 +700,10 @@ func (c *Conn) closeWithError(err error) {
 
 	// if error was nil then unblock the quit channel
 	c.cancel()
-	cerr := c.close()
+	_ = c.conn.Close()
 
 	if err != nil {
 		c.errorHandler.HandleError(c, err, true)
-	} else if cerr != nil {
-		// TODO(zariel): is it a good idea to do this?
-		c.errorHandler.HandleError(c, cerr, true)
 	}
 }
 
@@ -719,10 +717,6 @@ func (c *Conn) setTabletSupported(val bool) {
 		intVal = 1
 	}
 	atomic.StoreInt32(&c.tabletsRoutingV1, intVal)
-}
-
-func (c *Conn) close() error {
-	return c.conn.Close()
 }
 
 func (c *Conn) Close() {
@@ -1219,9 +1213,6 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, reques
 
 	err := req.buildFrame(framer, stream)
 	if err != nil {
-		// closeWithError will block waiting for this stream to either receive a response
-		// or for us to timeout.
-		close(call.timeout)
 		// We failed to serialize the frame into a buffer.
 		// This should not affect the connection as we didn't write anything. We just free the current call.
 		c.mu.Lock()
@@ -1237,10 +1228,6 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, reques
 
 	n, err := c.w.writeContext(ctx, framer.buf)
 	if err != nil {
-		// closeWithError will block waiting for this stream to either receive a response
-		// or for us to timeout, close the timeout chan here. Im not entirely sure
-		// but we should not get a response after an error on the write side.
-		close(call.timeout)
 		if (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) && n == 0 {
 			// We have not started to write this frame.
 			// Release the stream as no response can come from the server on the stream.
