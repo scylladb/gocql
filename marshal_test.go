@@ -866,6 +866,156 @@ func TestUnmarshalUDT(t *testing.T) {
 	}
 }
 
+// TestUnmarshalListIntoInterface tests that lists can be unmarshaled into *interface{}
+// This is used by MapScan and SliceMap functions.
+func TestUnmarshalListIntoInterface(t *testing.T) {
+	t.Parallel()
+
+	// Create a list of ints: [1, 2]
+	// Format: [list_size (4 bytes), element_length (4 bytes), element_data, ...]
+	// Reference: line 63 shows format: \x00\x00\x00\x02\x00\x00\x00\x04\x00\x00\x00\x01\x00\x00\x00\x04\x00\x00\x00\x02
+	data := []byte{
+		0, 0, 0, 2, // list size: 2 elements
+		0, 0, 0, 4, // element 0 length: 4 bytes
+		0, 0, 0, 1, // element 0 value: 1
+		0, 0, 0, 4, // element 1 length: 4 bytes
+		0, 0, 0, 2, // element 1 value: 2
+	}
+
+	info := CollectionType{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeList},
+		Elem:       NativeType{proto: protoVersion4, typ: TypeInt},
+	}
+
+	var result interface{}
+	if err := Unmarshal(info, data, &result); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+
+	// Verify the result is a []int
+	slice, ok := result.([]int)
+	if !ok {
+		t.Fatalf("Expected []int, got %T", result)
+	}
+	if len(slice) != 2 {
+		t.Fatalf("Expected 2 elements, got %d", len(slice))
+	}
+	expected := []int{1, 2}
+	for i, v := range expected {
+		if slice[i] != v {
+			t.Errorf("Element %d: expected %d, got %d", i, v, slice[i])
+		}
+	}
+}
+
+// TestUnmarshalMapIntoInterface tests that maps can be unmarshaled into *interface{}
+// This is used by MapScan and SliceMap functions.
+func TestUnmarshalMapIntoInterface(t *testing.T) {
+	t.Parallel()
+
+	// Create a map: {"a": 1, "b": 2}
+	// Format: [map_size (4 bytes), key_length, key_data, value_length, value_data, ...]
+	data := []byte{
+		0, 0, 0, 2, // map size: 2 entries
+		0, 0, 0, 1, // key 0 length: 1 byte
+		'a',        // key 0 value: "a"
+		0, 0, 0, 4, // value 0 length: 4 bytes
+		0, 0, 0, 1, // value 0: 1
+		0, 0, 0, 1, // key 1 length: 1 byte
+		'b',        // key 1 value: "b"
+		0, 0, 0, 4, // value 1 length: 4 bytes
+		0, 0, 0, 2, // value 1: 2
+	}
+
+	info := CollectionType{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeMap},
+		Key:        NativeType{proto: protoVersion4, typ: TypeVarchar},
+		Elem:       NativeType{proto: protoVersion4, typ: TypeInt},
+	}
+
+	var result interface{}
+	if err := Unmarshal(info, data, &result); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+
+	// Verify the result is a map[string]int
+	m, ok := result.(map[string]int)
+	if !ok {
+		t.Fatalf("Expected map[string]int, got %T", result)
+	}
+	if len(m) != 2 {
+		t.Fatalf("Expected 2 entries, got %d", len(m))
+	}
+	if m["a"] != 1 {
+		t.Errorf("Expected m[\"a\"] = 1, got %d", m["a"])
+	}
+	if m["b"] != 2 {
+		t.Errorf("Expected m[\"b\"] = 2, got %d", m["b"])
+	}
+}
+
+// TestUnmarshalListWithVectorIntoInterface tests that lists containing vectors
+// can be unmarshaled into *interface{} (issue #692)
+func TestUnmarshalListWithVectorIntoInterface(t *testing.T) {
+	t.Parallel()
+
+	// Create a list of vectors: [[1.0, 2.0], [3.0, 4.0]]
+	// Vector elements are fixed-size floats (4 bytes each)
+	// Format: [list_size (4 bytes), element_length, element_data (vector), ...]
+	// Each vector is 8 bytes (2 floats * 4 bytes)
+	var data []byte
+
+	// List size: 2 vectors
+	data = append(data, 0, 0, 0, 2)
+
+	// Vector 1: [1.0, 2.0]
+	data = append(data, 0, 0, 0, 8) // vector length: 8 bytes
+	float1Bytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(float1Bytes, math.Float32bits(1.0))
+	data = append(data, float1Bytes...)
+	float2Bytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(float2Bytes, math.Float32bits(2.0))
+	data = append(data, float2Bytes...)
+
+	// Vector 2: [3.0, 4.0]
+	data = append(data, 0, 0, 0, 8) // vector length: 8 bytes
+	float3Bytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(float3Bytes, math.Float32bits(3.0))
+	data = append(data, float3Bytes...)
+	float4Bytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(float4Bytes, math.Float32bits(4.0))
+	data = append(data, float4Bytes...)
+
+	info := CollectionType{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeList},
+		Elem: VectorType{
+			NativeType: NativeType{proto: protoVersion4, typ: TypeCustom, custom: "org.apache.cassandra.db.marshal.VectorType"},
+			SubType:    NativeType{proto: protoVersion4, typ: TypeFloat},
+			Dimensions: 2,
+		},
+	}
+
+	var result interface{}
+	if err := Unmarshal(info, data, &result); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+
+	// Verify the result is a [][]float32
+	slice, ok := result.([][]float32)
+	if !ok {
+		t.Fatalf("Expected [][]float32, got %T", result)
+	}
+	if len(slice) != 2 {
+		t.Fatalf("Expected 2 elements, got %d", len(slice))
+	}
+	if len(slice[0]) != 2 || slice[0][0] != 1.0 || slice[0][1] != 2.0 {
+		t.Errorf("Expected slice[0] = [1.0, 2.0], got %v", slice[0])
+	}
+	if len(slice[1]) != 2 || slice[1][0] != 3.0 || slice[1][1] != 4.0 {
+		t.Errorf("Expected slice[1] = [3.0, 4.0], got %v", slice[1])
+	}
+}
+
 // bytesWithLength concatenates all data slices and prepends the total length as uint32.
 // The length does not count the size of the uint32 used for writing the size.
 func bytesWithLength(data ...[]byte) []byte {
