@@ -316,30 +316,23 @@ type frame interface {
 }
 
 func readHeader(r io.Reader, p []byte) (head frm.FrameHeader, err error) {
-	_, err = io.ReadFull(r, p[:1])
+	_, err = io.ReadFull(r, p[:headSize])
 	if err != nil {
-		return frm.FrameHeader{}, err
+		if len(p) < headSize {
+			return frm.FrameHeader{}, fmt.Errorf("not enough bytes to read header require 9 got: %d", len(p))
+		} else {
+			return frm.FrameHeader{}, err
+		}
 	}
 
-	version := p[0] & protoVersionMask
+	head.Version = frm.ProtoVersion(p[0])
+	version := head.Version.Version()
 
 	if version < protoVersion3 || version > protoVersion5 {
 		return frm.FrameHeader{}, fmt.Errorf("gocql: unsupported protocol response version: %d", version)
 	}
 
-	_, err = io.ReadFull(r, p[1:headSize])
-	if err != nil {
-		return frm.FrameHeader{}, err
-	}
-
-	p = p[:headSize]
-
-	head.Version = frm.ProtoVersion(p[0])
 	head.Flags = p[1]
-
-	if len(p) != 9 {
-		return frm.FrameHeader{}, fmt.Errorf("not enough bytes to read header require 9 got: %d", len(p))
-	}
 
 	head.Stream = int(int16(binary.BigEndian.Uint16(p[2:4])))
 	head.Op = frm.Op(p[4])
