@@ -1817,6 +1817,71 @@ func (v VectorType) Zero() interface{} {
 }
 
 func (t CollectionType) NewWithError() (interface{}, error) {
+	// Fast path for common collection patterns
+	switch t.typ {
+	case TypeList, TypeSet:
+		// Fast path for lists/sets of primitive types
+		if nt, ok := t.Elem.(NativeType); ok {
+			switch nt.typ {
+			case TypeInt:
+				return new([]int), nil
+			case TypeBigInt, TypeCounter:
+				return new([]int64), nil
+			case TypeText, TypeVarchar, TypeAscii:
+				return new([]string), nil
+			case TypeBoolean:
+				return new([]bool), nil
+			case TypeFloat:
+				return new([]float32), nil
+			case TypeDouble:
+				return new([]float64), nil
+			case TypeUUID, TypeTimeUUID:
+				return new([]UUID), nil
+			case TypeTimestamp, TypeDate:
+				return new([]time.Time), nil
+			case TypeSmallInt:
+				return new([]int16), nil
+			case TypeTinyInt:
+				return new([]int8), nil
+			case TypeBlob:
+				return new([][]byte), nil
+			}
+		}
+	case TypeMap:
+		// Fast path for maps with primitive key/value types
+		if keyNT, keyOk := t.Key.(NativeType); keyOk {
+			if valNT, valOk := t.Elem.(NativeType); valOk {
+				// String keys are most common
+				if keyNT.typ == TypeText || keyNT.typ == TypeVarchar {
+					switch valNT.typ {
+					case TypeInt:
+						return new(map[string]int), nil
+					case TypeBigInt:
+						return new(map[string]int64), nil
+					case TypeText, TypeVarchar:
+						return new(map[string]string), nil
+					case TypeBoolean:
+						return new(map[string]bool), nil
+					case TypeDouble:
+						return new(map[string]float64), nil
+					case TypeUUID:
+						return new(map[string]UUID), nil
+					}
+				}
+				// Int keys
+				if keyNT.typ == TypeInt {
+					switch valNT.typ {
+					case TypeText, TypeVarchar:
+						return new(map[int]string), nil
+					case TypeInt:
+						return new(map[int]int), nil
+					}
+				}
+			}
+		}
+	}
+
+	// Fallback to reflection for complex types
 	typ, err := goType(t)
 	if err != nil {
 		return nil, err
@@ -1861,11 +1926,8 @@ func (t TupleTypeInfo) String() string {
 }
 
 func (t TupleTypeInfo) NewWithError() (interface{}, error) {
-	typ, err := goType(t)
-	if err != nil {
-		return nil, err
-	}
-	return reflect.New(typ).Interface(), nil
+	// Tuples are always []interface{}, no need for reflection
+	return new([]interface{}), nil
 }
 
 type UDTField struct {
