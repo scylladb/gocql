@@ -29,9 +29,13 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"math/big"
 	"math/bits"
 	"reflect"
+	"time"
 	"unsafe"
+
+	"gopkg.in/inf.v0"
 
 	"github.com/gocql/gocql/serialization/ascii"
 	"github.com/gocql/gocql/serialization/bigint"
@@ -1718,6 +1722,41 @@ func NewCustomType(proto byte, typ Type, custom string) NativeType {
 }
 
 func (t NativeType) NewWithError() (interface{}, error) {
+	// Fast path for common types to avoid reflection overhead
+	switch t.typ {
+	case TypeInt:
+		return new(int), nil
+	case TypeBigInt, TypeCounter:
+		return new(int64), nil
+	case TypeVarchar, TypeAscii, TypeText, TypeInet:
+		return new(string), nil
+	case TypeBoolean:
+		return new(bool), nil
+	case TypeFloat:
+		return new(float32), nil
+	case TypeDouble:
+		return new(float64), nil
+	case TypeTimestamp, TypeDate:
+		return new(time.Time), nil
+	case TypeUUID, TypeTimeUUID:
+		return new(UUID), nil
+	case TypeBlob:
+		return new([]byte), nil
+	case TypeSmallInt:
+		return new(int16), nil
+	case TypeTinyInt:
+		return new(int8), nil
+	case TypeTime:
+		return new(time.Duration), nil
+	case TypeDecimal:
+		return new(*inf.Dec), nil
+	case TypeVarint:
+		return new(*big.Int), nil
+	case TypeDuration:
+		return new(Duration), nil
+	}
+
+	// Fallback to reflection for complex/custom types
 	typ, err := goType(t)
 	if err != nil {
 		return nil, err
