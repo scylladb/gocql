@@ -367,9 +367,13 @@ func (iter *Iter) RowData() (RowData, error) {
 		return RowData{}, iter.err
 	}
 
-	columns := make([]string, 0, len(iter.Columns()))
-	values := make([]interface{}, 0, len(iter.Columns()))
+	// Pre-size slices to actual column count including tuple expansion
+	// and use direct indexing instead of append for better performance
+	actualSize := iter.meta.actualColCount
+	columns := make([]string, actualSize)
+	values := make([]interface{}, actualSize)
 
+	idx := 0
 	for _, column := range iter.Columns() {
 		if c, ok := column.TypeInfo.(TupleTypeInfo); !ok {
 			val, err := column.TypeInfo.NewWithError()
@@ -377,17 +381,19 @@ func (iter *Iter) RowData() (RowData, error) {
 				iter.err = err
 				return RowData{}, err
 			}
-			columns = append(columns, column.Name)
-			values = append(values, val)
+			columns[idx] = column.Name
+			values[idx] = val
+			idx++
 		} else {
 			for i, elem := range c.Elems {
-				columns = append(columns, TupleColumnName(column.Name, i))
+				columns[idx] = TupleColumnName(column.Name, i)
 				val, err := elem.NewWithError()
 				if err != nil {
 					iter.err = err
 					return RowData{}, err
 				}
-				values = append(values, val)
+				values[idx] = val
+				idx++
 			}
 		}
 	}
