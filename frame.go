@@ -189,7 +189,7 @@ func readInt(p []byte) int32 {
 	return int32(binary.BigEndian.Uint32(p[:4]))
 }
 
-const defaultBufSize = 128
+const defaultBufSize = 4096
 
 type ObservedFrameHeader struct {
 	// StartHeader is the time we started reading the frame header off the network connection.
