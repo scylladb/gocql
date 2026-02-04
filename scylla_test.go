@@ -469,7 +469,7 @@ func mockConnForPicker(shard, nrShards int) *Conn {
 				msbIgnore: 12,
 			},
 		},
-		conn:    conn1,
+		r:       &connReader{conn: conn1},
 		addr:    fmt.Sprintf("192.168.1.%d:9042", shard+1),
 		closed:  false,
 		mu:      sync.Mutex{},

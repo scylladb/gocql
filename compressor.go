@@ -30,8 +30,24 @@ import (
 
 type Compressor interface {
 	Name() string
-	Encode(data []byte) ([]byte, error)
-	Decode(data []byte) ([]byte, error)
+
+	// AppendCompressedWithLength compresses src bytes, appends the length of the compressed bytes to dst
+	// and then appends the compressed bytes to dst.
+	// It returns a new byte slice that is the result of the append operation.
+	AppendCompressedWithLength(dst, src []byte) ([]byte, error)
+
+	// AppendDecompressedWithLength reads the length of the decompressed bytes from src,
+	// decompressed bytes from src and appends the decompressed bytes to dst.
+	// It returns a new byte slice that is the result of the append operation.
+	AppendDecompressedWithLength(dst, src []byte) ([]byte, error)
+
+	// AppendCompressed compresses src bytes and appends the compressed bytes to dst.
+	// It returns a new byte slice that is the result of the append operation.
+	AppendCompressed(dst, src []byte) ([]byte, error)
+
+	// AppendDecompressed decompresses bytes from src and appends the decompressed bytes to dst.
+	// It returns a new byte slice that is the result of the append operation.
+	AppendDecompressed(dst, src []byte, decompressedLength uint32) ([]byte, error)
 }
 
 // SnappyCompressor implements the Compressor interface and can be used to
@@ -44,10 +60,18 @@ func (s SnappyCompressor) Name() string {
 	return "snappy"
 }
 
-func (s SnappyCompressor) Encode(data []byte) ([]byte, error) {
-	return s2.EncodeSnappy(nil, data), nil
+func (s SnappyCompressor) AppendCompressedWithLength(dst, src []byte) ([]byte, error) {
+	return s2.EncodeSnappy(dst, src), nil
 }
 
-func (s SnappyCompressor) Decode(data []byte) ([]byte, error) {
-	return s2.Decode(nil, data)
+func (s SnappyCompressor) AppendDecompressedWithLength(dst, src []byte) ([]byte, error) {
+	return s2.Decode(dst, src)
+}
+
+func (s SnappyCompressor) AppendCompressed(dst, src []byte) ([]byte, error) {
+	panic("SnappyCompressor.AppendCompressed is not supported")
+}
+
+func (s SnappyCompressor) AppendDecompressed(dst, src []byte, decompressedLength uint32) ([]byte, error) {
+	panic("SnappyCompressor.AppendDecompressed is not supported")
 }

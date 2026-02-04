@@ -29,10 +29,13 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/gocql/gocql/lz4"
 )
 
 var (
@@ -45,7 +48,7 @@ var (
 	flagAutoWait      = flag.Duration("autowait", 1000*time.Millisecond, "time to wait for autodiscovery to fill the hosts poll")
 	flagRunSslTest    = flag.Bool("runssl", false, "Set to true to run ssl test")
 	flagRunAuthTest   = flag.Bool("runauth", false, "Set to true to run authentication test")
-	flagCompressTest  = flag.String("compressor", "", "compressor to use")
+	flagCompressTest  = flag.String("compressor", "no-compression", "compressor to use")
 	flagTimeout       = flag.Duration("gocql.timeout", 5*time.Second, "sets the connection `timeout` for all operations")
 	flagClusterSocket = flag.String("cluster-socket", "", "nodes socket files separated by comma")
 	flagDistribution  = flag.String("distribution", "scylla", "database distribution - scylla or cassandra")
@@ -222,7 +225,9 @@ func createCluster(opts ...func(*ClusterConfig)) *ClusterConfig {
 	switch *flagCompressTest {
 	case "snappy":
 		cluster.Compressor = &SnappyCompressor{}
-	case "":
+	case "lz4":
+		cluster.Compressor = &lz4.LZ4Compressor{}
+	case "no-compression":
 	default:
 		panic("invalid compressor: " + *flagCompressTest)
 	}
@@ -418,4 +423,11 @@ func staticAddressTranslator(newAddr net.IP, newPort int) AddressTranslator {
 	return AddressTranslatorFunc(func(addr net.IP, port int) (net.IP, int) {
 		return newAddr, newPort
 	})
+}
+
+func assertDeepEqual(t *testing.T, description string, expected, actual interface{}) {
+	t.Helper()
+	if !reflect.DeepEqual(expected, actual) {
+		t.Fatalf("expected %s to be (%#v) but was (%#v) instead", description, expected, actual)
+	}
 }
