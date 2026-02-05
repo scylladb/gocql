@@ -833,7 +833,8 @@ func (f *framer) parsePreparedMetadata() preparedMetadata {
 	}
 
 	globalSpec := meta.flags&frm.FlagGlobalTableSpec == frm.FlagGlobalTableSpec
-	if globalSpec {
+	if globalSpec || meta.colCount > 0 {
+		// globalSpec: read from metadata position; !globalSpec: read from first column position
 		meta.keyspace = f.readString()
 		meta.table = f.readString()
 	}
@@ -843,14 +844,14 @@ func (f *framer) parsePreparedMetadata() preparedMetadata {
 		// preallocate columninfo to avoid excess copying
 		cols = make([]ColumnInfo, meta.colCount)
 		for i := 0; i < meta.colCount; i++ {
-			f.readCol(&cols[i], &meta.resultMetadata, globalSpec, meta.keyspace, meta.table)
+			f.readCol(&cols[i], &meta.resultMetadata, globalSpec, meta.keyspace, meta.table, i)
 		}
 	} else {
 		// use append, huge number of columns usually indicates a corrupt frame or
 		// just a huge row.
 		for i := 0; i < meta.colCount; i++ {
 			var col ColumnInfo
-			f.readCol(&col, &meta.resultMetadata, globalSpec, meta.keyspace, meta.table)
+			f.readCol(&col, &meta.resultMetadata, globalSpec, meta.keyspace, meta.table, i)
 			cols = append(cols, col)
 		}
 	}
@@ -862,6 +863,8 @@ func (f *framer) parsePreparedMetadata() preparedMetadata {
 
 type resultMetadata struct {
 	pagingState []byte
+	keyspace    string
+	table       string
 	// this is a count of the total number of columns which can be scanned,
 	// it is at minimum len(columns) but may be larger, for instance when a column
 	// is a UDT or tuple.
@@ -879,14 +882,14 @@ func (r resultMetadata) String() string {
 	return fmt.Sprintf("[metadata flags=0x%x paging_state=% X columns=%v]", r.flags, r.pagingState, r.columns)
 }
 
-func (f *framer) readCol(col *ColumnInfo, meta *resultMetadata, globalSpec bool, keyspace, table string) {
-	if !globalSpec {
-		col.Keyspace = f.readString()
-		col.Table = f.readString()
-	} else {
-		col.Keyspace = keyspace
-		col.Table = table
+func (f *framer) readCol(col *ColumnInfo, meta *resultMetadata, globalSpec bool, keyspace, table string, colIndex int) {
+	if !globalSpec && colIndex > 0 {
+		// Skip redundant keyspace/table from wire (already read from first column)
+		f.skipString()
+		f.skipString()
 	}
+	col.Keyspace = keyspace
+	col.Table = table
 
 	col.Name = f.readString()
 	col.TypeInfo = f.readTypeInfo()
@@ -916,11 +919,11 @@ func (f *framer) parseResultMetadata() resultMetadata {
 		return meta
 	}
 
-	var keyspace, table string
 	globalSpec := meta.flags&frm.FlagGlobalTableSpec == frm.FlagGlobalTableSpec
-	if globalSpec {
-		keyspace = f.readString()
-		table = f.readString()
+	if globalSpec || meta.colCount > 0 {
+		// globalSpec: read from metadata position; !globalSpec: read from first column position
+		meta.keyspace = f.readString()
+		meta.table = f.readString()
 	}
 
 	var cols []ColumnInfo
@@ -928,7 +931,7 @@ func (f *framer) parseResultMetadata() resultMetadata {
 		// preallocate columninfo to avoid excess copying
 		cols = make([]ColumnInfo, meta.colCount)
 		for i := 0; i < meta.colCount; i++ {
-			f.readCol(&cols[i], &meta, globalSpec, keyspace, table)
+			f.readCol(&cols[i], &meta, globalSpec, meta.keyspace, meta.table, i)
 		}
 
 	} else {
@@ -936,7 +939,7 @@ func (f *framer) parseResultMetadata() resultMetadata {
 		// just a huge row.
 		for i := 0; i < meta.colCount; i++ {
 			var col ColumnInfo
-			f.readCol(&col, &meta, globalSpec, keyspace, table)
+			f.readCol(&col, &meta, globalSpec, meta.keyspace, meta.table, i)
 			cols = append(cols, col)
 		}
 	}
@@ -1486,6 +1489,17 @@ func (f *framer) readString() (s string) {
 	s = string(f.buf[:size])
 	f.buf = f.buf[size:]
 	return
+}
+
+// skipString advances the buffer past a string without allocating
+func (f *framer) skipString() {
+	size := f.readShort()
+
+	if len(f.buf) < int(size) {
+		panic(fmt.Errorf("not enough bytes in buffer to skip string require %d got: %d", size, len(f.buf)))
+	}
+
+	f.buf = f.buf[size:]
 }
 
 func (f *framer) readLongString() (s string) {
