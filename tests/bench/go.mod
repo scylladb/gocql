@@ -1,6 +1,6 @@
 module github.com/gocql/gocql/bench_test
 
-go 1.25.0
+go 1.25
 
 require (
 	github.com/brianvoe/gofakeit/v6 v6.28.0
