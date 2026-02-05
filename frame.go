@@ -1454,67 +1454,60 @@ func (f *framer) writeRegisterFrame(streamID int, w *writeRegisterFrame) error {
 }
 
 func (f *framer) readByte() byte {
-	if len(f.buf) < 1 {
-		panic(fmt.Errorf("not enough bytes in buffer to read byte require 1 got: %d", len(f.buf)))
+	if len(f.buf) >= 1 {
+		b := f.buf[0]
+		f.buf = f.buf[1:]
+		return b
 	}
-
-	b := f.buf[0]
-	f.buf = f.buf[1:]
-	return b
+	panic(fmt.Errorf("not enough bytes in buffer to read byte require 1 got: %d", len(f.buf)))
 }
 
 func (f *framer) readInt() (n int) {
-	if len(f.buf) < 4 {
-		panic(fmt.Errorf("not enough bytes in buffer to read int require 4 got: %d", len(f.buf)))
+	if len(f.buf) >= 4 {
+		n = int(int32(binary.BigEndian.Uint32(f.buf[:4])))
+		f.buf = f.buf[4:]
+		return
 	}
-
-	n = int(int32(binary.BigEndian.Uint32(f.buf[:4])))
-	f.buf = f.buf[4:]
-	return
+	panic(fmt.Errorf("not enough bytes in buffer to read int require 4 got: %d", len(f.buf)))
 }
 
 func (f *framer) readShort() (n uint16) {
-	if len(f.buf) < 2 {
-		panic(fmt.Errorf("not enough bytes in buffer to read short require 2 got: %d", len(f.buf)))
+	if len(f.buf) >= 2 {
+		n = binary.BigEndian.Uint16(f.buf[:2])
+		f.buf = f.buf[2:]
+		return
 	}
-	n = binary.BigEndian.Uint16(f.buf[:2])
-	f.buf = f.buf[2:]
-	return
+	panic(fmt.Errorf("not enough bytes in buffer to read short require 2 got: %d", len(f.buf)))
 }
 
 func (f *framer) readString() (s string) {
 	size := f.readShort()
-
-	if len(f.buf) < int(size) {
-		panic(fmt.Errorf("not enough bytes in buffer to read string require %d got: %d", size, len(f.buf)))
+	if len(f.buf) >= int(size) {
+		s = string(f.buf[:size])
+		f.buf = f.buf[size:]
+		return
 	}
-
-	s = string(f.buf[:size])
-	f.buf = f.buf[size:]
-	return
+	panic(fmt.Errorf("not enough bytes in buffer to read string require %d got: %d", size, len(f.buf)))
 }
 
 // skipString advances the buffer past a string without allocating
 func (f *framer) skipString() {
 	size := f.readShort()
-
-	if len(f.buf) < int(size) {
-		panic(fmt.Errorf("not enough bytes in buffer to skip string require %d got: %d", size, len(f.buf)))
+	if len(f.buf) >= int(size) {
+		f.buf = f.buf[size:]
+		return
 	}
-
-	f.buf = f.buf[size:]
+	panic(fmt.Errorf("not enough bytes in buffer to skip string require %d got: %d", size, len(f.buf)))
 }
 
 func (f *framer) readLongString() (s string) {
 	size := f.readInt()
-
-	if len(f.buf) < size {
-		panic(fmt.Errorf("not enough bytes in buffer to read long string require %d got: %d", size, len(f.buf)))
+	if len(f.buf) >= size {
+		s = string(f.buf[:size])
+		f.buf = f.buf[size:]
+		return
 	}
-
-	s = string(f.buf[:size])
-	f.buf = f.buf[size:]
-	return
+	panic(fmt.Errorf("not enough bytes in buffer to read long string require %d got: %d", size, len(f.buf)))
 }
 
 func (f *framer) readStringList() []string {
@@ -1533,15 +1526,12 @@ func (f *framer) ReadBytesInternal() ([]byte, error) {
 	if size < 0 {
 		return nil, nil
 	}
-
-	if len(f.buf) < size {
-		return nil, fmt.Errorf("not enough bytes in buffer to read bytes require %d got: %d", size, len(f.buf))
+	if len(f.buf) >= size {
+		l := f.buf[:size]
+		f.buf = f.buf[size:]
+		return l, nil
 	}
-
-	l := f.buf[:size]
-	f.buf = f.buf[size:]
-
-	return l, nil
+	return nil, fmt.Errorf("not enough bytes in buffer to read bytes require %d got: %d", size, len(f.buf))
 }
 
 func (f *framer) readBytes() []byte {
@@ -1549,15 +1539,12 @@ func (f *framer) readBytes() []byte {
 	if size < 0 {
 		return nil
 	}
-
-	if len(f.buf) < size {
-		panic(fmt.Errorf("not enough bytes in buffer to read bytes require %d got: %d", size, len(f.buf)))
+	if len(f.buf) >= size {
+		l := f.buf[:size]
+		f.buf = f.buf[size:]
+		return l
 	}
-
-	l := f.buf[:size]
-	f.buf = f.buf[size:]
-
-	return l
+	panic(fmt.Errorf("not enough bytes in buffer to read bytes require %d got: %d", size, len(f.buf)))
 }
 
 func (f *framer) readBytesCopy() []byte {
@@ -1565,49 +1552,41 @@ func (f *framer) readBytesCopy() []byte {
 	if size < 0 {
 		return nil
 	}
-
-	if len(f.buf) < size {
-		panic(fmt.Errorf("not enough bytes in buffer to read bytes require %d got: %d", size, len(f.buf)))
+	if len(f.buf) >= size {
+		out := make([]byte, size)
+		copy(out, f.buf[:size])
+		f.buf = f.buf[size:]
+		return out
 	}
-
-	out := make([]byte, size)
-	copy(out, f.buf[:size])
-	f.buf = f.buf[size:]
-	return out
+	panic(fmt.Errorf("not enough bytes in buffer to read bytes require %d got: %d", size, len(f.buf)))
 }
 
 func (f *framer) readShortBytes() []byte {
 	size := f.readShort()
-	if len(f.buf) < int(size) {
-		panic(fmt.Errorf("not enough bytes in buffer to read short bytes: require %d got %d", size, len(f.buf)))
+	if len(f.buf) >= int(size) {
+		l := f.buf[:size]
+		f.buf = f.buf[size:]
+		return l
 	}
-
-	l := f.buf[:size]
-	f.buf = f.buf[size:]
-
-	return l
+	panic(fmt.Errorf("not enough bytes in buffer to read short bytes: require %d got %d", size, len(f.buf)))
 }
 
 func (f *framer) readInetAdressOnly() net.IP {
-	if len(f.buf) < 1 {
-		panic(fmt.Errorf("not enough bytes in buffer to read inet size require %d got: %d", 1, len(f.buf)))
-	}
-
-	size := f.buf[0]
-	f.buf = f.buf[1:]
-
-	if !(size == 4 || size == 16) {
-		panic(fmt.Errorf("invalid IP size: %d", size))
-	}
-
-	if len(f.buf) < int(size) {
+	if len(f.buf) >= 1 {
+		size := f.buf[0]
+		f.buf = f.buf[1:]
+		if !(size == 4 || size == 16) {
+			panic(fmt.Errorf("invalid IP size: %d", size))
+		}
+		if len(f.buf) >= int(size) {
+			ip := make(net.IP, size)
+			copy(ip, f.buf[:size])
+			f.buf = f.buf[size:]
+			return ip
+		}
 		panic(fmt.Errorf("not enough bytes in buffer to read inet require %d got: %d", size, len(f.buf)))
 	}
-
-	ip := make(net.IP, size)
-	copy(ip, f.buf[:size])
-	f.buf = f.buf[size:]
-	return ip
+	panic(fmt.Errorf("not enough bytes in buffer to read inet size require %d got: %d", 1, len(f.buf)))
 }
 
 func (f *framer) readInet() (net.IP, int) {
