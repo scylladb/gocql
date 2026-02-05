@@ -48,4 +48,4 @@ retract (
 	v1.8.0 // tag from kiwicom/gocql added by mistake to scylladb/gocql
 )
 
-go 1.25.0
+go 1.25
