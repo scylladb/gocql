@@ -717,6 +717,11 @@ func (f *framer) readTypeInfo() TypeInfo {
 		typ:   Type(id),
 	}
 
+	// Fast path: simple native types (0x0001-0x0015) need no further processing
+	if id > 0 && id <= 0x0015 {
+		return simple
+	}
+
 	if simple.typ == TypeCustom {
 		simple.custom = f.readString()
 		if cassType := getApacheCassandraType(simple.custom); cassType != TypeCustom {
@@ -893,11 +898,9 @@ func (f *framer) readCol(col *ColumnInfo, meta *resultMetadata, globalSpec bool,
 
 	col.Name = f.readString()
 	col.TypeInfo = f.readTypeInfo()
-	switch v := col.TypeInfo.(type) {
-	// maybe also UDT
-	case TupleTypeInfo:
+	if tuple, ok := col.TypeInfo.(TupleTypeInfo); ok {
 		// -1 because we already included the tuple column
-		meta.actualColCount += len(v.Elems) - 1
+		meta.actualColCount += len(tuple.Elems) - 1
 	}
 }
 
