@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 )
 
 // Check if TokenAwareHostPolicy works correctly when using tablets
@@ -43,28 +44,52 @@ func TestTablets(t *testing.T) {
 		}
 	}
 
-	for i := 0; i < 5; i++ {
-		for attempt := 1; true; attempt++ {
+	for i := range 5 {
+		startTime := time.Now()
+		timeout := 2 * time.Second
+		backoffDelay := 100 * time.Millisecond
+		success := false
+
+		for attempt := 1; time.Since(startTime) < timeout; attempt++ {
 			iter := session.Query(`SELECT pk, ck, v FROM test_tablets WHERE pk = ?;`, i).WithContext(ctx).Consistency(One).Iter()
-			if payload := iter.GetCustomPayload(); payload != nil {
-				if hint, ok := payload["tablets-routing-v1"]; ok {
-					tablet, err := unmarshalTabletHint(hint, 4, "", "")
-					if err != nil {
-						t.Fatalf("failed to extract tablet information: %s", err.Error())
-					}
-					t.Logf("%s", tablet.Replicas())
-					if attempt >= 3 {
-						t.Fatalf("Tablet hint from the server should not be sent")
-					}
-				} else {
-					break
-				}
-			} else {
-				break
-			}
+
+			payload := iter.GetCustomPayload()
+
 			if err := iter.Close(); err != nil {
 				t.Fatal(err)
 			}
+
+			if payload == nil || payload["tablets-routing-v1"] == nil {
+				// Routing is working correctly
+				success = true
+				break
+			}
+
+			// Hint received, tablet migration may be in progress
+			hint := payload["tablets-routing-v1"]
+			tablet, err := unmarshalTabletHint(hint, 4, "", "")
+			if err != nil {
+				t.Fatalf("failed to extract tablet information: %s", err.Error())
+			}
+			t.Logf("Attempt %d: received tablet hint (replicas: %s) - tablet migration may be in progress, backing off %v", attempt, tablet.Replicas(), backoffDelay)
+
+			// Backoff to allow tablet migration to complete, but do not exceed the overall timeout.
+			remaining := timeout - time.Since(startTime)
+			if remaining <= 0 {
+				// Overall timeout reached; exit the retry loop and fail after the loop.
+				break
+			}
+			sleepFor := backoffDelay
+			if sleepFor > remaining {
+				sleepFor = remaining
+			}
+			time.Sleep(sleepFor)
+			backoffDelay *= 2 // Exponential backoff
+		}
+
+		if !success {
+			elapsed := time.Since(startTime)
+			t.Fatalf("Timed out after %v (elapsed %v) waiting for tablets to stabilize (migrations still in progress)", timeout, elapsed)
 		}
 	}
 }
