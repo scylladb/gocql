@@ -234,7 +234,7 @@ scylla-start: .prepare-pki .prepare-scylla-ccm .prepare-environment-update-aio-m
 	ccm node1 nodetool status
 	sudo chmod 0777 ${CCM_CONFIG_DIR}/${CCM_SCYLLA_CLUSTER_NAME}/*/cql.m || true
 
-download-cassandra: .prepare-scylla-ccm resolve-cassandra-version
+download-cassandra: .prepare-cassandra-ccm resolve-cassandra-version
 	@if [[ -z "$${CASSANDRA_VERSION_RESOLVED}" ]]; then
 		CASSANDRA_VERSION_RESOLVED=$$(cat '${CASSANDRA_VERSION_FILE}')
 	fi
