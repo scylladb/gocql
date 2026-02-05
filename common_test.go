@@ -242,6 +242,11 @@ func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string, disa
 	c := *cluster
 	c.Keyspace = "system"
 	c.Timeout = 30 * time.Second
+	// Create a fresh policy to avoid sharing the policy instance with the caller.
+	// Shallow copy of cluster config shares the HostSelectionPolicy pointer, which
+	// would cause "sharing token aware host selection policy between sessions" panic
+	// when both createKeyspace's session and the caller's session try to Init() it.
+	c.PoolConfig.HostSelectionPolicy = nil
 	session, err := c.CreateSession()
 	if err != nil {
 		tb.Fatalf("failed to create session: %v", err)
