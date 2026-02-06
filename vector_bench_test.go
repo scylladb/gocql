@@ -2,9 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build all || unit
-// +build all unit
-
 package gocql
 
 import (
@@ -20,7 +17,7 @@ func BenchmarkUnmarshalVectorFloat32(b *testing.B) {
 	dims := []int{128, 384, 768, 1536}
 
 	for _, dim := range dims {
-		b.Run(fmt.Sprintf("dim-%d", dim), func(b *testing.B) {
+		b.Run(fmt.Sprintf("dim_%d", dim), func(b *testing.B) {
 			b.ReportAllocs()
 
 			// Prepare test data - vector of floats

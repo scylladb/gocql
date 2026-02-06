@@ -837,6 +837,10 @@ func marshalVector(info VectorType, value interface{}) ([]byte, error) {
 	// Fast-path for []float32 (most common case)
 	if info.SubType.Type() == TypeFloat {
 		if vec, ok := value.([]float32); ok {
+			// Validate dimensions
+			if len(vec) != info.Dimensions {
+				return nil, marshalErrorf("expected vector with %d dimensions, received %d", info.Dimensions, len(vec))
+			}
 			// Pre-allocate exact size: 4 bytes per float32
 			data := make([]byte, len(vec)*4)
 			for i, v := range vec {
@@ -902,8 +906,16 @@ func unmarshalVector(info VectorType, data []byte, value interface{}) error {
 	// Fast-path for *[]float32 (most common case)
 	if info.SubType.Type() == TypeFloat {
 		if vec, ok := value.(*[]float32); ok {
-			// Calculate dimensions from actual data length
-			n := len(data) / 4
+			// Ensure data length is properly aligned to float32 size
+			if len(data)%4 != 0 {
+				return unmarshalErrorf("invalid data length for float32 vector: expected multiple of 4, got %d", len(data))
+			}
+			// Calculate dimensions from actual data length (bit shift is faster than division, it's really just / 4)
+			n := len(data) >> 2
+			// Validate dimensions match expected
+			if n != info.Dimensions {
+				return unmarshalErrorf("expected vector with %d dimensions, received %d", info.Dimensions, n)
+			}
 			if cap(*vec) >= n {
 				*vec = (*vec)[:n]
 			} else {
@@ -992,7 +1004,7 @@ func getFixedTypeSize(t Type) int {
 		return 1
 	case TypeSmallInt:
 		return 2
-	case TypeInt, TypeFloat:
+	case TypeInt, TypeFloat, TypeDate:
 		return 4
 	case TypeBigInt, TypeCounter, TypeDouble, TypeTimestamp, TypeTime:
 		return 8
