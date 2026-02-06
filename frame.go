@@ -318,11 +318,7 @@ type frame interface {
 func readHeader(r io.Reader, p []byte) (head frm.FrameHeader, err error) {
 	_, err = io.ReadFull(r, p[:headSize])
 	if err != nil {
-		if len(p) < headSize {
-			return frm.FrameHeader{}, fmt.Errorf("not enough bytes to read header require 9 got: %d", len(p))
-		} else {
-			return frm.FrameHeader{}, err
-		}
+		return frm.FrameHeader{}, err
 	}
 
 	head.Version = frm.ProtoVersion(p[0])
