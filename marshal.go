@@ -26,6 +26,7 @@ package gocql
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
@@ -833,6 +834,19 @@ func unmarshalList(info TypeInfo, data []byte, value interface{}) error {
 }
 
 func marshalVector(info VectorType, value interface{}) ([]byte, error) {
+	// Fast-path for []float32 (most common case)
+	if info.SubType.Type() == TypeFloat {
+		if vec, ok := value.([]float32); ok {
+			// Pre-allocate exact size: 4 bytes per float32
+			data := make([]byte, len(vec)*4)
+			for i, v := range vec {
+				binary.BigEndian.PutUint32(data[i*4:], math.Float32bits(v))
+			}
+			return data, nil
+		}
+	}
+
+	// Handle edge cases before reflection
 	if value == nil {
 		return nil, nil
 	} else if _, ok := value.(unsetColumn); ok {
@@ -848,13 +862,27 @@ func marshalVector(info VectorType, value interface{}) ([]byte, error) {
 
 	switch k {
 	case reflect.Slice, reflect.Array:
-		buf := &bytes.Buffer{}
 		n := rv.Len()
 		if n != info.Dimensions {
 			return nil, marshalErrorf("expected vector with %d dimensions, received %d", info.Dimensions, n)
 		}
 
 		isLengthType := isVectorVariableLengthType(info.SubType)
+		// Pre-allocate buffer for fixed-size types
+		var buf *bytes.Buffer
+		if !isLengthType {
+			// Fixed-size types: calculate exact size upfront
+			elemSize := getFixedTypeSize(info.SubType.Type())
+			if elemSize > 0 {
+				data := make([]byte, 0, n*elemSize)
+				buf = bytes.NewBuffer(data)
+			} else {
+				buf = &bytes.Buffer{}
+			}
+		} else {
+			buf = &bytes.Buffer{}
+		}
+
 		for i := 0; i < n; i++ {
 			item, err := Marshal(info.SubType, rv.Index(i).Interface())
 			if err != nil {
@@ -871,6 +899,23 @@ func marshalVector(info VectorType, value interface{}) ([]byte, error) {
 }
 
 func unmarshalVector(info VectorType, data []byte, value interface{}) error {
+	// Fast-path for *[]float32 (most common case)
+	if info.SubType.Type() == TypeFloat {
+		if vec, ok := value.(*[]float32); ok {
+			// Calculate dimensions from actual data length
+			n := len(data) / 4
+			if cap(*vec) >= n {
+				*vec = (*vec)[:n]
+			} else {
+				*vec = make([]float32, n)
+			}
+			for i := 0; i < n; i++ {
+				(*vec)[i] = math.Float32frombits(binary.BigEndian.Uint32(data[i*4:]))
+			}
+			return nil
+		}
+	}
+
 	rv := reflect.ValueOf(value)
 	if rv.Kind() != reflect.Ptr {
 		return unmarshalErrorf("can not unmarshal into non-pointer %T", value)
@@ -940,15 +985,31 @@ func unmarshalVector(info VectorType, data []byte, value interface{}) error {
 	return unmarshalErrorf("can not unmarshal %s into %T. Accepted types: *slice, *array, *interface{}.", info, value)
 }
 
+// getFixedTypeSize returns the fixed byte size for CQL fixed-length types, or 0 for variable-length types
+func getFixedTypeSize(t Type) int {
+	switch t {
+	case TypeBoolean, TypeTinyInt:
+		return 1
+	case TypeSmallInt:
+		return 2
+	case TypeInt, TypeFloat:
+		return 4
+	case TypeBigInt, TypeCounter, TypeDouble, TypeTimestamp, TypeTime:
+		return 8
+	case TypeUUID, TypeTimeUUID:
+		return 16
+	default:
+		return 0 // Variable-length or unknown
+	}
+}
+
 // isVectorVariableLengthType determines if a type requires explicit length serialization within a vector.
 // Variable-length types need their length encoded before the actual data to allow proper deserialization.
-// Fixed-length types, on the other hand, don't require this kind of length prefix.
+// Fixed-length types (int, float, bigint, etc.) don't require length prefixes.
 func isVectorVariableLengthType(elemType TypeInfo) bool {
 	switch elemType.Type() {
 	case TypeVarchar, TypeAscii, TypeBlob, TypeText,
-		TypeCounter,
-		TypeDuration, TypeDate, TypeTime,
-		TypeDecimal, TypeSmallInt, TypeTinyInt, TypeVarint,
+		TypeDecimal, TypeVarint, TypeDuration,
 		TypeInet,
 		TypeList, TypeSet, TypeMap, TypeUDT, TypeTuple:
 		return true
