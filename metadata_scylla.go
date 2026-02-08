@@ -775,10 +775,7 @@ func getKeyspaceMetadata(session *Session, keyspaceName string) (*KeyspaceMetada
 	}
 	keyspace := &KeyspaceMetadata{Name: keyspaceName}
 
-	const stmt = `
-		SELECT durable_writes, replication
-		FROM system_schema.keyspaces
-		WHERE keyspace_name = ?`
+	const stmt = `SELECT durable_writes, replication FROM system_schema.keyspaces WHERE keyspace_name = ?`
 
 	var replication map[string]string
 
