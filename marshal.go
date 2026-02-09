@@ -352,8 +352,8 @@ func Unmarshal(info TypeInfo, data []byte, value interface{}) error {
 }
 
 func isNullableValue(value interface{}) bool {
-	v := reflect.ValueOf(value)
-	return v.Kind() == reflect.Ptr && v.Type().Elem().Kind() == reflect.Ptr
+	t := reflect.TypeOf(value)
+	return t != nil && t.Kind() == reflect.Ptr && t.Elem().Kind() == reflect.Ptr
 }
 
 func isNullData(info TypeInfo, data []byte) bool {
@@ -923,6 +923,28 @@ func unmarshalVector(info VectorType, data []byte, value interface{}) error {
 			}
 			for i := 0; i < n; i++ {
 				(*vec)[i] = math.Float32frombits(binary.BigEndian.Uint32(data[i*4:]))
+			}
+			return nil
+		}
+	}
+
+	// Fast-path for *[]float64
+	if info.SubType.Type() == TypeDouble {
+		if vec, ok := value.(*[]float64); ok {
+			if len(data)%8 != 0 {
+				return unmarshalErrorf("invalid data length for float64 vector: expected multiple of 8, got %d", len(data))
+			}
+			n := len(data) >> 3
+			if n != info.Dimensions {
+				return unmarshalErrorf("expected vector with %d dimensions, received %d", info.Dimensions, n)
+			}
+			if cap(*vec) >= n {
+				*vec = (*vec)[:n]
+			} else {
+				*vec = make([]float64, n)
+			}
+			for i := 0; i < n; i++ {
+				(*vec)[i] = math.Float64frombits(binary.BigEndian.Uint64(data[i*8:]))
 			}
 			return nil
 		}

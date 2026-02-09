@@ -110,6 +110,67 @@ func BenchmarkUnmarshalVectorFloat32ViaUnmarshal_NativeType(b *testing.B) {
 	}
 }
 
+// BenchmarkUnmarshalVectorFloat64ViaUnmarshal measures dispatcher overhead when decoding float64 vectors.
+func BenchmarkUnmarshalVectorFloat64ViaUnmarshal(b *testing.B) {
+	dims := []int{128, 384, 768, 1536}
+
+	for _, dim := range dims {
+		b.Run(fmt.Sprintf("dim_%d", dim), func(b *testing.B) {
+			b.ReportAllocs()
+
+			data := make([]byte, dim*8)
+			for i := 0; i < dim; i++ {
+				binary.BigEndian.PutUint64(data[i*8:], math.Float64bits(float64(i)*0.1))
+			}
+
+			info := VectorType{
+				NativeType: NativeType{proto: protoVersion4, typ: TypeCustom, custom: "org.apache.cassandra.db.marshal.VectorType(org.apache.cassandra.db.marshal.DoubleType, " + fmt.Sprintf("%d", dim) + ")"},
+				SubType:    NativeType{proto: protoVersion4, typ: TypeDouble},
+				Dimensions: dim,
+			}
+
+			var result []float64
+			b.SetBytes(int64(dim * 8))
+			b.ResetTimer()
+
+			for i := 0; i < b.N; i++ {
+				if err := Unmarshal(info, data, &result); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+// BenchmarkUnmarshalVectorFloat64ViaUnmarshal_NativeType measures the TypeCustom NativeType VectorType(...) path.
+func BenchmarkUnmarshalVectorFloat64ViaUnmarshal_NativeType(b *testing.B) {
+	dims := []int{128, 384, 768, 1536}
+
+	for _, dim := range dims {
+		b.Run(fmt.Sprintf("dim_%d", dim), func(b *testing.B) {
+			b.ReportAllocs()
+
+			data := make([]byte, dim*8)
+			for i := 0; i < dim; i++ {
+				binary.BigEndian.PutUint64(data[i*8:], math.Float64bits(float64(i)*0.1))
+			}
+
+			info := NewCustomType(protoVersion4, TypeCustom,
+				"org.apache.cassandra.db.marshal.VectorType(org.apache.cassandra.db.marshal.DoubleType, "+fmt.Sprintf("%d", dim)+")")
+
+			var result []float64
+			b.SetBytes(int64(dim * 8))
+			b.ResetTimer()
+
+			for i := 0; i < b.N; i++ {
+				if err := Unmarshal(info, data, &result); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
 // BenchmarkMarshalVectorFloat32 measures marshal performance for float32 vectors
 // across common embedding dimensions
 func BenchmarkMarshalVectorFloat32(b *testing.B) {
