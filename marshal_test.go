@@ -38,6 +38,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gocql/gocql/internal/tests"
+
 	"gopkg.in/inf.v0"
 )
 
@@ -1014,6 +1016,24 @@ func TestUnmarshalListWithVectorIntoInterface(t *testing.T) {
 	if len(slice[1]) != 2 || slice[1][0] != 3.0 || slice[1][1] != 4.0 {
 		t.Errorf("Expected slice[1] = [3.0, 4.0], got %v", slice[1])
 	}
+}
+
+func TestUnmarshal_VectorFloat32_FromNativeCustomVectorType(t *testing.T) {
+	info := NewCustomType(protoVersion4, TypeCustom, "org.apache.cassandra.db.marshal.VectorType(org.apache.cassandra.db.marshal.FloatType, 3)")
+
+	data := make([]byte, 3*4)
+	binary.BigEndian.PutUint32(data[0:], math.Float32bits(1.25))
+	binary.BigEndian.PutUint32(data[4:], math.Float32bits(-2.5))
+	binary.BigEndian.PutUint32(data[8:], math.Float32bits(3.0))
+
+	var out []float32
+	err := Unmarshal(info, data, &out)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	expected := []float32{1.25, -2.5, 3.0}
+	tests.AssertDeepEqual(t, "unmarshaled vector", expected, out)
 }
 
 // bytesWithLength concatenates all data slices and prepends the total length as uint32.

@@ -231,7 +231,7 @@ func Marshal(info TypeInfo, value interface{}) ([]byte, error) {
 	case TypeDuration:
 		return marshalDuration(value)
 	case TypeCustom:
-		if vector, ok := info.(VectorType); ok {
+		if vector, ok := asVectorType(info); ok {
 			return marshalVector(vector, value)
 		}
 	}
@@ -342,7 +342,7 @@ func Unmarshal(info TypeInfo, data []byte, value interface{}) error {
 	case TypeDuration:
 		return unmarshalDuration(data, value)
 	case TypeCustom:
-		if vector, ok := info.(VectorType); ok {
+		if vector, ok := asVectorType(info); ok {
 			return unmarshalVector(vector, data, value)
 		}
 	}
@@ -1016,22 +1016,18 @@ func getFixedTypeSize(t Type) int {
 }
 
 // isVectorVariableLengthType determines if a type requires explicit length serialization within a vector.
-// Variable-length types need their length encoded before the actual data to allow proper deserialization.
-// Fixed-length types (int, float, bigint, etc.) don't require length prefixes.
+// Only Float32, Int64, and Double are treated as fixed-size based on current Cassandra behavior.
 func isVectorVariableLengthType(elemType TypeInfo) bool {
 	switch elemType.Type() {
-	case TypeVarchar, TypeAscii, TypeBlob, TypeText,
-		TypeDecimal, TypeVarint, TypeDuration,
-		TypeInet,
-		TypeList, TypeSet, TypeMap, TypeUDT, TypeTuple:
-		return true
+	case TypeFloat, TypeBigInt, TypeDouble:
+		return false
 	case TypeCustom:
 		if vecType, ok := elemType.(VectorType); ok {
 			return isVectorVariableLengthType(vecType.SubType)
 		}
 		return true
 	}
-	return false
+	return true
 }
 
 func writeUnsignedVInt(buf *bytes.Buffer, v uint64) {
