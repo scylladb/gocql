@@ -32,6 +32,29 @@ import (
 	"testing"
 )
 
+func TestSplitCompositeTypes_Nested_CQL(t *testing.T) {
+	t.Parallel()
+
+	got := splitCQLCompositeTypes("map<text, frozen<list<frozen<tuple<int, int>>>>>", "map")
+	want := []string{"text", "frozen<list<frozen<tuple<int, int>>>>"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected parts: got=%#v want=%#v", got, want)
+	}
+}
+
+func TestSplitCompositeTypes_Nested_Java(t *testing.T) {
+	t.Parallel()
+
+	got := splitJavaCompositeTypes(
+		"MapType(UTF8Type, FrozenType(ListType(FrozenType(TupleType(Int32Type, Int32Type)))))",
+		"MapType",
+	)
+	want := []string{"UTF8Type", "FrozenType(ListType(FrozenType(TupleType(Int32Type, Int32Type)))))"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected parts: got=%#v want=%#v", got, want)
+	}
+}
+
 func TestGetCassandraType_Set(t *testing.T) {
 	t.Parallel()
 

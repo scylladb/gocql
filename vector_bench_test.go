@@ -61,7 +61,9 @@ func BenchmarkUnmarshalVectorFloat32ViaUnmarshal(b *testing.B) {
 				binary.BigEndian.PutUint32(data[i*4:], math.Float32bits(float32(i)*0.1))
 			}
 
-			info := VectorType{
+			// Important: store as TypeInfo so we don't allocate each iteration
+			// by converting a concrete struct to an interface.
+			var info TypeInfo = VectorType{
 				NativeType: NativeType{proto: protoVersion4, typ: TypeCustom, custom: "org.apache.cassandra.db.marshal.VectorType(org.apache.cassandra.db.marshal.FloatType, " + fmt.Sprintf("%d", dim) + ")"},
 				SubType:    NativeType{proto: protoVersion4, typ: TypeFloat},
 				Dimensions: dim,
@@ -94,7 +96,7 @@ func BenchmarkUnmarshalVectorFloat32ViaUnmarshal_NativeType(b *testing.B) {
 				binary.BigEndian.PutUint32(data[i*4:], math.Float32bits(float32(i)*0.1))
 			}
 
-			info := NewCustomType(protoVersion4, TypeCustom,
+			var info TypeInfo = NewCustomType(protoVersion4, TypeCustom,
 				"org.apache.cassandra.db.marshal.VectorType(org.apache.cassandra.db.marshal.FloatType, "+fmt.Sprintf("%d", dim)+")")
 
 			var result []float32
@@ -123,7 +125,9 @@ func BenchmarkUnmarshalVectorFloat64ViaUnmarshal(b *testing.B) {
 				binary.BigEndian.PutUint64(data[i*8:], math.Float64bits(float64(i)*0.1))
 			}
 
-			info := VectorType{
+			// Important: store as TypeInfo so we don't allocate each iteration
+			// by converting a concrete struct to an interface.
+			var info TypeInfo = VectorType{
 				NativeType: NativeType{proto: protoVersion4, typ: TypeCustom, custom: "org.apache.cassandra.db.marshal.VectorType(org.apache.cassandra.db.marshal.DoubleType, " + fmt.Sprintf("%d", dim) + ")"},
 				SubType:    NativeType{proto: protoVersion4, typ: TypeDouble},
 				Dimensions: dim,
@@ -155,7 +159,7 @@ func BenchmarkUnmarshalVectorFloat64ViaUnmarshal_NativeType(b *testing.B) {
 				binary.BigEndian.PutUint64(data[i*8:], math.Float64bits(float64(i)*0.1))
 			}
 
-			info := NewCustomType(protoVersion4, TypeCustom,
+			var info TypeInfo = NewCustomType(protoVersion4, TypeCustom,
 				"org.apache.cassandra.db.marshal.VectorType(org.apache.cassandra.db.marshal.DoubleType, "+fmt.Sprintf("%d", dim)+")")
 
 			var result []float64

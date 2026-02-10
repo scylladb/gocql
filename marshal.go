@@ -352,6 +352,24 @@ func Unmarshal(info TypeInfo, data []byte, value interface{}) error {
 }
 
 func isNullableValue(value interface{}) bool {
+	// Fast-path: avoid reflection for the most common destination shapes.
+	// Nullable semantics only apply to pointer-to-pointer destinations.
+	switch value.(type) {
+	case *string, *[]byte,
+		*bool,
+		*int, *int8, *int16, *int32, *int64,
+		*uint, *uint8, *uint16, *uint32, *uint64,
+		*float32, *float64,
+		*[]float32, *[]float64:
+		return false
+	case **string, **[]byte,
+		**bool,
+		**int, **int8, **int16, **int32, **int64,
+		**uint, **uint8, **uint16, **uint32, **uint64,
+		**float32, **float64:
+		return true
+	}
+
 	t := reflect.TypeOf(value)
 	return t != nil && t.Kind() == reflect.Ptr && t.Elem().Kind() == reflect.Ptr
 }
