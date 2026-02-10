@@ -834,27 +834,52 @@ func (f *framer) parsePreparedMetadata() preparedMetadata {
 	}
 
 	globalSpec := meta.flags&frm.FlagGlobalTableSpec == frm.FlagGlobalTableSpec
-	if globalSpec || meta.colCount > 0 {
-		// globalSpec: read from metadata position; !globalSpec: read from first column position
+	if globalSpec {
 		meta.keyspace = f.readString()
 		meta.table = f.readString()
 	}
 
 	var cols []ColumnInfo
+	sameKeyspaceTable := true
+	firstKeyspace := ""
+	firstTable := ""
+	readPerColumnSpec := !globalSpec
 	if meta.colCount < 1000 {
 		// preallocate columninfo to avoid excess copying
 		cols = make([]ColumnInfo, meta.colCount)
 		for i := 0; i < meta.colCount; i++ {
-			f.readCol(&cols[i], &meta.resultMetadata, globalSpec, meta.keyspace, meta.table, i)
+			col := &cols[i]
+			keyspace, table := f.readColWithSpec(col, &meta.resultMetadata, globalSpec, meta.keyspace, meta.table, i, readPerColumnSpec)
+			if readPerColumnSpec {
+				if i == 0 {
+					firstKeyspace = keyspace
+					firstTable = table
+				} else if keyspace != firstKeyspace || table != firstTable {
+					sameKeyspaceTable = false
+				}
+			}
 		}
 	} else {
 		// use append, huge number of columns usually indicates a corrupt frame or
 		// just a huge row.
 		for i := 0; i < meta.colCount; i++ {
 			var col ColumnInfo
-			f.readCol(&col, &meta.resultMetadata, globalSpec, meta.keyspace, meta.table, i)
+			keyspace, table := f.readColWithSpec(&col, &meta.resultMetadata, globalSpec, meta.keyspace, meta.table, i, readPerColumnSpec)
+			if readPerColumnSpec {
+				if i == 0 {
+					firstKeyspace = keyspace
+					firstTable = table
+				} else if keyspace != firstKeyspace || table != firstTable {
+					sameKeyspaceTable = false
+				}
+			}
 			cols = append(cols, col)
 		}
+	}
+
+	if !globalSpec && meta.colCount > 0 && sameKeyspaceTable {
+		meta.keyspace = firstKeyspace
+		meta.table = firstTable
 	}
 
 	meta.columns = cols
@@ -883,14 +908,20 @@ func (r resultMetadata) String() string {
 	return fmt.Sprintf("[metadata flags=0x%x paging_state=% X columns=%v]", r.flags, r.pagingState, r.columns)
 }
 
-func (f *framer) readCol(col *ColumnInfo, meta *resultMetadata, globalSpec bool, keyspace, table string, colIndex int) {
-	if !globalSpec && colIndex > 0 {
-		// Skip redundant keyspace/table from wire (already read from first column)
-		f.skipString()
-		f.skipString()
+func (f *framer) readColWithSpec(col *ColumnInfo, meta *resultMetadata, globalSpec bool, keyspace, table string, colIndex int, readPerColumnSpec bool) (string, string) {
+	if readPerColumnSpec {
+		// In case of prepared statements with per-column spec, we need to read the keyspace and table for each column.
+		col.Keyspace = f.readString()
+		col.Table = f.readString()
+	} else {
+		if !globalSpec && colIndex != 0 {
+			// Skip redundant keyspace/table from wire (already read from first column).
+			f.skipString()
+			f.skipString()
+		}
+		col.Keyspace = keyspace
+		col.Table = table
 	}
-	col.Keyspace = keyspace
-	col.Table = table
 
 	col.Name = f.readString()
 	col.TypeInfo = f.readTypeInfo()
@@ -898,6 +929,8 @@ func (f *framer) readCol(col *ColumnInfo, meta *resultMetadata, globalSpec bool,
 		// -1 because we already included the tuple column
 		meta.actualColCount += len(tuple.Elems) - 1
 	}
+
+	return col.Keyspace, col.Table
 }
 
 func (f *framer) parseResultMetadata() resultMetadata {
@@ -930,7 +963,7 @@ func (f *framer) parseResultMetadata() resultMetadata {
 		// preallocate columninfo to avoid excess copying
 		cols = make([]ColumnInfo, meta.colCount)
 		for i := 0; i < meta.colCount; i++ {
-			f.readCol(&cols[i], &meta, globalSpec, meta.keyspace, meta.table, i)
+			f.readColWithSpec(&cols[i], &meta, globalSpec, meta.keyspace, meta.table, i, false)
 		}
 
 	} else {
@@ -938,7 +971,7 @@ func (f *framer) parseResultMetadata() resultMetadata {
 		// just a huge row.
 		for i := 0; i < meta.colCount; i++ {
 			var col ColumnInfo
-			f.readCol(&col, &meta, globalSpec, meta.keyspace, meta.table, i)
+			f.readColWithSpec(&col, &meta, globalSpec, meta.keyspace, meta.table, i, false)
 			cols = append(cols, col)
 		}
 	}
