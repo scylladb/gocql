@@ -49,7 +49,7 @@ func TestSplitCompositeTypes_Nested_Java(t *testing.T) {
 		"MapType(UTF8Type, FrozenType(ListType(FrozenType(TupleType(Int32Type, Int32Type)))))",
 		"MapType",
 	)
-	want := []string{"UTF8Type", "FrozenType(ListType(FrozenType(TupleType(Int32Type, Int32Type)))))"}
+	want := []string{"UTF8Type", "FrozenType(ListType(FrozenType(TupleType(Int32Type, Int32Type))))"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected parts: got=%#v want=%#v", got, want)
 	}
