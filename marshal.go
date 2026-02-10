@@ -26,6 +26,7 @@ package gocql
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
@@ -230,7 +231,7 @@ func Marshal(info TypeInfo, value interface{}) ([]byte, error) {
 	case TypeDuration:
 		return marshalDuration(value)
 	case TypeCustom:
-		if vector, ok := info.(VectorType); ok {
+		if vector, ok := asVectorType(info); ok {
 			return marshalVector(vector, value)
 		}
 	}
@@ -341,7 +342,7 @@ func Unmarshal(info TypeInfo, data []byte, value interface{}) error {
 	case TypeDuration:
 		return unmarshalDuration(data, value)
 	case TypeCustom:
-		if vector, ok := info.(VectorType); ok {
+		if vector, ok := asVectorType(info); ok {
 			return unmarshalVector(vector, data, value)
 		}
 	}
@@ -351,8 +352,26 @@ func Unmarshal(info TypeInfo, data []byte, value interface{}) error {
 }
 
 func isNullableValue(value interface{}) bool {
-	v := reflect.ValueOf(value)
-	return v.Kind() == reflect.Ptr && v.Type().Elem().Kind() == reflect.Ptr
+	// Fast-path: avoid reflection for the most common destination shapes.
+	// Nullable semantics only apply to pointer-to-pointer destinations.
+	switch value.(type) {
+	case *string, *[]byte,
+		*bool,
+		*int, *int8, *int16, *int32, *int64,
+		*uint, *uint8, *uint16, *uint32, *uint64,
+		*float32, *float64,
+		*[]float32, *[]float64:
+		return false
+	case **string, **[]byte,
+		**bool,
+		**int, **int8, **int16, **int32, **int64,
+		**uint, **uint8, **uint16, **uint32, **uint64,
+		**float32, **float64:
+		return true
+	}
+
+	t := reflect.TypeOf(value)
+	return t != nil && t.Kind() == reflect.Ptr && t.Elem().Kind() == reflect.Ptr
 }
 
 func isNullData(info TypeInfo, data []byte) bool {
@@ -833,6 +852,23 @@ func unmarshalList(info TypeInfo, data []byte, value interface{}) error {
 }
 
 func marshalVector(info VectorType, value interface{}) ([]byte, error) {
+	// Fast-path for []float32 (most common case)
+	if info.SubType.Type() == TypeFloat {
+		if vec, ok := value.([]float32); ok {
+			// Validate dimensions
+			if len(vec) != info.Dimensions {
+				return nil, marshalErrorf("expected vector with %d dimensions, received %d", info.Dimensions, len(vec))
+			}
+			// Pre-allocate exact size: 4 bytes per float32
+			data := make([]byte, len(vec)*4)
+			for i, v := range vec {
+				binary.BigEndian.PutUint32(data[i*4:], math.Float32bits(v))
+			}
+			return data, nil
+		}
+	}
+
+	// Handle edge cases before reflection
 	if value == nil {
 		return nil, nil
 	} else if _, ok := value.(unsetColumn); ok {
@@ -848,13 +884,27 @@ func marshalVector(info VectorType, value interface{}) ([]byte, error) {
 
 	switch k {
 	case reflect.Slice, reflect.Array:
-		buf := &bytes.Buffer{}
 		n := rv.Len()
 		if n != info.Dimensions {
 			return nil, marshalErrorf("expected vector with %d dimensions, received %d", info.Dimensions, n)
 		}
 
 		isLengthType := isVectorVariableLengthType(info.SubType)
+		// Pre-allocate buffer for fixed-size types
+		var buf *bytes.Buffer
+		if !isLengthType {
+			// Fixed-size types: calculate exact size upfront
+			elemSize := getFixedTypeSize(info.SubType.Type())
+			if elemSize > 0 {
+				data := make([]byte, 0, n*elemSize)
+				buf = bytes.NewBuffer(data)
+			} else {
+				buf = &bytes.Buffer{}
+			}
+		} else {
+			buf = &bytes.Buffer{}
+		}
+
 		for i := 0; i < n; i++ {
 			item, err := Marshal(info.SubType, rv.Index(i).Interface())
 			if err != nil {
@@ -871,6 +921,61 @@ func marshalVector(info VectorType, value interface{}) ([]byte, error) {
 }
 
 func unmarshalVector(info VectorType, data []byte, value interface{}) error {
+	// Fast-path for *[]float32 (most common case)
+	if info.SubType.Type() == TypeFloat {
+		if vec, ok := value.(*[]float32); ok {
+			if data == nil {
+				*vec = nil
+				return nil
+			}
+			// Ensure data length is properly aligned to float32 size
+			if len(data)%4 != 0 {
+				return unmarshalErrorf("invalid data length for float32 vector: expected multiple of 4, got %d", len(data))
+			}
+			// Calculate dimensions from actual data length (bit shift is faster than division, it's really just / 4)
+			n := len(data) >> 2
+			// Validate dimensions match expected
+			if n != info.Dimensions {
+				return unmarshalErrorf("expected vector with %d dimensions, received %d", info.Dimensions, n)
+			}
+			if cap(*vec) >= n {
+				*vec = (*vec)[:n]
+			} else {
+				*vec = make([]float32, n)
+			}
+			for i := 0; i < n; i++ {
+				(*vec)[i] = math.Float32frombits(binary.BigEndian.Uint32(data[i*4:]))
+			}
+			return nil
+		}
+	}
+
+	// Fast-path for *[]float64
+	if info.SubType.Type() == TypeDouble {
+		if vec, ok := value.(*[]float64); ok {
+			if data == nil {
+				*vec = nil
+				return nil
+			}
+			if len(data)%8 != 0 {
+				return unmarshalErrorf("invalid data length for float64 vector: expected multiple of 8, got %d", len(data))
+			}
+			n := len(data) >> 3
+			if n != info.Dimensions {
+				return unmarshalErrorf("expected vector with %d dimensions, received %d", info.Dimensions, n)
+			}
+			if cap(*vec) >= n {
+				*vec = (*vec)[:n]
+			} else {
+				*vec = make([]float64, n)
+			}
+			for i := 0; i < n; i++ {
+				(*vec)[i] = math.Float64frombits(binary.BigEndian.Uint64(data[i*8:]))
+			}
+			return nil
+		}
+	}
+
 	rv := reflect.ValueOf(value)
 	if rv.Kind() != reflect.Ptr {
 		return unmarshalErrorf("can not unmarshal into non-pointer %T", value)
@@ -940,25 +1045,38 @@ func unmarshalVector(info VectorType, data []byte, value interface{}) error {
 	return unmarshalErrorf("can not unmarshal %s into %T. Accepted types: *slice, *array, *interface{}.", info, value)
 }
 
+// getFixedTypeSize returns the fixed byte size for CQL fixed-length types, or 0 for variable-length types
+func getFixedTypeSize(t Type) int {
+	switch t {
+	case TypeBoolean, TypeTinyInt:
+		return 1
+	case TypeSmallInt:
+		return 2
+	case TypeInt, TypeFloat, TypeDate:
+		return 4
+	case TypeBigInt, TypeCounter, TypeDouble, TypeTimestamp, TypeTime:
+		return 8
+	case TypeUUID, TypeTimeUUID:
+		return 16
+	default:
+		return 0 // Variable-length or unknown
+	}
+}
+
 // isVectorVariableLengthType determines if a type requires explicit length serialization within a vector.
-// Variable-length types need their length encoded before the actual data to allow proper deserialization.
-// Fixed-length types, on the other hand, don't require this kind of length prefix.
+// Only Float32, Int64, and Double are treated as fixed-size based on current Cassandra behavior.
 func isVectorVariableLengthType(elemType TypeInfo) bool {
 	switch elemType.Type() {
-	case TypeVarchar, TypeAscii, TypeBlob, TypeText,
-		TypeCounter,
-		TypeDuration, TypeDate, TypeTime,
-		TypeDecimal, TypeSmallInt, TypeTinyInt, TypeVarint,
-		TypeInet,
-		TypeList, TypeSet, TypeMap, TypeUDT, TypeTuple:
-		return true
 	case TypeCustom:
 		if vecType, ok := elemType.(VectorType); ok {
 			return isVectorVariableLengthType(vecType.SubType)
 		}
 		return true
+	case TypeBoolean, TypeFloat, TypeDouble, TypeInt, TypeBigInt, TypeTimestamp, TypeTime, TypeUUID, TypeTimeUUID:
+		return false
+	default:
+		return true
 	}
-	return false
 }
 
 func writeUnsignedVInt(buf *bytes.Buffer, v uint64) {

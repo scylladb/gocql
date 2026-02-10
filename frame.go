@@ -774,8 +774,9 @@ func (f *framer) readTypeInfo() TypeInfo {
 
 		return collection
 	case TypeCustom:
-		if strings.HasPrefix(simple.custom, "org.apache.cassandra.db.marshal.VectorType") {
-			spec := strings.TrimPrefix(simple.custom, "org.apache.cassandra.db.marshal.VectorType")
+		vectorTypePrefix := apacheCassandraTypePrefix + "VectorType"
+		if strings.HasPrefix(simple.custom, vectorTypePrefix) {
+			spec := strings.TrimPrefix(simple.custom, vectorTypePrefix)
 			spec = spec[1 : len(spec)-1] // remove parenthesis
 			idx := strings.LastIndex(spec, ",")
 			typeStr := spec[:idx]
