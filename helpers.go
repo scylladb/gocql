@@ -42,7 +42,7 @@ type RowData struct {
 	Values  []interface{}
 }
 
-var vectorTypeCache [protoVersion5 + 1]sync.Map // map[string]VectorType
+var vectorTypeCache sync.Map // map[string]VectorType
 
 // asVectorType attempts to convert a NativeType(custom) which represents a VectorType
 // into a concrete VectorType. It also works recursively (nested vectors).
@@ -65,12 +65,7 @@ func asVectorType(t TypeInfo) (VectorType, bool) {
 	if len(custom) <= len(prefix)+2 || custom[len(prefix)] != '(' || custom[len(custom)-1] != ')' {
 		return VectorType{}, false
 	}
-	proto := n.Version()
-	if proto > protoVersion5 {
-		proto = protoVersion5
-	}
-	cache := &vectorTypeCache[proto]
-	if cached, ok := cache.Load(custom); ok {
+	if cached, ok := vectorTypeCache.Load(custom); ok {
 		return cached.(VectorType), true
 	}
 
@@ -96,7 +91,7 @@ func asVectorType(t TypeInfo) (VectorType, bool) {
 		SubType:    subType,
 		Dimensions: dim,
 	}
-	cache.Store(custom, vec)
+	vectorTypeCache.Store(custom, vec)
 	return vec, true
 }
 
