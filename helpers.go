@@ -82,6 +82,11 @@ func asVectorType(t TypeInfo) (VectorType, bool) {
 		return VectorType{}, false
 	}
 	subType := getCassandraLongType(subStr, n.Version(), nopLogger{})
+	// Cassandra may report vector<date> with DateType; ensure it maps to TypeDate
+	// so vector element encoding uses the correct length rules.
+	if strings.HasSuffix(subStr, "DateType") {
+		subType = NewNativeType(n.Version(), TypeDate)
+	}
 	// recurse if subtype itself is still a custom vector
 	if innerVec, ok := asVectorType(subType); ok {
 		subType = innerVec

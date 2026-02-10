@@ -924,6 +924,10 @@ func unmarshalVector(info VectorType, data []byte, value interface{}) error {
 	// Fast-path for *[]float32 (most common case)
 	if info.SubType.Type() == TypeFloat {
 		if vec, ok := value.(*[]float32); ok {
+			if data == nil {
+				*vec = nil
+				return nil
+			}
 			// Ensure data length is properly aligned to float32 size
 			if len(data)%4 != 0 {
 				return unmarshalErrorf("invalid data length for float32 vector: expected multiple of 4, got %d", len(data))
@@ -949,6 +953,10 @@ func unmarshalVector(info VectorType, data []byte, value interface{}) error {
 	// Fast-path for *[]float64
 	if info.SubType.Type() == TypeDouble {
 		if vec, ok := value.(*[]float64); ok {
+			if data == nil {
+				*vec = nil
+				return nil
+			}
 			if len(data)%8 != 0 {
 				return unmarshalErrorf("invalid data length for float64 vector: expected multiple of 8, got %d", len(data))
 			}
@@ -1059,15 +1067,16 @@ func getFixedTypeSize(t Type) int {
 // Only Float32, Int64, and Double are treated as fixed-size based on current Cassandra behavior.
 func isVectorVariableLengthType(elemType TypeInfo) bool {
 	switch elemType.Type() {
-	case TypeFloat, TypeBigInt, TypeDouble:
-		return false
 	case TypeCustom:
 		if vecType, ok := elemType.(VectorType); ok {
 			return isVectorVariableLengthType(vecType.SubType)
 		}
 		return true
+	case TypeBoolean, TypeFloat, TypeDouble, TypeInt, TypeBigInt, TypeTimestamp, TypeTime, TypeUUID, TypeTimeUUID:
+		return false
+	default:
+		return true
 	}
-	return true
 }
 
 func writeUnsignedVInt(buf *bytes.Buffer, v uint64) {
