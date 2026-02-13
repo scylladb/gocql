@@ -989,7 +989,7 @@ func TestUnmarshalListWithVectorIntoInterface(t *testing.T) {
 	info := CollectionType{
 		NativeType: NativeType{proto: protoVersion4, typ: TypeList},
 		Elem: VectorType{
-			NativeType: NativeType{proto: protoVersion4, typ: TypeCustom, custom: "org.apache.cassandra.db.marshal.VectorType"},
+			NativeType: NativeType{proto: protoVersion4, typ: TypeCustom, custom: apacheCassandraTypePrefix + "VectorType"},
 			SubType:    NativeType{proto: protoVersion4, typ: TypeFloat},
 			Dimensions: 2,
 		},

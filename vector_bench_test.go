@@ -44,7 +44,7 @@ func BenchmarkUnmarshalVectorFloat32(b *testing.B) {
 	for _, entry := range dims {
 		dim := entry.dim
 		dimStr := entry.dimStr
-		b.Run("dim-"+dimStr, func(b *testing.B) {
+		b.Run("dim_"+dimStr, func(b *testing.B) {
 			b.ReportAllocs()
 
 			data := make([]byte, dim*4)
