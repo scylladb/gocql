@@ -234,7 +234,7 @@ func TestGetCassandraType(t *testing.T) {
 			"vector<float, 3>", VectorType{
 				NativeType: NativeType{
 					typ:    TypeCustom,
-					custom: "org.apache.cassandra.db.marshal.VectorType",
+					custom: apacheCassandraTypePrefix + "VectorType",
 				},
 				SubType:    NativeType{typ: TypeFloat},
 				Dimensions: 3,
@@ -244,12 +244,12 @@ func TestGetCassandraType(t *testing.T) {
 			"vector<vector<float, 3>, 5>", VectorType{
 				NativeType: NativeType{
 					typ:    TypeCustom,
-					custom: "org.apache.cassandra.db.marshal.VectorType",
+					custom: apacheCassandraTypePrefix + "VectorType",
 				},
 				SubType: VectorType{
 					NativeType: NativeType{
 						typ:    TypeCustom,
-						custom: "org.apache.cassandra.db.marshal.VectorType",
+						custom: apacheCassandraTypePrefix + "VectorType",
 					},
 					SubType:    NativeType{typ: TypeFloat},
 					Dimensions: 3,
@@ -261,7 +261,7 @@ func TestGetCassandraType(t *testing.T) {
 			"vector<map<uuid,timestamp>, 5>", VectorType{
 				NativeType: NativeType{
 					typ:    TypeCustom,
-					custom: "org.apache.cassandra.db.marshal.VectorType",
+					custom: apacheCassandraTypePrefix + "VectorType",
 				},
 				SubType: CollectionType{
 					NativeType: NativeType{typ: TypeMap},
@@ -275,7 +275,7 @@ func TestGetCassandraType(t *testing.T) {
 			"vector<frozen<tuple<int, float>>, 100>", VectorType{
 				NativeType: NativeType{
 					typ:    TypeCustom,
-					custom: "org.apache.cassandra.db.marshal.VectorType",
+					custom: apacheCassandraTypePrefix + "VectorType",
 				},
 				SubType: TupleTypeInfo{
 					NativeType: NativeType{typ: TypeTuple},

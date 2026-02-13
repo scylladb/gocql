@@ -139,7 +139,7 @@ func TestVector_Types(t *testing.T) {
 		name       string
 		cqlType    string
 		value      interface{}
-		comparator func(interface{}, interface{})
+		comparator func(*testing.T, interface{}, interface{})
 	}{
 		{name: "ascii", cqlType: TypeAscii.String(), value: []string{"a", "1", "Z"}},
 		{name: "bigint", cqlType: TypeBigInt.String(), value: []int64{1, 2, 3}},
@@ -160,7 +160,7 @@ func TestVector_Types(t *testing.T) {
 			name:    "inet",
 			cqlType: TypeInet.String(),
 			value:   []net.IP{net.IPv4(127, 0, 0, 1), net.IPv4(192, 168, 1, 1), net.IPv4(8, 8, 8, 8)},
-			comparator: func(e interface{}, a interface{}) {
+			comparator: func(t *testing.T, e interface{}, a interface{}) {
 				expected := e.([]net.IP)
 				actual := a.([]net.IP)
 				tests.AssertEqual(t, "vector size", len(expected), len(actual))
@@ -183,7 +183,7 @@ func TestVector_Types(t *testing.T) {
 				{{2, 3}, {2, -1}, {3}, {0}, {-1.3}},
 				{{1, 1000.0}, {0}, {}, {12, 14, 15, 16}, {-1.3}},
 			},
-			comparator: func(e interface{}, a interface{}) {
+			comparator: func(t *testing.T, e interface{}, a interface{}) {
 				expected := e.([][][]float32)
 				actual := a.([][][]float32)
 				tests.AssertEqual(t, "vector size", len(expected), len(actual))
@@ -207,7 +207,7 @@ func TestVector_Types(t *testing.T) {
 			name:    "vector_set_text",
 			cqlType: "set<text>",
 			value:   [][]string{{"a", "b"}, {"c", "d"}, {"f", "e"}},
-			comparator: func(e interface{}, a interface{}) {
+			comparator: func(t *testing.T, e interface{}, a interface{}) {
 				expected := e.([][]string)
 				actual := a.([][]string)
 				tests.AssertEqual(t, "vector size", len(expected), len(actual))
@@ -243,7 +243,7 @@ func TestVector_Types(t *testing.T) {
 				t.Fatal(err)
 			}
 			if test.comparator != nil {
-				test.comparator(test.value, v.Elem().Interface())
+				test.comparator(t, test.value, v.Elem().Interface())
 			} else {
 				tests.AssertDeepEqual(t, "vector", test.value, v.Elem().Interface())
 			}
@@ -373,16 +373,18 @@ func TestVector_SubTypeParsing(t *testing.T) {
 	if *flagDistribution == "scylla" && flagCassVersion.Before(2025, 4, 0) {
 		t.Skip("Vector types are useful in ScyllaDB from 2025.4 and on")
 	}
+	prefix := apacheCassandraTypePrefix
+	vectorTypePrefix := prefix + "VectorType"
 	testCases := []struct {
 		name     string
 		custom   string
 		expected TypeInfo
 	}{
-		{name: "text", custom: "org.apache.cassandra.db.marshal.UTF8Type", expected: NativeType{typ: TypeVarchar}},
-		{name: "set_int", custom: "org.apache.cassandra.db.marshal.SetType(org.apache.cassandra.db.marshal.Int32Type)", expected: CollectionType{NativeType: NativeType{typ: TypeSet}, Key: nil, Elem: NativeType{typ: TypeInt}}},
+		{name: "text", custom: prefix + "UTF8Type", expected: NativeType{typ: TypeVarchar}},
+		{name: "set_int", custom: prefix + "SetType(" + prefix + "Int32Type)", expected: CollectionType{NativeType: NativeType{typ: TypeSet}, Key: nil, Elem: NativeType{typ: TypeInt}}},
 		{
 			name:   "udt",
-			custom: "org.apache.cassandra.db.marshal.UserType(gocql_test,706572736f6e,66697273745f6e616d65:org.apache.cassandra.db.marshal.UTF8Type,6c6173745f6e616d65:org.apache.cassandra.db.marshal.UTF8Type,616765:org.apache.cassandra.db.marshal.Int32Type)",
+			custom: prefix + "UserType(gocql_test,706572736f6e,66697273745f6e616d65:" + prefix + "UTF8Type,6c6173745f6e616d65:" + prefix + "UTF8Type,616765:" + prefix + "Int32Type)",
 			expected: UDTTypeInfo{
 				NativeType: NativeType{typ: TypeUDT},
 				KeySpace:   "gocql_test",
@@ -396,7 +398,7 @@ func TestVector_SubTypeParsing(t *testing.T) {
 		},
 		{
 			name:   "tuple",
-			custom: "org.apache.cassandra.db.marshal.TupleType(org.apache.cassandra.db.marshal.UTF8Type,org.apache.cassandra.db.marshal.Int32Type,org.apache.cassandra.db.marshal.UTF8Type)",
+			custom: prefix + "TupleType(" + prefix + "UTF8Type," + prefix + "Int32Type," + prefix + "UTF8Type)",
 			expected: TupleTypeInfo{
 				NativeType: NativeType{typ: TypeTuple},
 				Elems: []TypeInfo{
@@ -408,11 +410,11 @@ func TestVector_SubTypeParsing(t *testing.T) {
 		},
 		{
 			name:   "vector_vector_inet",
-			custom: "org.apache.cassandra.db.marshal.VectorType(org.apache.cassandra.db.marshal.VectorType(org.apache.cassandra.db.marshal.InetAddressType, 2), 3)",
+			custom: prefix + "VectorType(" + prefix + "VectorType(" + prefix + "InetAddressType, 2), 3)",
 			expected: VectorType{
-				NativeType: NativeType{typ: TypeCustom, custom: "org.apache.cassandra.db.marshal.VectorType"},
+				NativeType: NativeType{typ: TypeCustom, custom: vectorTypePrefix},
 				SubType: VectorType{
-					NativeType: NativeType{typ: TypeCustom, custom: "org.apache.cassandra.db.marshal.VectorType"},
+					NativeType: NativeType{typ: TypeCustom, custom: vectorTypePrefix},
 					SubType:    NativeType{typ: TypeInet},
 					Dimensions: 2,
 				},
@@ -421,12 +423,12 @@ func TestVector_SubTypeParsing(t *testing.T) {
 		},
 		{
 			name:   "map_int_vector_text",
-			custom: "org.apache.cassandra.db.marshal.MapType(org.apache.cassandra.db.marshal.Int32Type,org.apache.cassandra.db.marshal.VectorType(org.apache.cassandra.db.marshal.UTF8Type, 10))",
+			custom: prefix + "MapType(" + prefix + "Int32Type," + prefix + "VectorType(" + prefix + "UTF8Type, 10))",
 			expected: CollectionType{
 				NativeType: NativeType{typ: TypeMap},
 				Key:        NativeType{typ: TypeInt},
 				Elem: VectorType{
-					NativeType: NativeType{typ: TypeCustom, custom: "org.apache.cassandra.db.marshal.VectorType"},
+					NativeType: NativeType{typ: TypeCustom, custom: vectorTypePrefix},
 					SubType:    NativeType{typ: TypeVarchar},
 					Dimensions: 10,
 				},
@@ -434,14 +436,14 @@ func TestVector_SubTypeParsing(t *testing.T) {
 		},
 		{
 			name:   "set_map_vector_text_text",
-			custom: "org.apache.cassandra.db.marshal.SetType(org.apache.cassandra.db.marshal.MapType(org.apache.cassandra.db.marshal.VectorType(org.apache.cassandra.db.marshal.Int32Type, 10),org.apache.cassandra.db.marshal.UTF8Type))",
+			custom: prefix + "SetType(" + prefix + "MapType(" + prefix + "VectorType(" + prefix + "Int32Type, 10)," + prefix + "UTF8Type))",
 			expected: CollectionType{
 				NativeType: NativeType{typ: TypeSet},
 				Key:        nil,
 				Elem: CollectionType{
 					NativeType: NativeType{typ: TypeMap},
 					Key: VectorType{
-						NativeType: NativeType{typ: TypeCustom, custom: "org.apache.cassandra.db.marshal.VectorType"},
+						NativeType: NativeType{typ: TypeCustom, custom: vectorTypePrefix},
 						SubType:    NativeType{typ: TypeInt},
 						Dimensions: 10,
 					},
@@ -455,7 +457,7 @@ func TestVector_SubTypeParsing(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			f := newFramer(nil, 0)
 			f.writeShort(0)
-			f.writeString(fmt.Sprintf("org.apache.cassandra.db.marshal.VectorType(%s, 2)", test.custom))
+			f.writeString(fmt.Sprintf("%sVectorType(%s, 2)", prefix, test.custom))
 			parsedType := f.readTypeInfo()
 			require.IsType(t, parsedType, VectorType{})
 			vectorType := parsedType.(VectorType)
