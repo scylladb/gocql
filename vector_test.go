@@ -31,6 +31,7 @@ import (
 	"fmt"
 	"net"
 	"reflect"
+	"sort"
 	"testing"
 	"time"
 
@@ -106,8 +107,8 @@ func TestVector_Types(t *testing.T) {
 		t.Skip("Vector types have been introduced in Cassandra 5.0")
 	}
 
-	if *flagDistribution == "scylla" && flagCassVersion.Before(2025, 3, 0) {
-		t.Skip("Vector types have been introduced in ScyllaDB 2025.3")
+	if *flagDistribution == "scylla" && flagCassVersion.Before(2025, 4, 0) {
+		t.Skip("Vector types are useful in ScyllaDB from 2025.4 and on")
 	}
 
 	timestamp1, _ := time.Parse("2006-01-02", "2000-01-01")
@@ -126,13 +127,13 @@ func TestVector_Types(t *testing.T) {
 	duration2 := Duration{1, 1, 1920000000000}
 	duration3 := Duration{31, 0, 60000000000}
 
-	// map1 := make(map[string]int)
-	// map1["a"] = 1
-	// map1["b"] = 2
-	// map1["c"] = 3
-	// map2 := make(map[string]int)
-	// map2["abc"] = 123
-	// map3 := make(map[string]int)
+	map1 := make(map[string]int)
+	map1["a"] = 1
+	map1["b"] = 2
+	map1["c"] = 3
+	map2 := make(map[string]int)
+	map2["abc"] = 123
+	map3 := make(map[string]int)
 
 	testCases := []struct {
 		name       string
@@ -174,16 +175,53 @@ func TestVector_Types(t *testing.T) {
 		{name: "tinyint", cqlType: TypeTinyInt.String(), value: []int8{127, 9, -123}},
 		{name: "duration", cqlType: TypeDuration.String(), value: []Duration{duration1, duration2, duration3}},
 		{name: "vector_vector_float", cqlType: "vector<float, 5>", value: [][]float32{{0.1, -1.2, 3, 5, 5}, {10.1, -122222.0002, 35.0, 1, 1}, {0, 0, 0, 0, 0}}},
-		// {name: "vector_vector_set_float", cqlType: "vector<set<float>, 5>", value: [][][]float32{
-		// 	{{1, 2}, {2, -1}, {3}, {0}, {-1.3}},
-		// 	{{2, 3}, {2, -1}, {3}, {0}, {-1.3}},
-		// 	{{1, 1000.0}, {0}, {}, {12, 14, 15, 16}, {-1.3}},
-		// }}, // disable until INSERTing Vector<collection> is fixed on scylladb side
+		{
+			name:    "vector_vector_set_float",
+			cqlType: "vector<set<float>, 5>",
+			value: [][][]float32{
+				{{1, 2}, {2, -1}, {3}, {0}, {-1.3}},
+				{{2, 3}, {2, -1}, {3}, {0}, {-1.3}},
+				{{1, 1000.0}, {0}, {}, {12, 14, 15, 16}, {-1.3}},
+			},
+			comparator: func(e interface{}, a interface{}) {
+				expected := e.([][][]float32)
+				actual := a.([][][]float32)
+				tests.AssertEqual(t, "vector size", len(expected), len(actual))
+				for i := range expected {
+					expVector := expected[i]
+					actVector := actual[i]
+					tests.AssertEqual(t, "vector size", len(expVector), len(actVector))
+					for j := range expVector {
+						expSet := append([]float32(nil), expVector[j]...)
+						actSet := append([]float32(nil), actVector[j]...)
+						sort.Slice(expSet, func(a, b int) bool { return expSet[a] < expSet[b] })
+						sort.Slice(actSet, func(a, b int) bool { return actSet[a] < actSet[b] })
+						tests.AssertDeepEqual(t, "vector set", expSet, actSet)
+					}
+				}
+			},
+		},
 		{name: "vector_tuple_text_int_float", cqlType: "tuple<text, int, float>", value: [][]interface{}{{"a", 1, float32(0.5)}, {"b", 2, float32(-1.2)}, {"c", 3, float32(0)}}},
-		{name: "vector_tuple_text_list_text", cqlType: "tuple<text, list<text>>", value: [][]interface{}{{"a", []string{"b", "c"}}, {"d", []string{"e", "f", "g"}}, {"h", []string{"i"}}}},
-		// {name: "vector_set_text", cqlType: "set<text>", value: [][]string{{"a", "b"}, {"c", "d"}, {"e", "f"}}}, // disable until INSERTing Vector<collection> is fixed on scylladb side
+		{name: "vector_tuple_text_list_text", cqlType: "tuple<text, list<text>>", value: [][]interface{}{{"a", []string{"b", "c"}}, {"d", []string{"e", "g", "f"}}, {"h", []string{"i"}}}},
+		{
+			name:    "vector_set_text",
+			cqlType: "set<text>",
+			value:   [][]string{{"a", "b"}, {"c", "d"}, {"f", "e"}},
+			comparator: func(e interface{}, a interface{}) {
+				expected := e.([][]string)
+				actual := a.([][]string)
+				tests.AssertEqual(t, "vector size", len(expected), len(actual))
+				for i := range expected {
+					expSet := append([]string(nil), expected[i]...)
+					actSet := append([]string(nil), actual[i]...)
+					sort.Strings(expSet)
+					sort.Strings(actSet)
+					tests.AssertDeepEqual(t, "vector set", expSet, actSet)
+				}
+			},
+		},
 		{name: "vector_list_int", cqlType: "list<int>", value: [][]int32{{1, 2, 3}, {-1, -2, -3}, {0, 0, 0}}},
-		// {name: "vector_map_text_int", cqlType: "map<text, int>", value: []map[string]int{map1, map2, map3}}, // disable until INSERTing Vector<collection> is fixed on scylladb side
+		{name: "vector_map_text_int", cqlType: "map<text, int>", value: []map[string]int{map1, map2, map3}},
 	}
 
 	for _, test := range testCases {
@@ -331,14 +369,17 @@ func TestVector_MissingDimension(t *testing.T) {
 }
 
 func TestVector_SubTypeParsing(t *testing.T) {
+
+	if *flagDistribution == "scylla" && flagCassVersion.Before(2025, 4, 0) {
+		t.Skip("Vector types are useful in ScyllaDB from 2025.4 and on")
+	}
 	testCases := []struct {
 		name     string
 		custom   string
 		expected TypeInfo
 	}{
 		{name: "text", custom: "org.apache.cassandra.db.marshal.UTF8Type", expected: NativeType{typ: TypeVarchar}},
-		// disable until INSERTing Vector<collection> is fixed on scylladb side
-		// {name: "set_int", custom: "org.apache.cassandra.db.marshal.SetType(org.apache.cassandra.db.marshal.Int32Type)", expected: CollectionType{NativeType{typ: TypeSet}, nil, NativeType{typ: TypeInt}}},
+		{name: "set_int", custom: "org.apache.cassandra.db.marshal.SetType(org.apache.cassandra.db.marshal.Int32Type)", expected: CollectionType{NativeType: NativeType{typ: TypeSet}, Key: nil, Elem: NativeType{typ: TypeInt}}},
 		{
 			name:   "udt",
 			custom: "org.apache.cassandra.db.marshal.UserType(gocql_test,706572736f6e,66697273745f6e616d65:org.apache.cassandra.db.marshal.UTF8Type,6c6173745f6e616d65:org.apache.cassandra.db.marshal.UTF8Type,616765:org.apache.cassandra.db.marshal.Int32Type)",
@@ -391,24 +432,23 @@ func TestVector_SubTypeParsing(t *testing.T) {
 				},
 			},
 		},
-		// disable until INSERTing Vector<collection> is fixed on scylladb side
-		// {
-		// 	name:   "set_map_vector_text_text",
-		// 	custom: "org.apache.cassandra.db.marshal.SetType(org.apache.cassandra.db.marshal.MapType(org.apache.cassandra.db.marshal.VectorType(org.apache.cassandra.db.marshal.Int32Type, 10),org.apache.cassandra.db.marshal.UTF8Type))",
-		// 	expected: CollectionType{
-		// 		NativeType: NativeType{typ: TypeSet},
-		// 		Key:        nil,
-		// 		Elem: CollectionType{
-		// 			NativeType{typ: TypeMap},
-		// 			VectorType{
-		// 				NativeType: NativeType{typ: TypeCustom, custom: "org.apache.cassandra.db.marshal.VectorType"},
-		// 				SubType:    NativeType{typ: TypeInt},
-		// 				Dimensions: 10,
-		// 			},
-		// 			NativeType{typ: TypeVarchar},
-		// 		},
-		// 	},
-		// },
+		{
+			name:   "set_map_vector_text_text",
+			custom: "org.apache.cassandra.db.marshal.SetType(org.apache.cassandra.db.marshal.MapType(org.apache.cassandra.db.marshal.VectorType(org.apache.cassandra.db.marshal.Int32Type, 10),org.apache.cassandra.db.marshal.UTF8Type))",
+			expected: CollectionType{
+				NativeType: NativeType{typ: TypeSet},
+				Key:        nil,
+				Elem: CollectionType{
+					NativeType: NativeType{typ: TypeMap},
+					Key: VectorType{
+						NativeType: NativeType{typ: TypeCustom, custom: "org.apache.cassandra.db.marshal.VectorType"},
+						SubType:    NativeType{typ: TypeInt},
+						Dimensions: 10,
+					},
+					Elem: NativeType{typ: TypeVarchar},
+				},
+			},
+		},
 	}
 
 	for _, test := range testCases {
