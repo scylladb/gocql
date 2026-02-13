@@ -160,63 +160,6 @@ func dereference(i interface{}) interface{} {
 	return reflect.Indirect(reflect.ValueOf(i)).Interface()
 }
 
-func getCassandraBaseType(name string) Type {
-	switch name {
-	case "ascii":
-		return TypeAscii
-	case "bigint":
-		return TypeBigInt
-	case "blob":
-		return TypeBlob
-	case "boolean":
-		return TypeBoolean
-	case "counter":
-		return TypeCounter
-	case "date":
-		return TypeDate
-	case "decimal":
-		return TypeDecimal
-	case "double":
-		return TypeDouble
-	case "duration":
-		return TypeDuration
-	case "float":
-		return TypeFloat
-	case "int":
-		return TypeInt
-	case "smallint":
-		return TypeSmallInt
-	case "tinyint":
-		return TypeTinyInt
-	case "time":
-		return TypeTime
-	case "timestamp":
-		return TypeTimestamp
-	case "uuid":
-		return TypeUUID
-	case "varchar":
-		return TypeVarchar
-	case "text":
-		return TypeText
-	case "varint":
-		return TypeVarint
-	case "timeuuid":
-		return TypeTimeUUID
-	case "inet":
-		return TypeInet
-	case "MapType":
-		return TypeMap
-	case "ListType":
-		return TypeList
-	case "SetType":
-		return TypeSet
-	case "TupleType":
-		return TypeTuple
-	default:
-		return TypeCustom
-	}
-}
-
 // TODO: Cover with unit tests.
 // Parses long Java-style type definition to internal data structures.
 func getCassandraLongType(name string, protoVer byte, logger StdLogger) TypeInfo {
@@ -298,65 +241,6 @@ func getCassandraLongType(name string, protoVer byte, logger StdLogger) TypeInfo
 			typ:   getApacheCassandraType(name),
 		}
 	}
-}
-
-// Parses short CQL type representation (e.g. map<text, text>) to internal data structures.
-func getCassandraType(name string, protoVer byte, logger StdLogger) TypeInfo {
-	if strings.HasPrefix(name, "frozen<") {
-		return getCassandraType(unwrapCompositeTypeDefinition(name, "frozen", '<'), protoVer, logger)
-	} else if strings.HasPrefix(name, "set<") {
-		return CollectionType{
-			NativeType: NewNativeType(protoVer, TypeSet),
-			Elem:       getCassandraType(unwrapCompositeTypeDefinition(name, "set", '<'), protoVer, logger),
-		}
-	} else if strings.HasPrefix(name, "list<") {
-		return CollectionType{
-			NativeType: NewNativeType(protoVer, TypeList),
-			Elem:       getCassandraType(unwrapCompositeTypeDefinition(name, "list", '<'), protoVer, logger),
-		}
-	} else if strings.HasPrefix(name, "map<") {
-		names := splitCQLCompositeTypes(name, "map")
-		if len(names) != 2 {
-			logger.Printf("Error parsing map type, it has %d subelements, expecting 2\n", len(names))
-			return NewNativeType(protoVer, TypeCustom)
-		}
-		return CollectionType{
-			NativeType: NewNativeType(protoVer, TypeMap),
-			Key:        getCassandraType(names[0], protoVer, logger),
-			Elem:       getCassandraType(names[1], protoVer, logger),
-		}
-	} else if strings.HasPrefix(name, "tuple<") {
-		names := splitCQLCompositeTypes(name, "tuple")
-		types := make([]TypeInfo, len(names))
-
-		for i, name := range names {
-			types[i] = getCassandraType(name, protoVer, logger)
-		}
-
-		return TupleTypeInfo{
-			NativeType: NewNativeType(protoVer, TypeTuple),
-			Elems:      types,
-		}
-	} else if strings.HasPrefix(name, "vector<") {
-		names := splitCQLCompositeTypes(name, "vector")
-		subType := getCassandraType(strings.TrimSpace(names[0]), protoVer, logger)
-		dim, _ := strconv.Atoi(strings.TrimSpace(names[1]))
-
-		return VectorType{
-			NativeType: NewCustomType(protoVer, TypeCustom, apacheCassandraTypePrefix+"VectorType"),
-			SubType:    subType,
-			Dimensions: dim,
-		}
-	} else {
-		return NativeType{
-			proto: protoVer,
-			typ:   getCassandraBaseType(name),
-		}
-	}
-}
-
-func splitCQLCompositeTypes(name string, typeName string) []string {
-	return splitCompositeTypes(name, typeName, '<', '>')
 }
 
 func splitJavaCompositeTypes(name string, typeName string) []string {
