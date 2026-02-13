@@ -59,7 +59,7 @@ func generateRandomJSON(size int) string {
 func BenchmarkSerialization(b *testing.B) {
 	b.Run("SimpleTypes", func(b *testing.B) {
 		b.Run("Int", func(b *testing.B) {
-			tType := gocql.NewNativeType(4, gocql.TypeInt, "")
+			tType := gocql.NewNativeType(4, gocql.TypeInt)
 			var val int = 42
 			b.Run("Marshal", func(b *testing.B) {
 				for i := 0; i < b.N; i++ {
@@ -95,7 +95,7 @@ func BenchmarkSerialization(b *testing.B) {
 
 		for _, c := range cases {
 			b.Run("Blob"+c.name, func(b *testing.B) {
-				tType := gocql.NewNativeType(4, gocql.TypeBlob, "")
+				tType := gocql.NewNativeType(4, gocql.TypeBlob)
 				val := generateRandomBinaryData(c.size)
 				b.Run("Marshal", func(b *testing.B) {
 					for i := 0; i < b.N; i++ {
@@ -123,7 +123,7 @@ func BenchmarkSerialization(b *testing.B) {
 
 		for _, c := range cases {
 			b.Run("Text"+c.name, func(b *testing.B) {
-				tType := gocql.NewNativeType(4, gocql.TypeText, "")
+				tType := gocql.NewNativeType(4, gocql.TypeText)
 				val := generateRandomJSON(c.size)
 				b.Run("Marshal", func(b *testing.B) {
 					for i := 0; i < b.N; i++ {
@@ -150,7 +150,7 @@ func BenchmarkSerialization(b *testing.B) {
 		}
 
 		b.Run("UUID", func(b *testing.B) {
-			tType := gocql.NewNativeType(4, gocql.TypeUUID, "")
+			tType := gocql.NewNativeType(4, gocql.TypeUUID)
 			val := gocql.UUID{}
 			b.Run("Marshal", func(b *testing.B) {
 				for i := 0; i < b.N; i++ {
@@ -176,7 +176,7 @@ func BenchmarkSerialization(b *testing.B) {
 		})
 
 		b.Run("Duration", func(b *testing.B) {
-			tType := gocql.NewNativeType(4, gocql.TypeDuration, "")
+			tType := gocql.NewNativeType(4, gocql.TypeDuration)
 			val := gocql.Duration{Nanoseconds: 300000000000}
 			b.Run("Marshal", func(b *testing.B) {
 				for i := 0; i < b.N; i++ {
@@ -202,7 +202,7 @@ func BenchmarkSerialization(b *testing.B) {
 		})
 
 		b.Run("Timestamp", func(b *testing.B) {
-			tType := gocql.NewNativeType(4, gocql.TypeTimestamp, "")
+			tType := gocql.NewNativeType(4, gocql.TypeTimestamp)
 			val := time.Now()
 			b.Run("Marshal", func(b *testing.B) {
 				for i := 0; i < b.N; i++ {
@@ -231,8 +231,8 @@ func BenchmarkSerialization(b *testing.B) {
 	b.Run("ComplexTypes", func(b *testing.B) {
 		b.Run("List", func(b *testing.B) {
 			tType := gocql.CollectionType{
-				NativeType: gocql.NewNativeType(4, gocql.TypeList, ""),
-				Elem:       gocql.NewNativeType(4, gocql.TypeText, ""),
+				NativeType: gocql.NewNativeType(4, gocql.TypeList),
+				Elem:       gocql.NewNativeType(4, gocql.TypeText),
 			}
 			val := []string{"foo", "bar", "baz"}
 			b.Run("Marshal", func(b *testing.B) {
@@ -260,9 +260,9 @@ func BenchmarkSerialization(b *testing.B) {
 
 		b.Run("Map", func(b *testing.B) {
 			tType := gocql.CollectionType{
-				NativeType: gocql.NewNativeType(4, gocql.TypeMap, ""),
-				Key:        gocql.NewNativeType(4, gocql.TypeVarchar, ""),
-				Elem:       gocql.NewNativeType(4, gocql.TypeInt, ""),
+				NativeType: gocql.NewNativeType(4, gocql.TypeMap),
+				Key:        gocql.NewNativeType(4, gocql.TypeVarchar),
+				Elem:       gocql.NewNativeType(4, gocql.TypeInt),
 			}
 			val := map[string]int{"a": 1, "b": 2}
 			b.Run("Marshal", func(b *testing.B) {
@@ -290,8 +290,8 @@ func BenchmarkSerialization(b *testing.B) {
 
 		b.Run("Set", func(b *testing.B) {
 			tType := gocql.CollectionType{
-				NativeType: gocql.NewNativeType(4, gocql.TypeSet, ""),
-				Elem:       gocql.NewNativeType(4, gocql.TypeInt, ""),
+				NativeType: gocql.NewNativeType(4, gocql.TypeSet),
+				Elem:       gocql.NewNativeType(4, gocql.TypeInt),
 			}
 			val := map[int]struct{}{1: {}, 2: {}}
 			b.Run("Marshal", func(b *testing.B) {
@@ -331,21 +331,21 @@ func BenchmarkSerialization(b *testing.B) {
 			}
 
 			tType := gocql.UDTTypeInfo{
-				NativeType: gocql.NewNativeType(4, gocql.TypeUDT, ""),
+				NativeType: gocql.NewNativeType(4, gocql.TypeUDT),
 				Name:       "myudt",
 				KeySpace:   "myks",
 				Elements: []gocql.UDTField{
 					{
 						Name: "id",
-						Type: gocql.NewNativeType(4, gocql.TypeUUID, ""),
+						Type: gocql.NewNativeType(4, gocql.TypeUUID),
 					},
 					{
 						Name: "name",
-						Type: gocql.NewNativeType(4, gocql.TypeText, ""),
+						Type: gocql.NewNativeType(4, gocql.TypeText),
 					},
 					{
 						Name: "value",
-						Type: gocql.NewNativeType(4, gocql.TypeInt, ""),
+						Type: gocql.NewNativeType(4, gocql.TypeInt),
 					},
 				},
 			}
@@ -383,10 +383,10 @@ func BenchmarkSerialization(b *testing.B) {
 			}
 
 			tType := gocql.TupleTypeInfo{
-				NativeType: gocql.NewNativeType(4, gocql.TypeTuple, ""),
+				NativeType: gocql.NewNativeType(4, gocql.TypeTuple),
 				Elems: []gocql.TypeInfo{
-					gocql.NewNativeType(4, gocql.TypeInt, ""),
-					gocql.NewNativeType(4, gocql.TypeText, ""),
+					gocql.NewNativeType(4, gocql.TypeInt),
+					gocql.NewNativeType(4, gocql.TypeText),
 				},
 			}
 			b.Run("Marshal", func(b *testing.B) {
@@ -435,26 +435,26 @@ func BenchmarkSerialization(b *testing.B) {
 			}
 
 			tType := gocql.CollectionType{
-				NativeType: gocql.NewNativeType(4, gocql.TypeList, ""),
+				NativeType: gocql.NewNativeType(4, gocql.TypeList),
 				Elem: gocql.CollectionType{
-					NativeType: gocql.NewNativeType(4, gocql.TypeMap, ""),
-					Key:        gocql.NewNativeType(4, gocql.TypeText, ""),
+					NativeType: gocql.NewNativeType(4, gocql.TypeMap),
+					Key:        gocql.NewNativeType(4, gocql.TypeText),
 					Elem: gocql.UDTTypeInfo{
-						NativeType: gocql.NewNativeType(4, gocql.TypeUDT, ""),
+						NativeType: gocql.NewNativeType(4, gocql.TypeUDT),
 						Name:       "myudt",
 						KeySpace:   "myks",
 						Elements: []gocql.UDTField{
 							{
 								Name: "id",
-								Type: gocql.NewNativeType(4, gocql.TypeUUID, ""),
+								Type: gocql.NewNativeType(4, gocql.TypeUUID),
 							},
 							{
 								Name: "name",
-								Type: gocql.NewNativeType(4, gocql.TypeText, ""),
+								Type: gocql.NewNativeType(4, gocql.TypeText),
 							},
 							{
 								Name: "value",
-								Type: gocql.NewNativeType(4, gocql.TypeInt, ""),
+								Type: gocql.NewNativeType(4, gocql.TypeInt),
 							},
 						},
 					},
