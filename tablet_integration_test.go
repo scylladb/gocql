@@ -67,7 +67,7 @@ func TestTablets(t *testing.T) {
 
 			// Hint received, tablet migration may be in progress
 			hint := payload["tablets-routing-v1"]
-			tablet, err := unmarshalTabletHint(hint, 4, "", "")
+			tablet, err := unmarshalTabletHint(hint, "", "")
 			if err != nil {
 				t.Fatalf("failed to extract tablet information: %s", err.Error())
 			}

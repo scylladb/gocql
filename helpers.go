@@ -69,13 +69,13 @@ func asVectorType(t TypeInfo) (VectorType, bool) {
 	if err != nil {
 		return VectorType{}, false
 	}
-	subType := getCassandraLongType(subStr, n.Version(), nopLogger{})
+	subType := getCassandraLongType(subStr, nopLogger{})
 	// recurse if subtype itself is still a custom vector
 	if innerVec, ok := asVectorType(subType); ok {
 		subType = innerVec
 	}
 	return VectorType{
-		NativeType: NewCustomType(n.Version(), TypeCustom, prefix),
+		NativeType: NewCustomType(0, TypeCustom, prefix),
 		SubType:    subType,
 		Dimensions: dim,
 	}, true
@@ -219,38 +219,38 @@ func getCassandraBaseType(name string) Type {
 
 // TODO: Cover with unit tests.
 // Parses long Java-style type definition to internal data structures.
-func getCassandraLongType(name string, protoVer byte, logger StdLogger) TypeInfo {
+func getCassandraLongType(name string, logger StdLogger) TypeInfo {
 	if strings.HasPrefix(name, "org.apache.cassandra.db.marshal.SetType") {
 		return CollectionType{
-			NativeType: NewNativeType(protoVer, TypeSet),
-			Elem:       getCassandraLongType(unwrapCompositeTypeDefinition(name, "org.apache.cassandra.db.marshal.SetType", '('), protoVer, logger),
+			NativeType: NewNativeType(0, TypeSet),
+			Elem:       getCassandraLongType(unwrapCompositeTypeDefinition(name, "org.apache.cassandra.db.marshal.SetType", '('), logger),
 		}
 	} else if strings.HasPrefix(name, "org.apache.cassandra.db.marshal.ListType") {
 		return CollectionType{
-			NativeType: NewNativeType(protoVer, TypeList),
-			Elem:       getCassandraLongType(unwrapCompositeTypeDefinition(name, "org.apache.cassandra.db.marshal.ListType", '('), protoVer, logger),
+			NativeType: NewNativeType(0, TypeList),
+			Elem:       getCassandraLongType(unwrapCompositeTypeDefinition(name, "org.apache.cassandra.db.marshal.ListType", '('), logger),
 		}
 	} else if strings.HasPrefix(name, "org.apache.cassandra.db.marshal.MapType") {
 		names := splitJavaCompositeTypes(name, "org.apache.cassandra.db.marshal.MapType")
 		if len(names) != 2 {
 			logger.Printf("gocql: error parsing map type, it has %d subelements, expecting 2\n", len(names))
-			return NewNativeType(protoVer, TypeCustom)
+			return NewNativeType(0, TypeCustom)
 		}
 		return CollectionType{
-			NativeType: NewNativeType(protoVer, TypeMap),
-			Key:        getCassandraLongType(names[0], protoVer, logger),
-			Elem:       getCassandraLongType(names[1], protoVer, logger),
+			NativeType: NewNativeType(0, TypeMap),
+			Key:        getCassandraLongType(names[0], logger),
+			Elem:       getCassandraLongType(names[1], logger),
 		}
 	} else if strings.HasPrefix(name, "org.apache.cassandra.db.marshal.TupleType") {
 		names := splitJavaCompositeTypes(name, "org.apache.cassandra.db.marshal.TupleType")
 		types := make([]TypeInfo, len(names))
 
 		for i, name := range names {
-			types[i] = getCassandraLongType(name, protoVer, logger)
+			types[i] = getCassandraLongType(name, logger)
 		}
 
 		return TupleTypeInfo{
-			NativeType: NewNativeType(protoVer, TypeTuple),
+			NativeType: NewNativeType(0, TypeTuple),
 			Elems:      types,
 		}
 	} else if strings.HasPrefix(name, "org.apache.cassandra.db.marshal.UserType") {
@@ -262,94 +262,92 @@ func getCassandraLongType(name string, protoVer byte, logger StdLogger) TypeInfo
 			fieldName, _ := hex.DecodeString(spec[0])
 			fields[i-2] = UDTField{
 				Name: string(fieldName),
-				Type: getCassandraLongType(spec[1], protoVer, logger),
+				Type: getCassandraLongType(spec[1], logger),
 			}
 		}
 
 		udtName, _ := hex.DecodeString(names[1])
 		return UDTTypeInfo{
-			NativeType: NewNativeType(protoVer, TypeUDT),
+			NativeType: NewNativeType(0, TypeUDT),
 			KeySpace:   names[0],
 			Name:       string(udtName),
 			Elements:   fields,
 		}
 	} else if strings.HasPrefix(name, "org.apache.cassandra.db.marshal.VectorType") {
 		names := splitJavaCompositeTypes(name, "org.apache.cassandra.db.marshal.VectorType")
-		subType := getCassandraLongType(strings.TrimSpace(names[0]), protoVer, logger)
+		subType := getCassandraLongType(strings.TrimSpace(names[0]), logger)
 		dim, err := strconv.Atoi(strings.TrimSpace(names[1]))
 		if err != nil {
 			logger.Printf("gocql: error parsing vector dimensions: %v\n", err)
-			return NewNativeType(protoVer, TypeCustom)
+			return NewNativeType(0, TypeCustom)
 		}
 
 		return VectorType{
-			NativeType: NewCustomType(protoVer, TypeCustom, "org.apache.cassandra.db.marshal.VectorType"),
+			NativeType: NewCustomType(0, TypeCustom, "org.apache.cassandra.db.marshal.VectorType"),
 			SubType:    subType,
 			Dimensions: dim,
 		}
 	} else if strings.HasPrefix(name, "org.apache.cassandra.db.marshal.FrozenType") {
 		names := splitJavaCompositeTypes(name, "org.apache.cassandra.db.marshal.FrozenType")
-		return getCassandraLongType(strings.TrimSpace(names[0]), protoVer, logger)
+		return getCassandraLongType(strings.TrimSpace(names[0]), logger)
 	} else {
 		// basic type
 		return NativeType{
-			proto: protoVer,
-			typ:   getApacheCassandraType(name),
+			typ: getApacheCassandraType(name),
 		}
 	}
 }
 
 // Parses short CQL type representation (e.g. map<text, text>) to internal data structures.
-func getCassandraType(name string, protoVer byte, logger StdLogger) TypeInfo {
+func getCassandraType(name string, logger StdLogger) TypeInfo {
 	if strings.HasPrefix(name, "frozen<") {
-		return getCassandraType(unwrapCompositeTypeDefinition(name, "frozen", '<'), protoVer, logger)
+		return getCassandraType(unwrapCompositeTypeDefinition(name, "frozen", '<'), logger)
 	} else if strings.HasPrefix(name, "set<") {
 		return CollectionType{
-			NativeType: NewNativeType(protoVer, TypeSet),
-			Elem:       getCassandraType(unwrapCompositeTypeDefinition(name, "set", '<'), protoVer, logger),
+			NativeType: NewNativeType(0, TypeSet),
+			Elem:       getCassandraType(unwrapCompositeTypeDefinition(name, "set", '<'), logger),
 		}
 	} else if strings.HasPrefix(name, "list<") {
 		return CollectionType{
-			NativeType: NewNativeType(protoVer, TypeList),
-			Elem:       getCassandraType(unwrapCompositeTypeDefinition(name, "list", '<'), protoVer, logger),
+			NativeType: NewNativeType(0, TypeList),
+			Elem:       getCassandraType(unwrapCompositeTypeDefinition(name, "list", '<'), logger),
 		}
 	} else if strings.HasPrefix(name, "map<") {
 		names := splitCQLCompositeTypes(name, "map")
 		if len(names) != 2 {
 			logger.Printf("Error parsing map type, it has %d subelements, expecting 2\n", len(names))
-			return NewNativeType(protoVer, TypeCustom)
+			return NewNativeType(0, TypeCustom)
 		}
 		return CollectionType{
-			NativeType: NewNativeType(protoVer, TypeMap),
-			Key:        getCassandraType(names[0], protoVer, logger),
-			Elem:       getCassandraType(names[1], protoVer, logger),
+			NativeType: NewNativeType(0, TypeMap),
+			Key:        getCassandraType(names[0], logger),
+			Elem:       getCassandraType(names[1], logger),
 		}
 	} else if strings.HasPrefix(name, "tuple<") {
 		names := splitCQLCompositeTypes(name, "tuple")
 		types := make([]TypeInfo, len(names))
 
 		for i, name := range names {
-			types[i] = getCassandraType(name, protoVer, logger)
+			types[i] = getCassandraType(name, logger)
 		}
 
 		return TupleTypeInfo{
-			NativeType: NewNativeType(protoVer, TypeTuple),
+			NativeType: NewNativeType(0, TypeTuple),
 			Elems:      types,
 		}
 	} else if strings.HasPrefix(name, "vector<") {
 		names := splitCQLCompositeTypes(name, "vector")
-		subType := getCassandraType(strings.TrimSpace(names[0]), protoVer, logger)
+		subType := getCassandraType(strings.TrimSpace(names[0]), logger)
 		dim, _ := strconv.Atoi(strings.TrimSpace(names[1]))
 
 		return VectorType{
-			NativeType: NewCustomType(protoVer, TypeCustom, "org.apache.cassandra.db.marshal.VectorType"),
+			NativeType: NewCustomType(0, TypeCustom, "org.apache.cassandra.db.marshal.VectorType"),
 			SubType:    subType,
 			Dimensions: dim,
 		}
 	} else {
 		return NativeType{
-			proto: protoVer,
-			typ:   getCassandraBaseType(name),
+			typ: getCassandraBaseType(name),
 		}
 	}
 }
