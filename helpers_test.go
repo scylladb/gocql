@@ -35,7 +35,7 @@ import (
 func TestGetCassandraType_Set(t *testing.T) {
 	t.Parallel()
 
-	typ := getCassandraType("set<text>", protoVersion4, &defaultLogger{})
+	typ := getCassandraType("set<text>", &defaultLogger{})
 	set, ok := typ.(CollectionType)
 	if !ok {
 		t.Fatalf("expected CollectionType got %T", typ)
@@ -291,7 +291,7 @@ func TestGetCassandraType(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.input, func(t *testing.T) {
-			got := getCassandraType(test.input, 0, &defaultLogger{})
+			got := getCassandraType(test.input, &defaultLogger{})
 
 			// TODO(zariel): define an equal method on the types?
 			if !reflect.DeepEqual(got, test.exp) {
