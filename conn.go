@@ -1583,7 +1583,7 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 
 	if len(framer.customPayload) > 0 {
 		if hint, ok := framer.customPayload["tablets-routing-v1"]; ok {
-			tablet, err := unmarshalTabletHint(hint, c.version, qry.routingInfo.keyspace, qry.routingInfo.table)
+			tablet, err := unmarshalTabletHint(hint, qry.routingInfo.keyspace, qry.routingInfo.table)
 			if err != nil {
 				return &Iter{err: err}
 			}
@@ -1989,20 +1989,20 @@ func (e *QueryError) Unwrap() error {
 	return e.err
 }
 
-func unmarshalTabletHint(hint []byte, v uint8, keyspace, table string) (*tablets.TabletInfo, error) {
+func unmarshalTabletHint(hint []byte, keyspace, table string) (*tablets.TabletInfo, error) {
 	tabletBuilder := tablets.NewTabletInfoBuilder()
 	err := Unmarshal(TupleTypeInfo{
-		NativeType: NativeType{proto: v, typ: TypeTuple},
+		NativeType: NativeType{typ: TypeTuple},
 		Elems: []TypeInfo{
 			NativeType{typ: TypeBigInt},
 			NativeType{typ: TypeBigInt},
 			CollectionType{
-				NativeType: NativeType{proto: v, typ: TypeList},
+				NativeType: NativeType{typ: TypeList},
 				Elem: TupleTypeInfo{
-					NativeType: NativeType{proto: v, typ: TypeTuple},
+					NativeType: NativeType{typ: TypeTuple},
 					Elems: []TypeInfo{
-						NativeType{proto: v, typ: TypeUUID},
-						NativeType{proto: v, typ: TypeInt},
+						NativeType{typ: TypeUUID},
+						NativeType{typ: TypeInt},
 					}},
 			},
 		},
