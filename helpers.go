@@ -459,6 +459,18 @@ func getApacheCassandraType(class string) Type {
 
 func (r *RowData) rowMap(m map[string]interface{}) {
 	for i, column := range r.Columns {
+		// Check if the map originally had a pointer for this column
+		// If so, preserve the pointer in the map after scanning
+		if originalVal, exists := m[column]; exists {
+			originalReflectVal := reflect.ValueOf(originalVal)
+			if originalReflectVal.Kind() == reflect.Ptr {
+				// User provided a pointer, keep it in the map
+				// After Scan, r.Values[i] contains the same pointer with updated data
+				m[column] = r.Values[i]
+				continue
+			}
+		}
+		// For columns not originally in the map or with non-pointer values, dereference
 		val := dereference(r.Values[i])
 		if valVal := reflect.ValueOf(val); valVal.Kind() == reflect.Slice && !valVal.IsNil() {
 			valCopy := reflect.MakeSlice(valVal.Type(), valVal.Len(), valVal.Cap())
