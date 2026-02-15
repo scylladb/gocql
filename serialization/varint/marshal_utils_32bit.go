@@ -1,4 +1,4 @@
-//go:build (386 || arm || mips || mipsle) || gocql_32bit
+//go:build 386 || arm || mips || mipsle || gocql_32bit
 
 package varint
 

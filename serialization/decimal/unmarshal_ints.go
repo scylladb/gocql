@@ -5,14 +5,14 @@ import (
 )
 
 const (
-	neg8     = int64(-1) << 8
-	neg16    = int64(-1) << 16
-	neg24    = int64(-1) << 24
-	neg32    = int64(-1) << 32
-	neg40    = int64(-1) << 40
-	neg48    = int64(-1) << 48
-	neg56    = int64(-1) << 56
-	neg32Int = int(-1) << 32
+	neg8  = int64(-1) << 8
+	neg16 = int64(-1) << 16
+	neg24 = int64(-1) << 24
+	neg32 = int64(-1) << 32
+	neg40 = int64(-1) << 40
+	neg48 = int64(-1) << 48
+	neg56 = int64(-1) << 56
+	// neg32Int was defined but never used, so it has been removed
 )
 
 func decScale(p []byte) inf.Scale {

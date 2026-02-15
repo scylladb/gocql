@@ -1,4 +1,4 @@
-//go:build ((all || unit) && (amd64 || arm64 || ppc64 || ppc64le || mips64 || mips64le || s390x || riscv64 || loong64)) && !gocql_32bit
+//go:build (all || unit) && (amd64 || arm64 || ppc64 || ppc64le || mips64 || mips64le || s390x || riscv64 || loong64) && !gocql_32bit
 
 package varint
 
