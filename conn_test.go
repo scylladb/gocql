@@ -1083,6 +1083,50 @@ func TestSkipMetadata(t *testing.T) {
 	}
 }
 
+func TestPrepareBatchMetadataMultipleKeyspaceTables(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	srv := NewTestServer(t, protoVersion4, ctx)
+	defer srv.Stop()
+
+	cfg := testCluster(protoVersion4, srv.Address)
+	db, err := cfg.CreateSession()
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	defer db.Close()
+
+	conn := db.getConn()
+	if conn == nil {
+		t.Fatal("expected connection, got nil")
+	}
+
+	stmt := "BEGIN BATCH INSERT INTO ks1.tbl1 (col1) VALUES (?) INSERT INTO ks2.tbl2 (col2) VALUES (?) APPLY BATCH"
+	info, err := conn.prepareStatement(ctx, stmt, nil, time.Second)
+	if err != nil {
+		t.Fatalf("prepareStatement failed: %v", err)
+	}
+
+	if got := len(info.request.columns); got != 2 {
+		t.Fatalf("expected 2 request columns, got %d", got)
+	}
+
+	col0 := info.request.columns[0]
+	if col0.Keyspace != "ks1" || col0.Table != "tbl1" || col0.Name != "col1" {
+		t.Fatalf("unexpected column 0: %+v", col0)
+	}
+
+	col1 := info.request.columns[1]
+	if col1.Keyspace != "ks2" || col1.Table != "tbl2" || col1.Name != "col2" {
+		t.Fatalf("unexpected column 1: %+v", col1)
+	}
+
+	if info.request.keyspace != "" || info.request.table != "" {
+		t.Fatalf("expected empty prepared keyspace/table for mixed batch, got %q/%q", info.request.keyspace, info.request.table)
+	}
+}
+
 type recordingFrameHeaderObserver struct {
 	t      *testing.T
 	mu     sync.Mutex
@@ -1426,12 +1470,20 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 		respFrame.writeHeader(0, frm.OpError, head.Stream)
 		respFrame.buf = append(respFrame.buf, reqFrame.buf...)
 	case frm.OpPrepare:
-		query := reqFrame.readLongString()
-		name := strings.TrimPrefix(query, "select ")
-		if n := strings.Index(name, " "); n > 0 {
-			name = name[:n]
+		query := strings.TrimSpace(reqFrame.readLongString())
+		lower := strings.ToLower(query)
+		name := ""
+		if strings.HasPrefix(lower, "select ") {
+			name = strings.TrimPrefix(lower, "select ")
+			if n := strings.Index(name, " "); n > 0 {
+				name = name[:n]
+			}
+		} else if strings.HasPrefix(lower, "begin batch") {
+			name = "batchmetadata"
+		} else {
+			name = lower
 		}
-		switch strings.ToLower(name) {
+		switch name {
 		case "nometadata":
 			respFrame.writeHeader(0, frm.OpResult, head.Stream)
 			respFrame.writeInt(frm.ResultKindPrepared)
@@ -1466,6 +1518,30 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 			// <col_spec_0>
 			respFrame.writeString("col0")             // <name>
 			respFrame.writeShort(uint16(TypeBoolean)) // <type>
+		case "batchmetadata":
+			respFrame.writeHeader(0, frm.OpResult, head.Stream)
+			respFrame.writeInt(frm.ResultKindPrepared)
+			// <id>
+			respFrame.writeShortBytes(binary.BigEndian.AppendUint64(nil, 3))
+			// <metadata>
+			respFrame.writeInt(0) // <flags>
+			respFrame.writeInt(2) // <columns_count>
+			if srv.protocol >= protoVersion4 {
+				respFrame.writeInt(0) // <pk_count>
+			}
+			// <col_spec_0>
+			respFrame.writeString("ks1")
+			respFrame.writeString("tbl1")
+			respFrame.writeString("col1")
+			respFrame.writeShort(uint16(TypeInt))
+			// <col_spec_1>
+			respFrame.writeString("ks2")
+			respFrame.writeString("tbl2")
+			respFrame.writeString("col2")
+			respFrame.writeShort(uint16(TypeInt))
+			// <result_metadata>
+			respFrame.writeInt(int32(frm.FlagNoMetaData))
+			respFrame.writeInt(0)
 		default:
 			respFrame.writeHeader(0, frm.OpError, head.Stream)
 			respFrame.writeInt(0)
