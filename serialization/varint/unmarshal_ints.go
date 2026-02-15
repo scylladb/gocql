@@ -360,6 +360,3 @@ func dec8toInt64(p []byte) int64 {
 // dec5toInt, dec6toInt, dec7toInt, dec8toInt are defined in architecture-specific files
 // (unmarshal_ints_64bit.go) as they require int to be 64-bit.
 // On 32-bit architectures, these functions are not available.
-
-// DecInt and DecIntR are defined in architecture-specific files
-// (unmarshal_ints_64bit.go and unmarshal_ints_32bit.go)
