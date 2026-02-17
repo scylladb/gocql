@@ -10,7 +10,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -97,7 +97,7 @@ func TestRecreateSchema(t *testing.T) {
 			}
 			cleanup(t, session, test.Keyspace)
 
-			in, err := ioutil.ReadFile(test.Input)
+			in, err := os.ReadFile(test.Input)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -153,11 +153,11 @@ func TestRecreateSchema(t *testing.T) {
 				golden = []byte(trimSchema(string(golden)))
 			} else {
 				if *updateGolden {
-					if err := ioutil.WriteFile(test.Golden, []byte(dump), 0644); err != nil {
+					if err := os.WriteFile(test.Golden, []byte(dump), 0644); err != nil {
 						t.Fatal(err)
 					}
 				}
-				golden, err = ioutil.ReadFile(test.Golden)
+				golden, err = os.ReadFile(test.Golden)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -241,12 +241,12 @@ func TestScyllaEncryptionOptionsUnmarshaller(t *testing.T) {
 		golden = "testdata/recreate/scylla_encryption_options_golden.json"
 	)
 
-	inputBuf, err := ioutil.ReadFile(input)
+	inputBuf, err := os.ReadFile(input)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	goldenBuf, err := ioutil.ReadFile(golden)
+	goldenBuf, err := os.ReadFile(golden)
 	if err != nil {
 		t.Fatal(err)
 	}
