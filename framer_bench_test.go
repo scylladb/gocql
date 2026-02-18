@@ -29,7 +29,7 @@ package gocql
 
 import (
 	"compress/gzip"
-	"io/ioutil"
+	"io"
 	"os"
 	"testing"
 )
@@ -47,7 +47,7 @@ func readGzipData(path string) ([]byte, error) {
 	}
 	defer r.Close()
 
-	return ioutil.ReadAll(r)
+	return io.ReadAll(r)
 }
 
 func BenchmarkParseRowsFrame(b *testing.B) {

@@ -37,7 +37,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math/rand"
 	"net"
 	"os"
@@ -1200,7 +1199,7 @@ func NewSSLTestServer(t testing.TB, protocol uint8, ctx context.Context) *TestSe
 }
 
 func NewSSLTestServerWithSupportedFactory(t testing.TB, protocol uint8, ctx context.Context, supportedFactory testSupportedFactory) *TestServer {
-	pem, err := ioutil.ReadFile("testdata/pki/ca.crt")
+	pem, err := os.ReadFile("testdata/pki/ca.crt")
 	certPool := x509.NewCertPool()
 	if !certPool.AppendCertsFromPEM(pem) {
 		t.Fatalf("Failed parsing or appending certs")
