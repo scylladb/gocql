@@ -57,8 +57,8 @@ var marshalTests = []struct {
 }{
 	{
 		CollectionType{
-			NativeType: NativeType{proto: protoVersion3, typ: TypeList},
-			Elem:       NativeType{proto: protoVersion3, typ: TypeInt},
+			NativeType: NativeType{typ: TypeList},
+			Elem:       NativeType{typ: TypeInt},
 		},
 		[]byte("\x00\x00\x00\x02\x00\x00\x00\x04\x00\x00\x00\x01\x00\x00\x00\x04\x00\x00\x00\x02"),
 		func() *[]int {
@@ -78,8 +78,8 @@ var unmarshalTests = []struct {
 }{
 	{
 		CollectionType{
-			NativeType: NativeType{proto: protoVersion3, typ: TypeList},
-			Elem:       NativeType{proto: protoVersion3, typ: TypeInt},
+			NativeType: NativeType{typ: TypeList},
+			Elem:       NativeType{typ: TypeInt},
 		},
 		[]byte("\x00\x00\x00\x02\x00\x00\x00\x04\x00\x00"), // truncated data
 		func() *[]int {
@@ -176,8 +176,8 @@ func TestMarshalList(t *testing.T) {
 	t.Parallel()
 
 	typeInfoV3 := CollectionType{
-		NativeType: NativeType{proto: protoVersion3, typ: TypeList},
-		Elem:       NativeType{proto: protoVersion3, typ: TypeVarchar},
+		NativeType: NativeType{typ: TypeList},
+		Elem:       NativeType{typ: TypeVarchar},
 	}
 
 	type tc struct {
@@ -307,10 +307,10 @@ func TestMarshalTuple(t *testing.T) {
 	t.Parallel()
 
 	info := TupleTypeInfo{
-		NativeType: NativeType{proto: protoVersion3, typ: TypeTuple},
+		NativeType: NativeType{typ: TypeTuple},
 		Elems: []TypeInfo{
-			NativeType{proto: protoVersion3, typ: TypeVarchar},
-			NativeType{proto: protoVersion3, typ: TypeVarchar},
+			NativeType{typ: TypeVarchar},
+			NativeType{typ: TypeVarchar},
 		},
 	}
 
@@ -455,10 +455,10 @@ func TestUnmarshalTuple(t *testing.T) {
 	t.Parallel()
 
 	info := TupleTypeInfo{
-		NativeType: NativeType{proto: protoVersion3, typ: TypeTuple},
+		NativeType: NativeType{typ: TypeTuple},
 		Elems: []TypeInfo{
-			NativeType{proto: protoVersion3, typ: TypeVarchar},
-			NativeType{proto: protoVersion3, typ: TypeVarchar},
+			NativeType{typ: TypeVarchar},
+			NativeType{typ: TypeVarchar},
 		},
 	}
 
@@ -535,11 +535,11 @@ func TestMarshalUDTMap(t *testing.T) {
 		KeySpace: "",
 		Name:     "xyz",
 		Elements: []UDTField{
-			{Name: "x", Type: NativeType{proto: protoVersion3, typ: TypeInt}},
-			{Name: "y", Type: NativeType{proto: protoVersion3, typ: TypeInt}},
-			{Name: "z", Type: NativeType{proto: protoVersion3, typ: TypeInt}},
+			{Name: "x", Type: NativeType{typ: TypeInt}},
+			{Name: "y", Type: NativeType{typ: TypeInt}},
+			{Name: "z", Type: NativeType{typ: TypeInt}},
 		},
-		NativeType: NativeType{proto: protoVersion3, typ: TypeUDT},
+		NativeType: NativeType{typ: TypeUDT},
 	}
 
 	t.Run("partially bound", func(t *testing.T) {
@@ -597,11 +597,11 @@ func TestMarshalUDTStruct(t *testing.T) {
 		KeySpace: "",
 		Name:     "xyz",
 		Elements: []UDTField{
-			{Name: "x", Type: NativeType{proto: protoVersion3, typ: TypeInt}},
-			{Name: "y", Type: NativeType{proto: protoVersion3, typ: TypeInt}},
-			{Name: "z", Type: NativeType{proto: protoVersion3, typ: TypeInt}},
+			{Name: "x", Type: NativeType{typ: TypeInt}},
+			{Name: "y", Type: NativeType{typ: TypeInt}},
+			{Name: "z", Type: NativeType{typ: TypeInt}},
 		},
-		NativeType: NativeType{proto: protoVersion3, typ: TypeUDT},
+		NativeType: NativeType{typ: TypeUDT},
 	}
 
 	type xyzStruct struct {
@@ -688,7 +688,7 @@ func TestMarshalNil(t *testing.T) {
 	}
 
 	for _, typ := range types {
-		data, err := Marshal(NativeType{proto: protoVersion3, typ: typ}, nil)
+		data, err := Marshal(NativeType{typ: typ}, nil)
 		if err != nil {
 			t.Errorf("unable to marshal nil %v: %v\n", typ, err)
 		} else if data != nil {
@@ -730,8 +730,8 @@ func TestReadCollectionSize(t *testing.T) {
 	t.Parallel()
 
 	listV3 := CollectionType{
-		NativeType: NativeType{proto: protoVersion3, typ: TypeList},
-		Elem:       NativeType{proto: protoVersion3, typ: TypeVarchar},
+		NativeType: NativeType{typ: TypeList},
+		Elem:       NativeType{typ: TypeVarchar},
 	}
 
 	tests := []struct {
@@ -839,17 +839,17 @@ func TestUnmarshalUDT(t *testing.T) {
 	t.Parallel()
 
 	info := UDTTypeInfo{
-		NativeType: NativeType{proto: protoVersion4, typ: TypeUDT},
+		NativeType: NativeType{typ: TypeUDT},
 		Name:       "myudt",
 		KeySpace:   "myks",
 		Elements: []UDTField{
 			{
 				Name: "first",
-				Type: NativeType{proto: protoVersion4, typ: TypeAscii},
+				Type: NativeType{typ: TypeAscii},
 			},
 			{
 				Name: "second",
-				Type: NativeType{proto: protoVersion4, typ: TypeSmallInt},
+				Type: NativeType{typ: TypeSmallInt},
 			},
 		},
 	}
@@ -873,17 +873,17 @@ func TestUnmarshalUDTIntoInterface(t *testing.T) {
 	t.Parallel()
 
 	info := UDTTypeInfo{
-		NativeType: NativeType{proto: protoVersion4, typ: TypeUDT},
+		NativeType: NativeType{typ: TypeUDT},
 		Name:       "myudt",
 		KeySpace:   "myks",
 		Elements: []UDTField{
 			{
 				Name: "first",
-				Type: NativeType{proto: protoVersion4, typ: TypeAscii},
+				Type: NativeType{typ: TypeAscii},
 			},
 			{
 				Name: "second",
-				Type: NativeType{proto: protoVersion4, typ: TypeSmallInt},
+				Type: NativeType{typ: TypeSmallInt},
 			},
 		},
 	}
@@ -935,8 +935,8 @@ func TestUnmarshalListIntoInterface(t *testing.T) {
 	}
 
 	info := CollectionType{
-		NativeType: NativeType{proto: protoVersion4, typ: TypeList},
-		Elem:       NativeType{proto: protoVersion4, typ: TypeInt},
+		NativeType: NativeType{typ: TypeList},
+		Elem:       NativeType{typ: TypeInt},
 	}
 
 	var result any
@@ -980,9 +980,9 @@ func TestUnmarshalMapIntoInterface(t *testing.T) {
 	}
 
 	info := CollectionType{
-		NativeType: NativeType{proto: protoVersion4, typ: TypeMap},
-		Key:        NativeType{proto: protoVersion4, typ: TypeVarchar},
-		Elem:       NativeType{proto: protoVersion4, typ: TypeInt},
+		NativeType: NativeType{typ: TypeMap},
+		Key:        NativeType{typ: TypeVarchar},
+		Elem:       NativeType{typ: TypeInt},
 	}
 
 	var result any
@@ -1039,10 +1039,10 @@ func TestUnmarshalListWithVectorIntoInterface(t *testing.T) {
 	data = append(data, float4Bytes...)
 
 	info := CollectionType{
-		NativeType: NativeType{proto: protoVersion4, typ: TypeList},
+		NativeType: NativeType{typ: TypeList},
 		Elem: VectorType{
-			NativeType: NativeType{proto: protoVersion4, typ: TypeCustom, custom: apacheCassandraTypePrefix + "VectorType"},
-			SubType:    NativeType{proto: protoVersion4, typ: TypeFloat},
+			NativeType: NativeType{typ: TypeCustom, custom: apacheCassandraTypePrefix + "VectorType"},
+			SubType:    NativeType{typ: TypeFloat},
 			Dimensions: 2,
 		},
 	}
@@ -1091,7 +1091,7 @@ func bytesWithLength(data ...[]byte) []byte {
 func TestUnmarshalVectorZeroDimensions(t *testing.T) {
 	info := VectorType{
 		NativeType: NewCustomType(protoVersion4, TypeCustom, apacheCassandraTypePrefix+"VectorType"),
-		SubType:    NativeType{proto: protoVersion4, typ: TypeFloat},
+		SubType:    NativeType{typ: TypeFloat},
 		Dimensions: 0,
 	}
 
@@ -1178,7 +1178,7 @@ func TestNativeNewWithErrorConsistentWithGoType(t *testing.T) {
 	}
 
 	for _, typ := range nativeTypes {
-		nt := NativeType{typ: typ, proto: protoVersion4}
+		nt := NativeType{typ: typ}
 
 		// Get the fast-path result from NewWithError
 		fastVal, err := nt.NewWithError()
@@ -1228,8 +1228,8 @@ func TestCollectionNewWithErrorConsistentWithGoType(t *testing.T) {
 	for _, collTyp := range []Type{TypeList, TypeSet} {
 		for _, elemTyp := range elemTypes {
 			ct := CollectionType{
-				NativeType: NativeType{typ: collTyp, proto: protoVersion4},
-				Elem:       NativeType{typ: elemTyp, proto: protoVersion4},
+				NativeType: NativeType{typ: collTyp},
+				Elem:       NativeType{typ: elemTyp},
 			}
 
 			fastVal, err := ct.NewWithError()
@@ -1270,9 +1270,9 @@ func TestCollectionNewWithErrorConsistentWithGoType(t *testing.T) {
 	for _, keyTyp := range keyTypes {
 		for _, valTyp := range valTypes {
 			ct := CollectionType{
-				NativeType: NativeType{typ: TypeMap, proto: protoVersion4},
-				Key:        NativeType{typ: keyTyp, proto: protoVersion4},
-				Elem:       NativeType{typ: valTyp, proto: protoVersion4},
+				NativeType: NativeType{typ: TypeMap},
+				Key:        NativeType{typ: keyTyp},
+				Elem:       NativeType{typ: valTyp},
 			}
 
 			fastVal, err := ct.NewWithError()
