@@ -160,10 +160,6 @@ func (d *DirectUnmarshal) UnmarshalCQL(_ TypeInfo, data []byte) error {
 // The marshal/unmarshal error provides a list of supported types when an unsupported type is attempted.
 
 func Marshal(info TypeInfo, value interface{}) ([]byte, error) {
-	if info.Version() < protoVersion1 {
-		panic("protocol version not set")
-	}
-
 	if valueRef := reflect.ValueOf(value); valueRef.Kind() == reflect.Ptr {
 		if valueRef.IsNil() {
 			return nil, nil
@@ -1706,15 +1702,16 @@ type NativeType struct {
 	//only used for TypeCustom
 	custom string
 	typ    Type
-	proto  byte
 }
 
+// NewNativeType creates a NativeType. The proto parameter is ignored and kept for API compatibility.
 func NewNativeType(proto byte, typ Type) NativeType {
-	return NativeType{proto: proto, typ: typ, custom: ""}
+	return NativeType{typ: typ}
 }
 
+// NewCustomType creates a custom NativeType. The proto parameter is ignored and kept for API compatibility.
 func NewCustomType(proto byte, typ Type, custom string) NativeType {
-	return NativeType{proto: proto, typ: typ, custom: custom}
+	return NativeType{typ: typ, custom: custom}
 }
 
 func (t NativeType) NewWithError() (interface{}, error) {
@@ -1729,8 +1726,11 @@ func (t NativeType) Type() Type {
 	return t.typ
 }
 
+// Deprecated: Version always returns protoVersion4. The proto field has been
+// removed from NativeType because marshal/unmarshal logic never branches on it;
+// real protocol-version handling lives in framer.proto and Conn.version.
 func (t NativeType) Version() byte {
-	return t.proto
+	return protoVersion4
 }
 
 func (t NativeType) Custom() string {
@@ -1836,7 +1836,7 @@ type UDTField struct {
 
 func NewUDTType(proto byte, name, keySpace string, elems ...UDTField) UDTTypeInfo {
 	return UDTTypeInfo{
-		NativeType: NativeType{proto: proto, typ: TypeUDT, custom: ""},
+		NativeType: NativeType{typ: TypeUDT},
 		Name:       name,
 		KeySpace:   keySpace,
 		Elements:   elems,

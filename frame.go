@@ -720,8 +720,7 @@ func (f *framer) readTypeInfo() TypeInfo {
 	id := f.readShort()
 
 	simple := NativeType{
-		proto: f.proto,
-		typ:   Type(id),
+		typ: Type(id),
 	}
 
 	if simple.typ == TypeCustom {
@@ -781,7 +780,7 @@ func (f *framer) readTypeInfo() TypeInfo {
 			idx := strings.LastIndex(spec, ",")
 			typeStr := spec[:idx]
 			dimStr := spec[idx+1:]
-			subType := getCassandraLongType(strings.TrimSpace(typeStr), f.proto, nopLogger{})
+			subType := getCassandraLongType(strings.TrimSpace(typeStr), nopLogger{})
 			dim, _ := strconv.Atoi(strings.TrimSpace(dimStr))
 			vector := VectorType{
 				NativeType: simple,
