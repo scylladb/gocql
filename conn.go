@@ -1739,7 +1739,7 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 
 	if len(framer.customPayload) > 0 {
 		if hint, ok := framer.customPayload["tablets-routing-v1"]; ok {
-			tablet, err := unmarshalTabletHint(hint, c.version, qry.routingInfo.keyspace, qry.routingInfo.table)
+			tablet, err := unmarshalTabletHint(hint, qry.routingInfo.keyspace, qry.routingInfo.table)
 			if err != nil {
 				return newErrorIterWithReleasedFramer(err, framer).bindWarningHandler(qry, warningHandler)
 			}
@@ -2147,6 +2147,6 @@ func (e *QueryError) Unwrap() error {
 	return e.err
 }
 
-func unmarshalTabletHint(hint []byte, _ uint8, keyspace, table string) (tablets.TabletInfo, error) {
+func unmarshalTabletHint(hint []byte, keyspace, table string) (tablets.TabletInfo, error) {
 	return tablets.ParseHint(hint, keyspace, table)
 }
