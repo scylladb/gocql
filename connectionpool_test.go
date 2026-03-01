@@ -98,13 +98,23 @@ func TestSetupTLSConfig(t *testing.T) {
 	for _, test := range tests {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
-			tlsConfig, err := setupTLSConfig(test.opts)
+			tlsConfig, err := setupTLSConfig(test.opts, &defaultLogger{})
 			if err != nil {
 				t.Fatalf("unexpected error %q", err.Error())
 			}
 			if tlsConfig.InsecureSkipVerify != test.expectedInsecureSkipVerify {
 				t.Fatalf("got %v, but expected %v", tlsConfig.InsecureSkipVerify,
 					test.expectedInsecureSkipVerify)
+			}
+
+			// Verify that VerifyPeerCertificate is set when InsecureSkipVerify is false
+			// and DisableStrictCertificateValidation is false (default)
+			if !tlsConfig.InsecureSkipVerify && tlsConfig.VerifyPeerCertificate == nil {
+				t.Fatal("VerifyPeerCertificate should be set when InsecureSkipVerify is false")
+			}
+			// Verify that VerifyPeerCertificate is not set when InsecureSkipVerify is true
+			if tlsConfig.InsecureSkipVerify && tlsConfig.VerifyPeerCertificate != nil {
+				t.Fatal("VerifyPeerCertificate should not be set when InsecureSkipVerify is true")
 			}
 		})
 	}
