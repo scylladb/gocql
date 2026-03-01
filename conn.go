@@ -815,15 +815,17 @@ func (c *Conn) recv(ctx context.Context) error {
 		c.conn.SetReadDeadline(time.Time{})
 	}
 
-	headStartTime := time.Now()
-	// were just reading headers over and over and copy bodies
+	var headStartTime time.Time
+	if c.frameObserver != nil {
+		headStartTime = time.Now()
+	}
 	head, err := readHeader(c.r, c.headerBuf[:])
-	headEndTime := time.Now()
 	if err != nil {
 		return err
 	}
 
 	if c.frameObserver != nil {
+		headEndTime := time.Now()
 		c.frameObserver.ObserveFrameHeader(context.Background(), ObservedFrameHeader{
 			Version: head.Version,
 			Flags:   head.Flags,
@@ -838,24 +840,21 @@ func (c *Conn) recv(ctx context.Context) error {
 
 	if head.Stream > c.streams.NumStreams {
 		return fmt.Errorf("gocql: frame header stream is beyond call expected bounds: %d", head.Stream)
-	} else if head.Stream == -1 {
-		// TODO: handle cassandra event frames, we shouldnt get any currently
-		framer := newFramerWithExts(c.compressor, c.version, c.cqlProtoExts, c.logger)
-		c.setTabletSupported(framer.tabletsRoutingV1)
-		if err := framer.readFrame(c, &head); err != nil {
-			return err
-		}
-		go c.session.handleEvent(framer)
-		return nil
 	} else if head.Stream <= 0 {
-		// reserved stream that we dont use, probably due to a protocol error
-		// or a bug in Cassandra, this should be an error, parse it and return.
 		framer := newFramerWithExts(c.compressor, c.version, c.cqlProtoExts, c.logger)
 		c.setTabletSupported(framer.tabletsRoutingV1)
 		if err := framer.readFrame(c, &head); err != nil {
 			return err
 		}
 
+		if head.Stream == -1 {
+			// TODO: handle cassandra event frames, we shouldnt get any currently
+			go c.session.handleEvent(framer)
+			return nil
+		}
+
+		// reserved stream that we dont use, probably due to a protocol error
+		// or a bug in Cassandra, this should be an error, parse it and return.
 		frame, err := framer.parseFrame()
 		if err != nil {
 			return err
