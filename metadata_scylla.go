@@ -7,6 +7,7 @@ package gocql
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 	"strings"
 	"sync"
@@ -18,17 +19,72 @@ import (
 
 // schema metadata for a keyspace
 type KeyspaceMetadata struct {
-	StrategyOptions map[string]interface{}
-	Tables          map[string]*TableMetadata
-	Functions       map[string]*FunctionMetadata
-	Aggregates      map[string]*AggregateMetadata
-	Types           map[string]*TypeMetadata
-	Indexes         map[string]*IndexMetadata
-	Views           map[string]*ViewMetadata
-	Name            string
-	StrategyClass   string
-	CreateStmts     string
-	DurableWrites   bool
+	StrategyOptions   map[string]interface{}
+	Tables            map[string]*TableMetadata
+	Functions         map[string]*FunctionMetadata
+	Aggregates        map[string]*AggregateMetadata
+	Types             map[string]*TypeMetadata
+	Indexes           map[string]*IndexMetadata
+	Views             map[string]*ViewMetadata
+	tablesInvalidated map[string]struct{}
+	Name              string
+	StrategyClass     string
+	CreateStmts       string
+	DurableWrites     bool
+}
+
+// Clone returns a shallow copy of the keyspace metadata with
+// cloned Tables, Indexes, Views, and tablesInvalidated maps so that mutations
+// do not race with concurrent readers of the original.
+func (ks *KeyspaceMetadata) Clone() *KeyspaceMetadata {
+	cloned := &KeyspaceMetadata{
+		Name:            ks.Name,
+		DurableWrites:   ks.DurableWrites,
+		StrategyClass:   ks.StrategyClass,
+		StrategyOptions: maps.Clone(ks.StrategyOptions),
+		Tables:          maps.Clone(ks.Tables),
+		Functions:       maps.Clone(ks.Functions),
+		Aggregates:      maps.Clone(ks.Aggregates),
+		Types:           maps.Clone(ks.Types),
+		Indexes:         maps.Clone(ks.Indexes),
+		Views:           maps.Clone(ks.Views),
+		CreateStmts:     ks.CreateStmts,
+	}
+	if ks.tablesInvalidated != nil {
+		cloned.tablesInvalidated = maps.Clone(ks.tablesInvalidated)
+	}
+	return cloned
+}
+
+func (ks *KeyspaceMetadata) removeTableData(tableName string) {
+	if ks.Tables != nil {
+		delete(ks.Tables, tableName)
+	}
+	for name, idx := range ks.Indexes {
+		if idx != nil && idx.TableName == tableName {
+			delete(ks.Indexes, name)
+		}
+	}
+	for name, view := range ks.Views {
+		if view != nil && view.BaseTableName == tableName {
+			delete(ks.Views, name)
+		}
+	}
+}
+
+func (ks *KeyspaceMetadata) invalidateTable(tableName string) {
+	ks.removeTableData(tableName)
+	if ks.tablesInvalidated == nil {
+		ks.tablesInvalidated = make(map[string]struct{})
+	}
+	ks.tablesInvalidated[tableName] = struct{}{}
+}
+
+func (ks *KeyspaceMetadata) removeTable(tableName string) {
+	ks.removeTableData(tableName)
+	if ks.tablesInvalidated != nil {
+		delete(ks.tablesInvalidated, tableName)
+	}
 }
 
 // schema metadata for a table (a.k.a. column family)
@@ -320,16 +376,30 @@ func (c *cowKeyspaceMetadataMap) set(keyspaceName string, keyspaceMetadata *Keys
 	return true
 }
 
-func (c *cowKeyspaceMetadataMap) remove(keyspaceName string) {
+func (c *cowKeyspaceMetadataMap) invalidateTable(keyspaceName, tableName string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	m := c.get()
+	ks, ok := m[keyspaceName]
+	if !ok || ks == nil {
+		return
+	}
+
+	cloned := ks.Clone()
+	cloned.invalidateTable(tableName)
+
+	newM := maps.Clone(m)
+	newM[keyspaceName] = cloned
+	c.keyspaceMap.Store(newM)
+}
+
+func (c *cowKeyspaceMetadataMap) removeKeyspace(keyspaceName string) {
 	c.mu.Lock()
 	m := c.get()
 
-	newM := map[string]*KeyspaceMetadata{}
-	for name, meta := range m {
-		if name != keyspaceName {
-			newM[name] = meta
-		}
-	}
+	newM := maps.Clone(m)
+	delete(newM, keyspaceName)
 
 	c.keyspaceMap.Store(newM)
 	c.mu.Unlock()
@@ -458,24 +528,65 @@ func newMetadataDescriber(session *Session) *metadataDescriber {
 	}
 }
 
-// getSchema returns the KeyspaceMetadata for the keyspace, if it is not present, loads it from `system_schema`
-// does not require holding a lock
-func (s *metadataDescriber) getSchema(keyspaceName string) (*KeyspaceMetadata, error) {
-	metadata, found := s.metadata.keyspaceMetadata.getKeyspace(keyspaceName)
+func (s *metadataDescriber) getKeyspaceInternal(keyspaceName string) (metadata *KeyspaceMetadata, wasReloaded bool, err error) {
+	var found bool
+	metadata, found = s.metadata.keyspaceMetadata.getKeyspace(keyspaceName)
 	if !found {
-		// refresh the cache for this keyspace
-		err := s.refreshSchema(keyspaceName)
+		wasReloaded = true
+		err = s.refreshKeyspaceSchema(keyspaceName)
 		if err != nil {
-			return nil, err
+			return metadata, wasReloaded, err
 		}
 
 		metadata, found = s.metadata.keyspaceMetadata.getKeyspace(keyspaceName)
 		if !found {
-			return nil, fmt.Errorf("Metadata not found for keyspace: %s", keyspaceName)
+			return nil, true, fmt.Errorf("keyspace %s: %w", keyspaceName, ErrNotFound)
 		}
 	}
 
-	return metadata, nil
+	return metadata, wasReloaded, nil
+}
+
+func (s *metadataDescriber) GetKeyspace(keyspaceName string) (*KeyspaceMetadata, error) {
+	metadata, _, err := s.getKeyspaceInternal(keyspaceName)
+	return metadata, err
+}
+
+func (s *metadataDescriber) GetTable(keyspaceName, tableName string) (*TableMetadata, error) {
+	keyspaceMetadata, wasReloaded, err := s.getKeyspaceInternal(keyspaceName)
+	if err != nil {
+		return nil, err
+	}
+
+	tableMetadata, found := keyspaceMetadata.Tables[tableName]
+	if found {
+		return tableMetadata, nil
+	}
+
+	if wasReloaded {
+		return nil, fmt.Errorf("table %s.%s: %w", keyspaceName, tableName, ErrNotFound)
+	}
+
+	if _, ok := keyspaceMetadata.tablesInvalidated[tableName]; !ok {
+		return nil, fmt.Errorf("table %s.%s: %w", keyspaceName, tableName, ErrNotFound)
+	}
+
+	err = s.refreshTableSchema(keyspaceName, tableName)
+	if err != nil {
+		return nil, err
+	}
+
+	keyspaceMetadata, found = s.metadata.keyspaceMetadata.getKeyspace(keyspaceName)
+	if !found {
+		return nil, fmt.Errorf("table %s.%s: %w", keyspaceName, tableName, ErrNotFound)
+	}
+
+	tableMetadata, found = keyspaceMetadata.Tables[tableName]
+	if !found {
+		return nil, fmt.Errorf("table %s.%s: %w", keyspaceName, tableName, ErrNotFound)
+	}
+
+	return tableMetadata, nil
 }
 
 func (s *metadataDescriber) getTablets() tablets.TabletInfoList {
@@ -504,9 +615,13 @@ func (s *metadataDescriber) RemoveTabletsWithTable(keyspace string, table string
 	s.metadata.tabletsMetadata.RemoveTabletsWithTableFromTabletsList(keyspace, table)
 }
 
-// clearSchema clears the cached keyspace metadata
-func (s *metadataDescriber) clearSchema(keyspaceName string) {
-	s.metadata.keyspaceMetadata.remove(keyspaceName)
+// invalidateKeyspaceSchema clears the cached keyspace metadata
+func (s *metadataDescriber) invalidateKeyspaceSchema(keyspaceName string) {
+	s.metadata.keyspaceMetadata.removeKeyspace(keyspaceName)
+}
+
+func (s *metadataDescriber) invalidateTableSchema(keyspaceName, tableName string) {
+	s.metadata.keyspaceMetadata.invalidateTable(keyspaceName, tableName)
 }
 
 func (s *metadataDescriber) refreshAllSchema() error {
@@ -537,16 +652,16 @@ func (s *metadataDescriber) refreshAllSchema() error {
 
 	for keyspaceName, metadata := range copiedMap {
 		// refresh the cache for this keyspace
-		err := s.refreshSchema(keyspaceName)
+		err := s.refreshKeyspaceSchema(keyspaceName)
 		if errors.Is(err, ErrKeyspaceDoesNotExist) {
-			s.clearSchema(keyspaceName)
+			s.invalidateKeyspaceSchema(keyspaceName)
 			s.RemoveTabletsWithKeyspace(keyspaceName)
 			continue
 		} else if err != nil {
 			return err
 		}
 
-		updatedMetadata, err := s.getSchema(keyspaceName)
+		updatedMetadata, err := s.GetKeyspace(keyspaceName)
 		if err != nil {
 			return err
 		}
@@ -567,7 +682,7 @@ func (s *metadataDescriber) refreshAllSchema() error {
 
 // forcibly updates the current KeyspaceMetadata held by the schema describer
 // for a given named keyspace.
-func (s *metadataDescriber) refreshSchema(keyspaceName string) error {
+func (s *metadataDescriber) refreshKeyspaceSchema(keyspaceName string) error {
 	var err error
 
 	// query the system keyspace for schema data
@@ -610,12 +725,68 @@ func (s *metadataDescriber) refreshSchema(keyspaceName string) error {
 		return err
 	}
 
-	// organize the schema data
 	compileMetadata(keyspace, tables, columns, functions, aggregates, types, indexes, views, createStmts)
 
-	// update the cache
 	s.metadata.keyspaceMetadata.set(keyspaceName, keyspace)
 
+	return nil
+}
+
+func (s *metadataDescriber) refreshTableSchema(keyspaceName, tableName string) error {
+	keyspace, found := s.metadata.keyspaceMetadata.getKeyspace(keyspaceName)
+	if !found {
+		return s.refreshKeyspaceSchema(keyspaceName)
+	}
+
+	// Perform network queries outside the lock.
+	tables, err := getTableMetadataByName(s.session, keyspaceName, tableName)
+	if err != nil {
+		return err
+	}
+
+	columns, err := getColumnMetadataByTable(s.session, keyspaceName, tableName)
+	if err != nil {
+		return err
+	}
+
+	indexes, err := getIndexMetadataByTable(s.session, keyspaceName, tableName)
+	if err != nil {
+		return err
+	}
+
+	views, err := getViewMetadataByTable(s.session, keyspaceName, tableName)
+	if err != nil {
+		return err
+	}
+
+	// Hold the lock for the read-clone-mutate-write to prevent concurrent
+	// refreshes for different tables from overwriting each other's results.
+	s.mu.Lock()
+
+	keyspace, found = s.metadata.keyspaceMetadata.getKeyspace(keyspaceName)
+	if !found {
+		// Keyspace was removed between the two lookups; release the lock
+		// and fall back to a full keyspace refresh.
+		s.mu.Unlock()
+		return s.refreshKeyspaceSchema(keyspaceName)
+	}
+
+	keyspace = keyspace.Clone()
+
+	if len(tables) == 0 {
+		keyspace.removeTable(tableName)
+		s.metadata.keyspaceMetadata.set(keyspaceName, keyspace)
+		s.mu.Unlock()
+		return nil
+	}
+
+	compileTableMetadata(keyspace, tables, columns, indexes, views)
+	if keyspace.tablesInvalidated != nil {
+		delete(keyspace.tablesInvalidated, tableName)
+	}
+
+	s.metadata.keyspaceMetadata.set(keyspaceName, keyspace)
+	s.mu.Unlock()
 	return nil
 }
 
@@ -724,6 +895,101 @@ func compileMetadata(
 	}
 
 	keyspace.CreateStmts = string(createStmts)
+}
+
+func compileTableMetadata(
+	keyspace *KeyspaceMetadata,
+	tables []TableMetadata,
+	columns []ColumnMetadata,
+	indexes []IndexMetadata,
+	views []ViewMetadata,
+) {
+	if keyspace.Tables == nil {
+		keyspace.Tables = make(map[string]*TableMetadata)
+	}
+	for i := range tables {
+		tables[i].Columns = make(map[string]*ColumnMetadata)
+		keyspace.Tables[tables[i].Name] = &tables[i]
+	}
+
+	if keyspace.Indexes == nil {
+		keyspace.Indexes = make(map[string]*IndexMetadata)
+	}
+	for name, ix := range keyspace.Indexes {
+		for i := range tables {
+			if ix.TableName == tables[i].Name {
+				delete(keyspace.Indexes, name)
+			}
+		}
+	}
+	for i := range indexes {
+		indexes[i].Columns = make(map[string]*ColumnMetadata)
+		keyspace.Indexes[indexes[i].Name] = &indexes[i]
+	}
+
+	if keyspace.Views == nil {
+		keyspace.Views = make(map[string]*ViewMetadata)
+	}
+	for name, v := range keyspace.Views {
+		for i := range tables {
+			if v.BaseTableName == tables[i].Name {
+				delete(keyspace.Views, name)
+			}
+		}
+	}
+	for i := range views {
+		v := &views[i]
+		if _, ok := keyspace.Indexes[strings.TrimSuffix(v.ViewName, "_index")]; ok {
+			continue
+		}
+		v.Columns = make(map[string]*ColumnMetadata)
+		keyspace.Views[v.ViewName] = v
+	}
+
+	for i := range columns {
+		col := &columns[i]
+		col.Order = ASC
+		if col.ClusteringOrder == "desc" {
+			col.Order = DESC
+		}
+
+		table, ok := keyspace.Tables[col.Table]
+		if !ok {
+			if indexName, found := strings.CutSuffix(col.Table, "_index"); found {
+				ix, ok := keyspace.Indexes[indexName]
+				if ok {
+					ix.Columns[col.Name] = col
+					ix.OrderedColumns = append(ix.OrderedColumns, col.Name)
+					continue
+				}
+			}
+
+			view, ok := keyspace.Views[col.Table]
+			if !ok {
+				continue
+			}
+
+			view.Columns[col.Name] = col
+			view.OrderedColumns = append(view.OrderedColumns, col.Name)
+			continue
+		}
+
+		table.Columns[col.Name] = col
+		table.OrderedColumns = append(table.OrderedColumns, col.Name)
+	}
+
+	for i := range tables {
+		t := &tables[i]
+		t.PartitionKey, t.ClusteringColumns, t.OrderedColumns = compileColumns(t.Columns, t.OrderedColumns)
+	}
+	for i := range views {
+		v := &views[i]
+		v.PartitionKey, v.ClusteringColumns, v.OrderedColumns = compileColumns(v.Columns, v.OrderedColumns)
+	}
+	for i := range indexes {
+		ix := &indexes[i]
+		ix.PartitionKey, ix.ClusteringColumns, ix.OrderedColumns = compileColumns(ix.Columns, ix.OrderedColumns)
+	}
 }
 
 func compileColumns(columns map[string]*ColumnMetadata, orderedColumns []string) (
@@ -867,6 +1133,173 @@ func getTableMetadata(session *Session, keyspaceName string) ([]TableMetadata, e
 	}
 
 	return tables, nil
+}
+
+func getTableMetadataByName(session *Session, keyspaceName, tableName string) ([]TableMetadata, error) {
+	if !session.useSystemSchema {
+		return nil, nil
+	}
+
+	stmt := `SELECT * FROM system_schema.tables WHERE keyspace_name = ? AND table_name = ?`
+	iter := session.control.querySystem(stmt, keyspaceName, tableName)
+
+	var tables []TableMetadata
+	table := TableMetadata{Keyspace: keyspaceName}
+	for iter.MapScan(map[string]interface{}{
+		"table_name":                  &table.Name,
+		"bloom_filter_fp_chance":      &table.Options.BloomFilterFpChance,
+		"caching":                     &table.Options.Caching,
+		"comment":                     &table.Options.Comment,
+		"compaction":                  &table.Options.Compaction,
+		"compression":                 &table.Options.Compression,
+		"crc_check_chance":            &table.Options.CrcCheckChance,
+		"default_time_to_live":        &table.Options.DefaultTimeToLive,
+		"gc_grace_seconds":            &table.Options.GcGraceSeconds,
+		"max_index_interval":          &table.Options.MaxIndexInterval,
+		"memtable_flush_period_in_ms": &table.Options.MemtableFlushPeriodInMs,
+		"min_index_interval":          &table.Options.MinIndexInterval,
+		"speculative_retry":           &table.Options.SpeculativeRetry,
+		"flags":                       &table.Flags,
+		"extensions":                  &table.Extensions,
+	}) {
+		tables = append(tables, table)
+		table = TableMetadata{Keyspace: keyspaceName}
+	}
+
+	err := iter.Close()
+	if err != nil && err != ErrNotFound {
+		return nil, fmt.Errorf("error querying table schema: %w", err)
+	}
+
+	if conn := session.getConn(); conn == nil || !conn.isScyllaConn() {
+		return tables, nil
+	}
+
+	stmt = `SELECT * FROM system_schema.scylla_tables WHERE keyspace_name = ? AND table_name = ?`
+	for i, t := range tables {
+		iter := session.control.querySystem(stmt, keyspaceName, t.Name)
+
+		table := TableMetadata{}
+		if iter.MapScan(map[string]interface{}{
+			"cdc":         &table.Options.CDC,
+			"in_memory":   &table.Options.InMemory,
+			"partitioner": &table.Options.Partitioner,
+			"version":     &table.Options.Version,
+		}) {
+			tables[i].Options.CDC = table.Options.CDC
+			tables[i].Options.Version = table.Options.Version
+			tables[i].Options.Partitioner = table.Options.Partitioner
+			tables[i].Options.InMemory = table.Options.InMemory
+		}
+		if err := iter.Close(); err != nil && err != ErrNotFound {
+			return nil, fmt.Errorf("error querying scylla table schema: %w", err)
+		}
+	}
+
+	return tables, nil
+}
+
+func getColumnMetadataByTable(session *Session, keyspaceName, tableName string) ([]ColumnMetadata, error) {
+	const stmt = `SELECT * FROM system_schema.columns WHERE keyspace_name = ? AND table_name = ?`
+
+	var columns []ColumnMetadata
+
+	iter := session.control.querySystem(stmt, keyspaceName, tableName)
+	column := ColumnMetadata{Keyspace: keyspaceName}
+
+	for iter.MapScan(map[string]interface{}{
+		"table_name":       &column.Table,
+		"column_name":      &column.Name,
+		"clustering_order": &column.ClusteringOrder,
+		"type":             &column.Type,
+		"kind":             &column.Kind,
+		"position":         &column.ComponentIndex,
+	}) {
+		columns = append(columns, column)
+		column = ColumnMetadata{Keyspace: keyspaceName}
+	}
+
+	if err := iter.Close(); err != nil && err != ErrNotFound {
+		return nil, fmt.Errorf("error querying column schema: %w", err)
+	}
+
+	return columns, nil
+}
+
+func getIndexMetadataByTable(session *Session, keyspaceName, tableName string) ([]IndexMetadata, error) {
+	if !session.useSystemSchema {
+		return nil, nil
+	}
+
+	const stmt = `SELECT * FROM system_schema.indexes WHERE keyspace_name = ? AND table_name = ?`
+
+	var indexes []IndexMetadata
+	index := IndexMetadata{}
+
+	iter := session.control.querySystem(stmt, keyspaceName, tableName)
+	for iter.MapScan(map[string]interface{}{
+		"index_name":    &index.Name,
+		"keyspace_name": &index.KeyspaceName,
+		"table_name":    &index.TableName,
+		"kind":          &index.Kind,
+		"options":       &index.Options,
+	}) {
+		indexes = append(indexes, index)
+		index = IndexMetadata{}
+	}
+
+	if err := iter.Close(); err != nil {
+		return nil, err
+	}
+
+	return indexes, nil
+}
+
+func getViewMetadataByTable(session *Session, keyspaceName, tableName string) ([]ViewMetadata, error) {
+	if !session.useSystemSchema {
+		return nil, nil
+	}
+
+	stmt := `SELECT * FROM system_schema.views WHERE keyspace_name = ? AND base_table_name = ?`
+
+	iter := session.control.querySystem(stmt, keyspaceName, tableName)
+
+	var views []ViewMetadata
+	view := ViewMetadata{KeyspaceName: keyspaceName}
+
+	for iter.MapScan(map[string]interface{}{
+		"id":                          &view.ID,
+		"view_name":                   &view.ViewName,
+		"base_table_id":               &view.BaseTableID,
+		"base_table_name":             &view.BaseTableName,
+		"include_all_columns":         &view.IncludeAllColumns,
+		"where_clause":                &view.WhereClause,
+		"bloom_filter_fp_chance":      &view.Options.BloomFilterFpChance,
+		"caching":                     &view.Options.Caching,
+		"comment":                     &view.Options.Comment,
+		"compaction":                  &view.Options.Compaction,
+		"compression":                 &view.Options.Compression,
+		"crc_check_chance":            &view.Options.CrcCheckChance,
+		"default_time_to_live":        &view.Options.DefaultTimeToLive,
+		"gc_grace_seconds":            &view.Options.GcGraceSeconds,
+		"max_index_interval":          &view.Options.MaxIndexInterval,
+		"memtable_flush_period_in_ms": &view.Options.MemtableFlushPeriodInMs,
+		"min_index_interval":          &view.Options.MinIndexInterval,
+		"speculative_retry":           &view.Options.SpeculativeRetry,
+		"extensions":                  &view.Extensions,
+		"dclocal_read_repair_chance":  &view.DcLocalReadRepairChance,
+		"read_repair_chance":          &view.ReadRepairChance,
+	}) {
+		views = append(views, view)
+		view = ViewMetadata{KeyspaceName: keyspaceName}
+	}
+
+	err := iter.Close()
+	if err != nil && err != ErrNotFound {
+		return nil, fmt.Errorf("error querying view schema: %w", err)
+	}
+
+	return views, nil
 }
 
 // query for column metadata in the system_schema.columns

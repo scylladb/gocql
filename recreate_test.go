@@ -116,7 +116,7 @@ func TestRecreateSchema(t *testing.T) {
 			if err != nil {
 				t.Fatal("failed to await for schema agreement", err)
 			}
-			err = session.metadataDescriber.refreshSchema(test.Keyspace)
+			err = session.metadataDescriber.refreshKeyspaceSchema(test.Keyspace)
 			if err != nil {
 				t.Fatal("failed to read schema for keyspace", err)
 			}
@@ -181,7 +181,7 @@ func TestRecreateSchema(t *testing.T) {
 
 			// Exec dumped queries to check if they are CQL-correct
 			cleanup(t, session, test.Keyspace)
-			session.metadataDescriber.clearSchema(test.Keyspace)
+			session.metadataDescriber.invalidateKeyspaceSchema(test.Keyspace)
 
 			for _, q := range trimQueries(strings.Split(dump, ";")) {
 				qr := session.Query(q, nil)
@@ -196,7 +196,7 @@ func TestRecreateSchema(t *testing.T) {
 			if err != nil {
 				t.Fatal("failed to await for schema agreement", err)
 			}
-			err = session.metadataDescriber.refreshSchema(test.Keyspace)
+			err = session.metadataDescriber.refreshKeyspaceSchema(test.Keyspace)
 			if err != nil {
 				t.Fatal("failed to read schema for keyspace", err)
 			}

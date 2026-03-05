@@ -18,7 +18,7 @@ func TestSchemaQueries(t *testing.T) {
 	session := createSessionFromCluster(cluster, t)
 	defer session.Close()
 
-	keyspaceMetadata, err := session.metadataDescriber.getSchema("gocql_test")
+	keyspaceMetadata, err := session.metadataDescriber.GetKeyspace("gocql_test")
 	if err != nil {
 		t.Fatal("unable to get keyspace metadata for keyspace: ", err)
 	}
