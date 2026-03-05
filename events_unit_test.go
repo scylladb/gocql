@@ -193,6 +193,7 @@ type schemaDataMock struct {
 
 	knownKeyspaces map[string][]tableInfo
 	queryDelay     time.Duration
+	queryError     error // if set, querySystem returns an Iter with this error
 }
 
 func (m *schemaDataMock) awaitSchemaAgreement() error {
@@ -219,10 +220,15 @@ func (m *schemaDataMock) querySystem(statement string, values ...interface{}) *I
 	m.mu.Lock()
 	m.queries = append(m.queries, queryRecord{method: "querySystem", stmt: statement})
 	delay := m.queryDelay
+	queryErr := m.queryError
 	m.mu.Unlock()
 
 	if delay > 0 {
 		time.Sleep(delay)
+	}
+
+	if queryErr != nil {
+		return &Iter{err: queryErr}
 	}
 
 	if strings.HasPrefix(statement, "SELECT durable_writes, replication FROM system_schema.keyspaces") {
@@ -319,6 +325,12 @@ func (m *schemaDataMock) querySystem(statement string, values ...interface{}) *I
 	}
 
 	return &Iter{}
+}
+
+func (m *schemaDataMock) setQueryError(err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.queryError = err
 }
 
 func (m *schemaDataMock) resetQueries() {
@@ -1070,6 +1082,499 @@ func TestHandleSchemaEvent(t *testing.T) {
 		}
 		if got := ctrl.getQueryCount(); got == 0 {
 			t.Fatal("expected queries after keyspace was cleared")
+		}
+	})
+}
+
+// TestSchemaRefreshConcurrent validates that concurrent GetKeyspace/GetTable
+// calls for an uncached or invalidated keyspace result in only a single set
+// of schema queries, not one per caller.
+func TestSchemaRefreshConcurrent(t *testing.T) {
+	t.Parallel()
+
+	const concurrency = 10
+
+	knownKeyspaces := map[string][]tableInfo{
+		"test_ks": {
+			{name: "tbl_a", columns: []columnInfo{{name: "id", kind: "partition_key", position: 0}}},
+		},
+	}
+
+	fullRefreshCount := 7  // keyspace + tables + columns + types + indexes + views + DESCRIBE
+	tableRefreshCount := 4 // tables + columns + indexes + views (filtered by table_name)
+
+	t.Run("GetKeyspace/uncached", func(t *testing.T) {
+		t.Parallel()
+		ctrl := &schemaDataMock{
+			knownKeyspaces: knownKeyspaces,
+			queryDelay:     10 * time.Millisecond,
+		}
+		s := newSchemaEventTestSessionWithMock(ctrl)
+
+		var wg sync.WaitGroup
+		for range concurrency {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				_, _ = s.metadataDescriber.GetKeyspace("test_ks")
+			}()
+		}
+		wg.Wait()
+
+		if got := ctrl.getQueryCount(); got != fullRefreshCount {
+			t.Errorf("expected %d queries (single full refresh), got %d", fullRefreshCount, got)
+		}
+	})
+
+	t.Run("GetKeyspace/after_invalidation", func(t *testing.T) {
+		t.Parallel()
+		ctrl := &schemaDataMock{
+			knownKeyspaces: knownKeyspaces,
+			queryDelay:     10 * time.Millisecond,
+		}
+		s := newSchemaEventTestSessionWithMock(ctrl)
+		populateKeyspace(s, "test_ks", "tbl_a")
+
+		s.handleSchemaEvent([]frame{
+			&frm.SchemaChangeKeyspace{Change: "UPDATED", Keyspace: "test_ks"},
+		})
+
+		ctrl.resetQueries()
+
+		var wg sync.WaitGroup
+		for range concurrency {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				_, _ = s.metadataDescriber.GetKeyspace("test_ks")
+			}()
+		}
+		wg.Wait()
+
+		if got := ctrl.getQueryCount(); got != fullRefreshCount {
+			t.Errorf("expected %d queries (single full refresh), got %d", fullRefreshCount, got)
+		}
+	})
+
+	t.Run("GetTable/after_table_invalidation", func(t *testing.T) {
+		t.Parallel()
+		ctrl := &schemaDataMock{
+			knownKeyspaces: knownKeyspaces,
+			queryDelay:     10 * time.Millisecond,
+		}
+		s := newSchemaEventTestSessionWithMock(ctrl)
+		populateKeyspace(s, "test_ks", "tbl_a")
+
+		s.handleSchemaEvent([]frame{
+			&frm.SchemaChangeTable{Change: "UPDATED", Keyspace: "test_ks", Object: "tbl_a"},
+		})
+
+		ctrl.resetQueries()
+
+		var wg sync.WaitGroup
+		for range concurrency {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				_, _ = s.metadataDescriber.GetTable("test_ks", "tbl_a")
+			}()
+		}
+		wg.Wait()
+
+		if got := ctrl.getQueryCount(); got != tableRefreshCount {
+			t.Errorf("expected %d queries (single table refresh), got %d", tableRefreshCount, got)
+		}
+	})
+}
+
+// TestConcurrentSchemaRefreshErrorHandling verifies that concurrent
+// GetKeyspace and GetTable calls behave correctly when the underlying
+// schema queries succeed or fail, including mixed scenarios where
+// errors are injected mid-flight.
+func TestConcurrentSchemaRefreshErrorHandling(t *testing.T) {
+	t.Parallel()
+
+	const concurrency = 10
+
+	defaultTables := map[string][]tableInfo{
+		"test_ks": {
+			{name: "tbl_a", columns: []columnInfo{{name: "id", kind: "partition_key", position: 0}}},
+			{name: "tbl_b", columns: []columnInfo{{name: "pk", kind: "partition_key", position: 0}}},
+		},
+	}
+
+	t.Run("GetKeyspace/all_succeed", func(t *testing.T) {
+		t.Parallel()
+		ctrl := &schemaDataMock{
+			knownKeyspaces: defaultTables,
+			queryDelay:     10 * time.Millisecond,
+		}
+		s := newSchemaEventTestSessionWithMock(ctrl)
+
+		var wg sync.WaitGroup
+		results := make([]*KeyspaceMetadata, concurrency)
+		errs := make([]error, concurrency)
+		for i := range concurrency {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				results[idx], errs[idx] = s.metadataDescriber.GetKeyspace("test_ks")
+			}(i)
+		}
+		wg.Wait()
+
+		for i := range concurrency {
+			if errs[i] != nil {
+				t.Errorf("goroutine %d: unexpected error: %v", i, errs[i])
+			}
+			if results[i] == nil {
+				t.Errorf("goroutine %d: got nil metadata", i)
+			} else if results[i].Name != "test_ks" {
+				t.Errorf("goroutine %d: expected keyspace test_ks, got %s", i, results[i].Name)
+			}
+		}
+	})
+
+	t.Run("GetKeyspace/all_fail", func(t *testing.T) {
+		t.Parallel()
+		injectedErr := fmt.Errorf("injected query failure")
+		ctrl := &schemaDataMock{
+			knownKeyspaces: defaultTables,
+			queryDelay:     10 * time.Millisecond,
+			queryError:     injectedErr,
+		}
+		s := newSchemaEventTestSessionWithMock(ctrl)
+
+		var wg sync.WaitGroup
+		errs := make([]error, concurrency)
+		for i := range concurrency {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				_, errs[idx] = s.metadataDescriber.GetKeyspace("test_ks")
+			}(i)
+		}
+		wg.Wait()
+
+		for i := range concurrency {
+			if errs[i] == nil {
+				t.Errorf("goroutine %d: expected error, got nil", i)
+			}
+		}
+	})
+
+	t.Run("GetKeyspace/fail_then_succeed", func(t *testing.T) {
+		t.Parallel()
+		// First wave fails, second wave succeeds — verifies singleflight
+		// does not cache the error permanently.
+		injectedErr := fmt.Errorf("transient failure")
+		ctrl := &schemaDataMock{
+			knownKeyspaces: defaultTables,
+			queryDelay:     10 * time.Millisecond,
+			queryError:     injectedErr,
+		}
+		s := newSchemaEventTestSessionWithMock(ctrl)
+
+		// Wave 1: all fail.
+		var wg sync.WaitGroup
+		for range concurrency {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				_, _ = s.metadataDescriber.GetKeyspace("test_ks")
+			}()
+		}
+		wg.Wait()
+
+		// Clear error and retry — should succeed.
+		ctrl.setQueryError(nil)
+		ctrl.resetQueries()
+
+		ks, err := s.metadataDescriber.GetKeyspace("test_ks")
+		if err != nil {
+			t.Fatalf("second attempt should succeed, got: %v", err)
+		}
+		if ks.Name != "test_ks" {
+			t.Fatalf("expected keyspace test_ks, got %s", ks.Name)
+		}
+	})
+
+	t.Run("GetKeyspace/nonexistent_keyspace", func(t *testing.T) {
+		t.Parallel()
+		ctrl := &schemaDataMock{
+			knownKeyspaces: defaultTables,
+			queryDelay:     10 * time.Millisecond,
+		}
+		s := newSchemaEventTestSessionWithMock(ctrl)
+
+		var wg sync.WaitGroup
+		errs := make([]error, concurrency)
+		for i := range concurrency {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				_, errs[idx] = s.metadataDescriber.GetKeyspace("no_such_ks")
+			}(i)
+		}
+		wg.Wait()
+
+		for i := range concurrency {
+			if errs[i] == nil {
+				t.Errorf("goroutine %d: expected ErrKeyspaceDoesNotExist, got nil", i)
+			}
+		}
+	})
+
+	t.Run("GetTable/all_succeed", func(t *testing.T) {
+		t.Parallel()
+		ctrl := &schemaDataMock{
+			knownKeyspaces: defaultTables,
+			queryDelay:     10 * time.Millisecond,
+		}
+		s := newSchemaEventTestSessionWithMock(ctrl)
+		populateKeyspace(s, "test_ks", "tbl_a")
+		s.metadataDescriber.invalidateTableSchema("test_ks", "tbl_a")
+
+		var wg sync.WaitGroup
+		results := make([]*TableMetadata, concurrency)
+		errs := make([]error, concurrency)
+		for i := range concurrency {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				results[idx], errs[idx] = s.metadataDescriber.GetTable("test_ks", "tbl_a")
+			}(i)
+		}
+		wg.Wait()
+
+		for i := range concurrency {
+			if errs[i] != nil {
+				t.Errorf("goroutine %d: unexpected error: %v", i, errs[i])
+			}
+			if results[i] == nil {
+				t.Errorf("goroutine %d: got nil table metadata", i)
+			} else if results[i].Name != "tbl_a" {
+				t.Errorf("goroutine %d: expected tbl_a, got %s", i, results[i].Name)
+			}
+		}
+	})
+
+	t.Run("GetTable/all_fail", func(t *testing.T) {
+		t.Parallel()
+		injectedErr := fmt.Errorf("injected table query failure")
+		ctrl := &schemaDataMock{
+			knownKeyspaces: defaultTables,
+			queryError:     injectedErr,
+			queryDelay:     10 * time.Millisecond,
+		}
+		s := newSchemaEventTestSessionWithMock(ctrl)
+		populateKeyspace(s, "test_ks", "tbl_a")
+		s.metadataDescriber.invalidateTableSchema("test_ks", "tbl_a")
+
+		var wg sync.WaitGroup
+		errs := make([]error, concurrency)
+		for i := range concurrency {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				_, errs[idx] = s.metadataDescriber.GetTable("test_ks", "tbl_a")
+			}(i)
+		}
+		wg.Wait()
+
+		for i := range concurrency {
+			if errs[i] == nil {
+				t.Errorf("goroutine %d: expected error, got nil", i)
+			}
+		}
+	})
+
+	t.Run("GetTable/fail_then_succeed", func(t *testing.T) {
+		t.Parallel()
+		injectedErr := fmt.Errorf("transient table failure")
+		ctrl := &schemaDataMock{
+			knownKeyspaces: defaultTables,
+			queryDelay:     10 * time.Millisecond,
+			queryError:     injectedErr,
+		}
+		s := newSchemaEventTestSessionWithMock(ctrl)
+		populateKeyspace(s, "test_ks", "tbl_a")
+		s.metadataDescriber.invalidateTableSchema("test_ks", "tbl_a")
+
+		// Wave 1: all fail.
+		var wg sync.WaitGroup
+		for range concurrency {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				_, _ = s.metadataDescriber.GetTable("test_ks", "tbl_a")
+			}()
+		}
+		wg.Wait()
+
+		// Clear error, re-invalidate (the failed refresh may have left
+		// tablesInvalidated in an inconsistent state), and retry.
+		ctrl.setQueryError(nil)
+		ctrl.resetQueries()
+		s.metadataDescriber.invalidateTableSchema("test_ks", "tbl_a")
+
+		tbl, err := s.metadataDescriber.GetTable("test_ks", "tbl_a")
+		if err != nil {
+			t.Fatalf("second attempt should succeed, got: %v", err)
+		}
+		if tbl.Name != "tbl_a" {
+			t.Fatalf("expected tbl_a, got %s", tbl.Name)
+		}
+	})
+
+	t.Run("GetTable/nonexistent_table", func(t *testing.T) {
+		t.Parallel()
+		ctrl := &schemaDataMock{
+			knownKeyspaces: defaultTables,
+			queryDelay:     10 * time.Millisecond,
+		}
+		s := newSchemaEventTestSessionWithMock(ctrl)
+		populateKeyspace(s, "test_ks", "tbl_a")
+
+		var wg sync.WaitGroup
+		errs := make([]error, concurrency)
+		for i := range concurrency {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				_, errs[idx] = s.metadataDescriber.GetTable("test_ks", "no_such_table")
+			}(i)
+		}
+		wg.Wait()
+
+		for i := range concurrency {
+			if errs[i] == nil {
+				t.Errorf("goroutine %d: expected ErrNotFound, got nil", i)
+			}
+		}
+	})
+
+	t.Run("GetKeyspace_and_GetTable/concurrent_mixed", func(t *testing.T) {
+		t.Parallel()
+		// Exercises the interplay between concurrent keyspace and table
+		// refreshes hitting the singleflight groups simultaneously.
+		ctrl := &schemaDataMock{
+			knownKeyspaces: defaultTables,
+			queryDelay:     5 * time.Millisecond,
+		}
+		s := newSchemaEventTestSessionWithMock(ctrl)
+
+		var wg sync.WaitGroup
+		ksErrs := make([]error, concurrency)
+		tblErrs := make([]error, concurrency)
+		for i := range concurrency {
+			wg.Add(2)
+			go func(idx int) {
+				defer wg.Done()
+				_, ksErrs[idx] = s.metadataDescriber.GetKeyspace("test_ks")
+			}(i)
+			go func(idx int) {
+				defer wg.Done()
+				_, tblErrs[idx] = s.metadataDescriber.GetTable("test_ks", "tbl_a")
+			}(i)
+		}
+		wg.Wait()
+
+		for i := range concurrency {
+			if ksErrs[i] != nil {
+				t.Errorf("GetKeyspace goroutine %d: unexpected error: %v", i, ksErrs[i])
+			}
+			if tblErrs[i] != nil {
+				t.Errorf("GetTable goroutine %d: unexpected error: %v", i, tblErrs[i])
+			}
+		}
+	})
+
+	t.Run("GetTable/different_tables_concurrent", func(t *testing.T) {
+		t.Parallel()
+		// Two different tables invalidated concurrently: each gets its own
+		// singleflight key, so both refresh independently.
+		ctrl := &schemaDataMock{
+			knownKeyspaces: defaultTables,
+			queryDelay:     5 * time.Millisecond,
+		}
+		s := newSchemaEventTestSessionWithMock(ctrl)
+		populateKeyspace(s, "test_ks", "tbl_a", "tbl_b")
+		s.metadataDescriber.invalidateTableSchema("test_ks", "tbl_a")
+		s.metadataDescriber.invalidateTableSchema("test_ks", "tbl_b")
+
+		var wg sync.WaitGroup
+		aErrs := make([]error, concurrency)
+		bErrs := make([]error, concurrency)
+		for i := range concurrency {
+			wg.Add(2)
+			go func(idx int) {
+				defer wg.Done()
+				_, aErrs[idx] = s.metadataDescriber.GetTable("test_ks", "tbl_a")
+			}(i)
+			go func(idx int) {
+				defer wg.Done()
+				_, bErrs[idx] = s.metadataDescriber.GetTable("test_ks", "tbl_b")
+			}(i)
+		}
+		wg.Wait()
+
+		for i := range concurrency {
+			if aErrs[i] != nil {
+				t.Errorf("tbl_a goroutine %d: unexpected error: %v", i, aErrs[i])
+			}
+			if bErrs[i] != nil {
+				t.Errorf("tbl_b goroutine %d: unexpected error: %v", i, bErrs[i])
+			}
+		}
+
+		// Verify both tables are now cached.
+		for _, name := range []string{"tbl_a", "tbl_b"} {
+			tbl, err := s.metadataDescriber.GetTable("test_ks", name)
+			if err != nil {
+				t.Errorf("GetTable(%s) after refresh: %v", name, err)
+			} else if tbl.Name != name {
+				t.Errorf("expected %s, got %s", name, tbl.Name)
+			}
+		}
+	})
+
+	t.Run("GetTable/different_tables_one_fails", func(t *testing.T) {
+		t.Parallel()
+		// tbl_a exists in the mock, tbl_x does not — concurrent refreshes
+		// for both: one succeeds, one gets ErrNotFound.
+		ctrl := &schemaDataMock{
+			knownKeyspaces: defaultTables,
+			queryDelay:     5 * time.Millisecond,
+		}
+		s := newSchemaEventTestSessionWithMock(ctrl)
+		populateKeyspace(s, "test_ks", "tbl_a", "tbl_x")
+		s.metadataDescriber.invalidateTableSchema("test_ks", "tbl_a")
+		s.metadataDescriber.invalidateTableSchema("test_ks", "tbl_x")
+
+		var wg sync.WaitGroup
+		aErrs := make([]error, concurrency)
+		xErrs := make([]error, concurrency)
+		for i := range concurrency {
+			wg.Add(2)
+			go func(idx int) {
+				defer wg.Done()
+				_, aErrs[idx] = s.metadataDescriber.GetTable("test_ks", "tbl_a")
+			}(i)
+			go func(idx int) {
+				defer wg.Done()
+				_, xErrs[idx] = s.metadataDescriber.GetTable("test_ks", "tbl_x")
+			}(i)
+		}
+		wg.Wait()
+
+		for i := range concurrency {
+			if aErrs[i] != nil {
+				t.Errorf("tbl_a goroutine %d: unexpected error: %v", i, aErrs[i])
+			}
+			if xErrs[i] == nil {
+				t.Errorf("tbl_x goroutine %d: expected ErrNotFound, got nil", i)
+			}
 		}
 	})
 }

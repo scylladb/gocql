@@ -13,6 +13,8 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"golang.org/x/sync/singleflight"
+
 	frm "github.com/gocql/gocql/internal/frame"
 	"github.com/gocql/gocql/tablets"
 )
@@ -363,6 +365,8 @@ func (c *cowKeyspaceMetadataMap) getKeyspace(keyspaceName string) (*KeyspaceMeta
 
 func (c *cowKeyspaceMetadataMap) set(keyspaceName string, keyspaceMetadata *KeyspaceMetadata) bool {
 	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	m := c.get()
 
 	newM := map[string]*KeyspaceMetadata{}
@@ -372,37 +376,47 @@ func (c *cowKeyspaceMetadataMap) set(keyspaceName string, keyspaceMetadata *Keys
 	newM[keyspaceName] = keyspaceMetadata
 
 	c.keyspaceMap.Store(newM)
-	c.mu.Unlock()
 	return true
 }
 
 func (c *cowKeyspaceMetadataMap) invalidateTable(keyspaceName, tableName string) {
+	c.updateKeyspace(keyspaceName, func(ks *KeyspaceMetadata) {
+		ks.invalidateTable(tableName)
+	})
+}
+
+func (c *cowKeyspaceMetadataMap) removeKeyspace(keyspaceName string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	m := c.get()
+	newM := maps.Clone(m)
+	delete(newM, keyspaceName)
+
+	c.keyspaceMap.Store(newM)
+}
+
+// updateKeyspace atomically clones a keyspace's mutable maps, applies fn to
+// the clone, and publishes the result. This prevents data races between
+// concurrent readers and writers of the same KeyspaceMetadata.
+// Returns false if the keyspace was not found (no update applied).
+func (c *cowKeyspaceMetadataMap) updateKeyspace(keyspaceName string, fn func(ks *KeyspaceMetadata)) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	m := c.get()
 	ks, ok := m[keyspaceName]
 	if !ok || ks == nil {
-		return
+		return false
 	}
 
 	cloned := ks.Clone()
-	cloned.invalidateTable(tableName)
+	fn(cloned)
 
 	newM := maps.Clone(m)
 	newM[keyspaceName] = cloned
 	c.keyspaceMap.Store(newM)
-}
-
-func (c *cowKeyspaceMetadataMap) removeKeyspace(keyspaceName string) {
-	c.mu.Lock()
-	m := c.get()
-
-	newM := maps.Clone(m)
-	delete(newM, keyspaceName)
-
-	c.keyspaceMap.Store(newM)
-	c.mu.Unlock()
+	return true
 }
 
 const (
@@ -512,9 +526,18 @@ type Metadata struct {
 
 // queries the cluster for schema information for a specific keyspace and for tablets
 type metadataDescriber struct {
-	session  *Session
-	metadata *Metadata
-	mu       sync.Mutex
+	keyspaceGroup singleflight.Group
+	tableGroup    singleflight.Group
+	session       *Session
+	metadata      *Metadata
+
+	// mu serialises refreshAllSchema calls so the snapshot-compare-refresh
+	// cycle runs as an atomic batch.  Individual keyspace/table refreshes
+	// are deduplicated by the singleflight groups above and do NOT need
+	// this lock.
+	//
+	// Lock ordering: s.mu → cowKeyspaceMetadataMap.mu (never reversed).
+	mu sync.Mutex
 }
 
 // creates a session bound schema describer which will query and cache
@@ -533,7 +556,7 @@ func (s *metadataDescriber) getKeyspaceInternal(keyspaceName string) (metadata *
 	metadata, found = s.metadata.keyspaceMetadata.getKeyspace(keyspaceName)
 	if !found {
 		wasReloaded = true
-		err = s.refreshKeyspaceSchema(keyspaceName)
+		err = s.deduplicatedRefreshKeyspace(keyspaceName)
 		if err != nil {
 			return metadata, wasReloaded, err
 		}
@@ -571,7 +594,7 @@ func (s *metadataDescriber) GetTable(keyspaceName, tableName string) (*TableMeta
 		return nil, fmt.Errorf("table %s.%s: %w", keyspaceName, tableName, ErrNotFound)
 	}
 
-	err = s.refreshTableSchema(keyspaceName, tableName)
+	err = s.deduplicatedRefreshTable(keyspaceName, tableName)
 	if err != nil {
 		return nil, err
 	}
@@ -624,35 +647,46 @@ func (s *metadataDescriber) invalidateTableSchema(keyspaceName, tableName string
 	s.metadata.keyspaceMetadata.invalidateTable(keyspaceName, tableName)
 }
 
+// deduplicatedRefreshKeyspace collapses concurrent refreshKeyspaceSchema calls
+// for the same keyspace into a single in-flight operation.
+func (s *metadataDescriber) deduplicatedRefreshKeyspace(keyspaceName string) error {
+	_, err, _ := s.keyspaceGroup.Do(keyspaceName, func() (interface{}, error) {
+		return nil, s.refreshKeyspaceSchema(keyspaceName)
+	})
+	return err
+}
+
+// deduplicatedRefreshTable collapses concurrent refreshTableSchema calls
+// for the same keyspace/table into a single in-flight operation.
+func (s *metadataDescriber) deduplicatedRefreshTable(keyspaceName, tableName string) error {
+	key := keyspaceName + "\x00" + tableName
+	_, err, _ := s.tableGroup.Do(key, func() (interface{}, error) {
+		return nil, s.refreshTableSchema(keyspaceName, tableName)
+	})
+	return err
+}
+
 func (s *metadataDescriber) refreshAllSchema() error {
+	// mu serialises concurrent refreshAllSchema calls so each one sees a
+	// consistent snapshot before deciding what changed.  Individual keyspace
+	// refreshes inside the loop go through singleflight, so two overlapping
+	// refreshAllSchema calls will not duplicate network queries — the second
+	// caller blocks on mu while the first finishes.
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	copiedMap := make(map[string]*KeyspaceMetadata)
-
 	for key, value := range s.metadata.keyspaceMetadata.get() {
 		if value != nil {
-			copiedMap[key] = &KeyspaceMetadata{
-				Name:            value.Name,
-				DurableWrites:   value.DurableWrites,
-				StrategyClass:   value.StrategyClass,
-				StrategyOptions: value.StrategyOptions,
-				Tables:          value.Tables,
-				Functions:       value.Functions,
-				Aggregates:      value.Aggregates,
-				Types:           value.Types,
-				Indexes:         value.Indexes,
-				Views:           value.Views,
-				CreateStmts:     value.CreateStmts,
-			}
+			copiedMap[key] = value.Clone()
 		} else {
 			copiedMap[key] = nil
 		}
 	}
 
 	for keyspaceName, metadata := range copiedMap {
-		// refresh the cache for this keyspace
-		err := s.refreshKeyspaceSchema(keyspaceName)
+		// Route through singleflight to dedup concurrent refreshes.
+		err := s.deduplicatedRefreshKeyspace(keyspaceName)
 		if errors.Is(err, ErrKeyspaceDoesNotExist) {
 			s.invalidateKeyspaceSchema(keyspaceName)
 			s.RemoveTabletsWithKeyspace(keyspaceName)
@@ -733,9 +767,9 @@ func (s *metadataDescriber) refreshKeyspaceSchema(keyspaceName string) error {
 }
 
 func (s *metadataDescriber) refreshTableSchema(keyspaceName, tableName string) error {
-	keyspace, found := s.metadata.keyspaceMetadata.getKeyspace(keyspaceName)
+	_, found := s.metadata.keyspaceMetadata.getKeyspace(keyspaceName)
 	if !found {
-		return s.refreshKeyspaceSchema(keyspaceName)
+		return s.deduplicatedRefreshKeyspace(keyspaceName)
 	}
 
 	// Perform network queries outside the lock.
@@ -759,34 +793,23 @@ func (s *metadataDescriber) refreshTableSchema(keyspaceName, tableName string) e
 		return err
 	}
 
-	// Hold the lock for the read-clone-mutate-write to prevent concurrent
-	// refreshes for different tables from overwriting each other's results.
-	s.mu.Lock()
-
-	keyspace, found = s.metadata.keyspaceMetadata.getKeyspace(keyspaceName)
-	if !found {
-		// Keyspace was removed between the two lookups; release the lock
-		// and fall back to a full keyspace refresh.
-		s.mu.Unlock()
-		return s.refreshKeyspaceSchema(keyspaceName)
+	// Atomically clone-and-swap the keyspace metadata to avoid data races
+	// with concurrent readers.
+	applied := s.metadata.keyspaceMetadata.updateKeyspace(keyspaceName, func(ks *KeyspaceMetadata) {
+		if len(tables) == 0 {
+			ks.removeTable(tableName)
+		} else {
+			compileTableMetadata(ks, tables, columns, indexes, views)
+			if ks.tablesInvalidated != nil {
+				delete(ks.tablesInvalidated, tableName)
+			}
+		}
+	})
+	if !applied {
+		// Keyspace was removed between the initial check and the update.
+		// Fall back to a full keyspace refresh to recover.
+		return s.deduplicatedRefreshKeyspace(keyspaceName)
 	}
-
-	keyspace = keyspace.Clone()
-
-	if len(tables) == 0 {
-		keyspace.removeTable(tableName)
-		s.metadata.keyspaceMetadata.set(keyspaceName, keyspace)
-		s.mu.Unlock()
-		return nil
-	}
-
-	compileTableMetadata(keyspace, tables, columns, indexes, views)
-	if keyspace.tablesInvalidated != nil {
-		delete(keyspace.tablesInvalidated, tableName)
-	}
-
-	s.metadata.keyspaceMetadata.set(keyspaceName, keyspace)
-	s.mu.Unlock()
 	return nil
 }
 
