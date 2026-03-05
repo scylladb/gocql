@@ -270,6 +270,9 @@ func compareStringMaps(a, b map[string]string) bool {
 }
 
 func compareInterfaceMaps(a, b map[string]interface{}) bool {
+	if len(a) != len(b) {
+		return false
+	}
 	for k, v := range a {
 		otherValue, exists := b[k]
 		if !exists || !reflect.DeepEqual(v, otherValue) {
