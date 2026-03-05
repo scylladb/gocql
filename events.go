@@ -148,21 +148,100 @@ func (s *Session) handleEvent(framer *framer) {
 }
 
 func (s *Session) handleSchemaEvent(frames []frame) {
-	// TODO: debounce events
+	if len(frames) == 0 {
+		return
+	}
+
+	isTableMode := s.cfg.SchemaChangesRefreshMode == SchemaChangesRefreshTable
+
+	// Collect affected keyspaces while processing side effects.
+	affectedKeyspaces := make(map[string]struct{}, len(frames))
+
+	// For RefreshTable mode, track table-level events separately and keyspace-level fallbacks.
+	var tableChanges []tableChange // pre-allocated below when isTableMode
+	var keyspaceFallbacks map[string]struct{}
+	if isTableMode {
+		tableChanges = make([]tableChange, 0, len(frames))
+		keyspaceFallbacks = make(map[string]struct{}, len(frames))
+	}
+
 	for _, frame := range frames {
 		switch f := frame.(type) {
 		case *frm.SchemaChangeKeyspace:
-			s.metadataDescriber.clearSchema(f.Keyspace)
+			// In RefreshKeyspace and RefreshTable modes, skip clearSchema: the subsequent
+			// eager refresh will overwrite the cache entry via refreshSchema → set().
+			// In RefreshAll mode, clearSchema is needed because refreshAllSchema iterates
+			// cached keyspaces and a dropped keyspace must be removed before that.
+			if s.cfg.SchemaChangesRefreshMode == SchemaChangesRefreshAll {
+				s.metadataDescriber.clearSchema(f.Keyspace)
+			}
 			s.handleKeyspaceChange(f.Keyspace, f.Change)
+			affectedKeyspaces[f.Keyspace] = struct{}{}
+			if isTableMode {
+				keyspaceFallbacks[f.Keyspace] = struct{}{}
+			}
 		case *frm.SchemaChangeTable:
-			s.metadataDescriber.clearSchema(f.Keyspace)
+			// In RefreshKeyspace and RefreshTable modes, skip clearSchema for table events.
+			// RefreshKeyspace will overwrite the keyspace via refreshSchema → set() anyway,
+			// and RefreshTable will surgically update/remove just that table.
+			// Skipping avoids a brief window where the keyspace is absent from cache,
+			// which could cause concurrent getSchema callers to trigger a redundant refresh.
+			if s.cfg.SchemaChangesRefreshMode == SchemaChangesRefreshAll {
+				s.metadataDescriber.clearSchema(f.Keyspace)
+			}
 			s.handleTableChange(f.Keyspace, f.Object, f.Change)
+			affectedKeyspaces[f.Keyspace] = struct{}{}
+			if isTableMode {
+				tableChanges = append(tableChanges, tableChange{
+					keyspace: f.Keyspace,
+					table:    f.Object,
+					change:   f.Change,
+				})
+			}
 		case *frm.SchemaChangeAggregate:
-			s.metadataDescriber.clearSchema(f.Keyspace)
+			if s.cfg.SchemaChangesRefreshMode == SchemaChangesRefreshAll {
+				s.metadataDescriber.clearSchema(f.Keyspace)
+			}
+			affectedKeyspaces[f.Keyspace] = struct{}{}
+			if isTableMode {
+				keyspaceFallbacks[f.Keyspace] = struct{}{}
+			}
 		case *frm.SchemaChangeFunction:
-			s.metadataDescriber.clearSchema(f.Keyspace)
+			if s.cfg.SchemaChangesRefreshMode == SchemaChangesRefreshAll {
+				s.metadataDescriber.clearSchema(f.Keyspace)
+			}
+			affectedKeyspaces[f.Keyspace] = struct{}{}
+			if isTableMode {
+				keyspaceFallbacks[f.Keyspace] = struct{}{}
+			}
 		case *frm.SchemaChangeType:
-			s.metadataDescriber.clearSchema(f.Keyspace)
+			if s.cfg.SchemaChangesRefreshMode == SchemaChangesRefreshAll {
+				s.metadataDescriber.clearSchema(f.Keyspace)
+			}
+			affectedKeyspaces[f.Keyspace] = struct{}{}
+			if isTableMode {
+				keyspaceFallbacks[f.Keyspace] = struct{}{}
+			}
+		}
+	}
+
+	if len(affectedKeyspaces) == 0 {
+		return
+	}
+
+	// Refresh metadata based on the configured mode.
+	switch s.cfg.SchemaChangesRefreshMode {
+	case SchemaChangesRefreshAll:
+		if err := s.metadataDescriber.refreshAllSchema(); err != nil {
+			s.logger.Printf("gocql: unable to refresh all schema: %v\n", err)
+		}
+	case SchemaChangesRefreshKeyspace:
+		if err := s.metadataDescriber.refreshKeyspacesSchema(affectedKeyspaces); err != nil {
+			s.logger.Printf("gocql: unable to refresh schema for affected keyspaces: %v\n", err)
+		}
+	case SchemaChangesRefreshTable:
+		if err := s.metadataDescriber.refreshTablesSchema(tableChanges, keyspaceFallbacks); err != nil {
+			s.logger.Printf("gocql: unable to refresh schema for affected tables: %v\n", err)
 		}
 	}
 }

@@ -55,6 +55,46 @@ func (p PoolConfig) buildPool(session *Session) *policyConnPool {
 	return newPolicyConnPool(session)
 }
 
+// SchemaChangesRefreshMode controls the scope of metadata refresh when a schema change event is received.
+type SchemaChangesRefreshMode int
+
+const (
+	// SchemaChangesRefreshAll refreshes metadata for all cached keyspaces when a schema change event
+	// is received. This is the default behavior and the most conservative option.
+	SchemaChangesRefreshAll SchemaChangesRefreshMode = iota
+
+	// SchemaChangesRefreshKeyspace refreshes metadata only for the keyspace affected by
+	// the schema change event plus all cached system keyspaces.
+	SchemaChangesRefreshKeyspace
+
+	// SchemaChangesRefreshTable refreshes metadata only for the specific table affected by a
+	// table-level schema change event, using table-scoped CQL queries
+	// (e.g., system_schema.tables WHERE keyspace_name = ? AND table_name = ?).
+	// For keyspace-level events (keyspace created/dropped/altered) or non-table schema changes
+	// (types, functions, aggregates), it behaves the same as SchemaChangesRefreshKeyspace.
+	// In all modes, cached system keyspace metadata is always refreshed.
+	//
+	// For DROP events, the table and its associated indexes and views are removed from the
+	// cache without querying the database. For CREATE/UPDATE events, only the affected table's
+	// metadata (columns, indexes, views) is re-queried and merged into the cached keyspace.
+	// Note: views are fetched at keyspace level and filtered client-side because
+	// system_schema.views does not support filtering by base_table_name in CQL.
+	SchemaChangesRefreshTable
+)
+
+func (m SchemaChangesRefreshMode) String() string {
+	switch m {
+	case SchemaChangesRefreshAll:
+		return "all"
+	case SchemaChangesRefreshKeyspace:
+		return "keyspace"
+	case SchemaChangesRefreshTable:
+		return "table"
+	default:
+		return fmt.Sprintf("unknown(%d)", m)
+	}
+}
+
 // ClusterConfig is a struct to configure the default cluster implementation
 // of gocql. It has a variety of attributes that can be used to modify the
 // behavior to fit the most common use cases. Applications that require a
@@ -241,6 +281,16 @@ type ClusterConfig struct {
 		// disable registering for schema events (keyspace/table/function removed/created/updated)
 		DisableSchemaEvents bool
 	}
+	// SchemaChangesRefreshMode controls how metadata is refreshed when a schema change event
+	// is received from the server. In all modes, cached system keyspace metadata is always refreshed.
+	//
+	//   - SchemaChangesRefreshAll (default): refreshes metadata for all cached keyspaces.
+	//   - SchemaChangesRefreshKeyspace: refreshes only the affected keyspace(s).
+	//   - SchemaChangesRefreshTable: for table-level events, refreshes only the specific table
+	//     using table-scoped CQL queries. For other schema events, behaves like SchemaChangesRefreshKeyspace.
+	//
+	// Default: SchemaChangesRefreshAll
+	SchemaChangesRefreshMode SchemaChangesRefreshMode
 	// Default idempotence for queries
 	DefaultIdempotence bool
 	// Sends a client side timestamp for all requests which overrides the timestamp at which it arrives at the server.
@@ -605,6 +655,10 @@ func (cfg *ClusterConfig) Validate() error {
 
 	if cfg.MaxExcessShardConnectionsRate < 0 {
 		return fmt.Errorf("MaxExcessShardConnectionsRate should be positive number or zero")
+	}
+
+	if cfg.SchemaChangesRefreshMode < SchemaChangesRefreshAll || cfg.SchemaChangesRefreshMode > SchemaChangesRefreshTable {
+		return fmt.Errorf("SchemaChangesRefreshMode has invalid value: %d", cfg.SchemaChangesRefreshMode)
 	}
 
 	if cfg.ClientRoutesConfig != nil {

@@ -562,6 +562,436 @@ func (s *metadataDescriber) refreshAllSchema() error {
 	return nil
 }
 
+// isSystemKeyspace returns true if the keyspace is "system" or starts with "system_".
+func isSystemKeyspace(keyspaceName string) bool {
+	return keyspaceName == "system" || strings.HasPrefix(keyspaceName, "system_")
+}
+
+// refreshSystemKeyspacesLocked refreshes metadata for all cached system keyspaces.
+// Must be called with s.mu held.
+func (s *metadataDescriber) refreshSystemKeyspacesLocked() error {
+	for keyspaceName := range s.metadata.keyspaceMetadata.get() {
+		if isSystemKeyspace(keyspaceName) {
+			err := s.refreshSchema(keyspaceName)
+			if errors.Is(err, ErrKeyspaceDoesNotExist) {
+				s.clearSchema(keyspaceName)
+				s.RemoveTabletsWithKeyspace(keyspaceName)
+				continue
+			} else if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// refreshKeyspacesSchema refreshes metadata for the given keyspaces plus all cached system keyspaces.
+// The lock is acquired once for the entire operation to avoid redundant system keyspace refreshes
+// and to provide a consistent view during the refresh cycle.
+func (s *metadataDescriber) refreshKeyspacesSchema(keyspaces map[string]struct{}) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Refresh system keyspaces once for the entire batch.
+	if err := s.refreshSystemKeyspacesLocked(); err != nil {
+		return err
+	}
+
+	// Refresh each affected non-system keyspace.
+	for keyspaceName := range keyspaces {
+		if isSystemKeyspace(keyspaceName) {
+			continue // already refreshed above
+		}
+
+		err := s.refreshSchema(keyspaceName)
+		if errors.Is(err, ErrKeyspaceDoesNotExist) {
+			s.clearSchema(keyspaceName)
+			s.RemoveTabletsWithKeyspace(keyspaceName)
+			continue
+		} else if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// tableChange pairs a keyspace with a table for table-level refresh tracking.
+type tableChange struct {
+	keyspace string
+	table    string
+	change   string
+}
+
+// refreshTableInKeyspace refreshes metadata for a single table within a keyspace using
+// table-scoped CQL queries. It merges the result into the existing cached KeyspaceMetadata.
+// For DROP events, the table (and its related indexes/views) are removed from the cache.
+//
+// keyspaceViews contains ALL views for the keyspace (pre-fetched by the caller to avoid
+// redundant full-keyspace queries when multiple tables in the same keyspace are refreshed
+// in a single batch). If nil, views are fetched directly.
+//
+// Must be called with s.mu held.
+func (s *metadataDescriber) refreshTableInKeyspace(keyspaceName, tableName, change string, keyspaceViews []ViewMetadata) error {
+	if change == "DROPPED" {
+		return s.removeTableFromCache(keyspaceName, tableName)
+	}
+
+	// Query table-scoped metadata.
+	tables, err := getTableMetadataByName(s.session, keyspaceName, tableName)
+	if err != nil {
+		return err
+	}
+	if len(tables) == 0 {
+		// Table no longer exists; treat as implicit drop.
+		return s.removeTableFromCache(keyspaceName, tableName)
+	}
+
+	// Fetch indexes and views BEFORE columns, because we need to know
+	// which additional table_name values to query in system_schema.columns.
+	// In system_schema.columns, index backing views store columns under
+	// table_name = "<indexName>_index", and materialized views store
+	// columns under table_name = "<viewName>".
+	indexes, err := getIndexMetadataByTable(s.session, keyspaceName, tableName)
+	if err != nil {
+		return err
+	}
+
+	// Filter views for this table from the pre-fetched keyspace-level set.
+	// If keyspaceViews is nil (e.g., single-table call), fetch directly.
+	var views []ViewMetadata
+	if keyspaceViews != nil {
+		for _, v := range keyspaceViews {
+			if v.BaseTableName == tableName {
+				views = append(views, v)
+			}
+		}
+	} else {
+		views, err = getViewMetadataByTable(s.session, keyspaceName, tableName)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Fetch columns for the base table.
+	columns, err := getColumnMetadataByTable(s.session, keyspaceName, tableName)
+	if err != nil {
+		return err
+	}
+
+	// Fetch columns for index backing views (table_name = "<indexName>_index").
+	for _, idx := range indexes {
+		indexTableName := idx.Name + "_index"
+		indexCols, err := getColumnMetadataByTable(s.session, keyspaceName, indexTableName)
+		if err != nil {
+			return err
+		}
+		columns = append(columns, indexCols...)
+	}
+
+	// Fetch columns for materialized views (table_name = "<viewName>").
+	// Skip views that correspond to indexes (already handled above).
+	indexNames := make(map[string]struct{}, len(indexes))
+	for _, idx := range indexes {
+		indexNames[idx.Name] = struct{}{}
+	}
+	for _, v := range views {
+		if _, isIndex := indexNames[strings.TrimSuffix(v.ViewName, "_index")]; isIndex {
+			continue
+		}
+		viewCols, err := getColumnMetadataByTable(s.session, keyspaceName, v.ViewName)
+		if err != nil {
+			return err
+		}
+		columns = append(columns, viewCols...)
+	}
+
+	// Compile the single table's metadata.
+	compiledTable, compiledIndexes, compiledViews := compileTableMetadata(tables, columns, indexes, views)
+
+	// Merge into the existing cached KeyspaceMetadata.
+	return s.mergeTableIntoCache(keyspaceName, tableName, compiledTable, compiledIndexes, compiledViews)
+}
+
+// compileTableMetadata compiles metadata for a single table: links columns to the table,
+// handles index columns, view columns, and derives partition key / clustering columns.
+// Returns the compiled table, its indexes, and its views.
+func compileTableMetadata(
+	tables []TableMetadata,
+	columns []ColumnMetadata,
+	indexes []IndexMetadata,
+	views []ViewMetadata,
+) (*TableMetadata, map[string]*IndexMetadata, map[string]*ViewMetadata) {
+	if len(tables) == 0 {
+		return nil, nil, nil
+	}
+
+	// Build the table.
+	table := &tables[0]
+	table.Columns = make(map[string]*ColumnMetadata)
+
+	// Build indexes map.
+	compiledIndexes := make(map[string]*IndexMetadata, len(indexes))
+	for i := range indexes {
+		indexes[i].Columns = make(map[string]*ColumnMetadata)
+		compiledIndexes[indexes[i].Name] = &indexes[i]
+	}
+
+	// Build views map (skip views that correspond to indexes).
+	compiledViews := make(map[string]*ViewMetadata, len(views))
+	for i := range views {
+		v := &views[i]
+		if _, ok := compiledIndexes[strings.TrimSuffix(v.ViewName, "_index")]; ok {
+			continue
+		}
+		v.Columns = make(map[string]*ColumnMetadata)
+		compiledViews[v.ViewName] = v
+	}
+
+	// Link columns to the table, indexes, or views.
+	for i := range columns {
+		col := &columns[i]
+		col.Order = ASC
+		if col.ClusteringOrder == "desc" {
+			col.Order = DESC
+		}
+
+		if col.Table == table.Name {
+			table.Columns[col.Name] = col
+			table.OrderedColumns = append(table.OrderedColumns, col.Name)
+			continue
+		}
+
+		// Column might belong to an index's backing view (table_name = indexName + "_index").
+		if indexName, found := strings.CutSuffix(col.Table, "_index"); found {
+			if ix, ok := compiledIndexes[indexName]; ok {
+				ix.Columns[col.Name] = col
+				ix.OrderedColumns = append(ix.OrderedColumns, col.Name)
+				continue
+			}
+		}
+
+		// Column might belong to a materialized view.
+		if view, ok := compiledViews[col.Table]; ok {
+			view.Columns[col.Name] = col
+			view.OrderedColumns = append(view.OrderedColumns, col.Name)
+			continue
+		}
+	}
+
+	// Compile partition key and clustering columns.
+	table.PartitionKey, table.ClusteringColumns, table.OrderedColumns = compileColumns(table.Columns, table.OrderedColumns)
+	for i := range views {
+		v := &views[i]
+		if _, ok := compiledViews[v.ViewName]; ok {
+			v.PartitionKey, v.ClusteringColumns, v.OrderedColumns = compileColumns(v.Columns, v.OrderedColumns)
+		}
+	}
+	for i := range indexes {
+		ix := &indexes[i]
+		ix.PartitionKey, ix.ClusteringColumns, ix.OrderedColumns = compileColumns(ix.Columns, ix.OrderedColumns)
+	}
+
+	return table, compiledIndexes, compiledViews
+}
+
+// mergeTableIntoCache merges a compiled table's metadata into the cached KeyspaceMetadata.
+// If no cached keyspace exists, the table is not merged (a full keyspace refresh is needed first).
+// Must be called with s.mu held.
+func (s *metadataDescriber) mergeTableIntoCache(
+	keyspaceName, tableName string,
+	table *TableMetadata,
+	indexes map[string]*IndexMetadata,
+	views map[string]*ViewMetadata,
+) error {
+	existing, ok := s.metadata.keyspaceMetadata.getKeyspace(keyspaceName)
+	if !ok || existing == nil {
+		// No cached keyspace — fall back to full keyspace refresh.
+		return s.refreshSchema(keyspaceName)
+	}
+
+	// Clone the existing keyspace metadata (shallow copy + new maps for the parts we modify).
+	cloned := &KeyspaceMetadata{
+		Name:            existing.Name,
+		DurableWrites:   existing.DurableWrites,
+		StrategyClass:   existing.StrategyClass,
+		StrategyOptions: existing.StrategyOptions,
+		Functions:       existing.Functions,
+		Aggregates:      existing.Aggregates,
+		Types:           existing.Types,
+	}
+
+	// Clone tables map, replacing the target table.
+	cloned.Tables = make(map[string]*TableMetadata, len(existing.Tables))
+	for k, v := range existing.Tables {
+		cloned.Tables[k] = v
+	}
+	if table != nil {
+		cloned.Tables[tableName] = table
+	}
+
+	// Clone indexes map, removing old indexes for this table and adding new ones.
+	cloned.Indexes = make(map[string]*IndexMetadata, len(existing.Indexes))
+	for k, v := range existing.Indexes {
+		if v.TableName != tableName {
+			cloned.Indexes[k] = v
+		}
+	}
+	for k, v := range indexes {
+		cloned.Indexes[k] = v
+	}
+
+	// Clone views map, removing old views for this table and adding new ones.
+	cloned.Views = make(map[string]*ViewMetadata, len(existing.Views))
+	for k, v := range existing.Views {
+		if v.BaseTableName != tableName {
+			cloned.Views[k] = v
+		}
+	}
+	for k, v := range views {
+		cloned.Views[k] = v
+	}
+
+	// Invalidate the cached DESCRIBE output so it is regenerated on next access.
+	// We cannot surgically update the keyspace-level CreateStmts with a single table's statement.
+	cloned.CreateStmts = ""
+
+	s.metadata.keyspaceMetadata.set(keyspaceName, cloned)
+	return nil
+}
+
+// removeTableFromCache removes a table and its associated indexes and views from the
+// cached KeyspaceMetadata. Must be called with s.mu held.
+func (s *metadataDescriber) removeTableFromCache(keyspaceName, tableName string) error {
+	existing, ok := s.metadata.keyspaceMetadata.getKeyspace(keyspaceName)
+	if !ok || existing == nil {
+		return nil // nothing to remove
+	}
+
+	cloned := &KeyspaceMetadata{
+		Name:            existing.Name,
+		DurableWrites:   existing.DurableWrites,
+		StrategyClass:   existing.StrategyClass,
+		StrategyOptions: existing.StrategyOptions,
+		Functions:       existing.Functions,
+		Aggregates:      existing.Aggregates,
+		Types:           existing.Types,
+		CreateStmts:     "", // invalidate cached DESCRIBE output so it is regenerated
+	}
+
+	// Clone tables map without the dropped table.
+	cloned.Tables = make(map[string]*TableMetadata, len(existing.Tables))
+	for k, v := range existing.Tables {
+		if k != tableName {
+			cloned.Tables[k] = v
+		}
+	}
+
+	// Clone indexes map without indexes belonging to the dropped table.
+	cloned.Indexes = make(map[string]*IndexMetadata, len(existing.Indexes))
+	for k, v := range existing.Indexes {
+		if v.TableName != tableName {
+			cloned.Indexes[k] = v
+		}
+	}
+
+	// Clone views map without views backed by the dropped table.
+	cloned.Views = make(map[string]*ViewMetadata, len(existing.Views))
+	for k, v := range existing.Views {
+		if v.BaseTableName != tableName {
+			cloned.Views[k] = v
+		}
+	}
+
+	s.metadata.keyspaceMetadata.set(keyspaceName, cloned)
+	return nil
+}
+
+// refreshTablesSchema refreshes metadata for specific tables using table-scoped queries,
+// and falls back to keyspace-level refresh for non-table events.
+// System keyspaces are always refreshed at keyspace level.
+func (s *metadataDescriber) refreshTablesSchema(
+	tableChanges []tableChange,
+	keyspaceFallbacks map[string]struct{},
+) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Refresh system keyspaces once for the entire batch.
+	if err := s.refreshSystemKeyspacesLocked(); err != nil {
+		return err
+	}
+
+	// Process keyspace-level fallbacks first (for non-table events like type/function/aggregate changes).
+	for keyspaceName := range keyspaceFallbacks {
+		if isSystemKeyspace(keyspaceName) {
+			continue // already refreshed above
+		}
+
+		err := s.refreshSchema(keyspaceName)
+		if errors.Is(err, ErrKeyspaceDoesNotExist) {
+			s.clearSchema(keyspaceName)
+			s.RemoveTabletsWithKeyspace(keyspaceName)
+			continue
+		} else if err != nil {
+			return err
+		}
+	}
+
+	// Process table-level changes with table-scoped queries.
+	// Deduplicate: if the same (keyspace, table) appears multiple times in the batch
+	// (e.g., CREATE then UPDATE, or CREATE then DROP), keep only the last event.
+	// The last event reflects the final state and avoids redundant queries.
+	lastChange := make(map[[2]string]int, len(tableChanges))
+	for i, tc := range tableChanges {
+		lastChange[[2]string{tc.keyspace, tc.table}] = i
+	}
+
+	// Cache views per keyspace to avoid redundant full-keyspace queries.
+	// getViewMetadataByTable fetches ALL views in the keyspace and filters client-side,
+	// so when multiple tables in the same keyspace are refreshed, we query once and reuse.
+	// Populated lazily on first non-DROP table change per keyspace.
+	viewsByKeyspace := make(map[string][]ViewMetadata)
+
+	for i, tc := range tableChanges {
+		if i != lastChange[[2]string{tc.keyspace, tc.table}] {
+			continue // superseded by a later event for the same table
+		}
+		if isSystemKeyspace(tc.keyspace) {
+			continue // already refreshed above
+		}
+		if _, ok := keyspaceFallbacks[tc.keyspace]; ok {
+			continue // already refreshed at keyspace level
+		}
+
+		// Pre-fetch views for this keyspace if not already cached and the change
+		// is not a DROP (DROP events don't need view metadata).
+		var keyspaceViews []ViewMetadata
+		if tc.change != "DROPPED" {
+			var cached bool
+			keyspaceViews, cached = viewsByKeyspace[tc.keyspace]
+			if !cached {
+				var err error
+				keyspaceViews, err = getViewMetadata(s.session, tc.keyspace)
+				if err != nil {
+					return err
+				}
+				viewsByKeyspace[tc.keyspace] = keyspaceViews
+			}
+		}
+
+		err := s.refreshTableInKeyspace(tc.keyspace, tc.table, tc.change, keyspaceViews)
+		if errors.Is(err, ErrKeyspaceDoesNotExist) {
+			s.clearSchema(tc.keyspace)
+			s.RemoveTabletsWithKeyspace(tc.keyspace)
+			continue
+		} else if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // forcibly updates the current KeyspaceMetadata held by the schema describer
 // for a given named keyspace.
 func (s *metadataDescriber) refreshSchema(keyspaceName string) error {
@@ -1081,6 +1511,186 @@ func getViewMetadata(session *Session, keyspaceName string) ([]ViewMetadata, err
 		"read_repair_chance":          &view.ReadRepairChance,
 	}) {
 		views = append(views, view)
+		view = ViewMetadata{KeyspaceName: keyspaceName}
+	}
+
+	err := iter.Close()
+	if err != nil && err != ErrNotFound {
+		return nil, fmt.Errorf("error querying view schema: %v", err)
+	}
+
+	return views, nil
+}
+
+// getTableMetadataByName queries system_schema.tables (and scylla_tables) for a single table.
+func getTableMetadataByName(session *Session, keyspaceName, tableName string) ([]TableMetadata, error) {
+	if !session.useSystemSchema {
+		return nil, nil
+	}
+
+	stmt := `SELECT * FROM system_schema.tables WHERE keyspace_name = ? AND table_name = ?`
+	iter := session.control.querySystem(stmt, keyspaceName, tableName)
+
+	var tables []TableMetadata
+	table := TableMetadata{Keyspace: keyspaceName}
+	for iter.MapScan(map[string]interface{}{
+		"table_name":                  &table.Name,
+		"bloom_filter_fp_chance":      &table.Options.BloomFilterFpChance,
+		"caching":                     &table.Options.Caching,
+		"comment":                     &table.Options.Comment,
+		"compaction":                  &table.Options.Compaction,
+		"compression":                 &table.Options.Compression,
+		"crc_check_chance":            &table.Options.CrcCheckChance,
+		"default_time_to_live":        &table.Options.DefaultTimeToLive,
+		"gc_grace_seconds":            &table.Options.GcGraceSeconds,
+		"max_index_interval":          &table.Options.MaxIndexInterval,
+		"memtable_flush_period_in_ms": &table.Options.MemtableFlushPeriodInMs,
+		"min_index_interval":          &table.Options.MinIndexInterval,
+		"speculative_retry":           &table.Options.SpeculativeRetry,
+		"flags":                       &table.Flags,
+		"extensions":                  &table.Extensions,
+	}) {
+		tables = append(tables, table)
+		table = TableMetadata{Keyspace: keyspaceName}
+	}
+
+	err := iter.Close()
+	if err != nil && err != ErrNotFound {
+		return nil, fmt.Errorf("error querying table schema: %v", err)
+	}
+
+	if len(tables) == 0 {
+		return tables, nil
+	}
+
+	conn := session.getConn()
+	if conn == nil || !conn.isScyllaConn() {
+		return tables, nil
+	}
+
+	scyllaStmt := `SELECT * FROM system_schema.scylla_tables WHERE keyspace_name = ? AND table_name = ?`
+	// tables has at most 1 element here (queried by primary key), but we
+	// iterate for robustness.
+	for i, t := range tables {
+		iter := session.control.querySystem(scyllaStmt, keyspaceName, t.Name)
+
+		st := TableMetadata{}
+		if iter.MapScan(map[string]interface{}{
+			"cdc":         &st.Options.CDC,
+			"in_memory":   &st.Options.InMemory,
+			"partitioner": &st.Options.Partitioner,
+			"version":     &st.Options.Version,
+		}) {
+			tables[i].Options.CDC = st.Options.CDC
+			tables[i].Options.Version = st.Options.Version
+			tables[i].Options.Partitioner = st.Options.Partitioner
+			tables[i].Options.InMemory = st.Options.InMemory
+		}
+		if err := iter.Close(); err != nil && err != ErrNotFound {
+			return nil, fmt.Errorf("error querying scylla table schema: %v", err)
+		}
+	}
+
+	return tables, nil
+}
+
+// getColumnMetadataByTable queries system_schema.columns for a single table.
+func getColumnMetadataByTable(session *Session, keyspaceName, tableName string) ([]ColumnMetadata, error) {
+	const stmt = `SELECT * FROM system_schema.columns WHERE keyspace_name = ? AND table_name = ?`
+
+	var columns []ColumnMetadata
+	iter := session.control.querySystem(stmt, keyspaceName, tableName)
+	column := ColumnMetadata{Keyspace: keyspaceName}
+
+	for iter.MapScan(map[string]interface{}{
+		"table_name":       &column.Table,
+		"column_name":      &column.Name,
+		"clustering_order": &column.ClusteringOrder,
+		"type":             &column.Type,
+		"kind":             &column.Kind,
+		"position":         &column.ComponentIndex,
+	}) {
+		columns = append(columns, column)
+		column = ColumnMetadata{Keyspace: keyspaceName}
+	}
+
+	if err := iter.Close(); err != nil && err != ErrNotFound {
+		return nil, fmt.Errorf("error querying column schema: %v", err)
+	}
+
+	return columns, nil
+}
+
+// getIndexMetadataByTable queries system_schema.indexes for a single table.
+func getIndexMetadataByTable(session *Session, keyspaceName, tableName string) ([]IndexMetadata, error) {
+	if !session.useSystemSchema {
+		return nil, nil
+	}
+
+	const stmt = `SELECT * FROM system_schema.indexes WHERE keyspace_name = ? AND table_name = ?`
+
+	var indexes []IndexMetadata
+	index := IndexMetadata{}
+
+	iter := session.control.querySystem(stmt, keyspaceName, tableName)
+	for iter.MapScan(map[string]interface{}{
+		"index_name":    &index.Name,
+		"keyspace_name": &index.KeyspaceName,
+		"table_name":    &index.TableName,
+		"kind":          &index.Kind,
+		"options":       &index.Options,
+	}) {
+		indexes = append(indexes, index)
+		index = IndexMetadata{}
+	}
+
+	if err := iter.Close(); err != nil {
+		return nil, err
+	}
+
+	return indexes, nil
+}
+
+// getViewMetadataByTable queries system_schema.views for the entire keyspace and filters
+// by base_table_name client-side. The views table has view_name as the clustering key,
+// so we cannot filter by base_table_name in CQL.
+func getViewMetadataByTable(session *Session, keyspaceName, tableName string) ([]ViewMetadata, error) {
+	if !session.useSystemSchema {
+		return nil, nil
+	}
+
+	stmt := `SELECT * FROM system_schema.views WHERE keyspace_name = ?`
+	iter := session.control.querySystem(stmt, keyspaceName)
+
+	var views []ViewMetadata
+	view := ViewMetadata{KeyspaceName: keyspaceName}
+
+	for iter.MapScan(map[string]interface{}{
+		"id":                          &view.ID,
+		"view_name":                   &view.ViewName,
+		"base_table_id":               &view.BaseTableID,
+		"base_table_name":             &view.BaseTableName,
+		"include_all_columns":         &view.IncludeAllColumns,
+		"where_clause":                &view.WhereClause,
+		"bloom_filter_fp_chance":      &view.Options.BloomFilterFpChance,
+		"caching":                     &view.Options.Caching,
+		"comment":                     &view.Options.Comment,
+		"compaction":                  &view.Options.Compaction,
+		"compression":                 &view.Options.Compression,
+		"crc_check_chance":            &view.Options.CrcCheckChance,
+		"default_time_to_live":        &view.Options.DefaultTimeToLive,
+		"gc_grace_seconds":            &view.Options.GcGraceSeconds,
+		"max_index_interval":          &view.Options.MaxIndexInterval,
+		"memtable_flush_period_in_ms": &view.Options.MemtableFlushPeriodInMs,
+		"min_index_interval":          &view.Options.MinIndexInterval,
+		"speculative_retry":           &view.Options.SpeculativeRetry,
+		"extensions":                  &view.Extensions,
+		"dclocal_read_repair_chance":  &view.DcLocalReadRepairChance,
+		"read_repair_chance":          &view.ReadRepairChance,
+	}) {
+		if view.BaseTableName == tableName {
+			views = append(views, view)
+		}
 		view = ViewMetadata{KeyspaceName: keyspaceName}
 	}
 
