@@ -557,7 +557,7 @@ func (s *metadataDescriber) refreshAllSchema() error {
 		}
 
 		for tableName, tableMetadata := range metadata.Tables {
-			if updatedTableMetadata, ok := updatedMetadata.Tables[tableName]; !ok || tableMetadata.Equals(updatedTableMetadata) {
+			if updatedTableMetadata, ok := updatedMetadata.Tables[tableName]; !ok || !tableMetadata.Equals(updatedTableMetadata) {
 				s.RemoveTabletsWithTable(keyspaceName, tableName)
 			}
 		}
