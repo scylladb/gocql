@@ -528,7 +528,7 @@ func (c *controlConn) writeFrame(w frameBuilder) (frame, error) {
 func (c *controlConn) querySystem(statement string, values ...interface{}) (iter *Iter) {
 	conn := c.getConn().conn.(*Conn)
 	return c.runQuery(c.session.Query(statement+conn.usingTimeoutClause, values...).
-		Consistency(One).
+		Consistency(LocalOne).
 		SetRequestTimeout(conn.systemRequestTimeout).
 		RoutingKey([]byte{}).
 		Trace(nil))
@@ -536,7 +536,7 @@ func (c *controlConn) querySystem(statement string, values ...interface{}) (iter
 
 // query will return nil if the connection is closed or nil
 func (c *controlConn) query(statement string, values ...interface{}) (iter *Iter) {
-	return c.runQuery(c.session.Query(statement, values...).Consistency(One).RoutingKey([]byte{}).Trace(nil))
+	return c.runQuery(c.session.Query(statement, values...).Consistency(LocalOne).RoutingKey([]byte{}).Trace(nil))
 }
 
 // query will return nil if the connection is closed or nil

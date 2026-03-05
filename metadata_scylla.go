@@ -947,8 +947,8 @@ func (s *metadataDescriber) refreshTablesSchema(
 	}
 
 	// Cache views per keyspace to avoid redundant full-keyspace queries.
-	// getViewMetadataByTable fetches ALL views in the keyspace and filters client-side,
-	// so when multiple tables in the same keyspace are refreshed, we query once and reuse.
+	// getViewMetadata fetches ALL views in the keyspace, so when multiple tables
+	// in the same keyspace are refreshed, we query once and reuse.
 	// Populated lazily on first non-DROP table change per keyspace.
 	viewsByKeyspace := make(map[string][]ViewMetadata)
 
@@ -1654,49 +1654,18 @@ func getIndexMetadataByTable(session *Session, keyspaceName, tableName string) (
 // getViewMetadataByTable queries system_schema.views for the entire keyspace and filters
 // by base_table_name client-side. The views table has view_name as the clustering key,
 // so we cannot filter by base_table_name in CQL.
+// This delegates to getViewMetadata to avoid duplicating the MapScan field mapping.
 func getViewMetadataByTable(session *Session, keyspaceName, tableName string) ([]ViewMetadata, error) {
-	if !session.useSystemSchema {
-		return nil, nil
+	allViews, err := getViewMetadata(session, keyspaceName)
+	if err != nil {
+		return nil, err
 	}
-
-	stmt := `SELECT * FROM system_schema.views WHERE keyspace_name = ?`
-	iter := session.control.querySystem(stmt, keyspaceName)
 
 	var views []ViewMetadata
-	view := ViewMetadata{KeyspaceName: keyspaceName}
-
-	for iter.MapScan(map[string]interface{}{
-		"id":                          &view.ID,
-		"view_name":                   &view.ViewName,
-		"base_table_id":               &view.BaseTableID,
-		"base_table_name":             &view.BaseTableName,
-		"include_all_columns":         &view.IncludeAllColumns,
-		"where_clause":                &view.WhereClause,
-		"bloom_filter_fp_chance":      &view.Options.BloomFilterFpChance,
-		"caching":                     &view.Options.Caching,
-		"comment":                     &view.Options.Comment,
-		"compaction":                  &view.Options.Compaction,
-		"compression":                 &view.Options.Compression,
-		"crc_check_chance":            &view.Options.CrcCheckChance,
-		"default_time_to_live":        &view.Options.DefaultTimeToLive,
-		"gc_grace_seconds":            &view.Options.GcGraceSeconds,
-		"max_index_interval":          &view.Options.MaxIndexInterval,
-		"memtable_flush_period_in_ms": &view.Options.MemtableFlushPeriodInMs,
-		"min_index_interval":          &view.Options.MinIndexInterval,
-		"speculative_retry":           &view.Options.SpeculativeRetry,
-		"extensions":                  &view.Extensions,
-		"dclocal_read_repair_chance":  &view.DcLocalReadRepairChance,
-		"read_repair_chance":          &view.ReadRepairChance,
-	}) {
-		if view.BaseTableName == tableName {
-			views = append(views, view)
+	for _, v := range allViews {
+		if v.BaseTableName == tableName {
+			views = append(views, v)
 		}
-		view = ViewMetadata{KeyspaceName: keyspaceName}
-	}
-
-	err := iter.Close()
-	if err != nil && err != ErrNotFound {
-		return nil, fmt.Errorf("error querying view schema: %v", err)
 	}
 
 	return views, nil

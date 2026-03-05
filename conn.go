@@ -1828,7 +1828,7 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 }
 
 func (c *Conn) querySystem(ctx context.Context, query string, values ...interface{}) *Iter {
-	q := c.session.Query(query+c.usingTimeoutClause, values...).Consistency(One).Trace(nil)
+	q := c.session.Query(query+c.usingTimeoutClause, values...).Consistency(LocalOne).Trace(nil)
 	q.skipPrepare = true
 	q.disableSkipMetadata = true
 	// we want to keep the query on this connection

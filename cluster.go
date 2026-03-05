@@ -60,7 +60,9 @@ type SchemaChangesRefreshMode int
 
 const (
 	// SchemaChangesRefreshAll refreshes metadata for all cached keyspaces when a schema change event
-	// is received. This is the default behavior and the most conservative option.
+	// is received. This is the default and most conservative option.
+	// Unlike the previous behavior (which lazily cleared the cache and re-fetched on next access),
+	// this mode eagerly refreshes all cached keyspaces immediately after receiving a schema change event.
 	SchemaChangesRefreshAll SchemaChangesRefreshMode = iota
 
 	// SchemaChangesRefreshKeyspace refreshes metadata only for the keyspace affected by
@@ -284,7 +286,7 @@ type ClusterConfig struct {
 	// SchemaChangesRefreshMode controls how metadata is refreshed when a schema change event
 	// is received from the server. In all modes, cached system keyspace metadata is always refreshed.
 	//
-	//   - SchemaChangesRefreshAll (default): refreshes metadata for all cached keyspaces.
+	//   - SchemaChangesRefreshAll (default): eagerly refreshes metadata for all cached keyspaces.
 	//   - SchemaChangesRefreshKeyspace: refreshes only the affected keyspace(s).
 	//   - SchemaChangesRefreshTable: for table-level events, refreshes only the specific table
 	//     using table-scoped CQL queries. For other schema events, behaves like SchemaChangesRefreshKeyspace.
