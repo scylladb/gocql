@@ -87,7 +87,7 @@ print-config:
 .prepare-get-version: .prepare-bin
 	@if [[ ! -f "$(MAKEFILE_PATH)/bin/get-version" ]]; then
 		echo "bin/get-version is not found, installing it"
-		curl -sSLo /tmp/get-version.zip https://github.com/scylladb-actions/get-version/releases/download/v0.3.0/get-version_0.3.0_linux_amd64v3.zip
+		curl -sSLo /tmp/get-version.zip https://github.com/scylladb-actions/get-version/releases/download/v0.4.3/get-version_0.4.3_linux_amd64v3.zip
 		unzip /tmp/get-version.zip get-version -d "$(MAKEFILE_PATH)/bin" >/dev/null
 	fi
 
