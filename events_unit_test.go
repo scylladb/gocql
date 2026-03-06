@@ -721,10 +721,10 @@ func TestHandleSchemaEvent(t *testing.T) {
 		}
 	}
 	tableRefresh := map[string]int{
-		"SELECT * FROM system_schema.tables WHERE keyspace_name = ? AND table_name = ?":     1,
-		"SELECT * FROM system_schema.columns WHERE keyspace_name = ? AND table_name = ?":    1,
-		"SELECT * FROM system_schema.indexes WHERE keyspace_name = ? AND table_name = ?":    1,
-		"SELECT * FROM system_schema.views WHERE keyspace_name = ? AND base_table_name = ?": 1,
+		"SELECT * FROM system_schema.tables WHERE keyspace_name = ? AND table_name = ?":                     1,
+		"SELECT * FROM system_schema.columns WHERE keyspace_name = ? AND table_name = ?":                    1,
+		"SELECT * FROM system_schema.indexes WHERE keyspace_name = ? AND table_name = ?":                    1,
+		"SELECT * FROM system_schema.views WHERE keyspace_name = ? AND base_table_name = ? ALLOW FILTERING": 1,
 	}
 	noQueries := map[string]int{}
 
