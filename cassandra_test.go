@@ -2290,6 +2290,355 @@ func TestGetKeyspaceMetadata(t *testing.T) {
 	}
 }
 
+func TestSessionMetadataAPIs(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	const ks = "gocql_test"
+
+	if _, err := session.KeyspaceMetadata(ks); err != nil {
+		t.Fatalf("failed to get initial keyspace metadata: %v", err)
+	}
+
+	waitForSchemaRefresh := func() { time.Sleep(2 * time.Second) }
+
+	t.Run("TableMetadata", func(t *testing.T) {
+		t.Run("basic_table_after_create", func(t *testing.T) {
+			table := "tbl_tm_basic"
+			if err := createTable(session, fmt.Sprintf(
+				"CREATE TABLE IF NOT EXISTS %s.%s (pk int PRIMARY KEY, v int)", ks, table)); err != nil {
+				t.Fatalf("create table: %v", err)
+			}
+			defer session.Query(fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", ks, table)).Exec()
+
+			waitForSchemaRefresh()
+
+			tm, err := session.TableMetadata(ks, table)
+			if err != nil {
+				t.Fatalf("TableMetadata failed: %v", err)
+			}
+			if tm.Name != table {
+				t.Errorf("expected table name %q, got %q", table, tm.Name)
+			}
+			if tm.Keyspace != ks {
+				t.Errorf("expected keyspace %q, got %q", ks, tm.Keyspace)
+			}
+		})
+
+		t.Run("columns_and_partition_key", func(t *testing.T) {
+			table := "tbl_tm_columns"
+			if err := createTable(session, fmt.Sprintf(
+				"CREATE TABLE IF NOT EXISTS %s.%s (pk1 int, pk2 text, ck int, val blob, PRIMARY KEY ((pk1, pk2), ck))", ks, table)); err != nil {
+				t.Fatalf("create table: %v", err)
+			}
+			defer session.Query(fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", ks, table)).Exec()
+
+			waitForSchemaRefresh()
+
+			tm, err := session.TableMetadata(ks, table)
+			if err != nil {
+				t.Fatalf("TableMetadata failed: %v", err)
+			}
+
+			if len(tm.PartitionKey) != 2 {
+				t.Fatalf("expected 2 partition key columns, got %d", len(tm.PartitionKey))
+			}
+			if tm.PartitionKey[0].Name != "pk1" || tm.PartitionKey[1].Name != "pk2" {
+				t.Errorf("unexpected partition key columns: %v, %v", tm.PartitionKey[0].Name, tm.PartitionKey[1].Name)
+			}
+
+			if len(tm.ClusteringColumns) != 1 || tm.ClusteringColumns[0].Name != "ck" {
+				t.Errorf("expected clustering column 'ck', got %v", tm.ClusteringColumns)
+			}
+
+			for _, col := range []string{"pk1", "pk2", "ck", "val"} {
+				if _, ok := tm.Columns[col]; !ok {
+					t.Errorf("expected column %q in metadata", col)
+				}
+			}
+		})
+
+		t.Run("with_secondary_index", func(t *testing.T) {
+			if isTabletsSupported() {
+				t.Skip("secondary indexes are not supported on tables with tablets")
+			}
+
+			table := "tbl_tm_idx"
+			if err := createTable(session, fmt.Sprintf(
+				"CREATE TABLE IF NOT EXISTS %s.%s (pk int PRIMARY KEY, v int)", ks, table)); err != nil {
+				t.Fatalf("create table: %v", err)
+			}
+			defer session.Query(fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", ks, table)).Exec()
+
+			idxName := table + "_v_idx"
+			if err := createTable(session, fmt.Sprintf(
+				"CREATE INDEX IF NOT EXISTS %s ON %s.%s (v)", idxName, ks, table)); err != nil {
+				t.Fatalf("create index: %v", err)
+			}
+
+			waitForSchemaRefresh()
+
+			session.metadataDescriber.invalidateKeyspaceSchema(ks)
+			km, err := session.KeyspaceMetadata(ks)
+			if err != nil {
+				t.Fatalf("KeyspaceMetadata failed: %v", err)
+			}
+			if _, ok := km.Indexes[idxName]; !ok {
+				t.Errorf("expected index %q in keyspace metadata indexes", idxName)
+			}
+		})
+
+		t.Run("with_materialized_view", func(t *testing.T) {
+			if flagCassVersion.Before(3, 0, 0) {
+				t.Skip("materialized views require Cassandra 3.0+")
+			}
+			if isTabletsSupported() {
+				t.Skip("materialized views are not supported on tables with tablets")
+			}
+
+			baseTable := "tbl_tm_mv_base"
+			viewName := "tbl_tm_mv_view"
+			if err := createTable(session, fmt.Sprintf(
+				"CREATE TABLE IF NOT EXISTS %s.%s (pk int, ck int, v int, PRIMARY KEY (pk, ck))", ks, baseTable)); err != nil {
+				t.Fatalf("create base table: %v", err)
+			}
+			defer session.Query(fmt.Sprintf("DROP MATERIALIZED VIEW IF EXISTS %s.%s", ks, viewName)).Exec()
+			defer session.Query(fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", ks, baseTable)).Exec()
+
+			if err := createTable(session, fmt.Sprintf(
+				"CREATE MATERIALIZED VIEW IF NOT EXISTS %s.%s AS SELECT pk, ck, v FROM %s.%s WHERE pk IS NOT NULL AND ck IS NOT NULL AND v IS NOT NULL PRIMARY KEY (v, pk, ck)",
+				ks, viewName, ks, baseTable)); err != nil {
+				t.Fatalf("create materialized view: %v", err)
+			}
+
+			waitForSchemaRefresh()
+
+			tm, err := session.TableMetadata(ks, baseTable)
+			if err != nil {
+				t.Fatalf("TableMetadata for base table failed: %v", err)
+			}
+			if tm.Name != baseTable {
+				t.Errorf("expected table name %q, got %q", baseTable, tm.Name)
+			}
+
+			session.metadataDescriber.invalidateKeyspaceSchema(ks)
+			km, err := session.KeyspaceMetadata(ks)
+			if err != nil {
+				t.Fatalf("KeyspaceMetadata failed: %v", err)
+			}
+			if _, ok := km.Views[viewName]; !ok {
+				t.Errorf("expected view %q in keyspace metadata", viewName)
+			}
+			if km.Views[viewName].BaseTableName != baseTable {
+				t.Errorf("expected view base table %q, got %q", baseTable, km.Views[viewName].BaseTableName)
+			}
+		})
+
+		t.Run("after_alter_table", func(t *testing.T) {
+			table := "tbl_tm_alter"
+			if err := createTable(session, fmt.Sprintf(
+				"CREATE TABLE IF NOT EXISTS %s.%s (pk int PRIMARY KEY, v int)", ks, table)); err != nil {
+				t.Fatalf("create table: %v", err)
+			}
+			defer session.Query(fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", ks, table)).Exec()
+
+			if err := createTable(session, fmt.Sprintf(
+				"ALTER TABLE %s.%s ADD v2 text", ks, table)); err != nil {
+				t.Fatalf("alter table: %v", err)
+			}
+
+			waitForSchemaRefresh()
+
+			tm, err := session.TableMetadata(ks, table)
+			if err != nil {
+				t.Fatalf("TableMetadata failed: %v", err)
+			}
+			if _, ok := tm.Columns["v2"]; !ok {
+				t.Errorf("expected column 'v2' after ALTER TABLE, got columns: %v", columnNames(tm.Columns))
+			}
+		})
+
+		t.Run("after_drop_and_recreate", func(t *testing.T) {
+			table := "tbl_tm_recreate"
+			if err := createTable(session, fmt.Sprintf(
+				"CREATE TABLE IF NOT EXISTS %s.%s (pk int PRIMARY KEY, v int)", ks, table)); err != nil {
+				t.Fatalf("create table: %v", err)
+			}
+
+			waitForSchemaRefresh()
+
+			if _, err := session.TableMetadata(ks, table); err != nil {
+				t.Fatalf("TableMetadata before drop failed: %v", err)
+			}
+
+			if err := createTable(session, fmt.Sprintf("DROP TABLE %s.%s", ks, table)); err != nil {
+				t.Fatalf("drop table: %v", err)
+			}
+			if err := createTable(session, fmt.Sprintf(
+				"CREATE TABLE %s.%s (pk text PRIMARY KEY, new_col int)", ks, table)); err != nil {
+				t.Fatalf("recreate table: %v", err)
+			}
+			defer session.Query(fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", ks, table)).Exec()
+
+			waitForSchemaRefresh()
+
+			tm, err := session.TableMetadata(ks, table)
+			if err != nil {
+				t.Fatalf("TableMetadata after recreate failed: %v", err)
+			}
+			if _, ok := tm.Columns["new_col"]; !ok {
+				t.Errorf("expected column 'new_col' after recreate, got columns: %v", columnNames(tm.Columns))
+			}
+			if _, ok := tm.Columns["v"]; ok {
+				t.Errorf("old column 'v' should not exist after recreate")
+			}
+		})
+
+		t.Run("nonexistent_table", func(t *testing.T) {
+			_, err := session.TableMetadata(ks, "does_not_exist_at_all")
+			if err == nil {
+				t.Fatal("expected error for nonexistent table, got nil")
+			}
+			if !errors.Is(err, ErrNotFound) {
+				t.Errorf("expected ErrNotFound, got: %v", err)
+			}
+		})
+
+		t.Run("empty_table_name", func(t *testing.T) {
+			_, err := session.TableMetadata(ks, "")
+			if err == nil {
+				t.Fatal("expected error for empty table name, got nil")
+			}
+			if !errors.Is(err, ErrNotFound) {
+				t.Errorf("expected ErrNotFound, got: %v", err)
+			}
+		})
+
+		t.Run("empty_keyspace", func(t *testing.T) {
+			_, err := session.TableMetadata("", "some_table")
+			if err == nil {
+				t.Fatal("expected error for empty keyspace, got nil")
+			}
+			if !errors.Is(err, ErrNoKeyspace) {
+				t.Errorf("expected ErrNoKeyspace, got: %v", err)
+			}
+		})
+	})
+
+	t.Run("KeyspaceMetadata", func(t *testing.T) {
+		t.Run("includes_new_table", func(t *testing.T) {
+			table := "tbl_km_new"
+			if err := createTable(session, fmt.Sprintf(
+				"CREATE TABLE IF NOT EXISTS %s.%s (pk int PRIMARY KEY, v int)", ks, table)); err != nil {
+				t.Fatalf("create table: %v", err)
+			}
+			defer session.Query(fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", ks, table)).Exec()
+
+			waitForSchemaRefresh()
+
+			session.metadataDescriber.invalidateKeyspaceSchema(ks)
+			km, err := session.KeyspaceMetadata(ks)
+			if err != nil {
+				t.Fatalf("KeyspaceMetadata failed: %v", err)
+			}
+			if _, ok := km.Tables[table]; !ok {
+				t.Fatalf("expected table %q in keyspace metadata, got tables: %v", table, tableNames(km.Tables))
+			}
+		})
+
+		t.Run("excludes_dropped_table", func(t *testing.T) {
+			table := "tbl_km_drop"
+			if err := createTable(session, fmt.Sprintf(
+				"CREATE TABLE IF NOT EXISTS %s.%s (pk int PRIMARY KEY, v int)", ks, table)); err != nil {
+				t.Fatalf("create table: %v", err)
+			}
+
+			waitForSchemaRefresh()
+
+			session.metadataDescriber.invalidateKeyspaceSchema(ks)
+			km, err := session.KeyspaceMetadata(ks)
+			if err != nil {
+				t.Fatalf("KeyspaceMetadata before drop failed: %v", err)
+			}
+			if _, ok := km.Tables[table]; !ok {
+				t.Fatalf("expected table %q before drop", table)
+			}
+
+			if err := createTable(session, fmt.Sprintf("DROP TABLE %s.%s", ks, table)); err != nil {
+				t.Fatalf("drop table: %v", err)
+			}
+
+			waitForSchemaRefresh()
+
+			session.metadataDescriber.invalidateKeyspaceSchema(ks)
+			km, err = session.KeyspaceMetadata(ks)
+			if err != nil {
+				t.Fatalf("KeyspaceMetadata after drop failed: %v", err)
+			}
+			if _, ok := km.Tables[table]; ok {
+				t.Errorf("table %q should not appear after DROP", table)
+			}
+		})
+
+		t.Run("multiple_tables", func(t *testing.T) {
+			tables := []string{"tbl_km_multi_a", "tbl_km_multi_b", "tbl_km_multi_c"}
+			for _, table := range tables {
+				if err := createTable(session, fmt.Sprintf(
+					"CREATE TABLE IF NOT EXISTS %s.%s (pk int PRIMARY KEY)", ks, table)); err != nil {
+					t.Fatalf("create table %s: %v", table, err)
+				}
+				defer session.Query(fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", ks, table)).Exec()
+			}
+
+			waitForSchemaRefresh()
+
+			session.metadataDescriber.invalidateKeyspaceSchema(ks)
+			km, err := session.KeyspaceMetadata(ks)
+			if err != nil {
+				t.Fatalf("KeyspaceMetadata failed: %v", err)
+			}
+			for _, table := range tables {
+				if _, ok := km.Tables[table]; !ok {
+					t.Errorf("expected table %q in keyspace metadata", table)
+				}
+			}
+		})
+
+		t.Run("nonexistent_keyspace", func(t *testing.T) {
+			_, err := session.KeyspaceMetadata("keyspace_that_does_not_exist_xyz")
+			if err == nil {
+				t.Fatal("expected error for nonexistent keyspace, got nil")
+			}
+		})
+
+		t.Run("empty_keyspace", func(t *testing.T) {
+			_, err := session.KeyspaceMetadata("")
+			if err == nil {
+				t.Fatal("expected error for empty keyspace, got nil")
+			}
+			if !errors.Is(err, ErrNoKeyspace) {
+				t.Errorf("expected ErrNoKeyspace, got: %v", err)
+			}
+		})
+	})
+}
+
+func tableNames(tables map[string]*TableMetadata) []string {
+	names := make([]string, 0, len(tables))
+	for name := range tables {
+		names = append(names, name)
+	}
+	return names
+}
+
+func columnNames(columns map[string]*ColumnMetadata) []string {
+	names := make([]string, 0, len(columns))
+	for name := range columns {
+		names = append(names, name)
+	}
+	return names
+}
+
 // Integration test of just querying for data from the system.schema_keyspace table where the keyspace DOES NOT exist.
 func TestGetKeyspaceMetadataFails(t *testing.T) {
 	session := createSession(t)

@@ -1283,7 +1283,7 @@ func getViewMetadataByTable(session *Session, keyspaceName, tableName string) ([
 		return nil, nil
 	}
 
-	stmt := `SELECT * FROM system_schema.views WHERE keyspace_name = ? AND base_table_name = ?`
+	stmt := `SELECT * FROM system_schema.views WHERE keyspace_name = ? AND base_table_name = ? ALLOW FILTERING`
 
 	iter := session.control.querySystem(stmt, keyspaceName, tableName)
 
