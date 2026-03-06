@@ -2523,6 +2523,62 @@ func TestSessionMetadataAPIs(t *testing.T) {
 				t.Errorf("expected ErrNoKeyspace, got: %v", err)
 			}
 		})
+
+		t.Run("fetches_unknown_table_from_server", func(t *testing.T) {
+			// Verifies that GetTable fetches a table from the server even
+			// when the table was never in the local metadata cache and was
+			// never added to tablesInvalidated. This happens for tables
+			// created as side effects (e.g. CDC log tables) where no
+			// dedicated schema event is sent.
+
+			// Ensure keyspace metadata is cached first.
+			if _, err := session.KeyspaceMetadata(ks); err != nil {
+				t.Fatalf("pre-cache KeyspaceMetadata: %v", err)
+			}
+
+			table := "tbl_tm_unknown"
+			if err := createTable(session, fmt.Sprintf(
+				"CREATE TABLE IF NOT EXISTS %s.%s (pk int PRIMARY KEY, v int)", ks, table)); err != nil {
+				t.Fatalf("create table: %v", err)
+			}
+			defer session.Query(fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", ks, table)).Exec()
+
+			waitForSchemaRefresh()
+
+			// Simulate a table that the cache doesn't know about by
+			// looking up a table name that was never invalidated.
+			// The schema event for CREATE TABLE will invalidate the
+			// base table, but we query a different name to replicate
+			// the CDC log table scenario.
+			altTable := "tbl_tm_unknown_alt"
+			if err := createTable(session, fmt.Sprintf(
+				"CREATE TABLE IF NOT EXISTS %s.%s (pk int PRIMARY KEY, v2 text)", ks, altTable)); err != nil {
+				t.Fatalf("create alt table: %v", err)
+			}
+			defer session.Query(fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", ks, altTable)).Exec()
+
+			waitForSchemaRefresh()
+
+			// Clear the invalidation entry so GetTable has to decide
+			// what to do with a table it has never seen.
+			session.metadataDescriber.metadata.keyspaceMetadata.updateKeyspace(ks, func(ksMeta *KeyspaceMetadata) {
+				delete(ksMeta.Tables, altTable)
+				if ksMeta.tablesInvalidated != nil {
+					delete(ksMeta.tablesInvalidated, altTable)
+				}
+			})
+
+			tm, err := session.TableMetadata(ks, altTable)
+			if err != nil {
+				t.Fatalf("TableMetadata for unknown-to-cache table failed: %v", err)
+			}
+			if tm.Name != altTable {
+				t.Errorf("expected table name %q, got %q", altTable, tm.Name)
+			}
+			if _, ok := tm.Columns["v2"]; !ok {
+				t.Errorf("expected column 'v2', got columns: %v", columnNames(tm.Columns))
+			}
+		})
 	})
 
 	t.Run("KeyspaceMetadata", func(t *testing.T) {

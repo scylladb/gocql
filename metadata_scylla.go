@@ -590,10 +590,10 @@ func (s *metadataDescriber) GetTable(keyspaceName, tableName string) (*TableMeta
 		return nil, fmt.Errorf("table %s.%s: %w", keyspaceName, tableName, ErrNotFound)
 	}
 
-	if _, ok := keyspaceMetadata.tablesInvalidated[tableName]; !ok {
-		return nil, fmt.Errorf("table %s.%s: %w", keyspaceName, tableName, ErrNotFound)
-	}
-
+	// Try to refresh the table from the server even if it's not in
+	// tablesInvalidated. The table may exist on the server but be unknown
+	// to the local cache — e.g. CDC log tables created as a side effect
+	// of CREATE TABLE don't trigger a dedicated schema event.
 	err = s.deduplicatedRefreshTable(keyspaceName, tableName)
 	if err != nil {
 		return nil, err
