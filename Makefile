@@ -347,10 +347,10 @@ install-java:
 	echo "sdkman_auto_answer=true" >> ~/.sdkman/etc/config
 	source ~/.sdkman/bin/sdkman-init.sh;
 	echo "Installing Java versions...";
-	sdk install java 11.0.24-zulu;
-	sdk install java 17.0.12-zulu;
-	sdk default java 11.0.24-zulu;
-	sdk use java 11.0.24-zulu;
+	sdk install java 11.0.30-zulu;
+	sdk install java 17.0.18-zulu;
+	sdk default java 11.0.30-zulu;
+	sdk use java 11.0.30-zulu;
 
 .prepare-cassandra-ccm:
 	@if command -v ccm >/dev/null 2>&1 && grep CASSANDRA ${CCM_CONFIG_DIR}/ccm-type 2>/dev/null 1>&2 && grep ${CCM_CASSANDRA_VERSION} ${CCM_CONFIG_DIR}/ccm-version 2>/dev//null  1>&2; then
