@@ -852,13 +852,20 @@ func marshalVector(info VectorType, value interface{}) ([]byte, error) {
 
 	switch k {
 	case reflect.Slice, reflect.Array:
-		buf := &bytes.Buffer{}
 		n := rv.Len()
 		if n != info.Dimensions {
 			return nil, marshalErrorf("expected vector with %d dimensions, received %d", info.Dimensions, n)
 		}
 
 		isLengthType := isVectorVariableLengthType(info.SubType)
+		buf := &bytes.Buffer{}
+		if !isLengthType {
+			if elemSize := vectorFixedElemSize(info.SubType); elemSize > 0 {
+				if needed := int64(n) * int64(elemSize); needed > 0 && needed <= math.MaxInt32 {
+					buf.Grow(int(needed))
+				}
+			}
+		}
 		for i := 0; i < n; i++ {
 			item, err := Marshal(info.SubType, rv.Index(i).Interface())
 			if err != nil {
@@ -955,6 +962,20 @@ func unmarshalVector(info VectorType, data []byte, value interface{}) error {
 		return nil
 	}
 	return unmarshalErrorf("can not unmarshal %s into %T. Accepted types: *slice, *array, *interface{}.", info, value)
+}
+
+func vectorFixedElemSize(elemType TypeInfo) int {
+	switch elemType.Type() {
+	case TypeBoolean:
+		return 1
+	case TypeInt, TypeFloat:
+		return 4
+	case TypeBigInt, TypeDouble, TypeTimestamp:
+		return 8
+	case TypeUUID, TypeTimeUUID:
+		return 16
+	}
+	return 0
 }
 
 // isVectorVariableLengthType determines if a type requires explicit length serialization within a vector.
