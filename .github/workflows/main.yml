@@ -185,5 +185,5 @@ jobs:
 
       - name: Run CCM integration suite with Cassandra ${{ matrix.cassandra-version }}(${{ steps.cassandra-version.outputs.value }})
         if: steps.cassandra-version.outputs.value != 'NOT-FOUND'
-        run: TEST_INTEGRATION_TAGS="ccm gocql_debug" make test-integration-scylla
+        run: TEST_INTEGRATION_TAGS="ccm gocql_debug" make test-integration-cassandra
 
