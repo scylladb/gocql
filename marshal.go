@@ -26,6 +26,7 @@ package gocql
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
@@ -861,6 +862,33 @@ func marshalVector(info VectorType, value any) ([]byte, error) {
 		return nil, nil
 	}
 
+	// Fast paths for []float64/[]float32 — skip reflect/per-element dispatch.
+	// dim=0 falls through to the generic path (CQL null semantics).
+	if info.Dimensions > 0 {
+		switch info.SubType.Type() {
+		case TypeDouble:
+			if v, ok := value.([]float64); ok {
+				if v == nil {
+					return nil, nil
+				}
+				if len(v) != info.Dimensions {
+					return nil, marshalErrorf("expected vector with %d dimensions, received %d", info.Dimensions, len(v))
+				}
+				return marshalVectorFloat64(info.Dimensions, v)
+			}
+		case TypeFloat:
+			if v, ok := value.([]float32); ok {
+				if v == nil {
+					return nil, nil
+				}
+				if len(v) != info.Dimensions {
+					return nil, marshalErrorf("expected vector with %d dimensions, received %d", info.Dimensions, len(v))
+				}
+				return marshalVectorFloat32(info.Dimensions, v)
+			}
+		}
+	}
+
 	rv := reflect.ValueOf(value)
 	t := rv.Type()
 	k := t.Kind()
@@ -899,7 +927,81 @@ func marshalVector(info VectorType, value any) ([]byte, error) {
 	return nil, marshalErrorf("can not marshal %T into %s. Accepted types: slice, array.", value, info)
 }
 
+// vectorSliceReuse reuses *dst's backing array when cap is sufficient.
+func vectorSliceReuse[T any](dst *[]T, dim int) []T {
+	vec := *dst
+	if cap(vec) >= dim {
+		vec = vec[:dim]
+	} else {
+		vec = make([]T, dim)
+	}
+	return vec
+}
+
+// marshalVectorFloat64 encodes []float64 as contiguous big-endian IEEE 754 doubles.
+func marshalVectorFloat64(dim int, vec []float64) ([]byte, error) {
+	buf := make([]byte, dim*8)
+	for i, v := range vec {
+		binary.BigEndian.PutUint64(buf[i*8:], math.Float64bits(v))
+	}
+	return buf, nil
+}
+
+// marshalVectorFloat32 encodes []float32 as contiguous big-endian IEEE 754 floats.
+func marshalVectorFloat32(dim int, vec []float32) ([]byte, error) {
+	buf := make([]byte, dim*4)
+	for i, v := range vec {
+		binary.BigEndian.PutUint32(buf[i*4:], math.Float32bits(v))
+	}
+	return buf, nil
+}
+
+// unmarshalVectorFloat64 decodes contiguous big-endian IEEE 754 doubles into vec.
+// The caller is responsible for ensuring data is dim*8 bytes and vec has length dim.
+func unmarshalVectorFloat64(data []byte, vec []float64) {
+	for i := range vec {
+		vec[i] = math.Float64frombits(binary.BigEndian.Uint64(data[i*8:]))
+	}
+}
+
+// unmarshalVectorFloat32 decodes contiguous big-endian IEEE 754 floats into vec.
+// The caller is responsible for ensuring data is dim*4 bytes and vec has length dim.
+func unmarshalVectorFloat32(data []byte, vec []float32) {
+	for i := range vec {
+		vec[i] = math.Float32frombits(binary.BigEndian.Uint32(data[i*4:]))
+	}
+}
+
 func unmarshalVector(info VectorType, data []byte, value any) error {
+	// Fast paths for *[]float64/*[]float32 — skip reflect/per-element dispatch.
+	// nil/empty and dim=0 fall through to the generic path.
+	if info.Dimensions > 0 && data != nil {
+		switch info.SubType.Type() {
+		case TypeDouble:
+			if dst, ok := value.(*[]float64); ok {
+				expected := info.Dimensions * 8
+				if len(data) != expected {
+					return unmarshalErrorf("unmarshal vector<double>: expected %d bytes, got %d", expected, len(data))
+				}
+				vec := vectorSliceReuse(dst, info.Dimensions)
+				unmarshalVectorFloat64(data, vec)
+				*dst = vec
+				return nil
+			}
+		case TypeFloat:
+			if dst, ok := value.(*[]float32); ok {
+				expected := info.Dimensions * 4
+				if len(data) != expected {
+					return unmarshalErrorf("unmarshal vector<float>: expected %d bytes, got %d", expected, len(data))
+				}
+				vec := vectorSliceReuse(dst, info.Dimensions)
+				unmarshalVectorFloat32(data, vec)
+				*dst = vec
+				return nil
+			}
+		}
+	}
+
 	rv := reflect.ValueOf(value)
 	if rv.Kind() != reflect.Ptr {
 		return unmarshalErrorf("can not unmarshal into non-pointer %T", value)
