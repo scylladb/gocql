@@ -1915,9 +1915,6 @@ func (c *Conn) awaitSchemaAgreement(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		if err = iter.Close(); err != nil {
-			return err
-		}
 
 		schemaVersions := []string{}
 
