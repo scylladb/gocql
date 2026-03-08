@@ -98,7 +98,11 @@ type Session struct {
 
 var queryPool = &sync.Pool{
 	New: func() interface{} {
-		return &Query{routingInfo: &queryRoutingInfo{}, refCount: 1}
+		return &Query{
+			routingInfo: &queryRoutingInfo{},
+			metrics:     &queryMetrics{m: make(map[string]*hostMetrics)},
+			refCount:    1,
+		}
 	},
 }
 
@@ -553,9 +557,7 @@ func (s *Session) Query(stmt string, values ...interface{}) *Query {
 	qry.session = s
 	qry.stmt = stmt
 	qry.values = values
-	qry.hostID = ""
 	qry.defaultsFromSession()
-	qry.routingInfo.lwt = false
 	qry.SetRequestTimeout(s.cfg.Timeout)
 	return qry
 }
@@ -579,7 +581,6 @@ func (s *Session) Bind(stmt string, b func(q *QueryInfo) ([]interface{}, error))
 	qry.stmt = stmt
 	qry.binding = b
 	qry.defaultsFromSession()
-	qry.routingInfo.lwt = false
 	qry.SetRequestTimeout(s.cfg.Timeout)
 	return qry
 }
@@ -1216,7 +1217,9 @@ func (q *Query) defaultsFromSession() {
 	q.serialCons = s.cfg.SerialConsistency
 	q.defaultTimestamp = s.cfg.DefaultTimestamp
 	q.idempotent = s.cfg.DefaultIdempotence
-	q.metrics = &queryMetrics{m: make(map[string]*hostMetrics)}
+	if q.metrics == nil {
+		q.metrics = &queryMetrics{m: make(map[string]*hostMetrics)}
+	}
 
 	q.spec = &NonSpeculativeExecution{}
 	s.mu.RUnlock()
@@ -1712,8 +1715,17 @@ func (q *Query) Release() {
 }
 
 // reset zeroes out all fields of a query so that it can be safely pooled.
+// It preserves the metrics allocation for reuse. routingInfo is always freshly
+// allocated because paging copies share the pointer (see conn.go executeQuery).
 func (q *Query) reset() {
-	*q = Query{routingInfo: &queryRoutingInfo{}, refCount: 1}
+	m := q.metrics
+	if m != nil {
+		clear(m.m)
+		m.totalAttempts = 0
+		m.l = sync.RWMutex{}
+	}
+
+	*q = Query{routingInfo: &queryRoutingInfo{}, metrics: m, refCount: 1}
 }
 
 func (q *Query) incRefCount() {
