@@ -1158,9 +1158,19 @@ type writeResult struct {
 	n   int
 }
 
+// writeResultChanPool pools buffered channels used for write coalescer results.
+// Each channel is used in a strict produce-once/consume-once pattern:
+// the flusher goroutine sends exactly one writeResult, and writeContext
+// reads exactly one. After reading, the channel is empty and safe to reuse.
+var writeResultChanPool = sync.Pool{
+	New: func() interface{} {
+		return make(chan writeResult, 1)
+	},
+}
+
 // writeContext implements contextWriter.
 func (w *writeCoalescer) writeContext(ctx context.Context, p []byte) (int, error) {
-	resultChan := make(chan writeResult, 1)
+	resultChan := writeResultChanPool.Get().(chan writeResult)
 	wr := writeRequest{
 		resultChan: resultChan,
 		data:       p,
@@ -1168,8 +1178,10 @@ func (w *writeCoalescer) writeContext(ctx context.Context, p []byte) (int, error
 
 	select {
 	case <-ctx.Done():
+		writeResultChanPool.Put(resultChan)
 		return 0, ctx.Err()
 	case <-w.quit:
+		writeResultChanPool.Put(resultChan)
 		return 0, io.EOF // TODO: better error here?
 	case w.writeCh <- wr:
 		// enqueued for writing
@@ -1180,6 +1192,7 @@ func (w *writeCoalescer) writeContext(ctx context.Context, p []byte) (int, error
 	}
 
 	result := <-resultChan
+	writeResultChanPool.Put(resultChan)
 	return result.n, result.err
 }
 
