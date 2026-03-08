@@ -1616,3 +1616,46 @@ func TestGetSchemaAgreement(t *testing.T) {
 		assert.NoError(t, err, "expected no error when all nodes have the same schema")
 	})
 }
+
+// BenchmarkWriteCoalescerNewChan benchmarks the old pattern: allocating a new
+// channel per writeContext call.
+func BenchmarkWriteCoalescerNewChan(b *testing.B) {
+	for b.Loop() {
+		ch := make(chan writeResult, 1)
+		ch <- writeResult{n: 1}
+		<-ch
+	}
+}
+
+// BenchmarkWriteCoalescerPooledChan benchmarks the pooled channel pattern.
+func BenchmarkWriteCoalescerPooledChan(b *testing.B) {
+	for b.Loop() {
+		ch := writeResultChanPool.Get().(chan writeResult)
+		ch <- writeResult{n: 1}
+		<-ch
+		writeResultChanPool.Put(ch)
+	}
+}
+
+// BenchmarkWriteCoalescerNewChanParallel benchmarks channel allocation under contention.
+func BenchmarkWriteCoalescerNewChanParallel(b *testing.B) {
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			ch := make(chan writeResult, 1)
+			ch <- writeResult{n: 1}
+			<-ch
+		}
+	})
+}
+
+// BenchmarkWriteCoalescerPooledChanParallel benchmarks pooled channels under contention.
+func BenchmarkWriteCoalescerPooledChanParallel(b *testing.B) {
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			ch := writeResultChanPool.Get().(chan writeResult)
+			ch <- writeResult{n: 1}
+			<-ch
+			writeResultChanPool.Put(ch)
+		}
+	})
+}
