@@ -29,11 +29,17 @@ package gocql
 
 import (
 	"bytes"
+	"io"
+	"log"
 	"os"
+	"sync"
 	"testing"
 
 	frm "github.com/gocql/gocql/internal/frame"
 )
+
+// benchLogger discards output to avoid skewing benchmark results.
+var benchLogger = log.New(io.Discard, "", 0)
 
 func TestFuzzBugs(t *testing.T) {
 	t.Parallel()
@@ -161,4 +167,265 @@ func TestParseEventFrame_ClientRoutesChanged(t *testing.T) {
 	if len(evt.HostIDs) != 0 {
 		t.Fatalf("HostIDs = %v, want empty", evt.HostIDs)
 	}
+}
+
+func TestFramerResetClearsAllFields(t *testing.T) {
+	t.Parallel()
+
+	f := newFramer(nil, protoVersion4)
+	// Populate every mutable field
+	f.header = &frm.FrameHeader{Version: protoVersion4}
+	f.customPayload = map[string][]byte{"key": {1, 2, 3}}
+	f.traceID = make([]byte, 16)
+	f.flagLWT = 42
+	f.rateLimitingErrorCode = 7
+	f.tabletsRoutingV1 = true
+	f.proto = protoVersion4
+	f.flags = frm.FlagTracing | frm.FlagCompress
+
+	// Grow buf beyond readBuffer to simulate a serialized frame
+	f.writeHeader(f.flags, frm.OpQuery, 1)
+	f.writeBytes(make([]byte, 512))
+
+	f.reset()
+
+	if f.compres != nil {
+		t.Error("compres should be nil after reset")
+	}
+	if f.header != nil {
+		t.Error("header should be nil after reset")
+	}
+	if f.customPayload != nil {
+		t.Error("customPayload should be nil after reset")
+	}
+	if f.traceID != nil {
+		t.Error("traceID should be nil after reset")
+	}
+	if f.flagLWT != 0 {
+		t.Errorf("flagLWT should be 0 after reset, got %d", f.flagLWT)
+	}
+	if f.rateLimitingErrorCode != 0 {
+		t.Errorf("rateLimitingErrorCode should be 0 after reset, got %d", f.rateLimitingErrorCode)
+	}
+	if f.proto != 0 {
+		t.Errorf("proto should be 0 after reset, got %d", f.proto)
+	}
+	if f.flags != 0 {
+		t.Errorf("flags should be 0 after reset, got %x", f.flags)
+	}
+	if f.tabletsRoutingV1 {
+		t.Error("tabletsRoutingV1 should be false after reset")
+	}
+	if len(f.buf) != 0 {
+		t.Errorf("buf should have length 0 after reset, got %d", len(f.buf))
+	}
+	if f.readBuffer == nil {
+		t.Error("readBuffer should not be nil after reset")
+	}
+}
+
+func TestFramerResetPreservesNormalBuffer(t *testing.T) {
+	t.Parallel()
+
+	f := newFramer(nil, protoVersion4)
+	// Grow the buffer to something larger than default but under the cap
+	f.writeHeader(0, frm.OpQuery, 1)
+	f.writeBytes(make([]byte, 4096))
+
+	grownCap := cap(f.buf)
+	if grownCap <= defaultBufSize {
+		t.Fatalf("expected buf to have grown beyond %d, got cap=%d", defaultBufSize, grownCap)
+	}
+
+	f.reset()
+
+	// readBuffer should retain the grown capacity
+	if cap(f.readBuffer) != grownCap {
+		t.Errorf("expected readBuffer cap to be preserved at %d, got %d", grownCap, cap(f.readBuffer))
+	}
+	// buf should point to readBuffer
+	if cap(f.buf) != cap(f.readBuffer) {
+		t.Errorf("buf and readBuffer should share backing array after reset")
+	}
+}
+
+func TestFramerResetDiscardsOversizedBuffer(t *testing.T) {
+	t.Parallel()
+
+	f := newFramer(nil, protoVersion4)
+	// Replace readBuffer with an oversized one
+	oversized := make([]byte, maxPooledBufSize+1)
+	f.readBuffer = oversized
+	f.buf = oversized[:0]
+
+	f.reset()
+
+	if cap(f.readBuffer) > maxPooledBufSize {
+		t.Errorf("expected readBuffer to be replaced (cap=%d), got cap=%d", defaultBufSize, cap(f.readBuffer))
+	}
+	if cap(f.readBuffer) != defaultBufSize {
+		t.Errorf("expected readBuffer cap=%d after discard, got %d", defaultBufSize, cap(f.readBuffer))
+	}
+}
+
+func TestGetPutWriteFramerRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	logger := log.New(os.Stderr, "", log.LstdFlags)
+
+	f := getWriteFramer(nil, protoVersion4, nil, logger)
+	if f == nil {
+		t.Fatal("getWriteFramer returned nil")
+	}
+	if f.proto != protoVersion4&protoVersionMask {
+		t.Errorf("expected proto=%d, got %d", protoVersion4&protoVersionMask, f.proto)
+	}
+
+	// Use it: write a header and some data
+	f.writeHeader(f.flags, frm.OpQuery, 1)
+	f.writeBytes(make([]byte, 256))
+
+	grownCap := cap(f.buf)
+
+	// Return to pool
+	putWriteFramer(f)
+
+	// Get another framer — should reuse the pooled one (or get a new one; either is valid)
+	f2 := getWriteFramer(nil, protoVersion3, nil, logger)
+	if f2 == nil {
+		t.Fatal("second getWriteFramer returned nil")
+	}
+	if f2.proto != protoVersion3&protoVersionMask {
+		t.Errorf("expected proto=%d, got %d", protoVersion3&protoVersionMask, f2.proto)
+	}
+	if len(f2.buf) != 0 {
+		t.Errorf("expected buf to be empty, got len=%d", len(f2.buf))
+	}
+
+	// If we got the same framer back, the buffer should retain its capacity
+	if f == f2 && cap(f2.readBuffer) != grownCap {
+		t.Errorf("expected reused framer to retain buffer capacity %d, got %d", grownCap, cap(f2.readBuffer))
+	}
+
+	putWriteFramer(f2)
+}
+
+func TestWriteFramerPoolConcurrency(t *testing.T) {
+	t.Parallel()
+
+	logger := log.New(os.Stderr, "", log.LstdFlags)
+
+	const goroutines = 100
+	const iterations = 50
+
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+
+	for g := 0; g < goroutines; g++ {
+		go func() {
+			defer wg.Done()
+			for i := 0; i < iterations; i++ {
+				f := getWriteFramer(nil, protoVersion4, nil, logger)
+
+				// Simulate building a frame
+				f.writeHeader(f.flags, frm.OpQuery, 1)
+				f.writeBytes(make([]byte, 64))
+
+				// Verify basic invariants before returning
+				if f.proto != protoVersion4&protoVersionMask {
+					t.Errorf("unexpected proto version: %d", f.proto)
+				}
+				if len(f.buf) == 0 {
+					t.Error("buf should not be empty after writing")
+				}
+
+				putWriteFramer(f)
+			}
+		}()
+	}
+
+	wg.Wait()
+}
+
+func TestWriteFramerBuiltFrameIntegrity(t *testing.T) {
+	t.Parallel()
+
+	logger := log.New(os.Stderr, "", log.LstdFlags)
+
+	// Get a framer, build a real frame, verify bytes match what newFramerWithExts produces
+	pooled := getWriteFramer(nil, protoVersion4, nil, logger)
+	pooled.writeHeader(pooled.flags, frm.OpQuery, 5)
+	pooled.writeString("SELECT 1")
+	if err := pooled.finish(); err != nil {
+		t.Fatal(err)
+	}
+	pooledBuf := make([]byte, len(pooled.buf))
+	copy(pooledBuf, pooled.buf)
+	putWriteFramer(pooled)
+
+	fresh := newFramerWithExts(nil, protoVersion4, nil, logger)
+	fresh.writeHeader(fresh.flags, frm.OpQuery, 5)
+	fresh.writeString("SELECT 1")
+	if err := fresh.finish(); err != nil {
+		t.Fatal(err)
+	}
+
+	if !bytes.Equal(pooledBuf, fresh.buf) {
+		t.Errorf("pooled framer produced different bytes than fresh framer:\npooled: %x\nfresh:  %x", pooledBuf, fresh.buf)
+	}
+}
+
+// buildTypicalFrame simulates building a typical CQL query frame.
+func buildTypicalFrame(f *framer) {
+	f.writeHeader(f.flags, frm.OpQuery, 1)
+	f.writeString("SELECT key, value FROM my_keyspace.my_table WHERE key = ?")
+	// Simulate query parameters (consistency + values)
+	f.writeShort(0x0001) // ONE consistency
+	f.writeByte(0x01)    // flags: values present
+	f.writeShort(1)      // 1 value
+	f.writeBytes([]byte("some-partition-key-value-here"))
+	_ = f.finish()
+}
+
+// BenchmarkFramerNewAlloc benchmarks the old path: allocate a new framer per frame.
+func BenchmarkFramerNewAlloc(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		f := newFramerWithExts(nil, protoVersion4, nil, benchLogger)
+		buildTypicalFrame(f)
+		// Frame is written to wire; framer becomes garbage
+	}
+}
+
+// BenchmarkFramerPooled benchmarks the new path: get from pool, use, return.
+func BenchmarkFramerPooled(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		f := getWriteFramer(nil, protoVersion4, nil, benchLogger)
+		buildTypicalFrame(f)
+		putWriteFramer(f)
+	}
+}
+
+// BenchmarkFramerNewAllocParallel benchmarks concurrent new-alloc framers.
+func BenchmarkFramerNewAllocParallel(b *testing.B) {
+	b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			f := newFramerWithExts(nil, protoVersion4, nil, benchLogger)
+			buildTypicalFrame(f)
+		}
+	})
+}
+
+// BenchmarkFramerPooledParallel benchmarks concurrent pooled framers.
+func BenchmarkFramerPooledParallel(b *testing.B) {
+	b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			f := getWriteFramer(nil, protoVersion4, nil, benchLogger)
+			buildTypicalFrame(f)
+			putWriteFramer(f)
+		}
+	})
 }

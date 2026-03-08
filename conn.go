@@ -1184,9 +1184,11 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, reques
 		return nil, &QueryError{err: ErrNoStreams, potentiallyExecuted: false}
 	}
 
-	// resp is basically a waiting semaphore protecting the framer
-	framer := newFramerWithExts(c.compressor, c.version, c.cqlProtoExts, c.logger)
-	c.setTabletSupported(framer.tabletsRoutingV1)
+	// Get a write-side framer from the pool. This framer is only used to
+	// serialize and write the request frame; the response comes back on a
+	// separate read-side framer created in recv().
+	writeFramer := getWriteFramer(c.compressor, c.version, c.cqlProtoExts, c.logger)
+	c.setTabletSupported(writeFramer.tabletsRoutingV1)
 
 	call := &callReq{
 		timeout:  make(chan struct{}),
@@ -1199,6 +1201,7 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, reques
 	}
 
 	if err := c.addCall(call); err != nil {
+		putWriteFramer(writeFramer)
 		return nil, &QueryError{err: err, potentiallyExecuted: false}
 	}
 
@@ -1207,7 +1210,7 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, reques
 	// If we don't close(call.timeout) or read from call.resp, closeWithError can deadlock.
 
 	if tracer != nil {
-		framer.trace()
+		writeFramer.trace()
 	}
 
 	if call.streamObserverContext != nil {
@@ -1216,8 +1219,9 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, reques
 		})
 	}
 
-	err := req.buildFrame(framer, stream)
+	err := req.buildFrame(writeFramer, stream)
 	if err != nil {
+		putWriteFramer(writeFramer)
 		// closeWithError will block waiting for this stream to either receive a response
 		// or for us to timeout.
 		close(call.timeout)
@@ -1234,7 +1238,12 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, reques
 		return nil, &QueryError{err: err, potentiallyExecuted: false}
 	}
 
-	n, err := c.w.writeContext(ctx, framer.buf)
+	n, err := c.w.writeContext(ctx, writeFramer.buf)
+	// Safety: writeContext always blocks until the buffer is fully consumed by
+	// the underlying writer. Both deadlineContextWriter.writeContext (synchronous
+	// Write) and writeCoalescer.writeContext (blocks on resultChan until flush
+	// completes) guarantee this. The framer's buffer is therefore safe to recycle.
+	putWriteFramer(writeFramer)
 	if err != nil {
 		// closeWithError will block waiting for this stream to either receive a response
 		// or for us to timeout, close the timeout chan here. Im not entirely sure
