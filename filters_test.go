@@ -46,7 +46,7 @@ func TestFilter_WhiteList(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		if f.Accept(&HostInfo{connectAddress: test.addr}) {
+		if f.Accept(&HostInfo{rpcAddress: test.addr}) {
 			if !test.accept {
 				t.Errorf("%d: should not have been accepted but was", i)
 			}
@@ -101,6 +101,121 @@ func TestFilter_DenyAll(t *testing.T) {
 		} else if test.accept {
 			t.Errorf("%d: should have been accepted but wasn't", i)
 		}
+	}
+}
+
+func TestFilter_WhiteList_MatchesRPCAddress(t *testing.T) {
+	t.Parallel()
+
+	f := WhiteListHostFilter("127.0.0.1")
+
+	host := &HostInfo{
+		connectAddress: net.ParseIP("10.0.0.1"),
+		rpcAddress:     net.ParseIP("127.0.0.1"),
+	}
+	if !f.Accept(host) {
+		t.Error("should have been accepted via rpcAddress but wasn't")
+	}
+}
+
+func TestFilter_WhiteList_MatchesBroadcastAddress(t *testing.T) {
+	t.Parallel()
+
+	f := WhiteListHostFilter("127.0.0.1")
+
+	host := &HostInfo{
+		connectAddress:   net.ParseIP("10.0.0.1"),
+		broadcastAddress: net.ParseIP("127.0.0.1"),
+	}
+	if !f.Accept(host) {
+		t.Error("should have been accepted via broadcastAddress but wasn't")
+	}
+}
+
+func TestFilter_WhiteList_MatchesListenAddress(t *testing.T) {
+	t.Parallel()
+
+	f := WhiteListHostFilter("127.0.0.1")
+
+	host := &HostInfo{
+		connectAddress: net.ParseIP("10.0.0.1"),
+		listenAddress:  net.ParseIP("127.0.0.1"),
+	}
+	if !f.Accept(host) {
+		t.Error("should have been accepted via listenAddress but wasn't")
+	}
+}
+
+func TestFilter_WhiteList_MatchesPeer(t *testing.T) {
+	t.Parallel()
+
+	f := WhiteListHostFilter("127.0.0.1")
+
+	host := &HostInfo{
+		connectAddress: net.ParseIP("10.0.0.1"),
+		peer:           net.ParseIP("127.0.0.1"),
+	}
+	if !f.Accept(host) {
+		t.Error("should have been accepted via peer but wasn't")
+	}
+}
+
+func TestFilter_WhiteList_MatchesPreferredIP(t *testing.T) {
+	t.Parallel()
+
+	f := WhiteListHostFilter("127.0.0.1")
+
+	host := &HostInfo{
+		connectAddress: net.ParseIP("10.0.0.1"),
+		preferredIP:    net.ParseIP("127.0.0.1"),
+	}
+	if !f.Accept(host) {
+		t.Error("should have been accepted via preferredIP but wasn't")
+	}
+}
+
+func TestFilter_WhiteList_MatchesTranslatedAddress(t *testing.T) {
+	t.Parallel()
+
+	f := WhiteListHostFilter("127.0.0.1")
+
+	host := &HostInfo{
+		connectAddress: net.ParseIP("10.0.0.1"),
+		translatedAddresses: &translatedAddresses{
+			CQL: AddressPort{Address: net.ParseIP("127.0.0.1"), Port: 9042},
+		},
+	}
+	if !f.Accept(host) {
+		t.Error("should have been accepted via translatedAddresses but wasn't")
+	}
+}
+
+func TestFilter_WhiteList_NoMatchWhenNoAddressMatches(t *testing.T) {
+	t.Parallel()
+
+	f := WhiteListHostFilter("127.0.0.1")
+
+	host := &HostInfo{
+		connectAddress:   net.ParseIP("10.0.0.1"),
+		rpcAddress:       net.ParseIP("10.0.0.2"),
+		broadcastAddress: net.ParseIP("10.0.0.3"),
+		listenAddress:    net.ParseIP("10.0.0.4"),
+		peer:             net.ParseIP("10.0.0.5"),
+		preferredIP:      net.ParseIP("10.0.0.6"),
+	}
+	if f.Accept(host) {
+		t.Error("should not have been accepted but was")
+	}
+}
+
+func TestFilter_WhiteList_EmptyHost(t *testing.T) {
+	t.Parallel()
+
+	f := WhiteListHostFilter("127.0.0.1")
+
+	host := &HostInfo{}
+	if f.Accept(host) {
+		t.Error("empty host should not have been accepted")
 	}
 }
 
