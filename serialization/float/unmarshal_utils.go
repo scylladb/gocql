@@ -118,7 +118,8 @@ func uint32ToFloat(v uint32) float32 {
 }
 
 func uint32ToFloatR(v uint32) *float32 {
-	return (*float32)(unsafe.Pointer(&v))
+	f := *(*float32)(unsafe.Pointer(&v))
+	return &f
 }
 
 func decUint32(p []byte) uint32 {
