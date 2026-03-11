@@ -271,7 +271,7 @@ func (m *schemaDataMock) querySystem(statement string, values ...interface{}) *I
 		return &Iter{}
 	}
 
-	if strings.HasPrefix(statement, "SELECT * FROM system_schema.columns WHERE keyspace_name = ?") &&
+	if strings.HasPrefix(statement, "SELECT "+columnMetadataColumns+" FROM system_schema.columns WHERE keyspace_name = ?") &&
 		!strings.Contains(statement, "AND table_name") {
 		ksName, _ := values[0].(string)
 		tables, ok := m.knownKeyspaces[ksName]
@@ -296,7 +296,7 @@ func (m *schemaDataMock) querySystem(statement string, values ...interface{}) *I
 		}
 	}
 
-	if strings.HasPrefix(statement, "SELECT * FROM system_schema.columns WHERE keyspace_name = ? AND table_name = ?") {
+	if strings.HasPrefix(statement, "SELECT "+columnMetadataColumns+" FROM system_schema.columns WHERE keyspace_name = ? AND table_name = ?") {
 		ksName, _ := values[0].(string)
 		tblName, _ := values[1].(string)
 		tables, ok := m.knownKeyspaces[ksName]
@@ -713,7 +713,7 @@ func TestHandleSchemaEvent(t *testing.T) {
 		return map[string]int{
 			"SELECT durable_writes, replication FROM system_schema.keyspaces WHERE keyspace_name = ?": 1,
 			"SELECT * FROM system_schema.tables WHERE keyspace_name = ?":                              1,
-			"SELECT * FROM system_schema.columns WHERE keyspace_name = ?":                             1,
+			"SELECT " + columnMetadataColumns + " FROM system_schema.columns WHERE keyspace_name = ?": 1,
 			"SELECT * FROM system_schema.types WHERE keyspace_name = ?":                               1,
 			"SELECT * FROM system_schema.indexes WHERE keyspace_name = ?":                             1,
 			"SELECT * FROM system_schema.views WHERE keyspace_name = ?":                               1,
@@ -721,10 +721,10 @@ func TestHandleSchemaEvent(t *testing.T) {
 		}
 	}
 	tableRefresh := map[string]int{
-		"SELECT * FROM system_schema.tables WHERE keyspace_name = ? AND table_name = ?":                     1,
-		"SELECT * FROM system_schema.columns WHERE keyspace_name = ? AND table_name = ?":                    1,
-		"SELECT * FROM system_schema.indexes WHERE keyspace_name = ? AND table_name = ?":                    1,
-		"SELECT * FROM system_schema.views WHERE keyspace_name = ? AND base_table_name = ? ALLOW FILTERING": 1,
+		"SELECT * FROM system_schema.tables WHERE keyspace_name = ? AND table_name = ?":                              1,
+		"SELECT " + columnMetadataColumns + " FROM system_schema.columns WHERE keyspace_name = ? AND table_name = ?": 1,
+		"SELECT * FROM system_schema.indexes WHERE keyspace_name = ? AND table_name = ?":                             1,
+		"SELECT * FROM system_schema.views WHERE keyspace_name = ? AND base_table_name = ? ALLOW FILTERING":          1,
 	}
 	noQueries := map[string]int{}
 
