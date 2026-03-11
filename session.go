@@ -36,6 +36,7 @@ import (
 	"sync/atomic"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/gocql/gocql/debounce"
 	"github.com/gocql/gocql/events"
@@ -1223,6 +1224,12 @@ type Query struct {
 	skipPrepare           bool
 	disableSkipMetadata   bool
 	defaultTimestamp      bool
+	// prepareCache caches whether shouldPrepare has been computed.
+	// Since q.stmt is immutable after construction, the result never
+	// changes. Accessed atomically because speculative execution may
+	// call shouldPrepare from multiple goroutines concurrently.
+	// Values: 0 = unknown, 1 = should prepare (DML), 2 = should not prepare.
+	prepareCache uint32
 }
 
 type queryRoutingInfo struct {
@@ -1506,23 +1513,79 @@ func (q *Query) GetRoutingKey() ([]byte, error) {
 }
 
 func (q *Query) shouldPrepare() bool {
-
-	stmt := strings.TrimLeftFunc(strings.TrimRightFunc(q.stmt, func(r rune) bool {
-		return unicode.IsSpace(r) || r == ';'
-	}), unicode.IsSpace)
-
-	var stmtType string
-	if n := strings.IndexFunc(stmt, unicode.IsSpace); n >= 0 {
-		stmtType = strings.ToLower(stmt[:n])
+	if v := atomic.LoadUint32(&q.prepareCache); v != 0 {
+		return v == 1
 	}
-	if stmtType == "begin" {
-		if n := strings.LastIndexFunc(stmt, unicode.IsSpace); n >= 0 {
-			stmtType = strings.ToLower(stmt[n+1:])
+	result := stmtIsDML(q.stmt)
+	if result {
+		atomic.StoreUint32(&q.prepareCache, 1)
+	} else {
+		atomic.StoreUint32(&q.prepareCache, 2)
+	}
+	return result
+}
+
+// stmtKeyword returns the first whitespace-delimited keyword of a CQL
+// statement, skipping leading whitespace. For "BEGIN …" statements it
+// returns the last word instead (e.g. "BATCH"). The returned substring
+// shares the backing array of stmt (zero allocations). The result is
+// not lowercased; callers should use strings.EqualFold for comparison.
+func stmtKeyword(stmt string) string {
+	// Skip leading whitespace using unicode-aware scanning (no allocation).
+	i := 0
+	for i < len(stmt) {
+		r, size := utf8.DecodeRuneInString(stmt[i:])
+		if !unicode.IsSpace(r) {
+			break
 		}
+		i += size
 	}
-	switch stmtType {
-	case "select", "insert", "update", "delete", "batch":
-		return true
+
+	// Find the end of the first word.
+	j := i
+	for j < len(stmt) {
+		r, size := utf8.DecodeRuneInString(stmt[j:])
+		if unicode.IsSpace(r) {
+			break
+		}
+		j += size
+	}
+
+	word := stmt[i:j]
+	if strings.EqualFold(word, "begin") {
+		// Handle "BEGIN BATCH ... APPLY BATCH" — extract the last word.
+		end := len(stmt)
+		for end > j {
+			r, size := utf8.DecodeLastRuneInString(stmt[:end])
+			if !unicode.IsSpace(r) && r != ';' {
+				break
+			}
+			end -= size
+		}
+		start := end
+		for start > j {
+			r, size := utf8.DecodeLastRuneInString(stmt[:start])
+			if unicode.IsSpace(r) {
+				break
+			}
+			start -= size
+		}
+		word = stmt[start:end]
+	}
+	return word
+}
+
+// stmtIsDML reports whether stmt is a DML statement that should be prepared.
+func stmtIsDML(stmt string) bool {
+	kw := stmtKeyword(stmt)
+	switch len(kw) {
+	case 5: // "batch"
+		return strings.EqualFold(kw, "batch")
+	case 6: // "select", "insert", "update", "delete"
+		return strings.EqualFold(kw, "select") ||
+			strings.EqualFold(kw, "insert") ||
+			strings.EqualFold(kw, "update") ||
+			strings.EqualFold(kw, "delete")
 	}
 	return false
 }
