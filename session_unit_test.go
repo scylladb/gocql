@@ -32,6 +32,67 @@ import (
 	"testing"
 )
 
+func TestGetRoutingKeySkipsDDL(t *testing.T) {
+	t.Parallel()
+
+	ddlStatements := []string{
+		"CREATE TABLE ks.tbl (id int PRIMARY KEY)",
+		"ALTER TABLE ks.tbl ADD col text",
+		"DROP TABLE ks.tbl",
+		"TRUNCATE ks.tbl",
+		"CREATE KEYSPACE ks WITH replication = {'class': 'SimpleStrategy'}",
+		"DROP KEYSPACE ks",
+		"GRANT SELECT ON ks.tbl TO user1",
+		"USE ks",
+	}
+
+	for _, stmt := range ddlStatements {
+		// session is intentionally nil — if GetRoutingKey tries to call
+		// routingKeyInfo it will panic, proving the guard works.
+		q := &Query{
+			stmt:        stmt,
+			routingInfo: &queryRoutingInfo{},
+		}
+		key, err := q.GetRoutingKey()
+		if err != nil {
+			t.Errorf("GetRoutingKey(%q) returned error: %v", stmt, err)
+		}
+		if key != nil {
+			t.Errorf("GetRoutingKey(%q) returned non-nil key: %v", stmt, key)
+		}
+	}
+}
+
+func TestGetRoutingKeyDMLNeedsSession(t *testing.T) {
+	t.Parallel()
+
+	// DML statements should NOT be short-circuited — they need to go through
+	// routingKeyInfo to compute a routing key. With a nil session this will
+	// panic, confirming that the guard does not block DML.
+	dmlStatements := []string{
+		"SELECT * FROM ks.tbl",
+		"INSERT INTO ks.tbl (id) VALUES (?)",
+		"UPDATE ks.tbl SET col = ? WHERE id = ?",
+		"DELETE FROM ks.tbl WHERE id = ?",
+	}
+
+	for _, stmt := range dmlStatements {
+		q := &Query{
+			stmt:        stmt,
+			routingInfo: &queryRoutingInfo{},
+		}
+
+		func() {
+			defer func() {
+				if r := recover(); r == nil {
+					t.Errorf("GetRoutingKey(%q) did not panic with nil session — shouldPrepare guard may be blocking DML", stmt)
+				}
+			}()
+			q.GetRoutingKey()
+		}()
+	}
+}
+
 func TestAsyncSessionInit(t *testing.T) {
 	t.Parallel()
 
