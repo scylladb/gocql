@@ -1271,8 +1271,15 @@ func getTableMetadataByName(session *Session, keyspaceName, tableName string) ([
 	return tables, nil
 }
 
+// columnMetadataColumns lists the columns consumed by getColumnMetadata and
+// getColumnMetadataByTable. Selecting only these columns (instead of SELECT *)
+// avoids deserializing unused fields such as keyspace_name (already known from
+// the WHERE clause) and column_name_bytes (ScyllaDB-specific), which can add
+// over 50 KB of wasted payload per keyspace with 80+ tables.
+const columnMetadataColumns = `table_name, column_name, clustering_order, type, kind, position`
+
 func getColumnMetadataByTable(session *Session, keyspaceName, tableName string) ([]ColumnMetadata, error) {
-	const stmt = `SELECT * FROM system_schema.columns WHERE keyspace_name = ? AND table_name = ?`
+	const stmt = `SELECT ` + columnMetadataColumns + ` FROM system_schema.columns WHERE keyspace_name = ? AND table_name = ?`
 
 	var columns []ColumnMetadata
 
@@ -1376,7 +1383,7 @@ func getViewMetadataByTable(session *Session, keyspaceName, tableName string) ([
 
 // query for column metadata in the system_schema.columns
 func getColumnMetadata(session *Session, keyspaceName string) ([]ColumnMetadata, error) {
-	const stmt = `SELECT * FROM system_schema.columns WHERE keyspace_name = ?`
+	const stmt = `SELECT ` + columnMetadataColumns + ` FROM system_schema.columns WHERE keyspace_name = ?`
 
 	var columns []ColumnMetadata
 
