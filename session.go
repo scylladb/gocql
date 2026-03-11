@@ -1480,6 +1480,13 @@ func (q *Query) GetRoutingKey() ([]byte, error) {
 		return nil, nil
 	}
 
+	// Non-DML statements (DDL, USE, GRANT, etc.) do not need preparation
+	// and have no routing key. Skip the routingKeyInfo call which would
+	// otherwise send a wasteful PREPARE frame to the server.
+	if !q.shouldPrepare() {
+		return nil, nil
+	}
+
 	// try to determine the routing key
 	routingKeyInfo, err := q.session.routingKeyInfo(q.Context(), q.stmt, q.requestTimeout)
 	if err != nil {
