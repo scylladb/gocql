@@ -36,6 +36,7 @@ import (
 	"sync/atomic"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/gocql/gocql/debounce"
 	"github.com/gocql/gocql/events"
@@ -1433,6 +1434,13 @@ func (q *Query) GetRoutingKey() ([]byte, error) {
 		return nil, nil
 	}
 
+	// Non-DML statements (DDL, USE, GRANT, etc.) do not need preparation
+	// and have no routing key. Skip the routingKeyInfo call which would
+	// otherwise send a wasteful PREPARE frame to the server.
+	if !q.shouldPrepare() {
+		return nil, nil
+	}
+
 	// try to determine the routing key
 	routingKeyInfo, err := q.session.routingKeyInfo(q.Context(), q.stmt, q.requestTimeout)
 	if err != nil {
@@ -1451,25 +1459,55 @@ func (q *Query) GetRoutingKey() ([]byte, error) {
 }
 
 func (q *Query) shouldPrepare() bool {
+	stmt := q.stmt
 
-	stmt := strings.TrimLeftFunc(strings.TrimRightFunc(q.stmt, func(r rune) bool {
-		return unicode.IsSpace(r) || r == ';'
-	}), unicode.IsSpace)
-
-	var stmtType string
-	if n := strings.IndexFunc(stmt, unicode.IsSpace); n >= 0 {
-		stmtType = strings.ToLower(stmt[:n])
-	}
-	if stmtType == "begin" {
-		if n := strings.LastIndexFunc(stmt, unicode.IsSpace); n >= 0 {
-			stmtType = strings.ToLower(stmt[n+1:])
+	// Skip leading whitespace using unicode-aware scanning (no allocation).
+	i := 0
+	for i < len(stmt) {
+		r, size := utf8.DecodeRuneInString(stmt[i:])
+		if !unicode.IsSpace(r) {
+			break
 		}
+		i += size
 	}
-	switch stmtType {
-	case "select", "insert", "update", "delete", "batch":
-		return true
+
+	// Find the end of the first word.
+	j := i
+	for j < len(stmt) {
+		r, size := utf8.DecodeRuneInString(stmt[j:])
+		if unicode.IsSpace(r) {
+			break
+		}
+		j += size
 	}
-	return false
+
+	word := stmt[i:j]
+	if strings.EqualFold(word, "begin") {
+		// Handle "BEGIN BATCH ... APPLY BATCH" — extract the last word.
+		end := len(stmt)
+		for end > j {
+			r, size := utf8.DecodeLastRuneInString(stmt[:end])
+			if !unicode.IsSpace(r) && r != ';' {
+				break
+			}
+			end -= size
+		}
+		start := end
+		for start > j {
+			r, size := utf8.DecodeLastRuneInString(stmt[:start])
+			if unicode.IsSpace(r) {
+				break
+			}
+			start -= size
+		}
+		word = stmt[start:end]
+	}
+
+	return strings.EqualFold(word, "select") ||
+		strings.EqualFold(word, "insert") ||
+		strings.EqualFold(word, "update") ||
+		strings.EqualFold(word, "delete") ||
+		strings.EqualFold(word, "batch")
 }
 
 // SetPrefetch sets the default threshold for pre-fetching new pages. If
