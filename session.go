@@ -628,6 +628,11 @@ func (s *Session) Close() {
 		s.clientRoutesHandler.Stop()
 	}
 
+	if s.metadataDescriber != nil && s.metadataDescriber.metadata != nil &&
+		s.metadataDescriber.metadata.tabletsMetadata != nil {
+		s.metadataDescriber.metadata.tabletsMetadata.Close()
+	}
+
 	s.sessionStateMu.Lock()
 	s.isClosed = true
 	s.sessionStateMu.Unlock()

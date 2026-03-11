@@ -155,6 +155,7 @@ func runSingleCowTabletListTest(b *testing.B, hostsCount, parallelism, rf, total
 	readyTablets := createTablets(removeKs, removeTable, hosts, rf, totalTablets, tokenRangeCount64)
 	b.SetParallelism(parallelism)
 	tl := NewCowTabletList()
+	defer tl.Close()
 	rnd := getThreadSafeRnd()
 	opID := atomic.Int64{}
 
@@ -166,6 +167,7 @@ func runSingleCowTabletListTest(b *testing.B, hostsCount, parallelism, rf, total
 		tl.BulkAddTablets(createTablets(targetKS, fmt.Sprintf("table-%d", i), hosts, rf, totalTablets, tokenRangeCount64))
 	}
 
+	tl.Flush()
 	runtime.GC()
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {

@@ -520,7 +520,7 @@ func columnKindFromSchema(kind string) (ColumnKind, error) {
 }
 
 type Metadata struct {
-	tabletsMetadata  tablets.CowTabletList
+	tabletsMetadata  *tablets.CowTabletList
 	keyspaceMetadata cowKeyspaceMetadataMap
 }
 
