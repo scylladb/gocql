@@ -11,6 +11,28 @@ SCYLLA_VERSION ?= LATEST
 
 GOLANGCI_VERSION = 2.5.0
 
+# Shell function for retrying commands with linear backoff.
+# 5 attempts, 10s between first retry growing by 10s each time.
+define RETRY_CMD
+retry() {
+  local max_attempts=5 attempt=1 output
+  while true; do
+    if output=$$("$$@" 2>&1); then
+      echo "$$output"
+      return 0
+    fi
+    if (( attempt >= max_attempts )); then
+      echo "Command failed after $$max_attempts attempts: $$*" >&2
+      echo "$$output" >&2
+      return 1
+    fi
+    echo "Attempt $$attempt/$$max_attempts failed, retrying in $$(( attempt * 10 ))s..." >&2
+    sleep $$(( attempt * 10 ))
+    (( attempt++ ))
+  done
+}
+endef
+
 TEST_CQL_PROTOCOL ?= 4
 TEST_COMPRESSOR ?= snappy
 TEST_OPTS ?=
@@ -108,14 +130,16 @@ resolve-cassandra-version: .prepare-get-version
 		exit 0
 	fi
 
+	$(RETRY_CMD)
+
 	if [[ "${CASSANDRA_VERSION}" == "LATEST" ]]; then
-		CASSANDRA_VERSION_RESOLVED=`get-version -source github-tag -repo apache/cassandra -prefix "cassandra-" -out-no-prefix -filters "^[0-9]+$$.^[0-9]+$$.^[0-9]+$$ and LAST.LAST.LAST" | tr -d '\"'`
+		CASSANDRA_VERSION_RESOLVED=`retry get-version -source github-tag -repo apache/cassandra -prefix "cassandra-" -out-no-prefix -filters "^[0-9]+$$.^[0-9]+$$.^[0-9]+$$ and LAST.LAST.LAST" | tr -d '\"'`
 	elif [[ "${CASSANDRA_VERSION}" == "5-LATEST" ]]; then
-		CASSANDRA_VERSION_RESOLVED=`get-version -source github-tag -repo apache/cassandra -prefix "cassandra-" -out-no-prefix -filters "^[0-9]+$$.^[0-9]+$$.^[0-9]+$$ and 5.LAST.LAST" | tr -d '\"'`
+		CASSANDRA_VERSION_RESOLVED=`retry get-version -source github-tag -repo apache/cassandra -prefix "cassandra-" -out-no-prefix -filters "^[0-9]+$$.^[0-9]+$$.^[0-9]+$$ and 5.LAST.LAST" | tr -d '\"'`
 	elif [[ "${CASSANDRA_VERSION}" == "4-LATEST" ]]; then
-		CASSANDRA_VERSION_RESOLVED=`get-version -source github-tag -repo apache/cassandra -prefix "cassandra-" -out-no-prefix -filters "^[0-9]+$$.^[0-9]+$$.^[0-9]+$$ and 4.LAST.LAST" | tr -d '\"'`
+		CASSANDRA_VERSION_RESOLVED=`retry get-version -source github-tag -repo apache/cassandra -prefix "cassandra-" -out-no-prefix -filters "^[0-9]+$$.^[0-9]+$$.^[0-9]+$$ and 4.LAST.LAST" | tr -d '\"'`
 	elif [[ "${CASSANDRA_VERSION}" == "3-LATEST" ]]; then
-		CASSANDRA_VERSION_RESOLVED=`get-version -source github-tag -repo apache/cassandra -prefix "cassandra-" -out-no-prefix -filters "^[0-9]+$$.^[0-9]+$$.^[0-9]+$$ and 3.LAST.LAST" | tr -d '\"'`
+		CASSANDRA_VERSION_RESOLVED=`retry get-version -source github-tag -repo apache/cassandra -prefix "cassandra-" -out-no-prefix -filters "^[0-9]+$$.^[0-9]+$$.^[0-9]+$$ and 3.LAST.LAST" | tr -d '\"'`
 	elif echo "${CASSANDRA_VERSION}" | grep -P '^[0-9\.]+'; then
 		CASSANDRA_VERSION_RESOLVED=${CASSANDRA_VERSION}
 	else
@@ -150,17 +174,19 @@ resolve-scylla-version: .prepare-get-version
 		exit 0
 	fi
 
+	$(RETRY_CMD)
+
 	if [[ "${SCYLLA_VERSION}" == "LTS-LATEST" ]]; then
-		SCYLLA_VERSION_RESOLVED=`get-version --source dockerhub-imagetag --repo scylladb/scylla -filters "^[0-9]{4}$$.^[0-9]+$$.^[0-9]+$$ and LAST.1.LAST" | tr -d '\"'`
+		SCYLLA_VERSION_RESOLVED=`retry get-version --source dockerhub-imagetag --repo scylladb/scylla -filters "^[0-9]{4}$$.^[0-9]+$$.^[0-9]+$$ and LAST.1.LAST" | tr -d '\"'`
 	elif [[ "${SCYLLA_VERSION}" == "LTS-PRIOR" ]]; then
-		SCYLLA_VERSION_RESOLVED=`get-version --source dockerhub-imagetag --repo scylladb/scylla -filters "^[0-9]{4}$$.^[0-9]+$$.^[0-9]+$$ and LAST-1.1.LAST" | tr -d '\"'`
+		SCYLLA_VERSION_RESOLVED=`retry get-version --source dockerhub-imagetag --repo scylladb/scylla -filters "^[0-9]{4}$$.^[0-9]+$$.^[0-9]+$$ and LAST-1.1.LAST" | tr -d '\"'`
 		if [[ -z "$${SCYLLA_VERSION_RESOLVED}" ]]; then
-			SCYLLA_VERSION_RESOLVED=`get-version --source dockerhub-imagetag --repo scylladb/scylla-enterprise -filters "^[0-9]{4}$$.^[0-9]+$$.^[0-9]+$$ and LAST-1.1.LAST" | tr -d '\"'`
+			SCYLLA_VERSION_RESOLVED=`retry get-version --source dockerhub-imagetag --repo scylladb/scylla-enterprise -filters "^[0-9]{4}$$.^[0-9]+$$.^[0-9]+$$ and LAST-1.1.LAST" | tr -d '\"'`
 		fi
 	elif [[ "${SCYLLA_VERSION}" == "LATEST" ]]; then
-		SCYLLA_VERSION_RESOLVED=`get-version --source dockerhub-imagetag --repo scylladb/scylla -filters "^[0-9]{4}$$.^[0-9]+$$.^[0-9]+$$ and LAST.LAST.LAST" | tr -d '\"'`
+		SCYLLA_VERSION_RESOLVED=`retry get-version --source dockerhub-imagetag --repo scylladb/scylla -filters "^[0-9]{4}$$.^[0-9]+$$.^[0-9]+$$ and LAST.LAST.LAST" | tr -d '\"'`
 	elif [[ "${SCYLLA_VERSION}" == "PRIOR" ]]; then
-		SCYLLA_VERSION_RESOLVED=`get-version --source dockerhub-imagetag --repo scylladb/scylla -filters "^[0-9]{4}$$.^[0-9]+$$.^[0-9]+$$ and LAST.LAST.LAST-1" | tr -d '\"'`
+		SCYLLA_VERSION_RESOLVED=`retry get-version --source dockerhub-imagetag --repo scylladb/scylla -filters "^[0-9]{4}$$.^[0-9]+$$.^[0-9]+$$ and LAST.LAST.LAST-1" | tr -d '\"'`
 	elif echo "${SCYLLA_VERSION}" | grep -P '^[0-9\.]+'; then
 		SCYLLA_VERSION_RESOLVED=${SCYLLA_VERSION}
 	else
