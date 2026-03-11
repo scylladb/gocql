@@ -207,17 +207,16 @@ func TestQueryShouldPrepare(t *testing.T) {
 
 	toPrepare := []string{"select * ", "INSERT INTO", "update table", "delete from", "begin batch"}
 	cantPrepare := []string{"create table", "USE table", "LIST keyspaces", "alter table", "drop table", "grant user", "revoke user"}
-	q := &Query{routingInfo: &queryRoutingInfo{}}
 
 	for i := 0; i < len(toPrepare); i++ {
-		q.stmt = toPrepare[i]
+		q := &Query{stmt: toPrepare[i], routingInfo: &queryRoutingInfo{}}
 		if !q.shouldPrepare() {
 			t.Fatalf("expected Query.shouldPrepare to return true, got false for statement '%v'", toPrepare[i])
 		}
 	}
 
 	for i := 0; i < len(cantPrepare); i++ {
-		q.stmt = cantPrepare[i]
+		q := &Query{stmt: cantPrepare[i], routingInfo: &queryRoutingInfo{}}
 		if q.shouldPrepare() {
 			t.Fatalf("expected Query.shouldPrepare to return false, got true for statement '%v'", cantPrepare[i])
 		}

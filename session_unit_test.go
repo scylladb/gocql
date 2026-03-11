@@ -36,10 +36,10 @@ import (
 	"github.com/gocql/gocql/tablets"
 )
 
-func TestGetRoutingKeySkipsDDL(t *testing.T) {
+func TestShouldPrepareNonDML(t *testing.T) {
 	t.Parallel()
 
-	ddlStatements := []string{
+	nonDMLStatements := []string{
 		"CREATE TABLE ks.tbl (id int PRIMARY KEY)",
 		"ALTER TABLE ks.tbl ADD col text",
 		"DROP TABLE ks.tbl",
@@ -50,50 +50,39 @@ func TestGetRoutingKeySkipsDDL(t *testing.T) {
 		"USE ks",
 	}
 
-	for _, stmt := range ddlStatements {
-		// session is intentionally nil — if GetRoutingKey tries to call
-		// routingKeyInfo it will panic, proving the guard works.
-		q := &Query{
-			stmt:        stmt,
-			routingInfo: &queryRoutingInfo{},
-		}
-		key, err := q.GetRoutingKey()
-		if err != nil {
-			t.Errorf("GetRoutingKey(%q) returned error: %v", stmt, err)
-		}
-		if key != nil {
-			t.Errorf("GetRoutingKey(%q) returned non-nil key: %v", stmt, key)
-		}
+	for _, stmt := range nonDMLStatements {
+		t.Run(stmt, func(t *testing.T) {
+			q := &Query{stmt: stmt, routingInfo: &queryRoutingInfo{}}
+			if q.shouldPrepare() {
+				t.Errorf("shouldPrepare(%q) = true, want false", stmt)
+			}
+		})
 	}
 }
 
-func TestGetRoutingKeyDMLNeedsSession(t *testing.T) {
+func TestShouldPrepareDML(t *testing.T) {
 	t.Parallel()
 
-	// DML statements should NOT be short-circuited — they need to go through
-	// routingKeyInfo to compute a routing key. With a nil session this will
-	// panic, confirming that the guard does not block DML.
 	dmlStatements := []string{
 		"SELECT * FROM ks.tbl",
 		"INSERT INTO ks.tbl (id) VALUES (?)",
 		"UPDATE ks.tbl SET col = ? WHERE id = ?",
 		"DELETE FROM ks.tbl WHERE id = ?",
+		"BEGIN BATCH INSERT INTO ks.tbl (id) VALUES (1) APPLY BATCH",
+		"BEGIN BATCH INSERT INTO ks.tbl (id) VALUES (1) APPLY BATCH;",
+		"BEGIN UNLOGGED BATCH INSERT INTO ks.tbl (id) VALUES (1) APPLY BATCH",
+		"  SELECT * FROM ks.tbl",
+		"\t INSERT INTO ks.tbl (id) VALUES (?)",
+		"\u00a0SELECT * FROM ks.tbl",
 	}
 
 	for _, stmt := range dmlStatements {
-		q := &Query{
-			stmt:        stmt,
-			routingInfo: &queryRoutingInfo{},
-		}
-
-		func() {
-			defer func() {
-				if r := recover(); r == nil {
-					t.Errorf("GetRoutingKey(%q) did not panic with nil session — shouldPrepare guard may be blocking DML", stmt)
-				}
-			}()
-			q.GetRoutingKey()
-		}()
+		t.Run(stmt, func(t *testing.T) {
+			q := &Query{stmt: stmt, routingInfo: &queryRoutingInfo{}}
+			if !q.shouldPrepare() {
+				t.Errorf("shouldPrepare(%q) = false, want true", stmt)
+			}
+		})
 	}
 }
 
