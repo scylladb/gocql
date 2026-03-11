@@ -188,7 +188,7 @@ func readInt(p []byte) int32 {
 	return int32(binary.BigEndian.Uint32(p[:4]))
 }
 
-const defaultBufSize = 128
+const defaultBufSize = 4096
 
 type ObservedFrameHeader struct {
 	// StartHeader is the time we started reading the frame header off the network connection.
@@ -315,30 +315,19 @@ type frame interface {
 }
 
 func readHeader(r io.Reader, p []byte) (head frm.FrameHeader, err error) {
-	_, err = io.ReadFull(r, p[:1])
+	_, err = io.ReadFull(r, p[:headSize])
 	if err != nil {
 		return frm.FrameHeader{}, err
 	}
 
-	version := p[0] & protoVersionMask
+	head.Version = frm.ProtoVersion(p[0])
+	version := head.Version.Version()
 
 	if version < protoVersion3 || version > protoVersion5 {
 		return frm.FrameHeader{}, fmt.Errorf("gocql: unsupported protocol response version: %d", version)
 	}
 
-	_, err = io.ReadFull(r, p[1:headSize])
-	if err != nil {
-		return frm.FrameHeader{}, err
-	}
-
-	p = p[:headSize]
-
-	head.Version = frm.ProtoVersion(p[0])
 	head.Flags = p[1]
-
-	if len(p) != 9 {
-		return frm.FrameHeader{}, fmt.Errorf("not enough bytes to read header require 9 got: %d", len(p))
-	}
 
 	head.Stream = int(int16(binary.BigEndian.Uint16(p[2:4])))
 	head.Op = frm.Op(p[4])
@@ -723,6 +712,11 @@ func (f *framer) readTypeInfo() TypeInfo {
 		typ:   Type(id),
 	}
 
+	// Fast path: simple native types (0x0001-0x0015) need no further processing
+	if id > 0 && id <= 0x0015 {
+		return simple
+	}
+
 	if simple.typ == TypeCustom {
 		simple.custom = f.readString()
 		if cassType := getApacheCassandraType(simple.custom); cassType != TypeCustom {
@@ -846,20 +840,46 @@ func (f *framer) parsePreparedMetadata() preparedMetadata {
 	}
 
 	var cols []ColumnInfo
+	sameKeyspaceTable := true
+	firstKeyspace := ""
+	firstTable := ""
+	readPerColumnSpec := !globalSpec
 	if meta.colCount < 1000 {
 		// preallocate columninfo to avoid excess copying
 		cols = make([]ColumnInfo, meta.colCount)
 		for i := 0; i < meta.colCount; i++ {
-			f.readCol(&cols[i], &meta.resultMetadata, globalSpec, meta.keyspace, meta.table)
+			col := &cols[i]
+			keyspace, table := f.readColWithSpec(col, &meta.resultMetadata, globalSpec, meta.keyspace, meta.table, i, readPerColumnSpec)
+			if readPerColumnSpec {
+				if i == 0 {
+					firstKeyspace = keyspace
+					firstTable = table
+				} else if keyspace != firstKeyspace || table != firstTable {
+					sameKeyspaceTable = false
+				}
+			}
 		}
 	} else {
 		// use append, huge number of columns usually indicates a corrupt frame or
 		// just a huge row.
 		for i := 0; i < meta.colCount; i++ {
 			var col ColumnInfo
-			f.readCol(&col, &meta.resultMetadata, globalSpec, meta.keyspace, meta.table)
+			keyspace, table := f.readColWithSpec(&col, &meta.resultMetadata, globalSpec, meta.keyspace, meta.table, i, readPerColumnSpec)
+			if readPerColumnSpec {
+				if i == 0 {
+					firstKeyspace = keyspace
+					firstTable = table
+				} else if keyspace != firstKeyspace || table != firstTable {
+					sameKeyspaceTable = false
+				}
+			}
 			cols = append(cols, col)
 		}
+	}
+
+	if !globalSpec && meta.colCount > 0 && sameKeyspaceTable {
+		meta.keyspace = firstKeyspace
+		meta.table = firstTable
 	}
 
 	meta.columns = cols
@@ -869,6 +889,8 @@ func (f *framer) parsePreparedMetadata() preparedMetadata {
 
 type resultMetadata struct {
 	pagingState []byte
+	keyspace    string
+	table       string
 	// this is a count of the total number of columns which can be scanned,
 	// it is at minimum len(columns) but may be larger, for instance when a column
 	// is a UDT or tuple.
@@ -886,23 +908,29 @@ func (r resultMetadata) String() string {
 	return fmt.Sprintf("[metadata flags=0x%x paging_state=% X columns=%v]", r.flags, r.pagingState, r.columns)
 }
 
-func (f *framer) readCol(col *ColumnInfo, meta *resultMetadata, globalSpec bool, keyspace, table string) {
-	if !globalSpec {
+func (f *framer) readColWithSpec(col *ColumnInfo, meta *resultMetadata, globalSpec bool, keyspace, table string, colIndex int, readPerColumnSpec bool) (string, string) {
+	if readPerColumnSpec {
+		// In case of prepared statements with per-column spec, we need to read the keyspace and table for each column.
 		col.Keyspace = f.readString()
 		col.Table = f.readString()
 	} else {
+		if !globalSpec && colIndex != 0 {
+			// Skip redundant keyspace/table from wire (already read from first column).
+			f.skipString()
+			f.skipString()
+		}
 		col.Keyspace = keyspace
 		col.Table = table
 	}
 
 	col.Name = f.readString()
 	col.TypeInfo = f.readTypeInfo()
-	switch v := col.TypeInfo.(type) {
-	// maybe also UDT
-	case TupleTypeInfo:
+	if tuple, ok := col.TypeInfo.(TupleTypeInfo); ok {
 		// -1 because we already included the tuple column
-		meta.actualColCount += len(v.Elems) - 1
+		meta.actualColCount += len(tuple.Elems) - 1
 	}
+
+	return col.Keyspace, col.Table
 }
 
 func (f *framer) parseResultMetadata() resultMetadata {
@@ -923,11 +951,11 @@ func (f *framer) parseResultMetadata() resultMetadata {
 		return meta
 	}
 
-	var keyspace, table string
 	globalSpec := meta.flags&frm.FlagGlobalTableSpec == frm.FlagGlobalTableSpec
-	if globalSpec {
-		keyspace = f.readString()
-		table = f.readString()
+	if globalSpec || meta.colCount > 0 {
+		// globalSpec: read from metadata position; !globalSpec: read from first column position
+		meta.keyspace = f.readString()
+		meta.table = f.readString()
 	}
 
 	var cols []ColumnInfo
@@ -935,7 +963,7 @@ func (f *framer) parseResultMetadata() resultMetadata {
 		// preallocate columninfo to avoid excess copying
 		cols = make([]ColumnInfo, meta.colCount)
 		for i := 0; i < meta.colCount; i++ {
-			f.readCol(&cols[i], &meta, globalSpec, keyspace, table)
+			f.readColWithSpec(&cols[i], &meta, globalSpec, meta.keyspace, meta.table, i, false)
 		}
 
 	} else {
@@ -943,7 +971,7 @@ func (f *framer) parseResultMetadata() resultMetadata {
 		// just a huge row.
 		for i := 0; i < meta.colCount; i++ {
 			var col ColumnInfo
-			f.readCol(&col, &meta, globalSpec, keyspace, table)
+			f.readColWithSpec(&col, &meta, globalSpec, meta.keyspace, meta.table, i, false)
 			cols = append(cols, col)
 		}
 	}
@@ -1455,56 +1483,60 @@ func (f *framer) writeRegisterFrame(streamID int, w *writeRegisterFrame) error {
 }
 
 func (f *framer) readByte() byte {
-	if len(f.buf) < 1 {
-		panic(fmt.Errorf("not enough bytes in buffer to read byte require 1 got: %d", len(f.buf)))
+	if len(f.buf) >= 1 {
+		b := f.buf[0]
+		f.buf = f.buf[1:]
+		return b
 	}
-
-	b := f.buf[0]
-	f.buf = f.buf[1:]
-	return b
+	panic(fmt.Errorf("not enough bytes in buffer to read byte require 1 got: %d", len(f.buf)))
 }
 
 func (f *framer) readInt() (n int) {
-	if len(f.buf) < 4 {
-		panic(fmt.Errorf("not enough bytes in buffer to read int require 4 got: %d", len(f.buf)))
+	if len(f.buf) >= 4 {
+		n = int(int32(binary.BigEndian.Uint32(f.buf[:4])))
+		f.buf = f.buf[4:]
+		return
 	}
-
-	n = int(int32(binary.BigEndian.Uint32(f.buf[:4])))
-	f.buf = f.buf[4:]
-	return
+	panic(fmt.Errorf("not enough bytes in buffer to read int require 4 got: %d", len(f.buf)))
 }
 
 func (f *framer) readShort() (n uint16) {
-	if len(f.buf) < 2 {
-		panic(fmt.Errorf("not enough bytes in buffer to read short require 2 got: %d", len(f.buf)))
+	if len(f.buf) >= 2 {
+		n = binary.BigEndian.Uint16(f.buf[:2])
+		f.buf = f.buf[2:]
+		return
 	}
-	n = binary.BigEndian.Uint16(f.buf[:2])
-	f.buf = f.buf[2:]
-	return
+	panic(fmt.Errorf("not enough bytes in buffer to read short require 2 got: %d", len(f.buf)))
 }
 
 func (f *framer) readString() (s string) {
 	size := f.readShort()
-
-	if len(f.buf) < int(size) {
-		panic(fmt.Errorf("not enough bytes in buffer to read string require %d got: %d", size, len(f.buf)))
+	if len(f.buf) >= int(size) {
+		s = string(f.buf[:size])
+		f.buf = f.buf[size:]
+		return
 	}
+	panic(fmt.Errorf("not enough bytes in buffer to read string require %d got: %d", size, len(f.buf)))
+}
 
-	s = string(f.buf[:size])
-	f.buf = f.buf[size:]
-	return
+// skipString advances the buffer past a string without allocating
+func (f *framer) skipString() {
+	size := f.readShort()
+	if len(f.buf) >= int(size) {
+		f.buf = f.buf[size:]
+		return
+	}
+	panic(fmt.Errorf("not enough bytes in buffer to skip string require %d got: %d", size, len(f.buf)))
 }
 
 func (f *framer) readLongString() (s string) {
 	size := f.readInt()
-
-	if len(f.buf) < size {
-		panic(fmt.Errorf("not enough bytes in buffer to read long string require %d got: %d", size, len(f.buf)))
+	if len(f.buf) >= size {
+		s = string(f.buf[:size])
+		f.buf = f.buf[size:]
+		return
 	}
-
-	s = string(f.buf[:size])
-	f.buf = f.buf[size:]
-	return
+	panic(fmt.Errorf("not enough bytes in buffer to read long string require %d got: %d", size, len(f.buf)))
 }
 
 func (f *framer) readStringList() []string {
@@ -1523,15 +1555,12 @@ func (f *framer) ReadBytesInternal() ([]byte, error) {
 	if size < 0 {
 		return nil, nil
 	}
-
-	if len(f.buf) < size {
-		return nil, fmt.Errorf("not enough bytes in buffer to read bytes require %d got: %d", size, len(f.buf))
+	if len(f.buf) >= size {
+		l := f.buf[:size]
+		f.buf = f.buf[size:]
+		return l, nil
 	}
-
-	l := f.buf[:size]
-	f.buf = f.buf[size:]
-
-	return l, nil
+	return nil, fmt.Errorf("not enough bytes in buffer to read bytes require %d got: %d", size, len(f.buf))
 }
 
 func (f *framer) readBytes() []byte {
@@ -1539,15 +1568,12 @@ func (f *framer) readBytes() []byte {
 	if size < 0 {
 		return nil
 	}
-
-	if len(f.buf) < size {
-		panic(fmt.Errorf("not enough bytes in buffer to read bytes require %d got: %d", size, len(f.buf)))
+	if len(f.buf) >= size {
+		l := f.buf[:size]
+		f.buf = f.buf[size:]
+		return l
 	}
-
-	l := f.buf[:size]
-	f.buf = f.buf[size:]
-
-	return l
+	panic(fmt.Errorf("not enough bytes in buffer to read bytes require %d got: %d", size, len(f.buf)))
 }
 
 func (f *framer) readBytesCopy() []byte {
@@ -1555,49 +1581,41 @@ func (f *framer) readBytesCopy() []byte {
 	if size < 0 {
 		return nil
 	}
-
-	if len(f.buf) < size {
-		panic(fmt.Errorf("not enough bytes in buffer to read bytes require %d got: %d", size, len(f.buf)))
+	if len(f.buf) >= size {
+		out := make([]byte, size)
+		copy(out, f.buf[:size])
+		f.buf = f.buf[size:]
+		return out
 	}
-
-	out := make([]byte, size)
-	copy(out, f.buf[:size])
-	f.buf = f.buf[size:]
-	return out
+	panic(fmt.Errorf("not enough bytes in buffer to read bytes require %d got: %d", size, len(f.buf)))
 }
 
 func (f *framer) readShortBytes() []byte {
 	size := f.readShort()
-	if len(f.buf) < int(size) {
-		panic(fmt.Errorf("not enough bytes in buffer to read short bytes: require %d got %d", size, len(f.buf)))
+	if len(f.buf) >= int(size) {
+		l := f.buf[:size]
+		f.buf = f.buf[size:]
+		return l
 	}
-
-	l := f.buf[:size]
-	f.buf = f.buf[size:]
-
-	return l
+	panic(fmt.Errorf("not enough bytes in buffer to read short bytes: require %d got %d", size, len(f.buf)))
 }
 
 func (f *framer) readInetAdressOnly() net.IP {
-	if len(f.buf) < 1 {
-		panic(fmt.Errorf("not enough bytes in buffer to read inet size require %d got: %d", 1, len(f.buf)))
-	}
-
-	size := f.buf[0]
-	f.buf = f.buf[1:]
-
-	if !(size == 4 || size == 16) {
-		panic(fmt.Errorf("invalid IP size: %d", size))
-	}
-
-	if len(f.buf) < int(size) {
+	if len(f.buf) >= 1 {
+		size := f.buf[0]
+		f.buf = f.buf[1:]
+		if !(size == 4 || size == 16) {
+			panic(fmt.Errorf("invalid IP size: %d", size))
+		}
+		if len(f.buf) >= int(size) {
+			ip := make(net.IP, size)
+			copy(ip, f.buf[:size])
+			f.buf = f.buf[size:]
+			return ip
+		}
 		panic(fmt.Errorf("not enough bytes in buffer to read inet require %d got: %d", size, len(f.buf)))
 	}
-
-	ip := make(net.IP, size)
-	copy(ip, f.buf[:size])
-	f.buf = f.buf[size:]
-	return ip
+	panic(fmt.Errorf("not enough bytes in buffer to read inet size require %d got: %d", 1, len(f.buf)))
 }
 
 func (f *framer) readInet() (net.IP, int) {
