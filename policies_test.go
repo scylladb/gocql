@@ -1723,23 +1723,33 @@ func BenchmarkPickLWT(b *testing.B) {
 	const keyspace = "myKeyspace"
 	hosts := ntsTestHosts()
 
-	setup := func(lwt bool) (HostSelectionPolicy, *Query) {
+	// setup creates a token-aware policy and query. When withPlan is true the
+	// LWT flag is stored in an atomic routingPlan pointer (lock-free read);
+	// when false it is stored in the mutex-guarded queryRoutingInfo field.
+	setup := func(lwt, withPlan bool) (HostSelectionPolicy, *Query) {
 		policy := createNTSPolicy(keyspace, true)
 		for _, host := range hosts {
 			policy.AddHost(host)
 		}
 		policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: keyspace})
 
+		ri := &queryRoutingInfo{}
+		if withPlan {
+			ri.plan.Store(&routingPlan{lwt: lwt})
+		} else {
+			ri.lwt = lwt
+		}
+
 		query := &Query{
 			routingKey:  []byte("18"),
-			routingInfo: &queryRoutingInfo{lwt: lwt},
+			routingInfo: ri,
 		}
 		query.getKeyspace = func() string { return keyspace }
 		return policy, query
 	}
 
 	b.Run("LWT", func(b *testing.B) {
-		policy, query := setup(true)
+		policy, query := setup(true, false)
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -1751,8 +1761,20 @@ func BenchmarkPickLWT(b *testing.B) {
 		}
 	})
 
+	b.Run("LWT_WithPlan", func(b *testing.B) {
+		policy, query := setup(true, true)
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			iter := policy.Pick(query)
+			if h := iter(); h == nil {
+				b.Fatal("nil host")
+			}
+		}
+	})
+
 	b.Run("NonLWT", func(b *testing.B) {
-		policy, query := setup(false)
+		policy, query := setup(false, false)
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -1764,7 +1786,18 @@ func BenchmarkPickLWT(b *testing.B) {
 	})
 
 	b.Run("LWT_FullDrain", func(b *testing.B) {
-		policy, query := setup(true)
+		policy, query := setup(true, false)
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			iter := policy.Pick(query)
+			for h := iter(); h != nil; h = iter() {
+			}
+		}
+	})
+
+	b.Run("LWT_FullDrain_WithPlan", func(b *testing.B) {
+		policy, query := setup(true, true)
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -1775,7 +1808,7 @@ func BenchmarkPickLWT(b *testing.B) {
 	})
 
 	b.Run("NonLWT_FullDrain", func(b *testing.B) {
-		policy, query := setup(false)
+		policy, query := setup(false, false)
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
