@@ -1837,10 +1837,10 @@ func (c *Conn) querySystem(ctx context.Context, query string, values ...interfac
 	return c.executeQuery(ctx, q)
 }
 
-const qrySystemPeers = "SELECT * FROM system.peers"
-const qrySystemPeersV2 = "SELECT * FROM system.peers_v2"
+const qrySystemPeers = "SELECT peer, data_center, host_id, preferred_ip, rack, release_version, rpc_address, schema_version, tokens FROM system.peers"
+const qrySystemPeersV2 = "SELECT peer, data_center, host_id, native_address, native_port, preferred_ip, rack, release_version, schema_version, tokens FROM system.peers_v2"
 
-const qrySystemLocal = "SELECT * FROM system.local WHERE key='local'"
+const qrySystemLocal = "SELECT broadcast_address, cluster_name, data_center, host_id, listen_address, partitioner, rack, release_version, rpc_address, schema_version, tokens FROM system.local WHERE key='local'"
 
 func getSchemaAgreement(queryLocalSchemasRows []string, querySystemPeersRows []schemaAgreementHost, logger StdLogger) (err error) {
 	versions := make(map[string]struct{})
@@ -1905,7 +1905,7 @@ func (c *Conn) awaitSchemaAgreement(ctx context.Context) error {
 		} else {
 			iter = c.querySystem(ctx, "SELECT host_id, data_center, rack, schema_version, rpc_address FROM system.peers")
 		}
-		// data_center, rack, host_id, schema_version, rpc_address
+		// Scan order: host_id, data_center, rack, schema_version, rpc_address/preferred_ip
 		var hosts []schemaAgreementHost
 		var tmp schemaAgreementHost
 		for iter.Scan(&tmp.HostID, &tmp.DataCenter, &tmp.Rack, &tmp.SchemaVersion, &tmp.RPCAddress) {
