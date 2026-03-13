@@ -26,11 +26,13 @@ package gocql
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
 	"math/bits"
 	"reflect"
+	"sync"
 	"unsafe"
 
 	"github.com/gocql/gocql/serialization/ascii"
@@ -839,6 +841,26 @@ func marshalVector(info VectorType, value interface{}) ([]byte, error) {
 		return nil, nil
 	}
 
+	// Fast paths for common vector types — avoid reflect entirely.
+	switch info.SubType.Type() {
+	case TypeFloat:
+		if vec, ok := value.([]float32); ok {
+			return marshalVectorFloat32(info.Dimensions, vec)
+		}
+	case TypeDouble:
+		if vec, ok := value.([]float64); ok {
+			return marshalVectorFloat64(info.Dimensions, vec)
+		}
+	case TypeInt:
+		if vec, ok := value.([]int32); ok {
+			return marshalVectorInt32(info.Dimensions, vec)
+		}
+	case TypeBigInt:
+		if vec, ok := value.([]int64); ok {
+			return marshalVectorInt64(info.Dimensions, vec)
+		}
+	}
+
 	rv := reflect.ValueOf(value)
 	t := rv.Type()
 	k := t.Kind()
@@ -855,6 +877,13 @@ func marshalVector(info VectorType, value interface{}) ([]byte, error) {
 		}
 
 		isLengthType := isVectorVariableLengthType(info.SubType)
+		if !isLengthType {
+			if elemSize := vectorFixedElemSize(info.SubType); elemSize > 0 {
+				if needed := int64(n) * int64(elemSize); needed > 0 && needed <= math.MaxInt32 {
+					buf.Grow(int(needed))
+				}
+			}
+		}
 		for i := 0; i < n; i++ {
 			item, err := Marshal(info.SubType, rv.Index(i).Interface())
 			if err != nil {
@@ -871,6 +900,26 @@ func marshalVector(info VectorType, value interface{}) ([]byte, error) {
 }
 
 func unmarshalVector(info VectorType, data []byte, value interface{}) error {
+	// Fast paths for common vector types — avoid reflect entirely.
+	switch info.SubType.Type() {
+	case TypeFloat:
+		if dst, ok := value.(*[]float32); ok {
+			return unmarshalVectorFloat32(info.Dimensions, data, dst)
+		}
+	case TypeDouble:
+		if dst, ok := value.(*[]float64); ok {
+			return unmarshalVectorFloat64(info.Dimensions, data, dst)
+		}
+	case TypeInt:
+		if dst, ok := value.(*[]int32); ok {
+			return unmarshalVectorInt32(info.Dimensions, data, dst)
+		}
+	case TypeBigInt:
+		if dst, ok := value.(*[]int64); ok {
+			return unmarshalVectorInt64(info.Dimensions, data, dst)
+		}
+	}
+
 	rv := reflect.ValueOf(value)
 	if rv.Kind() != reflect.Ptr {
 		return unmarshalErrorf("can not unmarshal into non-pointer %T", value)
@@ -938,6 +987,211 @@ func unmarshalVector(info VectorType, data []byte, value interface{}) error {
 		return nil
 	}
 	return unmarshalErrorf("can not unmarshal %s into %T. Accepted types: *slice, *array, *interface{}.", info, value)
+}
+
+// vectorBufPool pools []byte buffers used by vector marshal fast paths.
+// Buffers are returned to the pool by putVectorBuf after the framer copies them.
+//
+// NOTE: putVectorBuf is currently exercised only by benchmarks/tests.
+// Wiring it into the connection write path (so production callers return
+// buffers after the framer copies them) is planned for a follow-up change.
+var vectorBufPool = sync.Pool{}
+
+func getVectorBuf(size int) []byte {
+	if v := vectorBufPool.Get(); v != nil {
+		if buf, ok := v.([]byte); ok {
+			if cap(buf) >= size {
+				return buf[:size]
+			}
+			// Undersized buffer: return it so smaller vectors can reuse it.
+			vectorBufPool.Put(buf) //nolint:staticcheck // SA6002: []byte is a value type; boxing cost is acceptable for pool reuse
+		}
+	}
+	return make([]byte, size)
+}
+
+func putVectorBuf(buf []byte) {
+	if buf == nil || cap(buf) > 65536 {
+		return
+	}
+	vectorBufPool.Put(buf) //nolint:staticcheck // SA6002: []byte is a value type; boxing cost is acceptable for pool reuse
+}
+
+// marshalVectorFloat32 encodes a float32 slice as a contiguous big-endian
+// IEEE 754 vector. Uses a pooled buffer for zero-alloc steady state.
+func marshalVectorFloat32(dim int, vec []float32) ([]byte, error) {
+	if vec == nil {
+		return nil, nil
+	}
+	if len(vec) != dim {
+		return nil, marshalErrorf("expected vector with %d dimensions, received %d", dim, len(vec))
+	}
+	buf := getVectorBuf(dim * 4)
+	for i, v := range vec {
+		binary.BigEndian.PutUint32(buf[i*4:], math.Float32bits(v))
+	}
+	return buf, nil
+}
+
+// marshalVectorFloat64 encodes a float64 slice as a contiguous big-endian
+// IEEE 754 vector. Uses a pooled buffer for zero-alloc steady state.
+func marshalVectorFloat64(dim int, vec []float64) ([]byte, error) {
+	if vec == nil {
+		return nil, nil
+	}
+	if len(vec) != dim {
+		return nil, marshalErrorf("expected vector with %d dimensions, received %d", dim, len(vec))
+	}
+	buf := getVectorBuf(dim * 8)
+	for i, v := range vec {
+		binary.BigEndian.PutUint64(buf[i*8:], math.Float64bits(v))
+	}
+	return buf, nil
+}
+
+// unmarshalVectorFloat32 decodes contiguous big-endian IEEE 754 floats.
+// Reuses the destination slice's backing array when capacity allows (zero-alloc steady state).
+func unmarshalVectorFloat32(dim int, data []byte, dst *[]float32) error {
+	if data == nil {
+		*dst = nil
+		return nil
+	}
+	expected := dim * 4
+	if len(data) != expected {
+		return unmarshalErrorf("unmarshal vector<float, %d>: expected %d bytes, got %d", dim, expected, len(data))
+	}
+	vec := *dst
+	if cap(vec) >= dim {
+		vec = vec[:dim]
+	} else {
+		vec = make([]float32, dim)
+	}
+	for i := 0; i < dim; i++ {
+		vec[i] = math.Float32frombits(binary.BigEndian.Uint32(data[i*4:]))
+	}
+	*dst = vec
+	return nil
+}
+
+// unmarshalVectorFloat64 decodes contiguous big-endian IEEE 754 doubles.
+// Reuses the destination slice's backing array when capacity allows (zero-alloc steady state).
+func unmarshalVectorFloat64(dim int, data []byte, dst *[]float64) error {
+	if data == nil {
+		*dst = nil
+		return nil
+	}
+	expected := dim * 8
+	if len(data) != expected {
+		return unmarshalErrorf("unmarshal vector<double, %d>: expected %d bytes, got %d", dim, expected, len(data))
+	}
+	vec := *dst
+	if cap(vec) >= dim {
+		vec = vec[:dim]
+	} else {
+		vec = make([]float64, dim)
+	}
+	for i := 0; i < dim; i++ {
+		vec[i] = math.Float64frombits(binary.BigEndian.Uint64(data[i*8:]))
+	}
+	*dst = vec
+	return nil
+}
+
+// marshalVectorInt32 encodes an int32 slice as a contiguous big-endian
+// vector (CQL int = 4 bytes). Uses a pooled buffer for zero-alloc steady state.
+func marshalVectorInt32(dim int, vec []int32) ([]byte, error) {
+	if vec == nil {
+		return nil, nil
+	}
+	if len(vec) != dim {
+		return nil, marshalErrorf("expected vector with %d dimensions, received %d", dim, len(vec))
+	}
+	buf := getVectorBuf(dim * 4)
+	for i, v := range vec {
+		binary.BigEndian.PutUint32(buf[i*4:], uint32(v))
+	}
+	return buf, nil
+}
+
+// marshalVectorInt64 encodes an int64 slice as a contiguous big-endian
+// vector (CQL bigint = 8 bytes). Uses a pooled buffer for zero-alloc steady state.
+func marshalVectorInt64(dim int, vec []int64) ([]byte, error) {
+	if vec == nil {
+		return nil, nil
+	}
+	if len(vec) != dim {
+		return nil, marshalErrorf("expected vector with %d dimensions, received %d", dim, len(vec))
+	}
+	buf := getVectorBuf(dim * 8)
+	for i, v := range vec {
+		binary.BigEndian.PutUint64(buf[i*8:], uint64(v))
+	}
+	return buf, nil
+}
+
+// unmarshalVectorInt32 decodes contiguous big-endian CQL int (4-byte) values.
+// Reuses the destination slice's backing array when capacity allows (zero-alloc steady state).
+func unmarshalVectorInt32(dim int, data []byte, dst *[]int32) error {
+	if data == nil {
+		*dst = nil
+		return nil
+	}
+	expected := dim * 4
+	if len(data) != expected {
+		return unmarshalErrorf("unmarshal vector<int, %d>: expected %d bytes, got %d", dim, expected, len(data))
+	}
+	vec := *dst
+	if cap(vec) >= dim {
+		vec = vec[:dim]
+	} else {
+		vec = make([]int32, dim)
+	}
+	for i := 0; i < dim; i++ {
+		vec[i] = int32(binary.BigEndian.Uint32(data[i*4:]))
+	}
+	*dst = vec
+	return nil
+}
+
+// unmarshalVectorInt64 decodes contiguous big-endian CQL bigint (8-byte) values.
+// Reuses the destination slice's backing array when capacity allows (zero-alloc steady state).
+func unmarshalVectorInt64(dim int, data []byte, dst *[]int64) error {
+	if data == nil {
+		*dst = nil
+		return nil
+	}
+	expected := dim * 8
+	if len(data) != expected {
+		return unmarshalErrorf("unmarshal vector<bigint, %d>: expected %d bytes, got %d", dim, expected, len(data))
+	}
+	vec := *dst
+	if cap(vec) >= dim {
+		vec = vec[:dim]
+	} else {
+		vec = make([]int64, dim)
+	}
+	for i := 0; i < dim; i++ {
+		vec[i] = int64(binary.BigEndian.Uint64(data[i*8:]))
+	}
+	*dst = vec
+	return nil
+}
+
+// vectorFixedElemSize returns the known wire-format byte size for fixed-length
+// CQL types used as vector elements. Returns 0 for variable-length or unknown types.
+func vectorFixedElemSize(elemType TypeInfo) int {
+	switch elemType.Type() {
+	case TypeBoolean:
+		return 1
+	case TypeInt, TypeFloat:
+		return 4
+	case TypeBigInt, TypeDouble, TypeTimestamp:
+		return 8
+	case TypeUUID, TypeTimeUUID:
+		return 16
+	default:
+		return 0
+	}
 }
 
 // isVectorVariableLengthType determines if a type requires explicit length serialization within a vector.

@@ -1,0 +1,1150 @@
+// Copyright (c) 2012 The gocql Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build all || unit
+// +build all unit
+
+package gocql
+
+import (
+	"encoding/binary"
+	"math"
+	"reflect"
+	"strconv"
+	"sync"
+	"testing"
+)
+
+// --- Test helpers ---
+
+func makeFloat32VectorType(dim int) VectorType {
+	return VectorType{
+		NativeType: NativeType{
+			proto:  protoVersion4,
+			typ:    TypeCustom,
+			custom: apacheCassandraTypePrefix + "VectorType(" + apacheCassandraTypePrefix + "FloatType, " + strconv.Itoa(dim) + ")",
+		},
+		SubType:    NativeType{proto: protoVersion4, typ: TypeFloat},
+		Dimensions: dim,
+	}
+}
+
+func makeFloat64VectorType(dim int) VectorType {
+	return VectorType{
+		NativeType: NativeType{
+			proto:  protoVersion4,
+			typ:    TypeCustom,
+			custom: apacheCassandraTypePrefix + "VectorType(" + apacheCassandraTypePrefix + "DoubleType, " + strconv.Itoa(dim) + ")",
+		},
+		SubType:    NativeType{proto: protoVersion4, typ: TypeDouble},
+		Dimensions: dim,
+	}
+}
+
+func makeUUIDVectorType(dim int) VectorType {
+	return VectorType{
+		NativeType: NativeType{
+			proto:  protoVersion4,
+			typ:    TypeCustom,
+			custom: apacheCassandraTypePrefix + "VectorType(" + apacheCassandraTypePrefix + "UUIDType, " + strconv.Itoa(dim) + ")",
+		},
+		SubType:    NativeType{proto: protoVersion4, typ: TypeUUID},
+		Dimensions: dim,
+	}
+}
+
+func makeInt32VectorType(dim int) VectorType {
+	return VectorType{
+		NativeType: NativeType{
+			proto:  protoVersion4,
+			typ:    TypeCustom,
+			custom: apacheCassandraTypePrefix + "VectorType(" + apacheCassandraTypePrefix + "Int32Type, " + strconv.Itoa(dim) + ")",
+		},
+		SubType:    NativeType{proto: protoVersion4, typ: TypeInt},
+		Dimensions: dim,
+	}
+}
+
+func makeInt64VectorType(dim int) VectorType {
+	return VectorType{
+		NativeType: NativeType{
+			proto:  protoVersion4,
+			typ:    TypeCustom,
+			custom: apacheCassandraTypePrefix + "VectorType(" + apacheCassandraTypePrefix + "LongType, " + strconv.Itoa(dim) + ")",
+		},
+		SubType:    NativeType{proto: protoVersion4, typ: TypeBigInt},
+		Dimensions: dim,
+	}
+}
+
+// --- Test 1: Round-trip ---
+
+func TestMarshalVector_RoundTrip(t *testing.T) {
+	t.Run("float32", func(t *testing.T) {
+		dim := 5
+		info := makeFloat32VectorType(dim)
+		vec := []float32{1.1, 2.2, 3.3, 4.4, 5.5}
+
+		data, err := marshalVector(info, vec)
+		if err != nil {
+			t.Fatalf("marshalVector: %v", err)
+		}
+		if len(data) != dim*4 {
+			t.Fatalf("expected %d bytes, got %d", dim*4, len(data))
+		}
+
+		var result []float32
+		if err := unmarshalVector(info, data, &result); err != nil {
+			t.Fatalf("unmarshalVector: %v", err)
+		}
+		if !reflect.DeepEqual(vec, result) {
+			t.Errorf("round-trip mismatch: got %v, want %v", result, vec)
+		}
+	})
+
+	t.Run("float64", func(t *testing.T) {
+		dim := 5
+		info := makeFloat64VectorType(dim)
+		vec := []float64{1.1, 2.2, 3.3, 4.4, 5.5}
+
+		data, err := marshalVector(info, vec)
+		if err != nil {
+			t.Fatalf("marshalVector: %v", err)
+		}
+		if len(data) != dim*8 {
+			t.Fatalf("expected %d bytes, got %d", dim*8, len(data))
+		}
+
+		var result []float64
+		if err := unmarshalVector(info, data, &result); err != nil {
+			t.Fatalf("unmarshalVector: %v", err)
+		}
+		if !reflect.DeepEqual(vec, result) {
+			t.Errorf("round-trip mismatch: got %v, want %v", result, vec)
+		}
+	})
+
+	t.Run("int32", func(t *testing.T) {
+		dim := 5
+		info := makeInt32VectorType(dim)
+		vec := []int32{-100, 0, 42, math.MaxInt32, math.MinInt32}
+
+		data, err := marshalVector(info, vec)
+		if err != nil {
+			t.Fatalf("marshalVector: %v", err)
+		}
+		if len(data) != dim*4 {
+			t.Fatalf("expected %d bytes, got %d", dim*4, len(data))
+		}
+
+		var result []int32
+		if err := unmarshalVector(info, data, &result); err != nil {
+			t.Fatalf("unmarshalVector: %v", err)
+		}
+		if !reflect.DeepEqual(vec, result) {
+			t.Errorf("round-trip mismatch: got %v, want %v", result, vec)
+		}
+	})
+
+	t.Run("int64", func(t *testing.T) {
+		dim := 5
+		info := makeInt64VectorType(dim)
+		vec := []int64{-100, 0, 42, math.MaxInt64, math.MinInt64}
+
+		data, err := marshalVector(info, vec)
+		if err != nil {
+			t.Fatalf("marshalVector: %v", err)
+		}
+		if len(data) != dim*8 {
+			t.Fatalf("expected %d bytes, got %d", dim*8, len(data))
+		}
+
+		var result []int64
+		if err := unmarshalVector(info, data, &result); err != nil {
+			t.Fatalf("unmarshalVector: %v", err)
+		}
+		if !reflect.DeepEqual(vec, result) {
+			t.Errorf("round-trip mismatch: got %v, want %v", result, vec)
+		}
+	})
+}
+
+// --- Test 2: Byte compatibility ---
+
+func TestMarshalVector_ByteCompatibility(t *testing.T) {
+	t.Run("float32", func(t *testing.T) {
+		dim := 3
+		vec := []float32{-1.5, 0, 42.125}
+		expected := make([]byte, dim*4)
+		for i, v := range vec {
+			binary.BigEndian.PutUint32(expected[i*4:], math.Float32bits(v))
+		}
+
+		info := makeFloat32VectorType(dim)
+		data, err := marshalVector(info, vec)
+		if err != nil {
+			t.Fatalf("marshalVector: %v", err)
+		}
+		if !reflect.DeepEqual(data, expected) {
+			t.Errorf("byte mismatch:\n  got:  %x\n  want: %x", data, expected)
+		}
+	})
+
+	t.Run("float64", func(t *testing.T) {
+		dim := 3
+		vec := []float64{-1.5, 0, 42.125}
+		expected := make([]byte, dim*8)
+		for i, v := range vec {
+			binary.BigEndian.PutUint64(expected[i*8:], math.Float64bits(v))
+		}
+
+		info := makeFloat64VectorType(dim)
+		data, err := marshalVector(info, vec)
+		if err != nil {
+			t.Fatalf("marshalVector: %v", err)
+		}
+		if !reflect.DeepEqual(data, expected) {
+			t.Errorf("byte mismatch:\n  got:  %x\n  want: %x", data, expected)
+		}
+	})
+
+	t.Run("int32", func(t *testing.T) {
+		dim := 3
+		vec := []int32{-1, 0, 42}
+		expected := make([]byte, dim*4)
+		for i, v := range vec {
+			binary.BigEndian.PutUint32(expected[i*4:], uint32(v))
+		}
+
+		info := makeInt32VectorType(dim)
+		data, err := marshalVector(info, vec)
+		if err != nil {
+			t.Fatalf("marshalVector: %v", err)
+		}
+		if !reflect.DeepEqual(data, expected) {
+			t.Errorf("byte mismatch:\n  got:  %x\n  want: %x", data, expected)
+		}
+	})
+
+	t.Run("int64", func(t *testing.T) {
+		dim := 3
+		vec := []int64{-1, 0, 42}
+		expected := make([]byte, dim*8)
+		for i, v := range vec {
+			binary.BigEndian.PutUint64(expected[i*8:], uint64(v))
+		}
+
+		info := makeInt64VectorType(dim)
+		data, err := marshalVector(info, vec)
+		if err != nil {
+			t.Fatalf("marshalVector: %v", err)
+		}
+		if !reflect.DeepEqual(data, expected) {
+			t.Errorf("byte mismatch:\n  got:  %x\n  want: %x", data, expected)
+		}
+	})
+}
+
+// --- Test 3: Slice reuse ---
+
+func TestUnmarshalVector_SliceReuse(t *testing.T) {
+	t.Run("float32", func(t *testing.T) {
+		dim := 4
+		info := makeFloat32VectorType(dim)
+		data := make([]byte, dim*4)
+		for i := 0; i < dim; i++ {
+			binary.BigEndian.PutUint32(data[i*4:], math.Float32bits(float32(i)))
+		}
+
+		var result []float32
+		if err := unmarshalVector(info, data, &result); err != nil {
+			t.Fatalf("unmarshalVector (first): %v", err)
+		}
+		if len(result) != dim {
+			t.Fatalf("expected len %d, got %d", dim, len(result))
+		}
+		ptr := &result[0]
+
+		if err := unmarshalVector(info, data, &result); err != nil {
+			t.Fatalf("unmarshalVector (second): %v", err)
+		}
+		if &result[0] != ptr {
+			t.Error("expected slice reuse, but a new backing array was allocated")
+		}
+	})
+
+	t.Run("float64", func(t *testing.T) {
+		dim := 4
+		info := makeFloat64VectorType(dim)
+		data := make([]byte, dim*8)
+		for i := 0; i < dim; i++ {
+			binary.BigEndian.PutUint64(data[i*8:], math.Float64bits(float64(i)))
+		}
+
+		var result []float64
+		if err := unmarshalVector(info, data, &result); err != nil {
+			t.Fatalf("unmarshalVector (first): %v", err)
+		}
+		ptr := &result[0]
+
+		if err := unmarshalVector(info, data, &result); err != nil {
+			t.Fatalf("unmarshalVector (second): %v", err)
+		}
+		if &result[0] != ptr {
+			t.Error("expected slice reuse, but a new backing array was allocated")
+		}
+	})
+
+	t.Run("float32_excess_cap", func(t *testing.T) {
+		dim := 4
+		info := makeFloat32VectorType(dim)
+		data := make([]byte, dim*4)
+		for i := 0; i < dim; i++ {
+			binary.BigEndian.PutUint32(data[i*4:], math.Float32bits(float32(i)+0.5))
+		}
+
+		result := make([]float32, 0, dim+10)
+		ptr := &result[:1][0]
+		if err := unmarshalVector(info, data, &result); err != nil {
+			t.Fatalf("unmarshalVector: %v", err)
+		}
+		if len(result) != dim {
+			t.Fatalf("expected len %d, got %d", dim, len(result))
+		}
+		if &result[0] != ptr {
+			t.Error("expected reuse of pre-allocated backing array with excess capacity")
+		}
+	})
+
+	t.Run("float64_excess_cap", func(t *testing.T) {
+		dim := 4
+		info := makeFloat64VectorType(dim)
+		data := make([]byte, dim*8)
+		for i := 0; i < dim; i++ {
+			binary.BigEndian.PutUint64(data[i*8:], math.Float64bits(float64(i)+0.5))
+		}
+
+		result := make([]float64, 0, dim+10)
+		ptr := &result[:1][0]
+		if err := unmarshalVector(info, data, &result); err != nil {
+			t.Fatalf("unmarshalVector: %v", err)
+		}
+		if len(result) != dim {
+			t.Fatalf("expected len %d, got %d", dim, len(result))
+		}
+		if &result[0] != ptr {
+			t.Error("expected reuse of pre-allocated backing array with excess capacity")
+		}
+	})
+
+	t.Run("int32", func(t *testing.T) {
+		dim := 4
+		info := makeInt32VectorType(dim)
+		data := make([]byte, dim*4)
+		for i := 0; i < dim; i++ {
+			binary.BigEndian.PutUint32(data[i*4:], uint32(int32(i)))
+		}
+
+		var result []int32
+		if err := unmarshalVector(info, data, &result); err != nil {
+			t.Fatalf("unmarshalVector (first): %v", err)
+		}
+		if len(result) != dim {
+			t.Fatalf("expected len %d, got %d", dim, len(result))
+		}
+		ptr := &result[0]
+
+		if err := unmarshalVector(info, data, &result); err != nil {
+			t.Fatalf("unmarshalVector (second): %v", err)
+		}
+		if &result[0] != ptr {
+			t.Error("expected slice reuse, but a new backing array was allocated")
+		}
+	})
+
+	t.Run("int64", func(t *testing.T) {
+		dim := 4
+		info := makeInt64VectorType(dim)
+		data := make([]byte, dim*8)
+		for i := 0; i < dim; i++ {
+			binary.BigEndian.PutUint64(data[i*8:], uint64(int64(i)))
+		}
+
+		var result []int64
+		if err := unmarshalVector(info, data, &result); err != nil {
+			t.Fatalf("unmarshalVector (first): %v", err)
+		}
+		ptr := &result[0]
+
+		if err := unmarshalVector(info, data, &result); err != nil {
+			t.Fatalf("unmarshalVector (second): %v", err)
+		}
+		if &result[0] != ptr {
+			t.Error("expected slice reuse, but a new backing array was allocated")
+		}
+	})
+
+	t.Run("int32_excess_cap", func(t *testing.T) {
+		dim := 4
+		info := makeInt32VectorType(dim)
+		data := make([]byte, dim*4)
+		for i := 0; i < dim; i++ {
+			binary.BigEndian.PutUint32(data[i*4:], uint32(int32(i)+10))
+		}
+
+		result := make([]int32, 0, dim+10)
+		ptr := &result[:1][0]
+		if err := unmarshalVector(info, data, &result); err != nil {
+			t.Fatalf("unmarshalVector: %v", err)
+		}
+		if len(result) != dim {
+			t.Fatalf("expected len %d, got %d", dim, len(result))
+		}
+		if &result[0] != ptr {
+			t.Error("expected reuse of pre-allocated backing array with excess capacity")
+		}
+	})
+
+	t.Run("int64_excess_cap", func(t *testing.T) {
+		dim := 4
+		info := makeInt64VectorType(dim)
+		data := make([]byte, dim*8)
+		for i := 0; i < dim; i++ {
+			binary.BigEndian.PutUint64(data[i*8:], uint64(int64(i)+10))
+		}
+
+		result := make([]int64, 0, dim+10)
+		ptr := &result[:1][0]
+		if err := unmarshalVector(info, data, &result); err != nil {
+			t.Fatalf("unmarshalVector: %v", err)
+		}
+		if len(result) != dim {
+			t.Fatalf("expected len %d, got %d", dim, len(result))
+		}
+		if &result[0] != ptr {
+			t.Error("expected reuse of pre-allocated backing array with excess capacity")
+		}
+	})
+}
+
+// --- Test 4: Nil slice marshal ---
+
+func TestMarshalVector_NilSlice(t *testing.T) {
+	t.Run("float32_nil_slice", func(t *testing.T) {
+		info := makeFloat32VectorType(3)
+		var vec []float32
+		data, err := marshalVector(info, vec)
+		if err != nil {
+			t.Fatalf("marshalVector: %v", err)
+		}
+		if data != nil {
+			t.Errorf("expected nil data for nil slice, got %v", data)
+		}
+	})
+
+	t.Run("float64_nil_slice", func(t *testing.T) {
+		info := makeFloat64VectorType(3)
+		var vec []float64
+		data, err := marshalVector(info, vec)
+		if err != nil {
+			t.Fatalf("marshalVector: %v", err)
+		}
+		if data != nil {
+			t.Errorf("expected nil data for nil slice, got %v", data)
+		}
+	})
+
+	t.Run("float32_nil_ptr", func(t *testing.T) {
+		info := makeFloat32VectorType(3)
+		var ptr *[]float32
+		data, err := Marshal(info, ptr)
+		if err != nil {
+			t.Fatalf("Marshal: %v", err)
+		}
+		if data != nil {
+			t.Errorf("expected nil data for nil ptr, got %v", data)
+		}
+	})
+
+	t.Run("float64_nil_ptr", func(t *testing.T) {
+		info := makeFloat64VectorType(3)
+		var ptr *[]float64
+		data, err := Marshal(info, ptr)
+		if err != nil {
+			t.Fatalf("Marshal: %v", err)
+		}
+		if data != nil {
+			t.Errorf("expected nil data for nil ptr, got %v", data)
+		}
+	})
+
+	t.Run("float32_non_nil_ptr_nil_slice", func(t *testing.T) {
+		info := makeFloat32VectorType(3)
+		var s []float32
+		data, err := Marshal(info, &s)
+		if err != nil {
+			t.Fatalf("Marshal: %v", err)
+		}
+		if data != nil {
+			t.Errorf("expected nil data for non-nil ptr to nil slice, got %v", data)
+		}
+	})
+
+	t.Run("float64_non_nil_ptr_nil_slice", func(t *testing.T) {
+		info := makeFloat64VectorType(3)
+		var s []float64
+		data, err := Marshal(info, &s)
+		if err != nil {
+			t.Fatalf("Marshal: %v", err)
+		}
+		if data != nil {
+			t.Errorf("expected nil data for non-nil ptr to nil slice, got %v", data)
+		}
+	})
+
+	t.Run("int32_nil_slice", func(t *testing.T) {
+		info := makeInt32VectorType(3)
+		var vec []int32
+		data, err := marshalVector(info, vec)
+		if err != nil {
+			t.Fatalf("marshalVector: %v", err)
+		}
+		if data != nil {
+			t.Errorf("expected nil data for nil slice, got %v", data)
+		}
+	})
+
+	t.Run("int64_nil_slice", func(t *testing.T) {
+		info := makeInt64VectorType(3)
+		var vec []int64
+		data, err := marshalVector(info, vec)
+		if err != nil {
+			t.Fatalf("marshalVector: %v", err)
+		}
+		if data != nil {
+			t.Errorf("expected nil data for nil slice, got %v", data)
+		}
+	})
+
+	t.Run("int32_nil_ptr", func(t *testing.T) {
+		info := makeInt32VectorType(3)
+		var ptr *[]int32
+		data, err := Marshal(info, ptr)
+		if err != nil {
+			t.Fatalf("Marshal: %v", err)
+		}
+		if data != nil {
+			t.Errorf("expected nil data for nil ptr, got %v", data)
+		}
+	})
+
+	t.Run("int64_nil_ptr", func(t *testing.T) {
+		info := makeInt64VectorType(3)
+		var ptr *[]int64
+		data, err := Marshal(info, ptr)
+		if err != nil {
+			t.Fatalf("Marshal: %v", err)
+		}
+		if data != nil {
+			t.Errorf("expected nil data for nil ptr, got %v", data)
+		}
+	})
+
+	t.Run("int32_non_nil_ptr_nil_slice", func(t *testing.T) {
+		info := makeInt32VectorType(3)
+		var s []int32
+		data, err := Marshal(info, &s)
+		if err != nil {
+			t.Fatalf("Marshal: %v", err)
+		}
+		if data != nil {
+			t.Errorf("expected nil data for non-nil ptr to nil slice, got %v", data)
+		}
+	})
+
+	t.Run("int64_non_nil_ptr_nil_slice", func(t *testing.T) {
+		info := makeInt64VectorType(3)
+		var s []int64
+		data, err := Marshal(info, &s)
+		if err != nil {
+			t.Fatalf("Marshal: %v", err)
+		}
+		if data != nil {
+			t.Errorf("expected nil data for non-nil ptr to nil slice, got %v", data)
+		}
+	})
+}
+
+// --- Test 5: Nil data unmarshal ---
+
+func TestUnmarshalVector_NilData(t *testing.T) {
+	t.Run("float32_nil_data_nil_dst", func(t *testing.T) {
+		info := makeFloat32VectorType(3)
+		var result []float32
+		if err := unmarshalVector(info, nil, &result); err != nil {
+			t.Fatalf("unmarshalVector: %v", err)
+		}
+		if result != nil {
+			t.Errorf("expected nil result, got %v", result)
+		}
+	})
+
+	t.Run("float32_nil_data_non_nil_dst", func(t *testing.T) {
+		info := makeFloat32VectorType(3)
+		result := []float32{1, 2, 3}
+		if err := unmarshalVector(info, nil, &result); err != nil {
+			t.Fatalf("unmarshalVector: %v", err)
+		}
+		if result != nil {
+			t.Errorf("expected nil result after nil data, got %v", result)
+		}
+	})
+
+	t.Run("float64_nil_data_nil_dst", func(t *testing.T) {
+		info := makeFloat64VectorType(3)
+		var result []float64
+		if err := unmarshalVector(info, nil, &result); err != nil {
+			t.Fatalf("unmarshalVector: %v", err)
+		}
+		if result != nil {
+			t.Errorf("expected nil result, got %v", result)
+		}
+	})
+
+	t.Run("float64_nil_data_non_nil_dst", func(t *testing.T) {
+		info := makeFloat64VectorType(3)
+		result := []float64{1, 2, 3}
+		if err := unmarshalVector(info, nil, &result); err != nil {
+			t.Fatalf("unmarshalVector: %v", err)
+		}
+		if result != nil {
+			t.Errorf("expected nil result after nil data, got %v", result)
+		}
+	})
+
+	t.Run("int32_nil_data_nil_dst", func(t *testing.T) {
+		info := makeInt32VectorType(3)
+		var result []int32
+		if err := unmarshalVector(info, nil, &result); err != nil {
+			t.Fatalf("unmarshalVector: %v", err)
+		}
+		if result != nil {
+			t.Errorf("expected nil result, got %v", result)
+		}
+	})
+
+	t.Run("int32_nil_data_non_nil_dst", func(t *testing.T) {
+		info := makeInt32VectorType(3)
+		result := []int32{1, 2, 3}
+		if err := unmarshalVector(info, nil, &result); err != nil {
+			t.Fatalf("unmarshalVector: %v", err)
+		}
+		if result != nil {
+			t.Errorf("expected nil result after nil data, got %v", result)
+		}
+	})
+
+	t.Run("int64_nil_data_nil_dst", func(t *testing.T) {
+		info := makeInt64VectorType(3)
+		var result []int64
+		if err := unmarshalVector(info, nil, &result); err != nil {
+			t.Fatalf("unmarshalVector: %v", err)
+		}
+		if result != nil {
+			t.Errorf("expected nil result, got %v", result)
+		}
+	})
+
+	t.Run("int64_nil_data_non_nil_dst", func(t *testing.T) {
+		info := makeInt64VectorType(3)
+		result := []int64{1, 2, 3}
+		if err := unmarshalVector(info, nil, &result); err != nil {
+			t.Fatalf("unmarshalVector: %v", err)
+		}
+		if result != nil {
+			t.Errorf("expected nil result after nil data, got %v", result)
+		}
+	})
+}
+
+// --- Test 6: Dimension mismatch ---
+
+func TestMarshalVector_DimensionMismatch(t *testing.T) {
+	t.Run("float32_marshal", func(t *testing.T) {
+		info := makeFloat32VectorType(3)
+		vec := []float32{1, 2}
+		_, err := marshalVector(info, vec)
+		if err == nil {
+			t.Fatal("expected error for dimension mismatch, got nil")
+		}
+	})
+
+	t.Run("float64_marshal", func(t *testing.T) {
+		info := makeFloat64VectorType(3)
+		vec := []float64{1, 2}
+		_, err := marshalVector(info, vec)
+		if err == nil {
+			t.Fatal("expected error for dimension mismatch, got nil")
+		}
+	})
+
+	t.Run("float32_unmarshal_wrong_data_len", func(t *testing.T) {
+		info := makeFloat32VectorType(3)
+		data := make([]byte, 10) // not 4*3=12
+		var result []float32
+		err := unmarshalVector(info, data, &result)
+		if err == nil {
+			t.Fatal("expected error for wrong data length, got nil")
+		}
+	})
+
+	t.Run("float64_unmarshal_wrong_data_len", func(t *testing.T) {
+		info := makeFloat64VectorType(3)
+		data := make([]byte, 10) // not 8*3=24
+		var result []float64
+		err := unmarshalVector(info, data, &result)
+		if err == nil {
+			t.Fatal("expected error for wrong data length, got nil")
+		}
+	})
+
+	t.Run("int32_marshal", func(t *testing.T) {
+		info := makeInt32VectorType(3)
+		vec := []int32{1, 2}
+		_, err := marshalVector(info, vec)
+		if err == nil {
+			t.Fatal("expected error for dimension mismatch, got nil")
+		}
+	})
+
+	t.Run("int64_marshal", func(t *testing.T) {
+		info := makeInt64VectorType(3)
+		vec := []int64{1, 2}
+		_, err := marshalVector(info, vec)
+		if err == nil {
+			t.Fatal("expected error for dimension mismatch, got nil")
+		}
+	})
+
+	t.Run("int32_unmarshal_wrong_data_len", func(t *testing.T) {
+		info := makeInt32VectorType(3)
+		data := make([]byte, 10) // not 4*3=12
+		var result []int32
+		err := unmarshalVector(info, data, &result)
+		if err == nil {
+			t.Fatal("expected error for wrong data length, got nil")
+		}
+	})
+
+	t.Run("int64_unmarshal_wrong_data_len", func(t *testing.T) {
+		info := makeInt64VectorType(3)
+		data := make([]byte, 10) // not 8*3=24
+		var result []int64
+		err := unmarshalVector(info, data, &result)
+		if err == nil {
+			t.Fatal("expected error for wrong data length, got nil")
+		}
+	})
+}
+
+// --- Test 7: Empty vector (dim=0) ---
+
+func TestMarshalVector_EmptyVector(t *testing.T) {
+	t.Run("float32_dim0", func(t *testing.T) {
+		info := makeFloat32VectorType(0)
+		vec := []float32{}
+		data, err := marshalVector(info, vec)
+		if err != nil {
+			t.Fatalf("marshalVector: %v", err)
+		}
+		if len(data) != 0 {
+			t.Errorf("expected empty data, got %d bytes", len(data))
+		}
+
+		var result []float32
+		if err := unmarshalVector(info, data, &result); err != nil {
+			t.Fatalf("unmarshalVector: %v", err)
+		}
+		if len(result) != 0 {
+			t.Errorf("expected empty result, got len %d", len(result))
+		}
+	})
+
+	t.Run("float64_dim0", func(t *testing.T) {
+		info := makeFloat64VectorType(0)
+		vec := []float64{}
+		data, err := marshalVector(info, vec)
+		if err != nil {
+			t.Fatalf("marshalVector: %v", err)
+		}
+		if len(data) != 0 {
+			t.Errorf("expected empty data, got %d bytes", len(data))
+		}
+
+		var result []float64
+		if err := unmarshalVector(info, data, &result); err != nil {
+			t.Fatalf("unmarshalVector: %v", err)
+		}
+		if len(result) != 0 {
+			t.Errorf("expected empty result, got len %d", len(result))
+		}
+	})
+
+	t.Run("int32_dim0", func(t *testing.T) {
+		info := makeInt32VectorType(0)
+		vec := []int32{}
+		data, err := marshalVector(info, vec)
+		if err != nil {
+			t.Fatalf("marshalVector: %v", err)
+		}
+		if len(data) != 0 {
+			t.Errorf("expected empty data, got %d bytes", len(data))
+		}
+
+		var result []int32
+		if err := unmarshalVector(info, data, &result); err != nil {
+			t.Fatalf("unmarshalVector: %v", err)
+		}
+		if len(result) != 0 {
+			t.Errorf("expected empty result, got len %d", len(result))
+		}
+	})
+
+	t.Run("int64_dim0", func(t *testing.T) {
+		info := makeInt64VectorType(0)
+		vec := []int64{}
+		data, err := marshalVector(info, vec)
+		if err != nil {
+			t.Fatalf("marshalVector: %v", err)
+		}
+		if len(data) != 0 {
+			t.Errorf("expected empty data, got %d bytes", len(data))
+		}
+
+		var result []int64
+		if err := unmarshalVector(info, data, &result); err != nil {
+			t.Fatalf("unmarshalVector: %v", err)
+		}
+		if len(result) != 0 {
+			t.Errorf("expected empty result, got len %d", len(result))
+		}
+	})
+}
+
+// --- Test 8: Pointer to slice ---
+
+func TestMarshalVector_PointerToSlice(t *testing.T) {
+	t.Run("float32_ptr_marshal", func(t *testing.T) {
+		info := makeFloat32VectorType(2)
+		vec := []float32{1.5, 2.5}
+		data, err := Marshal(info, &vec)
+		if err != nil {
+			t.Fatalf("Marshal with *[]float32: %v", err)
+		}
+
+		var result []float32
+		if err := unmarshalVector(info, data, &result); err != nil {
+			t.Fatalf("unmarshalVector: %v", err)
+		}
+		if !reflect.DeepEqual(vec, result) {
+			t.Errorf("round-trip mismatch: got %v, want %v", result, vec)
+		}
+	})
+
+	t.Run("float64_ptr_marshal", func(t *testing.T) {
+		info := makeFloat64VectorType(2)
+		vec := []float64{1.5, 2.5}
+		data, err := Marshal(info, &vec)
+		if err != nil {
+			t.Fatalf("Marshal with *[]float64: %v", err)
+		}
+
+		var result []float64
+		if err := unmarshalVector(info, data, &result); err != nil {
+			t.Fatalf("unmarshalVector: %v", err)
+		}
+		if !reflect.DeepEqual(vec, result) {
+			t.Errorf("round-trip mismatch: got %v, want %v", result, vec)
+		}
+	})
+
+	t.Run("int32_ptr_marshal", func(t *testing.T) {
+		info := makeInt32VectorType(2)
+		vec := []int32{100, -200}
+		data, err := Marshal(info, &vec)
+		if err != nil {
+			t.Fatalf("Marshal with *[]int32: %v", err)
+		}
+
+		var result []int32
+		if err := unmarshalVector(info, data, &result); err != nil {
+			t.Fatalf("unmarshalVector: %v", err)
+		}
+		if !reflect.DeepEqual(vec, result) {
+			t.Errorf("round-trip mismatch: got %v, want %v", result, vec)
+		}
+	})
+
+	t.Run("int64_ptr_marshal", func(t *testing.T) {
+		info := makeInt64VectorType(2)
+		vec := []int64{100, -200}
+		data, err := Marshal(info, &vec)
+		if err != nil {
+			t.Fatalf("Marshal with *[]int64: %v", err)
+		}
+
+		var result []int64
+		if err := unmarshalVector(info, data, &result); err != nil {
+			t.Fatalf("unmarshalVector: %v", err)
+		}
+		if !reflect.DeepEqual(vec, result) {
+			t.Errorf("round-trip mismatch: got %v, want %v", result, vec)
+		}
+	})
+}
+
+// --- Test 9: Special values ---
+
+func TestMarshalVector_SpecialValues(t *testing.T) {
+	t.Run("float32", func(t *testing.T) {
+		negZero := math.Float32frombits(0x80000000)
+		info := makeFloat32VectorType(5)
+		vec := []float32{float32(math.Inf(1)), float32(math.Inf(-1)), math.MaxFloat32, math.SmallestNonzeroFloat32, negZero}
+		data, err := marshalVector(info, vec)
+		if err != nil {
+			t.Fatalf("marshalVector: %v", err)
+		}
+
+		var result []float32
+		if err := unmarshalVector(info, data, &result); err != nil {
+			t.Fatalf("unmarshalVector: %v", err)
+		}
+		if !reflect.DeepEqual(vec, result) {
+			t.Errorf("special values mismatch: got %v, want %v", result, vec)
+		}
+		// reflect.DeepEqual treats -0.0 == +0.0; verify the sign bit explicitly.
+		if got := math.Float32bits(result[4]); got != 0x80000000 {
+			t.Errorf("negative zero sign bit lost: got bits %#08x, want 0x80000000", got)
+		}
+	})
+
+	t.Run("float32_nan", func(t *testing.T) {
+		info := makeFloat32VectorType(1)
+		vec := []float32{float32(math.NaN())}
+		data, err := marshalVector(info, vec)
+		if err != nil {
+			t.Fatalf("marshalVector: %v", err)
+		}
+
+		var result []float32
+		if err := unmarshalVector(info, data, &result); err != nil {
+			t.Fatalf("unmarshalVector: %v", err)
+		}
+		if len(result) != 1 || !math.IsNaN(float64(result[0])) {
+			t.Errorf("expected NaN, got %v", result)
+		}
+	})
+
+	t.Run("float64", func(t *testing.T) {
+		negZero := math.Float64frombits(0x8000000000000000)
+		info := makeFloat64VectorType(5)
+		vec := []float64{math.Inf(1), math.Inf(-1), math.MaxFloat64, math.SmallestNonzeroFloat64, negZero}
+		data, err := marshalVector(info, vec)
+		if err != nil {
+			t.Fatalf("marshalVector: %v", err)
+		}
+
+		var result []float64
+		if err := unmarshalVector(info, data, &result); err != nil {
+			t.Fatalf("unmarshalVector: %v", err)
+		}
+		if !reflect.DeepEqual(vec, result) {
+			t.Errorf("special values mismatch: got %v, want %v", result, vec)
+		}
+		// reflect.DeepEqual treats -0.0 == +0.0; verify the sign bit explicitly.
+		if got := math.Float64bits(result[4]); got != 0x8000000000000000 {
+			t.Errorf("negative zero sign bit lost: got bits %#016x, want 0x8000000000000000", got)
+		}
+	})
+
+	t.Run("float64_nan", func(t *testing.T) {
+		info := makeFloat64VectorType(1)
+		vec := []float64{math.NaN()}
+		data, err := marshalVector(info, vec)
+		if err != nil {
+			t.Fatalf("marshalVector: %v", err)
+		}
+
+		var result []float64
+		if err := unmarshalVector(info, data, &result); err != nil {
+			t.Fatalf("unmarshalVector: %v", err)
+		}
+		if len(result) != 1 || !math.IsNaN(result[0]) {
+			t.Errorf("expected NaN, got %v", result)
+		}
+	})
+
+	t.Run("int32", func(t *testing.T) {
+		info := makeInt32VectorType(5)
+		vec := []int32{0, 1, -1, math.MaxInt32, math.MinInt32}
+		data, err := marshalVector(info, vec)
+		if err != nil {
+			t.Fatalf("marshalVector: %v", err)
+		}
+
+		var result []int32
+		if err := unmarshalVector(info, data, &result); err != nil {
+			t.Fatalf("unmarshalVector: %v", err)
+		}
+		if !reflect.DeepEqual(vec, result) {
+			t.Errorf("special values mismatch: got %v, want %v", result, vec)
+		}
+	})
+
+	t.Run("int64", func(t *testing.T) {
+		info := makeInt64VectorType(5)
+		vec := []int64{0, 1, -1, math.MaxInt64, math.MinInt64}
+		data, err := marshalVector(info, vec)
+		if err != nil {
+			t.Fatalf("marshalVector: %v", err)
+		}
+
+		var result []int64
+		if err := unmarshalVector(info, data, &result); err != nil {
+			t.Fatalf("unmarshalVector: %v", err)
+		}
+		if !reflect.DeepEqual(vec, result) {
+			t.Errorf("special values mismatch: got %v, want %v", result, vec)
+		}
+	})
+}
+
+// --- Test 10: Pool concurrency ---
+
+func TestVectorBufPool_Concurrency(t *testing.T) {
+	const goroutines = 100
+	const iterations = 100
+	const dim = 256
+	const bufSize = dim * 4
+
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for g := 0; g < goroutines; g++ {
+		go func() {
+			defer wg.Done()
+			for i := 0; i < iterations; i++ {
+				buf := getVectorBuf(bufSize)
+				if len(buf) != bufSize {
+					t.Errorf("getVectorBuf returned wrong size: got %d, want %d", len(buf), bufSize)
+					return
+				}
+				// Write some data to detect cross-goroutine corruption.
+				for j := range buf {
+					buf[j] = byte(j)
+				}
+				// Verify before returning.
+				for j := range buf {
+					if buf[j] != byte(j) {
+						t.Errorf("buffer corruption detected at index %d", j)
+						return
+					}
+				}
+				putVectorBuf(buf)
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+// --- Test 11: Oversized buffers not pooled ---
+
+func TestVectorBufPool_OversizedNotPooled(t *testing.T) {
+	// A buffer larger than 65536 should not be returned to the pool.
+	big := make([]byte, 70000)
+	putVectorBuf(big)
+
+	// Getting a small buffer should not return the oversized one.
+	small := getVectorBuf(100)
+	if cap(small) >= 70000 {
+		t.Errorf("oversized buffer was returned from pool: cap=%d", cap(small))
+	}
+}
+
+// --- Test 12: vectorFixedElemSize ---
+
+func TestVectorFixedElemSize(t *testing.T) {
+	tests := []struct {
+		typ  Type
+		want int
+	}{
+		// Fixed-length types.
+		{TypeBoolean, 1},
+		{TypeInt, 4},
+		{TypeFloat, 4},
+		{TypeBigInt, 8},
+		{TypeDouble, 8},
+		{TypeTimestamp, 8},
+		{TypeUUID, 16},
+		{TypeTimeUUID, 16},
+		// Variable-length types — must return 0.
+		{TypeVarchar, 0},
+		{TypeBlob, 0},
+		{TypeText, 0},
+		{TypeVarint, 0},
+		{TypeDecimal, 0},
+		{TypeAscii, 0},
+		{TypeInet, 0},
+		{TypeDuration, 0},
+		{TypeList, 0},
+		{TypeSet, 0},
+		{TypeMap, 0},
+		{TypeUDT, 0},
+		{TypeTuple, 0},
+	}
+	for _, tt := range tests {
+		info := NewNativeType(protoVersion4, tt.typ)
+		got := vectorFixedElemSize(info)
+		if got != tt.want {
+			t.Errorf("vectorFixedElemSize(%v) = %d, want %d", tt.typ, got, tt.want)
+		}
+	}
+}
+
+// --- Test 13: Generic prealloc correctness ---
+
+func TestMarshalVector_GenericPrealloc(t *testing.T) {
+	// Test with UUID vectors — fixed-size (16 bytes) but not a float/int fast path.
+	// This exercises the generic path with buf.Grow() prealloc from Phase 1b.
+	dim := 3
+	info := makeUUIDVectorType(dim)
+
+	// Create UUID values as [16]byte arrays.
+	uuids := make([][16]byte, dim)
+	for i := range uuids {
+		for j := range uuids[i] {
+			uuids[i][j] = byte(i*16 + j)
+		}
+	}
+
+	// Marshal using the generic path (no fast path for UUID).
+	data, err := marshalVector(info, uuids[:])
+	if err != nil {
+		t.Fatalf("marshalVector: %v", err)
+	}
+
+	// UUID elements are fixed-size (16 bytes), no length prefix.
+	expectedLen := dim * 16
+	if len(data) != expectedLen {
+		t.Fatalf("expected %d bytes, got %d", expectedLen, len(data))
+	}
+
+	// Verify content by unmarshaling.
+	var result [][16]byte
+	if err := unmarshalVector(info, data, &result); err != nil {
+		t.Fatalf("unmarshalVector: %v", err)
+	}
+	if !reflect.DeepEqual(uuids[:], result) {
+		t.Errorf("round-trip mismatch: got %v, want %v", result, uuids[:])
+	}
+}
