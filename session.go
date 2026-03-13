@@ -55,32 +55,36 @@ import (
 // and automatically sets a default consistency level on all operations
 // that do not have a consistency level set.
 type Session struct {
-	warningHandler            WarningHandler
-	queryObserver             QueryObserver
-	control                   controlConnection
-	ctx                       context.Context
-	logger                    StdLogger
-	trace                     Tracer
-	policy                    HostSelectionPolicy
-	batchObserver             BatchObserver
-	connectObserver           ConnectObserver
-	frameObserver             FrameHeaderObserver
-	streamObserver            StreamObserver
-	initErr                   error
-	nodeEvents                *eventDebouncer
-	stmtsLRU                  *preparedLRU
-	hostSource                *ringDescriber
-	pool                      *policyConnPool
-	ringRefresher             *debounce.RefreshDebouncer
-	readyCh                   chan struct{}
-	executor                  *queryExecutor
-	cancel                    context.CancelFunc
-	schemaEvents              *eventDebouncer
-	metadataDescriber         *metadataDescriber
-	eventBus                  *eventbus.EventBus[events.Event]
-	connCfg                   *ConnConfig
-	clientRoutesHandler       *ClientRoutesHandler
-	routingKeyInfoCache       routingKeyInfoLRU
+	warningHandler      WarningHandler
+	queryObserver       QueryObserver
+	control             controlConnection
+	ctx                 context.Context
+	logger              StdLogger
+	trace               Tracer
+	policy              HostSelectionPolicy
+	batchObserver       BatchObserver
+	connectObserver     ConnectObserver
+	frameObserver       FrameHeaderObserver
+	streamObserver      StreamObserver
+	initErr             error
+	nodeEvents          *eventDebouncer
+	stmtsLRU            *preparedLRU
+	hostSource          *ringDescriber
+	pool                *policyConnPool
+	ringRefresher       *debounce.RefreshDebouncer
+	readyCh             chan struct{}
+	executor            *queryExecutor
+	cancel              context.CancelFunc
+	schemaEvents        *eventDebouncer
+	metadataDescriber   *metadataDescriber
+	eventBus            *eventbus.EventBus[events.Event]
+	connCfg             *ConnConfig
+	clientRoutesHandler *ClientRoutesHandler
+	routingKeyInfoCache routingKeyInfoLRU
+	// routingPlans caches immutable *routingPlan pointers keyed by
+	// statement string, providing lock-free reads for isLWT(),
+	// getPartitioner(), Keyspace(), and Table() on the hot path.
+	routingPlans              sync.Map // map[string]*routingPlan
 	addressTranslator         AddressTranslator
 	cfg                       ClusterConfig
 	prefetch                  float64
@@ -904,6 +908,38 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string, requestTimeou
 	return routingKeyInfo, nil
 }
 
+// getRoutingPlan returns a cached, immutable *routingPlan for the given
+// statement. On cache miss it builds the plan from routingKeyInfo() and
+// stores it in Session.routingPlans (sync.Map, lock-free reads).
+// The returned plan is shared across all queries using the same statement.
+func (s *Session) getRoutingPlan(ctx context.Context, stmt string, timeout time.Duration) (*routingPlan, error) {
+	if p, ok := s.routingPlans.Load(stmt); ok {
+		return p.(*routingPlan), nil
+	}
+
+	rki, err := s.routingKeyInfo(ctx, stmt, timeout)
+	if err != nil {
+		return nil, err
+	}
+	if rki == nil {
+		return nil, nil
+	}
+
+	plan := &routingPlan{
+		keyspace:    rki.keyspace,
+		table:       rki.table,
+		partitioner: rki.partitioner,
+		indexes:     rki.indexes,
+		types:       rki.types,
+		lwt:         rki.lwt,
+	}
+
+	// LoadOrStore ensures only one plan per statement survives; concurrent
+	// builders may race but the winner's plan is used by all.
+	actual, _ := s.routingPlans.LoadOrStore(stmt, plan)
+	return actual.(*routingPlan), nil
+}
+
 func (b *Batch) execute(ctx context.Context, conn *Conn) *Iter {
 	return conn.executeBatch(ctx, b)
 }
@@ -1178,12 +1214,21 @@ type Query struct {
 }
 
 type queryRoutingInfo struct {
+	// plan is an immutable per-statement routing metadata pointer, set
+	// atomically once during GetRoutingKey(). When non-nil, isLWT(),
+	// getPartitioner(), and the keyspace/table accessors read from it
+	// without taking mu, eliminating per-query RLock overhead.
+	plan atomic.Pointer[routingPlan]
+
 	// partitioner is a reference to a Partitioner instance
 	// If nil default partitioner will be used.
 	partitioner Partitioner
 	keyspace    string
 	table       string
-	// mu protects contents of queryRoutingInfo.
+	// mu protects the non-plan fields (partitioner, keyspace, table, lwt).
+	// These fields are only written when no plan is available (e.g. the
+	// conn.go prepared-statement path that writes lwt/keyspace/table
+	// directly). Reads should prefer the plan when set.
 	mu sync.RWMutex
 	// "lwt" denotes the query being an LWT operation
 	// In effect if the query is of the form "INSERT/UPDATE/DELETE ... IF ..."
@@ -1192,12 +1237,18 @@ type queryRoutingInfo struct {
 }
 
 func (qri *queryRoutingInfo) isLWT() bool {
+	if p := qri.plan.Load(); p != nil {
+		return p.lwt
+	}
 	qri.mu.RLock()
 	defer qri.mu.RUnlock()
 	return qri.lwt
 }
 
 func (qri *queryRoutingInfo) getPartitioner() Partitioner {
+	if p := qri.plan.Load(); p != nil {
+		return p.partitioner
+	}
 	qri.mu.RLock()
 	defer qri.mu.RUnlock()
 	return qri.partitioner
@@ -1396,7 +1447,11 @@ func (q *Query) Keyspace() string {
 	if q.getKeyspace != nil {
 		return q.getKeyspace()
 	}
-	if q.routingInfo.keyspace != "" {
+	if p := q.routingInfo.plan.Load(); p != nil {
+		if p.keyspace != "" {
+			return p.keyspace
+		}
+	} else if q.routingInfo.keyspace != "" {
 		return q.routingInfo.keyspace
 	}
 
@@ -1410,6 +1465,9 @@ func (q *Query) Keyspace() string {
 
 // Table returns name of the table the query will be executed against.
 func (q *Query) Table() string {
+	if p := q.routingInfo.plan.Load(); p != nil {
+		return p.table
+	}
 	return q.routingInfo.table
 }
 
@@ -1433,21 +1491,16 @@ func (q *Query) GetRoutingKey() ([]byte, error) {
 		return nil, nil
 	}
 
-	// try to determine the routing key
-	routingKeyInfo, err := q.session.routingKeyInfo(q.Context(), q.stmt, q.requestTimeout)
+	// Try the cached routing plan first (lock-free sync.Map lookup).
+	plan, err := q.session.getRoutingPlan(q.Context(), q.stmt, q.requestTimeout)
 	if err != nil {
 		return nil, err
 	}
-
-	if routingKeyInfo != nil {
-		q.routingInfo.mu.Lock()
-		q.routingInfo.lwt = routingKeyInfo.lwt
-		q.routingInfo.partitioner = routingKeyInfo.partitioner
-		q.routingInfo.keyspace = routingKeyInfo.keyspace
-		q.routingInfo.table = routingKeyInfo.table
-		q.routingInfo.mu.Unlock()
+	if plan != nil {
+		q.routingInfo.plan.Store(plan)
+		return createRoutingKey(plan.indexes, plan.types, q.values)
 	}
-	return createRoutingKey(routingKeyInfo, q.values)
+	return nil, nil
 }
 
 func (q *Query) shouldPrepare() bool {
@@ -2134,11 +2187,21 @@ func (b *Batch) Observer(observer BatchObserver) *Batch {
 }
 
 func (b *Batch) Keyspace() string {
+	if p := b.routingInfo.plan.Load(); p != nil {
+		if p.keyspace != "" {
+			return p.keyspace
+		}
+	} else if b.routingInfo.keyspace != "" {
+		return b.routingInfo.keyspace
+	}
 	return b.keyspace
 }
 
 // Batch has no reasonable eqivalent of Query.Table().
 func (b *Batch) Table() string {
+	if p := b.routingInfo.plan.Load(); p != nil {
+		return p.table
+	}
 	return b.routingInfo.table
 }
 
@@ -2341,18 +2404,15 @@ func (b *Batch) GetRoutingKey() ([]byte, error) {
 		return nil, nil
 	}
 	// try to determine the routing key
-	routingKeyInfo, err := b.session.routingKeyInfo(b.Context(), entry.Stmt, b.GetRequestTimeout())
+	plan, err := b.session.getRoutingPlan(b.Context(), entry.Stmt, b.GetRequestTimeout())
 	if err != nil {
 		return nil, err
 	}
-	if routingKeyInfo != nil {
-		b.routingInfo.mu.Lock()
-		b.routingInfo.lwt = routingKeyInfo.lwt
-		b.routingInfo.partitioner = routingKeyInfo.partitioner
-		b.routingInfo.mu.Unlock()
+	if plan != nil {
+		b.routingInfo.plan.Store(plan)
+		return createRoutingKey(plan.indexes, plan.types, entry.Args)
 	}
-
-	return createRoutingKey(routingKeyInfo, entry.Args)
+	return nil, nil
 }
 
 // GetRequestTimeout returns time driver waits for single server response
@@ -2368,16 +2428,28 @@ func (b *Batch) SetRequestTimeout(timeout time.Duration) *Batch {
 	return b
 }
 
-func createRoutingKey(routingKeyInfo *routingKeyInfo, values []interface{}) ([]byte, error) {
-	if routingKeyInfo == nil {
+// createRoutingKey computes the CQL routing key from partition key column
+// indexes, their types, and the query values. It handles both single-column
+// and composite partition keys.
+func createRoutingKey(indexes []int, types []TypeInfo, values []interface{}) ([]byte, error) {
+	if len(indexes) == 0 {
 		return nil, nil
 	}
 
-	if len(routingKeyInfo.indexes) == 1 {
+	if len(types) < len(indexes) {
+		return nil, fmt.Errorf("createRoutingKey: %d type(s) for %d index(es)", len(types), len(indexes))
+	}
+	for _, idx := range indexes {
+		if idx < 0 || idx >= len(values) {
+			return nil, fmt.Errorf("createRoutingKey: partition-key column index %d is out of range for %d bind value(s)", idx, len(values))
+		}
+	}
+
+	if len(indexes) == 1 {
 		// single column routing key
 		routingKey, err := Marshal(
-			routingKeyInfo.types[0],
-			values[routingKeyInfo.indexes[0]],
+			types[0],
+			values[indexes[0]],
 		)
 		if err != nil {
 			return nil, err
@@ -2387,10 +2459,10 @@ func createRoutingKey(routingKeyInfo *routingKeyInfo, values []interface{}) ([]b
 
 	// composite routing key
 	buf := bytes.NewBuffer(make([]byte, 0, 256))
-	for i := range routingKeyInfo.indexes {
+	for i := range indexes {
 		encoded, err := Marshal(
-			routingKeyInfo.types[i],
-			values[routingKeyInfo.indexes[i]],
+			types[i],
+			values[indexes[i]],
 		)
 		if err != nil {
 			return nil, err
@@ -2401,8 +2473,7 @@ func createRoutingKey(routingKeyInfo *routingKeyInfo, values []interface{}) ([]b
 		buf.Write(encoded)
 		buf.WriteByte(0x00)
 	}
-	routingKey := buf.Bytes()
-	return routingKey, nil
+	return buf.Bytes(), nil
 }
 
 func (b *Batch) borrowForExecution() {
@@ -2465,6 +2536,19 @@ type routingKeyInfo struct {
 	partitioner Partitioner
 	keyspace    string
 	table       string
+	indexes     []int
+	types       []TypeInfo
+	lwt         bool
+}
+
+// routingPlan holds immutable per-statement routing metadata, shared across
+// all queries using the same prepared statement via Session.routingPlans.
+// Fields are set once during creation and never modified, so concurrent
+// reads require no synchronization.
+type routingPlan struct {
+	keyspace    string
+	table       string
+	partitioner Partitioner
 	indexes     []int
 	types       []TypeInfo
 	lwt         bool

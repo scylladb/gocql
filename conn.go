@@ -1556,12 +1556,16 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 			customPayload: qry.customPayload,
 		}
 
-		// Set "lwt", keyspace", "table" property in the query if it is present in preparedMetadata
-		qry.routingInfo.mu.Lock()
-		qry.routingInfo.lwt = info.request.lwt
-		qry.routingInfo.keyspace = info.request.keyspace
-		qry.routingInfo.table = info.request.table
-		qry.routingInfo.mu.Unlock()
+		// Set "lwt", "keyspace", "table" on the query routing info.
+		// When a routing plan is already cached (set during GetRoutingKey),
+		// these fields are redundant — the plan provides them lock-free.
+		if qry.routingInfo.plan.Load() == nil {
+			qry.routingInfo.mu.Lock()
+			qry.routingInfo.lwt = info.request.lwt
+			qry.routingInfo.keyspace = info.request.keyspace
+			qry.routingInfo.table = info.request.table
+			qry.routingInfo.mu.Unlock()
+		}
 	} else {
 		frame = &writeQueryFrame{
 			statement:     qry.stmt,
@@ -1582,7 +1586,7 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 
 	if len(framer.customPayload) > 0 {
 		if hint, ok := framer.customPayload["tablets-routing-v1"]; ok {
-			tablet, err := unmarshalTabletHint(hint, c.version, qry.routingInfo.keyspace, qry.routingInfo.table)
+			tablet, err := unmarshalTabletHint(hint, c.version, qry.Keyspace(), qry.Table())
 			if err != nil {
 				return &Iter{err: err}
 			}
@@ -1645,6 +1649,13 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 	case *RequestErrUnprepared:
 		stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), c.currentKeyspace, qry.stmt)
 		c.session.stmtsLRU.evictPreparedID(stmtCacheKey, x.StatementId)
+		// Invalidate the cached routing plan so it is rebuilt from
+		// the re-prepared statement metadata on the next execution.
+		c.session.routingPlans.Delete(qry.stmt)
+		// Clear the per-query plan pointer so the recursive executeQuery
+		// call does not see stale plan data (e.g. after a schema change
+		// that alters LWT status, keyspace, or table).
+		qry.routingInfo.plan.Store(nil)
 		return c.executeQuery(ctx, qry)
 	case error:
 		return &Iter{err: x, framer: framer}
@@ -1810,7 +1821,12 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 		if found {
 			key := c.session.stmtsLRU.keyFor(c.host.HostID(), c.currentKeyspace, stmt)
 			c.session.stmtsLRU.evictPreparedID(key, x.StatementId)
+			// Invalidate the cached routing plan for the unprepared statement.
+			c.session.routingPlans.Delete(stmt)
 		}
+		// Clear the per-batch plan pointer so the recursive executeBatch
+		// call does not see stale plan data after re-preparation.
+		batch.routingInfo.plan.Store(nil)
 		return c.executeBatch(ctx, batch)
 	case *resultRowsFrame:
 		iter := &Iter{
