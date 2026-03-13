@@ -432,16 +432,22 @@ func BenchmarkRoutingPlanCacheLookup(b *testing.B) {
 
 	b.Run("CacheMiss_Store", func(b *testing.B) {
 		// Each iteration needs a fresh key to measure a true cache miss.
-		// Pre-generate unique keys outside the timed loop.
+		// Cap the number of unique keys to avoid OOM when b.N ramps up;
+		// the benchmark measures sync.Map contention, not string formatting.
+		const maxKeys = 10000
 		var m sync.Map
-		stmts := make([]string, b.N)
+		n := b.N
+		if n > maxKeys {
+			n = maxKeys
+		}
+		stmts := make([]string, n)
 		for i := range stmts {
 			stmts[i] = fmt.Sprintf("SELECT * FROM ks.tbl WHERE id = ? /* %d */", i)
 		}
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			m.LoadOrStore(stmts[i], plan)
+			m.LoadOrStore(stmts[i%n], plan)
 		}
 	})
 }

@@ -2187,6 +2187,13 @@ func (b *Batch) Observer(observer BatchObserver) *Batch {
 }
 
 func (b *Batch) Keyspace() string {
+	if p := b.routingInfo.plan.Load(); p != nil {
+		if p.keyspace != "" {
+			return p.keyspace
+		}
+	} else if b.routingInfo.keyspace != "" {
+		return b.routingInfo.keyspace
+	}
 	return b.keyspace
 }
 
@@ -2427,6 +2434,15 @@ func (b *Batch) SetRequestTimeout(timeout time.Duration) *Batch {
 func createRoutingKey(indexes []int, types []TypeInfo, values []interface{}) ([]byte, error) {
 	if len(indexes) == 0 {
 		return nil, nil
+	}
+
+	if len(types) < len(indexes) {
+		return nil, fmt.Errorf("createRoutingKey: %d type(s) for %d index(es)", len(types), len(indexes))
+	}
+	for _, idx := range indexes {
+		if idx < 0 || idx >= len(values) {
+			return nil, fmt.Errorf("createRoutingKey: partition-key column index %d is out of range for %d bind value(s)", idx, len(values))
+		}
 	}
 
 	if len(indexes) == 1 {

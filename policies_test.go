@@ -1350,6 +1350,19 @@ func TestPickLWT_LocalBeforeRemote(t *testing.T) {
 
 	ids := iterHostIDs(policy.Pick(query))
 
+	// Total: all 12 hosts, no duplicates — check length first to avoid
+	// panicking on slice operations below if the implementation regresses.
+	if len(ids) != 12 {
+		t.Fatalf("expected 12 hosts, got %d: %v", len(ids), ids)
+	}
+	seen := make(map[string]bool)
+	for _, id := range ids {
+		if seen[id] {
+			t.Fatalf("duplicate host %s in LWT pick", id)
+		}
+		seen[id] = true
+	}
+
 	// Local replicas should come first: hosts[4] ("local") and hosts[7] ("local")
 	// in the order they appear in the replica list.
 	localReplicas := ids[:2]
@@ -1374,18 +1387,6 @@ func TestPickLWT_LocalBeforeRemote(t *testing.T) {
 	}
 	if diff := cmp.Diff(gotRest, wantRest); diff != "" {
 		t.Errorf("expected remaining fallback hosts (-got +want):\n%s", diff)
-	}
-
-	// Total: all 12 hosts, no duplicates
-	if len(ids) != 12 {
-		t.Errorf("expected 12 hosts, got %d: %v", len(ids), ids)
-	}
-	seen := make(map[string]bool)
-	for _, id := range ids {
-		if seen[id] {
-			t.Errorf("duplicate host %s in LWT pick", id)
-		}
-		seen[id] = true
 	}
 }
 
@@ -1430,9 +1431,10 @@ func TestPickLWT_AllLocalDown_FallbackWorks(t *testing.T) {
 		}
 	}
 
-	// Should still get all 10 up hosts
+	// Should still get all 10 up hosts — check before slicing to avoid
+	// an index-out-of-range panic on regression.
 	if len(ids) != 10 {
-		t.Errorf("expected 10 up hosts, got %d: %v", len(ids), ids)
+		t.Fatalf("expected 10 up hosts, got %d: %v", len(ids), ids)
 	}
 
 	// Remote replicas should be first (since no local replicas are up)
@@ -1700,7 +1702,10 @@ func TestPickLWT_HighRF_NoDuplicates(t *testing.T) {
 	seenLocal := make(map[string]bool)
 	localDone := false
 	for _, id := range ids {
-		idx, _ := strconv.Atoi(id)
+		idx, err := strconv.Atoi(id)
+		if err != nil {
+			t.Fatalf("non-numeric host ID %q: %v", id, err)
+		}
 		isLocal := hosts[idx].dataCenter == "local"
 		if isLocal {
 			if localDone {

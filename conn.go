@@ -1652,6 +1652,10 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 		// Invalidate the cached routing plan so it is rebuilt from
 		// the re-prepared statement metadata on the next execution.
 		c.session.routingPlans.Delete(qry.stmt)
+		// Clear the per-query plan pointer so the recursive executeQuery
+		// call does not see stale plan data (e.g. after a schema change
+		// that alters LWT status, keyspace, or table).
+		qry.routingInfo.plan.Store(nil)
 		return c.executeQuery(ctx, qry)
 	case error:
 		return &Iter{err: x, framer: framer}
@@ -1820,6 +1824,9 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 			// Invalidate the cached routing plan for the unprepared statement.
 			c.session.routingPlans.Delete(stmt)
 		}
+		// Clear the per-batch plan pointer so the recursive executeBatch
+		// call does not see stale plan data after re-preparation.
+		batch.routingInfo.plan.Store(nil)
 		return c.executeBatch(ctx, batch)
 	case *resultRowsFrame:
 		iter := &Iter{
