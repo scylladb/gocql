@@ -1298,7 +1298,7 @@ func (srv *TestServer) serve() {
 			for !srv.isClosed() {
 				framer, err := srv.readFrame(conn)
 				if err != nil {
-					if err == io.EOF {
+					if err == io.EOF || errors.Is(err, net.ErrClosed) {
 						return
 					}
 					srv.errorLocked(err)
