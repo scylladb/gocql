@@ -34,6 +34,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	frm "github.com/gocql/gocql/internal/frame"
@@ -1161,6 +1162,68 @@ type queryValues struct {
 	name    string
 	value   []byte
 	isUnset bool
+}
+
+// queryValuesPool is a set of size-bucketed sync.Pools for []queryValues slices.
+// Buckets: 0→cap 8, 1→cap 16, 2→cap 32, 3→cap 64, 4→cap 128.
+// Slices larger than 128 are not pooled.
+var queryValuesPools [5]sync.Pool
+
+// queryValuesBucket returns the pool bucket index for a given count.
+// Returns -1 if the count exceeds the maximum pooled size.
+func queryValuesBucket(n int) int {
+	switch {
+	case n <= 8:
+		return 0
+	case n <= 16:
+		return 1
+	case n <= 32:
+		return 2
+	case n <= 64:
+		return 3
+	case n <= 128:
+		return 4
+	default:
+		return -1
+	}
+}
+
+// getQueryValues returns a []queryValues of length n from the pool.
+// The returned slice elements are zeroed.
+func getQueryValues(n int) []queryValues {
+	bucket := queryValuesBucket(n)
+	if bucket < 0 {
+		return make([]queryValues, n)
+	}
+	if v := queryValuesPools[bucket].Get(); v != nil {
+		s := v.([]queryValues)
+		return s[:n]
+	}
+	// Allocate with the bucket's capacity so future returns fit.
+	return make([]queryValues, n, 8<<bucket)
+}
+
+// putQueryValues returns a []queryValues slice to the pool.
+// It clears all elements to release references to marshaled byte slices.
+func putQueryValues(s []queryValues) {
+	if s == nil {
+		return
+	}
+	bucket := queryValuesBucket(cap(s))
+	if bucket < 0 {
+		return
+	}
+	// Clear to release references (name strings, value []byte).
+	clear(s[:cap(s)])
+	queryValuesPools[bucket].Put(s[:cap(s)])
+}
+
+// putBatchQueryValues returns all pooled []queryValues slices from batch statements.
+func putBatchQueryValues(stmts []batchStatment) {
+	for i := range stmts {
+		putQueryValues(stmts[i].values)
+		stmts[i].values = nil
+	}
 }
 
 type queryParams struct {
