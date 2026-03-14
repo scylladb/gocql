@@ -577,6 +577,20 @@ func (t *tokenAwareHostPolicy) IsLocal(host *HostInfo) bool {
 	return t.fallback.IsLocal(host)
 }
 
+func (t *tokenAwareHostPolicy) MaxHostTier() uint {
+	if tierer, ok := t.fallback.(HostTierer); ok {
+		return tierer.MaxHostTier()
+	}
+	return 0
+}
+
+func (t *tokenAwareHostPolicy) HostTier(host *HostInfo) uint {
+	if tierer, ok := t.fallback.(HostTierer); ok {
+		return tierer.HostTier(host)
+	}
+	return 0
+}
+
 func (t *tokenAwareHostPolicy) KeyspaceChanged(update KeyspaceUpdateEvent) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -933,6 +947,17 @@ func (d *dcAwareRR) IsOperational(session *Session) error {
 
 func (d *dcAwareRR) IsLocal(host *HostInfo) bool {
 	return host.DataCenter() == d.local
+}
+
+func (d *dcAwareRR) MaxHostTier() uint {
+	return 1
+}
+
+func (d *dcAwareRR) HostTier(host *HostInfo) uint {
+	if host.DataCenter() == d.local {
+		return 0
+	}
+	return 1
 }
 
 func (d *dcAwareRR) AddHost(host *HostInfo) {
