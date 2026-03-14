@@ -1704,6 +1704,11 @@ func (c *Conn) UseKeyspace(keyspace string) error {
 	return nil
 }
 
+// maxBatchPrepareRetries limits the number of times executeBatch will retry
+// after receiving a RequestErrUnprepared response. A single retry is sufficient:
+// if re-preparation fails a second time, it indicates a persistent problem.
+const maxBatchPrepareRetries = 1
+
 func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 	defer func() {
 		if iter == nil || c.session == nil {
@@ -1715,6 +1720,33 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 		}
 	}()
 
+	for retries := 0; ; retries++ {
+		iter = c.executeBatchOnce(ctx, batch)
+		if iter == nil || iter.err == nil {
+			return iter
+		}
+
+		// Check for RequestErrUnprepared with bounded retry.
+		if _, ok := iter.err.(*RequestErrUnprepared); ok && retries < maxBatchPrepareRetries {
+			// Evict all prepared entries for this batch's statements so a
+			// single retry re-prepares everything. The CQL protocol reports
+			// only one unprepared ID per error, but batches with multiple
+			// distinct statements may have more than one stale entry.
+			for i := range batch.Entries {
+				entry := &batch.Entries[i]
+				if len(entry.Args) > 0 || entry.binding != nil {
+					key := c.session.stmtsLRU.keyFor(c.host.HostID(), c.currentKeyspace, entry.Stmt)
+					c.session.stmtsLRU.remove(key)
+				}
+			}
+			continue
+		}
+
+		return iter
+	}
+}
+
+func (c *Conn) executeBatchOnce(ctx context.Context, batch *Batch) *Iter {
 	n := len(batch.Entries)
 	req := &writeBatchFrame{
 		typ:                   batch.Type,
@@ -1726,58 +1758,116 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 		customPayload:         batch.CustomPayload,
 	}
 
-	stmts := make(map[string]string, len(batch.Entries))
+	// Prepare all unique statements concurrently.
+	// prepareStatement already coalesces concurrent calls for the same statement
+	// via execIfMissing, so the benefit here is for batches with multiple distinct
+	// statements that are not yet in the prepared statement cache.
+	type prepResult struct {
+		info *preparedStatment
+		err  error
+	}
 
+	uniqueStmts := make(map[string]*prepResult)
+	for i := 0; i < n; i++ {
+		entry := &batch.Entries[i]
+		if len(entry.Args) > 0 || entry.binding != nil {
+			if _, exists := uniqueStmts[entry.Stmt]; !exists {
+				uniqueStmts[entry.Stmt] = &prepResult{}
+			}
+		}
+	}
+
+	// Launch concurrent preparations. After wg.Wait returns, all prepResult
+	// structs are fully written and safe to read without synchronization.
+	var wg sync.WaitGroup
+	for stmt, result := range uniqueStmts {
+		wg.Add(1)
+		go func(s string, r *prepResult) {
+			defer wg.Done()
+			r.info, r.err = c.prepareStatement(batch.Context(), s, batch.trace, batch.GetRequestTimeout())
+		}(stmt, result)
+	}
+	wg.Wait()
+
+	// First pass: resolve preparation results, invoke bindings, and compute
+	// the total number of queryValues needed for bulk allocation.
+	type entryPrepInfo struct {
+		info   *preparedStatment
+		values []interface{}
+	}
+	entryInfos := make([]entryPrepInfo, n)
+	totalValues := 0
 	hasLwtEntries := false
 
 	for i := 0; i < n; i++ {
 		entry := &batch.Entries[i]
-		b := &req.statements[i]
 
-		if len(entry.Args) > 0 || entry.binding != nil {
-			info, err := c.prepareStatement(batch.Context(), entry.Stmt, batch.trace, batch.GetRequestTimeout())
+		result, needsPrep := uniqueStmts[entry.Stmt]
+		if !needsPrep {
+			req.statements[i].statement = entry.Stmt
+			continue
+		}
+
+		if result.err != nil {
+			return &Iter{err: result.err}
+		}
+		info := result.info
+
+		var values []interface{}
+		if entry.binding == nil {
+			values = entry.Args
+		} else {
+			var err error
+			values, err = entry.binding(&QueryInfo{
+				Id:          info.id,
+				Args:        info.request.columns,
+				Rval:        info.response.columns,
+				PKeyColumns: info.request.pkeyColumns,
+			})
 			if err != nil {
 				return &Iter{err: err}
 			}
+		}
 
-			var values []interface{}
-			if entry.binding == nil {
-				values = entry.Args
-			} else {
-				values, err = entry.binding(&QueryInfo{
-					Id:          info.id,
-					Args:        info.request.columns,
-					Rval:        info.response.columns,
-					PKeyColumns: info.request.pkeyColumns,
-				})
-				if err != nil {
-					return &Iter{err: err}
-				}
+		if len(values) != info.request.actualColCount {
+			return &Iter{err: fmt.Errorf("gocql: batch statement %d expected %d values send got %d", i, info.request.actualColCount, len(values))}
+		}
+
+		entryInfos[i] = entryPrepInfo{info: info, values: values}
+		totalValues += info.request.actualColCount
+
+		if !hasLwtEntries && info.request.lwt {
+			hasLwtEntries = true
+		}
+	}
+
+	// Second pass: bulk-allocate all queryValues in a single slice and marshal
+	// values into the batch statements. This replaces N individual make() calls
+	// with a single allocation.
+	allValues := make([]queryValues, totalValues)
+	offset := 0
+
+	for i := 0; i < n; i++ {
+		if entryInfos[i].info == nil {
+			continue
+		}
+
+		info := entryInfos[i].info
+		values := entryInfos[i].values
+		b := &req.statements[i]
+
+		b.preparedID = info.id
+		colCount := info.request.actualColCount
+		b.values = allValues[offset : offset+colCount]
+		offset += colCount
+
+		for j := 0; j < colCount; j++ {
+			v := &b.values[j]
+			value := values[j]
+			typ := info.request.columns[j].TypeInfo
+			if err := marshalQueryValue(typ, value, v); err != nil {
+				return &Iter{err: err}
 			}
-
-			if len(values) != info.request.actualColCount {
-				return &Iter{err: fmt.Errorf("gocql: batch statement %d expected %d values send got %d", i, info.request.actualColCount, len(values))}
-			}
-
-			b.preparedID = info.id
-			stmts[string(info.id)] = entry.Stmt
-
-			b.values = make([]queryValues, info.request.actualColCount)
-
-			for j := 0; j < info.request.actualColCount; j++ {
-				v := &b.values[j]
-				value := values[j]
-				typ := info.request.columns[j].TypeInfo
-				if err := marshalQueryValue(typ, value, v); err != nil {
-					return &Iter{err: err}
-				}
-			}
-
-			if !hasLwtEntries && info.request.lwt {
-				hasLwtEntries = true
-			}
-		} else {
-			b.statement = entry.Stmt
 		}
 	}
 
@@ -1806,12 +1896,7 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 	case *resultVoidFrame:
 		return &Iter{}
 	case *RequestErrUnprepared:
-		stmt, found := stmts[string(x.StatementId)]
-		if found {
-			key := c.session.stmtsLRU.keyFor(c.host.HostID(), c.currentKeyspace, stmt)
-			c.session.stmtsLRU.evictPreparedID(key, x.StatementId)
-		}
-		return c.executeBatch(ctx, batch)
+		return &Iter{err: x, framer: framer}
 	case *resultRowsFrame:
 		iter := &Iter{
 			meta:    x.meta,
