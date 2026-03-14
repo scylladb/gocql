@@ -203,13 +203,17 @@ type Conn struct {
 	cqlProtoExts         []cqlProtocolExtension
 	scyllaSupported      ScyllaConnectionFeatures
 	systemRequestTimeout time.Duration
-	writeTimeout         atomic.Int64
-	timeouts             int64
-	readTimeout          atomic.Int64
-	mu                   sync.Mutex
-	tabletsRoutingV1     int32
-	headerBuf            [headSize]byte
-	isShardAware         bool
+	// compOpts bundles the per-connection compression settings resolved once
+	// at connection creation from the session's CompressionPolicy and host
+	// tier. The threshold is topology-dependent; minSavingsPct is not.
+	compOpts         compressionOpts
+	writeTimeout     atomic.Int64
+	timeouts         int64
+	readTimeout      atomic.Int64
+	mu               sync.Mutex
+	tabletsRoutingV1 int32
+	headerBuf        [headSize]byte
+	isShardAware     bool
 	// true if connection close process for the connection started.
 	// closed is protected by mu.
 	closed     bool
@@ -368,15 +372,19 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 
 	ctx, cancel := context.WithCancel(ctx)
 	c := &Conn{
-		conn:          dialedHost.Conn,
-		r:             bufio.NewReader(dialedHost.Conn),
-		cfg:           cfg,
-		calls:         make(map[int]*callReq),
-		version:       uint8(cfg.ProtoVersion),
-		isShardAware:  isShardAware,
-		addr:          dialedHost.Conn.RemoteAddr().String(),
-		errorHandler:  errorHandler,
-		compressor:    cfg.Compressor,
+		conn:         dialedHost.Conn,
+		r:            bufio.NewReader(dialedHost.Conn),
+		cfg:          cfg,
+		calls:        make(map[int]*callReq),
+		version:      uint8(cfg.ProtoVersion),
+		isShardAware: isShardAware,
+		addr:         dialedHost.Conn.RemoteAddr().String(),
+		errorHandler: errorHandler,
+		compressor:   cfg.Compressor,
+		compOpts: compressionOpts{
+			threshold:     resolveCompressionThreshold(s.cfg.CompressionPolicy, s.policy, host),
+			minSavingsPct: s.cfg.CompressionPolicy.MinSavingsPercent,
+		},
 		session:       s,
 		streams:       s.streamIDGenerator(),
 		host:          host,
@@ -840,7 +848,7 @@ func (c *Conn) recv(ctx context.Context) error {
 		return fmt.Errorf("gocql: frame header stream is beyond call expected bounds: %d", head.Stream)
 	} else if head.Stream == -1 {
 		// TODO: handle cassandra event frames, we shouldnt get any currently
-		framer := newFramerWithExts(c.compressor, c.version, c.cqlProtoExts, c.logger)
+		framer := newFramerWithExts(c.compressor, c.version, compressionOpts{}, c.cqlProtoExts, c.logger)
 		c.setTabletSupported(framer.tabletsRoutingV1)
 		if err := framer.readFrame(c, &head); err != nil {
 			return err
@@ -850,7 +858,7 @@ func (c *Conn) recv(ctx context.Context) error {
 	} else if head.Stream <= 0 {
 		// reserved stream that we dont use, probably due to a protocol error
 		// or a bug in Cassandra, this should be an error, parse it and return.
-		framer := newFramerWithExts(c.compressor, c.version, c.cqlProtoExts, c.logger)
+		framer := newFramerWithExts(c.compressor, c.version, compressionOpts{}, c.cqlProtoExts, c.logger)
 		c.setTabletSupported(framer.tabletsRoutingV1)
 		if err := framer.readFrame(c, &head); err != nil {
 			return err
@@ -881,7 +889,7 @@ func (c *Conn) recv(ctx context.Context) error {
 		panic(fmt.Sprintf("call has incorrect streamID: got %d expected %d", call.streamID, head.Stream))
 	}
 
-	framer := newFramerWithExts(c.compressor, c.version, c.cqlProtoExts, c.logger)
+	framer := newFramerWithExts(c.compressor, c.version, compressionOpts{}, c.cqlProtoExts, c.logger)
 
 	err = framer.readFrame(c, &head)
 	if err != nil {
@@ -1185,7 +1193,7 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, reques
 	}
 
 	// resp is basically a waiting semaphore protecting the framer
-	framer := newFramerWithExts(c.compressor, c.version, c.cqlProtoExts, c.logger)
+	framer := newFramerWithExts(c.compressor, c.version, c.compOpts, c.cqlProtoExts, c.logger)
 	c.setTabletSupported(framer.tabletsRoutingV1)
 
 	call := &callReq{

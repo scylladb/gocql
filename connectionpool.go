@@ -101,6 +101,47 @@ func connConfig(cfg *ClusterConfig) (*ConnConfig, error) {
 	}, nil
 }
 
+// resolveCompressionThreshold determines the minimum frame body size (in bytes)
+// that should trigger compression for a connection to the given host.
+//
+// The returned value has the following semantics:
+//
+//	0  – compress every frame (default / backward-compatible behaviour)
+//	-1 – never compress
+//	>0 – compress only when the serialized body is at least this many bytes
+//
+// When the host selection policy implements HostTierer, the host's tier is used
+// together with CompressionPolicy.Scope to decide whether the connection is
+// "local" or "remote". Policies without HostTierer treat all hosts as local.
+func resolveCompressionThreshold(policy CompressionPolicy, selectionPolicy HostSelectionPolicy, host *HostInfo) int {
+	tierer, ok := selectionPolicy.(HostTierer)
+	if !ok {
+		// Policy has no topology awareness; treat every host as local.
+		return policy.MinCompressLocalSize
+	}
+
+	tier := tierer.HostTier(host)
+
+	switch policy.Scope {
+	case CompressNonLocalRack:
+		// tier 0 = local rack → local; everything else → remote.
+		if tier == 0 {
+			return policy.MinCompressLocalSize
+		}
+		return policy.MinCompressRemoteSize
+	case CompressNonLocalDC:
+		// For a rack-aware policy (max tier 2): tier 0,1 = same DC → local; tier 2 = remote.
+		// For a DC-aware policy (max tier 1): tier 0 = local DC → local; tier 1 = remote.
+		maxTier := tierer.MaxHostTier()
+		if tier < maxTier {
+			return policy.MinCompressLocalSize
+		}
+		return policy.MinCompressRemoteSize
+	default:
+		return policy.MinCompressLocalSize
+	}
+}
+
 func newPolicyConnPool(session *Session) *policyConnPool {
 	// create the pool
 	pool := &policyConnPool{

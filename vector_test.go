@@ -455,7 +455,7 @@ func TestVector_SubTypeParsing(t *testing.T) {
 
 	for _, test := range testCases {
 		t.Run(test.name, func(t *testing.T) {
-			f := newFramer(nil, 0)
+			f := newFramer(nil, 0, compressionOpts{})
 			f.writeShort(0)
 			f.writeString(fmt.Sprintf("%sVectorType(%s, 2)", prefix, test.custom))
 			parsedType := f.readTypeInfo()
