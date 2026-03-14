@@ -103,6 +103,7 @@ func testShardAwarePortNoReconnections(t *testing.T, makeCluster makeClusterTest
 						t.Errorf("there was more than one connection to the shard aware port from the same shard (shard %d, port %d and %d)",
 							shard, oldPort, evt.sourcePort)
 					}
+					shardsConnected[shard] = evt
 				}
 
 				if shardAwareConnectionCount != numberOfShards-1 {
