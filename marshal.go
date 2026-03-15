@@ -950,6 +950,9 @@ func unmarshalVector(info VectorType, data []byte, value interface{}) error {
 			if len(data) > 0 {
 				return unmarshalErrorf("unmarshal vector: %d bytes of data for 0-dimension vector", len(data))
 			}
+			if k == reflect.Array && rv.Len() != 0 {
+				return unmarshalErrorf("unmarshal vector: array of size %d cannot store vector of 0 dimensions", rv.Len())
+			}
 			if k == reflect.Slice {
 				rv.Set(reflect.MakeSlice(t, 0, 0))
 			}
@@ -1011,8 +1014,11 @@ func unmarshalVector(info VectorType, data []byte, value interface{}) error {
 var vectorBufPool = sync.Pool{}
 
 func getVectorBuf(size int) []byte {
-	if size <= 0 {
+	if size < 0 {
 		return nil
+	}
+	if size == 0 {
+		return make([]byte, 0)
 	}
 	if v := vectorBufPool.Get(); v != nil {
 		if buf, ok := v.([]byte); ok {
@@ -1058,7 +1064,7 @@ func marshalVectorFloat32(dim int, vec []float32) ([]byte, error) {
 	}
 	size, err := vectorByteSize(dim, 4)
 	if err != nil {
-		return nil, err
+		return nil, marshalErrorf("%v", err)
 	}
 	buf := getVectorBuf(size)
 	off := 0
@@ -1083,7 +1089,7 @@ func marshalVectorFloat64(dim int, vec []float64) ([]byte, error) {
 	}
 	size, err := vectorByteSize(dim, 8)
 	if err != nil {
-		return nil, err
+		return nil, marshalErrorf("%v", err)
 	}
 	buf := getVectorBuf(size)
 	off := 0
@@ -1106,10 +1112,18 @@ func unmarshalVectorFloat32(dim int, data []byte, dst *[]float32) error {
 	}
 	expected, err := vectorByteSize(dim, 4)
 	if err != nil {
-		return err
+		return unmarshalErrorf("%v", err)
 	}
 	if len(data) != expected {
 		return unmarshalErrorf("unmarshal vector<float, %d>: expected %d bytes, got %d", dim, expected, len(data))
+	}
+	if dim == 0 {
+		if *dst == nil {
+			*dst = make([]float32, 0)
+		} else {
+			*dst = (*dst)[:0]
+		}
+		return nil
 	}
 	vec := *dst
 	if cap(vec) >= dim {
@@ -1137,10 +1151,18 @@ func unmarshalVectorFloat64(dim int, data []byte, dst *[]float64) error {
 	}
 	expected, err := vectorByteSize(dim, 8)
 	if err != nil {
-		return err
+		return unmarshalErrorf("%v", err)
 	}
 	if len(data) != expected {
 		return unmarshalErrorf("unmarshal vector<double, %d>: expected %d bytes, got %d", dim, expected, len(data))
+	}
+	if dim == 0 {
+		if *dst == nil {
+			*dst = make([]float64, 0)
+		} else {
+			*dst = (*dst)[:0]
+		}
+		return nil
 	}
 	vec := *dst
 	if cap(vec) >= dim {
@@ -1170,7 +1192,7 @@ func marshalVectorInt32(dim int, vec []int32) ([]byte, error) {
 	}
 	size, err := vectorByteSize(dim, 4)
 	if err != nil {
-		return nil, err
+		return nil, marshalErrorf("%v", err)
 	}
 	buf := getVectorBuf(size)
 	off := 0
@@ -1195,7 +1217,7 @@ func marshalVectorInt64(dim int, vec []int64) ([]byte, error) {
 	}
 	size, err := vectorByteSize(dim, 8)
 	if err != nil {
-		return nil, err
+		return nil, marshalErrorf("%v", err)
 	}
 	buf := getVectorBuf(size)
 	off := 0
@@ -1218,10 +1240,18 @@ func unmarshalVectorInt32(dim int, data []byte, dst *[]int32) error {
 	}
 	expected, err := vectorByteSize(dim, 4)
 	if err != nil {
-		return err
+		return unmarshalErrorf("%v", err)
 	}
 	if len(data) != expected {
 		return unmarshalErrorf("unmarshal vector<int, %d>: expected %d bytes, got %d", dim, expected, len(data))
+	}
+	if dim == 0 {
+		if *dst == nil {
+			*dst = make([]int32, 0)
+		} else {
+			*dst = (*dst)[:0]
+		}
+		return nil
 	}
 	vec := *dst
 	if cap(vec) >= dim {
@@ -1249,10 +1279,18 @@ func unmarshalVectorInt64(dim int, data []byte, dst *[]int64) error {
 	}
 	expected, err := vectorByteSize(dim, 8)
 	if err != nil {
-		return err
+		return unmarshalErrorf("%v", err)
 	}
 	if len(data) != expected {
 		return unmarshalErrorf("unmarshal vector<bigint, %d>: expected %d bytes, got %d", dim, expected, len(data))
+	}
+	if dim == 0 {
+		if *dst == nil {
+			*dst = make([]int64, 0)
+		} else {
+			*dst = (*dst)[:0]
+		}
+		return nil
 	}
 	vec := *dst
 	if cap(vec) >= dim {

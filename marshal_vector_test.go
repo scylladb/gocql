@@ -9,6 +9,7 @@ package gocql
 
 import (
 	"encoding/binary"
+	"errors"
 	"math"
 	"reflect"
 	"strconv"
@@ -759,6 +760,9 @@ func TestMarshalVector_EmptyVector(t *testing.T) {
 		if err != nil {
 			t.Fatalf("marshalVector: %v", err)
 		}
+		if data == nil {
+			t.Error("expected non-nil empty data for non-nil empty vector, got nil (would encode as CQL NULL)")
+		}
 		if len(data) != 0 {
 			t.Errorf("expected empty data, got %d bytes", len(data))
 		}
@@ -778,6 +782,9 @@ func TestMarshalVector_EmptyVector(t *testing.T) {
 		data, err := marshalVector(info, vec)
 		if err != nil {
 			t.Fatalf("marshalVector: %v", err)
+		}
+		if data == nil {
+			t.Error("expected non-nil empty data for non-nil empty vector, got nil (would encode as CQL NULL)")
 		}
 		if len(data) != 0 {
 			t.Errorf("expected empty data, got %d bytes", len(data))
@@ -799,6 +806,9 @@ func TestMarshalVector_EmptyVector(t *testing.T) {
 		if err != nil {
 			t.Fatalf("marshalVector: %v", err)
 		}
+		if data == nil {
+			t.Error("expected non-nil empty data for non-nil empty vector, got nil (would encode as CQL NULL)")
+		}
 		if len(data) != 0 {
 			t.Errorf("expected empty data, got %d bytes", len(data))
 		}
@@ -818,6 +828,9 @@ func TestMarshalVector_EmptyVector(t *testing.T) {
 		data, err := marshalVector(info, vec)
 		if err != nil {
 			t.Fatalf("marshalVector: %v", err)
+		}
+		if data == nil {
+			t.Error("expected non-nil empty data for non-nil empty vector, got nil (would encode as CQL NULL)")
 		}
 		if len(data) != 0 {
 			t.Errorf("expected empty data, got %d bytes", len(data))
@@ -1056,6 +1069,138 @@ func TestVectorBufPool_Concurrency(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+// TestVectorByteSizeErrorType verifies that vectorByteSize overflow errors,
+// when propagated through unmarshal fast paths, are returned as typed
+// UnmarshalError rather than plain fmt.Errorf values. The marshal fast paths
+// check len(vec) != dim before reaching vectorByteSize, so they cannot be
+// tested with real slices large enough to trigger overflow.
+func TestVectorByteSizeErrorType(t *testing.T) {
+	// Use a dimension that overflows on all platforms: math.MaxInt/4+1 * 4 > MaxInt.
+	overflowDim4 := math.MaxInt/4 + 1
+	overflowDim8 := math.MaxInt/8 + 1
+
+	t.Run("unmarshal_4byte", func(t *testing.T) {
+		tests := []struct {
+			name string
+			fn   func() error
+		}{
+			{"float32", func() error { var dst []float32; return unmarshalVectorFloat32(overflowDim4, []byte{}, &dst) }},
+			{"int32", func() error { var dst []int32; return unmarshalVectorInt32(overflowDim4, []byte{}, &dst) }},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				err := tc.fn()
+				if err == nil {
+					t.Fatal("expected overflow error, got nil")
+				}
+				var ue UnmarshalError
+				if !errors.As(err, &ue) {
+					t.Errorf("expected UnmarshalError, got %T: %v", err, err)
+				}
+				if !strings.Contains(err.Error(), "overflow") {
+					t.Errorf("expected overflow in error message, got: %v", err)
+				}
+			})
+		}
+	})
+
+	t.Run("unmarshal_8byte", func(t *testing.T) {
+		tests := []struct {
+			name string
+			fn   func() error
+		}{
+			{"float64", func() error { var dst []float64; return unmarshalVectorFloat64(overflowDim8, []byte{}, &dst) }},
+			{"int64", func() error { var dst []int64; return unmarshalVectorInt64(overflowDim8, []byte{}, &dst) }},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				err := tc.fn()
+				if err == nil {
+					t.Fatal("expected overflow error, got nil")
+				}
+				var ue UnmarshalError
+				if !errors.As(err, &ue) {
+					t.Errorf("expected UnmarshalError, got %T: %v", err, err)
+				}
+				if !strings.Contains(err.Error(), "overflow") {
+					t.Errorf("expected overflow in error message, got: %v", err)
+				}
+			})
+		}
+	})
+}
+
+// TestUnmarshalVectorFastPathZeroDimNonNilSlice verifies that unmarshal fast
+// paths return a non-nil empty slice (not nil) when dim==0 and data is non-nil
+// empty, matching the generic path behavior.
+func TestUnmarshalVectorFastPathZeroDimNonNilSlice(t *testing.T) {
+	t.Run("float32", func(t *testing.T) {
+		var dst []float32
+		if err := unmarshalVectorFloat32(0, []byte{}, &dst); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if dst == nil {
+			t.Error("expected non-nil empty slice, got nil")
+		}
+		if len(dst) != 0 {
+			t.Errorf("expected len 0, got %d", len(dst))
+		}
+	})
+
+	t.Run("float64", func(t *testing.T) {
+		var dst []float64
+		if err := unmarshalVectorFloat64(0, []byte{}, &dst); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if dst == nil {
+			t.Error("expected non-nil empty slice, got nil")
+		}
+		if len(dst) != 0 {
+			t.Errorf("expected len 0, got %d", len(dst))
+		}
+	})
+
+	t.Run("int32", func(t *testing.T) {
+		var dst []int32
+		if err := unmarshalVectorInt32(0, []byte{}, &dst); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if dst == nil {
+			t.Error("expected non-nil empty slice, got nil")
+		}
+		if len(dst) != 0 {
+			t.Errorf("expected len 0, got %d", len(dst))
+		}
+	})
+
+	t.Run("int64", func(t *testing.T) {
+		var dst []int64
+		if err := unmarshalVectorInt64(0, []byte{}, &dst); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if dst == nil {
+			t.Error("expected non-nil empty slice, got nil")
+		}
+		if len(dst) != 0 {
+			t.Errorf("expected len 0, got %d", len(dst))
+		}
+	})
+
+	// Also verify that an existing non-nil dst is preserved as non-nil [:0].
+	t.Run("float32_existing_dst", func(t *testing.T) {
+		dst := make([]float32, 5)
+		if err := unmarshalVectorFloat32(0, []byte{}, &dst); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if dst == nil {
+			t.Error("expected non-nil empty slice, got nil")
+		}
+		if len(dst) != 0 {
+			t.Errorf("expected len 0, got %d", len(dst))
+		}
+	})
 }
 
 // --- Test 11: Oversized buffers not pooled ---
