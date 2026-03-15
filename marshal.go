@@ -1017,6 +1017,17 @@ func putVectorBuf(buf []byte) {
 	vectorBufPool.Put(buf) //nolint:staticcheck // SA6002: []byte is a value type; boxing cost is acceptable for pool reuse
 }
 
+// vectorByteSize computes dim * elemBytes and returns an error if the result
+// would overflow int. This guards against corrupt or adversarial schema metadata
+// on 32-bit platforms where int is 32 bits.
+func vectorByteSize(dim, elemBytes int) (int, error) {
+	n := int64(dim) * int64(elemBytes)
+	if n < 0 || n > int64(math.MaxInt) {
+		return 0, fmt.Errorf("vector byte size overflow: %d dimensions * %d bytes/elem", dim, elemBytes)
+	}
+	return int(n), nil
+}
+
 // marshalVectorFloat32 encodes a float32 slice as a contiguous big-endian
 // IEEE 754 vector. Uses a pooled buffer for zero-alloc steady state.
 func marshalVectorFloat32(dim int, vec []float32) ([]byte, error) {
@@ -1026,7 +1037,11 @@ func marshalVectorFloat32(dim int, vec []float32) ([]byte, error) {
 	if len(vec) != dim {
 		return nil, marshalErrorf("expected vector with %d dimensions, received %d", dim, len(vec))
 	}
-	buf := getVectorBuf(dim * 4)
+	size, err := vectorByteSize(dim, 4)
+	if err != nil {
+		return nil, err
+	}
+	buf := getVectorBuf(size)
 	for i, v := range vec {
 		binary.BigEndian.PutUint32(buf[i*4:], math.Float32bits(v))
 	}
@@ -1042,7 +1057,11 @@ func marshalVectorFloat64(dim int, vec []float64) ([]byte, error) {
 	if len(vec) != dim {
 		return nil, marshalErrorf("expected vector with %d dimensions, received %d", dim, len(vec))
 	}
-	buf := getVectorBuf(dim * 8)
+	size, err := vectorByteSize(dim, 8)
+	if err != nil {
+		return nil, err
+	}
+	buf := getVectorBuf(size)
 	for i, v := range vec {
 		binary.BigEndian.PutUint64(buf[i*8:], math.Float64bits(v))
 	}
@@ -1056,7 +1075,10 @@ func unmarshalVectorFloat32(dim int, data []byte, dst *[]float32) error {
 		*dst = nil
 		return nil
 	}
-	expected := dim * 4
+	expected, err := vectorByteSize(dim, 4)
+	if err != nil {
+		return err
+	}
 	if len(data) != expected {
 		return unmarshalErrorf("unmarshal vector<float, %d>: expected %d bytes, got %d", dim, expected, len(data))
 	}
@@ -1080,7 +1102,10 @@ func unmarshalVectorFloat64(dim int, data []byte, dst *[]float64) error {
 		*dst = nil
 		return nil
 	}
-	expected := dim * 8
+	expected, err := vectorByteSize(dim, 8)
+	if err != nil {
+		return err
+	}
 	if len(data) != expected {
 		return unmarshalErrorf("unmarshal vector<double, %d>: expected %d bytes, got %d", dim, expected, len(data))
 	}
@@ -1106,7 +1131,11 @@ func marshalVectorInt32(dim int, vec []int32) ([]byte, error) {
 	if len(vec) != dim {
 		return nil, marshalErrorf("expected vector with %d dimensions, received %d", dim, len(vec))
 	}
-	buf := getVectorBuf(dim * 4)
+	size, err := vectorByteSize(dim, 4)
+	if err != nil {
+		return nil, err
+	}
+	buf := getVectorBuf(size)
 	for i, v := range vec {
 		binary.BigEndian.PutUint32(buf[i*4:], uint32(v))
 	}
@@ -1122,7 +1151,11 @@ func marshalVectorInt64(dim int, vec []int64) ([]byte, error) {
 	if len(vec) != dim {
 		return nil, marshalErrorf("expected vector with %d dimensions, received %d", dim, len(vec))
 	}
-	buf := getVectorBuf(dim * 8)
+	size, err := vectorByteSize(dim, 8)
+	if err != nil {
+		return nil, err
+	}
+	buf := getVectorBuf(size)
 	for i, v := range vec {
 		binary.BigEndian.PutUint64(buf[i*8:], uint64(v))
 	}
@@ -1136,7 +1169,10 @@ func unmarshalVectorInt32(dim int, data []byte, dst *[]int32) error {
 		*dst = nil
 		return nil
 	}
-	expected := dim * 4
+	expected, err := vectorByteSize(dim, 4)
+	if err != nil {
+		return err
+	}
 	if len(data) != expected {
 		return unmarshalErrorf("unmarshal vector<int, %d>: expected %d bytes, got %d", dim, expected, len(data))
 	}
@@ -1160,7 +1196,10 @@ func unmarshalVectorInt64(dim int, data []byte, dst *[]int64) error {
 		*dst = nil
 		return nil
 	}
-	expected := dim * 8
+	expected, err := vectorByteSize(dim, 8)
+	if err != nil {
+		return err
+	}
 	if len(data) != expected {
 		return unmarshalErrorf("unmarshal vector<bigint, %d>: expected %d bytes, got %d", dim, expected, len(data))
 	}

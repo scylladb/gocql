@@ -1148,3 +1148,24 @@ func TestMarshalVector_GenericPrealloc(t *testing.T) {
 		t.Errorf("round-trip mismatch: got %v, want %v", result, uuids[:])
 	}
 }
+
+func TestVectorByteSize_Overflow(t *testing.T) {
+	// On 32-bit, math.MaxInt is 2^31-1. dim=math.MaxInt/4+1 with elemBytes=4
+	// would overflow. On 64-bit this is just a sanity check.
+	_, err := vectorByteSize(math.MaxInt/4+1, 4)
+	if err == nil {
+		t.Error("expected overflow error for large dim*4")
+	}
+	_, err = vectorByteSize(math.MaxInt/8+1, 8)
+	if err == nil {
+		t.Error("expected overflow error for large dim*8")
+	}
+	// Normal case should succeed
+	n, err := vectorByteSize(1536, 4)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if n != 6144 {
+		t.Fatalf("expected 6144, got %d", n)
+	}
+}
