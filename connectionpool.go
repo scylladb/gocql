@@ -120,6 +120,14 @@ func resolveCompressionThreshold(policy CompressionPolicy, selectionPolicy HostS
 		return policy.MinCompressLocalSize
 	}
 
+	maxTier := tierer.MaxHostTier()
+	if maxTier == 0 {
+		// The policy implements HostTierer but has no real tiering
+		// (e.g. TokenAwareHostPolicy wrapping a non-topology-aware
+		// fallback like RoundRobin). Treat every host as local.
+		return policy.MinCompressLocalSize
+	}
+
 	tier := tierer.HostTier(host)
 
 	switch policy.Scope {
@@ -132,7 +140,6 @@ func resolveCompressionThreshold(policy CompressionPolicy, selectionPolicy HostS
 	case CompressNonLocalDC:
 		// For a rack-aware policy (max tier 2): tier 0,1 = same DC → local; tier 2 = remote.
 		// For a DC-aware policy (max tier 1): tier 0 = local DC → local; tier 1 = remote.
-		maxTier := tierer.MaxHostTier()
 		if tier < maxTier {
 			return policy.MinCompressLocalSize
 		}

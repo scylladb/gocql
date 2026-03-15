@@ -200,7 +200,7 @@ func TestResolveCompressionThreshold(t *testing.T) {
 		}
 	})
 
-	t.Run("TokenAware wrapping RoundRobin has no HostTierer", func(t *testing.T) {
+	t.Run("TokenAware wrapping RoundRobin has no HostTierer CompressNonLocalRack", func(t *testing.T) {
 		policy := CompressionPolicy{
 			MinCompressLocalSize:  4096,
 			MinCompressRemoteSize: 256,
@@ -211,10 +211,29 @@ func TestResolveCompressionThreshold(t *testing.T) {
 		taPolicy := TokenAwareHostPolicy(rrPolicy)
 
 		// RoundRobin fallback has no HostTierer, so tokenAwareHostPolicy
-		// returns tier 0 for all hosts → all treated as local.
+		// MaxHostTier() returns 0 → all hosts treated as local.
 		threshold := resolveCompressionThreshold(policy, taPolicy, remoteDCHost)
 		if threshold != 4096 {
 			t.Errorf("expected threshold 4096 for TokenAware(RoundRobin), got %d", threshold)
+		}
+	})
+
+	t.Run("TokenAware wrapping RoundRobin has no HostTierer CompressNonLocalDC", func(t *testing.T) {
+		policy := CompressionPolicy{
+			MinCompressLocalSize:  4096,
+			MinCompressRemoteSize: 256,
+			Scope:                 CompressNonLocalDC,
+		}
+		rrPolicy := RoundRobinHostPolicy()
+		rrPolicy.AddHost(localRackHost)
+		taPolicy := TokenAwareHostPolicy(rrPolicy)
+
+		// RoundRobin fallback has no HostTierer, so tokenAwareHostPolicy
+		// MaxHostTier() returns 0 → all hosts treated as local, even
+		// with CompressNonLocalDC scope.
+		threshold := resolveCompressionThreshold(policy, taPolicy, remoteDCHost)
+		if threshold != 4096 {
+			t.Errorf("expected threshold 4096 for TokenAware(RoundRobin) with CompressNonLocalDC, got %d", threshold)
 		}
 	})
 }
