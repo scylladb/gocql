@@ -36,7 +36,7 @@ These instructions help AI coding agents work productively in this repo. Focus o
 
 - Shard-aware port: requires node config for `native_shard_aware_transport_port` and no NAT source-port rewrites. Custom dialers should bind the correct source port; see examples in [README.md](README.md) and APIs in [scylla.go](scylla.go).
 - Addressing: prefer IPs matching node broadcast/listen addresses; `AddressTranslator` can rewrite addresses; DNS v4 preference is configurable.
-- Compression: enable via `ClusterConfig.Compressor` (`SnappyCompressor` or `lz4.LZ4Compressor`) — examples in [README.md](README.md).
+- Compression: enable via `ClusterConfig.Compressor` (`SnappyCompressor` or `lz4.LZ4Compressor`). Fine-tune with `ClusterConfig.CompressionPolicy` for topology-aware, size-based compression decisions: `MinCompressLocalSize`/`MinCompressRemoteSize` set per-tier thresholds, `Scope` defines local/remote boundary (`CompressNonLocalRack` or `CompressNonLocalDC`), and `MinSavingsPercent` discards compressed output that doesn't save enough bytes. Requires a `HostTierer`-capable host selection policy (`DCAwareRoundRobinPolicy` or `RackAwareRoundRobinPolicy`) — examples in [README.md](README.md).
 
 ## Helpful References
 
