@@ -12,6 +12,7 @@ import (
 	"math"
 	"reflect"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -1167,5 +1168,133 @@ func TestVectorByteSize_Overflow(t *testing.T) {
 	}
 	if n != 6144 {
 		t.Fatalf("expected 6144, got %d", n)
+	}
+}
+
+// TestMarshalVectorNegativeDimensions verifies that all fast-path marshal
+// and unmarshal functions return a clear "negative dimensions" error when
+// the VectorType has a negative Dimensions value (corrupt/adversarial metadata).
+func TestMarshalVectorNegativeDimensions(t *testing.T) {
+	const wantSubstr = "negative dimensions"
+
+	t.Run("marshal", func(t *testing.T) {
+		tests := []struct {
+			name string
+			fn   func() error
+		}{
+			{"float32", func() error { _, err := marshalVectorFloat32(-1, []float32{1}); return err }},
+			{"float64", func() error { _, err := marshalVectorFloat64(-1, []float64{1}); return err }},
+			{"int32", func() error { _, err := marshalVectorInt32(-1, []int32{1}); return err }},
+			{"int64", func() error { _, err := marshalVectorInt64(-1, []int64{1}); return err }},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				err := tc.fn()
+				if err == nil {
+					t.Fatal("expected error for negative dimensions, got nil")
+				}
+				if !strings.Contains(err.Error(), wantSubstr) {
+					t.Errorf("error %q does not contain %q", err, wantSubstr)
+				}
+			})
+		}
+	})
+
+	t.Run("unmarshal", func(t *testing.T) {
+		tests := []struct {
+			name string
+			fn   func() error
+		}{
+			{"float32", func() error { var v []float32; return unmarshalVectorFloat32(-1, []byte{0, 0, 0, 0}, &v) }},
+			{"float64", func() error { var v []float64; return unmarshalVectorFloat64(-1, []byte{0, 0, 0, 0, 0, 0, 0, 0}, &v) }},
+			{"int32", func() error { var v []int32; return unmarshalVectorInt32(-1, []byte{0, 0, 0, 0}, &v) }},
+			{"int64", func() error { var v []int64; return unmarshalVectorInt64(-1, []byte{0, 0, 0, 0, 0, 0, 0, 0}, &v) }},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				err := tc.fn()
+				if err == nil {
+					t.Fatal("expected error for negative dimensions, got nil")
+				}
+				if !strings.Contains(err.Error(), wantSubstr) {
+					t.Errorf("error %q does not contain %q", err, wantSubstr)
+				}
+			})
+		}
+	})
+
+	// Also test via the public marshalVector/unmarshalVector entry points
+	// (which dispatch to fast paths).
+	t.Run("public_marshal", func(t *testing.T) {
+		info := makeFloat32VectorType(-3)
+		_, err := marshalVector(info, []float32{1, 2, 3})
+		if err == nil {
+			t.Fatal("expected error for negative dimensions via marshalVector")
+		}
+		if !strings.Contains(err.Error(), wantSubstr) {
+			t.Errorf("error %q does not contain %q", err, wantSubstr)
+		}
+	})
+
+	t.Run("public_unmarshal", func(t *testing.T) {
+		info := makeFloat32VectorType(-3)
+		var dst []float32
+		err := unmarshalVector(info, []byte{0, 0, 0, 0}, &dst)
+		if err == nil {
+			t.Fatal("expected error for negative dimensions via unmarshalVector")
+		}
+		if !strings.Contains(err.Error(), wantSubstr) {
+			t.Errorf("error %q does not contain %q", err, wantSubstr)
+		}
+	})
+}
+
+// TestUnmarshalVectorGenericPathZeroDimensions verifies the generic unmarshal
+// path (non-fast-path types like UUID) correctly handles Dimensions==0.
+func TestUnmarshalVectorGenericPathZeroDimensions(t *testing.T) {
+	info := makeUUIDVectorType(0) // UUID type goes through generic path
+
+	t.Run("nil_data", func(t *testing.T) {
+		var dst [][16]byte
+		err := unmarshalVector(info, nil, &dst)
+		if err != nil {
+			t.Fatalf("unexpected error for nil data: %v", err)
+		}
+		if dst != nil {
+			t.Errorf("expected nil slice for nil data, got %v", dst)
+		}
+	})
+
+	t.Run("empty_data", func(t *testing.T) {
+		var dst [][16]byte
+		err := unmarshalVector(info, []byte{}, &dst)
+		if err != nil {
+			t.Fatalf("unexpected error for empty data: %v", err)
+		}
+		if dst == nil || len(dst) != 0 {
+			t.Errorf("expected non-nil empty slice, got %v (nil=%v)", dst, dst == nil)
+		}
+	})
+
+	t.Run("non_empty_data_error", func(t *testing.T) {
+		var dst [][16]byte
+		err := unmarshalVector(info, []byte{1, 2, 3}, &dst)
+		if err == nil {
+			t.Fatal("expected error for non-empty data with 0 dimensions")
+		}
+		if !strings.Contains(err.Error(), "0-dimension") {
+			t.Errorf("error %q does not mention 0-dimension", err)
+		}
+	})
+}
+
+// TestGetVectorBuf_NonPositiveSize verifies that getVectorBuf returns nil
+// for zero or negative sizes instead of allocating or panicking.
+func TestGetVectorBuf_NonPositiveSize(t *testing.T) {
+	for _, size := range []int{0, -1, -100} {
+		buf := getVectorBuf(size)
+		if buf != nil {
+			t.Errorf("getVectorBuf(%d) = %v, want nil", size, buf)
+		}
 	}
 }

@@ -946,11 +946,24 @@ func unmarshalVector(info VectorType, data []byte, value interface{}) error {
 			rv.Set(reflect.Zero(t))
 			return nil
 		}
+		if info.Dimensions == 0 {
+			if len(data) > 0 {
+				return unmarshalErrorf("unmarshal vector: %d bytes of data for 0-dimension vector", len(data))
+			}
+			if k == reflect.Slice {
+				rv.Set(reflect.MakeSlice(t, 0, 0))
+			}
+			return nil
+		}
 		if k == reflect.Array {
 			if rv.Len() != info.Dimensions {
 				return unmarshalErrorf("unmarshal vector: array of size %d cannot store vector of %d dimensions", rv.Len(), info.Dimensions)
 			}
 		} else {
+			// TODO: reuse existing slice backing array when cap >= info.Dimensions
+			// instead of unconditionally allocating. This would bring the generic path
+			// closer to the fast-path zero-alloc behavior. Can be done independently
+			// since this code predates the fast-path implementation.
 			rv.Set(reflect.MakeSlice(t, info.Dimensions, info.Dimensions))
 			if rv.Kind() == reflect.Interface {
 				rv = rv.Elem()
@@ -998,6 +1011,9 @@ func unmarshalVector(info VectorType, data []byte, value interface{}) error {
 var vectorBufPool = sync.Pool{}
 
 func getVectorBuf(size int) []byte {
+	if size <= 0 {
+		return nil
+	}
 	if v := vectorBufPool.Get(); v != nil {
 		if buf, ok := v.([]byte); ok {
 			if cap(buf) >= size {
@@ -1031,6 +1047,9 @@ func vectorByteSize(dim, elemBytes int) (int, error) {
 // marshalVectorFloat32 encodes a float32 slice as a contiguous big-endian
 // IEEE 754 vector. Uses a pooled buffer for zero-alloc steady state.
 func marshalVectorFloat32(dim int, vec []float32) ([]byte, error) {
+	if dim < 0 {
+		return nil, marshalErrorf("vector has negative dimensions: %d", dim)
+	}
 	if vec == nil {
 		return nil, nil
 	}
@@ -1042,8 +1061,10 @@ func marshalVectorFloat32(dim int, vec []float32) ([]byte, error) {
 		return nil, err
 	}
 	buf := getVectorBuf(size)
-	for i, v := range vec {
-		binary.BigEndian.PutUint32(buf[i*4:], math.Float32bits(v))
+	off := 0
+	for _, v := range vec {
+		binary.BigEndian.PutUint32(buf[off:off+4], math.Float32bits(v))
+		off += 4
 	}
 	return buf, nil
 }
@@ -1051,6 +1072,9 @@ func marshalVectorFloat32(dim int, vec []float32) ([]byte, error) {
 // marshalVectorFloat64 encodes a float64 slice as a contiguous big-endian
 // IEEE 754 vector. Uses a pooled buffer for zero-alloc steady state.
 func marshalVectorFloat64(dim int, vec []float64) ([]byte, error) {
+	if dim < 0 {
+		return nil, marshalErrorf("vector has negative dimensions: %d", dim)
+	}
 	if vec == nil {
 		return nil, nil
 	}
@@ -1062,8 +1086,10 @@ func marshalVectorFloat64(dim int, vec []float64) ([]byte, error) {
 		return nil, err
 	}
 	buf := getVectorBuf(size)
-	for i, v := range vec {
-		binary.BigEndian.PutUint64(buf[i*8:], math.Float64bits(v))
+	off := 0
+	for _, v := range vec {
+		binary.BigEndian.PutUint64(buf[off:off+8], math.Float64bits(v))
+		off += 8
 	}
 	return buf, nil
 }
@@ -1071,6 +1097,9 @@ func marshalVectorFloat64(dim int, vec []float64) ([]byte, error) {
 // unmarshalVectorFloat32 decodes contiguous big-endian IEEE 754 floats.
 // Reuses the destination slice's backing array when capacity allows (zero-alloc steady state).
 func unmarshalVectorFloat32(dim int, data []byte, dst *[]float32) error {
+	if dim < 0 {
+		return unmarshalErrorf("vector has negative dimensions: %d", dim)
+	}
 	if data == nil {
 		*dst = nil
 		return nil
@@ -1088,8 +1117,9 @@ func unmarshalVectorFloat32(dim int, data []byte, dst *[]float32) error {
 	} else {
 		vec = make([]float32, dim)
 	}
-	for i := 0; i < dim; i++ {
-		vec[i] = math.Float32frombits(binary.BigEndian.Uint32(data[i*4:]))
+	for i := range vec {
+		vec[i] = math.Float32frombits(binary.BigEndian.Uint32(data[:4]))
+		data = data[4:]
 	}
 	*dst = vec
 	return nil
@@ -1098,6 +1128,9 @@ func unmarshalVectorFloat32(dim int, data []byte, dst *[]float32) error {
 // unmarshalVectorFloat64 decodes contiguous big-endian IEEE 754 doubles.
 // Reuses the destination slice's backing array when capacity allows (zero-alloc steady state).
 func unmarshalVectorFloat64(dim int, data []byte, dst *[]float64) error {
+	if dim < 0 {
+		return unmarshalErrorf("vector has negative dimensions: %d", dim)
+	}
 	if data == nil {
 		*dst = nil
 		return nil
@@ -1115,8 +1148,9 @@ func unmarshalVectorFloat64(dim int, data []byte, dst *[]float64) error {
 	} else {
 		vec = make([]float64, dim)
 	}
-	for i := 0; i < dim; i++ {
-		vec[i] = math.Float64frombits(binary.BigEndian.Uint64(data[i*8:]))
+	for i := range vec {
+		vec[i] = math.Float64frombits(binary.BigEndian.Uint64(data[:8]))
+		data = data[8:]
 	}
 	*dst = vec
 	return nil
@@ -1125,6 +1159,9 @@ func unmarshalVectorFloat64(dim int, data []byte, dst *[]float64) error {
 // marshalVectorInt32 encodes an int32 slice as a contiguous big-endian
 // vector (CQL int = 4 bytes). Uses a pooled buffer for zero-alloc steady state.
 func marshalVectorInt32(dim int, vec []int32) ([]byte, error) {
+	if dim < 0 {
+		return nil, marshalErrorf("vector has negative dimensions: %d", dim)
+	}
 	if vec == nil {
 		return nil, nil
 	}
@@ -1136,8 +1173,10 @@ func marshalVectorInt32(dim int, vec []int32) ([]byte, error) {
 		return nil, err
 	}
 	buf := getVectorBuf(size)
-	for i, v := range vec {
-		binary.BigEndian.PutUint32(buf[i*4:], uint32(v))
+	off := 0
+	for _, v := range vec {
+		binary.BigEndian.PutUint32(buf[off:off+4], uint32(v))
+		off += 4
 	}
 	return buf, nil
 }
@@ -1145,6 +1184,9 @@ func marshalVectorInt32(dim int, vec []int32) ([]byte, error) {
 // marshalVectorInt64 encodes an int64 slice as a contiguous big-endian
 // vector (CQL bigint = 8 bytes). Uses a pooled buffer for zero-alloc steady state.
 func marshalVectorInt64(dim int, vec []int64) ([]byte, error) {
+	if dim < 0 {
+		return nil, marshalErrorf("vector has negative dimensions: %d", dim)
+	}
 	if vec == nil {
 		return nil, nil
 	}
@@ -1156,8 +1198,10 @@ func marshalVectorInt64(dim int, vec []int64) ([]byte, error) {
 		return nil, err
 	}
 	buf := getVectorBuf(size)
-	for i, v := range vec {
-		binary.BigEndian.PutUint64(buf[i*8:], uint64(v))
+	off := 0
+	for _, v := range vec {
+		binary.BigEndian.PutUint64(buf[off:off+8], uint64(v))
+		off += 8
 	}
 	return buf, nil
 }
@@ -1165,6 +1209,9 @@ func marshalVectorInt64(dim int, vec []int64) ([]byte, error) {
 // unmarshalVectorInt32 decodes contiguous big-endian CQL int (4-byte) values.
 // Reuses the destination slice's backing array when capacity allows (zero-alloc steady state).
 func unmarshalVectorInt32(dim int, data []byte, dst *[]int32) error {
+	if dim < 0 {
+		return unmarshalErrorf("vector has negative dimensions: %d", dim)
+	}
 	if data == nil {
 		*dst = nil
 		return nil
@@ -1182,8 +1229,9 @@ func unmarshalVectorInt32(dim int, data []byte, dst *[]int32) error {
 	} else {
 		vec = make([]int32, dim)
 	}
-	for i := 0; i < dim; i++ {
-		vec[i] = int32(binary.BigEndian.Uint32(data[i*4:]))
+	for i := range vec {
+		vec[i] = int32(binary.BigEndian.Uint32(data[:4]))
+		data = data[4:]
 	}
 	*dst = vec
 	return nil
@@ -1192,6 +1240,9 @@ func unmarshalVectorInt32(dim int, data []byte, dst *[]int32) error {
 // unmarshalVectorInt64 decodes contiguous big-endian CQL bigint (8-byte) values.
 // Reuses the destination slice's backing array when capacity allows (zero-alloc steady state).
 func unmarshalVectorInt64(dim int, data []byte, dst *[]int64) error {
+	if dim < 0 {
+		return unmarshalErrorf("vector has negative dimensions: %d", dim)
+	}
 	if data == nil {
 		*dst = nil
 		return nil
@@ -1209,15 +1260,23 @@ func unmarshalVectorInt64(dim int, data []byte, dst *[]int64) error {
 	} else {
 		vec = make([]int64, dim)
 	}
-	for i := 0; i < dim; i++ {
-		vec[i] = int64(binary.BigEndian.Uint64(data[i*8:]))
+	for i := range vec {
+		vec[i] = int64(binary.BigEndian.Uint64(data[:8]))
+		data = data[8:]
 	}
 	*dst = vec
 	return nil
 }
 
 // vectorFixedElemSize returns the known wire-format byte size for fixed-length
-// CQL types used as vector elements. Returns 0 for variable-length or unknown types.
+// CQL types used as vector elements, specifically the subset that
+// isVectorVariableLengthType classifies as fixed-length. Returns 0 for
+// variable-length or unknown types.
+//
+// NOTE: Some types that have a fixed wire size (TinyInt=1, SmallInt=2,
+// Date=4, Time=8, Counter=8) are classified as variable-length by
+// isVectorVariableLengthType due to discrepancies between Cassandra and
+// ScyllaDB implementations, and are deliberately excluded here.
 func vectorFixedElemSize(elemType TypeInfo) int {
 	switch elemType.Type() {
 	case TypeBoolean:
