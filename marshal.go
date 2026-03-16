@@ -1834,6 +1834,7 @@ type UDTField struct {
 	Name string
 }
 
+// NewUDTType creates a UDTTypeInfo. The proto parameter is ignored and kept for API compatibility.
 func NewUDTType(proto byte, name, keySpace string, elems ...UDTField) UDTTypeInfo {
 	return UDTTypeInfo{
 		NativeType: NativeType{typ: TypeUDT},
