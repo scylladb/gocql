@@ -723,8 +723,9 @@ func (f *framer) readTypeInfo() TypeInfo {
 		typ:   Type(id),
 	}
 
-	// Fast path: simple native types (0x0001-0x0015) need no further processing
-	if id > 0 && id <= 0x0015 {
+	// Fast path: simple native types (0x0001 through TypeDuration) need no further processing.
+	// These are all scalar types that require no additional wire reads beyond the type ID.
+	if id > 0 && id <= uint16(TypeDuration) {
 		return simple
 	}
 
@@ -851,10 +852,8 @@ func (f *framer) parsePreparedMetadata() preparedMetadata {
 	}
 
 	var cols []ColumnInfo
-	sameKeyspaceTable := true
-	firstKeyspace := ""
-	firstTable := ""
 	readPerColumnSpec := !globalSpec
+	var tracker keyspaceTableTracker
 	if meta.colCount < 1000 {
 		// preallocate columninfo to avoid excess copying
 		cols = make([]ColumnInfo, meta.colCount)
@@ -862,12 +861,7 @@ func (f *framer) parsePreparedMetadata() preparedMetadata {
 			col := &cols[i]
 			keyspace, table := f.readColWithSpec(col, &meta.resultMetadata, globalSpec, meta.keyspace, meta.table, i, readPerColumnSpec)
 			if readPerColumnSpec {
-				if i == 0 {
-					firstKeyspace = keyspace
-					firstTable = table
-				} else if keyspace != firstKeyspace || table != firstTable {
-					sameKeyspaceTable = false
-				}
+				tracker.track(i, keyspace, table)
 			}
 		}
 	} else {
@@ -877,20 +871,15 @@ func (f *framer) parsePreparedMetadata() preparedMetadata {
 			var col ColumnInfo
 			keyspace, table := f.readColWithSpec(&col, &meta.resultMetadata, globalSpec, meta.keyspace, meta.table, i, readPerColumnSpec)
 			if readPerColumnSpec {
-				if i == 0 {
-					firstKeyspace = keyspace
-					firstTable = table
-				} else if keyspace != firstKeyspace || table != firstTable {
-					sameKeyspaceTable = false
-				}
+				tracker.track(i, keyspace, table)
 			}
 			cols = append(cols, col)
 		}
 	}
 
-	if !globalSpec && meta.colCount > 0 && sameKeyspaceTable {
-		meta.keyspace = firstKeyspace
-		meta.table = firstTable
+	if !globalSpec && meta.colCount > 0 && tracker.allSame {
+		meta.keyspace = tracker.keyspace
+		meta.table = tracker.table
 	}
 
 	meta.columns = cols
@@ -917,6 +906,24 @@ func (r *resultMetadata) morePages() bool {
 
 func (r resultMetadata) String() string {
 	return fmt.Sprintf("[metadata flags=0x%x paging_state=% X columns=%v]", r.flags, r.pagingState, r.columns)
+}
+
+// keyspaceTableTracker tracks whether all columns in a prepared statement
+// share the same keyspace and table, recording the first column's values.
+type keyspaceTableTracker struct {
+	keyspace string
+	table    string
+	allSame  bool
+}
+
+func (t *keyspaceTableTracker) track(colIndex int, keyspace, table string) {
+	if colIndex == 0 {
+		t.keyspace = keyspace
+		t.table = table
+		t.allSame = true
+	} else if keyspace != t.keyspace || table != t.table {
+		t.allSame = false
+	}
 }
 
 func (f *framer) readColWithSpec(col *ColumnInfo, meta *resultMetadata, globalSpec bool, keyspace, table string, colIndex int, readPerColumnSpec bool) (string, string) {
@@ -964,7 +971,16 @@ func (f *framer) parseResultMetadata() resultMetadata {
 
 	globalSpec := meta.flags&frm.FlagGlobalTableSpec == frm.FlagGlobalTableSpec
 	if globalSpec || meta.colCount > 0 {
-		// globalSpec: read from metadata position; !globalSpec: read from first column position
+		// When globalSpec is set, keyspace/table are encoded once at the metadata level.
+		// When !globalSpec, the protocol technically encodes keyspace/table per-column and
+		// they *could* differ. However, CQL ROWS results always come from a single table
+		// (SELECT cannot produce columns from multiple tables), so we read the first
+		// column's keyspace/table and reuse them for all columns, avoiding per-column
+		// string allocation. Note that parsePreparedMetadata() does NOT apply this
+		// optimization — it uses readPerColumnSpec for the result-set part, where prepared
+		// batch metadata may legitimately reference multiple tables.
+		// See readColWithSpec: column 0 skips reading (already consumed here), columns 1+
+		// skip the redundant per-column keyspace/table bytes on the wire.
 		meta.keyspace = f.readString()
 		meta.table = f.readString()
 	}
@@ -1539,7 +1555,7 @@ func (f *framer) skipString() {
 	size := f.readShort()
 
 	if len(f.buf) < int(size) {
-		panic(fmt.Errorf("not enough bytes in buffer to skip string require %d got: %d", size, len(f.buf)))
+		panic(fmt.Errorf("not enough bytes in buffer to skip string, requires %d got %d", size, len(f.buf)))
 	}
 
 	f.buf = f.buf[size:]
