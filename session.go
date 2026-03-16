@@ -1502,8 +1502,9 @@ func (q *Query) GetRoutingKey() ([]byte, error) {
 	}
 	if plan != nil {
 		q.routingInfo.plan.Store(plan)
+		return createRoutingKey(plan.indexes, plan.types, q.values)
 	}
-	return createRoutingKeyFromPlan(plan, q.values)
+	return nil, nil
 }
 
 func (q *Query) shouldPrepare() bool {
@@ -2413,9 +2414,9 @@ func (b *Batch) GetRoutingKey() ([]byte, error) {
 	}
 	if plan != nil {
 		b.routingInfo.plan.Store(plan)
+		return createRoutingKey(plan.indexes, plan.types, entry.Args)
 	}
-
-	return createRoutingKeyFromPlan(plan, entry.Args)
+	return nil, nil
 }
 
 // GetRequestTimeout returns time driver waits for single server response
@@ -2431,16 +2432,28 @@ func (b *Batch) SetRequestTimeout(timeout time.Duration) *Batch {
 	return b
 }
 
-func createRoutingKey(routingKeyInfo *routingKeyInfo, values []interface{}) ([]byte, error) {
-	if routingKeyInfo == nil {
+// createRoutingKey computes the CQL routing key from partition key column
+// indexes, their types, and the query values. It handles both single-column
+// and composite partition keys.
+func createRoutingKey(indexes []int, types []TypeInfo, values []interface{}) ([]byte, error) {
+	if len(indexes) == 0 {
 		return nil, nil
 	}
 
-	if len(routingKeyInfo.indexes) == 1 {
+	if len(types) < len(indexes) {
+		return nil, fmt.Errorf("createRoutingKey: %d type(s) for %d index(es)", len(types), len(indexes))
+	}
+	for _, idx := range indexes {
+		if idx < 0 || idx >= len(values) {
+			return nil, fmt.Errorf("createRoutingKey: partition-key column index %d is out of range for %d bind value(s)", idx, len(values))
+		}
+	}
+
+	if len(indexes) == 1 {
 		// single column routing key
 		routingKey, err := Marshal(
-			routingKeyInfo.types[0],
-			values[routingKeyInfo.indexes[0]],
+			types[0],
+			values[indexes[0]],
 		)
 		if err != nil {
 			return nil, err
@@ -2450,47 +2463,10 @@ func createRoutingKey(routingKeyInfo *routingKeyInfo, values []interface{}) ([]b
 
 	// composite routing key
 	buf := bytes.NewBuffer(make([]byte, 0, 256))
-	for i := range routingKeyInfo.indexes {
+	for i := range indexes {
 		encoded, err := Marshal(
-			routingKeyInfo.types[i],
-			values[routingKeyInfo.indexes[i]],
-		)
-		if err != nil {
-			return nil, err
-		}
-		lenBuf := []byte{0x00, 0x00}
-		binary.BigEndian.PutUint16(lenBuf, uint16(len(encoded)))
-		buf.Write(lenBuf)
-		buf.Write(encoded)
-		buf.WriteByte(0x00)
-	}
-	routingKey := buf.Bytes()
-	return routingKey, nil
-}
-
-// createRoutingKeyFromPlan is the routingPlan counterpart of createRoutingKey.
-// It computes the routing key bytes from an immutable plan and the query values.
-func createRoutingKeyFromPlan(plan *routingPlan, values []interface{}) ([]byte, error) {
-	if plan == nil {
-		return nil, nil
-	}
-
-	if len(plan.indexes) == 1 {
-		routingKey, err := Marshal(
-			plan.types[0],
-			values[plan.indexes[0]],
-		)
-		if err != nil {
-			return nil, err
-		}
-		return routingKey, nil
-	}
-
-	buf := bytes.NewBuffer(make([]byte, 0, 256))
-	for i := range plan.indexes {
-		encoded, err := Marshal(
-			plan.types[i],
-			values[plan.indexes[i]],
+			types[i],
+			values[indexes[i]],
 		)
 		if err != nil {
 			return nil, err
@@ -2560,28 +2536,6 @@ type routingKeyInfoLRU struct {
 	mu  sync.Mutex
 }
 
-type routingKeyInfo struct {
-	partitioner Partitioner
-	keyspace    string
-	table       string
-	indexes     []int
-	types       []TypeInfo
-	lwt         bool
-}
-
-// routingPlan holds immutable per-statement routing metadata, shared across
-// all queries using the same prepared statement via Session.routingPlanCache.
-// Fields are set once during creation and never modified, so concurrent
-// reads require no synchronization.
-type routingPlan struct {
-	keyspace    string
-	table       string
-	partitioner Partitioner
-	indexes     []int
-	types       []TypeInfo
-	lwt         bool
-}
-
 // routingPlanLRU is a bounded LRU cache for *routingPlan pointers,
 // keyed by prepared statement string. It mirrors routingKeyInfoLRU
 // but stores immutable routing plans instead of inflight entries.
@@ -2621,6 +2575,28 @@ func (r *routingPlanLRU) Remove(stmt string) {
 	r.mu.Lock()
 	r.lru.Remove(stmt)
 	r.mu.Unlock()
+}
+
+type routingKeyInfo struct {
+	partitioner Partitioner
+	keyspace    string
+	table       string
+	indexes     []int
+	types       []TypeInfo
+	lwt         bool
+}
+
+// routingPlan holds immutable per-statement routing metadata, shared across
+// all queries using the same prepared statement via Session.routingPlanCache.
+// Fields are set once during creation and never modified, so concurrent
+// reads require no synchronization.
+type routingPlan struct {
+	keyspace    string
+	table       string
+	partitioner Partitioner
+	indexes     []int
+	types       []TypeInfo
+	lwt         bool
 }
 
 func (r *routingKeyInfo) String() string {
