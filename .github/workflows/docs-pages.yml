@@ -69,7 +69,7 @@ jobs:
     permissions:
       pages: write # to deploy to Pages
       id-token: write # to verify the deployment originates from an appropriate source
-      contents: write # to read private repo
+      contents: read # to read private repo
 
     # Deploy to the github-pages environment
     environment:
