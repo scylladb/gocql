@@ -780,8 +780,9 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 	}
 
 	if len(replicas) == 0 {
-		host, _ := meta.tokenRing.GetHostForToken(token)
-		replicas = []*HostInfo{host}
+		if host, _ := meta.tokenRing.GetHostForToken(token); host != nil {
+			replicas = []*HostInfo{host}
+		}
 	}
 
 	// LWT queries use a dedicated pick path that avoids heap allocations
