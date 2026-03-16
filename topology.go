@@ -34,6 +34,11 @@ import (
 type hostTokens struct {
 	// token is end (inclusive) of token range these hosts belong to
 	token Token
+	// hosts holds the replica hosts for this token range. This slice
+	// must not be modified after the hostTokens struct is created.
+	// Callers that need to reorder or filter must clone the slice first.
+	// The LWT pick path (pickLWTReplicas) relies on this invariant to
+	// safely read without cloning.
 	hosts []*HostInfo
 }
 

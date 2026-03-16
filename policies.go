@@ -743,6 +743,8 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 	token := partitioner.Hash(routingKey)
 	tokenCasted, isInt64Token := token.(int64Token)
 
+	isLWT := qry.IsLWT()
+
 	var replicas []*HostInfo
 
 	if session := qry.GetSession(); session != nil && session.tabletsRoutingV1 && isInt64Token {
@@ -763,10 +765,16 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 	if len(replicas) == 0 {
 		ht := meta.replicas[qry.Keyspace()].replicasFor(token)
 		if ht != nil {
-			// Clone ht.hosts, otherwise, if shuffling or avoidSlowReplicas is enabled, it will update ht.hosts
-			replicas = make([]*HostInfo, len(ht.hosts))
-			for id, replica := range ht.hosts {
-				replicas[id] = replica
+			if isLWT {
+				// LWT queries never shuffle or reorder replicas,
+				// so it is safe to read ht.hosts without cloning.
+				replicas = ht.hosts
+			} else {
+				// Clone ht.hosts, otherwise, if shuffling or avoidSlowReplicas is enabled, it will update ht.hosts
+				replicas = make([]*HostInfo, len(ht.hosts))
+				for id, replica := range ht.hosts {
+					replicas[id] = replica
+				}
 			}
 		}
 	}
@@ -776,11 +784,19 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 		replicas = []*HostInfo{host}
 	}
 
-	if t.shuffleReplicas && !qry.IsLWT() && len(replicas) > 1 {
+	// LWT queries use a dedicated pick path that avoids heap allocations
+	// for the used-host map, remote-tier slices, and replica clone.
+	if isLWT {
+		return t.pickLWTReplicas(qry, token, replicas)
+	}
+
+	// Note: LWT queries are diverted to pickLWTReplicas above and never
+	// reach here, so the former !qry.IsLWT() guards are no longer needed.
+	if t.shuffleReplicas && len(replicas) > 1 {
 		replicas = shuffleHosts(replicas)
 	}
 
-	if s := qry.GetSession(); s != nil && !qry.IsLWT() && t.avoidSlowReplicas {
+	if s := qry.GetSession(); s != nil && t.avoidSlowReplicas {
 		healthyReplicas := make([]*HostInfo, 0, len(replicas))
 		unhealthyReplicas := make([]*HostInfo, 0, len(replicas))
 
@@ -874,6 +890,179 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 
 		return nil
 	}
+}
+
+// lwtReturnedCap is the maximum number of replica hosts tracked in the
+// fixed-size array before falling back to a heap-allocated map. Sized for
+// RF=3 across 3 data centers (9 replicas). Deployments with higher RF
+// still work correctly via the lazy map fallback.
+const lwtReturnedCap = 9
+
+// pickLWTReplicas returns a host iterator for LWT queries that avoids
+// per-call heap allocations for the used-host map and remote-tier slices.
+// It relies on the fact that LWT queries never shuffle replicas and never
+// reorder for slow-replica avoidance, so the replica slice is iterated
+// in deterministic order.
+//
+// Returned hosts are tracked in a fixed-size [lwtReturnedCap] array
+// embedded in the closure struct. If the number of yielded hosts exceeds
+// that capacity (uncommon), a map is lazily allocated as a fallback.
+//
+// Replica tier values are cached during phase 0 so that phase 1 (remote
+// tier scan) reads them from the cache instead of recomputing.
+func (t *tokenAwareHostPolicy) pickLWTReplicas(qry ExecutableQuery, token Token, replicas []*HostInfo) NextHost {
+	tierer, tiererOk := t.fallback.(HostTierer)
+	var maxTier uint
+	if tiererOk {
+		maxTier = tierer.MaxHostTier()
+	} else {
+		maxTier = 1
+	}
+
+	var (
+		// returned tracks hosts already yielded to the caller, used to
+		// deduplicate against the fallback iterator.
+		returned    [lwtReturnedCap]*HostInfo
+		returnedMap map[*HostInfo]bool // lazy: allocated only when nReturn exceeds lwtReturnedCap
+		nReturn     int
+
+		// replicaTiers caches the tier computed for each replica during
+		// phase 0, so phase 1 can read it without recomputing.
+		replicaTiers [lwtReturnedCap]uint
+		tiersLen     int // number of cached entries in replicaTiers
+
+		i            int  // index into replicas for local (tier 0) pass
+		remoteTier   uint // current tier being scanned in remote pass
+		j            int  // index into replicas for current remote tier scan
+		phase        int  // 0=local, 1=remote-by-tier, 2=fallback
+		fallbackIter NextHost
+	)
+
+	return func() SelectedHost {
+		for {
+			switch phase {
+			case 0: // Local (tier 0) replicas in deterministic order
+				for i < len(replicas) {
+					h := replicas[i]
+					tier := policyHostTier(h, t.fallback, tierer, tiererOk)
+					if i < lwtReturnedCap {
+						replicaTiers[i] = tier
+						tiersLen = i + 1
+					}
+					i++
+					if tier != 0 {
+						continue
+					}
+					if h.IsUp() {
+						if nReturn < lwtReturnedCap {
+							returned[nReturn] = h
+							nReturn++
+						} else {
+							if returnedMap == nil {
+								returnedMap = make(map[*HostInfo]bool, nReturn*2)
+								for k := 0; k < nReturn; k++ {
+									returnedMap[returned[k]] = true
+								}
+							}
+							returnedMap[h] = true
+							nReturn++
+						}
+						return selectedHost{info: h, token: token}
+					}
+				}
+				if t.nonLocalReplicasFallback {
+					phase = 1
+				} else {
+					phase = 2
+				}
+
+			case 1: // Remote replicas by ascending tier
+				for remoteTier < maxTier {
+					for j < len(replicas) {
+						h := replicas[j]
+						var tier uint
+						if j < tiersLen {
+							tier = replicaTiers[j]
+						} else {
+							tier = policyHostTier(h, t.fallback, tierer, tiererOk)
+						}
+						j++
+						if tier != remoteTier+1 {
+							continue
+						}
+						if h.IsUp() {
+							if nReturn < lwtReturnedCap {
+								returned[nReturn] = h
+								nReturn++
+							} else {
+								if returnedMap == nil {
+									returnedMap = make(map[*HostInfo]bool, nReturn*2)
+									for k := 0; k < nReturn; k++ {
+										returnedMap[returned[k]] = true
+									}
+								}
+								returnedMap[h] = true
+								nReturn++
+							}
+							return selectedHost{info: h, token: token}
+						}
+					}
+					remoteTier++
+					j = 0
+				}
+				phase = 2
+
+			case 2: // Fallback policy, deduplicated against returned hosts
+				if fallbackIter == nil {
+					fallbackIter = t.fallback.Pick(qry)
+				}
+				for fh := fallbackIter(); fh != nil; fh = fallbackIter() {
+					if returnedMap != nil {
+						if !returnedMap[fh.Info()] {
+							returnedMap[fh.Info()] = true
+							return fh
+						}
+					} else if !hostWasReturned(fh.Info(), &returned, nReturn) {
+						if nReturn < lwtReturnedCap {
+							returned[nReturn] = fh.Info()
+							nReturn++
+						} else {
+							returnedMap = make(map[*HostInfo]bool, nReturn*2)
+							for k := 0; k < nReturn; k++ {
+								returnedMap[returned[k]] = true
+							}
+							returnedMap[fh.Info()] = true
+							nReturn++
+						}
+						return fh
+					}
+				}
+				return nil
+			}
+		}
+	}
+}
+
+// policyHostTier returns the tier of a host for the given policy
+// configuration. Tier 0 means local.
+func policyHostTier(h *HostInfo, fallback HostSelectionPolicy, tierer HostTierer, tiererOk bool) uint {
+	if tiererOk {
+		return tierer.HostTier(h)
+	}
+	if fallback.IsLocal(h) {
+		return 0
+	}
+	return 1
+}
+
+// hostWasReturned checks whether h appears in the returned-hosts array.
+func hostWasReturned(h *HostInfo, returned *[lwtReturnedCap]*HostInfo, n int) bool {
+	for k := 0; k < n; k++ {
+		if returned[k] == h {
+			return true
+		}
+	}
+	return false
 }
 
 type dcAwareRR struct {
