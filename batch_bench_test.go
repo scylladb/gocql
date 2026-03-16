@@ -111,7 +111,8 @@ func BenchmarkBatchBuildWriteFrame(b *testing.B) {
 
 // BenchmarkBatchBuildWriteFrameBulkAlloc measures the cost of building a
 // writeBatchFrame using a single bulk allocation for all queryValues.
-// This reflects the optimized allocation pattern from Items 2 and 3.
+// This reflects the optimized allocation pattern that replaces per-statement
+// make([]queryValues, ...) calls with a single contiguous slice.
 func BenchmarkBatchBuildWriteFrameBulkAlloc(b *testing.B) {
 	for _, size := range []int{10, 100} {
 		b.Run(fmt.Sprintf("entries=%d", size), func(b *testing.B) {

@@ -1721,22 +1721,23 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 	}()
 
 	for retries := 0; ; retries++ {
-		iter = c.executeBatchOnce(ctx, batch)
+		iter = c.executeBatchOnce(batch)
 		if iter == nil || iter.err == nil {
 			return iter
 		}
 
 		// Check for RequestErrUnprepared with bounded retry.
-		if _, ok := iter.err.(*RequestErrUnprepared); ok && retries < maxBatchPrepareRetries {
-			// Evict all prepared entries for this batch's statements so a
-			// single retry re-prepares everything. The CQL protocol reports
-			// only one unprepared ID per error, but batches with multiple
-			// distinct statements may have more than one stale entry.
+		if x, ok := iter.err.(*RequestErrUnprepared); ok && retries < maxBatchPrepareRetries {
+			// Evict the stale prepared entry identified by the server.
+			// evictPreparedID only removes an entry if its cached prepared ID
+			// matches x.StatementId, so concurrently re-prepared entries are
+			// not disturbed. We scan all batch entries because we don't maintain
+			// a reverse map from prepared ID to statement text.
 			for i := range batch.Entries {
 				entry := &batch.Entries[i]
 				if len(entry.Args) > 0 || entry.binding != nil {
 					key := c.session.stmtsLRU.keyFor(c.host.HostID(), c.currentKeyspace, entry.Stmt)
-					c.session.stmtsLRU.remove(key)
+					c.session.stmtsLRU.evictPreparedID(key, x.StatementId)
 				}
 			}
 			continue
@@ -1746,7 +1747,7 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 	}
 }
 
-func (c *Conn) executeBatchOnce(ctx context.Context, batch *Batch) *Iter {
+func (c *Conn) executeBatchOnce(batch *Batch) *Iter {
 	n := len(batch.Entries)
 	req := &writeBatchFrame{
 		typ:                   batch.Type,
@@ -1830,7 +1831,7 @@ func (c *Conn) executeBatchOnce(ctx context.Context, batch *Batch) *Iter {
 		}
 
 		if len(values) != info.request.actualColCount {
-			return &Iter{err: fmt.Errorf("gocql: batch statement %d expected %d values send got %d", i, info.request.actualColCount, len(values))}
+			return &Iter{err: fmt.Errorf("gocql: batch statement %d expected %d values, got %d", i, info.request.actualColCount, len(values))}
 		}
 
 		entryInfos[i] = entryPrepInfo{info: info, values: values}
