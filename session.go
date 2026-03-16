@@ -1175,6 +1175,7 @@ type Query struct {
 	skipPrepare           bool
 	disableSkipMetadata   bool
 	defaultTimestamp      bool
+	pinPagesToHost        bool
 }
 
 type queryRoutingInfo struct {
@@ -1561,6 +1562,20 @@ func (q *Query) PageState(state []byte) *Query {
 // https://github.com/apache/cassandra-gocql-driver/issues/612
 func (q *Query) NoSkipMetadata() *Query {
 	q.disableSkipMetadata = true
+	return q
+}
+
+// PinPagesToHost causes subsequent pages of the query to be fetched from the
+// same host that served the first page. This can improve performance for paged
+// queries by leveraging hot caches on the node. If the pinned host becomes
+// unavailable between pages, the driver automatically falls back to normal host
+// selection using the configured HostSelectionPolicy.
+//
+// Note: this differs from SetHostID in that PinPagesToHost is dynamic — the
+// host is determined by whichever node serves the first page, and fallback is
+// automatic. SetHostID is a hard pin that returns an error if the host is down.
+func (q *Query) PinPagesToHost() *Query {
+	q.pinPagesToHost = true
 	return q
 }
 
@@ -2049,6 +2064,14 @@ func (n *nextIter) fetch() *Iter {
 		if n.qry.conn != nil {
 			n.next = n.qry.conn.executeQuery(n.qry.Context(), n.qry)
 		} else {
+			n.next = n.qry.session.executeQuery(n.qry)
+		}
+
+		// If PinPagesToHost was used and the pinned host failed, fall back to
+		// normal host selection and retry. This handles the case where a node
+		// goes down between pages — the paging state is portable across nodes.
+		if n.next != nil && n.next.err != nil && n.qry.pinPagesToHost && n.qry.hostID != "" && n.qry.conn == nil {
+			n.qry.hostID = ""
 			n.next = n.qry.session.executeQuery(n.qry)
 		}
 	})

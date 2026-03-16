@@ -1619,6 +1619,12 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 			newQry.pageState = copyBytes(x.meta.pagingState)
 			newQry.metrics = &queryMetrics{m: make(map[string]*hostMetrics)}
 
+			// If PinPagesToHost is enabled and no explicit hostID was set by
+			// the user, pin the next page to the host that served this page.
+			if qry.pinPagesToHost && qry.hostID == "" {
+				newQry.hostID = c.host.HostID()
+			}
+
 			iter.next = &nextIter{
 				qry: newQry,
 				pos: int((1 - qry.prefetch) * float64(x.numRows)),
