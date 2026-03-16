@@ -793,70 +793,116 @@ func TestRoutingPlan_ConcurrentAccess(t *testing.T) {
 	wg.Wait()
 }
 
-// TestCreateRoutingKeyFromPlan verifies that createRoutingKeyFromPlan
-// produces the same output as createRoutingKey for the same inputs.
-func TestCreateRoutingKeyFromPlan(t *testing.T) {
+// TestCreateRoutingKey verifies that createRoutingKey produces correct
+// output for single and composite partition keys.
+func TestCreateRoutingKey(t *testing.T) {
 	t.Parallel()
 
 	intType := NativeType{proto: 4, typ: TypeInt}
 
 	// Single partition key column
-	rki := &routingKeyInfo{
-		indexes: []int{0},
-		types:   []TypeInfo{intType},
-	}
-	plan := &routingPlan{
-		indexes: []int{0},
-		types:   []TypeInfo{intType},
-	}
+	indexes := []int{0}
+	types := []TypeInfo{intType}
 	values := []interface{}{42}
 
-	got1, err1 := createRoutingKey(rki, values)
+	got1, err1 := createRoutingKey(indexes, types, values)
 	if err1 != nil {
-		t.Fatalf("createRoutingKey error: %v", err1)
+		t.Fatalf("createRoutingKey (single) error: %v", err1)
 	}
-	got2, err2 := createRoutingKeyFromPlan(plan, values)
-	if err2 != nil {
-		t.Fatalf("createRoutingKeyFromPlan error: %v", err2)
-	}
-	if string(got1) != string(got2) {
-		t.Errorf("routing keys differ: createRoutingKey=%x, createRoutingKeyFromPlan=%x", got1, got2)
+	if len(got1) == 0 {
+		t.Fatal("createRoutingKey (single) returned empty key")
 	}
 
 	// Composite partition key
-	rkiComp := &routingKeyInfo{
-		indexes: []int{0, 1},
-		types:   []TypeInfo{intType, intType},
-	}
-	planComp := &routingPlan{
-		indexes: []int{0, 1},
-		types:   []TypeInfo{intType, intType},
-	}
+	indexesComp := []int{0, 1}
+	typesComp := []TypeInfo{intType, intType}
 	valuesComp := []interface{}{42, 99}
 
-	got3, err3 := createRoutingKey(rkiComp, valuesComp)
-	if err3 != nil {
-		t.Fatalf("createRoutingKey (composite) error: %v", err3)
+	got2, err2 := createRoutingKey(indexesComp, typesComp, valuesComp)
+	if err2 != nil {
+		t.Fatalf("createRoutingKey (composite) error: %v", err2)
 	}
-	got4, err4 := createRoutingKeyFromPlan(planComp, valuesComp)
-	if err4 != nil {
-		t.Fatalf("createRoutingKeyFromPlan (composite) error: %v", err4)
+	if len(got2) == 0 {
+		t.Fatal("createRoutingKey (composite) returned empty key")
 	}
-	if string(got3) != string(got4) {
-		t.Errorf("composite routing keys differ: createRoutingKey=%x, createRoutingKeyFromPlan=%x", got3, got4)
+
+	// Composite key should differ from single key
+	if string(got1) == string(got2) {
+		t.Error("single and composite routing keys should differ")
 	}
 }
 
-// TestCreateRoutingKeyFromPlan_Nil verifies nil plan returns nil.
-func TestCreateRoutingKeyFromPlan_Nil(t *testing.T) {
+// TestCreateRoutingKey_Empty verifies empty indexes returns nil.
+func TestCreateRoutingKey_Empty(t *testing.T) {
 	t.Parallel()
 
-	got, err := createRoutingKeyFromPlan(nil, []interface{}{42})
+	got, err := createRoutingKey(nil, nil, []interface{}{42})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if got != nil {
-		t.Errorf("expected nil routing key for nil plan, got %x", got)
+		t.Errorf("expected nil routing key for empty indexes, got %x", got)
+	}
+}
+
+// TestCreateRoutingKey_BoundsValidation verifies that createRoutingKey
+// returns an error when types are fewer than indexes or when an index
+// is out of range for the provided bind values.
+func TestCreateRoutingKey_BoundsValidation(t *testing.T) {
+	t.Parallel()
+
+	intType := NativeType{proto: 4, typ: TypeInt}
+
+	tests := []struct {
+		name    string
+		indexes []int
+		types   []TypeInfo
+		values  []interface{}
+		errMsg  string
+	}{
+		{
+			name:    "fewer types than indexes",
+			indexes: []int{0, 1},
+			types:   []TypeInfo{intType}, // only 1 type for 2 indexes
+			values:  []interface{}{42, 99},
+			errMsg:  "1 type(s) for 2 index(es)",
+		},
+		{
+			name:    "index out of range (positive)",
+			indexes: []int{5},
+			types:   []TypeInfo{intType},
+			values:  []interface{}{42},
+			errMsg:  "index 5 is out of range for 1 bind value(s)",
+		},
+		{
+			name:    "index out of range (negative)",
+			indexes: []int{-1},
+			types:   []TypeInfo{intType},
+			values:  []interface{}{42},
+			errMsg:  "index -1 is out of range for 1 bind value(s)",
+		},
+		{
+			name:    "composite: second index out of range",
+			indexes: []int{0, 3},
+			types:   []TypeInfo{intType, intType},
+			values:  []interface{}{42, 99},
+			errMsg:  "index 3 is out of range for 2 bind value(s)",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := createRoutingKey(tc.indexes, tc.types, tc.values)
+			if err == nil {
+				t.Fatalf("expected error containing %q, got nil (key=%x)", tc.errMsg, got)
+			}
+			if !strings.Contains(err.Error(), tc.errMsg) {
+				t.Errorf("error %q does not contain %q", err.Error(), tc.errMsg)
+			}
+			if got != nil {
+				t.Errorf("expected nil key on error, got %x", got)
+			}
+		})
 	}
 }
 
@@ -1272,52 +1318,34 @@ func TestTableMetadataValidation(t *testing.T) {
 	})
 }
 
-// BenchmarkCreateRoutingKey compares createRoutingKeyFromPlan (plan-based)
-// against createRoutingKey (routingKeyInfo-based) for single and composite
-// partition keys. The two paths are functionally identical; this benchmark
-// verifies no performance regression in the plan-based path.
+// BenchmarkCreateRoutingKey measures createRoutingKey for single and composite
+// partition keys.
 func BenchmarkCreateRoutingKey(b *testing.B) {
 	intType := NativeType{proto: 4, typ: TypeInt}
 
 	// Single partition key
-	rkiSingle := &routingKeyInfo{indexes: []int{0}, types: []TypeInfo{intType}}
-	planSingle := &routingPlan{indexes: []int{0}, types: []TypeInfo{intType}}
+	idxSingle := []int{0}
+	typesSingle := []TypeInfo{intType}
 	valsSingle := []interface{}{42}
 
 	// Composite partition key (2 columns)
-	rkiComp := &routingKeyInfo{indexes: []int{0, 1}, types: []TypeInfo{intType, intType}}
-	planComp := &routingPlan{indexes: []int{0, 1}, types: []TypeInfo{intType, intType}}
+	idxComp := []int{0, 1}
+	typesComp := []TypeInfo{intType, intType}
 	valsComp := []interface{}{42, 99}
 
-	b.Run("FromPlan_Single", func(b *testing.B) {
+	b.Run("Single", func(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			_, _ = createRoutingKeyFromPlan(planSingle, valsSingle)
+			_, _ = createRoutingKey(idxSingle, typesSingle, valsSingle)
 		}
 	})
 
-	b.Run("FromInfo_Single", func(b *testing.B) {
+	b.Run("Composite", func(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			_, _ = createRoutingKey(rkiSingle, valsSingle)
-		}
-	})
-
-	b.Run("FromPlan_Composite", func(b *testing.B) {
-		b.ReportAllocs()
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			_, _ = createRoutingKeyFromPlan(planComp, valsComp)
-		}
-	})
-
-	b.Run("FromInfo_Composite", func(b *testing.B) {
-		b.ReportAllocs()
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			_, _ = createRoutingKey(rkiComp, valsComp)
+			_, _ = createRoutingKey(idxComp, typesComp, valsComp)
 		}
 	})
 }
