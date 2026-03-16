@@ -1722,6 +1722,72 @@ func TestPickLWT_HighRF_NoDuplicates(t *testing.T) {
 	}
 }
 
+// TestPick_NilHostFromEmptyTokenRing verifies that Pick does not panic when
+// the keyspace has no replicas configured and the token ring is empty (so
+// GetHostForToken returns nil). Before the nil-host guard this would panic
+// with a nil pointer dereference in policyHostTier.
+func TestPick_NilHostFromEmptyTokenRing(t *testing.T) {
+	t.Parallel()
+
+	const keyspace = "myKeyspace"
+
+	policy := TokenAwareHostPolicy(DCAwareRoundRobinPolicy("local"), NonLocalReplicasFallback())
+	policyInternal := policy.(*tokenAwareHostPolicy)
+	policyInternal.getKeyspaceName = func() string { return keyspace }
+	policyInternal.getKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {
+		// Return a keyspace with strategy but no replicas will actually be
+		// built because no hosts are added to the policy.
+		return &KeyspaceMetadata{
+			Name:          keyspace,
+			StrategyClass: "NetworkTopologyStrategy",
+			StrategyOptions: map[string]interface{}{
+				"class": "NetworkTopologyStrategy",
+				"local": 2,
+			},
+		}, nil
+	}
+	policy.SetPartitioner("OrderedPartitioner")
+
+	// Add a single host so the fallback policy has something to return,
+	// but do NOT call KeyspaceChanged — this means meta.replicas will be
+	// empty for the keyspace, and the token ring will have no entries,
+	// forcing the GetHostForToken fallback path.
+	host := &HostInfo{
+		hostId:         "0",
+		connectAddress: net.IPv4(10, 0, 0, 1),
+		tokens:         []string{"05"},
+		dataCenter:     "local",
+	}
+	policy.AddHost(host)
+
+	// Build metadata with an empty token ring so GetHostForToken returns nil.
+	policyInternal.metadata.Store(&clusterMeta{
+		tokenRing: &tokenRing{partitioner: &orderedPartitioner{}},
+		replicas:  map[string]tokenRingReplicas{},
+	})
+
+	for _, lwt := range []bool{false, true} {
+		name := "lwt=false"
+		if lwt {
+			name = "lwt=true"
+		}
+		t.Run(name, func(t *testing.T) {
+			query := &Query{
+				routingKey:  []byte("18"),
+				routingInfo: &queryRoutingInfo{lwt: lwt},
+			}
+			query.getKeyspace = func() string { return keyspace }
+
+			// Must not panic.
+			iter := policy.Pick(query)
+			// The fallback should still yield hosts.
+			if h := iter(); h == nil {
+				t.Fatal("expected at least one host from fallback, got nil")
+			}
+		})
+	}
+}
+
 // BenchmarkPickLWT benchmarks the LWT pick path vs the standard pick path
 // to quantify the allocation savings.
 func BenchmarkPickLWT(b *testing.B) {
