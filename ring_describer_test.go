@@ -97,18 +97,8 @@ func (*mockConnection) executeQuery(ctx context.Context, qry *Query) *Iter { ret
 var systemLocalResultMetadata = resultMetadata{
 	flags:          0,
 	pagingState:    []byte{},
-	actualColCount: 18,
+	actualColCount: 11,
 	columns: []ColumnInfo{{
-		Keyspace: "system",
-		Table:    "local",
-		Name:     "key",
-		TypeInfo: NativeType{proto: protoVersion4, typ: TypeVarchar},
-	}, {
-		Keyspace: "system",
-		Table:    "local",
-		Name:     "bootstrapped",
-		TypeInfo: NativeType{proto: protoVersion4, typ: TypeVarchar},
-	}, {
 		Keyspace: "system",
 		Table:    "local",
 		Name:     "broadcast_address",
@@ -121,18 +111,8 @@ var systemLocalResultMetadata = resultMetadata{
 	}, {
 		Keyspace: "system",
 		Table:    "local",
-		Name:     "cql_version",
-		TypeInfo: NativeType{proto: protoVersion4, typ: TypeVarchar},
-	}, {
-		Keyspace: "system",
-		Table:    "local",
 		Name:     "data_center",
 		TypeInfo: NativeType{proto: protoVersion4, typ: TypeVarchar},
-	}, {
-		Keyspace: "system",
-		Table:    "local",
-		Name:     "gossip_generation",
-		TypeInfo: NativeType{proto: protoVersion4, typ: TypeInt},
 	}, {
 		Keyspace: "system",
 		Table:    "local",
@@ -143,11 +123,6 @@ var systemLocalResultMetadata = resultMetadata{
 		Table:    "local",
 		Name:     "listen_address",
 		TypeInfo: NativeType{proto: protoVersion4, typ: TypeInet},
-	}, {
-		Keyspace: "system",
-		Table:    "local",
-		Name:     "native_protocol_version",
-		TypeInfo: NativeType{proto: protoVersion4, typ: TypeVarchar},
 	}, {
 		Keyspace: "system",
 		Table:    "local",
@@ -176,25 +151,10 @@ var systemLocalResultMetadata = resultMetadata{
 	}, {
 		Keyspace: "system",
 		Table:    "local",
-		Name:     "supported_features",
-		TypeInfo: NativeType{proto: protoVersion4, typ: TypeVarchar},
-	}, {
-		Keyspace: "system",
-		Table:    "local",
 		Name:     "tokens",
 		TypeInfo: CollectionType{
 			NativeType: NativeType{proto: protoVersion4, typ: TypeSet},
 			Elem:       NativeType{proto: protoVersion4, typ: TypeVarchar},
-		},
-	}, {
-		Keyspace: "system",
-		Table:    "local",
-		Name:     "truncated_at",
-		TypeInfo: CollectionType{
-			NativeType: NativeType{proto: protoVersion4, typ: TypeMap},
-
-			Key:  NativeType{proto: protoVersion4, typ: TypeUUID},
-			Elem: NativeType{proto: protoVersion4, typ: TypeBlob},
 		},
 	}},
 }
@@ -202,55 +162,50 @@ var systemLocalResultMetadata = resultMetadata{
 var systemPeersResultMetadata = resultMetadata{
 	flags:          0,
 	pagingState:    []byte{},
-	actualColCount: 10,
+	actualColCount: 9,
 	columns: []ColumnInfo{{
 		Keyspace: "system",
-		Table:    "local",
+		Table:    "peers",
 		Name:     "peer",
 		TypeInfo: NativeType{proto: protoVersion4, typ: TypeInet},
 	}, {
 		Keyspace: "system",
-		Table:    "local",
+		Table:    "peers",
 		Name:     "data_center",
 		TypeInfo: NativeType{proto: protoVersion4, typ: TypeVarchar},
 	}, {
 		Keyspace: "system",
-		Table:    "local",
+		Table:    "peers",
 		Name:     "host_id",
 		TypeInfo: NativeType{proto: protoVersion4, typ: TypeUUID},
 	}, {
 		Keyspace: "system",
-		Table:    "local",
+		Table:    "peers",
 		Name:     "preferred_ip",
 		TypeInfo: NativeType{proto: protoVersion4, typ: TypeInet},
 	}, {
 		Keyspace: "system",
-		Table:    "local",
+		Table:    "peers",
 		Name:     "rack",
 		TypeInfo: NativeType{proto: protoVersion4, typ: TypeVarchar},
 	}, {
 		Keyspace: "system",
-		Table:    "local",
+		Table:    "peers",
 		Name:     "release_version",
 		TypeInfo: NativeType{proto: protoVersion4, typ: TypeVarchar},
 	}, {
 		Keyspace: "system",
-		Table:    "local",
+		Table:    "peers",
 		Name:     "rpc_address",
 		TypeInfo: NativeType{proto: protoVersion4, typ: TypeInet},
 	}, {
 		Keyspace: "system",
-		Table:    "local",
+		Table:    "peers",
 		Name:     "schema_version",
 		TypeInfo: NativeType{proto: protoVersion4, typ: TypeUUID},
 	}, {
 		Keyspace: "system",
-		Table:    "local",
-		Name:     "supported_features",
-		TypeInfo: NativeType{proto: protoVersion4, typ: TypeVarchar},
-	}, {
-		Keyspace: "system",
-		Table:    "local",
+		Table:    "peers",
 		Name:     "tokens",
 		TypeInfo: CollectionType{
 			NativeType: NativeType{proto: protoVersion4, typ: TypeSet},
@@ -260,18 +215,22 @@ var systemPeersResultMetadata = resultMetadata{
 }
 
 func (*mockConnection) querySystem(ctx context.Context, query string, values ...interface{}) *Iter {
-	localData := []interface{}{"local", "COMPLETED", net.IPv4(192, 168, 100, 12), "", "3.3.1", "datacenter1", 1733834239, ParseUUIDMust("045859a7-6b9f-4efd-a5e7-acd64a295e13"), net.IPv4(192, 168, 100, 12), "4", "org.apache.cassandra.dht.Murmur3Partitioner", "rack1", "3.0.8", net.IPv4(192, 168, 100, 12), ParseUUIDMust("daf4df2c-b708-11ef-5c25-3004361afd71"), "", []string{}, map[UUID]byte{}}
-	peerData1 := []interface{}{net.IPv4(192, 168, 100, 13), "datacenter1", ParseUUIDMust("b953309f-6e68-41f2-baf5-0e60da317a9c"), net.IP{}, "rack1", "3.0.8", net.IPv4(192, 168, 100, 13), ParseUUIDMust("b6ed5bde-b318-11ef-8f58-aeba19e31273"), "", []string{"-1032311531684407545", "-1112089412567859825"}}
-	peerData2 := []interface{}{net.IPv4(192, 168, 100, 14), "datacenter1", ParseUUIDMust("8269e111-ea38-44bd-a73f-9d3d12cfaf78"), net.IP{}, "rack1", "3.0.8", net.IPv4(192, 168, 100, 14), ParseUUIDMust("b6ed5bde-b318-11ef-8f58-aeba19e31273"), "", []string{}}
+	// Column order matches the explicit SELECT in qrySystemLocal:
+	// broadcast_address, cluster_name, data_center, host_id, listen_address, partitioner, rack, release_version, rpc_address, schema_version, tokens
+	localData := []interface{}{net.IPv4(192, 168, 100, 12), "", "datacenter1", ParseUUIDMust("045859a7-6b9f-4efd-a5e7-acd64a295e13"), net.IPv4(192, 168, 100, 12), "org.apache.cassandra.dht.Murmur3Partitioner", "rack1", "3.0.8", net.IPv4(192, 168, 100, 12), ParseUUIDMust("daf4df2c-b708-11ef-5c25-3004361afd71"), []string{}}
+	// Column order matches the explicit SELECT in qrySystemPeersCassandra:
+	// peer, data_center, host_id, preferred_ip, rack, release_version, rpc_address, schema_version, tokens
+	peerData1 := []interface{}{net.IPv4(192, 168, 100, 13), "datacenter1", ParseUUIDMust("b953309f-6e68-41f2-baf5-0e60da317a9c"), net.IP{}, "rack1", "3.0.8", net.IPv4(192, 168, 100, 13), ParseUUIDMust("b6ed5bde-b318-11ef-8f58-aeba19e31273"), []string{"-1032311531684407545", "-1112089412567859825"}}
+	peerData2 := []interface{}{net.IPv4(192, 168, 100, 14), "datacenter1", ParseUUIDMust("8269e111-ea38-44bd-a73f-9d3d12cfaf78"), net.IP{}, "rack1", "3.0.8", net.IPv4(192, 168, 100, 14), ParseUUIDMust("b6ed5bde-b318-11ef-8f58-aeba19e31273"), []string{}}
 
-	if query == "SELECT * FROM system.local WHERE key='local'" {
+	if query == qrySystemLocal {
 		return &Iter{
 			meta:    systemLocalResultMetadata,
 			framer:  &mock.MockFramer{Data: marshalMetadataMust(systemLocalResultMetadata, localData)},
 			numRows: 1,
 			next:    nil,
 		}
-	} else if query == "SELECT * FROM system.peers" {
+	} else if query == qrySystemPeersCassandra {
 		return &Iter{
 			meta:    systemPeersResultMetadata,
 			framer:  &mock.MockFramer{Data: append(marshalMetadataMust(systemPeersResultMetadata, peerData1), marshalMetadataMust(systemPeersResultMetadata, peerData2)...)},
@@ -284,6 +243,7 @@ func (*mockConnection) querySystem(ctx context.Context, query string, values ...
 
 func (*mockConnection) getIsSchemaV2() bool { return false }
 func (*mockConnection) setSchemaV2(s bool)  {}
+func (*mockConnection) isScyllaConn() bool  { return false }
 func (*mockConnection) getScyllaSupported() ScyllaConnectionFeatures {
 	return ScyllaConnectionFeatures{}
 }
