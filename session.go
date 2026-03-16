@@ -1821,6 +1821,13 @@ func (is *iterScanner) Next() bool {
 		}
 		is.cols[i] = col
 	}
+
+	// Trigger async prefetch of next page when we've consumed enough rows,
+	// matching the behavior of Iter.Scan().
+	if iter.next != nil && iter.pos >= iter.next.pos {
+		iter.next.fetchAsync()
+	}
+
 	iter.pos++
 	is.valid = true
 
