@@ -1107,10 +1107,12 @@ func (qm *queryMetrics) latency() int64 {
 	return 0
 }
 
-// reset resets metrics, to forget about prior query executions
+// reset resets metrics, to forget about prior query executions.
+// Uses clear() instead of make() to preserve the map's backing array,
+// avoiding a heap allocation on each re-execution.
 func (qm *queryMetrics) reset() {
 	qm.l.Lock()
-	qm.m = make(map[string]*hostMetrics)
+	clear(qm.m)
 	qm.totalAttempts = 0
 	qm.l.Unlock()
 }
@@ -1722,7 +1724,6 @@ func (q *Query) reset() {
 	if m != nil {
 		clear(m.m)
 		m.totalAttempts = 0
-		m.l = sync.RWMutex{}
 	}
 
 	*q = Query{routingInfo: &queryRoutingInfo{}, metrics: m, refCount: 1}
