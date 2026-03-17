@@ -398,6 +398,10 @@ func (iter *Iter) RowData() (RowData, error) {
 		}
 	}
 
+	if idx != actualSize {
+		return RowData{}, fmt.Errorf("gocql: column count mismatch in RowData: metadata predicted %d columns but got %d", actualSize, idx)
+	}
+
 	rowData := RowData{
 		Columns: columns,
 		Values:  values,

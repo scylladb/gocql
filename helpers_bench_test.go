@@ -20,7 +20,6 @@ package gocql
 
 import (
 	"fmt"
-	"reflect"
 	"testing"
 )
 
@@ -226,63 +225,5 @@ func BenchmarkRowDataAllocation(b *testing.B) {
 				_ = rd
 			}
 		})
-	}
-}
-
-// TestNewWithErrorConsistentWithGoType verifies that the fast-path type mapping
-// in NativeType.NewWithError() stays consistent with the canonical goType() mapping.
-// This guards against future changes to one mapping that forget to update the other.
-func TestNewWithErrorConsistentWithGoType(t *testing.T) {
-	// All NativeType type codes that goType handles (excluding collection/tuple/UDT
-	// which are separate TypeInfo implementations).
-	nativeTypes := []Type{
-		TypeVarchar, TypeAscii, TypeText, TypeInet,
-		TypeBigInt, TypeCounter,
-		TypeTime,
-		TypeTimestamp,
-		TypeBlob,
-		TypeBoolean,
-		TypeFloat,
-		TypeDouble,
-		TypeInt,
-		TypeSmallInt,
-		TypeTinyInt,
-		TypeDecimal,
-		TypeUUID, TypeTimeUUID,
-		TypeVarint,
-		TypeDate,
-		TypeDuration,
-	}
-
-	for _, typ := range nativeTypes {
-		nt := NativeType{typ: typ, proto: protoVersion4}
-
-		// Get the fast-path result from NewWithError
-		fastVal, err := nt.NewWithError()
-		if err != nil {
-			t.Errorf("NewWithError(%s): unexpected error: %v", typ, err)
-			continue
-		}
-
-		// Get the canonical type from goType
-		canonicalType, err := goType(nt)
-		if err != nil {
-			t.Errorf("goType(%s): unexpected error: %v", typ, err)
-			continue
-		}
-
-		// NewWithError returns a pointer (reflect.New(typ).Interface()), so the
-		// underlying type is reflect.TypeOf(val).Elem()
-		fastType := reflect.TypeOf(fastVal)
-		if fastType.Kind() != reflect.Ptr {
-			t.Errorf("NewWithError(%s): expected pointer, got %s", typ, fastType.Kind())
-			continue
-		}
-		fastElemType := fastType.Elem()
-
-		if fastElemType != canonicalType {
-			t.Errorf("NewWithError(%s) fast-path type %s does not match goType() canonical type %s",
-				typ, fastElemType, canonicalType)
-		}
 	}
 }

@@ -1862,6 +1862,8 @@ func (t CollectionType) NewWithError() (interface{}, error) {
 						return new(map[string]string), nil
 					case TypeBoolean:
 						return new(map[string]bool), nil
+					case TypeFloat:
+						return new(map[string]float32), nil
 					case TypeDouble:
 						return new(map[string]float64), nil
 					case TypeUUID:
@@ -1875,6 +1877,8 @@ func (t CollectionType) NewWithError() (interface{}, error) {
 						return new(map[int]string), nil
 					case TypeInt:
 						return new(map[int]int), nil
+					case TypeFloat:
+						return new(map[int]float32), nil
 					}
 				}
 			}
