@@ -35,6 +35,8 @@ import (
 	"time"
 	"unsafe"
 
+	"gopkg.in/inf.v0"
+
 	"github.com/gocql/gocql/serialization/ascii"
 	"github.com/gocql/gocql/serialization/bigint"
 	"github.com/gocql/gocql/serialization/blob"
@@ -56,7 +58,6 @@ import (
 	"github.com/gocql/gocql/serialization/uuid"
 	"github.com/gocql/gocql/serialization/varchar"
 	"github.com/gocql/gocql/serialization/varint"
-	"gopkg.in/inf.v0"
 )
 
 var (
