@@ -376,6 +376,11 @@ func (iter *Iter) RowData() (RowData, error) {
 	idx := 0
 	for _, column := range iter.Columns() {
 		if c, ok := column.TypeInfo.(TupleTypeInfo); !ok {
+			if idx >= actualSize {
+				err := fmt.Errorf("gocql: column count overflow in RowData: metadata predicted %d columns but encountered more", actualSize)
+				iter.err = err
+				return RowData{}, err
+			}
 			val, err := column.TypeInfo.NewWithError()
 			if err != nil {
 				iter.err = err
@@ -386,6 +391,11 @@ func (iter *Iter) RowData() (RowData, error) {
 			idx++
 		} else {
 			for i, elem := range c.Elems {
+				if idx >= actualSize {
+					err := fmt.Errorf("gocql: column count overflow in RowData: metadata predicted %d columns but encountered more", actualSize)
+					iter.err = err
+					return RowData{}, err
+				}
 				columns[idx] = TupleColumnName(column.Name, i)
 				val, err := elem.NewWithError()
 				if err != nil {
@@ -399,7 +409,9 @@ func (iter *Iter) RowData() (RowData, error) {
 	}
 
 	if idx != actualSize {
-		return RowData{}, fmt.Errorf("gocql: column count mismatch in RowData: metadata predicted %d columns but got %d", actualSize, idx)
+		err := fmt.Errorf("gocql: column count mismatch in RowData: metadata predicted %d columns but got %d", actualSize, idx)
+		iter.err = err
+		return RowData{}, err
 	}
 
 	rowData := RowData{

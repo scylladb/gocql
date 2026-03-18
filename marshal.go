@@ -35,8 +35,6 @@ import (
 	"time"
 	"unsafe"
 
-	"gopkg.in/inf.v0"
-
 	"github.com/gocql/gocql/serialization/ascii"
 	"github.com/gocql/gocql/serialization/bigint"
 	"github.com/gocql/gocql/serialization/blob"
@@ -58,6 +56,7 @@ import (
 	"github.com/gocql/gocql/serialization/uuid"
 	"github.com/gocql/gocql/serialization/varchar"
 	"github.com/gocql/gocql/serialization/varint"
+	"gopkg.in/inf.v0"
 )
 
 var (
@@ -1931,6 +1930,10 @@ func (t TupleTypeInfo) String() string {
 
 func (t TupleTypeInfo) NewWithError() (interface{}, error) {
 	// Tuples scan into *[]interface{} (pointer to a slice of interface values).
+	// Note: the returned slice is nil (not pre-sized to len(Elems)), unlike the
+	// previous reflection-based implementation. Internal unmarshal paths handle
+	// this correctly via reflect.MakeSlice, but external callers that index into
+	// the result without checking length may see different behavior.
 	return new([]interface{}), nil
 }
 
