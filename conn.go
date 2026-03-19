@@ -918,6 +918,8 @@ func (c *Conn) releaseStream(call *callReq) {
 			})
 		})
 	}
+
+	putCallReq(call)
 }
 
 type callReq struct {
@@ -931,6 +933,35 @@ type callReq struct {
 	// streamObserverEndOnce ensures that either StreamAbandoned or StreamFinished is called,
 	// but not both.
 	streamObserverEndOnce sync.Once
+}
+
+var callReqPool = sync.Pool{
+	New: func() any {
+		return &callReq{}
+	},
+}
+
+// getCallReq obtains a callReq from the pool, initialises it for the given
+// stream, and creates fresh channels. The timer (if present from a previous
+// use) is kept so it can be reused.
+func getCallReq(stream int) *callReq {
+	call := callReqPool.Get().(*callReq)
+	call.resp = make(chan callResp)
+	call.timeout = make(chan struct{})
+	call.streamID = stream
+	call.streamObserverContext = nil
+	call.streamObserverEndOnce = sync.Once{}
+	return call
+}
+
+// putCallReq clears references and returns the callReq to the pool.
+// The timer is deliberately kept alive so it can be reused on the next
+// acquisition (the existing code at exec() already handles resetting it).
+func putCallReq(call *callReq) {
+	call.resp = nil
+	call.timeout = nil
+	call.streamObserverContext = nil
+	callReqPool.Put(call)
 }
 
 type callResp struct {
@@ -1188,11 +1219,7 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, reques
 	framer := newFramerWithExts(c.compressor, c.version, c.cqlProtoExts, c.logger)
 	c.setTabletSupported(framer.tabletsRoutingV1)
 
-	call := &callReq{
-		timeout:  make(chan struct{}),
-		streamID: stream,
-		resp:     make(chan callResp),
-	}
+	call := getCallReq(stream)
 
 	if c.streamObserver != nil {
 		call.streamObserverContext = c.streamObserver.StreamContext(ctx)
