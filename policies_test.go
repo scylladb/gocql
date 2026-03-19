@@ -839,7 +839,7 @@ func TestHostPolicy_TokenAware_NetworkStrategy(t *testing.T) {
 	t.Parallel()
 
 	const keyspace = "myKeyspace"
-	policy := TokenAwareHostPolicy(DCAwareRoundRobinPolicy("local"), NonLocalReplicasFallback())
+	policy := TokenAwareHostPolicy(DCAwareRoundRobinPolicy("local"), NonLocalReplicasFallback(), DontShuffleReplicas())
 	policyInternal := policy.(*tokenAwareHostPolicy)
 	policyInternal.getKeyspaceName = func() string { return keyspace }
 	policyInternal.getKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {
@@ -923,7 +923,7 @@ func TestHostPolicy_TokenAware_NetworkStrategy(t *testing.T) {
 	// rest should be hosts with matching token from remote DCs
 	expectHosts(t, "matching token from remote DCs", iter, "3", "5", "6", "8")
 	// followed by other hosts
-	expectHosts(t, "rest", iter, "0", "1", "2", "9", "10", "11")
+	expectHosts(t, "rest", iter, "10", "1", "9", "11", "0", "2")
 	expectNoMoreHosts(t, iter)
 }
 
@@ -1338,3 +1338,74 @@ func (f fixedInt64Partitioner) ParseString(s string) Token { return parseInt64To
 type stringStringer string
 
 func (s stringStringer) String() string { return string(s) }
+
+func TestHostSetInline(t *testing.T) {
+	var s hostSet
+	hosts := make([]*HostInfo, 9)
+	for i := range hosts {
+		hosts[i] = &HostInfo{}
+		s.add(hosts[i])
+	}
+	// All 9 should be tracked inline (no overflow map).
+	if s.overflow != nil {
+		t.Fatal("expected inline-only storage for 9 hosts")
+	}
+	for i, h := range hosts {
+		if !s.contains(h) {
+			t.Fatalf("host %d not found in inline set", i)
+		}
+	}
+	// Unknown host should not be found.
+	if s.contains(&HostInfo{}) {
+		t.Fatal("unexpected contains=true for unknown host")
+	}
+}
+
+func TestHostSetOverflow(t *testing.T) {
+	var s hostSet
+	hosts := make([]*HostInfo, 15) // exceeds inline capacity of 9
+	for i := range hosts {
+		hosts[i] = &HostInfo{}
+		s.add(hosts[i])
+	}
+	// Should have spilled to map.
+	if s.overflow == nil {
+		t.Fatal("expected overflow map for 15 hosts")
+	}
+	// Every host must be found, including those added before and after spill.
+	for i, h := range hosts {
+		if !s.contains(h) {
+			t.Fatalf("host %d not found after overflow", i)
+		}
+	}
+	// Unknown host should not be found.
+	if s.contains(&HostInfo{}) {
+		t.Fatal("unexpected contains=true for unknown host in overflow mode")
+	}
+}
+
+func TestHostSetOverflowPreservesInlineEntries(t *testing.T) {
+	var s hostSet
+	// Fill inline storage exactly.
+	inline := make([]*HostInfo, 9)
+	for i := range inline {
+		inline[i] = &HostInfo{}
+		s.add(inline[i])
+	}
+	// Add one more to trigger spill.
+	extra := &HostInfo{}
+	s.add(extra)
+
+	if s.overflow == nil {
+		t.Fatal("expected overflow map after 10th add")
+	}
+	// Inline entries must be findable via the map path.
+	for i, h := range inline {
+		if !s.contains(h) {
+			t.Fatalf("inline host %d lost after spill", i)
+		}
+	}
+	if !s.contains(extra) {
+		t.Fatal("extra host not found after spill")
+	}
+}
