@@ -1410,12 +1410,12 @@ type inflightPrepare struct {
 }
 
 func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer, requestTimeout time.Duration) (*preparedStatment, error) {
-	stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), c.currentKeyspace, stmt)
-	flight, ok := c.session.stmtsLRU.execIfMissing(stmtCacheKey, func(lru *lru.Cache) *inflightPrepare {
+	cacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), c.currentKeyspace, stmt)
+	flight, ok := c.session.stmtsLRU.execIfMissing(cacheKey, func(cache *lru.Cache[stmtCacheKey]) *inflightPrepare {
 		flight := &inflightPrepare{
 			done: make(chan struct{}),
 		}
-		lru.Add(stmtCacheKey, flight)
+		cache.Add(cacheKey, flight)
 		return flight
 	})
 
@@ -1436,14 +1436,14 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer,
 			framer, err := c.exec(c.ctx, prep, tracer, requestTimeout)
 			if err != nil {
 				flight.err = err
-				c.session.stmtsLRU.remove(stmtCacheKey)
+				c.session.stmtsLRU.remove(cacheKey)
 				return
 			}
 
 			frame, err := framer.parseFrame()
 			if err != nil {
 				flight.err = err
-				c.session.stmtsLRU.remove(stmtCacheKey)
+				c.session.stmtsLRU.remove(cacheKey)
 				return
 			}
 
@@ -1471,7 +1471,7 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer,
 			}
 
 			if flight.err != nil {
-				c.session.stmtsLRU.remove(stmtCacheKey)
+				c.session.stmtsLRU.remove(cacheKey)
 			}
 		}()
 	}
@@ -1670,8 +1670,8 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 		// is not consistent with regards to its schema.
 		return iter
 	case *RequestErrUnprepared:
-		stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), c.currentKeyspace, qry.stmt)
-		c.session.stmtsLRU.evictPreparedID(stmtCacheKey, x.StatementId)
+		cacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), c.currentKeyspace, qry.stmt)
+		c.session.stmtsLRU.evictPreparedID(cacheKey, x.StatementId)
 		return c.executeQuery(ctx, qry)
 	case error:
 		return &Iter{err: x, framer: framer}
