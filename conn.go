@@ -918,6 +918,8 @@ func (c *Conn) releaseStream(call *callReq) {
 			})
 		})
 	}
+
+	putCallReq(call)
 }
 
 type callReq struct {
@@ -931,6 +933,35 @@ type callReq struct {
 	// streamObserverEndOnce ensures that either StreamAbandoned or StreamFinished is called,
 	// but not both.
 	streamObserverEndOnce sync.Once
+}
+
+var callReqPool = sync.Pool{
+	New: func() any {
+		return &callReq{}
+	},
+}
+
+// getCallReq obtains a callReq from the pool, initialises it for the given
+// stream, and creates fresh channels. The timer (if present from a previous
+// use) is kept so it can be reused.
+func getCallReq(stream int) *callReq {
+	call := callReqPool.Get().(*callReq)
+	call.resp = make(chan callResp)
+	call.timeout = make(chan struct{})
+	call.streamID = stream
+	call.streamObserverContext = nil
+	call.streamObserverEndOnce = sync.Once{}
+	return call
+}
+
+// putCallReq clears references and returns the callReq to the pool.
+// The timer is deliberately kept alive so it can be reused on the next
+// acquisition (the existing code at exec() already handles resetting it).
+func putCallReq(call *callReq) {
+	call.resp = nil
+	call.timeout = nil
+	call.streamObserverContext = nil
+	callReqPool.Put(call)
 }
 
 type callResp struct {
@@ -1188,11 +1219,7 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, reques
 	framer := newFramerWithExts(c.compressor, c.version, c.cqlProtoExts, c.logger)
 	c.setTabletSupported(framer.tabletsRoutingV1)
 
-	call := &callReq{
-		timeout:  make(chan struct{}),
-		streamID: stream,
-		resp:     make(chan callResp),
-	}
+	call := getCallReq(stream)
 
 	if c.streamObserver != nil {
 		call.streamObserverContext = c.streamObserver.StreamContext(ctx)
@@ -1383,12 +1410,12 @@ type inflightPrepare struct {
 }
 
 func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer, requestTimeout time.Duration) (*preparedStatment, error) {
-	stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), c.currentKeyspace, stmt)
-	flight, ok := c.session.stmtsLRU.execIfMissing(stmtCacheKey, func(lru *lru.Cache) *inflightPrepare {
+	cacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), c.currentKeyspace, stmt)
+	flight, ok := c.session.stmtsLRU.execIfMissing(cacheKey, func(cache *lru.Cache[stmtCacheKey]) *inflightPrepare {
 		flight := &inflightPrepare{
 			done: make(chan struct{}),
 		}
-		lru.Add(stmtCacheKey, flight)
+		cache.Add(cacheKey, flight)
 		return flight
 	})
 
@@ -1409,14 +1436,14 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer,
 			framer, err := c.exec(c.ctx, prep, tracer, requestTimeout)
 			if err != nil {
 				flight.err = err
-				c.session.stmtsLRU.remove(stmtCacheKey)
+				c.session.stmtsLRU.remove(cacheKey)
 				return
 			}
 
 			frame, err := framer.parseFrame()
 			if err != nil {
 				flight.err = err
-				c.session.stmtsLRU.remove(stmtCacheKey)
+				c.session.stmtsLRU.remove(cacheKey)
 				return
 			}
 
@@ -1444,7 +1471,7 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer,
 			}
 
 			if flight.err != nil {
-				c.session.stmtsLRU.remove(stmtCacheKey)
+				c.session.stmtsLRU.remove(cacheKey)
 			}
 		}()
 	}
@@ -1643,8 +1670,8 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 		// is not consistent with regards to its schema.
 		return iter
 	case *RequestErrUnprepared:
-		stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), c.currentKeyspace, qry.stmt)
-		c.session.stmtsLRU.evictPreparedID(stmtCacheKey, x.StatementId)
+		cacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), c.currentKeyspace, qry.stmt)
+		c.session.stmtsLRU.evictPreparedID(cacheKey, x.StatementId)
 		return c.executeQuery(ctx, qry)
 	case error:
 		return &Iter{err: x, framer: framer}

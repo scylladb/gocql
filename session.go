@@ -134,7 +134,7 @@ func newSessionCommon(cfg ClusterConfig) (*Session, error) {
 		prefetch:          0.25,
 		cfg:               cfg,
 		pageSize:          cfg.PageSize,
-		stmtsLRU:          &preparedLRU{lru: lru.New(cfg.MaxPreparedStmts)},
+		stmtsLRU:          &preparedLRU{lru: lru.New[stmtCacheKey](cfg.MaxPreparedStmts)},
 		connectObserver:   cfg.ConnectObserver,
 		ctx:               ctx,
 		cancel:            cancel,
@@ -166,7 +166,7 @@ func newSessionCommon(cfg ClusterConfig) (*Session, error) {
 	s.nodeEvents = newEventDebouncer("NodeEvents", s.handleNodeEvent, s.logger)
 	s.schemaEvents = newEventDebouncer("SchemaEvents", s.handleSchemaEvent, s.logger)
 
-	s.routingKeyInfoCache.lru = lru.New(cfg.MaxRoutingKeyInfo)
+	s.routingKeyInfoCache.lru = lru.New[string](cfg.MaxRoutingKeyInfo)
 
 	s.hostSource = &ringDescriber{cfg: &s.cfg, logger: s.logger}
 	s.ringRefresher = debounce.NewRefreshDebouncer(debounce.RingRefreshDebounceTime, func() error {
@@ -2457,7 +2457,7 @@ func (c ColumnInfo) String() string {
 
 // routing key indexes LRU cache
 type routingKeyInfoLRU struct {
-	lru *lru.Cache
+	lru *lru.Cache[string]
 	mu  sync.Mutex
 }
 

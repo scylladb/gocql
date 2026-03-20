@@ -367,29 +367,51 @@ func (iter *Iter) RowData() (RowData, error) {
 		return RowData{}, iter.err
 	}
 
-	columns := make([]string, 0, len(iter.Columns()))
-	values := make([]interface{}, 0, len(iter.Columns()))
+	// Pre-size slices to actual column count including tuple expansion
+	// and use direct indexing instead of append for better performance
+	actualSize := iter.meta.actualColCount
+	columns := make([]string, actualSize)
+	values := make([]interface{}, actualSize)
 
+	idx := 0
 	for _, column := range iter.Columns() {
 		if c, ok := column.TypeInfo.(TupleTypeInfo); !ok {
+			if idx >= actualSize {
+				err := fmt.Errorf("gocql: column count overflow in RowData: metadata predicted %d columns but encountered more", actualSize)
+				iter.err = err
+				return RowData{}, err
+			}
 			val, err := column.TypeInfo.NewWithError()
 			if err != nil {
 				iter.err = err
 				return RowData{}, err
 			}
-			columns = append(columns, column.Name)
-			values = append(values, val)
+			columns[idx] = column.Name
+			values[idx] = val
+			idx++
 		} else {
 			for i, elem := range c.Elems {
-				columns = append(columns, TupleColumnName(column.Name, i))
+				if idx >= actualSize {
+					err := fmt.Errorf("gocql: column count overflow in RowData: metadata predicted %d columns but encountered more", actualSize)
+					iter.err = err
+					return RowData{}, err
+				}
+				columns[idx] = TupleColumnName(column.Name, i)
 				val, err := elem.NewWithError()
 				if err != nil {
 					iter.err = err
 					return RowData{}, err
 				}
-				values = append(values, val)
+				values[idx] = val
+				idx++
 			}
 		}
+	}
+
+	if idx != actualSize {
+		err := fmt.Errorf("gocql: column count mismatch in RowData: metadata predicted %d columns but got %d", actualSize, idx)
+		iter.err = err
+		return RowData{}, err
 	}
 
 	rowData := RowData{

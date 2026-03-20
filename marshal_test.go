@@ -1035,3 +1035,152 @@ func bytesWithLength(data ...[]byte) []byte {
 	}
 	return ret
 }
+
+// TestNativeNewWithErrorConsistentWithGoType verifies that the fast-path type mapping
+// in NativeType.NewWithError() stays consistent with the canonical goType() mapping.
+// This guards against future changes to one mapping that forget to update the other.
+func TestNativeNewWithErrorConsistentWithGoType(t *testing.T) {
+	// All NativeType type codes that goType handles (excluding collection/tuple/UDT
+	// which are separate TypeInfo implementations).
+	nativeTypes := []Type{
+		TypeVarchar, TypeAscii, TypeText, TypeInet,
+		TypeBigInt, TypeCounter,
+		TypeTime,
+		TypeTimestamp,
+		TypeBlob,
+		TypeBoolean,
+		TypeFloat,
+		TypeDouble,
+		TypeInt,
+		TypeSmallInt,
+		TypeTinyInt,
+		TypeDecimal,
+		TypeUUID, TypeTimeUUID,
+		TypeVarint,
+		TypeDate,
+		TypeDuration,
+	}
+
+	for _, typ := range nativeTypes {
+		nt := NativeType{typ: typ, proto: protoVersion4}
+
+		// Get the fast-path result from NewWithError
+		fastVal, err := nt.NewWithError()
+		if err != nil {
+			t.Errorf("NewWithError(%s): unexpected error: %v", typ, err)
+			continue
+		}
+
+		// Get the canonical type from goType
+		canonicalType, err := goType(nt)
+		if err != nil {
+			t.Errorf("goType(%s): unexpected error: %v", typ, err)
+			continue
+		}
+
+		// NewWithError returns a pointer (reflect.New(typ).Interface()), so the
+		// underlying type is reflect.TypeOf(val).Elem()
+		fastType := reflect.TypeOf(fastVal)
+		if fastType.Kind() != reflect.Ptr {
+			t.Errorf("NewWithError(%s): expected pointer, got %s", typ, fastType.Kind())
+			continue
+		}
+		fastElemType := fastType.Elem()
+
+		if fastElemType != canonicalType {
+			t.Errorf("NewWithError(%s) fast-path type %s does not match goType() canonical type %s",
+				typ, fastElemType, canonicalType)
+		}
+	}
+}
+
+// TestCollectionNewWithErrorConsistentWithGoType verifies that the fast-path type mapping
+// in CollectionType.NewWithError() stays consistent with the canonical goType() mapping.
+func TestCollectionNewWithErrorConsistentWithGoType(t *testing.T) {
+	elemTypes := []Type{
+		TypeInt, TypeBigInt, TypeCounter,
+		TypeText, TypeVarchar, TypeAscii,
+		TypeBoolean,
+		TypeFloat, TypeDouble,
+		TypeUUID, TypeTimeUUID,
+		TypeTimestamp, TypeDate,
+		TypeSmallInt, TypeTinyInt,
+		TypeBlob,
+	}
+
+	// Test list and set types
+	for _, collTyp := range []Type{TypeList, TypeSet} {
+		for _, elemTyp := range elemTypes {
+			ct := CollectionType{
+				NativeType: NativeType{typ: collTyp, proto: protoVersion4},
+				Elem:       NativeType{typ: elemTyp, proto: protoVersion4},
+			}
+
+			fastVal, err := ct.NewWithError()
+			if err != nil {
+				t.Errorf("NewWithError(%s<%s>): unexpected error: %v", collTyp, elemTyp, err)
+				continue
+			}
+
+			canonicalType, err := goType(ct)
+			if err != nil {
+				t.Errorf("goType(%s<%s>): unexpected error: %v", collTyp, elemTyp, err)
+				continue
+			}
+
+			fastType := reflect.TypeOf(fastVal)
+			if fastType.Kind() != reflect.Ptr {
+				t.Errorf("NewWithError(%s<%s>): expected pointer, got %s", collTyp, elemTyp, fastType.Kind())
+				continue
+			}
+
+			if fastType.Elem() != canonicalType {
+				t.Errorf("NewWithError(%s<%s>) fast-path type %s does not match goType() canonical type %s",
+					collTyp, elemTyp, fastType.Elem(), canonicalType)
+			}
+		}
+	}
+
+	// Test map types with common key/value combinations
+	keyTypes := []Type{TypeText, TypeVarchar, TypeInt}
+	valTypes := []Type{
+		TypeInt, TypeBigInt,
+		TypeText, TypeVarchar,
+		TypeBoolean,
+		TypeFloat, TypeDouble,
+		TypeUUID,
+	}
+
+	for _, keyTyp := range keyTypes {
+		for _, valTyp := range valTypes {
+			ct := CollectionType{
+				NativeType: NativeType{typ: TypeMap, proto: protoVersion4},
+				Key:        NativeType{typ: keyTyp, proto: protoVersion4},
+				Elem:       NativeType{typ: valTyp, proto: protoVersion4},
+			}
+
+			fastVal, err := ct.NewWithError()
+			if err != nil {
+				t.Errorf("NewWithError(map<%s, %s>): unexpected error: %v", keyTyp, valTyp, err)
+				continue
+			}
+
+			canonicalType, err := goType(ct)
+			if err != nil {
+				t.Errorf("goType(map<%s, %s>): unexpected error: %v", keyTyp, valTyp, err)
+				continue
+			}
+
+			fastType := reflect.TypeOf(fastVal)
+			if fastType.Kind() != reflect.Ptr {
+				t.Errorf("NewWithError(map<%s, %s>): expected pointer, got %s", keyTyp, valTyp, fastType.Kind())
+				continue
+			}
+
+			if fastType.Elem() != canonicalType {
+				t.Errorf("NewWithError(map<%s, %s>) fast-path type %s does not match goType() canonical type %s",
+					keyTyp, valTyp, fastType.Elem(), canonicalType)
+			}
+		}
+	}
+}

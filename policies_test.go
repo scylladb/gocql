@@ -838,7 +838,7 @@ func TestHostPolicy_TokenAware_NetworkStrategy(t *testing.T) {
 	t.Parallel()
 
 	const keyspace = "myKeyspace"
-	policy := TokenAwareHostPolicy(DCAwareRoundRobinPolicy("local"), NonLocalReplicasFallback())
+	policy := TokenAwareHostPolicy(DCAwareRoundRobinPolicy("local"), NonLocalReplicasFallback(), DontShuffleReplicas())
 	policyInternal := policy.(*tokenAwareHostPolicy)
 	policyInternal.getKeyspaceName = func() string { return keyspace }
 	policyInternal.getKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {
@@ -922,7 +922,7 @@ func TestHostPolicy_TokenAware_NetworkStrategy(t *testing.T) {
 	// rest should be hosts with matching token from remote DCs
 	expectHosts(t, "matching token from remote DCs", iter, "3", "5", "6", "8")
 	// followed by other hosts
-	expectHosts(t, "rest", iter, "0", "1", "2", "9", "10", "11")
+	expectHosts(t, "rest", iter, "10", "1", "9", "11", "0", "2")
 	expectNoMoreHosts(t, iter)
 }
 

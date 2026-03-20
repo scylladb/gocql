@@ -64,7 +64,7 @@ func TestGet(t *testing.T) {
 	t.Parallel()
 
 	for _, tt := range getTests {
-		lru := New(0)
+		lru := New[string](0)
 		lru.Add(tt.keyToAdd, 1234)
 		val, ok := lru.Get(tt.keyToGet)
 		if ok != tt.expectedOk {
@@ -78,7 +78,7 @@ func TestGet(t *testing.T) {
 func TestRemove(t *testing.T) {
 	t.Parallel()
 
-	lru := New(0)
+	lru := New[string](0)
 	lru.Add("mystring", 1234)
 	if val, ok := lru.Get("mystring"); !ok {
 		t.Fatal("TestRemove returned no match")
@@ -89,5 +89,35 @@ func TestRemove(t *testing.T) {
 	lru.Remove("mystring")
 	if _, ok := lru.Get("mystring"); ok {
 		t.Fatal("TestRemove returned a removed entry")
+	}
+}
+
+// TestStructKey verifies that struct keys work correctly with the generic cache.
+func TestStructKey(t *testing.T) {
+	t.Parallel()
+
+	type compositeKey struct {
+		A string
+		B string
+	}
+
+	c := New[compositeKey](0)
+	k1 := compositeKey{A: "ab", B: "cd"}
+	k2 := compositeKey{A: "a", B: "bcd"}
+
+	c.Add(k1, "value1")
+	c.Add(k2, "value2")
+
+	if val, ok := c.Get(k1); !ok || val != "value1" {
+		t.Fatalf("expected value1 for k1, got %v (ok=%v)", val, ok)
+	}
+	if val, ok := c.Get(k2); !ok || val != "value2" {
+		t.Fatalf("expected value2 for k2, got %v (ok=%v)", val, ok)
+	}
+
+	// Verify that keys with same concatenation but different field boundaries
+	// are distinct (this was a bug with string concatenation keys).
+	if c.Len() != 2 {
+		t.Fatalf("expected 2 entries, got %d", c.Len())
 	}
 }
