@@ -685,7 +685,11 @@ func (c *Conn) closeWithError(err error) {
 		// we need to send the error to all waiting queries.
 		select {
 		case req.resp <- callResp{err: err}:
+			// exec() received the error. Wait for exec() to close the timeout
+			// channel, which signals it is done accessing the callReq.
+			<-req.timeout
 		case <-req.timeout:
+			// exec() already timed out and returned.
 		}
 		if req.streamObserverContext != nil {
 			req.streamObserverEndOnce.Do(func() {
@@ -694,6 +698,7 @@ func (c *Conn) closeWithError(err error) {
 				})
 			})
 		}
+		putCallReq(req)
 	}
 
 	// if error was nil then unblock the quit channel
@@ -918,6 +923,8 @@ func (c *Conn) releaseStream(call *callReq) {
 			})
 		})
 	}
+
+	putCallReq(call)
 }
 
 type callReq struct {
@@ -939,6 +946,30 @@ type callResp struct {
 	framer *framer
 	// err is error encountered, if any.
 	err error
+}
+
+var callReqPool = sync.Pool{
+	New: func() interface{} {
+		return &callReq{
+			resp: make(chan callResp),
+		}
+	},
+}
+
+func getCallReq(stream int) *callReq {
+	call := callReqPool.Get().(*callReq)
+	call.streamID = stream
+	call.timeout = make(chan struct{})
+	return call
+}
+
+func putCallReq(call *callReq) {
+	call.streamObserverContext = nil
+	call.streamObserverEndOnce = sync.Once{}
+	call.streamID = 0
+	call.timeout = nil
+	// Keep resp channel and timer for reuse.
+	callReqPool.Put(call)
 }
 
 // contextWriter is like io.Writer, but takes context as well.
@@ -1188,17 +1219,14 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, reques
 	framer := newFramerWithExts(c.compressor, c.version, c.cqlProtoExts, c.logger)
 	c.setTabletSupported(framer.tabletsRoutingV1)
 
-	call := &callReq{
-		timeout:  make(chan struct{}),
-		streamID: stream,
-		resp:     make(chan callResp),
-	}
+	call := getCallReq(stream)
 
 	if c.streamObserver != nil {
 		call.streamObserverContext = c.streamObserver.StreamContext(ctx)
 	}
 
 	if err := c.addCall(call); err != nil {
+		putCallReq(call)
 		return nil, &QueryError{err: err, potentiallyExecuted: false}
 	}
 
@@ -1296,6 +1324,8 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, reques
 				// connection to close.
 				c.releaseStream(call)
 			}
+			// When c.Closed(), closeWithError owns the callReq and will
+			// return it to pool after observing close(call.timeout).
 			return nil, &QueryError{err: resp.err, potentiallyExecuted: true}
 		}
 		// dont release the stream if detect a timeout as another request can reuse
