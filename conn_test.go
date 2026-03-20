@@ -1618,3 +1618,160 @@ func TestGetSchemaAgreement(t *testing.T) {
 		assert.NoError(t, err, "expected no error when all nodes have the same schema")
 	})
 }
+
+func TestCallReqPoolRoundTrip(t *testing.T) {
+	// Get a callReq from the pool.
+	call := getCallReq(42)
+	if call == nil {
+		t.Fatal("getCallReq returned nil")
+	}
+	if call.streamID != 42 {
+		t.Fatalf("expected streamID=42, got %d", call.streamID)
+	}
+	if call.timeout == nil {
+		t.Fatal("expected non-nil timeout channel")
+	}
+	if call.resp == nil {
+		t.Fatal("expected non-nil resp channel")
+	}
+
+	// Simulate use: set observer context.
+	call.streamObserverContext = &mockStreamObserverContext{}
+
+	// Return to pool.
+	putCallReq(call)
+
+	// Get again — should get a recycled object.
+	call2 := getCallReq(99)
+	if call2.streamID != 99 {
+		t.Fatalf("expected streamID=99, got %d", call2.streamID)
+	}
+	if call2.streamObserverContext != nil {
+		t.Fatal("expected streamObserverContext to be nil after pool round-trip")
+	}
+	if call2.timeout == nil {
+		t.Fatal("expected non-nil timeout channel after pool round-trip")
+	}
+	if call2.resp == nil {
+		t.Fatal("expected non-nil resp channel after pool round-trip")
+	}
+	putCallReq(call2)
+}
+
+func TestCallReqPoolTimerReuse(t *testing.T) {
+	call := getCallReq(1)
+
+	// Simulate timer creation as exec() does.
+	call.timer = time.NewTimer(0)
+	<-call.timer.C
+
+	timer := call.timer
+
+	// Return and re-get.
+	putCallReq(call)
+	call2 := getCallReq(2)
+
+	// Timer should be preserved across pool cycles.
+	if call2.timer != timer {
+		t.Fatal("expected timer to be preserved across pool cycles")
+	}
+
+	call2.timer.Stop()
+	putCallReq(call2)
+}
+
+func TestCallReqPoolTimeoutChannelFresh(t *testing.T) {
+	call := getCallReq(1)
+	timeout1 := call.timeout
+
+	// Close it as exec() does.
+	close(call.timeout)
+
+	putCallReq(call)
+	call2 := getCallReq(2)
+
+	timeout2 := call2.timeout
+
+	// Must be a different channel object — closed channels cannot be reopened.
+	if timeout1 == timeout2 {
+		t.Fatal("expected fresh timeout channel after pool round-trip, got same channel")
+	}
+
+	// New timeout must not be closed.
+	select {
+	case <-timeout2:
+		t.Fatal("new timeout channel should not be closed")
+	default:
+	}
+
+	putCallReq(call2)
+}
+
+func TestCallReqPoolObserverCleanup(t *testing.T) {
+	call := getCallReq(1)
+	call.streamObserverContext = &mockStreamObserverContext{}
+
+	// Do the Once as releaseStream would.
+	call.streamObserverEndOnce.Do(func() {})
+
+	putCallReq(call)
+	call2 := getCallReq(2)
+
+	if call2.streamObserverContext != nil {
+		t.Fatal("expected streamObserverContext to be nil after pool return")
+	}
+
+	// Verify the Once was reset by checking it fires.
+	fired := false
+	call2.streamObserverEndOnce.Do(func() {
+		fired = true
+	})
+	if !fired {
+		t.Fatal("expected streamObserverEndOnce to be reset after pool return")
+	}
+
+	putCallReq(call2)
+}
+
+func TestCallReqPoolConcurrent(t *testing.T) {
+	const goroutines = 100
+	const iterations = 1000
+
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+
+	for g := 0; g < goroutines; g++ {
+		go func(id int) {
+			defer wg.Done()
+			for i := 0; i < iterations; i++ {
+				stream := id*iterations + i
+				call := getCallReq(stream)
+				if call.streamID != stream {
+					t.Errorf("goroutine %d: expected streamID=%d, got %d", id, stream, call.streamID)
+					return
+				}
+				if call.resp == nil {
+					t.Errorf("goroutine %d: resp channel is nil", id)
+					return
+				}
+				if call.timeout == nil {
+					t.Errorf("goroutine %d: timeout channel is nil", id)
+					return
+				}
+				// Simulate brief use.
+				call.streamObserverContext = &mockStreamObserverContext{}
+				close(call.timeout)
+				putCallReq(call)
+			}
+		}(g)
+	}
+
+	wg.Wait()
+}
+
+// mockStreamObserverContext implements StreamObserverContext for testing.
+type mockStreamObserverContext struct{}
+
+func (m *mockStreamObserverContext) StreamStarted(info ObservedStream)   {}
+func (m *mockStreamObserverContext) StreamFinished(info ObservedStream)  {}
+func (m *mockStreamObserverContext) StreamAbandoned(info ObservedStream) {}
