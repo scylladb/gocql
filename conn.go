@@ -1704,11 +1704,6 @@ func (c *Conn) UseKeyspace(keyspace string) error {
 	return nil
 }
 
-// maxBatchPrepareRetries limits the number of times executeBatch will retry
-// after receiving a RequestErrUnprepared response. A single retry is sufficient:
-// if re-preparation fails a second time, it indicates a persistent problem.
-const maxBatchPrepareRetries = 1
-
 func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 	defer func() {
 		if iter == nil || c.session == nil {
@@ -1720,19 +1715,30 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 		}
 	}()
 
+	// Count unique prepared statements to bound retries. Each UNPREPARED error
+	// identifies exactly one stale statement ID, so in the worst case we need
+	// one retry per distinct prepared statement to refresh them all.
+	uniquePrepared := 0
+	for i := range batch.Entries {
+		e := &batch.Entries[i]
+		if len(e.Args) > 0 || e.binding != nil {
+			uniquePrepared++
+		}
+	}
+
 	for retries := 0; ; retries++ {
-		iter = c.executeBatchOnce(batch)
+		iter = c.executeBatchOnce(ctx, batch)
 		if iter == nil || iter.err == nil {
 			return iter
 		}
 
-		// Check for RequestErrUnprepared with bounded retry.
-		if x, ok := iter.err.(*RequestErrUnprepared); ok && retries < maxBatchPrepareRetries {
-			// Evict the stale prepared entry identified by the server.
-			// evictPreparedID only removes an entry if its cached prepared ID
-			// matches x.StatementId, so concurrently re-prepared entries are
-			// not disturbed. We scan all batch entries because we don't maintain
-			// a reverse map from prepared ID to statement text.
+		// On RequestErrUnprepared, evict the single stale cache entry identified
+		// by the server and retry. evictPreparedID is a no-op for non-matching
+		// entries (it compares IDs before removing), so scanning all entries is
+		// safe. We stop retrying once we have exhausted all unique prepared
+		// statements, which bounds the loop even if the server keeps returning
+		// stale IDs (e.g. after a full node restart clears its prepared cache).
+		if x, ok := iter.err.(*RequestErrUnprepared); ok && retries < uniquePrepared {
 			for i := range batch.Entries {
 				entry := &batch.Entries[i]
 				if len(entry.Args) > 0 || entry.binding != nil {
@@ -1747,7 +1753,7 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 	}
 }
 
-func (c *Conn) executeBatchOnce(batch *Batch) *Iter {
+func (c *Conn) executeBatchOnce(ctx context.Context, batch *Batch) *Iter {
 	n := len(batch.Entries)
 	req := &writeBatchFrame{
 		typ:                   batch.Type,
@@ -1759,43 +1765,25 @@ func (c *Conn) executeBatchOnce(batch *Batch) *Iter {
 		customPayload:         batch.CustomPayload,
 	}
 
-	// Prepare all unique statements concurrently.
-	// prepareStatement already coalesces concurrent calls for the same statement
-	// via execIfMissing, so the benefit here is for batches with multiple distinct
-	// statements that are not yet in the prepared statement cache.
-	type prepResult struct {
-		info *preparedStatment
-		err  error
-	}
-
-	uniqueStmts := make(map[string]*prepResult)
-	for i := 0; i < n; i++ {
-		entry := &batch.Entries[i]
-		if len(entry.Args) > 0 || entry.binding != nil {
-			if _, exists := uniqueStmts[entry.Stmt]; !exists {
-				uniqueStmts[entry.Stmt] = &prepResult{}
-			}
-		}
-	}
-
-	// Launch concurrent preparations. After wg.Wait returns, all prepResult
-	// structs are fully written and safe to read without synchronization.
-	var wg sync.WaitGroup
-	for stmt, result := range uniqueStmts {
-		wg.Add(1)
-		go func(s string, r *prepResult) {
-			defer wg.Done()
-			r.info, r.err = c.prepareStatement(batch.Context(), s, batch.trace, batch.GetRequestTimeout())
-		}(stmt, result)
-	}
-	wg.Wait()
-
-	// First pass: resolve preparation results, invoke bindings, and compute
-	// the total number of queryValues needed for bulk allocation.
+	// First pass: prepare each unique statement sequentially, resolve binding
+	// callbacks, and compute the total number of queryValues for bulk allocation.
+	// Sequential preparation avoids exhausting connection streams when a batch
+	// has many distinct statements. prepareStatement already coalesces in-flight
+	// prepares for the same statement via execIfMissing, so there is no benefit
+	// to launching goroutines here.
 	type entryPrepInfo struct {
 		info   *preparedStatment
 		values []interface{}
 	}
+
+	// Cache prepare results by statement text so each unique statement is
+	// prepared at most once per executeBatchOnce call.
+	type prepResult struct {
+		info *preparedStatment
+		err  error
+	}
+	prepCache := make(map[string]*prepResult)
+
 	entryInfos := make([]entryPrepInfo, n)
 	totalValues := 0
 	hasLwtEntries := false
@@ -1803,16 +1791,24 @@ func (c *Conn) executeBatchOnce(batch *Batch) *Iter {
 	for i := 0; i < n; i++ {
 		entry := &batch.Entries[i]
 
-		result, needsPrep := uniqueStmts[entry.Stmt]
-		if !needsPrep {
+		if len(entry.Args) == 0 && entry.binding == nil {
+			// Literal (unprepared) statement — embed text directly.
 			req.statements[i].statement = entry.Stmt
 			continue
 		}
 
-		if result.err != nil {
-			return &Iter{err: result.err}
+		// Look up or populate the per-statement prepare result.
+		pr, found := prepCache[entry.Stmt]
+		if !found {
+			pr = &prepResult{}
+			pr.info, pr.err = c.prepareStatement(ctx, entry.Stmt, batch.trace, batch.GetRequestTimeout())
+			prepCache[entry.Stmt] = pr
 		}
-		info := result.info
+
+		if pr.err != nil {
+			return &Iter{err: pr.err}
+		}
+		info := pr.info
 
 		var values []interface{}
 		if entry.binding == nil {
@@ -1879,7 +1875,7 @@ func (c *Conn) executeBatchOnce(batch *Batch) *Iter {
 	batch.routingInfo.mu.Unlock()
 
 	// TODO: should batch support tracing?
-	framer, err := c.exec(batch.Context(), req, batch.trace, batch.GetRequestTimeout())
+	framer, err := c.exec(ctx, req, batch.trace, batch.GetRequestTimeout())
 	if err != nil {
 		return &Iter{err: err}
 	}

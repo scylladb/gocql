@@ -103,6 +103,8 @@ func BenchmarkBatchBuildWriteFrame(b *testing.B) {
 						bs.values[k] = queryValues{value: val}
 					}
 				}
+				// Prevent the compiler from eliminating the stmts allocation.
+				benchSink = stmts
 			}
 			benchSink = req
 		})
