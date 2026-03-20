@@ -1433,10 +1433,21 @@ func TestUnmarshalVectorGenericPathZeroDimensions(t *testing.T) {
 	})
 }
 
-// TestGetVectorBuf_NonPositiveSize verifies that getVectorBuf returns nil
-// for zero or negative sizes instead of allocating or panicking.
+// TestGetVectorBuf_NonPositiveSize verifies that getVectorBuf handles
+// zero and negative sizes correctly without allocating or panicking.
+// Size 0 returns a non-nil empty slice (distinguishes empty vector from NULL).
+// Negative sizes return nil.
 func TestGetVectorBuf_NonPositiveSize(t *testing.T) {
-	for _, size := range []int{0, -1, -100} {
+	// Zero size: non-nil empty slice (needed by marshalVector for dim=0).
+	buf := getVectorBuf(0)
+	if buf == nil {
+		t.Error("getVectorBuf(0) = nil, want non-nil empty slice")
+	} else if len(buf) != 0 {
+		t.Errorf("getVectorBuf(0) len = %d, want 0", len(buf))
+	}
+
+	// Negative sizes: nil.
+	for _, size := range []int{-1, -100} {
 		buf := getVectorBuf(size)
 		if buf != nil {
 			t.Errorf("getVectorBuf(%d) = %v, want nil", size, buf)
