@@ -20,6 +20,7 @@ package gocql
 
 import (
 	"fmt"
+	"strconv"
 	"testing"
 )
 
@@ -33,13 +34,18 @@ func BenchmarkBatchQueryAppend(b *testing.B) {
 	for _, size := range []int{10, 100} {
 		b.Run(fmt.Sprintf("entries=%d", size), func(b *testing.B) {
 			b.ReportAllocs()
+			// Pre-compute value strings so fmt.Sprintf doesn't dominate allocations.
+			vals := make([]string, size)
+			for j := 0; j < size; j++ {
+				vals[j] = "val_" + strconv.Itoa(j)
+			}
 			var batch *Batch
 			for i := 0; i < b.N; i++ {
 				batch = &Batch{
 					Type: LoggedBatch,
 				}
 				for j := 0; j < size; j++ {
-					batch.Query("INSERT INTO ks.tbl (pk, v) VALUES (?, ?)", j, fmt.Sprintf("val_%d", j))
+					batch.Query("INSERT INTO ks.tbl (pk, v) VALUES (?, ?)", j, vals[j])
 				}
 			}
 			benchSink = batch
@@ -54,13 +60,18 @@ func BenchmarkBatchQueryAppendPreallocated(b *testing.B) {
 	for _, size := range []int{10, 100} {
 		b.Run(fmt.Sprintf("entries=%d", size), func(b *testing.B) {
 			b.ReportAllocs()
+			// Pre-compute value strings so fmt.Sprintf doesn't dominate allocations.
+			vals := make([]string, size)
+			for j := 0; j < size; j++ {
+				vals[j] = "val_" + strconv.Itoa(j)
+			}
 			var batch *Batch
 			for i := 0; i < b.N; i++ {
 				batch = (&Batch{
 					Type: LoggedBatch,
 				}).Reserve(size)
 				for j := 0; j < size; j++ {
-					batch.Query("INSERT INTO ks.tbl (pk, v) VALUES (?, ?)", j, fmt.Sprintf("val_%d", j))
+					batch.Query("INSERT INTO ks.tbl (pk, v) VALUES (?, ?)", j, vals[j])
 				}
 			}
 			benchSink = batch
@@ -76,9 +87,25 @@ func BenchmarkBatchBuildWriteFrame(b *testing.B) {
 		b.Run(fmt.Sprintf("entries=%d", size), func(b *testing.B) {
 			b.ReportAllocs()
 
-			// Pre-build mock column types and values
 			colCount := 2
 			typ := NativeType{proto: protoVersion4, typ: TypeInt}
+
+			// Pre-compute prepared IDs and marshaled values outside the benchmark loop
+			// so fmt.Sprintf and Marshal don't pollute allocation measurements.
+			prepIDs := make([][]byte, size)
+			marshaledVals := make([][]byte, size*colCount)
+			for j := 0; j < size; j++ {
+				prepIDs[j] = []byte("prepared_" + strconv.Itoa(j%5))
+				for k := 0; k < colCount; k++ {
+					val, err := Marshal(typ, j+k)
+					if err != nil {
+						b.Fatalf("Marshal(%d): %v", j+k, err)
+					}
+					marshaledVals[j*colCount+k] = val
+				}
+			}
+
+			b.ResetTimer()
 
 			var req *writeBatchFrame
 			for i := 0; i < b.N; i++ {
@@ -91,16 +118,15 @@ func BenchmarkBatchBuildWriteFrame(b *testing.B) {
 
 				stmts := make(map[string]string, size)
 
-				// Simulate the allocation pattern from executeBatch
+				// Simulate the per-statement allocation pattern from executeBatch
 				for j := 0; j < size; j++ {
 					bs := &req.statements[j]
-					bs.preparedID = []byte(fmt.Sprintf("prepared_%d", j%5))
-					stmts[string(bs.preparedID)] = fmt.Sprintf("INSERT INTO ks.tbl (pk, v) VALUES (?, ?)")
+					bs.preparedID = prepIDs[j]
+					stmts[string(bs.preparedID)] = "INSERT INTO ks.tbl (pk, v) VALUES (?, ?)"
 
 					bs.values = make([]queryValues, colCount)
 					for k := 0; k < colCount; k++ {
-						val, _ := Marshal(typ, j+k)
-						bs.values[k] = queryValues{value: val}
+						bs.values[k] = queryValues{value: marshaledVals[j*colCount+k]}
 					}
 				}
 				// Prevent the compiler from eliminating the stmts allocation.
@@ -123,6 +149,22 @@ func BenchmarkBatchBuildWriteFrameBulkAlloc(b *testing.B) {
 			colCount := 2
 			typ := NativeType{proto: protoVersion4, typ: TypeInt}
 
+			// Pre-compute prepared IDs and marshaled values outside the benchmark loop.
+			prepIDs := make([][]byte, size)
+			marshaledVals := make([][]byte, size*colCount)
+			for j := 0; j < size; j++ {
+				prepIDs[j] = []byte("prepared_" + strconv.Itoa(j%5))
+				for k := 0; k < colCount; k++ {
+					val, err := Marshal(typ, j+k)
+					if err != nil {
+						b.Fatalf("Marshal(%d): %v", j+k, err)
+					}
+					marshaledVals[j*colCount+k] = val
+				}
+			}
+
+			b.ResetTimer()
+
 			var req *writeBatchFrame
 			for i := 0; i < b.N; i++ {
 				req = &writeBatchFrame{
@@ -137,12 +179,11 @@ func BenchmarkBatchBuildWriteFrameBulkAlloc(b *testing.B) {
 
 				for j := 0; j < size; j++ {
 					bs := &req.statements[j]
-					bs.preparedID = []byte(fmt.Sprintf("prepared_%d", j%5))
+					bs.preparedID = prepIDs[j]
 
 					bs.values = allValues[j*colCount : (j+1)*colCount]
 					for k := 0; k < colCount; k++ {
-						val, _ := Marshal(typ, j+k)
-						bs.values[k] = queryValues{value: val}
+						bs.values[k] = queryValues{value: marshaledVals[j*colCount+k]}
 					}
 				}
 			}
@@ -171,10 +212,13 @@ func BenchmarkBatchWriteFrameSerialization(b *testing.B) {
 
 			for j := 0; j < size; j++ {
 				bs := &frame.statements[j]
-				bs.preparedID = []byte(fmt.Sprintf("prepared_%d", j%5))
+				bs.preparedID = []byte("prepared_" + strconv.Itoa(j%5))
 				bs.values = make([]queryValues, colCount)
 				for k := 0; k < colCount; k++ {
-					val, _ := Marshal(typ, j+k)
+					val, err := Marshal(typ, j+k)
+					if err != nil {
+						b.Fatalf("Marshal(%d): %v", j+k, err)
+					}
 					bs.values[k] = queryValues{value: val}
 				}
 			}
