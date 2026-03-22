@@ -870,12 +870,17 @@ func marshalVector(info VectorType, value interface{}) ([]byte, error) {
 
 	switch k {
 	case reflect.Slice, reflect.Array:
-		buf := &bytes.Buffer{}
 		n := rv.Len()
 		if n != info.Dimensions {
 			return nil, marshalErrorf("expected vector with %d dimensions, received %d", info.Dimensions, n)
 		}
+		// Zero-dimension vectors encode as a non-nil empty value (not CQL NULL).
+		// bytes.Buffer{}.Bytes() returns nil, so we must special-case this.
+		if n == 0 {
+			return make([]byte, 0), nil
+		}
 
+		buf := &bytes.Buffer{}
 		isLengthType := isVectorVariableLengthType(info.SubType)
 		if !isLengthType {
 			if elemSize := vectorFixedElemSize(info.SubType); elemSize > 0 {

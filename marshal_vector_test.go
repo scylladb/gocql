@@ -846,6 +846,39 @@ func TestMarshalVector_EmptyVector(t *testing.T) {
 	})
 }
 
+// --- Test 7b: Empty vector (dim=0) via generic path ---
+
+func TestMarshalVector_EmptyVector_GenericPath(t *testing.T) {
+	// TypeBoolean vectors don't hit the fast paths, exercising the generic
+	// reflect-based marshalVector/unmarshalVector code for dim=0.
+	info := VectorType{
+		Dimensions: 0,
+		SubType:    NativeType{typ: TypeBoolean},
+	}
+	vec := []bool{}
+	data, err := marshalVector(info, vec)
+	if err != nil {
+		t.Fatalf("marshalVector (generic, dim=0): %v", err)
+	}
+	if data == nil {
+		t.Error("expected non-nil empty data for non-nil empty vector via generic path, got nil (would encode as CQL NULL)")
+	}
+	if len(data) != 0 {
+		t.Errorf("expected empty data, got %d bytes", len(data))
+	}
+
+	var result []bool
+	if err := unmarshalVector(info, data, &result); err != nil {
+		t.Fatalf("unmarshalVector (generic, dim=0): %v", err)
+	}
+	if result == nil {
+		t.Error("expected non-nil empty slice for dim=0 unmarshal via generic path, got nil")
+	}
+	if len(result) != 0 {
+		t.Errorf("expected empty result, got len %d", len(result))
+	}
+}
+
 // --- Test 8: Pointer to slice ---
 
 func TestMarshalVector_PointerToSlice(t *testing.T) {
