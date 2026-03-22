@@ -1618,3 +1618,22 @@ func TestGetSchemaAgreement(t *testing.T) {
 		assert.NoError(t, err, "expected no error when all nodes have the same schema")
 	})
 }
+
+func TestUseKeyspaceQuoteEscaping(t *testing.T) {
+	tests := []struct {
+		keyspace string
+		want     string
+	}{
+		{"simple", `USE "simple"`},
+		{`my"ks`, `USE "my""ks"`},
+		{`a""b`, `USE "a""""b"`},
+		{`"`, `USE """"`},
+		{"", `USE ""`},
+	}
+	for _, tt := range tests {
+		got := useKeyspaceStmt(tt.keyspace)
+		if got != tt.want {
+			t.Errorf("keyspace %q: got %q, want %q", tt.keyspace, got, tt.want)
+		}
+	}
+}
