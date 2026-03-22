@@ -1298,7 +1298,7 @@ func (srv *TestServer) serve() {
 			for !srv.isClosed() {
 				framer, err := srv.readFrame(conn)
 				if err != nil {
-					if err == io.EOF {
+					if err == io.EOF || errors.Is(err, net.ErrClosed) {
 						return
 					}
 					srv.errorLocked(err)
@@ -1530,7 +1530,9 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 	}
 
 	if err := respFrame.writeTo(conn); err != nil {
-		srv.errorLocked(err)
+		if !errors.Is(err, net.ErrClosed) {
+			srv.errorLocked(err)
+		}
 	}
 }
 
