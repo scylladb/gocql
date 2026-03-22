@@ -33,6 +33,7 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -1677,8 +1678,12 @@ func (c *Conn) AvailableStreams() int {
 	return c.streams.Available()
 }
 
+func useKeyspaceStmt(keyspace string) string {
+	return `USE "` + strings.ReplaceAll(keyspace, `"`, `""`) + `"`
+}
+
 func (c *Conn) UseKeyspace(keyspace string) error {
-	q := &writeQueryFrame{statement: `USE "` + keyspace + `"`}
+	q := &writeQueryFrame{statement: useKeyspaceStmt(keyspace)}
 	q.params.consistency = c.session.cons
 
 	framer, err := c.exec(c.ctx, q, nil, c.cfg.ConnectTimeout)
