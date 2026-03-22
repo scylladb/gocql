@@ -819,9 +819,10 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string, requestTimeou
 
 	partitioner, err := scyllaGetTablePartitioner(s, keyspace, table)
 	if err != nil {
-		// don't cache this error
+		// don't cache this error, but make sure all waiters see the same failure.
+		inflight.err = err
 		s.routingKeyInfoCache.Remove(stmt)
-		return nil, inflight.err
+		return nil, err
 	}
 
 	if len(info.request.pkeyColumns) > 0 {
