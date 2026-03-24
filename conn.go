@@ -964,6 +964,9 @@ func getCallReq(stream int) *callReq {
 }
 
 func putCallReq(call *callReq) {
+	if call.timer != nil {
+		call.timer.Stop()
+	}
 	call.streamObserverContext = nil
 	call.streamObserverEndOnce = sync.Once{}
 	call.streamID = 0
