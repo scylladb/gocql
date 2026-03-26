@@ -1130,28 +1130,40 @@ func getTableMetadata(session *Session, keyspaceName string) ([]TableMetadata, e
 		return nil, fmt.Errorf("error querying table schema: %v", err)
 	}
 
-	if session.getConn() == nil || !session.getConn().isScyllaConn() {
+	conn := session.getConn()
+	if conn == nil || !conn.isScyllaConn() {
 		return tables, nil
 	}
 
-	stmt = `SELECT * FROM system_schema.scylla_tables WHERE keyspace_name = ? AND table_name = ?`
-	for i, t := range tables {
-		iter := session.control.querySystem(stmt, keyspaceName, t.Name)
+	// Fetch all ScyllaDB-specific table properties in a single query
+	// instead of issuing one query per table (N+1 elimination).
+	stmt = `SELECT * FROM system_schema.scylla_tables WHERE keyspace_name = ?`
+	iter = session.control.querySystem(stmt, keyspaceName)
 
-		table := TableMetadata{}
-		if iter.MapScan(map[string]interface{}{
-			"cdc":         &table.Options.CDC,
-			"in_memory":   &table.Options.InMemory,
-			"partitioner": &table.Options.Partitioner,
-			"version":     &table.Options.Version,
-		}) {
-			tables[i].Options.CDC = table.Options.CDC
-			tables[i].Options.Version = table.Options.Version
-			tables[i].Options.Partitioner = table.Options.Partitioner
-			tables[i].Options.InMemory = table.Options.InMemory
-		}
-		if err := iter.Close(); err != nil && err != ErrNotFound {
-			return nil, fmt.Errorf("error querying scylla table schema: %v", err)
+	scyllaOpts := make(map[string]TableMetadataOptions, len(tables))
+	var opts TableMetadataOptions
+	var tblName string
+	for iter.MapScan(map[string]interface{}{
+		"table_name":  &tblName,
+		"cdc":         &opts.CDC,
+		"in_memory":   &opts.InMemory,
+		"partitioner": &opts.Partitioner,
+		"version":     &opts.Version,
+	}) {
+		scyllaOpts[tblName] = opts
+		opts = TableMetadataOptions{}
+		tblName = ""
+	}
+	if err := iter.Close(); err != nil && err != ErrNotFound {
+		return nil, fmt.Errorf("error querying scylla table schema: %v", err)
+	}
+
+	for i, t := range tables {
+		if sopts, ok := scyllaOpts[t.Name]; ok {
+			tables[i].Options.CDC = sopts.CDC
+			tables[i].Options.InMemory = sopts.InMemory
+			tables[i].Options.Partitioner = sopts.Partitioner
+			tables[i].Options.Version = sopts.Version
 		}
 	}
 
