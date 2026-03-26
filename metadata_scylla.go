@@ -13,6 +13,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 
 	frm "github.com/gocql/gocql/internal/frame"
@@ -716,46 +717,74 @@ func (s *metadataDescriber) refreshAllSchema() error {
 
 // forcibly updates the current KeyspaceMetadata held by the schema describer
 // for a given named keyspace.
+//
+// All system schema queries are issued concurrently since none of them
+// depend on each other's results. The results are only combined in
+// compileMetadata after all queries complete.
 func (s *metadataDescriber) refreshKeyspaceSchema(keyspaceName string) error {
-	var err error
+	var (
+		keyspace    *KeyspaceMetadata
+		tables      []TableMetadata
+		columns     []ColumnMetadata
+		functions   []FunctionMetadata
+		aggregates  []AggregateMetadata
+		types       []TypeMetadata
+		indexes     []IndexMetadata
+		views       []ViewMetadata
+		createStmts []byte
+	)
 
-	// query the system keyspace for schema data
-	// TODO retrieve concurrently
-	keyspace, err := getKeyspaceMetadata(s.session, keyspaceName)
-	if err != nil {
-		return err
-	}
-	tables, err := getTableMetadata(s.session, keyspaceName)
-	if err != nil {
-		return err
-	}
-	columns, err := getColumnMetadata(s.session, keyspaceName)
-	if err != nil {
-		return err
-	}
-	functions, err := getFunctionsMetadata(s.session, keyspaceName)
-	if err != nil {
-		return err
-	}
-	aggregates, err := getAggregatesMetadata(s.session, keyspaceName)
-	if err != nil {
-		return err
-	}
-	types, err := getTypeMetadata(s.session, keyspaceName)
-	if err != nil {
-		return err
-	}
-	indexes, err := getIndexMetadata(s.session, keyspaceName)
-	if err != nil {
-		return err
-	}
-	views, err := getViewMetadata(s.session, keyspaceName)
-	if err != nil {
-		return err
-	}
+	// Each goroutine writes to its own dedicated variable, so no
+	// synchronisation is needed beyond errgroup itself.
+	var g errgroup.Group
 
-	createStmts, err := getCreateStatements(s.session, keyspaceName)
-	if err != nil {
+	g.Go(func() error {
+		var err error
+		keyspace, err = getKeyspaceMetadata(s.session, keyspaceName)
+		return err
+	})
+	g.Go(func() error {
+		var err error
+		tables, err = getTableMetadata(s.session, keyspaceName)
+		return err
+	})
+	g.Go(func() error {
+		var err error
+		columns, err = getColumnMetadata(s.session, keyspaceName)
+		return err
+	})
+	g.Go(func() error {
+		var err error
+		functions, err = getFunctionsMetadata(s.session, keyspaceName)
+		return err
+	})
+	g.Go(func() error {
+		var err error
+		aggregates, err = getAggregatesMetadata(s.session, keyspaceName)
+		return err
+	})
+	g.Go(func() error {
+		var err error
+		types, err = getTypeMetadata(s.session, keyspaceName)
+		return err
+	})
+	g.Go(func() error {
+		var err error
+		indexes, err = getIndexMetadata(s.session, keyspaceName)
+		return err
+	})
+	g.Go(func() error {
+		var err error
+		views, err = getViewMetadata(s.session, keyspaceName)
+		return err
+	})
+	g.Go(func() error {
+		var err error
+		createStmts, err = getCreateStatements(s.session, keyspaceName)
+		return err
+	})
+
+	if err := g.Wait(); err != nil {
 		return err
 	}
 
