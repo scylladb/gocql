@@ -30,6 +30,7 @@ jobs:
         with:
           path: |
             /home/runner/.cache/pip
+            /home/runner/.local
             /home/runner/.ccm/scylla-repository
             /home/runner/.ccm/repository
             /home/runner/.sdkman
@@ -75,6 +76,7 @@ jobs:
         with:
           path: |
             /home/runner/.cache/pip
+            /home/runner/.local
             /home/runner/.sdkman
             testdata/pki
             bin/
@@ -142,6 +144,7 @@ jobs:
         with:
           path: |
             /home/runner/.cache/pip
+            /home/runner/.local
             /home/runner/.sdkman
             testdata/pki
             bin/
