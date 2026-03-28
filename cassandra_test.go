@@ -2300,7 +2300,12 @@ func TestSessionMetadataAPIs(t *testing.T) {
 		t.Fatalf("failed to get initial keyspace metadata: %v", err)
 	}
 
-	waitForSchemaRefresh := func() { time.Sleep(2 * time.Second) }
+	waitForSchemaRefresh := func() {
+		if err := session.control.awaitSchemaAgreement(); err != nil {
+			t.Logf("schema agreement warning: %v", err)
+		}
+		session.metadataDescriber.invalidateKeyspaceSchema(ks)
+	}
 
 	t.Run("TableMetadata", func(t *testing.T) {
 		t.Run("basic_table_after_create", func(t *testing.T) {
