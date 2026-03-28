@@ -188,12 +188,6 @@ func isTabletsAutoEnabled() bool {
 }
 
 func createTable(s *Session, table string) error {
-	// lets just be really sure
-	if err := s.control.awaitSchemaAgreement(); err != nil {
-		log.Printf("error waiting for schema agreement pre create table=%q err=%v\n", table, err)
-		return err
-	}
-
 	if err := s.Query(table).RetryPolicy(&SimpleRetryPolicy{NumRetries: 3}).Idempotent(true).Exec(); err != nil {
 		log.Printf("error creating table table=%q err=%v\n", table, err)
 		return err
