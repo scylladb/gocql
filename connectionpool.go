@@ -547,9 +547,8 @@ func (pool *hostConnPool) connect() (err error) {
 
 	// add the Conn to the pool
 	pool.mu.Lock()
-	defer pool.mu.Unlock()
-
 	if pool.closed {
+		pool.mu.Unlock()
 		conn.Close()
 		return nil
 	}
@@ -557,12 +556,14 @@ func (pool *hostConnPool) connect() (err error) {
 	// lazily initialize the connPicker when we know the required type
 	pool.initConnPicker(conn)
 	if err := pool.connPicker.Put(conn); err != nil {
+		pool.mu.Unlock()
 		conn.Close()
 		if debug.Enabled {
 			pool.logger.Printf("gocql: pool connection was not added to the pool: %w", err)
 		}
 		return nil
 	}
+	pool.mu.Unlock()
 	conn.finalizeConnection()
 
 	return nil
