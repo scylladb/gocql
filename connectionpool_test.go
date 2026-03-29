@@ -194,3 +194,54 @@ func TestHostConnPoolCloseDeadlock(t *testing.T) {
 		t.Fatal("hostConnPool.Close() deadlocked: timed out after 5 seconds")
 	}
 }
+
+// TestHostConnPoolConnectClosedPoolDoesNotDeadlock verifies that connect's
+// already-closed-pool path does not close a connection while holding pool.mu.
+func TestHostConnPoolConnectClosedPoolDoesNotDeadlock(t *testing.T) {
+	t.Parallel()
+
+	host := &HostInfo{connectAddress: net.ParseIP("127.0.0.1"), port: 9042}
+	session := &Session{
+		cfg: ClusterConfig{
+			NumConns:         1,
+			ConvictionPolicy: &SimpleConvictionPolicy{},
+		},
+		logger: nopLogger{},
+	}
+
+	pool := &hostConnPool{
+		session:    session,
+		host:       host,
+		size:       1,
+		keyspace:   "test",
+		connPicker: nopConnPicker{},
+		logger:     nopLogger{},
+		debouncer:  debounce.NewSimpleDebouncer(),
+		closed:     true,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	conn := &Conn{
+		conn:         errorConn{},
+		errorHandler: pool,
+		cancel:       cancel,
+		ctx:          ctx,
+		logger:       nopLogger{},
+	}
+
+	done := make(chan struct{})
+	go func() {
+		pool.mu.Lock()
+		if pool.closed {
+			pool.mu.Unlock()
+			conn.Close()
+		}
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("closed-pool connect cleanup deadlocked: timed out after 5 seconds")
+	}
+}
