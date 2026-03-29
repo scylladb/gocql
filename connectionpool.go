@@ -341,12 +341,17 @@ func (pool *hostConnPool) InFlight() int {
 // Close the connection pool
 func (pool *hostConnPool) Close() {
 	pool.mu.Lock()
-	defer pool.mu.Unlock()
-
-	if !pool.closed {
-		pool.connPicker.Close()
+	if pool.closed {
+		pool.mu.Unlock()
+		return
 	}
 	pool.closed = true
+	pool.mu.Unlock()
+
+	// Close connections outside the lock to avoid self-deadlock:
+	// conn.Close() triggers HandleError() which tries to acquire pool.mu.
+	// See scylladb/gocql#53 for the equivalent fix in scyllaConnPicker.
+	pool.connPicker.Close()
 }
 
 // Fill the connection pool

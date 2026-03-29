@@ -28,8 +28,14 @@
 package gocql
 
 import (
+	"context"
 	"crypto/tls"
+	"errors"
+	"net"
 	"testing"
+	"time"
+
+	"github.com/gocql/gocql/debounce"
 )
 
 func TestSetupTLSConfig(t *testing.T) {
@@ -107,5 +113,84 @@ func TestSetupTLSConfig(t *testing.T) {
 					test.expectedInsecureSkipVerify)
 			}
 		})
+	}
+}
+
+// errorConn is a mock net.Conn whose Close always returns an error,
+// which triggers the HandleError callback path in Conn.closeWithError.
+type errorConn struct {
+	net.Conn
+}
+
+func (e errorConn) Close() error {
+	return errors.New("mock close error")
+}
+
+// TestHostConnPoolCloseDeadlock verifies that hostConnPool.Close() does not
+// self-deadlock when defaultConnPicker closes connections that trigger
+// HandleError callbacks.
+//
+// The deadlock chain (before the fix):
+//
+//	hostConnPool.Close()             — acquires pool.mu.Lock()
+//	  └── defaultConnPicker.Close()  — iterates conns
+//	        └── conn.Close()
+//	              └── closeWithError(nil)
+//	                    └── HandleError()
+//	                          └── pool.mu.Lock() — DEADLOCK
+//
+// See scylladb/gocql#53 for the equivalent issue in scyllaConnPicker.
+func TestHostConnPoolCloseDeadlock(t *testing.T) {
+	t.Parallel()
+
+	host := &HostInfo{connectAddress: net.ParseIP("127.0.0.1"), port: 9042}
+	session := &Session{
+		cfg: ClusterConfig{
+			NumConns:         2,
+			ConvictionPolicy: &SimpleConvictionPolicy{},
+		},
+		logger: nopLogger{},
+	}
+
+	pool := &hostConnPool{
+		session:    session,
+		host:       host,
+		size:       2,
+		keyspace:   "test",
+		connPicker: nopConnPicker{},
+		logger:     nopLogger{},
+		debouncer:  debounce.NewSimpleDebouncer(),
+	}
+
+	// Create a defaultConnPicker with real Conn objects that will trigger
+	// HandleError on Close. Each Conn uses an errorConn (mock net.Conn
+	// whose Close returns an error) and has the pool as its errorHandler.
+	picker := newDefaultConnPicker(2)
+	for i := 0; i < 2; i++ {
+		ctx, cancel := context.WithCancel(context.Background())
+		conn := &Conn{
+			conn:         errorConn{},
+			errorHandler: pool,
+			cancel:       cancel,
+			ctx:          ctx,
+			logger:       nopLogger{},
+		}
+		_ = picker.Put(conn)
+	}
+	pool.connPicker = picker
+
+	// Close the pool in a goroutine with a deadline. If the call doesn't
+	// return within the deadline, the pool is deadlocked.
+	done := make(chan struct{})
+	go func() {
+		pool.Close()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Success — Close returned without deadlocking.
+	case <-time.After(5 * time.Second):
+		t.Fatal("hostConnPool.Close() deadlocked: timed out after 5 seconds")
 	}
 }
