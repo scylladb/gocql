@@ -34,6 +34,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	frm "github.com/gocql/gocql/internal/frame"
@@ -250,6 +251,13 @@ func newFramer(compressor Compressor, version byte) *framer {
 		buf:        buf[:0],
 		readBuffer: buf,
 	}
+	initFramer(f, compressor, version)
+	return f
+}
+
+// initFramer sets the compressor, protocol version, and flags on a framer.
+// Shared by newFramer (fresh allocation) and getWriteFramer (pool path).
+func initFramer(f *framer, compressor Compressor, version byte) {
 	var flags byte
 	if compressor != nil {
 		flags |= frm.FlagCompress
@@ -258,29 +266,22 @@ func newFramer(compressor Compressor, version byte) *framer {
 		flags |= frm.FlagBetaProtocol
 	}
 
-	version &= protoVersionMask
 	f.compres = compressor
-	f.proto = version
+	f.proto = version & protoVersionMask
 	f.flags = flags
-	f.header = nil
-	f.traceID = nil
-
-	f.tabletsRoutingV1 = false
-
-	return f
 }
 
-func newFramerWithExts(compressor Compressor, version byte, cqlProtoExts []cqlProtocolExtension, logger StdLogger) *framer {
-
-	f := newFramer(compressor, version)
-
+// applyFramerExtensions applies CQL protocol extensions to a framer.
+// Shared by newFramerWithExts (fresh allocation) and getWriteFramer (pool path)
+// to prevent the extension-handling logic from diverging.
+func applyFramerExtensions(f *framer, cqlProtoExts []cqlProtocolExtension, logger StdLogger) {
 	if lwtExt := findCQLProtoExtByName(cqlProtoExts, lwtAddMetadataMarkKey); lwtExt != nil {
 		castedExt, ok := lwtExt.(*lwtAddMetadataMarkExt)
 		if !ok {
 			logger.Println(
 				fmt.Errorf("failed to cast CQL protocol extension identified by name %s to type %T",
 					lwtAddMetadataMarkKey, lwtAddMetadataMarkExt{}))
-			return f
+			return
 		}
 		f.flagLWT = castedExt.lwtOptMetaBitMask
 	}
@@ -291,7 +292,7 @@ func newFramerWithExts(compressor Compressor, version byte, cqlProtoExts []cqlPr
 			logger.Println(
 				fmt.Errorf("failed to cast CQL protocol extension identified by name %s to type %T",
 					rateLimitError, rateLimitExt{}))
-			return f
+			return
 		}
 		f.rateLimitingErrorCode = castedExt.rateLimitErrorCode
 	}
@@ -302,12 +303,78 @@ func newFramerWithExts(compressor Compressor, version byte, cqlProtoExts []cqlPr
 			logger.Println(
 				fmt.Errorf("failed to cast CQL protocol extension identified by name %s to type %T",
 					tabletsRoutingV1, tabletsRoutingV1Ext{}))
-			return f
+			return
 		}
 		f.tabletsRoutingV1 = true
 	}
+}
 
+func newFramerWithExts(compressor Compressor, version byte, cqlProtoExts []cqlProtocolExtension, logger StdLogger) *framer {
+	f := newFramer(compressor, version)
+	applyFramerExtensions(f, cqlProtoExts, logger)
 	return f
+}
+
+// writeFramerPool pools write-side framers to reduce allocations in the
+// request hot path. Write-side framers have a short, self-contained lifecycle:
+// they are used to serialize a request frame and then immediately returned
+// to the pool. The backing buffer is preserved across reuses to avoid
+// repeated grow/allocate cycles from append().
+var writeFramerPool = sync.Pool{
+	New: func() interface{} {
+		buf := make([]byte, defaultBufSize)
+		return &framer{
+			buf:        buf[:0],
+			readBuffer: buf,
+		}
+	},
+}
+
+// reset clears all mutable state on the framer so it can be returned to the
+// pool. The backing buffer (readBuffer) is intentionally preserved so that
+// subsequent users benefit from an already-grown buffer, avoiding append
+// reallocation. A cap check prevents oversized buffers from lingering in
+// the pool.
+const maxPooledBufSize = 64 * 1024 // 64 KiB
+
+func (f *framer) reset() {
+	// If buf grew beyond readBuffer during writes (via append), adopt the
+	// larger backing array so subsequent pool users benefit from the already-
+	// grown buffer. Discard if it exceeds the maximum pooled size.
+	if cap(f.buf) > cap(f.readBuffer) {
+		f.readBuffer = f.buf[:cap(f.buf)]
+	}
+	if cap(f.readBuffer) > maxPooledBufSize {
+		buf := make([]byte, defaultBufSize)
+		f.readBuffer = buf
+	}
+	f.buf = f.readBuffer[:0]
+	f.compres = nil
+	f.header = nil
+	f.customPayload = nil
+	f.traceID = nil
+	f.flagLWT = 0
+	f.rateLimitingErrorCode = 0
+	f.proto = 0
+	f.flags = 0
+	f.tabletsRoutingV1 = false
+}
+
+// getWriteFramer retrieves a framer from the pool and initializes it for
+// writing with the given compressor and protocol version, including any
+// CQL protocol extensions. This mirrors what newFramerWithExts does but
+// reuses allocations.
+func getWriteFramer(compressor Compressor, version byte, cqlProtoExts []cqlProtocolExtension, logger StdLogger) *framer {
+	f := writeFramerPool.Get().(*framer)
+	initFramer(f, compressor, version)
+	applyFramerExtensions(f, cqlProtoExts, logger)
+	return f
+}
+
+// putWriteFramer returns a write-side framer to the pool after resetting it.
+func putWriteFramer(f *framer) {
+	f.reset()
+	writeFramerPool.Put(f)
 }
 
 type frame interface {
