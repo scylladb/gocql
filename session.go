@@ -426,15 +426,16 @@ func (s *Session) init() error {
 		}
 	}
 
-	// TODO(zariel): we probably dont need this any more as we verify that we
-	// can connect to one of the endpoints supplied by using the control conn.
-	// See if there are any connections in the pool
-	if s.cfg.ReconnectInterval > 0 {
-		go s.reconnectDownedHosts(s.cfg.ReconnectInterval)
-	}
-
+	// See if there are any connections in the pool.
+	// Check this BEFORE launching reconnectDownedHosts to avoid leaking
+	// a goroutine that periodically reconnects with invalid parameters
+	// (e.g., a nonexistent keyspace) and marks all hosts as DOWN.
 	if s.pool.Size() == 0 {
 		return ErrNoConnectionsStarted
+	}
+
+	if s.cfg.ReconnectInterval > 0 {
+		go s.reconnectDownedHosts(s.cfg.ReconnectInterval)
 	}
 
 	// Invoke KeyspaceChanged to let the policy cache the session keyspace

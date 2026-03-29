@@ -109,7 +109,9 @@ func TestUseStatementError(t *testing.T) {
 	}
 }
 
-// TestInvalidKeyspace checks that an invalid keyspace will return promptly and without a flood of connections
+// TestInvalidKeyspace checks that an invalid keyspace will return promptly and without a flood of connections.
+// This test must NOT run in parallel: it creates a session with an invalid keyspace, which triggers
+// reconnect attempts that mark all hosts as DOWN and can cascade into failures for concurrent tests.
 func TestInvalidKeyspace(t *testing.T) {
 	cluster := createCluster()
 	cluster.Keyspace = "invalidKeyspace"
