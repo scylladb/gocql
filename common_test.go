@@ -198,9 +198,12 @@ func createTable(s *Session, table string) error {
 		return err
 	}
 
-	// Invalidate the keyspace schema cache so that subsequent metadata lookups
-	// reload from the cluster, avoiding races with the debounced schema event.
-	if ks := extractKeyspaceFromDDL(table); ks != "" {
+	// Invalidate schema cache to avoid races with debounced schema events.
+	ks := extractKeyspaceFromDDL(table)
+	if ks == "" {
+		ks = s.cfg.Keyspace
+	}
+	if ks != "" {
 		s.metadataDescriber.invalidateKeyspaceSchema(ks)
 	}
 
@@ -216,8 +219,7 @@ func extractKeyspaceFromDDL(ddl string) string {
 		return ""
 	}
 	rest := strings.TrimSpace(ddl[idx+len("TABLE"):])
-	// DDL may contain optional "IF NOT EXISTS" (CREATE) or "IF EXISTS" (DROP)
-	// between the TABLE keyword and the table name — skip past them.
+	// Skip optional "IF [NOT] EXISTS" between TABLE and the name.
 	upperRest := strings.ToUpper(rest)
 	if strings.HasPrefix(upperRest, "IF NOT EXISTS") {
 		rest = strings.TrimSpace(rest[len("IF NOT EXISTS"):])
@@ -442,6 +444,35 @@ func createAggregate(t *testing.T, session *Session) {
 	`).Exec(); err != nil {
 		t.Fatalf("failed to create aggregate with err: %v", err)
 	}
+}
+
+const maxCQLIdentifierLen = 48
+
+// testTableName builds a CQL-safe table name from t.Name() and optional parts.
+// Truncates to 48 chars (CQL limit) using <first20>_<last20> when needed.
+func testTableName(t testing.TB, parts ...string) string {
+	name := strings.ToLower(t.Name())
+	for _, p := range parts {
+		name += "_" + strings.ToLower(p)
+	}
+
+	var b strings.Builder
+	prevUnderscore := false
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			prevUnderscore = false
+		} else if !prevUnderscore {
+			b.WriteByte('_')
+			prevUnderscore = true
+		}
+	}
+	name = strings.Trim(b.String(), "_")
+
+	if len(name) > maxCQLIdentifierLen {
+		name = name[:20] + "_" + name[len(name)-20:]
+	}
+	return name
 }
 
 func staticAddressTranslator(newAddr net.IP, newPort int) AddressTranslator {
