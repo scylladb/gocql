@@ -3937,3 +3937,152 @@ func TestRoutingKeyCacheUsesOverriddenKeyspace(t *testing.T) {
 
 	session.Query("DROP KEYSPACE IF EXISTS gocql_test_routing_key_cache").Exec()
 }
+
+// TestPrepareExecuteScyllaMetadataChangedFlag tests that the METADATA_CHANGED flag in RESULT/Rows
+// responses is handled correctly when the SCYLLA_USE_METADATA_ID CQL protocol extension is
+// negotiated with the Scylla server.
+//
+// When SCYLLA_USE_METADATA_ID is active, Scylla can signal that the result set metadata has
+// changed by setting the METADATA_CHANGED flag and including a new result metadata ID.
+// The driver must update its prepared statement cache accordingly.
+func TestPrepareExecuteScyllaMetadataChangedFlag(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	conn := session.getConn()
+	if conn == nil || !conn.scyllaUseMetadataId {
+		t.Skip("SCYLLA_USE_METADATA_ID extension is not negotiated — skipping test")
+	}
+
+	if err := createTable(session, "CREATE TABLE IF NOT EXISTS gocql_test.scylla_metadata_changed(id int, PRIMARY KEY (id))"); err != nil {
+		t.Fatal(err)
+	}
+
+	type record struct {
+		id     int
+		newCol int
+	}
+
+	firstRecord := record{
+		id: 1,
+	}
+	err := session.Query("INSERT INTO gocql_test.scylla_metadata_changed (id) VALUES (?)", firstRecord.id).Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Pin all queries to the same connection to ensure consistent behaviour.
+	conn = session.getConn()
+
+	const selectStmt = "SELECT * FROM gocql_test.scylla_metadata_changed"
+	queryBeforeTableAltering := session.Query(selectStmt)
+	queryBeforeTableAltering.conn = conn
+	row := make(map[string]interface{})
+	err = queryBeforeTableAltering.MapScan(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	require.Len(t, row, 1, "Expected to retrieve a single column")
+	require.Equal(t, 1, row["id"])
+
+	stmtCacheKey := session.stmtsLRU.keyFor(conn.host.HostID(), conn.currentKeyspace, queryBeforeTableAltering.stmt)
+	inflight, _ := session.stmtsLRU.get(stmtCacheKey)
+	preparedStatementBeforeTableAltering := inflight.preparedStatment
+
+	// Change the table schema so that Scylla returns RESULT/Rows with METADATA_CHANGED.
+	alteringTableQuery := session.Query("ALTER TABLE gocql_test.scylla_metadata_changed ADD new_col int")
+	alteringTableQuery.conn = conn
+	err = alteringTableQuery.Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	secondRecord := record{
+		id:     2,
+		newCol: 10,
+	}
+	err = session.Query("INSERT INTO gocql_test.scylla_metadata_changed (id, new_col) VALUES (?, ?)", secondRecord.id, secondRecord.newCol).
+		Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// handleRows scans both rows from the iterator and verifies the values.
+	handleRows := func(iter *Iter) {
+		t.Helper()
+
+		var scannedID int
+		var scannedNewCol *int
+
+		var nilIntPtr *int
+
+		if iter.Scan(&scannedID, &scannedNewCol) {
+			require.Equal(t, firstRecord.id, scannedID)
+			require.Equal(t, nilIntPtr, scannedNewCol)
+		}
+
+		if iter.Scan(&scannedID, &scannedNewCol) {
+			require.Equal(t, secondRecord.id, scannedID)
+			require.Equal(t, &secondRecord.newCol, scannedNewCol)
+		}
+
+		err := iter.Close()
+		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				t.Fatal("It is likely failed due to a deadlock")
+			}
+			t.Fatal(err)
+		}
+	}
+
+	// The first query after the schema change should trigger METADATA_CHANGED.
+	queryAfterTableAltering := session.Query(selectStmt)
+	queryAfterTableAltering.conn = conn
+	iter := queryAfterTableAltering.Iter()
+	handleRows(iter)
+
+	// The prepared statement cache must have been updated with the new metadata ID.
+	inflight, _ = session.stmtsLRU.get(stmtCacheKey)
+	preparedStatementAfterTableAltering := inflight.preparedStatment
+	require.NotEqual(t, preparedStatementBeforeTableAltering.resultMetadataID, preparedStatementAfterTableAltering.resultMetadataID)
+	require.NotEqual(t, preparedStatementBeforeTableAltering.response, preparedStatementAfterTableAltering.response)
+
+	// Force the driver to use the old (stale) result metadata ID to verify that Scylla still
+	// signals the change via METADATA_CHANGED when the driver sends an outdated ID.
+	closedCh := make(chan struct{})
+	close(closedCh)
+	session.stmtsLRU.add(stmtCacheKey, &inflightPrepare{
+		done:             closedCh,
+		err:              nil,
+		preparedStatment: preparedStatementBeforeTableAltering,
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
+	defer cancel()
+
+	queryAfterTableAltering2 := session.Query(selectStmt).WithContext(ctx)
+	queryAfterTableAltering2.conn = conn
+	iter = queryAfterTableAltering2.Iter()
+	handleRows(iter)
+
+	inflight, _ = session.stmtsLRU.get(stmtCacheKey)
+	preparedStatementAfterTableAltering2 := inflight.preparedStatment
+	require.NotEqual(t, preparedStatementBeforeTableAltering.resultMetadataID, preparedStatementAfterTableAltering2.resultMetadataID)
+	require.NotEqual(t, preparedStatementBeforeTableAltering.response, preparedStatementAfterTableAltering2.response)
+
+	require.Equal(t, preparedStatementAfterTableAltering.resultMetadataID, preparedStatementAfterTableAltering2.resultMetadataID)
+	require.NotEqual(t, preparedStatementAfterTableAltering.response, preparedStatementAfterTableAltering2.response) // METADATA_CHANGED flag
+	require.True(t, preparedStatementAfterTableAltering2.response.flags&frm.FlagMetaDataChanged != 0)
+
+	// A subsequent query with the correct (updated) metadata ID must not trigger METADATA_CHANGED.
+	queryAfterTableAltering3 := session.Query(selectStmt).WithContext(ctx)
+	queryAfterTableAltering3.conn = conn
+	iter = queryAfterTableAltering3.Iter()
+	handleRows(iter)
+
+	inflight, _ = session.stmtsLRU.get(stmtCacheKey)
+	preparedStatementAfterTableAltering3 := inflight.preparedStatment
+	require.Equal(t, preparedStatementAfterTableAltering2.resultMetadataID, preparedStatementAfterTableAltering3.resultMetadataID)
+	require.Equal(t, preparedStatementAfterTableAltering2.response, preparedStatementAfterTableAltering3.response)
+}

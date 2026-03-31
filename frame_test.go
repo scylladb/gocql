@@ -287,10 +287,10 @@ func Test_framer_writeExecuteFrame(t *testing.T) {
 			framer.buf = framer.buf[9:]
 
 			assertDeepEqual(t, "customPayload", frame.customPayload, framer.readBytesMap())
-			assertDeepEqual(t, "preparedID", frame.preparedID, framer.readShortBytes())
+			assertDeepEqual(t, "preparedID", frame.preparedID, framer.readShortBytesCopy())
 
 			if tt.protoVersion >= protoVersion5 || tt.scyllaUseMetadataId {
-				assertDeepEqual(t, "resultMetadataID", frame.resultMetadataID, framer.readShortBytes())
+				assertDeepEqual(t, "resultMetadataID", frame.resultMetadataID, framer.readShortBytesCopy())
 			}
 
 			assertDeepEqual(t, "constistency", frame.params.consistency, Consistency(framer.readShort()))
