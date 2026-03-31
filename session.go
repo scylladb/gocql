@@ -84,7 +84,7 @@ type Session struct {
 	// routingPlanCache caches immutable *routingPlan pointers keyed by
 	// statement string, providing lock-free reads for isLWT(),
 	// getPartitioner(), Keyspace(), and Table() on the hot path.
-	// Bounded by MaxRoutingKeyInfo to prevent unbounded growth.
+	// Bounded by MaxRoutingKeyInfo when > 0; unbounded when MaxRoutingKeyInfo == 0.
 	routingPlanCache          routingPlanLRU
 	addressTranslator         AddressTranslator
 	cfg                       ClusterConfig

@@ -681,23 +681,22 @@ func BenchmarkRoutingPlanCacheLookup(b *testing.B) {
 	})
 
 	b.Run("CacheMiss_Store", func(b *testing.B) {
-		// Each iteration needs a fresh key to measure a true cache miss.
-		// Cap the number of unique keys to avoid OOM when b.N ramps up;
-		// the benchmark measures LRU contention, not string formatting.
-		const maxKeys = 10000
-		c := routingPlanLRU{lru: lru.New(maxKeys)}
-		n := b.N
-		if n > maxKeys {
-			n = maxKeys
-		}
-		stmts := make([]string, n)
+		// Use more distinct keys than cache capacity so every cycle
+		// through the key pool forces evictions, ensuring each Put
+		// measures a true cache-miss store rather than a hit.
+		const (
+			cacheCap = 64
+			maxKeys  = 1024
+		)
+		c := routingPlanLRU{lru: lru.New(cacheCap)}
+		stmts := make([]string, maxKeys)
 		for i := range stmts {
 			stmts[i] = fmt.Sprintf("SELECT * FROM ks.tbl WHERE id = ? /* %d */", i)
 		}
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			c.Put(stmts[i%n], plan)
+			c.Put(stmts[i%maxKeys], plan)
 		}
 	})
 }
