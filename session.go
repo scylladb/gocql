@@ -845,21 +845,13 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string, requestTimeou
 	}
 
 	// get the table metadata
+	// Use TableMetadata (which routes through GetTable) instead of
+	// GetKeyspace + Tables[name] to properly handle cache invalidation
+	// when a table was recently created or altered.
 
-	var keyspaceMetadata *KeyspaceMetadata
-	keyspaceMetadata, inflight.err = s.KeyspaceMetadata(info.request.columns[0].Keyspace)
+	var tableMetadata *TableMetadata
+	tableMetadata, inflight.err = s.TableMetadata(keyspace, table)
 	if inflight.err != nil {
-		// don't cache this error
-		s.routingKeyInfoCache.Remove(stmt)
-		return nil, inflight.err
-	}
-
-	tableMetadata, found := keyspaceMetadata.Tables[table]
-	if !found {
-		// unlikely that the statement could be prepared and the metadata for
-		// the table couldn't be found, but this may indicate either a bug
-		// in the metadata code, or that the table was just dropped.
-		inflight.err = ErrNoMetadata
 		// don't cache this error
 		s.routingKeyInfoCache.Remove(stmt)
 		return nil, inflight.err
