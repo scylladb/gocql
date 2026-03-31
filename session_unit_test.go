@@ -29,6 +29,7 @@ package gocql
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -146,10 +147,8 @@ func TestExtractKeyspaceFromDDL(t *testing.T) {
 	}
 }
 
-// TestTableMetadataAfterInvalidation verifies that Session.TableMetadata
-// (used by routingKeyInfo and scyllaIsCdcTable) properly refreshes table
-// metadata after schema invalidation, unlike the old GetKeyspace + Tables[name]
-// pattern which returned stale data.
+// TestTableMetadataAfterInvalidation verifies that TableMetadata refreshes
+// after schema invalidation.
 func TestTableMetadataAfterInvalidation(t *testing.T) {
 	t.Parallel()
 
@@ -193,8 +192,7 @@ func TestTableMetadataAfterInvalidation(t *testing.T) {
 }
 
 // TestTableMetadataAfterKeyspaceInvalidation verifies that TableMetadata
-// works correctly when the entire keyspace cache is cleared (as done by
-// createTable's new cache invalidation logic).
+// works after the entire keyspace cache is cleared.
 func TestTableMetadataAfterKeyspaceInvalidation(t *testing.T) {
 	t.Parallel()
 
@@ -243,8 +241,7 @@ func newTestSessionForTableMetadata(ctrl *schemaDataMock) *Session {
 }
 
 // TestScyllaIsCdcTableAfterInvalidation verifies that scyllaIsCdcTable
-// properly handles invalidated table metadata (the same bug pattern as
-// routingKeyInfo).
+// handles invalidated table metadata.
 func TestScyllaIsCdcTableAfterInvalidation(t *testing.T) {
 	t.Parallel()
 
@@ -299,5 +296,82 @@ func TestScyllaIsCdcTableNotCdcSuffix(t *testing.T) {
 	}
 	if isCdc {
 		t.Fatal("expected regular_table to not be a CDC table")
+	}
+}
+
+func TestTestTableName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		parts []string
+		want  string
+	}{
+		{
+			name: "basic",
+			want: "testtesttablename_basic",
+		},
+		{
+			name:  "with_parts",
+			parts: []string{"single"},
+			want:  "testtesttablename_with_parts_single",
+		},
+		{
+			name:  "multiple_parts",
+			parts: []string{"foo", "bar"},
+			want:  "testtesttablename_multiple_parts_foo_bar",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := testTableName(t, tt.parts...)
+			if got != tt.want {
+				t.Errorf("testTableName() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTestTableNameSanitizesSpecialChars(t *testing.T) {
+	t.Parallel()
+
+	// t.Name() for subtests contains '/', verify it's sanitized.
+	t.Run("sub/with/slashes", func(t *testing.T) {
+		got := testTableName(t)
+		if strings.Contains(got, "/") {
+			t.Errorf("expected no slashes, got %q", got)
+		}
+		// Consecutive separators from / should be collapsed.
+		if strings.Contains(got, "__") {
+			t.Errorf("expected no consecutive underscores, got %q", got)
+		}
+	})
+}
+
+func TestTestTableNameTruncation(t *testing.T) {
+	t.Parallel()
+
+	// Build a subtest name that forces the result over 48 chars.
+	long := "abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz"
+	t.Run(long, func(t *testing.T) {
+		got := testTableName(t, "extra")
+		if len(got) > maxCQLIdentifierLen {
+			t.Errorf("len = %d, want <= %d; value = %q", len(got), maxCQLIdentifierLen, got)
+		}
+		// Should contain chars from both the start and end.
+		if got[:5] != "testt" {
+			t.Errorf("expected prefix from test name, got %q", got)
+		}
+	})
+}
+
+func TestTestTableNameUniqueness(t *testing.T) {
+	t.Parallel()
+
+	a := testTableName(t, "alpha")
+	b := testTableName(t, "beta")
+	if a == b {
+		t.Errorf("expected different names, both got %q", a)
 	}
 }

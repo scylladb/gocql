@@ -2661,16 +2661,19 @@ func TestRoutingKey(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := createTable(session, "CREATE TABLE gocql_test.test_single_routing_key (first_id int, second_id int, PRIMARY KEY (first_id, second_id))"); err != nil {
+	singleTable := testTableName(t, "single")
+	compositeTable := testTableName(t, "composite")
+
+	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (first_id int, second_id int, PRIMARY KEY (first_id, second_id))", singleTable)); err != nil {
 		t.Fatalf("failed to create table with error '%v'", err)
 	}
-	if err := createTable(session, "CREATE TABLE gocql_test.test_composite_routing_key (first_id int, second_id int, PRIMARY KEY ((first_id, second_id)))"); err != nil {
+	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (first_id int, second_id int, PRIMARY KEY ((first_id, second_id)))", compositeTable)); err != nil {
 		t.Fatalf("failed to create table with error '%v'", err)
 	}
 
 	initCacheSize := session.routingKeyInfoCache.lru.Len()
 
-	routingKeyInfo, err := session.routingKeyInfo(context.Background(), "SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?", time.Second)
+	routingKeyInfo, err := session.routingKeyInfo(context.Background(), fmt.Sprintf("SELECT * FROM %s WHERE second_id=? AND first_id=?", singleTable), time.Second)
 	if err != nil {
 		t.Fatalf("failed to get routing key info due to error: %v", err)
 	}
@@ -2696,7 +2699,7 @@ func TestRoutingKey(t *testing.T) {
 	// verify the cache is working
 	routingKeyInfo, err = session.routingKeyInfo(
 		context.Background(),
-		"SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?",
+		fmt.Sprintf("SELECT * FROM %s WHERE second_id=? AND first_id=?", singleTable),
 		// Routing info will be pulled from cached prepared statement, it should work with minimal timeout
 		time.Nanosecond)
 	if err != nil {
@@ -2722,7 +2725,7 @@ func TestRoutingKey(t *testing.T) {
 		t.Errorf("Expected cache size to be %d but was %d", initCacheSize+1, cacheSize)
 	}
 
-	query := session.Query("SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?", 1, 2)
+	query := session.Query(fmt.Sprintf("SELECT * FROM %s WHERE second_id=? AND first_id=?", singleTable), 1, 2)
 	routingKey, err := query.GetRoutingKey()
 	if err != nil {
 		t.Fatalf("Failed to get routing key due to error: %v", err)
@@ -2734,7 +2737,7 @@ func TestRoutingKey(t *testing.T) {
 
 	routingKeyInfo, err = session.routingKeyInfo(
 		context.Background(),
-		"SELECT * FROM test_composite_routing_key WHERE second_id=? AND first_id=?",
+		fmt.Sprintf("SELECT * FROM %s WHERE second_id=? AND first_id=?", compositeTable),
 		time.Second)
 	if err != nil {
 		t.Fatalf("failed to get routing key info due to error: %v", err)
@@ -2767,7 +2770,7 @@ func TestRoutingKey(t *testing.T) {
 		t.Fatalf("Expected routing key types[0] to be %v but was %v", TypeInt, routingKeyInfo.types[1].Type())
 	}
 
-	query = session.Query("SELECT * FROM test_composite_routing_key WHERE second_id=? AND first_id=?", 1, 2)
+	query = session.Query(fmt.Sprintf("SELECT * FROM %s WHERE second_id=? AND first_id=?", compositeTable), 1, 2)
 	routingKey, err = query.GetRoutingKey()
 	if err != nil {
 		t.Fatalf("Failed to get routing key due to error: %v", err)

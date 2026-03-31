@@ -817,6 +817,14 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string, requestTimeou
 	table := info.request.table
 	keyspace := info.request.keyspace
 
+	// Fall back to per-column metadata when FlagGlobalTableSpec is not set.
+	if keyspace == "" && len(info.request.columns) > 0 {
+		keyspace = info.request.columns[0].Keyspace
+	}
+	if table == "" && len(info.request.columns) > 0 {
+		table = info.request.columns[0].Table
+	}
+
 	partitioner, err := scyllaGetTablePartitioner(s, keyspace, table)
 	if err != nil {
 		// don't cache this error
@@ -844,11 +852,7 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string, requestTimeou
 		return routingKeyInfo, nil
 	}
 
-	// get the table metadata
-	// Use TableMetadata (which routes through GetTable) instead of
-	// GetKeyspace + Tables[name] to properly handle cache invalidation
-	// when a table was recently created or altered.
-
+	// get the table metadata (uses TableMetadata to handle cache invalidation)
 	var tableMetadata *TableMetadata
 	tableMetadata, inflight.err = s.TableMetadata(keyspace, table)
 	if inflight.err != nil {
