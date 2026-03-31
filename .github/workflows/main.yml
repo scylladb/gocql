@@ -132,6 +132,7 @@ jobs:
       fail-fast: false
     env:
       CASSANDRA_VERSION: ${{ matrix.cassandra-version }}
+      GH_TOKEN: ${{ github.token }}
 
     steps:
       - uses: actions/checkout@v6

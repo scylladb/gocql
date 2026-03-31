@@ -108,7 +108,26 @@ resolve-cassandra-version: .prepare-get-version
 		exit 0
 	fi
 
-	if [[ "${CASSANDRA_VERSION}" == "LATEST" ]]; then
+	if echo "${CASSANDRA_VERSION}" | grep -qP '^[0-9\.]+$$'; then
+		CASSANDRA_VERSION_RESOLVED=${CASSANDRA_VERSION}
+	elif command -v gh >/dev/null 2>&1 && [[ -n "$${GH_TOKEN:-}" || -n "$${GITHUB_TOKEN:-}" ]]; then
+		echo "Using gh CLI for authenticated GitHub API access"
+		ALL_VERSIONS=$$(gh api repos/apache/cassandra/tags --paginate -q '.[].name' | \
+			grep -P '^cassandra-[0-9]+\.[0-9]+\.[0-9]+$$' | \
+			sed 's/^cassandra-//' | sort -V)
+		if [[ "${CASSANDRA_VERSION}" == "LATEST" ]]; then
+			CASSANDRA_VERSION_RESOLVED=$$(echo "$${ALL_VERSIONS}" | tail -1)
+		elif [[ "${CASSANDRA_VERSION}" == "5-LATEST" ]]; then
+			CASSANDRA_VERSION_RESOLVED=$$(echo "$${ALL_VERSIONS}" | grep '^5\.' | tail -1)
+		elif [[ "${CASSANDRA_VERSION}" == "4-LATEST" ]]; then
+			CASSANDRA_VERSION_RESOLVED=$$(echo "$${ALL_VERSIONS}" | grep '^4\.' | tail -1)
+		elif [[ "${CASSANDRA_VERSION}" == "3-LATEST" ]]; then
+			CASSANDRA_VERSION_RESOLVED=$$(echo "$${ALL_VERSIONS}" | grep '^3\.' | tail -1)
+		else
+			echo "Unknown Cassandra version name '${CASSANDRA_VERSION}'"
+			exit 1
+		fi
+	elif [[ "${CASSANDRA_VERSION}" == "LATEST" ]]; then
 		CASSANDRA_VERSION_RESOLVED=`get-version -source github-tag -repo apache/cassandra -prefix "cassandra-" -out-no-prefix -filters "^[0-9]+$$.^[0-9]+$$.^[0-9]+$$ and LAST.LAST.LAST" | tr -d '\"'`
 	elif [[ "${CASSANDRA_VERSION}" == "5-LATEST" ]]; then
 		CASSANDRA_VERSION_RESOLVED=`get-version -source github-tag -repo apache/cassandra -prefix "cassandra-" -out-no-prefix -filters "^[0-9]+$$.^[0-9]+$$.^[0-9]+$$ and 5.LAST.LAST" | tr -d '\"'`
@@ -116,8 +135,6 @@ resolve-cassandra-version: .prepare-get-version
 		CASSANDRA_VERSION_RESOLVED=`get-version -source github-tag -repo apache/cassandra -prefix "cassandra-" -out-no-prefix -filters "^[0-9]+$$.^[0-9]+$$.^[0-9]+$$ and 4.LAST.LAST" | tr -d '\"'`
 	elif [[ "${CASSANDRA_VERSION}" == "3-LATEST" ]]; then
 		CASSANDRA_VERSION_RESOLVED=`get-version -source github-tag -repo apache/cassandra -prefix "cassandra-" -out-no-prefix -filters "^[0-9]+$$.^[0-9]+$$.^[0-9]+$$ and 3.LAST.LAST" | tr -d '\"'`
-	elif echo "${CASSANDRA_VERSION}" | grep -P '^[0-9\.]+'; then
-		CASSANDRA_VERSION_RESOLVED=${CASSANDRA_VERSION}
 	else
 		echo "Unknown Cassandra version name '${CASSANDRA_VERSION}'"
 		exit 1
