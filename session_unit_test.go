@@ -60,3 +60,244 @@ func TestAsyncSessionInit(t *testing.T) {
 		t.Fatalf("unexpected error from void")
 	}
 }
+
+func TestExtractKeyspaceFromDDL(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		ddl  string
+		want string
+	}{
+		{
+			name: "simple_create_table",
+			ddl:  "CREATE TABLE gocql_test.my_table (id int PRIMARY KEY)",
+			want: "gocql_test",
+		},
+		{
+			name: "create_table_if_not_exists",
+			ddl:  "CREATE TABLE IF NOT EXISTS gocql_test.my_table (id int PRIMARY KEY)",
+			want: "gocql_test",
+		},
+		{
+			name: "lowercase_create_table",
+			ddl:  "create table gocql_test.my_table (id int primary key)",
+			want: "gocql_test",
+		},
+		{
+			name: "mixed_case_if_not_exists",
+			ddl:  "Create Table If Not Exists gocql_test.my_table (id int PRIMARY KEY)",
+			want: "gocql_test",
+		},
+		{
+			name: "no_keyspace_prefix",
+			ddl:  "CREATE TABLE my_table (id int PRIMARY KEY)",
+			want: "",
+		},
+		{
+			name: "empty_string",
+			ddl:  "",
+			want: "",
+		},
+		{
+			name: "create_keyspace_ignored",
+			ddl:  "CREATE KEYSPACE my_ks WITH replication = {}",
+			want: "",
+		},
+		{
+			name: "materialized_view_ignored",
+			ddl:  "CREATE MATERIALIZED VIEW my_ks.my_view AS SELECT * FROM my_ks.my_table WHERE id IS NOT NULL PRIMARY KEY (id)",
+			want: "",
+		},
+		{
+			name: "multiline_ddl",
+			ddl:  "CREATE TABLE gocql_test.test_single_routing_key (\n\tfirst_id int,\n\tsecond_id int,\n\tPRIMARY KEY (first_id, second_id)\n)",
+			want: "gocql_test",
+		},
+		{
+			name: "tablets_disabled_keyspace",
+			ddl:  "CREATE TABLE gocql_test_tablets_disabled.my_table (id int PRIMARY KEY)",
+			want: "gocql_test_tablets_disabled",
+		},
+		{
+			name: "drop_table_if_exists",
+			ddl:  "DROP TABLE IF EXISTS gocql_test.my_table",
+			want: "gocql_test",
+		},
+		{
+			name: "drop_table_if_exists_lowercase",
+			ddl:  "drop table if exists gocql_test.my_table",
+			want: "gocql_test",
+		},
+		{
+			name: "drop_table_no_keyspace",
+			ddl:  "DROP TABLE IF EXISTS my_table",
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractKeyspaceFromDDL(tt.ddl)
+			if got != tt.want {
+				t.Errorf("extractKeyspaceFromDDL(%q) = %q, want %q", tt.ddl, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestTableMetadataAfterInvalidation verifies that Session.TableMetadata
+// (used by routingKeyInfo and scyllaIsCdcTable) properly refreshes table
+// metadata after schema invalidation, unlike the old GetKeyspace + Tables[name]
+// pattern which returned stale data.
+func TestTableMetadataAfterInvalidation(t *testing.T) {
+	t.Parallel()
+
+	ctrl := &schemaDataMock{
+		knownKeyspaces: map[string][]tableInfo{
+			"test_ks": {
+				{name: "tbl_a", columns: []columnInfo{{name: "id", kind: "partition_key", position: 0}}},
+			},
+		},
+	}
+	s := newSchemaEventTestSessionWithMock(ctrl)
+	s.isInitialized = true
+	populateKeyspace(s, "test_ks", "tbl_a")
+
+	// TableMetadata should succeed with cached data
+	tbl, err := s.TableMetadata("test_ks", "tbl_a")
+	if err != nil {
+		t.Fatalf("initial TableMetadata failed: %v", err)
+	}
+	if tbl.Name != "tbl_a" {
+		t.Fatalf("expected table name tbl_a, got %s", tbl.Name)
+	}
+
+	// Simulate a schema change event invalidating the table
+	s.metadataDescriber.invalidateTableSchema("test_ks", "tbl_a")
+
+	ctrl.resetQueries()
+
+	// TableMetadata should still succeed by refreshing the invalidated table
+	tbl, err = s.TableMetadata("test_ks", "tbl_a")
+	if err != nil {
+		t.Fatalf("TableMetadata after invalidation failed: %v", err)
+	}
+	if tbl.Name != "tbl_a" {
+		t.Fatalf("expected table name tbl_a, got %s", tbl.Name)
+	}
+	// Verify that a refresh query was actually issued
+	if ctrl.getQueryCount() == 0 {
+		t.Fatal("expected queries to refresh tbl_a after invalidation")
+	}
+}
+
+// TestTableMetadataAfterKeyspaceInvalidation verifies that TableMetadata
+// works correctly when the entire keyspace cache is cleared (as done by
+// createTable's new cache invalidation logic).
+func TestTableMetadataAfterKeyspaceInvalidation(t *testing.T) {
+	t.Parallel()
+
+	ctrl := &schemaDataMock{
+		knownKeyspaces: map[string][]tableInfo{
+			"test_ks": {
+				{name: "tbl_a", columns: []columnInfo{{name: "id", kind: "partition_key", position: 0}}},
+			},
+		},
+	}
+	s := newSchemaEventTestSessionWithMock(ctrl)
+	s.isInitialized = true
+	populateKeyspace(s, "test_ks", "tbl_a")
+
+	// TableMetadata should succeed with cached data
+	_, err := s.TableMetadata("test_ks", "tbl_a")
+	if err != nil {
+		t.Fatalf("initial TableMetadata failed: %v", err)
+	}
+
+	// Simulate what createTable now does: invalidate the entire keyspace
+	s.metadataDescriber.invalidateKeyspaceSchema("test_ks")
+
+	ctrl.resetQueries()
+
+	// TableMetadata should still succeed by reloading the keyspace
+	tbl, err := s.TableMetadata("test_ks", "tbl_a")
+	if err != nil {
+		t.Fatalf("TableMetadata after keyspace invalidation failed: %v", err)
+	}
+	if tbl.Name != "tbl_a" {
+		t.Fatalf("expected table name tbl_a, got %s", tbl.Name)
+	}
+	// Verify that a refresh query was issued (keyspace was reloaded)
+	if ctrl.getQueryCount() == 0 {
+		t.Fatal("expected queries to reload keyspace after invalidation")
+	}
+}
+
+// newTestSessionForTableMetadata creates a minimal session suitable for
+// testing TableMetadata/scyllaIsCdcTable paths.
+func newTestSessionForTableMetadata(ctrl *schemaDataMock) *Session {
+	s := newSchemaEventTestSessionWithMock(ctrl)
+	s.isInitialized = true
+	return s
+}
+
+// TestScyllaIsCdcTableAfterInvalidation verifies that scyllaIsCdcTable
+// properly handles invalidated table metadata (the same bug pattern as
+// routingKeyInfo).
+func TestScyllaIsCdcTableAfterInvalidation(t *testing.T) {
+	t.Parallel()
+
+	ctrl := &schemaDataMock{
+		knownKeyspaces: map[string][]tableInfo{
+			"test_ks": {
+				{name: "tbl_scylla_cdc_log", columns: []columnInfo{{name: "id", kind: "partition_key", position: 0}}},
+			},
+		},
+	}
+	s := newTestSessionForTableMetadata(ctrl)
+	populateKeyspace(s, "test_ks", "tbl_scylla_cdc_log")
+
+	// Should work with cached data
+	_, err := scyllaIsCdcTable(s, "test_ks", "tbl_scylla_cdc_log")
+	if err != nil {
+		t.Fatalf("initial scyllaIsCdcTable failed: %v", err)
+	}
+
+	// Invalidate the table (simulating a schema change event)
+	s.metadataDescriber.invalidateTableSchema("test_ks", "tbl_scylla_cdc_log")
+	ctrl.resetQueries()
+
+	// Should still succeed by refreshing the metadata
+	_, err = scyllaIsCdcTable(s, "test_ks", "tbl_scylla_cdc_log")
+	if err != nil {
+		t.Fatalf("scyllaIsCdcTable after invalidation failed: %v", err)
+	}
+	if ctrl.getQueryCount() == 0 {
+		t.Fatal("expected queries to refresh tbl_scylla_cdc_log after invalidation")
+	}
+}
+
+// TestScyllaIsCdcTableNotCdcSuffix verifies that scyllaIsCdcTable returns
+// false early for tables without the CDC log suffix.
+func TestScyllaIsCdcTableNotCdcSuffix(t *testing.T) {
+	t.Parallel()
+
+	ctrl := &schemaDataMock{
+		knownKeyspaces: map[string][]tableInfo{
+			"test_ks": {
+				{name: "regular_table", columns: []columnInfo{{name: "id", kind: "partition_key", position: 0}}},
+			},
+		},
+	}
+	s := newTestSessionForTableMetadata(ctrl)
+	populateKeyspace(s, "test_ks", "regular_table")
+
+	isCdc, err := scyllaIsCdcTable(s, "test_ks", "regular_table")
+	if err != nil {
+		t.Fatalf("scyllaIsCdcTable failed: %v", err)
+	}
+	if isCdc {
+		t.Fatal("expected regular_table to not be a CDC table")
+	}
+}

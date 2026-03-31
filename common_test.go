@@ -198,7 +198,38 @@ func createTable(s *Session, table string) error {
 		return err
 	}
 
+	// Invalidate the keyspace schema cache so that subsequent metadata lookups
+	// reload from the cluster, avoiding races with the debounced schema event.
+	if ks := extractKeyspaceFromDDL(table); ks != "" {
+		s.metadataDescriber.invalidateKeyspaceSchema(ks)
+	}
+
 	return nil
+}
+
+// extractKeyspaceFromDDL extracts the keyspace name from a DDL statement like
+// "CREATE TABLE gocql_test.table_name (...)". Returns empty string if not found.
+func extractKeyspaceFromDDL(ddl string) string {
+	upper := strings.ToUpper(ddl)
+	idx := strings.Index(upper, "TABLE")
+	if idx < 0 {
+		return ""
+	}
+	rest := strings.TrimSpace(ddl[idx+len("TABLE"):])
+	// DDL may contain optional "IF NOT EXISTS" (CREATE) or "IF EXISTS" (DROP)
+	// between the TABLE keyword and the table name — skip past them.
+	upperRest := strings.ToUpper(rest)
+	if strings.HasPrefix(upperRest, "IF NOT EXISTS") {
+		rest = strings.TrimSpace(rest[len("IF NOT EXISTS"):])
+	} else if strings.HasPrefix(upperRest, "IF EXISTS") {
+		rest = strings.TrimSpace(rest[len("IF EXISTS"):])
+	}
+	// Extract keyspace from keyspace.table
+	dot := strings.Index(rest, ".")
+	if dot < 0 {
+		return ""
+	}
+	return rest[:dot]
 }
 
 func createCluster(opts ...func(*ClusterConfig)) *ClusterConfig {
