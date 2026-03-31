@@ -116,8 +116,8 @@ func TestSetupTLSConfig(t *testing.T) {
 	}
 }
 
-// errorConn is a mock net.Conn whose Close always returns an error,
-// which triggers the HandleError callback path in Conn.closeWithError.
+// errorConn is a mock net.Conn whose Close returns an error,
+// triggering HandleError via Conn.closeWithError.
 type errorConn struct {
 	net.Conn
 }
@@ -130,16 +130,9 @@ func (e errorConn) Close() error {
 // self-deadlock when defaultConnPicker closes connections that trigger
 // HandleError callbacks.
 //
-// The deadlock chain (before the fix):
+// Deadlock chain (before fix):
 //
-//	hostConnPool.Close()             — acquires pool.mu.Lock()
-//	  └── defaultConnPicker.Close()  — iterates conns
-//	        └── conn.Close()
-//	              └── closeWithError(nil)
-//	                    └── HandleError()
-//	                          └── pool.mu.Lock() — DEADLOCK
-//
-// See scylladb/gocql#53 for the equivalent issue in scyllaConnPicker.
+//	Close() -> connPicker.Close() -> conn.Close() -> HandleError() -> pool.mu.Lock() (DEADLOCK)
 func TestHostConnPoolCloseDeadlock(t *testing.T) {
 	t.Parallel()
 
@@ -162,9 +155,7 @@ func TestHostConnPoolCloseDeadlock(t *testing.T) {
 		debouncer:  debounce.NewSimpleDebouncer(),
 	}
 
-	// Create a defaultConnPicker with real Conn objects that will trigger
-	// HandleError on Close. Each Conn uses an errorConn (mock net.Conn
-	// whose Close returns an error) and has the pool as its errorHandler.
+	// Build a defaultConnPicker with Conns that trigger HandleError on Close.
 	picker := newDefaultConnPicker(2)
 	for i := 0; i < 2; i++ {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -179,8 +170,7 @@ func TestHostConnPoolCloseDeadlock(t *testing.T) {
 	}
 	pool.connPicker = picker
 
-	// Close the pool in a goroutine with a deadline. If the call doesn't
-	// return within the deadline, the pool is deadlocked.
+	// Close must return before timeout; otherwise the pool is deadlocked.
 	done := make(chan struct{})
 	go func() {
 		pool.Close()

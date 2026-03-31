@@ -348,9 +348,6 @@ func (pool *hostConnPool) Close() {
 	pool.closed = true
 	pool.mu.Unlock()
 
-	// Close connections outside the lock to avoid self-deadlock:
-	// conn.Close() triggers HandleError() which tries to acquire pool.mu.
-	// See scylladb/gocql#53 for the equivalent fix in scyllaConnPicker.
 	pool.connPicker.Close()
 }
 
