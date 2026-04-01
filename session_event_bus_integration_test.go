@@ -21,12 +21,18 @@ func TestSessionEventBusReceivesSchemaChangeEvent(t *testing.T) {
 	}
 	defer sess.Close()
 
+	keyspace := fmt.Sprintf("eventbus_schema_%d", time.Now().UnixNano())
+
+	// Filter events to the specific keyspace this test creates, so that
+	// concurrent DDL from parallel tests does not cause spurious matches.
 	sub := sess.SubscribeToEvents("schema-event", 10, func(ev events.Event) bool {
-		return ev.Type() == events.ClusterEventTypeSchemaChangeKeyspace
+		if ks, ok := ev.(*events.SchemaChangeKeyspaceEvent); ok {
+			return ks.Keyspace == keyspace
+		}
+		return false
 	})
 	defer sub.Stop()
 
-	keyspace := fmt.Sprintf("eventbus_schema_%d", time.Now().UnixNano())
 	createStmt := fmt.Sprintf(`CREATE KEYSPACE %s WITH replication = {'class': 'NetworkTopologyStrategy', 'replication_factor': 1}`, keyspace)
 	if err := sess.Query(createStmt).Exec(); err != nil {
 		t.Fatalf("create keyspace: %v", err)
