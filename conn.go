@@ -919,6 +919,8 @@ func (c *Conn) releaseStream(call *callReq) {
 			})
 		})
 	}
+
+	putCallReq(call)
 }
 
 type callReq struct {
@@ -932,6 +934,37 @@ type callReq struct {
 	// streamObserverEndOnce ensures that either StreamAbandoned or StreamFinished is called,
 	// but not both.
 	streamObserverEndOnce sync.Once
+}
+
+var callReqPool = sync.Pool{
+	New: func() interface{} {
+		return &callReq{
+			resp: make(chan callResp, 1),
+		}
+	},
+}
+
+func getCallReq(streamID int) *callReq {
+	call := callReqPool.Get().(*callReq)
+	call.timeout = make(chan struct{})
+	call.streamID = streamID
+	call.streamObserverContext = nil
+	call.streamObserverEndOnce = sync.Once{}
+
+	select {
+	case <-call.resp:
+	default:
+	}
+
+	return call
+}
+
+func putCallReq(call *callReq) {
+	if call.timer != nil {
+		call.timer.Stop()
+	}
+	call.streamObserverContext = nil
+	callReqPool.Put(call)
 }
 
 type callResp struct {
@@ -1189,11 +1222,7 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, reques
 	framer := newFramerWithExts(c.compressor, c.version, c.cqlProtoExts, c.logger)
 	c.setTabletSupported(framer.tabletsRoutingV1)
 
-	call := &callReq{
-		timeout:  make(chan struct{}),
-		streamID: stream,
-		resp:     make(chan callResp),
-	}
+	call := getCallReq(stream)
 
 	if c.streamObserver != nil {
 		call.streamObserverContext = c.streamObserver.StreamContext(ctx)
@@ -1266,8 +1295,7 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, reques
 	var timeoutCh <-chan time.Time
 	if requestTimeout > 0 {
 		if call.timer == nil {
-			call.timer = time.NewTimer(0)
-			<-call.timer.C
+			call.timer = time.NewTimer(requestTimeout)
 		} else {
 			if !call.timer.Stop() {
 				select {
@@ -1275,9 +1303,9 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, reques
 				default:
 				}
 			}
+			call.timer.Reset(requestTimeout)
 		}
 
-		call.timer.Reset(requestTimeout)
 		timeoutCh = call.timer.C
 	}
 
