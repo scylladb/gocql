@@ -901,7 +901,11 @@ func unmarshalVector(info VectorType, data []byte, value interface{}) error {
 			if len(data) > 0 {
 				return unmarshalErrorf("unmarshal vector: %d bytes of data for 0-dimension vector", len(data))
 			}
-			if k == reflect.Slice {
+			if k == reflect.Array {
+				if rv.Len() != 0 {
+					return unmarshalErrorf("unmarshal vector: array of size %d cannot store vector of 0 dimensions", rv.Len())
+				}
+			} else if k == reflect.Slice {
 				rv.Set(reflect.MakeSlice(t, 0, 0))
 			}
 			return nil
