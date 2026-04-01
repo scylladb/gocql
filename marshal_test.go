@@ -1038,8 +1038,8 @@ func bytesWithLength(data ...[]byte) []byte {
 
 func TestUnmarshalVectorZeroDimensions(t *testing.T) {
 	info := VectorType{
-		NativeType: NativeType{typ: TypeCustom},
-		SubType:    NativeType{typ: TypeFloat},
+		NativeType: NewCustomType(protoVersion4, TypeCustom, apacheCassandraTypePrefix+"VectorType"),
+		SubType:    NativeType{proto: protoVersion4, typ: TypeFloat},
 		Dimensions: 0,
 	}
 
@@ -1071,6 +1071,31 @@ func TestUnmarshalVectorZeroDimensions(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), "0-dimension") {
 			t.Fatalf("expected error mentioning 0-dimension, got: %v", err)
+		}
+	})
+
+	t.Run("empty_data_into_zero_length_array", func(t *testing.T) {
+		var result [0]float32
+		if err := unmarshalVector(info, []byte{}, &result); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("empty_data_into_nonzero_length_array_errors", func(t *testing.T) {
+		var result [5]float32
+		err := unmarshalVector(info, []byte{}, &result)
+		if err == nil {
+			t.Fatal("expected error for 0-dimension vector into non-zero-length array")
+		}
+		if !strings.Contains(err.Error(), "array of size 5") {
+			t.Fatalf("expected error mentioning array size, got: %v", err)
+		}
+	})
+
+	t.Run("empty_data_into_interface", func(t *testing.T) {
+		var result interface{}
+		if err := unmarshalVector(info, []byte{}, &result); err != nil {
+			t.Fatalf("unexpected error: %v", err)
 		}
 	})
 }
