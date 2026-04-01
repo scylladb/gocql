@@ -10,6 +10,8 @@ import (
 )
 
 func TestSchemaQueries(t *testing.T) {
+	t.Parallel()
+
 	cluster := createCluster()
 
 	fallback := RoundRobinHostPolicy()

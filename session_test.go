@@ -38,6 +38,8 @@ import (
 )
 
 func TestSessionAPI(t *testing.T) {
+	t.Parallel()
+
 	cfg := &ClusterConfig{}
 
 	s := &Session{
@@ -127,6 +129,8 @@ func (f funcQueryObserver) ObserveQuery(ctx context.Context, o ObservedQuery) {
 }
 
 func TestQueryBasicAPI(t *testing.T) {
+	t.Parallel()
+
 	qry := &Query{routingInfo: &queryRoutingInfo{}}
 
 	// Initiate host
@@ -199,6 +203,8 @@ func TestQueryBasicAPI(t *testing.T) {
 }
 
 func TestQueryShouldPrepare(t *testing.T) {
+	t.Parallel()
+
 	toPrepare := []string{"select * ", "INSERT INTO", "update table", "delete from", "begin batch"}
 	cantPrepare := []string{"create table", "USE table", "LIST keyspaces", "alter table", "drop table", "grant user", "revoke user"}
 	q := &Query{routingInfo: &queryRoutingInfo{}}
@@ -219,6 +225,7 @@ func TestQueryShouldPrepare(t *testing.T) {
 }
 
 func TestBatchBasicAPI(t *testing.T) {
+	t.Parallel()
 
 	cfg := &ClusterConfig{RetryPolicy: &SimpleRetryPolicy{NumRetries: 2}}
 
@@ -313,6 +320,8 @@ func TestBatchBasicAPI(t *testing.T) {
 }
 
 func TestConsistencyNames(t *testing.T) {
+	t.Parallel()
+
 	names := map[fmt.Stringer]string{
 		Any:         "ANY",
 		One:         "ONE",
@@ -335,6 +344,8 @@ func TestConsistencyNames(t *testing.T) {
 }
 
 func TestIsUseStatement(t *testing.T) {
+	t.Parallel()
+
 	testCases := []struct {
 		input string
 		exp   bool
@@ -379,6 +390,8 @@ func (p *simpleTestRetryPolycy) GetRetryType(error) RetryType {
 // - return error is not nil on Rethrow, Ignore
 // - observed error is not nil
 func TestRetryType_IgnoreRethrow(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -485,6 +498,8 @@ func withSessionCache(cache tls.ClientSessionCache) func(config *ClusterConfig) 
 }
 
 func TestTLSTicketResumption(t *testing.T) {
+	t.Parallel()
+
 	t.Skip("TLS ticket resumption is only supported by 2025.2 and later")
 
 	c := newSessionCache()

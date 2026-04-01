@@ -9,6 +9,8 @@ import (
 )
 
 func TestTracingNewAPI(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 

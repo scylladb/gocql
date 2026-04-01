@@ -13,14 +13,23 @@ import (
 )
 
 func TestGetHostPortMapping(t *testing.T) {
-	session := createSession(t)
-	createKeyspace(t, createCluster(), "gocql_test", true)
+	t.Parallel()
+
+	keyspace := testKeyspaceName(t)
+	cluster := createCluster()
+	createKeyspace(t, cluster, keyspace, true)
+
+	cluster.Keyspace = keyspace
+	session, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatalf("failed to create session: %v", err)
+	}
 	defer session.Close()
 
 	table := testTableName(t)
-	qualifiedTable := "gocql_test." + table
+	qualifiedTable := keyspace + "." + table
 
-	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (
+	if err := createTable(session, fmt.Sprintf(`CREATE TABLE %s.%s (
     connection_id uuid,
     host_id uuid,
     Address text,
@@ -30,7 +39,7 @@ func TestGetHostPortMapping(t *testing.T) {
     alternator_https_port int,
     Datacenter text,
     Rack text,
-    PRIMARY KEY (connection_id, host_id))`, table)); err != nil {
+    PRIMARY KEY (connection_id, host_id))`, keyspace, table)); err != nil {
 		t.Fatal(err)
 	}
 

@@ -19,6 +19,8 @@ import (
 )
 
 func TestSerializationSimpleTypesCassandra(t *testing.T) {
+	t.Parallel()
+
 	const (
 		pkColumn   = "test_id"
 		testColumn = "test_col"
@@ -306,6 +308,8 @@ func compareValues(t *testing.T, cqlType string, expected, actual interface{}) b
 
 // TestSliceMapMapScanTypes tests SliceMap and MapScan with various CQL types
 func TestSliceMapMapScanTypes(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -488,6 +492,8 @@ func mustCreateDuration(months int32, days int32, timeDuration time.Duration) Du
 // TestSliceMapMapScanCounterTypes tests counter types separately since they have special restrictions
 // (counter columns can't be mixed with other column types in the same table)
 func TestSliceMapMapScanCounterTypes(t *testing.T) {
+	t.Parallel()
+
 	session := createSessionFromClusterTabletsDisabled(createCluster(), t)
 	defer session.Close()
 
@@ -549,6 +555,8 @@ func TestSliceMapMapScanCounterTypes(t *testing.T) {
 // TestSliceMapMapScanTupleTypes tests tuple types separately since they have special handling
 // (tuple elements get split into individual columns)
 func TestSliceMapMapScanTupleTypes(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -666,6 +674,8 @@ func TestSliceMapMapScanTupleTypes(t *testing.T) {
 // TestSliceMapMapScanVectorTypes tests vector types separately since they need Cassandra 5.0+ and special table setup
 // (vectors need separate tables and version checks)
 func TestSliceMapMapScanVectorTypes(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -791,6 +801,8 @@ func TestSliceMapMapScanVectorTypes(t *testing.T) {
 // TestSliceMapMapScanCollectionTypes tests collection types separately since they have special handling
 // (collections should return nil slices/maps for NULL values for consistency with other slice-based types)
 func TestSliceMapMapScanCollectionTypes(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 

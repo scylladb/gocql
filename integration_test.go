@@ -47,6 +47,7 @@ func init() {
 
 // TestAuthentication verifies that gocql will work with a host configured to only accept authenticated connections
 func TestAuthentication(t *testing.T) {
+	t.Parallel()
 
 	if !*flagRunAuthTest {
 		t.Skip("Authentication is not configured in the target cluster")
@@ -69,6 +70,8 @@ func TestAuthentication(t *testing.T) {
 }
 
 func TestGetHostsFromSystem(t *testing.T) {
+	t.Parallel()
+
 	clusterHosts := getClusterHosts()
 	cluster := createCluster()
 	session := createSessionFromCluster(cluster, t)
@@ -83,6 +86,8 @@ func TestGetHostsFromSystem(t *testing.T) {
 // TestRingDiscovery makes sure that you can autodiscover other cluster members
 // when you seed a cluster config with just one node
 func TestRingDiscovery(t *testing.T) {
+	t.Parallel()
+
 	clusterHosts := getClusterHosts()
 	cluster := createCluster()
 	cluster.Hosts = clusterHosts[:1]
@@ -110,6 +115,8 @@ func TestRingDiscovery(t *testing.T) {
 
 // TestHostFilterDiscovery ensures that host filtering works even when we discover hosts
 func TestHostFilterDiscovery(t *testing.T) {
+	t.Parallel()
+
 	clusterHosts := getClusterHosts()
 	if len(clusterHosts) < 2 {
 		t.Skip("skipping because we don't have 2 or more hosts")
@@ -135,6 +142,8 @@ func TestHostFilterDiscovery(t *testing.T) {
 // TestHostFilterInitial ensures that host filtering works for the initial
 // connection including the control connection
 func TestHostFilterInitial(t *testing.T) {
+	t.Parallel()
+
 	clusterHosts := getClusterHosts()
 	if len(clusterHosts) < 2 {
 		t.Skip("skipping because we don't have 2 or more hosts")
@@ -157,6 +166,8 @@ func TestHostFilterInitial(t *testing.T) {
 }
 
 func TestApplicationInformation(t *testing.T) {
+	t.Parallel()
+
 	cluster := createCluster()
 	s, err := cluster.CreateSession()
 	if err != nil {
@@ -260,6 +271,8 @@ func TestApplicationInformation(t *testing.T) {
 }
 
 func TestWriteFailure(t *testing.T) {
+	t.Parallel()
+
 	t.Skip("skipped due to unknown purpose")
 	cluster := createCluster()
 	createKeyspace(t, cluster, "test", false)
@@ -302,6 +315,8 @@ func TestWriteFailure(t *testing.T) {
 }
 
 func TestCustomPayloadMessages(t *testing.T) {
+	t.Parallel()
+
 	t.Skip("SKIPPING")
 	cluster := createCluster()
 	session := createSessionFromCluster(cluster, t)
@@ -342,6 +357,8 @@ func TestCustomPayloadMessages(t *testing.T) {
 }
 
 func TestCustomPayloadValues(t *testing.T) {
+	t.Parallel()
+
 	t.Skip("SKIPPING")
 	cluster := createCluster()
 	session := createSessionFromCluster(cluster, t)
@@ -366,6 +383,8 @@ func TestCustomPayloadValues(t *testing.T) {
 }
 
 func TestSessionAwaitSchemaAgreement(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -375,6 +394,8 @@ func TestSessionAwaitSchemaAgreement(t *testing.T) {
 }
 
 func TestSessionAwaitSchemaAgreementSessionClosed(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	session.Close()
 
@@ -385,6 +406,8 @@ func TestSessionAwaitSchemaAgreementSessionClosed(t *testing.T) {
 }
 
 func TestSessionAwaitSchemaAgreementContextCanceled(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -396,6 +419,8 @@ func TestSessionAwaitSchemaAgreementContextCanceled(t *testing.T) {
 }
 
 func TestNewConnectWithLowTimeout(t *testing.T) {
+	t.Parallel()
+
 	// Point of these tests to make sure that with low timeout connection creation will gracefully fail
 
 	type TestExpectation int

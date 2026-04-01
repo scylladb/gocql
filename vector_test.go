@@ -52,6 +52,8 @@ func (p person) String() string {
 }
 
 func TestVector_Marshaler(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -103,6 +105,8 @@ func TestVector_Marshaler(t *testing.T) {
 }
 
 func TestVector_Types(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -255,6 +259,8 @@ func TestVector_Types(t *testing.T) {
 }
 
 func TestVector_MarshalerUDT(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -306,6 +312,8 @@ func TestVector_MarshalerUDT(t *testing.T) {
 }
 
 func TestVector_Empty(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -354,6 +362,8 @@ func TestVector_Empty(t *testing.T) {
 }
 
 func TestVector_MissingDimension(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -380,6 +390,7 @@ func TestVector_MissingDimension(t *testing.T) {
 }
 
 func TestVector_SubTypeParsing(t *testing.T) {
+	t.Parallel()
 
 	if *flagDistribution == "scylla" && flagCassVersion.Before(2025, 4, 0) {
 		t.Skip("Vector types are useful in ScyllaDB from 2025.4 and on")

@@ -23,6 +23,8 @@ import (
 )
 
 func TestCloudConnection(t *testing.T) {
+	t.Parallel()
+
 	if !*gocql.FlagRunSslTest {
 		t.Skip("Skipping because SSL is not enabled on cluster")
 	}

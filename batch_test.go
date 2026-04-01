@@ -34,6 +34,8 @@ import (
 )
 
 func TestBatch_Errors(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -51,6 +53,8 @@ func TestBatch_Errors(t *testing.T) {
 }
 
 func TestBatch_WithTimestamp(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 

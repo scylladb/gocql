@@ -24,6 +24,8 @@ import (
 var updateGolden = flag.Bool("update-golden", false, "update golden files")
 
 func TestRecreateSchema(t *testing.T) {
+	t.Parallel()
+
 	failsOnOldScylla := false
 	if *flagDistribution == "scylla" && flagCassVersion.Before(2024, 0, 0) {
 		failsOnOldScylla = true
@@ -251,6 +253,8 @@ func isDescribeKeyspaceSupported(t *testing.T, s *Session) bool {
 }
 
 func TestScyllaEncryptionOptionsUnmarshaller(t *testing.T) {
+	t.Parallel()
+
 	const (
 		input  = "testdata/recreate/scylla_encryption_options.bin"
 		golden = "testdata/recreate/scylla_encryption_options_golden.json"
