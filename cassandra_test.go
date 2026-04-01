@@ -51,6 +51,8 @@ import (
 )
 
 func TestEmptyHosts(t *testing.T) {
+	t.Parallel()
+
 	cluster := createCluster()
 	cluster.Hosts = nil
 	if session, err := cluster.CreateSession(); err == nil {
@@ -60,6 +62,8 @@ func TestEmptyHosts(t *testing.T) {
 }
 
 func TestInvalidPeerEntry(t *testing.T) {
+	t.Parallel()
+
 	t.Skip("dont mutate system tables, rewrite this to test what we mean to test")
 	session := createSession(t)
 
@@ -97,6 +101,8 @@ func TestInvalidPeerEntry(t *testing.T) {
 
 // TestUseStatementError checks to make sure the correct error is returned when the user tries to execute a use statement.
 func TestUseStatementError(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -111,6 +117,8 @@ func TestUseStatementError(t *testing.T) {
 
 // TestInvalidKeyspace checks that an invalid keyspace will return promptly and without a flood of connections
 func TestInvalidKeyspace(t *testing.T) {
+	t.Parallel()
+
 	cluster := createCluster()
 	cluster.Keyspace = "invalidKeyspace"
 	session, err := cluster.CreateSession()
@@ -125,6 +133,8 @@ func TestInvalidKeyspace(t *testing.T) {
 }
 
 func TestTracing(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -168,6 +178,8 @@ func TestTracing(t *testing.T) {
 }
 
 func TestObserve(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -263,6 +275,8 @@ func TestObserve(t *testing.T) {
 }
 
 func TestObserve_Pagination(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -317,6 +331,8 @@ func TestObserve_Pagination(t *testing.T) {
 }
 
 func TestPaging(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -346,6 +362,8 @@ func TestPaging(t *testing.T) {
 }
 
 func TestPagingWithAllowFiltering(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 
 	table := testTableName(t)
@@ -481,6 +499,8 @@ func TestPagingWithAllowFiltering(t *testing.T) {
 }
 
 func TestPagingWithBind(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -523,6 +543,8 @@ func TestPagingWithBind(t *testing.T) {
 }
 
 func TestCAS(t *testing.T) {
+	t.Parallel()
+
 	cluster := createCluster()
 	cluster.SerialConsistency = LocalSerial
 	session := createSessionFromClusterTabletsDisabled(cluster, t)
@@ -702,6 +724,8 @@ func TestCAS(t *testing.T) {
 }
 
 func TestConsistencySerial(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -790,6 +814,8 @@ func TestConsistencySerial(t *testing.T) {
 }
 
 func TestDurationType(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -844,6 +870,8 @@ func TestDurationType(t *testing.T) {
 }
 
 func TestMapScanCAS(t *testing.T) {
+	t.Parallel()
+
 	session := createSessionFromClusterTabletsDisabled(createCluster(), t)
 	defer session.Close()
 
@@ -884,6 +912,8 @@ func TestMapScanCAS(t *testing.T) {
 }
 
 func TestBatch(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -911,6 +941,8 @@ func TestBatch(t *testing.T) {
 }
 
 func TestUnpreparedBatch(t *testing.T) {
+	t.Parallel()
+
 	t.Skip("FLAKE skipping")
 	session := createSession(t)
 	defer session.Close()
@@ -948,6 +980,8 @@ func TestUnpreparedBatch(t *testing.T) {
 // TestBatchLimit tests gocql to make sure batch operations larger than the maximum
 // statement limit are not submitted to a cassandra node.
 func TestBatchLimit(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -968,6 +1002,8 @@ func TestBatchLimit(t *testing.T) {
 }
 
 func TestWhereIn(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -996,6 +1032,8 @@ func TestWhereIn(t *testing.T) {
 // TestTooManyQueryArgs tests to make sure the library correctly handles the application level bug
 // whereby too many query arguments are passed to a query
 func TestTooManyQueryArgs(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -1026,6 +1064,8 @@ func TestTooManyQueryArgs(t *testing.T) {
 // TestNotEnoughQueryArgs tests to make sure the library correctly handles the application level bug
 // whereby not enough query arguments are passed to a query
 func TestNotEnoughQueryArgs(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -1053,6 +1093,8 @@ func TestNotEnoughQueryArgs(t *testing.T) {
 // TestCreateSessionTimeout tests to make sure the CreateSession function timeouts out correctly
 // and prevents an infinite loop of connection retries.
 func TestCreateSessionTimeout(t *testing.T) {
+	t.Parallel()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1114,6 +1156,8 @@ func (n *FullName) UnmarshalCQL(info TypeInfo, data []byte) error {
 }
 
 func TestMapScanWithRefMap(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -1182,6 +1226,8 @@ func TestMapScanWithRefMap(t *testing.T) {
 }
 
 func TestMapScan(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -1228,6 +1274,8 @@ func TestMapScan(t *testing.T) {
 }
 
 func TestSliceMap(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -1371,6 +1419,8 @@ func (*MyRetryPolicy) GetRetryType(err error) RetryType {
 }
 
 func Test_RetryPolicyIdempotence(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -1406,6 +1456,8 @@ func Test_RetryPolicyIdempotence(t *testing.T) {
 }
 
 func TestSmallInt(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -1433,6 +1485,8 @@ func TestSmallInt(t *testing.T) {
 }
 
 func TestScanWithNilArguments(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -1467,6 +1521,8 @@ func TestScanWithNilArguments(t *testing.T) {
 }
 
 func TestScanCASWithNilArguments(t *testing.T) {
+	t.Parallel()
+
 	session := createSessionFromClusterTabletsDisabled(createCluster(), t)
 	defer session.Close()
 
@@ -1513,6 +1569,8 @@ func TestScanCASWithNilArguments(t *testing.T) {
 }
 
 func TestRebindQueryInfo(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -1555,6 +1613,8 @@ func TestRebindQueryInfo(t *testing.T) {
 
 // TestStaticQueryInfo makes sure that the application can manually bind query parameters using the simplest possible static binding strategy
 func TestStaticQueryInfo(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -1625,6 +1685,7 @@ func upcaseInitial(str string) string {
 
 // TestBoundQueryInfo makes sure that the application can manually bind query parameters using the query meta data supplied at runtime
 func TestBoundQueryInfo(t *testing.T) {
+	t.Parallel()
 
 	session := createSession(t)
 	defer session.Close()
@@ -1666,6 +1727,8 @@ func TestBoundQueryInfo(t *testing.T) {
 
 // TestBatchQueryInfo makes sure that the application can manually bind query parameters when executing in a batch
 func TestBatchQueryInfo(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -1764,6 +1827,8 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 }
 
 func TestPrepare_MissingSchemaPrepare(t *testing.T) {
+	t.Parallel()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1788,6 +1853,8 @@ func TestPrepare_MissingSchemaPrepare(t *testing.T) {
 }
 
 func TestPrepare_ReprepareStatement(t *testing.T) {
+	t.Parallel()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1804,6 +1871,8 @@ func TestPrepare_ReprepareStatement(t *testing.T) {
 }
 
 func TestPrepare_ReprepareBatch(t *testing.T) {
+	t.Parallel()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1821,6 +1890,8 @@ func TestPrepare_ReprepareBatch(t *testing.T) {
 }
 
 func TestQueryInfo(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -1842,6 +1913,8 @@ func TestQueryInfo(t *testing.T) {
 
 // TestPreparedCacheEviction will make sure that the cache size is maintained
 func TestPrepare_PreparedCacheEviction(t *testing.T) {
+	t.Parallel()
+
 	const maxPrepared = 4
 
 	clusterHosts := getClusterHosts()
@@ -1935,6 +2008,8 @@ func TestPrepare_PreparedCacheEviction(t *testing.T) {
 }
 
 func TestPrepare_PreparedCacheKey(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -1986,6 +2061,8 @@ func TestPrepare_PreparedCacheKey(t *testing.T) {
 
 // TestMarshalFloat64Ptr tests to see that a pointer to a float64 is marshalled correctly.
 func TestMarshalFloat64Ptr(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -2002,6 +2079,8 @@ func TestMarshalFloat64Ptr(t *testing.T) {
 
 // TestMarshalInet tests to see that a pointer to a float64 is marshalled correctly.
 func TestMarshalInet(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -2055,6 +2134,8 @@ func TestMarshalInet(t *testing.T) {
 }
 
 func TestVarint(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -2166,6 +2247,8 @@ func TestVarint(t *testing.T) {
 
 // TestQueryStats confirms that the stats are returning valid data. Accuracy may be questionable.
 func TestQueryStats(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 	qry := session.Query("SELECT * FROM system.peers")
@@ -2183,6 +2266,8 @@ func TestQueryStats(t *testing.T) {
 
 // TestIterHosts confirms that host is added to Iter when the query succeeds.
 func TestIterHost(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 	iter := session.Query("SELECT * FROM system.peers").Iter()
@@ -2195,6 +2280,8 @@ func TestIterHost(t *testing.T) {
 
 // TestBatchStats confirms that the stats are returning valid data. Accuracy may be questionable.
 func TestBatchStats(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -2227,6 +2314,8 @@ func (f funcBatchObserver) ObserveBatch(ctx context.Context, o ObservedBatch) {
 }
 
 func TestBatchObserve(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -2290,6 +2379,8 @@ func TestBatchObserve(t *testing.T) {
 // TestNilInQuery tests to see that a nil value passed to a query is handled by Cassandra
 // TODO validate the nil value by reading back the nil. Need to fix Unmarshalling.
 func TestNilInQuery(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -2313,6 +2404,8 @@ func TestNilInQuery(t *testing.T) {
 
 // Don't initialize time.Time bind variable if cassandra timestamp column is empty
 func TestEmptyTimestamp(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 
 	defer session.Close()
@@ -2340,6 +2433,8 @@ func TestEmptyTimestamp(t *testing.T) {
 
 // Integration test of just querying for data from the system.schema_keyspace table where the keyspace DOES exist.
 func TestGetKeyspaceMetadata(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -2373,6 +2468,8 @@ func TestGetKeyspaceMetadata(t *testing.T) {
 }
 
 func TestSessionMetadataAPIs(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -2728,6 +2825,8 @@ func columnNames(columns map[string]*ColumnMetadata) []string {
 
 // Integration test of just querying for data from the system.schema_keyspace table where the keyspace DOES NOT exist.
 func TestGetKeyspaceMetadataFails(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -2740,6 +2839,8 @@ func TestGetKeyspaceMetadataFails(t *testing.T) {
 
 // Integration test of the routing key calculation
 func TestRoutingKey(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -2871,6 +2972,8 @@ func TestRoutingKey(t *testing.T) {
 
 // Integration test of the token-aware policy-based connection pool
 func TestTokenAwareConnPool(t *testing.T) {
+	t.Parallel()
+
 	cluster := createCluster()
 	cluster.PoolConfig.HostSelectionPolicy = TokenAwareHostPolicy(RoundRobinHostPolicy())
 
@@ -2920,6 +3023,8 @@ func TestTokenAwareConnPool(t *testing.T) {
 }
 
 func TestNegativeStream(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -2940,6 +3045,8 @@ func TestNegativeStream(t *testing.T) {
 }
 
 func TestManualQueryPaging(t *testing.T) {
+	t.Parallel()
+
 	const rowsToInsert = 5
 
 	session := createSession(t)
@@ -2994,6 +3101,8 @@ func TestManualQueryPaging(t *testing.T) {
 
 // Issue 475
 func TestSessionBindRoutingKey(t *testing.T) {
+	t.Parallel()
+
 	cluster := createCluster()
 	cluster.PoolConfig.HostSelectionPolicy = TokenAwareHostPolicy(RoundRobinHostPolicy())
 
@@ -3027,6 +3136,8 @@ func TestSessionBindRoutingKey(t *testing.T) {
 }
 
 func TestJSONSupport(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -3073,6 +3184,8 @@ func TestJSONSupport(t *testing.T) {
 }
 
 func TestUnmarshallNestedTypes(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -3108,6 +3221,8 @@ func TestUnmarshallNestedTypes(t *testing.T) {
 }
 
 func TestSchemaReset(t *testing.T) {
+	t.Parallel()
+
 	if flagCassVersion.Major == 0 || flagCassVersion.Before(2, 1, 3) {
 		t.Skipf("skipping TestSchemaReset due to CASSANDRA-7910 in Cassandra <2.1.3 version=%v", flagCassVersion)
 	}
@@ -3166,6 +3281,8 @@ func TestSchemaReset(t *testing.T) {
 }
 
 func TestCreateSession_DontSwallowError(t *testing.T) {
+	t.Parallel()
+
 	t.Skip("This test is bad, and the resultant error from cassandra changes between versions")
 	cluster := createCluster()
 	cluster.ProtoVersion = 0x100
@@ -3190,6 +3307,8 @@ func TestCreateSession_DontSwallowError(t *testing.T) {
 }
 
 func TestControl_DiscoverProtocol(t *testing.T) {
+	t.Parallel()
+
 	cluster := createCluster()
 	cluster.ProtoVersion = 0
 
@@ -3206,6 +3325,8 @@ func TestControl_DiscoverProtocol(t *testing.T) {
 
 // TestUnsetCol verify unset column will not replace an existing column
 func TestUnsetCol(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -3237,6 +3358,8 @@ func TestUnsetCol(t *testing.T) {
 
 // TestUnsetColBatch verify unset column will not replace a column in batch
 func TestUnsetColBatch(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -3281,6 +3404,8 @@ func TestUnsetColBatch(t *testing.T) {
 }
 
 func TestQuery_NamedValues(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 

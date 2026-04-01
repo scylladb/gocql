@@ -37,6 +37,8 @@ import (
 
 // Keyspace_table checks if Query.Keyspace() is updated based on prepared statement
 func TestKeyspaceTable(t *testing.T) {
+	t.Parallel()
+
 	cluster := createCluster()
 
 	fallback := RoundRobinHostPolicy()

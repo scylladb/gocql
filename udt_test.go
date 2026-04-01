@@ -69,6 +69,8 @@ func (p *position) UnmarshalUDT(name string, info TypeInfo, data []byte) error {
 }
 
 func TestUDT_Marshaler(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -124,6 +126,8 @@ func TestUDT_Marshaler(t *testing.T) {
 }
 
 func TestUDT_Reflect(t *testing.T) {
+	t.Parallel()
+
 	// Uses reflection instead of implementing the marshaling type
 	session := createSession(t)
 	defer session.Close()
@@ -175,6 +179,8 @@ func TestUDT_Reflect(t *testing.T) {
 }
 
 func TestUDT_NullObject(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -228,6 +234,8 @@ func TestUDT_NullObject(t *testing.T) {
 }
 
 func TestMapScanUDT(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -314,6 +322,8 @@ func TestMapScanUDT(t *testing.T) {
 }
 
 func TestUDT_MissingField(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -363,6 +373,8 @@ func TestUDT_MissingField(t *testing.T) {
 }
 
 func TestUDT_EmptyCollections(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -418,6 +430,8 @@ func TestUDT_EmptyCollections(t *testing.T) {
 }
 
 func TestUDT_UpdateField(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -474,6 +488,8 @@ func TestUDT_UpdateField(t *testing.T) {
 }
 
 func TestUDT_ScanNullUDT(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 

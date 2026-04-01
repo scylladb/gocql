@@ -149,6 +149,8 @@ func (w *WikiTest) GetPageCount() int {
 }
 
 func TestWikiCreateSchema(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -170,6 +172,8 @@ func BenchmarkWikiCreateSchema(b *testing.B) {
 }
 
 func TestWikiCreatePages(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -276,6 +280,8 @@ func BenchmarkWikiSelectPageCount(b *testing.B) {
 }
 
 func TestWikiTypicalCRUD(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 

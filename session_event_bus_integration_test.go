@@ -11,6 +11,10 @@ import (
 	"github.com/gocql/gocql/events"
 )
 
+// WARNING: This test must NOT use t.Parallel(). It listens for schema events
+// and concurrent DDL from parallel tests could cause spurious matches.
+//
+//nolint:paralleltest // listens for schema events from the global control connection
 func TestSessionEventBusReceivesSchemaChangeEvent(t *testing.T) {
 	cluster := createCluster()
 	cluster.Events.DisableSchemaEvents = false
@@ -50,6 +54,8 @@ func TestSessionEventBusReceivesSchemaChangeEvent(t *testing.T) {
 }
 
 func TestSessionEventBusReceivesControlReconnectEvent(t *testing.T) {
+	t.Parallel()
+
 	cluster := createCluster()
 	cluster.Events.DisableTopologyEvents = true
 	cluster.Events.DisableNodeStatusEvents = true

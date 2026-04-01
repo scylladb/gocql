@@ -6,6 +6,8 @@ package gocql
 import "testing"
 
 func TestShardAwarePortIntegrationNoReconnections(t *testing.T) {
+	t.Parallel()
+
 	testShardAwarePortNoReconnections(t, func() *ClusterConfig {
 		c := createCluster()
 		c.Port = 9042
@@ -14,6 +16,8 @@ func TestShardAwarePortIntegrationNoReconnections(t *testing.T) {
 }
 
 func TestShardAwarePortIntegrationMaliciousNAT(t *testing.T) {
+	t.Parallel()
+
 	testShardAwarePortMaliciousNAT(t, func() *ClusterConfig {
 		c := createCluster()
 		c.Port = 9042
@@ -22,6 +26,8 @@ func TestShardAwarePortIntegrationMaliciousNAT(t *testing.T) {
 }
 
 func TestShardAwarePortIntegrationUnreachable(t *testing.T) {
+	t.Parallel()
+
 	testShardAwarePortUnreachable(t, func() *ClusterConfig {
 		c := createCluster()
 		c.Port = 9042
@@ -30,6 +36,8 @@ func TestShardAwarePortIntegrationUnreachable(t *testing.T) {
 }
 
 func TestShardAwarePortIntegrationUnusedIfNotEnabled(t *testing.T) {
+	t.Parallel()
+
 	testShardAwarePortUnusedIfNotEnabled(t, func() *ClusterConfig {
 		c := createCluster()
 		c.Port = 9042

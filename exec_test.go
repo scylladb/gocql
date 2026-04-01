@@ -8,6 +8,8 @@ import (
 )
 
 func TestSingleHostQueryExecutor(t *testing.T) {
+	t.Parallel()
+
 	cluster := createCluster()
 
 	e, err := NewSingleHostQueryExecutor(cluster)

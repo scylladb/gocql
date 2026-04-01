@@ -12,6 +12,8 @@ import (
 
 // Check if TokenAwareHostPolicy works correctly when using tablets
 func TestTablets(t *testing.T) {
+	t.Parallel()
+
 	if !isTabletsSupported() {
 		t.Skip("Tablets are not supported by this server")
 	}

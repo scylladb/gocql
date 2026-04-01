@@ -34,6 +34,8 @@ import (
 )
 
 func TestProto1BatchInsert(t *testing.T) {
+	t.Parallel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -54,6 +56,8 @@ func TestProto1BatchInsert(t *testing.T) {
 }
 
 func TestShouldPrepareFunction(t *testing.T) {
+	t.Parallel()
+
 	var shouldPrepareTests = []struct {
 		Stmt   string
 		Result bool

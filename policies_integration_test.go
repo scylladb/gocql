@@ -11,6 +11,8 @@ import (
 
 // Check if session fail to start if DC name provided in the policy is wrong
 func TestDCValidationTokenAware(t *testing.T) {
+	t.Parallel()
+
 	cluster := createCluster()
 
 	fallback := DCAwareRoundRobinPolicy("WRONG_DC")
@@ -23,6 +25,8 @@ func TestDCValidationTokenAware(t *testing.T) {
 }
 
 func TestDCValidationDCAware(t *testing.T) {
+	t.Parallel()
+
 	cluster := createCluster()
 	cluster.PoolConfig.HostSelectionPolicy = DCAwareRoundRobinPolicy("WRONG_DC")
 
@@ -33,6 +37,8 @@ func TestDCValidationDCAware(t *testing.T) {
 }
 
 func TestDCValidationRackAware(t *testing.T) {
+	t.Parallel()
+
 	cluster := createCluster()
 	cluster.PoolConfig.HostSelectionPolicy = RackAwareRoundRobinPolicy("WRONG_DC", "RACK")
 
@@ -43,6 +49,8 @@ func TestDCValidationRackAware(t *testing.T) {
 }
 
 func TestTokenAwareHostPolicy(t *testing.T) {
+	t.Parallel()
+
 	t.Run("keyspace", func(t *testing.T) {
 		ks := testKeyspaceName(t)
 		createKeyspace(t, createCluster(), ks, false)
