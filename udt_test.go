@@ -324,7 +324,7 @@ func TestUDT_MissingField(t *testing.T) {
 
 	err = createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s(
 		id uuid,
-		udt_col frozen<udt_null_type>,
+		udt_col frozen<missing_field>,
 
 		primary key(id)
 	);`, table))
@@ -483,7 +483,7 @@ func TestUDT_ScanNullUDT(t *testing.T) {
 	err = createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s(
 		id int,
 		name text,
-		loc frozen<position>,
+		loc frozen<scan_null_udt_position>,
 		primary key(id)
 	);`, table))
 	if err != nil {
