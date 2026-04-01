@@ -44,7 +44,7 @@ func TestDCValidationRackAware(t *testing.T) {
 
 func TestTokenAwareHostPolicy(t *testing.T) {
 	t.Run("keyspace", func(t *testing.T) {
-		ks := "tokenaware_init_test"
+		ks := testKeyspaceName(t)
 		createKeyspace(t, createCluster(), ks, false)
 
 		policy := TokenAwareHostPolicy(RoundRobinHostPolicy())

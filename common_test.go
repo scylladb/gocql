@@ -29,6 +29,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -52,10 +53,22 @@ var (
 	flagCassVersion   cassVersion
 )
 
+// integrationTestSetup is set by an init() in an integration-tagged file to run
+// one-time setup (e.g. tablet probes) before any test executes.
+var integrationTestSetup func()
+
 func init() {
 	flag.Var(&flagCassVersion, "gocql.cversion", "the cassandra version being tested against")
 
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
+}
+
+func TestMain(m *testing.M) {
+	flag.Parse()
+	if integrationTestSetup != nil {
+		integrationTestSetup()
+	}
+	os.Exit(m.Run())
 }
 
 func getClusterHosts() []string {
@@ -104,26 +117,23 @@ func (o *OnceManager) GetOnce(key string) *sync.Once {
 var initKeyspaceOnce = NewOnceManager()
 
 var isTabletsSupportedFlag *bool
-var isTabletsSupportedOnce sync.RWMutex
+var isTabletsSupportedOnce sync.Once
 
 func isTabletsSupported() bool {
-	isTabletsSupportedOnce.RLock()
-	if isTabletsSupportedFlag != nil {
-		isTabletsSupportedOnce.RUnlock()
-		return *isTabletsSupportedFlag
+	isTabletsSupportedOnce.Do(probeTabletsSupported)
+	if isTabletsSupportedFlag == nil {
+		return false
 	}
-	isTabletsSupportedOnce.RUnlock()
-	isTabletsSupportedOnce.Lock()
-	defer isTabletsSupportedOnce.Unlock()
-	if isTabletsSupportedFlag != nil {
-		return *isTabletsSupportedFlag
-	}
-	var result bool
+	return *isTabletsSupportedFlag
+}
 
+func probeTabletsSupported() {
 	s, err := createCluster().CreateSession()
 	if err != nil {
 		panic(fmt.Errorf("failed to create session: %v", err))
 	}
+	defer s.Close()
+
 	res := make(map[string]interface{})
 	err = s.Query("select * from system.local").MapScan(res)
 	if err != nil {
@@ -134,36 +144,32 @@ func isTabletsSupported() bool {
 	featuresCasted, _ := features.(string)
 	for _, feature := range strings.Split(featuresCasted, ",") {
 		if feature == "TABLETS" {
-			result = true
+			result := true
 			isTabletsSupportedFlag = &result
-			return true
+			return
 		}
 	}
-	result = false
+	result := false
 	isTabletsSupportedFlag = &result
-	return false
 }
 
 var isTabletsAutoEnabledFlag *bool
-var isTabletsAutoEnabledOnce sync.RWMutex
+var isTabletsAutoEnabledOnce sync.Once
 
 func isTabletsAutoEnabled() bool {
-	isTabletsAutoEnabledOnce.RLock()
-	if isTabletsAutoEnabledFlag != nil {
-		isTabletsAutoEnabledOnce.RUnlock()
-		return *isTabletsAutoEnabledFlag
+	isTabletsAutoEnabledOnce.Do(probeTabletsAutoEnabled)
+	if isTabletsAutoEnabledFlag == nil {
+		return false
 	}
-	isTabletsAutoEnabledOnce.RUnlock()
-	isTabletsAutoEnabledOnce.Lock()
-	defer isTabletsAutoEnabledOnce.Unlock()
-	if isTabletsAutoEnabledFlag != nil {
-		return *isTabletsAutoEnabledFlag
-	}
+	return *isTabletsAutoEnabledFlag
+}
 
+func probeTabletsAutoEnabled() {
 	s, err := createCluster().CreateSession()
 	if err != nil {
 		panic(fmt.Errorf("failed to create session: %v", err))
 	}
+	defer s.Close()
 
 	err = s.Query("DROP KEYSPACE IF EXISTS gocql_check_tablets_enabled").Exec()
 	if err != nil {
@@ -171,20 +177,33 @@ func isTabletsAutoEnabled() bool {
 	}
 	err = s.Query("CREATE KEYSPACE gocql_check_tablets_enabled WITH replication = {'class': 'NetworkTopologyStrategy', 'replication_factor': '1'}").Exec()
 	if err != nil {
-		panic(fmt.Errorf("failed to delete keyspace: %v", err))
+		panic(fmt.Errorf("failed to create keyspace: %v", err))
 	}
 
 	res := make(map[string]interface{})
 	err = s.Query("describe keyspace gocql_check_tablets_enabled").MapScan(res)
 	if err != nil {
-		panic(fmt.Errorf("failed to read system.local: %v", err))
+		panic(fmt.Errorf("failed to describe keyspace: %v", err))
+	}
+
+	err = s.Query("DROP KEYSPACE IF EXISTS gocql_check_tablets_enabled").Exec()
+	if err != nil {
+		panic(fmt.Errorf("failed to drop probe keyspace: %v", err))
 	}
 
 	createStmt, _ := res["create_statement"]
 	createStmtCasted, _ := createStmt.(string)
 	result := strings.Contains(strings.ToLower(createStmtCasted), "and tablets")
 	isTabletsAutoEnabledFlag = &result
-	return result
+}
+
+// initTabletProbes runs the tablet-support and tablet-auto-enabled probes eagerly.
+// Called from TestMain before any tests run to avoid races with parallel test startup.
+func initTabletProbes() {
+	probeTabletsSupported()
+	if isTabletsSupportedFlag != nil && *isTabletsSupportedFlag {
+		probeTabletsAutoEnabled()
+	}
 }
 
 func createTable(s *Session, table string) error {
