@@ -3,23 +3,28 @@
 
 package gocql
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestTracingNewAPI(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := createTable(session, `CREATE TABLE gocql_test.trace2 (id int primary key)`); err != nil {
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (id int primary key)`, table)); err != nil {
 		t.Fatal("create:", err)
 	}
 
 	trace := NewTracer(session)
-	if err := session.Query(`INSERT INTO trace2 (id) VALUES (?)`, 42).Trace(trace).Exec(); err != nil {
+	if err := session.Query(fmt.Sprintf(`INSERT INTO %s (id) VALUES (?)`, table), 42).Trace(trace).Exec(); err != nil {
 		t.Fatal("insert:", err)
 	}
 
 	var value int
-	if err := session.Query(`SELECT id FROM trace2 WHERE id = ?`, 42).Trace(trace).Scan(&value); err != nil {
+	if err := session.Query(fmt.Sprintf(`SELECT id FROM %s WHERE id = ?`, table), 42).Trace(trace).Scan(&value); err != nil {
 		t.Fatal("select:", err)
 	} else if value != 42 {
 		t.Fatalf("value: expected %d, got %d", 42, value)

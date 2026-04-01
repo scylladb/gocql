@@ -45,7 +45,7 @@ func TestSerializationSimpleTypesCassandra(t *testing.T) {
 	//Create are tables
 	tables := make([]string, len(typeCases))
 	for i, tc := range typeCases {
-		table := "test_" + tc.CQLName
+		table := testTableName(t, tc.CQLName)
 
 		stmt := fmt.Sprintf(`CREATE TABLE %s (%s text, %s %s, PRIMARY KEY (test_id))`, table, pkColumn, testColumn, tc.CQLName)
 		if err := createTable(session, stmt); err != nil {
@@ -309,8 +309,9 @@ func TestSliceMapMapScanTypes(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	tableCQL := `
-		CREATE TABLE IF NOT EXISTS gocql_test.slicemap_test (
+	table := testTableName(t)
+	tableCQL := fmt.Sprintf(`
+		CREATE TABLE IF NOT EXISTS gocql_test.%s (
 			id int PRIMARY KEY,
 			tinyint_col tinyint,
 			smallint_col smallint,
@@ -332,13 +333,13 @@ func TestSliceMapMapScanTypes(t *testing.T) {
 			date_col date,
 			time_col time,
 			duration_col duration
-		)`
+		)`, table)
 
 	if err := createTable(session, tableCQL); err != nil {
 		t.Fatal("Failed to create test table:", err)
 	}
 
-	if err := session.Query("TRUNCATE gocql_test.slicemap_test").Exec(); err != nil {
+	if err := session.Query(fmt.Sprintf("TRUNCATE gocql_test.%s", table)).Exec(); err != nil {
 		t.Fatal("Failed to truncate test table:", err)
 	}
 
@@ -367,31 +368,31 @@ func TestSliceMapMapScanTypes(t *testing.T) {
 
 	for i, tc := range testCases {
 		t.Run(tc.CQLType, func(t *testing.T) {
-			testSliceMapMapScanSimple(t, session, tc, i)
+			testSliceMapMapScanSimple(t, session, tc, i, table)
 		})
 	}
 }
 
 // Simplified test function that tests both SliceMap and MapScan with both NULL and non-NULL values
-func testSliceMapMapScanSimple(t *testing.T, session *Session, tc SliceMapTypesTestCase, id int) {
+func testSliceMapMapScanSimple(t *testing.T, session *Session, tc SliceMapTypesTestCase, id int, table string) {
 	colName := tc.CQLType + "_col"
 
 	t.Run("NonNull", func(t *testing.T) {
-		insertQuery := fmt.Sprintf("INSERT INTO gocql_test.slicemap_test (id, %s) VALUES (?, %s)", colName, tc.CQLValue)
+		insertQuery := fmt.Sprintf("INSERT INTO gocql_test.%s (id, %s) VALUES (?, %s)", table, colName, tc.CQLValue)
 		if err := session.Query(insertQuery, id*2).Exec(); err != nil {
 			t.Fatalf("Failed to insert non-NULL value: %v", err)
 		}
 
 		for _, method := range []string{"SliceMap", "MapScan"} {
 			t.Run(method, func(t *testing.T) {
-				result := queryAndExtractValue(t, session, colName, id*2, method)
+				result := queryAndExtractValue(t, session, colName, id*2, method, table)
 				validateResult(t, tc.CQLType, tc.ExpectedValue, result, method, "non-NULL")
 			})
 		}
 	})
 
 	t.Run("Null", func(t *testing.T) {
-		insertQuery := fmt.Sprintf("INSERT INTO gocql_test.slicemap_test (id, %s) VALUES (?, NULL)", colName)
+		insertQuery := fmt.Sprintf("INSERT INTO gocql_test.%s (id, %s) VALUES (?, NULL)", table, colName)
 		if err := session.Query(insertQuery, id*2+1).Exec(); err != nil {
 			t.Fatalf("Failed to insert NULL value: %v", err)
 		}
@@ -399,16 +400,16 @@ func testSliceMapMapScanSimple(t *testing.T, session *Session, tc SliceMapTypesT
 		// Test both SliceMap and MapScan
 		for _, method := range []string{"SliceMap", "MapScan"} {
 			t.Run(method, func(t *testing.T) {
-				result := queryAndExtractValue(t, session, colName, id*2+1, method)
+				result := queryAndExtractValue(t, session, colName, id*2+1, method, table)
 				validateResult(t, tc.CQLType, tc.ExpectedNullValue, result, method, "NULL")
 			})
 		}
 	})
 }
 
-func queryAndExtractValue(t *testing.T, session *Session, colName string, id int, method string) interface{} {
+func queryAndExtractValue(t *testing.T, session *Session, colName string, id int, method string, table string) interface{} {
 	fmt.Println("queryAndExtractValue")
-	selectQuery := fmt.Sprintf("SELECT %s FROM gocql_test.slicemap_test WHERE id = ?", colName)
+	selectQuery := fmt.Sprintf("SELECT %s FROM gocql_test.%s WHERE id = ?", colName, table)
 
 	switch method {
 	case "SliceMap":
@@ -491,17 +492,18 @@ func TestSliceMapMapScanCounterTypes(t *testing.T) {
 	defer session.Close()
 
 	// Create separate table for counter types
-	if err := createTable(session, `
-		CREATE TABLE IF NOT EXISTS gocql_test_tablets_disabled.slicemap_counter_test (
+	table := testTableName(t)
+	if err := createTable(session, fmt.Sprintf(`
+		CREATE TABLE IF NOT EXISTS gocql_test_tablets_disabled.%s (
 			id int PRIMARY KEY,
 			counter_col counter
 		)
-	`); err != nil {
+	`, table)); err != nil {
 		t.Fatal("Failed to create counter test table:", err)
 	}
 
 	// Clear existing data
-	if err := session.Query("TRUNCATE gocql_test_tablets_disabled.slicemap_counter_test").Exec(); err != nil {
+	if err := session.Query(fmt.Sprintf("TRUNCATE gocql_test_tablets_disabled.%s", table)).Exec(); err != nil {
 		t.Fatal("Failed to truncate counter test table:", err)
 	}
 
@@ -509,7 +511,7 @@ func TestSliceMapMapScanCounterTypes(t *testing.T) {
 	expectedValue := int64(42)
 
 	// Increment counter (can't INSERT into counter, must UPDATE)
-	err := session.Query("UPDATE gocql_test_tablets_disabled.slicemap_counter_test SET counter_col = counter_col + 42 WHERE id = ?", testID).Exec()
+	err := session.Query(fmt.Sprintf("UPDATE gocql_test_tablets_disabled.%s SET counter_col = counter_col + 42 WHERE id = ?", table), testID).Exec()
 	if err != nil {
 		t.Fatalf("Failed to increment counter: %v", err)
 	}
@@ -519,7 +521,7 @@ func TestSliceMapMapScanCounterTypes(t *testing.T) {
 		t.Run(method, func(t *testing.T) {
 			var result interface{}
 
-			selectQuery := "SELECT counter_col FROM gocql_test_tablets_disabled.slicemap_counter_test WHERE id = ?"
+			selectQuery := fmt.Sprintf("SELECT counter_col FROM gocql_test_tablets_disabled.%s WHERE id = ?", table)
 			if method == "SliceMap" {
 				iter := session.Query(selectQuery, testID).Iter()
 				sliceResults, err := iter.SliceMap()
@@ -551,17 +553,18 @@ func TestSliceMapMapScanTupleTypes(t *testing.T) {
 	defer session.Close()
 
 	// Create test table with tuple column
-	if err := createTable(session, `
-		CREATE TABLE IF NOT EXISTS gocql_test.slicemap_tuple_test (
+	table := testTableName(t)
+	if err := createTable(session, fmt.Sprintf(`
+		CREATE TABLE IF NOT EXISTS gocql_test.%s (
 			id int PRIMARY KEY,
 			tuple_col tuple<int, text>
 		)
-	`); err != nil {
+	`, table)); err != nil {
 		t.Fatal("Failed to create tuple test table:", err)
 	}
 
 	// Clear existing data
-	if err := session.Query("TRUNCATE gocql_test.slicemap_tuple_test").Exec(); err != nil {
+	if err := session.Query(fmt.Sprintf("TRUNCATE gocql_test.%s", table)).Exec(); err != nil {
 		t.Fatal("Failed to truncate tuple test table:", err)
 	}
 
@@ -569,7 +572,7 @@ func TestSliceMapMapScanTupleTypes(t *testing.T) {
 	t.Run("NonNull", func(t *testing.T) {
 		testID := 1
 		// Insert tuple value
-		err := session.Query("INSERT INTO gocql_test.slicemap_tuple_test (id, tuple_col) VALUES (?, (42, 'hello'))", testID).Exec()
+		err := session.Query(fmt.Sprintf("INSERT INTO gocql_test.%s (id, tuple_col) VALUES (?, (42, 'hello'))", table), testID).Exec()
 		if err != nil {
 			t.Fatalf("Failed to insert tuple value: %v", err)
 		}
@@ -579,7 +582,7 @@ func TestSliceMapMapScanTupleTypes(t *testing.T) {
 			t.Run(method, func(t *testing.T) {
 				var result map[string]interface{}
 
-				selectQuery := "SELECT tuple_col FROM gocql_test.slicemap_tuple_test WHERE id = ?"
+				selectQuery := fmt.Sprintf("SELECT tuple_col FROM gocql_test.%s WHERE id = ?", table)
 				if method == "SliceMap" {
 					iter := session.Query(selectQuery, testID).Iter()
 					sliceResults, err := iter.SliceMap()
@@ -616,7 +619,7 @@ func TestSliceMapMapScanTupleTypes(t *testing.T) {
 	t.Run("Null", func(t *testing.T) {
 		testID := 2
 		// Insert NULL tuple
-		err := session.Query("INSERT INTO gocql_test.slicemap_tuple_test (id, tuple_col) VALUES (?, NULL)", testID).Exec()
+		err := session.Query(fmt.Sprintf("INSERT INTO gocql_test.%s (id, tuple_col) VALUES (?, NULL)", table), testID).Exec()
 		if err != nil {
 			t.Fatalf("Failed to insert NULL tuple: %v", err)
 		}
@@ -626,7 +629,7 @@ func TestSliceMapMapScanTupleTypes(t *testing.T) {
 			t.Run(method, func(t *testing.T) {
 				var result map[string]interface{}
 
-				selectQuery := "SELECT tuple_col FROM gocql_test.slicemap_tuple_test WHERE id = ?"
+				selectQuery := fmt.Sprintf("SELECT tuple_col FROM gocql_test.%s WHERE id = ?", table)
 				if method == "SliceMap" {
 					iter := session.Query(selectQuery, testID).Iter()
 					sliceResults, err := iter.SliceMap()
@@ -675,18 +678,19 @@ func TestSliceMapMapScanVectorTypes(t *testing.T) {
 	}
 
 	// Create test table with vector columns
-	if err := createTable(session, `
-		CREATE TABLE IF NOT EXISTS gocql_test.slicemap_vector_test (
+	table := testTableName(t)
+	if err := createTable(session, fmt.Sprintf(`
+		CREATE TABLE IF NOT EXISTS gocql_test.%s (
 			id int PRIMARY KEY,
 			vector_float_col vector<float, 3>,
 			vector_text_col vector<text, 2>
 		)
-	`); err != nil {
+	`, table)); err != nil {
 		t.Fatal("Failed to create vector test table:", err)
 	}
 
 	// Clear existing data
-	if err := session.Query("TRUNCATE gocql_test.slicemap_vector_test").Exec(); err != nil {
+	if err := session.Query(fmt.Sprintf("TRUNCATE gocql_test.%s", table)).Exec(); err != nil {
 		t.Fatal("Failed to truncate vector test table:", err)
 	}
 
@@ -706,7 +710,7 @@ func TestSliceMapMapScanVectorTypes(t *testing.T) {
 			t.Run("NonNull", func(t *testing.T) {
 				testID := 1
 				// Insert non-NULL value
-				insertQuery := fmt.Sprintf("INSERT INTO gocql_test.slicemap_vector_test (id, %s) VALUES (?, %s)", tc.colName, tc.cqlValue)
+				insertQuery := fmt.Sprintf("INSERT INTO gocql_test.%s (id, %s) VALUES (?, %s)", table, tc.colName, tc.cqlValue)
 				if err := session.Query(insertQuery, testID).Exec(); err != nil {
 					t.Fatalf("Failed to insert non-NULL value: %v", err)
 				}
@@ -716,7 +720,7 @@ func TestSliceMapMapScanVectorTypes(t *testing.T) {
 					t.Run(method, func(t *testing.T) {
 						var result interface{}
 
-						selectQuery := fmt.Sprintf("SELECT %s FROM gocql_test.slicemap_vector_test WHERE id = ?", tc.colName)
+						selectQuery := fmt.Sprintf("SELECT %s FROM gocql_test.%s WHERE id = ?", tc.colName, table)
 						if method == "SliceMap" {
 							iter := session.Query(selectQuery, testID).Iter()
 							sliceResults, err := iter.SliceMap()
@@ -745,7 +749,7 @@ func TestSliceMapMapScanVectorTypes(t *testing.T) {
 			t.Run("Null", func(t *testing.T) {
 				testID := 2
 				// Insert NULL value
-				insertQuery := fmt.Sprintf("INSERT INTO gocql_test.slicemap_vector_test (id, %s) VALUES (?, NULL)", tc.colName)
+				insertQuery := fmt.Sprintf("INSERT INTO gocql_test.%s (id, %s) VALUES (?, NULL)", table, tc.colName)
 				if err := session.Query(insertQuery, testID).Exec(); err != nil {
 					t.Fatalf("Failed to insert NULL value: %v", err)
 				}
@@ -755,7 +759,7 @@ func TestSliceMapMapScanVectorTypes(t *testing.T) {
 					t.Run(method, func(t *testing.T) {
 						var result interface{}
 
-						selectQuery := fmt.Sprintf("SELECT %s FROM gocql_test.slicemap_vector_test WHERE id = ?", tc.colName)
+						selectQuery := fmt.Sprintf("SELECT %s FROM gocql_test.%s WHERE id = ?", tc.colName, table)
 						if method == "SliceMap" {
 							iter := session.Query(selectQuery, testID).Iter()
 							sliceResults, err := iter.SliceMap()
@@ -791,19 +795,20 @@ func TestSliceMapMapScanCollectionTypes(t *testing.T) {
 	defer session.Close()
 
 	// Create test table with collection columns
-	if err := createTable(session, `
-		CREATE TABLE IF NOT EXISTS gocql_test.slicemap_collection_test (
+	table := testTableName(t)
+	if err := createTable(session, fmt.Sprintf(`
+		CREATE TABLE IF NOT EXISTS gocql_test.%s (
 			id int PRIMARY KEY,
 			list_col list<text>,
 			set_col set<int>,
 			map_col map<text, int>
 		)
-	`); err != nil {
+	`, table)); err != nil {
 		t.Fatal("Failed to create collection test table:", err)
 	}
 
 	// Clear existing data
-	if err := session.Query("TRUNCATE gocql_test.slicemap_collection_test").Exec(); err != nil {
+	if err := session.Query(fmt.Sprintf("TRUNCATE gocql_test.%s", table)).Exec(); err != nil {
 		t.Fatal("Failed to truncate collection test table:", err)
 	}
 
@@ -824,7 +829,7 @@ func TestSliceMapMapScanCollectionTypes(t *testing.T) {
 			t.Run("NonNull", func(t *testing.T) {
 				testID := 1
 				// Insert non-NULL value
-				insertQuery := fmt.Sprintf("INSERT INTO gocql_test.slicemap_collection_test (id, %s) VALUES (?, %s)", tc.colName, tc.cqlValue)
+				insertQuery := fmt.Sprintf("INSERT INTO gocql_test.%s (id, %s) VALUES (?, %s)", table, tc.colName, tc.cqlValue)
 				if err := session.Query(insertQuery, testID).Exec(); err != nil {
 					t.Fatalf("Failed to insert non-NULL value: %v", err)
 				}
@@ -834,7 +839,7 @@ func TestSliceMapMapScanCollectionTypes(t *testing.T) {
 					t.Run(method, func(t *testing.T) {
 						var result interface{}
 
-						selectQuery := fmt.Sprintf("SELECT %s FROM gocql_test.slicemap_collection_test WHERE id = ?", tc.colName)
+						selectQuery := fmt.Sprintf("SELECT %s FROM gocql_test.%s WHERE id = ?", tc.colName, table)
 						if method == "SliceMap" {
 							iter := session.Query(selectQuery, testID).Iter()
 							sliceResults, err := iter.SliceMap()
@@ -870,7 +875,7 @@ func TestSliceMapMapScanCollectionTypes(t *testing.T) {
 			t.Run("Null", func(t *testing.T) {
 				testID := 2
 				// Insert NULL value
-				insertQuery := fmt.Sprintf("INSERT INTO gocql_test.slicemap_collection_test (id, %s) VALUES (?, NULL)", tc.colName)
+				insertQuery := fmt.Sprintf("INSERT INTO gocql_test.%s (id, %s) VALUES (?, NULL)", table, tc.colName)
 				if err := session.Query(insertQuery, testID).Exec(); err != nil {
 					t.Fatalf("Failed to insert NULL value: %v", err)
 				}
@@ -880,7 +885,7 @@ func TestSliceMapMapScanCollectionTypes(t *testing.T) {
 					t.Run(method, func(t *testing.T) {
 						var result interface{}
 
-						selectQuery := fmt.Sprintf("SELECT %s FROM gocql_test.slicemap_collection_test WHERE id = ?", tc.colName)
+						selectQuery := fmt.Sprintf("SELECT %s FROM gocql_test.%s WHERE id = ?", tc.colName, table)
 						if method == "SliceMap" {
 							iter := session.Query(selectQuery, testID).Iter()
 							sliceResults, err := iter.SliceMap()

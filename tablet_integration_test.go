@@ -23,8 +23,10 @@ func TestTablets(t *testing.T) {
 	session := createSessionFromCluster(cluster, t)
 	defer session.Close()
 
+	table := testTableName(t)
+
 	if err := createTable(session, fmt.Sprintf(`CREATE TABLE %s (pk int, ck int, v int, PRIMARY KEY (pk, ck));
-	`, "test_tablets")); err != nil {
+	`, table)); err != nil {
 		t.Fatalf("unable to create table: %v", err)
 	}
 
@@ -38,7 +40,7 @@ func TestTablets(t *testing.T) {
 	ctx := context.Background()
 
 	for i := 0; i < 5; i++ {
-		err := session.Query(`INSERT INTO test_tablets (pk, ck, v) VALUES (?, ?, ?);`, i, i%5, i%2).WithContext(ctx).Exec()
+		err := session.Query(fmt.Sprintf(`INSERT INTO %s (pk, ck, v) VALUES (?, ?, ?);`, table), i, i%5, i%2).WithContext(ctx).Exec()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -51,7 +53,7 @@ func TestTablets(t *testing.T) {
 		success := false
 
 		for attempt := 1; time.Since(startTime) < timeout; attempt++ {
-			iter := session.Query(`SELECT pk, ck, v FROM test_tablets WHERE pk = ?;`, i).WithContext(ctx).Consistency(One).Iter()
+			iter := session.Query(fmt.Sprintf(`SELECT pk, ck, v FROM %s WHERE pk = ?;`, table), i).WithContext(ctx).Consistency(One).Iter()
 
 			payload := iter.GetCustomPayload()
 

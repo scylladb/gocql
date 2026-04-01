@@ -263,10 +263,13 @@ func TestWriteFailure(t *testing.T) {
 		t.Fatal("create session:", err)
 	}
 	defer session.Close()
-	if err := createTable(session, "CREATE TABLE test.test (id int,value int,PRIMARY KEY (id))"); err != nil {
+
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf("CREATE TABLE test.%s (id int,value int,PRIMARY KEY (id))", table)); err != nil {
 		t.Fatalf("failed to create table with error '%v'", err)
 	}
-	if err := session.Query(`INSERT INTO test.test (id, value) VALUES (1, 1)`).Exec(); err != nil {
+	if err := session.Query(fmt.Sprintf(`INSERT INTO test.%s (id, value) VALUES (1, 1)`, table)).Exec(); err != nil {
 		errWrite, ok := err.(*RequestErrWriteFailure)
 		if ok {
 			if session.cfg.ProtoVersion >= protoVersion5 {
@@ -298,13 +301,15 @@ func TestCustomPayloadMessages(t *testing.T) {
 	session := createSessionFromCluster(cluster, t)
 	defer session.Close()
 
-	if err := createTable(session, "CREATE TABLE gocql_test.testCustomPayloadMessages (id int, value int, PRIMARY KEY (id))"); err != nil {
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int, value int, PRIMARY KEY (id))", table)); err != nil {
 		t.Fatal(err)
 	}
 
 	// QueryMessage
 	var customPayload = map[string][]byte{"a": []byte{10, 20}, "b": []byte{20, 30}}
-	query := session.Query("SELECT id FROM testCustomPayloadMessages where id = ?", 42).Consistency(One).CustomPayload(customPayload)
+	query := session.Query(fmt.Sprintf("SELECT id FROM %s where id = ?", table), 42).Consistency(One).CustomPayload(customPayload)
 	iter := query.Iter()
 	rCustomPayload := iter.GetCustomPayload()
 	if !reflect.DeepEqual(customPayload, rCustomPayload) {
@@ -313,7 +318,7 @@ func TestCustomPayloadMessages(t *testing.T) {
 	iter.Close()
 
 	// Insert query
-	query = session.Query("INSERT INTO testCustomPayloadMessages(id,value) VALUES(1, 1)").Consistency(One).CustomPayload(customPayload)
+	query = session.Query(fmt.Sprintf("INSERT INTO %s(id,value) VALUES(1, 1)", table)).Consistency(One).CustomPayload(customPayload)
 	iter = query.Iter()
 	rCustomPayload = iter.GetCustomPayload()
 	if !reflect.DeepEqual(customPayload, rCustomPayload) {
@@ -324,7 +329,7 @@ func TestCustomPayloadMessages(t *testing.T) {
 	// Batch Message
 	b := session.Batch(LoggedBatch)
 	b.CustomPayload = customPayload
-	b.Query("INSERT INTO testCustomPayloadMessages(id,value) VALUES(1, 1)")
+	b.Query(fmt.Sprintf("INSERT INTO %s(id,value) VALUES(1, 1)", table))
 	if err := session.ExecuteBatch(b); err != nil {
 		t.Fatalf("query failed. %v", err)
 	}
@@ -336,14 +341,16 @@ func TestCustomPayloadValues(t *testing.T) {
 	session := createSessionFromCluster(cluster, t)
 	defer session.Close()
 
-	if err := createTable(session, "CREATE TABLE gocql_test.testCustomPayloadValues (id int, value int, PRIMARY KEY (id))"); err != nil {
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int, value int, PRIMARY KEY (id))", table)); err != nil {
 		t.Fatal(err)
 	}
 
 	values := []map[string][]byte{map[string][]byte{"a": []byte{10, 20}, "b": []byte{20, 30}}, nil, map[string][]byte{"a": []byte{10, 20}, "b": nil}}
 
 	for _, customPayload := range values {
-		query := session.Query("SELECT id FROM testCustomPayloadValues where id = ?", 42).Consistency(One).CustomPayload(customPayload)
+		query := session.Query(fmt.Sprintf("SELECT id FROM %s where id = ?", table), 42).Consistency(One).CustomPayload(customPayload)
 		iter := query.Iter()
 		rCustomPayload := iter.GetCustomPayload()
 		if !reflect.DeepEqual(customPayload, rCustomPayload) {

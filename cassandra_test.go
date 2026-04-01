@@ -128,13 +128,15 @@ func TestTracing(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := createTable(session, `CREATE TABLE gocql_test.trace (id int primary key)`); err != nil {
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (id int primary key)`, table)); err != nil {
 		t.Fatal("create:", err)
 	}
 
 	buf := &bytes.Buffer{}
 	trace := &TraceWriter{session: session, w: buf}
-	if err := session.Query(`INSERT INTO trace (id) VALUES (?)`, 42).Trace(trace).Exec(); err != nil {
+	if err := session.Query(fmt.Sprintf(`INSERT INTO %s (id) VALUES (?)`, table), 42).Trace(trace).Exec(); err != nil {
 		t.Fatal("insert:", err)
 	} else if buf.Len() == 0 {
 		t.Fatal("insert: failed to obtain any tracing")
@@ -144,7 +146,7 @@ func TestTracing(t *testing.T) {
 	trace.mu.Unlock()
 
 	var value int
-	if err := session.Query(`SELECT id FROM trace WHERE id = ?`, 42).Trace(trace).Scan(&value); err != nil {
+	if err := session.Query(fmt.Sprintf(`SELECT id FROM %s WHERE id = ?`, table), 42).Trace(trace).Scan(&value); err != nil {
 		t.Fatal("select:", err)
 	} else if value != 42 {
 		t.Fatalf("value: expected %d, got %d", 42, value)
@@ -157,7 +159,7 @@ func TestTracing(t *testing.T) {
 	trace.mu.Lock()
 	buf.Reset()
 	trace.mu.Unlock()
-	if err := session.Query(`SELECT id FROM trace WHERE id = ?`, 42).Scan(&value); err != nil {
+	if err := session.Query(fmt.Sprintf(`SELECT id FROM %s WHERE id = ?`, table), 42).Scan(&value); err != nil {
 		t.Fatal("select:", err)
 	}
 	if buf.Len() == 0 {
@@ -169,7 +171,9 @@ func TestObserve(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := createTable(session, `CREATE TABLE gocql_test.observe (id int primary key)`); err != nil {
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (id int primary key)`, table)); err != nil {
 		t.Fatal("create:", err)
 	}
 
@@ -196,30 +200,30 @@ func TestObserve(t *testing.T) {
 	// select before inserted, will error but the reporting is err=nil as the query is valid
 	resetObserved()
 	var value int
-	if err := session.Query(`SELECT id FROM observe WHERE id = ?`, 43).Observer(observer).Scan(&value); err == nil {
+	if err := session.Query(fmt.Sprintf(`SELECT id FROM %s WHERE id = ?`, table), 43).Observer(observer).Scan(&value); err == nil {
 		t.Fatal("select: expected error")
 	} else if observedErr != nil {
 		t.Fatalf("select: observed error expected nil, got %q", observedErr)
 	} else if observedKeyspace != keyspace {
 		t.Fatal("select: unexpected observed keyspace", observedKeyspace)
-	} else if observedStmt != `SELECT id FROM observe WHERE id = ?` {
+	} else if observedStmt != fmt.Sprintf(`SELECT id FROM %s WHERE id = ?`, table) {
 		t.Fatal("select: unexpected observed stmt", observedStmt)
 	}
 
 	resetObserved()
-	if err := session.Query(`INSERT INTO observe (id) VALUES (?)`, 42).Observer(observer).Exec(); err != nil {
+	if err := session.Query(fmt.Sprintf(`INSERT INTO %s (id) VALUES (?)`, table), 42).Observer(observer).Exec(); err != nil {
 		t.Fatal("insert:", err)
 	} else if observedErr != nil {
 		t.Fatal("insert:", observedErr)
 	} else if observedKeyspace != keyspace {
 		t.Fatal("insert: unexpected observed keyspace", observedKeyspace)
-	} else if observedStmt != `INSERT INTO observe (id) VALUES (?)` {
+	} else if observedStmt != fmt.Sprintf(`INSERT INTO %s (id) VALUES (?)`, table) {
 		t.Fatal("insert: unexpected observed stmt", observedStmt)
 	}
 
 	resetObserved()
 	value = 0
-	if err := session.Query(`SELECT id FROM observe WHERE id = ?`, 42).Observer(observer).Scan(&value); err != nil {
+	if err := session.Query(fmt.Sprintf(`SELECT id FROM %s WHERE id = ?`, table), 42).Observer(observer).Scan(&value); err != nil {
 		t.Fatal("select:", err)
 	} else if value != 42 {
 		t.Fatalf("value: expected %d, got %d", 42, value)
@@ -227,20 +231,20 @@ func TestObserve(t *testing.T) {
 		t.Fatal("select:", observedErr)
 	} else if observedKeyspace != keyspace {
 		t.Fatal("select: unexpected observed keyspace", observedKeyspace)
-	} else if observedStmt != `SELECT id FROM observe WHERE id = ?` {
+	} else if observedStmt != fmt.Sprintf(`SELECT id FROM %s WHERE id = ?`, table) {
 		t.Fatal("select: unexpected observed stmt", observedStmt)
 	}
 
 	// also works from session observer
 	resetObserved()
 	oSession := createSession(t, func(config *ClusterConfig) { config.QueryObserver = observer })
-	if err := oSession.Query(`SELECT id FROM observe WHERE id = ?`, 42).Scan(&value); err != nil {
+	if err := oSession.Query(fmt.Sprintf(`SELECT id FROM %s WHERE id = ?`, table), 42).Scan(&value); err != nil {
 		t.Fatal("select:", err)
 	} else if observedErr != nil {
 		t.Fatal("select:", err)
 	} else if observedKeyspace != keyspace {
 		t.Fatal("select: unexpected observed keyspace", observedKeyspace)
-	} else if observedStmt != `SELECT id FROM observe WHERE id = ?` {
+	} else if observedStmt != fmt.Sprintf(`SELECT id FROM %s WHERE id = ?`, table) {
 		t.Fatal("select: unexpected observed stmt", observedStmt)
 	}
 
@@ -262,7 +266,9 @@ func TestObserve_Pagination(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := createTable(session, `CREATE TABLE gocql_test.observe2 (id int, PRIMARY KEY (id))`); err != nil {
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (id int, PRIMARY KEY (id))`, table)); err != nil {
 		t.Fatal("create:", err)
 	}
 
@@ -278,7 +284,7 @@ func TestObserve_Pagination(t *testing.T) {
 
 	// insert 100 entries, relevant for pagination
 	for i := 0; i < 50; i++ {
-		if err := session.Query(`INSERT INTO observe2 (id) VALUES (?)`, i).Exec(); err != nil {
+		if err := session.Query(fmt.Sprintf(`INSERT INTO %s (id) VALUES (?)`, table), i).Exec(); err != nil {
 			t.Fatal("insert:", err)
 		}
 	}
@@ -286,7 +292,7 @@ func TestObserve_Pagination(t *testing.T) {
 	resetObserved()
 
 	// read the 100 entries in paginated entries of size 10. Expecting 5 observations, each with 10 rows
-	scanner := session.Query(`SELECT id FROM observe2 LIMIT 100`).
+	scanner := session.Query(fmt.Sprintf(`SELECT id FROM %s LIMIT 100`, table)).
 		Observer(observer).
 		PageSize(10).
 		Iter().Scanner()
@@ -314,16 +320,18 @@ func TestPaging(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := createTable(session, "CREATE TABLE gocql_test.paging (id int primary key)"); err != nil {
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int primary key)", table)); err != nil {
 		t.Fatal("create table:", err)
 	}
 	for i := 0; i < 100; i++ {
-		if err := session.Query("INSERT INTO paging (id) VALUES (?)", i).Exec(); err != nil {
+		if err := session.Query(fmt.Sprintf("INSERT INTO %s (id) VALUES (?)", table), i).Exec(); err != nil {
 			t.Fatal("insert:", err)
 		}
 	}
 
-	iter := session.Query("SELECT id FROM paging").PageSize(10).Iter()
+	iter := session.Query(fmt.Sprintf("SELECT id FROM %s", table)).PageSize(10).Iter()
 	var id int
 	count := 0
 	for iter.Scan(&id) {
@@ -340,8 +348,10 @@ func TestPaging(t *testing.T) {
 func TestPagingWithAllowFiltering(t *testing.T) {
 	session := createSession(t)
 
+	table := testTableName(t)
+
 	t.Cleanup(func() {
-		if err := session.Query("DROP TABLE gocql_test.pagging_with_allow_filtering").Exec(); err != nil {
+		if err := session.Query(fmt.Sprintf("DROP TABLE gocql_test.%s", table)).Exec(); err != nil {
 			t.Fatal("drop table:", err)
 		}
 		session.Close()
@@ -358,7 +368,7 @@ func TestPagingWithAllowFiltering(t *testing.T) {
 		expectedCount = totalExpectedResults - (deletedRageEnd - deletedRageStart)
 	)
 
-	paginatedSelect := fmt.Sprintf("SELECT c1, f1 FROM gocql_test.pagging_with_allow_filtering WHERE p1 = %d AND p2 = %d AND f1 < %d ALLOW FILTERING;", targetP1, targetP2, totalExpectedResults)
+	paginatedSelect := fmt.Sprintf("SELECT c1, f1 FROM gocql_test.%s WHERE p1 = %d AND p2 = %d AND f1 < %d ALLOW FILTERING;", table, targetP1, targetP2, totalExpectedResults)
 	validateResult := func(t *testing.T, results []int) {
 		if len(results) != expectedCount {
 			t.Fatalf("expected %d got %d: %d", expectedCount, len(results), results)
@@ -381,26 +391,26 @@ func TestPagingWithAllowFiltering(t *testing.T) {
 
 	t.Run("Prepare", func(t *testing.T) {
 		if err := createTable(session,
-			"CREATE TABLE gocql_test.pagging_with_allow_filtering (p1 int, p2 int, c1 int, f1 int, "+
-				"PRIMARY KEY ((p1, p2), c1)) WITH CLUSTERING ORDER BY (c1 DESC)"); err != nil {
+			fmt.Sprintf("CREATE TABLE gocql_test.%s (p1 int, p2 int, c1 int, f1 int, "+
+				"PRIMARY KEY ((p1, p2), c1)) WITH CLUSTERING ORDER BY (c1 DESC)", table)); err != nil {
 			t.Fatal("create table:", err)
 		}
 
 		// Insert extra records
 		for i := 0; i < 100; i++ {
-			if err := session.Query("INSERT INTO gocql_test.pagging_with_allow_filtering (p1,p2,c1,f1) VALUES (?,?,?,?)", i, i, i, i).Exec(); err != nil {
+			if err := session.Query(fmt.Sprintf("INSERT INTO gocql_test.%s (p1,p2,c1,f1) VALUES (?,?,?,?)", table), i, i, i, i).Exec(); err != nil {
 				t.Fatal("insert:", err)
 			}
 		}
 
 		// Insert records to a target partition
 		for i := 0; i < 100; i++ {
-			if err := session.Query("INSERT INTO gocql_test.pagging_with_allow_filtering (p1,p2,c1,f1) VALUES (?,?,?,?)", targetP1, targetP2, i, i).Exec(); err != nil {
+			if err := session.Query(fmt.Sprintf("INSERT INTO gocql_test.%s (p1,p2,c1,f1) VALUES (?,?,?,?)", table), targetP1, targetP2, i, i).Exec(); err != nil {
 				t.Fatal("insert:", err)
 			}
 		}
 
-		if err := session.Query("DELETE FROM gocql_test.pagging_with_allow_filtering WHERE p1 = ? AND p2 = ? AND c1 >= ? AND c1 < ?", targetP1, targetP2, deletedRageStart, deletedRageEnd).Exec(); err != nil {
+		if err := session.Query(fmt.Sprintf("DELETE FROM gocql_test.%s WHERE p1 = ? AND p2 = ? AND c1 >= ? AND c1 < ?", table), targetP1, targetP2, deletedRageStart, deletedRageEnd).Exec(); err != nil {
 			t.Fatal("insert:", err)
 		}
 	})
@@ -474,16 +484,18 @@ func TestPagingWithBind(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := createTable(session, "CREATE TABLE gocql_test.paging_bind (id int, val int, primary key(id,val))"); err != nil {
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int, val int, primary key(id,val))", table)); err != nil {
 		t.Fatal("create table:", err)
 	}
 	for i := 0; i < 100; i++ {
-		if err := session.Query("INSERT INTO paging_bind (id,val) VALUES (?,?)", 1, i).Exec(); err != nil {
+		if err := session.Query(fmt.Sprintf("INSERT INTO %s (id,val) VALUES (?,?)", table), 1, i).Exec(); err != nil {
 			t.Fatal("insert:", err)
 		}
 	}
 
-	q := session.Query("SELECT val FROM paging_bind WHERE id = ? AND val < ?", 1, 50).PageSize(10)
+	q := session.Query(fmt.Sprintf("SELECT val FROM %s WHERE id = ? AND val < ?", table), 1, 50).PageSize(10)
 	iter := q.Iter()
 	var id int
 	count := 0
@@ -516,12 +528,14 @@ func TestCAS(t *testing.T) {
 	session := createSessionFromClusterTabletsDisabled(cluster, t)
 	defer session.Close()
 
-	if err := createTable(session, `CREATE TABLE cas_table (
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf(`CREATE TABLE %s (
 			title         varchar,
 			revid   	  timeuuid,
 			last_modified timestamp,
 			PRIMARY KEY (title, revid)
-		)`); err != nil {
+		)`, table)); err != nil {
 		t.Fatal("create:", err)
 	}
 
@@ -530,17 +544,17 @@ func TestCAS(t *testing.T) {
 	var revidCAS UUID
 	var modifiedCAS time.Time
 
-	if applied, err := session.Query(`INSERT INTO cas_table (title, revid, last_modified)
+	if applied, err := session.Query(fmt.Sprintf(`INSERT INTO %s (title, revid, last_modified)
 		VALUES (?, ?, ?) IF NOT EXISTS`,
-		title, revid, modified).ScanCAS(&titleCAS, &revidCAS, &modifiedCAS); err != nil {
+		table), title, revid, modified).ScanCAS(&titleCAS, &revidCAS, &modifiedCAS); err != nil {
 		t.Fatal("insert:", err)
 	} else if !applied {
 		t.Fatal("insert should have been applied")
 	}
 
-	if applied, err := session.Query(`INSERT INTO cas_table (title, revid, last_modified)
+	if applied, err := session.Query(fmt.Sprintf(`INSERT INTO %s (title, revid, last_modified)
 		VALUES (?, ?, ?) IF NOT EXISTS`,
-		title, revid, modified).ScanCAS(&titleCAS, &revidCAS, &modifiedCAS); err != nil {
+		table), title, revid, modified).ScanCAS(&titleCAS, &revidCAS, &modifiedCAS); err != nil {
 		t.Fatal("insert:", err)
 	} else if applied {
 		t.Fatal("insert should not have been applied")
@@ -550,8 +564,8 @@ func TestCAS(t *testing.T) {
 
 	tenSecondsLater := modified.Add(10 * time.Second)
 
-	if applied, err := session.Query(`DELETE FROM cas_table WHERE title = ? and revid = ? IF last_modified = ?`,
-		title, revid, tenSecondsLater).ScanCAS(&modifiedCAS); err != nil {
+	if applied, err := session.Query(fmt.Sprintf(`DELETE FROM %s WHERE title = ? and revid = ? IF last_modified = ?`,
+		table), title, revid, tenSecondsLater).ScanCAS(&modifiedCAS); err != nil {
 		t.Fatal("delete:", err)
 	} else if applied {
 		t.Fatal("delete should have not been applied")
@@ -561,24 +575,24 @@ func TestCAS(t *testing.T) {
 		t.Fatalf("Was expecting modified CAS to be %v; but was one second later", modifiedCAS.UTC())
 	}
 
-	if _, err := session.Query(`DELETE FROM cas_table WHERE title = ? and revid = ? IF last_modified = ?`,
-		title, revid, tenSecondsLater).ScanCAS(); !strings.HasPrefix(err.Error(), "gocql: not enough columns to scan into") {
+	if _, err := session.Query(fmt.Sprintf(`DELETE FROM %s WHERE title = ? and revid = ? IF last_modified = ?`,
+		table), title, revid, tenSecondsLater).ScanCAS(); !strings.HasPrefix(err.Error(), "gocql: not enough columns to scan into") {
 		t.Fatalf("delete: was expecting count mismatch error but got: %q", err.Error())
 	}
 
-	if applied, err := session.Query(`DELETE FROM cas_table WHERE title = ? and revid = ? IF last_modified = ?`,
-		title, revid, modified).ScanCAS(&modifiedCAS); err != nil {
+	if applied, err := session.Query(fmt.Sprintf(`DELETE FROM %s WHERE title = ? and revid = ? IF last_modified = ?`,
+		table), title, revid, modified).ScanCAS(&modifiedCAS); err != nil {
 		t.Fatal("delete:", err)
 	} else if !applied {
 		t.Fatal("delete should have been applied")
 	}
 
-	if err := session.Query(`TRUNCATE cas_table`).Exec(); err != nil {
+	if err := session.Query(fmt.Sprintf(`TRUNCATE %s`, table)).Exec(); err != nil {
 		t.Fatal("truncate:", err)
 	}
 
 	successBatch := session.Batch(LoggedBatch)
-	successBatch.Query("INSERT INTO cas_table (title, revid, last_modified) VALUES (?, ?, ?) IF NOT EXISTS", title, revid, modified)
+	successBatch.Query(fmt.Sprintf("INSERT INTO %s (title, revid, last_modified) VALUES (?, ?, ?) IF NOT EXISTS", table), title, revid, modified)
 	if applied, _, err := session.ExecuteBatchCAS(successBatch, &titleCAS, &revidCAS, &modifiedCAS); err != nil {
 		t.Fatal("insert:", err)
 	} else if !applied {
@@ -586,7 +600,7 @@ func TestCAS(t *testing.T) {
 	}
 
 	successBatch = session.Batch(LoggedBatch)
-	successBatch.Query("INSERT INTO cas_table (title, revid, last_modified) VALUES (?, ?, ?) IF NOT EXISTS", title+"_foo", revid, modified)
+	successBatch.Query(fmt.Sprintf("INSERT INTO %s (title, revid, last_modified) VALUES (?, ?, ?) IF NOT EXISTS", table), title+"_foo", revid, modified)
 	casMap := make(map[string]interface{})
 	if applied, _, err := session.MapExecuteBatchCAS(successBatch, casMap); err != nil {
 		t.Fatal("insert:", err)
@@ -595,7 +609,7 @@ func TestCAS(t *testing.T) {
 	}
 
 	failBatch := session.Batch(LoggedBatch)
-	failBatch.Query("INSERT INTO cas_table (title, revid, last_modified) VALUES (?, ?, ?) IF NOT EXISTS", title, revid, modified)
+	failBatch.Query(fmt.Sprintf("INSERT INTO %s (title, revid, last_modified) VALUES (?, ?, ?) IF NOT EXISTS", table), title, revid, modified)
 	if applied, _, err := session.ExecuteBatchCAS(successBatch, &titleCAS, &revidCAS, &modifiedCAS); err != nil {
 		t.Fatal("insert:", err)
 	} else if applied {
@@ -604,11 +618,11 @@ func TestCAS(t *testing.T) {
 
 	insertBatch := session.Batch(LoggedBatch)
 	if *flagDistribution == "cassandra" && flagCassVersion.AtLeast(4, 1, 0) {
-		insertBatch.Query("INSERT INTO cas_table (title, revid, last_modified) VALUES ('_foo', 2c3af400-73a4-11e5-9381-29463d90c3f0, toTimestamp(NOW()))")
-		insertBatch.Query("INSERT INTO cas_table (title, revid, last_modified) VALUES ('_foo', 3e4ad2f1-73a4-11e5-9381-29463d90c3f0, toTimestamp(NOW()))")
+		insertBatch.Query(fmt.Sprintf("INSERT INTO %s (title, revid, last_modified) VALUES ('_foo', 2c3af400-73a4-11e5-9381-29463d90c3f0, toTimestamp(NOW()))", table))
+		insertBatch.Query(fmt.Sprintf("INSERT INTO %s (title, revid, last_modified) VALUES ('_foo', 3e4ad2f1-73a4-11e5-9381-29463d90c3f0, toTimestamp(NOW()))", table))
 	} else {
-		insertBatch.Query("INSERT INTO cas_table (title, revid, last_modified) VALUES ('_foo', 2c3af400-73a4-11e5-9381-29463d90c3f0, DATEOF(NOW()))")
-		insertBatch.Query("INSERT INTO cas_table (title, revid, last_modified) VALUES ('_foo', 3e4ad2f1-73a4-11e5-9381-29463d90c3f0, DATEOF(NOW()))")
+		insertBatch.Query(fmt.Sprintf("INSERT INTO %s (title, revid, last_modified) VALUES ('_foo', 2c3af400-73a4-11e5-9381-29463d90c3f0, DATEOF(NOW()))", table))
+		insertBatch.Query(fmt.Sprintf("INSERT INTO %s (title, revid, last_modified) VALUES ('_foo', 3e4ad2f1-73a4-11e5-9381-29463d90c3f0, DATEOF(NOW()))", table))
 	}
 	if err := session.ExecuteBatch(insertBatch); err != nil {
 		t.Fatal("insert:", err)
@@ -616,11 +630,11 @@ func TestCAS(t *testing.T) {
 
 	failBatch = session.Batch(LoggedBatch)
 	if *flagDistribution == "cassandra" && flagCassVersion.AtLeast(4, 1, 0) {
-		failBatch.Query("UPDATE cas_table SET last_modified = toTimestamp(NOW()) WHERE title='_foo' AND revid=2c3af400-73a4-11e5-9381-29463d90c3f0 IF last_modified=toTimestamp(NOW());")
-		failBatch.Query("UPDATE cas_table SET last_modified = toTimestamp(NOW()) WHERE title='_foo' AND revid=3e4ad2f1-73a4-11e5-9381-29463d90c3f0 IF last_modified=toTimestamp(NOW());")
+		failBatch.Query(fmt.Sprintf("UPDATE %s SET last_modified = toTimestamp(NOW()) WHERE title='_foo' AND revid=2c3af400-73a4-11e5-9381-29463d90c3f0 IF last_modified=toTimestamp(NOW());", table))
+		failBatch.Query(fmt.Sprintf("UPDATE %s SET last_modified = toTimestamp(NOW()) WHERE title='_foo' AND revid=3e4ad2f1-73a4-11e5-9381-29463d90c3f0 IF last_modified=toTimestamp(NOW());", table))
 	} else {
-		failBatch.Query("UPDATE cas_table SET last_modified = DATEOF(NOW()) WHERE title='_foo' AND revid=2c3af400-73a4-11e5-9381-29463d90c3f0 IF last_modified=DATEOF(NOW());")
-		failBatch.Query("UPDATE cas_table SET last_modified = DATEOF(NOW()) WHERE title='_foo' AND revid=3e4ad2f1-73a4-11e5-9381-29463d90c3f0 IF last_modified=DATEOF(NOW());")
+		failBatch.Query(fmt.Sprintf("UPDATE %s SET last_modified = DATEOF(NOW()) WHERE title='_foo' AND revid=2c3af400-73a4-11e5-9381-29463d90c3f0 IF last_modified=DATEOF(NOW());", table))
+		failBatch.Query(fmt.Sprintf("UPDATE %s SET last_modified = DATEOF(NOW()) WHERE title='_foo' AND revid=3e4ad2f1-73a4-11e5-9381-29463d90c3f0 IF last_modified=DATEOF(NOW());", table))
 	}
 	if applied, iter, err := session.ExecuteBatchCAS(failBatch, &titleCAS, &revidCAS, &modifiedCAS); err != nil {
 		t.Fatal("insert:", err)
@@ -638,48 +652,48 @@ func TestCAS(t *testing.T) {
 	}
 
 	casMap = make(map[string]interface{})
-	if applied, err := session.Query(`SELECT revid FROM cas_table WHERE title = ?`,
+	if applied, err := session.Query(fmt.Sprintf(`SELECT revid FROM %s WHERE title = ?`, table),
 		title+"_foo").MapScanCAS(casMap); err != nil {
 		t.Fatal("select:", err)
 	} else if applied {
 		t.Fatal("select shouldn't have returned applied")
 	}
 
-	if _, err := session.Query(`SELECT revid FROM cas_table WHERE title = ?`,
+	if _, err := session.Query(fmt.Sprintf(`SELECT revid FROM %s WHERE title = ?`, table),
 		title+"_foo").ScanCAS(&revidCAS); err == nil {
 		t.Fatal("select: should have returned an error")
 	}
 
 	notCASBatch := session.Batch(LoggedBatch)
-	notCASBatch.Query("INSERT INTO cas_table (title, revid, last_modified) VALUES (?, ?, ?)", title+"_baz", revid, modified)
+	notCASBatch.Query(fmt.Sprintf("INSERT INTO %s (title, revid, last_modified) VALUES (?, ?, ?)", table), title+"_baz", revid, modified)
 	casMap = make(map[string]interface{})
 	if _, _, err := session.MapExecuteBatchCAS(notCASBatch, casMap); err != ErrNotFound {
 		t.Fatal("insert should have returned not found:", err)
 	}
 
 	notCASBatch = session.Batch(LoggedBatch)
-	notCASBatch.Query("INSERT INTO cas_table (title, revid, last_modified) VALUES (?, ?, ?)", title+"_baz", revid, modified)
+	notCASBatch.Query(fmt.Sprintf("INSERT INTO %s (title, revid, last_modified) VALUES (?, ?, ?)", table), title+"_baz", revid, modified)
 	casMap = make(map[string]interface{})
 	if _, _, err := session.ExecuteBatchCAS(notCASBatch, &revidCAS); err != ErrNotFound {
 		t.Fatal("insert should have returned not found:", err)
 	}
 
 	failBatch = session.Batch(LoggedBatch)
-	failBatch.Query("UPDATE cas_table SET last_modified = TOTIMESTAMP(NOW()) WHERE title='_foo' AND revid=3e4ad2f1-73a4-11e5-9381-29463d90c3f0 IF last_modified = ?", modified)
+	failBatch.Query(fmt.Sprintf("UPDATE %s SET last_modified = TOTIMESTAMP(NOW()) WHERE title='_foo' AND revid=3e4ad2f1-73a4-11e5-9381-29463d90c3f0 IF last_modified = ?", table), modified)
 	if _, _, err := session.ExecuteBatchCAS(failBatch, new(bool)); err == nil {
 		t.Fatal("update should have errored")
 	}
 	// make sure MapScanCAS does not panic when MapScan fails
 	casMap = make(map[string]interface{})
 	casMap["last_modified"] = false
-	if _, err := session.Query(`UPDATE cas_table SET last_modified = TOTIMESTAMP(NOW()) WHERE title='_foo' AND revid=3e4ad2f1-73a4-11e5-9381-29463d90c3f0 IF last_modified = ?`,
+	if _, err := session.Query(fmt.Sprintf(`UPDATE %s SET last_modified = TOTIMESTAMP(NOW()) WHERE title='_foo' AND revid=3e4ad2f1-73a4-11e5-9381-29463d90c3f0 IF last_modified = ?`, table),
 		modified).MapScanCAS(casMap); err == nil {
 		t.Fatal("update should hvae errored", err)
 	}
 
 	// make sure MapExecuteBatchCAS does not panic when MapScan fails
 	failBatch = session.Batch(LoggedBatch)
-	failBatch.Query("UPDATE cas_table SET last_modified = TOTIMESTAMP(NOW()) WHERE title='_foo' AND revid=3e4ad2f1-73a4-11e5-9381-29463d90c3f0 IF last_modified = ?", modified)
+	failBatch.Query(fmt.Sprintf("UPDATE %s SET last_modified = TOTIMESTAMP(NOW()) WHERE title='_foo' AND revid=3e4ad2f1-73a4-11e5-9381-29463d90c3f0 IF last_modified = ?", table), modified)
 	casMap = make(map[string]interface{})
 	casMap["last_modified"] = false
 	if _, _, err := session.MapExecuteBatchCAS(failBatch, casMap); err == nil {
@@ -690,6 +704,8 @@ func TestCAS(t *testing.T) {
 func TestConsistencySerial(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
+
+	table := testTableName(t)
 
 	type testStruct struct {
 		name               string
@@ -744,21 +760,21 @@ func TestConsistencySerial(t *testing.T) {
 		},
 	}
 
-	err := session.Query("CREATE TABLE IF NOT EXISTS gocql_test.consistency_serial (id int PRIMARY KEY)").Exec()
+	err := session.Query(fmt.Sprintf("CREATE TABLE IF NOT EXISTS gocql_test.%s (id int PRIMARY KEY)", table)).Exec()
 	if err != nil {
-		t.Fatalf("can't create consistency_serial table:%v", err)
+		t.Fatalf("can't create table:%v", err)
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.expectedPanicValue == "" {
-				err = session.Query("INSERT INTO gocql_test.consistency_serial (id) VALUES (?)", tc.id).SerialConsistency(tc.consistency).Exec()
+				err = session.Query(fmt.Sprintf("INSERT INTO gocql_test.%s (id) VALUES (?)", table), tc.id).SerialConsistency(tc.consistency).Exec()
 				if err != nil {
 					t.Fatal(err)
 				}
 
 				var receivedID int
-				err = session.Query("SELECT * FROM gocql_test.consistency_serial WHERE id=?", tc.id).Scan(&receivedID)
+				err = session.Query(fmt.Sprintf("SELECT * FROM gocql_test.%s WHERE id=?", table), tc.id).Scan(&receivedID)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -766,7 +782,7 @@ func TestConsistencySerial(t *testing.T) {
 				require.Equal(t, tc.id, receivedID)
 			} else {
 				require.PanicsWithValue(t, tc.expectedPanicValue, func() {
-					session.Query("INSERT INTO gocql_test.consistency_serial (id) VALUES (?)", tc.id).SerialConsistency(tc.consistency)
+					session.Query(fmt.Sprintf("INSERT INTO gocql_test.%s (id) VALUES (?)", table), tc.id).SerialConsistency(tc.consistency)
 				})
 			}
 		})
@@ -781,9 +797,11 @@ func TestDurationType(t *testing.T) {
 		t.Skip("Duration type is not supported. Please use protocol version >= 4 and cassandra version >= 3.11")
 	}
 
-	if err := createTable(session, `CREATE TABLE gocql_test.duration_table (
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (
 		k int primary key, v duration
-	)`); err != nil {
+	)`, table)); err != nil {
 		t.Fatal("create:", err)
 	}
 
@@ -810,13 +828,13 @@ func TestDurationType(t *testing.T) {
 		},
 	}
 	for _, durationSend := range durations {
-		if err := session.Query(`INSERT INTO gocql_test.duration_table (k, v) VALUES (1, ?)`, durationSend).Exec(); err != nil {
+		if err := session.Query(fmt.Sprintf(`INSERT INTO gocql_test.%s (k, v) VALUES (1, ?)`, table), durationSend).Exec(); err != nil {
 			t.Fatal(err)
 		}
 
 		var id int
 		var duration Duration
-		if err := session.Query(`SELECT k, v FROM gocql_test.duration_table`).Scan(&id, &duration); err != nil {
+		if err := session.Query(fmt.Sprintf(`SELECT k, v FROM gocql_test.%s`, table)).Scan(&id, &duration); err != nil {
 			t.Fatal(err)
 		}
 		if duration.Months != durationSend.Months || duration.Days != durationSend.Days || duration.Nanoseconds != durationSend.Nanoseconds {
@@ -829,21 +847,23 @@ func TestMapScanCAS(t *testing.T) {
 	session := createSessionFromClusterTabletsDisabled(createCluster(), t)
 	defer session.Close()
 
-	if err := createTable(session, `CREATE TABLE cas_table2 (
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf(`CREATE TABLE %s (
 			title         varchar,
 			revid   	  timeuuid,
 			last_modified timestamp,
 			deleted boolean,
 			PRIMARY KEY (title, revid)
-		)`); err != nil {
+		)`, table)); err != nil {
 		t.Fatal("create:", err)
 	}
 
 	title, revid, modified, deleted := "baz", TimeUUID(), time.Now(), false
 	mapCAS := map[string]interface{}{}
 
-	if applied, err := session.Query(`INSERT INTO cas_table2 (title, revid, last_modified, deleted)
-		VALUES (?, ?, ?, ?) IF NOT EXISTS`,
+	if applied, err := session.Query(fmt.Sprintf(`INSERT INTO %s (title, revid, last_modified, deleted)
+		VALUES (?, ?, ?, ?) IF NOT EXISTS`, table),
 		title, revid, modified, deleted).MapScanCAS(mapCAS); err != nil {
 		t.Fatal("insert:", err)
 	} else if !applied {
@@ -851,8 +871,8 @@ func TestMapScanCAS(t *testing.T) {
 	}
 
 	mapCAS = map[string]interface{}{}
-	if applied, err := session.Query(`INSERT INTO cas_table2 (title, revid, last_modified, deleted)
-		VALUES (?, ?, ?, ?) IF NOT EXISTS`,
+	if applied, err := session.Query(fmt.Sprintf(`INSERT INTO %s (title, revid, last_modified, deleted)
+		VALUES (?, ?, ?, ?) IF NOT EXISTS`, table),
 		title, revid, modified, deleted).MapScanCAS(mapCAS); err != nil {
 		t.Fatal("insert:", err)
 	} else if applied {
@@ -867,13 +887,15 @@ func TestBatch(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := createTable(session, `CREATE TABLE gocql_test.batch_table (id int primary key)`); err != nil {
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (id int primary key)`, table)); err != nil {
 		t.Fatal("create table:", err)
 	}
 
 	batch := session.Batch(LoggedBatch)
 	for i := 0; i < 100; i++ {
-		batch.Query(`INSERT INTO batch_table (id) VALUES (?)`, i)
+		batch.Query(fmt.Sprintf(`INSERT INTO %s (id) VALUES (?)`, table), i)
 	}
 
 	if err := session.ExecuteBatch(batch); err != nil {
@@ -881,7 +903,7 @@ func TestBatch(t *testing.T) {
 	}
 
 	count := 0
-	if err := session.Query(`SELECT COUNT(*) FROM batch_table`).Scan(&count); err != nil {
+	if err := session.Query(fmt.Sprintf(`SELECT COUNT(*) FROM %s`, table)).Scan(&count); err != nil {
 		t.Fatal("select count:", err)
 	} else if count != 100 {
 		t.Fatalf("count: expected %d, got %d\n", 100, count)
@@ -893,14 +915,16 @@ func TestUnpreparedBatch(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := createTable(session, `CREATE TABLE gocql_test.batch_unprepared (id int primary key, c counter)`); err != nil {
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (id int primary key, c counter)`, table)); err != nil {
 		t.Fatal("create table:", err)
 	}
 
 	batch := session.Batch(UnloggedBatch)
 
 	for i := 0; i < 100; i++ {
-		batch.Query(`UPDATE batch_unprepared SET c = c + 1 WHERE id = 1`)
+		batch.Query(fmt.Sprintf(`UPDATE %s SET c = c + 1 WHERE id = 1`, table))
 	}
 
 	if err := session.ExecuteBatch(batch); err != nil {
@@ -908,13 +932,13 @@ func TestUnpreparedBatch(t *testing.T) {
 	}
 
 	count := 0
-	if err := session.Query(`SELECT COUNT(*) FROM batch_unprepared`).Scan(&count); err != nil {
+	if err := session.Query(fmt.Sprintf(`SELECT COUNT(*) FROM %s`, table)).Scan(&count); err != nil {
 		t.Fatal("select count:", err)
 	} else if count != 1 {
 		t.Fatalf("count: expected %d, got %d\n", 100, count)
 	}
 
-	if err := session.Query(`SELECT c FROM batch_unprepared`).Scan(&count); err != nil {
+	if err := session.Query(fmt.Sprintf(`SELECT c FROM %s`, table)).Scan(&count); err != nil {
 		t.Fatal("select count:", err)
 	} else if count != 100 {
 		t.Fatalf("count: expected %d, got %d\n", 100, count)
@@ -927,13 +951,15 @@ func TestBatchLimit(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := createTable(session, `CREATE TABLE gocql_test.batch_table2 (id int primary key)`); err != nil {
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (id int primary key)`, table)); err != nil {
 		t.Fatal("create table:", err)
 	}
 
 	batch := session.Batch(LoggedBatch)
 	for i := 0; i < 65537; i++ {
-		batch.Query(`INSERT INTO batch_table2 (id) VALUES (?)`, i)
+		batch.Query(fmt.Sprintf(`INSERT INTO %s (id) VALUES (?)`, table), i)
 	}
 	if err := session.ExecuteBatch(batch); err != ErrTooManyStmts {
 		t.Fatal("gocql attempted to execute a batch larger than the support limit of statements.")
@@ -945,15 +971,17 @@ func TestWhereIn(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := createTable(session, `CREATE TABLE gocql_test.where_in_table (id int, cluster int, primary key (id,cluster))`); err != nil {
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (id int, cluster int, primary key (id,cluster))`, table)); err != nil {
 		t.Fatal("create table:", err)
 	}
 
-	if err := session.Query("INSERT INTO where_in_table (id, cluster) VALUES (?,?)", 100, 200).Exec(); err != nil {
+	if err := session.Query(fmt.Sprintf("INSERT INTO %s (id, cluster) VALUES (?,?)", table), 100, 200).Exec(); err != nil {
 		t.Fatal("insert:", err)
 	}
 
-	iter := session.Query("SELECT * FROM where_in_table WHERE id = ? AND cluster IN (?)", 100, 200).Iter()
+	iter := session.Query(fmt.Sprintf("SELECT * FROM %s WHERE id = ? AND cluster IN (?)", table), 100, 200).Iter()
 	var id, cluster int
 	count := 0
 	for iter.Scan(&id, &cluster) {
@@ -971,18 +999,20 @@ func TestTooManyQueryArgs(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := createTable(session, `CREATE TABLE gocql_test.too_many_query_args (id int primary key, value int)`); err != nil {
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (id int primary key, value int)`, table)); err != nil {
 		t.Fatal("create table:", err)
 	}
 
-	_, err := session.Query(`SELECT * FROM too_many_query_args WHERE id = ?`, 1, 2).Iter().SliceMap()
+	_, err := session.Query(fmt.Sprintf(`SELECT * FROM %s WHERE id = ?`, table), 1, 2).Iter().SliceMap()
 
 	if err == nil {
-		t.Fatal("'`SELECT * FROM too_many_query_args WHERE id = ?`, 1, 2' should return an error")
+		t.Fatal("'SELECT * FROM <table> WHERE id = ?, 1, 2' should return an error")
 	}
 
 	batch := session.Batch(UnloggedBatch)
-	batch.Query("INSERT INTO too_many_query_args (id, value) VALUES (?, ?)", 1, 2, 3)
+	batch.Query(fmt.Sprintf("INSERT INTO %s (id, value) VALUES (?, ?)", table), 1, 2, 3)
 	err = session.ExecuteBatch(batch)
 
 	if err == nil {
@@ -999,18 +1029,20 @@ func TestNotEnoughQueryArgs(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := createTable(session, `CREATE TABLE gocql_test.not_enough_query_args (id int, cluster int, value int, primary key (id, cluster))`); err != nil {
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (id int, cluster int, value int, primary key (id, cluster))`, table)); err != nil {
 		t.Fatal("create table:", err)
 	}
 
-	_, err := session.Query(`SELECT * FROM not_enough_query_args WHERE id = ? and cluster = ?`, 1).Iter().SliceMap()
+	_, err := session.Query(fmt.Sprintf(`SELECT * FROM %s WHERE id = ? and cluster = ?`, table), 1).Iter().SliceMap()
 
 	if err == nil {
-		t.Fatal("'`SELECT * FROM not_enough_query_args WHERE id = ? and cluster = ?`, 1' should return an error")
+		t.Fatal("'SELECT * FROM <table> WHERE id = ? and cluster = ?, 1' should return an error")
 	}
 
 	batch := session.Batch(UnloggedBatch)
-	batch.Query("INSERT INTO not_enough_query_args (id, cluster, value) VALUES (?, ?, ?)", 1, 2)
+	batch.Query(fmt.Sprintf("INSERT INTO %s (id, cluster, value) VALUES (?, ?, ?)", table), 1, 2)
 	err = session.ExecuteBatch(batch)
 
 	if err == nil {
@@ -1079,11 +1111,13 @@ func (n *FullName) UnmarshalCQL(info TypeInfo, data []byte) error {
 func TestMapScanWithRefMap(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
-	if err := createTable(session, `CREATE TABLE gocql_test.scan_map_ref_table (
+
+	table := testTableName(t)
+	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (
 			testtext       text PRIMARY KEY,
 			testfullname   text,
 			testint        int,
-		)`); err != nil {
+		)`, table)); err != nil {
 		t.Fatal("create table:", err)
 	}
 	m := make(map[string]interface{})
@@ -1091,7 +1125,7 @@ func TestMapScanWithRefMap(t *testing.T) {
 	m["testfullname"] = FullName{FirstName: "John", LastName: "Doe"}
 	m["testint"] = 100
 
-	if err := session.Query(`INSERT INTO scan_map_ref_table (testtext, testfullname, testint) values (?,?,?)`,
+	if err := session.Query(fmt.Sprintf(`INSERT INTO %s (testtext, testfullname, testint) values (?,?,?)`, table),
 		m["testtext"], m["testfullname"], m["testint"]).Exec(); err != nil {
 		t.Fatal("insert:", err)
 	}
@@ -1103,7 +1137,7 @@ func TestMapScanWithRefMap(t *testing.T) {
 		"testfullname": &testFullName,
 		// testint is not set here.
 	}
-	iter := session.Query(`SELECT * FROM scan_map_ref_table`).Iter()
+	iter := session.Query(fmt.Sprintf(`SELECT * FROM %s`, table)).Iter()
 	if ok := iter.MapScan(ret); !ok {
 		t.Fatal("select:", iter.Close())
 	} else {
@@ -1130,10 +1164,10 @@ func TestMapScanWithRefMap(t *testing.T) {
 	ret = map[string]interface{}{
 		"testint": &intp,
 	}
-	if err := session.Query("INSERT INTO scan_map_ref_table(testtext, testint) VALUES(?, ?)", "null-int", nil).Exec(); err != nil {
+	if err := session.Query(fmt.Sprintf("INSERT INTO %s(testtext, testint) VALUES(?, ?)", table), "null-int", nil).Exec(); err != nil {
 		t.Fatal(err)
 	}
-	err := session.Query(`SELECT testint FROM scan_map_ref_table WHERE testtext = ?`, "null-int").MapScan(ret)
+	err := session.Query(fmt.Sprintf(`SELECT testint FROM %s WHERE testtext = ?`, table), "null-int").MapScan(ret)
 	if err != nil {
 		t.Fatal(err)
 	} else if v := ret["testint"].(*int64); v != nil {
@@ -1145,25 +1179,27 @@ func TestMapScanWithRefMap(t *testing.T) {
 func TestMapScan(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
-	if err := createTable(session, `CREATE TABLE gocql_test.scan_map_table (
+
+	table := testTableName(t)
+	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (
 			fullname       text PRIMARY KEY,
 			age            int,
 			address        inet,
 			data           blob,
-		)`); err != nil {
+		)`, table)); err != nil {
 		t.Fatal("create table:", err)
 	}
 
-	if err := session.Query(`INSERT INTO scan_map_table (fullname, age, address) values (?,?,?)`,
+	if err := session.Query(fmt.Sprintf(`INSERT INTO %s (fullname, age, address) values (?,?,?)`, table),
 		"Grace Hopper", 31, net.ParseIP("10.0.0.1")).Exec(); err != nil {
 		t.Fatal("insert:", err)
 	}
-	if err := session.Query(`INSERT INTO scan_map_table (fullname, age, address, data) values (?,?,?,?)`,
+	if err := session.Query(fmt.Sprintf(`INSERT INTO %s (fullname, age, address, data) values (?,?,?,?)`, table),
 		"Ada Lovelace", 30, net.ParseIP("10.0.0.2"), []byte(`{"foo": "bar"}`)).Exec(); err != nil {
 		t.Fatal("insert:", err)
 	}
 
-	iter := session.Query(`SELECT * FROM scan_map_table`).Iter()
+	iter := session.Query(fmt.Sprintf(`SELECT * FROM %s`, table)).Iter()
 
 	// First iteration
 	row := make(map[string]interface{})
@@ -1189,7 +1225,9 @@ func TestMapScan(t *testing.T) {
 func TestSliceMap(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
-	if err := createTable(session, `CREATE TABLE gocql_test.slice_map_table (
+
+	table := testTableName(t)
+	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (
 			testuuid       timeuuid PRIMARY KEY,
 			testtimestamp  timestamp,
 			testvarchar    varchar,
@@ -1205,7 +1243,7 @@ func TestSliceMap(t *testing.T) {
 			testmap        map<varchar, varchar>,
 			testvarint     varint,
 			testinet			 inet
-		)`); err != nil {
+		)`, table)); err != nil {
 		t.Fatal("create table:", err)
 	}
 	m := make(map[string]interface{})
@@ -1231,11 +1269,11 @@ func TestSliceMap(t *testing.T) {
 	m["testvarint"] = bigInt
 	m["testinet"] = "213.212.2.19"
 	sliceMap := []map[string]interface{}{m}
-	if err := session.Query(`INSERT INTO slice_map_table (testuuid, testtimestamp, testvarchar, testbigint, testblob, testbool, testfloat, testdouble, testint, testdecimal, testlist, testset, testmap, testvarint, testinet) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	if err := session.Query(fmt.Sprintf(`INSERT INTO %s (testuuid, testtimestamp, testvarchar, testbigint, testblob, testbool, testfloat, testdouble, testint, testdecimal, testlist, testset, testmap, testvarint, testinet) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, table),
 		m["testuuid"], m["testtimestamp"], m["testvarchar"], m["testbigint"], m["testblob"], m["testbool"], m["testfloat"], m["testdouble"], m["testint"], m["testdecimal"], m["testlist"], m["testset"], m["testmap"], m["testvarint"], m["testinet"]).Exec(); err != nil {
 		t.Fatal("insert:", err)
 	}
-	if returned, retErr := session.Query(`SELECT * FROM slice_map_table`).Iter().SliceMap(); retErr != nil {
+	if returned, retErr := session.Query(fmt.Sprintf(`SELECT * FROM %s`, table)).Iter().SliceMap(); retErr != nil {
 		t.Fatal("select:", retErr)
 	} else {
 		matchSliceMap(t, sliceMap, returned[0])
@@ -1244,7 +1282,7 @@ func TestSliceMap(t *testing.T) {
 	// Test for Iter.MapScan()
 	{
 		testMap := make(map[string]interface{})
-		if !session.Query(`SELECT * FROM slice_map_table`).Iter().MapScan(testMap) {
+		if !session.Query(fmt.Sprintf(`SELECT * FROM %s`, table)).Iter().MapScan(testMap) {
 			t.Fatal("MapScan failed to work with one row")
 		}
 		matchSliceMap(t, sliceMap, testMap)
@@ -1253,7 +1291,7 @@ func TestSliceMap(t *testing.T) {
 	// Test for Query.MapScan()
 	{
 		testMap := make(map[string]interface{})
-		if session.Query(`SELECT * FROM slice_map_table`).MapScan(testMap) != nil {
+		if session.Query(fmt.Sprintf(`SELECT * FROM %s`, table)).MapScan(testMap) != nil {
 			t.Fatal("MapScan failed to work with one row")
 		}
 		matchSliceMap(t, sliceMap, testMap)
@@ -1366,19 +1404,21 @@ func TestSmallInt(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := createTable(session, `CREATE TABLE gocql_test.smallint_table (
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (
 			testsmallint  smallint PRIMARY KEY,
-		)`); err != nil {
+		)`, table)); err != nil {
 		t.Fatal("create table:", err)
 	}
 	m := make(map[string]interface{})
 	m["testsmallint"] = int16(2)
 	sliceMap := []map[string]interface{}{m}
-	if err := session.Query(`INSERT INTO smallint_table (testsmallint) VALUES (?)`,
+	if err := session.Query(fmt.Sprintf(`INSERT INTO %s (testsmallint) VALUES (?)`, table),
 		m["testsmallint"]).Exec(); err != nil {
 		t.Fatal("insert:", err)
 	}
-	if returned, retErr := session.Query(`SELECT * FROM smallint_table`).Iter().SliceMap(); retErr != nil {
+	if returned, retErr := session.Query(fmt.Sprintf(`SELECT * FROM %s`, table)).Iter().SliceMap(); retErr != nil {
 		t.Fatal("select:", retErr)
 	} else {
 		if sliceMap[0]["testsmallint"] != returned[0]["testsmallint"] {
@@ -1391,21 +1431,23 @@ func TestScanWithNilArguments(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := createTable(session, `CREATE TABLE gocql_test.scan_with_nil_arguments (
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (
 			foo   varchar,
 			bar   int,
 			PRIMARY KEY (foo, bar)
-	)`); err != nil {
+	)`, table)); err != nil {
 		t.Fatal("create:", err)
 	}
 	for i := 1; i <= 20; i++ {
-		if err := session.Query("INSERT INTO scan_with_nil_arguments (foo, bar) VALUES (?, ?)",
+		if err := session.Query(fmt.Sprintf("INSERT INTO %s (foo, bar) VALUES (?, ?)", table),
 			"squares", i*i).Exec(); err != nil {
 			t.Fatal("insert:", err)
 		}
 	}
 
-	iter := session.Query("SELECT * FROM scan_with_nil_arguments WHERE foo = ?", "squares").Iter()
+	iter := session.Query(fmt.Sprintf("SELECT * FROM %s WHERE foo = ?", table), "squares").Iter()
 	var n int
 	count := 0
 	for iter.Scan(nil, &n) {
@@ -1423,27 +1465,29 @@ func TestScanCASWithNilArguments(t *testing.T) {
 	session := createSessionFromClusterTabletsDisabled(createCluster(), t)
 	defer session.Close()
 
-	if err := createTable(session, `CREATE TABLE scan_cas_with_nil_arguments (
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf(`CREATE TABLE %s (
 		foo   varchar,
 		bar   varchar,
 		PRIMARY KEY (foo, bar)
-	)`); err != nil {
+	)`, table)); err != nil {
 		t.Fatal("create:", err)
 	}
 
 	foo := "baz"
 	var cas string
 
-	if applied, err := session.Query(`INSERT INTO scan_cas_with_nil_arguments (foo, bar)
-		VALUES (?, ?) IF NOT EXISTS`,
+	if applied, err := session.Query(fmt.Sprintf(`INSERT INTO %s (foo, bar)
+		VALUES (?, ?) IF NOT EXISTS`, table),
 		foo, foo).ScanCAS(nil, nil); err != nil {
 		t.Fatal("insert:", err)
 	} else if !applied {
 		t.Fatal("insert should have been applied")
 	}
 
-	if applied, err := session.Query(`INSERT INTO scan_cas_with_nil_arguments (foo, bar)
-		VALUES (?, ?) IF NOT EXISTS`,
+	if applied, err := session.Query(fmt.Sprintf(`INSERT INTO %s (foo, bar)
+		VALUES (?, ?) IF NOT EXISTS`, table),
 		foo, foo).ScanCAS(&cas, nil); err != nil {
 		t.Fatal("insert:", err)
 	} else if applied {
@@ -1452,8 +1496,8 @@ func TestScanCASWithNilArguments(t *testing.T) {
 		t.Fatalf("expected %v but got %v", foo, cas)
 	}
 
-	if applied, err := session.Query(`INSERT INTO scan_cas_with_nil_arguments (foo, bar)
-		VALUES (?, ?) IF NOT EXISTS`,
+	if applied, err := session.Query(fmt.Sprintf(`INSERT INTO %s (foo, bar)
+		VALUES (?, ?) IF NOT EXISTS`, table),
 		foo, foo).ScanCAS(nil, &cas); err != nil {
 		t.Fatal("insert:", err)
 	} else if applied {
@@ -1467,19 +1511,21 @@ func TestRebindQueryInfo(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := createTable(session, "CREATE TABLE gocql_test.rebind_query (id int, value text, PRIMARY KEY (id))"); err != nil {
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int, value text, PRIMARY KEY (id))", table)); err != nil {
 		t.Fatalf("failed to create table with error '%v'", err)
 	}
 
-	if err := session.Query("INSERT INTO rebind_query (id, value) VALUES (?, ?)", 23, "quux").Exec(); err != nil {
+	if err := session.Query(fmt.Sprintf("INSERT INTO %s (id, value) VALUES (?, ?)", table), 23, "quux").Exec(); err != nil {
 		t.Fatalf("insert into rebind_query failed, err '%v'", err)
 	}
 
-	if err := session.Query("INSERT INTO rebind_query (id, value) VALUES (?, ?)", 24, "w00t").Exec(); err != nil {
+	if err := session.Query(fmt.Sprintf("INSERT INTO %s (id, value) VALUES (?, ?)", table), 24, "w00t").Exec(); err != nil {
 		t.Fatalf("insert into rebind_query failed, err '%v'", err)
 	}
 
-	q := session.Query("SELECT value FROM rebind_query WHERE ID = ?")
+	q := session.Query(fmt.Sprintf("SELECT value FROM %s WHERE ID = ?", table))
 	q.Bind(23)
 
 	iter := q.Iter()
@@ -1507,11 +1553,13 @@ func TestStaticQueryInfo(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := createTable(session, "CREATE TABLE gocql_test.static_query_info (id int, value text, PRIMARY KEY (id))"); err != nil {
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int, value text, PRIMARY KEY (id))", table)); err != nil {
 		t.Fatalf("failed to create table with error '%v'", err)
 	}
 
-	if err := session.Query("INSERT INTO static_query_info (id, value) VALUES (?, ?)", 113, "foo").Exec(); err != nil {
+	if err := session.Query(fmt.Sprintf("INSERT INTO %s (id, value) VALUES (?, ?)", table), 113, "foo").Exec(); err != nil {
 		t.Fatalf("insert into static_query_info failed, err '%v'", err)
 	}
 
@@ -1521,7 +1569,7 @@ func TestStaticQueryInfo(t *testing.T) {
 		return values, nil
 	}
 
-	qry := session.Bind("SELECT id, value FROM static_query_info WHERE id = ?", autobinder)
+	qry := session.Bind(fmt.Sprintf("SELECT id, value FROM %s WHERE id = ?", table), autobinder)
 
 	if err := qry.Exec(); err != nil {
 		t.Fatalf("expose query info failed, error '%v'", err)
@@ -1576,13 +1624,15 @@ func TestBoundQueryInfo(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := createTable(session, "CREATE TABLE gocql_test.clustered_query_info (id int, cluster int, value text, PRIMARY KEY (id, cluster))"); err != nil {
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int, cluster int, value text, PRIMARY KEY (id, cluster))", table)); err != nil {
 		t.Fatalf("failed to create table with error '%v'", err)
 	}
 
 	write := &ClusteredKeyValue{Id: 200, Cluster: 300, Value: "baz"}
 
-	insert := session.Bind("INSERT INTO clustered_query_info (id, cluster, value) VALUES (?, ?,?)", write.Bind)
+	insert := session.Bind(fmt.Sprintf("INSERT INTO %s (id, cluster, value) VALUES (?, ?,?)", table), write.Bind)
 
 	if err := insert.Exec(); err != nil {
 		t.Fatalf("insert into clustered_query_info failed, err '%v'", err)
@@ -1590,7 +1640,7 @@ func TestBoundQueryInfo(t *testing.T) {
 
 	read := &ClusteredKeyValue{Id: 200, Cluster: 300}
 
-	qry := session.Bind("SELECT id, cluster, value FROM clustered_query_info WHERE id = ? and cluster = ?", read.Bind)
+	qry := session.Bind(fmt.Sprintf("SELECT id, cluster, value FROM %s WHERE id = ? and cluster = ?", table), read.Bind)
 
 	iter := qry.Iter()
 
@@ -1614,7 +1664,9 @@ func TestBatchQueryInfo(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := createTable(session, "CREATE TABLE gocql_test.batch_query_info (id int, cluster int, value text, PRIMARY KEY (id, cluster))"); err != nil {
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int, cluster int, value text, PRIMARY KEY (id, cluster))", table)); err != nil {
 		t.Fatalf("failed to create table with error '%v'", err)
 	}
 
@@ -1627,7 +1679,7 @@ func TestBatchQueryInfo(t *testing.T) {
 	}
 
 	batch := session.Batch(LoggedBatch)
-	batch.Bind("INSERT INTO batch_query_info (id, cluster, value) VALUES (?, ?,?)", write)
+	batch.Bind(fmt.Sprintf("INSERT INTO %s (id, cluster, value) VALUES (?, ?,?)", table), write)
 
 	if err := session.ExecuteBatch(batch); err != nil {
 		t.Fatalf("batch insert into batch_query_info failed, err '%v'", err)
@@ -1640,7 +1692,7 @@ func TestBatchQueryInfo(t *testing.T) {
 		return values, nil
 	}
 
-	qry := session.Bind("SELECT id, cluster, value FROM batch_query_info WHERE id = ? and cluster = ?", read)
+	qry := session.Bind(fmt.Sprintf("SELECT id, cluster, value FROM %s WHERE id = ? and cluster = ?", table), read)
 
 	iter := qry.Iter()
 
@@ -1714,12 +1766,14 @@ func TestPrepare_MissingSchemaPrepare(t *testing.T) {
 	conn := getRandomConn(t, s)
 	defer s.Close()
 
-	insertQry := s.Query("INSERT INTO invalidschemaprep (val) VALUES (?)", 5)
+	table := testTableName(t)
+
+	insertQry := s.Query(fmt.Sprintf("INSERT INTO %s (val) VALUES (?)", table), 5)
 	if err := conn.executeQuery(ctx, insertQry).err; err == nil {
 		t.Fatal("expected error, but got nil.")
 	}
 
-	if err := createTable(s, "CREATE TABLE gocql_test.invalidschemaprep (val int, PRIMARY KEY (val))"); err != nil {
+	if err := createTable(s, fmt.Sprintf("CREATE TABLE gocql_test.%s (val int, PRIMARY KEY (val))", table)); err != nil {
 		t.Fatal("create table:", err)
 	}
 
@@ -1735,7 +1789,9 @@ func TestPrepare_ReprepareStatement(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	stmt, conn := injectInvalidPreparedStatement(t, session, "test_reprepare_statement")
+	table := testTableName(t)
+
+	stmt, conn := injectInvalidPreparedStatement(t, session, table)
 	query := session.Query(stmt, "bar")
 	if err := conn.executeQuery(ctx, query).Close(); err != nil {
 		t.Fatalf("Failed to execute query for reprepare statement: %v", err)
@@ -1749,7 +1805,9 @@ func TestPrepare_ReprepareBatch(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	stmt, conn := injectInvalidPreparedStatement(t, session, "test_reprepare_statement_batch")
+	table := testTableName(t)
+
+	stmt, conn := injectInvalidPreparedStatement(t, session, table)
 	batch := session.Batch(UnloggedBatch)
 	batch.Query(stmt, "bar")
 	if err := conn.executeBatch(ctx, batch).Close(); err != nil {
@@ -1793,7 +1851,9 @@ func TestPrepare_PreparedCacheEviction(t *testing.T) {
 	session := createSessionFromCluster(cluster, t)
 	defer session.Close()
 
-	if err := createTable(session, "CREATE TABLE gocql_test.prepcachetest (id int,mod int,PRIMARY KEY (id))"); err != nil {
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int,mod int,PRIMARY KEY (id))", table)); err != nil {
 		t.Fatalf("failed to create table with error '%v'", err)
 	}
 	// clear the cache
@@ -1801,33 +1861,33 @@ func TestPrepare_PreparedCacheEviction(t *testing.T) {
 
 	//Fill the table
 	for i := 0; i < 2; i++ {
-		if err := session.Query("INSERT INTO prepcachetest (id,mod) VALUES (?, ?)", i, 10000%(i+1)).Exec(); err != nil {
+		if err := session.Query(fmt.Sprintf("INSERT INTO %s (id,mod) VALUES (?, ?)", table), i, 10000%(i+1)).Exec(); err != nil {
 			t.Fatalf("insert into prepcachetest failed, err '%v'", err)
 		}
 	}
 	//Populate the prepared statement cache with select statements
 	var id, mod int
 	for i := 0; i < 2; i++ {
-		err := session.Query("SELECT id,mod FROM prepcachetest WHERE id = "+strconv.FormatInt(int64(i), 10)).Scan(&id, &mod)
+		err := session.Query(fmt.Sprintf("SELECT id,mod FROM %s WHERE id = ", table)+strconv.FormatInt(int64(i), 10)).Scan(&id, &mod)
 		if err != nil {
 			t.Fatalf("select from prepcachetest failed, error '%v'", err)
 		}
 	}
 
 	//generate an update statement to test they are prepared
-	err := session.Query("UPDATE prepcachetest SET mod = ? WHERE id = ?", 1, 11).Exec()
+	err := session.Query(fmt.Sprintf("UPDATE %s SET mod = ? WHERE id = ?", table), 1, 11).Exec()
 	if err != nil {
 		t.Fatalf("update prepcachetest failed, error '%v'", err)
 	}
 
 	//generate a delete statement to test they are prepared
-	err = session.Query("DELETE FROM prepcachetest WHERE id = ?", 1).Exec()
+	err = session.Query(fmt.Sprintf("DELETE FROM %s WHERE id = ?", table), 1).Exec()
 	if err != nil {
 		t.Fatalf("delete from prepcachetest failed, error '%v'", err)
 	}
 
 	//generate an insert statement to test they are prepared
-	err = session.Query("INSERT INTO prepcachetest (id,mod) VALUES (?, ?)", 3, 11).Exec()
+	err = session.Query(fmt.Sprintf("INSERT INTO %s (id,mod) VALUES (?, ?)", table), 3, 11).Exec()
 	if err != nil {
 		t.Fatalf("insert into prepcachetest failed, error '%v'", err)
 	}
@@ -1842,27 +1902,27 @@ func TestPrepare_PreparedCacheEviction(t *testing.T) {
 
 	// Walk through all the configured hosts and test cache retention and eviction
 	for _, host := range session.hostSource.hosts {
-		_, ok := session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host.HostID(), session.cfg.Keyspace, "SELECT id,mod FROM prepcachetest WHERE id = 0"))
+		_, ok := session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host.HostID(), session.cfg.Keyspace, fmt.Sprintf("SELECT id,mod FROM %s WHERE id = 0", table)))
 		if ok {
 			t.Errorf("expected first select to be purged but was in cache for host=%q", host)
 		}
 
-		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host.HostID(), session.cfg.Keyspace, "SELECT id,mod FROM prepcachetest WHERE id = 1"))
+		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host.HostID(), session.cfg.Keyspace, fmt.Sprintf("SELECT id,mod FROM %s WHERE id = 1", table)))
 		if !ok {
 			t.Errorf("exepected second select to be in cache for host=%q", host)
 		}
 
-		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host.HostID(), session.cfg.Keyspace, "INSERT INTO prepcachetest (id,mod) VALUES (?, ?)"))
+		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host.HostID(), session.cfg.Keyspace, fmt.Sprintf("INSERT INTO %s (id,mod) VALUES (?, ?)", table)))
 		if !ok {
 			t.Errorf("expected insert to be in cache for host=%q", host)
 		}
 
-		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host.HostID(), session.cfg.Keyspace, "UPDATE prepcachetest SET mod = ? WHERE id = ?"))
+		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host.HostID(), session.cfg.Keyspace, fmt.Sprintf("UPDATE %s SET mod = ? WHERE id = ?", table)))
 		if !ok {
 			t.Errorf("expected update to be in cached for host=%q", host)
 		}
 
-		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host.HostID(), session.cfg.Keyspace, "DELETE FROM prepcachetest WHERE id = ?"))
+		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host.HostID(), session.cfg.Keyspace, fmt.Sprintf("DELETE FROM %s WHERE id = ?", table)))
 		if !ok {
 			t.Errorf("expected delete to be cached for host=%q", host)
 		}
@@ -1872,6 +1932,8 @@ func TestPrepare_PreparedCacheEviction(t *testing.T) {
 func TestPrepare_PreparedCacheKey(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
+
+	table := testTableName(t)
 
 	// create a second keyspace
 	cluster2 := createCluster()
@@ -1884,31 +1946,31 @@ func TestPrepare_PreparedCacheKey(t *testing.T) {
 	defer session2.Close()
 
 	// both keyspaces have a table named "test_stmt_cache_key"
-	if err := createTable(session, "CREATE TABLE gocql_test.test_stmt_cache_key (id varchar primary key, field varchar)"); err != nil {
+	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id varchar primary key, field varchar)", table)); err != nil {
 		t.Fatal("create table:", err)
 	}
-	if err := createTable(session2, "CREATE TABLE gocql_test2.test_stmt_cache_key (id varchar primary key, field varchar)"); err != nil {
+	if err := createTable(session2, fmt.Sprintf("CREATE TABLE gocql_test2.%s (id varchar primary key, field varchar)", table)); err != nil {
 		t.Fatal("create table:", err)
 	}
 
 	// both tables have a single row with the same partition key but different column value
-	if err = session.Query(`INSERT INTO test_stmt_cache_key (id, field) VALUES (?, ?)`, "key", "one").Exec(); err != nil {
+	if err = session.Query(fmt.Sprintf(`INSERT INTO %s (id, field) VALUES (?, ?)`, table), "key", "one").Exec(); err != nil {
 		t.Fatal("insert:", err)
 	}
-	if err = session2.Query(`INSERT INTO test_stmt_cache_key (id, field) VALUES (?, ?)`, "key", "two").Exec(); err != nil {
+	if err = session2.Query(fmt.Sprintf(`INSERT INTO %s (id, field) VALUES (?, ?)`, table), "key", "two").Exec(); err != nil {
 		t.Fatal("insert:", err)
 	}
 
 	// should be able to see different values in each keyspace
 	var value string
-	if err = session.Query("SELECT field FROM test_stmt_cache_key WHERE id = ?", "key").Scan(&value); err != nil {
+	if err = session.Query(fmt.Sprintf("SELECT field FROM %s WHERE id = ?", table), "key").Scan(&value); err != nil {
 		t.Fatal("select:", err)
 	}
 	if value != "one" {
 		t.Errorf("Expected one, got %s", value)
 	}
 
-	if err = session2.Query("SELECT field FROM test_stmt_cache_key WHERE id = ?", "key").Scan(&value); err != nil {
+	if err = session2.Query(fmt.Sprintf("SELECT field FROM %s WHERE id = ?", table), "key").Scan(&value); err != nil {
 		t.Fatal("select:", err)
 	}
 	if value != "two" {
@@ -1921,11 +1983,13 @@ func TestMarshalFloat64Ptr(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := createTable(session, "CREATE TABLE gocql_test.float_test (id double, test double, primary key (id))"); err != nil {
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id double, test double, primary key (id))", table)); err != nil {
 		t.Fatal("create table:", err)
 	}
 	testNum := float64(7500)
-	if err := session.Query(`INSERT INTO float_test (id,test) VALUES (?,?)`, float64(7500.00), &testNum).Exec(); err != nil {
+	if err := session.Query(fmt.Sprintf(`INSERT INTO %s (id,test) VALUES (?,?)`, table), float64(7500.00), &testNum).Exec(); err != nil {
 		t.Fatal("insert float64:", err)
 	}
 }
@@ -1935,46 +1999,48 @@ func TestMarshalInet(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := createTable(session, "CREATE TABLE gocql_test.inet_test (ip inet, name text, primary key (ip))"); err != nil {
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (ip inet, name text, primary key (ip))", table)); err != nil {
 		t.Fatal("create table:", err)
 	}
 	stringIp := "123.34.45.56"
-	if err := session.Query(`INSERT INTO inet_test (ip,name) VALUES (?,?)`, stringIp, "Test IP 1").Exec(); err != nil {
+	if err := session.Query(fmt.Sprintf(`INSERT INTO %s (ip,name) VALUES (?,?)`, table), stringIp, "Test IP 1").Exec(); err != nil {
 		t.Fatal("insert string inet:", err)
 	}
 	var stringResult string
-	if err := session.Query("SELECT ip FROM inet_test").Scan(&stringResult); err != nil {
-		t.Fatalf("select for string from inet_test 1 failed: %v", err)
+	if err := session.Query(fmt.Sprintf("SELECT ip FROM %s", table)).Scan(&stringResult); err != nil {
+		t.Fatalf("select for string from table 1 failed: %v", err)
 	}
 	if stringResult != stringIp {
 		t.Errorf("Expected %s, was %s", stringIp, stringResult)
 	}
 
 	var ipResult net.IP
-	if err := session.Query("SELECT ip FROM inet_test").Scan(&ipResult); err != nil {
-		t.Fatalf("select for net.IP from inet_test 1 failed: %v", err)
+	if err := session.Query(fmt.Sprintf("SELECT ip FROM %s", table)).Scan(&ipResult); err != nil {
+		t.Fatalf("select for net.IP from table 1 failed: %v", err)
 	}
 	if ipResult.String() != stringIp {
 		t.Errorf("Expected %s, was %s", stringIp, ipResult.String())
 	}
 
-	if err := session.Query(`DELETE FROM inet_test WHERE ip = ?`, stringIp).Exec(); err != nil {
+	if err := session.Query(fmt.Sprintf(`DELETE FROM %s WHERE ip = ?`, table), stringIp).Exec(); err != nil {
 		t.Fatal("delete inet table:", err)
 	}
 
 	netIp := net.ParseIP("222.43.54.65")
-	if err := session.Query(`INSERT INTO inet_test (ip,name) VALUES (?,?)`, netIp, "Test IP 2").Exec(); err != nil {
+	if err := session.Query(fmt.Sprintf(`INSERT INTO %s (ip,name) VALUES (?,?)`, table), netIp, "Test IP 2").Exec(); err != nil {
 		t.Fatal("insert netIp inet:", err)
 	}
 
-	if err := session.Query("SELECT ip FROM inet_test").Scan(&stringResult); err != nil {
-		t.Fatalf("select for string from inet_test 2 failed: %v", err)
+	if err := session.Query(fmt.Sprintf("SELECT ip FROM %s", table)).Scan(&stringResult); err != nil {
+		t.Fatalf("select for string from table 2 failed: %v", err)
 	}
 	if stringResult != netIp.String() {
 		t.Errorf("Expected %s, was %s", netIp.String(), stringResult)
 	}
-	if err := session.Query("SELECT ip FROM inet_test").Scan(&ipResult); err != nil {
-		t.Fatalf("select for net.IP from inet_test 2 failed: %v", err)
+	if err := session.Query(fmt.Sprintf("SELECT ip FROM %s", table)).Scan(&ipResult); err != nil {
+		t.Fatalf("select for net.IP from table 2 failed: %v", err)
 	}
 	if ipResult.String() != netIp.String() {
 		t.Errorf("Expected %s, was %s", netIp.String(), ipResult.String())
@@ -1986,41 +2052,43 @@ func TestVarint(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := createTable(session, "CREATE TABLE gocql_test.varint_test (id varchar, test varint, test2 varint, primary key (id))"); err != nil {
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id varchar, test varint, test2 varint, primary key (id))", table)); err != nil {
 		t.Fatalf("failed to create table with error '%v'", err)
 	}
 
-	if err := session.Query(`INSERT INTO varint_test (id, test) VALUES (?, ?)`, "id", 0).Exec(); err != nil {
+	if err := session.Query(fmt.Sprintf(`INSERT INTO %s (id, test) VALUES (?, ?)`, table), "id", 0).Exec(); err != nil {
 		t.Fatalf("insert varint: %v", err)
 	}
 
 	var result int
-	if err := session.Query("SELECT test FROM varint_test").Scan(&result); err != nil {
-		t.Fatalf("select from varint_test failed: %v", err)
+	if err := session.Query(fmt.Sprintf("SELECT test FROM %s", table)).Scan(&result); err != nil {
+		t.Fatalf("select failed: %v", err)
 	}
 
 	if result != 0 {
 		t.Errorf("Expected 0, was %d", result)
 	}
 
-	if err := session.Query(`INSERT INTO varint_test (id, test) VALUES (?, ?)`, "id", -1).Exec(); err != nil {
+	if err := session.Query(fmt.Sprintf(`INSERT INTO %s (id, test) VALUES (?, ?)`, table), "id", -1).Exec(); err != nil {
 		t.Fatalf("insert varint: %v", err)
 	}
 
-	if err := session.Query("SELECT test FROM varint_test").Scan(&result); err != nil {
-		t.Fatalf("select from varint_test failed: %v", err)
+	if err := session.Query(fmt.Sprintf("SELECT test FROM %s", table)).Scan(&result); err != nil {
+		t.Fatalf("select failed: %v", err)
 	}
 
 	if result != -1 {
 		t.Errorf("Expected -1, was %d", result)
 	}
 
-	if err := session.Query(`INSERT INTO varint_test (id, test) VALUES (?, ?)`, "id", nil).Exec(); err != nil {
+	if err := session.Query(fmt.Sprintf(`INSERT INTO %s (id, test) VALUES (?, ?)`, table), "id", nil).Exec(); err != nil {
 		t.Fatalf("insert varint: %v", err)
 	}
 
-	if err := session.Query("SELECT test FROM varint_test").Scan(&result); err != nil {
-		t.Fatalf("select from varint_test failed: %v", err)
+	if err := session.Query(fmt.Sprintf("SELECT test FROM %s", table)).Scan(&result); err != nil {
+		t.Fatalf("select failed: %v", err)
 	}
 
 	if result != 0 {
@@ -2029,21 +2097,21 @@ func TestVarint(t *testing.T) {
 
 	var nullableResult *int
 
-	if err := session.Query("SELECT test FROM varint_test").Scan(&nullableResult); err != nil {
-		t.Fatalf("select from varint_test failed: %v", err)
+	if err := session.Query(fmt.Sprintf("SELECT test FROM %s", table)).Scan(&nullableResult); err != nil {
+		t.Fatalf("select failed: %v", err)
 	}
 
 	if nullableResult != nil {
 		t.Errorf("Expected nil, was %d", nullableResult)
 	}
 
-	if err := session.Query(`INSERT INTO varint_test (id, test) VALUES (?, ?)`, "id", int64(math.MaxInt32)+1).Exec(); err != nil {
+	if err := session.Query(fmt.Sprintf(`INSERT INTO %s (id, test) VALUES (?, ?)`, table), "id", int64(math.MaxInt32)+1).Exec(); err != nil {
 		t.Fatalf("insert varint: %v", err)
 	}
 
 	var result64 int64
-	if err := session.Query("SELECT test FROM varint_test").Scan(&result64); err != nil {
-		t.Fatalf("select from varint_test failed: %v", err)
+	if err := session.Query(fmt.Sprintf("SELECT test FROM %s", table)).Scan(&result64); err != nil {
+		t.Fatalf("select failed: %v", err)
 	}
 
 	if result64 != int64(math.MaxInt32)+1 {
@@ -2052,28 +2120,28 @@ func TestVarint(t *testing.T) {
 
 	biggie := new(big.Int)
 	biggie.SetString("36893488147419103232", 10) // > 2**64
-	if err := session.Query(`INSERT INTO varint_test (id, test) VALUES (?, ?)`, "id", biggie).Exec(); err != nil {
+	if err := session.Query(fmt.Sprintf(`INSERT INTO %s (id, test) VALUES (?, ?)`, table), "id", biggie).Exec(); err != nil {
 		t.Fatalf("insert varint: %v", err)
 	}
 
 	resultBig := new(big.Int)
-	if err := session.Query("SELECT test FROM varint_test").Scan(resultBig); err != nil {
-		t.Fatalf("select from varint_test failed: %v", err)
+	if err := session.Query(fmt.Sprintf("SELECT test FROM %s", table)).Scan(resultBig); err != nil {
+		t.Fatalf("select failed: %v", err)
 	}
 
 	if resultBig.String() != biggie.String() {
 		t.Errorf("Expected %s, was %s", biggie.String(), resultBig.String())
 	}
 
-	err := session.Query("SELECT test FROM varint_test").Scan(&result64)
+	err := session.Query(fmt.Sprintf("SELECT test FROM %s", table)).Scan(&result64)
 	if err == nil || strings.Index(err.Error(), "the data value should be in the int64 range") == -1 {
 		t.Errorf("expected out of range error since value is too big for int64, result:%d", result64)
 	}
 
 	// value not set in cassandra, leave bind variable empty
 	resultBig = new(big.Int)
-	if err := session.Query("SELECT test2 FROM varint_test").Scan(resultBig); err != nil {
-		t.Fatalf("select from varint_test failed: %v", err)
+	if err := session.Query(fmt.Sprintf("SELECT test2 FROM %s", table)).Scan(resultBig); err != nil {
+		t.Fatalf("select failed: %v", err)
 	}
 
 	if resultBig.Int64() != 0 {
@@ -2081,8 +2149,8 @@ func TestVarint(t *testing.T) {
 	}
 
 	// can use double pointer to explicitly detect value is not set in cassandra
-	if err := session.Query("SELECT test2 FROM varint_test").Scan(&resultBig); err != nil {
-		t.Fatalf("select from varint_test failed: %v", err)
+	if err := session.Query(fmt.Sprintf("SELECT test2 FROM %s", table)).Scan(&resultBig); err != nil {
+		t.Fatalf("select failed: %v", err)
 	}
 
 	if resultBig != nil {
@@ -2124,13 +2192,15 @@ func TestBatchStats(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := createTable(session, "CREATE TABLE gocql_test.batchStats (id int, PRIMARY KEY (id))"); err != nil {
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int, PRIMARY KEY (id))", table)); err != nil {
 		t.Fatalf("failed to create table with error '%v'", err)
 	}
 
 	b := session.Batch(LoggedBatch)
-	b.Query("INSERT INTO batchStats (id) VALUES (?)", 1)
-	b.Query("INSERT INTO batchStats (id) VALUES (?)", 2)
+	b.Query(fmt.Sprintf("INSERT INTO %s (id) VALUES (?)", table), 1)
+	b.Query(fmt.Sprintf("INSERT INTO %s (id) VALUES (?)", table), 2)
 
 	if err := session.ExecuteBatch(b); err != nil {
 		t.Fatalf("query failed. %v", err)
@@ -2154,7 +2224,9 @@ func TestBatchObserve(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := createTable(session, `CREATE TABLE gocql_test.batch_observe_table (id int, other int, PRIMARY KEY (id))`); err != nil {
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (id int, other int, PRIMARY KEY (id))`, table)); err != nil {
 		t.Fatal("create table:", err)
 	}
 
@@ -2182,7 +2254,7 @@ func TestBatchObserve(t *testing.T) {
 	}))
 	for i := 0; i < 100; i++ {
 		// hard coding 'i' into one of the values for better  testing of observation
-		batch.Query(fmt.Sprintf(`INSERT INTO batch_observe_table (id,other) VALUES (?,%d)`, i), i)
+		batch.Query(fmt.Sprintf(`INSERT INTO %s (id,other) VALUES (?,%d)`, table, i), i)
 	}
 
 	if err := session.ExecuteBatch(batch); err != nil {
@@ -2201,7 +2273,7 @@ func TestBatchObserve(t *testing.T) {
 		t.Fatalf("expecting keyspace 'gocql_test', got %q", observedBatch.observedKeyspace)
 	}
 	for i, stmt := range observedBatch.observedStmts {
-		if stmt != fmt.Sprintf(`INSERT INTO batch_observe_table (id,other) VALUES (?,%d)`, i) {
+		if stmt != fmt.Sprintf(`INSERT INTO %s (id,other) VALUES (?,%d)`, table, i) {
 			t.Fatal("unexpected query", stmt)
 		}
 
@@ -2215,16 +2287,18 @@ func TestNilInQuery(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := createTable(session, "CREATE TABLE gocql_test.testNilInsert (id int, count int, PRIMARY KEY (id))"); err != nil {
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int, count int, PRIMARY KEY (id))", table)); err != nil {
 		t.Fatalf("failed to create table with error '%v'", err)
 	}
-	if err := session.Query("INSERT INTO testNilInsert (id,count) VALUES (?,?)", 1, nil).Exec(); err != nil {
+	if err := session.Query(fmt.Sprintf("INSERT INTO %s (id,count) VALUES (?,?)", table), 1, nil).Exec(); err != nil {
 		t.Fatalf("failed to insert with err: %v", err)
 	}
 
 	var id int
 
-	if err := session.Query("SELECT id FROM testNilInsert").Scan(&id); err != nil {
+	if err := session.Query(fmt.Sprintf("SELECT id FROM %s", table)).Scan(&id); err != nil {
 		t.Fatalf("failed to select with err: %v", err)
 	} else if id != 1 {
 		t.Fatalf("expected id to be 1, got %v", id)
@@ -2237,17 +2311,19 @@ func TestEmptyTimestamp(t *testing.T) {
 
 	defer session.Close()
 
-	if err := createTable(session, "CREATE TABLE gocql_test.test_empty_timestamp (id int, time timestamp, num int, PRIMARY KEY (id))"); err != nil {
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int, time timestamp, num int, PRIMARY KEY (id))", table)); err != nil {
 		t.Fatalf("failed to create table with error '%v'", err)
 	}
 
-	if err := session.Query("INSERT INTO test_empty_timestamp (id, num) VALUES (?,?)", 1, 561).Exec(); err != nil {
+	if err := session.Query(fmt.Sprintf("INSERT INTO %s (id, num) VALUES (?,?)", table), 1, 561).Exec(); err != nil {
 		t.Fatalf("failed to insert with err: %v", err)
 	}
 
 	var timeVal time.Time
 
-	if err := session.Query("SELECT time FROM test_empty_timestamp where id = ?", 1).Scan(&timeVal); err != nil {
+	if err := session.Query(fmt.Sprintf("SELECT time FROM %s where id = ?", table), 1).Scan(&timeVal); err != nil {
 		t.Fatalf("failed to select with err: %v", err)
 	}
 
@@ -2309,7 +2385,7 @@ func TestSessionMetadataAPIs(t *testing.T) {
 
 	t.Run("TableMetadata", func(t *testing.T) {
 		t.Run("basic_table_after_create", func(t *testing.T) {
-			table := "tbl_tm_basic"
+			table := testTableName(t)
 			if err := createTable(session, fmt.Sprintf(
 				"CREATE TABLE IF NOT EXISTS %s.%s (pk int PRIMARY KEY, v int)", ks, table)); err != nil {
 				t.Fatalf("create table: %v", err)
@@ -2331,7 +2407,7 @@ func TestSessionMetadataAPIs(t *testing.T) {
 		})
 
 		t.Run("columns_and_partition_key", func(t *testing.T) {
-			table := "tbl_tm_columns"
+			table := testTableName(t)
 			if err := createTable(session, fmt.Sprintf(
 				"CREATE TABLE IF NOT EXISTS %s.%s (pk1 int, pk2 text, ck int, val blob, PRIMARY KEY ((pk1, pk2), ck))", ks, table)); err != nil {
 				t.Fatalf("create table: %v", err)
@@ -2368,7 +2444,7 @@ func TestSessionMetadataAPIs(t *testing.T) {
 				t.Skip("secondary indexes are not supported on tables with tablets")
 			}
 
-			table := "tbl_tm_idx"
+			table := testTableName(t)
 			if err := createTable(session, fmt.Sprintf(
 				"CREATE TABLE IF NOT EXISTS %s.%s (pk int PRIMARY KEY, v int)", ks, table)); err != nil {
 				t.Fatalf("create table: %v", err)
@@ -2401,8 +2477,8 @@ func TestSessionMetadataAPIs(t *testing.T) {
 				t.Skip("materialized views are not supported on tables with tablets")
 			}
 
-			baseTable := "tbl_tm_mv_base"
-			viewName := "tbl_tm_mv_view"
+			baseTable := testTableName(t, "base")
+			viewName := testTableName(t, "view")
 			if err := createTable(session, fmt.Sprintf(
 				"CREATE TABLE IF NOT EXISTS %s.%s (pk int, ck int, v int, PRIMARY KEY (pk, ck))", ks, baseTable)); err != nil {
 				t.Fatalf("create base table: %v", err)
@@ -2440,7 +2516,7 @@ func TestSessionMetadataAPIs(t *testing.T) {
 		})
 
 		t.Run("after_alter_table", func(t *testing.T) {
-			table := "tbl_tm_alter"
+			table := testTableName(t)
 			if err := createTable(session, fmt.Sprintf(
 				"CREATE TABLE IF NOT EXISTS %s.%s (pk int PRIMARY KEY, v int)", ks, table)); err != nil {
 				t.Fatalf("create table: %v", err)
@@ -2464,7 +2540,7 @@ func TestSessionMetadataAPIs(t *testing.T) {
 		})
 
 		t.Run("after_drop_and_recreate", func(t *testing.T) {
-			table := "tbl_tm_recreate"
+			table := testTableName(t)
 			if err := createTable(session, fmt.Sprintf(
 				"CREATE TABLE IF NOT EXISTS %s.%s (pk int PRIMARY KEY, v int)", ks, table)); err != nil {
 				t.Fatalf("create table: %v", err)
@@ -2532,7 +2608,7 @@ func TestSessionMetadataAPIs(t *testing.T) {
 
 	t.Run("KeyspaceMetadata", func(t *testing.T) {
 		t.Run("includes_new_table", func(t *testing.T) {
-			table := "tbl_km_new"
+			table := testTableName(t)
 			if err := createTable(session, fmt.Sprintf(
 				"CREATE TABLE IF NOT EXISTS %s.%s (pk int PRIMARY KEY, v int)", ks, table)); err != nil {
 				t.Fatalf("create table: %v", err)
@@ -2552,7 +2628,7 @@ func TestSessionMetadataAPIs(t *testing.T) {
 		})
 
 		t.Run("excludes_dropped_table", func(t *testing.T) {
-			table := "tbl_km_drop"
+			table := testTableName(t)
 			if err := createTable(session, fmt.Sprintf(
 				"CREATE TABLE IF NOT EXISTS %s.%s (pk int PRIMARY KEY, v int)", ks, table)); err != nil {
 				t.Fatalf("create table: %v", err)
@@ -2586,7 +2662,7 @@ func TestSessionMetadataAPIs(t *testing.T) {
 		})
 
 		t.Run("multiple_tables", func(t *testing.T) {
-			tables := []string{"tbl_km_multi_a", "tbl_km_multi_b", "tbl_km_multi_c"}
+			tables := []string{testTableName(t, "a"), testTableName(t, "b"), testTableName(t, "c")}
 			for _, table := range tables {
 				if err := createTable(session, fmt.Sprintf(
 					"CREATE TABLE IF NOT EXISTS %s.%s (pk int PRIMARY KEY)", ks, table)); err != nil {
@@ -2812,20 +2888,23 @@ func TestTokenAwareConnPool(t *testing.T) {
 		t.Errorf("Expected pool size %d but was %d", expectedPoolSize, session.pool.Size())
 	}
 
+	table := testTableName(t)
+	otherTable := testTableName(t, "other")
+
 	// add another cf so there are two pages when fetching table metadata from our keyspace
-	if err := createTable(session, "CREATE TABLE gocql_test.test_token_aware_other_cf (id int, data text, PRIMARY KEY (id))"); err != nil {
+	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int, data text, PRIMARY KEY (id))", otherTable)); err != nil {
 		t.Fatalf("failed to create test_token_aware table with err: %v", err)
 	}
 
-	if err := createTable(session, "CREATE TABLE gocql_test.test_token_aware (id int, data text, PRIMARY KEY (id))"); err != nil {
+	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int, data text, PRIMARY KEY (id))", table)); err != nil {
 		t.Fatalf("failed to create test_token_aware table with err: %v", err)
 	}
-	query := session.Query("INSERT INTO test_token_aware (id, data) VALUES (?,?)", 42, "8 * 6 =")
+	query := session.Query(fmt.Sprintf("INSERT INTO %s (id, data) VALUES (?,?)", table), 42, "8 * 6 =")
 	if err := query.Exec(); err != nil {
 		t.Fatalf("failed to insert with err: %v", err)
 	}
 
-	query = session.Query("SELECT data FROM test_token_aware where id = ?", 42).Consistency(One)
+	query = session.Query(fmt.Sprintf("SELECT data FROM %s where id = ?", table), 42).Consistency(One)
 	var data string
 	if err := query.Scan(&data); err != nil {
 		t.Error(err)
@@ -2860,19 +2939,21 @@ func TestManualQueryPaging(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := createTable(session, "CREATE TABLE gocql_test.testManualPaging (id int, count int, PRIMARY KEY (id))"); err != nil {
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int, count int, PRIMARY KEY (id))", table)); err != nil {
 		t.Fatal(err)
 	}
 
 	for i := 0; i < rowsToInsert; i++ {
-		err := session.Query("INSERT INTO testManualPaging(id, count) VALUES(?, ?)", i, i*i).Exec()
+		err := session.Query(fmt.Sprintf("INSERT INTO %s(id, count) VALUES(?, ?)", table), i, i*i).Exec()
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
 
 	// disable auto paging, 1 page per iteration
-	query := session.Query("SELECT id, count FROM testManualPaging").PageState(nil).PageSize(2)
+	query := session.Query(fmt.Sprintf("SELECT id, count FROM %s", table)).PageState(nil).PageSize(2)
 	var id, count, fetched int
 
 	iter := query.Iter()
@@ -2913,11 +2994,13 @@ func TestSessionBindRoutingKey(t *testing.T) {
 	session := createSessionFromCluster(cluster, t)
 	defer session.Close()
 
-	if err := createTable(session, `CREATE TABLE gocql_test.test_bind_routing_key (
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (
 			key     varchar,
 			value   int,
 			PRIMARY KEY (key)
-		)`); err != nil {
+		)`, table)); err != nil {
 
 		t.Fatal(err)
 	}
@@ -2931,7 +3014,7 @@ func TestSessionBindRoutingKey(t *testing.T) {
 		return []interface{}{key, value}, nil
 	}
 
-	q := session.Bind("INSERT INTO test_bind_routing_key(key, value) VALUES(?, ?)", fn)
+	q := session.Bind(fmt.Sprintf("INSERT INTO %s(key, value) VALUES(?, ?)", table), fn)
 	if err := q.Exec(); err != nil {
 		t.Fatal(err)
 	}
@@ -2945,16 +3028,18 @@ func TestJSONSupport(t *testing.T) {
 		t.Skip("skipping JSON support on proto < 4")
 	}
 
-	if err := createTable(session, `CREATE TABLE gocql_test.test_json (
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (
 		    id text PRIMARY KEY,
 		    age int,
 		    state text
-		)`); err != nil {
+		)`, table)); err != nil {
 
 		t.Fatal(err)
 	}
 
-	err := session.Query("INSERT INTO test_json JSON ?", `{"id": "user123", "age": 42, "state": "TX"}`).Exec()
+	err := session.Query(fmt.Sprintf("INSERT INTO %s JSON ?", table), `{"id": "user123", "age": 42, "state": "TX"}`).Exec()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2965,7 +3050,7 @@ func TestJSONSupport(t *testing.T) {
 		state string
 	)
 
-	err = session.Query("SELECT id, age, state FROM test_json WHERE id = ?", "user123").Scan(&id, &age, &state)
+	err = session.Query(fmt.Sprintf("SELECT id, age, state FROM %s WHERE id = ?", table), "user123").Scan(&id, &age, &state)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2985,10 +3070,12 @@ func TestUnmarshallNestedTypes(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := createTable(session, `CREATE TABLE gocql_test.test_557 (
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (
 		    id text PRIMARY KEY,
 		    val list<frozen<map<text, text> > >
-		)`); err != nil {
+		)`, table)); err != nil {
 
 		t.Fatal(err)
 	}
@@ -2999,13 +3086,13 @@ func TestUnmarshallNestedTypes(t *testing.T) {
 	}
 
 	const id = "key"
-	err := session.Query("INSERT INTO test_557(id, val) VALUES(?, ?)", id, m).Exec()
+	err := session.Query(fmt.Sprintf("INSERT INTO %s(id, val) VALUES(?, ?)", table), id, m).Exec()
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	var data []map[string]string
-	if err := session.Query("SELECT val FROM test_557 WHERE id = ?", id).Scan(&data); err != nil {
+	if err := session.Query(fmt.Sprintf("SELECT val FROM %s WHERE id = ?", table), id).Scan(&data); err != nil {
 		t.Fatal(err)
 	}
 
@@ -3025,39 +3112,41 @@ func TestSchemaReset(t *testing.T) {
 	session := createSessionFromCluster(cluster, t)
 	defer session.Close()
 
-	if err := createTable(session, `CREATE TABLE gocql_test.test_schema_reset (
-		id text PRIMARY KEY)`); err != nil {
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (
+		id text PRIMARY KEY)`, table)); err != nil {
 
 		t.Fatal(err)
 	}
 
 	const key = "test"
 
-	err := session.Query("INSERT INTO test_schema_reset(id) VALUES(?)", key).Exec()
+	err := session.Query(fmt.Sprintf("INSERT INTO %s(id) VALUES(?)", table), key).Exec()
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	var id string
-	err = session.Query("SELECT * FROM test_schema_reset WHERE id=?", key).Scan(&id)
+	err = session.Query(fmt.Sprintf("SELECT * FROM %s WHERE id=?", table), key).Scan(&id)
 	if err != nil {
 		t.Fatal(err)
 	} else if id != key {
 		t.Fatalf("expected to get id=%q got=%q", key, id)
 	}
 
-	if err := createTable(session, `ALTER TABLE gocql_test.test_schema_reset ADD val text`); err != nil {
+	if err := createTable(session, fmt.Sprintf(`ALTER TABLE gocql_test.%s ADD val text`, table)); err != nil {
 		t.Fatal(err)
 	}
 
 	const expVal = "test-val"
-	err = session.Query("INSERT INTO test_schema_reset(id, val) VALUES(?, ?)", key, expVal).Exec()
+	err = session.Query(fmt.Sprintf("INSERT INTO %s(id, val) VALUES(?, ?)", table), key, expVal).Exec()
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	var val string
-	err = session.Query("SELECT * FROM test_schema_reset WHERE id=?", key).Scan(&id, &val)
+	err = session.Query(fmt.Sprintf("SELECT * FROM %s WHERE id=?", table), key).Scan(&id, &val)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3118,20 +3207,22 @@ func TestUnsetCol(t *testing.T) {
 		t.Skip("Unset Values are not supported in protocol < 4")
 	}
 
-	if err := createTable(session, "CREATE TABLE gocql_test.testUnsetInsert (id int, my_int int, my_text text, PRIMARY KEY (id))"); err != nil {
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int, my_int int, my_text text, PRIMARY KEY (id))", table)); err != nil {
 		t.Fatalf("failed to create table with error '%v'", err)
 	}
-	if err := session.Query("INSERT INTO testUnSetInsert (id,my_int,my_text) VALUES (?,?,?)", 1, 2, "3").Exec(); err != nil {
+	if err := session.Query(fmt.Sprintf("INSERT INTO %s (id,my_int,my_text) VALUES (?,?,?)", table), 1, 2, "3").Exec(); err != nil {
 		t.Fatalf("failed to insert with err: %v", err)
 	}
-	if err := session.Query("INSERT INTO testUnSetInsert (id,my_int,my_text) VALUES (?,?,?)", 1, UnsetValue, UnsetValue).Exec(); err != nil {
+	if err := session.Query(fmt.Sprintf("INSERT INTO %s (id,my_int,my_text) VALUES (?,?,?)", table), 1, UnsetValue, UnsetValue).Exec(); err != nil {
 		t.Fatalf("failed to insert with err: %v", err)
 	}
 
 	var id, mInt int
 	var mText string
 
-	if err := session.Query("SELECT id, my_int ,my_text FROM testUnsetInsert").Scan(&id, &mInt, &mText); err != nil {
+	if err := session.Query(fmt.Sprintf("SELECT id, my_int ,my_text FROM %s", table)).Scan(&id, &mInt, &mText); err != nil {
 		t.Fatalf("failed to select with err: %v", err)
 	} else if id != 1 || mInt != 2 || mText != "3" {
 		t.Fatalf("Expected results: 1, 2, \"3\", got %v, %v, %v", id, mInt, mText)
@@ -3147,14 +3238,16 @@ func TestUnsetColBatch(t *testing.T) {
 		t.Skip("Unset Values are not supported in protocol < 4")
 	}
 
-	if err := createTable(session, "CREATE TABLE gocql_test.batchUnsetInsert (id int, my_int int, my_text text, PRIMARY KEY (id))"); err != nil {
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int, my_int int, my_text text, PRIMARY KEY (id))", table)); err != nil {
 		t.Fatalf("failed to create table with error '%v'", err)
 	}
 
 	b := session.Batch(LoggedBatch)
-	b.Query("INSERT INTO gocql_test.batchUnsetInsert(id, my_int, my_text) VALUES (?,?,?)", 1, 1, UnsetValue)
-	b.Query("INSERT INTO gocql_test.batchUnsetInsert(id, my_int, my_text) VALUES (?,?,?)", 1, UnsetValue, "")
-	b.Query("INSERT INTO gocql_test.batchUnsetInsert(id, my_int, my_text) VALUES (?,?,?)", 2, 2, UnsetValue)
+	b.Query(fmt.Sprintf("INSERT INTO gocql_test.%s(id, my_int, my_text) VALUES (?,?,?)", table), 1, 1, UnsetValue)
+	b.Query(fmt.Sprintf("INSERT INTO gocql_test.%s(id, my_int, my_text) VALUES (?,?,?)", table), 1, UnsetValue, "")
+	b.Query(fmt.Sprintf("INSERT INTO gocql_test.%s(id, my_int, my_text) VALUES (?,?,?)", table), 2, 2, UnsetValue)
 
 	if err := session.ExecuteBatch(b); err != nil {
 		t.Fatalf("query failed. %v", err)
@@ -3168,13 +3261,13 @@ func TestUnsetColBatch(t *testing.T) {
 	}
 	var id, mInt, count int
 	var mText string
-	if err := session.Query("SELECT count(*) FROM gocql_test.batchUnsetInsert;").Scan(&count); err != nil {
+	if err := session.Query(fmt.Sprintf("SELECT count(*) FROM gocql_test.%s;", table)).Scan(&count); err != nil {
 		t.Fatalf("Failed to select with err: %v", err)
 	} else if count != 2 {
 		t.Fatalf("Expected Batch Insert count 2, got %v", count)
 	}
 
-	if err := session.Query("SELECT id, my_int ,my_text FROM gocql_test.batchUnsetInsert where id=1;").Scan(&id, &mInt, &mText); err != nil {
+	if err := session.Query(fmt.Sprintf("SELECT id, my_int ,my_text FROM gocql_test.%s where id=1;", table)).Scan(&id, &mInt, &mText); err != nil {
 		t.Fatalf("failed to select with err: %v", err)
 	} else if id != mInt {
 		t.Fatalf("expected id, my_int to be 1, got %v and %v", id, mInt)
@@ -3185,16 +3278,18 @@ func TestQuery_NamedValues(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := createTable(session, "CREATE TABLE gocql_test.named_query(id int, value text, PRIMARY KEY (id))"); err != nil {
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s(id int, value text, PRIMARY KEY (id))", table)); err != nil {
 		t.Fatal(err)
 	}
 
-	err := session.Query("INSERT INTO gocql_test.named_query(id, value) VALUES(:id, :value)", NamedValue("id", 1), NamedValue("value", "i am a value")).Exec()
+	err := session.Query(fmt.Sprintf("INSERT INTO gocql_test.%s(id, value) VALUES(:id, :value)", table), NamedValue("id", 1), NamedValue("value", "i am a value")).Exec()
 	if err != nil {
 		t.Fatal(err)
 	}
 	var value string
-	if err := session.Query("SELECT VALUE from gocql_test.named_query WHERE id = :id", NamedValue("id", 1)).Scan(&value); err != nil {
+	if err := session.Query(fmt.Sprintf("SELECT VALUE from gocql_test.%s WHERE id = :id", table), NamedValue("id", 1)).Scan(&value); err != nil {
 		t.Fatal(err)
 	}
 }

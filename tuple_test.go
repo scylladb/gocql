@@ -28,6 +28,7 @@
 package gocql
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 )
@@ -36,16 +37,18 @@ func TestTupleSimple(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	err := createTable(session, `CREATE TABLE gocql_test.tuple_test(
+	table := testTableName(t)
+
+	err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s(
 		id int,
 		coord frozen<tuple<int, int>>,
 
-		primary key(id))`)
+		primary key(id))`, table))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = session.Query("INSERT INTO tuple_test(id, coord) VALUES(?, (?, ?))", 1, 100, -100).Exec()
+	err = session.Query(fmt.Sprintf("INSERT INTO %s(id, coord) VALUES(?, (?, ?))", table), 1, 100, -100).Exec()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +61,7 @@ func TestTupleSimple(t *testing.T) {
 		}
 	)
 
-	iter := session.Query("SELECT id, coord FROM tuple_test WHERE id=?", 1)
+	iter := session.Query(fmt.Sprintf("SELECT id, coord FROM %s WHERE id=?", table), 1)
 	if err := iter.Scan(&id, &coord.x, &coord.y); err != nil {
 		t.Fatal(err)
 	}
@@ -77,25 +80,27 @@ func TestTuple_NullTuple(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	err := createTable(session, `CREATE TABLE gocql_test.tuple_nil_test(
+	table := testTableName(t)
+
+	err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s(
 		id int,
 		coord frozen<tuple<int, int>>,
 
-		primary key(id))`)
+		primary key(id))`, table))
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	const id = 1
 
-	err = session.Query("INSERT INTO tuple_nil_test(id, coord) VALUES(?, (?, ?))", id, nil, nil).Exec()
+	err = session.Query(fmt.Sprintf("INSERT INTO %s(id, coord) VALUES(?, (?, ?))", table), id, nil, nil).Exec()
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	x := new(int)
 	y := new(int)
-	iter := session.Query("SELECT coord FROM tuple_nil_test WHERE id=?", id)
+	iter := session.Query(fmt.Sprintf("SELECT coord FROM %s WHERE id=?", table), id)
 	if err := iter.Scan(&x, &y); err != nil {
 		t.Fatal(err)
 	}
@@ -112,29 +117,31 @@ func TestTuple_TupleNotSet(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	err := createTable(session, `CREATE TABLE gocql_test.tuple_not_set_test(
+	table := testTableName(t)
+
+	err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s(
 		id int,
 		coord frozen<tuple<int, int>>,
 
-		primary key(id))`)
+		primary key(id))`, table))
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	const id = 1
 
-	err = session.Query("INSERT INTO tuple_not_set_test(id,coord) VALUES(?, (?,?))", id, 1, 2).Exec()
+	err = session.Query(fmt.Sprintf("INSERT INTO %s(id,coord) VALUES(?, (?,?))", table), id, 1, 2).Exec()
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = session.Query("INSERT INTO tuple_not_set_test(id) VALUES(?)", id+1).Exec()
+	err = session.Query(fmt.Sprintf("INSERT INTO %s(id) VALUES(?)", table), id+1).Exec()
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	x := new(int)
 	y := new(int)
-	iter := session.Query("SELECT coord FROM tuple_not_set_test WHERE id=?", id)
+	iter := session.Query(fmt.Sprintf("SELECT coord FROM %s WHERE id=?", table), id)
 	if err := iter.Scan(x, y); err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +153,7 @@ func TestTuple_TupleNotSet(t *testing.T) {
 	}
 
 	// Check if the supplied targets are reset to nil
-	iter = session.Query("SELECT coord FROM tuple_not_set_test WHERE id=?", id+1)
+	iter = session.Query(fmt.Sprintf("SELECT coord FROM %s WHERE id=?", table), id+1)
 	if err := iter.Scan(x, y); err != nil {
 		t.Fatal(err)
 	}
@@ -162,21 +169,23 @@ func TestTupleMapScan(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	err := createTable(session, `CREATE TABLE gocql_test.tuple_map_scan(
+	table := testTableName(t)
+
+	err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s(
 		id int,
 		val frozen<tuple<int, int>>,
 
-		primary key(id))`)
+		primary key(id))`, table))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := session.Query(`INSERT INTO tuple_map_scan (id, val) VALUES (1, (1, 2));`).Exec(); err != nil {
+	if err := session.Query(fmt.Sprintf(`INSERT INTO %s (id, val) VALUES (1, (1, 2));`, table)).Exec(); err != nil {
 		t.Fatal(err)
 	}
 
 	m := make(map[string]interface{})
-	err = session.Query(`SELECT * FROM tuple_map_scan`).MapScan(m)
+	err = session.Query(fmt.Sprintf(`SELECT * FROM %s`, table)).MapScan(m)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,20 +201,22 @@ func TestTupleMapScanNil(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	err := createTable(session, `CREATE TABLE gocql_test.tuple_map_scan_nil(
+	table := testTableName(t)
+
+	err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s(
 			id int,
 			val frozen<tuple<int, int>>,
 
-			primary key(id))`)
+			primary key(id))`, table))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := session.Query(`INSERT INTO tuple_map_scan_nil (id, val) VALUES (?,(?,?));`, 1, nil, nil).Exec(); err != nil {
+	if err := session.Query(fmt.Sprintf(`INSERT INTO %s (id, val) VALUES (?,(?,?));`, table), 1, nil, nil).Exec(); err != nil {
 		t.Fatal(err)
 	}
 
 	m := make(map[string]interface{})
-	err = session.Query(`SELECT * FROM tuple_map_scan_nil`).MapScan(m)
+	err = session.Query(fmt.Sprintf(`SELECT * FROM %s`, table)).MapScan(m)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,20 +232,22 @@ func TestTupleMapScanNotSet(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	err := createTable(session, `CREATE TABLE gocql_test.tuple_map_scan_not_set(
+	table := testTableName(t)
+
+	err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s(
 			id int,
 			val frozen<tuple<int, int>>,
 
-			primary key(id))`)
+			primary key(id))`, table))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := session.Query(`INSERT INTO tuple_map_scan_not_set (id) VALUES (?);`, 1).Exec(); err != nil {
+	if err := session.Query(fmt.Sprintf(`INSERT INTO %s (id) VALUES (?);`, table), 1).Exec(); err != nil {
 		t.Fatal(err)
 	}
 
 	m := make(map[string]interface{})
-	err = session.Query(`SELECT * FROM tuple_map_scan_not_set`).MapScan(m)
+	err = session.Query(fmt.Sprintf(`SELECT * FROM %s`, table)).MapScan(m)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,21 +264,23 @@ func TestTupleLastFieldEmpty(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	err := createTable(session, `CREATE TABLE gocql_test.tuple_last_field_empty(
+	table := testTableName(t)
+
+	err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s(
 			id int,
 			val frozen<tuple<text, text>>,
 
-			primary key(id))`)
+			primary key(id))`, table))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := session.Query(`INSERT INTO tuple_last_field_empty (id, val) VALUES (?,(?,?));`, 1, "abc", "").Exec(); err != nil {
+	if err := session.Query(fmt.Sprintf(`INSERT INTO %s (id, val) VALUES (?,(?,?));`, table), 1, "abc", "").Exec(); err != nil {
 		t.Fatal(err)
 	}
 
 	var e1, e2 *string
-	if err := session.Query("SELECT val FROM tuple_last_field_empty WHERE id = ?", 1).Scan(&e1, &e2); err != nil {
+	if err := session.Query(fmt.Sprintf("SELECT val FROM %s WHERE id = ?", table), 1).Scan(&e1, &e2); err != nil {
 		t.Fatal(err)
 	}
 
@@ -287,11 +302,13 @@ func TestTuple_NestedCollection(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	err := createTable(session, `CREATE TABLE gocql_test.nested_tuples(
+	table := testTableName(t)
+
+	err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s(
 		id int,
 		val list<frozen<tuple<int, text>>>,
 
-		primary key(id))`)
+		primary key(id))`, table))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -312,14 +329,14 @@ func TestTuple_NestedCollection(t *testing.T) {
 
 	for i, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if err := session.Query(`INSERT INTO nested_tuples (id, val) VALUES (?, ?);`, i, test.val).Exec(); err != nil {
+			if err := session.Query(fmt.Sprintf(`INSERT INTO %s (id, val) VALUES (?, ?);`, table), i, test.val).Exec(); err != nil {
 				t.Fatal(err)
 			}
 
 			rv := reflect.ValueOf(test.val)
 			res := reflect.New(rv.Type()).Elem().Addr().Interface()
 
-			err = session.Query(`SELECT val FROM nested_tuples WHERE id=?`, i).Scan(res)
+			err = session.Query(fmt.Sprintf(`SELECT val FROM %s WHERE id=?`, table), i).Scan(res)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -336,11 +353,13 @@ func TestTuple_NullableNestedCollection(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	err := createTable(session, `CREATE TABLE gocql_test.nested_tuples_with_nulls(
+	table := testTableName(t)
+
+	err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s(
 		id int,
 		val list<frozen<tuple<text, text>>>,
 
-		primary key(id))`)
+		primary key(id))`, table))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -367,14 +386,14 @@ func TestTuple_NullableNestedCollection(t *testing.T) {
 
 	for i, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if err := session.Query(`INSERT INTO nested_tuples_with_nulls (id, val) VALUES (?, ?);`, i, test.val).Exec(); err != nil {
+			if err := session.Query(fmt.Sprintf(`INSERT INTO %s (id, val) VALUES (?, ?);`, table), i, test.val).Exec(); err != nil {
 				t.Fatal(err)
 			}
 
 			rv := reflect.ValueOf(test.val)
 			res := reflect.New(rv.Type()).Interface()
 
-			err = session.Query(`SELECT val FROM nested_tuples_with_nulls WHERE id=?`, i).Scan(res)
+			err = session.Query(fmt.Sprintf(`SELECT val FROM %s WHERE id=?`, table), i).Scan(res)
 			if err != nil {
 				t.Fatal(err)
 			}

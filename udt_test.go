@@ -72,6 +72,8 @@ func TestUDT_Marshaler(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
+	table := testTableName(t)
+
 	err := createTable(session, `CREATE TYPE gocql_test.position(
 		lat int,
 		lon int,
@@ -80,13 +82,13 @@ func TestUDT_Marshaler(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = createTable(session, `CREATE TABLE gocql_test.houses(
+	err = createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s(
 		id int,
 		name text,
 		loc frozen<position>,
 
 		primary key(id)
-	);`)
+	);`, table))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,14 +99,14 @@ func TestUDT_Marshaler(t *testing.T) {
 	)
 	pad := strings.Repeat("X", 1000)
 
-	err = session.Query("INSERT INTO houses(id, name, loc) VALUES(?, ?, ?)", 1, "test", &position{expLat, expLon, pad}).Exec()
+	err = session.Query(fmt.Sprintf("INSERT INTO %s(id, name, loc) VALUES(?, ?, ?)", table), 1, "test", &position{expLat, expLon, pad}).Exec()
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	pos := &position{}
 
-	err = session.Query("SELECT loc FROM houses WHERE id = ?", 1).Scan(pos)
+	err = session.Query(fmt.Sprintf("SELECT loc FROM %s WHERE id = ?", table), 1).Scan(pos)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,6 +127,8 @@ func TestUDT_Reflect(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
+	table := testTableName(t)
+
 	err := createTable(session, `CREATE TYPE gocql_test.horse(
 		name text,
 		owner text);`)
@@ -132,12 +136,12 @@ func TestUDT_Reflect(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = createTable(session, `CREATE TABLE gocql_test.horse_race(
+	err = createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s(
 		position int,
 		horse frozen<horse>,
 
 		primary key(position)
-	);`)
+	);`, table))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,13 +156,13 @@ func TestUDT_Reflect(t *testing.T) {
 		Owner: "jim",
 	}
 
-	err = session.Query("INSERT INTO horse_race(position, horse) VALUES(?, ?)", 1, insertedHorse).Exec()
+	err = session.Query(fmt.Sprintf("INSERT INTO %s(position, horse) VALUES(?, ?)", table), 1, insertedHorse).Exec()
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	retrievedHorse := &horse{}
-	err = session.Query("SELECT horse FROM horse_race WHERE position = ?", 1).Scan(retrievedHorse)
+	err = session.Query(fmt.Sprintf("SELECT horse FROM %s WHERE position = ?", table), 1).Scan(retrievedHorse)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,6 +176,8 @@ func TestUDT_NullObject(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
+	table := testTableName(t)
+
 	err := createTable(session, `CREATE TYPE gocql_test.udt_null_type(
 		name text,
 		owner text);`)
@@ -179,12 +185,12 @@ func TestUDT_NullObject(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = createTable(session, `CREATE TABLE gocql_test.udt_null_table(
+	err = createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s(
 		id uuid,
 		udt_col frozen<udt_null_type>,
 
 		primary key(id)
-	);`)
+	);`, table))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +201,7 @@ func TestUDT_NullObject(t *testing.T) {
 	}
 
 	id := TimeUUID()
-	err = session.Query("INSERT INTO udt_null_table(id) VALUES(?)", id).Exec()
+	err = session.Query(fmt.Sprintf("INSERT INTO %s(id) VALUES(?)", table), id).Exec()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +211,7 @@ func TestUDT_NullObject(t *testing.T) {
 		Owner: "temp",
 	}
 
-	err = session.Query("SELECT udt_col FROM udt_null_table WHERE id = ?", id).Scan(readCol)
+	err = session.Query(fmt.Sprintf("SELECT udt_col FROM %s WHERE id = ?", table), id).Scan(readCol)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,6 +228,8 @@ func TestMapScanUDT(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
+	table := testTableName(t)
+
 	err := createTable(session, `CREATE TYPE gocql_test.log_entry (
 		created_timestamp timestamp,
 		message text
@@ -230,11 +238,11 @@ func TestMapScanUDT(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = createTable(session, `CREATE TABLE gocql_test.requests_by_id (
+	err = createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (
 		id uuid PRIMARY KEY,
 		type int,
 		log_entries list<frozen <log_entry>>
-	);`)
+	);`, table))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,13 +260,13 @@ func TestMapScanUDT(t *testing.T) {
 	id, _ := RandomUUID()
 	const typ = 1
 
-	err = session.Query("INSERT INTO requests_by_id(id, type, log_entries) VALUES (?, ?, ?)", id, typ, entry).Exec()
+	err = session.Query(fmt.Sprintf("INSERT INTO %s(id, type, log_entries) VALUES (?, ?, ?)", table), id, typ, entry).Exec()
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	rawResult := map[string]interface{}{}
-	err = session.Query(`SELECT * FROM requests_by_id WHERE id = ?`, id).MapScan(rawResult)
+	err = session.Query(fmt.Sprintf(`SELECT * FROM %s WHERE id = ?`, table), id).MapScan(rawResult)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -305,6 +313,8 @@ func TestUDT_MissingField(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
+	table := testTableName(t)
+
 	err := createTable(session, `CREATE TYPE gocql_test.missing_field(
 		name text,
 		owner text);`)
@@ -312,12 +322,12 @@ func TestUDT_MissingField(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = createTable(session, `CREATE TABLE gocql_test.missing_field(
+	err = createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s(
 		id uuid,
 		udt_col frozen<udt_null_type>,
 
 		primary key(id)
-	);`)
+	);`, table))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -331,13 +341,13 @@ func TestUDT_MissingField(t *testing.T) {
 	}
 
 	id := TimeUUID()
-	err = session.Query("INSERT INTO missing_field(id, udt_col) VALUES(?, ?)", id, writeCol).Exec()
+	err = session.Query(fmt.Sprintf("INSERT INTO %s(id, udt_col) VALUES(?, ?)", table), id, writeCol).Exec()
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	readCol := &col{}
-	err = session.Query("SELECT udt_col FROM missing_field WHERE id = ?", id).Scan(readCol)
+	err = session.Query(fmt.Sprintf("SELECT udt_col FROM %s WHERE id = ?", table), id).Scan(readCol)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -351,6 +361,8 @@ func TestUDT_EmptyCollections(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
+	table := testTableName(t)
+
 	err := createTable(session, `CREATE TYPE gocql_test.nil_collections(
 		a list<text>,
 		b map<text, text>,
@@ -360,12 +372,12 @@ func TestUDT_EmptyCollections(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = createTable(session, `CREATE TABLE gocql_test.nil_collections(
+	err = createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s(
 		id uuid,
 		udt_col frozen<nil_collections>,
 
 		primary key(id)
-	);`)
+	);`, table))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -377,13 +389,13 @@ func TestUDT_EmptyCollections(t *testing.T) {
 	}
 
 	id := TimeUUID()
-	err = session.Query("INSERT INTO nil_collections(id, udt_col) VALUES(?, ?)", id, &udt{}).Exec()
+	err = session.Query(fmt.Sprintf("INSERT INTO %s(id, udt_col) VALUES(?, ?)", table), id, &udt{}).Exec()
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	var val udt
-	err = session.Query("SELECT udt_col FROM nil_collections WHERE id=?", id).Scan(&val)
+	err = session.Query(fmt.Sprintf("SELECT udt_col FROM %s WHERE id=?", table), id).Scan(&val)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -403,6 +415,8 @@ func TestUDT_UpdateField(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
+	table := testTableName(t)
+
 	err := createTable(session, `CREATE TYPE gocql_test.update_field_udt(
 		name text,
 		owner text);`)
@@ -410,12 +424,12 @@ func TestUDT_UpdateField(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = createTable(session, `CREATE TABLE gocql_test.update_field(
+	err = createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s(
 		id uuid,
 		udt_col frozen<update_field_udt>,
 
 		primary key(id)
-	);`)
+	);`, table))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -432,7 +446,7 @@ func TestUDT_UpdateField(t *testing.T) {
 	}
 
 	id := TimeUUID()
-	err = session.Query("INSERT INTO update_field(id, udt_col) VALUES(?, ?)", id, writeCol).Exec()
+	err = session.Query(fmt.Sprintf("INSERT INTO %s(id, udt_col) VALUES(?, ?)", table), id, writeCol).Exec()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -442,7 +456,7 @@ func TestUDT_UpdateField(t *testing.T) {
 	}
 
 	readCol := &col{}
-	err = session.Query("SELECT udt_col FROM update_field WHERE id = ?", id).Scan(readCol)
+	err = session.Query(fmt.Sprintf("SELECT udt_col FROM %s WHERE id = ?", table), id).Scan(readCol)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -456,6 +470,8 @@ func TestUDT_ScanNullUDT(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
+	table := testTableName(t)
+
 	err := createTable(session, `CREATE TYPE gocql_test.scan_null_udt_position(
 		lat int,
 		lon int,
@@ -464,24 +480,24 @@ func TestUDT_ScanNullUDT(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = createTable(session, `CREATE TABLE gocql_test.scan_null_udt_houses(
+	err = createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s(
 		id int,
 		name text,
 		loc frozen<position>,
 		primary key(id)
-	);`)
+	);`, table))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = session.Query("INSERT INTO scan_null_udt_houses(id, name) VALUES(?, ?)", 1, "test").Exec()
+	err = session.Query(fmt.Sprintf("INSERT INTO %s(id, name) VALUES(?, ?)", table), 1, "test").Exec()
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	pos := &position{}
 
-	err = session.Query("SELECT loc FROM scan_null_udt_houses WHERE id = ?", 1).Scan(pos)
+	err = session.Query(fmt.Sprintf("SELECT loc FROM %s WHERE id = ?", table), 1).Scan(pos)
 	if err != nil {
 		t.Fatal(err)
 	}
