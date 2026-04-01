@@ -62,86 +62,115 @@ func TestAsyncSessionInit(t *testing.T) {
 	}
 }
 
-func TestExtractKeyspaceFromDDL(t *testing.T) {
+func TestExtractKeyspaceTableFromDDL(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name string
-		ddl  string
-		want string
+		name      string
+		ddl       string
+		wantKS    string
+		wantTable string
 	}{
 		{
-			name: "simple_create_table",
-			ddl:  "CREATE TABLE gocql_test.my_table (id int PRIMARY KEY)",
-			want: "gocql_test",
+			name:      "simple_create_table",
+			ddl:       "CREATE TABLE gocql_test.my_table (id int PRIMARY KEY)",
+			wantKS:    "gocql_test",
+			wantTable: "my_table",
 		},
 		{
-			name: "create_table_if_not_exists",
-			ddl:  "CREATE TABLE IF NOT EXISTS gocql_test.my_table (id int PRIMARY KEY)",
-			want: "gocql_test",
+			name:      "create_table_if_not_exists",
+			ddl:       "CREATE TABLE IF NOT EXISTS gocql_test.my_table (id int PRIMARY KEY)",
+			wantKS:    "gocql_test",
+			wantTable: "my_table",
 		},
 		{
-			name: "lowercase_create_table",
-			ddl:  "create table gocql_test.my_table (id int primary key)",
-			want: "gocql_test",
+			name:      "lowercase_create_table",
+			ddl:       "create table gocql_test.my_table (id int primary key)",
+			wantKS:    "gocql_test",
+			wantTable: "my_table",
 		},
 		{
-			name: "mixed_case_if_not_exists",
-			ddl:  "Create Table If Not Exists gocql_test.my_table (id int PRIMARY KEY)",
-			want: "gocql_test",
+			name:      "mixed_case_if_not_exists",
+			ddl:       "Create Table If Not Exists gocql_test.my_table (id int PRIMARY KEY)",
+			wantKS:    "gocql_test",
+			wantTable: "my_table",
 		},
 		{
-			name: "no_keyspace_prefix",
-			ddl:  "CREATE TABLE my_table (id int PRIMARY KEY)",
-			want: "",
+			name:      "no_keyspace_prefix",
+			ddl:       "CREATE TABLE my_table (id int PRIMARY KEY)",
+			wantKS:    "",
+			wantTable: "",
 		},
 		{
-			name: "empty_string",
-			ddl:  "",
-			want: "",
+			name:      "empty_string",
+			ddl:       "",
+			wantKS:    "",
+			wantTable: "",
 		},
 		{
-			name: "create_keyspace_ignored",
-			ddl:  "CREATE KEYSPACE my_ks WITH replication = {}",
-			want: "",
+			name:      "create_keyspace_ignored",
+			ddl:       "CREATE KEYSPACE my_ks WITH replication = {}",
+			wantKS:    "",
+			wantTable: "",
 		},
 		{
-			name: "materialized_view_ignored",
-			ddl:  "CREATE MATERIALIZED VIEW my_ks.my_view AS SELECT * FROM my_ks.my_table WHERE id IS NOT NULL PRIMARY KEY (id)",
-			want: "",
+			name:      "materialized_view_ignored",
+			ddl:       "CREATE MATERIALIZED VIEW my_ks.my_view AS SELECT * FROM my_ks.my_table WHERE id IS NOT NULL PRIMARY KEY (id)",
+			wantKS:    "",
+			wantTable: "",
 		},
 		{
-			name: "multiline_ddl",
-			ddl:  "CREATE TABLE gocql_test.test_single_routing_key (\n\tfirst_id int,\n\tsecond_id int,\n\tPRIMARY KEY (first_id, second_id)\n)",
-			want: "gocql_test",
+			name:      "multiline_ddl",
+			ddl:       "CREATE TABLE gocql_test.test_single_routing_key (\n\tfirst_id int,\n\tsecond_id int,\n\tPRIMARY KEY (first_id, second_id)\n)",
+			wantKS:    "gocql_test",
+			wantTable: "test_single_routing_key",
 		},
 		{
-			name: "tablets_disabled_keyspace",
-			ddl:  "CREATE TABLE gocql_test_tablets_disabled.my_table (id int PRIMARY KEY)",
-			want: "gocql_test_tablets_disabled",
+			name:      "tablets_disabled_keyspace",
+			ddl:       "CREATE TABLE gocql_test_tablets_disabled.my_table (id int PRIMARY KEY)",
+			wantKS:    "gocql_test_tablets_disabled",
+			wantTable: "my_table",
 		},
 		{
-			name: "drop_table_if_exists",
-			ddl:  "DROP TABLE IF EXISTS gocql_test.my_table",
-			want: "gocql_test",
+			name:      "drop_table_if_exists",
+			ddl:       "DROP TABLE IF EXISTS gocql_test.my_table",
+			wantKS:    "gocql_test",
+			wantTable: "my_table",
 		},
 		{
-			name: "drop_table_if_exists_lowercase",
-			ddl:  "drop table if exists gocql_test.my_table",
-			want: "gocql_test",
+			name:      "drop_table_if_exists_lowercase",
+			ddl:       "drop table if exists gocql_test.my_table",
+			wantKS:    "gocql_test",
+			wantTable: "my_table",
 		},
 		{
-			name: "drop_table_no_keyspace",
-			ddl:  "DROP TABLE IF EXISTS my_table",
-			want: "",
+			name:      "drop_table_no_keyspace",
+			ddl:       "DROP TABLE IF EXISTS my_table",
+			wantKS:    "",
+			wantTable: "",
+		},
+		{
+			name:      "table_with_space_before_paren",
+			ddl:       "CREATE TABLE gocql_test.t1 (id int PRIMARY KEY)",
+			wantKS:    "gocql_test",
+			wantTable: "t1",
+		},
+		{
+			name:      "drop_keyspace_returns_empty",
+			ddl:       "DROP KEYSPACE IF EXISTS gocql_test",
+			wantKS:    "",
+			wantTable: "",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := extractKeyspaceFromDDL(tt.ddl)
-			if got != tt.want {
-				t.Errorf("extractKeyspaceFromDDL(%q) = %q, want %q", tt.ddl, got, tt.want)
+			gotKS, gotTable := extractKeyspaceTableFromDDL(tt.ddl)
+			if gotKS != tt.wantKS {
+				t.Errorf("extractKeyspaceTableFromDDL(%q) keyspace = %q, want %q", tt.ddl, gotKS, tt.wantKS)
+			}
+			if gotTable != tt.wantTable {
+				t.Errorf("extractKeyspaceTableFromDDL(%q) table = %q, want %q", tt.ddl, gotTable, tt.wantTable)
 			}
 		})
 	}

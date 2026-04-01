@@ -218,24 +218,64 @@ func createTable(s *Session, table string) error {
 	}
 
 	// Invalidate schema cache to avoid races with debounced schema events.
-	ks := extractKeyspaceFromDDL(table)
+	// Use per-table invalidation when possible (cheaper than keyspace-wide)
+	// to reduce cache thrashing when parallel tests all perform DDL on the
+	// same shared keyspace. Falls back to keyspace-wide invalidation for
+	// non-TABLE DDL (e.g. DROP KEYSPACE, CREATE TYPE).
+	ks, tbl := extractKeyspaceTableFromDDL(table)
 	if ks == "" {
 		ks = s.cfg.Keyspace
 	}
-	if ks != "" {
+	if ks != "" && tbl != "" {
+		s.metadataDescriber.invalidateTableSchema(ks, tbl)
+	} else if ks != "" {
 		s.metadataDescriber.invalidateKeyspaceSchema(ks)
 	}
 
 	return nil
 }
 
-// extractKeyspaceFromDDL extracts the keyspace name from a DDL statement like
-// "CREATE TABLE gocql_test.table_name (...)". Returns empty string if not found.
-func extractKeyspaceFromDDL(ddl string) string {
+// createTables executes multiple DDL statements with a single
+// awaitSchemaAgreement call at the end, reducing the serialization bottleneck
+// when parallel tests all need schema agreement. Each statement is still
+// executed and cache-invalidated individually.
+func createTables(s *Session, ddls ...string) error {
+	for _, ddl := range ddls {
+		if err := s.Query(ddl).RetryPolicy(&SimpleRetryPolicy{NumRetries: 3}).Idempotent(true).Exec(); err != nil {
+			log.Printf("error creating table table=%q err=%v\n", ddl, err)
+			return err
+		}
+	}
+
+	if err := s.control.awaitSchemaAgreement(); err != nil {
+		log.Printf("error waiting for schema agreement after batch DDL err=%v\n", err)
+		return err
+	}
+
+	// Invalidate caches for all affected tables/keyspaces.
+	for _, ddl := range ddls {
+		ks, tbl := extractKeyspaceTableFromDDL(ddl)
+		if ks == "" {
+			ks = s.cfg.Keyspace
+		}
+		if ks != "" && tbl != "" {
+			s.metadataDescriber.invalidateTableSchema(ks, tbl)
+		} else if ks != "" {
+			s.metadataDescriber.invalidateKeyspaceSchema(ks)
+		}
+	}
+
+	return nil
+}
+
+// extractKeyspaceTableFromDDL extracts the keyspace and table names from a DDL
+// statement like "CREATE TABLE gocql_test.table_name (...)".
+// Returns ("", "") for non-TABLE DDL or when keyspace is not qualified.
+func extractKeyspaceTableFromDDL(ddl string) (keyspace, table string) {
 	upper := strings.ToUpper(ddl)
 	idx := strings.Index(upper, "TABLE")
 	if idx < 0 {
-		return ""
+		return "", ""
 	}
 	rest := strings.TrimSpace(ddl[idx+len("TABLE"):])
 	// Skip optional "IF [NOT] EXISTS" between TABLE and the name.
@@ -245,12 +285,19 @@ func extractKeyspaceFromDDL(ddl string) string {
 	} else if strings.HasPrefix(upperRest, "IF EXISTS") {
 		rest = strings.TrimSpace(rest[len("IF EXISTS"):])
 	}
-	// Extract keyspace from keyspace.table
+	// Extract keyspace.table
 	dot := strings.Index(rest, ".")
 	if dot < 0 {
-		return ""
+		return "", ""
 	}
-	return rest[:dot]
+	ks := rest[:dot]
+	// Extract table name: everything after the dot until whitespace or '('
+	nameRest := rest[dot+1:]
+	end := strings.IndexAny(nameRest, " \t\n(")
+	if end < 0 {
+		return ks, nameRest
+	}
+	return ks, nameRest[:end]
 }
 
 func createCluster(opts ...func(*ClusterConfig)) *ClusterConfig {
@@ -428,43 +475,49 @@ func createMaterializedViews(t *testing.T, session *Session) {
 }
 
 func createFunctions(t *testing.T, session *Session) {
-	if err := session.Query(`
-		CREATE OR REPLACE FUNCTION gocql_test.avgState ( state tuple<int,bigint>, val int )
+	fnState := testTableName(t, "avgstate")
+	fnFinal := testTableName(t, "avgfinal")
+	if err := session.Query(fmt.Sprintf(`
+		CREATE OR REPLACE FUNCTION gocql_test.%s ( state tuple<int,bigint>, val int )
 		CALLED ON NULL INPUT
 		RETURNS tuple<int,bigint>
 		LANGUAGE java AS
-		$$if (val !=null) {state.setInt(0, state.getInt(0)+1); state.setLong(1, state.getLong(1)+val.intValue());}return state;$$;	`).Exec(); err != nil {
+		$$if (val !=null) {state.setInt(0, state.getInt(0)+1); state.setLong(1, state.getLong(1)+val.intValue());}return state;$$;	`, fnState)).Exec(); err != nil {
 		t.Fatalf("failed to create function with err: %v", err)
 	}
-	if err := session.Query(`
-		CREATE OR REPLACE FUNCTION gocql_test.avgFinal ( state tuple<int,bigint> )
+	if err := session.Query(fmt.Sprintf(`
+		CREATE OR REPLACE FUNCTION gocql_test.%s ( state tuple<int,bigint> )
 		CALLED ON NULL INPUT
 		RETURNS double
 		LANGUAGE java AS
 		$$double r = 0; if (state.getInt(0) == 0) return null; r = state.getLong(1); r/= state.getInt(0); return Double.valueOf(r);$$
-	`).Exec(); err != nil {
+	`, fnFinal)).Exec(); err != nil {
 		t.Fatalf("failed to create function with err: %v", err)
 	}
 }
 
 func createAggregate(t *testing.T, session *Session) {
+	fnState := testTableName(t, "avgstate")
+	fnFinal := testTableName(t, "avgfinal")
+	aggName := testTableName(t, "average")
+	aggName2 := testTableName(t, "average2")
 	createFunctions(t, session)
-	if err := session.Query(`
-		CREATE OR REPLACE AGGREGATE gocql_test.average(int)
-		SFUNC avgState
+	if err := session.Query(fmt.Sprintf(`
+		CREATE OR REPLACE AGGREGATE gocql_test.%s(int)
+		SFUNC %s
 		STYPE tuple<int,bigint>
-		FINALFUNC avgFinal
+		FINALFUNC %s
 		INITCOND (0,0);
-	`).Exec(); err != nil {
+	`, aggName, fnState, fnFinal)).Exec(); err != nil {
 		t.Fatalf("failed to create aggregate with err: %v", err)
 	}
-	if err := session.Query(`
-		CREATE OR REPLACE AGGREGATE gocql_test.average2(int)
-		SFUNC avgState
+	if err := session.Query(fmt.Sprintf(`
+		CREATE OR REPLACE AGGREGATE gocql_test.%s(int)
+		SFUNC %s
 		STYPE tuple<int,bigint>
-		FINALFUNC avgFinal
+		FINALFUNC %s
 		INITCOND (0,0);
-	`).Exec(); err != nil {
+	`, aggName2, fnState, fnFinal)).Exec(); err != nil {
 		t.Fatalf("failed to create aggregate with err: %v", err)
 	}
 }
