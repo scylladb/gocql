@@ -1453,8 +1453,11 @@ func (q *Query) Keyspace() string {
 			return p.keyspace
 		}
 	}
-	if q.routingInfo.keyspace != "" {
-		return q.routingInfo.keyspace
+	q.routingInfo.mu.RLock()
+	ks := q.routingInfo.keyspace
+	q.routingInfo.mu.RUnlock()
+	if ks != "" {
+		return ks
 	}
 
 	if q.session == nil {
@@ -1472,6 +1475,8 @@ func (q *Query) Table() string {
 			return p.table
 		}
 	}
+	q.routingInfo.mu.RLock()
+	defer q.routingInfo.mu.RUnlock()
 	return q.routingInfo.table
 }
 
@@ -2206,6 +2211,8 @@ func (b *Batch) Table() string {
 			return p.table
 		}
 	}
+	b.routingInfo.mu.RLock()
+	defer b.routingInfo.mu.RUnlock()
 	return b.routingInfo.table
 }
 
