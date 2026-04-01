@@ -1940,10 +1940,11 @@ func TestPrepare_PreparedCacheKey(t *testing.T) {
 
 	table := testTableName(t)
 
-	// create a second keyspace
+	// create a second keyspace with a unique name to avoid collisions under parallel execution
+	ks2 := testKeyspaceName(t, "ks2")
 	cluster2 := createCluster()
-	createKeyspace(t, cluster2, "gocql_test2", false)
-	cluster2.Keyspace = "gocql_test2"
+	createKeyspace(t, cluster2, ks2, false)
+	cluster2.Keyspace = ks2
 	session2, err := cluster2.CreateSession()
 	if err != nil {
 		t.Fatal("create session:", err)
@@ -1954,7 +1955,7 @@ func TestPrepare_PreparedCacheKey(t *testing.T) {
 	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id varchar primary key, field varchar)", table)); err != nil {
 		t.Fatal("create table:", err)
 	}
-	if err := createTable(session2, fmt.Sprintf("CREATE TABLE gocql_test2.%s (id varchar primary key, field varchar)", table)); err != nil {
+	if err := createTable(session2, fmt.Sprintf("CREATE TABLE %s.%s (id varchar primary key, field varchar)", ks2, table)); err != nil {
 		t.Fatal("create table:", err)
 	}
 

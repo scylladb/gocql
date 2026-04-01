@@ -37,55 +37,55 @@ func TestRecreateSchema(t *testing.T) {
 
 	tcs := []struct {
 		Name            string
-		Keyspace        string
+		FixedKeyspace   string // original keyspace name used in .cql files
 		FailWithTablets bool
 		Input           string
 		Golden          string
 	}{
 		{
-			Name:     "Keyspace",
-			Keyspace: "gocqlx_keyspace",
-			Input:    "testdata/recreate/keyspace.cql",
-			Golden:   "testdata/recreate/keyspace_golden.cql",
+			Name:          "Keyspace",
+			FixedKeyspace: "gocqlx_keyspace",
+			Input:         "testdata/recreate/keyspace.cql",
+			Golden:        "testdata/recreate/keyspace_golden.cql",
 		},
 		{
-			Name:     "Table",
-			Keyspace: "gocqlx_table",
-			Input:    "testdata/recreate/table.cql",
-			Golden:   "testdata/recreate/table_golden.cql",
+			Name:          "Table",
+			FixedKeyspace: "gocqlx_table",
+			Input:         "testdata/recreate/table.cql",
+			Golden:        "testdata/recreate/table_golden.cql",
 		},
 		{
 			Name:            "Materialized Views",
-			Keyspace:        "gocqlx_mv",
+			FixedKeyspace:   "gocqlx_mv",
 			FailWithTablets: failsOnOldScylla,
 			Input:           "testdata/recreate/materialized_views.cql",
 			Golden:          "testdata/recreate/materialized_views_golden.cql",
 		},
 		{
 			Name:            "Index",
-			Keyspace:        "gocqlx_idx",
+			FixedKeyspace:   "gocqlx_idx",
 			FailWithTablets: failsOnOldScylla,
 			Input:           "testdata/recreate/index.cql",
 			Golden:          "testdata/recreate/index_golden.cql",
 		},
 		{
 			Name:            "Secondary Index",
-			Keyspace:        "gocqlx_sec_idx",
+			FixedKeyspace:   "gocqlx_sec_idx",
 			FailWithTablets: failsOnOldScylla,
 			Input:           "testdata/recreate/secondary_index.cql",
 			Golden:          "testdata/recreate/secondary_index_golden.cql",
 		},
 		{
-			Name:     "UDT",
-			Keyspace: "gocqlx_udt",
-			Input:    "testdata/recreate/udt.cql",
-			Golden:   "testdata/recreate/udt_golden.cql",
+			Name:          "UDT",
+			FixedKeyspace: "gocqlx_udt",
+			Input:         "testdata/recreate/udt.cql",
+			Golden:        "testdata/recreate/udt_golden.cql",
 		},
 		{
-			Name:     "Aggregates",
-			Keyspace: "gocqlx_aggregates",
-			Input:    "testdata/recreate/aggregates.cql",
-			Golden:   "testdata/recreate/aggregates_golden.cql",
+			Name:          "Aggregates",
+			FixedKeyspace: "gocqlx_aggregates",
+			Input:         "testdata/recreate/aggregates.cql",
+			Golden:        "testdata/recreate/aggregates_golden.cql",
 		},
 	}
 
@@ -95,14 +95,21 @@ func TestRecreateSchema(t *testing.T) {
 			if test.Name == "UDT" && *flagDistribution == "scylla" && flagCassVersion.Major == 2024 && flagCassVersion.Minor == 1 {
 				t.Skip("Doesn't work properly on Scylla 2024.1 due to https://github.com/scylladb/scylladb/issues/26761")
 			}
-			cleanup(t, session, test.Keyspace)
+
+			// Generate a unique keyspace name to avoid collisions under parallel execution.
+			// Replace the fixed keyspace name in CQL input/golden files with the unique name.
+			ks := testKeyspaceName(t)
+			cleanup(t, session, ks)
 
 			in, err := os.ReadFile(test.Input)
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			queries := trimQueries(strings.Split(string(in), ";"))
+			// Substitute the fixed keyspace name in the CQL input with the unique name.
+			inStr := strings.ReplaceAll(string(in), test.FixedKeyspace, ks)
+
+			queries := trimQueries(strings.Split(inStr, ";"))
 			for _, q := range queries {
 				qr := session.Query(q, nil)
 				err = qr.Exec()
@@ -116,7 +123,7 @@ func TestRecreateSchema(t *testing.T) {
 			if err != nil {
 				t.Fatal("failed to await for schema agreement", err)
 			}
-			err = session.metadataDescriber.refreshKeyspaceSchema(test.Keyspace)
+			err = session.metadataDescriber.refreshKeyspaceSchema(ks)
 			if err != nil {
 				t.Fatal("failed to read schema for keyspace", err)
 			}
@@ -133,7 +140,7 @@ func TestRecreateSchema(t *testing.T) {
 				t.Fatal("invalid input query", err)
 			}
 
-			km, err := session.KeyspaceMetadata(test.Keyspace)
+			km, err := session.KeyspaceMetadata(ks)
 			if err != nil {
 				t.Fatal("dump schema", err)
 			}
@@ -144,13 +151,18 @@ func TestRecreateSchema(t *testing.T) {
 
 			dump = trimSchema(dump)
 
+			// Normalize the dump back to the fixed keyspace name for comparison with golden files.
+			dump = strings.ReplaceAll(dump, ks, test.FixedKeyspace)
+
 			var golden []byte
 			if getStmtFromCluster {
-				golden, err = getCreateStatements(session, test.Keyspace)
+				golden, err = getCreateStatements(session, ks)
 				if err != nil {
 					t.Fatal(err)
 				}
 				golden = []byte(trimSchema(string(golden)))
+				// Normalize from the cluster's unique keyspace name back to fixed name.
+				golden = []byte(strings.ReplaceAll(string(golden), ks, test.FixedKeyspace))
 			} else {
 				if *updateGolden {
 					if err := os.WriteFile(test.Golden, []byte(dump), 0644); err != nil {
@@ -179,11 +191,12 @@ func TestRecreateSchema(t *testing.T) {
 				}
 			}
 
-			// Exec dumped queries to check if they are CQL-correct
-			cleanup(t, session, test.Keyspace)
-			session.metadataDescriber.invalidateKeyspaceSchema(test.Keyspace)
+			// Exec dumped queries to check if they are CQL-correct.
+			// Substitute the fixed keyspace name back to the unique name for execution.
+			cleanup(t, session, ks)
+			session.metadataDescriber.invalidateKeyspaceSchema(ks)
 
-			for _, q := range trimQueries(strings.Split(dump, ";")) {
+			for _, q := range trimQueries(strings.Split(strings.ReplaceAll(dump, test.FixedKeyspace, ks), ";")) {
 				qr := session.Query(q, nil)
 				if err := qr.Exec(); err != nil {
 					t.Fatal("invalid dump query", q, err)
@@ -196,11 +209,11 @@ func TestRecreateSchema(t *testing.T) {
 			if err != nil {
 				t.Fatal("failed to await for schema agreement", err)
 			}
-			err = session.metadataDescriber.refreshKeyspaceSchema(test.Keyspace)
+			err = session.metadataDescriber.refreshKeyspaceSchema(ks)
 			if err != nil {
 				t.Fatal("failed to read schema for keyspace", err)
 			}
-			km, err = session.KeyspaceMetadata(test.Keyspace)
+			km, err = session.KeyspaceMetadata(ks)
 			if err != nil {
 				t.Fatal("dump schema", err)
 			}
@@ -210,6 +223,8 @@ func TestRecreateSchema(t *testing.T) {
 			}
 
 			secondDump = trimSchema(secondDump)
+			// Normalize the second dump back to fixed keyspace name for comparison.
+			secondDump = strings.ReplaceAll(secondDump, ks, test.FixedKeyspace)
 
 			secondDumpQueries := trimQueries(sortQueries(strings.Split(secondDump, ";")))
 
