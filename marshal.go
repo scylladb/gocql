@@ -1704,12 +1704,16 @@ type NativeType struct {
 	typ    Type
 }
 
-// NewNativeType creates a NativeType. The proto parameter is ignored and kept for API compatibility.
+// NewNativeType creates a NativeType.
+//
+// Deprecated: The proto parameter is ignored. Use NativeType{} struct literal instead.
 func NewNativeType(proto byte, typ Type) NativeType {
 	return NativeType{typ: typ}
 }
 
-// NewCustomType creates a custom NativeType. The proto parameter is ignored and kept for API compatibility.
+// NewCustomType creates a custom NativeType.
+//
+// Deprecated: The proto parameter is ignored. Use NativeType{} struct literal instead.
 func NewCustomType(proto byte, typ Type, custom string) NativeType {
 	return NativeType{typ: typ, custom: custom}
 }
