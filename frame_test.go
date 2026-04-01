@@ -137,6 +137,84 @@ func TestFrameReadTooLong(t *testing.T) {
 	}
 }
 
+func TestParseResultMetadata_PerColumnSpec(t *testing.T) {
+	t.Parallel()
+
+	// Build a synthetic ROWS result metadata frame with FlagGlobalTableSpec unset
+	// (per-column keyspace/table encoding). This tests the !globalSpec optimization
+	// in parseResultMetadata() which reads keyspace/table from the first column
+	// position and reuses them for all columns via skipString().
+	fr := newFramer(nil, protoVersion4)
+	fr.header = &frm.FrameHeader{Version: protoVersion4}
+
+	// flags: no FlagGlobalTableSpec — per-column keyspace/table
+	fr.writeInt(0)
+	// colCount
+	fr.writeInt(3)
+
+	// Column 0: keyspace/table + name + type
+	fr.writeString("test_ks")
+	fr.writeString("test_tbl")
+	fr.writeString("col_a")
+	fr.writeShort(uint16(TypeInt))
+
+	// Column 1: same keyspace/table (will be skipped by optimization)
+	fr.writeString("test_ks")
+	fr.writeString("test_tbl")
+	fr.writeString("col_b")
+	fr.writeShort(uint16(TypeVarchar))
+
+	// Column 2: same keyspace/table
+	fr.writeString("test_ks")
+	fr.writeString("test_tbl")
+	fr.writeString("col_c")
+	fr.writeShort(uint16(TypeBoolean))
+
+	meta := fr.parseResultMetadata()
+
+	if meta.colCount != 3 {
+		t.Fatalf("colCount = %d, want 3", meta.colCount)
+	}
+	if len(meta.columns) != 3 {
+		t.Fatalf("len(columns) = %d, want 3", len(meta.columns))
+	}
+
+	// Verify all columns got the correct keyspace/table from the optimization
+	for i, col := range meta.columns {
+		if col.Keyspace != "test_ks" {
+			t.Errorf("columns[%d].Keyspace = %q, want %q", i, col.Keyspace, "test_ks")
+		}
+		if col.Table != "test_tbl" {
+			t.Errorf("columns[%d].Table = %q, want %q", i, col.Table, "test_tbl")
+		}
+	}
+
+	// Verify column names
+	expectedNames := []string{"col_a", "col_b", "col_c"}
+	for i, col := range meta.columns {
+		if col.Name != expectedNames[i] {
+			t.Errorf("columns[%d].Name = %q, want %q", i, col.Name, expectedNames[i])
+		}
+	}
+
+	// Verify column types
+	expectedTypes := []Type{TypeInt, TypeVarchar, TypeBoolean}
+	for i, col := range meta.columns {
+		nt, ok := col.TypeInfo.(NativeType)
+		if !ok {
+			t.Fatalf("columns[%d].TypeInfo is %T, want NativeType", i, col.TypeInfo)
+		}
+		if nt.typ != expectedTypes[i] {
+			t.Errorf("columns[%d].Type = %v, want %v", i, nt.typ, expectedTypes[i])
+		}
+	}
+
+	// Verify the entire buffer was consumed (no misalignment from skipString)
+	if len(fr.buf) != 0 {
+		t.Errorf("buffer has %d unconsumed bytes, want 0 (possible skipString misalignment)", len(fr.buf))
+	}
+}
+
 func TestParseEventFrame_ClientRoutesChanged(t *testing.T) {
 	t.Parallel()
 

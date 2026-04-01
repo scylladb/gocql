@@ -835,20 +835,34 @@ func (f *framer) parsePreparedMetadata() preparedMetadata {
 	}
 
 	var cols []ColumnInfo
+	readPerColumnSpec := !globalSpec
+	var tracker keyspaceTableTracker
 	if meta.colCount < 1000 {
 		// preallocate columninfo to avoid excess copying
 		cols = make([]ColumnInfo, meta.colCount)
 		for i := 0; i < meta.colCount; i++ {
-			f.readCol(&cols[i], &meta.resultMetadata, globalSpec, meta.keyspace, meta.table)
+			col := &cols[i]
+			keyspace, table := f.readColWithSpec(col, &meta.resultMetadata, globalSpec, meta.keyspace, meta.table, i, readPerColumnSpec)
+			if readPerColumnSpec {
+				tracker.track(i, keyspace, table)
+			}
 		}
 	} else {
 		// use append, huge number of columns usually indicates a corrupt frame or
 		// just a huge row.
 		for i := 0; i < meta.colCount; i++ {
 			var col ColumnInfo
-			f.readCol(&col, &meta.resultMetadata, globalSpec, meta.keyspace, meta.table)
+			keyspace, table := f.readColWithSpec(&col, &meta.resultMetadata, globalSpec, meta.keyspace, meta.table, i, readPerColumnSpec)
+			if readPerColumnSpec {
+				tracker.track(i, keyspace, table)
+			}
 			cols = append(cols, col)
 		}
+	}
+
+	if !globalSpec && meta.colCount > 0 && tracker.allSame {
+		meta.keyspace = tracker.keyspace
+		meta.table = tracker.table
 	}
 
 	meta.columns = cols
@@ -875,11 +889,34 @@ func (r resultMetadata) String() string {
 	return fmt.Sprintf("[metadata flags=0x%x paging_state=% X columns=%v]", r.flags, r.pagingState, r.columns)
 }
 
-func (f *framer) readCol(col *ColumnInfo, meta *resultMetadata, globalSpec bool, keyspace, table string) {
-	if !globalSpec {
+// keyspaceTableTracker tracks whether all columns share the same keyspace/table.
+type keyspaceTableTracker struct {
+	keyspace string
+	table    string
+	allSame  bool
+}
+
+func (t *keyspaceTableTracker) track(colIndex int, keyspace, table string) {
+	if colIndex == 0 {
+		t.keyspace = keyspace
+		t.table = table
+		t.allSame = true
+	} else if t.allSame && (keyspace != t.keyspace || table != t.table) {
+		t.allSame = false
+	}
+}
+
+func (f *framer) readColWithSpec(col *ColumnInfo, meta *resultMetadata, globalSpec bool, keyspace, table string, colIndex int, readPerColumnSpec bool) (string, string) {
+	if readPerColumnSpec {
+		// Per-column table spec encoding: read keyspace/table for this column.
 		col.Keyspace = f.readString()
 		col.Table = f.readString()
 	} else {
+		if !globalSpec && colIndex != 0 {
+			// Skip per-column keyspace/table already read from column 0.
+			f.skipString()
+			f.skipString()
+		}
 		col.Keyspace = keyspace
 		col.Table = table
 	}
@@ -892,6 +929,8 @@ func (f *framer) readCol(col *ColumnInfo, meta *resultMetadata, globalSpec bool,
 		// -1 because we already included the tuple column
 		meta.actualColCount += len(v.Elems) - 1
 	}
+
+	return col.Keyspace, col.Table
 }
 
 func (f *framer) parseResultMetadata() resultMetadata {
@@ -912,9 +951,13 @@ func (f *framer) parseResultMetadata() resultMetadata {
 		return meta
 	}
 
-	var keyspace, table string
 	globalSpec := meta.flags&frm.FlagGlobalTableSpec == frm.FlagGlobalTableSpec
-	if globalSpec {
+
+	// Read keyspace/table once and reuse for all columns. ROWS results are
+	// always single-table; when !globalSpec this consumes column 0's wire
+	// values and readColWithSpec skips the rest via skipString().
+	var keyspace, table string
+	if globalSpec || meta.colCount > 0 {
 		keyspace = f.readString()
 		table = f.readString()
 	}
@@ -924,7 +967,7 @@ func (f *framer) parseResultMetadata() resultMetadata {
 		// preallocate columninfo to avoid excess copying
 		cols = make([]ColumnInfo, meta.colCount)
 		for i := 0; i < meta.colCount; i++ {
-			f.readCol(&cols[i], &meta, globalSpec, keyspace, table)
+			f.readColWithSpec(&cols[i], &meta, globalSpec, keyspace, table, i, false)
 		}
 
 	} else {
@@ -932,7 +975,7 @@ func (f *framer) parseResultMetadata() resultMetadata {
 		// just a huge row.
 		for i := 0; i < meta.colCount; i++ {
 			var col ColumnInfo
-			f.readCol(&col, &meta, globalSpec, keyspace, table)
+			f.readColWithSpec(&col, &meta, globalSpec, keyspace, table, i, false)
 			cols = append(cols, col)
 		}
 	}
@@ -1482,6 +1525,17 @@ func (f *framer) readString() (s string) {
 	s = string(f.buf[:size])
 	f.buf = f.buf[size:]
 	return
+}
+
+// skipString advances past a string without allocating.
+func (f *framer) skipString() {
+	size := f.readShort()
+
+	if len(f.buf) < int(size) {
+		panic(fmt.Errorf("not enough bytes in buffer to skip string, requires %d got %d", size, len(f.buf)))
+	}
+
+	f.buf = f.buf[size:]
 }
 
 func (f *framer) readLongString() (s string) {
