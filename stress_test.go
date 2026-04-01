@@ -28,6 +28,7 @@
 package gocql
 
 import (
+	"fmt"
 	"sync/atomic"
 
 	"testing"
@@ -41,7 +42,9 @@ func BenchmarkConnStress(b *testing.B) {
 	session := createSessionFromCluster(cluster, b)
 	defer session.Close()
 
-	if err := createTable(session, "CREATE TABLE IF NOT EXISTS conn_stress (id int primary key)"); err != nil {
+	table := testTableName(b)
+
+	if err := createTable(session, fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (id int primary key)", table)); err != nil {
 		b.Fatal(err)
 	}
 
@@ -50,7 +53,7 @@ func BenchmarkConnStress(b *testing.B) {
 		seed := atomic.AddUint64(&seed, 1)
 		var i uint64 = 0
 		for pb.Next() {
-			if err := session.Query("insert into conn_stress (id) values (?)", i*seed).Exec(); err != nil {
+			if err := session.Query(fmt.Sprintf("insert into %s (id) values (?)", table), i*seed).Exec(); err != nil {
 				b.Error(err)
 				return
 			}
@@ -71,7 +74,9 @@ func BenchmarkConnRoutingKey(b *testing.B) {
 	session := createSessionFromCluster(cluster, b)
 	defer session.Close()
 
-	if err := createTable(session, "CREATE TABLE IF NOT EXISTS routing_key_stress (id int primary key)"); err != nil {
+	table := testTableName(b)
+
+	if err := createTable(session, fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (id int primary key)", table)); err != nil {
 		b.Fatal(err)
 	}
 
@@ -79,7 +84,7 @@ func BenchmarkConnRoutingKey(b *testing.B) {
 	writer := func(pb *testing.PB) {
 		seed := atomic.AddUint64(&seed, 1)
 		var i uint64 = 0
-		query := session.Query("insert into routing_key_stress (id) values (?)")
+		query := session.Query(fmt.Sprintf("insert into %s (id) values (?)", table))
 
 		for pb.Next() {
 			if _, err := query.Bind(i * seed).GetRoutingKey(); err != nil {

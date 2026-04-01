@@ -374,32 +374,36 @@ func createMaterializedViews(t *testing.T, session *Session) {
 	if flagCassVersion.Before(3, 0, 0) {
 		return
 	}
-	if err := session.Query(`CREATE TABLE IF NOT EXISTS gocql_test.view_table (
+	table1 := testTableName(t, "1")
+	table2 := testTableName(t, "2")
+	view1 := testTableName(t, "view1")
+	view2 := testTableName(t, "view2")
+	if err := session.Query(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS gocql_test.%s (
 		    userid text,
 		    year int,
 		    month int,
-    		    PRIMARY KEY (userid));`).Exec(); err != nil {
+    		    PRIMARY KEY (userid));`, table1)).Exec(); err != nil {
 		t.Fatalf("failed to create materialized view with err: %v", err)
 	}
-	if err := session.Query(`CREATE TABLE IF NOT EXISTS gocql_test.view_table2 (
+	if err := session.Query(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS gocql_test.%s (
 		    userid text,
 		    year int,
 		    month int,
-    		    PRIMARY KEY (userid));`).Exec(); err != nil {
+    		    PRIMARY KEY (userid));`, table2)).Exec(); err != nil {
 		t.Fatalf("failed to create materialized view with err: %v", err)
 	}
-	if err := session.Query(`CREATE MATERIALIZED VIEW IF NOT EXISTS gocql_test.view_view AS
+	if err := session.Query(fmt.Sprintf(`CREATE MATERIALIZED VIEW IF NOT EXISTS gocql_test.%s AS
 		   SELECT year, month, userid
-		   FROM gocql_test.view_table
+		   FROM gocql_test.%s
 		   WHERE year IS NOT NULL AND month IS NOT NULL AND userid IS NOT NULL
-		   PRIMARY KEY (userid, year);`).Exec(); err != nil {
+		   PRIMARY KEY (userid, year);`, view1, table1)).Exec(); err != nil {
 		t.Fatalf("failed to create materialized view with err: %v", err)
 	}
-	if err := session.Query(`CREATE MATERIALIZED VIEW IF NOT EXISTS gocql_test.view_view2 AS
+	if err := session.Query(fmt.Sprintf(`CREATE MATERIALIZED VIEW IF NOT EXISTS gocql_test.%s AS
 		   SELECT year, month, userid
-		   FROM gocql_test.view_table2
+		   FROM gocql_test.%s
 		   WHERE year IS NOT NULL AND month IS NOT NULL AND userid IS NOT NULL
-		   PRIMARY KEY (userid, year);`).Exec(); err != nil {
+		   PRIMARY KEY (userid, year);`, view2, table2)).Exec(); err != nil {
 		t.Fatalf("failed to create materialized view with err: %v", err)
 	}
 }

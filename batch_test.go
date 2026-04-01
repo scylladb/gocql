@@ -28,6 +28,7 @@
 package gocql
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -36,12 +37,14 @@ func TestBatch_Errors(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := createTable(session, `CREATE TABLE gocql_test.batch_errors (id int primary key, val inet)`); err != nil {
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (id int primary key, val inet)`, table)); err != nil {
 		t.Fatal(err)
 	}
 
 	b := session.Batch(LoggedBatch)
-	b = b.Query("SELECT * FROM gocql_test.batch_errors WHERE id=2 AND val=?", nil)
+	b = b.Query(fmt.Sprintf("SELECT * FROM gocql_test.%s WHERE id=2 AND val=?", table), nil)
 	if err := b.Exec(); err == nil {
 		t.Fatal("expected to get error for invalid query in batch")
 	}
@@ -51,7 +54,9 @@ func TestBatch_WithTimestamp(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := createTable(session, `CREATE TABLE gocql_test.batch_ts (id int primary key, val text)`); err != nil {
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (id int primary key, val text)`, table)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -59,15 +64,15 @@ func TestBatch_WithTimestamp(t *testing.T) {
 
 	b := session.Batch(LoggedBatch)
 	b.WithTimestamp(micros)
-	b = b.Query("INSERT INTO gocql_test.batch_ts (id, val) VALUES (?, ?)", 1, "val")
-	b = b.Query("INSERT INTO gocql_test.batch_ts (id, val) VALUES (?, ?)", 2, "val")
+	b = b.Query(fmt.Sprintf("INSERT INTO gocql_test.%s (id, val) VALUES (?, ?)", table), 1, "val")
+	b = b.Query(fmt.Sprintf("INSERT INTO gocql_test.%s (id, val) VALUES (?, ?)", table), 2, "val")
 
 	if err := b.Exec(); err != nil {
 		t.Fatal(err)
 	}
 
 	var storedTs int64
-	if err := session.Query(`SELECT writetime(val) FROM gocql_test.batch_ts WHERE id = ?`, 1).Scan(&storedTs); err != nil {
+	if err := session.Query(fmt.Sprintf(`SELECT writetime(val) FROM gocql_test.%s WHERE id = ?`, table), 1).Scan(&storedTs); err != nil {
 		t.Fatal(err)
 	}
 

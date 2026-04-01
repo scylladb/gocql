@@ -28,6 +28,7 @@
 package gocql
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -36,13 +37,15 @@ func TestProto1BatchInsert(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := createTable(session, "CREATE TABLE gocql_test.large (id int primary key)"); err != nil {
+	table := testTableName(t)
+
+	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int primary key)", table)); err != nil {
 		t.Fatal(err)
 	}
 
 	begin := "BEGIN BATCH"
 	end := "APPLY BATCH"
-	query := "INSERT INTO large (id) VALUES (?)"
+	query := fmt.Sprintf("INSERT INTO %s (id) VALUES (?)", table)
 	fullQuery := strings.Join([]string{begin, query, end}, "\n")
 	args := []interface{}{5}
 	if err := session.Query(fullQuery, args...).Consistency(Quorum).Exec(); err != nil {
