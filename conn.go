@@ -1572,7 +1572,8 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 	}
 
 	framer, err := c.exec(ctx, frame, qry.trace, qry.GetRequestTimeout())
-	// Return pooled queryValues; values were consumed during frame serialization inside c.exec().
+	// Return pooled values; consumed by buildFrame at the start of c.exec().
+	// Returned after round-trip (not right after serialization) for simplicity.
 	putQueryValues(params.values)
 	if err != nil {
 		return &Iter{err: err}
@@ -1796,7 +1797,8 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 
 	// TODO: should batch support tracing?
 	framer, err := c.exec(batch.Context(), req, batch.trace, batch.GetRequestTimeout())
-	// Return pooled queryValues; values were consumed during frame serialization inside c.exec().
+	// Return pooled values; consumed by buildFrame at the start of c.exec().
+	// Returned after round-trip (not right after serialization) for simplicity.
 	putBatchQueryValues(req.statements)
 	if err != nil {
 		return &Iter{err: err}
