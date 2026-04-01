@@ -391,12 +391,18 @@ func (h *HostInfo) HostID() string {
 	return h.hostId
 }
 
+// Deprecated: WorkLoad is a DSE-specific field that is no longer queried
+// from system tables. It will always return "" for hosts discovered via
+// the driver. Only populated if set explicitly via HostInfoBuilder.
 func (h *HostInfo) WorkLoad() string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.workload
 }
 
+// Deprecated: DSEVersion is a DSE-specific field that is no longer queried
+// from system tables. It will always return "" for hosts discovered via
+// the driver. Only populated if set explicitly via HostInfoBuilder.
 func (h *HostInfo) DSEVersion() string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
