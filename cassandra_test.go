@@ -1073,6 +1073,11 @@ func TestCreateSessionTimeout(t *testing.T) {
 	}
 }
 
+// TestReconnection verifies that a node marked down is eventually reconnected.
+// WARNING: This test must NOT use t.Parallel(). It calls session.handleNodeDown()
+// which mutates shared HostInfo state visible to all concurrent sessions.
+//
+//nolint:paralleltest // mutates shared HostInfo state via handleNodeDown()
 func TestReconnection(t *testing.T) {
 	cluster := createCluster()
 	cluster.ReconnectInterval = 1 * time.Second
@@ -3294,7 +3299,11 @@ func TestQuery_NamedValues(t *testing.T) {
 	}
 }
 
-// This test ensures that queries are sent to the specified host only
+// TestQuery_SetHostID ensures that queries are sent to the specified host only.
+// WARNING: This test must NOT use t.Parallel(). It calls pool.host.setState(NodeDown)
+// which mutates shared HostInfo state visible to all concurrent sessions.
+//
+//nolint:paralleltest // mutates shared HostInfo state via setState(NodeDown)
 func TestQuery_SetHostID(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()

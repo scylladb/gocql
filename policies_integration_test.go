@@ -89,7 +89,11 @@ func testIfPolicyInitializedProperly(t *testing.T, cluster *ClusterConfig, polic
 	}
 }
 
-// This test ensures  that when all hosts are down, the query execution does not hang.
+// TestNoHangAllHostsDown ensures that when all hosts are down, the query execution does not hang.
+// WARNING: This test must NOT use t.Parallel(). It sets ALL hosts to NodeDown state,
+// which mutates shared HostInfo objects visible to all concurrent sessions.
+//
+//nolint:paralleltest // mutates shared HostInfo state (sets all hosts to NodeDown)
 func TestNoHangAllHostsDown(t *testing.T) {
 	cluster := createCluster()
 	session := createSessionFromCluster(cluster, t)

@@ -267,20 +267,21 @@ func TestVector_MarshalerUDT(t *testing.T) {
 	}
 
 	table := testTableName(t)
+	typeName := testTypeName(t)
 
-	err := createTable(session, `CREATE TYPE gocql_test.person(
+	err := createTable(session, fmt.Sprintf(`CREATE TYPE gocql_test.%s(
 		first_name text,
 		last_name text,
-		age int);`)
+		age int);`, typeName))
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	err = createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s(
 		id int,
-		couple vector<person, 2>,
+		couple vector<%s, 2>,
 		primary key(id)
-	);`, table))
+	);`, table, typeName))
 	if err != nil {
 		t.Fatal(err)
 	}
