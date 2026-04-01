@@ -73,11 +73,12 @@ func TestUDT_Marshaler(t *testing.T) {
 	defer session.Close()
 
 	table := testTableName(t)
+	typeName := testTypeName(t)
 
-	err := createTable(session, `CREATE TYPE gocql_test.position(
+	err := createTable(session, fmt.Sprintf(`CREATE TYPE gocql_test.%s(
 		lat int,
 		lon int,
-		padding text);`)
+		padding text);`, typeName))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,10 +86,10 @@ func TestUDT_Marshaler(t *testing.T) {
 	err = createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s(
 		id int,
 		name text,
-		loc frozen<position>,
+		loc frozen<%s>,
 
 		primary key(id)
-	);`, table))
+	);`, table, typeName))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,20 +129,21 @@ func TestUDT_Reflect(t *testing.T) {
 	defer session.Close()
 
 	table := testTableName(t)
+	typeName := testTypeName(t)
 
-	err := createTable(session, `CREATE TYPE gocql_test.horse(
+	err := createTable(session, fmt.Sprintf(`CREATE TYPE gocql_test.%s(
 		name text,
-		owner text);`)
+		owner text);`, typeName))
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	err = createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s(
 		position int,
-		horse frozen<horse>,
+		horse frozen<%s>,
 
 		primary key(position)
-	);`, table))
+	);`, table, typeName))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,20 +179,21 @@ func TestUDT_NullObject(t *testing.T) {
 	defer session.Close()
 
 	table := testTableName(t)
+	typeName := testTypeName(t)
 
-	err := createTable(session, `CREATE TYPE gocql_test.udt_null_type(
+	err := createTable(session, fmt.Sprintf(`CREATE TYPE gocql_test.%s(
 		name text,
-		owner text);`)
+		owner text);`, typeName))
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	err = createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s(
 		id uuid,
-		udt_col frozen<udt_null_type>,
+		udt_col frozen<%s>,
 
 		primary key(id)
-	);`, table))
+	);`, table, typeName))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,11 +232,12 @@ func TestMapScanUDT(t *testing.T) {
 	defer session.Close()
 
 	table := testTableName(t)
+	typeName := testTypeName(t)
 
-	err := createTable(session, `CREATE TYPE gocql_test.log_entry (
+	err := createTable(session, fmt.Sprintf(`CREATE TYPE gocql_test.%s (
 		created_timestamp timestamp,
 		message text
-	);`)
+	);`, typeName))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,8 +245,8 @@ func TestMapScanUDT(t *testing.T) {
 	err = createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (
 		id uuid PRIMARY KEY,
 		type int,
-		log_entries list<frozen <log_entry>>
-	);`, table))
+		log_entries list<frozen <%s>>
+	);`, table, typeName))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -314,20 +318,21 @@ func TestUDT_MissingField(t *testing.T) {
 	defer session.Close()
 
 	table := testTableName(t)
+	typeName := testTypeName(t)
 
-	err := createTable(session, `CREATE TYPE gocql_test.missing_field(
+	err := createTable(session, fmt.Sprintf(`CREATE TYPE gocql_test.%s(
 		name text,
-		owner text);`)
+		owner text);`, typeName))
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	err = createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s(
 		id uuid,
-		udt_col frozen<udt_null_type>,
+		udt_col frozen<%s>,
 
 		primary key(id)
-	);`, table))
+	);`, table, typeName))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -362,22 +367,23 @@ func TestUDT_EmptyCollections(t *testing.T) {
 	defer session.Close()
 
 	table := testTableName(t)
+	typeName := testTypeName(t)
 
-	err := createTable(session, `CREATE TYPE gocql_test.nil_collections(
+	err := createTable(session, fmt.Sprintf(`CREATE TYPE gocql_test.%s(
 		a list<text>,
 		b map<text, text>,
 		c set<text>
-	);`)
+	);`, typeName))
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	err = createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s(
 		id uuid,
-		udt_col frozen<nil_collections>,
+		udt_col frozen<%s>,
 
 		primary key(id)
-	);`, table))
+	);`, table, typeName))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -416,20 +422,21 @@ func TestUDT_UpdateField(t *testing.T) {
 	defer session.Close()
 
 	table := testTableName(t)
+	typeName := testTypeName(t)
 
-	err := createTable(session, `CREATE TYPE gocql_test.update_field_udt(
+	err := createTable(session, fmt.Sprintf(`CREATE TYPE gocql_test.%s(
 		name text,
-		owner text);`)
+		owner text);`, typeName))
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	err = createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s(
 		id uuid,
-		udt_col frozen<update_field_udt>,
+		udt_col frozen<%s>,
 
 		primary key(id)
-	);`, table))
+	);`, table, typeName))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -451,7 +458,7 @@ func TestUDT_UpdateField(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := createTable(session, `ALTER TYPE gocql_test.update_field_udt ADD data text;`); err != nil {
+	if err := createTable(session, fmt.Sprintf(`ALTER TYPE gocql_test.%s ADD data text;`, typeName)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -471,11 +478,12 @@ func TestUDT_ScanNullUDT(t *testing.T) {
 	defer session.Close()
 
 	table := testTableName(t)
+	typeName := testTypeName(t)
 
-	err := createTable(session, `CREATE TYPE gocql_test.scan_null_udt_position(
+	err := createTable(session, fmt.Sprintf(`CREATE TYPE gocql_test.%s(
 		lat int,
 		lon int,
-		padding text);`)
+		padding text);`, typeName))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -483,9 +491,9 @@ func TestUDT_ScanNullUDT(t *testing.T) {
 	err = createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s(
 		id int,
 		name text,
-		loc frozen<position>,
+		loc frozen<%s>,
 		primary key(id)
-	);`, table))
+	);`, table, typeName))
 	if err != nil {
 		t.Fatal(err)
 	}

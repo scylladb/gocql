@@ -479,6 +479,18 @@ func testTableName(t testing.TB, parts ...string) string {
 	return name
 }
 
+// testTypeName builds a CQL-safe UDT type name from t.Name() and optional parts.
+// Analogous to testTableName but intended for CREATE TYPE / frozen<type> references.
+func testTypeName(t testing.TB, parts ...string) string {
+	return testTableName(t, parts...)
+}
+
+// testKeyspaceName builds a CQL-safe keyspace name from t.Name() and optional parts.
+// Analogous to testTableName but intended for CREATE/DROP KEYSPACE statements.
+func testKeyspaceName(t testing.TB, parts ...string) string {
+	return testTableName(t, parts...)
+}
+
 func staticAddressTranslator(newAddr net.IP, newPort int) AddressTranslator {
 	return AddressTranslatorFunc(func(addr net.IP, port int) (net.IP, int) {
 		return newAddr, newPort

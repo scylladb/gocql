@@ -49,7 +49,7 @@ func TestKeyspaceTable(t *testing.T) {
 
 	cluster.Keyspace = "wrong_keyspace"
 
-	keyspace := "test1"
+	keyspace := testKeyspaceName(t)
 	table := testTableName(t)
 
 	err = createTable(session, `DROP KEYSPACE IF EXISTS `+keyspace)

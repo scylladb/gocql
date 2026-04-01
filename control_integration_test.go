@@ -56,7 +56,7 @@ func TestUnixSockets(t *testing.T) {
 
 	defer sess.Close()
 
-	keyspace := "test1"
+	keyspace := testKeyspaceName(t)
 
 	err = createTable(sess, `DROP KEYSPACE IF EXISTS `+keyspace)
 	if err != nil {
