@@ -15,3 +15,4 @@ func (m *MockFramer) ReadBytesInternal() ([]byte, error) {
 
 func (*MockFramer) GetCustomPayload() map[string][]byte { return map[string][]byte{} }
 func (*MockFramer) GetHeaderWarnings() []string         { return []string{} }
+func (*MockFramer) Release()                            {}

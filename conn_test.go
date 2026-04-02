@@ -901,6 +901,143 @@ func TestContext_CanceledBeforeExec(t *testing.T) {
 	}
 }
 
+func TestCallReqReuseDoesNotInvalidateOutstandingTimeout(t *testing.T) {
+	t.Parallel()
+
+	oldCall := getCallReq(1)
+	oldTimeout := oldCall.timeout
+	oldCall.done.Done()
+	putCallReq(oldCall)
+
+	newCall := getCallReq(2)
+	defer newCall.done.Done()
+	defer close(newCall.timeout)
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("closing old timeout should not panic after putCallReq: %v", r)
+		}
+	}()
+
+	close(oldTimeout)
+
+	select {
+	case <-newCall.timeout:
+		t.Fatal("closing the old timeout unexpectedly closed the new call timeout")
+	default:
+	}
+}
+
+type testContextWriter struct {
+	n       int
+	err     error
+	onWrite func()
+}
+
+func (w testContextWriter) writeContext(ctx context.Context, p []byte) (int, error) {
+	if w.onWrite != nil {
+		w.onWrite()
+	}
+	if w.n == 0 && w.err == nil {
+		return len(p), nil
+	}
+	return w.n, w.err
+}
+
+func (w testContextWriter) setWriteTimeout(timeout time.Duration) {}
+
+func newTestExecConn(t *testing.T, w contextWriter) (*Conn, net.Conn) {
+	t.Helper()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	server, client := net.Pipe()
+	c := newTestConnWithFramerPool()
+	c.ctx = ctx
+	c.cancel = cancel
+	c.conn = client
+	c.w = w
+	c.logger = nopLogger{}
+	c.errorHandler = connErrorHandlerFn(func(*Conn, error, bool) {})
+	c.streams = streams.New()
+	c.calls = make(map[int]*callReq)
+
+	return c, server
+}
+
+func TestExecCloseWithError(t *testing.T) {
+	t.Parallel()
+
+	t.Run("PartialWriteDoesNotDeadlock", func(t *testing.T) {
+		c, server := newTestExecConn(t, testContextWriter{
+			n:   1,
+			err: io.ErrUnexpectedEOF,
+		})
+		defer server.Close()
+
+		errCh := make(chan error, 1)
+		go func() {
+			_, err := c.exec(context.Background(), frameWriterFunc(func(f *framer, streamID int) error {
+				f.buf = append(f.buf[:0], 'x')
+				return nil
+			}), nil, 0)
+			errCh <- err
+		}()
+
+		select {
+		case err := <-errCh:
+			if !errors.Is(err, io.ErrUnexpectedEOF) {
+				t.Fatalf("expected write error %v, got %v", io.ErrUnexpectedEOF, err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("exec deadlocked after partial write failure")
+		}
+	})
+
+	t.Run("ConnectionCloseErrorDoesNotDeadlock", func(t *testing.T) {
+		writeStarted := make(chan struct{})
+		var writeStartedOnce sync.Once
+		c, server := newTestExecConn(t, testContextWriter{
+			onWrite: func() {
+				writeStartedOnce.Do(func() {
+					close(writeStarted)
+				})
+			},
+		})
+		defer server.Close()
+
+		closeDone := make(chan struct{})
+		go func() {
+			<-writeStarted
+			c.closeWithError(io.EOF)
+			close(closeDone)
+		}()
+
+		errCh := make(chan error, 1)
+		go func() {
+			_, err := c.exec(context.Background(), frameWriterFunc(func(f *framer, streamID int) error {
+				f.buf = append(f.buf[:0], 'x')
+				return nil
+			}), nil, 0)
+			errCh <- err
+		}()
+
+		select {
+		case err := <-errCh:
+			if !errors.Is(err, io.EOF) {
+				t.Fatalf("expected close error %v, got %v", io.EOF, err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("exec deadlocked after closeWithError")
+		}
+
+		select {
+		case <-closeDone:
+		case <-time.After(2 * time.Second):
+			t.Fatal("closeWithError deadlocked waiting for exec to release the call")
+		}
+	})
+}
+
 // tcpConnPair returns a matching set of a TCP client side and server side connection.
 func tcpConnPair() (s, c net.Conn, err error) {
 	l, err := net.Listen("tcp", "localhost:0")
@@ -1547,7 +1684,7 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 			respFrame.writeString("unsupported query: " + name)
 		}
 	case frm.OpExecute:
-		b := reqFrame.readShortBytes()
+		b := reqFrame.readShortBytesCopy()
 		id := binary.BigEndian.Uint64(b)
 		// <query_parameters>
 		reqFrame.readConsistency() // <consistency>
@@ -1712,4 +1849,202 @@ func TestUseKeyspaceQuoteEscaping(t *testing.T) {
 			t.Errorf("keyspace %q: got %q, want %q", tt.keyspace, got, tt.want)
 		}
 	}
+}
+
+// newTestConnWithFramerPool creates a minimal Conn with an initialized framer pool
+// suitable for testing releaseFramer and EWMA logic.
+func newTestConnWithFramerPool() *Conn {
+	c := &Conn{}
+	c.framerConstructor.defaults = framerConfig{
+		proto: protoVersion4 & protoVersionMask,
+	}
+	c.initFramerPool()
+	return c
+}
+
+func TestReleaseFramer(t *testing.T) {
+	t.Parallel()
+
+	t.Run("EWMAEquilibrium", func(t *testing.T) {
+		c := newTestConnWithFramerPool()
+
+		// Release framers with bufCap == avg. EWMA should not drift.
+		for i := 0; i < 20; i++ {
+			f := c.getReadFramer()
+			// readBuffer is defaultBufSize (128), avg starts at defaultBufSize
+			c.releaseReadFramer(f)
+		}
+
+		avg := c.framerConstructor.readPool.bufAvgSize.Load()
+		if avg != defaultBufSize {
+			t.Errorf("EWMA should stay at defaultBufSize=%d when all buffers equal, got %d", defaultBufSize, avg)
+		}
+	})
+
+	t.Run("DelegatesFramerReleaseToConn", func(t *testing.T) {
+		c := newTestConnWithFramerPool()
+
+		f := c.getReadFramer()
+		f.readBuffer = make([]byte, 4096)
+
+		f.Release()
+
+		avgAfterFirstRelease := c.framerConstructor.readPool.bufAvgSize.Load()
+		if avgAfterFirstRelease <= defaultBufSize {
+			t.Fatalf("framer.Release() should route through Conn.releaseFramer and update EWMA, got %d", avgAfterFirstRelease)
+		}
+
+		f.Release()
+
+		if avgAfterSecondRelease := c.framerConstructor.readPool.bufAvgSize.Load(); avgAfterSecondRelease != avgAfterFirstRelease {
+			t.Fatalf("second framer.Release() should be a no-op: first avg=%d second avg=%d", avgAfterFirstRelease, avgAfterSecondRelease)
+		}
+	})
+
+	t.Run("EWMAConvergesUpward", func(t *testing.T) {
+		c := newTestConnWithFramerPool()
+
+		// Release framers with a larger buffer; EWMA should converge toward it.
+		const targetSize = 4096
+		for i := 0; i < 100; i++ {
+			f := c.getReadFramer()
+			f.readBuffer = make([]byte, targetSize)
+			c.releaseReadFramer(f)
+		}
+
+		avg := c.framerConstructor.readPool.bufAvgSize.Load()
+		// After 100 iterations with weight=8, avg should be very close to targetSize.
+		// Allow 1% tolerance.
+		if avg < targetSize*99/100 || avg > targetSize*101/100 {
+			t.Errorf("EWMA should converge to ~%d, got %d", targetSize, avg)
+		}
+	})
+
+	t.Run("EWMAConvergesDownward", func(t *testing.T) {
+		c := newTestConnWithFramerPool()
+
+		// First, push EWMA up.
+		for i := 0; i < 100; i++ {
+			f := c.getReadFramer()
+			f.readBuffer = make([]byte, 4096)
+			c.releaseReadFramer(f)
+		}
+
+		// Now release framers with small buffers; EWMA should converge back down.
+		// Due to upward bias (+4 rounding), convergence downward is slower.
+		const smallSize = 256
+		for i := 0; i < 200; i++ {
+			f := c.getReadFramer()
+			f.readBuffer = make([]byte, smallSize)
+			c.releaseReadFramer(f)
+		}
+
+		avg := c.framerConstructor.readPool.bufAvgSize.Load()
+		// Due to the upward-biased rounding (+framerBufEWMAWeight/2), the EWMA settles
+		// slightly above the actual sample value when converging downward. The steady-state
+		// offset is at most framerBufEWMAWeight/2 (i.e., 4) per step which compounds to
+		// roughly framerBufEWMAWeight/2 above the target. Allow generous tolerance.
+		if avg < smallSize || avg > smallSize+2*framerBufEWMAWeight {
+			t.Errorf("EWMA should converge toward ~%d (with upward bias), got %d", smallSize, avg)
+		}
+	})
+
+	t.Run("ShrinkOversizedBuffer", func(t *testing.T) {
+		c := newTestConnWithFramerPool()
+
+		// EWMA starts at defaultBufSize (128). Release a very large framer.
+		f := c.getReadFramer()
+		f.readBuffer = make([]byte, 100000)
+		origBuf := f.readBuffer
+		c.releaseReadFramer(f)
+
+		// Get the framer back from the pool and check that its buffer was shrunk.
+		f2 := c.getReadFramer()
+		if cap(f2.readBuffer) >= cap(origBuf) {
+			t.Errorf("oversized buffer should have been shrunk: original cap=%d, new cap=%d",
+				cap(origBuf), cap(f2.readBuffer))
+		}
+		// Shrink target should be at least defaultBufSize.
+		if cap(f2.readBuffer) < defaultBufSize {
+			t.Errorf("shrunk buffer should be at least defaultBufSize=%d, got cap=%d",
+				defaultBufSize, cap(f2.readBuffer))
+		}
+		c.releaseReadFramer(f2)
+	})
+
+	t.Run("NoShrinkNormalBuffer", func(t *testing.T) {
+		c := newTestConnWithFramerPool()
+
+		// Release a few framers with identical buffers; none should be shrunk.
+		for i := 0; i < 10; i++ {
+			f := c.getReadFramer()
+			origCap := cap(f.readBuffer)
+			c.releaseReadFramer(f)
+			f2 := c.getReadFramer()
+			if cap(f2.readBuffer) != origCap {
+				t.Errorf("iteration %d: normal-sized buffer should not be shrunk: orig cap=%d, new cap=%d",
+					i, origCap, cap(f2.readBuffer))
+			}
+			c.releaseReadFramer(f2)
+		}
+	})
+
+	t.Run("ShrinkFloorIsDefaultBufSize", func(t *testing.T) {
+		c := newTestConnWithFramerPool()
+
+		// Push EWMA down to a very small value by releasing tiny buffers.
+		// The shrink target should never go below defaultBufSize.
+		for i := 0; i < 100; i++ {
+			f := c.getReadFramer()
+			f.readBuffer = make([]byte, 1) // Tiny buffer
+			c.releaseReadFramer(f)
+		}
+
+		// Now release a moderately large buffer that triggers shrink.
+		f := c.getReadFramer()
+		f.readBuffer = make([]byte, 10000)
+		c.releaseReadFramer(f)
+
+		f2 := c.getReadFramer()
+		if cap(f2.readBuffer) < defaultBufSize {
+			t.Errorf("shrink target should respect defaultBufSize floor: got cap=%d, want >= %d",
+				cap(f2.readBuffer), defaultBufSize)
+		}
+		c.releaseReadFramer(f2)
+	})
+
+	t.Run("NilFramer", func(t *testing.T) {
+		c := newTestConnWithFramerPool()
+		// Should not panic.
+		c.releaseReadFramer(nil)
+	})
+
+	t.Run("NoPool", func(t *testing.T) {
+		c := &Conn{} // No pool initialized.
+		f := newFramer(nil, protoVersion4)
+		// Should not panic, framer is just dropped.
+		c.releaseReadFramer(f)
+	})
+
+	t.Run("ReadAndWritePoolsAreSeparate", func(t *testing.T) {
+		c := newTestConnWithFramerPool()
+
+		readFramer := c.getReadFramer()
+		readFramer.readBuffer = make([]byte, 100000)
+		c.releaseReadFramer(readFramer)
+
+		writeFramer := c.getWriteFramer()
+		writeFramer.buf = make([]byte, 0, 8192)
+		c.releaseWriteFramer(writeFramer)
+
+		if writeAvg := c.framerConstructor.writePool.bufAvgSize.Load(); writeAvg <= defaultBufSize {
+			t.Fatalf("writer pool should track its own EWMA, got %d", writeAvg)
+		}
+
+		writeFramer = c.getWriteFramer()
+		if cap(writeFramer.buf) >= cap(readFramer.readBuffer) {
+			t.Fatalf("writer framer should not inherit oversized reader buffer state, got writer cap=%d reader cap=%d", cap(writeFramer.buf), cap(readFramer.readBuffer))
+		}
+		c.releaseWriteFramer(writeFramer)
+	})
 }

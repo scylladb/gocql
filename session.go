@@ -30,7 +30,9 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1652,7 +1654,9 @@ func (q *Query) Iter() *Iter {
 	// Retry on empty page if pagination is manual
 	iter := q.executeQuery()
 	for iter.err == nil && iter.numRows == 0 && !iter.LastPage() {
-		q.PageState(iter.PageState())
+		ps := iter.PageState()
+		iter.Close()
+		q.PageState(ps)
 		iter = q.executeQuery()
 	}
 	return iter
@@ -1676,6 +1680,7 @@ func (q *Query) executeQuery() *Iter {
 func (q *Query) MapScan(m map[string]interface{}) error {
 	iter := q.Iter()
 	if err := iter.checkErrAndNotFound(); err != nil {
+		iter.Close()
 		return err
 	}
 	iter.MapScan(m)
@@ -1688,6 +1693,7 @@ func (q *Query) MapScan(m map[string]interface{}) error {
 func (q *Query) Scan(dest ...interface{}) error {
 	iter := q.Iter()
 	if err := iter.checkErrAndNotFound(); err != nil {
+		iter.Close()
 		return err
 	}
 	iter.Scan(dest...)
@@ -1706,6 +1712,7 @@ func (q *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
 	q.disableSkipMetadata = true
 	iter := q.Iter()
 	if err := iter.checkErrAndNotFound(); err != nil {
+		iter.Close()
 		return false, err
 	}
 	if len(iter.Columns()) > 1 {
@@ -1729,11 +1736,12 @@ func (q *Query) MapScanCAS(dest map[string]interface{}) (applied bool, err error
 	q.disableSkipMetadata = true
 	iter := q.Iter()
 	if err := iter.checkErrAndNotFound(); err != nil {
+		iter.Close()
 		return false, err
 	}
 	iter.MapScan(dest)
 	if iter.err != nil {
-		return false, iter.err
+		return false, iter.Close()
 	}
 	// check if [applied] was returned, otherwise it might not be CAS
 	if appliedRaw, ok := dest["[applied]"]; ok {
@@ -1801,15 +1809,39 @@ func (q *Query) GetHostID() string {
 // Iter represents an iterator that can be used to iterate over all rows that
 // were returned by a query. The iterator might send additional queries to the
 // database during the iteration if paging was enabled.
+//
+// IMPORTANT: Iter must ALWAYS be closed by calling Close() to release resources,
+// even if an error occurred or no rows were consumed. Use defer immediately after
+// obtaining an Iter:
+//
+//	iter := session.Query("...").Iter()
+//	defer iter.Close()
+//
+// Failure to call Close() may leak resources and prevent buffer reuse.
+//
+// CONCURRENCY: Iter is NOT safe for concurrent use. An Iter instance should only
+// be used from a single goroutine at a time. While Close() is safe to call multiple
+// times (idempotent), calling Scan(), Next(), or other methods concurrently with
+// Close() or each other will result in undefined behavior.
+//
+//nolint:govet // Keeping iterator lifetime/ownership state together is more important here than field packing.
 type Iter struct {
-	err     error
-	framer  framerInterface
-	next    *nextIter
-	host    *HostInfo
-	meta    resultMetadata
-	pos     int
-	numRows int
-	closed  int32
+	err    error
+	framer framerInterface
+	// allWarnings accumulates warnings across page boundaries.
+	// When a page's framer is released during fetchNextPage(), its warnings
+	// are appended here so they are not lost.
+	allWarnings           []string
+	releasedCustomPayload map[string][]byte
+	next                  *nextIter
+	host                  *HostInfo
+	meta                  resultMetadata
+	warningHandler        WarningHandler
+	warningQuery          ExecutableQuery
+	pos                   int
+	numRows               int
+	closed                int32
+	warningsHandled       int32
 }
 
 // Host returns the host which the query was sent to.
@@ -1820,6 +1852,92 @@ func (iter *Iter) Host() *HostInfo {
 // Columns returns the name and type of the selected columns.
 func (iter *Iter) Columns() []ColumnInfo {
 	return iter.meta.columns
+}
+
+// copyPageData copies page-related fields from src to iter, excluding the closed flag.
+// This is used when fetching the next page to avoid races with concurrent Close() calls.
+//
+// After this call, src must not be used because its framer ownership has been
+// transferred to iter (src.framer is set to nil to prevent double-release).
+func (iter *Iter) copyPageData(src *Iter) {
+	iter.err = src.err
+	iter.framer = src.framer
+	iter.next = src.next
+	iter.host = src.host
+	iter.meta = src.meta
+	iter.allWarnings = append(iter.allWarnings, src.allWarnings...)
+	iter.releasedCustomPayload = src.releasedCustomPayload
+	iter.pos = src.pos
+	iter.numRows = src.numRows
+
+	// Clear source framer to prevent double-release: ownership is now with iter.
+	src.framer = nil
+	src.allWarnings = nil
+	src.releasedCustomPayload = nil
+	// Intentionally don't copy iter.closed - it's managed with atomic operations
+}
+
+func (iter *Iter) bindWarningHandler(qry ExecutableQuery, handler WarningHandler) *Iter {
+	if iter == nil || handler == nil {
+		return iter
+	}
+	iter.warningQuery = qry
+	iter.warningHandler = handler
+	return iter
+}
+
+func (iter *Iter) collectReleasedFramerMetadata(f framerInterface) {
+	if f == nil {
+		return
+	}
+	if warnings := f.GetHeaderWarnings(); len(warnings) > 0 {
+		iter.allWarnings = append(iter.allWarnings, warnings...)
+	}
+	if payload := f.GetCustomPayload(); len(payload) > 0 {
+		iter.releasedCustomPayload = maps.Clone(payload)
+	}
+}
+
+func (iter *Iter) handleWarningsOnce() {
+	if iter.warningHandler == nil {
+		return
+	}
+	if !atomic.CompareAndSwapInt32(&iter.warningsHandled, 0, 1) {
+		return
+	}
+	if warnings := iter.Warnings(); len(warnings) > 0 {
+		iter.warningHandler.HandleWarnings(iter.warningQuery, iter.host, warnings)
+	}
+}
+
+func newErrorIterWithReleasedFramer(err error, framer framerInterface) *Iter {
+	iter := &Iter{err: err}
+	if framer != nil {
+		iter.collectReleasedFramerMetadata(framer)
+		framer.Release()
+	}
+	return iter
+}
+
+// fetchNextPage releases the current page's framer and loads the next page
+// into iter. Returns true if a new page was successfully loaded,
+// false if no more pages or if the fetch produced an error.
+func (iter *Iter) fetchNextPage() bool {
+	if iter.pos < iter.numRows || iter.next == nil {
+		return false
+	}
+	if iter.framer != nil {
+		// Accumulate warnings from the current page before releasing its framer,
+		// so they are not lost across page boundaries.
+		if w := iter.framer.GetHeaderWarnings(); len(w) > 0 {
+			iter.allWarnings = append(iter.allWarnings, w...)
+		}
+		iter.framer.Release()
+		iter.framer = nil // prevent accidental use of released framer
+	}
+	next := iter.next.fetch()
+	iter.copyPageData(next)
+	return iter.err == nil
 }
 
 type Scanner interface {
@@ -1853,12 +1971,10 @@ func (is *iterScanner) Next() bool {
 		return false
 	}
 
-	if iter.pos >= iter.numRows {
-		if iter.next != nil {
-			is.iter = iter.next.fetch()
-			return is.Next()
+	for iter.pos >= iter.numRows {
+		if !iter.fetchNextPage() {
+			return false
 		}
-		return false
 	}
 
 	for i := 0; i < len(is.cols); i++ {
@@ -1947,6 +2063,12 @@ func (iter *Iter) Scanner() Scanner {
 }
 
 func (iter *Iter) readColumn() ([]byte, error) {
+	if atomic.LoadInt32(&iter.closed) != 0 {
+		return nil, errors.New("iterator closed")
+	}
+	if iter.framer == nil {
+		return nil, errors.New("no framer available")
+	}
 	return iter.framer.ReadBytesInternal()
 }
 
@@ -1963,12 +2085,10 @@ func (iter *Iter) Scan(dest ...interface{}) bool {
 		return false
 	}
 
-	if iter.pos >= iter.numRows {
-		if iter.next != nil {
-			*iter = *iter.next.fetch()
-			return iter.Scan(dest...)
+	for iter.pos >= iter.numRows {
+		if !iter.fetchNextPage() {
+			return false
 		}
-		return false
 	}
 
 	if iter.next != nil && iter.pos >= iter.next.pos {
@@ -2005,7 +2125,12 @@ func (iter *Iter) Scan(dest ...interface{}) bool {
 }
 
 // GetCustomPayload returns any parsed custom payload results if given in the
-// response from Cassandra. Note that the result is not a copy.
+// response from Cassandra. The returned map is a shallow copy and is safe to
+// retain after the Iter advances or is closed.
+//
+// When paging is enabled, this returns the custom payload from the most recently
+// loaded page only. Custom payloads from previously consumed pages are not retained.
+// If you need the payload, retrieve it before advancing to the next page.
 //
 // This additional feature of CQL Protocol v4
 // allows additional results and query information to be returned by
@@ -2013,19 +2138,28 @@ func (iter *Iter) Scan(dest ...interface{}) bool {
 // See https://datastax.github.io/java-driver/manual/custom_payloads/
 func (iter *Iter) GetCustomPayload() map[string][]byte {
 	if iter.framer != nil {
-		return iter.framer.GetCustomPayload()
+		return maps.Clone(iter.framer.GetCustomPayload())
 	}
-	return nil
+	return maps.Clone(iter.releasedCustomPayload)
 }
 
 // Warnings returns any warnings generated if given in the response from Cassandra.
+// When paging is enabled, warnings are accumulated across all pages that have been
+// consumed so far plus the warnings from the current (not yet released) page.
 //
 // This is only available starting with CQL Protocol v4.
 func (iter *Iter) Warnings() []string {
+	var current []string
 	if iter.framer != nil {
-		return iter.framer.GetHeaderWarnings()
+		current = iter.framer.GetHeaderWarnings()
 	}
-	return nil
+	if len(iter.allWarnings) == 0 {
+		return slices.Clone(current) // always return a caller-owned slice
+	}
+	if len(current) == 0 {
+		return slices.Clone(iter.allWarnings)
+	}
+	return slices.Concat(iter.allWarnings, current)
 }
 
 // Close closes the iterator and returns any errors that happened during
@@ -2033,8 +2167,11 @@ func (iter *Iter) Warnings() []string {
 func (iter *Iter) Close() error {
 	if atomic.CompareAndSwapInt32(&iter.closed, 0, 1) {
 		if iter.framer != nil {
+			iter.collectReleasedFramerMetadata(iter.framer)
+			iter.framer.Release()
 			iter.framer = nil
 		}
+		iter.handleWarningsOnce()
 	}
 
 	return iter.err
