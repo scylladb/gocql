@@ -631,6 +631,10 @@ func (s *Session) Close() {
 	s.sessionStateMu.Lock()
 	s.isClosed = true
 	s.sessionStateMu.Unlock()
+
+	if s.metadataDescriber != nil && s.metadataDescriber.metadata != nil {
+		s.metadataDescriber.metadata.tabletsMetadata.Close()
+	}
 }
 
 func (s *Session) Closed() bool {
@@ -663,7 +667,6 @@ func (s *Session) WaitUntilReady() error {
 }
 
 func (s *Session) executeQuery(qry *Query) (it *Iter) {
-	// fail fast
 	if s.Closed() {
 		return &Iter{err: ErrSessionClosed}
 	}
@@ -691,7 +694,6 @@ func (s *Session) removeHost(h *HostInfo) {
 
 // KeyspaceMetadata returns the schema metadata for the keyspace specified. Returns an error if the keyspace does not exist.
 func (s *Session) KeyspaceMetadata(keyspace string) (*KeyspaceMetadata, error) {
-	// fail fast
 	if s.Closed() {
 		return nil, ErrSessionClosed
 	} else if err := s.Ready(); err != nil {
@@ -705,7 +707,6 @@ func (s *Session) KeyspaceMetadata(keyspace string) (*KeyspaceMetadata, error) {
 
 // TableMetadata returns the schema metadata for the specified table. Returns an error if the keyspace or table does not exist.
 func (s *Session) TableMetadata(keyspace, table string) (*TableMetadata, error) {
-	// fail fast
 	if s.Closed() {
 		return nil, ErrSessionClosed
 	} else if err := s.Ready(); err != nil {
@@ -713,15 +714,17 @@ func (s *Session) TableMetadata(keyspace, table string) (*TableMetadata, error) 
 	} else if keyspace == "" {
 		return nil, ErrNoKeyspace
 	} else if table == "" {
-		return nil, fmt.Errorf("no table name provided: %w", ErrNotFound)
+		return nil, ErrNoTable
 	}
 
 	return s.metadataDescriber.GetTable(keyspace, table)
 }
 
-// TabletsMetadata returns the metadata about tablets
+// TabletsMetadata returns the metadata about all tablets across all keyspaces and tables.
+//
+// Deprecated: Use [Session.TableTabletsMetadata] for per-table lookups or
+// [Session.ForEachTablet] to iterate without aggregating into a flat list.
 func (s *Session) TabletsMetadata() (tablets.TabletInfoList, error) {
-	// fail fast
 	if s.Closed() {
 		return nil, ErrSessionClosed
 	} else if err := s.Ready(); err != nil {
@@ -731,6 +734,45 @@ func (s *Session) TabletsMetadata() (tablets.TabletInfoList, error) {
 	}
 
 	return s.metadataDescriber.getTablets(), nil
+}
+
+// TableTabletsMetadata returns the tablet metadata for the specified keyspace and table.
+// Returns (nil, nil) when no tablets exist for the given keyspace/table.
+func (s *Session) TableTabletsMetadata(keyspace, table string) (tablets.TabletEntryList, error) {
+	// fail fast
+	if s.Closed() {
+		return nil, ErrSessionClosed
+	} else if err := s.Ready(); err != nil {
+		return nil, err
+	} else if !s.tabletsRoutingV1 {
+		return nil, ErrTabletsNotUsed
+	} else if keyspace == "" {
+		return nil, ErrNoKeyspace
+	} else if table == "" {
+		return nil, ErrNoTable
+	}
+
+	return s.metadataDescriber.getTableTablets(keyspace, table), nil
+}
+
+// ForEachTablet iterates over all keyspace/table pairs and their tablet entries,
+// calling fn for each one. If fn returns false, iteration stops early.
+// The entries slice is a shallow copy; do not mutate individual entries.
+func (s *Session) ForEachTablet(fn func(keyspace, table string, entries tablets.TabletEntryList) bool) error {
+	// fail fast
+	if s.Closed() {
+		return ErrSessionClosed
+	} else if err := s.Ready(); err != nil {
+		return err
+	} else if !s.tabletsRoutingV1 {
+		return ErrTabletsNotUsed
+	}
+	if fn == nil {
+		return nil
+	}
+
+	s.metadataDescriber.forEachTablet(fn)
+	return nil
 }
 
 func (s *Session) getConn() *Conn {
@@ -751,8 +793,17 @@ func (s *Session) getConn() *Conn {
 	return nil
 }
 
-func (s *Session) findTabletReplicasForToken(keyspace, table string, token int64) []tablets.ReplicaInfo {
-	return s.metadataDescriber.metadata.tabletsMetadata.FindReplicasForToken(keyspace, table, token)
+// findTabletReplicasUnsafeForToken returns the raw replica slice for the tablet
+// owning the given token. The returned slice must not be modified by callers.
+func (s *Session) findTabletReplicasUnsafeForToken(keyspace, table string, token int64) []tablets.ReplicaInfo {
+	if s.Closed() {
+		return nil
+	}
+	md := s.metadataDescriber
+	if md == nil || md.metadata == nil {
+		return nil
+	}
+	return md.metadata.tabletsMetadata.FindReplicasUnsafeForToken(keyspace, table, token)
 }
 
 // returns routing key indexes and type info
@@ -2643,6 +2694,7 @@ var (
 	ErrSessionClosed        = errors.New("session has been closed")
 	ErrNoConnections        = errors.New("gocql: no hosts available in the pool")
 	ErrNoKeyspace           = errors.New("no keyspace provided")
+	ErrNoTable              = errors.New("no table name provided")
 	ErrKeyspaceDoesNotExist = errors.New("keyspace does not exist")
 	ErrNoMetadata           = errors.New("no metadata available")
 	ErrTabletsNotUsed       = errors.New("tablets not used")

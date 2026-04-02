@@ -4,442 +4,297 @@
 package tablets
 
 import (
+	"math"
 	"testing"
-
-	"github.com/gocql/gocql/internal/tests"
 )
 
-var tablets = TabletInfoList{
-	{
-		keyspaceName: "test1",
-		tableName:    "table1",
-		replicas:     []ReplicaInfo{{tests.RandomUUID(), 9}},
-		firstToken:   -7917529027641081857,
-		lastToken:    -6917529027641081857,
-	},
-	{
-		keyspaceName: "test1",
-		tableName:    "table1",
-		replicas:     []ReplicaInfo{{tests.RandomUUID(), 8}},
-		firstToken:   -6917529027641081857,
-		lastToken:    -4611686018427387905,
-	},
-	{
-		keyspaceName: "test1",
-		tableName:    "table1",
-		replicas:     []ReplicaInfo{{tests.RandomUUID(), 9}},
-		firstToken:   -4611686018427387905,
-		lastToken:    -2305843009213693953,
-	},
-	{
-		keyspaceName: "test1",
-		tableName:    "table1",
-		replicas:     []ReplicaInfo{{tests.RandomUUID(), 8}},
-		firstToken:   -2305843009213693953,
-		lastToken:    -1,
-	},
-	{
-		keyspaceName: "test1",
-		tableName:    "table1",
-		replicas:     []ReplicaInfo{{tests.RandomUUID(), 3}},
-		firstToken:   -1,
-		lastToken:    2305843009213693951,
-	},
-	{
-		keyspaceName: "test1",
-		tableName:    "table1",
-		replicas:     []ReplicaInfo{{tests.RandomUUID(), 3}},
-		firstToken:   2305843009213693951,
-		lastToken:    4611686018427387903,
-	},
-	{
-		keyspaceName: "test1",
-		tableName:    "table1",
-		replicas:     []ReplicaInfo{{tests.RandomUUID(), 7}},
-		firstToken:   4611686018427387903,
-		lastToken:    6917529027641081855,
-	},
-	{
-		keyspaceName: "test1",
-		tableName:    "table1",
-		replicas:     []ReplicaInfo{{tests.RandomUUID(), 7}},
-		firstToken:   6917529027641081855,
-		lastToken:    9223372036854775807,
-	},
-	{
-		keyspaceName: "test2",
-		tableName:    "table1",
-		replicas:     []ReplicaInfo{{tests.RandomUUID(), 9}},
-		firstToken:   -7917529027641081857,
-		lastToken:    -6917529027641081857,
-	},
-	{
-		keyspaceName: "test2",
-		tableName:    "table1",
-		replicas:     []ReplicaInfo{{tests.RandomUUID(), 8}},
-		firstToken:   -6917529027641081857,
-		lastToken:    -4611686018427387905,
-	},
-	{
-		keyspaceName: "test2",
-		tableName:    "table1",
-		replicas:     []ReplicaInfo{{tests.RandomUUID(), 9}},
-		firstToken:   -4611686018427387905,
-		lastToken:    -2305843009213693953,
-	},
-	{
-		keyspaceName: "test2",
-		tableName:    "table1",
-		replicas:     []ReplicaInfo{{tests.RandomUUID(), 8}},
-		firstToken:   -2305843009213693953,
-		lastToken:    -1,
-	},
-	{
-		keyspaceName: "test2",
-		tableName:    "table1",
-		replicas:     []ReplicaInfo{{tests.RandomUUID(), 3}},
-		firstToken:   -1,
-		lastToken:    2305843009213693951,
-	},
-	{
-		keyspaceName: "test2",
-		tableName:    "table1",
-		replicas:     []ReplicaInfo{{tests.RandomUUID(), 3}},
-		firstToken:   2305843009213693951,
-		lastToken:    4611686018427387903,
-	},
-	{
-		keyspaceName: "test2",
-		tableName:    "table1",
-		replicas:     []ReplicaInfo{{tests.RandomUUID(), 7}},
-		firstToken:   4611686018427387903,
-		lastToken:    6917529027641081855,
-	},
-	{
-		keyspaceName: "test2",
-		tableName:    "table1",
-		replicas:     []ReplicaInfo{{tests.RandomUUID(), 7}},
-		firstToken:   6917529027641081855,
-		lastToken:    9223372036854775807,
-	},
-}
-
-func TestFindTablets(t *testing.T) {
+func TestFindEntryForToken(t *testing.T) {
 	t.Parallel()
 
-	id, id2 := tablets.FindTablets("test1", "table1")
-	tests.AssertEqual(t, "id", 0, id)
-	tests.AssertEqual(t, "id2", 7, id2)
-
-	id, id2 = tablets.FindTablets("test2", "table1")
-	tests.AssertEqual(t, "id", 8, id)
-	tests.AssertEqual(t, "id2", 15, id2)
-
-	id, id2 = tablets.FindTablets("test3", "table1")
-	tests.AssertEqual(t, "id", -1, id)
-	tests.AssertEqual(t, "id2", -1, id2)
-}
-
-func TestFindTabletForToken(t *testing.T) {
-	t.Parallel()
-
-	tablet := tablets.FindTabletForToken(0, 0, 7)
-	tests.AssertTrue(t, "tablet.lastToken == 2305843009213693951", tablet.lastToken == 2305843009213693951)
-
-	tablet = tablets.FindTabletForToken(9223372036854775807, 0, 7)
-	tests.AssertTrue(t, "tablet.lastToken == 9223372036854775807", tablet.lastToken == 9223372036854775807)
-
-	tablet = tablets.FindTabletForToken(-4611686018427387904, 0, 7)
-	tests.AssertTrue(t, "tablet.lastToken == -2305843009213693953", tablet.lastToken == -2305843009213693953)
-}
-
-func CompareRanges(tablets TabletInfoList, ranges [][]int64) bool {
-	if len(tablets) != len(ranges) {
-		return false
-	}
-
-	for idx, tablet := range tablets {
-		if tablet.FirstToken() != ranges[idx][0] || tablet.LastToken() != ranges[idx][1] {
-			return false
+	t.Run("ExactLastToken", func(t *testing.T) {
+		entries := TabletEntryList{
+			{firstToken: -100, lastToken: 0},
+			{firstToken: 0, lastToken: 100},
 		}
-	}
-	return true
-}
-func TestAddTabletToEmptyTablets(t *testing.T) {
-	t.Parallel()
-
-	tablets := TabletInfoList{}
-
-	tablets = tablets.AddTabletToTabletsList(&TabletInfo{
-		keyspaceName: "test_ks",
-		tableName:    "test_tb",
-		replicas:     []ReplicaInfo{},
-		firstToken:   -6917529027641081857,
-		lastToken:    -4611686018427387905,
+		entry := entries.findEntryForToken(0, 0, len(entries))
+		if entry == nil {
+			t.Fatal("expected entry for token at exact lastToken boundary")
+		}
+		if entry.lastToken != 0 {
+			t.Fatalf("expected lastToken=0, got %d", entry.lastToken)
+		}
 	})
 
-	tests.AssertTrue(t, "Token range in tablets table not correct", CompareRanges(tablets, [][]int64{{-6917529027641081857, -4611686018427387905}}))
-}
-
-func TestAddTabletAtTheBeggining(t *testing.T) {
-	t.Parallel()
-
-	tablets := TabletInfoList{{
-		keyspaceName: "test_ks",
-		tableName:    "test_tb",
-		replicas:     []ReplicaInfo{},
-		firstToken:   -6917529027641081857,
-		lastToken:    -4611686018427387905,
-	}}
-
-	tablets = tablets.AddTabletToTabletsList(&TabletInfo{
-		keyspaceName: "test_ks",
-		tableName:    "test_tb",
-		replicas:     []ReplicaInfo{},
-		firstToken:   -8611686018427387905,
-		lastToken:    -7917529027641081857,
+	t.Run("ExactFirstToken", func(t *testing.T) {
+		entries := TabletEntryList{
+			{firstToken: -100, lastToken: 0},
+			{firstToken: 0, lastToken: 100},
+		}
+		entry := entries.findEntryForToken(-100, 0, len(entries))
+		if entry == nil {
+			t.Fatal("expected entry for token at exact firstToken boundary")
+		}
+		if entry.firstToken != -100 {
+			t.Fatalf("expected firstToken=-100, got %d", entry.firstToken)
+		}
 	})
 
-	tests.AssertTrue(t, "Token range in tablets table not correct",
-		CompareRanges(tablets, [][]int64{{-8611686018427387905, -7917529027641081857}, {-6917529027641081857, -4611686018427387905}}))
-}
-
-func TestAddTabletAtTheEnd(t *testing.T) {
-	t.Parallel()
-
-	tablets := TabletInfoList{{
-		keyspaceName: "test_ks",
-		tableName:    "test_tb",
-		replicas:     []ReplicaInfo{},
-		firstToken:   -6917529027641081857,
-		lastToken:    -4611686018427387905,
-	}}
-
-	tablets = tablets.AddTabletToTabletsList(&TabletInfo{
-		keyspaceName: "test_ks",
-		tableName:    "test_tb",
-		replicas:     []ReplicaInfo{},
-		firstToken:   -1,
-		lastToken:    2305843009213693951,
+	t.Run("BeyondAll", func(t *testing.T) {
+		entries := TabletEntryList{
+			{firstToken: -100, lastToken: 0},
+			{firstToken: 0, lastToken: 100},
+		}
+		entry := entries.findEntryForToken(200, 0, len(entries))
+		if entry != nil {
+			t.Fatal("expected nil for token beyond all tablets")
+		}
 	})
 
-	tests.AssertTrue(t, "Token range in tablets table not correct", CompareRanges(tablets, [][]int64{{-6917529027641081857, -4611686018427387905},
-		{-1, 2305843009213693951}}))
-}
-
-func TestAddTabletInTheMiddle(t *testing.T) {
-	t.Parallel()
-
-	tablets := TabletInfoList{{
-		keyspaceName: "test_ks",
-		tableName:    "test_tb",
-		replicas:     []ReplicaInfo{},
-		firstToken:   -6917529027641081857,
-		lastToken:    -4611686018427387905,
-	}, {
-		keyspaceName: "test_ks",
-		tableName:    "test_tb",
-		replicas:     []ReplicaInfo{},
-		firstToken:   -1,
-		lastToken:    2305843009213693951,
-	}}
-
-	tablets = tablets.AddTabletToTabletsList(&TabletInfo{
-		keyspaceName: "test_ks",
-		tableName:    "test_tb",
-		replicas:     []ReplicaInfo{},
-		firstToken:   -4611686018427387905,
-		lastToken:    -2305843009213693953,
+	t.Run("BeforeAll", func(t *testing.T) {
+		entries := TabletEntryList{
+			{firstToken: -100, lastToken: 0},
+			{firstToken: 0, lastToken: 100},
+		}
+		entry := entries.findEntryForToken(-200, 0, len(entries))
+		if entry != nil {
+			t.Fatal("expected nil for token before all tablets")
+		}
 	})
 
-	tests.AssertTrue(t, "Token range in tablets table not correct", CompareRanges(tablets, [][]int64{{-6917529027641081857, -4611686018427387905},
-		{-4611686018427387905, -2305843009213693953},
-		{-1, 2305843009213693951}}))
-}
-
-func TestAddTabletIntersecting(t *testing.T) {
-	t.Parallel()
-
-	tablets := TabletInfoList{{
-		keyspaceName: "test_ks",
-		tableName:    "test_tb",
-		replicas:     []ReplicaInfo{},
-		firstToken:   -6917529027641081857,
-		lastToken:    -4611686018427387905,
-	}, {
-		keyspaceName: "test_ks",
-		tableName:    "test_tb",
-		replicas:     []ReplicaInfo{},
-		firstToken:   -4611686018427387905,
-		lastToken:    -2305843009213693953,
-	}, {
-		keyspaceName: "test_ks",
-		tableName:    "test_tb",
-		replicas:     []ReplicaInfo{},
-		firstToken:   -2305843009213693953,
-		lastToken:    -1,
-	}, {
-		keyspaceName: "test_ks",
-		tableName:    "test_tb",
-		replicas:     []ReplicaInfo{},
-		firstToken:   -1,
-		lastToken:    2305843009213693951,
-	}}
-
-	tablets = tablets.AddTabletToTabletsList(&TabletInfo{
-		keyspaceName: "test_ks",
-		tableName:    "test_tb",
-		replicas:     []ReplicaInfo{},
-		firstToken:   -3611686018427387905,
-		lastToken:    -6,
+	t.Run("InGap", func(t *testing.T) {
+		entries := TabletEntryList{
+			{firstToken: -200, lastToken: -100},
+			{firstToken: 100, lastToken: 200},
+		}
+		entry := entries.findEntryForToken(0, 0, len(entries))
+		if entry != nil {
+			t.Fatal("expected nil for token in gap between non-contiguous tablets")
+		}
 	})
 
-	tests.AssertTrue(t, "Token range in tablets table not correct",
-		CompareRanges(tablets, [][]int64{{-6917529027641081857, -4611686018427387905},
-			{-3611686018427387905, -6},
-			{-1, 2305843009213693951}}))
-}
-
-func TestAddTabletIntersectingWithFirst(t *testing.T) {
-	t.Parallel()
-
-	tablets := TabletInfoList{{
-		keyspaceName: "test_ks",
-		tableName:    "test_tb",
-		replicas:     []ReplicaInfo{},
-		firstToken:   -8611686018427387905,
-		lastToken:    -7917529027641081857,
-	}, {
-		keyspaceName: "test_ks",
-		tableName:    "test_tb",
-		replicas:     []ReplicaInfo{},
-		firstToken:   -6917529027641081857,
-		lastToken:    -4611686018427387905,
-	}}
-
-	tablets = tablets.AddTabletToTabletsList(&TabletInfo{
-		keyspaceName: "test_ks",
-		tableName:    "test_tb",
-		replicas:     []ReplicaInfo{},
-		firstToken:   -8011686018427387905,
-		lastToken:    -7987529027641081857,
+	t.Run("EmptyList", func(t *testing.T) {
+		entries := TabletEntryList{}
+		entry := entries.findEntryForToken(0, 0, 0)
+		if entry != nil {
+			t.Fatal("expected nil for empty entry list")
+		}
 	})
 
-	tests.AssertTrue(t, "Token range in tablets table not correct", CompareRanges(tablets, [][]int64{{-8011686018427387905, -7987529027641081857},
-		{-6917529027641081857, -4611686018427387905}}))
-}
+	t.Run("SingleEntry", func(t *testing.T) {
+		entries := TabletEntryList{
+			{firstToken: -50, lastToken: 50},
+		}
 
-func TestAddTabletIntersectingWithLast(t *testing.T) {
-	t.Parallel()
+		entry := entries.findEntryForToken(0, 0, len(entries))
+		if entry == nil {
+			t.Fatal("expected entry for token inside single entry")
+		}
 
-	tablets := TabletInfoList{{
-		keyspaceName: "test_ks",
-		tableName:    "test_tb",
-		replicas:     []ReplicaInfo{},
-		firstToken:   -8611686018427387905,
-		lastToken:    -7917529027641081857,
-	}, {
-		keyspaceName: "test_ks",
-		tableName:    "test_tb",
-		replicas:     []ReplicaInfo{},
-		firstToken:   -6917529027641081857,
-		lastToken:    -4611686018427387905,
-	}}
+		entry = entries.findEntryForToken(-50, 0, len(entries))
+		if entry == nil {
+			t.Fatal("expected entry for token at firstToken of single entry")
+		}
 
-	tablets = tablets.AddTabletToTabletsList(&TabletInfo{
-		keyspaceName: "test_ks",
-		tableName:    "test_tb",
-		replicas:     []ReplicaInfo{},
-		firstToken:   -5011686018427387905,
-		lastToken:    -2987529027641081857,
+		entry = entries.findEntryForToken(50, 0, len(entries))
+		if entry == nil {
+			t.Fatal("expected entry for token at lastToken of single entry")
+		}
+
+		entry = entries.findEntryForToken(-51, 0, len(entries))
+		if entry != nil {
+			t.Fatal("expected nil for token before single entry")
+		}
+
+		entry = entries.findEntryForToken(51, 0, len(entries))
+		if entry != nil {
+			t.Fatal("expected nil for token after single entry")
+		}
 	})
 
-	tests.AssertTrue(t, "Token range in tablets table not correct", CompareRanges(tablets, [][]int64{{-8611686018427387905, -7917529027641081857},
-		{-5011686018427387905, -2987529027641081857}}))
+	t.Run("InvalidBounds", func(t *testing.T) {
+		entries := TabletEntryList{
+			{firstToken: 0, lastToken: 100, replicas: []ReplicaInfo{{"host1", 0}}},
+		}
+
+		testCases := []struct {
+			name string
+			l, r int
+		}{
+			{"negative l", -1, 1},
+			{"r beyond length", 0, 10},
+			{"l > r", 1, 0},
+			{"both invalid", -1, 10},
+			{"l == r (empty range)", 0, 0},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				result := entries.findEntryForToken(50, tc.l, tc.r)
+				if result != nil {
+					t.Errorf("expected nil for invalid bounds l=%d r=%d, got %+v", tc.l, tc.r, result)
+				}
+			})
+		}
+	})
+
+	t.Run("SingleTokenTablet", func(t *testing.T) {
+		entries := TabletEntryList{
+			{firstToken: -100, lastToken: -50},
+			{firstToken: 42, lastToken: 42},
+			{firstToken: 100, lastToken: 200},
+		}
+
+		entry := entries.findEntryForToken(42, 0, len(entries))
+		if entry == nil {
+			t.Fatal("expected entry for single-token tablet")
+		}
+		if entry.firstToken != 42 || entry.lastToken != 42 {
+			t.Fatalf("expected [42,42], got [%d,%d]", entry.firstToken, entry.lastToken)
+		}
+
+		entry = entries.findEntryForToken(41, 0, len(entries))
+		if entry != nil {
+			t.Fatal("expected nil for token just before single-token tablet")
+		}
+
+		entry = entries.findEntryForToken(43, 0, len(entries))
+		if entry != nil {
+			t.Fatal("expected nil for token just after single-token tablet")
+		}
+	})
 }
 
-func TestRemoveTabletsWithHost(t *testing.T) {
+func TestFindOverlapRange(t *testing.T) {
 	t.Parallel()
 
-	removed_host_id := tests.RandomUUID()
+	t.Run("ContiguousBoundary", func(t *testing.T) {
+		entries := TabletEntryList{
+			{firstToken: 0, lastToken: 100, replicas: []ReplicaInfo{{"host1", 0}}},
+			{firstToken: 200, lastToken: 300, replicas: []ReplicaInfo{{"host2", 1}}},
+		}
 
-	tablets := TabletInfoList{{
-		keyspaceName: "test_ks",
-		tableName:    "test_tb",
-		firstToken:   -8611686018427387905,
-		lastToken:    -7917529027641081857,
-		replicas:     []ReplicaInfo{{tests.RandomUUID(), 9}, {tests.RandomUUID(), 8}, {tests.RandomUUID(), 3}},
-	}, {
-		keyspaceName: "test_ks",
-		tableName:    "test_tb",
-		firstToken:   -6917529027641081857,
-		lastToken:    -4611686018427387905,
-		replicas:     []ReplicaInfo{{removed_host_id, 9}, {tests.RandomUUID(), 8}, {tests.RandomUUID(), 3}},
-	}, {
-		keyspaceName: "test_ks",
-		tableName:    "test_tb",
-		firstToken:   -4611686018427387905,
-		lastToken:    -2305843009213693953,
-		replicas:     []ReplicaInfo{{tests.RandomUUID(), 9}, {removed_host_id, 8}, {tests.RandomUUID(), 3}},
-	}}
+		start, tailStart := entries.findOverlapRange(100, 200)
 
-	tablets = tablets.RemoveTabletsWithHost(removed_host_id)
+		if start != 1 {
+			t.Errorf("expected start=1 for contiguous boundary, got %d", start)
+		}
+		if tailStart != 2 {
+			t.Errorf("expected tailStart=2 for contiguous boundary, got %d", tailStart)
+		}
+	})
 
-	tests.AssertEqual(t, "TabletsList length", 1, len(tablets))
+	t.Run("ExtremeValues", func(t *testing.T) {
+		entries := TabletEntryList{
+			{firstToken: math.MinInt64, lastToken: 0, replicas: []ReplicaInfo{{"host1", 0}}},
+			{firstToken: 0, lastToken: math.MaxInt64, replicas: []ReplicaInfo{{"host2", 1}}},
+		}
+
+		start, tailStart := entries.findOverlapRange(math.MinInt64, math.MaxInt64)
+		if start != 0 {
+			t.Errorf("expected start=0 for full range overlap, got %d", start)
+		}
+		if tailStart != 2 {
+			t.Errorf("expected tailStart=2 for full range overlap, got %d", tailStart)
+		}
+
+		start, tailStart = entries.findOverlapRange(math.MinInt64, -100)
+		if start != 0 {
+			t.Errorf("expected start=0 for MinInt64 range, got %d", start)
+		}
+		if tailStart != 1 {
+			t.Errorf("expected tailStart=1 for MinInt64 range, got %d", tailStart)
+		}
+
+		start, tailStart = entries.findOverlapRange(100, math.MaxInt64)
+		if start != 1 {
+			t.Errorf("expected start=1 for MaxInt64 range, got %d", start)
+		}
+		if tailStart != 2 {
+			t.Errorf("expected tailStart=2 for MaxInt64 range, got %d", tailStart)
+		}
+	})
+
+	t.Run("SingleEntry", func(t *testing.T) {
+		entries := TabletEntryList{
+			{firstToken: -100, lastToken: 100, replicas: []ReplicaInfo{{"host1", 0}}},
+		}
+
+		start, tailStart := entries.findOverlapRange(-50, 50)
+		if start != 0 || tailStart != 1 {
+			t.Errorf("expected start=0 tailStart=1 for overlapping range, got start=%d tailStart=%d", start, tailStart)
+		}
+
+		start, tailStart = entries.findOverlapRange(-200, 200)
+		if start != 0 || tailStart != 1 {
+			t.Errorf("expected start=0 tailStart=1 for extended range, got start=%d tailStart=%d", start, tailStart)
+		}
+
+		start, tailStart = entries.findOverlapRange(-200, -150)
+		if start != 0 || tailStart != 0 {
+			t.Errorf("expected start=0 tailStart=0 for range before, got start=%d tailStart=%d", start, tailStart)
+		}
+
+		start, tailStart = entries.findOverlapRange(150, 200)
+		if start != 1 || tailStart != 1 {
+			t.Errorf("expected start=1 tailStart=1 for range after, got start=%d tailStart=%d", start, tailStart)
+		}
+
+		start, tailStart = entries.findOverlapRange(-100, -50)
+		if start != 0 || tailStart != 1 {
+			t.Errorf("expected start=0 tailStart=1 for range sharing firstToken, got start=%d tailStart=%d", start, tailStart)
+		}
+
+		start, tailStart = entries.findOverlapRange(100, 200)
+		if start != 1 || tailStart != 1 {
+			t.Errorf("expected start=1 tailStart=1 for contiguous range at lastToken, got start=%d tailStart=%d", start, tailStart)
+		}
+	})
+
+	t.Run("SingleTokenTablet", func(t *testing.T) {
+		entries := TabletEntryList{}
+		start, tailStart := entries.findOverlapRange(42, 42)
+		if start != 0 || tailStart != 0 {
+			t.Errorf("empty list: expected start=0 tailStart=0, got start=%d tailStart=%d", start, tailStart)
+		}
+
+		entries = TabletEntryList{
+			{firstToken: 40, lastToken: 50},
+		}
+		start, tailStart = entries.findOverlapRange(42, 42)
+		if start != 0 || tailStart != 1 {
+			t.Errorf("contained: expected start=0 tailStart=1, got start=%d tailStart=%d", start, tailStart)
+		}
+
+		entries = TabletEntryList{
+			{firstToken: 0, lastToken: 42},
+		}
+		start, tailStart = entries.findOverlapRange(42, 42)
+		if start != 1 || tailStart != 1 {
+			t.Errorf("adjacent: expected start=1 tailStart=1, got start=%d tailStart=%d", start, tailStart)
+		}
+	})
 }
 
-func TestRemoveTabletsWithKeyspace(t *testing.T) {
+func TestAddEntry(t *testing.T) {
 	t.Parallel()
 
-	tablets := TabletInfoList{{
-		keyspaceName: "removed_ks",
-		tableName:    "test_tb",
-		firstToken:   -8611686018427387905,
-		lastToken:    -7917529027641081857,
-		replicas:     []ReplicaInfo{{tests.RandomUUID(), 9}, {tests.RandomUUID(), 8}, {tests.RandomUUID(), 3}},
-	}, {
-		keyspaceName: "removed_ks",
-		tableName:    "test_tb",
-		firstToken:   -6917529027641081857,
-		lastToken:    -4611686018427387905,
-		replicas:     []ReplicaInfo{{tests.RandomUUID(), 9}, {tests.RandomUUID(), 8}, {tests.RandomUUID(), 3}},
-	}, {
-		keyspaceName: "test_ks",
-		tableName:    "test_tb",
-		firstToken:   -4611686018427387905,
-		lastToken:    -2305843009213693953,
-		replicas:     []ReplicaInfo{{tests.RandomUUID(), 9}, {tests.RandomUUID(), 8}, {tests.RandomUUID(), 3}},
-	}}
+	t.Run("SingleTokenTablet", func(t *testing.T) {
+		tl := TabletEntryList{}
+		tl = tl.addEntry(&TabletEntry{firstToken: 42, lastToken: 42})
+		if len(tl) != 1 || tl[0].firstToken != 42 || tl[0].lastToken != 42 {
+			t.Fatalf("expected single [42,42] entry, got %v", tl)
+		}
 
-	tablets = tablets.RemoveTabletsWithKeyspace("removed_ks")
-
-	tests.AssertEqual(t, "TabletsList length", 1, len(tablets))
-}
-
-func TestRemoveTabletsWithTable(t *testing.T) {
-	t.Parallel()
-
-	tablets := TabletInfoList{{
-		keyspaceName: "test_ks",
-		tableName:    "test_tb",
-		firstToken:   -8611686018427387905,
-		lastToken:    -7917529027641081857,
-		replicas:     []ReplicaInfo{{tests.RandomUUID(), 9}, {tests.RandomUUID(), 8}, {tests.RandomUUID(), 3}},
-	}, {
-		keyspaceName: "test_ks",
-		tableName:    "test_tb",
-		firstToken:   -6917529027641081857,
-		lastToken:    -4611686018427387905,
-		replicas:     []ReplicaInfo{{tests.RandomUUID(), 9}, {tests.RandomUUID(), 8}, {tests.RandomUUID(), 3}},
-	}, {
-		keyspaceName: "test_ks",
-		tableName:    "removed_tb",
-		firstToken:   -4611686018427387905,
-		lastToken:    -2305843009213693953,
-		replicas:     []ReplicaInfo{{tests.RandomUUID(), 9}, {tests.RandomUUID(), 8}, {tests.RandomUUID(), 3}},
-	}}
-
-	tablets = tablets.RemoveTabletsWithTableFromTabletsList("test_ks", "removed_tb")
-
-	tests.AssertEqual(t, "TabletsList length", 2, len(tablets))
+		tl = TabletEntryList{
+			{firstToken: -100, lastToken: -50},
+			{firstToken: 100, lastToken: 200},
+		}
+		tl = tl.addEntry(&TabletEntry{firstToken: 42, lastToken: 42})
+		if len(tl) != 3 {
+			t.Fatalf("expected 3 entries, got %d", len(tl))
+		}
+		if tl[1].firstToken != 42 || tl[1].lastToken != 42 {
+			t.Fatalf("expected middle entry [42,42], got [%d,%d]", tl[1].firstToken, tl[1].lastToken)
+		}
+	})
 }

@@ -521,7 +521,7 @@ func columnKindFromSchema(kind string) (ColumnKind, error) {
 }
 
 type Metadata struct {
-	tabletsMetadata  tablets.CowTabletList
+	tabletsMetadata  *tablets.CowTabletList
 	keyspaceMetadata cowKeyspaceMetadataMap
 }
 
@@ -617,6 +617,14 @@ func (s *metadataDescriber) getTablets() tablets.TabletInfoList {
 	return s.metadata.tabletsMetadata.Get()
 }
 
+func (s *metadataDescriber) getTableTablets(keyspace, table string) tablets.TabletEntryList {
+	return s.metadata.tabletsMetadata.GetTableTablets(keyspace, table)
+}
+
+func (s *metadataDescriber) forEachTablet(fn func(keyspace, table string, entries tablets.TabletEntryList) bool) {
+	s.metadata.tabletsMetadata.ForEach(fn)
+}
+
 func (s *metadataDescriber) AddTablet(tablet *tablets.TabletInfo) {
 	s.metadata.tabletsMetadata.AddTablet(tablet)
 }
@@ -636,7 +644,7 @@ func (s *metadataDescriber) RemoveTabletsWithKeyspace(keyspace string) {
 // RemoveTabletsWithTable removes tablets for given table.
 // to be used outside the metadataDescriber
 func (s *metadataDescriber) RemoveTabletsWithTable(keyspace string, table string) {
-	s.metadata.tabletsMetadata.RemoveTabletsWithTableFromTabletsList(keyspace, table)
+	s.metadata.tabletsMetadata.RemoveTabletsWithTable(keyspace, table)
 }
 
 // invalidateKeyspaceSchema clears the cached keyspace metadata
