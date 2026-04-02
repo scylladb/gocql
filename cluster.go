@@ -430,7 +430,7 @@ func (cfg *ClusterConfig) ValidateAndInitSSL() error {
 	if cfg.SslOpts == nil {
 		return nil
 	}
-	actualTLSConfig, err := setupTLSConfig(cfg.SslOpts)
+	actualTLSConfig, err := setupTLSConfig(cfg.SslOpts, cfg.logger())
 	if err != nil {
 		return fmt.Errorf("failed to initialize ssl configuration: %s", err.Error())
 	}
@@ -625,7 +625,7 @@ var (
 	ErrHostQueryFailed      = errors.New("unable to populate Hosts")
 )
 
-func setupTLSConfig(sslOpts *SslOptions) (*tls.Config, error) {
+func setupTLSConfig(sslOpts *SslOptions, logger StdLogger) (*tls.Config, error) {
 	//  Config.InsecureSkipVerify | EnableHostVerification | Result
 	//  Config is nil             | true                   | verify host
 	//  Config is nil             | false                  | do not verify host
@@ -673,5 +673,102 @@ func setupTLSConfig(sslOpts *SslOptions) (*tls.Config, error) {
 		tlsConfig.Certificates = append(tlsConfig.Certificates, mycert)
 	}
 
+	// Emit deprecation warning if the option is used
+	if sslOpts.DisableStrictCertificateValidation {
+		if logger != nil {
+			logger.Println("gocql: WARNING - DisableStrictCertificateValidation is deprecated and will be removed in a future version. " +
+				"Please ensure your certificate chains are properly configured to work with strict validation.")
+		}
+	}
+
+	// Add strict certificate chain validation unless explicitly disabled
+	// This ensures that the entire certificate chain is properly validated,
+	// not just that one intermediate certificate is trusted.
+	if !tlsConfig.InsecureSkipVerify && !sslOpts.DisableStrictCertificateValidation {
+		tlsConfig.VerifyPeerCertificate = strictVerifyPeerCertificate(tlsConfig.RootCAs)
+	}
+
 	return tlsConfig, nil
+}
+
+// strictVerifyPeerCertificate returns a VerifyPeerCertificate callback that performs
+// certificate chain validation by explicitly calling cert.Verify(). This ensures that
+// the certificate chain is properly validated against the configured root CAs and
+// intermediate certificates, rather than relying on Go's default TLS behavior.
+func strictVerifyPeerCertificate(rootCAs *x509.CertPool) func([][]byte, [][]*x509.Certificate) error {
+	return func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+		if len(rawCerts) == 0 {
+			return errors.New("no certificates provided")
+		}
+
+		// Parse the leaf certificate
+		cert, err := x509.ParseCertificate(rawCerts[0])
+		if err != nil {
+			return fmt.Errorf("failed to parse certificate: %v", err)
+		}
+
+		// Build the intermediate certificate pool from the provided chain
+		intermediates := x509.NewCertPool()
+		for i := 1; i < len(rawCerts); i++ {
+			intermediateCert, err := x509.ParseCertificate(rawCerts[i])
+			if err != nil {
+				return fmt.Errorf("failed to parse intermediate certificate: %v", err)
+			}
+			intermediates.AddCert(intermediateCert)
+		}
+
+		// Verify the certificate chain
+		opts := x509.VerifyOptions{
+			Roots:         rootCAs,
+			Intermediates: intermediates,
+			// We're not verifying the hostname here as that's handled separately
+			// by the TLS library if ServerName is set
+			KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		}
+
+		chains, err := cert.Verify(opts)
+		if err != nil {
+			// Provide detailed information about which certificate failed
+			return fmt.Errorf("certificate verification failed for subject=%q, issuer=%q: %v",
+				cert.Subject.String(), cert.Issuer.String(), err)
+		}
+
+		// Ensure at least one valid chain was found
+		if len(chains) == 0 {
+			return fmt.Errorf("no valid certificate chains found for subject=%q", cert.Subject.String())
+		}
+
+		// Verify that all certificates in at least one chain are properly connected
+		// This ensures every certificate is signed by the next one in the chain
+		for _, chain := range chains {
+			if len(chain) == 0 {
+				continue
+			}
+
+			// Verify each certificate in the chain is signed by its parent
+			chainValid := true
+			for i := 0; i < len(chain)-1; i++ {
+				// Check if cert[i] is signed by cert[i+1]
+				if err := chain[i].CheckSignatureFrom(chain[i+1]); err != nil {
+					chainValid = false
+					break
+				}
+			}
+
+			// If we found a valid chain where all certificates are properly signed, we're good
+			if chainValid {
+				// Also verify the root certificate in this chain is self-signed
+				rootCert := chain[len(chain)-1]
+				if err := rootCert.CheckSignatureFrom(rootCert); err != nil {
+					// This root is not self-signed, continue checking other chains
+					continue
+				}
+				// Found a valid chain with proper signatures all the way to a self-signed root
+				return nil
+			}
+		}
+
+		// No valid chain found where all certificates are properly signed
+		return fmt.Errorf("no valid certificate chain found with proper signatures for subject=%q", cert.Subject.String())
+	}
 }
