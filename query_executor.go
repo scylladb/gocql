@@ -273,9 +273,11 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, hostIter Ne
 }
 
 func (q *queryExecutor) run(ctx context.Context, qry ExecutableQuery, hostIter NextHost, results chan<- *Iter) {
+	iter := q.do(ctx, qry, hostIter)
 	select {
-	case results <- q.do(ctx, qry, hostIter):
+	case results <- iter:
 	case <-ctx.Done():
+		iter.Close()
 	}
 	qry.releaseAfterExecution()
 }
