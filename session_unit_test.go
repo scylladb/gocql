@@ -33,6 +33,58 @@ import (
 	"testing"
 )
 
+func TestShouldPrepareNonDML(t *testing.T) {
+	t.Parallel()
+
+	nonDMLStatements := []string{
+		"CREATE TABLE ks.tbl (id int PRIMARY KEY)",
+		"ALTER TABLE ks.tbl ADD col text",
+		"DROP TABLE ks.tbl",
+		"TRUNCATE ks.tbl",
+		"CREATE KEYSPACE ks WITH replication = {'class': 'SimpleStrategy'}",
+		"DROP KEYSPACE ks",
+		"GRANT SELECT ON ks.tbl TO user1",
+		"USE ks",
+	}
+
+	for _, stmt := range nonDMLStatements {
+		t.Run(stmt, func(t *testing.T) {
+			q := &Query{stmt: stmt}
+			if q.shouldPrepare() {
+				t.Errorf("shouldPrepare(%q) = true, want false", stmt)
+			}
+		})
+	}
+}
+
+func TestShouldPrepareDML(t *testing.T) {
+	t.Parallel()
+
+	dmlStatements := []string{
+		"SELECT * FROM ks.tbl",
+		"INSERT INTO ks.tbl (id) VALUES (?)",
+		"UPDATE ks.tbl SET col = ? WHERE id = ?",
+		"DELETE FROM ks.tbl WHERE id = ?",
+		"BEGIN BATCH INSERT INTO ks.tbl (id) VALUES (1) APPLY BATCH",
+		"BEGIN BATCH INSERT INTO ks.tbl (id) VALUES (1) APPLY BATCH;",
+		"BEGIN UNLOGGED BATCH INSERT INTO ks.tbl (id) VALUES (1) APPLY BATCH",
+		// Leading ASCII whitespace.
+		"  SELECT * FROM ks.tbl",
+		"\t INSERT INTO ks.tbl (id) VALUES (?)",
+		// Leading non-ASCII whitespace (NBSP \u00a0).
+		"\u00a0SELECT * FROM ks.tbl",
+	}
+
+	for _, stmt := range dmlStatements {
+		t.Run(stmt, func(t *testing.T) {
+			q := &Query{stmt: stmt}
+			if !q.shouldPrepare() {
+				t.Errorf("shouldPrepare(%q) = false, want true", stmt)
+			}
+		})
+	}
+}
+
 func TestAsyncSessionInit(t *testing.T) {
 	t.Parallel()
 
