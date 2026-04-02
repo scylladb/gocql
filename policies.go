@@ -746,7 +746,7 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 	var replicas []*HostInfo
 
 	if session := qry.GetSession(); session != nil && session.tabletsRoutingV1 && isInt64Token {
-		tabletReplicas := session.findTabletReplicasForToken(qry.Keyspace(), qry.Table(), int64(tokenCasted))
+		tabletReplicas := session.findTabletReplicasUnsafeForToken(qry.Keyspace(), qry.Table(), int64(tokenCasted))
 		if len(tabletReplicas) != 0 {
 			hosts := t.hosts.get()
 			for _, replica := range tabletReplicas {

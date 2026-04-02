@@ -29,8 +29,11 @@ package gocql
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
+
+	"github.com/gocql/gocql/tablets"
 )
 
 func TestAsyncSessionInit(t *testing.T) {
@@ -147,8 +150,6 @@ func TestExtractKeyspaceFromDDL(t *testing.T) {
 	}
 }
 
-// TestTableMetadataAfterInvalidation verifies that TableMetadata refreshes
-// after schema invalidation.
 func TestTableMetadataAfterInvalidation(t *testing.T) {
 	t.Parallel()
 
@@ -160,10 +161,10 @@ func TestTableMetadataAfterInvalidation(t *testing.T) {
 		},
 	}
 	s := newSchemaEventTestSessionWithMock(ctrl)
+	defer s.Close()
 	s.isInitialized = true
 	populateKeyspace(s, "test_ks", "tbl_a")
 
-	// TableMetadata should succeed with cached data
 	tbl, err := s.TableMetadata("test_ks", "tbl_a")
 	if err != nil {
 		t.Fatalf("initial TableMetadata failed: %v", err)
@@ -172,12 +173,10 @@ func TestTableMetadataAfterInvalidation(t *testing.T) {
 		t.Fatalf("expected table name tbl_a, got %s", tbl.Name)
 	}
 
-	// Simulate a schema change event invalidating the table
 	s.metadataDescriber.invalidateTableSchema("test_ks", "tbl_a")
 
 	ctrl.resetQueries()
 
-	// TableMetadata should still succeed by refreshing the invalidated table
 	tbl, err = s.TableMetadata("test_ks", "tbl_a")
 	if err != nil {
 		t.Fatalf("TableMetadata after invalidation failed: %v", err)
@@ -185,14 +184,11 @@ func TestTableMetadataAfterInvalidation(t *testing.T) {
 	if tbl.Name != "tbl_a" {
 		t.Fatalf("expected table name tbl_a, got %s", tbl.Name)
 	}
-	// Verify that a refresh query was actually issued
 	if ctrl.getQueryCount() == 0 {
 		t.Fatal("expected queries to refresh tbl_a after invalidation")
 	}
 }
 
-// TestTableMetadataAfterKeyspaceInvalidation verifies that TableMetadata
-// works after the entire keyspace cache is cleared.
 func TestTableMetadataAfterKeyspaceInvalidation(t *testing.T) {
 	t.Parallel()
 
@@ -204,21 +200,19 @@ func TestTableMetadataAfterKeyspaceInvalidation(t *testing.T) {
 		},
 	}
 	s := newSchemaEventTestSessionWithMock(ctrl)
+	defer s.Close()
 	s.isInitialized = true
 	populateKeyspace(s, "test_ks", "tbl_a")
 
-	// TableMetadata should succeed with cached data
 	_, err := s.TableMetadata("test_ks", "tbl_a")
 	if err != nil {
 		t.Fatalf("initial TableMetadata failed: %v", err)
 	}
 
-	// Simulate what createTable now does: invalidate the entire keyspace
 	s.metadataDescriber.invalidateKeyspaceSchema("test_ks")
 
 	ctrl.resetQueries()
 
-	// TableMetadata should still succeed by reloading the keyspace
 	tbl, err := s.TableMetadata("test_ks", "tbl_a")
 	if err != nil {
 		t.Fatalf("TableMetadata after keyspace invalidation failed: %v", err)
@@ -226,22 +220,17 @@ func TestTableMetadataAfterKeyspaceInvalidation(t *testing.T) {
 	if tbl.Name != "tbl_a" {
 		t.Fatalf("expected table name tbl_a, got %s", tbl.Name)
 	}
-	// Verify that a refresh query was issued (keyspace was reloaded)
 	if ctrl.getQueryCount() == 0 {
 		t.Fatal("expected queries to reload keyspace after invalidation")
 	}
 }
 
-// newTestSessionForTableMetadata creates a minimal session suitable for
-// testing TableMetadata/scyllaIsCdcTable paths.
 func newTestSessionForTableMetadata(ctrl *schemaDataMock) *Session {
 	s := newSchemaEventTestSessionWithMock(ctrl)
 	s.isInitialized = true
 	return s
 }
 
-// TestScyllaIsCdcTableAfterInvalidation verifies that scyllaIsCdcTable
-// handles invalidated table metadata.
 func TestScyllaIsCdcTableAfterInvalidation(t *testing.T) {
 	t.Parallel()
 
@@ -253,19 +242,17 @@ func TestScyllaIsCdcTableAfterInvalidation(t *testing.T) {
 		},
 	}
 	s := newTestSessionForTableMetadata(ctrl)
+	defer s.Close()
 	populateKeyspace(s, "test_ks", "tbl_scylla_cdc_log")
 
-	// Should work with cached data
 	_, err := scyllaIsCdcTable(s, "test_ks", "tbl_scylla_cdc_log")
 	if err != nil {
 		t.Fatalf("initial scyllaIsCdcTable failed: %v", err)
 	}
 
-	// Invalidate the table (simulating a schema change event)
 	s.metadataDescriber.invalidateTableSchema("test_ks", "tbl_scylla_cdc_log")
 	ctrl.resetQueries()
 
-	// Should still succeed by refreshing the metadata
 	_, err = scyllaIsCdcTable(s, "test_ks", "tbl_scylla_cdc_log")
 	if err != nil {
 		t.Fatalf("scyllaIsCdcTable after invalidation failed: %v", err)
@@ -275,8 +262,6 @@ func TestScyllaIsCdcTableAfterInvalidation(t *testing.T) {
 	}
 }
 
-// TestScyllaIsCdcTableNotCdcSuffix verifies that scyllaIsCdcTable returns
-// false early for tables without the CDC log suffix.
 func TestScyllaIsCdcTableNotCdcSuffix(t *testing.T) {
 	t.Parallel()
 
@@ -288,6 +273,7 @@ func TestScyllaIsCdcTableNotCdcSuffix(t *testing.T) {
 		},
 	}
 	s := newTestSessionForTableMetadata(ctrl)
+	defer s.Close()
 	populateKeyspace(s, "test_ks", "regular_table")
 
 	isCdc, err := scyllaIsCdcTable(s, "test_ks", "regular_table")
@@ -336,13 +322,11 @@ func TestTestTableName(t *testing.T) {
 func TestTestTableNameSanitizesSpecialChars(t *testing.T) {
 	t.Parallel()
 
-	// t.Name() for subtests contains '/', verify it's sanitized.
 	t.Run("sub/with/slashes", func(t *testing.T) {
 		got := testTableName(t)
 		if strings.Contains(got, "/") {
 			t.Errorf("expected no slashes, got %q", got)
 		}
-		// Consecutive separators from / should be collapsed.
 		if strings.Contains(got, "__") {
 			t.Errorf("expected no consecutive underscores, got %q", got)
 		}
@@ -352,14 +336,12 @@ func TestTestTableNameSanitizesSpecialChars(t *testing.T) {
 func TestTestTableNameTruncation(t *testing.T) {
 	t.Parallel()
 
-	// Build a subtest name that forces the result over 48 chars.
 	long := "abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz"
 	t.Run(long, func(t *testing.T) {
 		got := testTableName(t, "extra")
 		if len(got) > maxCQLIdentifierLen {
 			t.Errorf("len = %d, want <= %d; value = %q", len(got), maxCQLIdentifierLen, got)
 		}
-		// Should contain chars from both the start and end.
 		if got[:5] != "testt" {
 			t.Errorf("expected prefix from test name, got %q", got)
 		}
@@ -374,4 +356,297 @@ func TestTestTableNameUniqueness(t *testing.T) {
 	if a == b {
 		t.Errorf("expected different names, both got %q", a)
 	}
+}
+
+func TestTableTabletsMetadata(t *testing.T) {
+	t.Parallel()
+
+	t.Run("HappyPath", func(t *testing.T) {
+		t.Parallel()
+
+		ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{}}
+		s := newSchemaEventTestSessionWithMock(ctrl)
+		defer s.Close()
+		s.isInitialized = true
+		s.tabletsRoutingV1 = true
+
+		addTestTablets(t, s, "test_ks", "tbl_a")
+
+		entries, err := s.TableTabletsMetadata("test_ks", "tbl_a")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(entries) != 2 {
+			t.Fatalf("expected 2 tablet entries, got %d", len(entries))
+		}
+	})
+
+	t.Run("ClosedSession", func(t *testing.T) {
+		t.Parallel()
+
+		ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{}}
+		s := newSchemaEventTestSessionWithMock(ctrl)
+		defer s.Close()
+		s.isInitialized = true
+		s.tabletsRoutingV1 = true
+		s.isClosed = true
+
+		_, err := s.TableTabletsMetadata("ks", "tb")
+		if !errors.Is(err, ErrSessionClosed) {
+			t.Fatalf("expected ErrSessionClosed, got %v", err)
+		}
+	})
+
+	t.Run("NotReady", func(t *testing.T) {
+		t.Parallel()
+
+		ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{}}
+		s := newSchemaEventTestSessionWithMock(ctrl)
+		defer s.Close()
+		s.tabletsRoutingV1 = true
+
+		_, err := s.TableTabletsMetadata("ks", "tb")
+		if !errors.Is(err, ErrSessionNotReady) {
+			t.Fatalf("expected ErrSessionNotReady, got %v", err)
+		}
+	})
+
+	t.Run("TabletsNotEnabled", func(t *testing.T) {
+		t.Parallel()
+
+		ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{}}
+		s := newSchemaEventTestSessionWithMock(ctrl)
+		defer s.Close()
+		s.isInitialized = true
+
+		_, err := s.TableTabletsMetadata("ks", "tb")
+		if !errors.Is(err, ErrTabletsNotUsed) {
+			t.Fatalf("expected ErrTabletsNotUsed, got %v", err)
+		}
+	})
+
+	t.Run("EmptyKeyspace", func(t *testing.T) {
+		t.Parallel()
+
+		ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{}}
+		s := newSchemaEventTestSessionWithMock(ctrl)
+		defer s.Close()
+		s.isInitialized = true
+		s.tabletsRoutingV1 = true
+
+		_, err := s.TableTabletsMetadata("", "tb")
+		if !errors.Is(err, ErrNoKeyspace) {
+			t.Fatalf("expected ErrNoKeyspace, got %v", err)
+		}
+	})
+
+	t.Run("EmptyTable", func(t *testing.T) {
+		t.Parallel()
+
+		ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{}}
+		s := newSchemaEventTestSessionWithMock(ctrl)
+		defer s.Close()
+		s.isInitialized = true
+		s.tabletsRoutingV1 = true
+
+		_, err := s.TableTabletsMetadata("ks", "")
+		if !errors.Is(err, ErrNoTable) {
+			t.Fatalf("expected ErrNoTable, got %v", err)
+		}
+	})
+
+	t.Run("NoData", func(t *testing.T) {
+		t.Parallel()
+
+		ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{}}
+		s := newSchemaEventTestSessionWithMock(ctrl)
+		defer s.Close()
+		s.isInitialized = true
+		s.tabletsRoutingV1 = true
+
+		entries, err := s.TableTabletsMetadata("ks", "nonexistent")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if entries != nil {
+			t.Fatalf("expected nil for nonexistent table, got %d entries", len(entries))
+		}
+	})
+}
+
+func TestForEachTablet(t *testing.T) {
+	t.Parallel()
+
+	t.Run("HappyPath", func(t *testing.T) {
+		t.Parallel()
+
+		ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{}}
+		s := newSchemaEventTestSessionWithMock(ctrl)
+		defer s.Close()
+		s.isInitialized = true
+		s.tabletsRoutingV1 = true
+
+		addTestTablets(t, s, "ks1", "tbl_a")
+		addTestTablets(t, s, "ks2", "tbl_b")
+
+		visited := make(map[string]int)
+		err := s.ForEachTablet(func(keyspace, table string, entries tablets.TabletEntryList) bool {
+			visited[keyspace+"."+table] = len(entries)
+			return true
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(visited) != 2 {
+			t.Fatalf("expected 2 tables visited, got %d", len(visited))
+		}
+		if visited["ks1.tbl_a"] != 2 {
+			t.Fatalf("expected 2 entries for ks1.tbl_a, got %d", visited["ks1.tbl_a"])
+		}
+		if visited["ks2.tbl_b"] != 2 {
+			t.Fatalf("expected 2 entries for ks2.tbl_b, got %d", visited["ks2.tbl_b"])
+		}
+	})
+
+	t.Run("EarlyStop", func(t *testing.T) {
+		t.Parallel()
+
+		ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{}}
+		s := newSchemaEventTestSessionWithMock(ctrl)
+		defer s.Close()
+		s.isInitialized = true
+		s.tabletsRoutingV1 = true
+
+		addTestTablets(t, s, "ks1", "tbl_a")
+		addTestTablets(t, s, "ks2", "tbl_b")
+
+		count := 0
+		err := s.ForEachTablet(func(keyspace, table string, entries tablets.TabletEntryList) bool {
+			count++
+			return false
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if count != 1 {
+			t.Fatalf("expected 1 callback invocation, got %d", count)
+		}
+	})
+
+	t.Run("ClosedSession", func(t *testing.T) {
+		t.Parallel()
+
+		ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{}}
+		s := newSchemaEventTestSessionWithMock(ctrl)
+		defer s.Close()
+		s.isInitialized = true
+		s.tabletsRoutingV1 = true
+		s.isClosed = true
+
+		err := s.ForEachTablet(func(keyspace, table string, entries tablets.TabletEntryList) bool {
+			t.Fatal("callback should not be called on closed session")
+			return true
+		})
+		if !errors.Is(err, ErrSessionClosed) {
+			t.Fatalf("expected ErrSessionClosed, got %v", err)
+		}
+	})
+
+	t.Run("TabletsNotEnabled", func(t *testing.T) {
+		t.Parallel()
+
+		ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{}}
+		s := newSchemaEventTestSessionWithMock(ctrl)
+		defer s.Close()
+		s.isInitialized = true
+
+		err := s.ForEachTablet(func(keyspace, table string, entries tablets.TabletEntryList) bool {
+			t.Fatal("callback should not be called when tablets not enabled")
+			return true
+		})
+		if !errors.Is(err, ErrTabletsNotUsed) {
+			t.Fatalf("expected ErrTabletsNotUsed, got %v", err)
+		}
+	})
+
+	t.Run("NilCallback", func(t *testing.T) {
+		t.Parallel()
+
+		ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{}}
+		s := newSchemaEventTestSessionWithMock(ctrl)
+		defer s.Close()
+		s.isInitialized = true
+		s.tabletsRoutingV1 = true
+
+		addTestTablets(t, s, "ks", "tb")
+
+		err := s.ForEachTablet(nil)
+		if err != nil {
+			t.Fatalf("expected nil error for nil callback, got %v", err)
+		}
+	})
+}
+
+func TestFindTabletReplicasUnsafeForToken(t *testing.T) {
+	t.Parallel()
+
+	t.Run("NilMetadataDescriber", func(t *testing.T) {
+		t.Parallel()
+
+		s := &Session{}
+		s.metadataDescriber = nil
+
+		result := s.findTabletReplicasUnsafeForToken("ks", "tb", 42)
+		if result != nil {
+			t.Fatalf("expected nil replicas for nil metadataDescriber, got %v", result)
+		}
+	})
+
+	t.Run("NilMetadata", func(t *testing.T) {
+		t.Parallel()
+
+		s := &Session{}
+		s.metadataDescriber = &metadataDescriber{
+			session:  s,
+			metadata: nil,
+		}
+
+		result := s.findTabletReplicasUnsafeForToken("ks", "tb", 42)
+		if result != nil {
+			t.Fatalf("expected nil replicas for nil metadata, got %v", result)
+		}
+	})
+
+	t.Run("ClosedSession", func(t *testing.T) {
+		t.Parallel()
+
+		ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{}}
+		s := newSchemaEventTestSessionWithMock(ctrl)
+		defer s.Close()
+		s.isInitialized = true
+		s.isClosed = true
+
+		result := s.findTabletReplicasUnsafeForToken("ks", "tb", 42)
+		if result != nil {
+			t.Fatalf("expected nil replicas for closed session, got %v", result)
+		}
+	})
+}
+
+func TestTableMetadataValidation(t *testing.T) {
+	t.Parallel()
+
+	t.Run("EmptyTableReturnsErrNoTable", func(t *testing.T) {
+		t.Parallel()
+
+		ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{}}
+		s := newSchemaEventTestSessionWithMock(ctrl)
+		defer s.Close()
+		s.isInitialized = true
+
+		_, err := s.TableMetadata("ks", "")
+		if !errors.Is(err, ErrNoTable) {
+			t.Fatalf("TableMetadata: expected ErrNoTable, got %v", err)
+		}
+	})
 }

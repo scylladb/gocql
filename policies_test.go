@@ -41,6 +41,7 @@ import (
 	"time"
 
 	"github.com/gocql/gocql/internal/tests"
+	"github.com/gocql/gocql/tablets"
 
 	"github.com/google/go-cmp/cmp"
 )
@@ -1218,3 +1219,122 @@ func TestTokenAwarePolicyReset(t *testing.T) {
 		t.Fatal("logger is nil")
 	}
 }
+
+func TestTokenAwareHostPolicyTabletPath(t *testing.T) {
+	t.Parallel()
+
+	t.Run("HappyPath", func(t *testing.T) {
+		t.Parallel()
+
+		const keyspace = "testks"
+		const table = "testtbl"
+
+		policy := TokenAwareHostPolicy(RoundRobinHostPolicy())
+		policyInternal := policy.(*tokenAwareHostPolicy)
+		policyInternal.getKeyspaceName = func() string { return keyspace }
+		policyInternal.getKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {
+			return nil, errors.New("not initialized")
+		}
+
+		host1 := &HostInfo{hostId: "host-1", connectAddress: net.IPv4(10, 0, 0, 1), tokens: []string{"-6148914691236517206"}}
+		host2 := &HostInfo{hostId: "host-2", connectAddress: net.IPv4(10, 0, 0, 2), tokens: []string{"0"}}
+		host3 := &HostInfo{hostId: "host-3", connectAddress: net.IPv4(10, 0, 0, 3), tokens: []string{"6148914691236517206"}}
+
+		policy.AddHost(host1)
+		policy.AddHost(host2)
+		policy.AddHost(host3)
+		policy.SetPartitioner("Murmur3Partitioner")
+
+		policyInternal.getKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {
+			return &KeyspaceMetadata{
+				Name:          keyspace,
+				StrategyClass: "SimpleStrategy",
+				StrategyOptions: map[string]interface{}{
+					"class":              "SimpleStrategy",
+					"replication_factor": 1,
+				},
+			}, nil
+		}
+		policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: keyspace})
+
+		ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{}}
+		s := newSchemaEventTestSessionWithMock(ctrl)
+		defer s.Close()
+		s.isInitialized = true
+		s.tabletsRoutingV1 = true
+
+		t1, err := tablets.TabletInfoBuilder{
+			KeyspaceName: keyspace,
+			TableName:    table,
+			FirstToken:   -9223372036854775808,
+			LastToken:    0,
+			Replicas:     [][]interface{}{{stringStringer("host-2"), 0}},
+		}.Build()
+		if err != nil {
+			t.Fatal(err)
+		}
+		t2, err := tablets.TabletInfoBuilder{
+			KeyspaceName: keyspace,
+			TableName:    table,
+			FirstToken:   0,
+			LastToken:    9223372036854775807,
+			Replicas:     [][]interface{}{{stringStringer("host-3"), 0}},
+		}.Build()
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.metadataDescriber.AddTablet(t1)
+		s.metadataDescriber.AddTablet(t2)
+		s.metadataDescriber.metadata.tabletsMetadata.Flush()
+
+		query := &Query{
+			routingInfo: &queryRoutingInfo{
+				keyspace:    keyspace,
+				table:       table,
+				partitioner: fixedInt64Partitioner(-42),
+			},
+			session: s,
+		}
+		query.getKeyspace = func() string { return keyspace }
+		query.routingKey = []byte("anything")
+
+		iter := policy.Pick(query)
+		first := iter()
+		if first == nil || first.Info() == nil {
+			t.Fatal("expected a host from tablet path, got nil")
+		}
+		if first.Info().HostID() != "host-2" {
+			t.Fatalf("expected host-2 from tablet path, got %s", first.Info().HostID())
+		}
+
+		query2 := &Query{
+			routingInfo: &queryRoutingInfo{
+				keyspace:    keyspace,
+				table:       table,
+				partitioner: fixedInt64Partitioner(42),
+			},
+			session: s,
+		}
+		query2.getKeyspace = func() string { return keyspace }
+		query2.routingKey = []byte("anything")
+
+		iter2 := policy.Pick(query2)
+		first2 := iter2()
+		if first2 == nil || first2.Info() == nil {
+			t.Fatal("expected a host from tablet path, got nil")
+		}
+		if first2.Info().HostID() != "host-3" {
+			t.Fatalf("expected host-3 from tablet path, got %s", first2.Info().HostID())
+		}
+	})
+}
+
+type fixedInt64Partitioner int64
+
+func (f fixedInt64Partitioner) Name() string               { return "FixedInt64Partitioner" }
+func (f fixedInt64Partitioner) Hash([]byte) Token          { return int64Token(f) }
+func (f fixedInt64Partitioner) ParseString(s string) Token { return parseInt64Token(s) }
+
+type stringStringer string
+
+func (s stringStringer) String() string { return string(s) }

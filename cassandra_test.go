@@ -2590,8 +2590,8 @@ func TestSessionMetadataAPIs(t *testing.T) {
 			if err == nil {
 				t.Fatal("expected error for empty table name, got nil")
 			}
-			if !errors.Is(err, ErrNotFound) {
-				t.Errorf("expected ErrNotFound, got: %v", err)
+			if !errors.Is(err, ErrNoTable) {
+				t.Errorf("expected ErrNoTable, got: %v", err)
 			}
 		})
 

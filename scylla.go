@@ -442,7 +442,7 @@ outer:
 		}
 
 		if qry != nil && conn.isTabletSupported() {
-			for _, replica := range conn.session.findTabletReplicasForToken(qry.Keyspace(), qry.Table(), int64(mmt)) {
+			for _, replica := range conn.session.findTabletReplicasUnsafeForToken(qry.Keyspace(), qry.Table(), int64(mmt)) {
 				if replica.HostID() == p.hostId {
 					idx = replica.ShardID()
 					break outer
