@@ -388,6 +388,7 @@ func (c *controlConn) registerEvents(conn *Conn) error {
 	if err != nil {
 		return err
 	}
+	defer framer.Release()
 
 	frame, err := framer.parseFrame()
 	if err != nil {
@@ -510,6 +511,15 @@ func (c *controlConn) getConn() *connHost {
 	return c.conn.Load().(*connHost)
 }
 
+// writeFrame sends frame w on the control connection and returns the parsed
+// response frame.
+//
+// NOTE: The returned frame must not retain any byte-slice references to the
+// framer's read buffer, because the framer is released back to the pool
+// immediately after parseFrame returns (via defer). Frame types that use
+// readBytesCopy (e.g. SupportedFrame, AuthChallengeFrame, AuthSuccessFrame)
+// are safe; frame types that use readBytes and expose []byte fields would not
+// be safe and must not be returned from this function.
 func (c *controlConn) writeFrame(w frameBuilder) (frame, error) {
 	ch := c.getConn()
 	if ch == nil {
@@ -520,6 +530,7 @@ func (c *controlConn) writeFrame(w frameBuilder) (frame, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer framer.Release()
 
 	return framer.parseFrame()
 }

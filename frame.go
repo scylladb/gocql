@@ -34,6 +34,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	frm "github.com/gocql/gocql/internal/frame"
@@ -216,32 +217,43 @@ type FrameHeaderObserver interface {
 	ObserveFrameHeader(context.Context, ObservedFrameHeader)
 }
 
+// framerInterface represents a frame reader/writer for the CQL protocol.
+//
+// Framers are pooled and reused. Any byte slices returned from frame parsing
+// methods may be backed by pooled buffers that are reused after Release() is
+// called. If data must outlive the framer, use readBytesCopy() instead of
+// readBytes() when implementing parseFrame(), or copy returned byte slices
+// before calling Release().
+//
+// After Release() is called, the framer and any slices derived from its
+// buffers must not be accessed.
 type framerInterface interface {
 	ReadBytesInternal() ([]byte, error)
 	GetCustomPayload() map[string][]byte
 	GetHeaderWarnings() []string
+	// Release returns the framer to its pool (if pooled).
+	// Must be called when the framer is no longer needed.
+	// Safe to call multiple times; subsequent calls are no-ops.
+	Release()
 }
 
 const headSize = 9
 
 // a framer is responsible for reading, writing and parsing frames on a single stream
 type framer struct {
-	compres Compressor
-	// if this frame was read then the header will be here
-	header        *frm.FrameHeader
-	customPayload map[string][]byte
-	// if tracing flag is set this is not nil
-	traceID []byte
-	// holds a ref to the whole byte slice for buf so that it can be reset to
-	// 0 after a read.
+	compressor            Compressor
+	header                *frm.FrameHeader
+	customPayload         map[string][]byte
+	release               func()
+	traceID               []byte
 	readBuffer            []byte
 	buf                   []byte
 	flagLWT               int
 	rateLimitingErrorCode int
+	flags                 byte
 	proto                 byte
-	// flags are for outgoing flags, enabling compression and tracing etc
-	flags            byte
-	tabletsRoutingV1 bool
+	tabletsRoutingV1      bool
+	released              atomic.Bool
 }
 
 func newFramer(compressor Compressor, version byte) *framer {
@@ -259,7 +271,7 @@ func newFramer(compressor Compressor, version byte) *framer {
 	}
 
 	version &= protoVersionMask
-	f.compres = compressor
+	f.compressor = compressor
 	f.proto = version
 	f.flags = flags
 	f.header = nil
@@ -268,6 +280,17 @@ func newFramer(compressor Compressor, version byte) *framer {
 	f.tabletsRoutingV1 = false
 
 	return f
+}
+
+// Release returns the framer to its pool. If the framer was not obtained
+// from a pool (release is nil), this is a no-op.
+//
+// Conn.releaseFramer owns the released-state guard, so this method delegates
+// directly to the release closure.
+func (f *framer) Release() {
+	if f.release != nil {
+		f.release()
+	}
 }
 
 func newFramerWithExts(compressor Compressor, version byte, cqlProtoExts []cqlProtocolExtension, logger StdLogger) *framer {
@@ -373,11 +396,11 @@ func (f *framer) readFrame(r io.Reader, head *frm.FrameHeader) error {
 	}
 
 	if head.Flags&frm.FlagCompress == frm.FlagCompress {
-		if f.compres == nil {
+		if f.compressor == nil {
 			return NewErrProtocol("no compressor available with compressed frame body")
 		}
 
-		f.buf, err = f.compres.Decode(f.buf)
+		f.buf, err = f.compressor.Decode(f.buf)
 		if err != nil {
 			return err
 		}
@@ -492,10 +515,9 @@ func (f *framer) parseErrorFrame() frame {
 			Table:      table,
 		}
 	case ErrCodeUnprepared:
-		stmtId := f.readShortBytes()
 		return &RequestErrUnprepared{
 			ErrorFrame:  errD,
-			StatementId: copyBytes(stmtId), // defensively copy
+			StatementId: f.readShortBytesCopy(),
 		}
 	case ErrCodeReadFailure:
 		res := &RequestErrReadFailure{
@@ -604,12 +626,12 @@ func (f *framer) finish() error {
 	}
 
 	if f.buf[1]&frm.FlagCompress == frm.FlagCompress {
-		if f.compres == nil {
+		if f.compressor == nil {
 			panic("compress flag set with no compressor")
 		}
 
 		// TODO: only compress frames which are big enough
-		compressed, err := f.compres.Encode(f.buf[headSize:])
+		compressed, err := f.compressor.Encode(f.buf[headSize:])
 		if err != nil {
 			return err
 		}
@@ -1065,7 +1087,7 @@ type resultPreparedFrame struct {
 func (f *framer) parseResultPrepared() frame {
 	frame := &resultPreparedFrame{
 		FrameHeader: *f.header,
-		preparedID:  f.readShortBytes(),
+		preparedID:  f.readShortBytesCopy(),
 		reqMeta:     f.parsePreparedMetadata(),
 	}
 
@@ -1131,14 +1153,14 @@ func (f *framer) parseAuthenticateFrame() frame {
 func (f *framer) parseAuthSuccessFrame() frame {
 	return &frm.AuthSuccessFrame{
 		FrameHeader: *f.header,
-		Data:        f.readBytes(),
+		Data:        f.readBytesCopy(),
 	}
 }
 
 func (f *framer) parseAuthChallengeFrame() frame {
 	return &frm.AuthChallengeFrame{
 		FrameHeader: *f.header,
-		Data:        f.readBytes(),
+		Data:        f.readBytesCopy(),
 	}
 }
 
@@ -1580,22 +1602,6 @@ func (f *framer) ReadBytesInternal() ([]byte, error) {
 	return l, nil
 }
 
-func (f *framer) readBytes() []byte {
-	size := f.readInt()
-	if size < 0 {
-		return nil
-	}
-
-	if len(f.buf) < size {
-		panic(fmt.Errorf("not enough bytes in buffer to read bytes require %d got: %d", size, len(f.buf)))
-	}
-
-	l := f.buf[:size]
-	f.buf = f.buf[size:]
-
-	return l
-}
-
 func (f *framer) readBytesCopy() []byte {
 	size := f.readInt()
 	if size < 0 {
@@ -1612,16 +1618,17 @@ func (f *framer) readBytesCopy() []byte {
 	return out
 }
 
-func (f *framer) readShortBytes() []byte {
+func (f *framer) readShortBytesCopy() []byte {
 	size := f.readShort()
 	if len(f.buf) < int(size) {
 		panic(fmt.Errorf("not enough bytes in buffer to read short bytes: require %d got %d", size, len(f.buf)))
 	}
 
-	l := f.buf[:size]
+	out := make([]byte, size)
+	copy(out, f.buf[:size])
 	f.buf = f.buf[size:]
 
-	return l
+	return out
 }
 
 func (f *framer) readInetAdressOnly() net.IP {

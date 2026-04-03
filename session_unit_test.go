@@ -30,6 +30,8 @@ package gocql
 import (
 	"context"
 	"errors"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -371,8 +373,24 @@ func TestTestTableNameTruncation(t *testing.T) {
 		if len(got) > maxCQLIdentifierLen {
 			t.Errorf("len = %d, want <= %d; value = %q", len(got), maxCQLIdentifierLen, got)
 		}
+		// Should preserve chars from both the start and end around the hash.
 		if got[:5] != "testt" {
 			t.Errorf("expected prefix from test name, got %q", got)
+		}
+		if !strings.HasSuffix(got, "_extra") {
+			t.Errorf("expected suffix from test name and parts, got %q", got)
+		}
+		if len(got) != maxCQLIdentifierLen {
+			t.Errorf("expected truncated name to use full identifier budget, got len=%d value=%q", len(got), got)
+		}
+		if got[15] != '_' || got[32] != '_' {
+			t.Errorf("expected <first-n>_<hash>_<last-n> structure, got %q", got)
+		}
+		for _, ch := range got[16:32] {
+			if (ch < '0' || ch > '9') && (ch < 'a' || ch > 'f') {
+				t.Errorf("expected hex hash in the middle, got %q", got)
+				break
+			}
 		}
 	})
 }
@@ -385,6 +403,314 @@ func TestTestTableNameUniqueness(t *testing.T) {
 	if a == b {
 		t.Errorf("expected different names, both got %q", a)
 	}
+}
+
+// testWarningFramer is a mock framerInterface that returns configurable warnings.
+type testWarningFramer struct {
+	warnings      []string
+	customPayload map[string][]byte
+	released      bool
+}
+
+func (f *testWarningFramer) ReadBytesInternal() ([]byte, error) { return nil, nil }
+func (f *testWarningFramer) GetCustomPayload() map[string][]byte {
+	return f.customPayload
+}
+func (f *testWarningFramer) GetHeaderWarnings() []string { return f.warnings }
+func (f *testWarningFramer) Release()                    { f.released = true }
+
+type recordingWarningHandler struct {
+	calls    int
+	lastHost *HostInfo
+	lastQry  ExecutableQuery
+	warnings []string
+}
+
+func (h *recordingWarningHandler) HandleWarnings(qry ExecutableQuery, host *HostInfo, warnings []string) {
+	h.calls++
+	h.lastQry = qry
+	h.lastHost = host
+	h.warnings = slices.Clone(warnings)
+}
+
+func TestIterWarnings(t *testing.T) {
+	t.Parallel()
+
+	t.Run("NoFramer", func(t *testing.T) {
+		iter := &Iter{}
+		warnings := iter.Warnings()
+		if len(warnings) != 0 {
+			t.Errorf("expected no warnings, got %v", warnings)
+		}
+	})
+
+	t.Run("SinglePage", func(t *testing.T) {
+		framer := &testWarningFramer{warnings: []string{"warn1", "warn2"}}
+		iter := &Iter{framer: framer}
+
+		warnings := iter.Warnings()
+		want := []string{"warn1", "warn2"}
+		if !slices.Equal(warnings, want) {
+			t.Errorf("Warnings() = %v, want %v", warnings, want)
+		}
+	})
+
+	t.Run("ReturnsCopy", func(t *testing.T) {
+		framer := &testWarningFramer{warnings: []string{"warn1"}}
+		iter := &Iter{framer: framer}
+
+		w1 := iter.Warnings()
+		w2 := iter.Warnings()
+
+		// Mutating w1 should not affect w2
+		w1[0] = "mutated"
+		if w2[0] == "mutated" {
+			t.Error("Warnings() returned a shared slice, expected independent copies")
+		}
+	})
+
+	t.Run("AccumulatedAcrossPages", func(t *testing.T) {
+		page1Framer := &testWarningFramer{warnings: []string{"page1-warn1", "page1-warn2"}}
+		iter := &Iter{
+			framer:  page1Framer,
+			numRows: 1,
+			pos:     1,
+			next:    nil,
+		}
+
+		if w := iter.framer.GetHeaderWarnings(); len(w) > 0 {
+			iter.allWarnings = append(iter.allWarnings, w...)
+		}
+		iter.framer.Release()
+		page2Framer := &testWarningFramer{warnings: []string{"page2-warn1"}}
+		iter.framer = page2Framer
+
+		warnings := iter.Warnings()
+		want := []string{"page1-warn1", "page1-warn2", "page2-warn1"}
+		if !slices.Equal(warnings, want) {
+			t.Errorf("Warnings() = %v, want %v", warnings, want)
+		}
+
+		if !page1Framer.released {
+			t.Error("page 1 framer was not released")
+		}
+	})
+
+	t.Run("AfterClose", func(t *testing.T) {
+		framer := &testWarningFramer{warnings: []string{"last-page-warn"}}
+		iter := &Iter{
+			framer:      framer,
+			allWarnings: []string{"prev-page-warn"},
+		}
+
+		iter.Close()
+
+		if !framer.released {
+			t.Error("framer was not released on Close()")
+		}
+		if iter.framer != nil {
+			t.Error("framer was not nilled on Close()")
+		}
+
+		warnings := iter.Warnings()
+		want := []string{"prev-page-warn", "last-page-warn"}
+		if !slices.Equal(warnings, want) {
+			t.Errorf("Warnings() after Close() = %v, want %v", warnings, want)
+		}
+	})
+
+	t.Run("EmptyPages", func(t *testing.T) {
+		iter := &Iter{
+			allWarnings: []string{"page1-warn"},
+		}
+		page2Framer := &testWarningFramer{warnings: nil}
+		iter.framer = page2Framer
+
+		warnings := iter.Warnings()
+		want := []string{"page1-warn"}
+		if !slices.Equal(warnings, want) {
+			t.Errorf("Warnings() = %v, want %v", warnings, want)
+		}
+	})
+
+	t.Run("CloseIdempotent", func(t *testing.T) {
+		framer := &testWarningFramer{warnings: []string{"warn"}}
+		iter := &Iter{framer: framer}
+
+		iter.Close()
+		iter.Close()
+
+		warnings := iter.Warnings()
+		want := []string{"warn"}
+		if !slices.Equal(warnings, want) {
+			t.Errorf("Warnings() after double Close() = %v, want %v", warnings, want)
+		}
+	})
+}
+
+func TestNewErrorIterWithReleasedFramer(t *testing.T) {
+	t.Parallel()
+
+	t.Run("PreservesMetadata", func(t *testing.T) {
+		payload := map[string][]byte{"tablet": {1, 2, 3}}
+		framer := &testWarningFramer{
+			warnings:      []string{"warn1"},
+			customPayload: payload,
+		}
+
+		iter := newErrorIterWithReleasedFramer(errors.New("boom"), framer)
+
+		if !framer.released {
+			t.Fatal("expected framer to be released")
+		}
+		if !slices.Equal(iter.Warnings(), []string{"warn1"}) {
+			t.Fatalf("Warnings() = %v, want %v", iter.Warnings(), []string{"warn1"})
+		}
+		if !reflect.DeepEqual(iter.GetCustomPayload(), payload) {
+			t.Fatalf("GetCustomPayload() = %v, want %v", iter.GetCustomPayload(), payload)
+		}
+	})
+}
+
+func TestIterWarningHandler(t *testing.T) {
+	t.Parallel()
+
+	t.Run("CloseDispatchesAccumulatedWarnings", func(t *testing.T) {
+		handler := &recordingWarningHandler{}
+		host := &HostInfo{hostId: "host-1"}
+		qry := &Query{
+			routingInfo: &queryRoutingInfo{},
+			metrics:     &queryMetrics{m: make(map[string]*hostMetrics)},
+		}
+		iter := (&Iter{
+			framer:      &testWarningFramer{warnings: []string{"page2"}},
+			allWarnings: []string{"page1"},
+			host:        host,
+		}).bindWarningHandler(qry, handler)
+
+		if err := iter.Close(); err != nil {
+			t.Fatalf("Close() returned unexpected error: %v", err)
+		}
+
+		want := []string{"page1", "page2"}
+		if !slices.Equal(handler.warnings, want) {
+			t.Fatalf("handler warnings = %v, want %v", handler.warnings, want)
+		}
+		if handler.calls != 1 {
+			t.Fatalf("handler call count = %d, want 1", handler.calls)
+		}
+		if handler.lastHost != host {
+			t.Fatal("handler host mismatch")
+		}
+		if handler.lastQry != qry {
+			t.Fatal("handler query mismatch")
+		}
+	})
+
+	t.Run("CloseIsIdempotent", func(t *testing.T) {
+		handler := &recordingWarningHandler{}
+		iter := (&Iter{
+			framer: &testWarningFramer{warnings: []string{"warn"}},
+		}).bindWarningHandler(&Query{
+			routingInfo: &queryRoutingInfo{},
+			metrics:     &queryMetrics{m: make(map[string]*hostMetrics)},
+		}, handler)
+
+		iter.Close()
+		iter.Close()
+
+		if handler.calls != 1 {
+			t.Fatalf("handler call count = %d, want 1", handler.calls)
+		}
+	})
+
+	t.Run("CopyPageDataTransfersReleasedMetadata", func(t *testing.T) {
+		src := newErrorIterWithReleasedFramer(errors.New("boom"), &testWarningFramer{
+			warnings:      []string{"warn"},
+			customPayload: map[string][]byte{"k": {9}},
+		})
+		dst := &Iter{
+			allWarnings: []string{"first-page"},
+		}
+
+		dst.copyPageData(src)
+
+		wantWarnings := []string{"first-page", "warn"}
+		if !slices.Equal(dst.Warnings(), wantWarnings) {
+			t.Fatalf("Warnings() = %v, want %v", dst.Warnings(), wantWarnings)
+		}
+		if !reflect.DeepEqual(dst.GetCustomPayload(), map[string][]byte{"k": {9}}) {
+			t.Fatalf("GetCustomPayload() = %v, want %v", dst.GetCustomPayload(), map[string][]byte{"k": {9}})
+		}
+	})
+
+	t.Run("BindIgnoresNilHandler", func(t *testing.T) {
+		iter := (&Iter{}).bindWarningHandler(&Query{
+			routingInfo: &queryRoutingInfo{},
+			metrics:     &queryMetrics{m: make(map[string]*hostMetrics)},
+		}, nil)
+		if iter.warningHandler != nil {
+			t.Fatal("expected warning handler to remain nil")
+		}
+	})
+
+	t.Run("HostPreservedAcrossClose", func(t *testing.T) {
+		handler := &recordingWarningHandler{}
+		host := &HostInfo{port: 9042, hostId: "host-2"}
+		iter := (&Iter{
+			framer: &testWarningFramer{warnings: []string{"warn"}},
+			host:   host,
+		}).bindWarningHandler(&Batch{
+			context:     context.Background(),
+			routingInfo: &queryRoutingInfo{},
+			metrics:     &queryMetrics{m: make(map[string]*hostMetrics)},
+			rt:          &SimpleRetryPolicy{NumRetries: 0},
+			spec:        NonSpeculativeExecution{},
+		}, handler)
+
+		iter.Close()
+
+		if handler.lastHost != host {
+			t.Fatal("expected handler to receive the iterator host")
+		}
+	})
+
+	t.Run("CloseWithoutWarningsDoesNotInvokeHandler", func(t *testing.T) {
+		handler := &recordingWarningHandler{}
+		iter := (&Iter{
+			framer: &testWarningFramer{},
+		}).bindWarningHandler(&Query{
+			context:     context.Background(),
+			routingInfo: &queryRoutingInfo{},
+			metrics:     &queryMetrics{m: make(map[string]*hostMetrics)},
+			rt:          &SimpleRetryPolicy{NumRetries: 0},
+			spec:        NonSpeculativeExecution{},
+		}, handler)
+
+		iter.Close()
+
+		if handler.calls != 0 {
+			t.Fatalf("handler call count = %d, want 0", handler.calls)
+		}
+	})
+
+	t.Run("HandleWarningsOnceAfterManualAccumulation", func(t *testing.T) {
+		handler := &recordingWarningHandler{}
+		iter := (&Iter{
+			allWarnings: []string{"warn1"},
+			host:        &HostInfo{hostId: "host-3"},
+		}).bindWarningHandler(&Query{
+			routingInfo: &queryRoutingInfo{},
+			metrics:     &queryMetrics{m: make(map[string]*hostMetrics)},
+		}, handler)
+
+		iter.handleWarningsOnce()
+		iter.handleWarningsOnce()
+
+		if handler.calls != 1 {
+			t.Fatalf("handler call count = %d, want 1", handler.calls)
+		}
+	})
 }
 
 func TestTableTabletsMetadata(t *testing.T) {
