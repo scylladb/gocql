@@ -70,7 +70,7 @@ func TestFuzzBugs(t *testing.T) {
 			continue
 		}
 
-		framer := newFramer(nil, byte(head.Version))
+		framer := newFramer(nil, byte(head.Version), compressionOpts{})
 		err = framer.readFrame(r, &head)
 		if err != nil {
 			continue
@@ -93,7 +93,7 @@ func TestFrameWriteTooLong(t *testing.T) {
 		t.Skip("skipping test in travis due to memory pressure with the race detecor")
 	}
 
-	framer := newFramer(nil, 3)
+	framer := newFramer(nil, 3, compressionOpts{})
 
 	framer.writeHeader(0, frm.OpStartup, 1)
 	framer.writeBytes(make([]byte, maxFrameSize+1))
@@ -115,7 +115,7 @@ func TestFrameReadTooLong(t *testing.T) {
 	// write a new header right after this frame to verify that we can read it
 	r.Write([]byte{0x03, 0x00, 0x00, 0x00, byte(frm.OpReady), 0x00, 0x00, 0x00, 0x00})
 
-	framer := newFramer(nil, 3)
+	framer := newFramer(nil, 3, compressionOpts{})
 
 	head := frm.FrameHeader{
 		Version: protoVersion3,
@@ -140,7 +140,7 @@ func TestFrameReadTooLong(t *testing.T) {
 func TestParseEventFrame_ClientRoutesChanged(t *testing.T) {
 	t.Parallel()
 
-	fr := newFramer(nil, protoVersion4)
+	fr := newFramer(nil, protoVersion4, compressionOpts{})
 	fr.header = &frm.FrameHeader{Version: protoVersion4}
 	fr.writeString("CLIENT_ROUTES_CHANGE")
 	fr.writeString("UPDATED")

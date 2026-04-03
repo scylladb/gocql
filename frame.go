@@ -242,13 +242,36 @@ type framer struct {
 	// flags are for outgoing flags, enabling compression and tracing etc
 	flags            byte
 	tabletsRoutingV1 bool
+	// compOpts controls outgoing compression decisions in finish().
+	compOpts compressionOpts
 }
 
-func newFramer(compressor Compressor, version byte) *framer {
+// compressionOpts bundles the per-framer settings that control whether and
+// how outgoing frames are compressed. It is only meaningful for write-path
+// framers; read-path framers should use the zero value.
+type compressionOpts struct {
+	// threshold is the minimum body size in bytes for compression to be
+	// applied in finish().
+	//   0  = compress every frame (backward-compatible default)
+	//  -1  = never compress
+	//  >0  = compress only when body >= this many bytes
+	threshold int
+
+	// minSavingsPct is the minimum percentage of body bytes that
+	// compression must save for the compressed output to be kept.
+	//   0    = disabled (any compression result is accepted)
+	//   1-99 = require at least this % savings; if the savings are
+	//          below this value the compressed output is discarded
+	//          and the frame is sent uncompressed
+	minSavingsPct int
+}
+
+func newFramer(compressor Compressor, version byte, compOpts compressionOpts) *framer {
 	buf := make([]byte, defaultBufSize)
 	f := &framer{
 		buf:        buf[:0],
 		readBuffer: buf,
+		compOpts:   compOpts,
 	}
 	var flags byte
 	if compressor != nil {
@@ -270,9 +293,9 @@ func newFramer(compressor Compressor, version byte) *framer {
 	return f
 }
 
-func newFramerWithExts(compressor Compressor, version byte, cqlProtoExts []cqlProtocolExtension, logger StdLogger) *framer {
+func newFramerWithExts(compressor Compressor, version byte, compOpts compressionOpts, cqlProtoExts []cqlProtocolExtension, logger StdLogger) *framer {
 
-	f := newFramer(compressor, version)
+	f := newFramer(compressor, version, compOpts)
 
 	if lwtExt := findCQLProtoExtByName(cqlProtoExts, lwtAddMetadataMarkKey); lwtExt != nil {
 		castedExt, ok := lwtExt.(*lwtAddMetadataMarkExt)
@@ -608,14 +631,36 @@ func (f *framer) finish() error {
 			panic("compress flag set with no compressor")
 		}
 
-		// TODO: only compress frames which are big enough
-		compressed, err := f.compres.Encode(f.buf[headSize:])
-		if err != nil {
-			return err
-		}
+		bodyLen := bufLen - headSize
 
-		f.buf = append(f.buf[:headSize], compressed...)
-		bufLen = len(f.buf)
+		// Decide whether this frame should actually be compressed based
+		// on the per-connection compression threshold.
+		//   threshold  0: compress everything (backward-compatible default)
+		//   threshold -1: never compress
+		//   threshold >0: compress only when bodyLen >= threshold
+		if f.compOpts.threshold < 0 || (f.compOpts.threshold > 0 && bodyLen < f.compOpts.threshold) {
+			// Skip compression: clear the flag so the server knows the
+			// body is not compressed.
+			f.buf[1] &^= frm.FlagCompress
+		} else {
+			compressed, err := f.compres.Encode(f.buf[headSize:])
+			if err != nil {
+				return err
+			}
+
+			// If a minimum savings percentage is configured, verify that
+			// compression actually saved enough bytes. When it doesn't,
+			// discard the compressed output and send uncompressed to
+			// avoid wasting decompression CPU on the server.
+			if f.compOpts.minSavingsPct > 0 && bodyLen > 0 &&
+				int(int64(bodyLen-len(compressed))*100/int64(bodyLen)) < f.compOpts.minSavingsPct {
+				// Savings too low — send uncompressed.
+				f.buf[1] &^= frm.FlagCompress
+			} else {
+				f.buf = append(f.buf[:headSize], compressed...)
+				bufLen = len(f.buf)
+			}
+		}
 	}
 	length := bufLen - headSize
 	f.setLength(length)
@@ -680,7 +725,7 @@ func (w *writePrepareFrame) buildFrame(f *framer, streamID int) error {
 	if len(w.customPayload) > 0 {
 		f.payload()
 	}
-	f.writeHeader(f.flags, frm.OpPrepare, streamID)
+	f.writeHeader(f.flags&^frm.FlagCompress, frm.OpPrepare, streamID)
 	f.writeCustomPayload(&w.customPayload)
 	f.writeLongString(w.statement)
 
@@ -1141,7 +1186,7 @@ func (a *writeAuthResponseFrame) buildFrame(framer *framer, streamID int) error 
 }
 
 func (f *framer) writeAuthResponseFrame(streamID int, data []byte) error {
-	f.writeHeader(f.flags, frm.OpAuthResponse, streamID)
+	f.writeHeader(f.flags&^frm.FlagCompress, frm.OpAuthResponse, streamID)
 	f.writeBytes(data)
 	return f.finish()
 }
@@ -1437,7 +1482,7 @@ func (w *writeRegisterFrame) buildFrame(framer *framer, streamID int) error {
 }
 
 func (f *framer) writeRegisterFrame(streamID int, w *writeRegisterFrame) error {
-	f.writeHeader(f.flags, frm.OpRegister, streamID)
+	f.writeHeader(f.flags&^frm.FlagCompress, frm.OpRegister, streamID)
 	f.writeStringList(w.events)
 
 	return f.finish()

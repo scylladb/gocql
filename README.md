@@ -265,20 +265,56 @@ To control network costs and traffic, you can enable compression.
 Use `ClusterConfig.Compressor` to enable compression (either Snappy or LZ4):
 
 ```go
-...
 import (
-    ...
     "github.com/gocql/gocql"
     "github.com/gocql/gocql/lz4"
-    ...
 )
 
 config := gocql.NewCluster("10.0.12.83", "10.0.13.04", "10.0.14.12")
 config.Compressor = &gocql.SnappyCompressor{}
-//or LZ4
+// or LZ4
 config.Compressor = &lz4.LZ4Compressor{}
-...
 ```
+
+By default, when a `Compressor` is set, every outgoing data frame is compressed.
+Small control frames (STARTUP, OPTIONS, PREPARE, AUTH\_RESPONSE, REGISTER) always
+skip compression regardless of the policy.
+Use `ClusterConfig.CompressionPolicy` for fine-grained, topology-aware control
+over which frames get compressed based on their body size and the distance to
+the target host:
+
+```go
+config.Compressor = &gocql.SnappyCompressor{}
+config.CompressionPolicy = gocql.CompressionPolicy{
+    // Compress local traffic (same rack) only when body >= 4 KB.
+    MinCompressLocalSize: 4096,
+    // Compress remote traffic (cross-rack / cross-DC) only when body >= 512 B.
+    MinCompressRemoteSize: 512,
+    // Define "local" as same-rack; everything else is "remote".
+    Scope: gocql.CompressNonLocalRack,
+    // Discard compressed output if savings are below 15%.
+    MinSavingsPercent: 15,
+}
+```
+
+The threshold values have the following semantics:
+- `0` (default) -- compress all frames (backward compatible).
+- `-1` -- never compress.
+- `>0` -- compress only when the serialized body is at least this many bytes.
+
+`Scope` controls the local/remote boundary:
+- `CompressNonLocalRack` (default) -- same-rack traffic is "local"; everything else is "remote".
+- `CompressNonLocalDC` -- all same-DC traffic is "local"; only cross-DC traffic is "remote".
+
+The `MinSavingsPercent` field (0--99) lets you discard compressed output that
+doesn't save enough bytes, avoiding wasted decompression CPU on the server.
+For example, `15` means the compressed size must be at most 85% of the original.
+The default `0` accepts any compression result (backward compatible).
+
+The policy requires a topology-aware host selection policy — either directly
+(`DCAwareRoundRobinPolicy` or `RackAwareRoundRobinPolicy`) or wrapped in
+`TokenAwareHostPolicy` (the recommended configuration) — to distinguish
+local from remote hosts. Without one, all hosts are treated as local.
 
 ## 6. Contributing
 
