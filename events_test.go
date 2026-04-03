@@ -29,8 +29,9 @@ package gocql
 
 import (
 	"net"
-	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	frm "github.com/gocql/gocql/internal/frame"
 )
@@ -39,13 +40,16 @@ func TestEventDebounce(t *testing.T) {
 	t.Parallel()
 
 	const eventCount = 150
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
+	var eventsSeen atomic.Int64
+	done := make(chan struct{}, 1)
 
-	eventsSeen := 0
 	debouncer := newEventDebouncer("testDebouncer", func(events []frame) {
-		defer wg.Done()
-		eventsSeen += len(events)
+		if eventsSeen.Add(int64(len(events))) >= eventCount {
+			select {
+			case done <- struct{}{}:
+			default:
+			}
+		}
 	}, &defaultLogger{})
 	defer debouncer.stop()
 
@@ -57,8 +61,70 @@ func TestEventDebounce(t *testing.T) {
 		})
 	}
 
-	wg.Wait()
-	if eventCount != eventsSeen {
-		t.Fatalf("expected to see %d events but got %d", eventCount, eventsSeen)
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatalf("timed out waiting for events: saw %d of %d", eventsSeen.Load(), eventCount)
+	}
+	if n := eventsSeen.Load(); n != eventCount {
+		t.Fatalf("expected to see %d events but got %d", eventCount, n)
+	}
+}
+
+// TestEventDebounceMultipleFlushes verifies that the debouncer correctly
+// accumulates events across multiple flush cycles without panicking.
+// This is a regression test for a race where the callback could fire
+// more than once (due to timer re-fires), causing a negative WaitGroup
+// counter panic in the original test.
+func TestEventDebounceMultipleFlushes(t *testing.T) {
+	t.Parallel()
+
+	const eventCount = 50
+	var eventsSeen atomic.Int64
+	var flushCount atomic.Int64
+	done := make(chan struct{}, 1)
+
+	debouncer := newEventDebouncer("testDebouncerMulti", func(events []frame) {
+		flushCount.Add(1)
+		if eventsSeen.Add(int64(len(events))) >= eventCount {
+			select {
+			case done <- struct{}{}:
+			default:
+			}
+		}
+	}, &defaultLogger{})
+	defer debouncer.stop()
+
+	// Send events in two batches separated by more than eventDebounceTime
+	// to force at least two separate flush cycles.
+	for i := 0; i < eventCount/2; i++ {
+		debouncer.debounce(&frm.StatusChangeEventFrame{
+			Change: "UP",
+			Host:   net.IPv4(127, 0, 0, 1),
+			Port:   9042,
+		})
+	}
+
+	// Wait for the first batch to flush (debounce interval is 1s).
+	time.Sleep(eventDebounceTime + 500*time.Millisecond)
+
+	for i := 0; i < eventCount/2; i++ {
+		debouncer.debounce(&frm.StatusChangeEventFrame{
+			Change: "UP",
+			Host:   net.IPv4(127, 0, 0, 1),
+			Port:   9042,
+		})
+	}
+
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatalf("timed out waiting for events: saw %d of %d", eventsSeen.Load(), eventCount)
+	}
+	if n := eventsSeen.Load(); n != eventCount {
+		t.Fatalf("expected to see %d events but got %d", eventCount, n)
+	}
+	if f := flushCount.Load(); f < 2 {
+		t.Fatalf("expected at least 2 flush cycles but got %d", f)
 	}
 }
