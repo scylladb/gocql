@@ -113,3 +113,139 @@ func BenchmarkVectorRoundTripPublic(b *testing.B) {
 		})
 	}
 }
+
+func makeInt32VectorType(dim int) gocql.VectorType {
+	dimStr := strconv.Itoa(dim)
+	return gocql.VectorType{
+		NativeType: gocql.NewCustomType(
+			vectorProto,
+			gocql.TypeCustom,
+			apacheCassandraTypePrefix+"VectorType("+apacheCassandraTypePrefix+"Int32Type, "+dimStr+")",
+		),
+		SubType:    gocql.NewNativeType(vectorProto, gocql.TypeInt),
+		Dimensions: dim,
+	}
+}
+
+func makeInt64VectorType(dim int) gocql.VectorType {
+	dimStr := strconv.Itoa(dim)
+	return gocql.VectorType{
+		NativeType: gocql.NewCustomType(
+			vectorProto,
+			gocql.TypeCustom,
+			apacheCassandraTypePrefix+"VectorType("+apacheCassandraTypePrefix+"LongType, "+dimStr+")",
+		),
+		SubType:    gocql.NewNativeType(vectorProto, gocql.TypeBigInt),
+		Dimensions: dim,
+	}
+}
+
+func BenchmarkVectorMarshalInt32Public(b *testing.B) {
+	dims := []int{128, 384, 768, 1536}
+
+	for _, dim := range dims {
+		dimStr := strconv.Itoa(dim)
+		b.Run("dim_"+dimStr, func(b *testing.B) {
+			b.ReportAllocs()
+
+			vec := make([]int32, dim)
+			for i := range vec {
+				vec[i] = int32(i) * 7
+			}
+
+			info := makeInt32VectorType(dim)
+
+			b.SetBytes(int64(dim * 4))
+			b.ResetTimer()
+
+			for i := 0; i < b.N; i++ {
+				if _, err := gocql.Marshal(info, vec); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkVectorUnmarshalInt32Public(b *testing.B) {
+	dims := []int{128, 384, 768, 1536}
+
+	for _, dim := range dims {
+		dimStr := strconv.Itoa(dim)
+		b.Run("dim_"+dimStr, func(b *testing.B) {
+			b.ReportAllocs()
+
+			data := make([]byte, dim*4)
+			for i := 0; i < dim; i++ {
+				binary.BigEndian.PutUint32(data[i*4:], uint32(int32(i)*7))
+			}
+
+			info := makeInt32VectorType(dim)
+			var result []int32
+
+			b.SetBytes(int64(dim * 4))
+			b.ResetTimer()
+
+			for i := 0; i < b.N; i++ {
+				if err := gocql.Unmarshal(info, data, &result); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkVectorMarshalInt64Public(b *testing.B) {
+	dims := []int{128, 384, 768, 1536}
+
+	for _, dim := range dims {
+		dimStr := strconv.Itoa(dim)
+		b.Run("dim_"+dimStr, func(b *testing.B) {
+			b.ReportAllocs()
+
+			vec := make([]int64, dim)
+			for i := range vec {
+				vec[i] = int64(i) * 7
+			}
+
+			info := makeInt64VectorType(dim)
+
+			b.SetBytes(int64(dim * 8))
+			b.ResetTimer()
+
+			for i := 0; i < b.N; i++ {
+				if _, err := gocql.Marshal(info, vec); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkVectorUnmarshalInt64Public(b *testing.B) {
+	dims := []int{128, 384, 768, 1536}
+
+	for _, dim := range dims {
+		dimStr := strconv.Itoa(dim)
+		b.Run("dim_"+dimStr, func(b *testing.B) {
+			b.ReportAllocs()
+
+			data := make([]byte, dim*8)
+			for i := 0; i < dim; i++ {
+				binary.BigEndian.PutUint64(data[i*8:], uint64(int64(i)*7))
+			}
+
+			info := makeInt64VectorType(dim)
+			var result []int64
+
+			b.SetBytes(int64(dim * 8))
+			b.ResetTimer()
+
+			for i := 0; i < b.N; i++ {
+				if err := gocql.Unmarshal(info, data, &result); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
