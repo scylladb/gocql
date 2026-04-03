@@ -254,7 +254,6 @@ type HostInfo struct {
 	// that we are thread safe use a mutex to access all fields.
 	mu    sync.RWMutex
 	state nodeState
-	graph bool
 }
 
 func (h *HostInfo) Equal(host *HostInfo) bool {
@@ -392,18 +391,18 @@ func (h *HostInfo) HostID() string {
 	return h.hostId
 }
 
+// Deprecated: WorkLoad is a DSE-specific field that is no longer queried
+// from system tables. It will always return "" for hosts discovered via
+// the driver. Only populated if set explicitly via HostInfoBuilder.
 func (h *HostInfo) WorkLoad() string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.workload
 }
 
-func (h *HostInfo) Graph() bool {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	return h.graph
-}
-
+// Deprecated: DSEVersion is a DSE-specific field that is no longer queried
+// from system tables. It will always return "" for hosts discovered via
+// the driver. Only populated if set explicitly via HostInfoBuilder.
 func (h *HostInfo) DSEVersion() string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -697,25 +696,10 @@ func hostInfoFromMap(row map[string]interface{}, defaultPort int) (*HostInfo, er
 				return nil, fmt.Errorf(assertErrorMsg, "native_port")
 			}
 			host.port = native_port
-		case "workload":
-			host.workload, ok = value.(string)
-			if !ok {
-				return nil, fmt.Errorf(assertErrorMsg, "workload")
-			}
-		case "graph":
-			host.graph, ok = value.(bool)
-			if !ok {
-				return nil, fmt.Errorf(assertErrorMsg, "graph")
-			}
 		case "tokens":
 			host.tokens, ok = value.([]string)
 			if !ok {
 				return nil, fmt.Errorf(assertErrorMsg, "tokens")
-			}
-		case "dse_version":
-			host.dseVersion, ok = value.(string)
-			if !ok {
-				return nil, fmt.Errorf(assertErrorMsg, "dse_version")
 			}
 		case "schema_version":
 			schemaVersion, ok := value.(UUID)
