@@ -1023,9 +1023,10 @@ func unmarshalVector(info VectorType, data []byte, value interface{}) error {
 // vectorBufPool pools []byte buffers used by vector marshal fast paths.
 // Buffers are returned to the pool by putVectorBuf after the framer copies them.
 //
-// NOTE: putVectorBuf is currently exercised only by benchmarks/tests.
-// Wiring it into the connection write path (so production callers return
-// buffers after the framer copies them) is planned for a follow-up change.
+// vectorBufPool is used by the marshal fast paths (marshalVectorFloat32 etc.)
+// to allocate temporary byte buffers. After the framer copies the marshalled
+// bytes via writeBytes (append into framer.buf), the caller returns the buffer
+// to the pool via putVectorBuf.
 var vectorBufPool = sync.Pool{}
 
 func getVectorBuf(size int) []byte {
@@ -1052,6 +1053,17 @@ func putVectorBuf(buf []byte) {
 		return
 	}
 	vectorBufPool.Put(buf) //nolint:staticcheck // SA6002: []byte is a value type; boxing cost is acceptable for pool reuse
+}
+
+// vectorBufPoolSubtype returns true if the given VectorType's SubType uses a
+// marshal fast path that allocates from vectorBufPool via getVectorBuf.
+func vectorBufPoolSubtype(vt VectorType) bool {
+	switch vt.SubType.Type() {
+	case TypeFloat, TypeDouble, TypeInt, TypeBigInt:
+		return true
+	default:
+		return false
+	}
 }
 
 // vectorByteSize computes dim * elemBytes and returns an error if the result
@@ -1082,10 +1094,12 @@ func marshalVectorFloat32(dim int, vec []float32) ([]byte, error) {
 		return nil, marshalErrorf("%v", err)
 	}
 	buf := getVectorBuf(size)
-	off := 0
-	for _, v := range vec {
-		binary.BigEndian.PutUint32(buf[off:off+4], math.Float32bits(v))
-		off += 4
+	if dim == 0 {
+		return buf, nil
+	}
+	_ = buf[dim*4-1] // BCE hint
+	for i, v := range vec {
+		binary.BigEndian.PutUint32(buf[i*4:i*4+4], math.Float32bits(v))
 	}
 	return buf, nil
 }
@@ -1107,10 +1121,12 @@ func marshalVectorFloat64(dim int, vec []float64) ([]byte, error) {
 		return nil, marshalErrorf("%v", err)
 	}
 	buf := getVectorBuf(size)
-	off := 0
-	for _, v := range vec {
-		binary.BigEndian.PutUint64(buf[off:off+8], math.Float64bits(v))
-		off += 8
+	if dim == 0 {
+		return buf, nil
+	}
+	_ = buf[dim*8-1] // BCE hint
+	for i, v := range vec {
+		binary.BigEndian.PutUint64(buf[i*8:i*8+8], math.Float64bits(v))
 	}
 	return buf, nil
 }
@@ -1146,9 +1162,9 @@ func unmarshalVectorFloat32(dim int, data []byte, dst *[]float32) error {
 	} else {
 		vec = make([]float32, dim)
 	}
+	_ = data[dim*4-1] // BCE hint: compiler can prove data[i*4:i*4+4] is in-bounds
 	for i := range vec {
-		vec[i] = math.Float32frombits(binary.BigEndian.Uint32(data[:4]))
-		data = data[4:]
+		vec[i] = math.Float32frombits(binary.BigEndian.Uint32(data[i*4 : i*4+4]))
 	}
 	*dst = vec
 	return nil
@@ -1185,9 +1201,9 @@ func unmarshalVectorFloat64(dim int, data []byte, dst *[]float64) error {
 	} else {
 		vec = make([]float64, dim)
 	}
+	_ = data[dim*8-1] // BCE hint: compiler can prove data[i*8:i*8+8] is in-bounds
 	for i := range vec {
-		vec[i] = math.Float64frombits(binary.BigEndian.Uint64(data[:8]))
-		data = data[8:]
+		vec[i] = math.Float64frombits(binary.BigEndian.Uint64(data[i*8 : i*8+8]))
 	}
 	*dst = vec
 	return nil
@@ -1210,10 +1226,12 @@ func marshalVectorInt32(dim int, vec []int32) ([]byte, error) {
 		return nil, marshalErrorf("%v", err)
 	}
 	buf := getVectorBuf(size)
-	off := 0
-	for _, v := range vec {
-		binary.BigEndian.PutUint32(buf[off:off+4], uint32(v))
-		off += 4
+	if dim == 0 {
+		return buf, nil
+	}
+	_ = buf[dim*4-1] // BCE hint
+	for i, v := range vec {
+		binary.BigEndian.PutUint32(buf[i*4:i*4+4], uint32(v))
 	}
 	return buf, nil
 }
@@ -1235,10 +1253,12 @@ func marshalVectorInt64(dim int, vec []int64) ([]byte, error) {
 		return nil, marshalErrorf("%v", err)
 	}
 	buf := getVectorBuf(size)
-	off := 0
-	for _, v := range vec {
-		binary.BigEndian.PutUint64(buf[off:off+8], uint64(v))
-		off += 8
+	if dim == 0 {
+		return buf, nil
+	}
+	_ = buf[dim*8-1] // BCE hint
+	for i, v := range vec {
+		binary.BigEndian.PutUint64(buf[i*8:i*8+8], uint64(v))
 	}
 	return buf, nil
 }
@@ -1274,9 +1294,9 @@ func unmarshalVectorInt32(dim int, data []byte, dst *[]int32) error {
 	} else {
 		vec = make([]int32, dim)
 	}
+	_ = data[dim*4-1] // BCE hint: compiler can prove data[i*4:i*4+4] is in-bounds
 	for i := range vec {
-		vec[i] = int32(binary.BigEndian.Uint32(data[:4]))
-		data = data[4:]
+		vec[i] = int32(binary.BigEndian.Uint32(data[i*4 : i*4+4]))
 	}
 	*dst = vec
 	return nil
@@ -1313,9 +1333,9 @@ func unmarshalVectorInt64(dim int, data []byte, dst *[]int64) error {
 	} else {
 		vec = make([]int64, dim)
 	}
+	_ = data[dim*8-1] // BCE hint: compiler can prove data[i*8:i*8+8] is in-bounds
 	for i := range vec {
-		vec[i] = int64(binary.BigEndian.Uint64(data[:8]))
-		data = data[8:]
+		vec[i] = int64(binary.BigEndian.Uint64(data[i*8 : i*8+8]))
 	}
 	*dst = vec
 	return nil
