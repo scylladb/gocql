@@ -1691,10 +1691,36 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 		}
 
 		params.values = make([]queryValues, len(values))
+
+		// Install the pooled-vector-buffer cleanup BEFORE the marshalling loop:
+		// if marshalQueryValue fails mid-loop we still return already-marshalled
+		// vector buffers to the pool. The framer copies the bytes inside
+		// c.exec → buildFrame, so deferring the put until function exit is safe.
+		// Only install the defer when at least one column uses a poolable vector
+		// buffer, to avoid ~50ns defer overhead on non-vector queries.
+		// putVectorBuf(nil) is a no-op, so entries not yet marshalled are safe.
+		cols := info.request.columns
+		hasPooledVec := false
+		for i := 0; i < len(values) && i < len(cols); i++ {
+			if vt, ok := cols[i].TypeInfo.(VectorType); ok && vectorBufPoolSubtype(vt) {
+				hasPooledVec = true
+				break
+			}
+		}
+		if hasPooledVec {
+			defer func() {
+				for i := 0; i < len(params.values) && i < len(cols); i++ {
+					if vt, ok := cols[i].TypeInfo.(VectorType); ok && vectorBufPoolSubtype(vt) {
+						putVectorBuf(params.values[i].value)
+					}
+				}
+			}()
+		}
+
 		for i := 0; i < len(values); i++ {
 			v := &params.values[i]
 			value := values[i]
-			typ := info.request.columns[i].TypeInfo
+			typ := cols[i].TypeInfo
 			if err := marshalQueryValue(typ, value, v); err != nil {
 				return &Iter{err: err}
 			}
@@ -1879,6 +1905,20 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 
 	hasLwtEntries := false
 
+	// vectorBufs collects marshalled byte slices from vector fast paths
+	// so they can be returned to vectorBufPool after the framer copies them.
+	var vectorBufs [][]byte
+	// Install the cleanup defer up front (before the marshalling loop) so that
+	// buffers accumulated before an early return — e.g. a mid-loop
+	// marshalQueryValue failure — are still returned to the pool. The closure
+	// reads vectorBufs at function exit, so it sees whatever was appended. The
+	// framer copies the bytes inside c.exec → buildFrame, so deferring is safe.
+	defer func() {
+		for _, buf := range vectorBufs {
+			putVectorBuf(buf)
+		}
+	}()
+
 	for i := 0; i < n; i++ {
 		entry := &batch.Entries[i]
 		b := &req.statements[i]
@@ -1919,6 +1959,9 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 				typ := info.request.columns[j].TypeInfo
 				if err := marshalQueryValue(typ, value, v); err != nil {
 					return &Iter{err: err}
+				}
+				if vt, ok := typ.(VectorType); ok && vectorBufPoolSubtype(vt) {
+					vectorBufs = append(vectorBufs, v.value)
 				}
 			}
 
