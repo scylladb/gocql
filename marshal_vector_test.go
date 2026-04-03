@@ -1491,3 +1491,153 @@ func TestGetVectorBuf_NonPositiveSize(t *testing.T) {
 		}
 	}
 }
+
+// TestVectorBufPoolSubtype verifies that vectorBufPoolSubtype correctly
+// identifies which vector subtypes use the pooled fast path.
+func TestVectorBufPoolSubtype(t *testing.T) {
+	tests := []struct {
+		name   string
+		vt     VectorType
+		expect bool
+	}{
+		{"float32", makeFloat32VectorType(3), true},
+		{"float64", makeFloat64VectorType(3), true},
+		{"int32", makeInt32VectorType(3), true},
+		{"int64", makeInt64VectorType(3), true},
+		{"uuid", makeUUIDVectorType(3), false},
+		{"varchar", VectorType{
+			SubType:    NativeType{proto: protoVersion4, typ: TypeVarchar},
+			Dimensions: 3,
+		}, false},
+		{"boolean", VectorType{
+			SubType:    NativeType{proto: protoVersion4, typ: TypeBoolean},
+			Dimensions: 3,
+		}, false},
+		{"timestamp", VectorType{
+			SubType:    NativeType{proto: protoVersion4, typ: TypeTimestamp},
+			Dimensions: 3,
+		}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := vectorBufPoolSubtype(tt.vt)
+			if got != tt.expect {
+				t.Errorf("vectorBufPoolSubtype(%s) = %v, want %v", tt.name, got, tt.expect)
+			}
+		})
+	}
+}
+
+// TestVectorBufPoolReturnSimulation simulates the buffer lifecycle used in
+// executeQuery and executeBatch: marshal a vector value via marshalQueryValue,
+// then return the buffer to the pool via putVectorBuf. Verifies that the
+// returned buffer is reused by a subsequent getVectorBuf call.
+func TestVectorBufPoolReturnSimulation(t *testing.T) {
+	const dim = 128
+	vt := makeFloat32VectorType(dim)
+
+	// Create test data.
+	vec := make([]float32, dim)
+	for i := range vec {
+		vec[i] = float32(i)
+	}
+
+	// Marshal like marshalQueryValue does.
+	data, err := Marshal(vt, vec)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	expectedSize := dim * 4
+	if len(data) != expectedSize {
+		t.Fatalf("marshalled size = %d, want %d", len(data), expectedSize)
+	}
+
+	// Remember the backing array pointer before returning to pool.
+	origPtr := &data[:1][0]
+
+	// Simulate what the defer in executeQuery/executeBatch does.
+	if vectorBufPoolSubtype(vt) {
+		putVectorBuf(data)
+	}
+
+	// Get a buffer of the same size — should reuse the pooled one.
+	reused := getVectorBuf(expectedSize)
+	if len(reused) != expectedSize {
+		t.Fatalf("getVectorBuf(%d) returned len %d", expectedSize, len(reused))
+	}
+	reusedPtr := &reused[:1][0]
+	if origPtr != reusedPtr {
+		t.Error("expected pooled buffer to be reused, but got a different allocation")
+	}
+
+	// Clean up.
+	putVectorBuf(reused)
+}
+
+// TestVectorBufPoolReturnNonPooledType verifies that putVectorBuf is a no-op
+// for vector types that don't use the fast path (e.g. UUID vectors), and
+// that vectorBufPoolSubtype correctly excludes them.
+func TestVectorBufPoolReturnNonPooledType(t *testing.T) {
+	const dim = 4
+	vt := makeUUIDVectorType(dim)
+
+	if vectorBufPoolSubtype(vt) {
+		t.Fatal("vectorBufPoolSubtype should be false for UUID vectors")
+	}
+
+	// The UUID marshal path does not use getVectorBuf, so putting its
+	// result back should be skipped by the type check. Verify no panic.
+	data, err := Marshal(vt, []UUID{
+		{0x01}, {0x02}, {0x03}, {0x04},
+	})
+	if err != nil {
+		t.Fatalf("Marshal UUID vector: %v", err)
+	}
+	// Even if we mistakenly call putVectorBuf, it should not panic.
+	putVectorBuf(data)
+}
+
+// TestVectorBufPoolBatchSimulation simulates the batch buffer lifecycle:
+// multiple statements with vector columns get their buffers collected and
+// returned after the framer copies them.
+func TestVectorBufPoolBatchSimulation(t *testing.T) {
+	const dim = 64
+
+	types := []struct {
+		vt  VectorType
+		val interface{}
+	}{
+		{makeFloat32VectorType(dim), make([]float32, dim)},
+		{makeFloat64VectorType(dim), make([]float64, dim)},
+		{makeInt32VectorType(dim), make([]int32, dim)},
+		{makeInt64VectorType(dim), make([]int64, dim)},
+	}
+
+	// Simulate batch: marshal all, collect buffers.
+	var vectorBufs [][]byte
+	for _, tt := range types {
+		data, err := Marshal(tt.vt, tt.val)
+		if err != nil {
+			t.Fatalf("Marshal %v: %v", tt.vt.SubType.Type(), err)
+		}
+		if vectorBufPoolSubtype(tt.vt) {
+			vectorBufs = append(vectorBufs, data)
+		}
+	}
+
+	if len(vectorBufs) != 4 {
+		t.Fatalf("expected 4 pooled buffers, got %d", len(vectorBufs))
+	}
+
+	// Return all to pool (like the defer in executeBatch).
+	for _, buf := range vectorBufs {
+		putVectorBuf(buf)
+	}
+
+	// Verify at least one can be reused.
+	reused := getVectorBuf(dim * 4) // float32 size
+	if reused == nil {
+		t.Fatal("expected to get a buffer from pool after returning batch buffers")
+	}
+	putVectorBuf(reused)
+}
