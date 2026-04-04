@@ -329,7 +329,12 @@ else
 	go test -bench=. -benchmem ./...
 endif
 
-check: .prepare-golangci
+check-go-mod-drift:
+	@echo "Check Go module drift"
+	go mod tidy -diff
+	go mod tidy -C tests/bench -diff
+
+check: .prepare-golangci check-go-mod-drift
 	@echo "Build"
 	go build -tags all .
 	echo "Check linting"
