@@ -1,6 +1,6 @@
 module github.com/gocql/gocql/bench_test
 
-go 1.25
+go 1.25.0
 
 require (
 	github.com/brianvoe/gofakeit/v6 v6.28.0
@@ -9,7 +9,8 @@ require (
 
 require (
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/klauspost/compress v1.18.1 // indirect
+	github.com/klauspost/compress v1.18.4 // indirect
+	golang.org/x/sync v0.20.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 )
 
