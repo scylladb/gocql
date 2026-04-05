@@ -1283,7 +1283,7 @@ func (q *Query) defaultsFromSession() {
 		q.metrics = &queryMetrics{m: make(map[string]*hostMetrics)}
 	}
 
-	q.spec = &NonSpeculativeExecution{}
+	q.spec = defaultNonSpecExec
 	s.mu.RUnlock()
 }
 
@@ -2534,7 +2534,7 @@ func (s *Session) Batch(typ BatchType) *Batch {
 		defaultTimestamp: s.cfg.DefaultTimestamp,
 		keyspace:         s.cfg.Keyspace,
 		metrics:          &queryMetrics{m: make(map[string]*hostMetrics)},
-		spec:             &NonSpeculativeExecution{},
+		spec:             defaultNonSpecExec,
 		routingInfo:      &queryRoutingInfo{},
 		requestTimeout:   s.cfg.Timeout,
 	}
