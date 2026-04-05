@@ -170,6 +170,32 @@ func TestMarshalVector_RoundTrip(t *testing.T) {
 			t.Errorf("round-trip mismatch: got %v, want %v", result, vec)
 		}
 	})
+
+	t.Run("uuid", func(t *testing.T) {
+		dim := 3
+		info := makeUUIDVectorType(dim)
+		vec := []UUID{
+			{0x55, 0x0e, 0x84, 0x00, 0xe2, 0x9b, 0x41, 0xd4, 0xa7, 0x16, 0x44, 0x66, 0x55, 0x44, 0x00, 0x00},
+			{0xf4, 0x7a, 0xc1, 0x0b, 0x58, 0xcc, 0x43, 0x72, 0xa5, 0x67, 0x0e, 0x02, 0xb2, 0xc3, 0xd4, 0x79},
+			{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+		}
+
+		data, err := marshalVector(info, vec)
+		if err != nil {
+			t.Fatalf("marshalVector: %v", err)
+		}
+		if len(data) != dim*16 {
+			t.Fatalf("expected %d bytes, got %d", dim*16, len(data))
+		}
+
+		var result []UUID
+		if err := unmarshalVector(info, data, &result); err != nil {
+			t.Fatalf("unmarshalVector: %v", err)
+		}
+		if !reflect.DeepEqual(vec, result) {
+			t.Errorf("round-trip mismatch: got %v, want %v", result, vec)
+		}
+	})
 }
 
 // --- Test 2: Byte compatibility ---
@@ -238,6 +264,27 @@ func TestMarshalVector_ByteCompatibility(t *testing.T) {
 		}
 
 		info := makeInt64VectorType(dim)
+		data, err := marshalVector(info, vec)
+		if err != nil {
+			t.Fatalf("marshalVector: %v", err)
+		}
+		if !reflect.DeepEqual(data, expected) {
+			t.Errorf("byte mismatch:\n  got:  %x\n  want: %x", data, expected)
+		}
+	})
+
+	t.Run("uuid", func(t *testing.T) {
+		dim := 2
+		vec := []UUID{
+			{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10},
+			{0xf0, 0xe0, 0xd0, 0xc0, 0xb0, 0xa0, 0x90, 0x80, 0x70, 0x60, 0x50, 0x40, 0x30, 0x20, 0x10, 0x00},
+		}
+		// UUID is [16]byte — wire format is the raw bytes, no endian conversion.
+		expected := make([]byte, dim*16)
+		copy(expected[0:16], vec[0][:])
+		copy(expected[16:32], vec[1][:])
+
+		info := makeUUIDVectorType(dim)
 		data, err := marshalVector(info, vec)
 		if err != nil {
 			t.Fatalf("marshalVector: %v", err)
@@ -432,6 +479,49 @@ func TestUnmarshalVector_SliceReuse(t *testing.T) {
 			t.Error("expected reuse of pre-allocated backing array with excess capacity")
 		}
 	})
+
+	t.Run("uuid", func(t *testing.T) {
+		dim := 4
+		info := makeUUIDVectorType(dim)
+		data := make([]byte, dim*16)
+		for i := 0; i < dim; i++ {
+			data[i*16] = byte(i + 1) // put something identifiable in each UUID
+		}
+
+		result := make([]UUID, dim)
+		ptr := &result[0]
+		if err := unmarshalVector(info, data, &result); err != nil {
+			t.Fatalf("unmarshalVector: %v", err)
+		}
+		if len(result) != dim {
+			t.Fatalf("expected len %d, got %d", dim, len(result))
+		}
+		if &result[0] != ptr {
+			t.Error("expected reuse of pre-allocated backing array")
+		}
+	})
+
+	t.Run("uuid_excess_cap", func(t *testing.T) {
+		dim := 4
+		info := makeUUIDVectorType(dim)
+		data := make([]byte, dim*16)
+		for i := 0; i < dim; i++ {
+			data[i*16] = byte(i + 1)
+		}
+
+		result := make([]UUID, 1, dim+10)
+		ptr := &result[0]
+		result = result[:0]
+		if err := unmarshalVector(info, data, &result); err != nil {
+			t.Fatalf("unmarshalVector: %v", err)
+		}
+		if len(result) != dim {
+			t.Fatalf("expected len %d, got %d", dim, len(result))
+		}
+		if &result[0] != ptr {
+			t.Error("expected reuse of pre-allocated backing array with excess capacity")
+		}
+	})
 }
 
 // --- Test 4: Nil slice marshal ---
@@ -580,6 +670,18 @@ func TestMarshalVector_NilSlice(t *testing.T) {
 			t.Errorf("expected nil data for non-nil ptr to nil slice, got %v", data)
 		}
 	})
+
+	t.Run("uuid_nil_slice", func(t *testing.T) {
+		info := makeUUIDVectorType(3)
+		var vec []UUID
+		data, err := marshalVector(info, vec)
+		if err != nil {
+			t.Fatalf("marshalVector: %v", err)
+		}
+		if data != nil {
+			t.Errorf("expected nil data for nil slice, got %v", data)
+		}
+	})
 }
 
 // --- Test 5: Nil data unmarshal ---
@@ -672,6 +774,28 @@ func TestUnmarshalVector_NilData(t *testing.T) {
 			t.Errorf("expected nil result after nil data, got %v", result)
 		}
 	})
+
+	t.Run("uuid_nil_data_nil_dst", func(t *testing.T) {
+		info := makeUUIDVectorType(3)
+		var result []UUID
+		if err := unmarshalVector(info, nil, &result); err != nil {
+			t.Fatalf("unmarshalVector: %v", err)
+		}
+		if result != nil {
+			t.Errorf("expected nil result, got %v", result)
+		}
+	})
+
+	t.Run("uuid_nil_data_non_nil_dst", func(t *testing.T) {
+		info := makeUUIDVectorType(3)
+		result := []UUID{{0x01}, {0x02}, {0x03}}
+		if err := unmarshalVector(info, nil, &result); err != nil {
+			t.Fatalf("unmarshalVector: %v", err)
+		}
+		if result != nil {
+			t.Errorf("expected nil result after nil data, got %v", result)
+		}
+	})
 }
 
 // --- Test 6: Dimension mismatch ---
@@ -747,6 +871,25 @@ func TestMarshalVector_DimensionMismatch(t *testing.T) {
 		info := makeInt64VectorType(3)
 		data := make([]byte, 10) // not 8*3=24
 		var result []int64
+		err := unmarshalVector(info, data, &result)
+		if err == nil {
+			t.Fatal("expected error for wrong data length, got nil")
+		}
+	})
+
+	t.Run("uuid_marshal", func(t *testing.T) {
+		info := makeUUIDVectorType(3)
+		vec := []UUID{{0x01}, {0x02}}
+		_, err := marshalVector(info, vec)
+		if err == nil {
+			t.Fatal("expected error for dimension mismatch, got nil")
+		}
+	})
+
+	t.Run("uuid_unmarshal_wrong_data_len", func(t *testing.T) {
+		info := makeUUIDVectorType(3)
+		data := make([]byte, 10) // not 16*3=48
+		var result []UUID
 		err := unmarshalVector(info, data, &result)
 		if err == nil {
 			t.Fatal("expected error for wrong data length, got nil")
@@ -841,6 +984,29 @@ func TestMarshalVector_EmptyVector(t *testing.T) {
 		}
 
 		var result []int64
+		if err := unmarshalVector(info, data, &result); err != nil {
+			t.Fatalf("unmarshalVector: %v", err)
+		}
+		if len(result) != 0 {
+			t.Errorf("expected empty result, got len %d", len(result))
+		}
+	})
+
+	t.Run("uuid_dim0", func(t *testing.T) {
+		info := makeUUIDVectorType(0)
+		vec := []UUID{}
+		data, err := marshalVector(info, vec)
+		if err != nil {
+			t.Fatalf("marshalVector: %v", err)
+		}
+		if data == nil {
+			t.Error("expected non-nil empty data for non-nil empty vector, got nil (would encode as CQL NULL)")
+		}
+		if len(data) != 0 {
+			t.Errorf("expected empty data, got %d bytes", len(data))
+		}
+
+		var result []UUID
 		if err := unmarshalVector(info, data, &result); err != nil {
 			t.Fatalf("unmarshalVector: %v", err)
 		}
@@ -946,6 +1112,26 @@ func TestMarshalVector_PointerToSlice(t *testing.T) {
 		}
 
 		var result []int64
+		if err := unmarshalVector(info, data, &result); err != nil {
+			t.Fatalf("unmarshalVector: %v", err)
+		}
+		if !reflect.DeepEqual(vec, result) {
+			t.Errorf("round-trip mismatch: got %v, want %v", result, vec)
+		}
+	})
+
+	t.Run("uuid_ptr_marshal", func(t *testing.T) {
+		info := makeUUIDVectorType(2)
+		vec := []UUID{
+			{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10},
+			{0xf0, 0xe0, 0xd0, 0xc0, 0xb0, 0xa0, 0x90, 0x80, 0x70, 0x60, 0x50, 0x40, 0x30, 0x20, 0x10, 0x00},
+		}
+		data, err := Marshal(info, &vec)
+		if err != nil {
+			t.Fatalf("Marshal with *[]UUID: %v", err)
+		}
+
+		var result []UUID
 		if err := unmarshalVector(info, data, &result); err != nil {
 			t.Fatalf("unmarshalVector: %v", err)
 		}
@@ -1225,6 +1411,19 @@ func TestUnmarshalVectorFastPathZeroDimNonNilSlice(t *testing.T) {
 		}
 	})
 
+	t.Run("uuid", func(t *testing.T) {
+		var dst []UUID
+		if err := unmarshalVectorUUID(0, []byte{}, &dst); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if dst == nil {
+			t.Error("expected non-nil empty slice, got nil")
+		}
+		if len(dst) != 0 {
+			t.Errorf("expected len 0, got %d", len(dst))
+		}
+	})
+
 	// Also verify that an existing non-nil dst is preserved as non-nil [:0].
 	t.Run("float32_existing_dst", func(t *testing.T) {
 		dst := make([]float32, 5)
@@ -1368,6 +1567,7 @@ func TestMarshalVectorNegativeDimensions(t *testing.T) {
 			{"float64", func() error { _, err := marshalVectorFloat64(-1, []float64{1}); return err }},
 			{"int32", func() error { _, err := marshalVectorInt32(-1, []int32{1}); return err }},
 			{"int64", func() error { _, err := marshalVectorInt64(-1, []int64{1}); return err }},
+			{"uuid", func() error { _, err := marshalVectorUUID(-1, []UUID{{0x01}}); return err }},
 		}
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
@@ -1391,6 +1591,7 @@ func TestMarshalVectorNegativeDimensions(t *testing.T) {
 			{"float64", func() error { var v []float64; return unmarshalVectorFloat64(-1, []byte{0, 0, 0, 0, 0, 0, 0, 0}, &v) }},
 			{"int32", func() error { var v []int32; return unmarshalVectorInt32(-1, []byte{0, 0, 0, 0}, &v) }},
 			{"int64", func() error { var v []int64; return unmarshalVectorInt64(-1, []byte{0, 0, 0, 0, 0, 0, 0, 0}, &v) }},
+			{"uuid", func() error { var v []UUID; return unmarshalVectorUUID(-1, make([]byte, 16), &v) }},
 		}
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
@@ -1504,7 +1705,7 @@ func TestVectorBufPoolSubtype(t *testing.T) {
 		{"float64", makeFloat64VectorType(3), true},
 		{"int32", makeInt32VectorType(3), true},
 		{"int64", makeInt64VectorType(3), true},
-		{"uuid", makeUUIDVectorType(3), false},
+		{"uuid", makeUUIDVectorType(3), true},
 		{"varchar", VectorType{
 			SubType:    NativeType{proto: protoVersion4, typ: TypeVarchar},
 			Dimensions: 3,
@@ -1578,26 +1779,22 @@ func TestVectorBufPoolReturnSimulation(t *testing.T) {
 }
 
 // TestVectorBufPoolReturnNonPooledType verifies that putVectorBuf is a no-op
-// for vector types that don't use the fast path (e.g. UUID vectors), and
+// for vector types that don't use the fast path (e.g. varchar vectors), and
 // that vectorBufPoolSubtype correctly excludes them.
 func TestVectorBufPoolReturnNonPooledType(t *testing.T) {
-	const dim = 4
-	vt := makeUUIDVectorType(dim)
+	vt := VectorType{
+		SubType:    NativeType{proto: protoVersion4, typ: TypeVarchar},
+		Dimensions: 4,
+	}
 
 	if vectorBufPoolSubtype(vt) {
-		t.Fatal("vectorBufPoolSubtype should be false for UUID vectors")
+		t.Fatal("vectorBufPoolSubtype should be false for varchar vectors")
 	}
 
-	// The UUID marshal path does not use getVectorBuf, so putting its
-	// result back should be skipped by the type check. Verify no panic.
-	data, err := Marshal(vt, []UUID{
-		{0x01}, {0x02}, {0x03}, {0x04},
-	})
-	if err != nil {
-		t.Fatalf("Marshal UUID vector: %v", err)
-	}
-	// Even if we mistakenly call putVectorBuf, it should not panic.
-	putVectorBuf(data)
+	// Varchar marshal path does not use getVectorBuf, so putting a buffer
+	// back should be skipped by the type check. Verify no panic.
+	buf := make([]byte, 100)
+	putVectorBuf(buf)
 }
 
 // TestVectorBufPoolBatchSimulation simulates the batch buffer lifecycle:
@@ -1614,6 +1811,7 @@ func TestVectorBufPoolBatchSimulation(t *testing.T) {
 		{makeFloat64VectorType(dim), make([]float64, dim)},
 		{makeInt32VectorType(dim), make([]int32, dim)},
 		{makeInt64VectorType(dim), make([]int64, dim)},
+		{makeUUIDVectorType(dim), make([]UUID, dim)},
 	}
 
 	// Simulate batch: marshal all, collect buffers.
@@ -1628,8 +1826,8 @@ func TestVectorBufPoolBatchSimulation(t *testing.T) {
 		}
 	}
 
-	if len(vectorBufs) != 4 {
-		t.Fatalf("expected 4 pooled buffers, got %d", len(vectorBufs))
+	if len(vectorBufs) != 5 {
+		t.Fatalf("expected 5 pooled buffers, got %d", len(vectorBufs))
 	}
 
 	// Return all to pool (like the defer in executeBatch).

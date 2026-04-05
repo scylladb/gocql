@@ -868,6 +868,10 @@ func marshalVector(info VectorType, value interface{}) ([]byte, error) {
 		if vec, ok := value.([]int64); ok {
 			return marshalVectorInt64(info.Dimensions, vec)
 		}
+	case TypeUUID, TypeTimeUUID:
+		if vec, ok := value.([]UUID); ok {
+			return marshalVectorUUID(info.Dimensions, vec)
+		}
 	}
 
 	rv := reflect.ValueOf(value)
@@ -931,6 +935,10 @@ func unmarshalVector(info VectorType, data []byte, value interface{}) error {
 	case TypeBigInt:
 		if dst, ok := value.(*[]int64); ok {
 			return unmarshalVectorInt64(info.Dimensions, data, dst)
+		}
+	case TypeUUID, TypeTimeUUID:
+		if dst, ok := value.(*[]UUID); ok {
+			return unmarshalVectorUUID(info.Dimensions, data, dst)
 		}
 	}
 
@@ -1059,7 +1067,7 @@ func putVectorBuf(buf []byte) {
 // marshal fast path that allocates from vectorBufPool via getVectorBuf.
 func vectorBufPoolSubtype(vt VectorType) bool {
 	switch vt.SubType.Type() {
-	case TypeFloat, TypeDouble, TypeInt, TypeBigInt:
+	case TypeFloat, TypeDouble, TypeInt, TypeBigInt, TypeUUID, TypeTimeUUID:
 		return true
 	default:
 		return false
@@ -1336,6 +1344,73 @@ func unmarshalVectorInt64(dim int, data []byte, dst *[]int64) error {
 	_ = data[dim*8-1] // BCE hint: compiler can prove data[i*8:i*8+8] is in-bounds
 	for i := range vec {
 		vec[i] = int64(binary.BigEndian.Uint64(data[i*8 : i*8+8]))
+	}
+	*dst = vec
+	return nil
+}
+
+// marshalVectorUUID encodes a UUID slice as a contiguous vector
+// (CQL uuid/timeuuid = 16 bytes). Uses a pooled buffer for zero-alloc steady state.
+// UUID is [16]byte so no endian conversion is needed — just a flat copy.
+func marshalVectorUUID(dim int, vec []UUID) ([]byte, error) {
+	if dim < 0 {
+		return nil, marshalErrorf("vector has negative dimensions: %d", dim)
+	}
+	if vec == nil {
+		return nil, nil
+	}
+	if len(vec) != dim {
+		return nil, marshalErrorf("expected vector with %d dimensions, received %d", dim, len(vec))
+	}
+	size, err := vectorByteSize(dim, 16)
+	if err != nil {
+		return nil, marshalErrorf("%v", err)
+	}
+	buf := getVectorBuf(size)
+	if dim == 0 {
+		return buf, nil
+	}
+	_ = buf[dim*16-1] // BCE hint
+	for i, v := range vec {
+		copy(buf[i*16:i*16+16], v[:])
+	}
+	return buf, nil
+}
+
+// unmarshalVectorUUID decodes contiguous CQL uuid/timeuuid (16-byte) values.
+// Reuses the destination slice's backing array when capacity allows (zero-alloc steady state).
+func unmarshalVectorUUID(dim int, data []byte, dst *[]UUID) error {
+	if dim < 0 {
+		return unmarshalErrorf("vector has negative dimensions: %d", dim)
+	}
+	if data == nil {
+		*dst = nil
+		return nil
+	}
+	expected, err := vectorByteSize(dim, 16)
+	if err != nil {
+		return unmarshalErrorf("%v", err)
+	}
+	if len(data) != expected {
+		return unmarshalErrorf("unmarshal vector<uuid, %d>: expected %d bytes, got %d", dim, expected, len(data))
+	}
+	if dim == 0 {
+		if *dst == nil {
+			*dst = make([]UUID, 0)
+		} else {
+			*dst = (*dst)[:0]
+		}
+		return nil
+	}
+	vec := *dst
+	if cap(vec) >= dim {
+		vec = vec[:dim]
+	} else {
+		vec = make([]UUID, dim)
+	}
+	_ = data[dim*16-1] // BCE hint
+	for i := range vec {
+		copy(vec[i][:], data[i*16:i*16+16])
 	}
 	*dst = vec
 	return nil

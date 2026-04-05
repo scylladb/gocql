@@ -579,3 +579,132 @@ func BenchmarkUnmarshalVectorInt64(b *testing.B) {
 		})
 	}
 }
+
+func makeUUIDBenchVectorType(dim int, dimStr string) VectorType {
+	return VectorType{
+		NativeType: NativeType{
+			proto:  protoVersion4,
+			typ:    TypeCustom,
+			custom: apacheCassandraTypePrefix + "VectorType(" + apacheCassandraTypePrefix + "UUIDType, " + dimStr + ")",
+		},
+		SubType:    NativeType{proto: protoVersion4, typ: TypeUUID},
+		Dimensions: dim,
+	}
+}
+
+// BenchmarkMarshalVectorUUID measures marshal performance for UUID vectors.
+func BenchmarkMarshalVectorUUID(b *testing.B) {
+	dims := []struct {
+		dim    int
+		dimStr string
+	}{
+		{dim: 128, dimStr: "128"},
+		{dim: 384, dimStr: "384"},
+		{dim: 768, dimStr: "768"},
+		{dim: 1536, dimStr: "1536"},
+	}
+
+	for _, entry := range dims {
+		dim := entry.dim
+		dimStr := entry.dimStr
+		b.Run("dim_"+dimStr, func(b *testing.B) {
+			b.ReportAllocs()
+
+			vec := make([]UUID, dim)
+			for i := range vec {
+				vec[i][0] = byte(i)
+				vec[i][1] = byte(i >> 8)
+			}
+
+			info := makeUUIDBenchVectorType(dim, dimStr)
+
+			b.SetBytes(int64(dim * 16))
+			b.ResetTimer()
+
+			for i := 0; i < b.N; i++ {
+				if _, err := marshalVector(info, vec); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+// BenchmarkMarshalVectorUUIDPooled measures marshal with buffer pool return for UUID.
+func BenchmarkMarshalVectorUUIDPooled(b *testing.B) {
+	dims := []struct {
+		dim    int
+		dimStr string
+	}{
+		{dim: 128, dimStr: "128"},
+		{dim: 384, dimStr: "384"},
+		{dim: 768, dimStr: "768"},
+		{dim: 1536, dimStr: "1536"},
+	}
+
+	for _, entry := range dims {
+		dim := entry.dim
+		dimStr := entry.dimStr
+		b.Run("dim_"+dimStr, func(b *testing.B) {
+			b.ReportAllocs()
+
+			vec := make([]UUID, dim)
+			for i := range vec {
+				vec[i][0] = byte(i)
+				vec[i][1] = byte(i >> 8)
+			}
+
+			info := makeUUIDBenchVectorType(dim, dimStr)
+
+			b.SetBytes(int64(dim * 16))
+			b.ResetTimer()
+
+			for i := 0; i < b.N; i++ {
+				data, err := marshalVector(info, vec)
+				if err != nil {
+					b.Fatal(err)
+				}
+				putVectorBuf(data)
+			}
+		})
+	}
+}
+
+// BenchmarkUnmarshalVectorUUID measures unmarshal performance for UUID vectors.
+func BenchmarkUnmarshalVectorUUID(b *testing.B) {
+	dims := []struct {
+		dim    int
+		dimStr string
+	}{
+		{dim: 128, dimStr: "128"},
+		{dim: 384, dimStr: "384"},
+		{dim: 768, dimStr: "768"},
+		{dim: 1536, dimStr: "1536"},
+	}
+
+	for _, entry := range dims {
+		dim := entry.dim
+		dimStr := entry.dimStr
+		b.Run("dim_"+dimStr, func(b *testing.B) {
+			b.ReportAllocs()
+
+			data := make([]byte, dim*16)
+			for i := 0; i < dim; i++ {
+				data[i*16] = byte(i)
+				data[i*16+1] = byte(i >> 8)
+			}
+
+			info := makeUUIDBenchVectorType(dim, dimStr)
+			var result []UUID
+
+			b.SetBytes(int64(dim * 16))
+			b.ResetTimer()
+
+			for i := 0; i < b.N; i++ {
+				if err := unmarshalVector(info, data, &result); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
