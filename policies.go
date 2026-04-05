@@ -32,6 +32,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	randv2 "math/rand/v2"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -718,6 +719,114 @@ func (m *clusterMeta) resetTokenRing(partitioner string, hosts []*HostInfo, logg
 	m.tokenRing = tokenRing
 }
 
+// hostSet is a small, allocation-free set for tracking which hosts have been
+// returned by the token-aware iterator. For the common case (RF <= 9), it uses
+// an inline array on the stack, avoiding the ~200+ byte map allocation that
+// occurred on every query. Sized for NTS with up to 3 DCs at RF=3 each
+// (9 replicas). If more hosts are tracked (e.g. 4+ DCs), it spills over to a
+// heap-allocated map to preserve correct deduplication.
+type hostSet struct {
+	overflow map[*HostInfo]struct{}
+	arr      [9]*HostInfo
+	n        int
+}
+
+func (s *hostSet) add(h *HostInfo) {
+	if s.n < len(s.arr) {
+		s.arr[s.n] = h
+		s.n++
+		return
+	}
+	// Spill to map for large replica sets (4+ DCs, high RF, etc.).
+	if s.overflow == nil {
+		s.overflow = make(map[*HostInfo]struct{})
+		// Seed the map with the inline entries so contains() can check
+		// a single path once we've spilled.
+		for i := range s.n {
+			s.overflow[s.arr[i]] = struct{}{}
+		}
+	}
+	s.overflow[h] = struct{}{}
+}
+
+func (s *hostSet) contains(h *HostInfo) bool {
+	if s.overflow != nil {
+		_, ok := s.overflow[h]
+		return ok
+	}
+	for i := range s.n {
+		if s.arr[i] == h {
+			return true
+		}
+	}
+	return false
+}
+
+// shuffleHostsInPlace shuffles the given slice in-place using a lock-free
+// random source (math/rand/v2). This avoids the allocation and global mutex
+// contention of shuffleHosts().
+func shuffleHostsInPlace(hosts []*HostInfo) {
+	randv2.Shuffle(len(hosts), func(i, j int) {
+		hosts[i], hosts[j] = hosts[j], hosts[i]
+	})
+}
+
+// partitionHealthy performs an in-place stable partition of replicas, moving
+// healthy (non-busy) hosts to the front while preserving relative order within
+// each group. This replaces two separate make() calls + append.
+func partitionHealthy(replicas []*HostInfo, s *Session) {
+	// Stable partition: count healthy, then place in order.
+	n := len(replicas)
+	if n <= 1 {
+		return
+	}
+
+	// Snapshot IsBusy state once per host to avoid TOCTOU races between
+	// the counting pass and the placement pass. IsBusy reads a live atomic
+	// in-flight counter, so a host can flip between passes. If healthyCount
+	// becomes stale, the placement indices (hi/ui) can overflow.
+	var busyBuf [8]bool
+	var busy []bool
+	if n <= len(busyBuf) {
+		busy = busyBuf[:n]
+	} else {
+		busy = make([]bool, n)
+	}
+
+	healthyCount := 0
+	for i, h := range replicas {
+		busy[i] = h.IsBusy(s)
+		if !busy[i] {
+			healthyCount++
+		}
+	}
+
+	if healthyCount == 0 || healthyCount == n {
+		return // all same category, nothing to do
+	}
+
+	// Use a small stack buffer for the temp copy (covers RF up to 8).
+	var buf [8]*HostInfo
+	var tmp []*HostInfo
+	if n <= len(buf) {
+		tmp = buf[:n]
+	} else {
+		tmp = make([]*HostInfo, n)
+	}
+	copy(tmp, replicas)
+
+	hi, ui := 0, healthyCount
+	for i, h := range tmp {
+		if !busy[i] {
+			replicas[hi] = h
+			hi++
+		} else {
+			replicas[ui] = h
+			ui++
+		}
+	}
+}
+
 func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 	if qry == nil {
 		return t.fallback.Pick(qry)
@@ -763,10 +872,14 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 	if len(replicas) == 0 {
 		ht := meta.replicas[qry.Keyspace()].replicasFor(token)
 		if ht != nil {
-			// Clone ht.hosts, otherwise, if shuffling or avoidSlowReplicas is enabled, it will update ht.hosts
-			replicas = make([]*HostInfo, len(ht.hosts))
-			for id, replica := range ht.hosts {
-				replicas[id] = replica
+			needsMutation := t.shuffleReplicas || t.avoidSlowReplicas
+			if needsMutation {
+				// Clone only when we'll mutate (shuffle or partition).
+				replicas = make([]*HostInfo, len(ht.hosts))
+				copy(replicas, ht.hosts)
+			} else {
+				// Zero-copy: no mutation will occur, safe to reference directly.
+				replicas = ht.hosts
 			}
 		}
 	}
@@ -777,22 +890,11 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 	}
 
 	if t.shuffleReplicas && !qry.IsLWT() && len(replicas) > 1 {
-		replicas = shuffleHosts(replicas)
+		shuffleHostsInPlace(replicas)
 	}
 
 	if s := qry.GetSession(); s != nil && !qry.IsLWT() && t.avoidSlowReplicas {
-		healthyReplicas := make([]*HostInfo, 0, len(replicas))
-		unhealthyReplicas := make([]*HostInfo, 0, len(replicas))
-
-		for _, h := range replicas {
-			if h.IsBusy(s) {
-				unhealthyReplicas = append(unhealthyReplicas, h)
-			} else {
-				healthyReplicas = append(healthyReplicas, h)
-			}
-		}
-
-		replicas = append(healthyReplicas, unhealthyReplicas...)
+		partitionHealthy(replicas, s)
 	}
 
 	var (
@@ -814,7 +916,7 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 		remote = make([][]*HostInfo, maxTier)
 	}
 
-	used := make(map[*HostInfo]bool, len(replicas))
+	var used hostSet
 	return func() SelectedHost {
 		for i < len(replicas) {
 			h := replicas[i]
@@ -837,7 +939,7 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 			}
 
 			if h.IsUp() {
-				used[h] = true
+				used.add(h)
 				return selectedHost{info: h, token: token}
 			}
 		}
@@ -853,7 +955,7 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 				}
 
 				if h.IsUp() {
-					used[h] = true
+					used.add(h)
 					return selectedHost{info: h, token: token}
 				}
 			}
@@ -866,8 +968,8 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 
 		// filter the token aware selected hosts from the fallback hosts
 		for fallbackHost := fallbackIter(); fallbackHost != nil; fallbackHost = fallbackIter() {
-			if !used[fallbackHost.Info()] {
-				used[fallbackHost.Info()] = true
+			if !used.contains(fallbackHost.Info()) {
+				used.add(fallbackHost.Info())
 				return fallbackHost
 			}
 		}
