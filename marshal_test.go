@@ -774,7 +774,7 @@ func TestReadCollectionSize(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			size, _, err := readCollectionSize(test.info, test.data)
+			size, _, err := readCollectionSize(test.data)
 			if test.isError {
 				if err == nil {
 					t.Fatal("Expected error, but it was nil")
