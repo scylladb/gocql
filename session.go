@@ -27,7 +27,6 @@ package gocql
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"net"
@@ -915,6 +914,16 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string, requestTimeou
 
 	partitionKey = tableMetadata.PartitionKey
 
+	// Build a name→index map so that partition key lookup is O(1) per
+	// column instead of a nested O(partitionKey × columns) scan.
+	// The map records the first occurrence of each column name.
+	colIndex := make(map[string]int, len(info.request.columns))
+	for i, c := range info.request.columns {
+		if _, exists := colIndex[c.Name]; !exists {
+			colIndex[c.Name] = i
+		}
+	}
+
 	size := len(partitionKey)
 	routingKeyInfo := &routingKeyInfo{
 		indexes:     make([]int, size),
@@ -926,24 +935,14 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string, requestTimeou
 	}
 
 	for keyIndex, keyColumn := range partitionKey {
-		// set an indicator for checking if the mapping is missing
-		routingKeyInfo.indexes[keyIndex] = -1
-
-		// find the column in the query info
-		for argIndex, boundColumn := range info.request.columns {
-			if keyColumn.Name == boundColumn.Name {
-				// there may be many such bound columns, pick the first
-				routingKeyInfo.indexes[keyIndex] = argIndex
-				routingKeyInfo.types[keyIndex] = boundColumn.TypeInfo
-				break
-			}
-		}
-
-		if routingKeyInfo.indexes[keyIndex] == -1 {
+		argIndex, found := colIndex[keyColumn.Name]
+		if !found {
 			// missing a routing key column mapping
 			// no routing key, and no error
 			return nil, nil
 		}
+		routingKeyInfo.indexes[keyIndex] = argIndex
+		routingKeyInfo.types[keyIndex] = info.request.columns[argIndex].TypeInfo
 	}
 
 	// cache this result
@@ -2434,7 +2433,11 @@ func createRoutingKey(routingKeyInfo *routingKeyInfo, values []interface{}) ([]b
 	}
 
 	// composite routing key
-	buf := bytes.NewBuffer(make([]byte, 0, 256))
+	// Use a stack-allocated backing array to avoid heap allocation for the
+	// common case where the composite key fits in 256 bytes. Each component
+	// is encoded as: [2-byte big-endian length][marshaled value][0x00 terminator].
+	var backing [256]byte
+	buf := backing[:0]
 	for i := range routingKeyInfo.indexes {
 		encoded, err := Marshal(
 			routingKeyInfo.types[i],
@@ -2443,13 +2446,15 @@ func createRoutingKey(routingKeyInfo *routingKeyInfo, values []interface{}) ([]b
 		if err != nil {
 			return nil, err
 		}
-		lenBuf := []byte{0x00, 0x00}
-		binary.BigEndian.PutUint16(lenBuf, uint16(len(encoded)))
-		buf.Write(lenBuf)
-		buf.Write(encoded)
-		buf.WriteByte(0x00)
+		n := len(encoded)
+		buf = append(buf, byte(n>>8), byte(n))
+		buf = append(buf, encoded...)
+		buf = append(buf, 0x00)
 	}
-	routingKey := buf.Bytes()
+	// Return a copy so the backing array doesn't escape when the result
+	// is stored beyond this stack frame.
+	routingKey := make([]byte, len(buf))
+	copy(routingKey, buf)
 	return routingKey, nil
 }
 
