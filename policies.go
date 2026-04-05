@@ -1312,6 +1312,10 @@ type SpeculativeExecutionPolicy interface {
 
 type NonSpeculativeExecution struct{}
 
+// defaultNonSpecExec is a package-level singleton that avoids allocating a new
+// NonSpeculativeExecution every time a Query or Batch is initialised.
+var defaultNonSpecExec SpeculativeExecutionPolicy = &NonSpeculativeExecution{}
+
 func (sp NonSpeculativeExecution) Attempts() int        { return 0 } // No additional attempts
 func (sp NonSpeculativeExecution) Delay() time.Duration { return 1 } // The delay. Must be positive to be used in a ticker.
 
