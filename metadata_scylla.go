@@ -576,23 +576,53 @@ func (s *metadataDescriber) GetKeyspace(keyspaceName string) (*KeyspaceMetadata,
 	return metadata, err
 }
 
+func tableNotFoundError(keyspaceName, tableName string) error {
+	return fmt.Errorf("table %s.%s: %w", keyspaceName, tableName, ErrNotFound)
+}
+
+// getTableFromSnapshot resolves a table lookup against a keyspace snapshot.
+// It re-reads the latest published keyspace metadata before deciding that an
+// invalidated table still needs a refresh, which avoids duplicate refreshes
+// for callers holding a stale snapshot.
+func (s *metadataDescriber) getTableFromSnapshot(
+	keyspaceName, tableName string,
+	keyspaceMetadata *KeyspaceMetadata,
+	wasReloaded bool,
+) (tableMetadata *TableMetadata, refreshNeeded bool, err error) {
+	if tableMetadata, found := keyspaceMetadata.Tables[tableName]; found {
+		return tableMetadata, false, nil
+	}
+
+	if latestMetadata, found := s.metadata.keyspaceMetadata.getKeyspace(keyspaceName); found && latestMetadata != keyspaceMetadata {
+		keyspaceMetadata = latestMetadata
+		if tableMetadata, found := keyspaceMetadata.Tables[tableName]; found {
+			return tableMetadata, false, nil
+		}
+	}
+
+	if wasReloaded {
+		return nil, false, tableNotFoundError(keyspaceName, tableName)
+	}
+
+	if _, ok := keyspaceMetadata.tablesInvalidated[tableName]; !ok {
+		return nil, false, tableNotFoundError(keyspaceName, tableName)
+	}
+
+	return nil, true, nil
+}
+
 func (s *metadataDescriber) GetTable(keyspaceName, tableName string) (*TableMetadata, error) {
 	keyspaceMetadata, wasReloaded, err := s.getKeyspaceInternal(keyspaceName)
 	if err != nil {
 		return nil, err
 	}
 
-	tableMetadata, found := keyspaceMetadata.Tables[tableName]
-	if found {
+	tableMetadata, refreshNeeded, err := s.getTableFromSnapshot(keyspaceName, tableName, keyspaceMetadata, wasReloaded)
+	if err != nil {
+		return nil, err
+	}
+	if !refreshNeeded {
 		return tableMetadata, nil
-	}
-
-	if wasReloaded {
-		return nil, fmt.Errorf("table %s.%s: %w", keyspaceName, tableName, ErrNotFound)
-	}
-
-	if _, ok := keyspaceMetadata.tablesInvalidated[tableName]; !ok {
-		return nil, fmt.Errorf("table %s.%s: %w", keyspaceName, tableName, ErrNotFound)
 	}
 
 	err = s.deduplicatedRefreshTable(keyspaceName, tableName)
@@ -600,14 +630,14 @@ func (s *metadataDescriber) GetTable(keyspaceName, tableName string) (*TableMeta
 		return nil, err
 	}
 
-	keyspaceMetadata, found = s.metadata.keyspaceMetadata.getKeyspace(keyspaceName)
+	keyspaceMetadata, found := s.metadata.keyspaceMetadata.getKeyspace(keyspaceName)
 	if !found {
-		return nil, fmt.Errorf("table %s.%s: %w", keyspaceName, tableName, ErrNotFound)
+		return nil, tableNotFoundError(keyspaceName, tableName)
 	}
 
 	tableMetadata, found = keyspaceMetadata.Tables[tableName]
 	if !found {
-		return nil, fmt.Errorf("table %s.%s: %w", keyspaceName, tableName, ErrNotFound)
+		return nil, tableNotFoundError(keyspaceName, tableName)
 	}
 
 	return tableMetadata, nil
@@ -1110,6 +1140,7 @@ func getKeyspaceMetadata(session *Session, keyspaceName string) (*KeyspaceMetada
 
 	iter := session.control.querySystem(stmt, keyspaceName)
 	if iter.NumRows() == 0 {
+		iter.Close()
 		return nil, ErrKeyspaceDoesNotExist
 	}
 	iter.Scan(&keyspace.DurableWrites, &replication)

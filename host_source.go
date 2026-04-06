@@ -599,6 +599,10 @@ func (h *HostInfo) getTranslatedConnectionInfo() *translatedAddresses {
 // Returns true if we are using system_schema.keyspaces instead of system.schema_keyspaces
 func checkSystemSchema(control controlConnection) (bool, error) {
 	iter := control.querySystem("SELECT * FROM system_schema.keyspaces")
+	if iter == nil {
+		return false, errNoControl
+	}
+	defer iter.Close()
 	if err := iter.err; err != nil {
 		if errf, ok := err.(*frm.ErrorFrame); ok {
 			if errf.Code == ErrCodeSyntax {
@@ -737,6 +741,8 @@ func hostInfoFromMap(row map[string]interface{}, defaultPort int) (*HostInfo, er
 }
 
 func hostInfoFromIter(iter *Iter, defaultPort int) (*HostInfo, error) {
+	defer iter.Close()
+
 	rows, err := iter.SliceMap()
 	if err != nil {
 		// TODO(zariel): make typed error

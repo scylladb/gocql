@@ -11,6 +11,27 @@ import (
 	"testing"
 )
 
+func TestGetKeyspaceMetadataMissingKeyspaceClosesIter(t *testing.T) {
+	t.Parallel()
+
+	framer := &trackingMockFramer{}
+	session := &Session{
+		useSystemSchema: true,
+		control: &systemSchemaTestControl{
+			iter: &Iter{framer: framer},
+		},
+	}
+
+	_, err := getKeyspaceMetadata(session, "missing_keyspace")
+
+	if err != ErrKeyspaceDoesNotExist {
+		t.Fatalf("getKeyspaceMetadata() error = %v, want %v", err, ErrKeyspaceDoesNotExist)
+	}
+	if !framer.released {
+		t.Fatal("expected iterator framer to be released on missing keyspace")
+	}
+}
+
 // Tests metadata "compilation" from example data which might be returned
 // from metadata schema queries (see getKeyspaceMetadata, getTableMetadata, and getColumnMetadata)
 func TestCompileMetadata(t *testing.T) {
