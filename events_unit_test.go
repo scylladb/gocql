@@ -1200,6 +1200,48 @@ func TestSchemaRefreshConcurrent(t *testing.T) {
 			t.Errorf("expected %d queries (single table refresh), got %d", tableRefreshCount, got)
 		}
 	})
+
+	t.Run("GetTable/stale_snapshot_after_refresh_does_not_refresh_twice", func(t *testing.T) {
+		t.Parallel()
+		ctrl := &schemaDataMock{
+			knownKeyspaces: knownKeyspaces,
+		}
+		s := newSchemaEventTestSessionWithMock(ctrl)
+		defer s.Close()
+		populateKeyspace(s, "test_ks", "tbl_a")
+
+		s.handleSchemaEvent([]frame{
+			&frm.SchemaChangeTable{Change: "UPDATED", Keyspace: "test_ks", Object: "tbl_a"},
+		})
+
+		staleKeyspace, wasReloaded, err := s.metadataDescriber.getKeyspaceInternal("test_ks")
+		if err != nil {
+			t.Fatalf("getKeyspaceInternal returned unexpected error: %v", err)
+		}
+		if _, found := staleKeyspace.Tables["tbl_a"]; found {
+			t.Fatal("expected stale keyspace snapshot to have invalidated table removed")
+		}
+
+		if err := s.metadataDescriber.deduplicatedRefreshTable("test_ks", "tbl_a"); err != nil {
+			t.Fatalf("deduplicatedRefreshTable returned unexpected error: %v", err)
+		}
+
+		ctrl.resetQueries()
+
+		tbl, refreshNeeded, err := s.metadataDescriber.getTableFromSnapshot("test_ks", "tbl_a", staleKeyspace, wasReloaded)
+		if err != nil {
+			t.Fatalf("getTableFromSnapshot returned unexpected error: %v", err)
+		}
+		if refreshNeeded {
+			t.Fatal("expected latest published keyspace metadata to suppress an extra refresh")
+		}
+		if tbl == nil || tbl.Name != "tbl_a" {
+			t.Fatalf("unexpected table metadata: %#v", tbl)
+		}
+		if got := ctrl.getQueryCount(); got != 0 {
+			t.Fatalf("expected stale snapshot lookup to avoid extra queries, got %d", got)
+		}
+	})
 }
 
 // TestConcurrentSchemaRefreshErrorHandling verifies that concurrent

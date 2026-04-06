@@ -99,6 +99,11 @@ func (m DirectMarshal) MarshalCQL(_ TypeInfo) ([]byte, error) {
 //  1. When <value_len> is 'nil' gocql feeds nil to 'data []byte'
 //  2. When <value_len> is 'zero' gocql feeds []byte{} to 'data []byte'
 //
+// The data []byte slice passed to UnmarshalCQL is only valid for the duration
+// of the call. The backing memory may be reused after the call returns.
+// Implementations that need to retain data must copy it (e.g. using
+// bytes.Clone or append([]byte(nil), data...)).
+//
 // Some CQL databases have proprietary value coding features, which you may want to consider.
 // CQL binary protocol info:https://github.com/apache/cassandra/tree/trunk/doc
 type Unmarshaler interface {
@@ -1506,6 +1511,10 @@ type UDTUnmarshaler interface {
 	// UnmarshalUDT will be called for each field in the UDT return by Cassandra,
 	// the implementor should unmarshal the data into the value of their chosing,
 	// for example by calling Unmarshal.
+	//
+	// The data []byte slice is only valid for the duration of the call.
+	// The backing memory may be reused after the call returns.
+	// Implementations that need to retain data must copy it.
 	UnmarshalUDT(name string, info TypeInfo, data []byte) error
 }
 

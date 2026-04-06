@@ -55,6 +55,7 @@ func (r *ringDescriber) getClusterPeerInfo(localHost *HostInfo, c ConnInterface)
 	if iter == nil {
 		return nil, errNoControl
 	}
+	defer iter.Close()
 
 	rows, err := iter.SliceMap()
 	if err != nil {

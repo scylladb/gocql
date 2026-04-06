@@ -27,6 +27,7 @@ package gocql
 import (
 	"flag"
 	"fmt"
+	"hash/fnv"
 	"log"
 	"net"
 	"os"
@@ -523,9 +524,11 @@ func createAggregate(t *testing.T, session *Session) {
 }
 
 const maxCQLIdentifierLen = 48
+const testTableNameHashLen = 16
 
 // testTableName builds a CQL-safe table name from t.Name() and optional parts.
-// Truncates to 48 chars (CQL limit) using <first20>_<last20> when needed.
+// Truncates to 48 chars (CQL limit) using <first-n>_<fnv64a hash>_<last-n>
+// when needed.
 func testTableName(t testing.TB, parts ...string) string {
 	name := strings.ToLower(t.Name())
 	for _, p := range parts {
@@ -546,7 +549,13 @@ func testTableName(t testing.TB, parts ...string) string {
 	name = strings.Trim(b.String(), "_")
 
 	if len(name) > maxCQLIdentifierLen {
-		name = name[:20] + "_" + name[len(name)-20:]
+		h := fnv.New64a()
+		h.Write([]byte(name))
+		hash := fmt.Sprintf("%016x", h.Sum64()) // 16 hex chars for better collision resistance
+		remaining := maxCQLIdentifierLen - testTableNameHashLen - 2
+		prefixLen := remaining / 2
+		suffixLen := remaining - prefixLen
+		name = name[:prefixLen] + "_" + hash + "_" + name[len(name)-suffixLen:]
 	}
 	return name
 }

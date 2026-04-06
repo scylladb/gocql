@@ -29,7 +29,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1188,14 +1190,17 @@ func (qm *queryMetrics) attempt(addAttempts int, addLatency time.Duration,
 
 // Query represents a CQL statement that can be executed.
 type Query struct {
-	trace    Tracer
-	context  context.Context
-	spec     SpeculativeExecutionPolicy
-	rt       RetryPolicy
-	conn     ConnInterface
-	observer QueryObserver
-	metrics  *queryMetrics
-	session  *Session
+	trace   Tracer
+	context context.Context
+	// pageContextParent keeps paging fetch contexts anchored to the original
+	// query context instead of chaining each page under the previous page fetch.
+	pageContextParent context.Context
+	spec              SpeculativeExecutionPolicy
+	rt                RetryPolicy
+	conn              ConnInterface
+	observer          QueryObserver
+	metrics           *queryMetrics
+	session           *Session
 	// Timeout on waiting for response from server
 	customPayload map[string][]byte
 	// getKeyspace is field so that it can be overriden in tests
@@ -1211,18 +1216,19 @@ type Query struct {
 	values     []interface{}
 	pageState  []byte
 	// requestTimeout is a timeout on waiting for response from server
-	requestTimeout        time.Duration
-	defaultTimestampValue int64
-	prefetch              float64
-	pageSize              int
-	refCount              uint32
-	cons                  Consistency
-	serialCons            Consistency
-	disableAutoPage       bool
-	idempotent            bool
-	skipPrepare           bool
-	disableSkipMetadata   bool
-	defaultTimestamp      bool
+	requestTimeout             time.Duration
+	defaultTimestampValue      int64
+	prefetch                   float64
+	pageSize                   int
+	refCount                   uint32
+	cons                       Consistency
+	serialCons                 Consistency
+	disableAutoPage            bool
+	deferReleasedErrorFinalize bool
+	idempotent                 bool
+	skipPrepare                bool
+	disableSkipMetadata        bool
+	defaultTimestamp           bool
 	// prepareCache caches whether shouldPrepare has been computed.
 	// Since q.stmt is immutable after construction, the result never
 	// changes. Accessed atomically because speculative execution may
@@ -1719,12 +1725,32 @@ func (q *Query) Iter() *Iter {
 	}
 
 	// Retry on empty page if pagination is manual
-	iter := q.executeQuery()
+	iter := q.executeQueryForIterPostProcessing()
+	var hiddenWarnings []string
 	for iter.err == nil && iter.numRows == 0 && !iter.LastPage() {
-		q.PageState(iter.PageState())
-		iter = q.executeQuery()
+		if warnings := iter.Warnings(); len(warnings) > 0 {
+			hiddenWarnings = append(hiddenWarnings, warnings...)
+		}
+		ps := iter.PageState()
+		iter.discard()
+		q.PageState(ps)
+		iter = q.executeQueryForIterPostProcessing()
+	}
+	if len(hiddenWarnings) > 0 {
+		iter.allWarnings = append(hiddenWarnings, iter.allWarnings...)
+	}
+	if iter.err != nil && iter.framer == nil && iter.next == nil {
+		iter.finalize(true)
 	}
 	return iter
+}
+
+func (q *Query) executeQueryForIterPostProcessing() (iter *Iter) {
+	q.deferReleasedErrorFinalize = true
+	defer func() {
+		q.deferReleasedErrorFinalize = false
+	}()
+	return q.executeQuery()
 }
 
 func (q *Query) executeQuery() *Iter {
@@ -1745,6 +1771,7 @@ func (q *Query) executeQuery() *Iter {
 func (q *Query) MapScan(m map[string]interface{}) error {
 	iter := q.Iter()
 	if err := iter.checkErrAndNotFound(); err != nil {
+		iter.Close()
 		return err
 	}
 	iter.MapScan(m)
@@ -1757,6 +1784,7 @@ func (q *Query) MapScan(m map[string]interface{}) error {
 func (q *Query) Scan(dest ...interface{}) error {
 	iter := q.Iter()
 	if err := iter.checkErrAndNotFound(); err != nil {
+		iter.Close()
 		return err
 	}
 	iter.Scan(dest...)
@@ -1775,6 +1803,7 @@ func (q *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
 	q.disableSkipMetadata = true
 	iter := q.Iter()
 	if err := iter.checkErrAndNotFound(); err != nil {
+		iter.Close()
 		return false, err
 	}
 	if len(iter.Columns()) > 1 {
@@ -1798,11 +1827,12 @@ func (q *Query) MapScanCAS(dest map[string]interface{}) (applied bool, err error
 	q.disableSkipMetadata = true
 	iter := q.Iter()
 	if err := iter.checkErrAndNotFound(); err != nil {
+		iter.Close()
 		return false, err
 	}
 	iter.MapScan(dest)
 	if iter.err != nil {
-		return false, iter.err
+		return false, iter.Close()
 	}
 	// check if [applied] was returned, otherwise it might not be CAS
 	if appliedRaw, ok := dest["[applied]"]; ok {
@@ -1870,15 +1900,43 @@ func (q *Query) GetHostID() string {
 // Iter represents an iterator that can be used to iterate over all rows that
 // were returned by a query. The iterator might send additional queries to the
 // database during the iteration if paging was enabled.
+//
+// IMPORTANT: Close should still be called whenever iteration may stop early.
+// Iterators that run to exhaustion through Scan/Scanner.Next auto-finalize when
+// they become terminal, but Close remains the safest pattern and is still needed
+// to surface errors after manual early termination. Use defer immediately after
+// obtaining an Iter when in doubt:
+//
+//	iter := session.Query("...").Iter()
+//	defer iter.Close()
+//
+// Failure to call Close() after early termination may leak resources and prevent
+// buffer reuse.
+//
+// CONCURRENCY: Iter is NOT safe for concurrent use. An Iter instance should only
+// be used from a single goroutine at a time. While Close() is safe to call multiple
+// times (idempotent), calling Scan(), Next(), or other methods concurrently with
+// Close() or each other will result in undefined behavior.
+//
+//nolint:govet // Keeping iterator lifetime/ownership state together is more important here than field packing.
 type Iter struct {
-	err     error
-	framer  framerInterface
-	next    *nextIter
-	host    *HostInfo
-	meta    resultMetadata
-	pos     int
-	numRows int
-	closed  int32
+	err    error
+	framer framerInterface
+	// allWarnings accumulates warnings across page boundaries.
+	// When a page's framer is released during fetchNextPage(), its warnings
+	// are appended here so they are not lost.
+	allWarnings           []string
+	releasedCustomPayload map[string][]byte
+	next                  *nextIter
+	host                  *HostInfo
+	meta                  resultMetadata
+	warningHandler        WarningHandler
+	warningQuery          ExecutableQuery
+	warningQueryOwned     bool
+	pos                   int
+	numRows               int
+	closed                int32
+	warningsHandled       int32
 }
 
 // Host returns the host which the query was sent to.
@@ -1889,6 +1947,156 @@ func (iter *Iter) Host() *HostInfo {
 // Columns returns the name and type of the selected columns.
 func (iter *Iter) Columns() []ColumnInfo {
 	return iter.meta.columns
+}
+
+// copyPageData copies page-related fields from src to iter, excluding the closed flag.
+// This is used when fetching the next page to avoid races with concurrent Close() calls.
+//
+// After this call, src must not be used because its framer ownership has been
+// transferred to iter (src.framer is set to nil to prevent double-release).
+func (iter *Iter) copyPageData(src *Iter) {
+	iter.err = src.err
+	iter.framer = src.framer
+	iter.next = src.next
+	iter.host = src.host
+	iter.meta = src.meta
+	iter.allWarnings = append(iter.allWarnings, src.allWarnings...)
+	iter.releasedCustomPayload = src.releasedCustomPayload
+	iter.pos = src.pos
+	iter.numRows = src.numRows
+	if iter.warningQuery == nil {
+		iter.warningHandler = src.warningHandler
+		iter.warningQuery = src.warningQuery
+		iter.warningQueryOwned = src.warningQueryOwned
+	} else {
+		src.releaseWarningQuery()
+	}
+
+	// Clear source framer to prevent double-release: ownership is now with iter.
+	src.framer = nil
+	src.allWarnings = nil
+	src.releasedCustomPayload = nil
+	src.next = nil
+	src.warningHandler = nil
+	src.warningQuery = nil
+	src.warningQueryOwned = false
+	// Intentionally don't copy iter.closed - it's managed with atomic operations
+}
+
+func (iter *Iter) bindWarningHandler(qry ExecutableQuery, handler WarningHandler) *Iter {
+	if iter == nil || handler == nil {
+		return iter
+	}
+	iter.warningQuery = qry
+	iter.warningHandler = handler
+	if pooledQuery, ok := qry.(*Query); ok {
+		pooledQuery.incRefCount()
+		iter.warningQueryOwned = true
+		if iter.err != nil && iter.framer == nil && iter.next == nil && !pooledQuery.deferReleasedErrorFinalize {
+			iter.finalize(true)
+		}
+		return iter
+	}
+	if iter.err != nil && iter.framer == nil && iter.next == nil {
+		iter.finalize(true)
+	}
+	return iter
+}
+
+func (iter *Iter) releaseWarningQuery() {
+	qry := iter.warningQuery
+	owned := iter.warningQueryOwned
+	iter.warningQueryOwned = false
+	iter.warningQuery = nil
+
+	if !owned {
+		return
+	}
+	pooledQuery, ok := qry.(*Query)
+	if !ok {
+		return
+	}
+	pooledQuery.decRefCount()
+}
+
+func (iter *Iter) collectReleasedFramerMetadata(f framerInterface) {
+	if f == nil {
+		return
+	}
+	if warnings := f.GetHeaderWarnings(); len(warnings) > 0 {
+		iter.allWarnings = append(iter.allWarnings, warnings...)
+	}
+	if payload := f.GetCustomPayload(); len(payload) > 0 {
+		iter.releasedCustomPayload = maps.Clone(payload)
+	}
+}
+
+func (iter *Iter) handleWarningsOnce() {
+	if iter.warningHandler == nil {
+		return
+	}
+	if !atomic.CompareAndSwapInt32(&iter.warningsHandled, 0, 1) {
+		return
+	}
+	if warnings := iter.Warnings(); len(warnings) > 0 {
+		iter.warningHandler.HandleWarnings(iter.warningQuery, iter.host, warnings)
+	}
+}
+
+func (iter *Iter) finalize(dispatchWarnings bool) {
+	if !atomic.CompareAndSwapInt32(&iter.closed, 0, 1) {
+		return
+	}
+	if iter.framer != nil {
+		iter.collectReleasedFramerMetadata(iter.framer)
+		iter.framer.Release()
+		iter.framer = nil
+	}
+	if iter.next != nil {
+		iter.next.close()
+		iter.next = nil
+	}
+	if dispatchWarnings {
+		iter.handleWarningsOnce()
+	}
+	iter.releaseWarningQuery()
+	iter.warningHandler = nil
+}
+
+func (iter *Iter) discard() {
+	iter.finalize(false)
+}
+
+func newErrorIterWithReleasedFramer(err error, framer framerInterface) *Iter {
+	iter := &Iter{err: err}
+	if framer != nil {
+		iter.collectReleasedFramerMetadata(framer)
+		framer.Release()
+	}
+	return iter
+}
+
+// fetchNextPage releases the current page's framer and loads the next page
+// into iter. Returns true if a new page was successfully loaded,
+// false if no more pages or if the fetch produced an error.
+func (iter *Iter) fetchNextPage() bool {
+	if iter.pos < iter.numRows || iter.next == nil {
+		return false
+	}
+	currentNext := iter.next
+	if iter.framer != nil {
+		// Accumulate warnings from the current page before releasing its framer,
+		// so they are not lost across page boundaries.
+		if w := iter.framer.GetHeaderWarnings(); len(w) > 0 {
+			iter.allWarnings = append(iter.allWarnings, w...)
+		}
+		iter.framer.Release()
+		iter.framer = nil // prevent accidental use of released framer
+	}
+	next := currentNext.fetch()
+	currentNext.consume()
+	iter.copyPageData(next)
+	return iter.err == nil
 }
 
 type Scanner interface {
@@ -1919,21 +2127,22 @@ type iterScanner struct {
 func (is *iterScanner) Next() bool {
 	iter := is.iter
 	if iter.err != nil {
+		iter.finalize(true)
 		return false
 	}
 
-	if iter.pos >= iter.numRows {
-		if iter.next != nil {
-			is.iter = iter.next.fetch()
-			return is.Next()
+	for iter.pos >= iter.numRows {
+		if !iter.fetchNextPage() {
+			iter.finalize(true)
+			return false
 		}
-		return false
 	}
 
 	for i := 0; i < len(is.cols); i++ {
 		col, err := iter.readColumn()
 		if err != nil {
 			iter.err = err
+			iter.finalize(true)
 			return false
 		}
 		is.cols[i] = col
@@ -2016,6 +2225,12 @@ func (iter *Iter) Scanner() Scanner {
 }
 
 func (iter *Iter) readColumn() ([]byte, error) {
+	if atomic.LoadInt32(&iter.closed) != 0 {
+		return nil, errors.New("iterator closed")
+	}
+	if iter.framer == nil {
+		return nil, errors.New("no framer available")
+	}
 	return iter.framer.ReadBytesInternal()
 }
 
@@ -2029,15 +2244,15 @@ func (iter *Iter) readColumn() ([]byte, error) {
 // be called afterwards to retrieve any potential errors.
 func (iter *Iter) Scan(dest ...interface{}) bool {
 	if iter.err != nil {
+		iter.finalize(true)
 		return false
 	}
 
-	if iter.pos >= iter.numRows {
-		if iter.next != nil {
-			*iter = *iter.next.fetch()
-			return iter.Scan(dest...)
+	for iter.pos >= iter.numRows {
+		if !iter.fetchNextPage() {
+			iter.finalize(true)
+			return false
 		}
-		return false
 	}
 
 	if iter.next != nil && iter.pos >= iter.next.pos {
@@ -2048,6 +2263,7 @@ func (iter *Iter) Scan(dest ...interface{}) bool {
 	// as scanning in more values from a single column
 	if len(dest) != iter.meta.actualColCount {
 		iter.err = fmt.Errorf("gocql: not enough columns to scan into: have %d want %d", len(dest), iter.meta.actualColCount)
+		iter.finalize(true)
 		return false
 	}
 
@@ -2058,12 +2274,14 @@ func (iter *Iter) Scan(dest ...interface{}) bool {
 		colBytes, err := iter.readColumn()
 		if err != nil {
 			iter.err = err
+			iter.finalize(true)
 			return false
 		}
 
 		n, err := scanColumn(colBytes, col, dest[i:])
 		if err != nil {
 			iter.err = err
+			iter.finalize(true)
 			return false
 		}
 		i += n
@@ -2074,7 +2292,12 @@ func (iter *Iter) Scan(dest ...interface{}) bool {
 }
 
 // GetCustomPayload returns any parsed custom payload results if given in the
-// response from Cassandra. Note that the result is not a copy.
+// response from Cassandra. The returned map is a shallow copy and is safe to
+// retain after the Iter advances or is closed.
+//
+// When paging is enabled, this returns the custom payload from the most recently
+// loaded page only. Custom payloads from previously consumed pages are not retained.
+// If you need the payload, retrieve it before advancing to the next page.
 //
 // This additional feature of CQL Protocol v4
 // allows additional results and query information to be returned by
@@ -2082,30 +2305,34 @@ func (iter *Iter) Scan(dest ...interface{}) bool {
 // See https://datastax.github.io/java-driver/manual/custom_payloads/
 func (iter *Iter) GetCustomPayload() map[string][]byte {
 	if iter.framer != nil {
-		return iter.framer.GetCustomPayload()
+		return maps.Clone(iter.framer.GetCustomPayload())
 	}
-	return nil
+	return maps.Clone(iter.releasedCustomPayload)
 }
 
 // Warnings returns any warnings generated if given in the response from Cassandra.
+// When paging is enabled, warnings are accumulated across all pages that have been
+// consumed so far plus the warnings from the current (not yet released) page.
 //
 // This is only available starting with CQL Protocol v4.
 func (iter *Iter) Warnings() []string {
+	var current []string
 	if iter.framer != nil {
-		return iter.framer.GetHeaderWarnings()
+		current = iter.framer.GetHeaderWarnings()
 	}
-	return nil
+	if len(iter.allWarnings) == 0 {
+		return slices.Clone(current) // always return a caller-owned slice
+	}
+	if len(current) == 0 {
+		return slices.Clone(iter.allWarnings)
+	}
+	return slices.Concat(iter.allWarnings, current)
 }
 
 // Close closes the iterator and returns any errors that happened during
 // the query or the iteration.
 func (iter *Iter) Close() error {
-	if atomic.CompareAndSwapInt32(&iter.closed, 0, 1) {
-		if iter.framer != nil {
-			iter.framer = nil
-		}
-	}
-
+	iter.finalize(true)
 	return iter.err
 }
 
@@ -2146,11 +2373,29 @@ func (iter *Iter) NumRows() int {
 // nextIter holds state for fetching a single page in an iterator.
 // single page might be attempted multiple times due to retries.
 type nextIter struct {
-	qry   *Query
-	next  *Iter
-	pos   int
-	oncea sync.Once
-	once  sync.Once
+	qry    *Query
+	next   *Iter
+	cancel context.CancelFunc
+	oncea  sync.Once
+	once   sync.Once
+	mu     sync.Mutex
+	pos    int
+	closed bool
+}
+
+func newNextIter(qry *Query, pos int) *nextIter {
+	parentCtx := qry.pageContextParent
+	if parentCtx == nil {
+		parentCtx = qry.Context()
+	}
+	ctx, cancel := context.WithCancel(parentCtx)
+	nextQry := qry.WithContext(ctx)
+	nextQry.pageContextParent = parentCtx
+	return &nextIter{
+		qry:    nextQry,
+		pos:    pos,
+		cancel: cancel,
+	}
 }
 
 func (n *nextIter) fetchAsync() {
@@ -2159,17 +2404,68 @@ func (n *nextIter) fetchAsync() {
 	})
 }
 
+func (n *nextIter) storeFetched(next *Iter) {
+	if next == nil {
+		return
+	}
+
+	n.mu.Lock()
+	if n.closed {
+		n.mu.Unlock()
+		next.discard()
+		return
+	}
+	n.next = next
+	n.mu.Unlock()
+}
+
+func (n *nextIter) close() {
+	if n.cancel != nil {
+		n.cancel()
+	}
+
+	n.mu.Lock()
+	n.closed = true
+	next := n.next
+	n.next = nil
+	n.mu.Unlock()
+
+	if next != nil {
+		next.discard()
+	}
+}
+
+// consume retires the next-page fetch context after the fetched page has been
+// handed off to the caller. Unlike close(), it keeps the fetched Iter alive so
+// its page data can become the current iterator state.
+func (n *nextIter) consume() {
+	if n.cancel != nil {
+		n.cancel()
+	}
+
+	n.mu.Lock()
+	n.closed = true
+	n.next = nil
+	n.mu.Unlock()
+}
+
 func (n *nextIter) fetch() *Iter {
 	n.once.Do(func() {
 		// if the query was specifically run on a connection then re-use that
 		// connection when fetching the next results
+		var next *Iter
 		if n.qry.conn != nil {
-			n.next = n.qry.conn.executeQuery(n.qry.Context(), n.qry)
+			next = n.qry.conn.executeQuery(n.qry.Context(), n.qry)
 		} else {
-			n.next = n.qry.session.executeQuery(n.qry)
+			next = n.qry.session.executeQuery(n.qry)
 		}
+		n.storeFetched(next)
 	})
-	return n.next
+
+	n.mu.Lock()
+	next := n.next
+	n.mu.Unlock()
+	return next
 }
 
 type Batch struct {

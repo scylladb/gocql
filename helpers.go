@@ -438,9 +438,12 @@ func (iter *Iter) rowMap() (map[string]interface{}, error) {
 	return m, nil
 }
 
-// SliceMap is a helper function to make the API easier to use
-// returns the data from the query in the form of []map[string]interface{}
+// SliceMap is a helper function to make the API easier to use.
+// It consumes the remaining rows, closes the iterator, and returns the data
+// in the form of []map[string]interface{}.
 func (iter *Iter) SliceMap() ([]map[string]interface{}, error) {
+	defer iter.Close()
+
 	if iter.err != nil {
 		return nil, iter.err
 	}
@@ -481,6 +484,9 @@ func (iter *Iter) SliceMap() ([]map[string]interface{}, error) {
 //			fmt.Printf("Full Name: %s\n", fullname)
 //		}
 //	}
+//	if err := iter.Close(); err != nil {
+//		return err
+//	}
 //
 // You can also pass pointers in the map before each call
 //
@@ -499,6 +505,9 @@ func (iter *Iter) SliceMap() ([]map[string]interface{}, error) {
 //			break
 //		}
 //		fmt.Printf("First: %s Age: %d Address: %q\n", fullName.FirstName, age, address)
+//	}
+//	if err := iter.Close(); err != nil {
+//		return err
 //	}
 func (iter *Iter) MapScan(m map[string]interface{}) bool {
 	if iter.err != nil {

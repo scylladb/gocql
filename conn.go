@@ -197,6 +197,7 @@ type Conn struct {
 	calls                map[int]*callReq
 	r                    *bufio.Reader
 	session              *Session
+	framerConstructor    connFramers
 	cancel               context.CancelFunc
 	addr                 string
 	usingTimeoutClause   string
@@ -531,6 +532,15 @@ func (s *startupCoordinator) setupConn(ctx context.Context) error {
 	return nil
 }
 
+// write sends the given frame on the connection during startup and returns
+// the parsed response frame.
+//
+// NOTE: The returned frame must not retain any byte-slice references to the
+// framer's read buffer, because the framer is released back to the pool
+// immediately after parseFrame returns (via defer). Frame types that use
+// readBytesCopy (e.g. SupportedFrame, AuthChallengeFrame, AuthSuccessFrame)
+// are safe; frame types that use readBytes and expose []byte fields would not
+// be safe and must not be returned from this function.
 func (s *startupCoordinator) write(ctx context.Context, frame frameBuilder) (frame, error) {
 	select {
 	case s.frameTicker <- struct{}{}:
@@ -542,6 +552,7 @@ func (s *startupCoordinator) write(ctx context.Context, frame frameBuilder) (fra
 	if err != nil {
 		return nil, err
 	}
+	defer framer.Release()
 
 	return framer.parseFrame()
 }
@@ -565,7 +576,16 @@ func (s *startupCoordinator) options(ctx context.Context) error {
 	}
 	s.conn.cqlProtoExts = parseCQLProtocolExtensions(s.conn.supported, s.conn.logger)
 
-	return s.startup(ctx)
+	// initFramerCache must be called after startup(), because startup() may
+	// nil out c.compressor if the server does not support the requested
+	// compression algorithm. Calling it before would snapshot a stale
+	// compressor and set FlagCompress, causing protocol errors.
+	err = s.startup(ctx)
+	if err != nil {
+		return err
+	}
+	s.conn.initFramerCache()
+	return nil
 }
 
 func (s *startupCoordinator) startup(ctx context.Context) error {
@@ -669,29 +689,31 @@ func (c *Conn) closeWithError(err error) {
 		return
 	}
 	c.closed = true
-
-	var callsToClose map[int]*callReq
-
-	// We should attempt to deliver the error back to the caller if it
-	// exists. However, don't block c.mu while we are delivering the
-	// error to outstanding calls.
-	if err != nil {
-		callsToClose = c.calls
-		// It is safe to change c.calls to nil. Nobody should use it after c.closed is set to true.
-		c.calls = nil
-	}
+	callsToClose := c.calls
+	// It is safe to change c.calls to nil. Nobody should use it after c.closed is set to true.
+	c.calls = nil
 	c.mu.Unlock()
 
+	var cerr error
+	if err == nil {
+		// Graceful closes do not inject an error into call.resp, so cancel the
+		// connection first to unblock any exec() calls before waiting for them.
+		c.cancel()
+		cerr = c.close()
+	}
+
 	for _, req := range callsToClose {
-		// we need to send the error to all waiting queries.
-		select {
-		case req.resp <- callResp{err: err}:
-			// exec() received the error. Wait for it to close(call.timeout)
-			// signaling it is done accessing the callReq.
-			<-req.timeout
-		case <-req.timeout:
-			// exec() already timed out and returned.
+		if err != nil {
+			// We need to send the error to all waiting queries.
+			select {
+			case req.resp <- callResp{err: err}:
+				// exec() received the error. Wait for it to finish touching the callReq
+				// before recycling it.
+			case <-req.timeout:
+				// exec() already timed out and returned.
+			}
 		}
+		req.waitExecDone("closeWithError")
 		if req.streamObserverContext != nil {
 			req.streamObserverEndOnce.Do(func() {
 				req.streamObserverContext.StreamAbandoned(ObservedStream{
@@ -702,9 +724,15 @@ func (c *Conn) closeWithError(err error) {
 		putCallReq(req)
 	}
 
-	// if error was nil then unblock the quit channel
-	c.cancel()
-	cerr := c.close()
+	// Allow GC of pooled framers. Safe to do after the drain loop above has
+	// resolved all in-flight exec() calls. Any event goroutines still running
+	// will see pool==nil in releaseFramer and simply drop the framer.
+	c.framerConstructor.close()
+
+	if err != nil {
+		c.cancel()
+		cerr = c.close()
+	}
 
 	if err != nil {
 		c.errorHandler.HandleError(c, err, true)
@@ -793,6 +821,7 @@ func (c *Conn) heartBeat(ctx context.Context) {
 		}
 
 		resp, err := framer.parseFrame()
+		framer.Release()
 		if err != nil {
 			// invalid frame
 			failures++
@@ -850,13 +879,16 @@ func (c *Conn) recv(ctx context.Context) error {
 	} else if head.Stream <= 0 {
 		// reserved stream that we dont use, probably due to a protocol error
 		// or a bug in Cassandra, this should be an error, parse it and return.
-		framer := newFramerWithExts(c.compressor, c.version, c.cqlProtoExts, c.logger)
-		c.setTabletSupported(framer.tabletsRoutingV1)
-		if err := framer.readFrame(c, &head); err != nil {
+		framer, err := c.readFrameIntoFramer(head)
+		if err != nil {
 			return err
 		}
 
 		frame, err := framer.parseFrame()
+		// NOTE: Safe to release the framer here because all error frame types
+		// (from parseErrorFrame) contain only strings, scalars, and defensively-
+		// copied []byte fields. None retain sub-slices of the framer's read buffer.
+		c.releaseReadFramer(framer)
 		if err != nil {
 			if head.Stream == -1 {
 				// Event frame parse errors should not close the connection.
@@ -867,7 +899,9 @@ func (c *Conn) recv(ctx context.Context) error {
 		}
 
 		if head.Stream == -1 { // reserved stream for events
-			go c.session.handleEvent(frame)
+			if c.session != nil {
+				go c.session.handleEvent(frame)
+			}
 			return nil
 		}
 
@@ -891,13 +925,14 @@ func (c *Conn) recv(ctx context.Context) error {
 		panic(fmt.Sprintf("call has incorrect streamID: got %d expected %d", call.streamID, head.Stream))
 	}
 
-	framer := newFramerWithExts(c.compressor, c.version, c.cqlProtoExts, c.logger)
+	framer := c.getReadFramer()
 
 	err = framer.readFrame(c, &head)
 	if err != nil {
 		// only net errors should cause the connection to be closed. Though
 		// cassandra returning corrupt frames will be returned here as well.
 		if _, ok := err.(net.Error); ok {
+			c.releaseReadFramer(framer)
 			return err
 		}
 	}
@@ -906,12 +941,30 @@ func (c *Conn) recv(ctx context.Context) error {
 	// connection has closed. Either way we should never block indefinatly here
 	select {
 	case call.resp <- callResp{framer: framer, err: err}:
+		// Framer ownership transferred to caller
 	case <-call.timeout:
-		c.releaseStream(call)
+		c.abandonRecvCall(call, framer)
 	case <-ctx.Done():
+		c.abandonRecvCall(call, framer)
 	}
 
 	return nil
+}
+
+func (c *Conn) readFrameIntoFramer(head frm.FrameHeader) (*framer, error) {
+	framer := c.getReadFramer()
+	if err := framer.readFrame(c, &head); err != nil {
+		c.releaseReadFramer(framer)
+		return nil, err
+	}
+	return framer, nil
+}
+
+func (c *Conn) abandonRecvCall(call *callReq, framer *framer) {
+	c.releaseReadFramer(framer)
+	c.releaseStream(call)
+	call.waitExecDone("abandonRecvCall")
+	putCallReq(call)
 }
 
 func (c *Conn) releaseStream(call *callReq) {
@@ -924,8 +977,6 @@ func (c *Conn) releaseStream(call *callReq) {
 			})
 		})
 	}
-
-	putCallReq(call)
 }
 
 type callReq struct {
@@ -939,6 +990,7 @@ type callReq struct {
 	// streamObserverEndOnce ensures that either StreamAbandoned or StreamFinished is called,
 	// but not both.
 	streamObserverEndOnce sync.Once
+	done                  sync.WaitGroup
 }
 
 var callReqPool = sync.Pool{
@@ -955,17 +1007,48 @@ func getCallReq(streamID int) *callReq {
 	call.streamID = streamID
 	call.streamObserverContext = nil
 	call.streamObserverEndOnce = sync.Once{}
+	call.done = sync.WaitGroup{}
+	call.done.Add(1)
 	return call
 }
 
 func putCallReq(call *callReq) {
 	if call.timer != nil {
-		call.timer.Stop()
+		if !call.timer.Stop() {
+			select {
+			case <-call.timer.C:
+			default:
+			}
+		}
 	}
 	call.streamObserverContext = nil
 	call.streamObserverEndOnce = sync.Once{}
+	call.streamID = 0
 	call.timeout = nil
 	callReqPool.Put(call)
+}
+
+func (call *callReq) finishExec() {
+	call.done.Done()
+}
+
+func (call *callReq) waitExecDone(where string) {
+	waitCallReqDone(call, where)
+}
+
+// removeCallIfOpen removes a call from c.calls only if exec() still owns its
+// cleanup. Once the connection has started closing, closeWithError() becomes
+// responsible for draining and recycling detached callReqs.
+func (c *Conn) removeCallIfOpen(streamID int) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.closed || c.calls == nil {
+		return false
+	}
+
+	delete(c.calls, streamID)
+	return true
 }
 
 type callResp struct {
@@ -1208,6 +1291,15 @@ func (c *Conn) addCall(call *callReq) error {
 	return nil
 }
 
+// exec executes a frame on the connection and returns the response framer.
+//
+// IMPORTANT: The caller takes ownership of the returned framer and MUST call
+// framer.Release() when done reading the response. Failure to release the framer
+// will leak memory and prevent buffer reuse.
+//
+// The framer should be released as soon as the response data is no longer needed,
+// typically via defer immediately after parsing or after transferring ownership
+// to an Iter.
 func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, requestTimeout time.Duration) (*framer, error) {
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return nil, &QueryError{err: ctxErr, potentiallyExecuted: false}
@@ -1220,8 +1312,7 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, reques
 	}
 
 	// resp is basically a waiting semaphore protecting the framer
-	framer := newFramerWithExts(c.compressor, c.version, c.cqlProtoExts, c.logger)
-	c.setTabletSupported(framer.tabletsRoutingV1)
+	framer := c.getWriteFramer()
 
 	call := getCallReq(stream)
 
@@ -1230,13 +1321,41 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, reques
 	}
 
 	if err := c.addCall(call); err != nil {
+		call.finishExec()
 		putCallReq(call)
+		c.releaseWriteFramer(framer)
 		return nil, &QueryError{err: err, potentiallyExecuted: false}
 	}
 
 	// After this point, we need to either read from call.resp or close(call.timeout)
 	// since closeWithError can try to write a connection close error to call.resp.
 	// If we don't close(call.timeout) or read from call.resp, closeWithError can deadlock.
+
+	var (
+		stopWaiting   bool
+		releaseStream bool
+		recycleCall   bool
+		closeErr      error
+	)
+
+	defer func() {
+		if closeErr != nil {
+			c.closeWithError(closeErr)
+		}
+	}()
+
+	defer func() {
+		if stopWaiting {
+			close(call.timeout)
+		}
+		call.finishExec()
+		if releaseStream {
+			c.releaseStream(call)
+		}
+		if recycleCall {
+			putCallReq(call)
+		}
+	}()
 
 	if tracer != nil {
 		framer.trace()
@@ -1250,46 +1369,42 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, reques
 
 	err := req.buildFrame(framer, stream)
 	if err != nil {
-		// closeWithError will block waiting for this stream to either receive a response
-		// or for us to timeout.
-		close(call.timeout)
-		// We failed to serialize the frame into a buffer.
-		// This should not affect the connection as we didn't write anything. We just free the current call.
-		c.mu.Lock()
-		if !c.closed {
-			delete(c.calls, call.streamID)
+		c.releaseWriteFramer(framer)
+		// closeWithError waits for exec() to stop touching the callReq, so the
+		// deferred epilogue below is responsible for signaling completion.
+		stopWaiting = true
+		if c.removeCallIfOpen(call.streamID) {
+			// We failed to serialize the frame into a buffer. This should not affect
+			// the connection as we didn't write anything, so exec() still owns the
+			// stream/call cleanup.
+			releaseStream = true
+			recycleCall = true
 		}
-		c.mu.Unlock()
-		// We need to release the stream after we remove the call from c.calls, otherwise the existingCall != nil
-		// check above could fail.
-		c.releaseStream(call)
 		return nil, &QueryError{err: err, potentiallyExecuted: false}
 	}
 
 	n, err := c.w.writeContext(ctx, framer.buf)
+	c.releaseWriteFramer(framer)
 	if err != nil {
-		// closeWithError will block waiting for this stream to either receive a response
-		// or for us to timeout, close the timeout chan here. Im not entirely sure
-		// but we should not get a response after an error on the write side.
-		close(call.timeout)
+		// closeWithError waits for exec() to stop touching the callReq, so defer
+		// the completion signal and only record the cleanup we need here.
+		stopWaiting = true
 		if (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) && n == 0 {
 			// We have not started to write this frame.
 			// Release the stream as no response can come from the server on the stream.
-			c.mu.Lock()
-			if !c.closed {
-				delete(c.calls, call.streamID)
+			if c.removeCallIfOpen(call.streamID) {
+				// We need to release the stream after we remove the call from c.calls,
+				// otherwise the existingCall != nil check above could fail.
+				releaseStream = true
+				recycleCall = true
 			}
-			c.mu.Unlock()
-			// We need to release the stream after we remove the call from c.calls, otherwise the existingCall != nil
-			// check above could fail.
-			c.releaseStream(call)
 		} else {
 			// I think this is the correct thing to do, im not entirely sure. It is not
 			// ideal as readers might still get some data, but they probably wont.
 			// Here we need to be careful as the stream is not available and if all
 			// writes just timeout or fail then the pool might use this connection to
 			// send a frame on, with all the streams used up and not returned.
-			c.closeWithError(err)
+			closeErr = err
 		}
 		return nil, &QueryError{err: err, potentiallyExecuted: true}
 	}
@@ -1307,7 +1422,6 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, reques
 			}
 			call.timer.Reset(requestTimeout)
 		}
-
 		timeoutCh = call.timer.C
 	}
 
@@ -1318,14 +1432,16 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, reques
 
 	select {
 	case resp := <-call.resp:
-		close(call.timeout)
+		stopWaiting = true
 		if resp.err != nil {
+			c.releaseReadFramer(resp.framer)
 			if !c.Closed() {
 				// if the connection is closed then we cant release the stream,
 				// this is because the request is still outstanding and we have
 				// been handed another error from another stream which caused the
 				// connection to close.
-				c.releaseStream(call)
+				releaseStream = true
+				recycleCall = true
 			}
 			return nil, &QueryError{err: resp.err, potentiallyExecuted: true}
 		}
@@ -1335,21 +1451,26 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, reques
 		//
 		// Ensure that the stream is not released if there are potentially outstanding
 		// requests on the stream to prevent nil pointer dereferences in recv().
-		defer c.releaseStream(call)
+		releaseStream = true
+		recycleCall = true
 
 		if v := resp.framer.header.Version.Version(); v != c.version {
+			c.releaseReadFramer(resp.framer)
 			return nil, &QueryError{err: NewErrProtocol("unexpected protocol version in response: got %d expected %d", v, c.version), potentiallyExecuted: true}
 		}
 
+		// NOTE: The returned framer becomes the caller's responsibility to release.
+		// It is not released here to allow zero-copy access to the response data.
+		// The caller must call Release() on the returned read framer when done reading the response.
 		return resp.framer, nil
 	case <-timeoutCh:
-		close(call.timeout)
+		stopWaiting = true
 		return nil, &QueryError{err: ErrTimeoutNoResponse, potentiallyExecuted: true}
 	case <-ctxDone:
-		close(call.timeout)
+		stopWaiting = true
 		return nil, &QueryError{err: ctx.Err(), potentiallyExecuted: true}
 	case <-c.ctx.Done():
-		close(call.timeout)
+		stopWaiting = true
 		return nil, &QueryError{err: ErrConnectionClosed, potentiallyExecuted: true}
 	}
 }
@@ -1443,6 +1564,7 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer,
 				c.session.stmtsLRU.remove(cacheKey)
 				return
 			}
+			defer framer.Release()
 
 			frame, err := framer.parseFrame()
 			if err != nil {
@@ -1460,11 +1582,7 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer,
 			switch x := frame.(type) {
 			case *resultPreparedFrame:
 				flight.preparedStatment = &preparedStatment{
-					// defensively copy as we will recycle the underlying buffer after we
-					// return.
-					id: copyBytes(x.preparedID),
-					// the type info's should _not_ have a reference to the framers read buffer,
-					// therefore we can just copy them directly.
+					id:       x.preparedID,
 					request:  x.reqMeta,
 					response: x.respMeta,
 				}
@@ -1509,15 +1627,6 @@ func marshalQueryValue(typ TypeInfo, value interface{}, dst *queryValues) error 
 }
 
 func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
-	defer func() {
-		if iter == nil || c.session == nil {
-			return
-		}
-		warnings := iter.Warnings()
-		if len(warnings) > 0 && c.session.warningHandler != nil {
-			c.session.warningHandler.HandleWarnings(qry, iter.host, warnings)
-		}
-	}()
 	params := queryParams{
 		consistency: qry.cons,
 	}
@@ -1605,17 +1714,21 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 	if err != nil {
 		return &Iter{err: err}
 	}
+	warningHandler := WarningHandler(nil)
+	if c.session != nil {
+		warningHandler = c.session.warningHandler
+	}
 
 	resp, err := framer.parseFrame()
 	if err != nil {
-		return &Iter{err: err}
+		return newErrorIterWithReleasedFramer(err, framer).bindWarningHandler(qry, warningHandler)
 	}
 
 	if len(framer.customPayload) > 0 {
 		if hint, ok := framer.customPayload["tablets-routing-v1"]; ok {
 			tablet, err := unmarshalTabletHint(hint, c.version, qry.routingInfo.keyspace, qry.routingInfo.table)
 			if err != nil {
-				return &Iter{err: err}
+				return newErrorIterWithReleasedFramer(err, framer).bindWarningHandler(qry, warningHandler)
 			}
 			c.session.metadataDescriber.AddTablet(tablet)
 		}
@@ -1627,33 +1740,32 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 
 	switch x := resp.(type) {
 	case *resultVoidFrame:
-		return &Iter{framer: framer}
+		return (&Iter{framer: framer}).bindWarningHandler(qry, warningHandler)
 	case *resultRowsFrame:
-		iter := &Iter{
+		iter := (&Iter{
 			meta:    x.meta,
 			framer:  framer,
 			numRows: x.numRows,
-		}
+		}).bindWarningHandler(qry, warningHandler)
 
 		if params.skipMeta {
 			if info != nil {
 				iter.meta = info.response
-				iter.meta.pagingState = copyBytes(x.meta.pagingState)
+				// pagingState is already independently allocated by readBytesCopy()
+				// during frame parsing, no additional copy needed.
+				iter.meta.pagingState = x.meta.pagingState
 			} else {
-				return &Iter{framer: framer, err: errors.New("gocql: did not receive metadata but prepared info is nil")}
+				return newErrorIterWithReleasedFramer(errors.New("gocql: did not receive metadata but prepared info is nil"), framer).bindWarningHandler(qry, warningHandler)
 			}
 		}
 
 		if x.meta.morePages() && !qry.disableAutoPage {
 			newQry := new(Query)
 			*newQry = *qry
-			newQry.pageState = copyBytes(x.meta.pagingState)
+			newQry.pageState = x.meta.pagingState
 			newQry.metrics = &queryMetrics{m: make(map[string]*hostMetrics)}
 
-			iter.next = &nextIter{
-				qry: newQry,
-				pos: int((1 - qry.prefetch) * float64(x.numRows)),
-			}
+			iter.next = newNextIter(newQry, int((1-qry.prefetch)*float64(x.numRows)))
 
 			if iter.next.pos < 1 {
 				iter.next.pos = 1
@@ -1662,9 +1774,9 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 
 		return iter
 	case *resultKeyspaceFrame:
-		return &Iter{framer: framer}
+		return (&Iter{framer: framer}).bindWarningHandler(qry, warningHandler)
 	case *frm.SchemaChangeKeyspace, *frm.SchemaChangeTable, *frm.SchemaChangeFunction, *frm.SchemaChangeAggregate, *frm.SchemaChangeType:
-		iter := &Iter{framer: framer}
+		iter := (&Iter{framer: framer}).bindWarningHandler(qry, warningHandler)
 		if err := c.awaitSchemaAgreement(ctx); err != nil {
 			// TODO: should have this behind a flag
 			c.logger.Println(err)
@@ -1674,16 +1786,14 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 		// is not consistent with regards to its schema.
 		return iter
 	case *RequestErrUnprepared:
-		cacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), c.currentKeyspace, qry.stmt)
-		c.session.stmtsLRU.evictPreparedID(cacheKey, x.StatementId)
+		stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), c.currentKeyspace, qry.stmt)
+		c.session.stmtsLRU.evictPreparedID(stmtCacheKey, x.StatementId)
+		framer.Release()
 		return c.executeQuery(ctx, qry)
 	case error:
-		return &Iter{err: x, framer: framer}
+		return newErrorIterWithReleasedFramer(x, framer).bindWarningHandler(qry, warningHandler)
 	default:
-		return &Iter{
-			err:    NewErrProtocol("Unknown type in response to execute query (%T): %s", x, x),
-			framer: framer,
-		}
+		return newErrorIterWithReleasedFramer(NewErrProtocol("Unknown type in response to execute query (%T): %s", x, x), framer).bindWarningHandler(qry, warningHandler)
 	}
 }
 
@@ -1720,6 +1830,7 @@ func (c *Conn) UseKeyspace(keyspace string) error {
 	if err != nil {
 		return err
 	}
+	defer framer.Release()
 
 	resp, err := framer.parseFrame()
 	if err != nil {
@@ -1740,16 +1851,6 @@ func (c *Conn) UseKeyspace(keyspace string) error {
 }
 
 func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
-	defer func() {
-		if iter == nil || c.session == nil {
-			return
-		}
-		warnings := iter.Warnings()
-		if len(warnings) > 0 && c.session.warningHandler != nil {
-			c.session.warningHandler.HandleWarnings(batch, iter.host, warnings)
-		}
-	}()
-
 	n := len(batch.Entries)
 	req := &writeBatchFrame{
 		typ:                   batch.Type,
@@ -1827,10 +1928,14 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 	if err != nil {
 		return &Iter{err: err}
 	}
+	warningHandler := WarningHandler(nil)
+	if c.session != nil {
+		warningHandler = c.session.warningHandler
+	}
 
 	resp, err := framer.parseFrame()
 	if err != nil {
-		return &Iter{err: err, framer: framer}
+		return newErrorIterWithReleasedFramer(err, framer).bindWarningHandler(batch, warningHandler)
 	}
 
 	if len(framer.traceID) > 0 && batch.trace != nil {
@@ -1839,26 +1944,27 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 
 	switch x := resp.(type) {
 	case *resultVoidFrame:
-		return &Iter{}
+		return (&Iter{framer: framer}).bindWarningHandler(batch, warningHandler)
 	case *RequestErrUnprepared:
 		stmt, found := stmts[string(x.StatementId)]
 		if found {
 			key := c.session.stmtsLRU.keyFor(c.host.HostID(), c.currentKeyspace, stmt)
 			c.session.stmtsLRU.evictPreparedID(key, x.StatementId)
 		}
+		framer.Release()
 		return c.executeBatch(ctx, batch)
 	case *resultRowsFrame:
-		iter := &Iter{
+		iter := (&Iter{
 			meta:    x.meta,
 			framer:  framer,
 			numRows: x.numRows,
-		}
+		}).bindWarningHandler(batch, warningHandler)
 
 		return iter
 	case error:
-		return &Iter{err: x, framer: framer}
+		return newErrorIterWithReleasedFramer(x, framer).bindWarningHandler(batch, warningHandler)
 	default:
-		return &Iter{err: NewErrProtocol("Unknown type in response to batch statement: %s", x), framer: framer}
+		return newErrorIterWithReleasedFramer(NewErrProtocol("Unknown type in response to batch statement: %s", x), framer).bindWarningHandler(batch, warningHandler)
 	}
 }
 

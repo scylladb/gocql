@@ -834,7 +834,10 @@ func TestInitialRetryPolicy(t *testing.T) {
 		t.Run(fmt.Sprintf("NumRetries=%d_ProtocolVersion=%d", tc.NumRetries, tc.ProtoVersion), func(t *testing.T) {
 			t.Parallel()
 
-			cluster := NewCluster("127.254.254.254")
+			// Use a loopback address with a well-known closed port so the test
+			// remains deterministic even when a local Cassandra-compatible
+			// service is listening on 9042.
+			cluster := NewCluster("127.0.0.1:1")
 			policy := &TestReconnectionPolicy{NumRetries: tc.NumRetries}
 			cluster.InitialReconnectionPolicy = policy
 			cluster.ProtoVersion = tc.ProtoVersion
@@ -899,6 +902,483 @@ func TestContext_CanceledBeforeExec(t *testing.T) {
 	if queryRequestCount != 0 {
 		t.Fatalf("expected that no request is sent to server, sent %d requests", queryRequestCount)
 	}
+}
+
+func TestCallReqReuseDoesNotInvalidateOutstandingTimeout(t *testing.T) {
+	t.Parallel()
+
+	oldCall := getCallReq(1)
+	oldTimeout := oldCall.timeout
+	oldCall.done.Done()
+	putCallReq(oldCall)
+
+	newCall := getCallReq(2)
+	defer newCall.done.Done()
+	defer close(newCall.timeout)
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("closing old timeout should not panic after putCallReq: %v", r)
+		}
+	}()
+
+	close(oldTimeout)
+
+	select {
+	case <-newCall.timeout:
+		t.Fatal("closing the old timeout unexpectedly closed the new call timeout")
+	default:
+	}
+}
+
+type testContextWriter struct {
+	n       int
+	err     error
+	onWrite func()
+}
+
+func (w testContextWriter) writeContext(ctx context.Context, p []byte) (int, error) {
+	if w.onWrite != nil {
+		w.onWrite()
+	}
+	if w.n == 0 && w.err == nil {
+		return len(p), nil
+	}
+	return w.n, w.err
+}
+
+func (w testContextWriter) setWriteTimeout(timeout time.Duration) {}
+
+type contextWriterFunc func(context.Context, []byte) (int, error)
+
+func (fn contextWriterFunc) writeContext(ctx context.Context, p []byte) (int, error) {
+	return fn(ctx, p)
+}
+
+func (fn contextWriterFunc) setWriteTimeout(timeout time.Duration) {}
+
+func newTestExecConn(t *testing.T, w contextWriter) (*Conn, net.Conn) {
+	t.Helper()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	server, client := net.Pipe()
+	c := newTestConnWithFramerPool()
+	c.ctx = ctx
+	c.cancel = cancel
+	c.conn = client
+	c.w = w
+	c.logger = nopLogger{}
+	c.errorHandler = connErrorHandlerFn(func(*Conn, error, bool) {})
+	c.streams = streams.New()
+	c.calls = make(map[int]*callReq)
+
+	return c, server
+}
+
+func waitForSingleCall(t *testing.T, c *Conn) *callReq {
+	t.Helper()
+
+	deadline := time.After(2 * time.Second)
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		c.mu.Lock()
+		for _, call := range c.calls {
+			c.mu.Unlock()
+			return call
+		}
+		c.mu.Unlock()
+
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for in-flight call")
+		case <-ticker.C:
+		}
+	}
+}
+
+func detachSingleCall(t *testing.T, c *Conn) *callReq {
+	t.Helper()
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for streamID, call := range c.calls {
+		delete(c.calls, streamID)
+		return call
+	}
+
+	t.Fatal("expected an in-flight call")
+	return nil
+}
+
+type testStreamObserver struct {
+	ctx *testStreamObserverContext
+}
+
+func (o *testStreamObserver) StreamContext(context.Context) StreamObserverContext {
+	return o.ctx
+}
+
+type testStreamObserverContext struct {
+	started   chan struct{}
+	abandoned chan struct{}
+	finished  chan struct{}
+}
+
+func newTestStreamObserverContext() *testStreamObserverContext {
+	return &testStreamObserverContext{
+		started:   make(chan struct{}, 1),
+		abandoned: make(chan struct{}, 1),
+		finished:  make(chan struct{}, 1),
+	}
+}
+
+func (o *testStreamObserverContext) StreamStarted(ObservedStream) {
+	select {
+	case o.started <- struct{}{}:
+	default:
+	}
+}
+
+func (o *testStreamObserverContext) StreamAbandoned(ObservedStream) {
+	select {
+	case o.abandoned <- struct{}{}:
+	default:
+	}
+}
+
+func (o *testStreamObserverContext) StreamFinished(ObservedStream) {
+	select {
+	case o.finished <- struct{}{}:
+	default:
+	}
+}
+
+func TestExecCloseWithError(t *testing.T) {
+	t.Parallel()
+
+	t.Run("BuildFrameErrorReleasesResources", func(t *testing.T) {
+		c, server := newTestExecConn(t, testContextWriter{})
+		defer server.Close()
+
+		_, err := c.exec(context.Background(), frameWriterFunc(func(f *framer, streamID int) error {
+			return io.ErrUnexpectedEOF
+		}), nil, 0)
+		if !errors.Is(err, io.ErrUnexpectedEOF) {
+			t.Fatalf("expected build error %v, got %v", io.ErrUnexpectedEOF, err)
+		}
+
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		if len(c.calls) != 0 {
+			t.Fatalf("expected no in-flight calls after build error, got %d", len(c.calls))
+		}
+	})
+
+	t.Run("ContextCanceledBeforeWriteReleasesResources", func(t *testing.T) {
+		writeEntered := make(chan struct{})
+		c, server := newTestExecConn(t, contextWriterFunc(func(ctx context.Context, p []byte) (int, error) {
+			close(writeEntered)
+			<-ctx.Done()
+			return 0, ctx.Err()
+		}))
+		defer server.Close()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		errCh := make(chan error, 1)
+		go func() {
+			_, err := c.exec(ctx, frameWriterFunc(func(f *framer, streamID int) error {
+				f.buf = append(f.buf[:0], 'x')
+				return nil
+			}), nil, 0)
+			errCh <- err
+		}()
+
+		select {
+		case <-writeEntered:
+		case <-time.After(2 * time.Second):
+			t.Fatal("exec never reached the write path")
+		}
+		cancel()
+
+		select {
+		case err := <-errCh:
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("expected context cancel error %v, got %v", context.Canceled, err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("exec deadlocked after context cancellation before write")
+		}
+
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		if len(c.calls) != 0 {
+			t.Fatalf("expected no in-flight calls after canceled write, got %d", len(c.calls))
+		}
+	})
+
+	t.Run("ResponseErrorReleasesResources", func(t *testing.T) {
+		c, server := newTestExecConn(t, testContextWriter{})
+		defer server.Close()
+
+		errCh := make(chan error, 1)
+		go func() {
+			_, err := c.exec(context.Background(), frameWriterFunc(func(f *framer, streamID int) error {
+				f.buf = append(f.buf[:0], 'x')
+				return nil
+			}), nil, 0)
+			errCh <- err
+		}()
+
+		waitForSingleCall(t, c)
+		call := detachSingleCall(t, c)
+		call.resp <- callResp{err: io.EOF}
+
+		select {
+		case err := <-errCh:
+			if !errors.Is(err, io.EOF) {
+				t.Fatalf("expected response error %v, got %v", io.EOF, err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("exec deadlocked after response error")
+		}
+
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		if len(c.calls) != 0 {
+			t.Fatalf("expected no in-flight calls after response error, got %d", len(c.calls))
+		}
+	})
+
+	t.Run("PartialWriteDoesNotDeadlock", func(t *testing.T) {
+		c, server := newTestExecConn(t, testContextWriter{
+			n:   1,
+			err: io.ErrUnexpectedEOF,
+		})
+		defer server.Close()
+
+		errCh := make(chan error, 1)
+		go func() {
+			_, err := c.exec(context.Background(), frameWriterFunc(func(f *framer, streamID int) error {
+				f.buf = append(f.buf[:0], 'x')
+				return nil
+			}), nil, 0)
+			errCh <- err
+		}()
+
+		select {
+		case err := <-errCh:
+			if !errors.Is(err, io.ErrUnexpectedEOF) {
+				t.Fatalf("expected write error %v, got %v", io.ErrUnexpectedEOF, err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("exec deadlocked after partial write failure")
+		}
+	})
+
+	t.Run("ConnectionCloseErrorDoesNotDeadlock", func(t *testing.T) {
+		writeStarted := make(chan struct{})
+		var writeStartedOnce sync.Once
+		c, server := newTestExecConn(t, testContextWriter{
+			onWrite: func() {
+				writeStartedOnce.Do(func() {
+					close(writeStarted)
+				})
+			},
+		})
+		defer server.Close()
+
+		closeDone := make(chan struct{})
+		go func() {
+			<-writeStarted
+			c.closeWithError(io.EOF)
+			close(closeDone)
+		}()
+
+		errCh := make(chan error, 1)
+		go func() {
+			_, err := c.exec(context.Background(), frameWriterFunc(func(f *framer, streamID int) error {
+				f.buf = append(f.buf[:0], 'x')
+				return nil
+			}), nil, 0)
+			errCh <- err
+		}()
+
+		select {
+		case err := <-errCh:
+			if !errors.Is(err, io.EOF) {
+				t.Fatalf("expected close error %v, got %v", io.EOF, err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("exec deadlocked after closeWithError")
+		}
+
+		select {
+		case <-closeDone:
+		case <-time.After(2 * time.Second):
+			t.Fatal("closeWithError deadlocked waiting for exec to release the call")
+		}
+	})
+
+	t.Run("TimeoutUnblocksAbandonRecvCall", func(t *testing.T) {
+		c, server := newTestExecConn(t, testContextWriter{})
+		defer server.Close()
+
+		errCh := make(chan error, 1)
+		go func() {
+			_, err := c.exec(context.Background(), frameWriterFunc(func(f *framer, streamID int) error {
+				f.buf = append(f.buf[:0], 'x')
+				return nil
+			}), nil, time.Millisecond)
+			errCh <- err
+		}()
+
+		call := waitForSingleCall(t, c)
+
+		select {
+		case err := <-errCh:
+			if !errors.Is(err, ErrTimeoutNoResponse) {
+				t.Fatalf("expected timeout error %v, got %v", ErrTimeoutNoResponse, err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("exec deadlocked waiting for timeout")
+		}
+
+		if !c.removeCallIfOpen(call.streamID) {
+			t.Fatal("expected timed out call to still be registered")
+		}
+
+		done := make(chan struct{})
+		go func() {
+			c.abandonRecvCall(call, c.getReadFramer())
+			close(done)
+		}()
+
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Fatal("abandonRecvCall deadlocked after timeout")
+		}
+	})
+
+	t.Run("ContextCancelUnblocksAbandonRecvCall", func(t *testing.T) {
+		c, server := newTestExecConn(t, testContextWriter{})
+		defer server.Close()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		errCh := make(chan error, 1)
+		go func() {
+			_, err := c.exec(ctx, frameWriterFunc(func(f *framer, streamID int) error {
+				f.buf = append(f.buf[:0], 'x')
+				return nil
+			}), nil, 0)
+			errCh <- err
+		}()
+
+		call := waitForSingleCall(t, c)
+		cancel()
+
+		select {
+		case err := <-errCh:
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("expected context cancel error %v, got %v", context.Canceled, err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("exec deadlocked waiting for context cancellation")
+		}
+
+		if !c.removeCallIfOpen(call.streamID) {
+			t.Fatal("expected canceled call to still be registered")
+		}
+
+		done := make(chan struct{})
+		go func() {
+			c.abandonRecvCall(call, c.getReadFramer())
+			close(done)
+		}()
+
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Fatal("abandonRecvCall deadlocked after context cancellation")
+		}
+	})
+
+	t.Run("ConnectionCloseAbandonsInflightStream", func(t *testing.T) {
+		writeStarted := make(chan struct{})
+		var writeStartedOnce sync.Once
+		observerCtx := newTestStreamObserverContext()
+		c, server := newTestExecConn(t, testContextWriter{
+			onWrite: func() {
+				writeStartedOnce.Do(func() {
+					close(writeStarted)
+				})
+			},
+		})
+		c.streamObserver = &testStreamObserver{ctx: observerCtx}
+		defer server.Close()
+
+		errCh := make(chan error, 1)
+		go func() {
+			_, err := c.exec(context.Background(), frameWriterFunc(func(f *framer, streamID int) error {
+				f.buf = append(f.buf[:0], 'x')
+				return nil
+			}), nil, 0)
+			errCh <- err
+		}()
+
+		select {
+		case <-observerCtx.started:
+		case <-time.After(2 * time.Second):
+			t.Fatal("stream observer did not observe the request start")
+		}
+
+		select {
+		case <-writeStarted:
+		case <-time.After(2 * time.Second):
+			t.Fatal("exec never reached the write path")
+		}
+
+		closeDone := make(chan struct{})
+		go func() {
+			c.Close()
+			close(closeDone)
+		}()
+
+		select {
+		case err := <-errCh:
+			if !errors.Is(err, ErrConnectionClosed) {
+				t.Fatalf("expected close error %v, got %v", ErrConnectionClosed, err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("exec deadlocked after Close")
+		}
+
+		select {
+		case <-observerCtx.abandoned:
+		case <-time.After(2 * time.Second):
+			t.Fatal("Close did not abandon the in-flight stream")
+		}
+
+		select {
+		case <-observerCtx.finished:
+			t.Fatal("Close should not mark the in-flight stream as finished")
+		default:
+		}
+
+		select {
+		case <-closeDone:
+		case <-time.After(2 * time.Second):
+			t.Fatal("Close did not wait for the in-flight exec cleanup")
+		}
+
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		if c.calls != nil {
+			t.Fatal("expected in-flight calls to be detached on Close")
+		}
+	})
 }
 
 // tcpConnPair returns a matching set of a TCP client side and server side connection.
@@ -1547,7 +2027,7 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 			respFrame.writeString("unsupported query: " + name)
 		}
 	case frm.OpExecute:
-		b := reqFrame.readShortBytes()
+		b := reqFrame.readShortBytesCopy()
 		id := binary.BigEndian.Uint64(b)
 		// <query_parameters>
 		reqFrame.readConsistency() // <consistency>
@@ -1712,4 +2192,284 @@ func TestUseKeyspaceQuoteEscaping(t *testing.T) {
 			t.Errorf("keyspace %q: got %q, want %q", tt.keyspace, got, tt.want)
 		}
 	}
+}
+
+// newTestConnWithFramerPool creates a minimal Conn with an initialized framer pool
+// suitable for testing releaseFramer and EWMA logic.
+func newTestConnWithFramerPool() *Conn {
+	c := &Conn{}
+	c.framerConstructor.defaults = framerConfig{
+		proto: protoVersion4 & protoVersionMask,
+	}
+	c.initFramerPool()
+	return c
+}
+
+func buildTestFrame(t *testing.T, f *framer, req frameBuilder, streamID int) ([]byte, frm.FrameHeader) {
+	t.Helper()
+
+	if err := req.buildFrame(f, streamID); err != nil {
+		t.Fatalf("buildFrame failed: %v", err)
+	}
+
+	buf := append([]byte(nil), f.buf...)
+	header, err := readHeader(bytes.NewReader(buf), make([]byte, headSize))
+	if err != nil {
+		t.Fatalf("readHeader failed: %v", err)
+	}
+
+	return buf, header
+}
+
+func TestReleaseFramer(t *testing.T) {
+	t.Parallel()
+
+	t.Run("EWMAEquilibrium", func(t *testing.T) {
+		c := newTestConnWithFramerPool()
+
+		// Release framers with bufCap == avg. EWMA should not drift.
+		for i := 0; i < 20; i++ {
+			f := c.getReadFramer()
+			// readBuffer is defaultBufSize (128), avg starts at defaultBufSize
+			c.releaseReadFramer(f)
+		}
+
+		avg := c.framerConstructor.readPool.bufAvgSize.Load()
+		if avg != defaultBufSize {
+			t.Errorf("EWMA should stay at defaultBufSize=%d when all buffers equal, got %d", defaultBufSize, avg)
+		}
+	})
+
+	t.Run("DelegatesFramerReleaseToConn", func(t *testing.T) {
+		c := newTestConnWithFramerPool()
+
+		f := c.getReadFramer()
+		f.readBuffer = make([]byte, 4096)
+
+		f.Release()
+
+		avgAfterFirstRelease := c.framerConstructor.readPool.bufAvgSize.Load()
+		if avgAfterFirstRelease <= defaultBufSize {
+			t.Fatalf("framer.Release() should route through Conn.releaseFramer and update EWMA, got %d", avgAfterFirstRelease)
+		}
+
+		f.Release()
+
+		if avgAfterSecondRelease := c.framerConstructor.readPool.bufAvgSize.Load(); avgAfterSecondRelease != avgAfterFirstRelease {
+			t.Fatalf("second framer.Release() should be a no-op: first avg=%d second avg=%d", avgAfterFirstRelease, avgAfterSecondRelease)
+		}
+	})
+
+	t.Run("EWMAConvergesUpward", func(t *testing.T) {
+		c := newTestConnWithFramerPool()
+
+		// Release framers with a larger buffer; EWMA should converge toward it.
+		const targetSize = 4096
+		for i := 0; i < 100; i++ {
+			f := c.getReadFramer()
+			f.readBuffer = make([]byte, targetSize)
+			c.releaseReadFramer(f)
+		}
+
+		avg := c.framerConstructor.readPool.bufAvgSize.Load()
+		// After 100 iterations with weight=8, avg should be very close to targetSize.
+		// Allow 1% tolerance.
+		if avg < targetSize*99/100 || avg > targetSize*101/100 {
+			t.Errorf("EWMA should converge to ~%d, got %d", targetSize, avg)
+		}
+	})
+
+	t.Run("EWMAConvergesDownward", func(t *testing.T) {
+		c := newTestConnWithFramerPool()
+
+		// First, push EWMA up.
+		for i := 0; i < 100; i++ {
+			f := c.getReadFramer()
+			f.readBuffer = make([]byte, 4096)
+			c.releaseReadFramer(f)
+		}
+
+		// Now release framers with small buffers; EWMA should converge back down.
+		// Due to upward bias (+4 rounding), convergence downward is slower.
+		const smallSize = 256
+		for i := 0; i < 200; i++ {
+			f := c.getReadFramer()
+			f.readBuffer = make([]byte, smallSize)
+			c.releaseReadFramer(f)
+		}
+
+		avg := c.framerConstructor.readPool.bufAvgSize.Load()
+		// Due to the upward-biased rounding (+framerBufEWMAWeight/2), the EWMA settles
+		// slightly above the actual sample value when converging downward. The steady-state
+		// offset is at most framerBufEWMAWeight/2 (i.e., 4) per step which compounds to
+		// roughly framerBufEWMAWeight/2 above the target. Allow generous tolerance.
+		if avg < smallSize || avg > smallSize+2*framerBufEWMAWeight {
+			t.Errorf("EWMA should converge toward ~%d (with upward bias), got %d", smallSize, avg)
+		}
+	})
+
+	t.Run("ShrinkOversizedBuffer", func(t *testing.T) {
+		c := newTestConnWithFramerPool()
+
+		// EWMA starts at defaultBufSize (128). Release a very large framer.
+		f := c.getReadFramer()
+		f.readBuffer = make([]byte, 100000)
+		origBuf := f.readBuffer
+		c.releaseReadFramer(f)
+
+		// Get the framer back from the pool and check that its buffer was shrunk.
+		f2 := c.getReadFramer()
+		if cap(f2.readBuffer) >= cap(origBuf) {
+			t.Errorf("oversized buffer should have been shrunk: original cap=%d, new cap=%d",
+				cap(origBuf), cap(f2.readBuffer))
+		}
+		// Shrink target should be at least defaultBufSize.
+		if cap(f2.readBuffer) < defaultBufSize {
+			t.Errorf("shrunk buffer should be at least defaultBufSize=%d, got cap=%d",
+				defaultBufSize, cap(f2.readBuffer))
+		}
+		c.releaseReadFramer(f2)
+	})
+
+	t.Run("NoShrinkNormalBuffer", func(t *testing.T) {
+		c := newTestConnWithFramerPool()
+
+		// Release a few framers with identical buffers; none should be shrunk.
+		for i := 0; i < 10; i++ {
+			f := c.getReadFramer()
+			origCap := cap(f.readBuffer)
+			c.releaseReadFramer(f)
+			f2 := c.getReadFramer()
+			if cap(f2.readBuffer) != origCap {
+				t.Errorf("iteration %d: normal-sized buffer should not be shrunk: orig cap=%d, new cap=%d",
+					i, origCap, cap(f2.readBuffer))
+			}
+			c.releaseReadFramer(f2)
+		}
+	})
+
+	t.Run("ShrinkFloorIsDefaultBufSize", func(t *testing.T) {
+		c := newTestConnWithFramerPool()
+
+		// Push EWMA down to a very small value by releasing tiny buffers.
+		// The shrink target should never go below defaultBufSize.
+		for i := 0; i < 100; i++ {
+			f := c.getReadFramer()
+			f.readBuffer = make([]byte, 1) // Tiny buffer
+			c.releaseReadFramer(f)
+		}
+
+		// Now release a moderately large buffer that triggers shrink.
+		f := c.getReadFramer()
+		f.readBuffer = make([]byte, 10000)
+		c.releaseReadFramer(f)
+
+		f2 := c.getReadFramer()
+		if cap(f2.readBuffer) < defaultBufSize {
+			t.Errorf("shrink target should respect defaultBufSize floor: got cap=%d, want >= %d",
+				cap(f2.readBuffer), defaultBufSize)
+		}
+		c.releaseReadFramer(f2)
+	})
+
+	t.Run("NilFramer", func(t *testing.T) {
+		c := newTestConnWithFramerPool()
+		// Should not panic.
+		c.releaseReadFramer(nil)
+	})
+
+	t.Run("NoPool", func(t *testing.T) {
+		c := &Conn{} // No pool initialized.
+		f := newFramer(nil, protoVersion4)
+		// Should not panic, framer is just dropped.
+		c.releaseReadFramer(f)
+	})
+
+	t.Run("ReadAndWritePoolsAreSeparate", func(t *testing.T) {
+		c := newTestConnWithFramerPool()
+
+		readFramer := c.getReadFramer()
+		readFramer.readBuffer = make([]byte, 100000)
+		c.releaseReadFramer(readFramer)
+
+		writeFramer := c.getWriteFramer()
+		writeFramer.buf = make([]byte, 0, 8192)
+		c.releaseWriteFramer(writeFramer)
+
+		if writeAvg := c.framerConstructor.writePool.bufAvgSize.Load(); writeAvg <= defaultBufSize {
+			t.Fatalf("writer pool should track its own EWMA, got %d", writeAvg)
+		}
+
+		writeFramer = c.getWriteFramer()
+		if cap(writeFramer.buf) >= cap(readFramer.readBuffer) {
+			t.Fatalf("writer framer should not inherit oversized reader buffer state, got writer cap=%d reader cap=%d", cap(writeFramer.buf), cap(readFramer.readBuffer))
+		}
+		c.releaseWriteFramer(writeFramer)
+	})
+
+	t.Run("WriteFramerResetsCustomPayloadFlagBetweenUses", func(t *testing.T) {
+		c := newTestConnWithFramerPool()
+		const streamID = 7
+
+		f := c.getWriteFramer()
+		payloadReq := &writeQueryFrame{
+			statement: "SELECT now() FROM system.local",
+			customPayload: map[string][]byte{
+				"k": []byte("v"),
+			},
+		}
+		_, payloadHeader := buildTestFrame(t, f, payloadReq, streamID)
+		if payloadHeader.Flags&frm.FlagCustomPayload == 0 {
+			t.Fatalf("custom payload frame should set %v, got flags=%08b", frm.FlagCustomPayload, payloadHeader.Flags)
+		}
+
+		c.releaseWriteFramer(f)
+		if got, want := f.flags, c.framerConstructor.defaults.flags; got != want {
+			t.Fatalf("releaseWriteFramer should restore default flags: got %08b want %08b", got, want)
+		}
+
+		f = c.getWriteFramer()
+		plainReq := &writeQueryFrame{statement: "SELECT now() FROM system.local"}
+		plainBuf, plainHeader := buildTestFrame(t, f, plainReq, streamID)
+		if plainHeader.Flags != c.framerConstructor.defaults.flags {
+			t.Fatalf("plain query should use default flags after pooled reuse: got %08b want %08b", plainHeader.Flags, c.framerConstructor.defaults.flags)
+		}
+
+		fresh := newFramer(nil, protoVersion4)
+		freshBuf, freshHeader := buildTestFrame(t, fresh, plainReq, streamID)
+		if plainHeader.Flags != freshHeader.Flags {
+			t.Fatalf("reused plain query flags do not match fresh framer: got %08b want %08b", plainHeader.Flags, freshHeader.Flags)
+		}
+		if !bytes.Equal(plainBuf, freshBuf) {
+			t.Fatal("reused plain query frame does not match fresh framer output")
+		}
+
+		c.releaseWriteFramer(f)
+	})
+
+	t.Run("WriteFramerResetsTracingFlagBetweenUses", func(t *testing.T) {
+		c := newTestConnWithFramerPool()
+		const streamID = 9
+
+		f := c.getWriteFramer()
+		f.trace()
+		tracedReq := &writeQueryFrame{statement: "SELECT now() FROM system.local"}
+		_, tracedHeader := buildTestFrame(t, f, tracedReq, streamID)
+		if tracedHeader.Flags&frm.FlagTracing == 0 {
+			t.Fatalf("traced query should set %v, got flags=%08b", frm.FlagTracing, tracedHeader.Flags)
+		}
+
+		c.releaseWriteFramer(f)
+		if got, want := f.flags, c.framerConstructor.defaults.flags; got != want {
+			t.Fatalf("releaseWriteFramer should restore default flags: got %08b want %08b", got, want)
+		}
+
+		f = c.getWriteFramer()
+		_, plainHeader := buildTestFrame(t, f, tracedReq, streamID)
+		if plainHeader.Flags&frm.FlagTracing != 0 {
+			t.Fatalf("plain query should not inherit tracing flag after pooled reuse: got %08b", plainHeader.Flags)
+		}
+
+		c.releaseWriteFramer(f)
+	})
 }

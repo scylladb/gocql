@@ -328,6 +328,26 @@ func marshalMetadataMust(metadata resultMetadata, data []interface{}) [][]byte {
 	return res
 }
 
+type trackingRingConnection struct {
+	iter     *Iter
+	schemaV2 bool
+}
+
+func (*trackingRingConnection) Close() {}
+func (*trackingRingConnection) exec(context.Context, frameBuilder, Tracer, time.Duration) (*framer, error) {
+	return nil, nil
+}
+func (*trackingRingConnection) awaitSchemaAgreement(context.Context) error { return nil }
+func (*trackingRingConnection) executeQuery(context.Context, *Query) *Iter { return nil }
+func (c *trackingRingConnection) querySystem(context.Context, string, ...interface{}) *Iter {
+	return c.iter
+}
+func (c *trackingRingConnection) getIsSchemaV2() bool { return c.schemaV2 }
+func (*trackingRingConnection) setSchemaV2(bool)      {}
+func (*trackingRingConnection) getScyllaSupported() ScyllaConnectionFeatures {
+	return ScyllaConnectionFeatures{}
+}
+
 func TestMockGetHostsFromSystem(t *testing.T) {
 	t.Parallel()
 
@@ -341,6 +361,44 @@ func TestMockGetHostsFromSystem(t *testing.T) {
 	// local host and one of the peers are zero token so only one peer should be returned with 2 tokens
 	tests.AssertEqual(t, "hosts length", 1, len(hosts))
 	tests.AssertEqual(t, "host token length", 2, len(hosts[0].tokens))
+}
+
+func TestRingDescriberGetClusterPeerInfoClosesIter(t *testing.T) {
+	t.Parallel()
+
+	row := []interface{}{
+		net.IPv4(192, 168, 100, 13),
+		"datacenter1",
+		ParseUUIDMust("b953309f-6e68-41f2-baf5-0e60da317a9c"),
+		net.IP{},
+		"rack1",
+		"3.0.8",
+		net.IPv4(192, 168, 100, 13),
+		ParseUUIDMust("b6ed5bde-b318-11ef-8f58-aeba19e31273"),
+		"",
+		[]string{"-1032311531684407545"},
+	}
+	framer := &trackingMockFramer{
+		MockFramer: mock.MockFramer{Data: marshalMetadataMust(systemPeersResultMetadata, row)},
+	}
+	r := &ringDescriber{cfg: &ClusterConfig{}}
+
+	peers, err := r.getClusterPeerInfo(&HostInfo{}, &trackingRingConnection{
+		iter: &Iter{
+			meta:    systemPeersResultMetadata,
+			framer:  framer,
+			numRows: 1,
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(peers) != 1 {
+		t.Fatalf("expected 1 peer, got %d", len(peers))
+	}
+	if !framer.released {
+		t.Fatal("expected iterator framer to be released")
+	}
 }
 
 func TestRing_AddHostIfMissing_Missing(t *testing.T) {
