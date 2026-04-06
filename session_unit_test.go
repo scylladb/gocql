@@ -530,6 +530,7 @@ func (c *pagingTestConn) executeQuery(ctx context.Context, qry *Query) *Iter {
 func (*pagingTestConn) querySystem(context.Context, string, ...any) *Iter { return nil }
 func (*pagingTestConn) getIsSchemaV2() bool                               { return false }
 func (*pagingTestConn) setSchemaV2(bool)                                  {}
+func (*pagingTestConn) isScyllaConn() bool                                { return false }
 func (*pagingTestConn) getScyllaSupported() ScyllaConnectionFeatures {
 	return ScyllaConnectionFeatures{}
 }
