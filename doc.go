@@ -416,4 +416,37 @@
 // There is also a new implementation of Tracer - TracerEnhanced, that is intended to be more reliable and convinient to use.
 // It has a funcionality to check if trace is ready to be extracted and only actually gets it if requested which makes
 // the impact on a performance smaller.
+//
+// # Compression
+//
+// Set ClusterConfig.Compressor to enable CQL native protocol compression (Snappy or LZ4).
+// By default every outgoing data frame is compressed, matching the original all-or-nothing
+// behavior. Small control frames (STARTUP, OPTIONS, PREPARE, AUTH_RESPONSE, REGISTER) always
+// skip compression regardless of the policy.
+//
+// For more control, use ClusterConfig.CompressionPolicy with a topology-aware host selection
+// policy — either directly (DCAwareRoundRobinPolicy or RackAwareRoundRobinPolicy) or wrapped
+// in TokenAwareHostPolicy (the recommended configuration). CompressionPolicy has three dimensions:
+//
+//   - Size thresholds: MinCompressLocalSize and MinCompressRemoteSize set the minimum frame body
+//     size (in bytes) that triggers compression for local and remote traffic respectively.
+//     0 = compress all (default), -1 = never compress, >0 = compress only when body >= N bytes.
+//   - Scope: CompressNonLocalRack (default) treats same-rack traffic as local; CompressNonLocalDC
+//     treats all same-DC traffic as local.
+//   - Ratio check: MinSavingsPercent (0-99) discards compressed output if the savings are below
+//     the configured percentage, avoiding wasted decompression CPU on the server. 0 = disabled (default).
+//
+// The threshold is resolved once per connection (the host tier is fixed). The compress/skip decision
+// is made per frame based on the serialized body size. Small control frames (STARTUP, OPTIONS,
+// PREPARE, AUTH_RESPONSE, REGISTER) always skip compression regardless of the policy.
+//
+// Example:
+//
+//	cluster.Compressor = &gocql.SnappyCompressor{}
+//	cluster.CompressionPolicy = gocql.CompressionPolicy{
+//		MinCompressLocalSize:  4096,
+//		MinCompressRemoteSize: 512,
+//		Scope:                 gocql.CompressNonLocalRack,
+//		MinSavingsPercent:     15,
+//	}
 package gocql // import "github.com/gocql/gocql"
