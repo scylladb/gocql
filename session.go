@@ -1233,6 +1233,9 @@ type Query struct {
 	skipPrepare                bool
 	disableSkipMetadata        bool
 	defaultTimestamp           bool
+	// disableCompression overrides CompressionPolicy and unconditionally
+	// skips compression for this query's outgoing frames. See NoCompression.
+	disableCompression bool
 	// prepareCache caches whether shouldPrepare has been computed.
 	// Since q.stmt is immutable after construction, the result never
 	// changes. Accessed atomically because speculative execution may
@@ -1690,6 +1693,22 @@ func (q *Query) PageState(state []byte) *Query {
 // https://github.com/apache/cassandra-gocql-driver/issues/612
 func (q *Query) NoSkipMetadata() *Query {
 	q.disableSkipMetadata = true
+	return q
+}
+
+// NoCompression unconditionally disables compression for this query's
+// outgoing EXECUTE frame, overriding ClusterConfig.CompressionPolicy.
+//
+// Use this for queries whose payload is known to be incompressible, such as
+// prepared statements binding vector/embedding columns: attempting to
+// compress that data burns CPU on both ends for little or no size benefit,
+// since the CompressionPolicy size/topology thresholds are based on frame
+// size and cannot tell compressible payloads from incompressible ones.
+//
+// This has no effect on non-DML statements (which are never sent as EXECUTE
+// frames) and is a no-op unless ClusterConfig.Compressor is set.
+func (q *Query) NoCompression(value bool) *Query {
+	q.disableCompression = value
 	return q
 }
 
@@ -2515,6 +2534,10 @@ type Batch struct {
 	Cons             Consistency
 	defaultTimestamp bool
 	Type             BatchType
+	// disableCompression overrides CompressionPolicy and unconditionally
+	// skips compression for this batch's outgoing BATCH frame. See
+	// Batch.NoCompression.
+	disableCompression bool
 }
 
 // NewBatch creates a new batch operation using defaults defined in the cluster
@@ -2664,6 +2687,20 @@ func (b *Batch) retryPolicy() RetryPolicy {
 // RetryPolicy sets the retry policy to use when executing the batch operation
 func (b *Batch) RetryPolicy(r RetryPolicy) *Batch {
 	b.rt = r
+	return b
+}
+
+// NoCompression unconditionally disables compression for this batch's
+// outgoing BATCH frame, overriding ClusterConfig.CompressionPolicy.
+//
+// A BATCH frame carries every statement in the batch as one physical frame,
+// so this is an all-or-nothing toggle for the whole batch. Use it when the
+// batch is known to carry incompressible payloads, such as bulk inserts of
+// vector/embedding columns.
+//
+// This is a no-op unless ClusterConfig.Compressor is set.
+func (b *Batch) NoCompression(value bool) *Batch {
+	b.disableCompression = value
 	return b
 }
 

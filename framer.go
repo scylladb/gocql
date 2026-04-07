@@ -47,6 +47,9 @@ type framerConfig struct {
 	proto                 byte
 	flags                 byte
 	tabletsRoutingV1      bool
+	// compOpts holds the per-connection compression settings (topology-resolved
+	// threshold + min savings percent). Only meaningful for write-path framers.
+	compOpts compressionOpts
 }
 
 // framerBufEWMAWeight controls how quickly the exponential weighted moving average
@@ -80,6 +83,7 @@ func (cf *connFramers) initCache(c *Conn) {
 	cfg := framerConfig{
 		compressor: c.compressor,
 		proto:      c.version & protoVersionMask,
+		compOpts:   c.compOpts,
 	}
 	if c.compressor != nil {
 		cfg.flags |= frm.FlagCompress
@@ -218,6 +222,7 @@ func (fp *framerPool) init(defaults framerConfig, release func(*framer)) {
 				flagLWT:               defaults.flagLWT,
 				rateLimitingErrorCode: defaults.rateLimitingErrorCode,
 				tabletsRoutingV1:      defaults.tabletsRoutingV1,
+				compOpts:              defaults.compOpts,
 			}
 			f.release = func() { release(f) }
 			return f
@@ -227,7 +232,7 @@ func (fp *framerPool) init(defaults framerConfig, release func(*framer)) {
 
 func (fp *framerPool) get(c *Conn) *framer {
 	if !fp.enabled.Load() {
-		return newFramer(c.compressor, c.version)
+		return newFramer(c.compressor, c.version, c.compOpts)
 	}
 	return fp.pool.Get().(*framer)
 }
