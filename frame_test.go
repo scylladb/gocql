@@ -79,7 +79,7 @@ func TestFuzzBugs(t *testing.T) {
 			continue
 		}
 
-		framer := newFramer(nil, byte(head.Version))
+		framer := newFramer(nil, byte(head.Version), compressionOpts{})
 		err = framer.readFrame(r, &head)
 		if err != nil {
 			continue
@@ -102,7 +102,7 @@ func TestFrameWriteTooLong(t *testing.T) {
 		t.Skip("skipping test in travis due to memory pressure with the race detecor")
 	}
 
-	framer := newFramer(nil, 3)
+	framer := newFramer(nil, 3, compressionOpts{})
 
 	framer.writeHeader(0, frm.OpStartup, 1)
 	framer.writeBytes(make([]byte, frm.MaxFrameSize+1))
@@ -124,7 +124,7 @@ func TestFrameReadTooLong(t *testing.T) {
 	// write a new header right after this frame to verify that we can read it
 	r.Write([]byte{0x03, 0x00, 0x00, 0x00, byte(frm.OpReady), 0x00, 0x00, 0x00, 0x00})
 
-	framer := newFramer(nil, 3)
+	framer := newFramer(nil, 3, compressionOpts{})
 
 	head := frm.FrameHeader{
 		Version: protoVersion3,
@@ -173,7 +173,7 @@ func TestReadFrameBodyErrorKeepsNetError(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			f := newFramer(nil, protoVersion4)
+			f := newFramer(nil, protoVersion4, compressionOpts{})
 			head := frm.FrameHeader{Version: protoVersion4 | protoDirectionMask, Op: frm.OpReady, Length: 8}
 
 			err := f.readFrame(tc.r, &head)
@@ -192,7 +192,7 @@ func TestReadFrameBodyErrorKeepsNetError(t *testing.T) {
 func TestReadFrameDiscardErrorKeepsNetError(t *testing.T) {
 	t.Parallel()
 
-	f := newFramer(nil, protoVersion4)
+	f := newFramer(nil, protoVersion4, compressionOpts{})
 	head := frm.FrameHeader{Version: protoVersion4 | protoDirectionMask, Op: frm.OpReady, Length: frm.MaxFrameSize + 1}
 
 	err := f.readFrame(errReader{timeoutErr{}}, &head)
@@ -276,7 +276,7 @@ func TestParseResultMetadata_PagingStateBeforeNewMetadataID(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			fr := newFramer(nil, tc.proto)
+			fr := newFramer(nil, tc.proto, compressionOpts{})
 			fr.header = &frm.FrameHeader{Version: frm.ProtoVersion(tc.proto)}
 			fr.scyllaUseMetadataID = tc.extension
 
@@ -313,7 +313,7 @@ func TestParseResultMetadata_PagingStateBeforeNewMetadataID(t *testing.T) {
 func TestParseResultMetadata_NewMetadataIDIgnoredBelowV5(t *testing.T) {
 	t.Parallel()
 
-	fr := newFramer(nil, protoVersion4)
+	fr := newFramer(nil, protoVersion4, compressionOpts{})
 	fr.header = &frm.FrameHeader{Version: protoVersion4}
 
 	// METADATA_CHANGED set but no id on the wire, as a v4 server would send.
@@ -339,7 +339,7 @@ func TestParseResultMetadata_PerColumnSpec(t *testing.T) {
 	// (per-column keyspace/table encoding). This tests the !globalSpec optimization
 	// in parseResultMetadata() which reads keyspace/table from the first column
 	// position and reuses them for all columns via skipString().
-	fr := newFramer(nil, protoVersion4)
+	fr := newFramer(nil, protoVersion4, compressionOpts{})
 	fr.header = &frm.FrameHeader{Version: protoVersion4}
 
 	// flags: no FlagGlobalTableSpec — per-column keyspace/table
@@ -430,7 +430,7 @@ func TestParsePreparedMetadataRejectsInvalidPkeyCount(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			fr := newFramer(nil, protoVersion4)
+			fr := newFramer(nil, protoVersion4, compressionOpts{})
 			fr.header = &frm.FrameHeader{Version: protoVersion4 | protoDirectionMask, Op: frm.OpResult}
 
 			fr.writeInt(frm.ResultKindPrepared)
@@ -467,7 +467,7 @@ func TestParsePreparedMetadataAcceptsValidPkeyCount(t *testing.T) {
 	t.Run("exactly at the bound", func(t *testing.T) {
 		t.Parallel()
 
-		fr := newFramer(nil, protoVersion4)
+		fr := newFramer(nil, protoVersion4, compressionOpts{})
 		fr.header = &frm.FrameHeader{Version: protoVersion4 | protoDirectionMask}
 
 		// NO_METADATA so parsing stops right after the pkeys, leaving the buffer
@@ -491,7 +491,7 @@ func TestParsePreparedMetadataAcceptsValidPkeyCount(t *testing.T) {
 	t.Run("full prepared frame", func(t *testing.T) {
 		t.Parallel()
 
-		fr := newFramer(nil, protoVersion4)
+		fr := newFramer(nil, protoVersion4, compressionOpts{})
 		fr.header = &frm.FrameHeader{Version: protoVersion4 | protoDirectionMask, Op: frm.OpResult}
 
 		fr.writeInt(frm.ResultKindPrepared)
@@ -532,7 +532,7 @@ func TestParsePreparedMetadataAcceptsValidPkeyCount(t *testing.T) {
 func TestParseResultPreparedTruncatedResultMetadataID(t *testing.T) {
 	t.Parallel()
 
-	fr := newFramer(nil, protoVersion4)
+	fr := newFramer(nil, protoVersion4, compressionOpts{})
 	// Response direction bit set so parseFrame does not reject it as a request.
 	fr.header = &frm.FrameHeader{Version: protoVersion4 | 0x80, Op: frm.OpResult}
 	fr.scyllaUseMetadataID = true
@@ -593,7 +593,7 @@ func Test_framer_writeExecuteFrame(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			framer := newFramer(nil, tt.protoVersion)
+			framer := newFramer(nil, tt.protoVersion, compressionOpts{})
 			if tt.scyllaUseMetadataID {
 				framer.scyllaUseMetadataID = true
 			}
@@ -616,7 +616,7 @@ func Test_framer_writeExecuteFrame(t *testing.T) {
 				params: params,
 			}
 
-			err := framer.writeExecuteFrame(123, frame.preparedID, frame.resultMetadataID, &frame.params, &frame.customPayload)
+			err := framer.writeExecuteFrame(123, frame.preparedID, frame.resultMetadataID, &frame.params, &frame.customPayload, frame.noCompress)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -657,7 +657,7 @@ func Test_framer_writeExecuteFrame(t *testing.T) {
 }
 
 func Test_framer_writeBatchFrame(t *testing.T) {
-	framer := newFramer(nil, protoVersion5)
+	framer := newFramer(nil, protoVersion5, compressionOpts{})
 	nowInSeconds := 123
 	frame := writeBatchFrame{
 		customPayload: map[string][]byte{
@@ -691,7 +691,7 @@ func Test_framer_writeBatchFrame(t *testing.T) {
 // statement/values write loop (unnamed positional values), which must still
 // succeed after named-value rejection was hoisted out of that loop.
 func Test_framer_writeBatchFrame_unnamedValues(t *testing.T) {
-	framer := newFramer(nil, protoVersion5)
+	framer := newFramer(nil, protoVersion5, compressionOpts{})
 	frame := writeBatchFrame{
 		typ:         LoggedBatch,
 		consistency: Quorum,
@@ -792,7 +792,7 @@ func Test_framer_queryParamsWriters_rejectUnsupportedOptionsOnV4(t *testing.T) {
 		t.Run(w.name, func(t *testing.T) {
 			for _, tc := range cases {
 				t.Run(tc.name, func(t *testing.T) {
-					framer := newFramer(nil, tc.proto)
+					framer := newFramer(nil, tc.proto, compressionOpts{})
 
 					err := w.build(tc.opts).buildFrame(framer, 1)
 					require.Error(t, err)
@@ -811,13 +811,13 @@ func Test_framer_validateV5Options_acceptsSupportedOptions(t *testing.T) {
 	nowInSeconds := 123
 	minInt32, maxInt32 := math.MinInt32, math.MaxInt32
 
-	v5 := newFramer(nil, protoVersion5)
+	v5 := newFramer(nil, protoVersion5, compressionOpts{})
 	require.NoError(t, v5.validateV5Options("ks", &nowInSeconds))
 	require.NoError(t, v5.validateV5Options("", &minInt32))
 	require.NoError(t, v5.validateV5Options("", &maxInt32))
 
 	// And neither option set is required: v4 requests must still pass.
-	require.NoError(t, newFramer(nil, protoVersion4).validateV5Options("", nil))
+	require.NoError(t, newFramer(nil, protoVersion4, compressionOpts{}).validateV5Options("", nil))
 }
 
 func Test_framer_writeBatchFrame_rejectsUnsupportedOptionsOnV4(t *testing.T) {
@@ -894,7 +894,7 @@ func Test_framer_writeBatchFrame_rejectsUnsupportedOptionsOnV4(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			framer := newFramer(nil, tc.proto)
+			framer := newFramer(nil, tc.proto, compressionOpts{})
 			err := framer.writeBatchFrame(1, &tc.frame, tc.frame.customPayload)
 			if err == nil {
 				t.Fatal("expected an error, got nil")
@@ -910,7 +910,7 @@ func Test_framer_writeBatchFrame_rejectsUnsupportedOptionsOnV4(t *testing.T) {
 }
 
 func Test_framer_writePrepareFrame_rejectsKeyspaceOnV4(t *testing.T) {
-	framer := newFramer(nil, protoVersion4)
+	framer := newFramer(nil, protoVersion4, compressionOpts{})
 	prep := &writePrepareFrame{statement: "SELECT * FROM t", keyspace: "ks"}
 
 	// Must return an error, not panic.
@@ -963,7 +963,7 @@ func Test_framerFlags_neverBetaProtocol(t *testing.T) {
 			if got := defaultFramerFlags(compressor, version); got&frm.FlagBetaProtocol != 0 {
 				t.Errorf("defaultFramerFlags(%v, 0x%02x) set FlagBetaProtocol", compressor != nil, version)
 			}
-			if got := newFramer(compressor, version).flags; got&frm.FlagBetaProtocol != 0 {
+			if got := newFramer(compressor, version, compressionOpts{}).flags; got&frm.FlagBetaProtocol != 0 {
 				t.Errorf("newFramer(%v, 0x%02x) set FlagBetaProtocol", compressor != nil, version)
 			}
 		}
@@ -980,10 +980,10 @@ func Test_framerFlags_neverBetaProtocol(t *testing.T) {
 // newFramer must not set FlagCompress on v5, where compression happens at the
 // segment layer instead of via a frame-header flag.
 func Test_newFramer_compressFlag(t *testing.T) {
-	if flags := newFramer(testMockedCompressor{}, protoVersion5).flags; flags&frm.FlagCompress != 0 {
+	if flags := newFramer(testMockedCompressor{}, protoVersion5, compressionOpts{}).flags; flags&frm.FlagCompress != 0 {
 		t.Error("newFramer(v5) should not set FlagCompress (v5 compresses at the segment layer)")
 	}
-	if flags := newFramer(testMockedCompressor{}, protoVersion4).flags; flags&frm.FlagCompress == 0 {
+	if flags := newFramer(testMockedCompressor{}, protoVersion4, compressionOpts{}).flags; flags&frm.FlagCompress == 0 {
 		t.Error("newFramer(v4) should set FlagCompress")
 	}
 }
@@ -1089,7 +1089,7 @@ func Test_readUncompressedFrame(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			framer := newFramer(nil, protoVersion5)
+			framer := newFramer(nil, protoVersion5, compressionOpts{})
 			req := writeQueryFrame{
 				statement: "SELECT * FROM system.local",
 				params: queryParams{
@@ -1200,7 +1200,7 @@ func Test_readCompressedFrame(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			framer := newFramer(nil, protoVersion5)
+			framer := newFramer(nil, protoVersion5, compressionOpts{})
 			req := writeQueryFrame{
 				statement: "SELECT * FROM system.local",
 				params: queryParams{
@@ -1239,7 +1239,7 @@ func Test_readCompressedFrame(t *testing.T) {
 func TestParseEventFrame_ClientRoutesChanged(t *testing.T) {
 	t.Parallel()
 
-	fr := newFramer(nil, protoVersion4)
+	fr := newFramer(nil, protoVersion4, compressionOpts{})
 	fr.header = &frm.FrameHeader{Version: protoVersion4}
 	fr.writeString("CLIENT_ROUTES_CHANGE")
 	fr.writeString("UPDATED")
@@ -1303,7 +1303,7 @@ func TestPrepareModernLayoutLeavesBufIntactOnError(t *testing.T) {
 	// after the first chunk has already been appended to the local buffer.
 	original := bytes.Repeat([]byte{0xAB}, segment.MaxPayloadSize+100)
 
-	f := newFramer(&failingCompressor{failAt: 2}, protoVersion5)
+	f := newFramer(&failingCompressor{failAt: 2}, protoVersion5, compressionOpts{})
 	f.buf = append([]byte(nil), original...)
 
 	err := f.prepareModernLayout()
@@ -1323,7 +1323,7 @@ func TestPrepareModernLayoutLeavesBufIntactOnError(t *testing.T) {
 func TestPrepareModernLayoutRejectsPreV5ProtocolWithError(t *testing.T) {
 	t.Parallel()
 
-	f := newFramer(nil, protoVersion4)
+	f := newFramer(nil, protoVersion4, compressionOpts{})
 	f.buf = append([]byte(nil), []byte("some frame bytes")...)
 
 	require.NotPanics(t, func() {
@@ -1359,7 +1359,7 @@ func TestPrepareModernLayoutSuccessUnchanged(t *testing.T) {
 		}
 		want = append(want, seg...)
 
-		f := newFramer(nil, protoVersion5)
+		f := newFramer(nil, protoVersion5, compressionOpts{})
 		f.buf = append([]byte(nil), original...)
 		if err := f.prepareModernLayout(); err != nil {
 			t.Fatalf("size %d: prepareModernLayout: %v", size, err)
@@ -1428,7 +1428,7 @@ func TestPrepareModernLayoutReusesBuffers(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			payload := bytes.Repeat([]byte{0x5A}, tc.size)
-			f := newFramer(tc.compressor, protoVersion5)
+			f := newFramer(tc.compressor, protoVersion5, compressionOpts{})
 
 			segment := func() {
 				f.buf = append(f.buf[:0], payload...)

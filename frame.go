@@ -282,6 +282,10 @@ type framer struct {
 	tabletsRoutingV1      bool
 	scyllaUseMetadataID   bool
 	released              atomic.Bool
+	// compOpts controls outgoing compression decisions in finish().
+	// It is only meaningful for write-path framers; read-path framers
+	// use the zero value.
+	compOpts compressionOpts
 }
 
 // defaultFramerFlags computes the default header flags a framer carries for the
@@ -304,11 +308,32 @@ func defaultFramerFlags(compressor Compressor, version byte) byte {
 	return 0
 }
 
-func newFramer(compressor Compressor, version byte) *framer {
+// compressionOpts bundles the per-framer settings that control whether and
+// how outgoing frames are compressed. It is only meaningful for write-path
+// framers; read-path framers should use the zero value.
+type compressionOpts struct {
+	// threshold is the minimum body size in bytes for compression to be
+	// applied in finish().
+	//   0  = compress every frame (backward-compatible default)
+	//  -1  = never compress
+	//  >0  = compress only when body >= this many bytes
+	threshold int
+
+	// minSavingsPct is the minimum percentage of body bytes that
+	// compression must save for the compressed output to be kept.
+	//   0    = disabled (any compression result is accepted)
+	//   1-99 = require at least this % savings; if the savings are
+	//          below this value the compressed output is discarded
+	//          and the frame is sent uncompressed
+	minSavingsPct int
+}
+
+func newFramer(compressor Compressor, version byte, compOpts compressionOpts) *framer {
 	buf := make([]byte, defaultBufSize)
 	f := &framer{
 		buf:        buf[:0],
 		readBuffer: buf,
+		compOpts:   compOpts,
 	}
 	flags := defaultFramerFlags(compressor, version)
 
@@ -684,19 +709,39 @@ func (f *framer) finish() error {
 		return ErrFrameTooBig
 	}
 
-	if f.proto < protoVersion5 && f.buf[1]&frm.FlagCompress == frm.FlagCompress {
-		if f.compressor == nil {
-			panic("compress flag set with no compressor")
-		}
+	// FlagCompress is only ever set when a compressor exists, so the common
+	// no-compressor path short-circuits on the pointer check.
+	if f.compressor != nil && f.proto < protoVersion5 && f.buf[1]&frm.FlagCompress == frm.FlagCompress {
+		bodyLen := bufLen - headSize
 
-		// TODO: only compress frames which are big enough
-		compressed, err := f.compressor.Encode(f.buf[headSize:])
-		if err != nil {
-			return err
-		}
+		// Decide whether this frame should actually be compressed based
+		// on the per-connection compression threshold.
+		//   threshold  0: compress everything (backward-compatible default)
+		//   threshold -1: never compress
+		//   threshold >0: compress only when bodyLen >= threshold
+		if f.compOpts.threshold < 0 || (f.compOpts.threshold > 0 && bodyLen < f.compOpts.threshold) {
+			// Skip compression: clear the flag so the server knows the
+			// body is not compressed.
+			f.buf[1] &^= frm.FlagCompress
+		} else {
+			compressed, err := f.compressor.Encode(f.buf[headSize:])
+			if err != nil {
+				return err
+			}
 
-		f.buf = append(f.buf[:headSize], compressed...)
-		bufLen = len(f.buf)
+			// If a minimum savings percentage is configured, verify that
+			// compression actually saved enough bytes. When it doesn't,
+			// discard the compressed output and send uncompressed to
+			// avoid wasting decompression CPU on the server.
+			if f.compOpts.minSavingsPct > 0 && bodyLen > 0 &&
+				int(int64(bodyLen-len(compressed))*100/int64(bodyLen)) < f.compOpts.minSavingsPct {
+				// Savings too low — send uncompressed.
+				f.buf[1] &^= frm.FlagCompress
+			} else {
+				f.buf = append(f.buf[:headSize], compressed...)
+				bufLen = len(f.buf)
+			}
+		}
 	}
 	length := bufLen - headSize
 	f.setLength(length)
@@ -767,7 +812,7 @@ func (w *writePrepareFrame) buildFrame(f *framer, streamID int) error {
 	if len(w.customPayload) > 0 {
 		f.payload()
 	}
-	f.writeHeader(f.flags, frm.OpPrepare, streamID)
+	f.writeHeader(f.flags&^frm.FlagCompress, frm.OpPrepare, streamID)
 	f.writeCustomPayload(&w.customPayload)
 	f.writeLongString(w.statement)
 
@@ -1325,7 +1370,7 @@ func (a *writeAuthResponseFrame) buildFrame(framer *framer, streamID int) error 
 }
 
 func (f *framer) writeAuthResponseFrame(streamID int, data []byte) error {
-	f.writeHeader(f.flags, frm.OpAuthResponse, streamID)
+	f.writeHeader(f.flags&^frm.FlagCompress, frm.OpAuthResponse, streamID)
 	f.writeBytes(data)
 	return f.finish()
 }
@@ -1595,6 +1640,10 @@ type writeExecuteFrame struct {
 	preparedID       []byte
 	resultMetadataID []byte
 	params           queryParams
+	// noCompress overrides CompressionPolicy and unconditionally skips
+	// compression for this frame. Set from Query.disableCompression
+	// (Query.NoCompression) in executeQuery.
+	noCompress bool
 }
 
 func (e *writeExecuteFrame) String() string {
@@ -1602,10 +1651,10 @@ func (e *writeExecuteFrame) String() string {
 }
 
 func (e *writeExecuteFrame) buildFrame(fr *framer, streamID int) error {
-	return fr.writeExecuteFrame(streamID, e.preparedID, e.resultMetadataID, &e.params, &e.customPayload)
+	return fr.writeExecuteFrame(streamID, e.preparedID, e.resultMetadataID, &e.params, &e.customPayload, e.noCompress)
 }
 
-func (f *framer) writeExecuteFrame(streamID int, preparedID, resultMetadataID []byte, params *queryParams, customPayload *map[string][]byte) error {
+func (f *framer) writeExecuteFrame(streamID int, preparedID, resultMetadataID []byte, params *queryParams, customPayload *map[string][]byte, noCompress bool) error {
 	// Validate first, as in writeQueryFrame: the prepared id (and, on v5, the
 	// result metadata id) are written before writeQueryParams runs.
 	if err := f.validateV5Options(params.keyspace, params.nowInSeconds); err != nil {
@@ -1615,7 +1664,16 @@ func (f *framer) writeExecuteFrame(streamID int, preparedID, resultMetadataID []
 	if len(*customPayload) > 0 {
 		f.payload()
 	}
-	f.writeHeader(f.flags, frm.OpExecute, streamID)
+	flags := f.flags
+	if noCompress {
+		// Clearing the bit on a local copy of flags (rather than mutating
+		// f.compOpts) is the same pattern already used for PREPARE/
+		// AUTH_RESPONSE/OPTIONS/STARTUP: it only affects this single
+		// writeHeader call and carries no risk of leaking across pooled
+		// framer reuse.
+		flags &^= frm.FlagCompress
+	}
+	f.writeHeader(flags, frm.OpExecute, streamID)
 	f.writeCustomPayload(customPayload)
 	f.writeShortBytes(preparedID)
 
@@ -1648,6 +1706,10 @@ type writeBatchFrame struct {
 	serialConsistency     Consistency
 	typ                   BatchType
 	defaultTimestamp      bool
+	// noCompress overrides CompressionPolicy and unconditionally skips
+	// compression for this frame. Set from Batch.disableCompression
+	// (Batch.NoCompression) in executeBatch.
+	noCompress bool
 }
 
 func (w *writeBatchFrame) buildFrame(framer *framer, streamID int) error {
@@ -1675,7 +1737,13 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 	if len(customPayload) > 0 {
 		f.payload()
 	}
-	f.writeHeader(f.flags, frm.OpBatch, streamID)
+	headerFlags := f.flags
+	if w.noCompress {
+		// See writeExecuteFrame: local-copy bit clear only, never mutate
+		// f.compOpts/f.flags on the pooled framer itself.
+		headerFlags &^= frm.FlagCompress
+	}
+	f.writeHeader(headerFlags, frm.OpBatch, streamID)
 	f.writeCustomPayload(&customPayload)
 	f.writeByte(byte(w.typ))
 
@@ -1783,7 +1851,7 @@ func (w *writeRegisterFrame) buildFrame(framer *framer, streamID int) error {
 }
 
 func (f *framer) writeRegisterFrame(streamID int, w *writeRegisterFrame) error {
-	f.writeHeader(f.flags, frm.OpRegister, streamID)
+	f.writeHeader(f.flags&^frm.FlagCompress, frm.OpRegister, streamID)
 	f.writeStringList(w.events)
 
 	return f.finish()
