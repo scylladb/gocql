@@ -1863,6 +1863,53 @@ func (c *Conn) UseKeyspace(keyspace string) error {
 }
 
 func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
+	// Count unique prepared statements to bound retries. Each UNPREPARED error
+	// identifies exactly one stale statement ID, so in the worst case we need
+	// one retry per distinct prepared statement to refresh them all.
+	uniqueStmts := make(map[string]struct{}, len(batch.Entries))
+	for i := range batch.Entries {
+		uniqueStmts[batch.Entries[i].Stmt] = struct{}{}
+	}
+	uniquePrepared := len(uniqueStmts)
+
+	warningHandler := WarningHandler(nil)
+	if c.session != nil {
+		warningHandler = c.session.warningHandler
+	}
+
+	for retries := 0; ; retries++ {
+		iter = c.executeBatchOnce(ctx, batch)
+		if iter == nil || iter.err == nil {
+			return iter.bindWarningHandler(batch, warningHandler)
+		}
+
+		// On RequestErrUnprepared, evict the single stale cache entry identified
+		// by the server and retry. evictPreparedID is a no-op for non-matching
+		// entries (it compares IDs before removing), so scanning all entries is
+		// safe. We stop retrying once we have exhausted all unique prepared
+		// statements, which bounds the loop even if the server keeps returning
+		// stale IDs (e.g. after a full node restart clears its prepared cache).
+		if x, ok := iter.err.(*RequestErrUnprepared); ok && retries < uniquePrepared {
+			for i := range batch.Entries {
+				entry := &batch.Entries[i]
+				key := c.session.stmtsLRU.keyFor(c.host.HostID(), c.currentKeyspace, entry.Stmt)
+				c.session.stmtsLRU.evictPreparedID(key, x.StatementId)
+			}
+			// Release the intermediate frame without dispatching its warnings:
+			// only the terminal iter reports warnings (matching the pre-loop
+			// recursive behavior). executeBatchOnce does not bind the handler,
+			// so discard() finalizes silently and frees the pooled framer.
+			iter.discard()
+			continue
+		}
+
+		// Terminal result: bind the warning handler here (once) so warnings are
+		// dispatched a single time with the correct host context.
+		return iter.bindWarningHandler(batch, warningHandler)
+	}
+}
+
+func (c *Conn) executeBatchOnce(ctx context.Context, batch *Batch) *Iter {
 	n := len(batch.Entries)
 	req := &writeBatchFrame{
 		typ:                   batch.Type,
@@ -1874,58 +1921,100 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 		customPayload:         batch.CustomPayload,
 	}
 
-	stmts := make(map[string]string, len(batch.Entries))
+	// First pass: prepare each unique statement sequentially, resolve binding
+	// callbacks, and compute the total number of queryValues for bulk allocation.
+	// Sequential preparation avoids exhausting connection streams when a batch
+	// has many distinct statements. prepareStatement already coalesces in-flight
+	// prepares for the same statement via execIfMissing, so there is no benefit
+	// to launching goroutines here.
+	type entryPrepInfo struct {
+		info   *preparedStatment
+		values []any
+	}
 
+	// Cache prepare results by statement text so each unique statement is
+	// prepared at most once per executeBatchOnce call.
+	type prepResult struct {
+		info *preparedStatment
+		err  error
+	}
+	prepCache := make(map[string]*prepResult)
+
+	entryInfos := make([]entryPrepInfo, n)
+	totalValues := 0
 	hasLwtEntries := false
 
 	for i := 0; i < n; i++ {
 		entry := &batch.Entries[i]
-		b := &req.statements[i]
 
-		if len(entry.Args) > 0 || entry.binding != nil {
-			info, err := c.prepareStatement(batch.Context(), entry.Stmt, batch.trace, batch.GetRequestTimeout())
+		// Look up or populate the per-statement prepare result.
+		pr, found := prepCache[entry.Stmt]
+		if !found {
+			pr = &prepResult{}
+			pr.info, pr.err = c.prepareStatement(ctx, entry.Stmt, batch.trace, batch.GetRequestTimeout())
+			prepCache[entry.Stmt] = pr
+		}
+
+		if pr.err != nil {
+			return &Iter{err: pr.err}
+		}
+		info := pr.info
+
+		var values []any
+		if entry.binding != nil {
+			var err error
+			values, err = entry.binding(&QueryInfo{
+				Id:          info.id,
+				Args:        info.request.columns,
+				Rval:        info.response.columns,
+				PKeyColumns: info.request.pkeyColumns,
+			})
 			if err != nil {
 				return &Iter{err: err}
 			}
-
-			var values []any
-			if entry.binding == nil {
-				values = entry.Args
-			} else {
-				values, err = entry.binding(&QueryInfo{
-					Id:          info.id,
-					Args:        info.request.columns,
-					Rval:        info.response.columns,
-					PKeyColumns: info.request.pkeyColumns,
-				})
-				if err != nil {
-					return &Iter{err: err}
-				}
-			}
-
-			if len(values) != info.request.actualColCount {
-				return &Iter{err: fmt.Errorf("gocql: batch statement %d expected %d values send got %d", i, info.request.actualColCount, len(values))}
-			}
-
-			b.preparedID = info.id
-			stmts[string(info.id)] = entry.Stmt
-
-			b.values = make([]queryValues, info.request.actualColCount)
-
-			for j := 0; j < info.request.actualColCount; j++ {
-				v := &b.values[j]
-				value := values[j]
-				typ := info.request.columns[j].TypeInfo
-				if err := marshalQueryValue(typ, value, v); err != nil {
-					return &Iter{err: err}
-				}
-			}
-
-			if !hasLwtEntries && info.request.lwt {
-				hasLwtEntries = true
-			}
 		} else {
-			b.statement = entry.Stmt
+			values = entry.Args
+		}
+
+		if len(values) != info.request.actualColCount {
+			return &Iter{err: fmt.Errorf("gocql: batch statement %d expected %d values, got %d", i, info.request.actualColCount, len(values))}
+		}
+
+		entryInfos[i] = entryPrepInfo{info: info, values: values}
+		totalValues += info.request.actualColCount
+
+		if !hasLwtEntries && info.request.lwt {
+			hasLwtEntries = true
+		}
+	}
+
+	// Second pass: bulk-allocate all queryValues in a single slice and marshal
+	// values into the batch statements. This replaces N individual make() calls
+	// with a single allocation.
+	allValues := make([]queryValues, totalValues)
+	offset := 0
+
+	for i := 0; i < n; i++ {
+		if entryInfos[i].info == nil {
+			continue
+		}
+
+		info := entryInfos[i].info
+		values := entryInfos[i].values
+		b := &req.statements[i]
+
+		b.preparedID = info.id
+		colCount := info.request.actualColCount
+		b.values = allValues[offset : offset+colCount]
+		offset += colCount
+
+		for j := 0; j < colCount; j++ {
+			v := &b.values[j]
+			value := values[j]
+			typ := info.request.columns[j].TypeInfo
+			if err := marshalQueryValue(typ, value, v); err != nil {
+				return &Iter{err: err}
+			}
 		}
 	}
 
@@ -1936,47 +2025,37 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 	batch.routingInfo.mu.Unlock()
 
 	// TODO: should batch support tracing?
-	framer, err := c.exec(batch.Context(), req, batch.trace, batch.GetRequestTimeout())
+	framer, err := c.exec(ctx, req, batch.trace, batch.GetRequestTimeout())
 	if err != nil {
 		return &Iter{err: err}
-	}
-	warningHandler := WarningHandler(nil)
-	if c.session != nil {
-		warningHandler = c.session.warningHandler
 	}
 
 	resp, err := framer.parseFrame()
 	if err != nil {
-		return newErrorIterWithReleasedFramer(err, framer).bindWarningHandler(batch, warningHandler)
+		return newErrorIterWithReleasedFramer(err, framer)
 	}
 
 	if len(framer.traceID) > 0 && batch.trace != nil {
 		batch.trace.Trace(framer.traceID)
 	}
 
+	// Warning-handler binding and dispatch are handled once by executeBatch on
+	// the terminal iter, so intermediate UNPREPARED retries do not dispatch.
 	switch x := resp.(type) {
 	case *resultVoidFrame:
-		return (&Iter{framer: framer}).bindWarningHandler(batch, warningHandler)
+		return &Iter{framer: framer}
 	case *RequestErrUnprepared:
-		stmt, found := stmts[string(x.StatementId)]
-		if found {
-			key := c.session.stmtsLRU.keyFor(c.host.HostID(), c.currentKeyspace, stmt)
-			c.session.stmtsLRU.evictPreparedID(key, x.StatementId)
-		}
-		framer.Release()
-		return c.executeBatch(ctx, batch)
+		return newErrorIterWithReleasedFramer(x, framer)
 	case *resultRowsFrame:
-		iter := (&Iter{
+		return &Iter{
 			meta:    x.meta,
 			framer:  framer,
 			numRows: x.numRows,
-		}).bindWarningHandler(batch, warningHandler)
-
-		return iter
+		}
 	case error:
-		return newErrorIterWithReleasedFramer(x, framer).bindWarningHandler(batch, warningHandler)
+		return newErrorIterWithReleasedFramer(x, framer)
 	default:
-		return newErrorIterWithReleasedFramer(NewErrProtocol("Unknown type in response to batch statement: %s", x), framer).bindWarningHandler(batch, warningHandler)
+		return newErrorIterWithReleasedFramer(NewErrProtocol("Unknown type in response to batch statement: %s", x), framer)
 	}
 }
 
