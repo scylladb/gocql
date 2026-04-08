@@ -2198,10 +2198,10 @@ func TestUseKeyspaceQuoteEscaping(t *testing.T) {
 // suitable for testing releaseFramer and EWMA logic.
 func newTestConnWithFramerPool() *Conn {
 	c := &Conn{}
-	c.framerConstructor.defaults = framerConfig{
+	c.framers.defaults = framerConfig{
 		proto: protoVersion4 & protoVersionMask,
 	}
-	c.initFramerPool()
+	c.framers.initPool(c)
 	return c
 }
 
@@ -2234,7 +2234,7 @@ func TestReleaseFramer(t *testing.T) {
 			c.releaseReadFramer(f)
 		}
 
-		avg := c.framerConstructor.readPool.bufAvgSize.Load()
+		avg := c.framers.readPool.bufAvgSize.Load()
 		if avg != defaultBufSize {
 			t.Errorf("EWMA should stay at defaultBufSize=%d when all buffers equal, got %d", defaultBufSize, avg)
 		}
@@ -2248,14 +2248,14 @@ func TestReleaseFramer(t *testing.T) {
 
 		f.Release()
 
-		avgAfterFirstRelease := c.framerConstructor.readPool.bufAvgSize.Load()
+		avgAfterFirstRelease := c.framers.readPool.bufAvgSize.Load()
 		if avgAfterFirstRelease <= defaultBufSize {
 			t.Fatalf("framer.Release() should route through Conn.releaseFramer and update EWMA, got %d", avgAfterFirstRelease)
 		}
 
 		f.Release()
 
-		if avgAfterSecondRelease := c.framerConstructor.readPool.bufAvgSize.Load(); avgAfterSecondRelease != avgAfterFirstRelease {
+		if avgAfterSecondRelease := c.framers.readPool.bufAvgSize.Load(); avgAfterSecondRelease != avgAfterFirstRelease {
 			t.Fatalf("second framer.Release() should be a no-op: first avg=%d second avg=%d", avgAfterFirstRelease, avgAfterSecondRelease)
 		}
 	})
@@ -2271,7 +2271,7 @@ func TestReleaseFramer(t *testing.T) {
 			c.releaseReadFramer(f)
 		}
 
-		avg := c.framerConstructor.readPool.bufAvgSize.Load()
+		avg := c.framers.readPool.bufAvgSize.Load()
 		// After 100 iterations with weight=8, avg should be very close to targetSize.
 		// Allow 1% tolerance.
 		if avg < targetSize*99/100 || avg > targetSize*101/100 {
@@ -2298,7 +2298,7 @@ func TestReleaseFramer(t *testing.T) {
 			c.releaseReadFramer(f)
 		}
 
-		avg := c.framerConstructor.readPool.bufAvgSize.Load()
+		avg := c.framers.readPool.bufAvgSize.Load()
 		// Due to the upward-biased rounding (+framerBufEWMAWeight/2), the EWMA settles
 		// slightly above the actual sample value when converging downward. The steady-state
 		// offset is at most framerBufEWMAWeight/2 (i.e., 4) per step which compounds to
@@ -2396,7 +2396,7 @@ func TestReleaseFramer(t *testing.T) {
 		writeFramer.buf = make([]byte, 0, 8192)
 		c.releaseWriteFramer(writeFramer)
 
-		if writeAvg := c.framerConstructor.writePool.bufAvgSize.Load(); writeAvg <= defaultBufSize {
+		if writeAvg := c.framers.writePool.bufAvgSize.Load(); writeAvg <= defaultBufSize {
 			t.Fatalf("writer pool should track its own EWMA, got %d", writeAvg)
 		}
 
@@ -2424,15 +2424,15 @@ func TestReleaseFramer(t *testing.T) {
 		}
 
 		c.releaseWriteFramer(f)
-		if got, want := f.flags, c.framerConstructor.defaults.flags; got != want {
+		if got, want := f.flags, c.framers.defaults.flags; got != want {
 			t.Fatalf("releaseWriteFramer should restore default flags: got %08b want %08b", got, want)
 		}
 
 		f = c.getWriteFramer()
 		plainReq := &writeQueryFrame{statement: "SELECT now() FROM system.local"}
 		plainBuf, plainHeader := buildTestFrame(t, f, plainReq, streamID)
-		if plainHeader.Flags != c.framerConstructor.defaults.flags {
-			t.Fatalf("plain query should use default flags after pooled reuse: got %08b want %08b", plainHeader.Flags, c.framerConstructor.defaults.flags)
+		if plainHeader.Flags != c.framers.defaults.flags {
+			t.Fatalf("plain query should use default flags after pooled reuse: got %08b want %08b", plainHeader.Flags, c.framers.defaults.flags)
 		}
 
 		fresh := newFramer(nil, protoVersion4)
@@ -2460,7 +2460,7 @@ func TestReleaseFramer(t *testing.T) {
 		}
 
 		c.releaseWriteFramer(f)
-		if got, want := f.flags, c.framerConstructor.defaults.flags; got != want {
+		if got, want := f.flags, c.framers.defaults.flags; got != want {
 			t.Fatalf("releaseWriteFramer should restore default flags: got %08b want %08b", got, want)
 		}
 

@@ -197,7 +197,7 @@ type Conn struct {
 	calls                map[int]*callReq
 	r                    *bufio.Reader
 	session              *Session
-	framerConstructor    connFramers
+	framers              connFramers
 	cancel               context.CancelFunc
 	addr                 string
 	usingTimeoutClause   string
@@ -727,7 +727,7 @@ func (c *Conn) closeWithError(err error) {
 	// Allow GC of pooled framers. Safe to do after the drain loop above has
 	// resolved all in-flight exec() calls. Any event goroutines still running
 	// will see pool==nil in releaseFramer and simply drop the framer.
-	c.framerConstructor.close()
+	c.framers.close()
 
 	if err != nil {
 		c.cancel()
