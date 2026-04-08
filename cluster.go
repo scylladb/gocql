@@ -55,6 +55,71 @@ func (p PoolConfig) buildPool(session *Session) *policyConnPool {
 	return newPolicyConnPool(session)
 }
 
+// CompressionScope defines the boundary between "local" and "remote" for
+// topology-aware compression decisions.
+type CompressionScope int
+
+const (
+	// CompressNonLocalRack treats same-rack traffic as "local" and everything
+	// else (cross-rack within the same DC and cross-DC) as "remote".
+	CompressNonLocalRack CompressionScope = iota
+
+	// CompressNonLocalDC treats all same-DC traffic (any rack) as "local"
+	// and only cross-DC traffic as "remote".
+	CompressNonLocalDC
+)
+
+// neverCompressSize is the sentinel value that disables compression for a
+// traffic class when used as a threshold in CompressionPolicy.
+const neverCompressSize = -1
+
+// CompressionPolicy controls when protocol-level compression is applied based
+// on the serialized frame body size and the topology distance to the target
+// host. It is only effective when ClusterConfig.Compressor is set.
+//
+// The zero value compresses all frames, preserving backward compatibility.
+type CompressionPolicy struct {
+	// MinCompressLocalSize is the minimum frame body size in bytes to trigger
+	// compression for "local" traffic.
+	//
+	//   0  = compress all local frames (default, backward compatible)
+	//  -1  = never compress local frames
+	//  >0  = compress only if body >= this many bytes
+	//
+	// What counts as "local" depends on Scope:
+	//   CompressNonLocalRack: local = same rack
+	//   CompressNonLocalDC:   local = same DC (any rack)
+	MinCompressLocalSize int
+
+	// MinCompressRemoteSize is the minimum frame body size in bytes to trigger
+	// compression for "remote" traffic.
+	//
+	//   0  = compress all remote frames (default, backward compatible)
+	//  -1  = never compress remote frames
+	//  >0  = compress only if body >= this many bytes
+	//
+	// What counts as "remote" depends on Scope:
+	//   CompressNonLocalRack: remote = different rack (cross-rack same DC + cross-DC)
+	//   CompressNonLocalDC:   remote = different DC
+	MinCompressRemoteSize int
+
+	// Scope defines what counts as "local" vs "remote".
+	// Default: CompressNonLocalRack
+	Scope CompressionScope
+
+	// MinSavingsPercent is the minimum percentage of body bytes that
+	// compression must save for the compressed frame to be sent.
+	// After compressing, if the savings are below this threshold the
+	// compressed output is discarded and the frame is sent uncompressed,
+	// avoiding wasted decompression CPU on the server.
+	//
+	//   0   = disabled (default, backward compatible — any compression
+	//         result is accepted, even if it is larger than the original)
+	//   1-99 = require at least this % savings; e.g. 15 means the
+	//          compressed size must be ≤ 85% of the original body size
+	MinSavingsPercent int
+}
+
 // ClusterConfig is a struct to configure the default cluster implementation
 // of gocql. It has a variety of attributes that can be used to modify the
 // behavior to fit the most common use cases. Applications that require a
@@ -98,8 +163,10 @@ type ClusterConfig struct {
 	// the filter will be ignored. If set will take precedence over any options set
 	// via Discovery
 	HostFilter HostFilter
-	// Compression algorithm.
-	// Default: nil
+	// Compressor sets the compression algorithm for the CQL native protocol.
+	// When set, compression is negotiated during connection startup and applied
+	// to protocol frames according to CompressionPolicy.
+	// Default: nil (no compression)
 	Compressor Compressor
 	// Default: nil
 	Authenticator Authenticator
@@ -160,6 +227,11 @@ type ClusterConfig struct {
 	// The maximum amount of time to wait for schema agreement in a cluster after
 	// receiving a schema change frame. (default: 60s)
 	MaxWaitSchemaAgreement time.Duration
+	// CompressionPolicy controls when compression is applied based on frame size
+	// and the topology distance to the target host.
+	// Only effective when Compressor is set.
+	// Default: zero value (compress all frames, backward compatible)
+	CompressionPolicy CompressionPolicy
 	// ProtoVersion sets the version of the native protocol to use, this will
 	// enable features in the driver for specific protocol versions, generally this
 	// should be set to a known version (2,3,4) for the cluster being connected to.
@@ -614,6 +686,20 @@ func (cfg *ClusterConfig) Validate() error {
 		if err := cfg.ClientRoutesConfig.Validate(); err != nil {
 			return fmt.Errorf("ClientRoutesConfig is invalid: %v", err)
 		}
+	}
+
+	cp := cfg.CompressionPolicy
+	if cp.MinCompressLocalSize < -1 {
+		return errors.New("CompressionPolicy.MinCompressLocalSize must be >= -1")
+	}
+	if cp.MinCompressRemoteSize < -1 {
+		return errors.New("CompressionPolicy.MinCompressRemoteSize must be >= -1")
+	}
+	if cp.MinSavingsPercent < 0 || cp.MinSavingsPercent > 99 {
+		return errors.New("CompressionPolicy.MinSavingsPercent must be between 0 and 99")
+	}
+	if cp.Scope != CompressNonLocalRack && cp.Scope != CompressNonLocalDC {
+		return fmt.Errorf("CompressionPolicy.Scope has invalid value: %d", cp.Scope)
 	}
 
 	return cfg.ValidateAndInitSSL()
