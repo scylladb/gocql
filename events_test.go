@@ -82,10 +82,16 @@ func TestEventDebounceMultipleFlushes(t *testing.T) {
 	const eventCount = 50
 	var eventsSeen atomic.Int64
 	var flushCount atomic.Int64
+	firstFlushDone := make(chan struct{}, 1)
 	done := make(chan struct{}, 1)
 
 	debouncer := newEventDebouncer("testDebouncerMulti", func(events []frame) {
-		flushCount.Add(1)
+		if flushCount.Add(1) == 1 {
+			select {
+			case firstFlushDone <- struct{}{}:
+			default:
+			}
+		}
 		if eventsSeen.Add(int64(len(events))) >= eventCount {
 			select {
 			case done <- struct{}{}:
@@ -105,8 +111,11 @@ func TestEventDebounceMultipleFlushes(t *testing.T) {
 		})
 	}
 
-	// Wait for the first batch to flush (debounce interval is 1s).
-	time.Sleep(eventDebounceTime + 500*time.Millisecond)
+	select {
+	case <-firstFlushDone:
+	case <-time.After(10 * time.Second):
+		t.Fatalf("timed out waiting for first flush: saw %d events across %d flushes", eventsSeen.Load(), flushCount.Load())
+	}
 
 	for i := 0; i < eventCount/2; i++ {
 		debouncer.debounce(&frm.StatusChangeEventFrame{
