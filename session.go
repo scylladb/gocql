@@ -2262,6 +2262,18 @@ func (b *Batch) Query(stmt string, args ...interface{}) *Batch {
 	return b
 }
 
+// Reserve pre-allocates capacity for n entries in the batch, reducing slice
+// growth allocations when building large batches. It should be called before
+// adding entries. If entries have already been added, their data is preserved.
+func (b *Batch) Reserve(n int) *Batch {
+	if cap(b.Entries) < n {
+		entries := make([]BatchEntry, len(b.Entries), n)
+		copy(entries, b.Entries)
+		b.Entries = entries
+	}
+	return b
+}
+
 // Bind adds the query to the batch operation and correlates it with a binding callback
 // that will be invoked when the batch is executed. The binding callback allows the application
 // to define which query argument values will be marshalled as part of the batch execution.
