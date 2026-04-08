@@ -206,9 +206,18 @@ type HostInfoBuilder struct {
 }
 
 func (b HostInfoBuilder) Build() HostInfo {
+	var hostUUID UUID
+	if b.HostId != "" {
+		var err error
+		hostUUID, err = ParseUUID(b.HostId)
+		if err != nil {
+			// Fall back: treat as opaque identifier (for tests with non-UUID strings).
+			copy(hostUUID[:], b.HostId)
+		}
+	}
 	return HostInfo{
 		dseVersion:          b.DseVersion,
-		hostId:              b.HostId,
+		hostId:              hostUUID,
 		dataCenter:          b.DataCenter,
 		schemaVersion:       b.SchemaVersion,
 		hostname:            b.Hostname,
@@ -231,30 +240,30 @@ func (b HostInfoBuilder) Build() HostInfo {
 
 type HostInfo struct {
 	translatedAddresses *translatedAddresses
+	workload            string
 	dseVersion          string
-	hostId              string
 	dataCenter          string
 	schemaVersion       string
 	hostname            string
 	clusterName         string
 	partitioner         string
 	rack                string
-	workload            string
 	rpcAddress          net.IP
+	broadcastAddress    net.IP
 	tokens              []string
 	preferredIP         net.IP
 	peer                net.IP
 	listenAddress       net.IP
 	connectAddress      net.IP
-	broadcastAddress    net.IP
 	version             cassVersion
 	scyllaFeatures      ScyllaHostFeatures
 	port                int
 	// TODO(zariel): reduce locking maybe, not all values will change, but to ensure
 	// that we are thread safe use a mutex to access all fields.
-	mu    sync.RWMutex
-	state nodeState
-	graph bool
+	mu     sync.RWMutex
+	state  nodeState
+	hostId UUID
+	graph  bool
 }
 
 func (h *HostInfo) Equal(host *HostInfo) bool {
@@ -389,6 +398,17 @@ func (h *HostInfo) Rack() string {
 func (h *HostInfo) HostID() string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
+	if h.hostId.IsEmpty() {
+		return ""
+	}
+	return h.hostId.String()
+}
+
+// hostUUID returns the raw binary host UUID under the read lock.
+// Use this instead of direct field access on shared HostInfo to avoid data races.
+func (h *HostInfo) hostUUID() UUID {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 	return h.hostId
 }
 
@@ -495,7 +515,7 @@ func (h *HostInfo) update(from *HostInfo) {
 	if h.rack == "" {
 		h.rack = from.rack
 	}
-	if h.hostId == "" {
+	if h.hostId.IsEmpty() {
 		h.hostId = from.hostId
 	}
 	if h.workload == "" {
@@ -546,7 +566,7 @@ func (h *HostInfo) String() string {
 		"port=%d data_center=%q rack=%q host_id=%q version=%q state=%s num_tokens=%d]",
 		h.hostname, h.connectAddress, h.peer, h.rpcAddress, h.broadcastAddress, h.preferredIP,
 		connectAddr, source,
-		h.port, h.dataCenter, h.rack, h.hostId, h.version, h.state, len(h.tokens))
+		h.port, h.dataCenter, h.rack, h.hostId.String(), h.version, h.state, len(h.tokens))
 }
 
 func (h *HostInfo) setScyllaFeatures(s ScyllaHostFeatures) {
@@ -638,7 +658,7 @@ func hostInfoFromMap(row map[string]interface{}, defaultPort int) (*HostInfo, er
 			if !ok {
 				return nil, fmt.Errorf(assertErrorMsg, "host_id")
 			}
-			host.hostId = hostId.String()
+			host.hostId = hostId
 		case "release_version":
 			version, ok := value.(string)
 			if !ok {

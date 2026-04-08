@@ -91,7 +91,7 @@ func getPeersFromQuerySystemPeers(querySystemPeerRows []map[string]interface{}, 
 // Return true if the host is a valid peer
 func isValidPeer(host *HostInfo) bool {
 	return !(len(host.RPCAddress()) == 0 ||
-		host.hostId == "" ||
+		host.hostId.IsEmpty() ||
 		host.dataCenter == "" ||
 		host.rack == "")
 }

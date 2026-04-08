@@ -36,10 +36,10 @@ import (
 func TestPlacementStrategy_SimpleStrategy(t *testing.T) {
 	t.Parallel()
 
-	host0 := &HostInfo{hostId: "0"}
-	host25 := &HostInfo{hostId: "25"}
-	host50 := &HostInfo{hostId: "50"}
-	host75 := &HostInfo{hostId: "75"}
+	host0 := &HostInfo{hostId: tUUID(0)}
+	host25 := &HostInfo{hostId: tUUID(25)}
+	host50 := &HostInfo{hostId: tUUID(50)}
+	host75 := &HostInfo{hostId: tUUID(75)}
 
 	tokens := []hostToken{
 		{intToken(0), host0},
@@ -133,17 +133,20 @@ func TestPlacementStrategy_NetworkStrategy(t *testing.T) {
 				tokens []hostToken
 			)
 			dcRing := make(map[string][]hostToken, totalDCs)
+			hostIdx := 0
 			for i := 0; i < totalDCs; i++ {
 				var dcTokens []hostToken
 				dc := fmt.Sprintf("dc%d", i+1)
 
 				for j := 0; j < hostsPerDC; j++ {
 					rack := fmt.Sprintf("rack%d", (j%racksPerDC)+1)
+					tokenStr := fmt.Sprintf("%s:%s:%d", dc, rack, j)
 
-					h := &HostInfo{hostId: fmt.Sprintf("%s:%s:%d", dc, rack, j), dataCenter: dc, rack: rack}
+					h := &HostInfo{hostId: tUUID(hostIdx), dataCenter: dc, rack: rack}
+					hostIdx++
 
 					token := hostToken{
-						token: orderedToken([]byte(h.hostId)),
+						token: orderedToken(tokenStr),
 						host:  h,
 					}
 

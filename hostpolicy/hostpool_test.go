@@ -19,11 +19,11 @@ func TestHostPolicy_HostPool(t *testing.T) {
 	//	{hostId: "1", connectAddress: net.IPv4(10, 0, 0, 1)},
 	//}
 	firstHost := gocql.HostInfoBuilder{
-		HostId:         "0",
+		HostId:         "a0000000-0000-0000-0000-000000000000",
 		ConnectAddress: net.IPv4(10, 0, 0, 0),
 	}.Build()
 	secHost := gocql.HostInfoBuilder{
-		HostId:         "1",
+		HostId:         "a0000000-0000-0000-0000-000000000001",
 		ConnectAddress: net.IPv4(10, 0, 0, 1),
 	}.Build()
 	hosts := []*gocql.HostInfo{&firstHost, &secHost}
@@ -35,25 +35,25 @@ func TestHostPolicy_HostPool(t *testing.T) {
 	// interleaved iteration should always increment the host
 	iter := policy.Pick(nil)
 	actualA := iter()
-	if actualA.Info().HostID() != "0" {
+	if actualA.Info().HostID() != "a0000000-0000-0000-0000-000000000000" {
 		t.Errorf("Expected hosts[0] but was hosts[%s]", actualA.Info().HostID())
 	}
 	actualA.Mark(nil)
 
 	actualB := iter()
-	if actualB.Info().HostID() != "1" {
+	if actualB.Info().HostID() != "a0000000-0000-0000-0000-000000000001" {
 		t.Errorf("Expected hosts[1] but was hosts[%s]", actualB.Info().HostID())
 	}
 	actualB.Mark(fmt.Errorf("error"))
 
 	actualC := iter()
-	if actualC.Info().HostID() != "0" {
+	if actualC.Info().HostID() != "a0000000-0000-0000-0000-000000000000" {
 		t.Errorf("Expected hosts[0] but was hosts[%s]", actualC.Info().HostID())
 	}
 	actualC.Mark(nil)
 
 	actualD := iter()
-	if actualD.Info().HostID() != "0" {
+	if actualD.Info().HostID() != "a0000000-0000-0000-0000-000000000000" {
 		t.Errorf("Expected hosts[0] but was hosts[%s]", actualD.Info().HostID())
 	}
 	actualD.Mark(nil)

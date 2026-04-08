@@ -345,8 +345,8 @@ func (s *Session) init() error {
 	} else {
 		// For testing purposes we populate host ids
 		for _, host := range hosts {
-			if len(host.hostId) == 0 {
-				host.hostId = MustRandomUUID().String()
+			if host.hostId.IsEmpty() {
+				host.hostId = MustRandomUUID()
 			}
 		}
 	}

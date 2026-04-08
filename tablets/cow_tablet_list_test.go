@@ -14,6 +14,12 @@ import (
 	"github.com/gocql/gocql/internal/tests"
 )
 
+func testHostUUID(s string) HostUUID {
+	var u HostUUID
+	copy(u[:], s)
+	return u
+}
+
 func compareEntryRanges(entries TabletEntryList, ranges [][]int64) bool {
 	if len(entries) != len(ranges) {
 		return false
@@ -164,23 +170,23 @@ func TestBulkAddToPerTableList(t *testing.T) {
 	t.Run("IntraBatchOverlappingPair", func(t *testing.T) {
 		tl := TabletEntryList{}
 		batch := []*TabletEntry{
-			{firstToken: 0, lastToken: 100, replicas: []ReplicaInfo{{"h1", 0}}},
-			{firstToken: 50, lastToken: 150, replicas: []ReplicaInfo{{"h2", 0}}},
+			{firstToken: 0, lastToken: 100, replicas: []ReplicaInfo{{testHostUUID("h1"), 0}}},
+			{firstToken: 50, lastToken: 150, replicas: []ReplicaInfo{{testHostUUID("h2"), 0}}},
 		}
 		tl = tl.bulkAddEntries(batch)
 
 		tests.AssertEqual(t, "length", 1, len(tl))
 		tests.AssertEqual(t, "firstToken", int64(50), tl[0].firstToken)
 		tests.AssertEqual(t, "lastToken", int64(150), tl[0].lastToken)
-		tests.AssertEqual(t, "host", "h2", tl[0].replicas[0].hostId)
+		tests.AssertEqual(t, "host", testHostUUID("h2"), tl[0].replicas[0].hostId)
 	})
 
 	t.Run("IntraBatchOverlappingTriple", func(t *testing.T) {
 		tl := TabletEntryList{}
 		batch := []*TabletEntry{
-			{firstToken: 0, lastToken: 100, replicas: []ReplicaInfo{{"h1", 0}}},
-			{firstToken: 50, lastToken: 150, replicas: []ReplicaInfo{{"h2", 0}}},
-			{firstToken: 100, lastToken: 200, replicas: []ReplicaInfo{{"h3", 0}}},
+			{firstToken: 0, lastToken: 100, replicas: []ReplicaInfo{{testHostUUID("h1"), 0}}},
+			{firstToken: 50, lastToken: 150, replicas: []ReplicaInfo{{testHostUUID("h2"), 0}}},
+			{firstToken: 100, lastToken: 200, replicas: []ReplicaInfo{{testHostUUID("h3"), 0}}},
 		}
 		tl = tl.bulkAddEntries(batch)
 
@@ -195,8 +201,8 @@ func TestBulkAddToPerTableList(t *testing.T) {
 			{firstToken: 500, lastToken: 600},
 		}
 		batch := []*TabletEntry{
-			{firstToken: 0, lastToken: 100, replicas: []ReplicaInfo{{"h1", 0}}},
-			{firstToken: 50, lastToken: 150, replicas: []ReplicaInfo{{"h2", 0}}},
+			{firstToken: 0, lastToken: 100, replicas: []ReplicaInfo{{testHostUUID("h1"), 0}}},
+			{firstToken: 50, lastToken: 150, replicas: []ReplicaInfo{{testHostUUID("h2"), 0}}},
 		}
 		tl = tl.bulkAddEntries(batch)
 
@@ -222,17 +228,17 @@ func TestBulkAddToPerTableList(t *testing.T) {
 
 	t.Run("BatchWithGapsPreservesExisting", func(t *testing.T) {
 		tl := TabletEntryList{
-			{firstToken: 200, lastToken: 300, replicas: []ReplicaInfo{{"existing", 0}}},
+			{firstToken: 200, lastToken: 300, replicas: []ReplicaInfo{{testHostUUID("existing"), 0}}},
 		}
 		batch := []*TabletEntry{
-			{firstToken: 0, lastToken: 100, replicas: []ReplicaInfo{{"h1", 0}}},
-			{firstToken: 500, lastToken: 600, replicas: []ReplicaInfo{{"h2", 0}}},
+			{firstToken: 0, lastToken: 100, replicas: []ReplicaInfo{{testHostUUID("h1"), 0}}},
+			{firstToken: 500, lastToken: 600, replicas: []ReplicaInfo{{testHostUUID("h2"), 0}}},
 		}
 		tl = tl.bulkAddEntries(batch)
 
 		tests.AssertEqual(t, "length", 3, len(tl))
 		tests.AssertTrue(t, "ranges", compareEntryRanges(tl, [][]int64{{0, 100}, {200, 300}, {500, 600}}))
-		tests.AssertEqual(t, "existing host preserved", "existing", tl[1].replicas[0].hostId)
+		tests.AssertEqual(t, "existing host preserved", testHostUUID("existing"), tl[1].replicas[0].hostId)
 	})
 }
 
@@ -243,7 +249,7 @@ func TestCowTabletListAddAndFind(t *testing.T) {
 		cl := NewCowTabletList()
 		defer cl.Close()
 
-		host1 := tests.RandomUUID()
+		host1 := GenerateHostUUIDs(1)[0]
 		cl.AddTablet(&TabletInfo{
 			keyspaceName: "ks1", tableName: "tb1",
 			firstToken: -100, lastToken: 0,
@@ -282,8 +288,9 @@ func TestCowTabletListAddAndFind(t *testing.T) {
 	t.Run("FindReplicasUnsafeForToken", func(t *testing.T) {
 		cl := NewCowTabletList()
 		defer cl.Close()
-		host1 := tests.RandomUUID()
-		host2 := tests.RandomUUID()
+		hosts := GenerateHostUUIDs(2)
+		host1 := hosts[0]
+		host2 := hosts[1]
 
 		cl.AddTablet(&TabletInfo{
 			keyspaceName: "ks1", tableName: "tb1",
@@ -294,8 +301,8 @@ func TestCowTabletListAddAndFind(t *testing.T) {
 
 		replicas := cl.FindReplicasUnsafeForToken("ks1", "tb1", 0)
 		tests.AssertEqual(t, "replica count", 2, len(replicas))
-		tests.AssertEqual(t, "replica0 host", host1, replicas[0].HostID())
-		tests.AssertEqual(t, "replica1 host", host2, replicas[1].HostID())
+		tests.AssertEqual(t, "replica0 host", host1.String(), replicas[0].HostID())
+		tests.AssertEqual(t, "replica1 host", host2.String(), replicas[1].HostID())
 
 		replicas = cl.FindReplicasUnsafeForToken("ks1", "missing", 0)
 		if replicas != nil {
@@ -306,7 +313,7 @@ func TestCowTabletListAddAndFind(t *testing.T) {
 	t.Run("MultiTable", func(t *testing.T) {
 		cl := NewCowTabletList()
 		defer cl.Close()
-		host1 := tests.RandomUUID()
+		host1 := GenerateHostUUIDs(1)[0]
 
 		cl.AddTablet(&TabletInfo{
 			keyspaceName: "ks", tableName: "tb1",
@@ -330,7 +337,7 @@ func TestCowTabletListAddAndFind(t *testing.T) {
 	t.Run("MultiKeyspace", func(t *testing.T) {
 		cl := NewCowTabletList()
 		defer cl.Close()
-		host1 := tests.RandomUUID()
+		host1 := GenerateHostUUIDs(1)[0]
 
 		cl.AddTablet(&TabletInfo{
 			keyspaceName: "ks1", tableName: "tb",
@@ -354,8 +361,9 @@ func TestCowTabletListAddAndFind(t *testing.T) {
 	t.Run("OverwritesExisting", func(t *testing.T) {
 		cl := NewCowTabletList()
 		defer cl.Close()
-		host1 := tests.RandomUUID()
-		host2 := tests.RandomUUID()
+		hosts := GenerateHostUUIDs(2)
+		host1 := hosts[0]
+		host2 := hosts[1]
 
 		cl.AddTablet(&TabletInfo{
 			keyspaceName: "ks", tableName: "tb",
@@ -373,15 +381,16 @@ func TestCowTabletListAddAndFind(t *testing.T) {
 		if ti == nil {
 			t.Fatal("expected tablet")
 		}
-		tests.AssertEqual(t, "updated host", host2, ti.Replicas()[0].HostID())
+		tests.AssertEqual(t, "updated host", host2.String(), ti.Replicas()[0].HostID())
 		tests.AssertEqual(t, "updated shard", 5, ti.Replicas()[0].ShardID())
 	})
 
 	t.Run("SameFirstTokenDifferentLastToken", func(t *testing.T) {
 		cl := NewCowTabletList()
 		defer cl.Close()
-		host1 := tests.RandomUUID()
-		host2 := tests.RandomUUID()
+		hosts := GenerateHostUUIDs(2)
+		host1 := hosts[0]
+		host2 := hosts[1]
 
 		cl.AddTablet(&TabletInfo{
 			keyspaceName: "ks", tableName: "tb",
@@ -399,14 +408,14 @@ func TestCowTabletListAddAndFind(t *testing.T) {
 		if ti == nil {
 			t.Fatal("expected tablet for token 50")
 		}
-		tests.AssertEqual(t, "replaced host", host2, ti.Replicas()[0].HostID())
+		tests.AssertEqual(t, "replaced host", host2.String(), ti.Replicas()[0].HostID())
 		tests.AssertEqual(t, "replaced lastToken", int64(200), ti.LastToken())
 
 		ti = cl.FindTabletForToken("ks", "tb", 150)
 		if ti == nil {
 			t.Fatal("expected tablet for token 150")
 		}
-		tests.AssertEqual(t, "host at 150", host2, ti.Replicas()[0].HostID())
+		tests.AssertEqual(t, "host at 150", host2.String(), ti.Replicas()[0].HostID())
 	})
 }
 
@@ -416,7 +425,7 @@ func TestCowTabletListBulkAdd(t *testing.T) {
 	t.Run("Basic", func(t *testing.T) {
 		cl := NewCowTabletList()
 		defer cl.Close()
-		host1 := tests.RandomUUID()
+		host1 := GenerateHostUUIDs(1)[0]
 
 		batch := []*TabletInfo{
 			{keyspaceName: "ks", tableName: "tb", firstToken: -300, lastToken: -200, replicas: []ReplicaInfo{{host1, 0}}},
@@ -442,7 +451,7 @@ func TestCowTabletListBulkAdd(t *testing.T) {
 	t.Run("MultiTable", func(t *testing.T) {
 		cl := NewCowTabletList()
 		defer cl.Close()
-		host1 := tests.RandomUUID()
+		host1 := GenerateHostUUIDs(1)[0]
 
 		batch := []*TabletInfo{
 			{keyspaceName: "ks", tableName: "tb1", firstToken: -100, lastToken: 0, replicas: []ReplicaInfo{{host1, 0}}},
@@ -462,7 +471,7 @@ func TestCowTabletListBulkAdd(t *testing.T) {
 	t.Run("SortsPerTableGroups", func(t *testing.T) {
 		cl := NewCowTabletList()
 		defer cl.Close()
-		host1 := tests.RandomUUID()
+		host1 := GenerateHostUUIDs(1)[0]
 
 		batch := []*TabletInfo{
 			{keyspaceName: "ks", tableName: "tb1", firstToken: 100, lastToken: 200, replicas: []ReplicaInfo{{host1, 2}}},
@@ -502,7 +511,7 @@ func TestCowTabletListBulkAdd(t *testing.T) {
 	t.Run("NilEntries", func(t *testing.T) {
 		cl := NewCowTabletList()
 		defer cl.Close()
-		host1 := tests.RandomUUID()
+		host1 := GenerateHostUUIDs(1)[0]
 
 		cl.BulkAddTablets([]*TabletInfo{
 			nil,
@@ -520,7 +529,7 @@ func TestCowTabletListBulkAdd(t *testing.T) {
 	t.Run("EmptyIdentifiers", func(t *testing.T) {
 		cl := NewCowTabletList()
 		defer cl.Close()
-		host1 := tests.RandomUUID()
+		host1 := GenerateHostUUIDs(1)[0]
 
 		cl.BulkAddTablets([]*TabletInfo{
 			{keyspaceName: "", tableName: "tb", firstToken: 0, lastToken: 100, replicas: []ReplicaInfo{{host1, 0}}},
@@ -544,8 +553,8 @@ func TestCowTabletListBulkAdd(t *testing.T) {
 		defer cl.Close()
 
 		batch := []*TabletInfo{
-			{keyspaceName: "ks", tableName: "tb", firstToken: 0, lastToken: 100, replicas: []ReplicaInfo{{"h1", 0}}},
-			{keyspaceName: "ks", tableName: "tb", firstToken: 50, lastToken: 150, replicas: []ReplicaInfo{{"h2", 1}}},
+			{keyspaceName: "ks", tableName: "tb", firstToken: 0, lastToken: 100, replicas: []ReplicaInfo{{testHostUUID("h1"), 0}}},
+			{keyspaceName: "ks", tableName: "tb", firstToken: 50, lastToken: 150, replicas: []ReplicaInfo{{testHostUUID("h2"), 1}}},
 		}
 		cl.BulkAddTablets(batch)
 		cl.Flush()
@@ -564,7 +573,7 @@ func TestCowTabletListGet(t *testing.T) {
 	t.Run("AllTablets", func(t *testing.T) {
 		cl := NewCowTabletList()
 		defer cl.Close()
-		host1 := tests.RandomUUID()
+		host1 := GenerateHostUUIDs(1)[0]
 
 		cl.AddTablet(&TabletInfo{
 			keyspaceName: "ks1", tableName: "tb1",
@@ -608,7 +617,7 @@ func TestCowTabletListGetTableTablets(t *testing.T) {
 	t.Run("MultipleTablesAndKeyspaces", func(t *testing.T) {
 		cl := NewCowTabletList()
 		defer cl.Close()
-		host1 := tests.RandomUUID()
+		host1 := GenerateHostUUIDs(1)[0]
 
 		cl.AddTablet(&TabletInfo{
 			keyspaceName: "ks1", tableName: "tb1",
@@ -649,7 +658,7 @@ func TestCowTabletListGetTableTablets(t *testing.T) {
 	t.Run("NonExistent", func(t *testing.T) {
 		cl := NewCowTabletList()
 		defer cl.Close()
-		host1 := tests.RandomUUID()
+		host1 := GenerateHostUUIDs(1)[0]
 
 		cl.AddTablet(&TabletInfo{
 			keyspaceName: "ks1", tableName: "tb1",
@@ -672,7 +681,7 @@ func TestCowTabletListGetTableTablets(t *testing.T) {
 	t.Run("ReturnsCopy", func(t *testing.T) {
 		cl := NewCowTabletList()
 		defer cl.Close()
-		host1 := tests.RandomUUID()
+		host1 := GenerateHostUUIDs(1)[0]
 
 		cl.AddTablet(&TabletInfo{
 			keyspaceName: "ks", tableName: "tb",
@@ -712,8 +721,9 @@ func TestCowTabletListRemove(t *testing.T) {
 	t.Run("WithHost", func(t *testing.T) {
 		cl := NewCowTabletList()
 		defer cl.Close()
-		removedHost := tests.RandomUUID()
-		keptHost := tests.RandomUUID()
+		hosts := GenerateHostUUIDs(2)
+		removedHost := hosts[0]
+		keptHost := hosts[1]
 
 		cl.AddTablet(&TabletInfo{
 			keyspaceName: "ks", tableName: "tb1",
@@ -742,7 +752,7 @@ func TestCowTabletListRemove(t *testing.T) {
 		flat := cl.Get()
 		for _, tab := range flat {
 			for _, r := range tab.Replicas() {
-				if r.HostID() == removedHost {
+				if r.HostUUIDValue() == removedHost {
 					t.Fatalf("found removed host in tablet %v", tab)
 				}
 			}
@@ -752,7 +762,7 @@ func TestCowTabletListRemove(t *testing.T) {
 	t.Run("WithKeyspace", func(t *testing.T) {
 		cl := NewCowTabletList()
 		defer cl.Close()
-		host1 := tests.RandomUUID()
+		host1 := GenerateHostUUIDs(1)[0]
 
 		cl.AddTablet(&TabletInfo{
 			keyspaceName: "removed_ks", tableName: "tb1",
@@ -793,7 +803,7 @@ func TestCowTabletListRemove(t *testing.T) {
 	t.Run("WithTable", func(t *testing.T) {
 		cl := NewCowTabletList()
 		defer cl.Close()
-		host1 := tests.RandomUUID()
+		host1 := GenerateHostUUIDs(1)[0]
 
 		cl.AddTablet(&TabletInfo{
 			keyspaceName: "ks", tableName: "removed_tb",
@@ -823,7 +833,7 @@ func TestCowTabletListRemove(t *testing.T) {
 	t.Run("Nonexistent", func(t *testing.T) {
 		cl := NewCowTabletList()
 		defer cl.Close()
-		host1 := tests.RandomUUID()
+		host1 := GenerateHostUUIDs(1)[0]
 
 		cl.AddTablet(&TabletInfo{
 			keyspaceName: "ks", tableName: "tb",
@@ -832,7 +842,7 @@ func TestCowTabletListRemove(t *testing.T) {
 		})
 		cl.RemoveTabletsWithKeyspace("nonexistent")
 		cl.RemoveTabletsWithTable("ks", "nonexistent")
-		cl.RemoveTabletsWithHost("nonexistent-host-id")
+		cl.RemoveTabletsWithHost(testHostUUID("nonexistent-host"))
 		cl.Flush()
 
 		tests.AssertEqual(t, "still has tablet", 1, len(cl.Get()))
@@ -845,7 +855,7 @@ func TestCowTabletListForEach(t *testing.T) {
 	t.Run("VisitsAllTables", func(t *testing.T) {
 		cl := NewCowTabletList()
 		defer cl.Close()
-		host1 := tests.RandomUUID()
+		host1 := GenerateHostUUIDs(1)[0]
 
 		cl.AddTablet(&TabletInfo{
 			keyspaceName: "ks1", tableName: "tb1",
@@ -879,7 +889,7 @@ func TestCowTabletListForEach(t *testing.T) {
 	t.Run("StopsEarly", func(t *testing.T) {
 		cl := NewCowTabletList()
 		defer cl.Close()
-		host1 := tests.RandomUUID()
+		host1 := GenerateHostUUIDs(1)[0]
 
 		for i := 0; i < 10; i++ {
 			cl.AddTablet(&TabletInfo{
@@ -924,7 +934,7 @@ func TestCowTabletListForEach(t *testing.T) {
 	t.Run("MutationDoesNotCorruptState", func(t *testing.T) {
 		cl := NewCowTabletList()
 		defer cl.Close()
-		host1 := tests.RandomUUID()
+		host1 := GenerateHostUUIDs(1)[0]
 
 		cl.AddTablet(&TabletInfo{
 			keyspaceName: "ks", tableName: "tb",
@@ -964,7 +974,7 @@ func TestCowTabletListForEach(t *testing.T) {
 	t.Run("EntriesAreReadable", func(t *testing.T) {
 		cl := NewCowTabletList()
 		defer cl.Close()
-		host1 := tests.RandomUUID()
+		host1 := GenerateHostUUIDs(1)[0]
 
 		cl.AddTablet(&TabletInfo{
 			keyspaceName: "ks", tableName: "tb",
@@ -997,7 +1007,7 @@ func TestCowTabletListForEach(t *testing.T) {
 		cl.AddTablet(&TabletInfo{
 			keyspaceName: "ks", tableName: "tb",
 			firstToken: -100, lastToken: 100,
-			replicas: []ReplicaInfo{{"host1", 0}},
+			replicas: []ReplicaInfo{{testHostUUID("host1"), 0}},
 		})
 		cl.Flush()
 
@@ -1046,7 +1056,7 @@ func TestCowTabletListLifecycle(t *testing.T) {
 		cl := NewCowTabletList()
 		cl.Close()
 
-		host1 := tests.RandomUUID()
+		host1 := GenerateHostUUIDs(1)[0]
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
@@ -1074,14 +1084,14 @@ func TestCowTabletListLifecycle(t *testing.T) {
 		cl.AddTablet(&TabletInfo{
 			keyspaceName: "ks", tableName: "tb",
 			firstToken: -100, lastToken: 100,
-			replicas: []ReplicaInfo{{"host", 0}},
+			replicas: []ReplicaInfo{{testHostUUID("host"), 0}},
 		})
 		cl.BulkAddTablets([]*TabletInfo{{
 			keyspaceName: "ks", tableName: "tb",
 			firstToken: -100, lastToken: 100,
-			replicas: []ReplicaInfo{{"host", 0}},
+			replicas: []ReplicaInfo{{testHostUUID("host"), 0}},
 		}})
-		cl.RemoveTabletsWithHost("host")
+		cl.RemoveTabletsWithHost(testHostUUID("host"))
 		cl.RemoveTabletsWithKeyspace("ks")
 		cl.RemoveTabletsWithTable("ks", "tb")
 	})
@@ -1166,7 +1176,7 @@ func TestOpQueueRun(t *testing.T) {
 			flushDone := make(chan struct{})
 			q.send(opAddTablet{tablet: newTablet(0, 99)})
 			q.send(opFlush{done: flushDone})
-			q.send(opRemoveHost{hostID: "host-1"})
+			q.send(opRemoveHost{hostID: testHostUUID("host-1")})
 			q.send(opAddTablet{tablet: newTablet(100, 199)})
 			<-flushDone
 		}, []string{"bulk", "flush", "removeHost", "bulk"}, func(t *testing.T, processed []tabletOp) {
@@ -1185,7 +1195,7 @@ func TestCowTabletListConcurrency(t *testing.T) {
 	t.Run("ConcurrentReads", func(t *testing.T) {
 		cl := NewCowTabletList()
 		defer cl.Close()
-		hosts := tests.GenerateHostNames(3)
+		hosts := GenerateHostUUIDs(3)
 		cl.BulkAddTablets(createTablets("ks", "tb", hosts, 2, 100, 100))
 		cl.Flush()
 
@@ -1208,7 +1218,7 @@ func TestCowTabletListConcurrency(t *testing.T) {
 	t.Run("ConcurrentReadWrite", func(t *testing.T) {
 		cl := NewCowTabletList()
 		defer cl.Close()
-		hosts := tests.GenerateHostNames(3)
+		hosts := GenerateHostUUIDs(3)
 		cl.BulkAddTablets(createTablets("ks", "tb", hosts, 2, 100, 100))
 		cl.Flush()
 
@@ -1246,7 +1256,7 @@ func TestCowTabletListConcurrency(t *testing.T) {
 	t.Run("ConcurrentMultiTableReadWrite", func(t *testing.T) {
 		cl := NewCowTabletList()
 		defer cl.Close()
-		hosts := tests.GenerateHostNames(6)
+		hosts := GenerateHostUUIDs(6)
 		tables := []string{"tb1", "tb2", "tb3", "tb4", "tb5"}
 
 		for _, tb := range tables {
@@ -1300,7 +1310,7 @@ func TestCowTabletListConcurrency(t *testing.T) {
 	t.Run("ConcurrentRemoveKeyspace", func(t *testing.T) {
 		cl := NewCowTabletList()
 		defer cl.Close()
-		hosts := tests.GenerateHostNames(3)
+		hosts := GenerateHostUUIDs(3)
 
 		cl.BulkAddTablets(createTablets("ks1", "tb", hosts, 2, 50, 50))
 		cl.BulkAddTablets(createTablets("ks2", "tb", hosts, 2, 50, 50))
@@ -1344,9 +1354,12 @@ func TestCowTabletListConcurrency(t *testing.T) {
 		cl := NewCowTabletList()
 		defer cl.Close()
 
+		hostUUIDs := GenerateHostUUIDs(9) // 3 keyspaces * 3 hosts
+		hostIdx := 0
 		for ks := 0; ks < 3; ks++ {
 			for host := 0; host < 3; host++ {
-				hostID := tests.RandomUUID()
+				hostID := hostUUIDs[hostIdx]
+				hostIdx++
 				for i := 0; i < 10; i++ {
 					cl.AddTablet(&TabletInfo{
 						keyspaceName: fmt.Sprintf("ks%d", ks),
@@ -1361,19 +1374,23 @@ func TestCowTabletListConcurrency(t *testing.T) {
 		cl.Flush()
 
 		allTablets := cl.Get()
-		var host0, host1 string
-		hostCount := make(map[string]int)
+		var host0, host1 HostUUID
+		var host0Set, host1Set bool
+		hostCount := make(map[HostUUID]int)
 		for _, tablet := range allTablets {
 			for _, replica := range tablet.Replicas() {
-				hostID := replica.HostID()
+				hostID := replica.HostUUIDValue()
 				hostCount[hostID]++
-				if host0 == "" {
+				if !host0Set {
 					host0 = hostID
-				} else if host1 == "" && hostID != host0 {
+					host0Set = true
+				} else if !host1Set && hostID != host0 {
 					host1 = hostID
+					host1Set = true
 				}
 			}
 		}
+		_ = host1 // host1 is used below implicitly via hostCount
 
 		var wg sync.WaitGroup
 		wg.Add(3)
@@ -1401,8 +1418,8 @@ func TestCowTabletListConcurrency(t *testing.T) {
 
 		for _, tablet := range remaining {
 			for _, replica := range tablet.Replicas() {
-				if replica.HostID() == host0 {
-					t.Errorf("found tablet with removed host %s", host0)
+				if replica.HostUUIDValue() == host0 {
+					t.Errorf("found tablet with removed host %s", host0.String())
 				}
 			}
 		}
@@ -1422,7 +1439,7 @@ func TestCowTabletListConcurrency(t *testing.T) {
 			tableName:    "tbl",
 			firstToken:   -100,
 			lastToken:    100,
-			replicas:     []ReplicaInfo{{"host1", 0}},
+			replicas:     []ReplicaInfo{{testHostUUID("host1"), 0}},
 		}
 		list.BulkAddTablets([]*TabletInfo{tablet})
 		list.Flush()
@@ -1453,11 +1470,12 @@ func TestCowTabletListConcurrency(t *testing.T) {
 	t.Run("FlushCloseRace", func(t *testing.T) {
 		cl := NewCowTabletList()
 
+		uuids := GenerateHostUUIDs(100)
 		for i := 0; i < 100; i++ {
 			cl.AddTablet(&TabletInfo{
 				keyspaceName: "ks", tableName: "tb",
 				firstToken: int64(i * 100), lastToken: int64(i*100 + 99),
-				replicas: []ReplicaInfo{{tests.RandomUUID(), 0}},
+				replicas: []ReplicaInfo{{uuids[i], 0}},
 			})
 		}
 
@@ -1494,7 +1512,7 @@ func TestCowTabletListEdgeCases(t *testing.T) {
 	t.Run("ExtremeTokenValues", func(t *testing.T) {
 		cl := NewCowTabletList()
 		defer cl.Close()
-		host1 := tests.RandomUUID()
+		host1 := GenerateHostUUIDs(1)[0]
 
 		cl.AddTablet(&TabletInfo{
 			keyspaceName: "ks", tableName: "tb",
@@ -1556,13 +1574,13 @@ func TestCowTabletListEdgeCases(t *testing.T) {
 	})
 
 	t.Run("TabletInfoBuilderInvalidRange", func(t *testing.T) {
-		hostID := tests.RandomUUID()
+		hostID := GenerateHostUUIDs(1)[0]
 		builder := TabletInfoBuilder{
 			KeyspaceName: "ks",
 			TableName:    "tb",
 			FirstToken:   100,
 			LastToken:    -100,
-			Replicas:     [][]interface{}{{hostID, 0}},
+			Replicas:     [][]interface{}{{hostID.String(), 0}},
 		}
 		_, err := builder.Build()
 		if err == nil {
@@ -1578,6 +1596,7 @@ func TestCowTabletListEdgeCases(t *testing.T) {
 		const operations = 10000
 		done := make(chan bool)
 
+		uuids := GenerateHostUUIDs(operations)
 		go func() {
 			for i := 0; i < operations; i++ {
 				tablet := &TabletInfo{
@@ -1585,7 +1604,7 @@ func TestCowTabletListEdgeCases(t *testing.T) {
 					tableName:    "tb",
 					firstToken:   int64(i * 100),
 					lastToken:    int64(i*100 + 99),
-					replicas:     []ReplicaInfo{{tests.RandomUUID(), 0}},
+					replicas:     []ReplicaInfo{{uuids[i], 0}},
 				}
 				cl.AddTablet(tablet)
 			}
@@ -1609,13 +1628,14 @@ func TestCowTabletListEdgeCases(t *testing.T) {
 		cl.AddTablet(&TabletInfo{
 			keyspaceName: "ks", tableName: "tb",
 			firstToken: -1000, lastToken: -900,
-			replicas: []ReplicaInfo{{tests.RandomUUID(), 0}},
+			replicas: []ReplicaInfo{{GenerateHostUUIDs(1)[0], 0}},
 		})
 		cl.Flush()
 
 		const writers = 10000
 		var wg sync.WaitGroup
 
+		writerUUIDs := GenerateHostUUIDs(writers)
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -1623,7 +1643,7 @@ func TestCowTabletListEdgeCases(t *testing.T) {
 				cl.AddTablet(&TabletInfo{
 					keyspaceName: "ks", tableName: "tb",
 					firstToken: int64(i * 100), lastToken: int64(i*100 + 99),
-					replicas: []ReplicaInfo{{tests.RandomUUID(), 0}},
+					replicas: []ReplicaInfo{{writerUUIDs[i], 0}},
 				})
 			}
 		}()

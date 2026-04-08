@@ -93,8 +93,8 @@ func TestTranslateHostAddresses_WithScyllaPorts(t *testing.T) {
 
 	translatedIP := net.ParseIP("192.0.2.10")
 	translator := AddressTranslatorFuncV2(func(hostID string, addr AddressPort) AddressPort {
-		if hostID != "host-id" {
-			t.Errorf("expected host id %q, got %q", "host-id", hostID)
+		if hostID != "a0000000-0000-0000-0000-000000000001" {
+			t.Errorf("expected host id %q, got %q", "a0000000-0000-0000-0000-000000000001", hostID)
 		}
 		return AddressPort{
 			Address: translatedIP,
@@ -104,7 +104,7 @@ func TestTranslateHostAddresses_WithScyllaPorts(t *testing.T) {
 	host := HostInfoBuilder{
 		ConnectAddress: net.ParseIP("10.0.0.1"),
 		Port:           9042,
-		HostId:         "host-id",
+		HostId:         "a0000000-0000-0000-0000-000000000001",
 	}.Build()
 	host.setScyllaFeatures(ScyllaHostFeatures{
 		shardAwarePort:    19042,
