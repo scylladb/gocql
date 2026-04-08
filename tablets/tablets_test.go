@@ -113,7 +113,7 @@ func TestFindEntryForToken(t *testing.T) {
 
 	t.Run("InvalidBounds", func(t *testing.T) {
 		entries := TabletEntryList{
-			{firstToken: 0, lastToken: 100, replicas: []ReplicaInfo{{"host1", 0}}},
+			{firstToken: 0, lastToken: 100, replicas: []ReplicaInfo{{testHostUUID("host1"), 0}}},
 		}
 
 		testCases := []struct {
@@ -169,8 +169,8 @@ func TestFindOverlapRange(t *testing.T) {
 
 	t.Run("ContiguousBoundary", func(t *testing.T) {
 		entries := TabletEntryList{
-			{firstToken: 0, lastToken: 100, replicas: []ReplicaInfo{{"host1", 0}}},
-			{firstToken: 200, lastToken: 300, replicas: []ReplicaInfo{{"host2", 1}}},
+			{firstToken: 0, lastToken: 100, replicas: []ReplicaInfo{{testHostUUID("host1"), 0}}},
+			{firstToken: 200, lastToken: 300, replicas: []ReplicaInfo{{testHostUUID("host2"), 1}}},
 		}
 
 		start, tailStart := entries.findOverlapRange(100, 200)
@@ -185,8 +185,8 @@ func TestFindOverlapRange(t *testing.T) {
 
 	t.Run("ExtremeValues", func(t *testing.T) {
 		entries := TabletEntryList{
-			{firstToken: math.MinInt64, lastToken: 0, replicas: []ReplicaInfo{{"host1", 0}}},
-			{firstToken: 0, lastToken: math.MaxInt64, replicas: []ReplicaInfo{{"host2", 1}}},
+			{firstToken: math.MinInt64, lastToken: 0, replicas: []ReplicaInfo{{testHostUUID("host1"), 0}}},
+			{firstToken: 0, lastToken: math.MaxInt64, replicas: []ReplicaInfo{{testHostUUID("host2"), 1}}},
 		}
 
 		start, tailStart := entries.findOverlapRange(math.MinInt64, math.MaxInt64)
@@ -216,7 +216,7 @@ func TestFindOverlapRange(t *testing.T) {
 
 	t.Run("SingleEntry", func(t *testing.T) {
 		entries := TabletEntryList{
-			{firstToken: -100, lastToken: 100, replicas: []ReplicaInfo{{"host1", 0}}},
+			{firstToken: -100, lastToken: 100, replicas: []ReplicaInfo{{testHostUUID("host1"), 0}}},
 		}
 
 		start, tailStart := entries.findOverlapRange(-50, 50)

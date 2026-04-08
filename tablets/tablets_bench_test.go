@@ -8,11 +8,41 @@ import (
 	"runtime"
 	"sync/atomic"
 	"testing"
-
-	"github.com/gocql/gocql/internal/tests"
 )
 
 const tabletsCountMedium = 1500
+
+// BenchmarkFindReplicasUnsafeForToken measures the pure lookup+replica-return
+// path for a prepopulated CowTabletList.
+func BenchmarkFindReplicasUnsafeForToken(b *testing.B) {
+	for _, numTablets := range []int{1500, 10000} {
+		b.Run(fmt.Sprintf("Tablets%d", numTablets), func(b *testing.B) {
+			const rf = 3
+			const hostsCount = 6
+			hosts := GenerateHostUUIDs(hostsCount)
+			tl := NewCowTabletList()
+			defer tl.Close()
+
+			tl.BulkAddTablets(createTablets("ks", "tbl", hosts, rf, numTablets, int64(numTablets)))
+			tl.Flush()
+			runtime.GC()
+			b.ResetTimer()
+			b.ReportAllocs()
+
+			rnd := getThreadSafeRnd()
+			b.RunParallel(func(pb *testing.PB) {
+				for pb.Next() {
+					token := rnd.Int63()
+					replicas := tl.FindReplicasUnsafeForToken("ks", "tbl", token)
+					if len(replicas) != rf {
+						// Token may fall in a gap; that's fine for benchmarking.
+						_ = replicas
+					}
+				}
+			})
+		})
+	}
+}
 
 type opConfig struct {
 	opRemoveKeyspace int64
@@ -82,7 +112,7 @@ func runCowTabletListTestSuit(b *testing.B, name string, hostsCount, parallelism
 
 func runSingleCowTabletListTest(b *testing.B, hostsCount, parallelism, rf, totalTablets, extraTables int, prepopulate bool, ratios opConfig) {
 	tokenRangeCount64 := int64(totalTablets)
-	hosts := tests.GenerateHostNames(hostsCount)
+	hosts := GenerateHostUUIDs(hostsCount)
 	targetKS := "kstarget"
 	targetTable := "ttarget"
 	removeKs := "ksremove"

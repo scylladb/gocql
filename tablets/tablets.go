@@ -1,6 +1,7 @@
 package tablets
 
 import (
+	"encoding/hex"
 	"fmt"
 	"slices"
 	"sort"
@@ -8,13 +9,72 @@ import (
 	"sync/atomic"
 )
 
+// HostUUID is a 16-byte binary UUID used to identify hosts without heap allocation.
+type HostUUID [16]byte
+
+// String returns the canonical UUID string representation (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx).
+func (u HostUUID) String() string {
+	var buf [36]byte
+	hex.Encode(buf[0:8], u[0:4])
+	buf[8] = '-'
+	hex.Encode(buf[9:13], u[4:6])
+	buf[13] = '-'
+	hex.Encode(buf[14:18], u[6:8])
+	buf[18] = '-'
+	hex.Encode(buf[19:23], u[8:10])
+	buf[23] = '-'
+	hex.Encode(buf[24:36], u[10:16])
+	return string(buf[:])
+}
+
+// IsEmpty reports whether the UUID is all zeros.
+func (u HostUUID) IsEmpty() bool {
+	return u == HostUUID{}
+}
+
+// ParseHostUUID parses a UUID string (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx) into a HostUUID.
+func ParseHostUUID(s string) (HostUUID, error) {
+	if len(s) != 36 {
+		return HostUUID{}, fmt.Errorf("invalid UUID length: %d", len(s))
+	}
+	if s[8] != '-' || s[13] != '-' || s[18] != '-' || s[23] != '-' {
+		return HostUUID{}, fmt.Errorf("invalid UUID format: %s", s)
+	}
+	var u HostUUID
+	var buf [32]byte
+	copy(buf[0:8], s[0:8])
+	copy(buf[8:12], s[9:13])
+	copy(buf[12:16], s[14:18])
+	copy(buf[16:20], s[19:23])
+	copy(buf[20:32], s[24:36])
+	_, err := hex.Decode(u[:], buf[:])
+	if err != nil {
+		return HostUUID{}, fmt.Errorf("invalid UUID hex: %s: %w", s, err)
+	}
+	return u, nil
+}
+
+// MustParseHostUUID is like ParseHostUUID but panics on error.
+func MustParseHostUUID(s string) HostUUID {
+	u, err := ParseHostUUID(s)
+	if err != nil {
+		panic(err)
+	}
+	return u
+}
+
 type ReplicaInfo struct {
-	// hostId for sake of better performance, it has to be same type as HostInfo.hostId
-	hostId  string
+	// hostId stored as binary UUID to avoid per-replica heap allocation.
+	hostId  HostUUID
 	shardId int
 }
 
 func (r ReplicaInfo) HostID() string {
+	return r.hostId.String()
+}
+
+// HostUUIDValue returns the raw binary host UUID for zero-allocation comparison.
+func (r ReplicaInfo) HostUUIDValue() HostUUID {
 	return r.hostId
 }
 
@@ -23,7 +83,7 @@ func (r ReplicaInfo) ShardID() int {
 }
 
 func (r ReplicaInfo) String() string {
-	return fmt.Sprintf("ReplicaInfo{hostId:%s, shardId:%d}", r.hostId, r.shardId)
+	return fmt.Sprintf("ReplicaInfo{hostId:%s, shardId:%d}", r.hostId.String(), r.shardId)
 }
 
 type TabletInfoBuilder struct {
@@ -42,6 +102,11 @@ type toString interface {
 	String() string
 }
 
+// uuidProvider is satisfied by types that can provide raw UUID bytes (e.g., gocql.UUID).
+type uuidProvider interface {
+	Bytes() []byte
+}
+
 func (b TabletInfoBuilder) Build() (*TabletInfo, error) {
 	if b.FirstToken > b.LastToken {
 		return nil, fmt.Errorf("invalid token range: firstToken (%d) > lastToken (%d)",
@@ -53,16 +118,34 @@ func (b TabletInfoBuilder) Build() (*TabletInfo, error) {
 		if len(replica) != 2 {
 			return nil, fmt.Errorf("replica info should have exactly two elements, but it has %d: %v", len(replica), replica)
 		}
-		if hostId, ok := replica[0].(toString); ok {
-			if shardId, ok := replica[1].(int); ok {
-				repInfo := ReplicaInfo{hostId.String(), shardId}
-				tabletReplicas = append(tabletReplicas, repInfo)
-			} else {
-				return nil, fmt.Errorf("second element (shard) of replica is not int: %v", replica)
+		shardId, ok := replica[1].(int)
+		if !ok {
+			return nil, fmt.Errorf("second element (shard) of replica is not int: %v", replica)
+		}
+		var hostUUID HostUUID
+		switch v := replica[0].(type) {
+		case uuidProvider:
+			raw := v.Bytes()
+			if len(raw) != 16 {
+				return nil, fmt.Errorf("UUID bytes has wrong length %d, expected 16", len(raw))
 			}
-		} else {
+			copy(hostUUID[:], raw)
+		case string:
+			parsed, err := ParseHostUUID(v)
+			if err != nil {
+				return nil, fmt.Errorf("first element (hostID) cannot be parsed as UUID: %v: %w", replica, err)
+			}
+			hostUUID = parsed
+		case toString:
+			parsed, err := ParseHostUUID(v.String())
+			if err != nil {
+				return nil, fmt.Errorf("first element (hostID) cannot be parsed as UUID: %v: %w", replica, err)
+			}
+			hostUUID = parsed
+		default:
 			return nil, fmt.Errorf("first element (hostID) of replica is not UUID: %v", replica)
 		}
+		tabletReplicas = append(tabletReplicas, ReplicaInfo{hostUUID, shardId})
 	}
 
 	return &TabletInfo{
@@ -284,7 +367,7 @@ func (t TabletEntryList) findEntryForToken(token int64, l int, r int) *TabletEnt
 }
 
 // removeEntriesWithHost returns a new list excluding entries with a replica on the given host.
-func (t TabletEntryList) removeEntriesWithHost(hostID string) TabletEntryList {
+func (t TabletEntryList) removeEntriesWithHost(hostID HostUUID) TabletEntryList {
 	hasMatch := false
 	for _, e := range t {
 		for _, r := range e.replicas {
@@ -377,7 +460,7 @@ type opBulkAddTablets struct {
 func (op opBulkAddTablets) execute(c *CowTabletList) { c.doBulkAddTablets(op.tablets) }
 
 type opRemoveHost struct {
-	hostID string
+	hostID HostUUID
 }
 
 func (op opRemoveHost) execute(c *CowTabletList) { c.doRemoveTabletsWithHost(op.hostID) }
@@ -649,7 +732,7 @@ func (c *CowTabletList) doBulkAddTablets(tablets []*TabletInfo) {
 	}
 }
 
-func (c *CowTabletList) doRemoveTabletsWithHost(hostID string) {
+func (c *CowTabletList) doRemoveTabletsWithHost(hostID HostUUID) {
 	current := *c.tables.Load()
 	needsMapUpdate := false
 	for _, tt := range current {
@@ -841,7 +924,7 @@ func (c *CowTabletList) BulkAddTablets(tablets []*TabletInfo) {
 }
 
 // RemoveTabletsWithHost queues removal of all tablets with replicas on the specified host.
-func (c *CowTabletList) RemoveTabletsWithHost(hostID string) {
+func (c *CowTabletList) RemoveTabletsWithHost(hostID HostUUID) {
 	c.sendOp(opRemoveHost{hostID: hostID})
 }
 

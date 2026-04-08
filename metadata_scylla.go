@@ -632,7 +632,7 @@ func (s *metadataDescriber) AddTablet(tablet *tablets.TabletInfo) {
 // RemoveTabletsWithHost removes tablets that contains given host.
 // to be used outside the metadataDescriber
 func (s *metadataDescriber) RemoveTabletsWithHost(host *HostInfo) {
-	s.metadata.tabletsMetadata.RemoveTabletsWithHost(host.HostID())
+	s.metadata.tabletsMetadata.RemoveTabletsWithHost(tablets.HostUUID(host.hostUUID()))
 }
 
 // RemoveTabletsWithKeyspace removes tablets for given keyspace.

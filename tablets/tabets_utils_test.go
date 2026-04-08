@@ -1,15 +1,16 @@
+//go:build unit
+// +build unit
+
 package tablets
 
 import (
 	"math"
 	"testing"
-
-	"github.com/gocql/gocql/internal/tests"
 )
 
 func TestCreateTablets(t *testing.T) {
 	t.Run("BasicDistribution", func(t *testing.T) {
-		hosts := tests.GenerateHostNames(3)
+		hosts := GenerateHostUUIDs(3)
 		tl := createTablets("ks", "tbl", hosts, 2, 6, 6)
 		if len(tl) != 6 {
 			t.Errorf("expected 6 tablets, got %d", len(tl))
@@ -19,7 +20,7 @@ func TestCreateTablets(t *testing.T) {
 			if len(tablet.replicas) != 2 {
 				t.Errorf("each tablet should have 2 replicas, got %d", len(tablet.replicas))
 			}
-			replicaSet := map[string]bool{}
+			replicaSet := map[HostUUID]bool{}
 			for _, r := range tablet.replicas {
 				if replicaSet[r.hostId] {
 					t.Errorf("duplicate replica %s in tablet", r.hostId)
@@ -30,7 +31,7 @@ func TestCreateTablets(t *testing.T) {
 	})
 
 	t.Run("SingleTabletFullRange", func(t *testing.T) {
-		hosts := tests.GenerateHostNames(3)
+		hosts := GenerateHostUUIDs(3)
 		tl := createTablets("ks", "tbl", hosts, 3, 1, 1)
 		t0 := tl[0]
 		if t0.firstToken != math.MinInt64 {
@@ -43,11 +44,11 @@ func TestCreateTablets(t *testing.T) {
 }
 
 func TestReplicaGenerator(t *testing.T) {
-	hosts := []string{"a", "b", "c", "d"}
+	hosts := GenerateHostUUIDs(4)
 	rf := 2
 	g := NewReplicaSetGenerator(hosts, rf)
 
-	var seen [][]string
+	var seen [][]HostUUID
 	for i := 0; i < 6; i++ {
 		gen := g.Next()
 
@@ -55,9 +56,9 @@ func TestReplicaGenerator(t *testing.T) {
 			t.Fatalf("expected %d replicas, got %d", rf, len(gen))
 		}
 
-		var ids []string
+		var ids []HostUUID
 		for _, r := range gen {
-			ids = append(ids, r.HostID())
+			ids = append(ids, r.HostUUIDValue())
 		}
 		seen = append(seen, ids)
 	}
@@ -70,7 +71,7 @@ func TestReplicaGenerator(t *testing.T) {
 					continue outer
 				}
 			}
-			t.Errorf("expected different output for different seeds, but found same seeds for %d and %d: %s == %s", i, j, seen[i], seen[j])
+			t.Errorf("expected different output for different seeds, but found same seeds for %d and %d: %v == %v", i, j, seen[i], seen[j])
 		}
 	}
 }

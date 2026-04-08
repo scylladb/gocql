@@ -846,7 +846,7 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 			hosts := t.hosts.get()
 			for _, replica := range tabletReplicas {
 				for _, host := range hosts {
-					if host.hostId == replica.HostID() {
+					if host.hostId == UUID(replica.HostUUIDValue()) {
 						replicas = append(replicas, host)
 						break
 					}

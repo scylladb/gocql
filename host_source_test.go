@@ -91,7 +91,7 @@ func TestIsValidPeer(t *testing.T) {
 	host := &HostInfo{
 		rpcAddress: net.ParseIP("0.0.0.0"),
 		rack:       "myRack",
-		hostId:     "0",
+		hostId:     tUUID(1),
 		dataCenter: "datacenter",
 		tokens:     []string{"0", "1"},
 	}
@@ -112,7 +112,7 @@ func TestIsZeroToken(t *testing.T) {
 	host := &HostInfo{
 		rpcAddress: net.ParseIP("0.0.0.0"),
 		rack:       "myRack",
-		hostId:     "0",
+		hostId:     tUUID(1),
 		dataCenter: "datacenter",
 		tokens:     []string{"0", "1"},
 	}
@@ -374,7 +374,7 @@ func TestHostInfoBuilder(t *testing.T) {
 			t.Parallel()
 
 			builder := HostInfoBuilder{
-				HostId:        "host-123",
+				HostId:        "a0000000-0000-0000-0000-000000000123",
 				DataCenter:    "dc1",
 				Rack:          "rack1",
 				Tokens:        []string{"token1", "token2"},
@@ -567,7 +567,7 @@ func TestHostInfoBuilder(t *testing.T) {
 			builder := HostInfoBuilder{
 				TranslatedAddresses: translatedAddrs,
 				Workload:            "Cassandra",
-				HostId:              "uuid-host-456",
+				HostId:              "b0000000-0000-0000-0000-000000000456",
 				SchemaVersion:       "schema-v2",
 				Hostname:            "cassandra-node.local",
 				ClusterName:         "production-cluster",

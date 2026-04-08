@@ -372,7 +372,7 @@ func TestScyllaConnPickerHandleShardCountChange(t *testing.T) {
 			picker := &scyllaConnPicker{
 				logger:                     logger,
 				disableShardAwarePortUntil: new(atomic.Value),
-				hostId:                     "test-host-id",
+				hostId:                     tUUID(99),
 				address:                    "192.168.1.1:9042", // Regular port
 				conns:                      make([]*Conn, tt.initialShards),
 				excessConns:                make([]*Conn, 0),
