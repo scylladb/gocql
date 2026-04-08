@@ -113,7 +113,7 @@ func (cf *connFramers) initCache(c *Conn) {
 	cf.initPool(c)
 }
 
-// initFramerPool initializes the per-c-onnection framer pool.
+// initFramerPool initializes the per-connection framer pool.
 // Framers created by the pool are pre-populated with the connection's
 // cached defaults so getFramer only needs to reset per-request fields.
 func (c *Conn) initFramerPool() {
