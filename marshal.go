@@ -26,6 +26,7 @@ package gocql
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
@@ -843,6 +844,26 @@ func marshalVector(info VectorType, value interface{}) ([]byte, error) {
 		return nil, nil
 	}
 
+	// Fast paths for []float64/[]float32 — bypass reflect and per-element Marshal dispatch.
+	// Pointer-to-slice (*[]float64/*[]float32) is not handled here because the top-level
+	// Marshal() function already dereferences pointers before calling marshalVector.
+	switch info.SubType.Type() {
+	case TypeDouble:
+		if v, ok := value.([]float64); ok {
+			if v == nil {
+				return nil, nil
+			}
+			return marshalVectorFloat64(info.Dimensions, v)
+		}
+	case TypeFloat:
+		if v, ok := value.([]float32); ok {
+			if v == nil {
+				return nil, nil
+			}
+			return marshalVectorFloat32(info.Dimensions, v)
+		}
+	}
+
 	rv := reflect.ValueOf(value)
 	t := rv.Type()
 	k := t.Kind()
@@ -874,7 +895,101 @@ func marshalVector(info VectorType, value interface{}) ([]byte, error) {
 	return nil, marshalErrorf("can not marshal %T into %s. Accepted types: slice, array.", value, info)
 }
 
+// marshalVectorFloat64 encodes a []float64 as contiguous big-endian IEEE 754 doubles.
+// This is the fast path for vector<double> — it avoids reflect and per-element Marshal dispatch,
+// producing a single allocation for the output buffer.
+func marshalVectorFloat64(dim int, vec []float64) ([]byte, error) {
+	if len(vec) != dim {
+		return nil, marshalErrorf("expected vector with %d dimensions, received %d", dim, len(vec))
+	}
+	buf := make([]byte, dim*8)
+	for i, v := range vec {
+		binary.BigEndian.PutUint64(buf[i*8:], math.Float64bits(v))
+	}
+	return buf, nil
+}
+
+// marshalVectorFloat32 encodes a []float32 as contiguous big-endian IEEE 754 floats.
+// This is the fast path for vector<float> — it avoids reflect and per-element Marshal dispatch,
+// producing a single allocation for the output buffer.
+func marshalVectorFloat32(dim int, vec []float32) ([]byte, error) {
+	if len(vec) != dim {
+		return nil, marshalErrorf("expected vector with %d dimensions, received %d", dim, len(vec))
+	}
+	buf := make([]byte, dim*4)
+	for i, v := range vec {
+		binary.BigEndian.PutUint32(buf[i*4:], math.Float32bits(v))
+	}
+	return buf, nil
+}
+
+// unmarshalVectorFloat64 decodes contiguous big-endian IEEE 754 doubles into *[]float64.
+// This is the fast path for vector<double> — it avoids reflect and per-element Unmarshal dispatch.
+// If the destination slice has sufficient capacity, it is reused (zero allocations).
+// Note: the generic reflect-based path always allocates a new slice; this intentional
+// divergence is what delivers the zero-alloc steady-state for repeated unmarshal calls.
+func unmarshalVectorFloat64(dim int, data []byte, dst *[]float64) error {
+	expected := dim * 8
+	if len(data) != expected {
+		return unmarshalErrorf("unmarshal vector<double>: expected %d bytes, got %d", expected, len(data))
+	}
+	vec := *dst
+	if cap(vec) >= dim {
+		vec = vec[:dim]
+	} else {
+		vec = make([]float64, dim)
+	}
+	for i := range vec {
+		vec[i] = math.Float64frombits(binary.BigEndian.Uint64(data[i*8:]))
+	}
+	*dst = vec
+	return nil
+}
+
+// unmarshalVectorFloat32 decodes contiguous big-endian IEEE 754 floats into *[]float32.
+// This is the fast path for vector<float> — it avoids reflect and per-element Unmarshal dispatch.
+// If the destination slice has sufficient capacity, it is reused (zero allocations).
+// Note: the generic reflect-based path always allocates a new slice; this intentional
+// divergence is what delivers the zero-alloc steady-state for repeated unmarshal calls.
+func unmarshalVectorFloat32(dim int, data []byte, dst *[]float32) error {
+	expected := dim * 4
+	if len(data) != expected {
+		return unmarshalErrorf("unmarshal vector<float>: expected %d bytes, got %d", expected, len(data))
+	}
+	vec := *dst
+	if cap(vec) >= dim {
+		vec = vec[:dim]
+	} else {
+		vec = make([]float32, dim)
+	}
+	for i := range vec {
+		vec[i] = math.Float32frombits(binary.BigEndian.Uint32(data[i*4:]))
+	}
+	*dst = vec
+	return nil
+}
+
 func unmarshalVector(info VectorType, data []byte, value interface{}) error {
+	// Fast paths for *[]float64/*[]float32 — bypass reflect and per-element Unmarshal dispatch.
+	switch info.SubType.Type() {
+	case TypeDouble:
+		if dst, ok := value.(*[]float64); ok {
+			if data == nil {
+				*dst = nil
+				return nil
+			}
+			return unmarshalVectorFloat64(info.Dimensions, data, dst)
+		}
+	case TypeFloat:
+		if dst, ok := value.(*[]float32); ok {
+			if data == nil {
+				*dst = nil
+				return nil
+			}
+			return unmarshalVectorFloat32(info.Dimensions, data, dst)
+		}
+	}
+
 	rv := reflect.ValueOf(value)
 	if rv.Kind() != reflect.Ptr {
 		return unmarshalErrorf("can not unmarshal into non-pointer %T", value)
