@@ -73,7 +73,7 @@ const maxCASRetries = 100
 // initFramerCache precomputes framer fields from cqlProtoExts so that
 // per-query framer creation avoids repeated linear scans and allocations.
 func (c *Conn) initFramerCache() {
-	c.framerConstructor.initCache(c)
+	c.framers.initCache(c)
 }
 
 func (cf *connFramers) initCache(c *Conn) {
@@ -113,13 +113,6 @@ func (cf *connFramers) initCache(c *Conn) {
 	cf.initPool(c)
 }
 
-// initFramerPool initializes the per-connection framer pool.
-// Framers created by the pool are pre-populated with the connection's
-// cached defaults so getFramer only needs to reset per-request fields.
-func (c *Conn) initFramerPool() {
-	c.framerConstructor.initPool(c)
-}
-
 func (cf *connFramers) initPool(c *Conn) {
 	defaults := cf.defaults
 	cf.readPool.init(defaults, func(f *framer) { c.releaseReadFramer(f) })
@@ -128,7 +121,7 @@ func (cf *connFramers) initPool(c *Conn) {
 
 // getReadFramer returns a pooled framer for reading responses and events.
 func (c *Conn) getReadFramer() *framer {
-	return c.framerConstructor.getRead(c)
+	return c.framers.getRead(c)
 }
 
 func (cf *connFramers) getRead(c *Conn) *framer {
@@ -139,7 +132,7 @@ func (cf *connFramers) getRead(c *Conn) *framer {
 
 // getWriteFramer returns a pooled framer for building outgoing requests.
 func (c *Conn) getWriteFramer() *framer {
-	return c.framerConstructor.getWrite(c)
+	return c.framers.getWrite(c)
 }
 
 func (cf *connFramers) getWrite(c *Conn) *framer {
@@ -151,7 +144,7 @@ func (cf *connFramers) getWrite(c *Conn) *framer {
 
 // releaseReadFramer returns a response/event framer to the reader pool.
 func (c *Conn) releaseReadFramer(f *framer) {
-	c.framerConstructor.releaseRead(c, f)
+	c.framers.releaseRead(c, f)
 }
 
 func (cf *connFramers) releaseRead(c *Conn, f *framer) {
@@ -179,7 +172,7 @@ func (cf *connFramers) releaseRead(c *Conn, f *framer) {
 
 // releaseWriteFramer returns a request-builder framer to the writer pool.
 func (c *Conn) releaseWriteFramer(f *framer) {
-	c.framerConstructor.releaseWrite(f)
+	c.framers.releaseWrite(f)
 }
 
 func (cf *connFramers) releaseWrite(f *framer) {
