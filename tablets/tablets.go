@@ -193,7 +193,7 @@ func (t *TabletInfo) ReplicasUnsafe() []ReplicaInfo {
 	return t.replicas
 }
 
-type TabletInfoList []*TabletInfo
+type TabletInfoList []TabletInfo
 
 // TabletEntry is the per-table representation of a tablet, without keyspace/table names.
 type TabletEntry struct {
@@ -410,8 +410,8 @@ func (t *TabletInfo) toEntry() *TabletEntry {
 }
 
 // toTabletInfo converts a TabletEntry back to a TabletInfo.
-func (e *TabletEntry) toTabletInfo(keyspace, table string) *TabletInfo {
-	return &TabletInfo{
+func (e *TabletEntry) toTabletInfo(keyspace, table string) TabletInfo {
+	return TabletInfo{
 		keyspaceName: keyspace,
 		tableName:    table,
 		replicas:     slices.Clone(e.replicas),
@@ -454,7 +454,7 @@ type opAddTablet struct {
 func (op opAddTablet) execute(c *CowTabletList) { c.doAddTablet(op.tablet) }
 
 type opBulkAddTablets struct {
-	tablets []*TabletInfo
+	tablets TabletInfoList
 }
 
 func (op opBulkAddTablets) execute(c *CowTabletList) { c.doBulkAddTablets(op.tablets) }
@@ -528,9 +528,10 @@ func (q *opQueue) next() tabletOp {
 			return op
 		}
 		bulkOp := opBulkAddTablets{
-			tablets: []*TabletInfo{
-				opAdd.tablet,
-			},
+			tablets: make(TabletInfoList, 0, 1),
+		}
+		if opAdd.tablet != nil {
+			bulkOp.tablets = append(bulkOp.tablets, *opAdd.tablet)
 		}
 		for {
 			select {
@@ -540,7 +541,9 @@ func (q *opQueue) next() tabletOp {
 					q.cachedItem = op
 					return bulkOp
 				}
-				bulkOp.tablets = append(bulkOp.tablets, opAdd.tablet)
+				if opAdd.tablet != nil {
+					bulkOp.tablets = append(bulkOp.tablets, *opAdd.tablet)
+				}
 			default:
 				return bulkOp
 			}
@@ -700,16 +703,13 @@ func (c *CowTabletList) doAddTablet(tablet *TabletInfo) {
 	tt.store((*tt.list.Load()).addEntry(tablet.toEntry()))
 }
 
-func (c *CowTabletList) doBulkAddTablets(tablets []*TabletInfo) {
+func (c *CowTabletList) doBulkAddTablets(tablets TabletInfoList) {
 	if len(tablets) == 0 {
 		return
 	}
 
-	groups := make(map[tableKey][]*TabletInfo)
+	groups := make(map[tableKey]TabletInfoList)
 	for _, t := range tablets {
-		if t == nil {
-			continue
-		}
 		if t.keyspaceName == "" || t.tableName == "" {
 			continue
 		}
@@ -919,7 +919,7 @@ func (c *CowTabletList) AddTablet(tablet *TabletInfo) {
 }
 
 // BulkAddTablets queues a batch tablet addition.
-func (c *CowTabletList) BulkAddTablets(tablets []*TabletInfo) {
+func (c *CowTabletList) BulkAddTablets(tablets TabletInfoList) {
 	c.sendOp(opBulkAddTablets{tablets: tablets})
 }
 

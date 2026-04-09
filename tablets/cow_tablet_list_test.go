@@ -427,7 +427,7 @@ func TestCowTabletListBulkAdd(t *testing.T) {
 		defer cl.Close()
 		host1 := GenerateHostUUIDs(1)[0]
 
-		batch := []*TabletInfo{
+		batch := TabletInfoList{
 			{keyspaceName: "ks", tableName: "tb", firstToken: -300, lastToken: -200, replicas: []ReplicaInfo{{host1, 0}}},
 			{keyspaceName: "ks", tableName: "tb", firstToken: -200, lastToken: -100, replicas: []ReplicaInfo{{host1, 1}}},
 			{keyspaceName: "ks", tableName: "tb", firstToken: -100, lastToken: 0, replicas: []ReplicaInfo{{host1, 2}}},
@@ -453,7 +453,7 @@ func TestCowTabletListBulkAdd(t *testing.T) {
 		defer cl.Close()
 		host1 := GenerateHostUUIDs(1)[0]
 
-		batch := []*TabletInfo{
+		batch := TabletInfoList{
 			{keyspaceName: "ks", tableName: "tb1", firstToken: -100, lastToken: 0, replicas: []ReplicaInfo{{host1, 0}}},
 			{keyspaceName: "ks", tableName: "tb1", firstToken: 0, lastToken: 100, replicas: []ReplicaInfo{{host1, 1}}},
 			{keyspaceName: "ks", tableName: "tb2", firstToken: -50, lastToken: 50, replicas: []ReplicaInfo{{host1, 2}}},
@@ -473,7 +473,7 @@ func TestCowTabletListBulkAdd(t *testing.T) {
 		defer cl.Close()
 		host1 := GenerateHostUUIDs(1)[0]
 
-		batch := []*TabletInfo{
+		batch := TabletInfoList{
 			{keyspaceName: "ks", tableName: "tb1", firstToken: 100, lastToken: 200, replicas: []ReplicaInfo{{host1, 2}}},
 			{keyspaceName: "ks", tableName: "tb2", firstToken: -100, lastToken: 100, replicas: []ReplicaInfo{{host1, 7}}},
 			{keyspaceName: "ks", tableName: "tb1", firstToken: -100, lastToken: 0, replicas: []ReplicaInfo{{host1, 0}}},
@@ -508,15 +508,15 @@ func TestCowTabletListBulkAdd(t *testing.T) {
 		tests.AssertEqual(t, "tb2 shard", 7, ti.Replicas()[0].ShardID())
 	})
 
-	t.Run("NilEntries", func(t *testing.T) {
+	t.Run("ZeroValueEntries", func(t *testing.T) {
 		cl := NewCowTabletList()
 		defer cl.Close()
 		host1 := GenerateHostUUIDs(1)[0]
 
-		cl.BulkAddTablets([]*TabletInfo{
-			nil,
+		cl.BulkAddTablets(TabletInfoList{
+			{},
 			{keyspaceName: "ks", tableName: "tb", firstToken: 0, lastToken: 100, replicas: []ReplicaInfo{{host1, 0}}},
-			nil,
+			{},
 		})
 		cl.Flush()
 
@@ -531,7 +531,7 @@ func TestCowTabletListBulkAdd(t *testing.T) {
 		defer cl.Close()
 		host1 := GenerateHostUUIDs(1)[0]
 
-		cl.BulkAddTablets([]*TabletInfo{
+		cl.BulkAddTablets(TabletInfoList{
 			{keyspaceName: "", tableName: "tb", firstToken: 0, lastToken: 100, replicas: []ReplicaInfo{{host1, 0}}},
 			{keyspaceName: "ks", tableName: "", firstToken: 0, lastToken: 100, replicas: []ReplicaInfo{{host1, 1}}},
 			{keyspaceName: "", tableName: "", firstToken: 0, lastToken: 100, replicas: []ReplicaInfo{{host1, 2}}},
@@ -552,7 +552,7 @@ func TestCowTabletListBulkAdd(t *testing.T) {
 		cl := NewCowTabletList()
 		defer cl.Close()
 
-		batch := []*TabletInfo{
+		batch := TabletInfoList{
 			{keyspaceName: "ks", tableName: "tb", firstToken: 0, lastToken: 100, replicas: []ReplicaInfo{{testHostUUID("h1"), 0}}},
 			{keyspaceName: "ks", tableName: "tb", firstToken: 50, lastToken: 150, replicas: []ReplicaInfo{{testHostUUID("h2"), 1}}},
 		}
@@ -1086,7 +1086,7 @@ func TestCowTabletListLifecycle(t *testing.T) {
 			firstToken: -100, lastToken: 100,
 			replicas: []ReplicaInfo{{testHostUUID("host"), 0}},
 		})
-		cl.BulkAddTablets([]*TabletInfo{{
+		cl.BulkAddTablets(TabletInfoList{{
 			keyspaceName: "ks", tableName: "tb",
 			firstToken: -100, lastToken: 100,
 			replicas: []ReplicaInfo{{testHostUUID("host"), 0}},
@@ -1441,7 +1441,7 @@ func TestCowTabletListConcurrency(t *testing.T) {
 			lastToken:    100,
 			replicas:     []ReplicaInfo{{testHostUUID("host1"), 0}},
 		}
-		list.BulkAddTablets([]*TabletInfo{tablet})
+		list.BulkAddTablets(TabletInfoList{*tablet})
 		list.Flush()
 
 		ready := make(chan struct{})
