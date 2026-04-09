@@ -122,12 +122,12 @@ func GenerateHostUUIDs(count int) []HostUUID {
 // createTablets generates a list of TabletInfo entries for a given keyspace and table.
 // Each tablet is assigned a token range and a set of replica hosts.
 func createTablets(ks, table string, hosts []HostUUID, rf, count int, tokenRangeCount int64) TabletInfoList {
-	out := make([]*TabletInfo, count)
+	out := make(TabletInfoList, count)
 	step := math.MaxUint64 / uint64(tokenRangeCount)
 	repGen := NewReplicaSetGenerator(hosts, rf)
 	firstToken := int64(math.MinInt64)
 	for i := 0; i < count; i++ {
-		out[i] = &TabletInfo{
+		out[i] = TabletInfo{
 			keyspaceName: ks,
 			tableName:    table,
 			firstToken:   firstToken,
