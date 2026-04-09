@@ -85,7 +85,7 @@ func setupTabletAwareBench(b *testing.B, numHosts, numTablets, rf int) (HostSele
 		if err != nil {
 			b.Fatal(err)
 		}
-		tabletList[i] = *ti
+		tabletList[i] = ti
 		firstToken = lastToken
 	}
 
