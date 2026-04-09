@@ -625,7 +625,7 @@ func (s *metadataDescriber) forEachTablet(fn func(keyspace, table string, entrie
 	s.metadata.tabletsMetadata.ForEach(fn)
 }
 
-func (s *metadataDescriber) AddTablet(tablet *tablets.TabletInfo) {
+func (s *metadataDescriber) AddTablet(tablet tablets.TabletInfo) {
 	s.metadata.tabletsMetadata.AddTablet(tablet)
 }
 

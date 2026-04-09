@@ -140,12 +140,12 @@ func runSingleCowTabletListTest(b *testing.B, hostsCount, parallelism, rf, total
 		for pb.Next() {
 			id := opID.Add(1)
 			token := rnd.Int63()
-			tablet := tl.FindTabletForToken(targetKS, targetTable, token)
-			if tablet == nil || tablet.lastToken < token || tablet.firstToken > token {
+			tablet, ok := tl.FindTabletForToken(targetKS, targetTable, token)
+			if !ok || tablet.lastToken < token || tablet.firstToken > token {
 				// If there is no tablet for token, emulate update, same way it is usually happening
 				firstToken := (token / tokenRangeCount64) * tokenRangeCount64
 				lastToken := firstToken + tokenRangeCount64
-				tl.AddTablet(&TabletInfo{
+				tl.AddTablet(TabletInfo{
 					keyspaceName: targetKS,
 					tableName:    targetTable,
 					firstToken:   firstToken,

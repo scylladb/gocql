@@ -107,48 +107,48 @@ type uuidProvider interface {
 	Bytes() []byte
 }
 
-func (b TabletInfoBuilder) Build() (*TabletInfo, error) {
+func (b TabletInfoBuilder) Build() (TabletInfo, error) {
 	if b.FirstToken > b.LastToken {
-		return nil, fmt.Errorf("invalid token range: firstToken (%d) > lastToken (%d)",
+		return TabletInfo{}, fmt.Errorf("invalid token range: firstToken (%d) > lastToken (%d)",
 			b.FirstToken, b.LastToken)
 	}
 
 	tabletReplicas := make([]ReplicaInfo, 0, len(b.Replicas))
 	for _, replica := range b.Replicas {
 		if len(replica) != 2 {
-			return nil, fmt.Errorf("replica info should have exactly two elements, but it has %d: %v", len(replica), replica)
+			return TabletInfo{}, fmt.Errorf("replica info should have exactly two elements, but it has %d: %v", len(replica), replica)
 		}
 		shardId, ok := replica[1].(int)
 		if !ok {
-			return nil, fmt.Errorf("second element (shard) of replica is not int: %v", replica)
+			return TabletInfo{}, fmt.Errorf("second element (shard) of replica is not int: %v", replica)
 		}
 		var hostUUID HostUUID
 		switch v := replica[0].(type) {
 		case uuidProvider:
 			raw := v.Bytes()
 			if len(raw) != 16 {
-				return nil, fmt.Errorf("UUID bytes has wrong length %d, expected 16", len(raw))
+				return TabletInfo{}, fmt.Errorf("UUID bytes has wrong length %d, expected 16", len(raw))
 			}
 			copy(hostUUID[:], raw)
 		case string:
 			parsed, err := ParseHostUUID(v)
 			if err != nil {
-				return nil, fmt.Errorf("first element (hostID) cannot be parsed as UUID: %v: %w", replica, err)
+				return TabletInfo{}, fmt.Errorf("first element (hostID) cannot be parsed as UUID: %v: %w", replica, err)
 			}
 			hostUUID = parsed
 		case toString:
 			parsed, err := ParseHostUUID(v.String())
 			if err != nil {
-				return nil, fmt.Errorf("first element (hostID) cannot be parsed as UUID: %v: %w", replica, err)
+				return TabletInfo{}, fmt.Errorf("first element (hostID) cannot be parsed as UUID: %v: %w", replica, err)
 			}
 			hostUUID = parsed
 		default:
-			return nil, fmt.Errorf("first element (hostID) of replica is not UUID: %v", replica)
+			return TabletInfo{}, fmt.Errorf("first element (hostID) of replica is not UUID: %v", replica)
 		}
 		tabletReplicas = append(tabletReplicas, ReplicaInfo{hostUUID, shardId})
 	}
 
-	return &TabletInfo{
+	return TabletInfo{
 		keyspaceName: b.KeyspaceName,
 		tableName:    b.TableName,
 		firstToken:   b.FirstToken,
@@ -166,30 +166,30 @@ type TabletInfo struct {
 	lastToken    int64
 }
 
-func (t *TabletInfo) KeyspaceName() string {
+func (t TabletInfo) KeyspaceName() string {
 	return t.keyspaceName
 }
 
-func (t *TabletInfo) FirstToken() int64 {
+func (t TabletInfo) FirstToken() int64 {
 	return t.firstToken
 }
 
-func (t *TabletInfo) LastToken() int64 {
+func (t TabletInfo) LastToken() int64 {
 	return t.lastToken
 }
 
-func (t *TabletInfo) TableName() string {
+func (t TabletInfo) TableName() string {
 	return t.tableName
 }
 
-func (t *TabletInfo) Replicas() []ReplicaInfo {
+func (t TabletInfo) Replicas() []ReplicaInfo {
 	result := make([]ReplicaInfo, len(t.replicas))
 	copy(result, t.replicas)
 	return result
 }
 
 // ReplicasUnsafe returns the raw replica slice without copying.
-func (t *TabletInfo) ReplicasUnsafe() []ReplicaInfo {
+func (t TabletInfo) ReplicasUnsafe() []ReplicaInfo {
 	return t.replicas
 }
 
@@ -202,25 +202,25 @@ type TabletEntry struct {
 	lastToken  int64
 }
 
-type TabletEntryList []*TabletEntry
+type TabletEntryList []TabletEntry
 
 // Replicas returns a copy of the replica list for this entry.
-func (e *TabletEntry) Replicas() []ReplicaInfo {
+func (e TabletEntry) Replicas() []ReplicaInfo {
 	result := make([]ReplicaInfo, len(e.replicas))
 	copy(result, e.replicas)
 	return result
 }
 
 // ReplicasUnsafe returns the raw replica slice without copying.
-func (e *TabletEntry) ReplicasUnsafe() []ReplicaInfo {
+func (e TabletEntry) ReplicasUnsafe() []ReplicaInfo {
 	return e.replicas
 }
 
-func (e *TabletEntry) FirstToken() int64 {
+func (e TabletEntry) FirstToken() int64 {
 	return e.firstToken
 }
 
-func (e *TabletEntry) LastToken() int64 {
+func (e TabletEntry) LastToken() int64 {
 	return e.lastToken
 }
 
@@ -280,7 +280,7 @@ func (t TabletEntryList) findOverlapRange(firstToken, lastToken int64) (start, t
 
 // addEntry inserts a single entry into the sorted list, replacing any overlapping ranges.
 // Returns a new slice without mutating the original.
-func (t TabletEntryList) addEntry(e *TabletEntry) TabletEntryList {
+func (t TabletEntryList) addEntry(e TabletEntry) TabletEntryList {
 	start, tailStart := t.findOverlapRange(e.firstToken, e.lastToken)
 	result := make(TabletEntryList, 0, start+1+(len(t)-tailStart))
 	result = append(result, t[:start]...)
@@ -295,13 +295,13 @@ func (t TabletEntryList) addEntry(e *TabletEntry) TabletEntryList {
 // gaps between them or overlap each other within the batch; existing entries
 // that fall in gaps between batch entries are preserved. Intra-batch overlaps
 // are resolved by letting later entries replace earlier ones.
-func (t TabletEntryList) bulkAddEntries(entries []*TabletEntry) TabletEntryList {
+func (t TabletEntryList) bulkAddEntries(entries TabletEntryList) TabletEntryList {
 	if len(entries) == 0 {
 		return t
 	}
 
 	// Resolve intra-batch overlaps: later entries replace earlier ones.
-	deduped := make([]*TabletEntry, 0, len(entries))
+	deduped := make(TabletEntryList, 0, len(entries))
 	for _, e := range entries {
 		// Drop any previously added entries that the current one overlaps.
 		for len(deduped) > 0 && deduped[len(deduped)-1].firstToken >= e.firstToken {
@@ -340,13 +340,13 @@ func (t TabletEntryList) bulkAddEntries(entries []*TabletEntry) TabletEntryList 
 }
 
 // findEntryForToken performs a binary search within [l, r) to find the entry
-// covering the given token. Returns nil if no such entry exists.
-func (t TabletEntryList) findEntryForToken(token int64, l int, r int) *TabletEntry {
+// covering the given token. Returns false if no such entry exists.
+func (t TabletEntryList) findEntryForToken(token int64, l int, r int) (TabletEntry, bool) {
 	if l < 0 || r > len(t) || l > r {
-		return nil
+		return TabletEntry{}, false
 	}
 	if l == r {
-		return nil
+		return TabletEntry{}, false
 	}
 
 	for l < r {
@@ -358,12 +358,12 @@ func (t TabletEntryList) findEntryForToken(token int64, l int, r int) *TabletEnt
 		}
 	}
 	if l >= len(t) {
-		return nil
+		return TabletEntry{}, false
 	}
 	if t[l].firstToken > token {
-		return nil
+		return TabletEntry{}, false
 	}
-	return t[l]
+	return t[l], true
 }
 
 // removeEntriesWithHost returns a new list excluding entries with a replica on the given host.
@@ -401,8 +401,8 @@ func (t TabletEntryList) removeEntriesWithHost(hostID HostUUID) TabletEntryList 
 }
 
 // toEntry converts a TabletInfo to a TabletEntry.
-func (t *TabletInfo) toEntry() *TabletEntry {
-	return &TabletEntry{
+func (t TabletInfo) toEntry() TabletEntry {
+	return TabletEntry{
 		replicas:   t.replicas,
 		firstToken: t.firstToken,
 		lastToken:  t.lastToken,
@@ -410,7 +410,7 @@ func (t *TabletInfo) toEntry() *TabletEntry {
 }
 
 // toTabletInfo converts a TabletEntry back to a TabletInfo.
-func (e *TabletEntry) toTabletInfo(keyspace, table string) TabletInfo {
+func (e TabletEntry) toTabletInfo(keyspace, table string) TabletInfo {
 	return TabletInfo{
 		keyspaceName: keyspace,
 		tableName:    table,
@@ -448,7 +448,7 @@ type tabletOp interface {
 }
 
 type opAddTablet struct {
-	tablet *TabletInfo
+	tablet TabletInfo
 }
 
 func (op opAddTablet) execute(c *CowTabletList) { c.doAddTablet(op.tablet) }
@@ -530,9 +530,7 @@ func (q *opQueue) next() tabletOp {
 		bulkOp := opBulkAddTablets{
 			tablets: make(TabletInfoList, 0, 1),
 		}
-		if opAdd.tablet != nil {
-			bulkOp.tablets = append(bulkOp.tablets, *opAdd.tablet)
-		}
+		bulkOp.tablets = append(bulkOp.tablets, opAdd.tablet)
 		for {
 			select {
 			case op = <-q.ops:
@@ -541,9 +539,7 @@ func (q *opQueue) next() tabletOp {
 					q.cachedItem = op
 					return bulkOp
 				}
-				if opAdd.tablet != nil {
-					bulkOp.tablets = append(bulkOp.tablets, *opAdd.tablet)
-				}
+				bulkOp.tablets = append(bulkOp.tablets, opAdd.tablet)
 			default:
 				return bulkOp
 			}
@@ -694,8 +690,8 @@ func (c *CowTabletList) getOrCreateTable(key tableKey) *tableTablets {
 	return tt
 }
 
-func (c *CowTabletList) doAddTablet(tablet *TabletInfo) {
-	if tablet == nil || tablet.keyspaceName == "" || tablet.tableName == "" {
+func (c *CowTabletList) doAddTablet(tablet TabletInfo) {
+	if tablet.keyspaceName == "" || tablet.tableName == "" {
 		return
 	}
 	key := tableKey{tablet.keyspaceName, tablet.tableName}
@@ -723,7 +719,7 @@ func (c *CowTabletList) doBulkAddTablets(tablets TabletInfoList) {
 			}
 			return group[i].LastToken() < group[j].LastToken()
 		})
-		entries := make([]*TabletEntry, len(group))
+		entries := make(TabletEntryList, len(group))
 		for i, t := range group {
 			entries[i] = t.toEntry()
 		}
@@ -850,7 +846,7 @@ func (c *CowTabletList) GetTableTablets(keyspace, table string) TabletEntryList 
 
 // ForEach iterates over all keyspace/table pairs and their tablet entry lists,
 // calling fn for each one. Iteration stops early if fn returns false.
-// The returned TabletEntryList is a shallow copy; do not mutate individual entries.
+// The returned TabletEntryList is a shallow copy; do not mutate entries or their replica slices.
 func (c *CowTabletList) ForEach(fn func(keyspace, table string, entries TabletEntryList) bool) {
 	if c == nil || fn == nil {
 		return
@@ -871,8 +867,8 @@ func (c *CowTabletList) ForEach(fn func(keyspace, table string, entries TabletEn
 
 // FindReplicasForToken returns a copy of the replica set for the given token.
 func (c *CowTabletList) FindReplicasForToken(keyspace, table string, token int64) []ReplicaInfo {
-	tl := c.FindTabletForToken(keyspace, table, token)
-	if tl == nil {
+	tl, ok := c.FindTabletForToken(keyspace, table, token)
+	if !ok {
 		return nil
 	}
 	return tl.Replicas()
@@ -880,25 +876,25 @@ func (c *CowTabletList) FindReplicasForToken(keyspace, table string, token int64
 
 // FindReplicasUnsafeForToken returns the replica set for the given token without copying.
 func (c *CowTabletList) FindReplicasUnsafeForToken(keyspace, table string, token int64) []ReplicaInfo {
-	tl := c.FindTabletForToken(keyspace, table, token)
-	if tl == nil {
+	tl, ok := c.FindTabletForToken(keyspace, table, token)
+	if !ok {
 		return nil
 	}
 	return tl.ReplicasUnsafe()
 }
 
-// FindTabletForToken locates the tablet covering the given token. Returns nil if not found.
-func (c *CowTabletList) FindTabletForToken(keyspace, table string, token int64) *TabletEntry {
+// FindTabletForToken locates the tablet covering the given token. Returns false if not found.
+func (c *CowTabletList) FindTabletForToken(keyspace, table string, token int64) (TabletEntry, bool) {
 	if c == nil {
-		return nil
+		return TabletEntry{}, false
 	}
 	tt := c.getTable(tableKey{keyspace, table})
 	if tt == nil {
-		return nil
+		return TabletEntry{}, false
 	}
 	entries := *tt.list.Load()
 	if len(entries) == 0 {
-		return nil
+		return TabletEntry{}, false
 	}
 	return entries.findEntryForToken(token, 0, len(entries))
 }
@@ -914,7 +910,7 @@ func (c *CowTabletList) sendOp(op tabletOp) {
 }
 
 // AddTablet queues a single tablet addition.
-func (c *CowTabletList) AddTablet(tablet *TabletInfo) {
+func (c *CowTabletList) AddTablet(tablet TabletInfo) {
 	c.sendOp(opAddTablet{tablet: tablet})
 }
 
