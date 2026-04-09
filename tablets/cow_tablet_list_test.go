@@ -37,7 +37,7 @@ func TestAddTabletToPerTableList(t *testing.T) {
 
 	t.Run("Empty", func(t *testing.T) {
 		tl := TabletEntryList{}
-		tl = tl.addEntry(&TabletEntry{
+		tl = tl.addEntry(TabletEntry{
 			firstToken: -100, lastToken: 100,
 		})
 
@@ -50,7 +50,7 @@ func TestAddTabletToPerTableList(t *testing.T) {
 		tl := TabletEntryList{{
 			firstToken: 100, lastToken: 200,
 		}}
-		tl = tl.addEntry(&TabletEntry{
+		tl = tl.addEntry(TabletEntry{
 			firstToken: -200, lastToken: -100,
 		})
 
@@ -62,7 +62,7 @@ func TestAddTabletToPerTableList(t *testing.T) {
 		tl := TabletEntryList{{
 			firstToken: -200, lastToken: -100,
 		}}
-		tl = tl.addEntry(&TabletEntry{
+		tl = tl.addEntry(TabletEntry{
 			firstToken: 100, lastToken: 200,
 		})
 
@@ -77,7 +77,7 @@ func TestAddTabletToPerTableList(t *testing.T) {
 			{firstToken: -100, lastToken: 0},
 			{firstToken: 0, lastToken: 100},
 		}
-		tl = tl.addEntry(&TabletEntry{
+		tl = tl.addEntry(TabletEntry{
 			firstToken: -150, lastToken: 50,
 		})
 
@@ -89,7 +89,7 @@ func TestAddTabletToPerTableList(t *testing.T) {
 		entries := TabletEntryList{
 			{firstToken: -300, lastToken: 300},
 		}
-		result := entries.addEntry(&TabletEntry{firstToken: -100, lastToken: 100})
+		result := entries.addEntry(TabletEntry{firstToken: -100, lastToken: 100})
 		if len(result) != 1 {
 			t.Errorf("expected 1 tablet after replacement, got %d", len(result))
 		}
@@ -105,7 +105,7 @@ func TestAddTabletToPerTableList(t *testing.T) {
 			{firstToken: -100, lastToken: 0},
 			{firstToken: 0, lastToken: 100},
 		}
-		result := entries.addEntry(&TabletEntry{firstToken: -300, lastToken: 200})
+		result := entries.addEntry(TabletEntry{firstToken: -300, lastToken: 200})
 		if len(result) != 1 {
 			t.Errorf("expected consolidation to 1 tablet, got %d", len(result))
 		}
@@ -121,7 +121,7 @@ func TestAddTabletToPerTableList(t *testing.T) {
 			{firstToken: -100, lastToken: 0},
 			{firstToken: 100, lastToken: 200},
 		}
-		result := entries.addEntry(&TabletEntry{firstToken: -150, lastToken: 150})
+		result := entries.addEntry(TabletEntry{firstToken: -150, lastToken: 150})
 		if len(result) != 2 {
 			t.Errorf("expected 2 tablets after partial overlap, got %d", len(result))
 		}
@@ -139,7 +139,7 @@ func TestBulkAddToPerTableList(t *testing.T) {
 
 	t.Run("Empty", func(t *testing.T) {
 		tl := TabletEntryList{}
-		batch := []*TabletEntry{
+		batch := TabletEntryList{
 			{firstToken: -200, lastToken: -100},
 			{firstToken: -100, lastToken: 0},
 			{firstToken: 0, lastToken: 100},
@@ -157,7 +157,7 @@ func TestBulkAddToPerTableList(t *testing.T) {
 			{firstToken: -200, lastToken: -100},
 			{firstToken: 100, lastToken: 200},
 		}
-		batch := []*TabletEntry{
+		batch := TabletEntryList{
 			{firstToken: -350, lastToken: -250},
 			{firstToken: -250, lastToken: -150},
 		}
@@ -169,7 +169,7 @@ func TestBulkAddToPerTableList(t *testing.T) {
 
 	t.Run("IntraBatchOverlappingPair", func(t *testing.T) {
 		tl := TabletEntryList{}
-		batch := []*TabletEntry{
+		batch := TabletEntryList{
 			{firstToken: 0, lastToken: 100, replicas: []ReplicaInfo{{testHostUUID("h1"), 0}}},
 			{firstToken: 50, lastToken: 150, replicas: []ReplicaInfo{{testHostUUID("h2"), 0}}},
 		}
@@ -183,7 +183,7 @@ func TestBulkAddToPerTableList(t *testing.T) {
 
 	t.Run("IntraBatchOverlappingTriple", func(t *testing.T) {
 		tl := TabletEntryList{}
-		batch := []*TabletEntry{
+		batch := TabletEntryList{
 			{firstToken: 0, lastToken: 100, replicas: []ReplicaInfo{{testHostUUID("h1"), 0}}},
 			{firstToken: 50, lastToken: 150, replicas: []ReplicaInfo{{testHostUUID("h2"), 0}}},
 			{firstToken: 100, lastToken: 200, replicas: []ReplicaInfo{{testHostUUID("h3"), 0}}},
@@ -200,7 +200,7 @@ func TestBulkAddToPerTableList(t *testing.T) {
 			{firstToken: -500, lastToken: -400},
 			{firstToken: 500, lastToken: 600},
 		}
-		batch := []*TabletEntry{
+		batch := TabletEntryList{
 			{firstToken: 0, lastToken: 100, replicas: []ReplicaInfo{{testHostUUID("h1"), 0}}},
 			{firstToken: 50, lastToken: 150, replicas: []ReplicaInfo{{testHostUUID("h2"), 0}}},
 		}
@@ -215,7 +215,7 @@ func TestBulkAddToPerTableList(t *testing.T) {
 
 	t.Run("NonOverlappingBatchStillWorks", func(t *testing.T) {
 		tl := TabletEntryList{}
-		batch := []*TabletEntry{
+		batch := TabletEntryList{
 			{firstToken: 0, lastToken: 100},
 			{firstToken: 100, lastToken: 200},
 			{firstToken: 200, lastToken: 300},
@@ -230,7 +230,7 @@ func TestBulkAddToPerTableList(t *testing.T) {
 		tl := TabletEntryList{
 			{firstToken: 200, lastToken: 300, replicas: []ReplicaInfo{{testHostUUID("existing"), 0}}},
 		}
-		batch := []*TabletEntry{
+		batch := TabletEntryList{
 			{firstToken: 0, lastToken: 100, replicas: []ReplicaInfo{{testHostUUID("h1"), 0}}},
 			{firstToken: 500, lastToken: 600, replicas: []ReplicaInfo{{testHostUUID("h2"), 0}}},
 		}
@@ -250,37 +250,37 @@ func TestCowTabletListAddAndFind(t *testing.T) {
 		defer cl.Close()
 
 		host1 := GenerateHostUUIDs(1)[0]
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks1", tableName: "tb1",
 			firstToken: -100, lastToken: 0,
 			replicas: []ReplicaInfo{{host1, 0}},
 		})
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks1", tableName: "tb1",
 			firstToken: 0, lastToken: 100,
 			replicas: []ReplicaInfo{{host1, 1}},
 		})
 		cl.Flush()
 
-		ti := cl.FindTabletForToken("ks1", "tb1", -50)
-		if ti == nil {
+		ti, ok := cl.FindTabletForToken("ks1", "tb1", -50)
+		if !ok {
 			t.Fatal("expected tablet for token -50")
 		}
 		tests.AssertEqual(t, "lastToken", int64(0), ti.LastToken())
 
-		ti = cl.FindTabletForToken("ks1", "tb1", 50)
-		if ti == nil {
+		ti, ok = cl.FindTabletForToken("ks1", "tb1", 50)
+		if !ok {
 			t.Fatal("expected tablet for token 50")
 		}
 		tests.AssertEqual(t, "lastToken", int64(100), ti.LastToken())
 
-		ti = cl.FindTabletForToken("ks1", "unknown", 0)
-		if ti != nil {
+		_, ok = cl.FindTabletForToken("ks1", "unknown", 0)
+		if ok {
 			t.Fatal("expected nil for unknown table")
 		}
 
-		ti = cl.FindTabletForToken("unknown", "tb1", 0)
-		if ti != nil {
+		_, ok = cl.FindTabletForToken("unknown", "tb1", 0)
+		if ok {
 			t.Fatal("expected nil for unknown keyspace")
 		}
 	})
@@ -292,7 +292,7 @@ func TestCowTabletListAddAndFind(t *testing.T) {
 		host1 := hosts[0]
 		host2 := hosts[1]
 
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks1", tableName: "tb1",
 			firstToken: -100, lastToken: 100,
 			replicas: []ReplicaInfo{{host1, 0}, {host2, 1}},
@@ -315,12 +315,12 @@ func TestCowTabletListAddAndFind(t *testing.T) {
 		defer cl.Close()
 		host1 := GenerateHostUUIDs(1)[0]
 
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks", tableName: "tb1",
 			firstToken: -100, lastToken: 100,
 			replicas: []ReplicaInfo{{host1, 0}},
 		})
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks", tableName: "tb2",
 			firstToken: -100, lastToken: 100,
 			replicas: []ReplicaInfo{{host1, 5}},
@@ -339,12 +339,12 @@ func TestCowTabletListAddAndFind(t *testing.T) {
 		defer cl.Close()
 		host1 := GenerateHostUUIDs(1)[0]
 
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks1", tableName: "tb",
 			firstToken: -100, lastToken: 100,
 			replicas: []ReplicaInfo{{host1, 1}},
 		})
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks2", tableName: "tb",
 			firstToken: -100, lastToken: 100,
 			replicas: []ReplicaInfo{{host1, 2}},
@@ -365,20 +365,20 @@ func TestCowTabletListAddAndFind(t *testing.T) {
 		host1 := hosts[0]
 		host2 := hosts[1]
 
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks", tableName: "tb",
 			firstToken: -100, lastToken: 100,
 			replicas: []ReplicaInfo{{host1, 0}},
 		})
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks", tableName: "tb",
 			firstToken: -100, lastToken: 100,
 			replicas: []ReplicaInfo{{host2, 5}},
 		})
 		cl.Flush()
 
-		ti := cl.FindTabletForToken("ks", "tb", 0)
-		if ti == nil {
+		ti, ok := cl.FindTabletForToken("ks", "tb", 0)
+		if !ok {
 			t.Fatal("expected tablet")
 		}
 		tests.AssertEqual(t, "updated host", host2.String(), ti.Replicas()[0].HostID())
@@ -392,27 +392,27 @@ func TestCowTabletListAddAndFind(t *testing.T) {
 		host1 := hosts[0]
 		host2 := hosts[1]
 
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks", tableName: "tb",
 			firstToken: 0, lastToken: 100,
 			replicas: []ReplicaInfo{{host1, 0}},
 		})
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks", tableName: "tb",
 			firstToken: 0, lastToken: 200,
 			replicas: []ReplicaInfo{{host2, 1}},
 		})
 		cl.Flush()
 
-		ti := cl.FindTabletForToken("ks", "tb", 50)
-		if ti == nil {
+		ti, ok := cl.FindTabletForToken("ks", "tb", 50)
+		if !ok {
 			t.Fatal("expected tablet for token 50")
 		}
 		tests.AssertEqual(t, "replaced host", host2.String(), ti.Replicas()[0].HostID())
 		tests.AssertEqual(t, "replaced lastToken", int64(200), ti.LastToken())
 
-		ti = cl.FindTabletForToken("ks", "tb", 150)
-		if ti == nil {
+		ti, ok = cl.FindTabletForToken("ks", "tb", 150)
+		if !ok {
 			t.Fatal("expected tablet for token 150")
 		}
 		tests.AssertEqual(t, "host at 150", host2.String(), ti.Replicas()[0].HostID())
@@ -427,7 +427,7 @@ func TestCowTabletListBulkAdd(t *testing.T) {
 		defer cl.Close()
 		host1 := GenerateHostUUIDs(1)[0]
 
-		batch := []*TabletInfo{
+		batch := TabletInfoList{
 			{keyspaceName: "ks", tableName: "tb", firstToken: -300, lastToken: -200, replicas: []ReplicaInfo{{host1, 0}}},
 			{keyspaceName: "ks", tableName: "tb", firstToken: -200, lastToken: -100, replicas: []ReplicaInfo{{host1, 1}}},
 			{keyspaceName: "ks", tableName: "tb", firstToken: -100, lastToken: 0, replicas: []ReplicaInfo{{host1, 2}}},
@@ -435,14 +435,14 @@ func TestCowTabletListBulkAdd(t *testing.T) {
 		cl.BulkAddTablets(batch)
 		cl.Flush()
 
-		ti := cl.FindTabletForToken("ks", "tb", -250)
-		if ti == nil {
+		ti, ok := cl.FindTabletForToken("ks", "tb", -250)
+		if !ok {
 			t.Fatal("expected tablet")
 		}
 		tests.AssertEqual(t, "shard", 0, ti.Replicas()[0].ShardID())
 
-		ti = cl.FindTabletForToken("ks", "tb", -150)
-		if ti == nil {
+		ti, ok = cl.FindTabletForToken("ks", "tb", -150)
+		if !ok {
 			t.Fatal("expected tablet")
 		}
 		tests.AssertEqual(t, "shard", 1, ti.Replicas()[0].ShardID())
@@ -453,7 +453,7 @@ func TestCowTabletListBulkAdd(t *testing.T) {
 		defer cl.Close()
 		host1 := GenerateHostUUIDs(1)[0]
 
-		batch := []*TabletInfo{
+		batch := TabletInfoList{
 			{keyspaceName: "ks", tableName: "tb1", firstToken: -100, lastToken: 0, replicas: []ReplicaInfo{{host1, 0}}},
 			{keyspaceName: "ks", tableName: "tb1", firstToken: 0, lastToken: 100, replicas: []ReplicaInfo{{host1, 1}}},
 			{keyspaceName: "ks", tableName: "tb2", firstToken: -50, lastToken: 50, replicas: []ReplicaInfo{{host1, 2}}},
@@ -461,10 +461,16 @@ func TestCowTabletListBulkAdd(t *testing.T) {
 		cl.BulkAddTablets(batch)
 		cl.Flush()
 
-		ti := cl.FindTabletForToken("ks", "tb1", -50)
+		ti, ok := cl.FindTabletForToken("ks", "tb1", -50)
+		if !ok {
+			t.Fatal("expected tablet for tb1 token -50")
+		}
 		tests.AssertEqual(t, "tb1 shard", 0, ti.Replicas()[0].ShardID())
 
-		ti = cl.FindTabletForToken("ks", "tb2", 0)
+		ti, ok = cl.FindTabletForToken("ks", "tb2", 0)
+		if !ok {
+			t.Fatal("expected tablet for tb2 token 0")
+		}
 		tests.AssertEqual(t, "tb2 shard", 2, ti.Replicas()[0].ShardID())
 	})
 
@@ -473,7 +479,7 @@ func TestCowTabletListBulkAdd(t *testing.T) {
 		defer cl.Close()
 		host1 := GenerateHostUUIDs(1)[0]
 
-		batch := []*TabletInfo{
+		batch := TabletInfoList{
 			{keyspaceName: "ks", tableName: "tb1", firstToken: 100, lastToken: 200, replicas: []ReplicaInfo{{host1, 2}}},
 			{keyspaceName: "ks", tableName: "tb2", firstToken: -100, lastToken: 100, replicas: []ReplicaInfo{{host1, 7}}},
 			{keyspaceName: "ks", tableName: "tb1", firstToken: -100, lastToken: 0, replicas: []ReplicaInfo{{host1, 0}}},
@@ -483,40 +489,40 @@ func TestCowTabletListBulkAdd(t *testing.T) {
 		cl.BulkAddTablets(batch)
 		cl.Flush()
 
-		ti := cl.FindTabletForToken("ks", "tb1", -50)
-		if ti == nil {
+		ti, ok := cl.FindTabletForToken("ks", "tb1", -50)
+		if !ok {
 			t.Fatal("expected tablet for tb1 token -50")
 		}
 		tests.AssertEqual(t, "tb1 shard for -50", 0, ti.Replicas()[0].ShardID())
 
-		ti = cl.FindTabletForToken("ks", "tb1", 50)
-		if ti == nil {
+		ti, ok = cl.FindTabletForToken("ks", "tb1", 50)
+		if !ok {
 			t.Fatal("expected tablet for tb1 token 50")
 		}
 		tests.AssertEqual(t, "tb1 shard for 50", 1, ti.Replicas()[0].ShardID())
 
-		ti = cl.FindTabletForToken("ks", "tb1", 150)
-		if ti == nil {
+		ti, ok = cl.FindTabletForToken("ks", "tb1", 150)
+		if !ok {
 			t.Fatal("expected tablet for tb1 token 150")
 		}
 		tests.AssertEqual(t, "tb1 shard for 150", 2, ti.Replicas()[0].ShardID())
 
-		ti = cl.FindTabletForToken("ks", "tb2", 0)
-		if ti == nil {
+		ti, ok = cl.FindTabletForToken("ks", "tb2", 0)
+		if !ok {
 			t.Fatal("expected tablet for tb2 token 0")
 		}
 		tests.AssertEqual(t, "tb2 shard", 7, ti.Replicas()[0].ShardID())
 	})
 
-	t.Run("NilEntries", func(t *testing.T) {
+	t.Run("ZeroValueEntries", func(t *testing.T) {
 		cl := NewCowTabletList()
 		defer cl.Close()
 		host1 := GenerateHostUUIDs(1)[0]
 
-		cl.BulkAddTablets([]*TabletInfo{
-			nil,
+		cl.BulkAddTablets(TabletInfoList{
+			{},
 			{keyspaceName: "ks", tableName: "tb", firstToken: 0, lastToken: 100, replicas: []ReplicaInfo{{host1, 0}}},
-			nil,
+			{},
 		})
 		cl.Flush()
 
@@ -531,7 +537,7 @@ func TestCowTabletListBulkAdd(t *testing.T) {
 		defer cl.Close()
 		host1 := GenerateHostUUIDs(1)[0]
 
-		cl.BulkAddTablets([]*TabletInfo{
+		cl.BulkAddTablets(TabletInfoList{
 			{keyspaceName: "", tableName: "tb", firstToken: 0, lastToken: 100, replicas: []ReplicaInfo{{host1, 0}}},
 			{keyspaceName: "ks", tableName: "", firstToken: 0, lastToken: 100, replicas: []ReplicaInfo{{host1, 1}}},
 			{keyspaceName: "", tableName: "", firstToken: 0, lastToken: 100, replicas: []ReplicaInfo{{host1, 2}}},
@@ -552,7 +558,7 @@ func TestCowTabletListBulkAdd(t *testing.T) {
 		cl := NewCowTabletList()
 		defer cl.Close()
 
-		batch := []*TabletInfo{
+		batch := TabletInfoList{
 			{keyspaceName: "ks", tableName: "tb", firstToken: 0, lastToken: 100, replicas: []ReplicaInfo{{testHostUUID("h1"), 0}}},
 			{keyspaceName: "ks", tableName: "tb", firstToken: 50, lastToken: 150, replicas: []ReplicaInfo{{testHostUUID("h2"), 1}}},
 		}
@@ -575,17 +581,17 @@ func TestCowTabletListGet(t *testing.T) {
 		defer cl.Close()
 		host1 := GenerateHostUUIDs(1)[0]
 
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks1", tableName: "tb1",
 			firstToken: -100, lastToken: 0,
 			replicas: []ReplicaInfo{{host1, 0}},
 		})
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks1", tableName: "tb2",
 			firstToken: 0, lastToken: 100,
 			replicas: []ReplicaInfo{{host1, 1}},
 		})
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks2", tableName: "tb1",
 			firstToken: 100, lastToken: 200,
 			replicas: []ReplicaInfo{{host1, 2}},
@@ -619,22 +625,22 @@ func TestCowTabletListGetTableTablets(t *testing.T) {
 		defer cl.Close()
 		host1 := GenerateHostUUIDs(1)[0]
 
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks1", tableName: "tb1",
 			firstToken: -100, lastToken: 0,
 			replicas: []ReplicaInfo{{host1, 0}},
 		})
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks1", tableName: "tb1",
 			firstToken: 0, lastToken: 100,
 			replicas: []ReplicaInfo{{host1, 1}},
 		})
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks1", tableName: "tb2",
 			firstToken: 100, lastToken: 200,
 			replicas: []ReplicaInfo{{host1, 2}},
 		})
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks2", tableName: "tb1",
 			firstToken: 200, lastToken: 300,
 			replicas: []ReplicaInfo{{host1, 3}},
@@ -660,7 +666,7 @@ func TestCowTabletListGetTableTablets(t *testing.T) {
 		defer cl.Close()
 		host1 := GenerateHostUUIDs(1)[0]
 
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks1", tableName: "tb1",
 			firstToken: -100, lastToken: 0,
 			replicas: []ReplicaInfo{{host1, 0}},
@@ -683,12 +689,12 @@ func TestCowTabletListGetTableTablets(t *testing.T) {
 		defer cl.Close()
 		host1 := GenerateHostUUIDs(1)[0]
 
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks", tableName: "tb",
 			firstToken: -100, lastToken: 0,
 			replicas: []ReplicaInfo{{host1, 0}},
 		})
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks", tableName: "tb",
 			firstToken: 0, lastToken: 100,
 			replicas: []ReplicaInfo{{host1, 1}},
@@ -698,8 +704,8 @@ func TestCowTabletListGetTableTablets(t *testing.T) {
 		result1 := cl.GetTableTablets("ks", "tb")
 		result2 := cl.GetTableTablets("ks", "tb")
 
-		result1[0] = nil
-		if result2[0] == nil {
+		result1[0] = TabletEntry{}
+		if result2[0].FirstToken() != -100 {
 			t.Fatal("GetTableTablets should return independent copies")
 		}
 	})
@@ -725,17 +731,17 @@ func TestCowTabletListRemove(t *testing.T) {
 		removedHost := hosts[0]
 		keptHost := hosts[1]
 
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks", tableName: "tb1",
 			firstToken: -100, lastToken: 0,
 			replicas: []ReplicaInfo{{removedHost, 0}},
 		})
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks", tableName: "tb1",
 			firstToken: 0, lastToken: 100,
 			replicas: []ReplicaInfo{{keptHost, 1}},
 		})
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks", tableName: "tb2",
 			firstToken: -100, lastToken: 100,
 			replicas: []ReplicaInfo{{removedHost, 2}},
@@ -743,8 +749,8 @@ func TestCowTabletListRemove(t *testing.T) {
 		cl.RemoveTabletsWithHost(removedHost)
 		cl.Flush()
 
-		ti := cl.FindTabletForToken("ks", "tb1", 50)
-		if ti == nil {
+		ti, ok := cl.FindTabletForToken("ks", "tb1", 50)
+		if !ok {
 			t.Fatal("expected kept tablet in tb1")
 		}
 		tests.AssertEqual(t, "kept shard", 1, ti.Replicas()[0].ShardID())
@@ -764,17 +770,17 @@ func TestCowTabletListRemove(t *testing.T) {
 		defer cl.Close()
 		host1 := GenerateHostUUIDs(1)[0]
 
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "removed_ks", tableName: "tb1",
 			firstToken: -100, lastToken: 0,
 			replicas: []ReplicaInfo{{host1, 0}},
 		})
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "removed_ks", tableName: "tb2",
 			firstToken: 0, lastToken: 100,
 			replicas: []ReplicaInfo{{host1, 1}},
 		})
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "kept_ks", tableName: "tb1",
 			firstToken: 100, lastToken: 200,
 			replicas: []ReplicaInfo{{host1, 2}},
@@ -782,17 +788,17 @@ func TestCowTabletListRemove(t *testing.T) {
 		cl.RemoveTabletsWithKeyspace("removed_ks")
 		cl.Flush()
 
-		ti := cl.FindTabletForToken("removed_ks", "tb1", -50)
-		if ti != nil {
+		_, ok := cl.FindTabletForToken("removed_ks", "tb1", -50)
+		if ok {
 			t.Fatal("expected nil for removed keyspace table tb1")
 		}
-		ti = cl.FindTabletForToken("removed_ks", "tb2", 50)
-		if ti != nil {
+		_, ok = cl.FindTabletForToken("removed_ks", "tb2", 50)
+		if ok {
 			t.Fatal("expected nil for removed keyspace table tb2")
 		}
 
-		ti = cl.FindTabletForToken("kept_ks", "tb1", 150)
-		if ti == nil {
+		ti, ok := cl.FindTabletForToken("kept_ks", "tb1", 150)
+		if !ok {
 			t.Fatal("expected tablet for kept keyspace")
 		}
 		tests.AssertEqual(t, "kept shard", 2, ti.Replicas()[0].ShardID())
@@ -805,12 +811,12 @@ func TestCowTabletListRemove(t *testing.T) {
 		defer cl.Close()
 		host1 := GenerateHostUUIDs(1)[0]
 
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks", tableName: "removed_tb",
 			firstToken: -100, lastToken: 0,
 			replicas: []ReplicaInfo{{host1, 0}},
 		})
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks", tableName: "kept_tb",
 			firstToken: 0, lastToken: 100,
 			replicas: []ReplicaInfo{{host1, 1}},
@@ -818,13 +824,13 @@ func TestCowTabletListRemove(t *testing.T) {
 		cl.RemoveTabletsWithTable("ks", "removed_tb")
 		cl.Flush()
 
-		ti := cl.FindTabletForToken("ks", "removed_tb", -50)
-		if ti != nil {
+		_, ok := cl.FindTabletForToken("ks", "removed_tb", -50)
+		if ok {
 			t.Fatal("expected nil for removed table")
 		}
 
-		ti = cl.FindTabletForToken("ks", "kept_tb", 50)
-		if ti == nil {
+		ti, ok := cl.FindTabletForToken("ks", "kept_tb", 50)
+		if !ok {
 			t.Fatal("expected tablet for kept table")
 		}
 		tests.AssertEqual(t, "kept shard", 1, ti.Replicas()[0].ShardID())
@@ -835,7 +841,7 @@ func TestCowTabletListRemove(t *testing.T) {
 		defer cl.Close()
 		host1 := GenerateHostUUIDs(1)[0]
 
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks", tableName: "tb",
 			firstToken: -100, lastToken: 100,
 			replicas: []ReplicaInfo{{host1, 0}},
@@ -857,17 +863,17 @@ func TestCowTabletListForEach(t *testing.T) {
 		defer cl.Close()
 		host1 := GenerateHostUUIDs(1)[0]
 
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks1", tableName: "tb1",
 			firstToken: -100, lastToken: 0,
 			replicas: []ReplicaInfo{{host1, 0}},
 		})
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks1", tableName: "tb2",
 			firstToken: 0, lastToken: 100,
 			replicas: []ReplicaInfo{{host1, 1}},
 		})
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks2", tableName: "tb1",
 			firstToken: 100, lastToken: 200,
 			replicas: []ReplicaInfo{{host1, 2}},
@@ -892,7 +898,7 @@ func TestCowTabletListForEach(t *testing.T) {
 		host1 := GenerateHostUUIDs(1)[0]
 
 		for i := 0; i < 10; i++ {
-			cl.AddTablet(&TabletInfo{
+			cl.AddTablet(TabletInfo{
 				keyspaceName: "ks", tableName: fmt.Sprintf("tb%d", i),
 				firstToken: int64(i * 100), lastToken: int64(i*100 + 99),
 				replicas: []ReplicaInfo{{host1, i}},
@@ -936,12 +942,12 @@ func TestCowTabletListForEach(t *testing.T) {
 		defer cl.Close()
 		host1 := GenerateHostUUIDs(1)[0]
 
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks", tableName: "tb",
 			firstToken: -100, lastToken: 0,
 			replicas: []ReplicaInfo{{host1, 0}},
 		})
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks", tableName: "tb",
 			firstToken: 0, lastToken: 100,
 			replicas: []ReplicaInfo{{host1, 1}},
@@ -952,19 +958,19 @@ func TestCowTabletListForEach(t *testing.T) {
 			for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
 				entries[i], entries[j] = entries[j], entries[i]
 			}
-			entries[0] = nil
+			entries[0] = TabletEntry{}
 			return true
 		})
 
-		entry := cl.FindTabletForToken("ks", "tb", 50)
-		if entry == nil {
+		entry, ok := cl.FindTabletForToken("ks", "tb", 50)
+		if !ok {
 			t.Fatal("expected to find tablet for token 50 after ForEach mutation")
 		}
 		tests.AssertEqual(t, "firstToken", int64(0), entry.FirstToken())
 		tests.AssertEqual(t, "lastToken", int64(100), entry.LastToken())
 
-		entry = cl.FindTabletForToken("ks", "tb", -50)
-		if entry == nil {
+		entry, ok = cl.FindTabletForToken("ks", "tb", -50)
+		if !ok {
 			t.Fatal("expected to find tablet for token -50 after ForEach mutation")
 		}
 		tests.AssertEqual(t, "firstToken", int64(-100), entry.FirstToken())
@@ -976,12 +982,12 @@ func TestCowTabletListForEach(t *testing.T) {
 		defer cl.Close()
 		host1 := GenerateHostUUIDs(1)[0]
 
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks", tableName: "tb",
 			firstToken: -100, lastToken: 0,
 			replicas: []ReplicaInfo{{host1, 0}},
 		})
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks", tableName: "tb",
 			firstToken: 0, lastToken: 100,
 			replicas: []ReplicaInfo{{host1, 1}},
@@ -1004,7 +1010,7 @@ func TestCowTabletListForEach(t *testing.T) {
 		cl := NewCowTabletList()
 		defer cl.Close()
 
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks", tableName: "tb",
 			firstToken: -100, lastToken: 100,
 			replicas: []ReplicaInfo{{testHostUUID("host1"), 0}},
@@ -1060,7 +1066,7 @@ func TestCowTabletListLifecycle(t *testing.T) {
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
-			cl.AddTablet(&TabletInfo{
+			cl.AddTablet(TabletInfo{
 				keyspaceName: "ks", tableName: "tb",
 				firstToken: -100, lastToken: 100,
 				replicas: []ReplicaInfo{{host1, 0}},
@@ -1081,12 +1087,12 @@ func TestCowTabletListLifecycle(t *testing.T) {
 
 		cl.Close()
 		cl.Flush()
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks", tableName: "tb",
 			firstToken: -100, lastToken: 100,
 			replicas: []ReplicaInfo{{testHostUUID("host"), 0}},
 		})
-		cl.BulkAddTablets([]*TabletInfo{{
+		cl.BulkAddTablets(TabletInfoList{{
 			keyspaceName: "ks", tableName: "tb",
 			firstToken: -100, lastToken: 100,
 			replicas: []ReplicaInfo{{testHostUUID("host"), 0}},
@@ -1100,8 +1106,8 @@ func TestCowTabletListLifecycle(t *testing.T) {
 func TestOpQueueRun(t *testing.T) {
 	t.Parallel()
 
-	newTablet := func(first, last int64) *TabletInfo {
-		return &TabletInfo{
+	newTablet := func(first, last int64) TabletInfo {
+		return TabletInfo{
 			keyspaceName: "ks",
 			tableName:    "tb",
 			firstToken:   first,
@@ -1207,7 +1213,7 @@ func TestCowTabletListConcurrency(t *testing.T) {
 				rnd := getThreadSafeRnd()
 				for j := 0; j < 1000; j++ {
 					token := rnd.Int63()
-					cl.FindTabletForToken("ks", "tb", token)
+					_, _ = cl.FindTabletForToken("ks", "tb", token)
 					cl.FindReplicasUnsafeForToken("ks", "tb", token)
 				}
 			}()
@@ -1229,7 +1235,7 @@ func TestCowTabletListConcurrency(t *testing.T) {
 				defer wg.Done()
 				rnd := getThreadSafeRnd()
 				for j := 0; j < 1000; j++ {
-					cl.FindTabletForToken("ks", "tb", rnd.Int63())
+					_, _ = cl.FindTabletForToken("ks", "tb", rnd.Int63())
 					cl.Get()
 				}
 			}()
@@ -1242,7 +1248,7 @@ func TestCowTabletListConcurrency(t *testing.T) {
 				rnd := getThreadSafeRnd()
 				for j := 0; j < 100; j++ {
 					token := rnd.Int63()
-					cl.AddTablet(&TabletInfo{
+					cl.AddTablet(TabletInfo{
 						keyspaceName: "ks", tableName: "tb",
 						firstToken: token - 100, lastToken: token,
 						replicas: repGen.Next(),
@@ -1273,7 +1279,7 @@ func TestCowTabletListConcurrency(t *testing.T) {
 				rnd := getThreadSafeRnd()
 				tb := tables[idx%len(tables)]
 				for j := 0; j < 500; j++ {
-					cl.FindTabletForToken("ks", tb, rnd.Int63())
+					_, _ = cl.FindTabletForToken("ks", tb, rnd.Int63())
 				}
 			}(i)
 		}
@@ -1287,7 +1293,7 @@ func TestCowTabletListConcurrency(t *testing.T) {
 				tb := tables[idx%len(tables)]
 				for j := 0; j < 50; j++ {
 					token := rnd.Int63()
-					cl.AddTablet(&TabletInfo{
+					cl.AddTablet(TabletInfo{
 						keyspaceName: "ks", tableName: tb,
 						firstToken: token - 100, lastToken: token,
 						replicas: repGen.Next(),
@@ -1324,8 +1330,8 @@ func TestCowTabletListConcurrency(t *testing.T) {
 				defer wg.Done()
 				rnd := getThreadSafeRnd()
 				for j := 0; j < 500; j++ {
-					cl.FindTabletForToken("ks1", "tb", rnd.Int63())
-					cl.FindTabletForToken("ks2", "tb", rnd.Int63())
+					_, _ = cl.FindTabletForToken("ks1", "tb", rnd.Int63())
+					_, _ = cl.FindTabletForToken("ks2", "tb", rnd.Int63())
 				}
 			}()
 		}
@@ -1339,13 +1345,13 @@ func TestCowTabletListConcurrency(t *testing.T) {
 		wg.Wait()
 		cl.Flush()
 
-		ti := cl.FindTabletForToken("ks2", "tb", 0)
-		if ti != nil {
+		_, ok := cl.FindTabletForToken("ks2", "tb", 0)
+		if ok {
 			t.Fatal("expected nil for removed keyspace")
 		}
 
-		ti = cl.FindTabletForToken("ks1", "tb", 0)
-		if ti == nil {
+		_, ok = cl.FindTabletForToken("ks1", "tb", 0)
+		if !ok {
 			t.Fatal("expected tablet for ks1")
 		}
 	})
@@ -1361,7 +1367,7 @@ func TestCowTabletListConcurrency(t *testing.T) {
 				hostID := hostUUIDs[hostIdx]
 				hostIdx++
 				for i := 0; i < 10; i++ {
-					cl.AddTablet(&TabletInfo{
+					cl.AddTablet(TabletInfo{
 						keyspaceName: fmt.Sprintf("ks%d", ks),
 						tableName:    "tb",
 						firstToken:   int64(ks*10000 + host*1000 + i*100),
@@ -1434,14 +1440,14 @@ func TestCowTabletListConcurrency(t *testing.T) {
 	t.Run("CloseRace", func(t *testing.T) {
 		list := NewCowTabletList()
 
-		tablet := &TabletInfo{
+		tablet := TabletInfo{
 			keyspaceName: "ks",
 			tableName:    "tbl",
 			firstToken:   -100,
 			lastToken:    100,
 			replicas:     []ReplicaInfo{{testHostUUID("host1"), 0}},
 		}
-		list.BulkAddTablets([]*TabletInfo{tablet})
+		list.BulkAddTablets(TabletInfoList{tablet})
 		list.Flush()
 
 		ready := make(chan struct{})
@@ -1451,7 +1457,7 @@ func TestCowTabletListConcurrency(t *testing.T) {
 				defer func() { done <- true }()
 				ready <- struct{}{}
 				for j := 0; j < 1000; j++ {
-					_ = list.FindTabletForToken("ks", "tbl", 50)
+					_, _ = list.FindTabletForToken("ks", "tbl", 50)
 				}
 			}()
 		}
@@ -1472,7 +1478,7 @@ func TestCowTabletListConcurrency(t *testing.T) {
 
 		uuids := GenerateHostUUIDs(100)
 		for i := 0; i < 100; i++ {
-			cl.AddTablet(&TabletInfo{
+			cl.AddTablet(TabletInfo{
 				keyspaceName: "ks", tableName: "tb",
 				firstToken: int64(i * 100), lastToken: int64(i*100 + 99),
 				replicas: []ReplicaInfo{{uuids[i], 0}},
@@ -1514,32 +1520,32 @@ func TestCowTabletListEdgeCases(t *testing.T) {
 		defer cl.Close()
 		host1 := GenerateHostUUIDs(1)[0]
 
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks", tableName: "tb",
 			firstToken: math.MinInt64, lastToken: 0,
 			replicas: []ReplicaInfo{{host1, 0}},
 		})
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks", tableName: "tb",
 			firstToken: 0, lastToken: math.MaxInt64,
 			replicas: []ReplicaInfo{{host1, 1}},
 		})
 		cl.Flush()
 
-		ti := cl.FindTabletForToken("ks", "tb", math.MinInt64)
-		if ti == nil {
+		ti, ok := cl.FindTabletForToken("ks", "tb", math.MinInt64)
+		if !ok {
 			t.Fatal("expected tablet for math.MinInt64")
 		}
 		tests.AssertEqual(t, "MinInt64 shard", 0, ti.Replicas()[0].ShardID())
 
-		ti = cl.FindTabletForToken("ks", "tb", math.MaxInt64)
-		if ti == nil {
+		ti, ok = cl.FindTabletForToken("ks", "tb", math.MaxInt64)
+		if !ok {
 			t.Fatal("expected tablet for math.MaxInt64")
 		}
 		tests.AssertEqual(t, "MaxInt64 shard", 1, ti.Replicas()[0].ShardID())
 
-		ti = cl.FindTabletForToken("ks", "tb", 0)
-		if ti == nil {
+		_, ok = cl.FindTabletForToken("ks", "tb", 0)
+		if !ok {
 			t.Fatal("expected tablet for token 0")
 		}
 	})
@@ -1548,7 +1554,7 @@ func TestCowTabletListEdgeCases(t *testing.T) {
 		cl := NewCowTabletList()
 		defer cl.Close()
 
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks",
 			tableName:    "tb",
 			firstToken:   -100,
@@ -1564,8 +1570,8 @@ func TestCowTabletListEdgeCases(t *testing.T) {
 			t.Errorf("expected empty replica set, got %d replicas", len(replicas))
 		}
 
-		tablet := cl.FindTabletForToken("ks", "tb", 0)
-		if tablet == nil {
+		tablet, ok := cl.FindTabletForToken("ks", "tb", 0)
+		if !ok {
 			t.Fatal("expected tablet to exist")
 		}
 		if len(tablet.ReplicasUnsafe()) != 0 {
@@ -1599,7 +1605,7 @@ func TestCowTabletListEdgeCases(t *testing.T) {
 		uuids := GenerateHostUUIDs(operations)
 		go func() {
 			for i := 0; i < operations; i++ {
-				tablet := &TabletInfo{
+				tablet := TabletInfo{
 					keyspaceName: "ks",
 					tableName:    "tb",
 					firstToken:   int64(i * 100),
@@ -1625,7 +1631,7 @@ func TestCowTabletListEdgeCases(t *testing.T) {
 		cl := NewCowTabletList()
 		defer cl.Close()
 
-		cl.AddTablet(&TabletInfo{
+		cl.AddTablet(TabletInfo{
 			keyspaceName: "ks", tableName: "tb",
 			firstToken: -1000, lastToken: -900,
 			replicas: []ReplicaInfo{{GenerateHostUUIDs(1)[0], 0}},
@@ -1640,7 +1646,7 @@ func TestCowTabletListEdgeCases(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for i := 0; i < writers; i++ {
-				cl.AddTablet(&TabletInfo{
+				cl.AddTablet(TabletInfo{
 					keyspaceName: "ks", tableName: "tb",
 					firstToken: int64(i * 100), lastToken: int64(i*100 + 99),
 					replicas: []ReplicaInfo{{writerUUIDs[i], 0}},
@@ -1654,8 +1660,8 @@ func TestCowTabletListEdgeCases(t *testing.T) {
 			go func() {
 				defer wg.Done()
 				for i := 0; i < 1000; i++ {
-					entry := cl.FindTabletForToken("ks", "tb", -950)
-					if entry != nil {
+					entry, ok := cl.FindTabletForToken("ks", "tb", -950)
+					if ok {
 						if entry.FirstToken() > entry.LastToken() {
 							t.Errorf("invalid token range: first=%d > last=%d", entry.FirstToken(), entry.LastToken())
 						}
@@ -1667,10 +1673,6 @@ func TestCowTabletListEdgeCases(t *testing.T) {
 
 					entries := cl.GetTableTablets("ks", "tb")
 					for _, e := range entries {
-						if e == nil {
-							t.Error("nil entry in GetTableTablets result")
-							continue
-						}
 						if e.FirstToken() > e.LastToken() {
 							t.Errorf("invalid token range in list: first=%d > last=%d", e.FirstToken(), e.LastToken())
 						}
