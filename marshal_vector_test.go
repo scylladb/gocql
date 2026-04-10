@@ -793,7 +793,7 @@ func TestUnmarshalVectorAcceptsWellFormedPayloads(t *testing.T) {
 }
 
 // TestVectorElemMinSize covers the floor the dimension bound divides by. The
-// nested rows are the ones vectorFixedElemSize cannot answer: a vector carries no
+// nested rows are the ones fixedElemSize cannot answer: a vector carries no
 // fixed size of its own, and its element's floor includes the length prefix the
 // outer vector writes for a variable-length element.
 func TestVectorElemMinSize(t *testing.T) {
