@@ -227,3 +227,51 @@ func BenchmarkRowDataAllocation(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkDereference measures the fast-path vs reflect performance of dereference().
+func BenchmarkDereference(b *testing.B) {
+	n := 42
+	s := "hello"
+	u := TimeUUID()
+
+	b.Run("int_ptr", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			_ = dereference(&n)
+		}
+	})
+
+	b.Run("string_ptr", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			_ = dereference(&s)
+		}
+	})
+
+	b.Run("uuid_ptr", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			_ = dereference(&u)
+		}
+	})
+}
+
+// BenchmarkRowDataRepeatedCached measures the improvement from column name caching
+// when RowData is called repeatedly (as MapScan does per-row).
+func BenchmarkRowDataRepeatedCached(b *testing.B) {
+	iter := createMockIterWithTypes()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		// Simulate 100 rows being scanned with MapScan
+		for j := 0; j < 100; j++ {
+			rd, err := iter.RowData()
+			if err != nil {
+				b.Fatal(err)
+			}
+			_ = rd
+		}
+	}
+}
