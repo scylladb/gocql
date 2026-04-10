@@ -789,7 +789,7 @@ func TestIterWarningHandler(t *testing.T) {
 
 	t.Run("CloseDispatchesAccumulatedWarnings", func(t *testing.T) {
 		handler := &recordingWarningHandler{}
-		host := &HostInfo{hostId: "host-1"}
+		host := &HostInfo{hostId: UUID{1}}
 		qry := &Query{
 			routingInfo: &queryRoutingInfo{},
 			metrics:     &queryMetrics{m: make(map[string]*hostMetrics)},
@@ -868,7 +868,7 @@ func TestIterWarningHandler(t *testing.T) {
 
 	t.Run("HostPreservedAcrossClose", func(t *testing.T) {
 		handler := &recordingWarningHandler{}
-		host := &HostInfo{port: 9042, hostId: "host-2"}
+		host := &HostInfo{port: 9042, hostId: UUID{2}}
 		iter := (&Iter{
 			framer: &testWarningFramer{warnings: []string{"warn"}},
 			host:   host,
@@ -937,7 +937,7 @@ func TestIterWarningHandler(t *testing.T) {
 		handler := &recordingWarningHandler{}
 		iter := (&Iter{
 			allWarnings: []string{"warn1"},
-			host:        &HostInfo{hostId: "host-3"},
+			host:        &HostInfo{hostId: UUID{3}},
 		}).bindWarningHandler(&Query{
 			routingInfo: &queryRoutingInfo{},
 			metrics:     &queryMetrics{m: make(map[string]*hostMetrics)},
@@ -1095,7 +1095,7 @@ func TestQueryExecutorRetryAndDiscardWarningHandling(t *testing.T) {
 	t.Parallel()
 
 	t.Run("SpeculativeLoserIsDiscardedWithoutWarnings", func(t *testing.T) {
-		host := (&HostInfo{hostId: "host-4"}).setState(NodeUp)
+		host := (&HostInfo{hostId: UUID{4}}).setState(NodeUp)
 		handler := &recordingWarningHandler{}
 		framer := &testWarningFramer{warnings: []string{"loser"}}
 		qry := &executorTestQuery{
@@ -1125,7 +1125,7 @@ func TestQueryExecutorRetryAndDiscardWarningHandling(t *testing.T) {
 	})
 
 	t.Run("RetriedAttemptStillWarnsOnce", func(t *testing.T) {
-		host := (&HostInfo{hostId: "host-5"}).setState(NodeUp)
+		host := (&HostInfo{hostId: UUID{5}}).setState(NodeUp)
 		handler := &recordingWarningHandler{}
 		firstFramer := &testWarningFramer{warnings: []string{"retry-warn"}}
 		finalFramer := &testWarningFramer{}
