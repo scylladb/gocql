@@ -1149,20 +1149,23 @@ func unmarshalVectorFloat32(dim int, data []byte, dst *[]float32) error {
 		*dst = nil
 		return nil
 	}
-	expected, err := vectorByteSize(dim, 4)
-	if err != nil {
-		return unmarshalErrorf("%v", err)
-	}
-	if len(data) != expected {
-		return unmarshalErrorf("unmarshal vector<float, %d>: expected %d bytes, got %d", dim, expected, len(data))
-	}
 	if dim == 0 {
+		if len(data) > 0 {
+			return unmarshalErrorf("unmarshal vector: %d bytes of data for 0-dimension vector", len(data))
+		}
 		if *dst == nil {
 			*dst = make([]float32, 0)
 		} else {
 			*dst = (*dst)[:0]
 		}
 		return nil
+	}
+	expected, err := vectorByteSize(dim, 4)
+	if err != nil {
+		return unmarshalErrorf("%v", err)
+	}
+	if len(data) != expected {
+		return unmarshalErrorf("unmarshal vector<float, %d>: expected %d bytes, got %d", dim, expected, len(data))
 	}
 	vec := *dst
 	if cap(vec) >= dim {
@@ -1188,20 +1191,23 @@ func unmarshalVectorFloat64(dim int, data []byte, dst *[]float64) error {
 		*dst = nil
 		return nil
 	}
-	expected, err := vectorByteSize(dim, 8)
-	if err != nil {
-		return unmarshalErrorf("%v", err)
-	}
-	if len(data) != expected {
-		return unmarshalErrorf("unmarshal vector<double, %d>: expected %d bytes, got %d", dim, expected, len(data))
-	}
 	if dim == 0 {
+		if len(data) > 0 {
+			return unmarshalErrorf("unmarshal vector: %d bytes of data for 0-dimension vector", len(data))
+		}
 		if *dst == nil {
 			*dst = make([]float64, 0)
 		} else {
 			*dst = (*dst)[:0]
 		}
 		return nil
+	}
+	expected, err := vectorByteSize(dim, 8)
+	if err != nil {
+		return unmarshalErrorf("%v", err)
+	}
+	if len(data) != expected {
+		return unmarshalErrorf("unmarshal vector<double, %d>: expected %d bytes, got %d", dim, expected, len(data))
 	}
 	vec := *dst
 	if cap(vec) >= dim {
@@ -1281,20 +1287,23 @@ func unmarshalVectorInt32(dim int, data []byte, dst *[]int32) error {
 		*dst = nil
 		return nil
 	}
-	expected, err := vectorByteSize(dim, 4)
-	if err != nil {
-		return unmarshalErrorf("%v", err)
-	}
-	if len(data) != expected {
-		return unmarshalErrorf("unmarshal vector<int, %d>: expected %d bytes, got %d", dim, expected, len(data))
-	}
 	if dim == 0 {
+		if len(data) > 0 {
+			return unmarshalErrorf("unmarshal vector: %d bytes of data for 0-dimension vector", len(data))
+		}
 		if *dst == nil {
 			*dst = make([]int32, 0)
 		} else {
 			*dst = (*dst)[:0]
 		}
 		return nil
+	}
+	expected, err := vectorByteSize(dim, 4)
+	if err != nil {
+		return unmarshalErrorf("%v", err)
+	}
+	if len(data) != expected {
+		return unmarshalErrorf("unmarshal vector<int, %d>: expected %d bytes, got %d", dim, expected, len(data))
 	}
 	vec := *dst
 	if cap(vec) >= dim {
@@ -1320,20 +1329,23 @@ func unmarshalVectorInt64(dim int, data []byte, dst *[]int64) error {
 		*dst = nil
 		return nil
 	}
-	expected, err := vectorByteSize(dim, 8)
-	if err != nil {
-		return unmarshalErrorf("%v", err)
-	}
-	if len(data) != expected {
-		return unmarshalErrorf("unmarshal vector<bigint, %d>: expected %d bytes, got %d", dim, expected, len(data))
-	}
 	if dim == 0 {
+		if len(data) > 0 {
+			return unmarshalErrorf("unmarshal vector: %d bytes of data for 0-dimension vector", len(data))
+		}
 		if *dst == nil {
 			*dst = make([]int64, 0)
 		} else {
 			*dst = (*dst)[:0]
 		}
 		return nil
+	}
+	expected, err := vectorByteSize(dim, 8)
+	if err != nil {
+		return unmarshalErrorf("%v", err)
+	}
+	if len(data) != expected {
+		return unmarshalErrorf("unmarshal vector<bigint, %d>: expected %d bytes, got %d", dim, expected, len(data))
 	}
 	vec := *dst
 	if cap(vec) >= dim {
@@ -1387,20 +1399,23 @@ func unmarshalVectorUUID(dim int, data []byte, dst *[]UUID) error {
 		*dst = nil
 		return nil
 	}
-	expected, err := vectorByteSize(dim, 16)
-	if err != nil {
-		return unmarshalErrorf("%v", err)
-	}
-	if len(data) != expected {
-		return unmarshalErrorf("unmarshal vector<uuid, %d>: expected %d bytes, got %d", dim, expected, len(data))
-	}
 	if dim == 0 {
+		if len(data) > 0 {
+			return unmarshalErrorf("unmarshal vector: %d bytes of data for 0-dimension vector", len(data))
+		}
 		if *dst == nil {
 			*dst = make([]UUID, 0)
 		} else {
 			*dst = (*dst)[:0]
 		}
 		return nil
+	}
+	expected, err := vectorByteSize(dim, 16)
+	if err != nil {
+		return unmarshalErrorf("%v", err)
+	}
+	if len(data) != expected {
+		return unmarshalErrorf("unmarshal vector<uuid, %d>: expected %d bytes, got %d", dim, expected, len(data))
 	}
 	vec := *dst
 	if cap(vec) >= dim {
@@ -2314,6 +2329,63 @@ func (v VectorType) Zero() interface{} {
 		return nil
 	}
 	return reflect.Zero(reflect.SliceOf(reflect.TypeOf(t))).Interface()
+}
+
+// NewWithError creates a pointer to an empty slice of the appropriate Go type
+// for this vector's element type. Fast paths avoid reflection for the common
+// fixed-size element types (float, double, int, bigint, uuid/timeuuid).
+// Without this method, VectorType would inherit NativeType.NewWithError which
+// falls back to goType() → asVectorType(), re-parsing the full Java type
+// string (e.g. "org.apache.cassandra.db.marshal.VectorType(…)") on every call.
+func (v VectorType) NewWithError() (interface{}, error) {
+	// Fast path: return *[]T directly for common element types.
+	if nt, ok := v.SubType.(NativeType); ok {
+		switch nt.typ {
+		case TypeFloat:
+			return new([]float32), nil
+		case TypeDouble:
+			return new([]float64), nil
+		case TypeInt:
+			return new([]int), nil
+		case TypeBigInt, TypeCounter:
+			return new([]int64), nil
+		case TypeSmallInt:
+			return new([]int16), nil
+		case TypeTinyInt:
+			return new([]int8), nil
+		case TypeBoolean:
+			return new([]bool), nil
+		case TypeUUID, TypeTimeUUID:
+			return new([]UUID), nil
+		case TypeVarchar, TypeAscii, TypeText, TypeInet:
+			return new([]string), nil
+		case TypeBlob:
+			return new([][]byte), nil
+		case TypeTimestamp, TypeDate:
+			return new([]time.Time), nil
+		case TypeTime:
+			return new([]time.Duration), nil
+		case TypeDecimal:
+			return new([]*inf.Dec), nil
+		case TypeVarint:
+			return new([]*big.Int), nil
+		case TypeDuration:
+			return new([]Duration), nil
+		}
+	}
+
+	// Fallback: derive the slice type via SubType.NewWithError() + reflect.
+	// This still avoids the expensive asVectorType() re-parse since we
+	// already have the SubType available directly.
+	innerPtr, err := v.SubType.NewWithError()
+	if err != nil {
+		return nil, err
+	}
+	elemType := reflect.TypeOf(innerPtr)
+	if elemType.Kind() == reflect.Ptr {
+		elemType = elemType.Elem()
+	}
+	return reflect.New(reflect.SliceOf(elemType)).Interface(), nil
 }
 
 func (t CollectionType) NewWithError() (interface{}, error) {
