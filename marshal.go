@@ -32,6 +32,7 @@ import (
 	"math/big"
 	"math/bits"
 	"reflect"
+	"sync"
 	"time"
 	"unsafe"
 
@@ -67,6 +68,58 @@ var (
 var (
 	ErrorUDTUnavailable = errors.New("UDT are not available on protocols less than 3, please update config")
 )
+
+// marshalBufPool is a sync.Pool of *bytes.Buffer used by collection and vector
+// marshal functions to avoid allocating a new Buffer on every call.
+//
+// Lifecycle: marshalList/marshalMap/marshalVector call getMarshalBuf to get a
+// pooled buffer, write the serialized data into it, then call finishMarshalBuf
+// which copies the data into a new []byte and returns the buffer to the pool.
+// This ensures the returned slice never aliases pooled storage.
+var marshalBufPool = sync.Pool{
+	New: func() interface{} {
+		return &bytes.Buffer{}
+	},
+}
+
+// marshalBufMaxCap is the maximum capacity of a buffer that will be returned
+// to the pool. Buffers larger than this are left for GC to avoid holding
+// excessive memory in the pool from occasional large payloads.
+const marshalBufMaxCap = 64 * 1024 // 64 KiB
+
+// getMarshalBuf returns a *bytes.Buffer from the pool, reset and optionally
+// pre-grown to the given size hint. If sizeHint <= 0, no pre-grow is done.
+func getMarshalBuf(sizeHint int) *bytes.Buffer {
+	buf := marshalBufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	if sizeHint > 0 {
+		buf.Grow(sizeHint)
+	}
+	return buf
+}
+
+// putMarshalBuf returns a *bytes.Buffer to the pool. Buffers whose capacity
+// exceeds marshalBufMaxCap are discarded to prevent the pool from holding
+// oversized allocations.
+func putMarshalBuf(buf *bytes.Buffer) {
+	if buf == nil {
+		return
+	}
+	if buf.Cap() > marshalBufMaxCap {
+		return // let GC collect oversized buffers
+	}
+	marshalBufPool.Put(buf)
+}
+
+// finishMarshalBuf copies the contents of buf into a new []byte and returns
+// the buffer to the pool. This ensures the returned slice does not alias the
+// pooled buffer's internal storage.
+func finishMarshalBuf(buf *bytes.Buffer) []byte {
+	result := make([]byte, buf.Len())
+	copy(result, buf.Bytes())
+	putMarshalBuf(buf)
+	return result
+}
 
 // Marshaler is an interface for custom unmarshaler.
 // Each value of the 'CQL binary protocol' consist of <value_len> and <value_data>.
@@ -715,16 +768,25 @@ func marshalList(info TypeInfo, value interface{}) ([]byte, error) {
 
 	switch k {
 	case reflect.Slice, reflect.Array:
-		buf := &bytes.Buffer{}
 		n := rv.Len()
 
+		// Estimate buffer size: 4 bytes for collection size header,
+		// plus for each element: 4 bytes length prefix + element data.
+		sizeHint := 4 // collection size header
+		if elemSize := fixedElemSize(listInfo.Elem); elemSize > 0 {
+			sizeHint += n * (4 + elemSize) // 4-byte length prefix per element + data
+		}
+		buf := getMarshalBuf(sizeHint)
+
 		if err := writeCollectionSize(listInfo, n, buf); err != nil {
+			putMarshalBuf(buf)
 			return nil, err
 		}
 
 		for i := 0; i < n; i++ {
 			item, err := Marshal(listInfo.Elem, rv.Index(i).Interface())
 			if err != nil {
+				putMarshalBuf(buf)
 				return nil, err
 			}
 			itemLen := len(item)
@@ -733,11 +795,12 @@ func marshalList(info TypeInfo, value interface{}) ([]byte, error) {
 				itemLen = -1
 			}
 			if err := writeCollectionSize(listInfo, itemLen, buf); err != nil {
+				putMarshalBuf(buf)
 				return nil, err
 			}
 			buf.Write(item)
 		}
-		return buf.Bytes(), nil
+		return finishMarshalBuf(buf), nil
 	case reflect.Map:
 		elem := t.Elem()
 		if elem.Kind() == reflect.Struct && elem.NumField() == 0 {
@@ -863,17 +926,19 @@ func marshalVector(info VectorType, value interface{}) ([]byte, error) {
 		}
 
 		isLengthType := isVectorVariableLengthType(info.SubType)
-		buf := &bytes.Buffer{}
+		sizeHint := 0
 		if !isLengthType {
-			if elemSize := vectorFixedElemSize(info.SubType); elemSize > 0 {
+			if elemSize := fixedElemSize(info.SubType); elemSize > 0 {
 				if needed := int64(n) * int64(elemSize); needed > 0 && needed <= math.MaxInt32 {
-					buf.Grow(int(needed))
+					sizeHint = int(needed)
 				}
 			}
 		}
+		buf := getMarshalBuf(sizeHint)
 		for i := 0; i < n; i++ {
 			item, err := Marshal(info.SubType, rv.Index(i).Interface())
 			if err != nil {
+				putMarshalBuf(buf)
 				return nil, err
 			}
 			if isLengthType {
@@ -881,7 +946,7 @@ func marshalVector(info VectorType, value interface{}) ([]byte, error) {
 			}
 			buf.Write(item)
 		}
-		return buf.Bytes(), nil
+		return finishMarshalBuf(buf), nil
 	}
 	return nil, marshalErrorf("can not marshal %T into %s. Accepted types: slice, array.", value, info)
 }
@@ -969,13 +1034,16 @@ func unmarshalVector(info VectorType, data []byte, value interface{}) error {
 	return unmarshalErrorf("can not unmarshal %s into %T. Accepted types: *slice, *array, *interface{}.", info, value)
 }
 
-func vectorFixedElemSize(elemType TypeInfo) int {
+// fixedElemSize returns the wire-format byte size for fixed-length CQL types.
+// Returns 0 for variable-length or unknown types.
+// Note: TypeBoolean/TypeTinyInt (1B) and TypeSmallInt (2B) are intentionally
+// excluded — Cassandra's vector implementation treats them as variable-length,
+// and the pre-sizing benefit for such small types is negligible.
+func fixedElemSize(elemType TypeInfo) int {
 	switch elemType.Type() {
-	case TypeBoolean:
-		return 1
-	case TypeInt, TypeFloat:
+	case TypeInt, TypeFloat, TypeDate:
 		return 4
-	case TypeBigInt, TypeDouble, TypeTimestamp:
+	case TypeBigInt, TypeDouble, TypeTimestamp, TypeCounter, TypeTime:
 		return 8
 	case TypeUUID, TypeTimeUUID:
 		return 16
@@ -1069,10 +1137,20 @@ func marshalMap(info TypeInfo, value interface{}) ([]byte, error) {
 		return nil, nil
 	}
 
-	buf := &bytes.Buffer{}
 	n := rv.Len()
 
+	// Estimate buffer size: 4 bytes for map size header,
+	// plus for each entry: 4 bytes key length + key data + 4 bytes value length + value data.
+	sizeHint := 4 // map size header
+	keySize := fixedElemSize(mapInfo.Key)
+	valSize := fixedElemSize(mapInfo.Elem)
+	if keySize > 0 && valSize > 0 {
+		sizeHint += n * (4 + keySize + 4 + valSize)
+	}
+	buf := getMarshalBuf(sizeHint)
+
 	if err := writeCollectionSize(mapInfo, n, buf); err != nil {
+		putMarshalBuf(buf)
 		return nil, err
 	}
 
@@ -1080,6 +1158,7 @@ func marshalMap(info TypeInfo, value interface{}) ([]byte, error) {
 	for _, key := range keys {
 		item, err := Marshal(mapInfo.Key, key.Interface())
 		if err != nil {
+			putMarshalBuf(buf)
 			return nil, err
 		}
 		itemLen := len(item)
@@ -1088,12 +1167,14 @@ func marshalMap(info TypeInfo, value interface{}) ([]byte, error) {
 			itemLen = -1
 		}
 		if err := writeCollectionSize(mapInfo, itemLen, buf); err != nil {
+			putMarshalBuf(buf)
 			return nil, err
 		}
 		buf.Write(item)
 
 		item, err = Marshal(mapInfo.Elem, rv.MapIndex(key).Interface())
 		if err != nil {
+			putMarshalBuf(buf)
 			return nil, err
 		}
 		itemLen = len(item)
@@ -1102,11 +1183,12 @@ func marshalMap(info TypeInfo, value interface{}) ([]byte, error) {
 			itemLen = -1
 		}
 		if err := writeCollectionSize(mapInfo, itemLen, buf); err != nil {
+			putMarshalBuf(buf)
 			return nil, err
 		}
 		buf.Write(item)
 	}
-	return buf.Bytes(), nil
+	return finishMarshalBuf(buf), nil
 }
 
 func unmarshalMap(info TypeInfo, data []byte, value interface{}) error {
