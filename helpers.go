@@ -157,7 +157,48 @@ func goType(t TypeInfo) (reflect.Type, error) {
 }
 
 func dereference(i any) any {
-	return reflect.Indirect(reflect.ValueOf(i)).Interface()
+	// Fast path: avoid reflect for the common pointer types returned by
+	// NativeType.NewWithError and used in RowData/MapScan.
+	switch v := i.(type) {
+	case *string:
+		return *v
+	case *int:
+		return *v
+	case *int64:
+		return *v
+	case *int32:
+		return *v
+	case *int16:
+		return *v
+	case *int8:
+		return *v
+	case *float64:
+		return *v
+	case *float32:
+		return *v
+	case *bool:
+		return *v
+	case *[]byte:
+		return *v
+	case *time.Time:
+		return *v
+	case *time.Duration:
+		return *v
+	case *UUID:
+		return *v
+	case *Duration:
+		return *v
+	case *inf.Dec:
+		return *v
+	case *big.Int:
+		return *v
+	case *[]any:
+		return *v
+	case *map[string]any:
+		return *v
+	default:
+		return reflect.Indirect(reflect.ValueOf(i)).Interface()
+	}
 }
 
 // TODO: Cover with unit tests.
@@ -367,42 +408,52 @@ func (iter *Iter) RowData() (RowData, error) {
 		return RowData{}, iter.err
 	}
 
-	// Pre-size slices to actual column count including tuple expansion
-	// and use direct indexing instead of append for better performance
+	columns, err := iter.getScanColumns()
+	if err != nil {
+		return RowData{}, err
+	}
+
+	values, err := iter.newScanValues()
+	if err != nil {
+		return RowData{}, err
+	}
+
+	return RowData{
+		Columns: columns,
+		Values:  values,
+	}, nil
+}
+
+// getScanColumns returns the cached column names for this iterator,
+// computing them on the first call. Column names don't change between
+// rows, so they are computed once and reused.
+//
+// The returned slice is shared across all callers and must not be mutated.
+func (iter *Iter) getScanColumns() ([]string, error) {
+	if iter.scanColumns != nil {
+		return iter.scanColumns, nil
+	}
+
 	actualSize := iter.meta.actualColCount
 	columns := make([]string, actualSize)
-	values := make([]any, actualSize)
-
 	idx := 0
 	for _, column := range iter.Columns() {
 		if c, ok := column.TypeInfo.(TupleTypeInfo); !ok {
 			if idx >= actualSize {
 				err := fmt.Errorf("gocql: column count overflow in RowData: metadata predicted %d columns but encountered more", actualSize)
 				iter.err = err
-				return RowData{}, err
-			}
-			val, err := column.TypeInfo.NewWithError()
-			if err != nil {
-				iter.err = err
-				return RowData{}, err
+				return nil, err
 			}
 			columns[idx] = column.Name
-			values[idx] = val
 			idx++
 		} else {
-			for i, elem := range c.Elems {
+			for i := range c.Elems {
 				if idx >= actualSize {
 					err := fmt.Errorf("gocql: column count overflow in RowData: metadata predicted %d columns but encountered more", actualSize)
 					iter.err = err
-					return RowData{}, err
+					return nil, err
 				}
 				columns[idx] = TupleColumnName(column.Name, i)
-				val, err := elem.NewWithError()
-				if err != nil {
-					iter.err = err
-					return RowData{}, err
-				}
-				values[idx] = val
 				idx++
 			}
 		}
@@ -411,15 +462,59 @@ func (iter *Iter) RowData() (RowData, error) {
 	if idx != actualSize {
 		err := fmt.Errorf("gocql: column count mismatch in RowData: metadata predicted %d columns but got %d", actualSize, idx)
 		iter.err = err
-		return RowData{}, err
+		return nil, err
 	}
 
-	rowData := RowData{
-		Columns: columns,
-		Values:  values,
+	iter.scanColumns = columns
+	return columns, nil
+}
+
+// newScanValues allocates fresh zero-value pointers for each column,
+// suitable for passing to Scan. Values must be freshly allocated each
+// call because Scan mutates them.
+func (iter *Iter) newScanValues() ([]any, error) {
+	actualSize := iter.meta.actualColCount
+	values := make([]any, actualSize)
+	idx := 0
+	for _, column := range iter.Columns() {
+		if c, ok := column.TypeInfo.(TupleTypeInfo); !ok {
+			if idx >= actualSize {
+				err := fmt.Errorf("gocql: column count overflow in newScanValues: metadata predicted %d columns but encountered more", actualSize)
+				iter.err = err
+				return nil, err
+			}
+			val, err := column.TypeInfo.NewWithError()
+			if err != nil {
+				iter.err = err
+				return nil, err
+			}
+			values[idx] = val
+			idx++
+		} else {
+			for _, elem := range c.Elems {
+				if idx >= actualSize {
+					err := fmt.Errorf("gocql: column count overflow in newScanValues: metadata predicted %d columns but encountered more", actualSize)
+					iter.err = err
+					return nil, err
+				}
+				val, err := elem.NewWithError()
+				if err != nil {
+					iter.err = err
+					return nil, err
+				}
+				values[idx] = val
+				idx++
+			}
+		}
 	}
 
-	return rowData, nil
+	if idx != actualSize {
+		err := fmt.Errorf("gocql: column count mismatch in newScanValues: metadata predicted %d columns but got %d", actualSize, idx)
+		iter.err = err
+		return nil, err
+	}
+
+	return values, nil
 }
 
 // TODO(zariel): is it worth exporting this?

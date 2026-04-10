@@ -1941,7 +1941,12 @@ type Iter struct {
 	// allWarnings accumulates warnings across page boundaries.
 	// When a page's framer is released during fetchNextPage(), its warnings
 	// are appended here so they are not lost.
-	allWarnings       []string
+	allWarnings []string
+
+	// scanColumns caches the column names computed by RowData() so that
+	// MapScan does not recompute them on every row. Populated lazily on
+	// the first call to getScanColumns().
+	scanColumns       []string
 	meta              resultMetadata
 	pos               int
 	numRows           int
