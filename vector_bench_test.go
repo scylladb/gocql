@@ -708,3 +708,36 @@ func BenchmarkUnmarshalVectorUUID(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkVectorNewWithError measures VectorType.NewWithError() which avoids
+// the expensive goType() → asVectorType() re-parse path that NativeType.NewWithError()
+// falls into for TypeCustom vectors.
+func BenchmarkVectorNewWithError(b *testing.B) {
+	vt := makeFloatVectorType(1536, "1536")
+
+	b.Run("VectorType", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			val, err := vt.NewWithError()
+			if err != nil {
+				b.Fatal(err)
+			}
+			_ = val
+		}
+	})
+
+	// Benchmark the old path: NativeType.NewWithError() on a TypeCustom with
+	// vector custom string. This simulates what happened before VectorType had
+	// its own NewWithError — it fell through to goType() → asVectorType().
+	b.Run("NativeType_fallback", func(b *testing.B) {
+		nt := vt.NativeType // extract the embedded NativeType
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			val, err := nt.NewWithError()
+			if err != nil {
+				b.Fatal(err)
+			}
+			_ = val
+		}
+	})
+}
