@@ -776,7 +776,9 @@ func writeCollectionSize(n int, buf *bytes.Buffer) error {
 }
 
 func marshalList(info CollectionType, value any) ([]byte, error) {
-	if _, ok := value.(unsetColumn); ok {
+	if value == nil {
+		return nil, nil
+	} else if _, ok := value.(unsetColumn); ok {
 		return nil, nil
 	}
 
@@ -925,37 +927,70 @@ func unmarshalList(info CollectionType, data []byte, value any) error {
 }
 
 func marshalVector(info VectorType, value any) ([]byte, error) {
-	if _, ok := value.(unsetColumn); ok {
+	if value == nil {
+		return nil, nil
+	} else if _, ok := value.(unsetColumn); ok {
 		return nil, nil
 	}
 
-	// Fast paths for []float64/[]float32 — skip reflect/per-element dispatch.
-	// dim=0 falls through to the generic path (CQL null semantics).
-	if info.Dimensions > 0 {
+	dim := info.Dimensions
+
+	// Fast paths for []float64/[]float32/[]int32/[]int/[]int64/[]UUID — skip
+	// reflect/per-element dispatch. dim=0 falls through to the generic path
+	// (CQL null semantics).
+	if dim > 0 {
 		switch info.SubType.Type() {
 		case TypeDouble:
 			if v, ok := value.([]float64); ok {
 				if v == nil {
 					return nil, nil
 				}
-				if len(v) != info.Dimensions {
-					return nil, marshalErrorf("expected vector with %d dimensions, received %d", info.Dimensions, len(v))
+				if len(v) != dim {
+					return nil, marshalErrorf("expected vector with %d dimensions, received %d", dim, len(v))
 				}
-				return marshalVectorFloat64(info.Dimensions, v)
+				return marshalVectorFloat64(dim, v)
 			}
 		case TypeFloat:
 			if v, ok := value.([]float32); ok {
 				if v == nil {
 					return nil, nil
 				}
-				if len(v) != info.Dimensions {
-					return nil, marshalErrorf("expected vector with %d dimensions, received %d", info.Dimensions, len(v))
+				if len(v) != dim {
+					return nil, marshalErrorf("expected vector with %d dimensions, received %d", dim, len(v))
 				}
-				return marshalVectorFloat32(info.Dimensions, v)
+				return marshalVectorFloat32(dim, v)
+			}
+		case TypeInt:
+			if vec, ok := value.([]int32); ok {
+				if vec == nil {
+					return nil, nil
+				}
+				return marshalVectorInt32(vec, dim)
+			}
+			if vec, ok := value.([]int); ok {
+				if vec == nil {
+					return nil, nil
+				}
+				return marshalVectorInt(vec, dim)
+			}
+		case TypeBigInt, TypeTimestamp:
+			if vec, ok := value.([]int64); ok {
+				if vec == nil {
+					return nil, nil
+				}
+				return marshalVectorInt64(vec, dim)
+			}
+		case TypeUUID, TypeTimeUUID:
+			if vec, ok := value.([]UUID); ok {
+				if vec == nil {
+					return nil, nil
+				}
+				return marshalVectorUUID(vec, dim)
 			}
 		}
 	}
 
+	// Slow path: reflection-based marshal for all other types.
 	rv := reflect.ValueOf(value)
 	t := rv.Type()
 	k := t.Kind()
@@ -966,8 +1001,13 @@ func marshalVector(info VectorType, value any) ([]byte, error) {
 	switch k {
 	case reflect.Slice, reflect.Array:
 		n := rv.Len()
-		if n != info.Dimensions {
-			return nil, marshalErrorf("expected vector with %d dimensions, received %d", info.Dimensions, n)
+		if n != dim {
+			return nil, marshalErrorf("expected vector with %d dimensions, received %d", dim, n)
+		}
+		// A 0-dimension vector has no wire representation; treat it as
+		// CQL null rather than a zero-length, non-nil byte slice.
+		if n == 0 {
+			return nil, nil
 		}
 
 		isLengthType := isVectorVariableLengthType(info.SubType)
@@ -1042,35 +1082,54 @@ func unmarshalVectorFloat32(data []byte, vec []float32) {
 }
 
 func unmarshalVector(info VectorType, data []byte, value any) error {
-	// Fast paths for *[]float64/*[]float32 — skip reflect/per-element dispatch.
-	// nil/empty and dim=0 fall through to the generic path.
-	if info.Dimensions > 0 && data != nil {
+	dim := info.Dimensions
+
+	// Fast paths for *[]float64/*[]float32/*[]int32/*[]int/*[]int64/*[]UUID —
+	// skip reflect/per-element dispatch. nil/empty and dim=0 fall through to
+	// the generic path.
+	if dim > 0 && data != nil {
 		switch info.SubType.Type() {
 		case TypeDouble:
 			if dst, ok := value.(*[]float64); ok {
-				expected := info.Dimensions * 8
+				expected := dim * 8
 				if len(data) != expected {
 					return unmarshalErrorf("unmarshal vector<double>: expected %d bytes, got %d", expected, len(data))
 				}
-				vec := vectorSliceReuse(dst, info.Dimensions)
+				vec := vectorSliceReuse(dst, dim)
 				unmarshalVectorFloat64(data, vec)
 				*dst = vec
 				return nil
 			}
 		case TypeFloat:
 			if dst, ok := value.(*[]float32); ok {
-				expected := info.Dimensions * 4
+				expected := dim * 4
 				if len(data) != expected {
 					return unmarshalErrorf("unmarshal vector<float>: expected %d bytes, got %d", expected, len(data))
 				}
-				vec := vectorSliceReuse(dst, info.Dimensions)
+				vec := vectorSliceReuse(dst, dim)
 				unmarshalVectorFloat32(data, vec)
 				*dst = vec
 				return nil
 			}
+		case TypeInt:
+			if dst, ok := value.(*[]int32); ok {
+				return unmarshalVectorInt32(data, dim, dst)
+			}
+			if dst, ok := value.(*[]int); ok {
+				return unmarshalVectorInt(data, dim, dst)
+			}
+		case TypeBigInt, TypeTimestamp:
+			if dst, ok := value.(*[]int64); ok {
+				return unmarshalVectorInt64(data, dim, dst)
+			}
+		case TypeUUID, TypeTimeUUID:
+			if dst, ok := value.(*[]UUID); ok {
+				return unmarshalVectorUUID(data, dim, dst)
+			}
 		}
 	}
 
+	// Slow path: reflection-based unmarshal for all other types.
 	rv := reflect.ValueOf(value)
 	if rv.Kind() != reflect.Ptr {
 		return unmarshalErrorf("can not unmarshal into non-pointer %T", value)
@@ -1097,7 +1156,7 @@ func unmarshalVector(info VectorType, data []byte, value any) error {
 			rv.Set(reflect.Zero(t))
 			return nil
 		}
-		if info.Dimensions == 0 {
+		if dim == 0 {
 			if len(data) > 0 {
 				return unmarshalErrorf("unmarshal vector: %d bytes of data for 0-dimension vector", len(data))
 			}
@@ -1111,18 +1170,18 @@ func unmarshalVector(info VectorType, data []byte, value any) error {
 			return nil
 		}
 		if k == reflect.Array {
-			if rv.Len() != info.Dimensions {
-				return unmarshalErrorf("unmarshal vector: array of size %d cannot store vector of %d dimensions", rv.Len(), info.Dimensions)
+			if rv.Len() != dim {
+				return unmarshalErrorf("unmarshal vector: array of size %d cannot store vector of %d dimensions", rv.Len(), dim)
 			}
 		} else {
-			rv.Set(reflect.MakeSlice(t, info.Dimensions, info.Dimensions))
+			rv.Set(reflect.MakeSlice(t, dim, dim))
 			if rv.Kind() == reflect.Interface {
 				rv = rv.Elem()
 			}
 		}
-		elemSize := len(data) / info.Dimensions
+		elemSize := len(data) / dim
 		isLengthType := isVectorVariableLengthType(info.SubType)
-		for i := 0; i < info.Dimensions; i++ {
+		for i := 0; i < dim; i++ {
 			offset := 0
 			if isLengthType {
 				m, p, err := readUnsignedVInt(data)
@@ -1168,6 +1227,184 @@ func fixedElemSize(elemType TypeInfo) int {
 		return 16
 	}
 	return 0
+}
+
+// vectorByteSize returns the total byte size of a vector with the given number
+// of dimensions and per-element byte size. It returns an error if the result
+// would overflow int.
+func vectorByteSize(dim, elemSize int) (int, error) {
+	n := int64(dim) * int64(elemSize)
+	if n < 0 || n > math.MaxInt32 {
+		return 0, marshalErrorf("vector byte size overflow: %d * %d", dim, elemSize)
+	}
+	return int(n), nil
+}
+
+// --- Vector fast-path marshal functions ---
+// These use encoding/binary.BigEndian directly, avoiding per-element
+// reflection and the generic Marshal() call for common fixed-size types.
+// Each function validates dimensions, checks for byte-size overflow,
+// and uses a BCE hint to eliminate bounds checks in the hot loop.
+
+func marshalVectorInt32(vec []int32, dim int) ([]byte, error) {
+	if len(vec) != dim {
+		return nil, marshalErrorf("expected vector with %d dimensions, received %d", dim, len(vec))
+	}
+	size, err := vectorByteSize(dim, 4)
+	if err != nil {
+		return nil, err
+	}
+	buf := make([]byte, size)
+	if dim > 0 {
+		_ = buf[dim*4-1] // BCE hint
+	}
+	for i, v := range vec {
+		binary.BigEndian.PutUint32(buf[i*4:], uint32(v))
+	}
+	return buf, nil
+}
+
+func marshalVectorInt(vec []int, dim int) ([]byte, error) {
+	if len(vec) != dim {
+		return nil, marshalErrorf("expected vector with %d dimensions, received %d", dim, len(vec))
+	}
+	size, err := vectorByteSize(dim, 4)
+	if err != nil {
+		return nil, err
+	}
+	buf := make([]byte, size)
+	if dim > 0 {
+		_ = buf[dim*4-1] // BCE hint
+	}
+	for i, v := range vec {
+		if v > math.MaxInt32 || v < math.MinInt32 {
+			return nil, marshalErrorf("marshal vector: int element value %d out of int32 range", v)
+		}
+		binary.BigEndian.PutUint32(buf[i*4:], uint32(int32(v)))
+	}
+	return buf, nil
+}
+
+func marshalVectorInt64(vec []int64, dim int) ([]byte, error) {
+	if len(vec) != dim {
+		return nil, marshalErrorf("expected vector with %d dimensions, received %d", dim, len(vec))
+	}
+	size, err := vectorByteSize(dim, 8)
+	if err != nil {
+		return nil, err
+	}
+	buf := make([]byte, size)
+	if dim > 0 {
+		_ = buf[dim*8-1] // BCE hint
+	}
+	for i, v := range vec {
+		binary.BigEndian.PutUint64(buf[i*8:], uint64(v))
+	}
+	return buf, nil
+}
+
+func marshalVectorUUID(vec []UUID, dim int) ([]byte, error) {
+	if len(vec) != dim {
+		return nil, marshalErrorf("expected vector with %d dimensions, received %d", dim, len(vec))
+	}
+	size, err := vectorByteSize(dim, 16)
+	if err != nil {
+		return nil, err
+	}
+	buf := make([]byte, size)
+	if dim > 0 {
+		_ = buf[dim*16-1] // BCE hint
+	}
+	for i := range vec {
+		copy(buf[i*16:], vec[i][:])
+	}
+	return buf, nil
+}
+
+// --- Vector fast-path unmarshal functions ---
+// These read from raw bytes using encoding/binary.BigEndian directly, into a
+// fresh backing array per decode (see marshal_alias_test.go).
+//
+// Deliberately stricter than the generic path on payload length: each decoder
+// requires len(data) to be exactly the fixed element width times dim, where
+// the reflect path derives the element size as len(data)/dim and silently
+// ignores trailing bytes. Trailing bytes mean a corrupt or misframed value,
+// and an error beats quietly decoding it.
+
+func unmarshalVectorInt32(data []byte, dim int, dst *[]int32) error {
+	expected, err := vectorByteSize(dim, 4)
+	if err != nil {
+		return err
+	}
+	if len(data) != expected {
+		return unmarshalErrorf("unmarshal vector: expected %d bytes for %d int32 dimensions, got %d", expected, dim, len(data))
+	}
+	vec := make([]int32, dim)
+	if dim > 0 {
+		_ = data[dim*4-1] // BCE hint
+	}
+	for i := 0; i < dim; i++ {
+		vec[i] = int32(binary.BigEndian.Uint32(data[i*4:]))
+	}
+	*dst = vec
+	return nil
+}
+
+func unmarshalVectorInt(data []byte, dim int, dst *[]int) error {
+	expected, err := vectorByteSize(dim, 4)
+	if err != nil {
+		return err
+	}
+	if len(data) != expected {
+		return unmarshalErrorf("unmarshal vector: expected %d bytes for %d int dimensions, got %d", expected, dim, len(data))
+	}
+	vec := make([]int, dim)
+	if dim > 0 {
+		_ = data[dim*4-1] // BCE hint
+	}
+	for i := 0; i < dim; i++ {
+		vec[i] = int(int32(binary.BigEndian.Uint32(data[i*4:])))
+	}
+	*dst = vec
+	return nil
+}
+
+func unmarshalVectorInt64(data []byte, dim int, dst *[]int64) error {
+	expected, err := vectorByteSize(dim, 8)
+	if err != nil {
+		return err
+	}
+	if len(data) != expected {
+		return unmarshalErrorf("unmarshal vector: expected %d bytes for %d int64 dimensions, got %d", expected, dim, len(data))
+	}
+	vec := make([]int64, dim)
+	if dim > 0 {
+		_ = data[dim*8-1] // BCE hint
+	}
+	for i := 0; i < dim; i++ {
+		vec[i] = int64(binary.BigEndian.Uint64(data[i*8:]))
+	}
+	*dst = vec
+	return nil
+}
+
+func unmarshalVectorUUID(data []byte, dim int, dst *[]UUID) error {
+	expected, err := vectorByteSize(dim, 16)
+	if err != nil {
+		return err
+	}
+	if len(data) != expected {
+		return unmarshalErrorf("unmarshal vector: expected %d bytes for %d UUID dimensions, got %d", expected, dim, len(data))
+	}
+	vec := make([]UUID, dim)
+	if dim > 0 {
+		_ = data[dim*16-1] // BCE hint
+	}
+	for i := 0; i < dim; i++ {
+		copy(vec[i][:], data[i*16:])
+	}
+	*dst = vec
+	return nil
 }
 
 // isVectorVariableLengthType determines if a type requires explicit length serialization within a vector.
@@ -1251,7 +1488,9 @@ func computeUnsignedVIntSize(v uint64) int {
 }
 
 func marshalMap(info CollectionType, value any) ([]byte, error) {
-	if _, ok := value.(unsetColumn); ok {
+	if value == nil {
+		return nil, nil
+	} else if _, ok := value.(unsetColumn); ok {
 		return nil, nil
 	}
 
@@ -2408,6 +2647,48 @@ func (v VectorType) Zero() any {
 		return nil
 	}
 	return reflect.Zero(reflect.SliceOf(reflect.TypeOf(t))).Interface()
+}
+
+// NewWithError returns a pointer to an empty slice of the appropriate Go type
+// for common vector element types, avoiding the expensive goType() → asVectorType()
+// re-parse of Java type strings on every call.
+func (v VectorType) NewWithError() (any, error) {
+	if nt, ok := v.SubType.(NativeType); ok {
+		switch nt.typ {
+		case TypeFloat:
+			return new([]float32), nil
+		case TypeDouble:
+			return new([]float64), nil
+		case TypeInt:
+			return new([]int), nil
+		case TypeBigInt, TypeTimestamp:
+			return new([]int64), nil
+		case TypeUUID, TypeTimeUUID:
+			return new([]UUID), nil
+		case TypeText, TypeVarchar, TypeAscii:
+			return new([]string), nil
+		case TypeBlob:
+			return new([][]byte), nil
+		case TypeBoolean:
+			return new([]bool), nil
+		case TypeSmallInt:
+			return new([]int16), nil
+		case TypeTinyInt:
+			return new([]int8), nil
+		case TypeTime:
+			return new([]time.Duration), nil
+		case TypeCounter:
+			return new([]int64), nil
+		case TypeDate:
+			return new([]time.Time), nil
+		}
+	}
+	// Fallback to reflection for complex/nested types
+	typ, err := goType(v)
+	if err != nil {
+		return nil, err
+	}
+	return reflect.New(typ).Interface(), nil
 }
 
 func (t CollectionType) NewWithError() (any, error) {
