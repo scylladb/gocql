@@ -586,3 +586,170 @@ func BenchmarkMarshalMapStringInt(b *testing.B) {
 		})
 	}
 }
+
+// --- marshalOutputPool tests ---
+
+func TestGetMarshalOutputFresh(t *testing.T) {
+	buf := getMarshalOutput(64)
+	if len(buf) != 64 {
+		t.Fatalf("expected len 64, got %d", len(buf))
+	}
+	if cap(buf) < 64 {
+		t.Fatalf("expected cap >= 64, got %d", cap(buf))
+	}
+}
+
+func TestGetMarshalOutputFromPool(t *testing.T) {
+	// Put a buffer into the pool, then retrieve it.
+	orig := make([]byte, 0, 128)
+	marshalOutputPool.Put(orig)
+
+	buf := getMarshalOutput(64)
+	if len(buf) != 64 {
+		t.Fatalf("expected len 64, got %d", len(buf))
+	}
+	// The pool should have returned the 128-cap buffer.
+	if cap(buf) < 128 {
+		t.Logf("pool did not return expected buffer (cap %d); may have been GC'd", cap(buf))
+	}
+}
+
+func TestGetMarshalOutputPoolTooSmall(t *testing.T) {
+	// Put a small buffer, request a larger one — should get a fresh allocation.
+	small := make([]byte, 0, 8)
+	marshalOutputPool.Put(small)
+
+	buf := getMarshalOutput(64)
+	if len(buf) != 64 {
+		t.Fatalf("expected len 64, got %d", len(buf))
+	}
+}
+
+func TestPutMarshalOutputNil(t *testing.T) {
+	// Should not panic.
+	putMarshalOutput(nil)
+}
+
+func TestPutMarshalOutputOversized(t *testing.T) {
+	// Buffers larger than marshalBufMaxCap should be discarded.
+	huge := make([]byte, marshalBufMaxCap+1)
+	putMarshalOutput(huge)
+	// If we get it back, the pool ignored the cap limit (unlikely).
+	// Can't reliably test pool internals, just verify no panic.
+}
+
+func TestMarshalOutputPoolRoundTrip(t *testing.T) {
+	// Verify that a buffer returned to the pool can be reused.
+	buf := getMarshalOutput(32)
+	for i := range buf {
+		buf[i] = byte(i)
+	}
+	putMarshalOutput(buf)
+
+	buf2 := getMarshalOutput(16)
+	if len(buf2) != 16 {
+		t.Fatalf("expected len 16, got %d", len(buf2))
+	}
+	// buf2 may or may not be the same underlying array (GC can collect pool entries).
+	// Just verify it's usable.
+	for i := range buf2 {
+		buf2[i] = 0xff
+	}
+}
+
+func TestPooledMarshalType(t *testing.T) {
+	tests := []struct {
+		name   string
+		info   TypeInfo
+		expect bool
+	}{
+		// Vectors with pooled subtypes.
+		{"vector<float>", VectorType{Dimensions: 3, SubType: NativeType{proto: protoVersion4, typ: TypeFloat}}, true},
+		{"vector<double>", VectorType{Dimensions: 3, SubType: NativeType{proto: protoVersion4, typ: TypeDouble}}, true},
+		{"vector<int>", VectorType{Dimensions: 3, SubType: NativeType{proto: protoVersion4, typ: TypeInt}}, true},
+		{"vector<bigint>", VectorType{Dimensions: 3, SubType: NativeType{proto: protoVersion4, typ: TypeBigInt}}, true},
+		{"vector<timestamp>", VectorType{Dimensions: 3, SubType: NativeType{proto: protoVersion4, typ: TypeTimestamp}}, true},
+		{"vector<counter>", VectorType{Dimensions: 3, SubType: NativeType{proto: protoVersion4, typ: TypeCounter}}, true},
+		{"vector<uuid>", VectorType{Dimensions: 3, SubType: NativeType{proto: protoVersion4, typ: TypeUUID}}, true},
+		{"vector<timeuuid>", VectorType{Dimensions: 3, SubType: NativeType{proto: protoVersion4, typ: TypeTimeUUID}}, true},
+
+		// Vectors with non-pooled subtypes.
+		{"vector<text>", VectorType{Dimensions: 3, SubType: NativeType{proto: protoVersion4, typ: TypeVarchar}}, false},
+		{"vector<blob>", VectorType{Dimensions: 3, SubType: NativeType{proto: protoVersion4, typ: TypeBlob}}, false},
+		{"vector<boolean>", VectorType{Dimensions: 3, SubType: NativeType{proto: protoVersion4, typ: TypeBoolean}}, false},
+
+		// Lists/sets with pooled elem types.
+		{"list<float>", CollectionType{NativeType: NativeType{proto: protoVersion4, typ: TypeList}, Elem: NativeType{proto: protoVersion4, typ: TypeFloat}}, true},
+		{"list<double>", CollectionType{NativeType: NativeType{proto: protoVersion4, typ: TypeList}, Elem: NativeType{proto: protoVersion4, typ: TypeDouble}}, true},
+		{"list<int>", CollectionType{NativeType: NativeType{proto: protoVersion4, typ: TypeList}, Elem: NativeType{proto: protoVersion4, typ: TypeInt}}, true},
+		{"list<bigint>", CollectionType{NativeType: NativeType{proto: protoVersion4, typ: TypeList}, Elem: NativeType{proto: protoVersion4, typ: TypeBigInt}}, true},
+		{"list<timestamp>", CollectionType{NativeType: NativeType{proto: protoVersion4, typ: TypeList}, Elem: NativeType{proto: protoVersion4, typ: TypeTimestamp}}, true},
+		{"list<counter>", CollectionType{NativeType: NativeType{proto: protoVersion4, typ: TypeList}, Elem: NativeType{proto: protoVersion4, typ: TypeCounter}}, true},
+		{"set<float>", CollectionType{NativeType: NativeType{proto: protoVersion4, typ: TypeSet}, Elem: NativeType{proto: protoVersion4, typ: TypeFloat}}, true},
+		{"set<int>", CollectionType{NativeType: NativeType{proto: protoVersion4, typ: TypeSet}, Elem: NativeType{proto: protoVersion4, typ: TypeInt}}, true},
+
+		// Lists/sets with non-pooled elem types.
+		{"list<text>", CollectionType{NativeType: NativeType{proto: protoVersion4, typ: TypeList}, Elem: NativeType{proto: protoVersion4, typ: TypeVarchar}}, false},
+		{"set<blob>", CollectionType{NativeType: NativeType{proto: protoVersion4, typ: TypeSet}, Elem: NativeType{proto: protoVersion4, typ: TypeBlob}}, false},
+		{"list<uuid>", CollectionType{NativeType: NativeType{proto: protoVersion4, typ: TypeList}, Elem: NativeType{proto: protoVersion4, typ: TypeUUID}}, false},
+
+		// Maps are never pooled.
+		{"map<int,int>", CollectionType{NativeType: NativeType{proto: protoVersion4, typ: TypeMap}, Key: NativeType{proto: protoVersion4, typ: TypeInt}, Elem: NativeType{proto: protoVersion4, typ: TypeInt}}, false},
+
+		// Native types are never pooled.
+		{"int", NativeType{proto: protoVersion4, typ: TypeInt}, false},
+		{"text", NativeType{proto: protoVersion4, typ: TypeVarchar}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := pooledMarshalType(tt.info)
+			if got != tt.expect {
+				t.Errorf("pooledMarshalType(%s) = %v, want %v", tt.name, got, tt.expect)
+			}
+		})
+	}
+}
+
+func TestMarshalVectorFloat32UsesPool(t *testing.T) {
+	// Marshal, put back, marshal again — second call should reuse the buffer.
+	vec := []float32{1.0, 2.0, 3.0}
+	buf1, err := marshalVectorFloat32(vec, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Copy the data before returning to pool.
+	data1 := make([]byte, len(buf1))
+	copy(data1, buf1)
+	putMarshalOutput(buf1)
+
+	buf2, err := marshalVectorFloat32(vec, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Verify data is correct regardless of pool reuse.
+	if !bytes.Equal(data1, buf2) {
+		t.Fatalf("data mismatch after pool reuse")
+	}
+	putMarshalOutput(buf2)
+}
+
+func TestMarshalListInt32UsesPool(t *testing.T) {
+	list := []int32{10, 20, 30}
+	buf1, err := marshalListInt32(list)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data1 := make([]byte, len(buf1))
+	copy(data1, buf1)
+	putMarshalOutput(buf1)
+
+	buf2, err := marshalListInt32(list)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data1, buf2) {
+		t.Fatalf("data mismatch after pool reuse")
+	}
+	putMarshalOutput(buf2)
+}
