@@ -2531,6 +2531,11 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 	var (
 		frame frameBuilder
 		info  *preparedStatment
+		// pooledMarshalCols/hasPooledMarshal track columns whose marshal
+		// fast path allocates from marshalOutputPool, set in the prepared
+		// path below, so the buffers can be returned after c.exec.
+		pooledMarshalCols []ColumnInfo
+		hasPooledMarshal  bool
 	)
 
 	// The keyspace and table this attempt routes by, used below to attribute a
@@ -2569,11 +2574,28 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 		}
 
 		params.values = getQueryValues(len(values))
+
+		// Track which columns use a marshal fast path that allocates from
+		// marshalOutputPool, so their output buffers can be returned to it
+		// once the framer has copied them (inside c.exec → buildFrame →
+		// writeBytes). Must happen before putQueryValues, which clears
+		// params.values (including the .value slices) for its own pool.
+		pooledMarshalCols = info.request.columns
+		for _, col := range pooledMarshalCols {
+			if pooledMarshalType(col.TypeInfo) {
+				hasPooledMarshal = true
+				break
+			}
+		}
+
 		for i := 0; i < len(values); i++ {
 			v := &params.values[i]
 			value := values[i]
 			typ := info.request.columns[i].TypeInfo
 			if err := marshalQueryValue(typ, value, v); err != nil {
+				if hasPooledMarshal {
+					returnPooledMarshalOutputs(pooledMarshalCols, params.values)
+				}
 				putQueryValues(params.values)
 				return &Iter{err: err}
 			}
@@ -2614,6 +2636,12 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 	}
 
 	framer, err := c.exec(ctx, frame, qry.trace, qry.GetRequestTimeout())
+	// Return pooled marshal output buffers now that the framer has copied
+	// them, then return the queryValues slice itself. Order matters:
+	// putQueryValues clears each element's .value, so it must run second.
+	if hasPooledMarshal {
+		returnPooledMarshalOutputs(pooledMarshalCols, params.values)
+	}
 	// Return pooled values; consumed by buildFrame at the start of c.exec().
 	// Returned after round-trip (not right after serialization) for simplicity.
 	putQueryValues(params.values)
@@ -2879,6 +2907,17 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 
 	hasLwtEntries := false
 
+	// pooledBufs collects marshalled byte slices from fast-path marshal
+	// functions so they can be returned to marshalOutputPool after the
+	// framer copies them. The defer is installed before the loop so that
+	// buffers are returned even if a later marshalQueryValue call fails.
+	var pooledBufs [][]byte
+	defer func() {
+		for _, buf := range pooledBufs {
+			putMarshalOutput(buf)
+		}
+	}()
+
 	for i := 0; i < n; i++ {
 		entry := &batch.Entries[i]
 		b := &req.statements[i]
@@ -2923,6 +2962,9 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 				if err := marshalQueryValue(typ, value, v); err != nil {
 					putBatchQueryValues(req.statements)
 					return &Iter{err: err}
+				}
+				if pooledMarshalType(typ) {
+					pooledBufs = append(pooledBufs, v.value)
 				}
 			}
 
