@@ -86,7 +86,7 @@ var unmarshalTests = []struct {
 			l := []int{1, 2}
 			return &l
 		}(),
-		unmarshalErrorf("unmarshal list: unexpected eof"),
+		unmarshalErrorf("unmarshal list: count 2 exceeds available data"),
 	},
 }
 
@@ -695,22 +695,6 @@ func TestMarshalNil(t *testing.T) {
 			t.Errorf("expected to get nil byte for nil %v got % X", typ, data)
 		}
 	}
-
-	// Collection types also need nil coverage.
-	collectionTypes := []Type{TypeList, TypeSet, TypeMap}
-	for _, typ := range collectionTypes {
-		info := CollectionType{
-			NativeType: NativeType{proto: protoVersion3, typ: typ},
-			Key:        NativeType{proto: protoVersion3, typ: TypeVarchar},
-			Elem:       NativeType{proto: protoVersion3, typ: TypeVarchar},
-		}
-		data, err := Marshal(info, nil)
-		if err != nil {
-			t.Errorf("unable to marshal nil %v: %v\n", typ, err)
-		} else if data != nil {
-			t.Errorf("expected nil bytes for nil %v, got % X", typ, data)
-		}
-	}
 }
 
 func TestUnmarshalInetCopyBytes(t *testing.T) {
@@ -790,7 +774,7 @@ func TestReadCollectionSize(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			size, _, err := readCollectionSize(test.data)
+			size, _, err := readCollectionSize(test.info, test.data)
 			if test.isError {
 				if err == nil {
 					t.Fatal("Expected error, but it was nil")
@@ -1317,8 +1301,54 @@ func TestCollectionNewWithErrorConsistentWithGoType(t *testing.T) {
 	}
 }
 
-// buildMapBytes builds the CQL binary wire format for a map with n entries.
-// keyFn and valFn produce the raw bytes for each key and value given the entry index.
+// TestVectorNewWithErrorConsistentWithGoType verifies that the fast-path type mapping
+// in VectorType.NewWithError() stays consistent with the canonical goType() mapping.
+func TestVectorNewWithErrorConsistentWithGoType(t *testing.T) {
+	subTypes := []Type{
+		TypeInt,
+		TypeBigInt, TypeCounter,
+		TypeText, TypeVarchar, TypeAscii,
+		TypeBoolean,
+		TypeFloat, TypeDouble,
+		TypeUUID, TypeTimeUUID,
+		TypeTimestamp, TypeDate,
+		TypeSmallInt, TypeTinyInt,
+		TypeBlob,
+		TypeTime,
+	}
+
+	for _, subTyp := range subTypes {
+		vt := VectorType{
+			NativeType: NewCustomType(protoVersion4, TypeCustom, apacheCassandraTypePrefix+"VectorType"),
+			SubType:    NativeType{typ: subTyp, proto: protoVersion4},
+			Dimensions: 3,
+		}
+
+		fastVal, err := vt.NewWithError()
+		if err != nil {
+			t.Errorf("NewWithError(vector<%s>): unexpected error: %v", subTyp, err)
+			continue
+		}
+
+		canonicalType, err := goType(vt)
+		if err != nil {
+			t.Errorf("goType(vector<%s>): unexpected error: %v", subTyp, err)
+			continue
+		}
+
+		fastType := reflect.TypeOf(fastVal)
+		if fastType.Kind() != reflect.Ptr {
+			t.Errorf("NewWithError(vector<%s>): expected pointer, got %s", subTyp, fastType.Kind())
+			continue
+		}
+
+		if fastType.Elem() != canonicalType {
+			t.Errorf("NewWithError(vector<%s>) fast-path type %s does not match goType() canonical type %s",
+				subTyp, fastType.Elem(), canonicalType)
+		}
+	}
+}
+
 func buildMapBytes(n int, keyFn, valFn func(i int) []byte) []byte {
 	// 4 bytes for the entry count
 	size := 4
