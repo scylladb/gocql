@@ -2427,6 +2427,34 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 		}
 
 		params.values = make([]queryValues, len(values))
+
+		// Return pooled marshal output buffers after the framer copies
+		// them (which happens inside c.exec → buildFrame → writeBytes).
+		// Installed before the marshal loop so that buffers are returned
+		// even if a later marshalQueryValue call fails mid-loop.
+		// Only install the defer when at least one column uses a poolable
+		// type to avoid ~50ns defer overhead on non-pooled queries.
+		{
+			cols := info.request.columns
+			vals := params.values
+			hasPooled := false
+			for _, col := range cols {
+				if pooledMarshalType(col.TypeInfo) {
+					hasPooled = true
+					break
+				}
+			}
+			if hasPooled {
+				defer func() {
+					for i, col := range cols {
+						if pooledMarshalType(col.TypeInfo) {
+							putMarshalOutput(vals[i].value)
+						}
+					}
+				}()
+			}
+		}
+
 		for i := 0; i < len(values); i++ {
 			v := &params.values[i]
 			value := values[i]
@@ -2700,6 +2728,17 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 
 	hasLwtEntries := false
 
+	// pooledBufs collects marshalled byte slices from fast-path marshal
+	// functions so they can be returned to marshalOutputPool after the
+	// framer copies them. The defer is installed before the loop so that
+	// buffers are returned even if a later marshalQueryValue call fails.
+	var pooledBufs [][]byte
+	defer func() {
+		for _, buf := range pooledBufs {
+			putMarshalOutput(buf)
+		}
+	}()
+
 	for i := 0; i < n; i++ {
 		entry := &batch.Entries[i]
 		b := &req.statements[i]
@@ -2740,6 +2779,9 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 				typ := info.request.columns[j].TypeInfo
 				if err := marshalQueryValue(typ, value, v); err != nil {
 					return &Iter{err: err}
+				}
+				if pooledMarshalType(typ) {
+					pooledBufs = append(pooledBufs, v.value)
 				}
 			}
 
