@@ -86,11 +86,7 @@ var unmarshalTests = []struct {
 			l := []int{1, 2}
 			return &l
 		}(),
-		// A count of 2 needs at least 2*4=8 remaining bytes (one 4-byte
-		// length prefix per element); only 6 remain, so this is now rejected
-		// up front by the size-vs-buffer guard, before attempting to read
-		// any element and hitting the old "unexpected eof".
-		unmarshalErrorf("unmarshal list: invalid size 2"),
+		unmarshalErrorf("unmarshal list: count 2 exceeds available data"),
 	},
 }
 
@@ -1387,5 +1383,53 @@ func TestUnmarshalMapReflect_OversizedCount_RejectedBeforeAlloc(t *testing.T) {
 	}
 	if dst != nil {
 		t.Fatalf("expected dst to remain nil, got %#v", dst)
+	}
+}
+
+// TestVectorNewWithErrorConsistentWithGoType verifies that the fast-path type mapping
+// in VectorType.NewWithError() stays consistent with the canonical goType() mapping.
+func TestVectorNewWithErrorConsistentWithGoType(t *testing.T) {
+	subTypes := []Type{
+		TypeInt,
+		TypeBigInt, TypeCounter,
+		TypeText, TypeVarchar, TypeAscii,
+		TypeBoolean,
+		TypeFloat, TypeDouble,
+		TypeUUID, TypeTimeUUID,
+		TypeTimestamp, TypeDate,
+		TypeSmallInt, TypeTinyInt,
+		TypeBlob,
+		TypeTime,
+	}
+
+	for _, subTyp := range subTypes {
+		vt := VectorType{
+			NativeType: NewCustomType(protoVersion4, TypeCustom, apacheCassandraTypePrefix+"VectorType"),
+			SubType:    NativeType{typ: subTyp, proto: protoVersion4},
+			Dimensions: 3,
+		}
+
+		fastVal, err := vt.NewWithError()
+		if err != nil {
+			t.Errorf("NewWithError(vector<%s>): unexpected error: %v", subTyp, err)
+			continue
+		}
+
+		canonicalType, err := goType(vt)
+		if err != nil {
+			t.Errorf("goType(vector<%s>): unexpected error: %v", subTyp, err)
+			continue
+		}
+
+		fastType := reflect.TypeOf(fastVal)
+		if fastType.Kind() != reflect.Ptr {
+			t.Errorf("NewWithError(vector<%s>): expected pointer, got %s", subTyp, fastType.Kind())
+			continue
+		}
+
+		if fastType.Elem() != canonicalType {
+			t.Errorf("NewWithError(vector<%s>) fast-path type %s does not match goType() canonical type %s",
+				subTyp, fastType.Elem(), canonicalType)
+		}
 	}
 }
