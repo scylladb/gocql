@@ -1917,26 +1917,24 @@ func (q *Query) GetHostID() string {
 // be used from a single goroutine at a time. While Close() is safe to call multiple
 // times (idempotent), calling Scan(), Next(), or other methods concurrently with
 // Close() or each other will result in undefined behavior.
-//
-//nolint:govet // Keeping iterator lifetime/ownership state together is more important here than field packing.
 type Iter struct {
-	err    error
-	framer framerInterface
-	// allWarnings accumulates warnings across page boundaries.
-	// When a page's framer is released during fetchNextPage(), its warnings
-	// are appended here so they are not lost.
-	allWarnings           []string
+	warningQuery          ExecutableQuery
+	framer                framerInterface
+	err                   error
+	warningHandler        WarningHandler
 	releasedCustomPayload map[string][]byte
 	next                  *nextIter
 	host                  *HostInfo
-	meta                  resultMetadata
-	warningHandler        WarningHandler
-	warningQuery          ExecutableQuery
-	warningQueryOwned     bool
-	pos                   int
-	numRows               int
-	closed                int32
-	warningsHandled       int32
+	// allWarnings accumulates warnings across page boundaries.
+	// When a page's framer is released during fetchNextPage(), its warnings
+	// are appended here so they are not lost.
+	allWarnings       []string
+	meta              resultMetadata
+	pos               int
+	numRows           int
+	closed            int32
+	warningsHandled   int32
+	warningQueryOwned bool
 }
 
 // Host returns the host which the query was sent to.

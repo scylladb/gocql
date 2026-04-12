@@ -203,13 +203,13 @@ func BenchmarkRowDataRepeated(b *testing.B) {
 // BenchmarkRowDataAllocation focuses on allocation patterns
 func BenchmarkRowDataAllocation(b *testing.B) {
 	benchmarks := []struct {
-		name string
 		iter *Iter
+		name string
 	}{
-		{"10cols", createMockIter(10)},
-		{"100cols", createMockIter(100)},
-		{"1000cols", createMockIter(1000)},
-		{"WithTuples", createMockIterWithTuples()},
+		{name: "10cols", iter: createMockIter(10)},
+		{name: "100cols", iter: createMockIter(100)},
+		{name: "1000cols", iter: createMockIter(1000)},
+		{name: "WithTuples", iter: createMockIterWithTuples()},
 	}
 
 	for _, bm := range benchmarks {
