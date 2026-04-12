@@ -1,9 +1,23 @@
-// Copyright (c) 2012 The gocql Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
 //go:build all || unit
 // +build all unit
+
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 package gocql
 
@@ -297,6 +311,108 @@ func TestMarshalVectorInt64_Timestamp(t *testing.T) {
 	}
 }
 
+func TestMarshalVectorCounter_RoundTrip(t *testing.T) {
+	info := makeVectorType(TypeCounter, 3)
+	vec := []int64{-9223372036854775808, 0, 9223372036854775807}
+
+	data, err := marshalVector(info, vec)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+	if len(data) != 27 {
+		t.Fatalf("expected 27 bytes, got %d", len(data))
+	}
+
+	var result []int64
+	if err := unmarshalVector(info, data, &result); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	for i := range vec {
+		if result[i] != vec[i] {
+			t.Fatalf("result[%d] = %v, want %v", i, result[i], vec[i])
+		}
+	}
+}
+
+func TestMarshalVectorCounter_WireFormat(t *testing.T) {
+	info := makeVectorType(TypeCounter, 2)
+	vec := []int64{1, 256}
+
+	data, err := marshalVector(info, vec)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+
+	if len(data) != 18 {
+		t.Fatalf("expected 18 bytes, got %d", len(data))
+	}
+	if data[0] != 8 {
+		t.Fatalf("expected first length prefix 8, got %d", data[0])
+	}
+	if binary.BigEndian.Uint64(data[1:9]) != 1 {
+		t.Fatalf("expected first value 1, got %d", binary.BigEndian.Uint64(data[1:9]))
+	}
+	if data[9] != 8 {
+		t.Fatalf("expected second length prefix 8, got %d", data[9])
+	}
+	if binary.BigEndian.Uint64(data[10:18]) != 256 {
+		t.Fatalf("expected second value 256, got %d", binary.BigEndian.Uint64(data[10:18]))
+	}
+
+	var result []int64
+	if err := unmarshalVector(info, data, &result); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	if len(result) != 2 || result[0] != 1 || result[1] != 256 {
+		t.Fatalf("unexpected round-trip result: %v", result)
+	}
+}
+
+func TestUnmarshalVectorCounter_WrongElementLength(t *testing.T) {
+	info := makeVectorType(TypeCounter, 1)
+	// Length prefix says 7 bytes instead of 8.
+	data := make([]byte, 8)
+	data[0] = 7
+	copy(data[1:], []byte{0, 0, 0, 0, 0, 0, 0})
+
+	var result []int64
+	if err := unmarshalVector(info, data, &result); err == nil {
+		t.Fatal("expected error for wrong counter element length")
+	}
+}
+
+func TestUnmarshalVectorCounter_NilData(t *testing.T) {
+	info := makeVectorType(TypeCounter, 3)
+	var result []int64
+	if err := unmarshalVector(info, nil, &result); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != nil {
+		t.Fatalf("expected nil result, got %v", result)
+	}
+}
+
+func TestUnmarshalVectorCounter_SliceReuse(t *testing.T) {
+	info := makeVectorType(TypeCounter, 2)
+	data := make([]byte, 18)
+	data[0] = 8
+	binary.BigEndian.PutUint64(data[1:9], 1)
+	data[9] = 8
+	binary.BigEndian.PutUint64(data[10:18], 2)
+
+	result := make([]int64, 0, 10)
+	origCap := cap(result)
+	if err := unmarshalVector(info, data, &result); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	if cap(result) != origCap {
+		t.Fatalf("expected slice reuse (cap=%d), got new allocation (cap=%d)", origCap, cap(result))
+	}
+	if len(result) != 2 || result[0] != 1 || result[1] != 2 {
+		t.Fatalf("unexpected result: %v", result)
+	}
+}
+
 // --- marshalVectorUUID / unmarshalVectorUUID ---
 
 func TestMarshalVectorUUID_RoundTrip(t *testing.T) {
@@ -525,6 +641,30 @@ func TestVectorFastPath_ZeroDimUUID(t *testing.T) {
 	}
 	if result == nil {
 		t.Fatal("expected non-nil empty slice")
+	}
+}
+
+func TestVectorFastPath_ZeroDimCounter(t *testing.T) {
+	info := makeVectorType(TypeCounter, 0)
+
+	vec := []int64{}
+	data, err := marshalVector(info, vec)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+	if len(data) != 0 {
+		t.Fatalf("expected 0 bytes, got %d", len(data))
+	}
+
+	var result []int64
+	if err := unmarshalVector(info, []byte{}, &result); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil empty slice")
+	}
+	if len(result) != 0 {
+		t.Fatalf("expected len 0, got %d", len(result))
 	}
 }
 
