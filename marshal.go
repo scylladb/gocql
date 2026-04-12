@@ -122,6 +122,59 @@ func finishMarshalBuf(buf *bytes.Buffer) []byte {
 	return result
 }
 
+// marshalOutputPool pools []byte slices returned by fast-path marshal functions
+// (vectors and lists/sets). These slices are the final marshal output that gets
+// copied into the framer buffer by writeBytes. After the framer copies them,
+// the connection layer returns them to this pool via putMarshalOutput.
+var marshalOutputPool sync.Pool
+
+// getMarshalOutput returns a []byte of exactly the requested size, from the
+// pool if a suitable buffer is available, or freshly allocated otherwise.
+func getMarshalOutput(size int) []byte {
+	if bp := marshalOutputPool.Get(); bp != nil {
+		buf := bp.([]byte)
+		if cap(buf) >= size {
+			return buf[:size]
+		}
+	}
+	return make([]byte, size)
+}
+
+// putMarshalOutput returns a []byte to the output pool. Nil slices are ignored.
+// Buffers larger than marshalBufMaxCap are discarded to avoid holding excessive
+// memory.
+func putMarshalOutput(buf []byte) {
+	if buf == nil {
+		return
+	}
+	if cap(buf) > marshalBufMaxCap {
+		return
+	}
+	marshalOutputPool.Put(buf) //nolint:staticcheck // SA6002: []byte is a value type; boxing cost is acceptable for pool reuse
+}
+
+// pooledMarshalType returns true if the given TypeInfo uses a marshal fast path
+// that allocates from marshalOutputPool. This is used by the connection layer to
+// determine which queryValues.value slices can be returned to the pool after
+// the framer copies them.
+func pooledMarshalType(info TypeInfo) bool {
+	switch ti := info.(type) {
+	case VectorType:
+		switch ti.SubType.Type() {
+		case TypeFloat, TypeDouble, TypeInt, TypeBigInt, TypeTimestamp, TypeCounter, TypeUUID, TypeTimeUUID:
+			return true
+		}
+	case CollectionType:
+		if ti.typ == TypeList || ti.typ == TypeSet {
+			switch ti.Elem.Type() {
+			case TypeFloat, TypeDouble, TypeInt, TypeBigInt, TypeTimestamp, TypeCounter:
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // Marshaler is an interface for custom unmarshaler.
 // Each value of the 'CQL binary protocol' consist of <value_len> and <value_data>.
 // <value_len> can be 'unset'(-2), 'nil'(-1), 'zero'(0) or any value up to 2147483647.
@@ -1371,7 +1424,7 @@ func marshalVectorFloat32(vec []float32, dim int) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	buf := make([]byte, size)
+	buf := getMarshalOutput(size)
 	if dim > 0 {
 		_ = buf[dim*4-1] // BCE hint
 	}
@@ -1389,7 +1442,7 @@ func marshalVectorFloat64(vec []float64, dim int) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	buf := make([]byte, size)
+	buf := getMarshalOutput(size)
 	if dim > 0 {
 		_ = buf[dim*8-1] // BCE hint
 	}
@@ -1407,7 +1460,7 @@ func marshalVectorInt32(vec []int32, dim int) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	buf := make([]byte, size)
+	buf := getMarshalOutput(size)
 	if dim > 0 {
 		_ = buf[dim*4-1] // BCE hint
 	}
@@ -1425,7 +1478,7 @@ func marshalVectorInt64(vec []int64, dim int) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	buf := make([]byte, size)
+	buf := getMarshalOutput(size)
 	if dim > 0 {
 		_ = buf[dim*8-1] // BCE hint
 	}
@@ -1445,7 +1498,7 @@ func marshalVectorCounter(vec []int64, dim int) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	buf := make([]byte, size)
+	buf := getMarshalOutput(size)
 	off := 0
 	for _, v := range vec {
 		buf[off] = 8
@@ -1464,7 +1517,7 @@ func marshalVectorUUID(vec []UUID, dim int) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	buf := make([]byte, size)
+	buf := getMarshalOutput(size)
 	if dim > 0 {
 		_ = buf[dim*16-1] // BCE hint
 	}
@@ -1657,7 +1710,7 @@ func marshalListFloat32(list []float32) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	buf := make([]byte, size)
+	buf := getMarshalOutput(size)
 	binary.BigEndian.PutUint32(buf, uint32(n))
 	off := 4
 	for _, v := range list {
@@ -1677,7 +1730,7 @@ func marshalListFloat64(list []float64) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	buf := make([]byte, size)
+	buf := getMarshalOutput(size)
 	binary.BigEndian.PutUint32(buf, uint32(n))
 	off := 4
 	for _, v := range list {
@@ -1697,7 +1750,7 @@ func marshalListInt32(list []int32) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	buf := make([]byte, size)
+	buf := getMarshalOutput(size)
 	binary.BigEndian.PutUint32(buf, uint32(n))
 	off := 4
 	for _, v := range list {
@@ -1741,7 +1794,7 @@ func marshalListInt64(list []int64) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	buf := make([]byte, size)
+	buf := getMarshalOutput(size)
 	binary.BigEndian.PutUint32(buf, uint32(n))
 	off := 4
 	for _, v := range list {
