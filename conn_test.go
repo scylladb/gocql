@@ -1862,7 +1862,7 @@ func (srv *TestServer) Stop() {
 	srv.closeLocked()
 }
 
-func (srv *TestServer) errorLocked(err interface{}) {
+func (srv *TestServer) errorLocked(err any) {
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
 	if srv.closed {

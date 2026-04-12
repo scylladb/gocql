@@ -125,7 +125,7 @@ func checkTypeInsertSelect(t *testing.T, session *Session, insertStmt, selectStm
 			valCaseName := valCase.Name
 
 			for _, langCase := range valCase.LangCases {
-				var insertedValue interface{}
+				var insertedValue any
 				//Check Insert value as values
 				insertedValue = langCase.Value
 				err := session.Query(insertStmt, valCaseName, insertedValue).Exec()
@@ -164,16 +164,16 @@ func checkTypeInsertSelect(t *testing.T, session *Session, insertStmt, selectStm
 }
 
 // newRef returns the nil reference to the input type value (*type)(nil)
-func newRef(in interface{}) interface{} {
+func newRef(in any) any {
 	out := reflect.New(reflect.TypeOf(in)).Interface()
 	return out
 }
 
-func deReference(in interface{}) interface{} {
+func deReference(in any) any {
 	return reflect.Indirect(reflect.ValueOf(in)).Interface()
 }
 
-func equalVals(in1, in2 interface{}) bool {
+func equalVals(in1, in2 any) bool {
 	rin1 := reflect.ValueOf(in1)
 	rin2 := reflect.ValueOf(in2)
 	if rin1.Kind() != rin2.Kind() {
@@ -225,13 +225,13 @@ func equalVals(in1, in2 interface{}) bool {
 // SliceMapTypesTestCase defines a test case for validating SliceMap/MapScan behavior
 type SliceMapTypesTestCase struct {
 	CQLType           string
-	CQLValue          string      // Non-NULL value to insert
-	ExpectedValue     interface{} // Expected value for non-NULL case
-	ExpectedNullValue interface{} // Expected value for NULL
+	CQLValue          string // Non-NULL value to insert
+	ExpectedValue     any    // Expected value for non-NULL case
+	ExpectedNullValue any    // Expected value for NULL
 }
 
 // compareCollectionValues compares collection values (lists, sets, maps) with special handling
-func compareCollectionValues(t *testing.T, cqlType string, expected, actual interface{}) bool {
+func compareCollectionValues(t *testing.T, cqlType string, expected, actual any) bool {
 	switch {
 	case strings.HasPrefix(cqlType, "set<"):
 		// Sets are returned as slices, but order is not guaranteed
@@ -245,12 +245,12 @@ func compareCollectionValues(t *testing.T, cqlType string, expected, actual inte
 		}
 
 		// Convert to maps for unordered comparison
-		expectedSet := make(map[interface{}]bool)
+		expectedSet := make(map[any]bool)
 		for i := 0; i < expectedSlice.Len(); i++ {
 			expectedSet[expectedSlice.Index(i).Interface()] = true
 		}
 
-		actualSet := make(map[interface{}]bool)
+		actualSet := make(map[any]bool)
 		for i := 0; i < actualSlice.Len(); i++ {
 			actualSet[actualSlice.Index(i).Interface()] = true
 		}
@@ -264,7 +264,7 @@ func compareCollectionValues(t *testing.T, cqlType string, expected, actual inte
 }
 
 // compareValues compares expected and actual values with type-specific logic
-func compareValues(t *testing.T, cqlType string, expected, actual interface{}) bool {
+func compareValues(t *testing.T, cqlType string, expected, actual any) bool {
 	switch cqlType {
 	case "varint":
 		// big.Int needs Cmp() for proper comparison, but handle nil pointers safely
@@ -411,7 +411,7 @@ func testSliceMapMapScanSimple(t *testing.T, session *Session, tc SliceMapTypesT
 	})
 }
 
-func queryAndExtractValue(t *testing.T, session *Session, colName string, id int, method string, table string) interface{} {
+func queryAndExtractValue(t *testing.T, session *Session, colName string, id int, method string, table string) any {
 	fmt.Println("queryAndExtractValue")
 	selectQuery := fmt.Sprintf("SELECT %s FROM gocql_test.%s WHERE id = ?", colName, table)
 
@@ -430,7 +430,7 @@ func queryAndExtractValue(t *testing.T, session *Session, colName string, id int
 		return sliceResults[0][colName]
 
 	case "MapScan":
-		mapResult := make(map[string]interface{})
+		mapResult := make(map[string]any)
 		if err := session.Query(selectQuery, id).MapScan(mapResult); err != nil {
 			t.Fatalf("MapScan failed: %v", err)
 		}
@@ -442,7 +442,7 @@ func queryAndExtractValue(t *testing.T, session *Session, colName string, id int
 	}
 }
 
-func validateResult(t *testing.T, cqlType string, expected, actual interface{}, method, valueType string) {
+func validateResult(t *testing.T, cqlType string, expected, actual any, method, valueType string) {
 	if expected != nil && actual != nil {
 		expectedType := reflect.TypeOf(expected)
 		actualType := reflect.TypeOf(actual)
@@ -525,7 +525,7 @@ func TestSliceMapMapScanCounterTypes(t *testing.T) {
 	// Test both SliceMap and MapScan
 	for _, method := range []string{"SliceMap", "MapScan"} {
 		t.Run(method, func(t *testing.T) {
-			var result interface{}
+			var result any
 
 			selectQuery := fmt.Sprintf("SELECT counter_col FROM gocql_test_tablets_disabled.%s WHERE id = ?", table)
 			if method == "SliceMap" {
@@ -540,7 +540,7 @@ func TestSliceMapMapScanCounterTypes(t *testing.T) {
 				}
 				result = sliceResults[0]["counter_col"]
 			} else {
-				mapResult := make(map[string]interface{})
+				mapResult := make(map[string]any)
 				if err := session.Query(selectQuery, testID).MapScan(mapResult); err != nil {
 					t.Fatalf("MapScan failed: %v", err)
 				}
@@ -588,7 +588,7 @@ func TestSliceMapMapScanTupleTypes(t *testing.T) {
 		// Test both SliceMap and MapScan
 		for _, method := range []string{"SliceMap", "MapScan"} {
 			t.Run(method, func(t *testing.T) {
-				var result map[string]interface{}
+				var result map[string]any
 
 				selectQuery := fmt.Sprintf("SELECT tuple_col FROM gocql_test.%s WHERE id = ?", table)
 				if method == "SliceMap" {
@@ -603,7 +603,7 @@ func TestSliceMapMapScanTupleTypes(t *testing.T) {
 					}
 					result = sliceResults[0]
 				} else {
-					result = make(map[string]interface{})
+					result = make(map[string]any)
 					if err := session.Query(selectQuery, testID).MapScan(result); err != nil {
 						t.Fatalf("MapScan failed: %v", err)
 					}
@@ -635,7 +635,7 @@ func TestSliceMapMapScanTupleTypes(t *testing.T) {
 		// Test both SliceMap and MapScan
 		for _, method := range []string{"SliceMap", "MapScan"} {
 			t.Run(method, func(t *testing.T) {
-				var result map[string]interface{}
+				var result map[string]any
 
 				selectQuery := fmt.Sprintf("SELECT tuple_col FROM gocql_test.%s WHERE id = ?", table)
 				if method == "SliceMap" {
@@ -650,7 +650,7 @@ func TestSliceMapMapScanTupleTypes(t *testing.T) {
 					}
 					result = sliceResults[0]
 				} else {
-					result = make(map[string]interface{})
+					result = make(map[string]any)
 					if err := session.Query(selectQuery, testID).MapScan(result); err != nil {
 						t.Fatalf("MapScan failed: %v", err)
 					}
@@ -707,8 +707,8 @@ func TestSliceMapMapScanVectorTypes(t *testing.T) {
 	testCases := []struct {
 		colName       string
 		cqlValue      string
-		expectedValue interface{}
-		expectedNull  interface{}
+		expectedValue any
+		expectedNull  any
 	}{
 		{"vector_float_col", "[1.0, 2.5, -3.0]", []float32{1.0, 2.5, -3.0}, []float32(nil)},
 		{"vector_text_col", "['hello', 'world']", []string{"hello", "world"}, []string(nil)},
@@ -728,7 +728,7 @@ func TestSliceMapMapScanVectorTypes(t *testing.T) {
 				// Test both SliceMap and MapScan
 				for _, method := range []string{"SliceMap", "MapScan"} {
 					t.Run(method, func(t *testing.T) {
-						var result interface{}
+						var result any
 
 						selectQuery := fmt.Sprintf("SELECT %s FROM gocql_test.%s WHERE id = ?", tc.colName, table)
 						if method == "SliceMap" {
@@ -743,7 +743,7 @@ func TestSliceMapMapScanVectorTypes(t *testing.T) {
 							}
 							result = sliceResults[0][tc.colName]
 						} else {
-							mapResult := make(map[string]interface{})
+							mapResult := make(map[string]any)
 							if err := session.Query(selectQuery, testID).MapScan(mapResult); err != nil {
 								t.Fatalf("MapScan failed: %v", err)
 							}
@@ -767,7 +767,7 @@ func TestSliceMapMapScanVectorTypes(t *testing.T) {
 				// Test both SliceMap and MapScan
 				for _, method := range []string{"SliceMap", "MapScan"} {
 					t.Run(method, func(t *testing.T) {
-						var result interface{}
+						var result any
 
 						selectQuery := fmt.Sprintf("SELECT %s FROM gocql_test.%s WHERE id = ?", tc.colName, table)
 						if method == "SliceMap" {
@@ -782,7 +782,7 @@ func TestSliceMapMapScanVectorTypes(t *testing.T) {
 							}
 							result = sliceResults[0][tc.colName]
 						} else {
-							mapResult := make(map[string]interface{})
+							mapResult := make(map[string]any)
 							if err := session.Query(selectQuery, testID).MapScan(mapResult); err != nil {
 								t.Fatalf("MapScan failed: %v", err)
 							}
@@ -827,8 +827,8 @@ func TestSliceMapMapScanCollectionTypes(t *testing.T) {
 	testCases := []struct {
 		colName       string
 		cqlValue      string
-		expectedValue interface{}
-		expectedNull  interface{}
+		expectedValue any
+		expectedNull  any
 	}{
 		{"list_col", "['a', 'b', 'c']", []string{"a", "b", "c"}, []string(nil)},
 		{"set_col", "{1, 2, 3}", []int{1, 2, 3}, []int(nil)},
@@ -849,7 +849,7 @@ func TestSliceMapMapScanCollectionTypes(t *testing.T) {
 				// Test both SliceMap and MapScan
 				for _, method := range []string{"SliceMap", "MapScan"} {
 					t.Run(method, func(t *testing.T) {
-						var result interface{}
+						var result any
 
 						selectQuery := fmt.Sprintf("SELECT %s FROM gocql_test.%s WHERE id = ?", tc.colName, table)
 						if method == "SliceMap" {
@@ -864,7 +864,7 @@ func TestSliceMapMapScanCollectionTypes(t *testing.T) {
 							}
 							result = sliceResults[0][tc.colName]
 						} else {
-							mapResult := make(map[string]interface{})
+							mapResult := make(map[string]any)
 							if err := session.Query(selectQuery, testID).MapScan(mapResult); err != nil {
 								t.Fatalf("MapScan failed: %v", err)
 							}
@@ -895,7 +895,7 @@ func TestSliceMapMapScanCollectionTypes(t *testing.T) {
 				// Test both SliceMap and MapScan
 				for _, method := range []string{"SliceMap", "MapScan"} {
 					t.Run(method, func(t *testing.T) {
-						var result interface{}
+						var result any
 
 						selectQuery := fmt.Sprintf("SELECT %s FROM gocql_test.%s WHERE id = ?", tc.colName, table)
 						if method == "SliceMap" {
@@ -910,7 +910,7 @@ func TestSliceMapMapScanCollectionTypes(t *testing.T) {
 							}
 							result = sliceResults[0][tc.colName]
 						} else {
-							mapResult := make(map[string]interface{})
+							mapResult := make(map[string]any)
 							if err := session.Query(selectQuery, testID).MapScan(mapResult); err != nil {
 								t.Fatalf("MapScan failed: %v", err)
 							}

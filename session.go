@@ -99,7 +99,7 @@ type Session struct {
 }
 
 var queryPool = &sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return &Query{
 			routingInfo: &queryRoutingInfo{},
 			metrics:     &queryMetrics{m: make(map[string]*hostMetrics)},
@@ -544,7 +544,7 @@ func (s *Session) SetTrace(trace Tracer) {
 }
 
 // QueryWithContext same as Query, but adds context to it.
-func (s *Session) QueryWithContext(ctx context.Context, stmt string, values ...interface{}) *Query {
+func (s *Session) QueryWithContext(ctx context.Context, stmt string, values ...any) *Query {
 	q := s.Query(stmt, values...)
 	q.context = ctx
 	return q
@@ -554,7 +554,7 @@ func (s *Session) QueryWithContext(ctx context.Context, stmt string, values ...i
 // Further details of the query may be tweaked using the resulting query
 // value before the query is executed. Query is automatically prepared
 // if it has not previously been executed.
-func (s *Session) Query(stmt string, values ...interface{}) *Query {
+func (s *Session) Query(stmt string, values ...any) *Query {
 	qry := queryPool.Get().(*Query)
 	qry.session = s
 	qry.stmt = stmt
@@ -577,7 +577,7 @@ type QueryInfo struct {
 // values will be marshalled as part of the query execution.
 // During execution, the meta data of the prepared query will be routed to the
 // binding callback, which is responsible for producing the query argument values.
-func (s *Session) Bind(stmt string, b func(q *QueryInfo) ([]interface{}, error)) *Query {
+func (s *Session) Bind(stmt string, b func(q *QueryInfo) ([]any, error)) *Query {
 	qry := queryPool.Get().(*Query)
 	qry.session = s
 	qry.stmt = stmt
@@ -1005,7 +1005,7 @@ func (s *Session) ExecuteBatch(batch *Batch) error {
 // was sent.
 // Further scans on the interator must also remember to include
 // the applied boolean as the first argument to *Iter.Scan
-func (s *Session) ExecuteBatchCAS(batch *Batch, dest ...interface{}) (applied bool, iter *Iter, err error) {
+func (s *Session) ExecuteBatchCAS(batch *Batch, dest ...any) (applied bool, iter *Iter, err error) {
 	iter = s.executeBatch(batch)
 	if err := iter.checkErrAndNotFound(); err != nil {
 		iter.Close()
@@ -1013,7 +1013,7 @@ func (s *Session) ExecuteBatchCAS(batch *Batch, dest ...interface{}) (applied bo
 	}
 
 	if len(iter.Columns()) > 1 {
-		dest = append([]interface{}{&applied}, dest...)
+		dest = append([]any{&applied}, dest...)
 		iter.Scan(dest...)
 	} else {
 		iter.Scan(&applied)
@@ -1025,7 +1025,7 @@ func (s *Session) ExecuteBatchCAS(batch *Batch, dest ...interface{}) (applied bo
 // MapExecuteBatchCAS executes a batch operation much like ExecuteBatchCAS,
 // however it accepts a map rather than a list of arguments for the initial
 // scan.
-func (s *Session) MapExecuteBatchCAS(batch *Batch, dest map[string]interface{}) (applied bool, iter *Iter, err error) {
+func (s *Session) MapExecuteBatchCAS(batch *Batch, dest map[string]any) (applied bool, iter *Iter, err error) {
 	iter = s.executeBatch(batch)
 	if err := iter.checkErrAndNotFound(); err != nil {
 		iter.Close()
@@ -1210,13 +1210,13 @@ type Query struct {
 	getKeyspace func() string
 	// routingInfo is a pointer because Query can be copied and copyable struct can't hold a mutex.
 	routingInfo *queryRoutingInfo
-	binding     func(q *QueryInfo) ([]interface{}, error)
+	binding     func(q *QueryInfo) ([]any, error)
 	// hostID specifies the host on which the query should be executed.
 	// If it is empty, then the host is picked by HostSelectionPolicy
 	hostID     string
 	stmt       string
 	routingKey []byte
-	values     []interface{}
+	values     []any
 	pageState  []byte
 	// requestTimeout is a timeout on waiting for response from server
 	requestTimeout             time.Duration
@@ -1294,7 +1294,7 @@ func (q Query) Statement() string {
 
 // Values returns the values passed in via Bind.
 // This can be used by a wrapper type that needs to access the bound values.
-func (q Query) Values() []interface{} {
+func (q Query) Values() []any {
 	return q.values
 }
 
@@ -1651,7 +1651,7 @@ func (q *Query) Idempotent(value bool) *Query {
 
 // Bind sets query arguments of query. This can also be used to rebind new query arguments
 // to an existing query instance.
-func (q *Query) Bind(v ...interface{}) *Query {
+func (q *Query) Bind(v ...any) *Query {
 	q.values = v
 	q.pageState = nil
 	return q
@@ -1773,7 +1773,7 @@ func (q *Query) executeQuery() *Iter {
 // MapScan executes the query, copies the columns of the first selected
 // row into the map pointed at by m and discards the rest. If no rows
 // were selected, ErrNotFound is returned.
-func (q *Query) MapScan(m map[string]interface{}) error {
+func (q *Query) MapScan(m map[string]any) error {
 	iter := q.Iter()
 	if err := iter.checkErrAndNotFound(); err != nil {
 		iter.Close()
@@ -1786,7 +1786,7 @@ func (q *Query) MapScan(m map[string]interface{}) error {
 // Scan executes the query, copies the columns of the first selected
 // row into the values pointed at by dest and discards the rest. If no rows
 // were selected, ErrNotFound is returned.
-func (q *Query) Scan(dest ...interface{}) error {
+func (q *Query) Scan(dest ...any) error {
 	iter := q.Iter()
 	if err := iter.checkErrAndNotFound(); err != nil {
 		iter.Close()
@@ -1804,7 +1804,7 @@ func (q *Query) Scan(dest ...interface{}) error {
 // As for INSERT .. IF NOT EXISTS, previous values will be returned as if
 // SELECT * FROM. So using ScanCAS with INSERT is inherently prone to
 // column mismatching. Use MapScanCAS to capture them safely.
-func (q *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
+func (q *Query) ScanCAS(dest ...any) (applied bool, err error) {
 	q.disableSkipMetadata = true
 	iter := q.Iter()
 	if err := iter.checkErrAndNotFound(); err != nil {
@@ -1812,7 +1812,7 @@ func (q *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
 		return false, err
 	}
 	if len(iter.Columns()) > 1 {
-		dest = append([]interface{}{&applied}, dest...)
+		dest = append([]any{&applied}, dest...)
 		iter.Scan(dest...)
 	} else {
 		iter.Scan(&applied)
@@ -1828,7 +1828,7 @@ func (q *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
 // As for INSERT .. IF NOT EXISTS, previous values will be returned as if
 // SELECT * FROM. So using ScanCAS with INSERT is inherently prone to
 // column mismatching. MapScanCAS is added to capture them safely.
-func (q *Query) MapScanCAS(dest map[string]interface{}) (applied bool, err error) {
+func (q *Query) MapScanCAS(dest map[string]any) (applied bool, err error) {
 	q.disableSkipMetadata = true
 	iter := q.Iter()
 	if err := iter.checkErrAndNotFound(); err != nil {
@@ -2122,7 +2122,7 @@ type Scanner interface {
 	// when unmarshalling a column into the value in dest an error is returned and the row is invalidated
 	// until the next call to Next.
 	// Next must be called before calling Scan, if it is not an error is returned.
-	Scan(...interface{}) error
+	Scan(...any) error
 
 	// Err returns the if there was one during iteration that resulted in iteration being unable to complete.
 	// Err will also release resources held by the iterator, the Scanner should not used after being called.
@@ -2164,7 +2164,7 @@ func (is *iterScanner) Next() bool {
 	return true
 }
 
-func scanColumn(p []byte, col ColumnInfo, dest []interface{}) (int, error) {
+func scanColumn(p []byte, col ColumnInfo, dest []any) (int, error) {
 	if dest[0] == nil {
 		return 1, nil
 	}
@@ -2188,7 +2188,7 @@ func scanColumn(p []byte, col ColumnInfo, dest []interface{}) (int, error) {
 	}
 }
 
-func (is *iterScanner) Scan(dest ...interface{}) error {
+func (is *iterScanner) Scan(dest ...any) error {
 	if !is.valid {
 		return errors.New("gocql: Scan called without calling Next")
 	}
@@ -2253,7 +2253,7 @@ func (iter *Iter) readColumn() ([]byte, error) {
 // Scan returns true if the row was successfully unmarshaled or false if the
 // end of the result set was reached or if an error occurred. Close should
 // be called afterwards to retrieve any potential errors.
-func (iter *Iter) Scan(dest ...interface{}) bool {
+func (iter *Iter) Scan(dest ...any) bool {
 	if iter.err != nil {
 		iter.finalize(true)
 		return false
@@ -2634,7 +2634,7 @@ func (b *Batch) SpeculativeExecutionPolicy(sp SpeculativeExecutionPolicy) *Batch
 }
 
 // Query adds the query to the batch operation
-func (b *Batch) Query(stmt string, args ...interface{}) *Batch {
+func (b *Batch) Query(stmt string, args ...any) *Batch {
 	b.Entries = append(b.Entries, BatchEntry{Stmt: stmt, Args: args})
 	return b
 }
@@ -2642,7 +2642,7 @@ func (b *Batch) Query(stmt string, args ...interface{}) *Batch {
 // Bind adds the query to the batch operation and correlates it with a binding callback
 // that will be invoked when the batch is executed. The binding callback allows the application
 // to define which query argument values will be marshalled as part of the batch execution.
-func (b *Batch) Bind(stmt string, bind func(q *QueryInfo) ([]interface{}, error)) {
+func (b *Batch) Bind(stmt string, bind func(q *QueryInfo) ([]any, error)) {
 	b.Entries = append(b.Entries, BatchEntry{Stmt: stmt, binding: bind})
 }
 
@@ -2729,7 +2729,7 @@ func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter, host 
 	}
 
 	statements := make([]string, len(b.Entries))
-	values := make([][]interface{}, len(b.Entries))
+	values := make([][]any, len(b.Entries))
 
 	for i, entry := range b.Entries {
 		statements[i] = entry.Stmt
@@ -2792,7 +2792,7 @@ func (b *Batch) SetRequestTimeout(timeout time.Duration) *Batch {
 	return b
 }
 
-func createRoutingKey(routingKeyInfo *routingKeyInfo, values []interface{}) ([]byte, error) {
+func createRoutingKey(routingKeyInfo *routingKeyInfo, values []any) ([]byte, error) {
 	if routingKeyInfo == nil {
 		return nil, nil
 	}
@@ -2868,9 +2868,9 @@ const (
 )
 
 type BatchEntry struct {
-	binding    func(q *QueryInfo) ([]interface{}, error)
+	binding    func(q *QueryInfo) ([]any, error)
 	Stmt       string
-	Args       []interface{}
+	Args       []any
 	Idempotent bool
 }
 
@@ -2923,7 +2923,7 @@ func (r *routingKeyInfoLRU) Max(max int) {
 
 type inflightCachedEntry struct {
 	err   error
-	value interface{}
+	value any
 	wg    sync.WaitGroup
 }
 
@@ -2990,7 +2990,7 @@ type ObservedQuery struct {
 	Statement string
 	// Values holds a slice of bound values for the query.
 	// Do not modify the values here, they are shared with multiple goroutines.
-	Values []interface{}
+	Values []any
 	// Rows is the number of rows in the current iter.
 	// In paginated queries, rows from previous scans are not counted.
 	// Rows is not used in batch queries and remains at the default value
@@ -3025,7 +3025,7 @@ type ObservedBatch struct {
 	// Values holds a slice of bound values for each statement.
 	// Values[i] are bound values passed to Statements[i].
 	// Do not modify the values here, they are shared with multiple goroutines.
-	Values [][]interface{}
+	Values [][]any
 	// Attempt is the index of attempt at executing this query.
 	// The first attempt is number zero and any retries have non-zero attempt number.
 	Attempt int
@@ -3085,7 +3085,7 @@ var (
 
 type ErrProtocol struct{ error }
 
-func NewErrProtocol(format string, args ...interface{}) error {
+func NewErrProtocol(format string, args ...any) error {
 	return ErrProtocol{error: fmt.Errorf(format, args...)}
 }
 

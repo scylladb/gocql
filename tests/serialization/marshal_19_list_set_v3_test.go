@@ -35,8 +35,8 @@ func TestMarshalSetListV3(t *testing.T) {
 	refModInt16 := func(v mod.Int16) *mod.Int16 { return &v }
 
 	for _, tType := range tTypes {
-		marshal := func(i interface{}) ([]byte, error) { return gocql.Marshal(tType, i) }
-		unmarshal := func(bytes []byte, i interface{}) error {
+		marshal := func(i any) ([]byte, error) { return gocql.Marshal(tType, i) }
+		unmarshal := func(bytes []byte, i any) error {
 			return gocql.Unmarshal(tType, bytes, i)
 		}
 

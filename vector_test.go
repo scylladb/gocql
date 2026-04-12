@@ -145,8 +145,8 @@ func TestVector_Types(t *testing.T) {
 	testCases := []struct {
 		name       string
 		cqlType    string
-		value      interface{}
-		comparator func(*testing.T, interface{}, interface{})
+		value      any
+		comparator func(*testing.T, any, any)
 	}{
 		{name: "ascii", cqlType: TypeAscii.String(), value: []string{"a", "1", "Z"}},
 		{name: "bigint", cqlType: TypeBigInt.String(), value: []int64{1, 2, 3}},
@@ -167,7 +167,7 @@ func TestVector_Types(t *testing.T) {
 			name:    "inet",
 			cqlType: TypeInet.String(),
 			value:   []net.IP{net.IPv4(127, 0, 0, 1), net.IPv4(192, 168, 1, 1), net.IPv4(8, 8, 8, 8)},
-			comparator: func(t *testing.T, e interface{}, a interface{}) {
+			comparator: func(t *testing.T, e any, a any) {
 				expected := e.([]net.IP)
 				actual := a.([]net.IP)
 				tests.AssertEqual(t, "vector size", len(expected), len(actual))
@@ -190,7 +190,7 @@ func TestVector_Types(t *testing.T) {
 				{{2, 3}, {2, -1}, {3}, {0}, {-1.3}},
 				{{1, 1000.0}, {0}, {}, {12, 14, 15, 16}, {-1.3}},
 			},
-			comparator: func(t *testing.T, e interface{}, a interface{}) {
+			comparator: func(t *testing.T, e any, a any) {
 				expected := e.([][][]float32)
 				actual := a.([][][]float32)
 				tests.AssertEqual(t, "vector size", len(expected), len(actual))
@@ -208,13 +208,13 @@ func TestVector_Types(t *testing.T) {
 				}
 			},
 		},
-		{name: "vector_tuple_text_int_float", cqlType: "tuple<text, int, float>", value: [][]interface{}{{"a", 1, float32(0.5)}, {"b", 2, float32(-1.2)}, {"c", 3, float32(0)}}},
-		{name: "vector_tuple_text_list_text", cqlType: "tuple<text, list<text>>", value: [][]interface{}{{"a", []string{"b", "c"}}, {"d", []string{"e", "g", "f"}}, {"h", []string{"i"}}}},
+		{name: "vector_tuple_text_int_float", cqlType: "tuple<text, int, float>", value: [][]any{{"a", 1, float32(0.5)}, {"b", 2, float32(-1.2)}, {"c", 3, float32(0)}}},
+		{name: "vector_tuple_text_list_text", cqlType: "tuple<text, list<text>>", value: [][]any{{"a", []string{"b", "c"}}, {"d", []string{"e", "g", "f"}}, {"h", []string{"i"}}}},
 		{
 			name:    "vector_set_text",
 			cqlType: "set<text>",
 			value:   [][]string{{"a", "b"}, {"c", "d"}, {"f", "e"}},
-			comparator: func(t *testing.T, e interface{}, a interface{}) {
+			comparator: func(t *testing.T, e any, a any) {
 				expected := e.([][]string)
 				actual := a.([][]string)
 				tests.AssertEqual(t, "vector size", len(expected), len(actual))

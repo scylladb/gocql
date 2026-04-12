@@ -31,7 +31,7 @@ func setupTabletAwareBench(b *testing.B, numHosts, numTablets, rf int) (HostSele
 		return &KeyspaceMetadata{
 			Name:          keyspace,
 			StrategyClass: "SimpleStrategy",
-			StrategyOptions: map[string]interface{}{
+			StrategyOptions: map[string]any{
 				"class":              "SimpleStrategy",
 				"replication_factor": rf,
 			},
@@ -70,10 +70,10 @@ func setupTabletAwareBench(b *testing.B, numHosts, numTablets, rf int) (HostSele
 			lastToken = math.MaxInt64
 		}
 
-		reps := make([][]interface{}, rf)
+		reps := make([][]any, rf)
 		for r := 0; r < rf; r++ {
 			hostIdx := (i + r) % numHosts
-			reps[r] = []interface{}{hosts[hostIdx].hostId, 0}
+			reps[r] = []any{hosts[hostIdx].hostId, 0}
 		}
 		ti, err := tablets.TabletInfoBuilder{
 			KeyspaceName: keyspace,

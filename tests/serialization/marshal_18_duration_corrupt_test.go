@@ -17,8 +17,8 @@ func TestMarshalDurationCorrupt(t *testing.T) {
 
 	tType := gocql.NewNativeType(4, gocql.TypeDuration)
 
-	marshal := func(i interface{}) ([]byte, error) { return gocql.Marshal(tType, i) }
-	unmarshal := func(bytes []byte, i interface{}) error {
+	marshal := func(i any) ([]byte, error) { return gocql.Marshal(tType, i) }
+	unmarshal := func(bytes []byte, i any) error {
 		return gocql.Unmarshal(tType, bytes, i)
 	}
 

@@ -51,7 +51,7 @@ func Example_userDefinedTypesMap() {
 
 	ctx := context.Background()
 
-	value := map[string]interface{}{
+	value := map[string]any{
 		"field_a": "a value",
 		"field_b": 42,
 	}
@@ -61,7 +61,7 @@ func Example_userDefinedTypesMap() {
 		log.Fatal(err)
 	}
 
-	var readValue map[string]interface{}
+	var readValue map[string]any
 
 	err = session.Query("SELECT value FROM example.my_udt_table WHERE pk = 1").WithContext(ctx).Scan(&readValue)
 	if err != nil {

@@ -14,13 +14,13 @@ import (
 // on unmarshall - unmarshalled value from PositiveSet.Data should be equal with PositiveSet.Values.
 type PositiveSet struct {
 	Data   []byte
-	Values []interface{}
+	Values []any
 
 	BrokenMarshalTypes   []reflect.Type
 	BrokenUnmarshalTypes []reflect.Type
 }
 
-func (s PositiveSet) Run(name string, t *testing.T, marshal func(interface{}) ([]byte, error), unmarshal func([]byte, interface{}) error) {
+func (s PositiveSet) Run(name string, t *testing.T, marshal func(any) ([]byte, error), unmarshal func([]byte, any) error) {
 	if name == "" {
 		t.Fatal("name should be provided")
 	}
@@ -53,7 +53,7 @@ func (s PositiveSet) Run(name string, t *testing.T, marshal func(interface{}) ([
 	})
 }
 
-func (s PositiveSet) runMarshalTest(t *testing.T, f func(interface{}) ([]byte, error), val interface{}) {
+func (s PositiveSet) runMarshalTest(t *testing.T, f func(any) ([]byte, error), val any) {
 	t.Run("marshal", func(t *testing.T) {
 
 		result, err := func() (d []byte, err error) {
@@ -86,7 +86,7 @@ func (s PositiveSet) runMarshalTest(t *testing.T, f func(interface{}) ([]byte, e
 	})
 }
 
-func (s PositiveSet) runUnmarshalTest(name string, t *testing.T, f func([]byte, interface{}) error, expected, result interface{}) {
+func (s PositiveSet) runUnmarshalTest(name string, t *testing.T, f func([]byte, any) error, expected, result any) {
 	t.Run(name, func(t *testing.T) {
 
 		expectedPtr := getPointers(result)

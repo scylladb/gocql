@@ -87,7 +87,7 @@ func TestSessionAPI(t *testing.T) {
 		t.Fatalf("expected qry.stmt to be 'test', got '%v'", qry.stmt)
 	}
 
-	boundQry := s.Bind("test", func(q *QueryInfo) ([]interface{}, error) {
+	boundQry := s.Bind("test", func(q *QueryInfo) ([]any, error) {
 		return nil, nil
 	})
 	if boundQry.binding == nil {
@@ -294,7 +294,7 @@ func TestBatchBasicAPI(t *testing.T) {
 		t.Fatalf("expected batch.Entries[0].Args[0] to be 1, got %v", b.Entries[0].Args[0])
 	}
 
-	b.Bind("test2", func(q *QueryInfo) ([]interface{}, error) {
+	b.Bind("test2", func(q *QueryInfo) ([]any, error) {
 		return nil, nil
 	})
 

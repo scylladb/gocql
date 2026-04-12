@@ -52,12 +52,12 @@ func Example_batch() {
 	b := session.Batch(gocql.UnloggedBatch).WithContext(ctx)
 	b.Entries = append(b.Entries, gocql.BatchEntry{
 		Stmt:       "INSERT INTO example.batches (pk, ck, description) VALUES (?, ?, ?)",
-		Args:       []interface{}{1, 2, "1.2"},
+		Args:       []any{1, 2, "1.2"},
 		Idempotent: true,
 	})
 	b.Entries = append(b.Entries, gocql.BatchEntry{
 		Stmt:       "INSERT INTO example.batches (pk, ck, description) VALUES (?, ?, ?)",
-		Args:       []interface{}{1, 3, "1.3"},
+		Args:       []any{1, 3, "1.3"},
 		Idempotent: true,
 	})
 

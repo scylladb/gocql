@@ -22,7 +22,7 @@ import (
 
 // schema metadata for a keyspace
 type KeyspaceMetadata struct {
-	StrategyOptions   map[string]interface{}
+	StrategyOptions   map[string]any
 	Tables            map[string]*TableMetadata
 	Functions         map[string]*FunctionMetadata
 	Aggregates        map[string]*AggregateMetadata
@@ -93,7 +93,7 @@ func (ks *KeyspaceMetadata) removeTable(tableName string) {
 // schema metadata for a table (a.k.a. column family)
 type TableMetadata struct {
 	Columns           map[string]*ColumnMetadata
-	Extensions        map[string]interface{}
+	Extensions        map[string]any
 	Keyspace          string
 	Name              string
 	PartitionKey      []*ColumnMetadata
@@ -158,7 +158,7 @@ func (t *TableMetadataOptions) Equals(other *TableMetadataOptions) bool {
 
 type ViewMetadata struct {
 	Columns                 map[string]*ColumnMetadata
-	Extensions              map[string]interface{}
+	Extensions              map[string]any
 	WhereClause             string
 	BaseTableName           string
 	ID                      string
@@ -328,7 +328,7 @@ func compareStringMaps(a, b map[string]string) bool {
 	return true
 }
 
-func compareInterfaceMaps(a, b map[string]interface{}) bool {
+func compareInterfaceMaps(a, b map[string]any) bool {
 	if len(a) != len(b) {
 		return false
 	}
@@ -433,7 +433,7 @@ const (
 )
 
 type ColumnIndexMetadata struct {
-	Options map[string]interface{}
+	Options map[string]any
 	Name    string
 	Type    string
 }
@@ -689,7 +689,7 @@ func (s *metadataDescriber) invalidateTableSchema(keyspaceName, tableName string
 // deduplicatedRefreshKeyspace collapses concurrent refreshKeyspaceSchema calls
 // for the same keyspace into a single in-flight operation.
 func (s *metadataDescriber) deduplicatedRefreshKeyspace(keyspaceName string) error {
-	_, err, _ := s.keyspaceGroup.Do(keyspaceName, func() (interface{}, error) {
+	_, err, _ := s.keyspaceGroup.Do(keyspaceName, func() (any, error) {
 		return nil, s.refreshKeyspaceSchema(keyspaceName)
 	})
 	return err
@@ -699,7 +699,7 @@ func (s *metadataDescriber) deduplicatedRefreshKeyspace(keyspaceName string) err
 // for the same keyspace/table into a single in-flight operation.
 func (s *metadataDescriber) deduplicatedRefreshTable(keyspaceName, tableName string) error {
 	key := keyspaceName + "\x00" + tableName
-	_, err, _ := s.tableGroup.Do(key, func() (interface{}, error) {
+	_, err, _ := s.tableGroup.Do(key, func() (any, error) {
 		return nil, s.refreshTableSchema(keyspaceName, tableName)
 	})
 	return err
@@ -1152,7 +1152,7 @@ func getKeyspaceMetadata(session *Session, keyspaceName string) (*KeyspaceMetada
 	keyspace.StrategyClass = replication["class"]
 	delete(replication, "class")
 
-	keyspace.StrategyOptions = make(map[string]interface{}, len(replication))
+	keyspace.StrategyOptions = make(map[string]any, len(replication))
 	for k, v := range replication {
 		keyspace.StrategyOptions[k] = v
 	}
@@ -1172,7 +1172,7 @@ func getTableMetadata(session *Session, keyspaceName string) ([]TableMetadata, e
 
 	var tables []TableMetadata
 	table := TableMetadata{Keyspace: keyspaceName}
-	for iter.MapScan(map[string]interface{}{
+	for iter.MapScan(map[string]any{
 		"table_name":                  &table.Name,
 		"bloom_filter_fp_chance":      &table.Options.BloomFilterFpChance,
 		"caching":                     &table.Options.Caching,
@@ -1211,7 +1211,7 @@ func getTableMetadata(session *Session, keyspaceName string) ([]TableMetadata, e
 	scyllaOpts := make(map[string]TableMetadataOptions, len(tables))
 	var opts TableMetadataOptions
 	var tblName string
-	for iter.MapScan(map[string]interface{}{
+	for iter.MapScan(map[string]any{
 		"table_name":  &tblName,
 		"cdc":         &opts.CDC,
 		"in_memory":   &opts.InMemory,
@@ -1248,7 +1248,7 @@ func getTableMetadataByName(session *Session, keyspaceName, tableName string) ([
 
 	var tables []TableMetadata
 	table := TableMetadata{Keyspace: keyspaceName}
-	for iter.MapScan(map[string]interface{}{
+	for iter.MapScan(map[string]any{
 		"table_name":                  &table.Name,
 		"bloom_filter_fp_chance":      &table.Options.BloomFilterFpChance,
 		"caching":                     &table.Options.Caching,
@@ -1283,7 +1283,7 @@ func getTableMetadataByName(session *Session, keyspaceName, tableName string) ([
 		iter := session.control.querySystem(stmt, keyspaceName, t.Name)
 
 		table := TableMetadata{}
-		if iter.MapScan(map[string]interface{}{
+		if iter.MapScan(map[string]any{
 			"cdc":         &table.Options.CDC,
 			"in_memory":   &table.Options.InMemory,
 			"partitioner": &table.Options.Partitioner,
@@ -1317,7 +1317,7 @@ func getColumnMetadataByTable(session *Session, keyspaceName, tableName string) 
 	iter := session.control.querySystem(stmt, keyspaceName, tableName)
 	column := ColumnMetadata{Keyspace: keyspaceName}
 
-	for iter.MapScan(map[string]interface{}{
+	for iter.MapScan(map[string]any{
 		"table_name":       &column.Table,
 		"column_name":      &column.Name,
 		"clustering_order": &column.ClusteringOrder,
@@ -1347,7 +1347,7 @@ func getIndexMetadataByTable(session *Session, keyspaceName, tableName string) (
 	index := IndexMetadata{}
 
 	iter := session.control.querySystem(stmt, keyspaceName, tableName)
-	for iter.MapScan(map[string]interface{}{
+	for iter.MapScan(map[string]any{
 		"index_name":    &index.Name,
 		"keyspace_name": &index.KeyspaceName,
 		"table_name":    &index.TableName,
@@ -1377,7 +1377,7 @@ func getViewMetadataByTable(session *Session, keyspaceName, tableName string) ([
 	var views []ViewMetadata
 	view := ViewMetadata{KeyspaceName: keyspaceName}
 
-	for iter.MapScan(map[string]interface{}{
+	for iter.MapScan(map[string]any{
 		"id":                          &view.ID,
 		"view_name":                   &view.ViewName,
 		"base_table_id":               &view.BaseTableID,
@@ -1421,7 +1421,7 @@ func getColumnMetadata(session *Session, keyspaceName string) ([]ColumnMetadata,
 	iter := session.control.querySystem(stmt, keyspaceName)
 	column := ColumnMetadata{Keyspace: keyspaceName}
 
-	for iter.MapScan(map[string]interface{}{
+	for iter.MapScan(map[string]any{
 		"table_name":       &column.Table,
 		"column_name":      &column.Name,
 		"clustering_order": &column.ClusteringOrder,
@@ -1452,7 +1452,7 @@ func getTypeMetadata(session *Session, keyspaceName string) ([]TypeMetadata, err
 	var types []TypeMetadata
 	tm := TypeMetadata{Keyspace: keyspaceName}
 
-	for iter.MapScan(map[string]interface{}{
+	for iter.MapScan(map[string]any{
 		"type_name":   &tm.Name,
 		"field_names": &tm.FieldNames,
 		"field_types": &tm.FieldTypes,
@@ -1479,7 +1479,7 @@ func getFunctionsMetadata(session *Session, keyspaceName string) ([]FunctionMeta
 	function := FunctionMetadata{Keyspace: keyspaceName}
 
 	iter := session.control.querySystem(stmt, keyspaceName)
-	for iter.MapScan(map[string]interface{}{
+	for iter.MapScan(map[string]any{
 		"function_name":        &function.Name,
 		"argument_types":       &function.ArgumentTypes,
 		"argument_names":       &function.ArgumentNames,
@@ -1511,7 +1511,7 @@ func getAggregatesMetadata(session *Session, keyspaceName string) ([]AggregateMe
 	aggregate := AggregateMetadata{Keyspace: keyspaceName}
 
 	iter := session.control.querySystem(stmt, keyspaceName)
-	for iter.MapScan(map[string]interface{}{
+	for iter.MapScan(map[string]any{
 		"aggregate_name": &aggregate.Name,
 		"argument_types": &aggregate.ArgumentTypes,
 		"final_func":     &aggregate.finalFunc,
@@ -1543,7 +1543,7 @@ func getIndexMetadata(session *Session, keyspaceName string) ([]IndexMetadata, e
 	index := IndexMetadata{}
 
 	iter := session.control.querySystem(stmt, keyspaceName)
-	for iter.MapScan(map[string]interface{}{
+	for iter.MapScan(map[string]any{
 		"index_name":    &index.Name,
 		"keyspace_name": &index.KeyspaceName,
 		"table_name":    &index.TableName,
@@ -1603,7 +1603,7 @@ func getViewMetadata(session *Session, keyspaceName string) ([]ViewMetadata, err
 	var views []ViewMetadata
 	view := ViewMetadata{KeyspaceName: keyspaceName}
 
-	for iter.MapScan(map[string]interface{}{
+	for iter.MapScan(map[string]any{
 		"id":                          &view.ID,
 		"view_name":                   &view.ViewName,
 		"base_table_id":               &view.BaseTableID,

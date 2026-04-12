@@ -277,13 +277,13 @@ func TestMapScanUDT(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rawResult := map[string]interface{}{}
+	rawResult := map[string]any{}
 	err = session.Query(fmt.Sprintf(`SELECT * FROM %s WHERE id = ?`, table), id).MapScan(rawResult)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	logEntries, ok := rawResult["log_entries"].([]map[string]interface{})
+	logEntries, ok := rawResult["log_entries"].([]map[string]any)
 	if !ok {
 		t.Fatal("log_entries not in scanned map")
 	}

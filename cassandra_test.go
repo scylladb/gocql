@@ -623,7 +623,7 @@ func TestCAS(t *testing.T) {
 
 	successBatch = session.Batch(LoggedBatch)
 	successBatch.Query(fmt.Sprintf("INSERT INTO %s (title, revid, last_modified) VALUES (?, ?, ?) IF NOT EXISTS", table), title+"_foo", revid, modified)
-	casMap := make(map[string]interface{})
+	casMap := make(map[string]any)
 	if applied, _, err := session.MapExecuteBatchCAS(successBatch, casMap); err != nil {
 		t.Fatal("insert:", err)
 	} else if !applied {
@@ -673,7 +673,7 @@ func TestCAS(t *testing.T) {
 		}
 	}
 
-	casMap = make(map[string]interface{})
+	casMap = make(map[string]any)
 	if applied, err := session.Query(fmt.Sprintf(`SELECT revid FROM %s WHERE title = ?`, table),
 		title+"_foo").MapScanCAS(casMap); err != nil {
 		t.Fatal("select:", err)
@@ -688,14 +688,14 @@ func TestCAS(t *testing.T) {
 
 	notCASBatch := session.Batch(LoggedBatch)
 	notCASBatch.Query(fmt.Sprintf("INSERT INTO %s (title, revid, last_modified) VALUES (?, ?, ?)", table), title+"_baz", revid, modified)
-	casMap = make(map[string]interface{})
+	casMap = make(map[string]any)
 	if _, _, err := session.MapExecuteBatchCAS(notCASBatch, casMap); err != ErrNotFound {
 		t.Fatal("insert should have returned not found:", err)
 	}
 
 	notCASBatch = session.Batch(LoggedBatch)
 	notCASBatch.Query(fmt.Sprintf("INSERT INTO %s (title, revid, last_modified) VALUES (?, ?, ?)", table), title+"_baz", revid, modified)
-	casMap = make(map[string]interface{})
+	casMap = make(map[string]any)
 	if _, _, err := session.ExecuteBatchCAS(notCASBatch, &revidCAS); err != ErrNotFound {
 		t.Fatal("insert should have returned not found:", err)
 	}
@@ -706,7 +706,7 @@ func TestCAS(t *testing.T) {
 		t.Fatal("update should have errored")
 	}
 	// make sure MapScanCAS does not panic when MapScan fails
-	casMap = make(map[string]interface{})
+	casMap = make(map[string]any)
 	casMap["last_modified"] = false
 	if _, err := session.Query(fmt.Sprintf(`UPDATE %s SET last_modified = TOTIMESTAMP(NOW()) WHERE title='_foo' AND revid=3e4ad2f1-73a4-11e5-9381-29463d90c3f0 IF last_modified = ?`, table),
 		modified).MapScanCAS(casMap); err == nil {
@@ -716,7 +716,7 @@ func TestCAS(t *testing.T) {
 	// make sure MapExecuteBatchCAS does not panic when MapScan fails
 	failBatch = session.Batch(LoggedBatch)
 	failBatch.Query(fmt.Sprintf("UPDATE %s SET last_modified = TOTIMESTAMP(NOW()) WHERE title='_foo' AND revid=3e4ad2f1-73a4-11e5-9381-29463d90c3f0 IF last_modified = ?", table), modified)
-	casMap = make(map[string]interface{})
+	casMap = make(map[string]any)
 	casMap["last_modified"] = false
 	if _, _, err := session.MapExecuteBatchCAS(failBatch, casMap); err == nil {
 		t.Fatal("update should have errored")
@@ -888,7 +888,7 @@ func TestMapScanCAS(t *testing.T) {
 	}
 
 	title, revid, modified, deleted := "baz", TimeUUID(), time.Now(), false
-	mapCAS := map[string]interface{}{}
+	mapCAS := map[string]any{}
 
 	if applied, err := session.Query(fmt.Sprintf(`INSERT INTO %s (title, revid, last_modified, deleted)
 		VALUES (?, ?, ?, ?) IF NOT EXISTS`, table),
@@ -898,7 +898,7 @@ func TestMapScanCAS(t *testing.T) {
 		t.Fatalf("insert should have been applied: title=%v revID=%v modified=%v", title, revid, modified)
 	}
 
-	mapCAS = map[string]interface{}{}
+	mapCAS = map[string]any{}
 	if applied, err := session.Query(fmt.Sprintf(`INSERT INTO %s (title, revid, last_modified, deleted)
 		VALUES (?, ?, ?, ?) IF NOT EXISTS`, table),
 		title, revid, modified, deleted).MapScanCAS(mapCAS); err != nil {
@@ -1169,7 +1169,7 @@ func TestMapScanWithRefMap(t *testing.T) {
 		)`, table)); err != nil {
 		t.Fatal("create table:", err)
 	}
-	m := make(map[string]interface{})
+	m := make(map[string]any)
 	m["testtext"] = "testtext"
 	m["testfullname"] = FullName{FirstName: "John", LastName: "Doe"}
 	m["testint"] = 100
@@ -1181,7 +1181,7 @@ func TestMapScanWithRefMap(t *testing.T) {
 
 	var testText string
 	var testFullName FullName
-	ret := map[string]interface{}{
+	ret := map[string]any{
 		"testtext":     &testText,
 		"testfullname": &testFullName,
 		// testint is not set here.
@@ -1210,7 +1210,7 @@ func TestMapScanWithRefMap(t *testing.T) {
 
 	// using MapScan to read a nil int value
 	intp := new(int64)
-	ret = map[string]interface{}{
+	ret = map[string]any{
 		"testint": &intp,
 	}
 	if err := session.Query(fmt.Sprintf("INSERT INTO %s(testtext, testint) VALUES(?, ?)", table), "null-int", nil).Exec(); err != nil {
@@ -1253,7 +1253,7 @@ func TestMapScan(t *testing.T) {
 	iter := session.Query(fmt.Sprintf(`SELECT * FROM %s`, table)).Iter()
 
 	// First iteration
-	row := make(map[string]interface{})
+	row := make(map[string]any)
 	if !iter.MapScan(row) {
 		t.Fatal("select:", iter.Close())
 	}
@@ -1263,7 +1263,7 @@ func TestMapScan(t *testing.T) {
 	tests.AssertDeepEqual(t, "data", []byte(`{"foo": "bar"}`), row["data"])
 
 	// Second iteration using a new map
-	row = make(map[string]interface{})
+	row = make(map[string]any)
 	if !iter.MapScan(row) {
 		t.Fatal("select:", iter.Close())
 	}
@@ -1299,7 +1299,7 @@ func TestSliceMap(t *testing.T) {
 		)`, table)); err != nil {
 		t.Fatal("create table:", err)
 	}
-	m := make(map[string]interface{})
+	m := make(map[string]any)
 
 	bigInt := new(big.Int)
 	if _, ok := bigInt.SetString("830169365738487321165427203929228", 10); !ok {
@@ -1321,7 +1321,7 @@ func TestSliceMap(t *testing.T) {
 	m["testmap"] = map[string]string{"field1": "val1", "field2": "val2", "field3": "val3"}
 	m["testvarint"] = bigInt
 	m["testinet"] = "213.212.2.19"
-	sliceMap := []map[string]interface{}{m}
+	sliceMap := []map[string]any{m}
 	if err := session.Query(fmt.Sprintf(`INSERT INTO %s (testuuid, testtimestamp, testvarchar, testbigint, testblob, testbool, testfloat, testdouble, testint, testdecimal, testlist, testset, testmap, testvarint, testinet) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, table),
 		m["testuuid"], m["testtimestamp"], m["testvarchar"], m["testbigint"], m["testblob"], m["testbool"], m["testfloat"], m["testdouble"], m["testint"], m["testdecimal"], m["testlist"], m["testset"], m["testmap"], m["testvarint"], m["testinet"]).Exec(); err != nil {
 		t.Fatal("insert:", err)
@@ -1334,7 +1334,7 @@ func TestSliceMap(t *testing.T) {
 
 	// Test for Iter.MapScan()
 	{
-		testMap := make(map[string]interface{})
+		testMap := make(map[string]any)
 		if !session.Query(fmt.Sprintf(`SELECT * FROM %s`, table)).Iter().MapScan(testMap) {
 			t.Fatal("MapScan failed to work with one row")
 		}
@@ -1343,14 +1343,14 @@ func TestSliceMap(t *testing.T) {
 
 	// Test for Query.MapScan()
 	{
-		testMap := make(map[string]interface{})
+		testMap := make(map[string]any)
 		if session.Query(fmt.Sprintf(`SELECT * FROM %s`, table)).MapScan(testMap) != nil {
 			t.Fatal("MapScan failed to work with one row")
 		}
 		matchSliceMap(t, sliceMap, testMap)
 	}
 }
-func matchSliceMap(t *testing.T, sliceMap []map[string]interface{}, testMap map[string]interface{}) {
+func matchSliceMap(t *testing.T, sliceMap []map[string]any, testMap map[string]any) {
 	if sliceMap[0]["testuuid"] != testMap["testuuid"] {
 		t.Fatal("returned testuuid did not match")
 	}
@@ -1468,9 +1468,9 @@ func TestSmallInt(t *testing.T) {
 		)`, table)); err != nil {
 		t.Fatal("create table:", err)
 	}
-	m := make(map[string]interface{})
+	m := make(map[string]any)
 	m["testsmallint"] = int16(2)
-	sliceMap := []map[string]interface{}{m}
+	sliceMap := []map[string]any{m}
 	if err := session.Query(fmt.Sprintf(`INSERT INTO %s (testsmallint) VALUES (?)`, table),
 		m["testsmallint"]).Exec(); err != nil {
 		t.Fatal("insert:", err)
@@ -1628,8 +1628,8 @@ func TestStaticQueryInfo(t *testing.T) {
 		t.Fatalf("insert into static_query_info failed, err '%v'", err)
 	}
 
-	autobinder := func(q *QueryInfo) ([]interface{}, error) {
-		values := make([]interface{}, 1)
+	autobinder := func(q *QueryInfo) ([]any, error) {
+		values := make([]any, 1)
 		values[0] = 113
 		return values, nil
 	}
@@ -1663,8 +1663,8 @@ type ClusteredKeyValue struct {
 	Value   string
 }
 
-func (kv *ClusteredKeyValue) Bind(q *QueryInfo) ([]interface{}, error) {
-	values := make([]interface{}, len(q.Args))
+func (kv *ClusteredKeyValue) Bind(q *QueryInfo) ([]any, error) {
+	values := make([]any, len(q.Args))
 
 	for i, info := range q.Args {
 		fieldName := upcaseInitial(info.Name)
@@ -1738,8 +1738,8 @@ func TestBatchQueryInfo(t *testing.T) {
 		t.Fatalf("failed to create table with error '%v'", err)
 	}
 
-	write := func(q *QueryInfo) ([]interface{}, error) {
-		values := make([]interface{}, 3)
+	write := func(q *QueryInfo) ([]any, error) {
+		values := make([]any, 3)
 		values[0] = 4000
 		values[1] = 5000
 		values[2] = "bar"
@@ -1753,8 +1753,8 @@ func TestBatchQueryInfo(t *testing.T) {
 		t.Fatalf("batch insert into batch_query_info failed, err '%v'", err)
 	}
 
-	read := func(q *QueryInfo) ([]interface{}, error) {
-		values := make([]interface{}, 2)
+	read := func(q *QueryInfo) ([]any, error) {
+		values := make([]any, 2)
 		values[0] = 4000
 		values[1] = 5000
 		return values, nil
@@ -2329,7 +2329,7 @@ func TestBatchObserve(t *testing.T) {
 		observedErr      error
 		observedKeyspace string
 		observedStmts    []string
-		observedValues   [][]interface{}
+		observedValues   [][]any
 	}
 
 	var observedBatch *observation
@@ -2372,7 +2372,7 @@ func TestBatchObserve(t *testing.T) {
 			t.Fatal("unexpected query", stmt)
 		}
 
-		tests.AssertDeepEqual(t, "observed value", []interface{}{i}, observedBatch.observedValues[i])
+		tests.AssertDeepEqual(t, "observed value", []any{i}, observedBatch.observedValues[i])
 	}
 }
 
@@ -3125,8 +3125,8 @@ func TestSessionBindRoutingKey(t *testing.T) {
 		value = 5
 	)
 
-	fn := func(info *QueryInfo) ([]interface{}, error) {
-		return []interface{}{key, value}, nil
+	fn := func(info *QueryInfo) ([]any, error) {
+		return []any{key, value}, nil
 	}
 
 	q := session.Bind(fmt.Sprintf("INSERT INTO %s(key, value) VALUES(?, ?)", table), fn)

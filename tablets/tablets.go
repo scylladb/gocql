@@ -89,7 +89,7 @@ func (r ReplicaInfo) String() string {
 type TabletInfoBuilder struct {
 	KeyspaceName string
 	TableName    string
-	Replicas     [][]interface{}
+	Replicas     [][]any
 	FirstToken   int64
 	LastToken    int64
 }

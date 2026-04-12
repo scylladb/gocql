@@ -38,7 +38,7 @@ import (
 
 type RowData struct {
 	Columns []string
-	Values  []interface{}
+	Values  []any
 }
 
 // asVectorType attempts to convert a NativeType(custom) which represents a VectorType
@@ -128,11 +128,11 @@ func goType(t TypeInfo) (reflect.Type, error) {
 	case TypeVarint:
 		return reflect.TypeOf(*new(*big.Int)), nil
 	case TypeTuple:
-		// what can we do here? all there is to do is to make a list of interface{}
+		// what can we do here? all there is to do is to make a list of any
 		tuple := t.(TupleTypeInfo)
-		return reflect.TypeOf(make([]interface{}, len(tuple.Elems))), nil
+		return reflect.TypeOf(make([]any, len(tuple.Elems))), nil
 	case TypeUDT:
-		return reflect.TypeOf(make(map[string]interface{})), nil
+		return reflect.TypeOf(make(map[string]any)), nil
 	case TypeDate:
 		return reflect.TypeOf(*new(time.Time)), nil
 	case TypeDuration:
@@ -156,7 +156,7 @@ func goType(t TypeInfo) (reflect.Type, error) {
 	}
 }
 
-func dereference(i interface{}) interface{} {
+func dereference(i any) any {
 	return reflect.Indirect(reflect.ValueOf(i)).Interface()
 }
 
@@ -341,7 +341,7 @@ func getApacheCassandraType(class string) Type {
 	}
 }
 
-func (r *RowData) rowMap(m map[string]interface{}) {
+func (r *RowData) rowMap(m map[string]any) {
 	for i, column := range r.Columns {
 		val := dereference(r.Values[i])
 		if valVal := reflect.ValueOf(val); valVal.Kind() == reflect.Slice && !valVal.IsNil() {
@@ -371,7 +371,7 @@ func (iter *Iter) RowData() (RowData, error) {
 	// and use direct indexing instead of append for better performance
 	actualSize := iter.meta.actualColCount
 	columns := make([]string, actualSize)
-	values := make([]interface{}, actualSize)
+	values := make([]any, actualSize)
 
 	idx := 0
 	for _, column := range iter.Columns() {
@@ -423,7 +423,7 @@ func (iter *Iter) RowData() (RowData, error) {
 }
 
 // TODO(zariel): is it worth exporting this?
-func (iter *Iter) rowMap() (map[string]interface{}, error) {
+func (iter *Iter) rowMap() (map[string]any, error) {
 	if iter.err != nil {
 		return nil, iter.err
 	}
@@ -433,15 +433,15 @@ func (iter *Iter) rowMap() (map[string]interface{}, error) {
 		return nil, err
 	}
 	iter.Scan(rowData.Values...)
-	m := make(map[string]interface{}, len(rowData.Columns))
+	m := make(map[string]any, len(rowData.Columns))
 	rowData.rowMap(m)
 	return m, nil
 }
 
 // SliceMap is a helper function to make the API easier to use.
 // It consumes the remaining rows, closes the iterator, and returns the data
-// in the form of []map[string]interface{}.
-func (iter *Iter) SliceMap() ([]map[string]interface{}, error) {
+// in the form of []map[string]any.
+func (iter *Iter) SliceMap() ([]map[string]any, error) {
 	defer iter.Close()
 
 	if iter.err != nil {
@@ -453,9 +453,9 @@ func (iter *Iter) SliceMap() ([]map[string]interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	dataToReturn := make([]map[string]interface{}, 0)
+	dataToReturn := make([]map[string]any, 0)
 	for iter.Scan(rowData.Values...) {
-		m := make(map[string]interface{}, len(rowData.Columns))
+		m := make(map[string]any, len(rowData.Columns))
 		rowData.rowMap(m)
 		dataToReturn = append(dataToReturn, m)
 	}
@@ -465,7 +465,7 @@ func (iter *Iter) SliceMap() ([]map[string]interface{}, error) {
 	return dataToReturn, nil
 }
 
-// MapScan takes a map[string]interface{} and populates it with a row
+// MapScan takes a map[string]any and populates it with a row
 // that is returned from cassandra.
 //
 // Each call to MapScan() must be called with a new map object.
@@ -475,7 +475,7 @@ func (iter *Iter) SliceMap() ([]map[string]interface{}, error) {
 //	iter := session.Query(`SELECT * FROM mytable`).Iter()
 //	for {
 //		// New map each iteration
-//		row := make(map[string]interface{})
+//		row := make(map[string]any)
 //		if !iter.MapScan(row) {
 //			break
 //		}
@@ -496,7 +496,7 @@ func (iter *Iter) SliceMap() ([]map[string]interface{}, error) {
 //	iter := session.Query(`SELECT * FROM scan_map_table`).Iter()
 //	for {
 //		// New map each iteration
-//		row := map[string]interface{}{
+//		row := map[string]any{
 //			"fullname": &fullName,
 //			"age":      &age,
 //			"address":  &address,
@@ -509,7 +509,7 @@ func (iter *Iter) SliceMap() ([]map[string]interface{}, error) {
 //	if err := iter.Close(); err != nil {
 //		return err
 //	}
-func (iter *Iter) MapScan(m map[string]interface{}) bool {
+func (iter *Iter) MapScan(m map[string]any) bool {
 	if iter.err != nil {
 		return false
 	}

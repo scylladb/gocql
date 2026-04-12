@@ -207,7 +207,7 @@ func (fp *framerPool) init(defaults framerConfig, release func(*framer)) {
 	fp.bufAvgSize.Store(int64(defaultBufSize))
 	fp.enabled.Store(true)
 	fp.pool = sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			buf := make([]byte, defaultBufSize)
 			f := &framer{
 				buf:                   buf[:0],

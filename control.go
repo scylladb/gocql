@@ -65,8 +65,8 @@ const (
 type controlConnection interface {
 	getConn() *connHost
 	awaitSchemaAgreement() error
-	query(statement string, values ...interface{}) (iter *Iter)
-	querySystem(statement string, values ...interface{}) (iter *Iter)
+	query(statement string, values ...any) (iter *Iter)
+	querySystem(statement string, values ...any) (iter *Iter)
 	discoverProtocol(hosts []*HostInfo) (int, error)
 	connect(hosts []*HostInfo) error
 	close()
@@ -536,7 +536,7 @@ func (c *controlConn) writeFrame(w frameBuilder) (frame, error) {
 }
 
 // query will return nil if the connection is closed or nil
-func (c *controlConn) querySystem(statement string, values ...interface{}) (iter *Iter) {
+func (c *controlConn) querySystem(statement string, values ...any) (iter *Iter) {
 	conn := c.getConn().conn.(*Conn)
 	return c.runQuery(c.session.Query(statement+conn.usingTimeoutClause, values...).
 		Consistency(One).
@@ -546,7 +546,7 @@ func (c *controlConn) querySystem(statement string, values ...interface{}) (iter
 }
 
 // query will return nil if the connection is closed or nil
-func (c *controlConn) query(statement string, values ...interface{}) (iter *Iter) {
+func (c *controlConn) query(statement string, values ...any) (iter *Iter) {
 	return c.runQuery(c.session.Query(statement, values...).Consistency(One).RoutingKey([]byte{}).Trace(nil))
 }
 

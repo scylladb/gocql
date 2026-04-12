@@ -15,7 +15,7 @@ var errFirstPtrChanged = errors.New("unmarshal function rewrote first pointer")
 // but this is the current implementation `gocql` and changing it can lead to unexpected results in some cases.
 var errSecondPtrNotChanged = errors.New("unmarshal function did not rewrite second pointer")
 
-func getPointers(i interface{}) *pointer {
+func getPointers(i any) *pointer {
 	rv := reflect.ValueOf(i)
 	if rv.Kind() != reflect.Ptr {
 		return nil
@@ -42,7 +42,7 @@ func (p *pointer) NotNil() bool {
 // Valid validates if pointers has been manipulated by unmarshal functions in an expected manner:
 // Fist pointer should not be overwritten,
 // Second pointer, if applicable, should be overwritten.
-func (p *pointer) Valid(v interface{}) error {
+func (p *pointer) Valid(v any) error {
 	p2 := getPointers(v)
 	if p.Fist != p2.Fist {
 		return errFirstPtrChanged

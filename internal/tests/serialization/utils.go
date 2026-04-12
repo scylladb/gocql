@@ -4,7 +4,7 @@ import (
 	"reflect"
 )
 
-func GetTypes(values ...interface{}) []reflect.Type {
+func GetTypes(values ...any) []reflect.Type {
 	types := make([]reflect.Type, len(values))
 	for i, value := range values {
 		types[i] = reflect.TypeOf(value)
@@ -12,7 +12,7 @@ func GetTypes(values ...interface{}) []reflect.Type {
 	return types
 }
 
-func isTypeOf(value interface{}, types []reflect.Type) bool {
+func isTypeOf(value any, types []reflect.Type) bool {
 	valueType := reflect.TypeOf(value)
 	for i := range types {
 		if types[i] == valueType {
@@ -22,6 +22,6 @@ func isTypeOf(value interface{}, types []reflect.Type) bool {
 	return false
 }
 
-func deReference(in interface{}) interface{} {
+func deReference(in any) any {
 	return reflect.Indirect(reflect.ValueOf(in)).Interface()
 }

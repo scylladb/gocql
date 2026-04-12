@@ -165,7 +165,7 @@ func TestHostPolicy_TokenAware_SimpleStrategy(t *testing.T) {
 		return &KeyspaceMetadata{
 			Name:          keyspace,
 			StrategyClass: "SimpleStrategy",
-			StrategyOptions: map[string]interface{}{
+			StrategyOptions: map[string]any{
 				"class":              "SimpleStrategy",
 				"replication_factor": 2,
 			},
@@ -293,7 +293,7 @@ func createPolicy(keyspace string, shuffle bool) HostSelectionPolicy {
 		return &KeyspaceMetadata{
 			Name:          keyspace,
 			StrategyClass: "SimpleStrategy",
-			StrategyOptions: map[string]interface{}{
+			StrategyOptions: map[string]any{
 				"class":              "SimpleStrategy",
 				"replication_factor": 2,
 			},
@@ -810,7 +810,7 @@ func TestHostPolicy_TokenAware(t *testing.T) {
 		return &KeyspaceMetadata{
 			Name:          keyspace,
 			StrategyClass: "NetworkTopologyStrategy",
-			StrategyOptions: map[string]interface{}{
+			StrategyOptions: map[string]any{
 				"class":   "NetworkTopologyStrategy",
 				"local":   1,
 				"remote1": 1,
@@ -903,7 +903,7 @@ func TestHostPolicy_TokenAware_NetworkStrategy(t *testing.T) {
 		return &KeyspaceMetadata{
 			Name:          keyspace,
 			StrategyClass: "NetworkTopologyStrategy",
-			StrategyOptions: map[string]interface{}{
+			StrategyOptions: map[string]any{
 				"class":   "NetworkTopologyStrategy",
 				"local":   2,
 				"remote1": 2,
@@ -1047,7 +1047,7 @@ func TestHostPolicy_TokenAware_RackAware(t *testing.T) {
 		return &KeyspaceMetadata{
 			Name:          keyspace,
 			StrategyClass: "NetworkTopologyStrategy",
-			StrategyOptions: map[string]interface{}{
+			StrategyOptions: map[string]any{
 				"class":  "NetworkTopologyStrategy",
 				"local":  2,
 				"remote": 2,
@@ -1158,7 +1158,7 @@ func TestHostPolicy_TokenAware_Issue1274(t *testing.T) {
 		return &KeyspaceMetadata{
 			Name:          "myKeyspace",
 			StrategyClass: "NetworkTopologyStrategy",
-			StrategyOptions: map[string]interface{}{
+			StrategyOptions: map[string]any{
 				"class":   "NetworkTopologyStrategy",
 				"local":   1,
 				"remote1": 1,
@@ -1266,7 +1266,7 @@ func TestTokenAwareHostPolicyTabletPath(t *testing.T) {
 			return &KeyspaceMetadata{
 				Name:          keyspace,
 				StrategyClass: "SimpleStrategy",
-				StrategyOptions: map[string]interface{}{
+				StrategyOptions: map[string]any{
 					"class":              "SimpleStrategy",
 					"replication_factor": 1,
 				},
@@ -1285,7 +1285,7 @@ func TestTokenAwareHostPolicyTabletPath(t *testing.T) {
 			TableName:    table,
 			FirstToken:   -9223372036854775808,
 			LastToken:    0,
-			Replicas:     [][]interface{}{{host2.hostId, 0}},
+			Replicas:     [][]any{{host2.hostId, 0}},
 		}.Build()
 		if err != nil {
 			t.Fatal(err)
@@ -1295,7 +1295,7 @@ func TestTokenAwareHostPolicyTabletPath(t *testing.T) {
 			TableName:    table,
 			FirstToken:   0,
 			LastToken:    9223372036854775807,
-			Replicas:     [][]interface{}{{host3.hostId, 0}},
+			Replicas:     [][]any{{host3.hostId, 0}},
 		}.Build()
 		if err != nil {
 			t.Fatal(err)

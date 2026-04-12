@@ -168,7 +168,7 @@ func TestCloudConnection(t *testing.T) {
 	}
 }
 
-func writeYamlToTempFile(obj interface{}) (string, error) {
+func writeYamlToTempFile(obj any) (string, error) {
 	f, err := os.CreateTemp(os.TempDir(), "gocql-cloud")
 	if err != nil {
 		return "", fmt.Errorf("create temp file: %w", err)

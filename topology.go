@@ -70,7 +70,7 @@ type placementStrategy interface {
 	replicationFactor(dc string) int
 }
 
-func getReplicationFactorFromOpts(val interface{}) (int, error) {
+func getReplicationFactorFromOpts(val any) (int, error) {
 	switch v := val.(type) {
 	case int:
 		if v < 0 {

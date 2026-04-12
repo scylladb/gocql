@@ -101,7 +101,7 @@ var columnMeta = resultMetadata{
 	colCount:       6,
 }
 
-func mustMarshal(info TypeInfo, value interface{}) []byte {
+func mustMarshal(info TypeInfo, value any) []byte {
 	b, err := Marshal(info, value)
 	if err != nil {
 		panic(fmt.Sprintf("mustMarshal(%v, %v): %v", info, value, err))
@@ -109,7 +109,7 @@ func mustMarshal(info TypeInfo, value interface{}) []byte {
 	return b
 }
 
-func marshalRow(meta resultMetadata, values []interface{}) [][]byte {
+func marshalRow(meta resultMetadata, values []any) [][]byte {
 	if len(meta.columns) != len(values) {
 		panic(fmt.Sprintf("marshalRow: column count %d != value count %d", len(meta.columns), len(values)))
 	}
@@ -125,11 +125,11 @@ func makeKeyspaceRow(durableWrites bool) [][]byte {
 		"class":              "org.apache.cassandra.locator.SimpleStrategy",
 		"replication_factor": "1",
 	}
-	return marshalRow(keyspaceMeta, []interface{}{durableWrites, replication})
+	return marshalRow(keyspaceMeta, []any{durableWrites, replication})
 }
 
 func makeTableRow(tableName string) [][]byte {
-	return marshalRow(tableMeta, []interface{}{
+	return marshalRow(tableMeta, []any{
 		tableName,              // table_name
 		float64(0.01),          // bloom_filter_fp_chance
 		map[string]string(nil), // caching
@@ -149,7 +149,7 @@ func makeTableRow(tableName string) [][]byte {
 }
 
 func makeColumnRow(tableName, colName, kind string, position int) [][]byte {
-	return marshalRow(columnMeta, []interface{}{
+	return marshalRow(columnMeta, []any{
 		tableName, // table_name
 		colName,   // column_name
 		"none",    // clustering_order
@@ -204,7 +204,7 @@ func (m *schemaDataMock) awaitSchemaAgreement() error {
 	return nil
 }
 
-func (m *schemaDataMock) query(statement string, values ...interface{}) *Iter {
+func (m *schemaDataMock) query(statement string, values ...any) *Iter {
 	m.mu.Lock()
 	m.queries = append(m.queries, queryRecord{method: "query", stmt: statement})
 	delay := m.queryDelay
@@ -217,7 +217,7 @@ func (m *schemaDataMock) query(statement string, values ...interface{}) *Iter {
 	return &Iter{}
 }
 
-func (m *schemaDataMock) querySystem(statement string, values ...interface{}) *Iter {
+func (m *schemaDataMock) querySystem(statement string, values ...any) *Iter {
 	m.mu.Lock()
 	m.queries = append(m.queries, queryRecord{method: "querySystem", stmt: statement})
 	delay := m.queryDelay

@@ -19,8 +19,8 @@ func TestMarshalTexts(t *testing.T) {
 
 	type testSuite struct {
 		name      string
-		marshal   func(interface{}) ([]byte, error)
-		unmarshal func(bytes []byte, i interface{}) error
+		marshal   func(any) ([]byte, error)
+		unmarshal func(bytes []byte, i any) error
 	}
 
 	testSuites := []testSuite{
@@ -41,28 +41,28 @@ func TestMarshalTexts(t *testing.T) {
 		},
 		{
 			name: "glob.varchar",
-			marshal: func(i interface{}) ([]byte, error) {
+			marshal: func(i any) ([]byte, error) {
 				return gocql.Marshal(gocql.NewNativeType(4, gocql.TypeVarchar), i)
 			},
-			unmarshal: func(bytes []byte, i interface{}) error {
+			unmarshal: func(bytes []byte, i any) error {
 				return gocql.Unmarshal(gocql.NewNativeType(4, gocql.TypeVarchar), bytes, i)
 			},
 		},
 		{
 			name: "glob.text",
-			marshal: func(i interface{}) ([]byte, error) {
+			marshal: func(i any) ([]byte, error) {
 				return gocql.Marshal(gocql.NewNativeType(4, gocql.TypeText), i)
 			},
-			unmarshal: func(bytes []byte, i interface{}) error {
+			unmarshal: func(bytes []byte, i any) error {
 				return gocql.Unmarshal(gocql.NewNativeType(4, gocql.TypeText), bytes, i)
 			},
 		},
 		{
 			name: "glob.blob",
-			marshal: func(i interface{}) ([]byte, error) {
+			marshal: func(i any) ([]byte, error) {
 				return gocql.Marshal(gocql.NewNativeType(4, gocql.TypeBlob), i)
 			},
-			unmarshal: func(bytes []byte, i interface{}) error {
+			unmarshal: func(bytes []byte, i any) error {
 				return gocql.Unmarshal(gocql.NewNativeType(4, gocql.TypeBlob), bytes, i)
 			},
 		},

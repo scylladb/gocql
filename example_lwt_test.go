@@ -54,7 +54,7 @@ func ExampleQuery_MapScanCAS() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	m := make(map[string]interface{})
+	m := make(map[string]any)
 	applied, err := session.Query("UPDATE example.my_lwt_table SET value = ? WHERE pk = ? IF version = ?",
 		"b", 1, 0).WithContext(ctx).MapScanCAS(m)
 	if err != nil {
@@ -70,7 +70,7 @@ func ExampleQuery_MapScanCAS() {
 	}
 	fmt.Println(value)
 
-	m = make(map[string]interface{})
+	m = make(map[string]any)
 	applied, err = session.Query("UPDATE example.my_lwt_table SET value = ? WHERE pk = ? IF version = ?",
 		"b", 1, 1).WithContext(ctx).MapScanCAS(m)
 	if err != nil {

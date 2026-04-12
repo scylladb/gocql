@@ -18,8 +18,8 @@ func TestMarshalsDuration(t *testing.T) {
 
 	const nanoDay = 24 * 60 * 60 * 1000 * 1000 * 1000
 
-	marshal := func(i interface{}) ([]byte, error) { return gocql.Marshal(tType, i) }
-	unmarshal := func(bytes []byte, i interface{}) error { return gocql.Unmarshal(tType, bytes, i) }
+	marshal := func(i any) ([]byte, error) { return gocql.Marshal(tType, i) }
+	unmarshal := func(bytes []byte, i any) error { return gocql.Unmarshal(tType, bytes, i) }
 
 	serialization.PositiveSet{
 		Data: nil,

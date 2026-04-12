@@ -20,7 +20,7 @@ func TestGetClusterPeerInfoZeroToken(t *testing.T) {
 
 	schema_version1 := ParseUUIDMust("af810386-a694-11ef-81fa-3aea73156247")
 
-	peersRows := []map[string]interface{}{
+	peersRows := []map[string]any{
 		{
 			"data_center":     "datacenter1",
 			"host_id":         ParseUUIDMust("b2035fd9-e0ca-4857-8c45-e63c00fb7c43"),
@@ -259,10 +259,10 @@ var systemPeersResultMetadata = resultMetadata{
 	}},
 }
 
-func (*mockConnection) querySystem(ctx context.Context, query string, values ...interface{}) *Iter {
-	localData := []interface{}{"local", "COMPLETED", net.IPv4(192, 168, 100, 12), "", "3.3.1", "datacenter1", 1733834239, ParseUUIDMust("045859a7-6b9f-4efd-a5e7-acd64a295e13"), net.IPv4(192, 168, 100, 12), "4", "org.apache.cassandra.dht.Murmur3Partitioner", "rack1", "3.0.8", net.IPv4(192, 168, 100, 12), ParseUUIDMust("daf4df2c-b708-11ef-5c25-3004361afd71"), "", []string{}, map[UUID]byte{}}
-	peerData1 := []interface{}{net.IPv4(192, 168, 100, 13), "datacenter1", ParseUUIDMust("b953309f-6e68-41f2-baf5-0e60da317a9c"), net.IP{}, "rack1", "3.0.8", net.IPv4(192, 168, 100, 13), ParseUUIDMust("b6ed5bde-b318-11ef-8f58-aeba19e31273"), "", []string{"-1032311531684407545", "-1112089412567859825"}}
-	peerData2 := []interface{}{net.IPv4(192, 168, 100, 14), "datacenter1", ParseUUIDMust("8269e111-ea38-44bd-a73f-9d3d12cfaf78"), net.IP{}, "rack1", "3.0.8", net.IPv4(192, 168, 100, 14), ParseUUIDMust("b6ed5bde-b318-11ef-8f58-aeba19e31273"), "", []string{}}
+func (*mockConnection) querySystem(ctx context.Context, query string, values ...any) *Iter {
+	localData := []any{"local", "COMPLETED", net.IPv4(192, 168, 100, 12), "", "3.3.1", "datacenter1", 1733834239, ParseUUIDMust("045859a7-6b9f-4efd-a5e7-acd64a295e13"), net.IPv4(192, 168, 100, 12), "4", "org.apache.cassandra.dht.Murmur3Partitioner", "rack1", "3.0.8", net.IPv4(192, 168, 100, 12), ParseUUIDMust("daf4df2c-b708-11ef-5c25-3004361afd71"), "", []string{}, map[UUID]byte{}}
+	peerData1 := []any{net.IPv4(192, 168, 100, 13), "datacenter1", ParseUUIDMust("b953309f-6e68-41f2-baf5-0e60da317a9c"), net.IP{}, "rack1", "3.0.8", net.IPv4(192, 168, 100, 13), ParseUUIDMust("b6ed5bde-b318-11ef-8f58-aeba19e31273"), "", []string{"-1032311531684407545", "-1112089412567859825"}}
+	peerData2 := []any{net.IPv4(192, 168, 100, 14), "datacenter1", ParseUUIDMust("8269e111-ea38-44bd-a73f-9d3d12cfaf78"), net.IP{}, "rack1", "3.0.8", net.IPv4(192, 168, 100, 14), ParseUUIDMust("b6ed5bde-b318-11ef-8f58-aeba19e31273"), "", []string{}}
 
 	if query == "SELECT * FROM system.local WHERE key='local'" {
 		return &Iter{
@@ -290,7 +290,7 @@ func (*mockConnection) getScyllaSupported() ScyllaConnectionFeatures {
 
 type mockControlConn struct{}
 
-func (m *mockControlConn) querySystem(statement string, values ...interface{}) (iter *Iter) {
+func (m *mockControlConn) querySystem(statement string, values ...any) (iter *Iter) {
 	return nil
 }
 
@@ -305,14 +305,14 @@ func (m *mockControlConn) getConn() *connHost {
 	}
 }
 
-func (m *mockControlConn) awaitSchemaAgreement() error                                { return nil }
-func (m *mockControlConn) query(statement string, values ...interface{}) (iter *Iter) { return nil }
-func (m *mockControlConn) discoverProtocol(hosts []*HostInfo) (int, error)            { return 0, nil }
-func (m *mockControlConn) connect(hosts []*HostInfo) error                            { return nil }
-func (m *mockControlConn) close()                                                     {}
-func (m *mockControlConn) getSession() *Session                                       { return nil }
+func (m *mockControlConn) awaitSchemaAgreement() error                        { return nil }
+func (m *mockControlConn) query(statement string, values ...any) (iter *Iter) { return nil }
+func (m *mockControlConn) discoverProtocol(hosts []*HostInfo) (int, error)    { return 0, nil }
+func (m *mockControlConn) connect(hosts []*HostInfo) error                    { return nil }
+func (m *mockControlConn) close()                                             {}
+func (m *mockControlConn) getSession() *Session                               { return nil }
 
-func marshalMetadataMust(metadata resultMetadata, data []interface{}) [][]byte {
+func marshalMetadataMust(metadata resultMetadata, data []any) [][]byte {
 	if len(metadata.columns) != len(data) {
 		panic("metadata length mismatch")
 	}
@@ -339,7 +339,7 @@ func (*trackingRingConnection) exec(context.Context, frameBuilder, Tracer, time.
 }
 func (*trackingRingConnection) awaitSchemaAgreement(context.Context) error { return nil }
 func (*trackingRingConnection) executeQuery(context.Context, *Query) *Iter { return nil }
-func (c *trackingRingConnection) querySystem(context.Context, string, ...interface{}) *Iter {
+func (c *trackingRingConnection) querySystem(context.Context, string, ...any) *Iter {
 	return c.iter
 }
 func (c *trackingRingConnection) getIsSchemaV2() bool { return c.schemaV2 }
@@ -366,7 +366,7 @@ func TestMockGetHostsFromSystem(t *testing.T) {
 func TestRingDescriberGetClusterPeerInfoClosesIter(t *testing.T) {
 	t.Parallel()
 
-	row := []interface{}{
+	row := []any{
 		net.IPv4(192, 168, 100, 13),
 		"datacenter1",
 		ParseUUIDMust("b953309f-6e68-41f2-baf5-0e60da317a9c"),

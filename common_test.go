@@ -135,7 +135,7 @@ func probeTabletsSupported() {
 	}
 	defer s.Close()
 
-	res := make(map[string]interface{})
+	res := make(map[string]any)
 	err = s.Query("select * from system.local").MapScan(res)
 	if err != nil {
 		panic(fmt.Errorf("failed to read system.local: %v", err))
@@ -181,7 +181,7 @@ func probeTabletsAutoEnabled() {
 		panic(fmt.Errorf("failed to create keyspace: %v", err))
 	}
 
-	res := make(map[string]interface{})
+	res := make(map[string]any)
 	err = s.Query("describe keyspace gocql_check_tablets_enabled").MapScan(res)
 	if err != nil {
 		panic(fmt.Errorf("failed to describe keyspace: %v", err))
