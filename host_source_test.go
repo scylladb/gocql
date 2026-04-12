@@ -48,15 +48,15 @@ type systemSchemaTestControl struct {
 	iter *Iter
 }
 
-func (*systemSchemaTestControl) getConn() *connHost                                { return nil }
-func (*systemSchemaTestControl) awaitSchemaAgreement() error                       { return nil }
-func (*systemSchemaTestControl) query(string, ...interface{}) (iter *Iter)         { return nil }
-func (c *systemSchemaTestControl) querySystem(string, ...interface{}) (iter *Iter) { return c.iter }
-func (*systemSchemaTestControl) discoverProtocol([]*HostInfo) (int, error)         { return 0, nil }
-func (*systemSchemaTestControl) connect([]*HostInfo) error                         { return nil }
-func (*systemSchemaTestControl) close()                                            {}
-func (*systemSchemaTestControl) getSession() *Session                              { return nil }
-func (*systemSchemaTestControl) reconnect() error                                  { return nil }
+func (*systemSchemaTestControl) getConn() *connHost                        { return nil }
+func (*systemSchemaTestControl) awaitSchemaAgreement() error               { return nil }
+func (*systemSchemaTestControl) query(string, ...any) (iter *Iter)         { return nil }
+func (c *systemSchemaTestControl) querySystem(string, ...any) (iter *Iter) { return c.iter }
+func (*systemSchemaTestControl) discoverProtocol([]*HostInfo) (int, error) { return 0, nil }
+func (*systemSchemaTestControl) connect([]*HostInfo) error                 { return nil }
+func (*systemSchemaTestControl) close()                                    {}
+func (*systemSchemaTestControl) getSession() *Session                      { return nil }
+func (*systemSchemaTestControl) reconnect() error                          { return nil }
 
 func TestUnmarshalCassVersion(t *testing.T) {
 	t.Parallel()
@@ -205,7 +205,7 @@ func TestCheckSystemSchemaClosesIter(t *testing.T) {
 func TestHostInfoFromIterClosesIter(t *testing.T) {
 	t.Parallel()
 
-	row := []interface{}{
+	row := []any{
 		"local",
 		"COMPLETED",
 		net.IPv4(192, 168, 100, 12),

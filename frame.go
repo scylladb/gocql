@@ -52,12 +52,12 @@ type unsetColumn struct{}
 var UnsetValue = unsetColumn{}
 
 type namedValue struct {
-	value interface{}
+	value any
 	name  string
 }
 
 // NamedValue produce a value which will bind to the named parameter in a query
-func NamedValue(name string, value interface{}) interface{} {
+func NamedValue(name string, value any) any {
 	return &namedValue{
 		name:  name,
 		value: value,

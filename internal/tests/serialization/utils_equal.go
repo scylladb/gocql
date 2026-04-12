@@ -19,7 +19,7 @@ func equalData(in1, in2 []byte) bool {
 	return bytes.Equal(in1, in2)
 }
 
-func equalVals(in1, in2 interface{}) bool {
+func equalVals(in1, in2 any) bool {
 	rin1 := reflect.ValueOf(in1)
 	rin2 := reflect.ValueOf(in2)
 	if rin1.Kind() != rin2.Kind() {

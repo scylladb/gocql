@@ -25,17 +25,17 @@ func (f clientRoutesResolverFunc) Resolve(endpoint ResolvedClientRoute) ([]net.I
 
 type fakeControlConn struct {
 	statement string
-	values    []interface{}
+	values    []any
 }
 
 func (f *fakeControlConn) getConn() *connHost          { return nil }
 func (f *fakeControlConn) awaitSchemaAgreement() error { return nil }
-func (f *fakeControlConn) query(statement string, values ...interface{}) *Iter {
+func (f *fakeControlConn) query(statement string, values ...any) *Iter {
 	f.statement = statement
 	f.values = values
 	return &Iter{}
 }
-func (f *fakeControlConn) querySystem(statement string, values ...interface{}) *Iter {
+func (f *fakeControlConn) querySystem(statement string, values ...any) *Iter {
 	return &Iter{}
 }
 func (f *fakeControlConn) discoverProtocol(hosts []*HostInfo) (int, error) { return 0, nil }
@@ -476,7 +476,7 @@ func TestGetHostPortMappingFromClusterQuery(t *testing.T) {
 		connectionIDs []string
 		hostIDs       []string
 		expectedStmt  string
-		expectedVals  []interface{}
+		expectedVals  []any
 	}{
 		{
 			name:         "all",
@@ -486,20 +486,20 @@ func TestGetHostPortMappingFromClusterQuery(t *testing.T) {
 			name:          "connections-only",
 			connectionIDs: []string{"c1", "c2"},
 			expectedStmt:  "select connection_id, host_id, address, port, tls_port from system.client_routes where connection_id in (?,?) allow filtering",
-			expectedVals:  []interface{}{"c1", "c2"},
+			expectedVals:  []any{"c1", "c2"},
 		},
 		{
 			name:         "hosts-only",
 			hostIDs:      []string{"h1"},
 			expectedStmt: "select connection_id, host_id, address, port, tls_port from system.client_routes where host_id in (?) allow filtering",
-			expectedVals: []interface{}{"h1"},
+			expectedVals: []any{"h1"},
 		},
 		{
 			name:          "connections-and-hosts",
 			connectionIDs: []string{"c1"},
 			hostIDs:       []string{"h1", "h2"},
 			expectedStmt:  "select connection_id, host_id, address, port, tls_port from system.client_routes where connection_id in (?) and host_id in (?,?)",
-			expectedVals:  []interface{}{"c1", "h1", "h2"},
+			expectedVals:  []any{"c1", "h1", "h2"},
 		},
 		{
 			name:          "empty-slices",

@@ -638,7 +638,7 @@ func checkSystemSchema(control controlConnection) (bool, error) {
 
 // Given a map that represents a row from either system.local or system.peers
 // return as much information as we can in *HostInfo
-func hostInfoFromMap(row map[string]interface{}, defaultPort int) (*HostInfo, error) {
+func hostInfoFromMap(row map[string]any, defaultPort int) (*HostInfo, error) {
 	const assertErrorMsg = "Assertion failed for %s"
 	var ok bool
 

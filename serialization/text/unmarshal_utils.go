@@ -5,7 +5,7 @@ import (
 	"reflect"
 )
 
-func errNilReference(v interface{}) error {
+func errNilReference(v any) error {
 	return fmt.Errorf("failed to unmarshal text: can not unmarshal into nil reference(%T)(%[1]v)", v)
 }
 
@@ -49,7 +49,7 @@ func DecBytesR(p []byte, v **[]byte) error {
 	return nil
 }
 
-func DecInterface(p []byte, v *interface{}) error {
+func DecInterface(p []byte, v *any) error {
 	if v == nil {
 		return errNilReference(v)
 	}

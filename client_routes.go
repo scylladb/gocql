@@ -715,7 +715,7 @@ func getHostPortMappingFromCluster(c controlConnection, table string, connection
 	var res UnresolvedClientRouteList
 
 	stmt := []string{fmt.Sprintf("select connection_id, host_id, address, port, tls_port from %s", table)}
-	var bounds []interface{}
+	var bounds []any
 	if len(connectionIDs) != 0 {
 		var inClause []string
 		for _, connectionID := range connectionIDs {

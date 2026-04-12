@@ -340,7 +340,7 @@ func generateSerialNumber() (*big.Int, error) {
 	return serialNumber, nil
 }
 
-func generateSelfSignedX509Certificate(cn string, extKeyUsage []x509.ExtKeyUsage, dnsNames []string, pub, priv interface{}) (*x509.Certificate, error) {
+func generateSelfSignedX509Certificate(cn string, extKeyUsage []x509.ExtKeyUsage, dnsNames []string, pub, priv any) (*x509.Certificate, error) {
 	now := time.Now()
 
 	serialNumber, err := generateSerialNumber()

@@ -12,11 +12,11 @@ import (
 // NegativeUnmarshalSet is a tool for unmarshal funcs testing for cases when the function should an error.
 type NegativeUnmarshalSet struct {
 	Data        []byte
-	Values      []interface{}
+	Values      []any
 	BrokenTypes []reflect.Type
 }
 
-func (s NegativeUnmarshalSet) Run(name string, t *testing.T, unmarshal func([]byte, interface{}) error) {
+func (s NegativeUnmarshalSet) Run(name string, t *testing.T, unmarshal func([]byte, any) error) {
 	if name == "" {
 		t.Fatal("name should be provided")
 	}
@@ -43,7 +43,7 @@ func (s NegativeUnmarshalSet) Run(name string, t *testing.T, unmarshal func([]by
 	})
 }
 
-func (s NegativeUnmarshalSet) run(name string, t *testing.T, f func([]byte, interface{}) error, val, unmarshalIn interface{}) {
+func (s NegativeUnmarshalSet) run(name string, t *testing.T, f func([]byte, any) error, val, unmarshalIn any) {
 	t.Run(name, func(t *testing.T) {
 		err := func() (err error) {
 			defer func() {

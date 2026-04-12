@@ -168,7 +168,7 @@ type ConnInterface interface {
 	exec(ctx context.Context, req frameBuilder, tracer Tracer, requestTimeout time.Duration) (*framer, error)
 	awaitSchemaAgreement(ctx context.Context) error
 	executeQuery(ctx context.Context, qry *Query) *Iter
-	querySystem(ctx context.Context, query string, values ...interface{}) *Iter
+	querySystem(ctx context.Context, query string, values ...any) *Iter
 	getIsSchemaV2() bool
 	setSchemaV2(s bool)
 	getScyllaSupported() ScyllaConnectionFeatures
@@ -994,7 +994,7 @@ type callReq struct {
 }
 
 var callReqPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return &callReq{
 			resp: make(chan callResp),
 		}
@@ -1606,7 +1606,7 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer,
 	}
 }
 
-func marshalQueryValue(typ TypeInfo, value interface{}, dst *queryValues) error {
+func marshalQueryValue(typ TypeInfo, value any, dst *queryValues) error {
 	if named, ok := value.(*namedValue); ok {
 		dst.name = named.name
 		value = named.value
@@ -1876,7 +1876,7 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 				return &Iter{err: err}
 			}
 
-			var values []interface{}
+			var values []any
 			if entry.binding == nil {
 				values = entry.Args
 			} else {
@@ -1968,7 +1968,7 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 	}
 }
 
-func (c *Conn) querySystem(ctx context.Context, query string, values ...interface{}) *Iter {
+func (c *Conn) querySystem(ctx context.Context, query string, values ...any) *Iter {
 	q := c.session.Query(query+c.usingTimeoutClause, values...).Consistency(One).Trace(nil)
 	q.skipPrepare = true
 	q.disableSkipMetadata = true
@@ -2143,7 +2143,7 @@ func unmarshalTabletHint(hint []byte, v uint8, keyspace, table string) (*tablets
 					}},
 			},
 		},
-	}, hint, []interface{}{&tabletBuilder.FirstToken, &tabletBuilder.LastToken, &tabletBuilder.Replicas})
+	}, hint, []any{&tabletBuilder.FirstToken, &tabletBuilder.LastToken, &tabletBuilder.Replicas})
 	if err != nil {
 		return nil, err
 	}

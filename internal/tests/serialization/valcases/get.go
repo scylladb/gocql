@@ -19,7 +19,7 @@ type SimpleTypeCase struct {
 }
 
 type LangCase struct {
-	Value     interface{}
+	Value     any
 	LangType  string
 	ErrInsert bool
 	ErrSelect bool
@@ -31,7 +31,7 @@ func GetSimple() SimpleTypes {
 	return simpleTypesCases
 }
 
-func nilRef(in interface{}) interface{} {
+func nilRef(in any) any {
 	out := reflect.NewAt(reflect.TypeOf(in), nil).Interface()
 	return out
 }

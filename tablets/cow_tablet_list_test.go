@@ -1580,7 +1580,7 @@ func TestCowTabletListEdgeCases(t *testing.T) {
 			TableName:    "tb",
 			FirstToken:   100,
 			LastToken:    -100,
-			Replicas:     [][]interface{}{{hostID.String(), 0}},
+			Replicas:     [][]any{{hostID.String(), 0}},
 		}
 		_, err := builder.Build()
 		if err == nil {

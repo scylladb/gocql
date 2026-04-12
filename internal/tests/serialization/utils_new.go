@@ -4,12 +4,12 @@ import (
 	"reflect"
 )
 
-func newRef(in interface{}) interface{} {
+func newRef(in any) any {
 	out := reflect.New(reflect.TypeOf(in)).Interface()
 	return out
 }
 
-func newRefToZero(in interface{}) interface{} {
+func newRefToZero(in any) any {
 	rv := reflect.ValueOf(in)
 	nw := reflect.New(rv.Type().Elem())
 	out := reflect.New(rv.Type())

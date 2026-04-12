@@ -48,11 +48,11 @@ import "container/list"
 //
 // This cache has been forked from github.com/golang/groupcache/lru and
 // generalized with a comparable type parameter to avoid the allocations
-// caused by wrapping keys in interface{}.
+// caused by wrapping keys in any.
 type Cache[K comparable] struct {
 	// OnEvicted optionally specifies a callback function to be
 	// executed when an entry is purged from the cache.
-	OnEvicted func(key K, value interface{})
+	OnEvicted func(key K, value any)
 	ll        *list.List
 	cache     map[K]*list.Element
 	// MaxEntries is the maximum number of cache entries before
@@ -61,7 +61,7 @@ type Cache[K comparable] struct {
 }
 
 type entry[K comparable] struct {
-	value interface{}
+	value any
 	key   K
 }
 
@@ -77,7 +77,7 @@ func New[K comparable](maxEntries int) *Cache[K] {
 }
 
 // Add adds a value to the cache.
-func (c *Cache[K]) Add(key K, value interface{}) {
+func (c *Cache[K]) Add(key K, value any) {
 	if c.cache == nil {
 		c.cache = make(map[K]*list.Element)
 		c.ll = list.New()
@@ -95,7 +95,7 @@ func (c *Cache[K]) Add(key K, value interface{}) {
 }
 
 // Get looks up a key's value from the cache.
-func (c *Cache[K]) Get(key K) (value interface{}, ok bool) {
+func (c *Cache[K]) Get(key K) (value any, ok bool) {
 	if c.cache == nil {
 		return
 	}

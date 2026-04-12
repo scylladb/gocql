@@ -9,11 +9,11 @@ import (
 
 // NegativeMarshalSet is a tool for marshal funcs testing for cases when the function should an error.
 type NegativeMarshalSet struct {
-	Values      []interface{}
+	Values      []any
 	BrokenTypes []reflect.Type
 }
 
-func (s NegativeMarshalSet) Run(name string, t *testing.T, marshal func(interface{}) ([]byte, error)) {
+func (s NegativeMarshalSet) Run(name string, t *testing.T, marshal func(any) ([]byte, error)) {
 	if name == "" {
 		t.Fatal("name should be provided")
 	}

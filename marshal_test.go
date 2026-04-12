@@ -51,7 +51,7 @@ type AliasUint64 uint64
 var marshalTests = []struct {
 	Info           TypeInfo
 	Data           []byte
-	Value          interface{}
+	Value          any
 	MarshalError   error
 	UnmarshalError error
 }{
@@ -73,7 +73,7 @@ var marshalTests = []struct {
 var unmarshalTests = []struct {
 	Info           TypeInfo
 	Data           []byte
-	Value          interface{}
+	Value          any
 	UnmarshalError error
 }{
 	{
@@ -224,7 +224,7 @@ func TestMarshalList(t *testing.T) {
 		if unmarshalErr := Unmarshal(testCases[i].typeInfo, listData, &outputList); nil != unmarshalErr {
 			t.Error(unmarshalErr)
 		}
-		resultList := []interface{}{}
+		resultList := []any{}
 		for i := range outputList {
 			if outputList[i] != nil {
 				resultList = append(resultList, *outputList[i])
@@ -333,16 +333,16 @@ func TestMarshalTuple(t *testing.T) {
 	testCases := []struct {
 		name       string
 		expected   []byte
-		value      interface{}
-		checkValue interface{}
-		check      func(*testing.T, interface{})
+		value      any
+		checkValue any
+		check      func(*testing.T, any)
 	}{
 		{
 			name:       "interface-slice:two-strings",
 			expected:   []byte("\x00\x00\x00\x03foo\x00\x00\x00\x03bar"),
-			value:      []interface{}{"foo", "bar"},
-			checkValue: []interface{}{&s1, &s2},
-			check: func(t *testing.T, v interface{}) {
+			value:      []any{"foo", "bar"},
+			checkValue: []any{&s1, &s2},
+			check: func(t *testing.T, v any) {
 				checkString(t, "foo", *s1)
 				checkString(t, "bar", *s2)
 			},
@@ -350,9 +350,9 @@ func TestMarshalTuple(t *testing.T) {
 		{
 			name:       "interface-slice:one-string-one-nil-string",
 			expected:   []byte("\x00\x00\x00\x03foo\xff\xff\xff\xff"),
-			value:      []interface{}{"foo", nil},
-			checkValue: []interface{}{&s1, &s2},
-			check: func(t *testing.T, v interface{}) {
+			value:      []any{"foo", nil},
+			checkValue: []any{&s1, &s2},
+			check: func(t *testing.T, v any) {
 				checkString(t, "foo", *s1)
 				if s2 != nil {
 					t.Errorf("expected string to be nil, got %v", *s2)
@@ -367,7 +367,7 @@ func TestMarshalTuple(t *testing.T) {
 				B: stringToPtr("bar"),
 			},
 			checkValue: &tupleStruct{},
-			check: func(t *testing.T, v interface{}) {
+			check: func(t *testing.T, v any) {
 				got := v.(*tupleStruct)
 				if got.A != "foo" {
 					t.Errorf("expected A string to be %v, got %v", "foo", got.A)
@@ -385,7 +385,7 @@ func TestMarshalTuple(t *testing.T) {
 			expected:   []byte("\x00\x00\x00\x03foo\xff\xff\xff\xff"),
 			value:      tupleStruct{A: "foo", B: nil},
 			checkValue: &tupleStruct{},
-			check: func(t *testing.T, v interface{}) {
+			check: func(t *testing.T, v any) {
 				got := v.(*tupleStruct)
 				if got.A != "foo" {
 					t.Errorf("expected A string to be %v, got %v", "foo", got.A)
@@ -403,7 +403,7 @@ func TestMarshalTuple(t *testing.T) {
 				stringToPtr("bar"),
 			},
 			checkValue: &[2]*string{},
-			check: func(t *testing.T, v interface{}) {
+			check: func(t *testing.T, v any) {
 				got := v.(*[2]*string)
 				checkString(t, "foo", *(got[0]))
 				checkString(t, "bar", *(got[1]))
@@ -417,7 +417,7 @@ func TestMarshalTuple(t *testing.T) {
 				nil,
 			},
 			checkValue: &[2]*string{},
-			check: func(t *testing.T, v interface{}) {
+			check: func(t *testing.T, v any) {
 				got := v.(*[2]*string)
 				checkString(t, "foo", *(got[0]))
 				if got[1] != nil {
@@ -543,7 +543,7 @@ func TestMarshalUDTMap(t *testing.T) {
 	}
 
 	t.Run("partially bound", func(t *testing.T) {
-		value := map[string]interface{}{
+		value := map[string]any{
 			"y": 2,
 			"z": 3,
 		}
@@ -558,7 +558,7 @@ func TestMarshalUDTMap(t *testing.T) {
 		}
 	})
 	t.Run("partially bound from the beginning", func(t *testing.T) {
-		value := map[string]interface{}{
+		value := map[string]any{
 			"x": 1,
 			"y": 2,
 		}
@@ -573,7 +573,7 @@ func TestMarshalUDTMap(t *testing.T) {
 		}
 	})
 	t.Run("fully bound", func(t *testing.T) {
-		value := map[string]interface{}{
+		value := map[string]any{
 			"x": 1,
 			"y": 2,
 			"z": 3,
@@ -857,7 +857,7 @@ func TestUnmarshalUDT(t *testing.T) {
 		bytesWithLength([]byte("Hello")),    // first
 		bytesWithLength([]byte("\x00\x2a")), // second
 	)
-	value := map[string]interface{}{}
+	value := map[string]any{}
 	expectedErr := unmarshalErrorf("can not unmarshal into non-pointer map[string]interface {}")
 
 	if err := Unmarshal(info, data, value); err != expectedErr {
@@ -866,7 +866,7 @@ func TestUnmarshalUDT(t *testing.T) {
 	}
 }
 
-// TestUnmarshalListIntoInterface tests that lists can be unmarshaled into *interface{}
+// TestUnmarshalListIntoInterface tests that lists can be unmarshaled into *any
 // This is used by MapScan and SliceMap functions.
 func TestUnmarshalListIntoInterface(t *testing.T) {
 	t.Parallel()
@@ -887,7 +887,7 @@ func TestUnmarshalListIntoInterface(t *testing.T) {
 		Elem:       NativeType{proto: protoVersion4, typ: TypeInt},
 	}
 
-	var result interface{}
+	var result any
 	if err := Unmarshal(info, data, &result); err != nil {
 		t.Fatalf("Unmarshal failed: %v", err)
 	}
@@ -908,7 +908,7 @@ func TestUnmarshalListIntoInterface(t *testing.T) {
 	}
 }
 
-// TestUnmarshalMapIntoInterface tests that maps can be unmarshaled into *interface{}
+// TestUnmarshalMapIntoInterface tests that maps can be unmarshaled into *any
 // This is used by MapScan and SliceMap functions.
 func TestUnmarshalMapIntoInterface(t *testing.T) {
 	t.Parallel()
@@ -933,7 +933,7 @@ func TestUnmarshalMapIntoInterface(t *testing.T) {
 		Elem:       NativeType{proto: protoVersion4, typ: TypeInt},
 	}
 
-	var result interface{}
+	var result any
 	if err := Unmarshal(info, data, &result); err != nil {
 		t.Fatalf("Unmarshal failed: %v", err)
 	}
@@ -955,7 +955,7 @@ func TestUnmarshalMapIntoInterface(t *testing.T) {
 }
 
 // TestUnmarshalListWithVectorIntoInterface tests that lists containing vectors
-// can be unmarshaled into *interface{} (issue #692)
+// can be unmarshaled into *any (issue #692)
 func TestUnmarshalListWithVectorIntoInterface(t *testing.T) {
 	t.Parallel()
 
@@ -995,7 +995,7 @@ func TestUnmarshalListWithVectorIntoInterface(t *testing.T) {
 		},
 	}
 
-	var result interface{}
+	var result any
 	if err := Unmarshal(info, data, &result); err != nil {
 		t.Fatalf("Unmarshal failed: %v", err)
 	}
@@ -1093,7 +1093,7 @@ func TestUnmarshalVectorZeroDimensions(t *testing.T) {
 	})
 
 	t.Run("empty_data_into_interface", func(t *testing.T) {
-		var result interface{}
+		var result any
 		if err := unmarshalVector(info, []byte{}, &result); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}

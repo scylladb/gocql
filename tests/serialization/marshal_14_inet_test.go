@@ -20,8 +20,8 @@ func TestMarshalsInet(t *testing.T) {
 
 	type testSuite struct {
 		name      string
-		marshal   func(interface{}) ([]byte, error)
-		unmarshal func(bytes []byte, i interface{}) error
+		marshal   func(any) ([]byte, error)
+		unmarshal func(bytes []byte, i any) error
 	}
 
 	testSuites := [2]testSuite{
@@ -32,10 +32,10 @@ func TestMarshalsInet(t *testing.T) {
 		},
 		{
 			name: "glob",
-			marshal: func(i interface{}) ([]byte, error) {
+			marshal: func(i any) ([]byte, error) {
 				return gocql.Marshal(tType, i)
 			},
-			unmarshal: func(bytes []byte, i interface{}) error {
+			unmarshal: func(bytes []byte, i any) error {
 				return gocql.Unmarshal(tType, bytes, i)
 			},
 		},

@@ -13,7 +13,7 @@ import (
 const printLimit = 100
 
 // stringValue returns (value_type)(value) in the human-readable format.
-func stringValue(in interface{}) string {
+func stringValue(in any) string {
 	valStr := stringVal(in)
 	if len(valStr) > printLimit {
 		return fmt.Sprintf("(%T)", in)
@@ -31,7 +31,7 @@ func stringData(p []byte) string {
 	return fmt.Sprintf("[%x]", p)
 }
 
-func stringVal(in interface{}) string {
+func stringVal(in any) string {
 	switch i := in.(type) {
 	case string:
 		return i

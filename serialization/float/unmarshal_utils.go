@@ -8,7 +8,7 @@ import (
 
 var errWrongDataLen = fmt.Errorf("failed to unmarshal float: the length of the data should be 0 or 4")
 
-func errNilReference(v interface{}) error {
+func errNilReference(v any) error {
 	return fmt.Errorf("failed to unmarshal float: can not unmarshal into nil reference(%T)(%[1]v)", v)
 }
 

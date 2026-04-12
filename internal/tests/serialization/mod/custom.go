@@ -38,7 +38,7 @@ type (
 	SliceInt32C  []Int32
 	SliceInt32CR []*Int32
 
-	SliceAny []interface{}
+	SliceAny []any
 
 	Arr1Int16   [1]int16
 	Arr1Int16R  [1]*int16
@@ -50,7 +50,7 @@ type (
 	Arr1Int32C  [1]Int32
 	Arr1Int32CR [1]*Int32
 
-	ArrAny [1]interface{}
+	ArrAny [1]any
 
 	MapInt16   map[int16]int16
 	MapInt16R  map[int16]*int16
@@ -62,11 +62,11 @@ type (
 	MapInt32C  map[Int32]Int32
 	MapInt32CR map[Int32]*Int32
 
-	MapUDT map[string]interface{}
+	MapUDT map[string]any
 )
 
-var CustomType Mod = func(vals ...interface{}) []interface{} {
-	out := make([]interface{}, 0)
+var CustomType Mod = func(vals ...any) []any {
+	out := make([]any, 0)
 	for i := range vals {
 		if vals[i] == nil {
 			continue
@@ -79,7 +79,7 @@ var CustomType Mod = func(vals ...interface{}) []interface{} {
 	return out
 }
 
-func customType(i interface{}) interface{} {
+func customType(i any) any {
 	switch v := i.(type) {
 	case bool:
 		return Bool(v)
@@ -171,18 +171,18 @@ func customType(i interface{}) interface{} {
 		return MapInt32C(v)
 	case map[Int32]*Int32:
 		return MapInt32CR(v)
-	case map[string]interface{}:
+	case map[string]any:
 		return MapUDT(v)
-	case []interface{}:
+	case []any:
 		return SliceAny(v)
-	case [1]interface{}:
+	case [1]any:
 		return ArrAny(v)
 	default:
 		return intoCustomR(i)
 	}
 }
 
-func intoCustomR(i interface{}) interface{} {
+func intoCustomR(i any) any {
 	switch v := i.(type) {
 	case *bool:
 		return (*Bool)(v)
@@ -266,11 +266,11 @@ func intoCustomR(i interface{}) interface{} {
 		return (*MapInt32C)(v)
 	case *map[Int32]*Int32:
 		return (*MapInt32CR)(v)
-	case *map[string]interface{}:
+	case *map[string]any:
 		return (*MapUDT)(v)
-	case *[]interface{}:
+	case *[]any:
 		return (*SliceAny)(v)
-	case *[1]interface{}:
+	case *[1]any:
 		return (*ArrAny)(v)
 	default:
 		return nil

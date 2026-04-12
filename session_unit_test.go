@@ -526,9 +526,9 @@ func (*pagingTestConn) awaitSchemaAgreement(context.Context) error { return nil 
 func (c *pagingTestConn) executeQuery(ctx context.Context, qry *Query) *Iter {
 	return c.executeQueryFunc(ctx, qry)
 }
-func (*pagingTestConn) querySystem(context.Context, string, ...interface{}) *Iter { return nil }
-func (*pagingTestConn) getIsSchemaV2() bool                                       { return false }
-func (*pagingTestConn) setSchemaV2(bool)                                          {}
+func (*pagingTestConn) querySystem(context.Context, string, ...any) *Iter { return nil }
+func (*pagingTestConn) getIsSchemaV2() bool                               { return false }
+func (*pagingTestConn) setSchemaV2(bool)                                  {}
 func (*pagingTestConn) getScyllaSupported() ScyllaConnectionFeatures {
 	return ScyllaConnectionFeatures{}
 }

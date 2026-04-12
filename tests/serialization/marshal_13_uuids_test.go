@@ -23,8 +23,8 @@ func TestMarshalUUIDs(t *testing.T) {
 
 	type testSuite struct {
 		name      string
-		marshal   func(interface{}) ([]byte, error)
-		unmarshal func(bytes []byte, i interface{}) error
+		marshal   func(any) ([]byte, error)
+		unmarshal func(bytes []byte, i any) error
 	}
 
 	testSuites := [4]testSuite{
@@ -35,10 +35,10 @@ func TestMarshalUUIDs(t *testing.T) {
 		},
 		{
 			name: "glob.uuid",
-			marshal: func(i interface{}) ([]byte, error) {
+			marshal: func(i any) ([]byte, error) {
 				return gocql.Marshal(tTypes[0], i)
 			},
-			unmarshal: func(bytes []byte, i interface{}) error {
+			unmarshal: func(bytes []byte, i any) error {
 				return gocql.Unmarshal(tTypes[0], bytes, i)
 			},
 		},
@@ -49,8 +49,8 @@ func TestMarshalUUIDs(t *testing.T) {
 		},
 		{
 			name:      "glob.timeuuid",
-			marshal:   func(i interface{}) ([]byte, error) { return gocql.Marshal(tTypes[1], i) },
-			unmarshal: func(bytes []byte, i interface{}) error { return gocql.Unmarshal(tTypes[1], bytes, i) },
+			marshal:   func(i any) ([]byte, error) { return gocql.Marshal(tTypes[1], i) },
+			unmarshal: func(bytes []byte, i any) error { return gocql.Unmarshal(tTypes[1], bytes, i) },
 		},
 	}
 
@@ -128,8 +128,8 @@ func TestMarshalTimeUUID(t *testing.T) {
 
 	type testSuite struct {
 		name      string
-		marshal   func(interface{}) ([]byte, error)
-		unmarshal func(bytes []byte, i interface{}) error
+		marshal   func(any) ([]byte, error)
+		unmarshal func(bytes []byte, i any) error
 	}
 
 	testSuites := [4]testSuite{
@@ -140,8 +140,8 @@ func TestMarshalTimeUUID(t *testing.T) {
 		},
 		{
 			name:      "glob.timeuuid",
-			marshal:   func(i interface{}) ([]byte, error) { return gocql.Marshal(tType, i) },
-			unmarshal: func(bytes []byte, i interface{}) error { return gocql.Unmarshal(tType, bytes, i) },
+			marshal:   func(i any) ([]byte, error) { return gocql.Marshal(tType, i) },
+			unmarshal: func(bytes []byte, i any) error { return gocql.Unmarshal(tType, bytes, i) },
 		},
 	}
 

@@ -66,7 +66,7 @@ func (r *ringDescriber) getClusterPeerInfo(localHost *HostInfo, c ConnInterface)
 	return getPeersFromQuerySystemPeers(rows, r.cfg.Port, r.logger)
 }
 
-func getPeersFromQuerySystemPeers(querySystemPeerRows []map[string]interface{}, defaultPort int, logger StdLogger) ([]*HostInfo, error) {
+func getPeersFromQuerySystemPeers(querySystemPeerRows []map[string]any, defaultPort int, logger StdLogger) ([]*HostInfo, error) {
 	var peers []*HostInfo
 
 	for _, row := range querySystemPeerRows {

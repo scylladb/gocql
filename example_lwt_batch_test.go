@@ -65,23 +65,23 @@ func ExampleSession_MapExecuteBatchCAS() {
 		b := session.Batch(gocql.LoggedBatch)
 		b.Entries = append(b.Entries, gocql.BatchEntry{
 			Stmt: "UPDATE my_lwt_batch_table SET value=? WHERE pk=? AND ck=? IF version=?",
-			Args: []interface{}{"b", "pk1", "ck1", 1},
+			Args: []any{"b", "pk1", "ck1", 1},
 		})
 		b.Entries = append(b.Entries, gocql.BatchEntry{
 			Stmt: "UPDATE my_lwt_batch_table SET value=? WHERE pk=? AND ck=? IF version=?",
-			Args: []interface{}{"B", "pk1", "ck2", ck2Version},
+			Args: []any{"B", "pk1", "ck2", ck2Version},
 		})
-		m := make(map[string]interface{})
+		m := make(map[string]any)
 		applied, iter, err := session.MapExecuteBatchCAS(b.WithContext(ctx), m)
 		if err != nil {
 			log.Fatal(err)
 		}
 		fmt.Println(applied, m)
 
-		m = make(map[string]interface{})
+		m = make(map[string]any)
 		for iter.MapScan(m) {
 			fmt.Println(m)
-			m = make(map[string]interface{})
+			m = make(map[string]any)
 		}
 
 		if err := iter.Close(); err != nil {

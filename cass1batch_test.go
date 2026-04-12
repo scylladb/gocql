@@ -49,7 +49,7 @@ func TestProto1BatchInsert(t *testing.T) {
 	end := "APPLY BATCH"
 	query := fmt.Sprintf("INSERT INTO %s (id) VALUES (?)", table)
 	fullQuery := strings.Join([]string{begin, query, end}, "\n")
-	args := []interface{}{5}
+	args := []any{5}
 	if err := session.Query(fullQuery, args...).Consistency(Quorum).Exec(); err != nil {
 		t.Fatal(err)
 	}

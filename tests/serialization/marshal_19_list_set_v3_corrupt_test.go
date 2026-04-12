@@ -38,8 +38,8 @@ func TestMarshalSetListV3Corrupt(t *testing.T) {
 	refModInt32 := func(v mod.Int32) *mod.Int32 { return &v }
 
 	for _, tType := range tTypes {
-		marshal := func(i interface{}) ([]byte, error) { return gocql.Marshal(tType, i) }
-		unmarshal := func(bytes []byte, i interface{}) error {
+		marshal := func(i any) ([]byte, error) { return gocql.Marshal(tType, i) }
+		unmarshal := func(bytes []byte, i any) error {
 			return gocql.Unmarshal(tType, bytes, i)
 		}
 

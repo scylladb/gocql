@@ -192,7 +192,7 @@ func TestTupleMapScan(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m := make(map[string]interface{})
+	m := make(map[string]any)
 	err = session.Query(fmt.Sprintf(`SELECT * FROM %s`, table)).MapScan(m)
 	if err != nil {
 		t.Fatal(err)
@@ -225,7 +225,7 @@ func TestTupleMapScanNil(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m := make(map[string]interface{})
+	m := make(map[string]any)
 	err = session.Query(fmt.Sprintf(`SELECT * FROM %s`, table)).MapScan(m)
 	if err != nil {
 		t.Fatal(err)
@@ -258,7 +258,7 @@ func TestTupleMapScanNotSet(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m := make(map[string]interface{})
+	m := make(map[string]any)
 	err = session.Query(fmt.Sprintf(`SELECT * FROM %s`, table)).MapScan(m)
 	if err != nil {
 		t.Fatal(err)
@@ -336,10 +336,10 @@ func TestTuple_NestedCollection(t *testing.T) {
 
 	tests := []struct {
 		name string
-		val  interface{}
+		val  any
 	}{
-		{name: "slice", val: [][]interface{}{{1, "2"}, {3, "4"}}},
-		{name: "array", val: [][2]interface{}{{1, "2"}, {3, "4"}}},
+		{name: "slice", val: [][]any{{1, "2"}, {3, "4"}}},
+		{name: "array", val: [][2]any{{1, "2"}, {3, "4"}}},
 		{name: "struct", val: []typ{{1, "2"}, {3, "4"}}},
 	}
 
@@ -395,7 +395,7 @@ func TestTuple_NullableNestedCollection(t *testing.T) {
 
 	tests := []struct {
 		name string
-		val  interface{}
+		val  any
 	}{
 		{name: "slice", val: [][]*string{{ptrStr("1"), nil}, {nil, ptrStr("2")}, {ptrStr("3"), ptrStr("")}}},
 		{name: "array", val: [][2]*string{{ptrStr("1"), nil}, {nil, ptrStr("2")}, {ptrStr("3"), ptrStr("")}}},
