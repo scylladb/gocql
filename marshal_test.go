@@ -1248,3 +1248,84 @@ func TestCollectionNewWithErrorConsistentWithGoType(t *testing.T) {
 		}
 	}
 }
+
+// TestVectorNewWithErrorConsistentWithGoType verifies that VectorType.NewWithError()
+// returns the same underlying Go type as the canonical goType() mapping for every
+// supported element type. This guards against the fast-path and fallback drifting apart.
+func TestVectorNewWithErrorConsistentWithGoType(t *testing.T) {
+	elemTypes := []Type{
+		TypeFloat, TypeDouble,
+		TypeInt, TypeBigInt, TypeCounter,
+		TypeSmallInt, TypeTinyInt,
+		TypeBoolean,
+		TypeUUID, TypeTimeUUID,
+		TypeVarchar, TypeAscii, TypeText, TypeInet,
+		TypeBlob,
+		TypeTimestamp, TypeDate,
+		TypeTime,
+		TypeDecimal,
+		TypeVarint,
+		TypeDuration,
+	}
+
+	for _, elemTyp := range elemTypes {
+		vt := VectorType{
+			NativeType: NewCustomType(protoVersion4, TypeCustom, apacheCassandraTypePrefix+"VectorType"),
+			SubType:    NativeType{proto: protoVersion4, typ: elemTyp},
+			Dimensions: 1536,
+		}
+
+		fastVal, err := vt.NewWithError()
+		if err != nil {
+			t.Errorf("VectorType.NewWithError(vector<%s>): unexpected error: %v", elemTyp, err)
+			continue
+		}
+
+		// goType for TypeCustom goes through asVectorType → SubType.NewWithError → reflect.SliceOf.
+		// Build the canonical type the same way goType does.
+		canonicalType, err := goType(vt)
+		if err != nil {
+			t.Errorf("goType(vector<%s>): unexpected error: %v", elemTyp, err)
+			continue
+		}
+
+		fastType := reflect.TypeOf(fastVal)
+		if fastType.Kind() != reflect.Ptr {
+			t.Errorf("VectorType.NewWithError(vector<%s>): expected pointer, got %s", elemTyp, fastType.Kind())
+			continue
+		}
+
+		if fastType.Elem() != canonicalType {
+			t.Errorf("VectorType.NewWithError(vector<%s>) fast-path type %s does not match goType() canonical type %s",
+				elemTyp, fastType.Elem(), canonicalType)
+		}
+	}
+}
+
+// TestVectorNewWithErrorReturnsSlicePointer verifies that the returned value is
+// always a pointer to a slice, regardless of element type.
+func TestVectorNewWithErrorReturnsSlicePointer(t *testing.T) {
+	vt := VectorType{
+		NativeType: NewCustomType(protoVersion4, TypeCustom, apacheCassandraTypePrefix+"VectorType"),
+		SubType:    NativeType{proto: protoVersion4, typ: TypeFloat},
+		Dimensions: 3,
+	}
+
+	val, err := vt.NewWithError()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	rt := reflect.TypeOf(val)
+	if rt.Kind() != reflect.Ptr {
+		t.Fatalf("expected pointer, got %s", rt.Kind())
+	}
+	if rt.Elem().Kind() != reflect.Slice {
+		t.Fatalf("expected pointer to slice, got pointer to %s", rt.Elem().Kind())
+	}
+
+	// Verify the concrete type is *[]float32
+	if _, ok := val.(*[]float32); !ok {
+		t.Fatalf("expected *[]float32, got %T", val)
+	}
+}

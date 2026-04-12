@@ -26,12 +26,14 @@ package gocql
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
 	"math/big"
 	"math/bits"
 	"reflect"
+	"sync"
 	"time"
 	"unsafe"
 
@@ -848,6 +850,30 @@ func marshalVector(info VectorType, value interface{}) ([]byte, error) {
 		return nil, nil
 	}
 
+	// Fast paths for common vector types — avoid reflect entirely.
+	switch info.SubType.Type() {
+	case TypeFloat:
+		if vec, ok := value.([]float32); ok {
+			return marshalVectorFloat32(info.Dimensions, vec)
+		}
+	case TypeDouble:
+		if vec, ok := value.([]float64); ok {
+			return marshalVectorFloat64(info.Dimensions, vec)
+		}
+	case TypeInt:
+		if vec, ok := value.([]int32); ok {
+			return marshalVectorInt32(info.Dimensions, vec)
+		}
+	case TypeBigInt:
+		if vec, ok := value.([]int64); ok {
+			return marshalVectorInt64(info.Dimensions, vec)
+		}
+	case TypeUUID, TypeTimeUUID:
+		if vec, ok := value.([]UUID); ok {
+			return marshalVectorUUID(info.Dimensions, vec)
+		}
+	}
+
 	rv := reflect.ValueOf(value)
 	t := rv.Type()
 	k := t.Kind()
@@ -860,6 +886,11 @@ func marshalVector(info VectorType, value interface{}) ([]byte, error) {
 		n := rv.Len()
 		if n != info.Dimensions {
 			return nil, marshalErrorf("expected vector with %d dimensions, received %d", info.Dimensions, n)
+		}
+		// Zero-dimension vectors encode as a non-nil empty value (not CQL NULL).
+		// bytes.Buffer{}.Bytes() returns nil, so we must special-case this.
+		if n == 0 {
+			return make([]byte, 0), nil
 		}
 
 		isLengthType := isVectorVariableLengthType(info.SubType)
@@ -887,6 +918,30 @@ func marshalVector(info VectorType, value interface{}) ([]byte, error) {
 }
 
 func unmarshalVector(info VectorType, data []byte, value interface{}) error {
+	// Fast paths for common vector types — avoid reflect entirely.
+	switch info.SubType.Type() {
+	case TypeFloat:
+		if dst, ok := value.(*[]float32); ok {
+			return unmarshalVectorFloat32(info.Dimensions, data, dst)
+		}
+	case TypeDouble:
+		if dst, ok := value.(*[]float64); ok {
+			return unmarshalVectorFloat64(info.Dimensions, data, dst)
+		}
+	case TypeInt:
+		if dst, ok := value.(*[]int32); ok {
+			return unmarshalVectorInt32(info.Dimensions, data, dst)
+		}
+	case TypeBigInt:
+		if dst, ok := value.(*[]int64); ok {
+			return unmarshalVectorInt64(info.Dimensions, data, dst)
+		}
+	case TypeUUID, TypeTimeUUID:
+		if dst, ok := value.(*[]UUID); ok {
+			return unmarshalVectorUUID(info.Dimensions, data, dst)
+		}
+	}
+
 	rv := reflect.ValueOf(value)
 	if rv.Kind() != reflect.Ptr {
 		return unmarshalErrorf("can not unmarshal into non-pointer %T", value)
@@ -931,6 +986,10 @@ func unmarshalVector(info VectorType, data []byte, value interface{}) error {
 				return unmarshalErrorf("unmarshal vector: array of size %d cannot store vector of %d dimensions", rv.Len(), info.Dimensions)
 			}
 		} else {
+			// TODO: reuse existing slice backing array when cap >= info.Dimensions
+			// instead of unconditionally allocating. This would bring the generic path
+			// closer to the fast-path zero-alloc behavior. Can be done independently
+			// since this code predates the fast-path implementation.
 			rv.Set(reflect.MakeSlice(t, info.Dimensions, info.Dimensions))
 			if rv.Kind() == reflect.Interface {
 				rv = rv.Elem()
@@ -969,6 +1028,418 @@ func unmarshalVector(info VectorType, data []byte, value interface{}) error {
 	return unmarshalErrorf("can not unmarshal %s into %T. Accepted types: *slice, *array, *interface{}.", info, value)
 }
 
+// vectorBufPool pools []byte buffers used by vector marshal fast paths.
+// Buffers are returned to the pool by putVectorBuf after the framer copies them.
+//
+// vectorBufPool is used by the marshal fast paths (marshalVectorFloat32 etc.)
+// to allocate temporary byte buffers. After the framer copies the marshalled
+// bytes via writeBytes (append into framer.buf), the caller returns the buffer
+// to the pool via putVectorBuf.
+var vectorBufPool = sync.Pool{}
+
+func getVectorBuf(size int) []byte {
+	if size < 0 {
+		return nil
+	}
+	if size == 0 {
+		return make([]byte, 0)
+	}
+	if v := vectorBufPool.Get(); v != nil {
+		if buf, ok := v.([]byte); ok {
+			if cap(buf) >= size {
+				return buf[:size]
+			}
+			// Undersized buffer: return it so smaller vectors can reuse it.
+			vectorBufPool.Put(buf) //nolint:staticcheck // SA6002: []byte is a value type; boxing cost is acceptable for pool reuse
+		}
+	}
+	return make([]byte, size)
+}
+
+func putVectorBuf(buf []byte) {
+	if buf == nil || cap(buf) > 65536 {
+		return
+	}
+	vectorBufPool.Put(buf) //nolint:staticcheck // SA6002: []byte is a value type; boxing cost is acceptable for pool reuse
+}
+
+// vectorBufPoolSubtype returns true if the given VectorType's SubType uses a
+// marshal fast path that allocates from vectorBufPool via getVectorBuf.
+func vectorBufPoolSubtype(vt VectorType) bool {
+	switch vt.SubType.Type() {
+	case TypeFloat, TypeDouble, TypeInt, TypeBigInt, TypeUUID, TypeTimeUUID:
+		return true
+	default:
+		return false
+	}
+}
+
+// vectorByteSize computes dim * elemBytes and returns an error if the result
+// would overflow int. This guards against corrupt or adversarial schema metadata
+// on 32-bit platforms where int is 32 bits.
+func vectorByteSize(dim, elemBytes int) (int, error) {
+	n := int64(dim) * int64(elemBytes)
+	if n < 0 || n > int64(math.MaxInt) {
+		return 0, fmt.Errorf("vector byte size overflow: %d dimensions * %d bytes/elem", dim, elemBytes)
+	}
+	return int(n), nil
+}
+
+// marshalVectorFloat32 encodes a float32 slice as a contiguous big-endian
+// IEEE 754 vector. Uses a pooled buffer for zero-alloc steady state.
+func marshalVectorFloat32(dim int, vec []float32) ([]byte, error) {
+	if dim < 0 {
+		return nil, marshalErrorf("vector has negative dimensions: %d", dim)
+	}
+	if vec == nil {
+		return nil, nil
+	}
+	if len(vec) != dim {
+		return nil, marshalErrorf("expected vector with %d dimensions, received %d", dim, len(vec))
+	}
+	size, err := vectorByteSize(dim, 4)
+	if err != nil {
+		return nil, marshalErrorf("%v", err)
+	}
+	buf := getVectorBuf(size)
+	if dim == 0 {
+		return buf, nil
+	}
+	_ = buf[dim*4-1] // BCE hint
+	for i, v := range vec {
+		binary.BigEndian.PutUint32(buf[i*4:i*4+4], math.Float32bits(v))
+	}
+	return buf, nil
+}
+
+// marshalVectorFloat64 encodes a float64 slice as a contiguous big-endian
+// IEEE 754 vector. Uses a pooled buffer for zero-alloc steady state.
+func marshalVectorFloat64(dim int, vec []float64) ([]byte, error) {
+	if dim < 0 {
+		return nil, marshalErrorf("vector has negative dimensions: %d", dim)
+	}
+	if vec == nil {
+		return nil, nil
+	}
+	if len(vec) != dim {
+		return nil, marshalErrorf("expected vector with %d dimensions, received %d", dim, len(vec))
+	}
+	size, err := vectorByteSize(dim, 8)
+	if err != nil {
+		return nil, marshalErrorf("%v", err)
+	}
+	buf := getVectorBuf(size)
+	if dim == 0 {
+		return buf, nil
+	}
+	_ = buf[dim*8-1] // BCE hint
+	for i, v := range vec {
+		binary.BigEndian.PutUint64(buf[i*8:i*8+8], math.Float64bits(v))
+	}
+	return buf, nil
+}
+
+// unmarshalVectorFloat32 decodes contiguous big-endian IEEE 754 floats.
+// Reuses the destination slice's backing array when capacity allows (zero-alloc steady state).
+func unmarshalVectorFloat32(dim int, data []byte, dst *[]float32) error {
+	if dim < 0 {
+		return unmarshalErrorf("vector has negative dimensions: %d", dim)
+	}
+	if data == nil {
+		*dst = nil
+		return nil
+	}
+	if dim == 0 {
+		if len(data) > 0 {
+			return unmarshalErrorf("unmarshal vector: %d bytes of data for 0-dimension vector", len(data))
+		}
+		if *dst == nil {
+			*dst = make([]float32, 0)
+		} else {
+			*dst = (*dst)[:0]
+		}
+		return nil
+	}
+	expected, err := vectorByteSize(dim, 4)
+	if err != nil {
+		return unmarshalErrorf("%v", err)
+	}
+	if len(data) != expected {
+		return unmarshalErrorf("unmarshal vector<float, %d>: expected %d bytes, got %d", dim, expected, len(data))
+	}
+	vec := *dst
+	if cap(vec) >= dim {
+		vec = vec[:dim]
+	} else {
+		vec = make([]float32, dim)
+	}
+	_ = data[dim*4-1] // BCE hint: compiler can prove data[i*4:i*4+4] is in-bounds
+	for i := range vec {
+		vec[i] = math.Float32frombits(binary.BigEndian.Uint32(data[i*4 : i*4+4]))
+	}
+	*dst = vec
+	return nil
+}
+
+// unmarshalVectorFloat64 decodes contiguous big-endian IEEE 754 doubles.
+// Reuses the destination slice's backing array when capacity allows (zero-alloc steady state).
+func unmarshalVectorFloat64(dim int, data []byte, dst *[]float64) error {
+	if dim < 0 {
+		return unmarshalErrorf("vector has negative dimensions: %d", dim)
+	}
+	if data == nil {
+		*dst = nil
+		return nil
+	}
+	if dim == 0 {
+		if len(data) > 0 {
+			return unmarshalErrorf("unmarshal vector: %d bytes of data for 0-dimension vector", len(data))
+		}
+		if *dst == nil {
+			*dst = make([]float64, 0)
+		} else {
+			*dst = (*dst)[:0]
+		}
+		return nil
+	}
+	expected, err := vectorByteSize(dim, 8)
+	if err != nil {
+		return unmarshalErrorf("%v", err)
+	}
+	if len(data) != expected {
+		return unmarshalErrorf("unmarshal vector<double, %d>: expected %d bytes, got %d", dim, expected, len(data))
+	}
+	vec := *dst
+	if cap(vec) >= dim {
+		vec = vec[:dim]
+	} else {
+		vec = make([]float64, dim)
+	}
+	_ = data[dim*8-1] // BCE hint: compiler can prove data[i*8:i*8+8] is in-bounds
+	for i := range vec {
+		vec[i] = math.Float64frombits(binary.BigEndian.Uint64(data[i*8 : i*8+8]))
+	}
+	*dst = vec
+	return nil
+}
+
+// marshalVectorInt32 encodes an int32 slice as a contiguous big-endian
+// vector (CQL int = 4 bytes). Uses a pooled buffer for zero-alloc steady state.
+func marshalVectorInt32(dim int, vec []int32) ([]byte, error) {
+	if dim < 0 {
+		return nil, marshalErrorf("vector has negative dimensions: %d", dim)
+	}
+	if vec == nil {
+		return nil, nil
+	}
+	if len(vec) != dim {
+		return nil, marshalErrorf("expected vector with %d dimensions, received %d", dim, len(vec))
+	}
+	size, err := vectorByteSize(dim, 4)
+	if err != nil {
+		return nil, marshalErrorf("%v", err)
+	}
+	buf := getVectorBuf(size)
+	if dim == 0 {
+		return buf, nil
+	}
+	_ = buf[dim*4-1] // BCE hint
+	for i, v := range vec {
+		binary.BigEndian.PutUint32(buf[i*4:i*4+4], uint32(v))
+	}
+	return buf, nil
+}
+
+// marshalVectorInt64 encodes an int64 slice as a contiguous big-endian
+// vector (CQL bigint = 8 bytes). Uses a pooled buffer for zero-alloc steady state.
+func marshalVectorInt64(dim int, vec []int64) ([]byte, error) {
+	if dim < 0 {
+		return nil, marshalErrorf("vector has negative dimensions: %d", dim)
+	}
+	if vec == nil {
+		return nil, nil
+	}
+	if len(vec) != dim {
+		return nil, marshalErrorf("expected vector with %d dimensions, received %d", dim, len(vec))
+	}
+	size, err := vectorByteSize(dim, 8)
+	if err != nil {
+		return nil, marshalErrorf("%v", err)
+	}
+	buf := getVectorBuf(size)
+	if dim == 0 {
+		return buf, nil
+	}
+	_ = buf[dim*8-1] // BCE hint
+	for i, v := range vec {
+		binary.BigEndian.PutUint64(buf[i*8:i*8+8], uint64(v))
+	}
+	return buf, nil
+}
+
+// unmarshalVectorInt32 decodes contiguous big-endian CQL int (4-byte) values.
+// Reuses the destination slice's backing array when capacity allows (zero-alloc steady state).
+func unmarshalVectorInt32(dim int, data []byte, dst *[]int32) error {
+	if dim < 0 {
+		return unmarshalErrorf("vector has negative dimensions: %d", dim)
+	}
+	if data == nil {
+		*dst = nil
+		return nil
+	}
+	if dim == 0 {
+		if len(data) > 0 {
+			return unmarshalErrorf("unmarshal vector: %d bytes of data for 0-dimension vector", len(data))
+		}
+		if *dst == nil {
+			*dst = make([]int32, 0)
+		} else {
+			*dst = (*dst)[:0]
+		}
+		return nil
+	}
+	expected, err := vectorByteSize(dim, 4)
+	if err != nil {
+		return unmarshalErrorf("%v", err)
+	}
+	if len(data) != expected {
+		return unmarshalErrorf("unmarshal vector<int, %d>: expected %d bytes, got %d", dim, expected, len(data))
+	}
+	vec := *dst
+	if cap(vec) >= dim {
+		vec = vec[:dim]
+	} else {
+		vec = make([]int32, dim)
+	}
+	_ = data[dim*4-1] // BCE hint: compiler can prove data[i*4:i*4+4] is in-bounds
+	for i := range vec {
+		vec[i] = int32(binary.BigEndian.Uint32(data[i*4 : i*4+4]))
+	}
+	*dst = vec
+	return nil
+}
+
+// unmarshalVectorInt64 decodes contiguous big-endian CQL bigint (8-byte) values.
+// Reuses the destination slice's backing array when capacity allows (zero-alloc steady state).
+func unmarshalVectorInt64(dim int, data []byte, dst *[]int64) error {
+	if dim < 0 {
+		return unmarshalErrorf("vector has negative dimensions: %d", dim)
+	}
+	if data == nil {
+		*dst = nil
+		return nil
+	}
+	if dim == 0 {
+		if len(data) > 0 {
+			return unmarshalErrorf("unmarshal vector: %d bytes of data for 0-dimension vector", len(data))
+		}
+		if *dst == nil {
+			*dst = make([]int64, 0)
+		} else {
+			*dst = (*dst)[:0]
+		}
+		return nil
+	}
+	expected, err := vectorByteSize(dim, 8)
+	if err != nil {
+		return unmarshalErrorf("%v", err)
+	}
+	if len(data) != expected {
+		return unmarshalErrorf("unmarshal vector<bigint, %d>: expected %d bytes, got %d", dim, expected, len(data))
+	}
+	vec := *dst
+	if cap(vec) >= dim {
+		vec = vec[:dim]
+	} else {
+		vec = make([]int64, dim)
+	}
+	_ = data[dim*8-1] // BCE hint: compiler can prove data[i*8:i*8+8] is in-bounds
+	for i := range vec {
+		vec[i] = int64(binary.BigEndian.Uint64(data[i*8 : i*8+8]))
+	}
+	*dst = vec
+	return nil
+}
+
+// marshalVectorUUID encodes a UUID slice as a contiguous vector
+// (CQL uuid/timeuuid = 16 bytes). Uses a pooled buffer for zero-alloc steady state.
+// UUID is [16]byte so no endian conversion is needed — just a flat copy.
+func marshalVectorUUID(dim int, vec []UUID) ([]byte, error) {
+	if dim < 0 {
+		return nil, marshalErrorf("vector has negative dimensions: %d", dim)
+	}
+	if vec == nil {
+		return nil, nil
+	}
+	if len(vec) != dim {
+		return nil, marshalErrorf("expected vector with %d dimensions, received %d", dim, len(vec))
+	}
+	size, err := vectorByteSize(dim, 16)
+	if err != nil {
+		return nil, marshalErrorf("%v", err)
+	}
+	buf := getVectorBuf(size)
+	if dim == 0 {
+		return buf, nil
+	}
+	_ = buf[dim*16-1] // BCE hint
+	for i, v := range vec {
+		copy(buf[i*16:i*16+16], v[:])
+	}
+	return buf, nil
+}
+
+// unmarshalVectorUUID decodes contiguous CQL uuid/timeuuid (16-byte) values.
+// Reuses the destination slice's backing array when capacity allows (zero-alloc steady state).
+func unmarshalVectorUUID(dim int, data []byte, dst *[]UUID) error {
+	if dim < 0 {
+		return unmarshalErrorf("vector has negative dimensions: %d", dim)
+	}
+	if data == nil {
+		*dst = nil
+		return nil
+	}
+	if dim == 0 {
+		if len(data) > 0 {
+			return unmarshalErrorf("unmarshal vector: %d bytes of data for 0-dimension vector", len(data))
+		}
+		if *dst == nil {
+			*dst = make([]UUID, 0)
+		} else {
+			*dst = (*dst)[:0]
+		}
+		return nil
+	}
+	expected, err := vectorByteSize(dim, 16)
+	if err != nil {
+		return unmarshalErrorf("%v", err)
+	}
+	if len(data) != expected {
+		return unmarshalErrorf("unmarshal vector<uuid, %d>: expected %d bytes, got %d", dim, expected, len(data))
+	}
+	vec := *dst
+	if cap(vec) >= dim {
+		vec = vec[:dim]
+	} else {
+		vec = make([]UUID, dim)
+	}
+	_ = data[dim*16-1] // BCE hint
+	for i := range vec {
+		copy(vec[i][:], data[i*16:i*16+16])
+	}
+	*dst = vec
+	return nil
+}
+
+// vectorFixedElemSize returns the known wire-format byte size for fixed-length
+// CQL types used as vector elements, specifically the subset that
+// isVectorVariableLengthType classifies as fixed-length. Returns 0 for
+// variable-length or unknown types.
+//
+// NOTE: Some types that have a fixed wire size (TinyInt=1, SmallInt=2,
+// Date=4, Time=8, Counter=8) are classified as variable-length by
+// isVectorVariableLengthType due to discrepancies between Cassandra and
+// ScyllaDB implementations, and are deliberately excluded here.
 func vectorFixedElemSize(elemType TypeInfo) int {
 	switch elemType.Type() {
 	case TypeBoolean:
@@ -979,8 +1450,9 @@ func vectorFixedElemSize(elemType TypeInfo) int {
 		return 8
 	case TypeUUID, TypeTimeUUID:
 		return 16
+	default:
+		return 0
 	}
-	return 0
 }
 
 // isVectorVariableLengthType determines if a type requires explicit length serialization within a vector.
@@ -1857,6 +2329,63 @@ func (v VectorType) Zero() interface{} {
 		return nil
 	}
 	return reflect.Zero(reflect.SliceOf(reflect.TypeOf(t))).Interface()
+}
+
+// NewWithError creates a pointer to an empty slice of the appropriate Go type
+// for this vector's element type. Fast paths avoid reflection for the common
+// fixed-size element types (float, double, int, bigint, uuid/timeuuid).
+// Without this method, VectorType would inherit NativeType.NewWithError which
+// falls back to goType() → asVectorType(), re-parsing the full Java type
+// string (e.g. "org.apache.cassandra.db.marshal.VectorType(…)") on every call.
+func (v VectorType) NewWithError() (interface{}, error) {
+	// Fast path: return *[]T directly for common element types.
+	if nt, ok := v.SubType.(NativeType); ok {
+		switch nt.typ {
+		case TypeFloat:
+			return new([]float32), nil
+		case TypeDouble:
+			return new([]float64), nil
+		case TypeInt:
+			return new([]int), nil
+		case TypeBigInt, TypeCounter:
+			return new([]int64), nil
+		case TypeSmallInt:
+			return new([]int16), nil
+		case TypeTinyInt:
+			return new([]int8), nil
+		case TypeBoolean:
+			return new([]bool), nil
+		case TypeUUID, TypeTimeUUID:
+			return new([]UUID), nil
+		case TypeVarchar, TypeAscii, TypeText, TypeInet:
+			return new([]string), nil
+		case TypeBlob:
+			return new([][]byte), nil
+		case TypeTimestamp, TypeDate:
+			return new([]time.Time), nil
+		case TypeTime:
+			return new([]time.Duration), nil
+		case TypeDecimal:
+			return new([]*inf.Dec), nil
+		case TypeVarint:
+			return new([]*big.Int), nil
+		case TypeDuration:
+			return new([]Duration), nil
+		}
+	}
+
+	// Fallback: derive the slice type via SubType.NewWithError() + reflect.
+	// This still avoids the expensive asVectorType() re-parse since we
+	// already have the SubType available directly.
+	innerPtr, err := v.SubType.NewWithError()
+	if err != nil {
+		return nil, err
+	}
+	elemType := reflect.TypeOf(innerPtr)
+	if elemType.Kind() == reflect.Ptr {
+		elemType = elemType.Elem()
+	}
+	return reflect.New(reflect.SliceOf(elemType)).Interface(), nil
 }
 
 func (t CollectionType) NewWithError() (interface{}, error) {

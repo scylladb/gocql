@@ -1687,6 +1687,29 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 			}
 		}
 
+		// Return pooled vector buffers after the framer has copied the
+		// marshalled bytes (which happens inside c.exec → buildFrame).
+		// Only install the defer when at least one column uses a poolable
+		// vector buffer to avoid ~50ns defer overhead on non-vector queries.
+		cols := info.request.columns
+		vals := params.values
+		hasPooledVec := false
+		for _, col := range cols {
+			if vt, ok := col.TypeInfo.(VectorType); ok && vectorBufPoolSubtype(vt) {
+				hasPooledVec = true
+				break
+			}
+		}
+		if hasPooledVec {
+			defer func() {
+				for i, col := range cols {
+					if vt, ok := col.TypeInfo.(VectorType); ok && vectorBufPoolSubtype(vt) {
+						putVectorBuf(vals[i].value)
+					}
+				}
+			}()
+		}
+
 		// if the metadata was not present in the response then we should not skip it
 		params.skipMeta = !(c.session.cfg.DisableSkipMetadata || qry.disableSkipMetadata) && len(info.response.columns) != 0
 
@@ -1866,6 +1889,10 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 
 	hasLwtEntries := false
 
+	// vectorBufs collects marshalled byte slices from vector fast paths
+	// so they can be returned to vectorBufPool after the framer copies them.
+	var vectorBufs [][]byte
+
 	for i := 0; i < n; i++ {
 		entry := &batch.Entries[i]
 		b := &req.statements[i]
@@ -1907,6 +1934,9 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 				if err := marshalQueryValue(typ, value, v); err != nil {
 					return &Iter{err: err}
 				}
+				if vt, ok := typ.(VectorType); ok && vectorBufPoolSubtype(vt) {
+					vectorBufs = append(vectorBufs, v.value)
+				}
 			}
 
 			if !hasLwtEntries && info.request.lwt {
@@ -1915,6 +1945,16 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 		} else {
 			b.statement = entry.Stmt
 		}
+	}
+
+	// Return pooled vector buffers after the framer has copied the
+	// marshalled bytes (which happens inside c.exec → buildFrame).
+	if len(vectorBufs) > 0 {
+		defer func() {
+			for _, buf := range vectorBufs {
+				putVectorBuf(buf)
+			}
+		}()
 	}
 
 	// The batch is considered to be conditional if even one of the

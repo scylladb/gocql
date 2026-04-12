@@ -227,3 +227,40 @@ func BenchmarkRowDataAllocation(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkRowDataWithVector measures RowData() performance when the schema
+// includes a vector column (common in AI/ML embedding tables). This exercises
+// the VectorType.NewWithError() fast path added to avoid the expensive
+// goType() → asVectorType() re-parse on every call.
+func BenchmarkRowDataWithVector(b *testing.B) {
+	columns := []ColumnInfo{
+		{Name: "id", TypeInfo: NativeType{typ: TypeInt, proto: protoVersion4}},
+		{Name: "embedding", TypeInfo: VectorType{
+			NativeType: NativeType{proto: protoVersion4, typ: TypeCustom,
+				custom: apacheCassandraTypePrefix + "VectorType(" + apacheCassandraTypePrefix + "FloatType, 1536)"},
+			SubType:    NativeType{proto: protoVersion4, typ: TypeFloat},
+			Dimensions: 1536,
+		}},
+		{Name: "label", TypeInfo: NativeType{typ: TypeVarchar, proto: protoVersion4}},
+	}
+
+	iter := &Iter{
+		meta: resultMetadata{
+			columns:        columns,
+			colCount:       len(columns),
+			actualColCount: len(columns),
+		},
+		numRows: 1,
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		rd, err := iter.RowData()
+		if err != nil {
+			b.Fatal(err)
+		}
+		_ = rd
+	}
+}
