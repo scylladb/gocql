@@ -26,12 +26,14 @@ package gocql
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
 	"math/big"
 	"math/bits"
 	"reflect"
+	"sync"
 	"time"
 	"unsafe"
 
@@ -67,6 +69,111 @@ var (
 var (
 	ErrorUDTUnavailable = errors.New("UDT are not available on protocols less than 3, please update config")
 )
+
+// marshalBufPool is a sync.Pool of *bytes.Buffer used by collection and vector
+// marshal functions to avoid allocating a new Buffer on every call.
+//
+// Lifecycle: marshalList/marshalMap/marshalVector call getMarshalBuf to get a
+// pooled buffer, write the serialized data into it, then call finishMarshalBuf
+// which copies the data into a new []byte and returns the buffer to the pool.
+// This ensures the returned slice never aliases pooled storage.
+var marshalBufPool = sync.Pool{
+	New: func() interface{} {
+		return &bytes.Buffer{}
+	},
+}
+
+// marshalBufMaxCap is the maximum capacity of a buffer that will be returned
+// to the pool. Buffers larger than this are left for GC to avoid holding
+// excessive memory in the pool from occasional large payloads.
+const marshalBufMaxCap = 64 * 1024 // 64 KiB
+
+// getMarshalBuf returns a *bytes.Buffer from the pool, reset and optionally
+// pre-grown to the given size hint. If sizeHint <= 0, no pre-grow is done.
+func getMarshalBuf(sizeHint int) *bytes.Buffer {
+	buf := marshalBufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	if sizeHint > 0 {
+		buf.Grow(sizeHint)
+	}
+	return buf
+}
+
+// putMarshalBuf returns a *bytes.Buffer to the pool. Buffers whose capacity
+// exceeds marshalBufMaxCap are discarded to prevent the pool from holding
+// oversized allocations.
+func putMarshalBuf(buf *bytes.Buffer) {
+	if buf == nil {
+		return
+	}
+	if buf.Cap() > marshalBufMaxCap {
+		return // let GC collect oversized buffers
+	}
+	marshalBufPool.Put(buf)
+}
+
+// finishMarshalBuf copies the contents of buf into a new []byte and returns
+// the buffer to the pool. This ensures the returned slice does not alias the
+// pooled buffer's internal storage.
+func finishMarshalBuf(buf *bytes.Buffer) []byte {
+	result := make([]byte, buf.Len())
+	copy(result, buf.Bytes())
+	putMarshalBuf(buf)
+	return result
+}
+
+// marshalOutputPool pools []byte slices returned by fast-path marshal functions
+// (vectors and lists/sets). These slices are the final marshal output that gets
+// copied into the framer buffer by writeBytes. After the framer copies them,
+// the connection layer returns them to this pool via putMarshalOutput.
+var marshalOutputPool sync.Pool
+
+// getMarshalOutput returns a []byte of exactly the requested size, from the
+// pool if a suitable buffer is available, or freshly allocated otherwise.
+func getMarshalOutput(size int) []byte {
+	if bp := marshalOutputPool.Get(); bp != nil {
+		buf := bp.([]byte)
+		if cap(buf) >= size {
+			return buf[:size]
+		}
+	}
+	return make([]byte, size)
+}
+
+// putMarshalOutput returns a []byte to the output pool. Nil slices are ignored.
+// Buffers larger than marshalBufMaxCap are discarded to avoid holding excessive
+// memory.
+func putMarshalOutput(buf []byte) {
+	if buf == nil {
+		return
+	}
+	if cap(buf) > marshalBufMaxCap {
+		return
+	}
+	marshalOutputPool.Put(buf) //nolint:staticcheck // SA6002: []byte is a value type; boxing cost is acceptable for pool reuse
+}
+
+// pooledMarshalType returns true if the given TypeInfo uses a marshal fast path
+// that allocates from marshalOutputPool. This is used by the connection layer to
+// determine which queryValues.value slices can be returned to the pool after
+// the framer copies them.
+func pooledMarshalType(info TypeInfo) bool {
+	switch ti := info.(type) {
+	case VectorType:
+		switch ti.SubType.Type() {
+		case TypeFloat, TypeDouble, TypeInt, TypeBigInt, TypeTimestamp, TypeCounter, TypeUUID, TypeTimeUUID:
+			return true
+		}
+	case CollectionType:
+		if ti.typ == TypeList || ti.typ == TypeSet {
+			switch ti.Elem.Type() {
+			case TypeFloat, TypeDouble, TypeInt, TypeBigInt, TypeTimestamp, TypeCounter:
+				return true
+			}
+		}
+	}
+	return false
+}
 
 // Marshaler is an interface for custom unmarshaler.
 // Each value of the 'CQL binary protocol' consist of <value_len> and <value_data>.
@@ -706,6 +813,40 @@ func marshalList(info TypeInfo, value interface{}) ([]byte, error) {
 		return nil, nil
 	}
 
+	// Fast path: type-switch on concrete slice types for common fixed-size
+	// CQL element types. These bypass reflect and per-element Marshal entirely.
+	// List wire format: [4-byte count] + N × ([4-byte elem-len] + [elem-bytes])
+	switch listInfo.Elem.Type() {
+	case TypeFloat:
+		if vec, ok := value.([]float32); ok {
+			if vec == nil {
+				return nil, nil
+			}
+			return marshalListFloat32(vec)
+		}
+	case TypeDouble:
+		if vec, ok := value.([]float64); ok {
+			if vec == nil {
+				return nil, nil
+			}
+			return marshalListFloat64(vec)
+		}
+	case TypeInt:
+		if vec, ok := value.([]int32); ok {
+			if vec == nil {
+				return nil, nil
+			}
+			return marshalListInt32(vec)
+		}
+	case TypeBigInt, TypeTimestamp, TypeCounter:
+		if vec, ok := value.([]int64); ok {
+			if vec == nil {
+				return nil, nil
+			}
+			return marshalListInt64(vec)
+		}
+	}
+
 	rv := reflect.ValueOf(value)
 	t := rv.Type()
 	k := t.Kind()
@@ -715,16 +856,25 @@ func marshalList(info TypeInfo, value interface{}) ([]byte, error) {
 
 	switch k {
 	case reflect.Slice, reflect.Array:
-		buf := &bytes.Buffer{}
 		n := rv.Len()
 
+		// Estimate buffer size: 4 bytes for collection size header,
+		// plus for each element: 4 bytes length prefix + element data.
+		sizeHint := 4 // collection size header
+		if elemSize := fixedElemSize(listInfo.Elem); elemSize > 0 {
+			sizeHint += n * (4 + elemSize) // 4-byte length prefix per element + data
+		}
+		buf := getMarshalBuf(sizeHint)
+
 		if err := writeCollectionSize(listInfo, n, buf); err != nil {
+			putMarshalBuf(buf)
 			return nil, err
 		}
 
 		for i := 0; i < n; i++ {
 			item, err := Marshal(listInfo.Elem, rv.Index(i).Interface())
 			if err != nil {
+				putMarshalBuf(buf)
 				return nil, err
 			}
 			itemLen := len(item)
@@ -733,11 +883,12 @@ func marshalList(info TypeInfo, value interface{}) ([]byte, error) {
 				itemLen = -1
 			}
 			if err := writeCollectionSize(listInfo, itemLen, buf); err != nil {
+				putMarshalBuf(buf)
 				return nil, err
 			}
 			buf.Write(item)
 		}
-		return buf.Bytes(), nil
+		return finishMarshalBuf(buf), nil
 	case reflect.Map:
 		elem := t.Elem()
 		if elem.Kind() == reflect.Struct && elem.NumField() == 0 {
@@ -765,6 +916,28 @@ func unmarshalList(info TypeInfo, data []byte, value interface{}) error {
 	listInfo, ok := info.(CollectionType)
 	if !ok {
 		return unmarshalErrorf("unmarshal: can not unmarshal none collection type into list")
+	}
+
+	// Fast path: type-switch on concrete pointer-to-slice types for common
+	// fixed-size CQL element types. Bypasses reflect and per-element Unmarshal.
+	// NOTE: each fast-path function MUST handle data == nil internally.
+	switch listInfo.Elem.Type() {
+	case TypeFloat:
+		if dst, ok := value.(*[]float32); ok {
+			return unmarshalListFloat32(data, dst)
+		}
+	case TypeDouble:
+		if dst, ok := value.(*[]float64); ok {
+			return unmarshalListFloat64(data, dst)
+		}
+	case TypeInt:
+		if dst, ok := value.(*[]int32); ok {
+			return unmarshalListInt32(data, dst)
+		}
+	case TypeBigInt, TypeTimestamp, TypeCounter:
+		if dst, ok := value.(*[]int64); ok {
+			return unmarshalListInt64(data, dst)
+		}
 	}
 
 	rv := reflect.ValueOf(value)
@@ -848,6 +1021,68 @@ func marshalVector(info VectorType, value interface{}) ([]byte, error) {
 		return nil, nil
 	}
 
+	dim := info.Dimensions
+
+	// Fast path: type-switch on concrete slice types for common vector element
+	// types. Most fast paths are contiguous fixed-width encodings; counters are a
+	// special case that still require per-element length prefixes in the current
+	// vector wire format, but can still bypass reflection and generic Marshal().
+	switch info.SubType.Type() {
+	case TypeCounter:
+		if vec, ok := value.([]int64); ok {
+			if vec == nil {
+				return nil, nil
+			}
+			return marshalVectorCounter(vec, dim)
+		}
+	case TypeFloat:
+		if !isVectorVariableLengthType(info.SubType) {
+			if vec, ok := value.([]float32); ok {
+				if vec == nil {
+					return nil, nil
+				}
+				return marshalVectorFloat32(vec, dim)
+			}
+		}
+	case TypeDouble:
+		if !isVectorVariableLengthType(info.SubType) {
+			if vec, ok := value.([]float64); ok {
+				if vec == nil {
+					return nil, nil
+				}
+				return marshalVectorFloat64(vec, dim)
+			}
+		}
+	case TypeInt:
+		if !isVectorVariableLengthType(info.SubType) {
+			if vec, ok := value.([]int32); ok {
+				if vec == nil {
+					return nil, nil
+				}
+				return marshalVectorInt32(vec, dim)
+			}
+		}
+	case TypeBigInt, TypeTimestamp:
+		if !isVectorVariableLengthType(info.SubType) {
+			if vec, ok := value.([]int64); ok {
+				if vec == nil {
+					return nil, nil
+				}
+				return marshalVectorInt64(vec, dim)
+			}
+		}
+	case TypeUUID, TypeTimeUUID:
+		if !isVectorVariableLengthType(info.SubType) {
+			if vec, ok := value.([]UUID); ok {
+				if vec == nil {
+					return nil, nil
+				}
+				return marshalVectorUUID(vec, dim)
+			}
+		}
+	}
+
+	// Slow path: reflection-based marshal for all other types.
 	rv := reflect.ValueOf(value)
 	t := rv.Type()
 	k := t.Kind()
@@ -858,22 +1093,24 @@ func marshalVector(info VectorType, value interface{}) ([]byte, error) {
 	switch k {
 	case reflect.Slice, reflect.Array:
 		n := rv.Len()
-		if n != info.Dimensions {
-			return nil, marshalErrorf("expected vector with %d dimensions, received %d", info.Dimensions, n)
+		if n != dim {
+			return nil, marshalErrorf("expected vector with %d dimensions, received %d", dim, n)
 		}
 
 		isLengthType := isVectorVariableLengthType(info.SubType)
-		buf := &bytes.Buffer{}
+		sizeHint := 0
 		if !isLengthType {
-			if elemSize := vectorFixedElemSize(info.SubType); elemSize > 0 {
+			if elemSize := fixedElemSize(info.SubType); elemSize > 0 {
 				if needed := int64(n) * int64(elemSize); needed > 0 && needed <= math.MaxInt32 {
-					buf.Grow(int(needed))
+					sizeHint = int(needed)
 				}
 			}
 		}
+		buf := getMarshalBuf(sizeHint)
 		for i := 0; i < n; i++ {
 			item, err := Marshal(info.SubType, rv.Index(i).Interface())
 			if err != nil {
+				putMarshalBuf(buf)
 				return nil, err
 			}
 			if isLengthType {
@@ -881,12 +1118,146 @@ func marshalVector(info VectorType, value interface{}) ([]byte, error) {
 			}
 			buf.Write(item)
 		}
-		return buf.Bytes(), nil
+		return finishMarshalBuf(buf), nil
 	}
 	return nil, marshalErrorf("can not marshal %T into %s. Accepted types: slice, array.", value, info)
 }
 
 func unmarshalVector(info VectorType, data []byte, value interface{}) error {
+	dim := info.Dimensions
+
+	// Fast path: type-switch on concrete pointer-to-slice types for common
+	// vector element types. Most fast paths are contiguous fixed-width encodings;
+	// counters are a special case that still require per-element length prefixes,
+	// but can still bypass reflect and generic Unmarshal().
+	switch info.SubType.Type() {
+	case TypeFloat:
+		if !isVectorVariableLengthType(info.SubType) {
+			if dst, ok := value.(*[]float32); ok {
+				if data == nil {
+					*dst = nil
+					return nil
+				}
+				if dim == 0 {
+					if len(data) > 0 {
+						return unmarshalErrorf("unmarshal vector: %d bytes of data for 0-dimension vector", len(data))
+					}
+					if *dst == nil {
+						*dst = make([]float32, 0)
+					} else {
+						*dst = (*dst)[:0]
+					}
+					return nil
+				}
+				return unmarshalVectorFloat32(data, dim, dst)
+			}
+		}
+	case TypeDouble:
+		if !isVectorVariableLengthType(info.SubType) {
+			if dst, ok := value.(*[]float64); ok {
+				if data == nil {
+					*dst = nil
+					return nil
+				}
+				if dim == 0 {
+					if len(data) > 0 {
+						return unmarshalErrorf("unmarshal vector: %d bytes of data for 0-dimension vector", len(data))
+					}
+					if *dst == nil {
+						*dst = make([]float64, 0)
+					} else {
+						*dst = (*dst)[:0]
+					}
+					return nil
+				}
+				return unmarshalVectorFloat64(data, dim, dst)
+			}
+		}
+	case TypeInt:
+		if !isVectorVariableLengthType(info.SubType) {
+			if dst, ok := value.(*[]int32); ok {
+				if data == nil {
+					*dst = nil
+					return nil
+				}
+				if dim == 0 {
+					if len(data) > 0 {
+						return unmarshalErrorf("unmarshal vector: %d bytes of data for 0-dimension vector", len(data))
+					}
+					if *dst == nil {
+						*dst = make([]int32, 0)
+					} else {
+						*dst = (*dst)[:0]
+					}
+					return nil
+				}
+				return unmarshalVectorInt32(data, dim, dst)
+			}
+		}
+	case TypeCounter:
+		if dst, ok := value.(*[]int64); ok {
+			if data == nil {
+				*dst = nil
+				return nil
+			}
+			if dim == 0 {
+				if len(data) > 0 {
+					return unmarshalErrorf("unmarshal vector: %d bytes of data for 0-dimension vector", len(data))
+				}
+				if *dst == nil {
+					*dst = make([]int64, 0)
+				} else {
+					*dst = (*dst)[:0]
+				}
+				return nil
+			}
+			return unmarshalVectorCounter(data, dim, dst)
+		}
+	case TypeBigInt, TypeTimestamp:
+		if !isVectorVariableLengthType(info.SubType) {
+			if dst, ok := value.(*[]int64); ok {
+				if data == nil {
+					*dst = nil
+					return nil
+				}
+				if dim == 0 {
+					if len(data) > 0 {
+						return unmarshalErrorf("unmarshal vector: %d bytes of data for 0-dimension vector", len(data))
+					}
+					if *dst == nil {
+						*dst = make([]int64, 0)
+					} else {
+						*dst = (*dst)[:0]
+					}
+					return nil
+				}
+				return unmarshalVectorInt64(data, dim, dst)
+			}
+		}
+	case TypeUUID, TypeTimeUUID:
+		if !isVectorVariableLengthType(info.SubType) {
+			if dst, ok := value.(*[]UUID); ok {
+				if data == nil {
+					*dst = nil
+					return nil
+				}
+				if dim == 0 {
+					if len(data) > 0 {
+						return unmarshalErrorf("unmarshal vector: %d bytes of data for 0-dimension vector", len(data))
+					}
+					if *dst == nil {
+						*dst = make([]UUID, 0)
+					} else {
+						*dst = (*dst)[:0]
+					}
+					return nil
+				}
+				return unmarshalVectorUUID(data, dim, dst)
+			}
+		}
+	}
+
+	// Slow path: reflection-based unmarshal for all other types.
 	rv := reflect.ValueOf(value)
 	if rv.Kind() != reflect.Ptr {
 		return unmarshalErrorf("can not unmarshal into non-pointer %T", value)
@@ -913,7 +1284,7 @@ func unmarshalVector(info VectorType, data []byte, value interface{}) error {
 			rv.Set(reflect.Zero(t))
 			return nil
 		}
-		if info.Dimensions == 0 {
+		if dim == 0 {
 			if len(data) > 0 {
 				return unmarshalErrorf("unmarshal vector: %d bytes of data for 0-dimension vector", len(data))
 			}
@@ -927,18 +1298,18 @@ func unmarshalVector(info VectorType, data []byte, value interface{}) error {
 			return nil
 		}
 		if k == reflect.Array {
-			if rv.Len() != info.Dimensions {
-				return unmarshalErrorf("unmarshal vector: array of size %d cannot store vector of %d dimensions", rv.Len(), info.Dimensions)
+			if rv.Len() != dim {
+				return unmarshalErrorf("unmarshal vector: array of size %d cannot store vector of %d dimensions", rv.Len(), dim)
 			}
 		} else {
-			rv.Set(reflect.MakeSlice(t, info.Dimensions, info.Dimensions))
+			rv.Set(reflect.MakeSlice(t, dim, dim))
 			if rv.Kind() == reflect.Interface {
 				rv = rv.Elem()
 			}
 		}
-		elemSize := len(data) / info.Dimensions
+		elemSize := len(data) / dim
 		isLengthType := isVectorVariableLengthType(info.SubType)
-		for i := 0; i < info.Dimensions; i++ {
+		for i := 0; i < dim; i++ {
 			offset := 0
 			if isLengthType {
 				m, p, err := readUnsignedVInt(data)
@@ -969,18 +1340,576 @@ func unmarshalVector(info VectorType, data []byte, value interface{}) error {
 	return unmarshalErrorf("can not unmarshal %s into %T. Accepted types: *slice, *array, *interface{}.", info, value)
 }
 
-func vectorFixedElemSize(elemType TypeInfo) int {
+// fixedElemSize returns the wire-format byte size for fixed-length CQL types.
+// Returns 0 for variable-length or unknown types.
+// Note: TypeBoolean/TypeTinyInt (1B) and TypeSmallInt (2B) are intentionally
+// excluded — Cassandra's vector implementation treats them as variable-length,
+// and the pre-sizing benefit for such small types is negligible.
+func fixedElemSize(elemType TypeInfo) int {
 	switch elemType.Type() {
-	case TypeBoolean:
-		return 1
-	case TypeInt, TypeFloat:
+	case TypeInt, TypeFloat, TypeDate:
 		return 4
-	case TypeBigInt, TypeDouble, TypeTimestamp:
+	case TypeBigInt, TypeDouble, TypeTimestamp, TypeCounter, TypeTime:
 		return 8
 	case TypeUUID, TypeTimeUUID:
 		return 16
 	}
 	return 0
+}
+
+// vectorByteSize returns the total byte size of a vector with the given number
+// of dimensions and per-element byte size. It returns an error if the result
+// would overflow int.
+func vectorByteSize(dim, elemSize int) (int, error) {
+	n := int64(dim) * int64(elemSize)
+	if n < 0 || n > math.MaxInt32 {
+		return 0, marshalErrorf("vector byte size overflow: %d * %d", dim, elemSize)
+	}
+	return int(n), nil
+}
+
+// --- Vector fast-path marshal functions ---
+// These use encoding/binary.BigEndian directly, avoiding per-element
+// reflection and the generic Marshal() call for common fixed-size types.
+// Each function validates dimensions, checks for byte-size overflow,
+// and uses a BCE hint to eliminate bounds checks in the hot loop.
+
+func marshalVectorFloat32(vec []float32, dim int) ([]byte, error) {
+	if len(vec) != dim {
+		return nil, marshalErrorf("expected vector with %d dimensions, received %d", dim, len(vec))
+	}
+	size, err := vectorByteSize(dim, 4)
+	if err != nil {
+		return nil, err
+	}
+	buf := getMarshalOutput(size)
+	if dim > 0 {
+		_ = buf[dim*4-1] // BCE hint
+	}
+	for i, v := range vec {
+		binary.BigEndian.PutUint32(buf[i*4:], math.Float32bits(v))
+	}
+	return buf, nil
+}
+
+func marshalVectorFloat64(vec []float64, dim int) ([]byte, error) {
+	if len(vec) != dim {
+		return nil, marshalErrorf("expected vector with %d dimensions, received %d", dim, len(vec))
+	}
+	size, err := vectorByteSize(dim, 8)
+	if err != nil {
+		return nil, err
+	}
+	buf := getMarshalOutput(size)
+	if dim > 0 {
+		_ = buf[dim*8-1] // BCE hint
+	}
+	for i, v := range vec {
+		binary.BigEndian.PutUint64(buf[i*8:], math.Float64bits(v))
+	}
+	return buf, nil
+}
+
+func marshalVectorInt32(vec []int32, dim int) ([]byte, error) {
+	if len(vec) != dim {
+		return nil, marshalErrorf("expected vector with %d dimensions, received %d", dim, len(vec))
+	}
+	size, err := vectorByteSize(dim, 4)
+	if err != nil {
+		return nil, err
+	}
+	buf := getMarshalOutput(size)
+	if dim > 0 {
+		_ = buf[dim*4-1] // BCE hint
+	}
+	for i, v := range vec {
+		binary.BigEndian.PutUint32(buf[i*4:], uint32(v))
+	}
+	return buf, nil
+}
+
+func marshalVectorInt64(vec []int64, dim int) ([]byte, error) {
+	if len(vec) != dim {
+		return nil, marshalErrorf("expected vector with %d dimensions, received %d", dim, len(vec))
+	}
+	size, err := vectorByteSize(dim, 8)
+	if err != nil {
+		return nil, err
+	}
+	buf := getMarshalOutput(size)
+	if dim > 0 {
+		_ = buf[dim*8-1] // BCE hint
+	}
+	for i, v := range vec {
+		binary.BigEndian.PutUint64(buf[i*8:], uint64(v))
+	}
+	return buf, nil
+}
+
+func marshalVectorCounter(vec []int64, dim int) ([]byte, error) {
+	if len(vec) != dim {
+		return nil, marshalErrorf("expected vector with %d dimensions, received %d", dim, len(vec))
+	}
+	// Counter vectors are length-prefixed in the current wire format.
+	// Each element is encoded as: uVInt(8) + 8-byte big-endian payload.
+	size, err := vectorByteSize(dim, 9)
+	if err != nil {
+		return nil, err
+	}
+	buf := getMarshalOutput(size)
+	off := 0
+	for _, v := range vec {
+		buf[off] = 8
+		off++
+		binary.BigEndian.PutUint64(buf[off:], uint64(v))
+		off += 8
+	}
+	return buf, nil
+}
+
+func marshalVectorUUID(vec []UUID, dim int) ([]byte, error) {
+	if len(vec) != dim {
+		return nil, marshalErrorf("expected vector with %d dimensions, received %d", dim, len(vec))
+	}
+	size, err := vectorByteSize(dim, 16)
+	if err != nil {
+		return nil, err
+	}
+	buf := getMarshalOutput(size)
+	if dim > 0 {
+		_ = buf[dim*16-1] // BCE hint
+	}
+	for i := range vec {
+		copy(buf[i*16:], vec[i][:])
+	}
+	return buf, nil
+}
+
+// --- Vector fast-path unmarshal functions ---
+// These read from raw bytes using encoding/binary.BigEndian directly,
+// reusing the destination slice's backing array when cap >= dim.
+
+func unmarshalVectorFloat32(data []byte, dim int, dst *[]float32) error {
+	expected, err := vectorByteSize(dim, 4)
+	if err != nil {
+		return err
+	}
+	if len(data) != expected {
+		return unmarshalErrorf("unmarshal vector: expected %d bytes for %d float32 dimensions, got %d", expected, dim, len(data))
+	}
+	vec := *dst
+	if cap(vec) >= dim {
+		vec = vec[:dim]
+	} else {
+		vec = make([]float32, dim)
+	}
+	if dim > 0 {
+		_ = data[dim*4-1] // BCE hint
+	}
+	for i := 0; i < dim; i++ {
+		vec[i] = math.Float32frombits(binary.BigEndian.Uint32(data[i*4:]))
+	}
+	*dst = vec
+	return nil
+}
+
+func unmarshalVectorFloat64(data []byte, dim int, dst *[]float64) error {
+	expected, err := vectorByteSize(dim, 8)
+	if err != nil {
+		return err
+	}
+	if len(data) != expected {
+		return unmarshalErrorf("unmarshal vector: expected %d bytes for %d float64 dimensions, got %d", expected, dim, len(data))
+	}
+	vec := *dst
+	if cap(vec) >= dim {
+		vec = vec[:dim]
+	} else {
+		vec = make([]float64, dim)
+	}
+	if dim > 0 {
+		_ = data[dim*8-1] // BCE hint
+	}
+	for i := 0; i < dim; i++ {
+		vec[i] = math.Float64frombits(binary.BigEndian.Uint64(data[i*8:]))
+	}
+	*dst = vec
+	return nil
+}
+
+func unmarshalVectorInt32(data []byte, dim int, dst *[]int32) error {
+	expected, err := vectorByteSize(dim, 4)
+	if err != nil {
+		return err
+	}
+	if len(data) != expected {
+		return unmarshalErrorf("unmarshal vector: expected %d bytes for %d int32 dimensions, got %d", expected, dim, len(data))
+	}
+	vec := *dst
+	if cap(vec) >= dim {
+		vec = vec[:dim]
+	} else {
+		vec = make([]int32, dim)
+	}
+	if dim > 0 {
+		_ = data[dim*4-1] // BCE hint
+	}
+	for i := 0; i < dim; i++ {
+		vec[i] = int32(binary.BigEndian.Uint32(data[i*4:]))
+	}
+	*dst = vec
+	return nil
+}
+
+func unmarshalVectorInt64(data []byte, dim int, dst *[]int64) error {
+	expected, err := vectorByteSize(dim, 8)
+	if err != nil {
+		return err
+	}
+	if len(data) != expected {
+		return unmarshalErrorf("unmarshal vector: expected %d bytes for %d int64 dimensions, got %d", expected, dim, len(data))
+	}
+	vec := *dst
+	if cap(vec) >= dim {
+		vec = vec[:dim]
+	} else {
+		vec = make([]int64, dim)
+	}
+	if dim > 0 {
+		_ = data[dim*8-1] // BCE hint
+	}
+	for i := 0; i < dim; i++ {
+		vec[i] = int64(binary.BigEndian.Uint64(data[i*8:]))
+	}
+	*dst = vec
+	return nil
+}
+
+func unmarshalVectorCounter(data []byte, dim int, dst *[]int64) error {
+	vec := *dst
+	if cap(vec) >= dim {
+		vec = vec[:dim]
+	} else {
+		vec = make([]int64, dim)
+	}
+
+	off := 0
+	for i := 0; i < dim; i++ {
+		if off >= len(data) {
+			return unmarshalErrorf("unmarshal vector: unexpected eof")
+		}
+		m, p, err := readUnsignedVInt(data[off:])
+		if err != nil {
+			return err
+		}
+		off += p
+		if m != 8 {
+			return unmarshalErrorf("unmarshal vector: expected 8-byte counter element, got %d bytes at index %d", m, i)
+		}
+		if off+8 > len(data) {
+			return unmarshalErrorf("unmarshal vector: unexpected eof")
+		}
+		vec[i] = int64(binary.BigEndian.Uint64(data[off:]))
+		off += 8
+	}
+	if off != len(data) {
+		return unmarshalErrorf("unmarshal vector: expected %d counter elements, got %d trailing bytes", dim, len(data)-off)
+	}
+	*dst = vec
+	return nil
+}
+
+func unmarshalVectorUUID(data []byte, dim int, dst *[]UUID) error {
+	expected, err := vectorByteSize(dim, 16)
+	if err != nil {
+		return err
+	}
+	if len(data) != expected {
+		return unmarshalErrorf("unmarshal vector: expected %d bytes for %d UUID dimensions, got %d", expected, dim, len(data))
+	}
+	vec := *dst
+	if cap(vec) >= dim {
+		vec = vec[:dim]
+	} else {
+		vec = make([]UUID, dim)
+	}
+	if dim > 0 {
+		_ = data[dim*16-1] // BCE hint
+	}
+	for i := 0; i < dim; i++ {
+		copy(vec[i][:], data[i*16:])
+	}
+	*dst = vec
+	return nil
+}
+
+// --- List/Set fast-path marshal functions ---
+// These use encoding/binary.BigEndian directly, avoiding per-element
+// reflection and the generic Marshal() call for common fixed-size types.
+// List wire format: [4-byte count] + N × ([4-byte elem-length] + [elem-bytes])
+
+// listByteSize returns the total byte size for a list of n fixed-size elements,
+// checking for integer overflow. Each element has a 4-byte length prefix.
+func listByteSize(n, elemSize int) (int, error) {
+	// Total = 4 (count header) + n * (4 + elemSize)
+	perElem := 4 + elemSize
+	if n > 0 && perElem > (math.MaxInt-4)/n {
+		return 0, marshalErrorf("marshal list: byte size overflow for %d elements of %d bytes", n, elemSize)
+	}
+	return 4 + n*perElem, nil
+}
+
+func marshalListFloat32(list []float32) ([]byte, error) {
+	n := len(list)
+	if n > math.MaxInt32 {
+		return nil, marshalErrorf("marshal list: collection too large")
+	}
+	size, err := listByteSize(n, 4)
+	if err != nil {
+		return nil, err
+	}
+	buf := getMarshalOutput(size)
+	binary.BigEndian.PutUint32(buf, uint32(n))
+	off := 4
+	for _, v := range list {
+		binary.BigEndian.PutUint32(buf[off:], 4) // elem length
+		binary.BigEndian.PutUint32(buf[off+4:], math.Float32bits(v))
+		off += 8
+	}
+	return buf, nil
+}
+
+func marshalListFloat64(list []float64) ([]byte, error) {
+	n := len(list)
+	if n > math.MaxInt32 {
+		return nil, marshalErrorf("marshal list: collection too large")
+	}
+	size, err := listByteSize(n, 8)
+	if err != nil {
+		return nil, err
+	}
+	buf := getMarshalOutput(size)
+	binary.BigEndian.PutUint32(buf, uint32(n))
+	off := 4
+	for _, v := range list {
+		binary.BigEndian.PutUint32(buf[off:], 8) // elem length
+		binary.BigEndian.PutUint64(buf[off+4:], math.Float64bits(v))
+		off += 12
+	}
+	return buf, nil
+}
+
+func marshalListInt32(list []int32) ([]byte, error) {
+	n := len(list)
+	if n > math.MaxInt32 {
+		return nil, marshalErrorf("marshal list: collection too large")
+	}
+	size, err := listByteSize(n, 4)
+	if err != nil {
+		return nil, err
+	}
+	buf := getMarshalOutput(size)
+	binary.BigEndian.PutUint32(buf, uint32(n))
+	off := 4
+	for _, v := range list {
+		binary.BigEndian.PutUint32(buf[off:], 4) // elem length
+		binary.BigEndian.PutUint32(buf[off+4:], uint32(v))
+		off += 8
+	}
+	return buf, nil
+}
+
+func marshalListInt64(list []int64) ([]byte, error) {
+	n := len(list)
+	if n > math.MaxInt32 {
+		return nil, marshalErrorf("marshal list: collection too large")
+	}
+	size, err := listByteSize(n, 8)
+	if err != nil {
+		return nil, err
+	}
+	buf := getMarshalOutput(size)
+	binary.BigEndian.PutUint32(buf, uint32(n))
+	off := 4
+	for _, v := range list {
+		binary.BigEndian.PutUint32(buf[off:], 8) // elem length
+		binary.BigEndian.PutUint64(buf[off+4:], uint64(v))
+		off += 12
+	}
+	return buf, nil
+}
+
+// --- List/Set fast-path unmarshal functions ---
+// List wire format: [4-byte count] + N × ([4-byte elem-length] + [elem-bytes])
+// For fixed-size types, each elem-length must equal the expected element size.
+
+func unmarshalListFloat32(data []byte, dst *[]float32) error {
+	if data == nil {
+		*dst = nil
+		return nil
+	}
+	if len(data) < 4 {
+		return unmarshalErrorf("unmarshal list: unexpected eof reading count")
+	}
+	n := int(int32(binary.BigEndian.Uint32(data[:4])))
+	if n < 0 {
+		return unmarshalErrorf("unmarshal list: negative count %d", n)
+	}
+	vec := *dst
+	if cap(vec) >= n {
+		vec = vec[:n]
+	} else {
+		vec = make([]float32, n)
+	}
+	off := 4
+	for i := 0; i < n; i++ {
+		if off+4 > len(data) {
+			return unmarshalErrorf("unmarshal list: unexpected eof reading element length at index %d", i)
+		}
+		elemLen := int(int32(binary.BigEndian.Uint32(data[off:])))
+		off += 4
+		if elemLen < 0 {
+			// Null element: set zero value, matching slow-path behavior
+			vec[i] = 0
+			continue
+		}
+		if elemLen != 4 {
+			return unmarshalErrorf("unmarshal list: expected 4-byte float32 element, got %d bytes at index %d", elemLen, i)
+		}
+		if off+4 > len(data) {
+			return unmarshalErrorf("unmarshal list: unexpected eof reading element data at index %d", i)
+		}
+		vec[i] = math.Float32frombits(binary.BigEndian.Uint32(data[off:]))
+		off += 4
+	}
+	*dst = vec
+	return nil
+}
+
+func unmarshalListFloat64(data []byte, dst *[]float64) error {
+	if data == nil {
+		*dst = nil
+		return nil
+	}
+	if len(data) < 4 {
+		return unmarshalErrorf("unmarshal list: unexpected eof reading count")
+	}
+	n := int(int32(binary.BigEndian.Uint32(data[:4])))
+	if n < 0 {
+		return unmarshalErrorf("unmarshal list: negative count %d", n)
+	}
+	vec := *dst
+	if cap(vec) >= n {
+		vec = vec[:n]
+	} else {
+		vec = make([]float64, n)
+	}
+	off := 4
+	for i := 0; i < n; i++ {
+		if off+4 > len(data) {
+			return unmarshalErrorf("unmarshal list: unexpected eof reading element length at index %d", i)
+		}
+		elemLen := int(int32(binary.BigEndian.Uint32(data[off:])))
+		off += 4
+		if elemLen < 0 {
+			vec[i] = 0
+			continue
+		}
+		if elemLen != 8 {
+			return unmarshalErrorf("unmarshal list: expected 8-byte float64 element, got %d bytes at index %d", elemLen, i)
+		}
+		if off+8 > len(data) {
+			return unmarshalErrorf("unmarshal list: unexpected eof reading element data at index %d", i)
+		}
+		vec[i] = math.Float64frombits(binary.BigEndian.Uint64(data[off:]))
+		off += 8
+	}
+	*dst = vec
+	return nil
+}
+
+func unmarshalListInt32(data []byte, dst *[]int32) error {
+	if data == nil {
+		*dst = nil
+		return nil
+	}
+	if len(data) < 4 {
+		return unmarshalErrorf("unmarshal list: unexpected eof reading count")
+	}
+	n := int(int32(binary.BigEndian.Uint32(data[:4])))
+	if n < 0 {
+		return unmarshalErrorf("unmarshal list: negative count %d", n)
+	}
+	vec := *dst
+	if cap(vec) >= n {
+		vec = vec[:n]
+	} else {
+		vec = make([]int32, n)
+	}
+	off := 4
+	for i := 0; i < n; i++ {
+		if off+4 > len(data) {
+			return unmarshalErrorf("unmarshal list: unexpected eof reading element length at index %d", i)
+		}
+		elemLen := int(int32(binary.BigEndian.Uint32(data[off:])))
+		off += 4
+		if elemLen < 0 {
+			vec[i] = 0
+			continue
+		}
+		if elemLen != 4 {
+			return unmarshalErrorf("unmarshal list: expected 4-byte int32 element, got %d bytes at index %d", elemLen, i)
+		}
+		if off+4 > len(data) {
+			return unmarshalErrorf("unmarshal list: unexpected eof reading element data at index %d", i)
+		}
+		vec[i] = int32(binary.BigEndian.Uint32(data[off:]))
+		off += 4
+	}
+	*dst = vec
+	return nil
+}
+
+func unmarshalListInt64(data []byte, dst *[]int64) error {
+	if data == nil {
+		*dst = nil
+		return nil
+	}
+	if len(data) < 4 {
+		return unmarshalErrorf("unmarshal list: unexpected eof reading count")
+	}
+	n := int(int32(binary.BigEndian.Uint32(data[:4])))
+	if n < 0 {
+		return unmarshalErrorf("unmarshal list: negative count %d", n)
+	}
+	vec := *dst
+	if cap(vec) >= n {
+		vec = vec[:n]
+	} else {
+		vec = make([]int64, n)
+	}
+	off := 4
+	for i := 0; i < n; i++ {
+		if off+4 > len(data) {
+			return unmarshalErrorf("unmarshal list: unexpected eof reading element length at index %d", i)
+		}
+		elemLen := int(int32(binary.BigEndian.Uint32(data[off:])))
+		off += 4
+		if elemLen < 0 {
+			vec[i] = 0
+			continue
+		}
+		if elemLen != 8 {
+			return unmarshalErrorf("unmarshal list: expected 8-byte int64 element, got %d bytes at index %d", elemLen, i)
+		}
+		if off+8 > len(data) {
+			return unmarshalErrorf("unmarshal list: unexpected eof reading element data at index %d", i)
+		}
+		vec[i] = int64(binary.BigEndian.Uint64(data[off:]))
+		off += 8
+	}
+	*dst = vec
+	return nil
 }
 
 // isVectorVariableLengthType determines if a type requires explicit length serialization within a vector.
@@ -1069,10 +1998,20 @@ func marshalMap(info TypeInfo, value interface{}) ([]byte, error) {
 		return nil, nil
 	}
 
-	buf := &bytes.Buffer{}
 	n := rv.Len()
 
+	// Estimate buffer size: 4 bytes for map size header,
+	// plus for each entry: 4 bytes key length + key data + 4 bytes value length + value data.
+	sizeHint := 4 // map size header
+	keySize := fixedElemSize(mapInfo.Key)
+	valSize := fixedElemSize(mapInfo.Elem)
+	if keySize > 0 && valSize > 0 {
+		sizeHint += n * (4 + keySize + 4 + valSize)
+	}
+	buf := getMarshalBuf(sizeHint)
+
 	if err := writeCollectionSize(mapInfo, n, buf); err != nil {
+		putMarshalBuf(buf)
 		return nil, err
 	}
 
@@ -1080,6 +2019,7 @@ func marshalMap(info TypeInfo, value interface{}) ([]byte, error) {
 	for _, key := range keys {
 		item, err := Marshal(mapInfo.Key, key.Interface())
 		if err != nil {
+			putMarshalBuf(buf)
 			return nil, err
 		}
 		itemLen := len(item)
@@ -1088,12 +2028,14 @@ func marshalMap(info TypeInfo, value interface{}) ([]byte, error) {
 			itemLen = -1
 		}
 		if err := writeCollectionSize(mapInfo, itemLen, buf); err != nil {
+			putMarshalBuf(buf)
 			return nil, err
 		}
 		buf.Write(item)
 
 		item, err = Marshal(mapInfo.Elem, rv.MapIndex(key).Interface())
 		if err != nil {
+			putMarshalBuf(buf)
 			return nil, err
 		}
 		itemLen = len(item)
@@ -1102,11 +2044,12 @@ func marshalMap(info TypeInfo, value interface{}) ([]byte, error) {
 			itemLen = -1
 		}
 		if err := writeCollectionSize(mapInfo, itemLen, buf); err != nil {
+			putMarshalBuf(buf)
 			return nil, err
 		}
 		buf.Write(item)
 	}
-	return buf.Bytes(), nil
+	return finishMarshalBuf(buf), nil
 }
 
 func unmarshalMap(info TypeInfo, data []byte, value interface{}) error {
@@ -1857,6 +2800,50 @@ func (v VectorType) Zero() interface{} {
 		return nil
 	}
 	return reflect.Zero(reflect.SliceOf(reflect.TypeOf(t))).Interface()
+}
+
+// NewWithError returns a pointer to an empty slice of the appropriate Go type
+// for common vector element types, avoiding the expensive goType() → asVectorType()
+// re-parse of Java type strings on every call.
+func (v VectorType) NewWithError() (interface{}, error) {
+	if nt, ok := v.SubType.(NativeType); ok {
+		switch nt.typ {
+		case TypeFloat:
+			return new([]float32), nil
+		case TypeDouble:
+			return new([]float64), nil
+		case TypeInt:
+			return new([]int), nil
+		case TypeBigInt:
+			return new([]int64), nil
+		case TypeTimestamp:
+			return new([]time.Time), nil
+		case TypeUUID, TypeTimeUUID:
+			return new([]UUID), nil
+		case TypeText, TypeVarchar, TypeAscii:
+			return new([]string), nil
+		case TypeBlob:
+			return new([][]byte), nil
+		case TypeBoolean:
+			return new([]bool), nil
+		case TypeSmallInt:
+			return new([]int16), nil
+		case TypeTinyInt:
+			return new([]int8), nil
+		case TypeTime:
+			return new([]time.Duration), nil
+		case TypeCounter:
+			return new([]int64), nil
+		case TypeDate:
+			return new([]time.Time), nil
+		}
+	}
+	// Fallback to reflection for complex/nested types
+	typ, err := goType(v)
+	if err != nil {
+		return nil, err
+	}
+	return reflect.New(typ).Interface(), nil
 }
 
 func (t CollectionType) NewWithError() (interface{}, error) {
