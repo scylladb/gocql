@@ -206,7 +206,6 @@ type Conn struct {
 	scyllaSupported      ScyllaConnectionFeatures
 	systemRequestTimeout time.Duration
 	writeTimeout         atomic.Int64
-	timeouts             int64
 	readTimeout          atomic.Int64
 	mu                   sync.Mutex
 	tabletsRoutingV1     int32
