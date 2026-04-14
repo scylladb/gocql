@@ -6,6 +6,7 @@ package gocql
 import (
 	"errors"
 	"testing"
+	"time"
 )
 
 func TestQueryError_PotentiallyExecuted(t *testing.T) {
@@ -85,6 +86,8 @@ func TestQueryError_Error(t *testing.T) {
 		name                string
 		err                 error
 		potentiallyExecuted bool
+		timeout             time.Duration
+		inFlight            int
 		expected            string
 	}{
 		{
@@ -99,6 +102,21 @@ func TestQueryError_Error(t *testing.T) {
 			potentiallyExecuted: false,
 			expected:            "syntax error (potentially executed: false)",
 		},
+		{
+			name:                "with timeout",
+			err:                 ErrTimeoutNoResponse,
+			potentiallyExecuted: true,
+			timeout:             11 * time.Second,
+			inFlight:            42,
+			expected:            "gocql: no response received from cassandra within timeout period (timeout: 11s, in-flight: 42) (potentially executed: true)",
+		},
+		{
+			name:                "with zero timeout omits timeout",
+			err:                 errors.New("some error"),
+			potentiallyExecuted: false,
+			timeout:             0,
+			expected:            "some error (potentially executed: false)",
+		},
 	}
 
 	for _, tt := range tests {
@@ -106,6 +124,8 @@ func TestQueryError_Error(t *testing.T) {
 			qErr := &QueryError{
 				err:                 tt.err,
 				potentiallyExecuted: tt.potentiallyExecuted,
+				timeout:             tt.timeout,
+				inFlight:            tt.inFlight,
 			}
 
 			got := qErr.Error()
