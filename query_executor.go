@@ -30,6 +30,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/gocql/gocql/internal/debug"
 )
 
 type ExecutableQuery interface {
@@ -248,6 +250,20 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, hostIter Ne
 				return iter
 			}
 			retryType = getRetryType(iter.err)
+		}
+
+		if debug.Enabled {
+			if s := qry.GetSession(); s != nil {
+				var rt *RequestErrReadTimeout
+				var wt *RequestErrWriteTimeout
+				if errors.As(iter.err, &rt) {
+					s.logger.Printf("gocql: server read timeout (keyspace: %s, table: %s, consistency: %v, received: %d, blockFor: %d, dataPresent: %v, host: %v, attempt: %d, retryType: %v)",
+						qry.Keyspace(), qry.Table(), rt.Consistency, rt.Received, rt.BlockFor, rt.DataPresent, iter.host, qry.Attempts(), retryType)
+				} else if errors.As(iter.err, &wt) {
+					s.logger.Printf("gocql: server write timeout (keyspace: %s, table: %s, consistency: %v, received: %d, blockFor: %d, writeType: %s, host: %v, attempt: %d, retryType: %v)",
+						qry.Keyspace(), qry.Table(), wt.Consistency, wt.Received, wt.BlockFor, wt.WriteType, iter.host, qry.Attempts(), retryType)
+				}
+			}
 		}
 
 		// If query is unsuccessful, check the error with RetryPolicy to retry
