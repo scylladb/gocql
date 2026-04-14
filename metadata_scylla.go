@@ -1130,7 +1130,7 @@ func getTableMetadata(session *Session, keyspaceName string) ([]TableMetadata, e
 		return nil, fmt.Errorf("error querying table schema: %v", err)
 	}
 
-	if session.getConn() == nil || !session.getConn().isScyllaConn() {
+	if conn := session.getConn(); conn == nil || !conn.isScyllaConn() {
 		return tables, nil
 	}
 
