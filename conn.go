@@ -1464,10 +1464,10 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, reques
 		return resp.framer, nil
 	case <-timeoutCh:
 		stopWaiting = true
-		return nil, &QueryError{err: ErrTimeoutNoResponse, potentiallyExecuted: true}
+		return nil, &QueryError{err: ErrTimeoutNoResponse, potentiallyExecuted: true, timeout: requestTimeout, inFlight: c.streams.InUse()}
 	case <-ctxDone:
 		stopWaiting = true
-		return nil, &QueryError{err: ctx.Err(), potentiallyExecuted: true}
+		return nil, &QueryError{err: ctx.Err(), potentiallyExecuted: true, timeout: requestTimeout, inFlight: c.streams.InUse()}
 	case <-c.ctx.Done():
 		stopWaiting = true
 		return nil, &QueryError{err: ErrConnectionClosed, potentiallyExecuted: true}
@@ -2107,6 +2107,8 @@ func (e *ErrSchemaMismatch) Error() string {
 
 type QueryError struct {
 	err                 error
+	timeout             time.Duration
+	inFlight            int
 	potentiallyExecuted bool
 	isIdempotent        bool
 }
@@ -2119,7 +2121,22 @@ func (e *QueryError) PotentiallyExecuted() bool {
 	return e.potentiallyExecuted
 }
 
+// Timeout returns the configured timeout duration for the query that failed.
+// Returns 0 if the error is not timeout-related.
+func (e *QueryError) Timeout() time.Duration {
+	return e.timeout
+}
+
+// InFlight returns the number of in-flight requests on the connection at the
+// time the error occurred. Returns 0 if not applicable.
+func (e *QueryError) InFlight() int {
+	return e.inFlight
+}
+
 func (e *QueryError) Error() string {
+	if e.timeout > 0 {
+		return fmt.Sprintf("%s (timeout: %v, in-flight: %d) (potentially executed: %v)", e.err.Error(), e.timeout, e.inFlight, e.potentiallyExecuted)
+	}
 	return fmt.Sprintf("%s (potentially executed: %v)", e.err.Error(), e.potentiallyExecuted)
 }
 
