@@ -41,6 +41,7 @@ import (
 	frm "github.com/gocql/gocql/internal/frame"
 	"github.com/gocql/gocql/tablets"
 
+	"github.com/gocql/gocql/internal/debug"
 	"github.com/gocql/gocql/internal/lru"
 	"github.com/gocql/gocql/internal/streams"
 )
@@ -1464,10 +1465,20 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, reques
 		return resp.framer, nil
 	case <-timeoutCh:
 		stopWaiting = true
-		return nil, &QueryError{err: ErrTimeoutNoResponse, potentiallyExecuted: true, timeout: requestTimeout, inFlight: c.streams.InUse()}
+		inFlight := c.streams.InUse()
+		if debug.Enabled {
+			c.logger.Printf("gocql: request timeout (timeout: %v, host: %s, keyspace: %s, in-flight: %d)",
+				requestTimeout, c.addr, c.currentKeyspace, inFlight)
+		}
+		return nil, &QueryError{err: ErrTimeoutNoResponse, potentiallyExecuted: true, timeout: requestTimeout, inFlight: inFlight}
 	case <-ctxDone:
 		stopWaiting = true
-		return nil, &QueryError{err: ctx.Err(), potentiallyExecuted: true, timeout: requestTimeout, inFlight: c.streams.InUse()}
+		inFlight := c.streams.InUse()
+		if debug.Enabled {
+			c.logger.Printf("gocql: context done waiting for response (err: %v, timeout: %v, host: %s, keyspace: %s, in-flight: %d)",
+				ctx.Err(), requestTimeout, c.addr, c.currentKeyspace, inFlight)
+		}
+		return nil, &QueryError{err: ctx.Err(), potentiallyExecuted: true, timeout: requestTimeout, inFlight: inFlight}
 	case <-c.ctx.Done():
 		stopWaiting = true
 		return nil, &QueryError{err: ErrConnectionClosed, potentiallyExecuted: true}
