@@ -2085,8 +2085,10 @@ func (c *Conn) awaitSchemaAgreement(ctx context.Context) error {
 }
 
 var (
-	ErrQueryArgLength      = errors.New("gocql: query argument length mismatch")
-	ErrTimeoutNoResponse   = errors.New("gocql: no response received from cassandra within timeout period")
+	ErrQueryArgLength    = errors.New("gocql: query argument length mismatch")
+	ErrTimeoutNoResponse = errors.New("gocql: no response received from cassandra within timeout period")
+	// Deprecated: ErrTooManyTimeouts is no longer produced by the library.
+	// It will be removed in a future major release.
 	ErrTooManyTimeouts     = errors.New("gocql: too many query timeouts on the connection")
 	ErrConnectionClosed    = errors.New("gocql: connection closed waiting for response")
 	ErrNoStreams           = errors.New("gocql: no streams available on connection")
