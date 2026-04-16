@@ -126,6 +126,9 @@ func (e errorConn) Close() error {
 	return errors.New("mock close error")
 }
 
+func (e errorConn) SetTimeout(_ time.Duration) {}
+func (e errorConn) GetTimeout() time.Duration  { return 0 }
+
 // TestHostConnPoolCloseDeadlock verifies that hostConnPool.Close() does not
 // self-deadlock when defaultConnPicker closes connections that trigger
 // HandleError callbacks.
@@ -160,7 +163,7 @@ func TestHostConnPoolCloseDeadlock(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		ctx, cancel := context.WithCancel(context.Background())
 		conn := &Conn{
-			conn:         errorConn{},
+			r:            errorConn{},
 			errorHandler: pool,
 			cancel:       cancel,
 			ctx:          ctx,
@@ -212,7 +215,7 @@ func TestHostConnPoolConnectClosedPoolDoesNotDeadlock(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	conn := &Conn{
-		conn:         errorConn{},
+		r:            errorConn{},
 		errorHandler: pool,
 		cancel:       cancel,
 		ctx:          ctx,
