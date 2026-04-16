@@ -53,7 +53,7 @@ func TestGetHostPortMapping(t *testing.T) {
 	}
 
 	racks := []string{"rack1", "rack2", "rack3"}
-	expected := []UnresolvedClientRoute{}
+	expected := []clientRoute{}
 	for id, hostID := range hostIDs {
 		rack := racks[id]
 		ip := net.ParseIP(fmt.Sprintf("127.0.0.%d", id+1))
@@ -67,7 +67,7 @@ func TestGetHostPortMapping(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unable to insert connection metadata: %s", err.Error())
 			}
-			expected = append(expected, UnresolvedClientRoute{
+			expected = append(expected, clientRoute{
 				ConnectionID:  connectionID,
 				HostID:        hostID,
 				Address:       ip.String(),
@@ -77,44 +77,44 @@ func TestGetHostPortMapping(t *testing.T) {
 		}
 	}
 
-	sortUnresolvedHostPorts(expected)
+	sortClientRoutes(expected)
 
 	tcases := []struct {
 		name     string
-		method   func(controlConnection) ([]UnresolvedClientRoute, error)
-		expected []UnresolvedClientRoute
+		method   func(controlConnection) ([]clientRoute, error)
+		expected []clientRoute
 	}{
 		{
 			name: "get-all",
-			method: func(controlConnection) ([]UnresolvedClientRoute, error) {
+			method: func(controlConnection) ([]clientRoute, error) {
 				return getHostPortMappingFromCluster(session.control, qualifiedTable, nil, nil)
 			},
 			expected: expected,
 		},
 		{
 			name: "get-all-hosts",
-			method: func(controlConnection) ([]UnresolvedClientRoute, error) {
+			method: func(controlConnection) ([]clientRoute, error) {
 				return getHostPortMappingFromCluster(session.control, qualifiedTable, connectionIDs, nil)
 			},
 			expected: expected,
 		},
 		{
 			name: "get-all-connections",
-			method: func(controlConnection) ([]UnresolvedClientRoute, error) {
+			method: func(controlConnection) ([]clientRoute, error) {
 				return getHostPortMappingFromCluster(session.control, qualifiedTable, nil, hostIDs)
 			},
 			expected: expected,
 		},
 		{
 			name: "get-concrete",
-			method: func(controlConnection) ([]UnresolvedClientRoute, error) {
+			method: func(controlConnection) ([]clientRoute, error) {
 				return getHostPortMappingFromCluster(session.control, qualifiedTable, connectionIDs, hostIDs)
 			},
 			expected: expected,
 		},
 		{
 			name: "get-concrete-host",
-			method: func(controlConnection) ([]UnresolvedClientRoute, error) {
+			method: func(controlConnection) ([]clientRoute, error) {
 				return getHostPortMappingFromCluster(session.control, qualifiedTable, connectionIDs, hostIDs)
 			},
 			expected: expected,
@@ -128,7 +128,7 @@ func TestGetHostPortMapping(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			sortUnresolvedHostPorts(got)
+			sortClientRoutes(got)
 
 			if diff := cmp.Diff(got, tc.expected); diff != "" {
 				t.Errorf("got unexpected result: %s", diff)
@@ -137,7 +137,7 @@ func TestGetHostPortMapping(t *testing.T) {
 	}
 }
 
-func sortUnresolvedHostPorts(xs []UnresolvedClientRoute) {
+func sortClientRoutes(xs []clientRoute) {
 	sort.Slice(xs, func(i, j int) bool {
 		a, b := xs[i], xs[j]
 
