@@ -142,9 +142,24 @@ func (l *clientRouteList) Len() int {
 }
 
 // Merge upserts entries from incoming into the list.
-// Existing entries matching by (ConnectionID, HostID) are updated in place;
-// new entries are appended.
-func (l *clientRouteList) Merge(incoming clientRouteList) {
+// Before upserting it prunes stale entries within the query scope defined by
+// scopeConnectionIDs and scopeHostIDs:
+//   - Both non-empty (partial update): prune entries matching BOTH lists.
+//   - Only scopeConnectionIDs (full refresh): prune all entries for those connections.
+//   - Both empty / nil: additive-only merge, no pruning.
+func (l *clientRouteList) Merge(incoming clientRouteList, scopeConnectionIDs, scopeHostIDs []string) {
+	switch {
+	case len(scopeConnectionIDs) > 0 && len(scopeHostIDs) > 0:
+		*l = slices.DeleteFunc(*l, func(r clientRoute) bool {
+			return slices.Contains(scopeConnectionIDs, r.ConnectionID) &&
+				slices.Contains(scopeHostIDs, r.HostID)
+		})
+	case len(scopeConnectionIDs) > 0:
+		*l = slices.DeleteFunc(*l, func(r clientRoute) bool {
+			return slices.Contains(scopeConnectionIDs, r.ConnectionID)
+		})
+	}
+
 	for _, inc := range incoming {
 		found := false
 		for id, existing := range *l {
@@ -362,7 +377,7 @@ func (p *ClientRoutesHandler) updateHostPortMapping(connectionIDs []string, host
 	}
 
 	p.mu.Lock()
-	p.routes.Merge(incoming)
+	p.routes.Merge(incoming, connectionIDs, hostIDs)
 	p.mu.Unlock()
 
 	return nil
