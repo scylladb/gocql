@@ -6,6 +6,7 @@ package tablets
 import (
 	"fmt"
 	"runtime"
+	"runtime/debug"
 	"sync/atomic"
 	"testing"
 )
@@ -63,6 +64,55 @@ func BenchmarkCowTabletList(b *testing.B) {
 		runCowTabletListTestSuit(b, "ManyTables", 6, 1, rf, 1500, 5)
 		runCowTabletListTestSuit(b, "SingleTable", 6, 1, rf, 1500, 0)
 	})
+}
+
+func BenchmarkCowTabletListGCShape(b *testing.B) {
+	const (
+		rf                = 3
+		hostsCount        = 16
+		tabletsPerTable   = 100000
+		tokenRangeCount   = int64(tabletsPerTable)
+		lookupBatchSize   = 2048
+		gcEveryIterations = 8
+	)
+
+	oldGCPercent := debug.SetGCPercent(10)
+	defer debug.SetGCPercent(oldGCPercent)
+
+	hosts := GenerateHostUUIDs(hostsCount)
+	cl := NewCowTabletList()
+	defer cl.Close()
+
+	cl.BulkAddTablets(createTablets("ks", "tbl", hosts, rf, tabletsPerTable, tokenRangeCount))
+	cl.Flush()
+
+	runtime.GC()
+	runtime.GC()
+
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for j := 0; j < lookupBatchSize; j++ {
+			token := int64((i*lookupBatchSize + j) % tabletsPerTable)
+			_, _ = cl.FindTabletForToken("ks", "tbl", token)
+		}
+		if i%gcEveryIterations == 0 {
+			runtime.GC()
+		}
+	}
+	b.StopTimer()
+
+	runtime.GC()
+	runtime.GC()
+	runtime.KeepAlive(cl)
+	runtime.ReadMemStats(&after)
+
+	b.ReportMetric(float64(after.HeapObjects), "heap_objects")
+	b.ReportMetric(float64(after.HeapAlloc), "heap_bytes")
+	b.ReportMetric(float64(after.NumGC-before.NumGC), "gc_cycles")
+	b.ReportMetric(float64(after.PauseTotalNs-before.PauseTotalNs), "gc_pause_ns")
 }
 
 func runCowTabletListTestSuit(b *testing.B, name string, hostsCount, parallelism, rf, totalTablets, extraTables int) {
@@ -140,12 +190,12 @@ func runSingleCowTabletListTest(b *testing.B, hostsCount, parallelism, rf, total
 		for pb.Next() {
 			id := opID.Add(1)
 			token := rnd.Int63()
-			tablet := tl.FindTabletForToken(targetKS, targetTable, token)
-			if tablet == nil || tablet.lastToken < token || tablet.firstToken > token {
+			tablet, ok := tl.FindTabletForToken(targetKS, targetTable, token)
+			if !ok || tablet.lastToken < token || tablet.firstToken > token {
 				// If there is no tablet for token, emulate update, same way it is usually happening
 				firstToken := (token / tokenRangeCount64) * tokenRangeCount64
 				lastToken := firstToken + tokenRangeCount64
-				tl.AddTablet(&TabletInfo{
+				tl.AddTablet(TabletInfo{
 					keyspaceName: targetKS,
 					tableName:    targetTable,
 					firstToken:   firstToken,
