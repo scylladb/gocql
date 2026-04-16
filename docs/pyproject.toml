@@ -1,21 +1,15 @@
-[tool.poetry]
+[project]
 name = "sphinx-docs"
-description = "ScyllaDB gocql driver documentation"
+description = "ScyllaDB Documentation"
 version = "0.1.0"
-authors = ["ScyllaDB Documentation Contributors"]
-package-mode = false
-
-[tool.poetry.dependencies]
-python = ">=3.11,<3.14"
-pygments = "^2.19.2"
-sphinx-scylladb-theme = "^1.8.2"
-myst-parser = "^5.0.0"
-sphinx-autobuild = "^2025.0.0"
-Sphinx = "^8.0.0"
-sphinx-multiversion-scylla = "^0.3.2"
-sphinx-sitemap = "^2.8.0"
-redirects_cli ="^0.1.3"
-
-[build-system]
-requires = ["poetry==2.3.4"]
-build-backend = "poetry.masonry.api"
+requires-python = ">=3.11"
+dependencies = [
+    "pygments>=2.19.2",
+    "sphinx-scylladb-theme>=1.9.1",
+    "myst-parser>=5.0.0",
+    "sphinx-autobuild>=2025.4.8",
+    "sphinx>=9.0",
+    "sphinx-multiversion-scylla>=0.3.7",
+    "sphinx-sitemap>=2.9.0",
+    "redirects_cli>=0.1.3",
+]
