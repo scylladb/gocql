@@ -984,8 +984,25 @@ func vectorFixedElemSize(elemType TypeInfo) int {
 }
 
 // isVectorVariableLengthType determines if a type requires explicit length serialization within a vector.
-// Variable-length types need their length encoded before the actual data to allow proper deserialization.
-// Fixed-length types, on the other hand, don't require this kind of length prefix.
+// Variable-length types need their length encoded (as a vint prefix) before the actual data.
+// Fixed-length types don't require this prefix.
+//
+// This classification must match Cassandra's VectorType behavior. Cassandra's VectorType constructor
+// selects FixedLengthSerializer vs VariableLengthSerializer based on elementType.isValueLengthFixed(),
+// which checks whether the type overrides valueLengthIfFixed() to return something other than -1.
+//
+// Several types that are conceptually fixed-size do NOT override valueLengthIfFixed() in Cassandra
+// and are therefore treated as variable-length inside vectors on the wire:
+//   - CounterColumnType  (counter)  — no valueLengthIfFixed() override
+//   - ShortType          (smallint) — no valueLengthIfFixed() override
+//   - ByteType           (tinyint)  — no valueLengthIfFixed() override
+//   - TimeType           (time)     — no valueLengthIfFixed() override
+//   - SimpleDateType     (date)     — no valueLengthIfFixed() override
+//
+// gocql must match this to produce wire-compatible encoding, even though these types always
+// serialize to a known number of bytes.
+//
+// Reference: https://github.com/apache/cassandra/blob/trunk/src/java/org/apache/cassandra/db/marshal/VectorType.java
 func isVectorVariableLengthType(elemType TypeInfo) bool {
 	switch elemType.Type() {
 	case TypeVarchar, TypeAscii, TypeBlob, TypeText,
