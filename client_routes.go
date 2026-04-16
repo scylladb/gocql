@@ -187,15 +187,16 @@ func (l *clientRouteList) FindByHostID(hostID string) *clientRoute {
 }
 
 type ClientRoutesHandler struct {
-	log         StdLogger
-	c           controlConnection
-	resolver    DNSResolver
-	sub         *eventbus.Subscriber[events.Event]
-	routes      clientRouteList
-	updateTasks chan updateTask
-	closeChan   chan struct{}
-	cfg         ClientRoutesConfig
-	mu          sync.RWMutex
+	log          StdLogger
+	c            controlConnection
+	resolver     DNSResolver
+	sub          *eventbus.Subscriber[events.Event]
+	routes       clientRouteList
+	stickyRoute  map[string]string // hostID → preferred connectionID
+	updateTasks  chan updateTask
+	closeChan    chan struct{}
+	cfg          ClientRoutesConfig
+	mu           sync.RWMutex
 	pickTLSPorts bool
 	initialized  bool
 }
@@ -215,6 +216,20 @@ func pickProperPort(pickTLSPorts bool, rec *clientRoute) uint16 {
 	return rec.CQLPort
 }
 
+// findPreferredRoute returns the route for hostID that matches the sticky
+// connectionID, falling back to the first route for that host.
+// Must be called with p.mu held (at least RLock).
+func (p *ClientRoutesHandler) findPreferredRoute(hostID string) *clientRoute {
+	if preferred, ok := p.stickyRoute[hostID]; ok {
+		for i := range p.routes {
+			if p.routes[i].HostID == hostID && p.routes[i].ConnectionID == preferred {
+				return &p.routes[i]
+			}
+		}
+	}
+	return p.routes.FindByHostID(hostID)
+}
+
 // TranslateHost implements AddressTranslatorV2 interface.
 // It resolves DNS on every call rather than caching resolved addresses.
 func (p *ClientRoutesHandler) TranslateHost(host AddressTranslatorHostInfo, addr AddressPort) (AddressPort, error) {
@@ -224,7 +239,7 @@ func (p *ClientRoutesHandler) TranslateHost(host AddressTranslatorHostInfo, addr
 	}
 
 	p.mu.RLock()
-	rec := p.routes.FindByHostID(hostID)
+	rec := p.findPreferredRoute(hostID)
 	var route clientRoute
 	found := rec != nil
 	if found {
@@ -248,6 +263,10 @@ func (p *ClientRoutesHandler) TranslateHost(host AddressTranslatorHostInfo, addr
 	if port == 0 {
 		return addr, fmt.Errorf("record %s/%s has target port empty", route.HostID, route.ConnectionID)
 	}
+
+	p.mu.Lock()
+	p.stickyRoute[hostID] = route.ConnectionID
+	p.mu.Unlock()
 
 	return AddressPort{Address: ips[0], Port: port}, nil
 }
@@ -400,6 +419,7 @@ func NewClientRoutesAddressTranslator(
 		updateTasks:  make(chan updateTask, 1024),
 		resolver:     resolver,
 		routes:       make(clientRouteList, 0),
+		stickyRoute:  make(map[string]string),
 	}
 }
 

@@ -119,8 +119,9 @@ func TestClientRoutesHandlerTranslateHost(t *testing.T) {
 	})
 
 	handler := &ClientRoutesHandler{
-		resolver: resolver,
-		routes:   make(clientRouteList, 0),
+		stickyRoute: make(map[string]string),
+		resolver:    resolver,
+		routes:      make(clientRouteList, 0),
 	}
 
 	res, err := handler.TranslateHost(noHost, addr)
@@ -162,11 +163,65 @@ func TestClientRoutesHandlerTranslateHost(t *testing.T) {
 		resolver: dnsResolverFunc(func(host string) ([]net.IP, error) {
 			return nil, errors.New("lookup failed")
 		}),
-		routes: clientRouteList{{ConnectionID: "c2", HostID: "h2", Address: "host", CQLPort: 9042}},
+		stickyRoute: make(map[string]string),
+		routes:      clientRouteList{{ConnectionID: "c2", HostID: "h2", Address: "host", CQLPort: 9042}},
 	}
 	_, err = errorHandler.TranslateHost(testHostInfo{hostID: "h2"}, addr)
 	if err == nil {
 		t.Fatalf("expected resolver error to bubble up")
+	}
+}
+
+func TestTranslateHost_StickyRoute(t *testing.T) {
+	addr := AddressPort{Address: net.ParseIP("1.1.1.1"), Port: 9042}
+	resolvedIPs := map[string]net.IP{
+		"addr-c1": net.ParseIP("10.0.0.1"),
+		"addr-c2": net.ParseIP("10.0.0.2"),
+	}
+	handler := &ClientRoutesHandler{
+		pickTLSPorts: false,
+		stickyRoute:  make(map[string]string),
+		resolver: dnsResolverFunc(func(host string) ([]net.IP, error) {
+			if ip, ok := resolvedIPs[host]; ok {
+				return []net.IP{ip}, nil
+			}
+			return nil, fmt.Errorf("unknown host %s", host)
+		}),
+		routes: clientRouteList{
+			{ConnectionID: "c1", HostID: "h1", Address: "addr-c1", CQLPort: 9042},
+			{ConnectionID: "c2", HostID: "h1", Address: "addr-c2", CQLPort: 9042},
+		},
+	}
+
+	// First call picks the first route (c1) and records it as sticky.
+	res, err := handler.TranslateHost(testHostInfo{hostID: "h1"}, addr)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !res.Address.Equal(net.ParseIP("10.0.0.1")) {
+		t.Fatalf("expected first route IP 10.0.0.1, got %v", res.Address)
+	}
+
+	// Second call should stick to c1 even though c2 also matches h1.
+	res, err = handler.TranslateHost(testHostInfo{hostID: "h1"}, addr)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !res.Address.Equal(net.ParseIP("10.0.0.1")) {
+		t.Fatalf("expected sticky route IP 10.0.0.1, got %v", res.Address)
+	}
+
+	// Remove c1 route; sticky route should fall back to c2.
+	handler.mu.Lock()
+	handler.routes = handler.routes[1:]
+	handler.mu.Unlock()
+
+	res, err = handler.TranslateHost(testHostInfo{hostID: "h1"}, addr)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !res.Address.Equal(net.ParseIP("10.0.0.2")) {
+		t.Fatalf("expected fallback to c2 IP 10.0.0.2, got %v", res.Address)
 	}
 }
 
