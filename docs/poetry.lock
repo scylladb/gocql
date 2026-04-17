@@ -823,14 +823,14 @@ test = ["tox"]
 
 [[package]]
 name = "sphinx-scylladb-theme"
-version = "1.9.1"
+version = "1.9.2"
 description = "A Sphinx Theme for ScyllaDB documentation projects"
 optional = false
 python-versions = ">=3.11"
 groups = ["main"]
 files = [
-    {file = "sphinx_scylladb_theme-1.9.1-py3-none-any.whl", hash = "sha256:6156d60befc3da03bd11991fec9bc590e27ce7cc4ab05aa334edd5611424b106"},
-    {file = "sphinx_scylladb_theme-1.9.1.tar.gz", hash = "sha256:2ba6367f005d2c68eee1916cc16385989b8e53bbddcc81193003bdeb3bd3415e"},
+    {file = "sphinx_scylladb_theme-1.9.2-py3-none-any.whl", hash = "sha256:1d75463151693c3b31ef48b2401aa4db18953fc515b4061c6f127182242e0280"},
+    {file = "sphinx_scylladb_theme-1.9.2.tar.gz", hash = "sha256:f4319deeefcc446779375c2d9cbdd922eaf63da092a50def74247dd2156f1274"},
 ]
 
 [package.dependencies]
