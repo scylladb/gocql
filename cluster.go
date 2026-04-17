@@ -460,13 +460,13 @@ type ClientRoutesOption func(*ClientRoutesConfig)
 
 func WithMaxResolverConcurrency(val int) func(*ClientRoutesConfig) {
 	return func(cfg *ClientRoutesConfig) {
-		cfg.MaxResolverConcurrency = val
+		// noop for backward compatibility, this option is deprecated and has no effect
 	}
 }
 
 func WithResolveHealthyEndpointPeriod(val time.Duration) func(*ClientRoutesConfig) {
 	return func(cfg *ClientRoutesConfig) {
-		cfg.ResolveHealthyEndpointPeriod = val
+		// noop for backward compatibility, this option is deprecated and has no effect
 	}
 }
 
@@ -484,11 +484,7 @@ func WithTable(tableName string) func(*ClientRoutesConfig) {
 
 func WithClientRoutes(opts ...ClientRoutesOption) func(*ClusterConfig) {
 	pmCfg := ClientRoutesConfig{
-		// Don't resolve healthy nodes by default
-		ResolveHealthyEndpointPeriod: 0,
-		MaxResolverConcurrency:       1,
-		TableName:                    "system.client_routes",
-		ResolverCacheDuration:        time.Millisecond * 500,
+		TableName: "system.client_routes",
 	}
 	for _, opt := range opts {
 		opt(&pmCfg)
