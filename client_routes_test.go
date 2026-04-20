@@ -60,7 +60,7 @@ func TestGetHostPortMapping(t *testing.T) {
 		for _, connectionID := range connectionIDs {
 			err := session.Query(
 				fmt.Sprintf(`INSERT INTO %s (
-                                            connection_id, host_id, Address, port, tls_port, alternator_port, alternator_https_port, Datacenter, Rack)
+                                            connection_id, host_id, Address, port, tls_port, alternator_port, alternator_https_port, Datacenter, Rack) 
 						VALUES (?, ?, ?, 9042, 9142, 0, 0, 'dc1', ?);`, qualifiedTable),
 				connectionID, hostID, ip.String(), rack,
 			).Exec()
@@ -68,11 +68,11 @@ func TestGetHostPortMapping(t *testing.T) {
 				t.Fatalf("unable to insert connection metadata: %s", err.Error())
 			}
 			expected = append(expected, clientRoute{
-				ConnectionID:  connectionID,
-				HostID:        hostID,
-				Address:       ip.String(),
-				CQLPort:       9042,
-				SecureCQLPort: 9142,
+				connectionID:  connectionID,
+				hostID:        hostID,
+				address:       ip.String(),
+				cqlPort:       9042,
+				secureCQLPort: 9142,
 			})
 		}
 	}
@@ -130,7 +130,7 @@ func TestGetHostPortMapping(t *testing.T) {
 
 			sortClientRoutes(got)
 
-			if diff := cmp.Diff(got, tc.expected); diff != "" {
+			if diff := cmp.Diff(got, tc.expected, cmp.AllowUnexported(clientRoute{})); diff != "" {
 				t.Errorf("got unexpected result: %s", diff)
 			}
 		})
@@ -141,9 +141,9 @@ func sortClientRoutes(xs []clientRoute) {
 	sort.Slice(xs, func(i, j int) bool {
 		a, b := xs[i], xs[j]
 
-		if a.ConnectionID != b.ConnectionID {
-			return a.ConnectionID < b.ConnectionID // or bytes.Compare if raw [16]byte
+		if a.connectionID != b.connectionID {
+			return a.connectionID < b.connectionID // or bytes.Compare if raw [16]byte
 		}
-		return a.HostID < b.HostID
+		return a.hostID < b.hostID
 	})
 }
