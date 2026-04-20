@@ -59,53 +59,34 @@ func (t testHostInfo) ScyllaShardAwarePortTLS() uint16    { return 0 }
 func (t testHostInfo) ScyllaShardCount() int              { return 0 }
 
 func TestMerge(t *testing.T) {
-	list := clientRouteList{
-		{ConnectionID: "c1", HostID: "h1", Address: "a1", CQLPort: 9042},
+	m := clientRouteMap{
+		"h1": {"c1": {ConnectionID: "c1", HostID: "h1", Address: "a1", CQLPort: 9042}},
 	}
 
 	// Same record: no change expected.
-	list.Merge(clientRouteList{
+	m.Merge([]clientRoute{
 		{ConnectionID: "c1", HostID: "h1", Address: "a1", CQLPort: 9042},
 	}, []string{"c1"}, nil)
-	if len(list) != 1 {
-		t.Fatalf("expected 1 entry, got %d", len(list))
+	if len(m) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(m))
 	}
 
 	// Updated address: record should be replaced.
-	list.Merge(clientRouteList{
+	m.Merge([]clientRoute{
 		{ConnectionID: "c1", HostID: "h1", Address: "a2", CQLPort: 9043},
 	}, []string{"c1"}, nil)
-	if list[0].Address != "a2" || list[0].CQLPort != 9043 {
+	rec := m["h1"]["c1"]
+	if rec.Address != "a2" || rec.CQLPort != 9043 {
 		t.Fatalf("expected record to update")
 	}
 
-	// New record: should be appended.
-	list = clientRouteList{}
-	list.Merge(clientRouteList{
+	// New record: should be added.
+	m = make(clientRouteMap)
+	m.Merge([]clientRoute{
 		{ConnectionID: "c2", HostID: "h2", Address: "a3", CQLPort: 9044},
 	}, []string{"c2"}, nil)
-	if len(list) != 1 {
-		t.Fatalf("expected new record to be appended")
-	}
-}
-
-func TestFindByHostID(t *testing.T) {
-	list := clientRouteList{
-		{ConnectionID: "c1", HostID: "h1"},
-		{ConnectionID: "c1", HostID: "h2"},
-	}
-
-	rec := list.FindByHostID("h1")
-	if rec == nil {
-		t.Fatalf("expected FindByHostID to locate record")
-	}
-	rec.ConnectionID = "updated"
-	if list[0].ConnectionID != "updated" {
-		t.Fatalf("expected FindByHostID to return pointer to list element")
-	}
-
-	if list.FindByHostID("h3") != nil {
-		t.Fatalf("expected nil for missing host")
+	if len(m) != 1 {
+		t.Fatalf("expected new record to be added")
 	}
 }
 
@@ -120,7 +101,7 @@ func TestClientRoutesHandlerTranslateHost(t *testing.T) {
 
 	handler := &ClientRoutesHandler{
 		resolver: resolver,
-		routes:   make(clientRouteList, 0),
+		routes:   make(clientRouteMap),
 	}
 
 	res, err := handler.TranslateHost(noHost, addr)
@@ -136,8 +117,8 @@ func TestClientRoutesHandlerTranslateHost(t *testing.T) {
 		t.Fatalf("expected error for missing host entry")
 	}
 
-	handler.routes = clientRouteList{
-		{ConnectionID: "c1", HostID: "h1", CQLPort: 9042, SecureCQLPort: 9142},
+	handler.routes = clientRouteMap{
+		"h1": {"c1": {ConnectionID: "c1", HostID: "h1", CQLPort: 9042, SecureCQLPort: 9142}},
 	}
 
 	handler.pickTLSPorts = false
@@ -162,7 +143,7 @@ func TestClientRoutesHandlerTranslateHost(t *testing.T) {
 		resolver: dnsResolverFunc(func(host string) ([]net.IP, error) {
 			return nil, errors.New("lookup failed")
 		}),
-		routes: clientRouteList{{ConnectionID: "c2", HostID: "h2", Address: "host", CQLPort: 9042}},
+			routes: clientRouteMap{"h2": {"c2": {ConnectionID: "c2", HostID: "h2", Address: "host", CQLPort: 9042}}},
 	}
 	_, err = errorHandler.TranslateHost(testHostInfo{hostID: "h2"}, addr)
 	if err == nil {
@@ -227,70 +208,69 @@ func TestGetHostPortMappingFromClusterQuery(t *testing.T) {
 }
 
 func TestMerge_DeletedHost(t *testing.T) {
-	list := clientRouteList{
-		{ConnectionID: "c1", HostID: "h1", Address: "a1", CQLPort: 9042},
-		{ConnectionID: "c1", HostID: "h2", Address: "a2", CQLPort: 9042},
+	m := clientRouteMap{
+		"h1": {"c1": {ConnectionID: "c1", HostID: "h1", Address: "a1", CQLPort: 9042}},
+		"h2": {"c1": {ConnectionID: "c1", HostID: "h2", Address: "a2", CQLPort: 9042}},
 	}
 
 	// Simulate event for (c1, h1) where query returned nothing → (c1,h1) should be removed.
-	list.Merge(nil, []string{"c1"}, []string{"h1"})
+	m.Merge(nil, []string{"c1"}, []string{"h1"})
 
-	if len(list) != 1 {
-		t.Fatalf("expected 1 entry after pruning deleted host, got %d", len(list))
+	if len(m) != 1 {
+		t.Fatalf("expected 1 entry after pruning deleted host, got %d", len(m))
 	}
-	if list[0].HostID != "h2" {
-		t.Fatalf("expected h2 to survive, got %s", list[0].HostID)
+	if _, ok := m["h2"]; !ok {
+		t.Fatalf("expected h2 to survive")
 	}
 }
 
 func TestMerge_UpdatedHost(t *testing.T) {
-	list := clientRouteList{
-		{ConnectionID: "c1", HostID: "h1", Address: "old-addr", CQLPort: 9042},
-		{ConnectionID: "c2", HostID: "h1", Address: "old-addr2", CQLPort: 9042},
-		{ConnectionID: "c1", HostID: "h2", Address: "keep", CQLPort: 9042},
+	m := clientRouteMap{
+		"h1": {
+			"c1": {ConnectionID: "c1", HostID: "h1", Address: "old-addr", CQLPort: 9042},
+			"c2": {ConnectionID: "c2", HostID: "h1", Address: "old-addr2", CQLPort: 9042},
+		},
+		"h2": {"c1": {ConnectionID: "c1", HostID: "h2", Address: "keep", CQLPort: 9042}},
 	}
 
 	// h1 address changed; fresh query returns new data for h1. h2 is not affected.
-	list.Merge(clientRouteList{
+	m.Merge([]clientRoute{
 		{ConnectionID: "c1", HostID: "h1", Address: "new-addr", CQLPort: 9043},
 		{ConnectionID: "c2", HostID: "h1", Address: "new-addr2", CQLPort: 9043},
 	}, []string{"c1", "c2"}, []string{"h1"})
 
-	if len(list) != 3 {
-		t.Fatalf("expected 3 entries, got %d", len(list))
+	if len(m) != 2 || len(m["h1"]) != 2 {
+		t.Fatalf("expected 2 hosts with h1 having 2 connections, got %d hosts", len(m))
 	}
-	for _, r := range list {
-		if r.HostID == "h1" {
-			if r.Address != "new-addr" && r.Address != "new-addr2" {
-				t.Fatalf("expected h1 entries to have new addresses, got %s", r.Address)
-			}
-		}
-		if r.HostID == "h2" && r.Address != "keep" {
-			t.Fatalf("expected h2 entry to be preserved unchanged")
-		}
+	if r := m["h1"]["c1"]; r.Address != "new-addr" {
+		t.Fatalf("expected c1/h1 to have new address, got %s", r.Address)
+	}
+	if r := m["h1"]["c2"]; r.Address != "new-addr2" {
+		t.Fatalf("expected c2/h1 to have new address, got %s", r.Address)
+	}
+	if r := m["h2"]["c1"]; r.Address != "keep" {
+		t.Fatalf("expected h2 entry to be preserved unchanged")
 	}
 }
 
 func TestMerge_FullRefresh_PrunesAllStale(t *testing.T) {
-	list := clientRouteList{
-		{ConnectionID: "c1", HostID: "h1", Address: "a1", CQLPort: 9042},
-		{ConnectionID: "c1", HostID: "h2", Address: "a2", CQLPort: 9042},
-		{ConnectionID: "c1", HostID: "h3", Address: "a3", CQLPort: 9042},
+	m := clientRouteMap{
+		"h1": {"c1": {ConnectionID: "c1", HostID: "h1", Address: "a1", CQLPort: 9042}},
+		"h2": {"c1": {ConnectionID: "c1", HostID: "h2", Address: "a2", CQLPort: 9042}},
+		"h3": {"c1": {ConnectionID: "c1", HostID: "h3", Address: "a3", CQLPort: 9042}},
 	}
 
 	// Full refresh for connection c1: all entries for c1 are pruned, only h1 and h2 returned.
-	list.Merge(clientRouteList{
+	m.Merge([]clientRoute{
 		{ConnectionID: "c1", HostID: "h1", Address: "a1", CQLPort: 9042},
 		{ConnectionID: "c1", HostID: "h2", Address: "a2", CQLPort: 9042},
 	}, []string{"c1"}, nil)
 
-	if len(list) != 2 {
-		t.Fatalf("expected 2 entries after full refresh prune, got %d", len(list))
+	if len(m) != 2 {
+		t.Fatalf("expected 2 entries after full refresh prune, got %d", len(m))
 	}
-	for _, r := range list {
-		if r.HostID == "h3" {
-			t.Fatalf("expected h3 to be pruned")
-		}
+	if _, ok := m["h3"]; ok {
+		t.Fatalf("expected h3 to be pruned")
 	}
 }
 
@@ -299,14 +279,14 @@ func TestMerge_FullRefresh_PrunesAllStale(t *testing.T) {
 // to verify that a full refresh correctly prunes a host that disappeared.
 func TestUpdateHostPortMapping_FullRefresh_PrunesStaleEntries(t *testing.T) {
 	// Existing routes: h1, h2, h3.
-	routes := clientRouteList{
-		{ConnectionID: "c1", HostID: "h1", Address: "a1", CQLPort: 9042},
-		{ConnectionID: "c1", HostID: "h2", Address: "a2", CQLPort: 9042},
-		{ConnectionID: "c1", HostID: "h3", Address: "a3", CQLPort: 9042},
+	routes := clientRouteMap{
+		"h1": {"c1": {ConnectionID: "c1", HostID: "h1", Address: "a1", CQLPort: 9042}},
+		"h2": {"c1": {ConnectionID: "c1", HostID: "h2", Address: "a2", CQLPort: 9042}},
+		"h3": {"c1": {ConnectionID: "c1", HostID: "h3", Address: "a3", CQLPort: 9042}},
 	}
 
 	// Cluster now returns only h1 and h2 (h3 was decommissioned).
-	incoming := clientRouteList{
+	incoming := []clientRoute{
 		{ConnectionID: "c1", HostID: "h1", Address: "a1", CQLPort: 9042},
 		{ConnectionID: "c1", HostID: "h2", Address: "a2", CQLPort: 9042},
 	}
@@ -316,9 +296,7 @@ func TestUpdateHostPortMapping_FullRefresh_PrunesStaleEntries(t *testing.T) {
 	if len(routes) != 2 {
 		t.Fatalf("expected 2 entries after full-refresh prune, got %d", len(routes))
 	}
-	for _, r := range routes {
-		if r.HostID == "h3" {
-			t.Fatalf("h3 should have been pruned by full refresh")
-		}
+	if _, ok := routes["h3"]; ok {
+		t.Fatalf("h3 should have been pruned by full refresh")
 	}
 }
