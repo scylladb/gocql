@@ -107,21 +107,21 @@ func (cfg *ClientRoutesConfig) Validate() error {
 }
 
 type clientRoute struct {
-	ConnectionID  string
-	HostID        string
-	Address       string
-	CQLPort       uint16
-	SecureCQLPort uint16
+	connectionID  string
+	hostID        string
+	address       string
+	cqlPort       uint16
+	secureCQLPort uint16
 }
 
 func (r clientRoute) String() string {
 	return fmt.Sprintf(
-		"clientRoute{ConnectionID=%s, HostID=%s, Address=%s, CQLPort=%d, SecureCQLPort=%d}",
-		r.ConnectionID,
-		r.HostID,
-		r.Address,
-		r.CQLPort,
-		r.SecureCQLPort,
+		"clientRoute{connectionID=%s, hostID=%s, address=%s, cqlPort=%d, secureCQLPort=%d}",
+		r.connectionID,
+		r.hostID,
+		r.address,
+		r.cqlPort,
+		r.secureCQLPort,
 	)
 }
 
@@ -131,16 +131,16 @@ func (r clientRoute) String() string {
 // host first, then pick the right connection.
 type clientRouteMap map[string]map[string]clientRoute
 
-// Merge upserts entries from incoming into the map.
+// merge upserts entries from incoming into the map.
 // Before upserting it prunes stale entries within the query scope defined by
 // scopeConnectionIDs and scopeHostIDs:
 //   - Both non-empty (partial update): prune entries matching BOTH lists.
 //   - Only scopeConnectionIDs (full refresh): prune all entries for those connections.
 //
 // scopeConnectionIDs must not be empty.
-func (m clientRouteMap) Merge(incoming []clientRoute, scopeConnectionIDs, scopeHostIDs []string) {
+func (m clientRouteMap) merge(incoming []clientRoute, scopeConnectionIDs, scopeHostIDs []string) {
 	if len(scopeConnectionIDs) == 0 {
-		panic("clientRouteMap.Merge: scopeConnectionIDs must not be empty")
+		panic("clientRouteMap.merge: scopeConnectionIDs must not be empty")
 	}
 
 	if len(scopeHostIDs) > 0 {
@@ -170,12 +170,12 @@ func (m clientRouteMap) Merge(incoming []clientRoute, scopeConnectionIDs, scopeH
 	}
 
 	for _, inc := range incoming {
-		conns := m[inc.HostID]
+		conns := m[inc.hostID]
 		if conns == nil {
 			conns = make(map[string]clientRoute)
-			m[inc.HostID] = conns
+			m[inc.hostID] = conns
 		}
-		conns[inc.ConnectionID] = inc
+		conns[inc.connectionID] = inc
 	}
 }
 
@@ -203,9 +203,9 @@ func (p *ClientRoutesHandler) Translate(addr net.IP, port int) (net.IP, int) {
 
 func pickProperPort(pickTLSPorts bool, rec *clientRoute) uint16 {
 	if pickTLSPorts {
-		return rec.SecureCQLPort
+		return rec.secureCQLPort
 	}
-	return rec.CQLPort
+	return rec.cqlPort
 }
 
 
@@ -231,17 +231,17 @@ func (p *ClientRoutesHandler) TranslateHost(host AddressTranslatorHostInfo, addr
 		return addr, fmt.Errorf("no address found for host %s", hostID)
 	}
 
-	ips, err := p.resolver.LookupIP(route.Address)
+	ips, err := p.resolver.LookupIP(route.address)
 	if err != nil {
 		return addr, fmt.Errorf("failed to resolve address for host %s: %v", hostID, err)
 	}
 	if len(ips) == 0 {
-		return addr, fmt.Errorf("no addresses returned for host %s (address=%s)", hostID, route.Address)
+		return addr, fmt.Errorf("no addresses returned for host %s (address=%s)", hostID, route.address)
 	}
 
 	port := pickProperPort(p.pickTLSPorts, &route)
 	if port == 0 {
-		return addr, fmt.Errorf("record %s/%s has target port empty", route.HostID, route.ConnectionID)
+		return addr, fmt.Errorf("record %s/%s has target port empty", route.hostID, route.connectionID)
 	}
 
 	return AddressPort{Address: ips[0], Port: port}, nil
@@ -372,7 +372,7 @@ func (p *ClientRoutesHandler) updateHostPortMapping(connectionIDs []string, host
 	}
 
 	p.mu.Lock()
-	p.routes.Merge(incoming, connectionIDs, hostIDs)
+	p.routes.merge(incoming, connectionIDs, hostIDs)
 	p.mu.Unlock()
 
 	return nil
@@ -439,7 +439,7 @@ func getHostPortMappingFromCluster(c controlConnection, table string, connection
 
 	iter := c.query(strings.Join(stmt, " "), bounds...)
 	var rec clientRoute
-	for iter.Scan(&rec.ConnectionID, &rec.HostID, &rec.Address, &rec.CQLPort, &rec.SecureCQLPort) {
+	for iter.Scan(&rec.connectionID, &rec.hostID, &rec.address, &rec.cqlPort, &rec.secureCQLPort) {
 		res = append(res, rec)
 	}
 	if err := iter.Close(); err != nil {
