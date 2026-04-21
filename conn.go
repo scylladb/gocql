@@ -248,6 +248,7 @@ type Conn struct {
 	scyllaSupported      ScyllaConnectionFeatures
 	systemRequestTimeout time.Duration
 	writeTimeout         atomic.Int64
+	activity             atomic.Int64
 	mu                   sync.Mutex
 	tabletsRoutingV1     int32
 	headerBuf            [headSize]byte
@@ -898,6 +899,7 @@ func (c *Conn) heartBeat(ctx context.Context) {
 
 	var failures int
 	var heartbeatSlow bool
+	prev := c.activity.Load()
 
 	for {
 		if failures > 5 {
@@ -913,13 +915,25 @@ func (c *Conn) heartBeat(ctx context.Context) {
 		case <-timer.C:
 		}
 
+		// Skip heartbeat if the connection had activity since last check.
+		// Detection of a dead connection may be delayed by up to 2x the
+		// heartbeat interval. Matches the Python driver behavior.
+		cur := c.activity.Load()
+		if cur != prev {
+			prev = cur
+			sleepTime = 30 * time.Second
+			failures = 0
+			continue
+		}
+
 		var start time.Time
 		slowThreshold := c.cfg.HeartbeatSlowThreshold
 		if slowThreshold > 0 {
 			start = time.Now()
 		}
 
-		framer, err := c.exec(context.Background(), &writeOptionsFrame{}, nil, c.cfg.ConnectTimeout)
+		// execInternal: the probe must not count as activity.
+		framer, err := c.execInternal(context.Background(), &writeOptionsFrame{}, nil, c.cfg.ConnectTimeout, true)
 		if err != nil {
 			failures++
 			continue
@@ -2023,6 +2037,11 @@ func (c *Conn) addCall(call *callReq) error {
 // typically via defer immediately after parsing or after transferring ownership
 // to an Iter.
 func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, requestTimeout time.Duration) (*framer, error) {
+	// Cancelled requests never touch the wire; don't count as activity.
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return nil, &QueryError{err: ctxErr, potentiallyExecuted: false}
+	}
+	c.activity.Add(1)
 	return c.execInternal(ctx, req, tracer, requestTimeout, true)
 }
 

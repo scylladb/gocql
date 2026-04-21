@@ -1713,6 +1713,7 @@ type newTestServerOpts struct {
 	protocol         uint8
 	supportedFactory testSupportedFactory
 	recvHook         func(*framer)
+	recvConnHook     func(net.Conn, *framer)
 }
 
 func (nts newTestServerOpts) newServer(t testing.TB, ctx context.Context) *TestServer {
@@ -1740,6 +1741,7 @@ func (nts newTestServerOpts) newServer(t testing.TB, ctx context.Context) *TestS
 
 		supportedFactory: nts.supportedFactory,
 		onRecv:           nts.recvHook,
+		onRecvConn:       nts.recvConnHook,
 	}
 
 	go srv.closeWatch()
@@ -1817,6 +1819,8 @@ type TestServer struct {
 
 	// onRecv is a hook point for tests, called in receive loop.
 	onRecv func(*framer)
+	// onRecvConn is like onRecv but also receives the server-side conn.
+	onRecvConn func(net.Conn, *framer)
 }
 
 type testSupportedFactory func(conn net.Conn) map[string][]string
@@ -1873,6 +1877,9 @@ func (srv *TestServer) serve() {
 
 				if srv.onRecv != nil {
 					srv.onRecv(framer)
+				}
+				if srv.onRecvConn != nil {
+					srv.onRecvConn(conn, framer)
 				}
 
 				go srv.process(conn, framer, exts)
@@ -3977,5 +3984,62 @@ func TestHeartbeatLatencyNoWarningWhenFast(t *testing.T) {
 	logOutput := log.String()
 	if strings.Contains(logOutput, "exceeding threshold") {
 		t.Fatalf("expected no heartbeat warning for fast response, got: %q", logOutput)
+	}
+}
+
+// TestHeartbeatSkippedOnActiveConnection verifies that a connection with
+// recent traffic is not probed with heartbeat OPTIONS.
+func TestHeartbeatSkippedOnActiveConnection(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	// Per-connection OPTIONS counts, in connection arrival order.
+	var (
+		mu      sync.Mutex
+		order   []net.Conn
+		options = map[net.Conn]int{}
+	)
+	srv := newTestServerOpts{
+		addr:     "127.0.0.1:0",
+		protocol: defaultProto,
+		recvConnHook: func(conn net.Conn, f *framer) {
+			if f.header.Op != frm.OpOptions {
+				return
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if _, seen := options[conn]; !seen {
+				order = append(order, conn)
+			}
+			options[conn]++
+		},
+	}.newServer(t, ctx)
+	defer srv.Stop()
+
+	cluster := testCluster(defaultProto, srv.Address)
+	cluster.NumConns = 1
+	db, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	defer db.Close()
+
+	// Keep the data connection busy across the first heartbeat tick (~1s).
+	deadline := time.Now().Add(2200 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if err := db.Query("void").Exec(); err != nil {
+			t.Fatalf("query: %v", err)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	// testCluster disables the control conn, so the data conn is the only one.
+	if len(order) != 1 {
+		t.Fatalf("expected 1 connection, got %d", len(order))
+	}
+	if got := options[order[0]]; got != 1 {
+		t.Fatalf("expected only the handshake OPTIONS on the busy connection, got %d", got)
 	}
 }
