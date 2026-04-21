@@ -5288,3 +5288,125 @@ func TestStartupCompressionIsDriverOwned(t *testing.T) {
 		})
 	}
 }
+
+func TestHeartbeatLatencyWarning(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	// Count OPTIONS frames after startup to detect heartbeat.
+	var optionsCount atomic.Int32
+
+	srv := newTestServerOpts{
+		addr:     "127.0.0.1:0",
+		protocol: defaultProto,
+		recvHook: func(f *framer) {
+			if f.header.Op == frm.OpOptions {
+				count := optionsCount.Add(1)
+				// Delay heartbeat OPTIONS (not the initial handshake one).
+				// The first OPTIONS is from startup handshake; subsequent ones are heartbeats.
+				if count > 1 {
+					time.Sleep(50 * time.Millisecond)
+				}
+			}
+		},
+	}.newServer(t, ctx)
+	defer srv.Stop()
+
+	log := &recordingLogger{}
+
+	cluster := testCluster(defaultProto, srv.Address)
+	cluster.Logger = log
+	// Set threshold lower than the injected delay so warning is triggered.
+	cluster.HeartbeatSlowThreshold = 10 * time.Millisecond
+	cluster.NumConns = 1
+	db, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	// Poll rather than sleep: a probe that misses the 1s tick is due 30s later.
+	deadline := time.Now().Add(35 * time.Second)
+	for !strings.Contains(log.String(), "exceeding threshold") && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	// Stop heartbeat goroutines so the log content is final.
+	db.Close()
+
+	logOutput := log.String()
+	if !strings.Contains(logOutput, "heartbeat to") || !strings.Contains(logOutput, "exceeding threshold") {
+		t.Fatalf("expected heartbeat latency warning in log, got: %q", logOutput)
+	}
+	if !strings.Contains(logOutput, "10ms") {
+		t.Fatalf("expected threshold reported in milliseconds, got: %q", logOutput)
+	}
+	// Only one heartbeat fires within the window; expect exactly one warning.
+	count := strings.Count(logOutput, "exceeding threshold")
+	if count != 1 {
+		t.Fatalf("expected exactly 1 heartbeat warning (suppression), got %d in: %q", count, logOutput)
+	}
+}
+
+func TestHeartbeatLatencyNoWarningWhenDisabled(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	srv := newTestServerOpts{
+		addr:     "127.0.0.1:0",
+		protocol: defaultProto,
+		recvHook: func(f *framer) {
+			if f.header.Op == frm.OpOptions {
+				time.Sleep(20 * time.Millisecond)
+			}
+		},
+	}.newServer(t, ctx)
+	defer srv.Stop()
+
+	log := &recordingLogger{}
+
+	cluster := testCluster(defaultProto, srv.Address)
+	cluster.Logger = log
+	// HeartbeatSlowThreshold is zero (default) — no warnings should be emitted.
+	db, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	time.Sleep(2 * time.Second)
+
+	db.Close()
+
+	logOutput := log.String()
+	if strings.Contains(logOutput, "exceeding threshold") {
+		t.Fatalf("expected no heartbeat warning when disabled, got: %q", logOutput)
+	}
+}
+
+func TestHeartbeatLatencyNoWarningWhenFast(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	// No delay injected — heartbeat should be fast.
+	srv := NewTestServer(t, defaultProto, ctx)
+	defer srv.Stop()
+
+	log := &recordingLogger{}
+
+	cluster := testCluster(defaultProto, srv.Address)
+	cluster.Logger = log
+	// Set a generous threshold that local loopback will never exceed.
+	cluster.HeartbeatSlowThreshold = 5 * time.Second
+	db, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	time.Sleep(2 * time.Second)
+
+	db.Close()
+
+	logOutput := log.String()
+	if strings.Contains(logOutput, "exceeding threshold") {
+		t.Fatalf("expected no heartbeat warning for fast response, got: %q", logOutput)
+	}
+}
