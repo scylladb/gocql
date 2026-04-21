@@ -85,20 +85,21 @@ func connConfig(cfg *ClusterConfig) (*ConnConfig, error) {
 	}
 
 	return &ConnConfig{
-		ProtoVersion:           cfg.ProtoVersion,
-		CQLVersion:             cfg.CQLVersion,
-		WriteTimeout:           cfg.WriteTimeout,
-		ReadTimeout:            cfg.ReadTimeout,
-		ConnectTimeout:         cfg.ConnectTimeout,
-		Dialer:                 cfg.Dialer,
-		HostDialer:             hostDialer,
-		Compressor:             cfg.Compressor,
-		Authenticator:          cfg.Authenticator,
-		AuthProvider:           cfg.AuthProvider,
-		Keepalive:              cfg.SocketKeepalive,
-		HeartbeatSlowThreshold: cfg.HeartbeatSlowThreshold,
-		Logger:                 cfg.logger(),
-		tlsConfig:              cfg.getActualTLSConfig(),
+		ProtoVersion:            cfg.ProtoVersion,
+		CQLVersion:              cfg.CQLVersion,
+		WriteTimeout:            cfg.WriteTimeout,
+		ReadTimeout:             cfg.ReadTimeout,
+		ConnectTimeout:          cfg.ConnectTimeout,
+		Dialer:                  cfg.Dialer,
+		HostDialer:              hostDialer,
+		Compressor:              cfg.Compressor,
+		Authenticator:           cfg.Authenticator,
+		AuthProvider:            cfg.AuthProvider,
+		Keepalive:               cfg.SocketKeepalive,
+		HeartbeatSkipOnActivity: cfg.HeartbeatSkipOnActivity,
+		HeartbeatSlowThreshold:  cfg.HeartbeatSlowThreshold,
+		Logger:                  cfg.logger(),
+		tlsConfig:               cfg.getActualTLSConfig(),
 	}, nil
 }
 

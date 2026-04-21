@@ -167,6 +167,12 @@ type ClusterConfig struct {
 	// warning is logged (e.g. 500 * time.Millisecond for a 500ms threshold).
 	// Default: 0 (disabled, no latency measurement or logging).
 	HeartbeatSlowThreshold time.Duration
+	// HeartbeatSkipOnActivity controls whether heartbeats are skipped when the
+	// connection has had inbound activity since the last check.
+	// When false (the default), heartbeats are sent unconditionally on every tick.
+	// When true, a heartbeat is skipped if the server has sent data since the
+	// last probe, reducing overhead on busy connections.
+	HeartbeatSkipOnActivity bool
 	// If not zero, gocql attempt to reconnect known DOWN nodes in every ReconnectInterval.
 	ReconnectInterval time.Duration
 	// The maximum amount of time to wait for schema agreement in a cluster after
