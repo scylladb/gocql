@@ -2473,3 +2473,156 @@ func TestReleaseFramer(t *testing.T) {
 		c.releaseWriteFramer(f)
 	})
 }
+
+// safeTestLogger is a thread-safe version of testLogger for use in tests
+// where background goroutines (e.g. heartbeat) write to the logger concurrently
+// with the test goroutine reading it.
+type safeTestLogger struct {
+	mu      sync.Mutex
+	capture bytes.Buffer
+}
+
+func (l *safeTestLogger) Print(v ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	fmt.Fprint(&l.capture, v...)
+}
+
+func (l *safeTestLogger) Printf(format string, v ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	fmt.Fprintf(&l.capture, format, v...)
+}
+
+func (l *safeTestLogger) Println(v ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	fmt.Fprintln(&l.capture, v...)
+}
+
+func (l *safeTestLogger) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.capture.String()
+}
+
+func TestHeartbeatLatencyWarning(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	// Count OPTIONS frames after startup to detect heartbeat.
+	var optionsCount atomic.Int32
+
+	srv := newTestServerOpts{
+		addr:     "127.0.0.1:0",
+		protocol: defaultProto,
+		recvHook: func(f *framer) {
+			if f.header.Op == frm.OpOptions {
+				count := optionsCount.Add(1)
+				// Delay heartbeat OPTIONS (not the initial handshake one).
+				// The first OPTIONS is from startup handshake; subsequent ones are heartbeats.
+				if count > 1 {
+					time.Sleep(50 * time.Millisecond)
+				}
+			}
+		},
+	}.newServer(t, ctx)
+	defer srv.Stop()
+
+	log := &safeTestLogger{}
+
+	cluster := testCluster(defaultProto, srv.Address)
+	cluster.Logger = log
+	// Set threshold lower than the injected delay so warning is triggered.
+	cluster.HeartbeatSlowThreshold = 10 * time.Millisecond
+	cluster.NumConns = 1
+	db, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	// Heartbeat fires after 1s initially. Wait for it.
+	time.Sleep(2 * time.Second)
+
+	// Close session to stop heartbeat goroutines before reading the log,
+	// avoiding a data race on the non-thread-safe testLogger.
+	db.Close()
+
+	logOutput := log.String()
+	if !strings.Contains(logOutput, "heartbeat to") || !strings.Contains(logOutput, "exceeding threshold") {
+		t.Fatalf("expected heartbeat latency warning in log, got: %q", logOutput)
+	}
+	if !strings.Contains(logOutput, "10ms") {
+		t.Fatalf("expected threshold reported in milliseconds, got: %q", logOutput)
+	}
+	// Verify log suppression: only one warning should be emitted even though
+	// multiple slow heartbeats occurred during the 2s wait.
+	count := strings.Count(logOutput, "exceeding threshold")
+	if count != 1 {
+		t.Fatalf("expected exactly 1 heartbeat warning (suppression), got %d in: %q", count, logOutput)
+	}
+}
+
+func TestHeartbeatLatencyNoWarningWhenDisabled(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	srv := newTestServerOpts{
+		addr:     "127.0.0.1:0",
+		protocol: defaultProto,
+		recvHook: func(f *framer) {
+			if f.header.Op == frm.OpOptions {
+				time.Sleep(20 * time.Millisecond)
+			}
+		},
+	}.newServer(t, ctx)
+	defer srv.Stop()
+
+	log := &safeTestLogger{}
+
+	cluster := testCluster(defaultProto, srv.Address)
+	cluster.Logger = log
+	// HeartbeatSlowThreshold is zero (default) — no warnings should be emitted.
+	db, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	time.Sleep(2 * time.Second)
+
+	db.Close()
+
+	logOutput := log.String()
+	if strings.Contains(logOutput, "exceeding threshold") {
+		t.Fatalf("expected no heartbeat warning when disabled, got: %q", logOutput)
+	}
+}
+
+func TestHeartbeatLatencyNoWarningWhenFast(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	// No delay injected — heartbeat should be fast.
+	srv := NewTestServer(t, defaultProto, ctx)
+	defer srv.Stop()
+
+	log := &safeTestLogger{}
+
+	cluster := testCluster(defaultProto, srv.Address)
+	cluster.Logger = log
+	// Set a generous threshold that local loopback will never exceed.
+	cluster.HeartbeatSlowThreshold = 5 * time.Second
+	db, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	time.Sleep(2 * time.Second)
+
+	db.Close()
+
+	logOutput := log.String()
+	if strings.Contains(logOutput, "exceeding threshold") {
+		t.Fatalf("expected no heartbeat warning for fast response, got: %q", logOutput)
+	}
+}
