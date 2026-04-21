@@ -40,15 +40,6 @@ func (l *ClientRoutesEndpointList) GetAllConnectionIDs() []string {
 	return ids
 }
 
-func (l *ClientRoutesEndpointList) GetConnectionAddr(connectionID string) string {
-	for _, endpoint := range *l {
-		if endpoint.ConnectionID == connectionID {
-			return endpoint.ConnectionAddr
-		}
-	}
-	return ""
-}
-
 func (l *ClientRoutesEndpointList) Validate() error {
 	for id, endpoint := range *l {
 		if err := endpoint.Validate(); err != nil {
@@ -180,17 +171,18 @@ func (m clientRouteMap) merge(incoming []clientRoute, scopeConnectionIDs, scopeH
 }
 
 type ClientRoutesHandler struct {
-	log          StdLogger
-	c            controlConnection
-	resolver     DNSResolver
-	sub          *eventbus.Subscriber[events.Event]
-	routes       clientRouteMap
-	updateTasks  chan updateTask
-	closeChan    chan struct{}
-	cfg          ClientRoutesConfig
-	mu           sync.RWMutex
-	pickTLSPorts bool
-	initialized  bool
+	log           StdLogger
+	c             controlConnection
+	resolver      DNSResolver
+	sub           *eventbus.Subscriber[events.Event]
+	routes        clientRouteMap
+	addrOverrides map[string]string // connectionID → user-supplied ConnectionAddr
+	updateTasks   chan updateTask
+	closeChan     chan struct{}
+	cfg           ClientRoutesConfig
+	mu            sync.RWMutex
+	pickTLSPorts  bool
+	initialized   bool
 }
 
 var _ AddressTranslatorV2 = (*ClientRoutesHandler)(nil)
@@ -211,6 +203,8 @@ func pickProperPort(pickTLSPorts bool, rec *clientRoute) uint16 {
 
 // TranslateHost implements AddressTranslatorV2 interface.
 // It resolves DNS on every call rather than caching resolved addresses.
+// If the user provided a ConnectionAddr for the route's connectionID,
+// that address is used instead of the one from the system.client_routes table.
 func (p *ClientRoutesHandler) TranslateHost(host AddressTranslatorHostInfo, addr AddressPort) (AddressPort, error) {
 	hostID := host.HostID()
 	if hostID == "" {
@@ -231,12 +225,17 @@ func (p *ClientRoutesHandler) TranslateHost(host AddressTranslatorHostInfo, addr
 		return addr, fmt.Errorf("no address found for host %s", hostID)
 	}
 
-	ips, err := p.resolver.LookupIP(route.address)
+	resolveAddr := route.address
+	if override, ok := p.addrOverrides[route.connectionID]; ok {
+		resolveAddr = override
+	}
+
+	ips, err := p.resolver.LookupIP(resolveAddr)
 	if err != nil {
 		return addr, fmt.Errorf("failed to resolve address for host %s: %v", hostID, err)
 	}
 	if len(ips) == 0 {
-		return addr, fmt.Errorf("no addresses returned for host %s (address=%s)", hostID, route.address)
+		return addr, fmt.Errorf("no addresses returned for host %s (address=%s)", hostID, resolveAddr)
 	}
 
 	port := pickProperPort(p.pickTLSPorts, &route)
@@ -388,14 +387,21 @@ func NewClientRoutesAddressTranslator(
 	if resolver == nil {
 		resolver = defaultDnsResolver
 	}
+	overrides := make(map[string]string, len(cfg.Endpoints))
+	for _, ep := range cfg.Endpoints {
+		if ep.ConnectionAddr != "" {
+			overrides[ep.ConnectionID] = ep.ConnectionAddr
+		}
+	}
 	return &ClientRoutesHandler{
-		cfg:          cfg,
-		log:          log,
-		pickTLSPorts: pickTLSPorts,
-		closeChan:    make(chan struct{}),
-		updateTasks:  make(chan updateTask, 1024),
-		resolver:     resolver,
-			routes:       make(clientRouteMap),
+		cfg:           cfg,
+		log:           log,
+		pickTLSPorts:  pickTLSPorts,
+		closeChan:     make(chan struct{}),
+		updateTasks:   make(chan updateTask, 1024),
+		resolver:      resolver,
+		routes:        make(clientRouteMap),
+		addrOverrides: overrides,
 	}
 }
 

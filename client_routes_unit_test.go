@@ -271,7 +271,57 @@ func TestMerge_FullRefresh_PrunesAllStale(t *testing.T) {
 	}
 	if _, ok := m["h3"]; ok {
 		t.Fatalf("expected h3 to be pruned")
+}
+}
+
+func TestTranslateHost_ConnectionAddrOverride(t *testing.T) {
+	addr := AddressPort{Address: net.ParseIP("1.1.1.1"), Port: 9042}
+
+	resolvedIPs := map[string]net.IP{
+		"route-addr":    net.ParseIP("10.0.0.1"),
+		"override-addr": net.ParseIP("10.0.0.99"),
 	}
+	resolver := dnsResolverFunc(func(host string) ([]net.IP, error) {
+		if ip, ok := resolvedIPs[host]; ok {
+			return []net.IP{ip}, nil
+		}
+		return nil, fmt.Errorf("unknown host %s", host)
+	})
+	routes := clientRouteMap{
+		"h1": {"c1": {connectionID: "c1", hostID: "h1", address: "route-addr", cqlPort: 9042}},
+	}
+
+	t.Run("no override uses route address", func(t *testing.T) {
+		handler := &ClientRoutesHandler{
+			addrOverrides: map[string]string{},
+			resolver:      resolver,
+			routes:        routes,
+		}
+
+		res, err := handler.TranslateHost(testHostInfo{hostID: "h1"}, addr)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !res.Address.Equal(resolvedIPs["route-addr"]) {
+			t.Fatalf("expected route-addr IP %v, got %v", resolvedIPs["route-addr"], res.Address)
+		}
+	})
+
+	t.Run("override replaces route address", func(t *testing.T) {
+		handler := &ClientRoutesHandler{
+			addrOverrides: map[string]string{"c1": "override-addr"},
+			resolver:      resolver,
+			routes:        routes,
+		}
+
+		res, err := handler.TranslateHost(testHostInfo{hostID: "h1"}, addr)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !res.Address.Equal(resolvedIPs["override-addr"]) {
+			t.Fatalf("expected override-addr IP %v, got %v", resolvedIPs["override-addr"], res.Address)
+		}
+	})
 }
 
 // TestUpdateHostPortMapping_FullRefresh_PrunesStaleEntries simulates the same
