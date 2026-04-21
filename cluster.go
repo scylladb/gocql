@@ -270,6 +270,12 @@ type ClusterConfig struct {
 	// Sends a client side timestamp for all requests which overrides the timestamp at which it arrives at the server.
 	// Default: true, only enabled for protocol 3 and above.
 	DefaultTimestamp bool
+	// HeartbeatSkipOnActivity controls whether heartbeats are skipped when the
+	// connection has had inbound activity since the last check.
+	// When false (the default), heartbeats are sent unconditionally on every tick.
+	// When true, a heartbeat is skipped if the server has sent data since the
+	// last probe, reducing overhead on busy connections.
+	HeartbeatSkipOnActivity bool
 	// DisableSkipMetadata will override the internal result metadata cache so that the driver does not
 	// send skip_metadata for queries, this means that the result will always contain
 	// the metadata to parse the rows and will not reuse the metadata from the prepared
