@@ -140,20 +140,21 @@ type SslOptions struct {
 }
 
 type ConnConfig struct {
-	Dialer          Dialer
-	Logger          StdLogger
-	Authenticator   Authenticator
-	Compressor      Compressor
-	HostDialer      HostDialer
-	AuthProvider    func(h *HostInfo) (Authenticator, error)
-	tlsConfig       *tls.Config
-	CQLVersion      string
-	ConnectTimeout  time.Duration
-	ReadTimeout     time.Duration
-	WriteTimeout    time.Duration
-	ProtoVersion    int
-	Keepalive       time.Duration
-	disableCoalesce bool
+	Dialer                 Dialer
+	Logger                 StdLogger
+	Authenticator          Authenticator
+	Compressor             Compressor
+	HostDialer             HostDialer
+	AuthProvider           func(h *HostInfo) (Authenticator, error)
+	tlsConfig              *tls.Config
+	CQLVersion             string
+	ConnectTimeout         time.Duration
+	ReadTimeout            time.Duration
+	WriteTimeout           time.Duration
+	ProtoVersion           int
+	Keepalive              time.Duration
+	HeartbeatSlowThreshold time.Duration
+	disableCoalesce        bool
 	// isControlConn marks the connection used by the control connection, which is
 	// the only one reporting the driver configuration on startup.
 	isControlConn bool
@@ -983,6 +984,7 @@ func (c *Conn) heartBeat(ctx context.Context) {
 	defer timer.Stop()
 
 	var failures int
+	var heartbeatSlow bool
 
 	for {
 		if failures > 5 {
@@ -996,6 +998,12 @@ func (c *Conn) heartBeat(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-timer.C:
+		}
+
+		var start time.Time
+		slowThreshold := c.cfg.HeartbeatSlowThreshold
+		if slowThreshold > 0 {
+			start = time.Now()
 		}
 
 		framer, err := c.exec(context.Background(), &writeOptionsFrame{}, nil, c.cfg.ConnectTimeout)
@@ -1015,6 +1023,17 @@ func (c *Conn) heartBeat(ctx context.Context) {
 		switch resp.(type) {
 		case *frm.SupportedFrame:
 			// Everything ok
+			if slowThreshold > 0 {
+				if elapsed := time.Since(start); elapsed > slowThreshold {
+					if !heartbeatSlow {
+						heartbeatSlow = true
+						c.cfg.logger().Printf("gocql: heartbeat to %s took %v, exceeding threshold %v",
+							c.addr, elapsed, slowThreshold)
+					}
+				} else {
+					heartbeatSlow = false
+				}
+			}
 			sleepTime = 30 * time.Second
 			failures = 0
 		case error:
