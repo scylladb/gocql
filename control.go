@@ -111,6 +111,11 @@ func (c *controlConn) heartBeat() {
 	timer := time.NewTimer(sleepTime)
 	defer timer.Stop()
 
+	// prevConn/prevActivity track the underlying connection and its activity
+	// counter from the last check; reset on reconnect.
+	var prevConn *Conn
+	var prevActivity int64
+
 	for {
 		timer.Reset(sleepTime)
 
@@ -120,7 +125,27 @@ func (c *controlConn) heartBeat() {
 		case <-timer.C:
 		}
 
+		// Skip heartbeat if the underlying connection had activity since the
+		// last check. Matches the Python driver behavior.
+		if conn := c.underlyingConn(); conn != nil && conn == prevConn {
+			cur := conn.activity.Load()
+			if cur != prevActivity {
+				prevActivity = cur
+				sleepTime = 30 * time.Second
+				continue
+			}
+		}
+
 		resp, err := c.writeFrame(&writeOptionsFrame{})
+		// Refresh snapshot: writeFrame may have bumped the counter and the
+		// conn pointer may have changed on reconnect.
+		if conn := c.underlyingConn(); conn != nil {
+			prevConn = conn
+			prevActivity = conn.activity.Load()
+		} else {
+			prevConn = nil
+			prevActivity = 0
+		}
 		if err != nil {
 			goto reconn
 		}
@@ -140,8 +165,21 @@ func (c *controlConn) heartBeat() {
 		// try to connect a bit faster
 		sleepTime = 1 * time.Second
 		c.reconnect()
+		prevConn = nil
+		prevActivity = 0
 		continue
 	}
+}
+
+// underlyingConn returns the current control connection's *Conn, or nil if
+// none is set or it is not a *Conn (e.g., test mock).
+func (c *controlConn) underlyingConn() *Conn {
+	ch := c.getConn()
+	if ch == nil {
+		return nil
+	}
+	conn, _ := ch.conn.(*Conn)
+	return conn
 }
 
 func resolveInitialEndpoint(resolver DNSResolver, addr string, defaultPort int) ([]*HostInfo, error) {
