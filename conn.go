@@ -263,10 +263,14 @@ type Conn struct {
 	// for server push events: a SCHEMA_CHANGE arriving inside that window makes
 	// the event-debouncer goroutine run querySystem on this connection
 	// concurrently with the write.
-	systemRequest    atomic.Pointer[systemRequestState]
-	cqlProtoExts     []cqlProtocolExtension
-	scyllaSupported  ScyllaConnectionFeatures
-	writeTimeout     atomic.Int64
+	systemRequest   atomic.Pointer[systemRequestState]
+	cqlProtoExts    []cqlProtocolExtension
+	scyllaSupported ScyllaConnectionFeatures
+	writeTimeout    atomic.Int64
+	// activity records the last time (UnixNano) this connection sent or
+	// received a request, so the heartbeat can skip connections that are
+	// already active.
+	activity         atomic.Int64
 	mu               sync.Mutex
 	tabletsRoutingV1 int32
 	headerBuf        [headSize]byte
@@ -1037,6 +1041,18 @@ func (p *protocolError) Error() string {
 	return fmt.Sprintf("gocql: received unexpected frame on stream %d: %v", p.frame.Header().Stream, p.frame)
 }
 
+// warnSlowHeartbeat logs once per streak of heartbeats slower than threshold; a fast one re-arms it.
+func warnSlowHeartbeat(logger StdLogger, addr string, elapsed, threshold time.Duration, warned *bool) {
+	if elapsed <= threshold {
+		*warned = false
+		return
+	}
+	if !*warned {
+		*warned = true
+		logger.Printf("gocql: heartbeat to %s took %v, exceeding threshold %v", addr, elapsed, threshold)
+	}
+}
+
 func (c *Conn) heartBeat(ctx context.Context) {
 	sleepTime := 1 * time.Second
 	timer := time.NewTimer(sleepTime)
@@ -1044,6 +1060,7 @@ func (c *Conn) heartBeat(ctx context.Context) {
 
 	var failures int
 	var heartbeatSlow bool
+	prev := c.activity.Load()
 
 	for {
 		if failures > 5 {
@@ -1059,13 +1076,28 @@ func (c *Conn) heartBeat(ctx context.Context) {
 		case <-timer.C:
 		}
 
+		// Recent activity proves liveness, as in the Python driver; dead-conn
+		// detection may take up to 2x the interval.
+		cur := c.activity.Load()
+		if cur != prev {
+			prev = cur
+			sleepTime = 30 * time.Second
+			failures = 0
+			continue
+		}
+
 		var start time.Time
 		slowThreshold := c.cfg.HeartbeatSlowThreshold
+		// The control loop warns for control connections, so a slow probe is reported once.
+		if c.cfg.isControlConn {
+			slowThreshold = 0
+		}
 		if slowThreshold > 0 {
 			start = time.Now()
 		}
 
-		framer, err := c.exec(context.Background(), &writeOptionsFrame{}, nil, c.cfg.ConnectTimeout)
+		// execInternal: the probe must not count as activity.
+		framer, err := c.execInternal(context.Background(), &writeOptionsFrame{}, nil, c.cfg.ConnectTimeout, true)
 		if err != nil {
 			failures++
 			continue
@@ -1083,15 +1115,7 @@ func (c *Conn) heartBeat(ctx context.Context) {
 		case *frm.SupportedFrame:
 			// Everything ok
 			if slowThreshold > 0 {
-				if elapsed := time.Since(start); elapsed > slowThreshold {
-					if !heartbeatSlow {
-						heartbeatSlow = true
-						c.logger.Printf("gocql: heartbeat to %s took %v, exceeding threshold %v",
-							c.addr, elapsed, slowThreshold)
-					}
-				} else {
-					heartbeatSlow = false
-				}
+				warnSlowHeartbeat(c.logger, c.addr, time.Since(start), slowThreshold, &heartbeatSlow)
 			}
 			sleepTime = 30 * time.Second
 			failures = 0
@@ -2217,6 +2241,11 @@ func (c *Conn) addCall(call *callReq) error {
 // typically via defer immediately after parsing or after transferring ownership
 // to an Iter.
 func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, requestTimeout time.Duration) (*framer, error) {
+	// Cancelled requests never touch the wire; don't count as activity.
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return nil, &QueryError{err: ctxErr, potentiallyExecuted: false}
+	}
+	c.activity.Add(1)
 	return c.execInternal(ctx, req, tracer, requestTimeout, true)
 }
 
