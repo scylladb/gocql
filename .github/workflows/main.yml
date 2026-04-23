@@ -24,9 +24,9 @@ jobs:
     name: Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      - uses: actions/cache@v5
+      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: |
             /home/runner/.cache/pip
@@ -39,7 +39,7 @@ jobs:
           # CCM, scylla, cassandra and java versions are in Makefile
           key: pr-check-${{ runner.os }}-${{ hashFiles('Makefile') }}
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version-file: go.mod
           cache-dependency-path: |
@@ -66,13 +66,13 @@ jobs:
     env:
       SCYLLA_VERSION: ${{ matrix.scylla-version }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:
           python-version: '3.11'
 
-      - uses: actions/cache@v5
+      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: |
             /home/runner/.cache/pip
@@ -83,7 +83,7 @@ jobs:
           # CCM, pip and java versions are in Makefile
           key: pr-check-${{ runner.os }}-${{ hashFiles('Makefile') }}
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version-file: go.mod
           cache-dependency-path: |
@@ -96,7 +96,7 @@ jobs:
         run: make resolve-scylla-version
 
       - name: Pull CCM image from the cache
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         if: steps.scylla-version.outputs.value != 'NOT-FOUND'
         id: ccm-cache
         with:
@@ -109,7 +109,7 @@ jobs:
 
       - name: Save CCM ScyllaDB image into the cache
         if: steps.ccm-cache.outputs.cache-hit != 'true' && steps.scylla-version.outputs.value != 'NOT-FOUND'
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: ~/.ccm/repository
           key: ccm-scylla-${{ runner.os }}-${{ steps.scylla-version.outputs.value }}
@@ -134,13 +134,13 @@ jobs:
       CASSANDRA_VERSION: ${{ matrix.cassandra-version }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:
           python-version: '3.11'
 
-      - uses: actions/cache@v5
+      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: |
             /home/runner/.cache/pip
@@ -151,7 +151,7 @@ jobs:
           # CCM, python and java versions are in Makefile
           key: pr-check-${{ runner.os }}-${{ hashFiles('Makefile') }}
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version-file: go.mod
           cache-dependency-path: |
@@ -164,7 +164,7 @@ jobs:
         run: make resolve-cassandra-version
 
       - name: Pull CCM image from the cache
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         if: steps.cassandra-version.outputs.value != 'NOT-FOUND'
         id: ccm-cache
         with:
@@ -177,7 +177,7 @@ jobs:
 
       - name: Save CCM Cassandra image into the cache
         if: steps.ccm-cache.outputs.cache-hit != 'true' && steps.cassandra-version.outputs.value != 'NOT-FOUND'
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: ~/.ccm/repository
           key: ccm-cassandra-${{ runner.os }}-${{ steps.cassandra-version.outputs.value }}
