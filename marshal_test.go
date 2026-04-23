@@ -866,6 +866,58 @@ func TestUnmarshalUDT(t *testing.T) {
 	}
 }
 
+// TestUnmarshalUDTIntoInterface tests that UDTs can be unmarshaled into *any.
+// This is used by MapScan when the destination map has a pre-existing entry
+// for a UDT column (the value is an any, so Scan receives *any).
+func TestUnmarshalUDTIntoInterface(t *testing.T) {
+	t.Parallel()
+
+	info := UDTTypeInfo{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeUDT},
+		Name:       "myudt",
+		KeySpace:   "myks",
+		Elements: []UDTField{
+			{
+				Name: "first",
+				Type: NativeType{proto: protoVersion4, typ: TypeAscii},
+			},
+			{
+				Name: "second",
+				Type: NativeType{proto: protoVersion4, typ: TypeSmallInt},
+			},
+		},
+	}
+	data := append(
+		bytesWithLength([]byte("Hello")),       // first
+		bytesWithLength([]byte("\x00\x2a"))..., // second
+	)
+
+	var dest any
+	if err := Unmarshal(info, data, &dest); err != nil {
+		t.Fatalf("Unmarshal into *any failed: %v", err)
+	}
+
+	result, ok := dest.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map[string]any, got %T", dest)
+	}
+	if result["first"] != "Hello" {
+		t.Errorf("expected first=Hello, got %v", result["first"])
+	}
+	if result["second"] != int16(42) {
+		t.Errorf("expected second=42, got %v (%T)", result["second"], result["second"])
+	}
+
+	// nil data should produce nil
+	var dest2 any
+	if err := Unmarshal(info, nil, &dest2); err != nil {
+		t.Fatalf("Unmarshal nil into *any failed: %v", err)
+	}
+	if dest2 != nil {
+		t.Errorf("expected nil for nil data, got %v", dest2)
+	}
+}
+
 // TestUnmarshalListIntoInterface tests that lists can be unmarshaled into *any
 // This is used by MapScan and SliceMap functions.
 func TestUnmarshalListIntoInterface(t *testing.T) {
