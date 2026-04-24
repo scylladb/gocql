@@ -60,12 +60,12 @@ func (t testHostInfo) ScyllaShardCount() int              { return 0 }
 
 func TestMerge(t *testing.T) {
 	m := clientRouteMap{
-		"h1": {"c1": {connectionID: "c1", hostID: "h1", address: "a1", cqlPort: 9042}},
+		"h1": {"c1": {connectionID: "c1", hostID: "h1", address: "a1", port: 9042}},
 	}
 
 	// Same record: no change expected.
 	m.merge([]clientRoute{
-		{connectionID: "c1", hostID: "h1", address: "a1", cqlPort: 9042},
+		{connectionID: "c1", hostID: "h1", address: "a1", port: 9042},
 	}, []string{"c1"}, nil)
 	if len(m) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(m))
@@ -73,17 +73,17 @@ func TestMerge(t *testing.T) {
 
 	// Updated address: record should be replaced.
 	m.merge([]clientRoute{
-		{connectionID: "c1", hostID: "h1", address: "a2", cqlPort: 9043},
+		{connectionID: "c1", hostID: "h1", address: "a2", port: 9043},
 	}, []string{"c1"}, nil)
 	rec := m["h1"]["c1"]
-	if rec.address != "a2" || rec.cqlPort != 9043 {
+	if rec.address != "a2" || rec.port != 9043 {
 		t.Fatalf("expected record to update")
 	}
 
 	// New record: should be added.
 	m = make(clientRouteMap)
 	m.merge([]clientRoute{
-		{connectionID: "c2", hostID: "h2", address: "a3", cqlPort: 9044},
+		{connectionID: "c2", hostID: "h2", address: "a3", port: 9044},
 	}, []string{"c2"}, nil)
 	if len(m) != 1 {
 		t.Fatalf("expected new record to be added")
@@ -118,36 +118,42 @@ func TestClientRoutesHandlerTranslateHost(t *testing.T) {
 	}
 
 	handler.routes = clientRouteMap{
-		"h1": {"c1": {connectionID: "c1", hostID: "h1", cqlPort: 9042, secureCQLPort: 9142}},
+		"h1": {"c1": {connectionID: "c1", hostID: "h1", port: 9042}},
 	}
 
-	handler.pickTLSPorts = false
 	res, err = handler.TranslateHost(testHostInfo{hostID: "h1"}, addr)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	if !res.Address.Equal(net.ParseIP("10.0.0.1")) {
+		t.Fatalf("expected resolved IP 10.0.0.1, got %v", res.Address)
 	}
 	if res.Port != 9042 {
-		t.Fatalf("expected non-TLS port, got %d", res.Port)
-	}
-
-	handler.pickTLSPorts = true
-	res, err = handler.TranslateHost(testHostInfo{hostID: "h1"}, addr)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if res.Port != 9142 {
-		t.Fatalf("expected TLS port, got %d", res.Port)
+		t.Fatalf("expected port 9042, got %d", res.Port)
 	}
 
 	errorHandler := &ClientRoutesHandler{
 		resolver: dnsResolverFunc(func(host string) ([]net.IP, error) {
 			return nil, errors.New("lookup failed")
 		}),
-			routes: clientRouteMap{"h2": {"c2": {connectionID: "c2", hostID: "h2", address: "host", cqlPort: 9042}}},
+			routes: clientRouteMap{"h2": {"c2": {connectionID: "c2", hostID: "h2", address: "host", port: 9042}}},
 	}
 	_, err = errorHandler.TranslateHost(testHostInfo{hostID: "h2"}, addr)
 	if err == nil {
 		t.Fatalf("expected resolver error to bubble up")
+	}
+
+	// Route with port 0 should return an error before attempting DNS.
+	zeroPortHandler := &ClientRoutesHandler{
+		resolver: dnsResolverFunc(func(host string) ([]net.IP, error) {
+			t.Fatal("DNS should not be called when port is 0")
+			return nil, nil
+		}),
+			routes: clientRouteMap{"h3": {"c3": {connectionID: "c3", hostID: "h3", address: "host", port: 0}}},
+	}
+	_, err = zeroPortHandler.TranslateHost(testHostInfo{hostID: "h3"}, addr)
+	if err == nil {
+		t.Fatalf("expected error for zero port")
 	}
 }
 
@@ -193,7 +199,7 @@ func TestGetHostPortMappingFromClusterQuery(t *testing.T) {
 	for _, tc := range tcases {
 		t.Run(tc.name, func(t *testing.T) {
 			ctrl := &fakeControlConn{}
-			_, err := getHostPortMappingFromCluster(ctrl, "system.client_routes", tc.connectionIDs, tc.hostIDs)
+			_, err := getHostPortMappingFromCluster(ctrl, "system.client_routes", tc.connectionIDs, tc.hostIDs, false)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -209,8 +215,8 @@ func TestGetHostPortMappingFromClusterQuery(t *testing.T) {
 
 func TestMerge_DeletedHost(t *testing.T) {
 	m := clientRouteMap{
-		"h1": {"c1": {connectionID: "c1", hostID: "h1", address: "a1", cqlPort: 9042}},
-		"h2": {"c1": {connectionID: "c1", hostID: "h2", address: "a2", cqlPort: 9042}},
+		"h1": {"c1": {connectionID: "c1", hostID: "h1", address: "a1", port: 9042}},
+		"h2": {"c1": {connectionID: "c1", hostID: "h2", address: "a2", port: 9042}},
 	}
 
 	// Simulate event for (c1, h1) where query returned nothing → (c1,h1) should be removed.
@@ -227,16 +233,16 @@ func TestMerge_DeletedHost(t *testing.T) {
 func TestMerge_UpdatedHost(t *testing.T) {
 	m := clientRouteMap{
 		"h1": {
-			"c1": {connectionID: "c1", hostID: "h1", address: "old-addr", cqlPort: 9042},
-			"c2": {connectionID: "c2", hostID: "h1", address: "old-addr2", cqlPort: 9042},
+			"c1": {connectionID: "c1", hostID: "h1", address: "old-addr", port: 9042},
+			"c2": {connectionID: "c2", hostID: "h1", address: "old-addr2", port: 9042},
 		},
-		"h2": {"c1": {connectionID: "c1", hostID: "h2", address: "keep", cqlPort: 9042}},
+		"h2": {"c1": {connectionID: "c1", hostID: "h2", address: "keep", port: 9042}},
 	}
 
 	// h1 address changed; fresh query returns new data for h1. h2 is not affected.
 	m.merge([]clientRoute{
-		{connectionID: "c1", hostID: "h1", address: "new-addr", cqlPort: 9043},
-		{connectionID: "c2", hostID: "h1", address: "new-addr2", cqlPort: 9043},
+		{connectionID: "c1", hostID: "h1", address: "new-addr", port: 9043},
+		{connectionID: "c2", hostID: "h1", address: "new-addr2", port: 9043},
 	}, []string{"c1", "c2"}, []string{"h1"})
 
 	if len(m) != 2 || len(m["h1"]) != 2 {
@@ -255,15 +261,15 @@ func TestMerge_UpdatedHost(t *testing.T) {
 
 func TestMerge_FullRefresh_PrunesAllStale(t *testing.T) {
 	m := clientRouteMap{
-		"h1": {"c1": {connectionID: "c1", hostID: "h1", address: "a1", cqlPort: 9042}},
-		"h2": {"c1": {connectionID: "c1", hostID: "h2", address: "a2", cqlPort: 9042}},
-		"h3": {"c1": {connectionID: "c1", hostID: "h3", address: "a3", cqlPort: 9042}},
+		"h1": {"c1": {connectionID: "c1", hostID: "h1", address: "a1", port: 9042}},
+		"h2": {"c1": {connectionID: "c1", hostID: "h2", address: "a2", port: 9042}},
+		"h3": {"c1": {connectionID: "c1", hostID: "h3", address: "a3", port: 9042}},
 	}
 
 	// Full refresh for connection c1: all entries for c1 are pruned, only h1 and h2 returned.
 	m.merge([]clientRoute{
-		{connectionID: "c1", hostID: "h1", address: "a1", cqlPort: 9042},
-		{connectionID: "c1", hostID: "h2", address: "a2", cqlPort: 9042},
+		{connectionID: "c1", hostID: "h1", address: "a1", port: 9042},
+		{connectionID: "c1", hostID: "h2", address: "a2", port: 9042},
 	}, []string{"c1"}, nil)
 
 	if len(m) != 2 {
@@ -272,6 +278,7 @@ func TestMerge_FullRefresh_PrunesAllStale(t *testing.T) {
 	if _, ok := m["h3"]; ok {
 		t.Fatalf("expected h3 to be pruned")
 }
+
 }
 
 func TestTranslateHost_ConnectionAddrOverride(t *testing.T) {
@@ -288,7 +295,7 @@ func TestTranslateHost_ConnectionAddrOverride(t *testing.T) {
 		return nil, fmt.Errorf("unknown host %s", host)
 	})
 	routes := clientRouteMap{
-		"h1": {"c1": {connectionID: "c1", hostID: "h1", address: "route-addr", cqlPort: 9042}},
+		"h1": {"c1": {connectionID: "c1", hostID: "h1", address: "route-addr", port: 9042}},
 	}
 
 	t.Run("no override uses route address", func(t *testing.T) {
@@ -330,15 +337,15 @@ func TestTranslateHost_ConnectionAddrOverride(t *testing.T) {
 func TestUpdateHostPortMapping_FullRefresh_PrunesStaleEntries(t *testing.T) {
 	// Existing routes: h1, h2, h3.
 	routes := clientRouteMap{
-		"h1": {"c1": {connectionID: "c1", hostID: "h1", address: "a1", cqlPort: 9042}},
-		"h2": {"c1": {connectionID: "c1", hostID: "h2", address: "a2", cqlPort: 9042}},
-		"h3": {"c1": {connectionID: "c1", hostID: "h3", address: "a3", cqlPort: 9042}},
+		"h1": {"c1": {connectionID: "c1", hostID: "h1", address: "a1", port: 9042}},
+		"h2": {"c1": {connectionID: "c1", hostID: "h2", address: "a2", port: 9042}},
+		"h3": {"c1": {connectionID: "c1", hostID: "h3", address: "a3", port: 9042}},
 	}
 
 	// Cluster now returns only h1 and h2 (h3 was decommissioned).
 	incoming := []clientRoute{
-		{connectionID: "c1", hostID: "h1", address: "a1", cqlPort: 9042},
-		{connectionID: "c1", hostID: "h2", address: "a2", cqlPort: 9042},
+		{connectionID: "c1", hostID: "h1", address: "a1", port: 9042},
+		{connectionID: "c1", hostID: "h2", address: "a2", port: 9042},
 	}
 
 	routes.merge(incoming, []string{"c1"}, nil)

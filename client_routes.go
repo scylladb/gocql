@@ -98,21 +98,19 @@ func (cfg *ClientRoutesConfig) Validate() error {
 }
 
 type clientRoute struct {
-	connectionID  string
-	hostID        string
-	address       string
-	cqlPort       uint16
-	secureCQLPort uint16
+	connectionID string
+	hostID       string
+	address      string
+	port         uint16
 }
 
 func (r clientRoute) String() string {
 	return fmt.Sprintf(
-		"clientRoute{connectionID=%s, hostID=%s, address=%s, cqlPort=%d, secureCQLPort=%d}",
+		"clientRoute{connectionID=%s, hostID=%s, address=%s, port=%d}",
 		r.connectionID,
 		r.hostID,
 		r.address,
-		r.cqlPort,
-		r.secureCQLPort,
+		r.port,
 	)
 }
 
@@ -193,14 +191,6 @@ func (p *ClientRoutesHandler) Translate(addr net.IP, port int) (net.IP, int) {
 	panic("should never be called")
 }
 
-func pickProperPort(pickTLSPorts bool, rec *clientRoute) uint16 {
-	if pickTLSPorts {
-		return rec.secureCQLPort
-	}
-	return rec.cqlPort
-}
-
-
 // TranslateHost implements AddressTranslatorV2 interface.
 // It resolves DNS on every call rather than caching resolved addresses.
 // If the user provided a ConnectionAddr for the route's connectionID,
@@ -230,6 +220,10 @@ func (p *ClientRoutesHandler) TranslateHost(host AddressTranslatorHostInfo, addr
 		resolveAddr = override
 	}
 
+	if route.port == 0 {
+		return addr, fmt.Errorf("record %s/%s has target port empty", route.hostID, route.connectionID)
+	}
+
 	ips, err := p.resolver.LookupIP(resolveAddr)
 	if err != nil {
 		return addr, fmt.Errorf("failed to resolve address for host %s: %v", hostID, err)
@@ -238,12 +232,11 @@ func (p *ClientRoutesHandler) TranslateHost(host AddressTranslatorHostInfo, addr
 		return addr, fmt.Errorf("no addresses returned for host %s (address=%s)", hostID, resolveAddr)
 	}
 
-	port := pickProperPort(p.pickTLSPorts, &route)
-	if port == 0 {
+	if route.port == 0 {
 		return addr, fmt.Errorf("record %s/%s has target port empty", route.hostID, route.connectionID)
 	}
 
-	return AddressPort{Address: ips[0], Port: port}, nil
+	return AddressPort{Address: ips[0], Port: route.port}, nil
 }
 
 type updateTask struct {
@@ -365,7 +358,7 @@ func (p *ClientRoutesHandler) startUpdateWorker() {
 }
 
 func (p *ClientRoutesHandler) updateHostPortMapping(connectionIDs []string, hostIDs []string) error {
-	incoming, err := getHostPortMappingFromCluster(p.c, p.cfg.TableName, connectionIDs, hostIDs)
+	incoming, err := getHostPortMappingFromCluster(p.c, p.cfg.TableName, connectionIDs, hostIDs, p.pickTLSPorts)
 	if err != nil {
 		return err
 	}
@@ -407,7 +400,7 @@ func NewClientRoutesAddressTranslator(
 
 var _ AddressTranslator = &ClientRoutesHandler{}
 
-func getHostPortMappingFromCluster(c controlConnection, table string, connectionIDs []string, hostIDs []string) ([]clientRoute, error) {
+func getHostPortMappingFromCluster(c controlConnection, table string, connectionIDs []string, hostIDs []string, pickTLSPorts bool) ([]clientRoute, error) {
 	var res []clientRoute
 
 	stmt := []string{fmt.Sprintf("select connection_id, host_id, address, port, tls_port from %s", table)}
@@ -444,9 +437,24 @@ func getHostPortMappingFromCluster(c controlConnection, table string, connection
 	}
 
 	iter := c.query(strings.Join(stmt, " "), bounds...)
-	var rec clientRoute
-	for iter.Scan(&rec.connectionID, &rec.hostID, &rec.address, &rec.cqlPort, &rec.secureCQLPort) {
-		res = append(res, rec)
+	var (
+		connectionID  string
+		hostID        string
+		address       string
+		cqlPort       uint16
+		secureCQLPort uint16
+	)
+	for iter.Scan(&connectionID, &hostID, &address, &cqlPort, &secureCQLPort) {
+		port := cqlPort
+		if pickTLSPorts {
+			port = secureCQLPort
+		}
+		res = append(res, clientRoute{
+			connectionID: connectionID,
+			hostID:       hostID,
+			address:      address,
+			port:         port,
+		})
 	}
 	if err := iter.Close(); err != nil {
 		return nil, fmt.Errorf("error reading %s table: %v", table, err)
