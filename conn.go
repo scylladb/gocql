@@ -467,7 +467,7 @@ func (c *Conn) init(ctx context.Context, dialedHost *DialedHost) error {
 
 	// dont coalesce startup frames
 	if c.session.cfg.WriteCoalesceWaitTime > 0 && !c.cfg.disableCoalesce && !dialedHost.DisableCoalesce {
-		c.w = newWriteCoalescer(dialedHost.Conn, c.cfg.ConnectTimeout, c.session.cfg.WriteCoalesceWaitTime, ctx.Done())
+		c.w = newWriteCoalescer(dialedHost.Conn, c.cfg.ConnectTimeout, c.session.cfg.WriteCoalesceWaitTime, c.session.cfg.WriteCoalesceFlushThreshold, ctx.Done())
 	}
 
 	if c.isScyllaConn() { // ScyllaDB does not support system.peers_v2
@@ -1787,12 +1787,23 @@ func (c *deadlineContextWriter) writeContext(ctx context.Context, p []byte) (int
 	return c.w.Write(p)
 }
 
+// defaultFlushThreshold is the size threshold above which coalesced frames are
+// flushed immediately, without waiting for the coalesce timer.  A frame that
+// already fills a typical TCP segment (~1460 bytes for a 1500-byte MTU) gains
+// nothing from waiting for more data — the kernel will send it as a full
+// packet anyway.
+const defaultFlushThreshold = 1400
+
 func newWriteCoalescer(conn deadlineWriter, writeTimeout, coalesceDuration time.Duration,
-	quit <-chan struct{}) *writeCoalescer {
+	flushThreshold int, quit <-chan struct{}) *writeCoalescer {
+	if flushThreshold <= 0 {
+		flushThreshold = defaultFlushThreshold
+	}
 	wc := &writeCoalescer{
-		writeCh: make(chan writeRequest),
-		c:       conn,
-		quit:    quit,
+		writeCh:        make(chan writeRequest),
+		c:              conn,
+		quit:           quit,
+		flushThreshold: flushThreshold,
 	}
 	wc.setWriteTimeout(writeTimeout)
 	go wc.writeFlusher(coalesceDuration)
@@ -1806,6 +1817,8 @@ type writeCoalescer struct {
 	testEnqueuedHook func()
 	testFlushedHook  func()
 	timeout          atomic.Int64
+	flushThreshold   int
+	mu               sync.Mutex
 }
 
 func (w *writeCoalescer) setWriteTimeout(timeout time.Duration) {
@@ -1878,14 +1891,25 @@ func (w *writeCoalescer) writeFlusherImpl(timerC <-chan time.Time, resetTimer fu
 
 	var buffers net.Buffers
 	var resultChans []chan<- writeResult
+	var bufferedBytes int
 
 	for {
 		select {
 		case req := <-w.writeCh:
 			buffers = append(buffers, req.data)
 			resultChans = append(resultChans, req.resultChan)
-			if !running {
-				// Start timer on first write.
+			bufferedBytes += len(req.data)
+			if w.flushThreshold > 0 && bufferedBytes >= w.flushThreshold {
+				// Buffer already fills a TCP segment; flush now.
+				running = false
+				w.flush(resultChans, buffers)
+				buffers = nil
+				resultChans = nil
+				bufferedBytes = 0
+				if w.testFlushedHook != nil {
+					w.testFlushedHook()
+				}
+			} else if !running {
 				resetTimer()
 				running = true
 			}
@@ -1905,6 +1929,7 @@ func (w *writeCoalescer) writeFlusherImpl(timerC <-chan time.Time, resetTimer fu
 			w.flush(resultChans, buffers)
 			buffers = nil
 			resultChans = nil
+			bufferedBytes = 0
 			if w.testFlushedHook != nil {
 				w.testFlushedHook()
 			}
