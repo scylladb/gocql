@@ -1796,6 +1796,50 @@ func TestWriteCoalescing_MultipleSmallFramesExceedThreshold(t *testing.T) {
 	}
 }
 
+func TestCoalescePolicyCrossDC(t *testing.T) {
+	policy := NewCoalescePolicyCrossDC("dc1")
+
+	tests := []struct {
+		dc   string
+		want bool
+	}{
+		{"dc1", false}, // same DC → no coalesce
+		{"dc2", true},  // different DC → coalesce
+		{"", true},     // unknown DC → coalesce (safe default)
+	}
+
+	for _, tt := range tests {
+		host := &HostInfo{dataCenter: tt.dc}
+		got := policy(host)
+		if got != tt.want {
+			t.Errorf("CrossDC policy for dc=%q: got %v, want %v", tt.dc, got, tt.want)
+		}
+	}
+}
+
+func TestCoalescePolicyCrossRack(t *testing.T) {
+	policy := NewCoalescePolicyCrossRack("dc1", "rack1")
+
+	tests := []struct {
+		dc   string
+		rack string
+		want bool
+	}{
+		{"dc1", "rack1", false}, // same DC+rack → no coalesce
+		{"dc1", "rack2", true},  // same DC, different rack → coalesce
+		{"dc2", "rack1", true},  // different DC → coalesce
+		{"dc2", "rack2", true},  // different DC+rack → coalesce
+	}
+
+	for _, tt := range tests {
+		host := &HostInfo{dataCenter: tt.dc, rack: tt.rack}
+		got := policy(host)
+		if got != tt.want {
+			t.Errorf("CrossRack policy for dc=%q rack=%q: got %v, want %v", tt.dc, tt.rack, got, tt.want)
+		}
+	}
+}
+
 func TestSkipMetadata(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
