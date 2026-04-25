@@ -155,6 +155,11 @@ type ClusterConfig struct {
 	//
 	// (default: 200 microseconds)
 	WriteCoalesceWaitTime time.Duration
+	// WriteCoalesceFlushThreshold is the buffered data size (in bytes) above which
+	// the write coalescer flushes immediately instead of waiting for the coalesce
+	// timer.  A frame that already fills a TCP segment gains nothing from waiting.
+	// Set to 0 to use the default (1400 bytes).
+	WriteCoalesceFlushThreshold int
 	// WriteTimeout limits the time the driver waits to write a request to a network connection.
 	// WriteTimeout should be lower than or equal to Timeout.
 	// WriteTimeout defaults to the value of Timeout.
