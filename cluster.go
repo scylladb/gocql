@@ -153,6 +153,17 @@ type ClusterConfig struct {
 	// timer.  A frame that already fills a TCP segment gains nothing from waiting.
 	// Set to 0 to use the default (1400 bytes).
 	WriteCoalesceFlushThreshold int
+	// WriteCoalescePolicy, if set, is called when establishing a connection to
+	// decide whether write coalescing should be enabled for that host.  It
+	// receives the HostInfo of the remote node and returns true to enable
+	// coalescing or false to disable it.  This allows topology-aware decisions
+	// such as coalescing only for cross-DC or cross-rack connections where the
+	// network latency amortizes the coalesce wait.
+	//
+	// When nil, coalescing is applied to all connections (the default behavior).
+	// Use NewCoalescePolicyCrossDC or NewCoalescePolicyCrossRack as convenient
+	// constructors.
+	WriteCoalescePolicy func(host *HostInfo) bool
 	// WriteTimeout limits the time the driver waits to write a request to a network connection.
 	// WriteTimeout should be lower than or equal to Timeout.
 	// WriteTimeout defaults to the value of Timeout.
@@ -408,6 +419,27 @@ func NewCluster(hosts ...string) *ClusterConfig {
 	}
 
 	return cfg
+}
+
+// NewCoalescePolicyCrossDC returns a WriteCoalescePolicy that enables
+// coalescing only for hosts in a different data center than localDC.
+// Connections to hosts in localDC skip the coalesce wait since local-DC
+// round-trip times are low enough that the wait adds unnecessary latency.
+func NewCoalescePolicyCrossDC(localDC string) func(host *HostInfo) bool {
+	return func(host *HostInfo) bool {
+		return host.DataCenter() != localDC
+	}
+}
+
+// NewCoalescePolicyCrossRack returns a WriteCoalescePolicy that enables
+// coalescing only for hosts outside the local data center and rack.
+// Same-rack connections have the lowest latency and benefit least from
+// coalescing; cross-rack and cross-DC connections have higher latency
+// where the coalesce wait is amortized by network savings.
+func NewCoalescePolicyCrossRack(localDC, localRack string) func(host *HostInfo) bool {
+	return func(host *HostInfo) bool {
+		return host.DataCenter() != localDC || host.Rack() != localRack
+	}
 }
 
 func (cfg *ClusterConfig) logger() StdLogger {

@@ -437,7 +437,9 @@ func (c *Conn) init(ctx context.Context, dialedHost *DialedHost) error {
 
 	// dont coalesce startup frames
 	if c.session.cfg.WriteCoalesceWaitTime > 0 && !c.cfg.disableCoalesce && !dialedHost.DisableCoalesce {
-		c.w = newWriteCoalescer(c.conn, c.cfg.ConnectTimeout, c.session.cfg.WriteCoalesceWaitTime, c.session.cfg.WriteCoalesceFlushThreshold, ctx.Done())
+		if policy := c.session.cfg.WriteCoalescePolicy; policy == nil || policy(c.host) {
+			c.w = newWriteCoalescer(c.conn, c.cfg.ConnectTimeout, c.session.cfg.WriteCoalesceWaitTime, c.session.cfg.WriteCoalesceFlushThreshold, ctx.Done())
+		}
 	}
 
 	if c.isScyllaConn() { // ScyllaDB does not support system.peers_v2
