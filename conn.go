@@ -1148,10 +1148,10 @@ type writeCoalescer struct {
 	writeCh          chan writeRequest
 	testEnqueuedHook func()
 	testFlushedHook  func()
+	bypassOps        map[frm.Op]struct{}
+	scratchBufs      net.Buffers
 	timeout          atomic.Int64
 	flushThreshold   int
-	bypassOps        map[frm.Op]struct{}
-	scratchBufs      net.Buffers // reusable scratch for flush WriteTo
 }
 
 func (w *writeCoalescer) setWriteTimeout(timeout time.Duration) {
