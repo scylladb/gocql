@@ -126,6 +126,11 @@ type ClusterConfig struct {
 	// Default: nil
 	AuthProvider       func(h *HostInfo) (Authenticator, error)
 	ClientRoutesConfig *ClientRoutesConfig
+	// Per-host policy: returns true to enable coalescing, false to skip.
+	// Nil means coalesce all connections.
+	WriteCoalescePolicy func(host *HostInfo) bool
+	// CQL opcodes that bypass coalescing (flushed immediately).
+	WriteCoalesceBypassOps map[frm.Op]struct{}
 	// The version of the driver that is going to be reported to the server.
 	// Defaulted to current library version
 	DriverVersion string
@@ -149,13 +154,6 @@ type ClusterConfig struct {
 	//
 	// (default: 200 microseconds)
 	WriteCoalesceWaitTime time.Duration
-	// Flush immediately when buffered data exceeds this (default: 1400 bytes).
-	WriteCoalesceFlushThreshold int
-	// Per-host policy: returns true to enable coalescing, false to skip.
-	// Nil means coalesce all connections.
-	WriteCoalescePolicy func(host *HostInfo) bool
-	// CQL opcodes that bypass coalescing (flushed immediately).
-	WriteCoalesceBypassOps map[frm.Op]struct{}
 	// WriteTimeout limits the time the driver waits to write a request to a network connection.
 	// WriteTimeout should be lower than or equal to Timeout.
 	// WriteTimeout defaults to the value of Timeout.
@@ -230,6 +228,8 @@ type ClusterConfig struct {
 	// Maximum cache size for query info about statements for each session.
 	// Default: 1000
 	MaxRoutingKeyInfo int
+	// Flush immediately when buffered data exceeds this (default: 1400 bytes).
+	WriteCoalesceFlushThreshold int
 	// ReadTimeout limits the time the driver waits for data from the connection.
 	// It has only one purpose, identify faulty connection early and drop it.
 	// Default: 11 Seconds
@@ -400,6 +400,7 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		InitialReconnectionPolicy:     &NoReconnectionPolicy{},
 		SocketKeepalive:               15 * time.Second,
 		WriteCoalesceWaitTime:         200 * time.Microsecond,
+		WriteCoalesceBypassOps:        map[frm.Op]struct{}{frm.OpExecute: {}},
 		MetadataSchemaRequestTimeout:  60 * time.Second,
 		DisableSkipMetadata:           true,
 		WarningsHandlerBuilder:        DefaultWarningHandlerBuilder,
