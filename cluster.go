@@ -37,6 +37,7 @@ import (
 	"time"
 
 	"github.com/gocql/gocql/internal/eventbus"
+	frm "github.com/gocql/gocql/internal/frame"
 )
 
 const defaultDriverName = "ScyllaDB GoCQL Driver"
@@ -155,22 +156,13 @@ type ClusterConfig struct {
 	//
 	// (default: 200 microseconds)
 	WriteCoalesceWaitTime time.Duration
-	// WriteCoalesceFlushThreshold is the buffered data size (in bytes) above which
-	// the write coalescer flushes immediately instead of waiting for the coalesce
-	// timer.  A frame that already fills a TCP segment gains nothing from waiting.
-	// Set to 0 to use the default (1400 bytes).
+	// Flush immediately when buffered data exceeds this (default: 1400 bytes).
 	WriteCoalesceFlushThreshold int
-	// WriteCoalescePolicy, if set, is called when establishing a connection to
-	// decide whether write coalescing should be enabled for that host.  It
-	// receives the HostInfo of the remote node and returns true to enable
-	// coalescing or false to disable it.  This allows topology-aware decisions
-	// such as coalescing only for cross-DC or cross-rack connections where the
-	// network latency amortizes the coalesce wait.
-	//
-	// When nil, coalescing is applied to all connections (the default behavior).
-	// Use NewCoalescePolicyCrossDC or NewCoalescePolicyCrossRack as convenient
-	// constructors.
+	// Per-host policy: returns true to enable coalescing, false to skip.
+	// Nil means coalesce all connections.
 	WriteCoalescePolicy func(host *HostInfo) bool
+	// CQL opcodes that bypass coalescing (flushed immediately).
+	WriteCoalesceBypassOps map[frm.Op]struct{}
 	// WriteTimeout limits the time the driver waits to write a request to a network connection.
 	// WriteTimeout should be lower than or equal to Timeout.
 	// WriteTimeout defaults to the value of Timeout.
@@ -439,21 +431,14 @@ func NewCluster(hosts ...string) *ClusterConfig {
 	return cfg
 }
 
-// NewCoalescePolicyCrossDC returns a WriteCoalescePolicy that enables
-// coalescing only for hosts in a different data center than localDC.
-// Connections to hosts in localDC skip the coalesce wait since local-DC
-// round-trip times are low enough that the wait adds unnecessary latency.
+// NewCoalescePolicyCrossDC enables coalescing only for hosts in a different DC.
 func NewCoalescePolicyCrossDC(localDC string) func(host *HostInfo) bool {
 	return func(host *HostInfo) bool {
 		return host.DataCenter() != localDC
 	}
 }
 
-// NewCoalescePolicyCrossRack returns a WriteCoalescePolicy that enables
-// coalescing only for hosts outside the local data center and rack.
-// Same-rack connections have the lowest latency and benefit least from
-// coalescing; cross-rack and cross-DC connections have higher latency
-// where the coalesce wait is amortized by network savings.
+// NewCoalescePolicyCrossRack enables coalescing only for hosts outside the local DC+rack.
 func NewCoalescePolicyCrossRack(localDC, localRack string) func(host *HostInfo) bool {
 	return func(host *HostInfo) bool {
 		return host.DataCenter() != localDC || host.Rack() != localRack
