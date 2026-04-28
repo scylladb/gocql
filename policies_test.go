@@ -455,7 +455,7 @@ func TestSimpleRetryPolicy(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		q.metrics = preFilledQueryMetrics(map[string]*hostMetrics{"127.0.0.1": {Attempts: c.attempts}})
+		q.metrics = preFilledQueryMetrics(map[UUID]*hostMetrics{TimeUUID(): {Attempts: c.attempts}})
 		if c.retryType != rt.GetRetryType(c.err) {
 			t.Fatalf("retry type for %v should be %v", c.err, c.retryType)
 		}
@@ -596,7 +596,7 @@ func TestDowngradingConsistencyRetryPolicy(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		q.metrics = preFilledQueryMetrics(map[string]*hostMetrics{"127.0.0.1": {Attempts: c.attempts}})
+		q.metrics = preFilledQueryMetrics(map[UUID]*hostMetrics{TimeUUID(): {Attempts: c.attempts}})
 		if c.retryType != rt.GetRetryType(c.err) {
 			t.Fatalf("retry type should be %v", c.retryType)
 		}
