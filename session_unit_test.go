@@ -639,7 +639,7 @@ func newWarningTestQuery() *Query {
 	return &Query{
 		context:     context.Background(),
 		routingInfo: &queryRoutingInfo{},
-		metrics:     &queryMetrics{m: make(map[string]*hostMetrics)},
+		metrics:     &queryMetrics{m: make(map[UUID]*hostMetrics)},
 		rt:          &SimpleRetryPolicy{NumRetries: 0},
 		spec:        NonSpeculativeExecution{},
 	}
@@ -792,7 +792,7 @@ func TestIterWarningHandler(t *testing.T) {
 		host := &HostInfo{hostId: UUID{1}}
 		qry := &Query{
 			routingInfo: &queryRoutingInfo{},
-			metrics:     &queryMetrics{m: make(map[string]*hostMetrics)},
+			metrics:     &queryMetrics{m: make(map[UUID]*hostMetrics)},
 		}
 		iter := (&Iter{
 			framer:      &testWarningFramer{warnings: []string{"page2"}},
@@ -825,7 +825,7 @@ func TestIterWarningHandler(t *testing.T) {
 			framer: &testWarningFramer{warnings: []string{"warn"}},
 		}).bindWarningHandler(&Query{
 			routingInfo: &queryRoutingInfo{},
-			metrics:     &queryMetrics{m: make(map[string]*hostMetrics)},
+			metrics:     &queryMetrics{m: make(map[UUID]*hostMetrics)},
 		}, handler)
 
 		iter.Close()
@@ -859,7 +859,7 @@ func TestIterWarningHandler(t *testing.T) {
 	t.Run("BindIgnoresNilHandler", func(t *testing.T) {
 		iter := (&Iter{}).bindWarningHandler(&Query{
 			routingInfo: &queryRoutingInfo{},
-			metrics:     &queryMetrics{m: make(map[string]*hostMetrics)},
+			metrics:     &queryMetrics{m: make(map[UUID]*hostMetrics)},
 		}, nil)
 		if iter.warningHandler != nil {
 			t.Fatal("expected warning handler to remain nil")
@@ -875,7 +875,7 @@ func TestIterWarningHandler(t *testing.T) {
 		}).bindWarningHandler(&Batch{
 			context:     context.Background(),
 			routingInfo: &queryRoutingInfo{},
-			metrics:     &queryMetrics{m: make(map[string]*hostMetrics)},
+			metrics:     &queryMetrics{m: make(map[UUID]*hostMetrics)},
 			rt:          &SimpleRetryPolicy{NumRetries: 0},
 			spec:        NonSpeculativeExecution{},
 		}, handler)
@@ -892,7 +892,7 @@ func TestIterWarningHandler(t *testing.T) {
 		batch := &Batch{
 			context:     context.Background(),
 			routingInfo: &queryRoutingInfo{},
-			metrics:     &queryMetrics{m: make(map[string]*hostMetrics)},
+			metrics:     &queryMetrics{m: make(map[UUID]*hostMetrics)},
 			rt:          &SimpleRetryPolicy{NumRetries: 0},
 			spec:        NonSpeculativeExecution{},
 		}
@@ -921,7 +921,7 @@ func TestIterWarningHandler(t *testing.T) {
 		}).bindWarningHandler(&Query{
 			context:     context.Background(),
 			routingInfo: &queryRoutingInfo{},
-			metrics:     &queryMetrics{m: make(map[string]*hostMetrics)},
+			metrics:     &queryMetrics{m: make(map[UUID]*hostMetrics)},
 			rt:          &SimpleRetryPolicy{NumRetries: 0},
 			spec:        NonSpeculativeExecution{},
 		}, handler)
@@ -940,7 +940,7 @@ func TestIterWarningHandler(t *testing.T) {
 			host:        &HostInfo{hostId: UUID{3}},
 		}).bindWarningHandler(&Query{
 			routingInfo: &queryRoutingInfo{},
-			metrics:     &queryMetrics{m: make(map[string]*hostMetrics)},
+			metrics:     &queryMetrics{m: make(map[UUID]*hostMetrics)},
 		}, handler)
 
 		iter.handleWarningsOnce()

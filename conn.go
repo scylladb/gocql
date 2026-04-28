@@ -1775,7 +1775,7 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 			newQry := new(Query)
 			*newQry = *qry
 			newQry.pageState = x.meta.pagingState
-			newQry.metrics = &queryMetrics{m: make(map[string]*hostMetrics)}
+			newQry.metrics = &queryMetrics{m: make(map[UUID]*hostMetrics)}
 
 			iter.next = newNextIter(newQry, int((1-qry.prefetch)*float64(x.numRows)))
 
