@@ -332,6 +332,7 @@ endif
 check-go-mod-drift:
 	@echo "Check Go module drift"
 	go mod tidy -diff
+	go mod tidy -C lz4 -diff
 	go mod tidy -C tests/bench -diff
 
 check: .prepare-golangci check-go-mod-drift
@@ -340,7 +341,13 @@ check: .prepare-golangci check-go-mod-drift
 	echo "Check linting"
 	${BIN_DIR}/golangci-lint run
 
-fix: .prepare-golangci
+fix-go-mod-drift:
+	@echo "Fix Go module drift"
+	go mod tidy
+	go mod tidy -C lz4
+	go mod tidy -C tests/bench
+
+fix: .prepare-golangci fix-go-mod-drift
 	@echo "Fix linting"
 	${BIN_DIR}/golangci-lint run --fix
 
