@@ -635,11 +635,223 @@ func newTestQueryExecutor(host *HostInfo) *queryExecutor {
 	}
 }
 
+func TestQueryMetricsAttemptTracksTotalsAndHostSnapshots(t *testing.T) {
+	t.Parallel()
+
+	qm := newQueryMetrics()
+	host1 := &HostInfo{hostId: UUID{1}}
+	host2 := &HostInfo{hostId: UUID{2}}
+
+	attempt, metrics := qm.attempt(1, 10*time.Nanosecond, host1, true)
+	if attempt != 0 {
+		t.Fatalf("first attempt index = %d, want 0", attempt)
+	}
+	if metrics.Attempts != 1 || metrics.TotalLatency != 10 {
+		t.Fatalf("first host metrics = %+v, want attempts=1 latency=10", metrics)
+	}
+	if got := qm.attempts(); got != 1 {
+		t.Fatalf("attempts = %d, want 1", got)
+	}
+	if got := qm.latency(); got != 10 {
+		t.Fatalf("latency = %d, want 10", got)
+	}
+
+	attempt, metrics = qm.attempt(2, 20*time.Nanosecond, host1, true)
+	if attempt != 1 {
+		t.Fatalf("second attempt index = %d, want 1", attempt)
+	}
+	if metrics.Attempts != 3 || metrics.TotalLatency != 30 {
+		t.Fatalf("updated host metrics = %+v, want attempts=3 latency=30", metrics)
+	}
+	if qm.extra != nil {
+		t.Fatal("extra host metrics map allocated for one host")
+	}
+	snapshot := *metrics
+
+	attempt, metrics = qm.attempt(1, 6*time.Nanosecond, host2, true)
+	if attempt != 3 {
+		t.Fatalf("third attempt index = %d, want 3", attempt)
+	}
+	if metrics.Attempts != 1 || metrics.TotalLatency != 6 {
+		t.Fatalf("second host metrics = %+v, want attempts=1 latency=6", metrics)
+	}
+	if qm.extra == nil {
+		t.Fatal("extra host metrics map not allocated for second host")
+	}
+	if got := qm.attempts(); got != 4 {
+		t.Fatalf("attempts = %d, want 4", got)
+	}
+	if got := qm.latency(); got != 9 {
+		t.Fatalf("latency = %d, want 9", got)
+	}
+	if snapshot.Attempts != 3 || snapshot.TotalLatency != 30 {
+		t.Fatalf("host metrics snapshot mutated = %+v", snapshot)
+	}
+
+	qm.reset()
+	if got := qm.attempts(); got != 0 {
+		t.Fatalf("attempts after reset = %d, want 0", got)
+	}
+	if got := qm.latency(); got != 0 {
+		t.Fatalf("latency after reset = %d, want 0", got)
+	}
+}
+
+func TestQueryMetricsAttemptKeepsEmptyHostIDSeparate(t *testing.T) {
+	t.Parallel()
+
+	qm := newQueryMetrics()
+	emptyHostID := &HostInfo{}
+	realHostID := &HostInfo{hostId: UUID{1}}
+
+	_, metrics := qm.attempt(1, 10*time.Nanosecond, emptyHostID, true)
+	if metrics.Attempts != 1 || metrics.TotalLatency != 10 {
+		t.Fatalf("empty host metrics = %+v, want attempts=1 latency=10", metrics)
+	}
+
+	_, metrics = qm.attempt(1, 6*time.Nanosecond, realHostID, true)
+	if metrics.Attempts != 1 || metrics.TotalLatency != 6 {
+		t.Fatalf("real host metrics = %+v, want attempts=1 latency=6", metrics)
+	}
+
+	if !qm.hostInitialized || !qm.hostID.IsEmpty() {
+		t.Fatalf("primary host ID = %v initialized=%t, want empty initialized", qm.hostID, qm.hostInitialized)
+	}
+	if qm.host.Attempts != 1 || qm.host.TotalLatency != 10 {
+		t.Fatalf("primary host metrics = %+v, want empty host metrics", qm.host)
+	}
+	if metrics := qm.extra[realHostID.hostUUID()]; metrics.Attempts != 1 || metrics.TotalLatency != 6 {
+		t.Fatalf("extra real host metrics = %+v, want attempts=1 latency=6", metrics)
+	}
+}
+
+func TestQueryMetricsAttemptWithoutSnapshotSkipsHostStorage(t *testing.T) {
+	t.Parallel()
+
+	qm := newQueryMetrics()
+	host := &HostInfo{hostId: UUID{1}}
+
+	attempt, metrics := qm.attempt(1, 10*time.Nanosecond, host, false)
+	if attempt != 0 {
+		t.Fatalf("attempt index = %d, want 0", attempt)
+	}
+	if metrics != nil {
+		t.Fatalf("metrics = %+v, want nil", metrics)
+	}
+	if got := qm.attempts(); got != 1 {
+		t.Fatalf("attempts = %d, want 1", got)
+	}
+	if got := qm.latency(); got != 10 {
+		t.Fatalf("latency = %d, want 10", got)
+	}
+	if qm.hostInitialized || !qm.hostID.IsEmpty() || qm.host != (hostMetrics{}) {
+		t.Fatal("host metrics were stored without snapshot request")
+	}
+	if qm.extra != nil {
+		t.Fatal("extra host metrics map allocated without snapshot request")
+	}
+}
+
+func TestQueryMetricsObservedAttemptSerializesTotalAttemptWithHostMetrics(t *testing.T) {
+	t.Parallel()
+
+	qm := newQueryMetrics()
+	host := &HostInfo{hostId: UUID{1}}
+
+	qm.l.Lock()
+	started := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+
+		close(started)
+		attempt, metrics := qm.attempt(1, 10*time.Nanosecond, host, true)
+		if attempt != 0 {
+			t.Errorf("attempt index = %d, want 0", attempt)
+		}
+		if metrics.Attempts != 1 || metrics.TotalLatency != 10 {
+			t.Errorf("host metrics = %+v, want attempts=1 latency=10", metrics)
+		}
+	}()
+
+	<-started
+	deadline := time.After(100 * time.Millisecond)
+	tick := time.NewTicker(time.Millisecond)
+	defer tick.Stop()
+
+	for {
+		select {
+		case <-done:
+			qm.l.Unlock()
+			t.Fatal("observed attempt completed while host metrics lock was held")
+		case <-tick.C:
+			if got := qm.totalAttempts.Load(); got != 0 {
+				qm.l.Unlock()
+				<-done
+				t.Fatalf("total attempts advanced before host metrics lock: got %d, want 0", got)
+			}
+		case <-deadline:
+			if got := qm.totalAttempts.Load(); got != 0 {
+				qm.l.Unlock()
+				<-done
+				t.Fatalf("total attempts advanced before host metrics lock: got %d, want 0", got)
+			}
+			qm.l.Unlock()
+			<-done
+			return
+		}
+	}
+}
+
+func BenchmarkQueryMetricsAttempt(b *testing.B) {
+	host := &HostInfo{hostId: UUID{1}}
+	qm := newQueryMetrics()
+	qm.attempt(1, time.Nanosecond, host, false)
+	qm.reset()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		qm.attempt(1, time.Nanosecond, host, false)
+	}
+}
+
+func BenchmarkQueryMetricsResetAttempt(b *testing.B) {
+	host := &HostInfo{hostId: UUID{1}}
+	qm := newQueryMetrics()
+	qm.attempt(1, time.Nanosecond, host, false)
+	qm.reset()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		qm.reset()
+		qm.attempt(1, time.Nanosecond, host, false)
+	}
+}
+
+func BenchmarkQueryMetricsAttemptWithSnapshot(b *testing.B) {
+	host := &HostInfo{hostId: UUID{1}}
+	qm := newQueryMetrics()
+	qm.attempt(1, time.Nanosecond, host, true)
+	qm.reset()
+
+	var metrics *hostMetrics
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, metrics = qm.attempt(1, time.Nanosecond, host, true)
+	}
+	if metrics == nil {
+		b.Fatal("expected metrics snapshot")
+	}
+}
+
 func newWarningTestQuery() *Query {
 	return &Query{
 		context:     context.Background(),
 		routingInfo: &queryRoutingInfo{},
-		metrics:     &queryMetrics{m: make(map[UUID]*hostMetrics)},
+		metrics:     newQueryMetrics(),
 		rt:          &SimpleRetryPolicy{NumRetries: 0},
 		spec:        NonSpeculativeExecution{},
 	}
@@ -792,7 +1004,7 @@ func TestIterWarningHandler(t *testing.T) {
 		host := &HostInfo{hostId: UUID{1}}
 		qry := &Query{
 			routingInfo: &queryRoutingInfo{},
-			metrics:     &queryMetrics{m: make(map[UUID]*hostMetrics)},
+			metrics:     newQueryMetrics(),
 		}
 		iter := (&Iter{
 			framer:      &testWarningFramer{warnings: []string{"page2"}},
@@ -825,7 +1037,7 @@ func TestIterWarningHandler(t *testing.T) {
 			framer: &testWarningFramer{warnings: []string{"warn"}},
 		}).bindWarningHandler(&Query{
 			routingInfo: &queryRoutingInfo{},
-			metrics:     &queryMetrics{m: make(map[UUID]*hostMetrics)},
+			metrics:     newQueryMetrics(),
 		}, handler)
 
 		iter.Close()
@@ -859,7 +1071,7 @@ func TestIterWarningHandler(t *testing.T) {
 	t.Run("BindIgnoresNilHandler", func(t *testing.T) {
 		iter := (&Iter{}).bindWarningHandler(&Query{
 			routingInfo: &queryRoutingInfo{},
-			metrics:     &queryMetrics{m: make(map[UUID]*hostMetrics)},
+			metrics:     newQueryMetrics(),
 		}, nil)
 		if iter.warningHandler != nil {
 			t.Fatal("expected warning handler to remain nil")
@@ -875,7 +1087,7 @@ func TestIterWarningHandler(t *testing.T) {
 		}).bindWarningHandler(&Batch{
 			context:     context.Background(),
 			routingInfo: &queryRoutingInfo{},
-			metrics:     &queryMetrics{m: make(map[UUID]*hostMetrics)},
+			metrics:     newQueryMetrics(),
 			rt:          &SimpleRetryPolicy{NumRetries: 0},
 			spec:        NonSpeculativeExecution{},
 		}, handler)
@@ -892,7 +1104,7 @@ func TestIterWarningHandler(t *testing.T) {
 		batch := &Batch{
 			context:     context.Background(),
 			routingInfo: &queryRoutingInfo{},
-			metrics:     &queryMetrics{m: make(map[UUID]*hostMetrics)},
+			metrics:     newQueryMetrics(),
 			rt:          &SimpleRetryPolicy{NumRetries: 0},
 			spec:        NonSpeculativeExecution{},
 		}
@@ -921,7 +1133,7 @@ func TestIterWarningHandler(t *testing.T) {
 		}).bindWarningHandler(&Query{
 			context:     context.Background(),
 			routingInfo: &queryRoutingInfo{},
-			metrics:     &queryMetrics{m: make(map[UUID]*hostMetrics)},
+			metrics:     newQueryMetrics(),
 			rt:          &SimpleRetryPolicy{NumRetries: 0},
 			spec:        NonSpeculativeExecution{},
 		}, handler)
@@ -940,7 +1152,7 @@ func TestIterWarningHandler(t *testing.T) {
 			host:        &HostInfo{hostId: UUID{3}},
 		}).bindWarningHandler(&Query{
 			routingInfo: &queryRoutingInfo{},
-			metrics:     &queryMetrics{m: make(map[UUID]*hostMetrics)},
+			metrics:     newQueryMetrics(),
 		}, handler)
 
 		iter.handleWarningsOnce()
