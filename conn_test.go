@@ -356,22 +356,22 @@ func TestCancel(t *testing.T) {
 }
 
 type testQueryObserver struct {
-	metrics map[string]*hostMetrics
+	metrics map[string][]AttemptMetrics
 	verbose bool
 	logger  StdLogger
 }
 
 func (o *testQueryObserver) ObserveQuery(ctx context.Context, q ObservedQuery) {
 	host := q.Host.ConnectAddress().String()
-	o.metrics[host] = q.Metrics
+	o.metrics[host] = append(o.metrics[host], q.AttemptMetrics)
 	if o.verbose {
 		o.logger.Printf("Observed query %q. Returned %v rows, took %v on host %q with %v attempts and total latency %v. Error: %q\n",
-			q.Statement, q.Rows, q.End.Sub(q.Start), host, q.Metrics.Attempts, q.Metrics.TotalLatency, q.Err)
+			q.Statement, q.Rows, q.End.Sub(q.Start), host, q.AttemptMetrics.Attempts(), q.AttemptMetrics.TotalLatency(), q.Err)
 	}
 }
 
-func (o *testQueryObserver) GetMetrics(host *HostInfo) *hostMetrics {
-	return o.metrics[host.ConnectAddress().String()]
+func (o *testQueryObserver) GetMetrics(host *HostInfo) []AttemptMetrics {
+	return append([]AttemptMetrics(nil), o.metrics[host.ConnectAddress().String()]...)
 }
 
 // TestQueryRetry will test to make sure that gocql will execute
@@ -423,7 +423,7 @@ func TestQueryMultinodeWithMetrics(t *testing.T) {
 		os.Stdout.WriteString(log.String())
 	}()
 
-	// Build a 3 node cluster to test host metric mapping
+	// Build a 3 node cluster to test observer metrics across hosts.
 	var nodes []*TestServer
 	var addresses = []string{
 		"127.0.0.1",
@@ -446,12 +446,14 @@ func TestQueryMultinodeWithMetrics(t *testing.T) {
 
 	// 1 retry per host
 	rt := &SimpleRetryPolicy{NumRetries: 3}
-	observer := &testQueryObserver{metrics: make(map[string]*hostMetrics), verbose: false, logger: log}
+	observer := &testQueryObserver{metrics: make(map[string][]AttemptMetrics), verbose: false, logger: log}
 	qry := db.Query("kill").RetryPolicy(rt).Observer(observer).Idempotent(true)
 	if err := qry.Exec(); err == nil {
 		t.Fatalf("expected error")
 	}
 
+	totalRequests := 0
+	maxObservedAttempts := 0
 	for i, ip := range addresses {
 		var host *HostInfo
 		for _, clusterHost := range db.GetHosts() {
@@ -464,24 +466,32 @@ func TestQueryMultinodeWithMetrics(t *testing.T) {
 			t.Fatalf("failed to observe host info for address %v", ip)
 		}
 
-		queryMetric := qry.metrics.hostMetrics(host)
-		observedMetrics := observer.GetMetrics(host)
+		attemptMetrics := observer.GetMetrics(host)
 
 		requests := int(atomic.LoadInt64(&nodes[i].nKillReq))
-		hostAttempts := queryMetric.Attempts
-		if requests != hostAttempts {
-			t.Fatalf("expected requests %v to match query attempts %v", requests, hostAttempts)
+		totalRequests += requests
+		if requests != len(attemptMetrics) {
+			t.Fatalf("expected requests %v to match observed attempts %v on host %v", requests, len(attemptMetrics), ip)
 		}
 
-		if hostAttempts != observedMetrics.Attempts {
-			t.Fatalf("expected observed attempts %v to match query attempts %v on host %v", observedMetrics.Attempts, hostAttempts, ip)
+		for j, metrics := range attemptMetrics {
+			if metrics.Attempts() < 1 {
+				t.Fatalf("observed metrics %d on host %v attempts = %d, want positive", j, ip, metrics.Attempts())
+			}
+			if metrics.Attempts() > maxObservedAttempts {
+				maxObservedAttempts = metrics.Attempts()
+			}
+			if metrics.TotalLatency() < 0 {
+				t.Fatalf("observed metrics %d on host %v latency = %d, want non-negative", j, ip, metrics.TotalLatency())
+			}
 		}
+	}
 
-		hostLatency := queryMetric.TotalLatency
-		observedLatency := observedMetrics.TotalLatency
-		if hostLatency != observedLatency {
-			t.Fatalf("expected observed latency %v to match query latency %v on host %v", observedLatency, hostLatency, ip)
-		}
+	if got := qry.Attempts(); got != totalRequests {
+		t.Fatalf("expected aggregate query attempts %v to match total requests %v", got, totalRequests)
+	}
+	if maxObservedAttempts != totalRequests {
+		t.Fatalf("expected final observed attempts %v to match total requests %v", maxObservedAttempts, totalRequests)
 	}
 	// the query will only be attempted once, but is being retried
 	attempts := qry.Attempts()

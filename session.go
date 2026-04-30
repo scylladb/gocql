@@ -31,6 +31,7 @@ import (
 	"fmt"
 	"maps"
 	"net"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -1112,134 +1113,92 @@ type AttemptMetric struct {
 // Its zero value is empty. The concrete storage is intentionally hidden so the
 // metrics representation can change without affecting observer implementations.
 type AttemptMetrics struct {
-	attempt      AttemptMetric
-	attempts     int
-	totalLatency int64
-	hasAttempt   bool
-}
-
-func newAttemptMetrics(metrics *hostMetrics, attempt AttemptMetric) AttemptMetrics {
-	if metrics == nil {
-		return AttemptMetrics{}
-	}
-
-	return AttemptMetrics{
-		attempts:     metrics.Attempts,
-		totalLatency: metrics.TotalLatency,
-		attempt:      attempt,
-		hasAttempt:   true,
-	}
+	attempts []AttemptMetric
+	first    AttemptMetric
+	firstSet bool
 }
 
 // Attempts returns the number of attempts in the snapshot.
 func (m AttemptMetrics) Attempts() int {
-	return m.attempts
+	attempts := len(m.attempts)
+	if m.firstSet {
+		attempts++
+	}
+	return attempts
 }
 
 // TotalLatency returns the sum of attempt latencies in nanoseconds.
 func (m AttemptMetrics) TotalLatency() int64 {
-	return m.totalLatency
+	var totalLatency int64
+	if m.firstSet {
+		totalLatency += m.first.Latency
+	}
+	for _, attempt := range m.attempts {
+		totalLatency += attempt.Latency
+	}
+	return totalLatency
 }
 
 // ForEachAttempt calls iter for each recorded attempt in attempt order.
 // Iteration stops when iter returns false.
 func (m AttemptMetrics) ForEachAttempt(iter func(AttemptMetric) bool) {
-	if m.hasAttempt {
-		iter(m.attempt)
+	if m.firstSet {
+		if !iter(m.first) {
+			return
+		}
+	}
+
+	for _, attempt := range m.attempts {
+		if !iter(attempt) {
+			return
+		}
 	}
 }
 
-type queryMetrics struct {
-	// extra is allocated only when a query observes more than one host.
-	extra map[UUID]hostMetrics
+func (m AttemptMetrics) hostMetrics(host *HostInfo) *hostMetrics {
+	metrics := new(hostMetrics)
+	hostID, hostIDSet := hostInfoUUID(host)
+	m.ForEachAttempt(func(attempt AttemptMetric) bool {
+		attemptHostID, attemptHostIDSet := hostInfoUUID(attempt.Host)
+		if hostIDSet == attemptHostIDSet && hostID == attemptHostID {
+			metrics.Attempts++
+			metrics.TotalLatency += attempt.Latency
+		}
+		return true
+	})
+	return metrics
+}
 
-	// totalAttempts and totalLatency are tracked independently from per-host
-	// observer metrics so the non-observer path does not need host bucket work.
-	totalAttempts   atomic.Int64
-	totalLatency    atomic.Int64
-	l               sync.Mutex
-	hostID          UUID
-	host            hostMetrics
-	hostInitialized bool
+func hostInfoUUID(host *HostInfo) (UUID, bool) {
+	if host == nil {
+		return UUID{}, false
+	}
+	return host.hostUUID(), true
+}
+
+type attemptHistory struct {
+	attempts []AttemptMetric
+}
+
+type queryMetrics struct {
+	firstHost     atomic.Pointer[HostInfo]
+	extraAttempts atomic.Pointer[attemptHistory]
+	totalAttempts atomic.Int64
+	totalLatency  atomic.Int64
+	firstLatency  atomic.Int64
+	firstSet      atomic.Bool
 }
 
 func newQueryMetrics() *queryMetrics {
 	return &queryMetrics{}
 }
 
-// preFilledQueryMetrics initializes new queryMetrics based on per-host supplied data.
-func preFilledQueryMetrics(m map[UUID]*hostMetrics) *queryMetrics {
+// preFilledQueryMetrics initializes aggregate queryMetrics based on supplied totals.
+func preFilledQueryMetrics(totalAttempts int, totalLatency int64) *queryMetrics {
 	qm := newQueryMetrics()
-	qm.l.Lock()
-	for hostID, hm := range m {
-		if hm == nil {
-			continue
-		}
-		qm.addHostMetricsLocked(hostID, *hm)
-		qm.totalAttempts.Add(int64(hm.Attempts))
-		qm.totalLatency.Add(hm.TotalLatency)
-	}
-	qm.l.Unlock()
+	qm.totalAttempts.Store(int64(totalAttempts))
+	qm.totalLatency.Store(totalLatency)
 	return qm
-}
-
-// hostMetrics returns a snapshot of metrics for given host.
-// If the metrics for host don't exist, they are created.
-func (qm *queryMetrics) hostMetrics(host *HostInfo) *hostMetrics {
-	qm.l.Lock()
-	metrics := qm.hostMetricsLocked(host)
-	copied := new(hostMetrics)
-	*copied = metrics
-	qm.l.Unlock()
-	return copied
-}
-
-// hostMetricsLocked gets or creates host metrics for given host.
-// It must be called only while holding qm.l lock.
-func (qm *queryMetrics) hostMetricsLocked(host *HostInfo) hostMetrics {
-	return qm.hostMetricsByIDLocked(host.hostUUID())
-}
-
-func (qm *queryMetrics) hostMetricsByIDLocked(hostID UUID) hostMetrics {
-	if !qm.hostInitialized {
-		qm.hostID = hostID
-		qm.hostInitialized = true
-		return qm.host
-	}
-
-	if qm.hostID == hostID {
-		return qm.host
-	}
-
-	if qm.extra == nil {
-		qm.extra = make(map[UUID]hostMetrics)
-	}
-	metrics := qm.extra[hostID]
-	qm.extra[hostID] = metrics
-	return metrics
-}
-
-func (qm *queryMetrics) addHostMetricsLocked(hostID UUID, add hostMetrics) hostMetrics {
-	if !qm.hostInitialized {
-		qm.hostID = hostID
-		qm.hostInitialized = true
-	}
-
-	if qm.hostID == hostID {
-		qm.host.Attempts += add.Attempts
-		qm.host.TotalLatency += add.TotalLatency
-		return qm.host
-	}
-
-	if qm.extra == nil {
-		qm.extra = make(map[UUID]hostMetrics)
-	}
-
-	metrics := qm.extra[hostID]
-	metrics.Attempts += add.Attempts
-	metrics.TotalLatency += add.TotalLatency
-	qm.extra[hostID] = metrics
-	return metrics
 }
 
 // attempts returns the number of times the query was executed.
@@ -1256,46 +1215,131 @@ func (qm *queryMetrics) latency() int64 {
 }
 
 // reset resets metrics, to forget about prior query executions.
-// Uses clear() instead of make() to preserve the extra map's backing array
-// when a query has observed more than one host.
 func (qm *queryMetrics) reset() {
-	qm.l.Lock()
-	qm.hostID = UUID{}
-	qm.hostInitialized = false
-	qm.host = hostMetrics{}
-	clear(qm.extra)
+	qm.firstSet.Store(false)
+	qm.firstHost.Store(nil)
+	qm.firstLatency.Store(0)
+	qm.extraAttempts.Store(nil)
 	qm.totalAttempts.Store(0)
 	qm.totalLatency.Store(0)
-	qm.l.Unlock()
 }
 
-// attempt adds given number of attempts and latency for given host.
-// It returns previous total attempts.
-// If needsHostMetrics is true, a copy of updated hostMetrics is returned.
+// attempt adds given number of attempts and latency.
+// It returns previous total attempts and, when needed, metrics for this attempt.
 func (qm *queryMetrics) attempt(addAttempts int, addLatency time.Duration,
-	host *HostInfo, needsHostMetrics bool) (int, *hostMetrics) {
+	host *HostInfo, needsAttemptMetric bool) (int, AttemptMetric) {
 	addLatencyNanos := addLatency.Nanoseconds()
-
-	if !needsHostMetrics {
-		totalAttempts := qm.totalAttempts.Add(int64(addAttempts)) - int64(addAttempts)
-		qm.totalLatency.Add(addLatencyNanos)
-		return int(totalAttempts), nil
-	}
-
-	qm.l.Lock()
 	totalAttempts := qm.totalAttempts.Add(int64(addAttempts)) - int64(addAttempts)
 	qm.totalLatency.Add(addLatencyNanos)
 
-	updateHostMetrics := qm.addHostMetricsLocked(host.hostUUID(), hostMetrics{
-		Attempts:     addAttempts,
-		TotalLatency: addLatencyNanos,
-	})
+	if !needsAttemptMetric {
+		return int(totalAttempts), AttemptMetric{}
+	}
 
-	hostMetricsCopy := new(hostMetrics)
-	*hostMetricsCopy = updateHostMetrics
+	attempt := AttemptMetric{
+		Attempt: int(totalAttempts),
+		Host:    host,
+		Latency: addLatencyNanos,
+	}
 
-	qm.l.Unlock()
-	return int(totalAttempts), hostMetricsCopy
+	if totalAttempts == 0 {
+		qm.storeFirstAttempt(attempt)
+		return int(totalAttempts), attempt
+	}
+
+	qm.appendExtraAttempt(attempt)
+	return int(totalAttempts), attempt
+}
+
+func (qm *queryMetrics) storeFirstAttempt(attempt AttemptMetric) {
+	qm.firstHost.Store(attempt.Host)
+	qm.firstLatency.Store(attempt.Latency)
+	qm.firstSet.Store(true)
+}
+
+func (qm *queryMetrics) firstAttemptMetric() (AttemptMetric, bool) {
+	if !qm.firstSet.Load() {
+		return AttemptMetric{}, false
+	}
+
+	return AttemptMetric{
+		Attempt: 0,
+		Host:    qm.firstHost.Load(),
+		Latency: qm.firstLatency.Load(),
+	}, true
+}
+
+func (qm *queryMetrics) observedMetricsUntil(attemptIndex int) AttemptMetrics {
+	first, firstSet := qm.firstAttemptMetric()
+	for !firstSet && attemptIndex >= 0 {
+		runtime.Gosched()
+		first, firstSet = qm.firstAttemptMetric()
+	}
+
+	var extraAttempts []AttemptMetric
+	for {
+		history := qm.extraAttempts.Load()
+		var historyAttempts []AttemptMetric
+		if history != nil {
+			historyAttempts = history.attempts
+		}
+		if prefix, ok := attemptHistoryPrefix(historyAttempts, attemptIndex); ok {
+			extraAttempts = prefix
+			break
+		}
+		runtime.Gosched()
+	}
+
+	return AttemptMetrics{
+		firstSet: firstSet,
+		first:    first,
+		attempts: extraAttempts,
+	}
+}
+
+func attemptHistoryPrefix(attempts []AttemptMetric, attemptIndex int) ([]AttemptMetric, bool) {
+	if attemptIndex <= 0 {
+		return nil, true
+	}
+	if len(attempts) < attemptIndex {
+		return nil, false
+	}
+
+	prefix := attempts[:attemptIndex]
+	for i, attempt := range prefix {
+		if attempt.Attempt != i+1 {
+			return nil, false
+		}
+	}
+	return prefix, true
+}
+
+func (qm *queryMetrics) appendExtraAttempt(attempt AttemptMetric) []AttemptMetric {
+	for {
+		oldHistory := qm.extraAttempts.Load()
+		var oldAttempts []AttemptMetric
+		if oldHistory != nil {
+			oldAttempts = oldHistory.attempts
+		}
+
+		insertAt := len(oldAttempts)
+		for i, oldAttempt := range oldAttempts {
+			if attempt.Attempt < oldAttempt.Attempt {
+				insertAt = i
+				break
+			}
+		}
+
+		newAttempts := make([]AttemptMetric, len(oldAttempts)+1)
+		copy(newAttempts, oldAttempts[:insertAt])
+		newAttempts[insertAt] = attempt
+		copy(newAttempts[insertAt+1:], oldAttempts[insertAt:])
+		newHistory := &attemptHistory{attempts: newAttempts}
+
+		if qm.extraAttempts.CompareAndSwap(oldHistory, newHistory) {
+			return newAttempts
+		}
+	}
 }
 
 // Query represents a CQL statement that can be executed.
@@ -1541,14 +1585,10 @@ func (q *Query) execute(ctx context.Context, conn *Conn) *Iter {
 
 func (q *Query) attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
 	latency := end.Sub(start)
-	attempt, metricsForHost := q.metrics.attempt(1, latency, host, q.observer != nil)
+	attempt, attemptMetric := q.metrics.attempt(1, latency, host, q.observer != nil)
 
 	if q.observer != nil {
-		attemptMetric := AttemptMetric{
-			Attempt: attempt,
-			Host:    host,
-			Latency: latency.Nanoseconds(),
-		}
+		metrics := q.metrics.observedMetricsUntil(attemptMetric.Attempt)
 		q.observer.ObserveQuery(q.Context(), ObservedQuery{
 			Keyspace:       keyspace,
 			Statement:      q.stmt,
@@ -1557,8 +1597,8 @@ func (q *Query) attempt(keyspace string, end, start time.Time, iter *Iter, host 
 			End:            end,
 			Rows:           iter.numRows,
 			Host:           host,
-			Metrics:        metricsForHost,
-			AttemptMetrics: newAttemptMetrics(metricsForHost, attemptMetric),
+			Metrics:        metrics.hostMetrics(host),
+			AttemptMetrics: metrics,
 			Err:            iter.err,
 			Attempt:        attempt,
 		})
@@ -2839,7 +2879,7 @@ func (b *Batch) WithTimestamp(timestamp int64) *Batch {
 
 func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
 	latency := end.Sub(start)
-	attempt, metricsForHost := b.metrics.attempt(1, latency, host, b.observer != nil)
+	attempt, attemptMetric := b.metrics.attempt(1, latency, host, b.observer != nil)
 
 	if b.observer == nil {
 		return
@@ -2853,11 +2893,7 @@ func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter, host 
 		values[i] = entry.Args
 	}
 
-	attemptMetric := AttemptMetric{
-		Attempt: attempt,
-		Host:    host,
-		Latency: latency.Nanoseconds(),
-	}
+	metrics := b.metrics.observedMetricsUntil(attemptMetric.Attempt)
 	b.observer.ObserveBatch(b.Context(), ObservedBatch{
 		Keyspace:   keyspace,
 		Statements: statements,
@@ -2866,8 +2902,8 @@ func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter, host 
 		End:        end,
 		// Rows not used in batch observations // TODO - might be able to support it when using BatchCAS
 		Host:           host,
-		Metrics:        metricsForHost,
-		AttemptMetrics: newAttemptMetrics(metricsForHost, attemptMetric),
+		Metrics:        metrics.hostMetrics(host),
+		AttemptMetrics: metrics,
 		Err:            iter.err,
 		Attempt:        attempt,
 	})
@@ -3107,7 +3143,7 @@ type ObservedQuery struct {
 	Err error
 	// Host is a reference to the host where the query was executed.
 	Host *HostInfo
-	// Metrics is the metrics for this attempt.
+	// Metrics is the metrics for this attempt on the current host.
 	//
 	// Deprecated: use AttemptMetrics.
 	Metrics   *hostMetrics
@@ -3116,7 +3152,7 @@ type ObservedQuery struct {
 	// Values holds a slice of bound values for the query.
 	// Do not modify the values here, they are shared with multiple goroutines.
 	Values []any
-	// AttemptMetrics is the replacement metrics API for observed attempts.
+	// AttemptMetrics is the metrics snapshot after this attempt.
 	AttemptMetrics AttemptMetrics
 	// Rows is the number of rows in the current iter.
 	// In paginated queries, rows from previous scans are not counted.
@@ -3145,7 +3181,7 @@ type ObservedBatch struct {
 	Err error
 	// Host is a reference to the host where the batch was executed.
 	Host *HostInfo
-	// Metrics is the metrics for this attempt.
+	// Metrics is the metrics for this attempt on the current host.
 	//
 	// Deprecated: use AttemptMetrics.
 	Metrics    *hostMetrics
@@ -3155,7 +3191,7 @@ type ObservedBatch struct {
 	// Values[i] are bound values passed to Statements[i].
 	// Do not modify the values here, they are shared with multiple goroutines.
 	Values [][]any
-	// AttemptMetrics is the replacement metrics API for observed attempts.
+	// AttemptMetrics is the metrics snapshot after this attempt.
 	AttemptMetrics AttemptMetrics
 	// Attempt is the index of attempt at executing this query.
 	// The first attempt is number zero and any retries have non-zero attempt number.
