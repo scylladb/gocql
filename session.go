@@ -1085,10 +1085,68 @@ func translateAddressPort(addressTranslator AddressTranslator, host *HostInfo, a
 type hostMetrics struct {
 	// Attempts is count of how many times this query has been attempted for this host.
 	// An attempt is either a retry or fetching next page of results.
+	//
+	// Deprecated: use ObservedQuery.AttemptMetrics.Attempts or ObservedBatch.AttemptMetrics.Attempts.
 	Attempts int
 
 	// TotalLatency is the sum of attempt latencies for this host in nanoseconds.
+	//
+	// Deprecated: use ObservedQuery.AttemptMetrics.TotalLatency or ObservedBatch.AttemptMetrics.TotalLatency.
 	TotalLatency int64
+}
+
+// AttemptMetric is the metrics for one observed physical query or batch attempt.
+type AttemptMetric struct {
+	// Host is the host where the attempt was executed.
+	Host *HostInfo
+
+	// Attempt is the index of this physical attempt.
+	Attempt int
+
+	// Latency is the attempt latency in nanoseconds.
+	Latency int64
+}
+
+// AttemptMetrics is a snapshot of observed query or batch attempts.
+//
+// Its zero value is empty. The concrete storage is intentionally hidden so the
+// metrics representation can change without affecting observer implementations.
+type AttemptMetrics struct {
+	attempt      AttemptMetric
+	attempts     int
+	totalLatency int64
+	hasAttempt   bool
+}
+
+func newAttemptMetrics(metrics *hostMetrics, attempt AttemptMetric) AttemptMetrics {
+	if metrics == nil {
+		return AttemptMetrics{}
+	}
+
+	return AttemptMetrics{
+		attempts:     metrics.Attempts,
+		totalLatency: metrics.TotalLatency,
+		attempt:      attempt,
+		hasAttempt:   true,
+	}
+}
+
+// Attempts returns the number of attempts in the snapshot.
+func (m AttemptMetrics) Attempts() int {
+	return m.attempts
+}
+
+// TotalLatency returns the sum of attempt latencies in nanoseconds.
+func (m AttemptMetrics) TotalLatency() int64 {
+	return m.totalLatency
+}
+
+// ForEachAttempt calls iter for each recorded attempt in attempt order.
+// Iteration stops when iter returns false.
+func (m AttemptMetrics) ForEachAttempt(iter func(AttemptMetric) bool) {
+	if m.hasAttempt {
+		iter(m.attempt)
+	}
 }
 
 type queryMetrics struct {
@@ -1486,17 +1544,23 @@ func (q *Query) attempt(keyspace string, end, start time.Time, iter *Iter, host 
 	attempt, metricsForHost := q.metrics.attempt(1, latency, host, q.observer != nil)
 
 	if q.observer != nil {
+		attemptMetric := AttemptMetric{
+			Attempt: attempt,
+			Host:    host,
+			Latency: latency.Nanoseconds(),
+		}
 		q.observer.ObserveQuery(q.Context(), ObservedQuery{
-			Keyspace:  keyspace,
-			Statement: q.stmt,
-			Values:    q.values,
-			Start:     start,
-			End:       end,
-			Rows:      iter.numRows,
-			Host:      host,
-			Metrics:   metricsForHost,
-			Err:       iter.err,
-			Attempt:   attempt,
+			Keyspace:       keyspace,
+			Statement:      q.stmt,
+			Values:         q.values,
+			Start:          start,
+			End:            end,
+			Rows:           iter.numRows,
+			Host:           host,
+			Metrics:        metricsForHost,
+			AttemptMetrics: newAttemptMetrics(metricsForHost, attemptMetric),
+			Err:            iter.err,
+			Attempt:        attempt,
 		})
 	}
 }
@@ -2789,6 +2853,11 @@ func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter, host 
 		values[i] = entry.Args
 	}
 
+	attemptMetric := AttemptMetric{
+		Attempt: attempt,
+		Host:    host,
+		Latency: latency.Nanoseconds(),
+	}
 	b.observer.ObserveBatch(b.Context(), ObservedBatch{
 		Keyspace:   keyspace,
 		Statements: statements,
@@ -2796,10 +2865,11 @@ func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter, host 
 		Start:      start,
 		End:        end,
 		// Rows not used in batch observations // TODO - might be able to support it when using BatchCAS
-		Host:    host,
-		Metrics: metricsForHost,
-		Err:     iter.err,
-		Attempt: attempt,
+		Host:           host,
+		Metrics:        metricsForHost,
+		AttemptMetrics: newAttemptMetrics(metricsForHost, attemptMetric),
+		Err:            iter.err,
+		Attempt:        attempt,
 	})
 }
 
@@ -3037,13 +3107,17 @@ type ObservedQuery struct {
 	Err error
 	// Host is a reference to the host where the query was executed.
 	Host *HostInfo
-	// Metrics is the metrics for this attempt
+	// Metrics is the metrics for this attempt.
+	//
+	// Deprecated: use AttemptMetrics.
 	Metrics   *hostMetrics
 	Keyspace  string
 	Statement string
 	// Values holds a slice of bound values for the query.
 	// Do not modify the values here, they are shared with multiple goroutines.
 	Values []any
+	// AttemptMetrics is the replacement metrics API for observed attempts.
+	AttemptMetrics AttemptMetrics
 	// Rows is the number of rows in the current iter.
 	// In paginated queries, rows from previous scans are not counted.
 	// Rows is not used in batch queries and remains at the default value
@@ -3071,7 +3145,9 @@ type ObservedBatch struct {
 	Err error
 	// Host is a reference to the host where the batch was executed.
 	Host *HostInfo
-	// Metrics is the metrics for this attempt
+	// Metrics is the metrics for this attempt.
+	//
+	// Deprecated: use AttemptMetrics.
 	Metrics    *hostMetrics
 	Keyspace   string
 	Statements []string
@@ -3079,6 +3155,8 @@ type ObservedBatch struct {
 	// Values[i] are bound values passed to Statements[i].
 	// Do not modify the values here, they are shared with multiple goroutines.
 	Values [][]any
+	// AttemptMetrics is the replacement metrics API for observed attempts.
+	AttemptMetrics AttemptMetrics
 	// Attempt is the index of attempt at executing this query.
 	// The first attempt is number zero and any retries have non-zero attempt number.
 	Attempt int

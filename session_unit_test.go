@@ -752,6 +752,33 @@ func TestQueryMetricsAttemptWithoutSnapshotSkipsHostStorage(t *testing.T) {
 	}
 }
 
+func TestAttemptMetricsReplacesHostMetricsAPI(t *testing.T) {
+	t.Parallel()
+
+	host := &HostInfo{hostId: UUID{1}}
+	attemptMetric := AttemptMetric{
+		Attempt: 1,
+		Host:    host,
+		Latency: 20,
+	}
+	metrics := newAttemptMetrics(&hostMetrics{
+		Attempts:     2,
+		TotalLatency: 30,
+	}, attemptMetric)
+
+	if metrics.Attempts() != 2 || metrics.TotalLatency() != 30 {
+		t.Fatalf("attempt metrics = %+v, want attempts=2 latency=30", metrics)
+	}
+	var attempts []AttemptMetric
+	metrics.ForEachAttempt(func(attempt AttemptMetric) bool {
+		attempts = append(attempts, attempt)
+		return true
+	})
+	if len(attempts) != 1 || attempts[0] != attemptMetric {
+		t.Fatalf("attempt metrics entries = %+v, want [%+v]", attempts, attemptMetric)
+	}
+}
+
 func TestQueryMetricsObservedAttemptSerializesTotalAttemptWithHostMetrics(t *testing.T) {
 	t.Parallel()
 
