@@ -135,14 +135,13 @@ func TestQueryBasicAPI(t *testing.T) {
 
 	// Initiate host
 	ip := "127.0.0.1"
-	hostID := TimeUUID()
 
-	qry.metrics = preFilledQueryMetrics(map[UUID]*hostMetrics{hostID: {Attempts: 0, TotalLatency: 0}})
+	qry.metrics = preFilledQueryMetrics(0, 0)
 	if qry.Latency() != 0 {
 		t.Fatalf("expected Query.Latency() to return 0, got %v", qry.Latency())
 	}
 
-	qry.metrics = preFilledQueryMetrics(map[UUID]*hostMetrics{hostID: {Attempts: 2, TotalLatency: 4}})
+	qry.metrics = preFilledQueryMetrics(2, 4)
 	if qry.Attempts() != 2 {
 		t.Fatalf("expected Query.Attempts() to return 2, got %v", qry.Attempts())
 	}
@@ -253,10 +252,9 @@ func TestBatchBasicAPI(t *testing.T) {
 	}
 
 	ip := "127.0.0.1"
-	hostID := TimeUUID()
 
 	// Test attempts
-	b.metrics = preFilledQueryMetrics(map[UUID]*hostMetrics{hostID: {Attempts: 1}})
+	b.metrics = preFilledQueryMetrics(1, 0)
 	if b.Attempts() != 1 {
 		t.Fatalf("expected batch.Attempts() to return %v, got %v", 1, b.Attempts())
 	}
@@ -271,7 +269,7 @@ func TestBatchBasicAPI(t *testing.T) {
 		t.Fatalf("expected batch.Latency() to be 0, got %v", b.Latency())
 	}
 
-	b.metrics = preFilledQueryMetrics(map[UUID]*hostMetrics{hostID: {Attempts: 1, TotalLatency: 4}})
+	b.metrics = preFilledQueryMetrics(1, 4)
 	if b.Latency() != 4 {
 		t.Fatalf("expected batch.Latency() to return %v, got %v", 4, b.Latency())
 	}
