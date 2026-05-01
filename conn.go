@@ -437,7 +437,9 @@ func (c *Conn) init(ctx context.Context, dialedHost *DialedHost) error {
 
 	// dont coalesce startup frames
 	if c.session.cfg.WriteCoalesceWaitTime > 0 && !c.cfg.disableCoalesce && !dialedHost.DisableCoalesce {
-		c.w = newWriteCoalescer(c.conn, c.cfg.ConnectTimeout, c.session.cfg.WriteCoalesceWaitTime, ctx.Done())
+		if policy := c.session.cfg.WriteCoalescePolicy; policy == nil || policy(c.host) {
+			c.w = newWriteCoalescer(c.conn, c.cfg.ConnectTimeout, c.session.cfg.WriteCoalesceWaitTime, c.session.cfg.WriteCoalesceFlushThreshold, c.session.cfg.WriteCoalesceBypassOps, ctx.Done())
+		}
 	}
 
 	if c.isScyllaConn() { // ScyllaDB does not support system.peers_v2
@@ -1119,12 +1121,26 @@ func (c *deadlineContextWriter) writeContext(ctx context.Context, p []byte) (int
 	return c.w.Write(p)
 }
 
+// defaultFlushThreshold: frames above this skip the coalesce wait (~1 TCP segment).
+const defaultFlushThreshold = 1400
+
 func newWriteCoalescer(conn deadlineWriter, writeTimeout, coalesceDuration time.Duration,
-	quit <-chan struct{}) *writeCoalescer {
+	flushThreshold int, bypassOps map[frm.Op]struct{}, quit <-chan struct{}) *writeCoalescer {
+	if flushThreshold == 0 {
+		flushThreshold = defaultFlushThreshold
+	}
 	wc := &writeCoalescer{
-		writeCh: make(chan writeRequest),
-		c:       conn,
-		quit:    quit,
+		writeCh:        make(chan writeRequest),
+		c:              conn,
+		quit:           quit,
+		flushThreshold: flushThreshold,
+		bypassOps:      bypassOps,
+	}
+	if len(bypassOps) == 1 {
+		for op := range bypassOps {
+			wc.singleBypassOp = op
+			wc.hasSingleBypass = true
+		}
 	}
 	wc.setWriteTimeout(writeTimeout)
 	go wc.writeFlusher(coalesceDuration)
@@ -1137,8 +1153,12 @@ type writeCoalescer struct {
 	writeCh          chan writeRequest
 	testEnqueuedHook func()
 	testFlushedHook  func()
+	bypassOps        map[frm.Op]struct{}
+	scratchBufs      net.Buffers
 	timeout          atomic.Int64
-	mu               sync.Mutex
+	flushThreshold   int
+	singleBypassOp   frm.Op
+	hasSingleBypass  bool
 }
 
 func (w *writeCoalescer) setWriteTimeout(timeout time.Duration) {
@@ -1146,10 +1166,9 @@ func (w *writeCoalescer) setWriteTimeout(timeout time.Duration) {
 }
 
 type writeRequest struct {
-	// resultChan is a channel (with buffer size 1) where to send results of the write.
-	resultChan chan<- writeResult
-	// data to write.
-	data []byte
+	resultChan       chan<- writeResult
+	data             []byte
+	flushImmediately bool
 }
 
 type writeResult struct {
@@ -1157,22 +1176,34 @@ type writeResult struct {
 	n   int
 }
 
-// writeResultChanPool pools buffered channels used for write coalescer results.
-// Each channel is used in a strict produce-once/consume-once pattern:
-// the flusher goroutine sends exactly one writeResult, and writeContext
-// reads exactly one. After reading, the channel is empty and safe to reuse.
+// writeResultChanPool: produce-once/consume-once buffered channels.
 var writeResultChanPool = sync.Pool{
 	New: func() interface{} {
 		return make(chan writeResult, 1)
 	},
 }
 
+// Opcode byte offset in serialized CQL frame header.
+const cqlFrameOpcodeOffset = 4
+
 // writeContext implements contextWriter.
 func (w *writeCoalescer) writeContext(ctx context.Context, p []byte) (int, error) {
 	resultChan := writeResultChanPool.Get().(chan writeResult)
+
+	flush := false
+	if len(p) > cqlFrameOpcodeOffset {
+		op := frm.Op(p[cqlFrameOpcodeOffset])
+		if w.hasSingleBypass {
+			flush = op == w.singleBypassOp
+		} else if len(w.bypassOps) > 0 {
+			_, flush = w.bypassOps[op]
+		}
+	}
+
 	wr := writeRequest{
-		resultChan: resultChan,
-		data:       p,
+		resultChan:       resultChan,
+		data:             p,
+		flushImmediately: flush,
 	}
 
 	select {
@@ -1211,14 +1242,43 @@ func (w *writeCoalescer) writeFlusherImpl(timerC <-chan time.Time, resetTimer fu
 
 	var buffers net.Buffers
 	var resultChans []chan<- writeResult
+	var bufferedBytes int
+
+	flushAndReset := func() {
+		running = false
+		w.flush(resultChans, buffers)
+		buffers = buffers[:0]
+		resultChans = resultChans[:0]
+		bufferedBytes = 0
+		if w.testFlushedHook != nil {
+			w.testFlushedHook()
+		}
+	}
 
 	for {
 		select {
 		case req := <-w.writeCh:
 			buffers = append(buffers, req.data)
 			resultChans = append(resultChans, req.resultChan)
-			if !running {
-				// Start timer on first write.
+			bufferedBytes += len(req.data)
+
+			needsFlush := req.flushImmediately ||
+				(w.flushThreshold > 0 && bufferedBytes >= w.flushThreshold)
+
+			if needsFlush {
+				// Drain queued requests to batch into the same writev.
+			drain:
+				for {
+					select {
+					case r := <-w.writeCh:
+						buffers = append(buffers, r.data)
+						resultChans = append(resultChans, r.resultChan)
+					default:
+						break drain
+					}
+				}
+				flushAndReset()
+			} else if !running {
 				resetTimer()
 				running = true
 			}
@@ -1227,26 +1287,30 @@ func (w *writeCoalescer) writeFlusherImpl(timerC <-chan time.Time, resetTimer fu
 				n:   0,
 				err: io.EOF, // TODO: better error here?
 			}
-			// Unblock whoever was waiting.
 			for _, resultChan := range resultChans {
-				// resultChan has capacity 1, so it does not block.
 				resultChan <- result
 			}
 			return
 		case <-timerC:
-			running = false
-			w.flush(resultChans, buffers)
-			buffers = nil
-			resultChans = nil
-			if w.testFlushedHook != nil {
-				w.testFlushedHook()
+		timerDrain:
+			for {
+				select {
+				case r := <-w.writeCh:
+					buffers = append(buffers, r.data)
+					resultChans = append(resultChans, r.resultChan)
+				default:
+					break timerDrain
+				}
 			}
+			flushAndReset()
 		}
 	}
 }
 
 func (w *writeCoalescer) flush(resultChans []chan<- writeResult, buffers net.Buffers) {
-	// Flush everything we have so far.
+	if len(resultChans) == 0 {
+		return
+	}
 	timeout := w.timeout.Load()
 	if timeout > 0 {
 		err := w.c.SetWriteDeadline(time.Now().Add(time.Duration(timeout)))
@@ -1260,22 +1324,17 @@ func (w *writeCoalescer) flush(resultChans []chan<- writeResult, buffers net.Buf
 			return
 		}
 	}
-	// Copy buffers because WriteTo modifies buffers in-place.
-	buffers2 := make(net.Buffers, len(buffers))
-	copy(buffers2, buffers)
-	n, err := buffers2.WriteTo(w.c)
-	// Writes of bytes before n succeeded, writes of bytes starting from n failed with err.
-	// Use n as remaining byte counter.
+	// Reuse scratch slice; WriteTo modifies in-place.
+	w.scratchBufs = append(w.scratchBufs[:0], buffers...)
+	n, err := w.scratchBufs.WriteTo(w.c)
 	for i := range buffers {
 		if int64(len(buffers[i])) <= n {
-			// this buffer was fully written.
 			resultChans[i] <- writeResult{
 				n:   len(buffers[i]),
 				err: nil,
 			}
 			n -= int64(len(buffers[i]))
 		} else {
-			// this buffer was not (fully) written.
 			resultChans[i] <- writeResult{
 				n:   int(n),
 				err: err,
