@@ -2741,9 +2741,10 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 		}
 
 		if x.meta.morePages() && !qry.disableAutoPage {
-			newQry := cloneQueryForNextPage(qry, metrics, x.meta.pagingState)
-
-			iter.next = newNextIter(newQry, int((1-qry.prefetch)*float64(x.numRows)))
+			// Note: x.meta.pagingState is a slice allocated by readBytesCopy()
+			// and is safe to reference after x.release() — release zeros the
+			// slice header in x.meta but the backing array remains valid.
+			iter.next = newNextIterWithPageState(qry, metrics, x.meta.pagingState, int((1-qry.prefetch)*float64(x.numRows)))
 
 			if iter.next.pos < 1 {
 				iter.next.pos = 1
