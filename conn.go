@@ -2728,11 +2728,16 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 			numRows: x.numRows,
 		}).bindWarningHandlerWithMetrics(qry, metrics, warningHandler)
 
-		if x.meta.noMetaData() {
-			iter.meta = info.response
-			// pagingState is already independently allocated by readBytesCopy()
-			// during frame parsing, no additional copy needed.
-			iter.meta.pagingState = x.meta.pagingState
+		if params.skipMeta {
+			if info != nil {
+				iter.meta = info.response
+				// pagingState is already independently allocated by readBytesCopy()
+				// during frame parsing, no additional copy needed.
+				iter.meta.pagingState = x.meta.pagingState
+			} else {
+				x.release()
+				return newErrorIterWithReleasedFramer(errors.New("gocql: did not receive metadata but prepared info is nil"), framer).bindWarningHandler(qry, warningHandler)
+			}
 		}
 
 		if x.meta.morePages() && !qry.disableAutoPage {
@@ -2745,6 +2750,7 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 			}
 		}
 
+		x.release()
 		return iter
 	case *resultKeyspaceFrame:
 		return (&Iter{framer: framer}).
@@ -2979,6 +2985,7 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 			framer:  framer,
 			numRows: x.numRows,
 		}).bindWarningHandler(batch, warningHandler)
+		x.release()
 
 		return iter
 	case error:
