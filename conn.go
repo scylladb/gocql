@@ -1768,6 +1768,7 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 				// during frame parsing, no additional copy needed.
 				iter.meta.pagingState = x.meta.pagingState
 			} else {
+				x.release()
 				return newErrorIterWithReleasedFramer(errors.New("gocql: did not receive metadata but prepared info is nil"), framer).bindWarningHandler(qry, warningHandler)
 			}
 		}
@@ -1785,6 +1786,7 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 			}
 		}
 
+		x.release()
 		return iter
 	case *resultKeyspaceFrame:
 		return (&Iter{framer: framer}).bindWarningHandler(qry, warningHandler)
@@ -1972,6 +1974,7 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 			framer:  framer,
 			numRows: x.numRows,
 		}).bindWarningHandler(batch, warningHandler)
+		x.release()
 
 		return iter
 	case error:
