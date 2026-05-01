@@ -34,6 +34,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -1045,12 +1046,22 @@ type resultRowsFrame struct {
 	numRows int
 }
 
+var resultRowsFramePool = sync.Pool{
+	New: func() any { return &resultRowsFrame{} },
+}
+
 func (f *resultRowsFrame) String() string {
 	return fmt.Sprintf("[result_rows meta=%v]", f.meta)
 }
 
+// release returns the frame to the pool for reuse.
+// The caller must not use the frame after calling release.
+func (f *resultRowsFrame) release() {
+	resultRowsFramePool.Put(f)
+}
+
 func (f *framer) parseResultRows() frame {
-	result := &resultRowsFrame{}
+	result := resultRowsFramePool.Get().(*resultRowsFrame)
 	result.meta = f.parseResultMetadata()
 
 	result.numRows = f.readInt()
