@@ -2148,6 +2148,10 @@ func (is *iterScanner) Next() bool {
 		return false
 	}
 
+	if atomic.LoadInt32(&iter.closed) != 0 {
+		return false
+	}
+
 	for iter.pos >= iter.numRows {
 		if !iter.fetchNextPage() {
 			iter.finalize(true)
@@ -2170,7 +2174,7 @@ func (is *iterScanner) Next() bool {
 	return true
 }
 
-func scanColumn(p []byte, col ColumnInfo, dest []any) (int, error) {
+func scanColumn(p []byte, col *ColumnInfo, dest []any) (int, error) {
 	if dest[0] == nil {
 		return 1, nil
 	}
@@ -2210,9 +2214,9 @@ func (is *iterScanner) Scan(dest ...any) error {
 	// slices of dest
 	i := 0
 	var err error
-	for _, col := range iter.meta.columns {
+	for j := range iter.meta.columns {
 		var n int
-		n, err = scanColumn(is.cols[i], col, dest[i:])
+		n, err = scanColumn(is.cols[j], &iter.meta.columns[j], dest[i:])
 		if err != nil {
 			break
 		}
@@ -2242,9 +2246,6 @@ func (iter *Iter) Scanner() Scanner {
 }
 
 func (iter *Iter) readColumn() ([]byte, error) {
-	if atomic.LoadInt32(&iter.closed) != 0 {
-		return nil, errors.New("iterator closed")
-	}
 	if iter.framer == nil {
 		return nil, errors.New("no framer available")
 	}
@@ -2262,6 +2263,10 @@ func (iter *Iter) readColumn() ([]byte, error) {
 func (iter *Iter) Scan(dest ...any) bool {
 	if iter.err != nil {
 		iter.finalize(true)
+		return false
+	}
+
+	if atomic.LoadInt32(&iter.closed) != 0 {
 		return false
 	}
 
@@ -2287,7 +2292,7 @@ func (iter *Iter) Scan(dest ...any) bool {
 	// i is the current position in dest, could posible replace it and just use
 	// slices of dest
 	i := 0
-	for _, col := range iter.meta.columns {
+	for j := range iter.meta.columns {
 		colBytes, err := iter.readColumn()
 		if err != nil {
 			iter.err = err
@@ -2295,7 +2300,7 @@ func (iter *Iter) Scan(dest ...any) bool {
 			return false
 		}
 
-		n, err := scanColumn(colBytes, col, dest[i:])
+		n, err := scanColumn(colBytes, &iter.meta.columns[j], dest[i:])
 		if err != nil {
 			iter.err = err
 			iter.finalize(true)
