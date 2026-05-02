@@ -1422,3 +1422,86 @@ func TestHostSetOverflowPreservesInlineEntries(t *testing.T) {
 		t.Fatal("extra host not found after spill")
 	}
 }
+
+// BenchmarkTokenAwarePickTabletReplicas benchmarks the tablet replica lookup
+// path in tokenAwareHostPolicy.Pick() with varying numbers of hosts.
+func BenchmarkTokenAwarePickTabletReplicas(b *testing.B) {
+	for _, numHosts := range []int{3, 10, 50, 100, 200} {
+		b.Run(fmt.Sprintf("hosts=%d", numHosts), func(b *testing.B) {
+			const keyspace = "benchks"
+			const table = "benchtbl"
+
+			policy := TokenAwareHostPolicy(RoundRobinHostPolicy())
+			policyInternal := policy.(*tokenAwareHostPolicy)
+			policyInternal.getKeyspaceName = func() string { return keyspace }
+			policyInternal.getKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {
+				return &KeyspaceMetadata{
+					Name:          keyspace,
+					StrategyClass: "SimpleStrategy",
+					StrategyOptions: map[string]any{
+						"class":              "SimpleStrategy",
+						"replication_factor": 3,
+					},
+				}, nil
+			}
+
+			hosts := make([]*HostInfo, numHosts)
+			for i := range hosts {
+				hosts[i] = &HostInfo{
+					hostId:         tUUID(i),
+					connectAddress: net.IPv4(10, 0, byte(i/256), byte(i%256)),
+					tokens:         []string{fmt.Sprintf("%d", int64(i)*int64(9223372036854775807/int64(numHosts)))},
+				}
+			}
+			policyInternal.AddHosts(hosts)
+			policy.SetPartitioner("Murmur3Partitioner")
+			policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: keyspace})
+
+			// Set up session with tablets pointing to 3 replicas.
+			ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{}}
+			s := newSchemaEventTestSessionWithMock(ctrl)
+			defer s.Close()
+			s.isInitialized = true
+			s.tabletsRoutingV1 = true
+
+			// Create a tablet covering the full token range with 3 replicas.
+			replicas := [][]any{
+				{hosts[0].hostId, 0},
+				{hosts[numHosts/2].hostId, 0},
+				{hosts[numHosts-1].hostId, 0},
+			}
+			t1, err := tablets.TabletInfoBuilder{
+				KeyspaceName: keyspace,
+				TableName:    table,
+				FirstToken:   -9223372036854775808,
+				LastToken:    9223372036854775807,
+				Replicas:     replicas,
+			}.Build()
+			if err != nil {
+				b.Fatal(err)
+			}
+			s.metadataDescriber.AddTablet(t1)
+			s.metadataDescriber.metadata.tabletsMetadata.Flush()
+
+			query := &Query{
+				routingInfo: &queryRoutingInfo{
+					keyspace:    keyspace,
+					table:       table,
+					partitioner: fixedInt64Partitioner(42),
+				},
+				session: s,
+			}
+			query.getKeyspace = func() string { return keyspace }
+			query.routingKey = []byte("anything")
+
+			b.ResetTimer()
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				iter := policy.Pick(query)
+				if iter() == nil {
+					b.Fatal("expected host from tablet path")
+				}
+			}
+		})
+	}
+}
