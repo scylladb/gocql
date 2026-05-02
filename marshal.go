@@ -360,6 +360,19 @@ func Unmarshal(info TypeInfo, data []byte, value any) error {
 }
 
 func isNullableValue(value any) bool {
+	// Fast path: common single-pointer destination types are not nullable.
+	// This avoids reflect.ValueOf + Kind checks on the hot unmarshal path.
+	// Note: Unmarshaler is already checked before isNullableValue in Unmarshal(),
+	// so we don't need to list it here.
+	switch value.(type) {
+	case *string, *[]byte, *int, *int8, *int16, *int32, *int64,
+		*uint, *uint8, *uint16, *uint32, *uint64,
+		*float32, *float64, *bool,
+		*time.Time, *Duration,
+		*big.Int, *inf.Dec,
+		*UUID, *[]UUID:
+		return false
+	}
 	v := reflect.ValueOf(value)
 	return v.Kind() == reflect.Ptr && v.Type().Elem().Kind() == reflect.Ptr
 }

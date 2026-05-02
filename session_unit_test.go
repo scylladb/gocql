@@ -29,6 +29,7 @@ package gocql
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"reflect"
 	"slices"
@@ -1162,6 +1163,55 @@ func TestQueryExecutorRetryAndDiscardWarningHandling(t *testing.T) {
 			t.Fatalf("handler warnings = %v, want %v", handler.warnings, []string{"retry-warn"})
 		}
 	})
+}
+
+func TestScannerScanTupleColumnUsesRawColumnIndex(t *testing.T) {
+	t.Parallel()
+
+	tupleInfo := TupleTypeInfo{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeTuple},
+		Elems: []TypeInfo{
+			NativeType{proto: protoVersion4, typ: TypeVarchar},
+			NativeType{proto: protoVersion4, typ: TypeVarchar},
+		},
+	}
+
+	encodeTuple := func(values ...string) []byte {
+		var out []byte
+		for _, v := range values {
+			data := []byte(v)
+			var lenBuf [4]byte
+			binary.BigEndian.PutUint32(lenBuf[:], uint32(len(data)))
+			out = append(out, lenBuf[:]...)
+			out = append(out, data...)
+		}
+		return out
+	}
+
+	iter := &Iter{
+		framer:  &testWarningFramer{},
+		numRows: 1,
+		meta: resultMetadata{
+			columns: []ColumnInfo{
+				{Name: "pair", TypeInfo: tupleInfo},
+				{Name: "tail", TypeInfo: NativeType{proto: protoVersion4, typ: TypeVarchar}},
+			},
+			actualColCount: 3,
+		},
+	}
+
+	scanner := iter.Scanner().(*iterScanner)
+	scanner.valid = true
+	scanner.cols[0] = encodeTuple("left", "right")
+	scanner.cols[1] = []byte("tail")
+
+	var left, right, tail string
+	if err := scanner.Scan(&left, &right, &tail); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if left != "left" || right != "right" || tail != "tail" {
+		t.Fatalf("scanned values = (%q, %q, %q), want (%q, %q, %q)", left, right, tail, "left", "right", "tail")
+	}
 }
 
 func TestIterCloseCleansPrefetchedNextPage(t *testing.T) {

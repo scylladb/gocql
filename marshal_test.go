@@ -1248,3 +1248,98 @@ func TestCollectionNewWithErrorConsistentWithGoType(t *testing.T) {
 		}
 	}
 }
+
+func BenchmarkIsNullableValue(b *testing.B) {
+	b.Run("string_ptr", func(b *testing.B) {
+		b.ReportAllocs()
+		var s string
+		v := &s
+		for i := 0; i < b.N; i++ {
+			_ = isNullableValue(v)
+		}
+	})
+	b.Run("string_ptr_ptr", func(b *testing.B) {
+		b.ReportAllocs()
+		var s string
+		v := &s
+		vv := &v
+		for i := 0; i < b.N; i++ {
+			_ = isNullableValue(vv)
+		}
+	})
+	b.Run("int64_ptr", func(b *testing.B) {
+		b.ReportAllocs()
+		var n int64
+		v := &n
+		for i := 0; i < b.N; i++ {
+			_ = isNullableValue(v)
+		}
+	})
+	b.Run("uuid_ptr", func(b *testing.B) {
+		b.ReportAllocs()
+		var u UUID
+		v := &u
+		for i := 0; i < b.N; i++ {
+			_ = isNullableValue(v)
+		}
+	})
+}
+
+func BenchmarkUnmarshalFull(b *testing.B) {
+	b.Run("varchar_to_string", func(b *testing.B) {
+		b.ReportAllocs()
+		info := NativeType{proto: protoVersion4, typ: TypeVarchar}
+		data := []byte("hello world test string")
+		var s string
+		for i := 0; i < b.N; i++ {
+			if err := Unmarshal(info, data, &s); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("bigint_to_int64", func(b *testing.B) {
+		b.ReportAllocs()
+		info := NativeType{proto: protoVersion4, typ: TypeBigInt}
+		data := []byte{0, 0, 0, 0, 0, 0, 0, 42}
+		var n int64
+		for i := 0; i < b.N; i++ {
+			if err := Unmarshal(info, data, &n); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+}
+
+// isNullableValueReflect is the original reflect-based implementation,
+// kept here for A/B benchmarking.
+func isNullableValueReflect(value any) bool {
+	v := reflect.ValueOf(value)
+	return v.Kind() == reflect.Ptr && v.Type().Elem().Kind() == reflect.Ptr
+}
+
+func BenchmarkIsNullableValueComparison(b *testing.B) {
+	types := []struct {
+		name string
+		val  any
+	}{
+		{"string_ptr", new(string)},
+		{"int64_ptr", new(int64)},
+		{"uuid_ptr", new(UUID)},
+		{"string_ptr_ptr", func() any { s := new(string); return &s }()},
+	}
+	for _, tt := range types {
+		b.Run("old/"+tt.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				_ = isNullableValueReflect(tt.val)
+			}
+		})
+		b.Run("new/"+tt.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				_ = isNullableValue(tt.val)
+			}
+		})
+	}
+}
