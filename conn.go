@@ -2133,12 +2133,6 @@ func (c *Conn) execInternal(ctx context.Context, req frameBuilder, tracer Tracer
 	)
 
 	defer func() {
-		if closeErr != nil {
-			c.closeWithError(closeErr)
-		}
-	}()
-
-	defer func() {
 		if stopWaiting {
 			close(call.timeout)
 		}
@@ -2148,6 +2142,9 @@ func (c *Conn) execInternal(ctx context.Context, req frameBuilder, tracer Tracer
 		}
 		if recycleCall {
 			putCallReq(call)
+		}
+		if closeErr != nil {
+			c.closeWithError(closeErr)
 		}
 	}()
 
