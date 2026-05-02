@@ -2210,9 +2210,9 @@ func (is *iterScanner) Scan(dest ...any) error {
 	// slices of dest
 	i := 0
 	var err error
-	for _, col := range iter.meta.columns {
+	for j, col := range iter.meta.columns {
 		var n int
-		n, err = scanColumn(is.cols[i], col, dest[i:])
+		n, err = scanColumn(is.cols[j], col, dest[i:])
 		if err != nil {
 			break
 		}
