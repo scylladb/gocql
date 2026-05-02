@@ -1351,12 +1351,6 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, reques
 	)
 
 	defer func() {
-		if closeErr != nil {
-			c.closeWithError(closeErr)
-		}
-	}()
-
-	defer func() {
 		if stopWaiting {
 			close(call.timeout)
 		}
@@ -1366,6 +1360,9 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, reques
 		}
 		if recycleCall {
 			putCallReq(call)
+		}
+		if closeErr != nil {
+			c.closeWithError(closeErr)
 		}
 	}()
 
