@@ -1057,6 +1057,7 @@ func (f *resultRowsFrame) String() string {
 // release returns the frame to the pool for reuse.
 // The caller must not use the frame after calling release.
 func (f *resultRowsFrame) release() {
+	*f = resultRowsFrame{}
 	resultRowsFramePool.Put(f)
 }
 
