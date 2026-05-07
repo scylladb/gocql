@@ -37,7 +37,7 @@ import (
 // column being null and empty string, you can unmarshal into *string field.
 func Example_nulls() {
 	/* The example assumes the following CQL was used to setup the keyspace:
-	create keyspace example with replication = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };
+	create keyspace example with replication = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };
 	create table example.stringvals(id int, value text, PRIMARY KEY(id));
 	insert into example.stringvals (id, value) values (1, null);
 	insert into example.stringvals (id, value) values (2, '');

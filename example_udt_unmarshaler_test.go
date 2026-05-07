@@ -56,7 +56,7 @@ func (m *MyUDTUnmarshaler) UnmarshalUDT(name string, info gocql.TypeInfo, data [
 // ExampleUDTUnmarshaler demonstrates how to implement a UDTUnmarshaler.
 func ExampleUDTUnmarshaler() {
 	/* The example assumes the following CQL was used to setup the keyspace:
-	create keyspace example with replication = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };
+	create keyspace example with replication = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };
 	create type example.my_udt (field_a text, field_b int);
 	create table example.my_udt_table(pk int, value frozen<my_udt>, PRIMARY KEY(pk));
 	insert into example.my_udt_table (pk, value) values (1, {field_a: 'a value', field_b: 42});

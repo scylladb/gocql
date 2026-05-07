@@ -36,7 +36,7 @@ import (
 // See also Example_userDefinedTypesStruct and examples for UDTMarshaler and UDTUnmarshaler if you want to map to structs.
 func Example_userDefinedTypesMap() {
 	/* The example assumes the following CQL was used to setup the keyspace:
-	create keyspace example with replication = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };
+	create keyspace example with replication = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };
 	create type example.my_udt (field_a text, field_b int);
 	create table example.my_udt_table(pk int, value frozen<my_udt>, PRIMARY KEY(pk));
 	*/

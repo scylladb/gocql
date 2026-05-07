@@ -38,7 +38,7 @@ import (
 // Example_dynamicColumns demonstrates how to handle dynamic column list.
 func Example_dynamicColumns() {
 	/* The example assumes the following CQL was used to setup the keyspace:
-	create keyspace example with replication = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };
+	create keyspace example with replication = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };
 	create table example.table1(pk text, ck int, value1 text, value2 int, PRIMARY KEY(pk, ck));
 	insert into example.table1 (pk, ck, value1, value2) values ('a', 1, 'b', 2);
 	insert into example.table1 (pk, ck, value1, value2) values ('c', 3, 'd', 4);

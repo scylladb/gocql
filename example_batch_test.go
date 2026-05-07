@@ -35,7 +35,7 @@ import (
 // Example_batch demonstrates how to execute a batch of statements.
 func Example_batch() {
 	/* The example assumes the following CQL was used to setup the keyspace:
-	create keyspace example with replication = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };
+	create keyspace example with replication = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };
 	create table example.batches(pk int, ck int, description text, PRIMARY KEY(pk, ck));
 	*/
 	cluster := gocql.NewCluster("localhost:9042")
