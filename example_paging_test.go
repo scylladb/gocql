@@ -36,7 +36,7 @@ import (
 // See also package documentation about paging.
 func Example_paging() {
 	/* The example assumes the following CQL was used to setup the keyspace:
-	create keyspace example with replication = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };
+	create keyspace example with replication = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };
 	create table example.itoa(id int, description text, PRIMARY KEY(id));
 	insert into example.itoa (id, description) values (1, 'one');
 	insert into example.itoa (id, description) values (2, 'two');

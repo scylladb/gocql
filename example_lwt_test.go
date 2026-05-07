@@ -35,7 +35,7 @@ import (
 // ExampleQuery_MapScanCAS demonstrates how to execute a single-statement lightweight transaction.
 func ExampleQuery_MapScanCAS() {
 	/* The example assumes the following CQL was used to setup the keyspace:
-	create keyspace example with replication = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };
+	create keyspace example with replication = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };
 	create table example.my_lwt_table(pk int, version int, value text, PRIMARY KEY(pk));
 	*/
 	cluster := gocql.NewCluster("localhost:9042")

@@ -35,7 +35,7 @@ import (
 // ExampleSession_MapExecuteBatchCAS demonstrates how to execute a batch lightweight transaction.
 func ExampleSession_MapExecuteBatchCAS() {
 	/* The example assumes the following CQL was used to setup the keyspace:
-	create keyspace example with replication = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };
+	create keyspace example with replication = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };
 	create table example.my_lwt_batch_table(pk text, ck text, version int, value text, PRIMARY KEY(pk, ck));
 	*/
 	cluster := gocql.NewCluster("localhost:9042")
