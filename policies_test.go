@@ -277,6 +277,105 @@ func TestHostPolicy_TokenAware_LWT_DisablesHostShuffling(t *testing.T) {
 	}
 }
 
+func TestHostPolicy_TokenAware_SerialConsistency_DisablesHostShuffling(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		cons    Consistency
+		shuffle bool
+	}{
+		"LOCAL_SERIAL with shuffling": {cons: LocalSerial, shuffle: true},
+		"SERIAL with shuffling":       {cons: Serial, shuffle: true},
+		"LOCAL_SERIAL no shuffling":   {cons: LocalSerial, shuffle: false},
+		"SERIAL no shuffling":         {cons: Serial, shuffle: false},
+	}
+
+	const keyspace = "myKeyspace"
+	hosts := []*HostInfo{
+		{hostId: tUUID(0), connectAddress: net.IPv4(10, 0, 0, 1), tokens: []string{"00", "10", "20"}},
+		{hostId: tUUID(1), connectAddress: net.IPv4(10, 0, 0, 3), tokens: []string{"25", "35", "45"}},
+		{hostId: tUUID(2), connectAddress: net.IPv4(10, 0, 0, 2), tokens: []string{"00", "10", "20"}},
+		{hostId: tUUID(3), connectAddress: net.IPv4(10, 0, 0, 4), tokens: []string{"25", "35", "45"}},
+		{hostId: tUUID(4), connectAddress: net.IPv4(10, 0, 0, 3), tokens: []string{"50", "60", "70"}},
+		{hostId: tUUID(5), connectAddress: net.IPv4(10, 0, 0, 4), tokens: []string{"50", "60", "70"}},
+	}
+
+	// Expected replica order for token "8" - same as the LWT test above.
+	// Replicas for token 08 are hosts 0 and 2 (they share tokens "00","10","20").
+	wantReplicas := []string{tID(0), tID(2)}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			policy := createPolicy(keyspace, tc.shuffle)
+			for _, host := range hosts {
+				policy.AddHost(host)
+			}
+			query := &Query{
+				cons:        tc.cons,
+				routingKey:  []byte("8"),
+				routingInfo: &queryRoutingInfo{lwt: false}, // NOT marked as LWT by server
+			}
+			query.getKeyspace = func() string { return keyspace }
+
+			// Verify the query is treated as LWT due to serial consistency
+			if !query.IsLWT() {
+				t.Fatalf("expected IsLWT()=true for consistency %v", tc.cons)
+			}
+
+			// Run Pick multiple times - the first two hosts (replicas) should
+			// always be deterministic (no shuffling applied).
+			for i := 0; i < 20; i++ {
+				got := pickHosts(policy, query)
+				if len(got) < 2 {
+					t.Fatalf("iteration %d: expected at least 2 hosts, got %d", i, len(got))
+				}
+				gotReplicas := got[:2]
+				if diff := cmp.Diff(gotReplicas, wantReplicas); diff != "" {
+					t.Errorf("iteration %d: replica order not deterministic for serial consistency query, diff: %s", i, diff)
+				}
+			}
+		})
+	}
+}
+
+func TestQuery_IsLWT_SerialConsistency(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		cons      Consistency
+		lwtFlag   bool
+		wantIsLWT bool
+	}{
+		"SERIAL consistency, no LWT flag":       {cons: Serial, lwtFlag: false, wantIsLWT: true},
+		"LOCAL_SERIAL consistency, no LWT flag": {cons: LocalSerial, lwtFlag: false, wantIsLWT: true},
+		"QUORUM consistency, no LWT flag":       {cons: Quorum, lwtFlag: false, wantIsLWT: false},
+		"ONE consistency, no LWT flag":          {cons: One, lwtFlag: false, wantIsLWT: false},
+		"QUORUM consistency, LWT flag set":      {cons: Quorum, lwtFlag: true, wantIsLWT: true},
+		"LOCAL_ONE consistency, no LWT flag":    {cons: LocalOne, lwtFlag: false, wantIsLWT: false},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			query := &Query{
+				cons:        tc.cons,
+				routingInfo: &queryRoutingInfo{lwt: tc.lwtFlag},
+			}
+			if got := query.IsLWT(); got != tc.wantIsLWT {
+				t.Errorf("IsLWT() = %v, want %v", got, tc.wantIsLWT)
+			}
+		})
+	}
+}
+
+func pickHosts(policy HostSelectionPolicy, query *Query) []string {
+	iter := policy.Pick(query)
+	var hostIds []string
+	for host := iter(); host != nil; host = iter() {
+		hostIds = append(hostIds, host.Info().HostID())
+	}
+	return hostIds
+}
+
 func createPolicy(keyspace string, shuffle bool) HostSelectionPolicy {
 	policy := TokenAwareHostPolicy(RoundRobinHostPolicy())
 	policyInternal := policy.(*tokenAwareHostPolicy)
