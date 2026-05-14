@@ -1109,7 +1109,387 @@ func marshalMap(info CollectionType, value any) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// readMapEntryData reads a single collection entry (key or value) from data.
+// Returns the entry bytes (nil if the entry is null, i.e. size < 0),
+// the number of bytes consumed from data, and any error.
+func readMapEntryData(data []byte) (entryData []byte, consumed int, err error) {
+	if len(data) < 4 {
+		return nil, 0, unmarshalErrorf("unmarshal map: unexpected eof")
+	}
+	m := int(int32(data[0])<<24 | int32(data[1])<<16 | int32(data[2])<<8 | int32(data[3]))
+	if m < 0 {
+		return nil, 4, nil
+	}
+	// Compare against len(data)-4 instead of 4+m: on 32-bit targets a large
+	// positive m could overflow 4+m, wrap negative, bypass this guard, and then
+	// panic on the data[4:4+m] slice. len(data) >= 4 and m >= 0 here, so
+	// len(data)-4 is non-negative and the comparison is safe.
+	if m > len(data)-4 {
+		return nil, 0, unmarshalErrorf("unmarshal map: unexpected eof")
+	}
+	return data[4 : 4+m], 4 + m, nil
+}
+
+// isStringKeyType returns true if the CQL type encodes as raw bytes that can be
+// interpreted as a Go string without further validation (text, varchar).
+//
+// TypeAscii is deliberately excluded: the generic path validates ASCII payloads
+// via serialization/ascii.DecString (rejecting bytes > 127), so routing ascii
+// through the raw-string fast path would silently accept invalid data.
+func isStringKeyType(t Type) bool {
+	return t == TypeVarchar || t == TypeText
+}
+
+// unmarshalMapFast attempts to unmarshal a map using type-switch fast paths
+// for common concrete map types, avoiding all reflection. Returns (true, err)
+// if the fast path handled the value, or (false, nil) to fall through to the
+// generic reflect-based path.
+func unmarshalMapFast(info CollectionType, data []byte, value any) (bool, error) {
+	keyType := info.Key.Type()
+	elemType := info.Elem.Type()
+
+	// We only fast-path string-keyed maps and int64-keyed maps, which cover
+	// the vast majority of real-world CQL map usage. TypeAscii is excluded so
+	// the generic path can validate ASCII payloads (bytes > 127 are rejected).
+	switch keyType {
+	case TypeVarchar, TypeText:
+		switch v := value.(type) {
+		case *map[string]string:
+			if !isStringKeyType(elemType) {
+				return false, nil
+			}
+			return true, unmarshalMapStringString(data, v)
+		case *map[string][]byte:
+			if elemType != TypeBlob {
+				return false, nil
+			}
+			return true, unmarshalMapStringBytes(data, v)
+		case *map[string]int64:
+			if elemType != TypeBigInt && elemType != TypeCounter {
+				return false, nil
+			}
+			return true, unmarshalMapStringInt64(data, v)
+		case *map[string]int32:
+			if elemType != TypeInt {
+				return false, nil
+			}
+			return true, unmarshalMapStringInt32(data, v)
+		case *map[string]float64:
+			if elemType != TypeDouble {
+				return false, nil
+			}
+			return true, unmarshalMapStringFloat64(data, v)
+		case *map[string]bool:
+			if elemType != TypeBoolean {
+				return false, nil
+			}
+			return true, unmarshalMapStringBool(data, v)
+		}
+	case TypeBigInt, TypeCounter:
+		switch v := value.(type) {
+		case *map[int64]string:
+			if !isStringKeyType(elemType) {
+				return false, nil
+			}
+			return true, unmarshalMapInt64String(data, v)
+		case *map[int64]int64:
+			if elemType != TypeBigInt && elemType != TypeCounter {
+				return false, nil
+			}
+			return true, unmarshalMapInt64Int64(data, v)
+		}
+	}
+	return false, nil
+}
+
+func unmarshalMapStringString(data []byte, dest *map[string]string) error {
+	if data == nil {
+		*dest = nil
+		return nil
+	}
+	n, p, err := readCollectionSize(data)
+	if err != nil {
+		return err
+	}
+	if n < 0 {
+		return unmarshalErrorf("negative map size %d", n)
+	}
+	data = data[p:]
+	m := make(map[string]string, n)
+	for i := 0; i < n; i++ {
+		keyData, c, err := readMapEntryData(data)
+		if err != nil {
+			return err
+		}
+		data = data[c:]
+		valData, c, err := readMapEntryData(data)
+		if err != nil {
+			return err
+		}
+		data = data[c:]
+		m[string(keyData)] = string(valData)
+	}
+	*dest = m
+	return nil
+}
+
+func unmarshalMapStringBytes(data []byte, dest *map[string][]byte) error {
+	if data == nil {
+		*dest = nil
+		return nil
+	}
+	n, p, err := readCollectionSize(data)
+	if err != nil {
+		return err
+	}
+	if n < 0 {
+		return unmarshalErrorf("negative map size %d", n)
+	}
+	data = data[p:]
+	m := make(map[string][]byte, n)
+	for i := 0; i < n; i++ {
+		keyData, c, err := readMapEntryData(data)
+		if err != nil {
+			return err
+		}
+		data = data[c:]
+		valData, c, err := readMapEntryData(data)
+		if err != nil {
+			return err
+		}
+		data = data[c:]
+		// Copy the value bytes since the underlying buffer may be reused.
+		var valCopy []byte
+		if valData != nil {
+			valCopy = make([]byte, len(valData))
+			copy(valCopy, valData)
+		}
+		m[string(keyData)] = valCopy
+	}
+	*dest = m
+	return nil
+}
+
+func unmarshalMapStringInt64(data []byte, dest *map[string]int64) error {
+	if data == nil {
+		*dest = nil
+		return nil
+	}
+	n, p, err := readCollectionSize(data)
+	if err != nil {
+		return err
+	}
+	if n < 0 {
+		return unmarshalErrorf("negative map size %d", n)
+	}
+	data = data[p:]
+	m := make(map[string]int64, n)
+	for i := 0; i < n; i++ {
+		keyData, c, err := readMapEntryData(data)
+		if err != nil {
+			return err
+		}
+		data = data[c:]
+		valData, c, err := readMapEntryData(data)
+		if err != nil {
+			return err
+		}
+		data = data[c:]
+		var v int64
+		if err := bigint.DecInt64(valData, &v); err != nil {
+			return unmarshalErrorf("unmarshal map value: %v", err)
+		}
+		m[string(keyData)] = v
+	}
+	*dest = m
+	return nil
+}
+
+func unmarshalMapStringInt32(data []byte, dest *map[string]int32) error {
+	if data == nil {
+		*dest = nil
+		return nil
+	}
+	n, p, err := readCollectionSize(data)
+	if err != nil {
+		return err
+	}
+	if n < 0 {
+		return unmarshalErrorf("negative map size %d", n)
+	}
+	data = data[p:]
+	m := make(map[string]int32, n)
+	for i := 0; i < n; i++ {
+		keyData, c, err := readMapEntryData(data)
+		if err != nil {
+			return err
+		}
+		data = data[c:]
+		valData, c, err := readMapEntryData(data)
+		if err != nil {
+			return err
+		}
+		data = data[c:]
+		var v int32
+		if err := cqlint.DecInt32(valData, &v); err != nil {
+			return unmarshalErrorf("unmarshal map value: %v", err)
+		}
+		m[string(keyData)] = v
+	}
+	*dest = m
+	return nil
+}
+
+func unmarshalMapStringFloat64(data []byte, dest *map[string]float64) error {
+	if data == nil {
+		*dest = nil
+		return nil
+	}
+	n, p, err := readCollectionSize(data)
+	if err != nil {
+		return err
+	}
+	if n < 0 {
+		return unmarshalErrorf("negative map size %d", n)
+	}
+	data = data[p:]
+	m := make(map[string]float64, n)
+	for i := 0; i < n; i++ {
+		keyData, c, err := readMapEntryData(data)
+		if err != nil {
+			return err
+		}
+		data = data[c:]
+		valData, c, err := readMapEntryData(data)
+		if err != nil {
+			return err
+		}
+		data = data[c:]
+		var v float64
+		if err := double.DecFloat64(valData, &v); err != nil {
+			return unmarshalErrorf("unmarshal map value: %v", err)
+		}
+		m[string(keyData)] = v
+	}
+	*dest = m
+	return nil
+}
+
+func unmarshalMapStringBool(data []byte, dest *map[string]bool) error {
+	if data == nil {
+		*dest = nil
+		return nil
+	}
+	n, p, err := readCollectionSize(data)
+	if err != nil {
+		return err
+	}
+	if n < 0 {
+		return unmarshalErrorf("negative map size %d", n)
+	}
+	data = data[p:]
+	m := make(map[string]bool, n)
+	for i := 0; i < n; i++ {
+		keyData, c, err := readMapEntryData(data)
+		if err != nil {
+			return err
+		}
+		data = data[c:]
+		valData, c, err := readMapEntryData(data)
+		if err != nil {
+			return err
+		}
+		data = data[c:]
+		var v bool
+		if err := boolean.DecBool(valData, &v); err != nil {
+			return unmarshalErrorf("unmarshal map value: %v", err)
+		}
+		m[string(keyData)] = v
+	}
+	*dest = m
+	return nil
+}
+
+func unmarshalMapInt64String(data []byte, dest *map[int64]string) error {
+	if data == nil {
+		*dest = nil
+		return nil
+	}
+	n, p, err := readCollectionSize(data)
+	if err != nil {
+		return err
+	}
+	if n < 0 {
+		return unmarshalErrorf("negative map size %d", n)
+	}
+	data = data[p:]
+	m := make(map[int64]string, n)
+	for i := 0; i < n; i++ {
+		keyData, c, err := readMapEntryData(data)
+		if err != nil {
+			return err
+		}
+		data = data[c:]
+		var k int64
+		if err := bigint.DecInt64(keyData, &k); err != nil {
+			return unmarshalErrorf("unmarshal map key: %v", err)
+		}
+		valData, c, err := readMapEntryData(data)
+		if err != nil {
+			return err
+		}
+		data = data[c:]
+		m[k] = string(valData)
+	}
+	*dest = m
+	return nil
+}
+
+func unmarshalMapInt64Int64(data []byte, dest *map[int64]int64) error {
+	if data == nil {
+		*dest = nil
+		return nil
+	}
+	n, p, err := readCollectionSize(data)
+	if err != nil {
+		return err
+	}
+	if n < 0 {
+		return unmarshalErrorf("negative map size %d", n)
+	}
+	data = data[p:]
+	m := make(map[int64]int64, n)
+	for i := 0; i < n; i++ {
+		keyData, c, err := readMapEntryData(data)
+		if err != nil {
+			return err
+		}
+		data = data[c:]
+		var k int64
+		if err := bigint.DecInt64(keyData, &k); err != nil {
+			return unmarshalErrorf("unmarshal map key: %v", err)
+		}
+		valData, c, err := readMapEntryData(data)
+		if err != nil {
+			return err
+		}
+		data = data[c:]
+		var v int64
+		if err := bigint.DecInt64(valData, &v); err != nil {
+			return unmarshalErrorf("unmarshal map value: %v", err)
+		}
+		m[k] = v
+	}
+	*dest = m
+	return nil
+}
+
 func unmarshalMap(info CollectionType, data []byte, value any) error {
+	// Try fast path for common concrete map types (no reflection).
+	if handled, err := unmarshalMapFast(info, data, value); handled {
+		return err
+	}
+
 	rv := reflect.ValueOf(value)
 	if rv.Kind() != reflect.Ptr {
 		return unmarshalErrorf("can not unmarshal into non-pointer %T", value)
