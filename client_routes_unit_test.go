@@ -630,6 +630,37 @@ func TestStartReadingEventsUsesCartesianPairs(t *testing.T) {
 	}
 }
 
+func TestClientRoutesHandlerInitializeIsIdempotent(t *testing.T) {
+	s := &Session{
+		control: &fakeControlConn{},
+		eventBus: eventbus.New[events.Event](eventbus.EventBusConfig{
+			InputEventsQueueSize: 1,
+		}, nil),
+		logger: &nopLogger{},
+	}
+	if err := s.eventBus.Start(); err != nil {
+		t.Fatalf("starting event bus: %v", err)
+	}
+	defer s.eventBus.Stop()
+
+	h := NewClientRoutesAddressTranslator(ClientRoutesConfig{
+		TableName: "system.client_routes",
+		Endpoints: ClientRoutesEndpointList{{ConnectionID: "c1"}},
+	}, nil, false, &nopLogger{})
+	defer h.Stop()
+
+	if err := h.Initialize(s); err != nil {
+		t.Fatalf("first Initialize call failed: %v", err)
+	}
+	if !h.initialized {
+		t.Fatal("expected handler to be marked initialized")
+	}
+
+	if err := h.Initialize(s); err == nil {
+		t.Fatal("expected second Initialize call to fail")
+	}
+}
+
 func TestClientRoutesHandlerTranslateHost_RetainsCurrentRouteAfterQueryError(t *testing.T) {
 	addr := AddressPort{Address: net.ParseIP("1.1.1.1"), Port: 9042}
 	resolvedIPs := map[string]net.IP{
