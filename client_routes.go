@@ -239,10 +239,20 @@ func (p *ClientRoutesHandler) TranslateHost(host AddressTranslatorHostInfo, addr
 	return AddressPort{Address: ips[0], Port: route.port}, nil
 }
 
+type pair struct {
+	connectionID string
+	hostID       string
+}
+
 type updateTask struct {
-	result        chan error
+	result chan error
+	// Exactly one of pairs or connectionIDs must be set.
+	// pairs: scoped update — delete and re-query specific (connectionID, hostID) pairs.
+	// connectionIDs: full refresh — delete all entries for these connections and re-query.
+	// If both are nil, updateHostPortMapping returns an error.
+	// If both are set, pairs takes precedence.
+	pairs         []pair
 	connectionIDs []string
-	hostIDs       []string
 }
 
 func (p *ClientRoutesHandler) Initialize(s *Session) error {
@@ -266,7 +276,7 @@ func (p *ClientRoutesHandler) Initialize(s *Session) error {
 	})
 	p.startUpdateWorker()
 	p.startReadingEvents()
-	err := p.updateHostPortMappingSync(connectionIDs, nil)
+	err := p.updateHostPortMappingSync(updateTask{connectionIDs: connectionIDs})
 	if err != nil {
 		p.log.Printf("error updating host ports: %v\n", err)
 	}
@@ -285,29 +295,22 @@ func (p *ClientRoutesHandler) Stop() {
 	// and concurrent sends to it.
 }
 
-func (p *ClientRoutesHandler) updateHostPortMappingAsync(connectionIDs []string, hostIDs []string) {
+func (p *ClientRoutesHandler) updateHostPortMappingAsync(task updateTask) {
 	select {
-	case p.updateTasks <- updateTask{
-		connectionIDs: connectionIDs,
-		hostIDs:       hostIDs,
-	}:
+	case p.updateTasks <- task:
 	case <-p.closeChan:
 		// Stop() was called; drop the update safely.
 	}
 }
 
-func (p *ClientRoutesHandler) updateHostPortMappingSync(connectionIDs []string, hostIDs []string) error {
-	result := make(chan error, 1)
+func (p *ClientRoutesHandler) updateHostPortMappingSync(task updateTask) error {
+	task.result = make(chan error, 1)
 	select {
-	case p.updateTasks <- updateTask{
-		connectionIDs: connectionIDs,
-		hostIDs:       hostIDs,
-		result:        result,
-	}:
+	case p.updateTasks <- task:
 	case <-p.closeChan:
 		return errors.New("client routes handler stopped")
 	}
-	return <-result
+	return <-task.result
 }
 
 func (p *ClientRoutesHandler) startReadingEvents() {
@@ -327,25 +330,31 @@ func (p *ClientRoutesHandler) startReadingEvents() {
 						continue
 					}
 				}
-				var newConnectionIDs []string
-				for _, connectionID := range evt.ConnectionIDs {
-					if connectionID == "" {
-						continue
-					}
-					if slices.ContainsFunc(p.cfg.Endpoints, func(ep ClientRoutesEndpoint) bool {
-						return ep.ConnectionID == connectionID
-					}) {
-						newConnectionIDs = append(newConnectionIDs, connectionID)
-					}
-				}
-				if len(newConnectionIDs) != 0 {
-					p.updateHostPortMappingAsync(newConnectionIDs, evt.HostIDs)
+				pairs := getPairsFromEvent(evt, connectionIDs)
+				if len(pairs) != 0 {
+					p.updateHostPortMappingAsync(updateTask{pairs: pairs})
 				}
 			case *events.ControlConnectionRecreatedEvent:
-				p.updateHostPortMappingAsync(connectionIDs, nil)
+				p.updateHostPortMappingAsync(updateTask{connectionIDs: connectionIDs})
 			}
 		}
 	}()
+}
+
+func getPairsFromEvent(evt *events.ClientRoutesChangedEvent, allowedConnectionIDs []string) (pairs []pair) {
+	if len(evt.ConnectionIDs) != len(evt.HostIDs) {
+		return nil
+	}
+	for n, connID := range evt.ConnectionIDs {
+		if !slices.Contains(allowedConnectionIDs, connID) {
+			continue
+		}
+		pairs = append(pairs, pair{
+			connectionID: connID,
+			hostID:       evt.HostIDs[n],
+		})
+	}
+	return pairs
 }
 
 func (p *ClientRoutesHandler) startUpdateWorker() {
@@ -353,7 +362,7 @@ func (p *ClientRoutesHandler) startUpdateWorker() {
 		for {
 			select {
 			case task := <-p.updateTasks:
-				err := p.updateHostPortMapping(task.connectionIDs, task.hostIDs)
+				err := p.updateHostPortMapping(task)
 				if err != nil {
 					if debug.Enabled {
 						p.log.Printf("failed to update host port mapping: %v", err)
@@ -370,7 +379,23 @@ func (p *ClientRoutesHandler) startUpdateWorker() {
 	}()
 }
 
-func (p *ClientRoutesHandler) updateHostPortMapping(connectionIDs []string, hostIDs []string) error {
+func (p *ClientRoutesHandler) updateHostPortMapping(task updateTask) error {
+	var connectionIDs, hostIDs []string
+
+	switch {
+	case task.pairs != nil:
+		connectionIDs = make([]string, len(task.pairs))
+		hostIDs = make([]string, len(task.pairs))
+		for i, p := range task.pairs {
+			connectionIDs[i] = p.connectionID
+			hostIDs[i] = p.hostID
+		}
+	case task.connectionIDs != nil:
+		connectionIDs = task.connectionIDs
+	default:
+		return errors.New("updateTask has neither pairs nor connectionIDs")
+	}
+
 	incoming, err := getHostPortMappingFromCluster(p.c, p.cfg.TableName, connectionIDs, hostIDs, p.pickTLSPorts)
 	if err != nil {
 		return err
