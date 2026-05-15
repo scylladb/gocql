@@ -158,49 +158,96 @@ func TestClientRoutesHandlerTranslateHost(t *testing.T) {
 	}
 }
 
-func TestGetHostPortMappingFromClusterQuery(t *testing.T) {
+func TestGetHostPortMappingForConnectionIDsQuery(t *testing.T) {
 	tcases := []struct {
 		name          string
 		connectionIDs []string
-		hostIDs       []string
 		expectedStmt  string
 		expectedVals  []any
+		expectedErr   bool
 	}{
 		{
-			name:         "all",
-			expectedStmt: "select connection_id, host_id, address, port, tls_port from system.client_routes allow filtering",
-		},
-		{
-			name:          "connections-only",
+			name:          "multiple-connections",
 			connectionIDs: []string{"c1", "c2"},
-			expectedStmt:  "select connection_id, host_id, address, port, tls_port from system.client_routes where connection_id in (?,?) allow filtering",
-			expectedVals:  []any{"c1", "c2"},
+			expectedStmt:  "select connection_id, host_id, address, port, tls_port from system.client_routes where connection_id in ?",
+			expectedVals:  []any{[]string{"c1", "c2"}},
 		},
 		{
-			name:         "hosts-only",
-			hostIDs:      []string{"h1"},
-			expectedStmt: "select connection_id, host_id, address, port, tls_port from system.client_routes where host_id in (?) allow filtering",
-			expectedVals: []any{"h1"},
-		},
-		{
-			name:          "connections-and-hosts",
+			name:          "single-connection",
 			connectionIDs: []string{"c1"},
-			hostIDs:       []string{"h1", "h2"},
-			expectedStmt:  "select connection_id, host_id, address, port, tls_port from system.client_routes where connection_id in (?) and host_id in (?,?)",
-			expectedVals:  []any{"c1", "h1", "h2"},
+			expectedStmt:  "select connection_id, host_id, address, port, tls_port from system.client_routes where connection_id in ?",
+			expectedVals:  []any{[]string{"c1"}},
 		},
 		{
-			name:          "empty-slices",
-			connectionIDs: []string{},
-			hostIDs:       []string{},
-			expectedStmt:  "select connection_id, host_id, address, port, tls_port from system.client_routes allow filtering",
+			name:        "empty-slices",
+			expectedErr: true,
 		},
 	}
 
 	for _, tc := range tcases {
 		t.Run(tc.name, func(t *testing.T) {
 			ctrl := &fakeControlConn{}
-			_, err := getHostPortMappingFromCluster(ctrl, "system.client_routes", tc.connectionIDs, tc.hostIDs, false)
+			_, err := getHostPortMappingForConnectionIDs(ctrl, "system.client_routes", tc.connectionIDs, false)
+			if tc.expectedErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if ctrl.statement != tc.expectedStmt {
+				t.Fatalf("statement mismatch: got %q want %q", ctrl.statement, tc.expectedStmt)
+			}
+			if fmt.Sprint(ctrl.values) != fmt.Sprint(tc.expectedVals) {
+				t.Fatalf("values mismatch: got %v want %v", ctrl.values, tc.expectedVals)
+			}
+		})
+	}
+}
+
+func TestGetHostPortMappingForPairsQuery(t *testing.T) {
+	tcases := []struct {
+		name         string
+		pairs        []pair
+		expectedStmt string
+		expectedVals []any
+		expectedErr  bool
+	}{
+		{
+			name: "single-pair",
+			pairs: []pair{
+				{connectionID: "c1", hostID: "h1"},
+			},
+			expectedStmt: "select connection_id, host_id, address, port, tls_port from system.client_routes where connection_id in ? and host_id in ?",
+			expectedVals: []any{[]string{"c1"}, []string{"h1"}},
+		},
+		{
+			name: "multiple-pairs",
+			pairs: []pair{
+				{connectionID: "c1", hostID: "h1"},
+				{connectionID: "c2", hostID: "h2"},
+			},
+			expectedStmt: "select connection_id, host_id, address, port, tls_port from system.client_routes where connection_id in ? and host_id in ?",
+			expectedVals: []any{[]string{"c1", "c2"}, []string{"h1", "h2"}},
+		},
+		{
+			name:        "empty-slices",
+			expectedErr: true,
+		},
+	}
+
+	for _, tc := range tcases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := &fakeControlConn{}
+			_, err := getHostPortMappingForPairs(ctrl, "system.client_routes", tc.pairs, false)
+			if tc.expectedErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}

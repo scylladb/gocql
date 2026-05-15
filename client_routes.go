@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
@@ -380,10 +379,16 @@ func (p *ClientRoutesHandler) startUpdateWorker() {
 }
 
 func (p *ClientRoutesHandler) updateHostPortMapping(task updateTask) error {
+	var incoming []clientRoute
+	var err error
 	var connectionIDs, hostIDs []string
 
 	switch {
 	case task.pairs != nil:
+		incoming, err = getHostPortMappingForPairs(p.c, p.cfg.TableName, task.pairs, p.pickTLSPorts)
+		if err != nil {
+			return err
+		}
 		connectionIDs = make([]string, len(task.pairs))
 		hostIDs = make([]string, len(task.pairs))
 		for i, p := range task.pairs {
@@ -391,14 +396,13 @@ func (p *ClientRoutesHandler) updateHostPortMapping(task updateTask) error {
 			hostIDs[i] = p.hostID
 		}
 	case task.connectionIDs != nil:
+		incoming, err = getHostPortMappingForConnectionIDs(p.c, p.cfg.TableName, task.connectionIDs, p.pickTLSPorts)
+		if err != nil {
+			return err
+		}
 		connectionIDs = task.connectionIDs
 	default:
 		return errors.New("updateTask has neither pairs nor connectionIDs")
-	}
-
-	incoming, err := getHostPortMappingFromCluster(p.c, p.cfg.TableName, connectionIDs, hostIDs, p.pickTLSPorts)
-	if err != nil {
-		return err
 	}
 
 	p.mu.Lock()
@@ -438,43 +442,33 @@ func NewClientRoutesAddressTranslator(
 
 var _ AddressTranslator = &ClientRoutesHandler{}
 
-func getHostPortMappingFromCluster(c controlConnection, table string, connectionIDs []string, hostIDs []string, pickTLSPorts bool) ([]clientRoute, error) {
-	var res []clientRoute
-
-	stmt := []string{fmt.Sprintf("select connection_id, host_id, address, port, tls_port from %s", table)}
-	var bounds []any
-	if len(connectionIDs) != 0 {
-		var inClause []string
-		for _, connectionID := range connectionIDs {
-			bounds = append(bounds, connectionID)
-			inClause = append(inClause, "?")
-		}
-		if len(stmt) == 1 {
-			stmt = append(stmt, "where")
-		}
-		stmt = append(stmt, fmt.Sprintf("connection_id in (%s)", strings.Join(inClause, ",")))
+func getHostPortMappingForConnectionIDs(c controlConnection, table string, connIDs []string, pickTLSPorts bool) ([]clientRoute, error) {
+	if len(connIDs) == 0 {
+		return nil, errors.New("connIDs cannot be empty")
 	}
 
-	if len(hostIDs) != 0 {
-		var inClause []string
-		for _, hostID := range hostIDs {
-			bounds = append(bounds, hostID)
-			inClause = append(inClause, "?")
-		}
-		if len(stmt) == 1 {
-			stmt = append(stmt, "where")
-		} else {
-			stmt = append(stmt, "and")
-		}
-		stmt = append(stmt, fmt.Sprintf("host_id in (%s)", strings.Join(inClause, ",")))
+	stmt := fmt.Sprintf("select connection_id, host_id, address, port, tls_port from %s where connection_id in ?", table)
+	return readClientRoutesTable(c, table, stmt, []any{connIDs}, pickTLSPorts)
+}
+
+func getHostPortMappingForPairs(c controlConnection, table string, pairs []pair, pickTLSPorts bool) ([]clientRoute, error) {
+	if len(pairs) == 0 {
+		return nil, errors.New("pairs cannot be empty")
 	}
 
-	isFullScan := len(hostIDs) == 0 || len(connectionIDs) == 0
-	if isFullScan {
-		stmt = append(stmt, "allow filtering")
+	connIDs := make([]string, len(pairs))
+	hostIDs := make([]string, len(pairs))
+	for i, p := range pairs {
+		connIDs[i] = p.connectionID
+		hostIDs[i] = p.hostID
 	}
 
-	iter := c.query(strings.Join(stmt, " "), bounds...)
+	stmt := fmt.Sprintf("select connection_id, host_id, address, port, tls_port from %s where connection_id in ? and host_id in ?", table)
+	return readClientRoutesTable(c, table, stmt, []any{connIDs, hostIDs}, pickTLSPorts)
+}
+
+func readClientRoutesTable(c controlConnection, table, stmt string, bounds []any, pickTLSPorts bool) ([]clientRoute, error) {
+	iter := c.query(stmt, bounds...)
 	var (
 		connectionID  string
 		hostID        string
@@ -482,6 +476,7 @@ func getHostPortMappingFromCluster(c controlConnection, table string, connection
 		cqlPort       uint16
 		secureCQLPort uint16
 	)
+	var res []clientRoute
 	for iter.Scan(&connectionID, &hostID, &address, &cqlPort, &secureCQLPort) {
 		port := cqlPort
 		if pickTLSPorts {
