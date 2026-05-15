@@ -381,7 +381,7 @@ func TestStop_DoesNotPanicWithConcurrentAsyncSends(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			h.updateHostPortMappingAsync([]string{"c1"}, nil)
+			h.updateHostPortMappingAsync(updateTask{connectionIDs: []string{"c1"}})
 		}()
 	}
 	close(start) // release all goroutines simultaneously
