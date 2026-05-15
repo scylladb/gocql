@@ -61,7 +61,7 @@ func TestGetHostPortMapping(t *testing.T) {
 		for _, connectionID := range connectionIDs {
 			err := session.Query(
 				fmt.Sprintf(`INSERT INTO %s (
-                                            connection_id, host_id, Address, port, tls_port, alternator_port, alternator_https_port, Datacenter, Rack) 
+                                            connection_id, host_id, Address, port, tls_port, alternator_port, alternator_https_port, Datacenter, Rack)
 						VALUES (?, ?, ?, 9042, 9142, 0, 0, 'dc1', ?);`, qualifiedTable),
 				connectionID, hostID, ip.String(), rack,
 			).Exec()
