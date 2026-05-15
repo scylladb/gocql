@@ -358,6 +358,7 @@ func (p *ClientRoutesHandler) Initialize(s *Session) error {
 	if p.initialized {
 		return errors.New("already initialized")
 	}
+	p.initialized = true
 	connectionIDs := p.cfg.Endpoints.GetAllConnectionIDs()
 	p.c = s.control
 	p.sub = s.eventBus.Subscribe("port-mux", 1024, func(event events.Event) bool {
