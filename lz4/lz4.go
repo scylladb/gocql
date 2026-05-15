@@ -31,6 +31,10 @@ import (
 	"github.com/pierrec/lz4/v4"
 )
 
+// maxDecompressedSize is a safety limit to reject corrupt or malicious
+// uncompressed length headers. Matches the CQL protocol maxFrameSize (256MB).
+const maxDecompressedSize = 256 * 1024 * 1024
+
 // LZ4Compressor implements the gocql.Compressor interface and can be used to
 // compress incoming and outgoing frames. According to the Cassandra docs the
 // LZ4 protocol should be preferred over snappy. (For details refer to
@@ -72,4 +76,31 @@ func (s LZ4Compressor) Decode(data []byte) ([]byte, error) {
 	buf := make([]byte, uncompressedLength)
 	n, err := lz4.UncompressBlock(data[4:], buf)
 	return buf[:n], err
+}
+
+// DecodeInto decompresses LZ4 data into the provided buffer, growing it if
+// necessary. Returns the buffer (potentially reallocated) containing the
+// decompressed data. This avoids per-frame allocations when the caller
+// maintains a reusable buffer (e.g., pooled framers).
+func (s LZ4Compressor) DecodeInto(data []byte, dst []byte) ([]byte, error) {
+	if len(data) < 4 {
+		return dst, fmt.Errorf("cassandra lz4 block size should be >4, got=%d", len(data))
+	}
+	uncompressedLength := int(binary.BigEndian.Uint32(data))
+	if uncompressedLength == 0 {
+		return dst[:0], nil
+	}
+	if uncompressedLength < 0 || uncompressedLength > maxDecompressedSize {
+		return dst, fmt.Errorf("cassandra lz4 uncompressed length out of range: %d", uncompressedLength)
+	}
+	if cap(dst) < uncompressedLength {
+		dst = make([]byte, uncompressedLength)
+	} else {
+		dst = dst[:uncompressedLength]
+	}
+	n, err := lz4.UncompressBlock(data[4:], dst)
+	if err != nil {
+		return dst, err
+	}
+	return dst[:n], nil
 }
