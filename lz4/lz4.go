@@ -101,7 +101,7 @@ func (s LZ4Compressor) Decode(data []byte) ([]byte, error) {
 	if len(data) < dataLengthSize {
 		return nil, fmt.Errorf("cassandra lz4 block size should be >4, got=%d", len(data))
 	}
-	uncompressedLength := binary.BigEndian.Uint32(data[:dataLengthSize])
+	uncompressedLength := int(binary.BigEndian.Uint32(data))
 	if uncompressedLength == 0 {
 		return nil, nil
 	}
@@ -150,4 +150,31 @@ func grow(b []byte, n int) []byte {
 		b = newBuf
 	}
 	return b[:oldLen+n]
+}
+
+// DecodeInto decompresses LZ4 data into the provided buffer, growing it if
+// necessary. Returns the buffer (potentially reallocated) containing the
+// decompressed data. This avoids per-frame allocations when the caller
+// maintains a reusable buffer (e.g., pooled framers).
+func (s LZ4Compressor) DecodeInto(data []byte, dst []byte) ([]byte, error) {
+	if len(data) < 4 {
+		return dst, fmt.Errorf("cassandra lz4 block size should be >4, got=%d", len(data))
+	}
+	uncompressedLength := int(binary.BigEndian.Uint32(data))
+	if uncompressedLength == 0 {
+		return dst[:0], nil
+	}
+	if uncompressedLength < 0 || uncompressedLength > maxDecompressedSize {
+		return dst, fmt.Errorf("cassandra lz4 uncompressed length out of range: %d", uncompressedLength)
+	}
+	if cap(dst) < uncompressedLength {
+		dst = make([]byte, uncompressedLength)
+	} else {
+		dst = dst[:uncompressedLength]
+	}
+	n, err := lz4.UncompressBlock(data[4:], dst)
+	if err != nil {
+		return dst, err
+	}
+	return dst[:n], nil
 }

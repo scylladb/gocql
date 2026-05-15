@@ -214,10 +214,12 @@ func (fp *framerPool) init(defaults framerConfig, release func(*framer)) {
 	fp.pool = sync.Pool{
 		New: func() any {
 			buf := make([]byte, defaultBufSize)
+			compressorBuf, _ := defaults.compressor.(CompressorWithBuffer)
 			f := &framer{
 				buf:                   buf[:0],
 				readBuffer:            buf,
 				compressor:            defaults.compressor,
+				compressorBuf:         compressorBuf,
 				proto:                 defaults.proto,
 				flags:                 defaults.flags,
 				flagLWT:               defaults.flagLWT,
@@ -301,6 +303,9 @@ func (fp *framerPool) resetAndPut(f *framer, alignBufWithReadBuffer bool, shrink
 		// segmented, so it has to be dropped along with an oversized f.buf,
 		// otherwise a single large request keeps bloating this pooled framer.
 		f.wireBuf = nil
+		// Release oversized decompression buffer when shrinking to avoid
+		// a single large compressed frame permanently bloating pooled framers.
+		f.decompressBuf = nil
 		fp.put(f)
 		return
 	}
