@@ -9,6 +9,7 @@ import (
 	"net"
 	"sync"
 	"testing"
+	"time"
 )
 
 // dnsResolverFunc adapts a function to the DNSResolver interface.
@@ -21,6 +22,7 @@ func (f dnsResolverFunc) LookupIP(host string) ([]net.IP, error) {
 type fakeControlConn struct {
 	statement string
 	values    []any
+	iter      *Iter
 }
 
 func (f *fakeControlConn) getConn() *connHost          { return nil }
@@ -28,6 +30,9 @@ func (f *fakeControlConn) awaitSchemaAgreement() error { return nil }
 func (f *fakeControlConn) query(statement string, values ...any) *Iter {
 	f.statement = statement
 	f.values = values
+	if f.iter != nil {
+		return f.iter
+	}
 	return &Iter{}
 }
 func (f *fakeControlConn) querySystem(statement string, values ...any) *Iter {
@@ -101,8 +106,8 @@ func TestClientRoutesHandlerTranslateHost(t *testing.T) {
 	})
 
 	handler := &ClientRoutesHandler{
-		resolver: resolver,
-		routes:   make(clientRouteMap),
+		resolver:   resolver,
+		routeTable: newClientRouteTable(),
 	}
 
 	res, err := handler.TranslateHost(noHost, addr)
@@ -118,7 +123,7 @@ func TestClientRoutesHandlerTranslateHost(t *testing.T) {
 		t.Fatalf("expected error for missing host entry")
 	}
 
-	handler.routes = clientRouteMap{
+	handler.routeTable.routes = clientRouteMap{
 		"h1": {"c1": {connectionID: "c1", hostID: "h1", port: 9042}},
 	}
 
@@ -137,7 +142,10 @@ func TestClientRoutesHandlerTranslateHost(t *testing.T) {
 		resolver: dnsResolverFunc(func(host string) ([]net.IP, error) {
 			return nil, errors.New("lookup failed")
 		}),
-			routes: clientRouteMap{"h2": {"c2": {connectionID: "c2", hostID: "h2", address: "host", port: 9042}}},
+		routeTable: clientRouteTable{
+			routes:      clientRouteMap{"h2": {"c2": {connectionID: "c2", hostID: "h2", address: "host", port: 9042}}},
+			stickyRoute: make(map[string]clientRoute),
+		},
 	}
 	_, err = errorHandler.TranslateHost(testHostInfo{hostID: "h2"}, addr)
 	if err == nil {
@@ -150,11 +158,81 @@ func TestClientRoutesHandlerTranslateHost(t *testing.T) {
 			t.Fatal("DNS should not be called when port is 0")
 			return nil, nil
 		}),
-			routes: clientRouteMap{"h3": {"c3": {connectionID: "c3", hostID: "h3", address: "host", port: 0}}},
+		routeTable: clientRouteTable{
+			routes:      clientRouteMap{"h3": {"c3": {connectionID: "c3", hostID: "h3", address: "host", port: 0}}},
+			stickyRoute: make(map[string]clientRoute),
+		},
 	}
 	_, err = zeroPortHandler.TranslateHost(testHostInfo{hostID: "h3"}, addr)
 	if err == nil {
 		t.Fatalf("expected error for zero port")
+	}
+}
+
+func TestTranslateHost_StickyRoute(t *testing.T) {
+	addr := AddressPort{Address: net.ParseIP("1.1.1.1"), Port: 9042}
+	resolvedIPs := map[string]net.IP{
+		"addr-c1": net.ParseIP("10.0.0.1"),
+		"addr-c2": net.ParseIP("10.0.0.2"),
+	}
+	handler := &ClientRoutesHandler{
+		pickTLSPorts: false,
+		resolver: dnsResolverFunc(func(host string) ([]net.IP, error) {
+			if ip, ok := resolvedIPs[host]; ok {
+				return []net.IP{ip}, nil
+			}
+			return nil, fmt.Errorf("unknown host %s", host)
+		}),
+		routeTable: clientRouteTable{
+			routes: clientRouteMap{
+				"h1": {
+					"c1": {connectionID: "c1", hostID: "h1", address: "addr-c1", port: 9042},
+					"c2": {connectionID: "c2", hostID: "h1", address: "addr-c2", port: 9042},
+				},
+			},
+			stickyRoute: make(map[string]clientRoute),
+		},
+	}
+
+	// First call picks an arbitrary route and records it as sticky.
+	res1, err := handler.TranslateHost(testHostInfo{hostID: "h1"}, addr)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	firstIP := res1.Address
+
+	// Determine which connection was picked so we can verify stickiness.
+	var pickedConn, otherConn string
+	var otherIP net.IP
+	if firstIP.Equal(resolvedIPs["addr-c1"]) {
+		pickedConn, otherConn, otherIP = "c1", "c2", resolvedIPs["addr-c2"]
+	} else if firstIP.Equal(resolvedIPs["addr-c2"]) {
+		pickedConn, otherConn, otherIP = "c2", "c1", resolvedIPs["addr-c1"]
+	} else {
+		t.Fatalf("unexpected IP %v", firstIP)
+	}
+	_ = otherConn // used implicitly via otherIP
+
+	// Second call should stick to the same connection.
+	res2, err := handler.TranslateHost(testHostInfo{hostID: "h1"}, addr)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !res2.Address.Equal(firstIP) {
+		t.Fatalf("expected sticky route IP %v, got %v", firstIP, res2.Address)
+	}
+
+	// Remove the picked route; sticky route should fall back to the other.
+	handler.mu.Lock()
+	delete(handler.routeTable.routes["h1"], pickedConn)
+	handler.mu.Unlock()
+
+	res3, err := handler.TranslateHost(testHostInfo{hostID: "h1"}, addr)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !res3.Address.Equal(otherIP) {
+		t.Fatalf("expected fallback IP %v, got %v", otherIP, res3.Address)
 	}
 }
 
@@ -333,6 +411,32 @@ func TestClientRouteMapDeleteByConnectionIDs_FullRefreshPrunesAllStale(t *testin
 	}
 }
 
+func TestPruneStickyRoutes(t *testing.T) {
+	table := clientRouteTable{
+		stickyRoute: map[string]clientRoute{
+			"h1": {connectionID: "c1"},
+			"h2": {connectionID: "c1"},
+			"h3": {connectionID: "c1"},
+		},
+		routes: clientRouteMap{
+			"h1": {"c1": {connectionID: "c1", hostID: "h1", address: "a1", port: 9042}},
+			"h2": {"c1": {connectionID: "c1", hostID: "h2", address: "a2", port: 9042}},
+		},
+	}
+
+	table.pruneStickyRoutes()
+
+	if _, ok := table.stickyRoute["h1"]; !ok {
+		t.Fatalf("expected h1 to remain in stickyRoute")
+	}
+	if _, ok := table.stickyRoute["h2"]; !ok {
+		t.Fatalf("expected h2 to remain in stickyRoute")
+	}
+	if _, ok := table.stickyRoute["h3"]; ok {
+		t.Fatalf("expected h3 to be pruned from stickyRoute")
+	}
+}
+
 func TestTranslateHost_ConnectionAddrOverride(t *testing.T) {
 	addr := AddressPort{Address: net.ParseIP("1.1.1.1"), Port: 9042}
 
@@ -346,15 +450,16 @@ func TestTranslateHost_ConnectionAddrOverride(t *testing.T) {
 		}
 		return nil, fmt.Errorf("unknown host %s", host)
 	})
-	routes := clientRouteMap{
-		"h1": {"c1": {connectionID: "c1", hostID: "h1", address: "route-addr", port: 9042}},
+	routes := clientRouteTable{
+		routes:      clientRouteMap{"h1": {"c1": {connectionID: "c1", hostID: "h1", address: "route-addr", port: 9042}}},
+		stickyRoute: make(map[string]clientRoute),
 	}
 
 	t.Run("no override uses route address", func(t *testing.T) {
 		handler := &ClientRoutesHandler{
 			addrOverrides: map[string]string{},
 			resolver:      resolver,
-			routes:        routes,
+			routeTable:    routes,
 		}
 
 		res, err := handler.TranslateHost(testHostInfo{hostID: "h1"}, addr)
@@ -370,7 +475,7 @@ func TestTranslateHost_ConnectionAddrOverride(t *testing.T) {
 		handler := &ClientRoutesHandler{
 			addrOverrides: map[string]string{"c1": "override-addr"},
 			resolver:      resolver,
-			routes:        routes,
+			routeTable:    routes,
 		}
 
 		res, err := handler.TranslateHost(testHostInfo{hostID: "h1"}, addr)
@@ -417,7 +522,7 @@ func TestStop_DoesNotPanicWithConcurrentAsyncSends(t *testing.T) {
 		c:           &fakeControlConn{},
 		closeChan:   make(chan struct{}),
 		updateTasks: make(chan updateTask, 1024),
-		routes:      make(clientRouteMap),
+		routeTable:  newClientRouteTable(),
 		cfg: ClientRoutesConfig{
 			TableName: "system.client_routes",
 			Endpoints: ClientRoutesEndpointList{{ConnectionID: "c1"}},
@@ -439,4 +544,69 @@ func TestStop_DoesNotPanicWithConcurrentAsyncSends(t *testing.T) {
 	close(start) // release all goroutines simultaneously
 	h.Stop()     // race against the concurrent sends — must not panic
 	wg.Wait()
+}
+
+func TestUpdateHostPortMappingSyncCompletes(t *testing.T) {
+	h := &ClientRoutesHandler{
+		log:         &defaultLogger{},
+		c:           &fakeControlConn{},
+		closeChan:   make(chan struct{}),
+		updateTasks: make(chan updateTask, 1024),
+		routeTable:  newClientRouteTable(),
+		cfg: ClientRoutesConfig{
+			TableName: "system.client_routes",
+			Endpoints: ClientRoutesEndpointList{{ConnectionID: "c1"}},
+		},
+	}
+	h.startUpdateWorker()
+	defer h.Stop()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- h.updateHostPortMappingSync(updateTask{connectionIDs: []string{"c1"}})
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for synchronous update")
+	}
+}
+
+func TestUpdateWorkerDoesNotMutateRoutesOnQueryError(t *testing.T) {
+	h := &ClientRoutesHandler{
+		log:         &defaultLogger{},
+		c:           &fakeControlConn{iter: &Iter{err: errors.New("query failed")}},
+		closeChan:   make(chan struct{}),
+		updateTasks: make(chan updateTask, 1024),
+		routeTable: clientRouteTable{
+			routes: clientRouteMap{
+				"h1": {"c1": {connectionID: "c1", hostID: "h1", address: "a1", port: 9042}},
+			},
+			stickyRoute: map[string]clientRoute{
+				"h1": {connectionID: "c1", hostID: "h1", address: "a1", port: 9042},
+			},
+		},
+		cfg: ClientRoutesConfig{
+			TableName: "system.client_routes",
+			Endpoints: ClientRoutesEndpointList{{ConnectionID: "c1"}},
+		},
+	}
+	h.startUpdateWorker()
+	defer h.Stop()
+
+	err := h.updateHostPortMappingSync(updateTask{connectionIDs: []string{"c1"}})
+	if err == nil {
+		t.Fatal("expected query error")
+	}
+
+	if _, ok := h.routeTable.routes["h1"]["c1"]; !ok {
+		t.Fatal("expected existing route to remain after query error")
+	}
+	if _, ok := h.routeTable.stickyRoute["h1"]; !ok {
+		t.Fatal("expected sticky route to remain after query error")
+	}
 }
