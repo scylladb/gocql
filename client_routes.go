@@ -31,16 +31,19 @@ func (e ClientRoutesEndpoint) Validate() error {
 
 type ClientRoutesEndpointList []ClientRoutesEndpoint
 
-func (l *ClientRoutesEndpointList) GetAllConnectionIDs() []string {
-	var ids []string
-	for _, endpoint := range *l {
+func (l ClientRoutesEndpointList) GetAllConnectionIDs() []string {
+	ids := make([]string, 0, len(l))
+	for _, endpoint := range l {
+		if endpoint.ConnectionID == "" {
+			continue
+		}
 		ids = append(ids, endpoint.ConnectionID)
 	}
 	return ids
 }
 
-func (l *ClientRoutesEndpointList) Validate() error {
-	for id, endpoint := range *l {
+func (l ClientRoutesEndpointList) Validate() error {
+	for id, endpoint := range l {
 		if err := endpoint.Validate(); err != nil {
 			return fmt.Errorf("endpoint #%d is invalid: %w", id, err)
 		}
@@ -113,88 +116,171 @@ func (r clientRoute) String() string {
 	)
 }
 
-// clientRouteMap groups routes by hostID → connectionID → clientRoute.
-// The outer key is the host, the inner key is the connection.
-// This layout matches the AddressTranslator lookup pattern: find routes for a
-// host first, then pick the right connection.
-type clientRouteMap map[string]map[string]clientRoute
+type clientRouteCacheEntry struct {
+	current   *clientRoute
+	allRoutes []clientRoute
+}
+
+func (r *clientRouteCacheEntry) routeIndex(connectionID string) int {
+	return slices.IndexFunc(r.allRoutes, func(route clientRoute) bool {
+		return route.connectionID == connectionID
+	})
+}
+
+func (r *clientRouteCacheEntry) CurrentConnectionID() string {
+	if r.current == nil {
+		return ""
+	}
+	return r.current.connectionID
+}
+
+func (r *clientRouteCacheEntry) BindCurrent(connectionID string) {
+	if idx := r.routeIndex(connectionID); idx >= 0 {
+		r.current = &r.allRoutes[idx]
+		return
+	}
+	r.current = nil
+}
+
+func (r *clientRouteCacheEntry) DeleteByConnectionID(connectionID string) {
+	r.allRoutes = slices.DeleteFunc(r.allRoutes, func(route clientRoute) bool {
+		return route.connectionID == connectionID
+	})
+}
+
+func (r *clientRouteCacheEntry) Upsert(route clientRoute) {
+	if idx := r.routeIndex(route.connectionID); idx >= 0 {
+		r.allRoutes[idx] = route
+	} else {
+		r.allRoutes = append(r.allRoutes, route)
+	}
+}
+
+func (r *clientRouteCacheEntry) preferredRoute() (clientRoute, bool) {
+	if r.current != nil {
+		return *r.current, true
+	}
+
+	if len(r.allRoutes) == 0 {
+		return clientRoute{}, false
+	}
+
+	r.current = &r.allRoutes[0]
+	return *r.current, true
+}
+
+// clientRouteCache groups routes by hostID and owns synchronization for route selection and updates.
+type clientRouteCache struct {
+	routes map[string]clientRouteCacheEntry
+	mu     sync.Mutex
+}
+
+func newClientRouteCache() clientRouteCache {
+	return clientRouteCache{routes: make(map[string]clientRouteCacheEntry)}
+}
 
 // deleteByPairs removes entries identified by (connectionID, hostID) pairs.
-func (m clientRouteMap) deleteByPairs(pairs []pair) {
+func (c *clientRouteCache) deleteByPairsLocked(pairs []pair) {
 	for _, p := range pairs {
-		conns := m[p.hostID]
-		if conns == nil {
+		entry, ok := c.routes[p.hostID]
+		if !ok {
 			continue
 		}
-		delete(conns, p.connectionID)
-		if len(conns) == 0 {
-			delete(m, p.hostID)
+		entry.DeleteByConnectionID(p.connectionID)
+		if len(entry.allRoutes) == 0 {
+			delete(c.routes, p.hostID)
+			continue
 		}
+		c.routes[p.hostID] = entry
 	}
 }
 
 // deleteByConnectionIDs removes all entries for the given connectionIDs across all hosts.
-func (m clientRouteMap) deleteByConnectionIDs(connectionIDs []string) {
-	for hostID, conns := range m {
+func (c *clientRouteCache) deleteByConnectionIDsLocked(connectionIDs []string) {
+	for hostID, entry := range c.routes {
 		for _, connID := range connectionIDs {
-			delete(conns, connID)
+			entry.DeleteByConnectionID(connID)
 		}
-		if len(conns) == 0 {
-			delete(m, hostID)
+		if len(entry.allRoutes) == 0 {
+			delete(c.routes, hostID)
+			continue
 		}
+		c.routes[hostID] = entry
 	}
 }
 
-func (m clientRouteMap) populateRecords(incoming []clientRoute) {
+func (c *clientRouteCache) upsertRecordsLocked(incoming []clientRoute) {
 	for _, inc := range incoming {
-		conns := m[inc.hostID]
-		if conns == nil {
-			conns = make(map[string]clientRoute)
-			m[inc.hostID] = conns
+		entry := c.routes[inc.hostID]
+		entry.Upsert(inc)
+		c.routes[inc.hostID] = entry
+	}
+}
+
+// preferredRoute returns the current route for hostID if one exists and is still valid,
+// otherwise picks the first available route and records it as current.
+func (c *clientRouteCache) preferredRouteLocked(hostID string) (clientRoute, bool) {
+	entry, ok := c.routes[hostID]
+	if !ok {
+		return clientRoute{}, false
+	}
+
+	route, ok := entry.preferredRoute()
+	if !ok {
+		delete(c.routes, hostID)
+		return clientRoute{}, false
+	}
+	c.routes[hostID] = entry
+	return route, true
+}
+
+func (c *clientRouteCache) snapshotCurrentConnectionIDsLocked() map[string]string {
+	currentIDs := make(map[string]string, len(c.routes))
+	for hostID, entry := range c.routes {
+		if currentID := entry.CurrentConnectionID(); currentID != "" {
+			currentIDs[hostID] = currentID
 		}
-		conns[inc.connectionID] = inc
 	}
+	return currentIDs
 }
 
-// clientRouteTable is the single source of truth for route data.
-// It owns both the full route index and the per-host sticky selection so that
-// all consistency-maintaining logic lives in one place.
-type clientRouteTable struct {
-	routes      clientRouteMap         // hostID → connectionID → clientRoute
-	stickyRoute map[string]clientRoute // hostID → preferred route
-}
-
-func newClientRouteTable() clientRouteTable {
-	return clientRouteTable{
-		routes:      make(clientRouteMap),
-		stickyRoute: make(map[string]clientRoute),
-	}
-}
-
-// pruneStickyRoutes removes sticky entries whose route is no longer present in routes.
-func (t *clientRouteTable) pruneStickyRoutes() {
-	for hostID, route := range t.stickyRoute {
-		if _, ok := t.routes[hostID][route.connectionID]; !ok {
-			delete(t.stickyRoute, hostID)
+func (c *clientRouteCache) rebindCurrentConnectionIDsLocked(currentIDs map[string]string) {
+	for hostID, currentID := range currentIDs {
+		entry, ok := c.routes[hostID]
+		if !ok {
+			continue
 		}
+		entry.BindCurrent(currentID)
+		if len(entry.allRoutes) == 0 {
+			delete(c.routes, hostID)
+			continue
+		}
+		c.routes[hostID] = entry
 	}
 }
 
-// preferred returns the sticky route for hostID if one exists and is still valid,
-// otherwise picks an arbitrary route and records it as the new sticky entry.
-func (t *clientRouteTable) preferred(hostID string) (clientRoute, bool) {
-	if route, ok := t.stickyRoute[hostID]; ok {
-		if _, exists := t.routes[hostID][route.connectionID]; exists {
-			return route, true
-		}
-		// Stale sticky entry; clear it and fall back to a live route.
-		delete(t.stickyRoute, hostID)
-	}
-	for _, route := range t.routes[hostID] {
-		t.stickyRoute[hostID] = route
-		return route, true
-	}
-	return clientRoute{}, false
+func (c *clientRouteCache) PreferredRoute(hostID string) (clientRoute, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.preferredRouteLocked(hostID)
+}
+
+func (c *clientRouteCache) ReplaceByPairs(pairs []pair, incoming []clientRoute) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	currentIDs := c.snapshotCurrentConnectionIDsLocked()
+	c.deleteByPairsLocked(pairs)
+	c.upsertRecordsLocked(incoming)
+	c.rebindCurrentConnectionIDsLocked(currentIDs)
+}
+
+func (c *clientRouteCache) ReplaceByConnectionIDs(connectionIDs []string, incoming []clientRoute) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	currentIDs := c.snapshotCurrentConnectionIDsLocked()
+	c.deleteByConnectionIDsLocked(connectionIDs)
+	c.upsertRecordsLocked(incoming)
+	c.rebindCurrentConnectionIDsLocked(currentIDs)
 }
 
 type ClientRoutesHandler struct {
@@ -202,12 +288,11 @@ type ClientRoutesHandler struct {
 	c             controlConnection
 	resolver      DNSResolver
 	sub           *eventbus.Subscriber[events.Event]
-	routeTable    clientRouteTable
+	routeCache    clientRouteCache
 	addrOverrides map[string]string // connectionID → user-supplied ConnectionAddr
 	updateTasks   chan updateTask
 	closeChan     chan struct{}
 	cfg           ClientRoutesConfig
-	mu            sync.Mutex
 	pickTLSPorts  bool
 	initialized   bool
 }
@@ -230,9 +315,7 @@ func (p *ClientRoutesHandler) TranslateHost(host AddressTranslatorHostInfo, addr
 		return addr, nil
 	}
 
-	p.mu.Lock()
-	route, found := p.routeTable.preferred(hostID)
-	p.mu.Unlock()
+	route, found := p.routeCache.PreferredRoute(hostID)
 
 	if !found {
 		return addr, fmt.Errorf("no address found for host %s", hostID)
@@ -278,12 +361,7 @@ func (p *ClientRoutesHandler) Initialize(s *Session) error {
 	if p.initialized {
 		return errors.New("already initialized")
 	}
-	connectionIDs := make([]string, 0, len(p.cfg.Endpoints))
-	for _, ep := range p.cfg.Endpoints {
-		if ep.ConnectionID != "" {
-			connectionIDs = append(connectionIDs, ep.ConnectionID)
-		}
-	}
+	connectionIDs := p.cfg.Endpoints.GetAllConnectionIDs()
 	p.c = s.control
 	p.sub = s.eventBus.Subscribe("port-mux", 1024, func(event events.Event) bool {
 		switch event.Type() {
@@ -294,7 +372,7 @@ func (p *ClientRoutesHandler) Initialize(s *Session) error {
 		}
 	})
 	p.startUpdateWorker()
-	p.startReadingEvents()
+	p.startReadingEvents(connectionIDs)
 	err := p.updateHostPortMappingSync(updateTask{connectionIDs: connectionIDs})
 	if err != nil {
 		p.log.Printf("error updating host ports: %v\n", err)
@@ -332,9 +410,7 @@ func (p *ClientRoutesHandler) updateHostPortMappingSync(task updateTask) error {
 	return <-task.result
 }
 
-func (p *ClientRoutesHandler) startReadingEvents() {
-	connectionIDs := p.cfg.Endpoints.GetAllConnectionIDs()
-
+func (p *ClientRoutesHandler) startReadingEvents(connectionIDs []string) {
 	go func() {
 		for event := range p.sub.Events() {
 			switch evt := event.(type) {
@@ -346,10 +422,17 @@ func (p *ClientRoutesHandler) startReadingEvents() {
 					}
 					if len(evt.HostIDs) == 0 {
 						p.log.Printf("got CLIENT_ROUTES_CHANGE event with no host IDs")
-						continue
 					}
 				}
-				pairs := getPairsFromEvent(evt, connectionIDs)
+				filteredConnectionIDs := filterAllowedConnectionIDs(evt.ConnectionIDs, connectionIDs)
+				if len(filteredConnectionIDs) == 0 {
+					continue
+				}
+				if len(evt.HostIDs) == 0 {
+					p.updateHostPortMappingAsync(updateTask{connectionIDs: filteredConnectionIDs})
+					continue
+				}
+				pairs := getPairsFromEvent(filteredConnectionIDs, evt.HostIDs)
 				if len(pairs) != 0 {
 					p.updateHostPortMappingAsync(updateTask{pairs: pairs})
 				}
@@ -360,20 +443,33 @@ func (p *ClientRoutesHandler) startReadingEvents() {
 	}()
 }
 
-func getPairsFromEvent(evt *events.ClientRoutesChangedEvent, allowedConnectionIDs []string) (pairs []pair) {
-	if len(evt.ConnectionIDs) != len(evt.HostIDs) {
+func getPairsFromEvent(connectionIDs, hostIDs []string) (pairs []pair) {
+	if len(connectionIDs) == 0 || len(hostIDs) == 0 {
 		return nil
 	}
-	for n, connID := range evt.ConnectionIDs {
-		if !slices.Contains(allowedConnectionIDs, connID) {
-			continue
+	pairs = make([]pair, 0, len(connectionIDs)*len(hostIDs))
+	for _, connID := range connectionIDs {
+		for _, hostID := range hostIDs {
+			pairs = append(pairs, pair{
+				connectionID: connID,
+				hostID:       hostID,
+			})
 		}
-		pairs = append(pairs, pair{
-			connectionID: connID,
-			hostID:       evt.HostIDs[n],
-		})
 	}
 	return pairs
+}
+
+func filterAllowedConnectionIDs(connectionIDs, allowedConnectionIDs []string) []string {
+	filtered := make([]string, 0, len(connectionIDs))
+	for _, connID := range connectionIDs {
+		if connID == "" {
+			continue
+		}
+		if slices.Contains(allowedConnectionIDs, connID) {
+			filtered = append(filtered, connID)
+		}
+	}
+	return filtered
 }
 
 func (p *ClientRoutesHandler) startUpdateWorker() {
@@ -408,22 +504,16 @@ func (p *ClientRoutesHandler) updateHostPortMapping(task updateTask) error {
 		if err != nil {
 			return err
 		}
-		p.mu.Lock()
-		p.routeTable.routes.deleteByPairs(task.pairs)
+		p.routeCache.ReplaceByPairs(task.pairs, incoming)
 	case task.connectionIDs != nil:
 		incoming, err = getHostPortMappingForConnectionIDs(p.c, p.cfg.TableName, task.connectionIDs, p.pickTLSPorts)
 		if err != nil {
 			return err
 		}
-		p.mu.Lock()
-		p.routeTable.routes.deleteByConnectionIDs(task.connectionIDs)
+		p.routeCache.ReplaceByConnectionIDs(task.connectionIDs, incoming)
 	default:
 		return errors.New("updateTask has neither pairs nor connectionIDs")
 	}
-
-	p.routeTable.routes.populateRecords(incoming)
-	p.routeTable.pruneStickyRoutes()
-	p.mu.Unlock()
 
 	return nil
 }
@@ -450,7 +540,7 @@ func NewClientRoutesAddressTranslator(
 		closeChan:     make(chan struct{}),
 		updateTasks:   make(chan updateTask, 1024),
 		resolver:      resolver,
-		routeTable:    newClientRouteTable(),
+		routeCache:    newClientRouteCache(),
 		addrOverrides: overrides,
 	}
 }
