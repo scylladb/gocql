@@ -119,44 +119,33 @@ func (r clientRoute) String() string {
 // host first, then pick the right connection.
 type clientRouteMap map[string]map[string]clientRoute
 
-// merge upserts entries from incoming into the map.
-// Before upserting it prunes stale entries within the query scope defined by
-// scopeConnectionIDs and scopeHostIDs:
-//   - Both non-empty (partial update): prune entries matching BOTH lists.
-//   - Only scopeConnectionIDs (full refresh): prune all entries for those connections.
-//
-// scopeConnectionIDs must not be empty.
-func (m clientRouteMap) merge(incoming []clientRoute, scopeConnectionIDs, scopeHostIDs []string) {
-	if len(scopeConnectionIDs) == 0 {
-		panic("clientRouteMap.merge: scopeConnectionIDs must not be empty")
-	}
-
-	if len(scopeHostIDs) > 0 {
-		// Partial update: prune entries matching BOTH connection and host.
-		for _, hostID := range scopeHostIDs {
-			conns := m[hostID]
-			if conns == nil {
-				continue
-			}
-			for _, connID := range scopeConnectionIDs {
-				delete(conns, connID)
-			}
-			if len(conns) == 0 {
-				delete(m, hostID)
-			}
+// deleteByPairs removes entries identified by (connectionID, hostID) pairs.
+func (m clientRouteMap) deleteByPairs(pairs []pair) {
+	for _, p := range pairs {
+		conns := m[p.hostID]
+		if conns == nil {
+			continue
 		}
-	} else {
-		// Full refresh: prune all entries for the given connections.
-		for hostID, conns := range m {
-			for _, connID := range scopeConnectionIDs {
-				delete(conns, connID)
-			}
-			if len(conns) == 0 {
-				delete(m, hostID)
-			}
+		delete(conns, p.connectionID)
+		if len(conns) == 0 {
+			delete(m, p.hostID)
 		}
 	}
+}
 
+// deleteByConnectionIDs removes all entries for the given connectionIDs across all hosts.
+func (m clientRouteMap) deleteByConnectionIDs(connectionIDs []string) {
+	for hostID, conns := range m {
+		for _, connID := range connectionIDs {
+			delete(conns, connID)
+		}
+		if len(conns) == 0 {
+			delete(m, hostID)
+		}
+	}
+}
+
+func (m clientRouteMap) populateRecords(incoming []clientRoute) {
 	for _, inc := range incoming {
 		conns := m[inc.hostID]
 		if conns == nil {
@@ -381,7 +370,6 @@ func (p *ClientRoutesHandler) startUpdateWorker() {
 func (p *ClientRoutesHandler) updateHostPortMapping(task updateTask) error {
 	var incoming []clientRoute
 	var err error
-	var connectionIDs, hostIDs []string
 
 	switch {
 	case task.pairs != nil:
@@ -389,29 +377,24 @@ func (p *ClientRoutesHandler) updateHostPortMapping(task updateTask) error {
 		if err != nil {
 			return err
 		}
-		connectionIDs = make([]string, len(task.pairs))
-		hostIDs = make([]string, len(task.pairs))
-		for i, p := range task.pairs {
-			connectionIDs[i] = p.connectionID
-			hostIDs[i] = p.hostID
-		}
+		p.mu.Lock()
+		p.routes.deleteByPairs(task.pairs)
 	case task.connectionIDs != nil:
 		incoming, err = getHostPortMappingForConnectionIDs(p.c, p.cfg.TableName, task.connectionIDs, p.pickTLSPorts)
 		if err != nil {
 			return err
 		}
-		connectionIDs = task.connectionIDs
+		p.mu.Lock()
+		p.routes.deleteByConnectionIDs(task.connectionIDs)
 	default:
 		return errors.New("updateTask has neither pairs nor connectionIDs")
 	}
 
-	p.mu.Lock()
-	p.routes.merge(incoming, connectionIDs, hostIDs)
+	p.routes.populateRecords(incoming)
 	p.mu.Unlock()
 
 	return nil
 }
-
 
 func NewClientRoutesAddressTranslator(
 	cfg ClientRoutesConfig,

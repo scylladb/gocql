@@ -59,23 +59,23 @@ func (t testHostInfo) ScyllaShardAwarePort() uint16       { return 0 }
 func (t testHostInfo) ScyllaShardAwarePortTLS() uint16    { return 0 }
 func (t testHostInfo) ScyllaShardCount() int              { return 0 }
 
-func TestMerge(t *testing.T) {
+func TestClientRouteMapPopulateRecords(t *testing.T) {
 	m := clientRouteMap{
 		"h1": {"c1": {connectionID: "c1", hostID: "h1", address: "a1", port: 9042}},
 	}
 
 	// Same record: no change expected.
-	m.merge([]clientRoute{
+	m.populateRecords([]clientRoute{
 		{connectionID: "c1", hostID: "h1", address: "a1", port: 9042},
-	}, []string{"c1"}, nil)
+	})
 	if len(m) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(m))
 	}
 
 	// Updated address: record should be replaced.
-	m.merge([]clientRoute{
+	m.populateRecords([]clientRoute{
 		{connectionID: "c1", hostID: "h1", address: "a2", port: 9043},
-	}, []string{"c1"}, nil)
+	})
 	rec := m["h1"]["c1"]
 	if rec.address != "a2" || rec.port != 9043 {
 		t.Fatalf("expected record to update")
@@ -83,9 +83,9 @@ func TestMerge(t *testing.T) {
 
 	// New record: should be added.
 	m = make(clientRouteMap)
-	m.merge([]clientRoute{
+	m.populateRecords([]clientRoute{
 		{connectionID: "c2", hostID: "h2", address: "a3", port: 9044},
-	}, []string{"c2"}, nil)
+	})
 	if len(m) != 1 {
 		t.Fatalf("expected new record to be added")
 	}
@@ -261,14 +261,14 @@ func TestGetHostPortMappingForPairsQuery(t *testing.T) {
 	}
 }
 
-func TestMerge_DeletedHost(t *testing.T) {
+func TestClientRouteMapDeleteByPairs_DeletedHost(t *testing.T) {
 	m := clientRouteMap{
 		"h1": {"c1": {connectionID: "c1", hostID: "h1", address: "a1", port: 9042}},
 		"h2": {"c1": {connectionID: "c1", hostID: "h2", address: "a2", port: 9042}},
 	}
 
 	// Simulate event for (c1, h1) where query returned nothing → (c1,h1) should be removed.
-	m.merge(nil, []string{"c1"}, []string{"h1"})
+	m.deleteByPairs([]pair{{connectionID: "c1", hostID: "h1"}})
 
 	if len(m) != 1 {
 		t.Fatalf("expected 1 entry after pruning deleted host, got %d", len(m))
@@ -278,7 +278,7 @@ func TestMerge_DeletedHost(t *testing.T) {
 	}
 }
 
-func TestMerge_UpdatedHost(t *testing.T) {
+func TestClientRouteMapDeleteByPairs_UpdatedHost(t *testing.T) {
 	m := clientRouteMap{
 		"h1": {
 			"c1": {connectionID: "c1", hostID: "h1", address: "old-addr", port: 9042},
@@ -287,11 +287,15 @@ func TestMerge_UpdatedHost(t *testing.T) {
 		"h2": {"c1": {connectionID: "c1", hostID: "h2", address: "keep", port: 9042}},
 	}
 
-	// h1 address changed; fresh query returns new data for h1. h2 is not affected.
-	m.merge([]clientRoute{
+	// h1 address changed; delete old pairs, then populate with new data.
+	m.deleteByPairs([]pair{
+		{connectionID: "c1", hostID: "h1"},
+		{connectionID: "c2", hostID: "h1"},
+	})
+	m.populateRecords([]clientRoute{
 		{connectionID: "c1", hostID: "h1", address: "new-addr", port: 9043},
 		{connectionID: "c2", hostID: "h1", address: "new-addr2", port: 9043},
-	}, []string{"c1", "c2"}, []string{"h1"})
+	})
 
 	if len(m) != 2 || len(m["h1"]) != 2 {
 		t.Fatalf("expected 2 hosts with h1 having 2 connections, got %d hosts", len(m))
@@ -307,7 +311,7 @@ func TestMerge_UpdatedHost(t *testing.T) {
 	}
 }
 
-func TestMerge_FullRefresh_PrunesAllStale(t *testing.T) {
+func TestClientRouteMapDeleteByConnectionIDs_FullRefreshPrunesAllStale(t *testing.T) {
 	m := clientRouteMap{
 		"h1": {"c1": {connectionID: "c1", hostID: "h1", address: "a1", port: 9042}},
 		"h2": {"c1": {connectionID: "c1", hostID: "h2", address: "a2", port: 9042}},
@@ -315,18 +319,18 @@ func TestMerge_FullRefresh_PrunesAllStale(t *testing.T) {
 	}
 
 	// Full refresh for connection c1: all entries for c1 are pruned, only h1 and h2 returned.
-	m.merge([]clientRoute{
+	m.deleteByConnectionIDs([]string{"c1"})
+	m.populateRecords([]clientRoute{
 		{connectionID: "c1", hostID: "h1", address: "a1", port: 9042},
 		{connectionID: "c1", hostID: "h2", address: "a2", port: 9042},
-	}, []string{"c1"}, nil)
+	})
 
 	if len(m) != 2 {
 		t.Fatalf("expected 2 entries after full refresh prune, got %d", len(m))
 	}
 	if _, ok := m["h3"]; ok {
 		t.Fatalf("expected h3 to be pruned")
-}
-
+	}
 }
 
 func TestTranslateHost_ConnectionAddrOverride(t *testing.T) {
@@ -379,10 +383,10 @@ func TestTranslateHost_ConnectionAddrOverride(t *testing.T) {
 	})
 }
 
-// TestUpdateHostPortMapping_FullRefresh_PrunesStaleEntries simulates the same
-// sequence of operations that updateHostPortMapping performs (lock → Merge → unlock)
+// TestClientRouteMapFullRefresh_PrunesStaleEntries simulates the same
+// sequence of operations that updateHostPortMapping performs (lock → delete → populate → unlock)
 // to verify that a full refresh correctly prunes a host that disappeared.
-func TestUpdateHostPortMapping_FullRefresh_PrunesStaleEntries(t *testing.T) {
+func TestClientRouteMapFullRefresh_PrunesStaleEntries(t *testing.T) {
 	// Existing routes: h1, h2, h3.
 	routes := clientRouteMap{
 		"h1": {"c1": {connectionID: "c1", hostID: "h1", address: "a1", port: 9042}},
@@ -396,7 +400,8 @@ func TestUpdateHostPortMapping_FullRefresh_PrunesStaleEntries(t *testing.T) {
 		{connectionID: "c1", hostID: "h2", address: "a2", port: 9042},
 	}
 
-	routes.merge(incoming, []string{"c1"}, nil)
+	routes.deleteByConnectionIDs([]string{"c1"})
+	routes.populateRecords(incoming)
 
 	if len(routes) != 2 {
 		t.Fatalf("expected 2 entries after full-refresh prune, got %d", len(routes))

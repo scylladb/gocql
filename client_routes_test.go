@@ -85,6 +85,7 @@ func TestGetHostPortMapping(t *testing.T) {
 
 	sortClientRoutes(expected)
 	sortClientRoutes(expectedTLS)
+	expectedFirstHost := filterClientRoutesByHostID(expected, hostIDs[0])
 
 	tcases := []struct {
 		name     string
@@ -92,44 +93,30 @@ func TestGetHostPortMapping(t *testing.T) {
 		expected []clientRoute
 	}{
 		{
-			name: "get-all",
+			name: "get-for-connection-ids",
 			method: func(controlConnection) ([]clientRoute, error) {
-				return getHostPortMappingFromCluster(session.control, qualifiedTable, nil, nil, false)
+				return getHostPortMappingForConnectionIDs(session.control, qualifiedTable, connectionIDs, false)
 			},
 			expected: expected,
 		},
 		{
-			name: "get-all-hosts",
+			name: "get-for-pairs",
 			method: func(controlConnection) ([]clientRoute, error) {
-				return getHostPortMappingFromCluster(session.control, qualifiedTable, connectionIDs, nil, false)
+				return getHostPortMappingForPairs(session.control, qualifiedTable, makeClientRoutePairs(connectionIDs, hostIDs), false)
 			},
 			expected: expected,
 		},
 		{
-			name: "get-all-connections",
+			name: "get-for-single-host-pairs",
 			method: func(controlConnection) ([]clientRoute, error) {
-				return getHostPortMappingFromCluster(session.control, qualifiedTable, nil, hostIDs, false)
+				return getHostPortMappingForPairs(session.control, qualifiedTable, makeClientRoutePairs(connectionIDs, hostIDs[:1]), false)
 			},
-			expected: expected,
+			expected: expectedFirstHost,
 		},
 		{
-			name: "get-concrete",
+			name: "get-for-connection-ids-tls",
 			method: func(controlConnection) ([]clientRoute, error) {
-				return getHostPortMappingFromCluster(session.control, qualifiedTable, connectionIDs, hostIDs, false)
-			},
-			expected: expected,
-		},
-		{
-			name: "get-concrete-host",
-			method: func(controlConnection) ([]clientRoute, error) {
-				return getHostPortMappingFromCluster(session.control, qualifiedTable, connectionIDs, hostIDs, false)
-			},
-			expected: expected,
-		},
-		{
-			name: "get-all-tls",
-			method: func(controlConnection) ([]clientRoute, error) {
-				return getHostPortMappingFromCluster(session.control, qualifiedTable, nil, nil, true)
+				return getHostPortMappingForConnectionIDs(session.control, qualifiedTable, connectionIDs, true)
 			},
 			expected: expectedTLS,
 		},
@@ -149,6 +136,26 @@ func TestGetHostPortMapping(t *testing.T) {
 			}
 		})
 	}
+}
+
+func makeClientRoutePairs(connectionIDs, hostIDs []string) []pair {
+	pairs := make([]pair, 0, len(connectionIDs)*len(hostIDs))
+	for _, connectionID := range connectionIDs {
+		for _, hostID := range hostIDs {
+			pairs = append(pairs, pair{connectionID: connectionID, hostID: hostID})
+		}
+	}
+	return pairs
+}
+
+func filterClientRoutesByHostID(routes []clientRoute, hostID string) []clientRoute {
+	var filtered []clientRoute
+	for _, route := range routes {
+		if route.hostID == hostID {
+			filtered = append(filtered, route)
+		}
+	}
+	return filtered
 }
 
 func sortClientRoutes(xs []clientRoute) {
