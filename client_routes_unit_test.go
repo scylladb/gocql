@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sync"
 	"testing"
 )
 
@@ -356,4 +357,34 @@ func TestUpdateHostPortMapping_FullRefresh_PrunesStaleEntries(t *testing.T) {
 	if _, ok := routes["h3"]; ok {
 		t.Fatalf("h3 should have been pruned by full refresh")
 	}
+}
+
+func TestStop_DoesNotPanicWithConcurrentAsyncSends(t *testing.T) {
+	h := &ClientRoutesHandler{
+		log:         &defaultLogger{},
+		c:           &fakeControlConn{},
+		closeChan:   make(chan struct{}),
+		updateTasks: make(chan updateTask, 1024),
+		routes:      make(clientRouteMap),
+		cfg: ClientRoutesConfig{
+			TableName: "system.client_routes",
+			Endpoints: ClientRoutesEndpointList{{ConnectionID: "c1"}},
+		},
+	}
+	h.startUpdateWorker()
+
+	const goroutines = 200
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			h.updateHostPortMappingAsync([]string{"c1"}, nil)
+		}()
+	}
+	close(start) // release all goroutines simultaneously
+	h.Stop()     // race against the concurrent sends — must not panic
+	wg.Wait()
 }

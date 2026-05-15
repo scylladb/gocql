@@ -274,30 +274,38 @@ func (p *ClientRoutesHandler) Initialize(s *Session) error {
 }
 
 func (p *ClientRoutesHandler) Stop() {
-	if p.updateTasks != nil {
-		close(p.updateTasks)
-	}
 	if p.closeChan != nil {
 		close(p.closeChan)
 	}
 	if p.sub != nil {
 		p.sub.Stop()
 	}
+	// updateTasks is intentionally NOT closed here; the worker goroutine exits
+	// by selecting on closeChan, which avoids the race between close(updateTasks)
+	// and concurrent sends to it.
 }
 
 func (p *ClientRoutesHandler) updateHostPortMappingAsync(connectionIDs []string, hostIDs []string) {
-	p.updateTasks <- updateTask{
+	select {
+	case p.updateTasks <- updateTask{
 		connectionIDs: connectionIDs,
 		hostIDs:       hostIDs,
+	}:
+	case <-p.closeChan:
+		// Stop() was called; drop the update safely.
 	}
 }
 
 func (p *ClientRoutesHandler) updateHostPortMappingSync(connectionIDs []string, hostIDs []string) error {
 	result := make(chan error, 1)
-	p.updateTasks <- updateTask{
+	select {
+	case p.updateTasks <- updateTask{
 		connectionIDs: connectionIDs,
 		hostIDs:       hostIDs,
 		result:        result,
+	}:
+	case <-p.closeChan:
+		return errors.New("client routes handler stopped")
 	}
 	return <-result
 }
@@ -342,16 +350,21 @@ func (p *ClientRoutesHandler) startReadingEvents() {
 
 func (p *ClientRoutesHandler) startUpdateWorker() {
 	go func() {
-		for task := range p.updateTasks {
-			err := p.updateHostPortMapping(task.connectionIDs, task.hostIDs)
-			if err != nil {
-				if debug.Enabled {
-					p.log.Printf("failed to update host port mapping: %v", err)
+		for {
+			select {
+			case task := <-p.updateTasks:
+				err := p.updateHostPortMapping(task.connectionIDs, task.hostIDs)
+				if err != nil {
+					if debug.Enabled {
+						p.log.Printf("failed to update host port mapping: %v", err)
+					}
 				}
-			}
-			if task.result != nil {
-				task.result <- err
-				close(task.result)
+				if task.result != nil {
+					task.result <- err
+					close(task.result)
+				}
+			case <-p.closeChan:
+				return
 			}
 		}
 	}()
