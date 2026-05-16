@@ -31,6 +31,7 @@ import (
 	"math"
 	"math/big"
 	"math/bits"
+	"net"
 	"reflect"
 	"time"
 	"unsafe"
@@ -360,6 +361,18 @@ func Unmarshal(info TypeInfo, data []byte, value any) error {
 }
 
 func isNullableValue(value any) bool {
+	// Fast path: check common single-pointer types that are NOT nullable.
+	// This avoids reflect.ValueOf on the hot path for the vast majority of
+	// Unmarshal calls where value is *T (not **T).
+	switch value.(type) {
+	case *string, *[]byte, *int, *int8, *int16, *int32, *int64,
+		*uint, *uint8, *uint16, *uint32, *uint64,
+		*float32, *float64, *bool,
+		*time.Time, *net.IP,
+		*map[string]any, *map[string]string,
+		*[]string, *[]int64, *[]int32, *[]float64, *[]float32, *[]bool, *[][]byte, *[]int16:
+		return false
+	}
 	v := reflect.ValueOf(value)
 	return v.Kind() == reflect.Ptr && v.Type().Elem().Kind() == reflect.Ptr
 }

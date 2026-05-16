@@ -172,6 +172,23 @@ func equalStringPointerSlice(leftList, rightList []*string) bool {
 	return true
 }
 
+// BenchmarkUnmarshalScalar measures Unmarshal dispatch overhead for a simple
+// scalar type. The isNullableValue fast path eliminates a reflect.ValueOf call
+// on the hot path for common non-nullable pointer types.
+func BenchmarkUnmarshalScalar(b *testing.B) {
+	info := NativeType{proto: protoVersion4, typ: TypeBigInt}
+	data := []byte{0, 0, 0, 0, 0, 0, 0, 42}
+	var dst int64
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := Unmarshal(info, data, &dst); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func TestMarshalList(t *testing.T) {
 	t.Parallel()
 
