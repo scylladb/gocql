@@ -32,6 +32,7 @@ import (
 	"math/big"
 	"math/bits"
 	"reflect"
+	"sync"
 	"time"
 	"unsafe"
 
@@ -63,6 +64,27 @@ import (
 var (
 	emptyValue reflect.Value
 )
+
+// udtFieldCache caches struct type → (cql tag → field index) mappings
+// to avoid rebuilding the map on every unmarshalUDT call.
+var udtFieldCache sync.Map // map[reflect.Type]map[string]int
+
+// udtFieldMapping returns a cached mapping of CQL tag names to struct field
+// indices for the given struct type. If no cache entry exists, it builds one
+// by scanning struct tags and stores it for future calls.
+func udtFieldMapping(t reflect.Type) map[string]int {
+	if v, ok := udtFieldCache.Load(t); ok {
+		return v.(map[string]int)
+	}
+	m := make(map[string]int, t.NumField())
+	for i := 0; i < t.NumField(); i++ {
+		if tag := t.Field(i).Tag.Get("cql"); tag != "" {
+			m[tag] = i
+		}
+	}
+	udtFieldCache.Store(t, m)
+	return m
+}
 
 var (
 	ErrorUDTUnavailable = errors.New("UDT are not available on protocols less than 3, please update config")
@@ -1587,20 +1609,15 @@ func marshalUDT(info TypeInfo, value any) ([]byte, error) {
 		return nil, marshalErrorf("cannot marshal %T into %s", value, info)
 	}
 
-	fields := make(map[string]reflect.Value)
-	t := reflect.TypeOf(value)
-	for i := 0; i < t.NumField(); i++ {
-		sf := t.Field(i)
-
-		if tag := sf.Tag.Get("cql"); tag != "" {
-			fields[tag] = k.Field(i)
-		}
-	}
+	t := k.Type()
+	fieldIndices := udtFieldMapping(t)
 
 	var buf []byte
 	for _, e := range udt.Elements {
-		f, ok := fields[e.Name]
-		if !ok {
+		var f reflect.Value
+		if idx, ok := fieldIndices[e.Name]; ok {
+			f = k.Field(idx)
+		} else {
 			f = k.FieldByName(e.Name)
 		}
 
@@ -1677,14 +1694,7 @@ func unmarshalUDT(info TypeInfo, data []byte, value any) error {
 	}
 
 	t := k.Type()
-	fields := make(map[string]reflect.Value, t.NumField())
-	for i := 0; i < t.NumField(); i++ {
-		sf := t.Field(i)
-
-		if tag := sf.Tag.Get("cql"); tag != "" {
-			fields[tag] = k.Field(i)
-		}
-	}
+	fieldIndices := udtFieldMapping(t)
 
 	udt := info.(UDTTypeInfo)
 	for id, e := range udt.Elements {
@@ -1699,8 +1709,10 @@ func unmarshalUDT(info TypeInfo, data []byte, value any) error {
 		var p []byte
 		p, data = readBytes(data)
 
-		f, ok := fields[e.Name]
-		if !ok {
+		var f reflect.Value
+		if idx, ok := fieldIndices[e.Name]; ok {
+			f = k.Field(idx)
+		} else {
 			f = k.FieldByName(e.Name)
 			if f == emptyValue { //nolint:govet // no other way to do that
 				// skip fields which exist in the UDT but not in
