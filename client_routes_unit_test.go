@@ -422,6 +422,50 @@ func TestGetHostPortMappingForPairsQuery(t *testing.T) {
 	}
 }
 
+func TestGetHostPortMappingForPairsFiltersCrossProductRows(t *testing.T) {
+	meta := resultMetadata{
+		columns: []ColumnInfo{
+			{Name: "connection_id", TypeInfo: typeVarchar},
+			{Name: "host_id", TypeInfo: typeVarchar},
+			{Name: "address", TypeInfo: typeVarchar},
+			{Name: "port", TypeInfo: typeInt},
+			{Name: "tls_port", TypeInfo: typeInt},
+		},
+		actualColCount: 5,
+		colCount:       5,
+	}
+
+	ctrl := &fakeControlConn{
+		iter: makeIter(meta,
+			marshalRow(meta, []any{"c1", "h1", "10.0.0.1", 9042, 9142}),
+			marshalRow(meta, []any{"c1", "h2", "10.0.0.2", 9043, 9143}),
+			marshalRow(meta, []any{"c2", "h1", "10.0.0.3", 9044, 9144}),
+			marshalRow(meta, []any{"c2", "h2", "10.0.0.4", 9045, 9145}),
+		),
+	}
+
+	got, err := getHostPortMappingForPairs(ctrl, "system.client_routes", []pair{
+		{connectionID: "c1", hostID: "h1"},
+		{connectionID: "c2", hostID: "h2"},
+	}, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	want := []clientRoute{
+		{connectionID: "c1", hostID: "h1", address: "10.0.0.1", port: 9042},
+		{connectionID: "c2", hostID: "h2", address: "10.0.0.4", port: 9045},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("unexpected row count: got %d want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("row #%d = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
 func TestTranslateHost_ConnectionAddrOverride(t *testing.T) {
 	addr := AddressPort{Address: net.ParseIP("1.1.1.1"), Port: 9042}
 

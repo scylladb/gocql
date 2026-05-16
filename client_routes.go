@@ -570,7 +570,21 @@ func getHostPortMappingForPairs(c controlConnection, table string, pairs []pair,
 	}
 
 	stmt := fmt.Sprintf("select connection_id, host_id, address, port, tls_port from %s where connection_id in ? and host_id in ?", table)
-	return readClientRoutesTable(c, table, stmt, []any{connIDs, hostIDs}, pickTLSPorts)
+	routes, err := readClientRoutesTable(c, table, stmt, []any{connIDs, hostIDs}, pickTLSPorts)
+	if err != nil {
+		return nil, err
+	}
+
+	// The IN query returns the cartesian product of the requested connectionIDs
+	// and hostIDs, so keep only the exact pairs the caller asked for.
+	filtered := make([]clientRoute, 0, len(routes))
+	for _, route := range routes {
+		if slices.Contains(pairs, pair{connectionID: route.connectionID, hostID: route.hostID}) {
+			filtered = append(filtered, route)
+		}
+	}
+
+	return filtered, nil
 }
 
 func readClientRoutesTable(c controlConnection, table, stmt string, bounds []any, pickTLSPorts bool) ([]clientRoute, error) {
