@@ -7,25 +7,25 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"sync/atomic"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/gocql/gocql/events"
+	"github.com/gocql/gocql/internal/eventbus"
 )
 
-type dnsResolverFunc func(string) ([]net.IP, error)
+// dnsResolverFunc adapts a function to the DNSResolver interface.
+type dnsResolverFunc func(host string) ([]net.IP, error)
 
-// LookupIP implements DNSResolver for dnsResolverFunc.
-func (f dnsResolverFunc) LookupIP(host string) ([]net.IP, error) { return f(host) }
-
-type clientRoutesResolverFunc func(endpoint ResolvedClientRoute) ([]net.IP, net.IP, error)
-
-func (f clientRoutesResolverFunc) Resolve(endpoint ResolvedClientRoute) ([]net.IP, net.IP, error) {
-	return f(endpoint)
+func (f dnsResolverFunc) LookupIP(host string) ([]net.IP, error) {
+	return f(host)
 }
 
 type fakeControlConn struct {
 	statement string
 	values    []any
+	iter      *Iter
 }
 
 func (f *fakeControlConn) getConn() *connHost          { return nil }
@@ -33,6 +33,9 @@ func (f *fakeControlConn) awaitSchemaAgreement() error { return nil }
 func (f *fakeControlConn) query(statement string, values ...any) *Iter {
 	f.statement = statement
 	f.values = values
+	if f.iter != nil {
+		return f.iter
+	}
 	return &Iter{}
 }
 func (f *fakeControlConn) querySystem(statement string, values ...any) *Iter {
@@ -43,6 +46,30 @@ func (f *fakeControlConn) connect(hosts []*HostInfo) error                 { ret
 func (f *fakeControlConn) close()                                          {}
 func (f *fakeControlConn) getSession() *Session                            { return nil }
 func (f *fakeControlConn) reconnect() error                                { return nil }
+
+func newClientRoutesEventHarness(t *testing.T, allowedConnectionIDs []string) (*ClientRoutesHandler, *eventbus.EventBus[events.Event]) {
+	t.Helper()
+
+	bus := eventbus.New[events.Event](eventbus.EventBusConfig{InputEventsQueueSize: 1}, nil)
+	if err := bus.Start(); err != nil {
+		t.Fatalf("starting event bus: %v", err)
+	}
+
+	h := &ClientRoutesHandler{
+		sub:         bus.Subscribe("port-mux", 1, nil),
+		updateTasks: make(chan updateTask, 1),
+		closeChan:   make(chan struct{}),
+	}
+	h.startReadingEvents(allowedConnectionIDs)
+
+	t.Cleanup(func() {
+		if err := bus.Stop(); err != nil {
+			t.Fatalf("stopping event bus: %v", err)
+		}
+	})
+
+	return h, bus
+}
 
 type testHostInfo struct {
 	hostID string
@@ -64,220 +91,18 @@ func (t testHostInfo) ScyllaShardAwarePort() uint16       { return 0 }
 func (t testHostInfo) ScyllaShardAwarePortTLS() uint16    { return 0 }
 func (t testHostInfo) ScyllaShardCount() int              { return 0 }
 
-func TestResolvedClientRouteCloneNewerNeedsUpdate(t *testing.T) {
-	ip1 := net.ParseIP("127.0.0.1")
-	ip2 := net.ParseIP("127.0.0.2")
-	base := ResolvedClientRoute{
-		UnresolvedClientRoute: UnresolvedClientRoute{
-			ConnectionID: "c1",
-			HostID:       "h1",
-			Address:      "host",
-			CQLPort:      9042,
-		},
-		allKnownIPs: []net.IP{ip1},
-		currentIP:   ip1,
-		updateTime:  time.Unix(10, 0),
-	}
-
-	clone := base.Clone()
-	clone.allKnownIPs[0][0] = 8
-	clone.currentIP[0] = 9
-
-	if base.allKnownIPs[0][0] == 8 {
-		t.Fatalf("Clone should not share allKnownIPs slices")
-	}
-	if base.currentIP[0] == 9 {
-		t.Fatalf("Clone should not share currentIP slices")
-	}
-
-	newerIP := ResolvedClientRoute{currentIP: ip2}
-	if !(ResolvedClientRoute{}).Newer(newerIP) {
-		t.Fatalf("expected Newer to prefer non-nil currentIP")
-	}
-
-	newerTime := ResolvedClientRoute{updateTime: time.Unix(20, 0)}
-	if !base.Newer(newerTime) {
-		t.Fatalf("expected Newer to prefer newer updateTime")
-	}
-
-	if !(ResolvedClientRoute{currentIP: nil}).NeedsUpdate() {
-		t.Fatalf("expected NeedsUpdate for missing currentIP")
-	}
-	if !(ResolvedClientRoute{currentIP: ip1}).NeedsUpdate() {
-		t.Fatalf("expected NeedsUpdate for missing allKnownIPs")
-	}
-	if !(ResolvedClientRoute{currentIP: ip1, allKnownIPs: []net.IP{ip1}, forcedResolve: true}).NeedsUpdate() {
-		t.Fatalf("expected NeedsUpdate when forcedResolve is set")
-	}
-	if (ResolvedClientRoute{currentIP: ip1, allKnownIPs: []net.IP{ip1}}).NeedsUpdate() {
-		t.Fatalf("did not expect NeedsUpdate for fully resolved route")
-	}
+func newCacheEntry(routes ...clientRoute) clientRouteCacheEntry {
+	return clientRouteCacheEntry{allRoutes: routes}
 }
 
-func TestResolvedClientRouteListMergeWithUnresolved(t *testing.T) {
-	list := ResolvedClientRouteList{
-		{
-			UnresolvedClientRoute: UnresolvedClientRoute{
-				ConnectionID: "c1",
-				HostID:       "h1",
-				Address:      "a1",
-				CQLPort:      9042,
-			},
-			forcedResolve: false,
-		},
-	}
-
-	list.MergeWithUnresolved(UnresolvedClientRouteList{
-		{
-			ConnectionID: "c1",
-			HostID:       "h1",
-			Address:      "a1",
-			CQLPort:      9042,
-		},
-	})
-	if len(list) != 1 || list[0].forcedResolve {
-		t.Fatalf("expected unchanged record when unresolved is equal")
-	}
-
-	list.MergeWithUnresolved(UnresolvedClientRouteList{
-		{
-			ConnectionID: "c1",
-			HostID:       "h1",
-			Address:      "a2",
-			CQLPort:      9043,
-		},
-	})
-	if list[0].Address != "a2" || list[0].CQLPort != 9043 || !list[0].forcedResolve {
-		t.Fatalf("expected record to update and force resolve")
-	}
-
-	list = ResolvedClientRouteList{}
-	list.MergeWithUnresolved(UnresolvedClientRouteList{
-		{
-			ConnectionID: "c2",
-			HostID:       "h2",
-			Address:      "a3",
-			CQLPort:      9044,
-		},
-	})
-	if len(list) != 1 || !list[0].forcedResolve {
-		t.Fatalf("expected new record to be appended with forcedResolve")
-	}
+func newCache(routes map[string]clientRouteCacheEntry) clientRouteCache {
+	return clientRouteCache{routes: routes}
 }
 
-func TestResolvedClientRouteListMergeWithResolved(t *testing.T) {
-	older := ResolvedClientRoute{
-		UnresolvedClientRoute: UnresolvedClientRoute{ConnectionID: "c1", HostID: "h1"},
-		updateTime:            time.Unix(10, 0),
-	}
-	newer := ResolvedClientRoute{
-		UnresolvedClientRoute: UnresolvedClientRoute{ConnectionID: "c1", HostID: "h1"},
-		updateTime:            time.Unix(20, 0),
-		currentIP:             net.ParseIP("10.0.0.1"),
-	}
-
-	list := ResolvedClientRouteList{older}
-	other := ResolvedClientRouteList{newer, {UnresolvedClientRoute: UnresolvedClientRoute{ConnectionID: "c2", HostID: "h2"}}}
-	list.MergeWithResolved(&other)
-
-	if list[0].updateTime != newer.updateTime || list[0].currentIP == nil {
-		t.Fatalf("expected newer record to replace older one")
-	}
-	if len(list) != 2 {
-		t.Fatalf("expected new record to be appended")
-	}
-
-	list = ResolvedClientRouteList{newer}
-	stale := ResolvedClientRouteList{older}
-	list.MergeWithResolved(&stale)
-	if list[0].updateTime != newer.updateTime {
-		t.Fatalf("expected newer record to be preserved when other is stale")
-	}
-}
-
-func TestResolvedClientRouteListUpdateIfNewerAndFindByHostID(t *testing.T) {
-	list := ResolvedClientRouteList{{
-		UnresolvedClientRoute: UnresolvedClientRoute{ConnectionID: "c1", HostID: "h1"},
-		updateTime:            time.Unix(10, 0),
-	}}
-
-	older := ResolvedClientRoute{UnresolvedClientRoute: UnresolvedClientRoute{ConnectionID: "c1", HostID: "h1"}, updateTime: time.Unix(5, 0)}
-	if list.UpdateIfNewer(older) {
-		t.Fatalf("expected UpdateIfNewer to ignore older record")
-	}
-
-	newer := ResolvedClientRoute{UnresolvedClientRoute: UnresolvedClientRoute{ConnectionID: "c1", HostID: "h1"}, updateTime: time.Unix(15, 0)}
-	if !list.UpdateIfNewer(newer) {
-		t.Fatalf("expected UpdateIfNewer to accept newer record")
-	}
-
-	rec := list.FindByHostID("h1")
-	if rec == nil {
-		t.Fatalf("expected FindByHostID to locate record")
-	}
-	rec.ConnectionID = "updated"
-	if list[0].ConnectionID != "updated" {
-		t.Fatalf("expected FindByHostID to return pointer to list element")
-	}
-}
-
-func TestSimpleClientRoutesResolverResolve(t *testing.T) {
-	calls := 0
-	resolver := dnsResolverFunc(func(host string) ([]net.IP, error) {
-		calls++
-		return []net.IP{net.ParseIP("10.0.0.1"), net.ParseIP("10.0.0.2")}, nil
-	})
-
-	res := newSimpleClientRoutesResolver(time.Hour, resolver)
-	endpoint := ResolvedClientRoute{
-		UnresolvedClientRoute: UnresolvedClientRoute{Address: "example"},
-		currentIP:             net.ParseIP("10.0.0.2"),
-	}
-
-	all, current, err := res.Resolve(endpoint)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if calls != 1 {
-		t.Fatalf("expected resolver to be called once, got %d", calls)
-	}
-	if current == nil || !current.Equal(endpoint.currentIP) {
-		t.Fatalf("expected currentIP to be preserved when present")
-	}
-	if len(all) != 2 {
-		t.Fatalf("expected allKnownIPs to be returned")
-	}
-
-	_, _, err = res.Resolve(endpoint)
-	if err != nil {
-		t.Fatalf("unexpected error from cached resolve: %v", err)
-	}
-	if calls != 1 {
-		t.Fatalf("expected cached resolve to avoid LookupIP, got %d", calls)
-	}
-
-	resolveErr := errors.New("resolve failed")
-	errorResolver := dnsResolverFunc(func(host string) ([]net.IP, error) {
-		return nil, resolveErr
-	})
-	errorRes := newSimpleClientRoutesResolver(0, errorResolver)
-	endpoint.allKnownIPs = []net.IP{net.ParseIP("10.0.0.9")}
-	all, current, err = errorRes.Resolve(endpoint)
-	if !errors.Is(err, resolveErr) {
-		t.Fatalf("expected resolver error to propagate")
-	}
-	if len(all) != 1 || current == nil || !current.Equal(endpoint.currentIP) {
-		t.Fatalf("expected existing values to be returned on error")
-	}
-
-	emptyResolver := dnsResolverFunc(func(host string) ([]net.IP, error) {
-		return []net.IP{}, nil
-	})
-	emptyRes := newSimpleClientRoutesResolver(0, emptyResolver)
-	_, _, err = emptyRes.Resolve(ResolvedClientRoute{UnresolvedClientRoute: UnresolvedClientRoute{Address: "example"}})
-	if err == nil {
-		t.Fatalf("expected error when resolver returns empty list")
-	}
+func newCacheEntryWithCurrent(current clientRoute, routes ...clientRoute) clientRouteCacheEntry {
+	entry := clientRouteCacheEntry{allRoutes: routes}
+	entry.BindCurrent(current.connectionID)
+	return entry
 }
 
 func TestClientRoutesHandlerTranslateHost(t *testing.T) {
@@ -285,8 +110,14 @@ func TestClientRoutesHandlerTranslateHost(t *testing.T) {
 	noHost := testHostInfo{hostID: ""}
 	missingHost := testHostInfo{hostID: "missing"}
 
-	handler := &ClientRoutesHandler{}
-	handler.resolvedEndpoints.Store(&ResolvedClientRouteList{})
+	resolver := dnsResolverFunc(func(host string) ([]net.IP, error) {
+		return []net.IP{net.ParseIP("10.0.0.1")}, nil
+	})
+
+	handler := &ClientRoutesHandler{
+		resolver:   resolver,
+		routeCache: newClientRouteCache(),
+	}
 
 	res, err := handler.TranslateHost(noHost, addr)
 	if err != nil {
@@ -301,218 +132,229 @@ func TestClientRoutesHandlerTranslateHost(t *testing.T) {
 		t.Fatalf("expected error for missing host entry")
 	}
 
-	resolvedList := ResolvedClientRouteList{
-		{
-			UnresolvedClientRoute: UnresolvedClientRoute{ConnectionID: "c1", HostID: "h1", CQLPort: 9042, SecureCQLPort: 9142},
-			currentIP:             net.ParseIP("10.0.0.1"),
-		},
-	}
+	handler.routeCache = newCache(map[string]clientRouteCacheEntry{
+		"h1": newCacheEntry(clientRoute{connectionID: "c1", hostID: "h1", port: 9042}),
+	})
 
-	handler.pickTLSPorts = false
-	handler.resolvedEndpoints.Store(&resolvedList)
 	res, err = handler.TranslateHost(testHostInfo{hostID: "h1"}, addr)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	if !res.Address.Equal(net.ParseIP("10.0.0.1")) {
+		t.Fatalf("expected resolved IP 10.0.0.1, got %v", res.Address)
 	}
 	if res.Port != 9042 {
-		t.Fatalf("expected non-TLS port, got %d", res.Port)
-	}
-
-	handler.pickTLSPorts = true
-	res, err = handler.TranslateHost(testHostInfo{hostID: "h1"}, addr)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if res.Port != 9142 {
-		t.Fatalf("expected TLS port, got %d", res.Port)
+		t.Fatalf("expected port 9042, got %d", res.Port)
 	}
 
 	errorHandler := &ClientRoutesHandler{
-		resolver: clientRoutesResolverFunc(func(endpoint ResolvedClientRoute) ([]net.IP, net.IP, error) {
-			return nil, nil, errors.New("lookup failed")
+		resolver: dnsResolverFunc(func(host string) ([]net.IP, error) {
+			return nil, errors.New("lookup failed")
 		}),
+		routeCache: newCache(map[string]clientRouteCacheEntry{"h2": newCacheEntry(clientRoute{connectionID: "c2", hostID: "h2", address: "host", port: 9042})}),
 	}
-	errorList := ResolvedClientRouteList{{UnresolvedClientRoute: UnresolvedClientRoute{ConnectionID: "c2", HostID: "h2", Address: "host"}}}
-	errorHandler.resolvedEndpoints.Store(&errorList)
 	_, err = errorHandler.TranslateHost(testHostInfo{hostID: "h2"}, addr)
 	if err == nil {
 		t.Fatalf("expected resolver error to bubble up")
 	}
+
+	// Route with port 0 should return an error before attempting DNS.
+	zeroPortHandler := &ClientRoutesHandler{
+		resolver: dnsResolverFunc(func(host string) ([]net.IP, error) {
+			t.Fatal("DNS should not be called when port is 0")
+			return nil, nil
+		}),
+		routeCache: newCache(map[string]clientRouteCacheEntry{"h3": newCacheEntry(clientRoute{connectionID: "c3", hostID: "h3", address: "host", port: 0})}),
+	}
+	_, err = zeroPortHandler.TranslateHost(testHostInfo{hostID: "h3"}, addr)
+	if err == nil {
+		t.Fatalf("expected error for zero port")
+	}
 }
 
-func TestClientRoutesHandlerTranslateHost_CASCollision(t *testing.T) {
+func TestClientRoutesHandlerTranslateHost_CurrentRoute(t *testing.T) {
 	addr := AddressPort{Address: net.ParseIP("1.1.1.1"), Port: 9042}
-	resolverStarted := make(chan struct{})
-	releaseResolver := make(chan struct{})
-	resolver := clientRoutesResolverFunc(func(endpoint ResolvedClientRoute) ([]net.IP, net.IP, error) {
-		close(resolverStarted)
-		<-releaseResolver
-		ip := net.ParseIP("10.0.0.1")
-		return []net.IP{ip}, ip, nil
-	})
-
-	handler := &ClientRoutesHandler{resolver: resolver, pickTLSPorts: false}
-	origList := ResolvedClientRouteList{{UnresolvedClientRoute: UnresolvedClientRoute{ConnectionID: "c1", HostID: "h1", Address: "host", CQLPort: 9042}}}
-	handler.resolvedEndpoints.Store(&origList)
-
-	done := make(chan error, 1)
-	go func() {
-		_, err := handler.TranslateHost(testHostInfo{hostID: "h1"}, addr)
-		done <- err
-	}()
-
-	<-resolverStarted
-	altList := ResolvedClientRouteList{}
-	handler.resolvedEndpoints.Store(&altList)
-	close(releaseResolver)
-	time.Sleep(10 * time.Millisecond)
-	handler.resolvedEndpoints.Store(&origList)
-
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("unexpected error after CAS collision: %v", err)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("TranslateHost timed out after CAS collision")
+	resolvedIPs := map[string]net.IP{
+		"addr-c1": net.ParseIP("10.0.0.1"),
+		"addr-c2": net.ParseIP("10.0.0.2"),
 	}
-}
-
-func TestClientRoutesHandlerResolveAndUpdateInPlace(t *testing.T) {
-	var inFlight int32
-	var maxInFlight int32
-	called := make(chan string, 4)
-	resolveErr := errors.New("resolve error")
-
-	resolver := clientRoutesResolverFunc(func(endpoint ResolvedClientRoute) ([]net.IP, net.IP, error) {
-		curr := atomic.AddInt32(&inFlight, 1)
-		for {
-			prev := atomic.LoadInt32(&maxInFlight)
-			if curr > prev && atomic.CompareAndSwapInt32(&maxInFlight, prev, curr) {
-				break
-			}
-			if curr <= prev {
-				break
-			}
-		}
-		defer atomic.AddInt32(&inFlight, -1)
-
-		called <- endpoint.Address
-		time.Sleep(10 * time.Millisecond)
-		if endpoint.Address == "err" {
-			return nil, nil, resolveErr
-		}
-		ip := net.ParseIP("10.0.0.1")
-		return []net.IP{ip}, ip, nil
-	})
-
 	handler := &ClientRoutesHandler{
-		resolver: resolver,
-		cfg: ClientRoutesConfig{
-			MaxResolverConcurrency:       2,
-			ResolveHealthyEndpointPeriod: time.Hour,
-		},
+		pickTLSPorts: false,
+		resolver: dnsResolverFunc(func(host string) ([]net.IP, error) {
+			if ip, ok := resolvedIPs[host]; ok {
+				return []net.IP{ip}, nil
+			}
+			return nil, fmt.Errorf("unknown host %s", host)
+		}),
+		routeCache: newCache(map[string]clientRouteCacheEntry{
+			"h1": newCacheEntry(
+				clientRoute{connectionID: "c1", hostID: "h1", address: "addr-c1", port: 9042},
+				clientRoute{connectionID: "c2", hostID: "h1", address: "addr-c2", port: 9042},
+			),
+		}),
 	}
 
-	now := time.Now().UTC()
-	ip := net.ParseIP("10.0.0.2")
-	records := ResolvedClientRouteList{
-		{
-			UnresolvedClientRoute: UnresolvedClientRoute{ConnectionID: "c1", HostID: "h1", Address: "healthy"},
-			currentIP:             ip,
-			allKnownIPs:           []net.IP{ip},
-			updateTime:            now,
-		},
-		{
-			UnresolvedClientRoute: UnresolvedClientRoute{ConnectionID: "c2", HostID: "h2", Address: "forced"},
-			forcedResolve:         true,
-		},
-		{
-			UnresolvedClientRoute: UnresolvedClientRoute{ConnectionID: "c3", HostID: "h3", Address: "empty"},
-		},
-		{
-			UnresolvedClientRoute: UnresolvedClientRoute{ConnectionID: "c4", HostID: "h4", Address: "stale"},
-			currentIP:             ip,
-			allKnownIPs:           []net.IP{ip},
-			updateTime:            now.Add(-2 * time.Hour),
-		},
-		{
-			UnresolvedClientRoute: UnresolvedClientRoute{ConnectionID: "c5", HostID: "h5", Address: "err"},
-		},
+	// First call picks the first route in the record.
+	res1, err := handler.TranslateHost(testHostInfo{hostID: "h1"}, addr)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !res1.Address.Equal(resolvedIPs["addr-c1"]) {
+		t.Fatalf("expected first route to resolve addr-c1, got %v", res1.Address)
 	}
 
-	err := handler.resolveAndUpdateInPlace(records)
-	if err == nil || !errors.Is(err, resolveErr) {
-		t.Fatalf("expected aggregated error to include resolver error")
-	}
-	close(called)
+	// Refresh the host and replace c1 with c2. The next call should fall back to
+	// the remaining route.
+	handler.routeCache.ReplaceByConnectionIDs([]string{"c1"}, []clientRoute{
+		{connectionID: "c2", hostID: "h1", address: "addr-c2", port: 9042},
+	})
 
-	calledMap := map[string]bool{}
-	for addr := range called {
-		calledMap[addr] = true
+	res2, err := handler.TranslateHost(testHostInfo{hostID: "h1"}, addr)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-
-	if calledMap["healthy"] {
-		t.Fatalf("did not expect healthy endpoint to be resolved")
-	}
-	for _, addr := range []string{"forced", "empty", "stale", "err"} {
-		if !calledMap[addr] {
-			t.Fatalf("expected resolver to be called for %s", addr)
-		}
-	}
-
-	if atomic.LoadInt32(&maxInFlight) > int32(handler.cfg.MaxResolverConcurrency) {
-		t.Fatalf("expected max concurrency <= %d, got %d", handler.cfg.MaxResolverConcurrency, maxInFlight)
-	}
-
-	if records[1].currentIP == nil || len(records[1].allKnownIPs) == 0 || records[1].forcedResolve {
-		t.Fatalf("expected forced endpoint to be resolved and forcedResolve cleared")
+	if !res2.Address.Equal(resolvedIPs["addr-c2"]) {
+		t.Fatalf("expected fallback route to resolve addr-c2, got %v", res2.Address)
 	}
 }
 
-func TestGetHostPortMappingFromClusterQuery(t *testing.T) {
+func TestClientRoutesHandlerTranslateHost_PreservesCurrentAcrossRefresh(t *testing.T) {
+	addr := AddressPort{Address: net.ParseIP("1.1.1.1"), Port: 9042}
+	resolvedIPs := map[string]net.IP{
+		"addr-c1-old": net.ParseIP("10.0.0.1"),
+		"addr-c1-new": net.ParseIP("10.0.0.2"),
+		"addr-c2":     net.ParseIP("10.0.0.3"),
+	}
+	resolver := dnsResolverFunc(func(host string) ([]net.IP, error) {
+		if ip, ok := resolvedIPs[host]; ok {
+			return []net.IP{ip}, nil
+		}
+		return nil, fmt.Errorf("unknown host %s", host)
+	})
+
+	newHandler := func() *ClientRoutesHandler {
+		return &ClientRoutesHandler{
+			resolver: resolver,
+			routeCache: newCache(map[string]clientRouteCacheEntry{
+				"h1": newCacheEntryWithCurrent(
+					clientRoute{connectionID: "c1", hostID: "h1", address: "addr-c1-old", port: 9042},
+					clientRoute{connectionID: "c1", hostID: "h1", address: "addr-c1-old", port: 9042},
+					clientRoute{connectionID: "c2", hostID: "h1", address: "addr-c2", port: 9042},
+				),
+			}),
+		}
+	}
+
+	for _, tc := range []struct {
+		name    string
+		replace func(*clientRouteCache)
+	}{
+		{
+			name: "connection-ids",
+			replace: func(c *clientRouteCache) {
+				c.ReplaceByConnectionIDs([]string{"c1"}, []clientRoute{
+					{connectionID: "c1", hostID: "h1", address: "addr-c1-new", port: 9042},
+				})
+			},
+		},
+		{
+			name: "pairs",
+			replace: func(c *clientRouteCache) {
+				c.ReplaceByPairs([]pair{{connectionID: "c1", hostID: "h1"}}, []clientRoute{
+					{connectionID: "c1", hostID: "h1", address: "addr-c1-new", port: 9042},
+				})
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			handler := newHandler()
+			tc.replace(&handler.routeCache)
+
+			res, err := handler.TranslateHost(testHostInfo{hostID: "h1"}, addr)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !res.Address.Equal(resolvedIPs["addr-c1-new"]) {
+				t.Fatalf("expected preferred route to stay on c1 with updated address, got %v", res.Address)
+			}
+		})
+	}
+}
+
+func TestClientRoutesHandlerTranslateHost_PrunesMissingHostAcrossRefresh(t *testing.T) {
+	addr := AddressPort{Address: net.ParseIP("1.1.1.1"), Port: 9042}
+	resolvedIPs := map[string]net.IP{
+		"addr-h1": net.ParseIP("10.0.1.1"),
+		"addr-h2": net.ParseIP("10.0.1.2"),
+		"addr-h3": net.ParseIP("10.0.1.3"),
+	}
+	handler := &ClientRoutesHandler{
+		resolver: dnsResolverFunc(func(host string) ([]net.IP, error) {
+			if ip, ok := resolvedIPs[host]; ok {
+				return []net.IP{ip}, nil
+			}
+			return nil, fmt.Errorf("unknown host %s", host)
+		}),
+		routeCache: newCache(map[string]clientRouteCacheEntry{
+			"h1": newCacheEntryWithCurrent(
+				clientRoute{connectionID: "c1", hostID: "h1", address: "addr-h1", port: 9042},
+				clientRoute{connectionID: "c1", hostID: "h1", address: "addr-h1", port: 9042},
+			),
+			"h2": newCacheEntry(clientRoute{connectionID: "c1", hostID: "h2", address: "addr-h2", port: 9042}),
+			"h3": newCacheEntry(clientRoute{connectionID: "c1", hostID: "h3", address: "addr-h3", port: 9042}),
+		}),
+	}
+
+	if _, err := handler.TranslateHost(testHostInfo{hostID: "h3"}, addr); err != nil {
+		t.Fatalf("unexpected error before refresh: %v", err)
+	}
+
+	handler.routeCache.ReplaceByConnectionIDs([]string{"c1"}, []clientRoute{
+		{connectionID: "c1", hostID: "h1", address: "addr-h1-new", port: 9042},
+		{connectionID: "c1", hostID: "h2", address: "addr-h2", port: 9042},
+	})
+
+	if _, err := handler.TranslateHost(testHostInfo{hostID: "h3"}, addr); err == nil {
+		t.Fatal("expected h3 to be pruned after refresh")
+	}
+}
+
+func TestGetHostPortMappingForConnectionIDsQuery(t *testing.T) {
 	tcases := []struct {
 		name          string
 		connectionIDs []string
-		hostIDs       []string
 		expectedStmt  string
 		expectedVals  []any
+		expectedErr   bool
 	}{
 		{
-			name:         "all",
-			expectedStmt: "select connection_id, host_id, address, port, tls_port from system.client_routes allow filtering",
-		},
-		{
-			name:          "connections-only",
+			name:          "multiple-connections",
 			connectionIDs: []string{"c1", "c2"},
-			expectedStmt:  "select connection_id, host_id, address, port, tls_port from system.client_routes where connection_id in (?,?) allow filtering",
-			expectedVals:  []any{"c1", "c2"},
+			expectedStmt:  "select connection_id, host_id, address, port, tls_port from system.client_routes where connection_id in ?",
+			expectedVals:  []any{[]string{"c1", "c2"}},
 		},
 		{
-			name:         "hosts-only",
-			hostIDs:      []string{"h1"},
-			expectedStmt: "select connection_id, host_id, address, port, tls_port from system.client_routes where host_id in (?) allow filtering",
-			expectedVals: []any{"h1"},
-		},
-		{
-			name:          "connections-and-hosts",
+			name:          "single-connection",
 			connectionIDs: []string{"c1"},
-			hostIDs:       []string{"h1", "h2"},
-			expectedStmt:  "select connection_id, host_id, address, port, tls_port from system.client_routes where connection_id in (?) and host_id in (?,?)",
-			expectedVals:  []any{"c1", "h1", "h2"},
+			expectedStmt:  "select connection_id, host_id, address, port, tls_port from system.client_routes where connection_id in ?",
+			expectedVals:  []any{[]string{"c1"}},
 		},
 		{
-			name:          "empty-slices",
-			connectionIDs: []string{},
-			hostIDs:       []string{},
-			expectedStmt:  "select connection_id, host_id, address, port, tls_port from system.client_routes allow filtering",
+			name:        "empty-slices",
+			expectedErr: true,
 		},
 	}
 
 	for _, tc := range tcases {
 		t.Run(tc.name, func(t *testing.T) {
 			ctrl := &fakeControlConn{}
-			_, err := getHostPortMappingFromCluster(ctrl, "system.client_routes", tc.connectionIDs, tc.hostIDs)
+			_, err := getHostPortMappingForConnectionIDs(ctrl, "system.client_routes", tc.connectionIDs, false)
+			if tc.expectedErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -523,5 +365,347 @@ func TestGetHostPortMappingFromClusterQuery(t *testing.T) {
 				t.Fatalf("values mismatch: got %v want %v", ctrl.values, tc.expectedVals)
 			}
 		})
+	}
+}
+
+func TestGetHostPortMappingForPairsQuery(t *testing.T) {
+	tcases := []struct {
+		name         string
+		pairs        []pair
+		expectedStmt string
+		expectedVals []any
+		expectedErr  bool
+	}{
+		{
+			name: "single-pair",
+			pairs: []pair{
+				{connectionID: "c1", hostID: "h1"},
+			},
+			expectedStmt: "select connection_id, host_id, address, port, tls_port from system.client_routes where connection_id in ? and host_id in ?",
+			expectedVals: []any{[]string{"c1"}, []string{"h1"}},
+		},
+		{
+			name: "multiple-pairs",
+			pairs: []pair{
+				{connectionID: "c1", hostID: "h1"},
+				{connectionID: "c2", hostID: "h2"},
+			},
+			expectedStmt: "select connection_id, host_id, address, port, tls_port from system.client_routes where connection_id in ? and host_id in ?",
+			expectedVals: []any{[]string{"c1", "c2"}, []string{"h1", "h2"}},
+		},
+		{
+			name:        "empty-slices",
+			expectedErr: true,
+		},
+	}
+
+	for _, tc := range tcases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := &fakeControlConn{}
+			_, err := getHostPortMappingForPairs(ctrl, "system.client_routes", tc.pairs, false)
+			if tc.expectedErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if ctrl.statement != tc.expectedStmt {
+				t.Fatalf("statement mismatch: got %q want %q", ctrl.statement, tc.expectedStmt)
+			}
+			if fmt.Sprint(ctrl.values) != fmt.Sprint(tc.expectedVals) {
+				t.Fatalf("values mismatch: got %v want %v", ctrl.values, tc.expectedVals)
+			}
+		})
+	}
+}
+
+func TestGetHostPortMappingForPairsFiltersCrossProductRows(t *testing.T) {
+	meta := resultMetadata{
+		columns: []ColumnInfo{
+			{Name: "connection_id", TypeInfo: typeVarchar},
+			{Name: "host_id", TypeInfo: typeVarchar},
+			{Name: "address", TypeInfo: typeVarchar},
+			{Name: "port", TypeInfo: typeInt},
+			{Name: "tls_port", TypeInfo: typeInt},
+		},
+		actualColCount: 5,
+		colCount:       5,
+	}
+
+	ctrl := &fakeControlConn{
+		iter: makeIter(meta,
+			marshalRow(meta, []any{"c1", "h1", "10.0.0.1", 9042, 9142}),
+			marshalRow(meta, []any{"c1", "h2", "10.0.0.2", 9043, 9143}),
+			marshalRow(meta, []any{"c2", "h1", "10.0.0.3", 9044, 9144}),
+			marshalRow(meta, []any{"c2", "h2", "10.0.0.4", 9045, 9145}),
+		),
+	}
+
+	got, err := getHostPortMappingForPairs(ctrl, "system.client_routes", []pair{
+		{connectionID: "c1", hostID: "h1"},
+		{connectionID: "c2", hostID: "h2"},
+	}, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	want := []clientRoute{
+		{connectionID: "c1", hostID: "h1", address: "10.0.0.1", port: 9042},
+		{connectionID: "c2", hostID: "h2", address: "10.0.0.4", port: 9045},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("unexpected row count: got %d want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("row #%d = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
+func TestTranslateHost_ConnectionAddrOverride(t *testing.T) {
+	addr := AddressPort{Address: net.ParseIP("1.1.1.1"), Port: 9042}
+
+	resolvedIPs := map[string]net.IP{
+		"route-addr":    net.ParseIP("10.0.0.1"),
+		"override-addr": net.ParseIP("10.0.0.99"),
+	}
+	resolver := dnsResolverFunc(func(host string) ([]net.IP, error) {
+		if ip, ok := resolvedIPs[host]; ok {
+			return []net.IP{ip}, nil
+		}
+		return nil, fmt.Errorf("unknown host %s", host)
+	})
+	newRoutes := func() clientRouteCache {
+		return newCache(map[string]clientRouteCacheEntry{"h1": newCacheEntry(clientRoute{connectionID: "c1", hostID: "h1", address: "route-addr", port: 9042})})
+	}
+
+	t.Run("no override uses route address", func(t *testing.T) {
+		handler := &ClientRoutesHandler{
+			addrOverrides: map[string]string{},
+			resolver:      resolver,
+			routeCache:    newRoutes(),
+		}
+
+		res, err := handler.TranslateHost(testHostInfo{hostID: "h1"}, addr)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !res.Address.Equal(resolvedIPs["route-addr"]) {
+			t.Fatalf("expected route-addr IP %v, got %v", resolvedIPs["route-addr"], res.Address)
+		}
+	})
+
+	t.Run("override replaces route address", func(t *testing.T) {
+		handler := &ClientRoutesHandler{
+			addrOverrides: map[string]string{"c1": "override-addr"},
+			resolver:      resolver,
+			routeCache:    newRoutes(),
+		}
+
+		res, err := handler.TranslateHost(testHostInfo{hostID: "h1"}, addr)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !res.Address.Equal(resolvedIPs["override-addr"]) {
+			t.Fatalf("expected override-addr IP %v, got %v", resolvedIPs["override-addr"], res.Address)
+		}
+	})
+}
+func TestStop_DoesNotPanicWithConcurrentAsyncSends(t *testing.T) {
+	h := &ClientRoutesHandler{
+		log:         &defaultLogger{},
+		c:           &fakeControlConn{},
+		closeChan:   make(chan struct{}),
+		updateTasks: make(chan updateTask, 1024),
+		routeCache:  newClientRouteCache(),
+		cfg: ClientRoutesConfig{
+			TableName: "system.client_routes",
+			Endpoints: ClientRoutesEndpointList{{ConnectionID: "c1"}},
+		},
+	}
+	h.startUpdateWorker()
+
+	const goroutines = 200
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			h.updateHostPortMappingAsync(updateTask{connectionIDs: []string{"c1"}})
+		}()
+	}
+	close(start) // release all goroutines simultaneously
+	h.Stop()     // race against the concurrent sends — must not panic
+	wg.Wait()
+}
+
+func TestUpdateHostPortMappingSyncCompletes(t *testing.T) {
+	h := &ClientRoutesHandler{
+		log:         &defaultLogger{},
+		c:           &fakeControlConn{},
+		closeChan:   make(chan struct{}),
+		updateTasks: make(chan updateTask, 1024),
+		routeCache:  newClientRouteCache(),
+		cfg: ClientRoutesConfig{
+			TableName: "system.client_routes",
+			Endpoints: ClientRoutesEndpointList{{ConnectionID: "c1"}},
+		},
+	}
+	h.startUpdateWorker()
+	defer h.Stop()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- h.updateHostPortMappingSync(updateTask{connectionIDs: []string{"c1"}})
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for synchronous update")
+	}
+}
+
+func TestStartReadingEventsConnectionIDsOnlySchedulesRefresh(t *testing.T) {
+	h, bus := newClientRoutesEventHarness(t, []string{"c1"})
+
+	bus.PublishEventBlocking(&events.ClientRoutesChangedEvent{
+		ChangeType:    "UPDATED",
+		ConnectionIDs: []string{"c1"},
+		HostIDs:       []string{},
+	})
+
+	select {
+	case task := <-h.updateTasks:
+		if len(task.connectionIDs) != 1 || task.connectionIDs[0] != "c1" {
+			t.Fatalf("unexpected connection IDs: %v", task.connectionIDs)
+		}
+		if task.pairs != nil {
+			t.Fatalf("expected connectionIDs-only refresh, got pairs: %v", task.pairs)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for refresh task")
+	}
+}
+
+func TestStartReadingEventsUsesCartesianPairs(t *testing.T) {
+	h, bus := newClientRoutesEventHarness(t, []string{"c1", "c2"})
+
+	bus.PublishEventBlocking(&events.ClientRoutesChangedEvent{
+		ChangeType:    "UPDATED",
+		ConnectionIDs: []string{"c1", "c2"},
+		HostIDs:       []string{"h1", "h2"},
+	})
+
+	select {
+	case task := <-h.updateTasks:
+		want := []pair{
+			{connectionID: "c1", hostID: "h1"},
+			{connectionID: "c1", hostID: "h2"},
+			{connectionID: "c2", hostID: "h1"},
+			{connectionID: "c2", hostID: "h2"},
+		}
+		if len(task.pairs) != len(want) {
+			t.Fatalf("unexpected pair count: got %d want %d", len(task.pairs), len(want))
+		}
+		for i := range want {
+			if task.pairs[i] != want[i] {
+				t.Fatalf("pair #%d = %+v, want %+v", i, task.pairs[i], want[i])
+			}
+		}
+		if task.connectionIDs != nil {
+			t.Fatalf("expected pairs-only refresh, got connection IDs: %v", task.connectionIDs)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for refresh task")
+	}
+}
+
+func TestClientRoutesHandlerInitializeIsIdempotent(t *testing.T) {
+	s := &Session{
+		control: &fakeControlConn{},
+		eventBus: eventbus.New[events.Event](eventbus.EventBusConfig{
+			InputEventsQueueSize: 1,
+		}, nil),
+		logger: &nopLogger{},
+	}
+	if err := s.eventBus.Start(); err != nil {
+		t.Fatalf("starting event bus: %v", err)
+	}
+	defer s.eventBus.Stop()
+
+	h := NewClientRoutesAddressTranslator(ClientRoutesConfig{
+		TableName: "system.client_routes",
+		Endpoints: ClientRoutesEndpointList{{ConnectionID: "c1"}},
+	}, nil, false, &nopLogger{})
+	defer h.Stop()
+
+	if err := h.Initialize(s); err != nil {
+		t.Fatalf("first Initialize call failed: %v", err)
+	}
+	if !h.initialized {
+		t.Fatal("expected handler to be marked initialized")
+	}
+
+	if err := h.Initialize(s); err == nil {
+		t.Fatal("expected second Initialize call to fail")
+	}
+}
+
+func TestClientRoutesHandlerTranslateHost_RetainsCurrentRouteAfterQueryError(t *testing.T) {
+	addr := AddressPort{Address: net.ParseIP("1.1.1.1"), Port: 9042}
+	resolvedIPs := map[string]net.IP{
+		"a1": net.ParseIP("10.0.0.1"),
+	}
+	h := &ClientRoutesHandler{
+		log:         &defaultLogger{},
+		c:           &fakeControlConn{iter: &Iter{err: errors.New("query failed")}},
+		closeChan:   make(chan struct{}),
+		updateTasks: make(chan updateTask, 1024),
+		resolver: dnsResolverFunc(func(host string) ([]net.IP, error) {
+			if ip, ok := resolvedIPs[host]; ok {
+				return []net.IP{ip}, nil
+			}
+			return nil, fmt.Errorf("unknown host %s", host)
+		}),
+		routeCache: newCache(map[string]clientRouteCacheEntry{
+			"h1": newCacheEntryWithCurrent(
+				clientRoute{connectionID: "c1", hostID: "h1", address: "a1", port: 9042},
+				clientRoute{connectionID: "c1", hostID: "h1", address: "a1", port: 9042},
+			),
+		}),
+		cfg: ClientRoutesConfig{
+			TableName: "system.client_routes",
+			Endpoints: ClientRoutesEndpointList{{ConnectionID: "c1"}},
+		},
+	}
+	h.startUpdateWorker()
+	defer h.Stop()
+
+	before, err := h.TranslateHost(testHostInfo{hostID: "h1"}, addr)
+	if err != nil {
+		t.Fatalf("unexpected error before query failure: %v", err)
+	}
+
+	err = h.updateHostPortMappingSync(updateTask{connectionIDs: []string{"c1"}})
+	if err == nil {
+		t.Fatal("expected query error")
+	}
+
+	after, err := h.TranslateHost(testHostInfo{hostID: "h1"}, addr)
+	if err != nil {
+		t.Fatalf("unexpected error after query failure: %v", err)
+	}
+	if !after.Equal(before) {
+		t.Fatalf("expected route to remain stable after query failure, got %v want %v", after, before)
 	}
 }
