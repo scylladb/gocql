@@ -2244,7 +2244,7 @@ func TestReleaseFramer(t *testing.T) {
 		c := newTestConnWithFramerPool()
 
 		f := c.getReadFramer()
-		f.readBuffer = make([]byte, 4096)
+		f.readBuffer = make([]byte, 16384)
 
 		f.Release()
 
@@ -2264,7 +2264,7 @@ func TestReleaseFramer(t *testing.T) {
 		c := newTestConnWithFramerPool()
 
 		// Release framers with a larger buffer; EWMA should converge toward it.
-		const targetSize = 4096
+		const targetSize = 16384
 		for i := 0; i < 100; i++ {
 			f := c.getReadFramer()
 			f.readBuffer = make([]byte, targetSize)
@@ -2285,7 +2285,7 @@ func TestReleaseFramer(t *testing.T) {
 		// First, push EWMA up.
 		for i := 0; i < 100; i++ {
 			f := c.getReadFramer()
-			f.readBuffer = make([]byte, 4096)
+			f.readBuffer = make([]byte, 16384)
 			c.releaseReadFramer(f)
 		}
 
