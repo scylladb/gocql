@@ -888,6 +888,9 @@ func marshalList(info CollectionType, value any) ([]byte, error) {
 	if _, ok := value.(unsetColumn); ok {
 		return nil, nil
 	}
+	if value == nil {
+		return nil, nil
+	}
 
 	// Fast path: type-switch on concrete slice types for common fixed-size
 	// CQL element types. These bypass reflect and per-element Marshal entirely.
@@ -983,6 +986,500 @@ func marshalList(info CollectionType, value any) ([]byte, error) {
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
 }
 
+var errFastPathNotApplicable = errors.New("fast path not applicable")
+
+// unmarshalListFast attempts to unmarshal a CQL list/set directly into
+// common concrete Go slice types without reflection. Returns
+// errFastPathNotApplicable if the type combination is not handled.
+//
+// Every leaf allocates a fresh backing array rather than reusing the one in
+// *dst. Reuse looks free but aliases results the caller kept: the ordinary
+// `for iter.Scan(&v) { out = append(out, v) }` loop would leave every element
+// of out pointing at the last row. Iter.Scan documents that it copies into
+// dest, and there is no RawBytes-style "valid until the next Scan" contract.
+func unmarshalListFast(info CollectionType, data []byte, value any) error {
+	elemTyp := info.Elem.Type()
+
+	switch v := value.(type) {
+	case *[]string:
+		// TypeAscii is excluded: the generic path validates ASCII payloads
+		// (rejecting bytes > 127) via serialization/ascii, whereas this fast
+		// path would decode with string(elem) and silently accept invalid data.
+		if elemTyp != TypeVarchar && elemTyp != TypeText {
+			return errFastPathNotApplicable
+		}
+		return unmarshalListString(info, data, v)
+	case *[]int64:
+		if elemTyp != TypeBigInt && elemTyp != TypeCounter {
+			return errFastPathNotApplicable
+		}
+		return unmarshalListInt64(info, data, v)
+	case *[]int32:
+		if elemTyp != TypeInt {
+			return errFastPathNotApplicable
+		}
+		return unmarshalListInt32(info, data, v)
+	case *[]float64:
+		if elemTyp != TypeDouble {
+			return errFastPathNotApplicable
+		}
+		return unmarshalListFloat64(info, data, v)
+	case *[]float32:
+		if elemTyp != TypeFloat {
+			return errFastPathNotApplicable
+		}
+		return unmarshalListFloat32(info, data, v)
+	case *[]bool:
+		if elemTyp != TypeBoolean {
+			return errFastPathNotApplicable
+		}
+		return unmarshalListBool(info, data, v)
+	case *[][]byte:
+		if elemTyp != TypeBlob {
+			return errFastPathNotApplicable
+		}
+		return unmarshalListBlob(info, data, v)
+	case *[]int16:
+		if elemTyp != TypeSmallInt {
+			return errFastPathNotApplicable
+		}
+		return unmarshalListInt16(info, data, v)
+	case *[]time.Time:
+		if elemTyp != TypeTimestamp && elemTyp != TypeDate {
+			return errFastPathNotApplicable
+		}
+		return unmarshalListTime(info, data, v)
+	case *[]UUID:
+		if elemTyp != TypeUUID && elemTyp != TypeTimeUUID {
+			return errFastPathNotApplicable
+		}
+		return unmarshalListUUID(info, data, v)
+	default:
+		return errFastPathNotApplicable
+	}
+}
+
+// readListHeader reads the collection count and advances past the header.
+// Returns the element count and remaining data, or an error.
+func readListHeader(data []byte) (int, []byte, error) {
+	n, p, err := readCollectionSize(data)
+	if err != nil {
+		return 0, nil, err
+	}
+	if n < 0 {
+		return 0, nil, unmarshalErrorf("unmarshal list: negative size %d", n)
+	}
+	rest := data[p:]
+	// Reject counts that cannot possibly fit in the remaining payload before
+	// allocating: each element carries at least a 4-byte length prefix, so a
+	// valid count is bounded by len(rest)/4. This prevents a malformed frame
+	// with a huge positive size from triggering a massive up-front allocation.
+	if n > len(rest)/4 {
+		return 0, nil, unmarshalErrorf("unmarshal list: invalid size %d", n)
+	}
+	return n, rest, nil
+}
+
+// readListElement reads one element's raw bytes from data.
+// Returns the element bytes (nil if null), remaining data, and any error.
+func readListElement(data []byte) ([]byte, []byte, error) {
+	m, p, err := readCollectionSize(data)
+	if err != nil {
+		return nil, nil, err
+	}
+	data = data[p:]
+	if m < 0 {
+		return nil, data, nil // null element
+	}
+	if len(data) < m {
+		return nil, nil, unmarshalErrorf("unmarshal list: unexpected eof")
+	}
+	return data[:m], data[m:], nil
+}
+
+func unmarshalListString(info CollectionType, data []byte, dst *[]string) error {
+	if data == nil {
+		*dst = nil
+		return nil
+	}
+	n, data, err := readListHeader(data)
+	if err != nil {
+		return err
+	}
+	var s []string
+	if n == 0 {
+		s = make([]string, 0)
+	} else {
+		s = make([]string, n)
+		// Total element data bytes = remaining frame bytes minus n×4-byte length prefixes.
+		// Share one buffer across all strings (avoiding n individual string
+		// allocations), but only up to marshalBufMaxCap: sharing an unbounded
+		// buffer would let a caller keeping one small string pin all of it.
+		total := len(data) - n*4
+		if total > 0 && total <= marshalBufMaxCap {
+			buf := make([]byte, total)
+			offset := 0
+			for i := 0; i < n; i++ {
+				var elem []byte
+				elem, data, err = readListElement(data)
+				if err != nil {
+					return err
+				}
+				if len(elem) > 0 {
+					copy(buf[offset:], elem)
+					s[i] = unsafe.String(&buf[offset], len(elem))
+					offset += len(elem)
+				} else {
+					// Null/empty slot — explicitly clear (don't leave a stale
+					// string from a reused backing array).
+					s[i] = ""
+				}
+			}
+		} else {
+			for i := 0; i < n; i++ {
+				var elem []byte
+				elem, data, err = readListElement(data)
+				if err != nil {
+					return err
+				}
+				s[i] = string(elem) // "" for both nil and empty, matches DecString
+			}
+		}
+	}
+	*dst = s
+	return nil
+}
+
+func unmarshalListInt64(info CollectionType, data []byte, dst *[]int64) error {
+	if data == nil {
+		*dst = nil
+		return nil
+	}
+	n, data, err := readListHeader(data)
+	if err != nil {
+		return err
+	}
+	var s []int64
+	if n == 0 {
+		s = make([]int64, 0)
+	} else {
+		s = make([]int64, n)
+	}
+	for i := 0; i < n; i++ {
+		var elem []byte
+		elem, data, err = readListElement(data)
+		if err != nil {
+			return err
+		}
+		if len(elem) == 0 {
+			s[i] = 0
+			continue
+		}
+		if len(elem) != 8 {
+			return unmarshalErrorf("unmarshal list: invalid bigint size %d", len(elem))
+		}
+		s[i] = int64(elem[0])<<56 | int64(elem[1])<<48 | int64(elem[2])<<40 | int64(elem[3])<<32 |
+			int64(elem[4])<<24 | int64(elem[5])<<16 | int64(elem[6])<<8 | int64(elem[7])
+	}
+	*dst = s
+	return nil
+}
+
+func unmarshalListInt32(info CollectionType, data []byte, dst *[]int32) error {
+	if data == nil {
+		*dst = nil
+		return nil
+	}
+	n, data, err := readListHeader(data)
+	if err != nil {
+		return err
+	}
+	var s []int32
+	if n == 0 {
+		s = make([]int32, 0)
+	} else {
+		s = make([]int32, n)
+	}
+	for i := 0; i < n; i++ {
+		var elem []byte
+		elem, data, err = readListElement(data)
+		if err != nil {
+			return err
+		}
+		if len(elem) == 0 {
+			s[i] = 0
+			continue
+		}
+		if len(elem) != 4 {
+			return unmarshalErrorf("unmarshal list: invalid int size %d", len(elem))
+		}
+		s[i] = int32(elem[0])<<24 | int32(elem[1])<<16 | int32(elem[2])<<8 | int32(elem[3])
+	}
+	*dst = s
+	return nil
+}
+
+func unmarshalListFloat64(info CollectionType, data []byte, dst *[]float64) error {
+	if data == nil {
+		*dst = nil
+		return nil
+	}
+	n, data, err := readListHeader(data)
+	if err != nil {
+		return err
+	}
+	var s []float64
+	if n == 0 {
+		s = make([]float64, 0)
+	} else {
+		s = make([]float64, n)
+	}
+	for i := 0; i < n; i++ {
+		var elem []byte
+		elem, data, err = readListElement(data)
+		if err != nil {
+			return err
+		}
+		if len(elem) == 0 {
+			s[i] = 0
+			continue
+		}
+		if len(elem) != 8 {
+			return unmarshalErrorf("unmarshal list: invalid double size %d", len(elem))
+		}
+		bits := uint64(elem[0])<<56 | uint64(elem[1])<<48 | uint64(elem[2])<<40 | uint64(elem[3])<<32 |
+			uint64(elem[4])<<24 | uint64(elem[5])<<16 | uint64(elem[6])<<8 | uint64(elem[7])
+		s[i] = math.Float64frombits(bits)
+	}
+	*dst = s
+	return nil
+}
+
+func unmarshalListFloat32(info CollectionType, data []byte, dst *[]float32) error {
+	if data == nil {
+		*dst = nil
+		return nil
+	}
+	n, data, err := readListHeader(data)
+	if err != nil {
+		return err
+	}
+	var s []float32
+	if n == 0 {
+		s = make([]float32, 0)
+	} else {
+		s = make([]float32, n)
+	}
+	for i := 0; i < n; i++ {
+		var elem []byte
+		elem, data, err = readListElement(data)
+		if err != nil {
+			return err
+		}
+		if len(elem) == 0 {
+			s[i] = 0
+			continue
+		}
+		if len(elem) != 4 {
+			return unmarshalErrorf("unmarshal list: invalid float size %d", len(elem))
+		}
+		bits := uint32(elem[0])<<24 | uint32(elem[1])<<16 | uint32(elem[2])<<8 | uint32(elem[3])
+		s[i] = math.Float32frombits(bits)
+	}
+	*dst = s
+	return nil
+}
+
+func unmarshalListBool(info CollectionType, data []byte, dst *[]bool) error {
+	if data == nil {
+		*dst = nil
+		return nil
+	}
+	n, data, err := readListHeader(data)
+	if err != nil {
+		return err
+	}
+	var s []bool
+	if n == 0 {
+		s = make([]bool, 0)
+	} else {
+		s = make([]bool, n)
+	}
+	for i := 0; i < n; i++ {
+		var elem []byte
+		elem, data, err = readListElement(data)
+		if err != nil {
+			return err
+		}
+		if len(elem) == 0 {
+			s[i] = false
+			continue
+		}
+		if len(elem) != 1 {
+			return unmarshalErrorf("unmarshal list: invalid boolean size %d", len(elem))
+		}
+		s[i] = elem[0] != 0
+	}
+	*dst = s
+	return nil
+}
+
+func unmarshalListBlob(info CollectionType, data []byte, dst *[][]byte) error {
+	if data == nil {
+		*dst = nil
+		return nil
+	}
+	n, data, err := readListHeader(data)
+	if err != nil {
+		return err
+	}
+	var s [][]byte
+	if n == 0 {
+		s = make([][]byte, 0)
+	} else {
+		s = make([][]byte, n)
+	}
+	for i := 0; i < n; i++ {
+		var elem []byte
+		elem, data, err = readListElement(data)
+		if err != nil {
+			return err
+		}
+		if elem == nil {
+			// Null slot — explicitly clear (don't leave stale backing-array
+			// bytes when reusing a caller-provided slice across calls).
+			s[i] = nil
+			continue
+		}
+		// Copy to avoid aliasing the read buffer
+		cp := make([]byte, len(elem))
+		copy(cp, elem)
+		s[i] = cp
+	}
+	*dst = s
+	return nil
+}
+
+func unmarshalListInt16(info CollectionType, data []byte, dst *[]int16) error {
+	if data == nil {
+		*dst = nil
+		return nil
+	}
+	n, data, err := readListHeader(data)
+	if err != nil {
+		return err
+	}
+	var s []int16
+	if n == 0 {
+		s = make([]int16, 0)
+	} else {
+		s = make([]int16, n)
+	}
+	for i := 0; i < n; i++ {
+		var elem []byte
+		elem, data, err = readListElement(data)
+		if err != nil {
+			return err
+		}
+		if len(elem) == 0 {
+			s[i] = 0
+			continue
+		}
+		if len(elem) != 2 {
+			return unmarshalErrorf("unmarshal list: invalid smallint size %d", len(elem))
+		}
+		s[i] = int16(elem[0])<<8 | int16(elem[1])
+	}
+	*dst = s
+	return nil
+}
+
+func unmarshalListTime(info CollectionType, data []byte, dst *[]time.Time) error {
+	if data == nil {
+		*dst = nil
+		return nil
+	}
+	n, data, err := readListHeader(data)
+	if err != nil {
+		return err
+	}
+	var s []time.Time
+	if n == 0 {
+		s = make([]time.Time, 0)
+	} else {
+		s = make([]time.Time, n)
+	}
+	for i := 0; i < n; i++ {
+		var elem []byte
+		elem, data, err = readListElement(data)
+		if err != nil {
+			return err
+		}
+		if len(elem) == 0 {
+			// Null/empty slot — explicitly clear (don't leave a stale
+			// time.Time from a reused backing array).
+			if info.Elem.Type() == TypeDate {
+				s[i] = time.Date(-5877641, 06, 23, 0, 0, 0, 0, time.UTC)
+			} else {
+				s[i] = time.Time{}
+			}
+			continue
+		}
+		if info.Elem.Type() == TypeTimestamp {
+			if len(elem) != 8 {
+				return unmarshalErrorf("unmarshal list: invalid timestamp size %d", len(elem))
+			}
+			msec := int64(elem[0])<<56 | int64(elem[1])<<48 | int64(elem[2])<<40 | int64(elem[3])<<32 |
+				int64(elem[4])<<24 | int64(elem[5])<<16 | int64(elem[6])<<8 | int64(elem[7])
+			s[i] = time.UnixMilli(msec).UTC()
+		} else {
+			if len(elem) != 4 {
+				return unmarshalErrorf("unmarshal list: invalid date size %d", len(elem))
+			}
+			msec := (int64(elem[0])<<24 | int64(elem[1])<<16 | int64(elem[2])<<8 | int64(elem[3]) - (1 << 31)) * 86400000
+			s[i] = time.UnixMilli(msec).UTC()
+		}
+	}
+	*dst = s
+	return nil
+}
+
+func unmarshalListUUID(info CollectionType, data []byte, dst *[]UUID) error {
+	if data == nil {
+		*dst = nil
+		return nil
+	}
+	n, data, err := readListHeader(data)
+	if err != nil {
+		return err
+	}
+	var s []UUID
+	if n == 0 {
+		s = make([]UUID, 0)
+	} else {
+		s = make([]UUID, n)
+	}
+	for i := 0; i < n; i++ {
+		var elem []byte
+		elem, data, err = readListElement(data)
+		if err != nil {
+			return err
+		}
+		if len(elem) == 0 {
+			// Null/empty slot — explicitly clear (don't leave stale backing-array
+			// bytes when reusing a caller-provided slice across calls).
+			s[i] = UUID{}
+			continue
+		}
+		if len(elem) != 16 {
+			return unmarshalErrorf("unmarshal list: invalid uuid size %d", len(elem))
+		}
+		copy(s[i][:], elem)
+	}
+	*dst = s
+	return nil
+}
+
 func readCollectionSize(data []byte) (size, read int, err error) {
 	if len(data) < 4 {
 		return 0, 0, unmarshalErrorf("unmarshal list: unexpected eof")
@@ -996,46 +1493,16 @@ func unmarshalList(info CollectionType, data []byte, value any) error {
 	// Fast path: type-switch on concrete pointer-to-slice types for common
 	// fixed-size CQL element types. Bypasses reflect and per-element Unmarshal.
 	// nil data is handled here; leaf functions assume non-nil data.
-	switch info.Elem.Type() {
-	case TypeFloat:
-		if dst, ok := value.(*[]float32); ok {
-			if data == nil {
-				*dst = nil
-				return nil
-			}
-			return unmarshalListFloat32(data, dst)
+	if dst, ok := value.(*[]int); ok && info.Elem.Type() == TypeInt {
+		if data == nil {
+			*dst = nil
+			return nil
 		}
-	case TypeDouble:
-		if dst, ok := value.(*[]float64); ok {
-			if data == nil {
-				*dst = nil
-				return nil
-			}
-			return unmarshalListFloat64(data, dst)
-		}
-	case TypeInt:
-		if dst, ok := value.(*[]int32); ok {
-			if data == nil {
-				*dst = nil
-				return nil
-			}
-			return unmarshalListInt32(data, dst)
-		}
-		if dst, ok := value.(*[]int); ok {
-			if data == nil {
-				*dst = nil
-				return nil
-			}
-			return unmarshalListInt(data, dst)
-		}
-	case TypeBigInt, TypeTimestamp, TypeCounter:
-		if dst, ok := value.(*[]int64); ok {
-			if data == nil {
-				*dst = nil
-				return nil
-			}
-			return unmarshalListInt64(data, dst)
-		}
+		return unmarshalListInt(data, dst)
+	}
+
+	if err := unmarshalListFast(info, data, value); err != errFastPathNotApplicable {
+		return err
 	}
 
 	rv := reflect.ValueOf(value)
@@ -1120,6 +1587,9 @@ func unmarshalList(info CollectionType, data []byte, value any) error {
 
 func marshalVector(info VectorType, value any) ([]byte, error) {
 	if _, ok := value.(unsetColumn); ok {
+		return nil, nil
+	}
+	if value == nil {
 		return nil, nil
 	}
 
@@ -1886,137 +2356,6 @@ func marshalListInt64(list []int64) ([]byte, error) {
 	return buf, nil
 }
 
-// --- List/Set fast-path unmarshal functions ---
-// List wire format: [4-byte count] + N × ([4-byte elem-length] + [elem-bytes])
-// For fixed-size types, each elem-length must equal the expected element size.
-
-func unmarshalListFloat32(data []byte, dst *[]float32) error {
-	if len(data) < 4 {
-		return unmarshalErrorf("unmarshal list: unexpected eof reading count")
-	}
-	n := int(int32(binary.BigEndian.Uint32(data[:4])))
-	if n < 0 {
-		return unmarshalErrorf("unmarshal list: negative count %d", n)
-	}
-	// Each element needs ≥4 bytes (length prefix); reject implausible counts early.
-	if n > (len(data)-4)/4 {
-		return unmarshalErrorf("unmarshal list: count %d exceeds available data", n)
-	}
-	vec := *dst
-	if cap(vec) >= n {
-		vec = vec[:n]
-	} else {
-		vec = make([]float32, n)
-	}
-	off := 4
-	for i := 0; i < n; i++ {
-		if off+4 > len(data) {
-			return unmarshalErrorf("unmarshal list: unexpected eof reading element length at index %d", i)
-		}
-		elemLen := int(int32(binary.BigEndian.Uint32(data[off:])))
-		off += 4
-		if elemLen < 0 {
-			// Null element: set zero value, matching slow-path behavior
-			vec[i] = 0
-			continue
-		}
-		if elemLen != 4 {
-			return unmarshalErrorf("unmarshal list: expected 4-byte float32 element, got %d bytes at index %d", elemLen, i)
-		}
-		if off+4 > len(data) {
-			return unmarshalErrorf("unmarshal list: unexpected eof reading element data at index %d", i)
-		}
-		vec[i] = math.Float32frombits(binary.BigEndian.Uint32(data[off:]))
-		off += 4
-	}
-	*dst = vec
-	return nil
-}
-
-func unmarshalListFloat64(data []byte, dst *[]float64) error {
-	if len(data) < 4 {
-		return unmarshalErrorf("unmarshal list: unexpected eof reading count")
-	}
-	n := int(int32(binary.BigEndian.Uint32(data[:4])))
-	if n < 0 {
-		return unmarshalErrorf("unmarshal list: negative count %d", n)
-	}
-	// Each element needs ≥4 bytes (length prefix); reject implausible counts early.
-	if n > (len(data)-4)/4 {
-		return unmarshalErrorf("unmarshal list: count %d exceeds available data", n)
-	}
-	vec := *dst
-	if cap(vec) >= n {
-		vec = vec[:n]
-	} else {
-		vec = make([]float64, n)
-	}
-	off := 4
-	for i := 0; i < n; i++ {
-		if off+4 > len(data) {
-			return unmarshalErrorf("unmarshal list: unexpected eof reading element length at index %d", i)
-		}
-		elemLen := int(int32(binary.BigEndian.Uint32(data[off:])))
-		off += 4
-		if elemLen < 0 {
-			vec[i] = 0
-			continue
-		}
-		if elemLen != 8 {
-			return unmarshalErrorf("unmarshal list: expected 8-byte float64 element, got %d bytes at index %d", elemLen, i)
-		}
-		if off+8 > len(data) {
-			return unmarshalErrorf("unmarshal list: unexpected eof reading element data at index %d", i)
-		}
-		vec[i] = math.Float64frombits(binary.BigEndian.Uint64(data[off:]))
-		off += 8
-	}
-	*dst = vec
-	return nil
-}
-
-func unmarshalListInt32(data []byte, dst *[]int32) error {
-	if len(data) < 4 {
-		return unmarshalErrorf("unmarshal list: unexpected eof reading count")
-	}
-	n := int(int32(binary.BigEndian.Uint32(data[:4])))
-	if n < 0 {
-		return unmarshalErrorf("unmarshal list: negative count %d", n)
-	}
-	// Each element needs ≥4 bytes (length prefix); reject implausible counts early.
-	if n > (len(data)-4)/4 {
-		return unmarshalErrorf("unmarshal list: count %d exceeds available data", n)
-	}
-	vec := *dst
-	if cap(vec) >= n {
-		vec = vec[:n]
-	} else {
-		vec = make([]int32, n)
-	}
-	off := 4
-	for i := 0; i < n; i++ {
-		if off+4 > len(data) {
-			return unmarshalErrorf("unmarshal list: unexpected eof reading element length at index %d", i)
-		}
-		elemLen := int(int32(binary.BigEndian.Uint32(data[off:])))
-		off += 4
-		if elemLen < 0 {
-			vec[i] = 0
-			continue
-		}
-		if elemLen != 4 {
-			return unmarshalErrorf("unmarshal list: expected 4-byte int32 element, got %d bytes at index %d", elemLen, i)
-		}
-		if off+4 > len(data) {
-			return unmarshalErrorf("unmarshal list: unexpected eof reading element data at index %d", i)
-		}
-		vec[i] = int32(binary.BigEndian.Uint32(data[off:]))
-		off += 4
-	}
-	*dst = vec
-	return nil
-}
-
 func unmarshalListInt(data []byte, dst *[]int) error {
 	if len(data) < 4 {
 		return unmarshalErrorf("unmarshal list: unexpected eof reading count")
@@ -2053,48 +2392,6 @@ func unmarshalListInt(data []byte, dst *[]int) error {
 		}
 		vec[i] = int(int32(binary.BigEndian.Uint32(data[off:])))
 		off += 4
-	}
-	*dst = vec
-	return nil
-}
-
-func unmarshalListInt64(data []byte, dst *[]int64) error {
-	if len(data) < 4 {
-		return unmarshalErrorf("unmarshal list: unexpected eof reading count")
-	}
-	n := int(int32(binary.BigEndian.Uint32(data[:4])))
-	if n < 0 {
-		return unmarshalErrorf("unmarshal list: negative count %d", n)
-	}
-	// Each element needs ≥4 bytes (length prefix); reject implausible counts early.
-	if n > (len(data)-4)/4 {
-		return unmarshalErrorf("unmarshal list: count %d exceeds available data", n)
-	}
-	vec := *dst
-	if cap(vec) >= n {
-		vec = vec[:n]
-	} else {
-		vec = make([]int64, n)
-	}
-	off := 4
-	for i := 0; i < n; i++ {
-		if off+4 > len(data) {
-			return unmarshalErrorf("unmarshal list: unexpected eof reading element length at index %d", i)
-		}
-		elemLen := int(int32(binary.BigEndian.Uint32(data[off:])))
-		off += 4
-		if elemLen < 0 {
-			vec[i] = 0
-			continue
-		}
-		if elemLen != 8 {
-			return unmarshalErrorf("unmarshal list: expected 8-byte int64 element, got %d bytes at index %d", elemLen, i)
-		}
-		if off+8 > len(data) {
-			return unmarshalErrorf("unmarshal list: unexpected eof reading element data at index %d", i)
-		}
-		vec[i] = int64(binary.BigEndian.Uint64(data[off:]))
-		off += 8
 	}
 	*dst = vec
 	return nil
@@ -2182,6 +2479,9 @@ func computeUnsignedVIntSize(v uint64) int {
 
 func marshalMap(info CollectionType, value any) ([]byte, error) {
 	if _, ok := value.(unsetColumn); ok {
+		return nil, nil
+	}
+	if value == nil {
 		return nil, nil
 	}
 
