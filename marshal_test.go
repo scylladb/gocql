@@ -1300,3 +1300,84 @@ func TestCollectionNewWithErrorConsistentWithGoType(t *testing.T) {
 		}
 	}
 }
+
+// BenchmarkUnmarshalUDTStruct measures the per-call cost of unmarshaling a UDT
+// into a Go struct. The UDT field cache eliminates per-call map allocation and
+// struct tag scanning after the first call.
+func BenchmarkUnmarshalUDTStruct(b *testing.B) {
+	type MyUDT struct {
+		First  string `cql:"first"`
+		Second int16  `cql:"second"`
+		Third  int32  `cql:"third"`
+		Fourth string `cql:"fourth"`
+	}
+
+	info := UDTTypeInfo{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeUDT},
+		Name:       "myudt",
+		KeySpace:   "myks",
+		Elements: []UDTField{
+			{Name: "first", Type: NativeType{proto: protoVersion4, typ: TypeAscii}},
+			{Name: "second", Type: NativeType{proto: protoVersion4, typ: TypeSmallInt}},
+			{Name: "third", Type: NativeType{proto: protoVersion4, typ: TypeInt}},
+			{Name: "fourth", Type: NativeType{proto: protoVersion4, typ: TypeAscii}},
+		},
+	}
+
+	data := bytesWithLength(
+		bytesWithLength([]byte("Hello")),
+		bytesWithLength([]byte("\x00\x2a")),
+		bytesWithLength([]byte("\x00\x00\x00\x07")),
+		bytesWithLength([]byte("World")),
+	)
+
+	var dst MyUDT
+	// Warm the cache
+	if err := Unmarshal(info, data, &dst); err != nil {
+		b.Fatal(err)
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		dst = MyUDT{}
+		if err := Unmarshal(info, data, &dst); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkMarshalUDTStruct(b *testing.B) {
+	type MyUDT struct {
+		First  string `cql:"first"`
+		Second int16  `cql:"second"`
+		Third  int32  `cql:"third"`
+		Fourth string `cql:"fourth"`
+	}
+
+	info := UDTTypeInfo{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeUDT},
+		Name:       "myudt",
+		KeySpace:   "myks",
+		Elements: []UDTField{
+			{Name: "first", Type: NativeType{proto: protoVersion4, typ: TypeAscii}},
+			{Name: "second", Type: NativeType{proto: protoVersion4, typ: TypeSmallInt}},
+			{Name: "third", Type: NativeType{proto: protoVersion4, typ: TypeInt}},
+			{Name: "fourth", Type: NativeType{proto: protoVersion4, typ: TypeAscii}},
+		},
+	}
+
+	src := MyUDT{First: "Hello", Second: 42, Third: 7, Fourth: "World"}
+	// Warm the cache
+	if _, err := Marshal(info, src); err != nil {
+		b.Fatal(err)
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := Marshal(info, src); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
