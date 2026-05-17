@@ -462,8 +462,8 @@ func decodeTimestampToTime(data []byte, dest any) error {
 	case 0:
 		*p = time.Time{}
 	case 8:
-		millis := int64(binary.BigEndian.Uint64(data))
-		*p = time.Unix(0, millis*int64(time.Millisecond)).UTC()
+		msec := int64(binary.BigEndian.Uint64(data))
+		*p = time.Unix(msec/1e3, (msec%1e3)*1e6).UTC()
 	default:
 		return unmarshalErrorf("unmarshal timestamp: expected 0 or 8 bytes, got %d", len(data))
 	}
