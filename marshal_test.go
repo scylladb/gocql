@@ -1300,3 +1300,177 @@ func TestCollectionNewWithErrorConsistentWithGoType(t *testing.T) {
 		}
 	}
 }
+
+// buildCQLList builds a CQL binary list from raw element byte slices.
+// Format: [4-byte count] [4-byte len + data]...
+func buildCQLList(elems ...[]byte) []byte {
+	var buf []byte
+	countBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(countBytes, uint32(len(elems)))
+	buf = append(buf, countBytes...)
+	for _, e := range elems {
+		lenBytes := make([]byte, 4)
+		binary.BigEndian.PutUint32(lenBytes, uint32(len(e)))
+		buf = append(buf, lenBytes...)
+		buf = append(buf, e...)
+	}
+	return buf
+}
+
+func TestUnmarshalListFastPath(t *testing.T) {
+	t.Parallel()
+
+	// Test []string with TypeVarchar
+	t.Run("string", func(t *testing.T) {
+		info := CollectionType{
+			NativeType: NativeType{proto: protoVersion4, typ: TypeList},
+			Elem:       NativeType{proto: protoVersion4, typ: TypeVarchar},
+		}
+		data := buildCQLList([]byte("hello"), []byte("world"), []byte(""))
+		var dst []string
+		if err := unmarshalList(info, data, &dst); err != nil {
+			t.Fatal(err)
+		}
+		if len(dst) != 3 || dst[0] != "hello" || dst[1] != "world" || dst[2] != "" {
+			t.Fatalf("got %v", dst)
+		}
+	})
+
+	// Test []int64 with TypeBigInt
+	t.Run("int64", func(t *testing.T) {
+		info := CollectionType{
+			NativeType: NativeType{proto: protoVersion4, typ: TypeList},
+			Elem:       NativeType{proto: protoVersion4, typ: TypeBigInt},
+		}
+		data := buildCQLList(
+			[]byte{0, 0, 0, 0, 0, 0, 0, 42},
+			[]byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFE},
+		)
+		var dst []int64
+		if err := unmarshalList(info, data, &dst); err != nil {
+			t.Fatal(err)
+		}
+		if len(dst) != 2 || dst[0] != 42 || dst[1] != -2 {
+			t.Fatalf("got %v", dst)
+		}
+	})
+
+	// Test []int32 with TypeInt
+	t.Run("int32", func(t *testing.T) {
+		info := CollectionType{
+			NativeType: NativeType{proto: protoVersion4, typ: TypeList},
+			Elem:       NativeType{proto: protoVersion4, typ: TypeInt},
+		}
+		data := buildCQLList([]byte{0, 0, 0, 7}, []byte{0xFF, 0xFF, 0xFF, 0xFF})
+		var dst []int32
+		if err := unmarshalList(info, data, &dst); err != nil {
+			t.Fatal(err)
+		}
+		if len(dst) != 2 || dst[0] != 7 || dst[1] != -1 {
+			t.Fatalf("got %v", dst)
+		}
+	})
+
+	// Test []float64 with TypeDouble
+	t.Run("float64", func(t *testing.T) {
+		info := CollectionType{
+			NativeType: NativeType{proto: protoVersion4, typ: TypeList},
+			Elem:       NativeType{proto: protoVersion4, typ: TypeDouble},
+		}
+		b := make([]byte, 8)
+		binary.BigEndian.PutUint64(b, math.Float64bits(3.14))
+		data := buildCQLList(b)
+		var dst []float64
+		if err := unmarshalList(info, data, &dst); err != nil {
+			t.Fatal(err)
+		}
+		if len(dst) != 1 || dst[0] != 3.14 {
+			t.Fatalf("got %v", dst)
+		}
+	})
+
+	// Test []bool with TypeBoolean
+	t.Run("bool", func(t *testing.T) {
+		info := CollectionType{
+			NativeType: NativeType{proto: protoVersion4, typ: TypeList},
+			Elem:       NativeType{proto: protoVersion4, typ: TypeBoolean},
+		}
+		data := buildCQLList([]byte{1}, []byte{0})
+		var dst []bool
+		if err := unmarshalList(info, data, &dst); err != nil {
+			t.Fatal(err)
+		}
+		if len(dst) != 2 || dst[0] != true || dst[1] != false {
+			t.Fatalf("got %v", dst)
+		}
+	})
+
+	// Test nil data
+	t.Run("nil_data", func(t *testing.T) {
+		info := CollectionType{
+			NativeType: NativeType{proto: protoVersion4, typ: TypeList},
+			Elem:       NativeType{proto: protoVersion4, typ: TypeVarchar},
+		}
+		var dst []string
+		dst = []string{"existing"}
+		if err := unmarshalList(info, nil, &dst); err != nil {
+			t.Fatal(err)
+		}
+		if dst != nil {
+			t.Fatalf("expected nil, got %v", dst)
+		}
+	})
+
+	// Test []int16 with TypeSmallInt
+	t.Run("int16", func(t *testing.T) {
+		info := CollectionType{
+			NativeType: NativeType{proto: protoVersion4, typ: TypeList},
+			Elem:       NativeType{proto: protoVersion4, typ: TypeSmallInt},
+		}
+		data := buildCQLList([]byte{0, 42}, []byte{0xFF, 0xFE})
+		var dst []int16
+		if err := unmarshalList(info, data, &dst); err != nil {
+			t.Fatal(err)
+		}
+		if len(dst) != 2 || dst[0] != 42 || dst[1] != -2 {
+			t.Fatalf("got %v", dst)
+		}
+	})
+}
+
+func BenchmarkUnmarshalList(b *testing.B) {
+	// Build a list of 100 strings
+	elems := make([][]byte, 100)
+	for i := range elems {
+		elems[i] = []byte(fmt.Sprintf("element_%03d", i))
+	}
+	data := buildCQLList(elems...)
+
+	info := CollectionType{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeList},
+		Elem:       NativeType{proto: protoVersion4, typ: TypeVarchar},
+	}
+
+	b.Run("reflect", func(b *testing.B) {
+		// Use *any to force reflect path
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			var dst any
+			if err := unmarshalList(info, data, &dst); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("fast_path", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			var dst []string
+			if err := unmarshalList(info, data, &dst); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+}
