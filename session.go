@@ -2998,22 +2998,25 @@ func (is *iterScanner) Next() bool {
 }
 
 func scanColumn(p []byte, col *ColumnInfo, dest []any) (int, error) {
-	if dest[0] == nil {
-		return 1, nil
-	}
-
 	if col.TypeInfo.Type() == TypeTuple {
 		// this will panic, actually a bug, please report
 		tuple := col.TypeInfo.(TupleTypeInfo)
 
+		// No nil shortcut here: a tuple must consume all its dests (Unmarshal skips
+		// nil ones) to stay aligned with the compiled decoders of later columns.
 		count := len(tuple.Elems)
-		// here we pass in a slice of the struct which has the number number of
-		// values as elements in the tuple
-		if err := Unmarshal(col.TypeInfo, p, dest[:count]); err != nil {
+		// Pass a copy of the window: boxing dest[:count] itself in an interface
+		// would make Scan's variadic dest escape, costing a heap alloc per row.
+		window := make([]any, count)
+		copy(window, dest[:count])
+		if err := Unmarshal(col.TypeInfo, p, window); err != nil {
 			return 0, err
 		}
 		return count, nil
 	} else {
+		if dest[0] == nil {
+			return 1, nil
+		}
 		if err := Unmarshal(col.TypeInfo, p, dest[0]); err != nil {
 			return 0, err
 		}
@@ -3033,13 +3036,19 @@ func (is *iterScanner) Scan(dest ...any) error {
 		return fmt.Errorf("gocql: not enough columns to scan into: have %d want %d", len(dest), iter.meta.actualColCount)
 	}
 
+	dec := getOrCompileRowDecoder(iter.meta.columns, dest)
 	// i is the current position in dest, could posible replace it and just use
 	// slices of dest
 	i := 0
 	var err error
 	for j := range iter.meta.columns {
 		var n int
-		n, err = scanColumn(is.cols[j], &iter.meta.columns[j], dest[i:])
+		// Only tuple columns have no compiled decoder.
+		if d := dec.decoders[j]; d != nil {
+			n, err = 1, d(is.cols[j], dest[i])
+		} else {
+			n, err = scanColumn(is.cols[j], &iter.meta.columns[j], dest[i:])
+		}
 		if err != nil {
 			break
 		}
@@ -3112,6 +3121,7 @@ func (iter *Iter) Scan(dest ...any) bool {
 		return false
 	}
 
+	dec := getOrCompileRowDecoder(iter.meta.columns, dest)
 	// i is the current position in dest, could posible replace it and just use
 	// slices of dest
 	i := 0
@@ -3123,7 +3133,13 @@ func (iter *Iter) Scan(dest ...any) bool {
 			return false
 		}
 
-		n, err := scanColumn(colBytes, &iter.meta.columns[j], dest[i:])
+		// Only tuple columns have no compiled decoder.
+		n := 1
+		if d := dec.decoders[j]; d != nil {
+			err = d(colBytes, dest[i])
+		} else {
+			n, err = scanColumn(colBytes, &iter.meta.columns[j], dest[i:])
+		}
 		if err != nil {
 			iter.err = err
 			iter.finalize(true)
