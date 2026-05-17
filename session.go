@@ -1865,8 +1865,7 @@ func (q *Query) Release() {
 }
 
 // reset zeroes out all fields of a query so that it can be safely pooled.
-// It preserves the metrics allocation for reuse. routingInfo is always freshly
-// allocated because paging copies share the pointer (see conn.go executeQuery).
+// It preserves the metrics and routingInfo allocations for reuse.
 func (q *Query) reset() {
 	m := q.metrics
 	if m != nil {
@@ -1874,7 +1873,12 @@ func (q *Query) reset() {
 		m.totalAttempts = 0
 	}
 
-	*q = Query{routingInfo: &queryRoutingInfo{}, metrics: m, refCount: 1}
+	ri := q.routingInfo
+	if ri != nil {
+		*ri = queryRoutingInfo{}
+	}
+
+	*q = Query{routingInfo: ri, metrics: m, refCount: 1}
 }
 
 func (q *Query) incRefCount() {
@@ -2398,6 +2402,64 @@ type nextIter struct {
 	mu     sync.Mutex
 	pos    int
 	closed bool
+	pooled bool // if true, qry was obtained from queryPool via newNextIterWithPageState
+}
+
+func newNextIterWithPageState(parent *Query, pageState []byte, pos int) *nextIter {
+	// Acquire a Query from the global pool and shallow-copy the parent into it.
+	newQry := queryPool.Get().(*Query)
+	// Save pooled allocations before overwriting with parent's fields.
+	pooledMetrics := newQry.metrics
+	pooledRoutingInfo := newQry.routingInfo
+	*newQry = *parent
+	newQry.pageState = pageState
+	newQry.refCount = 1
+	// Reuse metrics map if the pool preserved one; otherwise allocate fresh.
+	if pooledMetrics != nil && pooledMetrics != parent.metrics {
+		clear(pooledMetrics.m)
+		pooledMetrics.totalAttempts = 0
+		newQry.metrics = pooledMetrics
+	} else {
+		newQry.metrics = &queryMetrics{m: make(map[UUID]*hostMetrics)}
+	}
+	// Reuse routingInfo to avoid aliasing the parent's pointer (which is
+	// mutex-protected and shared). Copy the parent's routing fields into
+	// the pooled struct so executeQuery can safely write to it.
+	parent.routingInfo.mu.RLock()
+	riKeyspace := parent.routingInfo.keyspace
+	riTable := parent.routingInfo.table
+	riPartitioner := parent.routingInfo.partitioner
+	riLwt := parent.routingInfo.lwt
+	parent.routingInfo.mu.RUnlock()
+	if pooledRoutingInfo != nil && pooledRoutingInfo != parent.routingInfo {
+		pooledRoutingInfo.keyspace = riKeyspace
+		pooledRoutingInfo.table = riTable
+		pooledRoutingInfo.partitioner = riPartitioner
+		pooledRoutingInfo.lwt = riLwt
+		newQry.routingInfo = pooledRoutingInfo
+	} else {
+		newQry.routingInfo = &queryRoutingInfo{
+			keyspace:    riKeyspace,
+			table:       riTable,
+			partitioner: riPartitioner,
+			lwt:         riLwt,
+		}
+	}
+
+	parentCtx := newQry.pageContextParent
+	if parentCtx == nil {
+		parentCtx = newQry.Context()
+	}
+	ctx, cancel := context.WithCancel(parentCtx)
+	newQry.context = ctx
+	newQry.pageContextParent = parentCtx
+
+	return &nextIter{
+		qry:    newQry,
+		pos:    pos,
+		cancel: cancel,
+		pooled: true,
+	}
 }
 
 func newNextIter(qry *Query, pos int) *nextIter {
@@ -2438,6 +2500,7 @@ func (n *nextIter) storeFetched(next *Iter) {
 
 func (n *nextIter) close() {
 	if n.cancel != nil {
+		// Cancel the context first so any in-flight fetch returns promptly.
 		n.cancel()
 	}
 
@@ -2450,11 +2513,18 @@ func (n *nextIter) close() {
 	if next != nil {
 		next.discard()
 	}
+	// releaseQuery waits for fetch to finish (via once.Do) before reclaiming.
+	// This is safe because cancel() above ensures the fetch won't block indefinitely.
+	n.releaseQuery()
 }
 
 // consume retires the next-page fetch context after the fetched page has been
 // handed off to the caller. Unlike close(), it keeps the fetched Iter alive so
 // its page data can become the current iterator state.
+//
+// The paging query's reference count is decremented here. If the fetched Iter
+// holds a warningQuery reference (via bindWarningHandler's incRefCount), the
+// query won't actually be pooled until that Iter finalizes and releases its ref.
 func (n *nextIter) consume() {
 	if n.cancel != nil {
 		n.cancel()
@@ -2464,17 +2534,54 @@ func (n *nextIter) consume() {
 	n.closed = true
 	n.next = nil
 	n.mu.Unlock()
+
+	n.releaseQuery()
+}
+
+// releaseQuery decrements the paging query's reference count if it was pool-allocated.
+// It waits for any in-flight fetch to complete before decrementing,
+// since the fetch goroutine holds a reference to the Query struct.
+// The query is returned to the global queryPool when its refCount reaches 0
+// (i.e., after all holders — including warningQuery refs and speculative
+// execution goroutines — have released their references).
+func (n *nextIter) releaseQuery() {
+	if !n.pooled {
+		return
+	}
+	// Ensure fetch has completed (or will see qry==nil and bail out).
+	// The cancel() in close()/consume() ensures the fetch won't block forever.
+	n.once.Do(func() {
+		// If fetch never ran, mark it as done. The nil qry check inside
+		// the real fetch closure handles this case.
+	})
+
+	n.mu.Lock()
+	qry := n.qry
+	n.qry = nil
+	n.mu.Unlock()
+
+	if qry != nil {
+		qry.decRefCount()
+	}
 }
 
 func (n *nextIter) fetch() *Iter {
 	n.once.Do(func() {
+		// Capture qry under the lock to prevent racing with releaseQuery.
+		n.mu.Lock()
+		qry := n.qry
+		n.mu.Unlock()
+		if qry == nil {
+			return
+		}
+
 		// if the query was specifically run on a connection then re-use that
 		// connection when fetching the next results
 		var next *Iter
-		if n.qry.conn != nil {
-			next = n.qry.conn.executeQuery(n.qry.Context(), n.qry)
+		if qry.conn != nil {
+			next = qry.conn.executeQuery(qry.Context(), qry)
 		} else {
-			next = n.qry.session.executeQuery(n.qry)
+			next = qry.session.executeQuery(qry)
 		}
 		n.storeFetched(next)
 	})
