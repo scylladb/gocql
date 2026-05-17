@@ -533,6 +533,7 @@ func (*pagingTestConn) setSchemaV2(bool)                                  {}
 func (*pagingTestConn) getScyllaSupported() ScyllaConnectionFeatures {
 	return ScyllaConnectionFeatures{}
 }
+func (*pagingTestConn) isScyllaConn() bool { return false }
 
 type fixedRetryPolicy struct {
 	maxRetries int
