@@ -1623,6 +1623,9 @@ func unmarshalTuple(info TypeInfo, data []byte, value any) error {
 					return unmarshalErrorf("can not unmarshal %s: element %d: unexpected eof", info, i)
 				}
 			}
+			if v[i] == nil {
+				continue
+			}
 			err := Unmarshal(elem, p, v[i])
 			if err != nil {
 				return err
