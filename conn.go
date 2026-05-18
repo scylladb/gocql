@@ -2145,28 +2145,6 @@ func (e *QueryError) Unwrap() error {
 	return e.err
 }
 
-func unmarshalTabletHint(hint []byte, v uint8, keyspace, table string) (tablets.TabletInfo, error) {
-	tabletBuilder := tablets.NewTabletInfoBuilder()
-	err := Unmarshal(TupleTypeInfo{
-		NativeType: NativeType{proto: v, typ: TypeTuple},
-		Elems: []TypeInfo{
-			NativeType{typ: TypeBigInt},
-			NativeType{typ: TypeBigInt},
-			CollectionType{
-				NativeType: NativeType{proto: v, typ: TypeList},
-				Elem: TupleTypeInfo{
-					NativeType: NativeType{proto: v, typ: TypeTuple},
-					Elems: []TypeInfo{
-						NativeType{proto: v, typ: TypeUUID},
-						NativeType{proto: v, typ: TypeInt},
-					}},
-			},
-		},
-	}, hint, []any{&tabletBuilder.FirstToken, &tabletBuilder.LastToken, &tabletBuilder.Replicas})
-	if err != nil {
-		return tablets.TabletInfo{}, err
-	}
-	tabletBuilder.KeyspaceName = keyspace
-	tabletBuilder.TableName = table
-	return tabletBuilder.Build()
+func unmarshalTabletHint(hint []byte, _ uint8, keyspace, table string) (tablets.TabletInfo, error) {
+	return tablets.ParseHintDirect(hint, keyspace, table)
 }
