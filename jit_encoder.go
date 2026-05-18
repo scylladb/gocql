@@ -439,7 +439,10 @@ func encodeUUIDToUUID(value any) ([]byte, error) {
 func encodeIPToInet(value any) ([]byte, error) {
 	v := value.(net.IP)
 	if len(v) == 0 {
-		return nil, nil
+		if v == nil {
+			return nil, nil
+		}
+		return make([]byte, 0), nil
 	}
 	if v4 := v.To4(); v4 != nil {
 		return []byte{v4[0], v4[1], v4[2], v4[3]}, nil
@@ -455,7 +458,7 @@ func encodeIPToInet(value any) ([]byte, error) {
 func encodeStringToInet(value any) ([]byte, error) {
 	v := value.(string)
 	if v == "" {
-		return make([]byte, 0), nil
+		return nil, nil
 	}
 	ip := net.ParseIP(v)
 	if ip == nil {
