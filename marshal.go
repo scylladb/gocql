@@ -1496,6 +1496,8 @@ func unmarshalInet(data []byte, value any) error {
 func marshalTuple(info TypeInfo, value any) ([]byte, error) {
 	tuple := info.(TupleTypeInfo)
 	switch v := value.(type) {
+	case nil:
+		return nil, marshalErrorf("can not marshal nil into %s", info)
 	case unsetColumn:
 		return nil, unmarshalErrorf("Invalid request: UnsetValue is unsupported for tuples")
 	case []any:

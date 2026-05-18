@@ -1405,3 +1405,15 @@ func TestUnmarshalMapReflect_OversizedCount_RejectedBeforeAlloc(t *testing.T) {
 		t.Fatalf("expected dst to remain nil, got %#v", dst)
 	}
 }
+
+func TestMarshalTupleNil(t *testing.T) {
+	t.Parallel()
+
+	info := TupleTypeInfo{
+		NativeType: NativeType{proto: protoVersion3, typ: TypeTuple},
+		Elems:      []TypeInfo{NativeType{proto: protoVersion3, typ: TypeVarchar}},
+	}
+	if _, err := Marshal(info, nil); err == nil {
+		t.Fatal("expected error marshalling nil into a tuple")
+	}
+}

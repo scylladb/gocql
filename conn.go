@@ -2655,6 +2655,32 @@ func metadataIDTracked(idExchangeActive bool, resultMetadataID []byte) bool {
 	return idExchangeActive && len(resultMetadataID) > 0
 }
 
+// marshalQueryValuesJIT encodes values via the JIT encoder; false means the
+// caller must use the generic loop. On true, errors match Marshal's (see
+// TestJITEncoderMatchesGenericMarshal), so they are final.
+func marshalQueryValuesJIT(columns []ColumnInfo, values []any, dst []queryValues) (bool, error) {
+	// The compiled encoder holds one encoder per column, and each value is
+	// written to its own dst entry, so all three must agree in length. They
+	// diverge when a bind marker expands into several values (a tuple).
+	if len(values) != len(columns) || len(dst) != len(values) {
+		return false, nil
+	}
+
+	// Quick scan: bail out if any value needs special handling.
+	for _, v := range values {
+		if v == nil {
+			continue
+		}
+		switch v.(type) {
+		case *namedValue, unsetColumn:
+			return false, nil
+		}
+	}
+
+	enc := getOrCompileParamEncoder(columns, values)
+	return true, enc.encodeInto(columns, values, dst)
+}
+
 func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 	return c.executeQueryWithMetrics(ctx, qry, qry.metrics)
 }
@@ -2736,13 +2762,20 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 		}
 
 		params.values = getQueryValues(len(values))
-		for i := 0; i < len(values); i++ {
-			v := &params.values[i]
-			value := values[i]
-			typ := info.request.columns[i].TypeInfo
-			if err := marshalQueryValue(typ, value, v); err != nil {
-				putQueryValues(params.values)
-				return &Iter{err: err}
+		handled, err := marshalQueryValuesJIT(info.request.columns, values, params.values)
+		if err != nil {
+			putQueryValues(params.values)
+			return &Iter{err: err}
+		}
+		if !handled {
+			for i := 0; i < len(values); i++ {
+				v := &params.values[i]
+				value := values[i]
+				typ := info.request.columns[i].TypeInfo
+				if err := marshalQueryValue(typ, value, v); err != nil {
+					putQueryValues(params.values)
+					return &Iter{err: err}
+				}
 			}
 		}
 
@@ -3092,13 +3125,20 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 
 			b.values = getQueryValues(info.request.actualColCount)
 
-			for j := 0; j < info.request.actualColCount; j++ {
-				v := &b.values[j]
-				value := values[j]
-				typ := info.request.columns[j].TypeInfo
-				if err := marshalQueryValue(typ, value, v); err != nil {
-					putBatchQueryValues(req.statements)
-					return &Iter{err: err}
+			handled, err := marshalQueryValuesJIT(info.request.columns, values, b.values)
+			if err != nil {
+				putBatchQueryValues(req.statements)
+				return &Iter{err: err}
+			}
+			if !handled {
+				for j := 0; j < info.request.actualColCount; j++ {
+					v := &b.values[j]
+					value := values[j]
+					typ := info.request.columns[j].TypeInfo
+					if err := marshalQueryValue(typ, value, v); err != nil {
+						putBatchQueryValues(req.statements)
+						return &Iter{err: err}
+					}
 				}
 			}
 
