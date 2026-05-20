@@ -708,6 +708,26 @@ func TestDowngradingConsistencyRetryPolicy(t *testing.T) {
 	}
 }
 
+func TestDowngradingConsistencyRetryPolicy_NoDowngradeFromSerial(t *testing.T) {
+	t.Parallel()
+
+	consistencyLevels := []Consistency{Quorum, One}
+	rt := &DowngradingConsistencyRetryPolicy{ConsistencyLevelsToTry: consistencyLevels}
+
+	for _, serial := range []Consistency{Serial, LocalSerial} {
+		q := &Query{cons: serial, routingInfo: &queryRoutingInfo{}}
+		q.metrics = preFilledQueryMetrics(map[UUID]*hostMetrics{TimeUUID(): {Attempts: 1}})
+
+		if rt.Attempt(q) {
+			t.Fatalf("DowngradingConsistencyRetryPolicy should not allow downgrade from %v to non-serial", serial)
+		}
+		// Consistency must remain unchanged
+		if q.GetConsistency() != serial {
+			t.Fatalf("expected consistency to remain %v, got %v", serial, q.GetConsistency())
+		}
+	}
+}
+
 // expectHosts makes sure that the next len(hostIDs) returned from iter is a permutation of hostIDs.
 func expectHosts(t *testing.T, msg string, iter NextHost, hostIDs ...string) {
 	t.Helper()
