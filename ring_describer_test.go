@@ -289,8 +289,10 @@ func marshalMetadataMust(metadata resultMetadata, data []any) [][]byte {
 }
 
 type trackingRingConnection struct {
-	iter     *Iter
-	schemaV2 bool
+	iter      *Iter
+	schemaV2  bool
+	scylla    bool
+	lastQuery string
 }
 
 func (*trackingRingConnection) Close() {}
@@ -299,12 +301,13 @@ func (*trackingRingConnection) exec(context.Context, frameBuilder, Tracer, time.
 }
 func (*trackingRingConnection) awaitSchemaAgreement(context.Context) error { return nil }
 func (*trackingRingConnection) executeQuery(context.Context, *Query) *Iter { return nil }
-func (c *trackingRingConnection) querySystem(context.Context, string, ...any) *Iter {
+func (c *trackingRingConnection) querySystem(_ context.Context, q string, _ ...any) *Iter {
+	c.lastQuery = q
 	return c.iter
 }
 func (c *trackingRingConnection) getIsSchemaV2() bool { return c.schemaV2 }
 func (*trackingRingConnection) setSchemaV2(bool)      {}
-func (*trackingRingConnection) isScyllaConn() bool    { return false }
+func (c *trackingRingConnection) isScyllaConn() bool  { return c.scylla }
 func (*trackingRingConnection) getScyllaSupported() ScyllaConnectionFeatures {
 	return ScyllaConnectionFeatures{}
 }
@@ -358,6 +361,36 @@ func TestRingDescriberGetClusterPeerInfoClosesIter(t *testing.T) {
 	}
 	if !framer.released {
 		t.Fatal("expected iterator framer to be released")
+	}
+}
+
+func TestGetClusterPeerInfoQueryRouting(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		schemaV2  bool
+		scylla    bool
+		wantQuery string
+	}{
+		{"schema_v2", true, false, qrySystemPeersV2},
+		{"scylla_peers", false, true, qrySystemPeers},
+		{"cassandra_peers", false, false, qrySystemPeersCassandra},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			conn := &trackingRingConnection{
+				schemaV2: tt.schemaV2,
+				scylla:   tt.scylla,
+			}
+			r := &ringDescriber{cfg: &ClusterConfig{}}
+			// iter is nil so getClusterPeerInfo returns errNoControl, but the query is still recorded
+			_, _ = r.getClusterPeerInfo(&HostInfo{}, conn)
+			if conn.lastQuery != tt.wantQuery {
+				t.Errorf("got query %q, want %q", conn.lastQuery, tt.wantQuery)
+			}
+		})
 	}
 }
 
