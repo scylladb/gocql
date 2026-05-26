@@ -205,25 +205,20 @@ func TestCheckSystemSchemaClosesIter(t *testing.T) {
 func TestHostInfoFromIterClosesIter(t *testing.T) {
 	t.Parallel()
 
+	// Column order matches systemLocalResultMetadata:
+	// broadcast_address, cluster_name, data_center, host_id, listen_address, partitioner, rack, release_version, rpc_address, schema_version, tokens
 	row := []any{
-		"local",
-		"COMPLETED",
 		net.IPv4(192, 168, 100, 12),
 		"cluster",
-		"3.3.1",
 		"datacenter1",
-		1733834239,
 		ParseUUIDMust("045859a7-6b9f-4efd-a5e7-acd64a295e13"),
 		net.IPv4(192, 168, 100, 12),
-		"4",
 		"org.apache.cassandra.dht.Murmur3Partitioner",
 		"rack1",
 		"3.0.8",
 		net.IPv4(192, 168, 100, 12),
 		ParseUUIDMust("daf4df2c-b708-11ef-5c25-3004361afd71"),
-		"",
 		[]string{"1"},
-		map[UUID]byte{},
 	}
 	framer := &trackingMockFramer{
 		MockFramer: mock.MockFramer{Data: marshalMetadataMust(systemLocalResultMetadata, row)},
