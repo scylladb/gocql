@@ -103,13 +103,22 @@ func TestParseHintRejects(t *testing.T) {
 		{"ShortUUID", withList(append(count(1), hintBytes(append(hintBytes(make([]byte, 15)), hintBytes(count(0))...))...)), "replica 0"},
 		{"MissingShard", withList(append(count(1), hintBytes(hintBytes(hintHost1[:]))...)), "replica 0"},
 		{"InvertedRange", hintPayload(5, 4, good), "invalid token range"},
+		{"NullFirstToken", hintBytes(nil), "first token is null"},
+		{"NullLastToken", append(hintBigInt(0), hintBytes(nil)...), "last token is null"},
+		{"NullHostUUID", withList(append(count(1), hintBytes(append(hintBytes(nil), hintBytes(count(0))...))...)), "host UUID is null"},
+		{"NullShard", withList(append(count(1), hintBytes(append(hintBytes(hintHost1[:]), hintBytes(nil)...))...)), "shard ID is null"},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if _, err := ParseHint(tc.data, "ks", "tbl"); err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+			_, err := ParseHint(tc.data, "ks", "tbl")
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 				t.Fatalf("ParseHint error = %v, want one containing %q", err, tc.wantErr)
+			}
+			// Readers report null and malformed the same way; a malformed payload must not read as null.
+			if !strings.Contains(tc.wantErr, "null") && strings.Contains(err.Error(), "is null") {
+				t.Fatalf("malformed payload reported as a null value: %v", err)
 			}
 		})
 	}
