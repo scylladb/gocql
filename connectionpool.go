@@ -571,7 +571,7 @@ func (pool *hostConnPool) initConnPicker(conn *Conn) {
 		return
 	}
 
-	if conn.isScyllaConn() {
+	if !pool.session.cfg.ForceCassandraMode && conn.isScyllaConn() {
 		pool.connPicker = newScyllaConnPicker(conn, pool.logger)
 		return
 	}

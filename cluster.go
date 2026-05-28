@@ -266,6 +266,25 @@ type ClusterConfig struct {
 	// this option to work around the issue. Set it to true only if you neither can fix
 	// your network nor disable shard-aware port on your nodes.
 	DisableShardAwarePort bool
+	// ForceCassandraMode disables Scylla-specific driver optimisations and makes the
+	// driver use the default Cassandra-style connection pool (one round-robin pool per
+	// host) instead of the per-shard scyllaConnPicker. As a side effect, the driver
+	// will not connect to the shard-aware port either, because that path is owned by
+	// the shard-aware picker.
+	//
+	// Use this if you want to bypass Scylla's per-shard connection routing and fall
+	// back to vanilla Cassandra connection behaviour, e.g. for debugging, A/B
+	// comparisons, or working around a Scylla-specific driver issue.
+	//
+	// This is independent of DisableShardAwarePort: setting ForceCassandraMode = true
+	// makes DisableShardAwarePort redundant but does not unset it.
+	//
+	// Note: this is the "narrow" fallback. Other Scylla-specific code paths (tablet
+	// routing, system_request_timeout lookup, CDC metadata, skipping system.peers_v2)
+	// still apply when talking to a Scylla cluster.
+	//
+	// Default: false
+	ForceCassandraMode bool
 	// If DisableInitialHostLookup then the driver will not attempt to get host info
 	// from the system.peers table, this will mean that the driver will connect to
 	// hosts supplied and will not attempt to lookup the hosts information, this will
