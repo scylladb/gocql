@@ -2380,7 +2380,7 @@ func TestReleaseFramer(t *testing.T) {
 
 	t.Run("NoPool", func(t *testing.T) {
 		c := &Conn{} // No pool initialized.
-		f := newFramer(nil, protoVersion4)
+		f := newFramer(nil, protoVersion4, compressionOpts{})
 		// Should not panic, framer is just dropped.
 		c.releaseReadFramer(f)
 	})
@@ -2435,7 +2435,7 @@ func TestReleaseFramer(t *testing.T) {
 			t.Fatalf("plain query should use default flags after pooled reuse: got %08b want %08b", plainHeader.Flags, c.framers.defaults.flags)
 		}
 
-		fresh := newFramer(nil, protoVersion4)
+		fresh := newFramer(nil, protoVersion4, compressionOpts{})
 		freshBuf, freshHeader := buildTestFrame(t, fresh, plainReq, streamID)
 		if plainHeader.Flags != freshHeader.Flags {
 			t.Fatalf("reused plain query flags do not match fresh framer: got %08b want %08b", plainHeader.Flags, freshHeader.Flags)
