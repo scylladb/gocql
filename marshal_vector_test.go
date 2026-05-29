@@ -896,6 +896,72 @@ func TestMarshalVector_DimensionMismatch(t *testing.T) {
 	})
 }
 
+// TestUnmarshalVector_ArrayDestDimensionMismatch verifies that unmarshalling
+// into a fixed-size array destination (*[N]T) whose length does not match the
+// vector dimensions reports a dimension-mismatch error rather than silently
+// succeeding and leaving the array unchanged.
+//
+// Array destinations never match the slice-typed fast-path assertions
+// (value.(*[]float32) etc.) in unmarshalVector, so they always fall through to
+// the generic reflect path. This test pins that the generic path validates the
+// array length for both the dim==0 early-return branch and the non-zero branch,
+// for both float (TypeFloat) and the dim==0 case across element types.
+func TestUnmarshalVector_ArrayDestDimensionMismatch(t *testing.T) {
+	t.Run("float32_array_too_small", func(t *testing.T) {
+		info := makeFloat32VectorType(3)
+		data := make([]byte, 3*4)
+		var arr [2]float32
+		err := unmarshalVector(info, data, &arr)
+		if err == nil {
+			t.Fatal("expected dimension-mismatch error for [2]float32 dst of vector<float,3>, got nil")
+		}
+	})
+
+	t.Run("float32_array_too_large", func(t *testing.T) {
+		info := makeFloat32VectorType(3)
+		data := make([]byte, 3*4)
+		var arr [5]float32
+		err := unmarshalVector(info, data, &arr)
+		if err == nil {
+			t.Fatal("expected dimension-mismatch error for [5]float32 dst of vector<float,3>, got nil")
+		}
+	})
+
+	t.Run("float32_array_match_ok", func(t *testing.T) {
+		info := makeFloat32VectorType(3)
+		data := make([]byte, 3*4)
+		for i := 0; i < 3; i++ {
+			binary.BigEndian.PutUint32(data[i*4:], math.Float32bits(float32(i+1)))
+		}
+		var arr [3]float32
+		if err := unmarshalVector(info, data, &arr); err != nil {
+			t.Fatalf("unexpected error for matching [3]float32: %v", err)
+		}
+		if arr != [3]float32{1, 2, 3} {
+			t.Errorf("array contents = %v, want [1 2 3]", arr)
+		}
+	})
+
+	// dim==0 early-return must still validate non-zero array destinations
+	// (otherwise a [N]T with N!=0 would be left unchanged and report success).
+	t.Run("float32_dim0_into_nonzero_array", func(t *testing.T) {
+		info := makeFloat32VectorType(0)
+		var arr [3]float32
+		err := unmarshalVector(info, []byte{}, &arr)
+		if err == nil {
+			t.Fatal("expected dimension-mismatch error for [3]float32 dst of vector<float,0>, got nil")
+		}
+	})
+
+	t.Run("float32_dim0_into_zero_array_ok", func(t *testing.T) {
+		info := makeFloat32VectorType(0)
+		var arr [0]float32
+		if err := unmarshalVector(info, []byte{}, &arr); err != nil {
+			t.Fatalf("unexpected error for [0]float32 dst of vector<float,0>: %v", err)
+		}
+	})
+}
+
 // --- Test 7: Empty vector (dim=0) ---
 
 func TestMarshalVector_EmptyVector(t *testing.T) {
@@ -1753,7 +1819,10 @@ func TestVectorBufPoolReturnSimulation(t *testing.T) {
 	}
 
 	// Remember the backing array pointer before returning to pool.
-	origPtr := &data[:1][0]
+	// data has len == expectedSize > 0 here, so &data[0] is the safe way to
+	// capture the backing-array pointer (avoids the fragile out-of-range
+	// reslice &data[:1][0] which would panic on a zero-length slice).
+	origPtr := &data[0]
 
 	// Simulate what the defer in executeQuery/executeBatch does.
 	if vectorBufPoolSubtype(vt) {
@@ -1765,7 +1834,7 @@ func TestVectorBufPoolReturnSimulation(t *testing.T) {
 	if len(reused) != expectedSize {
 		t.Fatalf("getVectorBuf(%d) returned len %d", expectedSize, len(reused))
 	}
-	reusedPtr := &reused[:1][0]
+	reusedPtr := &reused[0]
 	if origPtr != reusedPtr {
 		// sync.Pool makes no guarantees about reuse — the GC may clear the
 		// pool between Put and Get, especially under the race detector.
