@@ -6,6 +6,7 @@
 package gocql
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"math"
@@ -1839,4 +1840,98 @@ func TestVectorBufPoolBatchSimulation(t *testing.T) {
 		t.Fatal("expected to get a buffer from pool after returning batch buffers")
 	}
 	putVectorBuf(reused)
+}
+
+// Named slice types whose underlying type matches a fast-path element slice but
+// whose concrete type fails the `value.([]float32)` style type assertions in
+// marshalVector/unmarshalVector. Passing these forces the generic reflect-based
+// path, while passing the plain []T forces the fast path. This lets us compare
+// the two encoders byte-for-byte.
+type genericF32 []float32
+type genericF64 []float64
+type genericI32 []int32
+type genericI64 []int64
+type genericUUID []UUID
+
+// TestMarshalVector_FastPathMatchesGeneric is a differential test asserting that
+// the optimized fast paths produce byte-for-byte identical output to the generic
+// reflect-based path for every supported element type across nil, empty, single,
+// many, NaN/Inf/negative-zero, and negative-value cases. This is the highest-risk
+// area of the PR (the same nil-vs-empty / endianness divergence class found in
+// PR #744 and #871), so it is exercised explicitly here.
+func TestMarshalVector_FastPathMatchesGeneric(t *testing.T) {
+	nan32 := float32(math.NaN())
+	nan64 := math.NaN()
+	negZero32 := math.Float32frombits(0x80000000)
+	negZero64 := math.Float64frombits(0x8000000000000000)
+
+	cases := []struct {
+		name string
+		vt   VectorType
+		// fast is the concrete []T value taking the fast path.
+		// generic is the same logical value as a named type forcing the generic path.
+		fast    interface{}
+		generic interface{}
+	}{
+		// float32
+		{"f32/nil", makeFloat32VectorType(0), []float32(nil), genericF32(nil)},
+		{"f32/empty", makeFloat32VectorType(0), []float32{}, genericF32{}},
+		{"f32/one", makeFloat32VectorType(1), []float32{1.5}, genericF32{1.5}},
+		{"f32/many", makeFloat32VectorType(4), []float32{-1.5, 0, 42.125, 3.14}, genericF32{-1.5, 0, 42.125, 3.14}},
+		{"f32/special", makeFloat32VectorType(5), []float32{float32(math.Inf(1)), float32(math.Inf(-1)), nan32, negZero32, math.MaxFloat32}, genericF32{float32(math.Inf(1)), float32(math.Inf(-1)), nan32, negZero32, math.MaxFloat32}},
+
+		// float64
+		{"f64/nil", makeFloat64VectorType(0), []float64(nil), genericF64(nil)},
+		{"f64/empty", makeFloat64VectorType(0), []float64{}, genericF64{}},
+		{"f64/one", makeFloat64VectorType(1), []float64{1.5}, genericF64{1.5}},
+		{"f64/many", makeFloat64VectorType(4), []float64{-1.5, 0, 42.125, 3.14}, genericF64{-1.5, 0, 42.125, 3.14}},
+		{"f64/special", makeFloat64VectorType(5), []float64{math.Inf(1), math.Inf(-1), nan64, negZero64, math.MaxFloat64}, genericF64{math.Inf(1), math.Inf(-1), nan64, negZero64, math.MaxFloat64}},
+
+		// int32
+		{"i32/nil", makeInt32VectorType(0), []int32(nil), genericI32(nil)},
+		{"i32/empty", makeInt32VectorType(0), []int32{}, genericI32{}},
+		{"i32/one", makeInt32VectorType(1), []int32{-1}, genericI32{-1}},
+		{"i32/many", makeInt32VectorType(5), []int32{-1, 0, 42, math.MinInt32, math.MaxInt32}, genericI32{-1, 0, 42, math.MinInt32, math.MaxInt32}},
+
+		// int64
+		{"i64/nil", makeInt64VectorType(0), []int64(nil), genericI64(nil)},
+		{"i64/empty", makeInt64VectorType(0), []int64{}, genericI64{}},
+		{"i64/one", makeInt64VectorType(1), []int64{-1}, genericI64{-1}},
+		{"i64/many", makeInt64VectorType(5), []int64{-1, 0, 42, math.MinInt64, math.MaxInt64}, genericI64{-1, 0, 42, math.MinInt64, math.MaxInt64}},
+
+		// uuid
+		{"uuid/nil", makeUUIDVectorType(0), []UUID(nil), genericUUID(nil)},
+		{"uuid/empty", makeUUIDVectorType(0), []UUID{}, genericUUID{}},
+		{"uuid/many", makeUUIDVectorType(2), []UUID{
+			{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10},
+			{0xf0, 0xe0, 0xd0, 0xc0, 0xb0, 0xa0, 0x90, 0x80, 0x70, 0x60, 0x50, 0x40, 0x30, 0x20, 0x10, 0x00},
+		}, genericUUID{
+			{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10},
+			{0xf0, 0xe0, 0xd0, 0xc0, 0xb0, 0xa0, 0x90, 0x80, 0x70, 0x60, 0x50, 0x40, 0x30, 0x20, 0x10, 0x00},
+		}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fastBytes, fastErr := marshalVector(tc.vt, tc.fast)
+			genBytes, genErr := marshalVector(tc.vt, tc.generic)
+
+			if (fastErr == nil) != (genErr == nil) {
+				t.Fatalf("error mismatch: fast=%v generic=%v", fastErr, genErr)
+			}
+			if fastErr != nil {
+				return
+			}
+			// nil vs empty distinction must be preserved exactly: a nil input
+			// must produce nil bytes (CQL null); an empty input must produce a
+			// non-nil zero-length slice.
+			if (fastBytes == nil) != (genBytes == nil) {
+				t.Fatalf("nil-vs-empty divergence: fast nil=%v (%#v) generic nil=%v (%#v)",
+					fastBytes == nil, fastBytes, genBytes == nil, genBytes)
+			}
+			if !bytes.Equal(fastBytes, genBytes) {
+				t.Fatalf("byte mismatch:\n  fast:    %x\n  generic: %x", fastBytes, genBytes)
+			}
+		})
+	}
 }
