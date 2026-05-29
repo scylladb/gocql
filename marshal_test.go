@@ -1507,6 +1507,146 @@ func TestUnmarshalMapFastPath(t *testing.T) {
 	})
 }
 
+// namedStrStrMap is a named map type. Because Go type switches match concrete
+// types exactly, unmarshalMapFast does NOT recognise it, so unmarshaling into
+// it exercises the generic reflect path. This lets us assert that the fast
+// path and the generic path agree byte-for-byte on identical wire data.
+type namedStrStrMap map[string]string
+type namedStrI64Map map[string]int64
+type namedI64I64Map map[int64]int64
+
+// TestUnmarshalMapFastVsReflect is a differential test: for the same wire
+// bytes it unmarshals via the fast path (concrete map type) and via the
+// generic reflect path (named map type) and requires identical results.
+func TestUnmarshalMapFastVsReflect(t *testing.T) {
+	t.Parallel()
+
+	infoSS := CollectionType{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeMap},
+		Key:        NativeType{proto: protoVersion4, typ: TypeVarchar},
+		Elem:       NativeType{proto: protoVersion4, typ: TypeVarchar},
+	}
+	infoSI := CollectionType{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeMap},
+		Key:        NativeType{proto: protoVersion4, typ: TypeVarchar},
+		Elem:       NativeType{proto: protoVersion4, typ: TypeBigInt},
+	}
+	infoII := CollectionType{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeMap},
+		Key:        NativeType{proto: protoVersion4, typ: TypeBigInt},
+		Elem:       NativeType{proto: protoVersion4, typ: TypeBigInt},
+	}
+
+	// nullVal returns a -1 (null) length prefix.
+	nullPrefix := []byte{0xff, 0xff, 0xff, 0xff}
+	withLen := func(b []byte) []byte {
+		out := []byte{byte(len(b) >> 24), byte(len(b) >> 16), byte(len(b) >> 8), byte(len(b))}
+		return append(out, b...)
+	}
+	count := func(n int) []byte {
+		return []byte{byte(n >> 24), byte(n >> 16), byte(n >> 8), byte(n)}
+	}
+
+	t.Run("string/string with null key and null value", func(t *testing.T) {
+		// entry0: key "" (len 0), value null
+		// entry1: key null, value "v"
+		var data []byte
+		data = append(data, count(2)...)
+		data = append(data, withLen([]byte{})...) // key ""
+		data = append(data, nullPrefix...)        // value null
+		data = append(data, nullPrefix...)        // key null
+		data = append(data, withLen([]byte("v"))...)
+
+		var fast map[string]string
+		if err := unmarshalMap(infoSS, data, &fast); err != nil {
+			t.Fatalf("fast path: %v", err)
+		}
+		var slow namedStrStrMap
+		if err := unmarshalMap(infoSS, data, &slow); err != nil {
+			t.Fatalf("reflect path: %v", err)
+		}
+		if !reflect.DeepEqual(map[string]string(fast), map[string]string(slow)) {
+			t.Fatalf("fast=%v reflect=%v differ", fast, slow)
+		}
+	})
+
+	t.Run("string/int64 with null value vs reflect", func(t *testing.T) {
+		var data []byte
+		data = append(data, count(2)...)
+		data = append(data, withLen([]byte("a"))...)
+		data = append(data, nullPrefix...) // null int64 value
+		data = append(data, withLen([]byte("b"))...)
+		data = append(data, withLen(int64Bytes(7))...)
+
+		var fast map[string]int64
+		if err := unmarshalMap(infoSI, data, &fast); err != nil {
+			t.Fatalf("fast: %v", err)
+		}
+		var slow namedStrI64Map
+		if err := unmarshalMap(infoSI, data, &slow); err != nil {
+			t.Fatalf("reflect: %v", err)
+		}
+		if !reflect.DeepEqual(map[string]int64(fast), map[string]int64(slow)) {
+			t.Fatalf("fast=%v reflect=%v differ", fast, slow)
+		}
+	})
+
+	t.Run("int64/int64 duplicate keys keep last vs reflect", func(t *testing.T) {
+		// Duplicate key 5 appears twice; map semantics keep the last write.
+		var data []byte
+		data = append(data, count(2)...)
+		data = append(data, withLen(int64Bytes(5))...)
+		data = append(data, withLen(int64Bytes(1))...)
+		data = append(data, withLen(int64Bytes(5))...)
+		data = append(data, withLen(int64Bytes(2))...)
+
+		var fast map[int64]int64
+		if err := unmarshalMap(infoII, data, &fast); err != nil {
+			t.Fatalf("fast: %v", err)
+		}
+		var slow namedI64I64Map
+		if err := unmarshalMap(infoII, data, &slow); err != nil {
+			t.Fatalf("reflect: %v", err)
+		}
+		if !reflect.DeepEqual(map[int64]int64(fast), map[int64]int64(slow)) {
+			t.Fatalf("fast=%v reflect=%v differ", fast, slow)
+		}
+		if fast[5] != 2 {
+			t.Fatalf("expected last-write-wins key 5 -> 2, got %d", fast[5])
+		}
+	})
+
+	t.Run("nil data agrees", func(t *testing.T) {
+		var fast map[string]string
+		var slow namedStrStrMap
+		if err := unmarshalMap(infoSS, nil, &fast); err != nil {
+			t.Fatal(err)
+		}
+		if err := unmarshalMap(infoSS, nil, &slow); err != nil {
+			t.Fatal(err)
+		}
+		if (fast == nil) != (slow == nil) {
+			t.Fatalf("nil disagreement: fast nil=%v reflect nil=%v", fast == nil, slow == nil)
+		}
+	})
+
+	t.Run("wrong fixed-width value length errors like reflect", func(t *testing.T) {
+		// int64 value with 4 bytes (invalid: must be 0 or 8).
+		var data []byte
+		data = append(data, count(1)...)
+		data = append(data, withLen([]byte("k"))...)
+		data = append(data, withLen([]byte{0, 0, 0, 1})...) // 4-byte int64 -> invalid
+
+		var fast map[string]int64
+		errFast := unmarshalMap(infoSI, data, &fast)
+		var slow namedStrI64Map
+		errSlow := unmarshalMap(infoSI, data, &slow)
+		if (errFast == nil) != (errSlow == nil) {
+			t.Fatalf("error disagreement: fast=%v reflect=%v", errFast, errSlow)
+		}
+	})
+}
+
 func BenchmarkUnmarshalMapStringString(b *testing.B) {
 	for _, n := range []int{10, 100} {
 		data := buildMapBytes(n,
