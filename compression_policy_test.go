@@ -550,6 +550,60 @@ func TestCompressionPolicyDefaults(t *testing.T) {
 	}
 }
 
+// TestValidateCompressionPolicy verifies that ClusterConfig.Validate() accepts
+// valid CompressionPolicy values and rejects out-of-range ones.
+func TestValidateCompressionPolicy(t *testing.T) {
+	t.Parallel()
+
+	baseConfig := func() *ClusterConfig {
+		// NewCluster provides all the other required defaults so that
+		// Validate() only fails on the CompressionPolicy under test.
+		// SslOpts is nil so ValidateAndInitSSL() is a no-op.
+		return NewCluster("127.0.0.1")
+	}
+
+	valid := []struct {
+		name   string
+		policy CompressionPolicy
+	}{
+		{"zero value", CompressionPolicy{}},
+		{"never compress local/remote", CompressionPolicy{MinCompressLocalSize: neverCompressSize, MinCompressRemoteSize: neverCompressSize}},
+		{"positive thresholds", CompressionPolicy{MinCompressLocalSize: 4096, MinCompressRemoteSize: 512}},
+		{"savings 99", CompressionPolicy{MinSavingsPercent: 99}},
+		{"savings 1", CompressionPolicy{MinSavingsPercent: 1}},
+		{"scope DC", CompressionPolicy{Scope: CompressNonLocalDC}},
+	}
+	for _, tc := range valid {
+		t.Run("valid/"+tc.name, func(t *testing.T) {
+			cfg := baseConfig()
+			cfg.CompressionPolicy = tc.policy
+			if err := cfg.Validate(); err != nil {
+				t.Errorf("expected valid policy %+v, got error: %v", tc.policy, err)
+			}
+		})
+	}
+
+	invalid := []struct {
+		name   string
+		policy CompressionPolicy
+	}{
+		{"local size < -1", CompressionPolicy{MinCompressLocalSize: -2}},
+		{"remote size < -1", CompressionPolicy{MinCompressRemoteSize: -5}},
+		{"savings negative", CompressionPolicy{MinSavingsPercent: -1}},
+		{"savings > 99", CompressionPolicy{MinSavingsPercent: 100}},
+		{"unknown scope", CompressionPolicy{Scope: CompressionScope(42)}},
+	}
+	for _, tc := range invalid {
+		t.Run("invalid/"+tc.name, func(t *testing.T) {
+			cfg := baseConfig()
+			cfg.CompressionPolicy = tc.policy
+			if err := cfg.Validate(); err == nil {
+				t.Errorf("expected error for invalid policy %+v, got nil", tc.policy)
+			}
+		})
+	}
+}
+
 // TestFramerFinishCompressionBatchFrame verifies threshold-based compression
 // on batch frames which typically carry larger payloads.
 func TestFramerFinishCompressionBatchFrame(t *testing.T) {
