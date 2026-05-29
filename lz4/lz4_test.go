@@ -57,3 +57,45 @@ func TestLZ4Compressor(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, original, decoded)
 }
+
+func TestLZ4CompressorDecodeInto(t *testing.T) {
+	t.Parallel()
+
+	var c LZ4Compressor
+
+	original := []byte("My Test String that is reasonably long to compress nicely")
+	encoded, err := c.Encode(original)
+	require.NoError(t, err)
+
+	// nil dst.
+	got, err := c.DecodeInto(encoded, nil)
+	require.NoError(t, err)
+	require.Equal(t, original, got)
+
+	// Reuse a sufficiently-sized buffer; result must match and the previously
+	// returned data (copied) must not be corrupted by reuse.
+	prev := append([]byte(nil), got...)
+	got2, err := c.DecodeInto(encoded, got[:0])
+	require.NoError(t, err)
+	require.Equal(t, original, got2)
+	require.Equal(t, original, prev)
+
+	// Undersized dst must be grown/reallocated, not truncated.
+	got3, err := c.DecodeInto(encoded, make([]byte, 0, 1))
+	require.NoError(t, err)
+	require.Equal(t, original, got3)
+
+	// Short block error.
+	_, err = c.DecodeInto([]byte{0, 1, 2}, nil)
+	require.EqualError(t, err, "cassandra lz4 block size should be >4, got=3")
+
+	// Zero uncompressed length yields an empty (non-nil-cap-preserving) slice.
+	empty, err := c.DecodeInto([]byte{0, 0, 0, 0, 5, 7, 8}, make([]byte, 0, 8))
+	require.NoError(t, err)
+	require.Len(t, empty, 0)
+
+	// Oversized declared length must be rejected (corruption/DoS guard).
+	bad := []byte{0xFF, 0xFF, 0xFF, 0xFF, 1, 2, 3, 4}
+	_, err = c.DecodeInto(bad, nil)
+	require.Error(t, err)
+}
