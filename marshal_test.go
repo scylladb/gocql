@@ -36,6 +36,7 @@ import (
 	"net"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
 	"gopkg.in/inf.v0"
@@ -1299,6 +1300,229 @@ func TestCollectionNewWithErrorConsistentWithGoType(t *testing.T) {
 			}
 		}
 	}
+}
+
+// udtFieldCacheTestInfo builds a UDTTypeInfo with the given element names, all
+// typed as ascii/int for simple round-tripping in the cache correctness tests.
+func udtFieldCacheTestInfo(elems ...UDTField) UDTTypeInfo {
+	return UDTTypeInfo{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeUDT},
+		Name:       "myudt",
+		KeySpace:   "myks",
+		Elements:   elems,
+	}
+}
+
+func asciiField(name string) UDTField {
+	return UDTField{Name: name, Type: NativeType{proto: protoVersion4, typ: TypeAscii}}
+}
+
+// TestUDTFieldCache_DistinctTypesNoCollision ensures that two different Go
+// struct types that share UDT element names get independent cached field
+// mappings keyed by reflect.Type, and never collide with each other.
+func TestUDTFieldCache_DistinctTypesNoCollision(t *testing.T) {
+	type A struct {
+		First  string `cql:"first"`
+		Second string `cql:"second"`
+	}
+	// B reuses the same cql names but in a different field order / extra field.
+	type B struct {
+		Extra  string `cql:"extra"`
+		Second string `cql:"second"`
+		First  string `cql:"first"`
+	}
+
+	infoA := udtFieldCacheTestInfo(asciiField("first"), asciiField("second"))
+	infoB := udtFieldCacheTestInfo(asciiField("first"), asciiField("second"), asciiField("extra"))
+
+	srcA := A{First: "a1", Second: "a2"}
+	dataA, err := Marshal(infoA, srcA)
+	if err != nil {
+		t.Fatalf("marshal A: %v", err)
+	}
+	var gotA A
+	if err := Unmarshal(infoA, dataA, &gotA); err != nil {
+		t.Fatalf("unmarshal A: %v", err)
+	}
+	if gotA != srcA {
+		t.Fatalf("A round-trip mismatch: got %+v want %+v", gotA, srcA)
+	}
+
+	srcB := B{Extra: "be", Second: "b2", First: "b1"}
+	dataB, err := Marshal(infoB, srcB)
+	if err != nil {
+		t.Fatalf("marshal B: %v", err)
+	}
+	var gotB B
+	if err := Unmarshal(infoB, dataB, &gotB); err != nil {
+		t.Fatalf("unmarshal B: %v", err)
+	}
+	if gotB != srcB {
+		t.Fatalf("B round-trip mismatch: got %+v want %+v", gotB, srcB)
+	}
+
+	// Re-run A after B to ensure B's mapping did not clobber A's cache entry.
+	var gotA2 A
+	if err := Unmarshal(infoA, dataA, &gotA2); err != nil {
+		t.Fatalf("unmarshal A (post-B): %v", err)
+	}
+	if gotA2 != srcA {
+		t.Fatalf("A round-trip mismatch after B: got %+v want %+v", gotA2, srcA)
+	}
+}
+
+// TestUDTFieldCache_SameTypeDifferentUDTs ensures the same Go struct type can be
+// used with two different UDT definitions; the field mapping is intrinsic to the
+// struct and the per-UDT element iteration handles differing element sets.
+func TestUDTFieldCache_SameTypeDifferentUDTs(t *testing.T) {
+	type T struct {
+		A string `cql:"a"`
+		B string `cql:"b"`
+		C string `cql:"c"`
+	}
+
+	infoAB := udtFieldCacheTestInfo(asciiField("a"), asciiField("b"))
+	infoBC := udtFieldCacheTestInfo(asciiField("b"), asciiField("c"))
+
+	src := T{A: "va", B: "vb", C: "vc"}
+
+	dataAB, err := Marshal(infoAB, src)
+	if err != nil {
+		t.Fatalf("marshal AB: %v", err)
+	}
+	var gotAB T
+	if err := Unmarshal(infoAB, dataAB, &gotAB); err != nil {
+		t.Fatalf("unmarshal AB: %v", err)
+	}
+	if gotAB.A != "va" || gotAB.B != "vb" {
+		t.Fatalf("AB mismatch: %+v", gotAB)
+	}
+
+	dataBC, err := Marshal(infoBC, src)
+	if err != nil {
+		t.Fatalf("marshal BC: %v", err)
+	}
+	var gotBC T
+	if err := Unmarshal(infoBC, dataBC, &gotBC); err != nil {
+		t.Fatalf("unmarshal BC: %v", err)
+	}
+	if gotBC.B != "vb" || gotBC.C != "vc" {
+		t.Fatalf("BC mismatch: %+v", gotBC)
+	}
+}
+
+// TestUDTFieldCache_UntaggedFallback covers the FieldByName fallback path for a
+// UDT element whose name matches an exported Go field that has no cql tag. This
+// must behave identically to the pre-cache per-row scan.
+func TestUDTFieldCache_UntaggedFallback(t *testing.T) {
+	type T struct {
+		Tagged string `cql:"tagged"`
+		Plain  string // matched by FieldByName("Plain")
+	}
+
+	info := udtFieldCacheTestInfo(asciiField("tagged"), asciiField("Plain"))
+
+	src := T{Tagged: "t", Plain: "p"}
+	data, err := Marshal(info, src)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var got T
+	if err := Unmarshal(info, data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got != src {
+		t.Fatalf("mismatch: got %+v want %+v", got, src)
+	}
+}
+
+// TestUDTFieldCache_ExtraUDTFieldSkipped ensures a UDT element that has no
+// corresponding struct field (no tag, no matching name) is skipped on unmarshal
+// and marshaled as a null, identical to the pre-cache behavior.
+func TestUDTFieldCache_ExtraUDTFieldSkipped(t *testing.T) {
+	type T struct {
+		Known string `cql:"known"`
+	}
+
+	info := udtFieldCacheTestInfo(asciiField("known"), asciiField("missing"))
+
+	src := T{Known: "k"}
+	data, err := Marshal(info, src)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var got T
+	if err := Unmarshal(info, data, &got); err != nil {
+		t.Fatalf("unmarshal with extra UDT field: %v", err)
+	}
+	if got.Known != "k" {
+		t.Fatalf("mismatch: got %+v", got)
+	}
+}
+
+// TestUDTFieldCache_PointerToStruct ensures marshaling a pointer-to-struct works
+// through the cache path. (The pre-cache marshalUDT used reflect.TypeOf(value)
+// without dereferencing the pointer, which panicked; the cached version uses the
+// dereferenced k.Type() and is correct.)
+func TestUDTFieldCache_PointerToStruct(t *testing.T) {
+	type T struct {
+		A string `cql:"a"`
+		B string `cql:"b"`
+	}
+
+	info := udtFieldCacheTestInfo(asciiField("a"), asciiField("b"))
+
+	src := &T{A: "va", B: "vb"}
+	data, err := Marshal(info, src)
+	if err != nil {
+		t.Fatalf("marshal ptr: %v", err)
+	}
+	var got T
+	if err := Unmarshal(info, data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got.A != "va" || got.B != "vb" {
+		t.Fatalf("mismatch: %+v", got)
+	}
+}
+
+// TestUDTFieldCache_Concurrent exercises concurrent marshal/unmarshal of the
+// same struct type to surface data races in cache building/reads under -race.
+func TestUDTFieldCache_Concurrent(t *testing.T) {
+	type Conc struct {
+		A string `cql:"a"`
+		B string `cql:"b"`
+		C string `cql:"c"`
+	}
+
+	info := udtFieldCacheTestInfo(asciiField("a"), asciiField("b"), asciiField("c"))
+	src := Conc{A: "1", B: "2", C: "3"}
+
+	const goroutines = 32
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for g := 0; g < goroutines; g++ {
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 200; i++ {
+				data, err := Marshal(info, src)
+				if err != nil {
+					t.Errorf("marshal: %v", err)
+					return
+				}
+				var got Conc
+				if err := Unmarshal(info, data, &got); err != nil {
+					t.Errorf("unmarshal: %v", err)
+					return
+				}
+				if got != src {
+					t.Errorf("mismatch: got %+v want %+v", got, src)
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 // BenchmarkUnmarshalUDTStruct measures the per-call cost of unmarshaling a UDT
