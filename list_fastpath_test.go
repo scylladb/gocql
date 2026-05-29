@@ -24,6 +24,7 @@ package gocql
 import (
 	"encoding/binary"
 	"math"
+	"reflect"
 	"testing"
 )
 
@@ -380,7 +381,8 @@ func TestMarshalListFastPath_Float32_SpecialValues(t *testing.T) {
 	nan := float32(math.NaN())
 	inf := float32(math.Inf(1))
 	negInf := float32(math.Inf(-1))
-	input := []float32{nan, inf, negInf, 0, -0}
+	negZero := math.Float32frombits(0x80000000)
+	input := []float32{nan, inf, negInf, 0, negZero}
 
 	data, err := marshalList(info, input)
 	if err != nil {
@@ -404,6 +406,12 @@ func TestMarshalListFastPath_Float32_SpecialValues(t *testing.T) {
 	}
 	if output[2] != negInf {
 		t.Errorf("-Inf: got %v, want %v", output[2], negInf)
+	}
+	if output[3] != 0 {
+		t.Errorf("+0: got %v, want 0", output[3])
+	}
+	if math.Float32bits(output[4]) != 0x80000000 {
+		t.Errorf("-0 bits mismatch: got %08x, want 80000000", math.Float32bits(output[4]))
 	}
 }
 
@@ -450,26 +458,60 @@ func TestMarshalListFastPath_Int64_BoundaryValues(t *testing.T) {
 }
 
 // --- Wrong-type fallback tests ---
-// Verify that passing a non-matching Go type falls through to the reflect path.
+// Verify that passing a genuinely non-matching Go type falls through to the
+// reflect path. (Earlier revisions used []int for TypeInt, but Go's marshalList
+// has an explicit []int fast-path branch for TypeInt, so []int is no longer a
+// "wrong type" — it hits the fast path. Use a custom named type to actually
+// exercise the reflect fallback.)
 
-func TestMarshalListFastPath_WrongType_FallsToReflect(t *testing.T) {
+type namedInt32 int32
+
+func TestMarshalListFastPath_NonMatchingType_FallsToReflect(t *testing.T) {
 	info := listTypeInfo(TypeInt)
-	// Pass []int instead of []int32 — should fall through to reflect path
-	input := []int{1, 2, 3}
+	// namedInt32 does not match any concrete-type fast path; falls through
+	// to the reflect marshal/unmarshal.
+	input := []namedInt32{namedInt32(1), namedInt32(2), namedInt32(3)}
 
 	data, err := marshalList(info, input)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// Verify the data is valid by unmarshaling via reflect path
-	var output []int
+	var output []namedInt32
 	if err := unmarshalList(info, data, &output); err != nil {
 		t.Fatal(err)
 	}
 
-	if len(output) != 3 || output[0] != 1 || output[1] != 2 || output[2] != 3 {
+	if len(output) != 3 ||
+		output[0] != namedInt32(1) || output[1] != namedInt32(2) || output[2] != namedInt32(3) {
 		t.Errorf("reflect fallback: got %v, want [1 2 3]", output)
+	}
+}
+
+// TestUnmarshalListFastPath_NonMatchingType_ReflectPath verifies that the
+// reflect fallback path in unmarshalList handles unmarshal targets without a
+// fast-path match. We use *[]any to force the reflect path even on the typed
+// unmarshal side.
+func TestUnmarshalListFastPath_NonMatchingType_ReflectPath(t *testing.T) {
+	info := listTypeInfo(TypeVarchar)
+	// Wire: [count=2][len=5][hello][len=5][world]
+	data := buildCQLList([]byte("hello"), []byte("world"))
+	var output []any
+	if err := unmarshalList(info, data, &output); err != nil {
+		t.Fatal(err)
+	}
+	if len(output) != 2 {
+		t.Fatalf("expected length 2, got %d", len(output))
+	}
+	// The reflect path decodes VARCHAR elements as []byte (not string) when
+	// the destination is []any; verify the byte content matches.
+	got0, ok := output[0].([]byte)
+	if !ok || string(got0) != "hello" {
+		t.Errorf("output[0]: got %v, want hello (as []byte)", output[0])
+	}
+	got1, ok := output[1].([]byte)
+	if !ok || string(got1) != "world" {
+		t.Errorf("output[1]: got %v, want world (as []byte)", output[1])
 	}
 }
 
@@ -589,22 +631,37 @@ func TestMarshalListFastPath_CrossPathCompat_Int32(t *testing.T) {
 	info := listTypeInfo(TypeInt)
 	input := []int32{100, 200, 300}
 
-	// Fast path marshal
+	// Fast-path marshal
 	data, err := marshalList(info, input)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// Reflect path unmarshal (use []int which doesn't match fast path)
-	var reflectOutput []int
-	if err := unmarshalList(info, data, &reflectOutput); err != nil {
+	// Fast-path unmarshal: round-trip is consistent.
+	var fast []int32
+	if err := unmarshalList(info, data, &fast); err != nil {
 		t.Fatal(err)
 	}
+	if !reflect.DeepEqual(fast, input) {
+		t.Errorf("round-trip mismatch: got %v, want %v", fast, input)
+	}
 
-	for i := range input {
-		if int32(reflectOutput[i]) != input[i] {
-			t.Errorf("index %d: got %d, want %d", i, reflectOutput[i], input[i])
-		}
+	// Reverse: emit via the reflect marshal path, then consume via the fast
+	// path. We build a []any to force the reflect marshal.
+	anyOut := make([]any, len(input))
+	for i, v := range input {
+		anyOut[i] = v
+	}
+	wireBytes, err := Marshal(info, anyOut)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fastReflect []int32
+	if err := unmarshalList(info, wireBytes, &fastReflect); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(fastReflect, input) {
+		t.Errorf("reflect→fast round-trip mismatch: got %v, want %v", fastReflect, input)
 	}
 }
 
