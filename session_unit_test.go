@@ -1733,10 +1733,10 @@ func TestScannerScanTupleColumnUsesRawColumnIndex(t *testing.T) {
 	t.Parallel()
 
 	tupleInfo := TupleTypeInfo{
-		NativeType: NativeType{proto: protoVersion4, typ: TypeTuple},
+		NativeType: NativeType{typ: TypeTuple},
 		Elems: []TypeInfo{
-			NativeType{proto: protoVersion4, typ: TypeVarchar},
-			NativeType{proto: protoVersion4, typ: TypeVarchar},
+			NativeType{typ: TypeVarchar},
+			NativeType{typ: TypeVarchar},
 		},
 	}
 
@@ -1758,7 +1758,7 @@ func TestScannerScanTupleColumnUsesRawColumnIndex(t *testing.T) {
 		meta: resultMetadata{
 			columns: []ColumnInfo{
 				{Name: "pair", TypeInfo: tupleInfo},
-				{Name: "tail", TypeInfo: NativeType{proto: protoVersion4, typ: TypeVarchar}},
+				{Name: "tail", TypeInfo: NativeType{typ: TypeVarchar}},
 			},
 			actualColCount: 3,
 		},

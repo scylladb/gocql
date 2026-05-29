@@ -873,17 +873,17 @@ func TestUnmarshalUDTIntoInterface(t *testing.T) {
 	t.Parallel()
 
 	info := UDTTypeInfo{
-		NativeType: NativeType{proto: protoVersion4, typ: TypeUDT},
+		NativeType: NativeType{typ: TypeUDT},
 		Name:       "myudt",
 		KeySpace:   "myks",
 		Elements: []UDTField{
 			{
 				Name: "first",
-				Type: NativeType{proto: protoVersion4, typ: TypeAscii},
+				Type: NativeType{typ: TypeAscii},
 			},
 			{
 				Name: "second",
-				Type: NativeType{proto: protoVersion4, typ: TypeSmallInt},
+				Type: NativeType{typ: TypeSmallInt},
 			},
 		},
 	}
@@ -1091,7 +1091,7 @@ func bytesWithLength(data ...[]byte) []byte {
 func TestUnmarshalVectorZeroDimensions(t *testing.T) {
 	info := VectorType{
 		NativeType: NewCustomType(protoVersion4, TypeCustom, apacheCassandraTypePrefix+"VectorType"),
-		SubType:    NativeType{proto: protoVersion4, typ: TypeFloat},
+		SubType:    NativeType{typ: TypeFloat},
 		Dimensions: 0,
 	}
 
@@ -1178,7 +1178,7 @@ func TestNativeNewWithErrorConsistentWithGoType(t *testing.T) {
 	}
 
 	for _, typ := range nativeTypes {
-		nt := NativeType{typ: typ, proto: protoVersion4}
+		nt := NativeType{typ: typ}
 
 		// Get the fast-path result from NewWithError
 		fastVal, err := nt.NewWithError()
@@ -1228,8 +1228,8 @@ func TestCollectionNewWithErrorConsistentWithGoType(t *testing.T) {
 	for _, collTyp := range []Type{TypeList, TypeSet} {
 		for _, elemTyp := range elemTypes {
 			ct := CollectionType{
-				NativeType: NativeType{typ: collTyp, proto: protoVersion4},
-				Elem:       NativeType{typ: elemTyp, proto: protoVersion4},
+				NativeType: NativeType{typ: collTyp},
+				Elem:       NativeType{typ: elemTyp},
 			}
 
 			fastVal, err := ct.NewWithError()
@@ -1270,9 +1270,9 @@ func TestCollectionNewWithErrorConsistentWithGoType(t *testing.T) {
 	for _, keyTyp := range keyTypes {
 		for _, valTyp := range valTypes {
 			ct := CollectionType{
-				NativeType: NativeType{typ: TypeMap, proto: protoVersion4},
-				Key:        NativeType{typ: keyTyp, proto: protoVersion4},
-				Elem:       NativeType{typ: valTyp, proto: protoVersion4},
+				NativeType: NativeType{typ: TypeMap},
+				Key:        NativeType{typ: keyTyp},
+				Elem:       NativeType{typ: valTyp},
 			}
 
 			fastVal, err := ct.NewWithError()
