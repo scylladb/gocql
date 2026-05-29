@@ -1776,14 +1776,20 @@ type NativeType struct {
 
 // NewNativeType creates a NativeType.
 //
-// Deprecated: The proto parameter is ignored. Use NativeType{} struct literal instead.
+// The proto parameter is ignored; it is retained only for backward API
+// compatibility. External callers should keep using NewNativeType: NativeType's
+// fields (typ, custom) are unexported, so a NativeType{} literal cannot be
+// populated outside package gocql.
 func NewNativeType(proto byte, typ Type) NativeType {
 	return NativeType{typ: typ}
 }
 
 // NewCustomType creates a custom NativeType.
 //
-// Deprecated: The proto parameter is ignored. Use NativeType{} struct literal instead.
+// The proto parameter is ignored; it is retained only for backward API
+// compatibility. External callers should keep using NewCustomType: NativeType's
+// fields (typ, custom) are unexported, so a NativeType{} literal cannot be
+// populated outside package gocql.
 func NewCustomType(proto byte, typ Type, custom string) NativeType {
 	return NativeType{typ: typ, custom: custom}
 }
@@ -2009,7 +2015,10 @@ type UDTField struct {
 	Name string
 }
 
-// NewUDTType creates a UDTTypeInfo. The proto parameter is ignored and kept for API compatibility.
+// NewUDTType creates a UDTTypeInfo.
+//
+// The proto parameter is ignored; it is retained only for backward API
+// compatibility.
 func NewUDTType(proto byte, name, keySpace string, elems ...UDTField) UDTTypeInfo {
 	return UDTTypeInfo{
 		NativeType: NativeType{typ: TypeUDT},
