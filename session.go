@@ -102,7 +102,7 @@ var queryPool = &sync.Pool{
 	New: func() any {
 		return &Query{
 			routingInfo: &queryRoutingInfo{},
-			metrics:     &queryMetrics{m: make(map[UUID]*hostMetrics)},
+			metrics:     &queryMetrics{},
 			refCount:    1,
 		}
 	},
@@ -1092,17 +1092,33 @@ type hostMetrics struct {
 }
 
 type queryMetrics struct {
+	// m holds metrics for additional hosts beyond the first. It is allocated
+	// lazily, only when a second distinct host is observed (a retry to another
+	// node, speculative execution, or a page served by a different host).
+	// Kept first so the GC pointer-scan range over this struct stays minimal.
 	m map[UUID]*hostMetrics
+
+	l sync.RWMutex
+
+	// Fast path: the overwhelming majority of queries touch exactly one host
+	// (a single attempt, no retry or speculative execution). For that case we
+	// keep the host's metrics inline and never allocate the map at all.
+	firstHostID UUID
+	firstHost   hostMetrics
+
 	// totalAttempts is total number of attempts.
 	// Equal to sum of all hostMetrics' Attempts
 	totalAttempts int
-	l             sync.RWMutex
+
+	hasFirstHost bool
 }
 
 // preFilledQueryMetrics initializes new queryMetrics based on per-host supplied data.
 func preFilledQueryMetrics(m map[UUID]*hostMetrics) *queryMetrics {
-	qm := &queryMetrics{m: m}
-	for _, hm := range qm.m {
+	qm := &queryMetrics{}
+	for id, hm := range m {
+		dst := qm.getOrCreateHostMetricsLocked(id)
+		*dst = *hm
 		qm.totalAttempts += hm.Attempts
 	}
 	return qm
@@ -1122,14 +1138,34 @@ func (qm *queryMetrics) hostMetrics(host *HostInfo) *hostMetrics {
 // hostMetricsLocked gets or creates host metrics for given host.
 // It must be called only while holding qm.l lock.
 func (qm *queryMetrics) hostMetricsLocked(host *HostInfo) *hostMetrics {
-	id := host.hostUUID()
+	return qm.getOrCreateHostMetricsLocked(host.hostUUID())
+}
+
+// getOrCreateHostMetricsLocked returns the hostMetrics for id, creating a
+// zero-valued entry if none exists yet. The first host seen is stored inline;
+// only subsequent distinct hosts allocate (and populate) the spill map.
+// It must be called only while holding qm.l lock.
+func (qm *queryMetrics) getOrCreateHostMetricsLocked(id UUID) *hostMetrics {
+	if qm.hasFirstHost {
+		if qm.firstHostID == id {
+			return &qm.firstHost
+		}
+	} else {
+		qm.firstHostID = id
+		qm.firstHost = hostMetrics{}
+		qm.hasFirstHost = true
+		return &qm.firstHost
+	}
+
+	// Second or later distinct host: fall back to the lazily-allocated map.
+	if qm.m == nil {
+		qm.m = make(map[UUID]*hostMetrics)
+	}
 	metrics, exists := qm.m[id]
 	if !exists {
-		// if the host is not in the map, it means it's been accessed for the first time
 		metrics = &hostMetrics{}
 		qm.m[id] = metrics
 	}
-
 	return metrics
 }
 
@@ -1147,6 +1183,10 @@ func (qm *queryMetrics) latency() int64 {
 		attempts int
 		latency  int64
 	)
+	if qm.hasFirstHost {
+		attempts += qm.firstHost.Attempts
+		latency += qm.firstHost.TotalLatency
+	}
 	for _, metric := range qm.m {
 		attempts += metric.Attempts
 		latency += metric.TotalLatency
@@ -1159,10 +1199,14 @@ func (qm *queryMetrics) latency() int64 {
 }
 
 // reset resets metrics, to forget about prior query executions.
-// Uses clear() instead of make() to preserve the map's backing array,
+// The inline first-host slot is cleared and clear() (rather than make()) is
+// used on the spill map so its backing array is preserved for reuse,
 // avoiding a heap allocation on each re-execution.
 func (qm *queryMetrics) reset() {
 	qm.l.Lock()
+	qm.firstHostID = UUID{}
+	qm.firstHost = hostMetrics{}
+	qm.hasFirstHost = false
 	clear(qm.m)
 	qm.totalAttempts = 0
 	qm.l.Unlock()
@@ -1281,7 +1325,7 @@ func (q *Query) defaultsFromSession() {
 	q.defaultTimestamp = s.cfg.DefaultTimestamp
 	q.idempotent = s.cfg.DefaultIdempotence
 	if q.metrics == nil {
-		q.metrics = &queryMetrics{m: make(map[UUID]*hostMetrics)}
+		q.metrics = &queryMetrics{}
 	}
 
 	q.spec = defaultNonSpecExec
@@ -1869,8 +1913,7 @@ func (q *Query) Release() {
 func (q *Query) reset() {
 	m := q.metrics
 	if m != nil {
-		clear(m.m)
-		m.totalAttempts = 0
+		m.reset()
 	}
 
 	ri := q.routingInfo
@@ -2414,13 +2457,14 @@ func newNextIterWithPageState(parent *Query, pageState []byte, pos int) *nextIte
 	*newQry = *parent
 	newQry.pageState = pageState
 	newQry.refCount = 1
-	// Reuse metrics map if the pool preserved one; otherwise allocate fresh.
+	// Reuse the pooled metrics if the pool preserved one; otherwise allocate
+	// fresh. The map inside is allocated lazily, only if more than one host is
+	// observed during execution.
 	if pooledMetrics != nil && pooledMetrics != parent.metrics {
-		clear(pooledMetrics.m)
-		pooledMetrics.totalAttempts = 0
+		pooledMetrics.reset()
 		newQry.metrics = pooledMetrics
 	} else {
-		newQry.metrics = &queryMetrics{m: make(map[UUID]*hostMetrics)}
+		newQry.metrics = &queryMetrics{}
 	}
 	// Reuse routingInfo to avoid aliasing the parent's pointer (which is
 	// mutex-protected and shared). Copy the parent's routing fields into
@@ -2650,7 +2694,7 @@ func (s *Session) Batch(typ BatchType) *Batch {
 		Cons:             s.cons,
 		defaultTimestamp: s.cfg.DefaultTimestamp,
 		keyspace:         s.cfg.Keyspace,
-		metrics:          &queryMetrics{m: make(map[UUID]*hostMetrics)},
+		metrics:          &queryMetrics{},
 		spec:             defaultNonSpecExec,
 		routingInfo:      &queryRoutingInfo{},
 		requestTimeout:   s.cfg.Timeout,

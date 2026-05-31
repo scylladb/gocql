@@ -330,3 +330,112 @@ func TestQueryPoolRoundTripRoutingInfo(t *testing.T) {
 	}
 	qry2.Release()
 }
+
+// hostWithID builds a *HostInfo with the given host UUID for metrics tests.
+func hostWithID(t testing.TB, id string) *HostInfo {
+	h := (HostInfoBuilder{HostId: id}).Build()
+	return &h
+}
+
+// TestQueryMetricsInlineFirstHostLazyMap verifies that queryMetrics keeps the
+// first host's data inline (no map allocation) and only allocates the spill
+// map once a second distinct host is observed.
+func TestQueryMetricsInlineFirstHostLazyMap(t *testing.T) {
+	hostA := hostWithID(t, "3e9c5fd0-1a11-11ee-be56-0242ac120001")
+	hostB := hostWithID(t, "3e9c5fd0-1a11-11ee-be56-0242ac120002")
+
+	qm := &queryMetrics{}
+
+	// First host: stored inline, map stays nil.
+	qm.attempt(1, 10, hostA, false)
+	if !qm.hasFirstHost {
+		t.Fatal("expected hasFirstHost to be true after first attempt")
+	}
+	if qm.m != nil {
+		t.Fatalf("expected spill map to remain nil for a single host, got %v", qm.m)
+	}
+	if got := qm.attempts(); got != 1 {
+		t.Fatalf("expected 1 attempt, got %d", got)
+	}
+
+	// Same host again: still inline, still no map.
+	qm.attempt(1, 30, hostA, false)
+	if qm.m != nil {
+		t.Fatalf("expected spill map to remain nil for repeated single host, got %v", qm.m)
+	}
+	if got := qm.hostMetrics(hostA); got.Attempts != 2 || got.TotalLatency != 40 {
+		t.Fatalf("unexpected inline host metrics: %+v", got)
+	}
+
+	// Second distinct host: spill map is allocated and used.
+	qm.attempt(1, 100, hostB, false)
+	if qm.m == nil {
+		t.Fatal("expected spill map to be allocated after a second distinct host")
+	}
+	if len(qm.m) != 1 {
+		t.Fatalf("expected exactly one entry in spill map, got %d", len(qm.m))
+	}
+	if got := qm.attempts(); got != 3 {
+		t.Fatalf("expected 3 total attempts, got %d", got)
+	}
+	// latency() must aggregate inline + map: total latency 140 over 3 attempts.
+	if got := qm.latency(); got != 140/3 {
+		t.Fatalf("expected average latency %d, got %d", 140/3, got)
+	}
+
+	// reset() clears inline slot and map; map backing is preserved for reuse.
+	qm.reset()
+	if qm.hasFirstHost || qm.attempts() != 0 || len(qm.m) != 0 {
+		t.Fatalf("expected metrics cleared after reset: hasFirstHost=%v attempts=%d mapLen=%d",
+			qm.hasFirstHost, qm.attempts(), len(qm.m))
+	}
+	// After reset the next host is stored inline again.
+	qm.attempt(1, 5, hostB, false)
+	if !qm.hasFirstHost || qm.firstHostID != hostB.hostUUID() {
+		t.Fatal("expected reused metrics to store next host inline")
+	}
+}
+
+// TestPreFilledQueryMetricsRoundTrip verifies preFilledQueryMetrics correctly
+// distributes a supplied per-host map across the inline slot and spill map.
+func TestPreFilledQueryMetricsRoundTrip(t *testing.T) {
+	idA := hostWithID(t, "3e9c5fd0-1a11-11ee-be56-0242ac120001").hostUUID()
+	idB := hostWithID(t, "3e9c5fd0-1a11-11ee-be56-0242ac120002").hostUUID()
+	qm := preFilledQueryMetrics(map[UUID]*hostMetrics{
+		idA: {Attempts: 2, TotalLatency: 8},
+		idB: {Attempts: 3, TotalLatency: 12},
+	})
+	if got := qm.attempts(); got != 5 {
+		t.Fatalf("expected 5 total attempts, got %d", got)
+	}
+	if got := qm.latency(); got != 20/5 {
+		t.Fatalf("expected average latency %d, got %d", 20/5, got)
+	}
+}
+
+// BenchmarkQueryMetricsSingleHost measures the common path: a pooled
+// queryMetrics recording a single attempt against one host and being reset for
+// reuse. With the inline first-host slot this allocates nothing.
+func BenchmarkQueryMetricsSingleHost(b *testing.B) {
+	host := hostWithID(b, "3e9c5fd0-1a11-11ee-be56-0242ac120001")
+	qm := &queryMetrics{}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		qm.attempt(1, 10, host, false)
+		_ = qm.attempts()
+		qm.reset()
+	}
+}
+
+// BenchmarkQueryMetricsFreshSingleHost measures a fresh (unpooled) queryMetrics
+// per iteration recording one single-host attempt — the cold-start common path.
+func BenchmarkQueryMetricsFreshSingleHost(b *testing.B) {
+	host := hostWithID(b, "3e9c5fd0-1a11-11ee-be56-0242ac120001")
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		qm := &queryMetrics{}
+		qm.attempt(1, 10, host, false)
+	}
+}
