@@ -1691,10 +1691,21 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 		}
 
 		params.values = make([]queryValues, len(values))
+		// When the bound values are the query's own values (no binding
+		// callback rewrote them), partition-key columns may already have been
+		// marshalled while computing the routing key in GetRoutingKey. Reuse
+		// those bytes to avoid marshalling the same values twice per query.
+		usePKCache := qry.binding == nil && len(qry.pkMarshalCache) > 0
 		for i := 0; i < len(values); i++ {
 			v := &params.values[i]
 			value := values[i]
 			typ := info.request.columns[i].TypeInfo
+			if usePKCache {
+				if cached, ok := qry.lookupPKMarshalCache(i, typ); ok {
+					v.value = cached
+					continue
+				}
+			}
 			if err := marshalQueryValue(typ, value, v); err != nil {
 				return &Iter{err: err}
 			}

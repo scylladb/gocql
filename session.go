@@ -1219,6 +1219,14 @@ type Query struct {
 	routingKey []byte
 	values     []any
 	pageState  []byte
+	// pkMarshalCache holds partition-key column values marshalled while
+	// computing the routing key in GetRoutingKey, so that executeQuery can
+	// reuse them instead of marshalling the same values a second time when
+	// building the request frame. It is populated during Pick (before any
+	// speculative-execution goroutines are launched) and only read afterwards,
+	// so it needs no synchronization. Values are immutable for the lifetime of
+	// the query, so the cache stays valid across retries.
+	pkMarshalCache []pkMarshalEntry
 	// requestTimeout is a timeout on waiting for response from server
 	requestTimeout             time.Duration
 	defaultTimestampValue      int64
@@ -1404,6 +1412,10 @@ func (q *Query) WithTimestamp(timestamp int64) *Query {
 // pool is used to optimize the routing of this query.
 func (q *Query) RoutingKey(routingKey []byte) *Query {
 	q.routingKey = routingKey
+	// Invalidate any cached partition-key marshalling: an explicit routing key
+	// takes precedence and GetRoutingKey will now early-return without
+	// repopulating the cache.
+	q.pkMarshalCache = q.pkMarshalCache[:0]
 	return q
 }
 
@@ -1490,6 +1502,13 @@ func (q *Query) GetSession() *Session {
 // then nil will be returned with no error. On any error condition,
 // an error description will be returned.
 func (q *Query) GetRoutingKey() ([]byte, error) {
+	// Always invalidate any previously cached partition-key marshalling before
+	// taking an early-return path. The cache is repopulated below only when we
+	// actually marshal the partition key, so this guarantees executeQuery never
+	// reuses stale bytes from an earlier execution (e.g. after Bind rebinds the
+	// values or after RoutingKey sets an explicit key).
+	q.pkMarshalCache = q.pkMarshalCache[:0]
+
 	if q.routingKey != nil {
 		return q.routingKey, nil
 	} else if q.binding != nil && len(q.values) == 0 {
@@ -1520,7 +1539,34 @@ func (q *Query) GetRoutingKey() ([]byte, error) {
 		q.routingInfo.table = routingKeyInfo.table
 		q.routingInfo.mu.Unlock()
 	}
-	return createRoutingKey(routingKeyInfo, q.values)
+	// Capture the marshalled partition-key column bytes so executeQuery can
+	// reuse them instead of marshalling the same values again for the request
+	// frame. The cache was reset at the top of this method; values are
+	// immutable between rebinds so a single population is sufficient.
+	return createRoutingKeyCaching(routingKeyInfo, q.values, &q.pkMarshalCache)
+}
+
+// lookupPKMarshalCache returns the cached marshalled bytes for the query value
+// at the given index, but only when the cached entry was marshalled with the
+// same NativeType as wantType. The type check guarantees the cached bytes match
+// what the frame builder would produce, even if the routing-key info and the
+// prepared-statement metadata (which are cached independently) momentarily
+// disagree, e.g. after a table is dropped and recreated with a different
+// partition-key column type. The returned slice must not be mutated.
+func (q *Query) lookupPKMarshalCache(index int, wantType TypeInfo) ([]byte, bool) {
+	wantNative, ok := wantType.(NativeType)
+	if !ok {
+		return nil, false
+	}
+	for i := range q.pkMarshalCache {
+		if q.pkMarshalCache[i].index == index {
+			if q.pkMarshalCache[i].typ == wantNative {
+				return q.pkMarshalCache[i].value, true
+			}
+			return nil, false
+		}
+	}
+	return nil, false
 }
 
 func (q *Query) shouldPrepare() bool {
@@ -1655,6 +1701,9 @@ func (q *Query) Idempotent(value bool) *Query {
 func (q *Query) Bind(v ...any) *Query {
 	q.values = v
 	q.pageState = nil
+	// Rebinding changes the values, so any previously cached partition-key
+	// marshalling is now stale and must be discarded.
+	q.pkMarshalCache = q.pkMarshalCache[:0]
 	return q
 }
 
@@ -2798,20 +2847,52 @@ func (b *Batch) SetRequestTimeout(timeout time.Duration) *Batch {
 	return b
 }
 
+// pkMarshalEntry caches the marshalled bytes of a single partition-key column
+// keyed by its position in the query's bound values slice. The cached bytes are
+// identical to what the request-frame builder would produce for the same value,
+// so they can be reused to avoid marshalling partition-key columns twice (once
+// for routing/token computation and once for the request frame).
+//
+// typ records the exact NativeType the bytes were marshalled with. executeQuery
+// reuses the bytes only when the column's type at execution time is the same
+// NativeType, so a table that was dropped and recreated with a different
+// partition-key column type (the routing-key info and prepared metadata live in
+// separate caches that could momentarily disagree) can never cause stale bytes
+// to be written into a frame. Only NativeType partition-key columns are cached
+// because NativeType is comparable; other type kinds fall back to re-marshalling.
+type pkMarshalEntry struct {
+	value []byte
+	typ   NativeType
+	index int
+}
+
 func createRoutingKey(routingKeyInfo *routingKeyInfo, values []any) ([]byte, error) {
+	return createRoutingKeyCaching(routingKeyInfo, values, nil)
+}
+
+// createRoutingKeyCaching computes the routing key like createRoutingKey, and,
+// when cache is non-nil, appends the per-column marshalled bytes it produced for
+// each partition-key column so the caller can reuse them when building the
+// request frame. It only caches when a partition-key value is a plain value
+// (not a *namedValue or unsetColumn) AND its type is a NativeType, matching the
+// marshalling that the frame builder performs for those columns; otherwise it
+// leaves that column out of the cache and the frame builder marshals normally.
+func createRoutingKeyCaching(routingKeyInfo *routingKeyInfo, values []any, cache *[]pkMarshalEntry) ([]byte, error) {
 	if routingKeyInfo == nil {
 		return nil, nil
 	}
 
 	if len(routingKeyInfo.indexes) == 1 {
 		// single column routing key
+		idx := routingKeyInfo.indexes[0]
 		routingKey, err := Marshal(
 			routingKeyInfo.types[0],
-			values[routingKeyInfo.indexes[0]],
+			values[idx],
 		)
 		if err != nil {
 			return nil, err
 		}
+		maybeCachePKMarshal(cache, idx, routingKeyInfo.types[0], values[idx], routingKey)
 		return routingKey, nil
 	}
 
@@ -2822,13 +2903,15 @@ func createRoutingKey(routingKeyInfo *routingKeyInfo, values []any) ([]byte, err
 	var backing [256]byte
 	buf := backing[:0]
 	for i := range routingKeyInfo.indexes {
+		idx := routingKeyInfo.indexes[i]
 		encoded, err := Marshal(
 			routingKeyInfo.types[i],
-			values[routingKeyInfo.indexes[i]],
+			values[idx],
 		)
 		if err != nil {
 			return nil, err
 		}
+		maybeCachePKMarshal(cache, idx, routingKeyInfo.types[i], values[idx], encoded)
 		n := len(encoded)
 		buf = append(buf, byte(n>>8), byte(n))
 		buf = append(buf, encoded...)
@@ -2839,6 +2922,35 @@ func createRoutingKey(routingKeyInfo *routingKeyInfo, values []any) ([]byte, err
 	routingKey := make([]byte, len(buf))
 	copy(routingKey, buf)
 	return routingKey, nil
+}
+
+// maybeCachePKMarshal records the marshalled bytes for a partition-key column in
+// cache, but only when caching is requested, the value is plain, and the type is
+// a NativeType (so it can be compared for identity at reuse time). encoded must
+// be a slice that is not mutated or aliased after this call other than as
+// read-only data (Marshal returns a fresh slice for each value, satisfying this).
+func maybeCachePKMarshal(cache *[]pkMarshalEntry, idx int, typ TypeInfo, value any, encoded []byte) {
+	if cache == nil || !pkValueIsPlain(value) {
+		return
+	}
+	nt, ok := typ.(NativeType)
+	if !ok {
+		return
+	}
+	*cache = append(*cache, pkMarshalEntry{index: idx, typ: nt, value: encoded})
+}
+
+// pkValueIsPlain reports whether v is a plain value that the request-frame
+// builder marshals directly (i.e. not a *namedValue wrapper or unsetColumn).
+// Only such values can have their marshalled bytes safely reused from the
+// routing-key computation.
+func pkValueIsPlain(v any) bool {
+	switch v.(type) {
+	case *namedValue, unsetColumn:
+		return false
+	default:
+		return true
+	}
 }
 
 func (b *Batch) borrowForExecution() {
