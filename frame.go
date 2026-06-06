@@ -249,7 +249,8 @@ type framer struct {
 	traceID               []byte
 	readBuffer            []byte
 	buf                   []byte
-	decompressBuf         []byte // reusable buffer for decompression output
+	decompressBuf         []byte // reusable buffer for decompression output (read path)
+	compressBuf           []byte // reusable buffer for compression output (write path)
 	flagLWT               int
 	rateLimitingErrorCode int
 	flags                 byte
@@ -639,12 +640,24 @@ func (f *framer) finish() error {
 		}
 
 		// TODO: only compress frames which are big enough
-		compressed, err := f.compressor.Encode(f.buf[headSize:])
-		if err != nil {
-			return err
+		if f.compressorBuf != nil {
+			// Compress into a reusable scratch buffer (no per-write output
+			// allocation), then copy the compressed body back in after the
+			// header. dst (f.compressBuf) and src (f.buf[headSize:]) are
+			// distinct backing arrays, so they do not overlap.
+			compressed, err := f.compressorBuf.EncodeInto(f.buf[headSize:], f.compressBuf)
+			if err != nil {
+				return err
+			}
+			f.compressBuf = compressed
+			f.buf = append(f.buf[:headSize], compressed...)
+		} else {
+			compressed, err := f.compressor.Encode(f.buf[headSize:])
+			if err != nil {
+				return err
+			}
+			f.buf = append(f.buf[:headSize], compressed...)
 		}
-
-		f.buf = append(f.buf[:headSize], compressed...)
 		bufLen = len(f.buf)
 	}
 	length := bufLen - headSize

@@ -104,3 +104,25 @@ func (s LZ4Compressor) DecodeInto(data []byte, dst []byte) ([]byte, error) {
 	}
 	return dst[:n], nil
 }
+
+// EncodeInto compresses data into dst's backing array when it is large enough,
+// otherwise it grows dst. The Cassandra LZ4 block format (4-byte big-endian
+// uncompressed length followed by the compressed block) is written starting at
+// dst[0]. Returns the resulting slice. dst and data must not overlap. This
+// avoids per-frame allocations when the caller maintains a reusable buffer
+// (e.g., pooled framers). It mirrors Encode exactly except for buffer reuse.
+func (s LZ4Compressor) EncodeInto(data []byte, dst []byte) ([]byte, error) {
+	dataLen := len(data)
+	required := lz4.CompressBlockBound(dataLen) + 4
+	if cap(dst) < required {
+		dst = make([]byte, required)
+	} else {
+		dst = dst[:required]
+	}
+	n, err := lz4.CompressBlock(data, dst[4:], nil)
+	if err != nil {
+		return dst, err
+	}
+	binary.BigEndian.PutUint32(dst, uint32(dataLen))
+	return dst[:n+4], nil
+}

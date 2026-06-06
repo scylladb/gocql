@@ -28,6 +28,7 @@
 package lz4
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -98,4 +99,42 @@ func TestLZ4CompressorDecodeInto(t *testing.T) {
 	bad := []byte{0xFF, 0xFF, 0xFF, 0xFF, 1, 2, 3, 4}
 	_, err = c.DecodeInto(bad, nil)
 	require.Error(t, err)
+}
+
+func TestLZ4CompressorEncodeInto(t *testing.T) {
+	t.Parallel()
+
+	var c LZ4Compressor
+
+	inputs := [][]byte{
+		[]byte("My Test String that is reasonably long to compress nicely"),
+		[]byte("x"),
+		bytes.Repeat([]byte("abcd1234"), 1000),
+		bytes.Repeat([]byte{0}, 4096),
+	}
+
+	var dst []byte // reused across all inputs (grows as needed)
+	for i, in := range inputs {
+		// EncodeInto output must match Encode exactly.
+		want, err := c.Encode(in)
+		require.NoErrorf(t, err, "input %d Encode", i)
+
+		got, err := c.EncodeInto(in, dst)
+		require.NoErrorf(t, err, "input %d EncodeInto", i)
+		require.Equalf(t, want, got, "input %d EncodeInto vs Encode", i)
+
+		// Round-trip through Decode.
+		decoded, err := c.Decode(got)
+		require.NoErrorf(t, err, "input %d Decode", i)
+		require.Equalf(t, in, decoded, "input %d round-trip", i)
+
+		dst = got // reuse next iteration
+	}
+
+	// Undersized dst must be grown/reallocated.
+	got, err := c.EncodeInto(inputs[0], make([]byte, 0, 1))
+	require.NoError(t, err)
+	decoded, err := c.Decode(got)
+	require.NoError(t, err)
+	require.Equal(t, inputs[0], decoded)
 }

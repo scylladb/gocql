@@ -296,6 +296,7 @@ func (fp *framerPool) resetAndPut(f *framer, alignBufWithReadBuffer bool, shrink
 		// Release oversized decompression buffer when shrinking to avoid
 		// a single large compressed frame permanently bloating pooled framers.
 		f.decompressBuf = nil
+		f.compressBuf = nil
 		fp.put(f)
 		return
 	}
