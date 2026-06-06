@@ -650,11 +650,9 @@ func (f *framer) finish() error {
 		return ErrFrameTooBig
 	}
 
-	if f.buf[1]&frm.FlagCompress == frm.FlagCompress {
-		if f.compressor == nil {
-			panic("compress flag set with no compressor")
-		}
-
+	// FlagCompress is only ever set when a compressor exists, so the common
+	// no-compressor path short-circuits on the pointer check.
+	if f.compressor != nil && f.buf[1]&frm.FlagCompress == frm.FlagCompress {
 		bodyLen := bufLen - headSize
 
 		// Decide whether this frame should actually be compressed based
