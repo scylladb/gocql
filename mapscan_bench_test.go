@@ -95,11 +95,21 @@ func BenchmarkMapScanRows(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		bs.reset()
+		rows := 0
 		for {
 			m := make(map[string]any, numCols)
 			if !bs.iter.MapScan(m) {
 				break
 			}
+			rows++
+		}
+		// Assert full-row processing and no iterator error so a decode/iterator
+		// regression cannot produce falsely-fast numbers by scanning fewer rows.
+		if bs.iter.err != nil {
+			b.Fatalf("MapScan failed: %v", bs.iter.err)
+		}
+		if rows != bs.numRows {
+			b.Fatalf("expected %d rows, got %d", bs.numRows, rows)
 		}
 	}
 }
