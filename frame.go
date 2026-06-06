@@ -32,6 +32,7 @@ import (
 	"io"
 	"net"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -611,10 +612,7 @@ func (f *framer) writeHeader(flags byte, op frm.Op, stream int) {
 }
 
 func (f *framer) setLength(length int) {
-	f.buf[5] = byte(length >> 24)
-	f.buf[6] = byte(length >> 16)
-	f.buf[7] = byte(length >> 8)
-	f.buf[8] = byte(length)
+	binary.BigEndian.PutUint32(f.buf[5:9], uint32(length))
 }
 
 func (f *framer) finish() error {
@@ -1286,6 +1284,17 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 	if n := len(opts.values); n > 0 {
 		f.writeShort(uint16(n))
 
+		// Pre-grow once for the whole value section to avoid per-value append
+		// reallocations; sizes of already-marshalled values are O(1) to sum.
+		need := 0
+		for i := 0; i < n; i++ {
+			if names {
+				need += 2 + len(opts.values[i].name)
+			}
+			need += 4 + len(opts.values[i].value)
+		}
+		f.buf = slices.Grow(f.buf, need)
+
 		for i := 0; i < n; i++ {
 			if names {
 				f.writeString(opts.values[i].name)
@@ -1423,6 +1432,28 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 
 	var flags byte
 
+	// Pre-grow once for all statements to avoid per-value append reallocations.
+	{
+		need := 0
+		for i := 0; i < n; i++ {
+			b := &w.statements[i]
+			if len(b.preparedID) == 0 {
+				need += 1 + 4 + len(b.statement)
+			} else {
+				need += 1 + 2 + len(b.preparedID)
+			}
+			need += 2 // value count
+			for j := range b.values {
+				col := &b.values[j]
+				if col.name != "" {
+					need += 2 + len(col.name)
+				}
+				need += 4 + len(col.value)
+			}
+		}
+		f.buf = slices.Grow(f.buf, need)
+	}
+
 	for i := 0; i < n; i++ {
 		b := &w.statements[i]
 		if len(b.preparedID) == 0 {
@@ -1435,7 +1466,7 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 
 		f.writeShort(uint16(len(b.values)))
 		for j := range b.values {
-			col := b.values[j]
+			col := &b.values[j]
 			if col.name != "" {
 				// TODO: move this check into the caller and set a flag on writeBatchFrame
 				// to indicate using named values
