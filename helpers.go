@@ -473,34 +473,45 @@ func (iter *Iter) getScanColumns() ([]string, error) {
 // suitable for passing to Scan. Values must be freshly allocated each
 // call because Scan mutates them.
 func (iter *Iter) newScanValues() ([]any, error) {
+	values := make([]any, iter.meta.actualColCount)
+	if err := iter.fillScanValues(values); err != nil {
+		return nil, err
+	}
+	return values, nil
+}
+
+// fillScanValues populates values (which must have length actualColCount) with
+// freshly allocated zero-value pointers for each scannable column. It is shared
+// by newScanValues (fresh slice per call) and the MapScan fast path (reused
+// slice across rows).
+func (iter *Iter) fillScanValues(values []any) error {
 	actualSize := iter.meta.actualColCount
-	values := make([]any, actualSize)
 	idx := 0
 	for _, column := range iter.Columns() {
 		if c, ok := column.TypeInfo.(TupleTypeInfo); !ok {
 			if idx >= actualSize {
-				err := fmt.Errorf("gocql: column count overflow in newScanValues: metadata predicted %d columns but encountered more", actualSize)
+				err := fmt.Errorf("gocql: column count overflow in fillScanValues: metadata predicted %d columns but encountered more", actualSize)
 				iter.err = err
-				return nil, err
+				return err
 			}
 			val, err := column.TypeInfo.NewWithError()
 			if err != nil {
 				iter.err = err
-				return nil, err
+				return err
 			}
 			values[idx] = val
 			idx++
 		} else {
 			for _, elem := range c.Elems {
 				if idx >= actualSize {
-					err := fmt.Errorf("gocql: column count overflow in newScanValues: metadata predicted %d columns but encountered more", actualSize)
+					err := fmt.Errorf("gocql: column count overflow in fillScanValues: metadata predicted %d columns but encountered more", actualSize)
 					iter.err = err
-					return nil, err
+					return err
 				}
 				val, err := elem.NewWithError()
 				if err != nil {
 					iter.err = err
-					return nil, err
+					return err
 				}
 				values[idx] = val
 				idx++
@@ -509,12 +520,12 @@ func (iter *Iter) newScanValues() ([]any, error) {
 	}
 
 	if idx != actualSize {
-		err := fmt.Errorf("gocql: column count mismatch in newScanValues: metadata predicted %d columns but got %d", actualSize, idx)
+		err := fmt.Errorf("gocql: column count mismatch in fillScanValues: metadata predicted %d columns but got %d", actualSize, idx)
 		iter.err = err
-		return nil, err
+		return err
 	}
 
-	return values, nil
+	return nil
 }
 
 // TODO(zariel): is it worth exporting this?
@@ -609,22 +620,51 @@ func (iter *Iter) MapScan(m map[string]any) bool {
 		return false
 	}
 
-	rowData, err := iter.RowData()
+	// Resolve the (cached) column names once.
+	columns, err := iter.getScanColumns()
 	if err != nil {
 		return false
 	}
 
-	for i, col := range rowData.Columns {
+	// Reuse cached slices across rows to avoid allocating a new []any plus one
+	// pointer per column on every row.
+	//
+	// mapScanDefaults holds the default destination pointers (one per column)
+	// and is never replaced after creation. Scan writes through these pointers
+	// on each call, overwriting the pointed-to values in place, so the pointers
+	// themselves remain valid across rows. Each call copies the default
+	// pointers into mapScanWorking (an O(N) element-by-element copy of the
+	// []any interface slice, no allocation), applies the caller's pointer
+	// overrides to the working copy, and scans into that. Because the working
+	// copy is rebuilt from defaults every call, slots overridden in one row
+	// are automatically restored for the next without per-slot re-allocation.
+	defaults := iter.mapScanDefaults
+	if defaults == nil || len(defaults) != iter.meta.actualColCount {
+		defaults = make([]any, iter.meta.actualColCount)
+		if err := iter.fillScanValues(defaults); err != nil {
+			return false
+		}
+		iter.mapScanDefaults = defaults
+		iter.mapScanWorking = make([]any, iter.meta.actualColCount)
+	}
+	values := iter.mapScanWorking
+	copy(values, defaults)
+
+	// Apply user-supplied pointer overrides for this row.
+	for i, col := range columns {
 		if dest, ok := m[col]; ok {
-			rowData.Values[i] = dest
+			values[i] = dest
 		}
 	}
 
-	if iter.Scan(rowData.Values...) {
-		rowData.rowMap(m)
-		return true
+	ok := iter.Scan(values...)
+
+	if ok {
+		rd := RowData{Columns: columns, Values: values}
+		rd.rowMap(m)
 	}
-	return false
+
+	return ok
 }
 
 func copyBytes(p []byte) []byte {
