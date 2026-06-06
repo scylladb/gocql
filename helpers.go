@@ -473,20 +473,31 @@ func (iter *Iter) getScanColumns() ([]string, error) {
 // suitable for passing to Scan. Values must be freshly allocated each
 // call because Scan mutates them.
 func (iter *Iter) newScanValues() ([]any, error) {
+	values := make([]any, iter.meta.actualColCount)
+	if err := iter.fillScanValues(values); err != nil {
+		return nil, err
+	}
+	return values, nil
+}
+
+// fillScanValues populates values (which must have length actualColCount) with
+// freshly allocated zero-value pointers for each scannable column. It is shared
+// by newScanValues (fresh slice per call) and the MapScan fast path (reused
+// slice across rows).
+func (iter *Iter) fillScanValues(values []any) error {
 	actualSize := iter.meta.actualColCount
-	values := make([]any, actualSize)
 	idx := 0
 	for _, column := range iter.Columns() {
 		if c, ok := column.TypeInfo.(TupleTypeInfo); !ok {
 			if idx >= actualSize {
 				err := fmt.Errorf("gocql: column count overflow in newScanValues: metadata predicted %d columns but encountered more", actualSize)
 				iter.err = err
-				return nil, err
+				return err
 			}
 			val, err := column.TypeInfo.NewWithError()
 			if err != nil {
 				iter.err = err
-				return nil, err
+				return err
 			}
 			values[idx] = val
 			idx++
@@ -495,12 +506,12 @@ func (iter *Iter) newScanValues() ([]any, error) {
 				if idx >= actualSize {
 					err := fmt.Errorf("gocql: column count overflow in newScanValues: metadata predicted %d columns but encountered more", actualSize)
 					iter.err = err
-					return nil, err
+					return err
 				}
 				val, err := elem.NewWithError()
 				if err != nil {
 					iter.err = err
-					return nil, err
+					return err
 				}
 				values[idx] = val
 				idx++
@@ -511,10 +522,10 @@ func (iter *Iter) newScanValues() ([]any, error) {
 	if idx != actualSize {
 		err := fmt.Errorf("gocql: column count mismatch in newScanValues: metadata predicted %d columns but got %d", actualSize, idx)
 		iter.err = err
-		return nil, err
+		return err
 	}
 
-	return values, nil
+	return nil
 }
 
 // TODO(zariel): is it worth exporting this?
@@ -609,22 +620,100 @@ func (iter *Iter) MapScan(m map[string]any) bool {
 		return false
 	}
 
-	rowData, err := iter.RowData()
+	// Resolve the (cached) column names once.
+	columns, err := iter.getScanColumns()
 	if err != nil {
 		return false
 	}
 
-	for i, col := range rowData.Columns {
+	// Reuse a cached destination slice across rows to avoid allocating a new
+	// []any plus one pointer per column on every row. The slice holds freshly
+	// allocated default pointers; user-supplied pointers in m temporarily
+	// override individual slots for the duration of this call and are restored
+	// to their defaults afterwards so subsequent calls start from a clean state.
+	values := iter.mapScanValues
+	if values == nil || len(values) != iter.meta.actualColCount {
+		values = make([]any, iter.meta.actualColCount)
+		if err := iter.fillScanValues(values); err != nil {
+			return false
+		}
+		iter.mapScanValues = values
+	}
+
+	// Apply user overrides, remembering which slots we changed so we can
+	// restore their default pointers after the row is materialized into m.
+	var overridden []int
+	for i, col := range columns {
 		if dest, ok := m[col]; ok {
-			rowData.Values[i] = dest
+			if defaults := values[i]; dest != defaults {
+				overridden = append(overridden, i)
+			}
+			values[i] = dest
 		}
 	}
 
-	if iter.Scan(rowData.Values...) {
-		rowData.rowMap(m)
-		return true
+	ok := iter.Scan(values...)
+
+	if ok {
+		rd := RowData{Columns: columns, Values: values}
+		rd.rowMap(m)
 	}
-	return false
+
+	// Restore overridden slots to their default allocated pointers so the
+	// cached slice is reusable for the next row.
+	if len(overridden) > 0 {
+		if err := iter.repairScanValues(values, overridden); err != nil {
+			return false
+		}
+	}
+
+	return ok
+}
+
+// repairScanValues re-allocates default zero-value pointers for the given
+// column indices in values. Used by MapScan to restore slots that were
+// temporarily overridden by user-supplied pointers. This only runs when the
+// caller passed pointers in the map (the uncommon case), so allocating fresh
+// defaults for just those slots is acceptable.
+func (iter *Iter) repairScanValues(values []any, indices []int) error {
+	// Map each scannable destination index back to its originating column so we
+	// can re-create the correct default pointer. Tuple columns expand to
+	// multiple destinations; handle them by walking the columns in order.
+	for _, target := range indices {
+		ti, err := iter.scanColumnTypeAt(target)
+		if err != nil {
+			return err
+		}
+		val, err := ti.NewWithError()
+		if err != nil {
+			iter.err = err
+			return err
+		}
+		values[target] = val
+	}
+	return nil
+}
+
+// scanColumnTypeAt returns the TypeInfo that produces the default scan
+// destination for the destination index `target` (after tuple expansion).
+func (iter *Iter) scanColumnTypeAt(target int) (TypeInfo, error) {
+	idx := 0
+	for _, column := range iter.Columns() {
+		if c, ok := column.TypeInfo.(TupleTypeInfo); !ok {
+			if idx == target {
+				return column.TypeInfo, nil
+			}
+			idx++
+		} else {
+			for _, elem := range c.Elems {
+				if idx == target {
+					return elem, nil
+				}
+				idx++
+			}
+		}
+	}
+	return nil, fmt.Errorf("gocql: scan destination index %d out of range", target)
 }
 
 func copyBytes(p []byte) []byte {

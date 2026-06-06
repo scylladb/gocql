@@ -1947,7 +1947,11 @@ type Iter struct {
 	// scanColumns caches the column names computed by RowData() so that
 	// MapScan does not recompute them on every row. Populated lazily on
 	// the first call to getScanColumns().
-	scanColumns       []string
+	scanColumns []string
+	// mapScanValues caches the slice of freshly-allocated scan destinations
+	// reused by MapScan across rows so that it does not allocate a new []any
+	// plus per-column pointers on every row. Populated lazily on first MapScan.
+	mapScanValues     []any
 	meta              resultMetadata
 	pos               int
 	numRows           int
