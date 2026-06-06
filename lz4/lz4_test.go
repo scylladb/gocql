@@ -138,3 +138,59 @@ func TestLZ4CompressorEncodeInto(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, inputs[0], decoded)
 }
+
+// TestLZ4EncodeIntoEqualsEncode asserts EncodeInto is byte-for-byte identical to
+// Encode across a range of inputs, including incompressible (random) data where
+// lz4.CompressBlock can return n=0. This is the critical invariant of the
+// buffer-reuse refactor: it must change buffer ownership only, never output.
+func TestLZ4EncodeIntoEqualsEncode(t *testing.T) {
+	t.Parallel()
+
+	var c LZ4Compressor
+
+	// Deterministic pseudo-random (incompressible) data of various sizes, plus
+	// highly compressible data, exercised through a reused destination buffer.
+	mk := func(n int, seed uint32) []byte {
+		b := make([]byte, n)
+		x := seed
+		for i := range b {
+			// xorshift32 — produces incompressible bytes.
+			x ^= x << 13
+			x ^= x >> 17
+			x ^= x << 5
+			b[i] = byte(x)
+		}
+		return b
+	}
+
+	inputs := [][]byte{
+		{},
+		[]byte("x"),
+		mk(1, 1),
+		mk(15, 2),
+		mk(64, 3),
+		mk(1024, 4),
+		bytes.Repeat([]byte("compressible "), 200),
+	}
+
+	var dst []byte
+	for i, in := range inputs {
+		want, errWant := c.Encode(in)
+		got, errGot := c.EncodeInto(in, dst)
+
+		// Error behaviour must match.
+		require.Equalf(t, errWant == nil, errGot == nil, "input %d: error mismatch want=%v got=%v", i, errWant, errGot)
+		require.Equalf(t, want, got, "input %d (len %d): EncodeInto output must equal Encode output", i, len(in))
+
+		// Whatever Decode does with Encode's output, it must do identically with
+		// EncodeInto's output (faithful refactor, even for the n=0 edge).
+		dWant, eWant := c.Decode(want)
+		dGot, eGot := c.Decode(got)
+		require.Equalf(t, eWant == nil, eGot == nil, "input %d: decode error mismatch", i)
+		if eWant == nil {
+			require.Equalf(t, dWant, dGot, "input %d: decoded output mismatch", i)
+		}
+
+		dst = got // reuse buffer next iteration
+	}
+}
