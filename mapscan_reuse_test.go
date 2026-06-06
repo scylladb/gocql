@@ -152,3 +152,92 @@ func TestMapScanUserPointerOverride(t *testing.T) {
 		t.Fatalf("scanned %d rows, want %d", count, numRows)
 	}
 }
+
+// buildBlobRows builds rows where each column holds a distinct blob value
+// [byte(r), byte(c), byte(r+c)], so cross-row aliasing of the reused scan slice
+// would be detectable as a value mismatch.
+func buildBlobRows(numRows, numCols int) []byte {
+	buf := make([]byte, 0)
+	tmp := make([]byte, 4)
+	for r := 0; r < numRows; r++ {
+		for c := 0; c < numCols; c++ {
+			payload := []byte{byte(r), byte(c), byte(r + c)}
+			binary.BigEndian.PutUint32(tmp, uint32(len(payload)))
+			buf = append(buf, tmp...)
+			buf = append(buf, payload...)
+		}
+	}
+	return buf
+}
+
+// TestMapScanBlobReuseNoAliasing verifies that reusing the scan-value slice
+// across rows does not cause blob ([]byte) values stored in earlier rows' maps
+// to be corrupted by later rows (the defensive copy in rowMap must hold). All
+// row maps are retained and verified at the end.
+func TestMapScanBlobReuseNoAliasing(t *testing.T) {
+	t.Parallel()
+	const numRows, numCols = 6, 2
+	names := []string{"a", "b"}
+	data := buildBlobRows(numRows, numCols)
+
+	cols := make([]ColumnInfo, numCols)
+	ti := NewNativeType(4, TypeBlob)
+	for i := range cols {
+		cols[i] = ColumnInfo{Keyspace: "ks", Table: "t", Name: names[i], TypeInfo: ti}
+	}
+	f := &framer{header: &frm.FrameHeader{}, buf: data}
+	iter := &Iter{
+		framer:  f,
+		numRows: numRows,
+		meta:    resultMetadata{columns: cols, colCount: numCols, actualColCount: numCols},
+	}
+
+	maps := make([]map[string]any, 0, numRows)
+	for {
+		m := make(map[string]any)
+		if !iter.MapScan(m) {
+			break
+		}
+		maps = append(maps, m)
+	}
+	if iter.err != nil {
+		t.Fatalf("iter error: %v", iter.err)
+	}
+	if len(maps) != numRows {
+		t.Fatalf("got %d rows, want %d", len(maps), numRows)
+	}
+	for r, m := range maps {
+		for c := 0; c < numCols; c++ {
+			want := []byte{byte(r), byte(c), byte(r + c)}
+			got, ok := m[names[c]].([]byte)
+			if !ok {
+				t.Fatalf("row %d col %q: not []byte: %T", r, names[c], m[names[c]])
+			}
+			if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+				t.Fatalf("row %d col %q: got %v want %v (aliasing/corruption)", r, names[c], got, want)
+			}
+		}
+	}
+}
+
+// TestMapScanNonComparableOverrideNoPanic verifies that pre-seeding the map with
+// a non-comparable value (e.g. a slice) for a column does not panic in the
+// override-detection comparison (dest != defaults).
+func TestMapScanNonComparableOverrideNoPanic(t *testing.T) {
+	t.Parallel()
+	const numRows, numCols = 2, 1
+	names := []string{"a"}
+	data := buildIntRows(numRows, numCols, 0)
+	iter := newIntIter(numRows, numCols, names, data)
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("MapScan panicked on non-comparable map value: %v", r)
+		}
+	}()
+
+	// Seed with a non-comparable []int value under the column key. MapScan must
+	// not panic when comparing it against the cached default pointer.
+	m := map[string]any{"a": []int{1, 2, 3}}
+	_ = iter.MapScan(m)
+}
