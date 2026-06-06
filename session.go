@@ -1948,10 +1948,14 @@ type Iter struct {
 	// MapScan does not recompute them on every row. Populated lazily on
 	// the first call to getScanColumns().
 	scanColumns []string
-	// mapScanValues caches the slice of freshly-allocated scan destinations
-	// reused by MapScan across rows so that it does not allocate a new []any
-	// plus per-column pointers on every row. Populated lazily on first MapScan.
-	mapScanValues     []any
+	// mapScanDefaults holds one freshly-allocated default destination pointer
+	// per scannable column, allocated once and reused by MapScan across rows.
+	// mapScanWorking is the per-call scan slice: each MapScan copies defaults
+	// into it, applies user overrides, and scans into it. This avoids
+	// allocating a new []any plus per-column pointers on every row. Both are
+	// populated lazily on the first MapScan call.
+	mapScanDefaults   []any
+	mapScanWorking    []any
 	meta              resultMetadata
 	pos               int
 	numRows           int

@@ -241,3 +241,79 @@ func TestMapScanNonComparableOverrideNoPanic(t *testing.T) {
 	m := map[string]any{"a": []int{1, 2, 3}}
 	_ = iter.MapScan(m)
 }
+
+// TestMapScanAllPointersReuse exercises the documented "pass pointers in the map"
+// pattern where the caller supplies a pointer for every column on every row
+// (reusing the same variables). It verifies correct values across many rows with
+// the reused working slice, and that user variables receive each row's data.
+func TestMapScanAllPointersReuse(t *testing.T) {
+	t.Parallel()
+	const numRows, numCols = 5, 3
+	names := []string{"a", "b", "c"}
+	data := buildIntRows(numRows, numCols, 1000)
+	iter := newIntIter(numRows, numCols, names, data)
+
+	var a, b, c int
+	row := 0
+	for {
+		// Same pointers reused each iteration (the documented pattern).
+		m := map[string]any{"a": &a, "b": &b, "c": &c}
+		if !iter.MapScan(m) {
+			break
+		}
+		// User variables must hold this row's values.
+		if a != 1000+row*numCols+0 || b != 1000+row*numCols+1 || c != 1000+row*numCols+2 {
+			t.Fatalf("row %d: a=%d b=%d c=%d", row, a, b, c)
+		}
+		// Map values (dereferenced) must match too.
+		if v, _ := m["a"].(int); v != a {
+			t.Fatalf("row %d: m[a]=%v want %d", row, m["a"], a)
+		}
+		row++
+	}
+	if iter.err != nil {
+		t.Fatalf("iter error: %v", iter.err)
+	}
+	if row != numRows {
+		t.Fatalf("scanned %d rows, want %d", row, numRows)
+	}
+}
+
+// TestMapScanMixedOverrideThenDefault verifies that overriding a column with a
+// user pointer in one row, then NOT overriding it in the next row, correctly
+// falls back to the cached default destination (the working slice is rebuilt
+// from defaults each call) and does not keep writing into the stale user var.
+func TestMapScanMixedOverrideThenDefault(t *testing.T) {
+	t.Parallel()
+	const numRows, numCols = 3, 1
+	names := []string{"x"}
+	data := buildIntRows(numRows, numCols, 0) // values 0,1,2
+	iter := newIntIter(numRows, numCols, names, data)
+
+	var userX int
+	// Row 0: override.
+	if !iter.MapScan(map[string]any{"x": &userX}) {
+		t.Fatal("row 0 failed")
+	}
+	if userX != 0 {
+		t.Fatalf("row 0 userX=%d want 0", userX)
+	}
+	// Row 1: no override; must not touch userX, must read value 1.
+	m1 := map[string]any{}
+	if !iter.MapScan(m1) {
+		t.Fatal("row 1 failed")
+	}
+	if userX != 0 {
+		t.Fatalf("row 1 must not modify userX; got %d", userX)
+	}
+	if v, _ := m1["x"].(int); v != 1 {
+		t.Fatalf("row 1 m[x]=%v want 1", m1["x"])
+	}
+	// Row 2: override again with same var; must read value 2.
+	if !iter.MapScan(map[string]any{"x": &userX}) {
+		t.Fatal("row 2 failed")
+	}
+	if userX != 2 {
+		t.Fatalf("row 2 userX=%d want 2", userX)
+	}
+}

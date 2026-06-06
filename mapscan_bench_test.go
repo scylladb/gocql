@@ -113,3 +113,38 @@ func BenchmarkMapScanRows(b *testing.B) {
 		}
 	}
 }
+
+// BenchmarkMapScanRowsAllPointers exercises the documented "pass pointers in the
+// map" pattern (a pointer per column every row). The metric of interest is
+// allocs/op and B/op (deterministic, machine-noise-independent): the working
+// slice is reused and rebuilt from defaults with an O(N) copy, so there are no
+// per-column re-allocations regardless of how many columns are overridden.
+func BenchmarkMapScanRowsAllPointers(b *testing.B) {
+	const numCols = 8
+	bs := newMapScanBench(64, numCols)
+	cols := bs.iter.meta.columns
+	vals := make([]int, numCols)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		bs.reset()
+		rows := 0
+		for {
+			m := make(map[string]any, numCols)
+			for c := 0; c < numCols; c++ {
+				m[cols[c].Name] = &vals[c]
+			}
+			if !bs.iter.MapScan(m) {
+				break
+			}
+			rows++
+		}
+		if bs.iter.err != nil {
+			b.Fatalf("MapScan failed: %v", bs.iter.err)
+		}
+		if rows != bs.numRows {
+			b.Fatalf("expected %d rows, got %d", bs.numRows, rows)
+		}
+	}
+}

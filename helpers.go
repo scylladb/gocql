@@ -626,28 +626,31 @@ func (iter *Iter) MapScan(m map[string]any) bool {
 		return false
 	}
 
-	// Reuse a cached destination slice across rows to avoid allocating a new
-	// []any plus one pointer per column on every row. The slice holds freshly
-	// allocated default pointers; user-supplied pointers in m temporarily
-	// override individual slots for the duration of this call and are restored
-	// to their defaults afterwards so subsequent calls start from a clean state.
-	values := iter.mapScanValues
-	if values == nil || len(values) != iter.meta.actualColCount {
-		values = make([]any, iter.meta.actualColCount)
-		if err := iter.fillScanValues(values); err != nil {
+	// Reuse cached slices across rows to avoid allocating a new []any plus one
+	// pointer per column on every row.
+	//
+	// mapScanDefaults holds freshly-allocated default destination pointers and
+	// is never mutated after creation. Each call copies it into mapScanWorking
+	// (an O(N) slice-header copy, no allocation), applies the caller's
+	// pointer overrides to the working copy, and scans into it. Because the
+	// working copy is rebuilt from defaults every call, slots overridden in one
+	// row are automatically restored for the next row without any per-slot
+	// re-allocation.
+	defaults := iter.mapScanDefaults
+	if defaults == nil || len(defaults) != iter.meta.actualColCount {
+		defaults = make([]any, iter.meta.actualColCount)
+		if err := iter.fillScanValues(defaults); err != nil {
 			return false
 		}
-		iter.mapScanValues = values
+		iter.mapScanDefaults = defaults
+		iter.mapScanWorking = make([]any, iter.meta.actualColCount)
 	}
+	values := iter.mapScanWorking
+	copy(values, defaults)
 
-	// Apply user overrides, remembering which slots we changed so we can
-	// restore their default pointers after the row is materialized into m.
-	var overridden []int
+	// Apply user-supplied pointer overrides for this row.
 	for i, col := range columns {
 		if dest, ok := m[col]; ok {
-			if defaults := values[i]; dest != defaults {
-				overridden = append(overridden, i)
-			}
 			values[i] = dest
 		}
 	}
@@ -659,61 +662,7 @@ func (iter *Iter) MapScan(m map[string]any) bool {
 		rd.rowMap(m)
 	}
 
-	// Restore overridden slots to their default allocated pointers so the
-	// cached slice is reusable for the next row.
-	if len(overridden) > 0 {
-		if err := iter.repairScanValues(values, overridden); err != nil {
-			return false
-		}
-	}
-
 	return ok
-}
-
-// repairScanValues re-allocates default zero-value pointers for the given
-// column indices in values. Used by MapScan to restore slots that were
-// temporarily overridden by user-supplied pointers. This only runs when the
-// caller passed pointers in the map (the uncommon case), so allocating fresh
-// defaults for just those slots is acceptable.
-func (iter *Iter) repairScanValues(values []any, indices []int) error {
-	// Map each scannable destination index back to its originating column so we
-	// can re-create the correct default pointer. Tuple columns expand to
-	// multiple destinations; handle them by walking the columns in order.
-	for _, target := range indices {
-		ti, err := iter.scanColumnTypeAt(target)
-		if err != nil {
-			return err
-		}
-		val, err := ti.NewWithError()
-		if err != nil {
-			iter.err = err
-			return err
-		}
-		values[target] = val
-	}
-	return nil
-}
-
-// scanColumnTypeAt returns the TypeInfo that produces the default scan
-// destination for the destination index `target` (after tuple expansion).
-func (iter *Iter) scanColumnTypeAt(target int) (TypeInfo, error) {
-	idx := 0
-	for _, column := range iter.Columns() {
-		if c, ok := column.TypeInfo.(TupleTypeInfo); !ok {
-			if idx == target {
-				return column.TypeInfo, nil
-			}
-			idx++
-		} else {
-			for _, elem := range c.Elems {
-				if idx == target {
-					return elem, nil
-				}
-				idx++
-			}
-		}
-	}
-	return nil, fmt.Errorf("gocql: scan destination index %d out of range", target)
 }
 
 func copyBytes(p []byte) []byte {
