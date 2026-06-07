@@ -487,12 +487,10 @@ func TestNewConnectWithLowTimeout(t *testing.T) {
 						cluster.MetadataSchemaRequestTimeout = lowTimeout
 						return cluster
 					},
-					connect:      Pass,
-					regularQuery: Pass,
-					controlQuery: Fail,
-					// It breaks control connection, then it can start reconnecting in any moment
-					// As result test is not stable
-					controlQueryAfterReconnect: Fail,
+					connect:                    Pass,
+					regularQuery:               Pass,
+					controlQuery:               CanPass,
+					controlQueryAfterReconnect: CanPass,
 				},
 				{
 					name: "WriteTimeout",
@@ -573,7 +571,12 @@ func TestNewConnectWithLowTimeout(t *testing.T) {
 
 					if tcase.controlQuery != DontRun {
 						t.Run("Query from control connection", func(t *testing.T) {
-							err = s.control.querySystem("SELECT key FROM system.local WHERE key='local'").err
+							ch := s.control.getConn()
+							if ch == nil {
+								err = errNoControl
+							} else {
+								err = ch.conn.querySystem(context.TODO(), "SELECT key FROM system.local WHERE key='local'").err
+							}
 							match(t, tcase.controlQuery, err)
 						})
 					}
@@ -589,7 +592,12 @@ func TestNewConnectWithLowTimeout(t *testing.T) {
 							if err != nil {
 								t.Fatalf("failed to reconnect to control connection: %v", err)
 							}
-							err = s.control.querySystem("SELECT key FROM system.local WHERE key='local'").err
+							ch := s.control.getConn()
+							if ch == nil {
+								err = errNoControl
+							} else {
+								err = ch.conn.querySystem(context.TODO(), "SELECT key FROM system.local WHERE key='local'").err
+							}
 							match(t, tcase.controlQueryAfterReconnect, err)
 						})
 					}
