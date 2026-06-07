@@ -334,6 +334,9 @@ func TestUnmarshalVector_SliceReuse(t *testing.T) {
 		if err := unmarshalVector(info, data, &result); err != nil {
 			t.Fatalf("unmarshalVector (first): %v", err)
 		}
+		if len(result) != dim {
+			t.Fatalf("expected len %d after first unmarshal, got %d", dim, len(result))
+		}
 		ptr := &result[0]
 
 		if err := unmarshalVector(info, data, &result); err != nil {
@@ -424,6 +427,9 @@ func TestUnmarshalVector_SliceReuse(t *testing.T) {
 		var result []int64
 		if err := unmarshalVector(info, data, &result); err != nil {
 			t.Fatalf("unmarshalVector (first): %v", err)
+		}
+		if len(result) != dim {
+			t.Fatalf("expected len %d after first unmarshal, got %d", dim, len(result))
 		}
 		ptr := &result[0]
 
