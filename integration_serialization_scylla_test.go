@@ -36,6 +36,12 @@ func truncateTable(t *testing.T, session *Session, fqTable string) error {
 // returns the transient ScyllaDB "Another global topology request is ongoing"
 // error. Any other error (or success) is returned immediately.
 func retryOnTopologyBusy(exec func() error) error {
+	return retryOnTopologyBusyWithSleep(exec, time.Sleep)
+}
+
+// retryOnTopologyBusyWithSleep is retryOnTopologyBusy with an injectable sleep
+// function so tests can avoid real backoff delays.
+func retryOnTopologyBusyWithSleep(exec func() error, sleep func(time.Duration)) error {
 	const maxAttempts = 10
 	var err error
 	for attempt := 0; attempt < maxAttempts; attempt++ {
@@ -44,7 +50,7 @@ func retryOnTopologyBusy(exec func() error) error {
 			return err
 		}
 		// Small backoff capped at ~0.5s; topology requests are short.
-		time.Sleep(time.Duration(50*(attempt+1)) * time.Millisecond)
+		sleep(time.Duration(50*(attempt+1)) * time.Millisecond)
 	}
 	return err
 }
@@ -64,15 +70,18 @@ func TestRetryOnTopologyBusy(t *testing.T) {
 	busy := errors.New("Error during truncate: exceptions::invalid_request_exception (Another global topology request is ongoing, please retry.)")
 	other := errors.New("some other error")
 
+	// noSleep avoids real backoff so these subtests stay fast and deterministic.
+	noSleep := func(time.Duration) {}
+
 	t.Run("retries busy then succeeds", func(t *testing.T) {
 		calls := 0
-		err := retryOnTopologyBusy(func() error {
+		err := retryOnTopologyBusyWithSleep(func() error {
 			calls++
 			if calls < 3 {
 				return busy
 			}
 			return nil
-		})
+		}, noSleep)
 		if err != nil {
 			t.Fatalf("expected success, got %v", err)
 		}
@@ -83,10 +92,10 @@ func TestRetryOnTopologyBusy(t *testing.T) {
 
 	t.Run("does not retry non-busy errors", func(t *testing.T) {
 		calls := 0
-		err := retryOnTopologyBusy(func() error {
+		err := retryOnTopologyBusyWithSleep(func() error {
 			calls++
 			return other
-		})
+		}, noSleep)
 		if err != other {
 			t.Fatalf("expected the original error, got %v", err)
 		}
@@ -97,10 +106,10 @@ func TestRetryOnTopologyBusy(t *testing.T) {
 
 	t.Run("gives up after max attempts", func(t *testing.T) {
 		calls := 0
-		err := retryOnTopologyBusy(func() error {
+		err := retryOnTopologyBusyWithSleep(func() error {
 			calls++
 			return busy
-		})
+		}, noSleep)
 		if !isTopologyBusyErr(err) {
 			t.Fatalf("expected the busy error after exhausting retries, got %v", err)
 		}
