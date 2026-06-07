@@ -1462,6 +1462,38 @@ func TestUnmarshalListFastPath(t *testing.T) {
 			t.Fatalf("expected size-guard error, got: %v", err)
 		}
 	})
+
+	// TypeAscii []string must skip the raw-string fast path so the generic path
+	// can validate ASCII payloads (bytes > 127 are invalid). Otherwise the fast
+	// path's string(elem) would silently accept invalid data, diverging from the
+	// generic path.
+	t.Run("ascii skips fast path and validates", func(t *testing.T) {
+		info := CollectionType{
+			NativeType: NativeType{proto: protoVersion4, typ: TypeList},
+			Elem:       NativeType{proto: protoVersion4, typ: TypeAscii},
+		}
+
+		// Fast path must not claim ascii-typed []string.
+		var fast []string
+		if err := unmarshalListFast(info, buildCQLList([]byte("ok")), &fast); err != errFastPathNotApplicable {
+			t.Fatalf("expected ascii to skip the fast path, got err=%v", err)
+		}
+
+		// Generic path must reject an invalid (>127) byte.
+		var bad []string
+		if err := unmarshalList(info, buildCQLList([]byte{0x80}), &bad); err == nil {
+			t.Fatalf("expected error unmarshaling invalid ascii, got %v", bad)
+		}
+
+		// Valid ASCII still round-trips through the generic path.
+		var good []string
+		if err := unmarshalList(info, buildCQLList([]byte("hi"), []byte("")), &good); err != nil {
+			t.Fatalf("unexpected error for valid ascii: %v", err)
+		}
+		if len(good) != 2 || good[0] != "hi" || good[1] != "" {
+			t.Fatalf("got %v", good)
+		}
+	})
 }
 
 // buildCQLListWithNulls builds a CQL binary list where a nil entry encodes a
