@@ -786,6 +786,44 @@ func TestNewErrorIterWithReleasedFramer(t *testing.T) {
 	})
 }
 
+// TestExecuteBatchUnpreparedRetryWarnsOnce locks the warning-dispatch contract
+// of the executeBatch UNPREPARED retry loop: executeBatchOnce returns the error
+// iter unbound, so the loop discards the intermediate frame silently (no
+// warning callback) and binds the warning handler only on the terminal iter.
+// This guards against dispatching the intermediate frame's warnings, which
+// would produce spurious callbacks on every retry.
+func TestExecuteBatchUnpreparedRetryWarnsOnce(t *testing.T) {
+	t.Parallel()
+
+	batch := &Batch{routingInfo: &queryRoutingInfo{}}
+	handler := &recordingWarningHandler{}
+
+	// Intermediate UNPREPARED frame carries a warning that must NOT be dispatched.
+	intermediateFramer := &testWarningFramer{warnings: []string{"intermediate-warn"}}
+	intermediate := newErrorIterWithReleasedFramer(&RequestErrUnprepared{}, intermediateFramer)
+	// The loop discards the intermediate iter before retrying.
+	intermediate.discard()
+
+	if !intermediateFramer.released {
+		t.Fatal("intermediate framer was not released")
+	}
+	if handler.calls != 0 {
+		t.Fatalf("intermediate discard dispatched warnings: calls = %d, want 0", handler.calls)
+	}
+
+	// Terminal (success) frame carries its own warning, dispatched exactly once.
+	terminalFramer := &testWarningFramer{warnings: []string{"terminal-warn"}}
+	terminal := (&Iter{framer: terminalFramer}).bindWarningHandler(batch, handler)
+	terminal.Close()
+
+	if handler.calls != 1 {
+		t.Fatalf("terminal handler call count = %d, want 1", handler.calls)
+	}
+	if !slices.Equal(handler.warnings, []string{"terminal-warn"}) {
+		t.Fatalf("handler warnings = %v, want %v", handler.warnings, []string{"terminal-warn"})
+	}
+}
+
 func TestIterWarningHandler(t *testing.T) {
 	t.Parallel()
 

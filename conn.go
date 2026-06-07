@@ -1873,10 +1873,15 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 	}
 	uniquePrepared := len(uniqueStmts)
 
+	warningHandler := WarningHandler(nil)
+	if c.session != nil {
+		warningHandler = c.session.warningHandler
+	}
+
 	for retries := 0; ; retries++ {
 		iter = c.executeBatchOnce(ctx, batch)
 		if iter == nil || iter.err == nil {
-			return iter
+			return iter.bindWarningHandler(batch, warningHandler)
 		}
 
 		// On RequestErrUnprepared, evict the single stale cache entry identified
@@ -1891,10 +1896,17 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 				key := c.session.stmtsLRU.keyFor(c.host.HostID(), c.currentKeyspace, entry.Stmt)
 				c.session.stmtsLRU.evictPreparedID(key, x.StatementId)
 			}
+			// Release the intermediate frame without dispatching its warnings:
+			// only the terminal iter reports warnings (matching the pre-loop
+			// recursive behavior). executeBatchOnce does not bind the handler,
+			// so discard() finalizes silently and frees the pooled framer.
+			iter.discard()
 			continue
 		}
 
-		return iter
+		// Terminal result: bind the warning handler here (once) so warnings are
+		// dispatched a single time with the correct host context.
+		return iter.bindWarningHandler(batch, warningHandler)
 	}
 }
 
@@ -2018,37 +2030,33 @@ func (c *Conn) executeBatchOnce(ctx context.Context, batch *Batch) *Iter {
 	if err != nil {
 		return &Iter{err: err}
 	}
-	warningHandler := WarningHandler(nil)
-	if c.session != nil {
-		warningHandler = c.session.warningHandler
-	}
 
 	resp, err := framer.parseFrame()
 	if err != nil {
-		return newErrorIterWithReleasedFramer(err, framer).bindWarningHandler(batch, warningHandler)
+		return newErrorIterWithReleasedFramer(err, framer)
 	}
 
 	if len(framer.traceID) > 0 && batch.trace != nil {
 		batch.trace.Trace(framer.traceID)
 	}
 
+	// Warning-handler binding and dispatch are handled once by executeBatch on
+	// the terminal iter, so intermediate UNPREPARED retries do not dispatch.
 	switch x := resp.(type) {
 	case *resultVoidFrame:
-		return (&Iter{framer: framer}).bindWarningHandler(batch, warningHandler)
+		return &Iter{framer: framer}
 	case *RequestErrUnprepared:
-		return newErrorIterWithReleasedFramer(x, framer).bindWarningHandler(batch, warningHandler)
+		return newErrorIterWithReleasedFramer(x, framer)
 	case *resultRowsFrame:
-		iter := (&Iter{
+		return &Iter{
 			meta:    x.meta,
 			framer:  framer,
 			numRows: x.numRows,
-		}).bindWarningHandler(batch, warningHandler)
-
-		return iter
+		}
 	case error:
-		return newErrorIterWithReleasedFramer(x, framer).bindWarningHandler(batch, warningHandler)
+		return newErrorIterWithReleasedFramer(x, framer)
 	default:
-		return newErrorIterWithReleasedFramer(NewErrProtocol("Unknown type in response to batch statement: %s", x), framer).bindWarningHandler(batch, warningHandler)
+		return newErrorIterWithReleasedFramer(NewErrProtocol("Unknown type in response to batch statement: %s", x), framer)
 	}
 }
 
