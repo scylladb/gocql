@@ -765,7 +765,10 @@ func unmarshalListFast(info CollectionType, data []byte, value any) error {
 
 	switch v := value.(type) {
 	case *[]string:
-		if elemTyp != TypeVarchar && elemTyp != TypeText && elemTyp != TypeAscii {
+		// TypeAscii is excluded: the generic path validates ASCII payloads
+		// (rejecting bytes > 127) via serialization/ascii, whereas this fast
+		// path would decode with string(elem) and silently accept invalid data.
+		if elemTyp != TypeVarchar && elemTyp != TypeText {
 			return errFastPathNotApplicable
 		}
 		return unmarshalListString(info, data, v)
