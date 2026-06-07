@@ -896,11 +896,15 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 		replicas = []*HostInfo{host}
 	}
 
-	if t.shuffleReplicas && !qry.IsLWT() && len(replicas) > 1 {
+	// Cache IsLWT() once: it is read on both the shuffle and avoid-slow-replicas
+	// paths below, and computing it can take a lock on the query routing info.
+	isLWT := qry.IsLWT()
+
+	if t.shuffleReplicas && !isLWT && len(replicas) > 1 {
 		shuffleHostsInPlace(replicas)
 	}
 
-	if s := qry.GetSession(); s != nil && !qry.IsLWT() && t.avoidSlowReplicas {
+	if s := qry.GetSession(); s != nil && !isLWT && t.avoidSlowReplicas {
 		partitionHealthy(replicas, s)
 	}
 
