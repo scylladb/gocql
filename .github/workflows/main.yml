@@ -14,9 +14,9 @@ jobs:
     env:
       SCYLLA_IMAGE: scylladb/scylla:5.4.6
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-go@v2
-      - uses: actions/cache@v2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         id: gomod-cache
         with:
           path: ~/go/pkg/mod
