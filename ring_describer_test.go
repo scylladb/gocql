@@ -327,6 +327,53 @@ func TestMockGetHostsFromSystem(t *testing.T) {
 	tests.AssertEqual(t, "host token length", 2, len(hosts[0].tokens))
 }
 
+// portMockControlConn behaves like mockControlConn but reports a configurable
+// port for the host the control connection was established on.
+type portMockControlConn struct {
+	mockControlConn
+	port int
+}
+
+func (m *portMockControlConn) getConn() *connHost {
+	return &connHost{
+		conn: &mockConnection{},
+		host: &HostInfo{port: m.port},
+	}
+}
+
+// TestGetHostsFromSystemUsesControlConnPort verifies that hosts discovered via
+// system.local/system.peers without an explicit native_port inherit the port of
+// the host the control connection was actually established on, rather than
+// cfg.Port. This is a regression test for
+// https://github.com/scylladb/gocql/issues/900 where an explicit non-default
+// port from cfg.Hosts (e.g. the CQL TLS port 9142) was ignored and cfg.Port
+// (9042) was used for all discovered hosts.
+func TestGetHostsFromSystemUsesControlConnPort(t *testing.T) {
+	t.Parallel()
+
+	const controlConnPort = 9142
+
+	r := &ringDescriber{
+		control: &portMockControlConn{port: controlConnPort},
+		// cfg.Port is the default plaintext port, which must NOT be used when the
+		// control connection was established on a different port.
+		cfg: &ClusterConfig{Port: 9042},
+	}
+
+	hosts, _, err := r.GetHostsFromSystem()
+	if err != nil {
+		t.Fatalf("unable to get hosts: %v", err)
+	}
+
+	if len(hosts) == 0 {
+		t.Fatal("expected at least one host")
+	}
+
+	for _, h := range hosts {
+		tests.AssertEqual(t, fmt.Sprintf("port for host %s", h.ConnectAddress()), controlConnPort, h.Port())
+	}
+}
+
 func TestRingDescriberGetClusterPeerInfoClosesIter(t *testing.T) {
 	t.Parallel()
 
@@ -352,7 +399,7 @@ func TestRingDescriberGetClusterPeerInfoClosesIter(t *testing.T) {
 			framer:  framer,
 			numRows: 1,
 		},
-	})
+	}, r.cfg.Port)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -386,7 +433,7 @@ func TestGetClusterPeerInfoQueryRouting(t *testing.T) {
 			}
 			r := &ringDescriber{cfg: &ClusterConfig{}}
 			// iter is nil so getClusterPeerInfo returns errNoControl, but the query is still recorded
-			_, _ = r.getClusterPeerInfo(&HostInfo{}, conn)
+			_, _ = r.getClusterPeerInfo(&HostInfo{}, conn, r.cfg.Port)
 			if conn.lastQuery != tt.wantQuery {
 				t.Errorf("got query %q, want %q", conn.lastQuery, tt.wantQuery)
 			}
