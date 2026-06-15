@@ -285,15 +285,17 @@ func TestParseSupported(t *testing.T) {
 	}
 
 	tests := []struct {
-		name               string
-		supported          map[string][]string
-		nrShards           int
-		msbIgnore          uint64
-		shardingAlgorithm  string
-		partitioner        string
-		lwtFlagMask        int
-		rateLimitErrorCode int
-		shardAwarePort     uint16
+		name                  string
+		supported             map[string][]string
+		nrShards              int
+		msbIgnore             uint64
+		shardingAlgorithm     string
+		partitioner           string
+		lwtFlagMask           int
+		rateLimitErrorCode    int
+		shardAwarePort        uint16
+		isMetadataIDSupported bool
+		isScylla              bool
 	}{
 		{
 			name:               "full valid Scylla with sharding",
@@ -305,6 +307,7 @@ func TestParseSupported(t *testing.T) {
 			lwtFlagMask:        lwtMask,
 			rateLimitErrorCode: rateLimitCode,
 			shardAwarePort:     shardAwarePort,
+			isScylla:           true,
 		},
 		{
 			name: "Scylla without sharding (allow_shard_aware_drivers: false)",
@@ -313,9 +316,13 @@ func TestParseSupported(t *testing.T) {
 				rateLimitError:            {fmt.Sprintf("ERROR_CODE=%d", rateLimitCode)},
 				"SCYLLA_SHARD_AWARE_PORT": {fmt.Sprintf("%d", shardAwarePort)},
 			},
+			nrShards:           0,
+			msbIgnore:          0,
+			shardingAlgorithm:  "",
 			lwtFlagMask:        lwtMask,
 			rateLimitErrorCode: rateLimitCode,
 			shardAwarePort:     shardAwarePort,
+			isScylla:           true,
 		},
 		{
 			name: "invalid sharding (msbIgnore missing) with ports and LWT",
@@ -326,13 +333,30 @@ func TestParseSupported(t *testing.T) {
 				"SCYLLA_SHARD_AWARE_PORT":   {fmt.Sprintf("%d", shardAwarePort)},
 				lwtAddMetadataMarkKey:       {fmt.Sprintf("LWT_OPTIMIZATION_META_BIT_MASK=%d", lwtMask)},
 			},
-			partitioner:    "org.apache.cassandra.dht.Murmur3Partitioner",
-			lwtFlagMask:    lwtMask,
+			nrShards:          0,
+			msbIgnore:         0,
+			shardingAlgorithm: "",
+			partitioner:       "org.apache.cassandra.dht.Murmur3Partitioner",
+			lwtFlagMask:       lwtMask,
+			shardAwarePort:    shardAwarePort,
+			isScylla:          true,
+		},
+		{
+			name:                  "Scylla detected via SCYLLA_USE_METADATA_ID only",
+			supported:             map[string][]string{"SCYLLA_USE_METADATA_ID": {""}},
+			isMetadataIDSupported: true,
+			isScylla:              true,
+		},
+		{
+			name:           "shard-aware port only, no detection keys",
+			supported:      map[string][]string{"SCYLLA_SHARD_AWARE_PORT": {fmt.Sprintf("%d", shardAwarePort)}},
 			shardAwarePort: shardAwarePort,
+			isScylla:       false,
 		},
 		{
 			name:      "pure Cassandra (no SCYLLA keys)",
 			supported: map[string][]string{"CQL_VERSION": {"3.0.0"}},
+			isScylla:  false,
 		},
 	}
 
@@ -347,8 +371,69 @@ func TestParseSupported(t *testing.T) {
 			assert.Equal(t, tt.lwtFlagMask, got.lwtFlagMask, "lwtFlagMask")
 			assert.Equal(t, tt.rateLimitErrorCode, got.rateLimitErrorCode, "rateLimitErrorCode")
 			assert.Equal(t, tt.shardAwarePort, got.shardAwarePort, "shardAwarePort")
+			assert.Equal(t, tt.isMetadataIDSupported, got.isMetadataIDSupported, "isMetadataIDSupported")
+			assert.Equal(t, tt.isScylla, got.isScylla, "isScylla")
 		})
 	}
+}
+
+func TestIsScyllaConn(t *testing.T) {
+	t.Parallel()
+
+	makeConn := func(supported map[string][]string) *Conn {
+		conn := mockConn(0)
+		conn.supported = supported
+		conn.scyllaSupported = parseSupported(supported, &testLogger{})
+		return conn
+	}
+
+	t.Run("Scylla with sharding", func(t *testing.T) {
+		t.Parallel()
+		conn := makeConn(map[string][]string{
+			"SCYLLA_NR_SHARDS":           {"12"},
+			"SCYLLA_PARTITIONER":         {"org.apache.cassandra.dht.Murmur3Partitioner"},
+			"SCYLLA_SHARDING_ALGORITHM":  {"biased-token-round-robin"},
+			"SCYLLA_SHARDING_IGNORE_MSB": {"12"},
+			lwtAddMetadataMarkKey:        {"LWT_OPTIMIZATION_META_BIT_MASK=8"},
+		})
+		assert.True(t, conn.isScyllaConn())
+	})
+
+	t.Run("Scylla without sharding (allow_shard_aware_drivers: false)", func(t *testing.T) {
+		t.Parallel()
+		conn := makeConn(map[string][]string{
+			lwtAddMetadataMarkKey: {"LWT_OPTIMIZATION_META_BIT_MASK=8"},
+			rateLimitError:        {"ERROR_CODE=42"},
+		})
+		assert.True(t, conn.isScyllaConn())
+	})
+
+	t.Run("pure Cassandra", func(t *testing.T) {
+		t.Parallel()
+		conn := makeConn(map[string][]string{"CQL_VERSION": {"3.0.0"}})
+		assert.False(t, conn.isScyllaConn())
+	})
+}
+
+func TestInitConnPickerNonShardAwareScylla(t *testing.T) {
+	t.Parallel()
+
+	conn := mockConn(0)
+	conn.scyllaSupported = parseSupported(map[string][]string{
+		lwtAddMetadataMarkKey: {"LWT_OPTIMIZATION_META_BIT_MASK=8"},
+	}, &testLogger{})
+	require.True(t, conn.isScyllaConn())
+	require.Zero(t, conn.getScyllaSupported().nrShards)
+
+	pool := &hostConnPool{
+		size:       1,
+		connPicker: nopConnPicker{},
+		logger:     &testLogger{},
+	}
+	pool.initConnPicker(conn)
+
+	_, isScyllaPicker := pool.connPicker.(*scyllaConnPicker)
+	assert.False(t, isScyllaPicker, "must not build scyllaConnPicker without shards")
 }
 
 func TestScyllaPortIterator(t *testing.T) {
