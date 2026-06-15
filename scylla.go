@@ -333,7 +333,11 @@ func parseSupported(supported map[string][]string, logger StdLogger) ScyllaConne
 			logger.Printf("scylla: unsupported sharding configuration, partitioner=%s, algorithm=%s, no_shards=%d, msb_ignore=%d",
 				si.partitioner, si.shardingAlgorithm, si.nrShards, si.msbIgnore)
 		}
-		return ScyllaConnectionFeatures{}
+		// Clear shard-routing fields only; host-wide features are preserved.
+		si.shard = 0
+		si.nrShards = 0
+		si.msbIgnore = 0
+		si.shardingAlgorithm = ""
 	}
 
 	return si
