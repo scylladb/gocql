@@ -264,6 +264,93 @@ func TestScyllaLWTExtParsing(t *testing.T) {
 	})
 }
 
+func TestParseSupported(t *testing.T) {
+	t.Parallel()
+
+	const (
+		lwtMask        = 8
+		rateLimitCode  = 42
+		shardAwarePort = 19042
+	)
+
+	validSharding := map[string][]string{
+		"SCYLLA_SHARD":               {"3"},
+		"SCYLLA_NR_SHARDS":           {"12"},
+		"SCYLLA_PARTITIONER":         {"org.apache.cassandra.dht.Murmur3Partitioner"},
+		"SCYLLA_SHARDING_ALGORITHM":  {"biased-token-round-robin"},
+		"SCYLLA_SHARDING_IGNORE_MSB": {"12"},
+		"SCYLLA_SHARD_AWARE_PORT":    {fmt.Sprintf("%d", shardAwarePort)},
+		lwtAddMetadataMarkKey:        {fmt.Sprintf("LWT_OPTIMIZATION_META_BIT_MASK=%d", lwtMask)},
+		rateLimitError:               {fmt.Sprintf("ERROR_CODE=%d", rateLimitCode)},
+	}
+
+	tests := []struct {
+		name               string
+		supported          map[string][]string
+		nrShards           int
+		msbIgnore          uint64
+		shardingAlgorithm  string
+		partitioner        string
+		lwtFlagMask        int
+		rateLimitErrorCode int
+		shardAwarePort     uint16
+	}{
+		{
+			name:               "full valid Scylla with sharding",
+			supported:          validSharding,
+			nrShards:           12,
+			msbIgnore:          12,
+			shardingAlgorithm:  "biased-token-round-robin",
+			partitioner:        "org.apache.cassandra.dht.Murmur3Partitioner",
+			lwtFlagMask:        lwtMask,
+			rateLimitErrorCode: rateLimitCode,
+			shardAwarePort:     shardAwarePort,
+		},
+		{
+			name: "Scylla without sharding (allow_shard_aware_drivers: false)",
+			supported: map[string][]string{
+				lwtAddMetadataMarkKey:     {fmt.Sprintf("LWT_OPTIMIZATION_META_BIT_MASK=%d", lwtMask)},
+				rateLimitError:            {fmt.Sprintf("ERROR_CODE=%d", rateLimitCode)},
+				"SCYLLA_SHARD_AWARE_PORT": {fmt.Sprintf("%d", shardAwarePort)},
+			},
+			lwtFlagMask:        lwtMask,
+			rateLimitErrorCode: rateLimitCode,
+			shardAwarePort:     shardAwarePort,
+		},
+		{
+			name: "invalid sharding (msbIgnore missing) with ports and LWT",
+			supported: map[string][]string{
+				"SCYLLA_NR_SHARDS":          {"12"},
+				"SCYLLA_PARTITIONER":        {"org.apache.cassandra.dht.Murmur3Partitioner"},
+				"SCYLLA_SHARDING_ALGORITHM": {"biased-token-round-robin"},
+				"SCYLLA_SHARD_AWARE_PORT":   {fmt.Sprintf("%d", shardAwarePort)},
+				lwtAddMetadataMarkKey:       {fmt.Sprintf("LWT_OPTIMIZATION_META_BIT_MASK=%d", lwtMask)},
+			},
+			partitioner:    "org.apache.cassandra.dht.Murmur3Partitioner",
+			lwtFlagMask:    lwtMask,
+			shardAwarePort: shardAwarePort,
+		},
+		{
+			name:      "pure Cassandra (no SCYLLA keys)",
+			supported: map[string][]string{"CQL_VERSION": {"3.0.0"}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := parseSupported(tt.supported, &testLogger{})
+			assert.Equal(t, tt.nrShards, got.nrShards, "nrShards")
+			assert.Equal(t, tt.msbIgnore, got.msbIgnore, "msbIgnore")
+			assert.Equal(t, tt.shardingAlgorithm, got.shardingAlgorithm, "shardingAlgorithm")
+			assert.Equal(t, tt.partitioner, got.partitioner, "partitioner")
+			assert.Equal(t, tt.lwtFlagMask, got.lwtFlagMask, "lwtFlagMask")
+			assert.Equal(t, tt.rateLimitErrorCode, got.rateLimitErrorCode, "rateLimitErrorCode")
+			assert.Equal(t, tt.shardAwarePort, got.shardAwarePort, "shardAwarePort")
+		})
+	}
+}
+
 func TestScyllaPortIterator(t *testing.T) {
 	t.Parallel()
 
