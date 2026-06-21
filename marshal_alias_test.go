@@ -136,6 +136,20 @@ func TestUnmarshalListDoesNotAliasRetainedResult(t *testing.T) {
 		}
 	})
 
+	t.Run("int8", func(t *testing.T) {
+		var dst []int8
+		if err := Unmarshal(aliasListType(TypeTinyInt), aliasListWire([]byte{0x11}), &dst); err != nil {
+			t.Fatal(err)
+		}
+		retained := dst
+		if err := Unmarshal(aliasListType(TypeTinyInt), aliasListWire([]byte{0x22}), &dst); err != nil {
+			t.Fatal(err)
+		}
+		if retained[0] != 0x11 {
+			t.Fatalf("second decode overwrote the retained slice: got %#x, want 0x11", retained[0])
+		}
+	})
+
 	t.Run("int64", func(t *testing.T) {
 		enc := func(v int64) []byte {
 			var b [8]byte
