@@ -26,6 +26,7 @@ package gocql
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
@@ -698,6 +699,60 @@ func unmarshalDuration(data []byte, value any) error {
 	return nil
 }
 
+// allocCollBuf allocates a collection buffer, writes the element count header,
+// and returns the buffer along with the start offset for element data.
+func allocCollBuf(total, n int) (buf []byte, off int) {
+	buf = make([]byte, total)
+	binary.BigEndian.PutUint32(buf, uint32(n))
+	return buf, 4
+}
+
+// putLen writes a 4-byte length prefix and returns the new offset.
+func putLen(buf []byte, off int, length int) int {
+	binary.BigEndian.PutUint32(buf[off:], uint32(length))
+	return off + 4
+}
+
+// writeStr writes a length-prefixed string and returns the new offset.
+func writeStr(buf []byte, off int, s string) int {
+	off = putLen(buf, off, len(s))
+	copy(buf[off:], s)
+	return off + len(s)
+}
+
+// writeBytes writes a length-prefixed []byte (or CQL null if nil) and returns the new offset.
+func writeBytes(buf []byte, off int, b []byte) int {
+	if b == nil {
+		binary.BigEndian.PutUint32(buf[off:], math.MaxUint32)
+		return off + 4
+	}
+	off = putLen(buf, off, len(b))
+	copy(buf[off:], b)
+	return off + len(b)
+}
+
+// extractMapStrKey extracts string-key map entries into parallel slices and
+// computes total wire size. valFixed is the fixed data size of the value (e.g.
+// 8 for int64/float64, 4 for int/float32, 2 for int16, 1 for bool).
+func extractMapStrKey[T any](m map[string]T, valFixed int) (keys []string, vals []T, total int) {
+	keys = make([]string, 0, len(m))
+	vals = make([]T, 0, len(m))
+	total = 4 + (8+valFixed)*len(m)
+	for k, v := range m {
+		keys = append(keys, k)
+		vals = append(vals, v)
+		total += len(k)
+	}
+	return
+}
+
+func checkMarshalLen(n int) (int, error) {
+	if n > math.MaxInt32 {
+		return 0, marshalErrorf("marshal: collection too large")
+	}
+	return n, nil
+}
+
 func writeCollectionSize(n int, buf *bytes.Buffer) error {
 	if n > math.MaxInt32 {
 		return marshalErrorf("marshal: collection too large")
@@ -712,6 +767,54 @@ func writeCollectionSize(n int, buf *bytes.Buffer) error {
 func marshalList(info CollectionType, value any) ([]byte, error) {
 	if _, ok := value.(unsetColumn); ok {
 		return nil, nil
+	}
+
+	// Fast path: type-switch on concrete slice types for common variable-length
+	// CQL element types. These bypass reflect and per-element Marshal entirely.
+	// List wire format: [4-byte count] + N × ([4-byte elem-len] + [elem-bytes])
+	switch info.Elem.Type() {
+	case TypeVarchar, TypeText, TypeAscii:
+		if v, ok := value.([]string); ok {
+			if v == nil {
+				return nil, nil
+			}
+			return marshalListString(v)
+		}
+	case TypeBoolean:
+		if v, ok := value.([]bool); ok {
+			if v == nil {
+				return nil, nil
+			}
+			return marshalListBool(v)
+		}
+	case TypeBlob:
+		if v, ok := value.([][]byte); ok {
+			if v == nil {
+				return nil, nil
+			}
+			return marshalListBytes(v)
+		}
+	case TypeSmallInt:
+		if v, ok := value.([]int16); ok {
+			if v == nil {
+				return nil, nil
+			}
+			return marshalListInt16(v)
+		}
+	case TypeTinyInt:
+		if v, ok := value.([]int8); ok {
+			if v == nil {
+				return nil, nil
+			}
+			return marshalListInt8(v)
+		}
+	case TypeUUID, TypeTimeUUID:
+		if v, ok := value.([]UUID); ok {
+			if v == nil {
+				return nil, nil
+			}
+			return marshalListUUID(v)
+		}
 	}
 
 	rv := reflect.ValueOf(value)
@@ -770,6 +873,60 @@ func readCollectionSize(data []byte) (size, read int, err error) {
 }
 
 func unmarshalList(info CollectionType, data []byte, value any) error {
+	// Fast path: type-switch on concrete pointer-to-slice types for common
+	// variable-length CQL element types. Bypasses reflect and per-element Unmarshal.
+	// nil data is handled here; leaf functions assume non-nil data.
+	switch info.Elem.Type() {
+	case TypeVarchar, TypeText, TypeAscii:
+		if dst, ok := value.(*[]string); ok {
+			if data == nil {
+				*dst = nil
+				return nil
+			}
+			return unmarshalListString(data, dst)
+		}
+	case TypeBoolean:
+		if dst, ok := value.(*[]bool); ok {
+			if data == nil {
+				*dst = nil
+				return nil
+			}
+			return unmarshalListBool(data, dst)
+		}
+	case TypeBlob:
+		if dst, ok := value.(*[][]byte); ok {
+			if data == nil {
+				*dst = nil
+				return nil
+			}
+			return unmarshalListBytes(data, dst)
+		}
+	case TypeSmallInt:
+		if dst, ok := value.(*[]int16); ok {
+			if data == nil {
+				*dst = nil
+				return nil
+			}
+			return unmarshalListInt16(data, dst)
+		}
+	case TypeTinyInt:
+		if dst, ok := value.(*[]int8); ok {
+			if data == nil {
+				*dst = nil
+				return nil
+			}
+			return unmarshalListInt8(data, dst)
+		}
+	case TypeUUID, TypeTimeUUID:
+		if dst, ok := value.(*[]UUID); ok {
+			if data == nil {
+				*dst = nil
+				return nil
+			}
+			return unmarshalListUUID(data, dst)
+		}
+	}
+
 	rv := reflect.ValueOf(value)
 	if rv.Kind() != reflect.Ptr {
 		return unmarshalErrorf("can not unmarshal into non-pointer %T", value)
@@ -1069,6 +1226,95 @@ func marshalMap(info CollectionType, value any) ([]byte, error) {
 		return nil, nil
 	}
 
+	// Fast path: type-switch on concrete map types for common key/value CQL type
+	// combinations. These bypass reflect and per-element Marshal entirely.
+	// Map wire format: [4-byte count] + N × ([4-byte key-len] + [key-bytes] + [4-byte val-len] + [val-bytes])
+	switch info.Key.Type() {
+	case TypeVarchar, TypeText, TypeAscii:
+		switch info.Elem.Type() {
+		case TypeVarchar, TypeText, TypeAscii:
+			if v, ok := value.(map[string]string); ok {
+				if v == nil {
+					return nil, nil
+				}
+				return marshalMapStringString(v)
+			}
+		case TypeBigInt:
+			if v, ok := value.(map[string]int64); ok {
+				if v == nil {
+					return nil, nil
+				}
+				return marshalMapStringInt64(v)
+			}
+		case TypeInt:
+			if v, ok := value.(map[string]int); ok {
+				if v == nil {
+					return nil, nil
+				}
+				return marshalMapStringInt(v)
+			}
+		case TypeDouble:
+			if v, ok := value.(map[string]float64); ok {
+				if v == nil {
+					return nil, nil
+				}
+				return marshalMapStringFloat64(v)
+			}
+		case TypeFloat:
+			if v, ok := value.(map[string]float32); ok {
+				if v == nil {
+					return nil, nil
+				}
+				return marshalMapStringFloat32(v)
+			}
+		case TypeBoolean:
+			if v, ok := value.(map[string]bool); ok {
+				if v == nil {
+					return nil, nil
+				}
+				return marshalMapStringBool(v)
+			}
+		case TypeBlob:
+			if v, ok := value.(map[string][]byte); ok {
+				if v == nil {
+					return nil, nil
+				}
+				return marshalMapStringBytes(v)
+			}
+		case TypeSmallInt:
+			if v, ok := value.(map[string]int16); ok {
+				if v == nil {
+					return nil, nil
+				}
+				return marshalMapStringInt16(v)
+			}
+		}
+	case TypeBigInt:
+		switch info.Elem.Type() {
+		case TypeVarchar, TypeText, TypeAscii:
+			if v, ok := value.(map[int64]string); ok {
+				if v == nil {
+					return nil, nil
+				}
+				return marshalMapInt64String(v)
+			}
+		case TypeBigInt:
+			if v, ok := value.(map[int64]int64); ok {
+				if v == nil {
+					return nil, nil
+				}
+				return marshalMapInt64Int64(v)
+			}
+		case TypeDouble:
+			if v, ok := value.(map[int64]float64); ok {
+				if v == nil {
+					return nil, nil
+				}
+				return marshalMapInt64Float64(v)
+			}
+		}
+	}
+
 	rv := reflect.ValueOf(value)
 
 	t := rv.Type()
@@ -1215,6 +1461,169 @@ func unmarshalMapFast(info CollectionType, data []byte, value any) (bool, error)
 		}
 	}
 	return false, nil
+}
+
+// --- Unmarshal list variable-length fast paths ---
+
+func unmarshalListString(data []byte, dst *[]string) error {
+	n, p, err := readCollectionSize(data)
+	if err != nil {
+		return err
+	}
+	if n < 0 {
+		return unmarshalErrorf("unmarshal list: negative count %d", n)
+	}
+	data = data[p:]
+	s := make([]string, n)
+	for i := 0; i < n; i++ {
+		elemData, c, err := readMapEntryData(data)
+		if err != nil {
+			return err
+		}
+		data = data[c:]
+		if elemData != nil {
+			s[i] = string(elemData)
+		}
+	}
+	*dst = s
+	return nil
+}
+
+func unmarshalListBool(data []byte, dst *[]bool) error {
+	n, p, err := readCollectionSize(data)
+	if err != nil {
+		return err
+	}
+	if n < 0 {
+		return unmarshalErrorf("unmarshal list: negative count %d", n)
+	}
+	data = data[p:]
+	s := make([]bool, n)
+	for i := 0; i < n; i++ {
+		elemData, c, err := readMapEntryData(data)
+		if err != nil {
+			return err
+		}
+		data = data[c:]
+		if elemData != nil {
+			if l := len(elemData); l != 0 && l != 1 {
+				return unmarshalErrorf("unmarshal list: invalid bool element length %d", len(elemData))
+			} else if l == 1 {
+				s[i] = elemData[0] != 0
+			}
+		}
+	}
+	*dst = s
+	return nil
+}
+
+func unmarshalListBytes(data []byte, dst *[][]byte) error {
+	n, p, err := readCollectionSize(data)
+	if err != nil {
+		return err
+	}
+	if n < 0 {
+		return unmarshalErrorf("unmarshal list: negative count %d", n)
+	}
+	data = data[p:]
+	s := make([][]byte, n)
+	for i := 0; i < n; i++ {
+		elemData, c, err := readMapEntryData(data)
+		if err != nil {
+			return err
+		}
+		data = data[c:]
+		if elemData != nil {
+			s[i] = make([]byte, len(elemData))
+			copy(s[i], elemData)
+		}
+	}
+	*dst = s
+	return nil
+}
+
+func unmarshalListInt16(data []byte, dst *[]int16) error {
+	n, p, err := readCollectionSize(data)
+	if err != nil {
+		return err
+	}
+	if n < 0 {
+		return unmarshalErrorf("unmarshal list: negative count %d", n)
+	}
+	data = data[p:]
+	s := make([]int16, n)
+	for i := 0; i < n; i++ {
+		elemData, c, err := readMapEntryData(data)
+		if err != nil {
+			return err
+		}
+		data = data[c:]
+		if elemData != nil {
+			if l := len(elemData); l != 0 && l != 2 {
+				return unmarshalErrorf("unmarshal list: invalid int16 element length %d", len(elemData))
+			} else if l == 2 {
+				s[i] = int16(binary.BigEndian.Uint16(elemData))
+			}
+		}
+	}
+	*dst = s
+	return nil
+}
+
+func unmarshalListInt8(data []byte, dst *[]int8) error {
+	n, p, err := readCollectionSize(data)
+	if err != nil {
+		return err
+	}
+	if n < 0 {
+		return unmarshalErrorf("unmarshal list: negative count %d", n)
+	}
+	data = data[p:]
+	s := make([]int8, n)
+	for i := 0; i < n; i++ {
+		elemData, c, err := readMapEntryData(data)
+		if err != nil {
+			return err
+		}
+		data = data[c:]
+		if elemData != nil {
+			if l := len(elemData); l != 0 && l != 1 {
+				return unmarshalErrorf("unmarshal list: invalid int8 element length %d", len(elemData))
+			} else if l == 1 {
+				s[i] = int8(elemData[0])
+			}
+		}
+	}
+	*dst = s
+	return nil
+}
+
+func unmarshalListUUID(data []byte, dst *[]UUID) error {
+	n, p, err := readCollectionSize(data)
+	if err != nil {
+		return err
+	}
+	if n < 0 {
+		return unmarshalErrorf("unmarshal list: negative count %d", n)
+	}
+	data = data[p:]
+	s := make([]UUID, n)
+	for i := 0; i < n; i++ {
+		elemData, c, err := readMapEntryData(data)
+		if err != nil {
+			return err
+		}
+		data = data[c:]
+		if elemData != nil {
+			if l := len(elemData); l != 0 && l != 16 {
+				return unmarshalErrorf("unmarshal list: invalid UUID element length %d", len(elemData))
+			} else if l == 16 {
+				copy(s[i][:], elemData)
+			}
+		}
+	}
+	*dst = s
+	return nil
 }
 
 func unmarshalMapStringString(data []byte, dest *map[string]string) error {
@@ -2542,4 +2951,330 @@ func wrapUnmarshalError(err error, msg string) UnmarshalError {
 
 func wrapUnmarshalErrorf(err error, format string, a ...any) UnmarshalError {
 	return UnmarshalError{msg: fmt.Sprintf(format, a...), cause: err}
+}
+
+// --- Collection marshal fast paths ---
+
+func marshalListString(list []string) ([]byte, error) {
+	n, err := checkMarshalLen(len(list))
+	if err != nil {
+		return nil, err
+	}
+	total := 4 + 4*len(list)
+	for _, s := range list {
+		total += len(s)
+	}
+	buf, off := allocCollBuf(total, n)
+	for _, s := range list {
+		off = writeStr(buf, off, s)
+	}
+	return buf, nil
+}
+
+func marshalListBool(list []bool) ([]byte, error) {
+	n, err := checkMarshalLen(len(list))
+	if err != nil {
+		return nil, err
+	}
+	buf, off := allocCollBuf(4+n*(4+1), n)
+	for _, b := range list {
+		off = putLen(buf, off, 1)
+		if b {
+			buf[off] = 1
+		}
+		off++
+	}
+	return buf, nil
+}
+
+func marshalListBytes(list [][]byte) ([]byte, error) {
+	n, err := checkMarshalLen(len(list))
+	if err != nil {
+		return nil, err
+	}
+	total := 4 + 4*len(list)
+	for _, b := range list {
+		if b != nil {
+			total += len(b)
+		}
+	}
+	buf, off := allocCollBuf(total, n)
+	for _, b := range list {
+		off = writeBytes(buf, off, b)
+	}
+	return buf, nil
+}
+
+func marshalListInt16(list []int16) ([]byte, error) {
+	n, err := checkMarshalLen(len(list))
+	if err != nil {
+		return nil, err
+	}
+	buf, off := allocCollBuf(4+n*(4+2), n)
+	for _, v := range list {
+		off = putLen(buf, off, 2)
+		binary.BigEndian.PutUint16(buf[off:], uint16(v))
+		off += 2
+	}
+	return buf, nil
+}
+
+func marshalListInt8(list []int8) ([]byte, error) {
+	n, err := checkMarshalLen(len(list))
+	if err != nil {
+		return nil, err
+	}
+	buf, off := allocCollBuf(4+n*(4+1), n)
+	for _, v := range list {
+		off = putLen(buf, off, 1)
+		buf[off] = byte(v)
+		off++
+	}
+	return buf, nil
+}
+
+func marshalListUUID(list []UUID) ([]byte, error) {
+	n, err := checkMarshalLen(len(list))
+	if err != nil {
+		return nil, err
+	}
+	buf, off := allocCollBuf(4+n*(4+16), n)
+	for _, v := range list {
+		off = putLen(buf, off, 16)
+		copy(buf[off:], v[:])
+		off += 16
+	}
+	return buf, nil
+}
+
+// --- Map marshal fast paths ---
+
+func marshalMapStringString(m map[string]string) ([]byte, error) {
+	n, err := checkMarshalLen(len(m))
+	if err != nil {
+		return nil, err
+	}
+	if n == 0 {
+		return make([]byte, 4), nil
+	}
+	keys := make([]string, 0, n)
+	vals := make([]string, 0, n)
+	total := 4 + 8*len(m)
+	for k, v := range m {
+		keys = append(keys, k)
+		vals = append(vals, v)
+		total += len(k) + len(v)
+	}
+	buf, off := allocCollBuf(total, n)
+	for i := range keys {
+		off = writeStr(buf, off, keys[i])
+		off = writeStr(buf, off, vals[i])
+	}
+	return buf, nil
+}
+
+func marshalMapStringInt64(m map[string]int64) ([]byte, error) {
+	n, err := checkMarshalLen(len(m))
+	if err != nil {
+		return nil, err
+	}
+	if n == 0 {
+		return make([]byte, 4), nil
+	}
+	keys, vals, total := extractMapStrKey(m, 8)
+	buf, off := allocCollBuf(total, n)
+	for i := range keys {
+		off = writeStr(buf, off, keys[i])
+		off = putLen(buf, off, 8)
+		binary.BigEndian.PutUint64(buf[off:], uint64(vals[i]))
+		off += 8
+	}
+	return buf, nil
+}
+
+func marshalMapStringInt(m map[string]int) ([]byte, error) {
+	n, err := checkMarshalLen(len(m))
+	if err != nil {
+		return nil, err
+	}
+	if n == 0 {
+		return make([]byte, 4), nil
+	}
+	keys, vals, total := extractMapStrKey(m, 4)
+	buf, off := allocCollBuf(total, n)
+	for i := range keys {
+		if vals[i] > math.MaxInt32 || vals[i] < math.MinInt32 {
+			return nil, marshalErrorf("marshal: value %d out of range for int", vals[i])
+		}
+		off = writeStr(buf, off, keys[i])
+		off = putLen(buf, off, 4)
+		binary.BigEndian.PutUint32(buf[off:], uint32(vals[i]))
+		off += 4
+	}
+	return buf, nil
+}
+
+func marshalMapStringFloat64(m map[string]float64) ([]byte, error) {
+	n, err := checkMarshalLen(len(m))
+	if err != nil {
+		return nil, err
+	}
+	if n == 0 {
+		return make([]byte, 4), nil
+	}
+	keys, vals, total := extractMapStrKey(m, 8)
+	buf, off := allocCollBuf(total, n)
+	for i := range keys {
+		off = writeStr(buf, off, keys[i])
+		off = putLen(buf, off, 8)
+		binary.BigEndian.PutUint64(buf[off:], math.Float64bits(vals[i]))
+		off += 8
+	}
+	return buf, nil
+}
+
+func marshalMapStringFloat32(m map[string]float32) ([]byte, error) {
+	n, err := checkMarshalLen(len(m))
+	if err != nil {
+		return nil, err
+	}
+	if n == 0 {
+		return make([]byte, 4), nil
+	}
+	keys, vals, total := extractMapStrKey(m, 4)
+	buf, off := allocCollBuf(total, n)
+	for i := range keys {
+		off = writeStr(buf, off, keys[i])
+		off = putLen(buf, off, 4)
+		binary.BigEndian.PutUint32(buf[off:], math.Float32bits(vals[i]))
+		off += 4
+	}
+	return buf, nil
+}
+
+func marshalMapStringBool(m map[string]bool) ([]byte, error) {
+	n, err := checkMarshalLen(len(m))
+	if err != nil {
+		return nil, err
+	}
+	if n == 0 {
+		return make([]byte, 4), nil
+	}
+	keys, vals, total := extractMapStrKey(m, 1)
+	buf, off := allocCollBuf(total, n)
+	for i := range keys {
+		off = writeStr(buf, off, keys[i])
+		off = putLen(buf, off, 1)
+		if vals[i] {
+			buf[off] = 1
+		}
+		off++
+	}
+	return buf, nil
+}
+
+func marshalMapStringBytes(m map[string][]byte) ([]byte, error) {
+	n, err := checkMarshalLen(len(m))
+	if err != nil {
+		return nil, err
+	}
+	if n == 0 {
+		return make([]byte, 4), nil
+	}
+	keys := make([]string, 0, n)
+	vals := make([][]byte, 0, n)
+	total := 4 + 8*len(m)
+	for k, v := range m {
+		keys = append(keys, k)
+		vals = append(vals, v)
+		total += len(k)
+		if v != nil {
+			total += len(v)
+		}
+	}
+	buf, off := allocCollBuf(total, n)
+	for i := range keys {
+		off = writeStr(buf, off, keys[i])
+		off = writeBytes(buf, off, vals[i])
+	}
+	return buf, nil
+}
+
+func marshalMapStringInt16(m map[string]int16) ([]byte, error) {
+	n, err := checkMarshalLen(len(m))
+	if err != nil {
+		return nil, err
+	}
+	if n == 0 {
+		return make([]byte, 4), nil
+	}
+	keys, vals, total := extractMapStrKey(m, 2)
+	buf, off := allocCollBuf(total, n)
+	for i := range keys {
+		off = writeStr(buf, off, keys[i])
+		off = putLen(buf, off, 2)
+		binary.BigEndian.PutUint16(buf[off:], uint16(vals[i]))
+		off += 2
+	}
+	return buf, nil
+}
+
+func marshalMapInt64String(m map[int64]string) ([]byte, error) {
+	n, err := checkMarshalLen(len(m))
+	if err != nil {
+		return nil, err
+	}
+	if n == 0 {
+		return make([]byte, 4), nil
+	}
+	keys := make([]int64, 0, n)
+	vals := make([]string, 0, n)
+	total := 4 + 16*len(m)
+	for k, v := range m {
+		keys = append(keys, k)
+		vals = append(vals, v)
+		total += len(v)
+	}
+	buf, off := allocCollBuf(total, n)
+	for i := range keys {
+		off = putLen(buf, off, 8)
+		binary.BigEndian.PutUint64(buf[off:], uint64(keys[i]))
+		off += 8
+		off = writeStr(buf, off, vals[i])
+	}
+	return buf, nil
+}
+
+func marshalMapInt64Int64(m map[int64]int64) ([]byte, error) {
+	n, err := checkMarshalLen(len(m))
+	if err != nil {
+		return nil, err
+	}
+	buf, off := allocCollBuf(4+n*(4+8+4+8), n)
+	for k, v := range m {
+		off = putLen(buf, off, 8)
+		binary.BigEndian.PutUint64(buf[off:], uint64(k))
+		off += 8
+		off = putLen(buf, off, 8)
+		binary.BigEndian.PutUint64(buf[off:], uint64(v))
+		off += 8
+	}
+	return buf, nil
+}
+
+func marshalMapInt64Float64(m map[int64]float64) ([]byte, error) {
+	n, err := checkMarshalLen(len(m))
+	if err != nil {
+		return nil, err
+	}
+	buf, off := allocCollBuf(4+n*(4+8+4+8), n)
+	for k, v := range m {
+		off = putLen(buf, off, 8)
+		binary.BigEndian.PutUint64(buf[off:], uint64(k))
+		off += 8
+		off = putLen(buf, off, 8)
+		binary.BigEndian.PutUint64(buf[off:], math.Float64bits(v))
+		off += 8
+	}
+	return buf, nil
 }
