@@ -694,42 +694,6 @@ func writeCollectionSize(info CollectionType, n int, buf *bytes.Buffer) error {
 	return nil
 }
 
-// fixedElementWireSize returns the wire-encoded size in bytes of a CQL element
-// whose type has a fixed-length encoding, or 0 if the type is variable-length.
-func fixedElementWireSize(typ Type) int {
-	switch typ {
-	case TypeInt, TypeFloat:
-		return 4
-	case TypeBigInt, TypeDouble, TypeTime, TypeCounter:
-		return 8
-	case TypeSmallInt:
-		return 2
-	case TypeTinyInt, TypeBoolean:
-		return 1
-	case TypeUUID, TypeTimeUUID:
-		return 16
-	case TypeInet:
-		return 16 // IPv4 is 4, IPv6 is 16; use 16 as safe upper bound
-	case TypeDate:
-		return 4
-	default:
-		return 0
-	}
-}
-
-// variableElementWireSizeEstimate returns an estimated wire size for
-// variable-length CQL element types, used for buffer preallocation.
-// Text-like types (varchar, ascii, text) average ~32 bytes in practice;
-// other variable-length types (blob, custom) default to 64 bytes.
-func variableElementWireSizeEstimate(typ Type) int {
-	switch typ {
-	case TypeAscii, TypeVarchar, TypeText:
-		return 32
-	default:
-		return 64
-	}
-}
-
 func marshalList(info TypeInfo, value any) ([]byte, error) {
 	listInfo, ok := info.(CollectionType)
 	if !ok {
@@ -1064,6 +1028,48 @@ func isVectorVariableLengthType(elemType TypeInfo) bool {
 		return true
 	}
 	return false
+}
+
+// fixedElementWireSize returns the wire-encoded size in bytes of a CQL element
+// whose type has a fixed-length encoding, or 0 if the type is variable-length.
+//
+// This is a superset of vectorFixedElemSize: Cassandra's VectorType treats
+// SmallInt, TinyInt, Time, Counter, Inet, and Date as variable-length on the
+// wire (isVectorVariableLengthType), so vectorFixedElemSize excludes them.
+// Collection types have no such restriction, so this function includes all
+// fixed-size CQL types. The two cannot share a single switch.
+func fixedElementWireSize(typ Type) int {
+	switch typ {
+	case TypeInt, TypeFloat:
+		return 4
+	case TypeBigInt, TypeDouble, TypeTime, TypeCounter:
+		return 8
+	case TypeSmallInt:
+		return 2
+	case TypeTinyInt, TypeBoolean:
+		return 1
+	case TypeUUID, TypeTimeUUID:
+		return 16
+	case TypeInet:
+		return 16
+	case TypeDate:
+		return 4
+	default:
+		return 0
+	}
+}
+
+// variableElementWireSizeEstimate returns an estimated wire size for
+// variable-length CQL element types, used for buffer preallocation.
+// Text-like types (varchar, ascii, text) average ~32 bytes in practice;
+// other variable-length types (blob, custom) default to 64 bytes.
+func variableElementWireSizeEstimate(typ Type) int {
+	switch typ {
+	case TypeAscii, TypeVarchar, TypeText:
+		return 32
+	default:
+		return 64
+	}
 }
 
 func writeUnsignedVInt(buf *bytes.Buffer, v uint64) {
