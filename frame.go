@@ -1218,6 +1218,17 @@ type queryValues struct {
 	isUnset bool
 }
 
+func (v *queryValues) encodedSize() int {
+	n := 4 // value length prefix (int32)
+	if !v.isUnset && v.value != nil {
+		n += len(v.value)
+	}
+	if v.name != "" {
+		n += 2 + len(v.name)
+	}
+	return n
+}
+
 type queryParams struct {
 	keyspace              string
 	values                []queryValues
@@ -1285,24 +1296,22 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 		f.writeShort(uint16(n))
 
 		// Pre-grow once for the whole value section to avoid per-value append
-		// reallocations; sizes of already-marshalled values are O(1) to sum.
+		// reallocations.
 		need := 0
 		for i := 0; i < n; i++ {
-			if names {
-				need += 2 + len(opts.values[i].name)
-			}
-			need += 4 + len(opts.values[i].value)
+			need += opts.values[i].encodedSize()
 		}
 		f.buf = slices.Grow(f.buf, need)
 
 		for i := 0; i < n; i++ {
+			v := &opts.values[i]
 			if names {
-				f.writeString(opts.values[i].name)
+				f.writeString(v.name)
 			}
-			if opts.values[i].isUnset {
+			if v.isUnset {
 				f.writeUnset()
 			} else {
-				f.writeBytes(opts.values[i].value)
+				f.writeBytes(v.value)
 			}
 		}
 	}
@@ -1432,23 +1441,27 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 
 	var flags byte
 
+	// Validate named values before any allocation.
+	for i := 0; i < n; i++ {
+		for j := range w.statements[i].values {
+			if w.statements[i].values[j].name != "" && f.proto <= protoVersion5 {
+				return fmt.Errorf("gocql: named query values are not supported in batches, please see https://issues.apache.org/jira/browse/CASSANDRA-10246")
+			}
+		}
+	}
+
 	// Pre-grow once for all statements to avoid per-value append reallocations.
 	{
-		need := 0
+		need := 3 * n // kind bytes + value counts
 		for i := 0; i < n; i++ {
 			b := &w.statements[i]
 			if len(b.preparedID) == 0 {
-				need += 1 + 4 + len(b.statement)
+				need += 4 + len(b.statement)
 			} else {
-				need += 1 + 2 + len(b.preparedID)
+				need += 2 + len(b.preparedID)
 			}
-			need += 2 // value count
 			for j := range b.values {
-				col := &b.values[j]
-				if col.name != "" {
-					need += 2 + len(col.name)
-				}
-				need += 4 + len(col.value)
+				need += b.values[j].encodedSize()
 			}
 		}
 		f.buf = slices.Grow(f.buf, need)
@@ -1468,11 +1481,6 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 		for j := range b.values {
 			col := &b.values[j]
 			if col.name != "" {
-				// TODO: move this check into the caller and set a flag on writeBatchFrame
-				// to indicate using named values
-				if f.proto <= protoVersion5 {
-					return fmt.Errorf("gocql: named query values are not supported in batches, please see https://issues.apache.org/jira/browse/CASSANDRA-10246")
-				}
 				flags |= frm.FlagWithNameValues
 				f.writeString(col.name)
 			}

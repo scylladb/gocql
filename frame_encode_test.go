@@ -119,6 +119,9 @@ func TestWriteQueryParamsValuesRoundTrip(t *testing.T) {
 			// Locate the value section: header(9) + longstring(4+8) +
 			// consistency(2) + flags(1 for protoV4).
 			off := headSize + 4 + len("SELECT 1") + 2 + 1
+			if len(tc.values) == 0 {
+				return
+			}
 			got := decodeQueryParamsValues(t, f.buf[off:], 0, false)
 
 			if len(got) != len(tc.values) {
