@@ -694,6 +694,42 @@ func writeCollectionSize(info CollectionType, n int, buf *bytes.Buffer) error {
 	return nil
 }
 
+// fixedElementWireSize returns the wire-encoded size in bytes of a CQL element
+// whose type has a fixed-length encoding, or 0 if the type is variable-length.
+func fixedElementWireSize(typ Type) int {
+	switch typ {
+	case TypeInt, TypeFloat:
+		return 4
+	case TypeBigInt, TypeDouble, TypeTime, TypeCounter:
+		return 8
+	case TypeSmallInt:
+		return 2
+	case TypeTinyInt, TypeBoolean:
+		return 1
+	case TypeUUID, TypeTimeUUID:
+		return 16
+	case TypeInet:
+		return 16 // IPv4 is 4, IPv6 is 16; use 16 as safe upper bound
+	case TypeDate:
+		return 4
+	default:
+		return 0
+	}
+}
+
+// variableElementWireSizeEstimate returns an estimated wire size for
+// variable-length CQL element types, used for buffer preallocation.
+// Text-like types (varchar, ascii, text) average ~32 bytes in practice;
+// other variable-length types (blob, custom) default to 64 bytes.
+func variableElementWireSizeEstimate(typ Type) int {
+	switch typ {
+	case TypeAscii, TypeVarchar, TypeText:
+		return 32
+	default:
+		return 64
+	}
+}
+
 func marshalList(info TypeInfo, value any) ([]byte, error) {
 	listInfo, ok := info.(CollectionType)
 	if !ok {
@@ -720,6 +756,15 @@ func marshalList(info TypeInfo, value any) ([]byte, error) {
 
 		if err := writeCollectionSize(listInfo, n, buf); err != nil {
 			return nil, err
+		}
+
+		// Preallocate remaining space to avoid repeated buffer growth.
+		// For fixed-size CQL types we compute the exact wire size;
+		// for variable-length types we use a per-type estimate.
+		if elemSize := fixedElementWireSize(listInfo.Elem.Type()); elemSize > 0 {
+			buf.Grow(n * (4 + elemSize))
+		} else if n > 0 {
+			buf.Grow(n * (4 + variableElementWireSizeEstimate(listInfo.Elem.Type())))
 		}
 
 		for i := 0; i < n; i++ {
@@ -1093,8 +1138,25 @@ func marshalMap(info TypeInfo, value any) ([]byte, error) {
 		return nil, err
 	}
 
-	keys := rv.MapKeys()
-	for _, key := range keys {
+	// Preallocate remaining space. For fixed-size types we compute
+	// the exact wire size; for variable-length types we estimate.
+	keySize := fixedElementWireSize(mapInfo.Key.Type())
+	valSize := fixedElementWireSize(mapInfo.Elem.Type())
+	if n > 0 {
+		if keySize == 0 {
+			keySize = variableElementWireSizeEstimate(mapInfo.Key.Type())
+		}
+		if valSize == 0 {
+			valSize = variableElementWireSizeEstimate(mapInfo.Elem.Type())
+		}
+		buf.Grow(n * (4 + keySize + 4 + valSize))
+	}
+
+	iter := rv.MapRange()
+	for iter.Next() {
+		key := iter.Key()
+		val := iter.Value()
+
 		item, err := Marshal(mapInfo.Key, key.Interface())
 		if err != nil {
 			return nil, err
@@ -1109,7 +1171,7 @@ func marshalMap(info TypeInfo, value any) ([]byte, error) {
 		}
 		buf.Write(item)
 
-		item, err = Marshal(mapInfo.Elem, rv.MapIndex(key).Interface())
+		item, err = Marshal(mapInfo.Elem, val.Interface())
 		if err != nil {
 			return nil, err
 		}
@@ -1220,6 +1282,10 @@ func unmarshalMap(info TypeInfo, data []byte, value any) error {
 	}
 	return nil
 }
+
+// TODO: add unmarshalMap fast paths (mirror PR #881 pattern for common map types)
+// TODO: eliminate the deep copy in rowMap() for collection columns
+// TODO: batch decode fixed-size element types into backing array directly
 
 func marshalUUID(value any) ([]byte, error) {
 	switch uv := value.(type) {
