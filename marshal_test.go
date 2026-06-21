@@ -35,6 +35,7 @@ import (
 	"math/big"
 	"net"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -170,6 +171,428 @@ func equalStringPointerSlice(leftList, rightList []*string) bool {
 		}
 	}
 	return true
+}
+
+// --- Collection marshal benchmarks ---
+
+func makeListType(elemTyp Type) CollectionType {
+	return CollectionType{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeList},
+		Elem:       NativeType{proto: protoVersion4, typ: elemTyp},
+	}
+}
+
+func BenchmarkMarshalListString(b *testing.B) {
+	for _, n := range []int{10, 100, 1000} {
+		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+			info := makeListType(TypeVarchar)
+			list := make([]string, n)
+			for i := range list {
+				list[i] = "value-" + fmt.Sprint(i)
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if _, err := Marshal(info, list); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkMarshalListBool(b *testing.B) {
+	for _, n := range []int{10, 100, 1000} {
+		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+			info := makeListType(TypeBoolean)
+			list := make([]bool, n)
+			for i := range list {
+				list[i] = i%2 == 0
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if _, err := Marshal(info, list); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkMarshalListBytes(b *testing.B) {
+	for _, n := range []int{10, 100, 1000} {
+		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+			info := makeListType(TypeBlob)
+			list := make([][]byte, n)
+			for i := range list {
+				list[i] = []byte("blob-" + fmt.Sprint(i))
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if _, err := Marshal(info, list); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkMarshalListInt16(b *testing.B) {
+	for _, n := range []int{10, 100, 1000} {
+		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+			info := makeListType(TypeSmallInt)
+			list := make([]int16, n)
+			for i := range list {
+				list[i] = int16(i)
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if _, err := Marshal(info, list); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkMarshalListInt8(b *testing.B) {
+	for _, n := range []int{10, 100, 1000} {
+		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+			info := makeListType(TypeTinyInt)
+			list := make([]int8, n)
+			for i := range list {
+				list[i] = int8(i)
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if _, err := Marshal(info, list); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkMarshalListUUID(b *testing.B) {
+	for _, n := range []int{10, 100, 1000} {
+		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+			info := makeListType(TypeUUID)
+			list := make([]UUID, n)
+			for i := range list {
+				list[i] = UUID{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, byte(i >> 8), byte(i)}
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if _, err := Marshal(info, list); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func makeMapType(keyTyp, valTyp Type) CollectionType {
+	return CollectionType{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeMap},
+		Key:        NativeType{proto: protoVersion4, typ: keyTyp},
+		Elem:       NativeType{proto: protoVersion4, typ: valTyp},
+	}
+}
+
+func BenchmarkMarshalMapStringString(b *testing.B) {
+	for _, n := range []int{10, 100, 1000} {
+		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+			info := makeMapType(TypeVarchar, TypeVarchar)
+			m := make(map[string]string, n)
+			for i := 0; i < n; i++ {
+				m[fmt.Sprintf("key-%d", i)] = "value-" + fmt.Sprint(i)
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if _, err := Marshal(info, m); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkMarshalMapStringInt64(b *testing.B) {
+	for _, n := range []int{10, 100, 1000} {
+		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+			info := makeMapType(TypeVarchar, TypeBigInt)
+			m := make(map[string]int64, n)
+			for i := 0; i < n; i++ {
+				m[fmt.Sprintf("key-%d", i)] = int64(i * 100)
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if _, err := Marshal(info, m); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkMarshalMapStringBool(b *testing.B) {
+	for _, n := range []int{10, 100, 1000} {
+		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+			info := makeMapType(TypeVarchar, TypeBoolean)
+			m := make(map[string]bool, n)
+			for i := 0; i < n; i++ {
+				m[fmt.Sprintf("key-%d", i)] = i%2 == 0
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if _, err := Marshal(info, m); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkMarshalMapStringFloat64(b *testing.B) {
+	for _, n := range []int{10, 100, 1000} {
+		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+			info := makeMapType(TypeVarchar, TypeDouble)
+			m := make(map[string]float64, n)
+			for i := 0; i < n; i++ {
+				m[fmt.Sprintf("key-%d", i)] = float64(i) * 1.5
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if _, err := Marshal(info, m); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkMarshalMapInt64Int64(b *testing.B) {
+	for _, n := range []int{10, 100, 1000} {
+		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+			info := makeMapType(TypeBigInt, TypeBigInt)
+			m := make(map[int64]int64, n)
+			for i := 0; i < n; i++ {
+				m[int64(i)] = int64(i * 100)
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if _, err := Marshal(info, m); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+// --- Collection marshal differential tests ---
+// Verify that the fast path produces byte-identical output to the generic path.
+
+type namedStrings []string
+type namedBools []bool
+type namedBytes [][]byte
+type namedInt16s []int16
+type namedInt8s []int8
+type namedUUIDs []UUID
+
+func TestMarshalListDifferential(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		info    TypeInfo
+		fastVal any
+		genVal  any
+	}{
+		{
+			name:    "string/varchar",
+			info:    makeListType(TypeVarchar),
+			fastVal: []string{"hello", "world", "", "a", "bb", "ccc"},
+			genVal:  namedStrings{"hello", "world", "", "a", "bb", "ccc"},
+		},
+		{
+			name:    "string/text",
+			info:    makeListType(TypeText),
+			fastVal: []string{"hello", "world"},
+			genVal:  namedStrings{"hello", "world"},
+		},
+		{
+			name:    "string/ascii",
+			info:    makeListType(TypeAscii),
+			fastVal: []string{"hello", "world"},
+			genVal:  namedStrings{"hello", "world"},
+		},
+		{
+			name:    "bool",
+			info:    makeListType(TypeBoolean),
+			fastVal: []bool{true, false, true},
+			genVal:  namedBools{true, false, true},
+		},
+		{
+			name:    "blob",
+			info:    makeListType(TypeBlob),
+			fastVal: [][]byte{nil, {}, {0x01, 0x02}, {0xff}},
+			genVal:  namedBytes{nil, {}, {0x01, 0x02}, {0xff}},
+		},
+		{
+			name:    "int16",
+			info:    makeListType(TypeSmallInt),
+			fastVal: []int16{0, 1, -1, 32767, -32768},
+			genVal:  namedInt16s{0, 1, -1, 32767, -32768},
+		},
+		{
+			name:    "int8",
+			info:    makeListType(TypeTinyInt),
+			fastVal: []int8{0, 1, -1, 127, -128},
+			genVal:  namedInt8s{0, 1, -1, 127, -128},
+		},
+		{
+			name:    "uuid",
+			info:    makeListType(TypeUUID),
+			fastVal: []UUID{{}, {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}},
+			genVal:  namedUUIDs{{}, {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}},
+		},
+		{
+			name:    "empty list",
+			info:    makeListType(TypeVarchar),
+			fastVal: []string{},
+			genVal:  namedStrings{},
+		},
+		{
+			name:    "nil list",
+			info:    makeListType(TypeVarchar),
+			fastVal: []string(nil),
+			genVal:  namedStrings(nil),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fastData, fastErr := Marshal(tc.info, tc.fastVal)
+			genData, genErr := Marshal(tc.info, tc.genVal)
+
+			if fastErr != nil || genErr != nil {
+				t.Fatalf("fast err=%v gen err=%v", fastErr, genErr)
+			}
+			if !bytes.Equal(fastData, genData) {
+				t.Errorf("fast path output differs from generic path\nfast: %v\ngen:  %v", fastData, genData)
+			}
+		})
+	}
+}
+
+type namedMapStringString map[string]string
+type namedMapStringInt64 map[string]int64
+type namedMapStringInt map[string]int
+type namedMapStringFloat64 map[string]float64
+type namedMapStringFloat32 map[string]float32
+type namedMapStringBool map[string]bool
+type namedMapStringBytes map[string][]byte
+type namedMapStringInt16 map[string]int16
+type namedMapInt64String map[int64]string
+type namedMapInt64Int64 map[int64]int64
+type namedMapInt64Float64 map[int64]float64
+
+func TestMarshalMapDifferential(t *testing.T) {
+	t.Parallel()
+
+	// Each case creates ONE map and passes it via both fast (exact type) and
+	// generic (named/alias type) Marshal paths. Output comparison is via
+	// Unmarshal round-trip because map iteration order varies between
+	// the fast path (direct for range) and the generic reflect path.
+	run := func(t *testing.T, name string, info TypeInfo, fastVal, genVal any) {
+		t.Run(name, func(t *testing.T) {
+			fastData, fastErr := Marshal(info, fastVal)
+			genData, genErr := Marshal(info, genVal)
+			if fastErr != nil || genErr != nil {
+				t.Fatalf("fast err=%v gen err=%v", fastErr, genErr)
+			}
+			keyGoType, err := goType(info.(CollectionType).Key)
+			if err != nil {
+				t.Fatalf("goType(key): %v", err)
+			}
+			valGoType, err := goType(info.(CollectionType).Elem)
+			if err != nil {
+				t.Fatalf("goType(value): %v", err)
+			}
+			mapType := reflect.MapOf(keyGoType, valGoType)
+			fastResult := reflect.New(mapType).Interface()
+			genResult := reflect.New(mapType).Interface()
+			if err := Unmarshal(info, fastData, fastResult); err != nil {
+				t.Fatalf("Unmarshal fast result: %v", err)
+			}
+			if err := Unmarshal(info, genData, genResult); err != nil {
+				t.Fatalf("Unmarshal gen result: %v", err)
+			}
+			if !reflect.DeepEqual(reflect.ValueOf(fastResult).Elem().Interface(), reflect.ValueOf(genResult).Elem().Interface()) {
+				t.Errorf("round-trip results differ\nfast: %v\ngen:  %v", fastResult, genResult)
+			}
+		})
+	}
+
+	mSS := map[string]string{"k1": "v1", "k2": "v2"}
+	run(t, "string→string", makeMapType(TypeVarchar, TypeVarchar), mSS, namedMapStringString(mSS))
+
+	mSI64 := map[string]int64{"k1": 100, "k2": -200}
+	run(t, "string→bigint", makeMapType(TypeVarchar, TypeBigInt), mSI64, namedMapStringInt64(mSI64))
+
+	mSI := map[string]int{"k1": 42, "k2": -1}
+	run(t, "string→int", makeMapType(TypeVarchar, TypeInt), mSI, namedMapStringInt(mSI))
+
+	if strconv.IntSize == 64 {
+		mSIOverflow := map[string]int{"k": int(int64(math.MaxInt32) + 1)}
+		info := makeMapType(TypeVarchar, TypeInt)
+		if _, err := Marshal(info, mSIOverflow); err == nil {
+			t.Fatalf("fast path expected overflow error for map[string]int")
+		}
+		if _, err := Marshal(info, namedMapStringInt(mSIOverflow)); err == nil {
+			t.Fatalf("generic path expected overflow error for map[string]int")
+		}
+	}
+
+	mSF64 := map[string]float64{"k1": 3.14, "k2": -2.5}
+	run(t, "string→double", makeMapType(TypeVarchar, TypeDouble), mSF64, namedMapStringFloat64(mSF64))
+
+	mSF32 := map[string]float32{"k1": 1.5, "k2": -3.0}
+	run(t, "string→float", makeMapType(TypeVarchar, TypeFloat), mSF32, namedMapStringFloat32(mSF32))
+
+	mSB := map[string]bool{"k1": true, "k2": false}
+	run(t, "string→bool", makeMapType(TypeVarchar, TypeBoolean), mSB, namedMapStringBool(mSB))
+
+	mSBlob := map[string][]byte{"k1": {0x01, 0x02}, "k2": {}, "k3": nil}
+	run(t, "string→blob", makeMapType(TypeVarchar, TypeBlob), mSBlob, namedMapStringBytes(mSBlob))
+
+	mSI16 := map[string]int16{"k1": 100, "k2": -1}
+	run(t, "string→smallint", makeMapType(TypeVarchar, TypeSmallInt), mSI16, namedMapStringInt16(mSI16))
+
+	mI64S := map[int64]string{1: "a", 2: "b"}
+	run(t, "bigint→string", makeMapType(TypeBigInt, TypeVarchar), mI64S, namedMapInt64String(mI64S))
+
+	mI64I64 := map[int64]int64{1: 100, 2: -200}
+	run(t, "bigint→bigint", makeMapType(TypeBigInt, TypeBigInt), mI64I64, namedMapInt64Int64(mI64I64))
+
+	mI64F64 := map[int64]float64{1: 3.14, 2: -2.5}
+	run(t, "bigint→double", makeMapType(TypeBigInt, TypeDouble), mI64F64, namedMapInt64Float64(mI64F64))
+
+	mEmpty := map[string]string{}
+	run(t, "empty map", makeMapType(TypeVarchar, TypeVarchar), mEmpty, namedMapStringString(mEmpty))
+
+	var mNil map[string]string = nil
+	run(t, "nil map", makeMapType(TypeVarchar, TypeVarchar), mNil, namedMapStringString(mNil))
 }
 
 func TestMarshalList(t *testing.T) {
