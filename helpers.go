@@ -629,13 +629,15 @@ func (iter *Iter) MapScan(m map[string]any) bool {
 	// Reuse cached slices across rows to avoid allocating a new []any plus one
 	// pointer per column on every row.
 	//
-	// mapScanDefaults holds freshly-allocated default destination pointers and
-	// is never mutated after creation. Each call copies it into mapScanWorking
-	// (an O(N) slice-header copy, no allocation), applies the caller's
-	// pointer overrides to the working copy, and scans into it. Because the
-	// working copy is rebuilt from defaults every call, slots overridden in one
-	// row are automatically restored for the next row without any per-slot
-	// re-allocation.
+	// mapScanDefaults holds the default destination pointers (one per column)
+	// and is never replaced after creation. Scan writes through these pointers
+	// on each call, overwriting the pointed-to values in place, so the pointers
+	// themselves remain valid across rows. Each call copies the default
+	// pointers into mapScanWorking (an O(N) element-by-element copy of the
+	// []any interface slice, no allocation), applies the caller's pointer
+	// overrides to the working copy, and scans into that. Because the working
+	// copy is rebuilt from defaults every call, slots overridden in one row
+	// are automatically restored for the next without per-slot re-allocation.
 	defaults := iter.mapScanDefaults
 	if defaults == nil || len(defaults) != iter.meta.actualColCount {
 		defaults = make([]any, iter.meta.actualColCount)

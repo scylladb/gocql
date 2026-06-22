@@ -2163,6 +2163,12 @@ func (is *iterScanner) Next() bool {
 		}
 	}
 
+	// Trigger async prefetch of next page when we've consumed enough rows,
+	// matching the timing of Iter.Scan() — before column reading and pos++.
+	if iter.next != nil && iter.pos >= iter.next.pos {
+		iter.next.fetchAsync()
+	}
+
 	for i := 0; i < len(is.cols); i++ {
 		col, err := iter.readColumn()
 		if err != nil {
@@ -2171,12 +2177,6 @@ func (is *iterScanner) Next() bool {
 			return false
 		}
 		is.cols[i] = col
-	}
-
-	// Trigger async prefetch of next page when we've consumed enough rows,
-	// matching the behavior of Iter.Scan().
-	if iter.next != nil && iter.pos >= iter.next.pos {
-		iter.next.fetchAsync()
 	}
 
 	iter.pos++

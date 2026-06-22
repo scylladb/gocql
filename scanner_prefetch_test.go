@@ -41,12 +41,14 @@ func TestIterScanner_PrefetchTriggered(t *testing.T) {
 	// since pos is checked before being incremented from 3 to 4).
 	iter := makeTestIter(4, 1)
 
-	// Create a nextIter that we can observe. We don't need it to actually fetch
-	// anything since we only consume the first page.
+	// Create a nextIter with once pre-consumed and a dummy next so the async
+	// goroutine (if launched) returns immediately without a nil session panic.
 	ni := &nextIter{
-		qry: &Query{},
-		pos: 3, // trigger at pos >= 3
+		qry:  &Query{},
+		pos:  3, // trigger at pos >= 3
+		next: &Iter{},
 	}
+	ni.once.Do(func() {}) // make fetch() a no-op
 	iter.next = ni
 
 	scanner := iter.Scanner()
@@ -58,29 +60,14 @@ func TestIterScanner_PrefetchTriggered(t *testing.T) {
 		}
 	}
 
-	// At this point pos=3 (after 3 increments from 0).
-	// The prefetch check runs BEFORE pos++ so on the 3rd call pos was 2 < 3, no trigger.
-	// Verify fetchAsync has NOT been called yet by checking oncea state.
-	// We can't directly observe sync.Once, but we can check if the goroutine
-	// would have been launched by looking at the next field.
-	// A more reliable approach: manually check if fetchAsync was called by
-	// trying to call it ourselves — if Once already fired, our call is a no-op.
-	var alreadyCalled bool
-	ni.oncea.Do(func() {
-		alreadyCalled = false
-	})
-	if alreadyCalled {
-		t.Fatal("fetchAsync should not have been called before consuming 75% of rows")
-	}
-
-	// Now consume row 3 — at this point pos=3 >= next.pos=3, so fetchAsync fires.
+	// Consume row 3 — at this point pos=3 >= next.pos=3, so fetchAsync fires.
 	if !scanner.Next() {
 		t.Fatal("expected Next() to return true on row 3")
 	}
 
-	// Now oncea should have been consumed (fetchAsync was called).
-	// Verify by trying to execute via oncea — if it doesn't execute our func,
-	// that means fetchAsync already used it.
+	// fetchAsync calls oncea.Do synchronously, so after Next() returns oncea
+	// is consumed if the trigger fired. Verify by trying to execute via oncea:
+	// if our callback runs, oncea was still available (trigger did NOT fire).
 	onceClaimed := false
 	ni.oncea.Do(func() {
 		onceClaimed = true
@@ -95,9 +82,11 @@ func TestIterScanner_PrefetchNotTriggeredEarly(t *testing.T) {
 	iter := makeTestIter(10, 1)
 
 	ni := &nextIter{
-		qry: &Query{},
-		pos: 7,
+		qry:  &Query{},
+		pos:  7,
+		next: &Iter{},
 	}
+	ni.once.Do(func() {}) // prevent panic if fetchAsync fires (it shouldn't in this test)
 	iter.next = ni
 
 	scanner := iter.Scanner()
@@ -110,7 +99,9 @@ func TestIterScanner_PrefetchNotTriggeredEarly(t *testing.T) {
 		}
 	}
 
-	// oncea should still be unclaimed.
+	// oncea should still be unclaimed (trigger fires at pos >= 7, and pos was
+	// 0..6 during each prefetch check above). This probe consumes oncea, so
+	// it must be the last oncea operation in this test.
 	onceClaimed := false
 	ni.oncea.Do(func() {
 		onceClaimed = true
@@ -145,15 +136,17 @@ func TestIterScanner_PrefetchMatchesScanTiming(t *testing.T) {
 	//
 	// With 8 rows and next.pos=6:
 	// - Iter.Scan() checks pos >= 6 BEFORE reading columns, BEFORE pos++
-	// - iterScanner.Next() checks pos >= 6 AFTER reading columns, BEFORE pos++
+	// - iterScanner.Next() checks pos >= 6 BEFORE reading columns, BEFORE pos++
 	// Both should trigger on the 7th call (when pos=6).
 
 	// Test Scanner path
 	scannerIter := makeTestIter(8, 1)
 	scannerNI := &nextIter{
-		qry: &Query{},
-		pos: 6,
+		qry:  &Query{},
+		pos:  6,
+		next: &Iter{},
 	}
+	scannerNI.once.Do(func() {}) // prevent panic on async goroutine
 	scannerIter.next = scannerNI
 	scanner := scannerIter.Scanner()
 
@@ -163,6 +156,9 @@ func TestIterScanner_PrefetchMatchesScanTiming(t *testing.T) {
 			t.Fatalf("scanner: expected Next() true on row %d", i)
 		}
 		if scannerTriggerRow == -1 {
+			// fetchAsync calls oncea.Do synchronously, so after Next() returns
+			// oncea is consumed if the trigger fired. We probe by calling Do:
+			// if our callback runs, oncea was still available (not triggered).
 			claimed := false
 			scannerNI.oncea.Do(func() { claimed = true })
 			if !claimed {
@@ -175,9 +171,11 @@ func TestIterScanner_PrefetchMatchesScanTiming(t *testing.T) {
 	// Test Scan path
 	scanIter := makeTestIter(8, 1)
 	scanNI := &nextIter{
-		qry: &Query{},
-		pos: 6,
+		qry:  &Query{},
+		pos:  6,
+		next: &Iter{},
 	}
+	scanNI.once.Do(func() {}) // prevent panic on async goroutine
 	scanIter.next = scanNI
 
 	var dummy []byte
