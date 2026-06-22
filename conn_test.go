@@ -724,7 +724,7 @@ func TestStream0(t *testing.T) {
 	const expErr = "gocql: received unexpected frame on stream 0"
 
 	var buf bytes.Buffer
-	f := newFramer(nil, protoVersion4)
+	f := newFramer(nil, protoVersion4, compressionOpts{})
 	f.writeHeader(0, frm.OpResult, 0)
 	f.writeInt(frm.ResultKindVoid)
 	f.buf[0] |= 0x80
@@ -1877,7 +1877,7 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 		srv.errorLocked("process frame with a nil header")
 		return
 	}
-	respFrame := newFramer(nil, reqFrame.proto)
+	respFrame := newFramer(nil, reqFrame.proto, compressionOpts{})
 
 	switch head.Op {
 	case frm.OpStartup:
@@ -2098,7 +2098,7 @@ func (srv *TestServer) readFrame(conn net.Conn) (*framer, error) {
 	if err != nil {
 		return nil, err
 	}
-	framer := newFramer(nil, srv.protocol)
+	framer := newFramer(nil, srv.protocol, compressionOpts{})
 
 	err = framer.readFrame(conn, &head)
 	if err != nil {
@@ -2380,7 +2380,7 @@ func TestReleaseFramer(t *testing.T) {
 
 	t.Run("NoPool", func(t *testing.T) {
 		c := &Conn{} // No pool initialized.
-		f := newFramer(nil, protoVersion4)
+		f := newFramer(nil, protoVersion4, compressionOpts{})
 		// Should not panic, framer is just dropped.
 		c.releaseReadFramer(f)
 	})
@@ -2435,7 +2435,7 @@ func TestReleaseFramer(t *testing.T) {
 			t.Fatalf("plain query should use default flags after pooled reuse: got %08b want %08b", plainHeader.Flags, c.framers.defaults.flags)
 		}
 
-		fresh := newFramer(nil, protoVersion4)
+		fresh := newFramer(nil, protoVersion4, compressionOpts{})
 		freshBuf, freshHeader := buildTestFrame(t, fresh, plainReq, streamID)
 		if plainHeader.Flags != freshHeader.Flags {
 			t.Fatalf("reused plain query flags do not match fresh framer: got %08b want %08b", plainHeader.Flags, freshHeader.Flags)
