@@ -28,7 +28,9 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"log"
 	"math/big"
+	"strings"
 	"testing"
 	"time"
 )
@@ -404,6 +406,41 @@ func TestSetupTLSConfigStrictValidation(t *testing.T) {
 		tlsConfig.VerifyPeerCertificate(nil, nil)
 		if !called {
 			t.Fatal("expected user's callback to be called")
+		}
+	})
+
+	t.Run("deprecation warning logged when DisableStrictCertificateValidation is true", func(t *testing.T) {
+		var buf strings.Builder
+		logger := log.New(&buf, "", 0)
+		opts := &SslOptions{
+			EnableHostVerification:             true,
+			DisableStrictCertificateValidation: true,
+		}
+
+		_, err := setupTLSConfig(opts, logger)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if !strings.Contains(buf.String(), "DisableStrictCertificateValidation") {
+			t.Error("expected deprecation warning to include DisableStrictCertificateValidation")
+		}
+	})
+
+	t.Run("no deprecation warning when DisableStrictCertificateValidation is false", func(t *testing.T) {
+		var buf strings.Builder
+		logger := log.New(&buf, "", 0)
+		opts := &SslOptions{
+			EnableHostVerification: true,
+		}
+
+		_, err := setupTLSConfig(opts, logger)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if buf.Len() > 0 {
+			t.Error("expected no deprecation warning when DisableStrictCertificateValidation is false")
 		}
 	})
 }

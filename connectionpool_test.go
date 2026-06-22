@@ -115,12 +115,15 @@ func TestSetupTLSConfig(t *testing.T) {
 
 			// Verify that VerifyPeerCertificate is set when InsecureSkipVerify is false
 			// and DisableStrictCertificateValidation is false (default)
-			if !tlsConfig.InsecureSkipVerify && tlsConfig.VerifyPeerCertificate == nil {
+			if !tlsConfig.InsecureSkipVerify && !test.opts.DisableStrictCertificateValidation && tlsConfig.VerifyPeerCertificate == nil {
 				t.Fatal("VerifyPeerCertificate should be set when InsecureSkipVerify is false")
 			}
 			// Verify that VerifyPeerCertificate is not set when InsecureSkipVerify is true
 			if tlsConfig.InsecureSkipVerify && tlsConfig.VerifyPeerCertificate != nil {
 				t.Fatal("VerifyPeerCertificate should not be set when InsecureSkipVerify is true")
+			}
+			if test.opts.DisableStrictCertificateValidation && tlsConfig.VerifyPeerCertificate != nil {
+				t.Fatal("VerifyPeerCertificate should not be set when DisableStrictCertificateValidation is true")
 			}
 		})
 	}

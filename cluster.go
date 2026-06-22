@@ -432,7 +432,7 @@ func (cfg *ClusterConfig) ValidateAndInitSSL() error {
 	}
 	actualTLSConfig, err := setupTLSConfig(cfg.SslOpts, cfg.logger())
 	if err != nil {
-		return fmt.Errorf("failed to initialize ssl configuration: %s", err.Error())
+		return fmt.Errorf("failed to initialize ssl configuration: %w", err)
 	}
 
 	cfg.actualSslOpts.Store(actualTLSConfig)
@@ -687,14 +687,13 @@ func setupTLSConfig(sslOpts *SslOptions, logger StdLogger) (*tls.Config, error) 
 
 // strictVerifyPeerCertificate returns a VerifyPeerCertificate callback that ensures
 // the certificate chain terminates at a self-signed root certificate, preventing
-// intermediate CAs from being trusted as roots.
+// intermediate CAs from being mistakenly trusted as roots.
 //
-// cert.Verify() (or Go's built-in TLS verification for verifiedChains) already
-// validates all signatures in the chain. The additional self-signed root check
-// prevents a class of misconfiguration where an intermediate CA cert placed in
-// the root pool is accepted as a trust anchor.
+// When InsecureSkipVerify is false, Go's TLS already validates all chain signatures.
+// This callback additionally requires the trust anchor to be self-signed, which
+// catches misconfigurations where an intermediate CA cert is placed in the root pool.
 //
-// Note: this rejects cross-signed root certificates (roots signed by another CA).
+// Note: cross-signed root certificates (roots signed by another CA) are rejected.
 // This is an intentional trade-off: cross-signed roots are rare in CQL deployments,
 // and the security benefit of catching intermediate-in-root-pool misconfiguration
 // outweighs the compatibility cost.
@@ -704,8 +703,7 @@ func strictVerifyPeerCertificate(rootCAs *x509.CertPool) func([][]byte, [][]*x50
 		// stack already performs certificate verification and passes the results
 		// via verifiedChains. Use those to avoid redundant verification.
 		if len(verifiedChains) > 0 {
-			chains := verifiedChains
-			return checkChainRoots(chains)
+			return checkChainRoots(verifiedChains)
 		}
 
 		if len(rawCerts) == 0 {
@@ -756,5 +754,13 @@ func checkChainRoots(chains [][]*x509.Certificate) error {
 		return nil
 	}
 
+	// Include the leaf certificate subject in the error for debugging
+	var subject string
+	if len(chains) > 0 && len(chains[0]) > 0 {
+		subject = chains[0][0].Subject.String()
+	}
+	if subject != "" {
+		return fmt.Errorf("certificate chain for subject=%q does not terminate at a self-signed root certificate", subject)
+	}
 	return errors.New("no valid certificate chain terminating at a self-signed root certificate found")
 }
