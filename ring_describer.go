@@ -29,14 +29,14 @@ func (r *ringDescriber) setControlConn(c controlConnection) {
 }
 
 // Ask the control node for the local host info
-func (r *ringDescriber) getLocalHostInfo(conn ConnInterface, defaultPort int) (*HostInfo, error) {
+func (r *ringDescriber) getLocalHostInfo(conn ConnInterface) (*HostInfo, error) {
 	iter := conn.querySystem(context.TODO(), qrySystemLocal)
 
 	if iter == nil {
 		return nil, errNoControl
 	}
 
-	host, err := hostInfoFromIter(iter, defaultPort)
+	host, err := hostInfoFromIter(iter, r.cfg.Port)
 	if err != nil {
 		return nil, fmt.Errorf("could not retrieve local host info: %w", err)
 	}
@@ -44,7 +44,7 @@ func (r *ringDescriber) getLocalHostInfo(conn ConnInterface, defaultPort int) (*
 }
 
 // Ask the control node for host info on all it's known peers
-func (r *ringDescriber) getClusterPeerInfo(localHost *HostInfo, c ConnInterface, defaultPort int) ([]*HostInfo, error) {
+func (r *ringDescriber) getClusterPeerInfo(localHost *HostInfo, c ConnInterface) ([]*HostInfo, error) {
 	var iter *Iter
 	if c.getIsSchemaV2() {
 		iter = c.querySystem(context.TODO(), qrySystemPeersV2)
@@ -65,7 +65,7 @@ func (r *ringDescriber) getClusterPeerInfo(localHost *HostInfo, c ConnInterface,
 		return nil, fmt.Errorf("unable to fetch peer host info: %s", err)
 	}
 
-	return getPeersFromQuerySystemPeers(rows, defaultPort, r.logger)
+	return getPeersFromQuerySystemPeers(rows, r.cfg.Port, r.logger)
 }
 
 func getPeersFromQuerySystemPeers(querySystemPeerRows []map[string]any, defaultPort int, logger StdLogger) ([]*HostInfo, error) {
@@ -103,18 +103,6 @@ func isZeroToken(host *HostInfo) bool {
 	return len(host.tokens) == 0
 }
 
-// controlConnDefaultPort returns the port that should be used as the default
-// for hosts discovered via system.local/system.peers that do not carry an
-// explicit port. It prefers the port the control connection was actually
-// established on (e.g. when cfg.Hosts specifies a non-default port such as the
-// CQL TLS port), falling back to cfgPort when unavailable.
-func controlConnDefaultPort(host *HostInfo, cfgPort int) int {
-	if host != nil && host.Port() != 0 {
-		return host.Port()
-	}
-	return cfgPort
-}
-
 // GetHostsFromSystem returns a list of hosts found via queries to system.local and system.peers
 func (r *ringDescriber) GetHostsFromSystem() ([]*HostInfo, string, error) {
 	r.mu.Lock()
@@ -125,17 +113,12 @@ func (r *ringDescriber) GetHostsFromSystem() ([]*HostInfo, string, error) {
 	}
 
 	ch := r.control.getConn()
-	// Use the port of the host the control connection was actually established on
-	// as the default, so that hosts discovered without an explicit port inherit it
-	// (e.g. when cfg.Hosts specifies a non-default port such as the CQL TLS port).
-	defaultPort := controlConnDefaultPort(ch.host, r.cfg.Port)
-
-	localHost, err := r.getLocalHostInfo(ch.conn, defaultPort)
+	localHost, err := r.getLocalHostInfo(ch.conn)
 	if err != nil {
 		return r.prevHosts, r.prevPartitioner, err
 	}
 
-	peerHosts, err := r.getClusterPeerInfo(localHost, ch.conn, defaultPort)
+	peerHosts, err := r.getClusterPeerInfo(localHost, ch.conn)
 	if err != nil {
 		return r.prevHosts, r.prevPartitioner, err
 	}

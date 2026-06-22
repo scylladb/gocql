@@ -317,11 +317,7 @@ type connHost struct {
 func (c *controlConn) setupConn(conn *Conn) error {
 	// we need up-to-date host info for the filterHost call below
 	iter := conn.querySystem(context.TODO(), qrySystemLocal)
-	// Use the port of the host the control connection was actually established on
-	// as the default, so that peers discovered without an explicit port inherit it
-	// (e.g. when cfg.Hosts specifies a non-default port such as the CQL TLS port).
-	defaultPort := controlConnDefaultPort(conn.host, c.session.cfg.Port)
-	host, err := hostInfoFromIter(iter, defaultPort)
+	host, err := hostInfoFromIter(iter, c.session.cfg.Port)
 	if err != nil {
 		return err
 	}
