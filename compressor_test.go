@@ -164,6 +164,160 @@ func TestSnappyCompressor(t *testing.T) {
 	})
 }
 
+// TestSnappyCompressorDecodeInto verifies the zero-alloc DecodeInto path:
+// it must produce the same output as Decode, correctly reuse a caller-supplied
+// buffer when capacity is sufficient, grow it when not, and not corrupt the
+// previous result across reuse (the critical buffer-lifetime guarantee).
+func TestSnappyCompressorDecodeInto(t *testing.T) {
+	t.Parallel()
+
+	c := gocql.SnappyCompressor{}
+
+	t.Run("equivalence-and-reuse", func(t *testing.T) {
+		for id := range frameExamples.Responses {
+			frame := frameExamples.Responses[id]
+			t.Run(frame.Name, func(t *testing.T) {
+				want, err := c.Decode(frame.Frame)
+				if err != nil {
+					t.Fatalf("Decode failed: %v", err)
+				}
+
+				// First call with nil dst.
+				got, err := c.DecodeInto(frame.Frame, nil)
+				if err != nil {
+					t.Fatalf("DecodeInto(nil) failed: %v", err)
+				}
+				if !bytes.Equal(got, want) {
+					t.Fatalf("DecodeInto(nil) mismatch")
+				}
+
+				// Reuse the returned buffer; result must match again and the
+				// data from the previous call must not be silently aliased into
+				// something unexpected (we copy want before reuse).
+				prev := append([]byte(nil), got...)
+				got2, err := c.DecodeInto(frame.Frame, got[:0])
+				if err != nil {
+					t.Fatalf("DecodeInto(reuse) failed: %v", err)
+				}
+				if !bytes.Equal(got2, want) {
+					t.Fatalf("DecodeInto(reuse) mismatch")
+				}
+				if !bytes.Equal(prev, want) {
+					t.Fatalf("prior decoded copy was corrupted by reuse")
+				}
+			})
+		}
+	})
+
+	t.Run("grows-undersized-buffer", func(t *testing.T) {
+		// frameExamples is keyed by name; pick the big response to force growth.
+		var big []byte
+		for id := range frameExamples.Responses {
+			if frameExamples.Responses[id].Name == "Big query response" {
+				big = frameExamples.Responses[id].Frame
+			}
+		}
+		if big == nil {
+			t.Skip("big query response fixture not available")
+		}
+		want, err := c.Decode(big)
+		if err != nil {
+			t.Fatalf("Decode failed: %v", err)
+		}
+		// Intentionally tiny dst; DecodeInto must grow/reallocate.
+		dst := make([]byte, 0, 1)
+		got, err := c.DecodeInto(big, dst)
+		if err != nil {
+			t.Fatalf("DecodeInto failed: %v", err)
+		}
+		if !bytes.Equal(got, want) {
+			t.Fatalf("DecodeInto with undersized dst produced wrong output")
+		}
+	})
+
+	t.Run("interface-assertion", func(t *testing.T) {
+		// SnappyCompressor must satisfy the optional CompressorWithBuffer
+		// interface so the framer's zero-alloc path is exercised.
+		var comp gocql.Compressor = gocql.SnappyCompressor{}
+		if _, ok := comp.(gocql.CompressorWithBuffer); !ok {
+			t.Fatal("SnappyCompressor does not implement CompressorWithBuffer")
+		}
+	})
+}
+
+// TestSnappyCompressorEncodeInto verifies the zero-alloc EncodeInto path: it
+// must produce output that round-trips through Decode identically to Encode,
+// correctly reuse a caller-supplied buffer when capacity is sufficient, grow it
+// when not, and not corrupt the previous result across reuse.
+func TestSnappyCompressorEncodeInto(t *testing.T) {
+	t.Parallel()
+
+	c := gocql.SnappyCompressor{}
+
+	t.Run("equivalence-and-reuse", func(t *testing.T) {
+		var dst []byte // reused across all fixtures
+		for id := range frameExamples.Requests {
+			frame := frameExamples.Requests[id]
+			t.Run(frame.Name, func(t *testing.T) {
+				want, err := c.Encode(frame.Frame)
+				if err != nil {
+					t.Fatalf("Encode failed: %v", err)
+				}
+
+				got, err := c.EncodeInto(frame.Frame, dst)
+				if err != nil {
+					t.Fatalf("EncodeInto failed: %v", err)
+				}
+				if !bytes.Equal(got, want) {
+					t.Fatalf("EncodeInto output differs from Encode output")
+				}
+
+				// Round-trip through Decode.
+				dec, err := c.Decode(got)
+				if err != nil {
+					t.Fatalf("Decode of EncodeInto output failed: %v", err)
+				}
+				if !bytes.Equal(dec, frame.Frame) {
+					t.Fatalf("EncodeInto round-trip mismatch")
+				}
+
+				dst = got // reuse next iteration
+			})
+		}
+	})
+
+	t.Run("grows-undersized-buffer", func(t *testing.T) {
+		var big []byte
+		for id := range frameExamples.Requests {
+			if len(frameExamples.Requests[id].Frame) > len(big) {
+				big = frameExamples.Requests[id].Frame
+			}
+		}
+		if big == nil {
+			t.Skip("no request fixtures available")
+		}
+		want, err := c.Encode(big)
+		if err != nil {
+			t.Fatalf("Encode failed: %v", err)
+		}
+		// Intentionally tiny dst; EncodeInto must grow/reallocate.
+		got, err := c.EncodeInto(big, make([]byte, 0, 1))
+		if err != nil {
+			t.Fatalf("EncodeInto failed: %v", err)
+		}
+		if !bytes.Equal(got, want) {
+			t.Fatalf("EncodeInto with undersized dst produced wrong output")
+		}
+	})
+
+	t.Run("interface-assertion", func(t *testing.T) {
+		var comp gocql.Compressor = gocql.SnappyCompressor{}
+		if _, ok := comp.(gocql.CompressorWithBuffer); !ok {
+			t.Fatal("SnappyCompressor does not implement CompressorWithBuffer (EncodeInto)")
+		}
+	})
+}
+
 func BenchmarkSnappyCompressor(b *testing.B) {
 	c := gocql.SnappyCompressor{}
 	b.Run("Decode", func(b *testing.B) {
