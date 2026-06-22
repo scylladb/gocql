@@ -130,20 +130,21 @@ type SslOptions struct {
 }
 
 type ConnConfig struct {
-	Dialer          Dialer
-	Logger          StdLogger
-	Authenticator   Authenticator
-	Compressor      Compressor
-	HostDialer      HostDialer
-	AuthProvider    func(h *HostInfo) (Authenticator, error)
-	tlsConfig       *tls.Config
-	CQLVersion      string
-	ConnectTimeout  time.Duration
-	ReadTimeout     time.Duration
-	WriteTimeout    time.Duration
-	ProtoVersion    int
-	Keepalive       time.Duration
-	disableCoalesce bool
+	Dialer                 Dialer
+	Logger                 StdLogger
+	Authenticator          Authenticator
+	Compressor             Compressor
+	HostDialer             HostDialer
+	AuthProvider           func(h *HostInfo) (Authenticator, error)
+	tlsConfig              *tls.Config
+	CQLVersion             string
+	ConnectTimeout         time.Duration
+	ReadTimeout            time.Duration
+	WriteTimeout           time.Duration
+	ProtoVersion           int
+	Keepalive              time.Duration
+	HeartbeatSlowThreshold time.Duration
+	disableCoalesce        bool
 }
 
 func (c *ConnConfig) logger() StdLogger {
@@ -208,6 +209,7 @@ type Conn struct {
 	systemRequestTimeout time.Duration
 	writeTimeout         atomic.Int64
 	readTimeout          atomic.Int64
+	activity             atomic.Int64
 	mu                   sync.Mutex
 	tabletsRoutingV1     int32
 	headerBuf            [headSize]byte
@@ -799,6 +801,8 @@ func (c *Conn) heartBeat(ctx context.Context) {
 	defer timer.Stop()
 
 	var failures int
+	var heartbeatSlow bool
+	prev := c.activity.Load()
 
 	for {
 		if failures > 5 {
@@ -814,7 +818,26 @@ func (c *Conn) heartBeat(ctx context.Context) {
 		case <-timer.C:
 		}
 
+		// Skip heartbeat if the connection had activity since last check.
+		// Detection of a dead connection may be delayed by up to 2x the
+		// heartbeat interval. Matches the Python driver behavior.
+		cur := c.activity.Load()
+		if cur != prev {
+			prev = cur
+			sleepTime = 30 * time.Second
+			failures = 0
+			continue
+		}
+
+		var start time.Time
+		heartbeatTimeout := c.cfg.HeartbeatSlowThreshold
+		if heartbeatTimeout > 0 {
+			start = time.Now()
+		}
+
 		framer, err := c.exec(context.Background(), &writeOptionsFrame{}, nil, c.cfg.ConnectTimeout)
+		// exec() bumped the counter; refresh prev.
+		prev = c.activity.Load()
 		if err != nil {
 			failures++
 			continue
@@ -831,6 +854,18 @@ func (c *Conn) heartBeat(ctx context.Context) {
 		switch resp.(type) {
 		case *frm.SupportedFrame:
 			// Everything ok
+			if heartbeatTimeout > 0 {
+				elapsed := time.Since(start)
+				if elapsed > heartbeatTimeout {
+					if !heartbeatSlow {
+						heartbeatSlow = true
+						c.cfg.logger().Printf("gocql: heartbeat to %s took %dms, exceeding threshold %dms",
+							c.addr, elapsed.Milliseconds(), heartbeatTimeout.Milliseconds())
+					}
+				} else {
+					heartbeatSlow = false
+				}
+			}
 			sleepTime = 30 * time.Second
 			failures = 0
 		case error:
@@ -1314,6 +1349,7 @@ func (c *Conn) addCall(call *callReq) error {
 // typically via defer immediately after parsing or after transferring ownership
 // to an Iter.
 func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, requestTimeout time.Duration) (*framer, error) {
+	c.activity.Add(1)
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return nil, &QueryError{err: ctxErr, potentiallyExecuted: false}
 	}
