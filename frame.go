@@ -179,6 +179,8 @@ func ParseConsistencyWrapper(s string) (consistency Consistency, err error) {
 
 const (
 	apacheCassandraTypePrefix = "org.apache.cassandra.db.marshal."
+	// const so the concat folds at compile time (avoids a per-column alloc).
+	vectorClassNamePrefix = apacheCassandraTypePrefix + "VectorType"
 )
 
 var (
@@ -730,8 +732,7 @@ func (f *framer) readTypeInfo() TypeInfo {
 	id := f.readShort()
 
 	simple := NativeType{
-		proto: f.proto,
-		typ:   Type(id),
+		typ: Type(id),
 	}
 
 	// Fast path for simple native types (through TypeDuration).
@@ -789,14 +790,13 @@ func (f *framer) readTypeInfo() TypeInfo {
 
 		return collection
 	case TypeCustom:
-		vectorTypePrefix := apacheCassandraTypePrefix + "VectorType"
-		if strings.HasPrefix(simple.custom, vectorTypePrefix) {
-			spec := strings.TrimPrefix(simple.custom, vectorTypePrefix)
+		if strings.HasPrefix(simple.custom, vectorClassNamePrefix) {
+			spec := strings.TrimPrefix(simple.custom, vectorClassNamePrefix)
 			spec = spec[1 : len(spec)-1] // remove parenthesis
 			idx := strings.LastIndex(spec, ",")
 			typeStr := spec[:idx]
 			dimStr := spec[idx+1:]
-			subType := getCassandraLongType(strings.TrimSpace(typeStr), f.proto, nopLogger{})
+			subType := getCassandraLongType(strings.TrimSpace(typeStr), nopLogger{})
 			dim, _ := strconv.Atoi(strings.TrimSpace(dimStr))
 			vector := VectorType{
 				NativeType: simple,
