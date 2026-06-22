@@ -28,7 +28,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"encoding/pem"
 	"math/big"
 	"testing"
 	"time"
@@ -206,6 +205,69 @@ func TestStrictVerifyPeerCertificate(t *testing.T) {
 			t.Error("expected error for certificate chain with untrusted root")
 		}
 	})
+
+	t.Run("verifiedChains path accepts valid chain", func(t *testing.T) {
+		verifyFunc := strictVerifyPeerCertificate(rootPool)
+
+		// Simulate what Go's TLS passes: verifiedChains with one valid chain
+		verifiedChains := [][]*x509.Certificate{
+			{leafCert, intermediateCA, rootCA},
+		}
+
+		err := verifyFunc(nil, verifiedChains)
+		if err != nil {
+			t.Errorf("expected verifiedChains to pass, got error: %v", err)
+		}
+	})
+
+	t.Run("verifiedChains path rejects non-self-signed root", func(t *testing.T) {
+		// Build: crossRoot (self-signed) -> crossSignedRoot (signed by crossRoot)
+		crossRoot, crossRootKey, err := generateCertificate(true, nil, nil)
+		if err != nil {
+			t.Fatalf("failed to generate cross-root CA: %v", err)
+		}
+
+		crossSignedRoot, crossSignedRootKey, err := generateCertificate(true, crossRoot, crossRootKey)
+		if err != nil {
+			t.Fatalf("failed to generate cross-signed root: %v", err)
+		}
+
+		// Build: crossSignedRoot -> intermediate -> leaf
+		intermediateCA2, intermediateKey2, err := generateCertificate(true, crossSignedRoot, crossSignedRootKey)
+		if err != nil {
+			t.Fatalf("failed to generate intermediate: %v", err)
+		}
+
+		leaf2, _, err := generateCertificate(false, intermediateCA2, intermediateKey2)
+		if err != nil {
+			t.Fatalf("failed to generate leaf: %v", err)
+		}
+
+		crossRootPool := x509.NewCertPool()
+		crossRootPool.AddCert(crossRoot)
+		verifyFunc := strictVerifyPeerCertificate(crossRootPool)
+
+		// Chain with self-signed root (crossRoot) should pass
+		chains := [][]*x509.Certificate{
+			{leaf2, intermediateCA2, crossSignedRoot, crossRoot},
+		}
+		err = verifyFunc(nil, chains)
+		if err != nil {
+			t.Errorf("expected chain with self-signed root to pass, got error: %v", err)
+		}
+
+		// Put only the non-self-signed crossSignedRoot in the pool — should reject
+		crossSignedPool := x509.NewCertPool()
+		crossSignedPool.AddCert(crossSignedRoot)
+		verifyFunc = strictVerifyPeerCertificate(crossSignedPool)
+
+		err = verifyFunc(nil, [][]*x509.Certificate{
+			{leaf2, intermediateCA2, crossSignedRoot},
+		})
+		if err == nil {
+			t.Error("expected error when trust anchor is not self-signed")
+		}
+	})
 }
 
 func TestSetupTLSConfigStrictValidation(t *testing.T) {
@@ -289,22 +351,59 @@ func TestSetupTLSConfigStrictValidation(t *testing.T) {
 			t.Error("expected VerifyPeerCertificate to not be set when DisableStrictCertificateValidation is true")
 		}
 	})
-}
 
-func pemEncodeCert(cert *x509.Certificate) []byte {
-	return pem.EncodeToMemory(&pem.Block{
-		Type:  "CERTIFICATE",
-		Bytes: cert.Raw,
+	t.Run("VerifyPeerCertificate preserved when set on custom config", func(t *testing.T) {
+		called := false
+		opts := &SslOptions{
+			Config: &tls.Config{
+				InsecureSkipVerify: false,
+				VerifyPeerCertificate: func([][]byte, [][]*x509.Certificate) error {
+					called = true
+					return nil
+				},
+			},
+		}
+
+		tlsConfig, err := setupTLSConfig(opts, &defaultLogger{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if tlsConfig.VerifyPeerCertificate == nil {
+			t.Fatal("expected user's VerifyPeerCertificate to be preserved")
+		}
+
+		tlsConfig.VerifyPeerCertificate(nil, nil)
+		if !called {
+			t.Fatal("expected user's callback to be called")
+		}
 	})
-}
 
-func pemEncodeKey(key *ecdsa.PrivateKey) ([]byte, error) {
-	keyBytes, err := x509.MarshalECPrivateKey(key)
-	if err != nil {
-		return nil, err
-	}
-	return pem.EncodeToMemory(&pem.Block{
-		Type:  "EC PRIVATE KEY",
-		Bytes: keyBytes,
-	}), nil
+	t.Run("DisableStrictCertificateValidation prevents overwrite of user VerifyPeerCertificate", func(t *testing.T) {
+		called := false
+		opts := &SslOptions{
+			DisableStrictCertificateValidation: true,
+			Config: &tls.Config{
+				InsecureSkipVerify: false,
+				VerifyPeerCertificate: func([][]byte, [][]*x509.Certificate) error {
+					called = true
+					return nil
+				},
+			},
+		}
+
+		tlsConfig, err := setupTLSConfig(opts, &defaultLogger{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if tlsConfig.VerifyPeerCertificate == nil {
+			t.Fatal("expected user's VerifyPeerCertificate to be preserved")
+		}
+
+		tlsConfig.VerifyPeerCertificate(nil, nil)
+		if !called {
+			t.Fatal("expected user's callback to be called")
+		}
+	})
 }

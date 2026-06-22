@@ -670,7 +670,7 @@ func setupTLSConfig(sslOpts *SslOptions, logger StdLogger) (*tls.Config, error) 
 	// Emit deprecation warning if the option is used
 	if sslOpts.DisableStrictCertificateValidation {
 		if logger != nil {
-			logger.Println("gocql: WARNING - DisableStrictCertificateValidation is deprecated and will be removed in a future version. " +
+			logger.Println("gocql: WARNING - DisableStrictCertificateValidation (used to disable strict TLS certificate validation) is deprecated and will be removed in a future version (see https://github.com/scylladb/gocql/issues/511). " +
 				"Please ensure your certificate chains are properly configured to work with strict validation.")
 		}
 	}
@@ -685,76 +685,76 @@ func setupTLSConfig(sslOpts *SslOptions, logger StdLogger) (*tls.Config, error) 
 	return tlsConfig, nil
 }
 
-// strictVerifyPeerCertificate returns a VerifyPeerCertificate callback that performs
-// certificate chain validation. It ensures the entire chain is properly validated
-// and that the chain terminates at a self-signed root certificate, preventing
+// strictVerifyPeerCertificate returns a VerifyPeerCertificate callback that ensures
+// the certificate chain terminates at a self-signed root certificate, preventing
 // intermediate CAs from being trusted as roots.
+//
+// cert.Verify() (or Go's built-in TLS verification for verifiedChains) already
+// validates all signatures in the chain. The additional self-signed root check
+// prevents a class of misconfiguration where an intermediate CA cert placed in
+// the root pool is accepted as a trust anchor.
+//
+// Note: this rejects cross-signed root certificates (roots signed by another CA).
+// This is an intentional trade-off: cross-signed roots are rare in CQL deployments,
+// and the security benefit of catching intermediate-in-root-pool misconfiguration
+// outweighs the compatibility cost.
 func strictVerifyPeerCertificate(rootCAs *x509.CertPool) func([][]byte, [][]*x509.Certificate) error {
 	return func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+		// When InsecureSkipVerify is false (our guard ensures this), Go's TLS
+		// stack already performs certificate verification and passes the results
+		// via verifiedChains. Use those to avoid redundant verification.
+		if len(verifiedChains) > 0 {
+			chains := verifiedChains
+			return checkChainRoots(chains)
+		}
+
 		if len(rawCerts) == 0 {
 			return errors.New("no certificates provided")
 		}
 
 		cert, err := x509.ParseCertificate(rawCerts[0])
 		if err != nil {
-			return fmt.Errorf("failed to parse certificate: %v", err)
+			return fmt.Errorf("failed to parse certificate: %w", err)
 		}
 
-		// When InsecureSkipVerify is false (our guard ensures this), Go's TLS
-		// stack already performs certificate verification and passes the results
-		// via verifiedChains. Use those to avoid redundant verification.
-		var chains [][]*x509.Certificate
-		if len(verifiedChains) > 0 {
-			chains = verifiedChains
-		} else {
-			intermediates := x509.NewCertPool()
-			for i := 1; i < len(rawCerts); i++ {
-				intermediateCert, err := x509.ParseCertificate(rawCerts[i])
-				if err != nil {
-					return fmt.Errorf("failed to parse intermediate certificate at position %d: %v", i, err)
-				}
-				intermediates.AddCert(intermediateCert)
-			}
-
-			opts := x509.VerifyOptions{
-				Roots:         rootCAs,
-				Intermediates: intermediates,
-				KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-			}
-
-			chains, err = cert.Verify(opts)
+		intermediates := x509.NewCertPool()
+		for i := 1; i < len(rawCerts); i++ {
+			intermediateCert, err := x509.ParseCertificate(rawCerts[i])
 			if err != nil {
-				return fmt.Errorf("certificate verification failed for subject=%q, issuer=%q: %v",
-					cert.Subject.String(), cert.Issuer.String(), err)
+				return fmt.Errorf("failed to parse intermediate certificate at position %d: %w", i, err)
 			}
+			intermediates.AddCert(intermediateCert)
 		}
 
-		if len(chains) == 0 {
-			return fmt.Errorf("no valid certificate chains found for subject=%q", cert.Subject.String())
+		opts := x509.VerifyOptions{
+			Roots:         rootCAs,
+			Intermediates: intermediates,
+			KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		}
 
-		for _, chain := range chains {
-			if len(chain) == 0 {
-				continue
-			}
-
-			chainValid := true
-			for i := 0; i < len(chain)-1; i++ {
-				if err := chain[i].CheckSignatureFrom(chain[i+1]); err != nil {
-					chainValid = false
-					break
-				}
-			}
-
-			if chainValid {
-				rootCert := chain[len(chain)-1]
-				if err := rootCert.CheckSignatureFrom(rootCert); err != nil {
-					continue
-				}
-				return nil
-			}
+		chains, err := cert.Verify(opts)
+		if err != nil {
+			return fmt.Errorf("certificate verification failed for subject=%q, issuer=%q: %w",
+				cert.Subject.String(), cert.Issuer.String(), err)
 		}
 
-		return fmt.Errorf("no valid certificate chain found with proper signatures for subject=%q", cert.Subject.String())
+		return checkChainRoots(chains)
 	}
+}
+
+// checkChainRoots verifies that at least one chain terminates at a self-signed root.
+func checkChainRoots(chains [][]*x509.Certificate) error {
+	for _, chain := range chains {
+		if len(chain) == 0 {
+			continue
+		}
+
+		rootCert := chain[len(chain)-1]
+		if err := rootCert.CheckSignatureFrom(rootCert); err != nil {
+			continue
+		}
+		return nil
+	}
+
+	return errors.New("no valid certificate chain terminating at a self-signed root certificate found")
 }
