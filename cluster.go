@@ -32,6 +32,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strconv"
 	"sync/atomic"
 	"time"
 
@@ -135,12 +136,17 @@ type ClusterConfig struct {
 	Keyspace string
 	// CQL version (default: 3.0.0)
 	CQLVersion string
-	// addresses for the initial connections. It is recommended to use the value set in
+	// Addresses for the initial connections. It is recommended to use the value set in
 	// the Cassandra config for broadcast_address or listen_address, an IP address not
 	// a domain name. This is because events from Cassandra will use the configured IP
 	// address, which is used to index connected hosts. If the domain name specified
 	// resolves to more than 1 IP address then the driver may connect multiple times to
 	// the same host, and will not mark the node being down or up from events.
+	//
+	// Each entry may optionally include a port in host:port format. cfg.Port is
+	// overridden only when every entry carries an explicit port and all ports are
+	// equal. If any entry omits the port, or entries disagree on the port, cfg.Port
+	// is left unchanged and is used for peer discovery.
 	Hosts []string
 	// The time to wait for frames before flushing the frames connection to Cassandra.
 	// Can help reduce syscall overhead by making less calls to write. Set to 0 to
@@ -547,6 +553,34 @@ func (cfg *ClusterConfig) Validate() error {
 
 	if cfg.NumConns < 0 {
 		return errors.New("NumConns should be positive non-zero number or zero")
+	}
+
+	// Parse and normalise any ports embedded in cfg.Hosts.
+	// cfg.Port is overridden only when every entry carries an explicit port and
+	// they all agree on the same value. Any entry without a port, or any
+	// disagreement between entries, leaves cfg.Port unchanged.
+	var explicitPort int // 0 means "not yet seen"
+	allHavePorts := true
+	portsConsistent := true
+	for _, addr := range cfg.Hosts {
+		_, portStr, err := net.SplitHostPort(addr)
+		if err != nil {
+			// No port in this entry.
+			allHavePorts = false
+			continue
+		}
+		p, err := strconv.Atoi(portStr)
+		if err != nil || p <= 0 || p > 65535 {
+			return fmt.Errorf("invalid port %q in host entry %q: port must be a number between 1 and 65535", portStr, addr)
+		}
+		if explicitPort == 0 {
+			explicitPort = p
+		} else if explicitPort != p {
+			portsConsistent = false
+		}
+	}
+	if allHavePorts && portsConsistent && explicitPort != 0 {
+		cfg.Port = explicitPort
 	}
 
 	if cfg.Port <= 0 || cfg.Port > 65535 {

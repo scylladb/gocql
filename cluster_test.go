@@ -66,6 +66,76 @@ func TestNewCluster_WithHosts(t *testing.T) {
 	tests.AssertEqual(t, "cluster config host 1", "addr2", cfg.Hosts[1])
 }
 
+// TestValidate_HostPortNormalization covers the port-in-hosts feature added to
+// Validate(): a port embedded in a cfg.Hosts entry should be adopted as cfg.Port
+// so that peer discovery uses the correct port for all nodes.
+func TestValidate_HostPortNormalization(t *testing.T) {
+	t.Parallel()
+
+	makeValid := func(hosts ...string) *ClusterConfig {
+		cfg := NewCluster(hosts...)
+		// Supply just enough mandatory fields for Validate to reach the port
+		// check rather than failing on an earlier guard.
+		return cfg
+	}
+
+	t.Run("single host with explicit port overrides cfg.Port", func(t *testing.T) {
+		t.Parallel()
+		cfg := makeValid("10.0.0.1:9142")
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		tests.AssertEqual(t, "cfg.Port after Validate", 9142, cfg.Port)
+	})
+
+	t.Run("multiple hosts with the same explicit port", func(t *testing.T) {
+		t.Parallel()
+		cfg := makeValid("10.0.0.1:9142", "10.0.0.2:9142")
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		tests.AssertEqual(t, "cfg.Port after Validate", 9142, cfg.Port)
+	})
+
+	t.Run("hosts without explicit port use cfg.Port unchanged", func(t *testing.T) {
+		t.Parallel()
+		cfg := makeValid("10.0.0.1", "10.0.0.2")
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		tests.AssertEqual(t, "cfg.Port after Validate", 9042, cfg.Port)
+	})
+
+	t.Run("mixed: some hosts with port, some without – leaves cfg.Port unchanged", func(t *testing.T) {
+		t.Parallel()
+		cfg := makeValid("10.0.0.1:9142", "10.0.0.2")
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		// Not all hosts have a port → cfg.Port is left at the default
+		tests.AssertEqual(t, "cfg.Port after Validate", 9042, cfg.Port)
+	})
+
+	t.Run("hosts with conflicting explicit ports leaves cfg.Port unchanged", func(t *testing.T) {
+		t.Parallel()
+		cfg := makeValid("10.0.0.1:9142", "10.0.0.2:9043")
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		// Inconsistent ports → fallback to the default cfg.Port (9042)
+		tests.AssertEqual(t, "cfg.Port after Validate", 9042, cfg.Port)
+	})
+
+	t.Run("host with invalid port string returns error", func(t *testing.T) {
+		t.Parallel()
+		cfg := makeValid("10.0.0.1:notaport")
+		err := cfg.Validate()
+		if err == nil {
+			t.Fatal("expected an error for invalid port, got nil")
+		}
+	})
+}
+
 func TestClusterConfig_translateAddressAndPort_NilTranslator(t *testing.T) {
 	t.Parallel()
 	hh := HostInfoBuilder{
