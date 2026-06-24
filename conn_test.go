@@ -193,14 +193,16 @@ func TestDNSLookupConnected(t *testing.T) {
 	srv := NewTestServer(t, defaultProto, context.Background())
 	defer srv.Stop()
 
-	cluster := NewCluster("cassandra1.invalid", srv.Address, "cassandra2.invalid")
+	// Use bare IP (no port) so all entries are portless; the driver falls back
+	// to port 9042, which is where the test server is bound.
+	cluster := NewCluster("cassandra1.invalid", "127.0.0.1", "cassandra2.invalid")
 	cluster.Logger = log
 	cluster.ProtoVersion = int(defaultProto)
 	cluster.disableControlConn = true
 	cluster.DNSResolver = brokenDNSResolver{}
 
 	// CreateSession() should attempt to resolve the DNS name "cassandraX.invalid"
-	// and fail, but continue to connect via srv.Address
+	// and fail, but continue to connect via 127.0.0.1
 	_, err := cluster.CreateSession()
 	if err != nil {
 		t.Fatal("CreateSession() should have connected")
@@ -433,7 +435,7 @@ func TestQueryMultinodeWithMetrics(t *testing.T) {
 	// Can do with 1 context for all servers
 	ctx := context.Background()
 	for _, ip := range addresses {
-		srv := NewTestServerWithAddress(ip+":0", t, defaultProto, ctx)
+		srv := NewTestServerWithAddress(ip+":9042", t, defaultProto, ctx)
 		defer srv.Stop()
 		nodes = append(nodes, srv)
 	}
@@ -522,7 +524,7 @@ func TestSpeculativeExecution(t *testing.T) {
 	// Can do with 1 context for all servers
 	ctx := context.Background()
 	for _, ip := range addresses {
-		srv := NewTestServerWithAddress(ip+":0", t, defaultProto, ctx)
+		srv := NewTestServerWithAddress(ip+":9042", t, defaultProto, ctx)
 		defer srv.Stop()
 		nodes = append(nodes, srv)
 	}
@@ -1715,7 +1717,7 @@ func (nts newTestServerOpts) newServer(t testing.TB, ctx context.Context) *TestS
 }
 
 func NewTestServer(t testing.TB, protocol uint8, ctx context.Context) *TestServer {
-	return NewTestServerWithAddress("127.0.0.1:0", t, protocol, ctx)
+	return NewTestServerWithAddress("127.0.0.1:9042", t, protocol, ctx)
 }
 
 func NewSSLTestServer(t testing.TB, protocol uint8, ctx context.Context) *TestServer {
