@@ -102,11 +102,10 @@ func TestAsyncSessionInit(t *testing.T) {
 	}
 	// only build 1 of the servers so that we can test not connecting to the last
 	// one
-	srv := NewTestServerWithAddress(addresses[0]+":0", t, defaultProto, context.Background())
+	srv := NewTestServerWithAddress(addresses[0]+":9042", t, defaultProto, context.Background())
 	defer srv.Stop()
 
-	// just choose any port
-	cluster := testCluster(defaultProto, srv.Address, addresses[1]+":9999", addresses[2]+":9999")
+	cluster := testCluster(defaultProto, srv.Address, addresses[1]+":9042", addresses[2]+":9042")
 	cluster.PoolConfig.HostSelectionPolicy = SingleHostReadyPolicy(RoundRobinHostPolicy())
 	db, err := cluster.CreateSession()
 	if err != nil {
