@@ -43,6 +43,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -1822,7 +1823,7 @@ func (srv *TestServer) serve() {
 			for !srv.isClosed() {
 				framer, err := srv.readFrame(conn)
 				if err != nil {
-					if err == io.EOF || errors.Is(err, net.ErrClosed) {
+					if err == io.EOF || errors.Is(err, net.ErrClosed) || errors.Is(err, syscall.ECONNRESET) {
 						return
 					}
 					srv.errorLocked(err)
@@ -2086,7 +2087,7 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 	}
 
 	if err := respFrame.writeTo(conn); err != nil {
-		if !errors.Is(err, net.ErrClosed) {
+		if !errors.Is(err, net.ErrClosed) && !errors.Is(err, syscall.ECONNRESET) && !errors.Is(err, syscall.EPIPE) {
 			srv.errorLocked(err)
 		}
 	}
