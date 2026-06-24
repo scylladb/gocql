@@ -430,9 +430,9 @@ func (cfg *ClusterConfig) ValidateAndInitSSL() error {
 	if cfg.SslOpts == nil {
 		return nil
 	}
-	actualTLSConfig, err := setupTLSConfig(cfg.SslOpts)
+	actualTLSConfig, err := setupTLSConfig(cfg.SslOpts, cfg.logger())
 	if err != nil {
-		return fmt.Errorf("failed to initialize ssl configuration: %s", err.Error())
+		return fmt.Errorf("failed to initialize ssl configuration: %w", err)
 	}
 
 	cfg.actualSslOpts.Store(actualTLSConfig)
@@ -619,7 +619,7 @@ var (
 	ErrHostQueryFailed      = errors.New("unable to populate Hosts")
 )
 
-func setupTLSConfig(sslOpts *SslOptions) (*tls.Config, error) {
+func setupTLSConfig(sslOpts *SslOptions, logger StdLogger) (*tls.Config, error) {
 	//  Config.InsecureSkipVerify | EnableHostVerification | Result
 	//  Config is nil             | true                   | verify host
 	//  Config is nil             | false                  | do not verify host
@@ -667,5 +667,100 @@ func setupTLSConfig(sslOpts *SslOptions) (*tls.Config, error) {
 		tlsConfig.Certificates = append(tlsConfig.Certificates, mycert)
 	}
 
+	// Emit deprecation warning if the option is used
+	if sslOpts.DisableStrictCertificateValidation {
+		if logger != nil {
+			logger.Println("gocql: WARNING - DisableStrictCertificateValidation (used to disable strict TLS certificate validation) is deprecated and will be removed in a future version (see https://github.com/scylladb/gocql/issues/511). " +
+				"Please ensure your certificate chains are properly configured to work with strict validation.")
+		}
+	}
+
+	// Add strict certificate chain validation unless explicitly disabled
+	// This ensures that the entire certificate chain is properly validated,
+	// not just that one intermediate certificate is trusted.
+	if !tlsConfig.InsecureSkipVerify && !sslOpts.DisableStrictCertificateValidation && tlsConfig.VerifyPeerCertificate == nil {
+		tlsConfig.VerifyPeerCertificate = strictVerifyPeerCertificate(tlsConfig.RootCAs)
+	}
+
 	return tlsConfig, nil
+}
+
+// strictVerifyPeerCertificate returns a VerifyPeerCertificate callback that ensures
+// the certificate chain terminates at a self-signed root certificate, preventing
+// intermediate CAs from being mistakenly trusted as roots.
+//
+// When InsecureSkipVerify is false, Go's TLS already validates all chain signatures.
+// This callback additionally requires the trust anchor to be self-signed, which
+// catches misconfigurations where an intermediate CA cert is placed in the root pool.
+//
+// Note: cross-signed root certificates (roots signed by another CA) are rejected.
+// This is an intentional trade-off: cross-signed roots are rare in CQL deployments,
+// and the security benefit of catching intermediate-in-root-pool misconfiguration
+// outweighs the compatibility cost.
+func strictVerifyPeerCertificate(rootCAs *x509.CertPool) func([][]byte, [][]*x509.Certificate) error {
+	return func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+		// When InsecureSkipVerify is false (our guard ensures this), Go's TLS
+		// stack already performs certificate verification and passes the results
+		// via verifiedChains. Use those to avoid redundant verification.
+		if len(verifiedChains) > 0 {
+			return checkChainRoots(verifiedChains)
+		}
+
+		if len(rawCerts) == 0 {
+			return errors.New("no certificates provided")
+		}
+
+		cert, err := x509.ParseCertificate(rawCerts[0])
+		if err != nil {
+			return fmt.Errorf("failed to parse certificate: %w", err)
+		}
+
+		intermediates := x509.NewCertPool()
+		for i := 1; i < len(rawCerts); i++ {
+			intermediateCert, err := x509.ParseCertificate(rawCerts[i])
+			if err != nil {
+				return fmt.Errorf("failed to parse intermediate certificate at position %d: %w", i, err)
+			}
+			intermediates.AddCert(intermediateCert)
+		}
+
+		opts := x509.VerifyOptions{
+			Roots:         rootCAs,
+			Intermediates: intermediates,
+			KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		}
+
+		chains, err := cert.Verify(opts)
+		if err != nil {
+			return fmt.Errorf("certificate verification failed for subject=%q, issuer=%q: %w",
+				cert.Subject.String(), cert.Issuer.String(), err)
+		}
+
+		return checkChainRoots(chains)
+	}
+}
+
+// checkChainRoots verifies that at least one chain terminates at a self-signed root.
+func checkChainRoots(chains [][]*x509.Certificate) error {
+	for _, chain := range chains {
+		if len(chain) == 0 {
+			continue
+		}
+
+		rootCert := chain[len(chain)-1]
+		if err := rootCert.CheckSignatureFrom(rootCert); err != nil {
+			continue
+		}
+		return nil
+	}
+
+	// Include the leaf certificate subject in the error for debugging
+	var subject string
+	if len(chains) > 0 && len(chains[0]) > 0 {
+		subject = chains[0][0].Subject.String()
+	}
+	if subject != "" {
+		return fmt.Errorf("certificate chain for subject=%q does not terminate at a self-signed root certificate", subject)
+	}
+	return errors.New("no valid certificate chain terminating at a self-signed root certificate found")
 }
