@@ -1300,3 +1300,313 @@ func TestCollectionNewWithErrorConsistentWithGoType(t *testing.T) {
 		}
 	}
 }
+
+// generateStringSlice creates a []string of length n with elements of approximate size elemSize.
+func generateStringSlice(n, elemSize int) []string {
+	s := make([]string, n)
+	buf := make([]byte, elemSize)
+	for i := range buf {
+		buf[i] = byte('a' + i%26)
+	}
+	pattern := string(buf)
+	for i := range s {
+		s[i] = pattern
+	}
+	return s
+}
+
+// generateInt64Slice creates a []int64 of length n.
+func generateInt64Slice(n int) []int64 {
+	s := make([]int64, n)
+	for i := range s {
+		s[i] = int64(i)
+	}
+	return s
+}
+
+// generateStringInt64Map creates a map[string]int64 of length n.
+func generateStringInt64Map(n int) map[string]int64 {
+	m := make(map[string]int64, n)
+	for i := 0; i < n; i++ {
+		m[fmt.Sprintf("key-%010d", i)] = int64(i)
+	}
+	return m
+}
+
+// generateInt64Int64Map creates a map[int64]int64 of length n.
+func generateInt64Int64Map(n int) map[int64]int64 {
+	m := make(map[int64]int64, n)
+	for i := int64(0); i < int64(n); i++ {
+		m[i] = i * 2
+	}
+	return m
+}
+
+func BenchmarkMarshalList(b *testing.B) {
+	b.ReportAllocs()
+
+	varcharType := CollectionType{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeList},
+		Elem:       NativeType{proto: protoVersion4, typ: TypeVarchar},
+	}
+	bigintType := CollectionType{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeList},
+		Elem:       NativeType{proto: protoVersion4, typ: TypeBigInt},
+	}
+
+	b.Run("Small-10-varchar", func(b *testing.B) {
+		val := generateStringSlice(10, 64)
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, err := Marshal(varcharType, val)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("Medium-1K-varchar", func(b *testing.B) {
+		val := generateStringSlice(1000, 50)
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, err := Marshal(varcharType, val)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("Large-10K-varchar", func(b *testing.B) {
+		val := generateStringSlice(10000, 50)
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, err := Marshal(varcharType, val)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("Small-10-bigint", func(b *testing.B) {
+		val := generateInt64Slice(10)
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, err := Marshal(bigintType, val)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("Medium-1K-bigint", func(b *testing.B) {
+		val := generateInt64Slice(1000)
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, err := Marshal(bigintType, val)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("Large-10K-bigint", func(b *testing.B) {
+		val := generateInt64Slice(10000)
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, err := Marshal(bigintType, val)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+}
+
+func BenchmarkUnmarshalList(b *testing.B) {
+	b.ReportAllocs()
+
+	bigintType := CollectionType{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeList},
+		Elem:       NativeType{proto: protoVersion4, typ: TypeBigInt},
+	}
+
+	b.Run("Small-10-bigint", func(b *testing.B) {
+		val := generateInt64Slice(10)
+		wire, err := Marshal(bigintType, val)
+		if err != nil {
+			b.Fatal(err)
+		}
+		var dst []int64
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if err := Unmarshal(bigintType, wire, &dst); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("Large-10K-bigint", func(b *testing.B) {
+		val := generateInt64Slice(10000)
+		wire, err := Marshal(bigintType, val)
+		if err != nil {
+			b.Fatal(err)
+		}
+		var dst []int64
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if err := Unmarshal(bigintType, wire, &dst); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("Medium-1K-bigint", func(b *testing.B) {
+		val := generateInt64Slice(1000)
+		wire, err := Marshal(bigintType, val)
+		if err != nil {
+			b.Fatal(err)
+		}
+		var dst []int64
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if err := Unmarshal(bigintType, wire, &dst); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+}
+
+func BenchmarkMarshalMap(b *testing.B) {
+	b.ReportAllocs()
+
+	stringIntType := CollectionType{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeMap},
+		Key:        NativeType{proto: protoVersion4, typ: TypeVarchar},
+		Elem:       NativeType{proto: protoVersion4, typ: TypeInt},
+	}
+	bigintBigintType := CollectionType{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeMap},
+		Key:        NativeType{proto: protoVersion4, typ: TypeBigInt},
+		Elem:       NativeType{proto: protoVersion4, typ: TypeBigInt},
+	}
+
+	b.Run("Small-10-string-int", func(b *testing.B) {
+		val := generateStringInt64Map(10)
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, err := Marshal(stringIntType, val)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("Medium-1K-string-int", func(b *testing.B) {
+		val := generateStringInt64Map(1000)
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, err := Marshal(stringIntType, val)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("Large-10K-string-int", func(b *testing.B) {
+		val := generateStringInt64Map(10000)
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, err := Marshal(stringIntType, val)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("Small-10-bigint-bigint", func(b *testing.B) {
+		val := generateInt64Int64Map(10)
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, err := Marshal(bigintBigintType, val)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("Medium-1K-bigint-bigint", func(b *testing.B) {
+		val := generateInt64Int64Map(1000)
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, err := Marshal(bigintBigintType, val)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("Large-10K-bigint-bigint", func(b *testing.B) {
+		val := generateInt64Int64Map(10000)
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, err := Marshal(bigintBigintType, val)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+}
+
+func BenchmarkUnmarshalMap(b *testing.B) {
+	b.ReportAllocs()
+
+	bigintBigintType := CollectionType{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeMap},
+		Key:        NativeType{proto: protoVersion4, typ: TypeBigInt},
+		Elem:       NativeType{proto: protoVersion4, typ: TypeBigInt},
+	}
+
+	b.Run("Small-10-bigint-bigint", func(b *testing.B) {
+		val := generateInt64Int64Map(10)
+		wire, err := Marshal(bigintBigintType, val)
+		if err != nil {
+			b.Fatal(err)
+		}
+		var dst map[int64]int64
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if err := Unmarshal(bigintBigintType, wire, &dst); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("Large-10K-bigint-bigint", func(b *testing.B) {
+		val := generateInt64Int64Map(10000)
+		wire, err := Marshal(bigintBigintType, val)
+		if err != nil {
+			b.Fatal(err)
+		}
+		var dst map[int64]int64
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if err := Unmarshal(bigintBigintType, wire, &dst); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("Medium-1K-bigint-bigint", func(b *testing.B) {
+		val := generateInt64Int64Map(1000)
+		wire, err := Marshal(bigintBigintType, val)
+		if err != nil {
+			b.Fatal(err)
+		}
+		var dst map[int64]int64
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if err := Unmarshal(bigintBigintType, wire, &dst); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+}
