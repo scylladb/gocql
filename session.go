@@ -1219,6 +1219,11 @@ type Query struct {
 	routingKey []byte
 	values     []any
 	pageState  []byte
+	// pkMarshalCache holds partition-key column bytes marshalled during
+	// GetRoutingKey so executeQuery can reuse them. Populated in Pick
+	// before any speculative goroutine; values are immutable for the
+	// query's lifetime.
+	pkMarshalCache []pkMarshalEntry
 	// requestTimeout is a timeout on waiting for response from server
 	requestTimeout             time.Duration
 	defaultTimestampValue      int64
@@ -1404,6 +1409,8 @@ func (q *Query) WithTimestamp(timestamp int64) *Query {
 // pool is used to optimize the routing of this query.
 func (q *Query) RoutingKey(routingKey []byte) *Query {
 	q.routingKey = routingKey
+	// Cache is stale once an explicit routing key is set.
+	q.pkMarshalCache = q.pkMarshalCache[:0]
 	return q
 }
 
@@ -1490,6 +1497,9 @@ func (q *Query) GetSession() *Session {
 // then nil will be returned with no error. On any error condition,
 // an error description will be returned.
 func (q *Query) GetRoutingKey() ([]byte, error) {
+	// Invalidate cache before any early return; repopulated below.
+	q.pkMarshalCache = q.pkMarshalCache[:0]
+
 	if q.routingKey != nil {
 		return q.routingKey, nil
 	} else if q.binding != nil && len(q.values) == 0 {
@@ -1520,7 +1530,27 @@ func (q *Query) GetRoutingKey() ([]byte, error) {
 		q.routingInfo.table = routingKeyInfo.table
 		q.routingInfo.mu.Unlock()
 	}
-	return createRoutingKey(routingKeyInfo, q.values)
+	// Cache PK column bytes for reuse in executeQuery.
+	return createRoutingKeyCaching(routingKeyInfo, q.values, &q.pkMarshalCache)
+}
+
+// lookupPKMarshalCache returns cached marshalled bytes for the value at
+// index when the entry's NativeType matches wantType, guarding against
+// stale data after DROP+CREATE with a different PK type.
+func (q *Query) lookupPKMarshalCache(index int, wantType TypeInfo) ([]byte, bool) {
+	wantNative, ok := wantType.(NativeType)
+	if !ok {
+		return nil, false
+	}
+	for i := range q.pkMarshalCache {
+		if q.pkMarshalCache[i].index == index {
+			if q.pkMarshalCache[i].typ == wantNative {
+				return q.pkMarshalCache[i].value, true
+			}
+			return nil, false
+		}
+	}
+	return nil, false
 }
 
 func (q *Query) shouldPrepare() bool {
@@ -1655,6 +1685,8 @@ func (q *Query) Idempotent(value bool) *Query {
 func (q *Query) Bind(v ...any) *Query {
 	q.values = v
 	q.pageState = nil
+	// Values changed — cache is stale.
+	q.pkMarshalCache = q.pkMarshalCache[:0]
 	return q
 }
 
@@ -2798,20 +2830,40 @@ func (b *Batch) SetRequestTimeout(timeout time.Duration) *Batch {
 	return b
 }
 
+// pkMarshalEntry caches marshalled partition-key bytes keyed by value
+// index. typ is the NativeType used at marshal time; reuse is allowed
+// only when the column's type at execution matches, preventing stale
+// bytes across DROP+CREATE type changes. Non-NativeType columns never
+// cache (NativeType is comparable).
+type pkMarshalEntry struct {
+	value []byte
+	typ   NativeType
+	index int
+}
+
 func createRoutingKey(routingKeyInfo *routingKeyInfo, values []any) ([]byte, error) {
+	return createRoutingKeyCaching(routingKeyInfo, values, nil)
+}
+
+// createRoutingKeyCaching computes the routing key and appends each
+// partition-key column's marshalled bytes to cache when the value is
+// plain and the type is NativeType. Pass nil to skip caching.
+func createRoutingKeyCaching(routingKeyInfo *routingKeyInfo, values []any, cache *[]pkMarshalEntry) ([]byte, error) {
 	if routingKeyInfo == nil {
 		return nil, nil
 	}
 
 	if len(routingKeyInfo.indexes) == 1 {
 		// single column routing key
+		idx := routingKeyInfo.indexes[0]
 		routingKey, err := Marshal(
 			routingKeyInfo.types[0],
-			values[routingKeyInfo.indexes[0]],
+			values[idx],
 		)
 		if err != nil {
 			return nil, err
 		}
+		maybeCachePKMarshal(cache, idx, routingKeyInfo.types[0], values[idx], routingKey)
 		return routingKey, nil
 	}
 
@@ -2822,13 +2874,15 @@ func createRoutingKey(routingKeyInfo *routingKeyInfo, values []any) ([]byte, err
 	var backing [256]byte
 	buf := backing[:0]
 	for i := range routingKeyInfo.indexes {
+		idx := routingKeyInfo.indexes[i]
 		encoded, err := Marshal(
 			routingKeyInfo.types[i],
-			values[routingKeyInfo.indexes[i]],
+			values[idx],
 		)
 		if err != nil {
 			return nil, err
 		}
+		maybeCachePKMarshal(cache, idx, routingKeyInfo.types[i], values[idx], encoded)
 		n := len(encoded)
 		buf = append(buf, byte(n>>8), byte(n))
 		buf = append(buf, encoded...)
@@ -2839,6 +2893,30 @@ func createRoutingKey(routingKeyInfo *routingKeyInfo, values []any) ([]byte, err
 	routingKey := make([]byte, len(buf))
 	copy(routingKey, buf)
 	return routingKey, nil
+}
+
+// maybeCachePKMarshal appends encoded to cache when value is plain and
+// typ is a comparable NativeType.
+func maybeCachePKMarshal(cache *[]pkMarshalEntry, idx int, typ TypeInfo, value any, encoded []byte) {
+	if cache == nil || !pkValueIsPlain(value) {
+		return
+	}
+	nt, ok := typ.(NativeType)
+	if !ok {
+		return
+	}
+	*cache = append(*cache, pkMarshalEntry{index: idx, typ: nt, value: encoded})
+}
+
+// pkValueIsPlain reports whether v is a plain value (not *namedValue or
+// unsetColumn) that can be safely reused from the routing-key computation.
+func pkValueIsPlain(v any) bool {
+	switch v.(type) {
+	case *namedValue, unsetColumn:
+		return false
+	default:
+		return true
+	}
 }
 
 func (b *Batch) borrowForExecution() {
