@@ -32,6 +32,7 @@ import (
 	"io"
 	"net"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -611,10 +612,7 @@ func (f *framer) writeHeader(flags byte, op frm.Op, stream int) {
 }
 
 func (f *framer) setLength(length int) {
-	f.buf[5] = byte(length >> 24)
-	f.buf[6] = byte(length >> 16)
-	f.buf[7] = byte(length >> 8)
-	f.buf[8] = byte(length)
+	binary.BigEndian.PutUint32(f.buf[5:9], uint32(length))
 }
 
 func (f *framer) finish() error {
@@ -1220,6 +1218,17 @@ type queryValues struct {
 	isUnset bool
 }
 
+func (v *queryValues) encodedSize() int {
+	n := 4 // value length prefix (int32)
+	if !v.isUnset && v.value != nil {
+		n += len(v.value)
+	}
+	if v.name != "" {
+		n += 2 + len(v.name)
+	}
+	return n
+}
+
 type queryParams struct {
 	keyspace              string
 	values                []queryValues
@@ -1286,14 +1295,23 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 	if n := len(opts.values); n > 0 {
 		f.writeShort(uint16(n))
 
+		// Pre-grow once for the whole value section to avoid per-value append
+		// reallocations.
+		need := 0
 		for i := 0; i < n; i++ {
+			need += opts.values[i].encodedSize()
+		}
+		f.buf = slices.Grow(f.buf, need)
+
+		for i := 0; i < n; i++ {
+			v := &opts.values[i]
 			if names {
-				f.writeString(opts.values[i].name)
+				f.writeString(v.name)
 			}
-			if opts.values[i].isUnset {
+			if v.isUnset {
 				f.writeUnset()
 			} else {
-				f.writeBytes(opts.values[i].value)
+				f.writeBytes(v.value)
 			}
 		}
 	}
@@ -1423,6 +1441,32 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 
 	var flags byte
 
+	// Validate named values before any allocation.
+	for i := 0; i < n; i++ {
+		for j := range w.statements[i].values {
+			if w.statements[i].values[j].name != "" && f.proto <= protoVersion5 {
+				return fmt.Errorf("gocql: named query values are not supported in batches, please see https://issues.apache.org/jira/browse/CASSANDRA-10246")
+			}
+		}
+	}
+
+	// Pre-grow once for all statements to avoid per-value append reallocations.
+	{
+		need := 3 * n // kind bytes + value counts
+		for i := 0; i < n; i++ {
+			b := &w.statements[i]
+			if len(b.preparedID) == 0 {
+				need += 4 + len(b.statement)
+			} else {
+				need += 2 + len(b.preparedID)
+			}
+			for j := range b.values {
+				need += b.values[j].encodedSize()
+			}
+		}
+		f.buf = slices.Grow(f.buf, need)
+	}
+
 	for i := 0; i < n; i++ {
 		b := &w.statements[i]
 		if len(b.preparedID) == 0 {
@@ -1435,13 +1479,8 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 
 		f.writeShort(uint16(len(b.values)))
 		for j := range b.values {
-			col := b.values[j]
+			col := &b.values[j]
 			if col.name != "" {
-				// TODO: move this check into the caller and set a flag on writeBatchFrame
-				// to indicate using named values
-				if f.proto <= protoVersion5 {
-					return fmt.Errorf("gocql: named query values are not supported in batches, please see https://issues.apache.org/jira/browse/CASSANDRA-10246")
-				}
 				flags |= frm.FlagWithNameValues
 				f.writeString(col.name)
 			}
