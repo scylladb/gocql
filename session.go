@@ -1219,13 +1219,10 @@ type Query struct {
 	routingKey []byte
 	values     []any
 	pageState  []byte
-	// pkMarshalCache holds partition-key column values marshalled while
-	// computing the routing key in GetRoutingKey, so that executeQuery can
-	// reuse them instead of marshalling the same values a second time when
-	// building the request frame. It is populated during Pick (before any
-	// speculative-execution goroutines are launched) and only read afterwards,
-	// so it needs no synchronization. Values are immutable for the lifetime of
-	// the query, so the cache stays valid across retries.
+	// pkMarshalCache holds partition-key column bytes marshalled during
+	// GetRoutingKey so executeQuery can reuse them. Populated in Pick
+	// before any speculative goroutine; values are immutable for the
+	// query's lifetime.
 	pkMarshalCache []pkMarshalEntry
 	// requestTimeout is a timeout on waiting for response from server
 	requestTimeout             time.Duration
@@ -1412,9 +1409,7 @@ func (q *Query) WithTimestamp(timestamp int64) *Query {
 // pool is used to optimize the routing of this query.
 func (q *Query) RoutingKey(routingKey []byte) *Query {
 	q.routingKey = routingKey
-	// Invalidate any cached partition-key marshalling: an explicit routing key
-	// takes precedence and GetRoutingKey will now early-return without
-	// repopulating the cache.
+	// Cache is stale once an explicit routing key is set.
 	q.pkMarshalCache = q.pkMarshalCache[:0]
 	return q
 }
@@ -1502,11 +1497,7 @@ func (q *Query) GetSession() *Session {
 // then nil will be returned with no error. On any error condition,
 // an error description will be returned.
 func (q *Query) GetRoutingKey() ([]byte, error) {
-	// Always invalidate any previously cached partition-key marshalling before
-	// taking an early-return path. The cache is repopulated below only when we
-	// actually marshal the partition key, so this guarantees executeQuery never
-	// reuses stale bytes from an earlier execution (e.g. after Bind rebinds the
-	// values or after RoutingKey sets an explicit key).
+	// Invalidate cache before any early return; repopulated below.
 	q.pkMarshalCache = q.pkMarshalCache[:0]
 
 	if q.routingKey != nil {
@@ -1539,20 +1530,13 @@ func (q *Query) GetRoutingKey() ([]byte, error) {
 		q.routingInfo.table = routingKeyInfo.table
 		q.routingInfo.mu.Unlock()
 	}
-	// Capture the marshalled partition-key column bytes so executeQuery can
-	// reuse them instead of marshalling the same values again for the request
-	// frame. The cache was reset at the top of this method; values are
-	// immutable between rebinds so a single population is sufficient.
+	// Cache PK column bytes for reuse in executeQuery.
 	return createRoutingKeyCaching(routingKeyInfo, q.values, &q.pkMarshalCache)
 }
 
-// lookupPKMarshalCache returns the cached marshalled bytes for the query value
-// at the given index, but only when the cached entry was marshalled with the
-// same NativeType as wantType. The type check guarantees the cached bytes match
-// what the frame builder would produce, even if the routing-key info and the
-// prepared-statement metadata (which are cached independently) momentarily
-// disagree, e.g. after a table is dropped and recreated with a different
-// partition-key column type. The returned slice must not be mutated.
+// lookupPKMarshalCache returns cached marshalled bytes for the value at
+// index when the entry's NativeType matches wantType, guarding against
+// stale data after DROP+CREATE with a different PK type.
 func (q *Query) lookupPKMarshalCache(index int, wantType TypeInfo) ([]byte, bool) {
 	wantNative, ok := wantType.(NativeType)
 	if !ok {
@@ -1701,8 +1685,7 @@ func (q *Query) Idempotent(value bool) *Query {
 func (q *Query) Bind(v ...any) *Query {
 	q.values = v
 	q.pageState = nil
-	// Rebinding changes the values, so any previously cached partition-key
-	// marshalling is now stale and must be discarded.
+	// Values changed — cache is stale.
 	q.pkMarshalCache = q.pkMarshalCache[:0]
 	return q
 }
@@ -2847,19 +2830,11 @@ func (b *Batch) SetRequestTimeout(timeout time.Duration) *Batch {
 	return b
 }
 
-// pkMarshalEntry caches the marshalled bytes of a single partition-key column
-// keyed by its position in the query's bound values slice. The cached bytes are
-// identical to what the request-frame builder would produce for the same value,
-// so they can be reused to avoid marshalling partition-key columns twice (once
-// for routing/token computation and once for the request frame).
-//
-// typ records the exact NativeType the bytes were marshalled with. executeQuery
-// reuses the bytes only when the column's type at execution time is the same
-// NativeType, so a table that was dropped and recreated with a different
-// partition-key column type (the routing-key info and prepared metadata live in
-// separate caches that could momentarily disagree) can never cause stale bytes
-// to be written into a frame. Only NativeType partition-key columns are cached
-// because NativeType is comparable; other type kinds fall back to re-marshalling.
+// pkMarshalEntry caches marshalled partition-key bytes keyed by value
+// index. typ is the NativeType used at marshal time; reuse is allowed
+// only when the column's type at execution matches, preventing stale
+// bytes across DROP+CREATE type changes. Non-NativeType columns never
+// cache (NativeType is comparable).
 type pkMarshalEntry struct {
 	value []byte
 	typ   NativeType
@@ -2870,13 +2845,9 @@ func createRoutingKey(routingKeyInfo *routingKeyInfo, values []any) ([]byte, err
 	return createRoutingKeyCaching(routingKeyInfo, values, nil)
 }
 
-// createRoutingKeyCaching computes the routing key like createRoutingKey, and,
-// when cache is non-nil, appends the per-column marshalled bytes it produced for
-// each partition-key column so the caller can reuse them when building the
-// request frame. It only caches when a partition-key value is a plain value
-// (not a *namedValue or unsetColumn) AND its type is a NativeType, matching the
-// marshalling that the frame builder performs for those columns; otherwise it
-// leaves that column out of the cache and the frame builder marshals normally.
+// createRoutingKeyCaching computes the routing key and appends each
+// partition-key column's marshalled bytes to cache when the value is
+// plain and the type is NativeType. Pass nil to skip caching.
 func createRoutingKeyCaching(routingKeyInfo *routingKeyInfo, values []any, cache *[]pkMarshalEntry) ([]byte, error) {
 	if routingKeyInfo == nil {
 		return nil, nil
@@ -2924,11 +2895,8 @@ func createRoutingKeyCaching(routingKeyInfo *routingKeyInfo, values []any, cache
 	return routingKey, nil
 }
 
-// maybeCachePKMarshal records the marshalled bytes for a partition-key column in
-// cache, but only when caching is requested, the value is plain, and the type is
-// a NativeType (so it can be compared for identity at reuse time). encoded must
-// be a slice that is not mutated or aliased after this call other than as
-// read-only data (Marshal returns a fresh slice for each value, satisfying this).
+// maybeCachePKMarshal appends encoded to cache when value is plain and
+// typ is a comparable NativeType.
 func maybeCachePKMarshal(cache *[]pkMarshalEntry, idx int, typ TypeInfo, value any, encoded []byte) {
 	if cache == nil || !pkValueIsPlain(value) {
 		return
@@ -2940,10 +2908,8 @@ func maybeCachePKMarshal(cache *[]pkMarshalEntry, idx int, typ TypeInfo, value a
 	*cache = append(*cache, pkMarshalEntry{index: idx, typ: nt, value: encoded})
 }
 
-// pkValueIsPlain reports whether v is a plain value that the request-frame
-// builder marshals directly (i.e. not a *namedValue wrapper or unsetColumn).
-// Only such values can have their marshalled bytes safely reused from the
-// routing-key computation.
+// pkValueIsPlain reports whether v is a plain value (not *namedValue or
+// unsetColumn) that can be safely reused from the routing-key computation.
 func pkValueIsPlain(v any) bool {
 	switch v.(type) {
 	case *namedValue, unsetColumn:
