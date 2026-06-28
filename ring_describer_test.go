@@ -346,7 +346,7 @@ func TestRingDescriberGetClusterPeerInfoClosesIter(t *testing.T) {
 	}
 	r := &ringDescriber{cfg: &ClusterConfig{}}
 
-	peers, err := r.getClusterPeerInfo(&HostInfo{}, &trackingRingConnection{
+	peers, err := r.getClusterPeerInfo(&trackingRingConnection{
 		iter: &Iter{
 			meta:    systemPeersResultMetadata,
 			framer:  framer,
@@ -386,7 +386,7 @@ func TestGetClusterPeerInfoQueryRouting(t *testing.T) {
 			}
 			r := &ringDescriber{cfg: &ClusterConfig{}}
 			// iter is nil so getClusterPeerInfo returns errNoControl, but the query is still recorded
-			_, _ = r.getClusterPeerInfo(&HostInfo{}, conn)
+			_, _ = r.getClusterPeerInfo(conn)
 			if conn.lastQuery != tt.wantQuery {
 				t.Errorf("got query %q, want %q", conn.lastQuery, tt.wantQuery)
 			}
