@@ -2148,7 +2148,7 @@ func TestGetSchemaAgreement(t *testing.T) {
 
 	t.Run("SchemaNotConsistent", func(t *testing.T) {
 		err := getSchemaAgreement(
-			[]string{"875a938a-a695-11ef-4314-85c8ef0ebaa2"},
+			"875a938a-a695-11ef-4314-85c8ef0ebaa2",
 			peersRows,
 			logger,
 		)
@@ -2158,7 +2158,7 @@ func TestGetSchemaAgreement(t *testing.T) {
 
 	t.Run("ZeroTokenNodeSchemaNotConsistent", func(t *testing.T) {
 		err := getSchemaAgreement(
-			[]string{"af810386-a694-11ef-81fa-3aea73156247"},
+			"af810386-a694-11ef-81fa-3aea73156247",
 			peersRows,
 			logger,
 		)
@@ -2169,12 +2169,61 @@ func TestGetSchemaAgreement(t *testing.T) {
 	t.Run("SchemaConsistent", func(t *testing.T) {
 		peersRows[2].SchemaVersion = schema_version1
 		err := getSchemaAgreement(
-			[]string{"af810386-a694-11ef-81fa-3aea73156247"},
+			"af810386-a694-11ef-81fa-3aea73156247",
 			peersRows,
 			logger,
 		)
 
 		assert.NoError(t, err, "expected no error when all nodes have the same schema")
+	})
+
+	t.Run("EmptyLocalSchemaVersion", func(t *testing.T) {
+		err := getSchemaAgreement(
+			"",
+			[]schemaAgreementHost{
+				{
+					DataCenter:    "datacenter1",
+					HostID:        ParseUUIDMust("b2035fd9-e0ca-4857-8c45-e63c00fb7c43"),
+					Rack:          "rack1",
+					RPCAddress:    "127.0.0.3",
+					SchemaVersion: schema_version1,
+				},
+			},
+			logger,
+		)
+
+		assert.NoError(t, err, "expected no error when local version is empty and peers are consistent")
+	})
+
+	t.Run("EmptyLocalWithNoPeers", func(t *testing.T) {
+		err := getSchemaAgreement("", nil, logger)
+
+		assert.NoError(t, err, "expected no error when both local and peers are empty")
+	})
+
+	t.Run("EmptyLocalWithInconsistentPeers", func(t *testing.T) {
+		err := getSchemaAgreement(
+			"",
+			[]schemaAgreementHost{
+				{
+					DataCenter:    "datacenter1",
+					HostID:        ParseUUIDMust("b2035fd9-e0ca-4857-8c45-e63c00fb7c43"),
+					Rack:          "rack1",
+					RPCAddress:    "127.0.0.3",
+					SchemaVersion: schema_version1,
+				},
+				{
+					DataCenter:    "datacenter2",
+					HostID:        ParseUUIDMust("dfef4a22-b8d8-47e9-aee5-8c19d4b7a9e3"),
+					Rack:          "rack1",
+					RPCAddress:    "127.0.0.5",
+					SchemaVersion: ParseUUIDMust("875a938a-a695-11ef-4314-85c8ef0ebaa2"),
+				},
+			},
+			logger,
+		)
+
+		assert.Error(t, err, "expected error when peers have different schemas")
 	})
 }
 
