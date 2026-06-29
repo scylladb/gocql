@@ -37,6 +37,7 @@ import (
 	"time"
 
 	"github.com/gocql/gocql/internal/eventbus"
+	frm "github.com/gocql/gocql/internal/frame"
 )
 
 const defaultDriverName = "ScyllaDB GoCQL Driver"
@@ -126,6 +127,11 @@ type ClusterConfig struct {
 	// Default: nil
 	AuthProvider       func(h *HostInfo) (Authenticator, error)
 	ClientRoutesConfig *ClientRoutesConfig
+	// Per-host policy: returns true to enable coalescing, false to skip.
+	// Nil means coalesce all connections.
+	WriteCoalescePolicy func(host *HostInfo) bool
+	// CQL opcodes that bypass coalescing (flushed immediately).
+	WriteCoalesceBypassOps map[frm.Op]struct{}
 	// The version of the driver that is going to be reported to the server.
 	// Defaulted to current library version
 	DriverVersion string
@@ -241,6 +247,11 @@ type ClusterConfig struct {
 	// Maximum cache size for query info about statements for each session.
 	// Default: 1000
 	MaxRoutingKeyInfo int
+	// Flush immediately when buffered data exceeds this threshold.
+	// 0 uses the default threshold (1400 bytes, ~1 TCP segment); a negative
+	// value disables threshold-based flushing (only frames flagged for
+	// immediate flush bypass the coalesce wait).
+	WriteCoalesceFlushThreshold int
 	// ReadTimeout limits the time the driver waits for data from the connection.
 	// It has only one purpose, identify faulty connection early and drop it.
 	// Default: 11 Seconds
@@ -410,6 +421,7 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		InitialReconnectionPolicy:     &NoReconnectionPolicy{},
 		SocketKeepalive:               15 * time.Second,
 		WriteCoalesceWaitTime:         200 * time.Microsecond,
+		WriteCoalesceBypassOps:        map[frm.Op]struct{}{frm.OpExecute: {}},
 		MetadataSchemaRequestTimeout:  60 * time.Second,
 		DisableSkipMetadata:           true,
 		WarningsHandlerBuilder:        DefaultWarningHandlerBuilder,
@@ -421,6 +433,24 @@ func NewCluster(hosts ...string) *ClusterConfig {
 	}
 
 	return cfg
+}
+
+// NewCoalescePolicyCrossDC enables coalescing only for hosts in a different DC.
+//
+// If a host's datacenter (HostInfo.DataCenter) is unknown or empty, it compares
+// unequal to a non-empty localDC, so coalescing is enabled for that host — the
+// safe default.
+func NewCoalescePolicyCrossDC(localDC string) func(host *HostInfo) bool {
+	return func(host *HostInfo) bool {
+		return host.DataCenter() != localDC
+	}
+}
+
+// NewCoalescePolicyCrossRack enables coalescing only for hosts outside the local DC+rack.
+func NewCoalescePolicyCrossRack(localDC, localRack string) func(host *HostInfo) bool {
+	return func(host *HostInfo) bool {
+		return host.DataCenter() != localDC || host.Rack() != localRack
+	}
 }
 
 func (cfg *ClusterConfig) logger() StdLogger {
