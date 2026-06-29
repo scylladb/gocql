@@ -44,7 +44,7 @@ func (r *ringDescriber) getLocalHostInfo(conn ConnInterface) (*HostInfo, error) 
 }
 
 // Ask the control node for host info on all it's known peers
-func (r *ringDescriber) getClusterPeerInfo(localHost *HostInfo, c ConnInterface) ([]*HostInfo, error) {
+func (r *ringDescriber) getClusterPeerInfo(c ConnInterface) ([]*HostInfo, error) {
 	var iter *Iter
 	if c.getIsSchemaV2() {
 		iter = c.querySystem(context.TODO(), qrySystemPeersV2)
@@ -113,14 +113,31 @@ func (r *ringDescriber) GetHostsFromSystem() ([]*HostInfo, string, error) {
 	}
 
 	ch := r.control.getConn()
-	localHost, err := r.getLocalHostInfo(ch.conn)
-	if err != nil {
-		return r.prevHosts, r.prevPartitioner, err
-	}
 
-	peerHosts, err := r.getClusterPeerInfo(localHost, ch.conn)
-	if err != nil {
-		return r.prevHosts, r.prevPartitioner, err
+	var (
+		localHost *HostInfo
+		peerHosts []*HostInfo
+		localErr  error
+		peerErr   error
+		wg        sync.WaitGroup
+	)
+
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		localHost, localErr = r.getLocalHostInfo(ch.conn)
+	}()
+	go func() {
+		defer wg.Done()
+		peerHosts, peerErr = r.getClusterPeerInfo(ch.conn)
+	}()
+	wg.Wait()
+
+	if localErr != nil {
+		return r.prevHosts, r.prevPartitioner, localErr
+	}
+	if peerErr != nil {
+		return r.prevHosts, r.prevPartitioner, peerErr
 	}
 
 	var hosts []*HostInfo
