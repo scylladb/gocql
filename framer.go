@@ -47,6 +47,7 @@ type framerConfig struct {
 	proto                 byte
 	flags                 byte
 	tabletsRoutingV1      bool
+	scyllaUseMetadataId   bool
 }
 
 // framerBufEWMAWeight controls how quickly the exponential weighted moving average
@@ -106,6 +107,13 @@ func (cf *connFramers) initCache(c *Conn) {
 			cfg.tabletsRoutingV1 = true
 		} else {
 			c.logger.Printf("gocql: failed to cast CQL protocol extension %s to %T", tabletsRoutingV1, tabletsRoutingV1Ext{})
+		}
+	}
+	if metadataIdExt := findCQLProtoExtByName(c.cqlProtoExts, scyllaUseMetadataId); metadataIdExt != nil {
+		if _, ok := metadataIdExt.(*scyllaUseMetadataIdExt); ok {
+			cfg.scyllaUseMetadataId = true
+		} else {
+			c.logger.Printf("gocql: failed to cast CQL protocol extension %s to %T", scyllaUseMetadataId, scyllaUseMetadataIdExt{})
 		}
 	}
 	cf.defaults = cfg
@@ -218,6 +226,7 @@ func (fp *framerPool) init(defaults framerConfig, release func(*framer)) {
 				flagLWT:               defaults.flagLWT,
 				rateLimitingErrorCode: defaults.rateLimitingErrorCode,
 				tabletsRoutingV1:      defaults.tabletsRoutingV1,
+				scyllaUseMetadataId:   defaults.scyllaUseMetadataId,
 			}
 			f.release = func() { release(f) }
 			return f

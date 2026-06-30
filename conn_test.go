@@ -2211,6 +2211,32 @@ func newTestConnWithFramerPool() *Conn {
 	return c
 }
 
+// TestInitFramerCacheScyllaUseMetadataId guards against scyllaUseMetadataId
+// being negotiated on the Conn but never reaching the pooled framers that
+// actually read/write frames (see frame.go's parseResultMetadata,
+// parseResultPrepared, writeExecuteFrame).
+func TestInitFramerCacheScyllaUseMetadataId(t *testing.T) {
+	c := &Conn{
+		version:      protoVersion4,
+		cqlProtoExts: []cqlProtocolExtension{&scyllaUseMetadataIdExt{}},
+	}
+	c.initFramerCache()
+
+	if !c.framers.defaults.scyllaUseMetadataId {
+		t.Fatal("framerConfig.scyllaUseMetadataId should be true once SCYLLA_USE_METADATA_ID is negotiated")
+	}
+
+	wf := c.getWriteFramer()
+	if !wf.scyllaUseMetadataId {
+		t.Error("write framer obtained from pool should have scyllaUseMetadataId set")
+	}
+
+	rf := c.getReadFramer()
+	if !rf.scyllaUseMetadataId {
+		t.Error("read framer obtained from pool should have scyllaUseMetadataId set")
+	}
+}
+
 func buildTestFrame(t *testing.T, f *framer, req frameBuilder, streamID int) ([]byte, frm.FrameHeader) {
 	t.Helper()
 
