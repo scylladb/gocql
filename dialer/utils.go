@@ -1,6 +1,8 @@
 package dialer
 
 import (
+	"bytes"
+
 	frm "github.com/gocql/gocql/internal/frame"
 	"github.com/gocql/gocql/internal/murmur"
 )
@@ -8,6 +10,38 @@ import (
 type Record struct {
 	Data     []byte `json:"data"`
 	StreamID int    `json:"stream_id"`
+	// UseMetadataID reports whether the SCYLLA_USE_METADATA_ID extension was
+	// negotiated on the connection this frame belongs to. It governs whether an
+	// EXECUTE request carries a resultMetadataID short-bytes field on protocol
+	// v4 (see GetFrameHash). The recorder stamps it per connection; the frame
+	// bytes alone cannot reveal it.
+	UseMetadataID bool `json:"use_metadata_id"`
+}
+
+// scyllaUseMetadataIDKey is the STARTUP/SUPPORTED option key for the
+// SCYLLA_USE_METADATA_ID protocol extension (see gocql/scylla.go).
+const scyllaUseMetadataIDKey = "SCYLLA_USE_METADATA_ID"
+
+// StartupNegotiatesMetadataID reports whether the given raw request frame is a
+// STARTUP that opts into the SCYLLA_USE_METADATA_ID extension. The driver
+// serializes the extension as the key SCYLLA_USE_METADATA_ID in the STARTUP
+// [string map], so its presence is detectable by scanning the frame. Detection
+// is restricted to STARTUP requests so the same key appearing in a SUPPORTED
+// response (a read frame) never trips it.
+func StartupNegotiatesMetadataID(frame []byte) bool {
+	if len(frame) < 5 {
+		return false
+	}
+	var op byte
+	if frame[0] > 0x02 {
+		op = frame[4]
+	} else {
+		op = frame[3]
+	}
+	if frameOp(op) != opStartup {
+		return false
+	}
+	return bytes.Contains(frame, []byte(scyllaUseMetadataIDKey))
 }
 
 type frameOp byte
@@ -116,7 +150,13 @@ func addCustomPayload(frame []byte, index int, p int) int {
 	return index
 }
 
-func GetFrameHash(frame []byte) int64 {
+func GetFrameHash(frame []byte, useMetadataID bool) int64 {
+	// useMetadataID reports whether the SCYLLA_USE_METADATA_ID extension was
+	// negotiated on the connection. On protocol v4 the extension adds a
+	// resultMetadataID short-bytes field to EXECUTE requests (the same field v5
+	// always carries); it cannot be inferred from the frame bytes, so it is
+	// plumbed in by the recorder/replayer (see Record.UseMetadataID).
+	//
 	// GetFrameHash parses raw CQL request frames. On protocol v5+ the on-wire
 	// bytes recorded by the replayer are not a CQL frame but a transport
 	// segment produced by framer.prepareModernLayout (segment header, optional
@@ -191,12 +231,13 @@ func GetFrameHash(frame []byte) int64 {
 		preparedIDLen := int(frame[index])<<8 | int(frame[index+1])
 		endIndex = endIndex + 2 + preparedIDLen
 
-		// For protocol v5+, EXECUTE frames carry a resultMetadataID (short bytes)
-		// between the preparedID and the query params. Skip it so the query-params
-		// offset (and therefore the extracted hash) is correct. Currently dormant:
-		// Scylla negotiates at most protocol v4, so this branch is not reached in
-		// production, but it keeps the parser correct if v5 is enabled.
-		if frame[0] > 0x04 {
+		// EXECUTE frames carry a resultMetadataID (short bytes) between the
+		// preparedID and the query params on protocol v5+, and on protocol v4 when
+		// the SCYLLA_USE_METADATA_ID extension is negotiated. Skip it so the
+		// query-params offset (and therefore the extracted hash) is correct. The v4
+		// case cannot be read from the frame bytes, so it is signalled by the
+		// caller via useMetadataID.
+		if frame[0] > 0x04 || useMetadataID {
 			resultMetadataIDLen := int(frame[endIndex])<<8 | int(frame[endIndex+1])
 			endIndex = endIndex + 2 + resultMetadataIDLen
 		}

@@ -212,6 +212,7 @@ type Conn struct {
 	tabletsRoutingV1     int32
 	headerBuf            [headSize]byte
 	isShardAware         bool
+	scyllaUseMetadataId  bool
 	// true if connection close process for the connection started.
 	// closed is protected by mu.
 	closed     bool
@@ -564,6 +565,7 @@ func (s *startupCoordinator) options(ctx context.Context, startupCompleted *atom
 		s.conn.host.setScyllaFeatures(s.conn.scyllaSupported.ScyllaHostFeatures)
 	}
 	s.conn.cqlProtoExts = parseCQLProtocolExtensions(s.conn.supported, s.conn.logger)
+	s.conn.scyllaUseMetadataId = findCQLProtoExtByName(s.conn.cqlProtoExts, scyllaUseMetadataId) != nil
 
 	// initFramerCache must be called after startup(), because startup() may
 	// nil out c.compressor if the server does not support the requested
@@ -1928,6 +1930,26 @@ func marshalQueryValue(typ TypeInfo, value any, dst *queryValues) error {
 	return nil
 }
 
+// shouldSkipResultMetadata reports whether an EXECUTE request should ask the
+// server to skip result metadata in its RESULT/Rows response.
+//
+// Metadata can only be skipped when the response actually carries columns
+// (hasColumns); otherwise there is nothing cached to reuse. A per-query
+// NoSkipMetadata() (queryDisableSkipMetadata) always forces metadata.
+//
+// When the SCYLLA_USE_METADATA_ID extension is negotiated (scyllaUseMetadataId),
+// the server signals result-metadata changes via the METADATA_CHANGED flag, so
+// skipping is safe even if the session-level DisableSkipMetadata flag is set —
+// the session default is intentionally overridden in that case. Native protocol
+// v5 can track metadata changes the same way, but its skip-metadata default is
+// left to the v5 port's semantics (it still honors DisableSkipMetadata) and is
+// not overridden here, keeping this behavior scoped to the extension. v5 is not
+// auto-negotiated, so in practice the extension is the path used against Scylla.
+func shouldSkipResultMetadata(sessionDisableSkipMetadata, queryDisableSkipMetadata, scyllaUseMetadataId, hasColumns bool) bool {
+	disableSkipMeta := queryDisableSkipMetadata || (!scyllaUseMetadataId && sessionDisableSkipMetadata)
+	return !disableSkipMeta && hasColumns
+}
+
 func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 	params := queryParams{
 		consistency: qry.cons,
@@ -1998,14 +2020,18 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 			}
 		}
 
-		// if the metadata was not present in the response then we should not skip it
-		params.skipMeta = !(c.session.cfg.DisableSkipMetadata || qry.disableSkipMetadata) && len(info.response.columns) != 0
+		params.skipMeta = shouldSkipResultMetadata(
+			c.session.cfg.DisableSkipMetadata,
+			qry.disableSkipMetadata,
+			c.scyllaUseMetadataId,
+			len(info.response.columns) != 0,
+		)
 
 		frame = &writeExecuteFrame{
 			preparedID:       info.id,
+			resultMetadataID: info.resultMetadataID,
 			params:           params,
 			customPayload:    qry.customPayload,
-			resultMetadataID: info.resultMetadataID,
 		}
 
 		// Set "lwt", keyspace", "table" property in the query if it is present in preparedMetadata

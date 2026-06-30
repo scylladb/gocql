@@ -47,6 +47,10 @@ type ConnectionReplayer struct {
 	frameIdx              int
 	frameResponsePosition int
 	closed                bool
+	// useMetadataID latches once the STARTUP request on this connection opts into
+	// SCYLLA_USE_METADATA_ID, matching how the recorder stamped the frames so live
+	// and load-time hashes agree (see GetFrameHash / Record.UseMetadataID).
+	useMetadataID bool
 }
 
 func (c *ConnectionReplayer) frameStreamID() int {
@@ -115,7 +119,10 @@ func (c *ConnectionReplayer) Read(b []byte) (n int, err error) {
 }
 
 func (c *ConnectionReplayer) Write(b []byte) (n int, err error) {
-	writeHash := dialer.GetFrameHash(b)
+	if !c.useMetadataID && dialer.StartupNegotiatesMetadataID(b) {
+		c.useMetadataID = true
+	}
+	writeHash := dialer.GetFrameHash(b, c.useMetadataID)
 
 	for i, q := range c.frames {
 		if q.Hash == writeHash {
@@ -213,7 +220,7 @@ func loadResponseFramesFromFiles(read_file, write_file string) ([]*FrameRecorded
 	var frames = []*FrameRecorded{}
 	for streamID, record1 := range read_records {
 		if record2, exists := write_records[streamID]; exists {
-			frames = append(frames, &FrameRecorded{Response: record1.Data, Hash: dialer.GetFrameHash(record2.Data)})
+			frames = append(frames, &FrameRecorded{Response: record1.Data, Hash: dialer.GetFrameHash(record2.Data, record2.UseMetadataID)})
 		}
 	}
 	return frames, nil

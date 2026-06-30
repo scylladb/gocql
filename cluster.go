@@ -270,6 +270,11 @@ type ClusterConfig struct {
 	// the metadata to parse the rows and will not reuse the metadata from the prepared
 	// statement.
 	//
+	// Note: when the SCYLLA_USE_METADATA_ID protocol extension is negotiated, the driver may still
+	// send skip_metadata even if this flag is set, because the server safely signals result
+	// metadata changes via the METADATA_CHANGED flag. Use Query.NoSkipMetadata to force
+	// metadata on a specific query regardless of the extension.
+	//
 	// See https://issues.apache.org/jira/browse/CASSANDRA-10786
 	// See https://github.com/scylladb/scylladb/issues/20860
 	//

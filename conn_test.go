@@ -2216,6 +2216,86 @@ func newTestConnWithFramerPool() *Conn {
 	return c
 }
 
+// TestInitFramerCacheScyllaUseMetadataId guards against scyllaUseMetadataId
+// being negotiated on the Conn but never reaching the pooled framers that
+// actually read/write frames (see frame.go's parseResultMetadata,
+// parseResultPrepared, writeExecuteFrame).
+func TestInitFramerCacheScyllaUseMetadataId(t *testing.T) {
+	c := &Conn{
+		version:      protoVersion4,
+		cqlProtoExts: []cqlProtocolExtension{&scyllaUseMetadataIdExt{}},
+	}
+	c.initFramerCache()
+
+	if !c.framers.defaults.scyllaUseMetadataId {
+		t.Fatal("framerConfig.scyllaUseMetadataId should be true once SCYLLA_USE_METADATA_ID is negotiated")
+	}
+
+	wf := c.getWriteFramer()
+	if !wf.scyllaUseMetadataId {
+		t.Error("write framer obtained from pool should have scyllaUseMetadataId set")
+	}
+
+	rf := c.getReadFramer()
+	if !rf.scyllaUseMetadataId {
+		t.Error("read framer obtained from pool should have scyllaUseMetadataId set")
+	}
+}
+
+// TestShouldSkipResultMetadata pins the skip-metadata decision, in particular the
+// SCYLLA_USE_METADATA_ID override: when the extension is negotiated, metadata is
+// skipped by default even if the session-level DisableSkipMetadata is set, while a
+// per-query NoSkipMetadata() still forces metadata.
+func TestShouldSkipResultMetadata(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name                string
+		sessionDisableSkip  bool
+		queryDisableSkip    bool
+		scyllaUseMetadataId bool
+		hasColumns          bool
+		want                bool
+	}{
+		{name: "default skips when columns present", hasColumns: true, want: true},
+		{name: "no columns never skips", hasColumns: false, want: false},
+		{name: "session DisableSkipMetadata forces metadata", sessionDisableSkip: true, hasColumns: true, want: false},
+		{name: "query NoSkipMetadata forces metadata", queryDisableSkip: true, hasColumns: true, want: false},
+		{
+			name:                "extension overrides session DisableSkipMetadata",
+			sessionDisableSkip:  true,
+			scyllaUseMetadataId: true,
+			hasColumns:          true,
+			want:                true,
+		},
+		{
+			name:                "query NoSkipMetadata still wins under the extension",
+			sessionDisableSkip:  true,
+			queryDisableSkip:    true,
+			scyllaUseMetadataId: true,
+			hasColumns:          true,
+			want:                false,
+		},
+		{
+			name:                "extension override still needs columns",
+			sessionDisableSkip:  true,
+			scyllaUseMetadataId: true,
+			hasColumns:          false,
+			want:                false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := shouldSkipResultMetadata(tt.sessionDisableSkip, tt.queryDisableSkip, tt.scyllaUseMetadataId, tt.hasColumns)
+			if got != tt.want {
+				t.Errorf("shouldSkipResultMetadata(session=%v, query=%v, ext=%v, cols=%v) = %v, want %v",
+					tt.sessionDisableSkip, tt.queryDisableSkip, tt.scyllaUseMetadataId, tt.hasColumns, got, tt.want)
+			}
+		})
+	}
+}
+
 func buildTestFrame(t *testing.T, f *framer, req frameBuilder, streamID int) ([]byte, frm.FrameHeader) {
 	t.Helper()
 
