@@ -1042,6 +1042,11 @@ func unmarshalListFast(info CollectionType, data []byte, value any) error {
 			return errFastPathNotApplicable
 		}
 		return unmarshalListInt16(info, data, v)
+	case *[]time.Time:
+		if elemTyp != TypeTimestamp && elemTyp != TypeDate {
+			return errFastPathNotApplicable
+		}
+		return unmarshalListTime(info, data, v)
 	default:
 		return errFastPathNotApplicable
 	}
@@ -1391,6 +1396,61 @@ func unmarshalListInt16(info CollectionType, data []byte, dst *[]int16) error {
 			return unmarshalErrorf("unmarshal list: invalid smallint size %d", len(elem))
 		}
 		s[i] = int16(elem[0])<<8 | int16(elem[1])
+	}
+	*dst = s
+	return nil
+}
+
+func unmarshalListTime(info CollectionType, data []byte, dst *[]time.Time) error {
+	if data == nil {
+		*dst = nil
+		return nil
+	}
+	n, data, err := readListHeader(data)
+	if err != nil {
+		return err
+	}
+	var s []time.Time
+	if n == 0 {
+		s = make([]time.Time, 0)
+	} else {
+		s = *dst
+		if cap(s) >= n {
+			s = s[:n]
+		} else {
+			s = make([]time.Time, n)
+		}
+	}
+	for i := 0; i < n; i++ {
+		var elem []byte
+		elem, data, err = readListElement(data)
+		if err != nil {
+			return err
+		}
+		if len(elem) == 0 {
+			// Null/empty slot — explicitly clear (don't leave a stale
+			// time.Time from a reused backing array).
+			if info.Elem.Type() == TypeDate {
+				s[i] = time.Date(-5877641, 06, 23, 0, 0, 0, 0, time.UTC)
+			} else {
+				s[i] = time.Time{}
+			}
+			continue
+		}
+		if info.Elem.Type() == TypeTimestamp {
+			if len(elem) != 8 {
+				return unmarshalErrorf("unmarshal list: invalid timestamp size %d", len(elem))
+			}
+			msec := int64(elem[0])<<56 | int64(elem[1])<<48 | int64(elem[2])<<40 | int64(elem[3])<<32 |
+				int64(elem[4])<<24 | int64(elem[5])<<16 | int64(elem[6])<<8 | int64(elem[7])
+			s[i] = time.UnixMilli(msec).UTC()
+		} else {
+			if len(elem) != 4 {
+				return unmarshalErrorf("unmarshal list: invalid date size %d", len(elem))
+			}
+			msec := (int64(elem[0])<<24 | int64(elem[1])<<16 | int64(elem[2])<<8 | int64(elem[3]) - (1 << 31)) * 86400000
+			s[i] = time.UnixMilli(msec).UTC()
+		}
 	}
 	*dst = s
 	return nil

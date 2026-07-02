@@ -37,6 +37,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"gopkg.in/inf.v0"
 )
@@ -1798,6 +1799,18 @@ func BenchmarkUnmarshalMapInt64Int64(b *testing.B) {
 	}
 }
 
+func buildTimestampBytes(msec int64) []byte {
+	b := make([]byte, 8)
+	binary.BigEndian.PutUint64(b, uint64(msec))
+	return b
+}
+
+func buildDateBytes(daysSinceEpoch int32) []byte {
+	b := make([]byte, 4)
+	binary.BigEndian.PutUint32(b, uint32(int64(daysSinceEpoch)+(1<<31)))
+	return b
+}
+
 func TestUnmarshalListFastPath(t *testing.T) {
 	t.Parallel()
 
@@ -1918,6 +1931,51 @@ func TestUnmarshalListFastPath(t *testing.T) {
 		}
 	})
 
+	// Test []time.Time with TypeTimestamp
+	t.Run("time_timestamp", func(t *testing.T) {
+		info := CollectionType{
+			NativeType: NativeType{proto: protoVersion4, typ: TypeList},
+			Elem:       NativeType{proto: protoVersion4, typ: TypeTimestamp},
+		}
+		var tv int64 = 1700000000000
+		b := buildTimestampBytes(tv)
+		data := buildCQLListWithNulls(b, nil)
+		var dst []time.Time
+		if err := unmarshalList(info, data, &dst); err != nil {
+			t.Fatal(err)
+		}
+		if len(dst) != 2 {
+			t.Fatalf("got len %d", len(dst))
+		}
+		expected := time.UnixMilli(tv).UTC()
+		if !dst[0].Equal(expected) {
+			t.Fatalf("expected %v, got %v", expected, dst[0])
+		}
+		if !dst[1].IsZero() {
+			t.Fatalf("expected zero time for null element, got %v", dst[1])
+		}
+	})
+
+	// Test []time.Time with TypeDate
+	t.Run("time_date", func(t *testing.T) {
+		info := CollectionType{
+			NativeType: NativeType{proto: protoVersion4, typ: TypeList},
+			Elem:       NativeType{proto: protoVersion4, typ: TypeDate},
+		}
+		data := buildCQLList(buildDateBytes(19676))
+		var dst []time.Time
+		if err := unmarshalList(info, data, &dst); err != nil {
+			t.Fatal(err)
+		}
+		if len(dst) != 1 {
+			t.Fatalf("got len %d", len(dst))
+		}
+		expected := time.UnixMilli(int64(19676) * 86400000).UTC()
+		if !dst[0].Equal(expected) {
+			t.Fatalf("expected %v, got %v", expected, dst[0])
+		}
+	})
+
 	// A malformed frame advertising a huge element count must be rejected by
 	// the size guard before the fast path allocates a slice of that size.
 	// Asserting the specific "invalid size" message ensures the guard path is
@@ -1974,6 +2032,40 @@ func TestUnmarshalListFastPath(t *testing.T) {
 	})
 }
 
+// TestUnmarshalListTime_ReusedSlice_NullSlotsCleared verifies []time.Time
+// (timestamp) reuses dst's backing array and clears null slots to zero time.
+func TestUnmarshalListTime_ReusedSlice_NullSlotsCleared(t *testing.T) {
+	wire := buildCQLListWithNulls(nil, buildTimestampBytes(1700000000000), nil)
+	info := CollectionType{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeList},
+		Elem:       NativeType{proto: protoVersion4, typ: TypeTimestamp},
+	}
+
+	ghost := time.Date(1999, 1, 1, 0, 0, 0, 0, time.UTC)
+	dst := make([]time.Time, 0, 4)
+	dst = append(dst, ghost, ghost, ghost, ghost)
+	prev := &dst[:cap(dst)][0]
+
+	if err := unmarshalList(info, wire, &dst); err != nil {
+		t.Fatal(err)
+	}
+	if &dst[:cap(dst)][0] != prev {
+		t.Error("[]time.Time backing array was not reused")
+	}
+	if len(dst) != 3 {
+		t.Fatalf("expected length 3, got %d", len(dst))
+	}
+	if !dst[0].IsZero() {
+		t.Errorf("expected dst[0]=zero time (null slot), got %v", dst[0])
+	}
+	if !dst[1].Equal(time.UnixMilli(1700000000000).UTC()) {
+		t.Errorf("expected dst[1]=1700000000000ms, got %v", dst[1])
+	}
+	if !dst[2].IsZero() {
+		t.Errorf("expected dst[2]=zero time (null slot), got %v", dst[2])
+	}
+}
+
 // Named slice types used by TestUnmarshalListFastPathMatchesReflect to force
 // the generic reflection path while preserving the element Go type.
 type (
@@ -1986,6 +2078,7 @@ type (
 	namedBlobs    [][]byte
 	namedFloat32s []float32
 	namedFloat64s []float64
+	namedTimes    []time.Time
 )
 
 // TestUnmarshalListFastPathMatchesReflect is a differential test: for every
@@ -2104,6 +2197,27 @@ func TestUnmarshalListFastPathMatchesReflect(t *testing.T) {
 			dst:   func() any { return new([]int64) },
 			named: func() any { return new(namedInt64s) },
 		},
+		{
+			name:  "timestamp with null element",
+			info:  mk(TypeTimestamp),
+			data:  buildCQLListWithNulls(buildTimestampBytes(1700000000000), nil),
+			dst:   func() any { return new([]time.Time) },
+			named: func() any { return new(namedTimes) },
+		},
+		{
+			name:  "timestamp empty list",
+			info:  mk(TypeTimestamp),
+			data:  buildCQLList(),
+			dst:   func() any { return new([]time.Time) },
+			named: func() any { return new(namedTimes) },
+		},
+		{
+			name:  "date with null element",
+			info:  mk(TypeDate),
+			data:  buildCQLListWithNulls(buildDateBytes(19676), nil),
+			dst:   func() any { return new([]time.Time) },
+			named: func() any { return new(namedTimes) },
+		},
 	}
 
 	for _, tc := range cases {
@@ -2198,6 +2312,8 @@ func TestUnmarshalListFastPathWrongElementSize(t *testing.T) {
 		{"float32 wrong size", TypeFloat, buildCQLList([]byte{0, 0, 0, 0, 0}), new([]float32)},
 		{"float64 wrong size", TypeDouble, buildCQLList([]byte{0, 0}), new([]float64)},
 		{"bool wrong size", TypeBoolean, buildCQLList([]byte{1, 2}), new([]bool)},
+		{"timestamp wrong size", TypeTimestamp, buildCQLList([]byte{0, 0, 0, 0}), new([]time.Time)},
+		{"date wrong size", TypeDate, buildCQLList([]byte{0, 0, 0, 0, 0}), new([]time.Time)},
 	}
 	for _, tc := range cases {
 		tc := tc
