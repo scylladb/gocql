@@ -1047,6 +1047,11 @@ func unmarshalListFast(info CollectionType, data []byte, value any) error {
 			return errFastPathNotApplicable
 		}
 		return unmarshalListTime(info, data, v)
+	case *[]UUID:
+		if elemTyp != TypeUUID && elemTyp != TypeTimeUUID {
+			return errFastPathNotApplicable
+		}
+		return unmarshalListUUID(info, data, v)
 	default:
 		return errFastPathNotApplicable
 	}
@@ -1451,6 +1456,47 @@ func unmarshalListTime(info CollectionType, data []byte, dst *[]time.Time) error
 			msec := (int64(elem[0])<<24 | int64(elem[1])<<16 | int64(elem[2])<<8 | int64(elem[3]) - (1 << 31)) * 86400000
 			s[i] = time.UnixMilli(msec).UTC()
 		}
+	}
+	*dst = s
+	return nil
+}
+
+func unmarshalListUUID(info CollectionType, data []byte, dst *[]UUID) error {
+	if data == nil {
+		*dst = nil
+		return nil
+	}
+	n, data, err := readListHeader(data)
+	if err != nil {
+		return err
+	}
+	var s []UUID
+	if n == 0 {
+		s = make([]UUID, 0)
+	} else {
+		s = *dst
+		if cap(s) >= n {
+			s = s[:n]
+		} else {
+			s = make([]UUID, n)
+		}
+	}
+	for i := 0; i < n; i++ {
+		var elem []byte
+		elem, data, err = readListElement(data)
+		if err != nil {
+			return err
+		}
+		if len(elem) == 0 {
+			// Null/empty slot — explicitly clear (don't leave stale backing-array
+			// bytes when reusing a caller-provided slice across calls).
+			s[i] = UUID{}
+			continue
+		}
+		if len(elem) != 16 {
+			return unmarshalErrorf("unmarshal list: invalid uuid size %d", len(elem))
+		}
+		copy(s[i][:], elem)
 	}
 	*dst = s
 	return nil

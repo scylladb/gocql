@@ -1976,6 +1976,52 @@ func TestUnmarshalListFastPath(t *testing.T) {
 		}
 	})
 
+	// Test []UUID with TypeUUID
+	t.Run("uuid", func(t *testing.T) {
+		info := CollectionType{
+			NativeType: NativeType{proto: protoVersion4, typ: TypeList},
+			Elem:       NativeType{proto: protoVersion4, typ: TypeUUID},
+		}
+		u := MustRandomUUID()
+		data := buildCQLListWithNulls(u[:], nil, make([]byte, 16), []byte{})
+		var dst []UUID
+		if err := unmarshalList(info, data, &dst); err != nil {
+			t.Fatal(err)
+		}
+		if len(dst) != 4 {
+			t.Fatalf("got len %d", len(dst))
+		}
+		if dst[0] != u {
+			t.Fatalf("expected %v, got %v", u, dst[0])
+		}
+		if dst[1] != (UUID{}) {
+			t.Fatalf("expected zero UUID for null element, got %v", dst[1])
+		}
+		if dst[2] != (UUID{}) {
+			t.Fatalf("expected zero UUID for a present, all-zero 16-byte element, got %v", dst[2])
+		}
+		if dst[3] != (UUID{}) {
+			t.Fatalf("expected zero UUID for a true zero-length element, got %v", dst[3])
+		}
+	})
+
+	// Test []UUID with TypeTimeUUID
+	t.Run("timeuuid", func(t *testing.T) {
+		info := CollectionType{
+			NativeType: NativeType{proto: protoVersion4, typ: TypeList},
+			Elem:       NativeType{proto: protoVersion4, typ: TypeTimeUUID},
+		}
+		u := MustRandomUUID()
+		data := buildCQLList(u[:])
+		var dst []UUID
+		if err := unmarshalList(info, data, &dst); err != nil {
+			t.Fatal(err)
+		}
+		if len(dst) != 1 || dst[0] != u {
+			t.Fatalf("got %v", dst)
+		}
+	})
+
 	// A malformed frame advertising a huge element count must be rejected by
 	// the size guard before the fast path allocates a slice of that size.
 	// Asserting the specific "invalid size" message ensures the guard path is
@@ -2079,6 +2125,7 @@ type (
 	namedFloat32s []float32
 	namedFloat64s []float64
 	namedTimes    []time.Time
+	namedUUIDs    []UUID
 )
 
 // TestUnmarshalListFastPathMatchesReflect is a differential test: for every
@@ -2218,6 +2265,27 @@ func TestUnmarshalListFastPathMatchesReflect(t *testing.T) {
 			dst:   func() any { return new([]time.Time) },
 			named: func() any { return new(namedTimes) },
 		},
+		{
+			name:  "uuid with null and empty elements",
+			info:  mk(TypeUUID),
+			data:  buildCQLListWithNulls([]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, nil, make([]byte, 16)),
+			dst:   func() any { return new([]UUID) },
+			named: func() any { return new(namedUUIDs) },
+		},
+		{
+			name:  "timeuuid",
+			info:  mk(TypeTimeUUID),
+			data:  buildCQLListWithNulls([]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}),
+			dst:   func() any { return new([]UUID) },
+			named: func() any { return new(namedUUIDs) },
+		},
+		{
+			name:  "uuid empty list",
+			info:  mk(TypeUUID),
+			data:  buildCQLList(),
+			dst:   func() any { return new([]UUID) },
+			named: func() any { return new(namedUUIDs) },
+		},
 	}
 
 	for _, tc := range cases {
@@ -2314,6 +2382,10 @@ func TestUnmarshalListFastPathWrongElementSize(t *testing.T) {
 		{"bool wrong size", TypeBoolean, buildCQLList([]byte{1, 2}), new([]bool)},
 		{"timestamp wrong size", TypeTimestamp, buildCQLList([]byte{0, 0, 0, 0}), new([]time.Time)},
 		{"date wrong size", TypeDate, buildCQLList([]byte{0, 0, 0, 0, 0}), new([]time.Time)},
+		{"uuid wrong size (too short)", TypeUUID, buildCQLList(make([]byte, 15)), new([]UUID)},
+		{"uuid wrong size (too long)", TypeUUID, buildCQLList(make([]byte, 17)), new([]UUID)},
+		{"timeuuid wrong size (too short)", TypeTimeUUID, buildCQLList(make([]byte, 15)), new([]UUID)},
+		{"timeuuid wrong size (too long)", TypeTimeUUID, buildCQLList(make([]byte, 17)), new([]UUID)},
 	}
 	for _, tc := range cases {
 		tc := tc
