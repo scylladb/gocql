@@ -812,6 +812,11 @@ func unmarshalListFast(info CollectionType, data []byte, value any) error {
 			return errFastPathNotApplicable
 		}
 		return unmarshalListTime(info, data, v)
+	case *[]UUID:
+		if elemTyp != TypeUUID && elemTyp != TypeTimeUUID {
+			return errFastPathNotApplicable
+		}
+		return unmarshalListUUID(info, data, v)
 	default:
 		return errFastPathNotApplicable
 	}
@@ -1118,6 +1123,34 @@ func unmarshalListTime(info CollectionType, data []byte, dst *[]time.Time) error
 			msec := (int64(elem[0])<<24 | int64(elem[1])<<16 | int64(elem[2])<<8 | int64(elem[3]) - (1 << 31)) * 86400000
 			s[i] = time.UnixMilli(msec).UTC()
 		}
+	}
+	*dst = s
+	return nil
+}
+
+func unmarshalListUUID(info CollectionType, data []byte, dst *[]UUID) error {
+	if data == nil {
+		*dst = nil
+		return nil
+	}
+	n, data, err := readListHeader(info, data)
+	if err != nil {
+		return err
+	}
+	s := make([]UUID, n)
+	for i := 0; i < n; i++ {
+		var elem []byte
+		elem, data, err = readListElement(info, data)
+		if err != nil {
+			return err
+		}
+		if len(elem) == 0 {
+			continue
+		}
+		if len(elem) != 16 {
+			return unmarshalErrorf("unmarshal list: invalid uuid size %d", len(elem))
+		}
+		copy(s[i][:], elem)
 	}
 	*dst = s
 	return nil
