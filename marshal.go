@@ -1114,14 +1114,40 @@ func unmarshalListString(info CollectionType, data []byte, dst *[]string) error 
 		} else {
 			s = make([]string, n)
 		}
-	}
-	for i := 0; i < n; i++ {
-		var elem []byte
-		elem, data, err = readListElement(data)
-		if err != nil {
-			return err
+		// Total element data bytes = remaining frame bytes minus n×4-byte length prefixes.
+		// Share one buffer across all strings (avoiding n individual string
+		// allocations), but only up to marshalBufMaxCap: sharing an unbounded
+		// buffer would let a caller keeping one small string pin all of it.
+		total := len(data) - n*4
+		if total > 0 && total <= marshalBufMaxCap {
+			buf := make([]byte, total)
+			offset := 0
+			for i := 0; i < n; i++ {
+				var elem []byte
+				elem, data, err = readListElement(data)
+				if err != nil {
+					return err
+				}
+				if len(elem) > 0 {
+					copy(buf[offset:], elem)
+					s[i] = unsafe.String(&buf[offset], len(elem))
+					offset += len(elem)
+				} else {
+					// Null/empty slot — explicitly clear (don't leave a stale
+					// string from a reused backing array).
+					s[i] = ""
+				}
+			}
+		} else {
+			for i := 0; i < n; i++ {
+				var elem []byte
+				elem, data, err = readListElement(data)
+				if err != nil {
+					return err
+				}
+				s[i] = string(elem) // "" for both nil and empty, matches DecString
+			}
 		}
-		s[i] = string(elem)
 	}
 	*dst = s
 	return nil
@@ -1352,8 +1378,8 @@ func unmarshalListBlob(info CollectionType, data []byte, dst *[][]byte) error {
 		if err != nil {
 			return err
 		}
-		if len(elem) == 0 {
-			// Null/empty slot — explicitly clear (don't leave stale backing-array
+		if elem == nil {
+			// Null slot — explicitly clear (don't leave stale backing-array
 			// bytes when reusing a caller-provided slice across calls).
 			s[i] = nil
 			continue
