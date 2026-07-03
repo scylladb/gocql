@@ -870,13 +870,31 @@ func unmarshalListString(info CollectionType, data []byte, dst *[]string) error 
 		return err
 	}
 	s := make([]string, n)
-	for i := 0; i < n; i++ {
-		var elem []byte
-		elem, data, err = readListElement(info, data)
-		if err != nil {
-			return err
+	// Total element data bytes = remaining frame bytes minus n×4-byte length prefixes.
+	// Allocate one buffer so all strings share it, avoiding n individual string allocations.
+	total := len(data) - n*4
+	if total > 0 {
+		buf := make([]byte, total)
+		offset := 0
+		for i := 0; i < n; i++ {
+			var elem []byte
+			elem, data, err = readListElement(info, data)
+			if err != nil {
+				return err
+			}
+			if len(elem) > 0 {
+				copy(buf[offset:], elem)
+				s[i] = unsafe.String(&buf[offset], len(elem))
+				offset += len(elem)
+			}
 		}
-		s[i] = string(elem)
+	} else {
+		for i := 0; i < n; i++ {
+			_, data, err = readListElement(info, data)
+			if err != nil {
+				return err
+			}
+		}
 	}
 	*dst = s
 	return nil
