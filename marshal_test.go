@@ -1390,6 +1390,7 @@ func TestUnmarshalMapReflect_OversizedCount_RejectedBeforeAlloc(t *testing.T) {
 		t.Fatalf("expected dst to remain nil, got %#v", dst)
 	}
 }
+
 // buildCQLList builds a CQL binary list from raw element byte slices.
 // Format: [4-byte count] [4-byte len + data]...
 func buildCQLList(elems ...[]byte) []byte {
