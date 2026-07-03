@@ -1909,37 +1909,107 @@ func TestUnmarshalListFastPathElemTypeMismatch(t *testing.T) {
 
 func BenchmarkUnmarshalList(b *testing.B) {
 	// Build a list of 100 strings
-	elems := make([][]byte, 100)
-	for i := range elems {
-		elems[i] = []byte(fmt.Sprintf("element_%03d", i))
+	strElems := make([][]byte, 100)
+	for i := range strElems {
+		strElems[i] = []byte(fmt.Sprintf("element_%03d", i))
 	}
-	data := buildCQLList(elems...)
+	strData := buildCQLList(strElems...)
 
-	info := CollectionType{
-		NativeType: NativeType{proto: protoVersion4, typ: TypeList},
-		Elem:       NativeType{proto: protoVersion4, typ: TypeVarchar},
-	}
-
-	b.Run("reflect", func(b *testing.B) {
-		// Use *any to force reflect path
-		b.ReportAllocs()
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			var dst any
-			if err := unmarshalList(info, data, &dst); err != nil {
-				b.Fatal(err)
-			}
+	b.Run("string", func(b *testing.B) {
+		info := CollectionType{
+			NativeType: NativeType{proto: protoVersion4, typ: TypeList},
+			Elem:       NativeType{proto: protoVersion4, typ: TypeVarchar},
 		}
+		b.Run("reflect", func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				var dst any
+				if err := unmarshalList(info, strData, &dst); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+		b.Run("fast_path", func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				var dst []string
+				if err := unmarshalList(info, strData, &dst); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
 	})
 
-	b.Run("fast_path", func(b *testing.B) {
-		b.ReportAllocs()
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			var dst []string
-			if err := unmarshalList(info, data, &dst); err != nil {
-				b.Fatal(err)
-			}
+	timestampElems := make([][]byte, 100)
+	for i := range timestampElems {
+		b := make([]byte, 8)
+		binary.BigEndian.PutUint64(b, uint64(i*1000000))
+		timestampElems[i] = b
+	}
+	timestampData := buildCQLList(timestampElems...)
+
+	b.Run("timestamp", func(b *testing.B) {
+		info := CollectionType{
+			NativeType: NativeType{proto: protoVersion4, typ: TypeList},
+			Elem:       NativeType{proto: protoVersion4, typ: TypeTimestamp},
 		}
+		b.Run("reflect", func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				var dst any
+				if err := unmarshalList(info, timestampData, &dst); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+		b.Run("fast_path", func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				var dst []time.Time
+				if err := unmarshalList(info, timestampData, &dst); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	})
+
+	uuidElems := make([][]byte, 100)
+	for i := range uuidElems {
+		b := make([]byte, 16)
+		binary.BigEndian.PutUint64(b[0:8], uint64(i))
+		binary.BigEndian.PutUint64(b[8:16], uint64(i+1))
+		uuidElems[i] = b
+	}
+	uuidData := buildCQLList(uuidElems...)
+
+	b.Run("uuid", func(b *testing.B) {
+		info := CollectionType{
+			NativeType: NativeType{proto: protoVersion4, typ: TypeList},
+			Elem:       NativeType{proto: protoVersion4, typ: TypeUUID},
+		}
+		b.Run("reflect", func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				var dst any
+				if err := unmarshalList(info, uuidData, &dst); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+		b.Run("fast_path", func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				var dst []UUID
+				if err := unmarshalList(info, uuidData, &dst); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
 	})
 }
