@@ -104,7 +104,7 @@ type ClusterConfig struct {
 	Compressor Compressor
 	// Default: nil
 	Authenticator Authenticator
-	actualSslOpts atomic.Value
+	actualSslOpts *atomic.Pointer[tls.Config]
 	// PoolConfig configures the underlying connection pool, allowing the
 	// configuration of host selection and connection selection policies.
 	PoolConfig PoolConfig
@@ -445,6 +445,7 @@ func (cfg *ClusterConfig) filterHost(host *HostInfo) bool {
 }
 
 func (cfg *ClusterConfig) ValidateAndInitSSL() error {
+	cfg.actualSslOpts = nil
 	if cfg.SslOpts == nil {
 		return nil
 	}
@@ -453,13 +454,17 @@ func (cfg *ClusterConfig) ValidateAndInitSSL() error {
 		return fmt.Errorf("failed to initialize ssl configuration: %s", err.Error())
 	}
 
+	cfg.actualSslOpts = new(atomic.Pointer[tls.Config])
 	cfg.actualSslOpts.Store(actualTLSConfig)
 	return nil
 }
 
 func (cfg *ClusterConfig) getActualTLSConfig() *tls.Config {
-	val, ok := cfg.actualSslOpts.Load().(*tls.Config)
-	if !ok {
+	if cfg.actualSslOpts == nil {
+		return nil
+	}
+	val := cfg.actualSslOpts.Load()
+	if val == nil {
 		return nil
 	}
 	return val.Clone()

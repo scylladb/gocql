@@ -28,6 +28,7 @@
 package gocql
 
 import (
+	"crypto/tls"
 	"net"
 	"reflect"
 	"testing"
@@ -64,6 +65,37 @@ func TestNewCluster_WithHosts(t *testing.T) {
 	tests.AssertEqual(t, "cluster config hosts length", 2, len(cfg.Hosts))
 	tests.AssertEqual(t, "cluster config host 0", "addr1", cfg.Hosts[0])
 	tests.AssertEqual(t, "cluster config host 1", "addr2", cfg.Hosts[1])
+}
+
+func TestValidateAndInitSSLDoesNotShareTLSConfigBetweenConfigCopies(t *testing.T) {
+	t.Parallel()
+
+	cfg := NewCluster("127.0.0.1")
+	cfg.SslOpts = &SslOptions{
+		Config: &tls.Config{
+			InsecureSkipVerify: true,
+		},
+	}
+
+	tlsCfg := *cfg
+	if err := tlsCfg.ValidateAndInitSSL(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tlsCfg.getActualTLSConfig() == nil {
+		t.Fatal("expected copied TLS config to initialize TLS")
+	}
+	if cfg.getActualTLSConfig() != nil {
+		t.Fatal("expected original config not to retain copied TLS state")
+	}
+
+	noTLSCfg := *cfg
+	noTLSCfg.SslOpts = nil
+	if err := noTLSCfg.ValidateAndInitSSL(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if noTLSCfg.getActualTLSConfig() != nil {
+		t.Fatal("expected copied config with nil SslOpts not to use TLS")
+	}
 }
 
 // TestValidate_HostPortNormalization covers the port-learning logic in Validate():
