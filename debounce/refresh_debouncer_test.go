@@ -192,7 +192,10 @@ func TestErrorBroadcaster_MultipleListeners(t *testing.T) {
 
 	err := errors.New("expected error")
 	wg := sync.WaitGroup{}
-	result := atomic.Value{}
+	var result atomic.Pointer[error]
+	storeResult := func(err error) {
+		result.Store(&err)
+	}
 	for _, listener := range listeners {
 		currentListener := listener
 		wg.Add(1)
@@ -200,9 +203,9 @@ func TestErrorBroadcaster_MultipleListeners(t *testing.T) {
 			defer wg.Done()
 			receivedErr, ok := <-currentListener
 			if !ok {
-				result.Store(errors.New("listener was closed"))
+				storeResult(errors.New("listener was closed"))
 			} else if receivedErr != err {
-				result.Store(errors.New("expected received error to be the same as the one that was broadcasted"))
+				storeResult(errors.New("expected received error to be the same as the one that was broadcasted"))
 			}
 		}()
 	}
@@ -214,7 +217,7 @@ func TestErrorBroadcaster_MultipleListeners(t *testing.T) {
 	}()
 	wg.Wait()
 	if loadedVal := result.Load(); loadedVal != nil {
-		t.Error(loadedVal.(error).Error())
+		t.Error((*loadedVal).Error())
 	}
 }
 
@@ -228,7 +231,10 @@ func TestErrorBroadcaster_StopWithoutBroadcast(t *testing.T) {
 	}
 
 	wg := sync.WaitGroup{}
-	result := atomic.Value{}
+	var result atomic.Pointer[error]
+	storeResult := func(err error) {
+		result.Store(&err)
+	}
 	for _, listener := range listeners {
 		currentListener := listener
 		wg.Add(1)
@@ -237,7 +243,7 @@ func TestErrorBroadcaster_StopWithoutBroadcast(t *testing.T) {
 			// broadcaster stopped, expect listener to be closed
 			_, ok := <-currentListener
 			if ok {
-				result.Store(errors.New("expected listener to be closed"))
+				storeResult(errors.New("expected listener to be closed"))
 			}
 		}()
 	}
@@ -249,6 +255,6 @@ func TestErrorBroadcaster_StopWithoutBroadcast(t *testing.T) {
 	}()
 	wg.Wait()
 	if loadedVal := result.Load(); loadedVal != nil {
-		t.Error(loadedVal.(error).Error())
+		t.Error((*loadedVal).Error())
 	}
 }

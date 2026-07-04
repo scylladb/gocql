@@ -40,7 +40,7 @@ import (
 
 // cowHostList implements a copy on write host list, its equivalent type is []*HostInfo
 type cowHostList struct {
-	list atomic.Value
+	list atomic.Pointer[[]*HostInfo]
 	mu   sync.Mutex
 }
 
@@ -50,8 +50,8 @@ func (c *cowHostList) String() string {
 
 func (c *cowHostList) get() []*HostInfo {
 	// TODO(zariel): should we replace this with []*HostInfo?
-	l, ok := c.list.Load().(*[]*HostInfo)
-	if !ok {
+	l := c.list.Load()
+	if l == nil {
 		return nil
 	}
 	return *l
@@ -517,7 +517,7 @@ func TokenAwareHostPolicy(fallback HostSelectionPolicy, opts ...func(*tokenAware
 }
 
 // clusterMeta holds metadata about cluster topology.
-// It is used inside atomic.Value and shallow copies are used when replacing it,
+// It is used inside atomic.Pointer and shallow copies are used when replacing it,
 // so fields should not be modified in-place. Instead, to modify a field a copy of the field should be made
 // and the pointer in clusterMeta updated to point to the new value.
 type clusterMeta struct {
@@ -531,7 +531,7 @@ var MAX_IN_FLIGHT_THRESHOLD int = 10
 type tokenAwareHostPolicy struct {
 	fallback HostSelectionPolicy
 	// atomic store for *clusterMeta
-	metadata            atomic.Value
+	metadata            atomic.Pointer[clusterMeta]
 	logger              StdLogger
 	getKeyspaceMetadata func(keyspace string) (*KeyspaceMetadata, error)
 	getKeyspaceName     func() string
@@ -689,8 +689,7 @@ func (t *tokenAwareHostPolicy) HostDown(host *HostInfo) {
 // Metadata uses copy on write, so the returned value should be only used for reading.
 // To obtain a copy that could be updated, use getMetadataForUpdate instead.
 func (t *tokenAwareHostPolicy) getMetadataReadOnly() *clusterMeta {
-	meta, _ := t.metadata.Load().(*clusterMeta)
-	return meta
+	return t.metadata.Load()
 }
 
 // getMetadataForUpdate returns clusterMeta suitable for updating.

@@ -74,10 +74,8 @@ type controlConnection interface {
 	reconnect() error
 }
 
-// Ensure that the atomic variable is aligned to a 64bit boundary
-// so that atomic operations can be applied on 32bit architectures.
 type controlConn struct {
-	conn         atomic.Value
+	conn         atomic.Pointer[connHost]
 	retry        RetryPolicy
 	session      *Session
 	quit         chan struct{}
@@ -96,8 +94,6 @@ func createControlConn(session *Session) *controlConn {
 		quit:    make(chan struct{}),
 		retry:   &SimpleRetryPolicy{NumRetries: 3},
 	}
-
-	control.conn.Store((*connHost)(nil))
 
 	return control
 }
@@ -334,7 +330,7 @@ func (c *controlConn) setupConn(conn *Conn) error {
 		conn: conn,
 		host: host,
 	}
-	old, _ := c.conn.Swap(ch).(*connHost)
+	old := c.conn.Swap(ch)
 	var oldHost events.HostInfo
 	if old != nil && old.host != nil {
 		oldHost.HostID = old.host.HostID()
@@ -508,7 +504,7 @@ func (c *controlConn) HandleError(conn *Conn, err error, closed bool) {
 }
 
 func (c *controlConn) getConn() *connHost {
-	return c.conn.Load().(*connHost)
+	return c.conn.Load()
 }
 
 // writeFrame sends frame w on the control connection and returns the parsed

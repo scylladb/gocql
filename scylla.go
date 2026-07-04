@@ -392,7 +392,7 @@ func (c *Conn) isScyllaConn() bool {
 type scyllaConnPicker struct {
 	logger StdLogger
 	// disableShardAwarePortUntil is used to temporarily disable new connections to the shard-aware port temporarily
-	disableShardAwarePortUntil *atomic.Value
+	disableShardAwarePortUntil *atomic.Pointer[time.Time]
 	address                    string
 	excessConns                []*Conn
 	conns                      []*Conn
@@ -428,7 +428,7 @@ func newScyllaConnPicker(conn *Conn, logger StdLogger) *scyllaConnPicker {
 		logger:                 logger,
 		excessConnsLimitRate:   conn.session.cfg.MaxExcessShardConnectionsRate,
 
-		disableShardAwarePortUntil: new(atomic.Value),
+		disableShardAwarePortUntil: new(atomic.Pointer[time.Time]),
 	}
 }
 
@@ -570,7 +570,7 @@ func (p *scyllaConnPicker) Put(conn *Conn) error {
 				scyllaShardAwarePortFallbackDuration,
 			)
 			until := time.Now().Add(scyllaShardAwarePortFallbackDuration)
-			p.disableShardAwarePortUntil.Store(until)
+			p.disableShardAwarePortUntil.Store(&until)
 
 			return fmt.Errorf("connection landed on %d shard that already has connection", shard)
 		} else {
@@ -769,8 +769,7 @@ func (p *scyllaConnPicker) NextShard() (shardID, nrShards int) {
 		return 0, 0
 	}
 
-	disableUntil, _ := p.disableShardAwarePortUntil.Load().(time.Time)
-	if time.Now().Before(disableUntil) {
+	if disableUntil := p.disableShardAwarePortUntil.Load(); disableUntil != nil && time.Now().Before(*disableUntil) {
 		// There is suspicion that the shard-aware-port is not reachable
 		// or misconfigured, fall back to the non-shard-aware port
 		return 0, 0
