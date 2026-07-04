@@ -1139,7 +1139,6 @@ type writeCoalescer struct {
 	testEnqueuedHook func()
 	testFlushedHook  func()
 	timeout          atomic.Int64
-	mu               sync.Mutex
 }
 
 func (w *writeCoalescer) setWriteTimeout(timeout time.Duration) {
