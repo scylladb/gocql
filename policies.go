@@ -536,7 +536,10 @@ type tokenAwareHostPolicy struct {
 	getKeyspaceMetadata func(keyspace string) (*KeyspaceMetadata, error)
 	getKeyspaceName     func() string
 	hosts               cowHostList
-	partitioner         string
+	// hostsByID maps host UUID to *HostInfo for O(1) tablet replica lookups.
+	// Stored as atomic.Value holding map[UUID]*HostInfo; rebuilt on host add/remove.
+	hostsByID   atomic.Value
+	partitioner string
 	// mu protects writes to hosts, partitioner, metadata.
 	// reads can be unlocked as long as they are not used for updating state later.
 	mu                       sync.Mutex
@@ -632,11 +635,29 @@ func (t *tokenAwareHostPolicy) SetPartitioner(partitioner string) {
 	}
 }
 
+// rebuildHostsByID rebuilds the hostsByID map from the given hosts list.
+// Must be called with t.mu held.
+func (t *tokenAwareHostPolicy) rebuildHostsByID(hosts []*HostInfo) {
+	m := make(map[UUID]*HostInfo, len(hosts))
+	for _, h := range hosts {
+		m[h.hostId] = h
+	}
+	t.hostsByID.Store(m)
+}
+
+// getHostsByID returns the current host-by-UUID map for lock-free lookups.
+func (t *tokenAwareHostPolicy) getHostsByID() map[UUID]*HostInfo {
+	m, _ := t.hostsByID.Load().(map[UUID]*HostInfo)
+	return m
+}
+
 func (t *tokenAwareHostPolicy) AddHost(host *HostInfo) {
 	t.mu.Lock()
 	if t.hosts.add(host) {
+		allHosts := t.hosts.get()
+		t.rebuildHostsByID(allHosts)
 		meta := t.getMetadataForUpdate()
-		meta.resetTokenRing(t.partitioner, t.hosts.get(), t.logger)
+		meta.resetTokenRing(t.partitioner, allHosts, t.logger)
 		t.updateReplicas(meta, t.getKeyspaceName())
 		t.metadata.Store(meta)
 	}
@@ -652,8 +673,10 @@ func (t *tokenAwareHostPolicy) AddHosts(hosts []*HostInfo) {
 		t.hosts.add(host)
 	}
 
+	allHosts := t.hosts.get()
+	t.rebuildHostsByID(allHosts)
 	meta := t.getMetadataForUpdate()
-	meta.resetTokenRing(t.partitioner, t.hosts.get(), t.logger)
+	meta.resetTokenRing(t.partitioner, allHosts, t.logger)
 	t.updateReplicas(meta, t.getKeyspaceName())
 	t.metadata.Store(meta)
 
@@ -667,8 +690,10 @@ func (t *tokenAwareHostPolicy) AddHosts(hosts []*HostInfo) {
 func (t *tokenAwareHostPolicy) RemoveHost(host *HostInfo) {
 	t.mu.Lock()
 	if t.hosts.remove(host) {
+		allHosts := t.hosts.get()
+		t.rebuildHostsByID(allHosts)
 		meta := t.getMetadataForUpdate()
-		meta.resetTokenRing(t.partitioner, t.hosts.get(), t.logger)
+		meta.resetTokenRing(t.partitioner, allHosts, t.logger)
 		t.updateReplicas(meta, t.getKeyspaceName())
 		t.metadata.Store(meta)
 	}
@@ -849,13 +874,10 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 	if session := qry.GetSession(); session != nil && session.tabletsRoutingV1 && isInt64Token {
 		tabletReplicas := session.findTabletReplicasUnsafeForToken(qry.Keyspace(), qry.Table(), int64(tokenCasted))
 		if len(tabletReplicas) != 0 {
-			hosts := t.hosts.get()
+			hostMap := t.getHostsByID()
 			for _, replica := range tabletReplicas {
-				for _, host := range hosts {
-					if host.hostId == UUID(replica.HostUUIDValue()) {
-						replicas = append(replicas, host)
-						break
-					}
+				if host := hostMap[UUID(replica.HostUUIDValue())]; host != nil {
+					replicas = append(replicas, host)
 				}
 			}
 		}
@@ -880,11 +902,15 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 		replicas = []*HostInfo{host}
 	}
 
-	if t.shuffleReplicas && !qry.IsLWT() && len(replicas) > 1 {
+	// Cache IsLWT() once: it is read on both the shuffle and avoid-slow-replicas
+	// paths below, and computing it can take a lock on the query routing info.
+	isLWT := qry.IsLWT()
+
+	if t.shuffleReplicas && !isLWT && len(replicas) > 1 {
 		shuffleHostsInPlace(replicas)
 	}
 
-	if s := qry.GetSession(); s != nil && !qry.IsLWT() && t.avoidSlowReplicas {
+	if s := qry.GetSession(); s != nil && !isLWT && t.avoidSlowReplicas {
 		partitionHealthy(replicas, s)
 	}
 
