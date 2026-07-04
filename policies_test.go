@@ -492,7 +492,7 @@ func TestCOWList_Add(t *testing.T) {
 		}
 	}
 
-	hosts := cow.get()
+	hosts := cow.get().allHosts()
 	if len(hosts) != len(toAdd) {
 		t.Fatalf("expected to have %d hosts got %d", len(toAdd), len(hosts))
 	}
@@ -507,6 +507,117 @@ func TestCOWList_Add(t *testing.T) {
 			t.Errorf("addr was not in the host list: %q", addr)
 		}
 	}
+}
+
+func TestHostInfoList_HostByID(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		hosts   []*HostInfo
+		wantMap bool
+	}{
+		{
+			name:    "linear below threshold",
+			hosts:   makeHostInfoListTestHosts(hostInfoListMapThreshold - 1),
+			wantMap: false,
+		},
+		{
+			name:    "map at threshold",
+			hosts:   makeHostInfoListTestHosts(hostInfoListMapThreshold),
+			wantMap: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			hosts := newHostInfoList(tt.hosts)
+			if (hosts.hostsByID != nil) != tt.wantMap {
+				t.Fatalf("hostsByID presence = %v, want %v", hosts.hostsByID != nil, tt.wantMap)
+			}
+			if tt.wantMap {
+				if hosts.hostIDs != nil {
+					t.Fatalf("hostIDs = %v, want nil when hostsByID is used", hosts.hostIDs)
+				}
+			} else if len(hosts.hostIDs) != len(tt.hosts) {
+				t.Fatalf("len(hostIDs) = %d, want %d", len(hosts.hostIDs), len(tt.hosts))
+			}
+
+			for _, host := range tt.hosts {
+				if got := hosts.hostByID(host.hostUUID()); got != host {
+					t.Fatalf("hostByID(%s) = %v, want %v", host.HostID(), got, host)
+				}
+			}
+
+			if got := hosts.hostByID(tUUID(9999)); got != nil {
+				t.Fatalf("hostByID(missing) = %v, want nil", got)
+			}
+			if got := hosts.hostByID(UUID{}); got != nil {
+				t.Fatalf("hostByID(zero) = %v, want nil", got)
+			}
+		})
+	}
+}
+
+func TestHostInfoList_AllHostsClipsCapacity(t *testing.T) {
+	t.Parallel()
+
+	original := makeHostInfoListTestHosts(2)
+	withSpareCapacity := make([]*HostInfo, len(original), len(original)+1)
+	copy(withSpareCapacity, original)
+
+	hosts := newHostInfoList(withSpareCapacity)
+	snapshot := hosts.allHosts()
+	appended := append(snapshot, &HostInfo{hostId: tUUID(100)})
+
+	if len(snapshot) != len(original) {
+		t.Fatalf("len(allHosts()) = %d, want %d", len(snapshot), len(original))
+	}
+	if len(appended) != len(original)+1 {
+		t.Fatalf("len(appended) = %d, want %d", len(appended), len(original)+1)
+	}
+	if &snapshot[0] == &appended[0] {
+		t.Fatal("append reused allHosts backing array")
+	}
+}
+
+func TestCOWList_AddAll(t *testing.T) {
+	t.Parallel()
+
+	var cow cowHostList
+	hosts := makeHostInfoListTestHosts(hostInfoListMapThreshold)
+
+	if !cow.addAll(hosts) {
+		t.Fatal("did not add hosts which were not in the set")
+	}
+	if got := cow.get().len(); got != len(hosts) {
+		t.Fatalf("len() = %d, want %d", got, len(hosts))
+	}
+	if cow.get().hostsByID == nil {
+		t.Fatal("expected host ID map at threshold")
+	}
+	for _, host := range hosts {
+		if got := cow.get().hostByID(host.hostUUID()); got != host {
+			t.Fatalf("hostByID(%s) = %v, want %v", host.HostID(), got, host)
+		}
+	}
+	if cow.addAll(hosts) {
+		t.Fatal("added duplicate hosts")
+	}
+}
+
+func makeHostInfoListTestHosts(n int) []*HostInfo {
+	hosts := make([]*HostInfo, n)
+	for i := range hosts {
+		hosts[i] = &HostInfo{
+			hostId:         tUUID(i + 1),
+			connectAddress: net.IPv4(10, 0, byte(i>>8), byte(i)),
+			port:           9042,
+		}
+	}
+	return hosts
 }
 
 // TestSimpleRetryPolicy makes sure that we only allow 1 + numRetries attempts
