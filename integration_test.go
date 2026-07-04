@@ -136,7 +136,7 @@ func TestHostFilterDiscovery(t *testing.T) {
 	session := createSessionFromCluster(cluster, t)
 	defer session.Close()
 
-	tests.AssertEqual(t, "len(clusterHosts)-1 != len(rr.hosts.get())", len(clusterHosts)-1, len(rr.hosts.get()))
+	tests.AssertEqual(t, "len(clusterHosts)-1 != rr.hosts.get().len()", len(clusterHosts)-1, rr.hosts.get().len())
 }
 
 // TestHostFilterInitial ensures that host filtering works for the initial
@@ -162,7 +162,7 @@ func TestHostFilterInitial(t *testing.T) {
 	session := createSessionFromCluster(cluster, t)
 	defer session.Close()
 
-	tests.AssertEqual(t, "len(clusterHosts)-1 != len(rr.hosts.get())", len(clusterHosts)-1, len(rr.hosts.get()))
+	tests.AssertEqual(t, "len(clusterHosts)-1 != rr.hosts.get().len()", len(clusterHosts)-1, rr.hosts.get().len())
 }
 
 func TestApplicationInformation(t *testing.T) {
