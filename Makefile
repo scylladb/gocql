@@ -10,6 +10,8 @@ CASSANDRA_VERSION ?= LATEST
 SCYLLA_VERSION ?= LATEST
 
 GOLANGCI_VERSION = 2.5.0
+GET_VERSION_VERSION = 0.4.5
+GET_VERSION_BIN = $(MAKEFILE_PATH)/bin/get-version
 
 TEST_CQL_PROTOCOL ?= 4
 TEST_COMPRESSOR ?= snappy
@@ -85,10 +87,10 @@ print-config:
 	@[[ -d "$(MAKEFILE_PATH)/bin" ]] || mkdir "$(MAKEFILE_PATH)/bin"
 
 .prepare-get-version: .prepare-bin
-	@if [[ ! -f "$(MAKEFILE_PATH)/bin/get-version" ]]; then
-		echo "bin/get-version is not found, installing it"
-		curl -sSLo /tmp/get-version.zip https://github.com/scylladb-actions/get-version/releases/download/v0.4.5/get-version_0.4.5_linux_amd64v3.zip
-		unzip /tmp/get-version.zip get-version -d "$(MAKEFILE_PATH)/bin" >/dev/null
+	@if [[ ! -x "${GET_VERSION_BIN}" ]] || [[ "$$("${GET_VERSION_BIN}" -version 2>/dev/null)" != "${GET_VERSION_VERSION}" ]]; then
+		echo "Installing get-version ${GET_VERSION_VERSION}"
+		curl -sSLo /tmp/get-version.zip https://github.com/scylladb-actions/get-version/releases/download/v${GET_VERSION_VERSION}/get-version_${GET_VERSION_VERSION}_linux_amd64v3.zip
+		unzip -o /tmp/get-version.zip get-version -d "$(MAKEFILE_PATH)/bin" >/dev/null
 	fi
 
 .prepare-environment-update-aio-max-nr:
