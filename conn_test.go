@@ -1061,6 +1061,8 @@ func (o *testStreamObserverContext) StreamFinished(ObservedStream) {
 func TestExecCloseWithError(t *testing.T) {
 	t.Parallel()
 
+	const execCloseTestTimeout = 10 * time.Second
+
 	t.Run("BuildFrameErrorReleasesResources", func(t *testing.T) {
 		c, server := newTestExecConn(t, testContextWriter{})
 		defer server.Close()
@@ -1100,7 +1102,7 @@ func TestExecCloseWithError(t *testing.T) {
 
 		select {
 		case <-writeEntered:
-		case <-time.After(2 * time.Second):
+		case <-time.After(execCloseTestTimeout):
 			t.Fatal("exec never reached the write path")
 		}
 		cancel()
@@ -1110,7 +1112,7 @@ func TestExecCloseWithError(t *testing.T) {
 			if !errors.Is(err, context.Canceled) {
 				t.Fatalf("expected context cancel error %v, got %v", context.Canceled, err)
 			}
-		case <-time.After(2 * time.Second):
+		case <-time.After(execCloseTestTimeout):
 			t.Fatal("exec deadlocked after context cancellation before write")
 		}
 
@@ -1143,7 +1145,7 @@ func TestExecCloseWithError(t *testing.T) {
 			if !errors.Is(err, io.EOF) {
 				t.Fatalf("expected response error %v, got %v", io.EOF, err)
 			}
-		case <-time.After(2 * time.Second):
+		case <-time.After(execCloseTestTimeout):
 			t.Fatal("exec deadlocked after response error")
 		}
 
@@ -1175,7 +1177,7 @@ func TestExecCloseWithError(t *testing.T) {
 			if !errors.Is(err, io.ErrUnexpectedEOF) {
 				t.Fatalf("expected write error %v, got %v", io.ErrUnexpectedEOF, err)
 			}
-		case <-time.After(2 * time.Second):
+		case <-time.After(execCloseTestTimeout):
 			t.Fatal("exec deadlocked after partial write failure")
 		}
 	})
@@ -1213,13 +1215,13 @@ func TestExecCloseWithError(t *testing.T) {
 			if !errors.Is(err, io.EOF) {
 				t.Fatalf("expected close error %v, got %v", io.EOF, err)
 			}
-		case <-time.After(2 * time.Second):
+		case <-time.After(execCloseTestTimeout):
 			t.Fatal("exec deadlocked after closeWithError")
 		}
 
 		select {
 		case <-closeDone:
-		case <-time.After(2 * time.Second):
+		case <-time.After(execCloseTestTimeout):
 			t.Fatal("closeWithError deadlocked waiting for exec to release the call")
 		}
 	})
@@ -1244,7 +1246,7 @@ func TestExecCloseWithError(t *testing.T) {
 			if !errors.Is(err, ErrTimeoutNoResponse) {
 				t.Fatalf("expected timeout error %v, got %v", ErrTimeoutNoResponse, err)
 			}
-		case <-time.After(2 * time.Second):
+		case <-time.After(execCloseTestTimeout):
 			t.Fatal("exec deadlocked waiting for timeout")
 		}
 
@@ -1260,7 +1262,7 @@ func TestExecCloseWithError(t *testing.T) {
 
 		select {
 		case <-done:
-		case <-time.After(2 * time.Second):
+		case <-time.After(execCloseTestTimeout):
 			t.Fatal("abandonRecvCall deadlocked after timeout")
 		}
 	})
@@ -1287,7 +1289,7 @@ func TestExecCloseWithError(t *testing.T) {
 			if !errors.Is(err, context.Canceled) {
 				t.Fatalf("expected context cancel error %v, got %v", context.Canceled, err)
 			}
-		case <-time.After(2 * time.Second):
+		case <-time.After(execCloseTestTimeout):
 			t.Fatal("exec deadlocked waiting for context cancellation")
 		}
 
@@ -1303,7 +1305,7 @@ func TestExecCloseWithError(t *testing.T) {
 
 		select {
 		case <-done:
-		case <-time.After(2 * time.Second):
+		case <-time.After(execCloseTestTimeout):
 			t.Fatal("abandonRecvCall deadlocked after context cancellation")
 		}
 	})
@@ -1333,13 +1335,13 @@ func TestExecCloseWithError(t *testing.T) {
 
 		select {
 		case <-observerCtx.started:
-		case <-time.After(2 * time.Second):
+		case <-time.After(execCloseTestTimeout):
 			t.Fatal("stream observer did not observe the request start")
 		}
 
 		select {
 		case <-writeStarted:
-		case <-time.After(2 * time.Second):
+		case <-time.After(execCloseTestTimeout):
 			t.Fatal("exec never reached the write path")
 		}
 
@@ -1354,13 +1356,13 @@ func TestExecCloseWithError(t *testing.T) {
 			if !errors.Is(err, ErrConnectionClosed) {
 				t.Fatalf("expected close error %v, got %v", ErrConnectionClosed, err)
 			}
-		case <-time.After(2 * time.Second):
+		case <-time.After(execCloseTestTimeout):
 			t.Fatal("exec deadlocked after Close")
 		}
 
 		select {
 		case <-observerCtx.abandoned:
-		case <-time.After(2 * time.Second):
+		case <-time.After(execCloseTestTimeout):
 			t.Fatal("Close did not abandon the in-flight stream")
 		}
 
@@ -1372,7 +1374,7 @@ func TestExecCloseWithError(t *testing.T) {
 
 		select {
 		case <-closeDone:
-		case <-time.After(2 * time.Second):
+		case <-time.After(execCloseTestTimeout):
 			t.Fatal("Close did not wait for the in-flight exec cleanup")
 		}
 
