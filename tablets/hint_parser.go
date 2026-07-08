@@ -37,8 +37,14 @@ import (
 func ParseHint(data []byte, keyspace, table string) (TabletInfo, error) {
 	r := cqlproto.NewReader(data)
 
-	firstToken, _ := r.ReadBigInt()
-	lastToken, _ := r.ReadBigInt()
+	firstToken, ok := r.ReadBigInt()
+	if !ok {
+		return TabletInfo{}, fmt.Errorf("invalid hint: first token is null")
+	}
+	lastToken, ok := r.ReadBigInt()
+	if !ok {
+		return TabletInfo{}, fmt.Errorf("invalid hint: last token is null")
+	}
 
 	// list<tuple<uuid, int>>: read the list [bytes] envelope, then element count.
 	listBody := r.ReadBytes()
@@ -64,8 +70,14 @@ func ParseHint(data []byte, keyspace, table string) (TabletInfo, error) {
 		}
 		tupleR := cqlproto.NewReader(tupleBody)
 
-		hostUUID, _ := tupleR.ReadUUID()
-		shardID, _ := tupleR.ReadInt()
+		hostUUID, ok := tupleR.ReadUUID()
+		if !ok {
+			return TabletInfo{}, fmt.Errorf("replica %d: host UUID is null", i)
+		}
+		shardID, ok := tupleR.ReadInt()
+		if !ok {
+			return TabletInfo{}, fmt.Errorf("replica %d: shard ID is null", i)
+		}
 		if tupleR.Err() != nil {
 			return TabletInfo{}, fmt.Errorf("replica %d: %w", i, tupleR.Err())
 		}

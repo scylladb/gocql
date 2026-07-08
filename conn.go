@@ -1638,6 +1638,33 @@ func marshalQueryValue(typ TypeInfo, value any, dst *queryValues) error {
 	return nil
 }
 
+// marshalQueryValuesJIT attempts to encode all values using the JIT encoder.
+// It returns true if the fast path was used, false if any value requires
+// special handling (namedValue or unsetColumn) and the caller should fall back.
+func marshalQueryValuesJIT(columns []ColumnInfo, values []any, dst []queryValues) bool {
+	// Quick scan: bail out if any value needs special handling.
+	for _, v := range values {
+		if v == nil {
+			continue
+		}
+		switch v.(type) {
+		case *namedValue, unsetColumn:
+			return false
+		}
+	}
+
+	enc := getOrCompileParamEncoder(columns, values)
+	for i, v := range values {
+		val, err := enc.encoders[i](v)
+		if err != nil {
+			// On error, fall back to generic path for all values.
+			return false
+		}
+		dst[i].value = val
+	}
+	return true
+}
+
 func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 	params := queryParams{
 		consistency: qry.cons,
@@ -1690,12 +1717,14 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 		}
 
 		params.values = make([]queryValues, len(values))
-		for i := 0; i < len(values); i++ {
-			v := &params.values[i]
-			value := values[i]
-			typ := info.request.columns[i].TypeInfo
-			if err := marshalQueryValue(typ, value, v); err != nil {
-				return &Iter{err: err}
+		if !marshalQueryValuesJIT(info.request.columns, values, params.values) {
+			for i := 0; i < len(values); i++ {
+				v := &params.values[i]
+				value := values[i]
+				typ := info.request.columns[i].TypeInfo
+				if err := marshalQueryValue(typ, value, v); err != nil {
+					return &Iter{err: err}
+				}
 			}
 		}
 
@@ -1912,12 +1941,14 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 
 			b.values = make([]queryValues, info.request.actualColCount)
 
-			for j := 0; j < info.request.actualColCount; j++ {
-				v := &b.values[j]
-				value := values[j]
-				typ := info.request.columns[j].TypeInfo
-				if err := marshalQueryValue(typ, value, v); err != nil {
-					return &Iter{err: err}
+			if !marshalQueryValuesJIT(info.request.columns, values, b.values) {
+				for j := 0; j < info.request.actualColCount; j++ {
+					v := &b.values[j]
+					value := values[j]
+					typ := info.request.columns[j].TypeInfo
+					if err := marshalQueryValue(typ, value, v); err != nil {
+						return &Iter{err: err}
+					}
 				}
 			}
 
