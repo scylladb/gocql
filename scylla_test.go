@@ -212,7 +212,7 @@ func TestScyllaRateLimitingExtParsing(t *testing.T) {
 		// mock connection without cql extensions, expected to have the `rateLimitingErrorCode`
 		// field set to 0 (default, signifying no code)
 		conn := mockConn(0)
-		f := newFramerWithExts(conn.compressor, conn.version, conn.cqlProtoExts, conn.logger)
+		f := newFramerWithExts(conn.compressor, conn.version, compressionOpts{}, conn.cqlProtoExts, conn.logger)
 		if f.rateLimitingErrorCode != 0 {
 			t.Error("expected to have rateLimitingErrorCode set to 0 (no code) after framer init")
 		}
@@ -228,7 +228,7 @@ func TestScyllaRateLimitingExtParsing(t *testing.T) {
 				rateLimitErrorCode: mockCode,
 			},
 		}
-		framerWithRateLimitExt := newFramerWithExts(conn.compressor, conn.version, conn.cqlProtoExts, conn.logger)
+		framerWithRateLimitExt := newFramerWithExts(conn.compressor, conn.version, compressionOpts{}, conn.cqlProtoExts, conn.logger)
 		if framerWithRateLimitExt.rateLimitingErrorCode != mockCode {
 			t.Error("expected to have rateLimitingErrorCode set to mockCode after framer init")
 		}
@@ -242,7 +242,7 @@ func TestScyllaLWTExtParsing(t *testing.T) {
 		// mock connection without cql extensions, expected not to have
 		// the `flagLWT` field being set in the framer created out of it
 		conn := mockConn(0)
-		f := newFramerWithExts(conn.compressor, conn.version, conn.cqlProtoExts, conn.logger)
+		f := newFramerWithExts(conn.compressor, conn.version, compressionOpts{}, conn.cqlProtoExts, conn.logger)
 		if f.flagLWT != 0 {
 			t.Error("expected to have LWT flag uninitialized after framer init")
 		}
@@ -257,7 +257,7 @@ func TestScyllaLWTExtParsing(t *testing.T) {
 				lwtOptMetaBitMask: 1,
 			},
 		}
-		framerWithLwtExt := newFramerWithExts(conn.compressor, conn.version, conn.cqlProtoExts, conn.logger)
+		framerWithLwtExt := newFramerWithExts(conn.compressor, conn.version, compressionOpts{}, conn.cqlProtoExts, conn.logger)
 		if framerWithLwtExt.flagLWT == 0 {
 			t.Error("expected to have LWT flag to be set after framer init")
 		}

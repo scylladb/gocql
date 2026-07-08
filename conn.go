@@ -206,12 +206,16 @@ type Conn struct {
 	cqlProtoExts         []cqlProtocolExtension
 	scyllaSupported      ScyllaConnectionFeatures
 	systemRequestTimeout time.Duration
-	writeTimeout         atomic.Int64
-	readTimeout          atomic.Int64
-	mu                   sync.Mutex
-	tabletsRoutingV1     int32
-	headerBuf            [headSize]byte
-	isShardAware         bool
+	// compOpts bundles the per-connection compression settings resolved once
+	// at connection creation from the session's CompressionPolicy and host
+	// tier. The threshold is topology-dependent; minSavingsPct is not.
+	compOpts         compressionOpts
+	writeTimeout     atomic.Int64
+	readTimeout      atomic.Int64
+	mu               sync.Mutex
+	tabletsRoutingV1 int32
+	headerBuf        [headSize]byte
+	isShardAware     bool
 	// true if connection close process for the connection started.
 	// closed is protected by mu.
 	closed     bool
@@ -370,15 +374,19 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 
 	ctx, cancel := context.WithCancel(ctx)
 	c := &Conn{
-		conn:          dialedHost.Conn,
-		r:             bufio.NewReader(dialedHost.Conn),
-		cfg:           cfg,
-		calls:         make(map[int]*callReq),
-		version:       uint8(cfg.ProtoVersion),
-		isShardAware:  isShardAware,
-		addr:          dialedHost.Conn.RemoteAddr().String(),
-		errorHandler:  errorHandler,
-		compressor:    cfg.Compressor,
+		conn:         dialedHost.Conn,
+		r:            bufio.NewReader(dialedHost.Conn),
+		cfg:          cfg,
+		calls:        make(map[int]*callReq),
+		version:      uint8(cfg.ProtoVersion),
+		isShardAware: isShardAware,
+		addr:         dialedHost.Conn.RemoteAddr().String(),
+		errorHandler: errorHandler,
+		compressor:   cfg.Compressor,
+		compOpts: compressionOpts{
+			threshold:     resolveCompressionThreshold(s.cfg.CompressionPolicy, s.policy, host),
+			minSavingsPct: s.cfg.CompressionPolicy.MinSavingsPercent,
+		},
 		session:       s,
 		streams:       s.streamIDGenerator(),
 		host:          host,
