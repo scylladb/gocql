@@ -102,7 +102,7 @@ var queryPool = &sync.Pool{
 	New: func() any {
 		return &Query{
 			routingInfo: &queryRoutingInfo{},
-			metrics:     &queryMetrics{m: make(map[UUID]*hostMetrics)},
+			metrics:     &queryMetrics{},
 			refCount:    1,
 		}
 	},
@@ -1092,17 +1092,33 @@ type hostMetrics struct {
 }
 
 type queryMetrics struct {
+	// m holds metrics for additional hosts beyond the first. It is allocated
+	// lazily, only when a second distinct host is observed (a retry to another
+	// node, speculative execution, or a page served by a different host).
+	// Kept first so the GC pointer-scan range over this struct stays minimal.
 	m map[UUID]*hostMetrics
+
+	l sync.RWMutex
+
+	// Fast path: the overwhelming majority of queries touch exactly one host
+	// (a single attempt, no retry or speculative execution). For that case we
+	// keep the host's metrics inline and never allocate the map at all.
+	firstHostID UUID
+	firstHost   hostMetrics
+
 	// totalAttempts is total number of attempts.
 	// Equal to sum of all hostMetrics' Attempts
 	totalAttempts int
-	l             sync.RWMutex
+
+	hasFirstHost bool
 }
 
 // preFilledQueryMetrics initializes new queryMetrics based on per-host supplied data.
 func preFilledQueryMetrics(m map[UUID]*hostMetrics) *queryMetrics {
-	qm := &queryMetrics{m: m}
-	for _, hm := range qm.m {
+	qm := &queryMetrics{}
+	for id, hm := range m {
+		dst := qm.getOrCreateHostMetricsLocked(id)
+		*dst = *hm
 		qm.totalAttempts += hm.Attempts
 	}
 	return qm
@@ -1122,14 +1138,34 @@ func (qm *queryMetrics) hostMetrics(host *HostInfo) *hostMetrics {
 // hostMetricsLocked gets or creates host metrics for given host.
 // It must be called only while holding qm.l lock.
 func (qm *queryMetrics) hostMetricsLocked(host *HostInfo) *hostMetrics {
-	id := host.hostUUID()
+	return qm.getOrCreateHostMetricsLocked(host.hostUUID())
+}
+
+// getOrCreateHostMetricsLocked returns the hostMetrics for id, creating a
+// zero-valued entry if none exists yet. The first host seen is stored inline;
+// only subsequent distinct hosts allocate (and populate) the spill map.
+// It must be called only while holding qm.l lock.
+func (qm *queryMetrics) getOrCreateHostMetricsLocked(id UUID) *hostMetrics {
+	if qm.hasFirstHost {
+		if qm.firstHostID == id {
+			return &qm.firstHost
+		}
+	} else {
+		qm.firstHostID = id
+		qm.firstHost = hostMetrics{}
+		qm.hasFirstHost = true
+		return &qm.firstHost
+	}
+
+	// Second or later distinct host: fall back to the lazily-allocated map.
+	if qm.m == nil {
+		qm.m = make(map[UUID]*hostMetrics)
+	}
 	metrics, exists := qm.m[id]
 	if !exists {
-		// if the host is not in the map, it means it's been accessed for the first time
 		metrics = &hostMetrics{}
 		qm.m[id] = metrics
 	}
-
 	return metrics
 }
 
@@ -1147,6 +1183,10 @@ func (qm *queryMetrics) latency() int64 {
 		attempts int
 		latency  int64
 	)
+	if qm.hasFirstHost {
+		attempts += qm.firstHost.Attempts
+		latency += qm.firstHost.TotalLatency
+	}
 	for _, metric := range qm.m {
 		attempts += metric.Attempts
 		latency += metric.TotalLatency
@@ -1159,10 +1199,14 @@ func (qm *queryMetrics) latency() int64 {
 }
 
 // reset resets metrics, to forget about prior query executions.
-// Uses clear() instead of make() to preserve the map's backing array,
+// The inline first-host slot is cleared and clear() (rather than make()) is
+// used on the spill map so its backing array is preserved for reuse,
 // avoiding a heap allocation on each re-execution.
 func (qm *queryMetrics) reset() {
 	qm.l.Lock()
+	qm.firstHostID = UUID{}
+	qm.firstHost = hostMetrics{}
+	qm.hasFirstHost = false
 	clear(qm.m)
 	qm.totalAttempts = 0
 	qm.l.Unlock()
@@ -1281,7 +1325,7 @@ func (q *Query) defaultsFromSession() {
 	q.defaultTimestamp = s.cfg.DefaultTimestamp
 	q.idempotent = s.cfg.DefaultIdempotence
 	if q.metrics == nil {
-		q.metrics = &queryMetrics{m: make(map[UUID]*hostMetrics)}
+		q.metrics = &queryMetrics{}
 	}
 
 	q.spec = defaultNonSpecExec
@@ -1865,16 +1909,19 @@ func (q *Query) Release() {
 }
 
 // reset zeroes out all fields of a query so that it can be safely pooled.
-// It preserves the metrics allocation for reuse. routingInfo is always freshly
-// allocated because paging copies share the pointer (see conn.go executeQuery).
+// It preserves the metrics and routingInfo allocations for reuse.
 func (q *Query) reset() {
 	m := q.metrics
 	if m != nil {
-		clear(m.m)
-		m.totalAttempts = 0
+		m.reset()
 	}
 
-	*q = Query{routingInfo: &queryRoutingInfo{}, metrics: m, refCount: 1}
+	ri := q.routingInfo
+	if ri != nil {
+		*ri = queryRoutingInfo{}
+	}
+
+	*q = Query{routingInfo: ri, metrics: m, refCount: 1}
 }
 
 func (q *Query) incRefCount() {
@@ -2403,6 +2450,65 @@ type nextIter struct {
 	mu     sync.Mutex
 	pos    int
 	closed bool
+	pooled bool // if true, qry was obtained from queryPool via newNextIterWithPageState
+}
+
+func newNextIterWithPageState(parent *Query, pageState []byte, pos int) *nextIter {
+	// Acquire a Query from the global pool and shallow-copy the parent into it.
+	newQry := queryPool.Get().(*Query)
+	// Save pooled allocations before overwriting with parent's fields.
+	pooledMetrics := newQry.metrics
+	pooledRoutingInfo := newQry.routingInfo
+	*newQry = *parent
+	newQry.pageState = pageState
+	newQry.refCount = 1
+	// Reuse the pooled metrics if the pool preserved one; otherwise allocate
+	// fresh. The map inside is allocated lazily, only if more than one host is
+	// observed during execution.
+	if pooledMetrics != nil && pooledMetrics != parent.metrics {
+		pooledMetrics.reset()
+		newQry.metrics = pooledMetrics
+	} else {
+		newQry.metrics = &queryMetrics{}
+	}
+	// Reuse routingInfo to avoid aliasing the parent's pointer (which is
+	// mutex-protected and shared). Copy the parent's routing fields into
+	// the pooled struct so executeQuery can safely write to it.
+	parent.routingInfo.mu.RLock()
+	riKeyspace := parent.routingInfo.keyspace
+	riTable := parent.routingInfo.table
+	riPartitioner := parent.routingInfo.partitioner
+	riLwt := parent.routingInfo.lwt
+	parent.routingInfo.mu.RUnlock()
+	if pooledRoutingInfo != nil && pooledRoutingInfo != parent.routingInfo {
+		pooledRoutingInfo.keyspace = riKeyspace
+		pooledRoutingInfo.table = riTable
+		pooledRoutingInfo.partitioner = riPartitioner
+		pooledRoutingInfo.lwt = riLwt
+		newQry.routingInfo = pooledRoutingInfo
+	} else {
+		newQry.routingInfo = &queryRoutingInfo{
+			keyspace:    riKeyspace,
+			table:       riTable,
+			partitioner: riPartitioner,
+			lwt:         riLwt,
+		}
+	}
+
+	parentCtx := newQry.pageContextParent
+	if parentCtx == nil {
+		parentCtx = newQry.Context()
+	}
+	ctx, cancel := context.WithCancel(parentCtx)
+	newQry.context = ctx
+	newQry.pageContextParent = parentCtx
+
+	return &nextIter{
+		qry:    newQry,
+		pos:    pos,
+		cancel: cancel,
+		pooled: true,
+	}
 }
 
 func newNextIter(qry *Query, pos int) *nextIter {
@@ -2443,6 +2549,7 @@ func (n *nextIter) storeFetched(next *Iter) {
 
 func (n *nextIter) close() {
 	if n.cancel != nil {
+		// Cancel the context first so any in-flight fetch returns promptly.
 		n.cancel()
 	}
 
@@ -2455,11 +2562,18 @@ func (n *nextIter) close() {
 	if next != nil {
 		next.discard()
 	}
+	// releaseQuery waits for fetch to finish (via once.Do) before reclaiming.
+	// This is safe because cancel() above ensures the fetch won't block indefinitely.
+	n.releaseQuery()
 }
 
 // consume retires the next-page fetch context after the fetched page has been
 // handed off to the caller. Unlike close(), it keeps the fetched Iter alive so
 // its page data can become the current iterator state.
+//
+// The paging query's reference count is decremented here. If the fetched Iter
+// holds a warningQuery reference (via bindWarningHandler's incRefCount), the
+// query won't actually be pooled until that Iter finalizes and releases its ref.
 func (n *nextIter) consume() {
 	if n.cancel != nil {
 		n.cancel()
@@ -2469,17 +2583,58 @@ func (n *nextIter) consume() {
 	n.closed = true
 	n.next = nil
 	n.mu.Unlock()
+
+	n.releaseQuery()
+}
+
+// releaseQuery decrements the paging query's reference count if it was pool-allocated.
+// It waits for any in-flight fetch to complete before decrementing,
+// since the fetch goroutine holds a reference to the Query struct.
+// The query is returned to the global queryPool when its refCount reaches 0
+// (i.e., after all holders — including warningQuery refs and speculative
+// execution goroutines — have released their references).
+func (n *nextIter) releaseQuery() {
+	if !n.pooled {
+		return
+	}
+	// Coordinate with fetch() through the same sync.Once: this either waits for
+	// an in-flight fetch() to finish, or — if fetch() never ran — marks the once
+	// as done so a later fetch() becomes a no-op. The cancel() in
+	// close()/consume() ensures an in-flight fetch won't block forever, and the
+	// qry==nil check below (and inside fetch()) handles the never-ran case.
+	n.once.Do(func() {
+		// Intentionally empty: running the once is the whole point here — it
+		// claims/awaits the single fetch slot so releaseQuery and fetch can
+		// never both execute the fetch body.
+	})
+
+	n.mu.Lock()
+	qry := n.qry
+	n.qry = nil
+	n.mu.Unlock()
+
+	if qry != nil {
+		qry.decRefCount()
+	}
 }
 
 func (n *nextIter) fetch() *Iter {
 	n.once.Do(func() {
+		// Capture qry under the lock to prevent racing with releaseQuery.
+		n.mu.Lock()
+		qry := n.qry
+		n.mu.Unlock()
+		if qry == nil {
+			return
+		}
+
 		// if the query was specifically run on a connection then re-use that
 		// connection when fetching the next results
 		var next *Iter
-		if n.qry.conn != nil {
-			next = n.qry.conn.executeQuery(n.qry.Context(), n.qry)
+		if qry.conn != nil {
+			next = qry.conn.executeQuery(qry.Context(), qry)
 		} else {
-			next = n.qry.session.executeQuery(n.qry)
+			next = qry.session.executeQuery(qry)
 		}
 		n.storeFetched(next)
 	})
@@ -2544,7 +2699,7 @@ func (s *Session) Batch(typ BatchType) *Batch {
 		Cons:             s.cons,
 		defaultTimestamp: s.cfg.DefaultTimestamp,
 		keyspace:         s.cfg.Keyspace,
-		metrics:          &queryMetrics{m: make(map[UUID]*hostMetrics)},
+		metrics:          &queryMetrics{},
 		spec:             defaultNonSpecExec,
 		routingInfo:      &queryRoutingInfo{},
 		requestTimeout:   s.cfg.Timeout,
