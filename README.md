@@ -282,6 +282,17 @@ config.Compressor = &lz4.LZ4Compressor{}
 ...
 ```
 
+LZ4 support is provided as an optional sub-module. Because it uses the same fork pattern as
+the parent module, add a second `replace` directive alongside the one from the Installation
+section:
+
+```mod
+replace github.com/gocql/gocql => github.com/scylladb/gocql latest
+replace github.com/gocql/gocql/lz4 => github.com/scylladb/gocql/lz4 latest
+```
+
+Run `go mod tidy` to pin both to concrete versions.
+
 ## 6. Contributing
 
 If you have any interest to be contributing in this GoCQL Fork, please read the [CONTRIBUTING.md](CONTRIBUTING.md) before initialize any Issue or Pull Request.

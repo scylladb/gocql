@@ -30,12 +30,14 @@ package gocql
 import (
 	"bytes"
 	"errors"
+	"math"
 	"os"
 	"testing"
 
-	frm "github.com/gocql/gocql/internal/frame"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	frm "github.com/gocql/gocql/internal/frame"
 )
 
 func TestFuzzBugs(t *testing.T) {
@@ -242,16 +244,16 @@ func Test_framer_writeExecuteFrame(t *testing.T) {
 	framer.buf = framer.buf[9:]
 
 	assertDeepEqual(t, "customPayload", frame.customPayload, framer.readBytesMap())
-	assertDeepEqual(t, "preparedID", frame.preparedID, framer.readShortBytes())
-	assertDeepEqual(t, "resultMetadataID", frame.resultMetadataID, framer.readShortBytes())
+	assertDeepEqual(t, "preparedID", frame.preparedID, framer.readShortBytesCopy())
+	assertDeepEqual(t, "resultMetadataID", frame.resultMetadataID, framer.readShortBytesCopy())
 	assertDeepEqual(t, "constistency", frame.params.consistency, Consistency(framer.readShort()))
 
 	flags := framer.readInt()
-	if flags&int(flagWithNowInSeconds) != int(flagWithNowInSeconds) {
+	if flags&int(frm.FlagWithNowInSeconds) != int(frm.FlagWithNowInSeconds) {
 		t.Fatal("expected flagNowInSeconds to be set, but it is not")
 	}
 
-	if flags&int(flagWithKeyspace) != int(flagWithKeyspace) {
+	if flags&int(frm.FlagWithKeyspace) != int(frm.FlagWithKeyspace) {
 		t.Fatal("expected flagWithKeyspace to be set, but it is not")
 	}
 
@@ -283,11 +285,124 @@ func Test_framer_writeBatchFrame(t *testing.T) {
 	assertDeepEqual(t, "consistency", frame.consistency, Consistency(framer.readShort()))
 
 	flags := framer.readInt()
-	if flags&int(flagWithNowInSeconds) != int(flagWithNowInSeconds) {
+	if flags&int(frm.FlagWithNowInSeconds) != int(frm.FlagWithNowInSeconds) {
 		t.Fatal("expected flagNowInSeconds to be set, but it is not")
 	}
 
 	assertDeepEqual(t, "nowInSeconds", nowInSeconds, framer.readInt())
+}
+
+// On protocols below v5 the keyspace override and now_in_seconds options are
+// not part of the wire format. The frame writers must reject them with an
+// explicit error (rather than silently dropping them, panicking, or leaving a
+// partial frame in the reusable framer buffer).
+func Test_framer_writeQueryParams_rejectsUnsupportedOptionsOnV4(t *testing.T) {
+	nowInSeconds := 123
+	overflow := math.MaxInt32 + 1
+
+	cases := []struct {
+		name  string
+		proto byte
+		opts  queryParams
+	}{
+		{"keyspace on v4", protoVersion4, queryParams{consistency: Quorum, keyspace: "ks"}},
+		{"nowInSeconds on v4", protoVersion4, queryParams{consistency: Quorum, nowInSeconds: &nowInSeconds}},
+		{"nowInSeconds overflow on v5", protoVersion5, queryParams{consistency: Quorum, nowInSeconds: &overflow}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			framer := newFramer(nil, tc.proto)
+			if err := framer.writeQueryParams(&tc.opts); err == nil {
+				t.Fatal("expected an error, got nil")
+			}
+			if len(framer.buf) != 0 {
+				t.Fatalf("expected framer buffer to be untouched on error, got %d bytes", len(framer.buf))
+			}
+		})
+	}
+}
+
+func Test_framer_writeBatchFrame_rejectsUnsupportedOptionsOnV4(t *testing.T) {
+	nowInSeconds := 123
+	overflow := math.MaxInt32 + 1
+
+	cases := []struct {
+		name  string
+		proto byte
+		frame writeBatchFrame
+	}{
+		{"keyspace on v4", protoVersion4, writeBatchFrame{keyspace: "ks"}},
+		{"nowInSeconds on v4", protoVersion4, writeBatchFrame{nowInSeconds: &nowInSeconds}},
+		{"nowInSeconds overflow on v5", protoVersion5, writeBatchFrame{nowInSeconds: &overflow}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			framer := newFramer(nil, tc.proto)
+			if err := framer.writeBatchFrame(1, &tc.frame, tc.frame.customPayload); err == nil {
+				t.Fatal("expected an error, got nil")
+			}
+			if len(framer.buf) != 0 {
+				t.Fatalf("expected framer buffer to be untouched on error, got %d bytes", len(framer.buf))
+			}
+		})
+	}
+}
+
+func Test_framer_writePrepareFrame_rejectsKeyspaceOnV4(t *testing.T) {
+	framer := newFramer(nil, protoVersion4)
+	prep := &writePrepareFrame{statement: "SELECT * FROM t", keyspace: "ks"}
+
+	// Must return an error, not panic.
+	if err := prep.buildFrame(framer, 1); err == nil {
+		t.Fatal("expected an error, got nil")
+	}
+	if len(framer.buf) != 0 {
+		t.Fatalf("expected framer buffer to be untouched on error, got %d bytes", len(framer.buf))
+	}
+}
+
+func Test_defaultFramerFlags(t *testing.T) {
+	comp := testMockedCompressor{}
+
+	cases := []struct {
+		name       string
+		compressor Compressor
+		version    byte
+		want       byte
+	}{
+		{"v4 no compressor", nil, protoVersion4, 0},
+		{"v4 with compressor", comp, protoVersion4, frm.FlagCompress},
+		{"v5 no compressor", nil, protoVersion5, frm.FlagBetaProtocol},
+		// v5 compresses at the segment layer, so no frame-header FlagCompress.
+		{"v5 with compressor", comp, protoVersion5, frm.FlagBetaProtocol},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := defaultFramerFlags(tc.compressor, tc.version); got != tc.want {
+				t.Fatalf("defaultFramerFlags(%v, v%d) = 0x%02x, want 0x%02x", tc.compressor != nil, tc.version, got, tc.want)
+			}
+		})
+	}
+}
+
+// newFramer must carry FlagBetaProtocol on proto v5 (so startup/fallback framers
+// match the pooled framers from initCache) and must not carry it on v4.
+func Test_newFramer_betaProtocolFlag(t *testing.T) {
+	v5 := newFramer(nil, protoVersion5)
+	if v5.flags&frm.FlagBetaProtocol == 0 {
+		t.Error("newFramer(v5) should set FlagBetaProtocol")
+	}
+	if v5.flags&frm.FlagCompress != 0 {
+		t.Error("newFramer(v5) should not set FlagCompress (v5 compresses at the segment layer)")
+	}
+
+	v4 := newFramer(nil, protoVersion4)
+	if v4.flags&frm.FlagBetaProtocol != 0 {
+		t.Error("newFramer(v4) should not set FlagBetaProtocol")
+	}
 }
 
 type testMockedCompressor struct {

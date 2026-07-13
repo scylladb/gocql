@@ -21,7 +21,6 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed
 	github.com/klauspost/compress v1.18.6
-	github.com/scylladb/gocql/lz4 v0.0.0-20260713010054-6ac410f63f0d
 	golang.org/x/net v0.53.0
 	golang.org/x/sync v0.20.0
 	gopkg.in/inf.v0 v0.9.1
@@ -30,7 +29,6 @@ require (
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/pierrec/lz4/v4 v4.1.27 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
@@ -52,11 +50,3 @@ retract (
 )
 
 go 1.25.0
-
-// The lz4 sub-module is declared as github.com/scylladb/gocql/lz4 (not github.com/gocql/gocql/lz4)
-// because upstream (apache) deleted lz4/go.mod before the append-style Compressor API was added,
-// so no pseudo-version with the new API exists under the old path.
-// The replace directive overrides the require for local builds and CI.
-// TODO: Once this PR merges to scylladb/master, update the require to a post-merge pseudo-version
-// and remove this replace directive.
-replace github.com/scylladb/gocql/lz4 => ./lz4

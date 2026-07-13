@@ -36,8 +36,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/scylladb/gocql/lz4"
 )
 
 var (
@@ -319,7 +317,7 @@ func createCluster(opts ...func(*ClusterConfig)) *ClusterConfig {
 	switch *flagCompressTest {
 	case "snappy":
 		cluster.Compressor = &SnappyCompressor{}
-	case "":
+	case "no-compression":
 	default:
 		panic("invalid compressor: " + *flagCompressTest)
 	}

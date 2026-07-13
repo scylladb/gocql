@@ -117,7 +117,7 @@ func (p *preparedLRU) evictPreparedID(key stmtCacheKey, id []byte) {
 	}
 }
 
-func (p *preparedLRU) get(key string) (*inflightPrepare, bool) {
+func (p *preparedLRU) get(key stmtCacheKey) (*inflightPrepare, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 

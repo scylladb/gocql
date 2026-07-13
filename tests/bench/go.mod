@@ -15,5 +15,3 @@ require (
 )
 
 replace github.com/gocql/gocql => ../..
-
-replace github.com/scylladb/gocql/lz4 => ../../lz4

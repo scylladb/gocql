@@ -19,8 +19,6 @@ package gocql
 import (
 	"sync"
 	"sync/atomic"
-
-	frm "github.com/gocql/gocql/internal/frame"
 )
 
 // framerPool owns one sync.Pool plus the adaptive buffer-sizing state for one
@@ -80,12 +78,7 @@ func (cf *connFramers) initCache(c *Conn) {
 	cfg := framerConfig{
 		compressor: c.compressor,
 		proto:      c.version & protoVersionMask,
-	}
-	if c.compressor != nil {
-		cfg.flags |= frm.FlagCompress
-	}
-	if c.version == protoVersion5 {
-		cfg.flags |= frm.FlagBetaProtocol
+		flags:      defaultFramerFlags(c.compressor, c.version),
 	}
 	if lwtExt := findCQLProtoExtByName(c.cqlProtoExts, lwtAddMetadataMarkKey); lwtExt != nil {
 		if castedExt, ok := lwtExt.(*lwtAddMetadataMarkExt); ok {

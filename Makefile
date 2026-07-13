@@ -1,6 +1,7 @@
 SHELL := bash
 .ONESHELL:
 .SHELLFLAGS := -eo pipefail -c
+# cache-bust: lz4 v4.1.27
 
 MAKEFILE_PATH := $(abspath $(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
 KEY_PATH = ${MAKEFILE_PATH}/testdata/pki
