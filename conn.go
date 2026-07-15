@@ -2014,22 +2014,31 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 			// Metadata_changed flag, the reported new resultset metadata must be used
 			// in subsequent executions.
 			cacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), usedKeyspace, qry.stmt)
-			oldInflight, ok := c.session.stmtsLRU.get(cacheKey)
-			if ok {
+			// Use the already-completed local `info` rather than dereferencing the
+			// cached inflight entry's preparedStatment field. `info` comes from the
+			// prepareStatement call above and is guaranteed complete.
+			//
+			// updateMetadataIfSame performs the presence/identity check and the
+			// replacement atomically under the cache lock, so a concurrent eviction
+			// or a newer/in-flight prepare installed for the same key between check
+			// and replace cannot be resurrected or clobbered. It only replaces the
+			// entry when it is still the same completed prepared statement (id match).
+			if info != nil {
 				newInflight := &inflightPrepare{
 					done: make(chan struct{}),
 					preparedStatment: &preparedStatment{
-						id:               oldInflight.preparedStatment.id,
+						id:               info.id,
 						resultMetadataID: x.meta.newMetadataID,
-						request:          oldInflight.preparedStatment.request,
+						request:          info.request,
 						response:         x.meta,
 					},
 				}
 				// Close done to avoid deadlocks on subsequent requests waiting on this.
 				close(newInflight.done)
-				c.session.stmtsLRU.add(cacheKey, newInflight)
-				// Update info so the code below sees the updated prepared statement.
-				info = newInflight.preparedStatment
+				if c.session.stmtsLRU.updateMetadataIfSame(cacheKey, info.id, newInflight) {
+					// Update info so the code below sees the updated prepared statement.
+					info = newInflight.preparedStatment
+				}
 			}
 		}
 
