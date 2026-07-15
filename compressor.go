@@ -63,11 +63,15 @@ func (s SnappyCompressor) Name() string {
 }
 
 func (s SnappyCompressor) AppendCompressedWithLength(dst, src []byte) ([]byte, error) {
-	return s2.EncodeSnappy(dst, src), nil
+	return append(dst, s2.EncodeSnappy(nil, src)...), nil
 }
 
 func (s SnappyCompressor) AppendDecompressedWithLength(dst, src []byte) ([]byte, error) {
-	return s2.Decode(dst, src)
+	decoded, err := s2.Decode(nil, src)
+	if err != nil {
+		return nil, err
+	}
+	return append(dst, decoded...), nil
 }
 
 func (s SnappyCompressor) AppendCompressed(dst, src []byte) ([]byte, error) {

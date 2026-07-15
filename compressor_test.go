@@ -118,6 +118,34 @@ func TestSnappyCompressor(t *testing.T) {
 		}
 	})
 
+	t.Run("append-contract", func(t *testing.T) {
+		// Verify that both methods honor the append contract: existing content in dst
+		// must be preserved as a prefix, with the compressed/decompressed payload
+		// appended after it.
+		c := gocql.SnappyCompressor{}
+		prefix := []byte("PREFIX")
+		src := []byte("payload data to compress")
+
+		compressed, err := c.AppendCompressedWithLength(append([]byte{}, prefix...), src)
+		if err != nil {
+			t.Fatalf("AppendCompressedWithLength: %v", err)
+		}
+		if !bytes.Equal(compressed[:len(prefix)], prefix) {
+			t.Fatalf("AppendCompressedWithLength did not preserve dst prefix: got %q", compressed[:len(prefix)])
+		}
+
+		decompressed, err := c.AppendDecompressedWithLength(append([]byte{}, prefix...), compressed[len(prefix):])
+		if err != nil {
+			t.Fatalf("AppendDecompressedWithLength: %v", err)
+		}
+		if !bytes.Equal(decompressed[:len(prefix)], prefix) {
+			t.Fatalf("AppendDecompressedWithLength did not preserve dst prefix: got %q", decompressed[:len(prefix)])
+		}
+		if !bytes.Equal(decompressed[len(prefix):], src) {
+			t.Fatalf("AppendDecompressedWithLength payload mismatch: got %q want %q", decompressed[len(prefix):], src)
+		}
+	})
+
 	t.Run("frame-examples", func(t *testing.T) {
 		c := gocql.SnappyCompressor{}
 
