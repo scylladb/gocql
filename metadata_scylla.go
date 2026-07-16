@@ -697,9 +697,23 @@ func (s *metadataDescriber) deduplicatedRefreshKeyspace(keyspaceName string) err
 
 // deduplicatedRefreshTable collapses concurrent refreshTableSchema calls
 // for the same keyspace/table into a single in-flight operation.
+//
+// singleflight only deduplicates calls that overlap in time: once a flight
+// completes it deletes its key, so a caller that reaches Do just after the
+// previous flight finished would start a second, redundant refresh. To close
+// that window the flight re-checks the published metadata first and skips the
+// network queries when a prior flight has already refreshed the table. This is
+// safe because the only caller (GetTable) invokes this exclusively when the
+// table is absent or invalidated; there is no force-refresh-when-present path.
 func (s *metadataDescriber) deduplicatedRefreshTable(keyspaceName, tableName string) error {
 	key := keyspaceName + "\x00" + tableName
 	_, err, _ := s.tableGroup.Do(key, func() (any, error) {
+		if ksMeta, found := s.metadata.keyspaceMetadata.getKeyspace(keyspaceName); found {
+			if _, ok := ksMeta.Tables[tableName]; ok {
+				// A prior flight already refreshed this table.
+				return nil, nil
+			}
+		}
 		return nil, s.refreshTableSchema(keyspaceName, tableName)
 	})
 	return err
