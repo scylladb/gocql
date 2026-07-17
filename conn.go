@@ -1996,7 +1996,7 @@ const qrySystemPeersV2 = "SELECT peer, data_center, host_id, native_address, nat
 
 const qrySystemLocal = "SELECT broadcast_address, cluster_name, data_center, host_id, listen_address, partitioner, rack, release_version, rpc_address, schema_version, tokens FROM system.local WHERE key='local'"
 
-func getSchemaAgreement(queryLocalSchemasRows []string, querySystemPeersRows []schemaAgreementHost, logger StdLogger) (err error) {
+func getSchemaAgreement(localSchemaVersion string, querySystemPeersRows []schemaAgreementHost, logger StdLogger) error {
 	versions := make(map[string]struct{})
 
 	for _, row := range querySystemPeersRows {
@@ -2007,9 +2007,8 @@ func getSchemaAgreement(queryLocalSchemasRows []string, querySystemPeersRows []s
 		versions[row.SchemaVersion.String()] = struct{}{}
 	}
 
-	for _, schemaVersion := range queryLocalSchemasRows {
-		versions[schemaVersion] = struct{}{}
-		schemaVersion = ""
+	if localSchemaVersion != "" {
+		versions[localSchemaVersion] = struct{}{}
 	}
 
 	if len(versions) > 1 {
@@ -2038,64 +2037,91 @@ func (h *schemaAgreementHost) IsValid() bool {
 
 func (c *Conn) awaitSchemaAgreement(ctx context.Context) error {
 	endDeadline := time.Now().Add(c.session.cfg.MaxWaitSchemaAgreement)
-
-	var err error
-	ticker := time.NewTicker(200 * time.Millisecond) // Create a ticker that ticks every 200ms
+	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
 
-	waitForNextTick := func() error {
+	var lastErr error
+	for time.Now().Before(endDeadline) {
+		var (
+			peersIter, localIter *Iter
+			peersErr, localErr   error
+		)
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			if c.getIsSchemaV2() {
+				peersIter = c.querySystem(ctx, "SELECT host_id, data_center, rack, schema_version, preferred_ip FROM system.peers_v2")
+			} else {
+				peersIter = c.querySystem(ctx, "SELECT host_id, data_center, rack, schema_version, rpc_address FROM system.peers")
+			}
+			if peersIter == nil {
+				peersErr = errNoControl
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			localIter = c.querySystem(ctx, "SELECT schema_version FROM system.local WHERE key='local'")
+			if localIter == nil {
+				localErr = errNoControl
+			}
+		}()
+		wg.Wait()
+
+		if ctx.Err() != nil {
+			if peersIter != nil {
+				peersIter.Close()
+			}
+			if localIter != nil {
+				localIter.Close()
+			}
+			return ctx.Err()
+		}
+		if peersErr != nil {
+			if localIter != nil {
+				localIter.Close()
+			}
+			return peersErr
+		}
+		if localErr != nil {
+			if peersIter != nil {
+				peersIter.Close()
+			}
+			return localErr
+		}
+
+		var hosts []schemaAgreementHost
+		var tmp schemaAgreementHost
+		for peersIter.Scan(&tmp.HostID, &tmp.DataCenter, &tmp.Rack, &tmp.SchemaVersion, &tmp.RPCAddress) {
+			hosts = append(hosts, tmp)
+		}
+		if err := peersIter.Close(); err != nil {
+			localIter.Close()
+			return err
+		}
+
+		var localSchemaVersion string
+		for localIter.Scan(&localSchemaVersion) {
+		}
+		if err := localIter.Close(); err != nil {
+			return err
+		}
+
+		if err := getSchemaAgreement(localSchemaVersion, hosts, c.logger); err == ErrConnectionClosed || err == nil {
+			return err
+		} else {
+			lastErr = err
+		}
+
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			return nil
 		}
 	}
 
-	for time.Now().Before(endDeadline) {
-		var iter *Iter
-		if c.getIsSchemaV2() {
-			iter = c.querySystem(ctx, "SELECT host_id, data_center, rack, schema_version, preferred_ip FROM system.peers_v2")
-		} else {
-			iter = c.querySystem(ctx, "SELECT host_id, data_center, rack, schema_version, rpc_address FROM system.peers")
-		}
-		// Scan order: host_id, data_center, rack, schema_version, rpc_address/preferred_ip
-		var hosts []schemaAgreementHost
-		var tmp schemaAgreementHost
-		for iter.Scan(&tmp.HostID, &tmp.DataCenter, &tmp.Rack, &tmp.SchemaVersion, &tmp.RPCAddress) {
-			hosts = append(hosts, tmp)
-		}
-		err = iter.Close()
-		if err != nil {
-			return err
-		}
-
-		schemaVersions := []string{}
-
-		iter = c.querySystem(ctx, "SELECT schema_version FROM system.local WHERE key='local'")
-
-		var schemaVersion string
-		for iter.Scan(&schemaVersion) {
-			schemaVersions = append(schemaVersions, schemaVersion)
-			schemaVersion = ""
-		}
-
-		if err = iter.Close(); err != nil {
-			return err
-		}
-
-		err = getSchemaAgreement(schemaVersions, hosts, c.logger)
-
-		if err == ErrConnectionClosed || err == nil {
-			return err
-		}
-
-		if tickerErr := waitForNextTick(); tickerErr != nil {
-			return tickerErr
-		}
-	}
-
-	return err
+	return lastErr
 }
 
 var (
