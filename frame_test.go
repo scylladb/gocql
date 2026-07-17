@@ -405,6 +405,52 @@ func Test_newFramer_betaProtocolFlag(t *testing.T) {
 	}
 }
 
+// versionFramerFlags carries only the version-derived flags (FlagBetaProtocol on
+// v5) and never a compressor-derived flag, since it is applied before the
+// compressor is negotiated.
+func Test_versionFramerFlags(t *testing.T) {
+	if got := versionFramerFlags(protoVersion5); got != frm.FlagBetaProtocol {
+		t.Errorf("versionFramerFlags(v5) = 0x%02x, want 0x%02x", got, frm.FlagBetaProtocol)
+	}
+	if got := versionFramerFlags(protoVersion4); got != 0 {
+		t.Errorf("versionFramerFlags(v4) = 0x%02x, want 0x00", got)
+	}
+}
+
+func Test_compressionFramerFlag(t *testing.T) {
+	comp := testMockedCompressor{}
+	if got := compressionFramerFlag(comp, protoVersion4); got != frm.FlagCompress {
+		t.Errorf("compressionFramerFlag(comp, v4) = 0x%02x, want 0x%02x", got, frm.FlagCompress)
+	}
+	if got := compressionFramerFlag(nil, protoVersion4); got != 0 {
+		t.Errorf("compressionFramerFlag(nil, v4) = 0x%02x, want 0x00", got)
+	}
+	// v5 compresses at the segment layer, so no frame-header FlagCompress.
+	if got := compressionFramerFlag(comp, protoVersion5); got != 0 {
+		t.Errorf("compressionFramerFlag(comp, v5) = 0x%02x, want 0x00", got)
+	}
+}
+
+// initDefaults must seed FlagBetaProtocol on proto v5 before initCache runs, so
+// that getWriteFramer does not strip the beta flag from handshake frames.
+func Test_connFramers_initDefaults_betaBeforeCache(t *testing.T) {
+	c := &Conn{version: protoVersion5}
+	c.initDefaults()
+
+	if c.framers.defaults.flags&frm.FlagBetaProtocol == 0 {
+		t.Error("initDefaults(v5) should seed FlagBetaProtocol before the handshake")
+	}
+	if c.framers.defaults.flags&frm.FlagCompress != 0 {
+		t.Error("initDefaults must not seed FlagCompress before the compressor is negotiated")
+	}
+
+	c4 := &Conn{version: protoVersion4}
+	c4.initDefaults()
+	if c4.framers.defaults.flags&frm.FlagBetaProtocol != 0 {
+		t.Error("initDefaults(v4) should not seed FlagBetaProtocol")
+	}
+}
+
 type testMockedCompressor struct {
 	// this is an error its methods should return
 	expectedError error

@@ -434,6 +434,11 @@ func (c *Conn) init(ctx context.Context, dialedHost *DialedHost) error {
 		conn:        c,
 	}
 
+	// Seed version-derived framer defaults (e.g. FlagBetaProtocol on proto v5)
+	// before the handshake writes any frame. initFramerCache refines these with
+	// the negotiated compressor and protocol extensions once startup completes.
+	c.initDefaults()
+
 	if err := startup.setupConn(ctx); err != nil {
 		return err
 	}

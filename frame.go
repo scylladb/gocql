@@ -344,23 +344,39 @@ type framer struct {
 	released              atomic.Bool
 }
 
-// defaultFramerFlags computes the default header flags a framer carries for the
-// given compressor and negotiated protocol version. It is the single source of
-// truth shared by newFramer and initCache so the startup/fallback path and the
-// pooled framers cannot drift:
-//   - FlagCompress only below proto v5 (v5+ compresses at the segment layer, not
-//     via a frame header flag);
+// versionFramerFlags returns the header flags a framer carries purely because of
+// the negotiated protocol version, independent of the compressor. It is known as
+// soon as the connection is constructed and therefore may be seeded before the
+// handshake:
 //   - FlagBetaProtocol on proto v5 (beta opt-in must be present on the whole
 //     handshake, including OPTIONS/STARTUP/AUTH_RESPONSE).
-func defaultFramerFlags(compressor Compressor, version byte) byte {
+func versionFramerFlags(version byte) byte {
 	var flags byte
-	if compressor != nil && version < protoVersion5 {
-		flags |= frm.FlagCompress
-	}
 	if version == protoVersion5 {
 		flags |= frm.FlagBetaProtocol
 	}
 	return flags
+}
+
+// compressionFramerFlag returns the compression-related header flag for the given
+// compressor and protocol version. Unlike versionFramerFlags this depends on the
+// negotiated compressor, so it must only be applied after startup (the server may
+// reject the requested compression and clear c.compressor):
+//   - FlagCompress only below proto v5 (v5+ compresses at the segment layer, not
+//     via a frame header flag).
+func compressionFramerFlag(compressor Compressor, version byte) byte {
+	if compressor != nil && version < protoVersion5 {
+		return frm.FlagCompress
+	}
+	return 0
+}
+
+// defaultFramerFlags computes the default header flags a framer carries for the
+// given compressor and negotiated protocol version. It is the single source of
+// truth shared by newFramer and initCache so the startup/fallback path and the
+// pooled framers cannot drift.
+func defaultFramerFlags(compressor Compressor, version byte) byte {
+	return versionFramerFlags(version) | compressionFramerFlag(compressor, version)
 }
 
 func newFramer(compressor Compressor, version byte) *framer {
