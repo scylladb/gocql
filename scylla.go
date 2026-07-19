@@ -62,6 +62,10 @@ func (f ScyllaHostFeatures) IsPresent() bool {
 	return f.isScylla
 }
 
+func (f ScyllaHostFeatures) IsScylla() bool {
+	return f.isScylla
+}
+
 func (f ScyllaHostFeatures) Partitioner() string {
 	return f.partitioner
 }

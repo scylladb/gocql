@@ -1518,7 +1518,7 @@ func TestWriteCoalescing_WriteAfterClose(t *testing.T) {
 		server.Close()
 		close(done)
 	}()
-	w := newWriteCoalescer(client, 0, 5*time.Millisecond, ctx.Done())
+	w := newWriteCoalescer(client, 0, 5*time.Millisecond, 0, nil, ctx.Done())
 
 	// ensure 1 write works
 	if _, err := w.writeContext(context.Background(), []byte("one")); err != nil {
@@ -1539,6 +1539,526 @@ func TestWriteCoalescing_WriteAfterClose(t *testing.T) {
 		t.Fatal("expected to get error for write after closing")
 	} else if err != io.EOF {
 		t.Fatalf("expected to get EOF got %v", err)
+	}
+}
+
+func TestWriteCoalescing_LargeFrameFlushesImmediately(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	server, client, err := tcpConnPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	var bufMutex sync.Mutex
+	done := make(chan struct{}, 1)
+	go func() {
+		defer close(done)
+		b := make([]byte, 4096)
+		for {
+			n, err := server.Read(b)
+			if err != nil {
+				break
+			}
+			bufMutex.Lock()
+			buf.Write(b[:n])
+			bufMutex.Unlock()
+		}
+	}()
+
+	flushed := make(chan struct{}, 1)
+	resetTimer := make(chan struct{}, 1)
+	threshold := 100
+
+	w := &writeCoalescer{
+		writeCh:        make(chan writeRequest),
+		c:              client,
+		quit:           ctx.Done(),
+		flushThreshold: threshold,
+		testFlushedHook: func() {
+			flushed <- struct{}{}
+		},
+	}
+	w.setWriteTimeout(500 * time.Millisecond)
+
+	timerC := make(chan time.Time, 1)
+	go w.writeFlusherImpl(timerC, func() { resetTimer <- struct{}{} })
+
+	// Write a single frame larger than the threshold.
+	largeData := bytes.Repeat([]byte("x"), threshold+50)
+	go func() {
+		if _, err := w.writeContext(context.Background(), largeData); err != nil {
+			t.Error(err)
+		}
+	}()
+
+	// The flush should happen without us firing the timer.
+	select {
+	case <-flushed:
+		// expected
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected immediate flush for large frame, but timed out waiting")
+	}
+
+	// Timer should NOT have been started since we flushed immediately.
+	select {
+	case <-resetTimer:
+		t.Fatal("timer should not have been started for a large frame")
+	default:
+	}
+
+	client.Close()
+	<-done
+
+	bufMutex.Lock()
+	got := buf.String()
+	bufMutex.Unlock()
+
+	if got != string(largeData) {
+		t.Fatalf("expected %d bytes, got %d", len(largeData), len(got))
+	}
+}
+
+func TestWriteCoalescing_SmallFramesBelowThresholdWaitForTimer(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	server, client, err := tcpConnPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	var bufMutex sync.Mutex
+	done := make(chan struct{}, 1)
+	go func() {
+		defer close(done)
+		b := make([]byte, 4096)
+		for {
+			n, err := server.Read(b)
+			if err != nil {
+				break
+			}
+			bufMutex.Lock()
+			buf.Write(b[:n])
+			bufMutex.Unlock()
+		}
+	}()
+
+	flushed := make(chan struct{}, 1)
+	enqueued := make(chan struct{}, 2)
+	resetTimer := make(chan struct{}, 1)
+	threshold := 1400
+
+	w := &writeCoalescer{
+		writeCh:        make(chan writeRequest),
+		c:              client,
+		quit:           ctx.Done(),
+		flushThreshold: threshold,
+		testEnqueuedHook: func() {
+			enqueued <- struct{}{}
+		},
+		testFlushedHook: func() {
+			flushed <- struct{}{}
+		},
+	}
+	w.setWriteTimeout(500 * time.Millisecond)
+
+	timerC := make(chan time.Time, 1)
+	go w.writeFlusherImpl(timerC, func() { resetTimer <- struct{}{} })
+
+	// Write a small frame (well under threshold).
+	go func() {
+		if _, err := w.writeContext(context.Background(), []byte("small")); err != nil {
+			t.Error(err)
+		}
+	}()
+
+	<-enqueued
+	<-resetTimer
+
+	// No flush should happen yet — data is below threshold.
+	select {
+	case <-flushed:
+		t.Fatal("should not have flushed before timer fires for small frame")
+	case <-time.After(50 * time.Millisecond):
+		// expected: no flush yet
+	}
+
+	// Now fire the timer.
+	timerC <- time.Now()
+
+	select {
+	case <-flushed:
+		// expected
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected flush after timer, timed out")
+	}
+
+	client.Close()
+	<-done
+
+	bufMutex.Lock()
+	got := buf.String()
+	bufMutex.Unlock()
+
+	if got != "small" {
+		t.Fatalf("expected %q got %q", "small", got)
+	}
+}
+
+func TestWriteCoalescing_MultipleSmallFramesExceedThreshold(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	server, client, err := tcpConnPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	var bufMutex sync.Mutex
+	done := make(chan struct{}, 1)
+	go func() {
+		defer close(done)
+		b := make([]byte, 4096)
+		for {
+			n, err := server.Read(b)
+			if err != nil {
+				break
+			}
+			bufMutex.Lock()
+			buf.Write(b[:n])
+			bufMutex.Unlock()
+		}
+	}()
+
+	flushed := make(chan struct{}, 1)
+	enqueued := make(chan struct{}, 4)
+	resetTimer := make(chan struct{}, 1)
+	threshold := 100
+
+	w := &writeCoalescer{
+		writeCh:        make(chan writeRequest),
+		c:              client,
+		quit:           ctx.Done(),
+		flushThreshold: threshold,
+		testEnqueuedHook: func() {
+			enqueued <- struct{}{}
+		},
+		testFlushedHook: func() {
+			flushed <- struct{}{}
+		},
+	}
+	w.setWriteTimeout(500 * time.Millisecond)
+
+	timerC := make(chan time.Time, 1)
+	go w.writeFlusherImpl(timerC, func() { resetTimer <- struct{}{} })
+
+	// Write two frames that together exceed threshold.
+	frame1 := bytes.Repeat([]byte("a"), 60)
+	frame2 := bytes.Repeat([]byte("b"), 60)
+
+	go func() {
+		if _, err := w.writeContext(context.Background(), frame1); err != nil {
+			t.Error(err)
+		}
+	}()
+
+	<-enqueued
+	<-resetTimer // timer started for first (small) frame
+
+	go func() {
+		if _, err := w.writeContext(context.Background(), frame2); err != nil {
+			t.Error(err)
+		}
+	}()
+
+	// Second frame pushes total over threshold — should flush immediately.
+	select {
+	case <-flushed:
+		// expected
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected immediate flush when accumulated frames exceed threshold")
+	}
+
+	client.Close()
+	<-done
+
+	bufMutex.Lock()
+	got := buf.Bytes()
+	bufMutex.Unlock()
+
+	if len(got) != 120 {
+		t.Fatalf("expected 120 bytes, got %d", len(got))
+	}
+}
+
+func TestWriteCoalescing_BypassOpFlushesImmediately(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	server, client, err := tcpConnPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	var bufMutex sync.Mutex
+	done := make(chan struct{}, 1)
+	go func() {
+		defer close(done)
+		b := make([]byte, 4096)
+		for {
+			n, err := server.Read(b)
+			if err != nil {
+				break
+			}
+			bufMutex.Lock()
+			buf.Write(b[:n])
+			bufMutex.Unlock()
+		}
+	}()
+
+	flushed := make(chan struct{}, 1)
+	resetTimer := make(chan struct{}, 1)
+
+	// Build a fake CQL frame with OpExecute at byte 4.
+	frame := make([]byte, 20)
+	frame[cqlFrameOpcodeOffset] = byte(frm.OpExecute)
+
+	bypassOps := map[frm.Op]struct{}{frm.OpExecute: {}}
+
+	w := &writeCoalescer{
+		writeCh:        make(chan writeRequest),
+		c:              client,
+		quit:           ctx.Done(),
+		flushThreshold: 9999, // large threshold — won't trigger by size
+		bypassOps:      bypassOps,
+		testFlushedHook: func() {
+			flushed <- struct{}{}
+		},
+	}
+	w.setWriteTimeout(500 * time.Millisecond)
+
+	timerC := make(chan time.Time, 1)
+	go w.writeFlusherImpl(timerC, func() { resetTimer <- struct{}{} })
+
+	go func() {
+		if _, err := w.writeContext(context.Background(), frame); err != nil {
+			t.Error(err)
+		}
+	}()
+
+	select {
+	case <-flushed:
+		// expected: bypass op triggered immediate flush
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected immediate flush for bypass opcode")
+	}
+
+	client.Close()
+	<-done
+}
+
+func TestWriteCoalescing_NonBypassOpWaitsForTimer(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	server, client, err := tcpConnPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	done := make(chan struct{}, 1)
+	go func() {
+		defer close(done)
+		io.Copy(&buf, server)
+	}()
+
+	flushed := make(chan struct{}, 1)
+	enqueued := make(chan struct{}, 1)
+	resetTimer := make(chan struct{}, 1)
+
+	// Frame with OpQuery — not in bypass set.
+	frame := make([]byte, 20)
+	frame[cqlFrameOpcodeOffset] = byte(frm.OpQuery)
+
+	bypassOps := map[frm.Op]struct{}{frm.OpExecute: {}}
+
+	w := &writeCoalescer{
+		writeCh:        make(chan writeRequest),
+		c:              client,
+		quit:           ctx.Done(),
+		flushThreshold: 9999,
+		bypassOps:      bypassOps,
+		testEnqueuedHook: func() {
+			enqueued <- struct{}{}
+		},
+		testFlushedHook: func() {
+			flushed <- struct{}{}
+		},
+	}
+	w.setWriteTimeout(500 * time.Millisecond)
+
+	timerC := make(chan time.Time, 1)
+	go w.writeFlusherImpl(timerC, func() { resetTimer <- struct{}{} })
+
+	go func() {
+		if _, err := w.writeContext(context.Background(), frame); err != nil {
+			t.Error(err)
+		}
+	}()
+
+	<-enqueued
+	<-resetTimer
+
+	// Should NOT flush yet.
+	select {
+	case <-flushed:
+		t.Fatal("non-bypass op should wait for timer")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	timerC <- time.Now()
+
+	select {
+	case <-flushed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected flush after timer")
+	}
+
+	client.Close()
+	<-done
+}
+
+func TestWriteCoalescing_DrainBeforeFlush(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	server, client, err := tcpConnPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	var bufMutex sync.Mutex
+	done := make(chan struct{}, 1)
+	go func() {
+		defer close(done)
+		b := make([]byte, 4096)
+		for {
+			n, err := server.Read(b)
+			if err != nil {
+				break
+			}
+			bufMutex.Lock()
+			buf.Write(b[:n])
+			bufMutex.Unlock()
+		}
+	}()
+
+	flushed := make(chan struct{}, 1)
+
+	// Use a buffered writeCh so we can pre-load requests.
+	writeCh := make(chan writeRequest, 10)
+	w := &writeCoalescer{
+		writeCh:        writeCh,
+		c:              client,
+		quit:           ctx.Done(),
+		flushThreshold: 50,
+		testFlushedHook: func() {
+			flushed <- struct{}{}
+		},
+	}
+	w.setWriteTimeout(500 * time.Millisecond)
+
+	timerC := make(chan time.Time, 1)
+	go w.writeFlusherImpl(timerC, func() {})
+
+	// Pre-load 3 requests into the buffered channel.
+	// First is large enough to trigger flush; the other two should be drained.
+	r1Chan := make(chan writeResult, 1)
+	r2Chan := make(chan writeResult, 1)
+	r3Chan := make(chan writeResult, 1)
+	writeCh <- writeRequest{resultChan: r1Chan, data: bytes.Repeat([]byte("a"), 60)}
+	writeCh <- writeRequest{resultChan: r2Chan, data: []byte("bb")}
+	writeCh <- writeRequest{resultChan: r3Chan, data: []byte("cc")}
+
+	select {
+	case <-flushed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected flush")
+	}
+
+	// All three should have been written in one flush.
+	r1 := <-r1Chan
+	r2 := <-r2Chan
+	r3 := <-r3Chan
+
+	if r1.err != nil || r2.err != nil || r3.err != nil {
+		t.Fatalf("unexpected errors: %v, %v, %v", r1.err, r2.err, r3.err)
+	}
+	if r1.n != 60 || r2.n != 2 || r3.n != 2 {
+		t.Fatalf("unexpected byte counts: %d, %d, %d", r1.n, r2.n, r3.n)
+	}
+
+	client.Close()
+	<-done
+
+	bufMutex.Lock()
+	got := buf.Len()
+	bufMutex.Unlock()
+
+	if got != 64 {
+		t.Fatalf("expected 64 bytes total, got %d", got)
+	}
+}
+
+func TestCoalescePolicyCrossDC(t *testing.T) {
+	policy := NewCoalescePolicyCrossDC("dc1")
+
+	tests := []struct {
+		dc   string
+		want bool
+	}{
+		{"dc1", false}, // same DC → no coalesce
+		{"dc2", true},  // different DC → coalesce
+		{"", true},     // unknown DC → coalesce (safe default)
+	}
+
+	for _, tt := range tests {
+		host := &HostInfo{dataCenter: tt.dc}
+		got := policy(host)
+		if got != tt.want {
+			t.Errorf("CrossDC policy for dc=%q: got %v, want %v", tt.dc, got, tt.want)
+		}
+	}
+}
+
+func TestCoalescePolicyCrossRack(t *testing.T) {
+	policy := NewCoalescePolicyCrossRack("dc1", "rack1")
+
+	tests := []struct {
+		dc   string
+		rack string
+		want bool
+	}{
+		{"dc1", "rack1", false}, // same DC+rack → no coalesce
+		{"dc1", "rack2", true},  // same DC, different rack → coalesce
+		{"dc2", "rack1", true},  // different DC → coalesce
+		{"dc2", "rack2", true},  // different DC+rack → coalesce
+	}
+
+	for _, tt := range tests {
+		host := &HostInfo{dataCenter: tt.dc, rack: tt.rack}
+		got := policy(host)
+		if got != tt.want {
+			t.Errorf("CrossRack policy for dc=%q rack=%q: got %v, want %v", tt.dc, tt.rack, got, tt.want)
+		}
 	}
 }
 
