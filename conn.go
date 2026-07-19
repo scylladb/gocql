@@ -128,7 +128,7 @@ type SslOptions struct {
 	// See SslOptions documentation to see how EnableHostVerification interacts with the provided tls.Config.
 	EnableHostVerification bool
 	// DisableStrictCertificateValidation disables strict chain validation.
-	// Strict validation requires TLS verification (EnableHostVerification=true).
+	// Strict validation requires TLS verification (InsecureSkipVerify=false).
 	// When false (default) with verification enabled, the driver validates the
 	// entire chain up to a self-signed root. When true, Go's default applies.
 	//
