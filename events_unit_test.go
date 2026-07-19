@@ -933,6 +933,7 @@ func TestHandleSchemaEvent(t *testing.T) {
 				expectedQueries: map[string]int{
 					"SELECT * FROM system_schema.types WHERE keyspace_name = ?": 1,
 				},
+				expectNoRequery: true,
 			},
 			{
 				name: "unknown table: returns error",

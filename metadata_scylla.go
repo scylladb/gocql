@@ -432,7 +432,7 @@ func (c *cowKeyspaceMetadataMap) replaceKeyspace(keyspaceName string, replacemen
 		newM = make(map[string]*KeyspaceMetadata)
 	}
 	newM[keyspaceName] = replacement
-	c.keyspaceMap.Store(newM)
+	c.keyspaceMap.Store(&newM)
 }
 
 func (c *cowKeyspaceMetadataMap) invalidateTable(keyspaceName, tableName string) {
@@ -942,14 +942,17 @@ func (s *metadataDescriber) refreshKeyspaceSchema(keyspaceName string) error {
 		if current.typesInvalidationGen > startTypesGeneration {
 			replacement.typesInvalidationGen = current.typesInvalidationGen
 			replacement.typesInvalidated = current.typesInvalidated
+			replacement.Types = current.Types
 		}
 		if current.functionsInvalidationGen > startFunctionsGeneration {
 			replacement.functionsInvalidationGen = current.functionsInvalidationGen
 			replacement.functionsInvalidated = current.functionsInvalidated
+			replacement.Functions = current.Functions
 		}
 		if current.aggregatesInvalidationGen > startAggregatesGeneration {
 			replacement.aggregatesInvalidationGen = current.aggregatesInvalidationGen
 			replacement.aggregatesInvalidated = current.aggregatesInvalidated
+			replacement.Aggregates = current.Aggregates
 		}
 	})
 
