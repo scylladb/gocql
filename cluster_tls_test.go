@@ -205,6 +205,70 @@ func TestStrictVerifyPeerCertificate(t *testing.T) {
 			t.Error("expected error for certificate chain with untrusted root")
 		}
 	})
+
+	t.Run("malformed leaf certificate", func(t *testing.T) {
+		verifyFunc := strictVerifyPeerCertificate(rootPool)
+
+		rawCerts := [][]byte{
+			{0x00, 0x01, 0x02}, // not a valid DER certificate
+		}
+
+		err := verifyFunc(rawCerts, nil)
+		if err == nil {
+			t.Error("expected error for malformed leaf certificate")
+		}
+	})
+
+	t.Run("malformed intermediate certificate", func(t *testing.T) {
+		verifyFunc := strictVerifyPeerCertificate(rootPool)
+
+		rawCerts := [][]byte{
+			leafCert.Raw,
+			{0x00, 0x01, 0x02}, // not a valid DER certificate
+		}
+
+		err := verifyFunc(rawCerts, nil)
+		if err == nil {
+			t.Error("expected error for malformed intermediate certificate")
+		}
+	})
+
+	t.Run("valid certificate chain with verifiedChains", func(t *testing.T) {
+		verifyFunc := strictVerifyPeerCertificate(rootPool)
+
+		verifiedChains := [][]*x509.Certificate{
+			{leafCert, intermediateCA, rootCA},
+		}
+		rawCerts := [][]byte{
+			leafCert.Raw,
+			intermediateCA.Raw,
+		}
+
+		err := verifyFunc(rawCerts, verifiedChains)
+		if err != nil {
+			t.Errorf("expected valid chain with verifiedChains to pass, got error: %v", err)
+		}
+	})
+
+	t.Run("intermediate CA in root pool with verifiedChains", func(t *testing.T) {
+		intermediatePool := x509.NewCertPool()
+		intermediatePool.AddCert(intermediateCA)
+
+		verifyFunc := strictVerifyPeerCertificate(intermediatePool)
+
+		verifiedChains := [][]*x509.Certificate{
+			{leafCert, intermediateCA},
+		}
+		rawCerts := [][]byte{
+			leafCert.Raw,
+			intermediateCA.Raw,
+		}
+
+		err := verifyFunc(rawCerts, verifiedChains)
+		if err == nil {
+			t.Error("expected error when intermediate CA is in root pool with verifiedChains")
+		}
+	})
 }
 
 func TestSetupTLSConfigStrictValidation(t *testing.T) {
@@ -289,4 +353,3 @@ func TestSetupTLSConfigStrictValidation(t *testing.T) {
 		}
 	})
 }
-
