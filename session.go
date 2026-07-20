@@ -1474,8 +1474,15 @@ func (q *Query) Keyspace() string {
 	if q.getKeyspace != nil {
 		return q.getKeyspace()
 	}
-	if q.routingInfo.keyspace != "" {
-		return q.routingInfo.keyspace
+	// routingInfo.keyspace is written under routingInfo.mu by GetRoutingKey,
+	// which can run concurrently with the (speculative) execution goroutines
+	// that call Keyspace() via queryExecutor.attemptQuery. Read it under the
+	// same lock, matching queryRoutingInfo.isLWT/getPartitioner.
+	q.routingInfo.mu.RLock()
+	routingKeyspace := q.routingInfo.keyspace
+	q.routingInfo.mu.RUnlock()
+	if routingKeyspace != "" {
+		return routingKeyspace
 	}
 	if q.keyspace != "" {
 		return q.keyspace
