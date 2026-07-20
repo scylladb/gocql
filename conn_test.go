@@ -2757,14 +2757,20 @@ func TestRecvSegmentDisarmsReadDeadlineOnIdleConn(t *testing.T) {
 
 	// --- assertions valid while recvSegment is blocked inside Read ---
 
-	// SetReadDeadline must have been called exactly once with the zero time.
+	// SetReadDeadline must have been called with the zero time to disarm the
+	// deadline. recvSegment disarms it once explicitly, and connReader.Read
+	// also clears the deadline whenever the timeout is disabled, so there may
+	// be more than one call — but every value seen before the segment read
+	// must be the zero time.
 	mock.mu.Lock()
 	deadlines := append([]time.Time(nil), mock.deadlines...)
 	mock.mu.Unlock()
 
-	require.Len(t, deadlines, 1, "expected exactly one SetReadDeadline call before the segment read")
-	require.True(t, deadlines[0].IsZero(),
-		"SetReadDeadline should be called with zero time to disarm the deadline; got %v", deadlines[0])
+	require.NotEmpty(t, deadlines, "expected at least one SetReadDeadline call before the segment read")
+	for i, d := range deadlines {
+		require.True(t, d.IsZero(),
+			"SetReadDeadline call %d should pass the zero time to disarm the deadline; got %v", i, d)
+	}
 
 	// connReader timeout must be zeroed so that connReader.Read does not
 	// re-arm the deadline while blocking for segment data.
@@ -2793,6 +2799,55 @@ func TestRecvSegmentDisarmsReadDeadlineOnIdleConn(t *testing.T) {
 	// Timeout must be restored to its original value regardless of the error path.
 	require.Equal(t, configuredTimeout, cr.GetTimeout(),
 		"connReader timeout should be restored to its configured value after recvSegment returns")
+}
+
+// nonBlockingDeadlineConn is a net.Conn that records SetReadDeadline calls and
+// returns immediately from Read, so a single connReader.Read can be exercised
+// synchronously.
+type nonBlockingDeadlineConn struct {
+	deadlines []time.Time
+}
+
+var _ net.Conn = (*nonBlockingDeadlineConn)(nil)
+
+func (c *nonBlockingDeadlineConn) SetReadDeadline(t time.Time) error {
+	c.deadlines = append(c.deadlines, t)
+	return nil
+}
+func (c *nonBlockingDeadlineConn) Read(p []byte) (int, error)         { return 0, io.EOF }
+func (c *nonBlockingDeadlineConn) Write(p []byte) (int, error)        { return 0, io.ErrClosedPipe }
+func (c *nonBlockingDeadlineConn) Close() error                       { return nil }
+func (c *nonBlockingDeadlineConn) LocalAddr() net.Addr                { return nil }
+func (c *nonBlockingDeadlineConn) RemoteAddr() net.Addr               { return nil }
+func (c *nonBlockingDeadlineConn) SetDeadline(t time.Time) error      { return nil }
+func (c *nonBlockingDeadlineConn) SetWriteDeadline(t time.Time) error { return nil }
+
+// TestConnReaderReadClearsDeadlineWhenTimeoutDisabled verifies that
+// connReader.Read arms a read deadline when a positive timeout is configured
+// and clears any previously-armed deadline when the timeout is disabled (0).
+// Without the clear, a deadline armed during connection setup (e.g.
+// ConnectTimeout) would persist and keep expiring on an idle connection.
+func TestConnReaderReadClearsDeadlineWhenTimeoutDisabled(t *testing.T) {
+	t.Parallel()
+
+	mock := &nonBlockingDeadlineConn{}
+	cr := &connReader{conn: mock, r: bufio.NewReader(mock)}
+
+	buf := make([]byte, 1)
+
+	// Positive timeout: Read arms a concrete (non-zero) deadline.
+	cr.SetTimeout(5 * time.Second)
+	_, _ = cr.Read(buf)
+	require.Len(t, mock.deadlines, 1)
+	require.False(t, mock.deadlines[0].IsZero(),
+		"a positive timeout should arm a non-zero read deadline")
+
+	// Disabled timeout: Read must clear the previously-armed deadline.
+	cr.SetTimeout(0)
+	_, _ = cr.Read(buf)
+	require.Len(t, mock.deadlines, 2)
+	require.True(t, mock.deadlines[1].IsZero(),
+		"disabling the timeout should clear the read deadline (zero time)")
 }
 
 // TestRecvSegmentReassemblesFrameWithSplitHeader verifies that recvSegment

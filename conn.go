@@ -1174,9 +1174,14 @@ type connReader struct {
 }
 
 func (c *connReader) Read(p []byte) (n int, err error) {
-	timeout := c.GetTimeout()
-	if timeout > 0 {
+	if timeout := c.GetTimeout(); timeout > 0 {
 		c.conn.SetReadDeadline(time.Now().Add(timeout))
+	} else if c.conn != nil {
+		// A read deadline is absolute and persists across reads: once the
+		// timeout is disabled we must clear any deadline armed by a previous
+		// read (or during connection setup, e.g. ConnectTimeout), otherwise
+		// idle connections keep tripping the stale deadline.
+		c.conn.SetReadDeadline(time.Time{})
 	}
 	n, err = io.ReadFull(c.r, p)
 	return
