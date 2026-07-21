@@ -1661,18 +1661,25 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 		f.writeByte(byte(flags))
 	}
 
-	if w.serialConsistency > 0 {
-		f.writeConsistency(Consistency(w.serialConsistency))
-	}
-
-	if w.defaultTimestamp {
-		var ts int64
-		if w.defaultTimestampValue != 0 {
-			ts = w.defaultTimestampValue
-		} else {
-			ts = time.Now().UnixNano() / 1000
+	// serialConsistency and defaultTimestamp are only signalled by flags on
+	// proto > v2, so their fields must only be written on proto > v2 as well;
+	// otherwise the bytes would not be described by any flag and would corrupt
+	// the frame. (In practice proto < v3 is unreachable: readHeader rejects
+	// response versions below protoVersion3.)
+	if f.proto > protoVersion2 {
+		if w.serialConsistency > 0 {
+			f.writeConsistency(Consistency(w.serialConsistency))
 		}
-		f.writeLong(ts)
+
+		if w.defaultTimestamp {
+			var ts int64
+			if w.defaultTimestampValue != 0 {
+				ts = w.defaultTimestampValue
+			} else {
+				ts = time.Now().UnixNano() / 1000
+			}
+			f.writeLong(ts)
+		}
 	}
 
 	if w.keyspace != "" {
