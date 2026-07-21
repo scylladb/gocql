@@ -21,12 +21,14 @@ jobs:
       - name: Check out the scylla-bench repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           repository: scylladb/scylla-bench
           path: scylla-bench
 
       - name: Checkout GoCQL PR Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.sha }}
           path: gocql
