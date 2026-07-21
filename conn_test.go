@@ -195,8 +195,9 @@ func TestDNSLookupConnected(t *testing.T) {
 	defer srv.Stop()
 
 	// Use bare IP (no port) so all entries are portless; the driver falls back
-	// to port 9042, which is where the test server is bound.
+	// to cfg.Port, which is where the test server is bound.
 	cluster := NewCluster("cassandra1.invalid", "127.0.0.1", "cassandra2.invalid")
+	cluster.Port = srv.port()
 	cluster.Logger = log
 	cluster.ProtoVersion = int(defaultProto)
 	cluster.disableControlConn = true
@@ -1720,7 +1721,7 @@ func (nts newTestServerOpts) newServer(t testing.TB, ctx context.Context) *TestS
 }
 
 func NewTestServer(t testing.TB, protocol uint8, ctx context.Context) *TestServer {
-	return NewTestServerWithAddress("127.0.0.1:9042", t, protocol, ctx)
+	return NewTestServerWithAddress("127.0.0.1:0", t, protocol, ctx)
 }
 
 func NewSSLTestServer(t testing.TB, protocol uint8, ctx context.Context) *TestServer {
@@ -1787,6 +1788,10 @@ type TestServer struct {
 }
 
 type testSupportedFactory func(conn net.Conn) map[string][]string
+
+func (srv *TestServer) port() int {
+	return srv.listen.Addr().(*net.TCPAddr).Port
+}
 
 func (srv *TestServer) session() (*Session, error) {
 	return testCluster(frm.ProtoVersion(srv.protocol), srv.Address).CreateSession()
