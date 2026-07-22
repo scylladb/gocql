@@ -2703,9 +2703,13 @@ func (c *deadlineRecordingConn) SetDeadline(t time.Time) error      { return nil
 func (c *deadlineRecordingConn) SetWriteDeadline(t time.Time) error { return nil }
 
 // TestRecvSegmentDisarmsReadDeadlineOnIdleConn verifies that recvSegment
-// calls SetReadDeadline(time.Time{}) on the underlying connection before
-// attempting to read the first segment bytes, and restores the configured
-// ReadTimeout on the connReader afterwards.
+// disarms the read deadline (SetReadDeadline(time.Time{})) on the underlying
+// connection while reading the first segment header, and re-arms it afterwards.
+//
+// The disarm is driven by the connReader.disarm flag rather than by zeroing the
+// operational timeout: the configured timeout value is left intact throughout,
+// so a concurrent finalizeConnection switching ConnectTimeout -> ReadTimeout is
+// never clobbered.
 //
 // This exercises the fix for the idle proto-v5 connection timeout regression:
 // without the disarm, connReader.Read re-arms the deadline on every call, so
@@ -2746,9 +2750,9 @@ func TestRecvSegmentDisarmsReadDeadlineOnIdleConn(t *testing.T) {
 	errCh := make(chan error, 1)
 	go func() { errCh <- c.recvSegment(ctx) }()
 
-	// Wait until connReader.Read has been entered — at this point
-	// SetReadDeadline(zero) has already been called and SetTimeout(0) has
-	// already been applied, but the restore has not yet happened.
+	// Wait until connReader.Read has been entered — at this point the disarm
+	// flag is set and SetReadDeadline(zero) has already been called, but the
+	// re-arm has not yet happened.
 	select {
 	case <-mock.readEntered:
 	case <-ctx.Done():
@@ -2758,10 +2762,8 @@ func TestRecvSegmentDisarmsReadDeadlineOnIdleConn(t *testing.T) {
 	// --- assertions valid while recvSegment is blocked inside Read ---
 
 	// SetReadDeadline must have been called with the zero time to disarm the
-	// deadline. recvSegment disarms it once explicitly, and connReader.Read
-	// also clears the deadline whenever the timeout is disabled, so there may
-	// be more than one call — but every value seen before the segment read
-	// must be the zero time.
+	// deadline. connReader.Read clears the deadline whenever the disarm flag is
+	// set, so every value seen before the segment read must be the zero time.
 	mock.mu.Lock()
 	deadlines := append([]time.Time(nil), mock.deadlines...)
 	mock.mu.Unlock()
@@ -2772,10 +2774,14 @@ func TestRecvSegmentDisarmsReadDeadlineOnIdleConn(t *testing.T) {
 			"SetReadDeadline call %d should pass the zero time to disarm the deadline; got %v", i, d)
 	}
 
-	// connReader timeout must be zeroed so that connReader.Read does not
-	// re-arm the deadline while blocking for segment data.
-	require.Equal(t, time.Duration(0), cr.GetTimeout(),
-		"connReader timeout should be zeroed while recvSegment blocks on the initial segment read")
+	// The disarm flag must be set so connReader.Read does not re-arm the
+	// deadline while blocking for segment data...
+	require.True(t, cr.disarm.Load(),
+		"connReader disarm flag should be set while recvSegment blocks on the initial segment read")
+	// ...while the operational timeout value is left intact (not zeroed), so a
+	// concurrent finalizeConnection cannot be clobbered by a restore.
+	require.Equal(t, configuredTimeout, cr.GetTimeout(),
+		"connReader timeout should be preserved (not zeroed) while recvSegment blocks on the initial segment read")
 
 	// Unblock Read — mock returns (0, io.EOF), which terminates recvSegment.
 	close(mock.proceed)
@@ -2796,9 +2802,13 @@ func TestRecvSegmentDisarmsReadDeadlineOnIdleConn(t *testing.T) {
 
 	// --- assertions valid after recvSegment has returned ---
 
-	// Timeout must be restored to its original value regardless of the error path.
+	// The disarm flag must be cleared so subsequent body reads are bounded by
+	// the operational timeout again.
+	require.False(t, cr.disarm.Load(),
+		"connReader disarm flag should be cleared after recvSegment returns")
+	// The configured timeout is unchanged throughout, regardless of the error path.
 	require.Equal(t, configuredTimeout, cr.GetTimeout(),
-		"connReader timeout should be restored to its configured value after recvSegment returns")
+		"connReader timeout should remain its configured value after recvSegment returns")
 }
 
 // nonBlockingDeadlineConn is a net.Conn that records SetReadDeadline calls and
@@ -2848,6 +2858,20 @@ func TestConnReaderReadClearsDeadlineWhenTimeoutDisabled(t *testing.T) {
 	require.Len(t, mock.deadlines, 2)
 	require.True(t, mock.deadlines[1].IsZero(),
 		"disabling the timeout should clear the read deadline (zero time)")
+}
+
+// TestConnReaderReadWithNilConnAndPositiveTimeoutDoesNotPanic verifies
+// connReader.Read does not dereference a nil conn when a positive timeout is
+// configured. Only test constructions produce a nil conn, but the
+// deadline-arming branch must be guarded consistently with the other branches.
+func TestConnReaderReadWithNilConnAndPositiveTimeoutDoesNotPanic(t *testing.T) {
+	t.Parallel()
+	cr := &connReader{r: bufio.NewReader(bytes.NewReader([]byte{0x01}))}
+	cr.SetTimeout(5 * time.Second)
+	require.NotPanics(t, func() {
+		buf := make([]byte, 1)
+		_, _ = cr.Read(buf)
+	})
 }
 
 // TestRecvSegmentReassemblesFrameWithSplitHeader verifies that recvSegment

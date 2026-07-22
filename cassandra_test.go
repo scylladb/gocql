@@ -3524,7 +3524,7 @@ func TestQuery_SetKeyspace(t *testing.T) {
 	keyspaceStmt := fmt.Sprintf(`
 		CREATE KEYSPACE IF NOT EXISTS %s
 		WITH replication = {
-			'class': 'SimpleStrategy', 
+			'class': 'SimpleStrategy',
 			'replication_factor': '1'
 		};
 	`, keyspace)

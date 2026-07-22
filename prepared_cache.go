@@ -72,16 +72,22 @@ func (p *preparedLRU) remove(key stmtCacheKey) bool {
 }
 
 // updateMetadataIfSame atomically replaces the cache entry for key with val, but
-// only when the currently cached entry is the same completed prepared statement
-// (its done channel is closed and its prepared id matches expectID). It returns
-// true if the replacement happened.
+// only when the currently cached entry is still the exact prepared statement
+// identified by expect (pointer identity of its preparedStatment, and its done
+// channel already closed). It returns true if the replacement happened.
+//
+// Pointer identity — not the prepared id — is the generation token: a concurrent
+// eviction+reprepare for the same statement installs a new *inflightPrepare with
+// a freshly allocated *preparedStatment, so even though the prepared id bytes are
+// typically identical across reprepares, the pointer differs and this stale
+// refresh is correctly skipped.
 //
 // This makes the METADATA_CHANGED metadata refresh a single locked operation:
 // the presence/identity check and the replacement cannot be interleaved with a
 // concurrent eviction (which would otherwise be resurrected) or with a newer or
 // still-in-flight prepare installed for the same key (which would otherwise be
 // clobbered).
-func (p *preparedLRU) updateMetadataIfSame(key stmtCacheKey, expectID []byte, val *inflightPrepare) bool {
+func (p *preparedLRU) updateMetadataIfSame(key stmtCacheKey, expect *preparedStatment, val *inflightPrepare) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -96,7 +102,7 @@ func (p *preparedLRU) updateMetadataIfSame(key stmtCacheKey, expectID []byte, va
 
 	select {
 	case <-ifp.done:
-		if ifp.preparedStatment != nil && bytes.Equal(ifp.preparedStatment.id, expectID) {
+		if ifp.preparedStatment != nil && ifp.preparedStatment == expect {
 			p.lru.Add(key, val)
 			return true
 		}

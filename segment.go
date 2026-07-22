@@ -137,15 +137,30 @@ func readCompressedSegmentHeader(r io.Reader) (segmentHeader, error) {
 	// The next 17 bits - payload size before compression
 	uncompressedLen := (uint32(headerBuf[2]) >> 1) | uint32(headerBuf[3])<<7 | uint32(headerBuf[4]&0b11)<<15
 
-	if compressedLen > uint32(maxFrameSize) {
-		return segmentHeader{}, fmt.Errorf("gocql: compressed segment length too large: %d", compressedLen)
-	}
+	// Both fields are extracted with a 17-bit mask, so each is inherently bounded
+	// by maxSegmentPayloadSize (0x1FFFF, ~128 KiB). The payload allocations in
+	// readCompressedSegmentPayload/readUncompressedSegmentPayload are therefore
+	// bounded without an explicit check, and the int() conversions below are safe
+	// on 32-bit platforms. TestReadCompressedSegmentHeader_LengthsBoundedTo17Bits
+	// locks this invariant.
 
 	return segmentHeader{
 		payloadLen:      int(compressedLen),
 		uncompressedLen: int(uncompressedLen),
 		isSelfContained: (headerBuf[4] & 0b100) != 0,
 	}, nil
+}
+
+// asSegmentCompressor asserts that compressor supports native protocol v5
+// segment (de)compression. The ClusterConfig validation already rejects a
+// non-segment compressor on v5, so this is a defensive check whose error should
+// never surface in practice.
+func asSegmentCompressor(compressor Compressor) (SegmentCompressor, error) {
+	segComp, ok := compressor.(SegmentCompressor)
+	if !ok {
+		return nil, fmt.Errorf("gocql: compressor %q does not support protocol v5 segment compression", compressor.Name())
+	}
+	return segComp, nil
 }
 
 func readCompressedSegmentPayload(r io.Reader, h segmentHeader, compressor Compressor) ([]byte, error) {
@@ -171,7 +186,11 @@ func readCompressedSegmentPayload(r io.Reader, h segmentHeader, compressor Compr
 		return compressedPayload, nil
 	}
 
-	uncompressedPayload, err := compressor.AppendDecompressed(nil, compressedPayload, uint32(h.uncompressedLen))
+	segComp, err := asSegmentCompressor(compressor)
+	if err != nil {
+		return nil, err
+	}
+	uncompressedPayload, err := segComp.AppendDecompressed(nil, compressedPayload, uint32(h.uncompressedLen))
 	if err != nil {
 		return nil, err
 	}
@@ -264,15 +283,24 @@ func newCompressedSegment(uncompressedPayload []byte, isSelfContained bool, comp
 		return nil, fmt.Errorf("gocql: payload length (%d) exceeds maximum size of %d", uncompressedLen, maxSegmentPayloadSize)
 	}
 
-	compressedPayload, err := compressor.AppendCompressed(nil, uncompressedPayload)
+	segComp, err := asSegmentCompressor(compressor)
+	if err != nil {
+		return nil, err
+	}
+	compressedPayload, err := segComp.AppendCompressed(nil, uncompressedPayload)
 	if err != nil {
 		return nil, err
 	}
 
 	compressedLen := len(compressedPayload)
 
-	// Compression is not worth it
-	if uncompressedLen < compressedLen {
+	// Compression is not worth it, or the compressor reported the input as
+	// incompressible (some implementations, e.g. pierrec/lz4's CompressBlock,
+	// return an empty result in that case). Emitting a segment with
+	// compressedLen==0 and a nonzero uncompressedLen is undecodable by the peer,
+	// so send the payload uncompressed when compression made it larger than the
+	// source or reported it incompressible.
+	if compressedLen == 0 || uncompressedLen < compressedLen {
 		// native_protocol_v5.spec
 		// 2.2
 		//  An uncompressed length of 0 signals that the compressed payload

@@ -31,7 +31,8 @@ import (
 	"github.com/pierrec/lz4/v4"
 )
 
-// LZ4Compressor implements the gocql.Compressor interface and can be used to
+// LZ4Compressor implements the gocql.Compressor interface (and, for native
+// protocol v5 segment compression, gocql.SegmentCompressor). It can be used to
 // compress incoming and outgoing frames. According to the Cassandra docs the
 // LZ4 protocol should be preferred over snappy. (For details refer to
 // https://cassandra.apache.org/doc/latest/operating/compression.html)
@@ -40,7 +41,10 @@ import (
 // of the uncompressed block length, written in big endian order. But the LZ4
 // compression library github.com/pierrec/lz4/v4 does not expect the length
 // field, so it needs to be added to compressed blocks sent to Cassandra, and
-// removed from ones received from Cassandra before decompression.
+// removed from ones received from Cassandra before decompression. This applies
+// to the Encode/Decode (v4 framing) path; the v5 segment path
+// (AppendCompressed/AppendDecompressed) carries the length out-of-band and
+// omits the prefix.
 type LZ4Compressor struct{}
 
 func (s LZ4Compressor) Name() string {
@@ -49,36 +53,46 @@ func (s LZ4Compressor) Name() string {
 
 const dataLengthSize = 4
 
-func (s LZ4Compressor) AppendCompressedWithLength(dst, src []byte) ([]byte, error) {
-	maxLength := lz4.CompressBlockBound(len(src))
-	oldDstLen := len(dst)
-	dst = grow(dst, maxLength+dataLengthSize)
+// maxDecompressedSize bounds the buffer allocated from a peer-supplied
+// uncompressed-length prefix in Decode. It matches Cassandra's default
+// native_transport_max_frame_size (256 MiB): the driver rejects frames larger
+// than this anyway, so a length claim above it is corrupt or hostile. Bounding
+// here prevents a multi-GB allocation (or, on 32-bit, a makeslice panic) driven
+// by a crafted or garbled compressed frame.
+const maxDecompressedSize = 256 * 1024 * 1024
+
+func (s LZ4Compressor) Encode(data []byte) ([]byte, error) {
+	maxLength := lz4.CompressBlockBound(len(data))
+	buf := make([]byte, maxLength+dataLengthSize)
 
 	var compressor lz4.Compressor
-	n, err := compressor.CompressBlock(src, dst[oldDstLen+dataLengthSize:])
+	n, err := compressor.CompressBlock(data, buf[dataLengthSize:])
 	// According to lz4.CompressBlock doc, it doesn't fail as long as the dst
 	// buffer length is at least lz4.CompressBlockBound(len(data))) bytes, but
-	// we check for error anyway just to be thorough.
+	// we check for error anyway just to be thorough. Given that bound, it always
+	// emits a valid block (never n==0) — incompressible input yields a block
+	// slightly larger than the input rather than an empty one.
 	if err != nil {
 		return nil, err
 	}
-	binary.BigEndian.PutUint32(dst[oldDstLen:oldDstLen+dataLengthSize], uint32(len(src)))
-	return dst[:oldDstLen+n+dataLengthSize], nil
+	binary.BigEndian.PutUint32(buf[:dataLengthSize], uint32(len(data)))
+	return buf[:n+dataLengthSize], nil
 }
 
-func (s LZ4Compressor) AppendDecompressedWithLength(dst, src []byte) ([]byte, error) {
-	if len(src) < dataLengthSize {
-		return nil, fmt.Errorf("cassandra lz4 block size should be >4, got=%d", len(src))
+func (s LZ4Compressor) Decode(data []byte) ([]byte, error) {
+	if len(data) < dataLengthSize {
+		return nil, fmt.Errorf("cassandra lz4 block size should be >4, got=%d", len(data))
 	}
-	uncompressedLength := binary.BigEndian.Uint32(src[:dataLengthSize])
+	uncompressedLength := binary.BigEndian.Uint32(data[:dataLengthSize])
 	if uncompressedLength == 0 {
-		return dst, nil
+		return nil, nil
 	}
-	oldDstLen := len(dst)
-	dst = grow(dst, int(uncompressedLength))
-	n, err := lz4.UncompressBlock(src[dataLengthSize:], dst[oldDstLen:])
-	return dst[:oldDstLen+n], err
-
+	if uncompressedLength > maxDecompressedSize {
+		return nil, fmt.Errorf("cassandra lz4 uncompressed length %d exceeds maximum of %d", uncompressedLength, maxDecompressedSize)
+	}
+	buf := make([]byte, uncompressedLength)
+	n, err := lz4.UncompressBlock(data[dataLengthSize:], buf)
+	return buf[:n], err
 }
 
 func (s LZ4Compressor) AppendCompressed(dst, src []byte) ([]byte, error) {

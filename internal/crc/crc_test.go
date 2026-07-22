@@ -30,7 +30,7 @@ func TestChecksumIEEE(t *testing.T) {
 		buf      []byte
 		expected uint32
 	}{
-		// expected values are manually generated using crc24 impl in Cassandra
+		// expected values are manually generated using crc32 impl in Cassandra
 		{
 			name:     "empty buf",
 			buf:      []byte{},
@@ -60,7 +60,7 @@ func TestKoopmanChecksum(t *testing.T) {
 		buf      []byte
 		expected uint32
 	}{
-		// expected values are manually generated using crc32 impl in Cassandra
+		// expected values are manually generated using crc24 impl in Cassandra
 		{
 			name:     "buf filled with 0 (len 3)",
 			buf:      []byte{0, 0, 0},

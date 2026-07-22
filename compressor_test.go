@@ -97,13 +97,13 @@ func TestSnappyCompressor(t *testing.T) {
 		str := "My Test String"
 		//Test Encoding with S2 library, Snappy compatible encoding.
 		expected := s2.EncodeSnappy(nil, []byte(str))
-		if res, err := c.AppendCompressedWithLength(nil, []byte(str)); err != nil {
+		if res, err := c.Encode([]byte(str)); err != nil {
 			t.Fatalf("failed to encode '%v' with error %v", str, err)
 		} else if bytes.Compare(expected, res) != 0 {
 			t.Fatal("failed to match the expected encoded value with the result encoded value.")
 		}
 
-		val, err := c.AppendCompressedWithLength(nil, []byte(str))
+		val, err := c.Encode([]byte(str))
 		if err != nil {
 			t.Fatalf("failed to encode '%v' with error '%v'", str, err)
 		}
@@ -111,38 +111,10 @@ func TestSnappyCompressor(t *testing.T) {
 		//Test Decoding with S2 library, Snappy compatible encoding.
 		if expected, err := s2.Decode(nil, val); err != nil {
 			t.Fatalf("failed to decode '%v' with error %v", val, err)
-		} else if res, err := c.AppendDecompressedWithLength(nil, val); err != nil {
+		} else if res, err := c.Decode(val); err != nil {
 			t.Fatalf("failed to decode '%v' with error %v", val, err)
 		} else if bytes.Compare(expected, res) != 0 {
 			t.Fatal("failed to match the expected decoded value with the result decoded value.")
-		}
-	})
-
-	t.Run("append-contract", func(t *testing.T) {
-		// Verify that both methods honor the append contract: existing content in dst
-		// must be preserved as a prefix, with the compressed/decompressed payload
-		// appended after it.
-		c := gocql.SnappyCompressor{}
-		prefix := []byte("PREFIX")
-		src := []byte("payload data to compress")
-
-		compressed, err := c.AppendCompressedWithLength(append([]byte{}, prefix...), src)
-		if err != nil {
-			t.Fatalf("AppendCompressedWithLength: %v", err)
-		}
-		if !bytes.Equal(compressed[:len(prefix)], prefix) {
-			t.Fatalf("AppendCompressedWithLength did not preserve dst prefix: got %q", compressed[:len(prefix)])
-		}
-
-		decompressed, err := c.AppendDecompressedWithLength(append([]byte{}, prefix...), compressed[len(prefix):])
-		if err != nil {
-			t.Fatalf("AppendDecompressedWithLength: %v", err)
-		}
-		if !bytes.Equal(decompressed[:len(prefix)], prefix) {
-			t.Fatalf("AppendDecompressedWithLength did not preserve dst prefix: got %q", decompressed[:len(prefix)])
-		}
-		if !bytes.Equal(decompressed[len(prefix):], src) {
-			t.Fatalf("AppendDecompressedWithLength payload mismatch: got %q want %q", decompressed[len(prefix):], src)
 		}
 	})
 
@@ -155,11 +127,11 @@ func TestSnappyCompressor(t *testing.T) {
 				t.Run(frame.Name, func(t *testing.T) {
 					t.Parallel()
 
-					encoded, err := c.AppendCompressedWithLength(nil, frame.Frame)
+					encoded, err := c.Encode(frame.Frame)
 					if err != nil {
 						t.Fatalf("failed to encode frame %s", frame.Name)
 					}
-					decoded, err := c.AppendDecompressedWithLength(nil, encoded)
+					decoded, err := c.Decode(encoded)
 					if err != nil {
 						t.Fatalf("failed to decode frame %s", frame.Name)
 					}
@@ -178,7 +150,7 @@ func TestSnappyCompressor(t *testing.T) {
 				t.Run(frame.Name, func(t *testing.T) {
 					t.Parallel()
 
-					decoded, err := c.AppendDecompressedWithLength(nil, frame.Frame)
+					decoded, err := c.Decode(frame.Frame)
 					if err != nil {
 						t.Fatalf("failed to decode frame %s", frame.Name)
 					}
@@ -192,13 +164,43 @@ func TestSnappyCompressor(t *testing.T) {
 	})
 }
 
+// legacyCompressor implements only the master-era Compressor surface
+// (Name/Encode/Decode). It guards backward compatibility: if the public
+// gocql.Compressor interface ever regains required methods beyond these, this
+// file stops compiling — which is the regression we are preventing.
+type legacyCompressor struct{}
+
+func (legacyCompressor) Name() string                       { return "legacy" }
+func (legacyCompressor) Encode(data []byte) ([]byte, error) { return data, nil }
+func (legacyCompressor) Decode(data []byte) ([]byte, error) { return data, nil }
+
+var _ gocql.Compressor = legacyCompressor{}
+
+func TestCompressorBackwardCompatibility(t *testing.T) {
+	t.Parallel()
+
+	// A compressor implementing only Name/Encode/Decode must satisfy
+	// gocql.Compressor without implementing the optional v5 SegmentCompressor.
+	var c gocql.Compressor = legacyCompressor{}
+	if _, ok := c.(gocql.SegmentCompressor); ok {
+		t.Fatal("legacyCompressor unexpectedly satisfies SegmentCompressor")
+	}
+
+	// The built-in SnappyCompressor must not satisfy SegmentCompressor: it is
+	// the "capable Compressor, but not v5-segment-capable" case the driver
+	// rejects up front on ProtoVersion >= 5.
+	if _, ok := interface{}(gocql.SnappyCompressor{}).(gocql.SegmentCompressor); ok {
+		t.Fatal("SnappyCompressor must not satisfy SegmentCompressor")
+	}
+}
+
 func BenchmarkSnappyCompressor(b *testing.B) {
 	c := gocql.SnappyCompressor{}
 	b.Run("Decode", func(b *testing.B) {
 		for _, frame := range frameExamples.Responses {
 			b.Run(frame.Name, func(b *testing.B) {
 				for x := 0; x < b.N; x++ {
-					_, _ = c.AppendDecompressedWithLength(nil, frame.Frame)
+					_, _ = c.Decode(frame.Frame)
 				}
 			})
 		}
@@ -208,7 +210,7 @@ func BenchmarkSnappyCompressor(b *testing.B) {
 		for _, frame := range frameExamples.Requests {
 			b.Run(frame.Name, func(b *testing.B) {
 				for x := 0; x < b.N; x++ {
-					_, _ = c.AppendCompressedWithLength(nil, frame.Frame)
+					_, _ = c.Encode(frame.Frame)
 				}
 			})
 		}

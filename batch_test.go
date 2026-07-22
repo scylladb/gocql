@@ -126,9 +126,9 @@ func TestBatch_SetKeyspace(t *testing.T) {
 	}
 
 	const keyspaceStmt = `
-		CREATE KEYSPACE IF NOT EXISTS gocql_keyspace_override_test 
+		CREATE KEYSPACE IF NOT EXISTS gocql_keyspace_override_test
 		WITH replication = {
-			'class': 'SimpleStrategy', 
+			'class': 'SimpleStrategy',
 			'replication_factor': '1'
 		};
 `

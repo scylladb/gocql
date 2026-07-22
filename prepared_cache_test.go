@@ -44,14 +44,15 @@ func TestPreparedLRU_updateMetadataIfSame(t *testing.T) {
 	key := stmtCacheKey{hostID: "h", keyspace: "ks", statement: "SELECT * FROM t"}
 	oldID := []byte{1, 2, 3}
 
-	t.Run("replaces when present and id matches", func(t *testing.T) {
+	t.Run("replaces when present and identity matches", func(t *testing.T) {
 		p := newTestPreparedLRU()
-		p.add(key, completedInflight(oldID))
+		cached := completedInflight(oldID)
+		p.add(key, cached)
 
 		newEntry := completedInflight(oldID)
 		newEntry.preparedStatment.resultMetadataID = []byte{9, 9}
 
-		if !p.updateMetadataIfSame(key, oldID, newEntry) {
+		if !p.updateMetadataIfSame(key, cached.preparedStatment, newEntry) {
 			t.Fatal("expected updateMetadataIfSame to return true")
 		}
 		got, ok := p.get(key)
@@ -62,7 +63,8 @@ func TestPreparedLRU_updateMetadataIfSame(t *testing.T) {
 
 	t.Run("no-op when key absent", func(t *testing.T) {
 		p := newTestPreparedLRU()
-		if p.updateMetadataIfSame(key, oldID, completedInflight(oldID)) {
+		expect := completedInflight(oldID)
+		if p.updateMetadataIfSame(key, expect.preparedStatment, completedInflight(oldID)) {
 			t.Fatal("expected false when the key is absent")
 		}
 		if _, ok := p.get(key); ok {
@@ -70,18 +72,37 @@ func TestPreparedLRU_updateMetadataIfSame(t *testing.T) {
 		}
 	})
 
-	t.Run("no-op when cached id differs (newer/other prepare)", func(t *testing.T) {
+	t.Run("no-op when cached entry is a different generation", func(t *testing.T) {
 		p := newTestPreparedLRU()
-		newerID := []byte{7, 7, 7}
-		newer := completedInflight(newerID)
+		newer := completedInflight([]byte{7, 7, 7})
 		p.add(key, newer)
 
-		if p.updateMetadataIfSame(key, oldID, completedInflight(oldID)) {
-			t.Fatal("expected false when the cached prepared id does not match expectID")
+		// expect points at some other, stale prepared statement.
+		stale := completedInflight(oldID)
+		if p.updateMetadataIfSame(key, stale.preparedStatment, completedInflight(oldID)) {
+			t.Fatal("expected false when the cached entry is a different generation")
 		}
 		got, ok := p.get(key)
 		if !ok || got != newer {
 			t.Fatal("a differing (newer) cache entry must not be clobbered")
+		}
+	})
+
+	t.Run("no-op when cached generation differs but id is identical", func(t *testing.T) {
+		// Regression guard: a reprepare of the same statement typically yields the
+		// same prepared id, so an id-only check would wrongly overwrite the newer
+		// generation. Pointer identity must reject it.
+		p := newTestPreparedLRU()
+		newerSameID := completedInflight(oldID)
+		p.add(key, newerSameID)
+
+		stale := completedInflight(oldID) // same id bytes, different *preparedStatment
+		if p.updateMetadataIfSame(key, stale.preparedStatment, completedInflight(oldID)) {
+			t.Fatal("expected false when only the id matches but the generation differs")
+		}
+		got, ok := p.get(key)
+		if !ok || got != newerSameID {
+			t.Fatal("a newer generation with the same id must not be clobbered")
 		}
 	})
 
@@ -90,7 +111,8 @@ func TestPreparedLRU_updateMetadataIfSame(t *testing.T) {
 		inflight := &inflightPrepare{done: make(chan struct{})} // done not closed
 		p.add(key, inflight)
 
-		if p.updateMetadataIfSame(key, oldID, completedInflight(oldID)) {
+		expect := completedInflight(oldID)
+		if p.updateMetadataIfSame(key, expect.preparedStatment, completedInflight(oldID)) {
 			t.Fatal("expected false when the cached entry is still in-flight")
 		}
 		got, ok := p.get(key)
