@@ -195,7 +195,7 @@ func TestDNSLookupConnected(t *testing.T) {
 	defer srv.Stop()
 
 	// Use bare IP (no port) so all entries are portless; the driver falls back
-	// to cfg.Port, which is where the test server is bound.
+	// to cluster.Port, which is where the test server is bound.
 	cluster := NewCluster("cassandra1.invalid", "127.0.0.1", "cassandra2.invalid")
 	cluster.Port = srv.port()
 	cluster.Logger = log

@@ -31,6 +31,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"net"
 	"reflect"
 	"slices"
 	"strings"
@@ -102,11 +103,14 @@ func TestAsyncSessionInit(t *testing.T) {
 	}
 	// only build 1 of the servers so that we can test not connecting to the last
 	// one
-	srv := NewTestServerWithAddress(addresses[0]+":0", t, defaultProto, context.Background())
+	srv := NewTestServerWithAddress(net.JoinHostPort(addresses[0], "0"), t, defaultProto, context.Background())
 	defer srv.Stop()
 
-	cluster := testCluster(defaultProto, addresses[0], addresses[1], addresses[2])
-	cluster.Port = srv.port()
+	_, port, err := net.SplitHostPort(srv.Address)
+	if err != nil {
+		t.Fatalf("split server address: %v", err)
+	}
+	cluster := testCluster(defaultProto, srv.Address, net.JoinHostPort(addresses[1], port), net.JoinHostPort(addresses[2], port))
 	cluster.PoolConfig.HostSelectionPolicy = SingleHostReadyPolicy(RoundRobinHostPolicy())
 	db, err := cluster.CreateSession()
 	if err != nil {
@@ -637,11 +641,607 @@ func newTestQueryExecutor(host *HostInfo) *queryExecutor {
 	}
 }
 
+func TestQueryMetricsAttemptTracksTotalsAndHostSnapshots(t *testing.T) {
+	t.Parallel()
+
+	qm := newQueryMetrics()
+	host1 := &HostInfo{hostId: UUID{1}}
+	host2 := &HostInfo{hostId: UUID{2}}
+
+	attempt, metrics := qm.attempt(1, 10*time.Nanosecond, host1, true)
+	if attempt != 0 {
+		t.Fatalf("first attempt index = %d, want 0", attempt)
+	}
+	if metrics.Attempts != 1 || metrics.TotalLatency != 10 {
+		t.Fatalf("first host metrics = %+v, want attempts=1 latency=10", metrics)
+	}
+	if got := qm.attempts(); got != 1 {
+		t.Fatalf("attempts = %d, want 1", got)
+	}
+	if got := qm.latency(); got != 10 {
+		t.Fatalf("latency = %d, want 10", got)
+	}
+
+	attempt, metrics = qm.attempt(2, 20*time.Nanosecond, host1, true)
+	if attempt != 1 {
+		t.Fatalf("second attempt index = %d, want 1", attempt)
+	}
+	if metrics.Attempts != 3 || metrics.TotalLatency != 30 {
+		t.Fatalf("updated host metrics = %+v, want attempts=3 latency=30", metrics)
+	}
+	if qm.extra != nil {
+		t.Fatal("extra host metrics map allocated for one host")
+	}
+	snapshot := *metrics
+
+	attempt, metrics = qm.attempt(1, 6*time.Nanosecond, host2, true)
+	if attempt != 3 {
+		t.Fatalf("third attempt index = %d, want 3", attempt)
+	}
+	if metrics.Attempts != 1 || metrics.TotalLatency != 6 {
+		t.Fatalf("second host metrics = %+v, want attempts=1 latency=6", metrics)
+	}
+	if qm.extra == nil {
+		t.Fatal("extra host metrics map not allocated for second host")
+	}
+	if got := qm.attempts(); got != 4 {
+		t.Fatalf("attempts = %d, want 4", got)
+	}
+	if got := qm.latency(); got != 9 {
+		t.Fatalf("latency = %d, want 9", got)
+	}
+	if snapshot.Attempts != 3 || snapshot.TotalLatency != 30 {
+		t.Fatalf("host metrics snapshot mutated = %+v", snapshot)
+	}
+
+	qm.reset()
+	if got := qm.attempts(); got != 0 {
+		t.Fatalf("attempts after reset = %d, want 0", got)
+	}
+	if got := qm.latency(); got != 0 {
+		t.Fatalf("latency after reset = %d, want 0", got)
+	}
+}
+
+func TestQueryMetricsAttemptKeepsEmptyHostIDSeparate(t *testing.T) {
+	t.Parallel()
+
+	qm := newQueryMetrics()
+	emptyHostID := &HostInfo{}
+	realHostID := &HostInfo{hostId: UUID{1}}
+
+	_, metrics := qm.attempt(1, 10*time.Nanosecond, emptyHostID, true)
+	if metrics.Attempts != 1 || metrics.TotalLatency != 10 {
+		t.Fatalf("empty host metrics = %+v, want attempts=1 latency=10", metrics)
+	}
+
+	_, metrics = qm.attempt(1, 6*time.Nanosecond, realHostID, true)
+	if metrics.Attempts != 1 || metrics.TotalLatency != 6 {
+		t.Fatalf("real host metrics = %+v, want attempts=1 latency=6", metrics)
+	}
+
+	if !qm.hostInitialized || !qm.hostID.IsEmpty() {
+		t.Fatalf("primary host ID = %v initialized=%t, want empty initialized", qm.hostID, qm.hostInitialized)
+	}
+	if qm.host.Attempts != 1 || qm.host.TotalLatency != 10 {
+		t.Fatalf("primary host metrics = %+v, want empty host metrics", qm.host)
+	}
+	if metrics := qm.extra[realHostID.hostUUID()]; metrics.Attempts != 1 || metrics.TotalLatency != 6 {
+		t.Fatalf("extra real host metrics = %+v, want attempts=1 latency=6", metrics)
+	}
+}
+
+func TestQueryMetricsAttemptWithoutSnapshotSkipsHostStorage(t *testing.T) {
+	t.Parallel()
+
+	qm := newQueryMetrics()
+	host := &HostInfo{hostId: UUID{1}}
+
+	attempt, metrics := qm.attempt(1, 10*time.Nanosecond, host, false)
+	if attempt != 0 {
+		t.Fatalf("attempt index = %d, want 0", attempt)
+	}
+	if metrics != nil {
+		t.Fatalf("metrics = %+v, want nil", metrics)
+	}
+	if got := qm.attempts(); got != 1 {
+		t.Fatalf("attempts = %d, want 1", got)
+	}
+	if got := qm.latency(); got != 10 {
+		t.Fatalf("latency = %d, want 10", got)
+	}
+	if qm.hostInitialized || !qm.hostID.IsEmpty() || qm.host != (hostMetrics{}) {
+		t.Fatal("host metrics were stored without snapshot request")
+	}
+	if qm.extra != nil {
+		t.Fatal("extra host metrics map allocated without snapshot request")
+	}
+}
+
+func TestQueryMetricsFirstObservedAttemptDoesNotAllocateHostSnapshot(t *testing.T) {
+	const runs = 1000
+	host := &HostInfo{hostId: UUID{1}}
+	metrics := make([]queryMetrics, runs+1)
+	i := 0
+
+	allocs := testing.AllocsPerRun(runs, func() {
+		qm := &metrics[i]
+		i++
+		_, snapshot := qm.attempt(1, time.Nanosecond, host, true)
+		if snapshot == nil || snapshot.Attempts != 1 || snapshot.TotalLatency != 1 {
+			panic("unexpected host metrics snapshot")
+		}
+	})
+	if allocs != 0 {
+		t.Fatalf("first observed attempt allocations = %f, want 0", allocs)
+	}
+}
+
+func TestQueryObserverDeprecatedMetricsIncludeManualHostUpdates(t *testing.T) {
+	t.Parallel()
+
+	host := &HostInfo{hostId: UUID{1}}
+	start := time.Unix(0, 100)
+	var observedQuery ObservedQuery
+	var observed bool
+	q := &Query{
+		context:     context.Background(),
+		metrics:     newQueryMetrics(),
+		observer:    unitQueryObserverFunc(func(_ context.Context, query ObservedQuery) { observedQuery, observed = query, true }),
+		routingInfo: &queryRoutingInfo{},
+		stmt:        "SELECT v FROM tbl WHERE k = ?",
+		values:      []any{1},
+	}
+
+	q.AddAttempts(2, host)
+	q.AddLatency(30, host)
+	q.attempt("ks", start.Add(10*time.Nanosecond), start, &Iter{}, host)
+
+	if !observed {
+		t.Fatal("query observation was not called")
+	}
+	if observedQuery.Metrics == nil || observedQuery.Metrics.Attempts != 3 || observedQuery.Metrics.TotalLatency != 40 {
+		t.Fatalf("deprecated metrics = %+v, want attempts=3 latency=40", observedQuery.Metrics)
+	}
+	if observedQuery.Attempt != 2 || observedQuery.Host != host {
+		t.Fatalf("query observation = %+v, want attempt=2 host=%p", observedQuery, host)
+	}
+	assertSingleAttemptMetric(t, observedQuery.AttemptMetrics, AttemptMetric{
+		Attempt: 2,
+		Host:    host,
+		Latency: 10,
+	})
+}
+
+func TestBatchObserverDeprecatedMetricsIncludeManualHostUpdates(t *testing.T) {
+	t.Parallel()
+
+	host := &HostInfo{hostId: UUID{1}}
+	start := time.Unix(0, 200)
+	var observedBatch ObservedBatch
+	var observed bool
+	b := &Batch{
+		context:     context.Background(),
+		metrics:     newQueryMetrics(),
+		observer:    unitBatchObserverFunc(func(_ context.Context, batch ObservedBatch) { observedBatch, observed = batch, true }),
+		routingInfo: &queryRoutingInfo{},
+		Entries: []BatchEntry{
+			{Stmt: "INSERT INTO tbl (k, v) VALUES (?, ?)", Args: []any{1, "v"}},
+		},
+	}
+
+	b.AddAttempts(2, host)
+	b.AddLatency(30, host)
+	b.attempt("ks", start.Add(10*time.Nanosecond), start, &Iter{}, host)
+
+	if !observed {
+		t.Fatal("batch observation was not called")
+	}
+	if observedBatch.Metrics == nil || observedBatch.Metrics.Attempts != 3 || observedBatch.Metrics.TotalLatency != 40 {
+		t.Fatalf("deprecated metrics = %+v, want attempts=3 latency=40", observedBatch.Metrics)
+	}
+	if observedBatch.Attempt != 2 || observedBatch.Host != host {
+		t.Fatalf("batch observation = %+v, want attempt=2 host=%p", observedBatch, host)
+	}
+	assertSingleAttemptMetric(t, observedBatch.AttemptMetrics, AttemptMetric{
+		Attempt: 2,
+		Host:    host,
+		Latency: 10,
+	})
+}
+
+func TestQueryMetricsLatencyWaitsForStableTotalsSnapshot(t *testing.T) {
+	t.Parallel()
+
+	qm := newQueryMetrics()
+	host := &HostInfo{hostId: UUID{1}}
+
+	qm.attempt(1, 10*time.Nanosecond, host, false)
+	qm.beginTotalsUpdate()
+	qm.totalAttempts.Add(1)
+
+	latency := make(chan int64, 1)
+	go func() {
+		latency <- qm.latency()
+	}()
+
+	select {
+	case got := <-latency:
+		qm.totalLatency.Add(20)
+		qm.endTotalsUpdate()
+		t.Fatalf("latency returned during totals update = %d, want to wait", got)
+	case <-time.After(10 * time.Millisecond):
+	}
+
+	qm.totalLatency.Add(20)
+	qm.endTotalsUpdate()
+
+	if got := <-latency; got != 15 {
+		t.Fatalf("latency = %d, want 15", got)
+	}
+}
+
+type unitQueryObserverFunc func(context.Context, ObservedQuery)
+
+func (f unitQueryObserverFunc) ObserveQuery(ctx context.Context, q ObservedQuery) {
+	f(ctx, q)
+}
+
+type unitBatchObserverFunc func(context.Context, ObservedBatch)
+
+func (f unitBatchObserverFunc) ObserveBatch(ctx context.Context, b ObservedBatch) {
+	f(ctx, b)
+}
+
+func assertSingleAttemptMetric(t *testing.T, metrics AttemptMetrics, want AttemptMetric) {
+	t.Helper()
+
+	if got := metrics.Attempts(); got != 1 {
+		t.Fatalf("attempt metrics attempts = %d, want 1", got)
+	}
+	if got := metrics.TotalLatency(); got != want.Latency {
+		t.Fatalf("attempt metrics latency = %d, want %d", got, want.Latency)
+	}
+
+	var attempts []AttemptMetric
+	metrics.ForEachAttempt(func(attempt AttemptMetric) bool {
+		attempts = append(attempts, attempt)
+		return true
+	})
+	if len(attempts) != 1 || attempts[0] != want {
+		t.Fatalf("attempt metrics entries = %+v, want [%+v]", attempts, want)
+	}
+}
+
+func TestQueryObserverAttemptMetricsAndDeprecatedMetrics(t *testing.T) {
+	t.Parallel()
+
+	host := &HostInfo{hostId: UUID{1}}
+	start := time.Unix(0, 100)
+	var observations []ObservedQuery
+	q := &Query{
+		context:     context.Background(),
+		metrics:     newQueryMetrics(),
+		observer:    unitQueryObserverFunc(func(_ context.Context, observed ObservedQuery) { observations = append(observations, observed) }),
+		routingInfo: &queryRoutingInfo{},
+		stmt:        "SELECT v FROM tbl WHERE k = ?",
+		values:      []any{1},
+	}
+
+	q.attempt("ks", start.Add(10*time.Nanosecond), start, &Iter{numRows: 2}, host)
+	q.attempt("ks", start.Add(30*time.Nanosecond), start.Add(10*time.Nanosecond), &Iter{numRows: 3}, host)
+
+	if len(observations) != 2 {
+		t.Fatalf("observations = %d, want 2", len(observations))
+	}
+
+	first := observations[0]
+	if first.Metrics == nil || first.Metrics.Attempts != 1 || first.Metrics.TotalLatency != 10 {
+		t.Fatalf("first deprecated metrics = %+v, want attempts=1 latency=10", first.Metrics)
+	}
+	if first.Attempt != 0 || first.Rows != 2 || first.Host != host {
+		t.Fatalf("first observation = %+v, want attempt=0 rows=2 host=%p", first, host)
+	}
+	assertSingleAttemptMetric(t, first.AttemptMetrics, AttemptMetric{
+		Attempt: 0,
+		Host:    host,
+		Latency: 10,
+	})
+
+	second := observations[1]
+	if second.Metrics == nil || second.Metrics.Attempts != 2 || second.Metrics.TotalLatency != 30 {
+		t.Fatalf("second deprecated metrics = %+v, want attempts=2 latency=30", second.Metrics)
+	}
+	if second.Attempt != 1 || second.Rows != 3 || second.Host != host {
+		t.Fatalf("second observation = %+v, want attempt=1 rows=3 host=%p", second, host)
+	}
+	assertSingleAttemptMetric(t, second.AttemptMetrics, AttemptMetric{
+		Attempt: 1,
+		Host:    host,
+		Latency: 20,
+	})
+}
+
+func TestBatchObserverAttemptMetricsAndDeprecatedMetrics(t *testing.T) {
+	t.Parallel()
+
+	host := &HostInfo{hostId: UUID{1}}
+	start := time.Unix(0, 200)
+	var observedBatch ObservedBatch
+	var observed bool
+	b := &Batch{
+		context:     context.Background(),
+		metrics:     newQueryMetrics(),
+		observer:    unitBatchObserverFunc(func(_ context.Context, batch ObservedBatch) { observedBatch, observed = batch, true }),
+		routingInfo: &queryRoutingInfo{},
+		Entries: []BatchEntry{
+			{Stmt: "INSERT INTO tbl (k, v) VALUES (?, ?)", Args: []any{1, "v"}},
+		},
+	}
+
+	b.attempt("ks", start.Add(12*time.Nanosecond), start, &Iter{}, host)
+
+	if !observed {
+		t.Fatal("batch observation was not called")
+	}
+	if observedBatch.Metrics == nil || observedBatch.Metrics.Attempts != 1 || observedBatch.Metrics.TotalLatency != 12 {
+		t.Fatalf("deprecated metrics = %+v, want attempts=1 latency=12", observedBatch.Metrics)
+	}
+	if observedBatch.Attempt != 0 || observedBatch.Host != host || observedBatch.Keyspace != "ks" {
+		t.Fatalf("batch observation = %+v, want attempt=0 host=%p keyspace=ks", observedBatch, host)
+	}
+	if len(observedBatch.Statements) != 1 || observedBatch.Statements[0] != "INSERT INTO tbl (k, v) VALUES (?, ?)" {
+		t.Fatalf("batch statements = %+v, want inserted statement", observedBatch.Statements)
+	}
+	if len(observedBatch.Values) != 1 || !reflect.DeepEqual(observedBatch.Values[0], []any{1, "v"}) {
+		t.Fatalf("batch values = %+v, want [[1 v]]", observedBatch.Values)
+	}
+	assertSingleAttemptMetric(t, observedBatch.AttemptMetrics, AttemptMetric{
+		Attempt: 0,
+		Host:    host,
+		Latency: 12,
+	})
+}
+
+func TestQueryObserverAttemptMetricsConcurrentAttempts(t *testing.T) {
+	t.Parallel()
+
+	host := &HostInfo{hostId: UUID{1}}
+	observed := make(chan ObservedQuery, 2)
+	q := &Query{
+		context:     context.Background(),
+		metrics:     newQueryMetrics(),
+		observer:    unitQueryObserverFunc(func(_ context.Context, query ObservedQuery) { observed <- query }),
+		routingInfo: &queryRoutingInfo{},
+		stmt:        "SELECT v FROM tbl WHERE k = ?",
+		values:      []any{1},
+	}
+
+	start := make(chan struct{})
+	done := make(chan struct{}, 2)
+	for _, latency := range []time.Duration{10 * time.Nanosecond, 20 * time.Nanosecond} {
+		latency := latency
+		go func() {
+			<-start
+			now := time.Unix(0, int64(latency))
+			q.attempt("ks", now.Add(latency), now, &Iter{}, host)
+			done <- struct{}{}
+		}()
+	}
+	close(start)
+	for i := 0; i < 2; i++ {
+		<-done
+	}
+
+	observations := []ObservedQuery{<-observed, <-observed}
+	seenAttempts := map[int]bool{}
+	seenDeprecatedAttempts := map[int]bool{}
+	var observedLatency int64
+	for _, observation := range observations {
+		seenAttempts[observation.Attempt] = true
+		if observation.Metrics == nil {
+			t.Fatal("deprecated metrics are nil")
+		}
+		seenDeprecatedAttempts[observation.Metrics.Attempts] = true
+
+		var attempts []AttemptMetric
+		observation.AttemptMetrics.ForEachAttempt(func(attempt AttemptMetric) bool {
+			attempts = append(attempts, attempt)
+			return true
+		})
+		if len(attempts) != 1 {
+			t.Fatalf("attempt metrics entries = %+v, want one entry", attempts)
+		}
+		attempt := attempts[0]
+		if attempt.Attempt != observation.Attempt || attempt.Host != host || attempt.Latency <= 0 {
+			t.Fatalf("attempt metric = %+v, observation attempt=%d host=%p", attempt, observation.Attempt, host)
+		}
+		if observation.AttemptMetrics.Attempts() != 1 || observation.AttemptMetrics.TotalLatency() != attempt.Latency {
+			t.Fatalf("attempt metrics = %+v, want one attempt with latency %d", observation.AttemptMetrics, attempt.Latency)
+		}
+		observedLatency += attempt.Latency
+	}
+
+	if !seenAttempts[0] || !seenAttempts[1] {
+		t.Fatalf("observed attempts = %+v, want attempts 0 and 1", seenAttempts)
+	}
+	if !seenDeprecatedAttempts[1] || !seenDeprecatedAttempts[2] {
+		t.Fatalf("deprecated metric attempts = %+v, want snapshots 1 and 2", seenDeprecatedAttempts)
+	}
+	if observedLatency != 30 {
+		t.Fatalf("observed attempt latency = %d, want 30", observedLatency)
+	}
+	if got := q.metrics.attempts(); got != 2 {
+		t.Fatalf("query attempts = %d, want 2", got)
+	}
+	if got := q.metrics.latency(); got != 15 {
+		t.Fatalf("query latency = %d, want 15", got)
+	}
+}
+
+func TestAttemptMetricsReportsRecordedAttempts(t *testing.T) {
+	t.Parallel()
+
+	host := &HostInfo{hostId: UUID{1}}
+	qm := newQueryMetrics()
+
+	_, hostMetrics := qm.attempt(1, 10*time.Nanosecond, host, true)
+	if hostMetrics.Attempts != 1 || hostMetrics.TotalLatency != 10 {
+		t.Fatalf("first host metrics = %+v, want attempts=1 latency=10", hostMetrics)
+	}
+
+	attempt, hostMetrics := qm.attempt(1, 20*time.Nanosecond, host, true)
+	if hostMetrics.Attempts != 2 || hostMetrics.TotalLatency != 30 {
+		t.Fatalf("second host metrics = %+v, want attempts=2 latency=30", hostMetrics)
+	}
+
+	attemptMetric := AttemptMetric{
+		Attempt: attempt,
+		Host:    host,
+		Latency: 20,
+	}
+	metrics := newAttemptMetrics(attemptMetric)
+	if metrics.Attempts() != 1 || metrics.TotalLatency() != 20 {
+		t.Fatalf("attempt metrics = %+v, want attempts=1 latency=20", metrics)
+	}
+
+	var attempts []AttemptMetric
+	metrics.ForEachAttempt(func(attempt AttemptMetric) bool {
+		attempts = append(attempts, attempt)
+		return true
+	})
+	if len(attempts) != 1 || attempts[0] != attemptMetric {
+		t.Fatalf("attempt metrics entries = %+v, want [%+v]", attempts, attemptMetric)
+	}
+
+	var zero AttemptMetrics
+	if zero.Attempts() != 0 || zero.TotalLatency() != 0 {
+		t.Fatalf("zero attempt metrics = %+v, want zero totals", zero)
+	}
+	var zeroAttempts []AttemptMetric
+	zero.ForEachAttempt(func(attempt AttemptMetric) bool {
+		zeroAttempts = append(zeroAttempts, attempt)
+		return true
+	})
+	if len(zeroAttempts) != 0 {
+		t.Fatalf("zero attempt metrics entries = %+v, want none", zeroAttempts)
+	}
+}
+
+func TestQueryMetricsObservedAttemptSerializesTotalAttemptWithHostMetrics(t *testing.T) {
+	t.Parallel()
+
+	qm := newQueryMetrics()
+	host := &HostInfo{hostId: UUID{1}}
+
+	qm.l.Lock()
+	started := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+
+		close(started)
+		attempt, metrics := qm.attempt(1, 10*time.Nanosecond, host, true)
+		if attempt != 0 {
+			t.Errorf("attempt index = %d, want 0", attempt)
+		}
+		if metrics.Attempts != 1 || metrics.TotalLatency != 10 {
+			t.Errorf("host metrics = %+v, want attempts=1 latency=10", metrics)
+		}
+	}()
+
+	<-started
+	deadline := time.After(100 * time.Millisecond)
+	tick := time.NewTicker(time.Millisecond)
+	defer tick.Stop()
+
+	for {
+		select {
+		case <-done:
+			qm.l.Unlock()
+			t.Fatal("observed attempt completed while host metrics lock was held")
+		case <-tick.C:
+			if got := qm.totalAttempts.Load(); got != 0 {
+				qm.l.Unlock()
+				<-done
+				t.Fatalf("total attempts advanced before host metrics lock: got %d, want 0", got)
+			}
+		case <-deadline:
+			if got := qm.totalAttempts.Load(); got != 0 {
+				qm.l.Unlock()
+				<-done
+				t.Fatalf("total attempts advanced before host metrics lock: got %d, want 0", got)
+			}
+			qm.l.Unlock()
+			<-done
+			return
+		}
+	}
+}
+
+func BenchmarkQueryMetricsAttempt(b *testing.B) {
+	host := &HostInfo{hostId: UUID{1}}
+	qm := newQueryMetrics()
+	qm.attempt(1, time.Nanosecond, host, false)
+	qm.reset()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		qm.attempt(1, time.Nanosecond, host, false)
+	}
+}
+
+func BenchmarkQueryMetricsResetAttempt(b *testing.B) {
+	host := &HostInfo{hostId: UUID{1}}
+	qm := newQueryMetrics()
+	qm.attempt(1, time.Nanosecond, host, false)
+	qm.reset()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		qm.reset()
+		qm.attempt(1, time.Nanosecond, host, false)
+	}
+}
+
+func BenchmarkQueryMetricsAttemptWithSnapshot(b *testing.B) {
+	hosts := []*HostInfo{
+		{hostId: UUID{1}},
+		{hostId: UUID{2}},
+		{hostId: UUID{3}},
+		{hostId: UUID{4}},
+	}
+	qm := newQueryMetrics()
+	for _, host := range hosts {
+		qm.attempt(1, time.Nanosecond, host, true)
+	}
+	qm.reset()
+
+	var metrics *hostMetrics
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; {
+		qm.reset()
+		for _, host := range hosts {
+			if i >= b.N {
+				break
+			}
+			_, metrics = qm.attempt(1, time.Nanosecond, host, true)
+			i++
+		}
+	}
+	if metrics == nil {
+		b.Fatal("expected metrics snapshot")
+	}
+}
+
 func newWarningTestQuery() *Query {
 	return &Query{
 		context:     context.Background(),
 		routingInfo: &queryRoutingInfo{},
-		metrics:     &queryMetrics{m: make(map[UUID]*hostMetrics)},
+		metrics:     newQueryMetrics(),
 		rt:          &SimpleRetryPolicy{NumRetries: 0},
 		spec:        NonSpeculativeExecution{},
 	}
@@ -794,7 +1394,7 @@ func TestIterWarningHandler(t *testing.T) {
 		host := &HostInfo{hostId: UUID{1}}
 		qry := &Query{
 			routingInfo: &queryRoutingInfo{},
-			metrics:     &queryMetrics{m: make(map[UUID]*hostMetrics)},
+			metrics:     newQueryMetrics(),
 		}
 		iter := (&Iter{
 			framer:      &testWarningFramer{warnings: []string{"page2"}},
@@ -827,7 +1427,7 @@ func TestIterWarningHandler(t *testing.T) {
 			framer: &testWarningFramer{warnings: []string{"warn"}},
 		}).bindWarningHandler(&Query{
 			routingInfo: &queryRoutingInfo{},
-			metrics:     &queryMetrics{m: make(map[UUID]*hostMetrics)},
+			metrics:     newQueryMetrics(),
 		}, handler)
 
 		iter.Close()
@@ -861,7 +1461,7 @@ func TestIterWarningHandler(t *testing.T) {
 	t.Run("BindIgnoresNilHandler", func(t *testing.T) {
 		iter := (&Iter{}).bindWarningHandler(&Query{
 			routingInfo: &queryRoutingInfo{},
-			metrics:     &queryMetrics{m: make(map[UUID]*hostMetrics)},
+			metrics:     newQueryMetrics(),
 		}, nil)
 		if iter.warningHandler != nil {
 			t.Fatal("expected warning handler to remain nil")
@@ -877,7 +1477,7 @@ func TestIterWarningHandler(t *testing.T) {
 		}).bindWarningHandler(&Batch{
 			context:     context.Background(),
 			routingInfo: &queryRoutingInfo{},
-			metrics:     &queryMetrics{m: make(map[UUID]*hostMetrics)},
+			metrics:     newQueryMetrics(),
 			rt:          &SimpleRetryPolicy{NumRetries: 0},
 			spec:        NonSpeculativeExecution{},
 		}, handler)
@@ -894,7 +1494,7 @@ func TestIterWarningHandler(t *testing.T) {
 		batch := &Batch{
 			context:     context.Background(),
 			routingInfo: &queryRoutingInfo{},
-			metrics:     &queryMetrics{m: make(map[UUID]*hostMetrics)},
+			metrics:     newQueryMetrics(),
 			rt:          &SimpleRetryPolicy{NumRetries: 0},
 			spec:        NonSpeculativeExecution{},
 		}
@@ -923,7 +1523,7 @@ func TestIterWarningHandler(t *testing.T) {
 		}).bindWarningHandler(&Query{
 			context:     context.Background(),
 			routingInfo: &queryRoutingInfo{},
-			metrics:     &queryMetrics{m: make(map[UUID]*hostMetrics)},
+			metrics:     newQueryMetrics(),
 			rt:          &SimpleRetryPolicy{NumRetries: 0},
 			spec:        NonSpeculativeExecution{},
 		}, handler)
@@ -942,7 +1542,7 @@ func TestIterWarningHandler(t *testing.T) {
 			host:        &HostInfo{hostId: UUID{3}},
 		}).bindWarningHandler(&Query{
 			routingInfo: &queryRoutingInfo{},
-			metrics:     &queryMetrics{m: make(map[UUID]*hostMetrics)},
+			metrics:     newQueryMetrics(),
 		}, handler)
 
 		iter.handleWarningsOnce()
