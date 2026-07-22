@@ -102,7 +102,7 @@ var queryPool = &sync.Pool{
 	New: func() any {
 		return &Query{
 			routingInfo: &queryRoutingInfo{},
-			metrics:     &queryMetrics{m: make(map[UUID]*hostMetrics)},
+			metrics:     newQueryMetrics(),
 			refCount:    1,
 		}
 	},
@@ -1092,19 +1092,36 @@ type hostMetrics struct {
 }
 
 type queryMetrics struct {
-	m map[UUID]*hostMetrics
-	// totalAttempts is total number of attempts.
-	// Equal to sum of all hostMetrics' Attempts
-	totalAttempts int
-	l             sync.RWMutex
+	// extra is allocated only when a query observes more than one host.
+	extra map[UUID]hostMetrics
+
+	// totalAttempts and totalLatency are tracked independently from per-host
+	// observer metrics so the non-observer path does not need host bucket work.
+	totalAttempts   atomic.Int64
+	totalLatency    atomic.Int64
+	l               sync.Mutex
+	hostID          UUID
+	host            hostMetrics
+	hostInitialized bool
+}
+
+func newQueryMetrics() *queryMetrics {
+	return &queryMetrics{}
 }
 
 // preFilledQueryMetrics initializes new queryMetrics based on per-host supplied data.
 func preFilledQueryMetrics(m map[UUID]*hostMetrics) *queryMetrics {
-	qm := &queryMetrics{m: m}
-	for _, hm := range qm.m {
-		qm.totalAttempts += hm.Attempts
+	qm := newQueryMetrics()
+	qm.l.Lock()
+	for hostID, hm := range m {
+		if hm == nil {
+			continue
+		}
+		qm.addHostMetricsLocked(hostID, *hm)
+		qm.totalAttempts.Add(int64(hm.Attempts))
+		qm.totalLatency.Add(hm.TotalLatency)
 	}
+	qm.l.Unlock()
 	return qm
 }
 
@@ -1114,57 +1131,83 @@ func (qm *queryMetrics) hostMetrics(host *HostInfo) *hostMetrics {
 	qm.l.Lock()
 	metrics := qm.hostMetricsLocked(host)
 	copied := new(hostMetrics)
-	*copied = *metrics
+	*copied = metrics
 	qm.l.Unlock()
 	return copied
 }
 
 // hostMetricsLocked gets or creates host metrics for given host.
 // It must be called only while holding qm.l lock.
-func (qm *queryMetrics) hostMetricsLocked(host *HostInfo) *hostMetrics {
-	id := host.hostUUID()
-	metrics, exists := qm.m[id]
-	if !exists {
-		// if the host is not in the map, it means it's been accessed for the first time
-		metrics = &hostMetrics{}
-		qm.m[id] = metrics
+func (qm *queryMetrics) hostMetricsLocked(host *HostInfo) hostMetrics {
+	return qm.hostMetricsByIDLocked(host.hostUUID())
+}
+
+func (qm *queryMetrics) hostMetricsByIDLocked(hostID UUID) hostMetrics {
+	if !qm.hostInitialized {
+		qm.hostID = hostID
+		qm.hostInitialized = true
+		return qm.host
 	}
 
+	if qm.hostID == hostID {
+		return qm.host
+	}
+
+	if qm.extra == nil {
+		qm.extra = make(map[UUID]hostMetrics)
+	}
+	metrics := qm.extra[hostID]
+	qm.extra[hostID] = metrics
+	return metrics
+}
+
+func (qm *queryMetrics) addHostMetricsLocked(hostID UUID, add hostMetrics) hostMetrics {
+	if !qm.hostInitialized {
+		qm.hostID = hostID
+		qm.hostInitialized = true
+	}
+
+	if qm.hostID == hostID {
+		qm.host.Attempts += add.Attempts
+		qm.host.TotalLatency += add.TotalLatency
+		return qm.host
+	}
+
+	if qm.extra == nil {
+		qm.extra = make(map[UUID]hostMetrics)
+	}
+
+	metrics := qm.extra[hostID]
+	metrics.Attempts += add.Attempts
+	metrics.TotalLatency += add.TotalLatency
+	qm.extra[hostID] = metrics
 	return metrics
 }
 
 // attempts returns the number of times the query was executed.
 func (qm *queryMetrics) attempts() int {
-	qm.l.Lock()
-	attempts := qm.totalAttempts
-	qm.l.Unlock()
-	return attempts
+	return int(qm.totalAttempts.Load())
 }
 
 func (qm *queryMetrics) latency() int64 {
-	qm.l.Lock()
-	var (
-		attempts int
-		latency  int64
-	)
-	for _, metric := range qm.m {
-		attempts += metric.Attempts
-		latency += metric.TotalLatency
-	}
-	qm.l.Unlock()
+	attempts := qm.totalAttempts.Load()
 	if attempts > 0 {
-		return latency / int64(attempts)
+		return qm.totalLatency.Load() / attempts
 	}
 	return 0
 }
 
 // reset resets metrics, to forget about prior query executions.
-// Uses clear() instead of make() to preserve the map's backing array,
-// avoiding a heap allocation on each re-execution.
+// Uses clear() instead of make() to preserve the extra map's backing array
+// when a query has observed more than one host.
 func (qm *queryMetrics) reset() {
 	qm.l.Lock()
-	clear(qm.m)
-	qm.totalAttempts = 0
+	qm.hostID = UUID{}
+	qm.hostInitialized = false
+	qm.host = hostMetrics{}
+	clear(qm.extra)
+	qm.totalAttempts.Store(0)
+	qm.totalLatency.Store(0)
 	qm.l.Unlock()
 }
 
@@ -1173,23 +1216,28 @@ func (qm *queryMetrics) reset() {
 // If needsHostMetrics is true, a copy of updated hostMetrics is returned.
 func (qm *queryMetrics) attempt(addAttempts int, addLatency time.Duration,
 	host *HostInfo, needsHostMetrics bool) (int, *hostMetrics) {
-	qm.l.Lock()
+	addLatencyNanos := addLatency.Nanoseconds()
 
-	totalAttempts := qm.totalAttempts
-	qm.totalAttempts += addAttempts
-
-	updateHostMetrics := qm.hostMetricsLocked(host)
-	updateHostMetrics.Attempts += addAttempts
-	updateHostMetrics.TotalLatency += addLatency.Nanoseconds()
-
-	var hostMetricsCopy *hostMetrics
-	if needsHostMetrics {
-		hostMetricsCopy = new(hostMetrics)
-		*hostMetricsCopy = *updateHostMetrics
+	if !needsHostMetrics {
+		totalAttempts := qm.totalAttempts.Add(int64(addAttempts)) - int64(addAttempts)
+		qm.totalLatency.Add(addLatencyNanos)
+		return int(totalAttempts), nil
 	}
 
+	qm.l.Lock()
+	totalAttempts := qm.totalAttempts.Add(int64(addAttempts)) - int64(addAttempts)
+	qm.totalLatency.Add(addLatencyNanos)
+
+	updateHostMetrics := qm.addHostMetricsLocked(host.hostUUID(), hostMetrics{
+		Attempts:     addAttempts,
+		TotalLatency: addLatencyNanos,
+	})
+
+	hostMetricsCopy := new(hostMetrics)
+	*hostMetricsCopy = updateHostMetrics
+
 	qm.l.Unlock()
-	return totalAttempts, hostMetricsCopy
+	return int(totalAttempts), hostMetricsCopy
 }
 
 // Query represents a CQL statement that can be executed.
@@ -1281,7 +1329,7 @@ func (q *Query) defaultsFromSession() {
 	q.defaultTimestamp = s.cfg.DefaultTimestamp
 	q.idempotent = s.cfg.DefaultIdempotence
 	if q.metrics == nil {
-		q.metrics = &queryMetrics{m: make(map[UUID]*hostMetrics)}
+		q.metrics = newQueryMetrics()
 	}
 
 	q.spec = defaultNonSpecExec
@@ -1870,8 +1918,7 @@ func (q *Query) Release() {
 func (q *Query) reset() {
 	m := q.metrics
 	if m != nil {
-		clear(m.m)
-		m.totalAttempts = 0
+		m.reset()
 	}
 
 	*q = Query{routingInfo: &queryRoutingInfo{}, metrics: m, refCount: 1}
@@ -2544,7 +2591,7 @@ func (s *Session) Batch(typ BatchType) *Batch {
 		Cons:             s.cons,
 		defaultTimestamp: s.cfg.DefaultTimestamp,
 		keyspace:         s.cfg.Keyspace,
-		metrics:          &queryMetrics{m: make(map[UUID]*hostMetrics)},
+		metrics:          newQueryMetrics(),
 		spec:             defaultNonSpecExec,
 		routingInfo:      &queryRoutingInfo{},
 		requestTimeout:   s.cfg.Timeout,
