@@ -612,6 +612,10 @@ func (cfg *ClusterConfig) Validate() error {
 		return errors.New("ConnectTimeout should be positive time.Duration or zero")
 	}
 
+	if cfg.ReadTimeout < 0 {
+		return errors.New("ReadTimeout should be positive time.Duration or zero")
+	}
+
 	if cfg.MetadataSchemaRequestTimeout < 0 {
 		return errors.New("MetadataSchemaRequestTimeout should be positive time.Duration or zero")
 	}
@@ -630,6 +634,23 @@ func (cfg *ClusterConfig) Validate() error {
 
 	if cfg.ProtoVersion < 0 {
 		return errors.New("ProtoVersion should be positive number or zero")
+	}
+
+	if cfg.ProtoVersion >= 5 && cfg.Compressor != nil {
+		// The native protocol v5 spec allows only lz4 for segment compression.
+		// A v5 server still advertises snappy in its OPTIONS response, but STARTUP
+		// with COMPRESSION=snappy on v5 is rejected server-side ("Snappy
+		// compression is not supported in protocol V5"). We reject any compressor
+		// lacking v5 segment support up front to fail fast with a clear message
+		// rather than at the first segment.
+		//
+		// This is a capability check, not a concrete-type check: a Compressor
+		// supports v5 segment framing iff it also implements SegmentCompressor.
+		// The built-in SnappyCompressor deliberately does not; LZ4Compressor does.
+		// A nil compressor (no compression) is always allowed on v5.
+		if _, ok := cfg.Compressor.(SegmentCompressor); !ok {
+			return fmt.Errorf("compressor %q does not support protocol v5 segment framing; use LZ4Compressor or no compression with ProtoVersion >= 5", cfg.Compressor.Name())
+		}
 	}
 
 	if !cfg.DisableSkipMetadata {

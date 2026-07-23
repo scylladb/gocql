@@ -2,6 +2,9 @@ gocql-fuzz
 fuzz-corpus
 fuzz-work
 gocql.test
+
+# IDE specific files
+.vscode/
 .idea
 
 bin/

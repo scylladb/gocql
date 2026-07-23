@@ -26,6 +26,7 @@ package gocql
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -180,15 +181,14 @@ type ConnInterface interface {
 // level API.
 type Conn struct {
 	auth           Authenticator
+	cfg            *ConnConfig
+	frameObserver  FrameHeaderObserver
 	streamObserver StreamObserver
 	w              contextWriter
 	logger         StdLogger
-	frameObserver  FrameHeaderObserver
 	ctx            context.Context
 	errorHandler   ConnErrorHandler
 	compressor     Compressor
-	conn           net.Conn
-	cfg            *ConnConfig
 	supported      map[string][]string
 	streams        *streams.IDGenerator
 	host           *HostInfo
@@ -196,7 +196,7 @@ type Conn struct {
 	// This map is protected by mu.
 	// calls should not be used when closed is true, calls is set to nil when closed=true.
 	calls                map[int]*callReq
-	r                    *bufio.Reader
+	r                    ConnReader
 	session              *Session
 	framers              connFramers
 	cancel               context.CancelFunc
@@ -243,9 +243,9 @@ func (c *Conn) finalizeConnection() {
 	// It is done to make sure that connection is easy to establish when users set very low `WriteTimeout` and/or `Timeout`
 	// This method sets timeouts to `operational` values after connection successfully created
 	c.writeTimeout.Store(int64(c.cfg.WriteTimeout))
-	c.readTimeout.Store(int64(c.cfg.ReadTimeout))
 	c.setSystemRequestTimeout(c.session.cfg.MetadataSchemaRequestTimeout)
 	c.w.setWriteTimeout(c.cfg.WriteTimeout)
+	c.r.SetTimeout(c.cfg.ReadTimeout)
 }
 
 func (c *Conn) getScyllaSupported() ScyllaConnectionFeatures {
@@ -370,8 +370,10 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 
 	ctx, cancel := context.WithCancel(ctx)
 	c := &Conn{
-		conn:          dialedHost.Conn,
-		r:             bufio.NewReader(dialedHost.Conn),
+		r: &connReader{
+			conn: dialedHost.Conn,
+			r:    bufio.NewReader(dialedHost.Conn),
+		},
 		cfg:           cfg,
 		calls:         make(map[int]*callReq),
 		version:       uint8(cfg.ProtoVersion),
@@ -413,7 +415,7 @@ func (s *Session) streamIDGenerator() *streams.IDGenerator {
 }
 
 func (c *Conn) init(ctx context.Context, dialedHost *DialedHost) error {
-	c.readTimeout.Store(int64(c.cfg.ConnectTimeout))
+	c.r.SetTimeout(c.cfg.ConnectTimeout)
 	c.writeTimeout.Store(int64(c.cfg.ConnectTimeout))
 	c.w.setWriteTimeout(c.cfg.ConnectTimeout)
 
@@ -432,13 +434,18 @@ func (c *Conn) init(ctx context.Context, dialedHost *DialedHost) error {
 		conn:        c,
 	}
 
+	// Seed version-derived framer defaults (e.g. FlagBetaProtocol on proto v5)
+	// before the handshake writes any frame. initFramerCache refines these with
+	// the negotiated compressor and protocol extensions once startup completes.
+	c.initDefaults()
+
 	if err := startup.setupConn(ctx); err != nil {
 		return err
 	}
 
 	// dont coalesce startup frames
 	if c.session.cfg.WriteCoalesceWaitTime > 0 && !c.cfg.disableCoalesce && !dialedHost.DisableCoalesce {
-		c.w = newWriteCoalescer(c.conn, c.cfg.ConnectTimeout, c.session.cfg.WriteCoalesceWaitTime, ctx.Done())
+		c.w = newWriteCoalescer(dialedHost.Conn, c.cfg.ConnectTimeout, c.session.cfg.WriteCoalesceWaitTime, ctx.Done())
 	}
 
 	if c.isScyllaConn() { // ScyllaDB does not support system.peers_v2
@@ -455,33 +462,6 @@ func (c *Conn) Write(p []byte) (n int, err error) {
 	return c.w.writeContext(context.Background(), p)
 }
 
-func (c *Conn) Read(p []byte) (n int, err error) {
-	const maxAttempts = 5
-	timeout := c.readTimeout.Load()
-
-	for i := 0; i < maxAttempts; i++ {
-		var nn int
-		if timeout > 0 {
-			err = c.conn.SetReadDeadline(time.Now().Add(time.Duration(timeout)))
-			if err != nil {
-				return 0, err
-			}
-		}
-
-		nn, err = io.ReadFull(c.r, p[n:])
-		n += nn
-		if err == nil {
-			break
-		}
-
-		if verr, ok := err.(net.Error); !ok || !verr.Temporary() {
-			break
-		}
-	}
-
-	return
-}
-
 type startupCoordinator struct {
 	conn        *Conn
 	frameTicker chan struct{}
@@ -496,10 +476,19 @@ func (s *startupCoordinator) setupConn(ctx context.Context) error {
 	}
 	defer cancel()
 
+	// Only for proto v5+.
+	// Indicates if STARTUP has been completed.
+	// github.com/apache/cassandra/blob/trunk/doc/native_protocol_v5.spec
+	// 2.3.1 Initial Handshake
+	// 	In order to support both v5 and earlier formats, the v5 framing format is not
+	//  applied to message exchanges before an initial handshake is completed.
+	startupCompleted := &atomic.Bool{}
+	startupCompleted.Store(false)
+
 	startupErr := make(chan error)
 	go func() {
 		for range s.frameTicker {
-			err := s.conn.recv(ctx)
+			err := s.conn.recv(ctx, startupCompleted.Load())
 			if err != nil {
 				select {
 				case startupErr <- err:
@@ -513,7 +502,7 @@ func (s *startupCoordinator) setupConn(ctx context.Context) error {
 
 	go func() {
 		defer close(s.frameTicker)
-		err := s.options(ctx)
+		err := s.options(ctx, startupCompleted)
 		select {
 		case startupErr <- err:
 		case <-ctx.Done():
@@ -541,14 +530,14 @@ func (s *startupCoordinator) setupConn(ctx context.Context) error {
 // readBytesCopy (e.g. SupportedFrame, AuthChallengeFrame, AuthSuccessFrame)
 // are safe; frame types that use readBytes and expose []byte fields would not
 // be safe and must not be returned from this function.
-func (s *startupCoordinator) write(ctx context.Context, frame frameBuilder) (frame, error) {
+func (s *startupCoordinator) write(ctx context.Context, frame frameBuilder, startupCompleted *atomic.Bool) (frame, error) {
 	select {
 	case s.frameTicker <- struct{}{}:
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
 
-	framer, err := s.conn.exec(ctx, frame, nil, s.conn.cfg.ConnectTimeout)
+	framer, err := s.conn.execInternal(ctx, frame, nil, s.conn.cfg.ConnectTimeout, startupCompleted.Load())
 	if err != nil {
 		return nil, err
 	}
@@ -557,8 +546,8 @@ func (s *startupCoordinator) write(ctx context.Context, frame frameBuilder) (fra
 	return framer.parseFrame()
 }
 
-func (s *startupCoordinator) options(ctx context.Context) error {
-	frame, err := s.write(ctx, &writeOptionsFrame{})
+func (s *startupCoordinator) options(ctx context.Context, startupCompleted *atomic.Bool) error {
+	frame, err := s.write(ctx, &writeOptionsFrame{}, startupCompleted)
 	if err != nil {
 		return err
 	}
@@ -580,7 +569,7 @@ func (s *startupCoordinator) options(ctx context.Context) error {
 	// nil out c.compressor if the server does not support the requested
 	// compression algorithm. Calling it before would snapshot a stale
 	// compressor and set FlagCompress, causing protocol errors.
-	err = s.startup(ctx)
+	err = s.startup(ctx, startupCompleted)
 	if err != nil {
 		return err
 	}
@@ -588,16 +577,16 @@ func (s *startupCoordinator) options(ctx context.Context) error {
 	return nil
 }
 
-func (s *startupCoordinator) startup(ctx context.Context) error {
-	m := map[string]string{}
+func (s *startupCoordinator) startup(ctx context.Context, startupCompleted *atomic.Bool) error {
+	m := map[string]string{
+		"CQL_VERSION":    s.conn.cfg.CQLVersion,
+		"DRIVER_NAME":    s.conn.session.cfg.DriverName,
+		"DRIVER_VERSION": s.conn.session.cfg.DriverVersion,
+	}
 
 	if s.conn.session.cfg.ApplicationInfo != nil {
 		s.conn.session.cfg.ApplicationInfo.UpdateStartupOptions(m)
 	}
-
-	m["CQL_VERSION"] = s.conn.cfg.CQLVersion
-	m["DRIVER_NAME"] = s.conn.session.cfg.DriverName
-	m["DRIVER_VERSION"] = s.conn.session.cfg.DriverVersion
 
 	if s.conn.compressor != nil {
 		comp := s.conn.supported["COMPRESSION"]
@@ -621,7 +610,7 @@ func (s *startupCoordinator) startup(ctx context.Context) error {
 		}
 	}
 
-	frame, err := s.write(ctx, &writeStartupFrame{opts: m})
+	frame, err := s.write(ctx, &writeStartupFrame{opts: m}, startupCompleted)
 	if err != nil {
 		return err
 	}
@@ -630,15 +619,19 @@ func (s *startupCoordinator) startup(ctx context.Context) error {
 	case error:
 		return v
 	case *frm.ReadyFrame:
+		// Startup is successfully completed, so we could use Native Protocol 5
+		startupCompleted.Store(true)
 		return nil
 	case *frm.AuthenticateFrame:
-		return s.authenticateHandshake(ctx, v)
+		// Startup is successfully completed, so we could use Native Protocol 5
+		startupCompleted.Store(true)
+		return s.authenticateHandshake(ctx, v, startupCompleted)
 	default:
 		return NewErrProtocol("Unknown type of response to startup frame: %s", v)
 	}
 }
 
-func (s *startupCoordinator) authenticateHandshake(ctx context.Context, authFrame *frm.AuthenticateFrame) error {
+func (s *startupCoordinator) authenticateHandshake(ctx context.Context, authFrame *frm.AuthenticateFrame, startupCompleted *atomic.Bool) error {
 	if s.conn.auth == nil {
 		return fmt.Errorf("authentication required (using %q)", authFrame.Class)
 	}
@@ -650,7 +643,7 @@ func (s *startupCoordinator) authenticateHandshake(ctx context.Context, authFram
 
 	req := &writeAuthResponseFrame{data: resp}
 	for {
-		frame, err := s.write(ctx, req)
+		frame, err := s.write(ctx, req, startupCompleted)
 		if err != nil {
 			return err
 		}
@@ -755,7 +748,7 @@ func (c *Conn) setTabletSupported(val bool) {
 }
 
 func (c *Conn) close() error {
-	return c.conn.Close()
+	return c.r.Close()
 }
 
 func (c *Conn) Close() {
@@ -767,15 +760,26 @@ func (c *Conn) Close() {
 // open and is therefore usually called in a separate goroutine.
 func (c *Conn) serve(ctx context.Context) {
 	var err error
-	for err == nil {
-		err = c.recv(ctx)
+	for {
+		err = c.recv(ctx, true)
+		if err == nil {
+			continue
+		}
+		if errors.Is(err, ErrReadHeaderTimeout) {
+			c.logger.Print("gocql: read header timeout") // TODO: Provide more details from wrapped error?
+			err = nil
+			continue
+		}
+		break
 	}
 
 	c.closeWithError(err)
 }
 
-func (c *Conn) discardFrame(head frm.FrameHeader) error {
-	_, err := io.CopyN(io.Discard, c, int64(head.Length))
+func (c *Conn) discardFrame(r io.Reader, head frm.FrameHeader) error {
+	// Read the body from the same reader that supplied the header: for proto v5
+	// this may be a segment buffer rather than the socket (c.r).
+	_, err := io.CopyN(io.Discard, r, int64(head.Length))
 	if err != nil {
 		return err
 	}
@@ -841,13 +845,29 @@ func (c *Conn) heartBeat(ctx context.Context) {
 	}
 }
 
-func (c *Conn) recv(ctx context.Context) error {
+func (c *Conn) recv(ctx context.Context, startupCompleted bool) error {
+	// If startup is completed and native proto 5+ is set up then we should
+	// unwrap payload from compressed/uncompressed frame
+	if startupCompleted && c.version > protoVersion4 {
+		return c.recvSegment(ctx)
+	}
+
+	return c.processFrame(ctx, c.r)
+}
+
+func (c *Conn) processFrame(ctx context.Context, r io.Reader) error {
 	// not safe for concurrent reads
 
-	// read a full header, ignore timeouts, as this is being ran in a loop
-	// TODO: TCP level deadlines? or just query level deadlines?
-	if c.readTimeout.Load() > 0 {
-		c.conn.SetReadDeadline(time.Time{})
+	// Read the frame header without a per-request read deadline: the serve()
+	// loop waits indefinitely for the next inbound frame, so a short
+	// ReadTimeout must not fire here. We disarm the deadline for the header
+	// read only, then re-arm it before reading the body. Disarming via a
+	// dedicated flag (rather than zeroing and restoring the connReader timeout)
+	// keeps the operational timeout intact, so a concurrent finalizeConnection
+	// switching the reader from ConnectTimeout to ReadTimeout is never lost.
+	// The header read itself clears any stale deadline (see connReader.Read).
+	if cr, ok := r.(*connReader); ok {
+		cr.setDisarm(true)
 	}
 
 	var headStartTime time.Time
@@ -855,13 +875,23 @@ func (c *Conn) recv(ctx context.Context) error {
 		headStartTime = time.Now()
 	}
 	// were just reading headers over and over and copy bodies
-	head, err := readHeader(c.r, c.headerBuf[:])
+	head, err := readHeader(r, c.headerBuf[:])
+
+	var headEndTime time.Time
+	if c.frameObserver != nil {
+		headEndTime = time.Now()
+	}
+
+	// Re-arm the deadline so that body reads are still bounded by the
+	// operational timeout.
+	if cr, ok := r.(*connReader); ok {
+		cr.setDisarm(false)
+	}
 	if err != nil {
 		return err
 	}
 
 	if c.frameObserver != nil {
-		headEndTime := time.Now()
 		c.frameObserver.ObserveFrameHeader(context.Background(), ObservedFrameHeader{
 			Version: head.Version,
 			Flags:   head.Flags,
@@ -879,7 +909,7 @@ func (c *Conn) recv(ctx context.Context) error {
 	} else if head.Stream <= 0 {
 		// reserved stream that we dont use, probably due to a protocol error
 		// or a bug in Cassandra, this should be an error, parse it and return.
-		framer, err := c.readFrameIntoFramer(head)
+		framer, err := c.readFrameIntoFramer(r, head)
 		if err != nil {
 			return err
 		}
@@ -920,14 +950,14 @@ func (c *Conn) recv(ctx context.Context) error {
 	c.mu.Unlock()
 	if call == nil || !ok {
 		c.logger.Printf("gocql: received response for stream which has no handler: header=%v\n", head)
-		return c.discardFrame(head)
+		return c.discardFrame(r, head)
 	} else if head.Stream != call.streamID {
 		panic(fmt.Sprintf("call has incorrect streamID: got %d expected %d", call.streamID, head.Stream))
 	}
 
 	framer := c.getReadFramer()
 
-	err = framer.readFrame(c, &head)
+	err = framer.readFrame(r, &head)
 	if err != nil {
 		// only net errors should cause the connection to be closed. Though
 		// cassandra returning corrupt frames will be returned here as well.
@@ -951,9 +981,11 @@ func (c *Conn) recv(ctx context.Context) error {
 	return nil
 }
 
-func (c *Conn) readFrameIntoFramer(head frm.FrameHeader) (*framer, error) {
+func (c *Conn) readFrameIntoFramer(r io.Reader, head frm.FrameHeader) (*framer, error) {
 	framer := c.getReadFramer()
-	if err := framer.readFrame(c, &head); err != nil {
+	// Read the body from the same reader that supplied the header: for proto v5
+	// this may be a segment buffer rather than the socket (c.r).
+	if err := framer.readFrame(r, &head); err != nil {
 		c.releaseReadFramer(framer)
 		return nil, err
 	}
@@ -977,6 +1009,240 @@ func (c *Conn) releaseStream(call *callReq) {
 			})
 		})
 	}
+}
+
+func (c *Conn) recvSegment(ctx context.Context) error {
+	// Read the first segment's header with the read deadline disarmed: on an
+	// idle connection the serve() loop blocks here waiting for the peer to
+	// start sending the next frame, and that wait must not be bounded by
+	// ReadTimeout. Only the idle wait for the header is unbounded — the payload
+	// of this segment and any continuation segments are read with the deadline
+	// re-armed, so a peer that sends a header and then stalls mid-read is
+	// caught by the per-read ReadTimeout.
+	//
+	// Note the deadline is per-read (see connReader.Read), not per-frame: a
+	// single logical CQL frame may span many segments (recvSplitFrame), so
+	// ReadTimeout bounds how long any one read may stall, not the total time
+	// to assemble a frame. A peer that keeps trickling progress just under
+	// ReadTimeout is instead bounded by the maximum reassembled frame size
+	// enforced in recvSplitFrame/readContinuationSegmentInto.
+	hdr, err := c.readFirstSegmentHeader()
+	if err != nil {
+		return err
+	}
+
+	payload, err := readSegmentPayload(c.r, hdr, c.compressor)
+	if err != nil {
+		return err
+	}
+
+	if hdr.isSelfContained {
+		// The segment holds one or more complete CQL frames.
+		return c.processAllFramesInSegment(ctx, bytes.NewReader(payload))
+	}
+
+	// The segment is the first slice of a single large CQL frame split across
+	// several non-self-contained segments; reassemble the whole frame before
+	// processing it.
+	return c.recvSplitFrame(ctx, payload)
+}
+
+// readFirstSegmentHeader reads the header of the next segment while the read
+// deadline is disarmed, so an idle serve() loop can block indefinitely waiting
+// for the next frame to begin. The deadline is disarmed via a dedicated flag
+// (so connReader.Read does not re-arm it) and always re-armed before the caller
+// reads the payload. Disarming this way leaves the operational timeout value
+// intact, so a concurrent finalizeConnection switching the reader from
+// ConnectTimeout to ReadTimeout is never clobbered. A read timeout during this
+// idle wait is normalised to ErrReadHeaderTimeout so serve() treats it as a
+// benign idle timeout instead of closing the connection.
+func (c *Conn) readFirstSegmentHeader() (segmentHeader, error) {
+	if cr, ok := c.r.(*connReader); ok {
+		cr.setDisarm(true)
+	}
+
+	hdr, err := readSegmentHeader(c.r, c.compressor)
+
+	if cr, ok := c.r.(*connReader); ok {
+		cr.setDisarm(false)
+	}
+
+	if err != nil {
+		var netErr net.Error
+		if errors.As(err, &netErr) && netErr.Timeout() {
+			return segmentHeader{}, fmt.Errorf("%w: %w", ErrReadHeaderTimeout, err)
+		}
+		return segmentHeader{}, err
+	}
+	return hdr, nil
+}
+
+// recvSplitFrame reassembles a single CQL frame that the peer split across
+// multiple non-self-contained segments. first is the payload of the segment
+// already consumed by recvSegment. Each read here is bounded by ReadTimeout
+// (the peer is mid-transfer), and the total reassembled size is bounded by
+// maxFrameSize / the declared frame length so a peer trickling progress under
+// ReadTimeout cannot grow memory without limit. The 9-byte CQL frame header is
+// parsed only once enough bytes have been accumulated, since valid v5
+// segmentation may split the header itself across segments.
+func (c *Conn) recvSplitFrame(ctx context.Context, first []byte) error {
+	const frameHeaderLength = 9
+
+	buf := bytes.NewBuffer(first)
+
+	// Accumulate segments until the full CQL frame header is available. The
+	// header itself may be split across segments, so we cannot learn the total
+	// frame length up front; bound the accumulation by maxFrameSize so a peer
+	// that never completes the header cannot grow buf without limit.
+	for buf.Len() < frameHeaderLength {
+		if err := c.readContinuationSegmentInto(buf, maxFrameSize); err != nil {
+			return err
+		}
+	}
+
+	// Peek the CQL frame header (without consuming it — processFrame re-reads
+	// it from buf) to learn the total frame length.
+	head, err := readHeader(bytes.NewReader(buf.Bytes()[:frameHeaderLength]), c.headerBuf[:])
+	if err != nil {
+		return err
+	}
+	if head.Length < 0 || head.Length > maxFrameSize {
+		return fmt.Errorf("gocql: invalid frame body length in segmented frame: %d", head.Length)
+	}
+	total := frameHeaderLength + head.Length
+
+	// Accumulate the remaining segments until the whole frame is buffered.
+	// The buffer grows only as continuation payloads actually arrive, and
+	// readContinuationSegmentInto bounds growth by total, so a truncated or
+	// lying header cannot force a large speculative allocation up front and an
+	// over-long stream of continuation segments is rejected instead of
+	// overshooting the declared frame length.
+	for buf.Len() < total {
+		if err := c.readContinuationSegmentInto(buf, total); err != nil {
+			return err
+		}
+	}
+
+	if buf.Len() != total {
+		return fmt.Errorf("gocql: reassembled segmented frame length %d does not match expected %d", buf.Len(), total)
+	}
+
+	return c.processFrame(ctx, buf)
+}
+
+// readContinuationSegmentInto reads the next non-self-contained segment and
+// appends its payload to buf. Each read is bounded by ReadTimeout. limit is
+// the maximum number of bytes buf is allowed to hold after appending this
+// segment's payload; a segment that would exceed it, or one that makes no
+// forward progress (empty payload), is rejected so a hostile peer cannot drive
+// unbounded memory growth or an infinite reassembly loop.
+func (c *Conn) readContinuationSegmentInto(buf *bytes.Buffer, limit int) error {
+	hdr, err := readSegmentHeader(c.r, c.compressor)
+	if err != nil {
+		return fmt.Errorf("gocql: failed to read continuation segment header: %w", err)
+	}
+	if hdr.isSelfContained {
+		return fmt.Errorf("gocql: received self-contained segment, but expected a continuation")
+	}
+	payload, err := readSegmentPayload(c.r, hdr, c.compressor)
+	if err != nil {
+		return fmt.Errorf("gocql: failed to read continuation segment payload: %w", err)
+	}
+	if len(payload) == 0 {
+		return fmt.Errorf("gocql: continuation segment made no progress (empty payload)")
+	}
+	if buf.Len()+len(payload) > limit {
+		return fmt.Errorf("gocql: segmented frame exceeds maximum size %d", limit)
+	}
+	buf.Write(payload)
+	return nil
+}
+
+func (c *Conn) processAllFramesInSegment(ctx context.Context, r *bytes.Reader) error {
+	var err error
+	for r.Len() > 0 && err == nil {
+		err = c.processFrame(ctx, r)
+	}
+
+	return err
+}
+
+// ConnReader is like net.Conn but also allows to set timeout duration.
+type ConnReader interface {
+	// Read reads data from the connection.
+	Read(p []byte) (n int, err error)
+
+	// Close closes the connection.
+	Close() error
+
+	// RemoteAddr returns the remote network address, if known.
+	RemoteAddr() net.Addr
+
+	// SetTimeout sets timeout duration for reading data form conn
+	SetTimeout(timeout time.Duration)
+
+	// GetTimeout returns timeout duration
+	GetTimeout() time.Duration
+}
+
+// connReader implements ConnReader.
+type connReader struct {
+	conn    net.Conn
+	r       *bufio.Reader
+	timeout atomic.Int64
+	disarm  atomic.Bool
+}
+
+func (c *connReader) Read(p []byte) (n int, err error) {
+	if c.conn != nil {
+		if c.disarm.Load() {
+			// The read deadline is disarmed around the frame/segment header read in
+			// the serve() loop: on an idle connection that read blocks indefinitely
+			// waiting for the next frame, so a short ReadTimeout must not fire here.
+			// We disarm via this flag rather than by zeroing the operational timeout
+			// so that a concurrent finalizeConnection (which switches the reader from
+			// ConnectTimeout to ReadTimeout) is never clobbered by a restore.
+			c.conn.SetReadDeadline(time.Time{})
+		} else if timeout := c.GetTimeout(); timeout > 0 {
+			c.conn.SetReadDeadline(time.Now().Add(timeout))
+		} else {
+			// A read deadline is absolute and persists across reads: once the
+			// timeout is disabled we must clear any deadline armed by a previous
+			// read (or during connection setup, e.g. ConnectTimeout), otherwise
+			// idle connections keep tripping the stale deadline.
+			c.conn.SetReadDeadline(time.Time{})
+		}
+	}
+	n, err = io.ReadFull(c.r, p)
+	return
+}
+
+// setDisarm enables or disables the read-deadline disarm used around the
+// frame/segment header read (see Read). It deliberately leaves the operational
+// timeout value untouched so it can be toggled without racing a concurrent
+// finalizeConnection.
+func (c *connReader) setDisarm(v bool) {
+	c.disarm.Store(v)
+}
+
+func (c *connReader) Write(b []byte) (n int, err error) {
+	return c.conn.Write(b)
+}
+
+func (c *connReader) Close() error {
+	return c.conn.Close()
+}
+
+func (c *connReader) RemoteAddr() net.Addr {
+	return c.conn.RemoteAddr()
+}
+
+func (c *connReader) SetTimeout(timeout time.Duration) {
+	c.timeout.Store(int64(timeout))
+}
+
+func (c *connReader) GetTimeout() time.Duration {
+	return time.Duration(c.timeout.Load())
 }
 
 type callReq struct {
@@ -1313,6 +1579,10 @@ func (c *Conn) addCall(call *callReq) error {
 // typically via defer immediately after parsing or after transferring ownership
 // to an Iter.
 func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, requestTimeout time.Duration) (*framer, error) {
+	return c.execInternal(ctx, req, tracer, requestTimeout, true)
+}
+
+func (c *Conn) execInternal(ctx context.Context, req frameBuilder, tracer Tracer, requestTimeout time.Duration, startupCompleted bool) (*framer, error) {
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return nil, &QueryError{err: ctxErr, potentiallyExecuted: false}
 	}
@@ -1393,6 +1663,22 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, reques
 			recycleCall = true
 		}
 		return nil, &QueryError{err: err, potentiallyExecuted: false}
+	}
+
+	if c.version > protoVersion4 && startupCompleted {
+		if err = framer.prepareModernLayout(); err != nil {
+			c.releaseWriteFramer(framer)
+			// prepareModernLayout failed before any bytes were written, so this
+			// is equivalent to a buildFrame failure: the connection is untouched
+			// and the request was never sent. Signal completion via the deferred
+			// epilogue and let exec() own the stream/call cleanup.
+			stopWaiting = true
+			if c.removeCallIfOpen(call.streamID) {
+				releaseStream = true
+				recycleCall = true
+			}
+			return nil, &QueryError{err: err, potentiallyExecuted: false}
+		}
 	}
 
 	n, err := c.w.writeContext(ctx, framer.buf)
@@ -1534,9 +1820,10 @@ type StreamObserverContext interface {
 }
 
 type preparedStatment struct {
-	id       []byte
-	response resultMetadata
-	request  preparedMetadata
+	response         resultMetadata
+	id               []byte
+	resultMetadataID []byte
+	request          preparedMetadata
 }
 
 type inflightPrepare struct {
@@ -1546,8 +1833,8 @@ type inflightPrepare struct {
 	preparedStatment *preparedStatment
 }
 
-func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer, requestTimeout time.Duration) (*preparedStatment, error) {
-	cacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), c.currentKeyspace, stmt)
+func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer, keyspace string, requestTimeout time.Duration) (*preparedStatment, error) {
+	cacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), keyspace, stmt)
 	flight, ok := c.session.stmtsLRU.execIfMissing(cacheKey, func(cache *lru.Cache[stmtCacheKey]) *inflightPrepare {
 		flight := &inflightPrepare{
 			done: make(chan struct{}),
@@ -1564,7 +1851,7 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer,
 				statement: stmt,
 			}
 			if c.version > protoVersion4 {
-				prep.keyspace = c.currentKeyspace
+				prep.keyspace = keyspace
 			}
 
 			// we won the race to do the load, if our context is canceled we shouldnt
@@ -1594,9 +1881,12 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer,
 			switch x := frame.(type) {
 			case *resultPreparedFrame:
 				flight.preparedStatment = &preparedStatment{
-					id:       x.preparedID,
-					request:  x.reqMeta,
-					response: x.respMeta,
+					// preparedID is already defensively copied by readShortBytesCopy()
+					// in the frame parser; resultMetadataID likewise.
+					id:               x.preparedID,
+					resultMetadataID: x.resultMetadataID,
+					request:          x.reqMeta,
+					response:         x.respMeta,
 				}
 			case error:
 				flight.err = x
@@ -1654,8 +1944,17 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 	if qry.pageSize > 0 {
 		params.pageSize = qry.pageSize
 	}
-	if c.version > protoVersion4 {
-		params.keyspace = c.currentKeyspace
+	// Always forward these to the framer regardless of protocol version. On
+	// protocol < v5 the frame writer rejects them with an explicit
+	// "unsupported option" error instead of silently dropping the value.
+	params.keyspace = qry.keyspace
+	params.nowInSeconds = qry.nowInSecondsValue
+
+	// If a keyspace for the qry is overriden,
+	// then we should use it to create stmt cache key
+	usedKeyspace := c.currentKeyspace
+	if qry.keyspace != "" {
+		usedKeyspace = qry.keyspace
 	}
 
 	var (
@@ -1666,7 +1965,7 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 	if !qry.skipPrepare && qry.shouldPrepare() {
 		// Prepare all DML queries. Other queries can not be prepared.
 		var err error
-		info, err = c.prepareStatement(ctx, qry.stmt, qry.trace, qry.GetRequestTimeout())
+		info, err = c.prepareStatement(ctx, qry.stmt, qry.trace, usedKeyspace, qry.GetRequestTimeout())
 		if err != nil {
 			return &Iter{err: err}
 		}
@@ -1703,15 +2002,19 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 		params.skipMeta = !(c.session.cfg.DisableSkipMetadata || qry.disableSkipMetadata) && len(info.response.columns) != 0
 
 		frame = &writeExecuteFrame{
-			preparedID:    info.id,
-			params:        params,
-			customPayload: qry.customPayload,
+			preparedID:       info.id,
+			params:           params,
+			customPayload:    qry.customPayload,
+			resultMetadataID: info.resultMetadataID,
 		}
 
 		// Set "lwt", keyspace", "table" property in the query if it is present in preparedMetadata
 		qry.routingInfo.mu.Lock()
 		qry.routingInfo.lwt = info.request.lwt
 		qry.routingInfo.keyspace = info.request.keyspace
+		if info.request.keyspace == "" {
+			qry.routingInfo.keyspace = usedKeyspace
+		}
 		qry.routingInfo.table = info.request.table
 		qry.routingInfo.mu.Unlock()
 	} else {
@@ -1754,13 +2057,48 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 	case *resultVoidFrame:
 		return (&Iter{framer: framer}).bindWarningHandler(qry, warningHandler)
 	case *resultRowsFrame:
+		if x.meta.newMetadataID != nil {
+			// If a RESULT/Rows message reports changed resultset metadata with the
+			// Metadata_changed flag, the reported new resultset metadata must be used
+			// in subsequent executions.
+			cacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), usedKeyspace, qry.stmt)
+			// Use the already-completed local `info` rather than dereferencing the
+			// cached inflight entry's preparedStatment field. `info` comes from the
+			// prepareStatement call above and is guaranteed complete.
+			//
+			// updateMetadataIfSame performs the presence/identity check and the
+			// replacement atomically under the cache lock, so a concurrent eviction
+			// or a newer/in-flight prepare installed for the same key between check
+			// and replace cannot be resurrected or clobbered. It only replaces the
+			// entry while it is still the exact prepared statement `info` points to
+			// (pointer identity, not id bytes), so a same-id reprepare of a newer
+			// generation is left untouched.
+			if info != nil {
+				newInflight := &inflightPrepare{
+					done: make(chan struct{}),
+					preparedStatment: &preparedStatment{
+						id:               info.id,
+						resultMetadataID: x.meta.newMetadataID,
+						request:          info.request,
+						response:         x.meta,
+					},
+				}
+				// Close done to avoid deadlocks on subsequent requests waiting on this.
+				close(newInflight.done)
+				if c.session.stmtsLRU.updateMetadataIfSame(cacheKey, info, newInflight) {
+					// Update info so the code below sees the updated prepared statement.
+					info = newInflight.preparedStatment
+				}
+			}
+		}
+
 		iter := (&Iter{
 			meta:    x.meta,
 			framer:  framer,
 			numRows: x.numRows,
 		}).bindWarningHandler(qry, warningHandler)
 
-		if params.skipMeta {
+		if x.meta.noMetaData() {
 			if info != nil {
 				iter.meta = info.response
 				// pagingState is already independently allocated by readBytesCopy()
@@ -1798,7 +2136,7 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 		// is not consistent with regards to its schema.
 		return iter
 	case *RequestErrUnprepared:
-		stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), c.currentKeyspace, qry.stmt)
+		stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), usedKeyspace, qry.stmt)
 		c.session.stmtsLRU.evictPreparedID(stmtCacheKey, x.StatementId)
 		framer.Release()
 		return c.executeQuery(ctx, qry)
@@ -1874,6 +2212,17 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 		customPayload:         batch.CustomPayload,
 	}
 
+	// Always forward these to the framer regardless of protocol version. On
+	// protocol < v5 the frame writer rejects them with an explicit
+	// "unsupported option" error instead of silently dropping the value.
+	req.keyspace = batch.keyspace
+	req.nowInSeconds = batch.nowInSeconds
+
+	usedKeyspace := c.currentKeyspace
+	if batch.keyspace != "" {
+		usedKeyspace = batch.keyspace
+	}
+
 	stmts := make(map[string]string, len(batch.Entries))
 
 	hasLwtEntries := false
@@ -1883,7 +2232,7 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 		b := &req.statements[i]
 
 		if len(entry.Args) > 0 || entry.binding != nil {
-			info, err := c.prepareStatement(batch.Context(), entry.Stmt, batch.trace, batch.GetRequestTimeout())
+			info, err := c.prepareStatement(batch.Context(), entry.Stmt, batch.trace, usedKeyspace, batch.GetRequestTimeout())
 			if err != nil {
 				return &Iter{err: err}
 			}
@@ -1960,7 +2309,7 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 	case *RequestErrUnprepared:
 		stmt, found := stmts[string(x.StatementId)]
 		if found {
-			key := c.session.stmtsLRU.keyFor(c.host.HostID(), c.currentKeyspace, stmt)
+			key := c.session.stmtsLRU.keyFor(c.host.HostID(), usedKeyspace, stmt)
 			c.session.stmtsLRU.evictPreparedID(key, x.StatementId)
 		}
 		framer.Release()

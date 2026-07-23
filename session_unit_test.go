@@ -34,6 +34,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -1776,4 +1777,139 @@ func TestTableMetadataValidation(t *testing.T) {
 			t.Fatalf("TableMetadata: expected ErrNoTable, got %v", err)
 		}
 	})
+}
+
+type keyspaceCapturingQueryObserver struct{ keyspace string }
+
+func (o *keyspaceCapturingQueryObserver) ObserveQuery(_ context.Context, q ObservedQuery) {
+	o.keyspace = q.Keyspace
+}
+
+type keyspaceCapturingBatchObserver struct{ keyspace string }
+
+func (o *keyspaceCapturingBatchObserver) ObserveBatch(_ context.Context, b ObservedBatch) {
+	o.keyspace = b.Keyspace
+}
+
+// keyspaceCapturingExecutable is a fake ExecutableQuery that records the
+// keyspace argument queryExecutor.attemptQuery passes to attempt(). Keyspace()
+// returns effectiveKS (the per-statement override), while attempt captures
+// whatever attemptQuery actually forwards, so the test fails if attemptQuery
+// stops using the effective keyspace.
+type keyspaceCapturingExecutable struct {
+	ExecutableQuery
+	effectiveKS     string
+	attemptKeyspace string
+}
+
+func (e *keyspaceCapturingExecutable) Keyspace() string { return e.effectiveKS }
+
+func (e *keyspaceCapturingExecutable) execute(context.Context, *Conn) *Iter { return &Iter{} }
+
+func (e *keyspaceCapturingExecutable) attempt(keyspace string, _, _ time.Time, _ *Iter, _ *HostInfo) {
+	e.attemptKeyspace = keyspace
+}
+
+// TestAttemptQueryReportsEffectiveKeyspace verifies that queryExecutor.attemptQuery
+// forwards the query's effective keyspace (Query.Keyspace(), which honors the
+// proto v5 SetKeyspace override) to attempt(), rather than the pool/session
+// keyspace. Reverting attemptQuery to pass the pool keyspace fails this test.
+func TestAttemptQueryReportsEffectiveKeyspace(t *testing.T) {
+	const overrideKS = "override_ks"
+
+	qe := &queryExecutor{}
+	exec := &keyspaceCapturingExecutable{effectiveKS: overrideKS}
+	conn := &Conn{host: &HostInfo{hostId: UUID{1}}}
+
+	qe.attemptQuery(context.Background(), exec, conn)
+
+	if exec.attemptKeyspace != overrideKS {
+		t.Fatalf("attemptQuery forwarded keyspace %q to attempt, want %q", exec.attemptKeyspace, overrideKS)
+	}
+}
+
+// TestQueryAttemptReportsOverrideKeyspaceToObserver verifies the end-to-end wiring
+// from Query.attempt through to the observer: a per-query keyspace override
+// (Query.SetKeyspace) must surface in ObservedQuery.Keyspace.
+func TestQueryAttemptReportsOverrideKeyspaceToObserver(t *testing.T) {
+	const overrideKS = "override_ks"
+
+	obs := &keyspaceCapturingQueryObserver{}
+	q := &Query{
+		stmt:        "SELECT * FROM t",
+		routingInfo: &queryRoutingInfo{},
+		metrics:     &queryMetrics{m: make(map[UUID]*hostMetrics)},
+		observer:    obs,
+	}
+	q.SetKeyspace(overrideKS)
+
+	if got := q.Keyspace(); got != overrideKS {
+		t.Fatalf("Query.Keyspace() = %q, want %q", got, overrideKS)
+	}
+
+	now := time.Now()
+	q.attempt(q.Keyspace(), now, now, &Iter{}, &HostInfo{hostId: UUID{1}})
+
+	if obs.keyspace != overrideKS {
+		t.Fatalf("ObservedQuery.Keyspace = %q, want %q", obs.keyspace, overrideKS)
+	}
+}
+
+// TestBatchAttemptReportsOverrideKeyspaceToObserver is the batch counterpart of
+// TestQueryAttemptReportsOverrideKeyspaceToObserver.
+func TestBatchAttemptReportsOverrideKeyspaceToObserver(t *testing.T) {
+	const overrideKS = "override_ks"
+
+	obs := &keyspaceCapturingBatchObserver{}
+	b := &Batch{
+		routingInfo: &queryRoutingInfo{},
+		metrics:     &queryMetrics{m: make(map[UUID]*hostMetrics)},
+		observer:    obs,
+	}
+	b.SetKeyspace(overrideKS)
+
+	if got := b.Keyspace(); got != overrideKS {
+		t.Fatalf("Batch.Keyspace() = %q, want %q", got, overrideKS)
+	}
+
+	now := time.Now()
+	b.attempt(b.Keyspace(), now, now, &Iter{}, &HostInfo{hostId: UUID{2}})
+
+	if obs.keyspace != overrideKS {
+		t.Fatalf("ObservedBatch.Keyspace = %q, want %q", obs.keyspace, overrideKS)
+	}
+}
+
+// TestQueryKeyspaceConcurrentWithRoutingInfoWrite exercises Query.Keyspace()
+// concurrently with a writer mutating routingInfo.keyspace under routingInfo.mu
+// (as GetRoutingKey does). queryExecutor.attemptQuery calls Keyspace() from every
+// speculative execution goroutine, so the read must take routingInfo.mu; under
+// -race this fails if the lock is dropped.
+func TestQueryKeyspaceConcurrentWithRoutingInfoWrite(t *testing.T) {
+	q := &Query{
+		routingInfo: &queryRoutingInfo{},
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	// Writer: mimic GetRoutingKey updating routingInfo under the lock.
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 1000; i++ {
+			q.routingInfo.mu.Lock()
+			q.routingInfo.keyspace = "ks"
+			q.routingInfo.mu.Unlock()
+		}
+	}()
+
+	// Reader: mimic attemptQuery reading the effective keyspace.
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 1000; i++ {
+			_ = q.Keyspace()
+		}
+	}()
+
+	wg.Wait()
 }

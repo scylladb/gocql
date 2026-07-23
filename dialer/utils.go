@@ -46,12 +46,16 @@ func addQueryParams(frame []byte, index int) int {
 	index = index + 2
 
 	//use query flags
-	var flags byte
+	var flags uint32
 	if frame[0] > 0x04 {
-		flags = frame[index+3]
+		// For protocol v5+, flags are a 4-byte big-endian uint32
+		flags = uint32(frame[index])<<24 |
+			uint32(frame[index+1])<<16 |
+			uint32(frame[index+2])<<8 |
+			uint32(frame[index+3])
 		index = index + 4
 	} else {
-		flags = frame[index]
+		flags = uint32(frame[index])
 		index = index + 1
 	}
 
@@ -113,6 +117,35 @@ func addCustomPayload(frame []byte, index int, p int) int {
 }
 
 func GetFrameHash(frame []byte) int64 {
+	// GetFrameHash parses raw CQL request frames. On protocol v5+ the on-wire
+	// bytes recorded by the replayer are not a CQL frame but a transport
+	// segment produced by framer.prepareModernLayout (segment header, optional
+	// CRC/compression, possibly split across segments), so frame[0] is segment
+	// data rather than the CQL version byte. Parsing it as a CQL frame would
+	// hash the wrong byte range.
+	//
+	// This is currently dormant because Scylla negotiates at most protocol v4,
+	// so v5 segment framing is never produced. Proper segment unwrapping is
+	// tracked in https://github.com/scylladb/gocql/issues/937.
+	//
+	// The check below is only a best-effort heuristic: for a v5 segment,
+	// frame[0] is the low byte of the 17-bit segment length, NOT a CQL version
+	// byte. It reliably diverts inputs whose first byte looks like a v5+ version
+	// (>= 5), but a segment whose length low-byte is < 5 will still fall into
+	// the legacy parser below and be mis-hashed. Correctly distinguishing the
+	// two requires protocol context that is not plumbed here (see #937). A CQL
+	// request frame carries the protocol version in the low 7 bits of frame[0].
+	const (
+		protoVersionMask = 0x7F
+		protoVersion5    = 0x05
+	)
+	// TODO(#937): replace this heuristic with real protocol context — for a v5
+	// segment frame[0] is a length byte, so segments with a length low-byte < 5
+	// are still mis-hashed by the legacy parser below.
+	if len(frame) == 0 || frame[0]&protoVersionMask >= protoVersion5 {
+		return murmur.Murmur3H1(frame)
+	}
+
 	var p int
 	if frame[0] > 0x02 {
 		p = 1
@@ -157,6 +190,17 @@ func GetFrameHash(frame []byte) int64 {
 
 		preparedIDLen := int(frame[index])<<8 | int(frame[index+1])
 		endIndex = endIndex + 2 + preparedIDLen
+
+		// For protocol v5+, EXECUTE frames carry a resultMetadataID (short bytes)
+		// between the preparedID and the query params. Skip it so the query-params
+		// offset (and therefore the extracted hash) is correct. Currently dormant:
+		// Scylla negotiates at most protocol v4, so this branch is not reached in
+		// production, but it keeps the parser correct if v5 is enabled.
+		if frame[0] > 0x04 {
+			resultMetadataIDLen := int(frame[endIndex])<<8 | int(frame[endIndex+1])
+			endIndex = endIndex + 2 + resultMetadataIDLen
+		}
+
 		if frame[0] > 0x01 {
 			endIndex = addQueryParams(frame, endIndex)
 		} else {

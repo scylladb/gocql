@@ -164,6 +164,36 @@ func TestSnappyCompressor(t *testing.T) {
 	})
 }
 
+// legacyCompressor implements only the master-era Compressor surface
+// (Name/Encode/Decode). It guards backward compatibility: if the public
+// gocql.Compressor interface ever regains required methods beyond these, this
+// file stops compiling — which is the regression we are preventing.
+type legacyCompressor struct{}
+
+func (legacyCompressor) Name() string                       { return "legacy" }
+func (legacyCompressor) Encode(data []byte) ([]byte, error) { return data, nil }
+func (legacyCompressor) Decode(data []byte) ([]byte, error) { return data, nil }
+
+var _ gocql.Compressor = legacyCompressor{}
+
+func TestCompressorBackwardCompatibility(t *testing.T) {
+	t.Parallel()
+
+	// A compressor implementing only Name/Encode/Decode must satisfy
+	// gocql.Compressor without implementing the optional v5 SegmentCompressor.
+	var c gocql.Compressor = legacyCompressor{}
+	if _, ok := c.(gocql.SegmentCompressor); ok {
+		t.Fatal("legacyCompressor unexpectedly satisfies SegmentCompressor")
+	}
+
+	// The built-in SnappyCompressor must not satisfy SegmentCompressor: it is
+	// the "capable Compressor, but not v5-segment-capable" case the driver
+	// rejects up front on ProtoVersion >= 5.
+	if _, ok := interface{}(gocql.SnappyCompressor{}).(gocql.SegmentCompressor); ok {
+		t.Fatal("SnappyCompressor must not satisfy SegmentCompressor")
+	}
+}
+
 func BenchmarkSnappyCompressor(b *testing.B) {
 	c := gocql.SnappyCompressor{}
 	b.Run("Decode", func(b *testing.B) {
