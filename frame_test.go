@@ -389,6 +389,119 @@ func TestParseResultMetadata_PerColumnSpec(t *testing.T) {
 	}
 }
 
+// TestParsePreparedMetadataRejectsInvalidPkeyCount verifies that a RESULT/Prepared
+// frame declaring a negative or absurdly large partition-key count is reported as
+// an error rather than crashing the serve goroutine (a negative count makes
+// make([]int, n) raise a runtime error that parseFrame's recover re-panics) or
+// forcing a huge speculative allocation from a small frame.
+func TestParsePreparedMetadataRejectsInvalidPkeyCount(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name      string
+		pkeyCount int32
+	}{
+		{name: "negative", pkeyCount: -1},
+		{name: "huge", pkeyCount: 1 << 30},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			fr := newFramer(nil, protoVersion4)
+			fr.header = &frm.FrameHeader{Version: protoVersion4 | protoDirectionMask, Op: frm.OpResult}
+
+			fr.writeInt(frm.ResultKindPrepared)
+			fr.writeShortBytes([]byte{0x01, 0x02, 0x03}) // preparedID
+			// prepared metadata: flags=0, colCount=0, then the bogus pkeyCount.
+			fr.writeInt(0)
+			fr.writeInt(0)
+			fr.writeInt(tc.pkeyCount)
+
+			frame, err := fr.parseFrame()
+			if err == nil {
+				t.Fatalf("expected an error for pkeyCount=%d, got frame %+v", tc.pkeyCount, frame)
+			}
+			if frame != nil {
+				t.Errorf("expected nil frame on error, got %+v", frame)
+			}
+			// Assert on the message, not just on err != nil. Without the guard the
+			// "huge" case still returns an error — make() succeeds and the first
+			// readShort() then panics on the empty buffer — so a bare err != nil
+			// check passes either way and the allocation bound goes untested.
+			require.ErrorContains(t, err, "invalid partition key count")
+		})
+	}
+}
+
+// TestParsePreparedMetadataAcceptsValidPkeyCount pins the upper half of the
+// pkeyCount guard: a count that the remaining buffer can actually supply must be
+// accepted. Without this, a bound tightened by mistake (down to `> 0`, say) would
+// reject every prepared statement that has a partition key and no unit test would
+// notice — pk_count is 0 in every other prepared frame the suite builds.
+func TestParsePreparedMetadataAcceptsValidPkeyCount(t *testing.T) {
+	t.Parallel()
+
+	t.Run("exactly at the bound", func(t *testing.T) {
+		t.Parallel()
+
+		fr := newFramer(nil, protoVersion4)
+		fr.header = &frm.FrameHeader{Version: protoVersion4 | protoDirectionMask}
+
+		// NO_METADATA so parsing stops right after the pkeys, leaving the buffer
+		// holding exactly 2*pkeyCount bytes at the guard: pkeyCount == len(buf)/2.
+		fr.writeInt(int32(frm.FlagNoMetaData))
+		fr.writeInt(0) // colCount
+		fr.writeInt(2) // pkeyCount
+		fr.writeShort(0)
+		fr.writeShort(1)
+
+		// NotPanics, because parsePreparedMetadata is called directly here and so
+		// the guard's panic would otherwise take down the whole test binary rather
+		// than failing this subtest.
+		var meta preparedMetadata
+		require.NotPanics(t, func() { meta = fr.parsePreparedMetadata() })
+
+		require.Equal(t, []int{0, 1}, meta.pkeyColumns)
+		require.Empty(t, fr.buf, "whole metadata block should be consumed")
+	})
+
+	t.Run("full prepared frame", func(t *testing.T) {
+		t.Parallel()
+
+		fr := newFramer(nil, protoVersion4)
+		fr.header = &frm.FrameHeader{Version: protoVersion4 | protoDirectionMask, Op: frm.OpResult}
+
+		fr.writeInt(frm.ResultKindPrepared)
+		fr.writeShortBytes([]byte{0x01, 0x02, 0x03}) // preparedID
+		// prepared metadata
+		fr.writeInt(int32(frm.FlagGlobalTableSpec))
+		fr.writeInt(2) // colCount
+		fr.writeInt(2) // pkeyCount
+		fr.writeShort(0)
+		fr.writeShort(1)
+		fr.writeString("test_ks")
+		fr.writeString("test_tbl")
+		fr.writeString("pk_a")
+		fr.writeShort(uint16(TypeInt))
+		fr.writeString("pk_b")
+		fr.writeShort(uint16(TypeVarchar))
+		// result metadata
+		fr.writeInt(int32(frm.FlagNoMetaData))
+		fr.writeInt(0)
+
+		frame, err := fr.parseFrame()
+		require.NoError(t, err)
+
+		prepared, ok := frame.(*resultPreparedFrame)
+		require.True(t, ok, "got %T", frame)
+		require.Equal(t, []int{0, 1}, prepared.reqMeta.pkeyColumns)
+		require.Len(t, prepared.reqMeta.columns, 2)
+		require.Empty(t, fr.buf, "whole frame should be consumed")
+	})
+}
+
 func Test_framer_writeExecuteFrame(t *testing.T) {
 	framer := newFramer(nil, protoVersion5)
 	nowInSeconds := 123

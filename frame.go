@@ -947,6 +947,17 @@ func (f *framer) parsePreparedMetadata() preparedMetadata {
 
 	if f.proto >= protoVersion4 {
 		pkeyCount := f.readInt()
+		// Like the colCount guard above, reject a negative count: make would panic
+		// with a runtime error, which parseFrame's recover re-panics rather than
+		// converting to an error. Unlike colCount — whose huge-value case is handled
+		// by the make/append split further down — also reject a count larger than the
+		// remaining buffer could supply: each pkey index is a short (2 bytes), so a
+		// valid frame always has pkeyCount <= len(f.buf)/2. That bounds make() to the
+		// actual frame size instead of a peer-declared count, so a small malformed
+		// frame cannot force a large allocation.
+		if pkeyCount < 0 || pkeyCount > len(f.buf)/2 {
+			panic(fmt.Errorf("invalid partition key count %d (remaining %d bytes)", pkeyCount, len(f.buf)))
+		}
 		pkeys := make([]int, pkeyCount)
 		for i := 0; i < pkeyCount; i++ {
 			pkeys[i] = int(f.readShort())
