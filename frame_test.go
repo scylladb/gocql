@@ -248,6 +248,47 @@ func TestParseResultPreparedTruncatedResultMetadataID(t *testing.T) {
 	}
 }
 
+// TestParsePreparedMetadataRejectsInvalidPkeyCount verifies that a RESULT/Prepared
+// frame declaring a negative or absurdly large partition-key count is reported as
+// an error rather than crashing the serve goroutine (a negative count makes
+// make([]int, n) raise a runtime error that parseFrame's recover re-panics) or
+// forcing a huge speculative allocation from a small frame.
+func TestParsePreparedMetadataRejectsInvalidPkeyCount(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name      string
+		pkeyCount int32
+	}{
+		{name: "negative", pkeyCount: -1},
+		{name: "huge", pkeyCount: 1 << 30},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			fr := newFramer(nil, protoVersion4)
+			fr.header = &frm.FrameHeader{Version: protoVersion4 | 0x80, Op: frm.OpResult}
+
+			fr.writeInt(frm.ResultKindPrepared)
+			fr.writeShortBytes([]byte{0x01, 0x02, 0x03}) // preparedID
+			// prepared metadata: flags=0, colCount=0, then the bogus pkeyCount.
+			fr.writeInt(0)
+			fr.writeInt(0)
+			fr.writeInt(tc.pkeyCount)
+
+			frame, err := fr.parseFrame()
+			if err == nil {
+				t.Fatalf("expected an error for pkeyCount=%d, got frame %+v", tc.pkeyCount, frame)
+			}
+			if frame != nil {
+				t.Errorf("expected nil frame on error, got %+v", frame)
+			}
+		})
+	}
+}
+
 func Test_framer_writeExecuteFrame(t *testing.T) {
 	tests := []struct {
 		name                 string
