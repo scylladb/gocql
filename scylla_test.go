@@ -4,6 +4,7 @@
 package gocql
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"math"
@@ -260,6 +261,59 @@ func TestScyllaLWTExtParsing(t *testing.T) {
 		framerWithLwtExt := newFramerWithExts(conn.compressor, conn.version, conn.cqlProtoExts, conn.logger)
 		if framerWithLwtExt.flagLWT == 0 {
 			t.Error("expected to have LWT flag to be set after framer init")
+		}
+	})
+}
+
+func TestScyllaUseMetadataIdExtParsing(t *testing.T) {
+	t.Parallel()
+
+	t.Run("newScyllaUseMetadataIdExt detects the advertised key", func(t *testing.T) {
+		if ext := newScyllaUseMetadataIdExt(map[string][]string{scyllaUseMetadataId: {}}); ext == nil {
+			t.Error("expected a non-nil extension when SCYLLA_USE_METADATA_ID is advertised")
+		}
+		if ext := newScyllaUseMetadataIdExt(map[string][]string{}); ext != nil {
+			t.Error("expected a nil extension when SCYLLA_USE_METADATA_ID is not advertised")
+		}
+	})
+
+	t.Run("name and serialize", func(t *testing.T) {
+		ext := &scyllaUseMetadataIdExt{}
+		if ext.name() != scyllaUseMetadataId {
+			t.Errorf("name() = %q, want %q", ext.name(), scyllaUseMetadataId)
+		}
+		ser := ext.serialize()
+		if v, ok := ser[scyllaUseMetadataId]; !ok || len(ser) != 1 || v != "" {
+			t.Errorf("serialize() = %v, want a single %q key mapping to \"\"", ser, scyllaUseMetadataId)
+		}
+	})
+
+	t.Run("parseCQLProtocolExtensions registers the extension only when advertised", func(t *testing.T) {
+		exts := parseCQLProtocolExtensions(map[string][]string{scyllaUseMetadataId: {}}, &testLogger{})
+		if findCQLProtoExtByName(exts, scyllaUseMetadataId) == nil {
+			t.Error("expected parseCQLProtocolExtensions to register SCYLLA_USE_METADATA_ID when advertised")
+		}
+
+		extsAbsent := parseCQLProtocolExtensions(map[string][]string{}, &testLogger{})
+		if findCQLProtoExtByName(extsAbsent, scyllaUseMetadataId) != nil {
+			t.Error("did not expect SCYLLA_USE_METADATA_ID to be registered when not advertised")
+		}
+	})
+
+	t.Run("init framer without the extension", func(t *testing.T) {
+		conn := mockConn(0)
+		f := newFramerWithExts(conn.compressor, conn.version, conn.cqlProtoExts, conn.logger)
+		if f.scyllaUseMetadataId {
+			t.Error("expected scyllaUseMetadataId to be false after framer init without the extension")
+		}
+	})
+
+	t.Run("init framer with the extension", func(t *testing.T) {
+		conn := mockConn(0)
+		conn.cqlProtoExts = []cqlProtocolExtension{&scyllaUseMetadataIdExt{}}
+		f := newFramerWithExts(conn.compressor, conn.version, conn.cqlProtoExts, conn.logger)
+		if !f.scyllaUseMetadataId {
+			t.Error("expected scyllaUseMetadataId to be true after framer init with the extension")
 		}
 	})
 }
@@ -640,7 +694,7 @@ func mockConnForPicker(shard, nrShards int) *Conn {
 				msbIgnore: 12,
 			},
 		},
-		conn:    conn1,
+		r:       &connReader{conn: conn1, r: bufio.NewReader(conn1)},
 		addr:    fmt.Sprintf("192.168.1.%d:9042", shard+1),
 		closed:  false,
 		mu:      sync.Mutex{},

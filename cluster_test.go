@@ -31,6 +31,7 @@ import (
 	"crypto/tls"
 	"net"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -96,6 +97,68 @@ func TestValidateAndInitSSLDoesNotShareTLSConfigBetweenConfigCopies(t *testing.T
 	if noTLSCfg.getActualTLSConfig() != nil {
 		t.Fatal("expected copied config with nil SslOpts not to use TLS")
 	}
+}
+
+// segmentCapableCompressor implements both Compressor and SegmentCompressor,
+// standing in for a custom v5-capable compressor (like lz4.LZ4Compressor)
+// without importing the lz4 submodule.
+type segmentCapableCompressor struct{}
+
+func (segmentCapableCompressor) Name() string                       { return "fake-seg" }
+func (segmentCapableCompressor) Encode(data []byte) ([]byte, error) { return data, nil }
+func (segmentCapableCompressor) Decode(data []byte) ([]byte, error) { return data, nil }
+func (segmentCapableCompressor) AppendCompressed(dst, src []byte) ([]byte, error) {
+	return append(dst, src...), nil
+}
+func (segmentCapableCompressor) AppendDecompressed(dst, src []byte, _ uint32) ([]byte, error) {
+	return append(dst, src...), nil
+}
+
+// TestValidate_ProtoV5CompressorCapability covers the capability gate in
+// Validate(): on ProtoVersion >= 5 a compressor must implement SegmentCompressor
+// (the real condition), not merely be a non-Snappy type. Below v5 the gate is
+// off.
+func TestValidate_ProtoV5CompressorCapability(t *testing.T) {
+	t.Parallel()
+
+	newCfg := func(proto int, comp Compressor) *ClusterConfig {
+		cfg := NewCluster("10.0.0.1:9042")
+		cfg.ProtoVersion = proto
+		cfg.Compressor = comp
+		return cfg
+	}
+
+	t.Run("v5 with Snappy is rejected", func(t *testing.T) {
+		t.Parallel()
+		err := newCfg(5, SnappyCompressor{}).Validate()
+		if err == nil {
+			t.Fatal("expected error for Snappy on protocol v5, got nil")
+		}
+		if !strings.Contains(err.Error(), "does not support protocol v5 segment framing") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("v5 with a segment-capable compressor is allowed", func(t *testing.T) {
+		t.Parallel()
+		if err := newCfg(5, segmentCapableCompressor{}).Validate(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("v5 with no compressor is allowed", func(t *testing.T) {
+		t.Parallel()
+		if err := newCfg(5, nil).Validate(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("v4 with Snappy is allowed (gate off below v5)", func(t *testing.T) {
+		t.Parallel()
+		if err := newCfg(4, SnappyCompressor{}).Validate(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
 }
 
 // TestValidate_HostPortNormalization covers the port-learning logic in Validate():

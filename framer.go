@@ -19,8 +19,6 @@ package gocql
 import (
 	"sync"
 	"sync/atomic"
-
-	frm "github.com/gocql/gocql/internal/frame"
 )
 
 // framerPool owns one sync.Pool plus the adaptive buffer-sizing state for one
@@ -47,6 +45,7 @@ type framerConfig struct {
 	proto                 byte
 	flags                 byte
 	tabletsRoutingV1      bool
+	scyllaUseMetadataId   bool
 }
 
 // framerBufEWMAWeight controls how quickly the exponential weighted moving average
@@ -70,6 +69,28 @@ const maxReasonableBufferSize = 512 * 1024 * 1024 // 512MB
 // This prevents infinite loops under extreme contention.
 const maxCASRetries = 100
 
+// initDefaults seeds the connection-scoped framer defaults that are known before
+// the handshake completes. Only version-derived flags (FlagBetaProtocol on
+// proto v5) are set here; the compressor is not yet negotiated, so FlagCompress
+// and the CQL protocol extension fields are intentionally left for initCache.
+//
+// This must run before any handshake frame is written. getWriteFramer overwrites
+// a framer's flags with cf.defaults.flags, and before initCache the pools are
+// disabled and cf.defaults would otherwise be zero, which would strip
+// FlagBetaProtocol from the OPTIONS/STARTUP/AUTH_RESPONSE frames of a proto v5
+// handshake.
+func (c *Conn) initDefaults() {
+	c.framers.initDefaults(c)
+}
+
+func (cf *connFramers) initDefaults(c *Conn) {
+	cf.defaults = framerConfig{
+		compressor: c.compressor,
+		proto:      c.version & protoVersionMask,
+		flags:      versionFramerFlags(c.version),
+	}
+}
+
 // initFramerCache precomputes framer fields from cqlProtoExts so that
 // per-query framer creation avoids repeated linear scans and allocations.
 func (c *Conn) initFramerCache() {
@@ -80,12 +101,7 @@ func (cf *connFramers) initCache(c *Conn) {
 	cfg := framerConfig{
 		compressor: c.compressor,
 		proto:      c.version & protoVersionMask,
-	}
-	if c.compressor != nil {
-		cfg.flags |= frm.FlagCompress
-	}
-	if c.version == protoVersion5 {
-		cfg.flags |= frm.FlagBetaProtocol
+		flags:      defaultFramerFlags(c.compressor, c.version),
 	}
 	if lwtExt := findCQLProtoExtByName(c.cqlProtoExts, lwtAddMetadataMarkKey); lwtExt != nil {
 		if castedExt, ok := lwtExt.(*lwtAddMetadataMarkExt); ok {
@@ -106,6 +122,13 @@ func (cf *connFramers) initCache(c *Conn) {
 			cfg.tabletsRoutingV1 = true
 		} else {
 			c.logger.Printf("gocql: failed to cast CQL protocol extension %s to %T", tabletsRoutingV1, tabletsRoutingV1Ext{})
+		}
+	}
+	if metadataIdExt := findCQLProtoExtByName(c.cqlProtoExts, scyllaUseMetadataId); metadataIdExt != nil {
+		if _, ok := metadataIdExt.(*scyllaUseMetadataIdExt); ok {
+			cfg.scyllaUseMetadataId = true
+		} else {
+			c.logger.Printf("gocql: failed to cast CQL protocol extension %s to %T", scyllaUseMetadataId, scyllaUseMetadataIdExt{})
 		}
 	}
 	cf.defaults = cfg
@@ -218,6 +241,7 @@ func (fp *framerPool) init(defaults framerConfig, release func(*framer)) {
 				flagLWT:               defaults.flagLWT,
 				rateLimitingErrorCode: defaults.rateLimitingErrorCode,
 				tabletsRoutingV1:      defaults.tabletsRoutingV1,
+				scyllaUseMetadataId:   defaults.scyllaUseMetadataId,
 			}
 			f.release = func() { release(f) }
 			return f

@@ -49,6 +49,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	frm "github.com/gocql/gocql/internal/frame"
 
@@ -740,13 +741,15 @@ func TestStream0(t *testing.T) {
 	}
 
 	conn := &Conn{
-		r:       bufio.NewReader(&buf),
+		r: &connReader{
+			r: bufio.NewReader(&buf),
+		},
 		streams: streams.New(),
 		logger:  &defaultLogger{},
 		cfg:     &ConnConfig{},
 	}
 
-	err := conn.recv(context.Background())
+	err := conn.recv(context.Background(), false)
 	if err == nil {
 		t.Fatal("expected to get an error on stream 0")
 	} else if !strings.HasPrefix(err.Error(), expErr) {
@@ -969,7 +972,10 @@ func newTestExecConn(t *testing.T, w contextWriter) (*Conn, net.Conn) {
 	c := newTestConnWithFramerPool()
 	c.ctx = ctx
 	c.cancel = cancel
-	c.conn = client
+	c.r = &connReader{
+		conn: client,
+		r:    bufio.NewReader(client),
+	}
 	c.w = w
 	c.logger = nopLogger{}
 	c.errorHandler = connErrorHandlerFn(func(*Conn, error, bool) {})
@@ -1588,7 +1594,7 @@ func TestPrepareBatchMetadataMultipleKeyspaceTables(t *testing.T) {
 	}
 
 	stmt := "BEGIN BATCH INSERT INTO ks1.tbl1 (col1) VALUES (?) INSERT INTO ks2.tbl2 (col2) VALUES (?) APPLY BATCH"
-	info, err := conn.prepareStatement(ctx, stmt, nil, time.Second)
+	info, err := conn.prepareStatement(ctx, stmt, nil, "", time.Second)
 	if err != nil {
 		t.Fatalf("prepareStatement failed: %v", err)
 	}
@@ -2041,12 +2047,12 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 		id := binary.BigEndian.Uint64(b)
 		// <query_parameters>
 		reqFrame.readConsistency() // <consistency>
-		var flags byte
+		var flags uint32
 		if srv.protocol > protoVersion4 {
 			ui := reqFrame.readInt()
-			flags = byte(ui)
+			flags = uint32(ui)
 		} else {
-			flags = reqFrame.readByte()
+			flags = uint32(reqFrame.readByte())
 		}
 		switch id {
 		case 1:
@@ -2213,6 +2219,86 @@ func newTestConnWithFramerPool() *Conn {
 	}
 	c.framers.initPool(c)
 	return c
+}
+
+// TestInitFramerCacheScyllaUseMetadataId guards against scyllaUseMetadataId
+// being negotiated on the Conn but never reaching the pooled framers that
+// actually read/write frames (see frame.go's parseResultMetadata,
+// parseResultPrepared, writeExecuteFrame).
+func TestInitFramerCacheScyllaUseMetadataId(t *testing.T) {
+	c := &Conn{
+		version:      protoVersion4,
+		cqlProtoExts: []cqlProtocolExtension{&scyllaUseMetadataIdExt{}},
+	}
+	c.initFramerCache()
+
+	if !c.framers.defaults.scyllaUseMetadataId {
+		t.Fatal("framerConfig.scyllaUseMetadataId should be true once SCYLLA_USE_METADATA_ID is negotiated")
+	}
+
+	wf := c.getWriteFramer()
+	if !wf.scyllaUseMetadataId {
+		t.Error("write framer obtained from pool should have scyllaUseMetadataId set")
+	}
+
+	rf := c.getReadFramer()
+	if !rf.scyllaUseMetadataId {
+		t.Error("read framer obtained from pool should have scyllaUseMetadataId set")
+	}
+}
+
+// TestShouldSkipResultMetadata pins the skip-metadata decision, in particular the
+// SCYLLA_USE_METADATA_ID override: when the extension is negotiated, metadata is
+// skipped by default even if the session-level DisableSkipMetadata is set, while a
+// per-query NoSkipMetadata() still forces metadata.
+func TestShouldSkipResultMetadata(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name                string
+		sessionDisableSkip  bool
+		queryDisableSkip    bool
+		scyllaUseMetadataId bool
+		hasColumns          bool
+		want                bool
+	}{
+		{name: "default skips when columns present", hasColumns: true, want: true},
+		{name: "no columns never skips", hasColumns: false, want: false},
+		{name: "session DisableSkipMetadata forces metadata", sessionDisableSkip: true, hasColumns: true, want: false},
+		{name: "query NoSkipMetadata forces metadata", queryDisableSkip: true, hasColumns: true, want: false},
+		{
+			name:                "extension overrides session DisableSkipMetadata",
+			sessionDisableSkip:  true,
+			scyllaUseMetadataId: true,
+			hasColumns:          true,
+			want:                true,
+		},
+		{
+			name:                "query NoSkipMetadata still wins under the extension",
+			sessionDisableSkip:  true,
+			queryDisableSkip:    true,
+			scyllaUseMetadataId: true,
+			hasColumns:          true,
+			want:                false,
+		},
+		{
+			name:                "extension override still needs columns",
+			sessionDisableSkip:  true,
+			scyllaUseMetadataId: true,
+			hasColumns:          false,
+			want:                false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := shouldSkipResultMetadata(tt.sessionDisableSkip, tt.queryDisableSkip, tt.scyllaUseMetadataId, tt.hasColumns)
+			if got != tt.want {
+				t.Errorf("shouldSkipResultMetadata(session=%v, query=%v, ext=%v, cols=%v) = %v, want %v",
+					tt.sessionDisableSkip, tt.queryDisableSkip, tt.scyllaUseMetadataId, tt.hasColumns, got, tt.want)
+			}
+		})
+	}
 }
 
 func buildTestFrame(t *testing.T, f *framer, req frameBuilder, streamID int) ([]byte, frm.FrameHeader) {
@@ -2482,4 +2568,526 @@ func TestReleaseFramer(t *testing.T) {
 
 		c.releaseWriteFramer(f)
 	})
+}
+
+func TestConnProcessAllFramesInSingleSegment(t *testing.T) {
+	server, client, err := tcpConnPair()
+	require.NoError(t, err)
+
+	w := &deadlineContextWriter{
+		w:         server,
+		semaphore: make(chan struct{}, 1),
+		quit:      make(chan struct{}),
+	}
+	w.timeout.Store(int64(time.Second * 10))
+
+	c := &Conn{
+		r: &connReader{
+			conn: server,
+			r:    bufio.NewReader(server),
+		},
+		calls:      make(map[int]*callReq),
+		version:    protoVersion5,
+		addr:       server.RemoteAddr().String(),
+		streams:    streams.New(),
+		isSchemaV2: true,
+		w:          w,
+	}
+	c.writeTimeout.Store(int64(time.Second * 10))
+
+	call1 := &callReq{
+		timeout:  make(chan struct{}),
+		streamID: 1,
+		resp:     make(chan callResp),
+	}
+
+	call2 := &callReq{
+		timeout:  make(chan struct{}),
+		streamID: 2,
+		resp:     make(chan callResp),
+	}
+
+	c.calls[1] = call1
+	c.calls[2] = call2
+
+	req := writeQueryFrame{
+		statement: "SELECT * FROM system.local",
+		params: queryParams{
+			consistency: Quorum,
+			keyspace:    "gocql_test",
+		},
+	}
+
+	framer1 := newFramer(nil, protoVersion5)
+	err = req.buildFrame(framer1, 1)
+	require.NoError(t, err)
+
+	framer2 := newFramer(nil, protoVersion5)
+	err = req.buildFrame(framer2, 2)
+	require.NoError(t, err)
+
+	go func() {
+		var buf []byte
+		buf = append(buf, framer1.buf...)
+		buf = append(buf, framer2.buf...)
+
+		uncompressedSegment, err := newUncompressedSegment(buf, true)
+		require.NoError(t, err)
+
+		_, err = client.Write(uncompressedSegment)
+		require.NoError(t, err)
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- c.recvSegment(ctx)
+	}()
+
+	go func() {
+		resp1 := <-call1.resp
+		close(call1.timeout)
+		// Skipping here the header of the frame because resp.framer contains already parsed header
+		// and resp.framer.buf contains frame body
+		require.Equal(t, framer1.buf[9:], resp1.framer.buf)
+
+		resp2 := <-call2.resp
+		close(call2.timeout)
+		require.Equal(t, framer2.buf[9:], resp2.framer.buf)
+	}()
+
+	select {
+	case <-ctx.Done():
+		t.Fatal("Timed out waiting for frames")
+	case err := <-errCh:
+		require.NoError(t, err)
+	}
+}
+
+// TestConnProcessReservedStreamFrameInSegment verifies that a reserved-stream
+// frame (streamID -1) packed inside a self-contained v5 segment has its body
+// consumed from the segment payload rather than the socket. A normal response
+// frame for a real call follows it in the same segment; if the reserved frame's
+// body were read from the socket (c.r) instead of the segment reader, the
+// segment reader would be left misaligned and the trailing frame would never be
+// delivered to its call (the test would time out).
+func TestConnProcessReservedStreamFrameInSegment(t *testing.T) {
+	server, client, err := tcpConnPair()
+	require.NoError(t, err)
+	defer server.Close()
+	defer client.Close()
+
+	w := &deadlineContextWriter{
+		w:         server,
+		semaphore: make(chan struct{}, 1),
+		quit:      make(chan struct{}),
+	}
+	w.timeout.Store(int64(time.Second * 10))
+
+	c := &Conn{
+		r: &connReader{
+			conn: server,
+			r:    bufio.NewReader(server),
+		},
+		calls:      make(map[int]*callReq),
+		version:    protoVersion5,
+		addr:       server.RemoteAddr().String(),
+		streams:    streams.New(),
+		isSchemaV2: true,
+		logger:     nopLogger{},
+		w:          w,
+	}
+	c.writeTimeout.Store(int64(time.Second * 10))
+
+	// Only stream 2 has a registered call; the reserved stream -1 frame ahead of
+	// it goes through the readFrameIntoFramer body-read path.
+	call2 := &callReq{timeout: make(chan struct{}), streamID: 2, resp: make(chan callResp)}
+	c.calls[2] = call2
+
+	req := writeQueryFrame{
+		statement: "SELECT * FROM system.local",
+		params:    queryParams{consistency: Quorum, keyspace: "gocql_test"},
+	}
+
+	// A request-direction frame parses as an error on the response path; for
+	// stream -1 that error is tolerated (logged) — all we need here is for its
+	// body to be consumed from the segment reader.
+	reservedFramer := newFramer(nil, protoVersion5)
+	require.NoError(t, req.buildFrame(reservedFramer, -1))
+	framer2 := newFramer(nil, protoVersion5)
+	require.NoError(t, req.buildFrame(framer2, 2))
+
+	go func() {
+		var buf []byte
+		buf = append(buf, reservedFramer.buf...)
+		buf = append(buf, framer2.buf...)
+
+		seg, err := newUncompressedSegment(buf, true)
+		require.NoError(t, err)
+		_, err = client.Write(seg)
+		require.NoError(t, err)
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- c.recvSegment(ctx) }()
+
+	go func() {
+		resp2 := <-call2.resp
+		close(call2.timeout)
+		require.Equal(t, framer2.buf[9:], resp2.framer.buf)
+	}()
+
+	select {
+	case <-ctx.Done():
+		t.Fatal("timed out; reserved-stream frame body was likely read from the socket, not the segment")
+	case err := <-errCh:
+		require.NoError(t, err)
+	}
+}
+
+// deadlineRecordingConn is a net.Conn whose SetReadDeadline calls are recorded
+// so tests can assert the exact sequence of deadline values passed.
+//
+// Read blocks until proceed is closed, then returns (0, io.EOF). A sync.Once
+// guards the close of readEntered so that repeated Read calls (e.g. from
+// bufio's internal retry logic) do not panic.
+type deadlineRecordingConn struct {
+	readEnteredOnce sync.Once
+	readEntered     chan struct{} // closed on first Read entry
+	proceed         chan struct{} // close to unblock Read
+
+	mu        sync.Mutex
+	deadlines []time.Time // all values passed to SetReadDeadline, in order
+}
+
+var _ net.Conn = (*deadlineRecordingConn)(nil)
+
+func (c *deadlineRecordingConn) SetReadDeadline(t time.Time) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.deadlines = append(c.deadlines, t)
+	return nil
+}
+
+func (c *deadlineRecordingConn) Read(p []byte) (int, error) {
+	c.readEnteredOnce.Do(func() { close(c.readEntered) })
+	<-c.proceed
+	return 0, io.EOF
+}
+
+func (c *deadlineRecordingConn) Write(p []byte) (int, error)        { return 0, io.ErrClosedPipe }
+func (c *deadlineRecordingConn) Close() error                       { return nil }
+func (c *deadlineRecordingConn) LocalAddr() net.Addr                { return nil }
+func (c *deadlineRecordingConn) RemoteAddr() net.Addr               { return nil }
+func (c *deadlineRecordingConn) SetDeadline(t time.Time) error      { return nil }
+func (c *deadlineRecordingConn) SetWriteDeadline(t time.Time) error { return nil }
+
+// TestRecvSegmentDisarmsReadDeadlineOnIdleConn verifies that recvSegment
+// disarms the read deadline (SetReadDeadline(time.Time{})) on the underlying
+// connection while reading the first segment header, and re-arms it afterwards.
+//
+// The disarm is driven by the connReader.disarm flag rather than by zeroing the
+// operational timeout: the configured timeout value is left intact throughout,
+// so a concurrent finalizeConnection switching ConnectTimeout -> ReadTimeout is
+// never clobbered.
+//
+// This exercises the fix for the idle proto-v5 connection timeout regression:
+// without the disarm, connReader.Read re-arms the deadline on every call, so
+// a short ReadTimeout fires on a healthy idle connection and serve() drops it.
+func TestRecvSegmentDisarmsReadDeadlineOnIdleConn(t *testing.T) {
+	t.Parallel()
+
+	const configuredTimeout = 5 * time.Millisecond
+
+	mock := &deadlineRecordingConn{
+		readEntered: make(chan struct{}),
+		proceed:     make(chan struct{}),
+	}
+
+	cr := &connReader{
+		conn: mock,
+		r:    bufio.NewReader(mock),
+	}
+	cr.SetTimeout(configuredTimeout)
+
+	w := &deadlineContextWriter{
+		w:         mock,
+		semaphore: make(chan struct{}, 1),
+		quit:      make(chan struct{}),
+	}
+
+	c := &Conn{
+		r:       cr,
+		calls:   make(map[int]*callReq),
+		version: protoVersion5,
+		streams: streams.New(),
+		w:       w,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- c.recvSegment(ctx) }()
+
+	// Wait until connReader.Read has been entered — at this point the disarm
+	// flag is set and SetReadDeadline(zero) has already been called, but the
+	// re-arm has not yet happened.
+	select {
+	case <-mock.readEntered:
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for recvSegment to enter Read")
+	}
+
+	// --- assertions valid while recvSegment is blocked inside Read ---
+
+	// SetReadDeadline must have been called with the zero time to disarm the
+	// deadline. connReader.Read clears the deadline whenever the disarm flag is
+	// set, so every value seen before the segment read must be the zero time.
+	mock.mu.Lock()
+	deadlines := append([]time.Time(nil), mock.deadlines...)
+	mock.mu.Unlock()
+
+	require.NotEmpty(t, deadlines, "expected at least one SetReadDeadline call before the segment read")
+	for i, d := range deadlines {
+		require.True(t, d.IsZero(),
+			"SetReadDeadline call %d should pass the zero time to disarm the deadline; got %v", i, d)
+	}
+
+	// The disarm flag must be set so connReader.Read does not re-arm the
+	// deadline while blocking for segment data...
+	require.True(t, cr.disarm.Load(),
+		"connReader disarm flag should be set while recvSegment blocks on the initial segment read")
+	// ...while the operational timeout value is left intact (not zeroed), so a
+	// concurrent finalizeConnection cannot be clobbered by a restore.
+	require.Equal(t, configuredTimeout, cr.GetTimeout(),
+		"connReader timeout should be preserved (not zeroed) while recvSegment blocks on the initial segment read")
+
+	// Unblock Read — mock returns (0, io.EOF), which terminates recvSegment.
+	close(mock.proceed)
+
+	select {
+	case err := <-errCh:
+		// io.EOF is the expected outcome: we fed no bytes so recvSegment has
+		// nothing to parse and propagates the EOF from the mock.
+		// The critical invariant is that the error is NOT ErrReadHeaderTimeout:
+		// io.EOF is a clean close, not a timeout, so serve() must treat it as fatal.
+		require.ErrorIs(t, err, io.EOF,
+			"recvSegment should propagate io.EOF from a closed read, not misclassify it")
+		require.False(t, errors.Is(err, ErrReadHeaderTimeout),
+			"io.EOF must not be wrapped as ErrReadHeaderTimeout")
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for recvSegment to return after Read was unblocked")
+	}
+
+	// --- assertions valid after recvSegment has returned ---
+
+	// The disarm flag must be cleared so subsequent body reads are bounded by
+	// the operational timeout again.
+	require.False(t, cr.disarm.Load(),
+		"connReader disarm flag should be cleared after recvSegment returns")
+	// The configured timeout is unchanged throughout, regardless of the error path.
+	require.Equal(t, configuredTimeout, cr.GetTimeout(),
+		"connReader timeout should remain its configured value after recvSegment returns")
+}
+
+// nonBlockingDeadlineConn is a net.Conn that records SetReadDeadline calls and
+// returns immediately from Read, so a single connReader.Read can be exercised
+// synchronously.
+type nonBlockingDeadlineConn struct {
+	deadlines []time.Time
+}
+
+var _ net.Conn = (*nonBlockingDeadlineConn)(nil)
+
+func (c *nonBlockingDeadlineConn) SetReadDeadline(t time.Time) error {
+	c.deadlines = append(c.deadlines, t)
+	return nil
+}
+func (c *nonBlockingDeadlineConn) Read(p []byte) (int, error)         { return 0, io.EOF }
+func (c *nonBlockingDeadlineConn) Write(p []byte) (int, error)        { return 0, io.ErrClosedPipe }
+func (c *nonBlockingDeadlineConn) Close() error                       { return nil }
+func (c *nonBlockingDeadlineConn) LocalAddr() net.Addr                { return nil }
+func (c *nonBlockingDeadlineConn) RemoteAddr() net.Addr               { return nil }
+func (c *nonBlockingDeadlineConn) SetDeadline(t time.Time) error      { return nil }
+func (c *nonBlockingDeadlineConn) SetWriteDeadline(t time.Time) error { return nil }
+
+// TestConnReaderReadClearsDeadlineWhenTimeoutDisabled verifies that
+// connReader.Read arms a read deadline when a positive timeout is configured
+// and clears any previously-armed deadline when the timeout is disabled (0).
+// Without the clear, a deadline armed during connection setup (e.g.
+// ConnectTimeout) would persist and keep expiring on an idle connection.
+func TestConnReaderReadClearsDeadlineWhenTimeoutDisabled(t *testing.T) {
+	t.Parallel()
+
+	mock := &nonBlockingDeadlineConn{}
+	cr := &connReader{conn: mock, r: bufio.NewReader(mock)}
+
+	buf := make([]byte, 1)
+
+	// Positive timeout: Read arms a concrete (non-zero) deadline.
+	cr.SetTimeout(5 * time.Second)
+	_, _ = cr.Read(buf)
+	require.Len(t, mock.deadlines, 1)
+	require.False(t, mock.deadlines[0].IsZero(),
+		"a positive timeout should arm a non-zero read deadline")
+
+	// Disabled timeout: Read must clear the previously-armed deadline.
+	cr.SetTimeout(0)
+	_, _ = cr.Read(buf)
+	require.Len(t, mock.deadlines, 2)
+	require.True(t, mock.deadlines[1].IsZero(),
+		"disabling the timeout should clear the read deadline (zero time)")
+}
+
+// TestConnReaderReadWithNilConnAndPositiveTimeoutDoesNotPanic verifies
+// connReader.Read does not dereference a nil conn when a positive timeout is
+// configured. Only test constructions produce a nil conn, but the
+// deadline-arming branch must be guarded consistently with the other branches.
+func TestConnReaderReadWithNilConnAndPositiveTimeoutDoesNotPanic(t *testing.T) {
+	t.Parallel()
+	cr := &connReader{r: bufio.NewReader(bytes.NewReader([]byte{0x01}))}
+	cr.SetTimeout(5 * time.Second)
+	require.NotPanics(t, func() {
+		buf := make([]byte, 1)
+		_, _ = cr.Read(buf)
+	})
+}
+
+// TestRecvSegmentReassemblesFrameWithSplitHeader verifies that recvSegment
+// correctly reassembles a single CQL frame that is split across multiple
+// non-self-contained segments even when the 9-byte CQL frame header itself
+// spans two segments. The first segment intentionally carries only 4 payload
+// bytes, so the header must be accumulated across both segments before it can
+// be parsed.
+func TestRecvSegmentReassemblesFrameWithSplitHeader(t *testing.T) {
+	server, client, err := tcpConnPair()
+	require.NoError(t, err)
+	defer server.Close()
+	defer client.Close()
+
+	w := &deadlineContextWriter{
+		w:         server,
+		semaphore: make(chan struct{}, 1),
+		quit:      make(chan struct{}),
+	}
+	w.timeout.Store(int64(time.Second * 10))
+
+	c := &Conn{
+		r: &connReader{
+			conn: server,
+			r:    bufio.NewReader(server),
+		},
+		calls:      make(map[int]*callReq),
+		version:    protoVersion5,
+		addr:       server.RemoteAddr().String(),
+		streams:    streams.New(),
+		isSchemaV2: true,
+		w:          w,
+	}
+	c.writeTimeout.Store(int64(time.Second * 10))
+
+	call1 := &callReq{timeout: make(chan struct{}), streamID: 1, resp: make(chan callResp)}
+	c.calls[1] = call1
+
+	req := writeQueryFrame{
+		statement: "SELECT * FROM system.local",
+		params:    queryParams{consistency: Quorum, keyspace: "gocql_test"},
+	}
+	framer := newFramer(nil, protoVersion5)
+	require.NoError(t, req.buildFrame(framer, 1))
+	full := append([]byte(nil), framer.buf...)
+
+	// Split the frame into two non-self-contained segments. The first carries
+	// only 4 bytes, fewer than the 9-byte CQL frame header, so the header is
+	// split across both segments.
+	const splitAt = 4
+	seg1, err := newUncompressedSegment(full[:splitAt], false)
+	require.NoError(t, err)
+	seg2, err := newUncompressedSegment(full[splitAt:], false)
+	require.NoError(t, err)
+
+	go func() {
+		buf := append(append([]byte(nil), seg1...), seg2...)
+		_, err := client.Write(buf)
+		require.NoError(t, err)
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- c.recvSegment(ctx) }()
+
+	go func() {
+		resp := <-call1.resp
+		close(call1.timeout)
+		// resp.framer.buf holds the frame body (the header is already parsed).
+		require.Equal(t, full[9:], resp.framer.buf)
+	}()
+
+	select {
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for reassembled frame")
+	case err := <-errCh:
+		require.NoError(t, err)
+	}
+}
+
+// TestRecvSegmentPayloadReadIsBounded verifies that after the (idle-disarmed)
+// segment header is read, the read deadline is re-armed for the payload read,
+// so a peer that sends a segment header and then stalls does not hang the
+// receive loop indefinitely.
+func TestRecvSegmentPayloadReadIsBounded(t *testing.T) {
+	t.Parallel()
+
+	server, client, err := tcpConnPair()
+	require.NoError(t, err)
+	defer server.Close()
+	defer client.Close()
+
+	cr := &connReader{conn: server, r: bufio.NewReader(server)}
+	// Use a generous timeout/watchdog margin (rather than something tighter
+	// like 100ms/2s) so this doesn't flake under -race on a loaded CI runner,
+	// where scheduling jitter alone can exceed a couple hundred milliseconds.
+	const readTimeout = 500 * time.Millisecond
+	cr.SetTimeout(readTimeout)
+
+	c := &Conn{
+		r:       cr,
+		calls:   make(map[int]*callReq),
+		version: protoVersion5,
+		streams: streams.New(),
+	}
+
+	// Build a valid self-contained segment but send ONLY its 6-byte header: the
+	// header advertises a payload the peer never delivers (a mid-transfer stall).
+	payload := make([]byte, 128)
+	seg, err := newUncompressedSegment(payload, true)
+	require.NoError(t, err)
+	const uncompressedSegmentHeaderSize = 6
+
+	go func() {
+		_, _ = client.Write(seg[:uncompressedSegmentHeaderSize])
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- c.recvSegment(ctx) }()
+
+	select {
+	case err := <-errCh:
+		require.Error(t, err, "recvSegment should fail when the advertised payload never arrives")
+		require.False(t, errors.Is(err, ErrReadHeaderTimeout),
+			"a mid-transfer payload stall must not be normalised to the benign idle header timeout")
+	case <-time.After(5 * time.Second):
+		t.Fatal("recvSegment hung on the payload read; the read deadline was not re-armed after the segment header")
+	}
 }

@@ -60,6 +60,11 @@ type FrameWriter struct {
 	record    dialer.Record
 	to_record int
 	new       bool
+	// useMetadataID latches once a STARTUP frame on this connection opts into the
+	// SCYLLA_USE_METADATA_ID extension, so every subsequent recorded frame is
+	// stamped with the negotiated state (the driver only sends the opt-in when
+	// the server advertised it, so its presence means the extension is active).
+	useMetadataID bool
 }
 
 func (f *FrameWriter) Write(b []byte, n int, file *os.File) (err error) {
@@ -81,6 +86,10 @@ func (f *FrameWriter) Write(b []byte, n int, file *os.File) (err error) {
 	f.to_record = f.to_record - n
 	if f.to_record <= 0 {
 		f.new = true
+		if !f.useMetadataID && dialer.StartupNegotiatesMetadataID(f.record.Data) {
+			f.useMetadataID = true
+		}
+		f.record.UseMetadataID = f.useMetadataID
 		// Write JSON record to file
 		jsonData, marshalErr := json.Marshal(f.record)
 		if marshalErr != nil {
