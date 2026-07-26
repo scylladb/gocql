@@ -86,7 +86,11 @@ var unmarshalTests = []struct {
 			l := []int{1, 2}
 			return &l
 		}(),
-		unmarshalErrorf("unmarshal list: unexpected eof"),
+		// A count of 2 needs at least 2*4=8 remaining bytes (one 4-byte
+		// length prefix per element); only 6 remain, so this is now rejected
+		// up front by the size-vs-buffer guard, before attempting to read
+		// any element and hitting the old "unexpected eof".
+		unmarshalErrorf("unmarshal list: invalid size 2"),
 	},
 }
 
@@ -1298,5 +1302,90 @@ func TestCollectionNewWithErrorConsistentWithGoType(t *testing.T) {
 					keyTyp, valTyp, fastType.Elem(), canonicalType)
 			}
 		}
+	}
+}
+
+// TestUnmarshalListReflect_NegativeSize_ReturnsError guards against a
+// malformed frame with a negative list-count header reaching
+// reflect.MakeSlice, which panics on negative len. Uses a named slice type
+// to force the generic reflect path (the fast path's readListHeader already
+// rejects negative counts before this point).
+func TestUnmarshalListReflect_NegativeSize_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	type Strings []string
+	info := CollectionType{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeList},
+		Elem:       NativeType{proto: protoVersion4, typ: TypeVarchar},
+	}
+	data := []byte{0xFF, 0xFF, 0xFF, 0xFF} // count = -1, no elements follow
+
+	var dst Strings
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("unmarshalList panicked on negative size instead of returning an error: %v", r)
+		}
+	}()
+	if err := unmarshalList(info, data, &dst); err == nil {
+		t.Fatal("expected error for negative list size, got nil")
+	}
+}
+
+// TestUnmarshalListReflect_OversizedCount_RejectedBeforeAlloc verifies a list
+// header claiming far more elements than the buffer could contain is
+// rejected before reflect.MakeSlice attempts a huge allocation.
+func TestUnmarshalListReflect_OversizedCount_RejectedBeforeAlloc(t *testing.T) {
+	t.Parallel()
+
+	type Strings []string
+	info := CollectionType{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeList},
+		Elem:       NativeType{proto: protoVersion4, typ: TypeVarchar},
+	}
+	// count = 1, but no element bytes follow: even a small count is rejected
+	// up front once it exceeds what the remaining buffer could hold, instead
+	// of risking a large allocation attempt if this test ever used a huge
+	// count and the guard regressed.
+	data := []byte{0x00, 0x00, 0x00, 0x01}
+
+	var dst Strings
+	err := unmarshalList(info, data, &dst)
+	if err == nil {
+		t.Fatal("expected error for oversized list count, got nil")
+	}
+	if err.Error() != "unmarshal list: invalid size 1" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if dst != nil {
+		t.Fatalf("expected dst to remain nil, got %#v", dst)
+	}
+}
+
+// TestUnmarshalMapReflect_OversizedCount_RejectedBeforeAlloc verifies a map
+// header claiming far more entries than the buffer could contain is rejected
+// before reflect.MakeMapWithSize attempts a huge allocation. Uses a named map
+// type to force the generic reflect path.
+func TestUnmarshalMapReflect_OversizedCount_RejectedBeforeAlloc(t *testing.T) {
+	t.Parallel()
+
+	type StringMap map[string]string
+	info := CollectionType{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeMap},
+		Key:        NativeType{proto: protoVersion4, typ: TypeVarchar},
+		Elem:       NativeType{proto: protoVersion4, typ: TypeVarchar},
+	}
+	// count = 1, but no entry bytes follow (same rationale as the list case).
+	data := []byte{0x00, 0x00, 0x00, 0x01}
+
+	var dst StringMap
+	err := unmarshalMap(info, data, &dst)
+	if err == nil {
+		t.Fatal("expected error for oversized map count, got nil")
+	}
+	if err.Error() != "unmarshal map: invalid size 1" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if dst != nil {
+		t.Fatalf("expected dst to remain nil, got %#v", dst)
 	}
 }
