@@ -1591,12 +1591,18 @@ func unmarshalList(info CollectionType, data []byte, value any) error {
 		if err != nil {
 			return err
 		}
+		if n < 0 {
+			return unmarshalErrorf("unmarshal list: negative size %d", n)
+		}
 		data = data[p:]
 		if k == reflect.Array {
 			if rv.Len() != n {
 				return unmarshalErrorf("unmarshal list: array with wrong size")
 			}
 		} else {
+			if n > len(data)/4 {
+				return unmarshalErrorf("unmarshal list: invalid size %d", n)
+			}
 			rv.Set(reflect.MakeSlice(t, n, n))
 			// If rv was an interface, get the underlying slice
 			if rv.Kind() == reflect.Interface {
@@ -3028,6 +3034,9 @@ func unmarshalMap(info CollectionType, data []byte, value any) error {
 	}
 	if n < 0 {
 		return unmarshalErrorf("negative map size %d", n)
+	}
+	if n > (len(data)-p)/8 {
+		return unmarshalErrorf("unmarshal map: invalid size %d", n)
 	}
 	rv.Set(reflect.MakeMapWithSize(t, n))
 	// If rv was an interface, get the underlying map

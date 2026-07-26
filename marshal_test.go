@@ -2531,3 +2531,69 @@ func BenchmarkUnmarshalList(b *testing.B) {
 		})
 	})
 }
+
+// TestUnmarshalListReflect_NegativeSize_ReturnsError guards against a
+// malformed frame with a negative list-count header reaching
+// reflect.MakeSlice, which panics on negative len. Uses a named slice type
+// to force the generic reflect path (the fast path's readListHeader already
+// rejects negative counts before this point).
+func TestUnmarshalListReflect_NegativeSize_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	type Strings []string
+	info := CollectionType{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeList},
+		Elem:       NativeType{proto: protoVersion4, typ: TypeVarchar},
+	}
+	data := []byte{0xFF, 0xFF, 0xFF, 0xFF} // count = -1, no elements follow
+
+	var dst Strings
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("unmarshalList panicked on negative size instead of returning an error: %v", r)
+		}
+	}()
+	if err := unmarshalList(info, data, &dst); err == nil {
+		t.Fatal("expected error for negative list size, got nil")
+	}
+}
+
+// TestUnmarshalListReflect_OversizedCount_RejectedBeforeAlloc verifies a list
+// header claiming far more elements than the buffer could contain is
+// rejected before reflect.MakeSlice attempts a huge allocation.
+func TestUnmarshalListReflect_OversizedCount_RejectedBeforeAlloc(t *testing.T) {
+	t.Parallel()
+
+	type Strings []string
+	info := CollectionType{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeList},
+		Elem:       NativeType{proto: protoVersion4, typ: TypeVarchar},
+	}
+	data := []byte{0x3F, 0xFF, 0xFF, 0xFF} // count ~1 billion, no data follows
+
+	var dst Strings
+	if err := unmarshalList(info, data, &dst); err == nil {
+		t.Fatal("expected error for oversized list count, got nil")
+	}
+}
+
+// TestUnmarshalMapReflect_OversizedCount_RejectedBeforeAlloc verifies a map
+// header claiming far more entries than the buffer could contain is rejected
+// before reflect.MakeMapWithSize attempts a huge allocation. Uses a named map
+// type to force the generic reflect path.
+func TestUnmarshalMapReflect_OversizedCount_RejectedBeforeAlloc(t *testing.T) {
+	t.Parallel()
+
+	type StringMap map[string]string
+	info := CollectionType{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeMap},
+		Key:        NativeType{proto: protoVersion4, typ: TypeVarchar},
+		Elem:       NativeType{proto: protoVersion4, typ: TypeVarchar},
+	}
+	data := []byte{0x3F, 0xFF, 0xFF, 0xFF} // count ~1 billion, no data follows
+
+	var dst StringMap
+	if err := unmarshalMap(info, data, &dst); err == nil {
+		t.Fatal("expected error for oversized map count, got nil")
+	}
+}
