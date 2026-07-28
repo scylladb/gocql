@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
+	"math/rand/v2"
 	"strings"
 	"sync"
 	"time"
@@ -12,10 +12,15 @@ import (
 
 // Keys returns all keys matching pattern.
 //
+// Keys and their elements share a partition, so enumerating the namespace reads
+// a separate index table rather than the key table, which would otherwise return
+// one row per element. The index is deliberately a superset: an entry is written
+// before the key it names, so a failed write leaves an entry pointing at
+// nothing rather than a key no listing can see. Every candidate is therefore
+// verified against its meta row, and a stale entry is removed as it is found.
+//
 // This is a full scan of the key namespace and stays O(n) on the cluster; it is
-// meant for debugging, tests and migrations, not for request paths. Unlike a
-// plain value scan it now sees keys of every type, because the kv table holds a
-// registry row for hashes, sets and lists as well.
+// meant for debugging, tests and migrations, not for request paths.
 func (c *Client) Keys(ctx context.Context, pattern string) *StringSliceCmd {
 	cmd := &StringSliceCmd{}
 
@@ -24,19 +29,15 @@ func (c *Client) Keys(ctx context.Context, pattern string) *StringSliceCmd {
 		return cmd
 	}
 
-	iter := c.core.runner.Iterate(ctx, c.core.schema.kvScan, c.kvScanArgs(),
+	iter := c.core.runner.Iterate(ctx, c.core.schema.indexScan, c.scanArgs(),
 		iterOptions{pageSize: c.core.scanPageSize})
 
 	var (
 		key       string
-		kind      string
 		out       []string
 		truncated bool
 	)
-	for iter.Scan(&key, &kind) {
-		if key == guardKey {
-			continue
-		}
+	for iter.Scan(&key) {
 		if !globMatch(pattern, key) {
 			continue
 		}
@@ -51,12 +52,52 @@ func (c *Client) Keys(ctx context.Context, pattern string) *StringSliceCmd {
 		return cmd
 	}
 	if truncated {
-		cmd.err = fmt.Errorf("rediscompat: Keys matched more than MaxKeysScan (%d) keys, use Scan", c.core.maxKeysScan)
+		cmd.err = fmt.Errorf("rediscompat: Keys matched more than MaxKeysScan (%d) keys, use Scan: %w",
+			c.core.maxKeysScan, ErrResultTooLarge)
 		return cmd
 	}
 
+	out, err := c.keepLive(ctx, out)
+	if err != nil {
+		cmd.err = err
+		return cmd
+	}
 	cmd.val = out
 	return cmd
+}
+
+// keepLive drops the candidates that no longer exist and repairs the index for
+// them, which is what keeps enumeration exact on top of a best effort index.
+// Expired keys are dropped by the same read, since readMeta applies expiry.
+func (c *Client) keepLive(ctx context.Context, keys []string) ([]string, error) {
+	if len(keys) == 0 {
+		return keys, nil
+	}
+
+	live := make([]bool, len(keys))
+	if err := runConcurrent(ctx, len(keys), c.core.maxConcurrent, func(ctx context.Context, i int) error {
+		_, found, err := c.readMeta(ctx, keys[i])
+		if err != nil {
+			return err
+		}
+		live[i] = found
+		if !found {
+			// Self-healing: an entry whose key is gone is deleted the first
+			// time enumeration notices, so the index cannot grow without bound.
+			_ = c.forgetKey(ctx, keys[i])
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	kept := keys[:0]
+	for i, key := range keys {
+		if live[i] {
+			kept = append(kept, key)
+		}
+	}
+	return kept, nil
 }
 
 // Scan iterates the key namespace one page at a time.
@@ -82,26 +123,53 @@ func (c *Client) Scan(ctx context.Context, cursor uint64, match string, count in
 	if count <= 0 {
 		count = 10
 	}
-	if count > math.MaxInt32 {
-		count = math.MaxInt32
+	// A caller supplied COUNT is a page size, and a page is materialized by
+	// the coordinator before it is sent: without a ceiling one call can ask
+	// for the whole namespace in a single response.
+	if limit := int64(c.core.maxScanPageSize); count > limit {
+		count = limit
 	}
 
 	var pageState []byte
 	if cursor != 0 {
-		entry, ok := c.core.cursors.load(cursor)
+		// Taking the entry under one lock stops two goroutines from paging the
+		// same cursor concurrently; it is put back if this page fails.
+		entry, ok := c.core.cursors.take(cursor)
 		if !ok {
 			cmd.err = ErrCursorUnknown
 			return cmd
 		}
+		// The paging state belongs to one bucket partition and one pattern.
+		// Replaying it against a different bucket would page through another
+		// tenant's keys, so a mismatched cursor is treated as unknown.
+		if entry.bucket != c.bucket {
+			c.core.cursors.restore(cursor, entry)
+			cmd.err = ErrCursorUnknown
+			return cmd
+		}
 		if entry.pattern != match {
+			c.core.cursors.restore(cursor, entry)
 			cmd.err = errors.New("rediscompat: Scan MATCH must stay the same for the whole iteration")
 			return cmd
 		}
 		pageState = entry.state
-		c.core.cursors.drop(cursor)
 	}
 
-	iter := c.core.runner.Iterate(ctx, c.core.schema.kvScan, c.kvScanArgs(), iterOptions{
+	restore := func() {
+		if cursor != 0 {
+			// Hand the cursor back so a failed page can be retried instead of
+			// forcing the whole iteration to restart at 0.
+			c.core.cursors.restore(cursor, &cursorEntry{
+				bucket:  c.bucket,
+				pattern: match,
+				state:   pageState,
+				created: c.now(),
+			})
+			cmd.cursor = cursor
+		}
+	}
+
+	iter := c.core.runner.Iterate(ctx, c.core.schema.indexScan, c.scanArgs(), iterOptions{
 		pageSize:   int(count),
 		pageState:  pageState,
 		singlePage: true,
@@ -109,42 +177,51 @@ func (c *Client) Scan(ctx context.Context, cursor uint64, match string, count in
 
 	var (
 		key  string
-		kind string
 		page []string
 	)
-	for iter.Scan(&key, &kind) {
-		if key == guardKey {
-			continue
-		}
+	for iter.Scan(&key) {
 		if globMatch(match, key) {
 			page = append(page, key)
 		}
 	}
 	next := iter.PageState()
 	if err := iter.Close(); err != nil {
+		restore()
+		cmd.err = err
+		return cmd
+	}
+
+	page, err := c.keepLive(ctx, page)
+	if err != nil {
+		restore()
 		cmd.err = err
 		return cmd
 	}
 
 	if len(next) > 0 {
-		cmd.cursor = c.core.cursors.save(match, next)
+		cmd.cursor = c.core.cursors.save(c.bucket, match, next, c.now())
 	}
 	cmd.val = page
 	return cmd
 }
 
-// cursorRegistry hands out small integer handles for server paging state so the
-// go-redis uint64 cursor API can be preserved. Entries are bounded and expire,
-// so an abandoned iteration cannot pin memory.
+// cursorRegistry hands out opaque integer handles for server paging state so
+// the go-redis uint64 cursor API can be preserved. Entries are bounded and
+// expire, so an abandoned iteration cannot pin memory.
+//
+// Handles are random rather than sequential. All bucket views of a client share
+// one registry, so a guessable handle would let one tenant pick up another
+// tenant's iteration; the bucket recorded on the entry is the actual guard, and
+// unguessable handles keep a caller from probing for live cursors at all.
 type cursorRegistry struct {
 	mu      sync.Mutex
-	next    uint64
 	max     int
 	ttl     time.Duration
 	entries map[uint64]*cursorEntry
 }
 
 type cursorEntry struct {
+	bucket  string
 	pattern string
 	state   []byte
 	created time.Time
@@ -158,11 +235,46 @@ func newCursorRegistry(max int, ttl time.Duration) *cursorRegistry {
 	}
 }
 
-func (r *cursorRegistry) save(pattern string, state []byte) uint64 {
+func (r *cursorRegistry) save(bucket, pattern string, state []byte, now time.Time) uint64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	now := time.Now()
+	r.evictLocked(now)
+
+	id := r.newIDLocked()
+	r.entries[id] = &cursorEntry{
+		bucket:  bucket,
+		pattern: pattern,
+		state:   state,
+		created: now,
+	}
+	return id
+}
+
+// take removes and returns an entry, so a cursor cannot be paged twice
+// concurrently. Callers put it back with restore when the page fails.
+func (r *cursorRegistry) take(cursor uint64) (*cursorEntry, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	entry, ok := r.entries[cursor]
+	if !ok {
+		return nil, false
+	}
+	delete(r.entries, cursor)
+	if time.Since(entry.created) > r.ttl {
+		return nil, false
+	}
+	return entry, true
+}
+
+func (r *cursorRegistry) restore(cursor uint64, entry *cursorEntry) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.evictLocked(entry.created)
+	r.entries[cursor] = entry
+}
+
+func (r *cursorRegistry) evictLocked(now time.Time) {
 	for id, entry := range r.entries {
 		if now.Sub(entry.created) > r.ttl {
 			delete(r.entries, id)
@@ -177,35 +289,19 @@ func (r *cursorRegistry) save(pattern string, state []byte) uint64 {
 		}
 		delete(r.entries, oldestID)
 	}
+}
 
-	r.next++
-	if r.next == 0 {
+func (r *cursorRegistry) newIDLocked() uint64 {
+	for {
 		// Zero means "iteration finished" in the Redis protocol.
-		r.next = 1
+		id := rand.Uint64()
+		if id == 0 {
+			continue
+		}
+		if _, taken := r.entries[id]; !taken {
+			return id
+		}
 	}
-	id := r.next
-	r.entries[id] = &cursorEntry{pattern: pattern, state: state, created: now}
-	return id
-}
-
-func (r *cursorRegistry) load(cursor uint64) (*cursorEntry, bool) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	entry, ok := r.entries[cursor]
-	if !ok {
-		return nil, false
-	}
-	if time.Since(entry.created) > r.ttl {
-		delete(r.entries, cursor)
-		return nil, false
-	}
-	return entry, true
-}
-
-func (r *cursorRegistry) drop(cursor uint64) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	delete(r.entries, cursor)
 }
 
 // globMatch implements Redis style glob matching for *, ?, [...] and escapes.

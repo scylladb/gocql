@@ -1,6 +1,9 @@
 package redis
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 // RedisNil mirrors go-redis "nil key" errors so existing comparisons such as
 // err == redis.Nil keep working.
@@ -52,11 +55,56 @@ var (
 	// in the package documentation.
 	ErrKeyTypeUnsupported = errors.New("rediscompat: operation is not supported for this key type")
 
-	// ErrReservedKey is returned when a caller uses a key reserved for
-	// internal bookkeeping.
-	ErrReservedKey = errors.New("rediscompat: key is reserved for internal bookkeeping")
-
 	// ErrCASExhausted is returned when a compare-and-set loop could not make
 	// progress within the configured retry budget.
 	ErrCASExhausted = errors.New("rediscompat: conflicting concurrent writes, retry budget exhausted")
+
+	// ErrValueTooLarge is returned when a value exceeds Options.MaxValueSize.
+	// A single CQL cell that large cannot be written reliably, so the write is
+	// refused here instead of failing deeper in the driver or destabilizing a
+	// replica.
+	ErrValueTooLarge = errors.New("rediscompat: value exceeds the configured maximum size")
+
+	// ErrResultTooLarge is returned when a command that materializes a whole
+	// collection (HGetAll, SMembers, Sort, list reads) would exceed
+	// Options.MaxCollectionScan. Read the collection in pages instead.
+	ErrResultTooLarge = errors.New("rediscompat: result exceeds the configured maximum element count")
+
+	// ErrListPositionExhausted is returned when a list has been pushed on the
+	// same side so many times that the next position would overflow int64.
+	ErrListPositionExhausted = errors.New("rediscompat: list position space is exhausted, recreate the list")
+
+	// ErrBatchTooLarge is returned when a command would need more statements
+	// in one batch than Options.MaxBatchStatements allows. The command is
+	// refused rather than split, so a command that returns success was applied
+	// atomically. Split the argument list instead.
+	ErrBatchTooLarge = errors.New("rediscompat: command needs more statements than MaxBatchStatements allows")
+
+	// ErrTxAborted is returned by Exec when a watched key changed while the
+	// transaction was being prepared. It is the equivalent of Redis EXEC
+	// returning nil after a WATCH was invalidated: nothing was applied and the
+	// caller should read again and retry.
+	ErrTxAborted = errors.New("rediscompat: transaction aborted, a watched key changed")
+
+	// ErrTxUnsupported is returned when a transaction is attempted without
+	// TransactionsByBucket. Conditional writes are confined to one partition,
+	// so a transaction needs the layout that puts a bucket's keys in one.
+	ErrTxUnsupported = errors.New("rediscompat: transactions require TransactionsByBucket")
+
+	// ErrTxEmpty is returned by Exec when no command was queued.
+	ErrTxEmpty = errors.New("rediscompat: transaction has no queued commands")
 )
+
+func errTooManyStatements(need, limit int) error {
+	return fmt.Errorf("rediscompat: command needs %d batched statements, limit is %d: %w",
+		need, limit, ErrBatchTooLarge)
+}
+
+// unsupportedForType converts an internal WRONGTYPE into the clearer "this
+// package cannot do that for this type" error used by TTL style commands.
+func unsupportedForType(err error) error {
+	if errors.Is(err, ErrWrongType) {
+		return ErrKeyTypeUnsupported
+	}
+	return err
+}

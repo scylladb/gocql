@@ -3,14 +3,17 @@ package redis
 import (
 	"errors"
 	"fmt"
-	"math"
 	"reflect"
 	"strings"
-	"time"
+	"unicode/utf8"
 )
 
 // maxTTLSeconds is the largest TTL CQL accepts (20 years).
 const maxTTLSeconds = 630720000
+
+// maxNameBytes is the largest value CQL accepts for a component of a primary
+// key, which is what keys, hash fields, set members and list positions become.
+const maxNameBytes = 1<<16 - 1
 
 type kvPair struct {
 	key   string
@@ -146,15 +149,49 @@ func marshalValue(value any) ([]byte, error) {
 	}
 }
 
-// ttlSecondsFromDuration converts a Go duration to a CQL TTL, clamped to the
-// range the server accepts so an absurd duration cannot overflow the wire type.
-func ttlSecondsFromDuration(d time.Duration) int {
-	seconds := math.Ceil(d.Seconds())
-	if seconds < 1 {
-		return 1
+// validateKey checks a key name. The key is a text column, so the server
+// rejects invalid UTF-8 and oversized components; catching it here says which
+// argument was wrong instead of failing as an opaque server error.
+func validateKey(key string) error {
+	if key == "" {
+		return Error("rediscompat: key must not be empty")
 	}
-	if seconds > maxTTLSeconds {
-		return maxTTLSeconds
+	if len(key) > maxNameBytes {
+		return fmt.Errorf("rediscompat: key is %d bytes, limit is %d", len(key), maxNameBytes)
 	}
-	return int(seconds)
+	if !utf8.ValidString(key) {
+		return Error("rediscompat: key must be valid UTF-8; keys are stored as text")
+	}
+	return nil
+}
+
+// validateElement checks a hash field or set member. Both are blob clustering
+// columns, so unlike the key they are binary safe and only the length matters.
+func validateElement(kind, name string) error {
+	if name == "" {
+		return Error("rediscompat: " + kind + " must not be empty")
+	}
+	if len(name) > maxNameBytes {
+		return fmt.Errorf("rediscompat: %s is %d bytes, limit is %d", kind, len(name), maxNameBytes)
+	}
+	return nil
+}
+
+func valueTooLarge(size, limit int) error {
+	return fmt.Errorf("rediscompat: value is %d bytes, limit is %d: %w", size, limit, ErrValueTooLarge)
+}
+
+// marshalBounded serializes a value and refuses it when it is too large for a
+// single CQL cell. Rejecting it here reports which command and value was at
+// fault, instead of surfacing a frame size failure from deep in the driver or
+// writing a cell large enough to destabilize a replica.
+func (c *Client) marshalBounded(value any) ([]byte, error) {
+	payload, err := marshalValue(value)
+	if err != nil {
+		return nil, err
+	}
+	if c.core.maxValueSize > 0 && len(payload) > c.core.maxValueSize {
+		return nil, valueTooLarge(len(payload), c.core.maxValueSize)
+	}
+	return payload, nil
 }

@@ -1,13 +1,10 @@
 package redis
 
-import (
-	"context"
-	"errors"
-	"sync/atomic"
-)
+import "context"
 
-// SAdd adds members and reports how many were new, using conditional inserts
-// so concurrent adds of the same member are counted once.
+// SAdd adds members and reports how many were new. Membership is read together
+// with the key's meta row, and the resulting count is applied under that read's
+// version, so concurrent adds of the same member are counted once.
 func (c *Client) SAdd(ctx context.Context, key string, members ...interface{}) *IntCmd {
 	cmd := &IntCmd{}
 
@@ -20,42 +17,66 @@ func (c *Client) SAdd(ctx context.Context, key string, members ...interface{}) *
 		return cmd
 	}
 
-	encoded := make([]string, len(members))
-	for i := range members {
-		raw, err := marshalValue(members[i])
-		if err != nil {
-			cmd.err = err
-			return cmd
-		}
-		encoded[i] = string(raw)
-	}
-
-	if err := c.ensureKeyType(ctx, key, typeSet); err != nil {
-		cmd.err = err
-		return cmd
-	}
-
-	var added atomic.Int64
-	err := runConcurrent(ctx, len(encoded), c.core.maxConcurrency, func(ctx context.Context, i int) error {
-		applied, err := c.core.runner.MapScanCAS(ctx, c.core.schema.setInsertNX,
-			c.setMemberArgs(key, encoded[i]), map[string]any{})
-		if err != nil {
-			return err
-		}
-		if applied {
-			added.Add(1)
-		}
-		return nil
-	})
+	encoded, err := encodeMembers(members)
 	if err != nil {
 		cmd.err = err
 		return cmd
 	}
 
-	cmd.val = added.Load()
-	return cmd
+	for attempt := 0; ; attempt++ {
+		m, existing, found, err := c.resolveCollection(ctx, key, typeSet, encoded)
+		if err != nil {
+			cmd.err = err
+			return cmd
+		}
+
+		var (
+			added int64
+			elems = make([]batchStatement, 0, len(encoded))
+			seen  = make(map[string]struct{}, len(encoded))
+		)
+		for i := range encoded {
+			member := string(encoded[i])
+			if _, repeat := seen[member]; repeat {
+				continue
+			}
+			seen[member] = struct{}{}
+			if _, ok := existing[member]; ok {
+				continue
+			}
+			added++
+			elems = append(elems, batchStatement{
+				stmt: c.core.schema.elemWrite,
+				args: c.elemWriteArgs(key, kindMember, encoded[i], nil),
+			})
+		}
+		if added == 0 && found {
+			return cmd
+		}
+
+		next := m
+		next.typ = typeSet
+		next.version = nextVersion()
+		next.size = m.size + added
+
+		applied, err := c.mutateCollection(ctx, key, typeSet, m, found, next, elems)
+		if err != nil {
+			cmd.err = err
+			return cmd
+		}
+		if applied {
+			cmd.val = added
+			return cmd
+		}
+		if err := c.casRetry(ctx, attempt); err != nil {
+			cmd.err = err
+			return cmd
+		}
+	}
 }
 
+// SRem removes members and reports how many were there. A set that loses its
+// last member stops existing.
 func (c *Client) SRem(ctx context.Context, key string, members ...interface{}) *IntCmd {
 	cmd := &IntCmd{}
 
@@ -63,39 +84,64 @@ func (c *Client) SRem(ctx context.Context, key string, members ...interface{}) *
 		cmd.err = err
 		return cmd
 	}
-	if err := c.checkKeyType(key, typeSet); err != nil {
-		cmd.err = err
-		return cmd
-	}
-
-	encoded := make([]string, len(members))
-	for i := range members {
-		raw, err := marshalValue(members[i])
-		if err != nil {
-			cmd.err = err
-			return cmd
-		}
-		encoded[i] = string(raw)
-	}
-
-	var removed atomic.Int64
-	err := runConcurrent(ctx, len(encoded), c.core.maxConcurrency, func(ctx context.Context, i int) error {
-		applied, err := c.core.runner.ExecCAS(ctx, c.core.schema.setDeleteIf, c.setMemberArgs(key, encoded[i]))
-		if err != nil {
-			return err
-		}
-		if applied {
-			removed.Add(1)
-		}
-		return nil
-	})
+	encoded, err := encodeMembers(members)
 	if err != nil {
 		cmd.err = err
 		return cmd
 	}
 
-	cmd.val = removed.Load()
-	return cmd
+	for attempt := 0; ; attempt++ {
+		m, existing, found, err := c.resolveCollection(ctx, key, typeSet, encoded)
+		if err != nil {
+			cmd.err = err
+			return cmd
+		}
+		if !found {
+			return cmd
+		}
+
+		var (
+			removed int64
+			elems   = make([]batchStatement, 0, len(encoded))
+			seen    = make(map[string]struct{}, len(encoded))
+		)
+		for i := range encoded {
+			member := string(encoded[i])
+			if _, ok := existing[member]; !ok {
+				continue
+			}
+			if _, repeat := seen[member]; repeat {
+				continue
+			}
+			seen[member] = struct{}{}
+			removed++
+			elems = append(elems, batchStatement{
+				stmt: c.core.schema.elemDelete,
+				args: c.elemDeleteArgs(key, kindMember, encoded[i]),
+			})
+		}
+		if removed == 0 {
+			return cmd
+		}
+
+		next := m
+		next.version = nextVersion()
+		next.size = m.size - removed
+
+		applied, err := c.mutateCollection(ctx, key, typeSet, m, found, next, elems)
+		if err != nil {
+			cmd.err = err
+			return cmd
+		}
+		if applied {
+			cmd.val = removed
+			return cmd
+		}
+		if err := c.casRetry(ctx, attempt); err != nil {
+			cmd.err = err
+			return cmd
+		}
+	}
 }
 
 func (c *Client) SMembers(ctx context.Context, key string) *StringSliceCmd {
@@ -105,7 +151,15 @@ func (c *Client) SMembers(ctx context.Context, key string) *StringSliceCmd {
 		cmd.err = err
 		return cmd
 	}
-	if err := c.checkKeyType(key, typeSet); err != nil {
+	m, found, err := c.readMeta(ctx, key)
+	if err != nil {
+		cmd.err = err
+		return cmd
+	}
+	if !found {
+		return cmd
+	}
+	if err := m.requireType(typeSet); err != nil {
 		cmd.err = err
 		return cmd
 	}
@@ -120,20 +174,7 @@ func (c *Client) SMembers(ctx context.Context, key string) *StringSliceCmd {
 }
 
 func (c *Client) setValues(ctx context.Context, key string) ([]string, error) {
-	iter := c.core.runner.Iterate(ctx, c.core.schema.setSelectAll, c.keyArgs(key),
-		iterOptions{pageSize: c.core.scanPageSize})
-
-	var (
-		out    []string
-		member string
-	)
-	for iter.Scan(&member) {
-		out = append(out, member)
-	}
-	if err := iter.Close(); err != nil {
-		return nil, err
-	}
-	return out, nil
+	return c.elementValues(ctx, key, kindMember, false)
 }
 
 func (c *Client) SIsMember(ctx context.Context, key string, member interface{}) *BoolCmd {
@@ -143,53 +184,47 @@ func (c *Client) SIsMember(ctx context.Context, key string, member interface{}) 
 		cmd.err = err
 		return cmd
 	}
-	if err := c.checkKeyType(key, typeSet); err != nil {
-		cmd.err = err
-		return cmd
-	}
-
-	raw, err := marshalValue(member)
+	encoded, err := encodeMembers([]interface{}{member})
 	if err != nil {
 		cmd.err = err
 		return cmd
 	}
 
-	var found string
-	err = c.core.runner.ScanOne(ctx, c.core.schema.setSelect, c.setMemberArgs(key, string(raw)), &found)
+	_, existing, found, err := c.resolveCollection(ctx, key, typeSet, encoded)
 	if err != nil {
-		if errors.Is(err, errNotFound) {
-			return cmd
-		}
 		cmd.err = err
 		return cmd
 	}
-	cmd.val = true
+	if !found {
+		return cmd
+	}
+	_, cmd.val = existing[string(encoded[0])]
 	return cmd
 }
 
-// SCard counts members on the server instead of streaming every member back to
-// the client just to length-check it.
+// SCard returns the member count from the key's meta row, so it costs one read
+// regardless of how large the set is.
 func (c *Client) SCard(ctx context.Context, key string) *IntCmd {
-	cmd := &IntCmd{}
+	return c.collectionSize(ctx, key, typeSet)
+}
 
-	if err := c.ensureReady(ctx); err != nil {
-		cmd.err = err
-		return cmd
+// encodeMembers renders set members as the bytes they are stored as. Members
+// are a blob clustering column, so unlike the key itself they are binary safe;
+// only the length is bounded.
+func encodeMembers(members []interface{}) ([][]byte, error) {
+	if len(members) == 0 {
+		return nil, Error("rediscompat: at least one member is required")
 	}
-	if err := c.checkKeyType(key, typeSet); err != nil {
-		cmd.err = err
-		return cmd
-	}
-
-	var count int64
-	err := c.core.runner.ScanOne(ctx, c.core.schema.setCount, c.keyArgs(key), &count)
-	if err != nil {
-		if errors.Is(err, errNotFound) {
-			return cmd
+	encoded := make([][]byte, len(members))
+	for i := range members {
+		raw, err := marshalValue(members[i])
+		if err != nil {
+			return nil, err
 		}
-		cmd.err = err
-		return cmd
+		if err := validateElement("set member", string(raw)); err != nil {
+			return nil, err
+		}
+		encoded[i] = raw
 	}
-	cmd.val = count
-	return cmd
+	return encoded, nil
 }

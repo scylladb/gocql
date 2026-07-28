@@ -6,108 +6,97 @@ import (
 	"math"
 	"strconv"
 	"time"
+
+	gocql "github.com/gocql/gocql"
 )
 
 // KeepTTL mirrors go-redis behavior where Set keeps the current key TTL.
 const KeepTTL = time.Duration(-1)
 
-// readString loads a string key. A row belonging to another Redis type yields
-// ErrWrongType, which is how the shared kv namespace enforces one type per key.
-func (c *Client) readString(ctx context.Context, key string, withTTL bool) (value []byte, ttl int, found bool, err error) {
-	var raw string
-	if withTTL {
-		var ttlPtr *int
-		err = c.core.runner.ScanOne(ctx, c.core.schema.kvSelectTTL, c.keyArgs(key), &raw, &value, &ttlPtr)
-		if err == nil && ttlPtr != nil && *ttlPtr > 0 {
-			ttl = *ttlPtr
-		}
-	} else {
-		err = c.core.runner.ScanOne(ctx, c.core.schema.kvSelect, c.keyArgs(key), &raw, &value)
+// readString loads a string key. A key holding another type yields
+// ErrWrongType, which the meta row answers directly: there is no separate
+// registry to consult and no cache that could be stale.
+func (c *Client) readString(ctx context.Context, key string) (m keyMeta, found bool, err error) {
+	m, found, err = c.readMeta(ctx, key)
+	if err != nil || !found {
+		return keyMeta{}, false, err
 	}
-	if err != nil {
-		if errors.Is(err, errNotFound) {
-			return nil, 0, false, nil
-		}
-		return nil, 0, false, err
+	if m.typ != typeString {
+		return keyMeta{}, false, ErrWrongType
 	}
-	if kt := keyType(raw); kt != "" && kt != typeString {
-		if kt == typeGuard {
-			return nil, 0, false, ErrReservedKey
-		}
-		c.rememberType(key, kt)
-		return nil, 0, false, ErrWrongType
-	}
-	c.rememberType(key, typeString)
-	return value, ttl, true, nil
+	return m, true, nil
 }
 
-func (c *Client) writeString(ctx context.Context, key string, value []byte, ttl int) error {
-	var err error
-	if ttl > 0 {
-		err = c.core.runner.Exec(ctx, c.core.schema.kvUpsertTTL, c.kvWriteTTLArgs(key, typeString, value, ttl)...)
-	} else {
-		err = c.core.runner.Exec(ctx, c.core.schema.kvUpsert, c.kvWriteArgs(key, typeString, value)...)
+// writeString replaces a key with a string value.
+//
+// SET replaces a key of any type, so the element rows of a collection are
+// removed in the same batch as the new meta row. Both statements are in one
+// partition, which makes the replacement a single mutation: there is no window
+// where the key is half a hash and half a string, and a cancelled call either
+// did nothing or did all of it.
+func (c *Client) writeString(ctx context.Context, key string, value []byte, expires time.Time, wasCollection bool) error {
+	version := nextVersion()
+	ttl := cellTTL(expires, c.now())
+
+	write := batchStatement{
+		stmt: c.core.schema.strWrite,
+		args: c.strWriteArgs(key, value, version, expiryArg(expires), 0),
 	}
-	if err != nil {
+	if ttl > 0 {
+		write = batchStatement{
+			stmt: c.core.schema.strWriteTTL,
+			args: c.strWriteArgs(key, value, version, expiryArg(expires), ttl),
+		}
+	}
+
+	if wasCollection {
+		if err := c.core.runner.Batch(ctx, gocql.UnloggedBatch, []batchStatement{
+			{stmt: c.core.schema.elemsDelete, args: c.keyArgs(key)},
+			write,
+		}); err != nil {
+			return err
+		}
+	} else if err := c.core.runner.Exec(ctx, write.stmt, write.args...); err != nil {
 		return err
 	}
-	c.rememberType(key, typeString)
+
+	c.noteExpiry(ctx, key, expires)
 	return nil
 }
 
-func (c *Client) insertStringNX(ctx context.Context, key string, value []byte, ttl int) (bool, error) {
-	existing := map[string]any{}
-	var (
-		applied bool
-		err     error
-	)
-	if ttl > 0 {
-		applied, err = c.core.runner.MapScanCAS(ctx, c.core.schema.kvInsertNXTTL,
-			c.kvWriteTTLArgs(key, typeString, value, ttl), existing)
-	} else {
-		applied, err = c.core.runner.MapScanCAS(ctx, c.core.schema.kvInsertNX,
-			c.kvWriteArgs(key, typeString, value), existing)
-	}
+// setString is the write path shared by SET, and by the commands that reuse SET
+// semantics. The enumeration index entry is written alongside the key rather
+// than after it, so a failure leaves an index entry with no key, which
+// enumeration repairs, instead of a key that no listing can ever see.
+func (c *Client) setString(ctx context.Context, key string, value []byte, expires time.Time) error {
+	m, found, err := c.readMeta(ctx, key)
 	if err != nil {
-		return false, err
+		return err
 	}
-	if applied {
-		c.rememberType(key, typeString)
+	if err := c.noteKey(ctx, key); err != nil {
+		return err
 	}
-	return applied, nil
+	return c.writeString(ctx, key, value, expires, found && m.typ.collection())
 }
 
-// casRetry waits before the next compare-and-set attempt, or reports that the
-// retry budget is spent.
-func (c *Client) casRetry(ctx context.Context, attempt int) error {
-	if attempt >= c.core.casRetries {
-		return ErrCASExhausted
-	}
-	return waitWithContext(ctx, backoffFor(c.core.casBackoff, attempt, c.core.blockPollMax))
-}
-
-// resolveTTL maps a go-redis expiration onto a CQL TTL in seconds.
-func (c *Client) resolveTTL(ctx context.Context, key string, expiration time.Duration) (int, error) {
+// resolveExpiry maps a go-redis expiration onto an absolute expiry.
+func (c *Client) resolveExpiry(ctx context.Context, key string, expiration time.Duration) (time.Time, error) {
 	switch {
 	case expiration == KeepTTL:
-		_, ttl, found, err := c.readString(ctx, key, true)
+		m, found, err := c.readMeta(ctx, key)
 		if err != nil {
-			if errors.Is(err, ErrWrongType) {
-				// SET replaces a key of any type; there is no TTL to keep.
-				return 0, nil
-			}
-			return 0, err
+			return time.Time{}, err
 		}
 		if !found {
-			return 0, nil
+			return time.Time{}, nil
 		}
-		return ttl, nil
+		return m.expires, nil
 	case expiration > 0:
-		return ttlSecondsFromDuration(expiration), nil
+		return c.now().Add(expiration), nil
 	case expiration == 0:
-		return 0, nil
+		return time.Time{}, nil
 	default:
-		return 0, ErrInvalidExpire
+		return time.Time{}, ErrInvalidExpire
 	}
 }
 
@@ -123,24 +112,18 @@ func (c *Client) Set(ctx context.Context, key string, value any, expiration time
 		return cmd
 	}
 
-	serialized, err := marshalValue(value)
+	serialized, err := c.marshalBounded(value)
 	if err != nil {
 		cmd.err = err
 		return cmd
 	}
 
-	ttl, err := c.resolveTTL(ctx, key, expiration)
+	expires, err := c.resolveExpiry(ctx, key, expiration)
 	if err != nil {
 		cmd.err = err
 		return cmd
 	}
-	if err := c.prepareStringWrite(ctx, key); err != nil {
-		cmd.err = err
-		return cmd
-	}
-	if err := c.writeString(ctx, key, serialized, ttl); err != nil {
-		cmd.err = err
-	}
+	cmd.err = c.setString(ctx, key, serialized, expires)
 	return cmd
 }
 
@@ -171,29 +154,52 @@ func (c *Client) SetNX(ctx context.Context, key string, value any, expiration ti
 		return cmd
 	}
 
-	serialized, err := marshalValue(value)
+	serialized, err := c.marshalBounded(value)
 	if err != nil {
 		cmd.err = err
 		return cmd
 	}
 
-	ttl := 0
+	var expires time.Time
 	switch {
 	case expiration == KeepTTL, expiration == 0:
 	case expiration > 0:
-		ttl = ttlSecondsFromDuration(expiration)
+		expires = c.now().Add(expiration)
 	default:
 		cmd.err = ErrInvalidExpire
 		return cmd
 	}
 
-	applied, err := c.insertStringNX(ctx, key, serialized, ttl)
+	// The index entry goes in first: a lock that exists but cannot be listed is
+	// worse than an entry for a lock that was never taken.
+	if err := c.noteKey(ctx, key); err != nil {
+		cmd.err = err
+		return cmd
+	}
+	applied, err := c.insertStringNX(ctx, key, serialized, expires)
 	if err != nil {
 		cmd.err = err
 		return cmd
 	}
 	cmd.val = applied
 	return cmd
+}
+
+func (c *Client) insertStringNX(ctx context.Context, key string, value []byte, expires time.Time) (bool, error) {
+	ttl := cellTTL(expires, c.now())
+	stmt := c.core.schema.strWriteNX
+	if ttl > 0 {
+		stmt = c.core.schema.strWriteNXTTL
+	}
+	applied, err := c.core.runner.ExecCAS(ctx, stmt,
+		c.strWriteArgs(key, value, nextVersion(), expiryArg(expires), ttl))
+	if err != nil {
+		return false, err
+	}
+	if applied {
+		c.noteExpiry(ctx, key, expires)
+	}
+	return applied, nil
 }
 
 func (c *Client) Get(ctx context.Context, key string) *StringCmd {
@@ -204,7 +210,7 @@ func (c *Client) Get(ctx context.Context, key string) *StringCmd {
 		return cmd
 	}
 
-	value, _, found, err := c.readString(ctx, key, false)
+	m, found, err := c.readString(ctx, key)
 	if err != nil {
 		cmd.err = err
 		return cmd
@@ -213,7 +219,7 @@ func (c *Client) Get(ctx context.Context, key string) *StringCmd {
 		cmd.err = Nil
 		return cmd
 	}
-	cmd.val = string(value)
+	cmd.val = string(m.value)
 	return cmd
 }
 
@@ -231,21 +237,25 @@ func (c *Client) GetSet(ctx context.Context, key string, value interface{}) *Str
 		return cmd
 	}
 
-	serialized, err := marshalValue(value)
+	serialized, err := c.marshalBounded(value)
 	if err != nil {
+		cmd.err = err
+		return cmd
+	}
+	if err := c.noteKey(ctx, key); err != nil {
 		cmd.err = err
 		return cmd
 	}
 
 	for attempt := 0; ; attempt++ {
-		old, _, found, err := c.readString(ctx, key, false)
+		m, found, err := c.readString(ctx, key)
 		if err != nil {
 			cmd.err = err
 			return cmd
 		}
 
 		if !found {
-			applied, err := c.insertStringNX(ctx, key, serialized, 0)
+			applied, err := c.insertStringNX(ctx, key, serialized, time.Time{})
 			if err != nil {
 				cmd.err = err
 				return cmd
@@ -255,14 +265,13 @@ func (c *Client) GetSet(ctx context.Context, key string, value interface{}) *Str
 				return cmd
 			}
 		} else {
-			applied, err := c.core.runner.ExecCAS(ctx, c.core.schema.kvUpdateCAS,
-				c.kvCASArgs(key, typeString, serialized, old))
+			applied, err := c.casString(ctx, key, serialized, time.Time{}, m.version)
 			if err != nil {
 				cmd.err = err
 				return cmd
 			}
 			if applied {
-				cmd.val = string(old)
+				cmd.val = string(m.value)
 				return cmd
 			}
 		}
@@ -272,6 +281,18 @@ func (c *Client) GetSet(ctx context.Context, key string, value interface{}) *Str
 			return cmd
 		}
 	}
+}
+
+// casString rewrites a string value only while the meta row still carries the
+// version the caller read.
+func (c *Client) casString(ctx context.Context, key string, value []byte, expires time.Time, expect int64) (bool, error) {
+	ttl := cellTTL(expires, c.now())
+	stmt := c.core.schema.strCAS
+	if ttl > 0 {
+		stmt = c.core.schema.strCASTTL
+	}
+	return c.core.runner.ExecCAS(ctx, stmt,
+		c.strCASArgs(key, value, nextVersion(), expiryArg(expires), expect, ttl))
 }
 
 // GetDel atomically returns and removes a value, so two callers racing for a
@@ -289,7 +310,7 @@ func (c *Client) GetDel(ctx context.Context, key string) *StringCmd {
 	}
 
 	for attempt := 0; ; attempt++ {
-		value, _, found, err := c.readString(ctx, key, false)
+		m, found, err := c.readString(ctx, key)
 		if err != nil {
 			cmd.err = err
 			return cmd
@@ -299,15 +320,15 @@ func (c *Client) GetDel(ctx context.Context, key string) *StringCmd {
 			return cmd
 		}
 
-		applied, err := c.core.runner.ExecCAS(ctx, c.core.schema.kvDeleteCAS,
-			c.kvDeleteCASArgs(key, value))
+		applied, err := c.core.runner.ExecCAS(ctx, c.core.schema.metaDeleteCAS,
+			c.metaDeleteCASArgs(key, m.version))
 		if err != nil {
 			cmd.err = err
 			return cmd
 		}
 		if applied {
-			c.forgetType(key)
-			cmd.val = string(value)
+			_ = c.forgetKey(ctx, key)
+			cmd.val = string(m.value)
 			return cmd
 		}
 
@@ -326,8 +347,8 @@ func (c *Client) MGet(ctx context.Context, keys ...string) *SliceCmd {
 		return cmd
 	}
 
-	err := runConcurrent(ctx, len(keys), c.core.maxConcurrency, func(ctx context.Context, i int) error {
-		value, _, found, err := c.readString(ctx, keys[i], false)
+	err := runConcurrent(ctx, len(keys), c.core.maxConcurrent, func(ctx context.Context, i int) error {
+		m, found, err := c.readString(ctx, keys[i])
 		if err != nil {
 			if errors.Is(err, ErrWrongType) {
 				// MGET reports nil for keys holding another type.
@@ -336,7 +357,7 @@ func (c *Client) MGet(ctx context.Context, keys ...string) *SliceCmd {
 			return err
 		}
 		if found {
-			cmd.val[i] = string(value)
+			cmd.val[i] = string(m.value)
 		}
 		return nil
 	})
@@ -346,8 +367,13 @@ func (c *Client) MGet(ctx context.Context, keys ...string) *SliceCmd {
 	return cmd
 }
 
-// MSet writes several keys. Without AtomicMSetByBucket the writes are
-// independent, so a failure can leave part of the batch applied.
+// MSet writes several keys in one logged batch.
+//
+// A logged batch is atomic in the sense that matters here: once the coordinator
+// accepts it, every mutation is applied, even across partitions. It is not
+// isolated, so a concurrent reader can still observe one key updated and
+// another not. Callers who need isolation put the keys in one bucket and use a
+// transaction, which is the same instruction a Redis Cluster user follows.
 func (c *Client) MSet(ctx context.Context, values ...interface{}) *StatusCmd {
 	cmd := &StatusCmd{val: "OK"}
 
@@ -361,36 +387,61 @@ func (c *Client) MSet(ctx context.Context, values ...interface{}) *StatusCmd {
 		cmd.err = err
 		return cmd
 	}
+	payloads := make([][]byte, len(pairs))
 	for i := range pairs {
 		if err := validateKey(pairs[i].key); err != nil {
 			cmd.err = err
 			return cmd
 		}
-	}
-
-	if c.core.atomicMSet {
-		cmd.err = c.msetAtomic(ctx, pairs)
-		return cmd
-	}
-
-	// Marshal everything up front so an unencodable value fails before any
-	// write lands.
-	payloads := make([][]byte, len(pairs))
-	for i := range pairs {
-		payload, err := marshalValue(pairs[i].value)
+		payload, err := c.marshalBounded(pairs[i].value)
 		if err != nil {
 			cmd.err = err
 			return cmd
 		}
 		payloads[i] = payload
 	}
+	// Two statements per key in the worst case, plus the index writes.
+	if err := c.checkBatch(2 * len(pairs)); err != nil {
+		cmd.err = err
+		return cmd
+	}
 
-	cmd.err = runConcurrent(ctx, len(pairs), c.core.maxConcurrency, func(ctx context.Context, i int) error {
-		if err := c.prepareStringWrite(ctx, pairs[i].key); err != nil {
+	// Any of the keys may currently hold a collection, whose element rows have
+	// to go in the same batch as the new value.
+	collections := make([]bool, len(pairs))
+	if err := runConcurrent(ctx, len(pairs), c.core.maxConcurrent, func(ctx context.Context, i int) error {
+		m, found, err := c.readMeta(ctx, pairs[i].key)
+		if err != nil {
 			return err
 		}
-		return c.writeString(ctx, pairs[i].key, payloads[i], 0)
-	})
+		collections[i] = found && m.typ.collection()
+		return c.noteKey(ctx, pairs[i].key)
+	}); err != nil {
+		cmd.err = err
+		return cmd
+	}
+
+	stmts := make([]batchStatement, 0, 2*len(pairs))
+	for i := range pairs {
+		if collections[i] {
+			stmts = append(stmts, batchStatement{
+				stmt: c.core.schema.elemsDelete,
+				args: c.keyArgs(pairs[i].key),
+			})
+		}
+		stmts = append(stmts, batchStatement{
+			stmt: c.core.schema.strWrite,
+			args: c.strWriteArgs(pairs[i].key, payloads[i], nextVersion(), nil, 0),
+		})
+	}
+
+	batchType := gocql.LoggedBatch
+	if c.core.schema.grouped {
+		// Every key shares the bucket partition, so the batch is a single
+		// mutation and the batchlog would be pure overhead.
+		batchType = gocql.UnloggedBatch
+	}
+	cmd.err = c.core.runner.Batch(ctx, batchType, stmts)
 	return cmd
 }
 
@@ -409,9 +460,8 @@ func (c *Client) DecrBy(ctx context.Context, key string, decrement int64) *IntCm
 	return c.IncrBy(ctx, key, -decrement)
 }
 
-// IncrBy applies a counter delta with compare-and-set, so concurrent
-// increments cannot lose updates, and preserves any TTL on the key as Redis
-// does.
+// IncrBy applies a counter delta under a version guard, so concurrent
+// increments cannot lose updates, and preserves any expiry as Redis does.
 func (c *Client) IncrBy(ctx context.Context, key string, value int64) *IntCmd {
 	cmd := &IntCmd{}
 
@@ -423,9 +473,13 @@ func (c *Client) IncrBy(ctx context.Context, key string, value int64) *IntCmd {
 		cmd.err = err
 		return cmd
 	}
+	if err := c.noteKey(ctx, key); err != nil {
+		cmd.err = err
+		return cmd
+	}
 
 	for attempt := 0; ; attempt++ {
-		current, ttl, found, err := c.readString(ctx, key, true)
+		m, found, err := c.readString(ctx, key)
 		if err != nil {
 			cmd.err = err
 			return cmd
@@ -433,7 +487,7 @@ func (c *Client) IncrBy(ctx context.Context, key string, value int64) *IntCmd {
 
 		var base int64
 		if found {
-			base, err = strconv.ParseInt(string(current), 10, 64)
+			base, err = strconv.ParseInt(string(m.value), 10, 64)
 			if err != nil {
 				cmd.err = ErrValueNotInteger
 				return cmd
@@ -445,9 +499,8 @@ func (c *Client) IncrBy(ctx context.Context, key string, value int64) *IntCmd {
 			cmd.err = ErrIncrOverflow
 			return cmd
 		}
-		payload := []byte(strconv.FormatInt(next, 10))
 
-		applied, err := c.compareAndSwap(ctx, key, payload, current, ttl, found)
+		applied, err := c.rewriteString(ctx, key, []byte(strconv.FormatInt(next, 10)), m, found)
 		if err != nil {
 			cmd.err = err
 			return cmd
@@ -464,7 +517,7 @@ func (c *Client) IncrBy(ctx context.Context, key string, value int64) *IntCmd {
 	}
 }
 
-// Append extends a string, preserving its TTL.
+// Append extends a string, preserving its expiry.
 func (c *Client) Append(ctx context.Context, key, value string) *IntCmd {
 	cmd := &IntCmd{}
 
@@ -476,19 +529,27 @@ func (c *Client) Append(ctx context.Context, key, value string) *IntCmd {
 		cmd.err = err
 		return cmd
 	}
+	if err := c.noteKey(ctx, key); err != nil {
+		cmd.err = err
+		return cmd
+	}
 
 	for attempt := 0; ; attempt++ {
-		current, ttl, found, err := c.readString(ctx, key, true)
+		m, found, err := c.readString(ctx, key)
 		if err != nil {
 			cmd.err = err
 			return cmd
 		}
 
-		next := make([]byte, 0, len(current)+len(value))
-		next = append(next, current...)
+		next := make([]byte, 0, len(m.value)+len(value))
+		next = append(next, m.value...)
 		next = append(next, value...)
+		if c.core.maxValueSize > 0 && len(next) > c.core.maxValueSize {
+			cmd.err = valueTooLarge(len(next), c.core.maxValueSize)
+			return cmd
+		}
 
-		applied, err := c.compareAndSwap(ctx, key, next, current, ttl, found)
+		applied, err := c.rewriteString(ctx, key, next, m, found)
 		if err != nil {
 			cmd.err = err
 			return cmd
@@ -505,18 +566,13 @@ func (c *Client) Append(ctx context.Context, key, value string) *IntCmd {
 	}
 }
 
-// compareAndSwap writes next only if the stored value still equals expect
-// (or, when the key was absent, only if it is still absent).
-func (c *Client) compareAndSwap(ctx context.Context, key string, next, expect []byte, ttl int, exists bool) (bool, error) {
+// rewriteString writes next only if the key is still in the state the caller
+// read: still absent, or still carrying the same version.
+func (c *Client) rewriteString(ctx context.Context, key string, next []byte, m keyMeta, exists bool) (bool, error) {
 	if !exists {
-		return c.insertStringNX(ctx, key, next, ttl)
+		return c.insertStringNX(ctx, key, next, time.Time{})
 	}
-	if ttl > 0 {
-		return c.core.runner.ExecCAS(ctx, c.core.schema.kvUpdateCASTTL,
-			c.kvCASTTLArgs(key, typeString, next, expect, ttl))
-	}
-	return c.core.runner.ExecCAS(ctx, c.core.schema.kvUpdateCAS,
-		c.kvCASArgs(key, typeString, next, expect))
+	return c.casString(ctx, key, next, m.expires, m.version)
 }
 
 // StrLen returns the length of the string value stored at key, or 0.
@@ -528,13 +584,13 @@ func (c *Client) StrLen(ctx context.Context, key string) *IntCmd {
 		return cmd
 	}
 
-	value, _, found, err := c.readString(ctx, key, false)
+	m, found, err := c.readString(ctx, key)
 	if err != nil {
 		cmd.err = err
 		return cmd
 	}
 	if found {
-		cmd.val = int64(len(value))
+		cmd.val = int64(len(m.value))
 	}
 	return cmd
 }

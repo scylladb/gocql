@@ -53,8 +53,9 @@ It also provides support for shard aware ports, a faster way to connect to all s
   - [6.10 Blocking List Ops (BLPop/BRPop)](#610-blocking-list-ops-blpopbrpop)
   - [6.11 Scan (cursor iteration)](#611-scan-cursor-iteration)
   - [6.12 Sort](#612-sort)
-  - [6.13 Atomic MSet With LWT](#613-atomic-mset-with-lwt)
+  - [6.13 Transactions (Multi/Watch/Exec)](#613-transactions-multiwatchexec)
   - [6.14 Bucketed Clients](#614-bucketed-clients)
+  - [6.15 Reclaiming Expired Keys (Sweep)](#615-reclaiming-expired-keys-sweep)
 - [7. Contributing](#7-contributing)
 
 ## 1. Sunsetting Model
@@ -303,10 +304,11 @@ config.Compressor = &lz4.LZ4Compressor{}
 This repository now includes a Redis-compatible API surface in `github.com/gocql/gocql/redis`.
 
 The goal is migration-friendly usage for common go-redis key/value paths. It is
-**not** a Redis server and not a drop-in replacement for one. Single-key
-mutations are made atomic by the database (lightweight transactions), but
-multi-key commands, blocking list ops and `SCAN` behave differently from Redis.
-Read [6.0 Compatibility and guarantees](#60-compatibility-and-guarantees) before
+**not** a Redis server and not a drop-in replacement for one. A key and all of
+its elements live in one partition, so every single-key command is atomic and
+enforced by the database; multi-key atomicity needs the keys to share a
+partition, and blocking list ops and `SCAN` behave differently from Redis. Read
+[6.0 Compatibility and guarantees](#60-compatibility-and-guarantees) before
 migrating anything beyond plain `Set`/`Get`.
 
 **String / KV commands:**
@@ -334,6 +336,7 @@ migrating anything beyond plain `Set`/`Get`.
 | `Keys` | `Keys(ctx, pattern) *StringSliceCmd` |
 | `Scan` | `Scan(ctx, cursor, match, count) *ScanCmd` |
 | `Sort` | `Sort(ctx, key, opt) *StringSliceCmd` |
+| `Type` | `Type(ctx, key) *StatusCmd` |
 
 **Key lifecycle commands:**
 
@@ -342,6 +345,21 @@ migrating anything beyond plain `Set`/`Get`.
 | `Expire` | `Expire(ctx, key, expiration) *BoolCmd` |
 | `TTL` | `TTL(ctx, key) *DurationCmd` |
 | `Persist` | `Persist(ctx, key) *BoolCmd` |
+| `Sweep` | `Sweep(ctx) *IntCmd` |
+
+**Transaction commands** (require `TransactionsByBucket`, see [6.13](#613-transactions-multiwatchexec)):
+
+| Method | Signature |
+|---|---|
+| `Multi` | `Multi() *Tx` |
+| `Watch` | `Watch(ctx, keys...) *Tx` |
+| `Tx.Watch` | `Watch(ctx, keys...) *Tx` |
+| `Tx.Set` | `Set(key, value) *Tx` |
+| `Tx.SetEx` | `SetEx(key, value, expiration) *Tx` |
+| `Tx.IncrBy` | `IncrBy(key, delta) *Tx` |
+| `Tx.Expire` | `Expire(key, expiration) *Tx` |
+| `Tx.Del` | `Del(keys...) *Tx` |
+| `Tx.Exec` | `Exec(ctx) error` |
 
 **Hash commands:**
 
@@ -351,6 +369,7 @@ migrating anything beyond plain `Set`/`Get`.
 | `HGet` | `HGet(ctx, key, field) *StringCmd` |
 | `HExists` | `HExists(ctx, key, field) *BoolCmd` |
 | `HDel` | `HDel(ctx, key, fields...) *IntCmd` |
+| `HLen` | `HLen(ctx, key) *IntCmd` |
 | `HGetAll` | `HGetAll(ctx, key) *MapStringStringCmd` |
 
 **Set commands:**
@@ -372,6 +391,7 @@ migrating anything beyond plain `Set`/`Get`.
 | `LPop` | `LPop(ctx, key) *StringCmd` |
 | `RPop` | `RPop(ctx, key) *StringCmd` |
 | `LLen` | `LLen(ctx, key) *IntCmd` |
+| `LRange` | `LRange(ctx, key, start, stop) *StringSliceCmd` |
 | `BLPop` | `BLPop(ctx, timeout, keys...) *StringSliceCmd` |
 | `BRPop` | `BRPop(ctx, timeout, keys...) *StringSliceCmd` |
 
@@ -396,7 +416,7 @@ migrating anything beyond plain `Set`/`Get`.
 
 | Command | Atomic | TTL kept | Notes |
 |---|---|---|---|
-| `Set` | yes | with `KeepTTL` | replaces a key of any type |
+| `Set` | yes | with `KeepTTL` | replaces a key of any type, elements included |
 | `SetEx` | yes | n/a | rejects `expiration <= 0` |
 | `SetNX` | yes | n/a | one conditional insert; safe for locking |
 | `Get`, `StrLen` | yes | yes | `WRONGTYPE` on non-string keys |
@@ -405,63 +425,139 @@ migrating anything beyond plain `Set`/`Get`.
 | `Incr`, `IncrBy`, `Decr`, `DecrBy` | yes | yes | errors on `int64` overflow |
 | `Append` | yes | yes | |
 | `MGet` | no | n/a | per-key reads; `nil` for wrong-type keys |
-| `MSet` | only with `AtomicMSetByBucket` | no | see 6.13 |
-| `Del`, `Exists` | per key | n/a | sees all key types, cascades to collections |
-| `Expire` | yes | n/a | `expiration <= 0` deletes the key (Redis 7) |
+| `MSet` | applied, not isolated | no | logged batch; see 6.13 for isolation |
+| `Del`, `Exists` | yes | n/a | one batch per key; elements go with the key |
+| `Expire`, `Persist` | yes | n/a | every key type; `expiration <= 0` deletes (Redis 7) |
 | `TTL` | yes | n/a | `-2` missing, `-1` no expiry |
-| `Persist` | yes | n/a | |
-| `Rename` | no | yes | string keys only |
+| `Type` | yes | n/a | from the key's meta row |
+| `Rename` | with `TransactionsByBucket` | yes | string keys; otherwise rolls back its own write |
 | `Copy` | conditional without `replace` | yes | missing source returns `0`, not an error |
-| `HSet`, `HDel`, `SAdd`, `SRem` | per field/member | n/a | counts are exact under concurrency |
-| `SCard` | yes | n/a | counted server-side |
-| `LPush`, `RPush`, `LPop`, `RPop` | per element | n/a | positions claimed with LWT |
-| `BLPop`, `BRPop` | per element | n/a | polling, see below |
-| `Keys` | no | n/a | full scan; maintenance tool |
+| `HSet`, `HDel`, `SAdd`, `SRem` | yes | yes | one batch; counts exact under concurrency |
+| `HLen`, `SCard`, `LLen` | yes | n/a | recorded count, one read of the meta row |
+| `HGet`, `HExists`, `SIsMember` | yes | n/a | meta row and named elements in one read |
+| `HGetAll`, `SMembers`, `LRange` | yes | n/a | whole collection in one read |
+| `LPush`, `RPush`, `LPop`, `RPop` | yes | yes | one batch; an element is delivered once |
+| `BLPop`, `BRPop` | yes | n/a | wakeups plus a poll, see 6.10 |
+| `Multi`, `Watch`, `Exec` | yes | yes | one bucket partition, see 6.13 |
+| `Keys` | no | n/a | full scan of the index; maintenance tool |
 | `Scan` | no | n/a | server paging-state cursor |
 | `Sort` | no | n/a | `BY nosort` only, no `GET` |
+| `Sweep` | n/a | n/a | reclaims expired keys, see 6.15 |
 
 **Known differences from Redis**
 
-- Multi-key commands are not atomic as a group. `MSet` is atomic only with
-  `AtomicMSetByBucket`, and only against other `MSet` calls in the same bucket:
-  `Set`, `Del` and `Incr` do not take the bucket guard.
-- `Expire`/`TTL`/`Persist` apply to string keys. Collections report no expiry
-  and `Expire` returns `ErrKeyTypeUnsupported`.
-- `Rename` and `Copy` support string keys.
-- `BLPop`/`BRPop` poll with exponential backoff and jitter, because CQL has no
-  blocking primitive. Each pop is atomic (an element is delivered once), but
-  latency is bounded by the poll interval.
+- Multi-key atomicity needs co-location. `MSet` uses a logged batch, so every
+  write is applied but a reader can still see one key updated and another not.
+  For isolation put the keys in one bucket and use a transaction — the same
+  guarantee, and the same instruction, as Redis Cluster with a hash tag.
+- `Watch` pins a version when it is called, so the Redis order matters: watch,
+  read, queue, `Exec`. A value read before its key was watched is not covered.
+  A queued write to a key nobody watched is still guarded by what `Exec` read,
+  so a writer landing inside that one round trip aborts the transaction.
+- `Rename` and `Copy` support string keys. `Rename` is atomic when both keys
+  share a partition (`TransactionsByBucket`); otherwise it writes the
+  destination and then removes the source conditionally on the value it read, so
+  a concurrent write to the source is never silently discarded. A conflict that
+  outlasts `CASMaxRetries` fails with `ErrCASExhausted` and rolls back its own
+  write when the destination did not exist beforehand.
+- A contended single-key mutation gives up after `CASMaxRetries` and returns
+  `ErrCASExhausted`. For a pop this is deliberate: reporting an empty list would
+  tell a consumer to stop draining a queue that still holds work. Retry, or
+  treat it as "try again" the way `BLPop` does.
+- `BLPop`/`BRPop` wake on a notification but poll underneath, because CQL has no
+  blocking primitive. Notifications are best effort, so a lost one costs latency
+  and never an element.
+- Expiry is a column on the key, not only a cell TTL. It applies to every type,
+  but an expired key that nothing reads keeps its rows until `Sweep` runs. It
+  reads as absent throughout.
+- There is no `HSCAN`/`SSCAN`. `HGetAll`, `SMembers`, `LRange` and `Sort`
+  materialize a whole collection under `MaxCollectionScan`, so a large
+  collection is all-or-error rather than paged.
 - `Scan` cursors are handles for server paging state held in this process. They
-  do not survive a restart and cannot be shared; an unknown cursor returns
-  `ErrCursorUnknown`.
-- Key-type enforcement uses a bounded local cache, so a type change made by
-  another process may go unnoticed until the entry is evicted.
+  do not survive a restart, cannot be shared, and are bound to the bucket and
+  pattern that created them; an unknown cursor returns `ErrCursorUnknown`.
 - Conditional writes are lightweight transactions: correct, but more expensive
-  than plain writes and serialized per partition.
+  than plain writes and serialized per partition. A hot key is one partition.
+- A list allows 2^63 pushes on the same side over its lifetime, then reports
+  `ErrListPositionExhausted`.
+- Sorted sets, pub/sub, streams and scripting are absent.
+
+**Limits**
+
+Every command that could otherwise materialize an unbounded result, write an
+unbounded cell or build an unbounded batch has a ceiling. Each is an `Options`
+field:
+
+| Option | Default | Bounds | Error |
+|---|---|---|---|
+| `MaxValueSize` | 16MiB | one stored value | `ErrValueTooLarge` |
+| `MaxCollectionScan` | 100000 | elements per collection read | `ErrResultTooLarge` |
+| `MaxKeysScan` | inherits above | keys per `Keys` call | `ErrResultTooLarge` |
+| `MaxBatchStatements` | 200 | statements one command may batch | `ErrBatchTooLarge` |
+| `MaxScanPageSize` | 10000 | ceiling on `Scan` `COUNT` | clamped silently |
+| `MaxScanCursors` | 1024 | live `Scan` cursors | oldest expire first |
+
+A command that would exceed `MaxBatchStatements` is refused rather than split
+across batches, so a command that reported success was applied atomically.
+
+Keys are stored as `text`: a key must be valid UTF-8 and at most 65535 bytes.
+Hash fields, set members and values are binary safe.
+
+`Username`/`Password` are refused without `TLSConfig` unless
+`AllowPlaintextCredentials` is set, because credentials travel on the first frame
+of a connection.
 
 **Schema**
 
-Four tables are created from `Options.Table` (default `redis_compat_kv`):
+One table holds a key and its elements; three side tables answer what a key
+partition cannot. All four are named after `Options.Table` (default
+`redis_compat`):
 
 ```cql
-CREATE TABLE redis_compat_kv       (key text PRIMARY KEY, type text, value blob);
-CREATE TABLE redis_compat_kv_hash  (key text, field text, value blob, PRIMARY KEY (key, field));
-CREATE TABLE redis_compat_kv_set   (key text, member text, PRIMARY KEY (key, member));
-CREATE TABLE redis_compat_kv_list  (key text, pos bigint, value blob, PRIMARY KEY (key, pos));
+CREATE TABLE redis_compat (
+  key        text,
+  kind       tinyint,   -- 0 meta, 1 hash field, 2 set member, 3 list position
+  sub        blob,      -- field name, member, or encoded position
+  value      blob,
+  type       text,      -- string | hash | set | list, on the meta row
+  version    bigint,    -- guard for every conditional write
+  size       bigint,    -- element count, so HLen/SCard/LLen are one read
+  head       bigint,    -- list bounds
+  tail       bigint,
+  expires_at timestamp,
+  PRIMARY KEY ((key), kind, sub)
+);
+CREATE TABLE redis_compat_index  (key text PRIMARY KEY);
+CREATE TABLE redis_compat_expiry (slot timestamp, bucket text, key text, PRIMARY KEY ((slot), bucket, key));
+CREATE TABLE redis_compat_wakeup (slot timestamp, bucket text, key text, PRIMARY KEY ((slot), bucket, key));
 ```
 
-The kv table doubles as the key namespace: string keys store their value there,
-collection keys store a type-marker row. That is what lets `Del`, `Exists`,
-`Keys` and `Scan` see every key type and what makes `WRONGTYPE` possible. Set
-`DisableKeyTypeRegistry` to opt out of both.
+The meta row (`kind = 0`) sorts first in a key's partition and *is* the key: it
+exists exactly while the key exists, so `EXISTS`, `TYPE` and `WRONGTYPE` are
+single reads with nothing cached and nothing inferred. The rest of the partition
+is the key's elements.
 
-With `PartitionByBucket` (or `AtomicMSetByBucket`) each primary key gains a
-leading `bucket` column, so one bucket is one partition — size buckets so they
-do not become hot partitions.
+Co-location is what buys atomicity: a command asserts the key's type, mutates
+its elements and updates `size` in one conditional batch against one partition.
+There is no window in which a key is half a hash and half a string, and an
+emptied collection stops existing in the same batch that removes its last
+element.
 
-> Upgrading from an earlier version of this package: the `type` column is added
-> automatically with `ALTER TABLE`. If you run with `DisableAutoCreateTable`,
-> add it yourself before upgrading.
+`redis_compat_index` backs `Keys` and `Scan`, which would otherwise return one
+row per element. It is deliberately a superset: entries are written before the
+keys they name, and enumeration verifies each candidate and deletes the ones
+that no longer resolve. `redis_compat_expiry` lets `Sweep` find expired keys
+without scanning the namespace, and `redis_compat_wakeup` carries blocking-pop
+notifications when `EnableWakeupChannel` is set.
+
+`PartitionByBucket` adds a leading `bucket` column to the partition key
+(`PRIMARY KEY ((bucket, key), kind, sub)`), which routes a tenant's keys together
+while keeping one key per partition. `TransactionsByBucket` makes the bucket the
+whole partition key (`PRIMARY KEY ((bucket), key, kind, sub)`), which is what
+lets a transaction span keys — and what makes the bucket the unit of contention,
+so size it by its total number of elements rather than its number of keys. The
+index is bucketed with it; the expiry and wakeup tables carry the bucket as a
+column either way.
 
 ### 6.1 Basic Usage (Set/Get/MGet/MSet/Del/Exists)
 
@@ -482,8 +578,8 @@ func main() {
 	rdb := redis.NewClient(&redis.Options{
 		Addrs:    []string{"127.0.0.1:9042"},
 		Keyspace: "app",
-		// Optional. Default table: redis_compat_kv
-		Table: "redis_compat_kv",
+		// Optional. Base name for the tables; default redis_compat
+		Table: "redis_compat",
 	})
 	defer rdb.Close()
 
@@ -530,7 +626,7 @@ import redis "github.com/gocql/gocql/redis"
 rdb := redis.NewClient(&redis.Options{
 	Addrs:    []string{"127.0.0.1:9042"},
 	Keyspace: "app",
-	Table:    "redis_compat_kv",
+	Table:    "redis_compat",
 })
 defer rdb.Close()
 ```
@@ -606,16 +702,21 @@ ok, _ = rdb.Persist(ctx, "session").Result()
 ```
 
 Notes:
-- TTL is a property of the stored value in CQL, so `Expire` and `Persist`
-  rewrite the value under a compare-and-set. A concurrent `Set` is detected and
-  the operation retries instead of resurrecting the old value.
+- Expiry is a column on the key's meta row, so `Expire` and `Persist` are one
+  guarded update and cost the same for a hash, set or list as for a string —
+  there is no rewrite of the elements.
+- A string also gets a cell TTL, so the server reclaims it unprompted. A
+  collection is reclaimed by the first read after it expires, or by
+  [`Sweep`](#615-reclaiming-expired-keys-sweep). Reads filter on the expiry
+  either way, so an unswept key still reads as absent.
 - `Expire` with a non-positive duration deletes the key, matching Redis 7.
-- These commands apply to string keys. Hashes, sets and lists report no expiry
-  and `Expire` returns `ErrKeyTypeUnsupported`.
 
 ### 6.5 Hash Commands (HSet/HGet/HDel/HExists/HGetAll)
 
-Hashes are stored in a separate `<table>_hash` table with schema `(key, field, value)`.
+A hash lives in its key's partition, one row per field. `HSet` and `HDel` read
+the meta row together with the named fields and apply the writes and the new
+field count as one conditional batch, so the returned count is exact under
+concurrency and a hash that loses its last field stops existing.
 
 ```go
 // HSet: set one or more fields. Returns count of new fields created.
@@ -654,7 +755,14 @@ slen, _ := rdb.StrLen(ctx, "greeting").Result() // 11
 
 ```go
 // Rename moves src key to dst. Errors if src does not exist.
-// NOT atomic — reads value, writes to new key, deletes old key. TTL is not preserved.
+// The remaining TTL is carried over to dst.
+// Atomic with TransactionsByBucket, where both keys share a partition: one
+// conditional batch writes dst and removes src.
+// Otherwise it writes dst, then deletes src conditionally on the value it read,
+// so a concurrent write to src is never silently discarded; if that conflict
+// cannot be resolved within CASMaxRetries the command fails with
+// ErrCASExhausted and, when dst did not exist beforehand, rolls back its own
+// write to dst.
 _ = rdb.Rename(ctx, "old-key", "new-key").Err()
 
 // Copy duplicates src to dst. Returns 1 if copied, 0 if dst exists and replace=false.
@@ -664,7 +772,7 @@ copied, _ := rdb.Copy(ctx, "source", "dest", 0, true).Result() // 1
 
 ### 6.8 Keys (full-scan)
 
-> **WARNING**: `Keys` performs a full table scan (`SELECT key FROM ...`) and filters client-side.
+> **WARNING**: `Keys` scans the whole enumeration index and filters client-side.
 > It is O(n) on the cluster and should **never** be used in production hot paths.
 > Intended for debugging, tests, and migrations only.
 
@@ -673,14 +781,23 @@ keys, _ := rdb.Keys(ctx, "user:*").Result()
 // returns all keys matching the glob pattern
 
 all, _ := rdb.Keys(ctx, "*").Result()
-// returns every key in the table
+// returns every key in the bucket
 ```
 
 Supports Redis glob patterns: `*`, `?`, `[abc]`, `[a-z]`.
 
+The index is a superset of the keys that exist: an entry is written before the
+key it names and outlives a key that was deleted or expired. Enumeration
+therefore verifies each candidate before returning it, and deletes entries that
+no longer resolve — so a namespace churned hard gets cheaper to enumerate the
+more often it is enumerated. Results are capped by `MaxKeysScan`, which returns
+`ErrResultTooLarge` rather than a truncated answer.
+
 ### 6.9 Set Commands (SAdd/SRem/SMembers/SIsMember/SCard)
 
-Sets are stored in a separate `<table>_set` table with schema `(key, member)`.
+A set lives in its key's partition, one row per member. Members are stored as a
+blob, so they are binary safe, and `SCard` reads the recorded count rather than
+counting rows.
 
 ```go
 // SAdd: add members. Returns count of new members added.
@@ -701,7 +818,8 @@ removed, _ := rdb.SRem(ctx, "tags", "redis", "missing").Result() // 1
 
 ### 6.10 Blocking List Ops (BLPop/BRPop)
 
-Blocking list ops use a dedicated `<table>_list` table.
+A list lives in its key's partition, one row per position, with the head and tail
+bounds recorded on the meta row.
 
 ```go
 // Push producers:
@@ -719,15 +837,23 @@ if err == redis.Nil {
 item, err = rdb.BRPop(ctx, 0, "jobs").Result()
 ```
 
-Non-blocking `LPop`, `RPop` and `LLen` are also available.
+Non-blocking `LPop`, `RPop`, `LLen` and `LRange` are also available.
 
 Notes:
-- Polling-based implementation, not push-notify: CQL has no blocking primitive.
-- Polling uses exponential backoff with jitter (`BlockingPollInterval` to
-  `BlockingPollMaxInterval`, default 5ms to 250ms), so idle waiters do not
-  query in lockstep. Latency is bounded by the poll interval, not the write.
-- Each pop is a conditional delete, so an element is delivered to exactly one
-  consumer even with many competing workers.
+- CQL has no blocking primitive, so a waiter is woken by a notification and
+  polls underneath. A push in the same process wakes a local waiter
+  immediately; with `EnableWakeupChannel` a push also writes a notification
+  other processes read every `WakeupPollInterval` (default 20ms).
+- The underlying poll uses exponential backoff with jitter
+  (`BlockingPollInterval` to `BlockingPollMaxInterval`, 5ms to 250ms by
+  default), so idle waiters do not query in lockstep and a missed notification
+  costs latency rather than an element. With `EnableWakeupChannel` the poll is
+  only a safety net, so its floor defaults to 250ms instead of 5ms.
+- Each pop is one conditional batch: the element is removed, the length and the
+  list bounds are updated together, so an element goes to exactly one consumer
+  and a drained list stops existing.
+- A pop that keeps losing the race fails with `ErrCASExhausted` rather than
+  reporting the list empty, because "empty" tells a worker to stop.
 - Returns `redis.Nil` on timeout with no item. A timeout of `0` waits until the
   context is cancelled.
 
@@ -756,7 +882,10 @@ Notes:
 - The cursor is a handle for the server's paging state, held in this process.
   It does not survive a restart and cannot be passed to another instance;
   an unknown or expired cursor returns `ErrCursorUnknown`.
-- `MATCH` must stay the same for the whole iteration.
+- `MATCH` must stay the same for the whole iteration, and the cursor belongs to
+  the bucket that created it.
+- Paging reads the same enumeration index as `Keys`, with the same verification,
+  so a key that was deleted mid-iteration is not returned.
 - As in Redis, a page may be empty while the cursor is still non-zero.
   Iteration is finished when the returned cursor is `0`.
 
@@ -785,92 +914,125 @@ vals, _ = rdb.Sort(ctx, "tags", &redis.Sort{
 }).Result()
 ```
 
-### 6.13 Atomic MSet With LWT
+### 6.13 Transactions (Multi/Watch/Exec)
 
-`MSet` can be made atomic using Scylla/Cassandra LWT (CAS), scoped to a single bucket partition.
-
-Enable it with:
-
-- `AtomicMSetByBucket: true`
-- `Bucket: "some-bucket"` (default `"default"`; `AtomicBucket` is a deprecated alias)
-- optional retry controls:
-  - `AtomicMSetMaxRetries` (default `16`)
-  - `AtomicMSetRetryBackoff` (default `5ms`, jittered)
-  - `AtomicMSetMaxPairs` (default `100`)
-
-When enabled:
-
-- schema uses the bucketed key model: `PRIMARY KEY ((bucket), key)`
-- a reserved guard row inside the bucket's own kv partition tracks the CAS
-  version, and `MSet` applies all writes plus the guard update as one
-  conditional batch
-- `MSet` retries CAS conflicts with jittered exponential backoff
-
-> [!NOTE]
-> The guard must live in the same partition as the values it protects: a
-> conditional batch spanning two tables (for example a separate `<table>_guard`)
-> is **rejected by the server**. Keeping it in the bucket partition is what makes
-> the batch legal.
-
-**Scope and cost of the guarantee**
-
-- It is `MSet`-against-`MSet`, within one bucket. `Set`, `Del` and `Incr` do not
-  take the guard and can interleave.
-- The guard admits one writer per round, so a burst of N concurrent atomic
-  `MSet` calls in a bucket needs a retry budget of about N. Raise
-  `AtomicMSetMaxRetries` for hot buckets or spread writes across more buckets.
-  Exhausting the budget returns an error wrapping `ErrCASExhausted`.
-- A bucket is a single partition. Size buckets so they do not become hot
-  partitions.
+A transaction applies several keys' writes as one conditional batch. Since a
+conditional batch is confined to one partition, the keys must share one — set
+`TransactionsByBucket` and the bucket becomes the partition, so any keys in the
+same bucket can be transacted together. This is Redis Cluster's rule with a
+different name: co-locate the keys you need to write together.
 
 ```go
 rdb := redis.NewClient(&redis.Options{
-	Addrs:                  []string{"127.0.0.1:9042"},
-	Keyspace:               "app",
-	Table:                  "redis_compat_kv_atomic",
-	AtomicMSetByBucket:     true,
-	Bucket:                 "tenant-a",
-	AtomicMSetMaxRetries:   16,
-	AtomicMSetRetryBackoff: 10 * time.Millisecond,
+	Addrs:                []string{"127.0.0.1:9042"},
+	Keyspace:             "app",
+	TransactionsByBucket: true,
+	Bucket:               "tenant-a",
 })
 defer rdb.Close()
 
-if err := rdb.MSet(ctx, "k1", "v1", "k2", "v2").Err(); err != nil {
-	// CAS conflict after retries or query error
-	panic(err)
+// Move 10 units from one balance to another, aborting if either moved.
+for {
+	tx := rdb.Watch(ctx, "from", "to")
+
+	from, err := rdb.Get(ctx, "from").Int64() // read after watching
+	if err != nil {
+		panic(err)
+	}
+	if from < 10 {
+		break
+	}
+
+	err = tx.IncrBy("from", -10).IncrBy("to", 10).Exec(ctx)
+	if errors.Is(err, redis.ErrTxAborted) {
+		continue // someone else wrote a watched key; recompute
+	}
+	if err != nil {
+		panic(err)
+	}
+	break
 }
 ```
 
-> [!IMPORTANT]
-> Atomic mode requires bucketed schema. If you already use a non-bucket table (`PRIMARY KEY (key)`), use a new table name or migrate schema before enabling `AtomicMSetByBucket`.
+`Watch`, `Multi` and the queueing methods chain, and the first error is held
+until `Exec` (or `Err`) returns it. `Multi()` queues without watching anything.
+Queueable commands are `Set`, `SetEx`, `IncrBy`, `Expire` and `Del`; reads happen
+on the client, outside the transaction, as they do in Redis.
+
+**Semantics**
+
+- `Watch` reads each key's version when you call it. `Exec` sends one condition
+  per watched key, so any change since `Watch` — including a watched key that was
+  absent and now exists — aborts everything and returns `ErrTxAborted`.
+- The order matters and it is the Redis order: watch, read, queue, `Exec`. A
+  value read before its key was watched is not covered by any condition.
+- A key the transaction writes without watching is guarded by the state `Exec`
+  itself read. The race window is one round trip instead of your think time, but
+  it is not zero: watch what must not be lost.
+- `ErrTxAborted` is not retried for you, exactly as `EXEC` returning nil is not.
+  Only the caller knows whether the queued writes still make sense against the
+  new state.
+- `Exec` on an empty transaction returns `ErrTxEmpty`; a transaction needs
+  `TransactionsByBucket` or it returns `ErrTxUnsupported`.
+- A transaction is bounded by `MaxBatchStatements`, counting conditions and
+  writes together, and belongs to the goroutine that built it.
 
 ### 6.14 Bucketed Clients
 
 For multi-tenant routing, use `Bucketed(bucket)` to get a lightweight client view bound to one bucket.
 It shares the same session, schema state and caches, and keeps the same API.
 
-Bucket routing is independent of atomicity: enable `PartitionByBucket` for
-routing alone, or `AtomicMSetByBucket` when you also want atomic `MSet`.
+Bucket routing is independent of atomicity: enable `PartitionByBucket` to route a
+tenant's keys together, or `TransactionsByBucket` when you also want transactions
+across them.
 
-Note that key enumeration (`Keys`, `Scan`) and `Del`/`Exists` are scoped to the
-view's bucket. `Close` on a view is a no-op — close the client returned by
-`NewClient`, which owns the session.
+Key enumeration (`Keys`, `Scan`) and every key command are scoped to the view's
+bucket, so the same key name in two buckets is two keys. `Sweep` is the
+exception: it reclaims across buckets whichever view calls it. `Close` on a view
+is a no-op — close the client returned by `NewClient`, which owns the session.
 
 ```go
 base := redis.NewClient(&redis.Options{
-	Addrs:              []string{"127.0.0.1:9042"},
-	Keyspace:           "app",
-	Table:              "redis_compat_kv_atomic",
-	AtomicMSetByBucket: true,
+	Addrs:             []string{"127.0.0.1:9042"},
+	Keyspace:          "app",
+	PartitionByBucket: true,
 })
 defer base.Close()
 
 tenantA := base.Bucketed("tenant-a")
 tenantB := base.Bucketed("tenant-b")
 
-_ = tenantA.MSet(ctx, "k1", "a1", "k2", "a2").Err()
-_ = tenantB.Set(ctx, "k1", "b1", 0).Err()
+_ = tenantA.Set(ctx, "k1", "a1", 0).Err()
+_ = tenantB.Set(ctx, "k1", "b1", 0).Err() // a different key
 ```
+
+### 6.15 Reclaiming Expired Keys (Sweep)
+
+An expired key reads as absent immediately, and the first read that touches it
+deletes it. A key nobody reads again is the exception: its rows stay until
+something removes them. `Sweep` is that something.
+
+```go
+// Run periodically, from one process or many. No background goroutine is
+// started for you: the schedule is yours.
+ticker := time.NewTicker(time.Minute)
+for range ticker.C {
+	reclaimed, err := rdb.Sweep(ctx).Result()
+	...
+}
+```
+
+`Sweep` returns how many keys it reclaimed. It reads the time-bucketed expiry
+index rather than scanning the namespace, so the work is proportional to what
+actually expired. Each call covers the slots since the previous one, and at most
+`SweepLookback` (default 1h) on a first call or after a long gap — so run it more
+often than that lookback, or the keys that expired before the window are left to
+the next reader. It reclaims every bucket regardless of which view calls it, and
+concurrent sweepers are safe.
+
+Nothing depends on `Sweep` for correctness — an unswept key is invisible to every
+command. It reclaims disk and keeps `Keys`/`Scan` from verifying rows that will
+never resolve.
 
 ## 7. Contributing
 

@@ -62,29 +62,17 @@ func (c *Client) Sort(ctx context.Context, key string, opt *Sort) *StringSliceCm
 	return cmd
 }
 
-// sortSource resolves the elements to sort from the recorded key type rather
-// than probing the list table and falling through to the set table, which
-// picked the wrong collection whenever a key existed in both.
+// sortSource resolves the elements to sort from the key's recorded type, so a
+// list and a set are never confused for one another.
 func (c *Client) sortSource(ctx context.Context, key string) ([]string, error) {
-	if !c.core.enforceTypes {
-		values, err := c.listValues(ctx, key)
-		if err != nil {
-			return nil, err
-		}
-		if len(values) > 0 {
-			return values, nil
-		}
-		return c.setValues(ctx, key)
-	}
-
-	kt, found, err := c.lookupType(ctx, key)
+	m, found, err := c.readMeta(ctx, key)
 	if err != nil {
 		return nil, err
 	}
 	if !found {
 		return nil, nil
 	}
-	switch kt {
+	switch m.typ {
 	case typeList:
 		return c.listValues(ctx, key)
 	case typeSet:

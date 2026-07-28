@@ -2,235 +2,19 @@ package redis
 
 import (
 	"context"
-	"errors"
-	"sync"
 	"sync/atomic"
 	"time"
+
+	gocql "github.com/gocql/gocql"
 )
 
-// keyType is the Redis type recorded for a key in the kv table.
+// Del removes keys and reports how many existed.
 //
-// Redis guarantees one type per key and answers WRONGTYPE otherwise. Because
-// strings, hashes, sets and lists live in different CQL tables here, the kv
-// table doubles as the key namespace: string keys store their value there and
-// collection keys store a type marker row. That single registry is what lets
-// Del, Exists, Keys and Scan see every key regardless of type.
-type keyType string
-
-const (
-	typeString keyType = "string"
-	typeHash   keyType = "hash"
-	typeSet    keyType = "set"
-	typeList   keyType = "list"
-	typeGuard  keyType = "guard"
-)
-
-func (kt keyType) collectionTable(s *schema) (string, bool) {
-	switch kt {
-	case typeHash:
-		return s.hashDeleteKey, true
-	case typeSet:
-		return s.setDeleteKey, true
-	case typeList:
-		return s.listDeleteKey, true
-	default:
-		return "", false
-	}
-}
-
-// typeCache remembers verified key types so warm keys skip the registry round
-// trip. It is a best effort cache: another process can change a key's type,
-// which is why a cached mismatch is re-verified against the cluster before a
-// WRONGTYPE is returned.
-type typeCache struct {
-	mu      sync.Mutex
-	max     int
-	entries map[string]keyType
-}
-
-func newTypeCache(max int) *typeCache {
-	if max <= 0 {
-		max = 1024
-	}
-	return &typeCache{max: max, entries: make(map[string]keyType, min(max, 64))}
-}
-
-func cacheKey(bucket, key string) string { return bucket + "\x00" + key }
-
-func (c *typeCache) get(bucket, key string) (keyType, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	kt, ok := c.entries[cacheKey(bucket, key)]
-	return kt, ok
-}
-
-func (c *typeCache) put(bucket, key string, kt keyType) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if len(c.entries) >= c.max {
-		// Shed a slice of the cache rather than tracking exact recency: the
-		// cache only saves a round trip, so approximate eviction is enough.
-		drop := max(c.max/8, 1)
-		for k := range c.entries {
-			delete(c.entries, k)
-			drop--
-			if drop <= 0 {
-				break
-			}
-		}
-	}
-	c.entries[cacheKey(bucket, key)] = kt
-}
-
-func (c *typeCache) forget(bucket, key string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	delete(c.entries, cacheKey(bucket, key))
-}
-
-func (c *Client) cachedType(key string) (keyType, bool) {
-	if c.core.types == nil {
-		return "", false
-	}
-	return c.core.types.get(c.bucket, key)
-}
-
-func (c *Client) rememberType(key string, kt keyType) {
-	if c.core.types != nil {
-		c.core.types.put(c.bucket, key, kt)
-	}
-}
-
-func (c *Client) forgetType(key string) {
-	if c.core.types != nil {
-		c.core.types.forget(c.bucket, key)
-	}
-}
-
-// lookupType reads the recorded type of a key. Rows written before the type
-// column existed report an empty type and are treated as strings.
-func (c *Client) lookupType(ctx context.Context, key string) (keyType, bool, error) {
-	var raw string
-	err := c.core.runner.ScanOne(ctx, c.core.schema.kvSelectType, c.keyArgs(key), &raw)
-	if err != nil {
-		if errors.Is(err, errNotFound) {
-			return "", false, nil
-		}
-		return "", false, err
-	}
-	kt := keyType(raw)
-	if kt == "" {
-		kt = typeString
-	}
-	c.rememberType(key, kt)
-	return kt, true, nil
-}
-
-// ensureKeyType registers a collection key, returning WRONGTYPE if the key is
-// already held by another type. The registration is a single conditional
-// insert, so a cold key costs one round trip and a warm key costs none.
-func (c *Client) ensureKeyType(ctx context.Context, key string, want keyType) error {
-	if !c.core.enforceTypes {
-		return nil
-	}
-	if kt, ok := c.cachedType(key); ok {
-		if kt == want {
-			return nil
-		}
-		actual, found, err := c.lookupType(ctx, key)
-		if err != nil {
-			return err
-		}
-		if found {
-			if actual != want {
-				return ErrWrongType
-			}
-			return nil
-		}
-	}
-
-	existingRow := map[string]any{}
-	applied, err := c.core.runner.MapScanCAS(ctx, c.core.schema.kvMarkerNX, c.kvMarkerArgs(key, want), existingRow)
-	if err != nil {
-		return err
-	}
-	if !applied {
-		existing := typeString
-		if raw, ok := existingRow["type"].(string); ok && raw != "" {
-			existing = keyType(raw)
-		}
-		if existing != want {
-			return ErrWrongType
-		}
-	}
-	c.rememberType(key, want)
-	return nil
-}
-
-// checkKeyType is the cheap read path guard: it trusts the cache and never
-// issues a query, so reads stay single round trip.
-func (c *Client) checkKeyType(key string, want keyType) error {
-	if !c.core.enforceTypes {
-		return nil
-	}
-	if kt, ok := c.cachedType(key); ok && kt != want {
-		return ErrWrongType
-	}
-	return nil
-}
-
-// prepareStringWrite makes a key ready to hold a string. Redis SET replaces a
-// key of any type, so an existing collection is dropped first instead of being
-// left behind as unreachable rows.
-func (c *Client) prepareStringWrite(ctx context.Context, key string) error {
-	if !c.core.enforceTypes {
-		return nil
-	}
-	kt, ok := c.cachedType(key)
-	if !ok {
-		var (
-			found bool
-			err   error
-		)
-		kt, found, err = c.lookupType(ctx, key)
-		if err != nil {
-			return err
-		}
-		if !found {
-			c.rememberType(key, typeString)
-			return nil
-		}
-	}
-	switch kt {
-	case typeString, "":
-		return nil
-	case typeGuard:
-		return ErrReservedKey
-	}
-	if err := c.purgeCollection(ctx, key, kt); err != nil {
-		return err
-	}
-	c.rememberType(key, typeString)
-	return nil
-}
-
-func (c *Client) purgeCollection(ctx context.Context, key string, kt keyType) error {
-	stmt, ok := kt.collectionTable(c.core.schema)
-	if !ok {
-		return nil
-	}
-	return c.core.runner.Exec(ctx, stmt, c.keyArgs(key)...)
-}
-
-// unsupportedForType converts an internal WRONGTYPE into the clearer "this
-// package cannot do that for this type" error used by TTL style commands.
-func unsupportedForType(err error) error {
-	if errors.Is(err, ErrWrongType) {
-		return ErrKeyTypeUnsupported
-	}
-	return err
-}
-
+// A key and its elements share one partition, so removing a key of any type is
+// one conditional batch: the meta row carries the condition, and the slice
+// delete takes every element with it. There is no ordering left to get wrong
+// and no window in which a concurrent write can attach an element to a key that
+// is being deleted.
 func (c *Client) Del(ctx context.Context, keys ...string) *IntCmd {
 	cmd := &IntCmd{}
 
@@ -240,7 +24,7 @@ func (c *Client) Del(ctx context.Context, keys ...string) *IntCmd {
 	}
 
 	var deleted atomic.Int64
-	err := runConcurrent(ctx, len(keys), c.core.maxConcurrency, func(ctx context.Context, i int) error {
+	err := runConcurrent(ctx, len(keys), c.core.maxConcurrent, func(ctx context.Context, i int) error {
 		removed, err := c.delOne(ctx, keys[i])
 		if err != nil {
 			return err
@@ -264,36 +48,35 @@ func (c *Client) delOne(ctx context.Context, key string) (bool, error) {
 		return false, err
 	}
 
-	kt := keyType("")
-	if c.core.enforceTypes {
-		cached, ok := c.cachedType(key)
-		if ok {
-			kt = cached
-		} else {
-			looked, found, err := c.lookupType(ctx, key)
-			if err != nil {
-				return false, err
-			}
-			if !found {
-				return false, nil
-			}
-			kt = looked
-		}
-	}
-
-	// The conditional delete is what makes the returned count correct under
-	// concurrency: only the caller whose delete applied counts the key.
-	applied, err := c.core.runner.ExecCAS(ctx, c.core.schema.kvDeleteIfExists, c.keyArgs(key))
+	// The read is what makes an already expired key report 0 rather than 1: the
+	// rows may still be there, but the key is gone.
+	_, found, err := c.readMeta(ctx, key)
 	if err != nil {
 		return false, err
 	}
-	if err := c.purgeCollection(ctx, key, kt); err != nil {
+	if !found {
+		// Still clear anything left behind, so a key that expired without being
+		// read does not keep its rows until Sweep runs.
+		c.dropExpired(ctx, key)
+		return false, nil
+	}
+
+	applied, err := c.core.runner.BatchCAS(ctx, gocql.UnloggedBatch, []batchStatement{
+		{stmt: c.core.schema.metaDeleteIf, args: c.keyArgs(key)},
+		{stmt: c.core.schema.elemsDelete, args: c.keyArgs(key)},
+	})
+	if err != nil {
 		return false, err
 	}
-	c.forgetType(key)
+	if applied {
+		_ = c.forgetKey(ctx, key)
+	}
 	return applied, nil
 }
 
+// Exists counts the keys that exist, of any type. One read per key answers it:
+// the meta row exists exactly while the key does, so an emptied collection is
+// already gone rather than something a probe has to rule out.
 func (c *Client) Exists(ctx context.Context, keys ...string) *IntCmd {
 	cmd := &IntCmd{}
 
@@ -303,16 +86,14 @@ func (c *Client) Exists(ctx context.Context, keys ...string) *IntCmd {
 	}
 
 	var found atomic.Int64
-	err := runConcurrent(ctx, len(keys), c.core.maxConcurrency, func(ctx context.Context, i int) error {
-		var key string
-		err := c.core.runner.ScanOne(ctx, c.core.schema.kvSelectKey, c.keyArgs(keys[i]), &key)
+	err := runConcurrent(ctx, len(keys), c.core.maxConcurrent, func(ctx context.Context, i int) error {
+		_, ok, err := c.readMeta(ctx, keys[i])
 		if err != nil {
-			if errors.Is(err, errNotFound) {
-				return nil
-			}
 			return err
 		}
-		found.Add(1)
+		if ok {
+			found.Add(1)
+		}
 		return nil
 	})
 	if err != nil {
@@ -324,10 +105,13 @@ func (c *Client) Exists(ctx context.Context, keys ...string) *IntCmd {
 	return cmd
 }
 
-// Expire sets a TTL on a string key. A non positive expiration deletes the key,
-// matching Redis 7. TTL is a property of the stored value in CQL, so this is
-// implemented as a conditional rewrite: a concurrent Set is detected and the
-// operation retries instead of resurrecting the previous value.
+// Expire sets a TTL on a key of any type. A non positive expiration deletes the
+// key, matching Redis 7.
+//
+// Expiry is a column on the meta row, so this is one guarded update rather than
+// a rewrite of the value, and it applies to hashes, sets and lists as well as
+// strings. A string also gets a cell TTL so the server reclaims it unprompted;
+// a collection is reclaimed by the first read after it expires, or by Sweep.
 func (c *Client) Expire(ctx context.Context, key string, expiration time.Duration) *BoolCmd {
 	cmd := &BoolCmd{}
 
@@ -350,21 +134,16 @@ func (c *Client) Expire(ctx context.Context, key string, expiration time.Duratio
 		return cmd
 	}
 
-	ttl := ttlSecondsFromDuration(expiration)
-	applied, found, err := c.retimeValue(ctx, key, ttl)
+	applied, found, err := c.retime(ctx, key, c.now().Add(expiration))
 	if err != nil {
-		cmd.err = unsupportedForType(err)
+		cmd.err = err
 		return cmd
 	}
-	if !found {
-		cmd.val = false
-		return cmd
-	}
-	cmd.val = applied
+	cmd.val = found && applied
 	return cmd
 }
 
-// Persist removes the TTL from a string key.
+// Persist removes the expiry from a key of any type.
 func (c *Client) Persist(ctx context.Context, key string) *BoolCmd {
 	cmd := &BoolCmd{}
 
@@ -377,60 +156,61 @@ func (c *Client) Persist(ctx context.Context, key string) *BoolCmd {
 		return cmd
 	}
 
-	_, ttl, found, err := c.readString(ctx, key, true)
+	m, found, err := c.readMeta(ctx, key)
 	if err != nil {
-		cmd.err = unsupportedForType(err)
+		cmd.err = err
 		return cmd
 	}
-	if !found || ttl <= 0 {
-		cmd.val = false
+	if !found || m.expires.IsZero() {
 		return cmd
 	}
 
-	applied, _, err := c.retimeValue(ctx, key, 0)
+	applied, _, err := c.retime(ctx, key, time.Time{})
 	if err != nil {
-		cmd.err = unsupportedForType(err)
+		cmd.err = err
 		return cmd
 	}
 	cmd.val = applied
 	return cmd
 }
 
-// retimeValue rewrites a value with a new TTL under a compare-and-set on the
-// current value. ttl <= 0 clears the TTL.
-func (c *Client) retimeValue(ctx context.Context, key string, ttl int) (applied, found bool, err error) {
+// retime rewrites a key's expiry under a version guard.
+//
+// A string is rewritten in full so its cell TTL matches the new expiry;
+// leaving the old TTL in place would let the row vanish while the key claims
+// to live longer. A collection carries no cell TTL at all, which is what keeps
+// Expire and Persist O(1) for it instead of a rewrite of every element.
+func (c *Client) retime(ctx context.Context, key string, expires time.Time) (applied, found bool, err error) {
 	for attempt := 0; ; attempt++ {
-		value, _, exists, err := c.readString(ctx, key, false)
+		m, ok, err := c.readMeta(ctx, key)
 		if err != nil {
 			return false, false, err
 		}
-		if !exists {
+		if !ok {
 			return false, false, nil
 		}
 
-		var ok bool
-		if ttl > 0 {
-			ok, err = c.core.runner.ExecCAS(ctx, c.core.schema.kvUpdateCASTTL,
-				c.kvCASTTLArgs(key, typeString, value, value, ttl))
+		if m.typ == typeString {
+			applied, err = c.casString(ctx, key, m.value, expires, m.version)
 		} else {
-			ok, err = c.core.runner.ExecCAS(ctx, c.core.schema.kvUpdateCAS,
-				c.kvCASArgs(key, typeString, value, value))
+			applied, err = c.core.runner.ExecCAS(ctx, c.core.schema.expireCAS,
+				c.expireCASArgs(key, nextVersion(), expiryArg(expires), m.version))
 		}
 		if err != nil {
 			return false, true, err
 		}
-		if ok {
+		if applied {
+			c.noteExpiry(ctx, key, expires)
 			return true, true, nil
 		}
-		if attempt >= c.core.casRetries {
-			return false, true, ErrCASExhausted
-		}
-		if err := waitWithContext(ctx, backoffFor(c.core.casBackoff, attempt, c.core.blockPollMax)); err != nil {
+		if err := c.casRetry(ctx, attempt); err != nil {
 			return false, true, err
 		}
 	}
 }
 
+// TTL reports the remaining time to live: -1 for a key without an expiry and
+// -2 for a key that does not exist, as Redis does.
 func (c *Client) TTL(ctx context.Context, key string) *DurationCmd {
 	cmd := &DurationCmd{}
 
@@ -439,38 +219,33 @@ func (c *Client) TTL(ctx context.Context, key string) *DurationCmd {
 		return cmd
 	}
 
-	var (
-		raw   string
-		value []byte
-		ttl   *int
-	)
-	err := c.core.runner.ScanOne(ctx, c.core.schema.kvSelectTTL, c.keyArgs(key), &raw, &value, &ttl)
+	m, found, err := c.readMeta(ctx, key)
 	if err != nil {
-		if errors.Is(err, errNotFound) {
-			cmd.val = -2 * time.Second
-			return cmd
-		}
 		cmd.err = err
 		return cmd
 	}
-	if kt := keyType(raw); kt != "" && kt != typeString {
-		// Collections carry no TTL in this mapping; Redis reports -1 for keys
-		// without an expiry.
+	if !found {
+		cmd.val = -2 * time.Second
+		return cmd
+	}
+	if m.expires.IsZero() {
 		cmd.val = -1 * time.Second
 		return cmd
 	}
-	if ttl == nil || *ttl <= 0 {
-		cmd.val = -1 * time.Second
-		return cmd
+	remaining := m.expires.Sub(c.now())
+	if remaining < time.Second {
+		remaining = time.Second
 	}
-	cmd.val = time.Duration(*ttl) * time.Second
+	cmd.val = remaining.Round(time.Second)
 	return cmd
 }
 
-// Rename moves a string key, preserving its TTL. The write to the destination
-// and the removal of the source are separate statements, so this is not atomic
-// across a failure; the source removal is conditional, so a value written
-// concurrently to the source is never silently discarded.
+// Rename moves a string key, preserving its expiry.
+//
+// With TransactionsByBucket both keys share a partition, so the write and the
+// removal are one conditional batch and the rename is atomic. Otherwise they
+// are separate partitions and the two statements cannot be, so a lost race
+// rolls back the write it made rather than leaving the value under two keys.
 func (c *Client) Rename(ctx context.Context, key, newkey string) *StatusCmd {
 	cmd := &StatusCmd{val: "OK"}
 
@@ -490,20 +265,33 @@ func (c *Client) Rename(ctx context.Context, key, newkey string) *StatusCmd {
 	if key == newkey {
 		// Renaming a key onto itself is a no-op in Redis. Writing then
 		// deleting would destroy the key.
-		var existing string
-		err := c.core.runner.ScanOne(ctx, c.core.schema.kvSelectKey, c.keyArgs(key), &existing)
+		_, found, err := c.readMeta(ctx, key)
 		if err != nil {
-			if errors.Is(err, errNotFound) {
-				cmd.err = ErrNoSuchKey
-				return cmd
-			}
 			cmd.err = err
+			return cmd
+		}
+		if !found {
+			cmd.err = ErrNoSuchKey
 		}
 		return cmd
 	}
 
+	if c.core.schema.grouped {
+		cmd.err = c.renameAtomic(ctx, key, newkey)
+		return cmd
+	}
+
+	// Whether the destination already held something decides if a failed
+	// rename may roll its own write back: deleting a destination that existed
+	// beforehand would destroy data the caller never asked to touch.
+	_, destExisted, err := c.readMeta(ctx, newkey)
+	if err != nil {
+		cmd.err = err
+		return cmd
+	}
+
 	for attempt := 0; ; attempt++ {
-		value, ttl, found, err := c.readString(ctx, key, true)
+		m, found, err := c.readString(ctx, key)
 		if err != nil {
 			cmd.err = unsupportedForType(err)
 			return cmd
@@ -513,44 +301,105 @@ func (c *Client) Rename(ctx context.Context, key, newkey string) *StatusCmd {
 			return cmd
 		}
 
-		if err := c.prepareStringWrite(ctx, newkey); err != nil {
-			cmd.err = err
-			return cmd
-		}
-		if err := c.writeString(ctx, newkey, value, ttl); err != nil {
+		if err := c.setString(ctx, newkey, m.value, m.expires); err != nil {
 			cmd.err = err
 			return cmd
 		}
 
-		applied, err := c.core.runner.ExecCAS(ctx, c.core.schema.kvDeleteCAS,
-			c.kvDeleteCASArgs(key, value))
+		applied, err := c.core.runner.ExecCAS(ctx, c.core.schema.metaDeleteCAS,
+			c.metaDeleteCASArgs(key, m.version))
 		if err != nil {
 			cmd.err = err
 			return cmd
 		}
 		if applied {
-			c.forgetType(key)
+			_ = c.forgetKey(ctx, key)
 			return cmd
 		}
-		if attempt >= c.core.casRetries {
-			cmd.err = ErrCASExhausted
-			return cmd
-		}
-		if err := waitWithContext(ctx, backoffFor(c.core.casBackoff, attempt, c.core.blockPollMax)); err != nil {
+		if err := c.casRetry(ctx, attempt); err != nil {
+			// The destination now holds a copy the source never gave up. Undo
+			// it when the destination was empty to begin with, so a failed
+			// Rename does not leave the value under two keys.
+			if !destExisted {
+				if _, rbErr := c.delOne(ctx, newkey); rbErr == nil {
+					_ = c.forgetKey(ctx, newkey)
+				}
+			}
 			cmd.err = err
 			return cmd
 		}
 	}
 }
 
-// Copy copies a string key, preserving its TTL. A missing source returns 0 with
-// no error, as Redis does. Without replace the write is conditional, so two
-// concurrent copies cannot both report success.
-func (c *Client) Copy(ctx context.Context, source, destination string, _ int, replace bool) *IntCmd {
+// renameAtomic renames within one bucket partition, where the destination write
+// and the source removal can be a single conditional batch.
+func (c *Client) renameAtomic(ctx context.Context, key, newkey string) error {
+	for attempt := 0; ; attempt++ {
+		m, found, err := c.readString(ctx, key)
+		if err != nil {
+			return unsupportedForType(err)
+		}
+		if !found {
+			return ErrNoSuchKey
+		}
+		dest, destFound, err := c.readMeta(ctx, newkey)
+		if err != nil {
+			return err
+		}
+		if err := c.noteKey(ctx, newkey); err != nil {
+			return err
+		}
+
+		stmts := []batchStatement{
+			{stmt: c.core.schema.metaDeleteCAS, args: c.metaDeleteCASArgs(key, m.version)},
+			{stmt: c.core.schema.elemsDelete, args: c.keyArgs(key)},
+		}
+		if destFound && dest.typ.collection() {
+			stmts = append(stmts, batchStatement{stmt: c.core.schema.elemsDelete, args: c.keyArgs(newkey)})
+		}
+		ttl := cellTTL(m.expires, c.now())
+		write := batchStatement{
+			stmt: c.core.schema.strWrite,
+			args: c.strWriteArgs(newkey, m.value, nextVersion(), expiryArg(m.expires), 0),
+		}
+		if ttl > 0 {
+			write = batchStatement{
+				stmt: c.core.schema.strWriteTTL,
+				args: c.strWriteArgs(newkey, m.value, nextVersion(), expiryArg(m.expires), ttl),
+			}
+		}
+		stmts = append(stmts, write)
+
+		applied, err := c.core.runner.BatchCAS(ctx, gocql.UnloggedBatch, stmts)
+		if err != nil {
+			return err
+		}
+		if applied {
+			_ = c.forgetKey(ctx, key)
+			c.noteExpiry(ctx, newkey, m.expires)
+			return nil
+		}
+		if err := c.casRetry(ctx, attempt); err != nil {
+			return err
+		}
+	}
+}
+
+// Copy copies a string key, preserving its expiry. A missing source returns 0
+// with no error, as Redis does. Without replace the write is conditional, so
+// two concurrent copies cannot both report success and an occupied destination
+// is left exactly as it was.
+func (c *Client) Copy(ctx context.Context, source, destination string, destinationDB int, replace bool) *IntCmd {
 	cmd := &IntCmd{}
 
 	if err := c.ensureReady(ctx); err != nil {
 		cmd.err = err
+		return cmd
+	}
+	if destinationDB != 0 {
+		// There is one namespace per client here. Silently copying into the
+		// current one would put the value somewhere the caller did not ask for.
+		cmd.err = Error("rediscompat: Copy DB must be 0; use Bucketed for a separate namespace")
 		return cmd
 	}
 	if err := validateKey(source); err != nil {
@@ -562,23 +411,19 @@ func (c *Client) Copy(ctx context.Context, source, destination string, _ int, re
 		return cmd
 	}
 
-	value, ttl, found, err := c.readString(ctx, source, true)
+	m, found, err := c.readString(ctx, source)
 	if err != nil {
 		cmd.err = unsupportedForType(err)
 		return cmd
 	}
 	if !found {
-		cmd.val = 0
-		return cmd
-	}
-
-	if err := c.prepareStringWrite(ctx, destination); err != nil {
-		cmd.err = err
 		return cmd
 	}
 
 	if replace {
-		if err := c.writeString(ctx, destination, value, ttl); err != nil {
+		// Replace is Set semantics: the destination is dropped whatever it
+		// held, so clearing a collection there is the intended effect.
+		if err := c.setString(ctx, destination, m.value, m.expires); err != nil {
 			cmd.err = err
 			return cmd
 		}
@@ -586,7 +431,11 @@ func (c *Client) Copy(ctx context.Context, source, destination string, _ int, re
 		return cmd
 	}
 
-	applied, err := c.insertStringNX(ctx, destination, value, ttl)
+	if err := c.noteKey(ctx, destination); err != nil {
+		cmd.err = err
+		return cmd
+	}
+	applied, err := c.insertStringNX(ctx, destination, m.value, m.expires)
 	if err != nil {
 		cmd.err = err
 		return cmd
@@ -595,4 +444,116 @@ func (c *Client) Copy(ctx context.Context, source, destination string, _ int, re
 		cmd.val = 1
 	}
 	return cmd
+}
+
+// Type reports the Redis type of a key, or an empty string when it is absent.
+func (c *Client) Type(ctx context.Context, key string) *StatusCmd {
+	cmd := &StatusCmd{}
+
+	if err := c.ensureReady(ctx); err != nil {
+		cmd.err = err
+		return cmd
+	}
+	m, found, err := c.readMeta(ctx, key)
+	if err != nil {
+		cmd.err = err
+		return cmd
+	}
+	if !found {
+		cmd.val = "none"
+		return cmd
+	}
+	cmd.val = string(m.typ)
+	return cmd
+}
+
+// Sweep reclaims keys whose logical expiry has passed.
+//
+// Expiry is a column rather than only a cell TTL, which is what makes it
+// conditionable and what lets it apply to collections; the cost is that
+// something has to remove the rows. A read of an expired key does it for any key
+// anyone still touches, and this covers the rest. It reads the time bucketed
+// expiry index, so the work is proportional to the keys that expired rather than
+// to the size of the namespace.
+//
+// Sweep is safe to call concurrently and from any bucket view; it sweeps the
+// slots it has not seen yet, up to SweepLookback on the first call. Callers
+// schedule it: a driver that starts its own background goroutines is a surprise.
+func (c *Client) Sweep(ctx context.Context) *IntCmd {
+	cmd := &IntCmd{}
+
+	if err := c.ensureReady(ctx); err != nil {
+		cmd.err = err
+		return cmd
+	}
+
+	now := c.now()
+	c.core.sweepMu.Lock()
+	from := c.core.sweepMark
+	if from.IsZero() || now.Sub(from) > c.core.sweepLookback {
+		from = now.Add(-c.core.sweepLookback)
+	}
+	c.core.sweepMu.Unlock()
+
+	var reclaimed int64
+	for slot := expirySlot(from); !slot.After(expirySlot(now)); slot = slot.Add(expirySlotSeconds * time.Second) {
+		entries, err := c.sweepSlot(ctx, slot)
+		if err != nil {
+			cmd.err = err
+			cmd.val = reclaimed
+			return cmd
+		}
+		reclaimed += entries
+	}
+
+	c.core.sweepMu.Lock()
+	if now.After(c.core.sweepMark) {
+		// One slot of overlap on the next run, so an entry written just after
+		// this slot was read is not skipped.
+		c.core.sweepMark = now.Add(-expirySlotSeconds * time.Second)
+	}
+	c.core.sweepMu.Unlock()
+
+	cmd.val = reclaimed
+	return cmd
+}
+
+func (c *Client) sweepSlot(ctx context.Context, slot time.Time) (int64, error) {
+	iter := c.core.runner.Iterate(ctx, c.core.schema.expiryScan, []any{slot},
+		iterOptions{pageSize: c.core.scanPageSize})
+
+	type entry struct{ bucket, key string }
+	var (
+		entries []entry
+		bucket  string
+		key     string
+	)
+	for iter.Scan(&bucket, &key) {
+		entries = append(entries, entry{bucket, key})
+	}
+	if err := iter.Close(); err != nil {
+		return 0, err
+	}
+
+	var reclaimed atomic.Int64
+	err := runConcurrent(ctx, len(entries), c.core.maxConcurrent, func(ctx context.Context, i int) error {
+		view := c
+		if c.core.schema.bucketed && entries[i].bucket != c.bucket {
+			view = &Client{core: c.core, bucket: entries[i].bucket}
+		}
+		// readMeta drops an expired key as a side effect, so the sweep is the
+		// same reclamation a reader would have done.
+		m, found, err := view.readMeta(ctx, entries[i].key)
+		if err != nil {
+			return err
+		}
+		if !found {
+			reclaimed.Add(1)
+		} else if !m.expires.IsZero() && m.expires.After(c.now()) {
+			// The expiry moved out; leave the index entry for its new slot.
+			return nil
+		}
+		return c.core.runner.Exec(ctx, c.core.schema.expiryDrop, slot, entries[i].bucket, entries[i].key)
+	})
+	return reclaimed.Load(), err
 }

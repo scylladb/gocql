@@ -42,12 +42,15 @@ type queryRunner interface {
 	// ExecCAS runs a conditional statement and reports only whether it
 	// applied. A rejected conditional may return anything from [applied] alone
 	// to the entire row depending on the condition and the server, so the
-	// result is never scanned positionally.
+	// result is never scanned positionally; a rejected guard is resolved by
+	// reading the row again rather than by parsing the rejection.
 	ExecCAS(ctx context.Context, stmt string, args []any) (bool, error)
-	// MapScanCAS runs a conditional statement whose rejected result is needed,
-	// addressed by column name.
-	MapScanCAS(ctx context.Context, stmt string, args []any, dest map[string]any) (bool, error)
 	Iterate(ctx context.Context, stmt string, args []any, opt iterOptions) rowIterator
+	// Batch applies statements without a condition. Single partition batches
+	// are one mutation on the server, which is what makes an unconditional
+	// multi statement write atomic; a batch spanning partitions needs
+	// gocql.LoggedBatch to get all-or-nothing durability.
+	Batch(ctx context.Context, batchType gocql.BatchType, stmts []batchStatement) error
 	BatchCAS(ctx context.Context, batchType gocql.BatchType, stmts []batchStatement) (bool, error)
 }
 
@@ -86,10 +89,6 @@ func (r *sessionRunner) ExecCAS(ctx context.Context, stmt string, args []any) (b
 	return r.casQuery(ctx, stmt, args).MapScanCAS(map[string]any{})
 }
 
-func (r *sessionRunner) MapScanCAS(ctx context.Context, stmt string, args []any, dest map[string]any) (bool, error) {
-	return r.casQuery(ctx, stmt, args).MapScanCAS(dest)
-}
-
 func (r *sessionRunner) Iterate(ctx context.Context, stmt string, args []any, opt iterOptions) rowIterator {
 	q := r.query(ctx, stmt, args)
 	if opt.pageSize > 0 {
@@ -101,6 +100,14 @@ func (r *sessionRunner) Iterate(ctx context.Context, stmt string, args []any, op
 		q = q.PageState(opt.pageState)
 	}
 	return &sessionIter{iter: q.Iter()}
+}
+
+func (r *sessionRunner) Batch(ctx context.Context, batchType gocql.BatchType, stmts []batchStatement) error {
+	batch := r.session.Batch(batchType).WithContext(ctx)
+	for i := range stmts {
+		batch.Query(stmts[i].stmt, stmts[i].args...)
+	}
+	return r.session.ExecuteBatch(batch)
 }
 
 func (r *sessionRunner) BatchCAS(ctx context.Context, batchType gocql.BatchType, stmts []batchStatement) (bool, error) {
