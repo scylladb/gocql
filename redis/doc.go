@@ -52,13 +52,16 @@
 // never contend.
 //
 // Multi key atomicity is bounded by the partition, as it is in Redis Cluster.
-// MSet uses a logged batch, which guarantees every mutation is applied but not
-// that a reader sees them together. Multi, Watch and Exec give real
-// transactions over the keys of one bucket when TransactionsByBucket is set:
-// Watch pins the version of each key it names, and Exec applies the queued
-// commands as one conditional batch whose conditions are those versions. If any
-// of them moved, nothing is applied and Exec returns ErrTxAborted, which is
-// EXEC returning nil after an invalidated WATCH.
+// Across partitions MSet is a logged batch: every mutation is guaranteed to
+// apply, but not to be seen together. When TransactionsByBucket puts every
+// key in one bucket partition, that same MSet call becomes a single-partition
+// batch instead, so readers do see every key change together, with no
+// transaction required. Multi, Watch and Exec add what a plain batch cannot:
+// a condition, or a mix of different command kinds, over the keys of one
+// bucket. Watch pins the version of each key it names, and Exec applies the
+// queued commands as one conditional batch whose conditions are those
+// versions. If any of them moved, nothing is applied and Exec returns
+// ErrTxAborted, which is EXEC returning nil after an invalidated WATCH.
 //
 // Conditional writes are lightweight transactions. They are correct but
 // noticeably more expensive than plain writes, and they serialize per
@@ -93,7 +96,7 @@
 //	Incr, IncrBy, Decr, DecrBy  yes     yes       errors on int64 overflow
 //	Append                      yes     yes
 //	MGet                        no      n/a       per key reads, nil on wrong type
-//	MSet                        no*     no        *logged batch: applied, not isolated
+//	MSet                        no*     no        *isolated only within one TransactionsByBucket partition
 //	Del, Exists                 yes     n/a       per key, elements go with the key
 //	Expire, TTL, Persist        yes     n/a       every type; expiration <= 0 deletes
 //	Rename                      no*     yes       *atomic with TransactionsByBucket
@@ -140,10 +143,13 @@
 // # Known differences from Redis
 //
 //   - Multi key atomicity needs co-location. Without TransactionsByBucket there
-//     is no equivalent of MULTI/EXEC, and MSet is applied atomically but read
-//     without isolation. This is the guarantee Redis Cluster offers, where a
-//     multi-key command whose keys do not share a slot is refused; the bucket is
-//     that slot.
+//     is no equivalent of MULTI/EXEC, and an MSet spanning partitions is
+//     applied atomically but read without isolation. Putting the keys in one
+//     bucket already makes a plain MSet a single-partition mutation, isolated
+//     without a transaction; Multi/Watch/Exec is for a condition or a mix of
+//     command kinds. This is the guarantee Redis Cluster offers, where a
+//     multi-key command whose keys do not share a slot is refused; the bucket
+//     is that slot.
 //   - Watch pins a version when it is called, so the Redis order matters: watch
 //     first, then read, then queue, then Exec. A value read before its key was
 //     watched is not covered by anything. A queued write to a key nobody

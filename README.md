@@ -425,7 +425,7 @@ migrating anything beyond plain `Set`/`Get`.
 | `Incr`, `IncrBy`, `Decr`, `DecrBy` | yes | yes | errors on `int64` overflow |
 | `Append` | yes | yes | |
 | `MGet` | no | n/a | per-key reads; `nil` for wrong-type keys |
-| `MSet` | applied, not isolated | no | logged batch; see 6.13 for isolation |
+| `MSet` | isolated only within one bucket (`TransactionsByBucket`) | no | logged batch across partitions; a single-partition mutation within a bucket |
 | `Del`, `Exists` | yes | n/a | one batch per key; elements go with the key |
 | `Expire`, `Persist` | yes | n/a | every key type; `expiration <= 0` deletes (Redis 7) |
 | `TTL` | yes | n/a | `-2` missing, `-1` no expiry |
@@ -446,10 +446,14 @@ migrating anything beyond plain `Set`/`Get`.
 
 **Known differences from Redis**
 
-- Multi-key atomicity needs co-location. `MSet` uses a logged batch, so every
-  write is applied but a reader can still see one key updated and another not.
-  For isolation put the keys in one bucket and use a transaction — the same
-  guarantee, and the same instruction, as Redis Cluster with a hash tag.
+- Multi-key atomicity needs co-location. Across partitions, `MSet` is a logged
+  batch: every write is guaranteed to apply, but a reader can see one key
+  updated and another not. When every key shares one bucket partition
+  (`TransactionsByBucket`), that same `MSet` call becomes a single-partition
+  batch — one mutation, so readers see every key change together — with no
+  need to wrap it in a transaction. `Multi`/`Watch`/`Exec` adds what a plain
+  batch cannot: a condition (`Watch`) or a mix of different command kinds.
+  This is the same trade Redis Cluster makes with hash tags.
 - `Watch` pins a version when it is called, so the Redis order matters: watch,
   read, queue, `Exec`. A value read before its key was watched is not covered.
   A queued write to a key nobody watched is still guarded by what `Exec` read,
@@ -766,7 +770,9 @@ slen, _ := rdb.StrLen(ctx, "greeting").Result() // 11
 _ = rdb.Rename(ctx, "old-key", "new-key").Err()
 
 // Copy duplicates src to dst. Returns 1 if copied, 0 if dst exists and replace=false.
-// db parameter is ignored (Scylla has no numbered databases).
+// destinationDB must be 0: there are no numbered databases here, and a
+// non-zero value is refused rather than silently copying into the current
+// namespace. Use Bucketed for a separate namespace instead.
 copied, _ := rdb.Copy(ctx, "source", "dest", 0, true).Result() // 1
 ```
 
@@ -979,12 +985,26 @@ on the client, outside the transaction, as they do in Redis.
 
 ### 6.14 Bucketed Clients
 
-For multi-tenant routing, use `Bucketed(bucket)` to get a lightweight client view bound to one bucket.
-It shares the same session, schema state and caches, and keeps the same API.
+Two separate decisions are involved, made at two different times.
 
-Bucket routing is independent of atomicity: enable `PartitionByBucket` to route a
-tenant's keys together, or `TransactionsByBucket` when you also want transactions
-across them.
+Whether to bucket at all is a schema decision, made once, in the `Options`
+passed to `NewClient`: `PartitionByBucket` and `TransactionsByBucket` are read
+there and baked into that table's `CREATE TABLE` and every statement the
+client generates for as long as it runs. A table is either bucketed or it
+isn't; there is no per-call override. Bucket routing is independent of
+atomicity: enable `PartitionByBucket` to route a tenant's keys together while
+keeping one key per partition, or `TransactionsByBucket` when you also want
+`Multi`/`Watch`/`Exec` across them.
+
+Which bucket to use is the per-call-site decision, and it is just a string:
+`Options.Bucket` sets it once for the whole client (default `"default"`), or
+call `Bucketed(bucket)` to get a lightweight client view bound to one bucket.
+It shares the same session, schema state and caches as its parent, and keeps
+the same API — deriving one is cheap and does not repeat schema setup, so it
+is the natural way to route many tenants through one client. The package has
+no notion of "user": mapping a tenant or user ID to a bucket name is the
+caller's job, typically done once where a request is first attributed to a
+tenant.
 
 Key enumeration (`Keys`, `Scan`) and every key command are scoped to the view's
 bucket, so the same key name in two buckets is two keys. `Sweep` is the
