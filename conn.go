@@ -168,6 +168,7 @@ type ConnInterface interface {
 	exec(ctx context.Context, req frameBuilder, tracer Tracer, requestTimeout time.Duration) (*framer, error)
 	awaitSchemaAgreement(ctx context.Context) error
 	executeQuery(ctx context.Context, qry *Query) *Iter
+	executeQueryWithMetrics(ctx context.Context, qry *Query, metrics *queryMetrics) *Iter
 	querySystem(ctx context.Context, query string, values ...any) *Iter
 	getIsSchemaV2() bool
 	setSchemaV2(s bool)
@@ -1639,6 +1640,10 @@ func marshalQueryValue(typ TypeInfo, value any, dst *queryValues) error {
 }
 
 func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
+	return c.executeQueryWithMetrics(ctx, qry, qry.metrics)
+}
+
+func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics *queryMetrics) (iter *Iter) {
 	params := queryParams{
 		consistency: qry.cons,
 	}
@@ -1733,14 +1738,16 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 
 	resp, err := framer.parseFrame()
 	if err != nil {
-		return newErrorIterWithReleasedFramer(err, framer).bindWarningHandler(qry, warningHandler)
+		return newErrorIterWithReleasedFramer(err, framer).
+			bindWarningHandlerWithMetrics(qry, metrics, warningHandler)
 	}
 
 	if len(framer.customPayload) > 0 {
 		if hint, ok := framer.customPayload["tablets-routing-v1"]; ok {
 			tablet, err := unmarshalTabletHint(hint, c.version, qry.routingInfo.keyspace, qry.routingInfo.table)
 			if err != nil {
-				return newErrorIterWithReleasedFramer(err, framer).bindWarningHandler(qry, warningHandler)
+				return newErrorIterWithReleasedFramer(err, framer).
+					bindWarningHandlerWithMetrics(qry, metrics, warningHandler)
 			}
 			c.session.metadataDescriber.AddTablet(tablet)
 		}
@@ -1752,30 +1759,31 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 
 	switch x := resp.(type) {
 	case *resultVoidFrame:
-		return (&Iter{framer: framer}).bindWarningHandler(qry, warningHandler)
+		return (&Iter{framer: framer}).
+			bindWarningHandlerWithMetrics(qry, metrics, warningHandler)
 	case *resultRowsFrame:
+		if params.skipMeta && info == nil {
+			return newErrorIterWithReleasedFramer(
+				errors.New("gocql: did not receive metadata but prepared info is nil"),
+				framer,
+			).bindWarningHandlerWithMetrics(qry, metrics, warningHandler)
+		}
+
 		iter := (&Iter{
 			meta:    x.meta,
 			framer:  framer,
 			numRows: x.numRows,
-		}).bindWarningHandler(qry, warningHandler)
+		}).bindWarningHandlerWithMetrics(qry, metrics, warningHandler)
 
 		if params.skipMeta {
-			if info != nil {
-				iter.meta = info.response
-				// pagingState is already independently allocated by readBytesCopy()
-				// during frame parsing, no additional copy needed.
-				iter.meta.pagingState = x.meta.pagingState
-			} else {
-				return newErrorIterWithReleasedFramer(errors.New("gocql: did not receive metadata but prepared info is nil"), framer).bindWarningHandler(qry, warningHandler)
-			}
+			iter.meta = info.response
+			// pagingState is already independently allocated by readBytesCopy()
+			// during frame parsing, no additional copy needed.
+			iter.meta.pagingState = x.meta.pagingState
 		}
 
 		if x.meta.morePages() && !qry.disableAutoPage {
-			newQry := new(Query)
-			*newQry = *qry
-			newQry.pageState = x.meta.pagingState
-			newQry.metrics = &queryMetrics{m: make(map[UUID]*hostMetrics)}
+			newQry := cloneQueryForNextPage(qry, metrics, x.meta.pagingState)
 
 			iter.next = newNextIter(newQry, int((1-qry.prefetch)*float64(x.numRows)))
 
@@ -1786,9 +1794,11 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 
 		return iter
 	case *resultKeyspaceFrame:
-		return (&Iter{framer: framer}).bindWarningHandler(qry, warningHandler)
+		return (&Iter{framer: framer}).
+			bindWarningHandlerWithMetrics(qry, metrics, warningHandler)
 	case *frm.SchemaChangeKeyspace, *frm.SchemaChangeTable, *frm.SchemaChangeFunction, *frm.SchemaChangeAggregate, *frm.SchemaChangeType:
-		iter := (&Iter{framer: framer}).bindWarningHandler(qry, warningHandler)
+		iter := (&Iter{framer: framer}).
+			bindWarningHandlerWithMetrics(qry, metrics, warningHandler)
 		if err := c.awaitSchemaAgreement(ctx); err != nil {
 			// TODO: should have this behind a flag
 			c.logger.Println(err)
@@ -1801,12 +1811,24 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 		stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), c.currentKeyspace, qry.stmt)
 		c.session.stmtsLRU.evictPreparedID(stmtCacheKey, x.StatementId)
 		framer.Release()
-		return c.executeQuery(ctx, qry)
+		return c.executeQueryWithMetrics(ctx, qry, metrics)
 	case error:
-		return newErrorIterWithReleasedFramer(x, framer).bindWarningHandler(qry, warningHandler)
+		return newErrorIterWithReleasedFramer(x, framer).
+			bindWarningHandlerWithMetrics(qry, metrics, warningHandler)
 	default:
-		return newErrorIterWithReleasedFramer(NewErrProtocol("Unknown type in response to execute query (%T): %s", x, x), framer).bindWarningHandler(qry, warningHandler)
+		return newErrorIterWithReleasedFramer(
+			NewErrProtocol("Unknown type in response to execute query (%T): %s", x, x),
+			framer,
+		).bindWarningHandlerWithMetrics(qry, metrics, warningHandler)
 	}
+}
+
+func cloneQueryForNextPage(qry *Query, metrics *queryMetrics, pageState []byte) *Query {
+	next := cloneQuery(qry, metrics)
+	next.pageState = pageState
+	// Automatic pages belong to one logical execution, and newNextIter pins
+	// this exact run until the page is retired.
+	return next
 }
 
 func (c *Conn) Pick(qry *Query) *Conn {
