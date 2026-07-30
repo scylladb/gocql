@@ -1889,6 +1889,49 @@ func TestPrepare_ReprepareBatch(t *testing.T) {
 	}
 }
 
+// TestBatchNoArgsPrepared verifies that batch entries without bind arguments
+// are still prepared (not sent as unprepared text). This prevents a regression
+// where the driver would skip preparation for statements with no args.
+func TestBatchNoArgsPrepared(t *testing.T) {
+	t.Parallel()
+
+	session := createSession(t)
+	defer session.Close()
+
+	table := testTableName(t)
+	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (id int primary key, val int)`, table)); err != nil {
+		t.Fatal("create table:", err)
+	}
+
+	// Insert a row using a batch with no bind args (literal values in CQL).
+	stmt := fmt.Sprintf(`INSERT INTO gocql_test.%s (id, val) VALUES (1, 42)`, table)
+	batch := session.Batch(LoggedBatch)
+	batch.Query(stmt)
+	if err := session.ExecuteBatch(batch); err != nil {
+		t.Fatal("execute batch:", err)
+	}
+
+	// Verify the statement was prepared by checking the cache.
+	// The batch may have been routed to any host, so check all hosts in the
+	// ring rather than relying on getRandomConn returning the right one.
+	found := false
+	session.pool.mu.RLock()
+	for hostID := range session.pool.hostConnPools {
+		key := session.stmtsLRU.keyFor(hostID, "gocql_test", stmt)
+		session.stmtsLRU.mu.Lock()
+		_, ok := session.stmtsLRU.lru.Get(key)
+		session.stmtsLRU.mu.Unlock()
+		if ok {
+			found = true
+			break
+		}
+	}
+	session.pool.mu.RUnlock()
+	if !found {
+		t.Fatal("expected statement with no args to be in prepared cache, but it was not found")
+	}
+}
+
 func TestQueryInfo(t *testing.T) {
 	t.Parallel()
 
