@@ -1694,12 +1694,13 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 			return &Iter{err: fmt.Errorf("gocql: expected %d values send got %d", info.request.actualColCount, len(values))}
 		}
 
-		params.values = make([]queryValues, len(values))
+		params.values = getQueryValues(len(values))
 		for i := 0; i < len(values); i++ {
 			v := &params.values[i]
 			value := values[i]
 			typ := info.request.columns[i].TypeInfo
 			if err := marshalQueryValue(typ, value, v); err != nil {
+				putQueryValues(params.values)
 				return &Iter{err: err}
 			}
 		}
@@ -1728,6 +1729,9 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 	}
 
 	framer, err := c.exec(ctx, frame, qry.trace, qry.GetRequestTimeout())
+	// Return pooled values; consumed by buildFrame at the start of c.exec().
+	// Returned after round-trip (not right after serialization) for simplicity.
+	putQueryValues(params.values)
 	if err != nil {
 		return &Iter{err: err}
 	}
@@ -1907,6 +1911,7 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 		if len(entry.Args) > 0 || entry.binding != nil {
 			info, err := c.prepareStatement(batch.Context(), entry.Stmt, batch.trace, batch.GetRequestTimeout())
 			if err != nil {
+				putBatchQueryValues(req.statements)
 				return &Iter{err: err}
 			}
 
@@ -1921,24 +1926,27 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 					PKeyColumns: info.request.pkeyColumns,
 				})
 				if err != nil {
+					putBatchQueryValues(req.statements)
 					return &Iter{err: err}
 				}
 			}
 
 			if len(values) != info.request.actualColCount {
+				putBatchQueryValues(req.statements)
 				return &Iter{err: fmt.Errorf("gocql: batch statement %d expected %d values send got %d", i, info.request.actualColCount, len(values))}
 			}
 
 			b.preparedID = info.id
 			stmts[string(info.id)] = entry.Stmt
 
-			b.values = make([]queryValues, info.request.actualColCount)
+			b.values = getQueryValues(info.request.actualColCount)
 
 			for j := 0; j < info.request.actualColCount; j++ {
 				v := &b.values[j]
 				value := values[j]
 				typ := info.request.columns[j].TypeInfo
 				if err := marshalQueryValue(typ, value, v); err != nil {
+					putBatchQueryValues(req.statements)
 					return &Iter{err: err}
 				}
 			}
@@ -1959,6 +1967,9 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 
 	// TODO: should batch support tracing?
 	framer, err := c.exec(batch.Context(), req, batch.trace, batch.GetRequestTimeout())
+	// Return pooled values; consumed by buildFrame at the start of c.exec().
+	// Returned after round-trip (not right after serialization) for simplicity.
+	putBatchQueryValues(req.statements)
 	if err != nil {
 		return &Iter{err: err}
 	}

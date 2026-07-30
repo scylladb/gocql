@@ -30,6 +30,7 @@ package gocql
 import (
 	"bytes"
 	"os"
+	"runtime"
 	"testing"
 
 	frm "github.com/gocql/gocql/internal/frame"
@@ -239,4 +240,175 @@ func TestParseEventFrame_ClientRoutesChanged(t *testing.T) {
 	if len(evt.HostIDs) != 0 {
 		t.Fatalf("HostIDs = %v, want empty", evt.HostIDs)
 	}
+}
+
+// --- queryValues pool tests ---
+
+func TestQueryValuesBucket(t *testing.T) {
+	tests := []struct {
+		n      int
+		bucket int
+	}{
+		{0, 0}, {1, 0}, {8, 0},
+		{9, 1}, {16, 1},
+		{17, 2}, {32, 2},
+		{33, 3}, {64, 3},
+		{65, 4}, {128, 4},
+		{129, -1}, {1000, -1},
+	}
+	for _, tt := range tests {
+		got := queryValuesBucket(tt.n)
+		if got != tt.bucket {
+			t.Errorf("queryValuesBucket(%d) = %d, want %d", tt.n, got, tt.bucket)
+		}
+	}
+}
+
+func TestGetQueryValuesLength(t *testing.T) {
+	for _, n := range []int{0, 1, 5, 8, 10, 16, 30, 64, 128, 200} {
+		s := getQueryValues(n)
+		if len(s) != n {
+			t.Errorf("getQueryValues(%d): len = %d, want %d", n, len(s), n)
+		}
+		// For pooled sizes, capacity should be the bucket size.
+		bucket := queryValuesBucket(n)
+		if bucket >= 0 {
+			wantCap := 8 << bucket
+			if cap(s) != wantCap {
+				t.Errorf("getQueryValues(%d): cap = %d, want %d", n, cap(s), wantCap)
+			}
+		}
+	}
+}
+
+func TestPutGetQueryValuesClearsReferences(t *testing.T) {
+	s := getQueryValues(4)
+	s[0].name = "col1"
+	s[0].value = []byte("data")
+	s[1].name = "col2"
+	s[1].value = []byte("more")
+	s[2].isUnset = true
+
+	putQueryValues(s)
+
+	// Assert directly on the original slice: putQueryValues clears the
+	// backing array in place, so s still reflects the zeroed state.
+	// This is deterministic and does not depend on sync.Pool returning
+	// the same object on the next Get.
+	for i := 0; i < 4; i++ {
+		if s[i].name != "" {
+			t.Errorf("element %d: name = %q, want empty after put", i, s[i].name)
+		}
+		if s[i].value != nil {
+			t.Errorf("element %d: value = %v, want nil after put", i, s[i].value)
+		}
+		if s[i].isUnset {
+			t.Errorf("element %d: isUnset = true, want false after put", i)
+		}
+	}
+}
+
+func TestPutQueryValuesNilSafe(t *testing.T) {
+	// Must not panic.
+	putQueryValues(nil)
+}
+
+func TestPutBatchQueryValues(t *testing.T) {
+	stmts := make([]batchStatment, 3)
+	stmts[0].values = getQueryValues(5)
+	stmts[0].values[0].name = "a"
+	// stmts[1].values is nil (simulates entry without args)
+	stmts[2].values = getQueryValues(10)
+	stmts[2].values[0].value = []byte("x")
+
+	putBatchQueryValues(stmts)
+
+	for i, s := range stmts {
+		if s.values != nil {
+			t.Errorf("stmts[%d].values should be nil after putBatchQueryValues", i)
+		}
+	}
+}
+
+func TestGetQueryValuesOversize(t *testing.T) {
+	// Slices larger than 128 should not be pooled.
+	s := getQueryValues(200)
+	if len(s) != 200 {
+		t.Errorf("getQueryValues(200): len = %d, want 200", len(s))
+	}
+	// Should not panic when returning oversize.
+	putQueryValues(s)
+}
+
+// --- benchmarks ---
+
+// queryValuesSink forces escape analysis to heap-allocate make() in baseline
+// benchmarks. Assigned once after the loop to avoid per-iteration cache-line
+// effects that would unfairly penalize the baseline.
+var queryValuesSink []queryValues
+
+func BenchmarkGetPutQueryValues_8_Seq(b *testing.B) {
+	for b.Loop() {
+		s := getQueryValues(8)
+		s[0].name = "col"
+		s[0].value = []byte("val")
+		putQueryValues(s)
+	}
+}
+
+func BenchmarkGetPutQueryValues_8_Parallel(b *testing.B) {
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			s := getQueryValues(8)
+			s[0].name = "col"
+			s[0].value = []byte("val")
+			putQueryValues(s)
+		}
+	})
+}
+
+func BenchmarkMakeQueryValues_8_Seq(b *testing.B) {
+	var s []queryValues
+	for b.Loop() {
+		s = make([]queryValues, 8)
+		s[0].name = "col"
+		s[0].value = []byte("val")
+	}
+	queryValuesSink = s
+}
+
+func BenchmarkMakeQueryValues_8_Parallel(b *testing.B) {
+	b.RunParallel(func(pb *testing.PB) {
+		var s []queryValues
+		for pb.Next() {
+			s = make([]queryValues, 8)
+			s[0].name = "col"
+			s[0].value = []byte("val")
+		}
+		runtime.KeepAlive(s)
+	})
+}
+
+func BenchmarkPutBatchQueryValues_10x8(b *testing.B) {
+	for b.Loop() {
+		stmts := make([]batchStatment, 10)
+		for i := range stmts {
+			stmts[i].values = getQueryValues(8)
+			stmts[i].values[0].name = "col"
+		}
+		putBatchQueryValues(stmts)
+	}
+}
+
+func BenchmarkPutBatchQueryValues_10x8_Parallel(b *testing.B) {
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			stmts := make([]batchStatment, 10)
+			for i := range stmts {
+				stmts[i].values = getQueryValues(8)
+				stmts[i].values[0].name = "col"
+			}
+			putBatchQueryValues(stmts)
+		}
+	})
 }
