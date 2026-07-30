@@ -96,7 +96,7 @@ func TestSessionAPI(t *testing.T) {
 		t.Fatalf("expected qry.stmt to be 'test', got '%v'", boundQry.stmt)
 	}
 
-	itr := s.executeQuery(qry)
+	itr := s.executeQueryWithMetrics(qry, qry.metrics)
 	if itr.err != ErrSessionNotReady {
 		t.Fatalf("expected itr.err to be '%v', got '%v'", ErrSessionNotReady, itr.err)
 	}

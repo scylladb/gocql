@@ -671,15 +671,6 @@ func (s *Session) WaitUntilReady() error {
 	return s.initErr
 }
 
-func (s *Session) executeQuery(qry *Query) (it *Iter) {
-	metrics := qry.metrics
-	if metrics == nil {
-		metrics = newQueryMetrics()
-		qry.metrics = metrics
-	}
-	return s.executeQueryWithMetrics(qry, metrics)
-}
-
 func (s *Session) executeQueryWithMetrics(qry *Query, metrics *queryMetrics) (it *Iter) {
 	if s.Closed() {
 		return &Iter{err: ErrSessionClosed}
@@ -1655,22 +1646,6 @@ func (qm *queryMetrics) reset() {
 	qm.l.Unlock()
 }
 
-// attempt adds given number of attempts and latency for given host.
-// It returns previous total attempts.
-// If needsHostMetrics is true, a copy of updated hostMetrics is returned.
-func (qm *queryMetrics) attempt(addAttempts int, addLatency time.Duration,
-	host *HostInfo, needsHostMetrics bool) (int, *hostMetrics) {
-	addLatencyNanos := addLatency.Nanoseconds()
-
-	if !needsHostMetrics {
-		qm.nextAttempt.Add(int64(addAttempts))
-		totalAttempts := qm.addTotals(addAttempts, addLatencyNanos)
-		return int(totalAttempts), nil
-	}
-
-	return qm.recordHostAttempt(addAttempts, addLatency, host, true)
-}
-
 // recordHostAttempt records totals and deprecated per-host metrics.
 // If needsHostMetrics is true, a copy of updated hostMetrics is returned.
 func (qm *queryMetrics) recordHostAttempt(addAttempts int, addLatency time.Duration,
@@ -2020,12 +1995,6 @@ func (q *Query) Cancel() {
 
 func (q *Query) execute(ctx context.Context, conn *Conn, metrics *queryMetrics) *Iter {
 	return conn.executeQueryWithMetrics(ctx, q, metrics)
-}
-
-func (q *Query) attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
-	token := q.metrics.beginAttempt()
-	token.start = start
-	q.finishAttempt(token, keyspace, end, iter, host)
 }
 
 func (q *Query) finishAttempt(token attemptToken, keyspace string, end time.Time, iter *Iter, host *HostInfo) {
@@ -3426,12 +3395,6 @@ func (b *Batch) WithTimestamp(timestamp int64) *Batch {
 	b.DefaultTimestamp(true)
 	b.defaultTimestampValue = timestamp
 	return b
-}
-
-func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
-	token := b.metrics.beginAttempt()
-	token.start = start
-	b.finishAttempt(token, keyspace, end, iter, host)
 }
 
 func (b *Batch) finishAttempt(token attemptToken, keyspace string, end time.Time, iter *Iter, host *HostInfo) {

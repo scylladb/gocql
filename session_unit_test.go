@@ -503,7 +503,7 @@ func TestIterWarningHandlerPinsExactExecutionMetrics(t *testing.T) {
 	q := newWarningTestQuery()
 	prepareQueryMetrics(&q.metrics, &q.metricsOwner)
 	executionMetrics := q.metrics
-	executionMetrics.attempt(1, time.Nanosecond, &HostInfo{hostId: UUID{17}}, false)
+	finishUnobservedTestAttempt(executionMetrics, time.Nanosecond, &HostInfo{hostId: UUID{17}})
 	executionQuery := cloneQuery(q, executionMetrics)
 	handler := &recordingWarningHandler{}
 	iter := (&Iter{
@@ -746,14 +746,14 @@ func newTestQueryExecutor(host *HostInfo) *queryExecutor {
 	}
 }
 
-func TestQueryMetricsAttemptTracksTotalsAndHostSnapshots(t *testing.T) {
+func TestQueryMetricsRecordHostAttemptTracksTotalsAndHostSnapshots(t *testing.T) {
 	t.Parallel()
 
 	qm := newQueryMetrics()
 	host1 := &HostInfo{hostId: UUID{1}}
 	host2 := &HostInfo{hostId: UUID{2}}
 
-	attempt, metrics := qm.attempt(1, 10*time.Nanosecond, host1, true)
+	attempt, metrics := qm.recordHostAttempt(1, 10*time.Nanosecond, host1, true)
 	if attempt != 0 {
 		t.Fatalf("first attempt index = %d, want 0", attempt)
 	}
@@ -767,7 +767,7 @@ func TestQueryMetricsAttemptTracksTotalsAndHostSnapshots(t *testing.T) {
 		t.Fatalf("latency = %d, want 10", got)
 	}
 
-	attempt, metrics = qm.attempt(2, 20*time.Nanosecond, host1, true)
+	attempt, metrics = qm.recordHostAttempt(2, 20*time.Nanosecond, host1, true)
 	if attempt != 1 {
 		t.Fatalf("second attempt index = %d, want 1", attempt)
 	}
@@ -779,7 +779,7 @@ func TestQueryMetricsAttemptTracksTotalsAndHostSnapshots(t *testing.T) {
 	}
 	snapshot := *metrics
 
-	attempt, metrics = qm.attempt(1, 6*time.Nanosecond, host2, true)
+	attempt, metrics = qm.recordHostAttempt(1, 6*time.Nanosecond, host2, true)
 	if attempt != 3 {
 		t.Fatalf("third attempt index = %d, want 3", attempt)
 	}
@@ -897,19 +897,19 @@ func TestQueryMetricsTotalsConcurrentOverflowTransition(t *testing.T) {
 	}
 }
 
-func TestQueryMetricsAttemptKeepsEmptyHostIDSeparate(t *testing.T) {
+func TestQueryMetricsRecordHostAttemptKeepsEmptyHostIDSeparate(t *testing.T) {
 	t.Parallel()
 
 	qm := newQueryMetrics()
 	emptyHostID := &HostInfo{}
 	realHostID := &HostInfo{hostId: UUID{1}}
 
-	_, metrics := qm.attempt(1, 10*time.Nanosecond, emptyHostID, true)
+	_, metrics := qm.recordHostAttempt(1, 10*time.Nanosecond, emptyHostID, true)
 	if metrics.Attempts != 1 || metrics.TotalLatency != 10 {
 		t.Fatalf("empty host metrics = %+v, want attempts=1 latency=10", metrics)
 	}
 
-	_, metrics = qm.attempt(1, 6*time.Nanosecond, realHostID, true)
+	_, metrics = qm.recordHostAttempt(1, 6*time.Nanosecond, realHostID, true)
 	if metrics.Attempts != 1 || metrics.TotalLatency != 6 {
 		t.Fatalf("real host metrics = %+v, want attempts=1 latency=6", metrics)
 	}
@@ -931,12 +931,9 @@ func TestQueryMetricsAttemptWithoutSnapshotSkipsHostStorage(t *testing.T) {
 	qm := newQueryMetrics()
 	host := &HostInfo{hostId: UUID{1}}
 
-	attempt, metrics := qm.attempt(1, 10*time.Nanosecond, host, false)
+	attempt := finishUnobservedTestAttempt(qm, 10*time.Nanosecond, host)
 	if attempt != 0 {
 		t.Fatalf("attempt index = %d, want 0", attempt)
-	}
-	if metrics != nil {
-		t.Fatalf("metrics = %+v, want nil", metrics)
 	}
 	if got := qm.attempts(); got != 1 {
 		t.Fatalf("attempts = %d, want 1", got)
@@ -1039,7 +1036,7 @@ func TestQueryObserverDeprecatedMetricsIncludeManualHostUpdates(t *testing.T) {
 
 	q.AddAttempts(2, host)
 	q.AddLatency(30, host)
-	q.attempt("ks", start.Add(10*time.Nanosecond), start, &Iter{}, host)
+	finishTestAttempt(q, q.metrics, "ks", start.Add(10*time.Nanosecond), start, &Iter{}, host)
 
 	if !observed {
 		t.Fatal("query observation was not called")
@@ -1080,7 +1077,7 @@ func TestBatchObserverDeprecatedMetricsIncludeManualHostUpdates(t *testing.T) {
 
 	b.AddAttempts(2, host)
 	b.AddLatency(30, host)
-	b.attempt("ks", start.Add(10*time.Nanosecond), start, &Iter{}, host)
+	finishTestAttempt(b, b.metrics, "ks", start.Add(10*time.Nanosecond), start, &Iter{}, host)
 
 	if !observed {
 		t.Fatal("batch observation was not called")
@@ -1116,7 +1113,7 @@ func TestQueryMetricsLatencyMakesProgressWithConcurrentAttempts(t *testing.T) {
 				case <-stop:
 					return
 				default:
-					qm.attempt(1, time.Nanosecond, host, false)
+					finishUnobservedTestAttempt(qm, time.Nanosecond, host)
 				}
 			}
 		}()
@@ -1148,6 +1145,26 @@ func TestQueryMetricsLatencyMakesProgressWithConcurrentAttempts(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("metrics readers made no progress during sustained concurrent updates")
 	}
+}
+
+func finishUnobservedTestAttempt(metrics *queryMetrics, latency time.Duration, host *HostInfo) int {
+	token := metrics.beginAttempt()
+	defer token.metrics.release()
+	attempt, _, _ := metrics.finishAttempt(token, latency, host, false, false)
+	return attempt
+}
+
+func finishTestAttempt(
+	q ExecutableQuery,
+	metrics *queryMetrics,
+	keyspace string,
+	end, start time.Time,
+	iter *Iter,
+	host *HostInfo,
+) {
+	token := metrics.beginAttempt()
+	token.start = start
+	q.finishAttempt(token, keyspace, end, iter, host)
 }
 
 type unitQueryObserverFunc func(context.Context, ObservedQuery)
@@ -1234,8 +1251,17 @@ func TestQueryObserverAttemptMetricsAndDeprecatedMetrics(t *testing.T) {
 		values:      []any{1},
 	}
 
-	q.attempt("ks", start.Add(10*time.Nanosecond), start, &Iter{numRows: 2}, host)
-	q.attempt("ks", start.Add(30*time.Nanosecond), start.Add(10*time.Nanosecond), &Iter{numRows: 3}, host)
+	metrics := q.metrics
+	finishTestAttempt(q, metrics, "ks", start.Add(10*time.Nanosecond), start, &Iter{numRows: 2}, host)
+	finishTestAttempt(
+		q,
+		metrics,
+		"ks",
+		start.Add(30*time.Nanosecond),
+		start.Add(10*time.Nanosecond),
+		&Iter{numRows: 3},
+		host,
+	)
 
 	if len(observations) != 2 {
 		t.Fatalf("observations = %d, want 2", len(observations))
@@ -1288,7 +1314,7 @@ func TestBatchObserverAttemptMetricsAndDeprecatedMetrics(t *testing.T) {
 		},
 	}
 
-	b.attempt("ks", start.Add(12*time.Nanosecond), start, &Iter{}, host)
+	finishTestAttempt(b, b.metrics, "ks", start.Add(12*time.Nanosecond), start, &Iter{}, host)
 
 	if !observed {
 		t.Fatal("batch observation was not called")
@@ -1330,8 +1356,17 @@ func TestBatchObserverAttemptMetricsAreCumulative(t *testing.T) {
 	}
 	start := time.Unix(0, 200)
 
-	b.attempt("ks", start.Add(5*time.Nanosecond), start, &Iter{}, host1)
-	b.attempt("ks", start.Add(12*time.Nanosecond), start.Add(5*time.Nanosecond), &Iter{}, host2)
+	metrics := b.metrics
+	finishTestAttempt(b, metrics, "ks", start.Add(5*time.Nanosecond), start, &Iter{}, host1)
+	finishTestAttempt(
+		b,
+		metrics,
+		"ks",
+		start.Add(12*time.Nanosecond),
+		start.Add(5*time.Nanosecond),
+		&Iter{},
+		host2,
+	)
 
 	if len(observations) != 2 {
 		t.Fatalf("observations = %d, want 2", len(observations))
@@ -1369,6 +1404,7 @@ func TestQueryObserverAttemptMetricsConcurrentAttempts(t *testing.T) {
 		values:      []any{1},
 	}
 
+	metrics := q.metrics
 	start := make(chan struct{})
 	done := make(chan struct{}, 2)
 	for _, latency := range []time.Duration{10 * time.Nanosecond, 20 * time.Nanosecond} {
@@ -1376,7 +1412,7 @@ func TestQueryObserverAttemptMetricsConcurrentAttempts(t *testing.T) {
 		go func() {
 			<-start
 			now := time.Unix(0, int64(latency))
-			q.attempt("ks", now.Add(latency), now, &Iter{}, host)
+			finishTestAttempt(q, metrics, "ks", now.Add(latency), now, &Iter{}, host)
 			done <- struct{}{}
 		}()
 	}
@@ -1620,7 +1656,7 @@ func TestBindWarningHandlerWithMetricsUsesExplicitMetrics(t *testing.T) {
 	metricsOwner := newWarningTestQuery()
 	prepareQueryMetrics(&metricsOwner.metrics, &metricsOwner.metricsOwner)
 	pinnedMetrics := metricsOwner.metrics
-	pinnedMetrics.attempt(1, time.Nanosecond, nil, false)
+	finishUnobservedTestAttempt(pinnedMetrics, time.Nanosecond, nil)
 	handler := &recordingWarningHandler{}
 	iter := (&Iter{
 		framer: &testWarningFramer{warnings: []string{"pinned"}},
@@ -1720,7 +1756,7 @@ func TestWithContextMetricsAreCopyOnWrite(t *testing.T) {
 	if q.metrics == originalMetrics {
 		t.Fatal("executing the source query did not detach from its WithContext copy")
 	}
-	qCopy.metrics.attempt(1, 7*time.Nanosecond, nil, false)
+	finishUnobservedTestAttempt(qCopy.metrics, 7*time.Nanosecond, nil)
 	rawCopy := *qCopy
 	prepareQueryMetrics(&rawCopy.metrics, &rawCopy.metricsOwner)
 	if rawCopy.metrics == qCopy.metrics {
@@ -1747,7 +1783,7 @@ func TestWithContextMetricsAreCopyOnWrite(t *testing.T) {
 	if b.metrics == originalBatchMetrics {
 		t.Fatal("executing the source batch did not detach from its WithContext copy")
 	}
-	bCopy.metrics.attempt(1, 11*time.Nanosecond, nil, false)
+	finishUnobservedTestAttempt(bCopy.metrics, 11*time.Nanosecond, nil)
 	rawBatchCopy := *bCopy
 	prepareQueryMetrics(&rawBatchCopy.metrics, &rawBatchCopy.metricsOwner)
 	if rawBatchCopy.metrics == bCopy.metrics {
@@ -1831,7 +1867,7 @@ func TestWithContextFromStaleValueDoesNotStealMetricsOwner(t *testing.T) {
 	prepareQueryMetrics(&q.metrics, &q.metricsOwner)
 	staleQuery := *q
 	currentQueryMetrics := prepareQueryMetrics(&q.metrics, &q.metricsOwner)
-	currentQueryMetrics.attempt(1, 13*time.Nanosecond, nil, false)
+	finishUnobservedTestAttempt(currentQueryMetrics, 13*time.Nanosecond, nil)
 
 	queryCopy := staleQuery.WithContext(context.Background())
 	prepareQueryMetrics(&queryCopy.metrics, &queryCopy.metricsOwner)
@@ -1847,7 +1883,7 @@ func TestWithContextFromStaleValueDoesNotStealMetricsOwner(t *testing.T) {
 	prepareQueryMetrics(&b.metrics, &b.metricsOwner)
 	staleBatch := *b
 	currentBatchMetrics := prepareQueryMetrics(&b.metrics, &b.metricsOwner)
-	currentBatchMetrics.attempt(1, 17*time.Nanosecond, nil, false)
+	finishUnobservedTestAttempt(currentBatchMetrics, 17*time.Nanosecond, nil)
 
 	batchCopy := staleBatch.WithContext(context.Background())
 	prepareQueryMetrics(&batchCopy.metrics, &batchCopy.metricsOwner)
@@ -1996,12 +2032,12 @@ func TestAttemptMetricsReportsRecordedAttempts(t *testing.T) {
 	host := &HostInfo{hostId: UUID{1}}
 	qm := newQueryMetrics()
 
-	_, hostMetrics := qm.attempt(1, 10*time.Nanosecond, host, true)
+	_, hostMetrics := qm.recordHostAttempt(1, 10*time.Nanosecond, host, true)
 	if hostMetrics.Attempts != 1 || hostMetrics.TotalLatency != 10 {
 		t.Fatalf("first host metrics = %+v, want attempts=1 latency=10", hostMetrics)
 	}
 
-	attempt, hostMetrics := qm.attempt(1, 20*time.Nanosecond, host, true)
+	attempt, hostMetrics := qm.recordHostAttempt(1, 20*time.Nanosecond, host, true)
 	if hostMetrics.Attempts != 2 || hostMetrics.TotalLatency != 30 {
 		t.Fatalf("second host metrics = %+v, want attempts=2 latency=30", hostMetrics)
 	}
@@ -2113,7 +2149,7 @@ func TestAttemptMetricsPersistentHistoryScalesAndStaysOrdered(t *testing.T) {
 	}
 }
 
-func TestQueryMetricsObservedAttemptSerializesTotalAttemptWithHostMetrics(t *testing.T) {
+func TestQueryMetricsRecordHostAttemptSerializesTotalsWithHostMetrics(t *testing.T) {
 	t.Parallel()
 
 	qm := newQueryMetrics()
@@ -2126,7 +2162,7 @@ func TestQueryMetricsObservedAttemptSerializesTotalAttemptWithHostMetrics(t *tes
 		defer close(done)
 
 		close(started)
-		attempt, metrics := qm.attempt(1, 10*time.Nanosecond, host, true)
+		attempt, metrics := qm.recordHostAttempt(1, 10*time.Nanosecond, host, true)
 		if attempt != 0 {
 			t.Errorf("attempt index = %d, want 0", attempt)
 		}
@@ -2167,7 +2203,7 @@ func TestQueryMetricsObservedAttemptSerializesTotalAttemptWithHostMetrics(t *tes
 func BenchmarkQueryMetricsAttempt(b *testing.B) {
 	host := &HostInfo{hostId: UUID{1}}
 	qm := newQueryMetrics()
-	qm.attempt(1, time.Nanosecond, host, false)
+	finishUnobservedTestAttempt(qm, time.Nanosecond, host)
 	qm.reset()
 
 	b.ReportAllocs()
@@ -2176,21 +2212,21 @@ func BenchmarkQueryMetricsAttempt(b *testing.B) {
 		if i%1024 == 0 {
 			qm.reset()
 		}
-		qm.attempt(1, time.Nanosecond, host, false)
+		finishUnobservedTestAttempt(qm, time.Nanosecond, host)
 	}
 }
 
 func BenchmarkQueryMetricsResetAttempt(b *testing.B) {
 	host := &HostInfo{hostId: UUID{1}}
 	qm := newQueryMetrics()
-	qm.attempt(1, time.Nanosecond, host, false)
+	finishUnobservedTestAttempt(qm, time.Nanosecond, host)
 	qm.reset()
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		qm.reset()
-		qm.attempt(1, time.Nanosecond, host, false)
+		finishUnobservedTestAttempt(qm, time.Nanosecond, host)
 	}
 }
 
@@ -2208,7 +2244,7 @@ func BenchmarkQueryResetWithStraggler(b *testing.B) {
 	}
 }
 
-func BenchmarkQueryMetricsAttemptWithSnapshot(b *testing.B) {
+func BenchmarkQueryMetricsRecordHostAttemptWithSnapshot(b *testing.B) {
 	hosts := []*HostInfo{
 		{hostId: UUID{1}},
 		{hostId: UUID{2}},
@@ -2217,7 +2253,7 @@ func BenchmarkQueryMetricsAttemptWithSnapshot(b *testing.B) {
 	}
 	qm := newQueryMetrics()
 	for _, host := range hosts {
-		qm.attempt(1, time.Nanosecond, host, true)
+		qm.recordHostAttempt(1, time.Nanosecond, host, true)
 	}
 	qm.reset()
 
@@ -2230,7 +2266,7 @@ func BenchmarkQueryMetricsAttemptWithSnapshot(b *testing.B) {
 			if i >= b.N {
 				break
 			}
-			_, metrics = qm.attempt(1, time.Nanosecond, host, true)
+			_, metrics = qm.recordHostAttempt(1, time.Nanosecond, host, true)
 			i++
 		}
 	}
@@ -3208,7 +3244,9 @@ func TestQueryForExecutionPreservesConcreteTypes(t *testing.T) {
 	host := &HostInfo{hostId: UUID{9}}
 
 	queryMetrics := newQueryMetrics()
-	queryMetrics.attempt(7, 4*time.Nanosecond, host, false)
+	for i := 0; i < 7; i++ {
+		finishUnobservedTestAttempt(queryMetrics, 4*time.Nanosecond, host)
+	}
 	var queryAttempts atomic.Int64
 	queryAttempts.Store(2)
 	query := &Query{
@@ -3245,7 +3283,9 @@ func TestQueryForExecutionPreservesConcreteTypes(t *testing.T) {
 	}
 
 	batchMetrics := newQueryMetrics()
-	batchMetrics.attempt(8, 9*time.Nanosecond, host, false)
+	for i := 0; i < 8; i++ {
+		finishUnobservedTestAttempt(batchMetrics, 9*time.Nanosecond, host)
+	}
 	var batchAttempts atomic.Int64
 	batchAttempts.Store(3)
 	batch := &Batch{
@@ -3561,18 +3601,30 @@ func TestQueryObserverMetricsContinueAcrossAutomaticPages(t *testing.T) {
 	var firstPageMetrics *queryMetrics
 	call := 0
 	baseQry.conn = &pagingTestConn{
-		executeQueryFunc: func(_ context.Context, qry *Query) *Iter {
+		executeQueryWithMetricsFunc: func(
+			_ context.Context,
+			qry *Query,
+			metrics *queryMetrics,
+		) *Iter {
 			call++
 			if call == 1 {
-				firstPageMetrics = qry.metrics
-			} else if qry.metrics != firstPageMetrics {
+				firstPageMetrics = metrics
+			} else if metrics != firstPageMetrics {
 				t.Fatal("automatic page detached from the first page metrics run")
 			}
 
 			start := time.Unix(0, int64(call)*100)
-			qry.attempt("ks", start.Add(time.Duration(call)*time.Nanosecond), start, &Iter{numRows: 1}, host)
+			finishTestAttempt(
+				qry,
+				metrics,
+				"ks",
+				start.Add(time.Duration(call)*time.Nanosecond),
+				start,
+				&Iter{numRows: 1},
+				host,
+			)
 			if call == 1 {
-				nextQry := cloneQueryForNextPage(qry, qry.metrics, []byte("next"))
+				nextQry := cloneQueryForNextPage(qry, metrics, []byte("next"))
 				return &Iter{
 					framer:  &testWarningFramer{},
 					numRows: 1,
@@ -3628,10 +3680,22 @@ func TestQueryIterManualPagingDefersHiddenEmptyPageWarnings(t *testing.T) {
 
 	call := 0
 	baseQry.conn = &pagingTestConn{
-		executeQueryFunc: func(_ context.Context, qry *Query) *Iter {
+		executeQueryWithMetricsFunc: func(
+			_ context.Context,
+			qry *Query,
+			metrics *queryMetrics,
+		) *Iter {
 			call++
 			start := time.Unix(0, int64(call)*100)
-			qry.attempt("ks", start.Add(time.Duration(call)*time.Nanosecond), start, &Iter{}, host)
+			finishTestAttempt(
+				qry,
+				metrics,
+				"ks",
+				start.Add(time.Duration(call)*time.Nanosecond),
+				start,
+				&Iter{},
+				host,
+			)
 			switch call {
 			case 1:
 				if !slices.Equal(qry.pageState, []byte("initial")) {
@@ -3643,7 +3707,7 @@ func TestQueryIterManualPagingDefersHiddenEmptyPageWarnings(t *testing.T) {
 					meta: resultMetadata{
 						pagingState: []byte("next"),
 					},
-				}).bindWarningHandler(qry, handler)
+				}).bindWarningHandlerWithMetrics(qry, metrics, handler)
 			case 2:
 				if !slices.Equal(qry.pageState, []byte("next")) {
 					t.Fatalf("second page state = %q, want %q", qry.pageState, []byte("next"))
@@ -3651,7 +3715,7 @@ func TestQueryIterManualPagingDefersHiddenEmptyPageWarnings(t *testing.T) {
 				return (&Iter{
 					framer:  finalFramer,
 					numRows: 1,
-				}).bindWarningHandler(qry, handler)
+				}).bindWarningHandlerWithMetrics(qry, metrics, handler)
 			default:
 				t.Fatalf("unexpected executeQuery call %d", call)
 				return nil
