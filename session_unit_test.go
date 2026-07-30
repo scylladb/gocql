@@ -1102,15 +1102,15 @@ func TestQueryMetricsLatencyMakesProgressWithConcurrentAttempts(t *testing.T) {
 	qm := newQueryMetrics()
 	host := &HostInfo{hostId: UUID{1}}
 	stop := make(chan struct{})
-	var writers sync.WaitGroup
+	var goroutines sync.WaitGroup
 	t.Cleanup(func() {
 		close(stop)
-		writers.Wait()
+		goroutines.Wait()
 	})
 	for i := 0; i < min(4, runtime.GOMAXPROCS(0)); i++ {
-		writers.Add(1)
+		goroutines.Add(1)
 		go func() {
-			defer writers.Done()
+			defer goroutines.Done()
 			for {
 				select {
 				case <-stop:
@@ -1123,7 +1123,9 @@ func TestQueryMetricsLatencyMakesProgressWithConcurrentAttempts(t *testing.T) {
 	}
 
 	readsDone := make(chan error, 1)
+	goroutines.Add(1)
 	go func() {
+		defer goroutines.Done()
 		for i := 0; i < 1000; i++ {
 			attempts, latency := qm.totalsSnapshot()
 			if attempts < 0 || latency < 0 || latency != attempts {

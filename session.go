@@ -1275,8 +1275,9 @@ func forEachAttemptMetricNode(node *attemptMetricNode, yield func(AttemptMetric)
 // Iteration stops when yield returns false.
 //
 // A snapshot can contain gaps when a later speculative attempt completes before
-// an earlier attempt. Each snapshot is immutable and includes the attempt whose
-// observer callback carries it.
+// an earlier attempt, or when a positive AddAttempts advances the launch index without
+// adding entries to the history. Each snapshot is immutable and includes the
+// attempt whose observer callback carries it.
 func (m AttemptMetrics) ForEachAttempt(yield func(AttemptMetric) bool) {
 	if m.count == 1 {
 		yield(m.attempt)
@@ -1850,6 +1851,9 @@ func (q *Query) Attempts() int {
 	return q.metrics.attempts()
 }
 
+// AddAttempts adds i to the query's attempt count for host. An adjustment that
+// makes the total negative permanently switches the metrics to mutex-backed
+// full-width storage until reset.
 func (q *Query) AddAttempts(i int, host *HostInfo) {
 	q.metrics.recordHostAttempt(i, 0, host, false)
 }
@@ -1859,6 +1863,9 @@ func (q *Query) Latency() int64 {
 	return q.metrics.latency()
 }
 
+// AddLatency adds l nanoseconds to the query's latency for host. An adjustment
+// that makes the total negative also makes Latency return a negative value and
+// permanently switches the metrics to mutex-backed full-width storage until reset.
 func (q *Query) AddLatency(l int64, host *HostInfo) {
 	q.metrics.recordHostAttempt(0, time.Duration(l)*time.Nanosecond, host, false)
 }
@@ -3266,6 +3273,9 @@ func (b *Batch) Attempts() int {
 	return b.metrics.attempts()
 }
 
+// AddAttempts adds i to the batch's attempt count for host. An adjustment that
+// makes the total negative permanently switches the metrics to mutex-backed
+// full-width storage until reset.
 func (b *Batch) AddAttempts(i int, host *HostInfo) {
 	b.metrics.recordHostAttempt(i, 0, host, false)
 }
@@ -3275,6 +3285,9 @@ func (b *Batch) Latency() int64 {
 	return b.metrics.latency()
 }
 
+// AddLatency adds l nanoseconds to the batch's latency for host. An adjustment
+// that makes the total negative also makes Latency return a negative value and
+// permanently switches the metrics to mutex-backed full-width storage until reset.
 func (b *Batch) AddLatency(l int64, host *HostInfo) {
 	b.metrics.recordHostAttempt(0, time.Duration(l)*time.Nanosecond, host, false)
 }
@@ -3713,8 +3726,10 @@ type ObservedQuery struct {
 	// In paginated queries, rows from previous scans are not counted.
 	// Rows is not used in batch queries and remains at the default value
 	Rows int
-	// Attempt is the index of attempt at executing this query.
-	// The first attempt is number zero and any retries have non-zero attempt number.
+	// Attempt is the launch-order index of the attempt executing this query.
+	// The first attempt is number zero and any retries have a non-zero attempt
+	// number. With speculative execution, observer callbacks can arrive out of
+	// launch order.
 	Attempt int
 }
 
@@ -3776,8 +3791,10 @@ type ObservedBatch struct {
 	// Values[i] are bound values passed to Statements[i].
 	// Do not modify the values here, they are shared with multiple goroutines.
 	Values [][]any
-	// Attempt is the index of attempt at executing this batch.
-	// The first attempt is number zero and any retries have non-zero attempt number.
+	// Attempt is the launch-order index of the attempt executing this batch.
+	// The first attempt is number zero and any retries have a non-zero attempt
+	// number. With speculative execution, observer callbacks can arrive out of
+	// launch order.
 	Attempt int
 }
 
