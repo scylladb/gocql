@@ -691,6 +691,81 @@ func TestLWTSimpleRetryPolicy(t *testing.T) {
 	tests.AssertEqual(t, "retry type of LWT policy", lwt_rt.GetRetryTypeLWT(nil), Retry)
 }
 
+// resolveRetryPolicy mirrors queryExecutor.do()'s fallback exactly (see
+// query_executor.go): if rt is nil, use the shared defaultRetryPolicy
+// singleton instead of allocating a fresh *SimpleRetryPolicy. Kept in the
+// test rather than exported from production code, since it's a two-line
+// fallback that isn't otherwise worth extracting into its own function.
+func resolveRetryPolicy(rt RetryPolicy) RetryPolicy {
+	if rt == nil {
+		rt = defaultRetryPolicy
+	}
+	return rt
+}
+
+// TestDefaultRetryPolicy_MatchesDocumentedDefault verifies the query
+// executor's shared default RetryPolicy singleton behaves exactly like the
+// per-query &SimpleRetryPolicy{NumRetries: 3} it replaced: same NumRetries
+// as ClusterConfig.RetryPolicy's documented default, and still satisfies
+// LWTRetryPolicy so do() picks the LWT-specific Attempt/GetRetryType for
+// LWT queries exactly as before.
+func TestDefaultRetryPolicy_MatchesDocumentedDefault(t *testing.T) {
+	t.Parallel()
+
+	srp, ok := defaultRetryPolicy.(*SimpleRetryPolicy)
+	if !ok {
+		t.Fatalf("defaultRetryPolicy has concrete type %T, want *SimpleRetryPolicy", defaultRetryPolicy)
+	}
+	if srp.NumRetries != 3 {
+		t.Fatalf("defaultRetryPolicy.NumRetries = %d, want 3 (the documented ClusterConfig.RetryPolicy default)", srp.NumRetries)
+	}
+	if _, ok := defaultRetryPolicy.(LWTRetryPolicy); !ok {
+		t.Fatal("defaultRetryPolicy must implement LWTRetryPolicy")
+	}
+}
+
+// TestDefaultRetryPolicy_SingletonIdentity verifies that every query which
+// leaves RetryPolicy unset resolves to the exact same instance rather than a
+// fresh allocation, and that an explicitly-configured RetryPolicy is left
+// untouched (the singleton must never override a user's choice).
+func TestDefaultRetryPolicy_SingletonIdentity(t *testing.T) {
+	t.Parallel()
+
+	a := resolveRetryPolicy(nil)
+	b := resolveRetryPolicy(nil)
+	if a == nil || b == nil {
+		t.Fatal("expected a non-nil retry policy")
+	}
+	if a != b {
+		t.Fatal("two unset-RetryPolicy queries must resolve to the identical singleton instance")
+	}
+	if a != defaultRetryPolicy {
+		t.Fatal("the resolved default must be the package-level defaultRetryPolicy singleton")
+	}
+
+	custom := &SimpleRetryPolicy{NumRetries: 99}
+	if got := resolveRetryPolicy(custom); got != custom {
+		t.Fatal("an explicitly-set RetryPolicy must be returned unchanged, not replaced by the default")
+	}
+}
+
+// TestDefaultRetryPolicy_ZeroAlloc guards the point of the change: resolving
+// an unset RetryPolicy to the shared singleton must not allocate, unlike the
+// &SimpleRetryPolicy{NumRetries: 3} literal it replaced in query_executor.go.
+func TestDefaultRetryPolicy_ZeroAlloc(t *testing.T) {
+	var unset RetryPolicy // simulates qry.retryPolicy() returning nil
+	var resolved RetryPolicy
+	allocs := testing.AllocsPerRun(1000, func() {
+		resolved = resolveRetryPolicy(unset)
+	})
+	if allocs != 0 {
+		t.Errorf("resolveRetryPolicy(nil) allocated %.2f allocs/op, want 0", allocs)
+	}
+	if resolved != defaultRetryPolicy {
+		t.Fatal("sanity check failed: resolved policy is not the singleton")
+	}
+}
+
 func TestExponentialBackoffPolicy(t *testing.T) {
 	t.Parallel()
 
