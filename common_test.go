@@ -585,3 +585,29 @@ func assertDeepEqual(t *testing.T, description string, expected, actual interfac
 		t.Fatalf("expected %s to be (%#v) but was (%#v) instead", description, expected, actual)
 	}
 }
+
+// get returns the cache entry for key, or false when there is none. Tests only,
+// as of this commit: the driver's own paths reach the cache through
+// execIfMissing, evictPreparedID and updateMetadataIfSame, each of which takes
+// the lock itself.
+//
+// It lives in this file, which carries no build tag, because its callers do not
+// share one — cassandra_test.go is `integration` while prepared_cache_test.go is
+// `unit`, and TEST_INTEGRATION_TAGS does not include `unit`. Defining it in
+// either tagged file would break the other build.
+func (p *preparedLRU) get(key stmtCacheKey) (*inflightPrepare, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	val, ok := p.lru.Get(key)
+	if !ok {
+		return nil, false
+	}
+
+	ifp, ok := val.(*inflightPrepare)
+	if !ok {
+		return nil, false
+	}
+
+	return ifp, true
+}
