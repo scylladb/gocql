@@ -1800,7 +1800,7 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 	conn := getRandomConn(t, session)
 
 	flight := new(inflightPrepare)
-	key := session.stmtsLRU.keyFor(conn.host.HostID(), "", stmt)
+	key := session.stmtsLRU.keyFor(conn.host.hostUUID(), "", stmt)
 	session.stmtsLRU.add(key, flight)
 
 	flight.preparedStatment = &preparedStatment{
@@ -1980,27 +1980,27 @@ func TestPrepare_PreparedCacheEviction(t *testing.T) {
 
 	// Walk through all the configured hosts and test cache retention and eviction
 	for _, host := range session.hostSource.hosts {
-		_, ok := session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host.HostID(), session.cfg.Keyspace, fmt.Sprintf("SELECT id,mod FROM %s WHERE id = 0", table)))
+		_, ok := session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host.hostUUID(), session.cfg.Keyspace, fmt.Sprintf("SELECT id,mod FROM %s WHERE id = 0", table)))
 		if ok {
 			t.Errorf("expected first select to be purged but was in cache for host=%q", host)
 		}
 
-		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host.HostID(), session.cfg.Keyspace, fmt.Sprintf("SELECT id,mod FROM %s WHERE id = 1", table)))
+		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host.hostUUID(), session.cfg.Keyspace, fmt.Sprintf("SELECT id,mod FROM %s WHERE id = 1", table)))
 		if !ok {
 			t.Errorf("exepected second select to be in cache for host=%q", host)
 		}
 
-		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host.HostID(), session.cfg.Keyspace, fmt.Sprintf("INSERT INTO %s (id,mod) VALUES (?, ?)", table)))
+		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host.hostUUID(), session.cfg.Keyspace, fmt.Sprintf("INSERT INTO %s (id,mod) VALUES (?, ?)", table)))
 		if !ok {
 			t.Errorf("expected insert to be in cache for host=%q", host)
 		}
 
-		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host.HostID(), session.cfg.Keyspace, fmt.Sprintf("UPDATE %s SET mod = ? WHERE id = ?", table)))
+		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host.hostUUID(), session.cfg.Keyspace, fmt.Sprintf("UPDATE %s SET mod = ? WHERE id = ?", table)))
 		if !ok {
 			t.Errorf("expected update to be in cached for host=%q", host)
 		}
 
-		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host.HostID(), session.cfg.Keyspace, fmt.Sprintf("DELETE FROM %s WHERE id = ?", table)))
+		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host.hostUUID(), session.cfg.Keyspace, fmt.Sprintf("DELETE FROM %s WHERE id = ?", table)))
 		if !ok {
 			t.Errorf("expected delete to be cached for host=%q", host)
 		}
@@ -3710,7 +3710,7 @@ func TestPrepareExecuteMetadataChangedFlag(t *testing.T) {
 	require.Len(t, row, 1, "Expected to retrieve a single column")
 	require.Equal(t, 1, row["id"])
 
-	stmtCacheKey := session.stmtsLRU.keyFor(conn.host.HostID(), conn.getCurrentKeyspace(), queryBeforeTableAltering.stmt)
+	stmtCacheKey := session.stmtsLRU.keyFor(conn.host.hostUUID(), conn.getCurrentKeyspace(), queryBeforeTableAltering.stmt)
 	inflight, _ := session.stmtsLRU.get(stmtCacheKey)
 	preparedStatementBeforeTableAltering := inflight.preparedStatment
 

@@ -41,7 +41,7 @@ func completedInflight(id []byte) *inflightPrepare {
 }
 
 func TestPreparedLRU_updateMetadataIfSame(t *testing.T) {
-	key := stmtCacheKey{hostID: "h", keyspace: "ks", statement: "SELECT * FROM t"}
+	key := stmtCacheKey{hostID: UUID{1}, keyspace: "ks", statement: "SELECT * FROM t"}
 	oldID := []byte{1, 2, 3}
 
 	t.Run("replaces when present and identity matches", func(t *testing.T) {

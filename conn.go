@@ -2235,7 +2235,7 @@ type inflightPrepare struct {
 }
 
 func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer, keyspace string, requestTimeout time.Duration) (*preparedStatment, error) {
-	cacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), keyspace, stmt)
+	cacheKey := c.session.stmtsLRU.keyFor(c.host.hostUUID(), keyspace, stmt)
 	flight, ok := c.session.stmtsLRU.execIfMissing(cacheKey, func(cache *lru.Cache[stmtCacheKey]) *inflightPrepare {
 		flight := &inflightPrepare{
 			done: make(chan struct{}),
@@ -2488,7 +2488,7 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 			// If a RESULT/Rows message reports changed resultset metadata with the
 			// Metadata_changed flag, the reported new resultset metadata must be used
 			// in subsequent executions.
-			cacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), usedKeyspace, qry.stmt)
+			cacheKey := c.session.stmtsLRU.keyFor(c.host.hostUUID(), usedKeyspace, qry.stmt)
 			// Use the already-completed local `info` rather than dereferencing the
 			// cached inflight entry's preparedStatment field. `info` comes from the
 			// prepareStatement call above and is guaranteed complete.
@@ -2558,7 +2558,7 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 		// is not consistent with regards to its schema.
 		return iter
 	case *RequestErrUnprepared:
-		stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), usedKeyspace, qry.stmt)
+		stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.hostUUID(), usedKeyspace, qry.stmt)
 		c.session.stmtsLRU.evictPreparedID(stmtCacheKey, x.StatementId)
 		framer.Release()
 		return c.executeQueryWithMetrics(ctx, qry, metrics)
@@ -2758,7 +2758,7 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 	case *RequestErrUnprepared:
 		stmt, found := stmts[string(x.StatementId)]
 		if found {
-			key := c.session.stmtsLRU.keyFor(c.host.HostID(), usedKeyspace, stmt)
+			key := c.session.stmtsLRU.keyFor(c.host.hostUUID(), usedKeyspace, stmt)
 			c.session.stmtsLRU.evictPreparedID(key, x.StatementId)
 		}
 		framer.Release()
