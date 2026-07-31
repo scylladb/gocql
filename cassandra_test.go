@@ -3311,9 +3311,14 @@ func TestControl_DiscoverProtocol(t *testing.T) {
 
 	cluster := createCluster()
 	cluster.ProtoVersion = 0
-	// Forcing to run this test without any compression.
-	// If compressor is presented, then CI will fail when snappy compression is enabled, since
-	// protocol v5 doesn't support it.
+	// Run without compression so the negotiated protocol is the only variable
+	// under test.
+	//
+	// Upstream needs this because there discoverProtocol can settle on v5, which
+	// rejects snappy. In this fork discoverProtocol is pinned to protoVersion4
+	// (see control.go), so v5 is never negotiated and snappy would in fact be
+	// accepted — the override is kept for parity with upstream, not because
+	// snappy would fail here.
 	cluster.Compressor = nil
 
 	session, err := cluster.CreateSession()
@@ -3509,7 +3514,7 @@ func TestQuery_WithNowInSeconds(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	require.Equal(t, remainingTTL, 10)
+	require.Equal(t, 10, remainingTTL)
 }
 
 func TestQuery_SetKeyspace(t *testing.T) {
@@ -3524,7 +3529,7 @@ func TestQuery_SetKeyspace(t *testing.T) {
 	keyspaceStmt := fmt.Sprintf(`
 		CREATE KEYSPACE IF NOT EXISTS %s
 		WITH replication = {
-			'class': 'SimpleStrategy', 
+			'class': 'SimpleStrategy',
 			'replication_factor': '1'
 		};
 	`, keyspace)
@@ -3586,6 +3591,13 @@ func TestLargeSizeQuery(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
+	// Segmentation only exists on proto v5. Below that this is just an ordinary
+	// large frame, so without the guard the test passes green while exercising
+	// none of what its doc comment claims.
+	if session.cfg.ProtoVersion < protoVersion5 {
+		t.Skip("segmented frames are only produced on protocol >= 5")
+	}
+
 	if err := createTable(session, "CREATE TABLE IF NOT EXISTS gocql_test.large_size_query(id int, text_col text, PRIMARY KEY (id))"); err != nil {
 		t.Fatal(err)
 	}
@@ -3615,6 +3627,16 @@ func TestLargeSizeQuery(t *testing.T) {
 func TestQueryCompressionNotWorthIt(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
+
+	// The compressed-segment "not worth it" encoding requires both proto v5 and
+	// an actual segment compressor. Without both, this test round-trips a short
+	// string over an uncompressed frame and proves nothing.
+	if session.cfg.ProtoVersion < protoVersion5 {
+		t.Skip("compressed segments are only produced on protocol >= 5")
+	}
+	if session.cfg.Compressor == nil {
+		t.Skip("no compressor configured; the compressed-segment path is unreachable")
+	}
 
 	if err := createTable(session, "CREATE TABLE IF NOT EXISTS gocql_test.compression_now_worth_it(id int, text_col text, PRIMARY KEY (id))"); err != nil {
 		t.Fatal(err)
@@ -3800,7 +3822,25 @@ func TestPrepareExecuteMetadataChangedFlag(t *testing.T) {
 
 func TestStmtCacheUsesOverriddenKeyspace(t *testing.T) {
 	session := createSession(t)
-	defer session.Close()
+
+	// Clean up from t.Cleanup rather than at the end of the body: every require
+	// and t.Fatal below aborts the test, and a leftover keyspace (or a leftover
+	// row in the table this test creates inside the shared gocql_test keyspace)
+	// makes the next run read an arbitrary row and fail for the wrong reason.
+	//
+	// session.Close() must happen inside the cleanup, not via defer: deferred
+	// calls run before cleanups, so a deferred Close would close the session the
+	// drops need. t.Errorf rather than t.Fatal so one failed drop does not skip
+	// the rest. The table inside gocql_test_stmt_cache goes with the keyspace.
+	t.Cleanup(func() {
+		defer session.Close()
+		if err := createTable(session, "DROP TABLE IF EXISTS gocql_test.stmt_cache_uses_overridden_ks"); err != nil {
+			t.Errorf("drop table: %v", err)
+		}
+		if err := createTable(session, "DROP KEYSPACE IF EXISTS gocql_test_stmt_cache"); err != nil {
+			t.Errorf("drop keyspace: %v", err)
+		}
+	})
 
 	if session.cfg.ProtoVersion < protoVersion5 {
 		t.Skip("This tests only runs on proto > 4 due SetKeyspace availability")
@@ -3855,13 +3895,24 @@ func TestStmtCacheUsesOverriddenKeyspace(t *testing.T) {
 	err = session.Query(selectStmt).SetKeyspace("gocql_test_stmt_cache").Scan(&scannedID)
 	require.NoError(t, err)
 	require.Equal(t, 2, scannedID)
-
-	session.Query("DROP KEYSPACE IF EXISTS gocql_test_stmt_cache").Exec()
 }
 
 func TestRoutingKeyCacheUsesOverriddenKeyspace(t *testing.T) {
 	session := createSession(t)
-	defer session.Close()
+
+	// Cleanup registered before any DDL, for the reasons spelled out in
+	// TestStmtCacheUsesOverriddenKeyspace. This test has an extra way to abort
+	// early: the getRoutingKeyInfo helper below type-asserts on a cache lookup and
+	// panics outright if the entry is missing.
+	t.Cleanup(func() {
+		defer session.Close()
+		if err := createTable(session, "DROP TABLE IF EXISTS gocql_test.routing_key_cache_uses_overridden_ks"); err != nil {
+			t.Errorf("drop table: %v", err)
+		}
+		if err := createTable(session, "DROP KEYSPACE IF EXISTS gocql_test_routing_key_cache"); err != nil {
+			t.Errorf("drop keyspace: %v", err)
+		}
+	})
 
 	if session.cfg.ProtoVersion < protoVersion5 {
 		t.Skip("This tests only runs on proto > 4 due SetKeyspace availability")
@@ -3934,6 +3985,4 @@ func TestRoutingKeyCacheUsesOverriddenKeyspace(t *testing.T) {
 	_, err = q2.SetKeyspace("gocql_test_routing_key_cache").GetRoutingKey()
 	require.NoError(t, err)
 	require.Equal(t, "gocql_test_routing_key_cache", q2.routingInfo.keyspace)
-
-	session.Query("DROP KEYSPACE IF EXISTS gocql_test_routing_key_cache").Exec()
 }

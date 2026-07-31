@@ -317,7 +317,7 @@ func createCluster(opts ...func(*ClusterConfig)) *ClusterConfig {
 	switch *flagCompressTest {
 	case "snappy":
 		cluster.Compressor = &SnappyCompressor{}
-	case "no-compression":
+	case "no-compression", "":
 	default:
 		panic("invalid compressor: " + *flagCompressTest)
 	}

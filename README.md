@@ -54,16 +54,20 @@ This is a drop-in replacement to gocql, it reuses the `github.com/gocql/gocql` i
 Add the following line to your project `go.mod` file.
 
 ```mod
-replace github.com/gocql/gocql => github.com/scylladb/gocql latest
+replace github.com/gocql/gocql => github.com/scylladb/gocql <version>
 ```
+
+Replace `<version>` with a concrete released tag (for example `v1.7.3`) or a
+pseudo-version; `latest` is not a valid version in a `replace` directive. Note
+that the module path is `github.com/gocql/gocql` (no `/v2` suffix), so `v2.x`
+tags are not valid replacement versions here — use a `v1` tag or a
+pseudo-version.
 
 and run
 
 ```sh
 go mod tidy
 ```
-
-to evaluate `latest` to a concrete tag.
 
 Your project now uses the Scylla driver fork, make sure you are using the `TokenAwareHostPolicy` to enable the shard-awareness, continue reading for details.
 
