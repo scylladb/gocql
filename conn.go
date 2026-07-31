@@ -484,6 +484,15 @@ func (c *Conn) Write(p []byte) (n int, err error) {
 	return c.w.writeContext(context.Background(), p)
 }
 
+// Read reads data from the connection.
+//
+// The driver itself reads through the connection's connReader (which owns the
+// read-deadline handling); Read is retained so that *Conn keeps satisfying
+// io.Reader for external callers, as it does io.Writer via Write.
+func (c *Conn) Read(p []byte) (n int, err error) {
+	return c.r.Read(p)
+}
+
 type startupCoordinator struct {
 	conn        *Conn
 	frameTicker chan struct{}

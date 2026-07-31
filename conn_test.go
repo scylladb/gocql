@@ -3084,6 +3084,22 @@ func TestConnReaderReadRetriesWhileMakingProgress(t *testing.T) {
 	}
 }
 
+// TestConnReadDelegatesToConnReader verifies that the exported (*Conn).Read is
+// wired to the connection's connReader, so *Conn keeps satisfying io.Reader for
+// external callers after the read-path refactor.
+func TestConnReadDelegatesToConnReader(t *testing.T) {
+	t.Parallel()
+
+	payload := []byte{0xDE, 0xAD, 0xBE, 0xEF}
+	c := &Conn{r: &connReader{r: bufio.NewReader(bytes.NewReader(payload))}}
+
+	buf := make([]byte, len(payload))
+	n, err := c.Read(buf)
+	require.NoError(t, err)
+	require.Equal(t, len(payload), n)
+	require.Equal(t, payload, buf)
+}
+
 // scriptedReadSource is a connReadSource whose reads come from a script of
 // (bytes, error) steps and which records every setDisarm transition. It lets tests
 // drive partial reads, timing-out reads and the disarm/re-arm pairing without a
