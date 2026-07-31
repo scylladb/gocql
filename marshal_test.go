@@ -35,6 +35,7 @@ import (
 	"math/big"
 	"net"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -170,6 +171,428 @@ func equalStringPointerSlice(leftList, rightList []*string) bool {
 		}
 	}
 	return true
+}
+
+// --- Collection marshal benchmarks ---
+
+func makeListType(elemTyp Type) CollectionType {
+	return CollectionType{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeList},
+		Elem:       NativeType{proto: protoVersion4, typ: elemTyp},
+	}
+}
+
+func BenchmarkMarshalListString(b *testing.B) {
+	for _, n := range []int{10, 100, 1000} {
+		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+			info := makeListType(TypeVarchar)
+			list := make([]string, n)
+			for i := range list {
+				list[i] = "value-" + fmt.Sprint(i)
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if _, err := Marshal(info, list); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkMarshalListBool(b *testing.B) {
+	for _, n := range []int{10, 100, 1000} {
+		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+			info := makeListType(TypeBoolean)
+			list := make([]bool, n)
+			for i := range list {
+				list[i] = i%2 == 0
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if _, err := Marshal(info, list); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkMarshalListBytes(b *testing.B) {
+	for _, n := range []int{10, 100, 1000} {
+		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+			info := makeListType(TypeBlob)
+			list := make([][]byte, n)
+			for i := range list {
+				list[i] = []byte("blob-" + fmt.Sprint(i))
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if _, err := Marshal(info, list); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkMarshalListInt16(b *testing.B) {
+	for _, n := range []int{10, 100, 1000} {
+		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+			info := makeListType(TypeSmallInt)
+			list := make([]int16, n)
+			for i := range list {
+				list[i] = int16(i)
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if _, err := Marshal(info, list); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkMarshalListInt8(b *testing.B) {
+	for _, n := range []int{10, 100, 1000} {
+		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+			info := makeListType(TypeTinyInt)
+			list := make([]int8, n)
+			for i := range list {
+				list[i] = int8(i)
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if _, err := Marshal(info, list); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkMarshalListUUID(b *testing.B) {
+	for _, n := range []int{10, 100, 1000} {
+		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+			info := makeListType(TypeUUID)
+			list := make([]UUID, n)
+			for i := range list {
+				list[i] = UUID{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, byte(i >> 8), byte(i)}
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if _, err := Marshal(info, list); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func makeMapType(keyTyp, valTyp Type) CollectionType {
+	return CollectionType{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeMap},
+		Key:        NativeType{proto: protoVersion4, typ: keyTyp},
+		Elem:       NativeType{proto: protoVersion4, typ: valTyp},
+	}
+}
+
+func BenchmarkMarshalMapStringString(b *testing.B) {
+	for _, n := range []int{10, 100, 1000} {
+		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+			info := makeMapType(TypeVarchar, TypeVarchar)
+			m := make(map[string]string, n)
+			for i := 0; i < n; i++ {
+				m[fmt.Sprintf("key-%d", i)] = "value-" + fmt.Sprint(i)
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if _, err := Marshal(info, m); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkMarshalMapStringInt64(b *testing.B) {
+	for _, n := range []int{10, 100, 1000} {
+		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+			info := makeMapType(TypeVarchar, TypeBigInt)
+			m := make(map[string]int64, n)
+			for i := 0; i < n; i++ {
+				m[fmt.Sprintf("key-%d", i)] = int64(i * 100)
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if _, err := Marshal(info, m); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkMarshalMapStringBool(b *testing.B) {
+	for _, n := range []int{10, 100, 1000} {
+		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+			info := makeMapType(TypeVarchar, TypeBoolean)
+			m := make(map[string]bool, n)
+			for i := 0; i < n; i++ {
+				m[fmt.Sprintf("key-%d", i)] = i%2 == 0
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if _, err := Marshal(info, m); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkMarshalMapStringFloat64(b *testing.B) {
+	for _, n := range []int{10, 100, 1000} {
+		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+			info := makeMapType(TypeVarchar, TypeDouble)
+			m := make(map[string]float64, n)
+			for i := 0; i < n; i++ {
+				m[fmt.Sprintf("key-%d", i)] = float64(i) * 1.5
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if _, err := Marshal(info, m); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkMarshalMapInt64Int64(b *testing.B) {
+	for _, n := range []int{10, 100, 1000} {
+		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+			info := makeMapType(TypeBigInt, TypeBigInt)
+			m := make(map[int64]int64, n)
+			for i := 0; i < n; i++ {
+				m[int64(i)] = int64(i * 100)
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if _, err := Marshal(info, m); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+// --- Collection marshal differential tests ---
+// Verify that the fast path produces byte-identical output to the generic path.
+
+type namedStrings []string
+type namedBools []bool
+type namedBytes [][]byte
+type namedInt16s []int16
+type namedInt8s []int8
+type namedUUIDs []UUID
+
+func TestMarshalListDifferential(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		info    TypeInfo
+		fastVal any
+		genVal  any
+	}{
+		{
+			name:    "string/varchar",
+			info:    makeListType(TypeVarchar),
+			fastVal: []string{"hello", "world", "", "a", "bb", "ccc"},
+			genVal:  namedStrings{"hello", "world", "", "a", "bb", "ccc"},
+		},
+		{
+			name:    "string/text",
+			info:    makeListType(TypeText),
+			fastVal: []string{"hello", "world"},
+			genVal:  namedStrings{"hello", "world"},
+		},
+		{
+			name:    "string/ascii",
+			info:    makeListType(TypeAscii),
+			fastVal: []string{"hello", "world"},
+			genVal:  namedStrings{"hello", "world"},
+		},
+		{
+			name:    "bool",
+			info:    makeListType(TypeBoolean),
+			fastVal: []bool{true, false, true},
+			genVal:  namedBools{true, false, true},
+		},
+		{
+			name:    "blob",
+			info:    makeListType(TypeBlob),
+			fastVal: [][]byte{nil, {}, {0x01, 0x02}, {0xff}},
+			genVal:  namedBytes{nil, {}, {0x01, 0x02}, {0xff}},
+		},
+		{
+			name:    "int16",
+			info:    makeListType(TypeSmallInt),
+			fastVal: []int16{0, 1, -1, 32767, -32768},
+			genVal:  namedInt16s{0, 1, -1, 32767, -32768},
+		},
+		{
+			name:    "int8",
+			info:    makeListType(TypeTinyInt),
+			fastVal: []int8{0, 1, -1, 127, -128},
+			genVal:  namedInt8s{0, 1, -1, 127, -128},
+		},
+		{
+			name:    "uuid",
+			info:    makeListType(TypeUUID),
+			fastVal: []UUID{{}, {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}},
+			genVal:  namedUUIDs{{}, {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}},
+		},
+		{
+			name:    "empty list",
+			info:    makeListType(TypeVarchar),
+			fastVal: []string{},
+			genVal:  namedStrings{},
+		},
+		{
+			name:    "nil list",
+			info:    makeListType(TypeVarchar),
+			fastVal: []string(nil),
+			genVal:  namedStrings(nil),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fastData, fastErr := Marshal(tc.info, tc.fastVal)
+			genData, genErr := Marshal(tc.info, tc.genVal)
+
+			if fastErr != nil || genErr != nil {
+				t.Fatalf("fast err=%v gen err=%v", fastErr, genErr)
+			}
+			if !bytes.Equal(fastData, genData) {
+				t.Errorf("fast path output differs from generic path\nfast: %v\ngen:  %v", fastData, genData)
+			}
+		})
+	}
+}
+
+type namedMapStringString map[string]string
+type namedMapStringInt64 map[string]int64
+type namedMapStringInt map[string]int
+type namedMapStringFloat64 map[string]float64
+type namedMapStringFloat32 map[string]float32
+type namedMapStringBool map[string]bool
+type namedMapStringBytes map[string][]byte
+type namedMapStringInt16 map[string]int16
+type namedMapInt64String map[int64]string
+type namedMapInt64Int64 map[int64]int64
+type namedMapInt64Float64 map[int64]float64
+
+func TestMarshalMapDifferential(t *testing.T) {
+	t.Parallel()
+
+	// Each case creates ONE map and passes it via both fast (exact type) and
+	// generic (named/alias type) Marshal paths. Output comparison is via
+	// Unmarshal round-trip because map iteration order varies between
+	// the fast path (direct for range) and the generic reflect path.
+	run := func(t *testing.T, name string, info TypeInfo, fastVal, genVal any) {
+		t.Run(name, func(t *testing.T) {
+			fastData, fastErr := Marshal(info, fastVal)
+			genData, genErr := Marshal(info, genVal)
+			if fastErr != nil || genErr != nil {
+				t.Fatalf("fast err=%v gen err=%v", fastErr, genErr)
+			}
+			keyGoType, err := goType(info.(CollectionType).Key)
+			if err != nil {
+				t.Fatalf("goType(key): %v", err)
+			}
+			valGoType, err := goType(info.(CollectionType).Elem)
+			if err != nil {
+				t.Fatalf("goType(value): %v", err)
+			}
+			mapType := reflect.MapOf(keyGoType, valGoType)
+			fastResult := reflect.New(mapType).Interface()
+			genResult := reflect.New(mapType).Interface()
+			if err := Unmarshal(info, fastData, fastResult); err != nil {
+				t.Fatalf("Unmarshal fast result: %v", err)
+			}
+			if err := Unmarshal(info, genData, genResult); err != nil {
+				t.Fatalf("Unmarshal gen result: %v", err)
+			}
+			if !reflect.DeepEqual(reflect.ValueOf(fastResult).Elem().Interface(), reflect.ValueOf(genResult).Elem().Interface()) {
+				t.Errorf("round-trip results differ\nfast: %v\ngen:  %v", fastResult, genResult)
+			}
+		})
+	}
+
+	mSS := map[string]string{"k1": "v1", "k2": "v2"}
+	run(t, "string→string", makeMapType(TypeVarchar, TypeVarchar), mSS, namedMapStringString(mSS))
+
+	mSI64 := map[string]int64{"k1": 100, "k2": -200}
+	run(t, "string→bigint", makeMapType(TypeVarchar, TypeBigInt), mSI64, namedMapStringInt64(mSI64))
+
+	mSI := map[string]int{"k1": 42, "k2": -1}
+	run(t, "string→int", makeMapType(TypeVarchar, TypeInt), mSI, namedMapStringInt(mSI))
+
+	if strconv.IntSize == 64 {
+		mSIOverflow := map[string]int{"k": int(int64(math.MaxInt32) + 1)}
+		info := makeMapType(TypeVarchar, TypeInt)
+		if _, err := Marshal(info, mSIOverflow); err == nil {
+			t.Fatalf("fast path expected overflow error for map[string]int")
+		}
+		if _, err := Marshal(info, namedMapStringInt(mSIOverflow)); err == nil {
+			t.Fatalf("generic path expected overflow error for map[string]int")
+		}
+	}
+
+	mSF64 := map[string]float64{"k1": 3.14, "k2": -2.5}
+	run(t, "string→double", makeMapType(TypeVarchar, TypeDouble), mSF64, namedMapStringFloat64(mSF64))
+
+	mSF32 := map[string]float32{"k1": 1.5, "k2": -3.0}
+	run(t, "string→float", makeMapType(TypeVarchar, TypeFloat), mSF32, namedMapStringFloat32(mSF32))
+
+	mSB := map[string]bool{"k1": true, "k2": false}
+	run(t, "string→bool", makeMapType(TypeVarchar, TypeBoolean), mSB, namedMapStringBool(mSB))
+
+	mSBlob := map[string][]byte{"k1": {0x01, 0x02}, "k2": {}, "k3": nil}
+	run(t, "string→blob", makeMapType(TypeVarchar, TypeBlob), mSBlob, namedMapStringBytes(mSBlob))
+
+	mSI16 := map[string]int16{"k1": 100, "k2": -1}
+	run(t, "string→smallint", makeMapType(TypeVarchar, TypeSmallInt), mSI16, namedMapStringInt16(mSI16))
+
+	mI64S := map[int64]string{1: "a", 2: "b"}
+	run(t, "bigint→string", makeMapType(TypeBigInt, TypeVarchar), mI64S, namedMapInt64String(mI64S))
+
+	mI64I64 := map[int64]int64{1: 100, 2: -200}
+	run(t, "bigint→bigint", makeMapType(TypeBigInt, TypeBigInt), mI64I64, namedMapInt64Int64(mI64I64))
+
+	mI64F64 := map[int64]float64{1: 3.14, 2: -2.5}
+	run(t, "bigint→double", makeMapType(TypeBigInt, TypeDouble), mI64F64, namedMapInt64Float64(mI64F64))
+
+	mEmpty := map[string]string{}
+	run(t, "empty map", makeMapType(TypeVarchar, TypeVarchar), mEmpty, namedMapStringString(mEmpty))
+
+	var mNil map[string]string = nil
+	run(t, "nil map", makeMapType(TypeVarchar, TypeVarchar), mNil, namedMapStringString(mNil))
 }
 
 func TestMarshalList(t *testing.T) {
@@ -695,6 +1118,22 @@ func TestMarshalNil(t *testing.T) {
 			t.Errorf("expected to get nil byte for nil %v got % X", typ, data)
 		}
 	}
+
+	// Collection types also need nil coverage.
+	collectionTypes := []Type{TypeList, TypeSet, TypeMap}
+	for _, typ := range collectionTypes {
+		info := CollectionType{
+			NativeType: NativeType{proto: protoVersion3, typ: typ},
+			Key:        NativeType{proto: protoVersion3, typ: TypeVarchar},
+			Elem:       NativeType{proto: protoVersion3, typ: TypeVarchar},
+		}
+		data, err := Marshal(info, nil)
+		if err != nil {
+			t.Errorf("unable to marshal nil %v: %v\n", typ, err)
+		} else if data != nil {
+			t.Errorf("expected nil bytes for nil %v, got % X", typ, data)
+		}
+	}
 }
 
 func TestUnmarshalInetCopyBytes(t *testing.T) {
@@ -774,7 +1213,7 @@ func TestReadCollectionSize(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			size, _, err := readCollectionSize(test.info, test.data)
+			size, _, err := readCollectionSize(test.data)
 			if test.isError {
 				if err == nil {
 					t.Fatal("Expected error, but it was nil")
@@ -1298,5 +1737,437 @@ func TestCollectionNewWithErrorConsistentWithGoType(t *testing.T) {
 					keyTyp, valTyp, fastType.Elem(), canonicalType)
 			}
 		}
+	}
+}
+
+// buildMapBytes builds the CQL binary wire format for a map with n entries.
+// keyFn and valFn produce the raw bytes for each key and value given the entry index.
+func buildMapBytes(n int, keyFn, valFn func(i int) []byte) []byte {
+	// 4 bytes for the entry count
+	size := 4
+	for i := 0; i < n; i++ {
+		size += 4 + len(keyFn(i)) + 4 + len(valFn(i))
+	}
+	buf := make([]byte, 0, size)
+	buf = append(buf, byte(n>>24), byte(n>>16), byte(n>>8), byte(n))
+	for i := 0; i < n; i++ {
+		k := keyFn(i)
+		buf = append(buf, byte(len(k)>>24), byte(len(k)>>16), byte(len(k)>>8), byte(len(k)))
+		buf = append(buf, k...)
+		v := valFn(i)
+		buf = append(buf, byte(len(v)>>24), byte(len(v)>>16), byte(len(v)>>8), byte(len(v)))
+		buf = append(buf, v...)
+	}
+	return buf
+}
+
+func int64Bytes(v int64) []byte {
+	return []byte{byte(v >> 56), byte(v >> 48), byte(v >> 40), byte(v >> 32),
+		byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v)}
+}
+
+func TestUnmarshalMapFastPath(t *testing.T) {
+	t.Parallel()
+
+	infoSS := CollectionType{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeMap},
+		Key:        NativeType{proto: protoVersion4, typ: TypeVarchar},
+		Elem:       NativeType{proto: protoVersion4, typ: TypeVarchar},
+	}
+	infoSI := CollectionType{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeMap},
+		Key:        NativeType{proto: protoVersion4, typ: TypeVarchar},
+		Elem:       NativeType{proto: protoVersion4, typ: TypeBigInt},
+	}
+	infoII := CollectionType{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeMap},
+		Key:        NativeType{proto: protoVersion4, typ: TypeBigInt},
+		Elem:       NativeType{proto: protoVersion4, typ: TypeBigInt},
+	}
+
+	t.Run("nil data sets nil map", func(t *testing.T) {
+		var m map[string]string
+		if err := unmarshalMap(infoSS, nil, &m); err != nil {
+			t.Fatal(err)
+		}
+		if m != nil {
+			t.Fatalf("expected nil map, got %v", m)
+		}
+	})
+
+	t.Run("empty map", func(t *testing.T) {
+		data := buildMapBytes(0, nil, nil)
+		var m map[string]string
+		if err := unmarshalMap(infoSS, data, &m); err != nil {
+			t.Fatal(err)
+		}
+		if len(m) != 0 {
+			t.Fatalf("expected empty map, got %v", m)
+		}
+	})
+
+	t.Run("map[string]string correctness", func(t *testing.T) {
+		data := buildMapBytes(3,
+			func(i int) []byte { return []byte(fmt.Sprintf("k%d", i)) },
+			func(i int) []byte { return []byte(fmt.Sprintf("v%d", i)) },
+		)
+		var fast map[string]string
+		if err := unmarshalMap(infoSS, data, &fast); err != nil {
+			t.Fatal(err)
+		}
+		expected := map[string]string{"k0": "v0", "k1": "v1", "k2": "v2"}
+		if !reflect.DeepEqual(fast, expected) {
+			t.Fatalf("got %v, want %v", fast, expected)
+		}
+	})
+
+	t.Run("map[string]int64 correctness", func(t *testing.T) {
+		data := buildMapBytes(3,
+			func(i int) []byte { return []byte(fmt.Sprintf("k%d", i)) },
+			func(i int) []byte { return int64Bytes(int64(i * 10)) },
+		)
+		var fast map[string]int64
+		if err := unmarshalMap(infoSI, data, &fast); err != nil {
+			t.Fatal(err)
+		}
+		expected := map[string]int64{"k0": 0, "k1": 10, "k2": 20}
+		if !reflect.DeepEqual(fast, expected) {
+			t.Fatalf("got %v, want %v", fast, expected)
+		}
+	})
+
+	t.Run("map[int64]int64 correctness", func(t *testing.T) {
+		data := buildMapBytes(3,
+			func(i int) []byte { return int64Bytes(int64(i)) },
+			func(i int) []byte { return int64Bytes(int64(i * 100)) },
+		)
+		var fast map[int64]int64
+		if err := unmarshalMap(infoII, data, &fast); err != nil {
+			t.Fatal(err)
+		}
+		expected := map[int64]int64{0: 0, 1: 100, 2: 200}
+		if !reflect.DeepEqual(fast, expected) {
+			t.Fatalf("got %v, want %v", fast, expected)
+		}
+	})
+
+	t.Run("null value decoded as zero", func(t *testing.T) {
+		// Build a map with one entry where value is null (size = -1)
+		buf := []byte{
+			0, 0, 0, 1, // n=1
+			0, 0, 0, 3, 'k', 'e', 'y', // key = "key"
+			0xff, 0xff, 0xff, 0xff, // value size = -1 (null)
+		}
+		var m map[string]int64
+		if err := unmarshalMap(infoSI, buf, &m); err != nil {
+			t.Fatal(err)
+		}
+		if v, ok := m["key"]; !ok || v != 0 {
+			t.Fatalf("expected key→0, got key→%d (ok=%v)", v, ok)
+		}
+	})
+
+	t.Run("truncated data returns error", func(t *testing.T) {
+		buf := []byte{0, 0, 0, 1, 0, 0} // n=1 but truncated key
+		var m map[string]string
+		err := unmarshalMap(infoSS, buf, &m)
+		if err == nil {
+			t.Fatal("expected error on truncated data")
+		}
+	})
+
+	t.Run("fallthrough to reflect for mismatched types", func(t *testing.T) {
+		// *map[string]string with TypeBigInt elem should fall through to reflect
+		data := buildMapBytes(1,
+			func(i int) []byte { return []byte("key") },
+			func(i int) []byte { return int64Bytes(42) },
+		)
+		infoMismatch := CollectionType{
+			NativeType: NativeType{proto: protoVersion4, typ: TypeMap},
+			Key:        NativeType{proto: protoVersion4, typ: TypeVarchar},
+			Elem:       NativeType{proto: protoVersion4, typ: TypeBigInt},
+		}
+		// The fast path must NOT claim this mismatched elem type (BigInt, not a
+		// string), so it has to report handled == false and let the generic
+		// reflect path take over. Asserting this protects the dispatch logic.
+		var m map[string]string
+		handled, err := unmarshalMapFast(infoMismatch, data, &m)
+		if err != nil {
+			t.Fatalf("unexpected fast-path error: %v", err)
+		}
+		if handled {
+			t.Fatal("expected mismatched elem type to skip the fast path")
+		}
+
+		_ = unmarshalMap(infoMismatch, data, &m) // keep the panic-smoke test
+	})
+
+	t.Run("ascii map keys/values are validated via generic path", func(t *testing.T) {
+		// A byte > 127 is invalid ASCII. With TypeAscii excluded from the
+		// raw-string fast path, this must be rejected by serialization/ascii
+		// instead of being silently accepted.
+		data := buildMapBytes(1,
+			func(i int) []byte { return []byte{0x80} }, // invalid ascii key
+			func(i int) []byte { return []byte("v") },
+		)
+		infoAscii := CollectionType{
+			NativeType: NativeType{proto: protoVersion4, typ: TypeMap},
+			Key:        NativeType{proto: protoVersion4, typ: TypeAscii},
+			Elem:       NativeType{proto: protoVersion4, typ: TypeAscii},
+		}
+
+		// Fast path must not claim ascii-typed maps.
+		var fm map[string]string
+		if handled, _ := unmarshalMapFast(infoAscii, data, &fm); handled {
+			t.Fatal("expected ascii map to skip the raw-string fast path")
+		}
+
+		// Full Unmarshal (generic path) must reject the invalid byte.
+		var m map[string]string
+		if err := Unmarshal(infoAscii, data, &m); err == nil {
+			t.Fatal("expected error unmarshaling invalid ascii, got nil")
+		}
+	})
+}
+
+// namedStrStrMap is a named map type. Because Go type switches match concrete
+// types exactly, unmarshalMapFast does NOT recognise it, so unmarshaling into
+// it exercises the generic reflect path. This lets us assert that the fast
+// path and the generic path agree byte-for-byte on identical wire data.
+type namedStrStrMap map[string]string
+type namedStrI64Map map[string]int64
+type namedI64I64Map map[int64]int64
+
+// TestUnmarshalMapFastVsReflect is a differential test: for the same wire
+// bytes it unmarshals via the fast path (concrete map type) and via the
+// generic reflect path (named map type) and requires identical results.
+func TestUnmarshalMapFastVsReflect(t *testing.T) {
+	t.Parallel()
+
+	infoSS := CollectionType{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeMap},
+		Key:        NativeType{proto: protoVersion4, typ: TypeVarchar},
+		Elem:       NativeType{proto: protoVersion4, typ: TypeVarchar},
+	}
+	infoSI := CollectionType{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeMap},
+		Key:        NativeType{proto: protoVersion4, typ: TypeVarchar},
+		Elem:       NativeType{proto: protoVersion4, typ: TypeBigInt},
+	}
+	infoII := CollectionType{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeMap},
+		Key:        NativeType{proto: protoVersion4, typ: TypeBigInt},
+		Elem:       NativeType{proto: protoVersion4, typ: TypeBigInt},
+	}
+
+	// nullVal returns a -1 (null) length prefix.
+	nullPrefix := []byte{0xff, 0xff, 0xff, 0xff}
+	withLen := func(b []byte) []byte {
+		out := []byte{byte(len(b) >> 24), byte(len(b) >> 16), byte(len(b) >> 8), byte(len(b))}
+		return append(out, b...)
+	}
+	count := func(n int) []byte {
+		return []byte{byte(n >> 24), byte(n >> 16), byte(n >> 8), byte(n)}
+	}
+
+	t.Run("string/string with null key and null value", func(t *testing.T) {
+		// entry0: key "" (len 0), value null
+		// entry1: key null, value "v"
+		var data []byte
+		data = append(data, count(2)...)
+		data = append(data, withLen([]byte{})...) // key ""
+		data = append(data, nullPrefix...)        // value null
+		data = append(data, nullPrefix...)        // key null
+		data = append(data, withLen([]byte("v"))...)
+
+		var fast map[string]string
+		if err := unmarshalMap(infoSS, data, &fast); err != nil {
+			t.Fatalf("fast path: %v", err)
+		}
+		var slow namedStrStrMap
+		if err := unmarshalMap(infoSS, data, &slow); err != nil {
+			t.Fatalf("reflect path: %v", err)
+		}
+		if !reflect.DeepEqual(map[string]string(fast), map[string]string(slow)) {
+			t.Fatalf("fast=%v reflect=%v differ", fast, slow)
+		}
+	})
+
+	t.Run("string/int64 with null value vs reflect", func(t *testing.T) {
+		var data []byte
+		data = append(data, count(2)...)
+		data = append(data, withLen([]byte("a"))...)
+		data = append(data, nullPrefix...) // null int64 value
+		data = append(data, withLen([]byte("b"))...)
+		data = append(data, withLen(int64Bytes(7))...)
+
+		var fast map[string]int64
+		if err := unmarshalMap(infoSI, data, &fast); err != nil {
+			t.Fatalf("fast: %v", err)
+		}
+		var slow namedStrI64Map
+		if err := unmarshalMap(infoSI, data, &slow); err != nil {
+			t.Fatalf("reflect: %v", err)
+		}
+		if !reflect.DeepEqual(map[string]int64(fast), map[string]int64(slow)) {
+			t.Fatalf("fast=%v reflect=%v differ", fast, slow)
+		}
+	})
+
+	t.Run("int64/int64 duplicate keys keep last vs reflect", func(t *testing.T) {
+		// Duplicate key 5 appears twice; map semantics keep the last write.
+		var data []byte
+		data = append(data, count(2)...)
+		data = append(data, withLen(int64Bytes(5))...)
+		data = append(data, withLen(int64Bytes(1))...)
+		data = append(data, withLen(int64Bytes(5))...)
+		data = append(data, withLen(int64Bytes(2))...)
+
+		var fast map[int64]int64
+		if err := unmarshalMap(infoII, data, &fast); err != nil {
+			t.Fatalf("fast: %v", err)
+		}
+		var slow namedI64I64Map
+		if err := unmarshalMap(infoII, data, &slow); err != nil {
+			t.Fatalf("reflect: %v", err)
+		}
+		if !reflect.DeepEqual(map[int64]int64(fast), map[int64]int64(slow)) {
+			t.Fatalf("fast=%v reflect=%v differ", fast, slow)
+		}
+		if fast[5] != 2 {
+			t.Fatalf("expected last-write-wins key 5 -> 2, got %d", fast[5])
+		}
+	})
+
+	t.Run("nil data agrees", func(t *testing.T) {
+		var fast map[string]string
+		var slow namedStrStrMap
+		if err := unmarshalMap(infoSS, nil, &fast); err != nil {
+			t.Fatal(err)
+		}
+		if err := unmarshalMap(infoSS, nil, &slow); err != nil {
+			t.Fatal(err)
+		}
+		if (fast == nil) != (slow == nil) {
+			t.Fatalf("nil disagreement: fast nil=%v reflect nil=%v", fast == nil, slow == nil)
+		}
+	})
+
+	t.Run("wrong fixed-width value length errors like reflect", func(t *testing.T) {
+		// int64 value with 4 bytes (invalid: must be 0 or 8).
+		var data []byte
+		data = append(data, count(1)...)
+		data = append(data, withLen([]byte("k"))...)
+		data = append(data, withLen([]byte{0, 0, 0, 1})...) // 4-byte int64 -> invalid
+
+		var fast map[string]int64
+		errFast := unmarshalMap(infoSI, data, &fast)
+		var slow namedStrI64Map
+		errSlow := unmarshalMap(infoSI, data, &slow)
+		if (errFast == nil) != (errSlow == nil) {
+			t.Fatalf("error disagreement: fast=%v reflect=%v", errFast, errSlow)
+		}
+	})
+}
+
+func BenchmarkUnmarshalMapStringString(b *testing.B) {
+	for _, n := range []int{10, 100} {
+		data := buildMapBytes(n,
+			func(i int) []byte { return []byte(fmt.Sprintf("key-%04d", i)) },
+			func(i int) []byte { return []byte(fmt.Sprintf("value-%04d", i)) },
+		)
+		info := CollectionType{
+			NativeType: NativeType{proto: protoVersion4, typ: TypeMap},
+			Key:        NativeType{proto: protoVersion4, typ: TypeVarchar},
+			Elem:       NativeType{proto: protoVersion4, typ: TypeVarchar},
+		}
+
+		b.Run(fmt.Sprintf("fast/elems=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				var dest map[string]string
+				if err := unmarshalMap(info, data, &dest); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+
+		b.Run(fmt.Sprintf("reflect/elems=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				var dest any
+				if err := unmarshalMap(info, data, &dest); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkUnmarshalMapStringInt64(b *testing.B) {
+	for _, n := range []int{10, 100} {
+		data := buildMapBytes(n,
+			func(i int) []byte { return []byte(fmt.Sprintf("key-%04d", i)) },
+			func(i int) []byte { return int64Bytes(int64(i)) },
+		)
+		info := CollectionType{
+			NativeType: NativeType{proto: protoVersion4, typ: TypeMap},
+			Key:        NativeType{proto: protoVersion4, typ: TypeVarchar},
+			Elem:       NativeType{proto: protoVersion4, typ: TypeBigInt},
+		}
+
+		b.Run(fmt.Sprintf("fast/elems=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				var dest map[string]int64
+				if err := unmarshalMap(info, data, &dest); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+
+		b.Run(fmt.Sprintf("reflect/elems=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				var dest any
+				if err := unmarshalMap(info, data, &dest); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkUnmarshalMapInt64Int64(b *testing.B) {
+	for _, n := range []int{10, 100} {
+		data := buildMapBytes(n,
+			func(i int) []byte { return int64Bytes(int64(i)) },
+			func(i int) []byte { return int64Bytes(int64(i * 100)) },
+		)
+		info := CollectionType{
+			NativeType: NativeType{proto: protoVersion4, typ: TypeMap},
+			Key:        NativeType{proto: protoVersion4, typ: TypeBigInt},
+			Elem:       NativeType{proto: protoVersion4, typ: TypeBigInt},
+		}
+
+		b.Run(fmt.Sprintf("fast/elems=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				var dest map[int64]int64
+				if err := unmarshalMap(info, data, &dest); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+
+		b.Run(fmt.Sprintf("reflect/elems=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				var dest any
+				if err := unmarshalMap(info, data, &dest); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
 	}
 }
