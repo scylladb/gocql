@@ -1467,6 +1467,39 @@ func TestTokenAwarePolicyReset(t *testing.T) {
 	}
 }
 
+// TestTokenAwareHostPolicy_TabletReplicasPresizeAllocRegression guards the
+// tablets-path replicas slice presizing in Pick() against alloc regressions.
+func TestTokenAwareHostPolicy_TabletReplicasPresizeAllocRegression(t *testing.T) {
+	t.Parallel()
+
+	const rf = 3
+	result := testing.Benchmark(func(b *testing.B) {
+		policy, s, queries := setupTabletAwareBench(b, 10, 100, rf)
+		defer s.Close()
+
+		b.ResetTimer()
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			qry := queries[i%len(queries)]
+			iter := policy.Pick(qry)
+			h := iter()
+			if h == nil {
+				b.Fatal("Pick returned nil on first call")
+			}
+		}
+	})
+
+	t.Logf("tokenAwareHostPolicy.Pick (tablets, RF=%d): %d allocs/op, %d B/op",
+		rf, result.AllocsPerOp(), result.AllocedBytesPerOp())
+
+	// 8 allocs/op measured after presizing (10 before); +1 headroom.
+	const maxAllocsPerOp = 9
+	if got := result.AllocsPerOp(); got > maxAllocsPerOp {
+		t.Errorf("tokenAwareHostPolicy.Pick (tablets path) allocated %d allocs/op, want <= %d "+
+			"(replicas slice presizing may have regressed)", got, maxAllocsPerOp)
+	}
+}
+
 func TestTokenAwareHostPolicyTabletPath(t *testing.T) {
 	t.Parallel()
 
