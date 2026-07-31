@@ -766,6 +766,37 @@ func TestDefaultRetryPolicy_ZeroAlloc(t *testing.T) {
 	}
 }
 
+// BenchmarkDefaultRetryPolicyResolution compares the current singleton
+// fallback against a fresh &SimpleRetryPolicy{NumRetries: 3} allocated on
+// every call, the exact literal query_executor.go's do() used before this
+// change, for every query that leaves RetryPolicy unset. Run with
+// -benchmem: the singleton path should show 0 allocs/op against the
+// literal's 1.
+func BenchmarkDefaultRetryPolicyResolution(b *testing.B) {
+	var unset RetryPolicy // simulates qry.retryPolicy() returning nil
+
+	b.Run("Singleton_Current", func(b *testing.B) {
+		b.ReportAllocs()
+		var rt RetryPolicy
+		for i := 0; i < b.N; i++ {
+			rt = resolveRetryPolicy(unset)
+		}
+		_ = rt
+	})
+
+	b.Run("FreshAlloc_Old", func(b *testing.B) {
+		b.ReportAllocs()
+		var rt RetryPolicy
+		for i := 0; i < b.N; i++ {
+			rt = unset
+			if rt == nil {
+				rt = &SimpleRetryPolicy{NumRetries: 3}
+			}
+		}
+		_ = rt
+	})
+}
+
 func TestExponentialBackoffPolicy(t *testing.T) {
 	t.Parallel()
 
