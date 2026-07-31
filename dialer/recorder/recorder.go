@@ -71,6 +71,14 @@ func (f *FrameWriter) Write(b []byte, n int, file *os.File) (err error) {
 	recorded_ealier := len(f.record.Data)
 	f.record.Data = append(f.record.Data, b[:n]...)
 
+	// A frame's first byte is its protocol version, and the driver's handshake
+	// frames are never segment-framed — so on a v5+ connection this fires during
+	// the handshake, before any transport segment reaches the fixed-offset frame
+	// slicing below and is recorded as garbage.
+	if f.to_record == -1 && dialer.FrameIsProtoV5OrNewer(f.record.Data) {
+		return dialer.ErrProtoV5NotSupported
+	}
+
 	if f.to_record == -1 && len(f.record.Data) >= 9 {
 		f.to_record = 9 + int(f.record.Data[5+0])<<24 | int(f.record.Data[6])<<16 | int(f.record.Data[7])<<8 | int(f.record.Data[8]) - recorded_ealier
 		f.record.StreamID = int(f.record.Data[2])<<8 | int(f.record.Data[3])

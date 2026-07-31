@@ -1,14 +1,46 @@
 package dialer
 
 import (
+	"errors"
+
 	frm "github.com/gocql/gocql/internal/frame"
 	"github.com/gocql/gocql/internal/murmur"
 )
+
+// ErrProtoV5NotSupported is returned by the record/replay dialers for protocol
+// v5+ connections. After the handshake v5 switches to transport segments
+// (framer.prepareModernLayout), which these dialers would silently corrupt:
+// the recorder slices the byte stream into frames by the fixed CQL header
+// offsets, and the replayer patches stream ids in place, invalidating segment
+// CRCs. Segment-aware record/replay is tracked in
+// https://github.com/scylladb/gocql/issues/937.
+var ErrProtoV5NotSupported = errors.New("gocql/dialer: protocol v5+ uses transport segments, which the record/replay dialers do not support (see scylladb/gocql#937)")
+
+// FrameIsProtoV5OrNewer reports whether b starts a CQL frame whose protocol
+// version is v5 or newer. It is only meaningful for bytes at a frame boundary.
+// The driver's handshake frames are never segment-framed, so checking each
+// frame's first byte rejects a v5+ connection during the handshake, before any
+// transport segment flows.
+func FrameIsProtoV5OrNewer(b []byte) bool {
+	return len(b) > 0 && b[0]&protoVersionMask >= protoVersion5
+}
 
 type Record struct {
 	Data     []byte `json:"data"`
 	StreamID int    `json:"stream_id"`
 }
+
+// A CQL frame carries the protocol version in the low 7 bits of frame[0]; the
+// top bit is the request/response direction. Always mask with protoVersionMask
+// before comparing a version, so the version tests in this file cannot disagree
+// with each other depending on whether the direction bit happens to be set.
+const (
+	protoVersionMask = 0x7F
+	protoVersion1    = 0x01
+	protoVersion2    = 0x02
+	protoVersion4    = 0x04
+	protoVersion5    = 0x05
+)
 
 type frameOp byte
 
@@ -47,8 +79,12 @@ func addQueryParams(frame []byte, index int) int {
 
 	//use query flags
 	var flags uint32
-	if frame[0] > 0x04 {
-		flags = uint32(frame[index+3])
+	if frame[0]&protoVersionMask > protoVersion4 {
+		// For protocol v5+, flags are a 4-byte big-endian uint32
+		flags = uint32(frame[index])<<24 |
+			uint32(frame[index+1])<<16 |
+			uint32(frame[index+2])<<8 |
+			uint32(frame[index+3])
 		index = index + 4
 	} else {
 		flags = uint32(frame[index])
@@ -58,7 +94,7 @@ func addQueryParams(frame []byte, index int) int {
 	names := false
 
 	// protoV3 specific things
-	if frame[0] > 0x02 {
+	if frame[0]&protoVersionMask > protoVersion2 {
 		if flags&frm.FlagValues == frm.FlagValues && flags&frm.FlagWithNameValues == frm.FlagWithNameValues {
 			names = true
 		}
@@ -113,8 +149,32 @@ func addCustomPayload(frame []byte, index int, p int) int {
 }
 
 func GetFrameHash(frame []byte) int64 {
+	// GetFrameHash parses raw CQL request frames. On protocol v5+ the on-wire
+	// bytes recorded by the replayer are not a CQL frame but a transport
+	// segment produced by framer.prepareModernLayout (segment header, optional
+	// CRC/compression, possibly split across segments), so frame[0] is segment
+	// data rather than the CQL version byte. Parsing it as a CQL frame would
+	// hash the wrong byte range.
+	//
+	// This is currently dormant because Scylla negotiates at most protocol v4,
+	// so v5 segment framing is never produced. Proper segment unwrapping is
+	// tracked in https://github.com/scylladb/gocql/issues/937.
+	//
+	// The check below is only a best-effort heuristic: for a v5 segment,
+	// frame[0] is the low byte of the 17-bit segment length, NOT a CQL version
+	// byte. It reliably diverts inputs whose first byte looks like a v5+ version
+	// (>= 5), but a segment whose length low-byte is < 5 will still fall into
+	// the legacy parser below and be mis-hashed. Correctly distinguishing the
+	// two requires protocol context that is not plumbed here.
+	//
+	// TODO(#937): replace this heuristic with real protocol context.
+	//
+	if len(frame) == 0 || frame[0]&protoVersionMask >= protoVersion5 {
+		return murmur.Murmur3H1(frame)
+	}
+
 	var p int
-	if frame[0] > 0x02 {
+	if frame[0]&protoVersionMask > protoVersion2 {
 		p = 1
 		streamID1 := frame[2]
 		streamID2 := frame[3]
@@ -157,7 +217,20 @@ func GetFrameHash(frame []byte) int64 {
 
 		preparedIDLen := int(frame[index])<<8 | int(frame[index+1])
 		endIndex = endIndex + 2 + preparedIDLen
-		if frame[0] > 0x01 {
+
+		// For protocol v5+, EXECUTE frames carry a resultMetadataID (short bytes)
+		// between the preparedID and the query params. Skip it so the query-params
+		// offset (and therefore the extracted hash) is correct. Unreachable today:
+		// the v5 guard above already diverted anything at v5 or later, and Scylla
+		// negotiates at most protocol v4 in any case. It is kept, masked
+		// consistently with that guard, so the parser stays correct once #937
+		// plumbs real protocol context through and v5 frames reach this branch.
+		if frame[0]&protoVersionMask > protoVersion4 {
+			resultMetadataIDLen := int(frame[endIndex])<<8 | int(frame[endIndex+1])
+			endIndex = endIndex + 2 + resultMetadataIDLen
+		}
+
+		if frame[0]&protoVersionMask > protoVersion1 {
 			endIndex = addQueryParams(frame, endIndex)
 		} else {
 			valuesLen := int(frame[index])<<8 | int(frame[index+1])

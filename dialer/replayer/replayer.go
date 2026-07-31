@@ -115,6 +115,15 @@ func (c *ConnectionReplayer) Read(b []byte) (n int, err error) {
 }
 
 func (c *ConnectionReplayer) Write(b []byte) (n int, err error) {
+	// A request frame's first byte is its protocol version, and the driver's
+	// handshake frames are never segment-framed — so a v5+ connection is
+	// rejected here during the handshake. Past it, v5 switches to transport
+	// segments, which this replayer can neither hash for matching nor patch
+	// stream ids into without breaking the segment CRCs.
+	if dialer.FrameIsProtoV5OrNewer(b) {
+		return 0, dialer.ErrProtoV5NotSupported
+	}
+
 	writeHash := dialer.GetFrameHash(b)
 
 	for i, q := range c.frames {
