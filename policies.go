@@ -941,6 +941,8 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 	if session := qry.GetSession(); session != nil && session.tabletsRoutingV1 && isInt64Token {
 		tabletReplicas := session.findTabletReplicasUnsafeForToken(qry.Keyspace(), qry.Table(), int64(tokenCasted))
 		if len(tabletReplicas) != 0 {
+			// Presized to the known upper bound.
+			replicas = make([]*HostInfo, 0, len(tabletReplicas))
 			hosts := t.hosts.get()
 			for _, replica := range tabletReplicas {
 				if host := hosts.hostByID(UUID(replica.HostUUIDValue())); host != nil {
