@@ -15,7 +15,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-module github.com/gocql/gocql/lz4
+// This module is named github.com/scylladb/gocql/lz4 to match its hosting repository
+// (github.com/scylladb/gocql). Downstream consumers keep the documented import path
+// github.com/gocql/gocql/lz4 and resolve it to this module via a replace directive in
+// their go.mod — the same fork pattern already used for the parent module. See the
+// "Compression" section of the README for the required replace directive.
+module github.com/scylladb/gocql/lz4
 
 go 1.25.0
 

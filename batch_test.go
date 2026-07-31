@@ -29,9 +29,10 @@ package gocql
 
 import (
 	"fmt"
-	"github.com/stretchr/testify/require"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestBatch_Errors(t *testing.T) {
@@ -159,10 +160,14 @@ func TestBatch_SetKeyspace(t *testing.T) {
 	)
 
 	iter := session.Query("SELECT * FROM gocql_keyspace_override_test.batch_keyspace").Iter()
-	defer iter.Close()
 
-	for i := 0; iter.Scan(&id, &text); i++ {
-		require.Equal(t, id, ids[i])
-		require.Equal(t, text, texts[i])
+	got := map[int]string{}
+	for iter.Scan(&id, &text) {
+		got[id] = text
 	}
+	require.NoError(t, iter.Close())
+	require.Equal(t, map[int]string{
+		ids[0]: texts[0],
+		ids[1]: texts[1],
+	}, got)
 }

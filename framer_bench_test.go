@@ -32,6 +32,8 @@ import (
 	"io"
 	"os"
 	"testing"
+
+	frm "github.com/gocql/gocql/internal/frame"
 )
 
 func readGzipData(path string) ([]byte, error) {
@@ -59,10 +61,10 @@ func BenchmarkParseRowsFrame(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		framer := &framer{
-			header: &frameHeader{
-				version: protoVersion4 | 0x80,
-				op:      frm.OpResult,
-				length:  len(data),
+			header: &frm.FrameHeader{
+				Version: protoVersion4 | protoDirectionMask,
+				Op:      frm.OpResult,
+				Length:  len(data),
 			},
 			buf: data,
 		}

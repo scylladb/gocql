@@ -30,12 +30,17 @@ package gocql
 import (
 	"bytes"
 	"errors"
+	"io"
+	"math"
+	"net"
 	"os"
+	"strings"
 	"testing"
 
-	frm "github.com/gocql/gocql/internal/frame"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	frm "github.com/gocql/gocql/internal/frame"
 )
 
 func TestFuzzBugs(t *testing.T) {
@@ -140,6 +145,172 @@ func TestFrameReadTooLong(t *testing.T) {
 	}
 }
 
+// TestReadFrameBodyErrorKeepsNetError pins that a failed body read stays
+// recognisable as a net.Error through readFrame's wrapping. Conn.processFrameSource
+// decides whether the connection is desynced (and must be closed) from exactly this
+// check; formatting the cause with %v instead of %w silently defeats it, and the
+// half-read body is then read back as the next frame header.
+func TestReadFrameBodyErrorKeepsNetError(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		r    io.Reader
+		want bool
+	}{
+		{
+			name: "timeout mid-body",
+			r:    io.MultiReader(bytes.NewReader([]byte{0x01, 0x02}), errReader{timeoutErr{}}),
+			want: true,
+		},
+		{
+			// A peer that closes mid-body is equally desyncing, but io.ErrUnexpectedEOF
+			// is not a net.Error; the connection dies on the next read instead.
+			name: "peer closed mid-body",
+			r:    bytes.NewReader([]byte{0x01, 0x02}),
+			want: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFramer(nil, protoVersion4)
+			head := frm.FrameHeader{Version: protoVersion4 | protoDirectionMask, Op: frm.OpReady, Length: 8}
+
+			err := f.readFrame(tc.r, &head)
+			require.Error(t, err)
+
+			var netErr net.Error
+			require.Equal(t, tc.want, errors.As(err, &netErr),
+				"errors.As(net.Error) on %q", err)
+		})
+	}
+}
+
+// TestReadFrameDiscardErrorKeepsNetError is the same pin for the oversized-frame
+// path: an over-long frame is normally recovered from by discarding its body, but
+// if the discard itself fails the remainder is still on the wire.
+func TestReadFrameDiscardErrorKeepsNetError(t *testing.T) {
+	t.Parallel()
+
+	f := newFramer(nil, protoVersion4)
+	head := frm.FrameHeader{Version: protoVersion4 | protoDirectionMask, Op: frm.OpReady, Length: maxFrameSize + 1}
+
+	err := f.readFrame(errReader{timeoutErr{}}, &head)
+	require.Error(t, err)
+	require.NotErrorIs(t, err, ErrFrameTooBig, "the discard failed, so the frame was not skipped")
+
+	var netErr net.Error
+	require.True(t, errors.As(err, &netErr), "errors.As(net.Error) on %q", err)
+}
+
+// TestReadHeaderRejectsNegativeLength pins that a length field with the high bit
+// set is rejected by readHeader. The field is signed on the wire, so such a value
+// arrives negative; readFrame also rejects it, but only an error out of readHeader
+// closes the connection, and a header this broken means the stream position can no
+// longer be trusted.
+func TestReadHeaderRejectsNegativeLength(t *testing.T) {
+	t.Parallel()
+
+	header := []byte{
+		protoVersion4 | protoDirectionMask, 0x00, 0x00, 0x01, byte(frm.OpResult),
+		0xFF, 0xFF, 0xFF, 0xFF, // length = -1
+	}
+
+	_, err := readHeader(bytes.NewReader(header), make([]byte, headSize))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid frame body length")
+}
+
+// errReader fails every read with err, standing in for a socket whose read
+// deadline expired or which was reset.
+type errReader struct{ err error }
+
+func (e errReader) Read([]byte) (int, error) { return 0, e.err }
+
+// TestParseResultMetadata_PagingStateBeforeNewMetadataID pins the wire order of
+// the two optional fields in a v5 RESULT/Rows <metadata> block.
+//
+// With only one of HAS_MORE_PAGES / METADATA_CHANGED set, either ordering parses
+// identically, so no other test in this repo can tell them apart. Only a frame
+// carrying both distinguishes them, and such a frame is hard to obtain from a
+// live server (it needs the client to execute with a stale result_metadata_id
+// while a page boundary falls in the same response). Synthesising it here is
+// both deterministic and stronger than an integration test.
+//
+// The layout asserted below is the one Cassandra actually emits, read out of
+// ResultSet$ResultMetadata$Codec.encode in the 5.0.6 distribution:
+//
+//	writeInt(flags)
+//	writeInt(columnCount)
+//	if HAS_MORE_PAGES:                CBUtil.writeValue(pagingState)    // [bytes]
+//	if v5+ && METADATA_CHANGED:       CBUtil.writeBytes(resultMetadataId) // [short bytes]
+//	if !NO_METADATA:                  global table spec / column specs
+//
+// Note the differing wire types: paging state is [bytes] (4-byte length) and the
+// metadata id is [short bytes] (2-byte length), so swapping the two reads
+// desynchronises the rest of the block rather than merely exchanging the values.
+func TestParseResultMetadata_PagingStateBeforeNewMetadataID(t *testing.T) {
+	t.Parallel()
+
+	const (
+		keyspace = "test_ks"
+		table    = "test_tbl"
+	)
+	pagingState := []byte{0xDE, 0xAD, 0xBE, 0xEF, 0x01}
+	newMetadataID := []byte{0xAA, 0xBB, 0xCC}
+
+	fr := newFramer(nil, protoVersion5)
+	fr.header = &frm.FrameHeader{Version: protoVersion5}
+
+	fr.writeInt(int32(frm.FlagGlobalTableSpec | frm.FlagHasMorePages | frm.FlagMetaDataChanged))
+	fr.writeInt(1) // colCount
+	fr.writeBytes(pagingState)
+	fr.writeShortBytes(newMetadataID)
+	fr.writeString(keyspace)
+	fr.writeString(table)
+	fr.writeString("col_a")
+	fr.writeShort(uint16(TypeInt))
+
+	meta := fr.parseResultMetadata()
+
+	assertDeepEqual(t, "pagingState", pagingState, meta.pagingState)
+	assertDeepEqual(t, "newMetadataID", newMetadataID, meta.newMetadataID)
+
+	// The column spec must still be readable, which is what actually proves the
+	// two optional fields were consumed in the right order and with the right
+	// wire types.
+	require.Len(t, meta.columns, 1)
+	require.Equal(t, keyspace, meta.columns[0].Keyspace)
+	require.Equal(t, table, meta.columns[0].Table)
+	require.Equal(t, "col_a", meta.columns[0].Name)
+	require.Empty(t, fr.buf, "whole metadata block should be consumed")
+}
+
+// TestParseResultMetadata_NewMetadataIDIgnoredBelowV5 pins that the
+// METADATA_CHANGED field is only on the wire from v5 onwards: on v4 the flag bit
+// must not cause a read, or the parser would consume bytes that belong to the
+// column specs.
+func TestParseResultMetadata_NewMetadataIDIgnoredBelowV5(t *testing.T) {
+	t.Parallel()
+
+	fr := newFramer(nil, protoVersion4)
+	fr.header = &frm.FrameHeader{Version: protoVersion4}
+
+	// METADATA_CHANGED set but no id on the wire, as a v4 server would send.
+	fr.writeInt(int32(frm.FlagGlobalTableSpec | frm.FlagMetaDataChanged))
+	fr.writeInt(1)
+	fr.writeString("test_ks")
+	fr.writeString("test_tbl")
+	fr.writeString("col_a")
+	fr.writeShort(uint16(TypeInt))
+
+	meta := fr.parseResultMetadata()
+
+	require.Nil(t, meta.newMetadataID, "no metadata id should be read below v5")
+	require.Len(t, meta.columns, 1)
+	require.Equal(t, "col_a", meta.columns[0].Name)
+	require.Empty(t, fr.buf, "whole metadata block should be consumed")
+}
+
 func TestParseResultMetadata_PerColumnSpec(t *testing.T) {
 	t.Parallel()
 
@@ -242,16 +413,16 @@ func Test_framer_writeExecuteFrame(t *testing.T) {
 	framer.buf = framer.buf[9:]
 
 	assertDeepEqual(t, "customPayload", frame.customPayload, framer.readBytesMap())
-	assertDeepEqual(t, "preparedID", frame.preparedID, framer.readShortBytes())
-	assertDeepEqual(t, "resultMetadataID", frame.resultMetadataID, framer.readShortBytes())
+	assertDeepEqual(t, "preparedID", frame.preparedID, framer.readShortBytesCopy())
+	assertDeepEqual(t, "resultMetadataID", frame.resultMetadataID, framer.readShortBytesCopy())
 	assertDeepEqual(t, "constistency", frame.params.consistency, Consistency(framer.readShort()))
 
 	flags := framer.readInt()
-	if flags&int(flagWithNowInSeconds) != int(flagWithNowInSeconds) {
+	if flags&int(frm.FlagWithNowInSeconds) != int(frm.FlagWithNowInSeconds) {
 		t.Fatal("expected flagNowInSeconds to be set, but it is not")
 	}
 
-	if flags&int(flagWithKeyspace) != int(flagWithKeyspace) {
+	if flags&int(frm.FlagWithKeyspace) != int(frm.FlagWithKeyspace) {
 		t.Fatal("expected flagWithKeyspace to be set, but it is not")
 	}
 
@@ -283,11 +454,312 @@ func Test_framer_writeBatchFrame(t *testing.T) {
 	assertDeepEqual(t, "consistency", frame.consistency, Consistency(framer.readShort()))
 
 	flags := framer.readInt()
-	if flags&int(flagWithNowInSeconds) != int(flagWithNowInSeconds) {
+	if flags&int(frm.FlagWithNowInSeconds) != int(frm.FlagWithNowInSeconds) {
 		t.Fatal("expected flagNowInSeconds to be set, but it is not")
 	}
 
 	assertDeepEqual(t, "nowInSeconds", nowInSeconds, framer.readInt())
+}
+
+// Test_framer_writeBatchFrame_unnamedValues guards the happy path through the
+// statement/values write loop (unnamed positional values), which must still
+// succeed after named-value rejection was hoisted out of that loop.
+func Test_framer_writeBatchFrame_unnamedValues(t *testing.T) {
+	framer := newFramer(nil, protoVersion5)
+	frame := writeBatchFrame{
+		typ:         LoggedBatch,
+		consistency: Quorum,
+		statements: []batchStatment{
+			{
+				statement: "INSERT INTO t (id, v) VALUES (?, ?)",
+				values: []queryValues{
+					{value: []byte{0, 0, 0, 1}},
+					{value: []byte("x")},
+				},
+			},
+		},
+	}
+
+	if err := framer.writeBatchFrame(1, &frame, frame.customPayload); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// skipping header
+	framer.buf = framer.buf[9:]
+	assertDeepEqual(t, "typ", frame.typ, BatchType(framer.readByte()))
+	assertDeepEqual(t, "len(statements)", len(frame.statements), int(framer.readShort()))
+	assertDeepEqual(t, "kind", byte(0), framer.readByte()) // 0 = raw query string
+	assertDeepEqual(t, "statement", frame.statements[0].statement, framer.readLongString())
+	assertDeepEqual(t, "len(values)", len(frame.statements[0].values), int(framer.readShort()))
+	assertDeepEqual(t, "value0", frame.statements[0].values[0].value, framer.readBytesCopy())
+	assertDeepEqual(t, "value1", frame.statements[0].values[1].value, framer.readBytesCopy())
+}
+
+// On protocols below v5 the keyspace override and now_in_seconds options are
+// not part of the wire format. The frame writers must reject them with an
+// explicit error (rather than silently dropping them, panicking, or leaving a
+// partial frame in the reusable framer buffer).
+//
+// Driven through buildFrame, the entry point Conn.exec actually uses, for both
+// writers that carry queryParams. Calling writeQueryParams directly would assert
+// nothing: it is the first thing a fresh framer does, so `len(buf) == 0` holds
+// whatever the writer does. Via buildFrame the assertion has teeth — writeQueryFrame
+// writes the header, custom payload and statement before writeQueryParams runs, and
+// writeExecuteFrame additionally writes the prepared id and (on v5) the result
+// metadata id.
+//
+// wantErr pins which validation rejected the frame, so a case cannot pass by
+// tripping an unrelated one.
+func Test_framer_queryParamsWriters_rejectUnsupportedOptionsOnV4(t *testing.T) {
+	nowInSeconds := 123
+	overflow := math.MaxInt32 + 1
+
+	cases := []struct {
+		name    string
+		proto   byte
+		opts    queryParams
+		wantErr string
+	}{
+		{
+			name:    "keyspace on v4",
+			proto:   protoVersion4,
+			opts:    queryParams{consistency: Quorum, keyspace: "ks"},
+			wantErr: "keyspace override can only be set with protocol v5 or higher",
+		},
+		{
+			name:    "nowInSeconds on v4",
+			proto:   protoVersion4,
+			opts:    queryParams{consistency: Quorum, nowInSeconds: &nowInSeconds},
+			wantErr: "now_in_seconds can only be set with protocol v5 or higher",
+		},
+		{
+			name:    "nowInSeconds overflow on v5",
+			proto:   protoVersion5,
+			opts:    queryParams{consistency: Quorum, nowInSeconds: &overflow},
+			wantErr: "overflows int32",
+		},
+	}
+
+	writers := []struct {
+		name  string
+		build func(opts queryParams) frameBuilder
+	}{
+		{
+			name: "QUERY",
+			build: func(opts queryParams) frameBuilder {
+				return &writeQueryFrame{statement: "SELECT * FROM system.local", params: opts}
+			},
+		},
+		{
+			name: "EXECUTE",
+			build: func(opts queryParams) frameBuilder {
+				return &writeExecuteFrame{
+					preparedID:       []byte{0x01, 0x02},
+					resultMetadataID: []byte{0x03, 0x04},
+					params:           opts,
+				}
+			},
+		},
+	}
+
+	for _, w := range writers {
+		t.Run(w.name, func(t *testing.T) {
+			for _, tc := range cases {
+				t.Run(tc.name, func(t *testing.T) {
+					framer := newFramer(nil, tc.proto)
+
+					err := w.build(tc.opts).buildFrame(framer, 1)
+					require.Error(t, err)
+					require.Contains(t, err.Error(), tc.wantErr)
+					require.Empty(t, framer.buf, "a rejected option must not leave a partial frame in the framer buffer")
+				})
+			}
+		})
+	}
+}
+
+// Test_framer_validateV5Options_acceptsSupportedOptions is the positive half: the
+// shared validator must not reject what v5 does support, or the writers above
+// would fail every legitimate v5 request.
+func Test_framer_validateV5Options_acceptsSupportedOptions(t *testing.T) {
+	nowInSeconds := 123
+	minInt32, maxInt32 := math.MinInt32, math.MaxInt32
+
+	v5 := newFramer(nil, protoVersion5)
+	require.NoError(t, v5.validateV5Options("ks", &nowInSeconds))
+	require.NoError(t, v5.validateV5Options("", &minInt32))
+	require.NoError(t, v5.validateV5Options("", &maxInt32))
+
+	// And neither option set is required: v4 requests must still pass.
+	require.NoError(t, newFramer(nil, protoVersion4).validateV5Options("", nil))
+}
+
+func Test_framer_writeBatchFrame_rejectsUnsupportedOptionsOnV4(t *testing.T) {
+	nowInSeconds := 123
+	overflow := math.MaxInt32 + 1
+
+	namedValues := []queryValues{{name: "id", value: []byte{1}}}
+
+	// wantErr pins which validation rejected the frame, so a case cannot pass by
+	// tripping some unrelated error.
+	cases := []struct {
+		name    string
+		proto   byte
+		frame   writeBatchFrame
+		wantErr string
+	}{
+		{
+			name:    "keyspace on v4",
+			proto:   protoVersion4,
+			frame:   writeBatchFrame{keyspace: "ks"},
+			wantErr: "keyspace override can only be set with protocol v5 or higher",
+		},
+		{
+			name:    "nowInSeconds on v4",
+			proto:   protoVersion4,
+			frame:   writeBatchFrame{nowInSeconds: &nowInSeconds},
+			wantErr: "now_in_seconds can only be set with protocol v5 or higher",
+		},
+		{
+			name:    "nowInSeconds overflow on v5",
+			proto:   protoVersion5,
+			frame:   writeBatchFrame{nowInSeconds: &overflow},
+			wantErr: "overflows int32",
+		},
+		// Named values are rejected on every protocol version (CASSANDRA-10246),
+		// for both raw-statement and prepared-id batch entries.
+		{
+			name:  "named values on v4",
+			proto: protoVersion4,
+			frame: writeBatchFrame{
+				statements: []batchStatment{{statement: "INSERT INTO t (id) VALUES (?)", values: namedValues}},
+			},
+			wantErr: "named query values are not supported in batches",
+		},
+		{
+			name:  "named values on v5",
+			proto: protoVersion5,
+			frame: writeBatchFrame{
+				statements: []batchStatment{{statement: "INSERT INTO t (id) VALUES (?)", values: namedValues}},
+			},
+			wantErr: "named query values are not supported in batches",
+		},
+		{
+			name:  "named values on a prepared statement",
+			proto: protoVersion5,
+			frame: writeBatchFrame{
+				statements: []batchStatment{{preparedID: []byte{0xAA, 0xBB}, values: namedValues}},
+			},
+			wantErr: "named query values are not supported in batches",
+		},
+		{
+			// The rejection must scan every statement, not just the first.
+			name:  "named values in a later statement",
+			proto: protoVersion5,
+			frame: writeBatchFrame{
+				statements: []batchStatment{
+					{statement: "INSERT INTO t (id) VALUES (?)", values: []queryValues{{value: []byte{1}}}},
+					{statement: "INSERT INTO u (id) VALUES (?)", values: namedValues},
+				},
+			},
+			wantErr: "named query values are not supported in batches",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			framer := newFramer(nil, tc.proto)
+			err := framer.writeBatchFrame(1, &tc.frame, tc.frame.customPayload)
+			if err == nil {
+				t.Fatal("expected an error, got nil")
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("error %q does not contain %q", err, tc.wantErr)
+			}
+			if len(framer.buf) != 0 {
+				t.Fatalf("expected framer buffer to be untouched on error, got %d bytes", len(framer.buf))
+			}
+		})
+	}
+}
+
+func Test_framer_writePrepareFrame_rejectsKeyspaceOnV4(t *testing.T) {
+	framer := newFramer(nil, protoVersion4)
+	prep := &writePrepareFrame{statement: "SELECT * FROM t", keyspace: "ks"}
+
+	// Must return an error, not panic.
+	if err := prep.buildFrame(framer, 1); err == nil {
+		t.Fatal("expected an error, got nil")
+	}
+	if len(framer.buf) != 0 {
+		t.Fatalf("expected framer buffer to be untouched on error, got %d bytes", len(framer.buf))
+	}
+}
+
+func Test_defaultFramerFlags(t *testing.T) {
+	comp := testMockedCompressor{}
+
+	cases := []struct {
+		name       string
+		compressor Compressor
+		version    byte
+		want       byte
+	}{
+		{"v4 no compressor", nil, protoVersion4, 0},
+		{"v4 with compressor", comp, protoVersion4, frm.FlagCompress},
+		{"v5 no compressor", nil, protoVersion5, 0},
+		// v5 compresses at the segment layer, so no frame-header FlagCompress.
+		{"v5 with compressor", comp, protoVersion5, 0},
+		// A direction/reserved high bit on the version must not defeat the v5
+		// check and re-enable FlagCompress at v5, nor suppress it at v4.
+		{"v5|dir with compressor", comp, protoVersion5 | protoDirectionMask, 0},
+		{"v4|dir with compressor", comp, protoVersion4 | protoDirectionMask, frm.FlagCompress},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := defaultFramerFlags(tc.compressor, tc.version); got != tc.want {
+				t.Fatalf("defaultFramerFlags(%v, v%d) = 0x%02x, want 0x%02x", tc.compressor != nil, tc.version, got, tc.want)
+			}
+		})
+	}
+}
+
+// No framer may ever set FlagBetaProtocol: opting into a server's in-development
+// v5 dialect makes a Cassandra 3.11 handshake succeed and every following frame
+// fail, instead of v5 being rejected cleanly (see protoVersion5, CASSGO-88).
+// Covered here for every way a request framer is built.
+func Test_framerFlags_neverBetaProtocol(t *testing.T) {
+	comp := testMockedCompressor{}
+
+	for _, version := range []byte{protoVersion4, protoVersion5, protoVersion5 | protoDirectionMask} {
+		for _, compressor := range []Compressor{nil, comp} {
+			if got := defaultFramerFlags(compressor, version); got&frm.FlagBetaProtocol != 0 {
+				t.Errorf("defaultFramerFlags(%v, 0x%02x) set FlagBetaProtocol", compressor != nil, version)
+			}
+			if got := newFramer(compressor, version).flags; got&frm.FlagBetaProtocol != 0 {
+				t.Errorf("newFramer(%v, 0x%02x) set FlagBetaProtocol", compressor != nil, version)
+			}
+		}
+	}
+
+	// initCache is what the connection actually uses once the handshake completed.
+	c := &Conn{version: protoVersion5, compressor: comp, logger: &defaultLogger{}}
+	c.initFramerCache()
+	if c.framers.defaults.flags&frm.FlagBetaProtocol != 0 {
+		t.Error("initFramerCache(v5) seeded FlagBetaProtocol")
+	}
+}
+
+// newFramer must not set FlagCompress on v5, where compression happens at the
+// segment layer instead of via a frame-header flag.
+func Test_newFramer_compressFlag(t *testing.T) {
+	if flags := newFramer(testMockedCompressor{}, protoVersion5).flags; flags&frm.FlagCompress != 0 {
+		t.Error("newFramer(v5) should not set FlagCompress (v5 compresses at the segment layer)")
+	}
+	if flags := newFramer(testMockedCompressor{}, protoVersion4).flags; flags&frm.FlagCompress == 0 {
+		t.Error("newFramer(v4) should set FlagCompress")
+	}
 }
 
 type testMockedCompressor struct {
@@ -302,32 +774,42 @@ func (m testMockedCompressor) Name() string {
 	return "testMockedCompressor"
 }
 
-func (m testMockedCompressor) AppendCompressed(_, src []byte) ([]byte, error) {
+// AppendCompressed is a no-op "compressor" that still honours the
+// SegmentCompressor contract of appending to dst and returning the extended
+// slice. Returning src alone would let the mock pass while a caller that encodes
+// segments directly into dst (framer.prepareModernLayout) breaks.
+func (m testMockedCompressor) AppendCompressed(dst, src []byte) ([]byte, error) {
 	if m.expectedError != nil {
 		return nil, m.expectedError
 	}
-	return src, nil
+	return append(dst, src...), nil
 }
 
-func (m testMockedCompressor) AppendDecompressed(_, src []byte, decompressedLength uint32) ([]byte, error) {
+func (m testMockedCompressor) AppendDecompressed(dst, src []byte, decompressedLength uint32) ([]byte, error) {
 	if m.expectedError != nil {
 		return nil, m.expectedError
 	}
 
 	// simulating invalid size of decoded data
 	if m.invalidateDecodedDataLength {
-		return src[:decompressedLength-1], nil
+		return append(dst, src[:decompressedLength-1]...), nil
 	}
 
-	return src, nil
+	return append(dst, src...), nil
 }
 
-func (m testMockedCompressor) AppendCompressedWithLength(dst, src []byte) ([]byte, error) {
-	panic("testMockedCompressor.AppendCompressedWithLength is not implemented")
+func (m testMockedCompressor) Encode(data []byte) ([]byte, error) {
+	if m.expectedError != nil {
+		return nil, m.expectedError
+	}
+	return data, nil
 }
 
-func (m testMockedCompressor) AppendDecompressedWithLength(dst, src []byte) ([]byte, error) {
-	panic("testMockedCompressor.AppendDecompressedWithLength is not implemented")
+func (m testMockedCompressor) Decode(data []byte) ([]byte, error) {
+	if m.expectedError != nil {
+		return nil, m.expectedError
+	}
+	return data, nil
 }
 
 func Test_readUncompressedFrame(t *testing.T) {
@@ -551,5 +1033,193 @@ func TestParseEventFrame_ClientRoutesChanged(t *testing.T) {
 	}
 	if len(evt.HostIDs) != 0 {
 		t.Fatalf("HostIDs = %v, want empty", evt.HostIDs)
+	}
+}
+
+// failingCompressor compresses by copying (append semantics), but returns an
+// error on the (failAt)th AppendCompressed call (1-indexed). It lets a test
+// force prepareModernLayout to fail partway through multi-segment framing.
+type failingCompressor struct {
+	failAt int
+	calls  int
+}
+
+func (c *failingCompressor) Name() string { return "failing" }
+
+func (c *failingCompressor) AppendCompressed(dst, src []byte) ([]byte, error) {
+	c.calls++
+	if c.calls == c.failAt {
+		return nil, errors.New("compress boom")
+	}
+	return append(dst, src...), nil
+}
+
+func (c *failingCompressor) AppendDecompressed(dst, src []byte, _ uint32) ([]byte, error) {
+	return append(dst, src...), nil
+}
+
+func (c *failingCompressor) Encode(data []byte) ([]byte, error) {
+	return data, nil
+}
+
+func (c *failingCompressor) Decode(data []byte) ([]byte, error) {
+	return data, nil
+}
+
+// TestPrepareModernLayoutLeavesBufIntactOnError verifies that when segmentation
+// fails partway through a multi-segment frame, framer.buf is left byte-for-byte
+// unchanged so the caller can safely release the framer.
+func TestPrepareModernLayoutLeavesBufIntactOnError(t *testing.T) {
+	t.Parallel()
+
+	// A payload spanning more than one maxSegmentPayloadSize chunk forces the
+	// chunk loop to run, so failing on the second AppendCompressed call fails
+	// after the first chunk has already been appended to the local buffer.
+	original := bytes.Repeat([]byte{0xAB}, maxSegmentPayloadSize+100)
+
+	f := newFramer(&failingCompressor{failAt: 2}, protoVersion5)
+	f.buf = append([]byte(nil), original...)
+
+	err := f.prepareModernLayout()
+	if err == nil {
+		t.Fatal("expected prepareModernLayout to fail")
+	}
+	if !bytes.Equal(f.buf, original) {
+		t.Fatalf("f.buf was mutated on error: len=%d, want len=%d", len(f.buf), len(original))
+	}
+}
+
+// TestPrepareModernLayoutRejectsPreV5ProtocolWithError verifies that calling
+// prepareModernLayout on a framer negotiated below protocol v5 returns an
+// error instead of panicking, since the function's contract is to report
+// every failure mode (including this internal precondition) via its error
+// return.
+func TestPrepareModernLayoutRejectsPreV5ProtocolWithError(t *testing.T) {
+	t.Parallel()
+
+	f := newFramer(nil, protoVersion4)
+	f.buf = append([]byte(nil), []byte("some frame bytes")...)
+
+	require.NotPanics(t, func() {
+		err := f.prepareModernLayout()
+		require.Error(t, err)
+	})
+}
+
+// TestPrepareModernLayoutSuccessUnchanged guards that the local-cursor refactor
+// did not change the segmented output on the success path.
+func TestPrepareModernLayoutSuccessUnchanged(t *testing.T) {
+	t.Parallel()
+
+	for _, size := range []int{1, maxSegmentPayloadSize - 1, maxSegmentPayloadSize, maxSegmentPayloadSize + 1, 2*maxSegmentPayloadSize + 7} {
+		original := bytes.Repeat([]byte{0x5A}, size)
+
+		// Reference output computed directly from the segment helpers.
+		var want []byte
+		src := original
+		selfContained := true
+		for len(src) > maxSegmentPayloadSize {
+			seg, err := newUncompressedSegment(src[:maxSegmentPayloadSize], false)
+			if err != nil {
+				t.Fatalf("size %d: reference segment: %v", size, err)
+			}
+			want = append(want, seg...)
+			src = src[maxSegmentPayloadSize:]
+			selfContained = false
+		}
+		seg, err := newUncompressedSegment(src, selfContained)
+		if err != nil {
+			t.Fatalf("size %d: reference tail segment: %v", size, err)
+		}
+		want = append(want, seg...)
+
+		f := newFramer(nil, protoVersion5)
+		f.buf = append([]byte(nil), original...)
+		if err := f.prepareModernLayout(); err != nil {
+			t.Fatalf("size %d: prepareModernLayout: %v", size, err)
+		}
+		if !bytes.Equal(f.buf, want) {
+			t.Fatalf("size %d: segmented output changed", size)
+		}
+	}
+}
+
+// expandingCompressor is an incompressible-data compressor that demands capacity
+// exactly the way pierrec/lz4 does: its output may exceed its input by the lz4
+// block bound (len + len/255 + 16), and it grows dst — reallocating and copying
+// everything accumulated so far — whenever dst has less spare capacity than that
+// bound. It is what makes an undersized wire buffer observable as an allocation.
+type expandingCompressor struct{}
+
+func (expandingCompressor) Name() string { return "expanding" }
+
+func (expandingCompressor) AppendCompressed(dst, src []byte) ([]byte, error) {
+	bound := len(src) + len(src)/255 + 16
+	oldLen := len(dst)
+	if cap(dst)-oldLen < bound {
+		grown := make([]byte, oldLen+bound)
+		copy(grown, dst)
+		dst = grown
+	}
+	// Expand slightly, so every segment takes appendCompressedSegment's
+	// "compression was not worth it" fallback back to the raw payload.
+	out := dst[:oldLen+len(src)+len(src)/255+1]
+	copy(out[oldLen:], src)
+	return out, nil
+}
+
+func (expandingCompressor) AppendDecompressed(dst, src []byte, _ uint32) ([]byte, error) {
+	return append(dst, src...), nil
+}
+
+func (expandingCompressor) Encode(data []byte) ([]byte, error) { return data, nil }
+func (expandingCompressor) Decode(data []byte) ([]byte, error) { return data, nil }
+
+// TestPrepareModernLayoutReusesBuffers pins that a framer reused for consecutive
+// v5 requests segments them without allocating: the wire buffer must be kept on
+// the framer and swapped with the raw-frame buffer, not built from scratch (which
+// allocated the whole wire output, plus a temporary per segment, per request).
+//
+// The expanding cases additionally cover a multi-segment compressed frame whose
+// every payload grows under compression, which is what segmentedFrameSize's
+// one-segment slack is for. Expansion does not accumulate across segments: only
+// one segment is ever mid-compression, and a segment whose compressed form came
+// out larger is rewritten as its raw payload before the next one starts. Note
+// that a short estimate would only cost one extra grow rather than a per-request
+// allocation, since both buffers converge on the capacity actually needed — this
+// asserts the steady state, not the constant.
+func TestPrepareModernLayoutReusesBuffers(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		compressor Compressor
+		size       int
+	}{
+		{"single segment", nil, 4096},
+		{"multi segment", nil, 2*maxSegmentPayloadSize + 7},
+		{"compressed", testMockedCompressor{}, 4096},
+		{"expanding compressed, single segment", expandingCompressor{}, maxSegmentPayloadSize - 1},
+		{"expanding compressed, multi segment", expandingCompressor{}, 5*maxSegmentPayloadSize - 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			payload := bytes.Repeat([]byte{0x5A}, tc.size)
+			f := newFramer(tc.compressor, protoVersion5)
+
+			segment := func() {
+				f.buf = append(f.buf[:0], payload...)
+				if err := f.prepareModernLayout(); err != nil {
+					t.Fatalf("prepareModernLayout: %v", err)
+				}
+			}
+
+			// The first calls legitimately allocate: both buffers still have to
+			// grow to the size of this frame.
+			for i := 0; i < 5; i++ {
+				segment()
+			}
+
+			if allocs := testing.AllocsPerRun(20, segment); allocs != 0 {
+				t.Errorf("segmenting a warmed-up framer allocated %v times per request, want 0", allocs)
+			}
+		})
 	}
 }

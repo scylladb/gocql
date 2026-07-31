@@ -1780,6 +1780,8 @@ func TestCloneQueryAccountsForEveryField(t *testing.T) {
 		"getKeyspace":                {},
 		"routingInfo":                {},
 		"binding":                    {},
+		"keyspace":                   {},
+		"nowInSecondsValue":          {},
 		"hostID":                     {},
 		"stmt":                       {},
 		"routingKey":                 {},
