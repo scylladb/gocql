@@ -385,7 +385,19 @@ func getApacheCassandraType(class string) Type {
 func (r *RowData) rowMap(m map[string]any) {
 	for i, column := range r.Columns {
 		val := dereference(r.Values[i])
-		if valVal := reflect.ValueOf(val); valVal.Kind() == reflect.Slice && !valVal.IsNil() {
+		// []byte (blob) is by far the most common slice-typed column; avoid
+		// the reflect.MakeSlice/Copy/Interface() round trip for it since a
+		// plain copy() does the same defensive-copy job. This is a CPU-time
+		// win (no reflect dispatch), not an allocation-count one: both paths
+		// still pay for the backing-array copy and the interface-boxing that
+		// storing a []byte into map[string]any requires either way.
+		if b, ok := val.([]byte); ok {
+			if b != nil {
+				m[column] = copyBytes(b)
+			} else {
+				m[column] = val
+			}
+		} else if valVal := reflect.ValueOf(val); valVal.Kind() == reflect.Slice && !valVal.IsNil() {
 			valCopy := reflect.MakeSlice(valVal.Type(), valVal.Len(), valVal.Cap())
 			reflect.Copy(valCopy, valVal)
 			m[column] = valCopy.Interface()
