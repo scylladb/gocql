@@ -41,6 +41,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/gocql/gocql/tablets"
 )
 
@@ -4046,4 +4048,374 @@ func TestTableMetadataValidation(t *testing.T) {
 			t.Fatalf("TableMetadata: expected ErrNoTable, got %v", err)
 		}
 	})
+}
+
+type keyspaceCapturingQueryObserver struct{ keyspace string }
+
+func (o *keyspaceCapturingQueryObserver) ObserveQuery(_ context.Context, q ObservedQuery) {
+	o.keyspace = q.Keyspace
+}
+
+type keyspaceCapturingBatchObserver struct{ keyspace string }
+
+func (o *keyspaceCapturingBatchObserver) ObserveBatch(_ context.Context, b ObservedBatch) {
+	o.keyspace = b.Keyspace
+}
+
+// keyspaceCapturingExecutable is a fake ExecutableQuery that records the
+// keyspace argument queryExecutor.attemptQuery passes to attempt(). Keyspace()
+// returns effectiveKS (the per-statement override), while attempt captures
+// whatever attemptQuery actually forwards, so the test fails if attemptQuery
+// stops using the effective keyspace.
+type keyspaceCapturingExecutable struct {
+	ExecutableQuery
+	effectiveKS     string
+	attemptKeyspace string
+}
+
+func (e *keyspaceCapturingExecutable) Keyspace() string { return e.effectiveKS }
+
+func (e *keyspaceCapturingExecutable) execute(context.Context, *Conn, *queryMetrics) *Iter {
+	return &Iter{}
+}
+
+func (e *keyspaceCapturingExecutable) finishAttempt(_ attemptToken, keyspace string, _ time.Time, _ *Iter, _ *HostInfo) {
+	e.attemptKeyspace = keyspace
+}
+
+// TestAttemptQueryReportsEffectiveKeyspace verifies that queryExecutor.attemptQuery
+// forwards the query's effective keyspace (Query.Keyspace(), which honors the
+// proto v5 SetKeyspace override) to attempt(), rather than the pool/session
+// keyspace. Reverting attemptQuery to pass the pool keyspace fails this test.
+func TestAttemptQueryReportsEffectiveKeyspace(t *testing.T) {
+	const overrideKS = "override_ks"
+
+	qe := &queryExecutor{}
+	exec := &keyspaceCapturingExecutable{effectiveKS: overrideKS}
+	conn := &Conn{host: &HostInfo{hostId: UUID{1}}}
+
+	var localAttempts int64
+	qe.attemptQuery(context.Background(), exec, newQueryMetrics(), nil, &localAttempts, conn)
+
+	if exec.attemptKeyspace != overrideKS {
+		t.Fatalf("attemptQuery forwarded keyspace %q to attempt, want %q", exec.attemptKeyspace, overrideKS)
+	}
+}
+
+// TestQueryAttemptReportsOverrideKeyspaceToObserver verifies the end-to-end wiring
+// from Query.attempt through to the observer: a per-query keyspace override
+// (Query.SetKeyspace) must surface in ObservedQuery.Keyspace.
+func TestQueryAttemptReportsOverrideKeyspaceToObserver(t *testing.T) {
+	const overrideKS = "override_ks"
+
+	obs := &keyspaceCapturingQueryObserver{}
+	q := &Query{
+		stmt:        "SELECT * FROM t",
+		routingInfo: &queryRoutingInfo{},
+		metrics:     newQueryMetrics(),
+		observer:    obs,
+	}
+	q.SetKeyspace(overrideKS)
+
+	if got := q.Keyspace(); got != overrideKS {
+		t.Fatalf("Query.Keyspace() = %q, want %q", got, overrideKS)
+	}
+
+	token := q.metrics.beginAttempt()
+	q.finishAttempt(token, q.Keyspace(), time.Now(), &Iter{}, &HostInfo{hostId: UUID{1}})
+
+	if obs.keyspace != overrideKS {
+		t.Fatalf("ObservedQuery.Keyspace = %q, want %q", obs.keyspace, overrideKS)
+	}
+}
+
+// TestBatchAttemptReportsOverrideKeyspaceToObserver is the batch counterpart of
+// TestQueryAttemptReportsOverrideKeyspaceToObserver.
+func TestBatchAttemptReportsOverrideKeyspaceToObserver(t *testing.T) {
+	const overrideKS = "override_ks"
+
+	obs := &keyspaceCapturingBatchObserver{}
+	b := &Batch{
+		routingInfo: &queryRoutingInfo{},
+		metrics:     newQueryMetrics(),
+		observer:    obs,
+	}
+	b.SetKeyspace(overrideKS)
+
+	if got := b.Keyspace(); got != overrideKS {
+		t.Fatalf("Batch.Keyspace() = %q, want %q", got, overrideKS)
+	}
+
+	token := b.metrics.beginAttempt()
+	b.finishAttempt(token, b.Keyspace(), time.Now(), &Iter{}, &HostInfo{hostId: UUID{2}})
+
+	if obs.keyspace != overrideKS {
+		t.Fatalf("ObservedBatch.Keyspace = %q, want %q", obs.keyspace, overrideKS)
+	}
+}
+
+// TestQueryRoutingInfoAccessorsConcurrentWithWrite exercises every accessor that
+// reads queryRoutingInfo concurrently with a writer mutating it under
+// routingInfo.mu (as GetRoutingKey and Conn.executeQuery both do).
+//
+// Both keyspace and table are covered: the token-aware host policy reads them
+// together (policies.go, scylla.go call qry.Keyspace() and qry.Table() in one
+// expression) from every speculative execution goroutine, so both reads must
+// take routingInfo.mu. Under -race this fails if either lock is dropped.
+//
+// The writer alternates between values of differing length so the unsynchronized
+// case is a genuine torn-read of the string header, not just a formal race.
+func TestQueryRoutingInfoAccessorsConcurrentWithWrite(t *testing.T) {
+	const iterations = 1000
+
+	t.Run("Query", func(t *testing.T) {
+		q := &Query{
+			routingInfo: &queryRoutingInfo{},
+		}
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		// Writer: mimic GetRoutingKey/executeQuery updating routingInfo under the lock.
+		go func() {
+			defer wg.Done()
+			for i := 0; i < iterations; i++ {
+				q.routingInfo.mu.Lock()
+				if i%2 == 0 {
+					q.routingInfo.keyspace, q.routingInfo.table = "ks", "tbl"
+				} else {
+					q.routingInfo.keyspace, q.routingInfo.table = "a_much_longer_keyspace", "a_much_longer_table"
+				}
+				q.routingInfo.mu.Unlock()
+			}
+		}()
+
+		// Reader: mimic attemptQuery and the token-aware policy reading both fields,
+		// plus the pair read Conn.executeQuery does for a tablet-routing hint. The
+		// pair must come from one critical section: keyspace and table are always
+		// written together, so reading them separately can pair one goroutine's
+		// keyspace with another's table even with both reads individually locked.
+		go func() {
+			defer wg.Done()
+			for i := 0; i < iterations; i++ {
+				_ = q.Keyspace()
+				_ = q.Table()
+
+				ks, tbl := q.routingInfo.keyspaceTable()
+				if (ks == "ks") != (tbl == "tbl") {
+					t.Errorf("keyspaceTable() returned a mismatched pair: %q / %q", ks, tbl)
+				}
+			}
+		}()
+
+		wg.Wait()
+	})
+
+	t.Run("Batch", func(t *testing.T) {
+		b := &Batch{
+			routingInfo: &queryRoutingInfo{},
+		}
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		go func() {
+			defer wg.Done()
+			for i := 0; i < iterations; i++ {
+				b.routingInfo.mu.Lock()
+				if i%2 == 0 {
+					b.routingInfo.table = "tbl"
+				} else {
+					b.routingInfo.table = "a_much_longer_table"
+				}
+				b.routingInfo.mu.Unlock()
+			}
+		}()
+
+		go func() {
+			defer wg.Done()
+			for i := 0; i < iterations; i++ {
+				_ = b.Keyspace()
+				_ = b.Table()
+			}
+		}()
+
+		wg.Wait()
+	})
+}
+
+// TestSetKeyspaceInvalidatesRoutingInfo pins that changing the keyspace override
+// drops the routing metadata GetRoutingKey resolved for the previous one.
+//
+// Keyspace() prefers routingInfo.keyspace over q.keyspace, and the partitioner
+// and table are only ever refreshed by GetRoutingKey. A host-pinned or explicitly
+// routed query never calls GetRoutingKey again, so a stale cache would route
+// (and be reported to observers) with the previous keyspace's metadata.
+func TestSetKeyspaceInvalidatesRoutingInfo(t *testing.T) {
+	t.Parallel()
+
+	// Stand in for GetRoutingKey having resolved the first override.
+	cached := func(ri *queryRoutingInfo) {
+		ri.mu.Lock()
+		defer ri.mu.Unlock()
+		ri.keyspace = "ks_a"
+		ri.table = "tbl_a"
+		ri.partitioner = murmur3Partitioner{}
+		ri.lwt = true
+	}
+
+	t.Run("Query", func(t *testing.T) {
+		q := &Query{routingInfo: &queryRoutingInfo{}}
+		q.SetKeyspace("ks_a")
+		cached(q.routingInfo)
+
+		q.SetKeyspace("ks_b")
+
+		require.Equal(t, "ks_b", q.Keyspace(), "Keyspace() must follow the new override, not the stale cache")
+		require.Empty(t, q.Table(), "cached table must not survive a keyspace change")
+		require.Nil(t, q.routingInfo.getPartitioner(), "cached partitioner must not survive a keyspace change")
+		require.False(t, q.routingInfo.isLWT(), "cached lwt flag must not survive a keyspace change")
+	})
+
+	t.Run("Batch", func(t *testing.T) {
+		b := &Batch{routingInfo: &queryRoutingInfo{}}
+		b.SetKeyspace("ks_a")
+		cached(b.routingInfo)
+
+		b.SetKeyspace("ks_b")
+
+		require.Equal(t, "ks_b", b.Keyspace())
+		require.Empty(t, b.Table())
+		require.Nil(t, b.routingInfo.getPartitioner(), "cached partitioner must not survive a keyspace change")
+		require.False(t, b.routingInfo.isLWT(), "cached lwt flag must not survive a keyspace change")
+	})
+
+	// WithContext returns a shallow copy that shares the routingInfo pointer, so
+	// dropping the cache in place would reach back into the query the copy came
+	// from. That query is not necessarily going to rebuild it: GetRoutingKey
+	// returns early when an explicit routing key is set, which leaves it routing
+	// on a nil partitioner and reporting an empty table — a worse failure than the
+	// stale cache, and one the source never asked for.
+	t.Run("Query/WithContext does not disturb the source", func(t *testing.T) {
+		q := &Query{routingInfo: &queryRoutingInfo{}, routingKey: []byte{0x01}}
+		q.SetKeyspace("ks_a")
+		cached(q.routingInfo)
+
+		copied := q.WithContext(context.Background())
+		copied.SetKeyspace("ks_b")
+
+		require.Equal(t, "ks_b", copied.Keyspace(), "the copy must follow its own override")
+		require.Empty(t, copied.Table(), "the copy must not inherit the source's cached table")
+
+		require.Equal(t, "ks_a", q.Keyspace(), "the source's resolved keyspace must survive")
+		require.Equal(t, "tbl_a", q.Table(), "the source's cached table must survive")
+		require.NotNil(t, q.routingInfo.getPartitioner(), "the source's cached partitioner must survive")
+		require.True(t, q.routingInfo.isLWT(), "the source's cached lwt flag must survive")
+	})
+
+	t.Run("Batch/WithContext does not disturb the source", func(t *testing.T) {
+		b := &Batch{routingInfo: &queryRoutingInfo{}}
+		b.SetKeyspace("ks_a")
+		cached(b.routingInfo)
+
+		copied := b.WithContext(context.Background())
+		copied.SetKeyspace("ks_b")
+
+		require.Equal(t, "ks_b", copied.Keyspace())
+		require.Nil(t, copied.routingInfo.getPartitioner(), "the copy must not inherit the source's cached partitioner")
+
+		require.Equal(t, "tbl_a", b.Table(), "the source's cached table must survive")
+		require.NotNil(t, b.routingInfo.getPartitioner(), "the source's cached partitioner must survive")
+		require.True(t, b.routingInfo.isLWT(), "the source's cached lwt flag must survive")
+	})
+}
+
+// TestResolveRoutingKeyspaceTable pins the precedence used to pick the keyspace
+// and table a prepared statement targets. The default (SetKeyspace override or
+// Cluster.Keyspace) must never shadow the per-column metadata: routingKeyInfo
+// seeds its keyspace variable with that default in order to build the cache key,
+// and if the default won, a statement against another keyspace's table would be
+// routed with the session keyspace and get the wrong partitioner.
+func TestResolveRoutingKeyspaceTable(t *testing.T) {
+	t.Parallel()
+
+	col := func(ks, tbl string) []ColumnInfo {
+		return []ColumnInfo{{Keyspace: ks, Table: tbl, Name: "id"}}
+	}
+
+	tests := []struct {
+		name         string
+		meta         preparedMetadata
+		def          string
+		wantKeyspace string
+		wantTable    string
+	}{
+		{
+			name:         "global table spec wins over the default",
+			meta:         preparedMetadata{keyspace: "global_ks", table: "global_tbl"},
+			def:          "session_ks",
+			wantKeyspace: "global_ks",
+			wantTable:    "global_tbl",
+		},
+		{
+			name: "global table spec wins over per-column metadata",
+			meta: preparedMetadata{
+				keyspace:       "global_ks",
+				table:          "global_tbl",
+				resultMetadata: resultMetadata{columns: col("column_ks", "column_tbl")},
+			},
+			def:          "session_ks",
+			wantKeyspace: "global_ks",
+			wantTable:    "global_tbl",
+		},
+		{
+			// The regression this helper exists for: no global table spec, so the
+			// keyspace must come from the columns and not from the session default.
+			name: "per-column metadata wins over the default",
+			meta: preparedMetadata{
+				resultMetadata: resultMetadata{columns: col("column_ks", "column_tbl")},
+			},
+			def:          "session_ks",
+			wantKeyspace: "column_ks",
+			wantTable:    "column_tbl",
+		},
+		{
+			name: "per-column keyspace fills in a partial global spec",
+			meta: preparedMetadata{
+				table:          "global_tbl",
+				resultMetadata: resultMetadata{columns: col("column_ks", "column_tbl")},
+			},
+			def:          "session_ks",
+			wantKeyspace: "column_ks",
+			wantTable:    "global_tbl",
+		},
+		{
+			name:         "default is the last resort",
+			meta:         preparedMetadata{},
+			def:          "session_ks",
+			wantKeyspace: "session_ks",
+			wantTable:    "",
+		},
+		{
+			name:         "no source at all yields empty",
+			meta:         preparedMetadata{},
+			def:          "",
+			wantKeyspace: "",
+			wantTable:    "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			keyspace, table := resolveRoutingKeyspaceTable(&tt.meta, tt.def)
+			if keyspace != tt.wantKeyspace {
+				t.Errorf("keyspace = %q, want %q", keyspace, tt.wantKeyspace)
+			}
+			if table != tt.wantTable {
+				t.Errorf("table = %q, want %q", table, tt.wantTable)
+			}
+		})
+	}
 }

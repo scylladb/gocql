@@ -820,6 +820,38 @@ func (s *Session) findTabletReplicasUnsafeForToken(keyspace, table string, token
 	return md.metadata.tabletsMetadata.FindReplicasUnsafeForToken(keyspace, table, token)
 }
 
+// resolveRoutingKeyspaceTable determines which keyspace and table a prepared
+// statement actually targets, for the purpose of picking a partitioner and
+// reading table metadata.
+//
+// The order matters. The prepared metadata's global table spec is authoritative.
+// When FlagGlobalTableSpec is not set the server carries the keyspace/table per
+// column instead, so the first column is the next best source. def (the
+// statement's SetKeyspace override, or else Cluster.Keyspace) is only a last
+// resort: letting it take precedence over the per-column metadata would route a
+// statement that targets another keyspace's table using the session keyspace,
+// yielding the wrong partitioner or a metadata lookup failure.
+//
+// table has no def fallback — there is no session-level default table.
+func resolveRoutingKeyspaceTable(meta *preparedMetadata, def string) (keyspace, table string) {
+	keyspace, table = meta.keyspace, meta.table
+
+	if len(meta.columns) > 0 {
+		if keyspace == "" {
+			keyspace = meta.columns[0].Keyspace
+		}
+		if table == "" {
+			table = meta.columns[0].Table
+		}
+	}
+
+	if keyspace == "" {
+		keyspace = def
+	}
+
+	return keyspace, table
+}
+
 // Returns routing key indexes and type info.
 // If keyspace == "" it uses the keyspace which is specified in Cluster.Keyspace
 func (s *Session) routingKeyInfo(ctx context.Context, stmt string, keyspace string, requestTimeout time.Duration) (*routingKeyInfo, error) {
@@ -888,22 +920,14 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string, keyspace stri
 		return nil, nil
 	}
 
-	table := info.request.table
-	if info.request.keyspace != "" {
-		keyspace = info.request.keyspace
-	}
-
-	// Fall back to per-column metadata when FlagGlobalTableSpec is not set.
-	if keyspace == "" && len(info.request.columns) > 0 {
-		keyspace = info.request.columns[0].Keyspace
-	}
-	if table == "" && len(info.request.columns) > 0 {
-		table = info.request.columns[0].Table
-	}
+	// Resolve the statement's real target from the prepared metadata. Note this
+	// reassigns keyspace: routingKeyInfoCacheKey was already built from the
+	// requested keyspace above and is unaffected.
+	keyspace, table := resolveRoutingKeyspaceTable(&info.request, keyspace)
 
 	partitioner, err := scyllaGetTablePartitioner(s, keyspace, table)
 	if err != nil {
-		// don't cache this error
+		// don't cache this error, but make sure all waiters see the same failure.
 		inflight.err = err
 		s.routingKeyInfoCache.Remove(routingKeyInfoCacheKey)
 		return nil, inflight.err
@@ -1817,6 +1841,16 @@ func (qri *queryRoutingInfo) getPartitioner() Partitioner {
 	return qri.partitioner
 }
 
+// keyspaceTable returns the cached keyspace and table together, under a single
+// lock. They are always written as a pair (by GetRoutingKey and by
+// Conn.executeQuery), so reading them in one critical section is what keeps a
+// reader from pairing one goroutine's keyspace with another's table.
+func (qri *queryRoutingInfo) keyspaceTable() (string, string) {
+	qri.mu.RLock()
+	defer qri.mu.RUnlock()
+	return qri.keyspace, qri.table
+}
+
 func (q *Query) defaultsFromSession() {
 	s := q.session
 
@@ -2088,8 +2122,15 @@ func (q *Query) Keyspace() string {
 	if q.getKeyspace != nil {
 		return q.getKeyspace()
 	}
-	if q.routingInfo.keyspace != "" {
-		return q.routingInfo.keyspace
+	// routingInfo.keyspace is written under routingInfo.mu by GetRoutingKey,
+	// which can run concurrently with the (speculative) execution goroutines
+	// that call Keyspace() via queryExecutor.attemptQuery. Read it under the
+	// same lock, matching queryRoutingInfo.isLWT/getPartitioner.
+	q.routingInfo.mu.RLock()
+	routingKeyspace := q.routingInfo.keyspace
+	q.routingInfo.mu.RUnlock()
+	if routingKeyspace != "" {
+		return routingKeyspace
 	}
 	if q.keyspace != "" {
 		return q.keyspace
@@ -2105,6 +2146,12 @@ func (q *Query) Keyspace() string {
 
 // Table returns name of the table the query will be executed against.
 func (q *Query) Table() string {
+	// routingInfo.table is written under routingInfo.mu by GetRoutingKey and by
+	// Conn.executeQuery, either of which can run concurrently with the
+	// (speculative) execution goroutines that reach Table() via the token-aware
+	// host policy. Read it under the same lock, matching Query.Keyspace().
+	q.routingInfo.mu.RLock()
+	defer q.routingInfo.mu.RUnlock()
 	return q.routingInfo.table
 }
 
@@ -2548,6 +2595,21 @@ func (q *Query) GetHostID() string {
 // Only available on protocol >= 5.
 func (q *Query) SetKeyspace(keyspace string) *Query {
 	q.keyspace = keyspace
+	// GetRoutingKey resolves the keyspace override into routingInfo, and
+	// Keyspace() gives that cached value precedence over q.keyspace. Left alone,
+	// SetKeyspace("a"); GetRoutingKey(); SetKeyspace("b") would keep reporting
+	// keyspace "a" — and keep routing with "a"'s table metadata and partitioner —
+	// on any execution path that does not call GetRoutingKey again (a host-pinned
+	// or explicitly routed query).
+	//
+	// Detached rather than cleared in place, because WithContext returns a shallow
+	// copy that shares this pointer. Clearing would reach back through it and wipe
+	// the cache of the query the copy came from, which is worse than the bug it
+	// fixes: that query's GetRoutingKey returns early when it has an explicit
+	// routing key, so nothing ever rebuilds what was cleared and it goes on with a
+	// nil partitioner and an empty table. A fresh instance gives this query its own
+	// cache and leaves every other holder's intact.
+	q.routingInfo = &queryRoutingInfo{}
 	return q
 }
 
@@ -3304,6 +3366,12 @@ func (b *Batch) Keyspace() string {
 
 // Batch has no reasonable eqivalent of Query.Table().
 func (b *Batch) Table() string {
+	// Read under routingInfo.mu for the same reason as Query.Table(). Nothing
+	// currently writes batch.routingInfo.table (Conn.executeBatch only sets
+	// lwt), but leaving one of the two accessors unlocked is how the Query.Table
+	// race was introduced in the first place.
+	b.routingInfo.mu.RLock()
+	defer b.routingInfo.mu.RUnlock()
 	return b.routingInfo.table
 }
 
@@ -3637,6 +3705,11 @@ func (b *Batch) GetHostID() string {
 // Only available on protocol >= 5.
 func (b *Batch) SetKeyspace(keyspace string) *Batch {
 	b.keyspace = keyspace
+	// Batch.Keyspace() reads b.keyspace directly, but Batch.GetRoutingKey still
+	// caches the partitioner (and lwt) it resolved for the previous override, and
+	// Batch.Partitioner()/IsLWT() serve that cache. Detached for the same reasons
+	// as Query.SetKeyspace, including the sharing through Batch.WithContext.
+	b.routingInfo = &queryRoutingInfo{}
 	return b
 }
 

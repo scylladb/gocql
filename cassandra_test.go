@@ -1896,7 +1896,7 @@ func TestQueryInfo(t *testing.T) {
 	defer session.Close()
 
 	conn := getRandomConn(t, session)
-	info, err := conn.prepareStatement(context.Background(), "SELECT release_version, host_id FROM system.local WHERE key = ?", nil, conn.currentKeyspace, time.Second)
+	info, err := conn.prepareStatement(context.Background(), "SELECT release_version, host_id FROM system.local WHERE key = ?", nil, conn.getCurrentKeyspace(), time.Second)
 
 	if err != nil {
 		t.Fatalf("Failed to execute query for preparing statement: %v", err)
@@ -3688,7 +3688,7 @@ func TestPrepareExecuteMetadataChangedFlag(t *testing.T) {
 	require.Len(t, row, 1, "Expected to retrieve a single column")
 	require.Equal(t, 1, row["id"])
 
-	stmtCacheKey := session.stmtsLRU.keyFor(conn.host.HostID(), conn.currentKeyspace, queryBeforeTableAltering.stmt)
+	stmtCacheKey := session.stmtsLRU.keyFor(conn.host.HostID(), conn.getCurrentKeyspace(), queryBeforeTableAltering.stmt)
 	inflight, _ := session.stmtsLRU.get(stmtCacheKey)
 	preparedStatementBeforeTableAltering := inflight.preparedStatment
 

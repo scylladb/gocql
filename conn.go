@@ -214,12 +214,21 @@ type Conn struct {
 	// close(frameTicker), so the startup reader can still be unwinding when
 	// serve() starts. Work added to processFrameSource after the response is
 	// delivered would need a real barrier here.
-	headerReader         headerReader
-	r                    connReadSource
-	session              *Session
-	framers              connFramers
-	cancel               context.CancelFunc
-	currentKeyspace      string
+	headerReader headerReader
+	r            connReadSource
+	session      *Session
+	framers      connFramers
+	cancel       context.CancelFunc
+	// currentKeyspace is the keyspace this connection was switched to by
+	// Conn.UseKeyspace, and the default the prepared-statement cache is keyed by
+	// (see executeQuery/executeBatch). It deliberately tracks only driver-issued
+	// USE: a `USE` statement a caller executes as an ordinary query switches the
+	// server side of whichever single pooled connection it landed on, and the
+	// driver does not follow it — so cache keys keep using the configured keyspace.
+	//
+	// Atomic because UseKeyspace is exported: a caller invoking it on a live
+	// connection would otherwise race the request goroutines reading it.
+	currentKeyspace      atomic.Pointer[string]
 	addr                 string
 	usingTimeoutClause   string
 	cqlProtoExts         []cqlProtocolExtension
@@ -2339,7 +2348,7 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 
 	// If a keyspace for the qry is overriden,
 	// then we should use it to create stmt cache key
-	usedKeyspace := c.currentKeyspace
+	usedKeyspace := c.getCurrentKeyspace()
 	if qry.keyspace != "" {
 		usedKeyspace = qry.keyspace
 	}
@@ -2348,6 +2357,15 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 		frame frameBuilder
 		info  *preparedStatment
 	)
+
+	// The keyspace and table this attempt routes by, used below to attribute a
+	// tablet-routing hint. Held in locals rather than read back out of
+	// qry.routingInfo: one *Query (and one *queryRoutingInfo) is shared by every
+	// speculative execution goroutine and by the auto-paging copy, so a sibling
+	// goroutine can overwrite the cached pair between the write below and the read
+	// at the end of this function. Seeded from the cache for the non-prepared path,
+	// where only GetRoutingKey has written it.
+	routingKeyspace, routingTable := qry.routingInfo.keyspaceTable()
 
 	if !qry.skipPrepare && qry.shouldPrepare() {
 		// Prepare all DML queries. Other queries can not be prepared.
@@ -2396,13 +2414,16 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 		}
 
 		// Set "lwt", keyspace", "table" property in the query if it is present in preparedMetadata
+		routingKeyspace = info.request.keyspace
+		if routingKeyspace == "" {
+			routingKeyspace = usedKeyspace
+		}
+		routingTable = info.request.table
+
 		qry.routingInfo.mu.Lock()
 		qry.routingInfo.lwt = info.request.lwt
-		qry.routingInfo.keyspace = info.request.keyspace
-		if info.request.keyspace == "" {
-			qry.routingInfo.keyspace = usedKeyspace
-		}
-		qry.routingInfo.table = info.request.table
+		qry.routingInfo.keyspace = routingKeyspace
+		qry.routingInfo.table = routingTable
 		qry.routingInfo.mu.Unlock()
 	} else {
 		frame = &writeQueryFrame{
@@ -2429,7 +2450,7 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 
 	if len(framer.customPayload) > 0 {
 		if hint, ok := framer.customPayload["tablets-routing-v1"]; ok {
-			tablet, err := unmarshalTabletHint(hint, c.version, qry.routingInfo.keyspace, qry.routingInfo.table)
+			tablet, err := unmarshalTabletHint(hint, c.version, routingKeyspace, routingTable)
 			if err != nil {
 				return newErrorIterWithReleasedFramer(err, framer).
 					bindWarningHandlerWithMetrics(qry, metrics, warningHandler)
@@ -2599,9 +2620,24 @@ func (c *Conn) UseKeyspace(keyspace string) error {
 		return NewErrProtocol("unknown frame in response to USE: %v", x)
 	}
 
-	c.currentKeyspace = keyspace
+	c.setCurrentKeyspace(keyspace)
 
 	return nil
+}
+
+// setCurrentKeyspace records the keyspace this connection was switched to. See the
+// currentKeyspace field for why it is atomic.
+func (c *Conn) setCurrentKeyspace(keyspace string) {
+	c.currentKeyspace.Store(&keyspace)
+}
+
+// getCurrentKeyspace returns the keyspace this connection was switched to, or ""
+// if it was never switched (Cluster.Keyspace empty, or a control connection).
+func (c *Conn) getCurrentKeyspace() string {
+	if ks := c.currentKeyspace.Load(); ks != nil {
+		return *ks
+	}
+	return ""
 }
 
 func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
@@ -2622,7 +2658,7 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 	req.keyspace = batch.keyspace
 	req.nowInSeconds = batch.nowInSeconds
 
-	usedKeyspace := c.currentKeyspace
+	usedKeyspace := c.getCurrentKeyspace()
 	if batch.keyspace != "" {
 		usedKeyspace = batch.keyspace
 	}

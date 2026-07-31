@@ -86,7 +86,12 @@ func (q *queryExecutor) attemptQuery(ctx context.Context, qry ExecutableQuery, m
 	} else {
 		*localAttempts++
 	}
-	qry.finishAttempt(token, q.pool.keyspace, end, iter, conn.host)
+	// Report the query's effective keyspace to observers rather than the
+	// pool/session keyspace. Query.SetKeyspace()/Batch.SetKeyspace() (proto v5
+	// keyspace override) make these diverge, and Keyspace() is the single
+	// source of truth for a statement's keyspace (routing/prepared metadata,
+	// then the SetKeyspace override, then the session default).
+	qry.finishAttempt(token, qry.Keyspace(), end, iter, conn.host)
 
 	return iter
 }

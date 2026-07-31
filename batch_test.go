@@ -114,7 +114,7 @@ func TestBatch_WithNowInSeconds(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	require.Equal(t, remainingTTL, 10)
+	require.Equal(t, 10, remainingTTL)
 }
 
 func TestBatch_SetKeyspace(t *testing.T) {
@@ -126,9 +126,9 @@ func TestBatch_SetKeyspace(t *testing.T) {
 	}
 
 	const keyspaceStmt = `
-		CREATE KEYSPACE IF NOT EXISTS gocql_keyspace_override_test 
+		CREATE KEYSPACE IF NOT EXISTS gocql_keyspace_override_test
 		WITH replication = {
-			'class': 'SimpleStrategy', 
+			'class': 'SimpleStrategy',
 			'replication_factor': '1'
 		};
 `
