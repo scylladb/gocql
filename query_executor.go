@@ -262,7 +262,7 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, metrics *qu
 	executionAttempts *atomic.Int64, hostIter NextHost) (*Iter, Consistency) {
 	rt := qry.retryPolicy()
 	if rt == nil {
-		rt = &SimpleRetryPolicy{NumRetries: 3}
+		rt = defaultRetryPolicy
 	}
 
 	lwtRT, isRTSupportsLWT := rt.(LWTRetryPolicy)

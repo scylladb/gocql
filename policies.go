@@ -264,6 +264,9 @@ type SimpleRetryPolicy struct {
 	NumRetries int // Number of times to retry a query
 }
 
+// defaultRetryPolicy is the shared fallback when no RetryPolicy is configured.
+var defaultRetryPolicy RetryPolicy = &SimpleRetryPolicy{NumRetries: 3}
+
 // Attempt tells gocql to attempt the query again based on query.Attempts being less
 // than the NumRetries defined in the policy.
 func (s *SimpleRetryPolicy) Attempt(q RetryableQuery) bool {
