@@ -112,7 +112,7 @@ func TestMarshalQueryValuesJITDeclinesMismatchedLengths(t *testing.T) {
 	values := []any{int32(1), int32(2)} // more values than columns
 	dst := make([]queryValues, len(values))
 
-	handled, err := marshalQueryValuesJIT(columns, values, dst)
+	handled, err := marshalQueryValuesJIT(stmtFor(columns), values, dst)
 	if handled || err != nil {
 		t.Fatalf("expected the fast path to decline, got handled=%v err=%v", handled, err)
 	}
@@ -126,7 +126,7 @@ func TestMarshalQueryValuesJITSurfacesEncodeError(t *testing.T) {
 	values := []any{int64(math.MaxInt32) + 1} // out of range for a CQL int
 	dst := make([]queryValues, len(values))
 
-	handled, err := marshalQueryValuesJIT(columns, values, dst)
+	handled, err := marshalQueryValuesJIT(stmtFor(columns), values, dst)
 	if !handled {
 		t.Fatal("expected the fast path to handle these values")
 	}
@@ -185,5 +185,13 @@ func TestJITEncoderNilAgainstComplexColumns(t *testing.T) {
 				t.Fatalf("generic Marshal disagrees: out=%#v err=%v", genOut, genErr)
 			}
 		})
+	}
+}
+
+// stmtFor builds a prepared statement whose request metadata carries columns,
+// which is where the encoder cache reads them from.
+func stmtFor(columns []ColumnInfo) *preparedStatment {
+	return &preparedStatment{
+		request: preparedMetadata{resultMetadata: resultMetadata{columns: columns}},
 	}
 }
