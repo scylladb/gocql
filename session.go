@@ -31,6 +31,7 @@ import (
 	"fmt"
 	"maps"
 	"net"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -2652,6 +2653,7 @@ type Iter struct {
 	next                  *nextIter
 	host                  *HostInfo
 	rowDecoder            *compiledRowDecoder // JIT-compiled fast decoder, set on first Scan
+	rowDecoderDest        []reflect.Type      // dest shape rowDecoder was compiled for; see ensureRowDecoderFor
 	// preparedStmt, when non-nil, is the prepared statement this Iter's rows
 	// came from — used to cache the compiled row decoder across repeat
 	// executions (see preparedStatment.jitDecoder) instead of recompiling it
@@ -2665,13 +2667,19 @@ type Iter struct {
 	// scanColumns caches the column names computed by RowData() so that
 	// MapScan does not recompute them on every row. Populated lazily on
 	// the first call to getScanColumns().
-	scanColumns       []string
-	meta              resultMetadata
-	pos               int
-	numRows           int
-	closed            int32
-	warningsHandled   int32
-	warningQueryOwned bool
+	scanColumns []string
+	meta        resultMetadata
+	pos         int
+	numRows     int
+	// rowDecoderColumnsSig is the columnsSignature(meta.columns) rowDecoder
+	// was compiled for; see ensureRowDecoderFor. Grouped with the other
+	// scalar fields (rather than beside rowDecoder/rowDecoderDest above) for
+	// fieldalignment: a lone uint64 between pointer/slice fields would widen
+	// the struct's GC pointer-scanned prefix for no benefit.
+	rowDecoderColumnsSig uint64
+	closed               int32
+	warningsHandled      int32
+	warningQueryOwned    bool
 }
 
 // Host returns the host which the query was sent to.
@@ -2682,6 +2690,47 @@ func (iter *Iter) Host() *HostInfo {
 // Columns returns the name and type of the selected columns.
 func (iter *Iter) Columns() []ColumnInfo {
 	return iter.meta.columns
+}
+
+// ensureRowDecoderFor makes sure iter.rowDecoder is compiled for dest's exact
+// destination-type shape and iter.meta's current columns, (re)compiling it if
+// either changed since it was last set.
+//
+// The destTypes half of this guards against callers varying dest's types
+// between rows of one Iter (Scan's doc makes no promise otherwise; only
+// ScanInto explicitly disclaims it), which was safe before the JIT decoder
+// existed — the generic Unmarshal path re-derives its behavior from each
+// value's concrete type on every call. A cached compiledRowDecoder is built
+// for one fixed destTypes shape, so reusing it across a shape change would
+// misapply a decoder function compiled for the wrong Go type: at best a
+// type-assertion panic, at worst — if a decoder for one integer width is
+// asked to decode into a differently-sized one via unsafe-free but still
+// type-mismatched pointer math — silently wrong data.
+//
+// The columns half guards a second, independent way rowDecoder can go stale:
+// copyPageData (used when fetchNextPage's Iter is folded into the persisting
+// one) updates iter.meta — potentially to a new schema, if RESULT_METADATA_
+// CHANGED lands on that page boundary — but does not touch iter.rowDecoder.
+// If the caller's dest shape happens to be identical across the page turn
+// (the overwhelming common case — the same Scan(&x, &y, ...) call site, same
+// locals, every row), checking destTypes alone would never notice and would
+// keep applying the old-schema decoder to the new schema's row bytes — the
+// same failure mode getOrCompileRowDecoderCached's columnsSig already
+// protects against for the *stmt-level* cache, just unguarded here at the
+// single-Iter level. columnsSignature is the same cheap, no-allocation hash
+// used there.
+//
+// Both checks are cheap relative to the cost of decoding a row, so neither is
+// skipped even though either changing mid-iteration is rare.
+func (iter *Iter) ensureRowDecoderFor(dest []any) {
+	columnsSig := columnsSignature(iter.meta.columns)
+	if iter.rowDecoder != nil && iter.rowDecoderColumnsSig == columnsSig &&
+		destTypesEqualToValues(dest, iter.rowDecoderDest) {
+		return
+	}
+	iter.rowDecoder = getOrCompileRowDecoderCached(iter.preparedStmt, iter.meta.columns, dest)
+	iter.rowDecoderDest = destTypesOf(dest)
+	iter.rowDecoderColumnsSig = columnsSig
 }
 
 // copyPageData copies page-related fields from src to iter, excluding the closed flag.
@@ -2967,9 +3016,7 @@ func (is *iterScanner) Scan(dest ...any) error {
 	// JIT fast path: when dest count == column count (no tuple expansion),
 	// use the compiled row decoder for direct dispatch.
 	if len(dest) == len(iter.meta.columns) {
-		if iter.rowDecoder == nil {
-			iter.rowDecoder = getOrCompileRowDecoderCached(iter.preparedStmt, iter.meta.columns, dest)
-		}
+		iter.ensureRowDecoderFor(dest)
 		for i := range iter.meta.columns {
 			if dest[i] == nil {
 				continue
@@ -3097,9 +3144,7 @@ func (iter *Iter) scanSlice(dest []any) bool {
 	// Try JIT fast path: compile a row decoder on the first call and reuse it.
 	// Only applicable when dest count == column count (no tuple expansion).
 	if len(dest) == len(iter.meta.columns) {
-		if iter.rowDecoder == nil {
-			iter.rowDecoder = getOrCompileRowDecoderCached(iter.preparedStmt, iter.meta.columns, dest)
-		}
+		iter.ensureRowDecoderFor(dest)
 
 		for i := range iter.meta.columns {
 			colBytes, err := iter.readColumn()
