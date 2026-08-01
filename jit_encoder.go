@@ -110,6 +110,12 @@ func makeEncoderCacheKey(columns []ColumnInfo, srcTypes []reflect.Type) string {
 
 // getOrCompileParamEncoder returns a cached compiled encoder or builds one.
 func getOrCompileParamEncoder(columns []ColumnInfo, values []any) *compiledParamEncoder {
+	srcTypes := srcTypesOf(values)
+	return getOrCompileParamEncoderFromTypes(columns, srcTypes)
+}
+
+// srcTypesOf extracts each value's reflect.Type (nil for a nil value).
+func srcTypesOf(values []any) []reflect.Type {
 	srcTypes := make([]reflect.Type, len(values))
 	for i, v := range values {
 		if v == nil {
@@ -118,7 +124,14 @@ func getOrCompileParamEncoder(columns []ColumnInfo, values []any) *compiledParam
 			srcTypes[i] = reflect.TypeOf(v)
 		}
 	}
+	return srcTypes
+}
 
+// getOrCompileParamEncoderFromTypes is the shared slow path: build (or find
+// in the process-wide cache) the compiledParamEncoder for this exact
+// (columns, srcTypes) shape. Both getOrCompileParamEncoder and a
+// getOrCompileParamEncoderCached miss go through here.
+func getOrCompileParamEncoderFromTypes(columns []ColumnInfo, srcTypes []reflect.Type) *compiledParamEncoder {
 	key := makeEncoderCacheKey(columns, srcTypes)
 	if cached, ok := encoderCache.Load(key); ok {
 		return cached.(*compiledParamEncoder)
@@ -133,6 +146,60 @@ func getOrCompileParamEncoder(columns []ColumnInfo, values []any) *compiledParam
 		encoderCacheCount.Add(1)
 	}
 	return actual.(*compiledParamEncoder)
+}
+
+// valuesMatchSrcTypes reports whether each value's reflect.TypeOf (nil for a
+// nil value) equals the corresponding entry in srcTypes, without allocating
+// a new []reflect.Type to compare against.
+func valuesMatchSrcTypes(values []any, srcTypes []reflect.Type) bool {
+	if len(values) != len(srcTypes) {
+		return false
+	}
+	for i, v := range values {
+		var t reflect.Type
+		if v != nil {
+			t = reflect.TypeOf(v)
+		}
+		if t != srcTypes[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// getOrCompileParamEncoderCached is getOrCompileParamEncoder, but backed by a
+// single-entry cache on stmt (see preparedStatment.jitEncoder) in addition to
+// the process-wide sync.Map: a prepared statement is executed with the same
+// call-site argument types on essentially every repeat execution in real
+// usage, so after the first call this turns encoder resolution into one
+// atomic pointer load plus a comparison against the existing values slice —
+// no new []reflect.Type, no key string, and no sync.Map lookup at all.
+//
+// The columns come from stmt itself rather than from the caller, so a cached
+// encoder cannot be served for a different schema than it was compiled for.
+// (resolveRowDecoder has to compare columns at runtime because its columns
+// arrive from the Iter's own metadata, which a page turn can replace
+// independently of the statement; here the two cannot diverge.) A
+// preparedStatment is immutable once built — a metadata change allocates a new
+// one — so stmt.request.columns is stable for the life of the cache entry.
+//
+// The cache holds one entry, which assumes a statement is executed with one
+// argument shape. A call site alternating shapes for the same statement — say
+// a value and an untyped nil for the same optional parameter — misses every
+// time and pays a resolution plus a store into a process-wide atomic. That is
+// still cheaper than the reflective Marshal it replaces, so it degrades to no
+// worse than not caching, but it does not speed such a caller up.
+func getOrCompileParamEncoderCached(stmt *preparedStatment, values []any) *compiledParamEncoder {
+	if cached := stmt.jitEncoder.Load(); cached != nil && valuesMatchSrcTypes(values, cached.srcTypes) {
+		return cached.enc
+	}
+
+	srcTypes := srcTypesOf(values)
+	enc := getOrCompileParamEncoderFromTypes(stmt.request.columns, srcTypes)
+	// Last writer wins; a lost race just means a future call redoes this
+	// resolution instead of caching it, which is always correct and rare.
+	stmt.jitEncoder.Store(&cachedJITEncoder{srcTypes: srcTypes, enc: enc})
+	return enc
 }
 
 // compileColumnEncoder selects the optimal encoder for a (CQL type, Go type) pair.

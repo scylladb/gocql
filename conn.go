@@ -33,6 +33,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -2332,10 +2333,36 @@ type StreamObserverContext interface {
 }
 
 type preparedStatment struct {
-	response         resultMetadata
+	// jitEncoder caches the compiled parameter encoder for this prepared
+	// statement's most recently seen argument-type shape (see
+	// getOrCompileParamEncoderCached in jit_encoder.go). A prepared statement
+	// is executed with the same call-site argument types on every repeat
+	// execution in virtually all real usage, so this turns the encoder
+	// lookup from a per-call key computation into a single pointer load.
+	//
+	// Declared first so this pointer-sized atomic.Pointer field precedes
+	// the []byte/struct fields below — required for `fieldalignment` (run
+	// as part of `make check`): a slice or non-pointer-shaped field ahead
+	// of it would widen the GC pointer-scanned prefix of the struct for no
+	// benefit.
+	jitEncoder atomic.Pointer[cachedJITEncoder]
+
 	id               []byte
 	resultMetadataID []byte
+	response         resultMetadata
 	request          preparedMetadata
+}
+
+// cachedJITEncoder pairs a compiledParamEncoder with the exact srcTypes
+// shape it was compiled for, so a cache hit can be confirmed with a cheap
+// slice-of-pointers comparison instead of recomputing a string key.
+//
+// enc is declared before srcTypes for fieldalignment (see preparedStatment):
+// the pointer field first keeps the GC pointer-scanned prefix minimal
+// relative to the slice header that follows it.
+type cachedJITEncoder struct {
+	enc      *compiledParamEncoder
+	srcTypes []reflect.Type
 }
 
 type inflightPrepare struct {
@@ -2504,7 +2531,18 @@ func metadataIDTracked(idExchangeActive bool, resultMetadataID []byte) bool {
 // report — the fast path rejects exactly the values Marshal rejects (see
 // TestJITEncoderMatchesGenericMarshal), so re-running the generic loop would
 // only produce the same error after marshalling every value twice.
-func marshalQueryValuesJIT(columns []ColumnInfo, values []any, dst []queryValues) (bool, error) {
+//
+// The encoder is cached on stmt (see getOrCompileParamEncoderCached) so
+// repeat executions of the same statement skip recomputing a cache key
+// entirely. The columns come from stmt.request rather than from the caller,
+// which is what makes that cache safe: the encoder cached on a statement is
+// always the one compiled for that statement's own schema.
+func marshalQueryValuesJIT(stmt *preparedStatment, values []any, dst []queryValues) (bool, error) {
+	if stmt == nil {
+		return false, nil
+	}
+	columns := stmt.request.columns
+
 	// The compiled encoder holds one encoder per column, and each value is
 	// written to its own dst entry, so all three must agree in length. They
 	// diverge when a bind marker expands into several values (a tuple).
@@ -2523,7 +2561,7 @@ func marshalQueryValuesJIT(columns []ColumnInfo, values []any, dst []queryValues
 		}
 	}
 
-	enc := getOrCompileParamEncoder(columns, values)
+	enc := getOrCompileParamEncoderCached(stmt, values)
 	for i, v := range values {
 		val, err := enc.encoders[i](v)
 		if err != nil {
@@ -2608,7 +2646,7 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 		}
 
 		params.values = getQueryValues(len(values))
-		handled, err := marshalQueryValuesJIT(info.request.columns, values, params.values)
+		handled, err := marshalQueryValuesJIT(info, values, params.values)
 		if err != nil {
 			putQueryValues(params.values)
 			return &Iter{err: err}
@@ -2962,7 +3000,7 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 
 			b.values = getQueryValues(info.request.actualColCount)
 
-			handled, err := marshalQueryValuesJIT(info.request.columns, values, b.values)
+			handled, err := marshalQueryValuesJIT(info, values, b.values)
 			if err != nil {
 				putBatchQueryValues(req.statements)
 				return &Iter{err: err}
