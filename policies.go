@@ -984,13 +984,12 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 		}
 	}
 
+	// SelectedHost always needs a boxed token; a nil token disables shard-aware picking.
+	if token == nil {
+		token = tokenCasted
+	}
+
 	if len(replicas) == 0 {
-		// Rare fallback (no tablet/replica-map match): GetHostForToken needs
-		// a boxed Token, so box tokenCasted here instead of unconditionally
-		// above — this path is not the common per-query case.
-		if token == nil {
-			token = tokenCasted
-		}
 		host, _ := meta.tokenRing.GetHostForToken(token)
 		replicas = []*HostInfo{host}
 	}
