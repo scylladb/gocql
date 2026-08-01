@@ -215,6 +215,69 @@ func appendTypeInfoKey(buf []byte, t TypeInfo) []byte {
 	return appendStr(appendStr(append(buf, 6), fmt.Sprintf("%T", t)), fmt.Sprint(t))
 }
 
+// columnsEqual reports whether two column lists decode identically: same count
+// and same CQL type per position. Column names do not affect decoding.
+func columnsEqual(a, b []ColumnInfo) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if !typeInfoEqual(a[i].TypeInfo, b[i].TypeInfo) {
+			return false
+		}
+	}
+	return true
+}
+
+// typeInfoEqual reports whether two TypeInfos describe the same CQL type,
+// nested types included. NativeType is compared as a struct to avoid interface calls.
+func typeInfoEqual(a, b TypeInfo) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+
+	switch at := a.(type) {
+	case NativeType:
+		bt, ok := b.(NativeType)
+		return ok && at == bt
+	case CollectionType:
+		bt, ok := b.(CollectionType)
+		return ok && at.NativeType == bt.NativeType &&
+			typeInfoEqual(at.Key, bt.Key) && typeInfoEqual(at.Elem, bt.Elem)
+	case VectorType:
+		bt, ok := b.(VectorType)
+		return ok && at.NativeType == bt.NativeType && at.Dimensions == bt.Dimensions &&
+			typeInfoEqual(at.SubType, bt.SubType)
+	case TupleTypeInfo:
+		bt, ok := b.(TupleTypeInfo)
+		if !ok || at.NativeType != bt.NativeType || len(at.Elems) != len(bt.Elems) {
+			return false
+		}
+		for i := range at.Elems {
+			if !typeInfoEqual(at.Elems[i], bt.Elems[i]) {
+				return false
+			}
+		}
+		return true
+	case UDTTypeInfo:
+		bt, ok := b.(UDTTypeInfo)
+		if !ok || at.NativeType != bt.NativeType || at.KeySpace != bt.KeySpace ||
+			at.Name != bt.Name || len(at.Elements) != len(bt.Elements) {
+			return false
+		}
+		for i := range at.Elements {
+			if at.Elements[i].Name != bt.Elements[i].Name ||
+				!typeInfoEqual(at.Elements[i].Type, bt.Elements[i].Type) {
+				return false
+			}
+		}
+		return true
+	}
+
+	// Unknown TypeInfo implementation: recompile rather than risk a wrong reuse.
+	return false
+}
+
 // compileColumnDecoder selects the decoder for a (CQL type, Go type) pair, else falls back to Unmarshal.
 // Compares exact reflect.Types, not Kind: *MyInt would fail the dest.(*int32) assertion.
 func compileColumnDecoder(info TypeInfo, destType reflect.Type) columnDecoder {

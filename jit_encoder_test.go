@@ -359,3 +359,6 @@ func TestJITEncoderCacheKeyVersion(t *testing.T) {
 	}
 }
 
+func getOrCompileParamEncoder(columns []ColumnInfo, values []any) *compiledParamEncoder {
+	return getOrCompileParamEncoderFromTypes(columns, srcTypesOf(values))
+}

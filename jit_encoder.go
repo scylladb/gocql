@@ -121,8 +121,8 @@ func makeEncoderCacheKey(columns []ColumnInfo, srcTypes []reflect.Type) string {
 	return string(buf)
 }
 
-// getOrCompileParamEncoder returns a cached compiled encoder or builds one.
-func getOrCompileParamEncoder(columns []ColumnInfo, values []any) *compiledParamEncoder {
+// srcTypesOf extracts each value's reflect.Type (nil for a nil value).
+func srcTypesOf(values []any) []reflect.Type {
 	srcTypes := make([]reflect.Type, len(values))
 	for i, v := range values {
 		if v == nil {
@@ -131,7 +131,12 @@ func getOrCompileParamEncoder(columns []ColumnInfo, values []any) *compiledParam
 			srcTypes[i] = reflect.TypeOf(v)
 		}
 	}
+	return srcTypes
+}
 
+// getOrCompileParamEncoderFromTypes builds (or finds in the process-wide cache)
+// the compiledParamEncoder for this exact (columns, srcTypes) shape.
+func getOrCompileParamEncoderFromTypes(columns []ColumnInfo, srcTypes []reflect.Type) *compiledParamEncoder {
 	key := makeEncoderCacheKey(columns, srcTypes)
 	if cached, ok := encoderCache.Load(key); ok {
 		return cached.(*compiledParamEncoder)
@@ -146,6 +151,40 @@ func getOrCompileParamEncoder(columns []ColumnInfo, values []any) *compiledParam
 		encoderCacheCount.Add(1)
 	}
 	return actual.(*compiledParamEncoder)
+}
+
+// valuesMatchSrcTypes reports whether each value's reflect.TypeOf (nil for a
+// nil value) equals the corresponding entry in srcTypes, without allocating
+// a new []reflect.Type to compare against.
+func valuesMatchSrcTypes(values []any, srcTypes []reflect.Type) bool {
+	if len(values) != len(srcTypes) {
+		return false
+	}
+	for i, v := range values {
+		var t reflect.Type
+		if v != nil {
+			t = reflect.TypeOf(v)
+		}
+		if t != srcTypes[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// getOrCompileParamEncoderCached resolves the encoder via a single-entry
+// per-statement cache (preparedStatment.jitEncoder), then the process-wide one.
+// Columns come from stmt, whose metadata is immutable, so a hit cannot be stale.
+func getOrCompileParamEncoderCached(stmt *preparedStatment, values []any) *compiledParamEncoder {
+	if cached := stmt.jitEncoder.Load(); cached != nil && valuesMatchSrcTypes(values, cached.srcTypes) {
+		return cached.enc
+	}
+
+	srcTypes := srcTypesOf(values)
+	enc := getOrCompileParamEncoderFromTypes(stmt.request.columns, srcTypes)
+	// Last writer wins; a lost race only costs a later re-resolution.
+	stmt.jitEncoder.Store(&cachedJITEncoder{srcTypes: srcTypes, enc: enc})
+	return enc
 }
 
 // compileColumnEncoder selects the optimal encoder for a (CQL type, Go type) pair.

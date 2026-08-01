@@ -33,6 +33,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -2436,10 +2437,21 @@ type StreamObserverContext interface {
 }
 
 type preparedStatment struct {
-	response         resultMetadata
+	// jitEncoder caches the encoder for the last-seen argument-type shape.
+	// First field for fieldalignment (pointer-sized atomic ahead of slices).
+	jitEncoder atomic.Pointer[cachedJITEncoder]
+
 	id               []byte
 	resultMetadataID []byte
+	response         resultMetadata
 	request          preparedMetadata
+}
+
+// cachedJITEncoder pairs an encoder with the srcTypes it was compiled for, so a
+// hit is a cheap comparison. enc precedes srcTypes for fieldalignment.
+type cachedJITEncoder struct {
+	enc      *compiledParamEncoder
+	srcTypes []reflect.Type
 }
 
 type inflightPrepare struct {
@@ -2655,10 +2667,15 @@ func metadataIDTracked(idExchangeActive bool, resultMetadataID []byte) bool {
 	return idExchangeActive && len(resultMetadataID) > 0
 }
 
-// marshalQueryValuesJIT encodes values via the JIT encoder; false means the
-// caller must use the generic loop. On true, errors match Marshal's (see
-// TestJITEncoderMatchesGenericMarshal), so they are final.
-func marshalQueryValuesJIT(columns []ColumnInfo, values []any, dst []queryValues) (bool, error) {
+// marshalQueryValuesJIT encodes values via the statement's cached JIT encoder;
+// false means the caller must use the generic loop. On true, errors match
+// Marshal's (see TestJITEncoderMatchesGenericMarshal), so they are final.
+func marshalQueryValuesJIT(stmt *preparedStatment, values []any, dst []queryValues) (bool, error) {
+	if stmt == nil {
+		return false, nil
+	}
+	columns := stmt.request.columns
+
 	// The compiled encoder holds one encoder per column, and each value is
 	// written to its own dst entry, so all three must agree in length. They
 	// diverge when a bind marker expands into several values (a tuple).
@@ -2677,7 +2694,7 @@ func marshalQueryValuesJIT(columns []ColumnInfo, values []any, dst []queryValues
 		}
 	}
 
-	enc := getOrCompileParamEncoder(columns, values)
+	enc := getOrCompileParamEncoderCached(stmt, values)
 	return true, enc.encodeInto(columns, values, dst)
 }
 
@@ -2762,7 +2779,7 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 		}
 
 		params.values = getQueryValues(len(values))
-		handled, err := marshalQueryValuesJIT(info.request.columns, values, params.values)
+		handled, err := marshalQueryValuesJIT(info, values, params.values)
 		if err != nil {
 			putQueryValues(params.values)
 			return &Iter{err: err}
@@ -3125,7 +3142,7 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 
 			b.values = getQueryValues(info.request.actualColCount)
 
-			handled, err := marshalQueryValuesJIT(info.request.columns, values, b.values)
+			handled, err := marshalQueryValuesJIT(info, values, b.values)
 			if err != nil {
 				putBatchQueryValues(req.statements)
 				return &Iter{err: err}

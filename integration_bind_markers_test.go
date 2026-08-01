@@ -237,9 +237,10 @@ func TestBindMarkers_ReprepareAfterEviction(t *testing.T) {
 			// keeping the real metadata, as if the server had evicted it.
 			info, err := conn.prepareStatement(ctx, stmt, nil, conn.getCurrentKeyspace(), session.cfg.Timeout)
 			require.NoError(t, err)
-			stale := *info
-			stale.id = []byte("evicted")
-			flight := &inflightPrepare{done: make(chan struct{}), preparedStatment: &stale}
+			// Not a struct copy: preparedStatment holds atomic.Pointer caches.
+			stale := &preparedStatment{id: []byte("evicted"), resultMetadataID: info.resultMetadataID,
+				request: info.request, response: info.response}
+			flight := &inflightPrepare{done: make(chan struct{}), preparedStatment: stale}
 			close(flight.done)
 			session.stmtsLRU.add(session.stmtsLRU.keyFor(conn.host.hostUUID(), conn.getCurrentKeyspace(), stmt), flight)
 
