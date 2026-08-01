@@ -2652,6 +2652,11 @@ type Iter struct {
 	next                  *nextIter
 	host                  *HostInfo
 	rowDecoder            *compiledRowDecoder // JIT-compiled fast decoder, set on first Scan
+	// preparedStmt, when non-nil, is the prepared statement this Iter's rows
+	// came from — used to cache the compiled row decoder across repeat
+	// executions (see preparedStatment.jitDecoder) instead of recompiling it
+	// fresh for every new Iter.
+	preparedStmt *preparedStatment
 	// allWarnings accumulates warnings across page boundaries.
 	// When a page's framer is released during fetchNextPage(), its warnings
 	// are appended here so they are not lost.
@@ -2963,7 +2968,7 @@ func (is *iterScanner) Scan(dest ...any) error {
 	// use the compiled row decoder for direct dispatch.
 	if len(dest) == len(iter.meta.columns) {
 		if iter.rowDecoder == nil {
-			iter.rowDecoder = getOrCompileRowDecoder(iter.meta.columns, dest)
+			iter.rowDecoder = getOrCompileRowDecoderCached(iter.preparedStmt, iter.meta.columns, dest)
 		}
 		for i := range iter.meta.columns {
 			if dest[i] == nil {
@@ -3093,7 +3098,7 @@ func (iter *Iter) scanSlice(dest []any) bool {
 	// Only applicable when dest count == column count (no tuple expansion).
 	if len(dest) == len(iter.meta.columns) {
 		if iter.rowDecoder == nil {
-			iter.rowDecoder = getOrCompileRowDecoder(iter.meta.columns, dest)
+			iter.rowDecoder = getOrCompileRowDecoderCached(iter.preparedStmt, iter.meta.columns, dest)
 		}
 
 		for i := range iter.meta.columns {

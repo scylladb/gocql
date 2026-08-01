@@ -119,6 +119,12 @@ func makeDecoderCacheKey(columns []ColumnInfo, destTypes []reflect.Type) string 
 
 // getOrCompileRowDecoder returns a cached compiled decoder or builds one.
 func getOrCompileRowDecoder(columns []ColumnInfo, dest []any) *compiledRowDecoder {
+	destTypes := destTypesOf(dest)
+	return getOrCompileRowDecoderFromTypes(columns, destTypes)
+}
+
+// destTypesOf extracts each destination's reflect.Type (nil for a nil dest).
+func destTypesOf(dest []any) []reflect.Type {
 	destTypes := make([]reflect.Type, len(dest))
 	for i, d := range dest {
 		if d == nil {
@@ -127,7 +133,13 @@ func getOrCompileRowDecoder(columns []ColumnInfo, dest []any) *compiledRowDecode
 			destTypes[i] = reflect.TypeOf(d)
 		}
 	}
+	return destTypes
+}
 
+// getOrCompileRowDecoderFromTypes is the shared slow path: build (or find in
+// the process-wide cache) the compiledRowDecoder for this exact (columns,
+// destTypes) shape.
+func getOrCompileRowDecoderFromTypes(columns []ColumnInfo, destTypes []reflect.Type) *compiledRowDecoder {
 	key := makeDecoderCacheKey(columns, destTypes)
 	if cached, ok := decoderCache.Load(key); ok {
 		return cached.(*compiledRowDecoder)
@@ -136,6 +148,117 @@ func getOrCompileRowDecoder(columns []ColumnInfo, dest []any) *compiledRowDecode
 	dec := compileRowDecoder(columns, destTypes)
 	actual, _ := decoderCache.LoadOrStore(key, dec)
 	return actual.(*compiledRowDecoder)
+}
+
+// destTypesEqualToValues reports whether each value in dest has the same
+// reflect.Type (nil for a nil dest) as the corresponding entry in destTypes,
+// without allocating a new []reflect.Type to compare against.
+func destTypesEqualToValues(dest []any, destTypes []reflect.Type) bool {
+	if len(dest) != len(destTypes) {
+		return false
+	}
+	for i, d := range dest {
+		var t reflect.Type
+		if d != nil {
+			t = reflect.TypeOf(d)
+		}
+		if t != destTypes[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// cachedJITDecoder pairs a compiledRowDecoder with the exact destTypes shape
+// it was compiled for, so a cache hit can be confirmed with a cheap
+// comparison against the current Scan call's dest slice instead of
+// recomputing a string key.
+//
+// columnsSig additionally pins a cheap signature of the columns the decoder
+// was compiled against (see getOrCompileRowDecoderCached and
+// columnsSignature): a cache hit must never be served across two different
+// metadata generations for the same *preparedStatment, since the whole point
+// of caching here is to skip re-deriving destTypes, not to skip
+// re-validating that the columns are the ones this decoder was actually
+// built for.
+type cachedJITDecoder struct {
+	dec        *compiledRowDecoder
+	destTypes  []reflect.Type
+	columnsSig uint64
+}
+
+// getOrCompileRowDecoderCached is getOrCompileRowDecoder, but backed by a
+// single-entry cache on stmt (see preparedStatment.jitDecoder) in addition to
+// the process-wide sync.Map: a prepared statement is scanned into the same
+// call-site destination types on essentially every repeat execution in real
+// usage (e.g. a hot query loop reusing the same *WikiPage locals), so after
+// the first row this turns decoder resolution into one atomic pointer load
+// plus two cheap comparisons — no key string and no sync.Map lookup at all.
+//
+// Why columns must also be validated, not just destTypes: a *preparedStatment
+// can legitimately be shared across a schema change. When the server reports
+// RESULT_METADATA_CHANGED (see conn.go's newMetadataID handling), a losing
+// goroutine in a concurrent-execution race can end up with iter.preparedStmt
+// still pointing at the pre-change statement while iter.meta.columns already
+// reflects the new schema — the two are populated independently and are not
+// atomically swapped together. If the stale statement already has a warm
+// jitDecoder from before the change (the common case — the whole premise of
+// this cache is that the same statement is scanned into the same Go types
+// repeatedly), validating destTypes alone would let a decoder compiled for
+// the OLD column types be silently applied to bytes for the NEW schema:
+// wrong-sized reads, misinterpreted values, or a panic, with no error in the
+// best case.
+//
+// columnsSignature hashes column count and each column's top-level CQL type
+// code rather than comparing the columns slice's backing-array identity: with
+// DisableSkipMetadata's default of true, skip_metadata is never requested, so
+// the server sends full column metadata on every response and
+// parseResultMetadata (frame.go) allocates a brand-new []ColumnInfo on every
+// single call regardless of whether the schema changed — an identity check
+// would fail on every call and silently defeat this entire cache under the
+// driver's default configuration. The signature is stable across repeated
+// identical-schema responses (the common case) while still changing whenever
+// a column is added/removed/reordered/retyped at the top level (the case
+// this mechanism protects against). It does not distinguish two schemas that
+// differ only in a nested element type behind an unchanged outer type (e.g.
+// list<int> vs list<bigint>) — accepted as a bounded, narrow trade-off in
+// exchange for the signature being computable with no allocation, versus a
+// full structural key that would reintroduce this cache's entire allocation
+// cost.
+//
+// stmt may be nil — e.g. non-prepared queries have no preparedStatment to
+// cache against — in which case this falls back to the uncached path,
+// identical to getOrCompileRowDecoder. That still costs a fresh compile per
+// Iter (Iter.rowDecoder itself caches within one Iter's rows), same as
+// before this cache existed.
+func getOrCompileRowDecoderCached(stmt *preparedStatment, columns []ColumnInfo, dest []any) *compiledRowDecoder {
+	if stmt == nil {
+		return getOrCompileRowDecoder(columns, dest)
+	}
+
+	columnsSig := columnsSignature(columns)
+	if cached := stmt.jitDecoder.Load(); cached != nil && cached.columnsSig == columnsSig &&
+		destTypesEqualToValues(dest, cached.destTypes) {
+		return cached.dec
+	}
+
+	destTypes := destTypesOf(dest)
+	dec := getOrCompileRowDecoderFromTypes(columns, destTypes)
+	// Last writer wins; a lost race just means a future call redoes this
+	// resolution instead of caching it, which is always correct and rare.
+	stmt.jitDecoder.Store(&cachedJITDecoder{destTypes: destTypes, columnsSig: columnsSig, dec: dec})
+	return dec
+}
+
+// columnsSignature computes a cheap, allocation-free hash of columns' shape:
+// column count plus each column's top-level CQL type code. See
+// getOrCompileRowDecoderCached for what this does and does not distinguish.
+func columnsSignature(columns []ColumnInfo) uint64 {
+	sig := uint64(len(columns))
+	for i := range columns {
+		sig = sig*31 + uint64(columns[i].TypeInfo.Type())
+	}
+	return sig
 }
 
 // compileColumnDecoder selects the optimal decoder for a (CQL type, Go type) pair.
