@@ -131,20 +131,22 @@ type SslOptions struct {
 }
 
 type ConnConfig struct {
-	Dialer          Dialer
-	Logger          StdLogger
-	Authenticator   Authenticator
-	Compressor      Compressor
-	HostDialer      HostDialer
-	AuthProvider    func(h *HostInfo) (Authenticator, error)
-	tlsConfig       *tls.Config
-	CQLVersion      string
-	ConnectTimeout  time.Duration
-	ReadTimeout     time.Duration
-	WriteTimeout    time.Duration
-	ProtoVersion    int
-	Keepalive       time.Duration
-	disableCoalesce bool
+	Dialer                  Dialer
+	Logger                  StdLogger
+	Authenticator           Authenticator
+	Compressor              Compressor
+	HostDialer              HostDialer
+	AuthProvider            func(h *HostInfo) (Authenticator, error)
+	tlsConfig               *tls.Config
+	CQLVersion              string
+	ConnectTimeout          time.Duration
+	ReadTimeout             time.Duration
+	WriteTimeout            time.Duration
+	ProtoVersion            int
+	Keepalive               time.Duration
+	HeartbeatSlowThreshold  time.Duration
+	HeartbeatSkipOnActivity bool
+	disableCoalesce         bool
 }
 
 func (c *ConnConfig) logger() StdLogger {
@@ -235,6 +237,8 @@ type Conn struct {
 	scyllaSupported      ScyllaConnectionFeatures
 	systemRequestTimeout time.Duration
 	writeTimeout         atomic.Int64
+	readTimeout          atomic.Int64
+	activity             atomic.Int64
 	mu                   sync.Mutex
 	tabletsRoutingV1     int32
 	headerBuf            [headSize]byte
@@ -872,6 +876,8 @@ func (c *Conn) heartBeat(ctx context.Context) {
 	defer timer.Stop()
 
 	var failures int
+	var heartbeatSlow bool
+	prev := c.activity.Load()
 
 	for {
 		if failures > 5 {
@@ -887,7 +893,29 @@ func (c *Conn) heartBeat(ctx context.Context) {
 		case <-timer.C:
 		}
 
+		// Skip heartbeat if the connection had inbound activity since last check
+		// (only when HeartbeatSkipOnActivity is enabled).
+		if c.cfg.HeartbeatSkipOnActivity {
+			cur := c.activity.Load()
+			if cur != prev {
+				prev = cur
+				sleepTime = 30 * time.Second
+				failures = 0
+				heartbeatSlow = false
+				continue
+			}
+		}
+
+		var start time.Time
+		heartbeatTimeout := c.cfg.HeartbeatSlowThreshold
+		if heartbeatTimeout > 0 {
+			start = time.Now()
+		}
+
 		framer, err := c.exec(context.Background(), &writeOptionsFrame{}, nil, c.cfg.ConnectTimeout)
+		// A successful heartbeat exec records inbound activity; refresh prev so
+		// the next iteration compares against the post-heartbeat value.
+		prev = c.activity.Load()
 		if err != nil {
 			failures++
 			continue
@@ -904,6 +932,18 @@ func (c *Conn) heartBeat(ctx context.Context) {
 		switch resp.(type) {
 		case *frm.SupportedFrame:
 			// Everything ok
+			if heartbeatTimeout > 0 {
+				elapsed := time.Since(start)
+				if elapsed > heartbeatTimeout {
+					if !heartbeatSlow {
+						heartbeatSlow = true
+						c.cfg.logger().Printf("gocql: heartbeat to %s took %dms, exceeding threshold %dms",
+							c.addr, elapsed.Milliseconds(), heartbeatTimeout.Milliseconds())
+					}
+				} else {
+					heartbeatSlow = false
+				}
+			}
 			sleepTime = 30 * time.Second
 			failures = 0
 		case error:
@@ -2131,6 +2171,12 @@ func (c *Conn) execInternal(ctx context.Context, req frameBuilder, tracer Tracer
 
 	select {
 	case resp := <-call.resp:
+		// A response was received from the server: proven inbound activity.
+		// Counting here (rather than on the send side) ensures the heartbeat
+		// skip logic only suppresses probes when the peer is actually
+		// responding, so a connection that accepts writes but stops replying
+		// is still probed for liveness.
+		c.activity.Add(1)
 		stopWaiting = true
 		if resp.err != nil {
 			c.releaseReadFramer(resp.framer)

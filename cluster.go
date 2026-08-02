@@ -162,6 +162,11 @@ type ClusterConfig struct {
 	// The keepalive period to use, enabled if > 0 (default: 15 seconds)
 	// SocketKeepalive is used to set up the default dialer and is ignored if Dialer or HostDialer is provided.
 	SocketKeepalive time.Duration
+	// HeartbeatSlowThreshold is the latency threshold for heartbeat OPTIONS
+	// round-trips. If a heartbeat response takes longer than this duration, a
+	// warning is logged (e.g. 500 * time.Millisecond for a 500ms threshold).
+	// Default: 0 (disabled, no latency measurement or logging).
+	HeartbeatSlowThreshold time.Duration
 	// If not zero, gocql attempt to reconnect known DOWN nodes in every ReconnectInterval.
 	ReconnectInterval time.Duration
 	// The maximum amount of time to wait for schema agreement in a cluster after
@@ -265,6 +270,12 @@ type ClusterConfig struct {
 	// Sends a client side timestamp for all requests which overrides the timestamp at which it arrives at the server.
 	// Default: true, only enabled for protocol 3 and above.
 	DefaultTimestamp bool
+	// HeartbeatSkipOnActivity controls whether heartbeats are skipped when the
+	// connection has had inbound activity since the last check.
+	// When false (the default), heartbeats are sent unconditionally on every tick.
+	// When true, a heartbeat is skipped if the server has sent data since the
+	// last probe, reducing overhead on busy connections.
+	HeartbeatSkipOnActivity bool
 	// DisableSkipMetadata will override the internal result metadata cache so that the driver does not
 	// send skip_metadata for queries, this means that the result will always contain
 	// the metadata to parse the rows and will not reuse the metadata from the prepared
