@@ -701,9 +701,8 @@ func (s *Session) executeQueryWithMetrics(qry *Query, metrics *queryMetrics) (it
 
 func (s *Session) removeHost(h *HostInfo) {
 	s.policy.RemoveHost(h)
-	hostID := h.HostID()
-	s.pool.removeHost(hostID)
-	s.hostSource.removeHost(hostID)
+	s.pool.removeHost(h.hostUUID())
+	s.hostSource.removeHost(h.HostID())
 }
 
 // KeyspaceMetadata returns the schema metadata for the keyspace specified. Returns an error if the keyspace does not exist.

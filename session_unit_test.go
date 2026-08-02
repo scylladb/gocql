@@ -737,8 +737,8 @@ func newTestQueryExecutor(host *HostInfo) *queryExecutor {
 	policy.AddHost(host)
 	return &queryExecutor{
 		pool: &policyConnPool{
-			hostConnPools: map[string]*hostConnPool{
-				host.HostID(): &hostConnPool{
+			hostConnPools: map[UUID]*hostConnPool{
+				host.hostUUID(): &hostConnPool{
 					host:       host,
 					connPicker: staticConnPicker{conn: &Conn{host: host}},
 				},
@@ -2936,7 +2936,7 @@ func TestQueryExecutorPropagatesWinningRetryConsistency(t *testing.T) {
 		secondHost := (&HostInfo{hostId: UUID{16}}).setState(NodeUp)
 		executor := newTestQueryExecutor(host)
 		executor.policy.AddHost(secondHost)
-		executor.pool.hostConnPools[secondHost.HostID()] = &hostConnPool{
+		executor.pool.hostConnPools[secondHost.hostUUID()] = &hostConnPool{
 			host:       secondHost,
 			connPicker: staticConnPicker{conn: &Conn{host: secondHost}},
 		}
@@ -3039,10 +3039,9 @@ func TestQueryExecutorSuccessfulAttemptDoesNotAddRetryCounterAllocation(t *testi
 			panic("unexpected iterator")
 		}
 	})
-	// The host-pool lookup allocates one HostID string. The retry counter must
-	// remain stack-local and add no second allocation on this fast path.
-	if allocs != 1 {
-		t.Fatalf("successful execution allocations = %f, want host lookup baseline of 1", allocs)
+	// getPool uses hostUUID() (zero-alloc); the retry counter must stay stack-local too.
+	if allocs != 0 {
+		t.Fatalf("successful execution allocations = %f, want 0", allocs)
 	}
 }
 
@@ -3051,7 +3050,7 @@ func TestQueryExecutorSpeculativeBranchesShareRetryBudget(t *testing.T) {
 	secondHost := (&HostInfo{hostId: UUID{11}}).setState(NodeUp)
 	executor := newTestQueryExecutor(host)
 	executor.policy.AddHost(secondHost)
-	executor.pool.hostConnPools[secondHost.HostID()] = &hostConnPool{
+	executor.pool.hostConnPools[secondHost.hostUUID()] = &hostConnPool{
 		host:       secondHost,
 		connPicker: staticConnPicker{conn: &Conn{host: secondHost}},
 	}
@@ -3116,7 +3115,7 @@ func TestQueryExecutorSpeculativeAttemptOrdinalsFollowLaunchOrder(t *testing.T) 
 	secondHost := (&HostInfo{hostId: UUID{7}}).setState(NodeUp)
 	executor := newTestQueryExecutor(host)
 	executor.policy.AddHost(secondHost)
-	executor.pool.hostConnPools[secondHost.HostID()] = &hostConnPool{
+	executor.pool.hostConnPools[secondHost.hostUUID()] = &hostConnPool{
 		host:       secondHost,
 		connPicker: staticConnPicker{conn: &Conn{host: secondHost}},
 	}
