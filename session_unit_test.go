@@ -43,6 +43,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/gocql/gocql/internal/lru"
 	"github.com/gocql/gocql/tablets"
 )
 
@@ -2259,6 +2260,26 @@ func BenchmarkAttemptMetricsPersistentHistory(b *testing.B) {
 				b.Fatalf("attempt history count = %d, want %d", metrics.Attempts(), attemptsPerExecution)
 			}
 		})
+	}
+}
+
+// Exercises the cache-hit path of Session.routingKeyInfo, called on every
+// Pick() by TokenAwareHostPolicy for every query/batch.
+func BenchmarkSessionRoutingKeyInfoCacheHit(b *testing.B) {
+	const keyspace, stmt = "benchks", "insert into t (id) values (?)"
+
+	s := &Session{}
+	s.routingKeyInfoCache.lru = lru.New[routingKeyInfoCacheKey](100)
+	inflight := &inflightCachedEntry{value: &routingKeyInfo{keyspace: keyspace, table: "t"}}
+	s.routingKeyInfoCache.lru.Add(routingKeyInfoCacheKey{keyspace: keyspace, stmt: stmt}, inflight)
+
+	ctx := context.Background()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := s.routingKeyInfo(ctx, stmt, keyspace, 0); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 

@@ -174,7 +174,7 @@ func newSessionCommon(cfg ClusterConfig) (*Session, error) {
 	s.nodeEvents = newEventDebouncer("NodeEvents", s.handleNodeEvent, s.logger)
 	s.schemaEvents = newEventDebouncer("SchemaEvents", s.handleSchemaEvent, s.logger)
 
-	s.routingKeyInfoCache.lru = lru.New[string](cfg.MaxRoutingKeyInfo)
+	s.routingKeyInfoCache.lru = lru.New[routingKeyInfoCacheKey](cfg.MaxRoutingKeyInfo)
 
 	s.hostSource = &ringDescriber{cfg: &s.cfg, logger: s.logger}
 	s.ringRefresher = debounce.NewRefreshDebouncer(debounce.RingRefreshDebounceTime, func() error {
@@ -859,13 +859,13 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string, keyspace stri
 		keyspace = s.cfg.Keyspace
 	}
 
-	routingKeyInfoCacheKey := keyspace + "\x00" + stmt
+	cacheKey := routingKeyInfoCacheKey{keyspace: keyspace, stmt: stmt}
 
 	s.routingKeyInfoCache.mu.Lock()
 
 	// Using here keyspace + stmt as a cache key because
 	// the query keyspace could be overridden via SetKeyspace
-	entry, cached := s.routingKeyInfoCache.lru.Get(routingKeyInfoCacheKey)
+	entry, cached := s.routingKeyInfoCache.lru.Get(cacheKey)
 	if cached {
 		// done accessing the cache
 		s.routingKeyInfoCache.mu.Unlock()
@@ -889,7 +889,7 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string, keyspace stri
 	inflight := new(inflightCachedEntry)
 	inflight.wg.Add(1)
 	defer inflight.wg.Done()
-	s.routingKeyInfoCache.lru.Add(routingKeyInfoCacheKey, inflight)
+	s.routingKeyInfoCache.lru.Add(cacheKey, inflight)
 	s.routingKeyInfoCache.mu.Unlock()
 
 	var (
@@ -908,7 +908,7 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string, keyspace stri
 	info, inflight.err = conn.prepareStatement(ctx, stmt, nil, keyspace, requestTimeout)
 	if inflight.err != nil {
 		// don't cache this error
-		s.routingKeyInfoCache.Remove(routingKeyInfoCacheKey)
+		s.routingKeyInfoCache.Remove(cacheKey)
 		return nil, inflight.err
 	}
 
@@ -921,15 +921,15 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string, keyspace stri
 	}
 
 	// Resolve the statement's real target from the prepared metadata. Note this
-	// reassigns keyspace: routingKeyInfoCacheKey was already built from the
-	// requested keyspace above and is unaffected.
+	// reassigns keyspace: cacheKey was already built from the requested
+	// keyspace above and is unaffected.
 	keyspace, table := resolveRoutingKeyspaceTable(&info.request, keyspace)
 
 	partitioner, err := scyllaGetTablePartitioner(s, keyspace, table)
 	if err != nil {
 		// don't cache this error, but make sure all waiters see the same failure.
 		inflight.err = err
-		s.routingKeyInfoCache.Remove(routingKeyInfoCacheKey)
+		s.routingKeyInfoCache.Remove(cacheKey)
 		return nil, inflight.err
 	}
 
@@ -958,7 +958,7 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string, keyspace stri
 	tableMetadata, inflight.err = s.TableMetadata(keyspace, table)
 	if inflight.err != nil {
 		// don't cache this error
-		s.routingKeyInfoCache.Remove(routingKeyInfoCacheKey)
+		s.routingKeyInfoCache.Remove(cacheKey)
 		return nil, inflight.err
 	}
 
@@ -3749,8 +3749,16 @@ func (c ColumnInfo) String() string {
 }
 
 // routing key indexes LRU cache
+// routingKeyInfoCacheKey avoids concatenating keyspace+stmt into a string on
+// every cache lookup; lru.Cache already takes a comparable key type for
+// exactly this reason.
+type routingKeyInfoCacheKey struct {
+	keyspace string
+	stmt     string
+}
+
 type routingKeyInfoLRU struct {
-	lru *lru.Cache[string]
+	lru *lru.Cache[routingKeyInfoCacheKey]
 	mu  sync.Mutex
 }
 
@@ -3767,7 +3775,7 @@ func (r *routingKeyInfo) String() string {
 	return fmt.Sprintf("routing key index=%v types=%v", r.indexes, r.types)
 }
 
-func (r *routingKeyInfoLRU) Remove(key string) {
+func (r *routingKeyInfoLRU) Remove(key routingKeyInfoCacheKey) {
 	r.mu.Lock()
 	r.lru.Remove(key)
 	r.mu.Unlock()

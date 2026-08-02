@@ -3939,10 +3939,10 @@ func TestRoutingKeyCacheUsesOverriddenKeyspace(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	getRoutingKeyInfo := func(key string) *routingKeyInfo {
+	getRoutingKeyInfo := func(keyspace, stmt string) *routingKeyInfo {
 		t.Helper()
 		session.routingKeyInfoCache.mu.Lock()
-		value, _ := session.routingKeyInfoCache.lru.Get(key)
+		value, _ := session.routingKeyInfoCache.lru.Get(routingKeyInfoCacheKey{keyspace: keyspace, stmt: stmt})
 		session.routingKeyInfoCache.mu.Unlock()
 
 		inflight := value.(*inflightCachedEntry)
@@ -3958,7 +3958,7 @@ func TestRoutingKeyCacheUsesOverriddenKeyspace(t *testing.T) {
 	require.NoError(t, err)
 
 	// Ensuring that the cache contains the query with default ks
-	routingKeyInfo1 := getRoutingKeyInfo("gocql_test" + "\x00" + b1.Entries[0].Stmt)
+	routingKeyInfo1 := getRoutingKeyInfo("gocql_test", b1.Entries[0].Stmt)
 	require.Equal(t, "gocql_test", routingKeyInfo1.keyspace)
 
 	// Running batch in gocql_test_routing_key_cache ks
@@ -3969,7 +3969,7 @@ func TestRoutingKeyCacheUsesOverriddenKeyspace(t *testing.T) {
 	require.NoError(t, err)
 
 	// Ensuring that the cache contains the query with gocql_test_routing_key_cache ks
-	routingKeyInfo2 := getRoutingKeyInfo("gocql_test_routing_key_cache" + "\x00" + b2.Entries[0].Stmt)
+	routingKeyInfo2 := getRoutingKeyInfo("gocql_test_routing_key_cache", b2.Entries[0].Stmt)
 	require.Equal(t, "gocql_test_routing_key_cache", routingKeyInfo2.keyspace)
 
 	const selectStmt = "SELECT * FROM routing_key_cache_uses_overridden_ks WHERE id=?"
