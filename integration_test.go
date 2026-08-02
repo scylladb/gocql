@@ -475,8 +475,10 @@ func TestNewConnectWithLowTimeout(t *testing.T) {
 						cluster.Timeout = lowTimeout
 						return cluster
 					},
-					connect:                    Pass,
-					regularQuery:               Fail,
+					connect: Pass,
+					// At 100ns the query can complete before the deadline fires,
+					// the same race already tolerated below for WriteTimeout/ReadTimeout.
+					regularQuery:               canPassOnHighTimeout,
 					controlQuery:               Pass,
 					controlQueryAfterReconnect: Pass,
 				},
