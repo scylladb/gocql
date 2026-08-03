@@ -28,6 +28,7 @@
 package lz4
 
 import (
+	"encoding/binary"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -56,4 +57,22 @@ func TestLZ4Compressor(t *testing.T) {
 	decoded, err = c.Decode(encoded)
 	require.NoError(t, err)
 	require.Equal(t, original, decoded)
+}
+
+// TestLZ4Compressor_RejectsOversizedHeader ensures both Decode and DecodeInto
+// reject an untrusted uncompressed-length header above maxDecompressedSize
+// before allocating, rather than only DecodeInto enforcing the bound.
+func TestLZ4Compressor_RejectsOversizedHeader(t *testing.T) {
+	t.Parallel()
+
+	var c LZ4Compressor
+
+	oversized := make([]byte, 8)
+	binary.BigEndian.PutUint32(oversized, uint32(maxDecompressedSize+1))
+
+	_, err := c.Decode(oversized)
+	require.ErrorContains(t, err, "uncompressed length out of range")
+
+	_, err = c.DecodeInto(oversized, nil)
+	require.ErrorContains(t, err, "uncompressed length out of range")
 }

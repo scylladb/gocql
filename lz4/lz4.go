@@ -73,7 +73,7 @@ func (s LZ4Compressor) Decode(data []byte) ([]byte, error) {
 	if uncompressedLength == 0 {
 		return nil, nil
 	}
-	if uncompressedLength > maxDecompressedSize {
+	if uncompressedLength < 0 || uncompressedLength > maxDecompressedSize {
 		return nil, fmt.Errorf("cassandra lz4 uncompressed length out of range: %d", uncompressedLength)
 	}
 	buf := make([]byte, uncompressedLength)
