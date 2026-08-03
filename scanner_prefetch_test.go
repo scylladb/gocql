@@ -268,7 +268,16 @@ func BenchmarkIterScanner_Next(b *testing.B) {
 		iter.next = ni
 		scanner := iter.Scanner()
 		b.StartTimer()
+		rows := 0
 		for scanner.Next() {
+			rows++
+		}
+		b.StopTimer()
+		if rows != numRows {
+			b.Fatalf("scanned %d rows, want %d", rows, numRows)
+		}
+		if err := scanner.Err(); err != nil {
+			b.Fatalf("scanner error: %v", err)
 		}
 	}
 }
@@ -293,7 +302,16 @@ func BenchmarkIterScan(b *testing.B) {
 		iter.next = ni
 		b.StartTimer()
 		var dummy []byte
+		rows := 0
 		for iter.Scan(&dummy) {
+			rows++
+		}
+		b.StopTimer()
+		if rows != numRows {
+			b.Fatalf("scanned %d rows, want %d", rows, numRows)
+		}
+		if err := iter.Close(); err != nil {
+			b.Fatalf("iter error: %v", err)
 		}
 	}
 }
@@ -312,7 +330,16 @@ func BenchmarkIterScanner_NextNoNextIter(b *testing.B) {
 		iter := makeTestIter(numRows, numCols)
 		scanner := iter.Scanner()
 		b.StartTimer()
+		rows := 0
 		for scanner.Next() {
+			rows++
+		}
+		b.StopTimer()
+		if rows != numRows {
+			b.Fatalf("scanned %d rows, want %d", rows, numRows)
+		}
+		if err := scanner.Err(); err != nil {
+			b.Fatalf("scanner error: %v", err)
 		}
 	}
 }

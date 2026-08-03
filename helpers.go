@@ -386,7 +386,11 @@ func (r *RowData) rowMap(m map[string]any) {
 	for i, column := range r.Columns {
 		val := dereference(r.Values[i])
 		if valVal := reflect.ValueOf(val); valVal.Kind() == reflect.Slice && !valVal.IsNil() {
-			valCopy := reflect.MakeSlice(valVal.Type(), valVal.Len(), valVal.Cap())
+			// Copy with cap == len: the source may be a reused decode buffer
+			// (MapScan's cached destinations) whose capacity grew to fit an
+			// earlier, larger value; copying with Cap() would carry that
+			// capacity into every returned value.
+			valCopy := reflect.MakeSlice(valVal.Type(), valVal.Len(), valVal.Len())
 			reflect.Copy(valCopy, valVal)
 			m[column] = valCopy.Interface()
 		} else {
@@ -632,12 +636,11 @@ func (iter *Iter) MapScan(m map[string]any) bool {
 	// mapScanDefaults holds the default destination pointers (one per column)
 	// and is never replaced after creation. Scan writes through these pointers
 	// on each call, overwriting the pointed-to values in place, so the pointers
-	// themselves remain valid across rows. Each call copies the default
-	// pointers into mapScanWorking (an O(N) element-by-element copy of the
-	// []any interface slice, no allocation), applies the caller's pointer
-	// overrides to the working copy, and scans into that. Because the working
-	// copy is rebuilt from defaults every call, slots overridden in one row
-	// are automatically restored for the next without per-slot re-allocation.
+	// themselves remain valid across rows. Rows without caller overrides scan
+	// directly into the defaults. When the caller pre-seeds m with destination
+	// overrides, the defaults are copied into mapScanWorking (allocated lazily
+	// on the first override) and the overrides applied to that working copy,
+	// keeping the defaults intact for later rows.
 	defaults := iter.mapScanDefaults
 	if defaults == nil || len(defaults) != iter.meta.actualColCount {
 		defaults = make([]any, iter.meta.actualColCount)
@@ -645,16 +648,25 @@ func (iter *Iter) MapScan(m map[string]any) bool {
 			return false
 		}
 		iter.mapScanDefaults = defaults
-		iter.mapScanWorking = make([]any, iter.meta.actualColCount)
 	}
-	values := iter.mapScanWorking
-	copy(values, defaults)
 
-	// Apply user-supplied pointer overrides for this row.
+	// Apply user-supplied destination overrides for this row.
+	values := defaults
+	overridden := false
 	for i, col := range columns {
-		if dest, ok := m[col]; ok {
-			values[i] = dest
+		dest, ok := m[col]
+		if !ok {
+			continue
 		}
+		if !overridden {
+			if len(iter.mapScanWorking) != len(defaults) {
+				iter.mapScanWorking = make([]any, len(defaults))
+			}
+			copy(iter.mapScanWorking, defaults)
+			values = iter.mapScanWorking
+			overridden = true
+		}
+		values[i] = dest
 	}
 
 	ok := iter.Scan(values...)
@@ -662,6 +674,20 @@ func (iter *Iter) MapScan(m map[string]any) bool {
 	if ok {
 		rd := RowData{Columns: columns, Values: values}
 		rd.rowMap(m)
+	}
+
+	if overridden {
+		// Drop the caller-supplied destinations so the iterator does not
+		// retain them between calls or after exhaustion.
+		clear(values)
+	}
+
+	if !ok {
+		// Scan returning false is terminal (exhaustion, error, or closed).
+		// finalize() already released the caches; drop any rebuilt here too,
+		// so extra MapScan calls on a finished iterator do not re-pin them.
+		iter.mapScanDefaults = nil
+		iter.mapScanWorking = nil
 	}
 
 	return ok
