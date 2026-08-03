@@ -220,26 +220,115 @@ func TestMapScanBlobReuseNoAliasing(t *testing.T) {
 	}
 }
 
-// TestMapScanNonComparableOverrideNoPanic verifies that pre-seeding the map with
-// a non-comparable value (e.g. a slice) for a column does not panic in the
-// override-detection comparison (dest != defaults).
-func TestMapScanNonComparableOverrideNoPanic(t *testing.T) {
+// buildVarBlobRows builds a one-column rows buffer with one row per entry in
+// sizes; row r holds a blob of sizes[r] bytes, each byte set to r.
+func buildVarBlobRows(sizes []int) []byte {
+	var buf []byte
+	tmp := make([]byte, 4)
+	for r, size := range sizes {
+		binary.BigEndian.PutUint32(tmp, uint32(size))
+		buf = append(buf, tmp...)
+		cell := make([]byte, size)
+		for i := range cell {
+			cell[i] = byte(r)
+		}
+		buf = append(buf, cell...)
+	}
+	return buf
+}
+
+func newBlobIter(numRows int, name string, data []byte) *Iter {
+	cols := []ColumnInfo{{Keyspace: "ks", Table: "t", Name: name, TypeInfo: NewNativeType(4, TypeBlob)}}
+	f := &framer{header: &frm.FrameHeader{}, buf: data}
+	return &Iter{
+		framer:  f,
+		numRows: numRows,
+		meta:    resultMetadata{columns: cols, colCount: 1, actualColCount: 1},
+	}
+}
+
+// TestMapScanBlobCapacityNotAmplified verifies that a large blob in an early
+// row does not inflate the capacity of later rows' returned values: the cached
+// *[]byte destination retains the largest decoded capacity (blob decode is
+// append-based), so rowMap must copy with cap == len rather than Cap().
+func TestMapScanBlobCapacityNotAmplified(t *testing.T) {
+	t.Parallel()
+	sizes := []int{4096, 3, 3}
+	iter := newBlobIter(len(sizes), "b", buildVarBlobRows(sizes))
+
+	for r, size := range sizes {
+		m := make(map[string]any)
+		if !iter.MapScan(m) {
+			t.Fatalf("row %d failed: %v", r, iter.err)
+		}
+		got, ok := m["b"].([]byte)
+		if !ok {
+			t.Fatalf("row %d: not []byte: %T", r, m["b"])
+		}
+		if len(got) != size {
+			t.Fatalf("row %d: len=%d want %d", r, len(got), size)
+		}
+		if cap(got) != size {
+			t.Fatalf("row %d: cap=%d want %d (large-row capacity amplified into small row)", r, cap(got), size)
+		}
+	}
+}
+
+// TestMapScanCachesReleasedOnExhaustion verifies that the terminal MapScan
+// releases both cached slices (via Iter.finalize), so an exhausted iterator
+// retains neither the last row's decoded values nor caller-supplied
+// destination pointers.
+func TestMapScanCachesReleasedOnExhaustion(t *testing.T) {
 	t.Parallel()
 	const numRows, numCols = 2, 1
 	names := []string{"a"}
-	data := buildIntRows(numRows, numCols, 0)
-	iter := newIntIter(numRows, numCols, names, data)
+	iter := newIntIter(numRows, numCols, names, buildIntRows(numRows, numCols, 0))
 
-	defer func() {
-		if r := recover(); r != nil {
-			t.Fatalf("MapScan panicked on non-comparable map value: %v", r)
+	var a int
+	for iter.MapScan(map[string]any{"a": &a}) {
+	}
+	if iter.err != nil {
+		t.Fatalf("iter error: %v", iter.err)
+	}
+	if iter.mapScanDefaults != nil {
+		t.Fatal("mapScanDefaults retained after exhaustion")
+	}
+	if iter.mapScanWorking != nil {
+		t.Fatal("mapScanWorking retained after exhaustion")
+	}
+
+	// An extra MapScan call on the finished iterator must not re-pin the
+	// caches either.
+	if iter.MapScan(map[string]any{"a": &a}) {
+		t.Fatal("MapScan succeeded on exhausted iterator")
+	}
+	if iter.mapScanDefaults != nil || iter.mapScanWorking != nil {
+		t.Fatal("caches re-pinned by MapScan call after exhaustion")
+	}
+}
+
+// TestMapScanNoOverrideSkipsWorkingSlice verifies the common no-override path
+// scans directly into the defaults and never allocates the working slice.
+func TestMapScanNoOverrideSkipsWorkingSlice(t *testing.T) {
+	t.Parallel()
+	const numRows, numCols = 3, 2
+	names := []string{"a", "b"}
+	iter := newIntIter(numRows, numCols, names, buildIntRows(numRows, numCols, 0))
+
+	rows := 0
+	for {
+		m := make(map[string]any)
+		if !iter.MapScan(m) {
+			break
 		}
-	}()
-
-	// Seed with a non-comparable []int value under the column key. MapScan must
-	// not panic when comparing it against the cached default pointer.
-	m := map[string]any{"a": []int{1, 2, 3}}
-	_ = iter.MapScan(m)
+		rows++
+		if iter.mapScanWorking != nil {
+			t.Fatal("working slice allocated without any caller override")
+		}
+	}
+	if iter.err != nil || rows != numRows {
+		t.Fatalf("rows=%d err=%v", rows, iter.err)
+	}
 }
 
 // TestMapScanAllPointersReuse exercises the documented "pass pointers in the map"

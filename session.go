@@ -2701,11 +2701,12 @@ type Iter struct {
 	// the first call to getScanColumns().
 	scanColumns []string
 	// mapScanDefaults holds one freshly-allocated default destination pointer
-	// per scannable column, allocated once and reused by MapScan across rows.
-	// mapScanWorking is the per-call scan slice: each MapScan copies defaults
-	// into it, applies user overrides, and scans into it. This avoids
-	// allocating a new []any plus per-column pointers on every row. Both are
-	// populated lazily on the first MapScan call.
+	// per scannable column, allocated once on the first MapScan call and
+	// reused across rows. mapScanWorking is allocated lazily on the first
+	// MapScan call with a caller-supplied destination override: defaults are
+	// copied into it and the overrides applied there, keeping the defaults
+	// intact for later rows. Rows without overrides scan directly into the
+	// defaults. Both are released in finalize().
 	mapScanDefaults   []any
 	mapScanWorking    []any
 	meta              resultMetadata
@@ -2869,6 +2870,10 @@ func (iter *Iter) finalize(dispatchWarnings bool) {
 		iter.next.close()
 		iter.next = nil
 	}
+	// Release the MapScan caches: the defaults hold the last row's decoded
+	// values and the working slice may hold caller-supplied destinations.
+	iter.mapScanDefaults = nil
+	iter.mapScanWorking = nil
 	if dispatchWarnings {
 		iter.handleWarningsOnce()
 	}

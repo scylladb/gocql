@@ -81,6 +81,12 @@ func (b *mapScanBench) reset() {
 	b.iter.err = nil
 	b.iter.closed = 0
 	b.iter.framer = b.f
+	// Drop the per-Iter caches: production allocates a fresh Iter per query,
+	// so keeping them warm across iterations would hide the per-query cache
+	// construction cost and overstate the per-row savings.
+	b.iter.scanColumns = nil
+	b.iter.mapScanDefaults = nil
+	b.iter.mapScanWorking = nil
 }
 
 // BenchmarkMapScanRows scans numRows rows of numCols int columns via MapScan,
