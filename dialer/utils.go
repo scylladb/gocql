@@ -1,7 +1,16 @@
+// Package dialer provides the record/replay and single-connection benchmark
+// harness the driver uses to exercise its own wire handling against captured
+// traffic.
+//
+// It is not part of the driver's supported API. Its exported identifiers exist so
+// the recorder and replayer subpackages and the benchmarks can share frame
+// parsing, and they change whenever the wire handling they mirror changes —
+// GetFrameHash, for instance, needs whatever protocol context a frame's layout
+// depends on but its bytes do not reveal. Expect breaking signature changes
+// without a major version bump.
 package dialer
 
 import (
-	"bytes"
 	"errors"
 
 	frm "github.com/gocql/gocql/internal/frame"
@@ -44,23 +53,62 @@ const scyllaUseMetadataIDKey = "SCYLLA_USE_METADATA_ID"
 // StartupNegotiatesMetadataID reports whether the given raw request frame is a
 // STARTUP that opts into the SCYLLA_USE_METADATA_ID extension. The driver
 // serializes the extension as the key SCYLLA_USE_METADATA_ID in the STARTUP
-// [string map], so its presence is detectable by scanning the frame. Detection
-// is restricted to STARTUP requests so the same key appearing in a SUPPORTED
-// response (a read frame) never trips it.
+// [string map]. Detection is restricted to STARTUP requests so the same key
+// appearing in a SUPPORTED response (a read frame) never trips it.
+//
+// The body is walked as a proper [string map] and only keys are compared, rather
+// than scanning the frame for the literal: gocql's startupOptions puts
+// caller-influenced values into the same map — DRIVER_NAME, DRIVER_VERSION,
+// DRIVER_CONFIG, SESSION_ID and whatever ApplicationInfo adds — so a substring
+// match lets a caller latch this by naming their application after the extension.
+// The list keeps growing, which is the point: matching on keys does not care.
+// A malformed or truncated map reads as "not negotiated".
 func StartupNegotiatesMetadataID(frame []byte) bool {
 	if len(frame) < 5 {
 		return false
 	}
-	var op byte
-	if frame[0] > 0x02 {
-		op = frame[4]
-	} else {
-		op = frame[3]
-	}
-	if frameOp(op) != opStartup {
+	shift := headerShift(frame)
+	if frameOp(frame[3+shift]) != opStartup {
 		return false
 	}
-	return bytes.Contains(frame, []byte(scyllaUseMetadataIDKey))
+
+	// Header: version, flags, stream (1 byte on v1/v2, 2 on v3+), opcode, length(4).
+	p := 8 + shift
+	readShort := func() (int, bool) {
+		if p+2 > len(frame) {
+			return 0, false
+		}
+		v := int(frame[p])<<8 | int(frame[p+1])
+		p += 2
+		return v, true
+	}
+	readString := func() ([]byte, bool) {
+		n, ok := readShort()
+		if !ok || p+n > len(frame) {
+			return nil, false
+		}
+		s := frame[p : p+n]
+		p += n
+		return s, true
+	}
+
+	count, ok := readShort()
+	if !ok {
+		return false
+	}
+	for i := 0; i < count; i++ {
+		key, ok := readString()
+		if !ok {
+			return false
+		}
+		if _, ok := readString(); !ok { // value, skipped
+			return false
+		}
+		if string(key) == scyllaUseMetadataIDKey {
+			return true
+		}
+	}
+	return false
 }
 
 // A CQL frame carries the protocol version in the low 7 bits of frame[0]; the
@@ -74,6 +122,36 @@ const (
 	protoVersion4    = 0x04
 	protoVersion5    = 0x05
 )
+
+// headerShift reports the extra header byte protocol v3+ spends on its 2-byte
+// stream id: v1/v2 put the opcode at frame[3] and the body at frame[8], v3+ put
+// them at frame[4] and frame[9]. Callers must have checked that frame is non-empty.
+//
+// This is the single place the offset is derived, so the parsers in this file cannot
+// disagree about where a frame's opcode is. The comparison is masked per the note
+// above: the top bit of frame[0] is the request/response direction, and folding it
+// into the version makes every response look like a much newer protocol.
+func headerShift(frame []byte) int {
+	if frame[0]&protoVersionMask > protoVersion2 {
+		return 1
+	}
+	return 0
+}
+
+// fits reports whether the n bytes starting at index lie inside frame.
+//
+// Every length the parsers below walk on is peer- or file-supplied — a recording
+// file is just JSON on disk — so each read is checked against this before it
+// indexes. The helpers return false rather than a partial result, and their
+// callers fall back to hashing the raw bytes, which is what a damaged recording
+// deserves and is still stable between record and replay.
+//
+// n is compared against the space left rather than added to index, because the
+// obvious index+n <= len(frame) overflows on a 32-bit int for the largest length
+// a [bytes] field can encode, and a negative sum passes every bound.
+func fits(frame []byte, index, n int) bool {
+	return index >= 0 && index <= len(frame) && n >= 0 && n <= len(frame)-index
+}
 
 type frameOp byte
 
@@ -97,29 +175,51 @@ const (
 	opAuthSuccess   frameOp = 0x10
 )
 
-func addBytes(frame []byte, index int) int {
-	bytesLength := int(frame[index+0])<<24 | int(frame[index+1])<<16 | int(frame[index+2])<<8 | int(frame[index+3])
+// addBytes advances index past a [bytes] value: a 4-byte length followed by that
+// many bytes.
+//
+// The length is read as signed, which the CQL spec says it is: -1 encodes a null
+// value and -2 an unset one, neither of which carries a payload. Reading it
+// unsigned turns a null bind value into a 4 GB payload and the walk never
+// recovers, so an EXECUTE with one hashed as raw bytes rather than as itself.
+func addBytes(frame []byte, index int) (int, bool) {
+	if !fits(frame, index, 4) {
+		return 0, false
+	}
+	bytesLength := int(int32(uint32(frame[index+0])<<24 | uint32(frame[index+1])<<16 | uint32(frame[index+2])<<8 | uint32(frame[index+3])))
 	index = index + 4
 	if bytesLength > 0 {
+		if !fits(frame, index, bytesLength) {
+			return 0, false
+		}
 		index = index + bytesLength
 	}
-	return index
+	return index, true
 }
 
-func addQueryParams(frame []byte, index int) int {
+func addQueryParams(frame []byte, index int) (int, bool) {
 	//use consistency
+	if !fits(frame, index, 2) {
+		return 0, false
+	}
 	index = index + 2
 
 	//use query flags
 	var flags uint32
 	if frame[0]&protoVersionMask > protoVersion4 {
 		// For protocol v5+, flags are a 4-byte big-endian uint32
+		if !fits(frame, index, 4) {
+			return 0, false
+		}
 		flags = uint32(frame[index])<<24 |
 			uint32(frame[index+1])<<16 |
 			uint32(frame[index+2])<<8 |
 			uint32(frame[index+3])
 		index = index + 4
 	} else {
+		if !fits(frame, index, 1) {
+			return 0, false
+		}
 		flags = uint32(frame[index])
 		index = index + 1
 	}
@@ -134,51 +234,85 @@ func addQueryParams(frame []byte, index int) int {
 	}
 
 	if flags&frm.FlagValues == frm.FlagValues {
+		if !fits(frame, index, 2) {
+			return 0, false
+		}
 		valuesLen := int(frame[index])<<8 | int(frame[index+1])
 		index = index + 2
 
 		for i := 0; i < valuesLen; i++ {
 			if names {
+				if !fits(frame, index, 2) {
+					return 0, false
+				}
 				stringLenght := int(frame[index])<<8 | int(frame[index+1])
+				if !fits(frame, index, 2+stringLenght) {
+					return 0, false
+				}
 				index = index + 2 + stringLenght
 			}
 
-			index = addBytes(frame, index)
+			var ok bool
+			if index, ok = addBytes(frame, index); !ok {
+				return 0, false
+			}
 		}
 	}
 
 	if flags&frm.FlagPageSize == frm.FlagPageSize {
+		if !fits(frame, index, 4) {
+			return 0, false
+		}
 		index = index + 4
 	}
 
 	if flags&frm.FlagWithPagingState == frm.FlagWithPagingState {
-		index = addBytes(frame, index)
+		var ok bool
+		if index, ok = addBytes(frame, index); !ok {
+			return 0, false
+		}
 	}
 
 	if flags&frm.FlagWithSerialConsistency == frm.FlagWithSerialConsistency {
+		if !fits(frame, index, 2) {
+			return 0, false
+		}
 		index = index + 2
 	}
 
 	// do not use timelaps and keyspace
-	return index
+	return index, true
 }
 
 func addHeader(index int) int {
 	return index + 8
 }
 
-func addCustomPayload(frame []byte, index int, p int) int {
+func addCustomPayload(frame []byte, index int, p int) (int, bool) {
+	if !fits(frame, 8+p, 2) {
+		return 0, false
+	}
 	customPayloadLenght := int(frame[8+p])<<8 | int(frame[9+p])
 	if customPayloadLenght > 0 {
 		index = index + 2
 	}
 	for i := 0; i < customPayloadLenght; i++ {
+		if !fits(frame, index, 2) {
+			return 0, false
+		}
 		stringLenght := int(frame[index])<<8 | int(frame[index+1])
+		if !fits(frame, index, 2+stringLenght) {
+			return 0, false
+		}
 		index = index + 2 + stringLenght
-		index = addBytes(frame, index)
+
+		var ok bool
+		if index, ok = addBytes(frame, index); !ok {
+			return 0, false
+		}
 	}
 
-	return index
+	return index, true
 }
 
 func GetFrameHash(frame []byte, useMetadataID bool) int64 {
@@ -208,18 +342,27 @@ func GetFrameHash(frame []byte, useMetadataID bool) int64 {
 	//
 	// TODO(#937): replace this heuristic with real protocol context.
 	//
-	// Note this guard hashes the frame as given, while the raw-bytes fallbacks
-	// inside the switch below hash it with the stream id already blanked. Both are
-	// stable between record and replay, which is all the hash has to be — but they
-	// are not interchangeable, so a new fallback has to match the one next to it
-	// rather than whichever reads better.
+	// Note this guard, and the short-frame guard below it, hash the frame as given,
+	// while the raw-bytes fallbacks inside the switch hash it with the stream id
+	// already blanked. Both are stable between record and replay, which is all the
+	// hash has to be — but they are not interchangeable, so a new fallback has to
+	// match the one next to it rather than whichever reads better. The two guards
+	// here have no choice: they run before, or on frames too short to contain, the
+	// stream id they would have to blank.
 	if len(frame) == 0 || frame[0]&protoVersionMask >= protoVersion5 {
 		return murmur.Murmur3H1(frame)
 	}
 
-	var p int
-	if frame[0]&protoVersionMask > protoVersion2 {
-		p = 1
+	p := headerShift(frame)
+
+	// A frame shorter than its own header — version, flags, stream id, opcode and
+	// the 4-byte body length — cannot be parsed at all: the stream-id blanking
+	// below and the opcode switch after it both index into it unconditionally.
+	if !fits(frame, 0, 8+p) {
+		return murmur.Murmur3H1(frame)
+	}
+
+	if p == 1 {
 		streamID1 := frame[2]
 		streamID2 := frame[3]
 		defer func() {
@@ -229,7 +372,6 @@ func GetFrameHash(frame []byte, useMetadataID bool) int64 {
 		frame[2] = byte('0')
 		frame[3] = byte('0')
 	} else {
-		p = 0
 		streamID1 := frame[2]
 		defer func() {
 			frame[2] = streamID1
@@ -253,22 +395,45 @@ func GetFrameHash(frame []byte, useMetadataID bool) int64 {
 	case byte(opAuthResponse):
 		return murmur.Murmur3H1(frame)
 	case byte(opQuery):
+		var ok bool
 		index := addHeader(p)
 		if frame[1]&frm.FlagCustomPayload == frm.FlagCustomPayload {
-			index = addCustomPayload(frame, index, p)
+			if index, ok = addCustomPayload(frame, index, p); !ok {
+				return murmur.Murmur3H1(frame)
+			}
 		}
 		endIndex := index
-		endIndex = addQueryParams(frame, endIndex)
+		if endIndex, ok = addQueryParams(frame, endIndex); !ok {
+			return murmur.Murmur3H1(frame)
+		}
+		if index > endIndex {
+			return murmur.Murmur3H1(frame)
+		}
 		return murmur.Murmur3H1(frame[index:endIndex])
 	case byte(opExecute):
+		var ok bool
 		index := addHeader(p)
 		if frame[1]&frm.FlagCustomPayload == frm.FlagCustomPayload {
-			index = addCustomPayload(frame, index, p)
+			if index, ok = addCustomPayload(frame, index, p); !ok {
+				return murmur.Murmur3H1(frame)
+			}
 		}
 
 		endIndex := index
 
+		// Every length here is peer- or file-supplied, and this branch now runs on
+		// protocol v4 rather than being unreachable, so bound the reads: a truncated
+		// or wrongly-stamped recording must fall back to hashing the raw bytes (as the
+		// v5 guard above does) rather than panic inside loadResponseFramesFromFiles.
+		// Both the length field and the payload it announces have to be checked —
+		// a plausible length running off the end walks straight into addQueryParams.
+		if !fits(frame, index, 2) {
+			return murmur.Murmur3H1(frame)
+		}
 		preparedIDLen := int(frame[index])<<8 | int(frame[index+1])
+		if !fits(frame, endIndex, 2+preparedIDLen) {
+			return murmur.Murmur3H1(frame)
+		}
 		endIndex = endIndex + 2 + preparedIDLen
 
 		// EXECUTE frames carry a resultMetadataID (short bytes) between the
@@ -278,19 +443,37 @@ func GetFrameHash(frame []byte, useMetadataID bool) int64 {
 		// case cannot be read from the frame bytes, so it is signalled by the
 		// caller via useMetadataID.
 		if frame[0]&protoVersionMask > protoVersion4 || useMetadataID {
+			if !fits(frame, endIndex, 2) {
+				return murmur.Murmur3H1(frame)
+			}
 			resultMetadataIDLen := int(frame[endIndex])<<8 | int(frame[endIndex+1])
+			if !fits(frame, endIndex, 2+resultMetadataIDLen) {
+				return murmur.Murmur3H1(frame)
+			}
 			endIndex = endIndex + 2 + resultMetadataIDLen
 		}
 
 		if frame[0]&protoVersionMask > protoVersion1 {
-			endIndex = addQueryParams(frame, endIndex)
+			if endIndex, ok = addQueryParams(frame, endIndex); !ok {
+				return murmur.Murmur3H1(frame)
+			}
 		} else {
+			// Bounded by the preparedID length check above, which read the same two
+			// bytes at the same index: nothing between here and there moves it.
 			valuesLen := int(frame[index])<<8 | int(frame[index+1])
 			index = index + 2
 			for i := 0; i < valuesLen; i++ {
-				index = addBytes(frame, index)
+				if index, ok = addBytes(frame, index); !ok {
+					return murmur.Murmur3H1(frame)
+				}
 			}
 			index = index + 2
+		}
+		// The v1 branch above walks index independently of endIndex and can leave it
+		// past the end of the range, so the two still have to be ordered before the
+		// slice. endIndex itself is now bounded by the helpers.
+		if index > endIndex {
+			return murmur.Murmur3H1(frame)
 		}
 		return murmur.Murmur3H1(frame[index:endIndex])
 	case byte(opBatch):
