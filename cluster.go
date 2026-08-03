@@ -270,10 +270,36 @@ type ClusterConfig struct {
 	// the metadata to parse the rows and will not reuse the metadata from the prepared
 	// statement.
 	//
+	// This flag exists because prepared-statement result metadata could not be
+	// invalidated safely: after an ALTER the server kept answering with the old
+	// column set, so reusing the cached metadata could misdecode rows. It defaults
+	// to true for that reason.
+	//
+	// This flag is IGNORED — including when it was set to true explicitly — once the
+	// connection exchanges result metadata IDs and the driver holds one for the
+	// statement. That is the case on native protocol v5, and on protocol v4 once the
+	// SCYLLA_USE_METADATA_ID extension is negotiated. Either way the underlying
+	// problem is fixed: the server hands out a result metadata ID at prepare time,
+	// the driver returns it with every execute, and the server answers a stale ID
+	// with METADATA_CHANGED plus fresh metadata. Skipping is then safe, so the driver
+	// skips and this workaround no longer applies.
+	//
+	// This matches scylladb/scylla-drivers#81, which specifies skipping as the safe
+	// default "if SCYLLA_USE_METADATA_ID was negotiated or CQL v5 is used", and the
+	// Scylla java-driver, which skips for any non-empty result metadata ID. The
+	// Scylla python-driver implements the extension half only.
+	//
+	// There is deliberately no knob to force metadata for a whole session once an ID
+	// is in play (the java-driver's skip-cql4-metadata-resolve-method has no
+	// equivalent here). Use Query.NoSkipMetadata for a specific query; ScanCAS and
+	// MapScanCAS already do so internally.
+	//
 	// See https://issues.apache.org/jira/browse/CASSANDRA-10786
 	// See https://github.com/scylladb/scylladb/issues/20860
+	// See https://github.com/scylladb/scylladb/pull/23292
 	//
-	// Default: true
+	// Default: true, and has no effect on a connection that exchanges result
+	// metadata IDs.
 	DisableSkipMetadata bool
 	// DisableShardAwarePort will prevent the driver from connecting to Scylla's shard-aware port,
 	// even if there are nodes in the cluster that support it.
@@ -670,7 +696,14 @@ func (cfg *ClusterConfig) Validate() error {
 	}
 
 	if !cfg.DisableSkipMetadata {
-		cfg.Logger.Println("warning: enabling skipping metadata can lead to unpredictable results when executing query and altering columns involved in the query.")
+		// The hazard this warns about is confined to connections that exchange no
+		// result metadata ID: protocol v4 or lower against a server that does not
+		// advertise SCYLLA_USE_METADATA_ID. Everywhere else the server reports
+		// metadata changes via METADATA_CHANGED, DisableSkipMetadata is ignored, and
+		// skipping is both safe and the default — so say which case is actually risky.
+		// The protocol version is negotiated per connection, long after Validate runs,
+		// so this cannot be narrowed down here.
+		cfg.Logger.Println("warning: skipping result metadata can lead to unpredictable results if columns involved in a prepared query are altered, on connections that exchange no result metadata ID (protocol v4 or lower without the SCYLLA_USE_METADATA_ID extension).")
 	}
 
 	if cfg.SerialConsistency > 0 && !cfg.SerialConsistency.IsSerial() {

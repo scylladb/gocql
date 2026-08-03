@@ -827,6 +827,41 @@ func (c *Conn) setTabletSupported(val bool) {
 	atomic.StoreInt32(&c.tabletsRoutingV1, intVal)
 }
 
+// usesMetadataID reports whether SCYLLA_USE_METADATA_ID was negotiated on this
+// connection. This is the extension alone; see tracksResultMetadataID for the
+// question the request path actually asks.
+//
+// It reads the framer config rather than a separate field on Conn, so the request
+// path and the pooled framers that encode and decode the result metadata ID cannot
+// disagree: a Conn that believed the extension was on while its framers did not
+// would ask the server to skip metadata while writing no ID to compare against.
+// initFramerCache populates the config during connection setup, before any query
+// can run.
+//
+// One framer is not built from that config: framerPool.get falls back to newFramer
+// when the pool is disabled, which yields scyllaUseMetadataID false regardless of
+// what was negotiated. That is correct during the handshake, and unreachable from
+// the request path afterwards — execInternal acquires its framer before addCall
+// rejects a closed connection, so a framer taken after the pool closed belongs to a
+// call that never writes a frame. It is a property of call ordering rather than of
+// construction, so see #982, which also covers flagLWT and tabletsRoutingV1.
+func (c *Conn) usesMetadataID() bool {
+	return c.framers.defaults.scyllaUseMetadataID
+}
+
+// tracksResultMetadataID reports whether an EXECUTE on this connection carries a
+// result metadata ID for the server to compare its own against — either because
+// native protocol v5 makes the field mandatory, or because
+// SCYLLA_USE_METADATA_ID backported it to v4. Either way the server answers a
+// stale ID with METADATA_CHANGED, which is what makes skipping result metadata
+// recoverable. See shouldSkipResultMetadata.
+//
+// Read from the same framer config as usesMetadataID, for the same reason, and
+// because initCache has already masked the protocol version there.
+func (c *Conn) tracksResultMetadataID() bool {
+	return c.framers.defaults.proto > protoVersion4 || c.framers.defaults.scyllaUseMetadataID
+}
+
 func (c *Conn) close() error {
 	return c.r.Close()
 }
@@ -2353,6 +2388,61 @@ func marshalQueryValue(typ TypeInfo, value any, dst *queryValues) error {
 	return nil
 }
 
+// shouldSkipResultMetadata reports whether an EXECUTE request should ask the
+// server to skip result metadata in its RESULT/Rows response.
+//
+// A per-query NoSkipMetadata() (queryDisableSkipMetadata) always forces metadata.
+//
+// hasColumns is not only an optimization. A statement whose RESULT/Prepared
+// response carries no result metadata cannot have its metadata reused, and on
+// current ScyllaDB asking to skip it is unrecoverable: such a statement is handed
+// an ID hashed from empty metadata, the server compares the returned ID against
+// that same empty-metadata ID, always matches, and so never sets
+// METADATA_CHANGED — leaving the driver with a response it has no columns to
+// decode. LIST ROLES OF is the motivating case. The server-side fixes for this
+// (scylladb/scylladb#29233, scylladb/scylladb#29275) are both closed unmerged, so
+// this gate is load-bearing, not cosmetic. The Scylla python-driver and
+// java-driver check the same thing, java-driver first of all.
+//
+// idTracked means the response carries a result metadata ID mechanism the driver
+// can rely on: the connection speaks a protocol that exchanges result metadata
+// IDs *and* the prepared statement holds a non-empty one. Both halves matter — the
+// ID exchange is what makes the server report staleness with METADATA_CHANGED, and
+// an ID is what it has to compare against. With both in hand skipping is safe, so
+// the session-level DisableSkipMetadata is deliberately overridden, including when
+// it was set explicitly. That flag is itself a workaround for the invalidation bug
+// this mechanism fixes (https://github.com/scylladb/scylladb/issues/20860), and
+// upstream gocql skips by default on every protocol version.
+//
+// This follows scylladb/scylla-drivers#81: skipping is the safe default "if
+// SCYLLA_USE_METADATA_ID was negotiated or CQL v5 is used". The Scylla java-driver
+// reaches the same rule from the other direction — DefaultPreparedStatement's
+// resolveSkipMetadata returns true for any non-empty result metadata ID, which
+// native v5 always supplies. The Scylla python-driver implements the extension half
+// only, deliberately leaving native v5 alone.
+//
+// A statement prepared before the ID exchange was available has no ID. The prepared
+// cache is keyed by host and survives reconnects, so that is reachable during a
+// rolling upgrade. Such a statement asks for metadata for one more round trip: the
+// empty ID it sends is treated as a mismatch, the server answers METADATA_CHANGED
+// with a fresh ID, and later executions skip. Gating here means there is never a
+// window where the driver skips metadata it cannot recover.
+func shouldSkipResultMetadata(sessionDisableSkipMetadata, queryDisableSkipMetadata, idTracked, hasColumns bool) bool {
+	disableSkipMeta := queryDisableSkipMetadata || (!idTracked && sessionDisableSkipMetadata)
+	return !disableSkipMeta && hasColumns
+}
+
+// metadataIDTracked reports whether an EXECUTE for this prepared statement can rely
+// on the server to report result-metadata changes, which is what makes skipping
+// metadata safe. Both conditions are required: the connection must exchange result
+// metadata IDs at all (Conn.tracksResultMetadataID — native v5 or the
+// SCYLLA_USE_METADATA_ID extension), and the statement must carry a non-empty
+// result metadata ID for the server to compare its own against. See
+// shouldSkipResultMetadata.
+func metadataIDTracked(idExchangeActive bool, resultMetadataID []byte) bool {
+	return idExchangeActive && len(resultMetadataID) > 0
+}
+
 func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 	return c.executeQueryWithMetrics(ctx, qry, qry.metrics)
 }
@@ -2436,14 +2526,18 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 			}
 		}
 
-		// if the metadata was not present in the response then we should not skip it
-		params.skipMeta = !(c.session.cfg.DisableSkipMetadata || qry.disableSkipMetadata) && len(info.response.columns) != 0
+		params.skipMeta = shouldSkipResultMetadata(
+			c.session.cfg.DisableSkipMetadata,
+			qry.disableSkipMetadata,
+			metadataIDTracked(c.tracksResultMetadataID(), info.resultMetadataID),
+			len(info.response.columns) != 0,
+		)
 
 		frame = &writeExecuteFrame{
 			preparedID:       info.id,
+			resultMetadataID: info.resultMetadataID,
 			params:           params,
 			customPayload:    qry.customPayload,
-			resultMetadataID: info.resultMetadataID,
 		}
 
 		// Set "lwt", keyspace", "table" property in the query if it is present in preparedMetadata
@@ -2508,6 +2602,29 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 			).bindWarningHandlerWithMetrics(qry, metrics, warningHandler)
 		}
 
+		if x.meta.newMetadataID != nil && x.meta.noMetaData() {
+			// METADATA_CHANGED obliges the server to include the new metadata, so this
+			// response is malformed, and there are two wrong ways to continue.
+			//
+			// Adopting the new ID while keeping the old columns is unrecoverable: the
+			// server would match the ID from then on and stop sending metadata, leaving
+			// the driver decoding rows against stale columns indefinitely. The
+			// python-driver guards that the same way.
+			//
+			// Decoding *this* response against the cached columns is no better. The
+			// server has just declared them stale, and the noMetaData() branch below
+			// would reuse them anyway — which is precisely the misdecode this whole
+			// mechanism exists to prevent (scylladb/scylladb#20860).
+			//
+			// So do neither. Fail the query with the old ID still cached: a retry
+			// resends it, the server reports the mismatch again, and it has another
+			// chance to answer with the metadata it owes.
+			return newErrorIterWithReleasedFramer(
+				fmt.Errorf("gocql: server reported changed result metadata for %q but sent no column metadata", qry.stmt),
+				framer,
+			).bindWarningHandlerWithMetrics(qry, metrics, warningHandler)
+		}
+
 		if x.meta.newMetadataID != nil {
 			// If a RESULT/Rows message reports changed resultset metadata with the
 			// Metadata_changed flag, the reported new resultset metadata must be used
@@ -2524,6 +2641,12 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 			// entry while it is still the exact prepared statement `info` points to
 			// (pointer identity, not id bytes), so a same-id reprepare of a newer
 			// generation is left untouched.
+			//
+			// `response` caches this whole resultMetadata, so it keeps this response's
+			// flags (METADATA_CHANGED, possibly HasMorePages) and pagingState alongside
+			// the columns. Only the columns are reused: the code below reads
+			// morePages()/noMetaData() off the live x.meta, and overwrites
+			// iter.meta.pagingState from it.
 			if info != nil {
 				newInflight := &inflightPrepare{
 					done: make(chan struct{}),

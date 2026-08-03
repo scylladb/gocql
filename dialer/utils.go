@@ -1,6 +1,7 @@
 package dialer
 
 import (
+	"bytes"
 	"errors"
 
 	frm "github.com/gocql/gocql/internal/frame"
@@ -28,6 +29,38 @@ func FrameIsProtoV5OrNewer(b []byte) bool {
 type Record struct {
 	Data     []byte `json:"data"`
 	StreamID int    `json:"stream_id"`
+	// UseMetadataID reports whether the SCYLLA_USE_METADATA_ID extension was
+	// negotiated on the connection this frame belongs to. It governs whether an
+	// EXECUTE request carries a resultMetadataID short-bytes field on protocol
+	// v4 (see GetFrameHash). The recorder stamps it per connection; the frame
+	// bytes alone cannot reveal it.
+	UseMetadataID bool `json:"use_metadata_id"`
+}
+
+// scyllaUseMetadataIDKey is the STARTUP/SUPPORTED option key for the
+// SCYLLA_USE_METADATA_ID protocol extension (see gocql/scylla.go).
+const scyllaUseMetadataIDKey = "SCYLLA_USE_METADATA_ID"
+
+// StartupNegotiatesMetadataID reports whether the given raw request frame is a
+// STARTUP that opts into the SCYLLA_USE_METADATA_ID extension. The driver
+// serializes the extension as the key SCYLLA_USE_METADATA_ID in the STARTUP
+// [string map], so its presence is detectable by scanning the frame. Detection
+// is restricted to STARTUP requests so the same key appearing in a SUPPORTED
+// response (a read frame) never trips it.
+func StartupNegotiatesMetadataID(frame []byte) bool {
+	if len(frame) < 5 {
+		return false
+	}
+	var op byte
+	if frame[0] > 0x02 {
+		op = frame[4]
+	} else {
+		op = frame[3]
+	}
+	if frameOp(op) != opStartup {
+		return false
+	}
+	return bytes.Contains(frame, []byte(scyllaUseMetadataIDKey))
 }
 
 // A CQL frame carries the protocol version in the low 7 bits of frame[0]; the
@@ -148,7 +181,13 @@ func addCustomPayload(frame []byte, index int, p int) int {
 	return index
 }
 
-func GetFrameHash(frame []byte) int64 {
+func GetFrameHash(frame []byte, useMetadataID bool) int64 {
+	// useMetadataID reports whether the SCYLLA_USE_METADATA_ID extension was
+	// negotiated on the connection. On protocol v4 the extension adds a
+	// resultMetadataID short-bytes field to EXECUTE requests (the same field v5
+	// always carries); it cannot be inferred from the frame bytes, so it is
+	// plumbed in by the recorder/replayer (see Record.UseMetadataID).
+	//
 	// GetFrameHash parses raw CQL request frames. On protocol v5+ the on-wire
 	// bytes recorded by the replayer are not a CQL frame but a transport
 	// segment produced by framer.prepareModernLayout (segment header, optional
@@ -169,6 +208,11 @@ func GetFrameHash(frame []byte) int64 {
 	//
 	// TODO(#937): replace this heuristic with real protocol context.
 	//
+	// Note this guard hashes the frame as given, while the raw-bytes fallbacks
+	// inside the switch below hash it with the stream id already blanked. Both are
+	// stable between record and replay, which is all the hash has to be — but they
+	// are not interchangeable, so a new fallback has to match the one next to it
+	// rather than whichever reads better.
 	if len(frame) == 0 || frame[0]&protoVersionMask >= protoVersion5 {
 		return murmur.Murmur3H1(frame)
 	}
@@ -227,14 +271,13 @@ func GetFrameHash(frame []byte) int64 {
 		preparedIDLen := int(frame[index])<<8 | int(frame[index+1])
 		endIndex = endIndex + 2 + preparedIDLen
 
-		// For protocol v5+, EXECUTE frames carry a resultMetadataID (short bytes)
-		// between the preparedID and the query params. Skip it so the query-params
-		// offset (and therefore the extracted hash) is correct. Unreachable today:
-		// the v5 guard above already diverted anything at v5 or later, and Scylla
-		// negotiates at most protocol v4 in any case. It is kept, masked
-		// consistently with that guard, so the parser stays correct once #937
-		// plumbs real protocol context through and v5 frames reach this branch.
-		if frame[0]&protoVersionMask > protoVersion4 {
+		// EXECUTE frames carry a resultMetadataID (short bytes) between the
+		// preparedID and the query params on protocol v5+, and on protocol v4 when
+		// the SCYLLA_USE_METADATA_ID extension is negotiated. Skip it so the
+		// query-params offset (and therefore the extracted hash) is correct. The v4
+		// case cannot be read from the frame bytes, so it is signalled by the
+		// caller via useMetadataID.
+		if frame[0]&protoVersionMask > protoVersion4 || useMetadataID {
 			resultMetadataIDLen := int(frame[endIndex])<<8 | int(frame[endIndex+1])
 			endIndex = endIndex + 2 + resultMetadataIDLen
 		}

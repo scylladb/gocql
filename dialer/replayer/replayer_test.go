@@ -35,7 +35,7 @@ func TestConnectionReplayerRejectsProtoV5(t *testing.T) {
 func TestConnectionReplayerAcceptsProtoV4(t *testing.T) {
 	req := optionsFrame(0x04)
 	c := &ConnectionReplayer{
-		frames:     []*FrameRecorded{{Response: optionsFrame(0x84), Hash: dialer.GetFrameHash(req)}},
+		frames:     []*FrameRecorded{{Response: optionsFrame(0x84), Hash: dialer.GetFrameHash(req, false)}},
 		gotRequest: make(chan struct{}, 1),
 	}
 

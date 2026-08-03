@@ -3657,28 +3657,117 @@ func TestQueryCompressionNotWorthIt(t *testing.T) {
 	require.Equal(t, str, result)
 }
 
-// This test ensures that the whole Metadata_changed flow
-// is handled properly.
+// This test ensures that the whole Metadata_changed flow is handled properly.
 //
-// To trigger C* to return Metadata_changed we should do:
+// To trigger the server to return Metadata_changed we should do:
 //  1. Create a table
 //  2. Prepare stmt which uses the created table
 //  3. Change the table schema in order to affect prepared stmt (e.g. add a column)
-//  4. Execute prepared stmt. As a result C* should return RESULT/ROWS response with
-//     Metadata_changed flag, new metadata id and updated metadata resultset.
+//  4. Execute prepared stmt. As a result the server should return RESULT/ROWS
+//     response with Metadata_changed flag, new metadata id and updated metadata
+//     resultset.
 //
 // The driver should handle this by updating its prepared statement inside the cache
-// when it receives RESULT/ROWS with Metadata_changed flag
+// when it receives RESULT/ROWS with Metadata_changed flag.
+//
+// It runs for both ways the result-metadata-ID exchange can be active on a
+// connection: native protocol v5, where the field is mandatory, and protocol v4
+// with Scylla's SCYLLA_USE_METADATA_ID extension, which backports it. The two share
+// the whole read and cache-update path (framer.parseResultMetadata and the
+// RESULT/Rows case in Conn.executeQueryWithMetrics), so they are driven through one
+// flow rather than two copies of it.
+//
+// Exactly one case runs per invocation, because the protocol version is fixed for
+// the whole suite by the -proto flag. Note that the v5 case never runs in CI:
+// TEST_CQL_PROTOCOL is pinned to 4 in the Makefile and no workflow overrides it, so
+// reaching it takes an explicit `TEST_CQL_PROTOCOL=5 make test-integration-cassandra`.
 func TestPrepareExecuteMetadataChangedFlag(t *testing.T) {
-	session := createSession(t)
-	defer session.Close()
+	for _, tc := range []struct {
+		name  string
+		table string
+		// gate returns a reason to skip, or "" to run. It may also fail outright, for
+		// a state that must not be allowed to pass as a skip.
+		gate func(t *testing.T, session *Session, conn *Conn) string
+	}{
+		{
+			name:  "native protocol v5",
+			table: "metadata_changed",
+			gate: func(t *testing.T, session *Session, conn *Conn) string {
+				if session.cfg.ProtoVersion < protoVersion5 {
+					return "Metadata_changed mechanism is only available in proto > 4"
+				}
+				if *flagDistribution == "scylla" && flagCassVersion.Before(2025, 3, 0) {
+					return "ScyllaDB before 2025.3 does not exchange result metadata ids"
+				}
+				return ""
+			},
+		},
+		{
+			name:  "protocol v4 with SCYLLA_USE_METADATA_ID",
+			table: "scylla_metadata_changed",
+			gate: func(t *testing.T, session *Session, conn *Conn) string {
+				// Skip only for a server that cannot do this at all. If the server
+				// advertised SCYLLA_USE_METADATA_ID and the driver still failed to
+				// negotiate it, that is a regression — and since this is the only
+				// end-to-end coverage of the extension, skipping would turn that
+				// regression green. Fail instead.
+				if !conn.scyllaSupported.IsMetadataIDSupported() {
+					return "server does not advertise SCYLLA_USE_METADATA_ID"
+				}
+				if !conn.usesMetadataID() {
+					t.Fatal("server advertises SCYLLA_USE_METADATA_ID but the driver did not negotiate it")
+				}
+				return ""
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			session := createSession(t)
+			defer session.Close()
 
-	if session.cfg.ProtoVersion < protoVersion5 || (*flagDistribution == "scylla" && flagCassVersion.Before(2025, 3, 0)) {
-		t.Skip("Metadata_changed mechanism is only available in proto > 4")
+			// We have to specify conn for all queries to ensure that
+			// all queries are running on the same node
+			conn := session.getConn()
+			if conn == nil {
+				t.Skip("no connection available")
+			}
+			if reason := tc.gate(t, session, conn); reason != "" {
+				t.Skip(reason)
+			}
+
+			runMetadataChangedFlow(t, session, conn, tc.table)
+		})
+	}
+}
+
+// runMetadataChangedFlow drives the METADATA_CHANGED flow against
+// gocql_test.<table>, with every statement pinned to conn so they all land on the
+// node whose prepared-statement cache entry is being inspected.
+func runMetadataChangedFlow(t *testing.T, session *Session, conn *Conn, table string) {
+	t.Helper()
+
+	qualified := "gocql_test." + table
+
+	// Drop rather than CREATE IF NOT EXISTS: the flow ALTERs the table, so a table
+	// left behind by an earlier run already has new_col and the ALTER below would
+	// fail before anything is exercised.
+	if err := createTable(session, "DROP TABLE IF EXISTS "+qualified); err != nil {
+		t.Fatal(err)
+	}
+	if err := createTable(session, "CREATE TABLE "+qualified+"(id int, PRIMARY KEY (id))"); err != nil {
+		t.Fatal(err)
 	}
 
-	if err := createTable(session, "CREATE TABLE IF NOT EXISTS gocql_test.metadata_changed(id int, PRIMARY KEY (id))"); err != nil {
-		t.Fatal(err)
+	// Bound every query, not only the ones after the schema change: the first
+	// response after it is the one that actually exercises METADATA_CHANGED, so it is
+	// the most likely to hang and the least useful to leave to the package timeout.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
+	defer cancel()
+
+	pinned := func(stmt string, values ...any) *Query {
+		q := session.Query(stmt, values...).WithContext(ctx)
+		q.conn = conn
+		return q
 	}
 
 	type record struct {
@@ -3689,21 +3778,14 @@ func TestPrepareExecuteMetadataChangedFlag(t *testing.T) {
 	firstRecord := record{
 		id: 1,
 	}
-	err := session.Query("INSERT INTO gocql_test.metadata_changed (id) VALUES (?)", firstRecord.id).Exec()
-	if err != nil {
+	if err := pinned("INSERT INTO "+qualified+" (id) VALUES (?)", firstRecord.id).Exec(); err != nil {
 		t.Fatal(err)
 	}
 
-	// We have to specify conn for all queries to ensure that
-	// all queries are running on the same node
-	conn := session.getConn()
-
-	const selectStmt = "SELECT * FROM gocql_test.metadata_changed"
-	queryBeforeTableAltering := session.Query(selectStmt)
-	queryBeforeTableAltering.conn = conn
+	selectStmt := "SELECT * FROM " + qualified
+	queryBeforeTableAltering := pinned(selectStmt)
 	row := make(map[string]interface{})
-	err = queryBeforeTableAltering.MapScan(row)
-	if err != nil {
+	if err := queryBeforeTableAltering.MapScan(row); err != nil {
 		t.Fatal(err)
 	}
 
@@ -3714,11 +3796,8 @@ func TestPrepareExecuteMetadataChangedFlag(t *testing.T) {
 	inflight, _ := session.stmtsLRU.get(stmtCacheKey)
 	preparedStatementBeforeTableAltering := inflight.preparedStatment
 
-	// Changing table schema in order to cause C* to return RESULT/ROWS Metadata_changed
-	alteringTableQuery := session.Query("ALTER TABLE gocql_test.metadata_changed ADD new_col int")
-	alteringTableQuery.conn = conn
-	err = alteringTableQuery.Exec()
-	if err != nil {
+	// Change the table schema so the server returns RESULT/Rows with METADATA_CHANGED.
+	if err := pinned("ALTER TABLE " + qualified + " ADD new_col int").Exec(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -3726,22 +3805,19 @@ func TestPrepareExecuteMetadataChangedFlag(t *testing.T) {
 		id:     2,
 		newCol: 10,
 	}
-	err = session.Query("INSERT INTO gocql_test.metadata_changed (id, new_col) VALUES (?, ?)", secondRecord.id, secondRecord.newCol).
-		Exec()
-	if err != nil {
+	if err := pinned("INSERT INTO "+qualified+" (id, new_col) VALUES (?, ?)", secondRecord.id, secondRecord.newCol).Exec(); err != nil {
 		t.Fatal(err)
 	}
 
-	// Handles result from iter and ensures integrity of the result,
-	// closes iter and handles error
+	// handleRows scans all rows from the iterator and verifies the values.
 	handleRows := func(iter *Iter) {
 		t.Helper()
 
 		var scannedID int
-		var scannedNewCol *int // to perform null values
+		var scannedNewCol *int // to capture null values
 
-		// when the driver handling null values during unmarshalling
-		// it sets to dest type its zero value, which is (*int)(nil) for this case
+		// When the driver handles null values during unmarshalling it sets the
+		// destination to its zero value, which is (*int)(nil) for this case.
 		var nilIntPtr *int
 
 		// Collect all rows into a map to avoid order-dependent assertions.
@@ -3759,26 +3835,24 @@ func TestPrepareExecuteMetadataChangedFlag(t *testing.T) {
 		err := iter.Close()
 		if err != nil {
 			if errors.Is(err, context.DeadlineExceeded) {
-				t.Fatal("It is likely failed due deadlock")
+				t.Fatal("It is likely failed due to a deadlock")
 			}
 			t.Fatal(err)
 		}
 	}
 
-	// Expecting C* will return RESULT/ROWS Metadata_changed
-	// and it will be properly handled
-	queryAfterTableAltering := session.Query(selectStmt)
-	queryAfterTableAltering.conn = conn
-	iter := queryAfterTableAltering.Iter()
-	handleRows(iter)
+	// The first query after the schema change should trigger METADATA_CHANGED.
+	handleRows(pinned(selectStmt).Iter())
 
-	// Ensuring if cache contains updated prepared statement
+	// The prepared statement cache must have been updated with the new metadata ID.
 	inflight, _ = session.stmtsLRU.get(stmtCacheKey)
 	preparedStatementAfterTableAltering := inflight.preparedStatment
 	require.NotEqual(t, preparedStatementBeforeTableAltering.resultMetadataID, preparedStatementAfterTableAltering.resultMetadataID)
 	require.NotEqual(t, preparedStatementBeforeTableAltering.response, preparedStatementAfterTableAltering.response)
 
-	// FORCE SEND OLD RESULT METADATA ID (https://issues.apache.org/jira/browse/CASSANDRA-20028)
+	// Force the driver to send the old (stale) result metadata ID, to verify the
+	// server still signals the change when the driver's id is outdated.
+	// (https://issues.apache.org/jira/browse/CASSANDRA-20028)
 	closedCh := make(chan struct{})
 	close(closedCh)
 	session.stmtsLRU.add(stmtCacheKey, &inflightPrepare{
@@ -3787,15 +3861,7 @@ func TestPrepareExecuteMetadataChangedFlag(t *testing.T) {
 		preparedStatment: preparedStatementBeforeTableAltering,
 	})
 
-	// Running query with timeout to ensure there is no deadlocks.
-	// However, it doesn't 100% proves that there is a deadlock...
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
-	defer cancel()
-
-	queryAfterTableAltering2 := session.Query(selectStmt).WithContext(ctx)
-	queryAfterTableAltering2.conn = conn
-	iter = queryAfterTableAltering2.Iter()
-	handleRows(iter)
+	handleRows(pinned(selectStmt).Iter())
 
 	inflight, _ = session.stmtsLRU.get(stmtCacheKey)
 	preparedStatementAfterTableAltering2 := inflight.preparedStatment
@@ -3806,18 +3872,15 @@ func TestPrepareExecuteMetadataChangedFlag(t *testing.T) {
 	require.NotEqual(t, preparedStatementAfterTableAltering.response, preparedStatementAfterTableAltering2.response) // METADATA_CHANGED flag
 	require.True(t, preparedStatementAfterTableAltering2.response.flags&frm.FlagMetaDataChanged != 0)
 
-	// Executing prepared stmt and expecting that C* won't return
-	// Metadata_changed because the table is not being changed.
-	queryAfterTableAltering3 := session.Query(selectStmt).WithContext(ctx)
-	queryAfterTableAltering3.conn = conn
-	iter = queryAfterTableAltering3.Iter()
-	handleRows(iter)
+	// A subsequent query carrying the correct (updated) metadata ID must not trigger
+	// METADATA_CHANGED, which means the cache entry must not be replaced at all.
+	// Assert that by pointer identity: comparing the entry's fields would compare it
+	// with itself, so such an assertion could never fail.
+	handleRows(pinned(selectStmt).Iter())
 
-	// Ensuring metadata of prepared stmt is not changed
 	inflight, _ = session.stmtsLRU.get(stmtCacheKey)
-	preparedStatementAfterTableAltering3 := inflight.preparedStatment
-	require.Equal(t, preparedStatementAfterTableAltering2.resultMetadataID, preparedStatementAfterTableAltering3.resultMetadataID)
-	require.Equal(t, preparedStatementAfterTableAltering2.response, preparedStatementAfterTableAltering3.response)
+	require.Same(t, preparedStatementAfterTableAltering2, inflight.preparedStatment,
+		"the cached prepared statement should not have been replaced")
 }
 
 func TestStmtCacheUsesOverriddenKeyspace(t *testing.T) {

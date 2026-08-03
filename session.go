@@ -2428,6 +2428,21 @@ func (q *Query) PageState(state []byte) *Query {
 // statement. This should only be used to work around cassandra bugs, such as when using
 // CAS operations which do not end in Cas.
 //
+// This is the only way to force metadata on a connection that exchanges result
+// metadata IDs — native protocol v5, or protocol v4 with the SCYLLA_USE_METADATA_ID
+// extension negotiated. There, skipping is the default and the cluster-level
+// ClusterConfig.DisableSkipMetadata is ignored, but this per-query setting still
+// wins.
+//
+// Conditional (LWT) statements are the case to keep in mind: their response column
+// set depends on whether the condition applied, which a result metadata ID cannot
+// express, since the ID describes the statement and not the outcome. In practice
+// the driver does not skip for them anyway — a prepared conditional statement's
+// result metadata is empty, and metadata is never skipped without cached columns to
+// reuse — and ScanCAS and MapScanCAS set this internally regardless. Setting it
+// explicitly on a conditional statement driven through Iter or MapScan is therefore
+// belt-and-braces rather than required.
+//
 // See https://issues.apache.org/jira/browse/CASSANDRA-11099
 // https://github.com/apache/cassandra-gocql-driver/issues/612
 func (q *Query) NoSkipMetadata() *Query {
