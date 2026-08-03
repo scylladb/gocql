@@ -117,36 +117,43 @@ func (r *ringDescriber) GetHostsFromSystem() ([]*HostInfo, string, error) {
 	var (
 		localHost *HostInfo
 		peerHosts []*HostInfo
-		localErr  error
-		peerErr   error
 		wg        sync.WaitGroup
+		errMu     sync.Mutex
+		firstErr  error
 	)
 
 	ctx, cancel := context.WithCancel(context.TODO())
 	defer cancel()
 
+	recordErr := func(err error) {
+		if err == nil {
+			return
+		}
+		errMu.Lock()
+		defer errMu.Unlock()
+		if firstErr == nil {
+			firstErr = err
+			cancel()
+		}
+	}
+
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
+		var localErr error
 		localHost, localErr = r.getLocalHostInfo(ctx, ch.conn)
-		if localErr != nil {
-			cancel()
-		}
+		recordErr(localErr)
 	}()
 	go func() {
 		defer wg.Done()
+		var peerErr error
 		peerHosts, peerErr = r.getClusterPeerInfo(ctx, ch.conn)
-		if peerErr != nil {
-			cancel()
-		}
+		recordErr(peerErr)
 	}()
 	wg.Wait()
 
-	if localErr != nil {
-		return r.prevHosts, r.prevPartitioner, localErr
-	}
-	if peerErr != nil {
-		return r.prevHosts, r.prevPartitioner, peerErr
+	if firstErr != nil {
+		return r.prevHosts, r.prevPartitioner, firstErr
 	}
 
 	var hosts []*HostInfo
