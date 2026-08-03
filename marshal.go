@@ -223,9 +223,17 @@ func Marshal(info TypeInfo, value any) ([]byte, error) {
 	case TypeTimestamp:
 		return marshalTimestamp(value)
 	case TypeList, TypeSet:
-		return marshalList(info.(CollectionType), value)
+		collection, ok := info.(CollectionType)
+		if !ok {
+			return nil, marshalErrorf("marshal: can not use %T as list/set type", info)
+		}
+		return marshalList(collection, value)
 	case TypeMap:
-		return marshalMap(info.(CollectionType), value)
+		collection, ok := info.(CollectionType)
+		if !ok {
+			return nil, marshalErrorf("marshal: can not use %T as map type", info)
+		}
+		return marshalMap(collection, value)
 	case TypeUUID:
 		return marshalUUID(value)
 	case TypeTimeUUID:
@@ -336,9 +344,17 @@ func Unmarshal(info TypeInfo, data []byte, value any) error {
 	case TypeTimestamp:
 		return unmarshalTimestamp(data, value)
 	case TypeList, TypeSet:
-		return unmarshalList(info.(CollectionType), data, value)
+		collection, ok := info.(CollectionType)
+		if !ok {
+			return unmarshalErrorf("unmarshal: can not use %T as list/set type", info)
+		}
+		return unmarshalList(collection, data, value)
 	case TypeMap:
-		return unmarshalMap(info.(CollectionType), data, value)
+		collection, ok := info.(CollectionType)
+		if !ok {
+			return unmarshalErrorf("unmarshal: can not use %T as map type", info)
+		}
+		return unmarshalMap(collection, data, value)
 	case TypeTimeUUID:
 		return unmarshalTimeUUID(data, value)
 	case TypeUUID:
@@ -1141,6 +1157,18 @@ func readMapEntryData(data []byte) (entryData []byte, consumed int, err error) {
 	return data[4 : 4+m], 4 + m, nil
 }
 
+// mapSizeHint bounds a wire-provided entry count by the remaining payload
+// length before it's used as a map preallocation hint, so a hostile size
+// prefix (e.g. n = MaxInt32 over a few bytes of payload) can't force a huge
+// allocation. Each entry needs at least 8 bytes of framing (4-byte key length
+// + 4-byte value length), so len(data)/8 bounds the hint.
+func mapSizeHint(n int, data []byte) int {
+	if max := len(data) / 8; n > max {
+		return max
+	}
+	return n
+}
+
 // isStringKeyType returns true if the CQL type encodes as raw bytes that can be
 // interpreted as a Go string without further validation (text, varchar).
 //
@@ -1226,7 +1254,7 @@ func unmarshalMapStringString(data []byte, dest *map[string]string) error {
 		return unmarshalErrorf("negative map size %d", n)
 	}
 	data = data[p:]
-	m := make(map[string]string, n)
+	m := make(map[string]string, mapSizeHint(n, data))
 	for i := 0; i < n; i++ {
 		keyData, c, err := readMapEntryData(data)
 		if err != nil {
@@ -1253,7 +1281,7 @@ func unmarshalMapStringBytes(data []byte, dest *map[string][]byte) error {
 		return unmarshalErrorf("negative map size %d", n)
 	}
 	data = data[p:]
-	m := make(map[string][]byte, n)
+	m := make(map[string][]byte, mapSizeHint(n, data))
 	for i := 0; i < n; i++ {
 		keyData, c, err := readMapEntryData(data)
 		if err != nil {
@@ -1286,7 +1314,7 @@ func unmarshalMapStringInt64(data []byte, dest *map[string]int64) error {
 		return unmarshalErrorf("negative map size %d", n)
 	}
 	data = data[p:]
-	m := make(map[string]int64, n)
+	m := make(map[string]int64, mapSizeHint(n, data))
 	for i := 0; i < n; i++ {
 		keyData, c, err := readMapEntryData(data)
 		if err != nil {
@@ -1317,7 +1345,7 @@ func unmarshalMapStringInt32(data []byte, dest *map[string]int32) error {
 		return unmarshalErrorf("negative map size %d", n)
 	}
 	data = data[p:]
-	m := make(map[string]int32, n)
+	m := make(map[string]int32, mapSizeHint(n, data))
 	for i := 0; i < n; i++ {
 		keyData, c, err := readMapEntryData(data)
 		if err != nil {
@@ -1348,7 +1376,7 @@ func unmarshalMapStringFloat64(data []byte, dest *map[string]float64) error {
 		return unmarshalErrorf("negative map size %d", n)
 	}
 	data = data[p:]
-	m := make(map[string]float64, n)
+	m := make(map[string]float64, mapSizeHint(n, data))
 	for i := 0; i < n; i++ {
 		keyData, c, err := readMapEntryData(data)
 		if err != nil {
@@ -1379,7 +1407,7 @@ func unmarshalMapStringBool(data []byte, dest *map[string]bool) error {
 		return unmarshalErrorf("negative map size %d", n)
 	}
 	data = data[p:]
-	m := make(map[string]bool, n)
+	m := make(map[string]bool, mapSizeHint(n, data))
 	for i := 0; i < n; i++ {
 		keyData, c, err := readMapEntryData(data)
 		if err != nil {
@@ -1410,7 +1438,7 @@ func unmarshalMapInt64String(data []byte, dest *map[int64]string) error {
 		return unmarshalErrorf("negative map size %d", n)
 	}
 	data = data[p:]
-	m := make(map[int64]string, n)
+	m := make(map[int64]string, mapSizeHint(n, data))
 	for i := 0; i < n; i++ {
 		keyData, c, err := readMapEntryData(data)
 		if err != nil {
@@ -1441,7 +1469,7 @@ func unmarshalMapInt64Int64(data []byte, dest *map[int64]int64) error {
 		return unmarshalErrorf("negative map size %d", n)
 	}
 	data = data[p:]
-	m := make(map[int64]int64, n)
+	m := make(map[int64]int64, mapSizeHint(n, data))
 	for i := 0; i < n; i++ {
 		keyData, c, err := readMapEntryData(data)
 		if err != nil {
@@ -1511,12 +1539,12 @@ func unmarshalMap(info CollectionType, data []byte, value any) error {
 	if n < 0 {
 		return unmarshalErrorf("negative map size %d", n)
 	}
-	rv.Set(reflect.MakeMapWithSize(t, n))
+	data = data[p:]
+	rv.Set(reflect.MakeMapWithSize(t, mapSizeHint(n, data)))
 	// If rv was an interface, get the underlying map
 	if rv.Kind() == reflect.Interface {
 		rv = rv.Elem()
 	}
-	data = data[p:]
 	for i := 0; i < n; i++ {
 		m, p, err := readCollectionSize(data)
 		if err != nil {
