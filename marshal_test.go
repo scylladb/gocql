@@ -1432,6 +1432,52 @@ func int64Bytes(v int64) []byte {
 		byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v)}
 }
 
+func TestMarshalUnmarshalCollectionTypeAssertion(t *testing.T) {
+	t.Parallel()
+
+	// NativeType reports TypeMap/TypeList/TypeSet but is not a CollectionType.
+	// Marshal/Unmarshal dispatch must return an error instead of panicking on
+	// the type assertion.
+	notCollection := []Type{TypeMap, TypeList, TypeSet}
+	for _, typ := range notCollection {
+		typ := typ
+		t.Run(typ.String(), func(t *testing.T) {
+			info := NativeType{proto: protoVersion4, typ: typ}
+
+			if _, err := Marshal(info, []string{"a"}); err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			var dest any
+			if err := Unmarshal(info, []byte{0, 0, 0, 0}, &dest); err == nil {
+				t.Fatal("expected error, got nil")
+			}
+		})
+	}
+}
+
+func TestMapSizeHint(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		n    int
+		data []byte
+		want int
+	}{
+		{"fits within payload", 2, make([]byte, 16), 2},
+		{"hostile huge count clamped", 2147483647, make([]byte, 8), 1},
+		{"empty payload clamps to zero", 5, nil, 0},
+	}
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			if got := mapSizeHint(c.n, c.data); got != c.want {
+				t.Fatalf("mapSizeHint(%d, %d bytes) = %d, want %d", c.n, len(c.data), got, c.want)
+			}
+		})
+	}
+}
+
 func TestUnmarshalMapFastPath(t *testing.T) {
 	t.Parallel()
 
