@@ -1356,6 +1356,11 @@ type queryValues struct {
 	name    string
 	value   []byte
 	isUnset bool
+	// pooled reports whether value was returned from marshalOutputPool (the
+	// buffer-pool fast path) and is safe to return to the pool after the
+	// framer has copied it. False when the bytes came from a user Marshaler,
+	// the reflection path, or any non-pooled allocation site.
+	pooled bool
 }
 
 type queryParams struct {

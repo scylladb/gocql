@@ -2315,6 +2315,13 @@ func marshalQueryValue(typ TypeInfo, value any, dst *queryValues) error {
 		value = named.value
 	}
 
+	// Capture user-Marshaler handling BEFORE Marshal consumes value, so we can
+	// skip the pool even if the user implements Marshaler for a CQL type that
+	// would otherwise be a pooled fast path. This avoids handing back user-owned
+	// memory to the pool, where a later getMarshalOutput could overwrite it while
+	// the user is still reading it.
+	_, userMarshaler := value.(Marshaler)
+
 	if _, ok := value.(unsetColumn); !ok {
 		val, err := Marshal(typ, value)
 		if err != nil {
@@ -2322,6 +2329,7 @@ func marshalQueryValue(typ TypeInfo, value any, dst *queryValues) error {
 		}
 
 		dst.value = val
+		dst.pooled = !userMarshaler && pooledMarshalValue(typ, value) && cap(val) <= marshalBufMaxCap
 	} else {
 		dst.isUnset = true
 	}
@@ -2403,6 +2411,31 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 		}
 
 		params.values = make([]queryValues, len(values))
+
+		// Return pooled marshal buffers once the framer copies them
+		// (c.exec → buildFrame → writeBytes). Predict poolability from
+		// column TypeInfo, not params.values[i].pooled — those are still
+		// zero-valued here, before the marshal loop below sets them.
+		{
+			vals := params.values
+			hasPooled := false
+			for i := 0; i < len(values); i++ {
+				if pooledMarshalType(info.request.columns[i].TypeInfo) {
+					hasPooled = true
+					break
+				}
+			}
+			if hasPooled {
+				defer func() {
+					for i := range vals {
+						if vals[i].pooled {
+							putMarshalOutput(vals[i].value)
+						}
+					}
+				}()
+			}
+		}
+
 		for i := 0; i < len(values); i++ {
 			v := &params.values[i]
 			value := values[i]
@@ -2676,6 +2709,17 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 
 	hasLwtEntries := false
 
+	// pooledBufs collects marshalled byte slices from fast-path marshal
+	// functions so they can be returned to marshalOutputPool after the
+	// framer copies them. The defer is installed before the loop so that
+	// buffers are returned even if a later marshalQueryValue call fails.
+	var pooledBufs [][]byte
+	defer func() {
+		for _, buf := range pooledBufs {
+			putMarshalOutput(buf)
+		}
+	}()
+
 	for i := 0; i < n; i++ {
 		entry := &batch.Entries[i]
 		b := &req.statements[i]
@@ -2716,6 +2760,9 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 				typ := info.request.columns[j].TypeInfo
 				if err := marshalQueryValue(typ, value, v); err != nil {
 					return &Iter{err: err}
+				}
+				if v.pooled {
+					pooledBufs = append(pooledBufs, v.value)
 				}
 			}
 
