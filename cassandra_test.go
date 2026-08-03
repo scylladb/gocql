@@ -4049,3 +4049,91 @@ func TestRoutingKeyCacheUsesOverriddenKeyspace(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "gocql_test_routing_key_cache", q2.routingInfo.keyspace)
 }
+
+// TestPrepareExecuteScyllaEmptyMetadataID covers the rolling-upgrade case: a
+// prepared statement cached before SCYLLA_USE_METADATA_ID was negotiated has no
+// result metadata ID, and the prepared cache is keyed by host and survives
+// reconnects, so it can still be executed over an extension-enabled connection.
+//
+// Two things have to hold. The driver must not ask the server to skip metadata for
+// such a statement — it has no ID for the server to compare against, so a skipped
+// response would leave it decoding against whatever it had cached. And Scylla must
+// accept the empty ID as a mismatch rather than rejecting the frame, answering with
+// METADATA_CHANGED and a fresh ID so the statement heals itself.
+//
+// The same scenario is covered in the sibling drivers: java-driver's
+// PreparedStatementIT.should_handle_empty_metadata_id_when_executing_statement_when_supported
+// (scylladb/java-driver#758) and python-driver's
+// test_empty_sentinel_id_triggers_metadata_changed (scylladb/python-driver#770).
+func TestPrepareExecuteScyllaEmptyMetadataID(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	conn := session.getConn()
+	if conn == nil {
+		t.Skip("no connection available — skipping test")
+	}
+	if !conn.scyllaSupported.IsMetadataIDSupported() {
+		t.Skip("server does not advertise SCYLLA_USE_METADATA_ID — skipping test")
+	}
+	if !conn.usesMetadataID() {
+		t.Fatal("server advertises SCYLLA_USE_METADATA_ID but the driver did not negotiate it")
+	}
+
+	if err := createTable(session, "DROP TABLE IF EXISTS gocql_test.scylla_empty_metadata_id"); err != nil {
+		t.Fatal(err)
+	}
+	if err := createTable(session, "CREATE TABLE gocql_test.scylla_empty_metadata_id(id int, val int, PRIMARY KEY (id))"); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.Query("INSERT INTO gocql_test.scylla_empty_metadata_id (id, val) VALUES (?, ?)", 1, 7).Exec(); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
+	defer cancel()
+
+	const selectStmt = "SELECT id, val FROM gocql_test.scylla_empty_metadata_id WHERE id = ?"
+
+	// Prepare once so the statement is cached with a real metadata ID.
+	first := session.Query(selectStmt, 1).WithContext(ctx)
+	first.conn = conn
+	row := make(map[string]interface{})
+	require.NoError(t, first.MapScan(row))
+
+	stmtCacheKey := session.stmtsLRU.keyFor(conn.host.HostID(), conn.getCurrentKeyspace(), first.stmt)
+	inflight, ok := session.stmtsLRU.get(stmtCacheKey)
+	require.True(t, ok, "statement should be cached after preparing")
+	require.NotEmpty(t, inflight.preparedStatment.resultMetadataID)
+
+	// Replace the cached entry with one whose metadata ID is nil, standing in for a
+	// statement prepared before the extension was negotiated.
+	closedCh := make(chan struct{})
+	close(closedCh)
+	session.stmtsLRU.add(stmtCacheKey, &inflightPrepare{
+		done: closedCh,
+		preparedStatment: &preparedStatment{
+			id:               inflight.preparedStatment.id,
+			resultMetadataID: nil,
+			request:          inflight.preparedStatment.request,
+			response:         inflight.preparedStatment.response,
+		},
+	})
+
+	// Executing it must succeed and decode correctly, which it can only do if the
+	// server sent metadata back.
+	second := session.Query(selectStmt, 1).WithContext(ctx)
+	second.conn = conn
+	var gotID, gotVal int
+	iter := second.Iter()
+	require.True(t, iter.Scan(&gotID, &gotVal), "expected a row")
+	require.NoError(t, iter.Close())
+	require.Equal(t, 1, gotID)
+	require.Equal(t, 7, gotVal)
+
+	// And the statement must have acquired a fresh ID, so later executions can skip.
+	inflight, ok = session.stmtsLRU.get(stmtCacheKey)
+	require.True(t, ok, "statement should still be cached")
+	require.NotEmpty(t, inflight.preparedStatment.resultMetadataID,
+		"a fresh result metadata ID should have been adopted from the METADATA_CHANGED response")
+}

@@ -248,6 +248,12 @@ func (e errReader) Read([]byte) (int, error) { return 0, e.err }
 // Note the differing wire types: paging state is [bytes] (4-byte length) and the
 // metadata id is [short bytes] (2-byte length), so swapping the two reads
 // desynchronises the rest of the block rather than merely exchanging the values.
+//
+// Run for both ways the field can be on the wire: native v5, and v4 with
+// SCYLLA_USE_METADATA_ID negotiated. The extension reuses this parser, so the v4
+// case is the only unit coverage of the read side of METADATA_CHANGED on v4 —
+// otherwise it rests entirely on an integration test that skips unless a capable
+// server is present.
 func TestParseResultMetadata_PagingStateBeforeNewMetadataID(t *testing.T) {
 	t.Parallel()
 
@@ -258,31 +264,45 @@ func TestParseResultMetadata_PagingStateBeforeNewMetadataID(t *testing.T) {
 	pagingState := []byte{0xDE, 0xAD, 0xBE, 0xEF, 0x01}
 	newMetadataID := []byte{0xAA, 0xBB, 0xCC}
 
-	fr := newFramer(nil, protoVersion5)
-	fr.header = &frm.FrameHeader{Version: protoVersion5}
+	for _, tc := range []struct {
+		name      string
+		proto     byte
+		extension bool
+	}{
+		{name: "native v5", proto: protoVersion5},
+		{name: "v4 with SCYLLA_USE_METADATA_ID", proto: protoVersion4, extension: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	fr.writeInt(int32(frm.FlagGlobalTableSpec | frm.FlagHasMorePages | frm.FlagMetaDataChanged))
-	fr.writeInt(1) // colCount
-	fr.writeBytes(pagingState)
-	fr.writeShortBytes(newMetadataID)
-	fr.writeString(keyspace)
-	fr.writeString(table)
-	fr.writeString("col_a")
-	fr.writeShort(uint16(TypeInt))
+			fr := newFramer(nil, tc.proto)
+			fr.header = &frm.FrameHeader{Version: frm.ProtoVersion(tc.proto)}
+			fr.scyllaUseMetadataID = tc.extension
 
-	meta := fr.parseResultMetadata()
+			fr.writeInt(int32(frm.FlagGlobalTableSpec | frm.FlagHasMorePages | frm.FlagMetaDataChanged))
+			fr.writeInt(1) // colCount
+			fr.writeBytes(pagingState)
+			fr.writeShortBytes(newMetadataID)
+			fr.writeString(keyspace)
+			fr.writeString(table)
+			fr.writeString("col_a")
+			fr.writeShort(uint16(TypeInt))
 
-	assertDeepEqual(t, "pagingState", pagingState, meta.pagingState)
-	assertDeepEqual(t, "newMetadataID", newMetadataID, meta.newMetadataID)
+			meta := fr.parseResultMetadata()
 
-	// The column spec must still be readable, which is what actually proves the
-	// two optional fields were consumed in the right order and with the right
-	// wire types.
-	require.Len(t, meta.columns, 1)
-	require.Equal(t, keyspace, meta.columns[0].Keyspace)
-	require.Equal(t, table, meta.columns[0].Table)
-	require.Equal(t, "col_a", meta.columns[0].Name)
-	require.Empty(t, fr.buf, "whole metadata block should be consumed")
+			assertDeepEqual(t, "pagingState", pagingState, meta.pagingState)
+			assertDeepEqual(t, "newMetadataID", newMetadataID, meta.newMetadataID)
+
+			// The column spec must still be readable, which is what actually proves the
+			// two optional fields were consumed in the right order and with the right
+			// wire types.
+			require.Len(t, meta.columns, 1)
+			require.Equal(t, keyspace, meta.columns[0].Keyspace)
+			require.Equal(t, table, meta.columns[0].Table)
+			require.Equal(t, "col_a", meta.columns[0].Name)
+			require.Empty(t, fr.buf, "whole metadata block should be consumed")
+		})
+	}
 }
 
 // TestParseResultMetadata_NewMetadataIDIgnoredBelowV5 pins that the
@@ -578,14 +598,13 @@ func Test_framer_writeExecuteFrame(t *testing.T) {
 			}
 
 			nowInSeconds := 123
-			var params queryParams
+			// A non-zero consistency, so reading it back is an assertion that can
+			// actually fail: with the zero value on both sides a misaligned read of
+			// Consistency(ANY) would still compare equal.
+			params := queryParams{consistency: Quorum}
 			if tt.protoVersion >= protoVersion5 {
-				params = queryParams{
-					nowInSeconds: &nowInSeconds,
-					keyspace:     "test_keyspace",
-				}
-			} else {
-				params = queryParams{}
+				params.nowInSeconds = &nowInSeconds
+				params.keyspace = "test_keyspace"
 			}
 			frame := writeExecuteFrame{
 				preparedID:       []byte{1, 2, 3},
@@ -624,6 +643,13 @@ func Test_framer_writeExecuteFrame(t *testing.T) {
 				}
 				assertDeepEqual(t, "keyspace", frame.params.keyspace, framer.readString())
 				assertDeepEqual(t, "nowInSeconds", nowInSeconds, framer.readInt())
+			} else {
+				// Below v5 the query flags are a single byte, and nothing follows them
+				// here. Consuming them and requiring the buffer to be empty turns this
+				// into a check that every preceding field was read at exactly the length
+				// it was written — in particular the resultMetadataID short bytes.
+				require.Zero(t, framer.readByte(), "no query flags expected")
+				require.Empty(t, framer.buf, "whole EXECUTE body should be consumed")
 			}
 		})
 	}

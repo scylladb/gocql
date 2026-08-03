@@ -196,3 +196,20 @@ jobs:
       - name: Run CCM integration suite with Cassandra ${{ matrix.cassandra-version }}(${{ steps.cassandra-version.outputs.value }})
         if: steps.cassandra-version.outputs.value != 'NOT-FOUND'
         run: TEST_INTEGRATION_TAGS="ccm gocql_debug" make test-integration-cassandra
+
+      # Native protocol v5 is never negotiated automatically (discoverProtocol caps at
+      # v4), so every ProtoVersion >= 5 integration test skips at the default
+      # TEST_CQL_PROTOCOL=4 — including the v5 half of the result-metadata-id exchange.
+      # Run that one test explicitly. Scoped with -run rather than a full v5 lane so a
+      # gap in an unrelated v5 test cannot block unrelated work; the full lane is #960.
+      #
+      # TEST_COMPRESSOR is not optional here: the default is snappy, and
+      # ClusterConfig.Validate rejects any compressor that is not a SegmentCompressor
+      # once ProtoVersion >= 5, which would fail every session in the suite.
+      - name: Run proto-5 result-metadata-id tests with Cassandra ${{ matrix.cassandra-version }}(${{ steps.cassandra-version.outputs.value }})
+        if: matrix.cassandra-version == '5-LATEST' && steps.cassandra-version.outputs.value != 'NOT-FOUND'
+        run: |
+          TEST_CQL_PROTOCOL=5 \
+          TEST_COMPRESSOR=no-compression \
+          TEST_OPTS="-run TestPrepareExecuteMetadataChangedFlag" \
+          make test-integration-cassandra
