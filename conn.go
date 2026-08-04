@@ -2037,7 +2037,7 @@ func (h *schemaAgreementHost) IsValid() bool {
 
 func (c *Conn) awaitSchemaAgreement(ctx context.Context) error {
 	endDeadline := time.Now().Add(c.session.cfg.MaxWaitSchemaAgreement)
-	ticker := time.NewTicker(50 * time.Millisecond)
+	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
 
 	var lastErr error
