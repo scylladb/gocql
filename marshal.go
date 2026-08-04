@@ -738,11 +738,11 @@ func marshalList(info TypeInfo, value any) ([]byte, error) {
 		// Preallocate remaining space to avoid repeated buffer growth.
 		// For fixed-size CQL types we compute the exact wire size;
 		// for variable-length types we use a per-type estimate.
-		if elemSize := fixedElementWireSize(listInfo.Elem.Type()); elemSize > 0 {
-			buf.Grow(n * (4 + elemSize))
-		} else if n > 0 {
-			buf.Grow(n * (4 + variableElementWireSizeEstimate(listInfo.Elem.Type())))
+		elemSize := fixedElementWireSize(listInfo.Elem.Type())
+		if elemSize == 0 {
+			elemSize = variableElementWireSizeEstimate(listInfo.Elem.Type())
 		}
+		growCollectionBuffer(buf, n, 4+elemSize)
 
 		for i := 0; i < n; i++ {
 			item, err := Marshal(listInfo.Elem, rv.Index(i).Interface())
@@ -1053,23 +1053,22 @@ func isVectorVariableLengthType(elemType TypeInfo) bool {
 // whose type has a fixed-length encoding, or 0 if the type is variable-length.
 //
 // This is a superset of vectorFixedElemSize: Cassandra's VectorType treats
-// SmallInt, TinyInt, Time, Counter, Inet, and Date as variable-length on the
-// wire (isVectorVariableLengthType), so vectorFixedElemSize excludes them.
+// SmallInt, TinyInt, Time, Counter, and Date as variable-length on the wire
+// (isVectorVariableLengthType), so vectorFixedElemSize excludes them.
 // Collection types have no such restriction, so this function includes all
-// fixed-size CQL types. The two cannot share a single switch.
+// fixed-size CQL types. The two cannot share a single switch. Inet is
+// excluded from both: it encodes to 4 (IPv4) or 16 (IPv6) bytes.
 func fixedElementWireSize(typ Type) int {
 	switch typ {
 	case TypeInt, TypeFloat:
 		return 4
-	case TypeBigInt, TypeDouble, TypeTime, TypeCounter:
+	case TypeBigInt, TypeDouble, TypeTime, TypeCounter, TypeTimestamp:
 		return 8
 	case TypeSmallInt:
 		return 2
 	case TypeTinyInt, TypeBoolean:
 		return 1
 	case TypeUUID, TypeTimeUUID:
-		return 16
-	case TypeInet:
 		return 16
 	case TypeDate:
 		return 4
@@ -1081,14 +1080,36 @@ func fixedElementWireSize(typ Type) int {
 // variableElementWireSizeEstimate returns an estimated wire size for
 // variable-length CQL element types, used for buffer preallocation.
 // Text-like types (varchar, ascii, text) average ~32 bytes in practice;
-// other variable-length types (blob, custom) default to 64 bytes.
+// inet is 4 (IPv4) or 16 (IPv6) bytes, so use the upper bound; other
+// variable-length types (blob, custom) default to 64 bytes.
 func variableElementWireSizeEstimate(typ Type) int {
 	switch typ {
 	case TypeAscii, TypeVarchar, TypeText:
 		return 32
+	case TypeInet:
+		return 16
 	default:
 		return 64
 	}
+}
+
+// maxCollectionPreallocBytes caps speculative buffer preallocation in
+// marshalList and marshalMap. The buffer is grown before any element has
+// been validated, so a huge element count (e.g. a slice of zero-sized
+// elements, which costs no memory to build) must not trigger an arbitrarily
+// large allocation — or an int overflow of n*perEntry — before the first
+// element's Marshal returns an error. Past the cap, bytes.Buffer doubling
+// takes over as usual.
+const maxCollectionPreallocBytes = 1 << 20 // 1 MiB
+
+// growCollectionBuffer preallocates space for n collection entries of
+// perEntry wire bytes each, capped at maxCollectionPreallocBytes.
+func growCollectionBuffer(buf *bytes.Buffer, n, perEntry int) {
+	if n > maxCollectionPreallocBytes/perEntry {
+		buf.Grow(maxCollectionPreallocBytes)
+		return
+	}
+	buf.Grow(n * perEntry)
 }
 
 func writeUnsignedVInt(buf *bytes.Buffer, v uint64) {
@@ -1166,16 +1187,14 @@ func marshalMap(info TypeInfo, value any) ([]byte, error) {
 	// Preallocate remaining space. For fixed-size types we compute
 	// the exact wire size; for variable-length types we estimate.
 	keySize := fixedElementWireSize(mapInfo.Key.Type())
-	valSize := fixedElementWireSize(mapInfo.Elem.Type())
-	if n > 0 {
-		if keySize == 0 {
-			keySize = variableElementWireSizeEstimate(mapInfo.Key.Type())
-		}
-		if valSize == 0 {
-			valSize = variableElementWireSizeEstimate(mapInfo.Elem.Type())
-		}
-		buf.Grow(n * (4 + keySize + 4 + valSize))
+	if keySize == 0 {
+		keySize = variableElementWireSizeEstimate(mapInfo.Key.Type())
 	}
+	valSize := fixedElementWireSize(mapInfo.Elem.Type())
+	if valSize == 0 {
+		valSize = variableElementWireSizeEstimate(mapInfo.Elem.Type())
+	}
+	growCollectionBuffer(buf, n, 4+keySize+4+valSize)
 
 	iter := rv.MapRange()
 	for iter.Next() {

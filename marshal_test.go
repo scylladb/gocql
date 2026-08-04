@@ -1390,6 +1390,53 @@ func TestUnmarshalMapReflect_OversizedCount_RejectedBeforeAlloc(t *testing.T) {
 	}
 }
 
+// TestMarshalListHugeSliceBadElementNoHugeAlloc verifies the marshal buffer
+// preallocation is capped: a huge slice of zero-sized elements costs almost
+// nothing to build, so it must not trigger a multi-gigabyte Grow (which
+// panics with ErrTooLarge) before the first element's Marshal returns an
+// error.
+func TestMarshalListHugeSliceBadElementNoHugeAlloc(t *testing.T) {
+	t.Parallel()
+
+	info := CollectionType{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeList},
+		Elem:       NativeType{proto: protoVersion4, typ: TypeBigInt},
+	}
+	val := make([]struct{}, 1<<28)
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("marshalList panicked instead of returning an error: %v", r)
+		}
+	}()
+	if _, err := Marshal(info, val); err == nil {
+		t.Fatal("expected error marshalling []struct{} as list<bigint>, got nil")
+	}
+}
+
+// TestMarshalMapBadValueNoHugeAlloc is the map twin of the list test above:
+// entries whose value type cannot marshal must produce an error, not a panic
+// from speculative buffer growth.
+func TestMarshalMapBadValueNoHugeAlloc(t *testing.T) {
+	t.Parallel()
+
+	info := CollectionType{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeMap},
+		Key:        NativeType{proto: protoVersion4, typ: TypeBigInt},
+		Elem:       NativeType{proto: protoVersion4, typ: TypeBigInt},
+	}
+	val := map[int64]struct{}{1: {}, 2: {}, 3: {}}
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("marshalMap panicked instead of returning an error: %v", r)
+		}
+	}()
+	if _, err := Marshal(info, val); err == nil {
+		t.Fatal("expected error marshalling map[int64]struct{} as map<bigint,bigint>, got nil")
+	}
+}
+
 // generateStringSlice creates a []string of length n with elements of approximate size elemSize.
 func generateStringSlice(n, elemSize int) []string {
 	s := make([]string, n)
