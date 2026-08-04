@@ -2042,70 +2042,59 @@ func (c *Conn) awaitSchemaAgreement(ctx context.Context) error {
 
 	var lastErr error
 	for time.Now().Before(endDeadline) {
+		queryCtx, cancel := context.WithCancel(ctx)
+
 		var (
-			peersIter, localIter *Iter
-			peersErr, localErr   error
+			hosts              []schemaAgreementHost
+			localSchemaVersion string
+			wg                 sync.WaitGroup
+			errMu              sync.Mutex
+			firstErr           error
 		)
 
-		var wg sync.WaitGroup
+		recordErr := func(err error) {
+			if err == nil {
+				return
+			}
+			errMu.Lock()
+			defer errMu.Unlock()
+			if firstErr == nil {
+				firstErr = err
+				cancel()
+			}
+		}
+
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
+			var query string
 			if c.getIsSchemaV2() {
-				peersIter = c.querySystem(ctx, "SELECT host_id, data_center, rack, schema_version, preferred_ip FROM system.peers_v2")
+				query = "SELECT host_id, data_center, rack, schema_version, preferred_ip FROM system.peers_v2"
 			} else {
-				peersIter = c.querySystem(ctx, "SELECT host_id, data_center, rack, schema_version, rpc_address FROM system.peers")
+				query = "SELECT host_id, data_center, rack, schema_version, rpc_address FROM system.peers"
 			}
-			if peersIter == nil {
-				peersErr = errNoControl
+			iter := c.querySystem(queryCtx, query)
+			var tmp schemaAgreementHost
+			for iter.Scan(&tmp.HostID, &tmp.DataCenter, &tmp.Rack, &tmp.SchemaVersion, &tmp.RPCAddress) {
+				hosts = append(hosts, tmp)
 			}
+			recordErr(iter.Close())
 		}()
 		go func() {
 			defer wg.Done()
-			localIter = c.querySystem(ctx, "SELECT schema_version FROM system.local WHERE key='local'")
-			if localIter == nil {
-				localErr = errNoControl
+			iter := c.querySystem(queryCtx, "SELECT schema_version FROM system.local WHERE key='local'")
+			for iter.Scan(&localSchemaVersion) {
 			}
+			recordErr(iter.Close())
 		}()
 		wg.Wait()
+		cancel()
 
 		if ctx.Err() != nil {
-			if peersIter != nil {
-				peersIter.Close()
-			}
-			if localIter != nil {
-				localIter.Close()
-			}
 			return ctx.Err()
 		}
-		if peersErr != nil {
-			if localIter != nil {
-				localIter.Close()
-			}
-			return peersErr
-		}
-		if localErr != nil {
-			if peersIter != nil {
-				peersIter.Close()
-			}
-			return localErr
-		}
-
-		var hosts []schemaAgreementHost
-		var tmp schemaAgreementHost
-		for peersIter.Scan(&tmp.HostID, &tmp.DataCenter, &tmp.Rack, &tmp.SchemaVersion, &tmp.RPCAddress) {
-			hosts = append(hosts, tmp)
-		}
-		if err := peersIter.Close(); err != nil {
-			localIter.Close()
-			return err
-		}
-
-		var localSchemaVersion string
-		for localIter.Scan(&localSchemaVersion) {
-		}
-		if err := localIter.Close(); err != nil {
-			return err
+		if firstErr != nil {
+			return firstErr
 		}
 
 		if err := getSchemaAgreement(localSchemaVersion, hosts, c.logger); err == ErrConnectionClosed || err == nil {
