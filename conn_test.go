@@ -1772,6 +1772,10 @@ type TestServer struct {
 	nKillReq         int64
 	supportedFactory testSupportedFactory
 
+	// stallSystemQueries, when non-zero, makes system.peers/system.local queries
+	// hang until the server is stopped, simulating a stalled backend.
+	stallSystemQueries int32
+
 	protocol   byte
 	headerSize int
 	ctx        context.Context
@@ -1901,6 +1905,11 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 		first := query
 		if n := strings.Index(query, " "); n > 0 {
 			first = first[:n]
+		}
+		if atomic.LoadInt32(&srv.stallSystemQueries) != 0 &&
+			(strings.Contains(query, "system.peers") || strings.Contains(query, "system.local")) {
+			<-srv.ctx.Done()
+			return
 		}
 		switch strings.ToLower(first) {
 		case "kill":
@@ -2225,6 +2234,46 @@ func TestGetSchemaAgreement(t *testing.T) {
 
 		assert.Error(t, err, "expected error when peers have different schemas")
 	})
+}
+
+// TestAwaitSchemaAgreementBoundedByMaxWaitSchemaAgreement verifies that a stalled
+// system.peers/system.local query cannot make awaitSchemaAgreement block past
+// MaxWaitSchemaAgreement, even when MetadataSchemaRequestTimeout is much larger.
+func TestAwaitSchemaAgreementBoundedByMaxWaitSchemaAgreement(t *testing.T) {
+	srv := NewTestServer(t, defaultProto, context.Background())
+	defer srv.Stop()
+
+	const maxWaitSchemaAgreement = 200 * time.Millisecond
+	const metadataSchemaRequestTimeout = 5 * time.Second
+
+	cluster := testCluster(defaultProto, srv.Address)
+	cluster.MaxWaitSchemaAgreement = maxWaitSchemaAgreement
+	cluster.MetadataSchemaRequestTimeout = metadataSchemaRequestTimeout
+
+	session, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	defer session.Close()
+
+	conn := session.getConn()
+	if conn == nil {
+		t.Fatal("unable to get a connection")
+	}
+
+	atomic.StoreInt32(&srv.stallSystemQueries, 1)
+
+	start := time.Now()
+	err = conn.awaitSchemaAgreement(context.Background())
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected an error from a stalled schema agreement query, got nil")
+	}
+	if elapsed >= metadataSchemaRequestTimeout {
+		t.Fatalf("awaitSchemaAgreement took %v, expected to return near MaxWaitSchemaAgreement (%v), not wait for MetadataSchemaRequestTimeout (%v)",
+			elapsed, maxWaitSchemaAgreement, metadataSchemaRequestTimeout)
+	}
 }
 
 func TestUseKeyspaceQuoteEscaping(t *testing.T) {

@@ -2037,12 +2037,15 @@ func (h *schemaAgreementHost) IsValid() bool {
 
 func (c *Conn) awaitSchemaAgreement(ctx context.Context) error {
 	endDeadline := time.Now().Add(c.session.cfg.MaxWaitSchemaAgreement)
+	deadlineCtx, cancelDeadline := context.WithDeadline(ctx, endDeadline)
+	defer cancelDeadline()
+
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
 
 	var lastErr error
 	for time.Now().Before(endDeadline) {
-		queryCtx, cancel := context.WithCancel(ctx)
+		queryCtx, cancel := context.WithCancel(deadlineCtx)
 
 		var (
 			hosts              []schemaAgreementHost
@@ -2094,6 +2097,13 @@ func (c *Conn) awaitSchemaAgreement(ctx context.Context) error {
 			return ctx.Err()
 		}
 		if firstErr != nil {
+			if deadlineCtx.Err() != nil {
+				// The internal per-round context hit endDeadline rather than a real
+				// query failure; preserve it as lastErr and let the loop condition
+				// above exit naturally instead of surfacing a raw deadline error.
+				lastErr = firstErr
+				break
+			}
 			return firstErr
 		}
 
@@ -2106,6 +2116,7 @@ func (c *Conn) awaitSchemaAgreement(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-deadlineCtx.Done():
 		case <-ticker.C:
 		}
 	}
