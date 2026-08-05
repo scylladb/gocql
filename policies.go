@@ -692,7 +692,9 @@ func (t *tokenAwareHostPolicy) Init(s *Session) {
 		if keyspace == "" {
 			return nil, ErrNoKeyspace
 		}
-		return s.metadataDescriber.GetKeyspace(keyspace)
+		// Only replication is needed: skip GetKeyspace's table refetch, which runs under t.mu and could fail.
+		ks, _, err := s.metadataDescriber.getKeyspaceInternal(keyspace)
+		return ks, err
 	}
 	t.getKeyspaceName = func() string { return s.cfg.Keyspace }
 	t.logger = s.logger

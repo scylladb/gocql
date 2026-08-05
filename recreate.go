@@ -34,8 +34,8 @@ func sortedByName[T any](m map[string]T) []T {
 // user defined types, tables, indexes, functions, aggregates and views associated
 // with this keyspace.
 func (ks *KeyspaceMetadata) ToCQL() (string, error) {
-	// Be aware that `CreateStmts` is not only a cache for ToCQL,
-	// but it also can be populated from response to `DESCRIBE KEYSPACE %s WITH INTERNALS`
+	// CreateStmts holds the server's DESCRIBE KEYSPACE ... WITH INTERNALS output
+	// when available; ToCQL returns it as is and never writes it.
 	if len(ks.CreateStmts) != 0 {
 		return ks.CreateStmts, nil
 	}
@@ -83,8 +83,7 @@ func (ks *KeyspaceMetadata) ToCQL() (string, error) {
 		}
 	}
 
-	ks.CreateStmts = sb.String()
-	return ks.CreateStmts, nil
+	return sb.String(), nil
 }
 
 // cqlTypeRef is one type name appearing in a rendered CQL type, with the three
