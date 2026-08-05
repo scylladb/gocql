@@ -25,7 +25,7 @@ module github.com/scylladb/gocql/lz4
 go 1.25.0
 
 require (
-	github.com/pierrec/lz4/v4 v4.1.27
+	github.com/pierrec/lz4/v4 v4.1.28
 	github.com/stretchr/testify v1.11.1
 )
 
