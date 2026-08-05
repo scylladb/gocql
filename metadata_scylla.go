@@ -22,18 +22,25 @@ import (
 
 // schema metadata for a keyspace
 type KeyspaceMetadata struct {
-	StrategyOptions   map[string]any
-	Tables            map[string]*TableMetadata
-	Functions         map[string]*FunctionMetadata
-	Aggregates        map[string]*AggregateMetadata
-	Types             map[string]*TypeMetadata
-	Indexes           map[string]*IndexMetadata
-	Views             map[string]*ViewMetadata
-	tablesInvalidated map[string]struct{}
-	Name              string
-	StrategyClass     string
-	CreateStmts       string
-	DurableWrites     bool
+	StrategyOptions           map[string]any
+	Tables                    map[string]*TableMetadata
+	Functions                 map[string]*FunctionMetadata
+	Aggregates                map[string]*AggregateMetadata
+	Types                     map[string]*TypeMetadata
+	Indexes                   map[string]*IndexMetadata
+	Views                     map[string]*ViewMetadata
+	tablesInvalidated         map[string]struct{}
+	Name                      string
+	StrategyClass             string
+	CreateStmts               string
+	createStmtsSeq            uint64 // fetch order of CreateStmts, from invalidationGen
+	DurableWrites             bool
+	typesInvalidated          bool
+	functionsInvalidated      bool
+	aggregatesInvalidated     bool
+	typesInvalidationGen      uint64
+	functionsInvalidationGen  uint64
+	aggregatesInvalidationGen uint64
 }
 
 // Clone returns a shallow copy of the keyspace metadata with
@@ -41,17 +48,24 @@ type KeyspaceMetadata struct {
 // do not race with concurrent readers of the original.
 func (ks *KeyspaceMetadata) Clone() *KeyspaceMetadata {
 	cloned := &KeyspaceMetadata{
-		Name:            ks.Name,
-		DurableWrites:   ks.DurableWrites,
-		StrategyClass:   ks.StrategyClass,
-		StrategyOptions: maps.Clone(ks.StrategyOptions),
-		Tables:          maps.Clone(ks.Tables),
-		Functions:       maps.Clone(ks.Functions),
-		Aggregates:      maps.Clone(ks.Aggregates),
-		Types:           maps.Clone(ks.Types),
-		Indexes:         maps.Clone(ks.Indexes),
-		Views:           maps.Clone(ks.Views),
-		CreateStmts:     ks.CreateStmts,
+		Name:                      ks.Name,
+		DurableWrites:             ks.DurableWrites,
+		StrategyClass:             ks.StrategyClass,
+		StrategyOptions:           maps.Clone(ks.StrategyOptions),
+		Tables:                    maps.Clone(ks.Tables),
+		Functions:                 maps.Clone(ks.Functions),
+		Aggregates:                maps.Clone(ks.Aggregates),
+		Types:                     maps.Clone(ks.Types),
+		Indexes:                   maps.Clone(ks.Indexes),
+		Views:                     maps.Clone(ks.Views),
+		CreateStmts:               ks.CreateStmts,
+		createStmtsSeq:            ks.createStmtsSeq,
+		typesInvalidated:          ks.typesInvalidated,
+		functionsInvalidated:      ks.functionsInvalidated,
+		aggregatesInvalidated:     ks.aggregatesInvalidated,
+		typesInvalidationGen:      ks.typesInvalidationGen,
+		functionsInvalidationGen:  ks.functionsInvalidationGen,
+		aggregatesInvalidationGen: ks.aggregatesInvalidationGen,
 	}
 	if ks.tablesInvalidated != nil {
 		cloned.tablesInvalidated = maps.Clone(ks.tablesInvalidated)
@@ -88,6 +102,33 @@ func (ks *KeyspaceMetadata) removeTable(tableName string) {
 	if ks.tablesInvalidated != nil {
 		delete(ks.tablesInvalidated, tableName)
 	}
+}
+
+func (ks *KeyspaceMetadata) needsPartialRefresh() bool {
+	return ks.typesInvalidated || ks.functionsInvalidated || ks.aggregatesInvalidated
+}
+
+// Globally unique, monotonic: per-keyspace counters would restart at 0 when
+// an entry is recreated, letting stale partial results match (ABA).
+var invalidationGen atomic.Uint64
+
+func (ks *KeyspaceMetadata) invalidateTypes() {
+	ks.typesInvalidated = true
+	ks.typesInvalidationGen = invalidationGen.Add(1)
+}
+
+func (ks *KeyspaceMetadata) invalidateFunctions() {
+	ks.functionsInvalidated = true
+	ks.aggregatesInvalidated = true
+	ks.functionsInvalidationGen = invalidationGen.Add(1)
+	// Aggregates embed copies of function metadata, so they must be refreshed
+	// whenever functions change.
+	ks.aggregatesInvalidationGen = invalidationGen.Add(1)
+}
+
+func (ks *KeyspaceMetadata) invalidateAggregates() {
+	ks.aggregatesInvalidated = true
+	ks.aggregatesInvalidationGen = invalidationGen.Add(1)
 }
 
 // schema metadata for a table (a.k.a. column family)
@@ -380,10 +421,88 @@ func (c *cowKeyspaceMetadataMap) set(keyspaceName string, keyspaceMetadata *Keys
 	return true
 }
 
+// replaceKeyspace publishes replacement, carrying forward categories
+// invalidated after the start generations so stale fetched values don't win.
+func (c *cowKeyspaceMetadataMap) replaceKeyspace(keyspaceName string, replacement *KeyspaceMetadata, startTypesGeneration, startFunctionsGeneration, startAggregatesGeneration uint64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	m := c.get()
+	if current, ok := m[keyspaceName]; ok && current != nil {
+		preserved := false
+		if current.typesInvalidationGen > startTypesGeneration {
+			preserved = true
+			replacement.typesInvalidationGen = current.typesInvalidationGen
+			replacement.typesInvalidated = current.typesInvalidated
+			replacement.Types = current.Types
+		}
+		if current.functionsInvalidationGen > startFunctionsGeneration {
+			preserved = true
+			replacement.functionsInvalidationGen = current.functionsInvalidationGen
+			replacement.functionsInvalidated = current.functionsInvalidated
+			replacement.Functions = current.Functions
+		}
+		if current.aggregatesInvalidationGen > startAggregatesGeneration {
+			preserved = true
+			replacement.aggregatesInvalidationGen = current.aggregatesInvalidationGen
+			replacement.aggregatesInvalidated = current.aggregatesInvalidated
+			replacement.Aggregates = current.Aggregates
+		}
+		// Keep the DESCRIBE fetched later; a still-dirty entry has no matching text.
+		if preserved {
+			if current.needsPartialRefresh() {
+				replacement.CreateStmts, replacement.createStmtsSeq = "", 0
+			} else if current.createStmtsSeq > replacement.createStmtsSeq {
+				replacement.CreateStmts, replacement.createStmtsSeq = current.CreateStmts, current.createStmtsSeq
+			}
+		}
+	}
+
+	newM := maps.Clone(m)
+	if newM == nil {
+		newM = make(map[string]*KeyspaceMetadata)
+	}
+	newM[keyspaceName] = replacement
+	c.keyspaceMap.Store(&newM)
+}
+
 func (c *cowKeyspaceMetadataMap) invalidateTable(keyspaceName, tableName string) {
 	c.updateKeyspace(keyspaceName, func(ks *KeyspaceMetadata) {
 		ks.invalidateTable(tableName)
 	})
+}
+
+func (c *cowKeyspaceMetadataMap) invalidateTypes(keyspaceName string) {
+	c.updateKeyspace(keyspaceName, func(ks *KeyspaceMetadata) {
+		ks.invalidateTypes()
+	})
+}
+
+func (c *cowKeyspaceMetadataMap) invalidateFunctions(keyspaceName string) {
+	c.updateKeyspace(keyspaceName, func(ks *KeyspaceMetadata) {
+		ks.invalidateFunctions()
+	})
+}
+
+func (c *cowKeyspaceMetadataMap) invalidateAggregates(keyspaceName string) {
+	c.updateKeyspace(keyspaceName, func(ks *KeyspaceMetadata) {
+		ks.invalidateAggregates()
+	})
+}
+
+// removeKeyspaceIf removes keyspaceName only while it still maps to expected.
+func (c *cowKeyspaceMetadataMap) removeKeyspaceIf(keyspaceName string, expected *KeyspaceMetadata) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	m := c.get()
+	if cur, ok := m[keyspaceName]; !ok || cur != expected {
+		return false
+	}
+	newM := maps.Clone(m)
+	delete(newM, keyspaceName)
+	c.keyspaceMap.Store(&newM)
+	return true
 }
 
 func (c *cowKeyspaceMetadataMap) removeKeyspace(keyspaceName string) {
@@ -527,10 +646,11 @@ type Metadata struct {
 
 // queries the cluster for schema information for a specific keyspace and for tablets
 type metadataDescriber struct {
-	keyspaceGroup singleflight.Group
-	tableGroup    singleflight.Group
-	session       *Session
-	metadata      *Metadata
+	keyspaceGroup       singleflight.Group
+	partialRefreshGroup singleflight.Group
+	tableGroup          singleflight.Group
+	session             *Session
+	metadata            *Metadata
 
 	// mu serialises refreshAllSchema calls so the snapshot-compare-refresh
 	// cycle runs as an atomic batch.  Individual keyspace/table refreshes
@@ -568,12 +688,98 @@ func (s *metadataDescriber) getKeyspaceInternal(keyspaceName string) (metadata *
 		}
 	}
 
+	// Bounded: a sustained invalidation burst would otherwise spin forever;
+	// fall back to a full refresh below.
+	const maxPartialRefreshAttempts = 3
+	for attempt := 0; attempt < maxPartialRefreshAttempts && metadata.needsPartialRefresh(); attempt++ {
+		if err = s.deduplicatedPartialRefreshKeyspace(keyspaceName); err != nil {
+			return nil, wasReloaded, err
+		}
+		metadata, found = s.metadata.keyspaceMetadata.getKeyspace(keyspaceName)
+		if !found {
+			return nil, wasReloaded, fmt.Errorf("keyspace %s: %w", keyspaceName, ErrNotFound)
+		}
+	}
+
+	if metadata.needsPartialRefresh() {
+		// The invalidation burst outran the partial loop; a full refresh clears
+		// every category at once when it lands on a quiet instant.
+		if err := s.refreshKeyspaceOrEvict(keyspaceName, metadata); err != nil {
+			return nil, wasReloaded, err
+		}
+		metadata, found = s.metadata.keyspaceMetadata.getKeyspace(keyspaceName)
+		if !found {
+			return nil, wasReloaded, fmt.Errorf("keyspace %s: %w", keyspaceName, ErrNotFound)
+		}
+		// The joined full refresh may predate the latest invalidation.
+		if metadata.needsPartialRefresh() {
+			if err := s.deduplicatedPartialRefreshKeyspace(keyspaceName); err != nil {
+				return nil, wasReloaded, err
+			}
+			metadata, found = s.metadata.keyspaceMetadata.getKeyspace(keyspaceName)
+			if !found {
+				return nil, wasReloaded, fmt.Errorf("keyspace %s: %w", keyspaceName, ErrNotFound)
+			}
+		}
+	}
+
 	return metadata, wasReloaded, nil
+}
+
+// refreshKeyspaceOrEvict drops the cached entry of a keyspace the server no
+// longer has, so it cannot be served dirty forever.
+func (s *metadataDescriber) refreshKeyspaceOrEvict(keyspaceName string, seen *KeyspaceMetadata) error {
+	err := s.deduplicatedRefreshKeyspace(keyspaceName)
+	if errors.Is(err, ErrKeyspaceDoesNotExist) {
+		s.evictKeyspace(keyspaceName, seen)
+	}
+	return err
+}
+
+// evictKeyspace removes a dropped keyspace only if the cache still holds the
+// entry seen before the refresh, so a late result cannot evict a recreated one.
+func (s *metadataDescriber) evictKeyspace(keyspaceName string, seen *KeyspaceMetadata) {
+	if s.metadata.keyspaceMetadata.removeKeyspaceIf(keyspaceName, seen) {
+		s.RemoveTabletsWithKeyspace(keyspaceName)
+	}
 }
 
 func (s *metadataDescriber) GetKeyspace(keyspaceName string) (*KeyspaceMetadata, error) {
 	metadata, _, err := s.getKeyspaceInternal(keyspaceName)
+	// Invalidated tables (ALTER TABLE, or ALTER TYPE's dependent tables) are
+	// absent from Tables until refetched. Bounded, as tables may keep changing.
+	const maxTableRefreshAttempts = 3
+	for attempt := 0; err == nil && len(metadata.tablesInvalidated) > 0 && attempt < maxTableRefreshAttempts; attempt++ {
+		if err = s.refreshInvalidatedTables(keyspaceName, metadata, attempt == maxTableRefreshAttempts-1); err != nil {
+			return nil, err
+		}
+		metadata, _, err = s.getKeyspaceInternal(keyspaceName)
+	}
 	return metadata, err
+}
+
+// refreshInvalidatedTables refetches each invalidated table of the snapshot,
+// or the whole keyspace when that is cheaper or a table refresh fails.
+func (s *metadataDescriber) refreshInvalidatedTables(keyspaceName string, snapshot *KeyspaceMetadata, forceFull bool) error {
+	// shortcut: unmeasured; per table is 4 queries, a full refresh a few more plus all rows.
+	const maxPerTableRefreshes = 4
+	if !forceFull && len(snapshot.tablesInvalidated) <= maxPerTableRefreshes {
+		var err error
+		for tableName := range snapshot.tablesInvalidated { // snapshot is immutable
+			if err = s.deduplicatedRefreshTable(keyspaceName, tableName); err != nil {
+				break
+			}
+		}
+		if err == nil {
+			return nil
+		}
+		s.session.logger.Printf("gocql: table schema refresh in keyspace %q failed, falling back to full refresh: %v", keyspaceName, err)
+	}
+	// Table refreshes above may have republished the entry; evict only the current one.
+	if current, found := s.metadata.keyspaceMetadata.getKeyspace(keyspaceName); found {
+		snapshot = current
+	}
+	return s.refreshKeyspaceOrEvict(keyspaceName, snapshot)
 }
 
 func tableNotFoundError(keyspaceName, tableName string) error {
@@ -686,11 +892,47 @@ func (s *metadataDescriber) invalidateTableSchema(keyspaceName, tableName string
 	s.metadata.keyspaceMetadata.invalidateTable(keyspaceName, tableName)
 }
 
+func (s *metadataDescriber) invalidateTypesSchema(keyspaceName string) {
+	s.metadata.keyspaceMetadata.invalidateTypes(keyspaceName)
+}
+
+func (s *metadataDescriber) invalidateFunctionsSchema(keyspaceName string) {
+	s.metadata.keyspaceMetadata.invalidateFunctions(keyspaceName)
+}
+
+func (s *metadataDescriber) invalidateAggregatesSchema(keyspaceName string) {
+	s.metadata.keyspaceMetadata.invalidateAggregates(keyspaceName)
+}
+
 // deduplicatedRefreshKeyspace collapses concurrent refreshKeyspaceSchema calls
 // for the same keyspace into a single in-flight operation.
 func (s *metadataDescriber) deduplicatedRefreshKeyspace(keyspaceName string) error {
 	_, err, _ := s.keyspaceGroup.Do(keyspaceName, func() (any, error) {
 		return nil, s.refreshKeyspaceSchema(keyspaceName)
+	})
+	return err
+}
+
+// deduplicatedPartialRefreshKeyspace collapses concurrent partial refreshes
+// of a keyspace into one in-flight operation to avoid query floods.
+func (s *metadataDescriber) deduplicatedPartialRefreshKeyspace(keyspaceName string) error {
+	_, err, _ := s.partialRefreshGroup.Do(keyspaceName, func() (any, error) {
+		// Re-read inside the shared flight so every caller uses the newest
+		// generation counters, not its own stale snapshot.
+		snapshot, ok := s.metadata.keyspaceMetadata.getKeyspace(keyspaceName)
+		if !ok {
+			return nil, s.deduplicatedRefreshKeyspace(keyspaceName)
+		}
+		err := s.refreshPartialKeyspaceSchema(keyspaceName, snapshot)
+		if err != nil && !errors.Is(err, ErrKeyspaceDoesNotExist) {
+			// Logged here, not per caller, so a shared failure logs once.
+			s.session.logger.Printf("gocql: partial schema refresh of keyspace %q failed, falling back to full refresh: %v", keyspaceName, err)
+			err = s.deduplicatedRefreshKeyspace(keyspaceName)
+		}
+		if errors.Is(err, ErrKeyspaceDoesNotExist) {
+			s.evictKeyspace(keyspaceName, snapshot)
+		}
+		return nil, err
 	})
 	return err
 }
@@ -734,9 +976,10 @@ func (s *metadataDescriber) refreshAllSchema() error {
 			return err
 		}
 
-		updatedMetadata, err := s.GetKeyspace(keyspaceName)
-		if err != nil {
-			return err
+		// Read the cache: GetKeyspace may run a partial refresh whose failure would abort the loop.
+		updatedMetadata, found := s.metadata.keyspaceMetadata.getKeyspace(keyspaceName)
+		if !found {
+			continue
 		}
 
 		if !compareInterfaceMaps(metadata.StrategyOptions, updatedMetadata.StrategyOptions) {
@@ -761,25 +1004,37 @@ func (s *metadataDescriber) refreshAllSchema() error {
 // compileMetadata after all queries complete.
 func (s *metadataDescriber) refreshKeyspaceSchema(keyspaceName string) error {
 	var (
-		keyspace    *KeyspaceMetadata
-		tables      []TableMetadata
-		columns     []ColumnMetadata
-		functions   []FunctionMetadata
-		aggregates  []AggregateMetadata
-		types       []TypeMetadata
-		indexes     []IndexMetadata
-		views       []ViewMetadata
-		createStmts []byte
+		startTypesGeneration      uint64
+		startFunctionsGeneration  uint64
+		startAggregatesGeneration uint64
+	)
+	if current, found := s.metadata.keyspaceMetadata.getKeyspace(keyspaceName); found && current != nil {
+		startTypesGeneration = current.typesInvalidationGen
+		startFunctionsGeneration = current.functionsInvalidationGen
+		startAggregatesGeneration = current.aggregatesInvalidationGen
+	}
+
+	var (
+		keyspace       *KeyspaceMetadata
+		tables         []TableMetadata
+		columns        []ColumnMetadata
+		functions      []FunctionMetadata
+		aggregates     []AggregateMetadata
+		types          []TypeMetadata
+		indexes        []IndexMetadata
+		views          []ViewMetadata
+		createStmts    []byte
+		createStmtsSeq uint64
 	)
 
 	// Each goroutine writes to its own dedicated variable, so no
 	// synchronisation is needed beyond errgroup itself.
 	var g errgroup.Group
 
+	var keyspaceErr error
 	g.Go(func() error {
-		var err error
-		keyspace, err = getKeyspaceMetadata(s.session, keyspaceName)
-		return err
+		keyspace, keyspaceErr = getKeyspaceMetadata(s.session, keyspaceName)
+		return keyspaceErr
 	})
 	g.Go(func() error {
 		var err error
@@ -818,17 +1073,26 @@ func (s *metadataDescriber) refreshKeyspaceSchema(keyspaceName string) error {
 	})
 	g.Go(func() error {
 		var err error
+		createStmtsSeq = invalidationGen.Add(1)
 		createStmts, err = getCreateStatements(s.session, keyspaceName)
 		return err
 	})
 
 	if err := g.Wait(); err != nil {
+		// errgroup keeps the first error; a dropped keyspace must still report ErrKeyspaceDoesNotExist.
+		if errors.Is(keyspaceErr, ErrKeyspaceDoesNotExist) {
+			return keyspaceErr
+		}
 		return err
 	}
 
 	compileMetadata(keyspace, tables, columns, functions, aggregates, types, indexes, views, createStmts)
+	keyspace.createStmtsSeq = createStmtsSeq
+	keyspace.typesInvalidationGen = startTypesGeneration
+	keyspace.functionsInvalidationGen = startFunctionsGeneration
+	keyspace.aggregatesInvalidationGen = startAggregatesGeneration
 
-	s.metadata.keyspaceMetadata.set(keyspaceName, keyspace)
+	s.metadata.keyspaceMetadata.replaceKeyspace(keyspaceName, keyspace, startTypesGeneration, startFunctionsGeneration, startAggregatesGeneration)
 
 	return nil
 }
@@ -860,6 +1124,15 @@ func (s *metadataDescriber) refreshTableSchema(keyspaceName, tableName string) e
 		return err
 	}
 
+	// Views, including index backing views, keep their columns under their own name.
+	for _, view := range views {
+		viewColumns, err := getColumnMetadataByTable(s.session, keyspaceName, view.ViewName)
+		if err != nil {
+			return err
+		}
+		columns = append(columns, viewColumns...)
+	}
+
 	// Atomically clone-and-swap the keyspace metadata to avoid data races
 	// with concurrent readers.
 	applied := s.metadata.keyspaceMetadata.updateKeyspace(keyspaceName, func(ks *KeyspaceMetadata) {
@@ -875,6 +1148,146 @@ func (s *metadataDescriber) refreshTableSchema(keyspaceName, tableName string) e
 	if !applied {
 		// Keyspace was removed between the initial check and the update.
 		// Fall back to a full keyspace refresh to recover.
+		return s.deduplicatedRefreshKeyspace(keyspaceName)
+	}
+	return nil
+}
+
+// refreshPartialKeyspaceSchema refetches only the invalidated categories
+// (types, functions, aggregates) and atomically updates the cached keyspace.
+func (s *metadataDescriber) refreshPartialKeyspaceSchema(keyspaceName string, snapshot *KeyspaceMetadata) error {
+	typesGeneration := snapshot.typesInvalidationGen
+	functionsGeneration := snapshot.functionsInvalidationGen
+	aggregatesGeneration := snapshot.aggregatesInvalidationGen
+
+	needTypes := snapshot.typesInvalidated
+	needFunctions := snapshot.functionsInvalidated
+	needAggregates := snapshot.aggregatesInvalidated
+
+	// Pre-2.2 servers have no UDF/UDA: skip the fetch and only clear the
+	// dirty flags.
+	hasFunctions := s.session.hasAggregatesAndFunctions
+	// DESCRIBE still covers UDF/UDA when their tables are not queried.
+	fetchText := needTypes || needFunctions || needAggregates
+
+	var (
+		types      []TypeMetadata
+		functions  []FunctionMetadata
+		aggregates []AggregateMetadata
+	)
+
+	var g errgroup.Group
+
+	// Type/function queries return no rows for a dropped keyspace and DESCRIBE
+	// may be unsupported, so only this query reliably detects the drop.
+	var keyspaceErr error
+	if s.session.useSystemSchema && fetchText {
+		g.Go(func() error {
+			_, keyspaceErr = getKeyspaceMetadata(s.session, keyspaceName)
+			return keyspaceErr
+		})
+	}
+	if needTypes {
+		g.Go(func() error {
+			var err error
+			types, err = getTypeMetadata(s.session, keyspaceName)
+			return err
+		})
+	}
+	// Aggregates depend on functions, so if aggregates are invalidated we
+	// must also refresh functions to compile aggregate metadata correctly.
+	if (needFunctions || needAggregates) && hasFunctions {
+		g.Go(func() error {
+			var err error
+			functions, err = getFunctionsMetadata(s.session, keyspaceName)
+			return err
+		})
+	}
+	if needAggregates && hasFunctions {
+		g.Go(func() error {
+			var err error
+			aggregates, err = getAggregatesMetadata(s.session, keyspaceName)
+			return err
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		// errgroup keeps the first error; a dropped keyspace must still report ErrKeyspaceDoesNotExist.
+		if errors.Is(keyspaceErr, ErrKeyspaceDoesNotExist) {
+			return keyspaceErr
+		}
+		return err
+	}
+
+	// Fetched after the maps so the text is at least as new as they are.
+	// nil (DESCRIBE unsupported) clears CreateStmts for client-side rebuild.
+	var createStmts []byte
+	var createStmtsSeq uint64
+	if fetchText {
+		var err error
+		createStmtsSeq = invalidationGen.Add(1)
+		if createStmts, err = getCreateStatements(s.session, keyspaceName); err != nil {
+			return err
+		}
+	}
+
+	applied := s.metadata.keyspaceMetadata.updateKeyspace(keyspaceName, func(ks *KeyspaceMetadata) {
+		changed := false
+
+		applyFunctions := false
+		if needFunctions {
+			applyFunctions = ks.functionsInvalidated && ks.functionsInvalidationGen == functionsGeneration
+		} else if needAggregates {
+			// When functions are fetched only to recompile aggregates, avoid
+			// overwriting a concurrently full-refreshed function map.
+			applyFunctions = ks.aggregatesInvalidated && ks.aggregatesInvalidationGen == aggregatesGeneration
+		}
+
+		if needTypes && ks.typesInvalidated && ks.typesInvalidationGen == typesGeneration {
+			ks.Types = make(map[string]*TypeMetadata, len(types))
+			for i := range types {
+				ks.Types[types[i].Name] = &types[i]
+			}
+			ks.typesInvalidated = false
+			changed = true
+		}
+		if applyFunctions {
+			if hasFunctions {
+				ks.Functions = make(map[string]*FunctionMetadata, len(functions))
+				for i := range functions {
+					ks.Functions[functions[i].Name] = &functions[i]
+				}
+			}
+			ks.functionsInvalidated = false
+			changed = true
+		}
+		if needAggregates && ks.aggregatesInvalidated && ks.aggregatesInvalidationGen == aggregatesGeneration {
+			if hasFunctions {
+				ks.Aggregates = make(map[string]*AggregateMetadata, len(aggregates))
+				for i := range aggregates {
+					aggregate := &aggregates[i]
+					if fn, ok := ks.Functions[aggregate.finalFunc]; ok {
+						aggregate.FinalFunc = *fn
+					}
+					if fn, ok := ks.Functions[aggregate.stateFunc]; ok {
+						aggregate.StateFunc = *fn
+					}
+					ks.Aggregates[aggregate.Name] = aggregate
+				}
+			}
+			ks.aggregatesInvalidated = false
+			changed = true
+		}
+		if changed {
+			if ks.needsPartialRefresh() {
+				// The fetched text can't match a category still dirty.
+				ks.CreateStmts, ks.createStmtsSeq = "", 0
+			} else if createStmtsSeq > ks.createStmtsSeq {
+				ks.CreateStmts, ks.createStmtsSeq = string(createStmts), createStmtsSeq
+			}
+		}
+	})
+	if !applied {
 		return s.deduplicatedRefreshKeyspace(keyspaceName)
 	}
 	return nil
@@ -907,8 +1320,13 @@ func compileMetadata(
 	}
 	keyspace.Aggregates = make(map[string]*AggregateMetadata, len(aggregates))
 	for _, aggregate := range aggregates {
-		aggregate.FinalFunc = *keyspace.Functions[aggregate.finalFunc]
-		aggregate.StateFunc = *keyspace.Functions[aggregate.stateFunc]
+		// FINALFUNC is optional in CQL.
+		if fn, ok := keyspace.Functions[aggregate.finalFunc]; ok {
+			aggregate.FinalFunc = *fn
+		}
+		if fn, ok := keyspace.Functions[aggregate.stateFunc]; ok {
+			aggregate.StateFunc = *fn
+		}
 		keyspace.Aggregates[aggregate.Name] = &aggregate
 	}
 	keyspace.Types = make(map[string]*TypeMetadata, len(types))
