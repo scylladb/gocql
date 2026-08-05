@@ -1606,6 +1606,52 @@ func TestTokenAwareHostPolicy_TabletReplicasPresizeAllocRegression(t *testing.T)
 	}
 }
 
+// TestTokenAwareHostPolicy_Pick_FallbackToGetHostForToken_DefaultPartitioner
+// is a regression guard for the lazy-boxing fallback to GetHostForToken.
+func TestTokenAwareHostPolicy_Pick_FallbackToGetHostForToken_DefaultPartitioner(t *testing.T) {
+	t.Parallel()
+
+	policy := TokenAwareHostPolicy(RoundRobinHostPolicy())
+	policyInternal := policy.(*tokenAwareHostPolicy)
+	// No keyspace name means meta.replicas is never populated, forcing the GetHostForToken fallback.
+	policyInternal.getKeyspaceName = func() string { return "" }
+
+	host0 := &HostInfo{hostId: tUUID(0), connectAddress: net.IPv4(10, 0, 0, 1), tokens: []string{"-9223372036854775808"}}
+	host1 := &HostInfo{hostId: tUUID(1), connectAddress: net.IPv4(10, 0, 0, 2), tokens: []string{"0"}}
+	host2 := &HostInfo{hostId: tUUID(2), connectAddress: net.IPv4(10, 0, 0, 3), tokens: []string{"6148914691236517206"}}
+	policy.AddHost(host0)
+	policy.AddHost(host1)
+	policy.AddHost(host2)
+	policy.SetPartitioner("Murmur3Partitioner")
+
+	query := &Query{routingInfo: &queryRoutingInfo{}}
+	query.getKeyspace = func() string { return "unregistered-keyspace" }
+	query.routingKey = []byte("some-routing-key")
+
+	iter := policy.Pick(query)
+	got := iter()
+	if got == nil || got.Info() == nil {
+		t.Fatal("expected a host from the GetHostForToken fallback, got nil")
+	}
+
+	meta := policyInternal.getMetadataReadOnly()
+	if meta == nil || meta.tokenRing == nil {
+		t.Fatal("test setup did not build a token ring")
+	}
+	if len(meta.replicas) != 0 {
+		t.Fatalf("test setup unexpectedly populated a replica map: %v", meta.replicas)
+	}
+
+	wantHost, _ := meta.tokenRing.GetHostForToken(murmur3Partitioner{}.Hash(query.routingKey))
+	if wantHost == nil {
+		t.Fatal("direct GetHostForToken returned nil; test setup is broken")
+	}
+	if got.Info() != wantHost {
+		t.Fatalf("Pick() fallback returned host %v, want %v (from direct GetHostForToken with the same routing key)",
+			got.Info().ConnectAddress(), wantHost.ConnectAddress())
+	}
+}
+
 func TestTokenAwareHostPolicyTabletPath(t *testing.T) {
 	t.Parallel()
 

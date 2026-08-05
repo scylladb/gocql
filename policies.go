@@ -936,8 +936,18 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 		partitioner = meta.tokenRing.partitioner
 	}
 
-	token := partitioner.Hash(routingKey)
-	tokenCasted, isInt64Token := token.(int64Token)
+	// Fast path: use the raw int64 hash when available, avoiding a Token-boxing
+	// allocation. Falls back to Hash() otherwise (see int64Hasher in token.go).
+	var token Token
+	var tokenCasted int64Token
+	var isInt64Token bool
+	if h64, ok := partitioner.(int64Hasher); ok {
+		tokenCasted = int64Token(h64.hashInt64(routingKey))
+		isInt64Token = true
+	} else {
+		token = partitioner.Hash(routingKey)
+		tokenCasted, isInt64Token = token.(int64Token)
+	}
 
 	var replicas []*HostInfo
 
@@ -956,7 +966,12 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 	}
 
 	if len(replicas) == 0 {
-		ht := meta.replicas[qry.Keyspace()].replicasFor(token)
+		var ht *hostTokens
+		if isInt64Token {
+			ht = meta.replicas[qry.Keyspace()].replicasForInt64(tokenCasted)
+		} else {
+			ht = meta.replicas[qry.Keyspace()].replicasFor(token)
+		}
 		if ht != nil {
 			needsMutation := t.shuffleReplicas || t.avoidSlowReplicas
 			if needsMutation {
@@ -967,6 +982,11 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 				replicas = ht.hosts
 			}
 		}
+	}
+
+	// SelectedHost always needs a boxed token; a nil token disables shard-aware picking.
+	if token == nil {
+		token = tokenCasted
 	}
 
 	if len(replicas) == 0 {

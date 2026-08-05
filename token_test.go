@@ -60,6 +60,67 @@ func TestMurmur3Partitioner(t *testing.T) {
 	}
 }
 
+// TestMurmur3Partitioner_HashInt64MatchesHash verifies hashInt64 matches Hash().
+func TestMurmur3Partitioner_HashInt64MatchesHash(t *testing.T) {
+	t.Parallel()
+
+	var p murmur3Partitioner
+	var _ int64Hasher = p // compile-time contract check, mirrors token.go's var _ assertion
+
+	keys := [][]byte{
+		nil,
+		{},
+		{0},
+		{1, 2, 3},
+		[]byte("routing-key"),
+		[]byte("a-somewhat-longer-partition-key-value-1234567890"),
+	}
+	for i := 0; i < 32; i++ {
+		buf := make([]byte, i)
+		for j := range buf {
+			buf[j] = byte(i*7 + j)
+		}
+		keys = append(keys, buf)
+	}
+
+	for _, k := range keys {
+		want := p.Hash(k)
+		wantInt64, ok := want.(int64Token)
+		if !ok {
+			t.Fatalf("Hash(%v) returned %T, want int64Token", k, want)
+		}
+		got := int64Token(p.hashInt64(k))
+		if got != wantInt64 {
+			t.Errorf("hashInt64(%v) = %d, want %d (from Hash)", k, got, wantInt64)
+		}
+	}
+}
+
+func TestMurmur3Partitioner_HashInt64_ZeroAlloc(t *testing.T) {
+	var p murmur3Partitioner
+	pk := []byte("routing-key")
+
+	var sink int64
+	allocs := testing.AllocsPerRun(1000, func() {
+		sink = p.hashInt64(pk)
+	})
+	if allocs != 0 {
+		t.Errorf("hashInt64 allocated %.2f allocs/op, want 0", allocs)
+	}
+	_ = sink
+
+	// Contrast: Hash() itself allocates once, boxing the int64 into a Token.
+	var tokSink Token
+	hashAllocs := testing.AllocsPerRun(1000, func() {
+		tokSink = p.Hash(pk)
+	})
+	_ = tokSink
+	if hashAllocs != 1 {
+		t.Logf("Hash() allocated %.2f allocs/op (expected ~1 from Token boxing); "+
+			"int64Hasher fast path may no longer be needed if this is 0", hashAllocs)
+	}
+}
+
 // Tests of the int64Token
 func TestInt64Token(t *testing.T) {
 	t.Parallel()
