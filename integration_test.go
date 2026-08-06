@@ -30,6 +30,7 @@ package gocql
 // This file groups integration tests where Cassandra has to be set up with some special integration variables
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -384,9 +385,21 @@ func TestDriverConfigReporting(t *testing.T) {
 	if len(configs) != 1 {
 		t.Errorf("expected exactly one connection with SESSION_ID %q to report DRIVER_CONFIG, got %d", wantSessionID, len(configs))
 	}
+	// Assert on the decoded report rather than a byte-exact string: the payload
+	// is a full configuration description whose exact serialization is the unit
+	// tests' business, while what only a live server can confirm is that it
+	// round-trips intact.
 	for _, config := range configs {
-		if want := `{"version":1}`; config != want {
-			t.Errorf("expected DRIVER_CONFIG to be %q, got %q", want, config)
+		var report driverConfigReport
+		if err := json.Unmarshal([]byte(config), &report); err != nil {
+			t.Errorf("expected %s to be valid JSON, got %q: %v", driverConfigStartupKey, config, err)
+			continue
+		}
+		if report.Version != driverConfigVersion {
+			t.Errorf("expected %s version %d, got %d", driverConfigStartupKey, driverConfigVersion, report.Version)
+		}
+		if got, want := report.ControlPlane.Schema.Agreement.TimeoutMs, cluster.MaxWaitSchemaAgreement.Milliseconds(); got != want {
+			t.Errorf("expected schema agreement timeout-ms %d, got %d", want, got)
 		}
 	}
 }
