@@ -52,7 +52,7 @@ func TestDriverConfigReporterStartupOptions(t *testing.T) {
 	reporter := newDriverConfigReporter(s)
 
 	opts := map[string]string{}
-	reporter.updateStartupOptions(opts)
+	reporter.updateStartupOptions(opts, false)
 
 	raw, ok := opts[driverConfigStartupKey]
 	if !ok {
@@ -82,6 +82,35 @@ func TestDriverConfigReporterStartupOptions(t *testing.T) {
 	policyMap, ok := report.Query.Retry.Policy.(map[string]any)
 	if !ok || policyMap["type"] != "simple" {
 		t.Errorf("query.retry.policy = %#v, want type simple (SimpleRetryPolicy fallback)", report.Query.Retry.Policy)
+	}
+}
+
+// TestDriverConfigReporterStartupOptions_ScyllaConnGatesServerSideMs pins that
+// control-plane.queries.system.timeout.server-side-ms only appears when the
+// connection is talking to Scylla, mirroring the USING TIMEOUT clause in
+// Conn.recalculateSystemRequestTimeout.
+func TestDriverConfigReporterStartupOptions_ScyllaConnGatesServerSideMs(t *testing.T) {
+	cfg := *NewCluster("127.0.0.1")
+	s := newTestReportSession(cfg, TokenAwareHostPolicy(RoundRobinHostPolicy()))
+	reporter := newDriverConfigReporter(s)
+
+	for _, isScylla := range []bool{false, true} {
+		opts := map[string]string{}
+		reporter.updateStartupOptions(opts, isScylla)
+
+		var report driverConfigReport
+		if err := json.Unmarshal([]byte(opts[driverConfigStartupKey]), &report); err != nil {
+			t.Fatalf("isScyllaConn=%v: DRIVER_CONFIG did not decode: %v", isScylla, err)
+		}
+
+		timeout := report.ControlPlane.Queries.System.Timeout
+		if timeout.ClientSideMs == nil {
+			t.Errorf("isScyllaConn=%v: expected client-side-ms to be set", isScylla)
+		}
+		gotServerSide := timeout.ServerSideMs != nil
+		if gotServerSide != isScylla {
+			t.Errorf("isScyllaConn=%v: server-side-ms present = %v, want %v", isScylla, gotServerSide, isScylla)
+		}
 	}
 }
 
@@ -629,10 +658,11 @@ func TestBuildLoadBalancingReport_UnwrapsWrappers(t *testing.T) {
 
 func TestBuildControlPlaneReport(t *testing.T) {
 	tests := []struct {
-		name      string
-		timeout   time.Duration
-		agreement time.Duration
-		want      controlPlaneReport
+		name         string
+		timeout      time.Duration
+		agreement    time.Duration
+		isScyllaConn bool
+		want         controlPlaneReport
 	}{
 		{
 			name:      "system query timeout disabled entirely omits the timeout object's contents",
@@ -643,12 +673,42 @@ func TestBuildControlPlaneReport(t *testing.T) {
 			},
 		},
 		{
-			name:      "system query timeout reports client-side-ms",
-			timeout:   30 * time.Second,
-			agreement: 60 * time.Second,
+			name:         "non-Scylla connection only reports client-side-ms",
+			timeout:      30 * time.Second,
+			agreement:    60 * time.Second,
+			isScyllaConn: false,
 			want: controlPlaneReport{
 				Queries: controlPlaneQueriesReport{System: systemQueriesReport{Timeout: systemQueriesTimeoutReport{
 					ClientSideMs: ptr(int64(30000)),
+				}}},
+				Schema: controlPlaneSchemaReport{Agreement: schemaAgreementReport{TimeoutMs: 60000}},
+			},
+		},
+		{
+			name:         "Scylla connection also reports server-side-ms",
+			timeout:      30 * time.Second,
+			agreement:    60 * time.Second,
+			isScyllaConn: true,
+			want: controlPlaneReport{
+				Queries: controlPlaneQueriesReport{System: systemQueriesReport{Timeout: systemQueriesTimeoutReport{
+					ClientSideMs: ptr(int64(30000)),
+					ServerSideMs: ptr(int64(30000)),
+				}}},
+				Schema: controlPlaneSchemaReport{Agreement: schemaAgreementReport{TimeoutMs: 60000}},
+			},
+		},
+		{
+			// Conn.recalculateSystemRequestTimeout truncates when it builds the
+			// USING TIMEOUT clause, so this connection really is sent
+			// "USING TIMEOUT 0ms". The schema cannot carry that, so the key is
+			// omitted rather than rounded up to a clause never sent.
+			name:         "sub-millisecond timeout omits server-side-ms but keeps the client-side floor",
+			timeout:      500 * time.Microsecond,
+			agreement:    60 * time.Second,
+			isScyllaConn: true,
+			want: controlPlaneReport{
+				Queries: controlPlaneQueriesReport{System: systemQueriesReport{Timeout: systemQueriesTimeoutReport{
+					ClientSideMs: ptr(int64(1)),
 				}}},
 				Schema: controlPlaneSchemaReport{Agreement: schemaAgreementReport{TimeoutMs: 60000}},
 			},
@@ -667,7 +727,7 @@ func TestBuildControlPlaneReport(t *testing.T) {
 			cfg := *NewCluster("127.0.0.1")
 			cfg.MetadataSchemaRequestTimeout = tt.timeout
 			cfg.MaxWaitSchemaAgreement = tt.agreement
-			got := buildControlPlaneReport(&cfg)
+			got := buildControlPlaneReport(&cfg, tt.isScyllaConn)
 			if diff := cmp.Diff(tt.want, got); diff != "" {
 				t.Errorf("buildControlPlaneReport() mismatch:\n%s", diff)
 			}
@@ -714,7 +774,7 @@ func TestBuildReport_SubMillisecondTimeouts(t *testing.T) {
 	cfg.MetadataSchemaRequestTimeout = 500 * time.Microsecond
 
 	s := newTestReportSession(cfg, TokenAwareHostPolicy(RoundRobinHostPolicy()))
-	raw, err := newDriverConfigReporter(s).buildReport()
+	raw, err := newDriverConfigReporter(s).buildReport(true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -753,6 +813,15 @@ func TestBuildReport_SubMillisecondTimeouts(t *testing.T) {
 		if *v < 1 {
 			t.Errorf("%s = %d, want >= 1 (the schema's positiveInteger minimum)", field, *v)
 		}
+	}
+
+	// server-side-ms is the exception, and deliberately so: it reports the
+	// USING TIMEOUT clause, which Conn.recalculateSystemRequestTimeout builds by
+	// truncating. A sub-millisecond timeout is sent as "USING TIMEOUT 0ms", and
+	// the schema cannot carry a 0 here, so the key is omitted rather than
+	// claiming a 1ms clause the connection never sends.
+	if got := report.ControlPlane.Queries.System.Timeout.ServerSideMs; got != nil {
+		t.Errorf("control-plane...server-side-ms = %d, want it omitted: the connection sends USING TIMEOUT 0ms", *got)
 	}
 }
 

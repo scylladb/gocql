@@ -178,6 +178,7 @@ type systemQueriesReport struct {
 
 type systemQueriesTimeoutReport struct {
 	ClientSideMs *int64 `json:"client-side-ms,omitempty"`
+	ServerSideMs *int64 `json:"server-side-ms,omitempty"`
 }
 
 type controlPlaneSchemaReport struct {
@@ -329,8 +330,9 @@ type nodeLocationRackReport struct {
 // the STARTUP options of the control connection.
 //
 // The report is rebuilt on every control connection (re-)establishment
-// rather than cached, since future configuration groups may describe state
-// only known after ring and topology setup.
+// rather than cached, since some of what it describes (e.g. whether the
+// server-side-ms control-plane timeout applies) is only known once a
+// connection has completed its OPTIONS/SUPPORTED exchange.
 //
 // The reporter holds the *Session itself and builds the report lazily, at
 // first use, rather than at construction time: newDriverConfigReporter runs
@@ -352,10 +354,14 @@ func newDriverConfigReporter(s *Session) *driverConfigReporter {
 // Only the control connection's startup holds a reporter, so this is not the
 // place that decides which connections report: see Conn.init.
 //
+// isScyllaConn is known by the time this runs: startupCoordinator.options
+// parses the OPTIONS/SUPPORTED exchange, which sets Conn.scyllaSupported,
+// before calling startup, which is what builds these STARTUP options.
+//
 // Reporting is best effort: it must never prevent a connection from being
 // established, so a report that cannot be built is logged and left out.
-func (r *driverConfigReporter) updateStartupOptions(opts map[string]string) {
-	report, err := r.buildReport()
+func (r *driverConfigReporter) updateStartupOptions(opts map[string]string, isScyllaConn bool) {
+	report, err := r.buildReport(isScyllaConn)
 	if err != nil {
 		r.session.logger.Printf("gocql: unable to report driver configuration: %v", err)
 		return
@@ -370,12 +376,12 @@ func (r *driverConfigReporter) updateStartupOptions(opts map[string]string) {
 // buildReport returns the JSON configuration report of the session, marshalled
 // fresh on every call so that it reflects the session's current state rather
 // than a snapshot from whenever it was first requested.
-func (r *driverConfigReporter) buildReport() (string, error) {
+func (r *driverConfigReporter) buildReport(isScyllaConn bool) (string, error) {
 	cfg := &r.session.cfg
 	report := driverConfigReport{
 		Version:      driverConfigVersion,
 		Connection:   buildConnectionReport(cfg),
-		ControlPlane: buildControlPlaneReport(cfg),
+		ControlPlane: buildControlPlaneReport(cfg, isScyllaConn),
 		Query:        buildQueryReport(r.session),
 	}
 	data, err := json.Marshal(report)
@@ -611,10 +617,27 @@ func buildReconnectionPolicyReport(rp ReconnectionPolicy) any {
 	}
 }
 
-func buildControlPlaneReport(cfg *ClusterConfig) controlPlaneReport {
+func buildControlPlaneReport(cfg *ClusterConfig, isScyllaConn bool) controlPlaneReport {
 	var timeout systemQueriesTimeoutReport
 	if clientMs := positiveMillis(cfg.MetadataSchemaRequestTimeout); clientMs != nil {
 		timeout.ClientSideMs = clientMs
+		if isScyllaConn {
+			// The USING TIMEOUT clause is ScyllaDB-only, so this key only ever
+			// applies against Scylla -- and it carries whatever
+			// Conn.recalculateSystemRequestTimeout put in the clause, which
+			// truncates rather than floors: a sub-millisecond timeout is sent as
+			// "USING TIMEOUT 0ms". Derive it from the same conversion so the
+			// report cannot claim a clause the connection never sends, and omit
+			// the key when that conversion yields 0, which the schema's
+			// positiveInteger cannot carry.
+			//
+			// client-side-ms is deliberately not aligned with this: it bounds a
+			// Go-side deadline that a sub-millisecond duration expresses just
+			// fine, so it keeps positiveMillis' floor.
+			if serverMs := cfg.MetadataSchemaRequestTimeout.Milliseconds(); serverMs > 0 {
+				timeout.ServerSideMs = &serverMs
+			}
+		}
 	}
 	return controlPlaneReport{
 		Queries: controlPlaneQueriesReport{System: systemQueriesReport{Timeout: timeout}},

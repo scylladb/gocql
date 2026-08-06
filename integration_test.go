@@ -388,7 +388,7 @@ func TestDriverConfigReporting(t *testing.T) {
 	// Assert on the decoded report rather than a byte-exact string: the payload
 	// is a full configuration description whose exact serialization is the unit
 	// tests' business, while what only a live server can confirm is that it
-	// round-trips intact.
+	// round-trips intact and that the ScyllaDB-gated key is decided correctly.
 	for _, config := range configs {
 		var report driverConfigReport
 		if err := json.Unmarshal([]byte(config), &report); err != nil {
@@ -400,6 +400,16 @@ func TestDriverConfigReporting(t *testing.T) {
 		}
 		if got, want := report.ControlPlane.Schema.Agreement.TimeoutMs, cluster.MaxWaitSchemaAgreement.Milliseconds(); got != want {
 			t.Errorf("expected schema agreement timeout-ms %d, got %d", want, got)
+		}
+		// server-side-ms describes the USING TIMEOUT clause, which only ScyllaDB
+		// understands. The fake server the unit tests run against cannot
+		// exercise either side of that gate.
+		wantServerSide := false
+		if ch := s.control.getConn(); ch != nil {
+			wantServerSide = ch.conn.isScyllaConn()
+		}
+		if got := report.ControlPlane.Queries.System.Timeout.ServerSideMs != nil; got != wantServerSide {
+			t.Errorf("expected server-side-ms present=%v against this server, got %v", wantServerSide, got)
 		}
 	}
 }
