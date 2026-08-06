@@ -2427,10 +2427,18 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 		}
 
 		params.values = make([]queryValues, len(values))
+		// Reuse PK marshal cache from GetRoutingKey.
+		usePKCache := qry.binding == nil && len(qry.pkMarshalCache) > 0
 		for i := 0; i < len(values); i++ {
 			v := &params.values[i]
 			value := values[i]
 			typ := info.request.columns[i].TypeInfo
+			if usePKCache {
+				if cached, ok := qry.lookupPKMarshalCache(i, typ); ok {
+					v.value = cached
+					continue
+				}
+			}
 			if err := marshalQueryValue(typ, value, v); err != nil {
 				return &Iter{err: err}
 			}
