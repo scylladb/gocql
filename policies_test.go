@@ -1578,6 +1578,10 @@ func TestTokenAwarePolicyReset(t *testing.T) {
 func TestTokenAwareHostPolicy_TabletReplicasPresizeAllocRegression(t *testing.T) {
 	t.Parallel()
 
+	if testing.CoverMode() != "" {
+		t.Skip("skipping alloc regression guard: coverage instrumentation adds allocations of its own")
+	}
+
 	const rf = 3
 	result := testing.Benchmark(func(b *testing.B) {
 		policy, s, queries := setupTabletAwareBench(b, 10, 100, rf)
