@@ -19,6 +19,14 @@ TEST_OPTS ?=
 TEST_INTEGRATION_TAGS ?= integration gocql_debug
 JVM_EXTRA_OPTS ?= -Dcassandra.test.fail_writes_ks=test -Dcassandra.custom_query_handler_class=org.apache.cassandra.cql3.CustomPayloadMirroringQueryHandler
 
+# COVER_ARGS is appended to every `go test ... ./...` invocation below. It is
+# empty by default, so plain `make test-unit`/`test-integration-*` behave
+# exactly as before; the *-coverage targets further down set it via a
+# recursive `make` call to instrument the same test run instead of
+# duplicating its recipe.
+COVER_ARGS ?=
+COVERAGE_DIR ?= $(MAKEFILE_PATH)/.coverage/data
+
 CCM_CASSANDRA_CLUSTER_NAME = gocql_cassandra_integration_test
 CCM_CASSANDRA_IP_PREFIX = 127.0.1.
 CCM_CASSANDRA_REPO ?= github.com/apache/cassandra-ccm
@@ -287,8 +295,8 @@ test-integration-cassandra: cassandra-start
 		echo "Cassandra version ${CASSANDRA_VERSION} was not resolved"
 		exit 1
 	fi
-	echo "go test -v ${TEST_OPTS} -tags \"${TEST_INTEGRATION_TAGS}\" -distribution cassandra -timeout=10m -runauth -gocql.timeout=60s -runssl -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$${CASSANDRA_VERSION_RESOLVED} -cluster=$$(ccm liveset) ./..."
-	go test -v ${TEST_OPTS} -tags "${TEST_INTEGRATION_TAGS}" -distribution cassandra -timeout=10m -runauth -gocql.timeout=60s -runssl -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$$(ccm node1 versionfrombuild) -cluster=$$(ccm liveset) ./...
+	echo "go test -v ${TEST_OPTS} -tags \"${TEST_INTEGRATION_TAGS}\" -distribution cassandra -timeout=10m -runauth -gocql.timeout=60s -runssl -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$${CASSANDRA_VERSION_RESOLVED} -cluster=$$(ccm liveset) ./... ${COVER_ARGS}"
+	go test -v ${TEST_OPTS} -tags "${TEST_INTEGRATION_TAGS}" -distribution cassandra -timeout=10m -runauth -gocql.timeout=60s -runssl -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$$(ccm node1 versionfrombuild) -cluster=$$(ccm liveset) ./... ${COVER_ARGS}
 
 test-integration-scylla: scylla-start
 	@echo "Run integration tests for proto ${TEST_CQL_PROTOCOL} on scylla ${SCYLLA_VERSION}"
@@ -304,8 +312,8 @@ test-integration-scylla: scylla-start
 		echo "ScyllaDB version ${SCYLLA_VERSION} was not resolved"
 		exit 1
 	fi
-	echo "go test -v ${TEST_OPTS} -tags \"${TEST_INTEGRATION_TAGS}\" -distribution scylla $${CLUSTER_SOCKET} -timeout=5m -gocql.timeout=60s -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$${SCYLLA_VERSION_RESOLVED} -cluster=$$(ccm liveset) ./..."
-	go test -v ${TEST_OPTS} -tags "${TEST_INTEGRATION_TAGS}" -distribution scylla $${CLUSTER_SOCKET} -timeout=5m -gocql.timeout=60s -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$${SCYLLA_VERSION_RESOLVED} -cluster=$$(ccm liveset) ./...
+	echo "go test -v ${TEST_OPTS} -tags \"${TEST_INTEGRATION_TAGS}\" -distribution scylla $${CLUSTER_SOCKET} -timeout=5m -gocql.timeout=60s -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$${SCYLLA_VERSION_RESOLVED} -cluster=$$(ccm liveset) ./... ${COVER_ARGS}"
+	go test -v ${TEST_OPTS} -tags "${TEST_INTEGRATION_TAGS}" -distribution scylla $${CLUSTER_SOCKET} -timeout=5m -gocql.timeout=60s -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$${SCYLLA_VERSION_RESOLVED} -cluster=$$(ccm liveset) ./... ${COVER_ARGS}
 
 # The lz4 compressor lives in a nested module (lz4/go.mod), so the root "./..."
 # pattern does not reach it — it has to be invoked explicitly with `go test -C`,
@@ -318,19 +326,64 @@ test-unit: .prepare-pki
 ifeq ($(shell if [[ -n "$${GITHUB_STEP_SUMMARY}" ]]; then echo "running-in-workflow"; else echo "running-in-shell"; fi), running-in-workflow)
 	echo "### Unit Test Results" >>$${GITHUB_STEP_SUMMARY}
 	echo '```' >>$${GITHUB_STEP_SUMMARY}
-	echo go test -tags unit -timeout=5m -race ./...
+	echo go test -tags unit -timeout=5m -race ./... ${COVER_ARGS}
 	TEST_STATUS=0
-	go test -tags unit -timeout=5m -race ./... | tee -a "$${GITHUB_STEP_SUMMARY}" || TEST_STATUS=$${PIPESTATUS[0]}
-	echo go test -C lz4 -tags unit -timeout=5m -race ./...
+	go test -tags unit -timeout=5m -race ./... ${COVER_ARGS} | tee -a "$${GITHUB_STEP_SUMMARY}" || TEST_STATUS=$${PIPESTATUS[0]}
+	echo go test -C lz4 -tags unit -timeout=5m -race ./... ${COVER_ARGS}
 	LZ4_TEST_STATUS=0
-	go test -C lz4 -tags unit -timeout=5m -race ./... | tee -a "$${GITHUB_STEP_SUMMARY}" || LZ4_TEST_STATUS=$${PIPESTATUS[0]}
+	go test -C lz4 -tags unit -timeout=5m -race ./... ${COVER_ARGS} | tee -a "$${GITHUB_STEP_SUMMARY}" || LZ4_TEST_STATUS=$${PIPESTATUS[0]}
 	echo '```' >>"$${GITHUB_STEP_SUMMARY}"
 	if (( TEST_STATUS != 0 )); then exit "$${TEST_STATUS}"; fi
 	exit "$${LZ4_TEST_STATUS}"
 else
-	go test -v -tags unit -timeout=5m -race ./...
-	go test -C lz4 -v -tags unit -timeout=5m -race ./...
+	go test -v -tags unit -timeout=5m -race ./... ${COVER_ARGS}
+	go test -C lz4 -v -tags unit -timeout=5m -race ./... ${COVER_ARGS}
 endif
+
+.prepare-coverage-dir:
+	@mkdir -p "${COVERAGE_DIR}"
+
+# Coverage-instrumented variants of the targets above. Each recurses into the
+# original target with COVER_ARGS set, rather than duplicating its recipe, so
+# CCM setup, version resolution and GITHUB_STEP_SUMMARY handling stay in one
+# place. Every *-coverage target writes into the same COVERAGE_DIR, so unit
+# and integration runs (and multiple integration runs against different
+# clusters/tags) all accumulate into one combined report -- see
+# coverage-report.
+test-unit-coverage: .prepare-coverage-dir
+	@$(MAKE) test-unit COVER_ARGS="-cover -coverpkg=./... -args -test.gocoverdir=${COVERAGE_DIR}"
+
+test-integration-scylla-coverage: .prepare-coverage-dir
+	@$(MAKE) test-integration-scylla COVER_ARGS="-cover -coverpkg=./... -args -test.gocoverdir=${COVERAGE_DIR}"
+
+test-integration-cassandra-coverage: .prepare-coverage-dir
+	@$(MAKE) test-integration-cassandra COVER_ARGS="-cover -coverpkg=./... -args -test.gocoverdir=${COVERAGE_DIR}"
+
+# lz4 is a separate Go module (see its go.mod), so a single `go tool covdata`
+# invocation can't render both it and the root module together -- `go tool
+# cover` resolves source files against the module rooted at the current
+# directory, and a merged profile spanning two modules fails with "no
+# required module provides package ...". Filter per module with `-pkg` and
+# run `go tool cover` from within each module's own directory instead.
+coverage-report:
+	@echo "Generate coverage report"
+ifeq ($(shell if [[ -n "$${GITHUB_STEP_SUMMARY}" ]]; then echo "running-in-workflow"; else echo "running-in-shell"; fi), running-in-workflow)
+	echo "### Coverage Report" >>$${GITHUB_STEP_SUMMARY}
+	echo '```' >>$${GITHUB_STEP_SUMMARY}
+	go tool covdata percent -i="${COVERAGE_DIR}" -pkg="github.com/gocql/gocql/..." | tee -a "$${GITHUB_STEP_SUMMARY}"
+	go tool covdata percent -i="${COVERAGE_DIR}" -pkg="github.com/scylladb/gocql/lz4/..." | tee -a "$${GITHUB_STEP_SUMMARY}"
+	echo '```' >>"$${GITHUB_STEP_SUMMARY}"
+else
+	go tool covdata percent -i="${COVERAGE_DIR}" -pkg="github.com/gocql/gocql/..."
+	go tool covdata percent -i="${COVERAGE_DIR}" -pkg="github.com/scylladb/gocql/lz4/..."
+endif
+	go tool covdata textfmt -i="${COVERAGE_DIR}" -pkg="github.com/gocql/gocql/..." -o="${MAKEFILE_PATH}/coverage-root.out"
+	go tool cover -html="${MAKEFILE_PATH}/coverage-root.out" -o="${MAKEFILE_PATH}/coverage-root.html"
+	go tool covdata textfmt -i="${COVERAGE_DIR}" -pkg="github.com/scylladb/gocql/lz4/..." -o="${MAKEFILE_PATH}/coverage-lz4.out"
+	cd lz4 && go tool cover -html="${MAKEFILE_PATH}/coverage-lz4.out" -o="${MAKEFILE_PATH}/coverage-lz4.html"
+
+clean-coverage:
+	rm -rf "${COVERAGE_DIR}" "${MAKEFILE_PATH}"/coverage-root.* "${MAKEFILE_PATH}"/coverage-lz4.*
 
 # The benchmarks are behind the `bench` build tag (and, in the root module, some
 # behind `unit`), so the tags have to be passed or `go test -bench` compiles and
