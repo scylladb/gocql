@@ -173,18 +173,31 @@ func Marshal(info TypeInfo, value any) ([]byte, error) {
 		panic("protocol version not set")
 	}
 
-	if valueRef := reflect.ValueOf(value); valueRef.Kind() == reflect.Ptr {
-		if valueRef.IsNil() {
-			return nil, nil
-		} else if v, ok := value.(Marshaler); ok {
+	// Fast path: skip reflect.ValueOf for common non-pointer types.
+	// The sub-marshalers (e.g., bigint.Marshal) handle both pointer and
+	// non-pointer variants via their own type-switch, including nil pointers.
+	// We only need the reflect path for custom types (Marshaler on pointer
+	// receiver, or unnamed pointer types not in any sub-marshaler's switch).
+	switch value.(type) {
+	case nil:
+		return nil, nil
+	case string, int64, int, int32, int16, int8, float64, float32, bool,
+		uint64, uint32, uint16, uint8, uint,
+		[]byte, time.Time, time.Duration,
+		*string, *int64, *int, *int32, *int16, *int8, *float64, *float32, *bool,
+		*uint64, *uint32, *uint16, *uint8, *uint,
+		*[]byte, *time.Time, *time.Duration:
+		// Known non-Marshaler types — skip reflect and Marshaler check.
+	default:
+		if v, ok := value.(Marshaler); ok {
 			return v.MarshalCQL(info)
-		} else {
+		}
+		if valueRef := reflect.ValueOf(value); valueRef.Kind() == reflect.Ptr {
+			if valueRef.IsNil() {
+				return nil, nil
+			}
 			return Marshal(info, valueRef.Elem().Interface())
 		}
-	}
-
-	if v, ok := value.(Marshaler); ok {
-		return v.MarshalCQL(info)
 	}
 
 	switch info.Type() {
