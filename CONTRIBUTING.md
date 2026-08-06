@@ -65,6 +65,25 @@ Unit tests are good, integration tests are even better. An example of a unit tes
 
 That said, the point of writing tests is to provide a safety net to catch regressions, so there is no need to go overboard with tests. Remember that the more tests you write, the more code we will have to maintain. So there's a balance to strike there.
 
+#### Measuring Code Coverage
+
+`make test-unit-coverage` runs the unit suite (root module and the `lz4` submodule) instrumented for coverage. To include the integration suite too, start a cluster and run its coverage target as well, e.g.:
+
+```sh
+make scylla-start
+make test-integration-scylla-coverage
+```
+
+Both targets accumulate into the same coverage data directory (`.coverage/data` by default, override with `COVERAGE_DIR`), so unit and integration runs combine into one picture. Once you've run whichever combination you want measured, generate the report:
+
+```sh
+make coverage-report
+```
+
+This prints a per-package percentage and writes `coverage-root.html`/`coverage-lz4.html` (open either in a browser for a line-by-line view) plus the underlying `.out` profiles. `lz4` is a separate Go module from the root one, so its report is generated and rendered separately -- `go tool cover` resolves source files against the module rooted at the current directory, and can't do that for two modules from one profile.
+
+`make clean-coverage` removes the coverage data directory and generated reports.
+
 ### Sign Off Procedure
 
 Generally speaking, a pull request can get merged by any one of the project's committers. If your change is minor, chances are that one team member will just go ahead and merge it there and then. As stated earlier, suitable test coverage will increase the likelihood that a single reviewer will assess and merge your change. If your change has no test coverage, or looks like it may have wider implications for the health and stability of the library, the reviewer may elect to refer the change to another team member to achieve consensus before proceeding. Therefore, the tighter and cleaner your patch is, the quicker it will go through the review process.
