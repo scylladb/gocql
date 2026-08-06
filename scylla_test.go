@@ -212,8 +212,7 @@ func TestScyllaRateLimitingExtParsing(t *testing.T) {
 	t.Run("init framer without cql extensions", func(t *testing.T) {
 		// mock connection without cql extensions, expected to have the `rateLimitingErrorCode`
 		// field set to 0 (default, signifying no code)
-		conn := mockConn(0)
-		f := newFramerWithExts(conn.compressor, conn.version, conn.cqlProtoExts, conn.logger)
+		f := framerForExts(nil)
 		if f.rateLimitingErrorCode != 0 {
 			t.Error("expected to have rateLimitingErrorCode set to 0 (no code) after framer init")
 		}
@@ -223,13 +222,11 @@ func TestScyllaRateLimitingExtParsing(t *testing.T) {
 	t.Run("init framer with cql extensions", func(t *testing.T) {
 		// create a mock connection, add `lwt` cql protocol extension to it,
 		// ensure that framer recognizes this extension and adjusts appropriately
-		conn := mockConn(0)
-		conn.cqlProtoExts = []cqlProtocolExtension{
+		framerWithRateLimitExt := framerForExts([]cqlProtocolExtension{
 			&rateLimitExt{
 				rateLimitErrorCode: mockCode,
 			},
-		}
-		framerWithRateLimitExt := newFramerWithExts(conn.compressor, conn.version, conn.cqlProtoExts, conn.logger)
+		})
 		if framerWithRateLimitExt.rateLimitingErrorCode != mockCode {
 			t.Error("expected to have rateLimitingErrorCode set to mockCode after framer init")
 		}
@@ -242,8 +239,7 @@ func TestScyllaLWTExtParsing(t *testing.T) {
 	t.Run("init framer without cql extensions", func(t *testing.T) {
 		// mock connection without cql extensions, expected not to have
 		// the `flagLWT` field being set in the framer created out of it
-		conn := mockConn(0)
-		f := newFramerWithExts(conn.compressor, conn.version, conn.cqlProtoExts, conn.logger)
+		f := framerForExts(nil)
 		if f.flagLWT != 0 {
 			t.Error("expected to have LWT flag uninitialized after framer init")
 		}
@@ -252,17 +248,69 @@ func TestScyllaLWTExtParsing(t *testing.T) {
 	t.Run("init framer with cql extensions", func(t *testing.T) {
 		// create a mock connection, add `lwt` cql protocol extension to it,
 		// ensure that framer recognizes this extension and adjusts appropriately
-		conn := mockConn(0)
-		conn.cqlProtoExts = []cqlProtocolExtension{
+		framerWithLwtExt := framerForExts([]cqlProtocolExtension{
 			&lwtAddMetadataMarkExt{
 				lwtOptMetaBitMask: 1,
 			},
-		}
-		framerWithLwtExt := newFramerWithExts(conn.compressor, conn.version, conn.cqlProtoExts, conn.logger)
+		})
 		if framerWithLwtExt.flagLWT == 0 {
 			t.Error("expected to have LWT flag to be set after framer init")
 		}
 	})
+}
+
+// framerForExts returns a pooled write framer from a mock Conn that negotiated
+// exts, i.e. through the same connFramers.initCache path production uses. There is
+// no standalone framer-with-extensions constructor to test against: the per-Conn
+// pool is the only place the negotiated extension list is turned into framer state.
+func framerForExts(exts []cqlProtocolExtension) *framer {
+	conn := mockConn(0)
+	conn.version = protoVersion4
+	conn.logger = &testLogger{}
+	conn.cqlProtoExts = exts
+	conn.initFramerCache()
+	return conn.getWriteFramer()
+}
+
+func TestScyllaUseMetadataIDExtParsing(t *testing.T) {
+	t.Parallel()
+
+	t.Run("newScyllaUseMetadataIDExt detects the advertised key", func(t *testing.T) {
+		if ext := newScyllaUseMetadataIDExt(map[string][]string{scyllaUseMetadataID: {}}); ext == nil {
+			t.Error("expected a non-nil extension when SCYLLA_USE_METADATA_ID is advertised")
+		}
+		if ext := newScyllaUseMetadataIDExt(map[string][]string{}); ext != nil {
+			t.Error("expected a nil extension when SCYLLA_USE_METADATA_ID is not advertised")
+		}
+	})
+
+	t.Run("name and serialize", func(t *testing.T) {
+		ext := &scyllaUseMetadataIDExt{}
+		if ext.name() != scyllaUseMetadataID {
+			t.Errorf("name() = %q, want %q", ext.name(), scyllaUseMetadataID)
+		}
+		ser := ext.serialize()
+		if v, ok := ser[scyllaUseMetadataID]; !ok || len(ser) != 1 || v != "" {
+			t.Errorf("serialize() = %v, want a single %q key mapping to \"\"", ser, scyllaUseMetadataID)
+		}
+	})
+
+	t.Run("parseCQLProtocolExtensions registers the extension only when advertised", func(t *testing.T) {
+		exts := parseCQLProtocolExtensions(map[string][]string{scyllaUseMetadataID: {}}, &testLogger{})
+		if findCQLProtoExtByName(exts, scyllaUseMetadataID) == nil {
+			t.Error("expected parseCQLProtocolExtensions to register SCYLLA_USE_METADATA_ID when advertised")
+		}
+
+		extsAbsent := parseCQLProtocolExtensions(map[string][]string{}, &testLogger{})
+		if findCQLProtoExtByName(extsAbsent, scyllaUseMetadataID) != nil {
+			t.Error("did not expect SCYLLA_USE_METADATA_ID to be registered when not advertised")
+		}
+	})
+
+	// The framer side of the extension is covered by conn_test.go's
+	// TestInitFramerCacheScyllaUseMetadataID and its negative counterpart, which go
+	// through the same connFramers.initCache path and additionally pin
+	// Conn.usesMetadataID against it.
 }
 
 func TestParseSupported(t *testing.T) {

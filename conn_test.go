@@ -1913,6 +1913,11 @@ func (srv *TestServer) errorLocked(err any) {
 	srv.t.Error(err)
 }
 
+// testMetadataIDOffset separates a canned result metadata id from the prepared id
+// it belongs to, so reading one where the other belongs is visible on the wire
+// rather than coincidentally equal.
+const testMetadataIDOffset = 0x1000
+
 func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string][]string) {
 	head := reqFrame.header
 	if head == nil {
@@ -1920,6 +1925,21 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 		return
 	}
 	respFrame := newFramer(nil, reqFrame.proto)
+
+	// SCYLLA_USE_METADATA_ID puts a result metadata id after the prepared id in both
+	// RESULT/Prepared and EXECUTE. The driver opts in whenever the server advertised
+	// the key, so the advertised map is the same signal it used, and the canned
+	// frames below have to match the layout it will then read and write.
+	_, useMetadataID := exts[scyllaUseMetadataID]
+
+	// writeResultMetadataID emits that field for a prepared statement. It is a no-op
+	// unless the extension was advertised, so servers that do not advertise it keep
+	// producing exactly the frames they did before.
+	writeResultMetadataID := func(preparedID uint64) {
+		if useMetadataID {
+			respFrame.writeShortBytes(binary.BigEndian.AppendUint64(nil, preparedID+testMetadataIDOffset))
+		}
+	}
 
 	switch head.Op {
 	case frm.OpStartup:
@@ -2015,6 +2035,7 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 			respFrame.writeInt(frm.ResultKindPrepared)
 			// <id>
 			respFrame.writeShortBytes(binary.BigEndian.AppendUint64(nil, 1))
+			writeResultMetadataID(1)
 			// <metadata>
 			respFrame.writeInt(0) // <flags>
 			respFrame.writeInt(0) // <columns_count>
@@ -2029,6 +2050,7 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 			respFrame.writeInt(frm.ResultKindPrepared)
 			// <id>
 			respFrame.writeShortBytes(binary.BigEndian.AppendUint64(nil, 2))
+			writeResultMetadataID(2)
 			// <metadata>
 			respFrame.writeInt(0) // <flags>
 			respFrame.writeInt(0) // <columns_count>
@@ -2049,6 +2071,7 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 			respFrame.writeInt(frm.ResultKindPrepared)
 			// <id>
 			respFrame.writeShortBytes(binary.BigEndian.AppendUint64(nil, 3))
+			writeResultMetadataID(3)
 			// <metadata>
 			respFrame.writeInt(0) // <flags>
 			respFrame.writeInt(2) // <columns_count>
@@ -2068,6 +2091,30 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 			// <result_metadata>
 			respFrame.writeInt(int32(frm.FlagNoMetaData))
 			respFrame.writeInt(0)
+		case "metadatachangednocolumns":
+			// Prepared with real result metadata and (under the extension) a metadata
+			// id, so the driver caches columns and asks the server to skip metadata on
+			// execute. Its EXECUTE reply, id 4 below, is then deliberately malformed.
+			respFrame.writeHeader(0, frm.OpResult, head.Stream)
+			respFrame.writeInt(frm.ResultKindPrepared)
+			// <id>
+			respFrame.writeShortBytes(binary.BigEndian.AppendUint64(nil, 4))
+			writeResultMetadataID(4)
+			// <metadata>
+			respFrame.writeInt(0) // <flags>
+			respFrame.writeInt(0) // <columns_count>
+			if srv.protocol >= protoVersion4 {
+				respFrame.writeInt(0) // <pk_count>
+			}
+			// <result_metadata>
+			respFrame.writeInt(int32(frm.FlagGlobalTableSpec)) // <flags>
+			respFrame.writeInt(1)                              // <columns_count>
+			// <global_table_spec>
+			respFrame.writeString("keyspace")
+			respFrame.writeString("table")
+			// <col_spec_0>
+			respFrame.writeString("col0")             // <name>
+			respFrame.writeShort(uint16(TypeBoolean)) // <type>
 		default:
 			respFrame.writeHeader(0, frm.OpError, head.Stream)
 			respFrame.writeInt(0)
@@ -2076,6 +2123,12 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 	case frm.OpExecute:
 		b := reqFrame.readShortBytesCopy()
 		id := binary.BigEndian.Uint64(b)
+		if useMetadataID {
+			// The driver writes the result metadata id between the prepared id and the
+			// query parameters once the extension is negotiated. Consume it, or every
+			// read below lands two bytes plus the id's length too early.
+			reqFrame.readShortBytesCopy()
+		}
 		// <query_parameters>
 		reqFrame.readConsistency() // <consistency>
 		var flags uint32
@@ -2113,6 +2166,30 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 				respFrame.writeHeader(0, frm.OpError, head.Stream)
 				respFrame.writeInt(0)
 				respFrame.writeString("skip metadata expected")
+			}
+		case 4:
+			// The driver is expected to have asked to skip metadata here: the extension
+			// is negotiated, this statement holds a metadata id, and its prepared
+			// response carried columns. Refusing otherwise keeps that part of the
+			// skip-metadata decision pinned on a live connection.
+			if flags&frm.FlagSkipMetaData == 0 {
+				respFrame.writeHeader(0, frm.OpError, head.Stream)
+				respFrame.writeInt(0)
+				respFrame.writeString("skip metadata expected")
+			} else {
+				// METADATA_CHANGED promises new result metadata; NO_METADATA says none
+				// was sent. A driver that adopted the new id would stop being sent
+				// metadata altogether, and one that decoded these rows against its
+				// cached columns would be decoding against the very columns the server
+				// just declared stale. Neither is acceptable, so it must reject this.
+				respFrame.writeHeader(0, frm.OpResult, head.Stream)
+				respFrame.writeInt(frm.ResultKindRows)
+				// <metadata>
+				respFrame.writeInt(int32(frm.FlagMetaDataChanged | frm.FlagNoMetaData)) // <flags>
+				respFrame.writeInt(0)                                                   // <columns_count>
+				respFrame.writeShortBytes(binary.BigEndian.AppendUint64(nil, 0xBEEF))   // <new_metadata_id>
+				// <rows_count>
+				respFrame.writeInt(0)
 			}
 		default:
 			respFrame.writeHeader(0, frm.OpError, head.Stream)
@@ -2339,6 +2416,320 @@ func newTestConnWithFramerPool() *Conn {
 	}
 	c.framers.initPool(c)
 	return c
+}
+
+// TestInitFramerCacheScyllaUseMetadataID guards against scyllaUseMetadataID
+// being negotiated on the Conn but never reaching the pooled framers that
+// actually read/write frames (see frame.go's parseResultMetadata,
+// parseResultPrepared, writeExecuteFrame).
+//
+// It also pins Conn.usesMetadataID against the same config, since the request path
+// reads the flag through it: were the two to diverge, the driver would ask the
+// server to skip metadata while writing no result metadata ID to compare against.
+func TestInitFramerCacheScyllaUseMetadataID(t *testing.T) {
+	c := &Conn{
+		version:      protoVersion4,
+		cqlProtoExts: []cqlProtocolExtension{&scyllaUseMetadataIDExt{}},
+	}
+	c.initFramerCache()
+
+	if !c.framers.defaults.scyllaUseMetadataID {
+		t.Fatal("framerConfig.scyllaUseMetadataID should be true once SCYLLA_USE_METADATA_ID is negotiated")
+	}
+
+	if !c.usesMetadataID() {
+		t.Error("Conn.usesMetadataID() should agree with the framer config")
+	}
+
+	wf := c.getWriteFramer()
+	if !wf.scyllaUseMetadataID {
+		t.Error("write framer obtained from pool should have scyllaUseMetadataID set")
+	}
+
+	rf := c.getReadFramer()
+	if !rf.scyllaUseMetadataID {
+		t.Error("read framer obtained from pool should have scyllaUseMetadataID set")
+	}
+}
+
+// TestInitFramerCacheWithoutScyllaUseMetadataID is the negative counterpart: with
+// no extension negotiated, nothing on the connection may claim otherwise.
+func TestInitFramerCacheWithoutScyllaUseMetadataID(t *testing.T) {
+	c := &Conn{version: protoVersion4}
+	c.initFramerCache()
+
+	if c.framers.defaults.scyllaUseMetadataID {
+		t.Error("framerConfig.scyllaUseMetadataID should be false when the extension was not negotiated")
+	}
+	if c.usesMetadataID() {
+		t.Error("Conn.usesMetadataID() should be false when the extension was not negotiated")
+	}
+	if c.getWriteFramer().scyllaUseMetadataID {
+		t.Error("write framer should not have scyllaUseMetadataID set")
+	}
+}
+
+// TestConnTracksResultMetadataID pins the question the EXECUTE path actually asks:
+// does this connection exchange result metadata IDs at all? Two mechanisms answer
+// yes — native protocol v5, where the field is mandatory, and SCYLLA_USE_METADATA_ID,
+// which backports it to v4 — and the skip-metadata default follows either, per
+// scylladb/scylla-drivers#81.
+//
+// usesMetadataID must stay narrower than that: the integration tests use it to
+// assert the extension was negotiated specifically, so a v5 connection reporting
+// true there would turn a negotiation regression green.
+func TestConnTracksResultMetadataID(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name        string
+		proto       byte
+		exts        []cqlProtocolExtension
+		wantTracked bool
+		wantExt     bool
+	}{
+		{name: "v4 without the extension", proto: protoVersion4},
+		{
+			name:        "v4 with the extension",
+			proto:       protoVersion4,
+			exts:        []cqlProtocolExtension{&scyllaUseMetadataIDExt{}},
+			wantTracked: true,
+			wantExt:     true,
+		},
+		{
+			// v5 makes the field mandatory, so no extension is involved.
+			name:        "v5 without the extension",
+			proto:       protoVersion5,
+			wantTracked: true,
+		},
+		{
+			name:        "v5 with the extension",
+			proto:       protoVersion5,
+			exts:        []cqlProtocolExtension{&scyllaUseMetadataIDExt{}},
+			wantTracked: true,
+			wantExt:     true,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			c := &Conn{version: tt.proto, cqlProtoExts: tt.exts}
+			c.initFramerCache()
+
+			if got := c.tracksResultMetadataID(); got != tt.wantTracked {
+				t.Errorf("Conn.tracksResultMetadataID() = %v, want %v", got, tt.wantTracked)
+			}
+			if got := c.usesMetadataID(); got != tt.wantExt {
+				t.Errorf("Conn.usesMetadataID() = %v, want %v", got, tt.wantExt)
+			}
+		})
+	}
+}
+
+// TestConnTracksResultMetadataIDMasksDirectionBit guards the derivation against the
+// request/response direction bit: tracksResultMetadataID reads the framer config,
+// which initCache masks with protoVersionMask. Folding the bit into the version
+// instead would make a v4 connection look like protocol 0x84 and silently start
+// skipping metadata with no ID to recover it.
+func TestConnTracksResultMetadataIDMasksDirectionBit(t *testing.T) {
+	t.Parallel()
+
+	c := &Conn{version: protoVersion4 | 0x80}
+	c.initFramerCache()
+
+	if c.tracksResultMetadataID() {
+		t.Error("Conn.tracksResultMetadataID() = true for v4 with the direction bit set, want false")
+	}
+}
+
+// TestShouldSkipResultMetadata pins the skip-metadata decision as the EXECUTE path
+// makes it, composing metadataIDTracked with shouldSkipResultMetadata exactly as
+// Conn.executeQueryWithMetrics does.
+//
+// Three behaviours matter most. The override itself: with a metadata-ID exchange
+// active and an ID in hand, metadata is skipped even though the session-level
+// DisableSkipMetadata is set, because the server reports changes via
+// METADATA_CHANGED. Its precondition: a connection whose cached prepared statement
+// has no ID yet (prepared before SCYLLA_USE_METADATA_ID was negotiated, reachable
+// during a rolling upgrade because the prepared cache is keyed by host and survives
+// reconnects) must NOT skip — there is nothing for the server to compare against.
+// And the column-set gate, which is what keeps statements whose prepared response
+// carries no result metadata decodable at all. A per-query NoSkipMetadata()
+// overrides all of it.
+//
+// idExchangeActive stands for Conn.tracksResultMetadataID: native protocol v5 or
+// the SCYLLA_USE_METADATA_ID extension. TestConnTracksResultMetadataID covers which
+// connections set it.
+func TestShouldSkipResultMetadata(t *testing.T) {
+	t.Parallel()
+
+	id := []byte{0xAA, 0xBB}
+
+	tests := []struct {
+		name               string
+		sessionDisableSkip bool
+		queryDisableSkip   bool
+		idExchangeActive   bool
+		resultMetadataID   []byte
+		hasColumns         bool
+		want               bool
+	}{
+		{name: "default skips when columns present", hasColumns: true, want: true},
+		{name: "no columns never skips", hasColumns: false, want: false},
+		{name: "session DisableSkipMetadata forces metadata", sessionDisableSkip: true, hasColumns: true, want: false},
+		{name: "query NoSkipMetadata forces metadata", queryDisableSkip: true, hasColumns: true, want: false},
+		{
+			name:               "id exchange with an id overrides session DisableSkipMetadata",
+			sessionDisableSkip: true,
+			idExchangeActive:   true,
+			resultMetadataID:   id,
+			hasColumns:         true,
+			want:               true,
+		},
+		{
+			name:               "query NoSkipMetadata still wins under the id exchange",
+			sessionDisableSkip: true,
+			queryDisableSkip:   true,
+			idExchangeActive:   true,
+			resultMetadataID:   id,
+			hasColumns:         true,
+			want:               false,
+		},
+		{
+			// Statements whose RESULT/Prepared carries no result metadata (LIST ROLES OF
+			// is the motivating case) are handed an ID hashed from empty metadata. Current
+			// ScyllaDB compares the returned ID against that same empty-metadata ID, always
+			// matches, and never sets METADATA_CHANGED, so a skipped response would be
+			// undecodable. The server-side fixes, scylladb/scylladb#29233 and #29275, are
+			// both closed unmerged — this gate is what keeps such statements working.
+			name:               "empty prepared column set never skips (scylladb/scylladb#29275)",
+			sessionDisableSkip: true,
+			idExchangeActive:   true,
+			resultMetadataID:   id,
+			hasColumns:         false,
+			want:               false,
+		},
+		{
+			// Same gate with skipping opted into explicitly, i.e. with nothing else left
+			// to stop it.
+			name:             "empty prepared column set never skips even when opted in",
+			idExchangeActive: true,
+			resultMetadataID: id,
+			hasColumns:       false,
+			want:             false,
+		},
+		{
+			// Rolling upgrade: statement prepared before the extension was negotiated.
+			name:               "id exchange without an id does not override",
+			sessionDisableSkip: true,
+			idExchangeActive:   true,
+			resultMetadataID:   nil,
+			hasColumns:         true,
+			want:               false,
+		},
+		{
+			name:               "id exchange with a zero-length id does not override",
+			sessionDisableSkip: true,
+			idExchangeActive:   true,
+			resultMetadataID:   []byte{},
+			hasColumns:         true,
+			want:               false,
+		},
+		{
+			// An id alone is not enough either: with no id exchange on the connection the
+			// server has no way to report a change, so this must fall back to the session
+			// setting.
+			name:               "id without an id exchange does not override",
+			sessionDisableSkip: true,
+			idExchangeActive:   false,
+			resultMetadataID:   id,
+			hasColumns:         true,
+			want:               false,
+		},
+		{
+			// A user who explicitly opted into skipping keeps it regardless of the ID;
+			// that is upstream behaviour and this change does not narrow it.
+			name:               "explicit opt-in skips even without an id",
+			sessionDisableSkip: false,
+			idExchangeActive:   true,
+			resultMetadataID:   nil,
+			hasColumns:         true,
+			want:               true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tracked := metadataIDTracked(tt.idExchangeActive, tt.resultMetadataID)
+			got := shouldSkipResultMetadata(tt.sessionDisableSkip, tt.queryDisableSkip, tracked, tt.hasColumns)
+			if got != tt.want {
+				t.Errorf("shouldSkipResultMetadata(session=%v, query=%v, tracked=%v (idExchange=%v, id=%v), cols=%v) = %v, want %v",
+					tt.sessionDisableSkip, tt.queryDisableSkip, tracked, tt.idExchangeActive, tt.resultMetadataID,
+					tt.hasColumns, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestExecuteMetadataChangedWithoutColumns pins that a RESULT/Rows which sets
+// METADATA_CHANGED while also setting NO_METADATA is rejected rather than decoded.
+//
+// The combination is malformed — METADATA_CHANGED obliges the server to include the
+// new metadata — and both ways of carrying on are unrecoverable. Adopting the new id
+// makes the server match it from then on and stop sending metadata at all; reusing the
+// columns cached at prepare time decodes rows against the exact column set the server
+// has just declared stale, which is the misdecode the mechanism exists to prevent. So
+// the query must fail with the old id left in the cache, ready to be resent.
+//
+// It doubles as the only unit-level coverage of a negotiated SCYLLA_USE_METADATA_ID
+// connection driven end to end: the mock server advertises the extension, so the driver
+// reads a result metadata id out of RESULT/Prepared and writes one back on EXECUTE, and
+// the server rejects the execute outright if skip_metadata was not requested.
+func TestExecuteMetadataChangedWithoutColumns(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	srv := NewTestServerWithAddressAndSupportedFactory("127.0.0.1:0", t, protoVersion4, ctx,
+		func(net.Conn) map[string][]string {
+			return map[string][]string{scyllaUseMetadataID: {""}}
+		})
+	defer srv.Stop()
+
+	db, err := testCluster(protoVersion4, srv.Address).CreateSession()
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	defer db.Close()
+
+	conn := db.getConn()
+	if conn == nil {
+		t.Fatal("no connection available")
+	}
+	if !conn.usesMetadataID() {
+		t.Fatal("server advertised SCYLLA_USE_METADATA_ID but the driver did not negotiate it")
+	}
+
+	const stmt = "select metadatachangednocolumns"
+	err = db.Query(stmt).Iter().Close()
+	if err == nil {
+		t.Fatal("expected an error for a METADATA_CHANGED response carrying no column metadata")
+	}
+	if !strings.Contains(err.Error(), "sent no column metadata") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The id from the malformed response must not have been cached: the entry still
+	// carries the one handed out at prepare time, so the next execute resends it and
+	// the server gets another chance to answer with the metadata it owes.
+	key := db.stmtsLRU.keyFor(conn.host.HostID(), conn.getCurrentKeyspace(), stmt)
+	inflight, ok := db.stmtsLRU.get(key)
+	if !ok {
+		t.Fatal("prepared statement should still be cached")
+	}
+	want := binary.BigEndian.AppendUint64(nil, 4+testMetadataIDOffset)
+	if got := inflight.preparedStatment.resultMetadataID; !bytes.Equal(got, want) {
+		t.Errorf("cached resultMetadataID = % X, want the prepare-time id % X", got, want)
+	}
 }
 
 func buildTestFrame(t *testing.T, f *framer, req frameBuilder, streamID int) ([]byte, frm.FrameHeader) {

@@ -248,6 +248,12 @@ func (e errReader) Read([]byte) (int, error) { return 0, e.err }
 // Note the differing wire types: paging state is [bytes] (4-byte length) and the
 // metadata id is [short bytes] (2-byte length), so swapping the two reads
 // desynchronises the rest of the block rather than merely exchanging the values.
+//
+// Run for both ways the field can be on the wire: native v5, and v4 with
+// SCYLLA_USE_METADATA_ID negotiated. The extension reuses this parser, so the v4
+// case is the only unit coverage of the read side of METADATA_CHANGED on v4 —
+// otherwise it rests entirely on an integration test that skips unless a capable
+// server is present.
 func TestParseResultMetadata_PagingStateBeforeNewMetadataID(t *testing.T) {
 	t.Parallel()
 
@@ -258,31 +264,45 @@ func TestParseResultMetadata_PagingStateBeforeNewMetadataID(t *testing.T) {
 	pagingState := []byte{0xDE, 0xAD, 0xBE, 0xEF, 0x01}
 	newMetadataID := []byte{0xAA, 0xBB, 0xCC}
 
-	fr := newFramer(nil, protoVersion5)
-	fr.header = &frm.FrameHeader{Version: protoVersion5}
+	for _, tc := range []struct {
+		name      string
+		proto     byte
+		extension bool
+	}{
+		{name: "native v5", proto: protoVersion5},
+		{name: "v4 with SCYLLA_USE_METADATA_ID", proto: protoVersion4, extension: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	fr.writeInt(int32(frm.FlagGlobalTableSpec | frm.FlagHasMorePages | frm.FlagMetaDataChanged))
-	fr.writeInt(1) // colCount
-	fr.writeBytes(pagingState)
-	fr.writeShortBytes(newMetadataID)
-	fr.writeString(keyspace)
-	fr.writeString(table)
-	fr.writeString("col_a")
-	fr.writeShort(uint16(TypeInt))
+			fr := newFramer(nil, tc.proto)
+			fr.header = &frm.FrameHeader{Version: frm.ProtoVersion(tc.proto)}
+			fr.scyllaUseMetadataID = tc.extension
 
-	meta := fr.parseResultMetadata()
+			fr.writeInt(int32(frm.FlagGlobalTableSpec | frm.FlagHasMorePages | frm.FlagMetaDataChanged))
+			fr.writeInt(1) // colCount
+			fr.writeBytes(pagingState)
+			fr.writeShortBytes(newMetadataID)
+			fr.writeString(keyspace)
+			fr.writeString(table)
+			fr.writeString("col_a")
+			fr.writeShort(uint16(TypeInt))
 
-	assertDeepEqual(t, "pagingState", pagingState, meta.pagingState)
-	assertDeepEqual(t, "newMetadataID", newMetadataID, meta.newMetadataID)
+			meta := fr.parseResultMetadata()
 
-	// The column spec must still be readable, which is what actually proves the
-	// two optional fields were consumed in the right order and with the right
-	// wire types.
-	require.Len(t, meta.columns, 1)
-	require.Equal(t, keyspace, meta.columns[0].Keyspace)
-	require.Equal(t, table, meta.columns[0].Table)
-	require.Equal(t, "col_a", meta.columns[0].Name)
-	require.Empty(t, fr.buf, "whole metadata block should be consumed")
+			assertDeepEqual(t, "pagingState", pagingState, meta.pagingState)
+			assertDeepEqual(t, "newMetadataID", newMetadataID, meta.newMetadataID)
+
+			// The column spec must still be readable, which is what actually proves the
+			// two optional fields were consumed in the right order and with the right
+			// wire types.
+			require.Len(t, meta.columns, 1)
+			require.Equal(t, keyspace, meta.columns[0].Keyspace)
+			require.Equal(t, table, meta.columns[0].Table)
+			require.Equal(t, "col_a", meta.columns[0].Name)
+			require.Empty(t, fr.buf, "whole metadata block should be consumed")
+		})
+	}
 }
 
 // TestParseResultMetadata_NewMetadataIDIgnoredBelowV5 pins that the
@@ -502,45 +522,137 @@ func TestParsePreparedMetadataAcceptsValidPkeyCount(t *testing.T) {
 	})
 }
 
+// TestParseResultPreparedTruncatedResultMetadataID verifies that a malformed
+// RESULT/Prepared frame whose resultMetadataID short-bytes length runs past the
+// frame body is reported as an error, not a serve-goroutine panic. The extension
+// makes this field live on protocol v4, and readShortBytesCopy panics with a
+// plain error on a short buffer; parseFrame's recover must convert it to a
+// returned error.
+func TestParseResultPreparedTruncatedResultMetadataID(t *testing.T) {
+	t.Parallel()
+
+	fr := newFramer(nil, protoVersion4)
+	// Response direction bit set so parseFrame does not reject it as a request.
+	fr.header = &frm.FrameHeader{Version: protoVersion4 | 0x80, Op: frm.OpResult}
+	fr.scyllaUseMetadataID = true
+
+	fr.writeInt(frm.ResultKindPrepared)
+	fr.writeShortBytes([]byte{0x01, 0x02, 0x03}) // preparedID
+	// resultMetadataID: claim 10 bytes but supply none.
+	fr.writeShort(10)
+
+	frame, err := fr.parseFrame()
+	if err == nil {
+		t.Fatalf("expected an error for a truncated resultMetadataID, got frame %+v", frame)
+	}
+	if frame != nil {
+		t.Errorf("expected nil frame on error, got %+v", frame)
+	}
+}
+
 func Test_framer_writeExecuteFrame(t *testing.T) {
-	framer := newFramer(nil, protoVersion5)
-	nowInSeconds := 123
-	frame := writeExecuteFrame{
-		preparedID:       []byte{1, 2, 3},
-		resultMetadataID: []byte{4, 5, 6},
-		customPayload: map[string][]byte{
-			"key1": []byte("value1"),
+	tests := []struct {
+		name                 string
+		protoVersion         byte
+		scyllaUseMetadataID  bool
+		resultMetadataID     []byte
+		wantResultMetadataID []byte
+	}{
+		{
+			name:                "protoVersion4 with ScyllaUseMetadataID false",
+			protoVersion:        protoVersion4,
+			scyllaUseMetadataID: false,
+			resultMetadataID:    []byte{},
+			// resultMetadataID is not written on v4 without the extension, so it is not read back.
 		},
-		params: queryParams{
-			nowInSeconds: &nowInSeconds,
-			keyspace:     "test_keyspace",
+		{
+			name:                 "protoVersion4 with ScyllaUseMetadataID true",
+			protoVersion:         protoVersion4,
+			scyllaUseMetadataID:  true,
+			resultMetadataID:     []byte{4, 5, 6},
+			wantResultMetadataID: []byte{4, 5, 6},
+		},
+		{
+			name:                "protoVersion4 with ScyllaUseMetadataID true & nil resultMetadataID",
+			protoVersion:        protoVersion4,
+			scyllaUseMetadataID: true,
+			// A resultPreparedFrame with a nil resultMetadataID (e.g. copyBytes(nil))
+			// must serialize to a zero-length short bytes and read back as []byte{}.
+			resultMetadataID:     nil,
+			wantResultMetadataID: []byte{},
+		},
+		{
+			name:                 "protoVersion5 with resultMetadataID support",
+			protoVersion:         protoVersion5,
+			scyllaUseMetadataID:  false,
+			resultMetadataID:     []byte{4, 5, 6},
+			wantResultMetadataID: []byte{4, 5, 6},
 		},
 	}
 
-	err := framer.writeExecuteFrame(123, frame.preparedID, frame.resultMetadataID, &frame.params, &frame.customPayload)
-	if err != nil {
-		t.Fatal(err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			framer := newFramer(nil, tt.protoVersion)
+			if tt.scyllaUseMetadataID {
+				framer.scyllaUseMetadataID = true
+			}
+
+			nowInSeconds := 123
+			// A non-zero consistency, so reading it back is an assertion that can
+			// actually fail: with the zero value on both sides a misaligned read of
+			// Consistency(ANY) would still compare equal.
+			params := queryParams{consistency: Quorum}
+			if tt.protoVersion >= protoVersion5 {
+				params.nowInSeconds = &nowInSeconds
+				params.keyspace = "test_keyspace"
+			}
+			frame := writeExecuteFrame{
+				preparedID:       []byte{1, 2, 3},
+				resultMetadataID: tt.resultMetadataID,
+				customPayload: map[string][]byte{
+					"key1": []byte("value1"),
+				},
+				params: params,
+			}
+
+			err := framer.writeExecuteFrame(123, frame.preparedID, frame.resultMetadataID, &frame.params, &frame.customPayload)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// skipping header
+			framer.buf = framer.buf[9:]
+
+			assertDeepEqual(t, "customPayload", frame.customPayload, framer.readBytesMap())
+			assertDeepEqual(t, "preparedID", frame.preparedID, framer.readShortBytesCopy())
+
+			if tt.protoVersion >= protoVersion5 || tt.scyllaUseMetadataID {
+				assertDeepEqual(t, "resultMetadataID", tt.wantResultMetadataID, framer.readShortBytesCopy())
+			}
+
+			assertDeepEqual(t, "constistency", frame.params.consistency, Consistency(framer.readShort()))
+
+			if tt.protoVersion >= protoVersion5 {
+				flags := framer.readInt()
+				if flags&int(frm.FlagWithNowInSeconds) != int(frm.FlagWithNowInSeconds) {
+					t.Fatal("expected flagNowInSeconds to be set, but it is not")
+				}
+
+				if flags&int(frm.FlagWithKeyspace) != int(frm.FlagWithKeyspace) {
+					t.Fatal("expected flagWithKeyspace to be set, but it is not")
+				}
+				assertDeepEqual(t, "keyspace", frame.params.keyspace, framer.readString())
+				assertDeepEqual(t, "nowInSeconds", nowInSeconds, framer.readInt())
+			} else {
+				// Below v5 the query flags are a single byte, and nothing follows them
+				// here. Consuming them and requiring the buffer to be empty turns this
+				// into a check that every preceding field was read at exactly the length
+				// it was written — in particular the resultMetadataID short bytes.
+				require.Zero(t, framer.readByte(), "no query flags expected")
+				require.Empty(t, framer.buf, "whole EXECUTE body should be consumed")
+			}
+		})
 	}
-
-	// skipping header
-	framer.buf = framer.buf[9:]
-
-	assertDeepEqual(t, "customPayload", frame.customPayload, framer.readBytesMap())
-	assertDeepEqual(t, "preparedID", frame.preparedID, framer.readShortBytesCopy())
-	assertDeepEqual(t, "resultMetadataID", frame.resultMetadataID, framer.readShortBytesCopy())
-	assertDeepEqual(t, "constistency", frame.params.consistency, Consistency(framer.readShort()))
-
-	flags := framer.readInt()
-	if flags&int(frm.FlagWithNowInSeconds) != int(frm.FlagWithNowInSeconds) {
-		t.Fatal("expected flagNowInSeconds to be set, but it is not")
-	}
-
-	if flags&int(frm.FlagWithKeyspace) != int(frm.FlagWithKeyspace) {
-		t.Fatal("expected flagWithKeyspace to be set, but it is not")
-	}
-
-	assertDeepEqual(t, "keyspace", frame.params.keyspace, framer.readString())
-	assertDeepEqual(t, "nowInSeconds", nowInSeconds, framer.readInt())
 }
 
 func Test_framer_writeBatchFrame(t *testing.T) {

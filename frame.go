@@ -290,6 +290,7 @@ type framer struct {
 	flags                 byte
 	proto                 byte
 	tabletsRoutingV1      bool
+	scyllaUseMetadataID   bool
 	released              atomic.Bool
 }
 
@@ -329,6 +330,7 @@ func newFramer(compressor Compressor, version byte) *framer {
 	f.traceID = nil
 
 	f.tabletsRoutingV1 = false
+	f.scyllaUseMetadataID = false
 
 	return f
 }
@@ -342,46 +344,6 @@ func (f *framer) Release() {
 	if f.release != nil {
 		f.release()
 	}
-}
-
-func newFramerWithExts(compressor Compressor, version byte, cqlProtoExts []cqlProtocolExtension, logger StdLogger) *framer {
-
-	f := newFramer(compressor, version)
-
-	if lwtExt := findCQLProtoExtByName(cqlProtoExts, lwtAddMetadataMarkKey); lwtExt != nil {
-		castedExt, ok := lwtExt.(*lwtAddMetadataMarkExt)
-		if !ok {
-			logger.Println(
-				fmt.Errorf("failed to cast CQL protocol extension identified by name %s to type %T",
-					lwtAddMetadataMarkKey, lwtAddMetadataMarkExt{}))
-			return f
-		}
-		f.flagLWT = castedExt.lwtOptMetaBitMask
-	}
-
-	if rateLimitErrorExt := findCQLProtoExtByName(cqlProtoExts, rateLimitError); rateLimitErrorExt != nil {
-		castedExt, ok := rateLimitErrorExt.(*rateLimitExt)
-		if !ok {
-			logger.Println(
-				fmt.Errorf("failed to cast CQL protocol extension identified by name %s to type %T",
-					rateLimitError, rateLimitExt{}))
-			return f
-		}
-		f.rateLimitingErrorCode = castedExt.rateLimitErrorCode
-	}
-
-	if tabletsExt := findCQLProtoExtByName(cqlProtoExts, tabletsRoutingV1); tabletsExt != nil {
-		_, ok := tabletsExt.(*tabletsRoutingV1Ext)
-		if !ok {
-			logger.Println(
-				fmt.Errorf("failed to cast CQL protocol extension identified by name %s to type %T",
-					tabletsRoutingV1, tabletsRoutingV1Ext{}))
-			return f
-		}
-		f.tabletsRoutingV1 = true
-	}
-
-	return f
 }
 
 type frame interface {
@@ -1097,11 +1059,15 @@ func (f *framer) parseResultMetadata() resultMetadata {
 		meta.pagingState = f.readBytesCopy()
 	}
 
+	// The re-issue of a result metadata ID, reached from a RESULT/Rows whose
+	// EXECUTE carried an ID the server found stale. It supersedes the one
+	// RESULT/Prepared issued; see parseResultPrepared for the other half.
+	//
 	// Read after the paging state, matching Cassandra's encoder
 	// (ResultSet$ResultMetadata$Codec.encode) and the v5 spec. See
 	// TestParseResultMetadata_PagingStateBeforeNewMetadataID, which is the only
 	// test that can distinguish the two orderings.
-	if f.proto > protoVersion4 && meta.flags&frm.FlagMetaDataChanged == frm.FlagMetaDataChanged {
+	if (f.proto > protoVersion4 || f.scyllaUseMetadataID) && meta.flags&frm.FlagMetaDataChanged == frm.FlagMetaDataChanged {
 		meta.newMetadataID = f.readShortBytesCopy()
 	}
 
@@ -1218,13 +1184,35 @@ type resultPreparedFrame struct {
 	reqMeta preparedMetadata
 }
 
+// parseResultPrepared parses a RESULT/Prepared body:
+//
+//	<id>                 [short bytes]  prepared statement ID
+//	<result_metadata_id> [short bytes]  v5, or v4 with SCYLLA_USE_METADATA_ID
+//	<metadata>           bind variables and partition key indexes (request side)
+//	<result_metadata>    the columns rows will carry (response side)
+//
+// The two metadata blocks describe opposite directions and are unrelated; only
+// the second one has an ID, because only it can go stale without the driver
+// noticing.
+//
+// The ID read here is the first one for this statement, issued alongside the
+// metadata it identifies and echoed back by every later EXECUTE. A superseding
+// ID arrives by a different route — newMetadataID inside a RESULT/Rows, behind
+// METADATA_CHANGED — so that the server can repair a stale ID in the response it
+// was already sending instead of making the driver re-prepare. Both land in
+// preparedStatment.resultMetadataID.
+//
+// parseResultMetadata below is the same codec RESULT/Rows uses, as it is in
+// Cassandra (ResultSet$ResultMetadata$Codec), so it reads newMetadataID whenever
+// METADATA_CHANGED is set. Nothing sets it here: that flag says a previously
+// issued ID is stale, which cannot apply to the response issuing the first one.
 func (f *framer) parseResultPrepared() frame {
 	frame := &resultPreparedFrame{
 		FrameHeader: *f.header,
 		preparedID:  f.readShortBytesCopy(),
 	}
 
-	if f.proto > protoVersion4 {
+	if f.proto > protoVersion4 || f.scyllaUseMetadataID {
 		frame.resultMetadataID = f.readShortBytesCopy()
 	}
 
@@ -1577,7 +1565,7 @@ func (f *framer) writeExecuteFrame(streamID int, preparedID, resultMetadataID []
 	f.writeCustomPayload(customPayload)
 	f.writeShortBytes(preparedID)
 
-	if f.proto > protoVersion4 {
+	if f.proto > protoVersion4 || f.scyllaUseMetadataID {
 		f.writeShortBytes(resultMetadataID)
 	}
 

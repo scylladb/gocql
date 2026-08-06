@@ -122,6 +122,7 @@ const (
 	lwtAddMetadataMarkKey = "SCYLLA_LWT_ADD_METADATA_MARK"
 	rateLimitError        = "SCYLLA_RATE_LIMIT_ERROR"
 	tabletsRoutingV1      = "TABLETS_ROUTING_V1"
+	scyllaUseMetadataID   = "SCYLLA_USE_METADATA_ID"
 )
 
 // "tabletsRoutingV1" CQL Protocol Extension.
@@ -256,6 +257,33 @@ func (ext *lwtAddMetadataMarkExt) name() string {
 	return lwtAddMetadataMarkKey
 }
 
+// "SCYLLA_USE_METADATA_ID" CQL Protocol Extension.
+// Enables storing and updating metadata IDs for prepared statements, similar to CQL v5.
+// When negotiated, the driver tracks metadata changes and updates cached metadata accordingly.
+type scyllaUseMetadataIDExt struct {
+}
+
+var _ cqlProtocolExtension = &scyllaUseMetadataIDExt{}
+
+func newScyllaUseMetadataIDExt(supported map[string][]string) *scyllaUseMetadataIDExt {
+	if _, found := supported[scyllaUseMetadataID]; found {
+		return &scyllaUseMetadataIDExt{}
+	}
+	return nil
+}
+
+// name implements cqlProtocolExtension.
+func (ext *scyllaUseMetadataIDExt) name() string {
+	return scyllaUseMetadataID
+}
+
+// serialize implements cqlProtocolExtension.
+func (ext *scyllaUseMetadataIDExt) serialize() map[string]string {
+	return map[string]string{
+		scyllaUseMetadataID: "",
+	}
+}
+
 func parseSupported(supported map[string][]string, logger StdLogger) ScyllaConnectionFeatures {
 	const (
 		scyllaShard             = "SCYLLA_SHARD"
@@ -265,7 +293,6 @@ func parseSupported(supported map[string][]string, logger StdLogger) ScyllaConne
 		scyllaShardingIgnoreMSB = "SCYLLA_SHARDING_IGNORE_MSB"
 		scyllaShardAwarePort    = "SCYLLA_SHARD_AWARE_PORT"
 		scyllaShardAwarePortSSL = "SCYLLA_SHARD_AWARE_PORT_SSL"
-		scyllaUseMetadataID     = "SCYLLA_USE_METADATA_ID"
 	)
 
 	var (
@@ -367,6 +394,11 @@ func parseCQLProtocolExtensions(supported map[string][]string, logger StdLogger)
 	tabletsExt := newTabletsRoutingV1Ext(supported)
 	if tabletsExt != nil {
 		exts = append(exts, tabletsExt)
+	}
+
+	metadataIDExt := newScyllaUseMetadataIDExt(supported)
+	if metadataIDExt != nil {
+		exts = append(exts, metadataIDExt)
 	}
 
 	return exts
