@@ -1099,6 +1099,20 @@ func DCAwareRoundRobinPolicy(localDC string, opts ...dcAwarePolicyOption) HostSe
 func (d *dcAwareRR) setDCFailoverDisabled() {
 	d.disableDCFailover = true
 }
+
+// dcFailoverDisabled reports whether this policy was constructed with
+// HostPolicyOptionDisableDCFailover. Used by driver_config.go to report
+// query.load-balancing.policy.fallback-to-non-preferred-nodes.
+func (d *dcAwareRR) dcFailoverDisabled() bool {
+	return d.disableDCFailover
+}
+
+// localDatacenter reports the datacenter this policy prioritizes. Used by
+// driver_config.go to report query.load-balancing.node-preference.
+func (d *dcAwareRR) localDatacenter() string {
+	return d.local
+}
+
 func (d *dcAwareRR) Init(*Session)                       {}
 func (d *dcAwareRR) Reset()                              {}
 func (d *dcAwareRR) KeyspaceChanged(KeyspaceUpdateEvent) {}
@@ -1245,6 +1259,24 @@ func (d *rackAwareRR) MaxHostTier() uint {
 
 func (d *rackAwareRR) setDCFailoverDisabled() {
 	d.disableDCFailover = true
+}
+
+// dcFailoverDisabled reports whether this policy was constructed with
+// HostPolicyOptionDisableDCFailover. Used by driver_config.go to report
+// query.load-balancing.policy.fallback-to-non-preferred-nodes.
+func (d *rackAwareRR) dcFailoverDisabled() bool {
+	return d.disableDCFailover
+}
+
+// localDatacenter and localRackName report the datacenter/rack this policy
+// prioritizes. Used by driver_config.go to report
+// query.load-balancing.node-preference.
+func (d *rackAwareRR) localDatacenter() string {
+	return d.localDC
+}
+
+func (d *rackAwareRR) localRackName() string {
+	return d.localRack
 }
 
 func (d *rackAwareRR) HostTier(host *HostInfo) uint {

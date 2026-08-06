@@ -3782,7 +3782,7 @@ func TestStartupOptionsKeepDriverKeys(t *testing.T) {
 	)
 
 	t.Run("no ApplicationInfo", func(t *testing.T) {
-		m := startupOptions(cqlVersion, driverName, driverVersion, nil, nil, sessionID)
+		m := startupOptions(cqlVersion, driverName, driverVersion, nil, nil, sessionID, false)
 
 		require.Equal(t, map[string]string{
 			"CQL_VERSION":       cqlVersion,
@@ -3794,7 +3794,7 @@ func TestStartupOptionsKeepDriverKeys(t *testing.T) {
 
 	t.Run("application options are kept", func(t *testing.T) {
 		m := startupOptions(cqlVersion, driverName, driverVersion,
-			NewStaticApplicationInfo("app", "9.9.9", "client-id"), nil, sessionID)
+			NewStaticApplicationInfo("app", "9.9.9", "client-id"), nil, sessionID, false)
 
 		require.Equal(t, "app", m["APPLICATION_NAME"])
 		require.Equal(t, "9.9.9", m["APPLICATION_VERSION"])
@@ -3813,7 +3813,7 @@ func TestStartupOptionsKeepDriverKeys(t *testing.T) {
 				opts["DRIVER_VERSION"] = "0.0.0"
 				opts[sessionIDStartupKey] = "not-the-session-id"
 				opts["APPLICATION_NAME"] = "app"
-			}), nil, sessionID)
+			}), nil, sessionID, false)
 
 		require.Equal(t, cqlVersion, m["CQL_VERSION"], "a custom CQL version would fail every handshake")
 		require.Equal(t, driverName, m["DRIVER_NAME"])

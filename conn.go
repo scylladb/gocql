@@ -637,7 +637,7 @@ func (s *startupCoordinator) options(ctx context.Context, startupCompleted *atom
 // The ordering is easy to lose, which is how it was lost: upstream has no
 // ApplicationInfo hook and writes these three as a map literal, so merging the
 // two put the callback last.
-func startupOptions(cqlVersion, driverName, driverVersion string, info ApplicationInfo, driverConfig *driverConfigReporter, sessionID string) map[string]string {
+func startupOptions(cqlVersion, driverName, driverVersion string, info ApplicationInfo, driverConfig *driverConfigReporter, sessionID string, isScyllaConn bool) map[string]string {
 	m := map[string]string{}
 
 	if info != nil {
@@ -645,7 +645,7 @@ func startupOptions(cqlVersion, driverName, driverVersion string, info Applicati
 	}
 
 	if driverConfig != nil {
-		driverConfig.updateStartupOptions(m)
+		driverConfig.updateStartupOptions(m, isScyllaConn)
 	}
 
 	m[sessionIDStartupKey] = sessionID
@@ -666,6 +666,7 @@ func (s *startupCoordinator) startup(ctx context.Context, startupCompleted *atom
 		s.conn.session.cfg.ApplicationInfo,
 		s.driverConfigReporter,
 		s.conn.session.id,
+		s.conn.isScyllaConn(),
 	)
 
 	if s.conn.compressor != nil {
