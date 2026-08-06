@@ -105,7 +105,8 @@ type readWriteTimeoutReport struct {
 //
 // The schema makes orphaned optional for exactly this case, and gives its
 // absence that meaning, so omitting it produces a document a consumer
-// validating against the schema accepts.
+// validating against the schema accepts. See
+// TestSchemaPermitsAnAbsentOrphanBound, which fails if that ever changes.
 type requestsReport struct {
 	InFlight inFlightReport `json:"in-flight"`
 }
