@@ -2684,7 +2684,16 @@ type Iter struct {
 	// scanColumns caches the column names computed by RowData() so that
 	// MapScan does not recompute them on every row. Populated lazily on
 	// the first call to getScanColumns().
-	scanColumns       []string
+	scanColumns []string
+	// mapScanDefaults holds one freshly-allocated default destination pointer
+	// per scannable column, allocated once on the first MapScan call and
+	// reused across rows. mapScanWorking is allocated lazily on the first
+	// MapScan call with a caller-supplied destination override: defaults are
+	// copied into it and the overrides applied there, keeping the defaults
+	// intact for later rows. Rows without overrides scan directly into the
+	// defaults. Both are released in finalize().
+	mapScanDefaults   []any
+	mapScanWorking    []any
 	meta              resultMetadata
 	pos               int
 	numRows           int
@@ -2846,6 +2855,10 @@ func (iter *Iter) finalize(dispatchWarnings bool) {
 		iter.next.close()
 		iter.next = nil
 	}
+	// Release the MapScan caches: the defaults hold the last row's decoded
+	// values and the working slice may hold caller-supplied destinations.
+	iter.mapScanDefaults = nil
+	iter.mapScanWorking = nil
 	if dispatchWarnings {
 		iter.handleWarningsOnce()
 	}
@@ -2932,6 +2945,12 @@ func (is *iterScanner) Next() bool {
 		}
 	}
 
+	// Trigger async prefetch of next page when we've consumed enough rows,
+	// matching the timing of Iter.Scan() — before column reading and pos++.
+	if iter.next != nil && iter.pos >= iter.next.pos {
+		iter.next.fetchAsync()
+	}
+
 	for i := 0; i < len(is.cols); i++ {
 		col, err := iter.readColumn()
 		if err != nil {
@@ -2941,6 +2960,7 @@ func (is *iterScanner) Next() bool {
 		}
 		is.cols[i] = col
 	}
+
 	iter.pos++
 	is.valid = true
 
