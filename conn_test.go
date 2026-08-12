@@ -4251,3 +4251,159 @@ func TestStartupOptionsKeepDriverKeys(t *testing.T) {
 type applicationInfoFunc func(map[string]string)
 
 func (f applicationInfoFunc) UpdateStartupOptions(opts map[string]string) { f(opts) }
+
+// TestSystemRequestTimeoutRaceWithFinalizeConnection pins the state
+// driver-issued system queries read (Conn.systemRequest, holding the client-side
+// timeout and the pre-rendered USING TIMEOUT clause) as safe to read while
+// finalizeConnection switches it from ConnectTimeout to
+// MetadataSchemaRequestTimeout.
+//
+// The two are concurrent in practice: the control connection is registered for
+// server push events during controlConn.setupConn, but its
+// finalizeConnection() is deferred to the very end of Session.init. A keyspace
+// SCHEMA_CHANGE delivered inside that window (a freshly bootstrapped cluster
+// still creating its internal keyspaces is enough) makes the event-debouncer
+// goroutine run handleKeyspaceChange -> awaitSchemaAgreement -> querySystem on
+// the connection the main goroutine is mid-write on.
+//
+// Run under -race: were the two values plain fields again, this would report
+// "DATA RACE" on them — a torn string header for the clause and a stale timeout.
+func TestSystemRequestTimeoutRaceWithFinalizeConnection(t *testing.T) {
+	t.Parallel()
+
+	// finalizeConnection only stores into atomics - Conn.writeTimeout,
+	// Conn.systemRequest, and the timeout field of each of these two - so neither
+	// needs a net.Conn behind it.
+	c := &Conn{
+		r: &connReader{},
+		w: &deadlineContextWriter{},
+		cfg: &ConnConfig{
+			ConnectTimeout: 10 * time.Second,
+			WriteTimeout:   2 * time.Second,
+			ReadTimeout:    3 * time.Second,
+		},
+		session: &Session{
+			cfg: ClusterConfig{MetadataSchemaRequestTimeout: 42 * time.Millisecond},
+		},
+		// Only a ScyllaDB connection renders the USING TIMEOUT clause.
+		scyllaSupported: ScyllaConnectionFeatures{
+			ScyllaHostFeatures: ScyllaHostFeatures{isScylla: true},
+		},
+	}
+	c.setSystemRequestTimeout(c.cfg.ConnectTimeout)
+
+	// The only two snapshots a reader may observe: the one the connection is
+	// dialed with, and the one finalizeConnection replaces it with. Spelling both
+	// out keeps this test from re-deriving the rendering rule, which is
+	// TestSystemRequestStateClauseFollowsTimeout's job.
+	var (
+		beforeFinalize = systemRequestState{
+			timeout:     c.cfg.ConnectTimeout,
+			usingClause: " USING TIMEOUT 10000ms",
+		}
+		afterFinalize = systemRequestState{
+			timeout:     c.session.cfg.MetadataSchemaRequestTimeout,
+			usingClause: " USING TIMEOUT 42ms",
+		}
+	)
+
+	const readers = 4
+	done := make(chan struct{})
+	var wg, spinning sync.WaitGroup
+	wg.Add(readers)
+	spinning.Add(readers)
+	for i := 0; i < readers; i++ {
+		go func() {
+			defer wg.Done()
+			first := true
+			for {
+				select {
+				case <-done:
+					return
+				default:
+				}
+				// The single load querySystem performs.
+				state := c.getSystemRequestState()
+				if first {
+					// Only write once every reader is already spinning, so the
+					// two sides genuinely overlap.
+					spinning.Done()
+					first = false
+				}
+				// Both values must come from the same snapshot: the clause the
+				// server is asked to honour always matches the deadline the
+				// client is waiting on, never the other transition's value.
+				if state != beforeFinalize && state != afterFinalize {
+					t.Errorf("observed %+v, which is neither transition's snapshot; want %+v or %+v",
+						state, beforeFinalize, afterFinalize)
+					return
+				}
+			}
+		}()
+	}
+
+	spinning.Wait()
+	c.finalizeConnection()
+	close(done)
+	wg.Wait()
+
+	require.Equal(t, afterFinalize, c.getSystemRequestState(),
+		"finalizeConnection should publish the metadata timeout and its clause as one snapshot")
+}
+
+// TestSystemRequestStateClauseFollowsTimeout pins the USING TIMEOUT clause as
+// derived purely from the timeout in effect and whether the peer is ScyllaDB.
+//
+// The zero case is the one worth guarding: MetadataSchemaRequestTimeout is
+// documented as "positive or zero" (see ClusterConfig.Validate), and by the time
+// finalizeConnection applies it, startupCoordinator.options has already rendered a
+// clause from ConnectTimeout. Were that clause carried over, a caller who disabled
+// the metadata timeout would still have every system query bounded server-side by
+// an unrelated setting - while DRIVER_CONFIG reported no timeout at all, since
+// buildControlPlaneReport omits a non-positive one.
+func TestSystemRequestStateClauseFollowsTimeout(t *testing.T) {
+	t.Parallel()
+
+	newConn := func(isScylla bool) *Conn {
+		c := &Conn{scyllaSupported: ScyllaConnectionFeatures{
+			ScyllaHostFeatures: ScyllaHostFeatures{isScylla: isScylla},
+		}}
+		// As startupCoordinator.options leaves it: a clause rendered from
+		// ConnectTimeout, before finalizeConnection applies the metadata timeout.
+		c.setSystemRequestTimeout(600 * time.Millisecond)
+		return c
+	}
+
+	t.Run("scylla renders the clause", func(t *testing.T) {
+		require.Equal(t, systemRequestState{
+			timeout:     600 * time.Millisecond,
+			usingClause: " USING TIMEOUT 600ms",
+		}, newConn(true).getSystemRequestState())
+	})
+
+	t.Run("cassandra renders no clause", func(t *testing.T) {
+		require.Equal(t, systemRequestState{timeout: 600 * time.Millisecond},
+			newConn(false).getSystemRequestState())
+	})
+
+	t.Run("a disabled timeout clears the clause", func(t *testing.T) {
+		c := newConn(true)
+		c.setSystemRequestTimeout(0)
+		require.Equal(t, systemRequestState{}, c.getSystemRequestState(),
+			"a zero metadata timeout must not leave the ConnectTimeout clause in force")
+	})
+
+	// The cases above assert the snapshot itself; this one goes through
+	// systemRequestStatement, which is how the query paths reach it.
+	t.Run("the statement carries the clause in force", func(t *testing.T) {
+		c := newConn(true)
+		stmt, timeout := c.systemRequestStatement(qrySystemLocal)
+		require.Equal(t, qrySystemLocal+" USING TIMEOUT 600ms", stmt)
+		require.Equal(t, 600*time.Millisecond, timeout)
+
+		c.setSystemRequestTimeout(0)
+		stmt, timeout = c.systemRequestStatement(qrySystemLocal)
+		require.Equal(t, qrySystemLocal, stmt, "a disabled timeout appends nothing")
+		require.Equal(t, time.Duration(0), timeout)
+	})
+}

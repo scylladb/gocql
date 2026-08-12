@@ -240,17 +240,25 @@ type Conn struct {
 	//
 	// Atomic because UseKeyspace is exported: a caller invoking it on a live
 	// connection would otherwise race the request goroutines reading it.
-	currentKeyspace      atomic.Pointer[string]
-	addr                 string
-	usingTimeoutClause   string
-	cqlProtoExts         []cqlProtocolExtension
-	scyllaSupported      ScyllaConnectionFeatures
-	systemRequestTimeout time.Duration
-	writeTimeout         atomic.Int64
-	mu                   sync.Mutex
-	tabletsRoutingV1     int32
-	headerBuf            [headSize]byte
-	isShardAware         bool
+	currentKeyspace atomic.Pointer[string]
+	addr            string
+	// systemRequest carries the timeouts driver-issued system queries are sent
+	// with. See systemRequestState for why the two travel together.
+	//
+	// Atomic because finalizeConnection switches the timeout from
+	// cfg.ConnectTimeout to cfg.MetadataSchemaRequestTimeout at the very end of
+	// Session.init, by which point the control connection is already registered
+	// for server push events: a SCHEMA_CHANGE arriving inside that window makes
+	// the event-debouncer goroutine run querySystem on this connection
+	// concurrently with the write.
+	systemRequest    atomic.Pointer[systemRequestState]
+	cqlProtoExts     []cqlProtocolExtension
+	scyllaSupported  ScyllaConnectionFeatures
+	writeTimeout     atomic.Int64
+	mu               sync.Mutex
+	tabletsRoutingV1 int32
+	headerBuf        [headSize]byte
+	isShardAware     bool
 	// true if connection close process for the connection started.
 	// closed is protected by mu.
 	closed     bool
@@ -266,15 +274,58 @@ func (c *Conn) setSchemaV2(s bool) {
 	c.isSchemaV2 = s
 }
 
-func (c *Conn) setSystemRequestTimeout(t time.Duration) {
-	c.systemRequestTimeout = t
-	c.recalculateSystemRequestTimeout()
+// systemRequestState is the immutable pair of timeouts a driver-issued system
+// query is sent with: the client-side deadline, and the ScyllaDB-only
+// " USING TIMEOUT ...ms" clause pre-rendered from it (empty when the clause does
+// not apply). The two are published as one snapshot so a reader can never pair
+// one with a stale version of the other - which would ask the server to abort a
+// system query on a deadline the client is not waiting on, or vice versa.
+//
+// Field order keeps the string first so the GC scans 8 pointer bytes, not 16
+// (govet's fieldalignment).
+type systemRequestState struct {
+	usingClause string
+	timeout     time.Duration
 }
 
-func (c *Conn) recalculateSystemRequestTimeout() {
-	if c.systemRequestTimeout > time.Duration(0) && c.isScyllaConn() {
-		c.usingTimeoutClause = " USING TIMEOUT " + strconv.FormatInt(c.systemRequestTimeout.Milliseconds(), 10) + "ms"
+// systemRequestStatement returns stmt with the USING TIMEOUT clause appended and
+// the client-side timeout to send it with, both taken from one snapshot so the
+// two can never disagree. It is the only way the query paths should reach them.
+func (c *Conn) systemRequestStatement(stmt string) (string, time.Duration) {
+	state := c.getSystemRequestState()
+	return stmt + state.usingClause, state.timeout
+}
+
+// getSystemRequestState returns the current snapshot.
+func (c *Conn) getSystemRequestState() systemRequestState {
+	if state := c.systemRequest.Load(); state != nil {
+		return *state
 	}
+	return systemRequestState{}
+}
+
+// setSystemRequestTimeout publishes t together with the clause derived from it.
+// The clause is ScyllaDB-only and needs a positive timeout, so it is empty
+// otherwise - a timeout the caller disabled must not leave an older clause in
+// force.
+func (c *Conn) setSystemRequestTimeout(t time.Duration) {
+	next := systemRequestState{timeout: t}
+	if t > time.Duration(0) && c.isScyllaConn() {
+		next.usingClause = " USING TIMEOUT " + strconv.FormatInt(t.Milliseconds(), 10) + "ms"
+	}
+	c.systemRequest.Store(&next)
+}
+
+// recalculateSystemRequestTimeout re-renders the clause for the timeout already
+// in effect. It is called once the connection knows whether it talks to
+// ScyllaDB, which the clause depends on.
+//
+// It re-reads the timeout rather than naming the value its only caller knows is
+// in force (cfg.ConnectTimeout, from dialWithoutObserver): republishing whatever
+// is current cannot overwrite a timeout some later change publishes earlier in
+// startup, which would put every system query back under an unrelated setting.
+func (c *Conn) recalculateSystemRequestTimeout() {
+	c.setSystemRequestTimeout(c.getSystemRequestState().timeout)
 }
 
 func (c *Conn) finalizeConnection() {
@@ -424,12 +475,12 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 			semaphore: make(chan struct{}, 1),
 			quit:      make(chan struct{}),
 		},
-		ctx:                  ctx,
-		cancel:               cancel,
-		logger:               cfg.logger(),
-		streamObserver:       s.streamObserver,
-		systemRequestTimeout: cfg.ConnectTimeout,
+		ctx:            ctx,
+		cancel:         cancel,
+		logger:         cfg.logger(),
+		streamObserver: s.streamObserver,
 	}
+	c.setSystemRequestTimeout(cfg.ConnectTimeout)
 
 	if err := c.init(ctx, dialedHost); err != nil {
 		cancel()
@@ -2927,12 +2978,13 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 }
 
 func (c *Conn) querySystem(ctx context.Context, query string, values ...any) *Iter {
-	q := c.session.Query(query+c.usingTimeoutClause, values...).Consistency(One).Trace(nil)
+	stmt, timeout := c.systemRequestStatement(query)
+	q := c.session.Query(stmt, values...).Consistency(One).Trace(nil)
 	q.skipPrepare = true
 	q.disableSkipMetadata = true
 	// we want to keep the query on this connection
 	q.conn = c
-	q.SetRequestTimeout(c.systemRequestTimeout)
+	q.SetRequestTimeout(timeout)
 	return c.executeQuery(ctx, q)
 }
 

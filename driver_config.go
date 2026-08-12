@@ -643,7 +643,7 @@ func buildControlPlaneReport(cfg *ClusterConfig, isScyllaConn bool) controlPlane
 		if isScyllaConn {
 			// The USING TIMEOUT clause is ScyllaDB-only, so this key only ever
 			// applies against Scylla -- and it carries whatever
-			// Conn.recalculateSystemRequestTimeout put in the clause, which
+			// Conn.setSystemRequestTimeout put in the clause, which
 			// truncates rather than floors: a sub-millisecond timeout is sent as
 			// "USING TIMEOUT 0ms". Derive it from the same conversion so the
 			// report cannot claim a clause the connection never sends, and omit

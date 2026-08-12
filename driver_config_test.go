@@ -88,7 +88,7 @@ func TestDriverConfigReporterStartupOptions(t *testing.T) {
 // TestDriverConfigReporterStartupOptions_ScyllaConnGatesServerSideMs pins that
 // control-plane.queries.system.timeout.server-side-ms only appears when the
 // connection is talking to Scylla, mirroring the USING TIMEOUT clause in
-// Conn.recalculateSystemRequestTimeout.
+// Conn.setSystemRequestTimeout.
 func TestDriverConfigReporterStartupOptions_ScyllaConnGatesServerSideMs(t *testing.T) {
 	cfg := *NewCluster("127.0.0.1")
 	s := newTestReportSession(cfg, TokenAwareHostPolicy(RoundRobinHostPolicy()))
@@ -698,7 +698,7 @@ func TestBuildControlPlaneReport(t *testing.T) {
 			},
 		},
 		{
-			// Conn.recalculateSystemRequestTimeout truncates when it builds the
+			// Conn.setSystemRequestTimeout truncates when it builds the
 			// USING TIMEOUT clause, so this connection really is sent
 			// "USING TIMEOUT 0ms". The schema cannot carry that, so the key is
 			// omitted rather than rounded up to a clause never sent.
@@ -816,7 +816,7 @@ func TestBuildReport_SubMillisecondTimeouts(t *testing.T) {
 	}
 
 	// server-side-ms is the exception, and deliberately so: it reports the
-	// USING TIMEOUT clause, which Conn.recalculateSystemRequestTimeout builds by
+	// USING TIMEOUT clause, which Conn.setSystemRequestTimeout builds by
 	// truncating. A sub-millisecond timeout is sent as "USING TIMEOUT 0ms", and
 	// the schema cannot carry a 0 here, so the key is omitted rather than
 	// claiming a 1ms clause the connection never sends.

@@ -194,6 +194,17 @@ type ClusterConfig struct {
 	//    For that, see ConnectTimeout.
 	Timeout time.Duration
 	// The timeout for the requests to the schema tables. (default: 60s)
+	//
+	// Zero means the driver does not bound these queries itself: it arms no
+	// client-side deadline, and against ScyllaDB it sends them without the
+	// " USING TIMEOUT ...ms" override, so how long they may run is left to the
+	// server's own configuration - its request timeouts, or the service level in
+	// force. Nothing else on the driver side steps in: controlConn.runQuery, which
+	// every schema-table read goes through, passes a context with no deadline, and
+	// the connection's read deadline is disarmed while waiting for a response to
+	// begin. Schema agreement is the exception, bounding its own queries by
+	// MaxWaitSchemaAgreement. Set a positive value to keep these queries under a
+	// deadline of the client's choosing.
 	MetadataSchemaRequestTimeout time.Duration
 	// ConnectTimeout limits the time spent during connection setup.
 	// During initial connection setup, internal queries, AUTH requests will return an error if the client

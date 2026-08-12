@@ -553,9 +553,10 @@ func (c *controlConn) writeFrame(w frameBuilder) (frame, error) {
 // query will return nil if the connection is closed or nil
 func (c *controlConn) querySystem(statement string, values ...any) (iter *Iter) {
 	conn := c.getConn().conn.(*Conn)
-	return c.runQuery(c.session.Query(statement+conn.usingTimeoutClause, values...).
+	stmt, timeout := conn.systemRequestStatement(statement)
+	return c.runQuery(c.session.Query(stmt, values...).
 		Consistency(One).
-		SetRequestTimeout(conn.systemRequestTimeout).
+		SetRequestTimeout(timeout).
 		RoutingKey([]byte{}).
 		Trace(nil))
 }
