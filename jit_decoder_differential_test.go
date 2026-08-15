@@ -286,3 +286,38 @@ func TestCompiledCachesAreBounded(t *testing.T) {
 		t.Fatalf("cache holds %d entries, past the %d bound", live, maxCompiledCacheEntries)
 	}
 }
+
+// TestScanVaryingDestTypesUnit is the unit-level counterpart of the
+// integration test of the same shape: a caller may vary destination types
+// between rows of one Iter, with no page turn and so no schema change, which
+// only the destTypes half of ensureRowDecoderFor's check catches.
+func TestScanVaryingDestTypesUnit(t *testing.T) {
+	columns := []ColumnInfo{{Name: "v", TypeInfo: nat(TypeInt)}}
+	data, err := Marshal(columns[0].TypeInfo, int32(7))
+	if err != nil {
+		t.Fatalf("unexpected error from reference Marshal: %v", err)
+	}
+
+	iter := &Iter{
+		framer:  &benchFramerT{cols: [][]byte{data}},
+		meta:    resultMetadata{columns: columns, actualColCount: 1},
+		numRows: 2,
+	}
+
+	var first int32
+	if !iter.Scan(&first) {
+		t.Fatalf("first Scan failed: %v", iter.err)
+	}
+	if first != 7 {
+		t.Fatalf("got %d, want 7", first)
+	}
+
+	// Same column, different Go type on the next row of the same Iter.
+	var second int64
+	if !iter.Scan(&second) {
+		t.Fatalf("second Scan failed: %v", iter.err)
+	}
+	if second != 7 {
+		t.Fatalf("got %d, want 7", second)
+	}
+}

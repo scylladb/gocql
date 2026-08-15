@@ -289,6 +289,73 @@ func TestTypeInfoEqual(t *testing.T) {
 	}
 }
 
+// TestEnsureRowDecoderForInvalidatesOnPageTurn verifies a page turn that
+// changes the schema drops the decoder compiled for the previous page, even
+// though the caller's destination types are unchanged — the common case, since
+// the same Scan call site is reused for every row.
+func TestEnsureRowDecoderForInvalidatesOnPageTurn(t *testing.T) {
+	oldColumns := []ColumnInfo{{Name: "id", TypeInfo: NativeType{typ: TypeInt, proto: 4}}}
+	newColumns := []ColumnInfo{{Name: "id", TypeInfo: NativeType{typ: TypeBigInt, proto: 4}}}
+
+	idBytes, err := Marshal(oldColumns[0].TypeInfo, int32(7))
+	if err != nil {
+		t.Fatalf("unexpected error from reference Marshal: %v", err)
+	}
+	newIDBytes, err := Marshal(newColumns[0].TypeInfo, int64(7))
+	if err != nil {
+		t.Fatalf("unexpected error from reference Marshal: %v", err)
+	}
+
+	iter := &Iter{meta: resultMetadata{columns: oldColumns}}
+
+	var id1 int32
+	iter.ensureRowDecoderFor([]any{&id1})
+	decodeAll(t, iter.rowDecoder.dec, [][]byte{idBytes}, []any{&id1})
+	if id1 != 7 {
+		t.Fatalf("got %d, want 7", id1)
+	}
+
+	// The page turn fetchNextPage performs when RESULT_METADATA_CHANGED lands
+	// on a page boundary.
+	iter.copyPageData(&Iter{meta: resultMetadata{columns: newColumns}})
+	if iter.rowDecoder != nil {
+		t.Fatal("expected the page turn to drop the decoder compiled for the previous schema")
+	}
+
+	var id2 int64
+	iter.ensureRowDecoderFor([]any{&id2})
+	decodeAll(t, iter.rowDecoder.dec, [][]byte{newIDBytes}, []any{&id2})
+	if id2 != 7 {
+		t.Fatalf("got %d, want 7", id2)
+	}
+}
+
+// BenchmarkEnsureRowDecoderForWarmRow measures the per-row revalidation on the
+// Scan hot path: every row of every Iter pays it.
+func BenchmarkEnsureRowDecoderForWarmRow(b *testing.B) {
+	columns := []ColumnInfo{
+		{Name: "title", TypeInfo: NativeType{typ: TypeVarchar, proto: 4}},
+		{Name: "body", TypeInfo: NativeType{typ: TypeVarchar, proto: 4}},
+		{Name: "views", TypeInfo: NativeType{typ: TypeBigInt, proto: 4}},
+		{Name: "protected", TypeInfo: NativeType{typ: TypeBoolean, proto: 4}},
+		{Name: "tags", TypeInfo: CollectionType{NativeType: NativeType{typ: TypeSet, proto: 4}, Elem: NativeType{typ: TypeVarchar, proto: 4}}},
+	}
+	var title, body string
+	var views int64
+	var protected bool
+	var tags []string
+	dest := []any{&title, &body, &views, &protected, &tags}
+
+	iter := &Iter{meta: resultMetadata{columns: columns}, preparedStmt: &preparedStatment{}}
+	iter.ensureRowDecoderFor(dest) // warm, as it is after the first row
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		iter.ensureRowDecoderFor(dest)
+	}
+}
+
 // BenchmarkGetOrCompileRowDecoder_ColdVsCachedHit is the decoder-side
 // analogue of BenchmarkGetOrCompileParamEncoder_ColdVsCachedHit.
 func BenchmarkGetOrCompileRowDecoder_ColdVsCachedHit(b *testing.B) {
