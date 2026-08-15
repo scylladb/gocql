@@ -2450,13 +2450,21 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer,
 	}
 }
 
-// releasePooledQueryValues returns marshal fast-path buffers to
-// marshalOutputPool. Must run before putQueryValues, which clears the pooled
-// flag and value bytes this depends on.
-func releasePooledQueryValues(vals []queryValues) {
+// putPooledOutput returns a buffer to marshalOutputPool. Indirected so tests
+// can observe exactly which buffers the release paths hand back.
+var putPooledOutput = putMarshalOutput
+
+// releasePooledValues returns the buffers that the generic marshal path took
+// from marshalOutputPool. The gate is the per-value pooled flag, never the
+// column's TypeInfo: poolability is a property of the code path that produced
+// the bytes, so predicting it from the schema would recycle reflect-path,
+// pointer and user-Marshaler buffers that were never pooled. Clearing the flag
+// makes a second call a no-op.
+func releasePooledValues(vals []queryValues) {
 	for i := range vals {
 		if vals[i].pooled {
-			putMarshalOutput(vals[i].value)
+			putPooledOutput(vals[i].value)
+			vals[i].pooled = false
 		}
 	}
 }
@@ -2626,7 +2634,7 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 			if err := marshalQueryValue(typ, value, v); err != nil {
 				// Return pooled marshal buffers before putQueryValues clears
 				// the pooled flag and value bytes they depend on.
-				releasePooledQueryValues(params.values)
+				releasePooledValues(params.values)
 				putQueryValues(params.values)
 				return &Iter{err: err}
 			}
@@ -2669,9 +2677,9 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 	framer, err := c.exec(ctx, frame, qry.trace, qry.GetRequestTimeout())
 	// Return pooled values; consumed by buildFrame at the start of c.exec().
 	// Returned after round-trip (not right after serialization) for simplicity.
-	// releasePooledQueryValues must run before putQueryValues clears the
+	// releasePooledValues must run before putQueryValues clears the
 	// pooled flag and value bytes it relies on.
-	releasePooledQueryValues(params.values)
+	releasePooledValues(params.values)
 	putQueryValues(params.values)
 	if err != nil {
 		return &Iter{err: err}
@@ -2942,7 +2950,7 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 	var pooledBufs [][]byte
 	defer func() {
 		for _, buf := range pooledBufs {
-			putMarshalOutput(buf)
+			putPooledOutput(buf)
 		}
 	}()
 
