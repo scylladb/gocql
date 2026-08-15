@@ -2450,12 +2450,21 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer,
 	}
 }
 
+// putPooledOutput returns a buffer to marshalOutputPool. Indirected so tests
+// can observe exactly which buffers the release paths hand back.
+var putPooledOutput = putMarshalOutput
+
 // releasePooledValues returns the buffers that the generic marshal path took
-// from marshalOutputPool, gated per value by the pooled flag.
+// from marshalOutputPool. The gate is the per-value pooled flag, never the
+// column's TypeInfo: poolability is a property of the code path that produced
+// the bytes, so predicting it from the schema would recycle reflect-path,
+// pointer and user-Marshaler buffers that were never pooled. Clearing the flag
+// makes a second call a no-op.
 func releasePooledValues(vals []queryValues) {
 	for i := range vals {
 		if vals[i].pooled {
-			putMarshalOutput(vals[i].value)
+			putPooledOutput(vals[i].value)
+			vals[i].pooled = false
 		}
 	}
 }
@@ -2937,7 +2946,7 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 	var pooledBufs [][]byte
 	defer func() {
 		for _, buf := range pooledBufs {
-			putMarshalOutput(buf)
+			putPooledOutput(buf)
 		}
 	}()
 
