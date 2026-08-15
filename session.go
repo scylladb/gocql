@@ -2916,6 +2916,10 @@ type Scanner interface {
 	// when unmarshalling a column into the value in dest an error is returned and the row is invalidated
 	// until the next call to Next.
 	// Next must be called before calling Scan, if it is not an error is returned.
+	//
+	// As with Iter.Scan, a *[]byte destination reuses its existing backing
+	// array where it is large enough, so those bytes are only valid until the
+	// next Scan into the same destination.
 	Scan(...any) error
 
 	// Err returns the if there was one during iteration that resulted in iteration being unable to complete.
@@ -3055,6 +3059,12 @@ func (iter *Iter) readColumn() ([]byte, error) {
 // Scan returns true if the row was successfully unmarshaled or false if the
 // end of the result set was reached or if an error occurred. Close should
 // be called afterwards to retrieve any potential errors.
+//
+// Byte slices are the exception to "copies": a *[]byte destination — and a
+// []byte field of a UDT — reuses its existing backing array when that array
+// is large enough, so those bytes are only valid until the next Scan into the
+// same destination. Copy them to keep them, as with database/sql's RawBytes.
+// Every other destination, collections included, gets fresh storage per row.
 func (iter *Iter) Scan(dest ...any) bool {
 	if iter.err != nil {
 		iter.finalize(true)
