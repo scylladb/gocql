@@ -190,3 +190,32 @@ func TestScanLoopRetainsDistinctCollectionSlices(t *testing.T) {
 		}
 	}
 }
+
+// TestScanByteSliceReusesBacking documents the one destination that is not
+// copied: *[]byte reuses its backing array where it fits. This is long-standing
+// gocql behaviour, inherited from serialization/{blob,varchar,text,ascii}, and
+// is now stated on Iter.Scan. The test exists so the documentation and the code
+// move together — if the reuse is ever removed, this fails and the doc comment
+// must be updated with it.
+func TestScanByteSliceReusesBacking(t *testing.T) {
+	col := ColumnInfo{Name: "b", TypeInfo: NativeType{proto: protoVersion4, typ: TypeBlob}}
+	iter := &Iter{
+		meta:    resultMetadata{columns: []ColumnInfo{col}, actualColCount: 1},
+		framer:  &mock.MockFramer{Data: [][]byte{[]byte("row-one"), []byte("row-two")}},
+		numRows: 2,
+	}
+
+	var b []byte
+	var retained [][]byte
+	for iter.Scan(&b) {
+		retained = append(retained, b)
+	}
+	if len(retained) != 2 {
+		t.Fatalf("scanned %d rows, want 2", len(retained))
+	}
+	if string(retained[0]) != "row-two" {
+		t.Fatalf("expected the retained []byte to alias the second row (documented "+
+			"reuse), got %q — if this now reads \"row-one\" the reuse was removed "+
+			"and Iter.Scan's doc comment needs updating", retained[0])
+	}
+}
