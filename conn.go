@@ -2420,6 +2420,25 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer,
 	}
 }
 
+// putPooledOutput returns a buffer to marshalOutputPool. Indirected so tests
+// can observe exactly which buffers the release paths hand back.
+var putPooledOutput = putMarshalOutput
+
+// releasePooledValues returns the buffers that the generic marshal path took
+// from marshalOutputPool. The gate is the per-value pooled flag, never the
+// column's TypeInfo: poolability is a property of the code path that produced
+// the bytes, so predicting it from the schema would recycle reflect-path,
+// pointer and user-Marshaler buffers that were never pooled. Clearing the flag
+// makes a second call a no-op.
+func releasePooledValues(vals []queryValues) {
+	for i := range vals {
+		if vals[i].pooled {
+			putPooledOutput(vals[i].value)
+			vals[i].pooled = false
+		}
+	}
+}
+
 func marshalQueryValue(typ TypeInfo, value any, dst *queryValues) error {
 	if named, ok := value.(*namedValue); ok {
 		dst.name = named.name
@@ -2579,9 +2598,10 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 		params.values = getQueryValues(len(values))
 
 		// Return pooled marshal buffers once the framer copies them
-		// (c.exec → buildFrame → writeBytes). Predict poolability from
-		// column TypeInfo, not params.values[i].pooled — those are still
-		// zero-valued here, before the marshal loop below sets them.
+		// (c.exec → buildFrame → writeBytes). The TypeInfo scan only decides
+		// whether registering the defer is worth it — the flags are still
+		// zero here. What actually gets returned is gated per value inside
+		// releasePooledValues.
 		{
 			vals := params.values
 			hasPooled := false
@@ -2592,13 +2612,7 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 				}
 			}
 			if hasPooled {
-				defer func() {
-					for i := range vals {
-						if vals[i].pooled {
-							putMarshalOutput(vals[i].value)
-						}
-					}
-				}()
+				defer releasePooledValues(vals)
 			}
 		}
 
@@ -2919,7 +2933,7 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 	var pooledBufs [][]byte
 	defer func() {
 		for _, buf := range pooledBufs {
-			putMarshalOutput(buf)
+			putPooledOutput(buf)
 		}
 	}()
 
