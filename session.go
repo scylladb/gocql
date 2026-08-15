@@ -2947,6 +2947,13 @@ func (is *iterScanner) Next() bool {
 		}
 	}
 
+	// A page turn can install new metadata (RESULT_METADATA_CHANGED), so the
+	// column count this row must be read with is not necessarily the one
+	// Scanner() sized cols for.
+	if len(is.cols) != len(iter.meta.columns) {
+		is.cols = make([][]byte, len(iter.meta.columns))
+	}
+
 	for i := 0; i < len(is.cols); i++ {
 		col, err := iter.readColumn()
 		if err != nil {
