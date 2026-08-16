@@ -367,20 +367,24 @@ test-integration-cassandra-coverage: .prepare-coverage-dir
 # run `go tool cover` from within each module's own directory instead.
 coverage-report:
 	@echo "Generate coverage report"
+	go tool covdata textfmt -i="${COVERAGE_DIR}" -pkg="github.com/gocql/gocql/..." -o="${MAKEFILE_PATH}/coverage-root.out"
+	go tool covdata textfmt -i="${COVERAGE_DIR}" -pkg="github.com/scylladb/gocql/lz4/..." -o="${MAKEFILE_PATH}/coverage-lz4.out"
 ifeq ($(shell if [[ -n "$${GITHUB_STEP_SUMMARY}" ]]; then echo "running-in-workflow"; else echo "running-in-shell"; fi), running-in-workflow)
 	echo "### Coverage Report" >>$${GITHUB_STEP_SUMMARY}
 	echo '```' >>$${GITHUB_STEP_SUMMARY}
 	go tool covdata percent -i="${COVERAGE_DIR}" -pkg="github.com/gocql/gocql/..." | tee -a "$${GITHUB_STEP_SUMMARY}"
+	go tool cover -func="${MAKEFILE_PATH}/coverage-root.out" | tail -1 | sed 's/^total:/root module total:/' | tee -a "$${GITHUB_STEP_SUMMARY}"
 	go tool covdata percent -i="${COVERAGE_DIR}" -pkg="github.com/scylladb/gocql/lz4/..." | tee -a "$${GITHUB_STEP_SUMMARY}"
+	(cd lz4 && go tool cover -func="${MAKEFILE_PATH}/coverage-lz4.out") | tail -1 | sed 's/^total:/lz4 module total:/' | tee -a "$${GITHUB_STEP_SUMMARY}"
 	echo '```' >>"$${GITHUB_STEP_SUMMARY}"
 else
 	go tool covdata percent -i="${COVERAGE_DIR}" -pkg="github.com/gocql/gocql/..."
+	go tool cover -func="${MAKEFILE_PATH}/coverage-root.out" | tail -1 | sed 's/^total:/root module total:/'
 	go tool covdata percent -i="${COVERAGE_DIR}" -pkg="github.com/scylladb/gocql/lz4/..."
+	(cd lz4 && go tool cover -func="${MAKEFILE_PATH}/coverage-lz4.out") | tail -1 | sed 's/^total:/lz4 module total:/'
 endif
-	go tool covdata textfmt -i="${COVERAGE_DIR}" -pkg="github.com/gocql/gocql/..." -o="${MAKEFILE_PATH}/coverage-root.out"
 	go tool cover -html="${MAKEFILE_PATH}/coverage-root.out" -o="${MAKEFILE_PATH}/coverage-root.html"
-	go tool covdata textfmt -i="${COVERAGE_DIR}" -pkg="github.com/scylladb/gocql/lz4/..." -o="${MAKEFILE_PATH}/coverage-lz4.out"
-	cd lz4 && go tool cover -html="${MAKEFILE_PATH}/coverage-lz4.out" -o="${MAKEFILE_PATH}/coverage-lz4.html"
+	(cd lz4 && go tool cover -html="${MAKEFILE_PATH}/coverage-lz4.out" -o="${MAKEFILE_PATH}/coverage-lz4.html")
 
 clean-coverage:
 	rm -rf "${COVERAGE_DIR}" "${MAKEFILE_PATH}"/coverage-root.* "${MAKEFILE_PATH}"/coverage-lz4.*
