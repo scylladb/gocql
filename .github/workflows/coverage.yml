@@ -20,6 +20,9 @@ on:
       - .github/workflows/extended-ci-longevity-large-partitions-with-network-nemesis-1h-test.yml
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   coverage:
     name: Measure code coverage
