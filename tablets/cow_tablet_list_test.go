@@ -1115,12 +1115,16 @@ func TestOpQueueRun(t *testing.T) {
 		}
 	}
 
-	runQueue := func(send func(q *opQueue), wantTypes []string, validate func(t *testing.T, processed []tabletOp)) {
+	runQueue := func(t *testing.T, seed func(q *opQueue), wantTypes []string, validate func(t *testing.T, processed []tabletOp)) {
 		t.Helper()
 
 		q := newOpQueue()
 		var mu sync.Mutex
 		processed := make([]tabletOp, 0, len(wantTypes))
+		// Enqueue all ops before starting the writer goroutine: coalescing in
+		// next() stops as soon as the channel is momentarily empty, so enqueueing
+		// concurrently with the writer makes the coalesced batch sizes racy.
+		seed(q)
 		go q.run(func(op tabletOp) {
 			mu.Lock()
 			processed = append(processed, op)
@@ -1129,8 +1133,10 @@ func TestOpQueueRun(t *testing.T) {
 				close(flush.done)
 			}
 		})
-
-		send(q)
+		// flush() acts as a barrier: it completes only once every previously
+		// queued op has been processed, so close() cannot race the writer and
+		// drop buffered ops.
+		q.flush()
 		q.close()
 
 		mu.Lock()
@@ -1164,11 +1170,10 @@ func TestOpQueueRun(t *testing.T) {
 	}
 
 	t.Run("CoalescesBufferedAddOps", func(t *testing.T) {
-		runQueue(func(q *opQueue) {
+		runQueue(t, func(q *opQueue) {
 			q.send(opAddTablet{tablet: newTablet(0, 99)})
 			q.send(opAddTablet{tablet: newTablet(100, 199)})
 			q.send(opAddTablet{tablet: newTablet(200, 299)})
-			q.flush()
 		}, []string{"bulk", "flush"}, func(t *testing.T, processed []tabletOp) {
 			bulk := processed[0].(opBulkAddTablets)
 			if len(bulk.tablets) != 3 {
@@ -1178,14 +1183,12 @@ func TestOpQueueRun(t *testing.T) {
 	})
 
 	t.Run("DoesNotCrossFlushOrNonAddBoundaries", func(t *testing.T) {
-		runQueue(func(q *opQueue) {
-			flushDone := make(chan struct{})
+		runQueue(t, func(q *opQueue) {
 			q.send(opAddTablet{tablet: newTablet(0, 99)})
-			q.send(opFlush{done: flushDone})
+			q.send(opFlush{done: make(chan struct{})})
 			q.send(opRemoveHost{hostID: testHostUUID("host-1")})
 			q.send(opAddTablet{tablet: newTablet(100, 199)})
-			<-flushDone
-		}, []string{"bulk", "flush", "removeHost", "bulk"}, func(t *testing.T, processed []tabletOp) {
+		}, []string{"bulk", "flush", "removeHost", "bulk", "flush"}, func(t *testing.T, processed []tabletOp) {
 			first := processed[0].(opBulkAddTablets)
 			second := processed[3].(opBulkAddTablets)
 			if len(first.tablets) != 1 || len(second.tablets) != 1 {
