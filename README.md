@@ -57,7 +57,7 @@ Add the following line to your project `go.mod` file.
 replace github.com/gocql/gocql => github.com/scylladb/gocql <version>
 ```
 
-Replace `<version>` with a concrete released tag (for example `v1.7.3`) or a
+Replace `<version>` with a concrete released tag (for example `v1.19.0`) or a
 pseudo-version; `latest` is not a valid version in a `replace` directive. Note
 that the module path is `github.com/gocql/gocql` (no `/v2` suffix), so `v2.x`
 tags are not valid replacement versions here — use a `v1` tag or a
@@ -287,24 +287,23 @@ config.Compressor = &lz4.LZ4Compressor{}
 ...
 ```
 
+When explicitly using native protocol v5, use LZ4 compression or no compression.
+`SnappyCompressor` does not support v5 transport segments and is rejected when
+`ProtoVersion` is 5 or newer. Protocol v5 is not selected by automatic protocol
+discovery; it must currently be configured explicitly.
+
 LZ4 support is provided as an optional sub-module with its own `go.mod`. Because it uses the
 same fork pattern as the parent module, add a second `replace` directive alongside the one from
 the Installation section:
 
 ```mod
-replace github.com/gocql/gocql => github.com/scylladb/gocql <version>
-replace github.com/gocql/gocql/lz4 => github.com/scylladb/gocql/lz4 <lz4-version>
+replace github.com/gocql/gocql => github.com/scylladb/gocql v1.19.0
+replace github.com/gocql/gocql/lz4 => github.com/scylladb/gocql/lz4 v1.19.0
 ```
 
-The two versions are independent, and `<lz4-version>` cannot be a release tag today: Go resolves
-a version of a sub-directory module through a tag prefixed with that subdirectory, so `v1.7.3`
-is looked up as the tag `lz4/v1.7.3`. This repository publishes no `lz4/v*` tags, so such a
-directive fails with `invalid version: unknown revision lz4/v1.7.3`. Use a pseudo-version
-instead — this prints one for the current `master`:
-
-```sh
-go list -m github.com/scylladb/gocql/lz4@master   # or @<commit-sha>
-```
+The two modules are versioned independently. The repository tag for the nested module is
+prefixed with its directory (`lz4/v1.19.0`), while the version used in a `go.mod` directive is
+`v1.19.0` as shown above.
 
 Then run `go mod tidy`.
 

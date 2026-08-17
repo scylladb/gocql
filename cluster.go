@@ -169,11 +169,12 @@ type ClusterConfig struct {
 	MaxWaitSchemaAgreement time.Duration
 	// ProtoVersion sets the version of the native protocol to use, this will
 	// enable features in the driver for specific protocol versions, generally this
-	// should be set to a known version (2,3,4) for the cluster being connected to.
+	// should be set to a supported version (3,4,5) for the cluster being connected to.
 	//
 	// If it is 0 or unset (the default) then the driver will attempt to discover the
-	// highest supported protocol for the cluster. In clusters with nodes of different
-	// versions the protocol selected is not defined (ie, it can be any of the supported in the cluster)
+	// highest supported protocol up to version 4. Protocol version 5 must currently
+	// be selected explicitly. In clusters with nodes of different versions the protocol
+	// selected is not defined (ie, it can be any of the supported in the cluster).
 	ProtoVersion int
 	// Maximum number of inflight requests allowed per connection.
 	// Default: 32768 for CQL v3 and newer
