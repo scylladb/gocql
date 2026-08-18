@@ -166,6 +166,73 @@ func BenchmarkTabletAwarePickAllReplicas(b *testing.B) {
 	}
 }
 
+// setupReplicaMapAwareBench sets up a tokenAwareHostPolicy on the default
+// Murmur3Partitioner replica-map path (no tablets, no custom partitioner).
+func setupReplicaMapAwareBench(b *testing.B, numHosts, rf int) (HostSelectionPolicy, []*Query) {
+	b.Helper()
+
+	const keyspace = "benchks"
+
+	policy := TokenAwareHostPolicy(RoundRobinHostPolicy())
+	policyInternal := policy.(*tokenAwareHostPolicy)
+	policyInternal.getKeyspaceName = func() string { return keyspace }
+	policyInternal.getKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {
+		return &KeyspaceMetadata{
+			Name:          keyspace,
+			StrategyClass: "SimpleStrategy",
+			StrategyOptions: map[string]any{
+				"class":              "SimpleStrategy",
+				"replication_factor": rf,
+			},
+		}, nil
+	}
+
+	for i := 0; i < numHosts; i++ {
+		host := &HostInfo{
+			hostId:         tUUID(i),
+			connectAddress: net.IPv4(10, 0, byte(i>>8), byte(i)),
+			tokens:         []string{fmt.Sprintf("%d", int64(math.MinInt64)+int64(i)*100)},
+		}
+		policy.AddHost(host)
+	}
+	policy.SetPartitioner("Murmur3Partitioner")
+	policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: keyspace})
+
+	const numQueries = 256
+	queries := make([]*Query, numQueries)
+	for i := range queries {
+		queries[i] = &Query{
+			routingInfo: &queryRoutingInfo{keyspace: keyspace},
+		}
+		queries[i].getKeyspace = func() string { return keyspace }
+		queries[i].routingKey = []byte(fmt.Sprintf("routing-key-%d", i))
+	}
+
+	return policy, queries
+}
+
+// BenchmarkTokenAwarePickReplicaMap benchmarks Pick() on the int64Hasher fast path.
+func BenchmarkTokenAwarePickReplicaMap(b *testing.B) {
+	for _, numHosts := range []int{10, 50, 100} {
+		b.Run(fmt.Sprintf("Hosts%d", numHosts), func(b *testing.B) {
+			policy, queries := setupReplicaMapAwareBench(b, numHosts, 3)
+
+			runtime.GC()
+			b.ResetTimer()
+			b.ReportAllocs()
+
+			for i := 0; i < b.N; i++ {
+				qry := queries[i%len(queries)]
+				iter := policy.Pick(qry)
+				h := iter()
+				if h == nil {
+					b.Fatal("Pick returned nil on first call")
+				}
+			}
+		})
+	}
+}
+
 // BenchmarkHostIdComparison is a micro-benchmark for isolated host-ID
 // comparisons: string==string (current) baseline.
 func BenchmarkHostIdComparison(b *testing.B) {
