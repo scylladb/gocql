@@ -11,7 +11,10 @@ on:
       - .github/workflows/bench-tests.yml
       - .github/workflows/extended-ci-longevity-large-partitions-with-network-nemesis-1h-test.yml
   pull_request:
-    types: [opened, synchronize, reopened]
+    # labeled/unlabeled included so removing disable-coverage-tests
+    # re-triggers a run instead of leaving coverage skipped until the next
+    # push or reopen.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
     paths-ignore:
       - "*.md"
       - "docs/**"
@@ -90,7 +93,7 @@ jobs:
 
       - name: Run CCM integration suite with coverage
         if: steps.scylla-version.outputs.value != 'NOT-FOUND'
-        run: TEST_INTEGRATION_TAGS="ccm gocql_debug" make test-integration-scylla-coverage
+        run: make ccm-test-coverage
 
       - name: Generate coverage report
         if: always()

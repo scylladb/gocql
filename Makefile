@@ -20,11 +20,22 @@ TEST_INTEGRATION_TAGS ?= integration gocql_debug
 JVM_EXTRA_OPTS ?= -Dcassandra.test.fail_writes_ks=test -Dcassandra.custom_query_handler_class=org.apache.cassandra.cql3.CustomPayloadMirroringQueryHandler
 
 # COVER_ARGS is appended to every `go test ... ./...` invocation below. It is
-# empty by default, so plain `make test-unit`/`test-integration-*` behave
-# exactly as before; the *-coverage targets further down set it via a
-# recursive `make` call to instrument the same test run instead of
-# duplicating its recipe.
+# empty by default, so plain `make test-unit` behaves exactly as before; the
+# *-coverage targets further down set it via a recursive `make` call to
+# instrument the same test run instead of duplicating its recipe.
 COVER_ARGS ?=
+
+# test-integration-scylla/cassandra can't use the same COVER_ARGS trick: they
+# already pass custom, test-binary-defined flags (-distribution, -cluster,
+# ...) that `go test` itself doesn't recognize. Once `go test` hits the first
+# such flag, it stops parsing its own flags -- including the package pattern
+# (./...), which then silently defaults to "." instead of erroring -- so
+# anything placed after it (like COVER_ARGS previously was) is unreliable.
+# COVER_BUILD_ARGS (flags `go test` itself must recognize, e.g. -cover)
+# goes before the package pattern; COVER_RUNTIME_ARGS (everything meant for
+# the test binary, after -args) goes after it, alongside the custom flags.
+COVER_BUILD_ARGS ?=
+COVER_RUNTIME_ARGS ?=
 COVERAGE_DIR ?= $(MAKEFILE_PATH)/.coverage/data
 
 CCM_CASSANDRA_CLUSTER_NAME = gocql_cassandra_integration_test
@@ -286,6 +297,16 @@ scylla-stop: .prepare-scylla-ccm
 	@ccm stop --not-gently ${CCM_SCYLLA_CLUSTER_NAME} 2>/dev/null 1>&2 || true
 	@ccm remove ${CCM_SCYLLA_CLUSTER_NAME} 2>/dev/null 1>&2 || true
 
+# The package pattern below is "." (this package only), not "./...". All
+# integration-tagged test files live in this package; the handful of
+# unconditional (untagged) test files in other packages -- dialer,
+# hostpolicy, several serialization/* packages, etc. -- would also get
+# built and would fail to parse -distribution/-cluster/etc, which only this
+# package's test files register. Cross-package coverage attribution still
+# works without testing those packages directly: -coverpkg=./... controls
+# what gets *instrumented*, separately from what gets *run*, so code in
+# other packages exercised transitively through this package's tests is
+# still measured under test-integration-*-coverage.
 test-integration-cassandra: cassandra-start
 	@echo "Run integration tests for proto ${TEST_CQL_PROTOCOL} on cassandra ${CASSANDRA_VERSION}"
 	if [[ -z "$${CASSANDRA_VERSION_RESOLVED}" ]]; then
@@ -295,8 +316,8 @@ test-integration-cassandra: cassandra-start
 		echo "Cassandra version ${CASSANDRA_VERSION} was not resolved"
 		exit 1
 	fi
-	echo "go test -v ${TEST_OPTS} -tags \"${TEST_INTEGRATION_TAGS}\" -distribution cassandra -timeout=10m -runauth -gocql.timeout=60s -runssl -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$${CASSANDRA_VERSION_RESOLVED} -cluster=$$(ccm liveset) ./... ${COVER_ARGS}"
-	go test -v ${TEST_OPTS} -tags "${TEST_INTEGRATION_TAGS}" -distribution cassandra -timeout=10m -runauth -gocql.timeout=60s -runssl -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$$(ccm node1 versionfrombuild) -cluster=$$(ccm liveset) ./... ${COVER_ARGS}
+	echo "go test -v ${TEST_OPTS} -tags \"${TEST_INTEGRATION_TAGS}\" ${COVER_BUILD_ARGS} -timeout=10m . -args -distribution cassandra -runauth -gocql.timeout=60s -runssl -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$${CASSANDRA_VERSION_RESOLVED} -cluster=$$(ccm liveset) ${COVER_RUNTIME_ARGS}"
+	go test -v ${TEST_OPTS} -tags "${TEST_INTEGRATION_TAGS}" ${COVER_BUILD_ARGS} -timeout=10m . -args -distribution cassandra -runauth -gocql.timeout=60s -runssl -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$$(ccm node1 versionfrombuild) -cluster=$$(ccm liveset) ${COVER_RUNTIME_ARGS}
 
 test-integration-scylla: scylla-start
 	@echo "Run integration tests for proto ${TEST_CQL_PROTOCOL} on scylla ${SCYLLA_VERSION}"
@@ -312,8 +333,8 @@ test-integration-scylla: scylla-start
 		echo "ScyllaDB version ${SCYLLA_VERSION} was not resolved"
 		exit 1
 	fi
-	echo "go test -v ${TEST_OPTS} -tags \"${TEST_INTEGRATION_TAGS}\" -distribution scylla $${CLUSTER_SOCKET} -timeout=5m -gocql.timeout=60s -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$${SCYLLA_VERSION_RESOLVED} -cluster=$$(ccm liveset) ./... ${COVER_ARGS}"
-	go test -v ${TEST_OPTS} -tags "${TEST_INTEGRATION_TAGS}" -distribution scylla $${CLUSTER_SOCKET} -timeout=5m -gocql.timeout=60s -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$${SCYLLA_VERSION_RESOLVED} -cluster=$$(ccm liveset) ./... ${COVER_ARGS}
+	echo "go test -v ${TEST_OPTS} -tags \"${TEST_INTEGRATION_TAGS}\" ${COVER_BUILD_ARGS} -timeout=5m . -args -distribution scylla $${CLUSTER_SOCKET} -gocql.timeout=60s -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$${SCYLLA_VERSION_RESOLVED} -cluster=$$(ccm liveset) ${COVER_RUNTIME_ARGS}"
+	go test -v ${TEST_OPTS} -tags "${TEST_INTEGRATION_TAGS}" ${COVER_BUILD_ARGS} -timeout=5m . -args -distribution scylla $${CLUSTER_SOCKET} -gocql.timeout=60s -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$${SCYLLA_VERSION_RESOLVED} -cluster=$$(ccm liveset) ${COVER_RUNTIME_ARGS}
 
 # The lz4 compressor lives in a nested module (lz4/go.mod), so the root "./..."
 # pattern does not reach it — it has to be invoked explicitly with `go test -C`,
@@ -344,20 +365,43 @@ endif
 	@mkdir -p "${COVERAGE_DIR}"
 
 # Coverage-instrumented variants of the targets above. Each recurses into the
-# original target with COVER_ARGS set, rather than duplicating its recipe, so
-# CCM setup, version resolution and GITHUB_STEP_SUMMARY handling stay in one
-# place. Every *-coverage target writes into the same COVERAGE_DIR, so unit
-# and integration runs (and multiple integration runs against different
-# clusters/tags) all accumulate into one combined report -- see
-# coverage-report.
+# original target with COVER_ARGS/COVER_BUILD_ARGS/COVER_RUNTIME_ARGS set,
+# rather than duplicating its recipe, so CCM setup, version resolution and
+# GITHUB_STEP_SUMMARY handling stay in one place. Every *-coverage target
+# writes into the same COVERAGE_DIR, so unit and integration runs (and
+# multiple integration runs against different clusters/tags) all accumulate
+# into one combined report -- see coverage-report.
+#
+# COVERAGE_DIR is quoted (with an escaped \" so the quote survives being
+# re-expanded, unquoted, inside the target recipe's own `go test` line) so a
+# path containing spaces isn't word-split by the shell into several
+# arguments.
+#
+# -covermode=atomic is explicit (rather than relying on -race, which forces
+# it) because `go tool covdata` refuses to merge data recorded under
+# different counter modes ("counter mode clash"): every *-coverage target
+# and ccm-test-coverage need to agree, not just test-unit-coverage, which is
+# the only one that would otherwise get atomic mode for free from -race.
 test-unit-coverage: .prepare-coverage-dir
-	@$(MAKE) test-unit COVER_ARGS="-cover -coverpkg=./... -args -test.gocoverdir=${COVERAGE_DIR}"
+	@$(MAKE) test-unit COVER_ARGS="-cover -covermode=atomic -coverpkg=./... -args -test.gocoverdir=\"${COVERAGE_DIR}\""
 
 test-integration-scylla-coverage: .prepare-coverage-dir
-	@$(MAKE) test-integration-scylla COVER_ARGS="-cover -coverpkg=./... -args -test.gocoverdir=${COVERAGE_DIR}"
+	@$(MAKE) test-integration-scylla COVER_BUILD_ARGS="-cover -covermode=atomic -coverpkg=./..." COVER_RUNTIME_ARGS="-test.gocoverdir=\"${COVERAGE_DIR}\""
 
 test-integration-cassandra-coverage: .prepare-coverage-dir
-	@$(MAKE) test-integration-cassandra COVER_ARGS="-cover -coverpkg=./... -args -test.gocoverdir=${COVERAGE_DIR}"
+	@$(MAKE) test-integration-cassandra COVER_BUILD_ARGS="-cover -covermode=atomic -coverpkg=./..." COVER_RUNTIME_ARGS="-test.gocoverdir=\"${COVERAGE_DIR}\""
+
+# internal/ccm's tests (the only tests the "ccm" build tag selects -- nothing
+# else in the module has a file gated by it) don't take any of the custom
+# flags test-integration-scylla passes (-distribution, -cluster, ...); its
+# test binary doesn't define them and would fail to parse them. It also needs
+# to be targeted directly rather than through ./...: `go test` stops
+# resolving its own flags (including the package pattern) at the first flag
+# it doesn't recognize, so a ./... alongside those custom flags silently
+# collapses to just ".", which is why reusing test-integration-scylla for
+# this never actually ran internal/ccm's tests.
+ccm-test-coverage: .prepare-coverage-dir
+	@go test -tags "ccm gocql_debug" -timeout=5m -v -cover -covermode=atomic -coverpkg=./... ./internal/ccm/... -args -test.gocoverdir="${COVERAGE_DIR}"
 
 # lz4 is a separate Go module (see its go.mod), so a single `go tool covdata`
 # invocation can't render both it and the root module together -- `go tool

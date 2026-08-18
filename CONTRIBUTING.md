@@ -74,7 +74,9 @@ make scylla-start
 make test-integration-scylla-coverage
 ```
 
-Both targets accumulate into the same coverage data directory (`.coverage/data` by default, override with `COVERAGE_DIR`), so unit and integration runs combine into one picture. Once you've run whichever combination you want measured, generate the report:
+To also measure the `ccm`-tagged tests (`internal/ccm`, exercised by `make ccm-test`), run `make ccm-test-coverage` too -- it targets that package directly rather than going through `test-integration-scylla`, since `internal/ccm`'s tests don't accept the cluster-connection flags (`-distribution`, `-cluster`, ...) that target passes.
+
+All of these accumulate into the same coverage data directory (`.coverage/data` by default, override with `COVERAGE_DIR`), so unit and integration runs combine into one picture. Once you've run whichever combination you want measured, generate the report:
 
 ```sh
 make coverage-report
