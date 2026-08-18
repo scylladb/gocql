@@ -70,6 +70,69 @@ func TestScyllaConnPickerPickNilToken(t *testing.T) {
 	})
 }
 
+// TestScyllaConnPickerPickInt64MatchesPick verifies the raw-int64 fast path
+// PickInt64 selects exactly the same shard-aware connection as the boxed Pick.
+func TestScyllaConnPickerPickInt64MatchesPick(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name      string
+		nrShards  int
+		msbIgnore uint64
+		tokens    []int64
+	}{
+		{"four-shards", 4, 12, []int64{math.MinInt64, -123456789, 0, 123456789, math.MaxInt64}},
+		{"eight-shards", 8, 0, []int64{-100000, 42, 999999999999}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := scyllaConnPicker{nrShards: tc.nrShards, msbIgnore: tc.msbIgnore}
+			s.conns = make([]*Conn, tc.nrShards)
+			for i := range s.conns {
+				s.conns[i] = &Conn{streams: streams.New()}
+			}
+
+			for _, tok := range tc.tokens {
+				tt := int64Token(tok)
+				want := s.Pick(tt, nil)
+				got := s.PickInt64(tok, nil)
+				if got != want {
+					t.Fatalf("token %d: PickInt64=%p, want %p (Pick)", tok, got, want)
+				}
+				if shard := s.shardOf(tt); got != s.conns[shard] {
+					t.Fatalf("token %d: shard %d conn %p, got %p", tok, shard, s.conns[shard], got)
+				}
+			}
+		})
+	}
+}
+
+// TestHostConnPoolPickConnRoutesInt64TokenToShardAwarePicker is a regression
+// guard: a SelectedHost carrying an unboxed int64Token must still reach the
+// shard-aware picker. If the raw token were dropped, scyllaConnPicker would
+// fall back to leastBusyConn() and shard-aware routing would silently degrade.
+func TestHostConnPoolPickConnRoutesInt64TokenToShardAwarePicker(t *testing.T) {
+	t.Parallel()
+
+	picker := scyllaConnPicker{nrShards: 4, msbIgnore: 12, nrConns: 4}
+	picker.conns = make([]*Conn, 4)
+	for i := range picker.conns {
+		picker.conns[i] = &Conn{streams: streams.New()}
+	}
+
+	tok := int64Token(math.MinInt64)
+	shard := picker.shardOf(tok)
+	want := picker.conns[shard]
+
+	pool := &hostConnPool{connPicker: &picker}
+	host := int64SelectedHost{info: &HostInfo{}, tokenCasted: tok}
+
+	got := pool.PickConn(host, nil)
+	if got != want {
+		t.Fatalf("PickConn returned %p (least-busy fallback?); want shard-aware conn %p for shard %d",
+			got, want, shard)
+	}
+}
+
 func hammerConnPicker(t *testing.T, wg *sync.WaitGroup, s *scyllaConnPicker, loops int) {
 	t.Helper()
 	for i := 0; i < loops; i++ {
