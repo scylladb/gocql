@@ -154,12 +154,12 @@ func TestNewNextIterWithPageState(t *testing.T) {
 		prefetch:    0.25,
 		session:     session,
 		routingInfo: &queryRoutingInfo{},
-		metrics:     &queryMetrics{m: make(map[UUID]*hostMetrics)},
+		metrics:     newQueryMetrics(),
 		context:     context.Background(),
 	}
 
 	pageState := []byte("next-page-token-abc")
-	ni := newNextIterWithPageState(parent, pageState, 750)
+	ni := newNextIterWithPageState(parent, nil, pageState, 750)
 
 	if ni.qry == nil {
 		t.Fatal("expected qry to be set")
@@ -201,11 +201,11 @@ func TestNextIterCloseReleasesPooledQuery(t *testing.T) {
 		stmt:        "SELECT * FROM tbl",
 		session:     &Session{},
 		routingInfo: &queryRoutingInfo{},
-		metrics:     &queryMetrics{m: make(map[UUID]*hostMetrics)},
+		metrics:     newQueryMetrics(),
 		context:     context.Background(),
 	}
 
-	ni := newNextIterWithPageState(parent, []byte("page"), 10)
+	ni := newNextIterWithPageState(parent, nil, []byte("page"), 10)
 	ni.close()
 
 	if ni.qry != nil {
@@ -223,7 +223,7 @@ func BenchmarkNewNextIter_Pooled(b *testing.B) {
 		prefetch:          0.25,
 		session:           &Session{},
 		routingInfo:       &queryRoutingInfo{},
-		metrics:           &queryMetrics{m: make(map[UUID]*hostMetrics)},
+		metrics:           newQueryMetrics(),
 		context:           context.Background(),
 		pageContextParent: context.Background(),
 	}
@@ -232,7 +232,7 @@ func BenchmarkNewNextIter_Pooled(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		ni := newNextIterWithPageState(parent, pageState, 3750)
+		ni := newNextIterWithPageState(parent, nil, pageState, 3750)
 		ni.close()
 	}
 }
@@ -246,7 +246,7 @@ func BenchmarkNewNextIter_NoPool(b *testing.B) {
 		prefetch:          0.25,
 		session:           &Session{},
 		routingInfo:       &queryRoutingInfo{},
-		metrics:           &queryMetrics{m: make(map[UUID]*hostMetrics)},
+		metrics:           newQueryMetrics(),
 		context:           context.Background(),
 		pageContextParent: context.Background(),
 	}
@@ -259,7 +259,7 @@ func BenchmarkNewNextIter_NoPool(b *testing.B) {
 		newQry := new(Query)
 		*newQry = *parent
 		newQry.pageState = pageState
-		newQry.metrics = &queryMetrics{m: make(map[UUID]*hostMetrics)}
+		newQry.metrics = newQueryMetrics()
 		ni := newNextIter(newQry, 3750)
 		ni.close()
 	}
@@ -276,12 +276,12 @@ func TestNextIterConcurrentCloseAndFetch(t *testing.T) {
 			stmt:              "SELECT * FROM tbl",
 			session:           &Session{},
 			routingInfo:       &queryRoutingInfo{},
-			metrics:           &queryMetrics{m: make(map[UUID]*hostMetrics)},
+			metrics:           newQueryMetrics(),
 			context:           context.Background(),
 			pageContextParent: context.Background(),
 		}
 
-		ni := newNextIterWithPageState(parent, []byte("page"), 10)
+		ni := newNextIterWithPageState(parent, nil, []byte("page"), 10)
 
 		// Race fetch (which reads n.qry) against close (which releases it).
 		// We call fetch() directly (not fetchAsync) so the WaitGroup captures
@@ -347,33 +347,33 @@ func TestQueryMetricsInlineFirstHostLazyMap(t *testing.T) {
 	qm := &queryMetrics{}
 
 	// First host: stored inline, map stays nil.
-	qm.attempt(1, 10, hostA, false)
-	if !qm.hasFirstHost {
-		t.Fatal("expected hasFirstHost to be true after first attempt")
+	qm.recordHostAdjustment(1, 10, hostA)
+	if !qm.hostInitialized {
+		t.Fatal("expected hostInitialized to be true after first attempt")
 	}
-	if qm.m != nil {
-		t.Fatalf("expected spill map to remain nil for a single host, got %v", qm.m)
+	if qm.extra != nil {
+		t.Fatalf("expected spill map to remain nil for a single host, got %v", qm.extra)
 	}
 	if got := qm.attempts(); got != 1 {
 		t.Fatalf("expected 1 attempt, got %d", got)
 	}
 
 	// Same host again: still inline, still no map.
-	qm.attempt(1, 30, hostA, false)
-	if qm.m != nil {
-		t.Fatalf("expected spill map to remain nil for repeated single host, got %v", qm.m)
+	qm.recordHostAdjustment(1, 30, hostA)
+	if qm.extra != nil {
+		t.Fatalf("expected spill map to remain nil for repeated single host, got %v", qm.extra)
 	}
 	if got := qm.hostMetrics(hostA); got.Attempts != 2 || got.TotalLatency != 40 {
 		t.Fatalf("unexpected inline host metrics: %+v", got)
 	}
 
 	// Second distinct host: spill map is allocated and used.
-	qm.attempt(1, 100, hostB, false)
-	if qm.m == nil {
+	qm.recordHostAdjustment(1, 100, hostB)
+	if qm.extra == nil {
 		t.Fatal("expected spill map to be allocated after a second distinct host")
 	}
-	if len(qm.m) != 1 {
-		t.Fatalf("expected exactly one entry in spill map, got %d", len(qm.m))
+	if len(qm.extra) != 1 {
+		t.Fatalf("expected exactly one entry in spill map, got %d", len(qm.extra))
 	}
 	if got := qm.attempts(); got != 3 {
 		t.Fatalf("expected 3 total attempts, got %d", got)
@@ -385,13 +385,13 @@ func TestQueryMetricsInlineFirstHostLazyMap(t *testing.T) {
 
 	// reset() clears inline slot and map; map backing is preserved for reuse.
 	qm.reset()
-	if qm.hasFirstHost || qm.attempts() != 0 || len(qm.m) != 0 {
-		t.Fatalf("expected metrics cleared after reset: hasFirstHost=%v attempts=%d mapLen=%d",
-			qm.hasFirstHost, qm.attempts(), len(qm.m))
+	if qm.hostInitialized || qm.attempts() != 0 || len(qm.extra) != 0 {
+		t.Fatalf("expected metrics cleared after reset: hostInitialized=%v attempts=%d mapLen=%d",
+			qm.hostInitialized, qm.attempts(), len(qm.extra))
 	}
 	// After reset the next host is stored inline again.
-	qm.attempt(1, 5, hostB, false)
-	if !qm.hasFirstHost || qm.firstHostID != hostB.hostUUID() {
+	qm.recordHostAdjustment(1, 5, hostB)
+	if !qm.hostInitialized || qm.hostID != hostB.hostUUID() {
 		t.Fatal("expected reused metrics to store next host inline")
 	}
 }
@@ -422,7 +422,7 @@ func BenchmarkQueryMetricsSingleHost(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		qm.attempt(1, 10, host, false)
+		qm.recordHostAdjustment(1, 10, host)
 		_ = qm.attempts()
 		qm.reset()
 	}
@@ -436,6 +436,6 @@ func BenchmarkQueryMetricsFreshSingleHost(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		qm := &queryMetrics{}
-		qm.attempt(1, 10, host, false)
+		qm.recordHostAdjustment(1, 10, host)
 	}
 }
