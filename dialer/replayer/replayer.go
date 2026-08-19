@@ -16,28 +16,63 @@ import (
 	"github.com/gocql/gocql/dialer"
 )
 
-func NewReplayDialer(dir string) *ReplayDialer {
-	return &ReplayDialer{
-		dir: dir,
+// Option configures a ReplayDialer.
+type Option func(*ReplayDialer)
+
+// WithSegmentCompressor supplies the compressor a protocol v5 connection's transport
+// segments are compressed with.
+//
+// It has to be supplied rather than derived: the only implementation, lz4, lives in a
+// separate Go module, so neither the driver nor this package can construct one. Pass
+// the same compressor the ClusterConfig being replayed against uses -- the layout
+// follows what the replaying driver negotiates, not what was recorded, because
+// recordings hold bare frames.
+//
+// Its name is checked against the algorithm the STARTUP names, when it reports one, and
+// a compressed connection below protocol v5 is refused outright: there compression
+// applies to frame bodies rather than transport segments, which this package does not
+// implement, and left alone it would surface as a replay whose hashes never match.
+func WithSegmentCompressor(comp dialer.SegmentCompressor) Option {
+	return func(d *ReplayDialer) { d.comp = comp }
+}
+
+func NewReplayDialer(dir string, opts ...Option) *ReplayDialer {
+	d := &ReplayDialer{dir: dir}
+	for _, opt := range opts {
+		opt(d)
 	}
+	return d
 }
 
 type ReplayDialer struct {
-	dir string
+	dir  string
+	comp dialer.SegmentCompressor
 	net.Dialer
 }
 
 func (d *ReplayDialer) DialContext(ctx context.Context, network, addr string) (conn net.Conn, err error) {
 	sourcePort := gocql.ScyllaGetSourcePort(ctx)
-	return NewConnectionReplayer(path.Join(d.dir, fmt.Sprintf("%s-%d", addr, sourcePort)))
+	return NewConnectionReplayer(path.Join(d.dir, fmt.Sprintf("%s-%d", addr, sourcePort)), d.comp)
 }
 
-func NewConnectionReplayer(fname string) (net.Conn, error) {
-	frames, err := loadResponseFramesFromFiles(fname+"Reads", fname+"Writes")
+// NewConnectionReplayer answers requests from the recording at fname.
+//
+// comp may be nil; see WithSegmentCompressor for when it is needed.
+func NewConnectionReplayer(fname string, comp dialer.SegmentCompressor) (net.Conn, error) {
+	frames, proto, err := loadResponseFramesFromFiles(fname+"Reads", fname+"Writes")
 	if err != nil {
 		return nil, err
 	}
-	return &ConnectionReplayer{frames: frames, frameIdsToReplay: []int{}, streamIdsToReplay: []int{}, gotRequest: make(chan struct{}, 1)}, nil
+	framing := dialer.NewFraming(comp)
+	return &ConnectionReplayer{
+		frames:            frames,
+		recordedProto:     proto,
+		frameIdsToReplay:  []int{},
+		streamIdsToReplay: []int{},
+		gotRequest:        make(chan struct{}, 1),
+		framing:           framing,
+		requests:          framing.NewDecoder(),
+	}, nil
 }
 
 type ConnectionReplayer struct {
@@ -45,25 +80,34 @@ type ConnectionReplayer struct {
 	frames            []*FrameRecorded
 	frameIdsToReplay  []int
 	streamIdsToReplay []int
-	// outgoing is the response currently being served: a copy of the recorded frame
-	// with its stream id patched, handed out across as many Read calls as it takes.
-	// Materialising it once is what makes the stream id right regardless of how the
-	// caller's buffer is sized.
-	outgoing []byte
-	// splitter turns the bytes the driver writes into whole CQL frames. The write
-	// path happens to deliver exactly one frame per Write today — there is no
-	// bufio.Writer on it, and although write coalescing is on by default,
+	// framing tracks how this connection's bytes are framed, and is shared by the
+	// request decoder and the response encoder: the handshake fact that switches them
+	// is carried by a response but applies to requests too.
+	framing *dialer.Framing
+	// requests turns the bytes the driver writes into whole CQL frames, following the
+	// connection across the switch to transport segments.
+	//
+	// The write path happens to deliver exactly one frame per Write today -- there is
+	// no bufio.Writer on it, and although write coalescing is on by default,
 	// net.Buffers.WriteTo only uses writev when the writer implements the unexported
 	// buffersWriter, which this type does not, because it holds its net.Conn as a
 	// named field rather than embedding it. That is an implementation detail of the
 	// standard library plus a struct-layout choice, not a contract: embedding
 	// net.Conn here would silently start coalescing several frames into one Write.
-	// The exported Conn.Write passes arbitrary bytes regardless. So the assumption
-	// is not relied on.
-	splitter    dialer.FrameSplitter
-	outgoingPos int
-	frameIdx    int
-	closed      bool
+	// The exported Conn.Write passes arbitrary bytes regardless. So the assumption is
+	// not relied on.
+	requests *dialer.Decoder
+	// patched is the recorded response with its stream id rewritten, before framing.
+	patched []byte
+	// outgoing is what is actually served: patched, wrapped in whatever framing the
+	// connection has reached, handed out across as many Read calls as it takes.
+	// Materialising it once is what makes the stream id right regardless of how the
+	// caller's buffer is sized.
+	outgoing      []byte
+	outgoingPos   int
+	frameIdx      int
+	recordedProto byte
+	closed        bool
 	// useMetadataID latches once the STARTUP request on this connection opts into
 	// SCYLLA_USE_METADATA_ID, matching how the recorder stamped the frames so live
 	// and load-time hashes agree (see GetFrameHash / Record.UseMetadataID).
@@ -102,6 +146,14 @@ func (c *ConnectionReplayer) pushStreamIDToReplay(b []byte, idx int) {
 // headerStreamIDEnd is one past the last byte of a v3+ frame's 2-byte stream id, and
 // so the shortest frame replaceFrameStreamID can patch.
 const headerStreamIDEnd = 4
+
+// opcodeIndex is where a v3+ frame header keeps its opcode, and opQuery is the QUERY
+// opcode found there. Local constants the way headerStreamIDEnd is: the dialer
+// package keeps its opcode table unexported.
+const (
+	opcodeIndex = 4
+	opQuery     = 0x07
+)
 
 func replaceFrameStreamID(b []byte, stream int) {
 	if b[0] > 0x02 {
@@ -163,22 +215,32 @@ func (c *ConnectionReplayer) materialise(frame *FrameRecorded) error {
 		return fmt.Errorf("gocql/dialer: recording holds an empty response frame for stream %d", c.frameStreamID())
 	}
 
-	c.outgoing = append(c.outgoing[:0], frame.Response...)
-	c.outgoingPos = 0
+	c.patched = append(c.patched[:0], frame.Response...)
 
 	// A frame too short to hold a stream id cannot be one the driver sent, so it can
 	// only come from a damaged recording. Serve it as recorded rather than indexing
 	// past it; the driver will reject it as a protocol error, which is the honest
 	// outcome.
-	if len(c.outgoing) < headerStreamIDEnd {
-		return nil
+	if len(c.patched) >= headerStreamIDEnd {
+		replaceFrameStreamID(c.patched, c.frameStreamID())
 	}
-	replaceFrameStreamID(c.outgoing, c.frameStreamID())
+
+	// Encode before observing. The frame that flips the framing latch -- READY or
+	// AUTHENTICATE -- is itself unsegmented; the switch applies to what comes after
+	// it. Observing first would wrap the very frame that announces the change.
+	out, err := c.framing.EncodeResponse(c.outgoing[:0], c.patched)
+	if err != nil {
+		return err
+	}
+	c.outgoing = out
+	c.outgoingPos = 0
+
+	c.framing.ObserveResponse(c.patched)
 	return nil
 }
 
 func (c *ConnectionReplayer) Write(b []byte) (n int, err error) {
-	if err := c.splitter.Feed(b, c.matchRequest); err != nil {
+	if err := c.requests.Feed(b, c.matchRequest); err != nil {
 		return 0, err
 	}
 	return len(b), nil
@@ -186,13 +248,32 @@ func (c *ConnectionReplayer) Write(b []byte) (n int, err error) {
 
 // matchRequest finds the recorded response for one request frame and queues it.
 func (c *ConnectionReplayer) matchRequest(frame []byte) error {
-	// A request frame's first byte is its protocol version, and the driver's
-	// handshake frames are never segment-framed — so a v5+ connection is
-	// rejected here during the handshake. Past it, v5 switches to transport
-	// segments, which this replayer can neither hash for matching nor patch
-	// stream ids into without breaking the segment CRCs.
-	if dialer.FrameIsProtoV5OrNewer(frame) {
-		return dialer.ErrProtoV5NotSupported
+	// A recording holds bare frames, so nothing about it announces which protocol
+	// version produced them; replaying a v5 recording against a v4 driver would
+	// otherwise serve it responses whose version byte it rejects deep inside
+	// readHeader, far from the cause.
+	if live := dialer.FrameProtoVersion(frame); c.recordedProto != 0 && live != c.recordedProto {
+		return fmt.Errorf("gocql/dialer: recording is protocol v%d but the driver is replaying it at protocol v%d", c.recordedProto, live)
+	}
+
+	// Reads the COMPRESSION option, which decides the segment header layout for the
+	// rest of the connection, and refuses the negotiated compressions a recording
+	// cannot represent -- body compression below v5, or an algorithm the supplied
+	// compressor does not implement. Reported before the hash is taken, because on a
+	// pre-v5 compressed connection the hash is exactly what goes wrong, and the panic
+	// it leads to names nothing.
+	if err := c.framing.ObserveRequest(frame); err != nil {
+		return err
+	}
+
+	// KNOWN GAP, tracked in scylladb/gocql#1000 and refused by name here: every
+	// QUERY hashes alike, because GetFrameHash hands the parameter walk the body
+	// start rather than the position past the query text, and on protocol v5 the
+	// misaligned walk falls back to hashing the whole frame -- default timestamp
+	// included -- so a v5 QUERY can never match its recording. Falling through would
+	// surface that as the anonymous panic below. Delete this when #1000 lands.
+	if dialer.FrameIsProtoV5OrNewer(frame) && len(frame) > opcodeIndex && frame[opcodeIndex] == opQuery {
+		return fmt.Errorf("gocql/dialer: cannot replay a protocol v5 QUERY: its hash cannot match any recording until scylladb/gocql#1000 is fixed")
 	}
 
 	if !c.useMetadataID && dialer.StartupNegotiatesMetadataID(frame) {
@@ -306,23 +387,48 @@ func loadFramesFromFile(filename string) (map[int]dialer.Record, error) {
 	return records, nil
 }
 
-func loadResponseFramesFromFiles(read_file, write_file string) ([]*FrameRecorded, error) {
+// loadResponseFramesFromFiles pairs each recorded response with the request that
+// produced it, and reports the protocol version the recording was made at.
+func loadResponseFramesFromFiles(read_file, write_file string) ([]*FrameRecorded, byte, error) {
 	read_records, err := loadFramesFromFile(read_file)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	write_records, err := loadFramesFromFile(write_file)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
-	var frames = []*FrameRecorded{}
-	for streamID, record1 := range read_records {
-		if record2, exists := write_records[streamID]; exists {
-			frames = append(frames, &FrameRecorded{Response: record1.Data, Hash: dialer.GetFrameHash(record2.Data, record2.UseMetadataID)})
+	var (
+		frames []*FrameRecorded
+		proto  byte
+	)
+
+	// The protocol version deliberately does not come from the pairing loop below:
+	// pairing can fail wholesale on a truncated Reads file, and a version check that
+	// disarms itself exactly when the recording is damaged is not a check. Every
+	// request on a connection shares one version, so any record answers -- prefer
+	// the version the recorder stamped, and fall back to the frame's own version
+	// byte for recordings that predate the field.
+	for _, record := range write_records {
+		if record.Proto != 0 {
+			proto = record.Proto
+			break
+		}
+		if proto == 0 {
+			proto = dialer.FrameProtoVersion(record.Data)
 		}
 	}
-	return frames, nil
+
+	for streamID, record1 := range read_records {
+		if record2, exists := write_records[streamID]; exists {
+			frames = append(frames, &FrameRecorded{
+				Response: record1.Data,
+				Hash:     dialer.GetFrameHash(record2.Data, record2.UseMetadataID),
+			})
+		}
+	}
+	return frames, proto, nil
 }
 
 type FrameRecorded struct {

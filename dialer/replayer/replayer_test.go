@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,32 +18,86 @@ func optionsFrame(version byte) []byte {
 	return []byte{version, 0x00, 0x00, 0x01, 0x05, 0x00, 0x00, 0x00, 0x00}
 }
 
-// TestConnectionReplayerRejectsProtoV5 pins the rejection path dkropachev asked
-// for: past the handshake a v5+ connection carries transport segments, which
-// the replayer can neither hash for matching nor patch stream ids into without
-// breaking the segment CRCs. The handshake frames are never segmented, so the
-// version byte of the first write is genuine and the connection fails there —
-// with an explicit error, not the unmatched-response panic.
-func TestConnectionReplayerRejectsProtoV5(t *testing.T) {
-	c := &ConnectionReplayer{gotRequest: make(chan struct{}, 1)}
-
-	n, err := c.Write(optionsFrame(0x05))
-	if !errors.Is(err, dialer.ErrProtoV5NotSupported) {
-		t.Fatalf("Write(v5 frame) error = %v, want ErrProtoV5NotSupported", err)
-	}
-	if n != 0 {
-		t.Errorf("Write(v5 frame) reported %d bytes written, want 0", n)
+// newTestReplayer builds a ConnectionReplayer the way NewConnectionReplayer does,
+// without going through a file on disk. Constructing the literal directly is a trap:
+// the request decoder and the framing state come as a pair, and a replayer missing
+// either panics on the first write.
+func newTestReplayer(proto byte, frames ...*FrameRecorded) *ConnectionReplayer {
+	framing := dialer.NewFraming(nil)
+	return &ConnectionReplayer{
+		gotRequest:        make(chan struct{}, 1),
+		frames:            frames,
+		frameIdsToReplay:  []int{},
+		streamIdsToReplay: []int{},
+		recordedProto:     proto,
+		framing:           framing,
+		requests:          framing.NewDecoder(),
 	}
 }
 
-// TestConnectionReplayerAcceptsProtoV4 pins that the rejection is scoped to
-// v5+: a v4 frame with a matching recorded hash replays normally.
+// TestConnectionReplayerReplaysUnsegmentedProtoV5 pins that a v5 request is matched
+// rather than refused.
+//
+// It used to be refused outright, because the replayer could neither hash a transport
+// segment for matching nor patch a stream id into one without invalidating its CRC.
+// The handshake is still unsegmented on v5, so this frame goes through the plain path;
+// what changed is that reaching it is no longer an error.
+func TestConnectionReplayerReplaysUnsegmentedProtoV5(t *testing.T) {
+	req := optionsFrame(0x05)
+	c := newTestReplayer(0x05, &FrameRecorded{
+		Response: optionsFrame(0x85),
+		Hash:     dialer.GetFrameHash(append([]byte(nil), req...), false),
+	})
+
+	if _, err := c.Write(append([]byte(nil), req...)); err != nil {
+		t.Fatalf("Write(v5 frame) error = %v, want nil", err)
+	}
+}
+
+// TestConnectionReplayerRefusesAProtoV5Query pins that the one request the hashing
+// cannot yet locate on protocol v5 is refused by name, rather than surfacing as the
+// anonymous unable-to-find-a-response panic (scylladb/gocql#1000).
+func TestConnectionReplayerRefusesAProtoV5Query(t *testing.T) {
+	query := []byte{
+		0x05, 0x00, // version, flags
+		0x00, 0x01, // stream id
+		0x07,                   // opQuery
+		0x00, 0x00, 0x00, 0x00, // body length
+	}
+	c := newTestReplayer(0x05)
+
+	_, err := c.Write(query)
+	if err == nil {
+		t.Fatal("a protocol v5 QUERY was accepted for replay")
+	}
+	if !strings.Contains(err.Error(), "QUERY") || !strings.Contains(err.Error(), "#1000") {
+		t.Errorf("error %q does not name QUERY and scylladb/gocql#1000", err)
+	}
+}
+
+// TestConnectionReplayerRejectsAProtocolMismatch pins that replaying a recording at
+// the wrong protocol version says so, rather than serving responses the driver rejects
+// deep inside its own header parsing.
+func TestConnectionReplayerRejectsAProtocolMismatch(t *testing.T) {
+	c := newTestReplayer(0x05)
+
+	_, err := c.Write(optionsFrame(0x04))
+	if err == nil {
+		t.Fatal("a v4 request against a v5 recording was accepted")
+	}
+	if !strings.Contains(err.Error(), "protocol v5") || !strings.Contains(err.Error(), "protocol v4") {
+		t.Errorf("error %q does not name both protocol versions", err)
+	}
+}
+
+// TestConnectionReplayerAcceptsProtoV4 pins that a v4 frame with a matching recorded
+// hash replays normally.
 func TestConnectionReplayerAcceptsProtoV4(t *testing.T) {
 	req := optionsFrame(0x04)
-	c := &ConnectionReplayer{
-		frames:     []*FrameRecorded{{Response: optionsFrame(0x84), Hash: dialer.GetFrameHash(req, false)}},
-		gotRequest: make(chan struct{}, 1),
-	}
+	c := newTestReplayer(0x04, &FrameRecorded{
+		Response: optionsFrame(0x84),
+		Hash:     dialer.GetFrameHash(req, false),
+	})
 
 	n, err := c.Write(req)
 	if err != nil {
@@ -74,6 +127,40 @@ func writeRecords(t *testing.T, name string, records ...dialer.Record) string {
 		t.Fatalf("writing %s: %v", path, err)
 	}
 	return path
+}
+
+// TestLoadFramesPrefersTheStampedProto pins where a recording's protocol version
+// comes from: the Proto field the recorder stamps, read from any request record,
+// rather than from the request/response pairing -- a truncated Reads file pairs
+// nothing, and a version check that disarms itself exactly when the recording is
+// damaged is not a check. A record that predates the field (Proto 0) still derives
+// the version from the frame's own bytes.
+func TestLoadFramesPrefersTheStampedProto(t *testing.T) {
+	t.Run("stamped, nothing paired", func(t *testing.T) {
+		writes := writeRecords(t, "Writes", dialer.Record{Data: optionsFrame(0x05), StreamID: 1, Proto: 0x05})
+		reads := writeRecords(t, "Reads")
+
+		_, proto, err := loadResponseFramesFromFiles(reads, writes)
+		if err != nil {
+			t.Fatalf("loadResponseFramesFromFiles: %v", err)
+		}
+		if proto != 0x05 {
+			t.Errorf("proto = %d, want 5 (the stamped version, despite nothing pairing)", proto)
+		}
+	})
+
+	t.Run("unstamped legacy record", func(t *testing.T) {
+		writes := writeRecords(t, "Writes", dialer.Record{Data: optionsFrame(0x04), StreamID: 1})
+		reads := writeRecords(t, "Reads", dialer.Record{Data: optionsFrame(0x84), StreamID: 1})
+
+		_, proto, err := loadResponseFramesFromFiles(reads, writes)
+		if err != nil {
+			t.Fatalf("loadResponseFramesFromFiles: %v", err)
+		}
+		if proto != 0x04 {
+			t.Errorf("proto = %d, want 4 (derived from the frame bytes)", proto)
+		}
+	})
 }
 
 // TestLoadFramesFromFileLargeRecord pins that a record is bounded by the frame it
@@ -203,13 +290,10 @@ func TestConnectionReplayerPatchesStreamIDAcrossPartialReads(t *testing.T) {
 	for _, chunk := range []int{1, 7, 64, 512, 4096} {
 		t.Run(fmt.Sprintf("buffer of %d", chunk), func(t *testing.T) {
 			response := responseFrame(recordedStreamID, bodyLen)
-			c := &ConnectionReplayer{
-				gotRequest: make(chan struct{}, 1),
-				frames: []*FrameRecorded{{
-					Response: append([]byte(nil), response...),
-					Hash:     dialer.GetFrameHash(append([]byte(nil), request...), false),
-				}},
-			}
+			c := newTestReplayer(0x04, &FrameRecorded{
+				Response: append([]byte(nil), response...),
+				Hash:     dialer.GetFrameHash(append([]byte(nil), request...), false),
+			})
 
 			if _, err := c.Write(append([]byte(nil), request...)); err != nil {
 				t.Fatalf("Write: %v", err)
@@ -248,10 +332,7 @@ func TestConnectionReplayerDoesNotMutateTheRecording(t *testing.T) {
 		request[2] = byte(streamID >> 8)
 		request[3] = byte(streamID & 0xFF)
 
-		c := &ConnectionReplayer{
-			gotRequest: make(chan struct{}, 1),
-			frames:     []*FrameRecorded{frame},
-		}
+		c := newTestReplayer(0x04, frame)
 		frame.Hash = dialer.GetFrameHash(append([]byte(nil), request...), false)
 
 		if _, err := c.Write(append([]byte(nil), request...)); err != nil {
@@ -279,13 +360,10 @@ func TestConnectionReplayerDoesNotMutateTheRecording(t *testing.T) {
 func TestConnectionReplayerRejectsAnEmptyRecord(t *testing.T) {
 	request := optionsFrame(0x04)
 
-	c := &ConnectionReplayer{
-		gotRequest: make(chan struct{}, 1),
-		frames: []*FrameRecorded{{
-			Response: nil,
-			Hash:     dialer.GetFrameHash(append([]byte(nil), request...), false),
-		}},
-	}
+	c := newTestReplayer(0x04, &FrameRecorded{
+		Response: nil,
+		Hash:     dialer.GetFrameHash(append([]byte(nil), request...), false),
+	})
 
 	if _, err := c.Write(append([]byte(nil), request...)); err != nil {
 		t.Fatalf("Write: %v", err)
@@ -310,13 +388,10 @@ func TestConnectionReplayerServesShortRecordAsIs(t *testing.T) {
 	short := []byte{0x84, 0x00}
 	request := optionsFrame(0x04)
 
-	c := &ConnectionReplayer{
-		gotRequest: make(chan struct{}, 1),
-		frames: []*FrameRecorded{{
-			Response: append([]byte(nil), short...),
-			Hash:     dialer.GetFrameHash(append([]byte(nil), request...), false),
-		}},
-	}
+	c := newTestReplayer(0x04, &FrameRecorded{
+		Response: append([]byte(nil), short...),
+		Hash:     dialer.GetFrameHash(append([]byte(nil), request...), false),
+	})
 
 	if _, err := c.Write(append([]byte(nil), request...)); err != nil {
 		t.Fatalf("Write: %v", err)
