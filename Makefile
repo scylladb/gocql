@@ -37,6 +37,15 @@ COVER_ARGS ?=
 COVER_BUILD_ARGS ?=
 COVER_RUNTIME_ARGS ?=
 COVERAGE_DIR ?= $(MAKEFILE_PATH)/.coverage/data
+# Normalize to an absolute path even when overridden on the command line
+# (e.g. COVERAGE_DIR=.cov): go test's subpackages (and lz4, run via -C) each
+# execute with their own directory as the working directory, so a relative
+# -test.gocoverdir resolves differently -- and usually inaccessibly -- per
+# package instead of to one shared directory at the repo root. `override` is
+# required here: a variable set on the `make` command line takes precedence
+# over a plain assignment in the Makefile, so without it this would silently
+# do nothing whenever someone actually overrides COVERAGE_DIR.
+override COVERAGE_DIR := $(abspath $(COVERAGE_DIR))
 
 CCM_CASSANDRA_CLUSTER_NAME = gocql_cassandra_integration_test
 CCM_CASSANDRA_IP_PREFIX = 127.0.1.
