@@ -41,10 +41,21 @@ func NewConnectionReplayer(fname string) (net.Conn, error) {
 }
 
 type ConnectionReplayer struct {
-	gotRequest            chan struct{}
-	frames                []*FrameRecorded
-	frameIdsToReplay      []int
-	streamIdsToReplay     []int
+	gotRequest        chan struct{}
+	frames            []*FrameRecorded
+	frameIdsToReplay  []int
+	streamIdsToReplay []int
+	// splitter turns the bytes the driver writes into whole CQL frames. The write
+	// path happens to deliver exactly one frame per Write today — there is no
+	// bufio.Writer on it, and although write coalescing is on by default,
+	// net.Buffers.WriteTo only uses writev when the writer implements the unexported
+	// buffersWriter, which this type does not, because it holds its net.Conn as a
+	// named field rather than embedding it. That is an implementation detail of the
+	// standard library plus a struct-layout choice, not a contract: embedding
+	// net.Conn here would silently start coalescing several frames into one Write.
+	// The exported Conn.Write passes arbitrary bytes regardless. So the assumption
+	// is not relied on.
+	splitter              dialer.FrameSplitter
 	frameIdx              int
 	frameResponsePosition int
 	closed                bool
@@ -120,26 +131,41 @@ func (c *ConnectionReplayer) Read(b []byte) (n int, err error) {
 }
 
 func (c *ConnectionReplayer) Write(b []byte) (n int, err error) {
+	if err := c.splitter.Feed(b, c.matchRequest); err != nil {
+		return 0, err
+	}
+	return len(b), nil
+}
+
+// matchRequest finds the recorded response for one request frame and queues it.
+func (c *ConnectionReplayer) matchRequest(frame []byte) error {
 	// A request frame's first byte is its protocol version, and the driver's
 	// handshake frames are never segment-framed — so a v5+ connection is
 	// rejected here during the handshake. Past it, v5 switches to transport
 	// segments, which this replayer can neither hash for matching nor patch
 	// stream ids into without breaking the segment CRCs.
-	if dialer.FrameIsProtoV5OrNewer(b) {
-		return 0, dialer.ErrProtoV5NotSupported
+	if dialer.FrameIsProtoV5OrNewer(frame) {
+		return dialer.ErrProtoV5NotSupported
 	}
 
-	if !c.useMetadataID && dialer.StartupNegotiatesMetadataID(b) {
+	if !c.useMetadataID && dialer.StartupNegotiatesMetadataID(frame) {
 		c.useMetadataID = true
 	}
-	writeHash := dialer.GetFrameHash(b, c.useMetadataID)
+	writeHash := dialer.GetFrameHash(frame, c.useMetadataID)
 
 	for i, q := range c.frames {
 		if q.Hash == writeHash {
-			c.pushStreamIDToReplay(b, i)
-			return len(b), nil
+			c.pushStreamIDToReplay(frame, i)
+			return nil
 		}
 	}
+
+	// Deliberately a panic rather than a returned error. A request with no recorded
+	// response means the recording does not match the driver that is replaying it,
+	// which no amount of retrying fixes — and returning an error here would be
+	// handled as a connection failure and retried or reported far from the cause.
+	// The replay benchmarks depend on this being loud: it is what makes them a
+	// regression test for the frame hashing rather than a timing measurement.
 	panic(fmt.Errorf("unable to find a response to replay"))
 }
 
