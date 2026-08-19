@@ -17,15 +17,6 @@ import (
 	"github.com/gocql/gocql/internal/murmur"
 )
 
-// ErrProtoV5NotSupported is returned by the record/replay dialers for protocol
-// v5+ connections. After the handshake v5 switches to transport segments
-// (framer.prepareModernLayout), which these dialers would silently corrupt:
-// the recorder slices the byte stream into frames by the fixed CQL header
-// offsets, and the replayer patches stream ids in place, invalidating segment
-// CRCs. Segment-aware record/replay is tracked in
-// https://github.com/scylladb/gocql/issues/937.
-var ErrProtoV5NotSupported = errors.New("gocql/dialer: protocol v5+ uses transport segments, which the record/replay dialers do not support (see scylladb/gocql#937)")
-
 // ErrSegmentCompressorRequired is returned when a connection negotiated compression
 // on protocol v5 but no compressor was supplied to the dialer.
 //
@@ -34,13 +25,23 @@ var ErrProtoV5NotSupported = errors.New("gocql/dialer: protocol v5+ uses transpo
 // v5 connection has to hand one in (see recorder.WithSegmentCompressor).
 var ErrSegmentCompressorRequired = errors.New("gocql/dialer: protocol v5 connection negotiated compression, but no SegmentCompressor was supplied to the dialer")
 
-// FrameIsProtoV5OrNewer reports whether b starts a CQL frame whose protocol
-// version is v5 or newer. It is only meaningful for bytes at a frame boundary.
-// The driver's handshake frames are never segment-framed, so checking each
-// frame's first byte rejects a v5+ connection during the handshake, before any
-// transport segment flows.
+// FrameProtoVersion returns the protocol version of the CQL frame b starts, or 0 if
+// b is empty.
+//
+// The direction bit is masked off: the top bit of frame[0] distinguishes a request
+// from a response, and folding it into the version makes every response look like a
+// far newer protocol. It is only meaningful for bytes at a frame boundary.
+func FrameProtoVersion(b []byte) byte {
+	if len(b) == 0 {
+		return 0
+	}
+	return b[0] & protoVersionMask
+}
+
+// FrameIsProtoV5OrNewer reports whether b starts a CQL frame whose protocol version is
+// v5 or newer, and therefore whether the connection segments anything at all.
 func FrameIsProtoV5OrNewer(b []byte) bool {
-	return len(b) > 0 && b[0]&protoVersionMask >= protoVersion5
+	return FrameProtoVersion(b) >= protoVersion5
 }
 
 type Record struct {
@@ -564,9 +565,7 @@ func GetFrameHash(frame []byte, useMetadataID bool) int64 {
 	// segment frame[0] is the low byte of a 17-bit length, so it is not
 	// distinguishable from a version byte without protocol context the bytes do not
 	// carry. Handing it segment bytes hashes a meaningless range. The record/replay
-	// dialers refuse v5 connections outright today (ErrProtoV5NotSupported) and will
-	// unwrap the segments instead once the dialer half of
-	// https://github.com/scylladb/gocql/issues/937 lands.
+	// dialers unwrap the segments first, which is what Decoder is for.
 	//
 	// Note the empty and short-frame guards hash the frame as given, while the
 	// raw-bytes fallbacks inside the switch hash it with the stream id already

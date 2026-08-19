@@ -3,7 +3,6 @@ package recorder
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"io"
 	"net"
 	"os"
@@ -109,7 +108,7 @@ func TestConnectionRecorderReassemblesSplitFrames(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fname := filepath.Join(t.TempDir(), "conn")
-			rec, err := NewConnectionRecorder(fname, &stubConn{})
+			rec, err := NewConnectionRecorder(fname, &stubConn{}, nil)
 			if err != nil {
 				t.Fatalf("NewConnectionRecorder: %v", err)
 			}
@@ -160,7 +159,7 @@ func TestConnectionRecorderSplitsCoalescedFrames(t *testing.T) {
 		second[3] = 0x02 // a different stream id, so the two records are telling apart
 
 		fname := filepath.Join(t.TempDir(), "conn")
-		rec, err := NewConnectionRecorder(fname, &stubConn{readData: append(append([]byte{}, first...), second...)})
+		rec, err := NewConnectionRecorder(fname, &stubConn{readData: append(append([]byte{}, first...), second...)}, nil)
 		if err != nil {
 			t.Fatalf("NewConnectionRecorder: %v", err)
 		}
@@ -188,7 +187,7 @@ func TestConnectionRecorderSplitsCoalescedFrames(t *testing.T) {
 		startup, options := startupFrame(), optionsFrame(0x04)
 
 		fname := filepath.Join(t.TempDir(), "conn")
-		rec, err := NewConnectionRecorder(fname, &stubConn{})
+		rec, err := NewConnectionRecorder(fname, &stubConn{}, nil)
 		if err != nil {
 			t.Fatalf("NewConnectionRecorder: %v", err)
 		}
@@ -221,43 +220,42 @@ func TestConnectionRecorderSplitsCoalescedFrames(t *testing.T) {
 	})
 }
 
-// TestConnectionRecorderRejectsProtoV5 pins the rejection path dkropachev asked
-// for: on v5+ the byte stream carries transport segments after the handshake,
-// which the recorder's fixed-offset frame slicing would record as garbage. The
-// version byte of the handshake frames is genuine (they are never segmented),
-// so both directions fail there, before any segment flows.
-func TestConnectionRecorderRejectsProtoV5(t *testing.T) {
-	t.Run("write side", func(t *testing.T) {
-		rec, err := NewConnectionRecorder(filepath.Join(t.TempDir(), "conn"), &stubConn{})
-		if err != nil {
-			t.Fatalf("NewConnectionRecorder: %v", err)
-		}
-		defer rec.Close()
+// TestConnectionRecorderRecordsUnsegmentedProtoV5 pins that a v5 connection is
+// recorded rather than refused.
+//
+// It used to be refused outright, because the recorder sliced the byte stream on fixed
+// CQL header offsets and a v5 transport segment has none of them. The handshake is
+// still unsegmented on v5, so these frames go through the plain path; what changed is
+// that reaching them is no longer an error.
+func TestConnectionRecorderRecordsUnsegmentedProtoV5(t *testing.T) {
+	fname := filepath.Join(t.TempDir(), "conn")
+	rec, err := NewConnectionRecorder(fname, &stubConn{readData: optionsFrame(0x85)}, nil)
+	if err != nil {
+		t.Fatalf("NewConnectionRecorder: %v", err)
+	}
+	defer rec.Close()
 
-		if _, err := rec.Write(optionsFrame(0x05)); !errors.Is(err, dialer.ErrProtoV5NotSupported) {
-			t.Fatalf("Write(v5 frame) error = %v, want ErrProtoV5NotSupported", err)
-		}
-	})
+	if _, err := rec.Write(optionsFrame(0x05)); err != nil {
+		t.Fatalf("Write(v5 frame) error = %v, want nil", err)
+	}
+	buf := make([]byte, 64)
+	if _, err := rec.Read(buf); err != nil {
+		t.Fatalf("Read(v5 response) error = %v, want nil", err)
+	}
 
-	t.Run("read side", func(t *testing.T) {
-		rec, err := NewConnectionRecorder(filepath.Join(t.TempDir(), "conn"), &stubConn{readData: optionsFrame(0x85)})
-		if err != nil {
-			t.Fatalf("NewConnectionRecorder: %v", err)
+	for _, suffix := range []string{"Writes", "Reads"} {
+		got := recordedFrames(t, fname+suffix)
+		if len(got) != 1 {
+			t.Fatalf("%s: recorded %d frames, want 1", suffix, len(got))
 		}
-		defer rec.Close()
-
-		buf := make([]byte, 64)
-		if _, err := rec.Read(buf); !errors.Is(err, dialer.ErrProtoV5NotSupported) {
-			t.Fatalf("Read(v5 response) error = %v, want ErrProtoV5NotSupported", err)
-		}
-	})
+	}
 }
 
 // TestConnectionRecorderAcceptsProtoV4 pins that the rejection is scoped to
 // v5+: a v4 frame (with and without the direction bit) is recorded normally.
 func TestConnectionRecorderAcceptsProtoV4(t *testing.T) {
 	fname := filepath.Join(t.TempDir(), "conn")
-	rec, err := NewConnectionRecorder(fname, &stubConn{readData: optionsFrame(0x84)})
+	rec, err := NewConnectionRecorder(fname, &stubConn{readData: optionsFrame(0x84)}, nil)
 	if err != nil {
 		t.Fatalf("NewConnectionRecorder: %v", err)
 	}

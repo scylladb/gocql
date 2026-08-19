@@ -14,14 +14,38 @@ import (
 	"github.com/gocql/gocql/dialer"
 )
 
-func NewRecordDialer(dir string) *RecordDialer {
-	return &RecordDialer{
-		dir: dir,
+// Option configures a RecordDialer.
+type Option func(*RecordDialer)
+
+// WithSegmentCompressor supplies the compressor a protocol v5 connection's transport
+// segments are compressed with.
+//
+// It has to be supplied rather than derived: the only implementation, lz4, lives in a
+// separate Go module, so neither the driver nor this package can construct one. Pass
+// the same compressor the ClusterConfig uses. Recording or replaying a v5 connection
+// that negotiated compression without one fails with
+// dialer.ErrSegmentCompressorRequired rather than decoding the stream with the wrong
+// segment header size.
+//
+// It is ignored on a connection that did not negotiate compression. Compression below
+// protocol v5 is not ignored but refused: there it compresses frame bodies rather than
+// transport segments, which is a different thing this package does not implement, and
+// left alone it would surface as a recording whose hashes never match on replay.
+func WithSegmentCompressor(comp dialer.SegmentCompressor) Option {
+	return func(d *RecordDialer) { d.comp = comp }
+}
+
+func NewRecordDialer(dir string, opts ...Option) *RecordDialer {
+	d := &RecordDialer{dir: dir}
+	for _, opt := range opts {
+		opt(d)
 	}
+	return d
 }
 
 type RecordDialer struct {
-	dir string
+	dir  string
+	comp dialer.SegmentCompressor
 	net.Dialer
 }
 
@@ -41,10 +65,13 @@ func (d *RecordDialer) DialContext(ctx context.Context, network, addr string) (c
 		return nil, err
 	}
 
-	return NewConnectionRecorder(path.Join(d.dir, fmt.Sprintf("%s-%d", addr, sourcePort)), conn)
+	return NewConnectionRecorder(path.Join(d.dir, fmt.Sprintf("%s-%d", addr, sourcePort)), conn, d.comp)
 }
 
-func NewConnectionRecorder(fname string, conn net.Conn) (net.Conn, error) {
+// NewConnectionRecorder wraps conn, recording every frame in both directions.
+//
+// comp may be nil; see WithSegmentCompressor for when it is needed.
+func NewConnectionRecorder(fname string, conn net.Conn, comp dialer.SegmentCompressor) (net.Conn, error) {
 	fd_writes, err := os.OpenFile(fname+"Writes", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
 		return nil, err
@@ -53,46 +80,76 @@ func NewConnectionRecorder(fname string, conn net.Conn) (net.Conn, error) {
 	if err2 != nil {
 		return nil, err2
 	}
-	return &ConnectionRecorder{fd_writes: fd_writes, fd_reads: fd_reads, orig: conn}, nil
+	// Both directions share one Framing: the handshake fact that switches them to
+	// transport segments is carried by a response, and applies to requests too.
+	framing := dialer.NewFraming(comp)
+	return &ConnectionRecorder{
+		fd_writes:    fd_writes,
+		fd_reads:     fd_reads,
+		orig:         conn,
+		read_record:  FrameWriter{framing: framing, decoder: framing.NewDecoder(), response: true},
+		write_record: FrameWriter{framing: framing, decoder: framing.NewDecoder()},
+	}, nil
 }
 
-// FrameWriter records the CQL frames it is fed, one JSON object per line.
+// FrameWriter records the CQL frames of one direction of a connection, one JSON
+// object per line.
 //
-// The frame boundaries come from dialer.FrameSplitter, which both this and the
-// replayer use: a read can carry several frames or end in the middle of one, and
-// either shape has to come back out of the recording as the frames that went in.
+// Frame boundaries come from a dialer.Decoder, which follows the connection across the
+// handshake: bare CQL frames to begin with, transport segments once a protocol v5
+// connection switches. Recordings hold bare frames either way, so the format does not
+// depend on the protocol version and a v5 recording is stored unwrapped and
+// decompressed.
 type FrameWriter struct {
-	splitter dialer.FrameSplitter
+	framing *dialer.Framing
+	decoder *dialer.Decoder
+	// response reports whether this direction carries responses. It decides which of
+	// the two handshake facts this direction can observe.
+	response bool
 	// useMetadataID latches once a STARTUP frame on this connection opts into the
 	// SCYLLA_USE_METADATA_ID extension, so every subsequent recorded frame is
-	// stamped with the negotiated state (the driver only sends the opt-in when
-	// the server advertised it, so its presence means the extension is active).
+	// stamped with the negotiated state (the driver only sends the opt-in when the
+	// server advertised it, so its presence means the extension is active).
+	//
+	// Deliberately per-direction rather than on Framing: only requests carry a
+	// STARTUP, so sharing it would start stamping the flag into the Reads recording
+	// as well. Nothing reads it from there, and the checked-in recordings do not
+	// carry the field at all.
 	useMetadataID bool
 }
 
 // Write records the frames in b[:n].
 func (f *FrameWriter) Write(b []byte, n int, file *os.File) error {
-	return f.splitter.Feed(b[:n], func(frame []byte) error {
+	return f.decoder.Feed(b[:n], func(frame []byte) error {
 		return f.record(frame, file)
 	})
 }
 
 // record appends one complete frame to the recording.
 func (f *FrameWriter) record(frame []byte, file *os.File) error {
-	// A frame's first byte is its protocol version, and the driver's handshake
-	// frames are never segment-framed — so on a v5+ connection this fires on the
-	// first frame of the handshake, before any transport segment reaches the
-	// fixed-offset frame slicing and is recorded as garbage.
-	if dialer.FrameIsProtoV5OrNewer(frame) {
-		return dialer.ErrProtoV5NotSupported
-	}
+	if f.response {
+		// Flips the framing latch when the handshake reaches READY or AUTHENTICATE,
+		// so both directions decode what follows as transport segments. The frame
+		// carrying that news is itself unsegmented, and has already been decoded as
+		// such by the time this runs.
+		f.framing.ObserveResponse(frame)
+	} else {
+		// Reads the COMPRESSION option, which decides the segment header layout, and
+		// refuses the negotiated compressions a recording cannot represent -- body
+		// compression below v5, or an algorithm the supplied compressor does not
+		// implement. Both are fatal to the recording rather than to the connection, but
+		// there is nothing useful to write once either is true, so it stops here.
+		if err := f.framing.ObserveRequest(frame); err != nil {
+			return err
+		}
 
-	// The latch reads a whole STARTUP, which is the reason frames are assembled
-	// before being recorded rather than each write being appended as it arrives.
-	// Missing the opt-in here would stamp every later EXECUTE false and turn replay
-	// into silent hash mismatches rather than an error.
-	if !f.useMetadataID && dialer.StartupNegotiatesMetadataID(frame) {
-		f.useMetadataID = true
+		// The latch reads a whole STARTUP, which is the reason frames are assembled
+		// before being recorded rather than each write being appended as it arrives.
+		// Missing the opt-in here would stamp every later EXECUTE false and turn
+		// replay into silent hash mismatches rather than an error.
+		if !f.useMetadataID && dialer.StartupNegotiatesMetadataID(frame) {
+			f.useMetadataID = true
+		}
 	}
 
 	record := dialer.Record{
