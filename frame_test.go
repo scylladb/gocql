@@ -105,7 +105,7 @@ func TestFrameWriteTooLong(t *testing.T) {
 	framer := newFramer(nil, 3)
 
 	framer.writeHeader(0, frm.OpStartup, 1)
-	framer.writeBytes(make([]byte, maxFrameSize+1))
+	framer.writeBytes(make([]byte, frm.MaxFrameSize+1))
 	err := framer.finish()
 	if err != ErrFrameTooBig {
 		t.Fatalf("expected to get %v got %v", ErrFrameTooBig, err)
@@ -120,7 +120,7 @@ func TestFrameReadTooLong(t *testing.T) {
 	}
 
 	r := &bytes.Buffer{}
-	r.Write(make([]byte, maxFrameSize+1))
+	r.Write(make([]byte, frm.MaxFrameSize+1))
 	// write a new header right after this frame to verify that we can read it
 	r.Write([]byte{0x03, 0x00, 0x00, 0x00, byte(frm.OpReady), 0x00, 0x00, 0x00, 0x00})
 
@@ -193,7 +193,7 @@ func TestReadFrameDiscardErrorKeepsNetError(t *testing.T) {
 	t.Parallel()
 
 	f := newFramer(nil, protoVersion4)
-	head := frm.FrameHeader{Version: protoVersion4 | protoDirectionMask, Op: frm.OpReady, Length: maxFrameSize + 1}
+	head := frm.FrameHeader{Version: protoVersion4 | protoDirectionMask, Op: frm.OpReady, Length: frm.MaxFrameSize + 1}
 
 	err := f.readFrame(errReader{timeoutErr{}}, &head)
 	require.Error(t, err)

@@ -86,8 +86,6 @@ const (
 	// CASSGO-88 (https://issues.apache.org/jira/browse/CASSGO-88). Supporting a
 	// beta dialect would need an explicit opt-in bound to that specific dialect.
 	protoVersion5 = 0x05
-
-	maxFrameSize = 256 * 1024 * 1024
 )
 
 // DEPRECATED use Consistency type, SerialConsistency is now an alias for backwards compatibility.
@@ -406,7 +404,7 @@ func (f *framer) readFrame(r io.Reader, head *frm.FrameHeader) error {
 	// callers that synthesise a header.
 	if head.Length < 0 {
 		return fmt.Errorf("frame body length can not be less than 0: %d", head.Length)
-	} else if head.Length > maxFrameSize {
+	} else if head.Length > frm.MaxFrameSize {
 		// need to free up the connection to be used again
 		_, err := io.CopyN(io.Discard, r, int64(head.Length))
 		if err != nil {
@@ -455,7 +453,7 @@ func (f *framer) readFrame(r io.Reader, head *frm.FrameHeader) error {
 // instead of reading and copying it as readFrame does. It is used for a v5 frame
 // reassembled from several transport segments (Conn.recvSplitFrame): that buffer
 // is already exactly frame-sized, so copying it would mean holding the frame twice
-// — 512 MiB for a maxFrameSize response.
+// — 512 MiB for a frm.MaxFrameSize response.
 //
 // f.readBuffer is deliberately left pointing at the pooled buffer, so releasing
 // the framer drops the adopted body instead of retaining an outsized buffer in the
@@ -680,7 +678,7 @@ func (f *framer) setLength(length int) {
 
 func (f *framer) finish() error {
 	bufLen := len(f.buf)
-	if bufLen > maxFrameSize {
+	if bufLen > frm.MaxFrameSize {
 		// huge app frame, lets remove it so it doesn't bloat the heap
 		f.buf = make([]byte, defaultBufSize)
 		return ErrFrameTooBig
