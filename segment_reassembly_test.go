@@ -33,6 +33,7 @@ import (
 	"time"
 
 	frm "github.com/gocql/gocql/internal/frame"
+	"github.com/gocql/gocql/internal/segment"
 	"github.com/gocql/gocql/internal/streams"
 )
 
@@ -130,7 +131,7 @@ func TestRecvSplitFrameRejectsOverlongStream(t *testing.T) {
 // invisible in the output but double or triple the memory a single large response
 // occupies.
 func TestRecvSplitFrameAllocatesExactlyOneFrameBuffer(t *testing.T) {
-	const bodyLen = 3 * maxSegmentPayloadSize
+	const bodyLen = 3 * segment.MaxPayloadSize
 
 	// Enough streams to also let the framer pool warm up.
 	const runs = 4
@@ -147,7 +148,7 @@ func TestRecvSplitFrameAllocatesExactlyOneFrameBuffer(t *testing.T) {
 
 	var stream []byte
 	for src := frame; len(src) > 0; {
-		n := min(len(src), maxSegmentPayloadSize)
+		n := min(len(src), segment.MaxPayloadSize)
 		stream = append(stream, mustUncompressedSegment(t, src[:n], false)...)
 		src = src[n:]
 	}

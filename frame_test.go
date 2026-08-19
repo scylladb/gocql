@@ -41,6 +41,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	frm "github.com/gocql/gocql/internal/frame"
+	"github.com/gocql/gocql/internal/segment"
 )
 
 func TestFuzzBugs(t *testing.T) {
@@ -1297,10 +1298,10 @@ func (c *failingCompressor) Decode(data []byte) ([]byte, error) {
 func TestPrepareModernLayoutLeavesBufIntactOnError(t *testing.T) {
 	t.Parallel()
 
-	// A payload spanning more than one maxSegmentPayloadSize chunk forces the
+	// A payload spanning more than one segment.MaxPayloadSize chunk forces the
 	// chunk loop to run, so failing on the second AppendCompressed call fails
 	// after the first chunk has already been appended to the local buffer.
-	original := bytes.Repeat([]byte{0xAB}, maxSegmentPayloadSize+100)
+	original := bytes.Repeat([]byte{0xAB}, segment.MaxPayloadSize+100)
 
 	f := newFramer(&failingCompressor{failAt: 2}, protoVersion5)
 	f.buf = append([]byte(nil), original...)
@@ -1336,20 +1337,20 @@ func TestPrepareModernLayoutRejectsPreV5ProtocolWithError(t *testing.T) {
 func TestPrepareModernLayoutSuccessUnchanged(t *testing.T) {
 	t.Parallel()
 
-	for _, size := range []int{1, maxSegmentPayloadSize - 1, maxSegmentPayloadSize, maxSegmentPayloadSize + 1, 2*maxSegmentPayloadSize + 7} {
+	for _, size := range []int{1, segment.MaxPayloadSize - 1, segment.MaxPayloadSize, segment.MaxPayloadSize + 1, 2*segment.MaxPayloadSize + 7} {
 		original := bytes.Repeat([]byte{0x5A}, size)
 
 		// Reference output computed directly from the segment helpers.
 		var want []byte
 		src := original
 		selfContained := true
-		for len(src) > maxSegmentPayloadSize {
-			seg, err := newUncompressedSegment(src[:maxSegmentPayloadSize], false)
+		for len(src) > segment.MaxPayloadSize {
+			seg, err := newUncompressedSegment(src[:segment.MaxPayloadSize], false)
 			if err != nil {
 				t.Fatalf("size %d: reference segment: %v", size, err)
 			}
 			want = append(want, seg...)
-			src = src[maxSegmentPayloadSize:]
+			src = src[segment.MaxPayloadSize:]
 			selfContained = false
 		}
 		seg, err := newUncompressedSegment(src, selfContained)
@@ -1406,7 +1407,7 @@ func (expandingCompressor) Decode(data []byte) ([]byte, error) { return data, ni
 // allocated the whole wire output, plus a temporary per segment, per request).
 //
 // The expanding cases additionally cover a multi-segment compressed frame whose
-// every payload grows under compression, which is what segmentedFrameSize's
+// every payload grows under compression, which is what segment.EncodedSize's
 // one-segment slack is for. Expansion does not accumulate across segments: only
 // one segment is ever mid-compression, and a segment whose compressed form came
 // out larger is rewritten as its raw payload before the next one starts. Note
@@ -1420,10 +1421,10 @@ func TestPrepareModernLayoutReusesBuffers(t *testing.T) {
 		size       int
 	}{
 		{"single segment", nil, 4096},
-		{"multi segment", nil, 2*maxSegmentPayloadSize + 7},
+		{"multi segment", nil, 2*segment.MaxPayloadSize + 7},
 		{"compressed", testMockedCompressor{}, 4096},
-		{"expanding compressed, single segment", expandingCompressor{}, maxSegmentPayloadSize - 1},
-		{"expanding compressed, multi segment", expandingCompressor{}, 5*maxSegmentPayloadSize - 1},
+		{"expanding compressed, single segment", expandingCompressor{}, segment.MaxPayloadSize - 1},
+		{"expanding compressed, multi segment", expandingCompressor{}, 5*segment.MaxPayloadSize - 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			payload := bytes.Repeat([]byte{0x5A}, tc.size)

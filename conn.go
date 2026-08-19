@@ -43,6 +43,7 @@ import (
 	"github.com/gocql/gocql/tablets"
 
 	"github.com/gocql/gocql/internal/lru"
+	"github.com/gocql/gocql/internal/segment"
 	"github.com/gocql/gocql/internal/streams"
 )
 
@@ -211,7 +212,7 @@ type Conn struct {
 	calls map[int]*callReq
 	// segScratch holds the reusable buffers inbound v5 segments are read into.
 	// Only touched by the receive path, which runs on the serve() goroutine.
-	segScratch segmentScratch
+	segScratch segment.Scratch
 	// headerReader is the reader the current frame or segment header is read
 	// through (see readFrameHeader, readFirstSegmentHeader). Reused rather than
 	// allocated per header, and like segScratch only touched by whichever
@@ -1335,13 +1336,13 @@ func (c *Conn) recvSegment(ctx context.Context) error {
 		return err
 	}
 
-	payload, err := readSegmentPayload(c.r, hdr, c.compressor, &c.segScratch)
+	payload, err := c.readSegmentPayload(hdr)
 	if err != nil {
 		return err
 	}
 	netEnd := c.observedNow()
 
-	if hdr.isSelfContained {
+	if hdr.IsSelfContained {
 		// The segment holds one or more complete CQL frames.
 		return c.processAllFramesInSegment(ctx, bytes.NewReader(payload), netStart, netEnd)
 	}
@@ -1432,7 +1433,7 @@ func (h *headerReader) Read(p []byte) (int, error) {
 // the stream at an unknown offset, so it stays a plain error and takes the
 // connection down rather than mis-framing everything that follows. That is the
 // timeout the re-arm above makes reachable.
-func (c *Conn) readFirstSegmentHeader() (segmentHeader, error) {
+func (c *Conn) readFirstSegmentHeader() (segment.Header, error) {
 	// No type assertion: Conn.r is a connReadSource, so the disarm always applies.
 	c.r.setDisarm(true)
 	defer c.r.setDisarm(false)
@@ -1441,15 +1442,30 @@ func (c *Conn) readFirstSegmentHeader() (segmentHeader, error) {
 	// the count only matters here, where the benign/fatal decision is made.
 	c.headerReader.reset(c.r, c.r)
 
-	hdr, err := readSegmentHeader(&c.headerReader, c.compressor)
+	hdr, err := segment.ReadHeader(&c.headerReader, c.compressor != nil)
 	if err != nil {
 		var netErr net.Error
 		if c.headerReader.n == 0 && errors.As(err, &netErr) && netErr.Timeout() {
-			return segmentHeader{}, fmt.Errorf("%w: %w", ErrReadHeaderTimeout, err)
+			return segment.Header{}, fmt.Errorf("%w: %w", ErrReadHeaderTimeout, err)
 		}
-		return segmentHeader{}, err
+		return segment.Header{}, err
 	}
 	return hdr, nil
+}
+
+// readSegmentPayload reads the payload of a segment whose header has already been
+// read, narrowing c.compressor to the interface the codec takes.
+//
+// The narrowing cannot fail on a connection that got this far: ClusterConfig.Validate
+// rejects a compressor without segment support on v5 before a connection is dialed.
+// It is reported rather than ignored because treating the failure as "no compression"
+// would decode the payload with the wrong layout.
+func (c *Conn) readSegmentPayload(hdr segment.Header) ([]byte, error) {
+	segComp, err := asSegmentCompressor(c.compressor)
+	if err != nil {
+		return nil, err
+	}
+	return segment.ReadPayload(c.r, hdr, segComp, &c.segScratch)
 }
 
 // recvSplitFrame reassembles a single CQL frame that the peer split across
@@ -1547,14 +1563,14 @@ func (c *Conn) recvSplitFrame(ctx context.Context, first []byte, netStart, netEn
 // payload), is rejected so a hostile peer cannot drive an infinite reassembly
 // loop.
 func (c *Conn) readContinuationSegment() ([]byte, error) {
-	hdr, err := readSegmentHeader(c.r, c.compressor)
+	hdr, err := segment.ReadHeader(c.r, c.compressor != nil)
 	if err != nil {
 		return nil, fmt.Errorf("gocql: failed to read continuation segment header: %w", err)
 	}
-	if hdr.isSelfContained {
+	if hdr.IsSelfContained {
 		return nil, fmt.Errorf("gocql: received self-contained segment, but expected a continuation")
 	}
-	payload, err := readSegmentPayload(c.r, hdr, c.compressor, &c.segScratch)
+	payload, err := c.readSegmentPayload(hdr)
 	if err != nil {
 		return nil, fmt.Errorf("gocql: failed to read continuation segment payload: %w", err)
 	}
