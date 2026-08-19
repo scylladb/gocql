@@ -26,6 +26,14 @@ import (
 // https://github.com/scylladb/gocql/issues/937.
 var ErrProtoV5NotSupported = errors.New("gocql/dialer: protocol v5+ uses transport segments, which the record/replay dialers do not support (see scylladb/gocql#937)")
 
+// ErrSegmentCompressorRequired is returned when a connection negotiated compression
+// on protocol v5 but no compressor was supplied to the dialer.
+//
+// The driver's only segment compressor, lz4, lives in a separate Go module, so this
+// module cannot construct one for itself; a caller recording or replaying a compressed
+// v5 connection has to hand one in (see recorder.WithSegmentCompressor).
+var ErrSegmentCompressorRequired = errors.New("gocql/dialer: protocol v5 connection negotiated compression, but no SegmentCompressor was supplied to the dialer")
+
 // FrameIsProtoV5OrNewer reports whether b starts a CQL frame whose protocol
 // version is v5 or newer. It is only meaningful for bytes at a frame boundary.
 // The driver's handshake frames are never segment-framed, so checking each
@@ -50,20 +58,25 @@ type Record struct {
 // SCYLLA_USE_METADATA_ID protocol extension (see gocql/scylla.go).
 const scyllaUseMetadataIDKey = "SCYLLA_USE_METADATA_ID"
 
-// StartupNegotiatesMetadataID reports whether the given raw request frame is a
-// STARTUP that opts into the SCYLLA_USE_METADATA_ID extension. The driver
-// serializes the extension as the key SCYLLA_USE_METADATA_ID in the STARTUP
-// [string map]. Detection is restricted to STARTUP requests so the same key
-// appearing in a SUPPORTED response (a read frame) never trips it.
+// compressionKey is the STARTUP option key naming the algorithm a connection's
+// frames are compressed with (see gocql's startupOptions).
+const compressionKey = "COMPRESSION"
+
+// forEachStartupOption walks a STARTUP request's [string map] body, calling fn with
+// each key and value until fn returns true. It reports whether fn stopped it.
 //
-// The body is walked as a proper [string map] and only keys are compared, rather
-// than scanning the frame for the literal: gocql's startupOptions puts
-// caller-influenced values into the same map — DRIVER_NAME, DRIVER_VERSION,
-// DRIVER_CONFIG, SESSION_ID and whatever ApplicationInfo adds — so a substring
-// match lets a caller latch this by naming their application after the extension.
-// The list keeps growing, which is the point: matching on keys does not care.
-// A malformed or truncated map reads as "not negotiated".
-func StartupNegotiatesMetadataID(frame []byte) bool {
+// The body is walked as a proper [string map] rather than scanning the frame for a
+// literal, and callers compare keys rather than the whole frame: gocql's
+// startupOptions puts caller-influenced values into the same map — DRIVER_NAME,
+// DRIVER_VERSION, DRIVER_CONFIG, SESSION_ID and whatever ApplicationInfo adds — so a
+// substring match would let a caller latch an option by naming their application
+// after it. The list keeps growing, which is the point: matching on keys does not
+// care.
+//
+// Detection is restricted to STARTUP requests, so the same key appearing in a
+// SUPPORTED response never trips a caller. A malformed or truncated map stops the
+// walk, which reads as "the option is not there".
+func forEachStartupOption(frame []byte, fn func(key, value []byte) bool) bool {
 	if len(frame) < 5 {
 		return false
 	}
@@ -101,14 +114,49 @@ func StartupNegotiatesMetadataID(frame []byte) bool {
 		if !ok {
 			return false
 		}
-		if _, ok := readString(); !ok { // value, skipped
+		value, ok := readString()
+		if !ok {
 			return false
 		}
-		if string(key) == scyllaUseMetadataIDKey {
+		if fn(key, value) {
 			return true
 		}
 	}
 	return false
+}
+
+// StartupNegotiatesMetadataID reports whether the given raw request frame is a
+// STARTUP that opts into the SCYLLA_USE_METADATA_ID extension. The driver serializes
+// the extension as the key SCYLLA_USE_METADATA_ID in the STARTUP [string map].
+func StartupNegotiatesMetadataID(frame []byte) bool {
+	return forEachStartupOption(frame, func(key, _ []byte) bool {
+		return string(key) == scyllaUseMetadataIDKey
+	})
+}
+
+// StartupCompression returns the compression algorithm a STARTUP request opts into,
+// and whether it named one at all.
+//
+// This is how the record/replay dialers learn whether a v5 connection's transport
+// segments are compressed, which the segment bytes themselves cannot reveal: the two
+// layouts differ in header size, so a decoder has to be told which it is reading.
+// Reading it from the STARTUP is exact rather than a guess, because the driver only
+// sends the option when it is going to use it — it drops its own compressor if the
+// server's SUPPORTED did not advertise the algorithm (see startupCoordinator.startup),
+// and STARTUP is written after that decision.
+//
+// The STARTUP frame is always unsegmented, on every protocol version, so it is
+// readable before any of this matters.
+func StartupCompression(frame []byte) (string, bool) {
+	var algorithm string
+	found := forEachStartupOption(frame, func(key, value []byte) bool {
+		if string(key) != compressionKey {
+			return false
+		}
+		algorithm = string(value)
+		return true
+	})
+	return algorithm, found
 }
 
 // A CQL frame carries the protocol version in the low 7 bits of frame[0]; the
