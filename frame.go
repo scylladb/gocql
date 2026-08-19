@@ -273,14 +273,14 @@ const headSize = 9
 
 // a framer is responsible for reading, writing and parsing frames on a single stream
 type framer struct {
-	compressor            Compressor
-	compressorBuf         CompressorWithBuffer // cached type assertion, nil if not supported
-	header                *frm.FrameHeader
-	customPayload         map[string][]byte
-	release               func()
-	traceID               []byte
-	readBuffer            []byte
-	buf                   []byte
+	compressor    Compressor
+	compressorBuf CompressorWithBuffer // cached type assertion, nil if not supported
+	header        *frm.FrameHeader
+	customPayload map[string][]byte
+	release       func()
+	traceID       []byte
+	readBuffer    []byte
+	buf           []byte
 	// wireBuf is the framer's second reusable byte buffer. prepareModernLayout
 	// encodes the v5 transport segments into it and then swaps it with buf, so a
 	// framer reused for consecutive v5 requests keeps both the raw-frame buffer
