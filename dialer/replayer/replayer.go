@@ -37,7 +37,7 @@ func NewConnectionReplayer(fname string) (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &ConnectionReplayer{frames: frames, frameIdsToReplay: []int{}, streamIdsToReplay: []int{}, frameIdx: 0, frameResponsePosition: 0, gotRequest: make(chan struct{}, 1)}, nil
+	return &ConnectionReplayer{frames: frames, frameIdsToReplay: []int{}, streamIdsToReplay: []int{}, gotRequest: make(chan struct{}, 1)}, nil
 }
 
 type ConnectionReplayer struct {
@@ -45,6 +45,11 @@ type ConnectionReplayer struct {
 	frames            []*FrameRecorded
 	frameIdsToReplay  []int
 	streamIdsToReplay []int
+	// outgoing is the response currently being served: a copy of the recorded frame
+	// with its stream id patched, handed out across as many Read calls as it takes.
+	// Materialising it once is what makes the stream id right regardless of how the
+	// caller's buffer is sized.
+	outgoing []byte
 	// splitter turns the bytes the driver writes into whole CQL frames. The write
 	// path happens to deliver exactly one frame per Write today — there is no
 	// bufio.Writer on it, and although write coalescing is on by default,
@@ -55,10 +60,10 @@ type ConnectionReplayer struct {
 	// net.Conn here would silently start coalescing several frames into one Write.
 	// The exported Conn.Write passes arbitrary bytes regardless. So the assumption
 	// is not relied on.
-	splitter              dialer.FrameSplitter
-	frameIdx              int
-	frameResponsePosition int
-	closed                bool
+	splitter    dialer.FrameSplitter
+	outgoingPos int
+	frameIdx    int
+	closed      bool
 	// useMetadataID latches once the STARTUP request on this connection opts into
 	// SCYLLA_USE_METADATA_ID, matching how the recorder stamped the frames so live
 	// and load-time hashes agree (see GetFrameHash / Record.UseMetadataID).
@@ -94,6 +99,10 @@ func (c *ConnectionReplayer) pushStreamIDToReplay(b []byte, idx int) {
 	}
 }
 
+// headerStreamIDEnd is one past the last byte of a v3+ frame's 2-byte stream id, and
+// so the shortest frame replaceFrameStreamID can patch.
+const headerStreamIDEnd = 4
+
 func replaceFrameStreamID(b []byte, stream int) {
 	if b[0] > 0x02 {
 		b[2] = byte(stream >> 8)
@@ -103,31 +112,69 @@ func replaceFrameStreamID(b []byte, stream int) {
 	}
 }
 
+// Read serves the recorded response to the request most recently matched, across as
+// many calls as the caller's buffer needs.
 func (c *ConnectionReplayer) Read(b []byte) (n int, err error) {
-	frame := c.getPendingFrame()
-	for frame == nil {
-		<-c.gotRequest
-		frame = c.getPendingFrame()
-	}
-	if c.Closed() {
-		return 0, io.EOF
-	}
-	response := frame.Response[c.frameResponsePosition:]
-
-	if len(b) < len(response) {
-		copy(b, response[:len(b)])
-		c.frameResponsePosition = c.frameResponsePosition + len(b)
-		return len(b), err
+	if len(b) == 0 {
+		return 0, nil
 	}
 
-	copy(b, response)
-	if c.frameResponsePosition == 0 {
-		replaceFrameStreamID(b, c.frameStreamID())
+	if c.outgoingPos == len(c.outgoing) {
+		frame := c.getPendingFrame()
+		for frame == nil {
+			<-c.gotRequest
+			frame = c.getPendingFrame()
+		}
+		if c.Closed() {
+			return 0, io.EOF
+		}
+		if err := c.materialise(frame); err != nil {
+			return 0, err
+		}
+		c.frameIdx = c.frameIdx + 1
 	}
 
-	c.frameIdx = c.frameIdx + 1
-	c.frameResponsePosition = 0
-	return len(response), err
+	n = copy(b, c.outgoing[c.outgoingPos:])
+	c.outgoingPos = c.outgoingPos + n
+	return n, nil
+}
+
+// materialise prepares the bytes for one recorded response, reading the stream id to
+// patch in from the request that matched it.
+//
+// The frame is copied first. FrameRecorded is shared and served once per benchmark
+// iteration, so patching it in place would rewrite the recording's own copy with the
+// stream id of whichever request arrived first and leave every later iteration
+// depending on that.
+//
+// This used to patch the caller's buffer instead, once per response and only when the
+// whole response fitted, so a response larger than the buffer was replayed with the
+// stream id it was recorded with. Unreachable with the checked-in recordings, whose
+// largest response is well under the driver's 4 KiB read buffer, which is why it went
+// unnoticed.
+func (c *ConnectionReplayer) materialise(frame *FrameRecorded) error {
+	// A record holding no bytes at all cannot be served: Read would return (0, nil)
+	// against a buffer with room in it, and then block for a request whose response has
+	// already been counted as delivered. Only a damaged recording produces one --
+	// loadFramesFromFile skips lines that do not decode, but `{"data":null}` decodes
+	// fine -- so it is reported rather than served, unlike the merely-too-short record
+	// below, which does reach the driver and is rejected there.
+	if len(frame.Response) == 0 {
+		return fmt.Errorf("gocql/dialer: recording holds an empty response frame for stream %d", c.frameStreamID())
+	}
+
+	c.outgoing = append(c.outgoing[:0], frame.Response...)
+	c.outgoingPos = 0
+
+	// A frame too short to hold a stream id cannot be one the driver sent, so it can
+	// only come from a damaged recording. Serve it as recorded rather than indexing
+	// past it; the driver will reject it as a protocol error, which is the honest
+	// outcome.
+	if len(c.outgoing) < headerStreamIDEnd {
+		return nil
+	}
+	replaceFrameStreamID(c.outgoing, c.frameStreamID())
+	return nil
 }
 
 func (c *ConnectionReplayer) Write(b []byte) (n int, err error) {
