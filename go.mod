@@ -20,7 +20,7 @@ module github.com/gocql/gocql
 require (
 	github.com/google/go-cmp v0.7.0
 	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed
-	github.com/klauspost/compress v1.19.1
+	github.com/klauspost/compress v1.19.2
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	golang.org/x/net v0.57.0
 	golang.org/x/sync v0.22.0
