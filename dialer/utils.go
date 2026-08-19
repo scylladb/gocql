@@ -197,6 +197,103 @@ func addBytes(frame []byte, index int) (int, bool) {
 	return index, true
 }
 
+// addLongString advances index past a [long string]: a 4-byte length followed by
+// that many bytes.
+//
+// The length is read as signed for the same reason addBytes does: a negative value
+// is a damaged frame rather than a null, and reading it unsigned would turn one into
+// a 4 GB field that the walk never recovers from.
+func addLongString(frame []byte, index int) (int, bool) {
+	if !fits(frame, index, 4) {
+		return 0, false
+	}
+	length := int(int32(uint32(frame[index+0])<<24 | uint32(frame[index+1])<<16 | uint32(frame[index+2])<<8 | uint32(frame[index+3])))
+	index = index + 4
+	if length < 0 || !fits(frame, index, length) {
+		return 0, false
+	}
+	return index + length, true
+}
+
+// addShortBytes advances index past a [short bytes] value: a 2-byte length followed
+// by that many bytes.
+func addShortBytes(frame []byte, index int) (int, bool) {
+	if !fits(frame, index, 2) {
+		return 0, false
+	}
+	length := int(frame[index])<<8 | int(frame[index+1])
+	if !fits(frame, index, 2+length) {
+		return 0, false
+	}
+	return index + 2 + length, true
+}
+
+// addBatchQueries advances index past a BATCH body's type, query count and queries,
+// leaving it on the consistency field that starts the batch's parameter block.
+//
+// That block is laid out exactly like a QUERY's <query_parameters> minus the fields
+// a batch never carries, so addQueryParams walks it unchanged: writeBatchFrame only
+// ever sets the serial-consistency, default-timestamp, keyspace and now_in_seconds
+// flags, so the values, page-size and paging-state branches cannot fire.
+//
+// Named values need no handling here. writeBatchFrame rejects them outright on every
+// protocol version, because Cassandra never implemented them (CASSANDRA-10246).
+func addBatchQueries(frame []byte, index int) (int, bool) {
+	// batch type
+	if !fits(frame, index, 1) {
+		return 0, false
+	}
+	index = index + 1
+
+	if !fits(frame, index, 2) {
+		return 0, false
+	}
+	queryCount := int(frame[index])<<8 | int(frame[index+1])
+	index = index + 2
+
+	for i := 0; i < queryCount; i++ {
+		if !fits(frame, index, 1) {
+			return 0, false
+		}
+		kind := frame[index]
+		index = index + 1
+
+		var ok bool
+		switch kind {
+		case 0:
+			// A query string, as a [long string].
+			if index, ok = addLongString(frame, index); !ok {
+				return 0, false
+			}
+		case 1:
+			// A prepared statement id, as [short bytes].
+			if index, ok = addShortBytes(frame, index); !ok {
+				return 0, false
+			}
+		default:
+			// Not a kind the driver writes, so the rest of the body cannot be
+			// located. A damaged recording, which the caller hashes raw.
+			return 0, false
+		}
+
+		if !fits(frame, index, 2) {
+			return 0, false
+		}
+		valuesLen := int(frame[index])<<8 | int(frame[index+1])
+		index = index + 2
+
+		for j := 0; j < valuesLen; j++ {
+			// A null or unset value carries no payload; addBytes reads the length as
+			// signed so both advance by just the length field.
+			if index, ok = addBytes(frame, index); !ok {
+				return 0, false
+			}
+		}
+	}
+
+	return index, true
+}
+
 // addQueryParams walks a <query_parameters> block starting at index, which must
 // point at the consistency field.
 //
@@ -345,9 +442,15 @@ func addCustomPayload(frame []byte, index int, p int) (int, bool) {
 		return 0, false
 	}
 	customPayloadLenght := int(frame[8+p])<<8 | int(frame[9+p])
-	if customPayloadLenght > 0 {
-		index = index + 2
-	}
+	// Skip the [bytes map] count itself unconditionally. A map of zero entries still
+	// spends the two bytes that say so, and stopping short of them leaves the walk
+	// reading that count as the next field: for a BATCH, its type, then its own second
+	// byte as half of the statement count. That misreading is plausible rather than
+	// detectably wrong — type LOGGED, zero statements, consistency ONE — so no bounds
+	// check fails and nothing falls back to the raw bytes. It simply hashes a handful
+	// of bytes of the wrong field, the same handful for every batch, which is a
+	// collision the replayer resolves by serving whichever response it finds first.
+	index = index + 2
 	for i := 0; i < customPayloadLenght; i++ {
 		if !fits(frame, index, 2) {
 			return 0, false
@@ -425,13 +528,11 @@ func GetFrameHash(frame []byte, useMetadataID bool) int64 {
 	// choice: they run before, or on frames too short to contain, the stream id they
 	// would have to blank.
 	//
-	// Two known gaps, both tracked rather than papered over:
-	//
-	//   - QUERY frames all hash alike, because the parameter walk starts at the body
-	//     start instead of past the query text (scylladb/gocql#1000). On v5 that also
-	//     costs replay entirely, since the fallback hashes the default timestamp.
-	//   - BATCH frames are hashed whole, default timestamp included, so a recorded
-	//     BATCH never matches its replay.
+	// One known gap, tracked rather than papered over: every QUERY frame hashes
+	// alike, because the parameter walk is handed the body start instead of the
+	// position past the query text (scylladb/gocql#1000). On v5 that costs replay
+	// outright, since the failed walk falls back to hashing the frame whole, default
+	// timestamp included.
 	if len(frame) == 0 {
 		return murmur.Murmur3H1(frame)
 	}
@@ -583,7 +684,33 @@ func GetFrameHash(frame []byte, useMetadataID bool) int64 {
 		}
 		return hashWithTail(frame, index, endIndex, tailStart, tailEnd)
 	case byte(opBatch):
-		return murmur.Murmur3H1(frame)
+		var ok bool
+		index := addHeader(p)
+		if frame[1]&frm.FlagCustomPayload == frm.FlagCustomPayload {
+			if index, ok = addCustomPayload(frame, index, p); !ok {
+				return murmur.Murmur3H1(frame)
+			}
+		}
+
+		// A BATCH used to be hashed whole, which put its default timestamp in the
+		// hash. writeBatchFrame fills that field with time.Now() unless the caller
+		// pinned a value, so a recorded BATCH hashed differently on every run and
+		// replaying one could only ever fail to find its response. Walking the body
+		// to the end of the parameter block leaves the timestamp out, the same way
+		// QUERY and EXECUTE do.
+		paramsStart, ok := addBatchQueries(frame, index)
+		if !ok {
+			return murmur.Murmur3H1(frame)
+		}
+
+		endIndex, tailStart, tailEnd, ok := addQueryParams(frame, paramsStart)
+		if !ok {
+			return murmur.Murmur3H1(frame)
+		}
+		if index > endIndex {
+			return murmur.Murmur3H1(frame)
+		}
+		return hashWithTail(frame, index, endIndex, tailStart, tailEnd)
 	case byte(opOptions):
 		return murmur.Murmur3H1(frame)
 	case byte(opRegister):
