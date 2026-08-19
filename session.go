@@ -3216,13 +3216,12 @@ func newNextIterWithPageState(parent *Query, metrics *queryMetrics, pageState []
 	newQry.refCount = 1
 	newQry.metrics = metrics
 	newQry.metricsOwner = queryMetricsOwner{}
-	// Reuse metrics map if the pool preserved one; otherwise allocate fresh.
+	// Reuse pooled metrics if the caller did not provide shared execution metrics.
 	if metrics == nil && pooledMetrics != nil && pooledMetrics != parent.metrics {
-		clear(pooledMetrics.m)
-		pooledMetrics.totalAttempts = 0
+		pooledMetrics.reset()
 		newQry.metrics = pooledMetrics
 	} else {
-		newQry.metrics = &queryMetrics{m: make(map[UUID]*hostMetrics)}
+		newQry.metrics = newQueryMetrics()
 	}
 	// Reuse routingInfo to avoid aliasing the parent's pointer (which is
 	// mutex-protected and shared). Copy the parent's routing fields into
