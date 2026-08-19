@@ -2944,7 +2944,7 @@ func (c *Conn) executeBatchOnce(ctx context.Context, batch *Batch, usedKeyspace 
 	for i := 0; i < n; i++ {
 		entry := &batch.Entries[i]
 
-// Look up or populate the per-statement prepare result.
+		// Look up or populate the per-statement prepare result.
 		pr, found := prepCache[entry.Stmt]
 		if !found {
 			pr = &prepResult{}
