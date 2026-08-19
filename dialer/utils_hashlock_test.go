@@ -175,8 +175,6 @@ func TestGetFrameHashIsStable(t *testing.T) {
 // value here — all of them v4 or below — is byte-identical to that baseline.
 var hashLockWant = map[string]int64{
 	"auth-response":                     -5612286604398787175,
-	"batch":                             4614837606640265276,
-	"batch-default-timestamp":           2789619218490224104,
 	"empty":                             0,
 	"execute-metadata-id":               8953623736212654883,
 	"execute-metadata-id-flag-off":      -8761464023806847249,
@@ -191,6 +189,15 @@ var hashLockWant = map[string]int64{
 	"truncated-execute-prepared-id-len": -2990148397469877668,
 	"unknown-opcode":                    -8681368666721584811,
 	"v2-options":                        2835211771060518081,
+
+	// Both BATCH values moved when the arm stopped hashing the frame whole and
+	// started walking the body to the end of the parameter block. That is the point
+	// of the change: hashing it whole covered the default timestamp, which
+	// writeBatchFrame fills with time.Now(), so a recorded BATCH never matched its
+	// own replay. No recording had to be regenerated for it — the checked-in
+	// fixtures contain no BATCH frame.
+	"batch":                   -8625060010961602230,
+	"batch-default-timestamp": -8987577148391256339,
 
 	// Every QUERY case collapses to Murmur3H1({0x00, 0x00, 0x00}). That is the
 	// scylladb/gocql#1000 collision, pinned here as it stands rather than hidden:
@@ -361,5 +368,210 @@ func TestGetFrameHashV5BoundsTailFields(t *testing.T) {
 	bad := v5ExecuteFrame(frm.FlagWithKeyspace, []byte{0x7F, 0xFF, 'k', 's'})
 	if got, want := GetFrameHash(bad, false), murmur3OfStreamBlanked(bad); got != want {
 		t.Errorf("overstated keyspace length: GetFrameHash = %d, want the raw-bytes fallback %d", got, want)
+	}
+}
+
+// batchBodyV5 assembles a BATCH body with a 4-byte flags field, as protocol v5
+// writes it, carrying exactly the fields flags announces.
+func batchBodyV5(statement string, flags uint32, optional ...[]byte) []byte {
+	body := []byte{0x00}            // type: LOGGED
+	body = append(body, 0x00, 0x01) // one query
+	body = append(body, 0x00)       // kind: query string
+	body = append(body, longString(statement)...)
+	body = append(body, 0x00, 0x00) // zero values
+	body = append(body, 0x00, 0x01) // consistency ONE
+	body = append(body, byte(flags>>24), byte(flags>>16), byte(flags>>8), byte(flags))
+	for _, o := range optional {
+		body = append(body, o...)
+	}
+	return body
+}
+
+// TestGetFrameHashBatchIgnoresDefaultTimestamp pins the reason the BATCH arm walks
+// its body at all.
+//
+// writeBatchFrame fills the default-timestamp field with time.Now() unless the caller
+// pinned a value, and the flag defaults to on. Hashing a BATCH whole therefore
+// produced a different hash on every run, so a recorded BATCH could only ever fail to
+// find its response — the replayer panics with "unable to find a response to replay".
+func TestGetFrameHashBatchIgnoresDefaultTimestamp(t *testing.T) {
+	a := frameV4(opBatch, 0x00, batchBody(byte(frm.FlagDefaultTimestamp), timestamp8(1)))
+	b := frameV4(opBatch, 0x00, batchBody(byte(frm.FlagDefaultTimestamp), timestamp8(999999)))
+
+	if GetFrameHash(a, false) != GetFrameHash(b, false) {
+		t.Error("the default timestamp reached a BATCH's hash, so a recorded BATCH cannot match its replay")
+	}
+}
+
+// TestGetFrameHashBatchDistinguishesStatements pins the other half: walking the body
+// has to cover the statements, or every batch of the same shape hashes alike and the
+// replayer serves the first one it finds.
+func TestGetFrameHashBatchDistinguishesStatements(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		a, b []byte
+	}{
+		{
+			name: "query text",
+			a:    batchBody(0x00),
+			b: func() []byte {
+				body := []byte{0x00, 0x00, 0x01, 0x00}
+				body = append(body, longString("INSERT INTO t (pk) VALUES (2)")...)
+				body = append(body, 0x00, 0x00, 0x00, 0x01, 0x00)
+				return body
+			}(),
+		},
+		{
+			name: "statement count",
+			a:    batchBody(0x00),
+			b: func() []byte {
+				body := []byte{0x00, 0x00, 0x02}
+				for i := 0; i < 2; i++ {
+					body = append(body, 0x00)
+					body = append(body, longString("INSERT INTO t (pk) VALUES (1)")...)
+					body = append(body, 0x00, 0x00)
+				}
+				return append(body, 0x00, 0x01, 0x00)
+			}(),
+		},
+		{
+			name: "bound values",
+			a: func() []byte {
+				body := []byte{0x00, 0x00, 0x01, 0x00}
+				body = append(body, longString("INSERT INTO t (pk) VALUES (?)")...)
+				body = append(body, 0x00, 0x01)
+				body = append(body, bytesValue([]byte{0x2A})...)
+				return append(body, 0x00, 0x01, 0x00)
+			}(),
+			b: func() []byte {
+				body := []byte{0x00, 0x00, 0x01, 0x00}
+				body = append(body, longString("INSERT INTO t (pk) VALUES (?)")...)
+				body = append(body, 0x00, 0x01)
+				body = append(body, bytesValue([]byte{0x2B})...)
+				return append(body, 0x00, 0x01, 0x00)
+			}(),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := GetFrameHash(frameV4(opBatch, 0x00, tc.a), false)
+			b := GetFrameHash(frameV4(opBatch, 0x00, tc.b), false)
+			if a == b {
+				t.Errorf("batches differing in %s hash the same (%d)", tc.name, a)
+			}
+		})
+	}
+}
+
+// TestGetFrameHashBatchPreparedStatements pins that a batch of prepared statements —
+// [short bytes] ids rather than query strings — is walked too, and that the ids are
+// what tells two such batches apart.
+func TestGetFrameHashBatchPreparedStatements(t *testing.T) {
+	preparedBatch := func(id []byte) []byte {
+		body := []byte{0x00, 0x00, 0x01, 0x01} // type, one query, kind: prepared
+		body = append(body, byte(len(id)>>8), byte(len(id)))
+		body = append(body, id...)
+		body = append(body, 0x00, 0x00)                                 // zero values
+		return append(body, 0x00, 0x01, byte(frm.FlagDefaultTimestamp)) // consistency + flags
+	}
+
+	a := frameV4(opBatch, 0x00, append(preparedBatch([]byte{0xAA, 0xBB}), timestamp8(1)...))
+	b := frameV4(opBatch, 0x00, append(preparedBatch([]byte{0xCC, 0xDD}), timestamp8(2)...))
+	same := frameV4(opBatch, 0x00, append(preparedBatch([]byte{0xAA, 0xBB}), timestamp8(3)...))
+
+	if GetFrameHash(a, false) == GetFrameHash(b, false) {
+		t.Error("batches with different prepared ids hash the same")
+	}
+	if GetFrameHash(a, false) != GetFrameHash(same, false) {
+		t.Error("the same prepared batch hashed differently across two timestamps")
+	}
+}
+
+// TestGetFrameHashBatchV5TailFields pins that a v5 batch's keyspace override and
+// now_in_seconds are covered, and its default timestamp still is not.
+func TestGetFrameHashBatchV5TailFields(t *testing.T) {
+	const flags = frm.FlagDefaultTimestamp | frm.FlagWithKeyspace | frm.FlagWithNowInSeconds
+	frame := func(keyspace string, now int32, ts int64) []byte {
+		return frameV5(opBatch, 0x00, batchBodyV5("INSERT INTO t (pk) VALUES (1)", flags,
+			timestamp8(ts), shortString(keyspace), nowInSeconds4(now)))
+	}
+
+	base := GetFrameHash(frame("ks_a", 1000, 111), false)
+
+	if GetFrameHash(frame("ks_b", 1000, 111), false) == base {
+		t.Error("a v5 batch's keyspace override is not hashed")
+	}
+	if GetFrameHash(frame("ks_a", 2000, 111), false) == base {
+		t.Error("a v5 batch's now_in_seconds is not hashed")
+	}
+	if GetFrameHash(frame("ks_a", 1000, 999999), false) != base {
+		t.Error("a v5 batch's default timestamp reached the hash")
+	}
+}
+
+// TestGetFrameHashBatchBounds walks every truncation of a BATCH frame, plus a few
+// overstated lengths. Every length in a batch body is file-supplied, so none of them
+// may index past the frame.
+func TestGetFrameHashBatchBounds(t *testing.T) {
+	full := frameV4(opBatch, 0x00, batchBody(byte(frm.FlagDefaultTimestamp), timestamp8(111)))
+
+	for n := 0; n <= len(full); n++ {
+		truncated := append([]byte(nil), full[:n]...)
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("GetFrameHash panicked on a %d-byte prefix: %v", n, r)
+				}
+			}()
+			GetFrameHash(truncated, false)
+		}()
+	}
+
+	for _, tc := range []struct {
+		name string
+		body []byte
+	}{
+		{name: "overstated statement count", body: []byte{0x00, 0x7F, 0xFF, 0x00}},
+		{name: "overstated query length", body: []byte{0x00, 0x00, 0x01, 0x00, 0x7F, 0xFF, 0xFF, 0xFF, 'x'}},
+		{name: "overstated prepared id length", body: []byte{0x00, 0x00, 0x01, 0x01, 0x7F, 0xFF, 'x'}},
+		{name: "overstated value count", body: append(append([]byte{0x00, 0x00, 0x01, 0x00}, longString("q")...), 0x7F, 0xFF)},
+		{name: "unknown statement kind", body: []byte{0x00, 0x00, 0x01, 0x09, 0x00}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			frame := frameV4(opBatch, 0x00, tc.body)
+			if got, want := GetFrameHash(frame, false), murmur3OfStreamBlanked(frame); got != want {
+				t.Errorf("GetFrameHash = %d, want the raw-bytes fallback %d", got, want)
+			}
+		})
+	}
+}
+
+// TestGetFrameHashBatchEmptyCustomPayload pins that an empty custom payload map is
+// skipped like any other.
+//
+// A [bytes map] of zero entries still spends the two bytes that say so. Stopping short
+// of them left the walk reading that count as the batch type, its own second byte as
+// the top half of the statement count, and so on: for the frames below that misreading
+// is entirely plausible — type LOGGED, zero statements, consistency ONE, no flags — so
+// nothing fails a bounds check and nothing falls back to the raw bytes. It just hashes
+// six bytes of the wrong field, identically for every batch that carries a custom
+// payload, and the replayer serves whichever of them it finds first.
+func TestGetFrameHashBatchEmptyCustomPayload(t *testing.T) {
+	emptyCustomPayload := func(statement string) []byte {
+		body := []byte{0x00, 0x00}      // custom payload: zero entries
+		body = append(body, 0x00)       // type: LOGGED
+		body = append(body, 0x00, 0x01) // one query
+		body = append(body, 0x00)       // kind: query string
+		body = append(body, longString(statement)...)
+		body = append(body, 0x00, 0x00) // zero values
+		body = append(body, 0x00, 0x01) // consistency ONE
+		body = append(body, byte(frm.FlagDefaultTimestamp))
+		return append(body, timestamp8(111)...)
+	}
+
+	a := frameV4(opBatch, frm.FlagCustomPayload, emptyCustomPayload("INSERT INTO t (pk) VALUES (1)"))
+	b := frameV4(opBatch, frm.FlagCustomPayload, emptyCustomPayload("INSERT INTO t (pk) VALUES (2)"))
+
+	if GetFrameHash(a, false) == GetFrameHash(b, false) {
+		t.Error("batches differing in their statement hash the same: the empty custom payload map was not skipped")
 	}
 }
