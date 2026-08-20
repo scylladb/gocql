@@ -34,7 +34,6 @@ import (
 	"math"
 	"net"
 	"os"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -1491,26 +1490,29 @@ func TestGetQueryValuesLength(t *testing.T) {
 
 func TestPutGetQueryValuesClearsReferences(t *testing.T) {
 	s := getQueryValues(4)
-	s[0].name = "col1"
-	s[0].value = []byte("data")
-	s[1].name = "col2"
-	s[1].value = []byte("more")
-	s[2].isUnset = true
+	full := s[:cap(s)] // cap(s) == 8; verify the whole backing array, not just len(s)
+	full[0].name = "col1"
+	full[0].value = []byte("data")
+	full[1].name = "col2"
+	full[1].value = []byte("more")
+	full[2].isUnset = true
+	full[len(full)-1].name = "tail"
+	full[len(full)-1].value = []byte("tail-data")
+	full[len(full)-1].isUnset = true
 
 	putQueryValues(s)
 
-	// Assert directly on the original slice: putQueryValues clears the
-	// backing array in place, so s still reflects the zeroed state.
-	// This is deterministic and does not depend on sync.Pool returning
-	// the same object on the next Get.
-	for i := 0; i < 4; i++ {
-		if s[i].name != "" {
-			t.Errorf("element %d: name = %q, want empty after put", i, s[i].name)
+	// Assert directly on the original backing array: putQueryValues clears it
+	// in place, so full still reflects the zeroed state. This is deterministic
+	// and does not depend on sync.Pool returning the same object on the next Get.
+	for i := range full {
+		if full[i].name != "" {
+			t.Errorf("element %d: name = %q, want empty after put", i, full[i].name)
 		}
-		if s[i].value != nil {
-			t.Errorf("element %d: value = %v, want nil after put", i, s[i].value)
+		if full[i].value != nil {
+			t.Errorf("element %d: value = %v, want nil after put", i, full[i].value)
 		}
-		if s[i].isUnset {
+		if full[i].isUnset {
 			t.Errorf("element %d: isUnset = true, want false after put", i)
 		}
 	}
@@ -1546,77 +1548,4 @@ func TestGetQueryValuesOversize(t *testing.T) {
 	}
 	// Should not panic when returning oversize.
 	putQueryValues(s)
-}
-
-// --- benchmarks ---
-
-// queryValuesSink forces escape analysis to heap-allocate make() in baseline
-// benchmarks. Assigned once after the loop to avoid per-iteration cache-line
-// effects that would unfairly penalize the baseline.
-var queryValuesSink []queryValues
-
-func BenchmarkGetPutQueryValues_8_Seq(b *testing.B) {
-	for b.Loop() {
-		s := getQueryValues(8)
-		s[0].name = "col"
-		s[0].value = []byte("val")
-		putQueryValues(s)
-	}
-}
-
-func BenchmarkGetPutQueryValues_8_Parallel(b *testing.B) {
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			s := getQueryValues(8)
-			s[0].name = "col"
-			s[0].value = []byte("val")
-			putQueryValues(s)
-		}
-	})
-}
-
-func BenchmarkMakeQueryValues_8_Seq(b *testing.B) {
-	var s []queryValues
-	for b.Loop() {
-		s = make([]queryValues, 8)
-		s[0].name = "col"
-		s[0].value = []byte("val")
-	}
-	queryValuesSink = s
-}
-
-func BenchmarkMakeQueryValues_8_Parallel(b *testing.B) {
-	b.RunParallel(func(pb *testing.PB) {
-		var s []queryValues
-		for pb.Next() {
-			s = make([]queryValues, 8)
-			s[0].name = "col"
-			s[0].value = []byte("val")
-		}
-		runtime.KeepAlive(s)
-	})
-}
-
-func BenchmarkPutBatchQueryValues_10x8(b *testing.B) {
-	for b.Loop() {
-		stmts := make([]batchStatment, 10)
-		for i := range stmts {
-			stmts[i].values = getQueryValues(8)
-			stmts[i].values[0].name = "col"
-		}
-		putBatchQueryValues(stmts)
-	}
-}
-
-func BenchmarkPutBatchQueryValues_10x8_Parallel(b *testing.B) {
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			stmts := make([]batchStatment, 10)
-			for i := range stmts {
-				stmts[i].values = getQueryValues(8)
-				stmts[i].values[0].name = "col"
-			}
-			putBatchQueryValues(stmts)
-		}
-	})
 }
