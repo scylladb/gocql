@@ -3208,20 +3208,28 @@ type nextIter struct {
 func newNextIterWithPageState(parent *Query, metrics *queryMetrics, pageState []byte, pos int) *nextIter {
 	// Acquire a Query from the global pool and shallow-copy the parent into it.
 	newQry := queryPool.Get().(*Query)
-	// Save pooled allocations before overwriting with parent's fields.
+	// Save pooled allocations, and the owner claim pooledMetrics was stamped
+	// against, before overwriting with parent's fields.
 	pooledMetrics := newQry.metrics
+	pooledOwner := newQry.metricsOwner
 	pooledRoutingInfo := newQry.routingInfo
 	*newQry = *parent
 	newQry.pageState = pageState
 	newQry.refCount = 1
-	newQry.metrics = metrics
-	newQry.metricsOwner = queryMetricsOwner{}
-	// Reuse pooled metrics if the caller did not provide shared execution metrics.
-	if metrics == nil && pooledMetrics != nil && pooledMetrics != parent.metrics {
-		pooledMetrics.reset()
-		newQry.metrics = pooledMetrics
+	if metrics != nil {
+		// Shared execution metrics: use directly, newQry just borrows them.
+		newQry.metrics = metrics
+		newQry.metricsOwner = queryMetricsOwner{}
 	} else {
-		newQry.metrics = newQueryMetrics()
+		// Restore the saved owner so prepareQueryMetrics can reclaim pooledMetrics
+		// instead of allocating fresh.
+		newQry.metrics = pooledMetrics
+		newQry.metricsOwner = pooledOwner
+		if newQry.metrics == parent.metrics {
+			newQry.metrics = nil
+			newQry.metricsOwner = queryMetricsOwner{}
+		}
+		newQry.metrics = prepareQueryMetrics(&newQry.metrics, &newQry.metricsOwner)
 	}
 	// Reuse routingInfo to avoid aliasing the parent's pointer (which is
 	// mutex-protected and shared). Copy the parent's routing fields into

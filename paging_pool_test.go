@@ -6,6 +6,8 @@ package gocql
 import (
 	"context"
 	"encoding/binary"
+	"runtime"
+	"runtime/debug"
 	"sync"
 	"testing"
 
@@ -329,6 +331,55 @@ func TestQueryPoolRoundTripRoutingInfo(t *testing.T) {
 		t.Fatalf("expected table to be empty after reset, got %q", qry2.routingInfo.table)
 	}
 	qry2.Release()
+}
+
+// TestNewNextIterWithPageStateReclaimsPooledMetrics verifies that, on a
+// second round-trip through the pool, newNextIterWithPageState's
+// metrics == nil path restores the owner claim it saved before the parent
+// copy overwrote it, so prepareQueryMetrics reclaims pooledMetrics on the
+// next round-trip instead of silently abandoning it. sync.Pool does not
+// guarantee a *Query is reused across Get/Put, so the identity check only
+// runs when that coincidentally happens - which is common in practice and
+// is exactly when the bug this guards against would otherwise surface.
+func TestNewNextIterWithPageStateReclaimsPooledMetrics(t *testing.T) {
+	// Make sync.Pool round-trips deterministic: flush any GC already in
+	// flight, then disable further GCs and pin to one P so the pool can't
+	// drop or migrate entries mid-test (same technique sync/pool_test.go
+	// uses upstream). Also swap in a private pool so the identity checks
+	// below aren't perturbed by other tests sharing the package-level
+	// queryPool.
+	runtime.GC()
+	defer debug.SetGCPercent(debug.SetGCPercent(-1))
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(1))
+	origPool := queryPool
+	queryPool = &sync.Pool{New: queryPool.New}
+	defer func() { queryPool = origPool }()
+
+	parent := &Query{
+		stmt:        "SELECT * FROM tbl",
+		session:     &Session{},
+		routingInfo: &queryRoutingInfo{},
+		metrics:     newQueryMetrics(),
+		context:     context.Background(),
+	}
+
+	ni1 := newNextIterWithPageState(parent, nil, []byte("page1"), 1)
+	ni1.close()
+
+	ni2 := newNextIterWithPageState(parent, nil, []byte("page2"), 2)
+	qry2 := ni2.qry
+	reclaimedMetrics := qry2.metrics
+	ni2.close()
+
+	ni3 := newNextIterWithPageState(parent, nil, []byte("page3"), 3)
+	defer ni3.close()
+
+	if ni3.qry != qry2 {
+		t.Skip("sync.Pool did not reuse the same *Query for this round-trip")
+	}
+	if ni3.qry.metrics != reclaimedMetrics {
+		t.Fatalf("expected pooled metrics to be reclaimed, got a new object (%p != %p)", ni3.qry.metrics, reclaimedMetrics)
+	}
 }
 
 // hostWithID builds a *HostInfo with the given host UUID for metrics tests.
