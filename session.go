@@ -3254,6 +3254,9 @@ func newNextIterWithPageState(parent *Query, metrics *queryMetrics, pageState []
 	ctx, cancel := context.WithCancel(parentCtx)
 	newQry.context = ctx
 	newQry.pageContextParent = parentCtx
+	if metrics != nil {
+		metrics.retain()
+	}
 
 	return &nextIter{
 		qry:     newQry,
