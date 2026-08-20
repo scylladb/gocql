@@ -1316,10 +1316,13 @@ func unmarshalMapFast(info CollectionType, data []byte, value any) (bool, error)
 			}
 			return true, unmarshalMapStringBytes(data, v)
 		case *map[string]int64:
-			if elemType != TypeBigInt && elemType != TypeCounter {
+			decInt64 := bigint.DecInt64
+			if elemType == TypeCounter {
+				decInt64 = counter.DecInt64
+			} else if elemType != TypeBigInt {
 				return false, nil
 			}
-			return true, unmarshalMapStringInt64(data, v)
+			return true, unmarshalMapStringInt64(data, v, decInt64)
 		case *map[string]int32:
 			if elemType != TypeInt {
 				return false, nil
@@ -1342,12 +1345,23 @@ func unmarshalMapFast(info CollectionType, data []byte, value any) (bool, error)
 			if !isStringKeyType(elemType) {
 				return false, nil
 			}
-			return true, unmarshalMapInt64String(data, v)
+			decInt64Key := bigint.DecInt64
+			if keyType == TypeCounter {
+				decInt64Key = counter.DecInt64
+			}
+			return true, unmarshalMapInt64String(data, v, decInt64Key)
 		case *map[int64]int64:
-			if elemType != TypeBigInt && elemType != TypeCounter {
+			decInt64Key := bigint.DecInt64
+			if keyType == TypeCounter {
+				decInt64Key = counter.DecInt64
+			}
+			decInt64Val := bigint.DecInt64
+			if elemType == TypeCounter {
+				decInt64Val = counter.DecInt64
+			} else if elemType != TypeBigInt {
 				return false, nil
 			}
-			return true, unmarshalMapInt64Int64(data, v)
+			return true, unmarshalMapInt64Int64(data, v, decInt64Key, decInt64Val)
 		}
 	}
 	return false, nil
@@ -1413,7 +1427,7 @@ func unmarshalMapStringBytes(data []byte, dest *map[string][]byte) error {
 	return nil
 }
 
-func unmarshalMapStringInt64(data []byte, dest *map[string]int64) error {
+func unmarshalMapStringInt64(data []byte, dest *map[string]int64, decInt64 func([]byte, *int64) error) error {
 	n, p, err := readCollectionSize(data)
 	if err != nil {
 		return err
@@ -1435,8 +1449,8 @@ func unmarshalMapStringInt64(data []byte, dest *map[string]int64) error {
 		}
 		data = data[c:]
 		var v int64
-		if err := bigint.DecInt64(valData, &v); err != nil {
-			return unmarshalErrorf("unmarshal map value: %v", err)
+		if err := decInt64(valData, &v); err != nil {
+			return wrapUnmarshalErrorf(err, "unmarshal map value")
 		}
 		m[string(keyData)] = v
 	}
@@ -1467,7 +1481,7 @@ func unmarshalMapStringInt32(data []byte, dest *map[string]int32) error {
 		data = data[c:]
 		var v int32
 		if err := cqlint.DecInt32(valData, &v); err != nil {
-			return unmarshalErrorf("unmarshal map value: %v", err)
+			return wrapUnmarshalErrorf(err, "unmarshal map value")
 		}
 		m[string(keyData)] = v
 	}
@@ -1498,7 +1512,7 @@ func unmarshalMapStringFloat64(data []byte, dest *map[string]float64) error {
 		data = data[c:]
 		var v float64
 		if err := double.DecFloat64(valData, &v); err != nil {
-			return unmarshalErrorf("unmarshal map value: %v", err)
+			return wrapUnmarshalErrorf(err, "unmarshal map value")
 		}
 		m[string(keyData)] = v
 	}
@@ -1529,7 +1543,7 @@ func unmarshalMapStringBool(data []byte, dest *map[string]bool) error {
 		data = data[c:]
 		var v bool
 		if err := boolean.DecBool(valData, &v); err != nil {
-			return unmarshalErrorf("unmarshal map value: %v", err)
+			return wrapUnmarshalErrorf(err, "unmarshal map value")
 		}
 		m[string(keyData)] = v
 	}
@@ -1537,7 +1551,7 @@ func unmarshalMapStringBool(data []byte, dest *map[string]bool) error {
 	return nil
 }
 
-func unmarshalMapInt64String(data []byte, dest *map[int64]string) error {
+func unmarshalMapInt64String(data []byte, dest *map[int64]string, decInt64Key func([]byte, *int64) error) error {
 	n, p, err := readCollectionSize(data)
 	if err != nil {
 		return err
@@ -1554,8 +1568,8 @@ func unmarshalMapInt64String(data []byte, dest *map[int64]string) error {
 		}
 		data = data[c:]
 		var k int64
-		if err := bigint.DecInt64(keyData, &k); err != nil {
-			return unmarshalErrorf("unmarshal map key: %v", err)
+		if err := decInt64Key(keyData, &k); err != nil {
+			return wrapUnmarshalErrorf(err, "unmarshal map key")
 		}
 		valData, c, err := readMapEntryData(data)
 		if err != nil {
@@ -1568,7 +1582,7 @@ func unmarshalMapInt64String(data []byte, dest *map[int64]string) error {
 	return nil
 }
 
-func unmarshalMapInt64Int64(data []byte, dest *map[int64]int64) error {
+func unmarshalMapInt64Int64(data []byte, dest *map[int64]int64, decInt64Key, decInt64Val func([]byte, *int64) error) error {
 	n, p, err := readCollectionSize(data)
 	if err != nil {
 		return err
@@ -1585,8 +1599,8 @@ func unmarshalMapInt64Int64(data []byte, dest *map[int64]int64) error {
 		}
 		data = data[c:]
 		var k int64
-		if err := bigint.DecInt64(keyData, &k); err != nil {
-			return unmarshalErrorf("unmarshal map key: %v", err)
+		if err := decInt64Key(keyData, &k); err != nil {
+			return wrapUnmarshalErrorf(err, "unmarshal map key")
 		}
 		valData, c, err := readMapEntryData(data)
 		if err != nil {
@@ -1594,8 +1608,8 @@ func unmarshalMapInt64Int64(data []byte, dest *map[int64]int64) error {
 		}
 		data = data[c:]
 		var v int64
-		if err := bigint.DecInt64(valData, &v); err != nil {
-			return unmarshalErrorf("unmarshal map value: %v", err)
+		if err := decInt64Val(valData, &v); err != nil {
+			return wrapUnmarshalErrorf(err, "unmarshal map value")
 		}
 		m[k] = v
 	}

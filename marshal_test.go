@@ -30,6 +30,7 @@ package gocql
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
@@ -1638,6 +1639,82 @@ func TestUnmarshalMapFastPath(t *testing.T) {
 		var m map[string]string
 		if err := Unmarshal(infoAscii, data, &m); err == nil {
 			t.Fatal("expected error unmarshaling invalid ascii, got nil")
+		}
+	})
+
+	t.Run("counter-typed value uses the counter decoder, not bigint", func(t *testing.T) {
+		infoSCounter := CollectionType{
+			NativeType: NativeType{proto: protoVersion4, typ: TypeMap},
+			Key:        NativeType{proto: protoVersion4, typ: TypeVarchar},
+			Elem:       NativeType{proto: protoVersion4, typ: TypeCounter},
+		}
+		// Correctness: counter values decode the same 8-byte big-endian layout as bigint.
+		data := buildMapBytes(1,
+			func(i int) []byte { return []byte("c") },
+			func(i int) []byte { return int64Bytes(42) },
+		)
+		var m map[string]int64
+		if err := unmarshalMap(infoSCounter, data, &m); err != nil {
+			t.Fatal(err)
+		}
+		if m["c"] != 42 {
+			t.Fatalf("got %v, want map[c:42]", m)
+		}
+
+		// Error message should identify the actual (counter) type, not bigint,
+		// so the fast path must dispatch to counter.DecInt64.
+		badData := buildMapBytes(1,
+			func(i int) []byte { return []byte("c") },
+			func(i int) []byte { return []byte{1, 2, 3, 4} }, // invalid length for int64
+		)
+		err := unmarshalMap(infoSCounter, badData, &m)
+		if err == nil {
+			t.Fatal("expected error for malformed counter value")
+		}
+		if strings.Contains(err.Error(), "bigint") || !strings.Contains(err.Error(), "counter") {
+			t.Fatalf("expected counter-specific error, got: %v", err)
+		}
+	})
+
+	t.Run("counter-typed key uses the counter decoder, not bigint", func(t *testing.T) {
+		infoCounterKey := CollectionType{
+			NativeType: NativeType{proto: protoVersion4, typ: TypeMap},
+			Key:        NativeType{proto: protoVersion4, typ: TypeCounter},
+			Elem:       NativeType{proto: protoVersion4, typ: TypeCounter},
+		}
+		badData := buildMapBytes(1,
+			func(i int) []byte { return []byte{1, 2, 3, 4} }, // invalid length for int64
+			func(i int) []byte { return int64Bytes(1) },
+		)
+		var m map[int64]int64
+		err := unmarshalMap(infoCounterKey, badData, &m)
+		if err == nil {
+			t.Fatal("expected error for malformed counter key")
+		}
+		if strings.Contains(err.Error(), "bigint") || !strings.Contains(err.Error(), "counter") {
+			t.Fatalf("expected counter-specific error, got: %v", err)
+		}
+	})
+
+	t.Run("fast-path decode error preserves the underlying cause", func(t *testing.T) {
+		data := buildMapBytes(1,
+			func(i int) []byte { return []byte("key") },
+			func(i int) []byte { return []byte{1, 2, 3, 4} }, // invalid length for int64
+		)
+		var m map[string]int64
+		err := unmarshalMap(infoSI, data, &m)
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		ue, ok := err.(UnmarshalError)
+		if !ok {
+			t.Fatalf("expected UnmarshalError, got %T", err)
+		}
+		if ue.Cause() == nil {
+			t.Fatal("expected Cause() to preserve the underlying decode error, got nil")
+		}
+		if errors.Unwrap(err) == nil {
+			t.Fatal("expected errors.Unwrap to reach the underlying decode error, got nil")
 		}
 	})
 }
