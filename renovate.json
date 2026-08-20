@@ -3,5 +3,19 @@
   "extends": [
     "config:recommended"
   ],
-  "prConcurrentLimit": 2
+  "prConcurrentLimit": 2,
+  "postUpdateOptions": [
+    "gomodTidy"
+  ],
+  "packageRules": [
+    {
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchDepTypes": [
+        "indirect"
+      ],
+      "enabled": true
+    }
+  ]
 }
