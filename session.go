@@ -3400,20 +3400,26 @@ func (n *nextIter) fetch() *Iter {
 	n.once.Do(func() {
 		n.mu.Lock()
 		qry := n.qry
-		metrics := n.metrics
-		if metrics != nil {
-			metrics.retain()
+		// n.metrics is set only in the shared-metrics case; take a temporary
+		// ref so it survives a concurrent close()/release() during the fetch.
+		sharedMetrics := n.metrics
+		if sharedMetrics != nil {
+			sharedMetrics.retain()
 		}
 		n.mu.Unlock()
 		if qry == nil {
-			if metrics != nil {
-				metrics.release()
+			if sharedMetrics != nil {
+				sharedMetrics.release()
 			}
 			return
 		}
-		if metrics != nil {
-			defer metrics.release()
+		if sharedMetrics != nil {
+			defer sharedMetrics.release()
 		}
+
+		// Always execute with qry.metrics, not n.metrics: in the pooled/owned
+		// case n.metrics is nil, but qry.metrics is never nil.
+		metrics := qry.metrics
 
 		// if the query was specifically run on a connection then re-use that
 		// connection when fetching the next results

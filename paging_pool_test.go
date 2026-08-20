@@ -413,6 +413,35 @@ func TestNewNextIterWithPageStateRetainsSharedMetrics(t *testing.T) {
 	}
 }
 
+// TestNextIterFetchUsesQueryMetricsNotNextIterMetrics guards against fetch()
+// passing n.metrics (nil in the pooled/owned case) to executeQueryWithMetrics
+// instead of qry.metrics (never nil). Every other call site into
+// queryExecutor.executeQuery relies on a non-nil metrics argument, so a nil
+// here would panic in the speculative-execution path; a closed Session just
+// makes that observable early without a full connection.
+func TestNextIterFetchUsesQueryMetricsNotNextIterMetrics(t *testing.T) {
+	parent := &Query{
+		stmt:        "SELECT * FROM tbl",
+		session:     &Session{}, // zero-value: not Ready(), so executeQueryWithMetrics short-circuits before touching a connection.
+		routingInfo: &queryRoutingInfo{},
+		metrics:     newQueryMetrics(),
+		context:     context.Background(),
+	}
+
+	ni := newNextIterWithPageState(parent, nil, []byte("page"), 1)
+	if ni.metrics != nil {
+		t.Fatalf("expected nextIter.metrics to stay nil in the owned/pooled case, got %p", ni.metrics)
+	}
+	if ni.qry.metrics == nil {
+		t.Fatal("expected qry.metrics to be non-nil in the owned/pooled case")
+	}
+
+	iter := ni.fetch()
+	if iter == nil || iter.err == nil {
+		t.Fatalf("expected a non-nil error without a panic, got iter=%v", iter)
+	}
+}
+
 // Single-host queryMetrics inline/lazy-map behavior (recordHostAdjustment,
 // preFilledQueryMetrics, and their benchmarks) is already covered on master —
 // see TestQueryMetricsRecordHostAdjustmentTracksTotalsAndHosts and
