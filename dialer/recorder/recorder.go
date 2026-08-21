@@ -79,6 +79,7 @@ func NewConnectionRecorder(fname string, conn net.Conn, comp dialer.SegmentCompr
 	}
 	fd_reads, err2 := os.OpenFile(fname+"Reads", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err2 != nil {
+		fd_writes.Close()
 		return nil, err2
 	}
 	// Both directions share one Framing: the handshake fact that switches them to
@@ -211,7 +212,11 @@ func (c *ConnectionRecorder) Read(b []byte) (n int, err error) {
 	if recErr := c.read_record.Write(b, n, c.fd_reads); recErr != nil {
 		return n, c.fail(recErr)
 	}
-	return n, nil
+	// err is nil or io.EOF here, and io.EOF must reach the caller: swallowed, a
+	// server-closed connection reads as (0, nil) forever, which the driver's
+	// io.ReadFull treats as no progress and spins on at full speed, never noticing
+	// the connection died.
+	return n, err
 }
 
 // Write records the frames in b, then forwards them to the wrapped connection.

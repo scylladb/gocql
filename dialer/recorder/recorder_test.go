@@ -91,6 +91,29 @@ func recordedFrames(t *testing.T, fname string) []dialer.Record {
 	return records
 }
 
+// TestConnectionRecorderPropagatesEOF pins that a server-closed connection reports
+// io.EOF. The recorder must record on EOF too -- a final read can carry data -- but
+// it used to return the recording step's error in its place, which is nil, so a dead
+// connection read as (0, nil) forever: the driver reads through io.ReadFull, which
+// loops while err is nil, and spun at full speed instead of tearing the
+// connection down.
+func TestConnectionRecorderPropagatesEOF(t *testing.T) {
+	response := optionsFrame(0x84)
+	rec, err := NewConnectionRecorder(filepath.Join(t.TempDir(), "conn"), &stubConn{readData: response}, nil)
+	if err != nil {
+		t.Fatalf("NewConnectionRecorder: %v", err)
+	}
+	defer rec.Close()
+
+	buf := make([]byte, len(response))
+	if n, err := rec.Read(buf); err != nil || n != len(response) {
+		t.Fatalf("Read = (%d, %v), want (%d, nil)", n, err, len(response))
+	}
+	if _, err := rec.Read(buf); err != io.EOF {
+		t.Fatalf("Read at end of stream = %v, want io.EOF", err)
+	}
+}
+
 // TestConnectionRecorderCloseReportsATruncatedStream pins that a stream ending in
 // the middle of a frame is reported at Close. On disk that recording looks complete,
 // and at load time the loss surfaces only as an unpaired stream or an unmatched
