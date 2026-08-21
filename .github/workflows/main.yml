@@ -57,10 +57,49 @@ jobs:
 
       - run: sudo sh -c "echo 2097152 >> /proc/sys/fs/aio-max-nr"
 
+  # Every other job here is x86-only. pierrec/lz4 ships hand-written
+  # per-architecture decode assembly (internal/lz4block/decode_arm64.s), so the
+  # code behind LZ4Compressor.Decode and AppendDecompressed -- and therefore
+  # behind every compressed native-protocol-v5 segment on a Graviton or
+  # Apple-silicon deployment -- had no gate at all. The last two bumps of that
+  # dependency both reworked exactly that file.
+  #
+  # Only `make test-unit` runs here, not `make check`: check is golangci-lint
+  # plus `go mod tidy -diff`, both architecture-independent, and running it
+  # again would only re-download an arm64 golangci-lint to repeat the amd64
+  # result. test-unit already descends into the nested lz4 module (see its
+  # recipe in the Makefile), so the assembly above needs no separate step.
+  build-arm64:
+    name: Build (arm64)
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # No actions/cache step, deliberately: the other jobs' key is
+      # pr-check-${{ runner.os }}-... and runner.os is "Linux" on both
+      # architectures, so sharing it would restore amd64 binaries into bin/.
+      # Nothing this job needs is expensive to recreate -- setup-go caches
+      # modules under its own arch-scoped key, and test-unit's .prepare-pki
+      # prerequisite regenerates the test certificates in seconds.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            lz4/go.sum
+            tests/bench/go.sum
+            go.sum
+
+      - name: Run unit tests
+        run: make test-unit
+
   test-integration-scylla:
     name: Integration Tests On Scylla
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, build-arm64]
     strategy:
       matrix:
         scylla-version: [LATEST, PRIOR, LTS-LATEST, LTS-PRIOR]
@@ -129,7 +168,7 @@ jobs:
   test-integration-cassandra:
     name: Integration Tests On Cassandra
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, build-arm64]
     strategy:
       matrix:
         cassandra-version: [5-LATEST, 4-LATEST]
