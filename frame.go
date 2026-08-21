@@ -213,7 +213,7 @@ func readInt(p []byte) int32 {
 	return int32(binary.BigEndian.Uint32(p[:4]))
 }
 
-const defaultBufSize = 128
+const defaultBufSize = 4096
 
 type ObservedFrameHeader struct {
 	// StartHeader is the time we started reading the frame header off the network connection.
@@ -275,6 +275,7 @@ const headSize = 9
 // a framer is responsible for reading, writing and parsing frames on a single stream
 type framer struct {
 	compressor    Compressor
+	compressorBuf CompressorWithBuffer // cached type assertion, nil if not supported
 	header        *frm.FrameHeader
 	customPayload map[string][]byte
 	release       func()
@@ -286,6 +287,7 @@ type framer struct {
 	// framer reused for consecutive v5 requests keeps both the raw-frame buffer
 	// and the wire buffer alive instead of allocating a new one per request.
 	wireBuf               []byte
+	decompressBuf         []byte // reusable buffer for decompression output
 	flagLWT               int
 	rateLimitingErrorCode int
 	flags                 byte
@@ -325,6 +327,7 @@ func newFramer(compressor Compressor, version byte) *framer {
 
 	version &= protoVersionMask
 	f.compressor = compressor
+	f.compressorBuf, _ = compressor.(CompressorWithBuffer)
 	f.proto = version
 	f.flags = flags
 	f.header = nil
@@ -450,7 +453,12 @@ func (f *framer) readFrame(r io.Reader, head *frm.FrameHeader) error {
 			return NewErrProtocol("no compressor available with compressed frame body")
 		}
 
-		f.buf, err = f.compressor.Decode(f.buf)
+		if f.compressorBuf != nil {
+			f.decompressBuf, err = f.compressorBuf.DecodeInto(f.buf, f.decompressBuf)
+			f.buf = f.decompressBuf
+		} else {
+			f.buf, err = f.compressor.Decode(f.buf)
+		}
 		if err != nil {
 			return err
 		}
