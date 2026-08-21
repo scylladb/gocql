@@ -84,8 +84,8 @@ func v5Conversation(compression string) []exchange {
 		{request: v5Frame(0x0F, false, 0x0080, []byte{0x00, 0x00, 0x00, 0x02, 0x01, 0x02}), response: v5Frame(0x10, true, 0x0080, nil), segmented: true},
 		{request: v5Frame(0x09, false, 0x00C0, []byte{0x00, 0x00, 0x00, 0x03, 'a', 'b', 'c'}), response: v5Frame(0x08, true, 0x00C0, []byte{0x00, 0x00, 0x00, 0x01}), segmented: true},
 
-		// An EXECUTE (a v5 QUERY is refused by name until scylladb/gocql#1000) whose
-		// response is far larger than one segment can carry, so the chain path runs.
+		// An EXECUTE whose response is far larger than one segment can carry, so the
+		// chain path runs.
 		{request: v5Frame(0x0A, false, 0x0100, []byte{
 			0x00, 0x02, 'h', 'i', // preparedID, [short bytes]
 			0x00, 0x00, // resultMetadataID, empty [short bytes]

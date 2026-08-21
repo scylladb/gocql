@@ -369,21 +369,6 @@ func (c *ConnectionReplayer) matchRequest(frame []byte) error {
 		return err
 	}
 
-	// KNOWN GAP, tracked in scylladb/gocql#1000 and refused by name here: every
-	// QUERY hashes alike, because GetFrameHash hands the parameter walk the body
-	// start rather than the position past the query text, and on protocol v5 the
-	// misaligned walk falls back to hashing the whole frame -- default timestamp
-	// included -- so a v5 QUERY can never match its recording. Falling through would
-	// surface that as the anonymous panic below. Delete this when #1000 lands.
-	//
-	// A panic for the same reason as that one, and unlike the two checks above: those
-	// fire on the handshake, where the error comes back out of the dial, while a QUERY
-	// arrives mid-session, where an error is a connection failure the driver answers by
-	// reconnecting and replaying the same recording into the same refusal.
-	if dialer.FrameIsProtoV5OrNewer(frame) && dialer.FrameIsQuery(frame) {
-		panic(fmt.Errorf("gocql/dialer: cannot replay a protocol v5 QUERY: its hash cannot match any recording until scylladb/gocql#1000 is fixed"))
-	}
-
 	if !c.useMetadataID && dialer.StartupNegotiatesMetadataID(frame) {
 		c.useMetadataID = true
 	}
@@ -517,11 +502,15 @@ func loadResponseFramesFromFiles(read_file, write_file string) ([]*FrameRecorded
 	)
 
 	// Pair by stream id in sorted order, not in map order. matchRequest scans frames
-	// for the first hash that matches and hashes do collide -- #1000 makes every QUERY
-	// collide, and addCustomPayload documents another -- so this slice's order decides
-	// which response a colliding request is served. Ranging a map made that decision
-	// afresh on every run of the same binary, which is not something a replay benchmark
-	// or a fixture failure can be reproduced from.
+	// for the first hash that matches, so were two ever to collide, this slice's order
+	// would decide which response the colliding request is served.
+	//
+	// No checked-in recording holds such a pair -- TestCheckedInRecordingsStillLoad
+	// asserts the hashes are distinct -- and the shapes that used to collide are fixed
+	// rather than merely rare. This is not a live defect being worked around: it is
+	// that a 64-bit hash of caller-supplied bytes cannot be promised never to collide,
+	// and ranging a map made the choice afresh on every run of the same binary, which
+	// is not something a replay benchmark or a fixture failure can be reproduced from.
 	paired := make([]int, 0, len(read_records))
 	for streamID := range read_records {
 		if _, exists := write_records[streamID]; exists {

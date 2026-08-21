@@ -44,18 +44,6 @@ func FrameIsProtoV5OrNewer(b []byte) bool {
 	return FrameProtoVersion(b) >= protoVersion5
 }
 
-// FrameIsQuery reports whether b starts a QUERY request.
-//
-// The opcode's offset comes from headerShift rather than a constant of its own, so a
-// caller cannot drift from the parsers here when #1022 changes what v1/v2 looks like.
-func FrameIsQuery(b []byte) bool {
-	if len(b) == 0 {
-		return false
-	}
-	i := 3 + headerShift(b)
-	return i < len(b) && frameOp(b[i]) == opQuery
-}
-
 type Record struct {
 	Data     []byte `json:"data"`
 	StreamID int    `json:"stream_id"`
@@ -610,11 +598,17 @@ func GetFrameHash(frame []byte, useMetadataID bool) int64 {
 	// choice: they run before, or on frames too short to contain, the stream id they
 	// would have to blank.
 	//
-	// One known gap, tracked rather than papered over: every QUERY frame hashes
-	// alike, because the parameter walk is handed the body start instead of the
-	// position past the query text (scylladb/gocql#1000). On v5 that costs replay
-	// outright, since the failed walk falls back to hashing the frame whole, default
-	// timestamp included.
+	// The arms below answer to those two requirements in three shapes, not one. QUERY,
+	// EXECUTE and BATCH extract a range: it starts at the body and stops where the
+	// per-run fields begin, because a request's identity is its statement and its bound
+	// values — the query text or the prepared id, the values, and the parameters that
+	// change what the statement means — while the default timestamp is time.Now() at
+	// send and never in the hash.
+	//
+	// STARTUP hashes the header down to the opcode and deliberately stops before the
+	// body length, for the reason its own comment gives. PREPARE, AUTH_RESPONSE,
+	// OPTIONS, REGISTER and the unknown-opcode default hash the frame whole, header
+	// included, with the blanked stream id as the only edit.
 	if len(frame) == 0 {
 		return murmur.Murmur3H1(frame)
 	}
@@ -669,26 +663,20 @@ func GetFrameHash(frame []byte, useMetadataID bool) int64 {
 			}
 		}
 
-		// KNOWN BUG, deferred to scylladb/gocql#1000: addQueryParams wants the
-		// consistency field, but a QUERY body is the query text as a [long string]
-		// followed by the query parameters, so what it is handed here is the text's
-		// 4-byte length. It reads the length's first two bytes as the consistency and
-		// the third as the flags, which are 0x00 0x00 0x00 for every query shorter than
-		// 16 MiB, so the walk stops at once and every QUERY frame hashes those same
-		// three zero bytes — the query text and the bound values fall outside the
-		// hashed range entirely.
+		// A QUERY body is the query text as a [long string] followed by the query
+		// parameters, so the parameter walk starts past the text — symmetric with the
+		// EXECUTE arm, which steps over its preparedID and resultMetadataID first, and
+		// with the BATCH arm, which steps over its statements.
 		//
-		// It is not fixed here because the correct offset makes the checked-in
-		// recordings in tests/bench unmatchable: their control-connection query text
-		// predates the explicit column list the driver sends today, and only the
-		// collision hides that. Regenerating them needs a live node, so both go
-		// together in #1000.
-		//
-		// The consequence for protocol v5 is worse than a collision and is called out
-		// in #1000: the 4-byte v5 flags field makes the misaligned walk fail a bounds
-		// check, falling back to hashing the whole frame — default timestamp included —
-		// so a v5 QUERY cannot match its recording. v5 EXECUTE is unaffected.
-		return hashParams(frame, index, index)
+		// The hashed range still starts at index, so it covers the text and the values
+		// as well as the parameters: the range is what identifies the request, and the
+		// walk only has to find where it ends.
+		paramsStart, ok := addLongString(frame, index)
+		if !ok {
+			return murmur.Murmur3H1(frame)
+		}
+
+		return hashParams(frame, index, paramsStart)
 	case byte(opExecute):
 		var ok bool
 		index := addHeader(p)

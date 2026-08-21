@@ -69,41 +69,6 @@ func TestConnectionReplayerReplaysUnsegmentedProtoV5(t *testing.T) {
 	}
 }
 
-// TestConnectionReplayerRefusesAProtoV5Query pins that the one request the hashing
-// cannot yet locate on protocol v5 is refused by name, rather than surfacing as the
-// anonymous unable-to-find-a-response panic (scylladb/gocql#1000).
-//
-// It panics like that one, and for the same reason: a QUERY arrives mid-session,
-// where a returned error is a connection failure the driver answers by reconnecting
-// and replaying the same recording into the same refusal, reporting it far from the
-// cause if at all.
-func TestConnectionReplayerRefusesAProtoV5Query(t *testing.T) {
-	query := []byte{
-		0x05, 0x00, // version, flags
-		0x00, 0x01, // stream id
-		0x07,                   // opQuery
-		0x00, 0x00, 0x00, 0x00, // body length
-	}
-	c := newTestReplayer(0x05)
-
-	defer func() {
-		r := recover()
-		if r == nil {
-			t.Error("a protocol v5 QUERY was accepted for replay")
-			return
-		}
-		err, ok := r.(error)
-		if !ok {
-			t.Fatalf("panic value %v is not an error", r)
-		}
-		if !strings.Contains(err.Error(), "QUERY") || !strings.Contains(err.Error(), "#1000") {
-			t.Errorf("panic %q does not name QUERY and scylladb/gocql#1000", err)
-		}
-	}()
-
-	_, _ = c.Write(query)
-}
-
 // TestConnectionReplayerRejectsAProtocolMismatch pins that replaying a recording at
 // the wrong protocol version says so, rather than serving responses the driver rejects
 // deep inside its own header parsing.
