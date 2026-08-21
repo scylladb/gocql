@@ -1838,6 +1838,7 @@ func TestCloneQueryAccountsForEveryField(t *testing.T) {
 		"idempotent":                 {},
 		"skipPrepare":                {},
 		"disableSkipMetadata":        {},
+		"disableCompression":         {},
 		"defaultTimestamp":           {},
 	}
 	speciallyHandled := map[string]struct{}{
