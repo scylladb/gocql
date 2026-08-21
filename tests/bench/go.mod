@@ -3,7 +3,7 @@ module github.com/gocql/gocql/bench_test
 go 1.25.0
 
 require (
-	github.com/brianvoe/gofakeit/v6 v6.28.0
+	github.com/brianvoe/gofakeit/v7 v7.16.0
 	github.com/gocql/gocql v1.7.0
 )
 
