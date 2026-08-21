@@ -1854,17 +1854,6 @@ func marshalVector(info VectorType, value any) ([]byte, error) {
 	return nil, marshalErrorf("can not marshal %T into %s. Accepted types: slice, array.", value, info)
 }
 
-// vectorSliceReuse reuses *dst's backing array when cap is sufficient.
-func vectorSliceReuse[T any](dst *[]T, dim int) []T {
-	vec := *dst
-	if cap(vec) >= dim {
-		vec = vec[:dim]
-	} else {
-		vec = make([]T, dim)
-	}
-	return vec
-}
-
 // marshalVectorFloat64 encodes []float64 as contiguous big-endian IEEE 754 doubles.
 func marshalVectorFloat64(vec []float64, dim int) ([]byte, error) {
 	size, err := vectorByteSize(dim, 8)
@@ -1931,7 +1920,10 @@ func unmarshalVector(info VectorType, data []byte, value any) error {
 				if len(data) != expected {
 					return unmarshalErrorf("unmarshal vector<double>: expected %d bytes, got %d", expected, len(data))
 				}
-				vec := vectorSliceReuse(dst, dim)
+				// Always allocate fresh: reusing *dst's backing array would
+				// alias a result the caller retained from an earlier decode
+				// (Iter.Scan gives no "valid until next Scan" guarantee).
+				vec := make([]float64, dim)
 				unmarshalVectorFloat64(data, vec)
 				*dst = vec
 				return nil
@@ -1942,7 +1934,7 @@ func unmarshalVector(info VectorType, data []byte, value any) error {
 				if len(data) != expected {
 					return unmarshalErrorf("unmarshal vector<float>: expected %d bytes, got %d", expected, len(data))
 				}
-				vec := vectorSliceReuse(dst, dim)
+				vec := make([]float32, dim)
 				unmarshalVectorFloat32(data, vec)
 				*dst = vec
 				return nil
