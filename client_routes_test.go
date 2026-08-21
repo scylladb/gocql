@@ -52,6 +52,11 @@ func TestGetHostPortMapping(t *testing.T) {
 		connectionIDs = append(connectionIDs, MustRandomUUID().String())
 	}
 
+	// These rows are read back below through session.control, and controlConn.query
+	// pins every query it issues to Consistency(One). The session default is Quorum,
+	// which acks once 2 of the 3 replicas have the row -- so a ONE read can be served
+	// by the third replica before it has been written, and rows go missing. Write the
+	// fixture at All so the read cannot outrun replication.
 	racks := []string{"rack1", "rack2", "rack3"}
 	var expected []clientRoute
 	var expectedTLS []clientRoute
@@ -64,7 +69,7 @@ func TestGetHostPortMapping(t *testing.T) {
                                             connection_id, host_id, Address, port, tls_port, alternator_port, alternator_https_port, Datacenter, Rack)
 						VALUES (?, ?, ?, 9042, 9142, 0, 0, 'dc1', ?);`, qualifiedTable),
 				connectionID, hostID, ip.String(), rack,
-			).Exec()
+			).Consistency(All).Exec()
 			if err != nil {
 				t.Fatalf("unable to insert connection metadata: %s", err.Error())
 			}
