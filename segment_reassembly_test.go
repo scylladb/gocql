@@ -33,6 +33,7 @@ import (
 	"time"
 
 	frm "github.com/gocql/gocql/internal/frame"
+	"github.com/gocql/gocql/internal/segment"
 	"github.com/gocql/gocql/internal/streams"
 )
 
@@ -130,7 +131,7 @@ func TestRecvSplitFrameRejectsOverlongStream(t *testing.T) {
 // invisible in the output but double or triple the memory a single large response
 // occupies.
 func TestRecvSplitFrameAllocatesExactlyOneFrameBuffer(t *testing.T) {
-	const bodyLen = 3 * maxSegmentPayloadSize
+	const bodyLen = 3 * segment.MaxPayloadSize
 
 	// Enough streams to also let the framer pool warm up.
 	const runs = 4
@@ -147,7 +148,7 @@ func TestRecvSplitFrameAllocatesExactlyOneFrameBuffer(t *testing.T) {
 
 	var stream []byte
 	for src := frame; len(src) > 0; {
-		n := min(len(src), maxSegmentPayloadSize)
+		n := min(len(src), segment.MaxPayloadSize)
 		stream = append(stream, mustUncompressedSegment(t, src[:n], false)...)
 		src = src[n:]
 	}
@@ -180,16 +181,16 @@ func TestRecvSplitFrameAllocatesExactlyOneFrameBuffer(t *testing.T) {
 }
 
 // TestRecvSplitFrameRejectsOversizedLength drives recvSplitFrame with a CQL
-// frame header declaring a body length beyond maxFrameSize. The declared
+// frame header declaring a body length beyond frm.MaxFrameSize. The declared
 // length is rejected before any large allocation and before processFrame.
 func TestRecvSplitFrameRejectsOversizedLength(t *testing.T) {
 	// Build a 9-byte CQL frame header (v5 response) whose length field is
-	// maxFrameSize+1, then wrap it in a single non-self-contained segment.
+	// frm.MaxFrameSize+1, then wrap it in a single non-self-contained segment.
 	header := make([]byte, 9)
 	header[0] = protoVersion5 | protoDirectionMask // version (response)
 	header[1] = 0                                  // flags
 	// header[2:4] stream, header[4] opcode left zero
-	oversized := uint32(maxFrameSize + 1)
+	oversized := uint32(frm.MaxFrameSize + 1)
 	header[5] = byte(oversized >> 24)
 	header[6] = byte(oversized >> 16)
 	header[7] = byte(oversized >> 8)
@@ -244,7 +245,7 @@ func v5ReadyFrame(bodyLen int, body []byte) []byte {
 // discovers the short read, and the io.ErrUnexpectedEOF that follows is not a
 // net.Error, so processFrameSource would keep it per-request and leave the
 // connection up for the peer to do it again. A ~20-byte segment would buy a
-// maxFrameSize allocation, repeatable.
+// frm.MaxFrameSize allocation, repeatable.
 func TestProcessAllFramesInSegmentBoundsFrameLength(t *testing.T) {
 	newConn := func(stream []byte) *Conn {
 		c := &Conn{
@@ -256,7 +257,7 @@ func TestProcessAllFramesInSegmentBoundsFrameLength(t *testing.T) {
 		return c
 	}
 
-	// Well below maxFrameSize, but far enough above the segment that the budget
+	// Well below frm.MaxFrameSize, but far enough above the segment that the budget
 	// below cannot be met by accident if the bound is removed.
 	const declared = 32 << 20
 
