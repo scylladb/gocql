@@ -575,11 +575,11 @@ func GetFrameHash(frame []byte, useMetadataID bool) int64 {
 	// choice: they run before, or on frames too short to contain, the stream id they
 	// would have to blank.
 	//
-	// One known gap, tracked rather than papered over: every QUERY frame hashes
-	// alike, because the parameter walk is handed the body start instead of the
-	// position past the query text (scylladb/gocql#1000). On v5 that costs replay
-	// outright, since the failed walk falls back to hashing the frame whole, default
-	// timestamp included.
+	// The ranges the arms below extract answer to those two requirements the same way
+	// throughout: they start at the body and stop where the per-run fields begin. A
+	// request's identity is its statement and its bound values — the query text or the
+	// prepared id, the values, and the parameters that change what the statement means
+	// — while the default timestamp is time.Now() at send and never in the hash.
 	if len(frame) == 0 {
 		return murmur.Murmur3H1(frame)
 	}
@@ -634,26 +634,18 @@ func GetFrameHash(frame []byte, useMetadataID bool) int64 {
 			}
 		}
 
-		// KNOWN BUG, deferred to scylladb/gocql#1000: addQueryParams wants the
-		// consistency field, but a QUERY body is the query text as a [long string]
-		// followed by the query parameters, so what it is handed here is the text's
-		// 4-byte length. It reads the length's first two bytes as the consistency and
-		// the third as the flags, which are 0x00 0x00 0x00 for every query shorter than
-		// 16 MiB, so the walk stops at once and every QUERY frame hashes those same
-		// three zero bytes — the query text and the bound values fall outside the
-		// hashed range entirely.
+		// A QUERY body is the query text as a [long string] followed by the query
+		// parameters, so the parameter walk starts past the text — symmetric with the
+		// EXECUTE arm, which steps over its preparedID and resultMetadataID first, and
+		// with the BATCH arm, which steps over its statements.
 		//
-		// It is not fixed here because the correct offset makes the checked-in
-		// recordings in tests/bench unmatchable: their control-connection query text
-		// predates the explicit column list the driver sends today, and only the
-		// collision hides that. Regenerating them needs a live node, so both go
-		// together in #1000.
-		//
-		// The consequence for protocol v5 is worse than a collision and is called out
-		// in #1000: the 4-byte v5 flags field makes the misaligned walk fail a bounds
-		// check, falling back to hashing the whole frame — default timestamp included —
-		// so a v5 QUERY cannot match its recording. v5 EXECUTE is unaffected.
-		paramsStart := index
+		// The hashed range still starts at index, so it covers the text and the values
+		// as well as the parameters: the range is what identifies the request, and the
+		// walk only has to find where it ends.
+		paramsStart, ok := addLongString(frame, index)
+		if !ok {
+			return murmur.Murmur3H1(frame)
+		}
 
 		endIndex, tailStart, tailEnd, ok := addQueryParams(frame, paramsStart)
 		if !ok {

@@ -466,7 +466,18 @@ func TestGetFrameHashBoundsTruncatedBody(t *testing.T) {
 		},
 		{
 			name:  "query frame truncated at the flags",
-			frame: frameV4(opQuery, 0x00, []byte{0x00, 0x01}),
+			frame: frameV4(opQuery, 0x00, append(longString("SELECT * FROM t"), 0x00, 0x01)),
+		},
+		{
+			// The query text's own [long string] length field is incomplete, so the
+			// parameters cannot be located at all.
+			name:  "query text length truncated",
+			frame: frameV4(opQuery, 0x00, []byte{0x00, 0x00, 0x00}),
+		},
+		{
+			// The length parses but announces more text than the frame holds.
+			name:  "query text length overruns",
+			frame: frameV4(opQuery, 0x00, append([]byte{0x7F, 0xFF, 0xFF, 0xFF}, "SELECT * FROM t"...)),
 		},
 		{
 			// The custom-payload header flag sends the parser through
@@ -492,9 +503,11 @@ func TestGetFrameHashBoundsTruncatedBody(t *testing.T) {
 	}
 
 	// A control: bounding the walk must not turn a frame that parses into a
-	// fallback. The opQuery branch reads the body as query params from offset 9.
+	// fallback. The opQuery branch hashes from the body start through the end of the
+	// query parameters, so a QUERY whose flags announce no optional field hashes its
+	// whole body — query text included.
 	t.Run("well-formed query still parses", func(t *testing.T) {
-		frame := frameV4(opQuery, 0x00, []byte{0x00, 0x01, 0x00})
+		frame := frameV4(opQuery, 0x00, queryBody("SELECT * FROM t", 0x00))
 
 		got := GetFrameHash(frame, false)
 		if want := murmur.Murmur3H1(frame[9:]); got != want {

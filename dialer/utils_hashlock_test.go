@@ -130,6 +130,15 @@ func hashLockCases() []hashLockCase {
 		{name: "query-named-values", frame: frameV4(opQuery, 0x00, queryBody("SELECT v FROM t WHERE pk = :pk", 0x01|0x40,
 			[]byte{0x00, 0x01}, shortString("pk"), bytesValue([]byte{0x2A})))},
 		{name: "query-custom-payload", frame: frameV4(opQuery, frm.FlagCustomPayload, customPayload())},
+		{name: "query-truncated-text-length", frame: frameV4(opQuery, 0x00, []byte{0x00, 0x00, 0x00})},
+		{name: "query-overstated-text-length", frame: frameV4(opQuery, 0x00,
+			append([]byte{0x7F, 0xFF, 0xFF, 0xFF}, "SELECT * FROM t"...))},
+
+		{name: "v5-query", frame: v5QueryFrame("SELECT * FROM t", 0)},
+		{name: "v5-query-values", frame: v5QueryFrame("SELECT v FROM t WHERE pk = ?", frm.FlagValues,
+			[]byte{0x00, 0x01}, bytesValue([]byte{0x2A}))},
+		{name: "v5-query-timestamp-and-keyspace", frame: v5QueryFrame("SELECT * FROM t",
+			frm.FlagDefaultTimestamp|frm.FlagWithKeyspace, timestamp8(111), shortString("ks"))},
 
 		{name: "execute-no-metadata-id", frame: v4ExecuteFrame(false)},
 		{name: "execute-metadata-id", frame: v4ExecuteFrame(true), useMetadataID: true},
@@ -199,22 +208,48 @@ var hashLockWant = map[string]int64{
 	"batch":                   -8625060010961602230,
 	"batch-default-timestamp": -8987577148391256339,
 
-	// Every QUERY case collapses to Murmur3H1({0x00, 0x00, 0x00}). That is the
-	// scylladb/gocql#1000 collision, pinned here as it stands rather than hidden:
-	// the parameter walk starts at the body start, so it hashes the top three bytes
-	// of the query text's length and nothing else. When #1000 is fixed these values
-	// move and become distinct, and that diff is the point of this table.
-	"query-bare":                    8779008611884021576,
-	"query-custom-payload":          8779008611884021576,
-	"query-default-timestamp":       8779008611884021576,
-	"query-named-values":            8779008611884021576,
-	"query-null-value":              8779008611884021576,
-	"query-page-size":               8779008611884021576,
-	"query-paging-state":            8779008611884021576,
-	"query-serial-consistency":      8779008611884021576,
-	"query-values":                  8779008611884021576,
-	"query-values-page-size-serial": 8779008611884021576,
-	"v2-query":                      8779008611884021576,
+	// Every QUERY value here moved when scylladb/gocql#1000 was fixed. Before it, all
+	// eleven were Murmur3H1({0x00, 0x00, 0x00}) = 8779008611884021576: the parameter
+	// walk was handed the body start rather than the position past the query text, so
+	// it hashed the top three bytes of the text's length — zero for any query under
+	// 16 MiB — and stopped. The checked-in recordings were regenerated in the same
+	// change, because their control-connection query text had been stale since
+	// b6a9682 and only the collision hid it.
+	//
+	// Three of these still coincide, and are meant to. query-bare, v2-query and
+	// query-custom-payload all hash 669594534933358966 because the range is measured
+	// from the body: the same statement and parameters hash alike across protocol
+	// versions, and a custom payload is connection metadata that the EXECUTE and BATCH
+	// arms leave out of the range too. Neither is a request the replayer has to tell
+	// apart from the other.
+	"query-bare":                    669594534933358966,
+	"query-custom-payload":          669594534933358966,
+	"query-default-timestamp":       -3958206948791604622,
+	"query-named-values":            1354821534699525939,
+	"query-null-value":              -7046978697175198898,
+	"query-page-size":               7395467639336959025,
+	"query-paging-state":            -7793657441845994096,
+	"query-serial-consistency":      -1672825478938872525,
+	"query-values":                  -2567259529754147462,
+	"query-values-page-size-serial": -6333038150028030013,
+	"v2-query":                      669594534933358966,
+
+	// A QUERY whose [long string] cannot be walked — its length field truncated, or
+	// announcing more bytes than the frame holds — is a damaged recording, so it falls
+	// back to the raw bytes with the stream id blanked, as the arm's other bounds
+	// failures do. Before #1000 neither reached a bound: the walk never looked at the
+	// length as a length.
+	"query-overstated-text-length": 7220702958000182124,
+	"query-truncated-text-length":  -9031940561743828789,
+
+	// The protocol v5 QUERY cases. Their whole point is that they parse at all: the
+	// misaligned walk read the v5 flags field across the text's length and the first
+	// two characters of the text, failed a bound, and fell back to hashing the frame
+	// whole — default timestamp included — so a v5 QUERY could never match its own
+	// replay. That was the QUERY half of scylladb/gocql#937.
+	"v5-query":                        -1459322207164818650,
+	"v5-query-timestamp-and-keyspace": 666526662632016432,
+	"v5-query-values":                 7314799553312446526,
 }
 
 // frameV5 builds a protocol v5 request frame. The header layout is v3+'s, so only
@@ -242,6 +277,19 @@ func v5ExecuteFrame(flags uint32, optional ...[]byte) []byte {
 		body = append(body, o...)
 	}
 	return frameV5(opExecute, 0x00, body)
+}
+
+// v5QueryFrame builds a protocol v5 QUERY frame whose query parameters carry exactly
+// the fields flags announces, in the order writeQueryParams emits them. The flags
+// field is four bytes wide on v5, which is what the misaligned walk used to trip on.
+func v5QueryFrame(query string, flags uint32, optional ...[]byte) []byte {
+	body := longString(query)
+	body = append(body, 0x00, 0x01) // consistency ONE
+	body = append(body, byte(flags>>24), byte(flags>>16), byte(flags>>8), byte(flags))
+	for _, o := range optional {
+		body = append(body, o...)
+	}
+	return frameV5(opQuery, 0x00, body)
 }
 
 // timestamp8 is an 8-byte default-timestamp field.
