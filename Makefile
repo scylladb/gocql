@@ -16,6 +16,15 @@ GET_VERSION_BIN = $(MAKEFILE_PATH)/bin/get-version
 TEST_CQL_PROTOCOL ?= 4
 TEST_COMPRESSOR ?= snappy
 TEST_OPTS ?=
+# go test's own -timeout for the Cassandra integration target. It cannot be set
+# through TEST_OPTS: TEST_OPTS is interpolated ahead of -timeout on the command
+# line, and the later flag wins, so a -timeout there is silently discarded.
+# Measured locally the suite lands anywhere between 280s and 470s depending on
+# what else the machine is doing -- the protocol version barely moves it -- so
+# the 10m default is only about 25% clear of the worst case. Overrunning it
+# panics with a goroutine dump instead of naming the failing test, which is a
+# bad way for a lane to fail, hence a knob to give a run more room.
+TEST_INTEGRATION_TIMEOUT ?= 10m
 TEST_INTEGRATION_TAGS ?= integration gocql_debug
 JVM_EXTRA_OPTS ?= -Dcassandra.test.fail_writes_ks=test -Dcassandra.custom_query_handler_class=org.apache.cassandra.cql3.CustomPayloadMirroringQueryHandler
 
@@ -325,8 +334,8 @@ test-integration-cassandra: cassandra-start
 		echo "Cassandra version ${CASSANDRA_VERSION} was not resolved"
 		exit 1
 	fi
-	echo "go test -v ${TEST_OPTS} -tags \"${TEST_INTEGRATION_TAGS}\" ${COVER_BUILD_ARGS} -timeout=10m . -args -distribution cassandra -runauth -gocql.timeout=60s -runssl -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$${CASSANDRA_VERSION_RESOLVED} -cluster=$$(ccm liveset) ${COVER_RUNTIME_ARGS}"
-	go test -v ${TEST_OPTS} -tags "${TEST_INTEGRATION_TAGS}" ${COVER_BUILD_ARGS} -timeout=10m . -args -distribution cassandra -runauth -gocql.timeout=60s -runssl -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$$(ccm node1 versionfrombuild) -cluster=$$(ccm liveset) ${COVER_RUNTIME_ARGS}
+	echo "go test -v ${TEST_OPTS} -tags \"${TEST_INTEGRATION_TAGS}\" ${COVER_BUILD_ARGS} -timeout=${TEST_INTEGRATION_TIMEOUT} . -args -distribution cassandra -runauth -gocql.timeout=60s -runssl -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$${CASSANDRA_VERSION_RESOLVED} -cluster=$$(ccm liveset) ${COVER_RUNTIME_ARGS}"
+	go test -v ${TEST_OPTS} -tags "${TEST_INTEGRATION_TAGS}" ${COVER_BUILD_ARGS} -timeout=${TEST_INTEGRATION_TIMEOUT} . -args -distribution cassandra -runauth -gocql.timeout=60s -runssl -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$$(ccm node1 versionfrombuild) -cluster=$$(ccm liveset) ${COVER_RUNTIME_ARGS}
 
 test-integration-scylla: scylla-start
 	@echo "Run integration tests for proto ${TEST_CQL_PROTOCOL} on scylla ${SCYLLA_VERSION}"

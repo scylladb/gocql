@@ -36,6 +36,17 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	lz4mod "github.com/scylladb/gocql/lz4"
+)
+
+// LZ4Compressor's conformance to SegmentCompressor was previously only claimed in its
+// doc comment: the lz4 module cannot assert it, since importing gocql to do so would
+// make the dependency circular. The root module importing lz4 for the v5 lane makes
+// the assertion possible in the direction that does not cycle.
+var (
+	_ Compressor        = lz4mod.LZ4Compressor{}
+	_ SegmentCompressor = lz4mod.LZ4Compressor{}
 )
 
 var (
@@ -317,6 +328,12 @@ func createCluster(opts ...func(*ClusterConfig)) *ClusterConfig {
 	switch *flagCompressTest {
 	case "snappy":
 		cluster.Compressor = &SnappyCompressor{}
+	case "lz4":
+		// lz4 is the only compressor native protocol v5 permits: a v5 server still
+		// advertises snappy in its OPTIONS response, but STARTUP with COMPRESSION=snappy
+		// is rejected server-side, and ClusterConfig.Validate refuses any compressor that
+		// is not a SegmentCompressor once ProtoVersion >= 5.
+		cluster.Compressor = &lz4mod.LZ4Compressor{}
 	case "no-compression", "":
 	default:
 		panic("invalid compressor: " + *flagCompressTest)
