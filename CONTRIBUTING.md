@@ -65,6 +65,18 @@ Unit tests are good, integration tests are even better. An example of a unit tes
 
 That said, the point of writing tests is to provide a safety net to catch regressions, so there is no need to go overboard with tests. Remember that the more tests you write, the more code we will have to maintain. So there's a balance to strike there.
 
+#### Running Against Native Protocol v5
+
+`TEST_CQL_PROTOCOL` and `TEST_COMPRESSOR` select what the integration targets negotiate; the defaults are `4` and `snappy`. Protocol v5 is never chosen automatically (`discoverProtocol` caps negotiation at v4), so the tests guarded by `session.cfg.ProtoVersion < protoVersion5` -- segmentation, compressed segments, `now_in_seconds`, keyspace override, `METADATA_CHANGED` -- only run when you ask for it:
+
+```sh
+CASSANDRA_VERSION=5-LATEST TEST_CQL_PROTOCOL=5 TEST_COMPRESSOR=lz4 TEST_INTEGRATION_TIMEOUT=20m make test-integration-cassandra
+```
+
+`TEST_INTEGRATION_TIMEOUT` buys headroom over the 10m default. The suite has been measured anywhere from 280s to 470s depending on machine load -- the protocol version makes little difference -- and overrunning `go test`'s `-timeout` panics with a goroutine dump rather than naming the failing test. Note that it cannot be passed through `TEST_OPTS`: `TEST_OPTS` is interpolated ahead of `-timeout` on the `go test` line, and the later flag wins.
+
+`lz4` is not interchangeable with the default here. Snappy was removed in v5, and `ClusterConfig.Validate` rejects any compressor that does not implement `SegmentCompressor` once `ProtoVersion >= 5`, so `TEST_COMPRESSOR=snappy` fails every session in the suite; `lz4` and `no-compression` are the only two valid settings. CI runs this configuration on the Cassandra `5-LATEST` leg. ScyllaDB builds its protocol extensions on top of v4 and has no v5 to negotiate, so there is no equivalent Scylla lane.
+
 #### Measuring Code Coverage
 
 `make test-unit-coverage` runs the unit suite (root module and the `lz4` submodule) instrumented for coverage. To include the integration suite too, start a cluster and run its coverage target as well, e.g.:

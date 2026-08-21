@@ -3618,6 +3618,38 @@ func TestLargeSizeQuery(t *testing.T) {
 	require.Equal(t, longString, result)
 }
 
+// TestCompressorNegotiated pins the compressor the suite was asked for to the one the
+// connection actually ended up with.
+//
+// startupCoordinator.startup silently clears Conn.compressor when the server's SUPPORTED
+// response does not list Compressor.Name(), so a lane configured with -compressor=lz4
+// against a server that does not offer lz4 would run entirely uncompressed while
+// session.cfg.Compressor stayed non-nil. Every compression-dependent test guards on the
+// connection and would simply skip, leaving the lane green and empty. Fail here instead,
+// once, with the mismatch named.
+func TestCompressorNegotiated(t *testing.T) {
+	t.Parallel()
+
+	if *flagCompressTest == "" || *flagCompressTest == "no-compression" {
+		t.Skip("no compressor requested")
+	}
+
+	session := createSession(t)
+	defer session.Close()
+
+	conn := session.getConn()
+	if conn == nil {
+		t.Skip("no connection available")
+	}
+
+	if conn.compressor == nil {
+		t.Fatalf("requested -compressor=%s but the connection negotiated none; the server's SUPPORTED response did not offer it", *flagCompressTest)
+	}
+	if got := conn.compressor.Name(); got != *flagCompressTest {
+		t.Fatalf("requested -compressor=%s but the connection negotiated %q", *flagCompressTest, got)
+	}
+}
+
 // TestQueryCompressionNotWorthIt runs a query that is not likely to be compressed efficiently
 // (uncompressed payload size > compressed payload size).
 // So, it should send a Compressed Frame where:
@@ -3634,8 +3666,16 @@ func TestQueryCompressionNotWorthIt(t *testing.T) {
 	if session.cfg.ProtoVersion < protoVersion5 {
 		t.Skip("compressed segments are only produced on protocol >= 5")
 	}
-	if session.cfg.Compressor == nil {
-		t.Skip("no compressor configured; the compressed-segment path is unreachable")
+	// Check the connection, not session.cfg: startupCoordinator.startup drops the
+	// compressor when the server's SUPPORTED list does not name it, leaving cfg set
+	// while nothing is actually compressed. Skipping on cfg alone would let this test
+	// pass having round-tripped a plain uncompressed segment.
+	conn := session.getConn()
+	if conn == nil {
+		t.Skip("no connection available")
+	}
+	if conn.compressor == nil {
+		t.Skip("no compressor negotiated on the connection; the compressed-segment path is unreachable")
 	}
 
 	if err := createTable(session, "CREATE TABLE IF NOT EXISTS gocql_test.compression_now_worth_it(id int, text_col text, PRIMARY KEY (id))"); err != nil {
