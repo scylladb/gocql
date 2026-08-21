@@ -40,6 +40,7 @@ import (
 	"time"
 
 	frm "github.com/gocql/gocql/internal/frame"
+	"github.com/gocql/gocql/internal/segment"
 )
 
 type unsetColumn struct{}
@@ -85,18 +86,6 @@ const (
 	// CASSGO-88 (https://issues.apache.org/jira/browse/CASSGO-88). Supporting a
 	// beta dialect would need an explicit opt-in bound to that specific dialect.
 	protoVersion5 = 0x05
-
-	maxFrameSize = 256 * 1024 * 1024
-
-	// maxSegmentPayloadSize is the largest payload a single v5 transport segment
-	// may carry (2^17 - 1). Used as a bound check when building segments.
-	maxSegmentPayloadSize = 0x1FFFF
-
-	// segmentPayloadLenMask extracts the 17-bit payload-length field from a
-	// decoded segment header. Numerically equal to maxSegmentPayloadSize, but
-	// kept separate: one is a limit, the other is a bit mask, and conflating
-	// them obscures why no explicit bound check is needed after masking.
-	segmentPayloadLenMask = 0x1FFFF
 )
 
 // DEPRECATED use Consistency type, SerialConsistency is now an alias for backwards compatibility.
@@ -415,7 +404,7 @@ func (f *framer) readFrame(r io.Reader, head *frm.FrameHeader) error {
 	// callers that synthesise a header.
 	if head.Length < 0 {
 		return fmt.Errorf("frame body length can not be less than 0: %d", head.Length)
-	} else if head.Length > maxFrameSize {
+	} else if head.Length > frm.MaxFrameSize {
 		// need to free up the connection to be used again
 		_, err := io.CopyN(io.Discard, r, int64(head.Length))
 		if err != nil {
@@ -464,7 +453,7 @@ func (f *framer) readFrame(r io.Reader, head *frm.FrameHeader) error {
 // instead of reading and copying it as readFrame does. It is used for a v5 frame
 // reassembled from several transport segments (Conn.recvSplitFrame): that buffer
 // is already exactly frame-sized, so copying it would mean holding the frame twice
-// — 512 MiB for a maxFrameSize response.
+// — 512 MiB for a frm.MaxFrameSize response.
 //
 // f.readBuffer is deliberately left pointing at the pooled buffer, so releasing
 // the framer drops the adopted body instead of retaining an outsized buffer in the
@@ -689,7 +678,7 @@ func (f *framer) setLength(length int) {
 
 func (f *framer) finish() error {
 	bufLen := len(f.buf)
-	if bufLen > maxFrameSize {
+	if bufLen > frm.MaxFrameSize {
 		// huge app frame, lets remove it so it doesn't bloat the heap
 		f.buf = make([]byte, defaultBufSize)
 		return ErrFrameTooBig
@@ -2157,19 +2146,19 @@ func (f *framer) prepareModernLayout() error {
 	// successfully, so that an error partway through leaves f.buf byte-for-byte
 	// intact.
 	src := f.buf
-	wire := f.growWireBuf(segmentedFrameSize(len(src), f.compressor != nil))
+	wire := f.growWireBuf(segment.EncodedSize(len(src), f.compressor != nil))
 
 	var err error
 	selfContained := true
 
 	// Process the buffer in chunks if it exceeds the max payload size
-	for len(src) > maxSegmentPayloadSize {
-		wire, err = f.appendSegment(wire, src[:maxSegmentPayloadSize], false)
+	for len(src) > segment.MaxPayloadSize {
+		wire, err = f.appendSegment(wire, src[:segment.MaxPayloadSize], false)
 		if err != nil {
 			return err
 		}
 
-		src = src[maxSegmentPayloadSize:]
+		src = src[segment.MaxPayloadSize:]
 		selfContained = false
 	}
 
@@ -2185,11 +2174,17 @@ func (f *framer) prepareModernLayout() error {
 
 // appendSegment encodes payload as one transport segment appended to dst, in the
 // layout matching the framer's compressor.
+//
+// The narrowing is defensive: ClusterConfig.Validate rejects a compressor without
+// segment support on v5 before a connection is dialed, so it cannot fail here. It is
+// reported rather than ignored, because falling back to the uncompressed layout
+// would produce a segment the peer decodes with the wrong one.
 func (f *framer) appendSegment(dst, payload []byte, isSelfContained bool) ([]byte, error) {
-	if f.compressor != nil {
-		return appendCompressedSegment(dst, payload, isSelfContained, f.compressor)
+	segComp, err := asSegmentCompressor(f.compressor)
+	if err != nil {
+		return nil, err
 	}
-	return appendUncompressedSegment(dst, payload, isSelfContained)
+	return segment.Append(dst, payload, isSelfContained, segComp)
 }
 
 // growWireBuf returns f.wireBuf emptied and with room for at least n bytes,
@@ -2199,29 +2194,4 @@ func (f *framer) growWireBuf(n int) []byte {
 		f.wireBuf = make([]byte, 0, n)
 	}
 	return f.wireBuf[:0]
-}
-
-// segmentedFrameSize returns how many bytes a rawLen-byte CQL frame occupies once
-// segmented, so the wire buffer can be sized before anything is encoded into it.
-// For the compressed layout this is an upper bound rather than the exact size:
-// compressed payloads are usually smaller, but a compressor may also return more
-// bytes than it was given, so room for one segment's worth of expansion is added.
-func segmentedFrameSize(rawLen int, compressed bool) int {
-	const (
-		// 3-byte header + CRC24 + payload CRC32.
-		uncompressedSegmentOverhead = 3 + crc24Size + crc32Size
-		// 5-byte header + CRC24 + payload CRC32.
-		compressedSegmentOverhead = 5 + crc24Size + crc32Size
-		// Room for a maximum-size payload growing under compression, matching
-		// lz4's block bound (len + len/255 + 16). A compressor that expands more
-		// than this is still handled correctly, it only makes the wire buffer grow
-		// once.
-		compressionSlack = maxSegmentPayloadSize/255 + 16
-	)
-
-	segments := rawLen/maxSegmentPayloadSize + 1
-	if compressed {
-		return rawLen + segments*compressedSegmentOverhead + compressionSlack
-	}
-	return rawLen + segments*uncompressedSegmentOverhead
 }
