@@ -33,6 +33,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -2332,10 +2333,44 @@ type StreamObserverContext interface {
 }
 
 type preparedStatment struct {
-	response         resultMetadata
+	// jitEncoder caches the compiled parameter encoder for this prepared
+	// statement's most recently seen argument-type shape (see
+	// getOrCompileParamEncoderCached in jit_encoder.go). A prepared statement
+	// is executed with the same call-site argument types on every repeat
+	// execution in virtually all real usage, so this turns the encoder
+	// lookup from a per-call key computation into a single pointer load.
+	//
+	// Declared first so this pointer-sized atomic.Pointer field precedes
+	// the []byte/struct fields below — required for `fieldalignment` (run
+	// as part of `make check`): a slice or non-pointer-shaped field ahead
+	// of it would widen the GC pointer-scanned prefix of the struct for no
+	// benefit.
+	jitEncoder atomic.Pointer[cachedJITEncoder]
+
+	// jitDecoder is the row-decoder analogue of jitEncoder: it caches the
+	// compiled decoder for this prepared statement's most recently seen
+	// Scan destination-type shape (see resolveRowDecoder in
+	// jit_decoder.go). Unlike jitEncoder, plain (non-prepared) queries have
+	// no preparedStatment to cache against, so those still recompile per
+	// Iter — see resolveRowDecoder's nil-stmt fallback.
+	jitDecoder atomic.Pointer[cachedJITDecoder]
+
 	id               []byte
 	resultMetadataID []byte
+	response         resultMetadata
 	request          preparedMetadata
+}
+
+// cachedJITEncoder pairs a compiledParamEncoder with the exact srcTypes
+// shape it was compiled for, so a cache hit can be confirmed with a cheap
+// slice-of-pointers comparison instead of recomputing a string key.
+//
+// enc is declared before srcTypes for fieldalignment (see preparedStatment):
+// the pointer field first keeps the GC pointer-scanned prefix minimal
+// relative to the slice header that follows it.
+type cachedJITEncoder struct {
+	enc      *compiledParamEncoder
+	srcTypes []reflect.Type
 }
 
 type inflightPrepare struct {
@@ -2495,6 +2530,56 @@ func metadataIDTracked(idExchangeActive bool, resultMetadataID []byte) bool {
 	return idExchangeActive && len(resultMetadataID) > 0
 }
 
+// marshalQueryValuesJIT encodes all values through the JIT encoder.
+//
+// It reports whether it handled the encoding: false means the caller must run
+// the generic marshalQueryValue loop, because a value needs special handling
+// (namedValue or unsetColumn) or the slices do not line up one-per-column.
+// When it returns true the encoding is done, and any error is the caller's to
+// report — the fast path rejects exactly the values Marshal rejects (see
+// TestJITEncoderMatchesGenericMarshal), so re-running the generic loop would
+// only produce the same error after marshalling every value twice.
+//
+// The encoder is cached on stmt (see getOrCompileParamEncoderCached) so
+// repeat executions of the same statement skip recomputing a cache key
+// entirely. The columns come from stmt.request rather than from the caller,
+// which is what makes that cache safe: the encoder cached on a statement is
+// always the one compiled for that statement's own schema.
+func marshalQueryValuesJIT(stmt *preparedStatment, values []any, dst []queryValues) (bool, error) {
+	if stmt == nil {
+		return false, nil
+	}
+	columns := stmt.request.columns
+
+	// The compiled encoder holds one encoder per column, and each value is
+	// written to its own dst entry, so all three must agree in length. They
+	// diverge when a bind marker expands into several values (a tuple).
+	if len(values) != len(columns) || len(dst) != len(values) {
+		return false, nil
+	}
+
+	// Quick scan: bail out if any value needs special handling.
+	for _, v := range values {
+		if v == nil {
+			continue
+		}
+		switch v.(type) {
+		case *namedValue, unsetColumn:
+			return false, nil
+		}
+	}
+
+	enc := getOrCompileParamEncoderCached(stmt, values)
+	for i, v := range values {
+		val, err := enc.encoders[i](v)
+		if err != nil {
+			return true, err
+		}
+		dst[i].value = val
+	}
+	return true, nil
+}
+
 func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 	return c.executeQueryWithMetrics(ctx, qry, qry.metrics)
 }
@@ -2569,13 +2654,20 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 		}
 
 		params.values = getQueryValues(len(values))
-		for i := 0; i < len(values); i++ {
-			v := &params.values[i]
-			value := values[i]
-			typ := info.request.columns[i].TypeInfo
-			if err := marshalQueryValue(typ, value, v); err != nil {
-				putQueryValues(params.values)
-				return &Iter{err: err}
+		handled, err := marshalQueryValuesJIT(info, values, params.values)
+		if err != nil {
+			putQueryValues(params.values)
+			return &Iter{err: err}
+		}
+		if !handled {
+			for i := 0; i < len(values); i++ {
+				v := &params.values[i]
+				value := values[i]
+				typ := info.request.columns[i].TypeInfo
+				if err := marshalQueryValue(typ, value, v); err != nil {
+					putQueryValues(params.values)
+					return &Iter{err: err}
+				}
 			}
 		}
 
@@ -2723,9 +2815,10 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 		}
 
 		iter := (&Iter{
-			meta:    x.meta,
-			framer:  framer,
-			numRows: x.numRows,
+			meta:         x.meta,
+			framer:       framer,
+			numRows:      x.numRows,
+			preparedStmt: info,
 		}).bindWarningHandlerWithMetrics(qry, metrics, warningHandler)
 
 		if x.meta.noMetaData() {
@@ -2916,13 +3009,20 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 
 			b.values = getQueryValues(info.request.actualColCount)
 
-			for j := 0; j < info.request.actualColCount; j++ {
-				v := &b.values[j]
-				value := values[j]
-				typ := info.request.columns[j].TypeInfo
-				if err := marshalQueryValue(typ, value, v); err != nil {
-					putBatchQueryValues(req.statements)
-					return &Iter{err: err}
+			handled, err := marshalQueryValuesJIT(info, values, b.values)
+			if err != nil {
+				putBatchQueryValues(req.statements)
+				return &Iter{err: err}
+			}
+			if !handled {
+				for j := 0; j < info.request.actualColCount; j++ {
+					v := &b.values[j]
+					value := values[j]
+					typ := info.request.columns[j].TypeInfo
+					if err := marshalQueryValue(typ, value, v); err != nil {
+						putBatchQueryValues(req.statements)
+						return &Iter{err: err}
+					}
 				}
 			}
 
