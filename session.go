@@ -3202,6 +3202,77 @@ type nextIter struct {
 	metricsRelease sync.Once
 	mu             sync.Mutex
 	closed         bool
+	pooled         bool // if true, qry was obtained from queryPool via newNextIterWithPageState
+}
+
+func newNextIterWithPageState(parent *Query, metrics *queryMetrics, pageState []byte, pos int) *nextIter {
+	// Acquire a Query from the global pool and shallow-copy the parent into it.
+	newQry := queryPool.Get().(*Query)
+	// Save pooled allocations, and the owner claim pooledMetrics was stamped
+	// against, before overwriting with parent's fields.
+	pooledMetrics := newQry.metrics
+	pooledOwner := newQry.metricsOwner
+	pooledRoutingInfo := newQry.routingInfo
+	*newQry = *parent
+	newQry.pageState = pageState
+	newQry.refCount = 1
+	if metrics != nil {
+		// Shared execution metrics: use directly, newQry just borrows them.
+		newQry.metrics = metrics
+		newQry.metricsOwner = queryMetricsOwner{}
+	} else {
+		// Restore the saved owner so prepareQueryMetrics can reclaim pooledMetrics
+		// instead of allocating fresh.
+		newQry.metrics = pooledMetrics
+		newQry.metricsOwner = pooledOwner
+		if newQry.metrics == parent.metrics {
+			newQry.metrics = nil
+			newQry.metricsOwner = queryMetricsOwner{}
+		}
+		newQry.metrics = prepareQueryMetrics(&newQry.metrics, &newQry.metricsOwner)
+	}
+	// Reuse routingInfo to avoid aliasing the parent's pointer (which is
+	// mutex-protected and shared). Copy the parent's routing fields into
+	// the pooled struct so executeQuery can safely write to it.
+	parent.routingInfo.mu.RLock()
+	riKeyspace := parent.routingInfo.keyspace
+	riTable := parent.routingInfo.table
+	riPartitioner := parent.routingInfo.partitioner
+	riLwt := parent.routingInfo.lwt
+	parent.routingInfo.mu.RUnlock()
+	if pooledRoutingInfo != nil && pooledRoutingInfo != parent.routingInfo {
+		pooledRoutingInfo.keyspace = riKeyspace
+		pooledRoutingInfo.table = riTable
+		pooledRoutingInfo.partitioner = riPartitioner
+		pooledRoutingInfo.lwt = riLwt
+		newQry.routingInfo = pooledRoutingInfo
+	} else {
+		newQry.routingInfo = &queryRoutingInfo{
+			keyspace:    riKeyspace,
+			table:       riTable,
+			partitioner: riPartitioner,
+			lwt:         riLwt,
+		}
+	}
+
+	parentCtx := newQry.pageContextParent
+	if parentCtx == nil {
+		parentCtx = newQry.Context()
+	}
+	ctx, cancel := context.WithCancel(parentCtx)
+	newQry.context = ctx
+	newQry.pageContextParent = parentCtx
+	if metrics != nil {
+		metrics.retain()
+	}
+
+	return &nextIter{
+		qry:     newQry,
+		metrics: metrics,
+		pos:     pos,
+		cancel:  cancel,
+		pooled:  true,
+	}
 }
 
 func newNextIter(qry *Query, pos int) *nextIter {
@@ -3255,6 +3326,7 @@ func (n *nextIter) storeFetched(next *Iter) {
 
 func (n *nextIter) close() {
 	if n.cancel != nil {
+		// Cancel the context first so any in-flight fetch returns promptly.
 		n.cancel()
 	}
 
@@ -3268,11 +3340,18 @@ func (n *nextIter) close() {
 	if next != nil {
 		next.discard()
 	}
+	// releaseQuery waits for fetch to finish (via once.Do) before reclaiming.
+	// This is safe because cancel() above ensures the fetch won't block indefinitely.
+	n.releaseQuery()
 }
 
 // consume retires the next-page fetch context after the fetched page has been
 // handed off to the caller. Unlike close(), it keeps the fetched Iter alive so
 // its page data can become the current iterator state.
+//
+// The paging query's reference count is decremented here. If the fetched Iter
+// holds a warningQuery reference (via bindWarningHandler's incRefCount), the
+// query won't actually be pooled until that Iter finalizes and releases its ref.
 func (n *nextIter) consume() {
 	if n.cancel != nil {
 		n.cancel()
@@ -3283,33 +3362,72 @@ func (n *nextIter) consume() {
 	n.next = nil
 	n.mu.Unlock()
 	n.releaseMetrics()
+	n.releaseQuery()
+}
+
+// releaseQuery decrements the paging query's reference count if it was pool-allocated.
+// It waits for any in-flight fetch to complete before decrementing,
+// since the fetch goroutine holds a reference to the Query struct.
+// The query is returned to the global queryPool when its refCount reaches 0
+// (i.e., after all holders — including warningQuery refs and speculative
+// execution goroutines — have released their references).
+func (n *nextIter) releaseQuery() {
+	if !n.pooled {
+		return
+	}
+	// Coordinate with fetch() through the same sync.Once: this either waits for
+	// an in-flight fetch() to finish, or — if fetch() never ran — marks the once
+	// as done so a later fetch() becomes a no-op. The cancel() in
+	// close()/consume() ensures an in-flight fetch won't block forever, and the
+	// qry==nil check below (and inside fetch()) handles the never-ran case.
+	n.once.Do(func() {
+		// Intentionally empty: running the once is the whole point here — it
+		// claims/awaits the single fetch slot so releaseQuery and fetch can
+		// never both execute the fetch body.
+	})
+
+	n.mu.Lock()
+	qry := n.qry
+	n.qry = nil
+	n.mu.Unlock()
+
+	if qry != nil {
+		qry.decRefCount()
+	}
 }
 
 func (n *nextIter) fetch() *Iter {
 	n.once.Do(func() {
-		// Synchronize with close before taking an execution reference. If close
-		// wins, the page owner can be released without a reset racing this fetch.
 		n.mu.Lock()
-		if n.closed {
-			n.mu.Unlock()
-			return
-		}
-		metrics := n.qry.metrics
-		if metrics != nil {
-			metrics.retain()
+		qry := n.qry
+		// n.metrics is set only in the shared-metrics case; take a temporary
+		// ref so it survives a concurrent close()/release() during the fetch.
+		sharedMetrics := n.metrics
+		if sharedMetrics != nil {
+			sharedMetrics.retain()
 		}
 		n.mu.Unlock()
-		if metrics != nil {
-			defer metrics.release()
+		if qry == nil {
+			if sharedMetrics != nil {
+				sharedMetrics.release()
+			}
+			return
 		}
+		if sharedMetrics != nil {
+			defer sharedMetrics.release()
+		}
+
+		// Always execute with qry.metrics, not n.metrics: in the pooled/owned
+		// case n.metrics is nil, but qry.metrics is never nil.
+		metrics := qry.metrics
 
 		// if the query was specifically run on a connection then re-use that
 		// connection when fetching the next results
 		var next *Iter
-		if n.qry.conn != nil {
-			next = n.qry.conn.executeQueryWithMetrics(n.qry.Context(), n.qry, metrics)
+		if qry.conn != nil {
+			next = qry.conn.executeQueryWithMetrics(qry.Context(), qry, metrics)
 		} else {
-			next = n.qry.session.executeQueryWithMetrics(n.qry, metrics)
+			next = qry.session.executeQueryWithMetrics(qry, metrics)
 		}
 		n.storeFetched(next)
 	})
