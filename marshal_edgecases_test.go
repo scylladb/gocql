@@ -158,25 +158,6 @@ func TestMarshalQueryValue_PooledFlag_FastPath(t *testing.T) {
 	}
 }
 
-// Fix #2 — the post-framer finalize loop must iterate len(vals) (not
-// len(cols)) so a mismatched-metadata theoretical case where cols>n
-// does not panic on an out-of-range index. We exercise the bounded loop
-// directly without spinning up a Conn.
-func TestQueryValues_LoopBound_Fix2NoPanicOnAllocsWhenColsLonger(t *testing.T) {
-	defer func() {
-		if x := recover(); x != nil {
-			t.Fatalf("bounded iteration over vals panicked: %v", x)
-		}
-	}()
-	v := []queryValues{{name: "a"}, {name: "b"}}
-	// Iterate exactly as conn.go does (vals, not cols).
-	for i := range v {
-		if v[i].pooled {
-			_ = v[i].value
-		}
-	}
-}
-
 // --- Fix #6 helpers: blob/UUID accumulation tests.
 
 // buildListBytesWithNulls builds a CQL list wire encoding where nil entries
