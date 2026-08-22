@@ -443,12 +443,13 @@ func (iter *Iter) RowData() (RowData, error) {
 }
 
 // getScanColumns returns the cached column names for this iterator,
-// computing them on the first call. Column names don't change between
-// rows, so they are computed once and reused.
+// computing them on the first call and recomputing them if a page turn
+// installed new metadata (RESULT_METADATA_CHANGED) since the cache was
+// built.
 //
 // The returned slice is shared across all callers and must not be mutated.
 func (iter *Iter) getScanColumns() ([]string, error) {
-	if iter.scanColumns != nil {
+	if iter.scanColumns != nil && iter.scanColumnsEpoch == iter.metaEpoch {
 		return iter.scanColumns, nil
 	}
 
@@ -484,6 +485,7 @@ func (iter *Iter) getScanColumns() ([]string, error) {
 	}
 
 	iter.scanColumns = columns
+	iter.scanColumnsEpoch = iter.metaEpoch
 	return columns, nil
 }
 
@@ -638,7 +640,15 @@ func (iter *Iter) MapScan(m map[string]any) bool {
 		return false
 	}
 
-	// Resolve the (cached) column names once.
+	// Load the next page, if needed, before resolving columns/defaults below:
+	// a page turn can install new metadata (RESULT_METADATA_CHANGED), and
+	// those caches must reflect the page this row is actually scanned from,
+	// not the previous one.
+	if !iter.ensureRowsAvailable() {
+		return false
+	}
+
+	// Resolve the (cached) column names once per page.
 	columns, err := iter.getScanColumns()
 	if err != nil {
 		return false
@@ -648,20 +658,26 @@ func (iter *Iter) MapScan(m map[string]any) bool {
 	// pointer per column on every row.
 	//
 	// mapScanDefaults holds the default destination pointers (one per column)
-	// and is never replaced after creation. Scan writes through these pointers
-	// on each call, overwriting the pointed-to values in place, so the pointers
-	// themselves remain valid across rows. Rows without caller overrides scan
-	// directly into the defaults. When the caller pre-seeds m with destination
-	// overrides, the defaults are copied into mapScanWorking (allocated lazily
-	// on the first override) and the overrides applied to that working copy,
-	// keeping the defaults intact for later rows.
+	// and is never replaced after creation, unless a page turn changes the
+	// metadata (mapScanEpoch != iter.metaEpoch) or the column count. Scan
+	// writes through these pointers on each call, overwriting the pointed-to
+	// values in place, so the pointers themselves remain valid across rows of
+	// the same page. Rows without caller overrides scan directly into the
+	// defaults. When the caller pre-seeds m with destination overrides, the
+	// defaults are copied into mapScanWorking (allocated lazily on the first
+	// override) and the overrides applied to that working copy, keeping the
+	// defaults intact for later rows.
 	defaults := iter.mapScanDefaults
-	if defaults == nil || len(defaults) != iter.meta.actualColCount {
+	if defaults == nil || iter.mapScanEpoch != iter.metaEpoch || len(defaults) != iter.meta.actualColCount {
 		defaults = make([]any, iter.meta.actualColCount)
 		if err := iter.fillScanValues(defaults); err != nil {
 			return false
 		}
 		iter.mapScanDefaults = defaults
+		iter.mapScanEpoch = iter.metaEpoch
+		// The previous page's working slice may hold stale-typed pointers;
+		// drop it so the next override rebuilds it from the new defaults.
+		iter.mapScanWorking = nil
 	}
 
 	// Apply user-supplied destination overrides for this row.

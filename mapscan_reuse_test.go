@@ -12,10 +12,12 @@
 package gocql
 
 import (
+	"context"
 	"encoding/binary"
 	"testing"
 
 	frm "github.com/gocql/gocql/internal/frame"
+	"github.com/gocql/gocql/internal/tests/mock"
 )
 
 // buildIntRows builds a rows buffer where row r, column c holds the int32 value
@@ -404,5 +406,81 @@ func TestMapScanMixedOverrideThenDefault(t *testing.T) {
 	}
 	if userX != 2 {
 		t.Fatalf("row 2 userX=%d want 2", userX)
+	}
+}
+
+// TestMapScanColumnCountChangeAcrossPageTurn covers a schema change landing on
+// a page boundary mid-iteration (RESULT_METADATA_CHANGED). MapScan resolves
+// cached column names (getScanColumns) and destination pointers
+// (mapScanDefaults) from iter.meta, which copyPageData replaces once the next
+// page is fetched. Left unguarded, a fresh page turn taken during MapScan
+// itself would resolve those caches against the previous page's metadata (or
+// keep reusing it), returning the new page's rows keyed by the wrong column
+// names or scanned into the wrong destination types.
+func TestMapScanColumnCountChangeAcrossPageTurn(t *testing.T) {
+	t.Parallel()
+	intCol := func(name string) ColumnInfo {
+		return ColumnInfo{Name: name, TypeInfo: NativeType{typ: TypeInt, proto: 4}}
+	}
+	marshalInt := func(v int32) []byte {
+		b, err := Marshal(NativeType{typ: TypeInt, proto: 4}, v)
+		if err != nil {
+			t.Fatalf("unexpected error from reference Marshal: %v", err)
+		}
+		return b
+	}
+
+	oneColumn := resultMetadata{columns: []ColumnInfo{intCol("a")}, actualColCount: 1}
+	twoColumns := resultMetadata{
+		columns:        []ColumnInfo{intCol("a"), intCol("b")},
+		actualColCount: 2,
+	}
+
+	firstFramer := &mock.MockFramer{Data: [][]byte{marshalInt(1)}}
+	nextFramer := &mock.MockFramer{Data: [][]byte{marshalInt(2), marshalInt(3)}}
+
+	conn := &pagingTestConn{
+		executeQueryFunc: func(_ context.Context, _ *Query) *Iter {
+			return &Iter{
+				meta:    twoColumns,
+				framer:  nextFramer,
+				numRows: 1,
+			}
+		},
+	}
+
+	baseQry := newWarningTestQuery()
+	baseQry.conn = conn
+
+	iter := &Iter{
+		meta:    oneColumn,
+		framer:  firstFramer,
+		numRows: 1,
+		next:    newNextIter(baseQry, 1),
+	}
+	defer iter.Close()
+
+	m1 := map[string]any{}
+	if !iter.MapScan(m1) {
+		t.Fatalf("expected first row, err: %v", iter.err)
+	}
+	if v, _ := m1["a"].(int); v != 1 {
+		t.Fatalf("first row: m[a]=%v want 1", m1["a"])
+	}
+	if _, ok := m1["b"]; ok {
+		t.Fatalf("first row: unexpected column b: %v", m1["b"])
+	}
+
+	// Page turn: metadata gains a column. MapScan must resolve columns and
+	// defaults against the new page's metadata, not the cached one-column set.
+	m2 := map[string]any{}
+	if !iter.MapScan(m2) {
+		t.Fatalf("expected second row, err: %v", iter.err)
+	}
+	if v, _ := m2["a"].(int); v != 2 {
+		t.Fatalf("second row: m[a]=%v want 2", m2["a"])
+	}
+	if v, _ := m2["b"].(int); v != 3 {
+		t.Fatalf("second row: m[b]=%v want 3", m2["b"])
 	}
 }

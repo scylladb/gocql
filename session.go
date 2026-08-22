@@ -2698,18 +2698,28 @@ type Iter struct {
 
 	// scanColumns caches the column names computed by RowData() so that
 	// MapScan does not recompute them on every row. Populated lazily on
-	// the first call to getScanColumns().
-	scanColumns []string
+	// the first call to getScanColumns(). scanColumnsEpoch records the
+	// metaEpoch it was built for.
+	scanColumns      []string
+	scanColumnsEpoch int
 	// mapScanDefaults holds one freshly-allocated default destination pointer
 	// per scannable column, allocated once on the first MapScan call and
 	// reused across rows. mapScanWorking is allocated lazily on the first
 	// MapScan call with a caller-supplied destination override: defaults are
 	// copied into it and the overrides applied there, keeping the defaults
 	// intact for later rows. Rows without overrides scan directly into the
-	// defaults. Both are released in finalize().
-	mapScanDefaults   []any
-	mapScanWorking    []any
+	// defaults. Both are released in finalize(). mapScanEpoch records the
+	// metaEpoch defaults was built for.
+	mapScanDefaults []any
+	mapScanWorking  []any
+	mapScanEpoch    int
+	// meta describes the current page's columns. metaEpoch increments every
+	// time meta is replaced by a page turn (copyPageData), so cached data
+	// derived from meta (scanColumns, mapScanDefaults/Working) can detect a
+	// RESULT_METADATA_CHANGED page and rebuild instead of scanning a new
+	// page's rows with a previous page's column names or destination types.
 	meta              resultMetadata
+	metaEpoch         int
 	pos               int
 	numRows           int
 	closed            int32
@@ -2738,6 +2748,7 @@ func (iter *Iter) copyPageData(src *Iter) {
 	iter.next = src.next
 	iter.host = src.host
 	iter.meta = src.meta
+	iter.metaEpoch++
 	iter.allWarnings = append(iter.allWarnings, src.allWarnings...)
 	iter.releasedCustomPayload = src.releasedCustomPayload
 	iter.pos = src.pos
@@ -2917,6 +2928,25 @@ func (iter *Iter) fetchNextPage() bool {
 	return iter.err == nil
 }
 
+// ensureRowsAvailable loads pages, fetching synchronously if necessary,
+// until a row is available at iter.pos, or the iterator is closed,
+// exhausted, or a fetch fails (in which case it finalizes the iterator and
+// returns false). Callers that cache data derived from iter.meta (column
+// names, destination types) must call this before reading iter.meta, so a
+// RESULT_METADATA_CHANGED page turn is reflected before that data is built.
+func (iter *Iter) ensureRowsAvailable() bool {
+	if atomic.LoadInt32(&iter.closed) != 0 {
+		return false
+	}
+	for iter.pos >= iter.numRows {
+		if !iter.fetchNextPage() {
+			iter.finalize(true)
+			return false
+		}
+	}
+	return true
+}
+
 type Scanner interface {
 	// Next advances the row pointer to point at the next row, the row is valid until
 	// the next call of Next. It returns true if there is a row which is available to be
@@ -2949,15 +2979,8 @@ func (is *iterScanner) Next() bool {
 		return false
 	}
 
-	if atomic.LoadInt32(&iter.closed) != 0 {
+	if !iter.ensureRowsAvailable() {
 		return false
-	}
-
-	for iter.pos >= iter.numRows {
-		if !iter.fetchNextPage() {
-			iter.finalize(true)
-			return false
-		}
 	}
 
 	// A page turn can install new metadata (RESULT_METADATA_CHANGED), so the
@@ -3081,15 +3104,8 @@ func (iter *Iter) Scan(dest ...any) bool {
 		return false
 	}
 
-	if atomic.LoadInt32(&iter.closed) != 0 {
+	if !iter.ensureRowsAvailable() {
 		return false
-	}
-
-	for iter.pos >= iter.numRows {
-		if !iter.fetchNextPage() {
-			iter.finalize(true)
-			return false
-		}
 	}
 
 	if iter.next != nil && iter.pos >= iter.next.pos {
