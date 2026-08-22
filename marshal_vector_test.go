@@ -139,7 +139,11 @@ func TestVectorFloat_ByteCompatibility(t *testing.T) {
 	})
 }
 
-func TestVectorFloat_SliceReuse(t *testing.T) {
+// TestVectorFloat_NoAliasing supersedes the old slice-reuse optimization:
+// Iter.Scan gives no "valid until next Scan" guarantee, so reusing *dst's
+// backing array across decodes would silently corrupt a retained result
+// (see marshal_alias_test.go). Each decode must allocate fresh.
+func TestVectorFloat_NoAliasing(t *testing.T) {
 	t.Run("float64", func(t *testing.T) {
 		dim := 4
 		info := makeDoubleVectorType(dim)
@@ -148,7 +152,6 @@ func TestVectorFloat_SliceReuse(t *testing.T) {
 			binary.BigEndian.PutUint64(data[i*8:], math.Float64bits(float64(i)))
 		}
 
-		// First unmarshal allocates.
 		var result []float64
 		if err := unmarshalVector(info, data, &result); err != nil {
 			t.Fatalf("unmarshalVector (first): %v", err)
@@ -156,16 +159,13 @@ func TestVectorFloat_SliceReuse(t *testing.T) {
 		if len(result) != dim {
 			t.Fatalf("expected len %d, got %d", dim, len(result))
 		}
+		retained := result
 
-		// Save the underlying array pointer.
-		ptr := &result[0]
-
-		// Second unmarshal should reuse the same backing array.
 		if err := unmarshalVector(info, data, &result); err != nil {
 			t.Fatalf("unmarshalVector (second): %v", err)
 		}
-		if &result[0] != ptr {
-			t.Error("expected slice reuse, but a new backing array was allocated")
+		if &result[0] == &retained[0] {
+			t.Error("expected a fresh backing array, but the previous one was reused")
 		}
 	})
 	t.Run("float32", func(t *testing.T) {
@@ -180,54 +180,13 @@ func TestVectorFloat_SliceReuse(t *testing.T) {
 		if err := unmarshalVector(info, data, &result); err != nil {
 			t.Fatalf("unmarshalVector (first): %v", err)
 		}
-		ptr := &result[0]
+		retained := result
 
 		if err := unmarshalVector(info, data, &result); err != nil {
 			t.Fatalf("unmarshalVector (second): %v", err)
 		}
-		if &result[0] != ptr {
-			t.Error("expected slice reuse, but a new backing array was allocated")
-		}
-	})
-	t.Run("float64_excess_cap", func(t *testing.T) {
-		dim := 4
-		info := makeDoubleVectorType(dim)
-		data := make([]byte, dim*8)
-		for i := 0; i < dim; i++ {
-			binary.BigEndian.PutUint64(data[i*8:], math.Float64bits(float64(i)+0.5))
-		}
-
-		// Pre-allocate with excess capacity.
-		result := make([]float64, 0, dim+10)
-		ptr := &result[:1][0] // get pointer to backing array
-		if err := unmarshalVector(info, data, &result); err != nil {
-			t.Fatalf("unmarshalVector: %v", err)
-		}
-		if len(result) != dim {
-			t.Fatalf("expected len %d, got %d", dim, len(result))
-		}
-		if &result[0] != ptr {
-			t.Error("expected reuse of pre-allocated backing array with excess capacity")
-		}
-	})
-	t.Run("float32_excess_cap", func(t *testing.T) {
-		dim := 4
-		info := makeFloat32VectorType(dim)
-		data := make([]byte, dim*4)
-		for i := 0; i < dim; i++ {
-			binary.BigEndian.PutUint32(data[i*4:], math.Float32bits(float32(i)+0.5))
-		}
-
-		result := make([]float32, 0, dim+10)
-		ptr := &result[:1][0]
-		if err := unmarshalVector(info, data, &result); err != nil {
-			t.Fatalf("unmarshalVector: %v", err)
-		}
-		if len(result) != dim {
-			t.Fatalf("expected len %d, got %d", dim, len(result))
-		}
-		if &result[0] != ptr {
-			t.Error("expected reuse of pre-allocated backing array with excess capacity")
+		if &result[0] == &retained[0] {
+			t.Error("expected a fresh backing array, but the previous one was reused")
 		}
 	})
 }
