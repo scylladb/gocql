@@ -2683,14 +2683,14 @@ func (q *Query) WithNowInSeconds(now int) *Query {
 // times (idempotent), calling Scan(), Next(), or other methods concurrently with
 // Close() or each other will result in undefined behavior.
 type Iter struct {
+	warningHandler        WarningHandler
 	warningQuery          ExecutableQuery
-	warningMetrics        *queryMetrics
 	framer                framerInterface
 	err                   error
-	warningHandler        WarningHandler
-	releasedCustomPayload map[string][]byte
 	next                  *nextIter
+	releasedCustomPayload map[string][]byte
 	host                  *HostInfo
+	warningMetrics        *queryMetrics
 	// allWarnings accumulates warnings across page boundaries.
 	// When a page's framer is released during fetchNextPage(), its warnings
 	// are appended here so they are not lost.
@@ -2700,8 +2700,7 @@ type Iter struct {
 	// MapScan does not recompute them on every row. Populated lazily on
 	// the first call to getScanColumns(). scanColumnsEpoch records the
 	// metaEpoch it was built for.
-	scanColumns      []string
-	scanColumnsEpoch int
+	scanColumns []string
 	// mapScanDefaults holds one freshly-allocated default destination pointer
 	// per scannable column, allocated once on the first MapScan call and
 	// reused across rows. mapScanWorking is allocated lazily on the first
@@ -2712,13 +2711,14 @@ type Iter struct {
 	// metaEpoch defaults was built for.
 	mapScanDefaults []any
 	mapScanWorking  []any
-	mapScanEpoch    int
 	// meta describes the current page's columns. metaEpoch increments every
 	// time meta is replaced by a page turn (copyPageData), so cached data
 	// derived from meta (scanColumns, mapScanDefaults/Working) can detect a
 	// RESULT_METADATA_CHANGED page and rebuild instead of scanning a new
 	// page's rows with a previous page's column names or destination types.
 	meta              resultMetadata
+	scanColumnsEpoch  int
+	mapScanEpoch      int
 	metaEpoch         int
 	pos               int
 	numRows           int
