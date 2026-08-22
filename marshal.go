@@ -944,9 +944,6 @@ func marshalList(info CollectionType, value any) ([]byte, error) {
 	} else if _, ok := value.(unsetColumn); ok {
 		return nil, nil
 	}
-	if value == nil {
-		return nil, nil
-	}
 
 	// Fast path: type-switch on concrete slice types for common fixed-size
 	// CQL element types. These bypass reflect and per-element Marshal entirely.
@@ -1736,9 +1733,6 @@ func marshalVector(info VectorType, value any) ([]byte, error) {
 	if value == nil {
 		return nil, nil
 	} else if _, ok := value.(unsetColumn); ok {
-		return nil, nil
-	}
-	if value == nil {
 		return nil, nil
 	}
 
@@ -2592,9 +2586,6 @@ func marshalMap(info CollectionType, value any) ([]byte, error) {
 	if value == nil {
 		return nil, nil
 	} else if _, ok := value.(unsetColumn); ok {
-		return nil, nil
-	}
-	if value == nil {
 		return nil, nil
 	}
 
