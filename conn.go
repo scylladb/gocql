@@ -256,9 +256,9 @@ type Conn struct {
 	cqlProtoExts    []cqlProtocolExtension
 	scyllaSupported ScyllaConnectionFeatures
 	writeTimeout    atomic.Int64
-	// activity records the last time (UnixNano) this connection sent or
-	// received a request, so the heartbeat can skip connections that are
-	// already active.
+	// activity is a counter bumped each time a request on this connection
+	// receives a successful response, so the heartbeat can skip connections
+	// that are already known to be alive.
 	activity         atomic.Int64
 	mu               sync.Mutex
 	tabletsRoutingV1 int32
@@ -2131,8 +2131,13 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, reques
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return nil, &QueryError{err: ctxErr, potentiallyExecuted: false}
 	}
-	c.activity.Add(1)
-	return c.execInternal(ctx, req, tracer, requestTimeout, true)
+	framer, err := c.execInternal(ctx, req, tracer, requestTimeout, true)
+	if err == nil {
+		// Only count activity once a response was actually received,
+		// so heartbeat skip reflects genuine liveness, not just an attempt.
+		c.activity.Add(1)
+	}
+	return framer, err
 }
 
 func (c *Conn) execInternal(ctx context.Context, req frameBuilder, tracer Tracer, requestTimeout time.Duration, startupCompleted bool) (*framer, error) {
