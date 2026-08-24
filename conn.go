@@ -267,9 +267,7 @@ type Conn struct {
 	cqlProtoExts    []cqlProtocolExtension
 	scyllaSupported ScyllaConnectionFeatures
 	writeTimeout    atomic.Int64
-	// activity records the last time (UnixNano) this connection sent or
-	// received a request, so the heartbeat can skip connections that are
-	// already active.
+	// activity counts responses received; only the recv goroutine writes it.
 	activity         atomic.Int64
 	mu               sync.Mutex
 	tabletsRoutingV1 int32
@@ -1096,8 +1094,9 @@ func (c *Conn) heartBeat(ctx context.Context) {
 			start = time.Now()
 		}
 
-		// execInternal: the probe must not count as activity.
-		framer, err := c.execInternal(context.Background(), &writeOptionsFrame{}, nil, c.cfg.ConnectTimeout, true)
+		framer, err := c.exec(context.Background(), &writeOptionsFrame{}, nil, c.cfg.ConnectTimeout)
+		// The probe's own response must not count as activity.
+		prev = c.activity.Load()
 		if err != nil {
 			failures++
 			continue
@@ -1343,6 +1342,10 @@ func (c *Conn) processFrameSource(ctx context.Context, src frameSource) error {
 	framer := c.getReadFramer()
 
 	err = src.readBody(framer, &head)
+	// Count only complete responses: a peer stalled mid-body must not defer the heartbeat.
+	if err == nil {
+		c.activity.Add(1)
+	}
 
 	desynced := bodyReadDesyncedConn(err)
 
@@ -2241,11 +2244,6 @@ func (c *Conn) addCall(call *callReq) error {
 // typically via defer immediately after parsing or after transferring ownership
 // to an Iter.
 func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, requestTimeout time.Duration) (*framer, error) {
-	// Cancelled requests never touch the wire; don't count as activity.
-	if ctxErr := ctx.Err(); ctxErr != nil {
-		return nil, &QueryError{err: ctxErr, potentiallyExecuted: false}
-	}
-	c.activity.Add(1)
 	return c.execInternal(ctx, req, tracer, requestTimeout, true)
 }
 

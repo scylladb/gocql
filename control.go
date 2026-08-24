@@ -137,7 +137,11 @@ func (c *controlConn) heartBeat() {
 		}
 
 		start := time.Now()
-		resp, err := c.probeOptions()
+		resp, err := c.writeFrame(&writeOptionsFrame{})
+		if conn != nil {
+			// The probe's own response must not count as activity.
+			prevActivity = conn.activity.Load()
+		}
 		if err != nil {
 			goto reconn
 		}
@@ -178,22 +182,6 @@ func (c *controlConn) underlyingConn() *Conn {
 	}
 	conn, _ := ch.conn.(*Conn)
 	return conn
-}
-
-// probeOptions sends a heartbeat OPTIONS frame; via execInternal so the
-// probe does not count as activity.
-func (c *controlConn) probeOptions() (frame, error) {
-	conn := c.underlyingConn()
-	if conn == nil {
-		// No conn or a mock: regular path.
-		return c.writeFrame(&writeOptionsFrame{})
-	}
-	framer, err := conn.execInternal(context.Background(), &writeOptionsFrame{}, nil, c.session.cfg.MetadataSchemaRequestTimeout, true)
-	if err != nil {
-		return nil, err
-	}
-	defer framer.Release()
-	return framer.parseFrame()
 }
 
 func resolveInitialEndpoint(resolver DNSResolver, addr string, defaultPort int) ([]*HostInfo, error) {
