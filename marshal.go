@@ -1426,14 +1426,17 @@ func marshalVectorFloat32(vec []float32, dim int) ([]byte, error) {
 	if len(vec) != dim {
 		return nil, marshalErrorf("expected vector with %d dimensions, received %d", dim, len(vec))
 	}
+	if dim == 0 {
+		// A zero-dimension vector marshals to CQL null, matching the
+		// generic reflect path.
+		return nil, nil
+	}
 	size, err := vectorByteSize(dim, 4)
 	if err != nil {
 		return nil, err
 	}
 	buf := getMarshalOutput(size)
-	if dim > 0 {
-		_ = buf[dim*4-1] // BCE hint
-	}
+	_ = buf[dim*4-1] // BCE hint
 	for i, v := range vec {
 		binary.BigEndian.PutUint32(buf[i*4:], math.Float32bits(v))
 	}
@@ -1444,14 +1447,15 @@ func marshalVectorFloat64(vec []float64, dim int) ([]byte, error) {
 	if len(vec) != dim {
 		return nil, marshalErrorf("expected vector with %d dimensions, received %d", dim, len(vec))
 	}
+	if dim == 0 {
+		return nil, nil
+	}
 	size, err := vectorByteSize(dim, 8)
 	if err != nil {
 		return nil, err
 	}
 	buf := getMarshalOutput(size)
-	if dim > 0 {
-		_ = buf[dim*8-1] // BCE hint
-	}
+	_ = buf[dim*8-1] // BCE hint
 	for i, v := range vec {
 		binary.BigEndian.PutUint64(buf[i*8:], math.Float64bits(v))
 	}
@@ -1462,14 +1466,15 @@ func marshalVectorInt32(vec []int32, dim int) ([]byte, error) {
 	if len(vec) != dim {
 		return nil, marshalErrorf("expected vector with %d dimensions, received %d", dim, len(vec))
 	}
+	if dim == 0 {
+		return nil, nil
+	}
 	size, err := vectorByteSize(dim, 4)
 	if err != nil {
 		return nil, err
 	}
 	buf := getMarshalOutput(size)
-	if dim > 0 {
-		_ = buf[dim*4-1] // BCE hint
-	}
+	_ = buf[dim*4-1] // BCE hint
 	for i, v := range vec {
 		binary.BigEndian.PutUint32(buf[i*4:], uint32(v))
 	}
@@ -1480,14 +1485,15 @@ func marshalVectorInt64(vec []int64, dim int) ([]byte, error) {
 	if len(vec) != dim {
 		return nil, marshalErrorf("expected vector with %d dimensions, received %d", dim, len(vec))
 	}
+	if dim == 0 {
+		return nil, nil
+	}
 	size, err := vectorByteSize(dim, 8)
 	if err != nil {
 		return nil, err
 	}
 	buf := getMarshalOutput(size)
-	if dim > 0 {
-		_ = buf[dim*8-1] // BCE hint
-	}
+	_ = buf[dim*8-1] // BCE hint
 	for i, v := range vec {
 		binary.BigEndian.PutUint64(buf[i*8:], uint64(v))
 	}
@@ -1497,6 +1503,9 @@ func marshalVectorInt64(vec []int64, dim int) ([]byte, error) {
 func marshalVectorCounter(vec []int64, dim int) ([]byte, error) {
 	if len(vec) != dim {
 		return nil, marshalErrorf("expected vector with %d dimensions, received %d", dim, len(vec))
+	}
+	if dim == 0 {
+		return nil, nil
 	}
 	// Counter vectors are length-prefixed in the current wire format.
 	// Each element is encoded as: uVInt(8) + 8-byte big-endian payload.
@@ -1519,14 +1528,15 @@ func marshalVectorUUID(vec []UUID, dim int) ([]byte, error) {
 	if len(vec) != dim {
 		return nil, marshalErrorf("expected vector with %d dimensions, received %d", dim, len(vec))
 	}
+	if dim == 0 {
+		return nil, nil
+	}
 	size, err := vectorByteSize(dim, 16)
 	if err != nil {
 		return nil, err
 	}
 	buf := getMarshalOutput(size)
-	if dim > 0 {
-		_ = buf[dim*16-1] // BCE hint
-	}
+	_ = buf[dim*16-1] // BCE hint
 	for i := range vec {
 		copy(buf[i*16:], vec[i][:])
 	}

@@ -39,7 +39,7 @@ func makeVectorType(subType Type, dim int) VectorType {
 
 // --- marshalVectorFloat32 / unmarshalVectorFloat32 ---
 
-func TestMarshalVectorFloat32_RoundTrip(t *testing.T) {
+func TestMarshalVectorFloat32_RoundTrip_MultiDim(t *testing.T) {
 	dims := []int{1, 3, 128, 768, 1536}
 	for _, dim := range dims {
 		info := makeVectorType(TypeFloat, dim)
@@ -177,7 +177,7 @@ func TestUnmarshalVectorFloat32_WrongDataSize(t *testing.T) {
 
 // --- marshalVectorFloat64 / unmarshalVectorFloat64 ---
 
-func TestMarshalVectorFloat64_RoundTrip(t *testing.T) {
+func TestMarshalVectorFloat64_RoundTrip_MultiDim(t *testing.T) {
 	dims := []int{1, 3, 128, 768}
 	for _, dim := range dims {
 		info := makeVectorType(TypeDouble, dim)
