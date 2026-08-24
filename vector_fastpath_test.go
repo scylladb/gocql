@@ -672,8 +672,7 @@ func TestVectorFastPath_ZeroDimCounter(t *testing.T) {
 
 func TestVectorFastPath_FallsThrough(t *testing.T) {
 	// Passing a custom slice type ([]myFloat instead of []float32) for
-	// TypeFloat should fall through to the reflect path and still work
-	// via Marshal/Unmarshal.
+	// TypeFloat should fall through to the reflect path and still work.
 	info := makeVectorType(TypeFloat, 3)
 	type myFloat float32
 	vec := []myFloat{1.0, 2.0, 3.0}
