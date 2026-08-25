@@ -9,9 +9,21 @@ BIN_DIR := "${MAKEFILE_PATH}/bin"
 CASSANDRA_VERSION ?= LATEST
 SCYLLA_VERSION ?= LATEST
 
+HOST_ARCH := $(shell uname -m)
+
 GOLANGCI_VERSION = 2.5.0
 GET_VERSION_VERSION = 0.4.5
 GET_VERSION_BIN = $(MAKEFILE_PATH)/bin/get-version
+# get-version publishes one release archive per architecture, and every
+# resolve-*-version target below depends on the binary being runnable: the
+# amd64v3 build is an "Exec format error" on aarch64.
+GET_VERSION_ARCH = $(if $(filter aarch64,$(HOST_ARCH)),arm64,amd64v3)
+
+# scylla-ccm chooses which relocatable package to download from SCYLLA_ARCH and
+# falls back to x86_64 (ccmlib/scylla_repository.py), so on an aarch64 host it
+# would fetch a package whose scylla binary cannot run. uname -m already prints
+# the two names ccm knows, x86_64 and aarch64.
+SCYLLA_ARCH ?= $(HOST_ARCH)
 
 TEST_CQL_PROTOCOL ?= 4
 TEST_COMPRESSOR ?= snappy
@@ -103,6 +115,7 @@ SCYLLA_CONFIG = "native_transport_port_ssl: 9142" \
 "experimental_features: [udf]"
 
 export JVM_EXTRA_OPTS
+export SCYLLA_ARCH
 export JAVA11_HOME=${JAVA_HOME_11_X64}
 export JAVA17_HOME=${JAVA_HOME_17_X64}
 export JAVA_HOME=${JAVA_HOME_11_X64}
@@ -117,7 +130,7 @@ print-config:
 .prepare-get-version: .prepare-bin
 	@if [[ ! -x "${GET_VERSION_BIN}" ]] || [[ "$$("${GET_VERSION_BIN}" -version 2>/dev/null)" != "${GET_VERSION_VERSION}" ]]; then
 		echo "Installing get-version ${GET_VERSION_VERSION}"
-		curl -sSLo /tmp/get-version.zip https://github.com/scylladb-actions/get-version/releases/download/v${GET_VERSION_VERSION}/get-version_${GET_VERSION_VERSION}_linux_amd64v3.zip
+		curl -sSLo /tmp/get-version.zip https://github.com/scylladb-actions/get-version/releases/download/v${GET_VERSION_VERSION}/get-version_${GET_VERSION_VERSION}_linux_${GET_VERSION_ARCH}.zip
 		unzip -o /tmp/get-version.zip get-version -d "$(MAKEFILE_PATH)/bin" >/dev/null
 	fi
 
