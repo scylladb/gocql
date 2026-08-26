@@ -197,19 +197,133 @@ func addBytes(frame []byte, index int) (int, bool) {
 	return index, true
 }
 
-func addQueryParams(frame []byte, index int) (int, bool) {
-	//use consistency
+// addLongString advances index past a [long string]: a 4-byte length followed by
+// that many bytes.
+//
+// The length is read as signed for the same reason addBytes does: a negative value
+// is a damaged frame rather than a null, and reading it unsigned would turn one into
+// a 4 GB field that the walk never recovers from.
+func addLongString(frame []byte, index int) (int, bool) {
+	if !fits(frame, index, 4) {
+		return 0, false
+	}
+	length := int(int32(uint32(frame[index+0])<<24 | uint32(frame[index+1])<<16 | uint32(frame[index+2])<<8 | uint32(frame[index+3])))
+	index = index + 4
+	if length < 0 || !fits(frame, index, length) {
+		return 0, false
+	}
+	return index + length, true
+}
+
+// addShortBytes advances index past a [short bytes] value: a 2-byte length followed
+// by that many bytes.
+func addShortBytes(frame []byte, index int) (int, bool) {
 	if !fits(frame, index, 2) {
 		return 0, false
+	}
+	length := int(frame[index])<<8 | int(frame[index+1])
+	if !fits(frame, index, 2+length) {
+		return 0, false
+	}
+	return index + 2 + length, true
+}
+
+// addBatchQueries advances index past a BATCH body's type, query count and queries,
+// leaving it on the consistency field that starts the batch's parameter block.
+//
+// That block is laid out exactly like a QUERY's <query_parameters> minus the fields
+// a batch never carries, so addQueryParams walks it unchanged: writeBatchFrame only
+// ever sets the serial-consistency, default-timestamp, keyspace and now_in_seconds
+// flags, so the values, page-size and paging-state branches cannot fire.
+//
+// Named values need no handling here. writeBatchFrame rejects them outright on every
+// protocol version, because Cassandra never implemented them (CASSANDRA-10246).
+func addBatchQueries(frame []byte, index int) (int, bool) {
+	// batch type
+	if !fits(frame, index, 1) {
+		return 0, false
+	}
+	index = index + 1
+
+	if !fits(frame, index, 2) {
+		return 0, false
+	}
+	queryCount := int(frame[index])<<8 | int(frame[index+1])
+	index = index + 2
+
+	for i := 0; i < queryCount; i++ {
+		if !fits(frame, index, 1) {
+			return 0, false
+		}
+		kind := frame[index]
+		index = index + 1
+
+		var ok bool
+		switch kind {
+		case 0:
+			// A query string, as a [long string].
+			if index, ok = addLongString(frame, index); !ok {
+				return 0, false
+			}
+		case 1:
+			// A prepared statement id, as [short bytes].
+			if index, ok = addShortBytes(frame, index); !ok {
+				return 0, false
+			}
+		default:
+			// Not a kind the driver writes, so the rest of the body cannot be
+			// located. A damaged recording, which the caller hashes raw.
+			return 0, false
+		}
+
+		if !fits(frame, index, 2) {
+			return 0, false
+		}
+		valuesLen := int(frame[index])<<8 | int(frame[index+1])
+		index = index + 2
+
+		for j := 0; j < valuesLen; j++ {
+			// A null or unset value carries no payload; addBytes reads the length as
+			// signed so both advance by just the length field.
+			if index, ok = addBytes(frame, index); !ok {
+				return 0, false
+			}
+		}
+	}
+
+	return index, true
+}
+
+// addQueryParams walks a <query_parameters> block starting at index, which must
+// point at the consistency field.
+//
+// It reports two ranges rather than one position. end is where the fields that
+// belong in a frame's hash stop: consistency through serial consistency. tailStart
+// and tailEnd bracket the protocol v5 keyspace override and now_in_seconds fields,
+// which also identify a request but are not contiguous with end, because the
+// default timestamp sits between them and must stay out of the hash — it is
+// time.Now() at send time (framer.writeQueryParams), so hashing it would make a
+// recorded frame never match its replay. An empty tail is reported as
+// tailStart == tailEnd.
+//
+// The v5 fields are walked only on v5+, which is what keeps this change invisible
+// to protocol v4: framer.validateV5Options rejects a keyspace override and
+// now_in_seconds below v5, and FlagWithNowInSeconds (0x100) is not even
+// representable in v4's one-byte flags field, so no v4 frame can reach the tail.
+func addQueryParams(frame []byte, index int) (end, tailStart, tailEnd int, ok bool) {
+	//use consistency
+	if !fits(frame, index, 2) {
+		return 0, 0, 0, false
 	}
 	index = index + 2
 
 	//use query flags
 	var flags uint32
-	if frame[0]&protoVersionMask > protoVersion4 {
+	protoV5OrNewer := frame[0]&protoVersionMask > protoVersion4
+	if protoV5OrNewer {
 		// For protocol v5+, flags are a 4-byte big-endian uint32
 		if !fits(frame, index, 4) {
-			return 0, false
+			return 0, 0, 0, false
 		}
 		flags = uint32(frame[index])<<24 |
 			uint32(frame[index+1])<<16 |
@@ -218,7 +332,7 @@ func addQueryParams(frame []byte, index int) (int, bool) {
 		index = index + 4
 	} else {
 		if !fits(frame, index, 1) {
-			return 0, false
+			return 0, 0, 0, false
 		}
 		flags = uint32(frame[index])
 		index = index + 1
@@ -235,7 +349,7 @@ func addQueryParams(frame []byte, index int) (int, bool) {
 
 	if flags&frm.FlagValues == frm.FlagValues {
 		if !fits(frame, index, 2) {
-			return 0, false
+			return 0, 0, 0, false
 		}
 		valuesLen := int(frame[index])<<8 | int(frame[index+1])
 		index = index + 2
@@ -243,25 +357,25 @@ func addQueryParams(frame []byte, index int) (int, bool) {
 		for i := 0; i < valuesLen; i++ {
 			if names {
 				if !fits(frame, index, 2) {
-					return 0, false
+					return 0, 0, 0, false
 				}
 				stringLenght := int(frame[index])<<8 | int(frame[index+1])
 				if !fits(frame, index, 2+stringLenght) {
-					return 0, false
+					return 0, 0, 0, false
 				}
 				index = index + 2 + stringLenght
 			}
 
 			var ok bool
 			if index, ok = addBytes(frame, index); !ok {
-				return 0, false
+				return 0, 0, 0, false
 			}
 		}
 	}
 
 	if flags&frm.FlagPageSize == frm.FlagPageSize {
 		if !fits(frame, index, 4) {
-			return 0, false
+			return 0, 0, 0, false
 		}
 		index = index + 4
 	}
@@ -269,42 +383,89 @@ func addQueryParams(frame []byte, index int) (int, bool) {
 	if flags&frm.FlagWithPagingState == frm.FlagWithPagingState {
 		var ok bool
 		if index, ok = addBytes(frame, index); !ok {
-			return 0, false
+			return 0, 0, 0, false
 		}
 	}
 
 	if flags&frm.FlagWithSerialConsistency == frm.FlagWithSerialConsistency {
 		if !fits(frame, index, 2) {
-			return 0, false
+			return 0, 0, 0, false
 		}
 		index = index + 2
 	}
 
-	// do not use timelaps and keyspace
-	return index, true
+	end = index
+
+	// Everything below is protocol v5 only. On v4 the tail is empty and end is the
+	// whole answer, exactly as before this function grew a tail.
+	if !protoV5OrNewer {
+		return end, index, index, true
+	}
+
+	// Skipped, never hashed: see the note on the default timestamp above.
+	if flags&frm.FlagDefaultTimestamp == frm.FlagDefaultTimestamp {
+		if !fits(frame, index, 8) {
+			return 0, 0, 0, false
+		}
+		index = index + 8
+	}
+
+	tailStart = index
+
+	if flags&frm.FlagWithKeyspace == frm.FlagWithKeyspace {
+		var ok bool
+		if index, ok = addShortBytes(frame, index); !ok {
+			return 0, 0, 0, false
+		}
+	}
+
+	if flags&frm.FlagWithNowInSeconds == frm.FlagWithNowInSeconds {
+		if !fits(frame, index, 4) {
+			return 0, 0, 0, false
+		}
+		index = index + 4
+	}
+
+	return end, tailStart, index, true
 }
 
 func addHeader(index int) int {
 	return index + 8
 }
 
-func addCustomPayload(frame []byte, index int, p int) (int, bool) {
-	if !fits(frame, 8+p, 2) {
+// addCustomPayload walks the [bytes map] a frame carries when FlagCustomPayload is
+// set, and returns the index just past it.
+//
+// It derives that map's offset from p with addHeader rather than taking it as well,
+// so the offset it reads the entry count from and the offset it walks on from cannot
+// disagree. Every caller passed addHeader(p) for both, which held only by convention:
+// a caller passing an index already advanced past something would have read the count
+// from the body start and walked from somewhere else, and the walk would be
+// plausible-but-wrong in the way the empty-map case below was.
+func addCustomPayload(frame []byte, p int) (int, bool) {
+	index := addHeader(p)
+	if !fits(frame, index, 2) {
 		return 0, false
 	}
-	customPayloadLenght := int(frame[8+p])<<8 | int(frame[9+p])
-	if customPayloadLenght > 0 {
-		index = index + 2
-	}
-	for i := 0; i < customPayloadLenght; i++ {
+	customPayloadLength := int(frame[index])<<8 | int(frame[index+1])
+	// Skip the [bytes map] count itself unconditionally. A map of zero entries still
+	// spends the two bytes that say so, and stopping short of them leaves the walk
+	// reading that count as the next field: for a BATCH, its type, then its own second
+	// byte as half of the statement count. That misreading is plausible rather than
+	// detectably wrong — type LOGGED, zero statements, consistency ONE — so no bounds
+	// check fails and nothing falls back to the raw bytes. It simply hashes a handful
+	// of bytes of the wrong field, the same handful for every batch, which is a
+	// collision the replayer resolves by serving whichever response it finds first.
+	index = index + 2
+	for i := 0; i < customPayloadLength; i++ {
 		if !fits(frame, index, 2) {
 			return 0, false
 		}
-		stringLenght := int(frame[index])<<8 | int(frame[index+1])
-		if !fits(frame, index, 2+stringLenght) {
+		stringLength := int(frame[index])<<8 | int(frame[index+1])
+		if !fits(frame, index, 2+stringLength) {
 			return 0, false
 		}
-		index = index + 2 + stringLenght
+		index = index + 2 + stringLength
 
 		var ok bool
 		if index, ok = addBytes(frame, index); !ok {
@@ -315,41 +476,83 @@ func addCustomPayload(frame []byte, index int, p int) (int, bool) {
 	return index, true
 }
 
+// foldHash mixes add into h, so a frame's identity can span two byte ranges that
+// are not contiguous.
+//
+// murmur.Murmur3H1 hashes one slice and has no incremental form, and the ranges a
+// request's identity spans are separated by bytes that must not be hashed (the
+// default timestamp). Copying them together into a scratch buffer would allocate on
+// every request, and GetFrameHash runs per request inside a benchmark harness. The
+// mix is boost's hash_combine; the hash only has to be deterministic and collide
+// rarely across the handful of frames in a recording, not be cryptographic.
+func foldHash(h, add int64) int64 {
+	const goldenRatio = 0x9E3779B97F4A7C15
+	return int64(uint64(h) ^ (uint64(add) + goldenRatio + uint64(h)<<6 + uint64(h)>>2))
+}
+
+// hashWithTail hashes frame[start:end], folding in frame[tailStart:tailEnd] when
+// that second range is non-empty. An empty tail returns exactly the single-range
+// hash, which is what keeps protocol v4 frames — where the tail is always empty —
+// byte-for-byte identical to a plain Murmur3H1 of the range.
+func hashWithTail(frame []byte, start, end, tailStart, tailEnd int) int64 {
+	h := murmur.Murmur3H1(frame[start:end])
+	if tailEnd > tailStart {
+		h = foldHash(h, murmur.Murmur3H1(frame[tailStart:tailEnd]))
+	}
+	return h
+}
+
+// hashParams finishes hashing a request whose body ends in a <query_parameters>
+// block: it walks the block at paramsStart and hashes frame[hashStart:] up to the
+// block's end, folding in the protocol v5 tail. A block that cannot be walked means
+// the frame cannot be located either, so it falls back to hashing the raw bytes,
+// matching the fallbacks at its call sites.
+func hashParams(frame []byte, hashStart, paramsStart int) int64 {
+	end, tailStart, tailEnd, ok := addQueryParams(frame, paramsStart)
+	if !ok {
+		return murmur.Murmur3H1(frame)
+	}
+	return hashWithTail(frame, hashStart, end, tailStart, tailEnd)
+}
+
 func GetFrameHash(frame []byte, useMetadataID bool) int64 {
+	// GetFrameHash parses a bare CQL request frame, of any protocol version the
+	// driver speaks, and returns a hash standing for the request's identity: enough
+	// of it to tell it apart from the other requests on the connection, and no byte
+	// that differs between the moment it was recorded and the moment it is replayed.
+	// Those two requirements are what every choice below is answering to.
+	//
 	// useMetadataID reports whether the SCYLLA_USE_METADATA_ID extension was
 	// negotiated on the connection. On protocol v4 the extension adds a
 	// resultMetadataID short-bytes field to EXECUTE requests (the same field v5
 	// always carries); it cannot be inferred from the frame bytes, so it is
 	// plumbed in by the recorder/replayer (see Record.UseMetadataID).
 	//
-	// GetFrameHash parses raw CQL request frames. On protocol v5+ the on-wire
-	// bytes recorded by the replayer are not a CQL frame but a transport
-	// segment produced by framer.prepareModernLayout (segment header, optional
-	// CRC/compression, possibly split across segments), so frame[0] is segment
-	// data rather than the CQL version byte. Parsing it as a CQL frame would
-	// hash the wrong byte range.
+	// A bare CQL frame is the caller's responsibility. From protocol v5 the driver
+	// wraps each frame in transport segments (framer.prepareModernLayout), and those
+	// on-wire bytes are not a frame: frame[0] is segment-header data rather than the
+	// CQL version byte. This function does not detect that and cannot — for a v5
+	// segment frame[0] is the low byte of a 17-bit length, so it is not
+	// distinguishable from a version byte without protocol context the bytes do not
+	// carry. Handing it segment bytes hashes a meaningless range. The record/replay
+	// dialers refuse v5 connections outright today (ErrProtoV5NotSupported) and will
+	// unwrap the segments instead once the dialer half of
+	// https://github.com/scylladb/gocql/issues/937 lands.
 	//
-	// This is currently dormant because Scylla negotiates at most protocol v4,
-	// so v5 segment framing is never produced. Proper segment unwrapping is
-	// tracked in https://github.com/scylladb/gocql/issues/937.
+	// Note the empty and short-frame guards hash the frame as given, while the
+	// raw-bytes fallbacks inside the switch hash it with the stream id already
+	// blanked. Both are stable between record and replay, which is all the hash has
+	// to be — but they are not interchangeable, so a new fallback has to match the
+	// one next to it rather than whichever reads better. The two guards have no
+	// choice: they run before, or on frames too short to contain, the stream id they
+	// would have to blank.
 	//
-	// The check below is only a best-effort heuristic: for a v5 segment,
-	// frame[0] is the low byte of the 17-bit segment length, NOT a CQL version
-	// byte. It reliably diverts inputs whose first byte looks like a v5+ version
-	// (>= 5), but a segment whose length low-byte is < 5 will still fall into
-	// the legacy parser below and be mis-hashed. Correctly distinguishing the
-	// two requires protocol context that is not plumbed here.
-	//
-	// TODO(#937): replace this heuristic with real protocol context.
-	//
-	// Note this guard, and the short-frame guard below it, hash the frame as given,
-	// while the raw-bytes fallbacks inside the switch hash it with the stream id
-	// already blanked. Both are stable between record and replay, which is all the
-	// hash has to be — but they are not interchangeable, so a new fallback has to
-	// match the one next to it rather than whichever reads better. The two guards
-	// here have no choice: they run before, or on frames too short to contain, the
-	// stream id they would have to blank.
-	if len(frame) == 0 || frame[0]&protoVersionMask >= protoVersion5 {
+	// One known gap, tracked rather than papered over: every QUERY frame hashes
+	// alike, because the parameter walk is handed the body start instead of the
+	// position past the query text (scylladb/gocql#1000). On v5 that costs replay
+	// outright, since the failed walk falls back to hashing the frame whole, default
+	// timestamp included.
+	if len(frame) == 0 {
 		return murmur.Murmur3H1(frame)
 	}
 
@@ -398,23 +601,36 @@ func GetFrameHash(frame []byte, useMetadataID bool) int64 {
 		var ok bool
 		index := addHeader(p)
 		if frame[1]&frm.FlagCustomPayload == frm.FlagCustomPayload {
-			if index, ok = addCustomPayload(frame, index, p); !ok {
+			if index, ok = addCustomPayload(frame, p); !ok {
 				return murmur.Murmur3H1(frame)
 			}
 		}
-		endIndex := index
-		if endIndex, ok = addQueryParams(frame, endIndex); !ok {
-			return murmur.Murmur3H1(frame)
-		}
-		if index > endIndex {
-			return murmur.Murmur3H1(frame)
-		}
-		return murmur.Murmur3H1(frame[index:endIndex])
+
+		// KNOWN BUG, deferred to scylladb/gocql#1000: addQueryParams wants the
+		// consistency field, but a QUERY body is the query text as a [long string]
+		// followed by the query parameters, so what it is handed here is the text's
+		// 4-byte length. It reads the length's first two bytes as the consistency and
+		// the third as the flags, which are 0x00 0x00 0x00 for every query shorter than
+		// 16 MiB, so the walk stops at once and every QUERY frame hashes those same
+		// three zero bytes — the query text and the bound values fall outside the
+		// hashed range entirely.
+		//
+		// It is not fixed here because the correct offset makes the checked-in
+		// recordings in tests/bench unmatchable: their control-connection query text
+		// predates the explicit column list the driver sends today, and only the
+		// collision hides that. Regenerating them needs a live node, so both go
+		// together in #1000.
+		//
+		// The consequence for protocol v5 is worse than a collision and is called out
+		// in #1000: the 4-byte v5 flags field makes the misaligned walk fail a bounds
+		// check, falling back to hashing the whole frame — default timestamp included —
+		// so a v5 QUERY cannot match its recording. v5 EXECUTE is unaffected.
+		return hashParams(frame, index, index)
 	case byte(opExecute):
 		var ok bool
 		index := addHeader(p)
 		if frame[1]&frm.FlagCustomPayload == frm.FlagCustomPayload {
-			if index, ok = addCustomPayload(frame, index, p); !ok {
+			if index, ok = addCustomPayload(frame, p); !ok {
 				return murmur.Murmur3H1(frame)
 			}
 		}
@@ -454,30 +670,49 @@ func GetFrameHash(frame []byte, useMetadataID bool) int64 {
 		}
 
 		if frame[0]&protoVersionMask > protoVersion1 {
-			if endIndex, ok = addQueryParams(frame, endIndex); !ok {
+			return hashParams(frame, index, endIndex)
+		}
+
+		// Protocol v1 has no <query_parameters> block: the values follow the
+		// preparedID directly. Bounded by the preparedID length check above, which
+		// read the same two bytes at the same index: nothing between here and there
+		// moves it.
+		valuesLen := int(frame[index])<<8 | int(frame[index+1])
+		index = index + 2
+		for i := 0; i < valuesLen; i++ {
+			if index, ok = addBytes(frame, index); !ok {
 				return murmur.Murmur3H1(frame)
 			}
-		} else {
-			// Bounded by the preparedID length check above, which read the same two
-			// bytes at the same index: nothing between here and there moves it.
-			valuesLen := int(frame[index])<<8 | int(frame[index+1])
-			index = index + 2
-			for i := 0; i < valuesLen; i++ {
-				if index, ok = addBytes(frame, index); !ok {
-					return murmur.Murmur3H1(frame)
-				}
-			}
-			index = index + 2
 		}
-		// The v1 branch above walks index independently of endIndex and can leave it
-		// past the end of the range, so the two still have to be ordered before the
-		// slice. endIndex itself is now bounded by the helpers.
+		index = index + 2
+		// The walk above moves index independently of endIndex and can leave it past
+		// the end of the range, so the two still have to be ordered before the slice.
+		// endIndex itself is bounded by the helpers.
 		if index > endIndex {
 			return murmur.Murmur3H1(frame)
 		}
 		return murmur.Murmur3H1(frame[index:endIndex])
 	case byte(opBatch):
-		return murmur.Murmur3H1(frame)
+		var ok bool
+		index := addHeader(p)
+		if frame[1]&frm.FlagCustomPayload == frm.FlagCustomPayload {
+			if index, ok = addCustomPayload(frame, p); !ok {
+				return murmur.Murmur3H1(frame)
+			}
+		}
+
+		// A BATCH used to be hashed whole, which put its default timestamp in the
+		// hash. writeBatchFrame fills that field with time.Now() unless the caller
+		// pinned a value, so a recorded BATCH hashed differently on every run and
+		// replaying one could only ever fail to find its response. Walking the body
+		// to the end of the parameter block leaves the timestamp out, the same way
+		// QUERY and EXECUTE do.
+		paramsStart, ok := addBatchQueries(frame, index)
+		if !ok {
+			return murmur.Murmur3H1(frame)
+		}
+
+		return hashParams(frame, index, paramsStart)
 	case byte(opOptions):
 		return murmur.Murmur3H1(frame)
 	case byte(opRegister):
