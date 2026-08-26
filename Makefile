@@ -482,9 +482,15 @@ check-go-mod-drift:
 	go mod tidy -C lz4 -diff
 	go mod tidy -C tests/bench -diff
 
-check: .prepare-golangci check-go-mod-drift
+# The one architecture-dependent part of check, split out so the arm64 lane can run
+# it without the linters, which are not. It is not redundant with test-unit either:
+# `go test` compiles no non-test file the `all` tag guards -- integration_only.go,
+# internal/ccm, internal/debug/debug_on.go.
+build:
 	@echo "Build"
 	go build -tags all .
+
+check: build .prepare-golangci check-go-mod-drift
 	echo "Check linting"
 	${BIN_DIR}/golangci-lint run
 
