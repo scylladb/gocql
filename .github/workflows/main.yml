@@ -129,6 +129,18 @@ jobs:
       fail-fast: false
     env:
       SCYLLA_VERSION: ${{ matrix.scylla-version }}
+      # The arm64 entry is the lane that exists for pierrec/lz4's hand-written
+      # internal/lz4block/decode_arm64.s, so run it against that code rather than
+      # against the snappy default: LZ4Compressor.Decode and AppendDecompressed are
+      # the entry points into that assembly, and nothing else here reaches it end to
+      # end. Possible only now that the root harness can build the nested lz4 module
+      # -- createCluster's `case "lz4"` is what this selects. snappy keeps its
+      # coverage on the five amd64 lanes.
+      #
+      # Both arms of the expression are non-empty strings on purpose: TEST_COMPRESSOR
+      # is a `?=` default in the Makefile, so an empty value would still count as set
+      # and would silently select no-compression on those five.
+      TEST_COMPRESSOR: ${{ matrix.arch == 'arm64' && 'lz4' || 'snappy' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -277,18 +289,54 @@ jobs:
         run: TEST_INTEGRATION_TAGS="ccm gocql_debug" make test-integration-cassandra
 
       # Native protocol v5 is never negotiated automatically (discoverProtocol caps at
-      # v4), so every ProtoVersion >= 5 integration test skips at the default
-      # TEST_CQL_PROTOCOL=4 — including the v5 half of the result-metadata-id exchange.
-      # Run that one test explicitly. Scoped with -run rather than a full v5 lane so a
-      # gap in an unrelated v5 test cannot block unrelated work; the full lane is #960.
+      # v4), so at the default TEST_CQL_PROTOCOL=4 every ProtoVersion >= 5 test skips and
+      # the whole suite runs over v4 framing. This lane runs it over v5 instead, which is
+      # the only place segmentation, compressed segments, now_in_seconds, keyspace
+      # override and METADATA_CHANGED reach a live server.
       #
-      # TEST_COMPRESSOR is not optional here: the default is snappy, and
-      # ClusterConfig.Validate rejects any compressor that is not a SegmentCompressor
-      # once ProtoVersion >= 5, which would fail every session in the suite.
-      - name: Run proto-5 result-metadata-id tests with Cassandra ${{ matrix.cassandra-version }}(${{ steps.cassandra-version.outputs.value }})
+      # Cassandra only, and only 5-LATEST: ScyllaDB's protocol extensions are defined on
+      # top of v4 — SCYLLA_USE_METADATA_ID exists precisely to backport a v5 feature onto
+      # v4 — so there is no v5 to negotiate on the Scylla legs.
+      #
+      # lz4 is the only legal *compressor* on v5; no-compression stays a valid setting,
+      # and the step below uses it. Snappy is removed in v5: a v5 server still advertises
+      # it in its OPTIONS response, but STARTUP with COMPRESSION=snappy is rejected
+      # server-side, and ClusterConfig.Validate refuses any compressor that is not a
+      # SegmentCompressor once ProtoVersion >= 5, which would fail every session in the
+      # suite. This lane compresses rather than running uncompressed so the
+      # compressed-segment path is covered; the step below covers the other half.
+      #
+      # cassandra-start short-circuits when the cluster is already up, so this costs one
+      # extra suite run rather than a second CCM bring-up.
+      #
+      # TEST_INTEGRATION_TIMEOUT is raised for headroom, not because v5 is slower: in
+      # back-to-back local runs v4 and v5 came out at 464s and 467s. The suite is simply
+      # close to the 10m default whenever the machine is loaded (280s-470s observed), and
+      # overrunning go test's -timeout panics with a goroutine dump instead of reporting
+      # the failing test. The default is left alone so only this new lane pays for it.
+      - name: Run proto-5 suite with Cassandra ${{ matrix.cassandra-version }}(${{ steps.cassandra-version.outputs.value }})
+        if: matrix.cassandra-version == '5-LATEST' && steps.cassandra-version.outputs.value != 'NOT-FOUND'
+        run: |
+          TEST_CQL_PROTOCOL=5 \
+          TEST_COMPRESSOR=lz4 \
+          TEST_INTEGRATION_TIMEOUT=20m \
+          make test-integration-cassandra
+
+      # The lane above compresses every segment it sends, so on its own it leaves the
+      # uncompressed v5 framing with no integration coverage at all: segment.ReadHeader
+      # and the writer take a different header layout and CRC for compressed and
+      # uncompressed segments, and only the compressed half would be exercised.
+      #
+      # Scoped with -run rather than a second full suite: the two tests below are the
+      # ones whose subject is the framing itself -- TestLargeSizeQuery is the
+      # multi-segment split, TestPrepareExecuteMetadataChangedFlag is the v5 half of the
+      # result-metadata-id exchange -- so this costs seconds, where repeating the suite
+      # would cost another eight minutes. Do not fold it into the lane above as a
+      # duplicate; the compressor is the entire point of the difference.
+      - name: Run proto-5 uncompressed framing tests with Cassandra ${{ matrix.cassandra-version }}(${{ steps.cassandra-version.outputs.value }})
         if: matrix.cassandra-version == '5-LATEST' && steps.cassandra-version.outputs.value != 'NOT-FOUND'
         run: |
           TEST_CQL_PROTOCOL=5 \
           TEST_COMPRESSOR=no-compression \
-          TEST_OPTS="-run TestPrepareExecuteMetadataChangedFlag" \
+          TEST_OPTS="-run 'TestLargeSizeQuery|TestPrepareExecuteMetadataChangedFlag'" \
           make test-integration-cassandra

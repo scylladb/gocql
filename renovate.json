@@ -16,6 +16,16 @@
         "indirect"
       ],
       "enabled": true
+    },
+    {
+      "description": "The root module requires its own nested lz4 module so the integration suite can build LZ4Compressor for the protocol v5 lane. A replace directive redirects it to ./lz4, so the pinned version is inert here and only matters to downstream consumers, for whom the replace does not apply. It should follow the lz4 module's release tags, not Renovate.",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchPackageNames": [
+        "github.com/scylladb/gocql/lz4"
+      ],
+      "enabled": false
     }
   ]
 }
