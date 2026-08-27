@@ -448,19 +448,46 @@ clean-coverage:
 # themselves belong to test-unit.
 BENCH_OPTS = -tags "bench unit" -run '^$$' -bench=. -benchmem
 
+# Each module's status is captured rather than left to abort the recipe, on both branches.
+# .SHELLFLAGS is -eo pipefail, so a bare failing command takes the whole target down where
+# it stands -- skipping the modules after it, and in the workflow branch the closing fence
+# with them. The tests/bench run is last and is the one that matters most: it is the only
+# end-to-end check that the frame hashing still matches a recording, and a root-module
+# regression must not be what stops it from running. The bench workflow is label-gated, so
+# on most changes the shell branch below is the only one that ever runs this at all.
+# test-unit's workflow branch does the same dance for the same reason; its shell branch
+# does not, so a root-module failure there still skips lz4.
 test-bench:
 	@echo "Run benchmark tests"
 ifeq ($(shell if [[ -n "$${GITHUB_STEP_SUMMARY}" ]]; then echo "running-in-workflow"; else echo "running-in-shell"; fi), running-in-workflow)
 	echo "### Benchmark Results" >>$${GITHUB_STEP_SUMMARY}
 	echo '```' >>"$${GITHUB_STEP_SUMMARY}"
 	echo go test ${BENCH_OPTS} ./...
-	go test ${BENCH_OPTS} ./... | tee -a >>"$${GITHUB_STEP_SUMMARY}"
+	BENCH_STATUS=0
+	go test ${BENCH_OPTS} ./... | tee -a "$${GITHUB_STEP_SUMMARY}" || BENCH_STATUS=$${PIPESTATUS[0]}
 	echo go test -C lz4 ${BENCH_OPTS} ./...
-	go test -C lz4 ${BENCH_OPTS} ./... | tee -a >>"$${GITHUB_STEP_SUMMARY}"
+	LZ4_BENCH_STATUS=0
+	go test -C lz4 ${BENCH_OPTS} ./... | tee -a "$${GITHUB_STEP_SUMMARY}" || LZ4_BENCH_STATUS=$${PIPESTATUS[0]}
+	echo go test -C tests/bench ${BENCH_OPTS} ./...
+	REPLAY_BENCH_STATUS=0
+	go test -C tests/bench ${BENCH_OPTS} ./... | tee -a "$${GITHUB_STEP_SUMMARY}" || REPLAY_BENCH_STATUS=$${PIPESTATUS[0]}
 	echo '```' >>"$${GITHUB_STEP_SUMMARY}"
+	if (( BENCH_STATUS != 0 )); then exit "$${BENCH_STATUS}"; fi
+	if (( LZ4_BENCH_STATUS != 0 )); then exit "$${LZ4_BENCH_STATUS}"; fi
+	exit "$${REPLAY_BENCH_STATUS}"
 else
-	go test ${BENCH_OPTS} ./...
-	go test -C lz4 ${BENCH_OPTS} ./...
+	echo go test ${BENCH_OPTS} ./...
+	BENCH_STATUS=0
+	go test ${BENCH_OPTS} ./... || BENCH_STATUS=$$?
+	echo go test -C lz4 ${BENCH_OPTS} ./...
+	LZ4_BENCH_STATUS=0
+	go test -C lz4 ${BENCH_OPTS} ./... || LZ4_BENCH_STATUS=$$?
+	echo go test -C tests/bench ${BENCH_OPTS} ./...
+	REPLAY_BENCH_STATUS=0
+	go test -C tests/bench ${BENCH_OPTS} ./... || REPLAY_BENCH_STATUS=$$?
+	if (( BENCH_STATUS != 0 )); then exit "$${BENCH_STATUS}"; fi
+	if (( LZ4_BENCH_STATUS != 0 )); then exit "$${LZ4_BENCH_STATUS}"; fi
+	exit "$${REPLAY_BENCH_STATUS}"
 endif
 
 check-go-mod-drift:
