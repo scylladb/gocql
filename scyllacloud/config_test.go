@@ -11,9 +11,8 @@ import (
 	"reflect"
 	"testing"
 
-	"sigs.k8s.io/yaml"
-
 	"github.com/gocql/gocql/internal/tests"
+	yaml "github.com/gocql/gocql/internal/yamlutil"
 
 	"github.com/gocql/gocql"
 )
