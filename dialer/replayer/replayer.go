@@ -37,14 +37,39 @@ func NewConnectionReplayer(fname string) (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &ConnectionReplayer{frames: frames, frameIdsToReplay: []int{}, streamIdsToReplay: []int{}, frameIdx: 0, frameResponsePosition: 0, gotRequest: make(chan struct{}, 1)}, nil
+	return &ConnectionReplayer{frames: frames, frameIdsToReplay: []int{}, streamIdsToReplay: []int{}, gotRequest: make(chan struct{}, 1)}, nil
 }
 
 type ConnectionReplayer struct {
+	// failed is the failure that ended this connection, if one did. Only materialise
+	// raises one, and nothing it refuses is repairable by trying again -- while frameIdx
+	// is not advanced past a record that failed, so without this Read would fetch that
+	// same record on every call and hand the driver an unbounded stream of errors:
+	// identical to read, and distinct as values, one fresh fmt.Errorf per call.
+	//
+	// A plain field rather than an atomic, and read by nothing outside Read. Write runs
+	// on another goroutine and deliberately does not consult it. The recorder gates both
+	// its directions, but it holds its latch in an atomic.Pointer because it had to; this
+	// connection's cross-goroutine state -- frameIdsToReplay, streamIdsToReplay, closed
+	// and the gotRequest handshake around them -- is being replaced wholesale by a mutex
+	// and a sync.Cond in scylladb/gocql#1020, and a fourth shared field here would be one
+	// more thing for that change to unpick. Gating Write would also cost the guarantee
+	// dialer.FrameSplitter.Feed rests on: that this type's Write is the one Feed caller
+	// with no failure gate of its own.
+	//
+	// It leads the struct only to keep the pointer-bearing fields contiguous, which the
+	// fieldalignment vet check requires -- an error is two words of pointers.
+	failed error
+
 	gotRequest        chan struct{}
 	frames            []*FrameRecorded
 	frameIdsToReplay  []int
 	streamIdsToReplay []int
+	// outgoing is the response currently being served: a copy of the recorded frame
+	// with its stream id patched, handed out across as many Read calls as it takes.
+	// Materialising it once is what makes the stream id right regardless of how the
+	// caller's buffer is sized.
+	outgoing []byte
 	// splitter turns the bytes the driver writes into whole CQL frames. The write
 	// path happens to deliver exactly one frame per Write today — there is no
 	// bufio.Writer on it, and although write coalescing is on by default,
@@ -55,14 +80,25 @@ type ConnectionReplayer struct {
 	// net.Conn here would silently start coalescing several frames into one Write.
 	// The exported Conn.Write passes arbitrary bytes regardless. So the assumption
 	// is not relied on.
-	splitter              dialer.FrameSplitter
-	frameIdx              int
-	frameResponsePosition int
-	closed                bool
+	splitter    dialer.FrameSplitter
+	outgoingPos int
+	frameIdx    int
+	closed      bool
 	// useMetadataID latches once the STARTUP request on this connection opts into
 	// SCYLLA_USE_METADATA_ID, matching how the recorder stamped the frames so live
 	// and load-time hashes agree (see GetFrameHash / Record.UseMetadataID).
 	useMetadataID bool
+}
+
+// fail latches err as the failure that ended this connection and returns it. Only the
+// first is kept, as in dialer.FrameSplitter.fail: a caller can never be handed a second
+// error, so a later Read reporting the same value is what says the connection was latched
+// rather than retried.
+func (c *ConnectionReplayer) fail(err error) error {
+	if c.failed == nil {
+		c.failed = err
+	}
+	return c.failed
 }
 
 func (c *ConnectionReplayer) frameStreamID() int {
@@ -94,6 +130,36 @@ func (c *ConnectionReplayer) pushStreamIDToReplay(b []byte, idx int) {
 	}
 }
 
+// headerLen is the v3+ CQL frame header: version, flags, a 2-byte stream id, the
+// opcode and the 4-byte body length.
+//
+// A local constant: the dialer package keeps its own copy unexported. Fixed at the v3+
+// layout like the rest of this pipeline -- the frame splitter feeding the recorder
+// slices on the same nine bytes, so a v1/v2 stream never reaches a recording intact
+// anyway (scylladb/gocql#1022).
+const headerLen = 9
+
+// maxRetainedResponse bounds the buffer kept between responses.
+//
+// It is reused so that serving a response costs no allocation, but a recording may hold
+// one of any size the driver's own frame limit allows, and reusing that for the life of
+// the connection would pin it there. So an outlier is handed back instead, the way the
+// dialer's frame splitter hands back an outsized frame. Its constant is unexported,
+// hence this one.
+const maxRetainedResponse = 64 << 10
+
+// wholeFrame reports whether b is exactly one CQL frame: a full v3+ header followed by
+// the body length that header declares, no more and no less. More would mean two frames
+// in one record, which the recorder cannot write -- it records what its decoder hands
+// it, one whole frame at a time.
+func wholeFrame(b []byte) bool {
+	if len(b) < headerLen {
+		return false
+	}
+	declared := int64(b[5])<<24 | int64(b[6])<<16 | int64(b[7])<<8 | int64(b[8])
+	return int64(len(b))-headerLen == declared
+}
+
 func replaceFrameStreamID(b []byte, stream int) {
 	if b[0] > 0x02 {
 		b[2] = byte(stream >> 8)
@@ -103,31 +169,91 @@ func replaceFrameStreamID(b []byte, stream int) {
 	}
 }
 
+// Read serves the recorded response to the request most recently matched, across as
+// many calls as the caller's buffer needs.
+//
+// A latched failure ends it. materialise fails on a record no amount of retrying repairs,
+// and it fails before frameIdx moves, so the branch below would fetch that same record
+// again on the next call and the driver -- which answers a read error by tearing the
+// connection down and redialling -- would be handed the same failure for as long as it
+// kept reading. It is reported ahead of the zero-length shortcut for the same reason
+// dialer.Decoder.Feed reports one for an empty buffer: (0, nil) is the answer that reads
+// as a healthy connection with nothing ready yet. io.EOF after Close is deliberately not
+// latched -- it is not a failure, and it is already idempotent.
 func (c *ConnectionReplayer) Read(b []byte) (n int, err error) {
-	frame := c.getPendingFrame()
-	for frame == nil {
-		<-c.gotRequest
-		frame = c.getPendingFrame()
+	if c.failed != nil {
+		return 0, c.failed
 	}
-	if c.Closed() {
-		return 0, io.EOF
-	}
-	response := frame.Response[c.frameResponsePosition:]
-
-	if len(b) < len(response) {
-		copy(b, response[:len(b)])
-		c.frameResponsePosition = c.frameResponsePosition + len(b)
-		return len(b), err
+	if len(b) == 0 {
+		return 0, nil
 	}
 
-	copy(b, response)
-	if c.frameResponsePosition == 0 {
-		replaceFrameStreamID(b, c.frameStreamID())
+	if c.outgoingPos == len(c.outgoing) {
+		// The response served last has drained, so an outsized buffer goes back before
+		// the next one is copied into it, and before the wait below rather than after
+		// it: a connection parked for the next request should not be holding it. See
+		// maxRetainedResponse.
+		if cap(c.outgoing) > maxRetainedResponse {
+			c.outgoing, c.outgoingPos = nil, 0
+		}
+
+		frame := c.getPendingFrame()
+		for frame == nil {
+			<-c.gotRequest
+			frame = c.getPendingFrame()
+		}
+		if c.Closed() {
+			return 0, io.EOF
+		}
+		if err := c.materialise(frame); err != nil {
+			return 0, c.fail(err)
+		}
+		c.frameIdx = c.frameIdx + 1
 	}
 
-	c.frameIdx = c.frameIdx + 1
-	c.frameResponsePosition = 0
-	return len(response), err
+	n = copy(b, c.outgoing[c.outgoingPos:])
+	c.outgoingPos = c.outgoingPos + n
+	return n, nil
+}
+
+// materialise prepares the bytes for one recorded response, reading the stream id to
+// patch in from the request that matched it.
+//
+// The frame is copied first. FrameRecorded is shared and served once per benchmark
+// iteration, so patching it in place would rewrite the recording's own copy with the
+// stream id of whichever request arrived first and leave every later iteration
+// depending on that.
+//
+// This used to patch the caller's buffer instead, once per response and only when the
+// whole response fitted, so a response larger than the buffer was replayed with the
+// stream id it was recorded with. Unreachable with the checked-in recordings, whose
+// largest response is well under the driver's 4 KiB read buffer, which is why it went
+// unnoticed.
+func (c *ConnectionReplayer) materialise(frame *FrameRecorded) error {
+	// A record that is not one whole frame cannot be served at all, and the driver
+	// cannot be left to reject it. It reads a frame with io.ReadFull twice -- the nine
+	// header bytes, then exactly the body length that header declares -- and this
+	// connection's SetReadDeadline does nothing, so anything short of a whole frame
+	// leaves the driver blocked mid-frame with no deadline to end it, while Read parks
+	// waiting for a request whose response has already been counted as delivered. A
+	// record holding no bytes at all is the same failure one step earlier: Read copies
+	// nothing into a buffer with room in it and returns (0, nil).
+	//
+	// If another goroutine's request does arrive, the outcome is worse than the hang:
+	// the next response's bytes are served as the remainder of this one.
+	//
+	// Only a damaged recording produces either. loadFramesFromFile skips lines that do
+	// not decode, but `{"data":null}` decodes fine, and a recording is a file on disk
+	// that can be truncated mid-frame.
+	if !wholeFrame(frame.Response) {
+		return fmt.Errorf("gocql/dialer: recording holds %d bytes for stream %d, which is not one whole CQL frame", len(frame.Response), c.frameStreamID())
+	}
+
+	c.outgoing = append(c.outgoing[:0], frame.Response...)
+	c.outgoingPos = 0
+
+	replaceFrameStreamID(c.outgoing, c.frameStreamID())
+	return nil
 }
 
 func (c *ConnectionReplayer) Write(b []byte) (n int, err error) {
