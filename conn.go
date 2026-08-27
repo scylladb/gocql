@@ -1071,7 +1071,7 @@ type frameSource struct {
 	// takes the connection down; out of a segment the short read is immediate and
 	// yields io.ErrUnexpectedEOF, which is not a net.Error, so processFrameSource
 	// keeps it per-request and leaves the connection up. A ~20-byte segment could
-	// otherwise buy a maxFrameSize allocation, repeatable for as long as the peer
+	// otherwise buy a frm.MaxFrameSize allocation, repeatable for as long as the peer
 	// cares to send them.
 	//
 	// Nil on the pre-v5 socket path, and nil for a reassembled frame, where
@@ -1492,11 +1492,11 @@ func (c *Conn) readSegmentPayload(hdr segment.Header) ([]byte, error) {
 // reassembly buffer is allocated exactly once, sized to the frame length the peer
 // declared in the CQL frame header, and appending the arriving payloads is bounded
 // by that length. So neither a lying header nor incremental growth can inflate it:
-// growing a buffer to a maxFrameSize frame would end up holding ~512 MiB for a
+// growing a buffer to a frm.MaxFrameSize frame would end up holding ~512 MiB for a
 // valid 256 MiB response. Ownership of the buffer is then handed to the read
 // framer rather than copied into it, so the frame is never resident twice.
 //
-// The declared length itself is the peer's to choose, up to maxFrameSize, so a
+// The declared length itself is the peer's to choose, up to frm.MaxFrameSize, so a
 // small hostile prologue still buys this one allocation before any body byte has
 // arrived. Accepted deliberately, because it is bounded: at most once per
 // connection — the continuation reads run under ReadTimeout, so a peer that
@@ -1536,7 +1536,7 @@ func (c *Conn) recvSplitFrame(ctx context.Context, first []byte, netStart, netEn
 	if err != nil {
 		return err
 	}
-	if head.Length < 0 || head.Length > maxFrameSize {
+	if head.Length < 0 || head.Length > frm.MaxFrameSize {
 		return fmt.Errorf("gocql: invalid frame body length in segmented frame: %d", head.Length)
 	}
 	total := headSize + head.Length
