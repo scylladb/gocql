@@ -502,3 +502,27 @@ func TestGetFrameHashBoundsTruncatedBody(t *testing.T) {
 		}
 	})
 }
+
+// TestFrameIsQueryDerivesTheOpcodeOffset pins that the opcode is read through
+// headerShift rather than at a fixed index, which is what stops this from drifting
+// from the parsers it shares utils.go with.
+func TestFrameIsQueryDerivesTheOpcodeOffset(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		frame []byte
+		want  bool
+	}{
+		{"v4 QUERY", frameV4(opQuery, 0x00, []byte("select")), true},
+		{"v4 EXECUTE", frameV4(opExecute, 0x00, []byte("x")), false},
+		{"v2 QUERY", frameV2(opQuery, []byte("select")), true},
+		{"v2 EXECUTE", frameV2(opExecute, []byte("x")), false},
+		{"empty", nil, false},
+		{"opcode has not arrived", frameV4(opQuery, 0x00, nil)[:3], false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := FrameIsQuery(tc.frame); got != tc.want {
+				t.Errorf("FrameIsQuery = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
