@@ -5,8 +5,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gocql/gocql/dialer"
@@ -15,6 +17,15 @@ import (
 // optionsFrame builds a body-less OPTIONS frame with the given version byte.
 func optionsFrame(version byte) []byte {
 	return []byte{version, 0x00, 0x00, 0x01, 0x05, 0x00, 0x00, 0x00, 0x00}
+}
+
+// requestFrame builds a body-less v4 request with the given opcode and stream id.
+//
+// The opcode is what tells two requests apart here: GetFrameHash blanks the stream id
+// before hashing, so two OPTIONS frames on different streams hash alike and would be
+// served the same recorded response.
+func requestFrame(opcode byte, streamID int) []byte {
+	return []byte{0x04, 0x00, byte(streamID >> 8), byte(streamID), opcode, 0x00, 0x00, 0x00, 0x00}
 }
 
 // TestConnectionReplayerRejectsProtoV5 pins the rejection path dkropachev asked
@@ -143,5 +154,321 @@ func TestLoadFramesFromFileSkipsDamagedRecord(t *testing.T) {
 	}
 	if !bytes.Equal(records[3].Data, last.Data) {
 		t.Errorf("record 3 = %+v, want %+v, so a record without a trailing newline is still read", records[3], last)
+	}
+}
+
+// responseFrame builds a body-carrying response frame with the given stream id, so a
+// test can check which stream id came back out.
+func responseFrame(streamID int, bodyLen int) []byte {
+	frame := []byte{
+		0x84, 0x00,
+		byte(streamID >> 8), byte(streamID),
+		0x08, // RESULT
+		byte(bodyLen >> 24), byte(bodyLen >> 16), byte(bodyLen >> 8), byte(bodyLen),
+	}
+	return append(frame, bytes.Repeat([]byte{0x5A}, bodyLen)...)
+}
+
+// readAll drains the replayer until it has delivered n bytes, using a buffer of
+// exactly chunk bytes so the response has to be served across several calls.
+func readAll(t *testing.T, c *ConnectionReplayer, n, chunk int) []byte {
+	t.Helper()
+
+	got := make([]byte, 0, n)
+	buf := make([]byte, chunk)
+	for len(got) < n {
+		read, err := c.Read(buf)
+		if err != nil {
+			t.Fatalf("Read: %v", err)
+		}
+		if read == 0 {
+			t.Fatal("Read returned 0 bytes without an error")
+		}
+		got = append(got, buf[:read]...)
+	}
+	return got
+}
+
+// TestConnectionReplayerPatchesStreamIDAcrossPartialReads pins the stream-id patch
+// against a caller whose buffer is smaller than the response.
+//
+// The patch used to be applied to the caller's buffer, and only on the branch where
+// the whole response fitted — so a response larger than the buffer was replayed
+// carrying the stream id it was recorded with, and the driver matched it to the wrong
+// in-flight request or to none. It went unnoticed because the largest response in the
+// checked-in recordings is well under the driver's 4 KiB read buffer, so the short
+// branch never ran.
+func TestConnectionReplayerPatchesStreamIDAcrossPartialReads(t *testing.T) {
+	const (
+		recordedStreamID = 0x0040
+		liveStreamID     = 0x01F4
+		bodyLen          = 500
+	)
+
+	request := optionsFrame(0x04)
+	request[2] = byte(liveStreamID >> 8)
+	request[3] = byte(liveStreamID & 0xFF)
+
+	for _, chunk := range []int{1, 7, 64, 512, 4096} {
+		t.Run(fmt.Sprintf("buffer of %d", chunk), func(t *testing.T) {
+			response := responseFrame(recordedStreamID, bodyLen)
+			c := &ConnectionReplayer{
+				gotRequest: make(chan struct{}, 1),
+				frames: []*FrameRecorded{{
+					Response: append([]byte(nil), response...),
+					Hash:     dialer.GetFrameHash(append([]byte(nil), request...), false),
+				}},
+			}
+
+			if _, err := c.Write(append([]byte(nil), request...)); err != nil {
+				t.Fatalf("Write: %v", err)
+			}
+
+			got := readAll(t, c, len(response), chunk)
+
+			if len(got) != len(response) {
+				t.Fatalf("served %d bytes, want %d", len(got), len(response))
+			}
+			if gotID := int(got[2])<<8 | int(got[3]); gotID != liveStreamID {
+				t.Errorf("served stream id %#04x, want the live request's %#04x", gotID, liveStreamID)
+			}
+			// Everything except the stream id must be byte-for-byte the recording.
+			if !bytes.Equal(got[4:], response[4:]) || got[0] != response[0] || got[1] != response[1] {
+				t.Error("the response body was altered")
+			}
+		})
+	}
+}
+
+// TestConnectionReplayerDoesNotMutateTheRecording pins that the patch goes into a copy.
+// A FrameRecorded is shared and served once per benchmark iteration, so patching it in
+// place would rewrite the recording with the first request's stream id and leave every
+// later iteration depending on that.
+func TestConnectionReplayerDoesNotMutateTheRecording(t *testing.T) {
+	const bodyLen = 32
+
+	recorded := responseFrame(0x0040, bodyLen)
+	pristine := append([]byte(nil), recorded...)
+
+	frame := &FrameRecorded{Response: recorded}
+
+	for i, streamID := range []int{0x0100, 0x0200, 0x0300} {
+		request := optionsFrame(0x04)
+		request[2] = byte(streamID >> 8)
+		request[3] = byte(streamID & 0xFF)
+
+		c := &ConnectionReplayer{
+			gotRequest: make(chan struct{}, 1),
+			frames:     []*FrameRecorded{frame},
+		}
+		frame.Hash = dialer.GetFrameHash(append([]byte(nil), request...), false)
+
+		if _, err := c.Write(append([]byte(nil), request...)); err != nil {
+			t.Fatalf("iteration %d: Write: %v", i, err)
+		}
+		got := readAll(t, c, len(recorded), 4096)
+
+		if gotID := int(got[2])<<8 | int(got[3]); gotID != streamID {
+			t.Errorf("iteration %d: served stream id %#04x, want %#04x", i, gotID, streamID)
+		}
+		if !bytes.Equal(frame.Response, pristine) {
+			t.Fatalf("iteration %d: the recorded response was mutated in place", i)
+		}
+	}
+}
+
+// TestConnectionReplayerRejectsAnEmptyRecord pins the one damaged record that cannot
+// be served at all.
+//
+// A record with no bytes would have Read copy nothing into a buffer with room in it and
+// return (0, nil), having already counted the response as delivered -- so the driver
+// retries, finds nothing pending, and blocks for a request whose response is gone. A
+// line like {"data":null,"stream_id":5} decodes cleanly, so only this check stands
+// between a damaged recording and a hung test. It is the same check that catches a
+// record truncated part-way through a frame; see the test below.
+func TestConnectionReplayerRejectsAnEmptyRecord(t *testing.T) {
+	request := optionsFrame(0x04)
+
+	c := &ConnectionReplayer{
+		gotRequest: make(chan struct{}, 1),
+		frames: []*FrameRecorded{{
+			Response: nil,
+			Hash:     dialer.GetFrameHash(append([]byte(nil), request...), false),
+		}},
+	}
+
+	if _, err := c.Write(append([]byte(nil), request...)); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	n, err := c.Read(make([]byte, 16))
+	if err == nil {
+		t.Fatalf("Read returned (%d, nil) for an empty record, want an error", n)
+	}
+	if n != 0 {
+		t.Errorf("Read returned %d bytes alongside its error", n)
+	}
+	if !strings.Contains(err.Error(), "not one whole CQL frame") {
+		t.Errorf("error %q does not say the recording is at fault", err)
+	}
+}
+
+// TestConnectionReplayerRejectsATruncatedRecord pins that a record which is not one
+// whole frame is refused rather than served.
+//
+// Serving it used to be the documented behaviour, on the grounds that the driver would
+// reject it as a protocol error. It cannot: the driver reads a frame with io.ReadFull
+// twice -- the nine header bytes, then the body length that header declares -- and this
+// connection's SetReadDeadline does nothing, so a record stopping short of a whole frame
+// leaves it blocked mid-frame while Read waits for a request that is never coming.
+//
+// The second case is the one a length-only check misses: a complete header whose body
+// arrived short hangs exactly the same way.
+func TestConnectionReplayerRejectsATruncatedRecord(t *testing.T) {
+	full := responseFrame(0x0040, 32)
+
+	for _, tc := range []struct {
+		name     string
+		response []byte
+	}{
+		{"shorter than a header", []byte{0x84, 0x00}},
+		{"header declares more body than arrived", full[:headerLen+16]},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			request := optionsFrame(0x04)
+
+			c := &ConnectionReplayer{
+				gotRequest: make(chan struct{}, 1),
+				frames: []*FrameRecorded{{
+					Response: append([]byte(nil), tc.response...),
+					Hash:     dialer.GetFrameHash(append([]byte(nil), request...), false),
+				}},
+			}
+
+			if _, err := c.Write(append([]byte(nil), request...)); err != nil {
+				t.Fatalf("Write: %v", err)
+			}
+
+			n, err := c.Read(make([]byte, 64))
+			if err == nil {
+				t.Fatalf("Read returned (%d, nil) for a truncated record, want an error", n)
+			}
+			if n != 0 {
+				t.Errorf("Read returned %d bytes alongside its error", n)
+			}
+			if !strings.Contains(err.Error(), "not one whole CQL frame") {
+				t.Errorf("error %q does not say the recording is at fault", err)
+			}
+		})
+	}
+}
+
+// TestConnectionReplayerReleasesAnOutsizedResponseBuffer pins that the reused buffer
+// does not keep an outlier's capacity for the life of the connection.
+//
+// It is reused so that serving a response allocates nothing, and a recording may hold a
+// response of any size the driver's frame limit allows -- so without a bound one large
+// response pins that much for as long as the connection lives.
+func TestConnectionReplayerReleasesAnOutsizedResponseBuffer(t *testing.T) {
+	const (
+		big   = 2 * maxRetainedResponse
+		small = 8
+	)
+
+	first := requestFrame(0x05, 0x0001)  // OPTIONS
+	second := requestFrame(0x0B, 0x0002) // REGISTER
+
+	c := &ConnectionReplayer{
+		gotRequest: make(chan struct{}, 1),
+		frames: []*FrameRecorded{
+			{
+				Response: responseFrame(0x0040, big),
+				Hash:     dialer.GetFrameHash(append([]byte(nil), first...), false),
+			},
+			{
+				Response: responseFrame(0x0041, small),
+				Hash:     dialer.GetFrameHash(append([]byte(nil), second...), false),
+			},
+		},
+	}
+
+	if _, err := c.Write(append([]byte(nil), first...)); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	readAll(t, c, headerLen+big, 4096)
+
+	// Still here: it is what is being served, until the next response needs the buffer.
+	if cap(c.outgoing) <= maxRetainedResponse {
+		t.Fatalf("outgoing holds %d bytes, want the response just served", cap(c.outgoing))
+	}
+
+	if _, err := c.Write(append([]byte(nil), second...)); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	readAll(t, c, headerLen+small, 4096)
+
+	if cap(c.outgoing) > maxRetainedResponse {
+		t.Errorf("outgoing still holds %d bytes after the outsized response drained", cap(c.outgoing))
+	}
+	// The bound must not cost the reuse it exists to protect: an ordinary response keeps
+	// its buffer.
+	if cap(c.outgoing) == 0 {
+		t.Error("outgoing was released although it is within the bound")
+	}
+}
+
+// TestConnectionReplayerLatchesAMaterialiseFailure pins that a response that cannot be
+// materialised ends the connection rather than being served up as an error forever.
+//
+// frameIdx is advanced only once the response is ready, so a failure leaves Read's branch
+// condition -- outgoingPos == len(outgoing) -- still true and the same record still
+// pending: the next Read fetches it again and fails the same way. The recorder latches the
+// analogous failure; this is the same latch, on the one goroutine that owns Read.
+func TestConnectionReplayerLatchesAMaterialiseFailure(t *testing.T) {
+	full := responseFrame(0x0040, 32)
+
+	for _, tc := range []struct {
+		name     string
+		response []byte
+	}{
+		{name: "empty record", response: nil},
+		{name: "truncated record", response: full[:headerLen+16]},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			request := optionsFrame(0x04)
+			c := &ConnectionReplayer{
+				gotRequest: make(chan struct{}, 1),
+				frames: []*FrameRecorded{{
+					Response: append([]byte(nil), tc.response...),
+					Hash:     dialer.GetFrameHash(append([]byte(nil), request...), false),
+				}},
+			}
+			if _, err := c.Write(append([]byte(nil), request...)); err != nil {
+				t.Fatalf("Write: %v", err)
+			}
+
+			n, first := c.Read(make([]byte, 64))
+			if first == nil {
+				t.Fatalf("Read returned (%d, nil) for a record that is not one whole frame", n)
+			}
+
+			// The latch is reported even for a zero-length read, the way dialer.Feed
+			// reports one for an empty buffer: a caller that took (0, nil) for "nothing
+			// yet, still healthy" would park on a connection that is finished.
+			if n, err := c.Read(nil); err == nil || !errors.Is(err, first) {
+				t.Errorf("Read(nil) = (%d, %v), want the latched %v", n, err, first)
+			}
+
+			// And every later read is the same error value, not another one just like
+			// it -- a fresh fmt.Errorf per call is exactly what the unlatched loop
+			// produced, and errors.Is compares identity, which is what tells them apart.
+			n, second := c.Read(make([]byte, 64))
+			if !errors.Is(second, first) {
+				t.Errorf("second Read = (%d, %v), want the latched %v", n, second, first)
+			}
+			if n != 0 {
+				t.Errorf("second Read returned %d bytes alongside its error", n)
+			}
+		})
 	}
 }
