@@ -29,6 +29,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          # make check's check-lz4-pin compares go.mod's lz4 require against the
+          # newest lz4/v* tag, so the tags have to be present. fetch-depth: 0 rather
+          # than fetch-tags on top of the default depth-1 fetch: it makes the tag set
+          # unconditional instead of dependent on which tags a shallow fetch chose to
+          # bring along. check-lz4-pin no longer skips when it finds none, so getting
+          # this wrong is now a failure rather than a silent pass.
+          fetch-depth: 0
 
       # runner.arch qualifies the key, which it did not before. This entry is shared
       # with the integration jobs, and the ScyllaDB one now runs on both

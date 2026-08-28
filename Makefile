@@ -502,7 +502,72 @@ build:
 	@echo "Build"
 	go build -tags all .
 
-check: build .prepare-golangci check-go-mod-drift
+# go.mod's require on github.com/scylladb/gocql/lz4 is inert here -- the `replace`
+# beside it wins for every local build -- and Renovate skips it, so nothing notices
+# when it drifts from the module's release tags. Consumers see the require and not
+# the replace, so it still has to resolve for them. See go.mod and README.md 5.4.
+check-lz4-pin:
+	@echo "Check the lz4 pin against the newest lz4/v* tag"
+	PINNED=$$(go list -m -f '{{.Version}}' github.com/scylladb/gocql/lz4) || {
+		echo "::error::go.mod has no require for github.com/scylladb/gocql/lz4."
+		exit 1
+	}
+	# Checked first: drop a replace and `go mod tidy` resolves the published release and
+	# rewrites go.sum to match, so every check below stays green against code that is no
+	# longer under test. tests/bench needs its own; its go.mod records why.
+	for module in ".:./lz4" "tests/bench:../../lz4"; do
+		DIR="$${module%%:*}"
+		TARGET="$${module##*:}"
+		REPLACED=$$(go -C "$${DIR}" list -m -f '{{with .Replace}}{{.Path}}{{end}}' github.com/scylladb/gocql/lz4 || true)
+		if [[ "$${REPLACED}" != "$${TARGET}" ]]; then
+			echo "::error::$${DIR}/go.mod no longer replaces github.com/scylladb/gocql/lz4 with $${TARGET}."
+			echo "Without it the module resolves from the proxy and this repository tests the last release."
+			exit 1
+		fi
+	done
+	ALLTAGS=$$(git tag -l 'lz4/v*' 2>/dev/null || true)
+	if [[ -z "$${ALLTAGS}" ]]; then
+		if [[ -n "$${GITHUB_ACTIONS}" ]]; then
+			echo "::error::no lz4/v* tags found at all, so this check verified nothing."
+			echo "The workflow's checkout has stopped fetching tags."
+			exit 1
+		fi
+		echo "No lz4/v* tags present (clone without tags); skipping"
+		exit 0
+	fi
+	# An existence question, not an ordering one: an untagged pin can sit between two
+	# tags, and so compare as older than the newest, while resolving for nobody.
+	if ! git rev-parse -q --verify "refs/tags/lz4/$${PINNED}" >/dev/null; then
+		echo "::error::go.mod requires lz4 $${PINNED} but no lz4/$${PINNED} tag exists."
+		echo "Consumers cannot resolve the module. Tag it, or lower the require."
+		exit 1
+	fi
+	# Pre-releases are dropped because `sort -V` orders v1.20.0-rc1 after v1.20.0.
+	LATEST=$$(printf '%s\n' "$${ALLTAGS}" | sed 's|^lz4/||' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$$' | sort -V | tail -1 || true)
+	if [[ -z "$${LATEST}" ]]; then
+		echo "Only pre-release lz4 tags present; the pin resolves, nothing to compare it against"
+	elif [[ "$${PINNED}" != "$${LATEST}" ]]; then
+		# A warning, not an error: a require is a lower bound so the pin still resolves,
+		# and the tag and the bump commit cannot land atomically.
+		echo "::warning::lz4 pin $${PINNED} lags tag lz4/$${LATEST}; bump go.mod and the versions README.md section 5.4 documents."
+		echo "- lz4 pin $${PINNED} lags tag lz4/$${LATEST}" >> "$${GITHUB_STEP_SUMMARY:-/dev/null}"
+	fi
+	# Every lz4 version README.md documents must be the pinned one, compared exactly. A
+	# substring test lets v1.19.0 be satisfied by v1.19.0-rc1, and asking only whether the
+	# pin appears somewhere stays green while another mention is stale. `sort -u` collapses
+	# to one line only when they all agree, so a single comparison covers both.
+	DOCUMENTED=$$(grep -oE '(github\.com/scylladb/gocql/lz4[ @]|(^|[^A-Za-z0-9./])lz4/)v[0-9]+\.[0-9]+\.[0-9]+[A-Za-z0-9.-]*' README.md | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+[A-Za-z0-9.-]*' | sort -u || true)
+	if [[ -z "$${DOCUMENTED}" ]]; then
+		echo "README.md documents no lz4 version; section 5.4 should name $${PINNED}."
+		exit 1
+	fi
+	if [[ "$${DOCUMENTED}" != "$${PINNED}" ]]; then
+		echo "README.md documents lz4 $$(echo $${DOCUMENTED}); go.mod pins $${PINNED}."
+		echo "Section 5.4 documents the lz4 version too; bump it alongside go.mod."
+		exit 1
+	fi
+
+check: build .prepare-golangci check-go-mod-drift check-lz4-pin
 	echo "Check linting"
 	${BIN_DIR}/golangci-lint run
 
