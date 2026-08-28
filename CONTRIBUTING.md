@@ -82,6 +82,45 @@ carries the guard even though the `duration` type has been served over v4 since 
 
 `lz4` is not interchangeable with the default here. Snappy was removed in v5, and `ClusterConfig.Validate` rejects any compressor that does not implement `SegmentCompressor` once `ProtoVersion >= 5`, so `TEST_COMPRESSOR=snappy` fails every session in the suite; `lz4` and `no-compression` are the only two valid settings. CI runs this configuration on the Cassandra `5-LATEST` leg, plus a second `TEST_COMPRESSOR=no-compression` step scoped to `TestLargeSizeQuery` and `TestPrepareExecuteMetadataChangedFlag`, because the compressed and uncompressed segment headers are separate code paths. ScyllaDB builds its protocol extensions on top of v4 and has no v5 to negotiate, so there is no equivalent Scylla lane.
 
+#### Releasing the lz4 Module
+
+The `lz4` sub-module is versioned independently of the parent and tagged with its directory
+prefix (`lz4/vX.Y.Z`). Its version is written down in four places, and `check-lz4-pin` verifies
+three of them:
+
+- `go.mod` -- `require github.com/scylladb/gocql/lz4 vX.Y.Z`. It is inert locally, because the
+  `replace` directive beside it redirects to `./lz4`, but consumers see the require and not
+  the replace.
+- `README.md` section 5.4 -- the `github.com/scylladb/gocql/lz4 vX.Y.Z` the prose quotes, and
+  the `lz4/vX.Y.Z` tag reference below it. The third occurrence, the bare version at the end of
+  the section, is deliberately left unchecked: it is indistinguishable from the parent module's
+  own version, which sits a few lines above it and moves independently.
+
+That neighbouring version is a release obligation of its own, and it belongs to the **parent**
+module rather than to this one: section 5.4 opens by telling consumers to pin
+`replace github.com/gocql/gocql => github.com/scylladb/gocql vX.Y.Z`. Nothing checks it --
+`check-lz4-pin` anchors both of its greps on the lz4 module path precisely because a bare version
+is ambiguous -- so bump it by hand at each **parent** release. Left behind, it hands consumers a
+pin older than the section introducing it, which then describes a `go.mod` that release does not
+have.
+
+One gap remains: the Build workflow's `paths-ignore` skips `*.md`, so a pull request that
+edits **only** README.md never triggers it and `check-lz4-pin` never runs on the change it
+guards. Closing it would mean running the full integration matrix on documentation-only pull
+requests, which costs more than the gap does; the release flow above touches `go.mod` and
+README.md in the same commit, so Build does run for it.
+
+Tag first, then bump -- the order matters. A pin that lags its newest tag is only a warning,
+because a `require` is a lower bound: it still resolves, and the README's `replace` is what
+selects the version a consumer builds against. The window between pushing `lz4/vX.Y.Z` and
+landing the bump is therefore green. The reverse order is not: a pin naming a version that was
+never tagged resolves for nobody, and `check-lz4-pin` fails hard on it. That is also why the
+check tests whether the tag exists rather than whether the pin sorts newest -- an untagged
+version can sit between two tags and still compare as older than the newest one.
+
+Renovate is deliberately disabled for `github.com/scylladb/gocql/lz4` (see `renovate.json`)
+because the version has to follow the release tag rather than a bot.
+
 #### Measuring Code Coverage
 
 `make test-unit-coverage` runs the unit suite (root module and the `lz4` submodule) instrumented for coverage. To include the integration suite too, start a cluster and run its coverage target as well, e.g.:
