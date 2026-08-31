@@ -2691,6 +2691,14 @@ type Iter struct {
 	releasedCustomPayload map[string][]byte
 	next                  *nextIter
 	host                  *HostInfo
+	// rowDecoder is the JIT decoder for this Iter's rows, together with the
+	// dest/columns shape it was compiled for. See ensureRowDecoderFor.
+	rowDecoder *cachedJITDecoder
+	// preparedStmt, when non-nil, is the prepared statement this Iter's rows
+	// came from — used to cache the compiled row decoder across repeat
+	// executions (see preparedStatment.jitDecoder) instead of recompiling it
+	// fresh for every new Iter.
+	preparedStmt *preparedStatment
 	// allWarnings accumulates warnings across page boundaries.
 	// When a page's framer is released during fetchNextPage(), its warnings
 	// are appended here so they are not lost.
@@ -2718,6 +2726,23 @@ func (iter *Iter) Columns() []ColumnInfo {
 	return iter.meta.columns
 }
 
+// ensureRowDecoderFor makes sure iter.rowDecoder is compiled for dest's exact
+// destination-type shape, recompiling it when a caller varies dest's types
+// between rows of one Iter. Scan permits that: the pre-JIT Unmarshal path
+// re-derived its behavior from each value's concrete type on every call, while
+// a compiledRowDecoder is fixed to one shape and would otherwise misapply a
+// decoder built for the wrong Go type.
+//
+// Staleness from a schema change is handled at the mutation point instead —
+// copyPageData clears rowDecoder when it installs a new page's metadata — so
+// this stays a nil check plus one allocation-free compare per row.
+func (iter *Iter) ensureRowDecoderFor(dest []any) {
+	if iter.rowDecoder != nil && destTypesEqualToValues(dest, iter.rowDecoder.destTypes) {
+		return
+	}
+	iter.rowDecoder = resolveRowDecoder(iter.preparedStmt, iter.meta.columns, dest)
+}
+
 // copyPageData copies page-related fields from src to iter, excluding the closed flag.
 // This is used when fetching the next page to avoid races with concurrent Close() calls.
 //
@@ -2729,6 +2754,11 @@ func (iter *Iter) copyPageData(src *Iter) {
 	iter.next = src.next
 	iter.host = src.host
 	iter.meta = src.meta
+	// meta may carry a new schema (RESULT_METADATA_CHANGED at a page boundary),
+	// and preparedStmt must move with it: a decoder compiled for the old
+	// columns must not outlive them, nor be cached onto the superseded stmt.
+	iter.preparedStmt = src.preparedStmt
+	iter.rowDecoder = nil
 	iter.allWarnings = append(iter.allWarnings, src.allWarnings...)
 	iter.releasedCustomPayload = src.releasedCustomPayload
 	iter.pos = src.pos
@@ -3007,10 +3037,9 @@ func (is *iterScanner) Scan(dest ...any) error {
 
 	// JIT fast path: when dest count == column count and no column needs
 	// tuple expansion, use the compiled row decoder for direct dispatch.
-	// Resolved fresh each call (served from the process-wide compile cache)
-	// since a caller may vary destination types between rows.
 	if len(dest) == len(iter.meta.columns) {
-		if dec := getOrCompileRowDecoder(iter.meta.columns, dest); dec.usable {
+		iter.ensureRowDecoderFor(dest)
+		if dec := iter.rowDecoder.dec; dec.usable {
 			for i := range iter.meta.columns {
 				if dest[i] == nil {
 					continue
@@ -3134,13 +3163,13 @@ func (iter *Iter) scanSlice(dest []any) bool {
 		return false
 	}
 
-	// Try JIT fast path: resolve a row decoder for this call's destination
-	// shape and use it for direct dispatch. Only applicable when dest count
-	// == column count and no column needs tuple expansion. Resolved fresh
-	// each call (served from the process-wide compile cache) since a caller
-	// may vary destination types between rows.
+	// Try JIT fast path: compile a row decoder on the first call and reuse it.
+	// Only applicable when dest count == column count and no column needs
+	// tuple expansion.
 	if len(dest) == len(iter.meta.columns) {
-		if dec := getOrCompileRowDecoder(iter.meta.columns, dest); dec.usable {
+		iter.ensureRowDecoderFor(dest)
+
+		if dec := iter.rowDecoder.dec; dec.usable {
 			for i := range iter.meta.columns {
 				colBytes, err := iter.readColumn()
 				if err != nil {

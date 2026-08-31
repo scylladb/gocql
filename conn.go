@@ -2347,6 +2347,14 @@ type preparedStatment struct {
 	// benefit.
 	jitEncoder atomic.Pointer[cachedJITEncoder]
 
+	// jitDecoder is the row-decoder analogue of jitEncoder: it caches the
+	// compiled decoder for this prepared statement's most recently seen
+	// Scan destination-type shape (see resolveRowDecoder in
+	// jit_decoder.go). Unlike jitEncoder, plain (non-prepared) queries have
+	// no preparedStatment to cache against, so those still recompile per
+	// Iter — see resolveRowDecoder's nil-stmt fallback.
+	jitDecoder atomic.Pointer[cachedJITDecoder]
+
 	id               []byte
 	resultMetadataID []byte
 	response         resultMetadata
@@ -2807,9 +2815,10 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 		}
 
 		iter := (&Iter{
-			meta:    x.meta,
-			framer:  framer,
-			numRows: x.numRows,
+			meta:         x.meta,
+			framer:       framer,
+			numRows:      x.numRows,
+			preparedStmt: info,
 		}).bindWarningHandlerWithMetrics(qry, metrics, warningHandler)
 
 		if x.meta.noMetaData() {

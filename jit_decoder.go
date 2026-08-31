@@ -84,7 +84,8 @@ var (
 // tables once) would lock the cache before its steady-state shapes ever land,
 // and recompile forever after. Clearing lets the live shapes repopulate, and
 // costs one recompile each. LRU eviction would be more precise but needs a
-// lock on a path whose whole point is to avoid one.
+// lock on a path whose whole point is to avoid one; these caches only serve
+// cold resolutions now that the per-statement caches carry the hot path.
 const maxCompiledCacheEntries = 1024
 
 // clearCompiledCache empties a compiled-artifact cache that has reached the
@@ -162,6 +163,12 @@ func makeDecoderCacheKey(columns []ColumnInfo, destTypes []reflect.Type) string 
 
 // getOrCompileRowDecoder returns a cached compiled decoder or builds one.
 func getOrCompileRowDecoder(columns []ColumnInfo, dest []any) *compiledRowDecoder {
+	destTypes := destTypesOf(dest)
+	return getOrCompileRowDecoderFromTypes(columns, destTypes)
+}
+
+// destTypesOf extracts each destination's reflect.Type (nil for a nil dest).
+func destTypesOf(dest []any) []reflect.Type {
 	destTypes := make([]reflect.Type, len(dest))
 	for i, d := range dest {
 		if d == nil {
@@ -170,7 +177,13 @@ func getOrCompileRowDecoder(columns []ColumnInfo, dest []any) *compiledRowDecode
 			destTypes[i] = reflect.TypeOf(d)
 		}
 	}
+	return destTypes
+}
 
+// getOrCompileRowDecoderFromTypes is the shared slow path: build (or find in
+// the process-wide cache) the compiledRowDecoder for this exact (columns,
+// destTypes) shape.
+func getOrCompileRowDecoderFromTypes(columns []ColumnInfo, destTypes []reflect.Type) *compiledRowDecoder {
 	key := makeDecoderCacheKey(columns, destTypes)
 	if cached, ok := decoderCache.Load(key); ok {
 		return cached.(*compiledRowDecoder)
@@ -185,6 +198,74 @@ func getOrCompileRowDecoder(columns []ColumnInfo, dest []any) *compiledRowDecode
 		decoderCacheCount.Add(1)
 	}
 	return actual.(*compiledRowDecoder)
+}
+
+// destTypesEqualToValues reports whether each value in dest has the same
+// reflect.Type (nil for a nil dest) as the corresponding entry in destTypes,
+// without allocating a new []reflect.Type to compare against.
+func destTypesEqualToValues(dest []any, destTypes []reflect.Type) bool {
+	if len(dest) != len(destTypes) {
+		return false
+	}
+	for i, d := range dest {
+		var t reflect.Type
+		if d != nil {
+			t = reflect.TypeOf(d)
+		}
+		if t != destTypes[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// cachedJITDecoder pairs a compiledRowDecoder with the destTypes and columns
+// it was compiled for, so a cache hit is confirmed by comparison rather than
+// by rebuilding a string key.
+type cachedJITDecoder struct {
+	dec       *compiledRowDecoder
+	destTypes []reflect.Type
+	columns   []ColumnInfo
+}
+
+// resolveRowDecoder returns the compiled decoder for (columns, dest) together
+// with the shape it was compiled for, served from stmt's single-entry cache
+// (preparedStatment.jitDecoder) whenever that entry is still valid. A prepared
+// statement is scanned into the same dest types on essentially every repeat
+// execution, so a hit costs one atomic load plus two allocation-free compares.
+//
+// columns are validated, not just destTypes: a *preparedStatment can be shared
+// across a schema change, because a goroutine losing the updateMetadataIfSame
+// race (conn.go) keeps the pre-change statement while iter.meta.columns already
+// holds the new schema. Serving the old decoder for new-schema bytes would
+// misread them.
+//
+// The comparison is structural rather than by backing-array identity: with
+// DisableSkipMetadata defaulting to true the server sends full metadata on
+// every response, so parseResultMetadata allocates a fresh []ColumnInfo each
+// time and an identity check would miss on every call.
+//
+// stmt may be nil (non-prepared queries); those compile through the
+// process-wide cache on every Iter, as before this cache existed.
+func resolveRowDecoder(stmt *preparedStatment, columns []ColumnInfo, dest []any) *cachedJITDecoder {
+	if stmt != nil {
+		if cached := stmt.jitDecoder.Load(); cached != nil &&
+			destTypesEqualToValues(dest, cached.destTypes) && columnsEqual(cached.columns, columns) {
+			return cached
+		}
+	}
+
+	destTypes := destTypesOf(dest)
+	entry := &cachedJITDecoder{
+		dec:       getOrCompileRowDecoderFromTypes(columns, destTypes),
+		destTypes: destTypes,
+		columns:   columns,
+	}
+	if stmt != nil {
+		// Last writer wins; a lost race just redoes this resolution later.
+		stmt.jitDecoder.Store(entry)
+	}
+	return entry
 }
 
 // columnsEqual reports whether two column lists decode identically: same count
