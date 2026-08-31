@@ -2441,6 +2441,10 @@ type preparedStatment struct {
 	// First field for fieldalignment (pointer-sized atomic ahead of slices).
 	jitEncoder atomic.Pointer[cachedJITEncoder]
 
+	// jitDecoder is jitEncoder's analogue for Scan destination types; nil-stmt
+	// queries recompile per Iter (see resolveRowDecoder).
+	jitDecoder atomic.Pointer[cachedJITDecoder]
+
 	id               []byte
 	resultMetadataID []byte
 	response         resultMetadata
@@ -2940,9 +2944,10 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 		}
 
 		iter := (&Iter{
-			meta:    x.meta,
-			framer:  framer,
-			numRows: x.numRows,
+			meta:         x.meta,
+			framer:       framer,
+			numRows:      x.numRows,
+			preparedStmt: info,
 		}).bindWarningHandlerWithMetrics(qry, metrics, warningHandler)
 
 		if x.meta.noMetaData() {

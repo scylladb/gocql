@@ -145,8 +145,8 @@ func makeDecoderCacheKey(columns []ColumnInfo, destTypes []reflect.Type) string 
 	return string(buf)
 }
 
-// getOrCompileRowDecoder returns a cached compiled decoder or builds one.
-func getOrCompileRowDecoder(columns []ColumnInfo, dest []any) *compiledRowDecoder {
+// destTypesOf extracts each destination's reflect.Type (nil for a nil dest).
+func destTypesOf(dest []any) []reflect.Type {
 	destTypes := make([]reflect.Type, len(dest))
 	for i, d := range dest {
 		if d == nil {
@@ -155,7 +155,13 @@ func getOrCompileRowDecoder(columns []ColumnInfo, dest []any) *compiledRowDecode
 			destTypes[i] = reflect.TypeOf(d)
 		}
 	}
+	return destTypes
+}
 
+// getOrCompileRowDecoderFromTypes is the shared slow path: build (or find in
+// the process-wide cache) the compiledRowDecoder for this exact (columns,
+// destTypes) shape.
+func getOrCompileRowDecoderFromTypes(columns []ColumnInfo, destTypes []reflect.Type) *compiledRowDecoder {
 	colTypes := columnDestTypes(columns, destTypes)
 	key := makeDecoderCacheKey(columns, colTypes)
 	if cached, ok := decoderCache.Load(key); ok {
@@ -213,6 +219,57 @@ func appendTypeInfoKey(buf []byte, t TypeInfo) []byte {
 	}
 	// shortcut: a foreign TypeInfo implementation keys on its %T and text, which may collide; add a case if one appears.
 	return appendStr(appendStr(append(buf, 6), fmt.Sprintf("%T", t)), fmt.Sprint(t))
+}
+
+// destTypesEqualToValues reports whether each value in dest has the same
+// reflect.Type (nil for a nil dest) as the corresponding entry in destTypes,
+// without allocating a new []reflect.Type to compare against.
+func destTypesEqualToValues(dest []any, destTypes []reflect.Type) bool {
+	if len(dest) != len(destTypes) {
+		return false
+	}
+	for i, d := range dest {
+		var t reflect.Type
+		if d != nil {
+			t = reflect.TypeOf(d)
+		}
+		if t != destTypes[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// cachedJITDecoder pairs a compiledRowDecoder with the destTypes and columns
+// it was compiled for, so a cache hit is confirmed by comparison rather than
+// by rebuilding a string key.
+type cachedJITDecoder struct {
+	dec       *compiledRowDecoder
+	destTypes []reflect.Type
+	columns   []ColumnInfo
+}
+
+// resolveRowDecoder returns stmt's cached decoder for (columns, dest) when valid,
+// else compiles via the process-wide cache (also for nil stmt).
+func resolveRowDecoder(stmt *preparedStatment, columns []ColumnInfo, dest []any) *cachedJITDecoder {
+	if stmt != nil {
+		if cached := stmt.jitDecoder.Load(); cached != nil &&
+			destTypesEqualToValues(dest, cached.destTypes) && columnsEqual(cached.columns, columns) {
+			return cached
+		}
+	}
+
+	destTypes := destTypesOf(dest)
+	entry := &cachedJITDecoder{
+		dec:       getOrCompileRowDecoderFromTypes(columns, destTypes),
+		destTypes: destTypes,
+		columns:   columns,
+	}
+	if stmt != nil {
+		// Last writer wins; a lost race just redoes this resolution later.
+		stmt.jitDecoder.Store(entry)
+	}
+	return entry
 }
 
 // columnsEqual reports whether two column lists decode identically: same count

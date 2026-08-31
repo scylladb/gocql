@@ -472,3 +472,7 @@ func TestJITDecoderCacheKeyVersion(t *testing.T) {
 		t.Fatal("same columns should produce the same cache key")
 	}
 }
+
+func getOrCompileRowDecoder(columns []ColumnInfo, dest []any) *compiledRowDecoder {
+	return getOrCompileRowDecoderFromTypes(columns, destTypesOf(dest))
+}
