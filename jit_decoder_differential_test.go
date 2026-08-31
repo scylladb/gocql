@@ -287,11 +287,10 @@ func TestCompiledCachesAreBounded(t *testing.T) {
 	}
 }
 
-// TestScanVaryingDestTypesUnit verifies a caller may vary destination types
-// between rows of one Iter: the JIT fast path resolves a decoder fresh from
-// each call's own destination types rather than reusing one compiled for an
-// earlier row, matching the pre-JIT Unmarshal path's behavior and Scan's
-// documented contract.
+// TestScanVaryingDestTypesUnit is the unit-level counterpart of the
+// integration test of the same shape: a caller may vary destination types
+// between rows of one Iter, with no page turn and so no schema change, which
+// only the destTypes half of ensureRowDecoderFor's check catches.
 func TestScanVaryingDestTypesUnit(t *testing.T) {
 	columns := []ColumnInfo{{Name: "v", TypeInfo: nat(TypeInt)}}
 	data, err := Marshal(columns[0].TypeInfo, int32(7))

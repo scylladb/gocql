@@ -2759,6 +2759,8 @@ func (iter *Iter) copyPageData(src *Iter) {
 	// columns must not outlive them, nor be cached onto the superseded stmt.
 	iter.preparedStmt = src.preparedStmt
 	iter.rowDecoder = nil
+	// Same reason: scanColumns caches column names derived from the old meta.
+	iter.scanColumns = nil
 	iter.allWarnings = append(iter.allWarnings, src.allWarnings...)
 	iter.releasedCustomPayload = src.releasedCustomPayload
 	iter.pos = src.pos
@@ -3116,7 +3118,8 @@ func (iter *Iter) Scan(dest ...any) bool {
 //
 // The dest slice must contain pointers to the destination variables, one per
 // column, in the same order as the query's column list. Use nil to skip a
-// column.
+// column. Destination types may change between rows — the row decoder is
+// recompiled when they do — but keeping them stable avoids that cost.
 //
 // Example:
 //

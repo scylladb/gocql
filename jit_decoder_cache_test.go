@@ -289,40 +289,6 @@ func TestTypeInfoEqual(t *testing.T) {
 	}
 }
 
-// BenchmarkGetOrCompileRowDecoder_ColdVsCachedHit is the decoder-side
-// analogue of BenchmarkGetOrCompileParamEncoder_ColdVsCachedHit.
-func BenchmarkGetOrCompileRowDecoder_ColdVsCachedHit(b *testing.B) {
-	columns := []ColumnInfo{
-		{Name: "title", TypeInfo: NativeType{typ: TypeVarchar, proto: 4}},
-		{Name: "body", TypeInfo: NativeType{typ: TypeVarchar, proto: 4}},
-		{Name: "views", TypeInfo: NativeType{typ: TypeBigInt, proto: 4}},
-		{Name: "protected", TypeInfo: NativeType{typ: TypeBoolean, proto: 4}},
-		{Name: "tags", TypeInfo: CollectionType{NativeType: NativeType{typ: TypeSet, proto: 4}, Elem: NativeType{typ: TypeVarchar, proto: 4}}},
-	}
-	var title, body string
-	var views int64
-	var protected bool
-	var tags []string
-	dest := []any{&title, &body, &views, &protected, &tags}
-
-	b.Run("Uncached_PerCallKey", func(b *testing.B) {
-		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
-			_ = getOrCompileRowDecoder(columns, dest)
-		}
-	})
-
-	b.Run("Cached_PerStatement_WarmHit", func(b *testing.B) {
-		stmt := &preparedStatment{}
-		resolveRowDecoder(stmt, columns, dest) // warm the cache
-		b.ReportAllocs()
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			_ = resolveRowDecoder(stmt, columns, dest)
-		}
-	})
-}
-
 // TestEnsureRowDecoderForInvalidatesOnPageTurn verifies a page turn that
 // changes the schema drops the decoder compiled for the previous page, even
 // though the caller's destination types are unchanged — the common case, since
@@ -388,4 +354,38 @@ func BenchmarkEnsureRowDecoderForWarmRow(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		iter.ensureRowDecoderFor(dest)
 	}
+}
+
+// BenchmarkGetOrCompileRowDecoder_ColdVsCachedHit is the decoder-side
+// analogue of BenchmarkGetOrCompileParamEncoder_ColdVsCachedHit.
+func BenchmarkGetOrCompileRowDecoder_ColdVsCachedHit(b *testing.B) {
+	columns := []ColumnInfo{
+		{Name: "title", TypeInfo: NativeType{typ: TypeVarchar, proto: 4}},
+		{Name: "body", TypeInfo: NativeType{typ: TypeVarchar, proto: 4}},
+		{Name: "views", TypeInfo: NativeType{typ: TypeBigInt, proto: 4}},
+		{Name: "protected", TypeInfo: NativeType{typ: TypeBoolean, proto: 4}},
+		{Name: "tags", TypeInfo: CollectionType{NativeType: NativeType{typ: TypeSet, proto: 4}, Elem: NativeType{typ: TypeVarchar, proto: 4}}},
+	}
+	var title, body string
+	var views int64
+	var protected bool
+	var tags []string
+	dest := []any{&title, &body, &views, &protected, &tags}
+
+	b.Run("Uncached_PerCallKey", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			_ = getOrCompileRowDecoder(columns, dest)
+		}
+	})
+
+	b.Run("Cached_PerStatement_WarmHit", func(b *testing.B) {
+		stmt := &preparedStatment{}
+		resolveRowDecoder(stmt, columns, dest) // warm the cache
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_ = resolveRowDecoder(stmt, columns, dest)
+		}
+	})
 }
