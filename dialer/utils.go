@@ -33,11 +33,15 @@ var ErrSegmentCompressorRequired = errors.New("gocql/dialer: protocol v5 connect
 // The direction bit is masked off: the top bit of frame[0] distinguishes a request
 // from a response, and folding it into the version makes every response look like a
 // far newer protocol. It is only meaningful for bytes at a frame boundary.
+//
+// The masking is frm.ProtoVersion's rather than a second copy of it here. Every
+// version comparison in this package goes through this function for that reason: one
+// of them getting the direction bit wrong is a bug that reads as a protocol change.
 func FrameProtoVersion(b []byte) byte {
 	if len(b) == 0 {
 		return 0
 	}
-	return b[0] & protoVersionMask
+	return frm.ProtoVersion(b[0]).Version()
 }
 
 // FrameIsProtoV5OrNewer reports whether b starts a CQL frame whose protocol version is
@@ -87,13 +91,11 @@ func forEachStartupOption(frame []byte, fn func(key, value []byte) bool) bool {
 	if len(frame) < 5 {
 		return false
 	}
-	shift := headerShift(frame)
-	if frameOp(frame[3+shift]) != opStartup {
+	if frameOp(frame[4]) != opStartup {
 		return false
 	}
 
-	// Header: version, flags, stream (1 byte on v1/v2, 2 on v3+), opcode, length(4).
-	p := 8 + shift
+	p := FrameHeaderLen
 	readShort := func() (int, bool) {
 		if p+2 > len(frame) {
 			return 0, false
@@ -166,33 +168,18 @@ func StartupCompression(frame []byte) (string, bool) {
 	return algorithm, found
 }
 
-// A CQL frame carries the protocol version in the low 7 bits of frame[0]; the
-// top bit is the request/response direction. Always mask with protoVersionMask
-// before comparing a version, so the version tests in this file cannot disagree
-// with each other depending on whether the direction bit happens to be set.
-const (
-	protoVersionMask = 0x7F
-	protoVersion1    = 0x01
-	protoVersion2    = 0x02
-	protoVersion3    = 0x03
-	protoVersion4    = 0x04
-	protoVersion5    = 0x05
-)
-
-// headerShift reports the extra header byte protocol v3+ spends on its 2-byte
-// stream id: v1/v2 put the opcode at frame[3] and the body at frame[8], v3+ put
-// them at frame[4] and frame[9]. Callers must have checked that frame is non-empty.
+// The protocol versions this package names. v3 is the floor: everything here reads
+// the v3+ frame header, and FrameSplitter.consume refuses anything older, so no parser
+// below has a v1/v2 case to answer for.
 //
-// This is the single place the offset is derived, so the parsers in this file cannot
-// disagree about where a frame's opcode is. The comparison is masked per the note
-// above: the top bit of frame[0] is the request/response direction, and folding it
-// into the version makes every response look like a much newer protocol.
-func headerShift(frame []byte) int {
-	if frame[0]&protoVersionMask > protoVersion2 {
-		return 1
-	}
-	return 0
-}
+// Compare a version through FrameProtoVersion, never against frame[0] directly. The
+// top bit there is the request/response direction, and folding it in makes every
+// response look like a much newer protocol.
+const (
+	protoVersion3 = 0x03
+	protoVersion4 = 0x04
+	protoVersion5 = 0x05
+)
 
 // fits reports whether the n bytes starting at index lie inside frame.
 //
@@ -375,7 +362,7 @@ func addQueryParams(frame []byte, index int) (end, tailStart, tailEnd int, ok bo
 
 	//use query flags
 	var flags uint32
-	protoV5OrNewer := frame[0]&protoVersionMask > protoVersion4
+	protoV5OrNewer := FrameProtoVersion(frame) > protoVersion4
 	if protoV5OrNewer {
 		// For protocol v5+, flags are a 4-byte big-endian uint32
 		if !fits(frame, index, 4) {
@@ -394,14 +381,7 @@ func addQueryParams(frame []byte, index int) (end, tailStart, tailEnd int, ok bo
 		index = index + 1
 	}
 
-	names := false
-
-	// protoV3 specific things
-	if frame[0]&protoVersionMask > protoVersion2 {
-		if flags&frm.FlagValues == frm.FlagValues && flags&frm.FlagWithNameValues == frm.FlagWithNameValues {
-			names = true
-		}
-	}
+	names := flags&frm.FlagValues == frm.FlagValues && flags&frm.FlagWithNameValues == frm.FlagWithNameValues
 
 	if flags&frm.FlagValues == frm.FlagValues {
 		if !fits(frame, index, 2) {
@@ -485,10 +465,6 @@ func addQueryParams(frame []byte, index int) (end, tailStart, tailEnd int, ok bo
 	return end, tailStart, index, true
 }
 
-func addHeader(index int) int {
-	return index + 8
-}
-
 // pastCustomPayload reports the offset a request's own body fields start at, stepping
 // over the custom payload when the frame carries one, along with a canonical hash of
 // the payload's entries (0 when the frame carries none).
@@ -497,23 +473,23 @@ func addHeader(index int) int {
 // body field, so QUERY, EXECUTE and BATCH each have to step over it before walking
 // anything of their own; a frame without the flag starts where the header ends. Reading
 // frame[1] is the caller's to make safe, and GetFrameHash's arms all sit behind its
-// header-length guard.
-func pastCustomPayload(frame []byte, p int) (int, int64, bool) {
+// FrameHeaderLen guard.
+func pastCustomPayload(frame []byte) (int, int64, bool) {
 	if frame[1]&frm.FlagCustomPayload != frm.FlagCustomPayload {
-		return addHeader(p), 0, true
+		return FrameHeaderLen, 0, true
 	}
-	return addCustomPayload(frame, p)
+	return addCustomPayload(frame)
 }
 
 // addCustomPayload walks the [bytes map] a frame carries when FlagCustomPayload is
 // set, and returns the index just past it along with a canonical hash of its entries.
 //
-// It derives that map's offset from p with addHeader rather than taking it as well,
-// so the offset it reads the entry count from and the offset it walks on from cannot
-// disagree. Every caller passed addHeader(p) for both, which held only by convention:
-// a caller passing an index already advanced past something would have read the count
-// from the body start and walked from somewhere else, and the walk would be
-// plausible-but-wrong in the way the empty-map case below was.
+// It starts at the body rather than taking an index, so the offset it reads the entry
+// count from and the offset it walks on from cannot disagree. They used to be two
+// arguments that every caller passed the same value for, which held only by
+// convention: a caller handing it an index already advanced past something would have
+// read the count from the body start and walked from somewhere else, and the walk
+// would be plausible-but-wrong in the way the empty-map case below was.
 //
 // The hash sorts each entry's raw bytes before folding them together, rather than
 // folding them in wire order. writeBytesMap (frame.go) ranges directly over a Go map to
@@ -524,8 +500,8 @@ func pastCustomPayload(frame []byte, p int) (int, int64, bool) {
 // independent of which order writeBytesMap happened to produce. Ties are impossible —
 // a [bytes map]'s keys are unique, and the key is the first field of each entry, so
 // comparing the raw entries already totally orders them.
-func addCustomPayload(frame []byte, p int) (int, int64, bool) {
-	index := addHeader(p)
+func addCustomPayload(frame []byte) (int, int64, bool) {
+	index := FrameHeaderLen
 	if !fits(frame, index, 2) {
 		return 0, 0, false
 	}
@@ -661,6 +637,15 @@ func GetFrameHash(frame []byte, useMetadataID bool) int64 {
 	// carry. Handing it segment bytes hashes a meaningless range. The record/replay
 	// dialers unwrap the segments first, which is what Decoder is for.
 	//
+	// Every offset below is the protocol v3+ header's. On a live connection nothing
+	// older reaches here: FrameSplitter.consume refuses one under v3 as soon as its
+	// version byte arrives, which is why this reads frame[4] for an opcode and blanks
+	// two stream-id bytes rather than deriving either. A recording is the other way
+	// in -- loadResponseFramesFromFiles hashes bytes straight off disk, past any
+	// splitter -- so a file holding pre-v3 frames is read at these offsets and fails
+	// to match. Every read below is bounds-checked, so that is a wrong hash, not a
+	// panic.
+	//
 	// Note the empty and short-frame guards hash the frame as given, while the
 	// raw-bytes fallbacks inside the switch hash it with the stream id already
 	// blanked. Both are stable between record and replay, which is all the hash has
@@ -678,13 +663,6 @@ func GetFrameHash(frame []byte, useMetadataID bool) int64 {
 	// a canonical hash of the payload as well, and the header flags, for a bit of
 	// identity the body never carries; see addCustomPayload and hashParams.
 	//
-	// One exception, and it is a dead one: the protocol v1 EXECUTE path slices from
-	// past its values, so it leaves the prepared id out of the very range that is meant
-	// to carry it. It cannot be reached — its values walk advances at least four bytes
-	// per value while the bound it is checked against allows one, so every v1 EXECUTE
-	// falls back to hashing the frame whole. Left as it is because no live connection is
-	// v1 and the path is going away.
-	//
 	// STARTUP hashes the header down to the opcode and deliberately stops before the
 	// body length, for the reason its own comment gives. PREPARE, AUTH_RESPONSE,
 	// OPTIONS, REGISTER and the unknown-opcode default hash the frame whole, header
@@ -693,32 +671,23 @@ func GetFrameHash(frame []byte, useMetadataID bool) int64 {
 		return murmur.Murmur3H1(frame)
 	}
 
-	p := headerShift(frame)
-
 	// A frame shorter than its own header — version, flags, stream id, opcode and
 	// the 4-byte body length — cannot be parsed at all: the stream-id blanking
 	// below and the opcode switch after it both index into it unconditionally.
-	if !fits(frame, 0, 8+p) {
+	if !fits(frame, 0, FrameHeaderLen) {
 		return murmur.Murmur3H1(frame)
 	}
 
-	if p == 1 {
-		streamID1 := frame[2]
-		streamID2 := frame[3]
-		defer func() {
-			frame[2] = streamID1
-			frame[3] = streamID2
-		}()
-		frame[2] = byte('0')
-		frame[3] = byte('0')
-	} else {
-		streamID1 := frame[2]
-		defer func() {
-			frame[2] = streamID1
-		}()
-		frame[2] = byte('0')
-	}
-	switch frame[3+p] {
+	streamID1 := frame[2]
+	streamID2 := frame[3]
+	defer func() {
+		frame[2] = streamID1
+		frame[3] = streamID2
+	}()
+	frame[2] = byte('0')
+	frame[3] = byte('0')
+
+	switch frame[4] {
 	case byte(opStartup):
 		// Hash the header up to and including the opcode, deliberately stopping
 		// before the 4-byte body length: a connection sends exactly one STARTUP,
@@ -729,13 +698,13 @@ func GetFrameHash(frame []byte, useMetadataID bool) int64 {
 		// set of STARTUP options the driver sent when it was recorded, so adding
 		// one (DRIVER_CONFIG, SESSION_ID, ...) would invalidate them all and
 		// panic the replay benchmarks until they were regenerated.
-		return murmur.Murmur3H1(frame[:4+p])
+		return murmur.Murmur3H1(frame[:5])
 	case byte(opPrepare):
 		return murmur.Murmur3H1(frame)
 	case byte(opAuthResponse):
 		return murmur.Murmur3H1(frame)
 	case byte(opQuery):
-		index, payloadHash, ok := pastCustomPayload(frame, p)
+		index, payloadHash, ok := pastCustomPayload(frame)
 		if !ok {
 			return murmur.Murmur3H1(frame)
 		}
@@ -756,17 +725,16 @@ func GetFrameHash(frame []byte, useMetadataID bool) int64 {
 
 		return hashParams(frame, index, paramsStart, payloadHash)
 	case byte(opExecute):
-		index, payloadHash, ok := pastCustomPayload(frame, p)
+		index, payloadHash, ok := pastCustomPayload(frame)
 		if !ok {
 			return murmur.Murmur3H1(frame)
 		}
 
 		endIndex := index
 
-		// Every length here is peer- or file-supplied, and this branch now runs on
-		// protocol v4 rather than being unreachable, so bound the reads: a truncated
-		// or wrongly-stamped recording must fall back to hashing the raw bytes (as the
-		// v5 guard above does) rather than panic inside loadResponseFramesFromFiles.
+		// Every length here is peer- or file-supplied, so bound the reads: a truncated
+		// or wrongly-stamped recording must fall back to hashing the raw bytes rather
+		// than panic inside loadResponseFramesFromFiles.
 		// Both the length field and the payload it announces have to be checked —
 		// a plausible length running off the end walks straight into addQueryParams.
 		if !fits(frame, index, 2) {
@@ -784,7 +752,7 @@ func GetFrameHash(frame []byte, useMetadataID bool) int64 {
 		// query-params offset (and therefore the extracted hash) is correct. The v4
 		// case cannot be read from the frame bytes, so it is signalled by the
 		// caller via useMetadataID.
-		if frame[0]&protoVersionMask > protoVersion4 || useMetadataID {
+		if FrameProtoVersion(frame) > protoVersion4 || useMetadataID {
 			if !fits(frame, endIndex, 2) {
 				return murmur.Murmur3H1(frame)
 			}
@@ -795,31 +763,9 @@ func GetFrameHash(frame []byte, useMetadataID bool) int64 {
 			endIndex = endIndex + 2 + resultMetadataIDLen
 		}
 
-		if frame[0]&protoVersionMask > protoVersion1 {
-			return hashParams(frame, index, endIndex, payloadHash)
-		}
-
-		// Protocol v1 has no <query_parameters> block: the values follow the
-		// preparedID directly. Bounded by the preparedID length check above, which
-		// read the same two bytes at the same index: nothing between here and there
-		// moves it.
-		valuesLen := int(frame[index])<<8 | int(frame[index+1])
-		index = index + 2
-		for i := 0; i < valuesLen; i++ {
-			if index, ok = addBytes(frame, index); !ok {
-				return murmur.Murmur3H1(frame)
-			}
-		}
-		index = index + 2
-		// The walk above moves index independently of endIndex and can leave it past
-		// the end of the range, so the two still have to be ordered before the slice.
-		// endIndex itself is bounded by the helpers.
-		if index > endIndex {
-			return murmur.Murmur3H1(frame)
-		}
-		return murmur.Murmur3H1(frame[index:endIndex])
+		return hashParams(frame, index, endIndex, payloadHash)
 	case byte(opBatch):
-		index, payloadHash, ok := pastCustomPayload(frame, p)
+		index, payloadHash, ok := pastCustomPayload(frame)
 		if !ok {
 			return murmur.Murmur3H1(frame)
 		}

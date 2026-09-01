@@ -117,7 +117,7 @@ func (f *Framing) ObserveRequest(frame []byte) error {
 
 	if !FrameIsProtoV5OrNewer(frame) {
 		return fmt.Errorf("gocql/dialer: connection negotiated %q compression at protocol v%d, which compresses frame bodies rather than transport segments; the record and replay dialers support compression only from protocol v5",
-			algorithm, frame[0]&protoVersionMask)
+			algorithm, FrameProtoVersion(frame))
 	}
 
 	if named, ok := f.comp.(interface{ Name() string }); ok && !strings.EqualFold(named.Name(), algorithm) {
@@ -147,7 +147,7 @@ func (f *Framing) ObserveResponse(frame []byte) {
 		return
 	}
 
-	switch frameOp(frame[3+headerShift(frame)]) {
+	switch frameOp(frame[4]) {
 	case opReady, opAuthenticate:
 		f.segmented.Store(true)
 	}

@@ -170,25 +170,11 @@ func (c *ConnectionReplayer) getPendingFrame() *FrameRecorded {
 	return c.frames[frameId]
 }
 
-// twoByteStreamID reports whether b's protocol version carries the 2-byte stream id of
-// v3+ rather than the single byte of v1/v2.
-//
-// dialer.FrameProtoVersion rather than b[0] directly: the top bit of a frame's first
-// byte is the request/response direction, so an unmasked comparison reads every
-// response as a far newer protocol. replaceFrameStreamID is handed exactly that -- a
-// recorded response -- where a v1/v2 frame arrives as 0x81 or 0x82, takes the v3+ branch
-// and writes the low half of the stream id over the opcode. dialer/utils.go warns about
-// this in the note above headerShift, and matchRequest already uses the masked helper.
-func twoByteStreamID(b []byte) bool {
-	return dialer.FrameProtoVersion(b) > 0x02
-}
-
+// A stream id is two bytes at frame[2:4] on every protocol this package reads. It used
+// to be one byte on v1/v2, and both functions below forked on the version to find out
+// -- dialer.FrameSplitter now refuses a connection under v3 before either can see it.
 func (c *ConnectionReplayer) pushStreamIDToReplay(b []byte, idx int) {
-	if twoByteStreamID(b) {
-		c.streamIdsToReplay = append(c.streamIdsToReplay, int(b[2])<<8|int(b[3]))
-	} else {
-		c.streamIdsToReplay = append(c.streamIdsToReplay, int(b[2]))
-	}
+	c.streamIdsToReplay = append(c.streamIdsToReplay, int(b[2])<<8|int(b[3]))
 	c.frameIdsToReplay = append(c.frameIdsToReplay, idx)
 
 	select {
@@ -216,12 +202,8 @@ func wholeFrame(b []byte) bool {
 }
 
 func replaceFrameStreamID(b []byte, stream int) {
-	if twoByteStreamID(b) {
-		b[2] = byte(stream >> 8)
-		b[3] = byte(stream)
-	} else {
-		b[2] = byte(stream)
-	}
+	b[2] = byte(stream >> 8)
+	b[3] = byte(stream)
 }
 
 // Read serves the recorded response to the request most recently matched, across as

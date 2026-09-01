@@ -23,10 +23,9 @@ func frameV4(op frameOp, headerFlags byte, body []byte) []byte {
 	return append(frame, body...)
 }
 
-// frameV2 builds the same frame on protocol v2, whose stream id is one byte, so
-// the opcode sits at index 3 and the body at index 8. Pins the shift=0 side of
-// headerShift; reading the opcode at index 4 here finds a length byte instead and
-// the frame is misclassified.
+// frameV2 builds the same frame on protocol v2, whose stream id is one byte, so the
+// opcode sits at index 3 and the body at index 8 -- a byte earlier than anything in
+// this package reads. It exists to pin that such a frame is not understood.
 func frameV2(op frameOp, body []byte) []byte {
 	frame := []byte{
 		0x02,
@@ -261,11 +260,12 @@ func TestStartupNegotiatesMetadataID(t *testing.T) {
 	if StartupNegotiatesMetadataID(frameV4(opQuery, 0x00, optIn)) {
 		t.Error("StartupNegotiatesMetadataID(QUERY with key) = true, want false")
 	}
-	if !StartupNegotiatesMetadataID(frameV2(opStartup, optIn)) {
-		t.Error("StartupNegotiatesMetadataID(v2 STARTUP with key) = false, want true")
-	}
-	if StartupNegotiatesMetadataID(frameV2(opQuery, optIn)) {
-		t.Error("StartupNegotiatesMetadataID(v2 QUERY with key) = true, want false")
+	// Below protocol v3 the opcode is a byte earlier, so index 4 holds a length byte
+	// and no v2 frame is a STARTUP as far as this is concerned. Not a gap: a
+	// connection that old is refused by FrameSplitter.consume before a STARTUP can be
+	// recorded, and reporting "no opt-in" for one is the safe way to be wrong.
+	if StartupNegotiatesMetadataID(frameV2(opStartup, optIn)) {
+		t.Error("StartupNegotiatesMetadataID(v2 STARTUP with key) = true, want false")
 	}
 	if StartupNegotiatesMetadataID(nil) {
 		t.Error("StartupNegotiatesMetadataID(nil) = true, want false")
@@ -381,9 +381,9 @@ func TestFitsRejectsOverflowingLengths(t *testing.T) {
 }
 
 // TestGetFrameHashBoundsShortFrame pins the guard for a frame shorter than its own
-// header. Everything after it indexes unconditionally — the stream-id blanking
-// reads frame[2] (and frame[3] on v3+), the switch reads the opcode at frame[3+p] —
-// so a one-byte v4 frame used to panic before the parser had looked at anything.
+// header. Everything after it indexes unconditionally — the stream-id blanking reads
+// frame[2] and frame[3], the switch reads the opcode at frame[4] — so a one-byte frame
+// used to panic before the parser had looked at anything.
 //
 // The fallback here hashes the frame as given rather than with the stream id
 // blanked, because there may be no stream id to blank. That is fine: record and
@@ -394,7 +394,6 @@ func TestGetFrameHashBoundsShortFrame(t *testing.T) {
 		full []byte
 	}{
 		{"v4", frameV4(opExecute, 0x00, nil)},
-		{"v2", frameV2(opExecute, nil)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// A header-only frame is the shortest one the parser accepts, so every
