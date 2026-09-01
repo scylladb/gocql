@@ -174,6 +174,7 @@ const (
 	protoVersionMask = 0x7F
 	protoVersion1    = 0x01
 	protoVersion2    = 0x02
+	protoVersion3    = 0x03
 	protoVersion4    = 0x04
 	protoVersion5    = 0x05
 )
