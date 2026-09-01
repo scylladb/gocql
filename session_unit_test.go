@@ -1827,6 +1827,7 @@ func TestCloneQueryAccountsForEveryField(t *testing.T) {
 		"routingKey":                 {},
 		"values":                     {},
 		"pageState":                  {},
+		"pkMarshalCache":             {},
 		"requestTimeout":             {},
 		"defaultTimestampValue":      {},
 		"prefetch":                   {},
