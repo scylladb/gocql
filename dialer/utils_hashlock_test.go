@@ -157,9 +157,6 @@ func hashLockCases() []hashLockCase {
 		{name: "batch-default-timestamp", frame: frameV4(opBatch, 0x00, batchBody(0x20,
 			[]byte{0x00, 0x06, 0x26, 0x52, 0xBF, 0xD6, 0xE5, 0x3F}))},
 
-		{name: "v2-options", frame: frameV2(opOptions, nil)},
-		{name: "v2-query", frame: frameV2(opQuery, queryBody("SELECT * FROM system.local", 0x00))},
-
 		{name: "truncated-execute-prepared-id-len", frame: v4ExecuteFrame(true)[:10], useMetadataID: true},
 		{name: "truncated-execute-metadata-id-len", frame: v4ExecuteFrame(true)[:15], useMetadataID: true},
 		{name: "short-header", frame: frameV4(opQuery, 0x00, nil)[:5]},
@@ -192,6 +189,11 @@ func TestGetFrameHashIsStable(t *testing.T) {
 // v5 query-parameter support was added, and is unchanged by it: the v5 tail walk is
 // gated on v5, so nothing below v5 could reach it. The v5 cases at the bottom of the
 // map are the ones that support added.
+//
+// They are also unchanged by the package settling on a protocol v3 floor. Two v2 cases
+// used to sit here pinning the older header layout; deleting the v1/v2 walks moved
+// those two and nothing else, which is what says the fixed offsets land where the
+// derived ones did.
 var hashLockWant = map[string]int64{
 	"auth-response":                     -5612286604398787175,
 	"empty":                             0,
@@ -208,7 +210,6 @@ var hashLockWant = map[string]int64{
 	"truncated-execute-metadata-id-len": 1641695519491433123,
 	"truncated-execute-prepared-id-len": -2990148397469877668,
 	"unknown-opcode":                    -8681368666721584811,
-	"v2-options":                        2835211771060518081,
 
 	// Both BATCH values moved when the arm stopped hashing the frame whole and
 	// started walking the body to the end of the parameter block. That is the point
@@ -221,22 +222,18 @@ var hashLockWant = map[string]int64{
 	"batch-default-timestamp": -8987577148391256339,
 
 	// Every QUERY value here moved when scylladb/gocql#1000 was fixed. Before it, all
-	// eleven were Murmur3H1({0x00, 0x00, 0x00}) = 8779008611884021576: the parameter
+	// ten were Murmur3H1({0x00, 0x00, 0x00}) = 8779008611884021576: the parameter
 	// walk was handed the body start rather than the position past the query text, so
 	// it hashed the top three bytes of the text's length — zero for any query under
 	// 16 MiB — and stopped. The checked-in recordings were regenerated in the same
 	// change, because their control-connection query text had been stale since
 	// b6a9682 and only the collision hid it.
 	//
-	// Two of these still coincide, and are meant to: query-bare and v2-query both hash
-	// 669594534933358966 because the range is measured from the body, so the same
-	// statement and parameters hash alike across protocol versions.
-	//
-	// query-custom-payload used to be a third. It carries query-bare's body behind a
-	// [bytes map] and differs in nothing else, and the range began past the payload,
-	// so the two were indistinguishable — and the replayer serves the first hash it
-	// matches, so one of them got the other's response. Query.CustomPayload is public,
-	// so both are requests a caller can send. The range then started at the body.
+	// query-custom-payload carries query-bare's body behind a [bytes map] and differs
+	// in nothing else. The two used to hash alike, because the range began past the
+	// payload — and the replayer serves the first hash it matches, so one of them got
+	// the other's response. Query.CustomPayload is public, so both are requests a
+	// caller can send. The range then started at the body.
 	//
 	// execute-custom-payload and batch-custom-payload are here because the same range
 	// moved in those two arms as well, and without a payload-bearing case each, either
@@ -267,7 +264,6 @@ var hashLockWant = map[string]int64{
 	"query-serial-consistency":      -1672825478938872525,
 	"query-values":                  -2567259529754147462,
 	"query-values-page-size-serial": -6333038150028030013,
-	"v2-query":                      669594534933358966,
 
 	// A QUERY whose [long string] cannot be walked — its length field truncated, or
 	// announcing more bytes than the frame holds — is a damaged recording, so it falls
