@@ -57,6 +57,17 @@ type SegmentCompressor interface {
 	AppendDecompressed(dst, src []byte, decompressedLength uint32) ([]byte, error)
 }
 
+// CompressorWithBuffer is an optional interface that compressors can implement
+// to support buffer reuse during decompression. When the framer detects this
+// interface, it passes its reusable decompression buffer to avoid per-frame
+// allocations.
+type CompressorWithBuffer interface {
+	Compressor
+	// DecodeInto decompresses data into dst, growing dst if needed.
+	// Returns the buffer (potentially reallocated) containing decompressed data.
+	DecodeInto(data []byte, dst []byte) ([]byte, error)
+}
+
 // SnappyCompressor implements the Compressor interface and can be used to
 // compress incoming and outgoing frames. It uses the S2 compression algorithm,
 // which is compatible with snappy and aims for high throughput.
@@ -79,4 +90,8 @@ func (s SnappyCompressor) Encode(data []byte) ([]byte, error) {
 
 func (s SnappyCompressor) Decode(data []byte) ([]byte, error) {
 	return s2.Decode(nil, data)
+}
+
+func (s SnappyCompressor) DecodeInto(data []byte, dst []byte) ([]byte, error) {
+	return s2.Decode(dst[:0], data)
 }
