@@ -33,6 +33,7 @@ import (
 	"math"
 	"net"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -670,10 +671,7 @@ func (f *framer) writeHeader(flags byte, op frm.Op, stream int) {
 }
 
 func (f *framer) setLength(length int) {
-	f.buf[5] = byte(length >> 24)
-	f.buf[6] = byte(length >> 16)
-	f.buf[7] = byte(length >> 8)
-	f.buf[8] = byte(length)
+	binary.BigEndian.PutUint32(f.buf[5:9], uint32(length))
 }
 
 func (f *framer) finish() error {
@@ -1400,6 +1398,14 @@ func putBatchQueryValues(stmts []batchStatment) {
 	}
 }
 
+func (q *queryValues) encodedSize(withName bool) int {
+	size := 4 + len(q.value)
+	if withName {
+		size += 2 + len(q.name)
+	}
+	return size
+}
+
 type queryParams struct {
 	nowInSeconds          *int
 	keyspace              string
@@ -1496,6 +1502,14 @@ func (f *framer) writeQueryParams(opts *queryParams) error {
 
 	if n := len(opts.values); n > 0 {
 		f.writeShort(uint16(n))
+
+		// Pre-grow once for the whole value section to avoid per-value append
+		// reallocations; sizes of already-marshalled values are O(1) to sum.
+		need := 0
+		for i := 0; i < n; i++ {
+			need += opts.values[i].encodedSize(names)
+		}
+		f.buf = slices.Grow(f.buf, need)
 
 		for i := 0; i < n; i++ {
 			if names {
@@ -1684,6 +1698,37 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 
 	var flags uint32
 
+	// Pre-grow once for all statements to avoid per-value append reallocations.
+	// Named values were already rejected above, so sizes never include a name.
+	{
+		need := 0
+		for i := 0; i < n; i++ {
+			b := &w.statements[i]
+			if len(b.preparedID) == 0 {
+				need += 1 + 4 + len(b.statement)
+			} else {
+				need += 1 + 2 + len(b.preparedID)
+			}
+			need += 2 // value count
+			for j := range b.values {
+				need += b.values[j].encodedSize(false)
+			}
+		}
+		need += 2 // consistency
+		if f.proto > protoVersion4 {
+			need += 4 // flags as uint32
+		} else {
+			need += 1 // flags as byte
+		}
+		if w.serialConsistency > 0 {
+			need += 2
+		}
+		if w.defaultTimestamp {
+			need += 8
+		}
+		f.buf = slices.Grow(f.buf, need)
+	}
+
 	for i := 0; i < n; i++ {
 		b := &w.statements[i]
 		if len(b.preparedID) == 0 {
@@ -1696,7 +1741,7 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 
 		f.writeShort(uint16(len(b.values)))
 		for j := range b.values {
-			col := b.values[j]
+			col := &b.values[j]
 			if col.isUnset {
 				f.writeUnset()
 			} else {
