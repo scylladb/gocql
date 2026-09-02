@@ -3903,6 +3903,34 @@ func (c *armFailingConn) RemoteAddr() net.Addr             { return nil }
 func (c *armFailingConn) SetDeadline(time.Time) error      { return nil }
 func (c *armFailingConn) SetWriteDeadline(time.Time) error { return nil }
 
+// A calls map that disagrees with the callReq it holds is a driver bug, not
+// something a peer can provoke. It used to panic anyway -- on the serve goroutine,
+// outside parseFrame's recover, and with a string value that recover could not have
+// converted even in scope -- so a bookkeeping slip killed the process. Now it fails
+// the connection whose stream accounting is in doubt, and nothing else.
+func TestProcessFrameStreamIDMismatchIsAnError(t *testing.T) {
+	t.Parallel()
+
+	header := []byte{
+		protoVersion4 | protoDirectionMask, 0x00, 0x00, 0x01, byte(frm.OpResult),
+		0x00, 0x00, 0x00, 0x00, // no body
+	}
+
+	// Keyed under stream 1, but the call believes it is stream 2.
+	call := &callReq{timeout: make(chan struct{}), streamID: 2, resp: make(chan callResp, 1)}
+	c := &Conn{
+		calls:   map[int]*callReq{1: call},
+		version: protoVersion4,
+		streams: streams.New(),
+		logger:  nopLogger{},
+	}
+
+	err := c.processFrameSource(context.Background(), frameSource{r: bytes.NewReader(header)})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "stream 1")
+	require.Contains(t, err.Error(), "stream 2")
+}
+
 // TestProcessFrameFailedDeadlineArmIsFatal pins that a body read which never
 // reached the socket is fatal to the connection, and that widening the rule that
 // far did not make every read failure fatal.
