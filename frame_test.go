@@ -34,6 +34,7 @@ import (
 	"math"
 	"net"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -521,6 +522,32 @@ func TestParsePreparedMetadataAcceptsValidPkeyCount(t *testing.T) {
 		require.Len(t, prepared.reqMeta.columns, 2)
 		require.Empty(t, fr.buf, "whole frame should be consumed")
 	})
+}
+
+// A negative [long string] length must panic with a plain error, not a
+// runtime.Error: parseFrame converts the first and re-panics the second.
+func TestReadLongStringRejectsNegativeLength(t *testing.T) {
+	f := newFramer(nil, protoVersion4)
+	f.buf = []byte{0xFF, 0xFF, 0xFF, 0xFF, 'x'} // a declared length of -1
+
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("a negative long string length was accepted")
+		}
+		if _, ok := r.(runtime.Error); ok {
+			t.Fatalf("panicked with a runtime.Error, which parseFrame's recover re-panics: %v", r)
+		}
+		err, ok := r.(error)
+		if !ok {
+			t.Fatalf("panicked with %T, which parseFrame's recover cannot convert: %v", r, r)
+		}
+		if !strings.Contains(err.Error(), "-1") {
+			t.Errorf("the error does not name the length: %v", err)
+		}
+	}()
+
+	f.readLongString()
 }
 
 // TestParseResultPreparedTruncatedResultMetadataID verifies that a malformed

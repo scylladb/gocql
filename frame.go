@@ -470,12 +470,23 @@ func (f *framer) adoptFrameBody(body []byte, head *frm.FrameHeader) error {
 }
 
 func (f *framer) parseFrame() (frame frame, err error) {
+	// The read helpers panic with an error instead of returning one (see readByte);
+	// this recover is what makes a malformed frame a protocol error.
 	defer func() {
 		if r := recover(); r != nil {
-			if _, ok := r.(runtime.Error); ok {
-				panic(r)
+			switch v := r.(type) {
+			case runtime.Error:
+				// A driver bug, not a bad frame -- converting it would file it against
+				// the peer. The helpers bound every read, so no frame should reach here.
+				panic(v)
+			case error:
+				err = v
+			default:
+				// Unreachable while every read-path panic carries an error; an unchecked
+				// r.(error) would itself panic in here and lose the original value. A
+				// panic("...") is a driver bug, so the message says so.
+				err = NewErrProtocol("driver bug: unexpected panic parsing a frame: %v", v)
 			}
-			err = r.(error)
 		}
 	}()
 
@@ -1789,6 +1800,12 @@ func (f *framer) writeRegisterFrame(streamID int, w *writeRegisterFrame) error {
 	return f.finish()
 }
 
+// The read helpers below bounds-check and then panic with a plain error instead of
+// returning one; parseFrame's recover converts it. Two rules keep that working:
+//   - panic with an error, never a string, or the recover has nothing to convert;
+//   - never raise a runtime.Error: bound every index against len(f.buf) and reject
+//     a negative length first -- a negative is not below any length. parseFrame
+//     re-panics a runtime.Error on purpose.
 func (f *framer) readByte() byte {
 	if len(f.buf) < 1 {
 		panic(fmt.Errorf("not enough bytes in buffer to read byte require 1 got: %d", len(f.buf)))
@@ -1843,6 +1860,13 @@ func (f *framer) skipString() {
 
 func (f *framer) readLongString() (s string) {
 	size := f.readInt()
+
+	// A [long string]'s length is signed, and unlike [bytes] a negative is malformed,
+	// not null. len(f.buf) is never below a negative, so without this f.buf[:size]
+	// raises a runtime.Error that parseFrame re-panics.
+	if size < 0 {
+		panic(fmt.Errorf("invalid long string length: %d", size))
+	}
 
 	if len(f.buf) < size {
 		panic(fmt.Errorf("not enough bytes in buffer to read long string require %d got: %d", size, len(f.buf)))
