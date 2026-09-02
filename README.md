@@ -220,6 +220,10 @@ If you suspect that this feature is causing you problems, you can completely dis
 
 ### 5.2 Client routes (PrivateLink)
 
+Cloud connection bundles and the `scyllacloud.NewCloudCluster` helper are no longer supported.
+Applications migrating from bundles should configure contact points, TLS, and authentication directly on `ClusterConfig`.
+Use client routes for PrivateLink endpoint routing, or implement `ClusterConfig.HostDialer` when connection setup needs custom routing or transport behavior.
+
 Scylla Cloud exposes a `system.client_routes` table that maps hosts to PrivateLink endpoints.
 When configured, the driver can resolve and connect to the per-host PrivateLink address instead of using the public host IP.
 
