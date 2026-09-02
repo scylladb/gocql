@@ -1844,6 +1844,17 @@ func (f *framer) skipString() {
 func (f *framer) readLongString() (s string) {
 	size := f.readInt()
 
+	// A [long string]'s length is signed on the wire, and unlike [bytes] a negative
+	// value is not the null convention -- it is malformed. The guard is what keeps
+	// this helper inside the package's panic-with-an-error contract: without it the
+	// check below passes (len(f.buf) is never below a negative) and f.buf[:size]
+	// raises a runtime.Error, which parseFrame's recover deliberately re-panics. That
+	// would be the one shape of bad frame that kills the serve goroutine instead of
+	// failing the request -- the same class as the pkeyCount allocation fixed in #976.
+	if size < 0 {
+		panic(fmt.Errorf("invalid long string length: %d", size))
+	}
+
 	if len(f.buf) < size {
 		panic(fmt.Errorf("not enough bytes in buffer to read long string require %d got: %d", size, len(f.buf)))
 	}
