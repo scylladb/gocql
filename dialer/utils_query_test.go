@@ -233,3 +233,58 @@ func TestGetFrameHashQueryBoundsEveryPrefix(t *testing.T) {
 		t.Errorf("overstated keyspace length: GetFrameHash = %d, want the raw-bytes fallback %d", got, want)
 	}
 }
+
+// TestGetFrameHashDistinguishesCustomPayload pins that a request's custom payload is
+// part of its identity, on each of the three arms that walk a body.
+//
+// The payload is a [bytes map] between the header and the first body field, so an arm
+// has to step over it to find anything of its own. The hashed range used to start where
+// that step landed, which put the payload outside it: two requests alike in everything
+// but their payload hashed the same, and the replayer, which serves the first hash it
+// matches, answered one with the other's response. Query.CustomPayload is public, so
+// that is a pair a caller can send.
+func TestGetFrameHashDistinguishesCustomPayload(t *testing.T) {
+	// payload renders a one-entry [bytes map], the shape a CUSTOM_PAYLOAD frame opens
+	// with, followed by whatever body the opcode expects.
+	payload := func(value byte, body []byte) []byte {
+		out := []byte{0x00, 0x01}
+		out = append(out, shortString("k")...)
+		out = append(out, bytesValue([]byte{value})...)
+		return append(out, body...)
+	}
+
+	// Each body has to be one the arm can walk to the end of. A body that fails a
+	// bound falls back to hashing the frame whole -- payload included -- which would
+	// make this test pass without the range covering anything.
+	queryTail := queryBody("SELECT * FROM system.local", 0x00)
+	executeTail := []byte{
+		0x00, 0x03, 0xAA, 0xBB, 0xCC, // preparedID: len 3
+		0x00, 0x01, 0x00, // consistency ONE, no flags
+	}
+	batchTail := batchBody(0x00)
+
+	for _, tc := range []struct {
+		name string
+		op   frameOp
+		tail []byte
+	}{
+		{name: "query", op: opQuery, tail: queryTail},
+		{name: "execute", op: opExecute, tail: executeTail},
+		{name: "batch", op: opBatch, tail: batchTail},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := frameV4(tc.op, frm.FlagCustomPayload, payload(0xAB, tc.tail))
+			b := frameV4(tc.op, frm.FlagCustomPayload, payload(0xCD, tc.tail))
+			if x, y := GetFrameHash(a, false), GetFrameHash(b, false); x == y {
+				t.Errorf("two requests differing only in their custom payload hash the same (%d)", x)
+			}
+
+			// And the payload's presence has to register at all: the same body with
+			// no map in front of it is a different request.
+			bare := frameV4(tc.op, 0x00, tc.tail)
+			if x, y := GetFrameHash(a, false), GetFrameHash(bare, false); x == y {
+				t.Errorf("a request with a custom payload hashes as one without (%d)", x)
+			}
+		})
+	}
+}

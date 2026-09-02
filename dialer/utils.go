@@ -486,6 +486,21 @@ func addHeader(index int) int {
 	return index + 8
 }
 
+// pastCustomPayload reports the offset a request's own body fields start at, stepping
+// over the custom payload when the frame carries one.
+//
+// The [bytes map] a CUSTOM_PAYLOAD frame carries sits between the header and the first
+// body field, so QUERY, EXECUTE and BATCH each have to step over it before walking
+// anything of their own; a frame without the flag starts where the header ends. Reading
+// frame[1] is the caller's to make safe, and GetFrameHash's arms all sit behind its
+// header-length guard.
+func pastCustomPayload(frame []byte, p int) (int, bool) {
+	if frame[1]&frm.FlagCustomPayload != frm.FlagCustomPayload {
+		return addHeader(p), true
+	}
+	return addCustomPayload(frame, p)
+}
+
 // addCustomPayload walks the [bytes map] a frame carries when FlagCustomPayload is
 // set, and returns the index just past it.
 //
@@ -605,6 +620,13 @@ func GetFrameHash(frame []byte, useMetadataID bool) int64 {
 	// change what the statement means — while the default timestamp is time.Now() at
 	// send and never in the hash.
 	//
+	// One exception, and it is a dead one: the protocol v1 EXECUTE path measures from
+	// past the custom payload rather than from the body, so it leaves the prepared id
+	// out of the very range that is meant to carry it. It cannot be reached — its
+	// values walk advances at least four bytes per value while the bound it is checked
+	// against allows one, so every v1 EXECUTE falls back to hashing the frame whole.
+	// Left as it is because no live connection is v1 and the path is going away.
+	//
 	// STARTUP hashes the header down to the opcode and deliberately stops before the
 	// body length, for the reason its own comment gives. PREPARE, AUTH_RESPONSE,
 	// OPTIONS, REGISTER and the unknown-opcode default hash the frame whole, header
@@ -655,12 +677,9 @@ func GetFrameHash(frame []byte, useMetadataID bool) int64 {
 	case byte(opAuthResponse):
 		return murmur.Murmur3H1(frame)
 	case byte(opQuery):
-		var ok bool
-		index := addHeader(p)
-		if frame[1]&frm.FlagCustomPayload == frm.FlagCustomPayload {
-			if index, ok = addCustomPayload(frame, p); !ok {
-				return murmur.Murmur3H1(frame)
-			}
+		index, ok := pastCustomPayload(frame, p)
+		if !ok {
+			return murmur.Murmur3H1(frame)
 		}
 
 		// A QUERY body is the query text as a [long string] followed by the query
@@ -668,22 +687,19 @@ func GetFrameHash(frame []byte, useMetadataID bool) int64 {
 		// EXECUTE arm, which steps over its preparedID and resultMetadataID first, and
 		// with the BATCH arm, which steps over its statements.
 		//
-		// The hashed range still starts at index, so it covers the text and the values
-		// as well as the parameters: the range is what identifies the request, and the
-		// walk only has to find where it ends.
+		// The hashed range starts at the body rather than at index, so it covers the
+		// custom payload and the query text as well as the values: the range is what
+		// identifies the request, and the walk only has to find where it ends.
 		paramsStart, ok := addLongString(frame, index)
 		if !ok {
 			return murmur.Murmur3H1(frame)
 		}
 
-		return hashParams(frame, index, paramsStart)
+		return hashParams(frame, addHeader(p), paramsStart)
 	case byte(opExecute):
-		var ok bool
-		index := addHeader(p)
-		if frame[1]&frm.FlagCustomPayload == frm.FlagCustomPayload {
-			if index, ok = addCustomPayload(frame, p); !ok {
-				return murmur.Murmur3H1(frame)
-			}
+		index, ok := pastCustomPayload(frame, p)
+		if !ok {
+			return murmur.Murmur3H1(frame)
 		}
 
 		endIndex := index
@@ -721,7 +737,7 @@ func GetFrameHash(frame []byte, useMetadataID bool) int64 {
 		}
 
 		if frame[0]&protoVersionMask > protoVersion1 {
-			return hashParams(frame, index, endIndex)
+			return hashParams(frame, addHeader(p), endIndex)
 		}
 
 		// Protocol v1 has no <query_parameters> block: the values follow the
@@ -744,12 +760,9 @@ func GetFrameHash(frame []byte, useMetadataID bool) int64 {
 		}
 		return murmur.Murmur3H1(frame[index:endIndex])
 	case byte(opBatch):
-		var ok bool
-		index := addHeader(p)
-		if frame[1]&frm.FlagCustomPayload == frm.FlagCustomPayload {
-			if index, ok = addCustomPayload(frame, p); !ok {
-				return murmur.Murmur3H1(frame)
-			}
+		index, ok := pastCustomPayload(frame, p)
+		if !ok {
+			return murmur.Murmur3H1(frame)
 		}
 
 		// A BATCH used to be hashed whole, which put its default timestamp in the
@@ -763,7 +776,7 @@ func GetFrameHash(frame []byte, useMetadataID bool) int64 {
 			return murmur.Murmur3H1(frame)
 		}
 
-		return hashParams(frame, index, paramsStart)
+		return hashParams(frame, addHeader(p), paramsStart)
 	case byte(opOptions):
 		return murmur.Murmur3H1(frame)
 	case byte(opRegister):

@@ -97,11 +97,15 @@ type hashLockCase struct {
 // flags that move the extracted range and the truncation paths that fall back to
 // hashing raw bytes.
 func hashLockCases() []hashLockCase {
-	customPayload := func() []byte {
-		body := []byte{0x00, 0x01} // one entry
-		body = append(body, shortString("k")...)
-		body = append(body, bytesValue([]byte{0xAB, 0xCD})...)
-		return append(body, queryBody("SELECT * FROM system.local", 0x00)...)
+	// customPayload prefixes a body with the [bytes map] a CUSTOM_PAYLOAD frame opens
+	// with. The map sits between the header and the first body field, so every arm
+	// that walks a body has to step over it -- and all three are pinned below,
+	// because the range this commit moved starts before it.
+	customPayload := func(body []byte) []byte {
+		out := []byte{0x00, 0x01} // one entry
+		out = append(out, shortString("k")...)
+		out = append(out, bytesValue([]byte{0xAB, 0xCD})...)
+		return append(out, body...)
 	}
 
 	return []hashLockCase{
@@ -129,7 +133,8 @@ func hashLockCases() []hashLockCase {
 			[]byte{0x00, 0x01}, bytesValue([]byte{0x2A}), []byte{0x00, 0x00, 0x13, 0x88}, []byte{0x00, 0x09}))},
 		{name: "query-named-values", frame: frameV4(opQuery, 0x00, queryBody("SELECT v FROM t WHERE pk = :pk", 0x01|0x40,
 			[]byte{0x00, 0x01}, shortString("pk"), bytesValue([]byte{0x2A})))},
-		{name: "query-custom-payload", frame: frameV4(opQuery, frm.FlagCustomPayload, customPayload())},
+		{name: "query-custom-payload", frame: frameV4(opQuery, frm.FlagCustomPayload,
+			customPayload(queryBody("SELECT * FROM system.local", 0x00)))},
 		{name: "query-truncated-text-length", frame: frameV4(opQuery, 0x00, []byte{0x00, 0x00, 0x00})},
 		{name: "query-overstated-text-length", frame: frameV4(opQuery, 0x00,
 			append([]byte{0x7F, 0xFF, 0xFF, 0xFF}, "SELECT * FROM t"...))},
@@ -143,8 +148,12 @@ func hashLockCases() []hashLockCase {
 		{name: "execute-no-metadata-id", frame: v4ExecuteFrame(false)},
 		{name: "execute-metadata-id", frame: v4ExecuteFrame(true), useMetadataID: true},
 		{name: "execute-metadata-id-flag-off", frame: v4ExecuteFrame(true)},
+		{name: "execute-custom-payload", frame: frameV4(opExecute, frm.FlagCustomPayload,
+			customPayload(v4ExecuteFrame(false)[FrameHeaderLen:]))},
 
 		{name: "batch", frame: frameV4(opBatch, 0x00, batchBody(0x00))},
+		{name: "batch-custom-payload", frame: frameV4(opBatch, frm.FlagCustomPayload,
+			customPayload(batchBody(0x00)))},
 		{name: "batch-default-timestamp", frame: frameV4(opBatch, 0x00, batchBody(0x20,
 			[]byte{0x00, 0x06, 0x26, 0x52, 0xBF, 0xD6, 0xE5, 0x3F}))},
 
@@ -188,6 +197,7 @@ var hashLockWant = map[string]int64{
 	"empty":                             0,
 	"execute-metadata-id":               8953623736212654883,
 	"execute-metadata-id-flag-off":      -8761464023806847249,
+	"execute-custom-payload":            5119610723658050802,
 	"execute-no-metadata-id":            -7853075121273079524,
 	"options":                           359591853454385582,
 	"prepare":                           7009575819196046835,
@@ -207,6 +217,7 @@ var hashLockWant = map[string]int64{
 	// own replay. No recording had to be regenerated for it — the checked-in
 	// fixtures contain no BATCH frame.
 	"batch":                   -8625060010961602230,
+	"batch-custom-payload":    6901954547158542081,
 	"batch-default-timestamp": -8987577148391256339,
 
 	// Every QUERY value here moved when scylladb/gocql#1000 was fixed. Before it, all
@@ -217,14 +228,21 @@ var hashLockWant = map[string]int64{
 	// change, because their control-connection query text had been stale since
 	// b6a9682 and only the collision hid it.
 	//
-	// Three of these still coincide, and are meant to. query-bare, v2-query and
-	// query-custom-payload all hash 669594534933358966 because the range is measured
-	// from the body: the same statement and parameters hash alike across protocol
-	// versions, and a custom payload is connection metadata that the EXECUTE and BATCH
-	// arms leave out of the range too. Neither is a request the replayer has to tell
-	// apart from the other.
+	// Two of these still coincide, and are meant to: query-bare and v2-query both hash
+	// 669594534933358966 because the range is measured from the body, so the same
+	// statement and parameters hash alike across protocol versions.
+	//
+	// query-custom-payload used to be a third. It carries query-bare's body behind a
+	// [bytes map] and differs in nothing else, and the range began past the payload,
+	// so the two were indistinguishable — and the replayer serves the first hash it
+	// matches, so one of them got the other's response. Query.CustomPayload is public,
+	// so both are requests a caller can send. The range now starts at the body.
+	//
+	// execute-custom-payload and batch-custom-payload are here because the same range
+	// moved in those two arms as well, and without a payload-bearing case each, either
+	// could be reverted with every pinned value in this table still matching.
 	"query-bare":                    669594534933358966,
-	"query-custom-payload":          669594534933358966,
+	"query-custom-payload":          -7987217641147380505,
 	"query-default-timestamp":       -3958206948791604622,
 	"query-named-values":            1354821534699525939,
 	"query-null-value":              -7046978697175198898,
