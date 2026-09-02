@@ -721,6 +721,55 @@ func Test_framer_writeBatchFrame_unnamedValues(t *testing.T) {
 	assertDeepEqual(t, "value1", frame.statements[0].values[1].value, framer.readBytesCopy())
 }
 
+// A [short bytes] length field is two bytes, and writeShortBytes truncated
+// uint16(len(p)) with no guard: an oversized prepared id or v5 result metadata id
+// produced a frame whose declared length disagreed with its payload, desynchronising
+// the connection. Both are opaque server-issued tokens far below the limit, so what
+// is pinned here is what a mis-sized one does, not a value anyone expects to see.
+//
+// Driven through buildFrame, the entry point Conn.exec uses, so the hoisted check is
+// covered too: writeExecuteFrame writes a header and custom payload before the
+// prepared id, and writeBatchFrame writes a header, type and count before its
+// statements, so a rejection that is not hoisted leaves a partial frame behind.
+func Test_framer_shortBytesWriters_rejectOverlongValues(t *testing.T) {
+	tooLong := make([]byte, math.MaxUint16+1)
+	ok := []byte{0x01, 0x02}
+
+	for _, tc := range []struct {
+		name  string
+		proto byte
+		build frameBuilder
+	}{
+		{
+			name:  "EXECUTE prepared id",
+			proto: protoVersion4,
+			build: &writeExecuteFrame{preparedID: tooLong, params: queryParams{consistency: Quorum}},
+		},
+		{
+			name:  "EXECUTE result metadata id on v5",
+			proto: protoVersion5,
+			build: &writeExecuteFrame{preparedID: ok, resultMetadataID: tooLong, params: queryParams{consistency: Quorum}},
+		},
+		{
+			name:  "BATCH prepared id",
+			proto: protoVersion4,
+			build: &writeBatchFrame{
+				consistency: Quorum,
+				statements:  []batchStatment{{preparedID: tooLong}},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			framer := newFramer(nil, tc.proto)
+
+			err := tc.build.buildFrame(framer, 1)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "overflows the 2-byte length")
+			require.Empty(t, framer.buf, "a rejected value must not leave a partial frame in the framer buffer")
+		})
+	}
+}
+
 // On protocols below v5 the keyspace override and now_in_seconds options are
 // not part of the wire format. The frame writers must reject them with an
 // explicit error (rather than silently dropping them, panicking, or leaving a
