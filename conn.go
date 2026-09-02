@@ -1037,7 +1037,12 @@ func (c *Conn) heartBeat(ctx context.Context) {
 		case error:
 			// TODO: should we do something here?
 		default:
-			panic(fmt.Sprintf("gocql: unknown frame in response to options: %T", resp))
+			// Reachable from the wire: parseFrame builds a frame for every opcode it
+			// knows, and this goroutine has no recover above it.
+			c.logger.Printf("gocql: unexpected frame in response to options: %T\n", resp)
+			failures++
+			// Broken now, not in 30 seconds; controlConn.heartBeat drops to 1s too.
+			sleepTime = 1 * time.Second
 		}
 	}
 }
