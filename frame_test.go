@@ -524,12 +524,6 @@ func TestParsePreparedMetadataAcceptsValidPkeyCount(t *testing.T) {
 	})
 }
 
-// TestParseResultPreparedTruncatedResultMetadataID verifies that a malformed
-// RESULT/Prepared frame whose resultMetadataID short-bytes length runs past the
-// frame body is reported as an error, not a serve-goroutine panic. The extension
-// makes this field live on protocol v4, and readShortBytesCopy panics with a
-// plain error on a short buffer; parseFrame's recover must convert it to a
-// returned error.
 // readLongString's length is signed, and it lacked the negative guard its siblings
 // readBytesCopy and ReadBytesInternal carry. len(f.buf) is never below a negative,
 // so the bounds check passed and f.buf[:size] raised a runtime.Error -- which
@@ -562,6 +556,12 @@ func TestReadLongStringRejectsNegativeLength(t *testing.T) {
 	f.readLongString()
 }
 
+// TestParseResultPreparedTruncatedResultMetadataID verifies that a malformed
+// RESULT/Prepared frame whose resultMetadataID short-bytes length runs past the
+// frame body is reported as an error, not a serve-goroutine panic. The extension
+// makes this field live on protocol v4, and readShortBytesCopy panics with a
+// plain error on a short buffer; parseFrame's recover must convert it to a
+// returned error.
 func TestParseResultPreparedTruncatedResultMetadataID(t *testing.T) {
 	t.Parallel()
 

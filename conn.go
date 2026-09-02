@@ -1239,12 +1239,26 @@ func (c *Conn) processFrameSource(ctx context.Context, src frameSource) error {
 		// callReq it holds disagree: an internal invariant, not something a peer can
 		// provoke. It used to panic -- on the serve goroutine, outside parseFrame's
 		// recover, and with a string value that recover could not have converted
-		// anyway -- so a driver bug took the whole process down. Returning the error
-		// closes this connection instead, which is the right blast radius: its stream
-		// bookkeeping is what is no longer trustworthy. The caller waiting on the
-		// stream is left to its own timeout; head.Stream is already out of c.calls, so
-		// closeWithError's drain can no longer reach it.
-		return fmt.Errorf("gocql: response for stream %d dispatched to a call on stream %d", head.Stream, call.streamID)
+		// anyway -- so a driver bug took the whole process down. Failing the
+		// connection is the right blast radius instead: its stream bookkeeping is what
+		// is no longer trustworthy.
+		//
+		// The call is delivered to before returning, the same way the fatal body-read
+		// failure below is. head.Stream has already been removed from c.calls, so
+		// closeWithError's drain can no longer find it: returning without delivering
+		// would leave the caller to wake on c.ctx.Done() with a generic
+		// ErrConnectionClosed, and would skip putCallReq and the stream observer
+		// entirely -- breaking the guarantee that exactly one of StreamAbandoned and
+		// StreamFinished fires.
+		err := fmt.Errorf("gocql: response for stream %d dispatched to a call on stream %d", head.Stream, call.streamID)
+		select {
+		case call.resp <- callResp{err: err}:
+		case <-call.timeout:
+			c.abandonRecvCall(call, nil)
+		case <-ctx.Done():
+			c.abandonRecvCall(call, nil)
+		}
+		return err
 	}
 
 	framer := c.getReadFramer()

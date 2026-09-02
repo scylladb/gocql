@@ -3916,7 +3916,8 @@ func TestProcessFrameStreamIDMismatchIsAnError(t *testing.T) {
 		0x00, 0x00, 0x00, 0x00, // no body
 	}
 
-	// Keyed under stream 1, but the call believes it is stream 2.
+	// Keyed under stream 1, but the call believes it is stream 2. resp is buffered so
+	// the delivery does not need a second goroutine.
 	call := &callReq{timeout: make(chan struct{}), streamID: 2, resp: make(chan callResp, 1)}
 	c := &Conn{
 		calls:   map[int]*callReq{1: call},
@@ -3929,6 +3930,17 @@ func TestProcessFrameStreamIDMismatchIsAnError(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "stream 1")
 	require.Contains(t, err.Error(), "stream 2")
+
+	// And the caller is handed it. head.Stream has already left c.calls, so
+	// closeWithError's drain cannot reach this call: returning without delivering
+	// would wake it only on c.ctx.Done(), with a generic ErrConnectionClosed, and
+	// would skip the stream observer and putCallReq altogether.
+	select {
+	case resp := <-call.resp:
+		require.ErrorIs(t, resp.err, err)
+	default:
+		t.Fatal("the call was never woken: it would wait out its full request timeout")
+	}
 }
 
 // TestProcessFrameFailedDeadlineArmIsFatal pins that a body read which never
