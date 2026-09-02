@@ -3691,11 +3691,13 @@ func (s *scriptedReadSource) Read(p []byte) (int, error) {
 	return n, step.err
 }
 
-func (s *scriptedReadSource) Close() error               { return nil }
-func (s *scriptedReadSource) RemoteAddr() net.Addr       { return nil }
-func (s *scriptedReadSource) SetTimeout(_ time.Duration) {}
-func (s *scriptedReadSource) GetTimeout() time.Duration  { return 0 }
-func (s *scriptedReadSource) setDisarm(v bool)           { s.disarms = append(s.disarms, v) }
+func (s *scriptedReadSource) Close() error                          { return nil }
+func (s *scriptedReadSource) RemoteAddr() net.Addr                  { return nil }
+func (s *scriptedReadSource) SetTimeout(_ time.Duration)            {}
+func (s *scriptedReadSource) GetTimeout() time.Duration             { return 0 }
+func (s *scriptedReadSource) setDisarm(v bool)                      { s.disarms = append(s.disarms, v) }
+func (s *scriptedReadSource) SetFrameAssemblyTimeout(time.Duration) {}
+func (s *scriptedReadSource) setReadBudget(bool)                    {}
 
 // timeoutErr is a net.Error reporting a timeout, standing in for the
 // os.ErrDeadlineExceeded a real socket returns once its read deadline expires.

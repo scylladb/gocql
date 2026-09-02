@@ -22,12 +22,15 @@
 package gocql
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"io"
 	"net"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -46,6 +49,13 @@ type segmentReader struct {
 	// Conn.r — a reader that could not be disarmed would silently exercise the
 	// receive path with the idle-wait handling switched off.
 	disarmed bool
+
+	// assembly, budgeted and budgets record the frame-assembly budget, for the same
+	// reason: an in-memory stream has no deadline to bound, but a reader that
+	// dropped the calls would hide whether recvSegment made them.
+	assembly time.Duration
+	budgeted bool
+	budgets  []bool
 }
 
 var _ connReadSource = (*segmentReader)(nil)
@@ -60,6 +70,11 @@ func (s *segmentReader) RemoteAddr() net.Addr       { return nil }
 func (s *segmentReader) SetTimeout(_ time.Duration) {}
 func (s *segmentReader) GetTimeout() time.Duration  { return 0 }
 func (s *segmentReader) setDisarm(v bool)           { s.disarmed = v }
+
+// There is no deadline to budget on an in-memory stream either, but the budget is
+// recorded so a test can assert recvSegment started and cleared one.
+func (s *segmentReader) SetFrameAssemblyTimeout(d time.Duration) { s.assembly = d }
+func (s *segmentReader) setReadBudget(v bool)                    { s.budgeted = v; s.budgets = append(s.budgets, v) }
 
 // mustUncompressedSegment builds a single uncompressed transport segment
 // carrying payload, failing the test on error.
@@ -102,6 +117,109 @@ func TestReadContinuationSegmentRejectsEmptyPayload(t *testing.T) {
 	_, err := c.readContinuationSegment()
 	if err == nil || !strings.Contains(err.Error(), "no progress") {
 		t.Fatalf("expected no-progress rejection, got %v", err)
+	}
+}
+
+// ReadTimeout cannot bound the time to assemble a segmented frame: every read arms
+// it afresh, so a peer that delivers one segment per interval renews its lease for as
+// long as it likes, and the only ceiling is the declared frame length. This is what
+// FrameAssemblyTimeout adds, and the two cases are the whole of it -- the same
+// trickle completes when no budget is configured, so the bound is what rejects it
+// rather than the pace.
+func TestRecvSegmentBoundsTheTimeToAssembleOneFrame(t *testing.T) {
+	// A READY frame on the event stream, split into three segments: with no session
+	// attached processFrame parses it and drops it, which is all this needs -- the
+	// assertion is about time, not contents.
+	const perSegment = 64
+	body := bytes.Repeat([]byte{0x5A}, 2*perSegment)
+	frame := make([]byte, headSize)
+	frame[0] = protoVersion5 | protoDirectionMask
+	binary.BigEndian.PutUint16(frame[2:4], uint16(0xFFFF))
+	frame[4] = byte(frm.OpReady)
+	binary.BigEndian.PutUint32(frame[5:headSize], uint32(len(body)))
+	frame = append(frame, body...)
+
+	var segments [][]byte
+	for src := frame; len(src) > 0; {
+		n := min(len(src), perSegment)
+		segments = append(segments, mustUncompressedSegment(t, src[:n], false))
+		src = src[n:]
+	}
+	if len(segments) < 3 {
+		t.Fatalf("the frame must need several segments to trickle, got %d", len(segments))
+	}
+
+	// Each segment arrives well inside ReadTimeout, so no individual read is ever
+	// close to failing; only their sum crosses the budget.
+	const gap = 100 * time.Millisecond
+
+	for _, tc := range []struct {
+		name    string
+		budget  time.Duration
+		wantErr bool
+	}{
+		{name: "no budget configured", budget: 0, wantErr: false},
+		{name: "budget shorter than the trickle", budget: 120 * time.Millisecond, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client, server := net.Pipe()
+			defer client.Close()
+			defer server.Close()
+
+			go func() {
+				for _, seg := range segments {
+					if _, err := server.Write(seg); err != nil {
+						return
+					}
+					time.Sleep(gap)
+				}
+			}()
+
+			cr := &connReader{conn: client, r: bufio.NewReader(client)}
+			cr.SetTimeout(5 * time.Second)
+			cr.SetFrameAssemblyTimeout(tc.budget)
+
+			c := &Conn{r: cr, streams: streams.New(), logger: nopLogger{}}
+			c.initFramerCache()
+
+			err := c.recvSegment(context.Background())
+			if !tc.wantErr {
+				if err != nil {
+					t.Fatalf("a trickling peer must not be rejected without a budget: %v", err)
+				}
+				return
+			}
+
+			var netErr net.Error
+			if !errors.As(err, &netErr) || !netErr.Timeout() {
+				t.Fatalf("expected the budget to expire the read, got %v", err)
+			}
+		})
+	}
+}
+
+// The budget has to be cleared on the way out. It is absolute, so one left behind
+// would still be expiring during the next idle wait for a frame that has not started
+// arriving -- turning a healthy connection into a dropped one.
+func TestRecvSegmentClearsTheBudgetAfterEachFrame(t *testing.T) {
+	frame := make([]byte, headSize)
+	frame[0] = protoVersion5 | protoDirectionMask
+	binary.BigEndian.PutUint16(frame[2:4], uint16(0xFFFF))
+	frame[4] = byte(frm.OpReady)
+
+	r := newSegmentReader(mustUncompressedSegment(t, frame, true))
+	c := &Conn{r: r, streams: streams.New(), logger: nopLogger{}}
+	c.initFramerCache()
+
+	if err := c.recvSegment(context.Background()); err != nil {
+		t.Fatalf("recvSegment: %v", err)
+	}
+
+	if want := []bool{true, false}; !slices.Equal(r.budgets, want) {
+		t.Errorf("budget calls were %v, want %v", r.budgets, want)
+	}
+	if r.budgeted {
+		t.Error("the budget is still running after the frame was processed")
 	}
 }
 

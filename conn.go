@@ -141,20 +141,23 @@ type SslOptions struct {
 }
 
 type ConnConfig struct {
-	Dialer          Dialer
-	Logger          StdLogger
-	Authenticator   Authenticator
-	Compressor      Compressor
-	HostDialer      HostDialer
-	AuthProvider    func(h *HostInfo) (Authenticator, error)
-	tlsConfig       *tls.Config
-	CQLVersion      string
-	ConnectTimeout  time.Duration
-	ReadTimeout     time.Duration
-	WriteTimeout    time.Duration
-	ProtoVersion    int
-	Keepalive       time.Duration
-	disableCoalesce bool
+	Dialer         Dialer
+	Logger         StdLogger
+	Authenticator  Authenticator
+	Compressor     Compressor
+	HostDialer     HostDialer
+	AuthProvider   func(h *HostInfo) (Authenticator, error)
+	tlsConfig      *tls.Config
+	CQLVersion     string
+	ConnectTimeout time.Duration
+	ReadTimeout    time.Duration
+	WriteTimeout   time.Duration
+	// FrameAssemblyTimeout bounds the total time to assemble one response frame;
+	// see ClusterConfig.FrameAssemblyTimeout. Zero leaves it unbounded.
+	FrameAssemblyTimeout time.Duration
+	ProtoVersion         int
+	Keepalive            time.Duration
+	disableCoalesce      bool
 	// isControlConn marks the connection used by the control connection, which is
 	// the only one reporting the driver configuration on startup.
 	isControlConn bool
@@ -347,6 +350,9 @@ func (c *Conn) finalizeConnection() {
 	c.setSystemRequestTimeout(c.session.cfg.MetadataSchemaRequestTimeout)
 	c.w.setWriteTimeout(c.cfg.WriteTimeout)
 	c.r.SetTimeout(c.cfg.ReadTimeout)
+	// Only from here on: the budget covers segmented frames, and segments only
+	// appear after startup has negotiated the modern transport.
+	c.r.SetFrameAssemblyTimeout(c.cfg.FrameAssemblyTimeout)
 }
 
 func (c *Conn) getScyllaSupported() ScyllaConnectionFeatures {
@@ -1331,15 +1337,17 @@ func (c *Conn) recvSegment(ctx context.Context) error {
 	// continuation segments are all read with the deadline re-armed, so a peer that
 	// starts sending and then stalls mid-read is caught by the per-read ReadTimeout.
 	//
-	// Note the deadline is per-read (see connReader.Read), not per-frame: a
-	// single logical CQL frame may span many segments (recvSplitFrame), so
-	// ReadTimeout bounds how long any one read may stall, not the total time
-	// to assemble a frame. And a read that stalls but keeps making progress is
-	// resumed up to maxReadAttempts times, so one read can take that multiple of
-	// ReadTimeout before failing — only a read that delivers nothing fails within a
-	// single one. A peer that keeps trickling progress is therefore not bounded by
-	// time at all; it is bounded by the frame length recvSplitFrame enforces against
-	// the reassembled size.
+	// ReadTimeout is per-read (see connReader.Read), not per-frame: a single
+	// logical CQL frame may span many segments (recvSplitFrame), and a read that
+	// stalls while still making progress is resumed with a fresh deadline. So
+	// ReadTimeout bounds how long any one read may stall, and a peer that keeps
+	// trickling progress is not bounded by it at all — only by the frame length
+	// recvSplitFrame enforces against the reassembled size.
+	//
+	// FrameAssemblyTimeout is what bounds the whole frame, and it starts below
+	// rather than here: until the first header has arrived this goroutine is idle,
+	// and charging a peer for the time it had nothing to say would drop healthy
+	// connections. Unset by default, in which case nothing changes.
 	//
 	// netStart/netEnd bracket this read for FrameHeaderObserver. The CQL headers
 	// inside are parsed out of memory further down, so timing them there would
@@ -1351,6 +1359,12 @@ func (c *Conn) recvSegment(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	// The peer is mid-frame from here: everything below is this frame's payload and,
+	// if it is split, its continuation segments. Cleared on the way out so the next
+	// idle wait is not charged against this frame's budget.
+	c.r.setReadBudget(true)
+	defer c.r.setReadBudget(false)
 
 	payload, err := c.readSegmentPayload(hdr)
 	if err != nil {
@@ -1655,6 +1669,16 @@ type connReadSource interface {
 	// GetTimeout returns the timeout duration.
 	GetTimeout() time.Duration
 
+	// SetFrameAssemblyTimeout sets how long a frame-assembly budget runs for once
+	// started. Zero disables the budget, which is the default.
+	SetFrameAssemblyTimeout(timeout time.Duration)
+
+	// setReadBudget starts (true) or clears (false) a budget over the reads that
+	// follow, of the duration SetFrameAssemblyTimeout configured. Unlike the
+	// per-read timeout the budget does not restart, so it is what bounds a
+	// sequence of reads rather than any one of them.
+	setReadBudget(bool)
+
 	deadlineDisarmer
 }
 
@@ -1663,7 +1687,12 @@ type connReader struct {
 	conn    net.Conn
 	r       *bufio.Reader
 	timeout atomic.Int64
-	disarm  atomic.Bool
+	// assembly is the configured budget duration, and budget the absolute deadline
+	// of the one currently running, in UnixNano. Zero means no budget in both
+	// cases: unconfigured, or configured but not started.
+	assembly atomic.Int64
+	budget   atomic.Int64
+	disarm   atomic.Bool
 }
 
 var _ connReadSource = (*connReader)(nil)
@@ -1753,14 +1782,26 @@ func (c *connReader) armDeadline() error {
 		// ConnectTimeout to ReadTimeout) is never clobbered by a restore.
 		return c.conn.SetReadDeadline(time.Time{})
 	}
+
+	// The zero deadline is net.Conn's "no deadline", and arming it is not optional:
+	// a read deadline is absolute and persists across reads, so once the timeout is
+	// disabled any deadline armed by a previous read (or during connection setup,
+	// e.g. ConnectTimeout) has to be cleared, or idle connections keep tripping the
+	// stale one.
+	var deadline time.Time
 	if timeout := c.GetTimeout(); timeout > 0 {
-		return c.conn.SetReadDeadline(time.Now().Add(timeout))
+		deadline = time.Now().Add(timeout)
 	}
-	// A read deadline is absolute and persists across reads: once the timeout is
-	// disabled we must clear any deadline armed by a previous read (or during
-	// connection setup, e.g. ConnectTimeout), otherwise idle connections keep
-	// tripping the stale deadline.
-	return c.conn.SetReadDeadline(time.Time{})
+	// The budget is a ceiling, never an extension: it only ever pulls the deadline
+	// in. Whichever expires first ends the read, and because the budget is absolute
+	// it survives the re-arm that gives each attempt a fresh timeout -- which is
+	// exactly the loop that leaves a trickling peer otherwise unbounded.
+	if budget := c.budget.Load(); budget != 0 {
+		if b := time.Unix(0, budget); deadline.IsZero() || b.Before(deadline) {
+			deadline = b
+		}
+	}
+	return c.conn.SetReadDeadline(deadline)
 }
 
 // setDisarm enables or disables the read-deadline disarm used around the
@@ -1769,6 +1810,23 @@ func (c *connReader) armDeadline() error {
 // finalizeConnection.
 func (c *connReader) setDisarm(v bool) {
 	c.disarm.Store(v)
+}
+
+func (c *connReader) SetFrameAssemblyTimeout(timeout time.Duration) {
+	c.assembly.Store(int64(timeout))
+}
+
+// setReadBudget starts or clears a frame-assembly budget. Starting one with no
+// duration configured is a no-op, so the caller needs no conditional of its own and
+// an unconfigured connection reads exactly as it did before.
+func (c *connReader) setReadBudget(v bool) {
+	if !v {
+		c.budget.Store(0)
+		return
+	}
+	if d := time.Duration(c.assembly.Load()); d > 0 {
+		c.budget.Store(time.Now().Add(d).UnixNano())
+	}
 }
 
 func (c *connReader) Close() error {
