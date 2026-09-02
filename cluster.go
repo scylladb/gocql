@@ -258,12 +258,13 @@ type ClusterConfig struct {
 	// Default: 11 Seconds
 	ReadTimeout time.Duration
 	// FrameAssemblyTimeout limits the total time spent assembling one response
-	// frame, from the moment the peer starts sending it. It exists because
-	// ReadTimeout cannot bound that: on protocol v5 a single frame may arrive
-	// across many transport segments, and every read re-arms ReadTimeout afresh,
-	// so a peer that keeps trickling bytes is never timed out however long the
-	// frame takes. It does not shorten the idle wait for the next frame, which
-	// stays unbounded.
+	// frame, measured from the first byte of its first transport segment. It exists
+	// because ReadTimeout cannot bound that: on protocol v5 a single frame may
+	// arrive across many transport segments, and every read re-arms ReadTimeout
+	// afresh, so a peer that keeps trickling bytes is never timed out however long
+	// the frame takes. It does not shorten the idle wait for the next frame, which
+	// stays unbounded, and it applies only to the segmented transport, so it has no
+	// effect below protocol v5.
 	//
 	// Set it above the time a legitimately large frame needs on the slowest link
 	// you serve: a frame may be up to 256 MiB, and exceeding the budget drops the

@@ -28,6 +28,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"math"
 	"net"
 	"runtime"
 	"slices"
@@ -160,6 +161,10 @@ func TestRecvSegmentBoundsTheTimeToAssembleOneFrame(t *testing.T) {
 	}{
 		{name: "no budget configured", budget: 0, wantErr: false},
 		{name: "budget shorter than the trickle", budget: 120 * time.Millisecond, wantErr: true},
+		// Held as a time.Time for this: as a UnixNano count the deadline wraps past
+		// the year 2262 into the past, and the largest budget expressible becomes the
+		// harshest one there is.
+		{name: "a budget beyond UnixNano's range", budget: math.MaxInt64, wantErr: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			client, server := net.Pipe()
@@ -195,6 +200,52 @@ func TestRecvSegmentBoundsTheTimeToAssembleOneFrame(t *testing.T) {
 				t.Fatalf("expected the budget to expire the read, got %v", err)
 			}
 		})
+	}
+}
+
+// The budget starts on the first byte of the segment header, not once the header is
+// complete. Only the wait for that byte is deliberately unbounded; the rest of the
+// header is otherwise covered by ReadTimeout alone, so with ReadTimeout disabled a
+// peer dribbling a header out would be bounded by nothing at all -- while
+// FrameAssemblyTimeout is documented to run from the moment the peer starts sending.
+func TestRecvSegmentBudgetsTheHeaderItself(t *testing.T) {
+	seg := mustUncompressedSegment(t, []byte("hello"), true)
+
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+
+	// The header alone is dribbled a byte per 100ms, so it takes longer than the
+	// budget; everything after it arrives at once. That is what isolates the window
+	// under test -- a budget that started after the header instead would see only the
+	// instant payload and never expire.
+	go func() {
+		head := segment.UncompressedHeaderSize
+		for _, b := range seg[:head] {
+			if _, err := server.Write([]byte{b}); err != nil {
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		_, _ = server.Write(seg[head:])
+	}()
+
+	cr := &connReader{conn: client, r: bufio.NewReader(client)}
+	cr.SetTimeout(0) // the case that has nothing else to fall back on
+	cr.SetFrameAssemblyTimeout(120 * time.Millisecond)
+
+	c := &Conn{r: cr, streams: streams.New(), logger: nopLogger{}}
+	c.initFramerCache()
+
+	err := c.recvSegment(context.Background())
+	var netErr net.Error
+	if !errors.As(err, &netErr) || !netErr.Timeout() {
+		t.Fatalf("expected the budget to expire during the header, got %v", err)
+	}
+	// Not the benign idle timeout: bytes were consumed, so the stream is at an
+	// unknown offset and the connection has to go down.
+	if errors.Is(err, ErrReadHeaderTimeout) {
+		t.Error("a partially-read header must not be reported as an idle timeout")
 	}
 }
 

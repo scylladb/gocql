@@ -1135,7 +1135,9 @@ func (c *Conn) readFrameHeader(r io.Reader) (frm.FrameHeader, error) {
 		defer d.setDisarm(false)
 	}
 
-	c.headerReader.reset(r, d)
+	// No budget: this is a whole-frame header off the wire (pre-v5) or out of a
+	// segment payload that has already arrived, not the start of a reassembly.
+	c.headerReader.reset(r, d, nil)
 	return readHeader(&c.headerReader, c.headerBuf[:])
 }
 
@@ -1344,10 +1346,12 @@ func (c *Conn) recvSegment(ctx context.Context) error {
 	// trickling progress is not bounded by it at all — only by the frame length
 	// recvSplitFrame enforces against the reassembled size.
 	//
-	// FrameAssemblyTimeout is what bounds the whole frame, and it starts below
-	// rather than here: until the first header has arrived this goroutine is idle,
-	// and charging a peer for the time it had nothing to say would drop healthy
-	// connections. Unset by default, in which case nothing changes.
+	// FrameAssemblyTimeout is what bounds the whole frame. It starts on the first
+	// byte of the segment header, inside headerReader -- not here, because until that
+	// byte arrives this goroutine is idle and charging a peer for the time it had
+	// nothing to say would drop healthy connections; and not after the header, which
+	// would leave the rest of it covered only by ReadTimeout. Unset by default, in
+	// which case nothing changes.
 	//
 	// netStart/netEnd bracket this read for FrameHeaderObserver. The CQL headers
 	// inside are parsed out of memory further down, so timing them there would
@@ -1355,16 +1359,17 @@ func (c *Conn) recvSegment(ctx context.Context) error {
 	// window is measured here and carried to processFrameSource instead. Sampled
 	// only when an observer is installed, so an unobserved connection pays nothing.
 	netStart := c.observedNow()
+
+	// Registered before the header read, which is what starts the budget: the clear
+	// has to cover the paths that fail partway through it as much as the ones that
+	// finish, or an absolute budget outlives its frame and expires during the next
+	// idle wait.
+	defer c.r.setReadBudget(false)
+
 	hdr, err := c.readFirstSegmentHeader()
 	if err != nil {
 		return err
 	}
-
-	// The peer is mid-frame from here: everything below is this frame's payload and,
-	// if it is split, its continuation segments. Cleared on the way out so the next
-	// idle wait is not charged against this frame's budget.
-	c.r.setReadBudget(true)
-	defer c.r.setReadBudget(false)
 
 	payload, err := c.readSegmentPayload(hdr)
 	if err != nil {
@@ -1420,12 +1425,24 @@ type headerReader struct {
 	// Nil when there is no deadline to bound: on proto v5 the CQL header is parsed
 	// out of a segment payload that has already been received.
 	disarm deadlineDisarmer
+	// budget is the reader whose frame-assembly budget starts on that same first
+	// byte, and is cleared with it. Nil for every header but a segment's first: the
+	// budget covers assembling one frame, and only readFirstSegmentHeader stands at
+	// the start of one.
+	budget readBudgeter
 	n      int
 }
 
-func (h *headerReader) reset(r io.Reader, disarm deadlineDisarmer) {
+// readBudgeter starts a frame-assembly budget; see connReadSource.setReadBudget.
+// Narrowed to the one method so headerReader cannot reach for anything else.
+type readBudgeter interface {
+	setReadBudget(bool)
+}
+
+func (h *headerReader) reset(r io.Reader, disarm deadlineDisarmer, budget readBudgeter) {
 	h.r = r
 	h.disarm = disarm
+	h.budget = budget
 	h.n = 0
 }
 
@@ -1436,11 +1453,22 @@ func (h *headerReader) Read(p []byte) (int, error) {
 	}
 	n, err := h.r.Read(p)
 	h.n += n
-	if n > 0 && h.disarm != nil {
-		// The peer has started sending: bound everything from here on. The caller's
-		// deferred re-arm still covers the paths that deliver no byte at all.
-		h.disarm.setDisarm(false)
-		h.disarm = nil
+	if n > 0 {
+		if h.disarm != nil {
+			// The peer has started sending: bound everything from here on. The caller's
+			// deferred re-arm still covers the paths that deliver no byte at all.
+			h.disarm.setDisarm(false)
+			h.disarm = nil
+		}
+		if h.budget != nil {
+			// The same instant, for the other clock. This byte is what
+			// FrameAssemblyTimeout documents as the peer starting to send the frame,
+			// and starting the budget anywhere later leaves a gap: the rest of this
+			// header is only covered by ReadTimeout, so with ReadTimeout disabled a
+			// peer could dribble it out for as long as it liked, unbounded by either.
+			h.budget.setReadBudget(true)
+			h.budget = nil
+		}
 	}
 	return n, err
 }
@@ -1470,7 +1498,7 @@ func (c *Conn) readFirstSegmentHeader() (segment.Header, error) {
 
 	// Counted rather than plumbing a byte count out of the segment header readers:
 	// the count only matters here, where the benign/fatal decision is made.
-	c.headerReader.reset(c.r, c.r)
+	c.headerReader.reset(c.r, c.r, c.r)
 
 	hdr, err := segment.ReadHeader(&c.headerReader, c.segCompressor != nil)
 	if err != nil {
@@ -1684,14 +1712,20 @@ type connReadSource interface {
 
 // connReader implements connReadSource.
 type connReader struct {
-	conn    net.Conn
-	r       *bufio.Reader
-	timeout atomic.Int64
-	// assembly is the configured budget duration, and budget the absolute deadline
-	// of the one currently running, in UnixNano. Zero means no budget in both
-	// cases: unconfigured, or configured but not started.
+	conn net.Conn
+	r    *bufio.Reader
+	// budget is the absolute deadline of the frame-assembly budget currently
+	// running, nil when none is. A time.Time rather than a UnixNano count on
+	// purpose: UnixNano is undefined past the year 2262, so a large
+	// FrameAssemblyTimeout would wrap to an instant in the past and expire every
+	// frame at once -- the exact opposite of what such a value asks for -- and the
+	// round trip through it would also strip the monotonic reading, leaving the
+	// budget exposed to wall-clock adjustments. Ordered here, with the other
+	// pointer-bearing fields, for fieldalignment.
+	budget atomic.Pointer[time.Time]
+	// assembly is the configured budget duration; zero disables the budget.
 	assembly atomic.Int64
-	budget   atomic.Int64
+	timeout  atomic.Int64
 	disarm   atomic.Bool
 }
 
@@ -1796,9 +1830,9 @@ func (c *connReader) armDeadline() error {
 	// in. Whichever expires first ends the read, and because the budget is absolute
 	// it survives the re-arm that gives each attempt a fresh timeout -- which is
 	// exactly the loop that leaves a trickling peer otherwise unbounded.
-	if budget := c.budget.Load(); budget != 0 {
-		if b := time.Unix(0, budget); deadline.IsZero() || b.Before(deadline) {
-			deadline = b
+	if budget := c.budget.Load(); budget != nil {
+		if deadline.IsZero() || budget.Before(deadline) {
+			deadline = *budget
 		}
 	}
 	return c.conn.SetReadDeadline(deadline)
@@ -1821,11 +1855,12 @@ func (c *connReader) SetFrameAssemblyTimeout(timeout time.Duration) {
 // an unconfigured connection reads exactly as it did before.
 func (c *connReader) setReadBudget(v bool) {
 	if !v {
-		c.budget.Store(0)
+		c.budget.Store(nil)
 		return
 	}
 	if d := time.Duration(c.assembly.Load()); d > 0 {
-		c.budget.Store(time.Now().Add(d).UnixNano())
+		deadline := time.Now().Add(d)
+		c.budget.Store(&deadline)
 	}
 }
 
