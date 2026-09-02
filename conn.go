@@ -1035,9 +1035,19 @@ func (c *Conn) heartBeat(ctx context.Context) {
 			sleepTime = 30 * time.Second
 			failures = 0
 		case error:
-			// TODO: should we do something here?
+			// A failed heartbeat like any other. Without this the arm below can
+			// never reach the bound: a peer that answers one OPTIONS with an
+			// unexpected frame and every later one with ERROR would hold failures
+			// at 1 and sleepTime at 1s for the life of the connection, since only
+			// a SUPPORTED reply restores either.
+			failures++
 		default:
-			panic(fmt.Sprintf("gocql: unknown frame in response to options: %T", resp))
+			// Reachable from the wire: parseFrame builds a frame for every opcode it
+			// knows, and this goroutine has no recover above it.
+			c.logger.Printf("gocql: unexpected frame in response to options: %T\n", resp)
+			failures++
+			// Broken now, not in 30 seconds; controlConn.heartBeat drops to 1s too.
+			sleepTime = 1 * time.Second
 		}
 	}
 }
