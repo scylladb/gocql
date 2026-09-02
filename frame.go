@@ -1442,6 +1442,22 @@ func (f *framer) validateV5Options(keyspace string, nowInSeconds *int) error {
 	return nil
 }
 
+// validateShortBytes rejects a value too long for the [short bytes] wire type, whose
+// length field is two bytes. Both values written with it -- a prepared id and a v5
+// result metadata id -- are opaque server-issued tokens far below the limit, so this
+// is about what a mis-sized one would do rather than about a value anyone expects to
+// see: writeShortBytes would truncate the length silently and emit a frame whose
+// header disagrees with its payload, desynchronising the connection.
+//
+// The single source of truth for the check, like validateV5Options above, so the
+// callers that hoist it and writeShortBytes itself cannot drift apart.
+func validateShortBytes(field string, p []byte) error {
+	if len(p) > math.MaxUint16 {
+		return fmt.Errorf("gocql: %s is %d bytes, which overflows the 2-byte length of a [short bytes] value", field, len(p))
+	}
+	return nil
+}
+
 func (f *framer) writeQueryParams(opts *queryParams) error {
 	// Validated again here, not only in the callers' buildFrame: this function is
 	// package-internal and nothing else would enforce the precondition.
@@ -1611,16 +1627,29 @@ func (f *framer) writeExecuteFrame(streamID int, preparedID, resultMetadataID []
 	if err := f.validateV5Options(params.keyspace, params.nowInSeconds); err != nil {
 		return err
 	}
+	writeResultMetadataID := f.proto > protoVersion4 || f.scyllaUseMetadataID
+	if err := validateShortBytes("prepared id", preparedID); err != nil {
+		return err
+	}
+	if writeResultMetadataID {
+		if err := validateShortBytes("result metadata id", resultMetadataID); err != nil {
+			return err
+		}
+	}
 
 	if len(*customPayload) > 0 {
 		f.payload()
 	}
 	f.writeHeader(f.flags, frm.OpExecute, streamID)
 	f.writeCustomPayload(customPayload)
-	f.writeShortBytes(preparedID)
+	if err := f.writeShortBytes(preparedID); err != nil {
+		return err
+	}
 
-	if f.proto > protoVersion4 || f.scyllaUseMetadataID {
-		f.writeShortBytes(resultMetadataID)
+	if writeResultMetadataID {
+		if err := f.writeShortBytes(resultMetadataID); err != nil {
+			return err
+		}
 	}
 
 	if err := f.writeQueryParams(params); err != nil {
@@ -1670,6 +1699,9 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 				return fmt.Errorf("gocql: named query values are not supported in batches, please see https://issues.apache.org/jira/browse/CASSANDRA-10246")
 			}
 		}
+		if err := validateShortBytes("prepared id", w.statements[i].preparedID); err != nil {
+			return err
+		}
 	}
 
 	if len(customPayload) > 0 {
@@ -1691,7 +1723,9 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 			f.writeLongString(b.statement)
 		} else {
 			f.writeByte(1)
-			f.writeShortBytes(b.preparedID)
+			if err := f.writeShortBytes(b.preparedID); err != nil {
+				return err
+			}
 		}
 
 		f.writeShort(uint16(len(b.values)))
@@ -2093,9 +2127,16 @@ func (f *framer) writeBytes(p []byte) {
 	}
 }
 
-func (f *framer) writeShortBytes(p []byte) {
+// writeShortBytes writes a [short bytes] value. Validated again here, not only in the
+// callers that hoist it before writing any byte: this is package-internal and nothing
+// else would enforce the precondition, and uint16(len(p)) would otherwise truncate.
+func (f *framer) writeShortBytes(p []byte) error {
+	if err := validateShortBytes("value", p); err != nil {
+		return err
+	}
 	f.writeShort(uint16(len(p)))
 	f.buf = append(f.buf, p...)
+	return nil
 }
 
 func (f *framer) writeConsistency(cons Consistency) {
