@@ -933,6 +933,53 @@ func TestContext_CanceledBeforeExec(t *testing.T) {
 	}
 }
 
+// heartBeat used to panic on an OPTIONS reply that was neither SUPPORTED nor an
+// error frame. parseFrame builds a frame for every opcode it knows, so a server can
+// produce one, and heartBeat runs on its own goroutine with nothing recovering above
+// it -- so a malformed reply took the process down rather than the connection. It is
+// counted as a heartbeat failure now, and six of those close the connection.
+//
+// The test asserts the connection survives one such reply; it fails on the old code
+// by aborting the test binary, which is exactly what the panic did in production.
+func TestHeartBeatSurvivesUnexpectedOptionsResponse(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	srv := NewTestServer(t, defaultProto, ctx)
+	defer srv.Stop()
+
+	cluster := testCluster(defaultProto, srv.Address)
+	cluster.NumConns = 1
+	db, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	// Startup reads SUPPORTED off an OPTIONS of its own, so the pool has to be up
+	// before the replies are spoiled -- otherwise the connection never opens and the
+	// heartbeat under test never runs.
+	if err := waitForPoolSize(db, 1, 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	served := atomic.LoadInt64(&srv.nOptions)
+	atomic.StoreInt32(&srv.readyOnOptions, 1)
+
+	// The first beat is a second out; wait for the server to see it rather than
+	// sleeping past it.
+	deadline := time.Now().Add(10 * time.Second)
+	for atomic.LoadInt64(&srv.nOptions) == served {
+		if time.Now().After(deadline) {
+			t.Fatal("the connection never sent another OPTIONS")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if err := db.Query("void").Exec(); err != nil {
+		t.Fatalf("the session did not survive an unexpected heartbeat reply: %v", err)
+	}
+}
+
 func TestCallReqReuseDoesNotInvalidateOutstandingTimeout(t *testing.T) {
 	t.Parallel()
 
@@ -1807,6 +1854,15 @@ type TestServer struct {
 	// hang until the server is stopped, simulating a stalled backend.
 	stallSystemQueries int32
 
+	// readyOnOptions, when non-zero, answers OPTIONS with READY instead of
+	// SUPPORTED -- a reply that is neither SUPPORTED nor an error frame, which is
+	// the case heartBeat has no arm for. Every connection reads SUPPORTED off an
+	// OPTIONS during startup too, so a test has to raise this only once its pool is
+	// up. nOptions counts the OPTIONS served, so it can then wait for the heartbeat
+	// it perturbed rather than sleeping for one.
+	readyOnOptions int32
+	nOptions       int64
+
 	protocol   byte
 	headerSize int
 	ctx        context.Context
@@ -1953,6 +2009,11 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 		}
 		respFrame.writeHeader(0, frm.OpReady, head.Stream)
 	case frm.OpOptions:
+		atomic.AddInt64(&srv.nOptions, 1)
+		if atomic.LoadInt32(&srv.readyOnOptions) != 0 {
+			respFrame.writeHeader(0, frm.OpReady, head.Stream)
+			break
+		}
 		respFrame.writeHeader(0, frm.OpSupported, head.Stream)
 		respFrame.writeStringMultiMap(exts)
 	case frm.OpQuery:

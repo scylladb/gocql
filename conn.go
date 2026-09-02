@@ -1037,7 +1037,15 @@ func (c *Conn) heartBeat(ctx context.Context) {
 		case error:
 			// TODO: should we do something here?
 		default:
-			panic(fmt.Sprintf("gocql: unknown frame in response to options: %T", resp))
+			// The peer answered OPTIONS with something that is neither SUPPORTED nor an
+			// error frame. parseFrame builds a frame for every opcode it knows, so this
+			// arm is reachable from the wire, and heartBeat runs on its own goroutine
+			// with nothing recovering above it -- frame.go's parseFrame holds the
+			// driver's only recover. Panicking here would let a server's malformed
+			// reply take the process down. Count it as a failure instead: six of them
+			// close the connection, which is what a peer this confused deserves.
+			c.logger.Printf("gocql: unexpected frame in response to options: %T\n", resp)
+			failures++
 		}
 	}
 }
