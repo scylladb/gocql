@@ -1287,7 +1287,10 @@ func TestExecCloseWithError(t *testing.T) {
 
 		waitForSingleCall(t, c)
 		call := detachSingleCall(t, c)
-		call.resp <- callResp{err: io.EOF}
+		// removedFromCalls tells exec it owns the cleanup; detachSingleCall above
+		// stands in for the production delete. Without it the leaked stream goes
+		// unnoticed.
+		call.resp <- callResp{err: io.EOF, removedFromCalls: true}
 
 		select {
 		case err := <-errCh:
@@ -1296,6 +1299,10 @@ func TestExecCloseWithError(t *testing.T) {
 			}
 		case <-time.After(execCloseTestTimeout):
 			t.Fatal("exec deadlocked after response error")
+		}
+
+		if inUse := c.streams.InUse(); inUse != 0 {
+			t.Fatalf("expected the stream to be released after a response error, %d still in use", inUse)
 		}
 
 		c.mu.Lock()
@@ -3979,6 +3986,187 @@ func (c *armFailingConn) LocalAddr() net.Addr              { return nil }
 func (c *armFailingConn) RemoteAddr() net.Addr             { return nil }
 func (c *armFailingConn) SetDeadline(time.Time) error      { return nil }
 func (c *armFailingConn) SetWriteDeadline(time.Time) error { return nil }
+
+// A calls map that disagrees with the callReq it holds is a driver bug, not
+// something a peer can provoke: it fails that connection, and nothing else.
+func TestProcessFrameStreamIDMismatchIsAnError(t *testing.T) {
+	t.Parallel()
+
+	header := []byte{
+		protoVersion4 | protoDirectionMask, 0x00, 0x00, 0x01, byte(frm.OpResult),
+		0x00, 0x00, 0x00, 0x00, // no body
+	}
+
+	// Keyed under stream 1, but the call believes it is stream 2. resp is buffered so
+	// the delivery does not need a second goroutine.
+	call := &callReq{timeout: make(chan struct{}), streamID: 2, resp: make(chan callResp, 1)}
+	c := &Conn{
+		calls:   map[int]*callReq{1: call},
+		version: protoVersion4,
+		streams: streams.New(),
+		logger:  nopLogger{},
+	}
+
+	err := c.processFrameSource(context.Background(), frameSource{r: bytes.NewReader(header)})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "stream 1")
+	require.Contains(t, err.Error(), "stream 2")
+
+	// And the caller is handed it: head.Stream has already left c.calls, so
+	// closeWithError's drain cannot reach this call.
+	select {
+	case resp := <-call.resp:
+		require.ErrorIs(t, resp.err, err)
+	default:
+		t.Fatal("the call was never woken: it would wait out its full request timeout")
+	}
+}
+
+// TestExecStreamIDMismatchDeliversToWaitingCall drives the same mismatch through a
+// real exec() waiting on call.resp, so it exercises execInternal's
+// resp.removedFromCalls branch -- which the test above would pass without.
+func TestExecStreamIDMismatchDeliversToWaitingCall(t *testing.T) {
+	t.Parallel()
+
+	const testTimeout = 10 * time.Second
+
+	// mismatchHeader builds a response frame header addressed to streamID, sized to
+	// carry no body.
+	mismatchHeader := func(streamID int) []byte {
+		return []byte{
+			protoVersion4 | protoDirectionMask, 0x00,
+			byte(streamID >> 8), byte(streamID),
+			byte(frm.OpResult),
+			0x00, 0x00, 0x00, 0x00, // no body
+		}
+	}
+
+	// remapWaitingCall starts an exec() and re-keys c.calls so the entry sits under a
+	// different stream than call.streamID. call.streamID keeps the bit c.streams
+	// allocated, so releasing it is observable via InUse(). Returns the result
+	// channel and the wrong map key a mismatched response must be addressed to.
+	remapWaitingCall := func(t *testing.T, c *Conn, observerCtx *testStreamObserverContext) (<-chan error, int) {
+		t.Helper()
+
+		errCh := make(chan error, 1)
+		go func() {
+			_, err := c.exec(context.Background(), frameWriterFunc(func(f *framer, streamID int) error {
+				f.buf = append(f.buf[:0], 'x')
+				return nil
+			}), nil, 0)
+			errCh <- err
+		}()
+
+		call := waitForSingleCall(t, c)
+		select {
+		case <-observerCtx.started:
+		case <-time.After(testTimeout):
+			t.Fatal("stream observer did not observe the request start")
+		}
+
+		wrongKey := call.streamID + 1
+		if wrongKey > c.streams.NumStreams {
+			wrongKey = 1
+		}
+
+		c.mu.Lock()
+		delete(c.calls, call.streamID)
+		c.calls[wrongKey] = call
+		c.mu.Unlock()
+
+		return errCh, wrongKey
+	}
+
+	t.Run("ReleasesAndRecyclesStream", func(t *testing.T) {
+		t.Parallel()
+
+		observerCtx := newTestStreamObserverContext()
+		c, server := newTestExecConn(t, testContextWriter{})
+		c.streamObserver = &testStreamObserver{ctx: observerCtx}
+		defer server.Close()
+
+		errCh, wrongKey := remapWaitingCall(t, c, observerCtx)
+
+		procErr := c.processFrameSource(context.Background(), frameSource{r: bytes.NewReader(mismatchHeader(wrongKey))})
+		require.Error(t, procErr)
+
+		select {
+		case err := <-errCh:
+			require.ErrorIs(t, err, procErr)
+		case <-time.After(testTimeout):
+			t.Fatal("exec did not return after the mismatched delivery")
+		}
+
+		select {
+		case <-observerCtx.finished:
+		case <-time.After(testTimeout):
+			t.Fatal("stream was never marked finished")
+		}
+		select {
+		case <-observerCtx.abandoned:
+			t.Fatal("stream should not also be marked abandoned")
+		default:
+		}
+
+		if inUse := c.streams.InUse(); inUse != 0 {
+			t.Fatalf("expected the stream to be released, %d still in use", inUse)
+		}
+
+		c.mu.Lock()
+		remaining := len(c.calls)
+		c.mu.Unlock()
+		if remaining != 0 {
+			t.Fatalf("expected no in-flight calls after mismatch delivery, got %d", remaining)
+		}
+	})
+
+	t.Run("RacesWithConnectionClose", func(t *testing.T) {
+		t.Parallel()
+
+		for i := 0; i < 100; i++ {
+			observerCtx := newTestStreamObserverContext()
+			c, server := newTestExecConn(t, testContextWriter{})
+			c.streamObserver = &testStreamObserver{ctx: observerCtx}
+
+			errCh, wrongKey := remapWaitingCall(t, c, observerCtx)
+			header := mismatchHeader(wrongKey)
+
+			var wg sync.WaitGroup
+			wg.Add(2)
+			go func() {
+				defer wg.Done()
+				c.processFrameSource(context.Background(), frameSource{r: bytes.NewReader(header)})
+			}()
+			go func() {
+				defer wg.Done()
+				c.Close()
+			}()
+			wg.Wait()
+			server.Close()
+
+			select {
+			case <-errCh:
+			case <-time.After(testTimeout):
+				t.Fatal("exec never returned after the raced delivery/close")
+			}
+
+			finished, abandoned := false, false
+			select {
+			case <-observerCtx.finished:
+				finished = true
+			default:
+			}
+			select {
+			case <-observerCtx.abandoned:
+				abandoned = true
+			default:
+			}
+			if finished == abandoned {
+				t.Fatalf("iteration %d: expected exactly one terminal callback, finished=%v abandoned=%v", i, finished, abandoned)
+			}
+		}
+	})
+}
 
 // TestProcessFrameFailedDeadlineArmIsFatal pins that a body read which never
 // reached the socket is fatal to the connection, and that widening the rule that
