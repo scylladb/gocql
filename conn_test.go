@@ -933,6 +933,29 @@ func TestContext_CanceledBeforeExec(t *testing.T) {
 	}
 }
 
+// unexpectedOptionsLogger closes seen the first time it observes heartBeat's log
+// line for an OPTIONS reply that is neither SUPPORTED nor an error frame -- proof
+// the driver actually parsed the reply, not just that the server produced one.
+//
+// A counter of OPTIONS requests the server had read is not enough: it advances the
+// instant the request is read, before its response is even built, and each response
+// is written from its own goroutine racing every other response on the same
+// connection. Waiting on such a counter can let a survival query's response win the
+// write race and return before the driver ever parsed the unexpected reply, so a
+// regression test built on it could pass against the old panicking code too.
+type unexpectedOptionsLogger struct {
+	seen     chan struct{}
+	seenOnce sync.Once
+}
+
+func (l *unexpectedOptionsLogger) Print(v ...any)   {}
+func (l *unexpectedOptionsLogger) Println(v ...any) {}
+func (l *unexpectedOptionsLogger) Printf(format string, v ...any) {
+	if strings.Contains(format, "unexpected frame in response to options") {
+		l.seenOnce.Do(func() { close(l.seen) })
+	}
+}
+
 // heartBeat used to panic on an OPTIONS reply that was neither SUPPORTED nor an
 // error frame. parseFrame builds a frame for every opcode it knows, so a server can
 // produce one, and heartBeat runs on its own goroutine with nothing recovering above
@@ -948,8 +971,11 @@ func TestHeartBeatSurvivesUnexpectedOptionsResponse(t *testing.T) {
 	srv := NewTestServer(t, defaultProto, ctx)
 	defer srv.Stop()
 
+	log := &unexpectedOptionsLogger{seen: make(chan struct{})}
+
 	cluster := testCluster(defaultProto, srv.Address)
 	cluster.NumConns = 1
+	cluster.Logger = log
 	db, err := cluster.CreateSession()
 	if err != nil {
 		t.Fatal(err)
@@ -962,17 +988,14 @@ func TestHeartBeatSurvivesUnexpectedOptionsResponse(t *testing.T) {
 	if err := waitForPoolSize(db, 1, 5*time.Second); err != nil {
 		t.Fatal(err)
 	}
-	served := atomic.LoadInt64(&srv.nOptions)
 	atomic.StoreInt32(&srv.readyOnOptions, 1)
 
-	// The first beat is a second out; wait for the server to see it rather than
-	// sleeping past it.
-	deadline := time.Now().Add(10 * time.Second)
-	for atomic.LoadInt64(&srv.nOptions) == served {
-		if time.Now().After(deadline) {
-			t.Fatal("the connection never sent another OPTIONS")
-		}
-		time.Sleep(10 * time.Millisecond)
+	// The first beat is a second out; wait for the driver to have parsed it rather
+	// than sleeping past it.
+	select {
+	case <-log.seen:
+	case <-time.After(10 * time.Second):
+		t.Fatal("heartBeat never logged the unexpected OPTIONS reply")
 	}
 
 	if err := db.Query("void").Exec(); err != nil {
@@ -1857,11 +1880,9 @@ type TestServer struct {
 	// readyOnOptions, when non-zero, answers OPTIONS with READY instead of
 	// SUPPORTED -- a reply that is neither SUPPORTED nor an error frame, which is
 	// the case heartBeat has no arm for. Every connection reads SUPPORTED off an
-	// OPTIONS during startup too, so a test has to raise this only once its pool is
-	// up. nOptions counts the OPTIONS served, so it can then wait for the heartbeat
-	// it perturbed rather than sleeping for one.
+	// OPTIONS during startup too, so a test has to raise this only once its pool
+	// is up.
 	readyOnOptions int32
-	nOptions       int64
 
 	protocol   byte
 	headerSize int
@@ -2009,7 +2030,6 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 		}
 		respFrame.writeHeader(0, frm.OpReady, head.Stream)
 	case frm.OpOptions:
-		atomic.AddInt64(&srv.nOptions, 1)
 		if atomic.LoadInt32(&srv.readyOnOptions) != 0 {
 			respFrame.writeHeader(0, frm.OpReady, head.Stream)
 			break
