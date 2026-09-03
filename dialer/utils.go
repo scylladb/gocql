@@ -572,15 +572,36 @@ func hashWithTail(frame []byte, start, end, tailStart, tailEnd int) int64 {
 
 // hashParams finishes hashing a request whose body ends in a <query_parameters>
 // block: it walks the block at paramsStart and hashes frame[hashStart:] up to the
-// block's end, folding in the protocol v5 tail. A block that cannot be walked means
-// the frame cannot be located either, so it falls back to hashing the raw bytes,
-// matching the fallbacks at its call sites.
+// block's end, folding in the protocol v5 tail and the header flags. A block that
+// cannot be walked means the frame cannot be located either, so it falls back to
+// hashing the raw bytes, matching the fallbacks at its call sites.
+//
+// The flags byte is folded in because it carries identity that no part of the body
+// does. Tracing is the case that matters: framer.trace sets FlagTracing and changes
+// nothing else, so a traced request and an untraced one are byte-identical from the
+// body onwards, and a hash drawn only from the body cannot tell them apart. The
+// replayer serves the first hash it matches, so it would answer one with the other's
+// response -- and Query.Trace, Batch.Trace and Session.SetTrace are all public. The
+// three arms that come through here are also the only ones needing it: STARTUP hashes
+// the header down to the opcode, and every other arm hashes the frame whole.
+//
+// Only a nonzero byte is folded, which is the bargain hashWithTail already strikes for
+// an empty v5 tail. A request with no flags set keeps the single-range hash it had, so
+// no checked-in recording and no pinned value for an unflagged request moves -- and a
+// zero flags byte has no identity to lose. Reading frame[1] is safe for the same reason
+// pastCustomPayload's is: every arm reaching here sits behind GetFrameHash's
+// FrameHeaderLen guard.
 func hashParams(frame []byte, hashStart, paramsStart int) int64 {
 	end, tailStart, tailEnd, ok := addQueryParams(frame, paramsStart)
 	if !ok {
 		return murmur.Murmur3H1(frame)
 	}
-	return hashWithTail(frame, hashStart, end, tailStart, tailEnd)
+
+	h := hashWithTail(frame, hashStart, end, tailStart, tailEnd)
+	if frame[1] != 0 {
+		h = foldHash(h, murmur.Murmur3H1(frame[1:2]))
+	}
+	return h
 }
 
 func GetFrameHash(frame []byte, useMetadataID bool) int64 {
@@ -618,7 +639,8 @@ func GetFrameHash(frame []byte, useMetadataID bool) int64 {
 	// per-run fields begin, because a request's identity is its statement and its bound
 	// values — the query text or the prepared id, the values, and the parameters that
 	// change what the statement means — while the default timestamp is time.Now() at
-	// send and never in the hash.
+	// send and never in the hash. Those three fold the header flags in as well, for a
+	// bit of identity the body never carries; see hashParams.
 	//
 	// One exception, and it is a dead one: the protocol v1 EXECUTE path measures from
 	// past the custom payload rather than from the body, so it leaves the prepared id

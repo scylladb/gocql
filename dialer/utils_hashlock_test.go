@@ -197,7 +197,7 @@ var hashLockWant = map[string]int64{
 	"empty":                             0,
 	"execute-metadata-id":               8953623736212654883,
 	"execute-metadata-id-flag-off":      -8761464023806847249,
-	"execute-custom-payload":            5119610723658050802,
+	"execute-custom-payload":            5599992181668421900,
 	"execute-no-metadata-id":            -7853075121273079524,
 	"options":                           359591853454385582,
 	"prepare":                           7009575819196046835,
@@ -217,7 +217,7 @@ var hashLockWant = map[string]int64{
 	// own replay. No recording had to be regenerated for it — the checked-in
 	// fixtures contain no BATCH frame.
 	"batch":                   -8625060010961602230,
-	"batch-custom-payload":    6901954547158542081,
+	"batch-custom-payload":    6934540613449475907,
 	"batch-default-timestamp": -8987577148391256339,
 
 	// Every QUERY value here moved when scylladb/gocql#1000 was fixed. Before it, all
@@ -241,8 +241,14 @@ var hashLockWant = map[string]int64{
 	// execute-custom-payload and batch-custom-payload are here because the same range
 	// moved in those two arms as well, and without a payload-bearing case each, either
 	// could be reverted with every pinned value in this table still matching.
+	//
+	// All three then moved once more, when the header flags were folded into the hash
+	// to cover tracing. They are the only cases in this table with a nonzero flags
+	// byte, and the fold is skipped when that byte is zero, so they are also the only
+	// values that moved: every other value here is byte-identical across it, which is
+	// what let the checked-in recordings stand.
 	"query-bare":                    669594534933358966,
-	"query-custom-payload":          -7987217641147380505,
+	"query-custom-payload":          3830604835530498012,
 	"query-default-timestamp":       -3958206948791604622,
 	"query-named-values":            1354821534699525939,
 	"query-null-value":              -7046978697175198898,

@@ -288,3 +288,40 @@ func TestGetFrameHashDistinguishesCustomPayload(t *testing.T) {
 		})
 	}
 }
+
+// TestGetFrameHashDistinguishesTracing pins that a request's tracing flag is part of its
+// identity, on each of the three arms that walk a body.
+//
+// framer.trace sets FlagTracing in the header and changes nothing else -- the tracing id
+// comes back on the response -- so a traced request and an untraced one are byte-identical
+// from the body onwards. No range of the body can tell them apart, which is what makes
+// this different from the custom payload: that one is body bytes, and widening the range
+// covered it. The replayer serves the first hash it matches, so without the flags byte in
+// the hash it answers one with the other's response. Query.Trace, Batch.Trace and
+// Session.SetTrace are all public, so this is a pair a caller can send.
+func TestGetFrameHashDistinguishesTracing(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		op   frameOp
+		tail []byte
+	}{
+		{name: "query", op: opQuery, tail: queryBody("SELECT * FROM system.local", 0x00)},
+		{name: "execute", op: opExecute, tail: v4ExecuteFrame(false)[FrameHeaderLen:]},
+		{name: "batch", op: opBatch, tail: batchBody(0x00)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			traced := frameV4(tc.op, frm.FlagTracing, tc.tail)
+			plain := frameV4(tc.op, 0x00, tc.tail)
+			if x, y := GetFrameHash(traced, false), GetFrameHash(plain, false); x == y {
+				t.Errorf("a traced and an untraced request hash the same (%d); the replayer would serve the wrong response", x)
+			}
+
+			// The fold has to distinguish which flag, not merely that one is set.
+			// FlagCompress never reaches a recorded frame, but it is the nearest
+			// neighbour in the byte and the cheapest way to say so.
+			if x, y := GetFrameHash(traced, false), GetFrameHash(frameV4(tc.op, frm.FlagCompress, tc.tail), false); x == y {
+				t.Errorf("two requests differing only in which header flag is set hash the same (%d)", x)
+			}
+		})
+	}
+}
