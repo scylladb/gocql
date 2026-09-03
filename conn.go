@@ -1252,7 +1252,7 @@ func (c *Conn) processFrameSource(ctx context.Context, src frameSource) error {
 		// StreamFinished fires.
 		err := fmt.Errorf("gocql: response for stream %d dispatched to a call on stream %d", head.Stream, call.streamID)
 		select {
-		case call.resp <- callResp{err: err}:
+		case call.resp <- callResp{err: err, removedFromCalls: true}:
 		case <-call.timeout:
 			c.abandonRecvCall(call, nil)
 		case <-ctx.Done():
@@ -1277,7 +1277,7 @@ func (c *Conn) processFrameSource(ctx context.Context, src frameSource) error {
 	// we either, return a response to the caller, the caller timedout, or the
 	// connection has closed. Either way we should never block indefinatly here
 	select {
-	case call.resp <- callResp{framer: framer, err: err}:
+	case call.resp <- callResp{framer: framer, err: err, removedFromCalls: true}:
 		// Framer ownership transferred to caller
 	case <-call.timeout:
 		c.abandonRecvCall(call, framer)
@@ -1896,6 +1896,21 @@ type callResp struct {
 	framer *framer
 	// err is error encountered, if any.
 	err error
+	// removedFromCalls is set by a sender that already deleted this call from
+	// c.calls before delivering here -- processFrameSource does that for every
+	// outcome it delivers directly (the stream-mismatch and fatal/per-request
+	// body-read paths), because c.calls is keyed by stream and a response frame
+	// pops its stream's entry as soon as it is matched. closeWithError's drain
+	// loop is the one other sender, and it only ever sends to a call it just
+	// found still in c.calls, then recycles it itself afterward.
+	//
+	// The receiver uses this instead of Conn.closed to decide whether it owns
+	// releasing the stream and recycling the callReq: a call already missing
+	// from c.calls will never be seen by closeWithError's drain, so the receiver
+	// is its only chance, regardless of how Conn.closed happens to race against
+	// this delivery (processFrameSource calls closeWithError itself immediately
+	// after a fatal delivery like this returns).
+	removedFromCalls bool
 }
 
 // contextWriter is like io.Writer, but takes context as well.
@@ -2306,11 +2321,12 @@ func (c *Conn) execInternal(ctx context.Context, req frameBuilder, tracer Tracer
 		stopWaiting = true
 		if resp.err != nil {
 			c.releaseReadFramer(resp.framer)
-			if !c.Closed() {
-				// if the connection is closed then we cant release the stream,
-				// this is because the request is still outstanding and we have
-				// been handed another error from another stream which caused the
-				// connection to close.
+			if resp.removedFromCalls {
+				// The sender already deleted this call from c.calls before
+				// delivering here, so closeWithError's drain will never find it --
+				// we are the only side that can release the stream and recycle the
+				// callReq, regardless of how Conn.closed happens to race against
+				// this delivery. See callResp.removedFromCalls.
 				releaseStream = true
 				recycleCall = true
 			}
