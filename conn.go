@@ -350,9 +350,6 @@ func (c *Conn) finalizeConnection() {
 	c.setSystemRequestTimeout(c.session.cfg.MetadataSchemaRequestTimeout)
 	c.w.setWriteTimeout(c.cfg.WriteTimeout)
 	c.r.SetTimeout(c.cfg.ReadTimeout)
-	// Only from here on: the budget covers segmented frames, and segments only
-	// appear after startup has negotiated the modern transport.
-	c.r.SetFrameAssemblyTimeout(c.cfg.FrameAssemblyTimeout)
 }
 
 func (c *Conn) getScyllaSupported() ScyllaConnectionFeatures {
@@ -498,6 +495,14 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 		streamObserver: s.streamObserver,
 	}
 	c.setSystemRequestTimeout(cfg.ConnectTimeout)
+	// Armed here, not in finalizeConnection: c.init below starts serve() before
+	// finalizeConnection ever runs (the control connection finalizes only at the very
+	// end of Session.init, after it has already issued system queries; a pool
+	// connection finalizes only after UseKeyspace). A segmented frame received in that
+	// window would otherwise see no budget at all. Safe this early because the value
+	// is inert until a v5 segment reassembly actually starts one (recvSegment /
+	// headerReader), which cannot happen before STARTUP has negotiated the connection.
+	c.r.SetFrameAssemblyTimeout(cfg.FrameAssemblyTimeout)
 
 	if err := c.init(ctx, dialedHost); err != nil {
 		cancel()
