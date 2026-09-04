@@ -276,7 +276,7 @@ Use `ClusterConfig.Compressor` to enable compression (either Snappy or LZ4):
 import (
     ...
     "github.com/gocql/gocql"
-    "github.com/gocql/gocql/lz4"
+    "github.com/scylladb/gocql/lz4"
     ...
 )
 
@@ -292,20 +292,46 @@ When explicitly using native protocol v5, use LZ4 compression or no compression.
 `ProtoVersion` is 5 or newer. Protocol v5 is not selected by automatic protocol
 discovery; it must currently be configured explicitly.
 
-LZ4 support is provided as an optional sub-module with its own `go.mod`. Because it uses the
-same fork pattern as the parent module, add a second `replace` directive alongside the one from
-the Installation section:
+LZ4 support lives in a sub-module with its own `go.mod`, published as
+`github.com/scylladb/gocql/lz4`. Unlike the parent module, import it by that path directly --
+it needs no `replace` directive of its own, only the one from the Installation section:
 
 ```mod
 replace github.com/gocql/gocql => github.com/scylladb/gocql v1.19.0
-replace github.com/gocql/gocql/lz4 => github.com/scylladb/gocql/lz4 v1.19.0
 ```
 
-The two modules are versioned independently. The repository tag for the nested module is
-prefixed with its directory (`lz4/v1.19.0`), while the version used in a `go.mod` directive is
-`v1.19.0` as shown above.
-
 Then run `go mod tidy`.
+
+The path differs from the parent module's because upstream has folded its `lz4` package into
+its main module: there is no `lz4/go.mod` there any more, so `github.com/gocql/gocql/lz4` is no
+longer a module that can be released, and only its pre-merge versions exist. Every release that
+supports native protocol v5 is published from this repository, under this repository's path.
+
+**Upgrading from an earlier version:** delete the
+`replace github.com/gocql/gocql/lz4 => ...` line from your `go.mod`, and change the import from
+`github.com/gocql/gocql/lz4` to `github.com/scylladb/gocql/lz4`.
+
+Keeping that `replace` stops working once gocql's own `go.mod` requires the module under its own
+name, which it does from the first release carrying protocol v5 support onward
+(`github.com/scylladb/gocql/lz4 v1.19.0`). The directive then points a second module path at a
+module already in your graph under its own name, and Go rejects it outright:
+
+```text
+go: github.com/scylladb/gocql/lz4@v1.19.0 used for two different module paths
+    (github.com/gocql/gocql/lz4 and github.com/scylladb/gocql/lz4)
+```
+
+gocql requires the module because its integration suite builds `LZ4Compressor` to exercise the
+protocol v5 compressed-segment path, and Go has no way to mark a requirement as test-only. It
+therefore appears in your module graph whether or not you compress -- but nothing outside
+gocql's `_test.go` files imports it, so no lz4 code is linked into your binary unless you set
+`ClusterConfig.Compressor` yourself. To build against a newer release than gocql asks for, add
+your own `require github.com/scylladb/gocql/lz4 vX.Y.Z`; version selection takes the higher of
+the two.
+
+The two modules are versioned independently. The repository tag for the nested module is
+prefixed with its directory (`lz4/v1.19.0`), while the version in a `go.mod` directive is
+`v1.19.0`.
 
 ## 6. Contributing
 

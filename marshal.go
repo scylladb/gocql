@@ -326,9 +326,17 @@ func Marshal(info TypeInfo, value any) ([]byte, error) {
 	case TypeTimestamp:
 		return marshalTimestamp(value)
 	case TypeList, TypeSet:
-		return marshalList(info, value)
+		ct, ok := info.(CollectionType)
+		if !ok {
+			return nil, marshalErrorf("can not marshal %T into %s", value, info)
+		}
+		return marshalList(ct, value)
 	case TypeMap:
-		return marshalMap(info, value)
+		ct, ok := info.(CollectionType)
+		if !ok {
+			return nil, marshalErrorf("can not marshal %T into %s", value, info)
+		}
+		return marshalMap(ct, value)
 	case TypeUUID:
 		return marshalUUID(value)
 	case TypeTimeUUID:
@@ -439,9 +447,17 @@ func Unmarshal(info TypeInfo, data []byte, value any) error {
 	case TypeTimestamp:
 		return unmarshalTimestamp(data, value)
 	case TypeList, TypeSet:
-		return unmarshalList(info, data, value)
+		ct, ok := info.(CollectionType)
+		if !ok {
+			return unmarshalErrorf("can not unmarshal %s into %T", info, value)
+		}
+		return unmarshalList(ct, data, value)
 	case TypeMap:
-		return unmarshalMap(info, data, value)
+		ct, ok := info.(CollectionType)
+		if !ok {
+			return unmarshalErrorf("can not unmarshal %s into %T", info, value)
+		}
+		return unmarshalMap(ct, data, value)
 	case TypeTimeUUID:
 		return unmarshalTimeUUID(data, value)
 	case TypeUUID:
@@ -801,25 +817,18 @@ func unmarshalDuration(data []byte, value any) error {
 	return nil
 }
 
-func writeCollectionSize(info CollectionType, n int, buf *bytes.Buffer) error {
+func writeCollectionSize(n int, buf *bytes.Buffer) error {
 	if n > math.MaxInt32 {
 		return marshalErrorf("marshal: collection too large")
 	}
 
-	buf.WriteByte(byte(n >> 24))
-	buf.WriteByte(byte(n >> 16))
-	buf.WriteByte(byte(n >> 8))
-	buf.WriteByte(byte(n))
+	tmp := [4]byte{byte(n >> 24), byte(n >> 16), byte(n >> 8), byte(n)}
+	buf.Write(tmp[:])
 
 	return nil
 }
 
-func marshalList(info TypeInfo, value any) ([]byte, error) {
-	listInfo, ok := info.(CollectionType)
-	if !ok {
-		return nil, marshalErrorf("marshal: can not marshal non collection type into list")
-	}
-
+func marshalList(info CollectionType, value any) ([]byte, error) {
 	if value == nil {
 		return nil, nil
 	} else if _, ok := value.(unsetColumn); ok {
@@ -829,7 +838,7 @@ func marshalList(info TypeInfo, value any) ([]byte, error) {
 	// Fast path: type-switch on concrete slice types for common fixed-size
 	// CQL element types. These bypass reflect and per-element Marshal entirely.
 	// List wire format: [4-byte count] + N × ([4-byte elem-len] + [elem-bytes])
-	switch listInfo.Elem.Type() {
+	switch info.Elem.Type() {
 	case TypeFloat:
 		if vec, ok := value.([]float32); ok {
 			if vec == nil {
@@ -880,18 +889,18 @@ func marshalList(info TypeInfo, value any) ([]byte, error) {
 		// Estimate buffer size: 4 bytes for collection size header,
 		// plus for each element: 4 bytes length prefix + element data.
 		sizeHint := 4 // collection size header
-		if elemSize := fixedElemSize(listInfo.Elem); elemSize > 0 {
+		if elemSize := fixedElemSize(info.Elem); elemSize > 0 {
 			sizeHint += n * (4 + elemSize) // 4-byte length prefix per element + data
 		}
 		buf := getMarshalBuf(sizeHint)
 
-		if err := writeCollectionSize(listInfo, n, buf); err != nil {
+		if err := writeCollectionSize(n, buf); err != nil {
 			putMarshalBuf(buf)
 			return nil, err
 		}
 
 		for i := 0; i < n; i++ {
-			item, err := Marshal(listInfo.Elem, rv.Index(i).Interface())
+			item, err := Marshal(info.Elem, rv.Index(i).Interface())
 			if err != nil {
 				putMarshalBuf(buf)
 				return nil, err
@@ -901,7 +910,7 @@ func marshalList(info TypeInfo, value any) ([]byte, error) {
 			if item == nil {
 				itemLen = -1
 			}
-			if err := writeCollectionSize(listInfo, itemLen, buf); err != nil {
+			if err := writeCollectionSize(itemLen, buf); err != nil {
 				putMarshalBuf(buf)
 				return nil, err
 			}
@@ -916,13 +925,13 @@ func marshalList(info TypeInfo, value any) ([]byte, error) {
 			for i := 0; i < len(keys); i++ {
 				keys[i] = rkeys[i].Interface()
 			}
-			return marshalList(listInfo, keys)
+			return marshalList(info, keys)
 		}
 	}
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
 }
 
-func readCollectionSize(info CollectionType, data []byte) (size, read int, err error) {
+func readCollectionSize(data []byte) (size, read int, err error) {
 	if len(data) < 4 {
 		return 0, 0, unmarshalErrorf("unmarshal list: unexpected eof")
 	}
@@ -931,16 +940,11 @@ func readCollectionSize(info CollectionType, data []byte) (size, read int, err e
 	return
 }
 
-func unmarshalList(info TypeInfo, data []byte, value any) error {
-	listInfo, ok := info.(CollectionType)
-	if !ok {
-		return unmarshalErrorf("unmarshal: can not unmarshal none collection type into list")
-	}
-
+func unmarshalList(info CollectionType, data []byte, value any) error {
 	// Fast path: type-switch on concrete pointer-to-slice types for common
 	// fixed-size CQL element types. Bypasses reflect and per-element Unmarshal.
 	// nil data is handled here; leaf functions assume non-nil data.
-	switch listInfo.Elem.Type() {
+	switch info.Elem.Type() {
 	case TypeFloat:
 		if dst, ok := value.(*[]float32); ok {
 			if data == nil {
@@ -996,7 +1000,7 @@ func unmarshalList(info TypeInfo, data []byte, value any) error {
 			return unmarshalErrorf("can not unmarshal into non-empty interface %T", value)
 		}
 		// Create a properly typed slice based on the element type
-		elemGoType, err := goType(listInfo.Elem)
+		elemGoType, err := goType(info.Elem)
 		if err != nil {
 			return unmarshalErrorf("unmarshal list: cannot determine element type: %v", err)
 		}
@@ -1016,7 +1020,7 @@ func unmarshalList(info TypeInfo, data []byte, value any) error {
 			rv.Set(reflect.Zero(t))
 			return nil
 		}
-		n, p, err := readCollectionSize(listInfo, data)
+		n, p, err := readCollectionSize(data)
 		if err != nil {
 			return err
 		}
@@ -1039,7 +1043,7 @@ func unmarshalList(info TypeInfo, data []byte, value any) error {
 			}
 		}
 		for i := 0; i < n; i++ {
-			m, p, err := readCollectionSize(listInfo, data)
+			m, p, err := readCollectionSize(data)
 			if err != nil {
 				return err
 			}
@@ -1053,7 +1057,7 @@ func unmarshalList(info TypeInfo, data []byte, value any) error {
 				unmarshalData = data[:m]
 				data = data[m:]
 			}
-			if err := Unmarshal(listInfo.Elem, unmarshalData, rv.Index(i).Addr().Interface()); err != nil {
+			if err := Unmarshal(info.Elem, unmarshalData, rv.Index(i).Addr().Interface()); err != nil {
 				return err
 			}
 		}
@@ -2116,12 +2120,7 @@ func computeUnsignedVIntSize(v uint64) int {
 	return (639 - lead0*9) >> 6
 }
 
-func marshalMap(info TypeInfo, value any) ([]byte, error) {
-	mapInfo, ok := info.(CollectionType)
-	if !ok {
-		return nil, marshalErrorf("marshal: can not marshal none collection type into map")
-	}
-
+func marshalMap(info CollectionType, value any) ([]byte, error) {
 	if value == nil {
 		return nil, nil
 	} else if _, ok := value.(unsetColumn); ok {
@@ -2144,21 +2143,21 @@ func marshalMap(info TypeInfo, value any) ([]byte, error) {
 	// Estimate buffer size: 4 bytes for map size header,
 	// plus for each entry: 4 bytes key length + key data + 4 bytes value length + value data.
 	sizeHint := 4 // map size header
-	keySize := fixedElemSize(mapInfo.Key)
-	valSize := fixedElemSize(mapInfo.Elem)
+	keySize := fixedElemSize(info.Key)
+	valSize := fixedElemSize(info.Elem)
 	if keySize > 0 && valSize > 0 {
 		sizeHint += n * (4 + keySize + 4 + valSize)
 	}
 	buf := getMarshalBuf(sizeHint)
 
-	if err := writeCollectionSize(mapInfo, n, buf); err != nil {
+	if err := writeCollectionSize(n, buf); err != nil {
 		putMarshalBuf(buf)
 		return nil, err
 	}
 
 	keys := rv.MapKeys()
 	for _, key := range keys {
-		item, err := Marshal(mapInfo.Key, key.Interface())
+		item, err := Marshal(info.Key, key.Interface())
 		if err != nil {
 			putMarshalBuf(buf)
 			return nil, err
@@ -2168,13 +2167,13 @@ func marshalMap(info TypeInfo, value any) ([]byte, error) {
 		if item == nil {
 			itemLen = -1
 		}
-		if err := writeCollectionSize(mapInfo, itemLen, buf); err != nil {
+		if err := writeCollectionSize(itemLen, buf); err != nil {
 			putMarshalBuf(buf)
 			return nil, err
 		}
 		buf.Write(item)
 
-		item, err = Marshal(mapInfo.Elem, rv.MapIndex(key).Interface())
+		item, err = Marshal(info.Elem, rv.MapIndex(key).Interface())
 		if err != nil {
 			putMarshalBuf(buf)
 			return nil, err
@@ -2184,7 +2183,7 @@ func marshalMap(info TypeInfo, value any) ([]byte, error) {
 		if item == nil {
 			itemLen = -1
 		}
-		if err := writeCollectionSize(mapInfo, itemLen, buf); err != nil {
+		if err := writeCollectionSize(itemLen, buf); err != nil {
 			putMarshalBuf(buf)
 			return nil, err
 		}
@@ -2193,12 +2192,7 @@ func marshalMap(info TypeInfo, value any) ([]byte, error) {
 	return finishMarshalBuf(buf), nil
 }
 
-func unmarshalMap(info TypeInfo, data []byte, value any) error {
-	mapInfo, ok := info.(CollectionType)
-	if !ok {
-		return unmarshalErrorf("unmarshal: can not unmarshal none collection type into map")
-	}
-
+func unmarshalMap(info CollectionType, data []byte, value any) error {
 	rv := reflect.ValueOf(value)
 	if rv.Kind() != reflect.Ptr {
 		return unmarshalErrorf("can not unmarshal into non-pointer %T", value)
@@ -2212,11 +2206,11 @@ func unmarshalMap(info TypeInfo, data []byte, value any) error {
 			return unmarshalErrorf("can not unmarshal into non-empty interface %T", value)
 		}
 		// Create a properly typed map based on the key and element types
-		keyGoType, err := goType(mapInfo.Key)
+		keyGoType, err := goType(info.Key)
 		if err != nil {
 			return unmarshalErrorf("unmarshal map: cannot determine key type: %v", err)
 		}
-		elemGoType, err := goType(mapInfo.Elem)
+		elemGoType, err := goType(info.Elem)
 		if err != nil {
 			return unmarshalErrorf("unmarshal map: cannot determine element type: %v", err)
 		}
@@ -2230,7 +2224,7 @@ func unmarshalMap(info TypeInfo, data []byte, value any) error {
 		rv.Set(reflect.Zero(t))
 		return nil
 	}
-	n, p, err := readCollectionSize(mapInfo, data)
+	n, p, err := readCollectionSize(data)
 	if err != nil {
 		return err
 	}
@@ -2247,7 +2241,7 @@ func unmarshalMap(info TypeInfo, data []byte, value any) error {
 	}
 	data = data[p:]
 	for i := 0; i < n; i++ {
-		m, p, err := readCollectionSize(mapInfo, data)
+		m, p, err := readCollectionSize(data)
 		if err != nil {
 			return err
 		}
@@ -2262,11 +2256,11 @@ func unmarshalMap(info TypeInfo, data []byte, value any) error {
 			unmarshalData = data[:m]
 			data = data[m:]
 		}
-		if err := Unmarshal(mapInfo.Key, unmarshalData, key.Interface()); err != nil {
+		if err := Unmarshal(info.Key, unmarshalData, key.Interface()); err != nil {
 			return err
 		}
 
-		m, p, err = readCollectionSize(mapInfo, data)
+		m, p, err = readCollectionSize(data)
 		if err != nil {
 			return err
 		}
@@ -2282,7 +2276,7 @@ func unmarshalMap(info TypeInfo, data []byte, value any) error {
 			unmarshalData = data[:m]
 			data = data[m:]
 		}
-		if err := Unmarshal(mapInfo.Elem, unmarshalData, val.Interface()); err != nil {
+		if err := Unmarshal(info.Elem, unmarshalData, val.Interface()); err != nil {
 			return err
 		}
 

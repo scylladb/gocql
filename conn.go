@@ -43,6 +43,7 @@ import (
 	"github.com/gocql/gocql/tablets"
 
 	"github.com/gocql/gocql/internal/lru"
+	"github.com/gocql/gocql/internal/segment"
 	"github.com/gocql/gocql/internal/streams"
 )
 
@@ -202,16 +203,26 @@ type Conn struct {
 	ctx            context.Context
 	errorHandler   ConnErrorHandler
 	compressor     Compressor
-	supported      map[string][]string
-	streams        *streams.IDGenerator
-	host           *HostInfo
+	// segCompressor is compressor narrowed to the two Append methods the v5 segment
+	// codec takes, resolved once by resolveSegmentCompressor during the handshake. The
+	// receive path would otherwise repeat that assertion for every segment it reads,
+	// for a result that cannot change: compressor is written at dial and once more by
+	// startupCoordinator.startup, and never again.
+	//
+	// Nil is the uncompressed segment layout, and is also what a pre-v5 connection
+	// leaves it as -- it never reaches the segment codec, and its compressor need not
+	// support segments at all.
+	segCompressor segment.Compressor
+	supported     map[string][]string
+	streams       *streams.IDGenerator
+	host          *HostInfo
 	// calls stores a map from stream ID to callReq.
 	// This map is protected by mu.
 	// calls should not be used when closed is true, calls is set to nil when closed=true.
 	calls map[int]*callReq
 	// segScratch holds the reusable buffers inbound v5 segments are read into.
 	// Only touched by the receive path, which runs on the serve() goroutine.
-	segScratch segmentScratch
+	segScratch segment.Scratch
 	// headerReader is the reader the current frame or segment header is read
 	// through (see readFrameHeader, readFirstSegmentHeader). Reused rather than
 	// allocated per header, and like segScratch only touched by whichever
@@ -735,6 +746,12 @@ func (s *startupCoordinator) startup(ctx context.Context, startupCompleted *atom
 		}
 	}
 
+	// The compressor is final now. Resolve its v5 segment view here rather than in
+	// initFramerCache: the auth exchange below is already segmented, and runs first.
+	if err := s.conn.resolveSegmentCompressor(); err != nil {
+		return err
+	}
+
 	for _, ext := range s.conn.cqlProtoExts {
 		serialized := ext.serialize()
 		for k, v := range serialized {
@@ -1054,7 +1071,7 @@ type frameSource struct {
 	// takes the connection down; out of a segment the short read is immediate and
 	// yields io.ErrUnexpectedEOF, which is not a net.Error, so processFrameSource
 	// keeps it per-request and leaves the connection up. A ~20-byte segment could
-	// otherwise buy a maxFrameSize allocation, repeatable for as long as the peer
+	// otherwise buy a frm.MaxFrameSize allocation, repeatable for as long as the peer
 	// cares to send them.
 	//
 	// Nil on the pre-v5 socket path, and nil for a reassembled frame, where
@@ -1335,13 +1352,13 @@ func (c *Conn) recvSegment(ctx context.Context) error {
 		return err
 	}
 
-	payload, err := readSegmentPayload(c.r, hdr, c.compressor, &c.segScratch)
+	payload, err := c.readSegmentPayload(hdr)
 	if err != nil {
 		return err
 	}
 	netEnd := c.observedNow()
 
-	if hdr.isSelfContained {
+	if hdr.IsSelfContained {
 		// The segment holds one or more complete CQL frames.
 		return c.processAllFramesInSegment(ctx, bytes.NewReader(payload), netStart, netEnd)
 	}
@@ -1432,7 +1449,7 @@ func (h *headerReader) Read(p []byte) (int, error) {
 // the stream at an unknown offset, so it stays a plain error and takes the
 // connection down rather than mis-framing everything that follows. That is the
 // timeout the re-arm above makes reachable.
-func (c *Conn) readFirstSegmentHeader() (segmentHeader, error) {
+func (c *Conn) readFirstSegmentHeader() (segment.Header, error) {
 	// No type assertion: Conn.r is a connReadSource, so the disarm always applies.
 	c.r.setDisarm(true)
 	defer c.r.setDisarm(false)
@@ -1441,15 +1458,28 @@ func (c *Conn) readFirstSegmentHeader() (segmentHeader, error) {
 	// the count only matters here, where the benign/fatal decision is made.
 	c.headerReader.reset(c.r, c.r)
 
-	hdr, err := readSegmentHeader(&c.headerReader, c.compressor)
+	hdr, err := segment.ReadHeader(&c.headerReader, c.segCompressor != nil)
 	if err != nil {
 		var netErr net.Error
 		if c.headerReader.n == 0 && errors.As(err, &netErr) && netErr.Timeout() {
-			return segmentHeader{}, fmt.Errorf("%w: %w", ErrReadHeaderTimeout, err)
+			return segment.Header{}, fmt.Errorf("%w: %w", ErrReadHeaderTimeout, err)
 		}
-		return segmentHeader{}, err
+		return segment.Header{}, err
 	}
 	return hdr, nil
+}
+
+// readSegmentPayload reads the payload of a segment whose header has already been
+// read, in the layout c.segCompressor selects — nil being the uncompressed one. The
+// narrowing behind that field happened once during the handshake; see
+// Conn.resolveSegmentCompressor.
+//
+// The header readers above take their layout from the same field. They branch on a
+// bool where this branches on the compressor being non-nil, and a connection whose two
+// answers disagreed would read an 8-byte compressed header as a 6-byte uncompressed
+// one and mis-frame everything after it.
+func (c *Conn) readSegmentPayload(hdr segment.Header) ([]byte, error) {
+	return segment.ReadPayload(c.r, hdr, c.segCompressor, &c.segScratch)
 }
 
 // recvSplitFrame reassembles a single CQL frame that the peer split across
@@ -1462,11 +1492,11 @@ func (c *Conn) readFirstSegmentHeader() (segmentHeader, error) {
 // reassembly buffer is allocated exactly once, sized to the frame length the peer
 // declared in the CQL frame header, and appending the arriving payloads is bounded
 // by that length. So neither a lying header nor incremental growth can inflate it:
-// growing a buffer to a maxFrameSize frame would end up holding ~512 MiB for a
+// growing a buffer to a frm.MaxFrameSize frame would end up holding ~512 MiB for a
 // valid 256 MiB response. Ownership of the buffer is then handed to the read
 // framer rather than copied into it, so the frame is never resident twice.
 //
-// The declared length itself is the peer's to choose, up to maxFrameSize, so a
+// The declared length itself is the peer's to choose, up to frm.MaxFrameSize, so a
 // small hostile prologue still buys this one allocation before any body byte has
 // arrived. Accepted deliberately, because it is bounded: at most once per
 // connection — the continuation reads run under ReadTimeout, so a peer that
@@ -1506,7 +1536,7 @@ func (c *Conn) recvSplitFrame(ctx context.Context, first []byte, netStart, netEn
 	if err != nil {
 		return err
 	}
-	if head.Length < 0 || head.Length > maxFrameSize {
+	if head.Length < 0 || head.Length > frm.MaxFrameSize {
 		return fmt.Errorf("gocql: invalid frame body length in segmented frame: %d", head.Length)
 	}
 	total := headSize + head.Length
@@ -1547,14 +1577,14 @@ func (c *Conn) recvSplitFrame(ctx context.Context, first []byte, netStart, netEn
 // payload), is rejected so a hostile peer cannot drive an infinite reassembly
 // loop.
 func (c *Conn) readContinuationSegment() ([]byte, error) {
-	hdr, err := readSegmentHeader(c.r, c.compressor)
+	hdr, err := segment.ReadHeader(c.r, c.segCompressor != nil)
 	if err != nil {
 		return nil, fmt.Errorf("gocql: failed to read continuation segment header: %w", err)
 	}
-	if hdr.isSelfContained {
+	if hdr.IsSelfContained {
 		return nil, fmt.Errorf("gocql: received self-contained segment, but expected a continuation")
 	}
-	payload, err := readSegmentPayload(c.r, hdr, c.compressor, &c.segScratch)
+	payload, err := c.readSegmentPayload(hdr)
 	if err != nil {
 		return nil, fmt.Errorf("gocql: failed to read continuation segment payload: %w", err)
 	}

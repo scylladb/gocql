@@ -695,6 +695,22 @@ func TestMarshalNil(t *testing.T) {
 			t.Errorf("expected to get nil byte for nil %v got % X", typ, data)
 		}
 	}
+
+	// Collection types also need nil coverage.
+	collectionTypes := []Type{TypeList, TypeSet, TypeMap}
+	for _, typ := range collectionTypes {
+		info := CollectionType{
+			NativeType: NativeType{proto: protoVersion3, typ: typ},
+			Key:        NativeType{proto: protoVersion3, typ: TypeVarchar},
+			Elem:       NativeType{proto: protoVersion3, typ: TypeVarchar},
+		}
+		data, err := Marshal(info, nil)
+		if err != nil {
+			t.Errorf("unable to marshal nil %v: %v\n", typ, err)
+		} else if data != nil {
+			t.Errorf("expected nil bytes for nil %v, got % X", typ, data)
+		}
+	}
 }
 
 func TestUnmarshalInetCopyBytes(t *testing.T) {
@@ -774,7 +790,7 @@ func TestReadCollectionSize(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			size, _, err := readCollectionSize(test.info, test.data)
+			size, _, err := readCollectionSize(test.data)
 			if test.isError {
 				if err == nil {
 					t.Fatal("Expected error, but it was nil")
