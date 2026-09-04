@@ -27,9 +27,11 @@ package gocql
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"maps"
+	mrand "math/rand/v2"
 	"net"
 	"slices"
 	"strings"
@@ -57,31 +59,36 @@ import (
 // and automatically sets a default consistency level on all operations
 // that do not have a consistency level set.
 type Session struct {
-	warningHandler            WarningHandler
-	queryObserver             QueryObserver
-	control                   controlConnection
-	ctx                       context.Context
-	logger                    StdLogger
-	trace                     Tracer
-	policy                    HostSelectionPolicy
-	batchObserver             BatchObserver
-	connectObserver           ConnectObserver
-	frameObserver             FrameHeaderObserver
-	streamObserver            StreamObserver
-	initErr                   error
-	nodeEvents                *eventDebouncer
-	stmtsLRU                  *preparedLRU
-	hostSource                *ringDescriber
-	pool                      *policyConnPool
-	ringRefresher             *debounce.RefreshDebouncer
-	readyCh                   chan struct{}
-	executor                  *queryExecutor
-	cancel                    context.CancelFunc
-	schemaEvents              *eventDebouncer
-	metadataDescriber         *metadataDescriber
-	eventBus                  *eventbus.EventBus[events.Event]
-	connCfg                   *ConnConfig
-	clientRoutesHandler       *ClientRoutesHandler
+	warningHandler       WarningHandler
+	queryObserver        QueryObserver
+	control              controlConnection
+	ctx                  context.Context
+	logger               StdLogger
+	trace                Tracer
+	policy               HostSelectionPolicy
+	batchObserver        BatchObserver
+	connectObserver      ConnectObserver
+	frameObserver        FrameHeaderObserver
+	streamObserver       StreamObserver
+	initErr              error
+	nodeEvents           *eventDebouncer
+	stmtsLRU             *preparedLRU
+	hostSource           *ringDescriber
+	pool                 *policyConnPool
+	ringRefresher        *debounce.RefreshDebouncer
+	readyCh              chan struct{}
+	executor             *queryExecutor
+	cancel               context.CancelFunc
+	schemaEvents         *eventDebouncer
+	metadataDescriber    *metadataDescriber
+	eventBus             *eventbus.EventBus[events.Event]
+	connCfg              *ConnConfig
+	clientRoutesHandler  *ClientRoutesHandler
+	driverConfigReporter *driverConfigReporter
+	// id is a globally unique identifier for this session, reported to
+	// the cluster via the SESSION_ID STARTUP option so that all connections
+	// belonging to the same session can be correlated in system.clients.
+	id                        string
 	routingKeyInfoCache       routingKeyInfoLRU
 	addressTranslator         AddressTranslator
 	cfg                       ClusterConfig
@@ -156,6 +163,11 @@ func newSessionCommon(cfg ClusterConfig) (*Session, error) {
 		s.addressTranslator = s.clientRoutesHandler
 	}
 
+	if !cfg.DisableDriverConfigReporting {
+		s.driverConfigReporter = newDriverConfigReporter(s)
+	}
+	s.id = newSessionID(s.logger)
+
 	// Close created resources on error otherwise they'll leak
 	var err error
 	defer func() {
@@ -174,7 +186,7 @@ func newSessionCommon(cfg ClusterConfig) (*Session, error) {
 	s.nodeEvents = newEventDebouncer("NodeEvents", s.handleNodeEvent, s.logger)
 	s.schemaEvents = newEventDebouncer("SchemaEvents", s.handleSchemaEvent, s.logger)
 
-	s.routingKeyInfoCache.lru = lru.New[string](cfg.MaxRoutingKeyInfo)
+	s.routingKeyInfoCache.lru = lru.New[routingKeyInfoCacheKey](cfg.MaxRoutingKeyInfo)
 
 	s.hostSource = &ringDescriber{cfg: &s.cfg, logger: s.logger}
 	s.ringRefresher = debounce.NewRefreshDebouncer(debounce.RingRefreshDebounceTime, func() error {
@@ -211,6 +223,60 @@ func newSessionCommon(cfg ClusterConfig) (*Session, error) {
 		s.warningHandler = cfg.WarningsHandlerBuilder(s)
 	}
 	return s, nil
+}
+
+// sessionIDStartupKey is the STARTUP option correlating the connections that
+// belong to one session in system.clients. Unlike driverConfigStartupKey it is
+// sent on every connection, since correlating them is the whole point.
+const sessionIDStartupKey = "SESSION_ID"
+
+// newSessionID generates a globally unique identifier for a session.
+//
+// Every connection reports one, so this always returns an id rather than
+// propagating a failure to generate it.
+//
+// The fallback is defensive rather than reachable: RandomUUID reads from
+// crypto/rand, which since Go 1.24 terminates the process instead of
+// returning an error when the system entropy source fails
+// (golang/go#66821). Since RandomUUID's signature still admits an error,
+// handling it costs little and keeps the id unconditional whatever a future
+// implementation does.
+func newSessionID(logger StdLogger) string {
+	id, err := RandomUUID()
+	if err != nil {
+		logger.Printf("gocql: unable to generate a random session id, falling back to a pseudo-random one: %v", err)
+		id = pseudoRandomUUID()
+	}
+	return id.String()
+}
+
+// pseudoRandomUUID builds a version 4 UUID from the runtime's pseudo-random
+// source, for the case where crypto/rand reports a failure instead of
+// aborting the process. A session id merely correlates the connections of one
+// session in system.clients and is never a security token, so a weaker source
+// of randomness is preferable to no id at all.
+func pseudoRandomUUID() UUID {
+	var u UUID
+	binary.BigEndian.PutUint64(u[:8], mrand.Uint64())
+	binary.BigEndian.PutUint64(u[8:], mrand.Uint64())
+	u[6] = u[6]&0x0F | 0x40 // set version to 4 (random uuid)
+	u[8] = u[8]&0x3F | 0x80 // set to IETF variant
+	return u
+}
+
+// ID returns the globally unique identifier of this session.
+//
+// Every connection the session opens reports this value to the cluster as the
+// SESSION_ID startup option, where it appears in the
+// system.clients.client_options column. Logging it, recording it in a support
+// bundle or attaching it as a metric label is what allows client-side
+// observations to be matched against those rows, instead of correlating by
+// address and port.
+//
+// The id is assigned when the session is created and never changes, so it is
+// safe to call concurrently and safe to read after the session is closed.
+func (s *Session) ID() string {
+	return s.id
 }
 
 // NewSession wraps an existing Node.
@@ -671,15 +737,6 @@ func (s *Session) WaitUntilReady() error {
 	return s.initErr
 }
 
-func (s *Session) executeQuery(qry *Query) (it *Iter) {
-	metrics := qry.metrics
-	if metrics == nil {
-		metrics = newQueryMetrics()
-		qry.metrics = metrics
-	}
-	return s.executeQueryWithMetrics(qry, metrics)
-}
-
 func (s *Session) executeQueryWithMetrics(qry *Query, metrics *queryMetrics) (it *Iter) {
 	if s.Closed() {
 		return &Iter{err: ErrSessionClosed}
@@ -701,9 +758,8 @@ func (s *Session) executeQueryWithMetrics(qry *Query, metrics *queryMetrics) (it
 
 func (s *Session) removeHost(h *HostInfo) {
 	s.policy.RemoveHost(h)
-	hostID := h.HostID()
-	s.pool.removeHost(hostID)
-	s.hostSource.removeHost(hostID)
+	s.pool.removeHost(h.hostUUID())
+	s.hostSource.removeHost(h.HostID())
 }
 
 // KeyspaceMetadata returns the schema metadata for the keyspace specified. Returns an error if the keyspace does not exist.
@@ -859,13 +915,13 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string, keyspace stri
 		keyspace = s.cfg.Keyspace
 	}
 
-	routingKeyInfoCacheKey := keyspace + "\x00" + stmt
+	cacheKey := routingKeyInfoCacheKey{keyspace: keyspace, stmt: stmt}
 
 	s.routingKeyInfoCache.mu.Lock()
 
 	// Using here keyspace + stmt as a cache key because
 	// the query keyspace could be overridden via SetKeyspace
-	entry, cached := s.routingKeyInfoCache.lru.Get(routingKeyInfoCacheKey)
+	entry, cached := s.routingKeyInfoCache.lru.Get(cacheKey)
 	if cached {
 		// done accessing the cache
 		s.routingKeyInfoCache.mu.Unlock()
@@ -889,7 +945,7 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string, keyspace stri
 	inflight := new(inflightCachedEntry)
 	inflight.wg.Add(1)
 	defer inflight.wg.Done()
-	s.routingKeyInfoCache.lru.Add(routingKeyInfoCacheKey, inflight)
+	s.routingKeyInfoCache.lru.Add(cacheKey, inflight)
 	s.routingKeyInfoCache.mu.Unlock()
 
 	var (
@@ -908,7 +964,7 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string, keyspace stri
 	info, inflight.err = conn.prepareStatement(ctx, stmt, nil, keyspace, requestTimeout)
 	if inflight.err != nil {
 		// don't cache this error
-		s.routingKeyInfoCache.Remove(routingKeyInfoCacheKey)
+		s.routingKeyInfoCache.Remove(cacheKey)
 		return nil, inflight.err
 	}
 
@@ -921,15 +977,15 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string, keyspace stri
 	}
 
 	// Resolve the statement's real target from the prepared metadata. Note this
-	// reassigns keyspace: routingKeyInfoCacheKey was already built from the
-	// requested keyspace above and is unaffected.
+	// reassigns keyspace: cacheKey was already built from the requested
+	// keyspace above and is unaffected.
 	keyspace, table := resolveRoutingKeyspaceTable(&info.request, keyspace)
 
 	partitioner, err := scyllaGetTablePartitioner(s, keyspace, table)
 	if err != nil {
 		// don't cache this error, but make sure all waiters see the same failure.
 		inflight.err = err
-		s.routingKeyInfoCache.Remove(routingKeyInfoCacheKey)
+		s.routingKeyInfoCache.Remove(cacheKey)
 		return nil, inflight.err
 	}
 
@@ -958,7 +1014,7 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string, keyspace stri
 	tableMetadata, inflight.err = s.TableMetadata(keyspace, table)
 	if inflight.err != nil {
 		// don't cache this error
-		s.routingKeyInfoCache.Remove(routingKeyInfoCacheKey)
+		s.routingKeyInfoCache.Remove(cacheKey)
 		return nil, inflight.err
 	}
 
@@ -1690,45 +1746,20 @@ func (qm *queryMetrics) reset() {
 	qm.l.Unlock()
 }
 
-// attempt adds given number of attempts and latency for given host.
-// It returns previous total attempts.
-// If needsHostMetrics is true, a copy of updated hostMetrics is returned.
-func (qm *queryMetrics) attempt(addAttempts int, addLatency time.Duration,
-	host *HostInfo, needsHostMetrics bool) (int, *hostMetrics) {
-	addLatencyNanos := addLatency.Nanoseconds()
-
-	if !needsHostMetrics {
-		qm.nextAttempt.Add(int64(addAttempts))
-		totalAttempts := qm.addTotals(addAttempts, addLatencyNanos)
-		return int(totalAttempts), nil
-	}
-
-	return qm.recordHostAttempt(addAttempts, addLatency, host, true)
-}
-
-// recordHostAttempt records totals and deprecated per-host metrics.
-// If needsHostMetrics is true, a copy of updated hostMetrics is returned.
-func (qm *queryMetrics) recordHostAttempt(addAttempts int, addLatency time.Duration,
-	host *HostInfo, needsHostMetrics bool) (int, *hostMetrics) {
+// recordHostAdjustment records explicit adjustments to totals and deprecated
+// per-host metrics.
+func (qm *queryMetrics) recordHostAdjustment(addAttempts int, addLatency time.Duration,
+	host *HostInfo) {
 	addLatencyNanos := addLatency.Nanoseconds()
 	qm.nextAttempt.Add(int64(addAttempts))
 
 	qm.l.Lock()
-	totalAttempts := qm.addTotals(addAttempts, addLatencyNanos)
-
-	updateHostMetrics := qm.addHostMetricsLocked(host.hostUUID(), hostMetrics{
+	qm.addTotals(addAttempts, addLatencyNanos)
+	qm.addHostMetricsLocked(host.hostUUID(), hostMetrics{
 		Attempts:     addAttempts,
 		TotalLatency: addLatencyNanos,
 	})
 	qm.l.Unlock()
-
-	if !needsHostMetrics {
-		return int(totalAttempts), nil
-	}
-
-	hostMetricsCopy := new(hostMetrics)
-	*hostMetricsCopy = updateHostMetrics
-	return int(totalAttempts), hostMetricsCopy
 }
 
 // finishAttempt records the completion of one launch-assigned attempt. The
@@ -1901,7 +1932,7 @@ func (q *Query) Attempts() int {
 // makes the total negative permanently switches the metrics to mutex-backed
 // full-width storage until reset.
 func (q *Query) AddAttempts(i int, host *HostInfo) {
-	q.metrics.recordHostAttempt(i, 0, host, false)
+	q.metrics.recordHostAdjustment(i, 0, host)
 }
 
 // Latency returns the average amount of nanoseconds per attempt of the query.
@@ -1913,7 +1944,7 @@ func (q *Query) Latency() int64 {
 // that makes the total negative also makes Latency return a negative value and
 // permanently switches the metrics to mutex-backed full-width storage until reset.
 func (q *Query) AddLatency(l int64, host *HostInfo) {
-	q.metrics.recordHostAttempt(0, time.Duration(l)*time.Nanosecond, host, false)
+	q.metrics.recordHostAdjustment(0, time.Duration(l)*time.Nanosecond, host)
 }
 
 // Consistency sets the consistency level for this query. If no consistency
@@ -2073,12 +2104,6 @@ func (q *Query) Cancel() {
 
 func (q *Query) execute(ctx context.Context, conn *Conn, metrics *queryMetrics) *Iter {
 	return conn.executeQueryWithMetrics(ctx, q, metrics)
-}
-
-func (q *Query) attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
-	token := q.metrics.beginAttempt()
-	token.start = start
-	q.finishAttempt(token, keyspace, end, iter, host)
 }
 
 func (q *Query) finishAttempt(token attemptToken, keyspace string, end time.Time, iter *Iter, host *HostInfo) {
@@ -2361,6 +2386,21 @@ func (q *Query) PageState(state []byte) *Query {
 // the metadata to parse the rows and will not reuse the metadata from the prepared
 // statement. This should only be used to work around cassandra bugs, such as when using
 // CAS operations which do not end in Cas.
+//
+// This is the only way to force metadata on a connection that exchanges result
+// metadata IDs — native protocol v5, or protocol v4 with the SCYLLA_USE_METADATA_ID
+// extension negotiated. There, skipping is the default and the cluster-level
+// ClusterConfig.DisableSkipMetadata is ignored, but this per-query setting still
+// wins.
+//
+// Conditional (LWT) statements are the case to keep in mind: their response column
+// set depends on whether the condition applied, which a result metadata ID cannot
+// express, since the ID describes the statement and not the outcome. In practice
+// the driver does not skip for them anyway — a prepared conditional statement's
+// result metadata is empty, and metadata is never skipped without cached columns to
+// reuse — and ScanCAS and MapScanCAS set this internally regardless. Setting it
+// explicitly on a conditional statement driven through Iter or MapScan is therefore
+// belt-and-braces rather than required.
 //
 // See https://issues.apache.org/jira/browse/CASSANDRA-11099
 // https://github.com/apache/cassandra-gocql-driver/issues/612
@@ -2907,6 +2947,13 @@ func (is *iterScanner) Next() bool {
 		}
 	}
 
+	// A page turn can install new metadata (RESULT_METADATA_CHANGED), so the
+	// column count this row must be read with is not necessarily the one
+	// Scanner() sized cols for.
+	if len(is.cols) != len(iter.meta.columns) {
+		is.cols = make([][]byte, len(iter.meta.columns))
+	}
+
 	for i := 0; i < len(is.cols); i++ {
 		col, err := iter.readColumn()
 		if err != nil {
@@ -3391,7 +3438,7 @@ func (b *Batch) Attempts() int {
 // makes the total negative permanently switches the metrics to mutex-backed
 // full-width storage until reset.
 func (b *Batch) AddAttempts(i int, host *HostInfo) {
-	b.metrics.recordHostAttempt(i, 0, host, false)
+	b.metrics.recordHostAdjustment(i, 0, host)
 }
 
 // Latency returns the average number of nanoseconds to execute a single attempt of the batch.
@@ -3403,7 +3450,7 @@ func (b *Batch) Latency() int64 {
 // that makes the total negative also makes Latency return a negative value and
 // permanently switches the metrics to mutex-backed full-width storage until reset.
 func (b *Batch) AddLatency(l int64, host *HostInfo) {
-	b.metrics.recordHostAttempt(0, time.Duration(l)*time.Nanosecond, host, false)
+	b.metrics.recordHostAdjustment(0, time.Duration(l)*time.Nanosecond, host)
 }
 
 // GetConsistency returns the currently configured consistency level for the batch
@@ -3540,12 +3587,6 @@ func (b *Batch) WithTimestamp(timestamp int64) *Batch {
 	b.DefaultTimestamp(true)
 	b.defaultTimestampValue = timestamp
 	return b
-}
-
-func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
-	token := b.metrics.beginAttempt()
-	token.start = start
-	b.finishAttempt(token, keyspace, end, iter, host)
 }
 
 func (b *Batch) finishAttempt(token attemptToken, keyspace string, end time.Time, iter *Iter, host *HostInfo) {
@@ -3749,8 +3790,16 @@ func (c ColumnInfo) String() string {
 }
 
 // routing key indexes LRU cache
+// routingKeyInfoCacheKey avoids concatenating keyspace+stmt into a string on
+// every cache lookup; lru.Cache already takes a comparable key type for
+// exactly this reason.
+type routingKeyInfoCacheKey struct {
+	keyspace string
+	stmt     string
+}
+
 type routingKeyInfoLRU struct {
-	lru *lru.Cache[string]
+	lru *lru.Cache[routingKeyInfoCacheKey]
 	mu  sync.Mutex
 }
 
@@ -3767,7 +3816,7 @@ func (r *routingKeyInfo) String() string {
 	return fmt.Sprintf("routing key index=%v types=%v", r.indexes, r.types)
 }
 
-func (r *routingKeyInfoLRU) Remove(key string) {
+func (r *routingKeyInfoLRU) Remove(key routingKeyInfoCacheKey) {
 	r.mu.Lock()
 	r.lru.Remove(key)
 	r.mu.Unlock()

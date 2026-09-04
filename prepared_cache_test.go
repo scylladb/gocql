@@ -41,7 +41,7 @@ func completedInflight(id []byte) *inflightPrepare {
 }
 
 func TestPreparedLRU_updateMetadataIfSame(t *testing.T) {
-	key := stmtCacheKey{hostID: "h", keyspace: "ks", statement: "SELECT * FROM t"}
+	key := stmtCacheKey{hostID: UUID{1}, keyspace: "ks", statement: "SELECT * FROM t"}
 	oldID := []byte{1, 2, 3}
 
 	t.Run("replaces when present and identity matches", func(t *testing.T) {
@@ -120,4 +120,73 @@ func TestPreparedLRU_updateMetadataIfSame(t *testing.T) {
 			t.Fatal("an in-flight cache entry must not be replaced")
 		}
 	})
+}
+
+// TestStmtCacheKey_HostIDEquality verifies that stmtCacheKey's UUID-typed
+// hostID field distinguishes and matches hosts exactly like the old
+// string-typed field did, including the "empty host" collapse (a HostInfo
+// with no hostId set must map to the same key as another HostInfo with no
+// hostId set, since both hostUUID() and the old HostID() return the zero
+// value for an unset host).
+func TestStmtCacheKey_HostIDEquality(t *testing.T) {
+	t.Parallel()
+
+	hostA := &HostInfo{hostId: tUUID(1)}
+	hostB := &HostInfo{hostId: tUUID(2)}
+	hostAEmpty1 := &HostInfo{}
+	hostAEmpty2 := &HostInfo{}
+
+	p := newTestPreparedLRU()
+
+	keyA := p.keyFor(hostA.hostUUID(), "ks", "SELECT 1")
+	keyB := p.keyFor(hostB.hostUUID(), "ks", "SELECT 1")
+	keyAAgain := p.keyFor(hostA.hostUUID(), "ks", "SELECT 1")
+	keyEmpty1 := p.keyFor(hostAEmpty1.hostUUID(), "ks", "SELECT 1")
+	keyEmpty2 := p.keyFor(hostAEmpty2.hostUUID(), "ks", "SELECT 1")
+
+	if keyA == keyB {
+		t.Fatal("distinct host UUIDs must not produce equal cache keys")
+	}
+	if keyA != keyAAgain {
+		t.Fatal("the same host UUID must produce equal cache keys")
+	}
+	if keyEmpty1 != keyEmpty2 {
+		t.Fatal("two hosts with no hostId set must collapse to the same (zero-value) cache key")
+	}
+	if keyA == keyEmpty1 {
+		t.Fatal("a real host UUID must not collide with the empty-host zero-value key")
+	}
+
+	// Round-trip through the actual cache to make sure UUID keys behave
+	// correctly as map keys end-to-end, not just via ==.
+	entry := completedInflight([]byte{9})
+	p.add(keyA, entry)
+	if got, ok := p.get(keyB); ok {
+		t.Fatalf("keyB must be a cache miss, got %v", got)
+	}
+	if got, ok := p.get(keyA); !ok || got != entry {
+		t.Fatal("keyA must retrieve the entry stored under it")
+	}
+}
+
+// TestPreparedLRU_keyFor_ZeroAlloc guards the whole point of switching
+// stmtCacheKey.hostID from string to UUID: building a cache key from a
+// HostInfo must not allocate. HostInfo.HostID() (the old call site) returns
+// a string via UUID.String(), which heap-allocates a []byte plus its string
+// conversion on every call; HostInfo.hostUUID() returns the raw comparable
+// UUID value with no allocation at all.
+func TestPreparedLRU_keyFor_ZeroAlloc(t *testing.T) {
+	host := &HostInfo{hostId: tUUID(7)}
+	p := newTestPreparedLRU()
+
+	var key stmtCacheKey
+	allocs := testing.AllocsPerRun(1000, func() {
+		key = p.keyFor(host.hostUUID(), "ks", "SELECT * FROM t WHERE id = ?")
+	})
+	if allocs != 0 {
+		t.Errorf("keyFor(host.hostUUID(), ...) allocated %.2f allocs/op, want 0", allocs)
+	}
+	if key.hostID != tUUID(7) {
+		t.Fatalf("sanity check failed: key.hostID = %v, want %v", key.hostID, tUUID(7))
+	}
 }

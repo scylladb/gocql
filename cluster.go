@@ -169,11 +169,12 @@ type ClusterConfig struct {
 	MaxWaitSchemaAgreement time.Duration
 	// ProtoVersion sets the version of the native protocol to use, this will
 	// enable features in the driver for specific protocol versions, generally this
-	// should be set to a known version (2,3,4) for the cluster being connected to.
+	// should be set to a supported version (3,4,5) for the cluster being connected to.
 	//
 	// If it is 0 or unset (the default) then the driver will attempt to discover the
-	// highest supported protocol for the cluster. In clusters with nodes of different
-	// versions the protocol selected is not defined (ie, it can be any of the supported in the cluster)
+	// highest supported protocol up to version 4. Protocol version 5 must currently
+	// be selected explicitly. In clusters with nodes of different versions the protocol
+	// selected is not defined (ie, it can be any of the supported in the cluster).
 	ProtoVersion int
 	// Maximum number of inflight requests allowed per connection.
 	// Default: 32768 for CQL v3 and newer
@@ -194,6 +195,17 @@ type ClusterConfig struct {
 	//    For that, see ConnectTimeout.
 	Timeout time.Duration
 	// The timeout for the requests to the schema tables. (default: 60s)
+	//
+	// Zero means the driver does not bound these queries itself: it arms no
+	// client-side deadline, and against ScyllaDB it sends them without the
+	// " USING TIMEOUT ...ms" override, so how long they may run is left to the
+	// server's own configuration - its request timeouts, or the service level in
+	// force. Nothing else on the driver side steps in: controlConn.runQuery, which
+	// every schema-table read goes through, passes a context with no deadline, and
+	// the connection's read deadline is disarmed while waiting for a response to
+	// begin. Schema agreement is the exception, bounding its own queries by
+	// MaxWaitSchemaAgreement. Set a positive value to keep these queries under a
+	// deadline of the client's choosing.
 	MetadataSchemaRequestTimeout time.Duration
 	// ConnectTimeout limits the time spent during connection setup.
 	// During initial connection setup, internal queries, AUTH requests will return an error if the client
@@ -270,10 +282,36 @@ type ClusterConfig struct {
 	// the metadata to parse the rows and will not reuse the metadata from the prepared
 	// statement.
 	//
+	// This flag exists because prepared-statement result metadata could not be
+	// invalidated safely: after an ALTER the server kept answering with the old
+	// column set, so reusing the cached metadata could misdecode rows. It defaults
+	// to true for that reason.
+	//
+	// This flag is IGNORED — including when it was set to true explicitly — once the
+	// connection exchanges result metadata IDs and the driver holds one for the
+	// statement. That is the case on native protocol v5, and on protocol v4 once the
+	// SCYLLA_USE_METADATA_ID extension is negotiated. Either way the underlying
+	// problem is fixed: the server hands out a result metadata ID at prepare time,
+	// the driver returns it with every execute, and the server answers a stale ID
+	// with METADATA_CHANGED plus fresh metadata. Skipping is then safe, so the driver
+	// skips and this workaround no longer applies.
+	//
+	// This matches scylladb/scylla-drivers#81, which specifies skipping as the safe
+	// default "if SCYLLA_USE_METADATA_ID was negotiated or CQL v5 is used", and the
+	// Scylla java-driver, which skips for any non-empty result metadata ID. The
+	// Scylla python-driver implements the extension half only.
+	//
+	// There is deliberately no knob to force metadata for a whole session once an ID
+	// is in play (the java-driver's skip-cql4-metadata-resolve-method has no
+	// equivalent here). Use Query.NoSkipMetadata for a specific query; ScanCAS and
+	// MapScanCAS already do so internally.
+	//
 	// See https://issues.apache.org/jira/browse/CASSANDRA-10786
 	// See https://github.com/scylladb/scylladb/issues/20860
+	// See https://github.com/scylladb/scylladb/pull/23292
 	//
-	// Default: true
+	// Default: true, and has no effect on a connection that exchanges result
+	// metadata IDs.
 	DisableSkipMetadata bool
 	// DisableShardAwarePort will prevent the driver from connecting to Scylla's shard-aware port,
 	// even if there are nodes in the cluster that support it.
@@ -302,6 +340,22 @@ type ClusterConfig struct {
 	// address in system.local or system.peers returns 127.0.0.1, the peer will be
 	// set to 10.0.0.1 which is what will be used to connect to.
 	IgnorePeerAddr bool
+	// DisableDriverConfigReporting turns off the driver's self-description to the
+	// cluster during connection setup. Reporting is enabled by default so that
+	// operators can inspect the settings of a client while investigating an
+	// incident.
+	//
+	// The control connection sends a DRIVER_CONFIG startup option holding a JSON
+	// description of the effective configuration. It ends up in the
+	// system.clients.client_options column, alongside SESSION_ID, a per-session
+	// unique identifier that every connection of a session reports and that is
+	// always sent regardless of this setting, letting all of a session's
+	// connections be correlated with each other.
+	//
+	// When set to true, DRIVER_CONFIG is not sent. SESSION_ID is unaffected.
+	//
+	// Default: false
+	DisableDriverConfigReporting bool
 	// An event bus configuration
 	EventBusConfig eventbus.EventBusConfig
 }
@@ -654,7 +708,14 @@ func (cfg *ClusterConfig) Validate() error {
 	}
 
 	if !cfg.DisableSkipMetadata {
-		cfg.Logger.Println("warning: enabling skipping metadata can lead to unpredictable results when executing query and altering columns involved in the query.")
+		// The hazard this warns about is confined to connections that exchange no
+		// result metadata ID: protocol v4 or lower against a server that does not
+		// advertise SCYLLA_USE_METADATA_ID. Everywhere else the server reports
+		// metadata changes via METADATA_CHANGED, DisableSkipMetadata is ignored, and
+		// skipping is both safe and the default — so say which case is actually risky.
+		// The protocol version is negotiated per connection, long after Validate runs,
+		// so this cannot be narrowed down here.
+		cfg.Logger.Println("warning: skipping result metadata can lead to unpredictable results if columns involved in a prepared query are altered, on connections that exchange no result metadata ID (protocol v4 or lower without the SCYLLA_USE_METADATA_ID extension).")
 	}
 
 	if cfg.SerialConsistency > 0 && !cfg.SerialConsistency.IsSerial() {

@@ -30,6 +30,7 @@ package gocql
 // This file groups integration tests where Cassandra has to be set up with some special integration variables
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -268,6 +269,149 @@ func TestApplicationInformation(t *testing.T) {
 		})
 	}
 
+}
+
+// TestDriverConfigReporting verifies end to end that a session reports one
+// SESSION_ID shared by all of its connections, and that DRIVER_CONFIG is
+// reported exactly once, by the control connection, mirroring the existing
+// TestApplicationInformation precedent.
+func TestDriverConfigReporting(t *testing.T) {
+	t.Parallel()
+
+	cluster := createCluster()
+	s, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatalf("failed to connect to the cluster: %s", err)
+	}
+	defer s.Close()
+
+	// Read the id through the exported accessor rather than the field: an
+	// application correlating its own logs with system.clients has only the
+	// accessor, so that is the path worth exercising end to end.
+	wantSessionID := s.ID()
+	if wantSessionID == "" {
+		t.Fatal("expected the session to have a non-empty id")
+	}
+
+	var clientsTableName string
+	for _, tableName := range []string{"system_views.clients", "system.clients"} {
+		iter := s.Query("select client_options from " + tableName).Iter()
+		if _, err := iter.SliceMap(); err == nil {
+			clientsTableName = tableName
+			break
+		}
+	}
+	if clientsTableName == "" {
+		t.Skip("Skipping because server does not have `client_options` in clients table")
+	}
+
+	// Wait until the pools have finished filling so that the number of
+	// connections this session owns stops moving. Without this the poll below
+	// could reach its exit condition while connections are still being opened.
+	if err := waitUntilPoolsStopFilling(context.Background(), s, 10*time.Second); err != nil {
+		t.Fatalf("failed to wait for the connection pools to fill: %s", err)
+	}
+
+	// The clients table is node-local: every node lists only the connections
+	// made to it. Integration runs use a three node cluster, so a load-balanced
+	// query round-robins across the cluster and most polls would land on a node
+	// that the control connection was never made to, and therefore never see
+	// DRIVER_CONFIG at all. Run every poll on the control connection itself so
+	// the rows always come from the one node whose client list is being
+	// reasoned about.
+	//
+	// Stopping at the first row carrying DRIVER_CONFIG would also make the
+	// "exactly once" assertion below vacuous: the control connection is
+	// established before the pool ones, so its row is the first to appear, and a
+	// regression that also reported DRIVER_CONFIG on pool connections would go
+	// unnoticed because their rows are not in the table yet. Wait for every
+	// connection to that node to be accounted for instead.
+	var configs []string
+	deadline := time.After(10 * time.Second)
+	for {
+		// Re-read the control connection's host on every pass: it can move if
+		// the control connection reconnects, and the pool size it is compared
+		// against has to belong to the same node. Re-reading the pool size also
+		// means that should a pool start filling again, the bar rises with it
+		// instead of leaving the loop free to exit on a stale count.
+		ch := s.control.getConn()
+		if ch == nil {
+			t.Fatal("expected the session to have a control connection")
+		}
+		controlHost := ch.host
+
+		// Connections this session has to the control connection's node: its
+		// pool for that host, plus the control connection itself, which is
+		// dialed outside the pool.
+		wantConns := 1
+		if hostPool, ok := s.pool.getPool(controlHost); ok {
+			wantConns += hostPool.Size()
+		}
+
+		configs = nil
+		conns := 0
+
+		var row map[string]string
+		iter := s.control.query("select client_options from " + clientsTableName)
+		for iter.Scan(&row) {
+			if row[sessionIDStartupKey] != wantSessionID {
+				continue
+			}
+			conns++
+			if config, ok := row[driverConfigStartupKey]; ok {
+				configs = append(configs, config)
+			}
+		}
+		if err := iter.Close(); err != nil {
+			t.Fatalf("failed to execute query: %s", err)
+		}
+
+		// More rows than connections is fine: a connection that has already been
+		// closed can linger in the clients table. Those rows cannot hide a
+		// regression, they can only reveal one, since a second DRIVER_CONFIG is
+		// a failure no matter which connection produced it.
+		if conns >= wantConns && len(configs) > 0 {
+			break
+		}
+
+		select {
+		case <-deadline:
+			t.Fatalf("expected all %d connections with SESSION_ID %q to node %s to be listed in %s with at least one reporting DRIVER_CONFIG within 10s, saw %d connections and %d DRIVER_CONFIG",
+				wantConns, wantSessionID, controlHost.ConnectAddress(), clientsTableName, conns, len(configs))
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
+
+	if len(configs) != 1 {
+		t.Errorf("expected exactly one connection with SESSION_ID %q to report DRIVER_CONFIG, got %d", wantSessionID, len(configs))
+	}
+	// Assert on the decoded report rather than a byte-exact string: the payload
+	// is a full configuration description whose exact serialization is the unit
+	// tests' business, while what only a live server can confirm is that it
+	// round-trips intact and that the ScyllaDB-gated key is decided correctly.
+	for _, config := range configs {
+		var report driverConfigReport
+		if err := json.Unmarshal([]byte(config), &report); err != nil {
+			t.Errorf("expected %s to be valid JSON, got %q: %v", driverConfigStartupKey, config, err)
+			continue
+		}
+		if report.Version != driverConfigVersion {
+			t.Errorf("expected %s version %d, got %d", driverConfigStartupKey, driverConfigVersion, report.Version)
+		}
+		if got, want := report.ControlPlane.Schema.Agreement.TimeoutMs, cluster.MaxWaitSchemaAgreement.Milliseconds(); got != want {
+			t.Errorf("expected schema agreement timeout-ms %d, got %d", want, got)
+		}
+		// server-side-ms describes the USING TIMEOUT clause, which only ScyllaDB
+		// understands. The fake server the unit tests run against cannot
+		// exercise either side of that gate.
+		wantServerSide := false
+		if ch := s.control.getConn(); ch != nil {
+			wantServerSide = ch.conn.isScyllaConn()
+		}
+		if got := report.ControlPlane.Queries.System.Timeout.ServerSideMs != nil; got != wantServerSide {
+			t.Errorf("expected server-side-ms present=%v against this server, got %v", wantServerSide, got)
+		}
+	}
 }
 
 func TestWriteFailure(t *testing.T) {

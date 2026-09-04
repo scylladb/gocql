@@ -34,14 +34,12 @@ import (
 const defaultMaxPreparedStmts = 1000
 
 // stmtCacheKey is a composite key for the prepared statement cache.
-// Using a struct avoids the string concatenation allocation that occurred
-// on every query and fixes the theoretical key collision bug where
-// different (hostID, keyspace, statement) tuples could produce the same
-// concatenated string.
+// A struct avoids the allocation and collision risk of concatenating
+// (hostID, keyspace, statement) into a single string key.
 type stmtCacheKey struct {
-	hostID    string
 	keyspace  string
 	statement string
+	hostID    UUID
 }
 
 // preparedLRU is the prepared statement cache
@@ -127,7 +125,7 @@ func (p *preparedLRU) execIfMissing(key stmtCacheKey, fn func(cache *lru.Cache[s
 // keyFor constructs a zero-allocation composite cache key from the given
 // components. The returned struct references the original strings without
 // copying, so no heap allocation occurs.
-func (p *preparedLRU) keyFor(hostID, keyspace, statement string) stmtCacheKey {
+func (p *preparedLRU) keyFor(hostID UUID, keyspace, statement string) stmtCacheKey {
 	return stmtCacheKey{
 		hostID:    hostID,
 		keyspace:  keyspace,

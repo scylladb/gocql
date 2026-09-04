@@ -35,10 +35,12 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	frm "github.com/gocql/gocql/internal/frame"
+	"github.com/gocql/gocql/internal/segment"
 )
 
 type unsetColumn struct{}
@@ -84,18 +86,6 @@ const (
 	// CASSGO-88 (https://issues.apache.org/jira/browse/CASSGO-88). Supporting a
 	// beta dialect would need an explicit opt-in bound to that specific dialect.
 	protoVersion5 = 0x05
-
-	maxFrameSize = 256 * 1024 * 1024
-
-	// maxSegmentPayloadSize is the largest payload a single v5 transport segment
-	// may carry (2^17 - 1). Used as a bound check when building segments.
-	maxSegmentPayloadSize = 0x1FFFF
-
-	// segmentPayloadLenMask extracts the 17-bit payload-length field from a
-	// decoded segment header. Numerically equal to maxSegmentPayloadSize, but
-	// kept separate: one is a limit, the other is a bit mask, and conflating
-	// them obscures why no explicit bound check is needed after masking.
-	segmentPayloadLenMask = 0x1FFFF
 )
 
 // DEPRECATED use Consistency type, SerialConsistency is now an alias for backwards compatibility.
@@ -290,6 +280,7 @@ type framer struct {
 	flags                 byte
 	proto                 byte
 	tabletsRoutingV1      bool
+	scyllaUseMetadataID   bool
 	released              atomic.Bool
 }
 
@@ -329,6 +320,7 @@ func newFramer(compressor Compressor, version byte) *framer {
 	f.traceID = nil
 
 	f.tabletsRoutingV1 = false
+	f.scyllaUseMetadataID = false
 
 	return f
 }
@@ -342,46 +334,6 @@ func (f *framer) Release() {
 	if f.release != nil {
 		f.release()
 	}
-}
-
-func newFramerWithExts(compressor Compressor, version byte, cqlProtoExts []cqlProtocolExtension, logger StdLogger) *framer {
-
-	f := newFramer(compressor, version)
-
-	if lwtExt := findCQLProtoExtByName(cqlProtoExts, lwtAddMetadataMarkKey); lwtExt != nil {
-		castedExt, ok := lwtExt.(*lwtAddMetadataMarkExt)
-		if !ok {
-			logger.Println(
-				fmt.Errorf("failed to cast CQL protocol extension identified by name %s to type %T",
-					lwtAddMetadataMarkKey, lwtAddMetadataMarkExt{}))
-			return f
-		}
-		f.flagLWT = castedExt.lwtOptMetaBitMask
-	}
-
-	if rateLimitErrorExt := findCQLProtoExtByName(cqlProtoExts, rateLimitError); rateLimitErrorExt != nil {
-		castedExt, ok := rateLimitErrorExt.(*rateLimitExt)
-		if !ok {
-			logger.Println(
-				fmt.Errorf("failed to cast CQL protocol extension identified by name %s to type %T",
-					rateLimitError, rateLimitExt{}))
-			return f
-		}
-		f.rateLimitingErrorCode = castedExt.rateLimitErrorCode
-	}
-
-	if tabletsExt := findCQLProtoExtByName(cqlProtoExts, tabletsRoutingV1); tabletsExt != nil {
-		_, ok := tabletsExt.(*tabletsRoutingV1Ext)
-		if !ok {
-			logger.Println(
-				fmt.Errorf("failed to cast CQL protocol extension identified by name %s to type %T",
-					tabletsRoutingV1, tabletsRoutingV1Ext{}))
-			return f
-		}
-		f.tabletsRoutingV1 = true
-	}
-
-	return f
 }
 
 type frame interface {
@@ -452,7 +404,7 @@ func (f *framer) readFrame(r io.Reader, head *frm.FrameHeader) error {
 	// callers that synthesise a header.
 	if head.Length < 0 {
 		return fmt.Errorf("frame body length can not be less than 0: %d", head.Length)
-	} else if head.Length > maxFrameSize {
+	} else if head.Length > frm.MaxFrameSize {
 		// need to free up the connection to be used again
 		_, err := io.CopyN(io.Discard, r, int64(head.Length))
 		if err != nil {
@@ -501,7 +453,7 @@ func (f *framer) readFrame(r io.Reader, head *frm.FrameHeader) error {
 // instead of reading and copying it as readFrame does. It is used for a v5 frame
 // reassembled from several transport segments (Conn.recvSplitFrame): that buffer
 // is already exactly frame-sized, so copying it would mean holding the frame twice
-// — 512 MiB for a maxFrameSize response.
+// — 512 MiB for a frm.MaxFrameSize response.
 //
 // f.readBuffer is deliberately left pointing at the pooled buffer, so releasing
 // the framer drops the adopted body instead of retaining an outsized buffer in the
@@ -726,7 +678,7 @@ func (f *framer) setLength(length int) {
 
 func (f *framer) finish() error {
 	bufLen := len(f.buf)
-	if bufLen > maxFrameSize {
+	if bufLen > frm.MaxFrameSize {
 		// huge app frame, lets remove it so it doesn't bloat the heap
 		f.buf = make([]byte, defaultBufSize)
 		return ErrFrameTooBig
@@ -1097,11 +1049,15 @@ func (f *framer) parseResultMetadata() resultMetadata {
 		meta.pagingState = f.readBytesCopy()
 	}
 
+	// The re-issue of a result metadata ID, reached from a RESULT/Rows whose
+	// EXECUTE carried an ID the server found stale. It supersedes the one
+	// RESULT/Prepared issued; see parseResultPrepared for the other half.
+	//
 	// Read after the paging state, matching Cassandra's encoder
 	// (ResultSet$ResultMetadata$Codec.encode) and the v5 spec. See
 	// TestParseResultMetadata_PagingStateBeforeNewMetadataID, which is the only
 	// test that can distinguish the two orderings.
-	if f.proto > protoVersion4 && meta.flags&frm.FlagMetaDataChanged == frm.FlagMetaDataChanged {
+	if (f.proto > protoVersion4 || f.scyllaUseMetadataID) && meta.flags&frm.FlagMetaDataChanged == frm.FlagMetaDataChanged {
 		meta.newMetadataID = f.readShortBytesCopy()
 	}
 
@@ -1218,13 +1174,35 @@ type resultPreparedFrame struct {
 	reqMeta preparedMetadata
 }
 
+// parseResultPrepared parses a RESULT/Prepared body:
+//
+//	<id>                 [short bytes]  prepared statement ID
+//	<result_metadata_id> [short bytes]  v5, or v4 with SCYLLA_USE_METADATA_ID
+//	<metadata>           bind variables and partition key indexes (request side)
+//	<result_metadata>    the columns rows will carry (response side)
+//
+// The two metadata blocks describe opposite directions and are unrelated; only
+// the second one has an ID, because only it can go stale without the driver
+// noticing.
+//
+// The ID read here is the first one for this statement, issued alongside the
+// metadata it identifies and echoed back by every later EXECUTE. A superseding
+// ID arrives by a different route — newMetadataID inside a RESULT/Rows, behind
+// METADATA_CHANGED — so that the server can repair a stale ID in the response it
+// was already sending instead of making the driver re-prepare. Both land in
+// preparedStatment.resultMetadataID.
+//
+// parseResultMetadata below is the same codec RESULT/Rows uses, as it is in
+// Cassandra (ResultSet$ResultMetadata$Codec), so it reads newMetadataID whenever
+// METADATA_CHANGED is set. Nothing sets it here: that flag says a previously
+// issued ID is stale, which cannot apply to the response issuing the first one.
 func (f *framer) parseResultPrepared() frame {
 	frame := &resultPreparedFrame{
 		FrameHeader: *f.header,
 		preparedID:  f.readShortBytesCopy(),
 	}
 
-	if f.proto > protoVersion4 {
+	if f.proto > protoVersion4 || f.scyllaUseMetadataID {
 		frame.resultMetadataID = f.readShortBytesCopy()
 	}
 
@@ -1356,6 +1334,70 @@ type queryValues struct {
 	name    string
 	value   []byte
 	isUnset bool
+}
+
+// queryValuesPools is a set of size-bucketed sync.Pools for []queryValues slices.
+// Buckets: 0→cap 8, 1→cap 16, 2→cap 32, 3→cap 64, 4→cap 128.
+// Slices larger than 128 are not pooled.
+var queryValuesPools [5]sync.Pool
+
+// queryValuesBucket returns the pool bucket index for a given count.
+// Returns -1 if the count exceeds the maximum pooled size.
+func queryValuesBucket(n int) int {
+	switch {
+	case n <= 8:
+		return 0
+	case n <= 16:
+		return 1
+	case n <= 32:
+		return 2
+	case n <= 64:
+		return 3
+	case n <= 128:
+		return 4
+	default:
+		return -1
+	}
+}
+
+// getQueryValues returns a []queryValues of length n from the pool.
+// The returned slice elements are zeroed.
+func getQueryValues(n int) []queryValues {
+	bucket := queryValuesBucket(n)
+	if bucket < 0 {
+		return make([]queryValues, n)
+	}
+	if v := queryValuesPools[bucket].Get(); v != nil {
+		s := v.([]queryValues)
+		return s[:n]
+	}
+	// Allocate with the bucket's capacity so future returns fit.
+	return make([]queryValues, n, 8<<bucket)
+}
+
+// putQueryValues returns a []queryValues slice to the pool.
+// It clears all elements to release references to marshaled byte slices.
+// Only slices originally obtained from getQueryValues are pooled;
+// slices with non-standard capacities are silently discarded.
+func putQueryValues(s []queryValues) {
+	if s == nil {
+		return
+	}
+	bucket := queryValuesBucket(cap(s))
+	if bucket < 0 || cap(s) != 8<<bucket {
+		return
+	}
+	// Clear to release references (name strings, value []byte).
+	clear(s[:cap(s)])
+	queryValuesPools[bucket].Put(s[:cap(s)])
+}
+
+// putBatchQueryValues returns all pooled []queryValues slices from batch statements.
+func putBatchQueryValues(stmts []batchStatment) {
+	for i := range stmts {
+		putQueryValues(stmts[i].values)
+		stmts[i].values = nil
+	}
 }
 
 type queryParams struct {
@@ -1577,7 +1619,7 @@ func (f *framer) writeExecuteFrame(streamID int, preparedID, resultMetadataID []
 	f.writeCustomPayload(customPayload)
 	f.writeShortBytes(preparedID)
 
-	if f.proto > protoVersion4 {
+	if f.proto > protoVersion4 || f.scyllaUseMetadataID {
 		f.writeShortBytes(resultMetadataID)
 	}
 
@@ -2099,44 +2141,49 @@ func (f *framer) prepareModernLayout() error {
 		return fmt.Errorf("gocql: modern layout is not supported with protocol version %d (requires v5+)", f.proto)
 	}
 
+	// Narrow the compressor once per frame rather than once per segment: a frame past
+	// segment.MaxPayloadSize is segmented by the loop below, and every one of those
+	// segments takes the same layout from the same compressor, which is fixed for the
+	// life of the framer.
+	//
+	// The narrowing is defensive — ClusterConfig.Validate rejects a compressor without
+	// segment support on v5 before a connection is dialed, and
+	// Conn.resolveSegmentCompressor re-checks it at the handshake — and is reported
+	// rather than ignored, because falling back to the uncompressed layout would
+	// produce segments the peer decodes with the wrong one.
+	segComp, err := asSegmentCompressor(f.compressor)
+	if err != nil {
+		return err
+	}
+
 	// Segment the frame via a local cursor rather than mutating f.buf as we go,
 	// and only swap the buffers once the whole frame has been segmented
 	// successfully, so that an error partway through leaves f.buf byte-for-byte
 	// intact.
 	src := f.buf
-	wire := f.growWireBuf(segmentedFrameSize(len(src), f.compressor != nil))
+	wire := f.growWireBuf(segment.EncodedSize(len(src), segComp != nil))
 
-	var err error
 	selfContained := true
 
 	// Process the buffer in chunks if it exceeds the max payload size
-	for len(src) > maxSegmentPayloadSize {
-		wire, err = f.appendSegment(wire, src[:maxSegmentPayloadSize], false)
+	for len(src) > segment.MaxPayloadSize {
+		wire, err = segment.Append(wire, src[:segment.MaxPayloadSize], false, segComp)
 		if err != nil {
 			return err
 		}
 
-		src = src[maxSegmentPayloadSize:]
+		src = src[segment.MaxPayloadSize:]
 		selfContained = false
 	}
 
 	// Process the remaining buffer
-	if wire, err = f.appendSegment(wire, src, selfContained); err != nil {
+	if wire, err = segment.Append(wire, src, selfContained, segComp); err != nil {
 		return err
 	}
 
 	f.wireBuf, f.buf = f.buf, wire
 
 	return nil
-}
-
-// appendSegment encodes payload as one transport segment appended to dst, in the
-// layout matching the framer's compressor.
-func (f *framer) appendSegment(dst, payload []byte, isSelfContained bool) ([]byte, error) {
-	if f.compressor != nil {
-		return appendCompressedSegment(dst, payload, isSelfContained, f.compressor)
-	}
-	return appendUncompressedSegment(dst, payload, isSelfContained)
 }
 
 // growWireBuf returns f.wireBuf emptied and with room for at least n bytes,
@@ -2146,29 +2193,4 @@ func (f *framer) growWireBuf(n int) []byte {
 		f.wireBuf = make([]byte, 0, n)
 	}
 	return f.wireBuf[:0]
-}
-
-// segmentedFrameSize returns how many bytes a rawLen-byte CQL frame occupies once
-// segmented, so the wire buffer can be sized before anything is encoded into it.
-// For the compressed layout this is an upper bound rather than the exact size:
-// compressed payloads are usually smaller, but a compressor may also return more
-// bytes than it was given, so room for one segment's worth of expansion is added.
-func segmentedFrameSize(rawLen int, compressed bool) int {
-	const (
-		// 3-byte header + CRC24 + payload CRC32.
-		uncompressedSegmentOverhead = 3 + crc24Size + crc32Size
-		// 5-byte header + CRC24 + payload CRC32.
-		compressedSegmentOverhead = 5 + crc24Size + crc32Size
-		// Room for a maximum-size payload growing under compression, matching
-		// lz4's block bound (len + len/255 + 16). A compressor that expands more
-		// than this is still handled correctly, it only makes the wire buffer grow
-		// once.
-		compressionSlack = maxSegmentPayloadSize/255 + 16
-	)
-
-	segments := rawLen/maxSegmentPayloadSize + 1
-	if compressed {
-		return rawLen + segments*compressedSegmentOverhead + compressionSlack
-	}
-	return rawLen + segments*uncompressedSegmentOverhead
 }

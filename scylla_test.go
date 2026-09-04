@@ -70,6 +70,69 @@ func TestScyllaConnPickerPickNilToken(t *testing.T) {
 	})
 }
 
+// TestScyllaConnPickerPickInt64MatchesPick verifies the raw-int64 fast path
+// PickInt64 selects exactly the same shard-aware connection as the boxed Pick.
+func TestScyllaConnPickerPickInt64MatchesPick(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name      string
+		nrShards  int
+		msbIgnore uint64
+		tokens    []int64
+	}{
+		{"four-shards", 4, 12, []int64{math.MinInt64, -123456789, 0, 123456789, math.MaxInt64}},
+		{"eight-shards", 8, 0, []int64{-100000, 42, 999999999999}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := scyllaConnPicker{nrShards: tc.nrShards, msbIgnore: tc.msbIgnore}
+			s.conns = make([]*Conn, tc.nrShards)
+			for i := range s.conns {
+				s.conns[i] = &Conn{streams: streams.New()}
+			}
+
+			for _, tok := range tc.tokens {
+				tt := int64Token(tok)
+				want := s.Pick(tt, nil)
+				got := s.PickInt64(tok, nil)
+				if got != want {
+					t.Fatalf("token %d: PickInt64=%p, want %p (Pick)", tok, got, want)
+				}
+				if shard := s.shardOf(tt); got != s.conns[shard] {
+					t.Fatalf("token %d: shard %d conn %p, got %p", tok, shard, s.conns[shard], got)
+				}
+			}
+		})
+	}
+}
+
+// TestHostConnPoolPickConnRoutesInt64TokenToShardAwarePicker is a regression
+// guard: a SelectedHost carrying an unboxed int64Token must still reach the
+// shard-aware picker. If the raw token were dropped, scyllaConnPicker would
+// fall back to leastBusyConn() and shard-aware routing would silently degrade.
+func TestHostConnPoolPickConnRoutesInt64TokenToShardAwarePicker(t *testing.T) {
+	t.Parallel()
+
+	picker := scyllaConnPicker{nrShards: 4, msbIgnore: 12, nrConns: 4}
+	picker.conns = make([]*Conn, 4)
+	for i := range picker.conns {
+		picker.conns[i] = &Conn{streams: streams.New()}
+	}
+
+	tok := int64Token(math.MinInt64)
+	shard := picker.shardOf(tok)
+	want := picker.conns[shard]
+
+	pool := &hostConnPool{connPicker: &picker}
+	host := int64SelectedHost{info: &HostInfo{}, tokenCasted: tok}
+
+	got := pool.PickConn(host, nil)
+	if got != want {
+		t.Fatalf("PickConn returned %p (least-busy fallback?); want shard-aware conn %p for shard %d",
+			got, want, shard)
+	}
+}
+
 func hammerConnPicker(t *testing.T, wg *sync.WaitGroup, s *scyllaConnPicker, loops int) {
 	t.Helper()
 	for i := 0; i < loops; i++ {
@@ -212,8 +275,7 @@ func TestScyllaRateLimitingExtParsing(t *testing.T) {
 	t.Run("init framer without cql extensions", func(t *testing.T) {
 		// mock connection without cql extensions, expected to have the `rateLimitingErrorCode`
 		// field set to 0 (default, signifying no code)
-		conn := mockConn(0)
-		f := newFramerWithExts(conn.compressor, conn.version, conn.cqlProtoExts, conn.logger)
+		f := framerForExts(nil)
 		if f.rateLimitingErrorCode != 0 {
 			t.Error("expected to have rateLimitingErrorCode set to 0 (no code) after framer init")
 		}
@@ -223,13 +285,11 @@ func TestScyllaRateLimitingExtParsing(t *testing.T) {
 	t.Run("init framer with cql extensions", func(t *testing.T) {
 		// create a mock connection, add `lwt` cql protocol extension to it,
 		// ensure that framer recognizes this extension and adjusts appropriately
-		conn := mockConn(0)
-		conn.cqlProtoExts = []cqlProtocolExtension{
+		framerWithRateLimitExt := framerForExts([]cqlProtocolExtension{
 			&rateLimitExt{
 				rateLimitErrorCode: mockCode,
 			},
-		}
-		framerWithRateLimitExt := newFramerWithExts(conn.compressor, conn.version, conn.cqlProtoExts, conn.logger)
+		})
 		if framerWithRateLimitExt.rateLimitingErrorCode != mockCode {
 			t.Error("expected to have rateLimitingErrorCode set to mockCode after framer init")
 		}
@@ -242,8 +302,7 @@ func TestScyllaLWTExtParsing(t *testing.T) {
 	t.Run("init framer without cql extensions", func(t *testing.T) {
 		// mock connection without cql extensions, expected not to have
 		// the `flagLWT` field being set in the framer created out of it
-		conn := mockConn(0)
-		f := newFramerWithExts(conn.compressor, conn.version, conn.cqlProtoExts, conn.logger)
+		f := framerForExts(nil)
 		if f.flagLWT != 0 {
 			t.Error("expected to have LWT flag uninitialized after framer init")
 		}
@@ -252,17 +311,102 @@ func TestScyllaLWTExtParsing(t *testing.T) {
 	t.Run("init framer with cql extensions", func(t *testing.T) {
 		// create a mock connection, add `lwt` cql protocol extension to it,
 		// ensure that framer recognizes this extension and adjusts appropriately
-		conn := mockConn(0)
-		conn.cqlProtoExts = []cqlProtocolExtension{
+		framerWithLwtExt := framerForExts([]cqlProtocolExtension{
 			&lwtAddMetadataMarkExt{
 				lwtOptMetaBitMask: 1,
 			},
-		}
-		framerWithLwtExt := newFramerWithExts(conn.compressor, conn.version, conn.cqlProtoExts, conn.logger)
+		})
 		if framerWithLwtExt.flagLWT == 0 {
 			t.Error("expected to have LWT flag to be set after framer init")
 		}
 	})
+}
+
+// framerForExts returns a pooled write framer from a mock Conn that negotiated
+// exts, i.e. through the same connFramers.initCache path production uses. There is
+// no standalone framer-with-extensions constructor to test against: the per-Conn
+// pool is the only place the negotiated extension list is turned into framer state.
+func framerForExts(exts []cqlProtocolExtension) *framer {
+	conn := mockConn(0)
+	conn.version = protoVersion4
+	conn.logger = &testLogger{}
+	conn.cqlProtoExts = exts
+	conn.initFramerCache()
+	return conn.getWriteFramer()
+}
+
+func TestScyllaUseMetadataIDExtParsing(t *testing.T) {
+	t.Parallel()
+
+	t.Run("newScyllaUseMetadataIDExt detects the advertised key", func(t *testing.T) {
+		if ext := newScyllaUseMetadataIDExt(map[string][]string{scyllaUseMetadataID: {}}, protoVersion4); ext == nil {
+			t.Error("expected a non-nil extension when SCYLLA_USE_METADATA_ID is advertised")
+		}
+		if ext := newScyllaUseMetadataIDExt(map[string][]string{}, protoVersion4); ext != nil {
+			t.Error("expected a nil extension when SCYLLA_USE_METADATA_ID is not advertised")
+		}
+	})
+
+	// The extension backports the v5 result metadata id to v4, and opting in changes
+	// what EXECUTE and RESULT/Prepared carry. A server advertising it says nothing
+	// about the version this connection speaks: ClusterConfig.ProtoVersion is pinned
+	// without going through discoverProtocol, and newFramer accepts v3 through v5.
+	t.Run("newScyllaUseMetadataIDExt opts in on v4 only", func(t *testing.T) {
+		advertised := map[string][]string{scyllaUseMetadataID: {}}
+		for _, version := range []byte{protoVersion3, protoVersion5} {
+			if ext := newScyllaUseMetadataIDExt(advertised, version); ext != nil {
+				t.Errorf("protocol v%d: expected a nil extension, got %+v", version, ext)
+			}
+		}
+		// The gate reads through protoVersionMask, as connFramers.initCache does with
+		// the same byte, so a version carrying the high bit still resolves to v4.
+		if ext := newScyllaUseMetadataIDExt(advertised, protoVersion4|protoDirectionMask); ext == nil {
+			t.Error("expected a non-nil extension for v4 with the direction bit set")
+		}
+	})
+
+	t.Run("name and serialize", func(t *testing.T) {
+		ext := &scyllaUseMetadataIDExt{}
+		if ext.name() != scyllaUseMetadataID {
+			t.Errorf("name() = %q, want %q", ext.name(), scyllaUseMetadataID)
+		}
+		ser := ext.serialize()
+		if v, ok := ser[scyllaUseMetadataID]; !ok || len(ser) != 1 || v != "" {
+			t.Errorf("serialize() = %v, want a single %q key mapping to \"\"", ser, scyllaUseMetadataID)
+		}
+	})
+
+	t.Run("parseCQLProtocolExtensions registers the extension only when advertised", func(t *testing.T) {
+		exts := parseCQLProtocolExtensions(map[string][]string{scyllaUseMetadataID: {}}, protoVersion4, &testLogger{})
+		if findCQLProtoExtByName(exts, scyllaUseMetadataID) == nil {
+			t.Error("expected parseCQLProtocolExtensions to register SCYLLA_USE_METADATA_ID when advertised")
+		}
+
+		extsAbsent := parseCQLProtocolExtensions(map[string][]string{}, protoVersion4, &testLogger{})
+		if findCQLProtoExtByName(extsAbsent, scyllaUseMetadataID) != nil {
+			t.Error("did not expect SCYLLA_USE_METADATA_ID to be registered when not advertised")
+		}
+	})
+
+	// The list parseCQLProtocolExtensions returns is what startupCoordinator.startup
+	// serializes into STARTUP, so keeping the extension out of it on v3 is what keeps
+	// the opt-in off the wire — the framer config follows from the same list.
+	t.Run("parseCQLProtocolExtensions leaves the extension out below v4", func(t *testing.T) {
+		advertised := map[string][]string{scyllaUseMetadataID: {}, tabletsRoutingV1: {}}
+		exts := parseCQLProtocolExtensions(advertised, protoVersion3, &testLogger{})
+		if findCQLProtoExtByName(exts, scyllaUseMetadataID) != nil {
+			t.Error("did not expect SCYLLA_USE_METADATA_ID to be registered on protocol v3")
+		}
+		// Version-independent extensions are unaffected by the gate.
+		if findCQLProtoExtByName(exts, tabletsRoutingV1) == nil {
+			t.Error("expected TABLETS_ROUTING_V1 to still be registered on protocol v3")
+		}
+	})
+
+	// The framer side of the extension is covered by conn_test.go's
+	// TestInitFramerCacheScyllaUseMetadataID and its negative counterpart, which go
+	// through the same connFramers.initCache path and additionally pin
+	// Conn.usesMetadataID against it.
 }
 
 func TestParseSupported(t *testing.T) {

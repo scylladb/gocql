@@ -43,6 +43,7 @@ import (
 	"github.com/gocql/gocql/tablets"
 
 	"github.com/gocql/gocql/internal/lru"
+	"github.com/gocql/gocql/internal/segment"
 	"github.com/gocql/gocql/internal/streams"
 )
 
@@ -154,6 +155,9 @@ type ConnConfig struct {
 	ProtoVersion    int
 	Keepalive       time.Duration
 	disableCoalesce bool
+	// isControlConn marks the connection used by the control connection, which is
+	// the only one reporting the driver configuration on startup.
+	isControlConn bool
 }
 
 func (c *ConnConfig) logger() StdLogger {
@@ -199,16 +203,26 @@ type Conn struct {
 	ctx            context.Context
 	errorHandler   ConnErrorHandler
 	compressor     Compressor
-	supported      map[string][]string
-	streams        *streams.IDGenerator
-	host           *HostInfo
+	// segCompressor is compressor narrowed to the two Append methods the v5 segment
+	// codec takes, resolved once by resolveSegmentCompressor during the handshake. The
+	// receive path would otherwise repeat that assertion for every segment it reads,
+	// for a result that cannot change: compressor is written at dial and once more by
+	// startupCoordinator.startup, and never again.
+	//
+	// Nil is the uncompressed segment layout, and is also what a pre-v5 connection
+	// leaves it as -- it never reaches the segment codec, and its compressor need not
+	// support segments at all.
+	segCompressor segment.Compressor
+	supported     map[string][]string
+	streams       *streams.IDGenerator
+	host          *HostInfo
 	// calls stores a map from stream ID to callReq.
 	// This map is protected by mu.
 	// calls should not be used when closed is true, calls is set to nil when closed=true.
 	calls map[int]*callReq
 	// segScratch holds the reusable buffers inbound v5 segments are read into.
 	// Only touched by the receive path, which runs on the serve() goroutine.
-	segScratch segmentScratch
+	segScratch segment.Scratch
 	// headerReader is the reader the current frame or segment header is read
 	// through (see readFrameHeader, readFirstSegmentHeader). Reused rather than
 	// allocated per header, and like segScratch only touched by whichever
@@ -237,17 +251,25 @@ type Conn struct {
 	//
 	// Atomic because UseKeyspace is exported: a caller invoking it on a live
 	// connection would otherwise race the request goroutines reading it.
-	currentKeyspace      atomic.Pointer[string]
-	addr                 string
-	usingTimeoutClause   string
-	cqlProtoExts         []cqlProtocolExtension
-	scyllaSupported      ScyllaConnectionFeatures
-	systemRequestTimeout time.Duration
-	writeTimeout         atomic.Int64
-	mu                   sync.Mutex
-	tabletsRoutingV1     int32
-	headerBuf            [headSize]byte
-	isShardAware         bool
+	currentKeyspace atomic.Pointer[string]
+	addr            string
+	// systemRequest carries the timeouts driver-issued system queries are sent
+	// with. See systemRequestState for why the two travel together.
+	//
+	// Atomic because finalizeConnection switches the timeout from
+	// cfg.ConnectTimeout to cfg.MetadataSchemaRequestTimeout at the very end of
+	// Session.init, by which point the control connection is already registered
+	// for server push events: a SCHEMA_CHANGE arriving inside that window makes
+	// the event-debouncer goroutine run querySystem on this connection
+	// concurrently with the write.
+	systemRequest    atomic.Pointer[systemRequestState]
+	cqlProtoExts     []cqlProtocolExtension
+	scyllaSupported  ScyllaConnectionFeatures
+	writeTimeout     atomic.Int64
+	mu               sync.Mutex
+	tabletsRoutingV1 int32
+	headerBuf        [headSize]byte
+	isShardAware     bool
 	// true if connection close process for the connection started.
 	// closed is protected by mu.
 	closed     bool
@@ -263,15 +285,58 @@ func (c *Conn) setSchemaV2(s bool) {
 	c.isSchemaV2 = s
 }
 
-func (c *Conn) setSystemRequestTimeout(t time.Duration) {
-	c.systemRequestTimeout = t
-	c.recalculateSystemRequestTimeout()
+// systemRequestState is the immutable pair of timeouts a driver-issued system
+// query is sent with: the client-side deadline, and the ScyllaDB-only
+// " USING TIMEOUT ...ms" clause pre-rendered from it (empty when the clause does
+// not apply). The two are published as one snapshot so a reader can never pair
+// one with a stale version of the other - which would ask the server to abort a
+// system query on a deadline the client is not waiting on, or vice versa.
+//
+// Field order keeps the string first so the GC scans 8 pointer bytes, not 16
+// (govet's fieldalignment).
+type systemRequestState struct {
+	usingClause string
+	timeout     time.Duration
 }
 
-func (c *Conn) recalculateSystemRequestTimeout() {
-	if c.systemRequestTimeout > time.Duration(0) && c.isScyllaConn() {
-		c.usingTimeoutClause = " USING TIMEOUT " + strconv.FormatInt(c.systemRequestTimeout.Milliseconds(), 10) + "ms"
+// systemRequestStatement returns stmt with the USING TIMEOUT clause appended and
+// the client-side timeout to send it with, both taken from one snapshot so the
+// two can never disagree. It is the only way the query paths should reach them.
+func (c *Conn) systemRequestStatement(stmt string) (string, time.Duration) {
+	state := c.getSystemRequestState()
+	return stmt + state.usingClause, state.timeout
+}
+
+// getSystemRequestState returns the current snapshot.
+func (c *Conn) getSystemRequestState() systemRequestState {
+	if state := c.systemRequest.Load(); state != nil {
+		return *state
 	}
+	return systemRequestState{}
+}
+
+// setSystemRequestTimeout publishes t together with the clause derived from it.
+// The clause is ScyllaDB-only and needs a positive timeout, so it is empty
+// otherwise - a timeout the caller disabled must not leave an older clause in
+// force.
+func (c *Conn) setSystemRequestTimeout(t time.Duration) {
+	next := systemRequestState{timeout: t}
+	if t > time.Duration(0) && c.isScyllaConn() {
+		next.usingClause = " USING TIMEOUT " + strconv.FormatInt(t.Milliseconds(), 10) + "ms"
+	}
+	c.systemRequest.Store(&next)
+}
+
+// recalculateSystemRequestTimeout re-renders the clause for the timeout already
+// in effect. It is called once the connection knows whether it talks to
+// ScyllaDB, which the clause depends on.
+//
+// It re-reads the timeout rather than naming the value its only caller knows is
+// in force (cfg.ConnectTimeout, from dialWithoutObserver): republishing whatever
+// is current cannot overwrite a timeout some later change publishes earlier in
+// startup, which would put every system query back under an unrelated setting.
+func (c *Conn) recalculateSystemRequestTimeout() {
+	c.setSystemRequestTimeout(c.getSystemRequestState().timeout)
 }
 
 func (c *Conn) finalizeConnection() {
@@ -286,12 +351,6 @@ func (c *Conn) finalizeConnection() {
 
 func (c *Conn) getScyllaSupported() ScyllaConnectionFeatures {
 	return c.scyllaSupported
-}
-
-// connect establishes a connection to a Cassandra node using session's connection config.
-// note: every connection needs to get `conn.finalizeConnection` called ont it when initialization process is done
-func (s *Session) connect(ctx context.Context, host *HostInfo, errorHandler ConnErrorHandler) (*Conn, error) {
-	return s.dial(ctx, host, s.connCfg, errorHandler)
 }
 
 // connectShard establishes a connection to a shard.
@@ -427,12 +486,12 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 			semaphore: make(chan struct{}, 1),
 			quit:      make(chan struct{}),
 		},
-		ctx:                  ctx,
-		cancel:               cancel,
-		logger:               cfg.logger(),
-		streamObserver:       s.streamObserver,
-		systemRequestTimeout: cfg.ConnectTimeout,
+		ctx:            ctx,
+		cancel:         cancel,
+		logger:         cfg.logger(),
+		streamObserver: s.streamObserver,
 	}
+	c.setSystemRequestTimeout(cfg.ConnectTimeout)
 
 	if err := c.init(ctx, dialedHost); err != nil {
 		cancel()
@@ -470,6 +529,14 @@ func (c *Conn) init(ctx context.Context, dialedHost *DialedHost) error {
 		conn:        c,
 	}
 
+	// The driver configuration is identical for every connection of a session,
+	// so it is reported only on the control connection to keep the other STARTUP
+	// frames small. Leaving the reporter nil elsewhere reuses the same path that
+	// a session with reporting disabled takes.
+	if c.cfg.isControlConn {
+		startup.driverConfigReporter = c.session.driverConfigReporter
+	}
+
 	if err := startup.setupConn(ctx); err != nil {
 		return err
 	}
@@ -503,8 +570,9 @@ func (c *Conn) Read(p []byte) (n int, err error) {
 }
 
 type startupCoordinator struct {
-	conn        *Conn
-	frameTicker chan struct{}
+	conn                 *Conn
+	frameTicker          chan struct{}
+	driverConfigReporter *driverConfigReporter
 }
 
 func (s *startupCoordinator) setupConn(ctx context.Context) error {
@@ -603,7 +671,7 @@ func (s *startupCoordinator) options(ctx context.Context, startupCompleted *atom
 	if current := s.conn.host.ScyllaFeatures(); current != s.conn.scyllaSupported.ScyllaHostFeatures {
 		s.conn.host.setScyllaFeatures(s.conn.scyllaSupported.ScyllaHostFeatures)
 	}
-	s.conn.cqlProtoExts = parseCQLProtocolExtensions(s.conn.supported, s.conn.logger)
+	s.conn.cqlProtoExts = parseCQLProtocolExtensions(s.conn.supported, s.conn.version, s.conn.logger)
 
 	// initFramerCache must be called after startup(), because startup() may
 	// nil out c.compressor if the server does not support the requested
@@ -620,22 +688,29 @@ func (s *startupCoordinator) options(ctx context.Context, startupCompleted *atom
 // startupOptions builds the STARTUP options the driver always sends.
 //
 // The application's options go in first so the driver-owned keys below can
-// overwrite them, never the other way round. They describe the driver and the
-// protocol it is speaking, and are not the application's to change: a callback
-// that set CQL_VERSION could make every connection in the cluster fail the
-// handshake, and one that set DRIVER_NAME or DRIVER_VERSION would misreport the
-// driver to the server for the life of the connection.
+// overwrite them, never the other way round. They describe the driver, the
+// protocol it is speaking and the session the connection belongs to, and are
+// not the application's to change: a callback that set CQL_VERSION could make
+// every connection in the cluster fail the handshake, one that set DRIVER_NAME
+// or DRIVER_VERSION would misreport the driver to the server for the life of
+// the connection, and one that set SESSION_ID would break correlating a
+// session's connections in system.clients.
 //
 // The ordering is easy to lose, which is how it was lost: upstream has no
 // ApplicationInfo hook and writes these three as a map literal, so merging the
 // two put the callback last.
-func startupOptions(cqlVersion, driverName, driverVersion string, info ApplicationInfo) map[string]string {
+func startupOptions(cqlVersion, driverName, driverVersion string, info ApplicationInfo, driverConfig *driverConfigReporter, sessionID string, isScyllaConn bool) map[string]string {
 	m := map[string]string{}
 
 	if info != nil {
 		info.UpdateStartupOptions(m)
 	}
 
+	if driverConfig != nil {
+		driverConfig.updateStartupOptions(m, isScyllaConn)
+	}
+
+	m[sessionIDStartupKey] = sessionID
 	m["CQL_VERSION"] = cqlVersion
 	m["DRIVER_NAME"] = driverName
 	m["DRIVER_VERSION"] = driverVersion
@@ -651,6 +726,9 @@ func (s *startupCoordinator) startup(ctx context.Context, startupCompleted *atom
 		s.conn.session.cfg.DriverName,
 		s.conn.session.cfg.DriverVersion,
 		s.conn.session.cfg.ApplicationInfo,
+		s.driverConfigReporter,
+		s.conn.session.id,
+		s.conn.isScyllaConn(),
 	)
 
 	if s.conn.compressor != nil {
@@ -666,6 +744,12 @@ func (s *startupCoordinator) startup(ctx context.Context, startupCompleted *atom
 		if _, ok := m["COMPRESSION"]; !ok {
 			s.conn.compressor = nil
 		}
+	}
+
+	// The compressor is final now. Resolve its v5 segment view here rather than in
+	// initFramerCache: the auth exchange below is already segmented, and runs first.
+	if err := s.conn.resolveSegmentCompressor(); err != nil {
+		return err
 	}
 
 	for _, ext := range s.conn.cqlProtoExts {
@@ -812,6 +896,41 @@ func (c *Conn) setTabletSupported(val bool) {
 	atomic.StoreInt32(&c.tabletsRoutingV1, intVal)
 }
 
+// usesMetadataID reports whether SCYLLA_USE_METADATA_ID was negotiated on this
+// connection. This is the extension alone; see tracksResultMetadataID for the
+// question the request path actually asks.
+//
+// It reads the framer config rather than a separate field on Conn, so the request
+// path and the pooled framers that encode and decode the result metadata ID cannot
+// disagree: a Conn that believed the extension was on while its framers did not
+// would ask the server to skip metadata while writing no ID to compare against.
+// initFramerCache populates the config during connection setup, before any query
+// can run.
+//
+// One framer is not built from that config: framerPool.get falls back to newFramer
+// when the pool is disabled, which yields scyllaUseMetadataID false regardless of
+// what was negotiated. That is correct during the handshake, and unreachable from
+// the request path afterwards — execInternal acquires its framer before addCall
+// rejects a closed connection, so a framer taken after the pool closed belongs to a
+// call that never writes a frame. It is a property of call ordering rather than of
+// construction, so see #982, which also covers flagLWT and tabletsRoutingV1.
+func (c *Conn) usesMetadataID() bool {
+	return c.framers.defaults.scyllaUseMetadataID
+}
+
+// tracksResultMetadataID reports whether an EXECUTE on this connection carries a
+// result metadata ID for the server to compare its own against — either because
+// native protocol v5 makes the field mandatory, or because
+// SCYLLA_USE_METADATA_ID backported it to v4. Either way the server answers a
+// stale ID with METADATA_CHANGED, which is what makes skipping result metadata
+// recoverable. See shouldSkipResultMetadata.
+//
+// Read from the same framer config as usesMetadataID, for the same reason, and
+// because initCache has already masked the protocol version there.
+func (c *Conn) tracksResultMetadataID() bool {
+	return c.framers.defaults.proto > protoVersion4 || c.framers.defaults.scyllaUseMetadataID
+}
+
 func (c *Conn) close() error {
 	return c.r.Close()
 }
@@ -952,7 +1071,7 @@ type frameSource struct {
 	// takes the connection down; out of a segment the short read is immediate and
 	// yields io.ErrUnexpectedEOF, which is not a net.Error, so processFrameSource
 	// keeps it per-request and leaves the connection up. A ~20-byte segment could
-	// otherwise buy a maxFrameSize allocation, repeatable for as long as the peer
+	// otherwise buy a frm.MaxFrameSize allocation, repeatable for as long as the peer
 	// cares to send them.
 	//
 	// Nil on the pre-v5 socket path, and nil for a reassembled frame, where
@@ -1233,13 +1352,13 @@ func (c *Conn) recvSegment(ctx context.Context) error {
 		return err
 	}
 
-	payload, err := readSegmentPayload(c.r, hdr, c.compressor, &c.segScratch)
+	payload, err := c.readSegmentPayload(hdr)
 	if err != nil {
 		return err
 	}
 	netEnd := c.observedNow()
 
-	if hdr.isSelfContained {
+	if hdr.IsSelfContained {
 		// The segment holds one or more complete CQL frames.
 		return c.processAllFramesInSegment(ctx, bytes.NewReader(payload), netStart, netEnd)
 	}
@@ -1330,7 +1449,7 @@ func (h *headerReader) Read(p []byte) (int, error) {
 // the stream at an unknown offset, so it stays a plain error and takes the
 // connection down rather than mis-framing everything that follows. That is the
 // timeout the re-arm above makes reachable.
-func (c *Conn) readFirstSegmentHeader() (segmentHeader, error) {
+func (c *Conn) readFirstSegmentHeader() (segment.Header, error) {
 	// No type assertion: Conn.r is a connReadSource, so the disarm always applies.
 	c.r.setDisarm(true)
 	defer c.r.setDisarm(false)
@@ -1339,15 +1458,28 @@ func (c *Conn) readFirstSegmentHeader() (segmentHeader, error) {
 	// the count only matters here, where the benign/fatal decision is made.
 	c.headerReader.reset(c.r, c.r)
 
-	hdr, err := readSegmentHeader(&c.headerReader, c.compressor)
+	hdr, err := segment.ReadHeader(&c.headerReader, c.segCompressor != nil)
 	if err != nil {
 		var netErr net.Error
 		if c.headerReader.n == 0 && errors.As(err, &netErr) && netErr.Timeout() {
-			return segmentHeader{}, fmt.Errorf("%w: %w", ErrReadHeaderTimeout, err)
+			return segment.Header{}, fmt.Errorf("%w: %w", ErrReadHeaderTimeout, err)
 		}
-		return segmentHeader{}, err
+		return segment.Header{}, err
 	}
 	return hdr, nil
+}
+
+// readSegmentPayload reads the payload of a segment whose header has already been
+// read, in the layout c.segCompressor selects — nil being the uncompressed one. The
+// narrowing behind that field happened once during the handshake; see
+// Conn.resolveSegmentCompressor.
+//
+// The header readers above take their layout from the same field. They branch on a
+// bool where this branches on the compressor being non-nil, and a connection whose two
+// answers disagreed would read an 8-byte compressed header as a 6-byte uncompressed
+// one and mis-frame everything after it.
+func (c *Conn) readSegmentPayload(hdr segment.Header) ([]byte, error) {
+	return segment.ReadPayload(c.r, hdr, c.segCompressor, &c.segScratch)
 }
 
 // recvSplitFrame reassembles a single CQL frame that the peer split across
@@ -1360,11 +1492,11 @@ func (c *Conn) readFirstSegmentHeader() (segmentHeader, error) {
 // reassembly buffer is allocated exactly once, sized to the frame length the peer
 // declared in the CQL frame header, and appending the arriving payloads is bounded
 // by that length. So neither a lying header nor incremental growth can inflate it:
-// growing a buffer to a maxFrameSize frame would end up holding ~512 MiB for a
+// growing a buffer to a frm.MaxFrameSize frame would end up holding ~512 MiB for a
 // valid 256 MiB response. Ownership of the buffer is then handed to the read
 // framer rather than copied into it, so the frame is never resident twice.
 //
-// The declared length itself is the peer's to choose, up to maxFrameSize, so a
+// The declared length itself is the peer's to choose, up to frm.MaxFrameSize, so a
 // small hostile prologue still buys this one allocation before any body byte has
 // arrived. Accepted deliberately, because it is bounded: at most once per
 // connection — the continuation reads run under ReadTimeout, so a peer that
@@ -1404,7 +1536,7 @@ func (c *Conn) recvSplitFrame(ctx context.Context, first []byte, netStart, netEn
 	if err != nil {
 		return err
 	}
-	if head.Length < 0 || head.Length > maxFrameSize {
+	if head.Length < 0 || head.Length > frm.MaxFrameSize {
 		return fmt.Errorf("gocql: invalid frame body length in segmented frame: %d", head.Length)
 	}
 	total := headSize + head.Length
@@ -1445,14 +1577,14 @@ func (c *Conn) recvSplitFrame(ctx context.Context, first []byte, netStart, netEn
 // payload), is rejected so a hostile peer cannot drive an infinite reassembly
 // loop.
 func (c *Conn) readContinuationSegment() ([]byte, error) {
-	hdr, err := readSegmentHeader(c.r, c.compressor)
+	hdr, err := segment.ReadHeader(c.r, c.segCompressor != nil)
 	if err != nil {
 		return nil, fmt.Errorf("gocql: failed to read continuation segment header: %w", err)
 	}
-	if hdr.isSelfContained {
+	if hdr.IsSelfContained {
 		return nil, fmt.Errorf("gocql: received self-contained segment, but expected a continuation")
 	}
-	payload, err := readSegmentPayload(c.r, hdr, c.compressor, &c.segScratch)
+	payload, err := c.readSegmentPayload(hdr)
 	if err != nil {
 		return nil, fmt.Errorf("gocql: failed to read continuation segment payload: %w", err)
 	}
@@ -2244,7 +2376,7 @@ type inflightPrepare struct {
 }
 
 func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer, keyspace string, requestTimeout time.Duration) (*preparedStatment, error) {
-	cacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), keyspace, stmt)
+	cacheKey := c.session.stmtsLRU.keyFor(c.host.hostUUID(), keyspace, stmt)
 	flight, ok := c.session.stmtsLRU.execIfMissing(cacheKey, func(cache *lru.Cache[stmtCacheKey]) *inflightPrepare {
 		flight := &inflightPrepare{
 			done: make(chan struct{}),
@@ -2338,6 +2470,61 @@ func marshalQueryValue(typ TypeInfo, value any, dst *queryValues) error {
 	return nil
 }
 
+// shouldSkipResultMetadata reports whether an EXECUTE request should ask the
+// server to skip result metadata in its RESULT/Rows response.
+//
+// A per-query NoSkipMetadata() (queryDisableSkipMetadata) always forces metadata.
+//
+// hasColumns is not only an optimization. A statement whose RESULT/Prepared
+// response carries no result metadata cannot have its metadata reused, and on
+// current ScyllaDB asking to skip it is unrecoverable: such a statement is handed
+// an ID hashed from empty metadata, the server compares the returned ID against
+// that same empty-metadata ID, always matches, and so never sets
+// METADATA_CHANGED — leaving the driver with a response it has no columns to
+// decode. LIST ROLES OF is the motivating case. The server-side fixes for this
+// (scylladb/scylladb#29233, scylladb/scylladb#29275) are both closed unmerged, so
+// this gate is load-bearing, not cosmetic. The Scylla python-driver and
+// java-driver check the same thing, java-driver first of all.
+//
+// idTracked means the response carries a result metadata ID mechanism the driver
+// can rely on: the connection speaks a protocol that exchanges result metadata
+// IDs *and* the prepared statement holds a non-empty one. Both halves matter — the
+// ID exchange is what makes the server report staleness with METADATA_CHANGED, and
+// an ID is what it has to compare against. With both in hand skipping is safe, so
+// the session-level DisableSkipMetadata is deliberately overridden, including when
+// it was set explicitly. That flag is itself a workaround for the invalidation bug
+// this mechanism fixes (https://github.com/scylladb/scylladb/issues/20860), and
+// upstream gocql skips by default on every protocol version.
+//
+// This follows scylladb/scylla-drivers#81: skipping is the safe default "if
+// SCYLLA_USE_METADATA_ID was negotiated or CQL v5 is used". The Scylla java-driver
+// reaches the same rule from the other direction — DefaultPreparedStatement's
+// resolveSkipMetadata returns true for any non-empty result metadata ID, which
+// native v5 always supplies. The Scylla python-driver implements the extension half
+// only, deliberately leaving native v5 alone.
+//
+// A statement prepared before the ID exchange was available has no ID. The prepared
+// cache is keyed by host and survives reconnects, so that is reachable during a
+// rolling upgrade. Such a statement asks for metadata for one more round trip: the
+// empty ID it sends is treated as a mismatch, the server answers METADATA_CHANGED
+// with a fresh ID, and later executions skip. Gating here means there is never a
+// window where the driver skips metadata it cannot recover.
+func shouldSkipResultMetadata(sessionDisableSkipMetadata, queryDisableSkipMetadata, idTracked, hasColumns bool) bool {
+	disableSkipMeta := queryDisableSkipMetadata || (!idTracked && sessionDisableSkipMetadata)
+	return !disableSkipMeta && hasColumns
+}
+
+// metadataIDTracked reports whether an EXECUTE for this prepared statement can rely
+// on the server to report result-metadata changes, which is what makes skipping
+// metadata safe. Both conditions are required: the connection must exchange result
+// metadata IDs at all (Conn.tracksResultMetadataID — native v5 or the
+// SCYLLA_USE_METADATA_ID extension), and the statement must carry a non-empty
+// result metadata ID for the server to compare its own against. See
+// shouldSkipResultMetadata.
+func metadataIDTracked(idExchangeActive bool, resultMetadataID []byte) bool {
+	return idExchangeActive && len(resultMetadataID) > 0
+}
+
 func (c *Conn) executeQuery(ctx context.Context, qry *Query) (iter *Iter) {
 	return c.executeQueryWithMetrics(ctx, qry, qry.metrics)
 }
@@ -2411,24 +2598,29 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 			return &Iter{err: fmt.Errorf("gocql: expected %d values send got %d", info.request.actualColCount, len(values))}
 		}
 
-		params.values = make([]queryValues, len(values))
+		params.values = getQueryValues(len(values))
 		for i := 0; i < len(values); i++ {
 			v := &params.values[i]
 			value := values[i]
 			typ := info.request.columns[i].TypeInfo
 			if err := marshalQueryValue(typ, value, v); err != nil {
+				putQueryValues(params.values)
 				return &Iter{err: err}
 			}
 		}
 
-		// if the metadata was not present in the response then we should not skip it
-		params.skipMeta = !(c.session.cfg.DisableSkipMetadata || qry.disableSkipMetadata) && len(info.response.columns) != 0
+		params.skipMeta = shouldSkipResultMetadata(
+			c.session.cfg.DisableSkipMetadata,
+			qry.disableSkipMetadata,
+			metadataIDTracked(c.tracksResultMetadataID(), info.resultMetadataID),
+			len(info.response.columns) != 0,
+		)
 
 		frame = &writeExecuteFrame{
 			preparedID:       info.id,
+			resultMetadataID: info.resultMetadataID,
 			params:           params,
 			customPayload:    qry.customPayload,
-			resultMetadataID: info.resultMetadataID,
 		}
 
 		// Set "lwt", keyspace", "table" property in the query if it is present in preparedMetadata
@@ -2452,6 +2644,9 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 	}
 
 	framer, err := c.exec(ctx, frame, qry.trace, qry.GetRequestTimeout())
+	// Return pooled values; consumed by buildFrame at the start of c.exec().
+	// Returned after round-trip (not right after serialization) for simplicity.
+	putQueryValues(params.values)
 	if err != nil {
 		return &Iter{err: err}
 	}
@@ -2493,11 +2688,34 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 			).bindWarningHandlerWithMetrics(qry, metrics, warningHandler)
 		}
 
+		if x.meta.newMetadataID != nil && x.meta.noMetaData() {
+			// METADATA_CHANGED obliges the server to include the new metadata, so this
+			// response is malformed, and there are two wrong ways to continue.
+			//
+			// Adopting the new ID while keeping the old columns is unrecoverable: the
+			// server would match the ID from then on and stop sending metadata, leaving
+			// the driver decoding rows against stale columns indefinitely. The
+			// python-driver guards that the same way.
+			//
+			// Decoding *this* response against the cached columns is no better. The
+			// server has just declared them stale, and the noMetaData() branch below
+			// would reuse them anyway — which is precisely the misdecode this whole
+			// mechanism exists to prevent (scylladb/scylladb#20860).
+			//
+			// So do neither. Fail the query with the old ID still cached: a retry
+			// resends it, the server reports the mismatch again, and it has another
+			// chance to answer with the metadata it owes.
+			return newErrorIterWithReleasedFramer(
+				fmt.Errorf("gocql: server reported changed result metadata for %q but sent no column metadata", qry.stmt),
+				framer,
+			).bindWarningHandlerWithMetrics(qry, metrics, warningHandler)
+		}
+
 		if x.meta.newMetadataID != nil {
 			// If a RESULT/Rows message reports changed resultset metadata with the
 			// Metadata_changed flag, the reported new resultset metadata must be used
 			// in subsequent executions.
-			cacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), usedKeyspace, qry.stmt)
+			cacheKey := c.session.stmtsLRU.keyFor(c.host.hostUUID(), usedKeyspace, qry.stmt)
 			// Use the already-completed local `info` rather than dereferencing the
 			// cached inflight entry's preparedStatment field. `info` comes from the
 			// prepareStatement call above and is guaranteed complete.
@@ -2509,6 +2727,12 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 			// entry while it is still the exact prepared statement `info` points to
 			// (pointer identity, not id bytes), so a same-id reprepare of a newer
 			// generation is left untouched.
+			//
+			// `response` caches this whole resultMetadata, so it keeps this response's
+			// flags (METADATA_CHANGED, possibly HasMorePages) and pagingState alongside
+			// the columns. Only the columns are reused: the code below reads
+			// morePages()/noMetaData() off the live x.meta, and overwrites
+			// iter.meta.pagingState from it.
 			if info != nil {
 				newInflight := &inflightPrepare{
 					done: make(chan struct{}),
@@ -2567,7 +2791,7 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 		// is not consistent with regards to its schema.
 		return iter
 	case *RequestErrUnprepared:
-		stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), usedKeyspace, qry.stmt)
+		stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.hostUUID(), usedKeyspace, qry.stmt)
 		c.session.stmtsLRU.evictPreparedID(stmtCacheKey, x.StatementId)
 		framer.Release()
 		return c.executeQueryWithMetrics(ctx, qry, metrics)
@@ -2692,6 +2916,7 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 		if len(entry.Args) > 0 || entry.binding != nil {
 			info, err := c.prepareStatement(batch.Context(), entry.Stmt, batch.trace, usedKeyspace, batch.GetRequestTimeout())
 			if err != nil {
+				putBatchQueryValues(req.statements)
 				return &Iter{err: err}
 			}
 
@@ -2706,24 +2931,27 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 					PKeyColumns: info.request.pkeyColumns,
 				})
 				if err != nil {
+					putBatchQueryValues(req.statements)
 					return &Iter{err: err}
 				}
 			}
 
 			if len(values) != info.request.actualColCount {
+				putBatchQueryValues(req.statements)
 				return &Iter{err: fmt.Errorf("gocql: batch statement %d expected %d values send got %d", i, info.request.actualColCount, len(values))}
 			}
 
 			b.preparedID = info.id
 			stmts[string(info.id)] = entry.Stmt
 
-			b.values = make([]queryValues, info.request.actualColCount)
+			b.values = getQueryValues(info.request.actualColCount)
 
 			for j := 0; j < info.request.actualColCount; j++ {
 				v := &b.values[j]
 				value := values[j]
 				typ := info.request.columns[j].TypeInfo
 				if err := marshalQueryValue(typ, value, v); err != nil {
+					putBatchQueryValues(req.statements)
 					return &Iter{err: err}
 				}
 			}
@@ -2744,6 +2972,9 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 
 	// TODO: should batch support tracing?
 	framer, err := c.exec(batch.Context(), req, batch.trace, batch.GetRequestTimeout())
+	// Return pooled values; consumed by buildFrame at the start of c.exec().
+	// Returned after round-trip (not right after serialization) for simplicity.
+	putBatchQueryValues(req.statements)
 	if err != nil {
 		return &Iter{err: err}
 	}
@@ -2767,7 +2998,7 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 	case *RequestErrUnprepared:
 		stmt, found := stmts[string(x.StatementId)]
 		if found {
-			key := c.session.stmtsLRU.keyFor(c.host.HostID(), usedKeyspace, stmt)
+			key := c.session.stmtsLRU.keyFor(c.host.hostUUID(), usedKeyspace, stmt)
 			c.session.stmtsLRU.evictPreparedID(key, x.StatementId)
 		}
 		framer.Release()
@@ -2788,12 +3019,13 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 }
 
 func (c *Conn) querySystem(ctx context.Context, query string, values ...any) *Iter {
-	q := c.session.Query(query+c.usingTimeoutClause, values...).Consistency(One).Trace(nil)
+	stmt, timeout := c.systemRequestStatement(query)
+	q := c.session.Query(stmt, values...).Consistency(One).Trace(nil)
 	q.skipPrepare = true
 	q.disableSkipMetadata = true
 	// we want to keep the query on this connection
 	q.conn = c
-	q.SetRequestTimeout(c.systemRequestTimeout)
+	q.SetRequestTimeout(timeout)
 	return c.executeQuery(ctx, q)
 }
 
@@ -2803,7 +3035,7 @@ const qrySystemPeersV2 = "SELECT peer, data_center, host_id, native_address, nat
 
 const qrySystemLocal = "SELECT broadcast_address, cluster_name, data_center, host_id, listen_address, partitioner, rack, release_version, rpc_address, schema_version, tokens FROM system.local WHERE key='local'"
 
-func getSchemaAgreement(queryLocalSchemasRows []string, querySystemPeersRows []schemaAgreementHost, logger StdLogger) (err error) {
+func getSchemaAgreement(localSchemaVersion string, querySystemPeersRows []schemaAgreementHost, logger StdLogger) error {
 	versions := make(map[string]struct{})
 
 	for _, row := range querySystemPeersRows {
@@ -2814,9 +3046,8 @@ func getSchemaAgreement(queryLocalSchemasRows []string, querySystemPeersRows []s
 		versions[row.SchemaVersion.String()] = struct{}{}
 	}
 
-	for _, schemaVersion := range queryLocalSchemasRows {
-		versions[schemaVersion] = struct{}{}
-		schemaVersion = ""
+	if localSchemaVersion != "" {
+		versions[localSchemaVersion] = struct{}{}
 	}
 
 	if len(versions) > 1 {
@@ -2845,64 +3076,91 @@ func (h *schemaAgreementHost) IsValid() bool {
 
 func (c *Conn) awaitSchemaAgreement(ctx context.Context) error {
 	endDeadline := time.Now().Add(c.session.cfg.MaxWaitSchemaAgreement)
+	deadlineCtx, cancelDeadline := context.WithDeadline(ctx, endDeadline)
+	defer cancelDeadline()
 
-	var err error
-	ticker := time.NewTicker(200 * time.Millisecond) // Create a ticker that ticks every 200ms
+	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
 
-	waitForNextTick := func() error {
+	var lastErr error
+	for time.Now().Before(endDeadline) {
+		queryCtx, cancel := context.WithCancel(deadlineCtx)
+
+		var (
+			hosts              []schemaAgreementHost
+			localSchemaVersion string
+			wg                 sync.WaitGroup
+			errMu              sync.Mutex
+			firstErr           error
+		)
+
+		recordErr := func(err error) {
+			if err == nil {
+				return
+			}
+			errMu.Lock()
+			defer errMu.Unlock()
+			if firstErr == nil {
+				firstErr = err
+				cancel()
+			}
+		}
+
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			var query string
+			if c.getIsSchemaV2() {
+				query = "SELECT host_id, data_center, rack, schema_version, preferred_ip FROM system.peers_v2"
+			} else {
+				query = "SELECT host_id, data_center, rack, schema_version, rpc_address FROM system.peers"
+			}
+			iter := c.querySystem(queryCtx, query)
+			var tmp schemaAgreementHost
+			for iter.Scan(&tmp.HostID, &tmp.DataCenter, &tmp.Rack, &tmp.SchemaVersion, &tmp.RPCAddress) {
+				hosts = append(hosts, tmp)
+			}
+			recordErr(iter.Close())
+		}()
+		go func() {
+			defer wg.Done()
+			iter := c.querySystem(queryCtx, "SELECT schema_version FROM system.local WHERE key='local'")
+			for iter.Scan(&localSchemaVersion) {
+			}
+			recordErr(iter.Close())
+		}()
+		wg.Wait()
+		cancel()
+
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if firstErr != nil {
+			if deadlineCtx.Err() != nil {
+				// The internal per-round context hit endDeadline rather than a real
+				// query failure; preserve it as lastErr and let the loop condition
+				// above exit naturally instead of surfacing a raw deadline error.
+				lastErr = firstErr
+				break
+			}
+			return firstErr
+		}
+
+		if err := getSchemaAgreement(localSchemaVersion, hosts, c.logger); err == ErrConnectionClosed || err == nil {
+			return err
+		} else {
+			lastErr = err
+		}
+
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-deadlineCtx.Done():
 		case <-ticker.C:
-			return nil
 		}
 	}
 
-	for time.Now().Before(endDeadline) {
-		var iter *Iter
-		if c.getIsSchemaV2() {
-			iter = c.querySystem(ctx, "SELECT host_id, data_center, rack, schema_version, preferred_ip FROM system.peers_v2")
-		} else {
-			iter = c.querySystem(ctx, "SELECT host_id, data_center, rack, schema_version, rpc_address FROM system.peers")
-		}
-		// Scan order: host_id, data_center, rack, schema_version, rpc_address/preferred_ip
-		var hosts []schemaAgreementHost
-		var tmp schemaAgreementHost
-		for iter.Scan(&tmp.HostID, &tmp.DataCenter, &tmp.Rack, &tmp.SchemaVersion, &tmp.RPCAddress) {
-			hosts = append(hosts, tmp)
-		}
-		err = iter.Close()
-		if err != nil {
-			return err
-		}
-
-		schemaVersions := []string{}
-
-		iter = c.querySystem(ctx, "SELECT schema_version FROM system.local WHERE key='local'")
-
-		var schemaVersion string
-		for iter.Scan(&schemaVersion) {
-			schemaVersions = append(schemaVersions, schemaVersion)
-			schemaVersion = ""
-		}
-
-		if err = iter.Close(); err != nil {
-			return err
-		}
-
-		err = getSchemaAgreement(schemaVersions, hosts, c.logger)
-
-		if err == ErrConnectionClosed || err == nil {
-			return err
-		}
-
-		if tickerErr := waitForNextTick(); tickerErr != nil {
-			return tickerErr
-		}
-	}
-
-	return err
+	return lastErr
 }
 
 var (

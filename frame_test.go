@@ -41,6 +41,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	frm "github.com/gocql/gocql/internal/frame"
+	"github.com/gocql/gocql/internal/segment"
 )
 
 func TestFuzzBugs(t *testing.T) {
@@ -104,7 +105,7 @@ func TestFrameWriteTooLong(t *testing.T) {
 	framer := newFramer(nil, 3)
 
 	framer.writeHeader(0, frm.OpStartup, 1)
-	framer.writeBytes(make([]byte, maxFrameSize+1))
+	framer.writeBytes(make([]byte, frm.MaxFrameSize+1))
 	err := framer.finish()
 	if err != ErrFrameTooBig {
 		t.Fatalf("expected to get %v got %v", ErrFrameTooBig, err)
@@ -119,7 +120,7 @@ func TestFrameReadTooLong(t *testing.T) {
 	}
 
 	r := &bytes.Buffer{}
-	r.Write(make([]byte, maxFrameSize+1))
+	r.Write(make([]byte, frm.MaxFrameSize+1))
 	// write a new header right after this frame to verify that we can read it
 	r.Write([]byte{0x03, 0x00, 0x00, 0x00, byte(frm.OpReady), 0x00, 0x00, 0x00, 0x00})
 
@@ -192,7 +193,7 @@ func TestReadFrameDiscardErrorKeepsNetError(t *testing.T) {
 	t.Parallel()
 
 	f := newFramer(nil, protoVersion4)
-	head := frm.FrameHeader{Version: protoVersion4 | protoDirectionMask, Op: frm.OpReady, Length: maxFrameSize + 1}
+	head := frm.FrameHeader{Version: protoVersion4 | protoDirectionMask, Op: frm.OpReady, Length: frm.MaxFrameSize + 1}
 
 	err := f.readFrame(errReader{timeoutErr{}}, &head)
 	require.Error(t, err)
@@ -248,6 +249,12 @@ func (e errReader) Read([]byte) (int, error) { return 0, e.err }
 // Note the differing wire types: paging state is [bytes] (4-byte length) and the
 // metadata id is [short bytes] (2-byte length), so swapping the two reads
 // desynchronises the rest of the block rather than merely exchanging the values.
+//
+// Run for both ways the field can be on the wire: native v5, and v4 with
+// SCYLLA_USE_METADATA_ID negotiated. The extension reuses this parser, so the v4
+// case is the only unit coverage of the read side of METADATA_CHANGED on v4 —
+// otherwise it rests entirely on an integration test that skips unless a capable
+// server is present.
 func TestParseResultMetadata_PagingStateBeforeNewMetadataID(t *testing.T) {
 	t.Parallel()
 
@@ -258,31 +265,45 @@ func TestParseResultMetadata_PagingStateBeforeNewMetadataID(t *testing.T) {
 	pagingState := []byte{0xDE, 0xAD, 0xBE, 0xEF, 0x01}
 	newMetadataID := []byte{0xAA, 0xBB, 0xCC}
 
-	fr := newFramer(nil, protoVersion5)
-	fr.header = &frm.FrameHeader{Version: protoVersion5}
+	for _, tc := range []struct {
+		name      string
+		proto     byte
+		extension bool
+	}{
+		{name: "native v5", proto: protoVersion5},
+		{name: "v4 with SCYLLA_USE_METADATA_ID", proto: protoVersion4, extension: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	fr.writeInt(int32(frm.FlagGlobalTableSpec | frm.FlagHasMorePages | frm.FlagMetaDataChanged))
-	fr.writeInt(1) // colCount
-	fr.writeBytes(pagingState)
-	fr.writeShortBytes(newMetadataID)
-	fr.writeString(keyspace)
-	fr.writeString(table)
-	fr.writeString("col_a")
-	fr.writeShort(uint16(TypeInt))
+			fr := newFramer(nil, tc.proto)
+			fr.header = &frm.FrameHeader{Version: frm.ProtoVersion(tc.proto)}
+			fr.scyllaUseMetadataID = tc.extension
 
-	meta := fr.parseResultMetadata()
+			fr.writeInt(int32(frm.FlagGlobalTableSpec | frm.FlagHasMorePages | frm.FlagMetaDataChanged))
+			fr.writeInt(1) // colCount
+			fr.writeBytes(pagingState)
+			fr.writeShortBytes(newMetadataID)
+			fr.writeString(keyspace)
+			fr.writeString(table)
+			fr.writeString("col_a")
+			fr.writeShort(uint16(TypeInt))
 
-	assertDeepEqual(t, "pagingState", pagingState, meta.pagingState)
-	assertDeepEqual(t, "newMetadataID", newMetadataID, meta.newMetadataID)
+			meta := fr.parseResultMetadata()
 
-	// The column spec must still be readable, which is what actually proves the
-	// two optional fields were consumed in the right order and with the right
-	// wire types.
-	require.Len(t, meta.columns, 1)
-	require.Equal(t, keyspace, meta.columns[0].Keyspace)
-	require.Equal(t, table, meta.columns[0].Table)
-	require.Equal(t, "col_a", meta.columns[0].Name)
-	require.Empty(t, fr.buf, "whole metadata block should be consumed")
+			assertDeepEqual(t, "pagingState", pagingState, meta.pagingState)
+			assertDeepEqual(t, "newMetadataID", newMetadataID, meta.newMetadataID)
+
+			// The column spec must still be readable, which is what actually proves the
+			// two optional fields were consumed in the right order and with the right
+			// wire types.
+			require.Len(t, meta.columns, 1)
+			require.Equal(t, keyspace, meta.columns[0].Keyspace)
+			require.Equal(t, table, meta.columns[0].Table)
+			require.Equal(t, "col_a", meta.columns[0].Name)
+			require.Empty(t, fr.buf, "whole metadata block should be consumed")
+		})
+	}
 }
 
 // TestParseResultMetadata_NewMetadataIDIgnoredBelowV5 pins that the
@@ -502,45 +523,137 @@ func TestParsePreparedMetadataAcceptsValidPkeyCount(t *testing.T) {
 	})
 }
 
+// TestParseResultPreparedTruncatedResultMetadataID verifies that a malformed
+// RESULT/Prepared frame whose resultMetadataID short-bytes length runs past the
+// frame body is reported as an error, not a serve-goroutine panic. The extension
+// makes this field live on protocol v4, and readShortBytesCopy panics with a
+// plain error on a short buffer; parseFrame's recover must convert it to a
+// returned error.
+func TestParseResultPreparedTruncatedResultMetadataID(t *testing.T) {
+	t.Parallel()
+
+	fr := newFramer(nil, protoVersion4)
+	// Response direction bit set so parseFrame does not reject it as a request.
+	fr.header = &frm.FrameHeader{Version: protoVersion4 | 0x80, Op: frm.OpResult}
+	fr.scyllaUseMetadataID = true
+
+	fr.writeInt(frm.ResultKindPrepared)
+	fr.writeShortBytes([]byte{0x01, 0x02, 0x03}) // preparedID
+	// resultMetadataID: claim 10 bytes but supply none.
+	fr.writeShort(10)
+
+	frame, err := fr.parseFrame()
+	if err == nil {
+		t.Fatalf("expected an error for a truncated resultMetadataID, got frame %+v", frame)
+	}
+	if frame != nil {
+		t.Errorf("expected nil frame on error, got %+v", frame)
+	}
+}
+
 func Test_framer_writeExecuteFrame(t *testing.T) {
-	framer := newFramer(nil, protoVersion5)
-	nowInSeconds := 123
-	frame := writeExecuteFrame{
-		preparedID:       []byte{1, 2, 3},
-		resultMetadataID: []byte{4, 5, 6},
-		customPayload: map[string][]byte{
-			"key1": []byte("value1"),
+	tests := []struct {
+		name                 string
+		protoVersion         byte
+		scyllaUseMetadataID  bool
+		resultMetadataID     []byte
+		wantResultMetadataID []byte
+	}{
+		{
+			name:                "protoVersion4 with ScyllaUseMetadataID false",
+			protoVersion:        protoVersion4,
+			scyllaUseMetadataID: false,
+			resultMetadataID:    []byte{},
+			// resultMetadataID is not written on v4 without the extension, so it is not read back.
 		},
-		params: queryParams{
-			nowInSeconds: &nowInSeconds,
-			keyspace:     "test_keyspace",
+		{
+			name:                 "protoVersion4 with ScyllaUseMetadataID true",
+			protoVersion:         protoVersion4,
+			scyllaUseMetadataID:  true,
+			resultMetadataID:     []byte{4, 5, 6},
+			wantResultMetadataID: []byte{4, 5, 6},
+		},
+		{
+			name:                "protoVersion4 with ScyllaUseMetadataID true & nil resultMetadataID",
+			protoVersion:        protoVersion4,
+			scyllaUseMetadataID: true,
+			// A resultPreparedFrame with a nil resultMetadataID (e.g. copyBytes(nil))
+			// must serialize to a zero-length short bytes and read back as []byte{}.
+			resultMetadataID:     nil,
+			wantResultMetadataID: []byte{},
+		},
+		{
+			name:                 "protoVersion5 with resultMetadataID support",
+			protoVersion:         protoVersion5,
+			scyllaUseMetadataID:  false,
+			resultMetadataID:     []byte{4, 5, 6},
+			wantResultMetadataID: []byte{4, 5, 6},
 		},
 	}
 
-	err := framer.writeExecuteFrame(123, frame.preparedID, frame.resultMetadataID, &frame.params, &frame.customPayload)
-	if err != nil {
-		t.Fatal(err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			framer := newFramer(nil, tt.protoVersion)
+			if tt.scyllaUseMetadataID {
+				framer.scyllaUseMetadataID = true
+			}
+
+			nowInSeconds := 123
+			// A non-zero consistency, so reading it back is an assertion that can
+			// actually fail: with the zero value on both sides a misaligned read of
+			// Consistency(ANY) would still compare equal.
+			params := queryParams{consistency: Quorum}
+			if tt.protoVersion >= protoVersion5 {
+				params.nowInSeconds = &nowInSeconds
+				params.keyspace = "test_keyspace"
+			}
+			frame := writeExecuteFrame{
+				preparedID:       []byte{1, 2, 3},
+				resultMetadataID: tt.resultMetadataID,
+				customPayload: map[string][]byte{
+					"key1": []byte("value1"),
+				},
+				params: params,
+			}
+
+			err := framer.writeExecuteFrame(123, frame.preparedID, frame.resultMetadataID, &frame.params, &frame.customPayload)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// skipping header
+			framer.buf = framer.buf[9:]
+
+			assertDeepEqual(t, "customPayload", frame.customPayload, framer.readBytesMap())
+			assertDeepEqual(t, "preparedID", frame.preparedID, framer.readShortBytesCopy())
+
+			if tt.protoVersion >= protoVersion5 || tt.scyllaUseMetadataID {
+				assertDeepEqual(t, "resultMetadataID", tt.wantResultMetadataID, framer.readShortBytesCopy())
+			}
+
+			assertDeepEqual(t, "constistency", frame.params.consistency, Consistency(framer.readShort()))
+
+			if tt.protoVersion >= protoVersion5 {
+				flags := framer.readInt()
+				if flags&int(frm.FlagWithNowInSeconds) != int(frm.FlagWithNowInSeconds) {
+					t.Fatal("expected flagNowInSeconds to be set, but it is not")
+				}
+
+				if flags&int(frm.FlagWithKeyspace) != int(frm.FlagWithKeyspace) {
+					t.Fatal("expected flagWithKeyspace to be set, but it is not")
+				}
+				assertDeepEqual(t, "keyspace", frame.params.keyspace, framer.readString())
+				assertDeepEqual(t, "nowInSeconds", nowInSeconds, framer.readInt())
+			} else {
+				// Below v5 the query flags are a single byte, and nothing follows them
+				// here. Consuming them and requiring the buffer to be empty turns this
+				// into a check that every preceding field was read at exactly the length
+				// it was written — in particular the resultMetadataID short bytes.
+				require.Zero(t, framer.readByte(), "no query flags expected")
+				require.Empty(t, framer.buf, "whole EXECUTE body should be consumed")
+			}
+		})
 	}
-
-	// skipping header
-	framer.buf = framer.buf[9:]
-
-	assertDeepEqual(t, "customPayload", frame.customPayload, framer.readBytesMap())
-	assertDeepEqual(t, "preparedID", frame.preparedID, framer.readShortBytesCopy())
-	assertDeepEqual(t, "resultMetadataID", frame.resultMetadataID, framer.readShortBytesCopy())
-	assertDeepEqual(t, "constistency", frame.params.consistency, Consistency(framer.readShort()))
-
-	flags := framer.readInt()
-	if flags&int(frm.FlagWithNowInSeconds) != int(frm.FlagWithNowInSeconds) {
-		t.Fatal("expected flagNowInSeconds to be set, but it is not")
-	}
-
-	if flags&int(frm.FlagWithKeyspace) != int(frm.FlagWithKeyspace) {
-		t.Fatal("expected flagWithKeyspace to be set, but it is not")
-	}
-
-	assertDeepEqual(t, "keyspace", frame.params.keyspace, framer.readString())
-	assertDeepEqual(t, "nowInSeconds", nowInSeconds, framer.readInt())
 }
 
 func Test_framer_writeBatchFrame(t *testing.T) {
@@ -1185,10 +1298,10 @@ func (c *failingCompressor) Decode(data []byte) ([]byte, error) {
 func TestPrepareModernLayoutLeavesBufIntactOnError(t *testing.T) {
 	t.Parallel()
 
-	// A payload spanning more than one maxSegmentPayloadSize chunk forces the
+	// A payload spanning more than one segment.MaxPayloadSize chunk forces the
 	// chunk loop to run, so failing on the second AppendCompressed call fails
 	// after the first chunk has already been appended to the local buffer.
-	original := bytes.Repeat([]byte{0xAB}, maxSegmentPayloadSize+100)
+	original := bytes.Repeat([]byte{0xAB}, segment.MaxPayloadSize+100)
 
 	f := newFramer(&failingCompressor{failAt: 2}, protoVersion5)
 	f.buf = append([]byte(nil), original...)
@@ -1224,20 +1337,20 @@ func TestPrepareModernLayoutRejectsPreV5ProtocolWithError(t *testing.T) {
 func TestPrepareModernLayoutSuccessUnchanged(t *testing.T) {
 	t.Parallel()
 
-	for _, size := range []int{1, maxSegmentPayloadSize - 1, maxSegmentPayloadSize, maxSegmentPayloadSize + 1, 2*maxSegmentPayloadSize + 7} {
+	for _, size := range []int{1, segment.MaxPayloadSize - 1, segment.MaxPayloadSize, segment.MaxPayloadSize + 1, 2*segment.MaxPayloadSize + 7} {
 		original := bytes.Repeat([]byte{0x5A}, size)
 
 		// Reference output computed directly from the segment helpers.
 		var want []byte
 		src := original
 		selfContained := true
-		for len(src) > maxSegmentPayloadSize {
-			seg, err := newUncompressedSegment(src[:maxSegmentPayloadSize], false)
+		for len(src) > segment.MaxPayloadSize {
+			seg, err := newUncompressedSegment(src[:segment.MaxPayloadSize], false)
 			if err != nil {
 				t.Fatalf("size %d: reference segment: %v", size, err)
 			}
 			want = append(want, seg...)
-			src = src[maxSegmentPayloadSize:]
+			src = src[segment.MaxPayloadSize:]
 			selfContained = false
 		}
 		seg, err := newUncompressedSegment(src, selfContained)
@@ -1274,7 +1387,7 @@ func (expandingCompressor) AppendCompressed(dst, src []byte) ([]byte, error) {
 		copy(grown, dst)
 		dst = grown
 	}
-	// Expand slightly, so every segment takes appendCompressedSegment's
+	// Expand slightly, so every segment takes segment.AppendCompressed's
 	// "compression was not worth it" fallback back to the raw payload.
 	out := dst[:oldLen+len(src)+len(src)/255+1]
 	copy(out[oldLen:], src)
@@ -1294,7 +1407,7 @@ func (expandingCompressor) Decode(data []byte) ([]byte, error) { return data, ni
 // allocated the whole wire output, plus a temporary per segment, per request).
 //
 // The expanding cases additionally cover a multi-segment compressed frame whose
-// every payload grows under compression, which is what segmentedFrameSize's
+// every payload grows under compression, which is what segment.EncodedSize's
 // one-segment slack is for. Expansion does not accumulate across segments: only
 // one segment is ever mid-compression, and a segment whose compressed form came
 // out larger is rewritten as its raw payload before the next one starts. Note
@@ -1308,10 +1421,10 @@ func TestPrepareModernLayoutReusesBuffers(t *testing.T) {
 		size       int
 	}{
 		{"single segment", nil, 4096},
-		{"multi segment", nil, 2*maxSegmentPayloadSize + 7},
+		{"multi segment", nil, 2*segment.MaxPayloadSize + 7},
 		{"compressed", testMockedCompressor{}, 4096},
-		{"expanding compressed, single segment", expandingCompressor{}, maxSegmentPayloadSize - 1},
-		{"expanding compressed, multi segment", expandingCompressor{}, 5*maxSegmentPayloadSize - 1},
+		{"expanding compressed, single segment", expandingCompressor{}, segment.MaxPayloadSize - 1},
+		{"expanding compressed, multi segment", expandingCompressor{}, 5*segment.MaxPayloadSize - 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			payload := bytes.Repeat([]byte{0x5A}, tc.size)
@@ -1335,4 +1448,105 @@ func TestPrepareModernLayoutReusesBuffers(t *testing.T) {
 			}
 		})
 	}
+}
+
+// --- queryValues pool tests ---
+
+func TestQueryValuesBucket(t *testing.T) {
+	tests := []struct {
+		n      int
+		bucket int
+	}{
+		{0, 0}, {1, 0}, {8, 0},
+		{9, 1}, {16, 1},
+		{17, 2}, {32, 2},
+		{33, 3}, {64, 3},
+		{65, 4}, {128, 4},
+		{129, -1}, {1000, -1},
+	}
+	for _, tt := range tests {
+		got := queryValuesBucket(tt.n)
+		if got != tt.bucket {
+			t.Errorf("queryValuesBucket(%d) = %d, want %d", tt.n, got, tt.bucket)
+		}
+	}
+}
+
+func TestGetQueryValuesLength(t *testing.T) {
+	for _, n := range []int{0, 1, 5, 8, 10, 16, 30, 64, 128, 200} {
+		s := getQueryValues(n)
+		if len(s) != n {
+			t.Errorf("getQueryValues(%d): len = %d, want %d", n, len(s), n)
+		}
+		// For pooled sizes, capacity should be the bucket size.
+		bucket := queryValuesBucket(n)
+		if bucket >= 0 {
+			wantCap := 8 << bucket
+			if cap(s) != wantCap {
+				t.Errorf("getQueryValues(%d): cap = %d, want %d", n, cap(s), wantCap)
+			}
+		}
+	}
+}
+
+func TestPutGetQueryValuesClearsReferences(t *testing.T) {
+	s := getQueryValues(4)
+	full := s[:cap(s)] // cap(s) == 8; verify the whole backing array, not just len(s)
+	full[0].name = "col1"
+	full[0].value = []byte("data")
+	full[1].name = "col2"
+	full[1].value = []byte("more")
+	full[2].isUnset = true
+	full[len(full)-1].name = "tail"
+	full[len(full)-1].value = []byte("tail-data")
+	full[len(full)-1].isUnset = true
+
+	putQueryValues(s)
+
+	// Assert directly on the original backing array: putQueryValues clears it
+	// in place, so full still reflects the zeroed state. This is deterministic
+	// and does not depend on sync.Pool returning the same object on the next Get.
+	for i := range full {
+		if full[i].name != "" {
+			t.Errorf("element %d: name = %q, want empty after put", i, full[i].name)
+		}
+		if full[i].value != nil {
+			t.Errorf("element %d: value = %v, want nil after put", i, full[i].value)
+		}
+		if full[i].isUnset {
+			t.Errorf("element %d: isUnset = true, want false after put", i)
+		}
+	}
+}
+
+func TestPutQueryValuesNilSafe(t *testing.T) {
+	// Must not panic.
+	putQueryValues(nil)
+}
+
+func TestPutBatchQueryValues(t *testing.T) {
+	stmts := make([]batchStatment, 3)
+	stmts[0].values = getQueryValues(5)
+	stmts[0].values[0].name = "a"
+	// stmts[1].values is nil (simulates entry without args)
+	stmts[2].values = getQueryValues(10)
+	stmts[2].values[0].value = []byte("x")
+
+	putBatchQueryValues(stmts)
+
+	for i, s := range stmts {
+		if s.values != nil {
+			t.Errorf("stmts[%d].values should be nil after putBatchQueryValues", i)
+		}
+	}
+}
+
+func TestGetQueryValuesOversize(t *testing.T) {
+	// Slices larger than 128 should not be pooled.
+	s := getQueryValues(200)
+	if len(s) != 200 {
+		t.Errorf("getQueryValues(200): len = %d, want 200", len(s))
+	}
+	// Should not panic when returning oversize.
+	putQueryValues(s)
 }

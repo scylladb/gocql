@@ -104,6 +104,28 @@ func testCluster(proto frm.ProtoVersion, addresses ...string) *ClusterConfig {
 	return cluster
 }
 
+// waitForPoolSize blocks until session's connection pool holds at least want
+// connections, or timeout elapses.
+//
+// CreateSession only guarantees the first connection to each host: the rest of
+// a pool is filled asynchronously, so a test making a claim about every
+// connection of a session has to wait for them rather than assert on whichever
+// ones it happened to observe.
+func waitForPoolSize(session *Session, want int, timeout time.Duration) error {
+	deadline := time.After(timeout)
+	for {
+		if got := session.pool.Size(); got >= want {
+			return nil
+		}
+
+		select {
+		case <-deadline:
+			return fmt.Errorf("pool reached %d of %d connections in %s", session.pool.Size(), want, timeout)
+		case <-time.After(time.Millisecond):
+		}
+	}
+}
+
 func TestSimple(t *testing.T) {
 	srv := NewTestServer(t, defaultProto, context.Background())
 	defer srv.Stop()
@@ -1781,6 +1803,10 @@ type TestServer struct {
 	nKillReq         int64
 	supportedFactory testSupportedFactory
 
+	// stallSystemQueries, when non-zero, makes system.peers/system.local queries
+	// hang until the server is stopped, simulating a stalled backend.
+	stallSystemQueries int32
+
 	protocol   byte
 	headerSize int
 	ctx        context.Context
@@ -1887,6 +1913,11 @@ func (srv *TestServer) errorLocked(err any) {
 	srv.t.Error(err)
 }
 
+// testMetadataIDOffset separates a canned result metadata id from the prepared id
+// it belongs to, so reading one where the other belongs is visible on the wire
+// rather than coincidentally equal.
+const testMetadataIDOffset = 0x1000
+
 func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string][]string) {
 	head := reqFrame.header
 	if head == nil {
@@ -1894,6 +1925,21 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 		return
 	}
 	respFrame := newFramer(nil, reqFrame.proto)
+
+	// SCYLLA_USE_METADATA_ID puts a result metadata id after the prepared id in both
+	// RESULT/Prepared and EXECUTE. The driver opts in whenever the server advertised
+	// the key, so the advertised map is the same signal it used, and the canned
+	// frames below have to match the layout it will then read and write.
+	_, useMetadataID := exts[scyllaUseMetadataID]
+
+	// writeResultMetadataID emits that field for a prepared statement. It is a no-op
+	// unless the extension was advertised, so servers that do not advertise it keep
+	// producing exactly the frames they did before.
+	writeResultMetadataID := func(preparedID uint64) {
+		if useMetadataID {
+			respFrame.writeShortBytes(binary.BigEndian.AppendUint64(nil, preparedID+testMetadataIDOffset))
+		}
+	}
 
 	switch head.Op {
 	case frm.OpStartup:
@@ -1914,6 +1960,11 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 		first := query
 		if n := strings.Index(query, " "); n > 0 {
 			first = first[:n]
+		}
+		if atomic.LoadInt32(&srv.stallSystemQueries) != 0 &&
+			(strings.Contains(query, "system.peers") || strings.Contains(query, "system.local")) {
+			<-srv.ctx.Done()
+			return
 		}
 		switch strings.ToLower(first) {
 		case "kill":
@@ -1984,6 +2035,7 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 			respFrame.writeInt(frm.ResultKindPrepared)
 			// <id>
 			respFrame.writeShortBytes(binary.BigEndian.AppendUint64(nil, 1))
+			writeResultMetadataID(1)
 			// <metadata>
 			respFrame.writeInt(0) // <flags>
 			respFrame.writeInt(0) // <columns_count>
@@ -1998,6 +2050,7 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 			respFrame.writeInt(frm.ResultKindPrepared)
 			// <id>
 			respFrame.writeShortBytes(binary.BigEndian.AppendUint64(nil, 2))
+			writeResultMetadataID(2)
 			// <metadata>
 			respFrame.writeInt(0) // <flags>
 			respFrame.writeInt(0) // <columns_count>
@@ -2018,6 +2071,7 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 			respFrame.writeInt(frm.ResultKindPrepared)
 			// <id>
 			respFrame.writeShortBytes(binary.BigEndian.AppendUint64(nil, 3))
+			writeResultMetadataID(3)
 			// <metadata>
 			respFrame.writeInt(0) // <flags>
 			respFrame.writeInt(2) // <columns_count>
@@ -2037,6 +2091,30 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 			// <result_metadata>
 			respFrame.writeInt(int32(frm.FlagNoMetaData))
 			respFrame.writeInt(0)
+		case "metadatachangednocolumns":
+			// Prepared with real result metadata and (under the extension) a metadata
+			// id, so the driver caches columns and asks the server to skip metadata on
+			// execute. Its EXECUTE reply, id 4 below, is then deliberately malformed.
+			respFrame.writeHeader(0, frm.OpResult, head.Stream)
+			respFrame.writeInt(frm.ResultKindPrepared)
+			// <id>
+			respFrame.writeShortBytes(binary.BigEndian.AppendUint64(nil, 4))
+			writeResultMetadataID(4)
+			// <metadata>
+			respFrame.writeInt(0) // <flags>
+			respFrame.writeInt(0) // <columns_count>
+			if srv.protocol >= protoVersion4 {
+				respFrame.writeInt(0) // <pk_count>
+			}
+			// <result_metadata>
+			respFrame.writeInt(int32(frm.FlagGlobalTableSpec)) // <flags>
+			respFrame.writeInt(1)                              // <columns_count>
+			// <global_table_spec>
+			respFrame.writeString("keyspace")
+			respFrame.writeString("table")
+			// <col_spec_0>
+			respFrame.writeString("col0")             // <name>
+			respFrame.writeShort(uint16(TypeBoolean)) // <type>
 		default:
 			respFrame.writeHeader(0, frm.OpError, head.Stream)
 			respFrame.writeInt(0)
@@ -2045,6 +2123,12 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 	case frm.OpExecute:
 		b := reqFrame.readShortBytesCopy()
 		id := binary.BigEndian.Uint64(b)
+		if useMetadataID {
+			// The driver writes the result metadata id between the prepared id and the
+			// query parameters once the extension is negotiated. Consume it, or every
+			// read below lands two bytes plus the id's length too early.
+			reqFrame.readShortBytesCopy()
+		}
 		// <query_parameters>
 		reqFrame.readConsistency() // <consistency>
 		var flags uint32
@@ -2082,6 +2166,30 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 				respFrame.writeHeader(0, frm.OpError, head.Stream)
 				respFrame.writeInt(0)
 				respFrame.writeString("skip metadata expected")
+			}
+		case 4:
+			// The driver is expected to have asked to skip metadata here: the extension
+			// is negotiated, this statement holds a metadata id, and its prepared
+			// response carried columns. Refusing otherwise keeps that part of the
+			// skip-metadata decision pinned on a live connection.
+			if flags&frm.FlagSkipMetaData == 0 {
+				respFrame.writeHeader(0, frm.OpError, head.Stream)
+				respFrame.writeInt(0)
+				respFrame.writeString("skip metadata expected")
+			} else {
+				// METADATA_CHANGED promises new result metadata; NO_METADATA says none
+				// was sent. A driver that adopted the new id would stop being sent
+				// metadata altogether, and one that decoded these rows against its
+				// cached columns would be decoding against the very columns the server
+				// just declared stale. Neither is acceptable, so it must reject this.
+				respFrame.writeHeader(0, frm.OpResult, head.Stream)
+				respFrame.writeInt(frm.ResultKindRows)
+				// <metadata>
+				respFrame.writeInt(int32(frm.FlagMetaDataChanged | frm.FlagNoMetaData)) // <flags>
+				respFrame.writeInt(0)                                                   // <columns_count>
+				respFrame.writeShortBytes(binary.BigEndian.AppendUint64(nil, 0xBEEF))   // <new_metadata_id>
+				// <rows_count>
+				respFrame.writeInt(0)
 			}
 		default:
 			respFrame.writeHeader(0, frm.OpError, head.Stream)
@@ -2161,7 +2269,7 @@ func TestGetSchemaAgreement(t *testing.T) {
 
 	t.Run("SchemaNotConsistent", func(t *testing.T) {
 		err := getSchemaAgreement(
-			[]string{"875a938a-a695-11ef-4314-85c8ef0ebaa2"},
+			"875a938a-a695-11ef-4314-85c8ef0ebaa2",
 			peersRows,
 			logger,
 		)
@@ -2171,7 +2279,7 @@ func TestGetSchemaAgreement(t *testing.T) {
 
 	t.Run("ZeroTokenNodeSchemaNotConsistent", func(t *testing.T) {
 		err := getSchemaAgreement(
-			[]string{"af810386-a694-11ef-81fa-3aea73156247"},
+			"af810386-a694-11ef-81fa-3aea73156247",
 			peersRows,
 			logger,
 		)
@@ -2182,13 +2290,102 @@ func TestGetSchemaAgreement(t *testing.T) {
 	t.Run("SchemaConsistent", func(t *testing.T) {
 		peersRows[2].SchemaVersion = schema_version1
 		err := getSchemaAgreement(
-			[]string{"af810386-a694-11ef-81fa-3aea73156247"},
+			"af810386-a694-11ef-81fa-3aea73156247",
 			peersRows,
 			logger,
 		)
 
 		assert.NoError(t, err, "expected no error when all nodes have the same schema")
 	})
+
+	t.Run("EmptyLocalSchemaVersion", func(t *testing.T) {
+		err := getSchemaAgreement(
+			"",
+			[]schemaAgreementHost{
+				{
+					DataCenter:    "datacenter1",
+					HostID:        ParseUUIDMust("b2035fd9-e0ca-4857-8c45-e63c00fb7c43"),
+					Rack:          "rack1",
+					RPCAddress:    "127.0.0.3",
+					SchemaVersion: schema_version1,
+				},
+			},
+			logger,
+		)
+
+		assert.NoError(t, err, "expected no error when local version is empty and peers are consistent")
+	})
+
+	t.Run("EmptyLocalWithNoPeers", func(t *testing.T) {
+		err := getSchemaAgreement("", nil, logger)
+
+		assert.NoError(t, err, "expected no error when both local and peers are empty")
+	})
+
+	t.Run("EmptyLocalWithInconsistentPeers", func(t *testing.T) {
+		err := getSchemaAgreement(
+			"",
+			[]schemaAgreementHost{
+				{
+					DataCenter:    "datacenter1",
+					HostID:        ParseUUIDMust("b2035fd9-e0ca-4857-8c45-e63c00fb7c43"),
+					Rack:          "rack1",
+					RPCAddress:    "127.0.0.3",
+					SchemaVersion: schema_version1,
+				},
+				{
+					DataCenter:    "datacenter2",
+					HostID:        ParseUUIDMust("dfef4a22-b8d8-47e9-aee5-8c19d4b7a9e3"),
+					Rack:          "rack1",
+					RPCAddress:    "127.0.0.5",
+					SchemaVersion: ParseUUIDMust("875a938a-a695-11ef-4314-85c8ef0ebaa2"),
+				},
+			},
+			logger,
+		)
+
+		assert.Error(t, err, "expected error when peers have different schemas")
+	})
+}
+
+// TestAwaitSchemaAgreementBoundedByMaxWaitSchemaAgreement verifies that a stalled
+// system.peers/system.local query cannot make awaitSchemaAgreement block past
+// MaxWaitSchemaAgreement, even when MetadataSchemaRequestTimeout is much larger.
+func TestAwaitSchemaAgreementBoundedByMaxWaitSchemaAgreement(t *testing.T) {
+	srv := NewTestServer(t, defaultProto, context.Background())
+	defer srv.Stop()
+
+	const maxWaitSchemaAgreement = 200 * time.Millisecond
+	const metadataSchemaRequestTimeout = 5 * time.Second
+
+	cluster := testCluster(defaultProto, srv.Address)
+	cluster.MaxWaitSchemaAgreement = maxWaitSchemaAgreement
+	cluster.MetadataSchemaRequestTimeout = metadataSchemaRequestTimeout
+
+	session, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	defer session.Close()
+
+	conn := session.getConn()
+	if conn == nil {
+		t.Fatal("unable to get a connection")
+	}
+
+	atomic.StoreInt32(&srv.stallSystemQueries, 1)
+
+	start := time.Now()
+	err = conn.awaitSchemaAgreement(context.Background())
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected an error from a stalled schema agreement query, got nil")
+	}
+	if elapsed >= metadataSchemaRequestTimeout {
+		t.Fatalf("awaitSchemaAgreement took %v, expected to return near MaxWaitSchemaAgreement (%v), not wait for MetadataSchemaRequestTimeout (%v)",
+			elapsed, maxWaitSchemaAgreement, metadataSchemaRequestTimeout)
+	}
 }
 
 func TestUseKeyspaceQuoteEscaping(t *testing.T) {
@@ -2219,6 +2416,352 @@ func newTestConnWithFramerPool() *Conn {
 	}
 	c.framers.initPool(c)
 	return c
+}
+
+// TestInitFramerCacheScyllaUseMetadataID guards against scyllaUseMetadataID
+// being negotiated on the Conn but never reaching the pooled framers that
+// actually read/write frames (see frame.go's parseResultMetadata,
+// parseResultPrepared, writeExecuteFrame).
+//
+// It also pins Conn.usesMetadataID against the same config, since the request path
+// reads the flag through it: were the two to diverge, the driver would ask the
+// server to skip metadata while writing no result metadata ID to compare against.
+func TestInitFramerCacheScyllaUseMetadataID(t *testing.T) {
+	c := &Conn{
+		version:      protoVersion4,
+		cqlProtoExts: []cqlProtocolExtension{&scyllaUseMetadataIDExt{}},
+	}
+	c.initFramerCache()
+
+	if !c.framers.defaults.scyllaUseMetadataID {
+		t.Fatal("framerConfig.scyllaUseMetadataID should be true once SCYLLA_USE_METADATA_ID is negotiated")
+	}
+
+	if !c.usesMetadataID() {
+		t.Error("Conn.usesMetadataID() should agree with the framer config")
+	}
+
+	wf := c.getWriteFramer()
+	if !wf.scyllaUseMetadataID {
+		t.Error("write framer obtained from pool should have scyllaUseMetadataID set")
+	}
+
+	rf := c.getReadFramer()
+	if !rf.scyllaUseMetadataID {
+		t.Error("read framer obtained from pool should have scyllaUseMetadataID set")
+	}
+}
+
+// TestInitFramerCacheWithoutScyllaUseMetadataID is the negative counterpart: with
+// no extension negotiated, nothing on the connection may claim otherwise.
+func TestInitFramerCacheWithoutScyllaUseMetadataID(t *testing.T) {
+	c := &Conn{version: protoVersion4}
+	c.initFramerCache()
+
+	if c.framers.defaults.scyllaUseMetadataID {
+		t.Error("framerConfig.scyllaUseMetadataID should be false when the extension was not negotiated")
+	}
+	if c.usesMetadataID() {
+		t.Error("Conn.usesMetadataID() should be false when the extension was not negotiated")
+	}
+	if c.getWriteFramer().scyllaUseMetadataID {
+		t.Error("write framer should not have scyllaUseMetadataID set")
+	}
+}
+
+// TestInitFramerCacheProtoV3IgnoresScyllaUseMetadataID pins the negotiation gate from
+// the connection's end: a v3 connection to a server advertising SCYLLA_USE_METADATA_ID
+// must come out of the handshake with the extension nowhere on it. It goes through
+// parseCQLProtocolExtensions rather than setting cqlProtoExts directly, because that
+// list is also what startupCoordinator.startup serializes into STARTUP — an extension
+// filtered out there is one the driver neither announces nor encodes.
+func TestInitFramerCacheProtoV3IgnoresScyllaUseMetadataID(t *testing.T) {
+	t.Parallel()
+
+	c := &Conn{version: protoVersion3, logger: &testLogger{}}
+	c.cqlProtoExts = parseCQLProtocolExtensions(map[string][]string{scyllaUseMetadataID: {}}, c.version, c.logger)
+	c.initFramerCache()
+
+	if findCQLProtoExtByName(c.cqlProtoExts, scyllaUseMetadataID) != nil {
+		t.Error("SCYLLA_USE_METADATA_ID should not be negotiated on a protocol v3 connection")
+	}
+	if c.framers.defaults.scyllaUseMetadataID {
+		t.Error("framerConfig.scyllaUseMetadataID should be false on a protocol v3 connection")
+	}
+	if c.usesMetadataID() {
+		t.Error("Conn.usesMetadataID() should be false on a protocol v3 connection")
+	}
+	if c.tracksResultMetadataID() {
+		t.Error("Conn.tracksResultMetadataID() should be false on a protocol v3 connection")
+	}
+	if c.getWriteFramer().scyllaUseMetadataID {
+		t.Error("write framer should not have scyllaUseMetadataID set on a protocol v3 connection")
+	}
+}
+
+// TestConnTracksResultMetadataID pins the question the EXECUTE path actually asks:
+// does this connection exchange result metadata IDs at all? Two mechanisms answer
+// yes — native protocol v5, where the field is mandatory, and SCYLLA_USE_METADATA_ID,
+// which backports it to v4 — and the skip-metadata default follows either, per
+// scylladb/scylla-drivers#81.
+//
+// usesMetadataID must stay narrower than that: the integration tests use it to
+// assert the extension was negotiated specifically, so a v5 connection reporting
+// true there would turn a negotiation regression green.
+func TestConnTracksResultMetadataID(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name        string
+		proto       byte
+		exts        []cqlProtocolExtension
+		wantTracked bool
+		wantExt     bool
+	}{
+		{name: "v4 without the extension", proto: protoVersion4},
+		{
+			name:        "v4 with the extension",
+			proto:       protoVersion4,
+			exts:        []cqlProtocolExtension{&scyllaUseMetadataIDExt{}},
+			wantTracked: true,
+			wantExt:     true,
+		},
+		{
+			// v5 makes the field mandatory, so no extension is involved.
+			name:        "v5 without the extension",
+			proto:       protoVersion5,
+			wantTracked: true,
+		},
+		{
+			// Not reachable through negotiation — newScyllaUseMetadataIDExt opts in on
+			// v4 only — but initCache must not read the two mechanisms as exclusive.
+			name:        "v5 with the extension",
+			proto:       protoVersion5,
+			exts:        []cqlProtocolExtension{&scyllaUseMetadataIDExt{}},
+			wantTracked: true,
+			wantExt:     true,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			c := &Conn{version: tt.proto, cqlProtoExts: tt.exts}
+			c.initFramerCache()
+
+			if got := c.tracksResultMetadataID(); got != tt.wantTracked {
+				t.Errorf("Conn.tracksResultMetadataID() = %v, want %v", got, tt.wantTracked)
+			}
+			if got := c.usesMetadataID(); got != tt.wantExt {
+				t.Errorf("Conn.usesMetadataID() = %v, want %v", got, tt.wantExt)
+			}
+		})
+	}
+}
+
+// TestConnTracksResultMetadataIDMasksDirectionBit guards the derivation against the
+// request/response direction bit: tracksResultMetadataID reads the framer config,
+// which initCache masks with protoVersionMask. Folding the bit into the version
+// instead would make a v4 connection look like protocol 0x84 and silently start
+// skipping metadata with no ID to recover it.
+func TestConnTracksResultMetadataIDMasksDirectionBit(t *testing.T) {
+	t.Parallel()
+
+	c := &Conn{version: protoVersion4 | 0x80}
+	c.initFramerCache()
+
+	if c.tracksResultMetadataID() {
+		t.Error("Conn.tracksResultMetadataID() = true for v4 with the direction bit set, want false")
+	}
+}
+
+// TestShouldSkipResultMetadata pins the skip-metadata decision as the EXECUTE path
+// makes it, composing metadataIDTracked with shouldSkipResultMetadata exactly as
+// Conn.executeQueryWithMetrics does.
+//
+// Three behaviours matter most. The override itself: with a metadata-ID exchange
+// active and an ID in hand, metadata is skipped even though the session-level
+// DisableSkipMetadata is set, because the server reports changes via
+// METADATA_CHANGED. Its precondition: a connection whose cached prepared statement
+// has no ID yet (prepared before SCYLLA_USE_METADATA_ID was negotiated, reachable
+// during a rolling upgrade because the prepared cache is keyed by host and survives
+// reconnects) must NOT skip — there is nothing for the server to compare against.
+// And the column-set gate, which is what keeps statements whose prepared response
+// carries no result metadata decodable at all. A per-query NoSkipMetadata()
+// overrides all of it.
+//
+// idExchangeActive stands for Conn.tracksResultMetadataID: native protocol v5 or
+// the SCYLLA_USE_METADATA_ID extension. TestConnTracksResultMetadataID covers which
+// connections set it.
+func TestShouldSkipResultMetadata(t *testing.T) {
+	t.Parallel()
+
+	id := []byte{0xAA, 0xBB}
+
+	tests := []struct {
+		name               string
+		sessionDisableSkip bool
+		queryDisableSkip   bool
+		idExchangeActive   bool
+		resultMetadataID   []byte
+		hasColumns         bool
+		want               bool
+	}{
+		{name: "default skips when columns present", hasColumns: true, want: true},
+		{name: "no columns never skips", hasColumns: false, want: false},
+		{name: "session DisableSkipMetadata forces metadata", sessionDisableSkip: true, hasColumns: true, want: false},
+		{name: "query NoSkipMetadata forces metadata", queryDisableSkip: true, hasColumns: true, want: false},
+		{
+			name:               "id exchange with an id overrides session DisableSkipMetadata",
+			sessionDisableSkip: true,
+			idExchangeActive:   true,
+			resultMetadataID:   id,
+			hasColumns:         true,
+			want:               true,
+		},
+		{
+			name:               "query NoSkipMetadata still wins under the id exchange",
+			sessionDisableSkip: true,
+			queryDisableSkip:   true,
+			idExchangeActive:   true,
+			resultMetadataID:   id,
+			hasColumns:         true,
+			want:               false,
+		},
+		{
+			// Statements whose RESULT/Prepared carries no result metadata (LIST ROLES OF
+			// is the motivating case) are handed an ID hashed from empty metadata. Current
+			// ScyllaDB compares the returned ID against that same empty-metadata ID, always
+			// matches, and never sets METADATA_CHANGED, so a skipped response would be
+			// undecodable. The server-side fixes, scylladb/scylladb#29233 and #29275, are
+			// both closed unmerged — this gate is what keeps such statements working.
+			name:               "empty prepared column set never skips (scylladb/scylladb#29275)",
+			sessionDisableSkip: true,
+			idExchangeActive:   true,
+			resultMetadataID:   id,
+			hasColumns:         false,
+			want:               false,
+		},
+		{
+			// Same gate with skipping opted into explicitly, i.e. with nothing else left
+			// to stop it.
+			name:             "empty prepared column set never skips even when opted in",
+			idExchangeActive: true,
+			resultMetadataID: id,
+			hasColumns:       false,
+			want:             false,
+		},
+		{
+			// Rolling upgrade: statement prepared before the extension was negotiated.
+			name:               "id exchange without an id does not override",
+			sessionDisableSkip: true,
+			idExchangeActive:   true,
+			resultMetadataID:   nil,
+			hasColumns:         true,
+			want:               false,
+		},
+		{
+			name:               "id exchange with a zero-length id does not override",
+			sessionDisableSkip: true,
+			idExchangeActive:   true,
+			resultMetadataID:   []byte{},
+			hasColumns:         true,
+			want:               false,
+		},
+		{
+			// An id alone is not enough either: with no id exchange on the connection the
+			// server has no way to report a change, so this must fall back to the session
+			// setting.
+			name:               "id without an id exchange does not override",
+			sessionDisableSkip: true,
+			idExchangeActive:   false,
+			resultMetadataID:   id,
+			hasColumns:         true,
+			want:               false,
+		},
+		{
+			// A user who explicitly opted into skipping keeps it regardless of the ID;
+			// that is upstream behaviour and this change does not narrow it.
+			name:               "explicit opt-in skips even without an id",
+			sessionDisableSkip: false,
+			idExchangeActive:   true,
+			resultMetadataID:   nil,
+			hasColumns:         true,
+			want:               true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tracked := metadataIDTracked(tt.idExchangeActive, tt.resultMetadataID)
+			got := shouldSkipResultMetadata(tt.sessionDisableSkip, tt.queryDisableSkip, tracked, tt.hasColumns)
+			if got != tt.want {
+				t.Errorf("shouldSkipResultMetadata(session=%v, query=%v, tracked=%v (idExchange=%v, id=%v), cols=%v) = %v, want %v",
+					tt.sessionDisableSkip, tt.queryDisableSkip, tracked, tt.idExchangeActive, tt.resultMetadataID,
+					tt.hasColumns, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestExecuteMetadataChangedWithoutColumns pins that a RESULT/Rows which sets
+// METADATA_CHANGED while also setting NO_METADATA is rejected rather than decoded.
+//
+// The combination is malformed — METADATA_CHANGED obliges the server to include the
+// new metadata — and both ways of carrying on are unrecoverable. Adopting the new id
+// makes the server match it from then on and stop sending metadata at all; reusing the
+// columns cached at prepare time decodes rows against the exact column set the server
+// has just declared stale, which is the misdecode the mechanism exists to prevent. So
+// the query must fail with the old id left in the cache, ready to be resent.
+//
+// It doubles as the only unit-level coverage of a negotiated SCYLLA_USE_METADATA_ID
+// connection driven end to end: the mock server advertises the extension, so the driver
+// reads a result metadata id out of RESULT/Prepared and writes one back on EXECUTE, and
+// the server rejects the execute outright if skip_metadata was not requested.
+func TestExecuteMetadataChangedWithoutColumns(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	srv := NewTestServerWithAddressAndSupportedFactory("127.0.0.1:0", t, protoVersion4, ctx,
+		func(net.Conn) map[string][]string {
+			return map[string][]string{scyllaUseMetadataID: {""}}
+		})
+	defer srv.Stop()
+
+	db, err := testCluster(protoVersion4, srv.Address).CreateSession()
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	defer db.Close()
+
+	conn := db.getConn()
+	if conn == nil {
+		t.Fatal("no connection available")
+	}
+	if !conn.usesMetadataID() {
+		t.Fatal("server advertised SCYLLA_USE_METADATA_ID but the driver did not negotiate it")
+	}
+
+	const stmt = "select metadatachangednocolumns"
+	err = db.Query(stmt).Iter().Close()
+	if err == nil {
+		t.Fatal("expected an error for a METADATA_CHANGED response carrying no column metadata")
+	}
+	if !strings.Contains(err.Error(), "sent no column metadata") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The id from the malformed response must not have been cached: the entry still
+	// carries the one handed out at prepare time, so the next execute resends it and
+	// the server gets another chance to answer with the metadata it owes.
+	key := db.stmtsLRU.keyFor(conn.host.hostUUID(), conn.getCurrentKeyspace(), stmt)
+	inflight, ok := db.stmtsLRU.get(key)
+	if !ok {
+		t.Fatal("prepared statement should still be cached")
+	}
+	want := binary.BigEndian.AppendUint64(nil, 4+testMetadataIDOffset)
+	if got := inflight.preparedStatment.resultMetadataID; !bytes.Equal(got, want) {
+		t.Errorf("cached resultMetadataID = % X, want the prepare-time id % X", got, want)
+	}
 }
 
 func buildTestFrame(t *testing.T, f *framer, req frameBuilder, streamID int) ([]byte, frm.FrameHeader) {
@@ -3649,6 +4192,8 @@ func TestRecvSegmentPayloadReadIsBounded(t *testing.T) {
 // protocol it speaks. A callback that set CQL_VERSION could make every connection
 // in the cluster fail its handshake; one that set DRIVER_NAME or DRIVER_VERSION
 // would misreport the driver to the server for the life of the connection.
+// SESSION_ID is driver-owned for the same reason: it is what correlates a
+// session's connections in system.clients.
 func TestStartupOptionsKeepDriverKeys(t *testing.T) {
 	t.Parallel()
 
@@ -3656,21 +4201,23 @@ func TestStartupOptionsKeepDriverKeys(t *testing.T) {
 		cqlVersion    = "3.4.5"
 		driverName    = "gocql"
 		driverVersion = "1.2.3"
+		sessionID     = "91b0b1a2-0000-4000-8000-000000000001"
 	)
 
 	t.Run("no ApplicationInfo", func(t *testing.T) {
-		m := startupOptions(cqlVersion, driverName, driverVersion, nil)
+		m := startupOptions(cqlVersion, driverName, driverVersion, nil, nil, sessionID, false)
 
 		require.Equal(t, map[string]string{
-			"CQL_VERSION":    cqlVersion,
-			"DRIVER_NAME":    driverName,
-			"DRIVER_VERSION": driverVersion,
+			"CQL_VERSION":       cqlVersion,
+			"DRIVER_NAME":       driverName,
+			"DRIVER_VERSION":    driverVersion,
+			sessionIDStartupKey: sessionID,
 		}, m)
 	})
 
 	t.Run("application options are kept", func(t *testing.T) {
 		m := startupOptions(cqlVersion, driverName, driverVersion,
-			NewStaticApplicationInfo("app", "9.9.9", "client-id"))
+			NewStaticApplicationInfo("app", "9.9.9", "client-id"), nil, sessionID, false)
 
 		require.Equal(t, "app", m["APPLICATION_NAME"])
 		require.Equal(t, "9.9.9", m["APPLICATION_VERSION"])
@@ -3678,6 +4225,7 @@ func TestStartupOptionsKeepDriverKeys(t *testing.T) {
 		require.Equal(t, cqlVersion, m["CQL_VERSION"])
 		require.Equal(t, driverName, m["DRIVER_NAME"])
 		require.Equal(t, driverVersion, m["DRIVER_VERSION"])
+		require.Equal(t, sessionID, m[sessionIDStartupKey])
 	})
 
 	t.Run("driver-owned keys win", func(t *testing.T) {
@@ -3686,12 +4234,14 @@ func TestStartupOptionsKeepDriverKeys(t *testing.T) {
 				opts["CQL_VERSION"] = "9.9.9"
 				opts["DRIVER_NAME"] = "not-gocql"
 				opts["DRIVER_VERSION"] = "0.0.0"
+				opts[sessionIDStartupKey] = "not-the-session-id"
 				opts["APPLICATION_NAME"] = "app"
-			}))
+			}), nil, sessionID, false)
 
 		require.Equal(t, cqlVersion, m["CQL_VERSION"], "a custom CQL version would fail every handshake")
 		require.Equal(t, driverName, m["DRIVER_NAME"])
 		require.Equal(t, driverVersion, m["DRIVER_VERSION"])
+		require.Equal(t, sessionID, m[sessionIDStartupKey], "a custom session id would break correlating a session's connections")
 		require.Equal(t, "app", m["APPLICATION_NAME"], "keys the driver does not own must still come through")
 	})
 }
@@ -3701,3 +4251,159 @@ func TestStartupOptionsKeepDriverKeys(t *testing.T) {
 type applicationInfoFunc func(map[string]string)
 
 func (f applicationInfoFunc) UpdateStartupOptions(opts map[string]string) { f(opts) }
+
+// TestSystemRequestTimeoutRaceWithFinalizeConnection pins the state
+// driver-issued system queries read (Conn.systemRequest, holding the client-side
+// timeout and the pre-rendered USING TIMEOUT clause) as safe to read while
+// finalizeConnection switches it from ConnectTimeout to
+// MetadataSchemaRequestTimeout.
+//
+// The two are concurrent in practice: the control connection is registered for
+// server push events during controlConn.setupConn, but its
+// finalizeConnection() is deferred to the very end of Session.init. A keyspace
+// SCHEMA_CHANGE delivered inside that window (a freshly bootstrapped cluster
+// still creating its internal keyspaces is enough) makes the event-debouncer
+// goroutine run handleKeyspaceChange -> awaitSchemaAgreement -> querySystem on
+// the connection the main goroutine is mid-write on.
+//
+// Run under -race: were the two values plain fields again, this would report
+// "DATA RACE" on them — a torn string header for the clause and a stale timeout.
+func TestSystemRequestTimeoutRaceWithFinalizeConnection(t *testing.T) {
+	t.Parallel()
+
+	// finalizeConnection only stores into atomics - Conn.writeTimeout,
+	// Conn.systemRequest, and the timeout field of each of these two - so neither
+	// needs a net.Conn behind it.
+	c := &Conn{
+		r: &connReader{},
+		w: &deadlineContextWriter{},
+		cfg: &ConnConfig{
+			ConnectTimeout: 10 * time.Second,
+			WriteTimeout:   2 * time.Second,
+			ReadTimeout:    3 * time.Second,
+		},
+		session: &Session{
+			cfg: ClusterConfig{MetadataSchemaRequestTimeout: 42 * time.Millisecond},
+		},
+		// Only a ScyllaDB connection renders the USING TIMEOUT clause.
+		scyllaSupported: ScyllaConnectionFeatures{
+			ScyllaHostFeatures: ScyllaHostFeatures{isScylla: true},
+		},
+	}
+	c.setSystemRequestTimeout(c.cfg.ConnectTimeout)
+
+	// The only two snapshots a reader may observe: the one the connection is
+	// dialed with, and the one finalizeConnection replaces it with. Spelling both
+	// out keeps this test from re-deriving the rendering rule, which is
+	// TestSystemRequestStateClauseFollowsTimeout's job.
+	var (
+		beforeFinalize = systemRequestState{
+			timeout:     c.cfg.ConnectTimeout,
+			usingClause: " USING TIMEOUT 10000ms",
+		}
+		afterFinalize = systemRequestState{
+			timeout:     c.session.cfg.MetadataSchemaRequestTimeout,
+			usingClause: " USING TIMEOUT 42ms",
+		}
+	)
+
+	const readers = 4
+	done := make(chan struct{})
+	var wg, spinning sync.WaitGroup
+	wg.Add(readers)
+	spinning.Add(readers)
+	for i := 0; i < readers; i++ {
+		go func() {
+			defer wg.Done()
+			first := true
+			for {
+				select {
+				case <-done:
+					return
+				default:
+				}
+				// The single load querySystem performs.
+				state := c.getSystemRequestState()
+				if first {
+					// Only write once every reader is already spinning, so the
+					// two sides genuinely overlap.
+					spinning.Done()
+					first = false
+				}
+				// Both values must come from the same snapshot: the clause the
+				// server is asked to honour always matches the deadline the
+				// client is waiting on, never the other transition's value.
+				if state != beforeFinalize && state != afterFinalize {
+					t.Errorf("observed %+v, which is neither transition's snapshot; want %+v or %+v",
+						state, beforeFinalize, afterFinalize)
+					return
+				}
+			}
+		}()
+	}
+
+	spinning.Wait()
+	c.finalizeConnection()
+	close(done)
+	wg.Wait()
+
+	require.Equal(t, afterFinalize, c.getSystemRequestState(),
+		"finalizeConnection should publish the metadata timeout and its clause as one snapshot")
+}
+
+// TestSystemRequestStateClauseFollowsTimeout pins the USING TIMEOUT clause as
+// derived purely from the timeout in effect and whether the peer is ScyllaDB.
+//
+// The zero case is the one worth guarding: MetadataSchemaRequestTimeout is
+// documented as "positive or zero" (see ClusterConfig.Validate), and by the time
+// finalizeConnection applies it, startupCoordinator.options has already rendered a
+// clause from ConnectTimeout. Were that clause carried over, a caller who disabled
+// the metadata timeout would still have every system query bounded server-side by
+// an unrelated setting - while DRIVER_CONFIG reported no timeout at all, since
+// buildControlPlaneReport omits a non-positive one.
+func TestSystemRequestStateClauseFollowsTimeout(t *testing.T) {
+	t.Parallel()
+
+	newConn := func(isScylla bool) *Conn {
+		c := &Conn{scyllaSupported: ScyllaConnectionFeatures{
+			ScyllaHostFeatures: ScyllaHostFeatures{isScylla: isScylla},
+		}}
+		// As startupCoordinator.options leaves it: a clause rendered from
+		// ConnectTimeout, before finalizeConnection applies the metadata timeout.
+		c.setSystemRequestTimeout(600 * time.Millisecond)
+		return c
+	}
+
+	t.Run("scylla renders the clause", func(t *testing.T) {
+		require.Equal(t, systemRequestState{
+			timeout:     600 * time.Millisecond,
+			usingClause: " USING TIMEOUT 600ms",
+		}, newConn(true).getSystemRequestState())
+	})
+
+	t.Run("cassandra renders no clause", func(t *testing.T) {
+		require.Equal(t, systemRequestState{timeout: 600 * time.Millisecond},
+			newConn(false).getSystemRequestState())
+	})
+
+	t.Run("a disabled timeout clears the clause", func(t *testing.T) {
+		c := newConn(true)
+		c.setSystemRequestTimeout(0)
+		require.Equal(t, systemRequestState{}, c.getSystemRequestState(),
+			"a zero metadata timeout must not leave the ConnectTimeout clause in force")
+	})
+
+	// The cases above assert the snapshot itself; this one goes through
+	// systemRequestStatement, which is how the query paths reach it.
+	t.Run("the statement carries the clause in force", func(t *testing.T) {
+		c := newConn(true)
+		stmt, timeout := c.systemRequestStatement(qrySystemLocal)
+		require.Equal(t, qrySystemLocal+" USING TIMEOUT 600ms", stmt)
+		require.Equal(t, 600*time.Millisecond, timeout)
+
+		c.setSystemRequestTimeout(0)
+		stmt, timeout = c.systemRequestStatement(qrySystemLocal)
+		require.Equal(t, qrySystemLocal, stmt, "a disabled timeout appends nothing")
+		require.Equal(t, time.Duration(0), timeout)
+	})
+}

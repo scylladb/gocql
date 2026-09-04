@@ -1,0 +1,111 @@
+name: Code coverage
+
+on:
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - "*.md"
+      - "docs/**"
+      - .github/workflows/docs-*
+      - .github/workflows/bench-tests.yml
+      - .github/workflows/extended-ci-longevity-large-partitions-with-network-nemesis-1h-test.yml
+  pull_request:
+    # labeled/unlabeled included so removing disable-coverage-tests
+    # re-triggers a run instead of leaving coverage skipped until the next
+    # push or reopen.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+    paths-ignore:
+      - "*.md"
+      - "docs/**"
+      - .github/workflows/docs-*
+      - .github/workflows/bench-tests.yml
+      - .github/workflows/extended-ci-longevity-large-partitions-with-network-nemesis-1h-test.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  coverage:
+    name: Measure code coverage
+    if: "!contains(github.event.pull_request.labels.*.name, 'disable-coverage-tests')"
+    runs-on: ubuntu-latest
+    env:
+      SCYLLA_VERSION: LATEST
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.11'
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            /home/runner/.cache/pip
+            /home/runner/.local
+            /home/runner/.sdkman
+            testdata/pki
+            bin/
+          # CCM, pip and java versions are in Makefile
+          key: pr-check-${{ runner.os }}-${{ hashFiles('Makefile') }}
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            lz4/go.sum
+            tests/bench/go.sum
+            go.sum
+
+      - name: Run unit tests with coverage
+        run: make test-unit-coverage
+
+      - name: Get scylla version
+        id: scylla-version
+        run: make resolve-scylla-version
+
+      - name: Pull CCM image from the cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        if: steps.scylla-version.outputs.value != 'NOT-FOUND'
+        id: ccm-cache
+        with:
+          path: ~/.ccm/repository
+          key: ccm-scylla-${{ runner.os }}-${{ steps.scylla-version.outputs.value }}
+
+      - name: Download ScyllaDB (${{ steps.scylla-version.outputs.value }}) image
+        if: steps.ccm-cache.outputs.cache-hit != 'true' && steps.scylla-version.outputs.value != 'NOT-FOUND'
+        run: make download-scylla
+
+      - name: Save CCM ScyllaDB image into the cache
+        if: steps.ccm-cache.outputs.cache-hit != 'true' && steps.scylla-version.outputs.value != 'NOT-FOUND'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.ccm/repository
+          key: ccm-scylla-${{ runner.os }}-${{ steps.scylla-version.outputs.value }}
+
+      - name: Run integration suite with coverage
+        if: steps.scylla-version.outputs.value != 'NOT-FOUND'
+        run: make test-integration-scylla-coverage
+
+      - name: Run CCM integration suite with coverage
+        if: steps.scylla-version.outputs.value != 'NOT-FOUND'
+        run: make ccm-test-coverage
+
+      - name: Generate coverage report
+        if: always()
+        run: make coverage-report
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-report
+          path: |
+            coverage-root.html
+            coverage-root.out
+            coverage-lz4.html
+            coverage-lz4.out
