@@ -195,6 +195,41 @@ func TestValidate_ReadTimeout(t *testing.T) {
 	})
 }
 
+// TestValidate_FrameAssemblyTimeout covers the FrameAssemblyTimeout bound check in
+// Validate(): a negative duration is rejected; zero (disabled) and positive are
+// allowed.
+func TestValidate_FrameAssemblyTimeout(t *testing.T) {
+	t.Parallel()
+
+	newCfg := func(d time.Duration) *ClusterConfig {
+		cfg := NewCluster("10.0.0.1:9042")
+		cfg.FrameAssemblyTimeout = d
+		return cfg
+	}
+
+	t.Run("negative is rejected", func(t *testing.T) {
+		t.Parallel()
+		err := newCfg(-time.Second).Validate()
+		if err == nil || !strings.Contains(err.Error(), "FrameAssemblyTimeout should be positive") {
+			t.Fatalf("expected FrameAssemblyTimeout validation error, got: %v", err)
+		}
+	})
+
+	t.Run("zero is allowed", func(t *testing.T) {
+		t.Parallel()
+		if err := newCfg(0).Validate(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("positive is allowed", func(t *testing.T) {
+		t.Parallel()
+		if err := newCfg(time.Second).Validate(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+}
+
 // TestValidate_HostPortNormalization covers the port-learning logic in Validate():
 // when cfg.Port is 0 (not explicitly set) the driver learns it from cfg.Hosts.
 func TestValidate_HostPortNormalization(t *testing.T) {

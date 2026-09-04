@@ -257,6 +257,20 @@ type ClusterConfig struct {
 	// It has only one purpose, identify faulty connection early and drop it.
 	// Default: 11 Seconds
 	ReadTimeout time.Duration
+	// FrameAssemblyTimeout limits the total time spent assembling one response
+	// frame, measured from the first byte of its first transport segment. It exists
+	// because ReadTimeout cannot bound that: on protocol v5 a single frame may
+	// arrive across many transport segments, and every read re-arms ReadTimeout
+	// afresh, so a peer that keeps trickling bytes is never timed out however long
+	// the frame takes. It does not shorten the idle wait for the next frame, which
+	// stays unbounded, and it applies only to the segmented transport, so it has no
+	// effect below protocol v5.
+	//
+	// Set it above the time a legitimately large frame needs on the slowest link
+	// you serve: a frame may be up to 256 MiB, and exceeding the budget drops the
+	// connection rather than the request.
+	// Default: 0, unbounded
+	FrameAssemblyTimeout time.Duration
 	// Consistency for the serial part of queries, values can be either SERIAL or LOCAL_SERIAL.
 	// Default: unset
 	SerialConsistency Consistency
@@ -668,6 +682,10 @@ func (cfg *ClusterConfig) Validate() error {
 
 	if cfg.ReadTimeout < 0 {
 		return errors.New("ReadTimeout should be positive time.Duration or zero")
+	}
+
+	if cfg.FrameAssemblyTimeout < 0 {
+		return errors.New("FrameAssemblyTimeout should be positive time.Duration or zero")
 	}
 
 	if cfg.MetadataSchemaRequestTimeout < 0 {
