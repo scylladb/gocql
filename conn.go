@@ -2450,11 +2450,37 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer,
 	}
 }
 
+// putPooledOutput returns a buffer to marshalOutputPool. Indirected so tests
+// can observe exactly which buffers the release paths hand back.
+var putPooledOutput = putMarshalOutput
+
+// releasePooledValues returns the buffers that the generic marshal path took
+// from marshalOutputPool. The gate is the per-value pooled flag, never the
+// column's TypeInfo: poolability is a property of the code path that produced
+// the bytes, so predicting it from the schema would recycle reflect-path,
+// pointer and user-Marshaler buffers that were never pooled. Clearing the flag
+// makes a second call a no-op.
+func releasePooledValues(vals []queryValues) {
+	for i := range vals {
+		if vals[i].pooled {
+			putPooledOutput(vals[i].value)
+			vals[i].pooled = false
+		}
+	}
+}
+
 func marshalQueryValue(typ TypeInfo, value any, dst *queryValues) error {
 	if named, ok := value.(*namedValue); ok {
 		dst.name = named.name
 		value = named.value
 	}
+
+	// Capture user-Marshaler handling BEFORE Marshal consumes value, so we can
+	// skip the pool even if the user implements Marshaler for a CQL type that
+	// would otherwise be a pooled fast path. This avoids handing back user-owned
+	// memory to the pool, where a later getMarshalOutput could overwrite it while
+	// the user is still reading it.
+	_, userMarshaler := value.(Marshaler)
 
 	if _, ok := value.(unsetColumn); !ok {
 		val, err := Marshal(typ, value)
@@ -2463,6 +2489,7 @@ func marshalQueryValue(typ TypeInfo, value any, dst *queryValues) error {
 		}
 
 		dst.value = val
+		dst.pooled = !userMarshaler && pooledMarshalValue(typ, value) && cap(val) <= marshalBufMaxCap
 	} else {
 		dst.isUnset = true
 	}
@@ -2599,6 +2626,26 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 		}
 
 		params.values = getQueryValues(len(values))
+
+		// Return pooled marshal buffers once the framer copies them
+		// (c.exec → buildFrame → writeBytes). The TypeInfo scan only decides
+		// whether registering the defer is worth it — the flags are still
+		// zero here. What actually gets returned is gated per value inside
+		// releasePooledValues.
+		{
+			vals := params.values
+			hasPooled := false
+			for i := 0; i < len(values); i++ {
+				if pooledMarshalType(info.request.columns[i].TypeInfo) {
+					hasPooled = true
+					break
+				}
+			}
+			if hasPooled {
+				defer releasePooledValues(vals)
+			}
+		}
+
 		for i := 0; i < len(values); i++ {
 			v := &params.values[i]
 			value := values[i]
@@ -2909,6 +2956,17 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 
 	hasLwtEntries := false
 
+	// pooledBufs collects marshalled byte slices from fast-path marshal
+	// functions so they can be returned to marshalOutputPool after the
+	// framer copies them. The defer is installed before the loop so that
+	// buffers are returned even if a later marshalQueryValue call fails.
+	var pooledBufs [][]byte
+	defer func() {
+		for _, buf := range pooledBufs {
+			putPooledOutput(buf)
+		}
+	}()
+
 	for i := 0; i < n; i++ {
 		entry := &batch.Entries[i]
 		b := &req.statements[i]
@@ -2953,6 +3011,9 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 				if err := marshalQueryValue(typ, value, v); err != nil {
 					putBatchQueryValues(req.statements)
 					return &Iter{err: err}
+				}
+				if v.pooled {
+					pooledBufs = append(pooledBufs, v.value)
 				}
 			}
 
