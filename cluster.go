@@ -78,6 +78,8 @@ type ClusterConfig struct {
 	// HostDialer will be used to establish all connections for this Cluster.
 	// Unlike Dialer, HostDialer is responsible for setting up the entire connection, including the TLS session.
 	// To support shard-aware port, HostDialer should implement ShardDialer.
+	// HostDialer is not supported with ClientRoutesConfig because HostInfo does
+	// not expose the translated client-route port. Use Dialer instead.
 	// If not provided, Dialer will be used instead.
 	HostDialer HostDialer
 	// StreamObserver will be notified of stream state changes.
@@ -545,12 +547,16 @@ func WithResolveHealthyEndpointPeriod(val time.Duration) func(*ClientRoutesConfi
 	return func(cfg *ClientRoutesConfig) {}
 }
 
+// WithEndpoints replaces the ScyllaDB Cloud private connection IDs and optional
+// address overrides used by client routes.
 func WithEndpoints(endpoints ...ClientRoutesEndpoint) func(*ClientRoutesConfig) {
 	return func(cfg *ClientRoutesConfig) {
 		cfg.Endpoints = endpoints
 	}
 }
 
+// WithTable overrides the client routes table name for tests. Production use
+// must use system.client_routes and should not set this option.
 func WithTable(tableName string) func(*ClientRoutesConfig) {
 	return func(cfg *ClientRoutesConfig) {
 		cfg.TableName = tableName

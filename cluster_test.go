@@ -68,6 +68,47 @@ func TestNewCluster_WithHosts(t *testing.T) {
 	tests.AssertEqual(t, "cluster config host 1", "addr2", cfg.Hosts[1])
 }
 
+func TestWithClientRoutesSeedsHostsFromConnectionAddresses(t *testing.T) {
+	t.Parallel()
+
+	t.Run("seeds only non-empty connection addresses", func(t *testing.T) {
+		t.Parallel()
+		cfg := NewCluster()
+		cfg.WithOptions(
+			WithClientRoutes(
+				WithEndpoints(
+					ClientRoutesEndpoint{ConnectionID: "conn-1", ConnectionAddr: "10.0.0.1"},
+					ClientRoutesEndpoint{ConnectionID: "conn-2", ConnectionAddr: "private-endpoint.example.com"},
+					ClientRoutesEndpoint{ConnectionID: "conn-3"},
+				),
+			),
+		)
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		tests.AssertDeepEqual(t, "client route connection addresses seed hosts",
+			[]string{"10.0.0.1", "private-endpoint.example.com"}, cfg.Hosts)
+		tests.AssertEqual(t, "client routes default port", 9042, cfg.Port)
+	})
+
+	t.Run("preserves existing hosts", func(t *testing.T) {
+		t.Parallel()
+		cfg := NewCluster("existing.example.com")
+		cfg.WithOptions(
+			WithClientRoutes(
+				WithEndpoints(
+					ClientRoutesEndpoint{ConnectionID: "conn-1", ConnectionAddr: "private-endpoint.example.com"},
+				),
+			),
+		)
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		tests.AssertDeepEqual(t, "existing hosts are preserved",
+			[]string{"existing.example.com"}, cfg.Hosts)
+	})
+}
+
 func TestValidateAndInitSSLDoesNotShareTLSConfigBetweenConfigCopies(t *testing.T) {
 	t.Parallel()
 
