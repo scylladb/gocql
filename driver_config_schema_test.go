@@ -117,6 +117,7 @@ func driverConfigCases() []struct {
 				c.MetadataSchemaRequestTimeout = 0
 				c.MaxWaitSchemaAgreement = 0
 				c.PageSize = 0
+				c.FrameAssemblyTimeout = 0
 			},
 		},
 		{
@@ -127,6 +128,7 @@ func driverConfigCases() []struct {
 				c.WriteTimeout = 500 * time.Microsecond
 				c.Timeout = 500 * time.Microsecond
 				c.MetadataSchemaRequestTimeout = 500 * time.Microsecond
+				c.FrameAssemblyTimeout = 500 * time.Microsecond
 			},
 			isScyllaConn: true,
 		},
