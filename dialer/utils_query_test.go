@@ -289,14 +289,86 @@ func TestGetFrameHashDistinguishesCustomPayload(t *testing.T) {
 	}
 }
 
+// TestGetFrameHashCustomPayloadOrderIndependent pins that a custom payload's identity
+// does not depend on the byte order its entries were encoded in.
+//
+// writeBytesMap (frame.go) ranges directly over a Go map to encode a CUSTOM_PAYLOAD
+// [bytes map], so the wire bytes for the same logical entries land in a different
+// order on every call once the payload holds two or more of them. addCustomPayload
+// sorts each entry's raw bytes before folding them together specifically so this does
+// not matter -- a single entry, which is all TestGetFrameHashDistinguishesCustomPayload
+// above ever builds, cannot exercise that: a one-entry sort has nothing to reorder.
+func TestGetFrameHashCustomPayloadOrderIndependent(t *testing.T) {
+	entries := [][2]string{
+		{"k1", "\xAA"},
+		{"k2", "\xBB"},
+		{"k3", "\xCC"},
+	}
+
+	// payload renders the entries at the given indices, in that order, as a [bytes
+	// map], followed by whatever body the opcode expects.
+	payload := func(order []int, body []byte) []byte {
+		out := []byte{0x00, byte(len(order))}
+		for _, i := range order {
+			out = append(out, shortString(entries[i][0])...)
+			out = append(out, bytesValue([]byte(entries[i][1]))...)
+		}
+		return append(out, body...)
+	}
+
+	// Each body has to be one the arm can walk to the end of, for the same reason
+	// TestGetFrameHashDistinguishesCustomPayload's do.
+	queryTail := queryBody("SELECT * FROM system.local", 0x00)
+	executeTail := []byte{
+		0x00, 0x03, 0xAA, 0xBB, 0xCC, // preparedID: len 3
+		0x00, 0x01, 0x00, // consistency ONE, no flags
+	}
+	batchTail := batchBody(0x00)
+
+	for _, tc := range []struct {
+		name string
+		op   frameOp
+		tail []byte
+	}{
+		{name: "query", op: opQuery, tail: queryTail},
+		{name: "execute", op: opExecute, tail: executeTail},
+		{name: "batch", op: opBatch, tail: batchTail},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			forward := frameV4(tc.op, frm.FlagCustomPayload, payload([]int{0, 1, 2}, tc.tail))
+			reversed := frameV4(tc.op, frm.FlagCustomPayload, payload([]int{2, 1, 0}, tc.tail))
+
+			x, y := GetFrameHash(forward, false), GetFrameHash(reversed, false)
+			if x != y {
+				t.Errorf("the same payload encoded in two different orders hashes differently: %d != %d", x, y)
+			}
+
+			// Neither hash may be the whole-frame fallback -- that would make the
+			// equality above vacuous, since a truncated or unwalkable frame always
+			// falls back to the same murmur.Murmur3H1(frame) regardless of order.
+			if raw := murmur3OfStreamBlanked(forward); x == raw {
+				t.Fatalf("GetFrameHash hit the whole-frame fallback (%d); the body did not fully bounds-check", raw)
+			}
+
+			// And a genuinely different payload -- not just a reordering -- still has
+			// to hash differently, so this test cannot be satisfied by a
+			// canonicalization that collapses every payload to the same value.
+			missingEntry := frameV4(tc.op, frm.FlagCustomPayload, payload([]int{0, 1}, tc.tail))
+			if z := GetFrameHash(missingEntry, false); z == x {
+				t.Errorf("a payload missing an entry hashes the same as the full one (%d)", z)
+			}
+		})
+	}
+}
+
 // TestGetFrameHashDistinguishesTracing pins that a request's tracing flag is part of its
 // identity, on each of the three arms that walk a body.
 //
 // framer.trace sets FlagTracing in the header and changes nothing else -- the tracing id
 // comes back on the response -- so a traced request and an untraced one are byte-identical
 // from the body onwards. No range of the body can tell them apart, which is what makes
-// this different from the custom payload: that one is body bytes, and widening the range
-// covered it. The replayer serves the first hash it matches, so without the flags byte in
+// this different from the custom payload: that one is body bytes, so a hash of them can be
+// folded in. The replayer serves the first hash it matches, so without the flags byte in
 // the hash it answers one with the other's response. Query.Trace, Batch.Trace and
 // Session.SetTrace are all public, so this is a pair a caller can send.
 func TestGetFrameHashDistinguishesTracing(t *testing.T) {

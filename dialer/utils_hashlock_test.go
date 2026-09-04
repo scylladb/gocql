@@ -197,7 +197,7 @@ var hashLockWant = map[string]int64{
 	"empty":                             0,
 	"execute-metadata-id":               8953623736212654883,
 	"execute-metadata-id-flag-off":      -8761464023806847249,
-	"execute-custom-payload":            5599992181668421900,
+	"execute-custom-payload":            301853343717256017,
 	"execute-no-metadata-id":            -7853075121273079524,
 	"options":                           359591853454385582,
 	"prepare":                           7009575819196046835,
@@ -217,7 +217,7 @@ var hashLockWant = map[string]int64{
 	// own replay. No recording had to be regenerated for it — the checked-in
 	// fixtures contain no BATCH frame.
 	"batch":                   -8625060010961602230,
-	"batch-custom-payload":    6934540613449475907,
+	"batch-custom-payload":    -134920547368094710,
 	"batch-default-timestamp": -8987577148391256339,
 
 	// Every QUERY value here moved when scylladb/gocql#1000 was fixed. Before it, all
@@ -236,7 +236,7 @@ var hashLockWant = map[string]int64{
 	// [bytes map] and differs in nothing else, and the range began past the payload,
 	// so the two were indistinguishable — and the replayer serves the first hash it
 	// matches, so one of them got the other's response. Query.CustomPayload is public,
-	// so both are requests a caller can send. The range now starts at the body.
+	// so both are requests a caller can send. The range then started at the body.
 	//
 	// execute-custom-payload and batch-custom-payload are here because the same range
 	// moved in those two arms as well, and without a payload-bearing case each, either
@@ -247,8 +247,18 @@ var hashLockWant = map[string]int64{
 	// byte, and the fold is skipped when that byte is zero, so they are also the only
 	// values that moved: every other value here is byte-identical across it, which is
 	// what let the checked-in recordings stand.
+	//
+	// The three moved a fourth time when the range stopped covering the payload's raw
+	// bytes and started folding in a canonical hash of its entries instead (see
+	// addCustomPayload): writeBytesMap (frame.go) ranges over a Go map to encode the
+	// payload, so those raw bytes land in a different order on every call once a
+	// payload holds two or more entries, and hashing them directly made a recorded
+	// request and its own replay hash differently. The three payload-bearing cases here
+	// still carry only one entry, so this move changed their values without changing
+	// what they cover; TestGetFrameHashCustomPayloadOrderIndependent is what actually
+	// exercises two or more.
 	"query-bare":                    669594534933358966,
-	"query-custom-payload":          3830604835530498012,
+	"query-custom-payload":          6969718323714752801,
 	"query-default-timestamp":       -3958206948791604622,
 	"query-named-values":            1354821534699525939,
 	"query-null-value":              -7046978697175198898,

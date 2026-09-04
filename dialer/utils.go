@@ -11,7 +11,9 @@
 package dialer
 
 import (
+	"bytes"
 	"errors"
+	"sort"
 
 	frm "github.com/gocql/gocql/internal/frame"
 	"github.com/gocql/gocql/internal/murmur"
@@ -487,22 +489,23 @@ func addHeader(index int) int {
 }
 
 // pastCustomPayload reports the offset a request's own body fields start at, stepping
-// over the custom payload when the frame carries one.
+// over the custom payload when the frame carries one, along with a canonical hash of
+// the payload's entries (0 when the frame carries none).
 //
 // The [bytes map] a CUSTOM_PAYLOAD frame carries sits between the header and the first
 // body field, so QUERY, EXECUTE and BATCH each have to step over it before walking
 // anything of their own; a frame without the flag starts where the header ends. Reading
 // frame[1] is the caller's to make safe, and GetFrameHash's arms all sit behind its
 // header-length guard.
-func pastCustomPayload(frame []byte, p int) (int, bool) {
+func pastCustomPayload(frame []byte, p int) (int, int64, bool) {
 	if frame[1]&frm.FlagCustomPayload != frm.FlagCustomPayload {
-		return addHeader(p), true
+		return addHeader(p), 0, true
 	}
 	return addCustomPayload(frame, p)
 }
 
 // addCustomPayload walks the [bytes map] a frame carries when FlagCustomPayload is
-// set, and returns the index just past it.
+// set, and returns the index just past it along with a canonical hash of its entries.
 //
 // It derives that map's offset from p with addHeader rather than taking it as well,
 // so the offset it reads the entry count from and the offset it walks on from cannot
@@ -510,10 +513,20 @@ func pastCustomPayload(frame []byte, p int) (int, bool) {
 // a caller passing an index already advanced past something would have read the count
 // from the body start and walked from somewhere else, and the walk would be
 // plausible-but-wrong in the way the empty-map case below was.
-func addCustomPayload(frame []byte, p int) (int, bool) {
+//
+// The hash sorts each entry's raw bytes before folding them together, rather than
+// folding them in wire order. writeBytesMap (frame.go) ranges directly over a Go map to
+// encode this same [bytes map], so its wire order is randomized across calls whenever
+// the payload holds two or more entries: hashing that order-dependent range directly,
+// as GetFrameHash used to, made the hash of an otherwise-identical request come out
+// differently between a recording and its own replay. Sorting first makes the fold
+// independent of which order writeBytesMap happened to produce. Ties are impossible —
+// a [bytes map]'s keys are unique, and the key is the first field of each entry, so
+// comparing the raw entries already totally orders them.
+func addCustomPayload(frame []byte, p int) (int, int64, bool) {
 	index := addHeader(p)
 	if !fits(frame, index, 2) {
-		return 0, false
+		return 0, 0, false
 	}
 	customPayloadLength := int(frame[index])<<8 | int(frame[index+1])
 	// Skip the [bytes map] count itself unconditionally. A map of zero entries still
@@ -525,23 +538,33 @@ func addCustomPayload(frame []byte, p int) (int, bool) {
 	// of bytes of the wrong field, the same handful for every batch, which is a
 	// collision the replayer resolves by serving whichever response it finds first.
 	index = index + 2
+
+	entries := make([][]byte, 0, customPayloadLength)
 	for i := 0; i < customPayloadLength; i++ {
+		entryStart := index
 		if !fits(frame, index, 2) {
-			return 0, false
+			return 0, 0, false
 		}
 		stringLength := int(frame[index])<<8 | int(frame[index+1])
 		if !fits(frame, index, 2+stringLength) {
-			return 0, false
+			return 0, 0, false
 		}
 		index = index + 2 + stringLength
 
 		var ok bool
 		if index, ok = addBytes(frame, index); !ok {
-			return 0, false
+			return 0, 0, false
 		}
+		entries = append(entries, frame[entryStart:index])
 	}
 
-	return index, true
+	sort.Slice(entries, func(i, j int) bool { return bytes.Compare(entries[i], entries[j]) < 0 })
+	var h int64
+	for _, entry := range entries {
+		h = foldHash(h, murmur.Murmur3H1(entry))
+	}
+
+	return index, h, true
 }
 
 // foldHash mixes add into h, so a frame's identity can span two byte ranges that
@@ -572,9 +595,17 @@ func hashWithTail(frame []byte, start, end, tailStart, tailEnd int) int64 {
 
 // hashParams finishes hashing a request whose body ends in a <query_parameters>
 // block: it walks the block at paramsStart and hashes frame[hashStart:] up to the
-// block's end, folding in the protocol v5 tail and the header flags. A block that
-// cannot be walked means the frame cannot be located either, so it falls back to
-// hashing the raw bytes, matching the fallbacks at its call sites.
+// block's end, folding in the protocol v5 tail, a custom payload's canonical hash and
+// the header flags. A block that cannot be walked means the frame cannot be located
+// either, so it falls back to hashing the raw bytes, matching the fallbacks at its
+// call sites.
+//
+// payloadHash is folded in rather than covered by [hashStart:end] because its own
+// bytes are order-dependent in a way the rest of the range is not — see
+// addCustomPayload — while the payload still has to be part of a request's identity:
+// two requests alike in everything but their payload must not hash the same. The fold
+// is gated on the flag bit itself, not on payloadHash being nonzero, so a payload
+// whose canonical hash happens to land on zero cannot be mistaken for no payload.
 //
 // The flags byte is folded in because it carries identity that no part of the body
 // does. Tracing is the case that matters: framer.trace sets FlagTracing and changes
@@ -591,13 +622,16 @@ func hashWithTail(frame []byte, start, end, tailStart, tailEnd int) int64 {
 // zero flags byte has no identity to lose. Reading frame[1] is safe for the same reason
 // pastCustomPayload's is: every arm reaching here sits behind GetFrameHash's
 // FrameHeaderLen guard.
-func hashParams(frame []byte, hashStart, paramsStart int) int64 {
+func hashParams(frame []byte, hashStart, paramsStart int, payloadHash int64) int64 {
 	end, tailStart, tailEnd, ok := addQueryParams(frame, paramsStart)
 	if !ok {
 		return murmur.Murmur3H1(frame)
 	}
 
 	h := hashWithTail(frame, hashStart, end, tailStart, tailEnd)
+	if frame[1]&frm.FlagCustomPayload == frm.FlagCustomPayload {
+		h = foldHash(h, payloadHash)
+	}
 	if frame[1] != 0 {
 		h = foldHash(h, murmur.Murmur3H1(frame[1:2]))
 	}
@@ -635,19 +669,20 @@ func GetFrameHash(frame []byte, useMetadataID bool) int64 {
 	// would have to blank.
 	//
 	// The arms below answer to those two requirements in three shapes, not one. QUERY,
-	// EXECUTE and BATCH extract a range: it starts at the body and stops where the
-	// per-run fields begin, because a request's identity is its statement and its bound
-	// values — the query text or the prepared id, the values, and the parameters that
-	// change what the statement means — while the default timestamp is time.Now() at
-	// send and never in the hash. Those three fold the header flags in as well, for a
-	// bit of identity the body never carries; see hashParams.
+	// EXECUTE and BATCH extract a range: it starts past the custom payload, when there
+	// is one, and stops where the per-run fields begin, because a request's identity is
+	// its statement and its bound values — the query text or the prepared id, the
+	// values, and the parameters that change what the statement means — while the
+	// default timestamp is time.Now() at send and never in the hash. Those three fold in
+	// a canonical hash of the payload as well, and the header flags, for a bit of
+	// identity the body never carries; see addCustomPayload and hashParams.
 	//
-	// One exception, and it is a dead one: the protocol v1 EXECUTE path measures from
-	// past the custom payload rather than from the body, so it leaves the prepared id
-	// out of the very range that is meant to carry it. It cannot be reached — its
-	// values walk advances at least four bytes per value while the bound it is checked
-	// against allows one, so every v1 EXECUTE falls back to hashing the frame whole.
-	// Left as it is because no live connection is v1 and the path is going away.
+	// One exception, and it is a dead one: the protocol v1 EXECUTE path slices from
+	// past its values, so it leaves the prepared id out of the very range that is meant
+	// to carry it. It cannot be reached — its values walk advances at least four bytes
+	// per value while the bound it is checked against allows one, so every v1 EXECUTE
+	// falls back to hashing the frame whole. Left as it is because no live connection is
+	// v1 and the path is going away.
 	//
 	// STARTUP hashes the header down to the opcode and deliberately stops before the
 	// body length, for the reason its own comment gives. PREPARE, AUTH_RESPONSE,
@@ -699,7 +734,7 @@ func GetFrameHash(frame []byte, useMetadataID bool) int64 {
 	case byte(opAuthResponse):
 		return murmur.Murmur3H1(frame)
 	case byte(opQuery):
-		index, ok := pastCustomPayload(frame, p)
+		index, payloadHash, ok := pastCustomPayload(frame, p)
 		if !ok {
 			return murmur.Murmur3H1(frame)
 		}
@@ -709,17 +744,18 @@ func GetFrameHash(frame []byte, useMetadataID bool) int64 {
 		// EXECUTE arm, which steps over its preparedID and resultMetadataID first, and
 		// with the BATCH arm, which steps over its statements.
 		//
-		// The hashed range starts at the body rather than at index, so it covers the
-		// custom payload and the query text as well as the values: the range is what
-		// identifies the request, and the walk only has to find where it ends.
+		// The hashed range starts at index rather than the body, so it covers the query
+		// text as well as the values but not the custom payload: the payload's own bytes
+		// are order-dependent (see addCustomPayload), so hashParams folds its canonical
+		// hash in separately instead.
 		paramsStart, ok := addLongString(frame, index)
 		if !ok {
 			return murmur.Murmur3H1(frame)
 		}
 
-		return hashParams(frame, addHeader(p), paramsStart)
+		return hashParams(frame, index, paramsStart, payloadHash)
 	case byte(opExecute):
-		index, ok := pastCustomPayload(frame, p)
+		index, payloadHash, ok := pastCustomPayload(frame, p)
 		if !ok {
 			return murmur.Murmur3H1(frame)
 		}
@@ -759,7 +795,7 @@ func GetFrameHash(frame []byte, useMetadataID bool) int64 {
 		}
 
 		if frame[0]&protoVersionMask > protoVersion1 {
-			return hashParams(frame, addHeader(p), endIndex)
+			return hashParams(frame, index, endIndex, payloadHash)
 		}
 
 		// Protocol v1 has no <query_parameters> block: the values follow the
@@ -782,7 +818,7 @@ func GetFrameHash(frame []byte, useMetadataID bool) int64 {
 		}
 		return murmur.Murmur3H1(frame[index:endIndex])
 	case byte(opBatch):
-		index, ok := pastCustomPayload(frame, p)
+		index, payloadHash, ok := pastCustomPayload(frame, p)
 		if !ok {
 			return murmur.Murmur3H1(frame)
 		}
@@ -798,7 +834,7 @@ func GetFrameHash(frame []byte, useMetadataID bool) int64 {
 			return murmur.Murmur3H1(frame)
 		}
 
-		return hashParams(frame, addHeader(p), paramsStart)
+		return hashParams(frame, index, paramsStart, payloadHash)
 	case byte(opOptions):
 		return murmur.Murmur3H1(frame)
 	case byte(opRegister):
