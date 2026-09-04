@@ -31,10 +31,13 @@ import (
 	"log"
 	"net"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	lz4mod "github.com/scylladb/gocql/lz4"
 )
 
 var (
@@ -47,7 +50,7 @@ var (
 	flagAutoWait      = flag.Duration("autowait", 1000*time.Millisecond, "time to wait for autodiscovery to fill the hosts poll")
 	flagRunSslTest    = flag.Bool("runssl", false, "Set to true to run ssl test")
 	flagRunAuthTest   = flag.Bool("runauth", false, "Set to true to run authentication test")
-	flagCompressTest  = flag.String("compressor", "", "compressor to use")
+	flagCompressTest  = flag.String("compressor", "no-compression", "compressor to use")
 	flagTimeout       = flag.Duration("gocql.timeout", 5*time.Second, "sets the connection `timeout` for all operations")
 	flagClusterSocket = flag.String("cluster-socket", "", "nodes socket files separated by comma")
 	flagDistribution  = flag.String("distribution", "scylla", "database distribution - scylla or cassandra")
@@ -316,7 +319,13 @@ func createCluster(opts ...func(*ClusterConfig)) *ClusterConfig {
 	switch *flagCompressTest {
 	case "snappy":
 		cluster.Compressor = &SnappyCompressor{}
-	case "":
+	case "lz4":
+		// lz4 is the only compressor native protocol v5 permits: a v5 server still
+		// advertises snappy in its OPTIONS response, but STARTUP with COMPRESSION=snappy
+		// is rejected server-side, and ClusterConfig.Validate refuses any compressor that
+		// is not a SegmentCompressor once ProtoVersion >= 5.
+		cluster.Compressor = &lz4mod.LZ4Compressor{}
+	case "no-compression", "":
 	default:
 		panic("invalid compressor: " + *flagCompressTest)
 	}
@@ -576,4 +585,37 @@ func staticAddressTranslator(newAddr net.IP, newPort int) AddressTranslator {
 	return AddressTranslatorFunc(func(addr net.IP, port int) (net.IP, int) {
 		return newAddr, newPort
 	})
+}
+
+func assertDeepEqual(t *testing.T, description string, expected, actual interface{}) {
+	t.Helper()
+	if !reflect.DeepEqual(expected, actual) {
+		t.Fatalf("expected %s to be (%#v) but was (%#v) instead", description, expected, actual)
+	}
+}
+
+// get returns the cache entry for key, or false when there is none. Tests only,
+// as of this commit: the driver's own paths reach the cache through
+// execIfMissing, evictPreparedID and updateMetadataIfSame, each of which takes
+// the lock itself.
+//
+// It lives in this file, which carries no build tag, because its callers do not
+// share one — cassandra_test.go is `integration` while prepared_cache_test.go is
+// `unit`, and TEST_INTEGRATION_TAGS does not include `unit`. Defining it in
+// either tagged file would break the other build.
+func (p *preparedLRU) get(key stmtCacheKey) (*inflightPrepare, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	val, ok := p.lru.Get(key)
+	if !ok {
+		return nil, false
+	}
+
+	ifp, ok := val.(*inflightPrepare)
+	if !ok {
+		return nil, false
+	}
+
+	return ifp, true
 }

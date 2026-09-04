@@ -93,6 +93,9 @@ func (*mockConnection) exec(ctx context.Context, req frameBuilder, tracer Tracer
 }
 func (*mockConnection) awaitSchemaAgreement(ctx context.Context) error     { return nil }
 func (*mockConnection) executeQuery(ctx context.Context, qry *Query) *Iter { return nil }
+func (*mockConnection) executeQueryWithMetrics(context.Context, *Query, *queryMetrics) *Iter {
+	return nil
+}
 
 var systemLocalResultMetadata = resultMetadata{
 	flags:          0,
@@ -301,6 +304,9 @@ func (*trackingRingConnection) exec(context.Context, frameBuilder, Tracer, time.
 }
 func (*trackingRingConnection) awaitSchemaAgreement(context.Context) error { return nil }
 func (*trackingRingConnection) executeQuery(context.Context, *Query) *Iter { return nil }
+func (*trackingRingConnection) executeQueryWithMetrics(context.Context, *Query, *queryMetrics) *Iter {
+	return nil
+}
 func (c *trackingRingConnection) querySystem(_ context.Context, q string, _ ...any) *Iter {
 	c.lastQuery = q
 	return c.iter
@@ -346,7 +352,7 @@ func TestRingDescriberGetClusterPeerInfoClosesIter(t *testing.T) {
 	}
 	r := &ringDescriber{cfg: &ClusterConfig{}}
 
-	peers, err := r.getClusterPeerInfo(&HostInfo{}, &trackingRingConnection{
+	peers, err := r.getClusterPeerInfo(context.Background(), &trackingRingConnection{
 		iter: &Iter{
 			meta:    systemPeersResultMetadata,
 			framer:  framer,
@@ -386,7 +392,7 @@ func TestGetClusterPeerInfoQueryRouting(t *testing.T) {
 			}
 			r := &ringDescriber{cfg: &ClusterConfig{}}
 			// iter is nil so getClusterPeerInfo returns errNoControl, but the query is still recorded
-			_, _ = r.getClusterPeerInfo(&HostInfo{}, conn)
+			_, _ = r.getClusterPeerInfo(context.Background(), conn)
 			if conn.lastQuery != tt.wantQuery {
 				t.Errorf("got query %q, want %q", conn.lastQuery, tt.wantQuery)
 			}

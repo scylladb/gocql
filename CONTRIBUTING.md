@@ -65,6 +65,83 @@ Unit tests are good, integration tests are even better. An example of a unit tes
 
 That said, the point of writing tests is to provide a safety net to catch regressions, so there is no need to go overboard with tests. Remember that the more tests you write, the more code we will have to maintain. So there's a balance to strike there.
 
+#### Running Against Native Protocol v5
+
+`TEST_CQL_PROTOCOL` and `TEST_COMPRESSOR` select what the integration targets negotiate; the defaults are `4` and `snappy`. Protocol v5 is never chosen automatically (`discoverProtocol` caps negotiation at v4), so the tests guarded by `session.cfg.ProtoVersion < protoVersion5` -- segmentation, compressed segments, `now_in_seconds`, keyspace override and `METADATA_CHANGED`, ten tests at the time of writing -- only run when you ask for it:
+
+```sh
+CASSANDRA_VERSION=5-LATEST TEST_CQL_PROTOCOL=5 TEST_COMPRESSOR=lz4 TEST_INTEGRATION_TIMEOUT=20m make test-integration-cassandra
+```
+
+`grep -rn 'ProtoVersion < protoVersion5' *_test.go` lists them, should that set have grown since.
+Note that not every test in that list is guarded because v5 is required: `TestDurationType`
+carries the guard even though the `duration` type has been served over v4 since Cassandra
+3.11 and the driver gates it on nothing.
+
+`TEST_INTEGRATION_TIMEOUT` buys headroom over the 10m default. The suite has been measured anywhere from 280s to 470s depending on machine load -- the protocol version makes little difference -- and overrunning `go test`'s `-timeout` panics with a goroutine dump rather than naming the failing test. Note that it cannot be passed through `TEST_OPTS`: `TEST_OPTS` is interpolated ahead of `-timeout` on the `go test` line, and the later flag wins.
+
+`lz4` is not interchangeable with the default here. Snappy was removed in v5, and `ClusterConfig.Validate` rejects any compressor that does not implement `SegmentCompressor` once `ProtoVersion >= 5`, so `TEST_COMPRESSOR=snappy` fails every session in the suite; `lz4` and `no-compression` are the only two valid settings. CI runs this configuration on the Cassandra `5-LATEST` leg, plus a second `TEST_COMPRESSOR=no-compression` step scoped to `TestLargeSizeQuery` and `TestPrepareExecuteMetadataChangedFlag`, because the compressed and uncompressed segment headers are separate code paths. ScyllaDB builds its protocol extensions on top of v4 and has no v5 to negotiate, so there is no equivalent Scylla lane.
+
+#### Releasing the lz4 Module
+
+The `lz4` sub-module is versioned independently of the parent and tagged with its directory
+prefix (`lz4/vX.Y.Z`). Its version is written down in four places, and `check-lz4-pin` verifies
+three of them:
+
+- `go.mod` -- `require github.com/scylladb/gocql/lz4 vX.Y.Z`. It is inert locally, because the
+  `replace` directive beside it redirects to `./lz4`, but consumers see the require and not
+  the replace.
+- `README.md` section 5.4 -- the `github.com/scylladb/gocql/lz4 vX.Y.Z` the prose quotes, and
+  the `lz4/vX.Y.Z` tag reference below it. The third occurrence, the bare version at the end of
+  the section, is deliberately left unchecked: it is indistinguishable from the parent module's
+  own version, which sits a few lines above it and moves independently.
+
+That neighbouring version is a release obligation of its own, and it belongs to the **parent**
+module rather than to this one: section 5.4 opens by telling consumers to pin
+`replace github.com/gocql/gocql => github.com/scylladb/gocql vX.Y.Z`. Nothing checks it --
+`check-lz4-pin` anchors both of its greps on the lz4 module path precisely because a bare version
+is ambiguous -- so bump it by hand at each **parent** release. Left behind, it hands consumers a
+pin older than the section introducing it, which then describes a `go.mod` that release does not
+have.
+
+One gap remains: the Build workflow's `paths-ignore` skips `*.md`, so a pull request that
+edits **only** README.md never triggers it and `check-lz4-pin` never runs on the change it
+guards. Closing it would mean running the full integration matrix on documentation-only pull
+requests, which costs more than the gap does; the release flow above touches `go.mod` and
+README.md in the same commit, so Build does run for it.
+
+Tag first, then bump -- the order matters. A pin that lags its newest tag is only a warning,
+because a `require` is a lower bound: it still resolves, and the README's `replace` is what
+selects the version a consumer builds against. The window between pushing `lz4/vX.Y.Z` and
+landing the bump is therefore green. The reverse order is not: a pin naming a version that was
+never tagged resolves for nobody, and `check-lz4-pin` fails hard on it. That is also why the
+check tests whether the tag exists rather than whether the pin sorts newest -- an untagged
+version can sit between two tags and still compare as older than the newest one.
+
+Renovate is deliberately disabled for `github.com/scylladb/gocql/lz4` (see `renovate.json`)
+because the version has to follow the release tag rather than a bot.
+
+#### Measuring Code Coverage
+
+`make test-unit-coverage` runs the unit suite (root module and the `lz4` submodule) instrumented for coverage. To include the integration suite too, start a cluster and run its coverage target as well, e.g.:
+
+```sh
+make scylla-start
+make test-integration-scylla-coverage
+```
+
+To also measure the `ccm`-tagged tests (`internal/ccm`, exercised by `make ccm-test`), run `make ccm-test-coverage` too -- it targets that package directly rather than going through `test-integration-scylla`, since `internal/ccm`'s tests don't accept the cluster-connection flags (`-distribution`, `-cluster`, ...) that target passes.
+
+All of these accumulate into the same coverage data directory (`.coverage/data` by default, override with `COVERAGE_DIR`), so unit and integration runs combine into one picture. Once you've run whichever combination you want measured, generate the report:
+
+```sh
+make coverage-report
+```
+
+This prints a per-package percentage and writes `coverage-root.html`/`coverage-lz4.html` (open either in a browser for a line-by-line view) plus the underlying `.out` profiles. `lz4` is a separate Go module from the root one, so its report is generated and rendered separately -- `go tool cover` resolves source files against the module rooted at the current directory, and can't do that for two modules from one profile.
+
+`make clean-coverage` removes the coverage data directory and generated reports.
+
 ### Sign Off Procedure
 
 Generally speaking, a pull request can get merged by any one of the project's committers. If your change is minor, chances are that one team member will just go ahead and merge it there and then. As stated earlier, suitable test coverage will increase the likelihood that a single reviewer will assess and merge your change. If your change has no test coverage, or looks like it may have wider implications for the health and stability of the library, the reviewer may elect to refer the change to another team member to achieve consensus before proceeding. Therefore, the tighter and cleaner your patch is, the quicker it will go through the review process.

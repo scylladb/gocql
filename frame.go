@@ -30,14 +30,17 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	frm "github.com/gocql/gocql/internal/frame"
+	"github.com/gocql/gocql/internal/segment"
 )
 
 type unsetColumn struct{}
@@ -71,9 +74,18 @@ const (
 	protoVersion2      = 0x02
 	protoVersion3      = 0x03
 	protoVersion4      = 0x04
-	protoVersion5      = 0x05
-
-	maxFrameSize = 256 * 1024 * 1024
+	// protoVersion5 is the final (non-beta) native protocol v5: the envelope and
+	// transport-segment layout implemented by segment.go.
+	//
+	// Requests are deliberately never marked with frm.FlagBetaProtocol. That flag
+	// opts into whatever v5 dialect the server is currently developing, which for
+	// Cassandra 3.11 is the *beta* v5 dialect — it does not use the final envelope
+	// layout, so setting the flag makes such a server accept the handshake and
+	// then fail every subsequent frame with a protocol error, instead of cleanly
+	// rejecting the version. Apache removed the same automatic opt-in in
+	// CASSGO-88 (https://issues.apache.org/jira/browse/CASSGO-88). Supporting a
+	// beta dialect would need an explicit opt-in bound to that specific dialect.
+	protoVersion5 = 0x05
 )
 
 // DEPRECATED use Consistency type, SerialConsistency is now an alias for backwards compatibility.
@@ -182,7 +194,8 @@ const (
 )
 
 var (
-	ErrFrameTooBig = errors.New("frame length is bigger than the maximum allowed")
+	ErrFrameTooBig       = errors.New("frame length is bigger than the maximum allowed")
+	ErrReadHeaderTimeout = errors.New("unable to read frame header")
 )
 
 func readInt(p []byte) int32 {
@@ -193,8 +206,17 @@ const defaultBufSize = 128
 
 type ObservedFrameHeader struct {
 	// StartHeader is the time we started reading the frame header off the network connection.
+	//
+	// On protocol v5 the header arrives inside a transport segment, so this is
+	// when the read of that segment began. Frames packed into one self-contained
+	// segment therefore share a window: they did all arrive in the same read.
 	Start time.Time
 	// EndHeader is the time we finished reading the frame header off the network connection.
+	//
+	// On protocol v5 this is when the segment carrying the header had been read —
+	// or, for a frame whose header is itself split across segments, when the last
+	// segment needed to complete the 9 header bytes arrived. It is not extended to
+	// cover the rest of a frame spanning further segments.
 	End time.Time
 	// Host is Host of the connection the frame header was read from.
 	Host    *HostInfo
@@ -241,19 +263,45 @@ const headSize = 9
 
 // a framer is responsible for reading, writing and parsing frames on a single stream
 type framer struct {
-	compressor            Compressor
-	header                *frm.FrameHeader
-	customPayload         map[string][]byte
-	release               func()
-	traceID               []byte
-	readBuffer            []byte
-	buf                   []byte
+	compressor    Compressor
+	header        *frm.FrameHeader
+	customPayload map[string][]byte
+	release       func()
+	traceID       []byte
+	readBuffer    []byte
+	buf           []byte
+	// wireBuf is the framer's second reusable byte buffer. prepareModernLayout
+	// encodes the v5 transport segments into it and then swaps it with buf, so a
+	// framer reused for consecutive v5 requests keeps both the raw-frame buffer
+	// and the wire buffer alive instead of allocating a new one per request.
+	wireBuf               []byte
 	flagLWT               int
 	rateLimitingErrorCode int
 	flags                 byte
 	proto                 byte
 	tabletsRoutingV1      bool
+	scyllaUseMetadataID   bool
 	released              atomic.Bool
+}
+
+// defaultFramerFlags computes the default header flags a framer carries for the
+// given compressor and negotiated protocol version. It is the single source of
+// truth shared by newFramer and initCache so the startup/fallback path and the
+// pooled framers cannot drift.
+//
+// Only FlagCompress is derived, and only below proto v5 (v5+ compresses at the
+// segment layer, not via a frame-header flag). It depends on the negotiated
+// compressor, so it must only be applied after startup: the server may reject the
+// requested compression, which clears c.compressor. No version-derived flag is
+// added — in particular FlagBetaProtocol is never set, see protoVersion5.
+func defaultFramerFlags(compressor Compressor, version byte) byte {
+	// Mask off the direction/reserved high bit: newFramer is called with the
+	// unmasked version byte, and an unmasked byte must not defeat the v5 check and
+	// re-enable frame-header compression on v5.
+	if compressor != nil && version&protoVersionMask < protoVersion5 {
+		return frm.FlagCompress
+	}
+	return 0
 }
 
 func newFramer(compressor Compressor, version byte) *framer {
@@ -262,13 +310,7 @@ func newFramer(compressor Compressor, version byte) *framer {
 		buf:        buf[:0],
 		readBuffer: buf,
 	}
-	var flags byte
-	if compressor != nil {
-		flags |= frm.FlagCompress
-	}
-	if version == protoVersion5 {
-		flags |= frm.FlagBetaProtocol
-	}
+	flags := defaultFramerFlags(compressor, version)
 
 	version &= protoVersionMask
 	f.compressor = compressor
@@ -278,6 +320,7 @@ func newFramer(compressor Compressor, version byte) *framer {
 	f.traceID = nil
 
 	f.tabletsRoutingV1 = false
+	f.scyllaUseMetadataID = false
 
 	return f
 }
@@ -293,53 +336,27 @@ func (f *framer) Release() {
 	}
 }
 
-func newFramerWithExts(compressor Compressor, version byte, cqlProtoExts []cqlProtocolExtension, logger StdLogger) *framer {
-
-	f := newFramer(compressor, version)
-
-	if lwtExt := findCQLProtoExtByName(cqlProtoExts, lwtAddMetadataMarkKey); lwtExt != nil {
-		castedExt, ok := lwtExt.(*lwtAddMetadataMarkExt)
-		if !ok {
-			logger.Println(
-				fmt.Errorf("failed to cast CQL protocol extension identified by name %s to type %T",
-					lwtAddMetadataMarkKey, lwtAddMetadataMarkExt{}))
-			return f
-		}
-		f.flagLWT = castedExt.lwtOptMetaBitMask
-	}
-
-	if rateLimitErrorExt := findCQLProtoExtByName(cqlProtoExts, rateLimitError); rateLimitErrorExt != nil {
-		castedExt, ok := rateLimitErrorExt.(*rateLimitExt)
-		if !ok {
-			logger.Println(
-				fmt.Errorf("failed to cast CQL protocol extension identified by name %s to type %T",
-					rateLimitError, rateLimitExt{}))
-			return f
-		}
-		f.rateLimitingErrorCode = castedExt.rateLimitErrorCode
-	}
-
-	if tabletsExt := findCQLProtoExtByName(cqlProtoExts, tabletsRoutingV1); tabletsExt != nil {
-		_, ok := tabletsExt.(*tabletsRoutingV1Ext)
-		if !ok {
-			logger.Println(
-				fmt.Errorf("failed to cast CQL protocol extension identified by name %s to type %T",
-					tabletsRoutingV1, tabletsRoutingV1Ext{}))
-			return f
-		}
-		f.tabletsRoutingV1 = true
-	}
-
-	return f
-}
-
 type frame interface {
 	Header() frm.FrameHeader
 }
 
 func readHeader(r io.Reader, p []byte) (head frm.FrameHeader, err error) {
-	_, err = io.ReadFull(r, p[:headSize])
+	n, err := io.ReadFull(r, p[:headSize])
 	if err != nil {
+		// A timeout that consumed nothing is the benign idle wait for the next
+		// frame, which serve() recovers from by simply reading again. A timeout that
+		// consumed part of a header is not: the stream position is now unknown, so
+		// resuming would mis-frame everything after it. Only the former is
+		// normalised to ErrReadHeaderTimeout; the latter stays a plain error and
+		// takes the connection down.
+		//
+		// errors.As rather than a bare type assertion, matching
+		// Conn.readFirstSegmentHeader: the two timeout checks must stay in
+		// agreement even if a caller in between starts wrapping the error.
+		var netErr net.Error
+		if n == 0 && errors.As(err, &netErr) && netErr.Timeout() {
+			return frm.FrameHeader{}, fmt.Errorf("%w: %w", ErrReadHeaderTimeout, err)
+		}
 		return frm.FrameHeader{}, err
 	}
 
@@ -356,6 +373,16 @@ func readHeader(r io.Reader, p []byte) (head frm.FrameHeader, err error) {
 	head.Op = frm.Op(p[4])
 	head.Length = int(readInt(p[5:]))
 
+	// The length is a signed 32-bit field on the wire, so any value with the high
+	// bit set arrives negative. Reject it here rather than further down in
+	// readFrame: a header this broken means the stream position is no longer
+	// trustworthy, and only an error out of readHeader closes the connection —
+	// readFrame's error is handed to the waiting caller while serve() reads on.
+	// recvSplitFrame applies the same bound to a reassembled frame.
+	if head.Length < 0 {
+		return frm.FrameHeader{}, fmt.Errorf("gocql: invalid frame body length: %d", head.Length)
+	}
+
 	return head, nil
 }
 
@@ -371,13 +398,21 @@ func (f *framer) payload() {
 
 // reads a frame form the wire into the framers buffer
 func (f *framer) readFrame(r io.Reader, head *frm.FrameHeader) error {
+	// A negative length is rejected by readHeader, which is where it has to be
+	// caught: there the error is fatal to the connection, whereas an error from
+	// here is delivered to the waiting caller. Kept as a precondition check for
+	// callers that synthesise a header.
 	if head.Length < 0 {
 		return fmt.Errorf("frame body length can not be less than 0: %d", head.Length)
-	} else if head.Length > maxFrameSize {
+	} else if head.Length > frm.MaxFrameSize {
 		// need to free up the connection to be used again
 		_, err := io.CopyN(io.Discard, r, int64(head.Length))
 		if err != nil {
-			return fmt.Errorf("error whilst trying to discard frame with invalid length: %v", err)
+			// %w, not %v: a failed discard leaves the undiscarded remainder of the
+			// body on the wire, so the caller has to be able to recognise the read
+			// failure here (Conn.bodyReadDesyncedConn) and close the connection rather
+			// than read the leftover bytes as the next frame header.
+			return fmt.Errorf("error whilst trying to discard frame with invalid length: %w", err)
 		}
 		return ErrFrameTooBig
 	}
@@ -389,13 +424,17 @@ func (f *framer) readFrame(r io.Reader, head *frm.FrameHeader) error {
 		f.buf = f.readBuffer
 	}
 
-	// assume the underlying reader takes care of timeouts and retries
 	n, err := io.ReadFull(r, f.buf)
 	if err != nil {
-		return fmt.Errorf("unable to read frame body: read %d/%d bytes: %v", n, head.Length, err)
+		// %w, not %v: a partially read body leaves the rest of it on the wire, so
+		// the connection is desynced and must be closed. Conn.bodyReadDesyncedConn
+		// decides that by inspecting the wrapped error, which a %v-formatted error
+		// would defeat — the connection would be reused and every later frame
+		// mis-framed.
+		return fmt.Errorf("unable to read frame body: read %d/%d bytes: %w", n, head.Length, err)
 	}
 
-	if head.Flags&frm.FlagCompress == frm.FlagCompress {
+	if f.proto < protoVersion5 && head.Flags&frm.FlagCompress == frm.FlagCompress {
 		if f.compressor == nil {
 			return NewErrProtocol("no compressor available with compressed frame body")
 		}
@@ -406,6 +445,26 @@ func (f *framer) readFrame(r io.Reader, head *frm.FrameHeader) error {
 		}
 	}
 
+	f.header = head
+	return nil
+}
+
+// adoptFrameBody takes ownership of a frame body that is already fully in memory,
+// instead of reading and copying it as readFrame does. It is used for a v5 frame
+// reassembled from several transport segments (Conn.recvSplitFrame): that buffer
+// is already exactly frame-sized, so copying it would mean holding the frame twice
+// — 512 MiB for a frm.MaxFrameSize response.
+//
+// f.readBuffer is deliberately left pointing at the pooled buffer, so releasing
+// the framer drops the adopted body instead of retaining an outsized buffer in the
+// framer pool. Segment-level decompression has already happened, so unlike
+// readFrame there is no frame-header compression flag to honour (it only exists
+// below v5).
+func (f *framer) adoptFrameBody(body []byte, head *frm.FrameHeader) error {
+	if head.Length != len(body) {
+		return fmt.Errorf("gocql: frame body length %d does not match the %d bytes reassembled", head.Length, len(body))
+	}
+	f.buf = body
 	f.header = head
 	return nil
 }
@@ -619,13 +678,13 @@ func (f *framer) setLength(length int) {
 
 func (f *framer) finish() error {
 	bufLen := len(f.buf)
-	if bufLen > maxFrameSize {
+	if bufLen > frm.MaxFrameSize {
 		// huge app frame, lets remove it so it doesn't bloat the heap
 		f.buf = make([]byte, defaultBufSize)
 		return ErrFrameTooBig
 	}
 
-	if f.buf[1]&frm.FlagCompress == frm.FlagCompress {
+	if f.proto < protoVersion5 && f.buf[1]&frm.FlagCompress == frm.FlagCompress {
 		if f.compressor == nil {
 			panic("compress flag set with no compressor")
 		}
@@ -699,6 +758,12 @@ type writePrepareFrame struct {
 }
 
 func (w *writePrepareFrame) buildFrame(f *framer, streamID int) error {
+	// Validate before writing anything into f.buf so an error never leaves a
+	// partial frame in the reusable framer buffer.
+	if err := f.validateV5Options(w.keyspace, nil); err != nil {
+		return err
+	}
+
 	if len(w.customPayload) > 0 {
 		f.payload()
 	}
@@ -708,11 +773,7 @@ func (w *writePrepareFrame) buildFrame(f *framer, streamID int) error {
 
 	var flags uint32 = 0
 	if w.keyspace != "" {
-		if f.proto > protoVersion4 {
-			flags |= frm.FlagWithPreparedKeyspace
-		} else {
-			panic(fmt.Errorf("the keyspace can only be set with protocol 5 or higher"))
-		}
+		flags |= frm.FlagWithPreparedKeyspace
 	}
 	if f.proto > protoVersion4 {
 		f.writeUint(flags)
@@ -838,6 +899,17 @@ func (f *framer) parsePreparedMetadata() preparedMetadata {
 
 	if f.proto >= protoVersion4 {
 		pkeyCount := f.readInt()
+		// Like the colCount guard above, reject a negative count: make would panic
+		// with a runtime error, which parseFrame's recover re-panics rather than
+		// converting to an error. Unlike colCount — whose huge-value case is handled
+		// by the make/append split further down — also reject a count larger than the
+		// remaining buffer could supply: each pkey index is a short (2 bytes), so a
+		// valid frame always has pkeyCount <= len(f.buf)/2. That bounds make() to the
+		// actual frame size instead of a peer-declared count, so a small malformed
+		// frame cannot force a large allocation.
+		if pkeyCount < 0 || pkeyCount > len(f.buf)/2 {
+			panic(fmt.Errorf("invalid partition key count %d (remaining %d bytes)", pkeyCount, len(f.buf)))
+		}
 		pkeys := make([]int, pkeyCount)
 		for i := 0; i < pkeyCount; i++ {
 			pkeys[i] = int(f.readShort())
@@ -903,6 +975,7 @@ type resultMetadata struct {
 	// it is at minimum len(columns) but may be larger, for instance when a column
 	// is a UDT or tuple.
 	columns        []ColumnInfo
+	newMetadataID  []byte
 	flags          int
 	colCount       int
 	actualColCount int
@@ -912,8 +985,12 @@ func (r *resultMetadata) morePages() bool {
 	return r.flags&frm.FlagHasMorePages == frm.FlagHasMorePages
 }
 
+func (r *resultMetadata) noMetaData() bool {
+	return r.flags&frm.FlagNoMetaData == frm.FlagNoMetaData
+}
+
 func (r resultMetadata) String() string {
-	return fmt.Sprintf("[metadata flags=0x%x paging_state=% X columns=%v]", r.flags, r.pagingState, r.columns)
+	return fmt.Sprintf("[metadata flags=0x%x paging_state=% X columns=%v new_metadata_id=% X]", r.flags, r.pagingState, r.columns, r.newMetadataID)
 }
 
 // keyspaceTableTracker tracks whether all columns share the same keyspace/table.
@@ -972,7 +1049,19 @@ func (f *framer) parseResultMetadata() resultMetadata {
 		meta.pagingState = f.readBytesCopy()
 	}
 
-	if meta.flags&frm.FlagNoMetaData == frm.FlagNoMetaData {
+	// The re-issue of a result metadata ID, reached from a RESULT/Rows whose
+	// EXECUTE carried an ID the server found stale. It supersedes the one
+	// RESULT/Prepared issued; see parseResultPrepared for the other half.
+	//
+	// Read after the paging state, matching Cassandra's encoder
+	// (ResultSet$ResultMetadata$Codec.encode) and the v5 spec. See
+	// TestParseResultMetadata_PagingStateBeforeNewMetadataID, which is the only
+	// test that can distinguish the two orderings.
+	if (f.proto > protoVersion4 || f.scyllaUseMetadataID) && meta.flags&frm.FlagMetaDataChanged == frm.FlagMetaDataChanged {
+		meta.newMetadataID = f.readShortBytesCopy()
+	}
+
+	if meta.noMetaData() {
 		return meta
 	}
 
@@ -1078,19 +1167,46 @@ func (f *framer) parseResultSetKeyspace() frame {
 }
 
 type resultPreparedFrame struct {
-	preparedID []byte
-	respMeta   resultMetadata
+	preparedID       []byte
+	resultMetadataID []byte
+	respMeta         resultMetadata
 	frm.FrameHeader
 	reqMeta preparedMetadata
 }
 
+// parseResultPrepared parses a RESULT/Prepared body:
+//
+//	<id>                 [short bytes]  prepared statement ID
+//	<result_metadata_id> [short bytes]  v5, or v4 with SCYLLA_USE_METADATA_ID
+//	<metadata>           bind variables and partition key indexes (request side)
+//	<result_metadata>    the columns rows will carry (response side)
+//
+// The two metadata blocks describe opposite directions and are unrelated; only
+// the second one has an ID, because only it can go stale without the driver
+// noticing.
+//
+// The ID read here is the first one for this statement, issued alongside the
+// metadata it identifies and echoed back by every later EXECUTE. A superseding
+// ID arrives by a different route — newMetadataID inside a RESULT/Rows, behind
+// METADATA_CHANGED — so that the server can repair a stale ID in the response it
+// was already sending instead of making the driver re-prepare. Both land in
+// preparedStatment.resultMetadataID.
+//
+// parseResultMetadata below is the same codec RESULT/Rows uses, as it is in
+// Cassandra (ResultSet$ResultMetadata$Codec), so it reads newMetadataID whenever
+// METADATA_CHANGED is set. Nothing sets it here: that flag says a previously
+// issued ID is stale, which cannot apply to the response issuing the first one.
 func (f *framer) parseResultPrepared() frame {
 	frame := &resultPreparedFrame{
 		FrameHeader: *f.header,
 		preparedID:  f.readShortBytesCopy(),
-		reqMeta:     f.parsePreparedMetadata(),
 	}
 
+	if f.proto > protoVersion4 || f.scyllaUseMetadataID {
+		frame.resultMetadataID = f.readShortBytesCopy()
+	}
+
+	frame.reqMeta = f.parsePreparedMetadata()
 	frame.respMeta = f.parseResultMetadata()
 
 	return frame
@@ -1220,7 +1336,72 @@ type queryValues struct {
 	isUnset bool
 }
 
+// queryValuesPools is a set of size-bucketed sync.Pools for []queryValues slices.
+// Buckets: 0→cap 8, 1→cap 16, 2→cap 32, 3→cap 64, 4→cap 128.
+// Slices larger than 128 are not pooled.
+var queryValuesPools [5]sync.Pool
+
+// queryValuesBucket returns the pool bucket index for a given count.
+// Returns -1 if the count exceeds the maximum pooled size.
+func queryValuesBucket(n int) int {
+	switch {
+	case n <= 8:
+		return 0
+	case n <= 16:
+		return 1
+	case n <= 32:
+		return 2
+	case n <= 64:
+		return 3
+	case n <= 128:
+		return 4
+	default:
+		return -1
+	}
+}
+
+// getQueryValues returns a []queryValues of length n from the pool.
+// The returned slice elements are zeroed.
+func getQueryValues(n int) []queryValues {
+	bucket := queryValuesBucket(n)
+	if bucket < 0 {
+		return make([]queryValues, n)
+	}
+	if v := queryValuesPools[bucket].Get(); v != nil {
+		s := v.([]queryValues)
+		return s[:n]
+	}
+	// Allocate with the bucket's capacity so future returns fit.
+	return make([]queryValues, n, 8<<bucket)
+}
+
+// putQueryValues returns a []queryValues slice to the pool.
+// It clears all elements to release references to marshaled byte slices.
+// Only slices originally obtained from getQueryValues are pooled;
+// slices with non-standard capacities are silently discarded.
+func putQueryValues(s []queryValues) {
+	if s == nil {
+		return
+	}
+	bucket := queryValuesBucket(cap(s))
+	if bucket < 0 || cap(s) != 8<<bucket {
+		return
+	}
+	// Clear to release references (name strings, value []byte).
+	clear(s[:cap(s)])
+	queryValuesPools[bucket].Put(s[:cap(s)])
+}
+
+// putBatchQueryValues returns all pooled []queryValues slices from batch statements.
+func putBatchQueryValues(stmts []batchStatment) {
+	for i := range stmts {
+		putQueryValues(stmts[i].values)
+		stmts[i].values = nil
+	}
+}
+
 type queryParams struct {
+	nowInSeconds          *int
 	keyspace              string
 	values                []queryValues
 	pagingState           []byte
@@ -1233,14 +1414,46 @@ type queryParams struct {
 }
 
 func (q queryParams) String() string {
-	return fmt.Sprintf("[query_params consistency=%v skip_meta=%v page_size=%d paging_state=%q serial_consistency=%v default_timestamp=%v values=%v keyspace=%s]",
-		q.consistency, q.skipMeta, q.pageSize, q.pagingState, q.serialConsistency, q.defaultTimestamp, q.values, q.keyspace)
+	return fmt.Sprintf("[query_params consistency=%v skip_meta=%v page_size=%d paging_state=%q serial_consistency=%v default_timestamp=%v values=%v keyspace=%s now_in_seconds=%v]",
+		q.consistency, q.skipMeta, q.pageSize, q.pagingState, q.serialConsistency, q.defaultTimestamp, q.values, q.keyspace, q.nowInSeconds)
 }
 
-func (f *framer) writeQueryParams(opts *queryParams) {
+// validateV5Options rejects the request options that only exist from protocol v5
+// onwards, and the one v5 option whose value has to fit the wire type. Callers
+// pass nil for nowInSeconds when their frame has no such field.
+//
+// It is the single source of truth for these checks, shared by every writer that
+// accepts them (QUERY/EXECUTE via writeQueryParams, BATCH, PREPARE), so the three
+// cannot drift apart in what they reject or in what they say. Each buildFrame also
+// calls it before writing any byte, so a rejected option cannot leave a partially
+// serialised frame behind.
+func (f *framer) validateV5Options(keyspace string, nowInSeconds *int) error {
+	if keyspace != "" && f.proto < protoVersion5 {
+		return fmt.Errorf("gocql: keyspace override can only be set with protocol v5 or higher, current protocol: %d", f.proto)
+	}
+	if nowInSeconds != nil {
+		if f.proto < protoVersion5 {
+			return fmt.Errorf("gocql: now_in_seconds can only be set with protocol v5 or higher, current protocol: %d", f.proto)
+		}
+		if v := *nowInSeconds; v < math.MinInt32 || v > math.MaxInt32 {
+			return fmt.Errorf("gocql: nowInSeconds value %d overflows int32", v)
+		}
+	}
+	return nil
+}
+
+func (f *framer) writeQueryParams(opts *queryParams) error {
+	// Validated again here, not only in the callers' buildFrame: this function is
+	// package-internal and nothing else would enforce the precondition.
+	if err := f.validateV5Options(opts.keyspace, opts.nowInSeconds); err != nil {
+		return err
+	}
+
 	f.writeConsistency(opts.consistency)
 
-	var flags byte
+	var flags uint32
+	names := false
+
 	if len(opts.values) > 0 {
 		flags |= frm.FlagValues
 	}
@@ -1257,8 +1470,6 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 		flags |= frm.FlagWithSerialConsistency
 	}
 
-	names := false
-
 	// protoV3 specific things
 	if opts.defaultTimestamp {
 		flags |= frm.FlagDefaultTimestamp
@@ -1270,17 +1481,17 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 	}
 
 	if opts.keyspace != "" {
-		if f.proto > protoVersion4 {
-			flags |= frm.FlagWithKeyspace
-		} else {
-			panic(fmt.Errorf("the keyspace can only be set with protocol 5 or higher"))
-		}
+		flags |= frm.FlagWithKeyspace
+	}
+
+	if opts.nowInSeconds != nil {
+		flags |= frm.FlagWithNowInSeconds
 	}
 
 	if f.proto > protoVersion4 {
-		f.writeUint(uint32(flags))
+		f.writeUint(flags)
 	} else {
-		f.writeByte(flags)
+		f.writeByte(byte(flags))
 	}
 
 	if n := len(opts.values); n > 0 {
@@ -1324,6 +1535,12 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 	if opts.keyspace != "" {
 		f.writeString(opts.keyspace)
 	}
+
+	if opts.nowInSeconds != nil {
+		// Bounds already validated at the top of this function.
+		f.writeInt(int32(*opts.nowInSeconds))
+	}
+	return nil
 }
 
 type writeQueryFrame struct {
@@ -1341,13 +1558,24 @@ func (w *writeQueryFrame) buildFrame(framer *framer, streamID int) error {
 }
 
 func (f *framer) writeQueryFrame(streamID int, statement string, params *queryParams, customPayload map[string][]byte) error {
+	// Validate before writing anything into f.buf, as the PREPARE and BATCH
+	// builders do. writeQueryParams performs the same check, but by the time it
+	// runs the header, the custom payload and the statement have already been
+	// written, so its own "nothing was written yet" guarantee would not hold for
+	// this path.
+	if err := f.validateV5Options(params.keyspace, params.nowInSeconds); err != nil {
+		return err
+	}
+
 	if len(customPayload) > 0 {
 		f.payload()
 	}
 	f.writeHeader(f.flags, frm.OpQuery, streamID)
 	f.writeCustomPayload(&customPayload)
 	f.writeLongString(statement)
-	f.writeQueryParams(params)
+	if err := f.writeQueryParams(params); err != nil {
+		return err
+	}
 
 	return f.finish()
 }
@@ -1363,9 +1591,10 @@ func (f frameWriterFunc) buildFrame(framer *framer, streamID int) error {
 }
 
 type writeExecuteFrame struct {
-	customPayload map[string][]byte
-	preparedID    []byte
-	params        queryParams
+	customPayload    map[string][]byte
+	preparedID       []byte
+	resultMetadataID []byte
+	params           queryParams
 }
 
 func (e *writeExecuteFrame) String() string {
@@ -1373,17 +1602,30 @@ func (e *writeExecuteFrame) String() string {
 }
 
 func (e *writeExecuteFrame) buildFrame(fr *framer, streamID int) error {
-	return fr.writeExecuteFrame(streamID, e.preparedID, &e.params, &e.customPayload)
+	return fr.writeExecuteFrame(streamID, e.preparedID, e.resultMetadataID, &e.params, &e.customPayload)
 }
 
-func (f *framer) writeExecuteFrame(streamID int, preparedID []byte, params *queryParams, customPayload *map[string][]byte) error {
+func (f *framer) writeExecuteFrame(streamID int, preparedID, resultMetadataID []byte, params *queryParams, customPayload *map[string][]byte) error {
+	// Validate first, as in writeQueryFrame: the prepared id (and, on v5, the
+	// result metadata id) are written before writeQueryParams runs.
+	if err := f.validateV5Options(params.keyspace, params.nowInSeconds); err != nil {
+		return err
+	}
+
 	if len(*customPayload) > 0 {
 		f.payload()
 	}
 	f.writeHeader(f.flags, frm.OpExecute, streamID)
 	f.writeCustomPayload(customPayload)
 	f.writeShortBytes(preparedID)
-	f.writeQueryParams(params)
+
+	if f.proto > protoVersion4 || f.scyllaUseMetadataID {
+		f.writeShortBytes(resultMetadataID)
+	}
+
+	if err := f.writeQueryParams(params); err != nil {
+		return err
+	}
 
 	return f.finish()
 }
@@ -1398,6 +1640,8 @@ type batchStatment struct {
 
 type writeBatchFrame struct {
 	customPayload         map[string][]byte
+	nowInSeconds          *int
+	keyspace              string
 	statements            []batchStatment
 	defaultTimestampValue int64
 	consistency           Consistency
@@ -1411,6 +1655,23 @@ func (w *writeBatchFrame) buildFrame(framer *framer, streamID int) error {
 }
 
 func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload map[string][]byte) error {
+	// Validate everything that can fail BEFORE writing anything into f.buf, so
+	// an error never leaves a partial frame in the reusable framer buffer.
+	if err := f.validateV5Options(w.keyspace, w.nowInSeconds); err != nil {
+		return err
+	}
+
+	// Named values are not supported in batches on any protocol version
+	// (CASSANDRA-10246). Reject them up front, before any bytes are written,
+	// so a rejected batch never leaves a partial frame in the reusable buffer.
+	for i := range w.statements {
+		for j := range w.statements[i].values {
+			if w.statements[i].values[j].name != "" {
+				return fmt.Errorf("gocql: named query values are not supported in batches, please see https://issues.apache.org/jira/browse/CASSANDRA-10246")
+			}
+		}
+	}
+
 	if len(customPayload) > 0 {
 		f.payload()
 	}
@@ -1421,7 +1682,7 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 	n := len(w.statements)
 	f.writeShort(uint16(n))
 
-	var flags byte
+	var flags uint32
 
 	for i := 0; i < n; i++ {
 		b := &w.statements[i]
@@ -1436,15 +1697,6 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 		f.writeShort(uint16(len(b.values)))
 		for j := range b.values {
 			col := b.values[j]
-			if col.name != "" {
-				// TODO: move this check into the caller and set a flag on writeBatchFrame
-				// to indicate using named values
-				if f.proto <= protoVersion5 {
-					return fmt.Errorf("gocql: named query values are not supported in batches, please see https://issues.apache.org/jira/browse/CASSANDRA-10246")
-				}
-				flags |= frm.FlagWithNameValues
-				f.writeString(col.name)
-			}
 			if col.isUnset {
 				f.writeUnset()
 			} else {
@@ -1455,31 +1707,57 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 
 	f.writeConsistency(w.consistency)
 
-	if w.serialConsistency > 0 {
-		flags |= frm.FlagWithSerialConsistency
+	if f.proto > protoVersion2 {
+		if w.serialConsistency > 0 {
+			flags |= frm.FlagWithSerialConsistency
+		}
+		if w.defaultTimestamp {
+			flags |= frm.FlagDefaultTimestamp
+		}
 	}
-	if w.defaultTimestamp {
-		flags |= frm.FlagDefaultTimestamp
+
+	if w.keyspace != "" {
+		flags |= frm.FlagWithKeyspace
+	}
+
+	if w.nowInSeconds != nil {
+		flags |= frm.FlagWithNowInSeconds
 	}
 
 	if f.proto > protoVersion4 {
-		f.writeUint(uint32(flags))
+		f.writeUint(flags)
 	} else {
-		f.writeByte(flags)
+		f.writeByte(byte(flags))
 	}
 
-	if w.serialConsistency > 0 {
-		f.writeConsistency(w.serialConsistency)
-	}
-
-	if w.defaultTimestamp {
-		var ts int64
-		if w.defaultTimestampValue != 0 {
-			ts = w.defaultTimestampValue
-		} else {
-			ts = time.Now().UnixNano() / 1000
+	// serialConsistency and defaultTimestamp are only signalled by flags on
+	// proto > v2, so their fields must only be written on proto > v2 as well;
+	// otherwise the bytes would not be described by any flag and would corrupt
+	// the frame. (In practice proto < v3 is unreachable: readHeader rejects
+	// response versions below protoVersion3.)
+	if f.proto > protoVersion2 {
+		if w.serialConsistency > 0 {
+			f.writeConsistency(w.serialConsistency)
 		}
-		f.writeLong(ts)
+
+		if w.defaultTimestamp {
+			var ts int64
+			if w.defaultTimestampValue != 0 {
+				ts = w.defaultTimestampValue
+			} else {
+				ts = time.Now().UnixNano() / 1000
+			}
+			f.writeLong(ts)
+		}
+	}
+
+	if w.keyspace != "" {
+		f.writeString(w.keyspace)
+	}
+
+	if w.nowInSeconds != nil {
+		// Bounds already validated at the top of this function.
+		f.writeInt(int32(*w.nowInSeconds))
 	}
 
 	return f.finish()
@@ -1846,4 +2124,73 @@ func (f *framer) writeBytesMap(m map[string][]byte) {
 		f.writeString(k)
 		f.writeBytes(v)
 	}
+}
+
+// prepareModernLayout rewrites the framer's buffer from a bare CQL frame into the
+// v5 wire format: one transport segment if the frame fits in one, otherwise a
+// chain of non-self-contained segments (see segment.go).
+//
+// Segment headers, payloads and CRCs are encoded straight into f.wireBuf, sized
+// up front so appending never has to grow it, and nothing per-segment is
+// allocated on the way. f.buf and f.wireBuf are then swapped, which both hands
+// the caller the wire bytes in f.buf and keeps the raw-frame buffer alive as
+// f.wireBuf for the next request on this framer.
+func (f *framer) prepareModernLayout() error {
+	// Ensure protocol version is V5 or higher
+	if f.proto < protoVersion5 {
+		return fmt.Errorf("gocql: modern layout is not supported with protocol version %d (requires v5+)", f.proto)
+	}
+
+	// Narrow the compressor once per frame rather than once per segment: a frame past
+	// segment.MaxPayloadSize is segmented by the loop below, and every one of those
+	// segments takes the same layout from the same compressor, which is fixed for the
+	// life of the framer.
+	//
+	// The narrowing is defensive — ClusterConfig.Validate rejects a compressor without
+	// segment support on v5 before a connection is dialed, and
+	// Conn.resolveSegmentCompressor re-checks it at the handshake — and is reported
+	// rather than ignored, because falling back to the uncompressed layout would
+	// produce segments the peer decodes with the wrong one.
+	segComp, err := asSegmentCompressor(f.compressor)
+	if err != nil {
+		return err
+	}
+
+	// Segment the frame via a local cursor rather than mutating f.buf as we go,
+	// and only swap the buffers once the whole frame has been segmented
+	// successfully, so that an error partway through leaves f.buf byte-for-byte
+	// intact.
+	src := f.buf
+	wire := f.growWireBuf(segment.EncodedSize(len(src), segComp != nil))
+
+	selfContained := true
+
+	// Process the buffer in chunks if it exceeds the max payload size
+	for len(src) > segment.MaxPayloadSize {
+		wire, err = segment.Append(wire, src[:segment.MaxPayloadSize], false, segComp)
+		if err != nil {
+			return err
+		}
+
+		src = src[segment.MaxPayloadSize:]
+		selfContained = false
+	}
+
+	// Process the remaining buffer
+	if wire, err = segment.Append(wire, src, selfContained, segComp); err != nil {
+		return err
+	}
+
+	f.wireBuf, f.buf = f.buf, wire
+
+	return nil
+}
+
+// growWireBuf returns f.wireBuf emptied and with room for at least n bytes,
+// reallocating only when what it already holds is too small.
+func (f *framer) growWireBuf(n int) []byte {
+	if cap(f.wireBuf) < n {
+		f.wireBuf = make([]byte, 0, n)
+	}
+	return f.wireBuf[:0]
 }

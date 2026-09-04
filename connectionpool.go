@@ -54,7 +54,7 @@ type SetTablets interface {
 
 type policyConnPool struct {
 	session       *Session
-	hostConnPools map[string]*hostConnPool
+	hostConnPools map[UUID]*hostConnPool
 	keyspace      string
 	port          int
 	numConns      int
@@ -108,7 +108,7 @@ func newPolicyConnPool(session *Session) *policyConnPool {
 		port:          session.cfg.Port,
 		numConns:      session.cfg.NumConns,
 		keyspace:      session.cfg.Keyspace,
-		hostConnPools: map[string]*hostConnPool{},
+		hostConnPools: map[UUID]*hostConnPool{},
 	}
 
 	return pool
@@ -118,7 +118,7 @@ func (p *policyConnPool) SetHosts(hosts []*HostInfo) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	toRemove := make(map[string]struct{})
+	toRemove := make(map[UUID]struct{})
 	for hostID := range p.hostConnPools {
 		toRemove[hostID] = struct{}{}
 	}
@@ -130,7 +130,7 @@ func (p *policyConnPool) SetHosts(hosts []*HostInfo) {
 			// don't create a connection pool for a down host
 			continue
 		}
-		hostID := host.HostID()
+		hostID := host.hostUUID()
 		if _, exists := p.hostConnPools[hostID]; exists {
 			// still have this host, so don't remove it
 			delete(toRemove, hostID)
@@ -155,7 +155,7 @@ func (p *policyConnPool) SetHosts(hosts []*HostInfo) {
 		createCount--
 		if pool.Size() > 0 {
 			// add pool only if there a connections available
-			p.hostConnPools[pool.host.HostID()] = pool
+			p.hostConnPools[pool.host.hostUUID()] = pool
 		}
 	}
 
@@ -189,16 +189,21 @@ func (p *policyConnPool) Size() int {
 }
 
 func (p *policyConnPool) getPool(host *HostInfo) (pool *hostConnPool, ok bool) {
-	hostID := host.HostID()
+	hostID := host.hostUUID()
 	p.mu.RLock()
 	pool, ok = p.hostConnPools[hostID]
 	p.mu.RUnlock()
 	return
 }
 
+// Rare path (SetHostID/GetHostPoolByID); getPool is the hot path and skips this parse.
 func (p *policyConnPool) getPoolByHostID(hostID string) (pool *hostConnPool, ok bool) {
+	id, err := ParseUUID(hostID)
+	if err != nil {
+		return nil, false
+	}
 	p.mu.RLock()
-	pool, ok = p.hostConnPools[hostID]
+	pool, ok = p.hostConnPools[id]
 	p.mu.RUnlock()
 	return
 }
@@ -225,7 +230,7 @@ func (p *policyConnPool) Close() {
 }
 
 func (p *policyConnPool) addHost(host *HostInfo) {
-	hostID := host.HostID()
+	hostID := host.hostUUID()
 	p.mu.Lock()
 	pool, ok := p.hostConnPools[hostID]
 	if !ok {
@@ -243,7 +248,7 @@ func (p *policyConnPool) addHost(host *HostInfo) {
 	pool.fill_debounce()
 }
 
-func (p *policyConnPool) removeHost(hostID string) {
+func (p *policyConnPool) removeHost(hostID UUID) {
 	p.mu.Lock()
 	pool, ok := p.hostConnPools[hostID]
 	if !ok {
@@ -303,8 +308,46 @@ func (pool *hostConnPool) Pick(token Token, qry ExecutableQuery) *Conn {
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
 
-	if pool.closed {
+	if !pool.pickable() {
 		return nil
+	}
+
+	return pool.connPicker.Pick(token, qry)
+}
+
+// PickInt64 picks a connection for the given raw int64 routing token, avoiding
+// the Token interface boxing. Picks fall back to the boxed path when the
+// connPicker does not support raw-int64 picking.
+func (pool *hostConnPool) PickInt64(token int64, qry ExecutableQuery) *Conn {
+	pool.mu.RLock()
+	defer pool.mu.RUnlock()
+
+	if !pool.pickable() {
+		return nil
+	}
+
+	if p, ok := pool.connPicker.(int64ConnPicker); ok {
+		return p.PickInt64(token, qry)
+	}
+	return pool.connPicker.Pick(int64Token(token), qry)
+}
+
+// PickConn routes a picked host to the raw-int64 fast path when it exposes one,
+// and to the boxed Token path otherwise.
+func (pool *hostConnPool) PickConn(host SelectedHost, qry ExecutableQuery) *Conn {
+	if th, ok := host.(int64TokenSelectedHost); ok {
+		if token, has := th.TokenInt64(); has {
+			return pool.PickInt64(int64(token), qry)
+		}
+	}
+	return pool.Pick(host.Token(), qry)
+}
+
+// pickable reports whether the pool is open and has (or is filling) connections.
+// Must be called with pool.mu held.
+func (pool *hostConnPool) pickable() bool {
+	if pool.closed {
+		return false
 	}
 
 	size, missing := pool.connPicker.Size()
@@ -313,11 +356,11 @@ func (pool *hostConnPool) Pick(token Token, qry ExecutableQuery) *Conn {
 		go pool.fill_debounce()
 
 		if size == 0 {
-			return nil
+			return false
 		}
 	}
 
-	return pool.connPicker.Pick(token, qry)
+	return true
 }
 
 // Size returns the number of connections currently active in the pool

@@ -231,21 +231,30 @@ func TestVector_Types(t *testing.T) {
 		{name: "vector_map_text_int", cqlType: "map<text, int>", value: []map[string]int{map1, map2, map3}},
 	}
 
+	// Create a single table with one column per test case to reduce schema
+	// change pressure (rapid CREATE TABLE statements can destabilize nodes
+	// in resource-constrained CI environments, see scylladb#739).
+	tableName := testTableName(t, "all_types")
+	var cols string
+	for _, tc := range testCases {
+		cols += fmt.Sprintf(", vec_%s vector<%s, 3>", tc.name, tc.cqlType)
+	}
+	err := createTable(session, fmt.Sprintf(`CREATE TABLE IF NOT EXISTS gocql_test.%s(id int primary key%s);`, tableName, cols))
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	for _, test := range testCases {
 		t.Run(test.name, func(t *testing.T) {
-			tableName := testTableName(t, test.name)
-			err := createTable(session, fmt.Sprintf(`CREATE TABLE IF NOT EXISTS gocql_test.%s(id int primary key, vec vector<%s, 3>);`, tableName, test.cqlType))
-			if err != nil {
-				t.Fatal(err)
-			}
+			colName := "vec_" + test.name
 
-			err = session.Query(fmt.Sprintf("INSERT INTO %s(id, vec) VALUES(?, ?)", tableName), 1, test.value).Exec()
+			err := session.Query(fmt.Sprintf("INSERT INTO %s(id, %s) VALUES(?, ?)", tableName, colName), 1, test.value).Exec()
 			if err != nil {
 				t.Fatal(err)
 			}
 
 			v := reflect.New(reflect.TypeOf(test.value))
-			err = session.Query(fmt.Sprintf("SELECT vec FROM %s WHERE id = ?", tableName), 1).Scan(v.Interface())
+			err = session.Query(fmt.Sprintf("SELECT %s FROM %s WHERE id = ?", colName, tableName), 1).Scan(v.Interface())
 			if err != nil {
 				t.Fatal(err)
 			}

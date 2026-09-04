@@ -26,6 +26,7 @@ package gocql
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
@@ -219,9 +220,17 @@ func Marshal(info TypeInfo, value any) ([]byte, error) {
 	case TypeTimestamp:
 		return marshalTimestamp(value)
 	case TypeList, TypeSet:
-		return marshalList(info, value)
+		ct, ok := info.(CollectionType)
+		if !ok {
+			return nil, marshalErrorf("can not marshal %T into %s", value, info)
+		}
+		return marshalList(ct, value)
 	case TypeMap:
-		return marshalMap(info, value)
+		ct, ok := info.(CollectionType)
+		if !ok {
+			return nil, marshalErrorf("can not marshal %T into %s", value, info)
+		}
+		return marshalMap(ct, value)
 	case TypeUUID:
 		return marshalUUID(value)
 	case TypeTimeUUID:
@@ -332,9 +341,17 @@ func Unmarshal(info TypeInfo, data []byte, value any) error {
 	case TypeTimestamp:
 		return unmarshalTimestamp(data, value)
 	case TypeList, TypeSet:
-		return unmarshalList(info, data, value)
+		ct, ok := info.(CollectionType)
+		if !ok {
+			return unmarshalErrorf("can not unmarshal %s into %T", info, value)
+		}
+		return unmarshalList(ct, data, value)
 	case TypeMap:
-		return unmarshalMap(info, data, value)
+		ct, ok := info.(CollectionType)
+		if !ok {
+			return unmarshalErrorf("can not unmarshal %s into %T", info, value)
+		}
+		return unmarshalMap(ct, data, value)
 	case TypeTimeUUID:
 		return unmarshalTimeUUID(data, value)
 	case TypeUUID:
@@ -360,6 +377,19 @@ func Unmarshal(info TypeInfo, data []byte, value any) error {
 }
 
 func isNullableValue(value any) bool {
+	// Fast path: common single-pointer destination types are not nullable.
+	// This avoids reflect.ValueOf + Kind checks on the hot unmarshal path.
+	// Note: Unmarshaler is already checked before isNullableValue in Unmarshal(),
+	// so we don't need to list it here.
+	switch value.(type) {
+	case *string, *[]byte, *int, *int8, *int16, *int32, *int64,
+		*uint, *uint8, *uint16, *uint32, *uint64,
+		*float32, *float64, *bool,
+		*time.Time, *Duration,
+		*big.Int, *inf.Dec,
+		*UUID, *[]UUID:
+		return false
+	}
 	v := reflect.ValueOf(value)
 	return v.Kind() == reflect.Ptr && v.Type().Elem().Kind() == reflect.Ptr
 }
@@ -681,25 +711,18 @@ func unmarshalDuration(data []byte, value any) error {
 	return nil
 }
 
-func writeCollectionSize(info CollectionType, n int, buf *bytes.Buffer) error {
+func writeCollectionSize(n int, buf *bytes.Buffer) error {
 	if n > math.MaxInt32 {
 		return marshalErrorf("marshal: collection too large")
 	}
 
-	buf.WriteByte(byte(n >> 24))
-	buf.WriteByte(byte(n >> 16))
-	buf.WriteByte(byte(n >> 8))
-	buf.WriteByte(byte(n))
+	tmp := [4]byte{byte(n >> 24), byte(n >> 16), byte(n >> 8), byte(n)}
+	buf.Write(tmp[:])
 
 	return nil
 }
 
-func marshalList(info TypeInfo, value any) ([]byte, error) {
-	listInfo, ok := info.(CollectionType)
-	if !ok {
-		return nil, marshalErrorf("marshal: can not marshal non collection type into list")
-	}
-
+func marshalList(info CollectionType, value any) ([]byte, error) {
 	if value == nil {
 		return nil, nil
 	} else if _, ok := value.(unsetColumn); ok {
@@ -718,12 +741,12 @@ func marshalList(info TypeInfo, value any) ([]byte, error) {
 		buf := &bytes.Buffer{}
 		n := rv.Len()
 
-		if err := writeCollectionSize(listInfo, n, buf); err != nil {
+		if err := writeCollectionSize(n, buf); err != nil {
 			return nil, err
 		}
 
 		for i := 0; i < n; i++ {
-			item, err := Marshal(listInfo.Elem, rv.Index(i).Interface())
+			item, err := Marshal(info.Elem, rv.Index(i).Interface())
 			if err != nil {
 				return nil, err
 			}
@@ -732,7 +755,7 @@ func marshalList(info TypeInfo, value any) ([]byte, error) {
 			if item == nil {
 				itemLen = -1
 			}
-			if err := writeCollectionSize(listInfo, itemLen, buf); err != nil {
+			if err := writeCollectionSize(itemLen, buf); err != nil {
 				return nil, err
 			}
 			buf.Write(item)
@@ -746,7 +769,7 @@ func marshalList(info TypeInfo, value any) ([]byte, error) {
 			for i := 0; i < len(keys); i++ {
 				keys[i] = rkeys[i].Interface()
 			}
-			return marshalList(listInfo, keys)
+			return marshalList(info, keys)
 		}
 	}
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
@@ -825,7 +848,7 @@ func unmarshalListFast(info CollectionType, data []byte, value any) error {
 // readListHeader reads the collection count and advances past the header.
 // Returns the element count and remaining data, or an error.
 func readListHeader(info CollectionType, data []byte) (int, []byte, error) {
-	n, p, err := readCollectionSize(info, data)
+	n, p, err := readCollectionSize(data)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -846,7 +869,7 @@ func readListHeader(info CollectionType, data []byte) (int, []byte, error) {
 // readListElement reads one element's raw bytes from data.
 // Returns the element bytes (nil if null), remaining data, and any error.
 func readListElement(info CollectionType, data []byte) ([]byte, []byte, error) {
-	m, p, err := readCollectionSize(info, data)
+	m, p, err := readCollectionSize(data)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -900,7 +923,11 @@ func unmarshalListString(info CollectionType, data []byte, dst *[]string) error 
 	return nil
 }
 
-func unmarshalListInt64(info CollectionType, data []byte, dst *[]int64) error {
+// unmarshalFixedList decodes a list of fixed-width elements shared by the
+// concrete numeric/bool fast paths. It preserves the exact header/bounds
+// validation of readListHeader/readListElement; only the per-element decode
+// and the size-mismatch label vary by type.
+func unmarshalFixedList[T any](info CollectionType, data []byte, dst *[]T, elemSize int, typeName string, decode func([]byte) T) error {
 	if data == nil {
 		*dst = nil
 		return nil
@@ -909,7 +936,7 @@ func unmarshalListInt64(info CollectionType, data []byte, dst *[]int64) error {
 	if err != nil {
 		return err
 	}
-	s := make([]int64, n)
+	s := make([]T, n)
 	for i := 0; i < n; i++ {
 		var elem []byte
 		elem, data, err = readListElement(info, data)
@@ -917,136 +944,49 @@ func unmarshalListInt64(info CollectionType, data []byte, dst *[]int64) error {
 			return err
 		}
 		if len(elem) == 0 {
-			s[i] = 0
 			continue
 		}
-		if len(elem) != 8 {
-			return unmarshalErrorf("unmarshal list: invalid bigint size %d", len(elem))
+		if len(elem) != elemSize {
+			return unmarshalErrorf("unmarshal list: invalid %s size %d", typeName, len(elem))
 		}
-		s[i] = int64(elem[0])<<56 | int64(elem[1])<<48 | int64(elem[2])<<40 | int64(elem[3])<<32 |
-			int64(elem[4])<<24 | int64(elem[5])<<16 | int64(elem[6])<<8 | int64(elem[7])
+		s[i] = decode(elem)
 	}
 	*dst = s
 	return nil
+}
+
+func unmarshalListInt64(info CollectionType, data []byte, dst *[]int64) error {
+	return unmarshalFixedList(info, data, dst, 8, "bigint", func(elem []byte) int64 {
+		return int64(elem[0])<<56 | int64(elem[1])<<48 | int64(elem[2])<<40 | int64(elem[3])<<32 |
+			int64(elem[4])<<24 | int64(elem[5])<<16 | int64(elem[6])<<8 | int64(elem[7])
+	})
 }
 
 func unmarshalListInt32(info CollectionType, data []byte, dst *[]int32) error {
-	if data == nil {
-		*dst = nil
-		return nil
-	}
-	n, data, err := readListHeader(info, data)
-	if err != nil {
-		return err
-	}
-	s := make([]int32, n)
-	for i := 0; i < n; i++ {
-		var elem []byte
-		elem, data, err = readListElement(info, data)
-		if err != nil {
-			return err
-		}
-		if len(elem) == 0 {
-			s[i] = 0
-			continue
-		}
-		if len(elem) != 4 {
-			return unmarshalErrorf("unmarshal list: invalid int size %d", len(elem))
-		}
-		s[i] = int32(elem[0])<<24 | int32(elem[1])<<16 | int32(elem[2])<<8 | int32(elem[3])
-	}
-	*dst = s
-	return nil
+	return unmarshalFixedList(info, data, dst, 4, "int", func(elem []byte) int32 {
+		return int32(elem[0])<<24 | int32(elem[1])<<16 | int32(elem[2])<<8 | int32(elem[3])
+	})
 }
 
 func unmarshalListFloat64(info CollectionType, data []byte, dst *[]float64) error {
-	if data == nil {
-		*dst = nil
-		return nil
-	}
-	n, data, err := readListHeader(info, data)
-	if err != nil {
-		return err
-	}
-	s := make([]float64, n)
-	for i := 0; i < n; i++ {
-		var elem []byte
-		elem, data, err = readListElement(info, data)
-		if err != nil {
-			return err
-		}
-		if len(elem) == 0 {
-			s[i] = 0
-			continue
-		}
-		if len(elem) != 8 {
-			return unmarshalErrorf("unmarshal list: invalid double size %d", len(elem))
-		}
+	return unmarshalFixedList(info, data, dst, 8, "double", func(elem []byte) float64 {
 		bits := uint64(elem[0])<<56 | uint64(elem[1])<<48 | uint64(elem[2])<<40 | uint64(elem[3])<<32 |
 			uint64(elem[4])<<24 | uint64(elem[5])<<16 | uint64(elem[6])<<8 | uint64(elem[7])
-		s[i] = math.Float64frombits(bits)
-	}
-	*dst = s
-	return nil
+		return math.Float64frombits(bits)
+	})
 }
 
 func unmarshalListFloat32(info CollectionType, data []byte, dst *[]float32) error {
-	if data == nil {
-		*dst = nil
-		return nil
-	}
-	n, data, err := readListHeader(info, data)
-	if err != nil {
-		return err
-	}
-	s := make([]float32, n)
-	for i := 0; i < n; i++ {
-		var elem []byte
-		elem, data, err = readListElement(info, data)
-		if err != nil {
-			return err
-		}
-		if len(elem) == 0 {
-			s[i] = 0
-			continue
-		}
-		if len(elem) != 4 {
-			return unmarshalErrorf("unmarshal list: invalid float size %d", len(elem))
-		}
+	return unmarshalFixedList(info, data, dst, 4, "float", func(elem []byte) float32 {
 		bits := uint32(elem[0])<<24 | uint32(elem[1])<<16 | uint32(elem[2])<<8 | uint32(elem[3])
-		s[i] = math.Float32frombits(bits)
-	}
-	*dst = s
-	return nil
+		return math.Float32frombits(bits)
+	})
 }
 
 func unmarshalListBool(info CollectionType, data []byte, dst *[]bool) error {
-	if data == nil {
-		*dst = nil
-		return nil
-	}
-	n, data, err := readListHeader(info, data)
-	if err != nil {
-		return err
-	}
-	s := make([]bool, n)
-	for i := 0; i < n; i++ {
-		var elem []byte
-		elem, data, err = readListElement(info, data)
-		if err != nil {
-			return err
-		}
-		if len(elem) == 0 {
-			s[i] = false
-			continue
-		}
-		if len(elem) != 1 {
-			return unmarshalErrorf("unmarshal list: invalid boolean size %d", len(elem))
-		}
-		s[i] = elem[0] != 0
-	}
-	*dst = s
-	return nil
+	return unmarshalFixedList(info, data, dst, 1, "boolean", func(elem []byte) bool {
+		return elem[0] != 0
+	})
 }
 
 func unmarshalListBlob(info CollectionType, data []byte, dst *[][]byte) error {
@@ -1077,32 +1017,9 @@ func unmarshalListBlob(info CollectionType, data []byte, dst *[][]byte) error {
 }
 
 func unmarshalListInt16(info CollectionType, data []byte, dst *[]int16) error {
-	if data == nil {
-		*dst = nil
-		return nil
-	}
-	n, data, err := readListHeader(info, data)
-	if err != nil {
-		return err
-	}
-	s := make([]int16, n)
-	for i := 0; i < n; i++ {
-		var elem []byte
-		elem, data, err = readListElement(info, data)
-		if err != nil {
-			return err
-		}
-		if len(elem) == 0 {
-			s[i] = 0
-			continue
-		}
-		if len(elem) != 2 {
-			return unmarshalErrorf("unmarshal list: invalid smallint size %d", len(elem))
-		}
-		s[i] = int16(elem[0])<<8 | int16(elem[1])
-	}
-	*dst = s
-	return nil
+	return unmarshalFixedList(info, data, dst, 2, "smallint", func(elem []byte) int16 {
+		return int16(elem[0])<<8 | int16(elem[1])
+	})
 }
 
 func unmarshalListTime(info CollectionType, data []byte, dst *[]time.Time) error {
@@ -1174,7 +1091,7 @@ func unmarshalListUUID(info CollectionType, data []byte, dst *[]UUID) error {
 	return nil
 }
 
-func readCollectionSize(info CollectionType, data []byte) (size, read int, err error) {
+func readCollectionSize(data []byte) (size, read int, err error) {
 	if len(data) < 4 {
 		return 0, 0, unmarshalErrorf("unmarshal list: unexpected eof")
 	}
@@ -1183,13 +1100,8 @@ func readCollectionSize(info CollectionType, data []byte) (size, read int, err e
 	return
 }
 
-func unmarshalList(info TypeInfo, data []byte, value any) error {
-	listInfo, ok := info.(CollectionType)
-	if !ok {
-		return unmarshalErrorf("unmarshal: can not unmarshal none collection type into list")
-	}
-
-	if err := unmarshalListFast(listInfo, data, value); err != errFastPathNotApplicable {
+func unmarshalList(info CollectionType, data []byte, value any) error {
+	if err := unmarshalListFast(info, data, value); err != errFastPathNotApplicable {
 		return err
 	}
 
@@ -1207,7 +1119,7 @@ func unmarshalList(info TypeInfo, data []byte, value any) error {
 			return unmarshalErrorf("can not unmarshal into non-empty interface %T", value)
 		}
 		// Create a properly typed slice based on the element type
-		elemGoType, err := goType(listInfo.Elem)
+		elemGoType, err := goType(info.Elem)
 		if err != nil {
 			return unmarshalErrorf("unmarshal list: cannot determine element type: %v", err)
 		}
@@ -1227,9 +1139,12 @@ func unmarshalList(info TypeInfo, data []byte, value any) error {
 			rv.Set(reflect.Zero(t))
 			return nil
 		}
-		n, p, err := readCollectionSize(listInfo, data)
+		n, p, err := readCollectionSize(data)
 		if err != nil {
 			return err
+		}
+		if n < 0 {
+			return unmarshalErrorf("unmarshal list: negative size %d", n)
 		}
 		data = data[p:]
 		if k == reflect.Array {
@@ -1237,6 +1152,9 @@ func unmarshalList(info TypeInfo, data []byte, value any) error {
 				return unmarshalErrorf("unmarshal list: array with wrong size")
 			}
 		} else {
+			if n > len(data)/4 {
+				return unmarshalErrorf("unmarshal list: invalid size %d", n)
+			}
 			rv.Set(reflect.MakeSlice(t, n, n))
 			// If rv was an interface, get the underlying slice
 			if rv.Kind() == reflect.Interface {
@@ -1244,7 +1162,7 @@ func unmarshalList(info TypeInfo, data []byte, value any) error {
 			}
 		}
 		for i := 0; i < n; i++ {
-			m, p, err := readCollectionSize(listInfo, data)
+			m, p, err := readCollectionSize(data)
 			if err != nil {
 				return err
 			}
@@ -1258,7 +1176,7 @@ func unmarshalList(info TypeInfo, data []byte, value any) error {
 				unmarshalData = data[:m]
 				data = data[m:]
 			}
-			if err := Unmarshal(listInfo.Elem, unmarshalData, rv.Index(i).Addr().Interface()); err != nil {
+			if err := Unmarshal(info.Elem, unmarshalData, rv.Index(i).Addr().Interface()); err != nil {
 				return err
 			}
 		}
@@ -1272,6 +1190,33 @@ func marshalVector(info VectorType, value any) ([]byte, error) {
 		return nil, nil
 	} else if _, ok := value.(unsetColumn); ok {
 		return nil, nil
+	}
+
+	// Fast paths for []float64/[]float32 — skip reflect/per-element dispatch.
+	// dim=0 falls through to the generic path (CQL null semantics).
+	if info.Dimensions > 0 {
+		switch info.SubType.Type() {
+		case TypeDouble:
+			if v, ok := value.([]float64); ok {
+				if v == nil {
+					return nil, nil
+				}
+				if len(v) != info.Dimensions {
+					return nil, marshalErrorf("expected vector with %d dimensions, received %d", info.Dimensions, len(v))
+				}
+				return marshalVectorFloat64(info.Dimensions, v)
+			}
+		case TypeFloat:
+			if v, ok := value.([]float32); ok {
+				if v == nil {
+					return nil, nil
+				}
+				if len(v) != info.Dimensions {
+					return nil, marshalErrorf("expected vector with %d dimensions, received %d", info.Dimensions, len(v))
+				}
+				return marshalVectorFloat32(info.Dimensions, v)
+			}
+		}
 	}
 
 	rv := reflect.ValueOf(value)
@@ -1312,7 +1257,81 @@ func marshalVector(info VectorType, value any) ([]byte, error) {
 	return nil, marshalErrorf("can not marshal %T into %s. Accepted types: slice, array.", value, info)
 }
 
+// vectorSliceReuse reuses *dst's backing array when cap is sufficient.
+func vectorSliceReuse[T any](dst *[]T, dim int) []T {
+	vec := *dst
+	if cap(vec) >= dim {
+		vec = vec[:dim]
+	} else {
+		vec = make([]T, dim)
+	}
+	return vec
+}
+
+// marshalVectorFloat64 encodes []float64 as contiguous big-endian IEEE 754 doubles.
+func marshalVectorFloat64(dim int, vec []float64) ([]byte, error) {
+	buf := make([]byte, dim*8)
+	for i, v := range vec {
+		binary.BigEndian.PutUint64(buf[i*8:], math.Float64bits(v))
+	}
+	return buf, nil
+}
+
+// marshalVectorFloat32 encodes []float32 as contiguous big-endian IEEE 754 floats.
+func marshalVectorFloat32(dim int, vec []float32) ([]byte, error) {
+	buf := make([]byte, dim*4)
+	for i, v := range vec {
+		binary.BigEndian.PutUint32(buf[i*4:], math.Float32bits(v))
+	}
+	return buf, nil
+}
+
+// unmarshalVectorFloat64 decodes contiguous big-endian IEEE 754 doubles into vec.
+// The caller is responsible for ensuring data is dim*8 bytes and vec has length dim.
+func unmarshalVectorFloat64(data []byte, vec []float64) {
+	for i := range vec {
+		vec[i] = math.Float64frombits(binary.BigEndian.Uint64(data[i*8:]))
+	}
+}
+
+// unmarshalVectorFloat32 decodes contiguous big-endian IEEE 754 floats into vec.
+// The caller is responsible for ensuring data is dim*4 bytes and vec has length dim.
+func unmarshalVectorFloat32(data []byte, vec []float32) {
+	for i := range vec {
+		vec[i] = math.Float32frombits(binary.BigEndian.Uint32(data[i*4:]))
+	}
+}
+
 func unmarshalVector(info VectorType, data []byte, value any) error {
+	// Fast paths for *[]float64/*[]float32 — skip reflect/per-element dispatch.
+	// nil/empty and dim=0 fall through to the generic path.
+	if info.Dimensions > 0 && data != nil {
+		switch info.SubType.Type() {
+		case TypeDouble:
+			if dst, ok := value.(*[]float64); ok {
+				expected := info.Dimensions * 8
+				if len(data) != expected {
+					return unmarshalErrorf("unmarshal vector<double>: expected %d bytes, got %d", expected, len(data))
+				}
+				vec := vectorSliceReuse(dst, info.Dimensions)
+				unmarshalVectorFloat64(data, vec)
+				*dst = vec
+				return nil
+			}
+		case TypeFloat:
+			if dst, ok := value.(*[]float32); ok {
+				expected := info.Dimensions * 4
+				if len(data) != expected {
+					return unmarshalErrorf("unmarshal vector<float>: expected %d bytes, got %d", expected, len(data))
+				}
+				vec := vectorSliceReuse(dst, info.Dimensions)
+				unmarshalVectorFloat32(data, vec)
+				*dst = vec
+				return nil
+			}
+		}
+	}
+
 	rv := reflect.ValueOf(value)
 	if rv.Kind() != reflect.Ptr {
 		return unmarshalErrorf("can not unmarshal into non-pointer %T", value)
@@ -1489,12 +1508,7 @@ func computeUnsignedVIntSize(v uint64) int {
 	return (639 - lead0*9) >> 6
 }
 
-func marshalMap(info TypeInfo, value any) ([]byte, error) {
-	mapInfo, ok := info.(CollectionType)
-	if !ok {
-		return nil, marshalErrorf("marshal: can not marshal none collection type into map")
-	}
-
+func marshalMap(info CollectionType, value any) ([]byte, error) {
 	if value == nil {
 		return nil, nil
 	} else if _, ok := value.(unsetColumn); ok {
@@ -1515,13 +1529,13 @@ func marshalMap(info TypeInfo, value any) ([]byte, error) {
 	buf := &bytes.Buffer{}
 	n := rv.Len()
 
-	if err := writeCollectionSize(mapInfo, n, buf); err != nil {
+	if err := writeCollectionSize(n, buf); err != nil {
 		return nil, err
 	}
 
 	keys := rv.MapKeys()
 	for _, key := range keys {
-		item, err := Marshal(mapInfo.Key, key.Interface())
+		item, err := Marshal(info.Key, key.Interface())
 		if err != nil {
 			return nil, err
 		}
@@ -1530,12 +1544,12 @@ func marshalMap(info TypeInfo, value any) ([]byte, error) {
 		if item == nil {
 			itemLen = -1
 		}
-		if err := writeCollectionSize(mapInfo, itemLen, buf); err != nil {
+		if err := writeCollectionSize(itemLen, buf); err != nil {
 			return nil, err
 		}
 		buf.Write(item)
 
-		item, err = Marshal(mapInfo.Elem, rv.MapIndex(key).Interface())
+		item, err = Marshal(info.Elem, rv.MapIndex(key).Interface())
 		if err != nil {
 			return nil, err
 		}
@@ -1544,7 +1558,7 @@ func marshalMap(info TypeInfo, value any) ([]byte, error) {
 		if item == nil {
 			itemLen = -1
 		}
-		if err := writeCollectionSize(mapInfo, itemLen, buf); err != nil {
+		if err := writeCollectionSize(itemLen, buf); err != nil {
 			return nil, err
 		}
 		buf.Write(item)
@@ -1552,12 +1566,7 @@ func marshalMap(info TypeInfo, value any) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func unmarshalMap(info TypeInfo, data []byte, value any) error {
-	mapInfo, ok := info.(CollectionType)
-	if !ok {
-		return unmarshalErrorf("unmarshal: can not unmarshal none collection type into map")
-	}
-
+func unmarshalMap(info CollectionType, data []byte, value any) error {
 	rv := reflect.ValueOf(value)
 	if rv.Kind() != reflect.Ptr {
 		return unmarshalErrorf("can not unmarshal into non-pointer %T", value)
@@ -1571,11 +1580,11 @@ func unmarshalMap(info TypeInfo, data []byte, value any) error {
 			return unmarshalErrorf("can not unmarshal into non-empty interface %T", value)
 		}
 		// Create a properly typed map based on the key and element types
-		keyGoType, err := goType(mapInfo.Key)
+		keyGoType, err := goType(info.Key)
 		if err != nil {
 			return unmarshalErrorf("unmarshal map: cannot determine key type: %v", err)
 		}
-		elemGoType, err := goType(mapInfo.Elem)
+		elemGoType, err := goType(info.Elem)
 		if err != nil {
 			return unmarshalErrorf("unmarshal map: cannot determine element type: %v", err)
 		}
@@ -1589,12 +1598,15 @@ func unmarshalMap(info TypeInfo, data []byte, value any) error {
 		rv.Set(reflect.Zero(t))
 		return nil
 	}
-	n, p, err := readCollectionSize(mapInfo, data)
+	n, p, err := readCollectionSize(data)
 	if err != nil {
 		return err
 	}
 	if n < 0 {
 		return unmarshalErrorf("negative map size %d", n)
+	}
+	if n > (len(data)-p)/8 {
+		return unmarshalErrorf("unmarshal map: invalid size %d", n)
 	}
 	rv.Set(reflect.MakeMapWithSize(t, n))
 	// If rv was an interface, get the underlying map
@@ -1603,7 +1615,7 @@ func unmarshalMap(info TypeInfo, data []byte, value any) error {
 	}
 	data = data[p:]
 	for i := 0; i < n; i++ {
-		m, p, err := readCollectionSize(mapInfo, data)
+		m, p, err := readCollectionSize(data)
 		if err != nil {
 			return err
 		}
@@ -1618,11 +1630,11 @@ func unmarshalMap(info TypeInfo, data []byte, value any) error {
 			unmarshalData = data[:m]
 			data = data[m:]
 		}
-		if err := Unmarshal(mapInfo.Key, unmarshalData, key.Interface()); err != nil {
+		if err := Unmarshal(info.Key, unmarshalData, key.Interface()); err != nil {
 			return err
 		}
 
-		m, p, err = readCollectionSize(mapInfo, data)
+		m, p, err = readCollectionSize(data)
 		if err != nil {
 			return err
 		}
@@ -1638,7 +1650,7 @@ func unmarshalMap(info TypeInfo, data []byte, value any) error {
 			unmarshalData = data[:m]
 			data = data[m:]
 		}
-		if err := Unmarshal(mapInfo.Elem, unmarshalData, val.Interface()); err != nil {
+		if err := Unmarshal(info.Elem, unmarshalData, val.Interface()); err != nil {
 			return err
 		}
 

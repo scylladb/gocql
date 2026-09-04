@@ -20,13 +20,29 @@ on:
       - .github/workflows/extended-ci-longevity-large-partitions-with-network-nemesis-1h-test.yml
 
 jobs:
-  build:
-    name: Build
+  build-amd64:
+    name: Build (amd64)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          # make check's check-lz4-pin compares go.mod's lz4 require against the
+          # newest lz4/v* tag, so the tags have to be present. fetch-depth: 0 rather
+          # than fetch-tags on top of the default depth-1 fetch: it makes the tag set
+          # unconditional instead of dependent on which tags a shallow fetch chose to
+          # bring along. check-lz4-pin no longer skips when it finds none, so getting
+          # this wrong is now a failure rather than a silent pass.
+          fetch-depth: 0
 
-      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+      # runner.arch qualifies the key, which it did not before. This entry is shared
+      # with the integration jobs, and the ScyllaDB one now runs on both
+      # architectures; runner.os is "Linux" on either, so an unqualified key would
+      # hand one lane the other's amd64 get-version in bin/ and x86_64 relocatables
+      # in ~/.ccm. Only the amd64 entries go cold, once.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
             /home/runner/.cache/pip
@@ -37,9 +53,9 @@ jobs:
             testdata/pki
             bin/
           # CCM, scylla, cassandra and java versions are in Makefile
-          key: pr-check-${{ runner.os }}-${{ hashFiles('Makefile') }}
+          key: pr-check-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
 
-      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
           cache-dependency-path: |
@@ -55,24 +71,98 @@ jobs:
 
       - run: sudo sh -c "echo 2097152 >> /proc/sys/fs/aio-max-nr"
 
+  # The arm64 counterpart, and the reason it exists: pierrec/lz4 ships hand-written
+  # per-architecture decode assembly (internal/lz4block/decode_arm64.s), so the code
+  # behind LZ4Compressor.Decode and AppendDecompressed -- and therefore behind every
+  # compressed native-protocol-v5 segment on a Graviton or Apple-silicon deployment --
+  # had no gate at all before this lane existed. The last two bumps of that dependency
+  # both reworked exactly that file.
+  #
+  # It builds and tests but does not lint, which is why it is not `make check`:
+  # golangci-lint and `go mod tidy -diff` are architecture-independent, so running the
+  # whole target here would only re-download an arm64 golangci-lint to repeat the amd64
+  # result. `make build` is the one part of it that is not -- and it is not redundant
+  # with the unit tests either, since `go test` never compiles the `all`-tagged non-test
+  # files (integration_only.go, internal/ccm, internal/debug/debug_on.go).
+  #
+  # No actions/cache step, deliberately: the pr-check entry above holds CCM
+  # repositories, a JDK and amd64 binaries in bin/, and this lane uses none of them.
+  # Nothing it does need is expensive to recreate -- setup-go caches modules under its
+  # own arch-scoped key, and test-unit's .prepare-pki prerequisite regenerates the test
+  # certificates in seconds.
+  build-arm64:
+    name: Build (arm64)
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            lz4/go.sum
+            tests/bench/go.sum
+            go.sum
+
+      - name: Build
+        run: make build
+
+      # test-unit descends into the nested lz4 module (see its recipe in the
+      # Makefile), so the decode assembly above needs no separate step.
+      - name: Run unit tests
+        run: make test-unit
+
   test-integration-scylla:
-    name: Integration Tests On Scylla
-    runs-on: ubuntu-latest
-    needs: build
+    name: Integration Tests On Scylla (${{ matrix.scylla-version }}, ${{ matrix.arch }})
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    needs: [build-amd64]
+    permissions:
+      contents: read
     strategy:
       matrix:
         scylla-version: [LATEST, PRIOR, LTS-LATEST, LTS-PRIOR]
+        arch: [amd64]
+        # arm64 is pinned to one version on purpose: this lane is here to show the
+        # driver works end to end on aarch64, not to re-cover every ScyllaDB
+        # release. `arch` is already a matrix key, so this entry cannot merge into
+        # an existing combination and GitHub adds it as a fifth one instead.
+        include:
+          - scylla-version: LATEST
+            arch: arm64
       fail-fast: false
     env:
       SCYLLA_VERSION: ${{ matrix.scylla-version }}
+      # The arm64 entry is the lane that exists for pierrec/lz4's hand-written
+      # internal/lz4block/decode_arm64.s, so run it against that code rather than
+      # against the snappy default: LZ4Compressor.Decode and AppendDecompressed are
+      # the entry points into that assembly, and nothing else here reaches it end to
+      # end. Possible only now that the root harness can build the nested lz4 module
+      # -- createCluster's `case "lz4"` is what this selects. snappy keeps its
+      # coverage on the five amd64 lanes.
+      #
+      # Both arms of the expression are non-empty strings on purpose: TEST_COMPRESSOR
+      # is a `?=` default in the Makefile, so an empty value would still count as set
+      # and would silently select no-compression on those five.
+      TEST_COMPRESSOR: ${{ matrix.arch == 'arm64' && 'lz4' || 'snappy' }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: '3.11'
 
-      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+      # runner.arch qualifies both cache keys in this job because runner.os is
+      # "Linux" on either architecture, so a shared key would hand one lane the
+      # other's amd64 get-version in bin/ and x86_64 ScyllaDB relocatable in
+      # ~/.ccm. ~/.sdkman is listed for the amd64 lane; the arm64 image ships no
+      # JDK, and actions/cache is content to skip a path that is not there.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
             /home/runner/.cache/pip
@@ -81,9 +171,9 @@ jobs:
             testdata/pki
             bin/
           # CCM, pip and java versions are in Makefile
-          key: pr-check-${{ runner.os }}-${{ hashFiles('Makefile') }}
+          key: pr-check-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
 
-      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
           cache-dependency-path: |
@@ -96,12 +186,12 @@ jobs:
         run: make resolve-scylla-version
 
       - name: Pull CCM image from the cache
-        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         if: steps.scylla-version.outputs.value != 'NOT-FOUND'
         id: ccm-cache
         with:
           path: ~/.ccm/repository
-          key: ccm-scylla-${{ runner.os }}-${{ steps.scylla-version.outputs.value }}
+          key: ccm-scylla-${{ runner.os }}-${{ runner.arch }}-${{ steps.scylla-version.outputs.value }}
 
       - name: Download ScyllaDB (${{ steps.scylla-version.outputs.value }}) image
         if: steps.ccm-cache.outputs.cache-hit != 'true' && steps.scylla-version.outputs.value != 'NOT-FOUND'
@@ -109,38 +199,53 @@ jobs:
 
       - name: Save CCM ScyllaDB image into the cache
         if: steps.ccm-cache.outputs.cache-hit != 'true' && steps.scylla-version.outputs.value != 'NOT-FOUND'
-        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.ccm/repository
-          key: ccm-scylla-${{ runner.os }}-${{ steps.scylla-version.outputs.value }}
+          key: ccm-scylla-${{ runner.os }}-${{ runner.arch }}-${{ steps.scylla-version.outputs.value }}
 
       - name: Run integration suite with ScyllaDB ${{ matrix.scylla-version }}(${{ steps.scylla-version.outputs.value }})
         if: steps.scylla-version.outputs.value != 'NOT-FOUND'
         run: make test-integration-scylla
 
+      # amd64 only, for the same reason the arm64 lane covers one version: it is
+      # here to show the driver works end to end on aarch64, not to re-run every
+      # pass the amd64 lane already makes.
       - name: Run CCM integration suite with ScyllaDB ${{ matrix.scylla-version }}(${{ steps.scylla-version.outputs.value }})
-        if: steps.scylla-version.outputs.value != 'NOT-FOUND'
+        if: matrix.arch == 'amd64' && steps.scylla-version.outputs.value != 'NOT-FOUND'
         run: TEST_INTEGRATION_TAGS="ccm gocql_debug" make test-integration-scylla
 
   test-integration-cassandra:
-    name: Integration Tests On Cassandra
-    runs-on: ubuntu-latest
-    needs: build
+    name: Integration Tests On Cassandra (${{ matrix.cassandra-version }}, ${{ matrix.arch }})
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    needs: [build-amd64]
+    # This job had no permissions block at all, having had no arm64 counterpart to
+    # force the question, so it ran on the repository default while its neighbour was
+    # pinned -- and it is the one job that hands GITHUB_TOKEN to a make target.
+    permissions:
+      contents: read
     strategy:
       matrix:
         cassandra-version: [5-LATEST, 4-LATEST]
+        # One value today. It is spelled as a matrix dimension so this job reads the
+        # same as the ScyllaDB one above and so an arm64 lane is one entry rather
+        # than a copied job.
+        arch: [amd64]
       fail-fast: false
     env:
       CASSANDRA_VERSION: ${{ matrix.cassandra-version }}
+      GH_TOKEN: ${{ github.token }}
 
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: '3.11'
 
-      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
             /home/runner/.cache/pip
@@ -149,9 +254,9 @@ jobs:
             testdata/pki
             bin/
           # CCM, python and java versions are in Makefile
-          key: pr-check-${{ runner.os }}-${{ hashFiles('Makefile') }}
+          key: pr-check-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
 
-      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
           cache-dependency-path: |
@@ -164,12 +269,12 @@ jobs:
         run: make resolve-cassandra-version
 
       - name: Pull CCM image from the cache
-        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         if: steps.cassandra-version.outputs.value != 'NOT-FOUND'
         id: ccm-cache
         with:
           path: ~/.ccm/repository
-          key: ccm-cassandra-${{ runner.os }}-${{ steps.cassandra-version.outputs.value }}
+          key: ccm-cassandra-${{ runner.os }}-${{ runner.arch }}-${{ steps.cassandra-version.outputs.value }}
 
       - name: Download Cassandra (${{ steps.cassandra-version.outputs.value }}) image
         if: steps.ccm-cache.outputs.cache-hit != 'true' && steps.cassandra-version.outputs.value != 'NOT-FOUND'
@@ -177,10 +282,10 @@ jobs:
 
       - name: Save CCM Cassandra image into the cache
         if: steps.ccm-cache.outputs.cache-hit != 'true' && steps.cassandra-version.outputs.value != 'NOT-FOUND'
-        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.ccm/repository
-          key: ccm-cassandra-${{ runner.os }}-${{ steps.cassandra-version.outputs.value }}
+          key: ccm-cassandra-${{ runner.os }}-${{ runner.arch }}-${{ steps.cassandra-version.outputs.value }}
 
       - name: Run integration suite with Cassandra ${{ matrix.cassandra-version }}(${{ steps.cassandra-version.outputs.value }})
         if: steps.cassandra-version.outputs.value != 'NOT-FOUND'
@@ -190,3 +295,55 @@ jobs:
         if: steps.cassandra-version.outputs.value != 'NOT-FOUND'
         run: TEST_INTEGRATION_TAGS="ccm gocql_debug" make test-integration-cassandra
 
+      # Native protocol v5 is never negotiated automatically (discoverProtocol caps at
+      # v4), so at the default TEST_CQL_PROTOCOL=4 every ProtoVersion >= 5 test skips and
+      # the whole suite runs over v4 framing. This lane runs it over v5 instead, which is
+      # the only place segmentation, compressed segments, now_in_seconds, keyspace
+      # override and METADATA_CHANGED reach a live server.
+      #
+      # Cassandra only, and only 5-LATEST: ScyllaDB's protocol extensions are defined on
+      # top of v4 — SCYLLA_USE_METADATA_ID exists precisely to backport a v5 feature onto
+      # v4 — so there is no v5 to negotiate on the Scylla legs.
+      #
+      # lz4 is the only legal *compressor* on v5; no-compression stays a valid setting,
+      # and the step below uses it. Snappy is removed in v5: a v5 server still advertises
+      # it in its OPTIONS response, but STARTUP with COMPRESSION=snappy is rejected
+      # server-side, and ClusterConfig.Validate refuses any compressor that is not a
+      # SegmentCompressor once ProtoVersion >= 5, which would fail every session in the
+      # suite. This lane compresses rather than running uncompressed so the
+      # compressed-segment path is covered; the step below covers the other half.
+      #
+      # cassandra-start short-circuits when the cluster is already up, so this costs one
+      # extra suite run rather than a second CCM bring-up.
+      #
+      # TEST_INTEGRATION_TIMEOUT is raised for headroom, not because v5 is slower: in
+      # back-to-back local runs v4 and v5 came out at 464s and 467s. The suite is simply
+      # close to the 10m default whenever the machine is loaded (280s-470s observed), and
+      # overrunning go test's -timeout panics with a goroutine dump instead of reporting
+      # the failing test. The default is left alone so only this new lane pays for it.
+      - name: Run proto-5 suite with Cassandra ${{ matrix.cassandra-version }}(${{ steps.cassandra-version.outputs.value }})
+        if: matrix.cassandra-version == '5-LATEST' && steps.cassandra-version.outputs.value != 'NOT-FOUND'
+        run: |
+          TEST_CQL_PROTOCOL=5 \
+          TEST_COMPRESSOR=lz4 \
+          TEST_INTEGRATION_TIMEOUT=20m \
+          make test-integration-cassandra
+
+      # The lane above compresses every segment it sends, so on its own it leaves the
+      # uncompressed v5 framing with no integration coverage at all: segment.ReadHeader
+      # and the writer take a different header layout and CRC for compressed and
+      # uncompressed segments, and only the compressed half would be exercised.
+      #
+      # Scoped with -run rather than a second full suite: the two tests below are the
+      # ones whose subject is the framing itself -- TestLargeSizeQuery is the
+      # multi-segment split, TestPrepareExecuteMetadataChangedFlag is the v5 half of the
+      # result-metadata-id exchange -- so this costs seconds, where repeating the suite
+      # would cost another eight minutes. Do not fold it into the lane above as a
+      # duplicate; the compressor is the entire point of the difference.
+      - name: Run proto-5 uncompressed framing tests with Cassandra ${{ matrix.cassandra-version }}(${{ steps.cassandra-version.outputs.value }})
+        if: matrix.cassandra-version == '5-LATEST' && steps.cassandra-version.outputs.value != 'NOT-FOUND'
+        run: |
+          TEST_CQL_PROTOCOL=5 \
+          TEST_COMPRESSOR=no-compression \
+          TEST_OPTS="-run 'TestLargeSizeQuery|TestPrepareExecuteMetadataChangedFlag'" \
+          make test-integration-cassandra

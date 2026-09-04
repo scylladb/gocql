@@ -5,6 +5,7 @@ package gocql
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"math/big"
 	"reflect"
@@ -17,6 +18,157 @@ import (
 
 	"github.com/gocql/gocql/internal/tests/serialization/valcases"
 )
+
+// truncateTable executes a TRUNCATE on the given fully-qualified table, retrying
+// transient ScyllaDB topology contention ("Another global topology request is
+// ongoing" / "Another TRUNCATE TABLE is ongoing"). TRUNCATE is a global topology
+// operation, so when several parallel tests issue DDL/TRUNCATE concurrently
+// Scylla rejects the overlapping request, and SimpleRetryPolicy does not retry
+// it. See scylladb/gocql#895.
+func truncateTable(t *testing.T, session *Session, fqTable string) error {
+	t.Helper()
+	return retryOnTopologyBusy(func() error {
+		return session.Query("TRUNCATE " + fqTable).Exec()
+	})
+}
+
+// retryOnTopologyBusy runs exec, retrying (with a short backoff) only while it
+// returns the transient ScyllaDB "Another global topology request is ongoing"
+// error. Any other error (or success) is returned immediately.
+func retryOnTopologyBusy(exec func() error) error {
+	return retryOnTopologyBusyWithSleep(exec, time.Sleep)
+}
+
+// retryOnTopologyBusyWithSleep is retryOnTopologyBusy with an injectable sleep
+// function so tests can avoid real backoff delays.
+func retryOnTopologyBusyWithSleep(exec func() error, sleep func(time.Duration)) error {
+	const maxAttempts = 10
+	var err error
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		err = exec()
+		if err == nil || !isTopologyBusyErr(err) {
+			return err
+		}
+		// Small backoff capped at ~0.5s; topology requests are short.
+		sleep(time.Duration(50*(attempt+1)) * time.Millisecond)
+	}
+	return err
+}
+
+// topologyBusyMessages lists the distinct ScyllaDB error message variants seen
+// for transient topology/TRUNCATE contention. Different Scylla versions/error
+// paths (invalid_request_exception vs. std::runtime_error) phrase this
+// differently, so isTopologyBusyErr matches on any of them.
+var topologyBusyMessages = []string{
+	"Another global topology request is ongoing",
+	"Another TRUNCATE TABLE is ongoing",
+}
+
+// isTopologyBusyErr reports whether err is a transient ScyllaDB error returned
+// when another global topology/TRUNCATE request is already in progress.
+func isTopologyBusyErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	for _, m := range topologyBusyMessages {
+		if strings.Contains(msg, m) {
+			return true
+		}
+	}
+	return false
+}
+
+// TestRetryOnTopologyBusy verifies the retry logic deterministically (no
+// cluster required): topology-busy errors are retried until success, other
+// errors are returned immediately, and retries are bounded.
+func TestRetryOnTopologyBusy(t *testing.T) {
+	t.Parallel()
+
+	busy := errors.New("Error during truncate: exceptions::invalid_request_exception (Another global topology request is ongoing, please retry.)")
+	busyTruncate := errors.New("Error during truncate: std::runtime_error (Another TRUNCATE TABLE is ongoing, please retry.)")
+	other := errors.New("some other error")
+
+	// noSleep avoids real backoff so these subtests stay fast and deterministic.
+	noSleep := func(time.Duration) {}
+
+	t.Run("retries busy then succeeds", func(t *testing.T) {
+		calls := 0
+		err := retryOnTopologyBusyWithSleep(func() error {
+			calls++
+			if calls < 3 {
+				return busy
+			}
+			return nil
+		}, noSleep)
+		if err != nil {
+			t.Fatalf("expected success, got %v", err)
+		}
+		if calls != 3 {
+			t.Fatalf("expected 3 calls, got %d", calls)
+		}
+	})
+
+	t.Run("does not retry non-busy errors", func(t *testing.T) {
+		calls := 0
+		err := retryOnTopologyBusyWithSleep(func() error {
+			calls++
+			return other
+		}, noSleep)
+		if err != other {
+			t.Fatalf("expected the original error, got %v", err)
+		}
+		if calls != 1 {
+			t.Fatalf("expected 1 call (no retry), got %d", calls)
+		}
+	})
+
+	t.Run("gives up after max attempts", func(t *testing.T) {
+		calls := 0
+		err := retryOnTopologyBusyWithSleep(func() error {
+			calls++
+			return busy
+		}, noSleep)
+		if !isTopologyBusyErr(err) {
+			t.Fatalf("expected the busy error after exhausting retries, got %v", err)
+		}
+		if calls != 10 {
+			t.Fatalf("expected 10 attempts, got %d", calls)
+		}
+	})
+
+	t.Run("isTopologyBusyErr classification", func(t *testing.T) {
+		if !isTopologyBusyErr(busy) {
+			t.Error("busy error should be classified as topology-busy")
+		}
+		if !isTopologyBusyErr(busyTruncate) {
+			t.Error("busyTruncate (runtime_error TRUNCATE variant) should be classified as topology-busy")
+		}
+		if isTopologyBusyErr(other) {
+			t.Error("other error should not be classified as topology-busy")
+		}
+		if isTopologyBusyErr(nil) {
+			t.Error("nil should not be classified as topology-busy")
+		}
+	})
+
+	t.Run("retries the TRUNCATE-variant busy error", func(t *testing.T) {
+		calls := 0
+		err := retryOnTopologyBusyWithSleep(func() error {
+			calls++
+			if calls < 2 {
+				return busyTruncate
+			}
+			return nil
+		}, noSleep)
+		if err != nil {
+			t.Fatalf("expected success, got %v", err)
+		}
+		if calls != 2 {
+			t.Fatalf("expected 2 calls, got %d", calls)
+		}
+	})
+}
 
 func TestSerializationSimpleTypesCassandra(t *testing.T) {
 	t.Parallel()
@@ -343,7 +495,7 @@ func TestSliceMapMapScanTypes(t *testing.T) {
 		t.Fatal("Failed to create test table:", err)
 	}
 
-	if err := session.Query(fmt.Sprintf("TRUNCATE gocql_test.%s", table)).Exec(); err != nil {
+	if err := truncateTable(t, session, fmt.Sprintf("gocql_test.%s", table)); err != nil {
 		t.Fatal("Failed to truncate test table:", err)
 	}
 
@@ -509,7 +661,7 @@ func TestSliceMapMapScanCounterTypes(t *testing.T) {
 	}
 
 	// Clear existing data
-	if err := session.Query(fmt.Sprintf("TRUNCATE gocql_test_tablets_disabled.%s", table)).Exec(); err != nil {
+	if err := truncateTable(t, session, fmt.Sprintf("gocql_test_tablets_disabled.%s", table)); err != nil {
 		t.Fatal("Failed to truncate counter test table:", err)
 	}
 
@@ -572,7 +724,7 @@ func TestSliceMapMapScanTupleTypes(t *testing.T) {
 	}
 
 	// Clear existing data
-	if err := session.Query(fmt.Sprintf("TRUNCATE gocql_test.%s", table)).Exec(); err != nil {
+	if err := truncateTable(t, session, fmt.Sprintf("gocql_test.%s", table)); err != nil {
 		t.Fatal("Failed to truncate tuple test table:", err)
 	}
 
@@ -700,7 +852,7 @@ func TestSliceMapMapScanVectorTypes(t *testing.T) {
 	}
 
 	// Clear existing data
-	if err := session.Query(fmt.Sprintf("TRUNCATE gocql_test.%s", table)).Exec(); err != nil {
+	if err := truncateTable(t, session, fmt.Sprintf("gocql_test.%s", table)); err != nil {
 		t.Fatal("Failed to truncate vector test table:", err)
 	}
 
@@ -820,7 +972,7 @@ func TestSliceMapMapScanCollectionTypes(t *testing.T) {
 	}
 
 	// Clear existing data
-	if err := session.Query(fmt.Sprintf("TRUNCATE gocql_test.%s", table)).Exec(); err != nil {
+	if err := truncateTable(t, session, fmt.Sprintf("gocql_test.%s", table)); err != nil {
 		t.Fatal("Failed to truncate collection test table:", err)
 	}
 

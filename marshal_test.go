@@ -87,7 +87,11 @@ var unmarshalTests = []struct {
 			l := []int{1, 2}
 			return &l
 		}(),
-		unmarshalErrorf("unmarshal list: unexpected eof"),
+		// A count of 2 needs at least 2*4=8 remaining bytes (one 4-byte
+		// length prefix per element); only 6 remain, so this is now rejected
+		// up front by the size-vs-buffer guard, before attempting to read
+		// any element and hitting the old "unexpected eof".
+		unmarshalErrorf("unmarshal list: invalid size 2"),
 	},
 }
 
@@ -696,6 +700,22 @@ func TestMarshalNil(t *testing.T) {
 			t.Errorf("expected to get nil byte for nil %v got % X", typ, data)
 		}
 	}
+
+	// Collection types also need nil coverage.
+	collectionTypes := []Type{TypeList, TypeSet, TypeMap}
+	for _, typ := range collectionTypes {
+		info := CollectionType{
+			NativeType: NativeType{proto: protoVersion3, typ: typ},
+			Key:        NativeType{proto: protoVersion3, typ: TypeVarchar},
+			Elem:       NativeType{proto: protoVersion3, typ: TypeVarchar},
+		}
+		data, err := Marshal(info, nil)
+		if err != nil {
+			t.Errorf("unable to marshal nil %v: %v\n", typ, err)
+		} else if data != nil {
+			t.Errorf("expected nil bytes for nil %v, got % X", typ, data)
+		}
+	}
 }
 
 func TestUnmarshalInetCopyBytes(t *testing.T) {
@@ -775,7 +795,7 @@ func TestReadCollectionSize(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			size, _, err := readCollectionSize(test.info, test.data)
+			size, _, err := readCollectionSize(test.data)
 			if test.isError {
 				if err == nil {
 					t.Fatal("Expected error, but it was nil")
@@ -1330,273 +1350,6 @@ func buildDateBytes(daysSinceEpoch int32) []byte {
 	return b
 }
 
-func TestUnmarshalListFastPath(t *testing.T) {
-	t.Parallel()
-
-	// Test []string with TypeVarchar
-	t.Run("string", func(t *testing.T) {
-		info := CollectionType{
-			NativeType: NativeType{proto: protoVersion4, typ: TypeList},
-			Elem:       NativeType{proto: protoVersion4, typ: TypeVarchar},
-		}
-		data := buildCQLList([]byte("hello"), []byte("world"), []byte(""))
-		var dst []string
-		if err := unmarshalList(info, data, &dst); err != nil {
-			t.Fatal(err)
-		}
-		if len(dst) != 3 || dst[0] != "hello" || dst[1] != "world" || dst[2] != "" {
-			t.Fatalf("got %v", dst)
-		}
-	})
-
-	// Test []int64 with TypeBigInt
-	t.Run("int64", func(t *testing.T) {
-		info := CollectionType{
-			NativeType: NativeType{proto: protoVersion4, typ: TypeList},
-			Elem:       NativeType{proto: protoVersion4, typ: TypeBigInt},
-		}
-		data := buildCQLList(
-			[]byte{0, 0, 0, 0, 0, 0, 0, 42},
-			[]byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFE},
-		)
-		var dst []int64
-		if err := unmarshalList(info, data, &dst); err != nil {
-			t.Fatal(err)
-		}
-		if len(dst) != 2 || dst[0] != 42 || dst[1] != -2 {
-			t.Fatalf("got %v", dst)
-		}
-	})
-
-	// Test []int32 with TypeInt
-	t.Run("int32", func(t *testing.T) {
-		info := CollectionType{
-			NativeType: NativeType{proto: protoVersion4, typ: TypeList},
-			Elem:       NativeType{proto: protoVersion4, typ: TypeInt},
-		}
-		data := buildCQLList([]byte{0, 0, 0, 7}, []byte{0xFF, 0xFF, 0xFF, 0xFF})
-		var dst []int32
-		if err := unmarshalList(info, data, &dst); err != nil {
-			t.Fatal(err)
-		}
-		if len(dst) != 2 || dst[0] != 7 || dst[1] != -1 {
-			t.Fatalf("got %v", dst)
-		}
-	})
-
-	// Test []float64 with TypeDouble
-	t.Run("float64", func(t *testing.T) {
-		info := CollectionType{
-			NativeType: NativeType{proto: protoVersion4, typ: TypeList},
-			Elem:       NativeType{proto: protoVersion4, typ: TypeDouble},
-		}
-		b := make([]byte, 8)
-		binary.BigEndian.PutUint64(b, math.Float64bits(3.14))
-		data := buildCQLList(b)
-		var dst []float64
-		if err := unmarshalList(info, data, &dst); err != nil {
-			t.Fatal(err)
-		}
-		if len(dst) != 1 || dst[0] != 3.14 {
-			t.Fatalf("got %v", dst)
-		}
-	})
-
-	// Test []bool with TypeBoolean
-	t.Run("bool", func(t *testing.T) {
-		info := CollectionType{
-			NativeType: NativeType{proto: protoVersion4, typ: TypeList},
-			Elem:       NativeType{proto: protoVersion4, typ: TypeBoolean},
-		}
-		data := buildCQLList([]byte{1}, []byte{0})
-		var dst []bool
-		if err := unmarshalList(info, data, &dst); err != nil {
-			t.Fatal(err)
-		}
-		if len(dst) != 2 || dst[0] != true || dst[1] != false {
-			t.Fatalf("got %v", dst)
-		}
-	})
-
-	// Test nil data
-	t.Run("nil_data", func(t *testing.T) {
-		info := CollectionType{
-			NativeType: NativeType{proto: protoVersion4, typ: TypeList},
-			Elem:       NativeType{proto: protoVersion4, typ: TypeVarchar},
-		}
-		var dst []string
-		dst = []string{"existing"}
-		if err := unmarshalList(info, nil, &dst); err != nil {
-			t.Fatal(err)
-		}
-		if dst != nil {
-			t.Fatalf("expected nil, got %v", dst)
-		}
-	})
-
-	// Test []int16 with TypeSmallInt
-	t.Run("int16", func(t *testing.T) {
-		info := CollectionType{
-			NativeType: NativeType{proto: protoVersion4, typ: TypeList},
-			Elem:       NativeType{proto: protoVersion4, typ: TypeSmallInt},
-		}
-		data := buildCQLList([]byte{0, 42}, []byte{0xFF, 0xFE})
-		var dst []int16
-		if err := unmarshalList(info, data, &dst); err != nil {
-			t.Fatal(err)
-		}
-		if len(dst) != 2 || dst[0] != 42 || dst[1] != -2 {
-			t.Fatalf("got %v", dst)
-		}
-	})
-
-	// Test []time.Time with TypeTimestamp
-	t.Run("time_timestamp", func(t *testing.T) {
-		info := CollectionType{
-			NativeType: NativeType{proto: protoVersion4, typ: TypeList},
-			Elem:       NativeType{proto: protoVersion4, typ: TypeTimestamp},
-		}
-		var tv int64 = 1700000000000
-		b := buildTimestampBytes(tv)
-		data := buildCQLList(b, nil)
-		var dst []time.Time
-		if err := unmarshalList(info, data, &dst); err != nil {
-			t.Fatal(err)
-		}
-		if len(dst) != 2 {
-			t.Fatalf("got len %d", len(dst))
-		}
-		expected := time.UnixMilli(tv).UTC()
-		if !dst[0].Equal(expected) {
-			t.Fatalf("expected %v, got %v", expected, dst[0])
-		}
-		if !dst[1].IsZero() {
-			t.Fatalf("expected zero time for null element, got %v", dst[1])
-		}
-	})
-
-	// Test []time.Time with TypeDate
-	t.Run("time_date", func(t *testing.T) {
-		info := CollectionType{
-			NativeType: NativeType{proto: protoVersion4, typ: TypeList},
-			Elem:       NativeType{proto: protoVersion4, typ: TypeDate},
-		}
-		data := buildCQLList(buildDateBytes(19676))
-		var dst []time.Time
-		if err := unmarshalList(info, data, &dst); err != nil {
-			t.Fatal(err)
-		}
-		if len(dst) != 1 {
-			t.Fatalf("got len %d", len(dst))
-		}
-		expected := time.UnixMilli(int64(19676) * 86400000).UTC()
-		if !dst[0].Equal(expected) {
-			t.Fatalf("expected %v, got %v", expected, dst[0])
-		}
-	})
-
-	// Test []UUID with TypeUUID
-	t.Run("uuid", func(t *testing.T) {
-		info := CollectionType{
-			NativeType: NativeType{proto: protoVersion4, typ: TypeList},
-			Elem:       NativeType{proto: protoVersion4, typ: TypeUUID},
-		}
-		u := MustRandomUUID()
-		data := buildCQLList(u[:], nil, make([]byte, 16))
-		var dst []UUID
-		if err := unmarshalList(info, data, &dst); err != nil {
-			t.Fatal(err)
-		}
-		if len(dst) != 3 {
-			t.Fatalf("got len %d", len(dst))
-		}
-		if dst[0] != u {
-			t.Fatalf("expected %v, got %v", u, dst[0])
-		}
-		if dst[1] != (UUID{}) {
-			t.Fatalf("expected zero UUID for null element, got %v", dst[1])
-		}
-		if dst[2] != (UUID{}) {
-			t.Fatalf("expected zero UUID for empty element, got %v", dst[2])
-		}
-	})
-
-	// Test []UUID with TypeTimeUUID
-	t.Run("timeuuid", func(t *testing.T) {
-		info := CollectionType{
-			NativeType: NativeType{proto: protoVersion4, typ: TypeList},
-			Elem:       NativeType{proto: protoVersion4, typ: TypeTimeUUID},
-		}
-		u := MustRandomUUID()
-		data := buildCQLList(u[:])
-		var dst []UUID
-		if err := unmarshalList(info, data, &dst); err != nil {
-			t.Fatal(err)
-		}
-		if len(dst) != 1 || dst[0] != u {
-			t.Fatalf("got %v", dst)
-		}
-	})
-
-	// A malformed frame advertising a huge element count must be rejected by
-	// the size guard before the fast path allocates a slice of that size.
-	// Asserting the specific "invalid size" message ensures the guard path is
-	// exercised rather than the later per-element EOF check (which would only
-	// fire after a multi-GB allocation).
-	t.Run("rejects bogus huge count", func(t *testing.T) {
-		info := CollectionType{
-			NativeType: NativeType{proto: protoVersion4, typ: TypeList},
-			Elem:       NativeType{proto: protoVersion4, typ: TypeVarchar},
-		}
-		// count = 1<<30 but only a few payload bytes follow.
-		data := make([]byte, 0, 8)
-		count := make([]byte, 4)
-		binary.BigEndian.PutUint32(count, 1<<30)
-		data = append(data, count...)
-		data = append(data, 0, 0, 0, 1, 'x') // one tiny element, nowhere near 1<<30
-		var dst []string
-		err := unmarshalList(info, data, &dst)
-		if err == nil {
-			t.Fatalf("expected error for bogus huge count, got dst=%v (len %d)", dst, len(dst))
-		}
-		if !strings.Contains(err.Error(), "invalid size") {
-			t.Fatalf("expected size-guard error, got: %v", err)
-		}
-	})
-
-	// TypeAscii []string must skip the raw-string fast path so the generic path
-	// can validate ASCII payloads (bytes > 127 are invalid). Otherwise the fast
-	// path's string(elem) would silently accept invalid data, diverging from the
-	// generic path.
-	t.Run("ascii skips fast path and validates", func(t *testing.T) {
-		info := CollectionType{
-			NativeType: NativeType{proto: protoVersion4, typ: TypeList},
-			Elem:       NativeType{proto: protoVersion4, typ: TypeAscii},
-		}
-
-		// Fast path must not claim ascii-typed []string.
-		var fast []string
-		if err := unmarshalListFast(info, buildCQLList([]byte("ok")), &fast); err != errFastPathNotApplicable {
-			t.Fatalf("expected ascii to skip the fast path, got err=%v", err)
-		}
-
-		// Generic path must reject an invalid (>127) byte.
-		var bad []string
-		if err := unmarshalList(info, buildCQLList([]byte{0x80}), &bad); err == nil {
-			t.Fatalf("expected error unmarshaling invalid ascii, got %v", bad)
-		}
-
-		// Valid ASCII still round-trips through the generic path.
-		var good []string
-		if err := unmarshalList(info, buildCQLList([]byte("hi"), []byte("")), &good); err != nil {
-			t.Fatalf("unexpected error for valid ascii: %v", err)
-		}
-		if len(good) != 2 || good[0] != "hi" || good[1] != "" {
-			t.Fatalf("got %v", good)
-		}
-	})
-}
-
 // buildCQLListWithNulls builds a CQL binary list where a nil entry encodes a
 // null element (length -1), matching the wire format the server emits.
 func buildCQLListWithNulls(elems ...[]byte) []byte {
@@ -1810,6 +1563,71 @@ func TestUnmarshalListFastPathMatchesReflect(t *testing.T) {
 	}
 }
 
+// TestUnmarshalListFastPathEdgeCases covers two fast-path behaviors not
+// exercised by the differential test above: rejecting a bogus huge element
+// count, and ascii falling through to the validating generic path.
+func TestUnmarshalListFastPathEdgeCases(t *testing.T) {
+	t.Parallel()
+
+	// A malformed frame advertising a huge element count must be rejected by
+	// the size guard before the fast path allocates a slice of that size.
+	// Asserting the specific "invalid size" message ensures the guard path is
+	// exercised rather than the later per-element EOF check (which would only
+	// fire after a multi-GB allocation).
+	t.Run("rejects bogus huge count", func(t *testing.T) {
+		info := CollectionType{
+			NativeType: NativeType{proto: protoVersion4, typ: TypeList},
+			Elem:       NativeType{proto: protoVersion4, typ: TypeVarchar},
+		}
+		// count = 1<<30 but only a few payload bytes follow.
+		data := make([]byte, 0, 8)
+		count := make([]byte, 4)
+		binary.BigEndian.PutUint32(count, 1<<30)
+		data = append(data, count...)
+		data = append(data, 0, 0, 0, 1, 'x') // one tiny element, nowhere near 1<<30
+		var dst []string
+		err := unmarshalList(info, data, &dst)
+		if err == nil {
+			t.Fatalf("expected error for bogus huge count, got dst=%v (len %d)", dst, len(dst))
+		}
+		if !strings.Contains(err.Error(), "invalid size") {
+			t.Fatalf("expected size-guard error, got: %v", err)
+		}
+	})
+
+	// TypeAscii []string must skip the raw-string fast path so the generic path
+	// can validate ASCII payloads (bytes > 127 are invalid). Otherwise the fast
+	// path's string(elem) would silently accept invalid data, diverging from the
+	// generic path.
+	t.Run("ascii skips fast path and validates", func(t *testing.T) {
+		info := CollectionType{
+			NativeType: NativeType{proto: protoVersion4, typ: TypeList},
+			Elem:       NativeType{proto: protoVersion4, typ: TypeAscii},
+		}
+
+		// Fast path must not claim ascii-typed []string.
+		var fast []string
+		if err := unmarshalListFast(info, buildCQLList([]byte("ok")), &fast); err != errFastPathNotApplicable {
+			t.Fatalf("expected ascii to skip the fast path, got err=%v", err)
+		}
+
+		// Generic path must reject an invalid (>127) byte.
+		var bad []string
+		if err := unmarshalList(info, buildCQLList([]byte{0x80}), &bad); err == nil {
+			t.Fatalf("expected error unmarshaling invalid ascii, got %v", bad)
+		}
+
+		// Valid ASCII still round-trips through the generic path.
+		var good []string
+		if err := unmarshalList(info, buildCQLList([]byte("hi"), []byte("")), &good); err != nil {
+			t.Fatalf("unexpected error for valid ascii: %v", err)
+		}
+		if len(good) != 2 || good[0] != "hi" || good[1] != "" {
+			t.Fatalf("got %v", good)
+		}
+	})
+}
+
 // TestUnmarshalListNamedTypeFallsBackToReflect verifies that named slice types
 // (e.g. type Strings []string) do NOT match the concrete fast-path type switch
 // and are handled correctly by the generic reflection path. A wrong type
@@ -2012,4 +1830,89 @@ func BenchmarkUnmarshalList(b *testing.B) {
 			}
 		})
 	})
+}
+
+// TestUnmarshalListReflect_NegativeSize_ReturnsError guards against a
+// malformed frame with a negative list-count header reaching
+// reflect.MakeSlice, which panics on negative len. Uses a named slice type
+// to force the generic reflect path (the fast path's readListHeader already
+// rejects negative counts before this point).
+func TestUnmarshalListReflect_NegativeSize_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	type Strings []string
+	info := CollectionType{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeList},
+		Elem:       NativeType{proto: protoVersion4, typ: TypeVarchar},
+	}
+	data := []byte{0xFF, 0xFF, 0xFF, 0xFF} // count = -1, no elements follow
+
+	var dst Strings
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("unmarshalList panicked on negative size instead of returning an error: %v", r)
+		}
+	}()
+	if err := unmarshalList(info, data, &dst); err == nil {
+		t.Fatal("expected error for negative list size, got nil")
+	}
+}
+
+// TestUnmarshalListReflect_OversizedCount_RejectedBeforeAlloc verifies a list
+// header claiming far more elements than the buffer could contain is
+// rejected before reflect.MakeSlice attempts a huge allocation.
+func TestUnmarshalListReflect_OversizedCount_RejectedBeforeAlloc(t *testing.T) {
+	t.Parallel()
+
+	type Strings []string
+	info := CollectionType{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeList},
+		Elem:       NativeType{proto: protoVersion4, typ: TypeVarchar},
+	}
+	// count = 1, but no element bytes follow: even a small count is rejected
+	// up front once it exceeds what the remaining buffer could hold, instead
+	// of risking a large allocation attempt if this test ever used a huge
+	// count and the guard regressed.
+	data := []byte{0x00, 0x00, 0x00, 0x01}
+
+	var dst Strings
+	err := unmarshalList(info, data, &dst)
+	if err == nil {
+		t.Fatal("expected error for oversized list count, got nil")
+	}
+	if err.Error() != "unmarshal list: invalid size 1" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if dst != nil {
+		t.Fatalf("expected dst to remain nil, got %#v", dst)
+	}
+}
+
+// TestUnmarshalMapReflect_OversizedCount_RejectedBeforeAlloc verifies a map
+// header claiming far more entries than the buffer could contain is rejected
+// before reflect.MakeMapWithSize attempts a huge allocation. Uses a named map
+// type to force the generic reflect path.
+func TestUnmarshalMapReflect_OversizedCount_RejectedBeforeAlloc(t *testing.T) {
+	t.Parallel()
+
+	type StringMap map[string]string
+	info := CollectionType{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeMap},
+		Key:        NativeType{proto: protoVersion4, typ: TypeVarchar},
+		Elem:       NativeType{proto: protoVersion4, typ: TypeVarchar},
+	}
+	// count = 1, but no entry bytes follow (same rationale as the list case).
+	data := []byte{0x00, 0x00, 0x00, 0x01}
+
+	var dst StringMap
+	err := unmarshalMap(info, data, &dst)
+	if err == nil {
+		t.Fatal("expected error for oversized map count, got nil")
+	}
+	if err.Error() != "unmarshal map: invalid size 1" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if dst != nil {
+		t.Fatalf("expected dst to remain nil, got %#v", dst)
+	}
 }

@@ -5,16 +5,31 @@ on:
     branches:
       - master
   pull_request:
-    types: [opened, synchronize, reopened]
+    # labeled is here because the job below is gated on a label. Without it the gate
+    # is unreachable on an open pull request: the condition reads the label list out
+    # of the triggering event's payload, so adding the label afterwards cannot start
+    # the job, and re-running the old workflow replays the payload that lacked it.
+    types: [opened, synchronize, reopened, labeled]
 
 jobs:
   bench-tests:
-    if: contains(github.event.pull_request.labels.*.name, 'run-benchmark-tests')
+    # On a push to master the benchmarks always run; that is what the push trigger
+    # above declares, and without this disjunct it was dead, because a push event
+    # carries no pull_request in its payload, so the label condition was always
+    # false. On a pull request the label has to be on it, and a `labeled` event has
+    # to be the one that added it -- otherwise every later label on a pull request
+    # that already carries this one re-runs the whole benchmark suite.
+    if: >-
+      github.event_name == 'push'
+      || (contains(github.event.pull_request.labels.*.name, 'run-benchmark-tests')
+      && (github.event.action != 'labeled' || github.event.label.name == 'run-benchmark-tests'))
     name: Run benchmark tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
           cache-dependency-path: |

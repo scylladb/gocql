@@ -104,13 +104,23 @@ func TestSetupTLSConfig(t *testing.T) {
 	for _, test := range tests {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
-			tlsConfig, err := setupTLSConfig(test.opts)
+			tlsConfig, err := setupTLSConfig(test.opts, &defaultLogger{})
 			if err != nil {
 				t.Fatalf("unexpected error %q", err.Error())
 			}
 			if tlsConfig.InsecureSkipVerify != test.expectedInsecureSkipVerify {
 				t.Fatalf("got %v, but expected %v", tlsConfig.InsecureSkipVerify,
 					test.expectedInsecureSkipVerify)
+			}
+
+			// Verify that VerifyPeerCertificate is set when InsecureSkipVerify is false
+			// and DisableStrictCertificateValidation is false (default)
+			if !tlsConfig.InsecureSkipVerify && tlsConfig.VerifyPeerCertificate == nil {
+				t.Fatal("VerifyPeerCertificate should be set when InsecureSkipVerify is false")
+			}
+			// Verify that VerifyPeerCertificate is not set when InsecureSkipVerify is true
+			if tlsConfig.InsecureSkipVerify && tlsConfig.VerifyPeerCertificate != nil {
+				t.Fatal("VerifyPeerCertificate should not be set when InsecureSkipVerify is true")
 			}
 		})
 	}
@@ -125,6 +135,13 @@ type errorConn struct {
 func (e errorConn) Close() error {
 	return errors.New("mock close error")
 }
+
+func (e errorConn) SetTimeout(_ time.Duration) {}
+func (e errorConn) GetTimeout() time.Duration  { return 0 }
+
+// setDisarm is required of any reader installed as Conn.r (connReadSource). This
+// mock is never read from, so there is nothing to disarm.
+func (e errorConn) setDisarm(_ bool) {}
 
 // TestHostConnPoolCloseDeadlock verifies that hostConnPool.Close() does not
 // self-deadlock when defaultConnPicker closes connections that trigger
@@ -160,7 +177,7 @@ func TestHostConnPoolCloseDeadlock(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		ctx, cancel := context.WithCancel(context.Background())
 		conn := &Conn{
-			conn:         errorConn{},
+			r:            errorConn{},
 			errorHandler: pool,
 			cancel:       cancel,
 			ctx:          ctx,
@@ -212,7 +229,7 @@ func TestHostConnPoolConnectClosedPoolDoesNotDeadlock(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	conn := &Conn{
-		conn:         errorConn{},
+		r:            errorConn{},
 		errorHandler: pool,
 		cancel:       cancel,
 		ctx:          ctx,

@@ -492,7 +492,7 @@ func TestCOWList_Add(t *testing.T) {
 		}
 	}
 
-	hosts := cow.get()
+	hosts := cow.get().allHosts()
 	if len(hosts) != len(toAdd) {
 		t.Fatalf("expected to have %d hosts got %d", len(toAdd), len(hosts))
 	}
@@ -507,6 +507,117 @@ func TestCOWList_Add(t *testing.T) {
 			t.Errorf("addr was not in the host list: %q", addr)
 		}
 	}
+}
+
+func TestHostInfoList_HostByID(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		hosts   []*HostInfo
+		wantMap bool
+	}{
+		{
+			name:    "linear below threshold",
+			hosts:   makeHostInfoListTestHosts(hostInfoListMapThreshold - 1),
+			wantMap: false,
+		},
+		{
+			name:    "map at threshold",
+			hosts:   makeHostInfoListTestHosts(hostInfoListMapThreshold),
+			wantMap: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			hosts := newHostInfoList(tt.hosts)
+			if (hosts.hostsByID != nil) != tt.wantMap {
+				t.Fatalf("hostsByID presence = %v, want %v", hosts.hostsByID != nil, tt.wantMap)
+			}
+			if tt.wantMap {
+				if hosts.hostIDs != nil {
+					t.Fatalf("hostIDs = %v, want nil when hostsByID is used", hosts.hostIDs)
+				}
+			} else if len(hosts.hostIDs) != len(tt.hosts) {
+				t.Fatalf("len(hostIDs) = %d, want %d", len(hosts.hostIDs), len(tt.hosts))
+			}
+
+			for _, host := range tt.hosts {
+				if got := hosts.hostByID(host.hostUUID()); got != host {
+					t.Fatalf("hostByID(%s) = %v, want %v", host.HostID(), got, host)
+				}
+			}
+
+			if got := hosts.hostByID(tUUID(9999)); got != nil {
+				t.Fatalf("hostByID(missing) = %v, want nil", got)
+			}
+			if got := hosts.hostByID(UUID{}); got != nil {
+				t.Fatalf("hostByID(zero) = %v, want nil", got)
+			}
+		})
+	}
+}
+
+func TestHostInfoList_AllHostsClipsCapacity(t *testing.T) {
+	t.Parallel()
+
+	original := makeHostInfoListTestHosts(2)
+	withSpareCapacity := make([]*HostInfo, len(original), len(original)+1)
+	copy(withSpareCapacity, original)
+
+	hosts := newHostInfoList(withSpareCapacity)
+	snapshot := hosts.allHosts()
+	appended := append(snapshot, &HostInfo{hostId: tUUID(100)})
+
+	if len(snapshot) != len(original) {
+		t.Fatalf("len(allHosts()) = %d, want %d", len(snapshot), len(original))
+	}
+	if len(appended) != len(original)+1 {
+		t.Fatalf("len(appended) = %d, want %d", len(appended), len(original)+1)
+	}
+	if &snapshot[0] == &appended[0] {
+		t.Fatal("append reused allHosts backing array")
+	}
+}
+
+func TestCOWList_AddAll(t *testing.T) {
+	t.Parallel()
+
+	var cow cowHostList
+	hosts := makeHostInfoListTestHosts(hostInfoListMapThreshold)
+
+	if !cow.addAll(hosts) {
+		t.Fatal("did not add hosts which were not in the set")
+	}
+	if got := cow.get().len(); got != len(hosts) {
+		t.Fatalf("len() = %d, want %d", got, len(hosts))
+	}
+	if cow.get().hostsByID == nil {
+		t.Fatal("expected host ID map at threshold")
+	}
+	for _, host := range hosts {
+		if got := cow.get().hostByID(host.hostUUID()); got != host {
+			t.Fatalf("hostByID(%s) = %v, want %v", host.HostID(), got, host)
+		}
+	}
+	if cow.addAll(hosts) {
+		t.Fatal("added duplicate hosts")
+	}
+}
+
+func makeHostInfoListTestHosts(n int) []*HostInfo {
+	hosts := make([]*HostInfo, n)
+	for i := range hosts {
+		hosts[i] = &HostInfo{
+			hostId:         tUUID(i + 1),
+			connectAddress: net.IPv4(10, 0, byte(i>>8), byte(i)),
+			port:           9042,
+		}
+	}
+	return hosts
 }
 
 // TestSimpleRetryPolicy makes sure that we only allow 1 + numRetries attempts
@@ -578,6 +689,112 @@ func TestLWTSimpleRetryPolicy(t *testing.T) {
 	var _ RetryPolicy = ebrp
 	var lwt_rt LWTRetryPolicy = ebrp
 	tests.AssertEqual(t, "retry type of LWT policy", lwt_rt.GetRetryTypeLWT(nil), Retry)
+}
+
+// resolveRetryPolicy mirrors queryExecutor.do()'s fallback exactly (see
+// query_executor.go): if rt is nil, use the shared defaultRetryPolicy
+// singleton instead of allocating a fresh *SimpleRetryPolicy. Kept in the
+// test rather than exported from production code, since it's a two-line
+// fallback that isn't otherwise worth extracting into its own function.
+func resolveRetryPolicy(rt RetryPolicy) RetryPolicy {
+	if rt == nil {
+		rt = defaultRetryPolicy
+	}
+	return rt
+}
+
+// TestDefaultRetryPolicy_MatchesDocumentedDefault verifies the query
+// executor's shared default RetryPolicy singleton behaves exactly like the
+// per-query &SimpleRetryPolicy{NumRetries: 3} it replaced: same NumRetries
+// as ClusterConfig.RetryPolicy's documented default, and still satisfies
+// LWTRetryPolicy so do() picks the LWT-specific Attempt/GetRetryType for
+// LWT queries exactly as before.
+func TestDefaultRetryPolicy_MatchesDocumentedDefault(t *testing.T) {
+	t.Parallel()
+
+	srp, ok := defaultRetryPolicy.(*SimpleRetryPolicy)
+	if !ok {
+		t.Fatalf("defaultRetryPolicy has concrete type %T, want *SimpleRetryPolicy", defaultRetryPolicy)
+	}
+	if srp.NumRetries != 3 {
+		t.Fatalf("defaultRetryPolicy.NumRetries = %d, want 3 (the documented ClusterConfig.RetryPolicy default)", srp.NumRetries)
+	}
+	if _, ok := defaultRetryPolicy.(LWTRetryPolicy); !ok {
+		t.Fatal("defaultRetryPolicy must implement LWTRetryPolicy")
+	}
+}
+
+// TestDefaultRetryPolicy_SingletonIdentity verifies that every query which
+// leaves RetryPolicy unset resolves to the exact same instance rather than a
+// fresh allocation, and that an explicitly-configured RetryPolicy is left
+// untouched (the singleton must never override a user's choice).
+func TestDefaultRetryPolicy_SingletonIdentity(t *testing.T) {
+	t.Parallel()
+
+	a := resolveRetryPolicy(nil)
+	b := resolveRetryPolicy(nil)
+	if a == nil || b == nil {
+		t.Fatal("expected a non-nil retry policy")
+	}
+	if a != b {
+		t.Fatal("two unset-RetryPolicy queries must resolve to the identical singleton instance")
+	}
+	if a != defaultRetryPolicy {
+		t.Fatal("the resolved default must be the package-level defaultRetryPolicy singleton")
+	}
+
+	custom := &SimpleRetryPolicy{NumRetries: 99}
+	if got := resolveRetryPolicy(custom); got != custom {
+		t.Fatal("an explicitly-set RetryPolicy must be returned unchanged, not replaced by the default")
+	}
+}
+
+// TestDefaultRetryPolicy_ZeroAlloc guards the point of the change: resolving
+// an unset RetryPolicy to the shared singleton must not allocate, unlike the
+// &SimpleRetryPolicy{NumRetries: 3} literal it replaced in query_executor.go.
+func TestDefaultRetryPolicy_ZeroAlloc(t *testing.T) {
+	var unset RetryPolicy // simulates qry.retryPolicy() returning nil
+	var resolved RetryPolicy
+	allocs := testing.AllocsPerRun(1000, func() {
+		resolved = resolveRetryPolicy(unset)
+	})
+	if allocs != 0 {
+		t.Errorf("resolveRetryPolicy(nil) allocated %.2f allocs/op, want 0", allocs)
+	}
+	if resolved != defaultRetryPolicy {
+		t.Fatal("sanity check failed: resolved policy is not the singleton")
+	}
+}
+
+// BenchmarkDefaultRetryPolicyResolution compares the current singleton
+// fallback against a fresh &SimpleRetryPolicy{NumRetries: 3} allocated on
+// every call, the exact literal query_executor.go's do() used before this
+// change, for every query that leaves RetryPolicy unset. Run with
+// -benchmem: the singleton path should show 0 allocs/op against the
+// literal's 1.
+func BenchmarkDefaultRetryPolicyResolution(b *testing.B) {
+	var unset RetryPolicy // simulates qry.retryPolicy() returning nil
+
+	b.Run("Singleton_Current", func(b *testing.B) {
+		b.ReportAllocs()
+		var rt RetryPolicy
+		for i := 0; i < b.N; i++ {
+			rt = resolveRetryPolicy(unset)
+		}
+		_ = rt
+	})
+
+	b.Run("FreshAlloc_Old", func(b *testing.B) {
+		b.ReportAllocs()
+		var rt RetryPolicy
+		for i := 0; i < b.N; i++ {
+			rt = unset
+			if rt == nil {
+				rt = &SimpleRetryPolicy{NumRetries: 3}
+			}
+		}
+		_ = rt
+	})
 }
 
 func TestExponentialBackoffPolicy(t *testing.T) {
@@ -1353,6 +1570,117 @@ func TestTokenAwarePolicyReset(t *testing.T) {
 	}
 	if policyInternal.logger != nil {
 		t.Fatal("logger is nil")
+	}
+}
+
+// TestTokenAwareHostPolicy_TabletReplicasPresizeAllocRegression guards the
+// tablets-path replicas slice presizing in Pick() against alloc regressions.
+func TestTokenAwareHostPolicy_TabletReplicasPresizeAllocRegression(t *testing.T) {
+	t.Parallel()
+
+	if testing.CoverMode() != "" {
+		t.Skip("skipping alloc regression guard: coverage instrumentation adds allocations of its own")
+	}
+
+	const rf = 3
+	result := testing.Benchmark(func(b *testing.B) {
+		policy, s, queries := setupTabletAwareBench(b, 10, 100, rf)
+		defer s.Close()
+
+		b.ResetTimer()
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			qry := queries[i%len(queries)]
+			iter := policy.Pick(qry)
+			h := iter()
+			if h == nil {
+				b.Fatal("Pick returned nil on first call")
+			}
+		}
+	})
+
+	t.Logf("tokenAwareHostPolicy.Pick (tablets, RF=%d): %d allocs/op, %d B/op",
+		rf, result.AllocsPerOp(), result.AllocedBytesPerOp())
+
+	// 8 allocs/op measured after presizing (10 before); +1 headroom.
+	const maxAllocsPerOp = 9
+	if got := result.AllocsPerOp(); got > maxAllocsPerOp {
+		t.Errorf("tokenAwareHostPolicy.Pick (tablets path) allocated %d allocs/op, want <= %d "+
+			"(replicas slice presizing may have regressed)", got, maxAllocsPerOp)
+	}
+}
+
+// TestTokenAwareHostPolicy_Pick_FallbackToGetHostForToken_DefaultPartitioner
+// is a regression guard for the lazy-boxing fallback to GetHostForToken.
+func TestTokenAwareHostPolicy_Pick_FallbackToGetHostForToken_DefaultPartitioner(t *testing.T) {
+	t.Parallel()
+
+	policy := TokenAwareHostPolicy(RoundRobinHostPolicy())
+	policyInternal := policy.(*tokenAwareHostPolicy)
+	// No keyspace name means meta.replicas is never populated, forcing the GetHostForToken fallback.
+	policyInternal.getKeyspaceName = func() string { return "" }
+
+	host0 := &HostInfo{hostId: tUUID(0), connectAddress: net.IPv4(10, 0, 0, 1), tokens: []string{"-9223372036854775808"}}
+	host1 := &HostInfo{hostId: tUUID(1), connectAddress: net.IPv4(10, 0, 0, 2), tokens: []string{"0"}}
+	host2 := &HostInfo{hostId: tUUID(2), connectAddress: net.IPv4(10, 0, 0, 3), tokens: []string{"6148914691236517206"}}
+	policy.AddHost(host0)
+	policy.AddHost(host1)
+	policy.AddHost(host2)
+	policy.SetPartitioner("Murmur3Partitioner")
+
+	query := &Query{routingInfo: &queryRoutingInfo{}}
+	query.getKeyspace = func() string { return "unregistered-keyspace" }
+	query.routingKey = []byte("some-routing-key")
+
+	iter := policy.Pick(query)
+	got := iter()
+	if got == nil || got.Info() == nil {
+		t.Fatal("expected a host from the GetHostForToken fallback, got nil")
+	}
+
+	meta := policyInternal.getMetadataReadOnly()
+	if meta == nil || meta.tokenRing == nil {
+		t.Fatal("test setup did not build a token ring")
+	}
+	if len(meta.replicas) != 0 {
+		t.Fatalf("test setup unexpectedly populated a replica map: %v", meta.replicas)
+	}
+
+	wantHost, _ := meta.tokenRing.GetHostForToken(murmur3Partitioner{}.Hash(query.routingKey))
+	if wantHost == nil {
+		t.Fatal("direct GetHostForToken returned nil; test setup is broken")
+	}
+	if got.Info() != wantHost {
+		t.Fatalf("Pick() fallback returned host %v, want %v (from direct GetHostForToken with the same routing key)",
+			got.Info().ConnectAddress(), wantHost.ConnectAddress())
+	}
+}
+
+// TestSelectedHostTokenInt64 verifies the unboxed routing token: TokenInt64()
+// returns the raw int64, and Token() lazily boxes to a non-nil value so the
+// shard-aware invariant (a nil token would disable shard-aware picking) holds
+// for any caller, not just the raw fast path.
+func TestSelectedHostTokenInt64(t *testing.T) {
+	t.Parallel()
+
+	sh := int64SelectedHost{info: &HostInfo{}, tokenCasted: int64Token(42)}
+	tok, ok := sh.TokenInt64()
+	if !ok || tok != int64Token(42) {
+		t.Fatalf("TokenInt64() = %d, %v; want 42, true", tok, ok)
+	}
+	if got := sh.Token(); got == nil || got != int64Token(42) {
+		t.Fatalf("Token() = %v; want boxed int64Token(42)", got)
+	}
+	if got := sh.Token(); got == nil || got != int64Token(42) {
+		t.Fatalf("Token() (again) = %v; want boxed int64Token(42)", got)
+	}
+
+	shBoxed := selectedHost{info: &HostInfo{}, token: int64Token(7)}
+	if tok, ok := shBoxed.TokenInt64(); ok || tok != 0 {
+		t.Fatalf("TokenInt64() = %d, %v; want 0, false for a boxed-only host", tok, ok)
+	}
+	if got := shBoxed.Token(); got != int64Token(7) {
+		t.Fatalf("Token() = %v; want boxed int64Token(7)", got)
 	}
 }
 

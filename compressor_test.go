@@ -33,6 +33,7 @@ import (
 	"testing"
 
 	"github.com/klauspost/compress/s2"
+	lz4mod "github.com/scylladb/gocql/lz4"
 
 	"github.com/gocql/gocql"
 )
@@ -162,6 +163,49 @@ func TestSnappyCompressor(t *testing.T) {
 			}
 		})
 	})
+}
+
+// legacyCompressor implements only the master-era Compressor surface
+// (Name/Encode/Decode). It guards backward compatibility: if the public
+// gocql.Compressor interface ever regains required methods beyond these, this
+// file stops compiling — which is the regression we are preventing.
+type legacyCompressor struct{}
+
+func (legacyCompressor) Name() string                       { return "legacy" }
+func (legacyCompressor) Encode(data []byte) ([]byte, error) { return data, nil }
+func (legacyCompressor) Decode(data []byte) ([]byte, error) { return data, nil }
+
+var _ gocql.Compressor = legacyCompressor{}
+
+// LZ4Compressor's conformance to SegmentCompressor was previously only claimed in its
+// doc comment: the lz4 module cannot assert it, since importing gocql to do so would
+// make the dependency circular. The root module importing lz4 for the v5 integration
+// lane makes the assertion possible in the direction that does not cycle.
+//
+// This is the positive half of what TestCompressorBackwardCompatibility below asserts
+// negatively for SnappyCompressor, so the two live together: a change to the interface
+// surface has one place to update, not two.
+var (
+	_ gocql.Compressor        = lz4mod.LZ4Compressor{}
+	_ gocql.SegmentCompressor = lz4mod.LZ4Compressor{}
+)
+
+func TestCompressorBackwardCompatibility(t *testing.T) {
+	t.Parallel()
+
+	// A compressor implementing only Name/Encode/Decode must satisfy
+	// gocql.Compressor without implementing the optional v5 SegmentCompressor.
+	var c gocql.Compressor = legacyCompressor{}
+	if _, ok := c.(gocql.SegmentCompressor); ok {
+		t.Fatal("legacyCompressor unexpectedly satisfies SegmentCompressor")
+	}
+
+	// The built-in SnappyCompressor must not satisfy SegmentCompressor: it is
+	// the "capable Compressor, but not v5-segment-capable" case the driver
+	// rejects up front on ProtoVersion >= 5.
+	if _, ok := interface{}(gocql.SnappyCompressor{}).(gocql.SegmentCompressor); ok {
+		t.Fatal("SnappyCompressor must not satisfy SegmentCompressor")
+	}
 }
 
 func BenchmarkSnappyCompressor(b *testing.B) {

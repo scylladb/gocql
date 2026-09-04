@@ -37,9 +37,14 @@ const (
 	protoVersion3      = 0x03
 	protoVersion4      = 0x04
 	protoVersion5      = 0x05
-
-	maxFrameSize = 256 * 1024 * 1024
 )
+
+// MaxFrameSize is the largest CQL frame body the driver will accept or produce, and
+// the bound every reader checks a peer-declared body length against.
+//
+// It is here, rather than in the packages that use it, because both the driver and
+// the record/replay dialers de-frame a byte stream and neither can import the other.
+const MaxFrameSize = 256 * 1024 * 1024
 
 const (
 	// result kind
@@ -53,16 +58,18 @@ const (
 	FlagGlobalTableSpec int = 0x01
 	FlagHasMorePages    int = 0x02
 	FlagNoMetaData      int = 0x04
+	FlagMetaDataChanged int = 0x08
 
 	// query flags
-	FlagValues                byte = 0x01
-	FlagSkipMetaData          byte = 0x02
-	FlagPageSize              byte = 0x04
-	FlagWithPagingState       byte = 0x08
-	FlagWithSerialConsistency byte = 0x10
-	FlagDefaultTimestamp      byte = 0x20
-	FlagWithNameValues        byte = 0x40
-	FlagWithKeyspace          byte = 0x80
+	FlagValues                uint32 = 0x01
+	FlagSkipMetaData          uint32 = 0x02
+	FlagPageSize              uint32 = 0x04
+	FlagWithPagingState       uint32 = 0x08
+	FlagWithSerialConsistency uint32 = 0x10
+	FlagDefaultTimestamp      uint32 = 0x20
+	FlagWithNameValues        uint32 = 0x40
+	FlagWithKeyspace          uint32 = 0x80
+	FlagWithNowInSeconds      uint32 = 0x100
 
 	// prepare flags
 	FlagWithPreparedKeyspace uint32 = 0x01
