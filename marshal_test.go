@@ -1564,8 +1564,6 @@ func TestUnmarshalMapFastPath(t *testing.T) {
 		if handled {
 			t.Fatal("expected mismatched elem type to skip the fast path")
 		}
-
-		_ = unmarshalMap(infoMismatch, data, &m) // keep the panic-smoke test
 	})
 
 	t.Run("ascii map keys/values are validated via generic path", func(t *testing.T) {

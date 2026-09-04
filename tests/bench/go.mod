@@ -15,3 +15,12 @@ require (
 )
 
 replace github.com/gocql/gocql => ../..
+
+// The root module requires github.com/scylladb/gocql/lz4 so its integration suite can
+// build LZ4Compressor, and the replace above brings that requirement into this module's
+// graph -- but not the root's own `replace ... => ./lz4`, which applies only while the
+// root is the main module. Without this second replace, `go mod tidy -C tests/bench`
+// resolves the published release of a module that is sitting in the tree: it needs the
+// network, and it computes this module's graph from the released lz4's requirements
+// while the root computes from ./lz4.
+replace github.com/scylladb/gocql/lz4 => ../../lz4

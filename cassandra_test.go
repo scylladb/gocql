@@ -819,8 +819,14 @@ func TestDurationType(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
+	// This guard is stricter than the type. Nothing in the driver gates TypeDuration on
+	// the protocol version -- marshal.go handles 0x0015 unconditionally, and frame.go's
+	// fast path covers every id up to it -- and Cassandra has served `duration` over v4
+	// since 3.11. The guard is left alone here: relaxing it is a change of its own, with
+	// its own testing. The message should not assert a limit that does not exist, though;
+	// the previous one said "protocol version >= 4", which is what pointed this out.
 	if session.cfg.ProtoVersion < protoVersion5 {
-		t.Skip("Duration type is not supported. Please use protocol version >= 4 and cassandra version >= 3.11")
+		t.Skip("skipped below protocol 5 by this test's own guard, not by a limit of the duration type")
 	}
 
 	table := testTableName(t)
@@ -1778,9 +1784,101 @@ func TestBatchQueryInfo(t *testing.T) {
 	}
 }
 
+// hostConnWaitTimeout bounds the waits below. Generous on purpose: exceeding it means
+// the pools never came up, which is a failure worth reporting rather than a slow start.
+const hostConnWaitTimeout = 15 * time.Second
+
+// pollUntil calls cond every 50ms until it holds or timeout elapses.
+func pollUntil(timeout time.Duration, cond func() bool) bool {
+	deadline := time.After(timeout)
+	for {
+		if cond() {
+			return true
+		}
+
+		select {
+		case <-deadline:
+			return false
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+}
+
+// waitForHostConns returns one pooled connection per host the session considers up,
+// waiting until every one of them has yielded a connection.
+//
+// createSession waits for schema agreement, not for connections, and hostConnPool.pickable
+// reports false while a pool is still empty -- it only schedules the fill. A host walk run
+// straight after createSession therefore skips whichever pools have not come up yet, which
+// silently narrows a per-host assertion down to the node that answered first.
+//
+// The host list is re-read on every attempt, so a host marked up while this waits is
+// included and one marked down stops being required.
+func waitForHostConns(t *testing.T, session *Session) map[string]*Conn {
+	t.Helper()
+
+	conns := make(map[string]*Conn)
+	var pending, down []string
+
+	ok := pollUntil(hostConnWaitTimeout, func() bool {
+		clear(conns)
+		pending = pending[:0]
+		down = down[:0]
+
+		for _, host := range session.hostSource.getHostsList() {
+			// Collected rather than merely skipped: a host that stays down keeps the
+			// count below *clusterSize while contributing nothing to pending, so the
+			// failure below would otherwise report "2 of 3 connected, 0 still without
+			// a connection: []" and name no address to go and look at.
+			if !host.IsUp() {
+				down = append(down, host.ConnectAddressAndPort())
+				continue
+			}
+
+			addr := host.ConnectAddressAndPort()
+			pool, found := session.pool.getPool(host)
+			if !found {
+				pending = append(pending, addr)
+				continue
+			}
+
+			if conn := pool.Pick(nil, nil); conn != nil {
+				conns[addr] = conn
+			} else {
+				pending = append(pending, addr)
+			}
+		}
+
+		// Against *clusterSize rather than "at least one": hostSource discovers peers
+		// asynchronously too, so early on the list itself is short and every host in it
+		// can have a connection while two nodes are not represented at all. Waiting for
+		// len(pending) == 0 alone would be satisfied by that, and reintroduce one level
+		// up exactly the "passed having checked one of three" hole this closes.
+		//
+		// >= rather than ==, so a session that has discovered more up hosts than
+		// -clusterSize claims still converges instead of polling to the deadline.
+		return len(pending) == 0 && len(conns) >= *clusterSize
+	})
+
+	if !ok {
+		t.Fatalf("after %s the session had %d of %d hosts connected; up host(s) still without a connection: %v; host(s) marked down: %v",
+			hostConnWaitTimeout, len(conns), *clusterSize, pending, down)
+	}
+
+	return conns
+}
+
+// getRandomConn returns a pooled connection, waiting for one rather than failing the
+// moment none is pickable. See waitForHostConns: an empty pool straight after
+// createSession is a pool still filling, not an anomaly.
 func getRandomConn(t *testing.T, session *Session) *Conn {
-	conn := session.getConn()
-	if conn == nil {
+	t.Helper()
+
+	var conn *Conn
+	if !pollUntil(hostConnWaitTimeout, func() bool {
+		conn = session.getConn()
+		return conn != nil
+	}) {
 		t.Fatal("unable to get a connection")
 	}
 	return conn
@@ -3618,6 +3716,52 @@ func TestLargeSizeQuery(t *testing.T) {
 	require.Equal(t, longString, result)
 }
 
+// TestCompressorNegotiated pins the compressor the suite was asked for to the one the
+// connections actually ended up with.
+//
+// startupCoordinator.startup silently clears Conn.compressor when the server's SUPPORTED
+// response does not list Compressor.Name(), so a lane configured with -compressor=lz4
+// against a server that does not offer lz4 would run entirely uncompressed while
+// session.cfg.Compressor stayed non-nil. Every compression-dependent test guards on the
+// connection and would simply skip, leaving the lane green and empty. Fail here instead,
+// with the mismatch named.
+//
+// Every host is checked, not just the one session.getConn happens to pick: the compressor
+// is negotiated per connection from that node's own SUPPORTED response, so on a cluster
+// where one node does not advertise the compressor a single-connection check passes while
+// queries routed to that node run uncompressed. One connection per host is the right
+// granularity, since the SUPPORTED response is a property of the node.
+//
+// waitForHostConns is what makes "every host" true. Walking the hosts directly would skip
+// the pools still filling, so on a three-node cluster this would usually inspect one node
+// and pass -- leaving exactly the degraded node it exists to catch invisible.
+//
+// Deliberately not parallel. A parallel test resumes only once the sequential tests at its
+// level have started, which would land this diagnosis at the tail of a ~470s run, after
+// every test it explains has already skipped.
+func TestCompressorNegotiated(t *testing.T) {
+	if *flagCompressTest == "" || *flagCompressTest == "no-compression" {
+		t.Skip("no compressor requested")
+	}
+
+	session := createSession(t)
+	defer session.Close()
+
+	conns := waitForHostConns(t, session)
+	t.Logf("checked the negotiated compressor on %d host(s)", len(conns))
+
+	for addr, conn := range conns {
+		switch {
+		case conn.compressor == nil:
+			t.Errorf("%s: requested -compressor=%s but the connection negotiated none; the server's SUPPORTED response did not offer it",
+				addr, *flagCompressTest)
+		case conn.compressor.Name() != *flagCompressTest:
+			t.Errorf("%s: requested -compressor=%s but the connection negotiated %q",
+				addr, *flagCompressTest, conn.compressor.Name())
+		}
+	}
+}
+
 // TestQueryCompressionNotWorthIt runs a query that is not likely to be compressed efficiently
 // (uncompressed payload size > compressed payload size).
 // So, it should send a Compressed Frame where:
@@ -3634,8 +3778,17 @@ func TestQueryCompressionNotWorthIt(t *testing.T) {
 	if session.cfg.ProtoVersion < protoVersion5 {
 		t.Skip("compressed segments are only produced on protocol >= 5")
 	}
-	if session.cfg.Compressor == nil {
-		t.Skip("no compressor configured; the compressed-segment path is unreachable")
+	// Check a connection, not session.cfg: startupCoordinator.startup drops the
+	// compressor when the server's SUPPORTED list does not name it, leaving cfg set
+	// while nothing is actually compressed. Skipping on cfg alone would let this test
+	// pass having round-tripped a plain uncompressed segment.
+	//
+	// This is a smoke check on one pooled connection, not a statement about the lane:
+	// the queries below route through the token-aware policy to whichever replica owns
+	// the key, which need not be this one. TestCompressorNegotiated is what checks
+	// every host.
+	if conn := getRandomConn(t, session); conn.compressor == nil {
+		t.Skip("no compressor negotiated on the connection; the compressed-segment path is unreachable")
 	}
 
 	if err := createTable(session, "CREATE TABLE IF NOT EXISTS gocql_test.compression_now_worth_it(id int, text_col text, PRIMARY KEY (id))"); err != nil {
@@ -3678,9 +3831,10 @@ func TestQueryCompressionNotWorthIt(t *testing.T) {
 // flow rather than two copies of it.
 //
 // Exactly one case runs per invocation, because the protocol version is fixed for
-// the whole suite by the -proto flag. Note that the v5 case never runs in CI:
-// TEST_CQL_PROTOCOL is pinned to 4 in the Makefile and no workflow overrides it, so
-// reaching it takes an explicit `TEST_CQL_PROTOCOL=5 make test-integration-cassandra`.
+// the whole suite by the -proto flag. CI covers both: the default lanes run at
+// TEST_CQL_PROTOCOL=4, and the Cassandra 5-LATEST leg runs the suite again at
+// TEST_CQL_PROTOCOL=5, once compressed and once -- scoped to this test and
+// TestLargeSizeQuery -- with no compression.
 func TestPrepareExecuteMetadataChangedFlag(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -3733,10 +3887,7 @@ func TestPrepareExecuteMetadataChangedFlag(t *testing.T) {
 
 			// We have to specify conn for all queries to ensure that
 			// all queries are running on the same node
-			conn := session.getConn()
-			if conn == nil {
-				t.Skip("no connection available")
-			}
+			conn := getRandomConn(t, session)
 			if reason := tc.gate(t, session, conn); reason != "" {
 				t.Skip(reason)
 			}
@@ -4075,10 +4226,7 @@ func TestPrepareExecuteScyllaEmptyMetadataID(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	conn := session.getConn()
-	if conn == nil {
-		t.Skip("no connection available — skipping test")
-	}
+	conn := getRandomConn(t, session)
 	if conn.version&protoVersionMask != protoVersion4 {
 		t.Skip("SCYLLA_USE_METADATA_ID is negotiated on protocol v4 only — skipping test")
 	}

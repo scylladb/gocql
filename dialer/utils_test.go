@@ -72,22 +72,36 @@ func TestGetFrameHashStartupIgnoresBodyLength(t *testing.T) {
 	}
 }
 
-// TestGetFrameHashGuardsProtoV5Segments verifies that GetFrameHash does not
-// attempt to parse protocol v5+ input as a CQL frame. On v5 the recorded bytes
-// are a transport segment (see prepareModernLayout), so frame[0] is segment
-// data, not a CQL version byte. The function must fall back to hashing the raw
-// bytes instead of walking CQL offsets. Tracked: scylladb/gocql#937.
-func TestGetFrameHashGuardsProtoV5Segments(t *testing.T) {
-	// First byte has the low 7 bits >= 5, i.e. a v5+ version (or arbitrary
-	// segment header data). The remaining bytes are deliberately too short to
-	// contain a valid CQL request body; the pre-guard code would index past
-	// them and panic.
-	segment := []byte{0x05, 0x00, 0x11, 0x22}
+// TestGetFrameHashParsesProtoV5Frames pins that a protocol v5 request frame is
+// parsed rather than diverted to a whole-frame hash.
+//
+// It used to be diverted, by a guard that treated any frame[0] whose low 7 bits were
+// >= 5 as transport-segment data. That guard was unsound in both directions: a v5
+// segment whose length low-byte is < 5 slipped past it into the CQL parser anyway,
+// and a genuine v5 frame — which the driver does produce, unsegmented, throughout the
+// handshake — was hashed whole, default timestamp included, so it could never match
+// its own replay. Telling the two apart needs protocol context the bytes do not
+// carry, so it is the caller's job to pass a bare frame; see GetFrameHash's contract.
+func TestGetFrameHashParsesProtoV5Frames(t *testing.T) {
+	// A v5 EXECUTE with a keyspace override. Parsed, the hashed range stops before
+	// the frame's end; diverted, the hash is the whole frame.
+	frame := v5ExecuteFrame(frm.FlagWithKeyspace, shortString("ks"))
 
-	got := GetFrameHash(segment, false)
-	want := murmur.Murmur3H1(segment)
-	if got != want {
-		t.Fatalf("GetFrameHash(v5 segment) = %d, want raw-bytes hash %d", got, want)
+	if got, whole := GetFrameHash(frame, false), murmur3OfStreamBlanked(frame); got == whole {
+		t.Error("v5 frame was hashed whole rather than parsed")
+	}
+	if got, asGiven := GetFrameHash(frame, false), murmur.Murmur3H1(frame); got == asGiven {
+		t.Error("v5 frame fell through to a guard that hashes it as given")
+	}
+}
+
+// TestGetFrameHashShortProtoV5Input pins that v5 input too short to hold a header
+// still reaches the short-frame guard, which hashes it as given.
+func TestGetFrameHashShortProtoV5Input(t *testing.T) {
+	short := []byte{0x05, 0x00, 0x11, 0x22}
+
+	if got, want := GetFrameHash(short, false), murmur.Murmur3H1(short); got != want {
+		t.Fatalf("GetFrameHash(short v5) = %d, want %d", got, want)
 	}
 }
 
@@ -329,9 +343,7 @@ func TestGetFrameHashBoundsTruncatedExecute(t *testing.T) {
 			// The fallback hashes the frame as the parser left it, i.e. with the stream
 			// id blanked — which is what makes the hash stable between record and replay,
 			// where the stream ids differ. Mirror that here.
-			normalised := append([]byte(nil), tc.frame...)
-			normalised[2], normalised[3] = byte('0'), byte('0')
-			want := murmur.Murmur3H1(normalised)
+			want := murmur3OfStreamBlanked(tc.frame)
 
 			got := GetFrameHash(frame, tc.useMetadataID)
 			if got != want {
@@ -468,9 +480,7 @@ func TestGetFrameHashBoundsTruncatedBody(t *testing.T) {
 
 			// These fall back from inside the switch, i.e. with the stream id already
 			// blanked — see TestGetFrameHashBoundsTruncatedExecute.
-			normalised := append([]byte(nil), tc.frame...)
-			normalised[2], normalised[3] = byte('0'), byte('0')
-			want := murmur.Murmur3H1(normalised)
+			want := murmur3OfStreamBlanked(tc.frame)
 
 			if got := GetFrameHash(frame, tc.useMetadataID); got != want {
 				t.Errorf("GetFrameHash(%s) = %d, want raw-bytes hash %d", tc.name, got, want)
@@ -491,4 +501,28 @@ func TestGetFrameHashBoundsTruncatedBody(t *testing.T) {
 			t.Errorf("GetFrameHash(QUERY) = %d, want body hash %d", got, want)
 		}
 	})
+}
+
+// TestFrameIsQueryDerivesTheOpcodeOffset pins that the opcode is read through
+// headerShift rather than at a fixed index, which is what stops this from drifting
+// from the parsers it shares utils.go with.
+func TestFrameIsQueryDerivesTheOpcodeOffset(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		frame []byte
+		want  bool
+	}{
+		{"v4 QUERY", frameV4(opQuery, 0x00, []byte("select")), true},
+		{"v4 EXECUTE", frameV4(opExecute, 0x00, []byte("x")), false},
+		{"v2 QUERY", frameV2(opQuery, []byte("select")), true},
+		{"v2 EXECUTE", frameV2(opExecute, []byte("x")), false},
+		{"empty", nil, false},
+		{"opcode has not arrived", frameV4(opQuery, 0x00, nil)[:3], false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := FrameIsQuery(tc.frame); got != tc.want {
+				t.Errorf("FrameIsQuery = %v, want %v", got, tc.want)
+			}
+		})
+	}
 }

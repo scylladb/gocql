@@ -1318,32 +1318,32 @@ func unmarshalMapFast(info CollectionType, data []byte, value any) (bool, error)
 			if !isStringKeyType(elemType) {
 				return false, nil
 			}
-			return true, unmarshalMapStringString(data, v)
+			return true, unmarshalMapEntries(data, v, decodeMapString, decodeMapString)
 		case *map[string][]byte:
 			if elemType != TypeBlob {
 				return false, nil
 			}
-			return true, unmarshalMapStringBytes(data, v)
+			return true, unmarshalMapEntries(data, v, decodeMapString, decodeMapBytes)
 		case *map[string]int64:
 			if elemType != TypeBigInt && elemType != TypeCounter {
 				return false, nil
 			}
-			return true, unmarshalMapStringInt64(data, v)
+			return true, unmarshalMapEntries(data, v, decodeMapString, decodeMapInt64)
 		case *map[string]int32:
 			if elemType != TypeInt {
 				return false, nil
 			}
-			return true, unmarshalMapStringInt32(data, v)
+			return true, unmarshalMapEntries(data, v, decodeMapString, decodeMapInt32)
 		case *map[string]float64:
 			if elemType != TypeDouble {
 				return false, nil
 			}
-			return true, unmarshalMapStringFloat64(data, v)
+			return true, unmarshalMapEntries(data, v, decodeMapString, decodeMapFloat64)
 		case *map[string]bool:
 			if elemType != TypeBoolean {
 				return false, nil
 			}
-			return true, unmarshalMapStringBool(data, v)
+			return true, unmarshalMapEntries(data, v, decodeMapString, decodeMapBool)
 		}
 	case TypeBigInt, TypeCounter:
 		switch v := value.(type) {
@@ -1351,12 +1351,12 @@ func unmarshalMapFast(info CollectionType, data []byte, value any) (bool, error)
 			if !isStringKeyType(elemType) {
 				return false, nil
 			}
-			return true, unmarshalMapInt64String(data, v)
+			return true, unmarshalMapEntries(data, v, decodeMapInt64, decodeMapString)
 		case *map[int64]int64:
 			if elemType != TypeBigInt && elemType != TypeCounter {
 				return false, nil
 			}
-			return true, unmarshalMapInt64Int64(data, v)
+			return true, unmarshalMapEntries(data, v, decodeMapInt64, decodeMapInt64)
 		}
 	}
 	return false, nil
@@ -1438,38 +1438,6 @@ func unmarshalMapEntries[K comparable, V any](data []byte, dest *map[K]V, decode
 	}
 	*dest = m
 	return nil
-}
-
-func unmarshalMapStringString(data []byte, dest *map[string]string) error {
-	return unmarshalMapEntries(data, dest, decodeMapString, decodeMapString)
-}
-
-func unmarshalMapStringBytes(data []byte, dest *map[string][]byte) error {
-	return unmarshalMapEntries(data, dest, decodeMapString, decodeMapBytes)
-}
-
-func unmarshalMapStringInt64(data []byte, dest *map[string]int64) error {
-	return unmarshalMapEntries(data, dest, decodeMapString, decodeMapInt64)
-}
-
-func unmarshalMapStringInt32(data []byte, dest *map[string]int32) error {
-	return unmarshalMapEntries(data, dest, decodeMapString, decodeMapInt32)
-}
-
-func unmarshalMapStringFloat64(data []byte, dest *map[string]float64) error {
-	return unmarshalMapEntries(data, dest, decodeMapString, decodeMapFloat64)
-}
-
-func unmarshalMapStringBool(data []byte, dest *map[string]bool) error {
-	return unmarshalMapEntries(data, dest, decodeMapString, decodeMapBool)
-}
-
-func unmarshalMapInt64String(data []byte, dest *map[int64]string) error {
-	return unmarshalMapEntries(data, dest, decodeMapInt64, decodeMapString)
-}
-
-func unmarshalMapInt64Int64(data []byte, dest *map[int64]int64) error {
-	return unmarshalMapEntries(data, dest, decodeMapInt64, decodeMapInt64)
 }
 
 func unmarshalMap(info CollectionType, data []byte, value any) error {
