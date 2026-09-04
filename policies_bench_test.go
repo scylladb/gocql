@@ -17,8 +17,8 @@ import (
 // of hosts and tablets, wired up to a mock session with tabletsRoutingV1.
 // It returns the policy, session, and a slice of pre-built queries that hit
 // different tokens spread across the tablet range.
-func setupTabletAwareBench(b *testing.B, numHosts, numTablets, rf int) (HostSelectionPolicy, *Session, []*Query) {
-	b.Helper()
+func setupTabletAwareBench(tb testing.TB, numHosts, numTablets, rf int) (HostSelectionPolicy, *Session, []*Query) {
+	tb.Helper()
 
 	const keyspace = "benchks"
 	const table = "benchtbl"
@@ -83,7 +83,7 @@ func setupTabletAwareBench(b *testing.B, numHosts, numTablets, rf int) (HostSele
 			Replicas:     reps,
 		}.Build()
 		if err != nil {
-			b.Fatal(err)
+			tb.Fatal(err)
 		}
 		tabletList[i] = ti
 		firstToken = lastToken
