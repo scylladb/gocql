@@ -1047,9 +1047,9 @@ func marshalList(info CollectionType, value any) ([]byte, error) {
 		// Variable-length elements get an estimate rather than no hint at
 		// all, which otherwise leaves text and blob lists growing by doubling.
 		// Hint only when the element size is exactly known; see
-		// collectionEntrySize for why estimating is counterproductive.
+		// collectionElemWireSize for why estimating is counterproductive.
 		sizeHint := 4
-		if elemSize := collectionEntrySize(info.Elem); elemSize > 0 {
+		if elemSize := collectionElemWireSize(info.Elem); elemSize > 0 {
 			sizeHint = collectionSizeHint(n, 4+elemSize)
 		}
 		buf := getMarshalBuf(sizeHint)
@@ -2082,18 +2082,12 @@ func collectionSizeHint(n, perEntry int) int {
 	return 4 + n*perEntry
 }
 
-// collectionEntrySize returns the per-entry wire size to preallocate for, or 0
-// when the element is variable-length and no honest figure exists.
-//
 // Deliberately no estimate for variable-length elements. An estimate that
 // overshoots is worse than no hint: it inflates the buffer past
 // marshalBufMaxCap, at which point putMarshalBuf drops it instead of returning
 // it to the pool, so every call allocates afresh. Measured on lists of short
 // blobs, a 64-byte-per-element guess cost +27% time and +192% B/op against no
 // hint at all. bytes.Buffer doubling is the cheaper default here.
-func collectionEntrySize(elemType TypeInfo) int {
-	return collectionElemWireSize(elemType)
-}
 
 func fixedElemSize(elemType TypeInfo) int {
 	switch elemType.Type() {
@@ -2695,8 +2689,8 @@ func marshalMap(info CollectionType, value any) ([]byte, error) {
 	n := rv.Len()
 
 	sizeHint := 4
-	keySize := collectionEntrySize(info.Key)
-	valSize := collectionEntrySize(info.Elem)
+	keySize := collectionElemWireSize(info.Key)
+	valSize := collectionElemWireSize(info.Elem)
 	if keySize > 0 && valSize > 0 {
 		sizeHint = collectionSizeHint(n, 4+keySize+4+valSize)
 	}

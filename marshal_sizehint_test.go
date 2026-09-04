@@ -36,13 +36,13 @@ func TestCollectionElemWireSize(t *testing.T) {
 // Callers must see 0 here and skip the hint entirely.
 func TestCollectionEntrySizeNoEstimate(t *testing.T) {
 	for _, typ := range []Type{TypeVarchar, TypeText, TypeAscii, TypeBlob, TypeInet, TypeCustom} {
-		if got := collectionEntrySize(nt(typ)); got != 0 {
-			t.Errorf("collectionEntrySize(%v) = %d, want 0 so no hint is applied", typ, got)
+		if got := collectionElemWireSize(nt(typ)); got != 0 {
+			t.Errorf("collectionElemWireSize(%v) = %d, want 0 so no hint is applied", typ, got)
 		}
 	}
 	for _, typ := range []Type{TypeInt, TypeUUID, TypeBoolean, TypeSmallInt, TypeBigInt} {
-		if got := collectionEntrySize(nt(typ)); got <= 0 {
-			t.Errorf("collectionEntrySize(%v) = %d, want the exact wire size", typ, got)
+		if got := collectionElemWireSize(nt(typ)); got <= 0 {
+			t.Errorf("collectionElemWireSize(%v) = %d, want the exact wire size", typ, got)
 		}
 	}
 }
