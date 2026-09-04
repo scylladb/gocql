@@ -1576,37 +1576,37 @@ func TestTokenAwarePolicyReset(t *testing.T) {
 // TestTokenAwareHostPolicy_TabletReplicasPresizeAllocRegression guards the
 // tablets-path replicas slice presizing in Pick() against alloc regressions.
 func TestTokenAwareHostPolicy_TabletReplicasPresizeAllocRegression(t *testing.T) {
-	t.Parallel()
+	// No t.Parallel(), and no testing.Benchmark: both let other goroutines'
+	// allocations pollute the global counters this guard reads (#1027).
 
 	if testing.CoverMode() != "" {
 		t.Skip("skipping alloc regression guard: coverage instrumentation adds allocations of its own")
 	}
 
 	const rf = 3
-	result := testing.Benchmark(func(b *testing.B) {
-		policy, s, queries := setupTabletAwareBench(b, 10, 100, rf)
-		defer s.Close()
+	policy, s, queries := setupTabletAwareBench(t, 10, 100, rf)
+	defer s.Close()
 
-		b.ResetTimer()
-		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
-			qry := queries[i%len(queries)]
-			iter := policy.Pick(qry)
-			h := iter()
-			if h == nil {
-				b.Fatal("Pick returned nil on first call")
-			}
+	// Fixed iteration count: AllocsPerRun has a fixed divisor, unlike
+	// testing.Benchmark's adaptive b.N which can shrink and amplify noise.
+	const n = 1000
+	i := 0
+	allocsPerOp := testing.AllocsPerRun(n, func() {
+		qry := queries[i%len(queries)]
+		i++
+		h := policy.Pick(qry)()
+		if h == nil {
+			t.Fatal("Pick returned nil on first call")
 		}
 	})
 
-	t.Logf("tokenAwareHostPolicy.Pick (tablets, RF=%d): %d allocs/op, %d B/op",
-		rf, result.AllocsPerOp(), result.AllocedBytesPerOp())
+	t.Logf("tokenAwareHostPolicy.Pick (tablets, RF=%d): %.0f allocs/op", rf, allocsPerOp)
 
 	// 8 allocs/op measured after presizing (10 before); +1 headroom.
 	const maxAllocsPerOp = 9
-	if got := result.AllocsPerOp(); got > maxAllocsPerOp {
-		t.Errorf("tokenAwareHostPolicy.Pick (tablets path) allocated %d allocs/op, want <= %d "+
-			"(replicas slice presizing may have regressed)", got, maxAllocsPerOp)
+	if allocsPerOp > maxAllocsPerOp {
+		t.Errorf("tokenAwareHostPolicy.Pick (tablets path) allocated %.0f allocs/op, want <= %d "+
+			"(replicas slice presizing may have regressed)", allocsPerOp, maxAllocsPerOp)
 	}
 }
 
