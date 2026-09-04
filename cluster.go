@@ -545,18 +545,24 @@ func WithResolveHealthyEndpointPeriod(val time.Duration) func(*ClientRoutesConfi
 	return func(cfg *ClientRoutesConfig) {}
 }
 
+// WithEndpoints configures the ScyllaDB Cloud private connection IDs and
+// optional address overrides used by client routes.
 func WithEndpoints(endpoints ...ClientRoutesEndpoint) func(*ClientRoutesConfig) {
 	return func(cfg *ClientRoutesConfig) {
 		cfg.Endpoints = endpoints
 	}
 }
 
+// WithTable overrides the client routes table name. WithClientRoutes uses
+// system.client_routes by default.
 func WithTable(tableName string) func(*ClientRoutesConfig) {
 	return func(cfg *ClientRoutesConfig) {
 		cfg.TableName = tableName
 	}
 }
 
+// WithClientRoutes enables routing through AWS PrivateLink or Google Cloud
+// Private Service Connect using ScyllaDB Cloud's system.client_routes table.
 func WithClientRoutes(opts ...ClientRoutesOption) func(*ClusterConfig) {
 	pmCfg := ClientRoutesConfig{
 		TableName: "system.client_routes",

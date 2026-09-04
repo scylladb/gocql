@@ -13,12 +13,17 @@ import (
 	"github.com/gocql/gocql/internal/eventbus"
 )
 
+// ClientRoutesEndpoint identifies one ScyllaDB Cloud private connection and
+// optionally overrides its network address.
 type ClientRoutesEndpoint struct {
-	// Scylla Cloud ConnectionID to read from `system.client_routes`
+	// ScyllaDB Cloud connection ID to read from system.client_routes.
 	ConnectionID string
 
-	// Ip Address or DNS name of the AWS endpoint
-	// Could stay empty, in this case driver will pick it up from system.client_routes table
+	// ConnectionAddr optionally overrides the address from system.client_routes.
+	// Set it to the IP address or DNS name, without a port, of an AWS PrivateLink
+	// or Google Cloud Private Service Connect endpoint. When ClusterConfig.Hosts
+	// is empty, WithClientRoutes also uses non-empty ConnectionAddr values as
+	// initial contact points on ClusterConfig.Port.
 	ConnectionAddr string
 }
 
@@ -29,6 +34,7 @@ func (e ClientRoutesEndpoint) Validate() error {
 	return nil
 }
 
+// ClientRoutesEndpointList is a list of ScyllaDB Cloud private connections.
 type ClientRoutesEndpointList []ClientRoutesEndpoint
 
 func (l ClientRoutesEndpointList) GetAllConnectionIDs() []string {
@@ -48,6 +54,8 @@ func (l ClientRoutesEndpointList) Validate() error {
 	return nil
 }
 
+// ClientRoutesConfig configures routing through AWS PrivateLink or Google
+// Cloud Private Service Connect using routes from system.client_routes.
 type ClientRoutesConfig struct {
 	TableName string
 	Endpoints ClientRoutesEndpointList
@@ -63,22 +71,8 @@ type ClientRoutesConfig struct {
 	// release.
 	BlockUnknownEndpoints bool
 
-	// EnableShardAwareness controls whether the driver should use shard-aware
-	// connections when using ClientRoutes (PrivateLink).
-	//
-	// By default this is false because NAT typically breaks shard-awareness.
-	// Shard-aware routing relies on the driver knowing the source port of connections,
-	// which NAT devices modify, making it impossible for the server to route
-	// requests to the correct shard.
-	//
-	// However, in some deployments shard-awareness can still work:
-	//   - When using PROXY Protocol v2, the original source port is preserved
-	//     in the protocol header. See https://www.haproxy.org/download/1.8/doc/proxy-protocol.txt
-	//   - When using direct connections without NAT (e.g., VPC peering)
-	//   - When the load balancer/proxy is shard-aware itself
-	//
-	// Set this to true only if your network setup preserves or correctly handles
-	// the source port information needed for shard-aware routing.
+	// Deprecated: EnableShardAwareness currently has no effect. See
+	// https://github.com/scylladb/gocql/issues/1050.
 	EnableShardAwareness bool
 }
 

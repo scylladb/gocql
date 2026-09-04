@@ -37,7 +37,7 @@ It also provides support for shard aware ports, a faster way to connect to all s
 - [4. Data Types](#4-data-types)
 - [5. Configuration](#5-configuration)
   - [5.1 Shard-aware port](#51-shard-aware-port)
-  - [5.2 Client routes (PrivateLink)](#52-client-routes-privatelink)
+  - [5.2 Client routes](#52-client-routes)
   - [5.3 Iterator](#53-iterator)
   - [5.4 Compression](#54-compression)
 - [6. Contributing](#6-contributing)
@@ -218,15 +218,20 @@ Issues with shard-aware port not being reachable are not reported in non-debug m
 
 If you suspect that this feature is causing you problems, you can completely disable it by setting the `ClusterConfig.DisableShardAwarePort` flag to true.
 
-### 5.2 Client routes (PrivateLink)
+### 5.2 Client routes
 
-Scylla Cloud exposes a `system.client_routes` table that maps hosts to PrivateLink endpoints.
-When configured, the driver can resolve and connect to the per-host PrivateLink address instead of using the public host IP.
+Use client routes when connecting to ScyllaDB Cloud through AWS PrivateLink or
+Google Cloud Private Service Connect (PSC). In these setups, cluster nodes are
+not reachable at the addresses they advertise to each other. ScyllaDB Cloud
+instead publishes the private endpoint address and port for each node in
+`system.client_routes`.
 
-Use `WithClientRoutes` to enable it and pass the connection IDs you receive from Scylla Cloud:
+Pass the connection ID supplied by ScyllaDB Cloud to `WithEndpoints`, inside
+`WithClientRoutes`. Use a private endpoint from the ScyllaDB Cloud connection
+details as the initial contact point:
 
 ```go
-cluster := gocql.NewCluster("private-link.dns.name")
+cluster := gocql.NewCluster("private-endpoint.example.com:9042")
 cluster.WithOptions(
 	gocql.WithClientRoutes(
 		gocql.WithEndpoints(
@@ -236,7 +241,48 @@ cluster.WithOptions(
 )
 ```
 
-If you also want to seed the cluster with PrivateLink hostnames, provide `ConnectionAddr` values in the endpoints list.
+For AWS PrivateLink, use the private endpoint DNS name. For GCP PSC, use the
+forwarding-rule IP address or its private DNS name. Configure every connection
+ID that the driver may use. Multiple IDs let the driver use routes through more
+than one private endpoint:
+
+```go
+cluster := gocql.NewCluster(
+	"private-endpoint-a.example.com:19042",
+	"private-endpoint-b.example.com:19043",
+)
+cluster.WithOptions(
+	gocql.WithClientRoutes(
+		gocql.WithEndpoints(
+			gocql.ClientRoutesEndpoint{
+				ConnectionID:   "connection-id-a",
+				ConnectionAddr: "private-endpoint-a.example.com",
+			},
+			gocql.ClientRoutesEndpoint{
+				ConnectionID:   "connection-id-b",
+				ConnectionAddr: "private-endpoint-b.example.com",
+			},
+		),
+	),
+)
+```
+
+`ConnectionAddr` is optional. When set, it must be an IP address or DNS name
+without a port. It overrides the address from `system.client_routes` for that
+connection ID. If `NewCluster` has no contact points, the driver also uses
+these addresses as initial contact points on `ClusterConfig.Port` (9042 by
+default). Specify contact points in `NewCluster`, as shown above, when initial
+endpoints use different ports.
+
+The driver reads the route table at session startup and uses
+`CLIENT_ROUTES_CHANGE` events to refresh changed routes. It selects the route's
+`tls_port` instead of `port` when `ClusterConfig.SslOpts` is configured. This
+choice follows `SslOpts` even when a custom `HostDialer` is set; that dialer
+must provide matching TLS behavior because `SslOpts` does not configure it.
+
+Client routes manage address translation internally and cannot be combined
+with `ClusterConfig.AddressTranslator`. Every discovered cluster node must have
+a route for at least one configured connection ID.
 
 ### 5.3 Iterator
 
