@@ -1105,11 +1105,8 @@ func unmarshalListString(info CollectionType, data []byte, dst *[]string) error 
 	if err != nil {
 		return err
 	}
-	var s []string
-	if n == 0 {
-		s = make([]string, 0)
-	} else {
-		s = make([]string, n)
+	s := make([]string, n)
+	if n != 0 {
 		// Total element data bytes = remaining frame bytes minus n×4-byte length prefixes.
 		// Share one buffer across all strings (avoiding n individual string
 		// allocations), but only up to marshalBufMaxCap: sharing an unbounded
@@ -1158,12 +1155,7 @@ func unmarshalListInt64(info CollectionType, data []byte, dst *[]int64) error {
 	if err != nil {
 		return err
 	}
-	var s []int64
-	if n == 0 {
-		s = make([]int64, 0)
-	} else {
-		s = make([]int64, n)
-	}
+	s := make([]int64, n)
 	for i := 0; i < n; i++ {
 		var elem []byte
 		elem, data, err = readListElement(data)
@@ -1177,8 +1169,7 @@ func unmarshalListInt64(info CollectionType, data []byte, dst *[]int64) error {
 		if len(elem) != 8 {
 			return unmarshalErrorf("unmarshal list: invalid bigint size %d", len(elem))
 		}
-		s[i] = int64(elem[0])<<56 | int64(elem[1])<<48 | int64(elem[2])<<40 | int64(elem[3])<<32 |
-			int64(elem[4])<<24 | int64(elem[5])<<16 | int64(elem[6])<<8 | int64(elem[7])
+		s[i] = int64(binary.BigEndian.Uint64(elem))
 	}
 	*dst = s
 	return nil
@@ -1193,12 +1184,7 @@ func unmarshalListInt32(info CollectionType, data []byte, dst *[]int32) error {
 	if err != nil {
 		return err
 	}
-	var s []int32
-	if n == 0 {
-		s = make([]int32, 0)
-	} else {
-		s = make([]int32, n)
-	}
+	s := make([]int32, n)
 	for i := 0; i < n; i++ {
 		var elem []byte
 		elem, data, err = readListElement(data)
@@ -1212,7 +1198,7 @@ func unmarshalListInt32(info CollectionType, data []byte, dst *[]int32) error {
 		if len(elem) != 4 {
 			return unmarshalErrorf("unmarshal list: invalid int size %d", len(elem))
 		}
-		s[i] = int32(elem[0])<<24 | int32(elem[1])<<16 | int32(elem[2])<<8 | int32(elem[3])
+		s[i] = int32(binary.BigEndian.Uint32(elem))
 	}
 	*dst = s
 	return nil
@@ -1227,12 +1213,7 @@ func unmarshalListFloat64(info CollectionType, data []byte, dst *[]float64) erro
 	if err != nil {
 		return err
 	}
-	var s []float64
-	if n == 0 {
-		s = make([]float64, 0)
-	} else {
-		s = make([]float64, n)
-	}
+	s := make([]float64, n)
 	for i := 0; i < n; i++ {
 		var elem []byte
 		elem, data, err = readListElement(data)
@@ -1246,9 +1227,7 @@ func unmarshalListFloat64(info CollectionType, data []byte, dst *[]float64) erro
 		if len(elem) != 8 {
 			return unmarshalErrorf("unmarshal list: invalid double size %d", len(elem))
 		}
-		bits := uint64(elem[0])<<56 | uint64(elem[1])<<48 | uint64(elem[2])<<40 | uint64(elem[3])<<32 |
-			uint64(elem[4])<<24 | uint64(elem[5])<<16 | uint64(elem[6])<<8 | uint64(elem[7])
-		s[i] = math.Float64frombits(bits)
+		s[i] = math.Float64frombits(binary.BigEndian.Uint64(elem))
 	}
 	*dst = s
 	return nil
@@ -1263,12 +1242,7 @@ func unmarshalListFloat32(info CollectionType, data []byte, dst *[]float32) erro
 	if err != nil {
 		return err
 	}
-	var s []float32
-	if n == 0 {
-		s = make([]float32, 0)
-	} else {
-		s = make([]float32, n)
-	}
+	s := make([]float32, n)
 	for i := 0; i < n; i++ {
 		var elem []byte
 		elem, data, err = readListElement(data)
@@ -1282,8 +1256,7 @@ func unmarshalListFloat32(info CollectionType, data []byte, dst *[]float32) erro
 		if len(elem) != 4 {
 			return unmarshalErrorf("unmarshal list: invalid float size %d", len(elem))
 		}
-		bits := uint32(elem[0])<<24 | uint32(elem[1])<<16 | uint32(elem[2])<<8 | uint32(elem[3])
-		s[i] = math.Float32frombits(bits)
+		s[i] = math.Float32frombits(binary.BigEndian.Uint32(elem))
 	}
 	*dst = s
 	return nil
@@ -1298,12 +1271,7 @@ func unmarshalListBool(info CollectionType, data []byte, dst *[]bool) error {
 	if err != nil {
 		return err
 	}
-	var s []bool
-	if n == 0 {
-		s = make([]bool, 0)
-	} else {
-		s = make([]bool, n)
-	}
+	s := make([]bool, n)
 	for i := 0; i < n; i++ {
 		var elem []byte
 		elem, data, err = readListElement(data)
@@ -1332,12 +1300,7 @@ func unmarshalListBlob(info CollectionType, data []byte, dst *[][]byte) error {
 	if err != nil {
 		return err
 	}
-	var s [][]byte
-	if n == 0 {
-		s = make([][]byte, 0)
-	} else {
-		s = make([][]byte, n)
-	}
+	s := make([][]byte, n)
 	for i := 0; i < n; i++ {
 		var elem []byte
 		elem, data, err = readListElement(data)
@@ -1368,12 +1331,7 @@ func unmarshalListInt16(info CollectionType, data []byte, dst *[]int16) error {
 	if err != nil {
 		return err
 	}
-	var s []int16
-	if n == 0 {
-		s = make([]int16, 0)
-	} else {
-		s = make([]int16, n)
-	}
+	s := make([]int16, n)
 	for i := 0; i < n; i++ {
 		var elem []byte
 		elem, data, err = readListElement(data)
@@ -1387,7 +1345,7 @@ func unmarshalListInt16(info CollectionType, data []byte, dst *[]int16) error {
 		if len(elem) != 2 {
 			return unmarshalErrorf("unmarshal list: invalid smallint size %d", len(elem))
 		}
-		s[i] = int16(elem[0])<<8 | int16(elem[1])
+		s[i] = int16(binary.BigEndian.Uint16(elem))
 	}
 	*dst = s
 	return nil
@@ -1402,12 +1360,7 @@ func unmarshalListTime(info CollectionType, data []byte, dst *[]time.Time) error
 	if err != nil {
 		return err
 	}
-	var s []time.Time
-	if n == 0 {
-		s = make([]time.Time, 0)
-	} else {
-		s = make([]time.Time, n)
-	}
+	s := make([]time.Time, n)
 	for i := 0; i < n; i++ {
 		var elem []byte
 		elem, data, err = readListElement(data)
@@ -1428,14 +1381,13 @@ func unmarshalListTime(info CollectionType, data []byte, dst *[]time.Time) error
 			if len(elem) != 8 {
 				return unmarshalErrorf("unmarshal list: invalid timestamp size %d", len(elem))
 			}
-			msec := int64(elem[0])<<56 | int64(elem[1])<<48 | int64(elem[2])<<40 | int64(elem[3])<<32 |
-				int64(elem[4])<<24 | int64(elem[5])<<16 | int64(elem[6])<<8 | int64(elem[7])
+			msec := int64(binary.BigEndian.Uint64(elem))
 			s[i] = time.UnixMilli(msec).UTC()
 		} else {
 			if len(elem) != 4 {
 				return unmarshalErrorf("unmarshal list: invalid date size %d", len(elem))
 			}
-			msec := (int64(elem[0])<<24 | int64(elem[1])<<16 | int64(elem[2])<<8 | int64(elem[3]) - (1 << 31)) * 86400000
+			msec := (int64(binary.BigEndian.Uint32(elem)) - (1 << 31)) * 86400000
 			s[i] = time.UnixMilli(msec).UTC()
 		}
 	}
@@ -1452,12 +1404,7 @@ func unmarshalListUUID(info CollectionType, data []byte, dst *[]UUID) error {
 	if err != nil {
 		return err
 	}
-	var s []UUID
-	if n == 0 {
-		s = make([]UUID, 0)
-	} else {
-		s = make([]UUID, n)
-	}
+	s := make([]UUID, n)
 	for i := 0; i < n; i++ {
 		var elem []byte
 		elem, data, err = readListElement(data)
