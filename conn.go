@@ -1725,11 +1725,22 @@ type connReader struct {
 	// FrameAssemblyTimeout would wrap to an instant in the past and expire every
 	// frame at once -- the exact opposite of what such a value asks for -- and the
 	// round trip through it would also strip the monotonic reading, leaving the
-	// budget exposed to wall-clock adjustments. Ordered here, with the other
-	// pointer-bearing fields, for fieldalignment.
-	budget atomic.Pointer[time.Time]
+	// budget exposed to wall-clock adjustments.
+	//
+	// Plain, not atomic, unlike timeout/disarm below: it is written only from
+	// setReadBudget (recvSegment's deferred clear, headerReader.Read's
+	// first-byte start) and read only from armDeadline, both exclusively on the
+	// serve goroutine once dialWithoutObserver hands the connection to c.init.
+	// timeout/disarm can't make the same claim -- finalizeConnection rewrites
+	// them again later, from Session.init, concurrently with an already-running
+	// serve() (see #992/#993, the -race this same pattern caused for
+	// systemRequestTimeout). SetFrameAssemblyTimeout has exactly one call site,
+	// before serve() starts, and is never called again, so budget has no such
+	// second writer to race.
+	budget *time.Time
 	// assembly is the configured budget duration; zero disables the budget.
-	assembly atomic.Int64
+	// Plain for the same reason as budget above.
+	assembly time.Duration
 	timeout  atomic.Int64
 	disarm   atomic.Bool
 }
@@ -1835,7 +1846,7 @@ func (c *connReader) armDeadline() error {
 	// in. Whichever expires first ends the read, and because the budget is absolute
 	// it survives the re-arm that gives each attempt a fresh timeout -- which is
 	// exactly the loop that leaves a trickling peer otherwise unbounded.
-	if budget := c.budget.Load(); budget != nil {
+	if budget := c.budget; budget != nil {
 		if deadline.IsZero() || budget.Before(deadline) {
 			deadline = *budget
 		}
@@ -1852,7 +1863,7 @@ func (c *connReader) setDisarm(v bool) {
 }
 
 func (c *connReader) SetFrameAssemblyTimeout(timeout time.Duration) {
-	c.assembly.Store(int64(timeout))
+	c.assembly = timeout
 }
 
 // setReadBudget starts or clears a frame-assembly budget. Starting one with no
@@ -1860,12 +1871,12 @@ func (c *connReader) SetFrameAssemblyTimeout(timeout time.Duration) {
 // an unconfigured connection reads exactly as it did before.
 func (c *connReader) setReadBudget(v bool) {
 	if !v {
-		c.budget.Store(nil)
+		c.budget = nil
 		return
 	}
-	if d := time.Duration(c.assembly.Load()); d > 0 {
+	if d := c.assembly; d > 0 {
 		deadline := time.Now().Add(d)
-		c.budget.Store(&deadline)
+		c.budget = &deadline
 	}
 }
 
