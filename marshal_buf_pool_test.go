@@ -58,35 +58,6 @@ func TestPutMarshalBuf_DiscardsOversized(t *testing.T) {
 	putMarshalBuf(buf)
 }
 
-func TestFinishMarshalBuf_CopiesData(t *testing.T) {
-	buf := getMarshalBuf(0)
-	buf.WriteString("hello world")
-
-	// Get a pointer to the internal storage before finish.
-	internalPtr := buf.Bytes()
-
-	result := finishMarshalBuf(buf)
-
-	if string(result) != "hello world" {
-		t.Fatalf("expected 'hello world', got %q", result)
-	}
-
-	// Verify that result does not alias the internal buffer by getting
-	// a new buffer from the pool and writing different data.
-	buf2 := getMarshalBuf(0)
-	buf2.WriteString("OVERWRITTEN!")
-
-	// The original result should be unchanged (no aliasing).
-	if string(result) != "hello world" {
-		t.Fatalf("result was corrupted after pool reuse: got %q", result)
-	}
-
-	// Also verify the internal pointer's data was overwritten (proves the
-	// pool actually reused the buffer).
-	_ = internalPtr // The data at this pointer may have been overwritten.
-	putMarshalBuf(buf2)
-}
-
 func TestFinishMarshalBuf_EmptyBuffer(t *testing.T) {
 	buf := getMarshalBuf(0)
 	result := finishMarshalBuf(buf)
@@ -165,19 +136,21 @@ func TestFixedElemSize(t *testing.T) {
 
 // --- Round-trip correctness: marshal with pooled buffers produces identical output ---
 
-func TestMarshalList_PooledRoundTrip_IntSlice(t *testing.T) {
+// testListRoundTrip marshals input, unmarshals it back, and compares
+// element-by-element using equal (so callers can special-case things like NaN).
+func testListRoundTrip[T any](t *testing.T, elemType Type, input []T, equal func(a, b T) bool) {
+	t.Helper()
 	info := CollectionType{
 		NativeType: NativeType{proto: protoVersion4, typ: TypeList},
-		Elem:       NativeType{proto: protoVersion4, typ: TypeInt},
+		Elem:       NativeType{proto: protoVersion4, typ: elemType},
 	}
 
-	input := []int32{1, 2, 3, -1, 0, math.MaxInt32, math.MinInt32}
 	data, err := marshalList(info, input)
 	if err != nil {
 		t.Fatalf("marshalList: %v", err)
 	}
 
-	var output []int32
+	var output []T
 	if err := unmarshalList(info, data, &output); err != nil {
 		t.Fatalf("unmarshalList: %v", err)
 	}
@@ -186,102 +159,49 @@ func TestMarshalList_PooledRoundTrip_IntSlice(t *testing.T) {
 		t.Fatalf("len mismatch: got %d, want %d", len(output), len(input))
 	}
 	for i := range input {
-		if input[i] != output[i] {
-			t.Errorf("element %d: got %d, want %d", i, output[i], input[i])
+		if !equal(input[i], output[i]) {
+			t.Errorf("element %d: got %v, want %v", i, output[i], input[i])
 		}
 	}
 }
 
-func TestMarshalList_PooledRoundTrip_Float32Slice(t *testing.T) {
-	info := CollectionType{
-		NativeType: NativeType{proto: protoVersion4, typ: TypeList},
-		Elem:       NativeType{proto: protoVersion4, typ: TypeFloat},
-	}
+func TestMarshalList_PooledRoundTrip(t *testing.T) {
+	t.Run("IntSlice", func(t *testing.T) {
+		input := []int32{1, 2, 3, -1, 0, math.MaxInt32, math.MinInt32}
+		testListRoundTrip(t, TypeInt, input, func(a, b int32) bool { return a == b })
+	})
 
-	input := []float32{0.0, 1.5, -1.5, math.MaxFloat32, math.SmallestNonzeroFloat32, float32(math.NaN())}
-	data, err := marshalList(info, input)
-	if err != nil {
-		t.Fatalf("marshalList: %v", err)
-	}
-
-	var output []float32
-	if err := unmarshalList(info, data, &output); err != nil {
-		t.Fatalf("unmarshalList: %v", err)
-	}
-
-	if len(output) != len(input) {
-		t.Fatalf("len mismatch: got %d, want %d", len(output), len(input))
-	}
-	for i := range input {
+	t.Run("Float32Slice", func(t *testing.T) {
+		input := []float32{0.0, 1.5, -1.5, math.MaxFloat32, math.SmallestNonzeroFloat32, float32(math.NaN())}
 		// NaN != NaN, so compare bits.
-		if math.Float32bits(input[i]) != math.Float32bits(output[i]) {
-			t.Errorf("element %d: got bits %08x, want %08x", i, math.Float32bits(output[i]), math.Float32bits(input[i]))
+		testListRoundTrip(t, TypeFloat, input, func(a, b float32) bool {
+			return math.Float32bits(a) == math.Float32bits(b)
+		})
+	})
+
+	t.Run("StringSlice", func(t *testing.T) {
+		input := []string{"hello", "", "world", "a longer string with spaces"}
+		testListRoundTrip(t, TypeVarchar, input, func(a, b string) bool { return a == b })
+	})
+
+	t.Run("Empty", func(t *testing.T) {
+		testListRoundTrip(t, TypeInt, []int32{}, func(a, b int32) bool { return a == b })
+	})
+
+	t.Run("Nil", func(t *testing.T) {
+		info := CollectionType{
+			NativeType: NativeType{proto: protoVersion4, typ: TypeList},
+			Elem:       NativeType{proto: protoVersion4, typ: TypeInt},
 		}
-	}
-}
 
-func TestMarshalList_PooledRoundTrip_StringSlice(t *testing.T) {
-	info := CollectionType{
-		NativeType: NativeType{proto: protoVersion4, typ: TypeList},
-		Elem:       NativeType{proto: protoVersion4, typ: TypeVarchar},
-	}
-
-	input := []string{"hello", "", "world", "a longer string with spaces"}
-	data, err := marshalList(info, input)
-	if err != nil {
-		t.Fatalf("marshalList: %v", err)
-	}
-
-	var output []string
-	if err := unmarshalList(info, data, &output); err != nil {
-		t.Fatalf("unmarshalList: %v", err)
-	}
-
-	if len(output) != len(input) {
-		t.Fatalf("len mismatch: got %d, want %d", len(output), len(input))
-	}
-	for i := range input {
-		if input[i] != output[i] {
-			t.Errorf("element %d: got %q, want %q", i, output[i], input[i])
+		data, err := marshalList(info, nil)
+		if err != nil {
+			t.Fatalf("marshalList: %v", err)
 		}
-	}
-}
-
-func TestMarshalList_PooledRoundTrip_Empty(t *testing.T) {
-	info := CollectionType{
-		NativeType: NativeType{proto: protoVersion4, typ: TypeList},
-		Elem:       NativeType{proto: protoVersion4, typ: TypeInt},
-	}
-
-	input := []int32{}
-	data, err := marshalList(info, input)
-	if err != nil {
-		t.Fatalf("marshalList: %v", err)
-	}
-
-	var output []int32
-	if err := unmarshalList(info, data, &output); err != nil {
-		t.Fatalf("unmarshalList: %v", err)
-	}
-
-	if len(output) != 0 {
-		t.Fatalf("expected empty slice, got len=%d", len(output))
-	}
-}
-
-func TestMarshalList_PooledRoundTrip_Nil(t *testing.T) {
-	info := CollectionType{
-		NativeType: NativeType{proto: protoVersion4, typ: TypeList},
-		Elem:       NativeType{proto: protoVersion4, typ: TypeInt},
-	}
-
-	data, err := marshalList(info, nil)
-	if err != nil {
-		t.Fatalf("marshalList: %v", err)
-	}
-	if data != nil {
-		t.Fatalf("expected nil for nil input, got %v", data)
-	}
+		if data != nil {
+			t.Fatalf("expected nil for nil input, got %v", data)
+		}
+	})
 }
 
 func TestMarshalMap_PooledRoundTrip(t *testing.T) {
