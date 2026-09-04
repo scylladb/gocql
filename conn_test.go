@@ -1003,6 +1003,76 @@ func TestHeartBeatSurvivesUnexpectedOptionsResponse(t *testing.T) {
 	}
 }
 
+// controlConn.heartBeat sends the same OPTIONS as Conn.heartBeat and used to panic on
+// the same unexpected reply, on its own goroutine and equally outside parseFrame's
+// recover -- so the fix above left half the exposure in place. The test above cannot
+// reach it: testCluster disables the control connection, and TestServer answers
+// REGISTER with an error frame, so setupConn could not bring one up even if it were
+// enabled. Drive heartBeat against a hand-assembled controlConn instead.
+//
+// Like the test above, this one fails on the old code by aborting the test binary,
+// which is exactly what the panic did in production.
+func TestControlHeartBeatSurvivesUnexpectedOptionsResponse(t *testing.T) {
+	t.Parallel()
+
+	const testTimeout = 10 * time.Second
+
+	log := &unexpectedOptionsLogger{seen: make(chan struct{})}
+
+	conn, server := newTestExecConn(t, testContextWriter{})
+	// execInternal compares the response's protocol version against c.version, so an
+	// unset one turns every delivered frame into a protocol error before the heartbeat
+	// ever classifies it.
+	conn.version = protoVersion4
+	defer server.Close()
+
+	// Only the fields the failing reconnect below reaches: connCfg because
+	// controlConnConfig dereferences it, hostSource for its (empty) host list, and the
+	// logger the unexpected reply is reported through. No known hosts and no contact
+	// points means the reconnect fails in resolveInitialEndpoints, well before
+	// refreshRingNow or the metadata describer.
+	sess := &Session{logger: log, connCfg: &ConnConfig{}}
+	sess.hostSource = &ringDescriber{cfg: &sess.cfg, logger: log}
+
+	// state is left at controlConnStarting so heartBeat's CAS lets it run.
+	cc := &controlConn{session: sess, quit: make(chan struct{})}
+	cc.conn.Store(&connHost{conn: conn})
+
+	go cc.heartBeat()
+	defer close(cc.quit)
+
+	// The first beat is a second out. Catch its in-flight call rather than sleeping
+	// past it, then answer the OPTIONS with a READY: a frame parseFrame builds happily,
+	// and one a peer can send, but not one an OPTIONS may be answered with.
+	call := waitForSingleCallWithin(t, conn, testTimeout)
+	ready := []byte{
+		protoVersion4 | protoDirectionMask, 0x00,
+		byte(call.streamID >> 8), byte(call.streamID),
+		byte(frm.OpReady),
+		0x00, 0x00, 0x00, 0x00, // no body
+	}
+	if err := conn.processFrameSource(context.Background(), frameSource{r: bytes.NewReader(ready)}); err != nil {
+		t.Fatalf("delivering the READY reply to the heartbeat: %v", err)
+	}
+
+	select {
+	case <-log.seen:
+	case <-time.After(testTimeout):
+		t.Fatal("the control heartbeat never logged the unexpected OPTIONS reply")
+	}
+
+	// attemptReconnect closes the old control connection before it tries any host, so
+	// this is what tells the reconnect the reply is supposed to cost apart from a
+	// continue that would log the reply and then trust the connection anyway.
+	deadline := time.Now().Add(testTimeout)
+	for !conn.Closed() {
+		if time.Now().After(deadline) {
+			t.Fatal("the unexpected reply did not cost the control connection a reconnect")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 func TestCallReqReuseDoesNotInvalidateOutstandingTimeout(t *testing.T) {
 	t.Parallel()
 
@@ -1080,7 +1150,13 @@ func newTestExecConn(t *testing.T, w contextWriter) (*Conn, net.Conn) {
 func waitForSingleCall(t *testing.T, c *Conn) *callReq {
 	t.Helper()
 
-	deadline := time.After(2 * time.Second)
+	return waitForSingleCallWithin(t, c, 2*time.Second)
+}
+
+func waitForSingleCallWithin(t *testing.T, c *Conn, timeout time.Duration) *callReq {
+	t.Helper()
+
+	deadline := time.After(timeout)
 	ticker := time.NewTicker(time.Millisecond)
 	defer ticker.Stop()
 
