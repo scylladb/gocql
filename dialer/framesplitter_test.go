@@ -3,6 +3,8 @@ package dialer
 import (
 	"bytes"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 
 	frm "github.com/gocql/gocql/internal/frame"
@@ -174,6 +176,55 @@ func TestFrameSplitterBoundsDeclaredLength(t *testing.T) {
 				t.Errorf("declared body length %d was rejected: %v", tc.bodyLen, err)
 			}
 		})
+	}
+}
+
+// TestFrameSplitterRefusesPreV3 pins the protocol floor. The splitter reads the body
+// length from frame[5:9] and the recorder a 2-byte stream id from frame[2:4], both of
+// which are the v3+ layout; on v1/v2 every one of those offsets is a byte early, so
+// slicing such a stream emits things that are not frames and records them without
+// complaint. Only a caller-pinned ProtoVersion can produce one -- negotiation lands on
+// v4 -- which is exactly the case that used to go unreported.
+//
+// Every length such a frame can arrive in is checked, because the floor used to sit
+// behind FrameBodyLen's completeness test and so only ran once nine bytes had arrived.
+// A v1/v2 header is eight bytes and a bodyless frame is nothing but its header, so an
+// OPTIONS -- which the control connection heartbeats -- was a complete frame one byte
+// short of the check meant to refuse it, and Feed answered nil. See consume.
+//
+// The refusal names the version rather than the length it would otherwise have
+// believed, and it latches: a stream whose framing is in doubt cannot be resumed.
+func TestFrameSplitterRefusesPreV3(t *testing.T) {
+	for _, version := range []byte{0x01, 0x02} {
+		// A whole bodyless v1/v2 OPTIONS: version, flags, a 1-byte stream id, the
+		// opcode and a 4-byte body length of zero.
+		frame := []byte{version, 0x00, 0x00, byte(opOptions), 0x00, 0x00, 0x00, 0x00}
+
+		for _, tc := range []struct {
+			name string
+			feed []byte
+		}{
+			{name: "the version byte alone", feed: frame[:1]},
+			{name: "a whole bodyless frame", feed: frame},
+			{name: "a frame and one byte past it", feed: append(append([]byte(nil), frame...), 0x00)},
+		} {
+			t.Run(fmt.Sprintf("v%d/%s", version, tc.name), func(t *testing.T) {
+				var s FrameSplitter
+				err := s.Feed(tc.feed, mustNotEmit(t))
+				if err == nil {
+					t.Fatalf("%d bytes of a protocol v%d frame were accepted", len(tc.feed), version)
+				}
+				if want := fmt.Sprintf("protocol v%d", version); !strings.Contains(err.Error(), want) {
+					t.Errorf("error does not name the version (%q): %v", want, err)
+				}
+
+				// Including a later call carrying nothing, which is how a refused
+				// connection's zero-length write reaches here.
+				if again := s.Feed(nil, mustNotEmit(t)); again != err {
+					t.Errorf("Feed after the refusal = %v, want the latched %v", again, err)
+				}
+			})
+		}
 	}
 }
 

@@ -10,10 +10,10 @@ import (
 // FrameHeaderLen is the CQL frame header these dialers slice on: version, flags, a
 // 2-byte stream id, the opcode and the 4-byte body length.
 //
-// It is fixed at the v3+ layout. Negotiation lands on v4 (discoverProtocol) and v5
-// keeps the same header, so the 1-byte stream id of v1/v2 only appears if a caller
-// pins ProtoVersion to one of them — which these dialers have never handled, here or
-// in the offset math they share with GetFrameHash (scylladb/gocql#1022).
+// It is the v3+ layout, and v3 is the floor this whole package parses at. Negotiation
+// lands on v4 (discoverProtocol) and v5 keeps the same header, so the 1-byte stream id
+// of v1/v2 only appears if a caller pins ProtoVersion to one of them -- which consume
+// refuses by name rather than slicing four wrong bytes as a body length.
 const FrameHeaderLen = 9
 
 // FrameBodyLen reports the body length that b's header declares, and whether b holds a
@@ -163,6 +163,42 @@ func (s *FrameSplitter) consume(b []byte, emit func(frame []byte) error) (int, e
 	s.frame = append(s.frame, b[:taken]...)
 
 	if headerShort {
+		// The version is frame[0], so the floor is checkable as soon as one byte has
+		// arrived -- and it has to be checked there rather than on a complete header.
+		// A bodyless v1/v2 frame is whole at eight bytes and so never reaches nine:
+		// behind FrameBodyLen's completeness test, the one shape this package most
+		// needs to refuse is the one shape it would never see. Feed would answer nil
+		// for it, the recorder would forward it to the server and record nothing (its
+		// Write gates the socket on the recording), and the replayer would report a
+		// successful write and then block in Read on a response it never queued. Nor
+		// is that shape exotic: OPTIONS carries no body, and the control connection
+		// heartbeats one every 30 seconds.
+		//
+		// Everything below reads the v3+ layout: the body length comes from
+		// frame[5:9], which on v1/v2 is the tail of the length plus the first body
+		// byte, and the recorder goes on to take a 2-byte stream id from frame[2:4].
+		// Refusing beats slicing, so a caller-pinned old protocol fails by name
+		// instead of recording mis-framed garbage. The refusal also precedes the
+		// length check because on such a frame the length is not the peer's number at
+		// all, and naming it would send the reader after the wrong thing.
+		//
+		// Latching on the response direction too costs the driver its protocol
+		// downgrade on a recorded connection: controlConn.discoverProtocol reads the
+		// server's version out of the ERROR frame answering a too-new STARTUP, and a
+		// v1/v2-stamped one now fails the read rather than reaching
+		// parseProtocolFromError. That is the trade, not an oversight -- the frames it
+		// gives up are ones no recording could have held correctly anyway, and it only
+		// reaches a server answering below v3.
+		//
+		// s.frame is never empty here -- Feed only calls consume with bytes to consume,
+		// and takes at least one of them while the header is short -- and
+		// FrameProtoVersion answers 0 for an empty slice anyway, so the check fails
+		// closed either way. Re-running it on each chunk of a dribbled header is the
+		// same verdict on the same byte.
+		if version := FrameProtoVersion(s.frame); version < protoVersion3 {
+			return taken, s.fail(fmt.Errorf("gocql/dialer: connection is at protocol v%d; the record and replay dialers read the protocol v3+ frame header", version))
+		}
+
 		bodyLen, ok := FrameBodyLen(s.frame)
 		if !ok {
 			return taken, nil

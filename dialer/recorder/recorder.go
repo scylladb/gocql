@@ -92,9 +92,10 @@ func (d *RecordDialer) DialContext(ctx context.Context, network, addr string) (c
 // shard-awareness is on. Every connection to a host therefore appends to the same pair
 // of files, and a directory reused across runs keeps accumulating. The loader survives
 // that only because it keys records by stream id and keeps the last one for each: the
-// recordings checked into tests/bench hold 345 records from 23 stacked sessions, and
-// load as the 15 that survive. Anything the last session did not overwrite is a record
-// from an older one, paired with whatever response now shares its stream id.
+// recordings checked into tests/bench were 23 stacked sessions of the same 15 frames,
+// 345 records loading as 15, before they were regenerated. Anything the last session
+// did not overwrite is a record from an older one, paired with whatever response now
+// shares its stream id.
 //
 // So a recording directory has to be per run. Making the file name unique per
 // connection instead would need the replayer to stop deriving the same name from the
@@ -142,8 +143,8 @@ type FrameWriter struct {
 	//
 	// Deliberately per-direction rather than on Framing: only requests carry a
 	// STARTUP, so sharing it would start stamping the flag into the Reads recording
-	// as well. Nothing reads it from there, and the checked-in recordings do not
-	// carry the field at all.
+	// as well. Nothing reads it from there -- the field has no omitempty, so every
+	// Reads record carries it either way, and per-direction is what keeps it false.
 	useMetadataID bool
 }
 

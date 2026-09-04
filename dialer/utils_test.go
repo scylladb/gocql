@@ -23,10 +23,9 @@ func frameV4(op frameOp, headerFlags byte, body []byte) []byte {
 	return append(frame, body...)
 }
 
-// frameV2 builds the same frame on protocol v2, whose stream id is one byte, so
-// the opcode sits at index 3 and the body at index 8. Pins the shift=0 side of
-// headerShift; reading the opcode at index 4 here finds a length byte instead and
-// the frame is misclassified.
+// frameV2 builds the same frame on protocol v2, whose stream id is one byte, so the
+// opcode sits at index 3 and the body at index 8 -- a byte earlier than anything in
+// this package reads. It exists to pin that such a frame is not understood.
 func frameV2(op frameOp, body []byte) []byte {
 	frame := []byte{
 		0x02,
@@ -261,11 +260,12 @@ func TestStartupNegotiatesMetadataID(t *testing.T) {
 	if StartupNegotiatesMetadataID(frameV4(opQuery, 0x00, optIn)) {
 		t.Error("StartupNegotiatesMetadataID(QUERY with key) = true, want false")
 	}
-	if !StartupNegotiatesMetadataID(frameV2(opStartup, optIn)) {
-		t.Error("StartupNegotiatesMetadataID(v2 STARTUP with key) = false, want true")
-	}
-	if StartupNegotiatesMetadataID(frameV2(opQuery, optIn)) {
-		t.Error("StartupNegotiatesMetadataID(v2 QUERY with key) = true, want false")
+	// Below protocol v3 the opcode is a byte earlier, so index 4 holds a length byte
+	// and no v2 frame is a STARTUP as far as this is concerned. Not a gap: a
+	// connection that old is refused by FrameSplitter.consume before a STARTUP can be
+	// recorded, and reporting "no opt-in" for one is the safe way to be wrong.
+	if StartupNegotiatesMetadataID(frameV2(opStartup, optIn)) {
+		t.Error("StartupNegotiatesMetadataID(v2 STARTUP with key) = true, want false")
 	}
 	if StartupNegotiatesMetadataID(nil) {
 		t.Error("StartupNegotiatesMetadataID(nil) = true, want false")
@@ -381,9 +381,9 @@ func TestFitsRejectsOverflowingLengths(t *testing.T) {
 }
 
 // TestGetFrameHashBoundsShortFrame pins the guard for a frame shorter than its own
-// header. Everything after it indexes unconditionally — the stream-id blanking
-// reads frame[2] (and frame[3] on v3+), the switch reads the opcode at frame[3+p] —
-// so a one-byte v4 frame used to panic before the parser had looked at anything.
+// header. Everything after it indexes unconditionally — the stream-id blanking reads
+// frame[2] and frame[3], the switch reads the opcode at frame[4] — so a one-byte frame
+// used to panic before the parser had looked at anything.
 //
 // The fallback here hashes the frame as given rather than with the stream id
 // blanked, because there may be no stream id to blank. That is fine: record and
@@ -394,7 +394,6 @@ func TestGetFrameHashBoundsShortFrame(t *testing.T) {
 		full []byte
 	}{
 		{"v4", frameV4(opExecute, 0x00, nil)},
-		{"v2", frameV2(opExecute, nil)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// A header-only frame is the shortest one the parser accepts, so every
@@ -466,7 +465,18 @@ func TestGetFrameHashBoundsTruncatedBody(t *testing.T) {
 		},
 		{
 			name:  "query frame truncated at the flags",
-			frame: frameV4(opQuery, 0x00, []byte{0x00, 0x01}),
+			frame: frameV4(opQuery, 0x00, append(longString("SELECT * FROM t"), 0x00, 0x01)),
+		},
+		{
+			// The query text's own [long string] length field is incomplete, so the
+			// parameters cannot be located at all.
+			name:  "query text length truncated",
+			frame: frameV4(opQuery, 0x00, []byte{0x00, 0x00, 0x00}),
+		},
+		{
+			// The length parses but announces more text than the frame holds.
+			name:  "query text length overruns",
+			frame: frameV4(opQuery, 0x00, append([]byte{0x7F, 0xFF, 0xFF, 0xFF}, "SELECT * FROM t"...)),
 		},
 		{
 			// The custom-payload header flag sends the parser through
@@ -492,37 +502,15 @@ func TestGetFrameHashBoundsTruncatedBody(t *testing.T) {
 	}
 
 	// A control: bounding the walk must not turn a frame that parses into a
-	// fallback. The opQuery branch reads the body as query params from offset 9.
+	// fallback. The opQuery branch hashes from the body start through the end of the
+	// query parameters, so a QUERY whose flags announce no optional field hashes its
+	// whole body — query text included.
 	t.Run("well-formed query still parses", func(t *testing.T) {
-		frame := frameV4(opQuery, 0x00, []byte{0x00, 0x01, 0x00})
+		frame := frameV4(opQuery, 0x00, queryBody("SELECT * FROM t", 0x00))
 
 		got := GetFrameHash(frame, false)
 		if want := murmur.Murmur3H1(frame[9:]); got != want {
 			t.Errorf("GetFrameHash(QUERY) = %d, want body hash %d", got, want)
 		}
 	})
-}
-
-// TestFrameIsQueryDerivesTheOpcodeOffset pins that the opcode is read through
-// headerShift rather than at a fixed index, which is what stops this from drifting
-// from the parsers it shares utils.go with.
-func TestFrameIsQueryDerivesTheOpcodeOffset(t *testing.T) {
-	for _, tc := range []struct {
-		name  string
-		frame []byte
-		want  bool
-	}{
-		{"v4 QUERY", frameV4(opQuery, 0x00, []byte("select")), true},
-		{"v4 EXECUTE", frameV4(opExecute, 0x00, []byte("x")), false},
-		{"v2 QUERY", frameV2(opQuery, []byte("select")), true},
-		{"v2 EXECUTE", frameV2(opExecute, []byte("x")), false},
-		{"empty", nil, false},
-		{"opcode has not arrived", frameV4(opQuery, 0x00, nil)[:3], false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := FrameIsQuery(tc.frame); got != tc.want {
-				t.Errorf("FrameIsQuery = %v, want %v", got, tc.want)
-			}
-		})
-	}
 }

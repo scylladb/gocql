@@ -154,6 +154,32 @@ func BenchmarkSingleConnectionInsert(b *testing.B) {
 	})
 }
 
+// TestMain records the golden files the benchmarks above replay, under
+// -update-golden. It needs a real node, and one reachable at the address the recording
+// file names embed -- the replayer looks a recording up by the address the driver
+// dialed, so 192.168.100.11 is not decoration.
+//
+// Nothing in CI can produce these files. A container on a bridge network of that subnet
+// is the cheapest way to get one:
+//
+//	docker network create --subnet 192.168.100.0/24 --gateway 192.168.100.1 gocql-bench
+//	docker run -d --name gocql-bench-scylla --network gocql-bench --ip 192.168.100.11 \
+//	  scylladb/scylla:2026.2.4 --smp 1 --memory 1G --developer-mode 1 --overprovisioned 1
+//	# wait for CQL, then from the repository root:
+//	rm -f tests/bench/rec_select/* tests/bench/rec_insert/*
+//	go test -C tests/bench -run '^$' -update-golden .
+//	docker rm -f gocql-bench-scylla && docker network rm gocql-bench
+//
+// Clearing the directories first is not optional. ConnectionRecorder opens its files
+// with O_APPEND, so a second run stacks another connection's frames on top of the
+// first; the loader keys records by stream id and keeps whichever it read last, which
+// makes the extra sessions invisible rather than harmless. The recordings were 23
+// stacked sessions of the same 15 frames before this was written down.
+//
+// Regenerate whenever the driver changes what it puts on the wire during control
+// connection setup -- a new control query, a different one, another handshake frame.
+// TestBenchRecordingsMatchTheControlQuery in the root package guards the case that has
+// already happened once.
 func TestMain(m *testing.M) {
 	update := flag.Bool("update-golden", false, "Update golden files")
 	flag.Parse()

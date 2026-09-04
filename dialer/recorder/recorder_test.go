@@ -532,6 +532,91 @@ func TestConnectionRecorderAcceptsProtoV4(t *testing.T) {
 	}
 }
 
+// startupFrameV2 builds a protocol v2 STARTUP: the handshake the driver opens with, in
+// the layout that predates the 2-byte stream id, so the opcode sits at index 3 and the
+// body at index 8 rather than 4 and 9.
+func startupFrameV2() []byte {
+	body := []byte{
+		0x00, 0x01, // one option
+		0x00, 0x0B, 'C', 'Q', 'L', '_', 'V', 'E', 'R', 'S', 'I', 'O', 'N',
+		0x00, 0x05, '3', '.', '0', '.', '0',
+	}
+	header := []byte{
+		0x02,                              // version v2 (request)
+		0x00,                              // header flags
+		0x00,                              // stream id (1 byte)
+		0x01,                              // opStartup
+		0x00, 0x00, 0x00, byte(len(body)), // body length
+	}
+	return append(header, body...)
+}
+
+// optionsFrameV2 builds a body-less protocol v2 OPTIONS: eight bytes that are nothing
+// but a v1/v2 header, and therefore a complete frame one byte short of the v3+ header
+// the splitter slices on.
+//
+// This is the shape that used to slip the floor entirely, because the check ran only
+// once nine bytes had arrived. It is also the shape the driver sends most often --
+// controlConn.heartBeat sends an OPTIONS every 30 seconds, and OPTIONS carries no body.
+func optionsFrameV2() []byte {
+	return []byte{
+		0x02,                   // version v2 (request)
+		0x00,                   // header flags
+		0x00,                   // stream id (1 byte)
+		0x05,                   // opOptions
+		0x00, 0x00, 0x00, 0x00, // body length
+	}
+}
+
+// TestConnectionRecorderRefusesPreV3 is the other side of AcceptsProtoV4: a connection
+// a caller pinned to protocol v1 or v2 is refused by name, and nothing reaches the
+// recording.
+//
+// What used to happen was worse than an error. Every offset here reads the v3+ header,
+// so a v2 stream was sliced a byte late, and the write succeeded -- the file filled
+// with records whose frames were not frames, and whose stream ids came from the middle
+// of a body. Nothing said so until a replay of them failed to match anything.
+//
+// Both a bodyful frame and a bodyless one, because Write gates the socket on the
+// recording: a frame the splitter fails to refuse is forwarded to the server and
+// recorded nowhere. The bodyless case is the one that got that far.
+func TestConnectionRecorderRefusesPreV3(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		frame []byte
+	}{
+		{name: "a bodyful STARTUP", frame: startupFrameV2()},
+		{name: "a bodyless OPTIONS", frame: optionsFrameV2()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fname := filepath.Join(t.TempDir(), "conn")
+			conn := &stubConn{}
+			rec, err := NewConnectionRecorder(fname, conn, nil)
+			if err != nil {
+				t.Fatalf("NewConnectionRecorder: %v", err)
+			}
+			defer rec.Close()
+
+			n, err := rec.Write(tc.frame)
+			if err == nil {
+				t.Fatal("a protocol v2 connection was recorded")
+			}
+			if !strings.Contains(err.Error(), "protocol v2") {
+				t.Errorf("error does not name the version: %v", err)
+			}
+			if n != 0 {
+				t.Errorf("Write reported %d bytes written, want 0", n)
+			}
+			if len(conn.written) != 0 {
+				t.Errorf("%d bytes reached the server from a refused connection", len(conn.written))
+			}
+			if got := recordedFrames(t, fname+"Writes"); len(got) != 0 {
+				t.Errorf("recorded %d frames from a refused connection, want 0", len(got))
+			}
+		})
+	}
+}
+
 // TestConnectionRecorderCloseClosesEverything pins that one failing close does not
 // strand the rest. Close used to return at the first error, leaving the other
 // recording file and the socket itself open -- under the driver's redial loop, one

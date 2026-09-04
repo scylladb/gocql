@@ -170,25 +170,11 @@ func (c *ConnectionReplayer) getPendingFrame() *FrameRecorded {
 	return c.frames[frameId]
 }
 
-// twoByteStreamID reports whether b's protocol version carries the 2-byte stream id of
-// v3+ rather than the single byte of v1/v2.
-//
-// dialer.FrameProtoVersion rather than b[0] directly: the top bit of a frame's first
-// byte is the request/response direction, so an unmasked comparison reads every
-// response as a far newer protocol. replaceFrameStreamID is handed exactly that -- a
-// recorded response -- where a v1/v2 frame arrives as 0x81 or 0x82, takes the v3+ branch
-// and writes the low half of the stream id over the opcode. dialer/utils.go warns about
-// this in the note above headerShift, and matchRequest already uses the masked helper.
-func twoByteStreamID(b []byte) bool {
-	return dialer.FrameProtoVersion(b) > 0x02
-}
-
+// A stream id is two bytes at frame[2:4] on every protocol this package reads. It used
+// to be one byte on v1/v2, and both functions below forked on the version to find out
+// -- dialer.FrameSplitter now refuses a connection under v3 before either can see it.
 func (c *ConnectionReplayer) pushStreamIDToReplay(b []byte, idx int) {
-	if twoByteStreamID(b) {
-		c.streamIdsToReplay = append(c.streamIdsToReplay, int(b[2])<<8|int(b[3]))
-	} else {
-		c.streamIdsToReplay = append(c.streamIdsToReplay, int(b[2]))
-	}
+	c.streamIdsToReplay = append(c.streamIdsToReplay, int(b[2])<<8|int(b[3]))
 	c.frameIdsToReplay = append(c.frameIdsToReplay, idx)
 
 	select {
@@ -216,12 +202,8 @@ func wholeFrame(b []byte) bool {
 }
 
 func replaceFrameStreamID(b []byte, stream int) {
-	if twoByteStreamID(b) {
-		b[2] = byte(stream >> 8)
-		b[3] = byte(stream)
-	} else {
-		b[2] = byte(stream)
-	}
+	b[2] = byte(stream >> 8)
+	b[3] = byte(stream)
 }
 
 // Read serves the recorded response to the request most recently matched, across as
@@ -369,21 +351,6 @@ func (c *ConnectionReplayer) matchRequest(frame []byte) error {
 		return err
 	}
 
-	// KNOWN GAP, tracked in scylladb/gocql#1000 and refused by name here: every
-	// QUERY hashes alike, because GetFrameHash hands the parameter walk the body
-	// start rather than the position past the query text, and on protocol v5 the
-	// misaligned walk falls back to hashing the whole frame -- default timestamp
-	// included -- so a v5 QUERY can never match its recording. Falling through would
-	// surface that as the anonymous panic below. Delete this when #1000 lands.
-	//
-	// A panic for the same reason as that one, and unlike the two checks above: those
-	// fire on the handshake, where the error comes back out of the dial, while a QUERY
-	// arrives mid-session, where an error is a connection failure the driver answers by
-	// reconnecting and replaying the same recording into the same refusal.
-	if dialer.FrameIsProtoV5OrNewer(frame) && dialer.FrameIsQuery(frame) {
-		panic(fmt.Errorf("gocql/dialer: cannot replay a protocol v5 QUERY: its hash cannot match any recording until scylladb/gocql#1000 is fixed"))
-	}
-
 	if !c.useMetadataID && dialer.StartupNegotiatesMetadataID(frame) {
 		c.useMetadataID = true
 	}
@@ -517,11 +484,15 @@ func loadResponseFramesFromFiles(read_file, write_file string) ([]*FrameRecorded
 	)
 
 	// Pair by stream id in sorted order, not in map order. matchRequest scans frames
-	// for the first hash that matches and hashes do collide -- #1000 makes every QUERY
-	// collide, and addCustomPayload documents another -- so this slice's order decides
-	// which response a colliding request is served. Ranging a map made that decision
-	// afresh on every run of the same binary, which is not something a replay benchmark
-	// or a fixture failure can be reproduced from.
+	// for the first hash that matches, so were two ever to collide, this slice's order
+	// would decide which response the colliding request is served.
+	//
+	// No checked-in recording holds such a pair -- TestCheckedInRecordingsStillLoad
+	// asserts the hashes are distinct -- and the shapes that used to collide are fixed
+	// rather than merely rare. This is not a live defect being worked around: it is
+	// that a 64-bit hash of caller-supplied bytes cannot be promised never to collide,
+	// and ranging a map made the choice afresh on every run of the same binary, which
+	// is not something a replay benchmark or a fixture failure can be reproduced from.
 	paired := make([]int, 0, len(read_records))
 	for streamID := range read_records {
 		if _, exists := write_records[streamID]; exists {

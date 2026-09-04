@@ -69,39 +69,37 @@ func TestConnectionReplayerReplaysUnsegmentedProtoV5(t *testing.T) {
 	}
 }
 
-// TestConnectionReplayerRefusesAProtoV5Query pins that the one request the hashing
-// cannot yet locate on protocol v5 is refused by name, rather than surfacing as the
-// anonymous unable-to-find-a-response panic (scylladb/gocql#1000).
+// TestConnectionReplayerRefusesPreV3 is the replayer's half of the protocol floor, and
+// it pins the worse of the two failures it prevents. A pre-v3 frame the splitter lets
+// through is not merely unmatched: Write reports every byte written and queues no
+// response, so the driver's next Read parks on gotRequest and the connection hangs
+// instead of failing.
 //
-// It panics like that one, and for the same reason: a QUERY arrives mid-session,
-// where a returned error is a connection failure the driver answers by reconnecting
-// and replaying the same recording into the same refusal, reporting it far from the
-// cause if at all.
-func TestConnectionReplayerRefusesAProtoV5Query(t *testing.T) {
-	query := []byte{
-		0x05, 0x00, // version, flags
-		0x00, 0x01, // stream id
-		0x07,                   // opQuery
-		0x00, 0x00, 0x00, 0x00, // body length
+// A bodyless v2 OPTIONS is what reached that state -- a complete v1/v2 frame one byte
+// short of the v3+ header the splitter slices on, from the request the control
+// connection heartbeats. The error has to be the splitter's own, raised ahead of
+// matchRequest, so it names the frame's version rather than reporting a recording
+// mismatch or a hash that matched nothing.
+func TestConnectionReplayerRefusesPreV3(t *testing.T) {
+	c := newTestReplayer(0x04)
+
+	// Eight bytes: version, flags, a 1-byte stream id, opOptions, and a zero body
+	// length.
+	n, err := c.Write([]byte{0x02, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x00})
+	if err == nil {
+		t.Fatal("a protocol v2 frame was replayed")
 	}
-	c := newTestReplayer(0x05)
-
-	defer func() {
-		r := recover()
-		if r == nil {
-			t.Error("a protocol v5 QUERY was accepted for replay")
-			return
-		}
-		err, ok := r.(error)
-		if !ok {
-			t.Fatalf("panic value %v is not an error", r)
-		}
-		if !strings.Contains(err.Error(), "QUERY") || !strings.Contains(err.Error(), "#1000") {
-			t.Errorf("panic %q does not name QUERY and scylladb/gocql#1000", err)
-		}
-	}()
-
-	_, _ = c.Write(query)
+	if !strings.Contains(err.Error(), "protocol v2") {
+		t.Errorf("error does not name the frame's version: %v", err)
+	}
+	// Distinguishes the floor from matchRequest's recording-mismatch check, which
+	// would also name v2 -- and which a frame refused here never reaches.
+	if !strings.Contains(err.Error(), "v3+ frame header") {
+		t.Errorf("refusal did not come from the protocol floor: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("Write reported %d bytes written, want 0", n)
+	}
 }
 
 // TestConnectionReplayerRejectsAProtocolMismatch pins that replaying a recording at
