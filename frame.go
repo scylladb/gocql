@@ -470,12 +470,28 @@ func (f *framer) adoptFrameBody(body []byte, head *frm.FrameHeader) error {
 }
 
 func (f *framer) parseFrame() (frame frame, err error) {
+	// The read helpers panic instead of returning errors (see readByte and below);
+	// this is what turns a malformed frame into a returned protocol error rather
+	// than a dead serve goroutine.
 	defer func() {
 		if r := recover(); r != nil {
-			if _, ok := r.(runtime.Error); ok {
-				panic(r)
+			switch v := r.(type) {
+			case runtime.Error:
+				// Deliberately not converted. An index, a slice bound or a nil map here
+				// is a driver bug, not a frame the server got wrong, and reporting it as
+				// a protocol error would file it against the peer. The helpers bound
+				// every read first, so no shape of frame should reach this arm.
+				panic(v)
+			case error:
+				err = v
+			default:
+				// Unreachable while every read-path panic carries an error, which is the
+				// convention readByte's comment records. It exists because the
+				// alternative -- an unchecked r.(error) -- would itself panic from inside
+				// this recover on a future panic("..."), with nothing left to catch it
+				// and the original value lost.
+				err = NewErrProtocol("unexpected panic parsing a frame: %v", v)
 			}
-			err = r.(error)
 		}
 	}()
 
@@ -1789,6 +1805,21 @@ func (f *framer) writeRegisterFrame(streamID int, w *writeRegisterFrame) error {
 	return f.finish()
 }
 
+// The read helpers below bounds-check and then panic with a plain error instead of
+// returning one. That is this package's convention, and parseFrame's recover is what
+// makes it safe: a truncated or malformed frame becomes a returned protocol error.
+//
+// Two rules keep it that way and both are load-bearing:
+//   - panic with an error, never a string or any other value, or the recover has
+//     nothing to convert;
+//   - never let an operation raise a runtime.Error. Bound every index and slice
+//     against len(f.buf), and reject a negative length before using it -- a negative
+//     is not below any length. parseFrame re-panics a runtime.Error on purpose, so
+//     one raised here kills the serve goroutine.
+//
+// Converting these to return errors was considered and declined: they are
+// recover-safe as they stand, so it would touch every read path in the driver
+// without changing what a caller sees. See scylladb/gocql#939.
 func (f *framer) readByte() byte {
 	if len(f.buf) < 1 {
 		panic(fmt.Errorf("not enough bytes in buffer to read byte require 1 got: %d", len(f.buf)))
@@ -1843,6 +1874,17 @@ func (f *framer) skipString() {
 
 func (f *framer) readLongString() (s string) {
 	size := f.readInt()
+
+	// A [long string]'s length is signed on the wire, and unlike [bytes] a negative
+	// value is not the null convention -- it is malformed. The guard is what keeps
+	// this helper inside the package's panic-with-an-error contract: without it the
+	// check below passes (len(f.buf) is never below a negative) and f.buf[:size]
+	// raises a runtime.Error, which parseFrame's recover deliberately re-panics. That
+	// would be the one shape of bad frame that kills the serve goroutine instead of
+	// failing the request -- the same class as the pkeyCount allocation fixed in #976.
+	if size < 0 {
+		panic(fmt.Errorf("invalid long string length: %d", size))
+	}
 
 	if len(f.buf) < size {
 		panic(fmt.Errorf("not enough bytes in buffer to read long string require %d got: %d", size, len(f.buf)))
