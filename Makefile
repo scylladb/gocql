@@ -9,13 +9,37 @@ BIN_DIR := "${MAKEFILE_PATH}/bin"
 CASSANDRA_VERSION ?= LATEST
 SCYLLA_VERSION ?= LATEST
 
+HOST_ARCH := $(shell uname -m)
+
 GOLANGCI_VERSION = 2.5.0
 GET_VERSION_VERSION = 0.4.5
 GET_VERSION_BIN = $(MAKEFILE_PATH)/bin/get-version
+# get-version publishes one release archive per architecture, and every
+# resolve-*-version target below depends on the binary being runnable: the
+# amd64v3 build is an "Exec format error" on aarch64.
+GET_VERSION_ARCH = $(if $(filter aarch64,$(HOST_ARCH)),arm64,amd64v3)
+
+# scylla-ccm chooses which relocatable package to download from SCYLLA_ARCH and
+# falls back to x86_64 (ccmlib/scylla_repository.py), so on an aarch64 host it
+# would fetch a package whose scylla binary cannot run. uname -m already prints
+# the two names ccm knows, x86_64 and aarch64.
+SCYLLA_ARCH ?= $(HOST_ARCH)
 
 TEST_CQL_PROTOCOL ?= 4
 TEST_COMPRESSOR ?= snappy
 TEST_OPTS ?=
+# go test's own -timeout for both integration targets. It cannot be set through
+# TEST_OPTS: TEST_OPTS is interpolated ahead of -timeout on the command line, and
+# the later flag wins, so a -timeout there is silently discarded.
+# Measured locally the suite lands anywhere between 280s and 470s depending on
+# what else the machine is doing -- the protocol version barely moves it -- so
+# the 10m default is only about 25% clear of the worst case. Overrunning it
+# panics with a goroutine dump instead of naming the failing test, which is a
+# bad way for a lane to fail, hence a knob to give a run more room.
+# It covers the ScyllaDB target too, which used to hardcode 5m and so ignored the
+# knob entirely; that raises the ScyllaDB default from 5m to 10m, which only
+# changes how long a hung run burns before it dumps.
+TEST_INTEGRATION_TIMEOUT ?= 10m
 TEST_INTEGRATION_TAGS ?= integration gocql_debug
 JVM_EXTRA_OPTS ?= -Dcassandra.test.fail_writes_ks=test -Dcassandra.custom_query_handler_class=org.apache.cassandra.cql3.CustomPayloadMirroringQueryHandler
 
@@ -103,6 +127,7 @@ SCYLLA_CONFIG = "native_transport_port_ssl: 9142" \
 "experimental_features: [udf]"
 
 export JVM_EXTRA_OPTS
+export SCYLLA_ARCH
 export JAVA11_HOME=${JAVA_HOME_11_X64}
 export JAVA17_HOME=${JAVA_HOME_17_X64}
 export JAVA_HOME=${JAVA_HOME_11_X64}
@@ -117,7 +142,7 @@ print-config:
 .prepare-get-version: .prepare-bin
 	@if [[ ! -x "${GET_VERSION_BIN}" ]] || [[ "$$("${GET_VERSION_BIN}" -version 2>/dev/null)" != "${GET_VERSION_VERSION}" ]]; then
 		echo "Installing get-version ${GET_VERSION_VERSION}"
-		curl -sSLo /tmp/get-version.zip https://github.com/scylladb-actions/get-version/releases/download/v${GET_VERSION_VERSION}/get-version_${GET_VERSION_VERSION}_linux_amd64v3.zip
+		curl -sSLo /tmp/get-version.zip https://github.com/scylladb-actions/get-version/releases/download/v${GET_VERSION_VERSION}/get-version_${GET_VERSION_VERSION}_linux_${GET_VERSION_ARCH}.zip
 		unzip -o /tmp/get-version.zip get-version -d "$(MAKEFILE_PATH)/bin" >/dev/null
 	fi
 
@@ -325,8 +350,8 @@ test-integration-cassandra: cassandra-start
 		echo "Cassandra version ${CASSANDRA_VERSION} was not resolved"
 		exit 1
 	fi
-	echo "go test -v ${TEST_OPTS} -tags \"${TEST_INTEGRATION_TAGS}\" ${COVER_BUILD_ARGS} -timeout=10m . -args -distribution cassandra -runauth -gocql.timeout=60s -runssl -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$${CASSANDRA_VERSION_RESOLVED} -cluster=$$(ccm liveset) ${COVER_RUNTIME_ARGS}"
-	go test -v ${TEST_OPTS} -tags "${TEST_INTEGRATION_TAGS}" ${COVER_BUILD_ARGS} -timeout=10m . -args -distribution cassandra -runauth -gocql.timeout=60s -runssl -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$$(ccm node1 versionfrombuild) -cluster=$$(ccm liveset) ${COVER_RUNTIME_ARGS}
+	echo "go test -v ${TEST_OPTS} -tags \"${TEST_INTEGRATION_TAGS}\" ${COVER_BUILD_ARGS} -timeout=${TEST_INTEGRATION_TIMEOUT} . -args -distribution cassandra -runauth -gocql.timeout=60s -runssl -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$${CASSANDRA_VERSION_RESOLVED} -cluster=$$(ccm liveset) ${COVER_RUNTIME_ARGS}"
+	go test -v ${TEST_OPTS} -tags "${TEST_INTEGRATION_TAGS}" ${COVER_BUILD_ARGS} -timeout=${TEST_INTEGRATION_TIMEOUT} . -args -distribution cassandra -runauth -gocql.timeout=60s -runssl -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$$(ccm node1 versionfrombuild) -cluster=$$(ccm liveset) ${COVER_RUNTIME_ARGS}
 
 test-integration-scylla: scylla-start
 	@echo "Run integration tests for proto ${TEST_CQL_PROTOCOL} on scylla ${SCYLLA_VERSION}"
@@ -342,8 +367,8 @@ test-integration-scylla: scylla-start
 		echo "ScyllaDB version ${SCYLLA_VERSION} was not resolved"
 		exit 1
 	fi
-	echo "go test -v ${TEST_OPTS} -tags \"${TEST_INTEGRATION_TAGS}\" ${COVER_BUILD_ARGS} -timeout=5m . -args -distribution scylla $${CLUSTER_SOCKET} -gocql.timeout=60s -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$${SCYLLA_VERSION_RESOLVED} -cluster=$$(ccm liveset) ${COVER_RUNTIME_ARGS}"
-	go test -v ${TEST_OPTS} -tags "${TEST_INTEGRATION_TAGS}" ${COVER_BUILD_ARGS} -timeout=5m . -args -distribution scylla $${CLUSTER_SOCKET} -gocql.timeout=60s -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$${SCYLLA_VERSION_RESOLVED} -cluster=$$(ccm liveset) ${COVER_RUNTIME_ARGS}
+	echo "go test -v ${TEST_OPTS} -tags \"${TEST_INTEGRATION_TAGS}\" ${COVER_BUILD_ARGS} -timeout=${TEST_INTEGRATION_TIMEOUT} . -args -distribution scylla $${CLUSTER_SOCKET} -gocql.timeout=60s -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$${SCYLLA_VERSION_RESOLVED} -cluster=$$(ccm liveset) ${COVER_RUNTIME_ARGS}"
+	go test -v ${TEST_OPTS} -tags "${TEST_INTEGRATION_TAGS}" ${COVER_BUILD_ARGS} -timeout=${TEST_INTEGRATION_TIMEOUT} . -args -distribution scylla $${CLUSTER_SOCKET} -gocql.timeout=60s -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$${SCYLLA_VERSION_RESOLVED} -cluster=$$(ccm liveset) ${COVER_RUNTIME_ARGS}
 
 # The lz4 compressor lives in a nested module (lz4/go.mod), so the root "./..."
 # pattern does not reach it — it has to be invoked explicitly with `go test -C`,
@@ -448,19 +473,46 @@ clean-coverage:
 # themselves belong to test-unit.
 BENCH_OPTS = -tags "bench unit" -run '^$$' -bench=. -benchmem
 
+# Each module's status is captured rather than left to abort the recipe, on both branches.
+# .SHELLFLAGS is -eo pipefail, so a bare failing command takes the whole target down where
+# it stands -- skipping the modules after it, and in the workflow branch the closing fence
+# with them. The tests/bench run is last and is the one that matters most: it is the only
+# end-to-end check that the frame hashing still matches a recording, and a root-module
+# regression must not be what stops it from running. The bench workflow is label-gated, so
+# on most changes the shell branch below is the only one that ever runs this at all.
+# test-unit's workflow branch does the same dance for the same reason; its shell branch
+# does not, so a root-module failure there still skips lz4.
 test-bench:
 	@echo "Run benchmark tests"
 ifeq ($(shell if [[ -n "$${GITHUB_STEP_SUMMARY}" ]]; then echo "running-in-workflow"; else echo "running-in-shell"; fi), running-in-workflow)
 	echo "### Benchmark Results" >>$${GITHUB_STEP_SUMMARY}
 	echo '```' >>"$${GITHUB_STEP_SUMMARY}"
 	echo go test ${BENCH_OPTS} ./...
-	go test ${BENCH_OPTS} ./... | tee -a >>"$${GITHUB_STEP_SUMMARY}"
+	BENCH_STATUS=0
+	go test ${BENCH_OPTS} ./... | tee -a "$${GITHUB_STEP_SUMMARY}" || BENCH_STATUS=$${PIPESTATUS[0]}
 	echo go test -C lz4 ${BENCH_OPTS} ./...
-	go test -C lz4 ${BENCH_OPTS} ./... | tee -a >>"$${GITHUB_STEP_SUMMARY}"
+	LZ4_BENCH_STATUS=0
+	go test -C lz4 ${BENCH_OPTS} ./... | tee -a "$${GITHUB_STEP_SUMMARY}" || LZ4_BENCH_STATUS=$${PIPESTATUS[0]}
+	echo go test -C tests/bench ${BENCH_OPTS} ./...
+	REPLAY_BENCH_STATUS=0
+	go test -C tests/bench ${BENCH_OPTS} ./... | tee -a "$${GITHUB_STEP_SUMMARY}" || REPLAY_BENCH_STATUS=$${PIPESTATUS[0]}
 	echo '```' >>"$${GITHUB_STEP_SUMMARY}"
+	if (( BENCH_STATUS != 0 )); then exit "$${BENCH_STATUS}"; fi
+	if (( LZ4_BENCH_STATUS != 0 )); then exit "$${LZ4_BENCH_STATUS}"; fi
+	exit "$${REPLAY_BENCH_STATUS}"
 else
-	go test ${BENCH_OPTS} ./...
-	go test -C lz4 ${BENCH_OPTS} ./...
+	echo go test ${BENCH_OPTS} ./...
+	BENCH_STATUS=0
+	go test ${BENCH_OPTS} ./... || BENCH_STATUS=$$?
+	echo go test -C lz4 ${BENCH_OPTS} ./...
+	LZ4_BENCH_STATUS=0
+	go test -C lz4 ${BENCH_OPTS} ./... || LZ4_BENCH_STATUS=$$?
+	echo go test -C tests/bench ${BENCH_OPTS} ./...
+	REPLAY_BENCH_STATUS=0
+	go test -C tests/bench ${BENCH_OPTS} ./... || REPLAY_BENCH_STATUS=$$?
+	if (( BENCH_STATUS != 0 )); then exit "$${BENCH_STATUS}"; fi
+	if (( LZ4_BENCH_STATUS != 0 )); then exit "$${LZ4_BENCH_STATUS}"; fi
+	exit "$${REPLAY_BENCH_STATUS}"
 endif
 
 check-go-mod-drift:
@@ -469,9 +521,80 @@ check-go-mod-drift:
 	go mod tidy -C lz4 -diff
 	go mod tidy -C tests/bench -diff
 
-check: .prepare-golangci check-go-mod-drift
+# The one architecture-dependent part of check, split out so the arm64 lane can run
+# it without the linters, which are not. It is not redundant with test-unit either:
+# `go test` compiles no non-test file the `all` tag guards -- integration_only.go,
+# internal/ccm, internal/debug/debug_on.go.
+build:
 	@echo "Build"
 	go build -tags all .
+
+# go.mod's require on github.com/scylladb/gocql/lz4 is inert here -- the `replace`
+# beside it wins for every local build -- and Renovate skips it, so nothing notices
+# when it drifts from the module's release tags. Consumers see the require and not
+# the replace, so it still has to resolve for them. See go.mod and README.md 5.4.
+check-lz4-pin:
+	@echo "Check the lz4 pin against the newest lz4/v* tag"
+	PINNED=$$(go list -m -f '{{.Version}}' github.com/scylladb/gocql/lz4) || {
+		echo "::error::go.mod has no require for github.com/scylladb/gocql/lz4."
+		exit 1
+	}
+	# Checked first: drop a replace and `go mod tidy` resolves the published release and
+	# rewrites go.sum to match, so every check below stays green against code that is no
+	# longer under test. tests/bench needs its own; its go.mod records why.
+	for module in ".:./lz4" "tests/bench:../../lz4"; do
+		DIR="$${module%%:*}"
+		TARGET="$${module##*:}"
+		REPLACED=$$(go -C "$${DIR}" list -m -f '{{with .Replace}}{{.Path}}{{end}}' github.com/scylladb/gocql/lz4 || true)
+		if [[ "$${REPLACED}" != "$${TARGET}" ]]; then
+			echo "::error::$${DIR}/go.mod no longer replaces github.com/scylladb/gocql/lz4 with $${TARGET}."
+			echo "Without it the module resolves from the proxy and this repository tests the last release."
+			exit 1
+		fi
+	done
+	ALLTAGS=$$(git tag -l 'lz4/v*' 2>/dev/null || true)
+	if [[ -z "$${ALLTAGS}" ]]; then
+		if [[ -n "$${GITHUB_ACTIONS}" ]]; then
+			echo "::error::no lz4/v* tags found at all, so this check verified nothing."
+			echo "The workflow's checkout has stopped fetching tags."
+			exit 1
+		fi
+		echo "No lz4/v* tags present (clone without tags); skipping"
+		exit 0
+	fi
+	# An existence question, not an ordering one: an untagged pin can sit between two
+	# tags, and so compare as older than the newest, while resolving for nobody.
+	if ! git rev-parse -q --verify "refs/tags/lz4/$${PINNED}" >/dev/null; then
+		echo "::error::go.mod requires lz4 $${PINNED} but no lz4/$${PINNED} tag exists."
+		echo "Consumers cannot resolve the module. Tag it, or lower the require."
+		exit 1
+	fi
+	# Pre-releases are dropped because `sort -V` orders v1.20.0-rc1 after v1.20.0.
+	LATEST=$$(printf '%s\n' "$${ALLTAGS}" | sed 's|^lz4/||' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$$' | sort -V | tail -1 || true)
+	if [[ -z "$${LATEST}" ]]; then
+		echo "Only pre-release lz4 tags present; the pin resolves, nothing to compare it against"
+	elif [[ "$${PINNED}" != "$${LATEST}" ]]; then
+		# A warning, not an error: a require is a lower bound so the pin still resolves,
+		# and the tag and the bump commit cannot land atomically.
+		echo "::warning::lz4 pin $${PINNED} lags tag lz4/$${LATEST}; bump go.mod and the versions README.md section 5.4 documents."
+		echo "- lz4 pin $${PINNED} lags tag lz4/$${LATEST}" >> "$${GITHUB_STEP_SUMMARY:-/dev/null}"
+	fi
+	# Every lz4 version README.md documents must be the pinned one, compared exactly. A
+	# substring test lets v1.19.0 be satisfied by v1.19.0-rc1, and asking only whether the
+	# pin appears somewhere stays green while another mention is stale. `sort -u` collapses
+	# to one line only when they all agree, so a single comparison covers both.
+	DOCUMENTED=$$(grep -oE '(github\.com/scylladb/gocql/lz4[ @]|(^|[^A-Za-z0-9./])lz4/)v[0-9]+\.[0-9]+\.[0-9]+[A-Za-z0-9.-]*' README.md | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+[A-Za-z0-9.-]*' | sort -u || true)
+	if [[ -z "$${DOCUMENTED}" ]]; then
+		echo "README.md documents no lz4 version; section 5.4 should name $${PINNED}."
+		exit 1
+	fi
+	if [[ "$${DOCUMENTED}" != "$${PINNED}" ]]; then
+		echo "README.md documents lz4 $$(echo $${DOCUMENTED}); go.mod pins $${PINNED}."
+		echo "Section 5.4 documents the lz4 version too; bump it alongside go.mod."
+		exit 1
+	fi
+
+check: build .prepare-golangci check-go-mod-drift check-lz4-pin
 	echo "Check linting"
 	${BIN_DIR}/golangci-lint run
 

@@ -1009,9 +1009,6 @@ func marshalVector(info VectorType, value any) ([]byte, error) {
 		if n == 0 {
 			return nil, nil
 		}
-		if n == 0 {
-			return nil, nil
-		}
 
 		isLengthType := isVectorVariableLengthType(info.SubType)
 		sizeHint := 0
