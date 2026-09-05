@@ -36,6 +36,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	lz4mod "github.com/scylladb/gocql/lz4"
 )
 
 var (
@@ -317,6 +319,12 @@ func createCluster(opts ...func(*ClusterConfig)) *ClusterConfig {
 	switch *flagCompressTest {
 	case "snappy":
 		cluster.Compressor = &SnappyCompressor{}
+	case "lz4":
+		// lz4 is the only compressor native protocol v5 permits: a v5 server still
+		// advertises snappy in its OPTIONS response, but STARTUP with COMPRESSION=snappy
+		// is rejected server-side, and ClusterConfig.Validate refuses any compressor that
+		// is not a SegmentCompressor once ProtoVersion >= 5.
+		cluster.Compressor = &lz4mod.LZ4Compressor{}
 	case "no-compression", "":
 	default:
 		panic("invalid compressor: " + *flagCompressTest)

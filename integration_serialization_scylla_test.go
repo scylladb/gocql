@@ -21,10 +21,10 @@ import (
 
 // truncateTable executes a TRUNCATE on the given fully-qualified table, retrying
 // transient ScyllaDB topology contention ("Another global topology request is
-// ongoing, please retry."). TRUNCATE is a global topology operation, so when
-// several parallel tests issue DDL/TRUNCATE concurrently Scylla rejects the
-// overlapping request with an invalid_request_exception that SimpleRetryPolicy
-// does not retry. See scylladb/gocql#895.
+// ongoing" / "Another TRUNCATE TABLE is ongoing"). TRUNCATE is a global topology
+// operation, so when several parallel tests issue DDL/TRUNCATE concurrently
+// Scylla rejects the overlapping request, and SimpleRetryPolicy does not retry
+// it. See scylladb/gocql#895.
 func truncateTable(t *testing.T, session *Session, fqTable string) error {
 	t.Helper()
 	return retryOnTopologyBusy(func() error {
@@ -55,10 +55,28 @@ func retryOnTopologyBusyWithSleep(exec func() error, sleep func(time.Duration)) 
 	return err
 }
 
-// isTopologyBusyErr reports whether err is the transient ScyllaDB error returned
-// when another global topology request is already in progress.
+// topologyBusyMessages lists the distinct ScyllaDB error message variants seen
+// for transient topology/TRUNCATE contention. Different Scylla versions/error
+// paths (invalid_request_exception vs. std::runtime_error) phrase this
+// differently, so isTopologyBusyErr matches on any of them.
+var topologyBusyMessages = []string{
+	"Another global topology request is ongoing",
+	"Another TRUNCATE TABLE is ongoing",
+}
+
+// isTopologyBusyErr reports whether err is a transient ScyllaDB error returned
+// when another global topology/TRUNCATE request is already in progress.
 func isTopologyBusyErr(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "Another global topology request is ongoing")
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	for _, m := range topologyBusyMessages {
+		if strings.Contains(msg, m) {
+			return true
+		}
+	}
+	return false
 }
 
 // TestRetryOnTopologyBusy verifies the retry logic deterministically (no
@@ -68,6 +86,7 @@ func TestRetryOnTopologyBusy(t *testing.T) {
 	t.Parallel()
 
 	busy := errors.New("Error during truncate: exceptions::invalid_request_exception (Another global topology request is ongoing, please retry.)")
+	busyTruncate := errors.New("Error during truncate: std::runtime_error (Another TRUNCATE TABLE is ongoing, please retry.)")
 	other := errors.New("some other error")
 
 	// noSleep avoids real backoff so these subtests stay fast and deterministic.
@@ -122,11 +141,31 @@ func TestRetryOnTopologyBusy(t *testing.T) {
 		if !isTopologyBusyErr(busy) {
 			t.Error("busy error should be classified as topology-busy")
 		}
+		if !isTopologyBusyErr(busyTruncate) {
+			t.Error("busyTruncate (runtime_error TRUNCATE variant) should be classified as topology-busy")
+		}
 		if isTopologyBusyErr(other) {
 			t.Error("other error should not be classified as topology-busy")
 		}
 		if isTopologyBusyErr(nil) {
 			t.Error("nil should not be classified as topology-busy")
+		}
+	})
+
+	t.Run("retries the TRUNCATE-variant busy error", func(t *testing.T) {
+		calls := 0
+		err := retryOnTopologyBusyWithSleep(func() error {
+			calls++
+			if calls < 2 {
+				return busyTruncate
+			}
+			return nil
+		}, noSleep)
+		if err != nil {
+			t.Fatalf("expected success, got %v", err)
+		}
+		if calls != 2 {
+			t.Fatalf("expected 2 calls, got %d", calls)
 		}
 	})
 }

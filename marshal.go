@@ -126,6 +126,11 @@ func finishMarshalBuf(buf *bytes.Buffer) []byte {
 // (vectors and lists/sets). These slices are the final marshal output that gets
 // copied into the framer buffer by writeBytes. After the framer copies them,
 // the connection layer returns them to this pool via putMarshalOutput.
+//
+// Benchmarked: ~3-4x fewer ns/op and near-zero allocs at n=10-1000 (more under
+// concurrent load), but buffers over marshalBufMaxCap are never pooled (see
+// putMarshalOutput), so very large collections (e.g. PR #910's ~11K-element
+// cells) always fall through to a fresh allocation, same as no pool at all.
 var marshalOutputPool sync.Pool
 
 // getMarshalOutput returns a []byte of exactly the requested size, from the
