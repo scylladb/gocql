@@ -253,12 +253,10 @@ var keyspaceCQLTemplate = template.Must(template.New("keyspace").
 		"escape":      cqlHelpers.escape,
 		"fixStrategy": cqlHelpers.fixStrategy,
 	}).
-	Parse(`CREATE KEYSPACE {{ .Name }} WITH replication = {
-    'class': {{ escape ( fixStrategy .StrategyClass) }}
-    {{- range $key, $value := .StrategyOptions }},
-    {{ escape $key }}: {{ escape $value }}
-    {{- end }}
-}{{ if not .DurableWrites }} AND durable_writes = 'false'{{ end }};
+	// Single-line, always-explicit durable_writes to match what DESCRIBE KEYSPACE
+	// returns from Cassandra/Scylla, so this fallback stays consistent with the
+	// server-echoed CreateStmts path in ToCQL.
+	Parse(`CREATE KEYSPACE {{ .Name }} WITH replication = {'class': {{ escape ( fixStrategy .StrategyClass) }}{{ range $key, $value := .StrategyOptions }}, {{ escape $key }}: {{ escape $value }}{{ end }}} AND durable_writes = {{ .DurableWrites }};
 `))
 
 func (ks *KeyspaceMetadata) keyspaceToCQL(w io.Writer) error {
