@@ -7,7 +7,6 @@ package gocql
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -252,39 +251,8 @@ func isDescribeKeyspaceSupported(t *testing.T, s *Session) bool {
 	return true
 }
 
-func TestScyllaEncryptionOptionsUnmarshaller(t *testing.T) {
-	t.Parallel()
-
-	const (
-		input  = "testdata/recreate/scylla_encryption_options.bin"
-		golden = "testdata/recreate/scylla_encryption_options_golden.json"
-	)
-
-	inputBuf, err := os.ReadFile(input)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	goldenBuf, err := os.ReadFile(golden)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	goldenOpts := &scyllaEncryptionOptions{}
-	if err := json.Unmarshal(goldenBuf, goldenOpts); err != nil {
-		t.Fatal(err)
-	}
-
-	opts := &scyllaEncryptionOptions{}
-	if err := opts.UnmarshalBinary(inputBuf); err != nil {
-		t.Error(err)
-	}
-
-	if !cmp.Equal(goldenOpts, opts) {
-		t.Error(cmp.Diff(goldenOpts, opts))
-	}
-
-}
+// TestScyllaEncryptionOptionsUnmarshalBinary moved to recreate_unit_test.go
+// (a cluster-free unit test, not gated behind the integration build tag).
 
 func cleanup(t *testing.T, session *Session, keyspace string) {
 	qr := session.Query(`DROP KEYSPACE IF EXISTS ` + keyspace)
