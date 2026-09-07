@@ -137,6 +137,7 @@ func resolveInitialEndpoints(resolver DNSResolver, addrs []string, defaultPort i
 }
 
 func newSessionCommon(cfg ClusterConfig) (*Session, error) {
+	cfg.applyClientRoutesConfig()
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("gocql: unable to create session: cluster config validation failed: %v", err)
 	}

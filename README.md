@@ -36,7 +36,7 @@ It also provides support for shard aware ports, a faster way to connect to all s
 - [3. Quick Start](#3-quick-start)
 - [4. Data Types](#4-data-types)
 - [5. Configuration](#5-configuration)
-  - [5.1 Shard-aware port](#51-shard-aware-port)
+  - [5.1 Advanced shard awareness (shard-aware port)](#51-advanced-shard-awareness-shard-aware-port)
   - [5.2 Client routes (PrivateLink)](#52-client-routes-privatelink)
   - [5.3 Iterator](#53-iterator)
   - [5.4 Compression](#54-compression)
@@ -171,9 +171,9 @@ if localDC != "" {
 // c.NumConns = 4
 ```
 
-### 5.1 Shard-aware port
+### 5.1 Advanced shard awareness (shard-aware port)
 
-This version of gocql supports a more robust method of establishing connection for each shard by using _shard aware port_ for native transport.
+Advanced shard awareness lets the driver choose a connection's source port so that Scylla assigns it to a desired shard. It uses the shard-aware native transport port.
 It greatly reduces time and the number of connections needed to establish a connection per shard in some cases - ex. when many clients connect at once, or when there are non-shard-aware clients connected to the same cluster.
 
 If you are using a custom Dialer and if your nodes expose the shard-aware port, it is highly recommended to update it so that it uses a specific source port when connecting.
@@ -216,7 +216,7 @@ The feature is designed to gracefully fall back to the using the non-shard-aware
 The driver will print a warning about misconfigured address translation if it detects it.
 Issues with shard-aware port not being reachable are not reported in non-debug mode, because there is no way to detect it without false positives.
 
-If you suspect that this feature is causing you problems, you can completely disable it by setting the `ClusterConfig.DisableShardAwarePort` flag to true.
+Set `ClusterConfig.DisableShardAwarePort` to true to disable advanced shard awareness. Per-shard connection pooling and token-to-shard routing remain enabled through the regular CQL port.
 
 ### 5.2 Client routes (PrivateLink)
 
@@ -237,6 +237,23 @@ cluster.WithOptions(
 ```
 
 If you also want to seed the cluster with PrivateLink hostnames, provide `ConnectionAddr` values in the endpoints list.
+
+Advanced shard awareness is disabled by default when client routes are enabled because PrivateLink paths commonly use NAT. Basic shard awareness remains enabled: the driver still maintains per-shard connections and routes requests to the appropriate shard.
+
+Opt in only when the client-route endpoint forwards to Scylla's Proxy Protocol v2 shard-aware CQL listener (`native_shard_aware_transport_port_proxy_protocol`, or `native_shard_aware_transport_port_ssl_proxy_protocol` for TLS) and the proxy sends the original client source port in the Proxy Protocol v2 header:
+
+```go
+cluster.WithOptions(
+	gocql.WithClientRoutes(
+		gocql.WithEndpoints(
+			gocql.ClientRoutesEndpoint{ConnectionID: "your-connection-id"},
+		),
+		gocql.WithShardAwareness(true),
+	),
+)
+```
+
+`ClusterConfig.DisableShardAwarePort` takes precedence over `WithShardAwareness(true)`.
 
 ### 5.3 Iterator
 
