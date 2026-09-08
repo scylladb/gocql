@@ -66,7 +66,7 @@ func asVectorType(t TypeInfo) (VectorType, bool) {
 	subStr := strings.TrimSpace(spec[:idx])
 	dimStr := strings.TrimSpace(spec[idx+1:])
 	dim, err := strconv.Atoi(dimStr)
-	if err != nil {
+	if err != nil || dim < 1 {
 		return VectorType{}, false
 	}
 	subType := getCassandraLongType(subStr, n.Version(), nopLogger{})
@@ -277,9 +277,13 @@ func getCassandraLongType(name string, protoVer byte, logger StdLogger) TypeInfo
 			return NewNativeType(protoVer, TypeCustom)
 		}
 		subType := getCassandraLongType(strings.TrimSpace(names[0]), protoVer, logger)
+		// Cassandra's VectorType requires a positive dimension, so neither a zero
+		// nor a negative one describes a real column, and a negative one reaches
+		// reflect.MakeSlice in unmarshalVector. A nested vector arrives here, not
+		// in readVectorTypeInfo, which validates only the outer spec.
 		dim, err := strconv.Atoi(strings.TrimSpace(names[1]))
-		if err != nil {
-			logger.Printf("gocql: error parsing vector dimensions: %v\n", err)
+		if err != nil || dim < 1 {
+			logger.Printf("gocql: error parsing vector dimensions %q: %v\n", names[1], err)
 			return NewNativeType(protoVer, TypeCustom)
 		}
 
