@@ -13,15 +13,23 @@ import (
 	"github.com/gocql/gocql/internal/eventbus"
 )
 
+// ClientRoutesEndpoint identifies one ScyllaDB Cloud private connection and
+// optionally overrides its network address.
 type ClientRoutesEndpoint struct {
-	// Scylla Cloud ConnectionID to read from `system.client_routes`
+	// ScyllaDB Cloud connection ID to read from the configured client-routes
+	// table (system.client_routes by default).
 	ConnectionID string
 
-	// Ip Address or DNS name of the AWS endpoint
-	// Could stay empty, in this case driver will pick it up from system.client_routes table
+	// ConnectionAddr optionally overrides the address from the configured
+	// client-routes table (system.client_routes by default).
+	// Set it to the IP address or DNS name, without a port, of an AWS PrivateLink
+	// or Google Cloud Private Service Connect endpoint. When ClusterConfig.Hosts
+	// is empty, WithClientRoutes also uses non-empty ConnectionAddr values as
+	// initial contact points on ClusterConfig.Port.
 	ConnectionAddr string
 }
 
+// Validate verifies that the endpoint has the required connection ID.
 func (e ClientRoutesEndpoint) Validate() error {
 	if e.ConnectionID == "" {
 		return errors.New("missing ConnectionID")
@@ -29,8 +37,10 @@ func (e ClientRoutesEndpoint) Validate() error {
 	return nil
 }
 
+// ClientRoutesEndpointList is a list of ScyllaDB Cloud private connections.
 type ClientRoutesEndpointList []ClientRoutesEndpoint
 
+// GetAllConnectionIDs returns every configured connection ID in list order.
 func (l ClientRoutesEndpointList) GetAllConnectionIDs() []string {
 	ids := make([]string, 0, len(l))
 	for _, endpoint := range l {
@@ -39,6 +49,7 @@ func (l ClientRoutesEndpointList) GetAllConnectionIDs() []string {
 	return ids
 }
 
+// Validate verifies that every endpoint is valid.
 func (l ClientRoutesEndpointList) Validate() error {
 	for id, endpoint := range l {
 		if err := endpoint.Validate(); err != nil {
@@ -48,14 +59,17 @@ func (l ClientRoutesEndpointList) Validate() error {
 	return nil
 }
 
+// ClientRoutesConfig configures routing through AWS PrivateLink or Google
+// Cloud Private Service Connect using routes from the configured client-routes
+// table (system.client_routes by default).
 type ClientRoutesConfig struct {
 	TableName string
 	Endpoints ClientRoutesEndpointList
-	// Deprecated:
+	// Deprecated: ResolveHealthyEndpointPeriod no longer has any effect.
 	ResolveHealthyEndpointPeriod time.Duration
-	// Deprecated:
+	// Deprecated: ResolverCacheDuration no longer has any effect.
 	ResolverCacheDuration time.Duration
-	// Deprecated:
+	// Deprecated: MaxResolverConcurrency no longer has any effect.
 	MaxResolverConcurrency int
 
 	// Deprecated: BlockUnknownEndpoints no longer has any effect. Unknown
@@ -63,22 +77,10 @@ type ClientRoutesConfig struct {
 	// release.
 	BlockUnknownEndpoints bool
 
-	// EnableShardAwareness controls whether the driver should use shard-aware
-	// connections when using ClientRoutes (PrivateLink).
-	//
-	// By default this is false because NAT typically breaks shard-awareness.
-	// Shard-aware routing relies on the driver knowing the source port of connections,
-	// which NAT devices modify, making it impossible for the server to route
-	// requests to the correct shard.
-	//
-	// However, in some deployments shard-awareness can still work:
-	//   - When using PROXY Protocol v2, the original source port is preserved
-	//     in the protocol header. See https://www.haproxy.org/download/1.8/doc/proxy-protocol.txt
-	//   - When using direct connections without NAT (e.g., VPC peering)
-	//   - When the load balancer/proxy is shard-aware itself
-	//
-	// Set this to true only if your network setup preserves or correctly handles
-	// the source port information needed for shard-aware routing.
+	// EnableShardAwareness controls whether client routes use shard-aware
+	// connections. It is disabled by default because private endpoints commonly
+	// use NAT, which does not preserve the source port required for shard
+	// routing. Enable it only when the complete network path preserves that port.
 	EnableShardAwareness bool
 }
 
@@ -280,6 +282,10 @@ func (c *clientRouteCache) ReplaceByConnectionIDs(connectionIDs []string, incomi
 	c.rebindCurrentConnectionIDsLocked(currentIDs)
 }
 
+// ClientRoutesHandler translates discovered hosts using ScyllaDB Cloud client
+// routes. Sessions create and initialize it from ClusterConfig.ClientRoutesConfig.
+// Do not install one directly as ClusterConfig.AddressTranslator; configure
+// client routes through WithClientRoutes or ClientRoutesConfig instead.
 type ClientRoutesHandler struct {
 	log           StdLogger
 	c             controlConnection
@@ -516,6 +522,10 @@ func (p *ClientRoutesHandler) updateHostPortMapping(task updateTask) error {
 	return nil
 }
 
+// NewClientRoutesAddressTranslator constructs the client-routes handler used
+// internally when ClusterConfig.ClientRoutesConfig is set. Do not assign the
+// result directly to ClusterConfig.AddressTranslator because the session would
+// not initialize it.
 func NewClientRoutesAddressTranslator(
 	cfg ClientRoutesConfig,
 	resolver DNSResolver,
