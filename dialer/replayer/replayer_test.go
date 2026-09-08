@@ -6,10 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gocql/gocql/dialer"
 )
@@ -62,7 +65,7 @@ func TestConnectionReplayerReplaysUnsegmentedProtoV5(t *testing.T) {
 // TestConnectionReplayerRefusesPreV3 is the replayer's half of the protocol floor, and
 // it pins the worse of the two failures it prevents. A pre-v3 frame the splitter lets
 // through is not merely unmatched: Write reports every byte written and queues no
-// response, so the driver's next Read parks on gotRequest and the connection hangs
+// response, so the driver's next Read parks in awaitPendingFrame and the connection hangs
 // instead of failing.
 //
 // A bodyless v2 OPTIONS is what reached that state -- a complete v1/v2 frame one byte
@@ -700,13 +703,12 @@ func TestMaterialiseLeavesNothingServableWhenEncodingFails(t *testing.T) {
 
 			// The state materialise is entered in: a previous response, served and
 			// drained, whose buffer is the one the next encode is handed.
-			c.streamIdsToReplay = []int{0x0007}
 			c.outgoing = make([]byte, previous, 4096)
 			c.outgoingPos = previous
 
 			response := responseFrame(0x0040, 32)
 			response[0] = 0x85 // the connection is v5; a v4 frame here would be a lie
-			if err := c.materialise(&FrameRecorded{Response: response}); err == nil {
+			if err := c.materialise(&FrameRecorded{Response: response}, 0x0007); err == nil {
 				t.Fatal("a response the framing cannot encode was materialised")
 			}
 
@@ -718,5 +720,221 @@ func TestMaterialiseLeavesNothingServableWhenEncodingFails(t *testing.T) {
 					c.outgoingPos, len(c.outgoing))
 			}
 		})
+	}
+}
+
+// TestConnectionReplayerCloseWakesABlockedRead pins that Close ends a Read parked for
+// the next request -- the driver's ordinary teardown order (scylladb/gocql#1020).
+func TestConnectionReplayerCloseWakesABlockedRead(t *testing.T) {
+	req := requestFrame(0x05, 1)
+	c := newTestReplayer(0x04, &FrameRecorded{
+		Response: responseFrame(0x0001, 8),
+		Hash:     dialer.GetFrameHash(req, false),
+	})
+
+	type readResult struct {
+		n   int
+		err error
+	}
+	done := make(chan readResult, 1)
+	go func() {
+		n, err := c.Read(make([]byte, 64))
+		done <- readResult{n: n, err: err}
+	}()
+
+	// Lets the reader reach the wait; either ordering must end in io.EOF.
+	time.Sleep(50 * time.Millisecond)
+
+	if err := c.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	select {
+	case got := <-done:
+		if !errors.Is(got.err, io.EOF) {
+			t.Errorf("Read after Close = %v, want io.EOF", got.err)
+		}
+		if got.n != 0 {
+			t.Errorf("Read after Close served %d bytes, want 0", got.n)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Read did not return within 5s of Close; it is spinning on the wait loop")
+	}
+}
+
+// TestConnectionReplayerCloseIsIdempotent pins that closing twice is not a crash.
+func TestConnectionReplayerCloseIsIdempotent(t *testing.T) {
+	c := newTestReplayer(0x04, &FrameRecorded{Response: responseFrame(0x0001, 8)})
+	if c.Closed() {
+		t.Fatal("Closed() = true before Close")
+	}
+
+	for i := 1; i <= 2; i++ {
+		if err := c.Close(); err != nil {
+			t.Fatalf("Close #%d: %v", i, err)
+		}
+		if !c.Closed() {
+			t.Fatalf("Closed() = false after Close #%d", i)
+		}
+	}
+}
+
+// TestConnectionReplayerWriteAfterCloseFailsTheConnection pins that a write past Close
+// fails that connection rather than panicking the process.
+func TestConnectionReplayerWriteAfterCloseFailsTheConnection(t *testing.T) {
+	req := requestFrame(0x05, 1)
+	c := newTestReplayer(0x04, &FrameRecorded{
+		Response: responseFrame(0x0001, 8),
+		Hash:     dialer.GetFrameHash(req, false),
+	})
+
+	if err := c.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	if _, err := c.Write(req); !errors.Is(err, net.ErrClosed) {
+		t.Fatalf("Write after Close = %v, want net.ErrClosed", err)
+	}
+
+	// dialer.FrameSplitter.Feed latches the emit error, so the connection stays failed.
+	if _, err := c.Write(req); !errors.Is(err, net.ErrClosed) {
+		t.Errorf("second Write after Close = %v, want the latched net.ErrClosed", err)
+	}
+}
+
+// TestConnectionReplayerUnmatchedWriteAfterCloseFailsTheConnection pins that the Close
+// gate comes before the lookup: a request with no recorded response fails rather than
+// reaching the unmatched-request panic.
+func TestConnectionReplayerUnmatchedWriteAfterCloseFailsTheConnection(t *testing.T) {
+	c := newTestReplayer(0x04, &FrameRecorded{
+		Response: responseFrame(0x0001, 8),
+		Hash:     dialer.GetFrameHash(requestFrame(0x05, 1), false),
+	})
+
+	if err := c.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	if _, err := c.Write(requestFrame(0x07, 1)); !errors.Is(err, net.ErrClosed) {
+		t.Fatalf("unmatched Write after Close = %v, want net.ErrClosed", err)
+	}
+}
+
+// TestConnectionReplayerConcurrentPipelinedReplay pins, under -race, that one writer and
+// one reader -- what the driver gives this connection -- get every response back in
+// order with its request's stream id.
+func TestConnectionReplayerConcurrentPipelinedReplay(t *testing.T) {
+	const (
+		requests    = 200
+		bodyLen     = 8
+		responseLen = dialer.FrameHeaderLen + bodyLen
+	)
+
+	// A distinct opcode per request: GetFrameHash blanks the stream id before hashing, so
+	// that is what tells two of these apart and pairs each with its own response.
+	reqs := make([][]byte, requests)
+	frames := make([]*FrameRecorded, requests)
+	for i := range reqs {
+		reqs[i] = requestFrame(byte(i), i)
+		frames[i] = &FrameRecorded{
+			Response: responseFrame(i, bodyLen),
+			Hash:     dialer.GetFrameHash(reqs[i], false),
+		}
+	}
+	c := newTestReplayer(0x04, frames...)
+
+	writeErr := make(chan error, 1)
+	go func() {
+		for _, req := range reqs {
+			if _, err := c.Write(req); err != nil {
+				writeErr <- err
+				return
+			}
+		}
+		writeErr <- nil
+	}()
+
+	// A buffer smaller than one response keeps the reader re-entering the handoff.
+	got := make([]byte, 0, requests*responseLen)
+	buf := make([]byte, 7)
+	for len(got) < requests*responseLen {
+		n, err := c.Read(buf)
+		if err != nil {
+			t.Fatalf("Read after %d of %d bytes: %v", len(got), requests*responseLen, err)
+		}
+		got = append(got, buf[:n]...)
+	}
+
+	if err := <-writeErr; err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	for i := range reqs {
+		frame := got[i*responseLen : (i+1)*responseLen]
+		if stream := int(frame[2])<<8 | int(frame[3]); stream != i {
+			t.Fatalf("response %d carries stream id %d, want %d", i, stream, i)
+		}
+	}
+
+	if err := c.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+}
+
+// TestConnectionReplayerCloseRacesPipelinedReplay pins, under -race, that Close landing
+// mid-stream ends both sides cleanly: the writer sees nil or net.ErrClosed, the reader
+// io.EOF, and nothing panics.
+func TestConnectionReplayerCloseRacesPipelinedReplay(t *testing.T) {
+	const requests = 200
+
+	reqs := make([][]byte, requests)
+	frames := make([]*FrameRecorded, requests)
+	for i := range reqs {
+		reqs[i] = requestFrame(byte(i), i)
+		frames[i] = &FrameRecorded{
+			Response: responseFrame(i, 8),
+			Hash:     dialer.GetFrameHash(reqs[i], false),
+		}
+	}
+
+	for iter := 0; iter < 50; iter++ {
+		c := newTestReplayer(0x04, frames...)
+
+		writeErr := make(chan error, 1)
+		go func() {
+			for _, req := range reqs {
+				if _, err := c.Write(req); err != nil {
+					writeErr <- err
+					return
+				}
+			}
+			writeErr <- nil
+		}()
+
+		readErr := make(chan error, 1)
+		go func() {
+			buf := make([]byte, 7)
+			for {
+				if _, err := c.Read(buf); err != nil {
+					readErr <- err
+					return
+				}
+			}
+		}()
+
+		if err := c.Close(); err != nil {
+			t.Fatalf("iteration %d: Close: %v", iter, err)
+		}
+		if err := <-writeErr; err != nil && !errors.Is(err, net.ErrClosed) {
+			t.Fatalf("iteration %d: Write = %v, want nil or net.ErrClosed", iter, err)
+		}
+		select {
+		case err := <-readErr:
+			if !errors.Is(err, io.EOF) {
+				t.Fatalf("iteration %d: Read = %v, want io.EOF", iter, err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("iteration %d: Read did not return within 5s of Close", iter)
+		}
 	}
 }

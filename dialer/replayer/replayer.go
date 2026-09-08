@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/gocql/gocql"
@@ -80,15 +81,16 @@ func NewConnectionReplayer(fname string, comp dialer.SegmentCompressor) (net.Con
 // framing and the request decoder built from it only work as a pair.
 func newConnectionReplayer(frames []*FrameRecorded, proto byte, comp dialer.SegmentCompressor) *ConnectionReplayer {
 	framing := dialer.NewFraming(comp)
-	return &ConnectionReplayer{
+	c := &ConnectionReplayer{
 		frames:            frames,
 		recordedProto:     proto,
 		frameIdsToReplay:  []int{},
 		streamIdsToReplay: []int{},
-		gotRequest:        make(chan struct{}, 1),
 		framing:           framing,
 		requests:          framing.NewDecoder(),
 	}
+	c.ready = sync.NewCond(&c.mu)
+	return c
 }
 
 type ConnectionReplayer struct {
@@ -98,21 +100,15 @@ type ConnectionReplayer struct {
 	// same record on every call and hand the driver an unbounded stream of errors:
 	// identical to read, and distinct as values, one fresh fmt.Errorf per call.
 	//
-	// A plain field rather than an atomic, and read by nothing outside Read. Write runs
-	// on another goroutine and deliberately does not consult it. The recorder gates both
-	// its directions, but it holds its latch in an atomic.Pointer because it had to; this
-	// connection's cross-goroutine state -- frameIdsToReplay, streamIdsToReplay, closed
-	// and the gotRequest handshake around them -- is being replaced wholesale by a mutex
-	// and a sync.Cond in scylladb/gocql#1020, and a fourth shared field here would be one
-	// more thing for that change to unpick. Gating Write would also cost the guarantee
-	// dialer.FrameSplitter.Feed rests on: that this type's Write is the one Feed caller
-	// with no failure gate of its own.
+	// Reader-only, so a plain field outside mu. Write deliberately ignores it:
+	// dialer.FrameSplitter.Feed relies on this Write having no failure gate of its own.
 	//
 	// It leads the struct only to keep the pointer-bearing fields contiguous, which the
 	// fieldalignment vet check requires -- an error is two words of pointers.
 	failed error
 
-	gotRequest        chan struct{}
+	// ready wakes awaitPendingFrame: signalled per queued response, broadcast by Close.
+	ready             *sync.Cond
 	frames            []*FrameRecorded
 	frameIdsToReplay  []int
 	streamIdsToReplay []int
@@ -139,11 +135,17 @@ type ConnectionReplayer struct {
 	// connection has reached, handed out across as many Read calls as it takes.
 	// Materialising it once is what makes the stream id right regardless of how the
 	// caller's buffer is sized.
-	outgoing      []byte
+	outgoing []byte
+	// mu guards the handoff only: the id slices and closed. Every other field is owned
+	// by one direction, immutable (frames, recordedProto), or safe on its own (framing's
+	// atomic latches). It sits after the pointer fields for fieldalignment.
+	mu            sync.Mutex
 	outgoingPos   int
 	frameIdx      int
 	recordedProto byte
-	closed        bool
+	// closed leads awaitPendingFrame's loop, so a queued response is dropped on Close;
+	// one already half served still drains.
+	closed bool
 	// useMetadataID latches once the STARTUP request on this connection opts into
 	// SCYLLA_USE_METADATA_ID, matching how the recorder stamped the frames so live
 	// and load-time hashes agree (see GetFrameHash / Record.UseMetadataID).
@@ -161,11 +163,9 @@ func (c *ConnectionReplayer) fail(err error) error {
 	return c.failed
 }
 
-func (c *ConnectionReplayer) frameStreamID() int {
-	return c.streamIdsToReplay[c.frameIdx]
-}
-
-func (c *ConnectionReplayer) getPendingFrame() *FrameRecorded {
+// pendingFrameLocked returns the recorded response the next request in the queue is
+// waiting on, or nil if the queue has caught up with the reader. The caller holds mu.
+func (c *ConnectionReplayer) pendingFrameLocked() *FrameRecorded {
 	if c.frameIdx < 0 || c.frameIdx >= len(c.frameIdsToReplay) {
 		return nil
 	}
@@ -179,14 +179,16 @@ func (c *ConnectionReplayer) getPendingFrame() *FrameRecorded {
 // A stream id is two bytes at frame[2:4] on every protocol this package reads. It used
 // to be one byte on v1/v2, and both functions below forked on the version to find out
 // -- dialer.FrameSplitter now refuses a connection under v3 before either can see it.
+//
+// pushStreamIDToReplay queues the response at idx for the request in b.
 func (c *ConnectionReplayer) pushStreamIDToReplay(b []byte, idx int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	c.streamIdsToReplay = append(c.streamIdsToReplay, int(b[2])<<8|int(b[3]))
 	c.frameIdsToReplay = append(c.frameIdsToReplay, idx)
 
-	select {
-	case c.gotRequest <- struct{}{}:
-	default:
-	}
+	c.ready.Signal()
 }
 
 // maxRetainedResponse bounds the buffers kept between responses.
@@ -240,15 +242,11 @@ func (c *ConnectionReplayer) Read(b []byte) (n int, err error) {
 			c.outgoing, c.outgoingPos = nil, 0
 		}
 
-		frame := c.getPendingFrame()
-		for frame == nil {
-			<-c.gotRequest
-			frame = c.getPendingFrame()
+		frame, streamID, err := c.awaitPendingFrame()
+		if err != nil {
+			return 0, err
 		}
-		if c.Closed() {
-			return 0, io.EOF
-		}
-		if err := c.materialise(frame); err != nil {
+		if err := c.materialise(frame, streamID); err != nil {
 			return 0, c.fail(err)
 		}
 		c.frameIdx = c.frameIdx + 1
@@ -259,8 +257,26 @@ func (c *ConnectionReplayer) Read(b []byte) (n int, err error) {
 	return n, nil
 }
 
-// materialise prepares the bytes for one recorded response, reading the stream id to
-// patch in from the request that matched it.
+// awaitPendingFrame blocks until a response is queued and returns it with the stream id
+// to patch in, or io.EOF once closed. materialise runs after it, outside mu, so the
+// write path never waits on encoding.
+func (c *ConnectionReplayer) awaitPendingFrame() (*FrameRecorded, int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	for {
+		if c.closed {
+			return nil, 0, io.EOF
+		}
+		if frame := c.pendingFrameLocked(); frame != nil {
+			return frame, c.streamIdsToReplay[c.frameIdx], nil
+		}
+		c.ready.Wait()
+	}
+}
+
+// materialise prepares the bytes for one recorded response, patching in the stream id of
+// the request that matched it.
 //
 // The frame is copied first. FrameRecorded is shared and served once per benchmark
 // iteration, so patching it in place would rewrite the recording's own copy with the
@@ -276,7 +292,7 @@ func (c *ConnectionReplayer) Read(b []byte) (n int, err error) {
 // On failure it leaves nothing servable behind: outgoingPos == len(outgoing), so Read
 // finds the branch it would take anyway rather than a buffer half describing a response
 // that was never encoded.
-func (c *ConnectionReplayer) materialise(frame *FrameRecorded) error {
+func (c *ConnectionReplayer) materialise(frame *FrameRecorded, streamID int) error {
 	// A record that is not one whole frame cannot be served at all, and the driver
 	// cannot be left to reject it. It reads a frame with io.ReadFull twice -- the nine
 	// header bytes, then exactly the body length that header declares -- and this
@@ -293,11 +309,11 @@ func (c *ConnectionReplayer) materialise(frame *FrameRecorded) error {
 	// not decode, but `{"data":null}` decodes fine, and a recording is a file on disk
 	// that can be truncated mid-frame.
 	if !wholeFrame(frame.Response) {
-		return fmt.Errorf("gocql/dialer: recording holds %d bytes for stream %d, which is not one whole CQL frame", len(frame.Response), c.frameStreamID())
+		return fmt.Errorf("gocql/dialer: recording holds %d bytes for stream %d, which is not one whole CQL frame", len(frame.Response), streamID)
 	}
 
 	c.patched = append(c.patched[:0], frame.Response...)
-	replaceFrameStreamID(c.patched, c.frameStreamID())
+	replaceFrameStreamID(c.patched, streamID)
 
 	// Encode before observing. The frame that flips the framing latch -- READY or
 	// AUTHENTICATE -- is itself unsegmented; the switch applies to what comes after
@@ -337,8 +353,14 @@ func (c *ConnectionReplayer) Write(b []byte) (n int, err error) {
 	return len(b), nil
 }
 
-// matchRequest finds the recorded response for one request frame and queues it.
+// matchRequest finds the recorded response for one request frame and queues it. Past
+// Close a request fails with net.ErrClosed, which FrameSplitter.Feed latches; the gate
+// is here, not in Write, because Feed relies on Write having none.
 func (c *ConnectionReplayer) matchRequest(frame []byte) error {
+	if c.Closed() {
+		return net.ErrClosed
+	}
+
 	// A recording holds bare frames, so nothing about it announces which protocol
 	// version produced them; replaying a v5 recording against a v4 driver would
 	// otherwise serve it responses whose version byte it rejects deep inside
@@ -378,13 +400,20 @@ func (c *ConnectionReplayer) matchRequest(frame []byte) error {
 	panic(fmt.Errorf("unable to find a response to replay"))
 }
 
+// Close wakes a parked reader into io.EOF and fails later requests. It is idempotent.
 func (c *ConnectionReplayer) Close() error {
-	close(c.gotRequest)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	c.closed = true
+	c.ready.Broadcast()
 	return nil
 }
 
+// Closed reports whether Close has been called.
 func (c *ConnectionReplayer) Closed() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.closed
 }
 
@@ -401,29 +430,29 @@ func (m *MockAddr) String() string {
 	return m.address
 }
 
-func (c ConnectionReplayer) LocalAddr() net.Addr {
+func (c *ConnectionReplayer) LocalAddr() net.Addr {
 	return &MockAddr{
 		network: "tcp",
 		address: "10.0.0.1:54321",
 	}
 }
 
-func (c ConnectionReplayer) RemoteAddr() net.Addr {
+func (c *ConnectionReplayer) RemoteAddr() net.Addr {
 	return &MockAddr{
 		network: "tcp",
 		address: "192.168.1.100:12345",
 	}
 }
 
-func (c ConnectionReplayer) SetDeadline(t time.Time) error {
+func (c *ConnectionReplayer) SetDeadline(t time.Time) error {
 	return nil
 }
 
-func (c ConnectionReplayer) SetReadDeadline(t time.Time) error {
+func (c *ConnectionReplayer) SetReadDeadline(t time.Time) error {
 	return nil
 }
 
-func (c ConnectionReplayer) SetWriteDeadline(t time.Time) error {
+func (c *ConnectionReplayer) SetWriteDeadline(t time.Time) error {
 	return nil
 }
 
