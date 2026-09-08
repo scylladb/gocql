@@ -24,8 +24,11 @@ package gocql
 import (
 	"encoding/binary"
 	"math"
+	"math/bits"
 	"reflect"
+	"runtime"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -548,4 +551,334 @@ func TestVectorFloat_SpecialValues(t *testing.T) {
 			t.Errorf("expected NaN, got %v", result)
 		}
 	})
+}
+
+// makeVectorType creates a VectorType with the given element type and dimension.
+func makeVectorType(elem Type, elemName string, dim int) VectorType {
+	return VectorType{
+		NativeType: NativeType{
+			proto:  protoVersion4,
+			typ:    TypeCustom,
+			custom: apacheCassandraTypePrefix + "VectorType(" + apacheCassandraTypePrefix + elemName + ", " + strconv.Itoa(dim) + ")",
+		},
+		SubType:    NativeType{proto: protoVersion4, typ: elem},
+		Dimensions: dim,
+	}
+}
+
+// makeNestedVectorType creates a VectorType whose elements are themselves vectors.
+func makeNestedVectorType(inner VectorType, dim int) VectorType {
+	return VectorType{
+		NativeType: NativeType{
+			proto:  protoVersion4,
+			typ:    TypeCustom,
+			custom: apacheCassandraTypePrefix + "VectorType(" + inner.custom + ", " + strconv.Itoa(dim) + ")",
+		},
+		SubType:    inner,
+		Dimensions: dim,
+	}
+}
+
+// TestUnmarshalVectorRejectsUnfittableDimensions covers the dimension count as the
+// peer's number, turned into an allocation before the payload is looked at. The
+// overflow cases are why the bound sits ahead of the float fast paths: 1<<61+1
+// wraps Dimensions*8 to exactly 8. They use the word size so the wrap lands on a
+// 32-bit target too.
+func TestUnmarshalVectorRejectsUnfittableDimensions(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		info VectorType
+		data []byte
+		dst  func() any
+		want string
+	}{
+		{
+			name: "negative dimensions",
+			info: makeFloat32VectorType(-3),
+			data: make([]byte, 4),
+			dst:  func() any { return new([]float32) },
+			want: "negative dimensions",
+		},
+		{
+			name: "negative dimensions into an interface",
+			info: makeFloat32VectorType(-3),
+			data: make([]byte, 4),
+			dst:  func() any { return new(any) },
+			want: "negative dimensions",
+		},
+		{
+			// A null value cannot excuse a vector of -3 elements.
+			name: "negative dimensions with a null value",
+			info: makeFloat32VectorType(-3),
+			data: nil,
+			dst:  func() any { return new([]float32) },
+			want: "negative dimensions",
+		},
+		{
+			name: "dimensions that wrap the float64 length check",
+			info: makeDoubleVectorType(1<<(bits.UintSize-3) + 1),
+			data: make([]byte, 8),
+			dst:  func() any { return new([]float64) },
+			want: "do not fit in 8 bytes",
+		},
+		{
+			name: "dimensions that wrap the float32 length check",
+			info: makeFloat32VectorType(1<<(bits.UintSize-2) + 1),
+			data: make([]byte, 4),
+			dst:  func() any { return new([]float32) },
+			want: "do not fit in 4 bytes",
+		},
+		{
+			// Rejected on the count, so nothing is ever handed to the allocator.
+			name: "more dimensions than the address space",
+			info: makeVectorType(TypeInt, "Int32Type", 1<<(bits.UintSize-2)),
+			data: make([]byte, 4),
+			dst:  func() any { return new([]int32) },
+			want: "do not fit in 4 bytes",
+		},
+		{
+			name: "short payload into a slice",
+			info: makeVectorType(TypeInt, "Int32Type", 3),
+			data: []byte{0x01, 0x02},
+			dst:  func() any { return new([]int32) },
+			want: "do not fit in 2 bytes",
+		},
+		{
+			// An array allocates nothing, but the loop derives its element size
+			// from len(data)/Dimensions, so a short payload decoded as zeroes.
+			name: "short payload into an array",
+			info: makeVectorType(TypeInt, "Int32Type", 3),
+			data: []byte{0x01, 0x02},
+			dst:  func() any { return new([3]int32) },
+			want: "do not fit in 2 bytes",
+		},
+		{
+			// A nested element has no fixed size of its own, so a one-byte floor
+			// let a count the payload cannot hold reach reflect.MakeSlice. The
+			// outer byte count is what pins the rejection to this bound: the
+			// inner decoder reaches the same verdict, but only after allocating.
+			name: "nested fixed vector beyond the payload",
+			info: makeNestedVectorType(makeVectorType(TypeFloat, "FloatType", 3), 3),
+			data: make([]byte, 24),
+			dst:  func() any { return new([][]float32) },
+			want: "3 dimensions do not fit in 24 bytes",
+		},
+		{
+			name: "nested variable-length vector beyond the payload",
+			info: makeNestedVectorType(makeVectorType(TypeText, "UTF8Type", 3), 3),
+			data: make([]byte, 8),
+			dst:  func() any { return new([][]string) },
+			want: "3 dimensions do not fit in 8 bytes",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := unmarshalVector(test.info, test.data, test.dst())
+			if err == nil {
+				t.Fatalf("unmarshalVector(dim=%d, %d bytes) returned no error", test.info.Dimensions, len(test.data))
+			}
+			if !strings.Contains(err.Error(), test.want) {
+				t.Errorf("unmarshalVector(dim=%d) error = %q, want it to contain %q", test.info.Dimensions, err, test.want)
+			}
+		})
+	}
+}
+
+// TestUnmarshalVectorAcceptsWellFormedPayloads pins the bound as non-narrowing: a
+// vector of N elements is never encoded in fewer than N bytes, so each of these
+// sits on or above the boundary.
+func TestUnmarshalVectorAcceptsWellFormedPayloads(t *testing.T) {
+	t.Parallel()
+
+	t.Run("float vector at the exact size", func(t *testing.T) {
+		t.Parallel()
+
+		var dst []float32
+		if err := unmarshalVector(makeFloat32VectorType(3), make([]byte, 12), &dst); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(dst) != 3 {
+			t.Errorf("len = %d, want 3", len(dst))
+		}
+	})
+
+	t.Run("text vector of empty elements", func(t *testing.T) {
+		t.Parallel()
+
+		// Three elements, each a vint length of zero: the smallest payload a
+		// three-dimension vector can have.
+		var dst []string
+		if err := unmarshalVector(makeVectorType(TypeText, "UTF8Type", 3), []byte{0x00, 0x00, 0x00}, &dst); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !reflect.DeepEqual(dst, []string{"", "", ""}) {
+			t.Errorf("dst = %q, want three empty strings", dst)
+		}
+	})
+
+	t.Run("payload with a trailing byte", func(t *testing.T) {
+		t.Parallel()
+
+		var dst []int32
+		if err := unmarshalVector(makeVectorType(TypeInt, "Int32Type", 3), make([]byte, 13), &dst); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(dst) != 3 {
+			t.Errorf("len = %d, want 3", len(dst))
+		}
+	})
+
+	t.Run("null value", func(t *testing.T) {
+		t.Parallel()
+
+		var dst []float32
+		if err := unmarshalVector(makeFloat32VectorType(3), nil, &dst); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if dst != nil {
+			t.Errorf("dst = %v, want nil", dst)
+		}
+	})
+
+	t.Run("nested fixed vector at the exact size", func(t *testing.T) {
+		t.Parallel()
+
+		want := [][]float32{{1, 2, 3}, {4, 5, 6}}
+		info := makeNestedVectorType(makeVectorType(TypeFloat, "FloatType", 3), 2)
+		data, err := Marshal(info, want)
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		if len(data) != 24 {
+			t.Fatalf("encoded %d bytes, want the 24 the bound calls the minimum", len(data))
+		}
+		var dst [][]float32
+		if err := unmarshalVector(info, data, &dst); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !reflect.DeepEqual(dst, want) {
+			t.Errorf("dst = %v, want %v", dst, want)
+		}
+	})
+
+	t.Run("nested variable-length vector at the exact size", func(t *testing.T) {
+		t.Parallel()
+
+		// Each inner vector is a vint length followed by three vint lengths of
+		// zero: eight bytes, the smallest this shape can be.
+		want := [][]string{{"", "", ""}, {"", "", ""}}
+		info := makeNestedVectorType(makeVectorType(TypeText, "UTF8Type", 3), 2)
+		data, err := Marshal(info, want)
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		if len(data) != 8 {
+			t.Fatalf("encoded %d bytes, want the 8 the bound calls the minimum", len(data))
+		}
+		var dst [][]string
+		if err := unmarshalVector(info, data, &dst); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !reflect.DeepEqual(dst, want) {
+			t.Errorf("dst = %v, want %v", dst, want)
+		}
+	})
+}
+
+// TestVectorElemMinSize covers the floor the dimension bound divides by. The
+// nested rows are the ones vectorFixedElemSize cannot answer: a vector carries no
+// fixed size of its own, and its element's floor includes the length prefix the
+// outer vector writes for a variable-length element.
+func TestVectorElemMinSize(t *testing.T) {
+	t.Parallel()
+
+	native := func(typ Type) NativeType { return NativeType{proto: protoVersion4, typ: typ} }
+
+	tests := []struct {
+		name string
+		elem TypeInfo
+		want int
+	}{
+		{"float", native(TypeFloat), 4},
+		{"uuid", native(TypeUUID), 16},
+		{"text", native(TypeText), 1},
+		{"vector<float,3>", makeVectorType(TypeFloat, "FloatType", 3), 12},
+		{"vector<text,3>", makeVectorType(TypeText, "UTF8Type", 3), 4},
+		{"vector<vector<float,3>,4>", makeNestedVectorType(makeVectorType(TypeFloat, "FloatType", 3), 4), 48},
+		// Neither can describe an element in zero bytes, and the caller divides.
+		{"vector<float,0>", makeVectorType(TypeFloat, "FloatType", 0), 1},
+		{"vector<float,-3>", makeVectorType(TypeFloat, "FloatType", -3), 1},
+		{"unknown custom", NewCustomType(protoVersion4, TypeCustom, "FooType"), 1},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := vectorElemMinSize(test.elem); got != test.want {
+				t.Errorf("vectorElemMinSize(%s) = %d, want %d", test.name, got, test.want)
+			}
+		})
+	}
+}
+
+// TestUnmarshalVectorRejectsNestedCountBeforeAllocating pins where the rejection
+// happens, not just that it happens. The error alone proves nothing: a one-byte
+// floor reaches the same error, after reflect.MakeSlice has taken the peer's whole
+// count -- one slice header per claimed element, 25 MB for the megabyte below.
+//
+// Not parallel: TotalAlloc is the process's, and a parallel sibling would pollute it.
+func TestUnmarshalVectorRejectsNestedCountBeforeAllocating(t *testing.T) {
+	const payload = 1 << 20
+
+	info := makeNestedVectorType(makeVectorType(TypeFloat, "FloatType", 3), payload)
+	data := make([]byte, payload)
+	var dst [][]float32
+
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	err := unmarshalVector(info, data, &dst)
+	runtime.ReadMemStats(&after)
+
+	if err == nil || !strings.Contains(err.Error(), "do not fit in") {
+		t.Fatalf("expected the count to be rejected on the bound, got %v", err)
+	}
+	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > payload/8 {
+		t.Errorf("rejecting %d claimed elements allocated %d bytes, want well under %d",
+			info.Dimensions, allocated, payload/8)
+	}
+}
+
+// VectorType, SubType and Dimensions are all exported, so a caller of Unmarshal can
+// hand us a zero VectorType. Nothing allocates at zero dimensions, so the dimension
+// bound must not run there -- it would dereference the nil SubType and panic on the
+// very goroutine the bound exists to keep alive.
+func TestUnmarshalVectorZeroDimensionsDoesNotTouchSubType(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name string
+		data []byte
+	}{
+		{name: "empty payload", data: []byte{}},
+		{name: "nil payload", data: nil},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			var dst []float64
+			if err := unmarshalVector(VectorType{}, test.data, &dst); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(dst) != 0 {
+				t.Errorf("decoded %#v, want an empty slice", dst)
+			}
+		})
+	}
 }

@@ -983,6 +983,25 @@ func unmarshalVectorFloat32(data []byte, vec []float32) {
 }
 
 func unmarshalVector(info VectorType, data []byte, value any) error {
+	// Dimensions is the peer's number, and every path below turns it into an
+	// allocation (make, reflect.MakeSlice) on Scan's goroutine, where nothing
+	// recovers. The fast paths' len(data) == Dimensions*8 check can be satisfied by
+	// a count whose product wraps, so the bound goes ahead of them -- which also
+	// makes that multiplication safe. elemMin is the fewest bytes an element can
+	// occupy, so it bounds the count; unmarshalList does the same.
+	if info.Dimensions < 0 {
+		return unmarshalErrorf("unmarshal vector: negative dimensions %d", info.Dimensions)
+	}
+	// Nothing allocates at zero dimensions, so the bound has nothing to do -- and
+	// vectorElemMinSize would dereference a SubType a caller of Unmarshal is free to
+	// leave nil, turning this guard into the panic it exists to prevent.
+	if info.Dimensions > 0 && data != nil {
+		elemMin := vectorElemMinSize(info.SubType)
+		if info.Dimensions > len(data)/elemMin {
+			return unmarshalErrorf("unmarshal vector: %d dimensions do not fit in %d bytes", info.Dimensions, len(data))
+		}
+	}
+
 	// Fast paths for *[]float64/*[]float32 — skip reflect/per-element dispatch.
 	// nil/empty and dim=0 fall through to the generic path.
 	if info.Dimensions > 0 && data != nil {
@@ -1092,6 +1111,32 @@ func unmarshalVector(info VectorType, data []byte, value any) error {
 		return nil
 	}
 	return unmarshalErrorf("can not unmarshal %s into %T. Accepted types: *slice, *array, *any.", info, value)
+}
+
+// vectorElemMinSize is the fewest bytes one element of elemType occupies inside a
+// vector, including the length prefix a variable-length element carries. A nested
+// vector has no fixed size of its own, so without the recursion the caller's bound
+// falls back to one byte per element for the types whose real minimum is largest.
+func vectorElemMinSize(elemType TypeInfo) int {
+	if fixed := vectorFixedElemSize(elemType); fixed > 0 {
+		return fixed
+	}
+	size := int64(0)
+	if isVectorVariableLengthType(elemType) {
+		size = 1 // the vint length of an empty element
+	}
+	// Dimensions is the peer's number at every level, so saturate rather than wrap.
+	if vec, ok := elemType.(VectorType); ok && vec.Dimensions > 0 {
+		per := int64(vectorElemMinSize(vec.SubType))
+		if int64(vec.Dimensions) > (math.MaxInt32-size)/per {
+			return math.MaxInt32
+		}
+		size += int64(vec.Dimensions) * per
+	}
+	if size < 1 {
+		return 1 // a zero-dimension inner vector would divide by zero
+	}
+	return int(size)
 }
 
 func vectorFixedElemSize(elemType TypeInfo) int {
