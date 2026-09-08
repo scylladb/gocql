@@ -863,23 +863,54 @@ func (f *framer) readTypeInfo() TypeInfo {
 	case TypeCustom:
 		vectorTypePrefix := apacheCassandraTypePrefix + "VectorType"
 		if strings.HasPrefix(simple.custom, vectorTypePrefix) {
-			spec := strings.TrimPrefix(simple.custom, vectorTypePrefix)
-			spec = spec[1 : len(spec)-1] // remove parenthesis
-			idx := strings.LastIndex(spec, ",")
-			typeStr := spec[:idx]
-			dimStr := spec[idx+1:]
-			subType := getCassandraLongType(strings.TrimSpace(typeStr), f.proto, nopLogger{})
-			dim, _ := strconv.Atoi(strings.TrimSpace(dimStr))
-			vector := VectorType{
-				NativeType: simple,
-				SubType:    subType,
-				Dimensions: dim,
-			}
-			return vector
+			return f.readVectorTypeInfo(simple, vectorTypePrefix)
 		}
 	}
 
 	return simple
+}
+
+// readVectorTypeInfo resolves a custom type named "<prefix>(<subtype>, <dimensions>)".
+// Every part is checked before it is sliced: an unchecked index raises a
+// runtime.Error, which parseFrame's recover re-panics by design. A name that only
+// starts with the prefix is not a vector and degrades to the plain custom type.
+func (f *framer) readVectorTypeInfo(simple NativeType, vectorTypePrefix string) TypeInfo {
+	rest := simple.custom[len(vectorTypePrefix):]
+	switch {
+	case rest == "":
+		panic(fmt.Errorf("invalid vector type %q: expected %s(<type>, <dimensions>)", simple.custom, vectorTypePrefix))
+	case rest[0] != '(':
+		// Not a vector: a different type that shares the prefix.
+		return simple
+	case rest[len(rest)-1] != ')':
+		panic(fmt.Errorf("invalid vector type %q: unterminated argument list", simple.custom))
+	}
+
+	// The dimensions are the last argument, so the last comma separates them from
+	// a subtype that may itself be parenthesised and hold commas of its own.
+	spec := rest[1 : len(rest)-1]
+	idx := strings.LastIndex(spec, ",")
+	if idx < 0 {
+		panic(fmt.Errorf("invalid vector type %q: missing dimensions", simple.custom))
+	}
+
+	typeStr := strings.TrimSpace(spec[:idx])
+	if typeStr == "" {
+		panic(fmt.Errorf("invalid vector type %q: missing element type", simple.custom))
+	}
+
+	// Cassandra requires a positive dimension, and a negative one reaches
+	// reflect.MakeSlice in unmarshalVector, outside any recover.
+	dim, err := strconv.Atoi(strings.TrimSpace(spec[idx+1:]))
+	if err != nil || dim < 1 {
+		panic(fmt.Errorf("invalid vector type %q: dimensions must be a positive integer", simple.custom))
+	}
+
+	return VectorType{
+		NativeType: simple,
+		SubType:    getCassandraLongType(typeStr, f.proto, nopLogger{}),
+		Dimensions: dim,
+	}
 }
 
 type preparedMetadata struct {
