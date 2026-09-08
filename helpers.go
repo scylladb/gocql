@@ -240,10 +240,20 @@ func getCassandraLongType(name string, protoVer byte, logger StdLogger) TypeInfo
 		}
 	} else if strings.HasPrefix(name, prefix+"UserType") {
 		names := splitJavaCompositeTypes(name, prefix+"UserType")
+		// Keyspace and type name come first; without both, make() below is handed a
+		// negative length, which panics with a runtime error rather than returning.
+		if len(names) < 2 {
+			logger.Printf("gocql: error parsing udt type, it has %d subelements, expecting at least 2\n", len(names))
+			return NewNativeType(protoVer, TypeCustom)
+		}
 		fields := make([]UDTField, len(names)-2)
 
 		for i := 2; i < len(names); i++ {
 			spec := strings.Split(names[i], ":")
+			if len(spec) < 2 {
+				logger.Printf("gocql: error parsing udt field %q, expecting <name>:<type>\n", names[i])
+				return NewNativeType(protoVer, TypeCustom)
+			}
 			fieldName, _ := hex.DecodeString(spec[0])
 			fields[i-2] = UDTField{
 				Name: string(fieldName),
@@ -260,6 +270,12 @@ func getCassandraLongType(name string, protoVer byte, logger StdLogger) TypeInfo
 		}
 	} else if strings.HasPrefix(name, prefix+"VectorType") {
 		names := splitJavaCompositeTypes(name, prefix+"VectorType")
+		// Like the MapType arm above: without the element type and the dimensions,
+		// indexing names below raises a runtime error instead of returning one.
+		if len(names) != 2 {
+			logger.Printf("gocql: error parsing vector type, it has %d subelements, expecting 2\n", len(names))
+			return NewNativeType(protoVer, TypeCustom)
+		}
 		subType := getCassandraLongType(strings.TrimSpace(names[0]), protoVer, logger)
 		dim, err := strconv.Atoi(strings.TrimSpace(names[1]))
 		if err != nil {
