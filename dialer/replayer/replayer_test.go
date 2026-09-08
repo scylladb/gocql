@@ -6,10 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gocql/gocql/dialer"
 )
@@ -667,13 +670,12 @@ func TestMaterialiseLeavesNothingServableWhenEncodingFails(t *testing.T) {
 
 			// The state materialise is entered in: a previous response, served and
 			// drained, whose buffer is the one the next encode is handed.
-			c.streamIdsToReplay = []int{0x0007}
 			c.outgoing = make([]byte, previous, 4096)
 			c.outgoingPos = previous
 
 			response := responseFrame(0x0040, 32)
 			response[0] = 0x85 // the connection is v5; a v4 frame here would be a lie
-			if err := c.materialise(&FrameRecorded{Response: response}); err == nil {
+			if err := c.materialise(&FrameRecorded{Response: response}, 0x0007); err == nil {
 				t.Fatal("a response the framing cannot encode was materialised")
 			}
 
@@ -685,5 +687,175 @@ func TestMaterialiseLeavesNothingServableWhenEncodingFails(t *testing.T) {
 					c.outgoingPos, len(c.outgoing))
 			}
 		})
+	}
+}
+
+// TestConnectionReplayerCloseWakesABlockedRead pins that closing a connection whose
+// reader is parked waiting for the next request ends that Read.
+//
+// This is the ordinary teardown order: the driver's serve goroutine sits in Read until
+// the connection is torn down. Close used to close the channel the wait loop received
+// from, after which every receive returned at once while no frame was pending -- the loop
+// spun at 100% CPU and never reached the io.EOF below it, pinning a core and leaking a
+// goroutine per closed replay connection. So the assertion is that Read returns at all;
+// a spinning one never does.
+func TestConnectionReplayerCloseWakesABlockedRead(t *testing.T) {
+	req := requestFrame(0x05, 1)
+	c := newTestReplayer(0x04, &FrameRecorded{
+		Response: responseFrame(0x0001, 8),
+		Hash:     dialer.GetFrameHash(req, false),
+	})
+
+	type readResult struct {
+		n   int
+		err error
+	}
+	done := make(chan readResult, 1)
+	go func() {
+		n, err := c.Read(make([]byte, 64))
+		done <- readResult{n: n, err: err}
+	}()
+
+	// Give the reader time to reach the wait, so this exercises the wake rather than the
+	// closed check on the way in. It is not what makes the test valid: both orderings
+	// hang on the old code, because a Read entered after Close spun on the closed channel
+	// just the same.
+	time.Sleep(50 * time.Millisecond)
+
+	if err := c.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	select {
+	case got := <-done:
+		if !errors.Is(got.err, io.EOF) {
+			t.Errorf("Read after Close = %v, want io.EOF", got.err)
+		}
+		if got.n != 0 {
+			t.Errorf("Read after Close served %d bytes, want 0", got.n)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Read did not return within 5s of Close; it is spinning on the wait loop")
+	}
+}
+
+// TestConnectionReplayerCloseIsIdempotent pins that closing twice is not a crash.
+//
+// An explicit Close alongside a deferred one is ordinary net.Conn usage. Close used to end
+// with close(c.gotRequest), so the second call panicked with "close of closed channel" and
+// took the process with it.
+func TestConnectionReplayerCloseIsIdempotent(t *testing.T) {
+	c := newTestReplayer(0x04, &FrameRecorded{Response: responseFrame(0x0001, 8)})
+
+	if err := c.Close(); err != nil {
+		t.Fatalf("first Close: %v", err)
+	}
+	if err := c.Close(); err != nil {
+		t.Fatalf("second Close: %v", err)
+	}
+}
+
+// TestConnectionReplayerWriteAfterCloseFailsTheConnection pins that a write past Close
+// fails that connection rather than the process.
+//
+// The queueing used to be a non-blocking send, and a select with a default does not
+// protect a send on a closed channel: the send case is ready on one, so it is chosen and
+// panics. A heartbeat or a query arriving as the connection is torn down took down the
+// whole benchmark run.
+func TestConnectionReplayerWriteAfterCloseFailsTheConnection(t *testing.T) {
+	req := requestFrame(0x05, 1)
+	c := newTestReplayer(0x04, &FrameRecorded{
+		Response: responseFrame(0x0001, 8),
+		Hash:     dialer.GetFrameHash(req, false),
+	})
+
+	if err := c.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	if _, err := c.Write(req); !errors.Is(err, net.ErrClosed) {
+		t.Fatalf("Write after Close = %v, want net.ErrClosed", err)
+	}
+
+	// dialer.FrameSplitter.Feed latches whatever the emit callback returned and reports it
+	// from every later call, so the connection stays failed rather than taking the next
+	// request as if nothing had happened.
+	if _, err := c.Write(req); !errors.Is(err, net.ErrClosed) {
+		t.Errorf("second Write after Close = %v, want the latched net.ErrClosed", err)
+	}
+}
+
+// TestConnectionReplayerConcurrentPipelinedReplay drives the request handoff from two
+// goroutines at once and pins that every response comes back, in order, with the stream id
+// of the request that asked for it.
+//
+// One writer and one reader, which is exactly what the driver gives this connection: Conn
+// serialises writes behind a cap-1 semaphore, or funnels them through the coalescer's
+// single flush goroutine, and reads from the one serve() loop. A second goroutine on
+// either side would race on state this connection deliberately leaves unguarded -- the
+// request decoder, the outgoing buffer -- and would be testing something the driver cannot
+// do.
+//
+// Under -race this is the regression test for the handoff itself: the id slices used to be
+// appended by the writer and indexed by the reader with no happens-before edge between
+// them, because the cap-1 token carrying it was dropped whenever the reader was more than
+// one request behind.
+func TestConnectionReplayerConcurrentPipelinedReplay(t *testing.T) {
+	const (
+		requests    = 200
+		bodyLen     = 8
+		responseLen = dialer.FrameHeaderLen + bodyLen
+	)
+
+	// A distinct opcode per request: GetFrameHash blanks the stream id before hashing, so
+	// that is what tells two of these apart and pairs each with its own response.
+	reqs := make([][]byte, requests)
+	frames := make([]*FrameRecorded, requests)
+	for i := range reqs {
+		reqs[i] = requestFrame(byte(i), i)
+		frames[i] = &FrameRecorded{
+			Response: responseFrame(i, bodyLen),
+			Hash:     dialer.GetFrameHash(reqs[i], false),
+		}
+	}
+	c := newTestReplayer(0x04, frames...)
+
+	writeErr := make(chan error, 1)
+	go func() {
+		for _, req := range reqs {
+			if _, err := c.Write(req); err != nil {
+				writeErr <- err
+				return
+			}
+		}
+		writeErr <- nil
+	}()
+
+	// Read on the test goroutine, with a buffer smaller than one response, so each is
+	// served across several calls and the reader keeps re-entering the handoff while the
+	// writer is still appending to it.
+	got := make([]byte, 0, requests*responseLen)
+	buf := make([]byte, 7)
+	for len(got) < requests*responseLen {
+		n, err := c.Read(buf)
+		if err != nil {
+			t.Fatalf("Read after %d of %d bytes: %v", len(got), requests*responseLen, err)
+		}
+		got = append(got, buf[:n]...)
+	}
+
+	if err := <-writeErr; err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	for i := range reqs {
+		frame := got[i*responseLen : (i+1)*responseLen]
+		if stream := int(frame[2])<<8 | int(frame[3]); stream != i {
+			t.Fatalf("response %d carries stream id %d, want %d", i, stream, i)
+		}
+	}
+
+	if err := c.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
 	}
 }
