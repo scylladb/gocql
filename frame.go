@@ -868,23 +868,66 @@ func (f *framer) readTypeInfo() TypeInfo {
 	case TypeCustom:
 		vectorTypePrefix := apacheCassandraTypePrefix + "VectorType"
 		if strings.HasPrefix(simple.custom, vectorTypePrefix) {
-			spec := strings.TrimPrefix(simple.custom, vectorTypePrefix)
-			spec = spec[1 : len(spec)-1] // remove parenthesis
-			idx := strings.LastIndex(spec, ",")
-			typeStr := spec[:idx]
-			dimStr := spec[idx+1:]
-			subType := getCassandraLongType(strings.TrimSpace(typeStr), f.proto, nopLogger{})
-			dim, _ := strconv.Atoi(strings.TrimSpace(dimStr))
-			vector := VectorType{
-				NativeType: simple,
-				SubType:    subType,
-				Dimensions: dim,
-			}
-			return vector
+			return f.readVectorTypeInfo(simple, vectorTypePrefix)
 		}
 	}
 
 	return simple
+}
+
+// readVectorTypeInfo resolves a custom type whose name starts with VectorType.
+// The spec the server sends is "<prefix>(<subtype>, <dimensions>)", and every
+// part of it has to be checked before it is sliced: the argument list can be
+// missing entirely, unterminated, or carry no dimensions, and each of those made
+// the old code index past the end of the string. That raises a runtime.Error,
+// which parseFrame's recover re-panics by design (see the comment there), so a
+// malformed column type took the serve goroutine down rather than the query.
+// Panicking with a plain error instead keeps it inside the convention readByte's
+// comment records: parseFrame turns it into a returned protocol error.
+//
+// A name that only starts with the prefix -- some later "VectorTypeXxx" -- is
+// not a vector at all. It falls back to the plain custom type it already was,
+// because failing the frame over an unknown column type the driver was never
+// asked to understand would be a new way to break a working query.
+func (f *framer) readVectorTypeInfo(simple NativeType, vectorTypePrefix string) TypeInfo {
+	rest := simple.custom[len(vectorTypePrefix):]
+	switch {
+	case rest == "":
+		panic(fmt.Errorf("invalid vector type %q: expected %s(<type>, <dimensions>)", simple.custom, vectorTypePrefix))
+	case rest[0] != '(':
+		// Not a vector: a different type that shares the prefix.
+		return simple
+	case rest[len(rest)-1] != ')':
+		panic(fmt.Errorf("invalid vector type %q: unterminated argument list", simple.custom))
+	}
+
+	// The dimensions are the last argument, so the last comma separates them from
+	// a subtype that may itself be parenthesised and hold commas of its own.
+	spec := rest[1 : len(rest)-1]
+	idx := strings.LastIndex(spec, ",")
+	if idx < 0 {
+		panic(fmt.Errorf("invalid vector type %q: missing dimensions", simple.custom))
+	}
+
+	typeStr := strings.TrimSpace(spec[:idx])
+	if typeStr == "" {
+		panic(fmt.Errorf("invalid vector type %q: missing element type", simple.custom))
+	}
+
+	// Cassandra's VectorType requires a positive dimension, so neither a zero nor
+	// a negative one can describe a real column. A negative one also reaches
+	// reflect.MakeSlice in unmarshalVector, on the caller's goroutine and outside
+	// any recover.
+	dim, err := strconv.Atoi(strings.TrimSpace(spec[idx+1:]))
+	if err != nil || dim < 1 {
+		panic(fmt.Errorf("invalid vector type %q: dimensions must be a positive integer", simple.custom))
+	}
+
+	return VectorType{
+		NativeType: simple,
+		SubType:    getCassandraLongType(typeStr, f.proto, nopLogger{}),
+		Dimensions: dim,
+	}
 }
 
 type preparedMetadata struct {

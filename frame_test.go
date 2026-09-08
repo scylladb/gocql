@@ -1583,3 +1583,108 @@ func TestGetQueryValuesOversize(t *testing.T) {
 	// Should not panic when returning oversize.
 	putQueryValues(s)
 }
+
+// writeRowsResultWithColumnType builds a RESULT/Rows body carrying a single
+// column of the custom type customType, so that parseFrame drives readTypeInfo
+// over a server-supplied type string.
+func writeRowsResultWithColumnType(fr *framer, customType string) {
+	fr.writeInt(frm.ResultKindRows)
+	fr.writeInt(int32(frm.FlagGlobalTableSpec))
+	fr.writeInt(1) // colCount
+	fr.writeString("gocql_test")
+	fr.writeString("vectors")
+	fr.writeString("vec")
+	fr.writeShort(uint16(TypeCustom))
+	fr.writeString(customType)
+	fr.writeInt(0) // numRows
+}
+
+// TestParseResultRowsRejectsMalformedVectorType verifies that a RESULT/Rows
+// column typed as a malformed VectorType is reported as an error rather than
+// killing the serve goroutine. readTypeInfo used to slice the spec string
+// unchecked: a bare "…VectorType" made spec[1:len(spec)-1] a [1:-1] slice, and
+// a spec with no comma made spec[:idx] a [:-1] one. Both raise a runtime.Error,
+// which parseFrame's recover re-panics by design.
+//
+// The well-formed cases are here to pin that the guard did not narrow the
+// accepted grammar, and the "VectorTypeXxx" case that a name which merely
+// starts with the prefix is not a vector at all and must degrade to an opaque
+// custom type instead of failing the frame.
+func TestParseResultRowsRejectsMalformedVectorType(t *testing.T) {
+	t.Parallel()
+
+	const p = apacheCassandraTypePrefix
+	const vp = p + "VectorType"
+
+	tests := []struct {
+		name    string
+		custom  string
+		wantErr bool
+		want    TypeInfo
+	}{
+		{name: "no argument list", custom: vp, wantErr: true},
+		{name: "unclosed argument list", custom: vp + "(", wantErr: true},
+		{name: "empty argument list", custom: vp + "()", wantErr: true},
+		{name: "no dimensions", custom: vp + "(" + p + "FloatType)", wantErr: true},
+		{name: "empty subtype", custom: vp + "(, 3)", wantErr: true},
+		{name: "unterminated", custom: vp + "(" + p + "FloatType, 3", wantErr: true},
+		{name: "dimensions not a number", custom: vp + "(" + p + "FloatType, abc)", wantErr: true},
+		{name: "negative dimensions", custom: vp + "(" + p + "FloatType, -3)", wantErr: true},
+		{name: "zero dimensions", custom: vp + "(" + p + "FloatType, 0)", wantErr: true},
+		{
+			name:   "not a vector type",
+			custom: vp + "Xxx(" + p + "FloatType, 3)",
+			want:   NewCustomType(protoVersion4, TypeCustom, vp+"Xxx("+p+"FloatType, 3)"),
+		},
+		{
+			name:   "float vector",
+			custom: vp + "(" + p + "FloatType, 3)",
+			want: VectorType{
+				NativeType: NewCustomType(protoVersion4, TypeCustom, vp+"("+p+"FloatType, 3)"),
+				SubType:    NewNativeType(protoVersion4, TypeFloat),
+				Dimensions: 3,
+			},
+		},
+		{
+			name:   "nested vector",
+			custom: vp + "(" + vp + "(" + p + "InetAddressType, 2), 3)",
+			want: VectorType{
+				NativeType: NewCustomType(protoVersion4, TypeCustom, vp+"("+vp+"("+p+"InetAddressType, 2), 3)"),
+				SubType: VectorType{
+					NativeType: NewCustomType(protoVersion4, TypeCustom, vp),
+					SubType:    NewNativeType(protoVersion4, TypeInet),
+					Dimensions: 2,
+				},
+				Dimensions: 3,
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			fr := newFramer(nil, protoVersion4)
+			// Response direction bit set so parseFrame does not reject it as a request.
+			fr.header = &frm.FrameHeader{Version: protoVersion4 | 0x80, Op: frm.OpResult}
+			writeRowsResultWithColumnType(fr, test.custom)
+
+			frame, err := fr.parseFrame()
+			if test.wantErr {
+				if err == nil {
+					t.Fatalf("expected an error for %q, got frame %+v", test.custom, frame)
+				}
+				if frame != nil {
+					t.Errorf("expected nil frame on error, got %+v", frame)
+				}
+				return
+			}
+
+			require.NoError(t, err)
+			rows, ok := frame.(*resultRowsFrame)
+			require.True(t, ok, "expected a resultRowsFrame, got %T", frame)
+			require.Len(t, rows.meta.columns, 1)
+			require.Equal(t, test.want, rows.meta.columns[0].TypeInfo)
+		})
+	}
+}
