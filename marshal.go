@@ -983,6 +983,32 @@ func unmarshalVectorFloat32(data []byte, vec []float32) {
 }
 
 func unmarshalVector(info VectorType, data []byte, value any) error {
+	// The dimension count arrives inside the column type, so it is the peer's
+	// number, and every path below turns it into an allocation: the fast paths
+	// hand it to make(), the generic path to reflect.MakeSlice. A negative count
+	// panics there, and the fast paths' len(data) == Dimensions*8 check can be
+	// satisfied by a count large enough for that product to wrap, so the bound
+	// belongs ahead of all of them -- and once it is there, the multiplication
+	// can no longer overflow. Nothing recovers a panic raised here: it is on the
+	// goroutine that called Scan, not inside parseFrame.
+	//
+	// Every element occupies at least one byte on the wire, a fixed-size one at
+	// least its own width and a variable-length one the vint prefix carrying its
+	// length, so a count the buffer cannot hold is not a short read to be found
+	// element by element. unmarshalList bounds its element count the same way.
+	if info.Dimensions < 0 {
+		return unmarshalErrorf("unmarshal vector: negative dimensions %d", info.Dimensions)
+	}
+	if data != nil {
+		elemMin := 1
+		if fixed := vectorFixedElemSize(info.SubType); fixed > 0 {
+			elemMin = fixed
+		}
+		if info.Dimensions > len(data)/elemMin {
+			return unmarshalErrorf("unmarshal vector: %d dimensions do not fit in %d bytes", info.Dimensions, len(data))
+		}
+	}
+
 	// Fast paths for *[]float64/*[]float32 — skip reflect/per-element dispatch.
 	// nil/empty and dim=0 fall through to the generic path.
 	if info.Dimensions > 0 && data != nil {
