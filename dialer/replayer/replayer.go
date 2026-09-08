@@ -73,6 +73,19 @@ func NewConnectionReplayer(fname string, comp dialer.SegmentCompressor) (net.Con
 	if len(frames) == 0 {
 		return nil, fmt.Errorf("gocql/dialer: %sReads and %sWrites pair no requests with responses; there is nothing to replay", fname, fname)
 	}
+	return newConnectionReplayer(frames, proto, comp), nil
+}
+
+// newConnectionReplayer wires the fields that only mean anything as a set: the framing
+// state and the request decoder built from it, and the request handoff between the
+// reader and the writer.
+//
+// Every replayer is built here -- NewConnectionReplayer for one backed by a recording on
+// disk, newTestReplayer for one built from frames already in memory. The literal used to
+// be written out in both places, and the copy in the test file carried a comment calling
+// that a trap: a replayer missing either half of the framing pair panics on its first
+// write, and nothing about the literal says so.
+func newConnectionReplayer(frames []*FrameRecorded, proto byte, comp dialer.SegmentCompressor) *ConnectionReplayer {
 	framing := dialer.NewFraming(comp)
 	return &ConnectionReplayer{
 		frames:            frames,
@@ -82,7 +95,7 @@ func NewConnectionReplayer(fname string, comp dialer.SegmentCompressor) (net.Con
 		gotRequest:        make(chan struct{}, 1),
 		framing:           framing,
 		requests:          framing.NewDecoder(),
-	}, nil
+	}
 }
 
 type ConnectionReplayer struct {
