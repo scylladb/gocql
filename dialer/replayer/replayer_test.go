@@ -29,25 +29,15 @@ func requestFrame(opcode byte, streamID int) []byte {
 }
 
 // newTestReplayer builds a ConnectionReplayer the way NewConnectionReplayer does,
-// without going through a file on disk. Constructing the literal directly is a trap:
-// the request decoder and the framing state come as a pair, and a replayer missing
-// either panics on the first write.
+// without going through a file on disk -- the same constructor, so a test connection
+// cannot drift from a real one.
 func newTestReplayer(proto byte, frames ...*FrameRecorded) *ConnectionReplayer {
 	return newTestReplayerWith(nil, proto, frames...)
 }
 
 // newTestReplayerWith is the same for a connection given a segment compressor.
 func newTestReplayerWith(comp dialer.SegmentCompressor, proto byte, frames ...*FrameRecorded) *ConnectionReplayer {
-	framing := dialer.NewFraming(comp)
-	return &ConnectionReplayer{
-		gotRequest:        make(chan struct{}, 1),
-		frames:            frames,
-		frameIdsToReplay:  []int{},
-		streamIdsToReplay: []int{},
-		recordedProto:     proto,
-		framing:           framing,
-		requests:          framing.NewDecoder(),
-	}
+	return newConnectionReplayer(frames, proto, comp)
 }
 
 // TestConnectionReplayerReplaysUnsegmentedProtoV5 pins that a v5 request is matched

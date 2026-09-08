@@ -73,6 +73,12 @@ func NewConnectionReplayer(fname string, comp dialer.SegmentCompressor) (net.Con
 	if len(frames) == 0 {
 		return nil, fmt.Errorf("gocql/dialer: %sReads and %sWrites pair no requests with responses; there is nothing to replay", fname, fname)
 	}
+	return newConnectionReplayer(frames, proto, comp), nil
+}
+
+// newConnectionReplayer is the one constructor, for recordings and tests alike: the
+// framing and the request decoder built from it only work as a pair.
+func newConnectionReplayer(frames []*FrameRecorded, proto byte, comp dialer.SegmentCompressor) *ConnectionReplayer {
 	framing := dialer.NewFraming(comp)
 	return &ConnectionReplayer{
 		frames:            frames,
@@ -82,7 +88,7 @@ func NewConnectionReplayer(fname string, comp dialer.SegmentCompressor) (net.Con
 		gotRequest:        make(chan struct{}, 1),
 		framing:           framing,
 		requests:          framing.NewDecoder(),
-	}, nil
+	}
 }
 
 type ConnectionReplayer struct {
