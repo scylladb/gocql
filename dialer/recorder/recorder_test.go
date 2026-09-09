@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -129,6 +130,120 @@ func recordedFrames(t *testing.T, fname string) []dialer.Record {
 		records = append(records, record)
 	}
 	return records
+}
+
+// TestConnectionRecorderRestrictsRecordingFiles pins both halves of the recording
+// file permission contract: a new file starts owner-only, and reopening an older,
+// permissive file tightens it. The Writes file can hold AUTH_RESPONSE credentials in
+// plaintext, so relying on the process umask is not enough.
+func TestConnectionRecorderRestrictsRecordingFiles(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not expose Unix permission bits")
+	}
+	const existingContents = "existing recording\n"
+	suffixes := [...]string{"Writes", "Reads"}
+
+	for _, tc := range []struct {
+		name     string
+		existing bool
+	}{
+		{name: "new files"},
+		{name: "existing permissive files", existing: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fname := filepath.Join(t.TempDir(), "conn")
+			if tc.existing {
+				for _, suffix := range suffixes {
+					path := fname + suffix
+					if err := os.WriteFile(path, []byte(existingContents), 0o666); err != nil {
+						t.Fatalf("creating %s: %v", suffix, err)
+					}
+					if err := os.Chmod(path, 0o666); err != nil {
+						t.Fatalf("making %s permissive: %v", suffix, err)
+					}
+				}
+			}
+
+			rec, err := NewConnectionRecorder(fname, &stubConn{}, nil)
+			if err != nil {
+				t.Fatalf("NewConnectionRecorder: %v", err)
+			}
+			t.Cleanup(func() {
+				if err := rec.Close(); err != nil {
+					t.Errorf("Close: %v", err)
+				}
+			})
+
+			for _, suffix := range suffixes {
+				info, err := os.Stat(fname + suffix)
+				if err != nil {
+					t.Fatalf("stat %s: %v", suffix, err)
+				}
+				if got := info.Mode().Perm(); got != 0o600 {
+					t.Errorf("%s permissions = %04o, want 0600", suffix, got)
+				}
+				if tc.existing {
+					contents, err := os.ReadFile(fname + suffix)
+					if err != nil {
+						t.Fatalf("read %s: %v", suffix, err)
+					}
+					if got := string(contents); got != existingContents {
+						t.Errorf("%s contents = %q, want %q", suffix, got, existingContents)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestConnectionRecorderRefusesSymlinkRecordingFile(t *testing.T) {
+	if recordingNoFollow == 0 {
+		t.Skip("O_NOFOLLOW is not available on this platform")
+	}
+
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target")
+	const targetContents = "must stay untouched\n"
+	if err := os.WriteFile(target, []byte(targetContents), 0o666); err != nil {
+		t.Fatalf("creating symlink target: %v", err)
+	}
+	if err := os.Chmod(target, 0o666); err != nil {
+		t.Fatalf("making symlink target permissive: %v", err)
+	}
+
+	fname := filepath.Join(dir, "conn")
+	if err := os.Symlink(target, fname+"Reads"); err != nil {
+		t.Fatalf("creating recording symlink: %v", err)
+	}
+
+	rec, err := NewConnectionRecorder(fname, &stubConn{}, nil)
+	if err == nil {
+		rec.Close()
+		t.Fatal("NewConnectionRecorder followed a recording symlink")
+	}
+	if rec != nil {
+		t.Fatalf("NewConnectionRecorder returned %T alongside error %v", rec, err)
+	}
+
+	info, err := os.Stat(target)
+	if err != nil {
+		t.Fatalf("stat symlink target: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o666 {
+		t.Errorf("symlink target permissions = %04o, want 0666", got)
+	}
+	contents, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("read symlink target: %v", err)
+	}
+	if got := string(contents); got != targetContents {
+		t.Errorf("symlink target contents = %q, want %q", got, targetContents)
+	}
+
+	// The failed setup left no recording to keep.
+	if err := os.Remove(fname + "Writes"); err != nil {
+		t.Errorf("removing Writes file after setup failure: %v", err)
+	}
 }
 
 // TestConnectionRecorderPropagatesEOF pins that a server-closed connection reports
