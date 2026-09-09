@@ -125,6 +125,9 @@ func TestSegmentSplitterChain(t *testing.T) {
 				{name: "header straddles the boundary", split: []int{4, len(frame) - 4}},
 				{name: "one byte at a time in the header", split: []int{1, 1, 1, len(frame) - 3}},
 				{name: "many segments", split: []int{50, 50, 50, 50, len(frame) - 200}},
+				// The driver accepts a chain opening with an empty segment (recvSplitFrame
+				// never checks first for emptiness), so the splitter must too.
+				{name: "opens with an empty segment", split: []int{0, len(frame)}},
 			} {
 				t.Run(tc.name, func(t *testing.T) {
 					var stream []byte
@@ -149,6 +152,35 @@ func TestSegmentSplitterChain(t *testing.T) {
 					}
 					if s.Pending() {
 						t.Error("splitter still holds something incomplete")
+					}
+				})
+			}
+		})
+	}
+}
+
+// TestSegmentSplitterPendingReportsAnOpenChain covers a stream ending right after a
+// chain's first segment. The empty case is the one worth having: buf and the inner
+// splitter are both empty, so only chainOpen marks the recording truncated.
+func TestSegmentSplitterPendingReportsAnOpenChain(t *testing.T) {
+	frame := frameV4(opQuery, 0x00, bytes.Repeat([]byte{0x5A}, 500))
+
+	for _, cc := range compressors() {
+		t.Run(cc.name, func(t *testing.T) {
+			for _, tc := range []struct {
+				name  string
+				first []byte
+			}{
+				{name: "carrying frame bytes", first: frame[:200]},
+				{name: "empty", first: nil},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					s := NewSegmentSplitter(cc.comp)
+					if got := decode(t, s, mustSegment(t, tc.first, false, cc.comp)); len(got) != 0 {
+						t.Fatalf("recovered %d frames from an unfinished chain, want 0", len(got))
+					}
+					if !s.Pending() {
+						t.Error("splitter reports a clean end of stream mid-chain")
 					}
 				})
 			}
@@ -248,7 +280,7 @@ func TestSegmentSplitterRejectsMalformedStreams(t *testing.T) {
 						s := mustSegment(t, frame[:40], false, cc.comp)
 						return append(s, mustSegment(t, other, true, cc.comp)...)
 					},
-					want: "while a split frame was still being reassembled",
+					want: "while a segment chain was still open",
 				},
 				{
 					name: "self-contained segment ends mid-frame",
@@ -258,12 +290,32 @@ func TestSegmentSplitterRejectsMalformedStreams(t *testing.T) {
 					want: "ended in the middle of a frame",
 				},
 				{
-					name: "chain segment with an empty payload",
+					name: "chain segment with an empty payload, chain already open",
 					stream: func() []byte {
 						s := mustSegment(t, frame[:40], false, cc.comp)
 						return append(s, mustSegment(t, nil, false, cc.comp)...)
 					},
 					want: "made no progress",
+				},
+				{
+					// The exemption does not stack: the first empty segment opens the
+					// chain, the second is owed progress.
+					name: "chain opens empty and then stalls",
+					stream: func() []byte {
+						s := mustSegment(t, nil, false, cc.comp)
+						return append(s, mustSegment(t, nil, false, cc.comp)...)
+					},
+					want: "made no progress",
+				},
+				{
+					// The exemption is for the chain rule only -- rule A still fires,
+					// since an empty first segment opens the chain.
+					name: "chain opens empty, then a self-contained segment",
+					stream: func() []byte {
+						s := mustSegment(t, nil, false, cc.comp)
+						return append(s, mustSegment(t, other, true, cc.comp)...)
+					},
+					want: "while a segment chain was still open",
 				},
 				{
 					name: "chain carries two frames",

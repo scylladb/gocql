@@ -1517,6 +1517,10 @@ func (c *Conn) recvSplitFrame(ctx context.Context, first []byte, netStart, netEn
 	// payload plus headSize, because a continuation segment must make progress and
 	// only headSize bytes are needed. Segment payloads alias c.segScratch, so each
 	// has to be copied before the next segment is read.
+	//
+	// first is never tested for emptiness, so a chain may open with an empty segment.
+	// Progress is owed from the second onward (readContinuationSegment) and does not
+	// stack. Observable behaviour: anything re-implementing this reader must match it.
 	if len(first) < headSize {
 		accumulated := append([]byte(nil), first...)
 		for len(accumulated) < headSize {
