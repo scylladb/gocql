@@ -8,6 +8,9 @@ endpoints instead of the public host addresses. ScyllaDB Cloud exposes a
 serves it; when client routes are enabled, the driver reads that table and
 translates every host address to its per-host private endpoint address and port.
 
+Client routes require server support for both ``system.client_routes`` and the
+``CLIENT_ROUTES_CHANGE`` event.
+
 This feature is also known as **PrivateLink** support, **private link**,
 **private service connection**, AWS **PrivateLink** (**PL**), and GCP
 **Private Service Connect** (**PSC**). The driver API is named after the
@@ -41,12 +44,11 @@ ScyllaDB Cloud:
    )
 
 At least one connection ID is required. Configuring client routes without any
-endpoint is a configuration error and session creation fails.
+endpoint is a configuration error and session creation fails. Every configured
+endpoint must have a non-empty ``ConnectionID``.
 
-Only endpoints you list are used. The driver scopes its queries by connection ID,
-so rows in ``system.client_routes`` belonging to a connection ID you did not
-configure are never read, and a cluster cannot redirect the driver to an endpoint
-you did not configure.
+The driver loads route rows and accepts route-change events only for configured
+connection IDs.
 
 Note that the contact points themselves are **not** translated. Translation is
 keyed by host ID, and the initial contact point has no host ID yet, so it is dialed
@@ -82,6 +84,9 @@ list:
 
 When several configured endpoints provide a route to the same host, the driver
 picks one preferred route per host and keeps using it until that route disappears.
+A connection-health failure alone does not switch routes. If a
+``CLIENT_ROUTES_CHANGE`` update removes the selected route, the next translation
+selects another configured route for that host.
 
 Overriding the endpoint address
 ===============================
@@ -102,7 +107,8 @@ Overriding the endpoint address
        driver uses the address from the ``system.client_routes`` table. When set, it
        **overrides** that address for every route belonging to this connection ID —
        useful when your environment needs a different DNS name or IP, for example in
-       local testing. The port always comes from the table.
+       local testing. Supply an address without a port; the port always comes from
+       the table for discovered hosts.
 
 ``ConnectionAddr`` has a second effect: if the cluster has no hosts configured when
 ``WithClientRoutes`` is applied, every non-empty ``ConnectionAddr`` is also used as
@@ -122,6 +128,12 @@ endpoint hostnames:
            ),
        ),
    )
+
+These inferred contact points use ``ClusterConfig.Port``, which defaults to
+9042. Specify contact points explicitly with ``NewCluster`` when bootstrap
+endpoints use different ports. An embedded port applies only while dialing that
+contact point; connections to discovered hosts use ``port`` or ``tls_port`` from
+the route table.
 
 Shard awareness
 ===============
@@ -164,6 +176,12 @@ Both listeners are ScyllaDB server-side configuration parameters; see
 <https://docs.scylladb.com/manual/stable/reference/configuration-parameters.html#confprop-native-shard-aware-transport-port-ssl-proxy-protocol>`_ in the ScyllaDB
 configuration parameters reference.
 
+The default and ``WithShardAwareness`` option were added after ``v1.19.0``. Use
+a later release or a pseudo-version containing commit ``e36b80d0``. With
+``v1.19.0``, client routes leave advanced shard awareness enabled by default;
+set ``ClusterConfig.DisableShardAwarePort = true`` when the endpoint does not
+preserve source ports.
+
 .. code-block:: go
 
    cluster.WithOptions(
@@ -183,8 +201,14 @@ TLS
 
 TLS is supported. ``system.client_routes`` exposes both a plain ``port`` and a
 ``tls_port`` for each route; the driver selects both columns in its query and uses
-the ``tls_port`` whenever ``ClusterConfig.SslOpts`` is set. No
-client-routes-specific TLS configuration is needed.
+the ``tls_port`` whenever ``ClusterConfig.SslOpts`` is set. Every selected TLS
+route must provide ``tls_port``. No client-routes-specific TLS configuration is
+needed.
+
+Custom ``HostDialer`` implementations are not supported with client routes.
+``HostInfo`` exposes the translated route address but not its translated port,
+so a custom host dialer may use the node-advertised port instead. Use
+``ClusterConfig.Dialer`` when client routes require custom dialing.
 
 Configuration options
 =====================
@@ -198,8 +222,8 @@ Configuration options
    * - ``WithEndpoints(endpoints ...ClientRoutesEndpoint)``
      - Sets the private endpoints to use. At least one is required.
    * - ``WithTable(tableName string)``
-     - Overrides the table the routes are read from. Defaults to
-       ``system.client_routes``.
+     - Overrides the route table for tests. Production use requires
+       ``system.client_routes``; do not set this option in production.
    * - ``WithShardAwareness(enabled bool)``
      - Opts in to advanced shard awareness. Disabled by default. See
        `Shard awareness`_.

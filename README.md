@@ -1,7 +1,7 @@
 <div align="center">
 
 ![Build Passing](https://github.com/scylladb/gocql/workflows/Build/badge.svg)
-[![Read the Fork Driver Docs](https://img.shields.io/badge/Read_the_Docs-pkg_go-blue)](https://pkg.go.dev/github.com/scylladb/gocql#section-documentation)
+[![Read the Fork Driver Docs](https://img.shields.io/badge/Read_the_Docs-ScyllaDB-blue)](https://gocql-driver.docs.scylladb.com/stable/)
 [![Protocol Specs](https://img.shields.io/badge/Protocol_Specs-ScyllaDB_Docs-blue)](https://github.com/scylladb/scylladb/blob/master/docs/dev/protocol-extensions.md)
 
 </div>
@@ -224,7 +224,7 @@ Scylla Cloud exposes a `system.client_routes` table that maps hosts to PrivateLi
 When configured, the driver can resolve and connect to the per-host PrivateLink address instead of using the public host IP.
 
 This feature is also known as PrivateLink support, private link, private service connection, AWS PrivateLink (PL) and GCP Private Service Connect (PSC).
-See the [Client routes (PrivateLink / Private Service Connect)](https://gocql-driver.docs.scylladb.com/stable/client-routes/) documentation page for the full reference.
+See the [Client routes (PrivateLink / Private Service Connect)](https://gocql-driver.docs.scylladb.com/stable/client-routes.html) documentation page for the full reference.
 
 Use `WithClientRoutes` to enable it and pass the connection IDs you receive from Scylla Cloud:
 
