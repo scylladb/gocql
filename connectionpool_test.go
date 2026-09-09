@@ -141,7 +141,9 @@ func (e errorConn) GetTimeout() time.Duration  { return 0 }
 
 // setDisarm is required of any reader installed as Conn.r (connReadSource). This
 // mock is never read from, so there is nothing to disarm.
-func (e errorConn) setDisarm(_ bool) {}
+func (e errorConn) setDisarm(_ bool)                        {}
+func (e errorConn) SetFrameAssemblyTimeout(_ time.Duration) {}
+func (e errorConn) setReadBudget(_ bool)                    {}
 
 // TestHostConnPoolCloseDeadlock verifies that hostConnPool.Close() does not
 // self-deadlock when defaultConnPicker closes connections that trigger

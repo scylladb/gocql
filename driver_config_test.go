@@ -829,6 +829,7 @@ func TestBuildConnectionReport_ReadWriteTLS(t *testing.T) {
 	cfg := *NewCluster("127.0.0.1")
 	cfg.ReadTimeout = 0
 	cfg.WriteTimeout = 0
+	cfg.FrameAssemblyTimeout = 0
 	report := buildConnectionReport(&cfg)
 	if report.Read != nil {
 		t.Errorf("expected read to be omitted when ReadTimeout is 0, got %+v", report.Read)
@@ -836,12 +837,16 @@ func TestBuildConnectionReport_ReadWriteTLS(t *testing.T) {
 	if report.Write != nil {
 		t.Errorf("expected write to be omitted when WriteTimeout is 0, got %+v", report.Write)
 	}
+	if report.FrameAssembly != nil {
+		t.Errorf("expected frame-assembly to be omitted when FrameAssemblyTimeout is 0, got %+v", report.FrameAssembly)
+	}
 	if report.TLS != nil {
 		t.Errorf("expected tls to be omitted when SslOpts is nil, got %+v", report.TLS)
 	}
 
 	cfg.ReadTimeout = 5 * time.Second
 	cfg.WriteTimeout = 7 * time.Second
+	cfg.FrameAssemblyTimeout = 9 * time.Second
 	cfg.SslOpts = &SslOptions{EnableHostVerification: true}
 	report = buildConnectionReport(&cfg)
 	if report.Read == nil || report.Read.TimeoutMs != 5000 {
@@ -849,6 +854,9 @@ func TestBuildConnectionReport_ReadWriteTLS(t *testing.T) {
 	}
 	if report.Write == nil || report.Write.TimeoutMs != 7000 {
 		t.Errorf("expected write.timeout-ms 7000, got %+v", report.Write)
+	}
+	if report.FrameAssembly == nil || report.FrameAssembly.TimeoutMs != 9000 {
+		t.Errorf("expected frame-assembly.timeout-ms 9000, got %+v", report.FrameAssembly)
 	}
 	if report.TLS == nil || !report.TLS.HostnameVerification {
 		t.Errorf("expected tls.hostname-verification true, got %+v", report.TLS)

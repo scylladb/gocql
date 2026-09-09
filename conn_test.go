@@ -3691,11 +3691,13 @@ func (s *scriptedReadSource) Read(p []byte) (int, error) {
 	return n, step.err
 }
 
-func (s *scriptedReadSource) Close() error               { return nil }
-func (s *scriptedReadSource) RemoteAddr() net.Addr       { return nil }
-func (s *scriptedReadSource) SetTimeout(_ time.Duration) {}
-func (s *scriptedReadSource) GetTimeout() time.Duration  { return 0 }
-func (s *scriptedReadSource) setDisarm(v bool)           { s.disarms = append(s.disarms, v) }
+func (s *scriptedReadSource) Close() error                          { return nil }
+func (s *scriptedReadSource) RemoteAddr() net.Addr                  { return nil }
+func (s *scriptedReadSource) SetTimeout(_ time.Duration)            {}
+func (s *scriptedReadSource) GetTimeout() time.Duration             { return 0 }
+func (s *scriptedReadSource) setDisarm(v bool)                      { s.disarms = append(s.disarms, v) }
+func (s *scriptedReadSource) SetFrameAssemblyTimeout(time.Duration) {}
+func (s *scriptedReadSource) setReadBudget(bool)                    {}
 
 // timeoutErr is a net.Error reporting a timeout, standing in for the
 // os.ErrDeadlineExceeded a real socket returns once its read deadline expires.
@@ -4349,6 +4351,147 @@ func TestSystemRequestTimeoutRaceWithFinalizeConnection(t *testing.T) {
 
 	require.Equal(t, afterFinalize, c.getSystemRequestState(),
 		"finalizeConnection should publish the metadata timeout and its clause as one snapshot")
+}
+
+// TestFrameAssemblyTimeoutActiveBeforeFinalizeConnection guards a review finding on
+// #1044: dialWithoutObserver used to leave c.r's assembly budget unconfigured until
+// finalizeConnection ran, but Conn.init already starts serve() well before that --
+// finalizeConnection is deferred to the very end of Session.init for the control
+// connection (after it has issued system queries) and runs only after UseKeyspace for
+// a pool connection. A segmented frame trickled into that window saw no budget at
+// all, which is exactly what this test reproduces.
+//
+// It drives the real dialWithoutObserver/Conn.init path over a net.Pipe, answers only
+// the STARTUP handshake, and then trickles a v5 segmented frame nobody requested --
+// finalizeConnection is never called. Before the fix this hangs (the trickle
+// completes, unbounded); after it, serve() drops the connection once the budget
+// expires.
+func TestFrameAssemblyTimeoutActiveBeforeFinalizeConnection(t *testing.T) {
+	const perSegment = 64
+	body := bytes.Repeat([]byte{0x5A}, 2*perSegment)
+	frame := make([]byte, headSize)
+	// An ordinary (positive) stream with no matching call, not the reserved event
+	// stream: were the trickle ever to complete despite the budget, this lands on
+	// the harmless "no handler" discard path (processFrameSource) instead of
+	// c.session.handleEvent, which a minimal test Session cannot service.
+	const noHandlerStream = 999
+	frame[0] = protoVersion5 | protoDirectionMask
+	binary.BigEndian.PutUint16(frame[2:4], uint16(noHandlerStream))
+	frame[4] = byte(frm.OpReady)
+	binary.BigEndian.PutUint32(frame[5:headSize], uint32(len(body)))
+	frame = append(frame, body...)
+
+	var segments [][]byte
+	for src := frame; len(src) > 0; {
+		n := min(len(src), perSegment)
+		segments = append(segments, mustUncompressedSegment(t, src[:n], false))
+		src = src[n:]
+	}
+	if len(segments) < 3 {
+		t.Fatalf("the frame must need several segments to trickle, got %d", len(segments))
+	}
+
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+
+	const gap = 100 * time.Millisecond
+	serverErr := make(chan error, 1)
+	go func() { serverErr <- fakeCQLHandshakeThenTrickle(t, server, segments, gap) }()
+
+	cluster := NewCluster("127.0.0.1:1")
+	cluster.ProtoVersion = protoVersion5
+	cluster.FrameAssemblyTimeout = 120 * time.Millisecond
+	cluster.HostDialer = pipeHostDialer{conn: client}
+
+	connCfg, err := connConfig(cluster)
+	if err != nil {
+		t.Fatalf("connConfig: %v", err)
+	}
+
+	dropped := make(chan error, 1)
+	errorHandler := connErrorHandlerFn(func(_ *Conn, err error, _ bool) {
+		select {
+		case dropped <- err:
+		default:
+		}
+	})
+
+	session := &Session{ctx: context.Background(), cfg: *cluster}
+	conn, err := session.dialWithoutObserver(context.Background(), &HostInfo{}, connCfg, errorHandler, 0, 0)
+	if err != nil {
+		t.Fatalf("dialWithoutObserver: %v", err)
+	}
+	defer conn.Close()
+
+	select {
+	case err := <-dropped:
+		var netErr net.Error
+		if !errors.As(err, &netErr) || !netErr.Timeout() {
+			t.Fatalf("expected the budget to expire the trickle, got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("connection was not dropped by the frame-assembly budget: finalizeConnection is never called here, so this hangs unless the budget is armed earlier")
+	}
+
+	// The fake server's own write loop is expected to fail once serve() has closed
+	// the connection out from under it -- that is the fix working, not an error.
+	<-serverErr
+}
+
+// pipeHostDialer is a HostDialer that always hands back the same pre-established
+// net.Conn, so a test can drive Conn.init/dialWithoutObserver over a net.Pipe instead
+// of a real socket.
+type pipeHostDialer struct{ conn net.Conn }
+
+func (d pipeHostDialer) DialHost(_ context.Context, _ *HostInfo) (*DialedHost, error) {
+	return &DialedHost{Conn: d.conn}, nil
+}
+
+// fakeCQLHandshakeThenTrickle answers exactly the two frames
+// startupCoordinator.setupConn sends (OPTIONS, then STARTUP) with SUPPORTED and
+// READY, then -- unlike a real peer -- starts dribbling segments nobody requested, one
+// per gap, standing in for a slow or adversarial one.
+func fakeCQLHandshakeThenTrickle(t *testing.T, conn net.Conn, segments [][]byte, gap time.Duration) error {
+	t.Helper()
+
+	for _, op := range []frm.Op{frm.OpOptions, frm.OpStartup} {
+		buf := make([]byte, headSize)
+		head, err := readHeader(conn, buf)
+		if err != nil {
+			return fmt.Errorf("reading %v: %w", op, err)
+		}
+		req := newFramer(nil, protoVersion5)
+		if err := req.readFrame(conn, &head); err != nil {
+			return fmt.Errorf("reading %v body: %w", op, err)
+		}
+		if head.Op != op {
+			return fmt.Errorf("expected %v, got %v", op, head.Op)
+		}
+
+		resp := newFramer(nil, protoVersion5)
+		if op == frm.OpOptions {
+			resp.writeHeader(0, frm.OpSupported, head.Stream)
+			resp.writeStringMultiMap(nil)
+		} else {
+			resp.writeHeader(0, frm.OpReady, head.Stream)
+		}
+		resp.buf[0] = protoVersion5 | protoDirectionMask
+		if err := resp.finish(); err != nil {
+			return err
+		}
+		if err := resp.writeTo(conn); err != nil {
+			return fmt.Errorf("writing %v response: %w", op, err)
+		}
+	}
+
+	for _, seg := range segments {
+		if _, err := conn.Write(seg); err != nil {
+			return err
+		}
+		time.Sleep(gap)
+	}
+	return nil
 }
 
 // TestSystemRequestStateClauseFollowsTimeout pins the USING TIMEOUT clause as

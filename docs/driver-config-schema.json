@@ -206,6 +206,17 @@
             }
           }
         },
+        "frame-assembly": {
+          "type": "object",
+          "description": "Settings bounding the total time to assemble one response frame out of its transport segments, measured from the first byte of its first segment.",
+          "additionalProperties": false,
+          "properties": {
+            "timeout-ms": {
+              "$ref": "#/$defs/positiveInteger",
+              "description": "Frame-assembly timeout."
+            }
+          }
+        },
         "heartbeat": {
           "type": "object",
           "description": "Reserved for CQL-level idle heartbeat settings. Optional and intentionally empty in this schema version. It is a placeholder for v2",

@@ -55,16 +55,17 @@ type connectionReport struct {
 	// a query may be routed to). Omitted when nothing narrows pool membership;
 	// see buildConnectionNodePreferenceReport.
 	NodePreference any `json:"node-preference,omitempty"`
-	// Read and Write are omitted entirely when their timeout is 0 (disabled),
-	// matching the schema's "absent when unset or not applicable" convention
-	// for optional groups. write.coalescing and the sibling connection.heartbeat
-	// group are never populated: the schema declares both as
-	// additionalProperties:false with no properties, an explicit placeholder
+	// Read, Write, and FrameAssembly are omitted entirely when their timeout is
+	// 0 (disabled), matching the schema's "absent when unset or not applicable"
+	// convention for optional groups. write.coalescing and the sibling
+	// connection.heartbeat group are never populated: the schema declares both
+	// as additionalProperties:false with no properties, an explicit placeholder
 	// for a future schema version, so there is nothing a v1 report could put
 	// there even though gocql does have both features (WriteCoalesceWaitTime,
 	// the control connection's heartBeat()).
-	Read  *readWriteTimeoutReport `json:"read,omitempty"`
-	Write *readWriteTimeoutReport `json:"write,omitempty"`
+	Read          *readWriteTimeoutReport `json:"read,omitempty"`
+	Write         *readWriteTimeoutReport `json:"write,omitempty"`
+	FrameAssembly *readWriteTimeoutReport `json:"frame-assembly,omitempty"`
 	// TLS is omitted when TLS is not configured, or when a HostDialer is set:
 	// HostDialer takes over the entire connection setup and SslOpts is ignored
 	// (see ClusterConfig.SslOpts), so the effective TLS state is unknown.
@@ -398,6 +399,9 @@ func buildConnectionReport(cfg *ClusterConfig) connectionReport {
 	}
 	if ms := positiveMillis(cfg.WriteTimeout); ms != nil {
 		report.Write = &readWriteTimeoutReport{TimeoutMs: *ms}
+	}
+	if ms := positiveMillis(cfg.FrameAssemblyTimeout); ms != nil {
+		report.FrameAssembly = &readWriteTimeoutReport{TimeoutMs: *ms}
 	}
 	report.TLS = buildTLSReport(cfg)
 	report.NodePreference = buildConnectionNodePreferenceReport(cfg)
