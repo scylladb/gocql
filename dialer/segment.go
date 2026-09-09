@@ -77,6 +77,10 @@ type SegmentSplitter struct {
 	// a corrupt header is reported once rather than per chunk.
 	hdr      segment.Header
 	hdrValid bool
+	// chainOpen says a chain has consumed a segment and not yet delivered its frame.
+	// Not frames.Pending(), which answers "is a frame half-built" and differs by the
+	// one segment a chain may open empty. Chain rules read this, frame rules that.
+	chainOpen bool
 }
 
 // NewSegmentSplitter returns a splitter for a stream in the layout implied by comp:
@@ -90,11 +94,11 @@ func (s *SegmentSplitter) compressed() bool {
 	return s.comp != nil
 }
 
-// Pending reports whether the splitter holds anything incomplete: a partial segment,
-// or a chain whose frame has not finished arriving. A stream that ends here ended
-// mid-structure.
+// Pending reports whether the splitter holds anything incomplete: a partial segment, an
+// open chain, or a chain whose frame has not finished arriving. A stream that ends here
+// ended mid-structure.
 func (s *SegmentSplitter) Pending() bool {
-	return len(s.buf) > 0 || s.frames.Pending()
+	return len(s.buf) > 0 || s.chainOpen || s.frames.Pending()
 }
 
 // Feed consumes b, calling emit once for each CQL frame it recovers.
@@ -104,18 +108,15 @@ func (s *SegmentSplitter) Pending() bool {
 // Four rules govern the self-contained flag, and together they are what stops a
 // damaged stream from re-aligning silently:
 //
-//   - A self-contained segment may not arrive while a chain is in progress. This is
-//     the same rejection the driver's own reader makes, and the case that matters
-//     most: without it an over-running chain does not error, it resumes reading
-//     frames at the wrong offset.
+//   - A self-contained segment may not arrive while a chain is open. This is the same
+//     rejection the driver's own reader makes, and the case that matters most: without
+//     it an over-running chain does not error, it resumes reading frames at the wrong
+//     offset.
 //   - A self-contained segment must not end mid-frame. It promised whole frames.
-//   - A chain segment must carry a non-empty payload, so a peer cannot drive an
-//     endless chain that never progresses. An empty *self-contained* segment is
-//     accepted and yields nothing, which looks like the same defect but is not: the
-//     driver's own reader accepts it too (processAllFramesInSegment loops while bytes
-//     remain, so an empty payload is zero frames and no error), and a splitter that
-//     refused what the connection it records accepts would fail a stream gocql itself
-//     handles. Only a chain is owed progress, and recvSplitFrame enforces that there.
+//   - A chain segment must carry a non-empty payload once the chain is open, so a peer
+//     cannot drive an endless chain. Two shapes the driver accepts are exempt, because
+//     the splitter must not refuse a stream gocql itself handles: an empty
+//     self-contained segment, and the first segment of a chain.
 //   - A chain must yield exactly one frame and nothing after it, since a split frame
 //     gets a sequence of segments to itself. A chain here is bounded by the frame it
 //     carries, not by the run of continuation segments: the segment that completes a
@@ -152,11 +153,15 @@ func (s *SegmentSplitter) Feed(b []byte, emit func(frame []byte) error) error {
 			return nil
 		}
 
-		chainInProgress := s.frames.Pending()
-		if s.hdr.IsSelfContained && chainInProgress {
-			return s.fail(fmt.Errorf("gocql/dialer: received a self-contained segment while a split frame was still being reassembled"))
+		if s.hdr.IsSelfContained && s.chainOpen {
+			return s.fail(fmt.Errorf("gocql/dialer: received a self-contained segment while a segment chain was still open"))
 		}
-		if !s.hdr.IsSelfContained && s.hdr.PayloadLen == 0 {
+		// PayloadLen is the encoded length where the driver checks the decoded one. They
+		// coincide: UncompressedLen == 0 is stored as-is, anything else must decode to
+		// exactly that many bytes (segment.ReadCompressedPayload). The one shape that
+		// differs, PayloadLen == 0 with a nonzero UncompressedLen, both readers reject.
+		// Checked on the header so a stalled chain costs no decode.
+		if !s.hdr.IsSelfContained && s.chainOpen && s.hdr.PayloadLen == 0 {
 			return s.fail(fmt.Errorf("gocql/dialer: segment chain made no progress (empty payload)"))
 		}
 
@@ -180,6 +185,10 @@ func (s *SegmentSplitter) Feed(b []byte, emit func(frame []byte) error) error {
 		if !s.hdr.IsSelfContained && (emitted > 1 || (emitted == 1 && s.frames.Pending())) {
 			return s.fail(fmt.Errorf("gocql/dialer: segment chain carried more than the one frame it was split from"))
 		}
+
+		// A self-contained segment is not in a chain, and the segment that delivered the
+		// frame closed it.
+		s.chainOpen = !s.hdr.IsSelfContained && emitted == 0
 
 		// Drop the consumed segment, keeping whatever came after it. Copying the
 		// remainder down rather than re-slicing keeps the buffer from growing without
