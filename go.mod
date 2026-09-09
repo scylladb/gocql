@@ -23,10 +23,8 @@ require (
 	github.com/klauspost/compress v1.19.2
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/scylladb/gocql/lz4 v1.19.0
-	golang.org/x/net v0.58.0
 	golang.org/x/sync v0.22.0
 	gopkg.in/inf.v0 v0.9.1
-	sigs.k8s.io/yaml v1.6.0
 )
 
 // The integration suite constructs lz4.LZ4Compressor to run the protocol v5 lane
@@ -44,7 +42,6 @@ replace github.com/scylladb/gocql/lz4 => ./lz4
 
 require (
 	github.com/pierrec/lz4/v4 v4.1.29 // indirect
-	go.yaml.in/yaml/v2 v2.4.3 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/text v0.41.0 // indirect
 )
