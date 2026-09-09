@@ -81,9 +81,46 @@ func (d *RecordDialer) DialContext(ctx context.Context, network, addr string) (c
 	return rec, nil
 }
 
+func openRecordingFile(fname string) (*os.File, error) {
+	const mode = 0o600
+	const flags = os.O_WRONLY | os.O_APPEND
+
+	// O_EXCL makes creation distinguishable from reuse and refuses a symlink in the
+	// final path component. A newly created file needs no follow-up Chmod, so it is
+	// never wider than mode even transiently.
+	fd, err := os.OpenFile(fname, flags|os.O_CREATE|os.O_EXCL|recordingNoFollow, mode)
+	if err == nil {
+		return fd, nil
+	}
+	if !errors.Is(err, os.ErrExist) {
+		return nil, err
+	}
+
+	// The file may disappear between the two opens, so retain O_CREATE. O_NOFOLLOW
+	// keeps an existing final-component symlink from redirecting Chmod to its target.
+	fd, err = os.OpenFile(fname, flags|os.O_CREATE|recordingNoFollow, mode)
+	if err != nil {
+		return nil, err
+	}
+
+	// Recorders intentionally append to existing files, so tighten reused files
+	// through the open descriptor before anything can be recorded.
+	if err := fd.Chmod(mode); err != nil {
+		return nil, errors.Join(
+			fmt.Errorf("restrict recording file %q permissions: %w", fname, err),
+			fd.Close(),
+		)
+	}
+
+	return fd, nil
+}
+
 // NewConnectionRecorder wraps conn, recording every frame in both directions.
 //
 // comp may be nil; see WithSegmentCompressor for when it is needed.
+// On platforms with Unix permission bits, recording files are created with mode 0600
+// and existing files are tightened to 0600 before appending because request frames can
+// contain plaintext authentication credentials.
 //
 // # One recording directory per run
 //
@@ -101,14 +138,13 @@ func (d *RecordDialer) DialContext(ctx context.Context, network, addr string) (c
 // connection instead would need the replayer to stop deriving the same name from the
 // same two values, which is a different design than the one here.
 func NewConnectionRecorder(fname string, conn net.Conn, comp dialer.SegmentCompressor) (net.Conn, error) {
-	fd_writes, err := os.OpenFile(fname+"Writes", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	fd_writes, err := openRecordingFile(fname + "Writes")
 	if err != nil {
 		return nil, err
 	}
-	fd_reads, err2 := os.OpenFile(fname+"Reads", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	fd_reads, err2 := openRecordingFile(fname + "Reads")
 	if err2 != nil {
-		fd_writes.Close()
-		return nil, err2
+		return nil, errors.Join(err2, fd_writes.Close())
 	}
 	// Both directions share one Framing: the handshake fact that switches them to
 	// transport segments is carried by a response, and applies to requests too.
