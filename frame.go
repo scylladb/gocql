@@ -1392,6 +1392,17 @@ func putQueryValues(s []queryValues) {
 	queryValuesPools[bucket].Put(s[:cap(s)])
 }
 
+// returnPooledMarshalOutputs returns each column's marshal output buffer to
+// marshalOutputPool for columns whose marshal fast path allocates from it.
+// Must be called before putQueryValues, which clears vals[i].value.
+func returnPooledMarshalOutputs(cols []ColumnInfo, vals []queryValues) {
+	for i, col := range cols {
+		if pooledMarshalType(col.TypeInfo) {
+			putMarshalOutput(vals[i].value)
+		}
+	}
+}
+
 // putBatchQueryValues returns all pooled []queryValues slices from batch statements.
 func putBatchQueryValues(stmts []batchStatment) {
 	for i := range stmts {
