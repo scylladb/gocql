@@ -467,7 +467,7 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 	c := &Conn{
 		r: &connReader{
 			conn: dialedHost.Conn,
-			r:    bufio.NewReader(dialedHost.Conn),
+			r:    bufio.NewReaderSize(dialedHost.Conn, 65536),
 		},
 		cfg:           cfg,
 		calls:         make(map[int]*callReq),
