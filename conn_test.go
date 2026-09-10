@@ -933,6 +933,146 @@ func TestContext_CanceledBeforeExec(t *testing.T) {
 	}
 }
 
+// unexpectedOptionsLogger closes seen the first time it observes heartBeat's log
+// line for an OPTIONS reply that is neither SUPPORTED nor an error frame -- proof
+// the driver actually parsed the reply, not just that the server produced one.
+//
+// A counter of OPTIONS requests the server had read is not enough: it advances the
+// instant the request is read, before its response is even built, and each response
+// is written from its own goroutine racing every other response on the same
+// connection. Waiting on such a counter can let a survival query's response win the
+// write race and return before the driver ever parsed the unexpected reply, so a
+// regression test built on it could pass against the old panicking code too.
+type unexpectedOptionsLogger struct {
+	seen     chan struct{}
+	seenOnce sync.Once
+}
+
+func (l *unexpectedOptionsLogger) Print(v ...any)   {}
+func (l *unexpectedOptionsLogger) Println(v ...any) {}
+func (l *unexpectedOptionsLogger) Printf(format string, v ...any) {
+	if strings.Contains(format, "unexpected frame in response to options") {
+		l.seenOnce.Do(func() { close(l.seen) })
+	}
+}
+
+// heartBeat used to panic on an OPTIONS reply that was neither SUPPORTED nor an
+// error frame. parseFrame builds a frame for every opcode it knows, so a server can
+// produce one, and heartBeat runs on its own goroutine with nothing recovering above
+// it -- so a malformed reply took the process down rather than the connection. It is
+// counted as a heartbeat failure now, and six of those close the connection.
+//
+// The test asserts the connection survives one such reply; it fails on the old code
+// by aborting the test binary, which is exactly what the panic did in production.
+func TestHeartBeatSurvivesUnexpectedOptionsResponse(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	srv := NewTestServer(t, defaultProto, ctx)
+	defer srv.Stop()
+
+	log := &unexpectedOptionsLogger{seen: make(chan struct{})}
+
+	cluster := testCluster(defaultProto, srv.Address)
+	cluster.NumConns = 1
+	cluster.Logger = log
+	db, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	// Startup reads SUPPORTED off an OPTIONS of its own, so the pool has to be up
+	// before the replies are spoiled -- otherwise the connection never opens and the
+	// heartbeat under test never runs.
+	if err := waitForPoolSize(db, 1, 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	atomic.StoreInt32(&srv.readyOnOptions, 1)
+
+	// The first beat is a second out; wait for the driver to have parsed it rather
+	// than sleeping past it.
+	select {
+	case <-log.seen:
+	case <-time.After(10 * time.Second):
+		t.Fatal("heartBeat never logged the unexpected OPTIONS reply")
+	}
+
+	if err := db.Query("void").Exec(); err != nil {
+		t.Fatalf("the session did not survive an unexpected heartbeat reply: %v", err)
+	}
+}
+
+// controlConn.heartBeat sends the same OPTIONS as Conn.heartBeat and used to panic on
+// the same unexpected reply, on its own goroutine and equally outside parseFrame's
+// recover -- so the fix above left half the exposure in place. The test above cannot
+// reach it: testCluster disables the control connection, and TestServer answers
+// REGISTER with an error frame, so setupConn could not bring one up even if it were
+// enabled. Drive heartBeat against a hand-assembled controlConn instead.
+//
+// Like the test above, this one fails on the old code by aborting the test binary,
+// which is exactly what the panic did in production.
+func TestControlHeartBeatSurvivesUnexpectedOptionsResponse(t *testing.T) {
+	t.Parallel()
+
+	const testTimeout = 10 * time.Second
+
+	log := &unexpectedOptionsLogger{seen: make(chan struct{})}
+
+	conn, server := newTestExecConn(t, testContextWriter{})
+	// execInternal compares the response's protocol version against c.version, so an
+	// unset one turns every delivered frame into a protocol error before the heartbeat
+	// ever classifies it.
+	conn.version = protoVersion4
+	defer server.Close()
+
+	// Only the fields the failing reconnect below reaches: connCfg because
+	// controlConnConfig dereferences it, hostSource for its (empty) host list, and the
+	// logger the unexpected reply is reported through. No known hosts and no contact
+	// points means the reconnect fails in resolveInitialEndpoints, well before
+	// refreshRingNow or the metadata describer.
+	sess := &Session{logger: log, connCfg: &ConnConfig{}}
+	sess.hostSource = &ringDescriber{cfg: &sess.cfg, logger: log}
+
+	// state is left at controlConnStarting so heartBeat's CAS lets it run.
+	cc := &controlConn{session: sess, quit: make(chan struct{})}
+	cc.conn.Store(&connHost{conn: conn})
+
+	go cc.heartBeat()
+	defer close(cc.quit)
+
+	// The first beat is a second out. Catch its in-flight call rather than sleeping
+	// past it, then answer the OPTIONS with a READY: a frame parseFrame builds happily,
+	// and one a peer can send, but not one an OPTIONS may be answered with.
+	call := waitForSingleCallWithin(t, conn, testTimeout)
+	ready := []byte{
+		protoVersion4 | protoDirectionMask, 0x00,
+		byte(call.streamID >> 8), byte(call.streamID),
+		byte(frm.OpReady),
+		0x00, 0x00, 0x00, 0x00, // no body
+	}
+	if err := conn.processFrameSource(context.Background(), frameSource{r: bytes.NewReader(ready)}); err != nil {
+		t.Fatalf("delivering the READY reply to the heartbeat: %v", err)
+	}
+
+	select {
+	case <-log.seen:
+	case <-time.After(testTimeout):
+		t.Fatal("the control heartbeat never logged the unexpected OPTIONS reply")
+	}
+
+	// attemptReconnect closes the old control connection before it tries any host, so
+	// this is what tells the reconnect the reply is supposed to cost apart from a
+	// continue that would log the reply and then trust the connection anyway.
+	deadline := time.Now().Add(testTimeout)
+	for !conn.Closed() {
+		if time.Now().After(deadline) {
+			t.Fatal("the unexpected reply did not cost the control connection a reconnect")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 func TestCallReqReuseDoesNotInvalidateOutstandingTimeout(t *testing.T) {
 	t.Parallel()
 
@@ -1010,7 +1150,13 @@ func newTestExecConn(t *testing.T, w contextWriter) (*Conn, net.Conn) {
 func waitForSingleCall(t *testing.T, c *Conn) *callReq {
 	t.Helper()
 
-	deadline := time.After(2 * time.Second)
+	return waitForSingleCallWithin(t, c, 2*time.Second)
+}
+
+func waitForSingleCallWithin(t *testing.T, c *Conn, timeout time.Duration) *callReq {
+	t.Helper()
+
+	deadline := time.After(timeout)
 	ticker := time.NewTicker(time.Millisecond)
 	defer ticker.Stop()
 
@@ -1807,6 +1953,13 @@ type TestServer struct {
 	// hang until the server is stopped, simulating a stalled backend.
 	stallSystemQueries int32
 
+	// readyOnOptions, when non-zero, answers OPTIONS with READY instead of
+	// SUPPORTED -- a reply that is neither SUPPORTED nor an error frame, which is
+	// the case heartBeat has no arm for. Every connection reads SUPPORTED off an
+	// OPTIONS during startup too, so a test has to raise this only once its pool
+	// is up.
+	readyOnOptions int32
+
 	protocol   byte
 	headerSize int
 	ctx        context.Context
@@ -1953,6 +2106,10 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 		}
 		respFrame.writeHeader(0, frm.OpReady, head.Stream)
 	case frm.OpOptions:
+		if atomic.LoadInt32(&srv.readyOnOptions) != 0 {
+			respFrame.writeHeader(0, frm.OpReady, head.Stream)
+			break
+		}
 		respFrame.writeHeader(0, frm.OpSupported, head.Stream)
 		respFrame.writeStringMultiMap(exts)
 	case frm.OpQuery:
@@ -3841,6 +3998,199 @@ func (c *armFailingConn) LocalAddr() net.Addr              { return nil }
 func (c *armFailingConn) RemoteAddr() net.Addr             { return nil }
 func (c *armFailingConn) SetDeadline(time.Time) error      { return nil }
 func (c *armFailingConn) SetWriteDeadline(time.Time) error { return nil }
+
+// A calls map that disagrees with the callReq it holds is a driver bug, not
+// something a peer can provoke. It used to panic anyway -- on the serve goroutine,
+// outside parseFrame's recover, and with a string value that recover could not have
+// converted even in scope -- so a bookkeeping slip killed the process. Now it fails
+// the connection whose stream accounting is in doubt, and nothing else.
+func TestProcessFrameStreamIDMismatchIsAnError(t *testing.T) {
+	t.Parallel()
+
+	header := []byte{
+		protoVersion4 | protoDirectionMask, 0x00, 0x00, 0x01, byte(frm.OpResult),
+		0x00, 0x00, 0x00, 0x00, // no body
+	}
+
+	// Keyed under stream 1, but the call believes it is stream 2. resp is buffered so
+	// the delivery does not need a second goroutine.
+	call := &callReq{timeout: make(chan struct{}), streamID: 2, resp: make(chan callResp, 1)}
+	c := &Conn{
+		calls:   map[int]*callReq{1: call},
+		version: protoVersion4,
+		streams: streams.New(),
+		logger:  nopLogger{},
+	}
+
+	err := c.processFrameSource(context.Background(), frameSource{r: bytes.NewReader(header)})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "stream 1")
+	require.Contains(t, err.Error(), "stream 2")
+
+	// And the caller is handed it. head.Stream has already left c.calls, so
+	// closeWithError's drain cannot reach this call: returning without delivering
+	// would wake it only on c.ctx.Done(), with a generic ErrConnectionClosed, and
+	// would skip the stream observer and putCallReq altogether.
+	select {
+	case resp := <-call.resp:
+		require.ErrorIs(t, resp.err, err)
+	default:
+		t.Fatal("the call was never woken: it would wait out its full request timeout")
+	}
+}
+
+// TestExecStreamIDMismatchDeliversToWaitingCall drives the same mismatch as
+// TestProcessFrameStreamIDMismatchIsAnError above, but through a real exec() that is
+// genuinely waiting on call.resp, so it actually exercises execInternal's
+// resp.removedFromCalls branch instead of just call.resp's contents. A change that
+// made execInternal ignore removedFromCalls -- reintroducing the leak it fixed --
+// would still make the low-level test above pass.
+func TestExecStreamIDMismatchDeliversToWaitingCall(t *testing.T) {
+	t.Parallel()
+
+	const testTimeout = 10 * time.Second
+
+	// mismatchHeader builds a response frame header addressed to streamID, sized to
+	// carry no body.
+	mismatchHeader := func(streamID int) []byte {
+		return []byte{
+			protoVersion4 | protoDirectionMask, 0x00,
+			byte(streamID >> 8), byte(streamID),
+			byte(frm.OpResult),
+			0x00, 0x00, 0x00, 0x00, // no body
+		}
+	}
+
+	// remapWaitingCall starts an exec(), waits for it to register and for the stream
+	// observer to see it start, then re-keys c.calls so the entry sits under a
+	// different stream than call.streamID -- the same map/callReq disagreement the
+	// low-level test constructs directly. call.streamID itself is left untouched,
+	// matching the stream bit c.streams actually allocated, so that releasing it
+	// through the real ownership path is observable via c.streams.InUse(). It
+	// returns the exec() result channel and the (wrong) map key a mismatched
+	// response must be addressed to.
+	remapWaitingCall := func(t *testing.T, c *Conn, observerCtx *testStreamObserverContext) (<-chan error, int) {
+		t.Helper()
+
+		errCh := make(chan error, 1)
+		go func() {
+			_, err := c.exec(context.Background(), frameWriterFunc(func(f *framer, streamID int) error {
+				f.buf = append(f.buf[:0], 'x')
+				return nil
+			}), nil, 0)
+			errCh <- err
+		}()
+
+		call := waitForSingleCall(t, c)
+		select {
+		case <-observerCtx.started:
+		case <-time.After(testTimeout):
+			t.Fatal("stream observer did not observe the request start")
+		}
+
+		wrongKey := call.streamID + 1
+		if wrongKey > c.streams.NumStreams {
+			wrongKey = 1
+		}
+
+		c.mu.Lock()
+		delete(c.calls, call.streamID)
+		c.calls[wrongKey] = call
+		c.mu.Unlock()
+
+		return errCh, wrongKey
+	}
+
+	t.Run("ReleasesAndRecyclesStream", func(t *testing.T) {
+		t.Parallel()
+
+		observerCtx := newTestStreamObserverContext()
+		c, server := newTestExecConn(t, testContextWriter{})
+		c.streamObserver = &testStreamObserver{ctx: observerCtx}
+		defer server.Close()
+
+		errCh, wrongKey := remapWaitingCall(t, c, observerCtx)
+
+		procErr := c.processFrameSource(context.Background(), frameSource{r: bytes.NewReader(mismatchHeader(wrongKey))})
+		require.Error(t, procErr)
+
+		select {
+		case err := <-errCh:
+			require.ErrorIs(t, err, procErr)
+		case <-time.After(testTimeout):
+			t.Fatal("exec did not return after the mismatched delivery")
+		}
+
+		select {
+		case <-observerCtx.finished:
+		case <-time.After(testTimeout):
+			t.Fatal("stream was never marked finished")
+		}
+		select {
+		case <-observerCtx.abandoned:
+			t.Fatal("stream should not also be marked abandoned")
+		default:
+		}
+
+		if inUse := c.streams.InUse(); inUse != 0 {
+			t.Fatalf("expected the stream to be released, %d still in use", inUse)
+		}
+
+		c.mu.Lock()
+		remaining := len(c.calls)
+		c.mu.Unlock()
+		if remaining != 0 {
+			t.Fatalf("expected no in-flight calls after mismatch delivery, got %d", remaining)
+		}
+	})
+
+	t.Run("RacesWithConnectionClose", func(t *testing.T) {
+		t.Parallel()
+
+		for i := 0; i < 100; i++ {
+			observerCtx := newTestStreamObserverContext()
+			c, server := newTestExecConn(t, testContextWriter{})
+			c.streamObserver = &testStreamObserver{ctx: observerCtx}
+
+			errCh, wrongKey := remapWaitingCall(t, c, observerCtx)
+			header := mismatchHeader(wrongKey)
+
+			var wg sync.WaitGroup
+			wg.Add(2)
+			go func() {
+				defer wg.Done()
+				c.processFrameSource(context.Background(), frameSource{r: bytes.NewReader(header)})
+			}()
+			go func() {
+				defer wg.Done()
+				c.Close()
+			}()
+			wg.Wait()
+			server.Close()
+
+			select {
+			case <-errCh:
+			case <-time.After(testTimeout):
+				t.Fatal("exec never returned after the raced delivery/close")
+			}
+
+			finished, abandoned := false, false
+			select {
+			case <-observerCtx.finished:
+				finished = true
+			default:
+			}
+			select {
+			case <-observerCtx.abandoned:
+				abandoned = true
+			default:
+			}
+			if finished == abandoned {
+				t.Fatalf("iteration %d: expected exactly one terminal callback, finished=%v abandoned=%v", i, finished, abandoned)
+			}
+		}
+	})
+}
 
 // TestProcessFrameFailedDeadlineArmIsFatal pins that a body read which never
 // reached the socket is fatal to the connection, and that widening the rule that

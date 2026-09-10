@@ -129,7 +129,15 @@ func (c *controlConn) heartBeat() {
 		case error:
 			goto reconn
 		default:
-			panic(fmt.Sprintf("gocql: unknown frame in response to options: %T", resp))
+			// The peer answered OPTIONS with something that is neither SUPPORTED nor an
+			// error frame. parseFrame builds a frame for every opcode it knows, so this
+			// arm is reachable from the wire, and heartBeat runs on its own goroutine
+			// with nothing recovering above it -- frame.go's parseFrame holds the
+			// driver's only recover. Panicking here would let a server's malformed reply
+			// take the process down. Treat it as the error arm does instead: a peer this
+			// confused costs the control connection a reconnect.
+			c.session.logger.Printf("gocql: unexpected frame in response to options: %T\n", resp)
+			goto reconn
 		}
 
 	reconn:

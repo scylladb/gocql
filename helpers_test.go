@@ -23,6 +23,7 @@ package gocql
 
 import (
 	"bytes"
+	"reflect"
 	"testing"
 )
 
@@ -80,5 +81,140 @@ func TestRowMapBytesFastPath(t *testing.T) {
 	gotOther[0] = "mutated"
 	if other[0] != "other" {
 		t.Fatal("other_col: mutating the returned copy mutated the source slice")
+	}
+}
+
+// TestGetCassandraLongTypeRejectsShortSplits verifies that a composite Java type
+// name whose argument list is missing or truncated degrades to an opaque custom
+// type instead of panicking. getCassandraLongType is reached from readTypeInfo
+// with a wire-supplied subtype string, so an unguarded names[1] or a negative
+// make() raises a runtime.Error that parseFrame's recover re-panics, killing the
+// serve goroutine. Only the MapType arm guarded its split length.
+//
+// The well-formed names are here so the degrade path cannot silently swallow
+// valid input.
+func TestGetCassandraLongTypeRejectsShortSplits(t *testing.T) {
+	t.Parallel()
+
+	const p = apacheCassandraTypePrefix
+
+	tests := []struct {
+		name string
+		typ  string
+		want TypeInfo
+	}{
+		{name: "vector without arguments", typ: p + "VectorType", want: NewNativeType(0, TypeCustom)},
+		{name: "vector without dimensions", typ: p + "VectorType(" + p + "FloatType)", want: NewNativeType(0, TypeCustom)},
+		{name: "udt without arguments", typ: p + "UserType", want: NewNativeType(0, TypeCustom)},
+		{name: "udt without a name", typ: p + "UserType(gocql_test)", want: NewNativeType(0, TypeCustom)},
+		{name: "udt field without a type", typ: p + "UserType(gocql_test,706572736f6e,616765)", want: NewNativeType(0, TypeCustom)},
+		{
+			name: "vector of float",
+			typ:  p + "VectorType(" + p + "FloatType, 3)",
+			want: VectorType{
+				NativeType: NewCustomType(0, TypeCustom, p+"VectorType"),
+				SubType:    NewNativeType(0, TypeFloat),
+				Dimensions: 3,
+			},
+		},
+		{
+			name: "udt",
+			typ:  p + "UserType(gocql_test,706572736f6e,616765:" + p + "Int32Type)",
+			want: UDTTypeInfo{
+				NativeType: NewNativeType(0, TypeUDT),
+				KeySpace:   "gocql_test",
+				Name:       "person",
+				Elements:   []UDTField{{Name: "age", Type: NewNativeType(0, TypeInt)}},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := getCassandraLongType(test.typ, 0, nopLogger{})
+			if !reflect.DeepEqual(got, test.want) {
+				t.Errorf("getCassandraLongType(%q) = %#v, want %#v", test.typ, got, test.want)
+			}
+		})
+	}
+}
+
+// TestGetCassandraLongTypeRejectsNonPositiveDimensions verifies that a vector
+// dimension has to be positive before it becomes a VectorType. Only Atoi's error
+// was checked, so a negative one parsed cleanly. readVectorTypeInfo validates the
+// outer spec only, and hands the subtype string to this function, so a nested
+// vector is exactly where a negative one gets in; from there it reaches
+// reflect.MakeSlice in unmarshalVector, on the goroutine that called Scan, where
+// nothing recovers.
+func TestGetCassandraLongTypeRejectsNonPositiveDimensions(t *testing.T) {
+	t.Parallel()
+
+	const p = apacheCassandraTypePrefix
+
+	tests := []struct {
+		name string
+		typ  string
+		want TypeInfo
+	}{
+		{name: "negative dimensions", typ: p + "VectorType(" + p + "FloatType, -3)", want: NewNativeType(0, TypeCustom)},
+		{name: "zero dimensions", typ: p + "VectorType(" + p + "FloatType, 0)", want: NewNativeType(0, TypeCustom)},
+		{
+			// The outer vector is well-formed, so it survives; only the element
+			// type it could not parse degrades.
+			name: "negative dimensions nested in a valid vector",
+			typ:  p + "VectorType(" + p + "VectorType(" + p + "FloatType, -3), 2)",
+			want: VectorType{
+				NativeType: NewCustomType(0, TypeCustom, p+"VectorType"),
+				SubType:    NewNativeType(0, TypeCustom),
+				Dimensions: 2,
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := getCassandraLongType(test.typ, 0, nopLogger{})
+			if !reflect.DeepEqual(got, test.want) {
+				t.Errorf("getCassandraLongType(%q) = %#v, want %#v", test.typ, got, test.want)
+			}
+		})
+	}
+}
+
+// TestAsVectorTypeRejectsNonPositiveDimensions covers the third parser of the
+// same grammar, which backs MapScan and SliceMap through goType. It reported a
+// negative dimension as a usable vector.
+func TestAsVectorTypeRejectsNonPositiveDimensions(t *testing.T) {
+	t.Parallel()
+
+	const p = apacheCassandraTypePrefix
+
+	tests := []struct {
+		name    string
+		typ     string
+		wantOK  bool
+		wantDim int
+	}{
+		{name: "negative dimensions", typ: p + "VectorType(" + p + "FloatType, -3)"},
+		{name: "zero dimensions", typ: p + "VectorType(" + p + "FloatType, 0)"},
+		{name: "vector of float", typ: p + "VectorType(" + p + "FloatType, 3)", wantOK: true, wantDim: 3},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, ok := asVectorType(NewCustomType(protoVersion4, TypeCustom, test.typ))
+			if ok != test.wantOK {
+				t.Fatalf("asVectorType(%q) ok = %t, want %t (got %#v)", test.typ, ok, test.wantOK, got)
+			}
+			if ok && got.Dimensions != test.wantDim {
+				t.Errorf("asVectorType(%q).Dimensions = %d, want %d", test.typ, got.Dimensions, test.wantDim)
+			}
+		})
 	}
 }

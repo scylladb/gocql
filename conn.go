@@ -1037,7 +1037,15 @@ func (c *Conn) heartBeat(ctx context.Context) {
 		case error:
 			// TODO: should we do something here?
 		default:
-			panic(fmt.Sprintf("gocql: unknown frame in response to options: %T", resp))
+			// The peer answered OPTIONS with something that is neither SUPPORTED nor an
+			// error frame. parseFrame builds a frame for every opcode it knows, so this
+			// arm is reachable from the wire, and heartBeat runs on its own goroutine
+			// with nothing recovering above it -- frame.go's parseFrame holds the
+			// driver's only recover. Panicking here would let a server's malformed
+			// reply take the process down. Count it as a failure instead: six of them
+			// close the connection, which is what a peer this confused deserves.
+			c.logger.Printf("gocql: unexpected frame in response to options: %T\n", resp)
+			failures++
 		}
 	}
 }
@@ -1227,7 +1235,30 @@ func (c *Conn) processFrameSource(ctx context.Context, src frameSource) error {
 		c.logger.Printf("gocql: received response for stream which has no handler: header=%v\n", head)
 		return c.discardFrame(r, head)
 	} else if head.Stream != call.streamID {
-		panic(fmt.Sprintf("call has incorrect streamID: got %d expected %d", call.streamID, head.Stream))
+		// c.calls is keyed by stream id, so reaching here means the map and the
+		// callReq it holds disagree: an internal invariant, not something a peer can
+		// provoke. It used to panic -- on the serve goroutine, outside parseFrame's
+		// recover, and with a string value that recover could not have converted
+		// anyway -- so a driver bug took the whole process down. Failing the
+		// connection is the right blast radius instead: its stream bookkeeping is what
+		// is no longer trustworthy.
+		//
+		// The call is delivered to before returning, the same way the fatal body-read
+		// failure below is. head.Stream has already been removed from c.calls, so
+		// closeWithError's drain can no longer find it: returning without delivering
+		// would leave the caller to wake on c.ctx.Done() with a generic
+		// ErrConnectionClosed, and would skip putCallReq and the stream observer
+		// entirely -- breaking the guarantee that exactly one of StreamAbandoned and
+		// StreamFinished fires.
+		err := fmt.Errorf("gocql: response for stream %d dispatched to a call on stream %d", head.Stream, call.streamID)
+		select {
+		case call.resp <- callResp{err: err, removedFromCalls: true}:
+		case <-call.timeout:
+			c.abandonRecvCall(call, nil)
+		case <-ctx.Done():
+			c.abandonRecvCall(call, nil)
+		}
+		return err
 	}
 
 	framer := c.getReadFramer()
@@ -1246,7 +1277,7 @@ func (c *Conn) processFrameSource(ctx context.Context, src frameSource) error {
 	// we either, return a response to the caller, the caller timedout, or the
 	// connection has closed. Either way we should never block indefinatly here
 	select {
-	case call.resp <- callResp{framer: framer, err: err}:
+	case call.resp <- callResp{framer: framer, err: err, removedFromCalls: true}:
 		// Framer ownership transferred to caller
 	case <-call.timeout:
 		c.abandonRecvCall(call, framer)
@@ -1865,6 +1896,21 @@ type callResp struct {
 	framer *framer
 	// err is error encountered, if any.
 	err error
+	// removedFromCalls is set by a sender that already deleted this call from
+	// c.calls before delivering here -- processFrameSource does that for every
+	// outcome it delivers directly (the stream-mismatch and fatal/per-request
+	// body-read paths), because c.calls is keyed by stream and a response frame
+	// pops its stream's entry as soon as it is matched. closeWithError's drain
+	// loop is the one other sender, and it only ever sends to a call it just
+	// found still in c.calls, then recycles it itself afterward.
+	//
+	// The receiver uses this instead of Conn.closed to decide whether it owns
+	// releasing the stream and recycling the callReq: a call already missing
+	// from c.calls will never be seen by closeWithError's drain, so the receiver
+	// is its only chance, regardless of how Conn.closed happens to race against
+	// this delivery (processFrameSource calls closeWithError itself immediately
+	// after a fatal delivery like this returns).
+	removedFromCalls bool
 }
 
 // contextWriter is like io.Writer, but takes context as well.
@@ -2275,11 +2321,12 @@ func (c *Conn) execInternal(ctx context.Context, req frameBuilder, tracer Tracer
 		stopWaiting = true
 		if resp.err != nil {
 			c.releaseReadFramer(resp.framer)
-			if !c.Closed() {
-				// if the connection is closed then we cant release the stream,
-				// this is because the request is still outstanding and we have
-				// been handed another error from another stream which caused the
-				// connection to close.
+			if resp.removedFromCalls {
+				// The sender already deleted this call from c.calls before
+				// delivering here, so closeWithError's drain will never find it --
+				// we are the only side that can release the stream and recycle the
+				// callReq, regardless of how Conn.closed happens to race against
+				// this delivery. See callResp.removedFromCalls.
 				releaseStream = true
 				recycleCall = true
 			}

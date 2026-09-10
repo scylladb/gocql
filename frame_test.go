@@ -34,6 +34,7 @@ import (
 	"math"
 	"net"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -521,6 +522,38 @@ func TestParsePreparedMetadataAcceptsValidPkeyCount(t *testing.T) {
 		require.Len(t, prepared.reqMeta.columns, 2)
 		require.Empty(t, fr.buf, "whole frame should be consumed")
 	})
+}
+
+// readLongString's length is signed, and it lacked the negative guard its siblings
+// readBytesCopy and ReadBytesInternal carry. len(f.buf) is never below a negative,
+// so the bounds check passed and f.buf[:size] raised a runtime.Error -- which
+// parseFrame's recover deliberately re-panics rather than converting.
+//
+// The assertion is that contract, not the message: every read helper panics with a
+// plain error, and that is the whole reason a truncated frame is a protocol error
+// instead of a dead serve goroutine. A helper that breaks it breaks the recover.
+func TestReadLongStringRejectsNegativeLength(t *testing.T) {
+	f := newFramer(nil, protoVersion4)
+	f.buf = []byte{0xFF, 0xFF, 0xFF, 0xFF, 'x'} // a declared length of -1
+
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("a negative long string length was accepted")
+		}
+		if _, ok := r.(runtime.Error); ok {
+			t.Fatalf("panicked with a runtime.Error, which parseFrame's recover re-panics: %v", r)
+		}
+		err, ok := r.(error)
+		if !ok {
+			t.Fatalf("panicked with %T, which parseFrame's recover cannot convert: %v", r, r)
+		}
+		if !strings.Contains(err.Error(), "-1") {
+			t.Errorf("the error does not name the length: %v", err)
+		}
+	}()
+
+	f.readLongString()
 }
 
 // TestParseResultPreparedTruncatedResultMetadataID verifies that a malformed
@@ -1598,4 +1631,109 @@ func TestGetQueryValuesOversize(t *testing.T) {
 	}
 	// Should not panic when returning oversize.
 	putQueryValues(s)
+}
+
+// writeRowsResultWithColumnType builds a RESULT/Rows body carrying a single
+// column of the custom type customType, so that parseFrame drives readTypeInfo
+// over a server-supplied type string.
+func writeRowsResultWithColumnType(fr *framer, customType string) {
+	fr.writeInt(frm.ResultKindRows)
+	fr.writeInt(int32(frm.FlagGlobalTableSpec))
+	fr.writeInt(1) // colCount
+	fr.writeString("gocql_test")
+	fr.writeString("vectors")
+	fr.writeString("vec")
+	fr.writeShort(uint16(TypeCustom))
+	fr.writeString(customType)
+	fr.writeInt(0) // numRows
+}
+
+// TestParseResultRowsRejectsMalformedVectorType verifies that a RESULT/Rows
+// column typed as a malformed VectorType is reported as an error rather than
+// killing the serve goroutine. readTypeInfo used to slice the spec string
+// unchecked: a bare "…VectorType" made spec[1:len(spec)-1] a [1:-1] slice, and
+// a spec with no comma made spec[:idx] a [:-1] one. Both raise a runtime.Error,
+// which parseFrame's recover re-panics by design.
+//
+// The well-formed cases are here to pin that the guard did not narrow the
+// accepted grammar, and the "VectorTypeXxx" case that a name which merely
+// starts with the prefix is not a vector at all and must degrade to an opaque
+// custom type instead of failing the frame.
+func TestParseResultRowsRejectsMalformedVectorType(t *testing.T) {
+	t.Parallel()
+
+	const p = apacheCassandraTypePrefix
+	const vp = p + "VectorType"
+
+	tests := []struct {
+		name    string
+		custom  string
+		wantErr bool
+		want    TypeInfo
+	}{
+		{name: "no argument list", custom: vp, wantErr: true},
+		{name: "unclosed argument list", custom: vp + "(", wantErr: true},
+		{name: "empty argument list", custom: vp + "()", wantErr: true},
+		{name: "no dimensions", custom: vp + "(" + p + "FloatType)", wantErr: true},
+		{name: "empty subtype", custom: vp + "(, 3)", wantErr: true},
+		{name: "unterminated", custom: vp + "(" + p + "FloatType, 3", wantErr: true},
+		{name: "dimensions not a number", custom: vp + "(" + p + "FloatType, abc)", wantErr: true},
+		{name: "negative dimensions", custom: vp + "(" + p + "FloatType, -3)", wantErr: true},
+		{name: "zero dimensions", custom: vp + "(" + p + "FloatType, 0)", wantErr: true},
+		{
+			name:   "not a vector type",
+			custom: vp + "Xxx(" + p + "FloatType, 3)",
+			want:   NewCustomType(protoVersion4, TypeCustom, vp+"Xxx("+p+"FloatType, 3)"),
+		},
+		{
+			name:   "float vector",
+			custom: vp + "(" + p + "FloatType, 3)",
+			want: VectorType{
+				NativeType: NewCustomType(protoVersion4, TypeCustom, vp+"("+p+"FloatType, 3)"),
+				SubType:    NewNativeType(protoVersion4, TypeFloat),
+				Dimensions: 3,
+			},
+		},
+		{
+			name:   "nested vector",
+			custom: vp + "(" + vp + "(" + p + "InetAddressType, 2), 3)",
+			want: VectorType{
+				NativeType: NewCustomType(protoVersion4, TypeCustom, vp+"("+vp+"("+p+"InetAddressType, 2), 3)"),
+				SubType: VectorType{
+					NativeType: NewCustomType(protoVersion4, TypeCustom, vp),
+					SubType:    NewNativeType(protoVersion4, TypeInet),
+					Dimensions: 2,
+				},
+				Dimensions: 3,
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			fr := newFramer(nil, protoVersion4)
+			// Response direction bit set so parseFrame does not reject it as a request.
+			fr.header = &frm.FrameHeader{Version: protoVersion4 | 0x80, Op: frm.OpResult}
+			writeRowsResultWithColumnType(fr, test.custom)
+
+			frame, err := fr.parseFrame()
+			if test.wantErr {
+				if err == nil {
+					t.Fatalf("expected an error for %q, got frame %+v", test.custom, frame)
+				}
+				if frame != nil {
+					t.Errorf("expected nil frame on error, got %+v", frame)
+				}
+				return
+			}
+
+			require.NoError(t, err)
+			rows, ok := frame.(*resultRowsFrame)
+			require.True(t, ok, "expected a resultRowsFrame, got %T", frame)
+			require.Len(t, rows.meta.columns, 1)
+			require.Equal(t, test.want, rows.meta.columns[0].TypeInfo)
+		})
+	}
 }
