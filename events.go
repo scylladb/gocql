@@ -152,11 +152,11 @@ func (s *Session) handleSchemaEvent(frames []frame) {
 			s.metadataDescriber.invalidateTableSchema(f.Keyspace, f.Object)
 			s.handleTableChange(f.Keyspace, f.Object, f.Change)
 		case *frm.SchemaChangeAggregate:
-			s.metadataDescriber.invalidateKeyspaceSchema(f.Keyspace)
+			s.metadataDescriber.invalidateAggregatesSchema(f.Keyspace)
 		case *frm.SchemaChangeFunction:
-			s.metadataDescriber.invalidateKeyspaceSchema(f.Keyspace)
+			s.metadataDescriber.invalidateFunctionsSchema(f.Keyspace)
 		case *frm.SchemaChangeType:
-			s.metadataDescriber.invalidateKeyspaceSchema(f.Keyspace)
+			s.metadataDescriber.invalidateTypesSchema(f.Keyspace)
 		}
 	}
 }

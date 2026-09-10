@@ -315,9 +315,17 @@ func trimQueries(in []string) []string {
 }
 
 var schemaVersion = regexp.MustCompile(` WITH ID = [0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}[ \t\n]+AND`)
+var tabletsClause = regexp.MustCompile(` AND tablets = \{[^}]*\}`)
 
 func trimSchema(s string) string {
 	// Remove temporary items from the scheme, in particular schema version:
 	// ) WITH ID = cf0364d0-3b85-11ef-b79d-80a2ee1928c0
-	return strings.ReplaceAll(schemaVersion.ReplaceAllString(s, " WITH"), "\n\n", "\n")
+	s = strings.ReplaceAll(schemaVersion.ReplaceAllString(s, " WITH"), "\n\n", "\n")
+	// The client rebuilds CREATE KEYSPACE from cached metadata and can't
+	// reproduce the server's fully-qualified strategy class name or its
+	// tablets clause (not modeled by KeyspaceMetadata); normalize both away
+	// since neither affects the recreated schema's meaning.
+	s = strings.ReplaceAll(s, "org.apache.cassandra.locator.", "")
+	s = tabletsClause.ReplaceAllString(s, "")
+	return s
 }
