@@ -141,20 +141,21 @@ type SslOptions struct {
 }
 
 type ConnConfig struct {
-	Dialer          Dialer
-	Logger          StdLogger
-	Authenticator   Authenticator
-	Compressor      Compressor
-	HostDialer      HostDialer
-	AuthProvider    func(h *HostInfo) (Authenticator, error)
-	tlsConfig       *tls.Config
-	CQLVersion      string
-	ConnectTimeout  time.Duration
-	ReadTimeout     time.Duration
-	WriteTimeout    time.Duration
-	ProtoVersion    int
-	Keepalive       time.Duration
-	disableCoalesce bool
+	Dialer                 Dialer
+	Logger                 StdLogger
+	Authenticator          Authenticator
+	Compressor             Compressor
+	HostDialer             HostDialer
+	AuthProvider           func(h *HostInfo) (Authenticator, error)
+	tlsConfig              *tls.Config
+	CQLVersion             string
+	ConnectTimeout         time.Duration
+	ReadTimeout            time.Duration
+	WriteTimeout           time.Duration
+	ProtoVersion           int
+	Keepalive              time.Duration
+	HeartbeatSlowThreshold time.Duration
+	disableCoalesce        bool
 	// isControlConn marks the connection used by the control connection, which is
 	// the only one reporting the driver configuration on startup.
 	isControlConn bool
@@ -262,10 +263,14 @@ type Conn struct {
 	// for server push events: a SCHEMA_CHANGE arriving inside that window makes
 	// the event-debouncer goroutine run querySystem on this connection
 	// concurrently with the write.
-	systemRequest    atomic.Pointer[systemRequestState]
-	cqlProtoExts     []cqlProtocolExtension
-	scyllaSupported  ScyllaConnectionFeatures
-	writeTimeout     atomic.Int64
+	systemRequest   atomic.Pointer[systemRequestState]
+	cqlProtoExts    []cqlProtocolExtension
+	scyllaSupported ScyllaConnectionFeatures
+	writeTimeout    atomic.Int64
+	// activity is a counter bumped each time a request on this connection
+	// receives a successful response, so the heartbeat can skip connections
+	// that are already known to be alive.
+	activity         atomic.Int64
 	mu               sync.Mutex
 	tabletsRoutingV1 int32
 	headerBuf        [headSize]byte
@@ -1000,6 +1005,8 @@ func (c *Conn) heartBeat(ctx context.Context) {
 	defer timer.Stop()
 
 	var failures int
+	var heartbeatSlow bool
+	prev := c.activity.Load()
 
 	for {
 		if failures > 5 {
@@ -1015,7 +1022,25 @@ func (c *Conn) heartBeat(ctx context.Context) {
 		case <-timer.C:
 		}
 
-		framer, err := c.exec(context.Background(), &writeOptionsFrame{}, nil, c.cfg.ConnectTimeout)
+		// Skip heartbeat if the connection had activity since last check.
+		// Detection of a dead connection may be delayed by up to 2x the
+		// heartbeat interval. Matches the Python driver behavior.
+		cur := c.activity.Load()
+		if cur != prev {
+			prev = cur
+			sleepTime = 30 * time.Second
+			failures = 0
+			continue
+		}
+
+		var start time.Time
+		slowThreshold := c.cfg.HeartbeatSlowThreshold
+		if slowThreshold > 0 {
+			start = time.Now()
+		}
+
+		// execInternal: the probe must not count as activity.
+		framer, err := c.execInternal(context.Background(), &writeOptionsFrame{}, nil, c.cfg.ConnectTimeout, true)
 		if err != nil {
 			failures++
 			continue
@@ -1032,6 +1057,17 @@ func (c *Conn) heartBeat(ctx context.Context) {
 		switch resp.(type) {
 		case *frm.SupportedFrame:
 			// Everything ok
+			if slowThreshold > 0 {
+				if elapsed := time.Since(start); elapsed > slowThreshold {
+					if !heartbeatSlow {
+						heartbeatSlow = true
+						c.cfg.logger().Printf("gocql: heartbeat to %s took %v, exceeding threshold %v",
+							c.addr, elapsed, slowThreshold)
+					}
+				} else {
+					heartbeatSlow = false
+				}
+			}
 			sleepTime = 30 * time.Second
 			failures = 0
 		case error:
@@ -2121,7 +2157,17 @@ func (c *Conn) addCall(call *callReq) error {
 // typically via defer immediately after parsing or after transferring ownership
 // to an Iter.
 func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, requestTimeout time.Duration) (*framer, error) {
-	return c.execInternal(ctx, req, tracer, requestTimeout, true)
+	// Cancelled requests never touch the wire; don't count as activity.
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return nil, &QueryError{err: ctxErr, potentiallyExecuted: false}
+	}
+	framer, err := c.execInternal(ctx, req, tracer, requestTimeout, true)
+	if err == nil {
+		// Only count activity once a response was actually received,
+		// so heartbeat skip reflects genuine liveness, not just an attempt.
+		c.activity.Add(1)
+	}
+	return framer, err
 }
 
 func (c *Conn) execInternal(ctx context.Context, req frameBuilder, tracer Tracer, requestTimeout time.Duration, startupCompleted bool) (*framer, error) {
