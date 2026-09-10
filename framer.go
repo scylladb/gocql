@@ -46,6 +46,9 @@ type framerConfig struct {
 	flags                 byte
 	tabletsRoutingV1      bool
 	scyllaUseMetadataID   bool
+	// compOpts holds the per-connection compression settings (topology-resolved
+	// threshold + min savings percent). Only meaningful for write-path framers.
+	compOpts compressionOpts
 }
 
 // framerBufEWMAWeight controls how quickly the exponential weighted moving average
@@ -80,6 +83,7 @@ func (cf *connFramers) initCache(c *Conn) {
 		compressor: c.compressor,
 		proto:      c.version & protoVersionMask,
 		flags:      defaultFramerFlags(c.compressor, c.version),
+		compOpts:   c.compOpts,
 	}
 	if lwtExt := findCQLProtoExtByName(c.cqlProtoExts, lwtAddMetadataMarkKey); lwtExt != nil {
 		if castedExt, ok := lwtExt.(*lwtAddMetadataMarkExt); ok {
@@ -224,6 +228,7 @@ func (fp *framerPool) init(defaults framerConfig, release func(*framer)) {
 				rateLimitingErrorCode: defaults.rateLimitingErrorCode,
 				tabletsRoutingV1:      defaults.tabletsRoutingV1,
 				scyllaUseMetadataID:   defaults.scyllaUseMetadataID,
+				compOpts:              defaults.compOpts,
 			}
 			f.release = func() { release(f) }
 			return f
@@ -233,7 +238,7 @@ func (fp *framerPool) init(defaults framerConfig, release func(*framer)) {
 
 func (fp *framerPool) get(c *Conn) *framer {
 	if !fp.enabled.Load() {
-		return newFramer(c.compressor, c.version)
+		return newFramer(c.compressor, c.version, c.compOpts)
 	}
 	return fp.pool.Get().(*framer)
 }
