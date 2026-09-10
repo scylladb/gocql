@@ -19,11 +19,10 @@ const vectorTypeSuffix = ")"
 func makeFloatVectorType(dim int, dimStr string) VectorType {
 	return VectorType{
 		NativeType: NativeType{
-			proto:  protoVersion4,
 			typ:    TypeCustom,
 			custom: vectorTypePrefix + dimStr + vectorTypeSuffix,
 		},
-		SubType:    NativeType{proto: protoVersion4, typ: TypeFloat},
+		SubType:    NativeType{typ: TypeFloat},
 		Dimensions: dim,
 	}
 }
