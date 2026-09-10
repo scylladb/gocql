@@ -1576,8 +1576,6 @@ func TestTokenAwarePolicyReset(t *testing.T) {
 // TestTokenAwareHostPolicy_TabletReplicasPresizeAllocRegression guards the
 // tablets-path replicas slice presizing in Pick() against alloc regressions.
 func TestTokenAwareHostPolicy_TabletReplicasPresizeAllocRegression(t *testing.T) {
-	t.Parallel()
-
 	if testing.CoverMode() != "" {
 		t.Skip("skipping alloc regression guard: coverage instrumentation adds allocations of its own")
 	}
