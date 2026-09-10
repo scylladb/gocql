@@ -1,0 +1,640 @@
+// Copyright (c) 2012 The gocql Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build all || unit
+// +build all unit
+
+package gocql
+
+import (
+	"encoding/binary"
+	"math"
+	"reflect"
+	"strconv"
+	"testing"
+)
+
+// --- Helper constructors for vector type info ---
+
+func makeVectorType(subType Type, dim int) VectorType {
+	return VectorType{
+		NativeType: NativeType{proto: protoVersion4, typ: TypeCustom},
+		SubType:    NativeType{proto: protoVersion4, typ: subType},
+		Dimensions: dim,
+	}
+}
+
+// Float32/float64 fast-path coverage (round-trip, special values, dimension
+// mismatch, nil handling, slice reuse) lives in marshal_vector_test.go —
+// those fast paths predate this file and are exercised there.
+
+// --- marshalVectorInt32 / unmarshalVectorInt32 ---
+
+func TestMarshalVectorInt32_RoundTrip(t *testing.T) {
+	info := makeVectorType(TypeInt, 4)
+	vec := []int32{-2147483648, -1, 0, 2147483647}
+
+	data, err := marshalVector(info, vec)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+	if len(data) != 16 {
+		t.Fatalf("expected 16 bytes, got %d", len(data))
+	}
+
+	var result []int32
+	if err := unmarshalVector(info, data, &result); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	for i := range vec {
+		if result[i] != vec[i] {
+			t.Fatalf("result[%d] = %v, want %v", i, result[i], vec[i])
+		}
+	}
+}
+
+func TestMarshalVectorInt32_WireFormat(t *testing.T) {
+	info := makeVectorType(TypeInt, 2)
+	vec := []int32{1, 256}
+
+	data, err := marshalVector(info, vec)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+
+	// Verify big-endian encoding
+	if binary.BigEndian.Uint32(data[0:]) != 1 {
+		t.Fatalf("expected 1 at offset 0, got %d", binary.BigEndian.Uint32(data[0:]))
+	}
+	if binary.BigEndian.Uint32(data[4:]) != 256 {
+		t.Fatalf("expected 256 at offset 4, got %d", binary.BigEndian.Uint32(data[4:]))
+	}
+}
+
+// --- marshalVectorInt / unmarshalVectorInt ---
+//
+// TypeInt vectors have two valid Go destinations: []int32 (tested above) and
+// []int (VectorType.NewWithError's default destination for TypeInt, see
+// TestVectorTypeNewWithError_Int) — without this fast path, the driver's own
+// default scan destination for vector<int> would always fall back to reflect.
+
+func TestMarshalVectorInt_RoundTrip(t *testing.T) {
+	info := makeVectorType(TypeInt, 4)
+	vec := []int{math.MinInt32, -1, 0, math.MaxInt32}
+
+	data, err := marshalVector(info, vec)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+	if len(data) != 16 {
+		t.Fatalf("expected 16 bytes, got %d", len(data))
+	}
+
+	var result []int
+	if err := unmarshalVector(info, data, &result); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	for i := range vec {
+		if result[i] != vec[i] {
+			t.Fatalf("result[%d] = %v, want %v", i, result[i], vec[i])
+		}
+	}
+}
+
+func TestMarshalVectorInt_WireFormat(t *testing.T) {
+	info := makeVectorType(TypeInt, 2)
+	vec := []int{1, 256}
+
+	data, err := marshalVector(info, vec)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+
+	if binary.BigEndian.Uint32(data[0:]) != 1 {
+		t.Fatalf("expected 1 at offset 0, got %d", binary.BigEndian.Uint32(data[0:]))
+	}
+	if binary.BigEndian.Uint32(data[4:]) != 256 {
+		t.Fatalf("expected 256 at offset 4, got %d", binary.BigEndian.Uint32(data[4:]))
+	}
+}
+
+func TestMarshalVectorInt_OutOfInt32Range(t *testing.T) {
+	// On a 32-bit platform an []int cannot hold a value outside int32 range,
+	// so the scenario cannot be constructed; the non-constant conversion also
+	// keeps this file compiling there (a constant would overflow at build).
+	if strconv.IntSize == 32 {
+		t.Skip("[]int cannot exceed int32 range on 32-bit platforms")
+	}
+	over := int64(math.MaxInt32) + 1
+	info := makeVectorType(TypeInt, 1)
+	vec := []int{int(over)}
+
+	if _, err := marshalVector(info, vec); err == nil {
+		t.Fatal("expected error for int value outside int32 range")
+	}
+}
+
+func TestUnmarshalVectorInt_PreSizedDestination(t *testing.T) {
+	info := makeVectorType(TypeInt, 3)
+	data := make([]byte, 12)
+	binary.BigEndian.PutUint32(data[0:], 1)
+	binary.BigEndian.PutUint32(data[4:], 2)
+	binary.BigEndian.PutUint32(data[8:], 3)
+
+	result := make([]int, 0, 10)
+	if err := unmarshalVector(info, data, &result); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	if !reflect.DeepEqual(result, []int{1, 2, 3}) {
+		t.Fatalf("got %v, want [1 2 3]", result)
+	}
+}
+
+// TestVectorTypeNewWithError_Int_RoundTrip closes the loop that
+// TestVectorTypeNewWithError_Int only half-covers: not only does
+// NewWithError() hand back a *[]int for a TypeInt vector, that destination
+// must actually be usable by unmarshalVector's fast path rather than silently
+// falling through to reflection.
+func TestVectorTypeNewWithError_Int_RoundTrip(t *testing.T) {
+	info := makeVectorType(TypeInt, 2)
+	dst, err := info.NewWithError()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	ptr, ok := dst.(*[]int)
+	if !ok {
+		t.Fatalf("expected *[]int, got %T", dst)
+	}
+
+	data, err := marshalVector(info, []int{7, 9})
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+	if err := unmarshalVector(info, data, ptr); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	if !reflect.DeepEqual(*ptr, []int{7, 9}) {
+		t.Fatalf("got %v, want [7 9]", *ptr)
+	}
+}
+
+// --- marshalVectorInt64 / unmarshalVectorInt64 ---
+
+func TestMarshalVectorInt64_RoundTrip(t *testing.T) {
+	info := makeVectorType(TypeBigInt, 3)
+	vec := []int64{-9223372036854775808, 0, 9223372036854775807}
+
+	data, err := marshalVector(info, vec)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+	if len(data) != 24 {
+		t.Fatalf("expected 24 bytes, got %d", len(data))
+	}
+
+	var result []int64
+	if err := unmarshalVector(info, data, &result); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	for i := range vec {
+		if result[i] != vec[i] {
+			t.Fatalf("result[%d] = %v, want %v", i, result[i], vec[i])
+		}
+	}
+}
+
+func TestMarshalVectorInt64_Timestamp(t *testing.T) {
+	// TypeTimestamp also maps to int64 on the wire (millis since epoch)
+	info := makeVectorType(TypeTimestamp, 2)
+	vec := []int64{1609459200000, 1640995200000} // 2021-01-01, 2022-01-01 in millis
+
+	data, err := marshalVector(info, vec)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+
+	var result []int64
+	if err := unmarshalVector(info, data, &result); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	for i := range vec {
+		if result[i] != vec[i] {
+			t.Fatalf("result[%d] = %v, want %v", i, result[i], vec[i])
+		}
+	}
+}
+
+// --- marshalVectorUUID / unmarshalVectorUUID ---
+
+func TestMarshalVectorUUID_RoundTrip(t *testing.T) {
+	info := makeVectorType(TypeUUID, 3)
+	vec := []UUID{
+		{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10},
+		{0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20},
+		{0xff, 0xfe, 0xfd, 0xfc, 0xfb, 0xfa, 0xf9, 0xf8, 0xf7, 0xf6, 0xf5, 0xf4, 0xf3, 0xf2, 0xf1, 0xf0},
+	}
+
+	data, err := marshalVector(info, vec)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+	if len(data) != 48 {
+		t.Fatalf("expected 48 bytes, got %d", len(data))
+	}
+
+	var result []UUID
+	if err := unmarshalVector(info, data, &result); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	for i := range vec {
+		if result[i] != vec[i] {
+			t.Fatalf("result[%d] = %v, want %v", i, result[i], vec[i])
+		}
+	}
+}
+
+func TestMarshalVectorUUID_TimeUUID(t *testing.T) {
+	info := makeVectorType(TypeTimeUUID, 2)
+	vec := []UUID{
+		TimeUUID(),
+		TimeUUID(),
+	}
+
+	data, err := marshalVector(info, vec)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+
+	var result []UUID
+	if err := unmarshalVector(info, data, &result); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	for i := range vec {
+		if result[i] != vec[i] {
+			t.Fatalf("result[%d] = %v, want %v", i, result[i], vec[i])
+		}
+	}
+}
+
+// --- Fast path vs slow path consistency ---
+
+func TestVectorFastPath_ConsistentWithReflectPath(t *testing.T) {
+	// Ensure fast path produces identical wire format to reflect path.
+	// We use []float32 (fast path) and compare to reflect-based marshal
+	// that would be used for a non-matching type.
+	info := makeVectorType(TypeFloat, 3)
+	vec := []float32{1.0, 2.0, 3.0}
+
+	// Fast path result
+	fastData, err := marshalVector(info, vec)
+	if err != nil {
+		t.Fatalf("fast path marshal error: %v", err)
+	}
+
+	// Manually construct expected wire format
+	expected := make([]byte, 12)
+	binary.BigEndian.PutUint32(expected[0:], math.Float32bits(1.0))
+	binary.BigEndian.PutUint32(expected[4:], math.Float32bits(2.0))
+	binary.BigEndian.PutUint32(expected[8:], math.Float32bits(3.0))
+
+	if len(fastData) != len(expected) {
+		t.Fatalf("length mismatch: fast=%d, expected=%d", len(fastData), len(expected))
+	}
+	for i := range expected {
+		if fastData[i] != expected[i] {
+			t.Fatalf("byte[%d]: fast=%02x, expected=%02x", i, fastData[i], expected[i])
+		}
+	}
+}
+
+// --- VectorType.NewWithError() ---
+
+func TestVectorTypeNewWithError_Float32(t *testing.T) {
+	info := makeVectorType(TypeFloat, 3)
+	v, err := info.NewWithError()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := v.(*[]float32); !ok {
+		t.Fatalf("expected *[]float32, got %T", v)
+	}
+}
+
+func TestVectorTypeNewWithError_Float64(t *testing.T) {
+	info := makeVectorType(TypeDouble, 3)
+	v, err := info.NewWithError()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := v.(*[]float64); !ok {
+		t.Fatalf("expected *[]float64, got %T", v)
+	}
+}
+
+func TestVectorTypeNewWithError_Int(t *testing.T) {
+	info := makeVectorType(TypeInt, 3)
+	v, err := info.NewWithError()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := v.(*[]int); !ok {
+		t.Fatalf("expected *[]int, got %T", v)
+	}
+}
+
+func TestVectorTypeNewWithError_BigInt(t *testing.T) {
+	info := makeVectorType(TypeBigInt, 3)
+	v, err := info.NewWithError()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := v.(*[]int64); !ok {
+		t.Fatalf("expected *[]int64, got %T", v)
+	}
+}
+
+func TestVectorTypeNewWithError_UUID(t *testing.T) {
+	info := makeVectorType(TypeUUID, 3)
+	v, err := info.NewWithError()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := v.(*[]UUID); !ok {
+		t.Fatalf("expected *[]UUID, got %T", v)
+	}
+}
+
+func TestVectorTypeNewWithError_Text(t *testing.T) {
+	info := makeVectorType(TypeText, 3)
+	v, err := info.NewWithError()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := v.(*[]string); !ok {
+		t.Fatalf("expected *[]string, got %T", v)
+	}
+}
+
+// --- vectorByteSize overflow ---
+
+func TestVectorByteSize_Overflow(t *testing.T) {
+	// Should fail for very large dimensions
+	_, err := vectorByteSize(math.MaxInt32, 4)
+	if err == nil {
+		t.Fatal("expected overflow error")
+	}
+}
+
+func TestVectorByteSize_Normal(t *testing.T) {
+	size, err := vectorByteSize(1536, 4)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if size != 6144 {
+		t.Fatalf("expected 6144, got %d", size)
+	}
+}
+
+func TestVectorByteSize_Zero(t *testing.T) {
+	size, err := vectorByteSize(0, 4)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if size != 0 {
+		t.Fatalf("expected 0, got %d", size)
+	}
+}
+
+// --- Zero-dimension fast path ---
+
+func TestVectorFastPath_ZeroDimFloat32(t *testing.T) {
+	info := makeVectorType(TypeFloat, 0)
+
+	// Marshal: empty float32 slice with 0 dimensions should work
+	vec := []float32{}
+	data, err := marshalVector(info, vec)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+	if len(data) != 0 {
+		t.Fatalf("expected 0 bytes, got %d", len(data))
+	}
+
+	// Unmarshal: empty data into float32 slice
+	var result []float32
+	if err := unmarshalVector(info, []byte{}, &result); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil empty slice")
+	}
+	if len(result) != 0 {
+		t.Fatalf("expected len 0, got %d", len(result))
+	}
+}
+
+func TestVectorFastPath_ZeroDimFloat64(t *testing.T) {
+	info := makeVectorType(TypeDouble, 0)
+	var result []float64
+	if err := unmarshalVector(info, []byte{}, &result); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil empty slice")
+	}
+}
+
+func TestVectorFastPath_ZeroDimUUID(t *testing.T) {
+	info := makeVectorType(TypeUUID, 0)
+	var result []UUID
+	if err := unmarshalVector(info, []byte{}, &result); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil empty slice")
+	}
+}
+
+// --- Non-matching types fall through to reflect path ---
+
+func TestVectorFastPath_FallsThrough(t *testing.T) {
+	// Passing []int (not []int32) for TypeInt should fall through to
+	// reflect path and still work via Marshal/Unmarshal
+	info := makeVectorType(TypeFloat, 3)
+	type myFloat float32
+	vec := []myFloat{1.0, 2.0, 3.0}
+
+	// Should fall through to reflect path (no fast path for custom types)
+	data, err := marshalVector(info, vec)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+	if len(data) != 12 {
+		t.Fatalf("expected 12 bytes, got %d", len(data))
+	}
+}
+
+// --- Benchmarks for all fast-path types ---
+
+func BenchmarkMarshalVectorFloat64(b *testing.B) {
+	dims := []int{128, 768, 1536}
+	for _, dim := range dims {
+		b.Run(dimStr(dim), func(b *testing.B) {
+			b.ReportAllocs()
+			info := makeVectorType(TypeDouble, dim)
+			vec := make([]float64, dim)
+			for i := range vec {
+				vec[i] = float64(i) * 0.01
+			}
+			b.SetBytes(int64(dim * 8))
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if _, err := marshalVector(info, vec); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkUnmarshalVectorFloat64(b *testing.B) {
+	dims := []int{128, 768, 1536}
+	for _, dim := range dims {
+		b.Run(dimStr(dim), func(b *testing.B) {
+			b.ReportAllocs()
+			info := makeVectorType(TypeDouble, dim)
+			data := make([]byte, dim*8)
+			for i := 0; i < dim; i++ {
+				binary.BigEndian.PutUint64(data[i*8:], math.Float64bits(float64(i)*0.01))
+			}
+			var result []float64
+			b.SetBytes(int64(dim * 8))
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if err := unmarshalVector(info, data, &result); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkMarshalVectorInt32(b *testing.B) {
+	dims := []int{128, 768, 1536}
+	for _, dim := range dims {
+		b.Run(dimStr(dim), func(b *testing.B) {
+			b.ReportAllocs()
+			info := makeVectorType(TypeInt, dim)
+			vec := make([]int32, dim)
+			for i := range vec {
+				vec[i] = int32(i)
+			}
+			b.SetBytes(int64(dim * 4))
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if _, err := marshalVector(info, vec); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkUnmarshalVectorInt32(b *testing.B) {
+	dims := []int{128, 768, 1536}
+	for _, dim := range dims {
+		b.Run(dimStr(dim), func(b *testing.B) {
+			b.ReportAllocs()
+			info := makeVectorType(TypeInt, dim)
+			data := make([]byte, dim*4)
+			for i := 0; i < dim; i++ {
+				binary.BigEndian.PutUint32(data[i*4:], uint32(i))
+			}
+			var result []int32
+			b.SetBytes(int64(dim * 4))
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if err := unmarshalVector(info, data, &result); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkMarshalVectorUUID(b *testing.B) {
+	dims := []int{128, 768}
+	for _, dim := range dims {
+		b.Run(dimStr(dim), func(b *testing.B) {
+			b.ReportAllocs()
+			info := makeVectorType(TypeUUID, dim)
+			vec := make([]UUID, dim)
+			for i := range vec {
+				vec[i] = TimeUUID()
+			}
+			b.SetBytes(int64(dim * 16))
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if _, err := marshalVector(info, vec); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkUnmarshalVectorUUID(b *testing.B) {
+	dims := []int{128, 768}
+	for _, dim := range dims {
+		b.Run(dimStr(dim), func(b *testing.B) {
+			b.ReportAllocs()
+			info := makeVectorType(TypeUUID, dim)
+			data := make([]byte, dim*16)
+			for i := 0; i < dim; i++ {
+				u := TimeUUID()
+				copy(data[i*16:], u[:])
+			}
+			var result []UUID
+			b.SetBytes(int64(dim * 16))
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if err := unmarshalVector(info, data, &result); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func dimStr(dim int) string {
+	switch dim {
+	case 128:
+		return "dim_128"
+	case 384:
+		return "dim_384"
+	case 768:
+		return "dim_768"
+	case 1536:
+		return "dim_1536"
+	default:
+		return "dim_other"
+	}
+}
+
+// TestUnmarshalVectorTrailingBytesRejected pins the fast paths' deliberate
+// strictness: a fixed-width vector payload with trailing bytes is rejected,
+// where the generic reflect path derives the element size as len(data)/dim
+// and silently ignores the excess. Trailing bytes mean a corrupt or misframed
+// value; see the convention note above unmarshalVectorFloat32.
+func TestUnmarshalVectorTrailingBytesRejected(t *testing.T) {
+	info := makeVectorType(TypeFloat, 2)
+	data := make([]byte, 9) // 2 float32s = 8 bytes, plus one trailing byte
+	binary.BigEndian.PutUint32(data[0:], math.Float32bits(1.0))
+	binary.BigEndian.PutUint32(data[4:], math.Float32bits(2.0))
+
+	var dst []float32
+	if err := unmarshalVector(info, data, &dst); err == nil {
+		t.Fatal("expected the fast path to reject 9 bytes for vector<float,2>")
+	}
+}
