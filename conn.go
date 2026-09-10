@@ -1946,6 +1946,7 @@ type writeCoalescer struct {
 	writeCh          chan writeRequest
 	testEnqueuedHook func()
 	testFlushedHook  func()
+	scratchBufs      net.Buffers // reusable scratch for flush WriteTo
 	timeout          atomic.Int64
 }
 
@@ -2042,10 +2043,22 @@ func (w *writeCoalescer) writeFlusherImpl(timerC <-chan time.Time, resetTimer fu
 			}
 			return
 		case <-timerC:
+		drain:
+			for {
+				select {
+				case r := <-w.writeCh:
+					buffers = append(buffers, r.data)
+					resultChans = append(resultChans, r.resultChan)
+				default:
+					break drain
+				}
+			}
 			running = false
 			w.flush(resultChans, buffers)
-			buffers = nil
-			resultChans = nil
+			clear(buffers)
+			buffers = buffers[:0]
+			clear(resultChans)
+			resultChans = resultChans[:0]
 			if w.testFlushedHook != nil {
 				w.testFlushedHook()
 			}
@@ -2068,10 +2081,10 @@ func (w *writeCoalescer) flush(resultChans []chan<- writeResult, buffers net.Buf
 			return
 		}
 	}
-	// Copy buffers because WriteTo modifies buffers in-place.
-	buffers2 := make(net.Buffers, len(buffers))
-	copy(buffers2, buffers)
-	n, err := buffers2.WriteTo(w.c)
+	// Reuse scratch slice; WriteTo modifies buffers in-place.
+	w.scratchBufs = append(w.scratchBufs[:0], buffers...)
+	toWrite := w.scratchBufs
+	n, err := toWrite.WriteTo(w.c)
 	// Writes of bytes before n succeeded, writes of bytes starting from n failed with err.
 	// Use n as remaining byte counter.
 	for i := range buffers {
