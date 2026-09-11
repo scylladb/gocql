@@ -42,3 +42,5 @@ claude.log
 claude_history.json
 claude_config.json
 CLAUDE.md
+# Raw write-coalescing benchmark output; reproducible from tests/bench scripts.
+tests/bench/results/
