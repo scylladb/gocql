@@ -3882,6 +3882,12 @@ func (s *Session) GetHostPoolByID(hostID string) HostPoolInfo {
 	return hostPool
 }
 
+// IterateHostPools calls iter once for each host's connection pool, stopping
+// early if iter returns false. Iteration order is unspecified.
+//
+// iter runs while an internal lock on the pool is held, so it must not call
+// back into the Session -- anything that adds or removes a host, or closes the
+// session, will deadlock -- and it should not block.
 func (s *Session) IterateHostPools(iter func(info HostPoolInfo) bool) {
 	s.pool.iteratePool(iter)
 }

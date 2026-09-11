@@ -1139,7 +1139,7 @@ func TestReconnection(t *testing.T) {
 		t.Fatal("Host should be NodeDown but not.")
 	}
 
-	time.Sleep(cluster.ReconnectInterval + h.Version().nodeUpDelay() + 1*time.Second)
+	time.Sleep(cluster.ReconnectInterval + 1*time.Second)
 
 	if h.State() != NodeUp {
 		t.Fatal("Host should be NodeUp but not. Failed to reconnect.")
