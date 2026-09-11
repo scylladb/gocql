@@ -121,15 +121,20 @@ func (s *SniHostDialer) connect(ctx context.Context, dialer gocql.Dialer, server
 		return nil, fmt.Errorf("can't connect to %q: %w", server, err)
 	}
 
+	// probe the raw conn's MSS before TLS wraps it.
+	threshold := gocql.CoalesceThresholdForTLS(conn)
+
 	tconn := tls.Client(conn, tlsConfig)
 	if err := tconn.HandshakeContext(ctx); err != nil {
 		_ = conn.Close()
 		return nil, fmt.Errorf("can't finish TLS handshake with server %q SNI %q: %w", server, tlsConfig.ServerName, err)
 	}
 
+	// writeCoalescer now concatenates into one Write, so TLS no longer
+	// needs coalescing disabled.
 	return &gocql.DialedHost{
-		Conn:            tconn,
-		DisableCoalesce: true,
+		Conn:           tconn,
+		FlushThreshold: threshold,
 	}, nil
 }
 
