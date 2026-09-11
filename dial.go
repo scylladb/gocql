@@ -38,8 +38,7 @@ type HostDialer interface {
 	// DialHost establishes a connection to the host.
 	// The returned connection must be directly usable for CQL protocol,
 	// specifically DialHost is responsible also for setting up the TLS session if needed.
-	// DialHost should disable write coalescing if the returned net.Conn does not support writev.
-	// As of Go 1.18, only plain TCP connections support writev, TLS sessions should disable coalescing.
+	// Write coalescing works even if the returned net.Conn isn't a *net.TCPConn (e.g. TLS).
 	// You can use WrapTLS helper function if you don't need to override the TLS setup.
 	DialHost(ctx context.Context, host *HostInfo) (*DialedHost, error)
 }
@@ -113,8 +112,9 @@ func WrapTLS(ctx context.Context, conn net.Conn, addr string, tlsConfig *tls.Con
 		conn = tconn
 	}
 
+	// writeCoalescer batches into one Write even without writev, so TLS
+	// doesn't need coalescing disabled.
 	return &DialedHost{
-		Conn:            conn,
-		DisableCoalesce: tlsConfig != nil, // write coalescing can't use writev when the connection is wrapped.
+		Conn: conn,
 	}, nil
 }
