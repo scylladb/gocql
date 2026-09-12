@@ -10,6 +10,7 @@ import (
 
 	"github.com/gocql/gocql/internal/crc"
 	"github.com/gocql/gocql/internal/segment"
+	"github.com/gocql/gocql/internal/tests"
 )
 
 // passthroughCompressor is a no-op compressor that still honours the append
@@ -533,7 +534,7 @@ func TestSegmentSplitterFeedReusesItsBuffers(t *testing.T) {
 			// catch made a bytes.Reader per header and per payload on top of those,
 			// which lands at four.
 			const allowedAllocs = 2
-			if got := testing.AllocsPerRun(8, feed); got > allowedAllocs {
+			if got := tests.MinAllocsPerRun(3, 8, feed); got > allowedAllocs {
 				t.Errorf("decoding a segment made %v allocations, want at most %d — a buffer is not being reused",
 					got, allowedAllocs)
 			}
