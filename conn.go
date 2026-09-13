@@ -33,6 +33,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -2456,6 +2457,13 @@ func marshalQueryValue(typ TypeInfo, value any, dst *queryValues) error {
 		value = named.value
 	}
 
+	// Capture user-Marshaler handling BEFORE Marshal consumes value, so we can
+	// skip the pool even if the user implements Marshaler for a CQL type that
+	// would otherwise be a pooled fast path. This avoids handing back user-owned
+	// memory to the pool, where a later getMarshalOutput could overwrite it while
+	// the user is still reading it.
+	_, userMarshaler := value.(Marshaler)
+
 	if _, ok := value.(unsetColumn); !ok {
 		val, err := Marshal(typ, value)
 		if err != nil {
@@ -2463,6 +2471,17 @@ func marshalQueryValue(typ TypeInfo, value any, dst *queryValues) error {
 		}
 
 		dst.value = val
+		// Marshal dereferences a non-nil pointer before dispatching (e.g.
+		// *[]int32 -> []int32); check pooledMarshalValue against that same
+		// dereferenced value, or a pointer input would never match a
+		// concrete slice type and its buffer would silently never pool.
+		pooledCheckValue := value
+		if !userMarshaler {
+			if rv := reflect.ValueOf(value); rv.Kind() == reflect.Ptr && !rv.IsNil() {
+				pooledCheckValue = rv.Elem().Interface()
+			}
+		}
+		dst.pooled = !userMarshaler && pooledMarshalValue(typ, pooledCheckValue) && cap(val) <= marshalBufMaxCap
 	} else {
 		dst.isUnset = true
 	}
@@ -2572,6 +2591,21 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 	// where only GetRoutingKey has written it.
 	routingKeyspace, routingTable := qry.routingInfo.keyspaceTable()
 
+	// pooledBufs collects marshalled byte slices so they can be
+	// returned to marshalOutputPool once the framer copies them
+	// (c.exec → buildFrame → writeBytes). Collected as they're
+	// marshalled, not by scanning params.values afterwards, since
+	// putQueryValues recycles that slice right after c.exec returns.
+	// The defer is a safety net for early returns (e.g. a marshal error);
+	// the normal path releases explicitly right after c.exec and clears
+	// the slice so this doesn't double-release.
+	var pooledBufs [][]byte
+	defer func() {
+		for _, buf := range pooledBufs {
+			putMarshalOutput(buf)
+		}
+	}()
+
 	if !qry.skipPrepare && qry.shouldPrepare() {
 		// Prepare all DML queries. Other queries can not be prepared.
 		var err error
@@ -2599,6 +2633,7 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 		}
 
 		params.values = getQueryValues(len(values))
+
 		for i := 0; i < len(values); i++ {
 			v := &params.values[i]
 			value := values[i]
@@ -2606,6 +2641,9 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 			if err := marshalQueryValue(typ, value, v); err != nil {
 				putQueryValues(params.values)
 				return &Iter{err: err}
+			}
+			if v.pooled {
+				pooledBufs = append(pooledBufs, v.value)
 			}
 		}
 
@@ -2644,6 +2682,12 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 	}
 
 	framer, err := c.exec(ctx, frame, qry.trace, qry.GetRequestTimeout())
+	// Release pooled marshal buffers as soon as c.exec's framer has copied
+	// them out, rather than holding them for the whole round-trip.
+	for _, buf := range pooledBufs {
+		putMarshalOutput(buf)
+	}
+	pooledBufs = nil
 	// Return pooled values; consumed by buildFrame at the start of c.exec().
 	// Returned after round-trip (not right after serialization) for simplicity.
 	putQueryValues(params.values)
@@ -2909,6 +2953,17 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 
 	hasLwtEntries := false
 
+	// pooledBufs collects marshalled byte slices from fast-path marshal
+	// functions so they can be returned to marshalOutputPool after the
+	// framer copies them. The defer is installed before the loop so that
+	// buffers are returned even if a later marshalQueryValue call fails.
+	var pooledBufs [][]byte
+	defer func() {
+		for _, buf := range pooledBufs {
+			putMarshalOutput(buf)
+		}
+	}()
+
 	for i := 0; i < n; i++ {
 		entry := &batch.Entries[i]
 		b := &req.statements[i]
@@ -2954,6 +3009,9 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 					putBatchQueryValues(req.statements)
 					return &Iter{err: err}
 				}
+				if v.pooled {
+					pooledBufs = append(pooledBufs, v.value)
+				}
 			}
 
 			if !hasLwtEntries && info.request.lwt {
@@ -2972,6 +3030,12 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 
 	// TODO: should batch support tracing?
 	framer, err := c.exec(batch.Context(), req, batch.trace, batch.GetRequestTimeout())
+	// Release pooled marshal buffers as soon as c.exec's framer has copied
+	// them out, rather than holding them for the whole round-trip.
+	for _, buf := range pooledBufs {
+		putMarshalOutput(buf)
+	}
+	pooledBufs = nil
 	// Return pooled values; consumed by buildFrame at the start of c.exec().
 	// Returned after round-trip (not right after serialization) for simplicity.
 	putBatchQueryValues(req.statements)
