@@ -2163,12 +2163,6 @@ func (c *Conn) execInternal(ctx context.Context, req frameBuilder, tracer Tracer
 	)
 
 	defer func() {
-		if closeErr != nil {
-			c.closeWithError(closeErr)
-		}
-	}()
-
-	defer func() {
 		if stopWaiting {
 			close(call.timeout)
 		}
@@ -2178,6 +2172,9 @@ func (c *Conn) execInternal(ctx context.Context, req frameBuilder, tracer Tracer
 		}
 		if recycleCall {
 			putCallReq(call)
+		}
+		if closeErr != nil {
+			c.closeWithError(closeErr)
 		}
 	}()
 
@@ -2758,23 +2755,30 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 			numRows: x.numRows,
 		}).bindWarningHandlerWithMetrics(qry, metrics, warningHandler)
 
-		if x.meta.noMetaData() {
-			iter.meta = info.response
-			// pagingState is already independently allocated by readBytesCopy()
-			// during frame parsing, no additional copy needed.
-			iter.meta.pagingState = x.meta.pagingState
+		if params.skipMeta {
+			if info != nil {
+				iter.meta = info.response
+				// pagingState is already independently allocated by readBytesCopy()
+				// during frame parsing, no additional copy needed.
+				iter.meta.pagingState = x.meta.pagingState
+			} else {
+				x.release()
+				return newErrorIterWithReleasedFramer(errors.New("gocql: did not receive metadata but prepared info is nil"), framer).bindWarningHandler(qry, warningHandler)
+			}
 		}
 
 		if x.meta.morePages() && !qry.disableAutoPage {
-			newQry := cloneQueryForNextPage(qry, metrics, x.meta.pagingState)
-
-			iter.next = newNextIter(newQry, int((1-qry.prefetch)*float64(x.numRows)))
+			// Note: x.meta.pagingState is a slice allocated by readBytesCopy()
+			// and is safe to reference after x.release() — release zeros the
+			// slice header in x.meta but the backing array remains valid.
+			iter.next = newNextIterWithPageState(qry, metrics, x.meta.pagingState, int((1-qry.prefetch)*float64(x.numRows)))
 
 			if iter.next.pos < 1 {
 				iter.next.pos = 1
 			}
 		}
 
+		x.release()
 		return iter
 	case *resultKeyspaceFrame:
 		return (&Iter{framer: framer}).
@@ -3009,6 +3013,7 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 			framer:  framer,
 			numRows: x.numRows,
 		}).bindWarningHandler(batch, warningHandler)
+		x.release()
 
 		return iter
 	case error:
