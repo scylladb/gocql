@@ -1037,7 +1037,12 @@ func (c *Conn) heartBeat(ctx context.Context) {
 		case error:
 			// TODO: should we do something here?
 		default:
-			panic(fmt.Sprintf("gocql: unknown frame in response to options: %T", resp))
+			// Reachable from the wire: parseFrame builds a frame for every opcode it
+			// knows, and this goroutine has no recover above it.
+			c.logger.Printf("gocql: unexpected frame in response to options: %T\n", resp)
+			failures++
+			// Broken now, not in 30 seconds; controlConn.heartBeat drops to 1s too.
+			sleepTime = 1 * time.Second
 		}
 	}
 }
@@ -1227,7 +1232,20 @@ func (c *Conn) processFrameSource(ctx context.Context, src frameSource) error {
 		c.logger.Printf("gocql: received response for stream which has no handler: header=%v\n", head)
 		return c.discardFrame(r, head)
 	} else if head.Stream != call.streamID {
-		panic(fmt.Sprintf("call has incorrect streamID: got %d expected %d", call.streamID, head.Stream))
+		// c.calls and the callReq it holds disagree: a driver bug, not something a
+		// peer can provoke. Fail the connection -- its stream bookkeeping is what is
+		// untrustworthy. Deliver first: head.Stream is already out of c.calls, so
+		// closeWithError's drain cannot, and exactly one of StreamAbandoned and
+		// StreamFinished must fire.
+		err := fmt.Errorf("gocql: response for stream %d dispatched to a call on stream %d", head.Stream, call.streamID)
+		select {
+		case call.resp <- callResp{err: err, removedFromCalls: true}:
+		case <-call.timeout:
+			c.abandonRecvCall(call, nil)
+		case <-ctx.Done():
+			c.abandonRecvCall(call, nil)
+		}
+		return err
 	}
 
 	framer := c.getReadFramer()
@@ -1246,7 +1264,7 @@ func (c *Conn) processFrameSource(ctx context.Context, src frameSource) error {
 	// we either, return a response to the caller, the caller timedout, or the
 	// connection has closed. Either way we should never block indefinatly here
 	select {
-	case call.resp <- callResp{framer: framer, err: err}:
+	case call.resp <- callResp{framer: framer, err: err, removedFromCalls: true}:
 		// Framer ownership transferred to caller
 	case <-call.timeout:
 		c.abandonRecvCall(call, framer)
@@ -1865,6 +1883,11 @@ type callResp struct {
 	framer *framer
 	// err is error encountered, if any.
 	err error
+	// removedFromCalls means the sender already deleted this call from c.calls, so
+	// closeWithError's drain will never see it and the receiver owns releasing the
+	// stream and recycling the callReq. Set by processFrameSource on every outcome
+	// it delivers directly; Conn.closed races this delivery and cannot answer it.
+	removedFromCalls bool
 }
 
 // contextWriter is like io.Writer, but takes context as well.
@@ -2275,11 +2298,8 @@ func (c *Conn) execInternal(ctx context.Context, req frameBuilder, tracer Tracer
 		stopWaiting = true
 		if resp.err != nil {
 			c.releaseReadFramer(resp.framer)
-			if !c.Closed() {
-				// if the connection is closed then we cant release the stream,
-				// this is because the request is still outstanding and we have
-				// been handed another error from another stream which caused the
-				// connection to close.
+			if resp.removedFromCalls {
+				// We own the stream and the callReq; see callResp.removedFromCalls.
 				releaseStream = true
 				recycleCall = true
 			}

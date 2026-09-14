@@ -470,12 +470,23 @@ func (f *framer) adoptFrameBody(body []byte, head *frm.FrameHeader) error {
 }
 
 func (f *framer) parseFrame() (frame frame, err error) {
+	// The read helpers panic with an error instead of returning one (see readByte);
+	// this recover is what makes a malformed frame a protocol error.
 	defer func() {
 		if r := recover(); r != nil {
-			if _, ok := r.(runtime.Error); ok {
-				panic(r)
+			switch v := r.(type) {
+			case runtime.Error:
+				// A driver bug, not a bad frame -- converting it would file it against
+				// the peer. The helpers bound every read, so no frame should reach here.
+				panic(v)
+			case error:
+				err = v
+			default:
+				// Unreachable while every read-path panic carries an error; an unchecked
+				// r.(error) would itself panic in here and lose the original value. A
+				// panic("...") is a driver bug, so the message says so.
+				err = NewErrProtocol("driver bug: unexpected panic parsing a frame: %v", v)
 			}
-			err = r.(error)
 		}
 	}()
 
@@ -852,23 +863,54 @@ func (f *framer) readTypeInfo() TypeInfo {
 	case TypeCustom:
 		vectorTypePrefix := apacheCassandraTypePrefix + "VectorType"
 		if strings.HasPrefix(simple.custom, vectorTypePrefix) {
-			spec := strings.TrimPrefix(simple.custom, vectorTypePrefix)
-			spec = spec[1 : len(spec)-1] // remove parenthesis
-			idx := strings.LastIndex(spec, ",")
-			typeStr := spec[:idx]
-			dimStr := spec[idx+1:]
-			subType := getCassandraLongType(strings.TrimSpace(typeStr), f.proto, nopLogger{})
-			dim, _ := strconv.Atoi(strings.TrimSpace(dimStr))
-			vector := VectorType{
-				NativeType: simple,
-				SubType:    subType,
-				Dimensions: dim,
-			}
-			return vector
+			return f.readVectorTypeInfo(simple, vectorTypePrefix)
 		}
 	}
 
 	return simple
+}
+
+// readVectorTypeInfo resolves a custom type named "<prefix>(<subtype>, <dimensions>)".
+// Every part is checked before it is sliced: an unchecked index raises a
+// runtime.Error, which parseFrame's recover re-panics by design. A name that only
+// starts with the prefix is not a vector and degrades to the plain custom type.
+func (f *framer) readVectorTypeInfo(simple NativeType, vectorTypePrefix string) TypeInfo {
+	rest := simple.custom[len(vectorTypePrefix):]
+	switch {
+	case rest == "":
+		panic(fmt.Errorf("invalid vector type %q: expected %s(<type>, <dimensions>)", simple.custom, vectorTypePrefix))
+	case rest[0] != '(':
+		// Not a vector: a different type that shares the prefix.
+		return simple
+	case rest[len(rest)-1] != ')':
+		panic(fmt.Errorf("invalid vector type %q: unterminated argument list", simple.custom))
+	}
+
+	// The dimensions are the last argument, so the last comma separates them from
+	// a subtype that may itself be parenthesised and hold commas of its own.
+	spec := rest[1 : len(rest)-1]
+	idx := strings.LastIndex(spec, ",")
+	if idx < 0 {
+		panic(fmt.Errorf("invalid vector type %q: missing dimensions", simple.custom))
+	}
+
+	typeStr := strings.TrimSpace(spec[:idx])
+	if typeStr == "" {
+		panic(fmt.Errorf("invalid vector type %q: missing element type", simple.custom))
+	}
+
+	// Cassandra requires a positive dimension, and a negative one reaches
+	// reflect.MakeSlice in unmarshalVector, outside any recover.
+	dim, err := strconv.Atoi(strings.TrimSpace(spec[idx+1:]))
+	if err != nil || dim < 1 {
+		panic(fmt.Errorf("invalid vector type %q: dimensions must be a positive integer", simple.custom))
+	}
+
+	return VectorType{
+		NativeType: simple,
+		SubType:    getCassandraLongType(typeStr, f.proto, nopLogger{}),
+		Dimensions: dim,
+	}
 }
 
 type preparedMetadata struct {
@@ -1823,6 +1865,12 @@ func (f *framer) writeRegisterFrame(streamID int, w *writeRegisterFrame) error {
 	return f.finish()
 }
 
+// The read helpers below bounds-check and then panic with a plain error instead of
+// returning one; parseFrame's recover converts it. Two rules keep that working:
+//   - panic with an error, never a string, or the recover has nothing to convert;
+//   - never raise a runtime.Error: bound every index against len(f.buf) and reject
+//     a negative length first -- a negative is not below any length. parseFrame
+//     re-panics a runtime.Error on purpose.
 func (f *framer) readByte() byte {
 	if len(f.buf) < 1 {
 		panic(fmt.Errorf("not enough bytes in buffer to read byte require 1 got: %d", len(f.buf)))
@@ -1877,6 +1925,13 @@ func (f *framer) skipString() {
 
 func (f *framer) readLongString() (s string) {
 	size := f.readInt()
+
+	// A [long string]'s length is signed, and unlike [bytes] a negative is malformed,
+	// not null. len(f.buf) is never below a negative, so without this f.buf[:size]
+	// raises a runtime.Error that parseFrame re-panics.
+	if size < 0 {
+		panic(fmt.Errorf("invalid long string length: %d", size))
+	}
 
 	if len(f.buf) < size {
 		panic(fmt.Errorf("not enough bytes in buffer to read long string require %d got: %d", size, len(f.buf)))

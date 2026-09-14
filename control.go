@@ -129,7 +129,10 @@ func (c *controlConn) heartBeat() {
 		case error:
 			goto reconn
 		default:
-			panic(fmt.Sprintf("gocql: unknown frame in response to options: %T", resp))
+			// Reachable from the wire: parseFrame builds a frame for every opcode it
+			// knows, and this goroutine has no recover above it.
+			c.session.logger.Printf("gocql: unexpected frame in response to options: %T\n", resp)
+			goto reconn
 		}
 
 	reconn:
