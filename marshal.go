@@ -1042,6 +1042,11 @@ func unmarshalVector(info VectorType, data []byte, value any) error {
 			return unmarshalErrorf("can not unmarshal into non-empty interface %T", value)
 		}
 		t = reflect.TypeOf(info.Zero())
+		if t == nil {
+			// Zero() is an untyped nil when the element type has no Go representation,
+			// and reflect.TypeOf(nil).Kind() dereferences nil on Scan's goroutine.
+			return unmarshalErrorf("unmarshal vector: no Go type for element type %v", info.SubType)
+		}
 	}
 
 	k := t.Kind()

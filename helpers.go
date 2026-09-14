@@ -277,9 +277,14 @@ func getCassandraLongType(name string, protoVer byte, logger StdLogger) TypeInfo
 		return getCassandraLongType(strings.TrimSpace(names[0]), protoVer, logger)
 	} else {
 		// basic type
+		typ := getApacheCassandraType(name)
+		if typ == TypeCustom {
+			// Keep the name so an error can say what the server sent, not "custom()".
+			return NewCustomType(protoVer, TypeCustom, name)
+		}
 		return NativeType{
 			proto: protoVer,
-			typ:   getApacheCassandraType(name),
+			typ:   typ,
 		}
 	}
 }

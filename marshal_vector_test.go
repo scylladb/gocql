@@ -855,6 +855,81 @@ func TestUnmarshalVectorRejectsNestedCountBeforeAllocating(t *testing.T) {
 	}
 }
 
+// wireVectorType builds the TypeInfo readTypeInfo resolves a custom column of this
+// name to, so the type under test is one a server can actually install.
+func wireVectorType(custom string) TypeInfo {
+	f := &framer{proto: protoVersion4}
+	f.writeShort(uint16(TypeCustom))
+	f.writeString(custom)
+	return f.readTypeInfo()
+}
+
+// TestUnmarshalVectorRejectsAnElementTypeWithNoGoType covers the empty-interface
+// destination, the one the generic path resolves through info.Zero(). Both cases
+// are reachable from the wire with no malformed metadata: a nested vector's inner
+// type resolves from the bare prefix, and an unknown element type degrades to an
+// opaque custom one. The concrete destinations pin that the guard narrowed nothing.
+func TestUnmarshalVectorRejectsAnElementTypeWithNoGoType(t *testing.T) {
+	t.Parallel()
+
+	const p = apacheCassandraTypePrefix
+	const vp = p + "VectorType"
+
+	nested := wireVectorType(vp + "(" + vp + "(" + p + "FloatType, 3), 2)")
+	unknown := wireVectorType(vp + "(" + p + "FooType, 2)")
+
+	t.Run("nested vector into an interface", func(t *testing.T) {
+		t.Parallel()
+
+		var dst any
+		err := Unmarshal(nested, make([]byte, 24), &dst)
+		if err == nil {
+			t.Fatalf("expected an error, got %#v", dst)
+		}
+		if !strings.Contains(err.Error(), "no Go type for element type") {
+			t.Errorf("error = %q, want it to name the missing Go type", err)
+		}
+	})
+
+	t.Run("unknown element type into an interface", func(t *testing.T) {
+		t.Parallel()
+
+		var dst any
+		err := Unmarshal(unknown, make([]byte, 24), &dst)
+		if err == nil {
+			t.Fatalf("expected an error, got %#v", dst)
+		}
+		// The name matters: it is all a caller has to identify the column.
+		if !strings.Contains(err.Error(), p+"FooType") {
+			t.Errorf("error = %q, want it to name %q", err, p+"FooType")
+		}
+	})
+
+	t.Run("nested vector into a concrete slice still decodes", func(t *testing.T) {
+		t.Parallel()
+
+		var dst [][]float32
+		if err := Unmarshal(nested, make([]byte, 24), &dst); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(dst) != 2 || len(dst[0]) != 3 {
+			t.Errorf("decoded %#v, want 2 vectors of 3", dst)
+		}
+	})
+
+	t.Run("a resolvable element type into an interface still decodes", func(t *testing.T) {
+		t.Parallel()
+
+		var dst any
+		if err := Unmarshal(wireVectorType(vp+"("+p+"FloatType, 3)"), make([]byte, 12), &dst); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got, ok := dst.([]*float32); !ok || len(got) != 3 {
+			t.Errorf("decoded %#v, want a 3-element []*float32", dst)
+		}
+	})
+}
+
 // VectorType, SubType and Dimensions are all exported, so a caller of Unmarshal can
 // hand us a zero VectorType. Nothing allocates at zero dimensions, so the dimension
 // bound must not run there -- it would dereference the nil SubType and panic on the
