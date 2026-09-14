@@ -31,7 +31,7 @@ func createMockIter(numColumns int) *Iter {
 			Keyspace: "test_keyspace",
 			Table:    "test_table",
 			Name:     fmt.Sprintf("column_%d", i),
-			TypeInfo: NativeType{typ: TypeInt, proto: protoVersion4},
+			TypeInfo: NativeType{typ: TypeInt},
 		}
 	}
 
@@ -48,16 +48,16 @@ func createMockIter(numColumns int) *Iter {
 // createMockIterWithTypes creates a mock iterator with varied column types
 func createMockIterWithTypes() *Iter {
 	columns := []ColumnInfo{
-		{Name: "id", TypeInfo: NativeType{typ: TypeInt, proto: protoVersion4}},
-		{Name: "name", TypeInfo: NativeType{typ: TypeVarchar, proto: protoVersion4}},
-		{Name: "created", TypeInfo: NativeType{typ: TypeTimestamp, proto: protoVersion4}},
-		{Name: "score", TypeInfo: NativeType{typ: TypeBigInt, proto: protoVersion4}},
-		{Name: "active", TypeInfo: NativeType{typ: TypeBoolean, proto: protoVersion4}},
-		{Name: "data", TypeInfo: NativeType{typ: TypeBlob, proto: protoVersion4}},
-		{Name: "uuid", TypeInfo: NativeType{typ: TypeUUID, proto: protoVersion4}},
-		{Name: "value", TypeInfo: NativeType{typ: TypeDouble, proto: protoVersion4}},
-		{Name: "count", TypeInfo: NativeType{typ: TypeCounter, proto: protoVersion4}},
-		{Name: "text", TypeInfo: NativeType{typ: TypeText, proto: protoVersion4}},
+		{Name: "id", TypeInfo: NativeType{typ: TypeInt}},
+		{Name: "name", TypeInfo: NativeType{typ: TypeVarchar}},
+		{Name: "created", TypeInfo: NativeType{typ: TypeTimestamp}},
+		{Name: "score", TypeInfo: NativeType{typ: TypeBigInt}},
+		{Name: "active", TypeInfo: NativeType{typ: TypeBoolean}},
+		{Name: "data", TypeInfo: NativeType{typ: TypeBlob}},
+		{Name: "uuid", TypeInfo: NativeType{typ: TypeUUID}},
+		{Name: "value", TypeInfo: NativeType{typ: TypeDouble}},
+		{Name: "count", TypeInfo: NativeType{typ: TypeCounter}},
+		{Name: "text", TypeInfo: NativeType{typ: TypeText}},
 	}
 
 	return &Iter{
@@ -74,18 +74,18 @@ func createMockIterWithTypes() *Iter {
 func createMockIterWithTuples() *Iter {
 	// Create a tuple with 3 elements
 	tupleElems := []TypeInfo{
-		NativeType{typ: TypeInt, proto: protoVersion4},
-		NativeType{typ: TypeVarchar, proto: protoVersion4},
-		NativeType{typ: TypeTimestamp, proto: protoVersion4},
+		NativeType{typ: TypeInt},
+		NativeType{typ: TypeVarchar},
+		NativeType{typ: TypeTimestamp},
 	}
 
 	columns := []ColumnInfo{
-		{Name: "id", TypeInfo: NativeType{typ: TypeInt, proto: protoVersion4}},
+		{Name: "id", TypeInfo: NativeType{typ: TypeInt}},
 		{Name: "coords", TypeInfo: TupleTypeInfo{
-			NativeType: NativeType{typ: TypeTuple, proto: protoVersion4},
+			NativeType: NativeType{typ: TypeTuple},
 			Elems:      tupleElems,
 		}},
-		{Name: "name", TypeInfo: NativeType{typ: TypeVarchar, proto: protoVersion4}},
+		{Name: "name", TypeInfo: NativeType{typ: TypeVarchar}},
 	}
 
 	// actualColCount accounts for tuple expansion: 1 (id) + 3 (tuple elements) + 1 (name) = 5
