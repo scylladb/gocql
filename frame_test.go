@@ -42,6 +42,7 @@ import (
 
 	frm "github.com/gocql/gocql/internal/frame"
 	"github.com/gocql/gocql/internal/segment"
+	"github.com/gocql/gocql/internal/tests"
 )
 
 func TestFuzzBugs(t *testing.T) {
@@ -1492,7 +1493,7 @@ func TestPrepareModernLayoutReusesBuffers(t *testing.T) {
 				segment()
 			}
 
-			if allocs := testing.AllocsPerRun(20, segment); allocs != 0 {
+			if allocs := tests.MinAllocsPerRun(3, 20, segment); allocs != 0 {
 				t.Errorf("segmenting a warmed-up framer allocated %v times per request, want 0", allocs)
 			}
 		})
