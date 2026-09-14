@@ -162,6 +162,12 @@ type ClusterConfig struct {
 	// The keepalive period to use, enabled if > 0 (default: 15 seconds)
 	// SocketKeepalive is used to set up the default dialer and is ignored if Dialer or HostDialer is provided.
 	SocketKeepalive time.Duration
+	// HeartbeatSlowThreshold is the latency threshold for heartbeat OPTIONS
+	// round-trips (e.g. 500 * time.Millisecond). A heartbeat taking longer
+	// logs a warning once; further slow heartbeats stay quiet until a
+	// heartbeat completes under the threshold again.
+	// Default: 0 (disabled, no latency measurement or logging).
+	HeartbeatSlowThreshold time.Duration
 	// If not zero, gocql attempt to reconnect known DOWN nodes in every ReconnectInterval.
 	ReconnectInterval time.Duration
 	// The maximum amount of time to wait for schema agreement in a cluster after
