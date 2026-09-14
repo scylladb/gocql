@@ -1338,8 +1338,9 @@ func (c *Conn) recvSegment(ctx context.Context) error {
 	// resumed up to maxReadAttempts times, so one read can take that multiple of
 	// ReadTimeout before failing — only a read that delivers nothing fails within a
 	// single one. A peer that keeps trickling progress is therefore not bounded by
-	// time at all; it is bounded by the frame length recvSplitFrame enforces against
-	// the reassembled size.
+	// ReadTimeout at all: recvSplitFrame's reassembled-size check bounds how much it
+	// can send, and heartBeat bounds how long it can hold the connection — six
+	// unanswered OPTIONS close it while serve() is blocked here.
 	//
 	// netStart/netEnd bracket this read for FrameHeaderObserver. The CQL headers
 	// inside are parsed out of memory further down, so timing them there would
