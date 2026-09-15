@@ -142,6 +142,15 @@ This prints a per-package percentage and writes `coverage-root.html`/`coverage-l
 
 `make clean-coverage` removes the coverage data directory and generated reports.
 
+CI runs the same targets in `.github/workflows/coverage.yml` and uploads the resulting
+`coverage-root.out`/`coverage-lz4.out` profiles to [Codecov](https://codecov.io/gh/scylladb/gocql),
+one upload per Go module under the `root` and `lz4` flags. Codecov then comments the delta on the
+pull request and reports it as a check. Both of its statuses are `informational` in `codecov.yml`,
+so a drop annotates the pull request but never blocks merging it -- the integration lanes need a
+live ScyllaDB cluster, and a lane that fails to start one moves the number for reasons unrelated to
+the diff. The workflow is still skippable: add the `disable-coverage-tests` label to a pull request
+and no run (and so no upload) happens, with Codecov carrying the previous commit's numbers forward.
+
 ### Sign Off Procedure
 
 Generally speaking, a pull request can get merged by any one of the project's committers. If your change is minor, chances are that one team member will just go ahead and merge it there and then. As stated earlier, suitable test coverage will increase the likelihood that a single reviewer will assess and merge your change. If your change has no test coverage, or looks like it may have wider implications for the health and stability of the library, the reviewer may elect to refer the change to another team member to achieve consensus before proceeding. Therefore, the tighter and cleaner your patch is, the quicker it will go through the review process.

@@ -1,0 +1,67 @@
+# Codecov configuration for the coverage lane in .github/workflows/coverage.yml,
+# which uploads the profiles `make coverage-report` writes.
+# Reference: https://docs.codecov.com/docs/codecov-yaml
+
+codecov:
+  # The coverage lane is a job of its own and is not gated on the rest of CI
+  # (main.yml runs the same suites uninstrumented, in parallel), so waiting for
+  # every other check to go green before processing an upload would only delay
+  # the report. The lane is also skippable -- the `disable-coverage-tests` label
+  # and the paths-ignore filters mean plenty of commits never upload at all --
+  # and require_ci_to_pass would turn each of those into a stuck report.
+  require_ci_to_pass: false
+
+# `go tool covdata textfmt` records import paths, not repository paths: the root
+# module's files come out as `github.com/gocql/gocql/conn.go` (module path, not
+# repo slug -- this fork keeps the upstream module path) and lz4's as
+# `github.com/scylladb/gocql/lz4/lz4.go`. Strip both module prefixes so what
+# Codecov gets lines up with the paths actually in the tree; without this every
+# file in both profiles is unmatched and the report comes out empty.
+fixes:
+  - "github.com/gocql/gocql/::"
+  - "github.com/scylladb/gocql/::"
+
+# One flag per Go module, mirroring the two profiles `make coverage-report`
+# emits and the "root module total"/"lz4 module total" split it already prints.
+# carryforward keeps the last known coverage for a flag on commits whose lane
+# didn't upload one (docs-only pushes filtered out by paths-ignore, PRs carrying
+# the disable-coverage-tests label), instead of reporting those modules as a
+# total loss of coverage.
+flag_management:
+  individual_flags:
+    - name: root
+      carryforward: true
+    - name: lz4
+      carryforward: true
+
+coverage:
+  precision: 2
+  round: down
+  range: "50...80"
+  status:
+    # informational: report the delta, never fail the merge on it. The
+    # integration lanes need a live ScyllaDB cluster, so a flaky cluster start
+    # or a skipped lane moves the number for reasons that have nothing to do
+    # with the diff; blocking on that would just train people to ignore it.
+    # Flip informational to false once the numbers have proven stable.
+    project:
+      default:
+        target: auto
+        threshold: 1%
+        informational: true
+    patch:
+      default:
+        target: auto
+        threshold: 1%
+        informational: true
+
+ignore:
+  - "docs/**"
+  - "tests/**"
+  - "testdata/**"
+  - "**/*_test.go"
+
+comment:
+  layout: "header, diff, flags, files"
+  behavior: default
+  require_changes: false
