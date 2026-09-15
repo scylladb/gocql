@@ -109,3 +109,43 @@ jobs:
             coverage-root.out
             coverage-lz4.html
             coverage-lz4.out
+
+      # Codecov ingests the same textfmt profiles the step above archives. One
+      # upload per Go module: flags are a property of the upload rather than of
+      # the individual file, so a single combined upload could not keep the
+      # root/lz4 split that `make coverage-report` already reports. Path fixing
+      # (the profiles carry import paths, not repository paths) and everything
+      # about how the report is presented live in codecov.yml at the repo root.
+      #
+      # fail_ci_if_error is off for pull requests from forks: secrets are not
+      # available there, so `token` comes through empty and the upload falls
+      # back to Codecov's tokenless path for public repositories. That path is
+      # best-effort, and a hiccup in it must not be what turns a contributor's
+      # pull request red.
+      - name: Upload root module coverage to Codecov
+        if: always()
+        uses: codecov/codecov-action@0b35c9ecc4f0529d0eb674914510c22f85b196b4 # v7.1.0
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage-root.out
+          flags: root
+          name: root module
+          # The file is named explicitly, so there is nothing to be gained from
+          # letting the action sweep the tree for anything else report-shaped,
+          # nor from the CLI's language plugins (gcov, Xcode, pycoverage): this
+          # is a Go repository and none of them have anything to contribute.
+          disable_search: true
+          plugins: noop
+          fail_ci_if_error: ${{ github.event.pull_request.head.repo.fork != true }}
+
+      - name: Upload lz4 module coverage to Codecov
+        if: always()
+        uses: codecov/codecov-action@0b35c9ecc4f0529d0eb674914510c22f85b196b4 # v7.1.0
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage-lz4.out
+          flags: lz4
+          name: lz4 module
+          disable_search: true
+          plugins: noop
+          fail_ci_if_error: ${{ github.event.pull_request.head.repo.fork != true }}
