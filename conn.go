@@ -262,9 +262,15 @@ type Conn struct {
 	// for server push events: a SCHEMA_CHANGE arriving inside that window makes
 	// the event-debouncer goroutine run querySystem on this connection
 	// concurrently with the write.
-	systemRequest    atomic.Pointer[systemRequestState]
-	cqlProtoExts     []cqlProtocolExtension
-	scyllaSupported  ScyllaConnectionFeatures
+	systemRequest   atomic.Pointer[systemRequestState]
+	cqlProtoExts    []cqlProtocolExtension
+	scyllaSupported ScyllaConnectionFeatures
+	// startupRTT is the min observed request/response latency across startup
+	// frames (network + server processing), used to scale the write coalescer's
+	// wait window (see coalesceWindow). A conservative proxy for RTT, not pure RTT.
+	// Measured once at startup and never refreshed, so a connection that started
+	// during a stall keeps an inflated window until it reconnects.
+	startupRTT       time.Duration
 	writeTimeout     atomic.Int64
 	mu               sync.Mutex
 	tabletsRoutingV1 int32
@@ -543,7 +549,12 @@ func (c *Conn) init(ctx context.Context, dialedHost *DialedHost) error {
 
 	// dont coalesce startup frames
 	if c.session.cfg.WriteCoalesceWaitTime > 0 && !c.cfg.disableCoalesce && !dialedHost.DisableCoalesce {
-		c.w = newWriteCoalescer(dialedHost.Conn, c.cfg.ConnectTimeout, c.session.cfg.WriteCoalesceWaitTime, ctx.Done())
+		window := coalesceWindow(c.startupRTT, c.session.cfg.WriteCoalesceWaitTime)
+		threshold := coalesceFlushThreshold
+		if dialedHost.FlushThreshold > 0 {
+			threshold = dialedHost.FlushThreshold
+		}
+		c.w = newWriteCoalescer(dialedHost.Conn, c.cfg.ConnectTimeout, window, threshold, ctx.Done())
 	}
 
 	if c.isScyllaConn() { // ScyllaDB does not support system.peers_v2
@@ -555,6 +566,34 @@ func (c *Conn) init(ctx context.Context, dialedHost *DialedHost) error {
 
 	return nil
 }
+
+// coalesceWaitFraction: share of measured RTT the coalescer may wait, so the
+// wait scales with RTT instead of being a fixed tax. See coalesceWindow.
+const coalesceWaitFraction = 0.05
+
+// coalesceWindow scales the write coalescer's wait window to a fraction of
+// the connection's measured RTT, capped at maxWait. A same-rack/AZ RTT
+// collapses this to near zero on its own.
+//
+// rtt <= 0 means no round trip was measured yet; fall back to maxWait.
+func coalesceWindow(rtt, maxWait time.Duration) time.Duration {
+	if rtt <= 0 {
+		return maxWait
+	}
+	w := time.Duration(float64(rtt) * coalesceWaitFraction)
+	if w > maxWait {
+		return maxWait
+	}
+	return w
+}
+
+// coalesceFlushThreshold: buffered bytes past which a batch flushes instead
+// of waiting -- roughly one Ethernet MTU's worth of payload.
+//
+// This is the fallback default when the connection's MSS can't be probed
+// (see WrapTLS / coalesceThresholdFor in dial.go, which set DialedHost's
+// FlushThreshold from the real negotiated MSS, minus TLS overhead if applicable).
+const coalesceFlushThreshold = 1448
 
 func (c *Conn) Write(p []byte) (n int, err error) {
 	return c.w.writeContext(context.Background(), p)
@@ -645,11 +684,16 @@ func (s *startupCoordinator) write(ctx context.Context, frame frameBuilder, star
 		return nil, ctx.Err()
 	}
 
+	start := time.Now()
 	framer, err := s.conn.execInternal(ctx, frame, nil, s.conn.cfg.ConnectTimeout, startupCompleted.Load())
 	if err != nil {
 		return nil, err
 	}
 	defer framer.Release()
+
+	if rtt := time.Since(start); s.conn.startupRTT == 0 || rtt < s.conn.startupRTT {
+		s.conn.startupRTT = rtt
+	}
 
 	return framer.parseFrame()
 }
@@ -1929,15 +1973,17 @@ func (c *deadlineContextWriter) writeContext(ctx context.Context, p []byte) (int
 	return c.w.Write(p)
 }
 
-func newWriteCoalescer(conn deadlineWriter, writeTimeout, coalesceDuration time.Duration,
-	quit <-chan struct{}) *writeCoalescer {
+func newWriteCoalescer(conn deadlineWriter, writeTimeout, window time.Duration,
+	flushThreshold int, quit <-chan struct{}) *writeCoalescer {
 	wc := &writeCoalescer{
-		writeCh: make(chan writeRequest),
-		c:       conn,
-		quit:    quit,
+		writeCh:        make(chan writeRequest),
+		c:              conn,
+		quit:           quit,
+		window:         window,
+		flushThreshold: flushThreshold,
 	}
 	wc.setWriteTimeout(writeTimeout)
-	go wc.writeFlusher(coalesceDuration)
+	go wc.writeFlusher(window)
 	return wc
 }
 
@@ -1947,7 +1993,14 @@ type writeCoalescer struct {
 	writeCh          chan writeRequest
 	testEnqueuedHook func()
 	testFlushedHook  func()
-	timeout          atomic.Int64
+	// testFlushSizeHook reports frames per flush. Test/benchmark-only.
+	testFlushSizeHook func(frames int)
+	scratchBuf        []byte // reusable scratch for flush's concatenated Write
+	// window: how long a batch may wait before it's sent. Fixed per coalescer.
+	window time.Duration
+	// flushThreshold: buffered bytes past which a batch flushes early.
+	flushThreshold int
+	timeout        atomic.Int64
 }
 
 func (w *writeCoalescer) setWriteTimeout(timeout time.Duration) {
@@ -2012,24 +2065,67 @@ func (w *writeCoalescer) writeFlusher(interval time.Duration) {
 		<-timer.C
 	}
 
-	w.writeFlusherImpl(timer.C, func() { timer.Reset(interval) })
+	w.writeFlusherImpl(timer.C, func() { timer.Reset(interval) }, func() {
+		if !timer.Stop() {
+			<-timer.C
+		}
+	})
 }
 
-func (w *writeCoalescer) writeFlusherImpl(timerC <-chan time.Time, resetTimer func()) {
+// writeFlusherImpl is the coalescer's single event loop. Arming is
+// Nagle-style: a write only starts the wait window if the previous flush
+// was recent; otherwise (idle conn, or window ~0 locally) it flushes now.
+func (w *writeCoalescer) writeFlusherImpl(timerC <-chan time.Time, resetTimer, stopTimer func()) {
 	running := false
+	var lastFlush time.Time // zero value: the first write always flushes immediately.
 
 	var buffers net.Buffers
 	var resultChans []chan<- writeResult
+	var bufferedBytes int
+
+	doFlush := func() {
+		if running {
+			stopTimer()
+			running = false
+		}
+		if w.testFlushSizeHook != nil {
+			w.testFlushSizeHook(len(buffers))
+		}
+		w.flush(resultChans, buffers)
+		clear(buffers)
+		clear(resultChans)
+		buffers = buffers[:0]
+		resultChans = resultChans[:0]
+		bufferedBytes = 0
+		lastFlush = time.Now()
+		if w.testFlushedHook != nil {
+			w.testFlushedHook()
+		}
+	}
 
 	for {
 		select {
 		case req := <-w.writeCh:
+			if w.flushThreshold > 0 && bufferedBytes > 0 && bufferedBytes+len(req.data) > w.flushThreshold {
+				// The batch already buffered is a full segment on its own;
+				// flush it now so this frame starts a fresh batch instead of
+				// spilling the segment already at capacity across two packets.
+				doFlush()
+			}
+
 			buffers = append(buffers, req.data)
 			resultChans = append(resultChans, req.resultChan)
-			if !running {
-				// Start timer on first write.
-				resetTimer()
-				running = true
+			bufferedBytes += len(req.data)
+
+			if w.flushThreshold > 0 && bufferedBytes >= w.flushThreshold {
+				doFlush()
+			} else if !running {
+				if w.window <= 0 || time.Since(lastFlush) >= w.window {
+					doFlush()
+				} else {
+					resetTimer()
+					running = true
+				}
 			}
 		case <-w.quit:
 			result := writeResult{
@@ -2043,13 +2139,27 @@ func (w *writeCoalescer) writeFlusherImpl(timerC <-chan time.Time, resetTimer fu
 			}
 			return
 		case <-timerC:
-			running = false
-			w.flush(resultChans, buffers)
-			buffers = nil
-			resultChans = nil
-			if w.testFlushedHook != nil {
-				w.testFlushedHook()
+			running = false // the timer already fired; nothing to stop.
+		drain:
+			for {
+				select {
+				case r := <-w.writeCh:
+					// Mirror the per-write path: flush before appending if this
+					// frame would push an already-full batch over threshold.
+					if w.flushThreshold > 0 && bufferedBytes > 0 && bufferedBytes+len(r.data) > w.flushThreshold {
+						doFlush()
+					}
+					buffers = append(buffers, r.data)
+					resultChans = append(resultChans, r.resultChan)
+					bufferedBytes += len(r.data)
+					if w.flushThreshold > 0 && bufferedBytes >= w.flushThreshold {
+						break drain
+					}
+				default:
+					break drain
+				}
 			}
+			doFlush()
 		}
 	}
 }
@@ -2069,10 +2179,29 @@ func (w *writeCoalescer) flush(resultChans []chan<- writeResult, buffers net.Buf
 			return
 		}
 	}
-	// Copy buffers because WriteTo modifies buffers in-place.
-	buffers2 := make(net.Buffers, len(buffers))
-	copy(buffers2, buffers)
-	n, err := buffers2.WriteTo(w.c)
+	// Concatenate into one Write call (and, over TLS, one record) rather than
+	// vector-writing: one code path covers every writer, at one copy.
+	var wn int
+	var err error
+	if len(buffers) == 1 {
+		wn, err = w.c.Write(buffers[0])
+	} else {
+		w.scratchBuf = w.scratchBuf[:0]
+		for _, b := range buffers {
+			w.scratchBuf = append(w.scratchBuf, b...)
+		}
+		wn, err = w.c.Write(w.scratchBuf)
+		// A frame larger than the threshold would otherwise pin its size for
+		// the life of the connection.
+		threshold := coalesceFlushThreshold
+		if w.flushThreshold > 0 {
+			threshold = w.flushThreshold
+		}
+		if cap(w.scratchBuf) > 4*threshold {
+			w.scratchBuf = nil
+		}
+	}
+	n := int64(wn)
 	// Writes of bytes before n succeeded, writes of bytes starting from n failed with err.
 	// Use n as remaining byte counter.
 	for i := range buffers {
