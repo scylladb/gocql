@@ -23,10 +23,20 @@ fixes:
 
 # One flag per Go module, mirroring the two profiles `make coverage-report`
 # emits and the "root module total"/"lz4 module total" split it already prints.
-# carryforward keeps the last known coverage for a flag on commits whose lane
-# didn't upload one (docs-only pushes filtered out by paths-ignore, PRs carrying
-# the disable-coverage-tests label), instead of reporting those modules as a
-# total loss of coverage.
+#
+# carryforward covers exactly one case: a commit that uploaded some flags but
+# not all of them, where the missing ones would otherwise read as a total loss
+# of coverage rather than as absent. In practice that is the root upload
+# landing and the lz4 one failing, since both steps share a condition.
+#
+# It does NOT cover a commit with no upload at all. Codecov builds no head
+# report for such a commit, and carryforward needs a report to fill in, so
+# there is nothing for it to run against. That is the shape of every skipped
+# coverage run here -- a docs-only push filtered out by paths-ignore, a pull
+# request labelled disable-coverage-tests -- and it needs no covering: with no
+# report, comparisons walk back to the nearest ancestor that has one, which is
+# the right baseline, and a run deliberately skipped has no business
+# manufacturing a status out of a blank upload.
 flag_management:
   individual_flags:
     - name: root

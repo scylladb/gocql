@@ -149,7 +149,10 @@ pull request and reports it as a check. Both of its statuses are `informational`
 so a drop annotates the pull request but never blocks merging it -- the integration lanes need a
 live ScyllaDB cluster, and a lane that fails to start one moves the number for reasons unrelated to
 the diff. The workflow is still skippable: add the `disable-coverage-tests` label to a pull request
-and no run (and so no upload) happens, with Codecov carrying the previous commit's numbers forward.
+and no run, and so no upload, happens. Codecov then has no report for that commit at all -- the
+`carryforward` flags in `codecov.yml` do not apply, since carryforward only fills in flags missing
+from a commit that uploaded *something* -- and comparisons against it simply walk back to the
+nearest ancestor that does have a report.
 
 ### Sign Off Procedure
 
