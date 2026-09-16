@@ -122,8 +122,29 @@ jobs:
       # back to Codecov's tokenless path for public repositories. That path is
       # best-effort, and a hiccup in it must not be what turns a contributor's
       # pull request red.
+      #
+      # Unlike the artifact above, these upload only from a run that both
+      # succeeded and actually measured everything. A partial profile is not
+      # merely noise: on master it becomes the baseline `target: auto`
+      # compares the next pull request against, so an artificially low number
+      # there reads as a phantom improvement on every pull request after it,
+      # with a real regression free to hide inside that margin until the next
+      # clean run. The informational statuses in codecov.yml stop a bad number
+      # from blocking a merge; they do not stop it from being recorded.
+      # Uploading nothing is the better failure: Codecov falls back to the
+      # nearest ancestor that does have a report, which leaves the comparison
+      # correct rather than wrong.
+      #
+      # success() covers a step that failed. The NOT-FOUND guard covers the
+      # other half, which success() cannot see: resolve-scylla-version exits 0
+      # when it can't resolve a version and reports the miss only through its
+      # step output, so the integration and CCM steps are *skipped* rather
+      # than failed and the job stays green while carrying unit-only coverage
+      # -- the same poisoned baseline by a quieter route. The artifact above
+      # keeps always(), so the profiles from a failed run remain downloadable
+      # either way.
       - name: Upload root module coverage to Codecov
-        if: always()
+        if: success() && steps.scylla-version.outputs.value != 'NOT-FOUND'
         uses: codecov/codecov-action@0b35c9ecc4f0529d0eb674914510c22f85b196b4 # v7.1.0
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -139,7 +160,7 @@ jobs:
           fail_ci_if_error: ${{ github.event.pull_request.head.repo.fork != true }}
 
       - name: Upload lz4 module coverage to Codecov
-        if: always()
+        if: success() && steps.scylla-version.outputs.value != 'NOT-FOUND'
         uses: codecov/codecov-action@0b35c9ecc4f0529d0eb674914510c22f85b196b4 # v7.1.0
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
