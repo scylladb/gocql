@@ -23,6 +23,14 @@ import (
 
 var updateGolden = flag.Bool("update-golden", false, "update golden files")
 
+// cassandraOverride returns override when running against Cassandra and it's set, else base.
+func cassandraOverride(base, override string) string {
+	if override != "" && *flagDistribution == "cassandra" {
+		return override
+	}
+	return base
+}
+
 func TestRecreateSchema(t *testing.T) {
 	t.Parallel()
 
@@ -42,7 +50,9 @@ func TestRecreateSchema(t *testing.T) {
 		FixedKeyspace   string // original keyspace name used in .cql files
 		FailWithTablets bool
 		Input           string
+		CassandraInput  string // overrides Input on Cassandra, when its CQL syntax requirements differ
 		Golden          string
+		CassandraGolden string // overrides Golden on Cassandra, when the rendered dump differs
 	}{
 		{
 			Name:          "Keyspace",
@@ -75,7 +85,11 @@ func TestRecreateSchema(t *testing.T) {
 			FixedKeyspace:   "gocqlx_sec_idx",
 			FailWithTablets: failsOnOldScylla,
 			Input:           "testdata/recreate/secondary_index.cql",
+			// Cassandra's CQL grammar doesn't accept Scylla's multi-column
+			// index target syntax "((location), name)"; use a single-column index.
+			CassandraInput:  "testdata/recreate/secondary_index_cassandra.cql",
 			Golden:          "testdata/recreate/secondary_index_golden.cql",
+			CassandraGolden: "testdata/recreate/secondary_index_cassandra_golden.cql",
 		},
 		{
 			Name:          "UDT",
@@ -103,7 +117,8 @@ func TestRecreateSchema(t *testing.T) {
 			ks := testKeyspaceName(t)
 			cleanup(t, session, ks)
 
-			in, err := os.ReadFile(test.Input)
+			input := cassandraOverride(test.Input, test.CassandraInput)
+			in, err := os.ReadFile(input)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -166,12 +181,13 @@ func TestRecreateSchema(t *testing.T) {
 				// Normalize from the cluster's unique keyspace name back to fixed name.
 				golden = []byte(strings.ReplaceAll(string(golden), ks, test.FixedKeyspace))
 			} else {
+				goldenPath := cassandraOverride(test.Golden, test.CassandraGolden)
 				if *updateGolden {
-					if err := os.WriteFile(test.Golden, []byte(dump), 0644); err != nil {
+					if err := os.WriteFile(goldenPath, []byte(dump), 0644); err != nil {
 						t.Fatal(err)
 					}
 				}
-				golden, err = os.ReadFile(test.Golden)
+				golden, err = os.ReadFile(goldenPath)
 				if err != nil {
 					t.Fatal(err)
 				}
