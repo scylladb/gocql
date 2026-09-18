@@ -30,6 +30,7 @@ package gocql
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"net"
@@ -524,8 +525,8 @@ func TestParsePreparedMetadataAcceptsValidPkeyCount(t *testing.T) {
 	})
 }
 
-// A negative [long string] length must panic with a plain error, not a
-// runtime.Error: parseFrame converts the first and re-panics the second.
+// A negative [long string] length must panic with a malformedFrameError: that is the
+// only value parseFrame converts, and a runtime.Error is re-panicked by design.
 func TestReadLongStringRejectsNegativeLength(t *testing.T) {
 	f := newFramer(nil, protoVersion4)
 	f.buf = []byte{0xFF, 0xFF, 0xFF, 0xFF, 'x'} // a declared length of -1
@@ -535,19 +536,108 @@ func TestReadLongStringRejectsNegativeLength(t *testing.T) {
 		if r == nil {
 			t.Fatal("a negative long string length was accepted")
 		}
-		if _, ok := r.(runtime.Error); ok {
-			t.Fatalf("panicked with a runtime.Error, which parseFrame's recover re-panics: %v", r)
-		}
-		err, ok := r.(error)
+		mf, ok := r.(malformedFrameError)
 		if !ok {
-			t.Fatalf("panicked with %T, which parseFrame's recover cannot convert: %v", r, r)
+			t.Fatalf("panicked with %T, which parseFrame re-panics instead of converting: %v", r, r)
 		}
-		if !strings.Contains(err.Error(), "-1") {
-			t.Errorf("the error does not name the length: %v", err)
+		if !strings.Contains(mf.Error(), "-1") {
+			t.Errorf("the error does not name the length: %v", mf)
 		}
 	}()
 
 	f.readLongString()
+}
+
+// TestMalformedFrameErrorWraps pins the carrier's two jobs: it reads as the error it
+// holds, and it gives that error back unchanged, so a caller of parseFrame never sees
+// the wrapper.
+func TestMalformedFrameErrorWraps(t *testing.T) {
+	t.Parallel()
+
+	inner := fmt.Errorf("short buffer: %d", 3)
+	mf := malformedFrameError{err: inner}
+
+	assert.Equal(t, inner.Error(), mf.Error())
+	assert.Same(t, inner, errors.Unwrap(mf))
+
+	var err error
+	recoverMalformedFrame(mf, &err)
+	assert.Same(t, inner, err, "parseFrame must return the wrapped error, not the wrapper")
+
+	assert.Equal(t, "short buffer: 3", malformedFramef("short buffer: %d", 3).Error())
+}
+
+// TestRecoverMalformedFrameRePanicsADriverBug pins that only the read path's own value
+// becomes an error. Anything else -- a runtime.Error, a bare error from code that does
+// not speak this contract, a panic("...") -- keeps unwinding, so a driver bug is never
+// reported as a malformed frame from the peer.
+func TestRecoverMalformedFrameRePanicsADriverBug(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		value any
+	}{
+		{name: "runtime error", value: capturedRuntimeError(t)},
+		{name: "bare error", value: fmt.Errorf("not enough bytes in buffer")},
+		{name: "string", value: "compress flag set with no compressor"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			var err error
+			func() {
+				defer func() {
+					r := recover()
+					if r == nil {
+						t.Fatalf("%T was swallowed instead of re-panicked", test.value)
+					}
+					assert.Equal(t, test.value, r, "the panic value must survive unchanged")
+				}()
+
+				recoverMalformedFrame(test.value, &err)
+			}()
+
+			assert.NoError(t, err, "a re-panicked value must not also be reported as a frame error")
+		})
+	}
+}
+
+// capturedRuntimeError returns a real runtime.Error, which cannot be constructed
+// directly.
+func capturedRuntimeError(t *testing.T) runtime.Error {
+	t.Helper()
+
+	var caught runtime.Error
+	func() {
+		defer func() {
+			var ok bool
+			caught, ok = recover().(runtime.Error)
+			require.True(t, ok, "expected an out-of-range index to raise a runtime.Error")
+		}()
+
+		empty := make([]int, 0)
+		_ = empty[len(empty)]
+	}()
+
+	return caught
+}
+
+// TestRecoverMalformedFrameIgnoresANormalReturn pins the nil case: nothing panicked,
+// so the error parseFrame is about to return stays as it is.
+func TestRecoverMalformedFrameIgnoresANormalReturn(t *testing.T) {
+	t.Parallel()
+
+	err := error(nil)
+	recoverMalformedFrame(nil, &err)
+	assert.NoError(t, err)
+
+	sentinel := fmt.Errorf("got a request frame from server")
+	err = sentinel
+	recoverMalformedFrame(nil, &err)
+	assert.Same(t, sentinel, err)
 }
 
 // TestParseResultPreparedTruncatedResultMetadataID verifies that a malformed

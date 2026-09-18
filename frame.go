@@ -32,7 +32,6 @@ import (
 	"io"
 	"math"
 	"net"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -469,26 +468,40 @@ func (f *framer) adoptFrameBody(body []byte, head *frm.FrameHeader) error {
 	return nil
 }
 
+// malformedFrameError carries a read-path failure out of the helpers through
+// panic/recover. It is the only panic value parseFrame converts into an error:
+// anything else unwinding through it comes from a driver bug, and returning that as
+// an error would file the bug against the peer.
+type malformedFrameError struct{ err error }
+
+func (e malformedFrameError) Error() string { return e.err.Error() }
+
+func (e malformedFrameError) Unwrap() error { return e.err }
+
+// malformedFramef builds the value the read helpers panic with. Every panic under
+// parseFrame goes through it; a bare panic(fmt.Errorf(...)) is not converted.
+func malformedFramef(format string, a ...any) malformedFrameError {
+	return malformedFrameError{err: fmt.Errorf(format, a...)}
+}
+
+// recoverMalformedFrame turns a read-path panic into a returned error and re-panics
+// everything else -- a runtime.Error, a panic("..."), or a plain error from code that
+// does not speak this contract. See the read-helper rules above readByte.
+func recoverMalformedFrame(r any, err *error) {
+	if r == nil {
+		return
+	}
+	mf, ok := r.(malformedFrameError)
+	if !ok {
+		panic(r)
+	}
+	*err = mf.Unwrap()
+}
+
 func (f *framer) parseFrame() (frame frame, err error) {
-	// The read helpers panic with an error instead of returning one (see readByte);
-	// this recover is what makes a malformed frame a protocol error.
-	defer func() {
-		if r := recover(); r != nil {
-			switch v := r.(type) {
-			case runtime.Error:
-				// A driver bug, not a bad frame -- converting it would file it against
-				// the peer. The helpers bound every read, so no frame should reach here.
-				panic(v)
-			case error:
-				err = v
-			default:
-				// Unreachable while every read-path panic carries an error; an unchecked
-				// r.(error) would itself panic in here and lose the original value. A
-				// panic("...") is a driver bug, so the message says so.
-				err = NewErrProtocol("driver bug: unexpected panic parsing a frame: %v", v)
-			}
-		}
-	}()
+	// The read helpers panic with a malformedFrameError instead of returning one (see
+	// readByte); this recover is what makes a malformed frame a protocol error.
+	defer func() { recoverMalformedFrame(recover(), &err) }()
 
 	if f.header.Version.Request() {
 		return nil, NewErrProtocol("got a request frame from server: %v", f.header.Version)
@@ -722,7 +735,7 @@ func (f *framer) writeTo(w io.Writer) error {
 
 func (f *framer) readTrace() {
 	if len(f.buf) < 16 {
-		panic(fmt.Errorf("not enough bytes in buffer to read trace uuid require 16 got: %d", len(f.buf)))
+		panic(malformedFramef("not enough bytes in buffer to read trace uuid require 16 got: %d", len(f.buf)))
 	}
 	if len(f.traceID) != 16 {
 		f.traceID = make([]byte, 16)
@@ -878,12 +891,12 @@ func (f *framer) readVectorTypeInfo(simple NativeType, vectorTypePrefix string) 
 	rest := simple.custom[len(vectorTypePrefix):]
 	switch {
 	case rest == "":
-		panic(fmt.Errorf("invalid vector type %q: expected %s(<type>, <dimensions>)", simple.custom, vectorTypePrefix))
+		panic(malformedFramef("invalid vector type %q: expected %s(<type>, <dimensions>)", simple.custom, vectorTypePrefix))
 	case rest[0] != '(':
 		// Not a vector: a different type that shares the prefix.
 		return simple
 	case rest[len(rest)-1] != ')':
-		panic(fmt.Errorf("invalid vector type %q: unterminated argument list", simple.custom))
+		panic(malformedFramef("invalid vector type %q: unterminated argument list", simple.custom))
 	}
 
 	// The dimensions are the last argument, so the last comma separates them from
@@ -891,19 +904,19 @@ func (f *framer) readVectorTypeInfo(simple NativeType, vectorTypePrefix string) 
 	spec := rest[1 : len(rest)-1]
 	idx := strings.LastIndex(spec, ",")
 	if idx < 0 {
-		panic(fmt.Errorf("invalid vector type %q: missing dimensions", simple.custom))
+		panic(malformedFramef("invalid vector type %q: missing dimensions", simple.custom))
 	}
 
 	typeStr := strings.TrimSpace(spec[:idx])
 	if typeStr == "" {
-		panic(fmt.Errorf("invalid vector type %q: missing element type", simple.custom))
+		panic(malformedFramef("invalid vector type %q: missing element type", simple.custom))
 	}
 
 	// Cassandra requires a positive dimension, and a negative one reaches
 	// reflect.MakeSlice in unmarshalVector, outside any recover.
 	dim, err := strconv.Atoi(strings.TrimSpace(spec[idx+1:]))
 	if err != nil || dim < 1 {
-		panic(fmt.Errorf("invalid vector type %q: dimensions must be a positive integer", simple.custom))
+		panic(malformedFramef("invalid vector type %q: dimensions must be a positive integer", simple.custom))
 	}
 
 	return VectorType{
@@ -935,7 +948,7 @@ func (f *framer) parsePreparedMetadata() preparedMetadata {
 	meta.flags = f.readInt()
 	meta.colCount = f.readInt()
 	if meta.colCount < 0 {
-		panic(fmt.Errorf("received negative column count: %d", meta.colCount))
+		panic(malformedFramef("received negative column count: %d", meta.colCount))
 	}
 	meta.actualColCount = meta.colCount
 
@@ -950,7 +963,7 @@ func (f *framer) parsePreparedMetadata() preparedMetadata {
 		// actual frame size instead of a peer-declared count, so a small malformed
 		// frame cannot force a large allocation.
 		if pkeyCount < 0 || pkeyCount > len(f.buf)/2 {
-			panic(fmt.Errorf("invalid partition key count %d (remaining %d bytes)", pkeyCount, len(f.buf)))
+			panic(malformedFramef("invalid partition key count %d (remaining %d bytes)", pkeyCount, len(f.buf)))
 		}
 		pkeys := make([]int, pkeyCount)
 		for i := 0; i < pkeyCount; i++ {
@@ -1083,7 +1096,7 @@ func (f *framer) parseResultMetadata() resultMetadata {
 	meta.flags = f.readInt()
 	meta.colCount = f.readInt()
 	if meta.colCount < 0 {
-		panic(fmt.Errorf("received negative column count: %d", meta.colCount))
+		panic(malformedFramef("received negative column count: %d", meta.colCount))
 	}
 	meta.actualColCount = meta.colCount
 
@@ -1186,7 +1199,7 @@ func (f *framer) parseResultRows() frame {
 
 	result.numRows = f.readInt()
 	if result.numRows < 0 {
-		panic(fmt.Errorf("invalid row_count in result frame: %d", result.numRows))
+		panic(malformedFramef("invalid row_count in result frame: %d", result.numRows))
 	}
 
 	return result
@@ -1297,7 +1310,7 @@ func (f *framer) parseResultSchemaChange() frame {
 			Args:        f.readStringList(),
 		}
 	default:
-		panic(fmt.Errorf("gocql: unknown SCHEMA_CHANGE target: %q change: %q", target, change))
+		panic(malformedFramef("gocql: unknown SCHEMA_CHANGE target: %q change: %q", target, change))
 	}
 }
 
@@ -1349,7 +1362,7 @@ func (f *framer) parseEventFrame() frame {
 			HostIDs:       f.readStringList(),
 		}
 	default:
-		panic(fmt.Errorf("gocql: unknown event type: %q", eventType))
+		panic(malformedFramef("gocql: unknown event type: %q", eventType))
 	}
 
 }
@@ -1865,15 +1878,16 @@ func (f *framer) writeRegisterFrame(streamID int, w *writeRegisterFrame) error {
 	return f.finish()
 }
 
-// The read helpers below bounds-check and then panic with a plain error instead of
-// returning one; parseFrame's recover converts it. Two rules keep that working:
-//   - panic with an error, never a string, or the recover has nothing to convert;
+// The read helpers below bounds-check and then panic instead of returning an error;
+// parseFrame's recover converts it. Two rules keep that working:
+//   - panic with malformedFramef, never a bare fmt.Errorf and never a string:
+//     recoverMalformedFrame converts that one type and re-panics everything else;
 //   - never raise a runtime.Error: bound every index against len(f.buf) and reject
 //     a negative length first -- a negative is not below any length. parseFrame
 //     re-panics a runtime.Error on purpose.
 func (f *framer) readByte() byte {
 	if len(f.buf) < 1 {
-		panic(fmt.Errorf("not enough bytes in buffer to read byte require 1 got: %d", len(f.buf)))
+		panic(malformedFramef("not enough bytes in buffer to read byte require 1 got: %d", len(f.buf)))
 	}
 
 	b := f.buf[0]
@@ -1883,7 +1897,7 @@ func (f *framer) readByte() byte {
 
 func (f *framer) readInt() (n int) {
 	if len(f.buf) < 4 {
-		panic(fmt.Errorf("not enough bytes in buffer to read int require 4 got: %d", len(f.buf)))
+		panic(malformedFramef("not enough bytes in buffer to read int require 4 got: %d", len(f.buf)))
 	}
 
 	n = int(int32(binary.BigEndian.Uint32(f.buf[:4])))
@@ -1893,7 +1907,7 @@ func (f *framer) readInt() (n int) {
 
 func (f *framer) readShort() (n uint16) {
 	if len(f.buf) < 2 {
-		panic(fmt.Errorf("not enough bytes in buffer to read short require 2 got: %d", len(f.buf)))
+		panic(malformedFramef("not enough bytes in buffer to read short require 2 got: %d", len(f.buf)))
 	}
 	n = binary.BigEndian.Uint16(f.buf[:2])
 	f.buf = f.buf[2:]
@@ -1904,7 +1918,7 @@ func (f *framer) readString() (s string) {
 	size := f.readShort()
 
 	if len(f.buf) < int(size) {
-		panic(fmt.Errorf("not enough bytes in buffer to read string require %d got: %d", size, len(f.buf)))
+		panic(malformedFramef("not enough bytes in buffer to read string require %d got: %d", size, len(f.buf)))
 	}
 
 	s = string(f.buf[:size])
@@ -1917,7 +1931,7 @@ func (f *framer) skipString() {
 	size := f.readShort()
 
 	if len(f.buf) < int(size) {
-		panic(fmt.Errorf("not enough bytes in buffer to skip string, requires %d got %d", size, len(f.buf)))
+		panic(malformedFramef("not enough bytes in buffer to skip string, requires %d got %d", size, len(f.buf)))
 	}
 
 	f.buf = f.buf[size:]
@@ -1930,11 +1944,11 @@ func (f *framer) readLongString() (s string) {
 	// not null. len(f.buf) is never below a negative, so without this f.buf[:size]
 	// raises a runtime.Error that parseFrame re-panics.
 	if size < 0 {
-		panic(fmt.Errorf("invalid long string length: %d", size))
+		panic(malformedFramef("invalid long string length: %d", size))
 	}
 
 	if len(f.buf) < size {
-		panic(fmt.Errorf("not enough bytes in buffer to read long string require %d got: %d", size, len(f.buf)))
+		panic(malformedFramef("not enough bytes in buffer to read long string require %d got: %d", size, len(f.buf)))
 	}
 
 	s = string(f.buf[:size])
@@ -1976,7 +1990,7 @@ func (f *framer) readBytesCopy() []byte {
 	}
 
 	if len(f.buf) < size {
-		panic(fmt.Errorf("not enough bytes in buffer to read bytes require %d got: %d", size, len(f.buf)))
+		panic(malformedFramef("not enough bytes in buffer to read bytes require %d got: %d", size, len(f.buf)))
 	}
 
 	out := make([]byte, size)
@@ -1988,7 +2002,7 @@ func (f *framer) readBytesCopy() []byte {
 func (f *framer) readShortBytesCopy() []byte {
 	size := f.readShort()
 	if len(f.buf) < int(size) {
-		panic(fmt.Errorf("not enough bytes in buffer to read short bytes: require %d got %d", size, len(f.buf)))
+		panic(malformedFramef("not enough bytes in buffer to read short bytes: require %d got %d", size, len(f.buf)))
 	}
 
 	out := make([]byte, size)
@@ -2000,18 +2014,18 @@ func (f *framer) readShortBytesCopy() []byte {
 
 func (f *framer) readInetAdressOnly() net.IP {
 	if len(f.buf) < 1 {
-		panic(fmt.Errorf("not enough bytes in buffer to read inet size require %d got: %d", 1, len(f.buf)))
+		panic(malformedFramef("not enough bytes in buffer to read inet size require %d got: %d", 1, len(f.buf)))
 	}
 
 	size := f.buf[0]
 	f.buf = f.buf[1:]
 
 	if !(size == 4 || size == 16) {
-		panic(fmt.Errorf("invalid IP size: %d", size))
+		panic(malformedFramef("invalid IP size: %d", size))
 	}
 
 	if len(f.buf) < int(size) {
-		panic(fmt.Errorf("not enough bytes in buffer to read inet require %d got: %d", size, len(f.buf)))
+		panic(malformedFramef("not enough bytes in buffer to read inet require %d got: %d", size, len(f.buf)))
 	}
 
 	ip := make(net.IP, size)
