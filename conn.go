@@ -262,9 +262,13 @@ type Conn struct {
 	// for server push events: a SCHEMA_CHANGE arriving inside that window makes
 	// the event-debouncer goroutine run querySystem on this connection
 	// concurrently with the write.
-	systemRequest    atomic.Pointer[systemRequestState]
-	cqlProtoExts     []cqlProtocolExtension
-	scyllaSupported  ScyllaConnectionFeatures
+	systemRequest   atomic.Pointer[systemRequestState]
+	cqlProtoExts    []cqlProtocolExtension
+	scyllaSupported ScyllaConnectionFeatures
+	// compOpts bundles the per-connection compression settings resolved once
+	// at connection creation from the session's CompressionPolicy and host
+	// tier. The threshold is topology-dependent; minSavingsPct is not.
+	compOpts         compressionOpts
 	writeTimeout     atomic.Int64
 	mu               sync.Mutex
 	tabletsRoutingV1 int32
@@ -469,13 +473,17 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 			conn: dialedHost.Conn,
 			r:    bufio.NewReader(dialedHost.Conn),
 		},
-		cfg:           cfg,
-		calls:         make(map[int]*callReq),
-		version:       uint8(cfg.ProtoVersion),
-		isShardAware:  isShardAware,
-		addr:          dialedHost.Conn.RemoteAddr().String(),
-		errorHandler:  errorHandler,
-		compressor:    cfg.Compressor,
+		cfg:          cfg,
+		calls:        make(map[int]*callReq),
+		version:      uint8(cfg.ProtoVersion),
+		isShardAware: isShardAware,
+		addr:         dialedHost.Conn.RemoteAddr().String(),
+		errorHandler: errorHandler,
+		compressor:   cfg.Compressor,
+		compOpts: compressionOpts{
+			threshold:     resolveCompressionThreshold(s.cfg.CompressionPolicy, s.policy, host),
+			minSavingsPct: s.cfg.CompressionPolicy.MinSavingsPercent,
+		},
 		session:       s,
 		streams:       s.streamIDGenerator(),
 		host:          host,
@@ -2622,6 +2630,9 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 			resultMetadataID: info.resultMetadataID,
 			params:           params,
 			customPayload:    qry.customPayload,
+			// Vector params are dense floats; compressing them wastes CPU for
+			// little gain, so skip compression even if not requested explicitly.
+			noCompress: qry.disableCompression || hasVectorColumn(info.request.columns),
 		}
 
 		// Set "lwt", keyspace", "table" property in the query if it is present in preparedMetadata
@@ -2893,6 +2904,7 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 		defaultTimestamp:      batch.defaultTimestamp,
 		defaultTimestampValue: batch.defaultTimestampValue,
 		customPayload:         batch.CustomPayload,
+		noCompress:            batch.disableCompression,
 	}
 
 	// Always forward these to the framer regardless of protocol version. On
@@ -2909,6 +2921,7 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 	stmts := make(map[string]string, len(batch.Entries))
 
 	hasLwtEntries := false
+	hasVectorEntries := false
 
 	for i := 0; i < n; i++ {
 		entry := &batch.Entries[i]
@@ -2960,6 +2973,9 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 			if !hasLwtEntries && info.request.lwt {
 				hasLwtEntries = true
 			}
+			if !hasVectorEntries && hasVectorColumn(info.request.columns) {
+				hasVectorEntries = true
+			}
 		} else {
 			b.statement = entry.Stmt
 		}
@@ -2970,6 +2986,9 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 	batch.routingInfo.mu.Lock()
 	batch.routingInfo.lwt = hasLwtEntries
 	batch.routingInfo.mu.Unlock()
+
+	// Skip compression for the whole batch if any entry carries vector params.
+	req.noCompress = req.noCompress || hasVectorEntries
 
 	// TODO: should batch support tracing?
 	framer, err := c.exec(batch.Context(), req, batch.trace, batch.GetRequestTimeout())
