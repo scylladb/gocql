@@ -43,6 +43,10 @@ func TestRecreateSchema(t *testing.T) {
 		FailWithTablets bool
 		Input           string
 		Golden          string
+		// InputCassandra/GoldenCassandra override Input/Golden on Cassandra,
+		// for cases whose default fixture relies on a Scylla-only feature.
+		InputCassandra  string
+		GoldenCassandra string
 	}{
 		{
 			Name:          "Keyspace",
@@ -84,10 +88,14 @@ func TestRecreateSchema(t *testing.T) {
 			Golden:        "testdata/recreate/udt_golden.cql",
 		},
 		{
-			Name:          "Aggregates",
-			FixedKeyspace: "gocqlx_aggregates",
-			Input:         "testdata/recreate/aggregates.cql",
-			Golden:        "testdata/recreate/aggregates_golden.cql",
+			// Default fixture uses LANGUAGE lua, a Scylla-only UDF language;
+			// Cassandra gets its own Java UDF fixture below instead.
+			Name:            "Aggregates",
+			FixedKeyspace:   "gocqlx_aggregates",
+			Input:           "testdata/recreate/aggregates.cql",
+			Golden:          "testdata/recreate/aggregates_golden.cql",
+			InputCassandra:  "testdata/recreate/aggregates_cassandra.cql",
+			GoldenCassandra: "testdata/recreate/aggregates_cassandra_golden.cql",
 		},
 	}
 
@@ -103,7 +111,12 @@ func TestRecreateSchema(t *testing.T) {
 			ks := testKeyspaceName(t)
 			cleanup(t, session, ks)
 
-			in, err := os.ReadFile(test.Input)
+			inputPath, goldenPath := test.Input, test.Golden
+			if *flagDistribution == "cassandra" && test.InputCassandra != "" {
+				inputPath, goldenPath = test.InputCassandra, test.GoldenCassandra
+			}
+
+			in, err := os.ReadFile(inputPath)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -111,7 +124,7 @@ func TestRecreateSchema(t *testing.T) {
 			// Substitute the fixed keyspace name in the CQL input with the unique name.
 			inStr := strings.ReplaceAll(string(in), test.FixedKeyspace, ks)
 
-			queries := trimQueries(strings.Split(inStr, ";"))
+			queries := trimQueries(splitStatements(inStr))
 			for _, q := range queries {
 				qr := session.Query(q, nil)
 				err = qr.Exec()
@@ -167,19 +180,19 @@ func TestRecreateSchema(t *testing.T) {
 				golden = []byte(strings.ReplaceAll(string(golden), ks, test.FixedKeyspace))
 			} else {
 				if *updateGolden {
-					if err := os.WriteFile(test.Golden, []byte(dump), 0644); err != nil {
+					if err := os.WriteFile(goldenPath, []byte(dump), 0644); err != nil {
 						t.Fatal(err)
 					}
 				}
-				golden, err = os.ReadFile(test.Golden)
+				golden, err = os.ReadFile(goldenPath)
 				if err != nil {
 					t.Fatal(err)
 				}
 				golden = []byte(trimSchema(string(golden)))
 			}
 
-			goldenQueries := trimQueries(sortQueries(strings.Split(string(golden), ";")))
-			dumpQueries := trimQueries(sortQueries(strings.Split(dump, ";")))
+			goldenQueries := trimQueries(sortQueries(splitStatements(string(golden))))
+			dumpQueries := trimQueries(sortQueries(splitStatements(dump)))
 
 			if len(goldenQueries) != len(dumpQueries) {
 				t.Fatalf("Expected len(dumpQueries) to be %d, got %d", len(goldenQueries), len(dumpQueries))
@@ -198,7 +211,7 @@ func TestRecreateSchema(t *testing.T) {
 			cleanup(t, session, ks)
 			session.metadataDescriber.invalidateKeyspaceSchema(ks)
 
-			for _, q := range trimQueries(strings.Split(strings.ReplaceAll(dump, test.FixedKeyspace, ks), ";")) {
+			for _, q := range trimQueries(splitStatements(strings.ReplaceAll(dump, test.FixedKeyspace, ks))) {
 				qr := session.Query(q, nil)
 				if err := qr.Exec(); err != nil {
 					t.Fatal("invalid dump query", q, err)
@@ -228,7 +241,7 @@ func TestRecreateSchema(t *testing.T) {
 			// Normalize the second dump back to fixed keyspace name for comparison.
 			secondDump = strings.ReplaceAll(secondDump, ks, test.FixedKeyspace)
 
-			secondDumpQueries := trimQueries(sortQueries(strings.Split(secondDump, ";")))
+			secondDumpQueries := trimQueries(sortQueries(splitStatements(secondDump)))
 
 			if !cmp.Equal(secondDumpQueries, dumpQueries) {
 				t.Errorf("first dump and second one differs: %s", cmp.Diff(secondDumpQueries, dumpQueries))
@@ -298,6 +311,32 @@ func sortQueries(in []string) []string {
 	q := trimQueries(in)
 	sort.Strings(q)
 	return q
+}
+
+// splitStatements splits CQL text on ';', ignoring ';' inside $$-quoted
+// bodies (e.g. UDF/UDA definitions), which a plain strings.Split would break.
+func splitStatements(s string) []string {
+	var stmts []string
+	var b strings.Builder
+	inDollarQuote := false
+	for i := 0; i < len(s); i++ {
+		if s[i] == '$' && i+1 < len(s) && s[i+1] == '$' {
+			inDollarQuote = !inDollarQuote
+			b.WriteString("$$")
+			i++
+			continue
+		}
+		if s[i] == ';' && !inDollarQuote {
+			stmts = append(stmts, b.String())
+			b.Reset()
+			continue
+		}
+		b.WriteByte(s[i])
+	}
+	if b.Len() > 0 {
+		stmts = append(stmts, b.String())
+	}
+	return stmts
 }
 
 func trimQueries(in []string) []string {
