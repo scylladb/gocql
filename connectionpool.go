@@ -607,7 +607,7 @@ func (pool *hostConnPool) connect() (err error) {
 		pool.mu.Unlock()
 		conn.Close()
 		if debug.Enabled {
-			pool.logger.Printf("gocql: pool connection was not added to the pool: %w", err)
+			pool.logger.Printf("gocql: pool connection was not added to the pool: %v", err)
 		}
 		return nil
 	}
