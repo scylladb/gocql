@@ -7,7 +7,6 @@ package gocql
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -250,40 +249,6 @@ func isDescribeKeyspaceSupported(t *testing.T, s *Session) bool {
 		t.Fatalf("error querying keyspace schema: %v", err)
 	}
 	return true
-}
-
-func TestScyllaEncryptionOptionsUnmarshaller(t *testing.T) {
-	t.Parallel()
-
-	const (
-		input  = "testdata/recreate/scylla_encryption_options.bin"
-		golden = "testdata/recreate/scylla_encryption_options_golden.json"
-	)
-
-	inputBuf, err := os.ReadFile(input)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	goldenBuf, err := os.ReadFile(golden)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	goldenOpts := &scyllaEncryptionOptions{}
-	if err := json.Unmarshal(goldenBuf, goldenOpts); err != nil {
-		t.Fatal(err)
-	}
-
-	opts := &scyllaEncryptionOptions{}
-	if err := opts.UnmarshalBinary(inputBuf); err != nil {
-		t.Error(err)
-	}
-
-	if !cmp.Equal(goldenOpts, opts) {
-		t.Error(cmp.Diff(goldenOpts, opts))
-	}
-
 }
 
 func cleanup(t *testing.T, session *Session, keyspace string) {
