@@ -845,6 +845,15 @@ func (c *Conn) closeWithError(err error) {
 	}
 
 	for _, req := range callsToClose {
+		if req.timeout == nil {
+			// Only putCallReq nils timeout, so this callReq was recycled while still
+			// in c.calls -- the same driver bug processFrameSource refuses to clean up
+			// after. Nobody is waiting on resp and the timeout arm below can never
+			// fire, so the send would block here forever. Skip it: a leaked call is
+			// survivable, a close that never returns is not.
+			c.logger.Printf("gocql: connection close skipped an already-recycled call\n")
+			continue
+		}
 		if err != nil {
 			// We need to send the error to all waiting queries.
 			select {
@@ -1221,26 +1230,28 @@ func (c *Conn) processFrameSource(ctx context.Context, src frameSource) error {
 		return ErrConnectionClosed
 	}
 	call, ok := c.calls[head.Stream]
+	// Read the callReq's own stream id under the lock. Leaving the entry in place
+	// below means closeWithError can be recycling this callReq the moment the lock
+	// is dropped, and putCallReq zeroes the field.
+	if call != nil && ok {
+		if streamID := call.streamID; head.Stream != streamID {
+			c.mu.Unlock()
+			// c.calls and the callReq it holds disagree: a driver bug, not something
+			// a peer can provoke. Fail the connection -- its stream bookkeeping is
+			// what is untrustworthy -- and touch nothing on the way out. addCall is
+			// the only writer of c.calls and always keys by call.streamID, so the two
+			// can only diverge once the callReq has been recycled; cleaning up by
+			// either the key or the field would then act on a stream some other call
+			// owns. serve() turns this error into closeWithError, which drains
+			// whatever is genuinely still in the map.
+			return fmt.Errorf("gocql: response for stream %d dispatched to a call on stream %d", head.Stream, streamID)
+		}
+	}
 	delete(c.calls, head.Stream)
 	c.mu.Unlock()
 	if call == nil || !ok {
 		c.logger.Printf("gocql: received response for stream which has no handler: header=%v\n", head)
 		return c.discardFrame(r, head)
-	} else if head.Stream != call.streamID {
-		// c.calls and the callReq it holds disagree: a driver bug, not something a
-		// peer can provoke. Fail the connection -- its stream bookkeeping is what is
-		// untrustworthy. Deliver first: head.Stream is already out of c.calls, so
-		// closeWithError's drain cannot, and exactly one of StreamAbandoned and
-		// StreamFinished must fire.
-		err := fmt.Errorf("gocql: response for stream %d dispatched to a call on stream %d", head.Stream, call.streamID)
-		select {
-		case call.resp <- callResp{err: err, removedFromCalls: true}:
-		case <-call.timeout:
-			c.abandonRecvCall(call, nil)
-		case <-ctx.Done():
-			c.abandonRecvCall(call, nil)
-		}
-		return err
 	}
 
 	framer := c.getReadFramer()

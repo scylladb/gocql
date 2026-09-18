@@ -1167,10 +1167,7 @@ func TestExecCloseWithError(t *testing.T) {
 
 		waitForSingleCall(t, c)
 		call := detachSingleCall(t, c)
-		// removedFromCalls tells exec it owns the cleanup; detachSingleCall above
-		// stands in for the production delete. Without it the leaked stream goes
-		// unnoticed.
-		call.resp <- callResp{err: io.EOF, removedFromCalls: true}
+		call.resp <- callResp{err: io.EOF}
 
 		select {
 		case err := <-errCh:
@@ -1179,10 +1176,6 @@ func TestExecCloseWithError(t *testing.T) {
 			}
 		case <-time.After(execCloseTestTimeout):
 			t.Fatal("exec deadlocked after response error")
-		}
-
-		if inUse := c.streams.InUse(); inUse != 0 {
-			t.Fatalf("expected the stream to be released after a response error, %d still in use", inUse)
 		}
 
 		c.mu.Lock()
@@ -3874,20 +3867,25 @@ func TestProcessFrameStreamIDMismatchIsAnError(t *testing.T) {
 	require.Contains(t, err.Error(), "stream 1")
 	require.Contains(t, err.Error(), "stream 2")
 
-	// And the caller is handed it: head.Stream has already left c.calls, so
-	// closeWithError's drain cannot reach this call.
+	// Nothing was delivered and nothing was removed. Waking the call would mean
+	// trusting call.streamID, which is the half of the disagreement that may name a
+	// stream some other call owns; closeWithError drains the map instead.
 	select {
 	case resp := <-call.resp:
-		require.ErrorIs(t, resp.err, err)
+		t.Fatalf("the mismatched call was woken with %v, leaving closeWithError nothing to drain", resp.err)
 	default:
-		t.Fatal("the call was never woken: it would wait out its full request timeout")
 	}
+
+	c.mu.Lock()
+	remaining := c.calls
+	c.mu.Unlock()
+	require.Equal(t, map[int]*callReq{1: call}, remaining, "the disagreeing entry must be left for closeWithError")
 }
 
-// TestExecStreamIDMismatchDeliversToWaitingCall drives the same mismatch through a
-// real exec() waiting on call.resp, so it exercises execInternal's
-// resp.removedFromCalls branch -- which the test above would pass without.
-func TestExecStreamIDMismatchDeliversToWaitingCall(t *testing.T) {
+// TestExecStreamIDMismatchFailsTheConnection drives the same mismatch with a real
+// exec() waiting on call.resp, so it pins what actually resolves that call: the
+// connection close the error triggers, not a delivery from the mismatch arm.
+func TestExecStreamIDMismatchFailsTheConnection(t *testing.T) {
 	t.Parallel()
 
 	const testTimeout = 10 * time.Second
@@ -3904,9 +3902,8 @@ func TestExecStreamIDMismatchDeliversToWaitingCall(t *testing.T) {
 	}
 
 	// remapWaitingCall starts an exec() and re-keys c.calls so the entry sits under a
-	// different stream than call.streamID. call.streamID keeps the bit c.streams
-	// allocated, so releasing it is observable via InUse(). Returns the result
-	// channel and the wrong map key a mismatched response must be addressed to.
+	// different stream than call.streamID. Returns the result channel and the wrong
+	// map key a mismatched response must be addressed to.
 	remapWaitingCall := func(t *testing.T, c *Conn, observerCtx *testStreamObserverContext) (<-chan error, int) {
 		t.Helper()
 
@@ -3939,7 +3936,41 @@ func TestExecStreamIDMismatchDeliversToWaitingCall(t *testing.T) {
 		return errCh, wrongKey
 	}
 
-	t.Run("ReleasesAndRecyclesStream", func(t *testing.T) {
+	// duplicateWaitingCall is remapWaitingCall without the delete: the live entry
+	// stays under call.streamID and a stale one is added beside it, which is what a
+	// recycled-and-re-issued callReq leaves behind. Returns the stale key.
+	duplicateWaitingCall := func(t *testing.T, c *Conn, observerCtx *testStreamObserverContext) (<-chan error, int) {
+		t.Helper()
+
+		errCh := make(chan error, 1)
+		go func() {
+			_, err := c.exec(context.Background(), frameWriterFunc(func(f *framer, streamID int) error {
+				f.buf = append(f.buf[:0], 'x')
+				return nil
+			}), nil, 0)
+			errCh <- err
+		}()
+
+		call := waitForSingleCall(t, c)
+		select {
+		case <-observerCtx.started:
+		case <-time.After(testTimeout):
+			t.Fatal("stream observer did not observe the request start")
+		}
+
+		staleKey := call.streamID + 1
+		if staleKey > c.streams.NumStreams {
+			staleKey = 1
+		}
+
+		c.mu.Lock()
+		c.calls[staleKey] = call
+		c.mu.Unlock()
+
+		return errCh, staleKey
+	}
+
+	t.Run("TheCloseReleasesAndRecyclesTheStream", func(t *testing.T) {
 		t.Parallel()
 
 		observerCtx := newTestStreamObserverContext()
@@ -3952,33 +3983,79 @@ func TestExecStreamIDMismatchDeliversToWaitingCall(t *testing.T) {
 		procErr := c.processFrameSource(context.Background(), frameSource{r: bytes.NewReader(mismatchHeader(wrongKey))})
 		require.Error(t, procErr)
 
+		// The arm left the call where it was, so it is still exec's only way out.
+		select {
+		case err := <-errCh:
+			t.Fatalf("exec returned %v before the connection was closed", err)
+		case <-time.After(10 * time.Millisecond):
+		}
+
+		// serve() does exactly this with the error it was handed.
+		c.closeWithError(procErr)
+
 		select {
 		case err := <-errCh:
 			require.ErrorIs(t, err, procErr)
 		case <-time.After(testTimeout):
-			t.Fatal("exec did not return after the mismatched delivery")
+			t.Fatal("exec did not return after the connection was closed")
 		}
 
 		select {
-		case <-observerCtx.finished:
+		case <-observerCtx.abandoned:
 		case <-time.After(testTimeout):
-			t.Fatal("stream was never marked finished")
+			t.Fatal("stream was never marked abandoned")
 		}
 		select {
-		case <-observerCtx.abandoned:
-			t.Fatal("stream should not also be marked abandoned")
+		case <-observerCtx.finished:
+			t.Fatal("stream should not also be marked finished")
 		default:
 		}
 
-		if inUse := c.streams.InUse(); inUse != 0 {
-			t.Fatalf("expected the stream to be released, %d still in use", inUse)
-		}
-
+		// The stream bit stays set: c.streams dies with the connection, and nothing
+		// on the close path clears it for any in-flight call. What must not survive
+		// is the call itself.
 		c.mu.Lock()
 		remaining := len(c.calls)
 		c.mu.Unlock()
 		if remaining != 0 {
-			t.Fatalf("expected no in-flight calls after mismatch delivery, got %d", remaining)
+			t.Fatalf("expected the close to drain c.calls, got %d", remaining)
+		}
+	})
+
+	// The shape a mismatch can actually take: addCall only ever keys by
+	// call.streamID, so the key and the field can diverge only once the callReq has
+	// been recycled and re-issued, leaving a stale entry beside the live one. Both
+	// entries then point at one callReq, and the close has to survive meeting it
+	// twice.
+	t.Run("ADuplicateEntryDoesNotWedgeTheClose", func(t *testing.T) {
+		t.Parallel()
+
+		observerCtx := newTestStreamObserverContext()
+		c, server := newTestExecConn(t, testContextWriter{})
+		c.streamObserver = &testStreamObserver{ctx: observerCtx}
+		defer server.Close()
+
+		errCh, staleKey := duplicateWaitingCall(t, c, observerCtx)
+
+		procErr := c.processFrameSource(context.Background(), frameSource{r: bytes.NewReader(mismatchHeader(staleKey))})
+		require.Error(t, procErr)
+
+		closed := make(chan struct{})
+		go func() {
+			c.closeWithError(procErr)
+			close(closed)
+		}()
+		select {
+		case <-closed:
+		case <-time.After(testTimeout):
+			t.Fatal("closeWithError never returned: it met the recycled callReq a second time")
+		}
+
+		select {
+		case err := <-errCh:
+			require.ErrorIs(t, err, procErr)
+		case <-time.After(testTimeout):
+			t.Fatal("exec did not return after the connection was closed")
 		}
 	})
 
