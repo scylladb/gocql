@@ -129,6 +129,16 @@ func TestGetCassandraLongTypeRejectsShortSplits(t *testing.T) {
 		{name: "udt without arguments", typ: p + "UserType", want: NewCustomType(0, TypeCustom, p+"UserType")},
 		{name: "udt without a name", typ: p + "UserType(gocql_test)", want: NewCustomType(0, TypeCustom, p+"UserType(gocql_test)")},
 		{name: "udt field without a type", typ: p + "UserType(gocql_test,706572736f6e,616765)", want: NewCustomType(0, TypeCustom, p+"UserType(gocql_test,706572736f6e,616765)")},
+		{name: "vector without an element type", typ: p + "VectorType(, 3)", want: NewCustomType(0, TypeCustom, p+"VectorType(, 3)")},
+		{
+			// The outer vector is well-formed; only its element type degrades.
+			name: "vector whose element has no element type",
+			typ:  p + "VectorType(" + p + "VectorType(, 3), 2)",
+			want: VectorType{
+				SubType:    NewCustomType(0, TypeCustom, p+"VectorType(, 3)"),
+				Dimensions: 2,
+			},
+		},
 		{
 			name: "vector of float",
 			typ:  p + "VectorType(" + p + "FloatType, 3)",
@@ -226,8 +236,8 @@ func TestAsVectorTypeRejectsNonPositiveDimensions(t *testing.T) {
 	}
 }
 
-// TestGetCassandraLongTypeLogsWhyADimensionWasRejected pins the reason, not just
-// the rejection: the log line is the only diagnostic a degraded column ever gets.
+// TestGetCassandraLongTypeLogsWhyADimensionWasRejected pins the reason, not just the
+// rejection, so that a caller passing a real logger can tell the two apart.
 func TestGetCassandraLongTypeLogsWhyADimensionWasRejected(t *testing.T) {
 	t.Parallel()
 

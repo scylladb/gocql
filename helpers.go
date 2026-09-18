@@ -274,9 +274,17 @@ func getCassandraLongType(name string, protoVer byte, logger StdLogger) TypeInfo
 			logger.Printf("gocql: error parsing vector type, it has %d subelements, expecting 2\n", len(names))
 			return NewCustomType(protoVer, TypeCustom, name)
 		}
-		subType := getCassandraLongType(strings.TrimSpace(names[0]), protoVer, logger)
 		// A nested vector arrives here, not readVectorTypeInfo, which validates only
-		// the outer spec; a negative dimension reaches unmarshalVector's MakeSlice.
+		// the outer spec, so both of its guards are repeated below.
+		elem := strings.TrimSpace(names[0])
+		if elem == "" {
+			// Without this the element resolves to a custom type with no name at all,
+			// while the other two parsers of this grammar both reject it.
+			logger.Printf("gocql: error parsing vector type %q: missing element type\n", name)
+			return NewCustomType(protoVer, TypeCustom, name)
+		}
+		subType := getCassandraLongType(elem, protoVer, logger)
+		// A negative dimension reaches unmarshalVector's MakeSlice.
 		dim, err := strconv.Atoi(strings.TrimSpace(names[1]))
 		if err != nil {
 			logger.Printf("gocql: error parsing vector dimensions %q: %v\n", names[1], err)
