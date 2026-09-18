@@ -37,23 +37,23 @@ import (
 )
 
 var (
-	typeVarchar = NativeType{proto: 4, typ: TypeVarchar}
-	typeBoolean = NativeType{proto: 4, typ: TypeBoolean}
-	typeDouble  = NativeType{proto: 4, typ: TypeDouble}
-	typeInt     = NativeType{proto: 4, typ: TypeInt}
+	typeVarchar = NativeType{typ: TypeVarchar}
+	typeBoolean = NativeType{typ: TypeBoolean}
+	typeDouble  = NativeType{typ: TypeDouble}
+	typeInt     = NativeType{typ: TypeInt}
 	typeMapSS   = CollectionType{
-		NativeType: NativeType{proto: 4, typ: TypeMap},
-		Key:        NativeType{proto: 4, typ: TypeVarchar},
-		Elem:       NativeType{proto: 4, typ: TypeVarchar},
+		NativeType: NativeType{typ: TypeMap},
+		Key:        NativeType{typ: TypeVarchar},
+		Elem:       NativeType{typ: TypeVarchar},
 	}
 	typeMapSB = CollectionType{
-		NativeType: NativeType{proto: 4, typ: TypeMap},
-		Key:        NativeType{proto: 4, typ: TypeVarchar},
-		Elem:       NativeType{proto: 4, typ: TypeBlob},
+		NativeType: NativeType{typ: TypeMap},
+		Key:        NativeType{typ: TypeVarchar},
+		Elem:       NativeType{typ: TypeBlob},
 	}
 	typeSetS = CollectionType{
-		NativeType: NativeType{proto: 4, typ: TypeSet},
-		Elem:       NativeType{proto: 4, typ: TypeVarchar},
+		NativeType: NativeType{typ: TypeSet},
+		Elem:       NativeType{typ: TypeVarchar},
 	}
 )
 
