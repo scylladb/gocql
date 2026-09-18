@@ -1,4 +1,4 @@
-CREATE KEYSPACE gocqlx_table WITH replication = {'class': 'org.apache.cassandra.locator.NetworkTopologyStrategy', 'datacenter1': '2'} AND durable_writes = true;
+CREATE KEYSPACE gocqlx_table WITH replication = {'class': 'org.apache.cassandra.locator.NetworkTopologyStrategy', 'datacenter1': '1'} AND durable_writes = true;
 CREATE TABLE gocqlx_table.loads (
     machine inet,
     cpu int,

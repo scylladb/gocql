@@ -1,4 +1,4 @@
-CREATE KEYSPACE gocqlx_sec_idx WITH replication = {'class': 'org.apache.cassandra.locator.NetworkTopologyStrategy', 'datacenter1': '2'} AND durable_writes = true;
+CREATE KEYSPACE gocqlx_sec_idx WITH replication = {'class': 'org.apache.cassandra.locator.NetworkTopologyStrategy', 'datacenter1': '1'} AND durable_writes = true;
 CREATE TABLE gocqlx_sec_idx.menus (
     location text,
     name text,
