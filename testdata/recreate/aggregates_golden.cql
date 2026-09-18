@@ -1,4 +1,4 @@
-CREATE KEYSPACE gocqlx_aggregates WITH replication = {'class': 'org.apache.cassandra.locator.NetworkTopologyStrategy', 'datacenter1': '2'} AND durable_writes = true;
+CREATE KEYSPACE gocqlx_aggregates WITH replication = {'class': 'org.apache.cassandra.locator.NetworkTopologyStrategy', 'datacenter1': '1'} AND durable_writes = true;
 CREATE FUNCTION gocqlx_aggregates.avgfinal(state frozen<tuple<int, double>>)
 CALLED ON NULL INPUT
 RETURNS double

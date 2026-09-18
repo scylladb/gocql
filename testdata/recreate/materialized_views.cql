@@ -1,6 +1,6 @@
 CREATE KEYSPACE gocqlx_mv WITH replication = {
   'class': 'NetworkTopologyStrategy',
-  'replication_factor': '2'
+  'replication_factor': '1'
 };
 
 CREATE TABLE gocqlx_mv.mv_buildings (
