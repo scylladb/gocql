@@ -111,14 +111,27 @@ func TestRecreateSchema(t *testing.T) {
 			// Substitute the fixed keyspace name in the CQL input with the unique name.
 			inStr := strings.ReplaceAll(string(in), test.FixedKeyspace, ks)
 
+			var queryErr error
 			queries := trimQueries(strings.Split(inStr, ";"))
 			for _, q := range queries {
 				qr := session.Query(q, nil)
-				err = qr.Exec()
-				if err != nil {
+				queryErr = qr.Exec()
+				if queryErr != nil {
 					break
 				}
 				qr.Release()
+			}
+
+			if tabletsAutoEnabled && test.FailWithTablets {
+				if queryErr == nil {
+					t.Errorf("did not get expected error or tablets")
+				} else if strings.Contains(queryErr.Error(), "not supported") && strings.Contains(queryErr.Error(), "tablets") {
+					return
+				} else {
+					t.Fatal("query failed with unexpected error", queryErr)
+				}
+			} else if queryErr != nil {
+				t.Fatal("invalid input query", queryErr)
 			}
 
 			err = session.AwaitSchemaAgreement(context.Background())
@@ -128,18 +141,6 @@ func TestRecreateSchema(t *testing.T) {
 			err = session.metadataDescriber.refreshKeyspaceSchema(ks)
 			if err != nil {
 				t.Fatal("failed to read schema for keyspace", err)
-			}
-
-			if tabletsAutoEnabled && test.FailWithTablets {
-				if err == nil {
-					t.Errorf("did not get expected error or tablets")
-				} else if strings.Contains(err.Error(), "not supported") && strings.Contains(err.Error(), "tablets") {
-					return
-				} else {
-					t.Fatal("query failed with unexpected error", err)
-				}
-			} else if err != nil {
-				t.Fatal("invalid input query", err)
 			}
 
 			km, err := session.KeyspaceMetadata(ks)
