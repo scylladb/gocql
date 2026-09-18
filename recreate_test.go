@@ -70,7 +70,12 @@ func TestRecreateSchema(t *testing.T) {
 			FixedKeyspace:   "gocqlx_mv",
 			FailWithTablets: failsOnOldScylla,
 			Input:           "testdata/recreate/materialized_views.cql",
-			Golden:          "testdata/recreate/materialized_views_golden.cql",
+			// Cassandra requires every MV primary key column not in the SELECT list
+			// to be explicitly restricted with IS NOT NULL; Scylla does not.
+			CassandraInput: "testdata/recreate/materialized_views_cassandra.cql",
+			Golden:         "testdata/recreate/materialized_views_golden.cql",
+			// Cassandra's rendered dump includes the extra IS NOT NULL restriction above.
+			CassandraGolden: "testdata/recreate/materialized_views_golden_cassandra.cql",
 		},
 		{
 			Name:            "Index",
