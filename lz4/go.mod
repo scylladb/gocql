@@ -27,7 +27,7 @@
 // See the "Compression" section of the README.
 module github.com/scylladb/gocql/lz4
 
-go 1.25.0
+go 1.26.8
 
 require (
 	github.com/pierrec/lz4/v4 v4.1.29
