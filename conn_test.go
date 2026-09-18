@@ -4107,6 +4107,76 @@ func TestExecStreamIDMismatchFailsTheConnection(t *testing.T) {
 	})
 }
 
+// closeOnBodyRead serves header and then, on the read that would fetch the body,
+// marks the connection closed before failing.
+type closeOnBodyRead struct {
+	c      *Conn
+	header []byte
+	off    int
+}
+
+func (r *closeOnBodyRead) Read(p []byte) (int, error) {
+	if r.off < len(r.header) {
+		n := copy(p, r.header[r.off:])
+		r.off += n
+		return n, nil
+	}
+	// Only c.closed is set: closeWithError would also cancel c.ctx, and exec would
+	// then race between the delivery and that cancellation, hiding the decision
+	// this test is about.
+	r.c.mu.Lock()
+	r.c.closed = true
+	r.c.mu.Unlock()
+	return 0, io.ErrUnexpectedEOF
+}
+
+// TestProcessFrameHandsOffOwnershipWhenTheConnectionCloses pins the handoff
+// callResp.removedFromCalls exists for, in the window that used to get it wrong: the
+// call has already been removed from c.calls, so closeWithError's drain can never
+// reach it, and only exec can release its stream and recycle the callReq. Keying
+// that on c.closed -- as the connection closes underneath the delivery -- makes exec
+// stand down for a drain that will never come, and the stream stays allocated for
+// the rest of the connection's life.
+func TestProcessFrameHandsOffOwnershipWhenTheConnectionCloses(t *testing.T) {
+	t.Parallel()
+
+	const testTimeout = 10 * time.Second
+
+	c, server := newTestExecConn(t, testContextWriter{})
+	c.version = protoVersion4
+	defer server.Close()
+
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := c.exec(context.Background(), frameWriterFunc(func(f *framer, streamID int) error {
+			f.buf = append(f.buf[:0], 'x')
+			return nil
+		}), nil, 0)
+		errCh <- err
+	}()
+
+	call := waitForSingleCall(t, c)
+	header := []byte{
+		protoVersion4 | protoDirectionMask, 0x00,
+		byte(call.streamID >> 8), byte(call.streamID),
+		byte(frm.OpResult),
+		0x00, 0x00, 0x00, 0x08, // a body that never arrives
+	}
+
+	c.processFrameSource(context.Background(), frameSource{r: &closeOnBodyRead{c: c, header: header}})
+
+	select {
+	case err := <-errCh:
+		require.ErrorIs(t, err, io.ErrUnexpectedEOF)
+	case <-time.After(testTimeout):
+		t.Fatal("exec was never woken: it would wait out its full request timeout")
+	}
+
+	if inUse := c.streams.InUse(); inUse != 0 {
+		t.Fatalf("exec left the stream to a drain that can never run, %d still in use", inUse)
+	}
+}
+
 // TestProcessFrameFailedDeadlineArmIsFatal pins that a body read which never
 // reached the socket is fatal to the connection, and that widening the rule that
 // far did not make every read failure fatal.
