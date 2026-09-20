@@ -844,16 +844,15 @@ func (c *Conn) closeWithError(err error) {
 		cerr = c.close()
 	}
 
+	// Dedup by identity: a duplicate entry's callReq was already recycled to the
+	// global pool, so re-reading it here would race with whoever reused it.
+	seen := make(map[*callReq]bool, len(callsToClose))
 	for _, req := range callsToClose {
-		if req.timeout == nil {
-			// Only putCallReq nils timeout, so this callReq was recycled while still
-			// in c.calls -- the same driver bug processFrameSource refuses to clean up
-			// after. Nobody is waiting on resp and the timeout arm below can never
-			// fire, so the send would block here forever. Skip it: a leaked call is
-			// survivable, a close that never returns is not.
-			c.logger.Printf("gocql: connection close skipped an already-recycled call\n")
+		if seen[req] {
 			continue
 		}
+		seen[req] = true
+
 		if err != nil {
 			// We need to send the error to all waiting queries.
 			select {
