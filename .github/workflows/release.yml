@@ -1,0 +1,153 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      module:
+        description: Go module to release
+        required: true
+        type: choice
+        default: root
+        options: [root, lz4]
+      version:
+        description: Bare canonical v1 SemVer (for example, 1.20.0 or 1.20.0-rc.1)
+        required: true
+        type: string
+      target_commit:
+        description: Full 40-character commit SHA reachable from master
+        required: true
+        type: string
+      dry_run:
+        description: Run every gate without publishing
+        required: true
+        type: boolean
+        default: true
+
+concurrency:
+  group: gocql-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: read
+
+jobs:
+  preflight:
+    name: Preflight
+    runs-on: ubuntu-latest
+    outputs:
+      directory: ${{ steps.validate.outputs.directory }}
+      module_path: ${{ steps.validate.outputs.module_path }}
+      release_action: ${{ steps.validate.outputs.release_action }}
+      release_title: ${{ steps.validate.outputs.release_title }}
+      resolved_sha: ${{ steps.validate.outputs.resolved_sha }}
+      tag: ${{ steps.validate.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Validate immutable release candidate
+        id: validate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_DISPATCH_REF: ${{ github.ref }}
+          RELEASE_MODULE: ${{ inputs.module }}
+          RELEASE_TARGET_COMMIT: ${{ inputs.target_commit }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: go run ./ci/release preflight
+
+  build:
+    name: Full Build matrix
+    needs: preflight
+    uses: ./.github/workflows/main.yml
+    permissions:
+      contents: read
+    with:
+      target_commit: ${{ needs.preflight.outputs.resolved_sha }}
+
+  publication-gate:
+    name: Final publication gate
+    needs: [preflight, build]
+    runs-on: ubuntu-latest
+    outputs:
+      release_action: ${{ steps.gate.outputs.release_action }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ needs.preflight.outputs.resolved_sha }}
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Recheck blockers and remote release state
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_MODULE: ${{ inputs.module }}
+          RELEASE_TARGET_COMMIT: ${{ needs.preflight.outputs.resolved_sha }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: go run ./ci/release gate
+      - name: Record dry-run result
+        if: inputs.dry_run
+        env:
+          RELEASE_ACTION: ${{ steps.gate.outputs.release_action }}
+          RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
+          TARGET_COMMIT: ${{ needs.preflight.outputs.resolved_sha }}
+        run: |
+          {
+            echo "## Release dry run passed"
+            echo
+            echo "- Tag: \`$RELEASE_TAG\`"
+            echo "- Target: \`$TARGET_COMMIT\`"
+            echo "- Recovery action: \`$RELEASE_ACTION\`"
+            echo "- No credentials were loaded and no remote state was created."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    name: Publish signed tag and GitHub Release
+    if: ${{ !inputs.dry_run }}
+    needs: [preflight, build, publication-gate]
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ needs.preflight.outputs.resolved_sha }}
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Mint repository-scoped release token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-metadata: read
+          permission-contents: write
+      - name: Configure Git authentication for release App
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: gh auth setup-git
+      - name: Publish or complete release
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          RELEASE_MODULE: ${{ inputs.module }}
+          RELEASE_QUERY_TOKEN: ${{ github.token }}
+          RELEASE_TARGET_COMMIT: ${{ needs.preflight.outputs.resolved_sha }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: go run ./ci/release publish

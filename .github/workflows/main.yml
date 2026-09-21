@@ -1,6 +1,12 @@
 name: Build
 
 on:
+  workflow_call:
+    inputs:
+      target_commit:
+        description: Full commit SHA to build when called by the release workflow
+        required: true
+        type: string
   push:
     branches:
       - master
@@ -29,6 +35,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          ref: ${{ inputs.target_commit || github.sha }}
           # make check's check-lz4-pin compares go.mod's lz4 require against the
           # newest lz4/v* tag, so the tags have to be present. fetch-depth: 0 rather
           # than fetch-tags on top of the default depth-1 fetch: it makes the tag set
@@ -99,6 +106,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          ref: ${{ inputs.target_commit || github.sha }}
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
@@ -152,6 +160,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          ref: ${{ inputs.target_commit || github.sha }}
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
@@ -240,6 +249,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          ref: ${{ inputs.target_commit || github.sha }}
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
