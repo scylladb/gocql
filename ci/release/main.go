@@ -269,8 +269,10 @@ func publish(ctx context.Context, runner commandRunner, env environment, c candi
 	for attempt := 0; attempt < 5; attempt++ {
 		finalAction, err = inspectReleaseState(ctx, api, verifier, c, strings.ToLower(env.target))
 		if err == nil && finalAction == actionComplete {
-			fmt.Printf("published and verified %s from %s\n", c.tag, env.target)
-			return nil
+			if err = verifyNewReleaseLatest(ctx, api, c); err == nil {
+				fmt.Printf("published and verified %s from %s\n", c.tag, env.target)
+				return nil
+			}
 		}
 		if attempt != 4 {
 			time.Sleep(2 * time.Second)

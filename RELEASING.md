@@ -13,7 +13,7 @@ Create GitHub Actions environment `release`. Configure no required reviewer. Lim
 
 - Variable `RELEASE_APP_ID`: `gocql-release` App ID
 - Secret `RELEASE_APP_PRIVATE_KEY`: App private key
-- Secret `GPG_PRIVATE_KEY`: armored private key matching `ci/release-signing-key.asc`
+- Secret `GPG_PRIVATE_KEY`: armored private key matching `ci/release/release-signing-key.asc`
 - Secret `GPG_PASSPHRASE`: promoter-key passphrase
 
 Committed trusted fingerprint: `DC4D ED58 7433 F319 EEE1 EB74 5BD1 EAD2 57F2 1B89`. Key rotation must update public-key file and fingerprint in reviewed PR before environment secret changes.
@@ -37,6 +37,8 @@ Both pushes must fail. Commands create no local tags. If either succeeds, stop a
 3. Merge release changes to `master`.
 4. Root release: update concrete root replacement in README.md to candidate `v1.x.y`; workflow requires match.
 5. Choose target `master` or a full 40-character SHA reachable from `master`. `master` is fetched and resolved once during preflight; every later job uses that immutable SHA. Other branches, abbreviated SHAs, and non-ancestors are rejected.
+
+Release-control code and trusted public-key material come from the workflow revision on `master`, not from the candidate commit. The controller is built once and passed to later jobs as a short-lived workflow artifact. This permits releasing an older reachable commit without trusting or requiring release scripts in that commit.
 
 Version input: bare canonical v1 SemVer, e.g. `1.20.0` or `1.20.0-rc.1`. No leading `v`. v2+, build metadata, leading zeroes, unsafe tag characters rejected. Both modules remain v1 paths without `/v2`; major release needs separate path/workflow change.
 
@@ -67,6 +69,20 @@ Dispatch again from `master` with same module/version, set `mode: publish`, and 
 
 Actions run names include mode, module, version, and requested target, making validation and publication runs distinguishable in history.
 
+Equivalent CLI dispatches reduce form-entry mistakes:
+
+```sh
+gh workflow run release.yml --ref master \
+  -f module=root -f version=1.20.0 -f target=master \
+  -f mode=validate -f confirm_tag=
+
+# Copy resolved SHA from validation summary.
+TARGET_SHA=0123456789abcdef0123456789abcdef01234567
+gh workflow run release.yml --ref master \
+  -f module=root -f version=1.20.0 -f target="$TARGET_SHA" \
+  -f mode=publish -f confirm_tag=v1.20.0
+```
+
 Production job mints short-lived repository-scoped token (metadata-read, contents-write), imports promoter key, checks primary fingerprint, creates signed annotated tag explicitly at validated SHA, then creates Release with generated notes from selected module's preceding tag and `--verify-tag`. Stable root releases become Latest. Root prereleases and all LZ4 releases use `latest=false`.
 
 Verify:
@@ -88,7 +104,9 @@ Rerun identical inputs after transient failure:
 - Correct signed tag at exact SHA, no Release: create Release only.
 - Correct tag and matching Release: verify and succeed without mutation.
 
-Workflow fails closed for Release without tag, wrong target, lightweight/untrusted/unverified tag, conflicting title/prerelease/Latest metadata, or Git/GitHub/parsing failure. Never repair by moving/deleting tag. Investigate; if public state may exist, issue new version.
+Workflow fails closed for Release without tag, wrong target, lightweight/untrusted/unverified tag, conflicting title/prerelease metadata, a new release with wrong Latest behavior, or Git/GitHub/parsing failure. A historical stable root release remains valid after a newer stable release supersedes it as Latest. Never repair by moving/deleting tag. Investigate; if public state may exist, issue new version.
+
+Release-control jobs time out after 20 minutes, build jobs after 45 minutes, and integration jobs after 120 minutes. A stuck run therefore cannot hold the globally serialized release queue indefinitely.
 
 ## LZ4 follow-up
 

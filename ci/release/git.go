@@ -117,11 +117,7 @@ type trustedKey struct {
 }
 
 func loadTrustedKey(ctx context.Context, runner commandRunner) (*trustedKey, error) {
-	fingerprintBytes, err := os.ReadFile("ci/release-signing-key.fingerprint")
-	if err != nil {
-		return nil, fmt.Errorf("read trusted signing fingerprint: %w", err)
-	}
-	fingerprint := strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(string(fingerprintBytes)), " ", ""))
+	fingerprint := strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(string(trustedFingerprint)), " ", ""))
 	if ok, _ := regexp.MatchString(`^[0-9A-F]{40,64}$`, fingerprint); !ok {
 		return nil, fmt.Errorf("committed signing fingerprint is malformed")
 	}
@@ -134,12 +130,7 @@ func loadTrustedKey(ctx context.Context, runner commandRunner) (*trustedKey, err
 		return nil, err
 	}
 	key := &trustedKey{runner: runner, home: home, fingerprint: fingerprint}
-	publicKey, err := os.ReadFile("ci/release-signing-key.asc")
-	if err != nil {
-		key.close()
-		return nil, fmt.Errorf("read trusted public key: %w", err)
-	}
-	if _, err := key.gpg(ctx, publicKey, "--import-options", "import-minimal", "--import"); err != nil {
+	if _, err := key.gpg(ctx, trustedPublicKey, "--import-options", "import-minimal", "--import"); err != nil {
 		key.close()
 		return nil, fmt.Errorf("import trusted public key: %w", err)
 	}

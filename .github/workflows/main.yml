@@ -29,6 +29,7 @@ jobs:
   build-amd64:
     name: Build (amd64)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
     steps:
@@ -100,6 +101,7 @@ jobs:
   build-arm64:
     name: Build (arm64)
     runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
     permissions:
       contents: read
     steps:
@@ -127,6 +129,7 @@ jobs:
   test-integration-scylla:
     name: Integration Tests On Scylla (${{ matrix.scylla-version }}, ${{ matrix.arch }})
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    timeout-minutes: 120
     needs: [build-amd64]
     permissions:
       contents: read
@@ -227,6 +230,7 @@ jobs:
   test-integration-cassandra:
     name: Integration Tests On Cassandra (${{ matrix.cassandra-version }}, ${{ matrix.arch }})
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    timeout-minutes: 120
     needs: [build-amd64]
     # This job had no permissions block at all, having had no arm64 counterpart to
     # force the question, so it ran on the repository default while its neighbour was

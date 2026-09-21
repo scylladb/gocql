@@ -200,10 +200,44 @@ func inspectReleaseState(ctx context.Context, api releaseAPI, verifier tagVerifi
 	if err != nil {
 		return "", fmt.Errorf("query latest release: %w", err)
 	}
-	wantLatest := c.module == "root" && !c.prerelease
 	isLatest := latestExists && latest.ID == release.ID
-	if wantLatest != isLatest {
-		return "", fmt.Errorf("release %s latest status is %t, want %t", c.tag, isLatest, wantLatest)
+	if c.module == "root" && !c.prerelease {
+		if isLatest || (latestExists && isHigherStableRootTag(latest.TagName, c)) {
+			return actionComplete, nil
+		}
+		return "", fmt.Errorf("stable root release %s is not Latest and has not been superseded by a higher stable root release", c.tag)
+	}
+	if isLatest {
+		return "", fmt.Errorf("release %s is Latest, but this module/version must not be", c.tag)
 	}
 	return actionComplete, nil
+}
+
+func isHigherStableRootTag(tag string, c candidate) bool {
+	if !strings.HasPrefix(tag, "v") || strings.Contains(tag, "/") {
+		return false
+	}
+	version, err := parseVersion(strings.TrimPrefix(tag, "v"))
+	return err == nil && len(version.prerelease) == 0 && compareVersions(version, c.parsedVersion) > 0
+}
+
+func verifyNewReleaseLatest(ctx context.Context, api releaseAPI, c candidate) error {
+	if c.module != "root" || c.prerelease {
+		return nil
+	}
+	release, exists, err := api.release(ctx, c.tag)
+	if err != nil {
+		return fmt.Errorf("query newly-created release %s: %w", c.tag, err)
+	}
+	if !exists {
+		return fmt.Errorf("newly-created release %s is missing", c.tag)
+	}
+	latest, latestExists, err := api.latestRelease(ctx)
+	if err != nil {
+		return fmt.Errorf("query latest release after creating %s: %w", c.tag, err)
+	}
+	if !latestExists || latest.ID != release.ID {
+		return fmt.Errorf("newly-created stable root release %s is not Latest", c.tag)
+	}
+	return nil
 }

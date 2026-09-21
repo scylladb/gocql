@@ -197,7 +197,8 @@ func TestReleaseStates(t *testing.T) {
 		{"wrong target", fakeAPI{tagInfo: tagInfo{Target: strings.Repeat("b", 40), Annotated: true, Verified: true}, tagExists: true}, nil, "", "want " + sha},
 		{"wrong signer", fakeAPI{tagInfo: goodTag, tagExists: true}, errors.New("wrong fingerprint"), "", "wrong fingerprint"},
 		{"metadata", fakeAPI{tagInfo: goodTag, tagExists: true, releaseInfo: releaseInfo{TagName: c.tag, Name: "wrong"}, releaseExists: true}, nil, "", "conflicting metadata"},
-		{"latest", fakeAPI{tagInfo: goodTag, tagExists: true, releaseInfo: goodRelease, releaseExists: true}, nil, "", "latest status"},
+		{"historical stable superseded", fakeAPI{tagInfo: goodTag, tagExists: true, releaseInfo: goodRelease, releaseExists: true, latestInfo: releaseInfo{ID: 21, TagName: "v1.21.0"}, latestExists: true}, nil, actionComplete, ""},
+		{"stable unexpectedly not latest", fakeAPI{tagInfo: goodTag, tagExists: true, releaseInfo: goodRelease, releaseExists: true}, nil, "", "not Latest"},
 		{"tag API", fakeAPI{tagErr: errors.New("tag API down")}, nil, "", "tag API down"},
 		{"release API", fakeAPI{tagInfo: goodTag, tagExists: true, releaseErr: errors.New("release API down")}, nil, "", "release API down"},
 		{"latest API", fakeAPI{tagInfo: goodTag, tagExists: true, releaseInfo: goodRelease, releaseExists: true, latestErr: errors.New("latest API down")}, nil, "", "latest API down"},
@@ -225,6 +226,55 @@ func TestLZ4ReleaseNeverLatest(t *testing.T) {
 	api := fakeAPI{tagInfo: tagInfo{Target: sha, Annotated: true, Verified: true}, tagExists: true, releaseInfo: release, releaseExists: true, latestInfo: releaseInfo{ID: 19}, latestExists: true}
 	if got, err := inspectReleaseState(context.Background(), api, fakeVerifier{}, c, sha); err != nil || got != actionComplete {
 		t.Fatalf("%q %v", got, err)
+	}
+}
+
+func TestLatestPolicies(t *testing.T) {
+	t.Parallel()
+	root, _ := newCandidate("root", "1.20.0")
+	lz4, _ := newCandidate("lz4", "1.20.0")
+	sha := strings.Repeat("a", 40)
+	tag := tagInfo{Target: sha, Annotated: true, Verified: true}
+	rootRelease := releaseInfo{ID: 20, TagName: root.tag, Name: root.title}
+	lz4Release := releaseInfo{ID: 21, TagName: lz4.tag, Name: lz4.title}
+
+	if err := verifyNewReleaseLatest(context.Background(), fakeAPI{releaseInfo: rootRelease, releaseExists: true, latestInfo: rootRelease, latestExists: true}, root); err != nil {
+		t.Fatalf("new stable root latest check: %v", err)
+	}
+	if err := verifyNewReleaseLatest(context.Background(), fakeAPI{releaseInfo: rootRelease, releaseExists: true}, root); err == nil || !strings.Contains(err.Error(), "not Latest") {
+		t.Fatalf("missing Latest error = %v", err)
+	}
+	if err := verifyNewReleaseLatest(context.Background(), fakeAPI{releaseInfo: rootRelease, releaseExists: true, latestErr: errors.New("latest API down")}, root); err == nil || !strings.Contains(err.Error(), "latest API down") {
+		t.Fatalf("Latest API error = %v", err)
+	}
+	if got, err := inspectReleaseState(context.Background(), fakeAPI{tagInfo: tag, tagExists: true, releaseInfo: lz4Release, releaseExists: true, latestInfo: lz4Release, latestExists: true}, fakeVerifier{}, lz4, sha); err == nil || got != "" || !strings.Contains(err.Error(), "must not be") {
+		t.Fatalf("LZ4 Latest state = %q, %v", got, err)
+	}
+	if _, err := inspectReleaseState(context.Background(), fakeAPI{tagInfo: tag, tagExists: true, releaseInfo: lz4Release, releaseExists: true, latestErr: errors.New("latest API down")}, fakeVerifier{}, lz4, sha); err == nil || !strings.Contains(err.Error(), "latest API down") {
+		t.Fatalf("LZ4 Latest API error = %v", err)
+	}
+}
+
+func TestHigherStableRootTag(t *testing.T) {
+	t.Parallel()
+	c, _ := newCandidate("root", "1.20.0")
+	tests := []struct {
+		tag  string
+		want bool
+	}{
+		{"v1.21.0", true},
+		{"v1.20.1", true},
+		{"v1.20.0", false},
+		{"v1.19.9", false},
+		{"v1.21.0-rc.1", false},
+		{"lz4/v1.21.0", false},
+		{"v2.0.0", false},
+		{"not-a-version", false},
+	}
+	for _, tt := range tests {
+		if got := isHigherStableRootTag(tt.tag, c); got != tt.want {
+			t.Errorf("isHigherStableRootTag(%q) = %t, want %t", tt.tag, got, tt.want)
+		}
 	}
 }
 

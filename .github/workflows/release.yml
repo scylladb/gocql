@@ -42,6 +42,7 @@ jobs:
   preflight:
     name: Preflight
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     outputs:
       directory: ${{ steps.validate.outputs.directory }}
       module_path: ${{ steps.validate.outputs.module_path }}
@@ -59,6 +60,15 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
+      - name: Build release controller from workflow revision
+        run: go build -trimpath -o "$RUNNER_TEMP/release-helper" ./ci/release
+      - name: Preserve release controller for later jobs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-controller
+          path: ${{ runner.temp }}/release-helper
+          if-no-files-found: error
+          retention-days: 1
       - name: Validate immutable release candidate
         id: validate
         env:
@@ -69,7 +79,7 @@ jobs:
           RELEASE_MODULE: ${{ inputs.module }}
           RELEASE_TARGET: ${{ inputs.target }}
           RELEASE_VERSION: ${{ inputs.version }}
-        run: go run ./ci/release preflight
+        run: $RUNNER_TEMP/release-helper preflight
 
   build:
     name: Full Build matrix
@@ -84,6 +94,7 @@ jobs:
     name: Final publication gate
     needs: [preflight, build]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     outputs:
       release_action: ${{ steps.gate.outputs.release_action }}
     steps:
@@ -92,10 +103,11 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
           ref: ${{ needs.preflight.outputs.resolved_sha }}
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+      - name: Restore release controller from workflow revision
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
-          go-version-file: go.mod
-          cache: false
+          name: release-controller
+          path: ${{ runner.temp }}
       - name: Recheck blockers and remote release state
         id: gate
         env:
@@ -103,7 +115,9 @@ jobs:
           RELEASE_MODULE: ${{ inputs.module }}
           RELEASE_TARGET_COMMIT: ${{ needs.preflight.outputs.resolved_sha }}
           RELEASE_VERSION: ${{ inputs.version }}
-        run: go run ./ci/release gate
+        run: |
+          chmod +x "$RUNNER_TEMP/release-helper"
+          "$RUNNER_TEMP/release-helper" gate
       - name: Record validation result
         if: inputs.mode == 'validate'
         env:
@@ -125,6 +139,7 @@ jobs:
     if: inputs.mode == 'publish'
     needs: [preflight, build, publication-gate]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: release
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -132,10 +147,11 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
           ref: ${{ needs.preflight.outputs.resolved_sha }}
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+      - name: Restore release controller from workflow revision
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
-          go-version-file: go.mod
-          cache: false
+          name: release-controller
+          path: ${{ runner.temp }}
       - name: Mint repository-scoped release token
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
@@ -159,4 +175,6 @@ jobs:
           RELEASE_QUERY_TOKEN: ${{ github.token }}
           RELEASE_TARGET_COMMIT: ${{ needs.preflight.outputs.resolved_sha }}
           RELEASE_VERSION: ${{ inputs.version }}
-        run: go run ./ci/release publish
+        run: |
+          chmod +x "$RUNNER_TEMP/release-helper"
+          "$RUNNER_TEMP/release-helper" publish
