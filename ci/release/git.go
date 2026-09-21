@@ -79,17 +79,23 @@ func (g gitRepository) checkout(ctx context.Context, sha string) error {
 }
 
 func resolveTarget(ctx context.Context, git targetGit, requested string) (string, error) {
-	if err := validateSHA(requested); err != nil {
-		return "", err
+	if requested != "master" {
+		if err := validateSHA(requested); err != nil {
+			return "", fmt.Errorf("target must be master or a full commit SHA: %w", err)
+		}
 	}
 	if err := git.fetchMaster(ctx); err != nil {
 		return "", fmt.Errorf("fetch origin/master: %w", err)
 	}
-	resolved, err := git.resolve(ctx, requested)
+	resolveRef := requested
+	if requested == "master" {
+		resolveRef = "refs/remotes/origin/master"
+	}
+	resolved, err := git.resolve(ctx, resolveRef)
 	if err != nil {
 		return "", fmt.Errorf("resolve target commit: %w", err)
 	}
-	if !strings.EqualFold(resolved, requested) {
+	if requested != "master" && !strings.EqualFold(resolved, requested) {
 		return "", fmt.Errorf("target resolved to %s, want exact commit %s", resolved, requested)
 	}
 	ancestor, err := git.isAncestor(ctx, resolved)

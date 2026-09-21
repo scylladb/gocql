@@ -9,7 +9,11 @@ import (
 	"time"
 )
 
-type environment struct{ module, version, target, dispatchRef, repository, apiURL, apiToken, blockerToken, output string }
+type environment struct {
+	module, version, target, mode, confirmTag string
+	dispatchRef, repository, apiURL           string
+	apiToken, blockerToken, output, summary   string
+}
 
 func main() {
 	if err := run(context.Background(), os.Args[1:], execCommandRunner{}); err != nil {
@@ -23,22 +27,29 @@ func run(ctx context.Context, args []string, runner commandRunner) error {
 	}
 	env := environment{
 		module: os.Getenv("RELEASE_MODULE"), version: os.Getenv("RELEASE_VERSION"), target: os.Getenv("RELEASE_TARGET_COMMIT"),
+		mode: os.Getenv("RELEASE_MODE"), confirmTag: os.Getenv("RELEASE_CONFIRM_TAG"),
 		dispatchRef: os.Getenv("RELEASE_DISPATCH_REF"), repository: os.Getenv("GITHUB_REPOSITORY"), apiURL: os.Getenv("GITHUB_API_URL"),
-		apiToken: os.Getenv("GH_TOKEN"), blockerToken: os.Getenv("RELEASE_QUERY_TOKEN"), output: os.Getenv("GITHUB_OUTPUT"),
+		apiToken: os.Getenv("GH_TOKEN"), blockerToken: os.Getenv("RELEASE_QUERY_TOKEN"), output: os.Getenv("GITHUB_OUTPUT"), summary: os.Getenv("GITHUB_STEP_SUMMARY"),
+	}
+	if env.target == "" {
+		env.target = os.Getenv("RELEASE_TARGET")
 	}
 	c, err := newCandidate(env.module, env.version)
 	if err != nil {
-		return err
-	}
-	if err := validateSHA(env.target); err != nil {
 		return err
 	}
 	switch args[0] {
 	case "preflight":
 		return preflight(ctx, runner, env, c)
 	case "gate":
+		if err := validateSHA(env.target); err != nil {
+			return err
+		}
 		return gate(ctx, runner, env, c)
 	case "publish":
+		if err := validateSHA(env.target); err != nil {
+			return err
+		}
 		return publish(ctx, runner, env, c)
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
@@ -48,6 +59,9 @@ func run(ctx context.Context, args []string, runner commandRunner) error {
 func preflight(ctx context.Context, runner commandRunner, env environment, c candidate) error {
 	if env.dispatchRef != "refs/heads/master" {
 		return fmt.Errorf("release workflow must be dispatched from master, got %q", env.dispatchRef)
+	}
+	if err := validateReleaseRequest(c, env.mode, env.confirmTag); err != nil {
+		return err
 	}
 	api, err := newGitHubAPI(env.apiURL, env.repository, env.apiToken)
 	if err != nil {
@@ -89,8 +103,57 @@ func preflight(ctx context.Context, runner commandRunner, env environment, c can
 	if err := appendOutputs(env.output, map[string]string{"directory": c.directory, "module_path": c.modulePath, "release_action": string(action), "release_title": c.title, "resolved_sha": resolved, "tag": c.tag}); err != nil {
 		return err
 	}
+	if err := appendCandidateSummary(env.summary, env, c, resolved, action); err != nil {
+		return err
+	}
 	fmt.Printf("preflight passed for %s at %s (%s)\n", c.tag, resolved, action)
 	return nil
+}
+
+func validateReleaseRequest(c candidate, mode, confirmTag string) error {
+	switch mode {
+	case "validate":
+		return nil
+	case "publish":
+		if confirmTag != c.tag {
+			return fmt.Errorf("publish confirmation %q does not match computed tag %q", confirmTag, c.tag)
+		}
+		return nil
+	default:
+		return fmt.Errorf("mode must be validate or publish, got %q", mode)
+	}
+}
+
+func appendCandidateSummary(path string, env environment, c candidate, resolved string, action releaseAction) error {
+	if path == "" {
+		return nil
+	}
+	releaseType := "stable"
+	if c.prerelease {
+		releaseType = "prerelease"
+	}
+	latest := "no"
+	if c.module == "root" && !c.prerelease {
+		latest = "yes"
+	}
+	confirmation := "not required"
+	if env.mode == "publish" {
+		confirmation = "matched `" + c.tag + "`"
+	}
+	content := fmt.Sprintf("## Release candidate\n\n"+
+		"| Field | Value |\n| --- | --- |\n"+
+		"| Mode | `%s` |\n| Module | `%s` |\n| Module path | `%s` |\n"+
+		"| Requested target | `%s` |\n| Resolved commit | `%s` |\n| Tag | `%s` |\n"+
+		"| Release type | `%s` |\n| Becomes Latest | `%s` |\n| Recovery action | `%s` |\n| Confirmation | %s |\n\n"+
+		"All later jobs use resolved commit `%s`; movement of `%s` cannot change this run.\n",
+		env.mode, c.module, c.modulePath, env.target, resolved, c.tag, releaseType, latest, action, confirmation, resolved, env.target)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		return fmt.Errorf("open GITHUB_STEP_SUMMARY: %w", err)
+	}
+	defer f.Close()
+	_, err = f.WriteString(content)
+	return err
 }
 
 func gate(ctx context.Context, runner commandRunner, env environment, c candidate) error {

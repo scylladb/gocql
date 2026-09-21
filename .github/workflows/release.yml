@@ -1,4 +1,5 @@
 name: Release
+run-name: ${{ inputs.mode }} ${{ inputs.module }} v${{ inputs.version }} @ ${{ inputs.target }}
 
 on:
   workflow_dispatch:
@@ -13,15 +14,21 @@ on:
         description: Bare canonical v1 SemVer (for example, 1.20.0 or 1.20.0-rc.1)
         required: true
         type: string
-      target_commit:
-        description: Full 40-character commit SHA reachable from master
+      target:
+        description: Full commit SHA or master (resolved once to an immutable SHA)
         required: true
         type: string
-      dry_run:
-        description: Run every gate without publishing
+        default: master
+      mode:
+        description: Validate runs every gate without credentials; publish creates remote state
         required: true
-        type: boolean
-        default: true
+        type: choice
+        default: validate
+        options: [validate, publish]
+      confirm_tag:
+        description: Publish only — enter exact tag (for example v1.20.0 or lz4/v1.20.0)
+        required: false
+        type: string
 
 concurrency:
   group: gocql-release
@@ -56,9 +63,11 @@ jobs:
         id: validate
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_CONFIRM_TAG: ${{ inputs.confirm_tag }}
           RELEASE_DISPATCH_REF: ${{ github.ref }}
+          RELEASE_MODE: ${{ inputs.mode }}
           RELEASE_MODULE: ${{ inputs.module }}
-          RELEASE_TARGET_COMMIT: ${{ inputs.target_commit }}
+          RELEASE_TARGET: ${{ inputs.target }}
           RELEASE_VERSION: ${{ inputs.version }}
         run: go run ./ci/release preflight
 
@@ -95,15 +104,15 @@ jobs:
           RELEASE_TARGET_COMMIT: ${{ needs.preflight.outputs.resolved_sha }}
           RELEASE_VERSION: ${{ inputs.version }}
         run: go run ./ci/release gate
-      - name: Record dry-run result
-        if: inputs.dry_run
+      - name: Record validation result
+        if: inputs.mode == 'validate'
         env:
           RELEASE_ACTION: ${{ steps.gate.outputs.release_action }}
           RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
           TARGET_COMMIT: ${{ needs.preflight.outputs.resolved_sha }}
         run: |
           {
-            echo "## Release dry run passed"
+            echo "## Release validation passed"
             echo
             echo "- Tag: \`$RELEASE_TAG\`"
             echo "- Target: \`$TARGET_COMMIT\`"
@@ -113,7 +122,7 @@ jobs:
 
   publish:
     name: Publish signed tag and GitHub Release
-    if: ${{ !inputs.dry_run }}
+    if: inputs.mode == 'publish'
     needs: [preflight, build, publication-gate]
     runs-on: ubuntu-latest
     environment: release

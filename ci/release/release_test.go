@@ -70,12 +70,14 @@ func TestSigningIdentity(t *testing.T) {
 type fakeTargetGit struct {
 	fetchErr, resolveErr, ancestorErr, checkoutErr error
 	resolved                                       string
+	resolvedRef                                    string
 	ancestor                                       bool
 	checkedOut                                     string
 }
 
 func (f *fakeTargetGit) fetchMaster(context.Context) error { return f.fetchErr }
-func (f *fakeTargetGit) resolve(context.Context, string) (string, error) {
+func (f *fakeTargetGit) resolve(_ context.Context, ref string) (string, error) {
+	f.resolvedRef = ref
 	return f.resolved, f.resolveErr
 }
 func (f *fakeTargetGit) isAncestor(context.Context, string) (bool, error) {
@@ -89,17 +91,18 @@ func (f *fakeTargetGit) checkout(_ context.Context, sha string) error {
 func TestResolveTarget(t *testing.T) {
 	sha := strings.Repeat("a", 40)
 	tests := []struct {
-		name, requested string
-		git             fakeTargetGit
-		wantErr         string
+		name, requested, wantResolve string
+		git                          fakeTargetGit
+		wantErr                      string
 	}{
-		{"ok", sha, fakeTargetGit{resolved: sha, ancestor: true}, ""},
-		{"malformed", "master; touch pwned", fakeTargetGit{}, "40-character"},
-		{"fetch failure", sha, fakeTargetGit{fetchErr: errors.New("network down")}, "fetch origin/master"},
-		{"resolve failure", sha, fakeTargetGit{resolveErr: errors.New("git unavailable")}, "resolve target"},
-		{"different resolution", sha, fakeTargetGit{resolved: strings.Repeat("b", 40)}, "want exact commit"},
-		{"non ancestor", sha, fakeTargetGit{resolved: sha}, "not reachable"},
-		{"ancestry failure", sha, fakeTargetGit{resolved: sha, ancestorErr: errors.New("broken graph")}, "check target ancestry"},
+		{"ok", sha, sha, fakeTargetGit{resolved: sha, ancestor: true}, ""},
+		{"master", "master", "refs/remotes/origin/master", fakeTargetGit{resolved: sha, ancestor: true}, ""},
+		{"malformed", "master; touch pwned", "", fakeTargetGit{}, "40-character"},
+		{"fetch failure", sha, "", fakeTargetGit{fetchErr: errors.New("network down")}, "fetch origin/master"},
+		{"resolve failure", sha, sha, fakeTargetGit{resolveErr: errors.New("git unavailable")}, "resolve target"},
+		{"different resolution", sha, sha, fakeTargetGit{resolved: strings.Repeat("b", 40)}, "want exact commit"},
+		{"non ancestor", sha, sha, fakeTargetGit{resolved: sha}, "not reachable"},
+		{"ancestry failure", sha, sha, fakeTargetGit{resolved: sha, ancestorErr: errors.New("broken graph")}, "check target ancestry"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -110,8 +113,35 @@ func TestResolveTarget(t *testing.T) {
 				}
 				return
 			}
-			if err != nil || got != sha || tt.git.checkedOut != sha {
-				t.Fatalf("%q %v checkout=%q", got, err, tt.git.checkedOut)
+			if err != nil || got != sha || tt.git.checkedOut != sha || tt.git.resolvedRef != tt.wantResolve {
+				t.Fatalf("%q %v resolve=%q checkout=%q", got, err, tt.git.resolvedRef, tt.git.checkedOut)
+			}
+		})
+	}
+}
+
+func TestValidateReleaseRequest(t *testing.T) {
+	t.Parallel()
+	root, _ := newCandidate("root", "1.20.0")
+	lz4, _ := newCandidate("lz4", "1.20.0")
+	tests := []struct {
+		name, mode, confirmation string
+		candidate                candidate
+		wantErr                  bool
+	}{
+		{"validate", "validate", "", root, false},
+		{"validate ignores confirmation", "validate", "stale", root, false},
+		{"publish root", "publish", "v1.20.0", root, false},
+		{"publish lz4", "publish", "lz4/v1.20.0", lz4, false},
+		{"publish empty", "publish", "", root, true},
+		{"publish wrong module tag", "publish", "v1.20.0", lz4, true},
+		{"unknown mode", "schedule", "v1.20.0", root, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateReleaseRequest(tt.candidate, tt.mode, tt.confirmation)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("error = %v, wantErr=%t", err, tt.wantErr)
 			}
 		})
 	}

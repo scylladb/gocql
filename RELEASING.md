@@ -36,33 +36,36 @@ Both pushes must fail. Commands create no local tags. If either succeeds, stop a
 2. Resolve every open `release-blocker`. Workflow checks before CI and immediately before publication. API/parsing errors stop release.
 3. Merge release changes to `master`.
 4. Root release: update concrete root replacement in README.md to candidate `v1.x.y`; workflow requires match.
-5. Record full 40-character SHA from `master`. Branches, abbreviated SHAs, non-ancestors, moving refs rejected.
+5. Choose target `master` or a full 40-character SHA reachable from `master`. `master` is fetched and resolved once during preflight; every later job uses that immutable SHA. Other branches, abbreviated SHAs, and non-ancestors are rejected.
 
 Version input: bare canonical v1 SemVer, e.g. `1.20.0` or `1.20.0-rc.1`. No leading `v`. v2+, build metadata, leading zeroes, unsafe tag characters rejected. Both modules remain v1 paths without `/v2`; major release needs separate path/workflow change.
 
 Published Go versions and source commits are immutable. Proxies/checksum databases cache tags immediately. Never move, replace, delete published tag. Correct with new version; add `retract` later if needed.
 
-## Dry run
+## Validate
 
 Open **Actions → Release → Run workflow**, select `master`, enter:
 
 - `module`: `root` or `lz4`
 - `version`: bare candidate
-- `target_commit`: full SHA
-- `dry_run`: `true`
+- `target`: `master` or a full SHA
+- `mode`: `validate`
+- `confirm_tag`: blank
 
-Dry run performs target, module, README, both blocker, recovery-state, and full Build gates (amd64, arm64, ScyllaDB, Cassandra). It never enters `release` environment, receives no App/GPG credentials, creates no tag/Release. Confirm requested SHA in every checkout.
+Validation performs target, module, README, both blocker, recovery-state, and full Build gates (amd64, arm64, ScyllaDB, Cassandra). It never enters `release` environment, receives no App/GPG credentials, creates no tag/Release. Run summary shows requested target, resolved SHA, computed tag, release type, Latest behavior, and recovery action. Confirm resolved SHA appears in every checkout.
 
 Mappings:
 
 - `root`: module `github.com/gocql/gocql`, tag/title `v<version>`.
 - `lz4`: module `github.com/scylladb/gocql/lz4`, tag `lz4/v<version>`, title `lz4 v<version>`.
 
-Gate test: temporary open `release-blocker` issue must stop dry run. Remove label/close issue afterward; never bypass.
+Gate test: temporary open `release-blocker` issue must stop validation. Remove label/close issue afterward; never bypass.
 
 ## Publish
 
-Dispatch again from `master` with same module/version/SHA and `dry_run: false`. Serialized workflow reruns every check and full Build matrix before entering `release` environment.
+Dispatch again from `master` with same module/version, set `mode: publish`, and enter exact computed tag in `confirm_tag`. To reproduce a validated candidate after `master` moves, copy resolved SHA from validation summary into `target`; do not enter `master`. A mismatched or missing confirmation fails preflight. Serialized workflow reruns every check and full Build matrix before entering `release` environment.
+
+Actions run names include mode, module, version, and requested target, making validation and publication runs distinguishable in history.
 
 Production job mints short-lived repository-scoped token (metadata-read, contents-write), imports promoter key, checks primary fingerprint, creates signed annotated tag explicitly at validated SHA, then creates Release with generated notes from selected module's preceding tag and `--verify-tag`. Stable root releases become Latest. Root prereleases and all LZ4 releases use `latest=false`.
 
