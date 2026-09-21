@@ -52,7 +52,6 @@ Open **Actions → Release → Run workflow**, select `master`, enter:
 - `version`: bare candidate
 - `target`: `master` or a full SHA
 - `mode`: `validate`
-- `confirm_tag`: blank
 
 Validation performs target, module, README, both blocker, recovery-state, and full Build gates (amd64, arm64, ScyllaDB, Cassandra). It never enters `release` environment, receives no App/GPG credentials, creates no tag/Release. Run summary shows requested target, resolved SHA, computed tag, release type, Latest behavior, and recovery action. Confirm resolved SHA appears in every checkout.
 
@@ -65,7 +64,7 @@ Gate test: temporary open `release-blocker` issue must stop validation. Remove l
 
 ## Publish
 
-Dispatch again from `master` with same module/version, set `mode: publish`, and enter exact computed tag in `confirm_tag`. To reproduce a validated candidate after `master` moves, copy resolved SHA from validation summary into `target`; do not enter `master`. A mismatched or missing confirmation fails preflight. Serialized workflow reruns every check and full Build matrix before entering `release` environment.
+Dispatch again from `master` with same module/version and set `mode: publish`. To reproduce a validated candidate after `master` moves, copy resolved SHA from validation summary into `target`; do not enter `master`. Serialized workflow reruns every check and full Build matrix before entering `release` environment.
 
 Actions run names include mode, module, version, and requested target, making validation and publication runs distinguishable in history.
 
@@ -74,13 +73,13 @@ Equivalent CLI dispatches reduce form-entry mistakes:
 ```sh
 gh workflow run release.yml --ref master \
   -f module=root -f version=1.20.0 -f target=master \
-  -f mode=validate -f confirm_tag=
+  -f mode=validate
 
 # Copy resolved SHA from validation summary.
 TARGET_SHA=0123456789abcdef0123456789abcdef01234567
 gh workflow run release.yml --ref master \
   -f module=root -f version=1.20.0 -f target="$TARGET_SHA" \
-  -f mode=publish -f confirm_tag=v1.20.0
+  -f mode=publish
 ```
 
 Production job mints short-lived repository-scoped token (metadata-read, contents-write), imports promoter key, checks primary fingerprint, creates signed annotated tag explicitly at validated SHA, then creates Release with generated notes from selected module's preceding tag and `--verify-tag`. Stable root releases become Latest. Root prereleases and all LZ4 releases use `latest=false`.

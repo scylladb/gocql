@@ -120,26 +120,19 @@ func TestResolveTarget(t *testing.T) {
 	}
 }
 
-func TestValidateReleaseRequest(t *testing.T) {
+func TestValidateReleaseMode(t *testing.T) {
 	t.Parallel()
-	root, _ := newCandidate("root", "1.20.0")
-	lz4, _ := newCandidate("lz4", "1.20.0")
 	tests := []struct {
-		name, mode, confirmation string
-		candidate                candidate
-		wantErr                  bool
+		name, mode string
+		wantErr    bool
 	}{
-		{"validate", "validate", "", root, false},
-		{"validate ignores confirmation", "validate", "stale", root, false},
-		{"publish root", "publish", "v1.20.0", root, false},
-		{"publish lz4", "publish", "lz4/v1.20.0", lz4, false},
-		{"publish empty", "publish", "", root, true},
-		{"publish wrong module tag", "publish", "v1.20.0", lz4, true},
-		{"unknown mode", "schedule", "v1.20.0", root, true},
+		{"validate", "validate", false},
+		{"publish", "publish", false},
+		{"unknown mode", "schedule", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateReleaseRequest(tt.candidate, tt.mode, tt.confirmation)
+			err := validateReleaseMode(tt.mode)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("error = %v, wantErr=%t", err, tt.wantErr)
 			}

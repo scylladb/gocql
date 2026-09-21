@@ -25,10 +25,6 @@ on:
         type: choice
         default: validate
         options: [validate, publish]
-      confirm_tag:
-        description: Publish only — enter exact tag (for example v1.20.0 or lz4/v1.20.0)
-        required: false
-        type: string
 
 concurrency:
   group: gocql-release
@@ -73,7 +69,6 @@ jobs:
         id: validate
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_CONFIRM_TAG: ${{ inputs.confirm_tag }}
           RELEASE_DISPATCH_REF: ${{ github.ref }}
           RELEASE_MODE: ${{ inputs.mode }}
           RELEASE_MODULE: ${{ inputs.module }}

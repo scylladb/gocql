@@ -10,9 +10,9 @@ import (
 )
 
 type environment struct {
-	module, version, target, mode, confirmTag string
-	dispatchRef, repository, apiURL           string
-	apiToken, blockerToken, output, summary   string
+	module, version, target, mode           string
+	dispatchRef, repository, apiURL         string
+	apiToken, blockerToken, output, summary string
 }
 
 func main() {
@@ -27,7 +27,7 @@ func run(ctx context.Context, args []string, runner commandRunner) error {
 	}
 	env := environment{
 		module: os.Getenv("RELEASE_MODULE"), version: os.Getenv("RELEASE_VERSION"), target: os.Getenv("RELEASE_TARGET_COMMIT"),
-		mode: os.Getenv("RELEASE_MODE"), confirmTag: os.Getenv("RELEASE_CONFIRM_TAG"),
+		mode:        os.Getenv("RELEASE_MODE"),
 		dispatchRef: os.Getenv("RELEASE_DISPATCH_REF"), repository: os.Getenv("GITHUB_REPOSITORY"), apiURL: os.Getenv("GITHUB_API_URL"),
 		apiToken: os.Getenv("GH_TOKEN"), blockerToken: os.Getenv("RELEASE_QUERY_TOKEN"), output: os.Getenv("GITHUB_OUTPUT"), summary: os.Getenv("GITHUB_STEP_SUMMARY"),
 	}
@@ -60,7 +60,7 @@ func preflight(ctx context.Context, runner commandRunner, env environment, c can
 	if env.dispatchRef != "refs/heads/master" {
 		return fmt.Errorf("release workflow must be dispatched from master, got %q", env.dispatchRef)
 	}
-	if err := validateReleaseRequest(c, env.mode, env.confirmTag); err != nil {
+	if err := validateReleaseMode(env.mode); err != nil {
 		return err
 	}
 	api, err := newGitHubAPI(env.apiURL, env.repository, env.apiToken)
@@ -110,14 +110,9 @@ func preflight(ctx context.Context, runner commandRunner, env environment, c can
 	return nil
 }
 
-func validateReleaseRequest(c candidate, mode, confirmTag string) error {
+func validateReleaseMode(mode string) error {
 	switch mode {
-	case "validate":
-		return nil
-	case "publish":
-		if confirmTag != c.tag {
-			return fmt.Errorf("publish confirmation %q does not match computed tag %q", confirmTag, c.tag)
-		}
+	case "validate", "publish":
 		return nil
 	default:
 		return fmt.Errorf("mode must be validate or publish, got %q", mode)
@@ -136,17 +131,13 @@ func appendCandidateSummary(path string, env environment, c candidate, resolved 
 	if c.module == "root" && !c.prerelease {
 		latest = "yes"
 	}
-	confirmation := "not required"
-	if env.mode == "publish" {
-		confirmation = "matched `" + c.tag + "`"
-	}
 	content := fmt.Sprintf("## Release candidate\n\n"+
 		"| Field | Value |\n| --- | --- |\n"+
 		"| Mode | `%s` |\n| Module | `%s` |\n| Module path | `%s` |\n"+
 		"| Requested target | `%s` |\n| Resolved commit | `%s` |\n| Tag | `%s` |\n"+
-		"| Release type | `%s` |\n| Becomes Latest | `%s` |\n| Recovery action | `%s` |\n| Confirmation | %s |\n\n"+
+		"| Release type | `%s` |\n| Becomes Latest | `%s` |\n| Recovery action | `%s` |\n\n"+
 		"All later jobs use resolved commit `%s`; movement of `%s` cannot change this run.\n",
-		env.mode, c.module, c.modulePath, env.target, resolved, c.tag, releaseType, latest, action, confirmation, resolved, env.target)
+		env.mode, c.module, c.modulePath, env.target, resolved, c.tag, releaseType, latest, action, resolved, env.target)
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
 	if err != nil {
 		return fmt.Errorf("open GITHUB_STEP_SUMMARY: %w", err)
