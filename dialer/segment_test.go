@@ -2,11 +2,13 @@ package dialer
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/gocql/gocql/internal/crc"
 	"github.com/gocql/gocql/internal/segment"
 )
 
@@ -20,6 +22,24 @@ func (passthroughCompressor) AppendCompressed(dst, src []byte) ([]byte, error) {
 }
 
 func (passthroughCompressor) AppendDecompressed(dst, src []byte, _ uint32) ([]byte, error) {
+	return append(dst, src...), nil
+}
+
+// expandingCompressor decodes an empty wire payload into decompressedLength bytes.
+// The structural SegmentCompressor contract permits that, and the driver's reader
+// accepts what it produces. A real lz4 does not -- pierrec's UncompressBlock
+// short-circuits on an empty source and returns nothing, which passthroughCompressor
+// above happens to model exactly.
+type expandingCompressor struct{ out []byte }
+
+func (expandingCompressor) AppendCompressed(dst, src []byte) ([]byte, error) {
+	return append(dst, src...), nil
+}
+
+func (c expandingCompressor) AppendDecompressed(dst, src []byte, decompressedLength uint32) ([]byte, error) {
+	if len(src) == 0 {
+		return append(dst, c.out[:decompressedLength]...), nil
+	}
 	return append(dst, src...), nil
 }
 
@@ -46,6 +66,21 @@ func mustSegment(t *testing.T, payload []byte, selfContained bool, comp SegmentC
 		t.Fatalf("build segment: %v", err)
 	}
 	return seg
+}
+
+// zeroWireSegment builds a compressed chain segment carrying no payload bytes on the
+// wire that declares decodedLen bytes after decompression. The header is spelled out
+// here because segment.Append cannot produce the shape: AppendCompressed rewrites a
+// zero compressed length into the store-as-is fallback, on the grounds that a peer
+// running a real compressor could not decode it.
+func zeroWireSegment(decodedLen int) []byte {
+	var wide [8]byte
+	binary.LittleEndian.PutUint64(wide[:], uint64(decodedLen)<<17)
+
+	seg := append([]byte(nil), wide[:5]...)
+	checksum := crc.Crc24(seg)
+	seg = append(seg, byte(checksum), byte(checksum>>8), byte(checksum>>16))
+	return binary.LittleEndian.AppendUint32(seg, crc.Crc32(nil))
 }
 
 // decode feeds chunks to a splitter and returns the frames it recovered.
@@ -186,6 +221,34 @@ func TestSegmentSplitterPendingReportsAnOpenChain(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestSegmentSplitterZeroWireContinuation covers a continuation segment that carries no
+// wire bytes and still decodes to some. Progress is owed on the decoded payload, which
+// is what Conn.readContinuationSegment measures, so reading it off the header's
+// PayloadLen would call this a stalled chain where the driver reads on.
+func TestSegmentSplitterZeroWireContinuation(t *testing.T) {
+	frame := frameV4(opOptions, 0x00, nil)
+	opener := mustSegment(t, nil, false, passthroughCompressor{})
+	stream := append(append([]byte(nil), opener...), zeroWireSegment(len(frame))...)
+
+	t.Run("decoding to a frame", func(t *testing.T) {
+		s := NewSegmentSplitter(expandingCompressor{out: frame})
+		got := decode(t, s, stream)
+		if len(got) != 1 || !bytes.Equal(got[0], frame) {
+			t.Fatalf("recovered %d frames, want the one the segment decoded to", len(got))
+		}
+	})
+
+	// The same segment read by a compressor that cannot decode an empty source is
+	// rejected by the codec's length check -- the error the driver reports for it too.
+	t.Run("decoding to nothing", func(t *testing.T) {
+		s := NewSegmentSplitter(passthroughCompressor{})
+		err := s.Feed(stream, func([]byte) error { return nil })
+		if err == nil || !strings.Contains(err.Error(), "length mismatch after payload decoding") {
+			t.Fatalf("got %v, want the codec's decode failure", err)
+		}
+	})
 }
 
 // TestSegmentSplitterOversizedFrame covers a frame larger than one segment can carry,

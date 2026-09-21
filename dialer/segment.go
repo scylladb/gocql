@@ -113,9 +113,9 @@ func (s *SegmentSplitter) Pending() bool {
 //     it an over-running chain does not error, it resumes reading frames at the wrong
 //     offset.
 //   - A self-contained segment must not end mid-frame. It promised whole frames.
-//   - A chain segment must carry a non-empty payload once the chain is open, so a peer
-//     cannot drive an endless chain. Two shapes the driver accepts are exempt, because
-//     the splitter must not refuse a stream gocql itself handles: an empty
+//   - A chain segment must carry a non-empty decoded payload once the chain is open, so
+//     a peer cannot drive an endless chain. Two shapes the driver accepts are exempt,
+//     because the splitter must not refuse a stream gocql itself handles: an empty
 //     self-contained segment, and the first segment of a chain.
 //   - A chain must yield exactly one frame and nothing after it, since a split frame
 //     gets a sequence of segments to itself. A chain here is bounded by the frame it
@@ -156,19 +156,17 @@ func (s *SegmentSplitter) Feed(b []byte, emit func(frame []byte) error) error {
 		if s.hdr.IsSelfContained && s.chainOpen {
 			return s.fail(fmt.Errorf("gocql/dialer: received a self-contained segment while a segment chain was still open"))
 		}
-		// PayloadLen is the encoded length where the driver checks the decoded one. They
-		// coincide: UncompressedLen == 0 is stored as-is, anything else must decode to
-		// exactly that many bytes (segment.ReadCompressedPayload). The one shape that
-		// differs, PayloadLen == 0 with a nonzero UncompressedLen, both readers reject.
-		// Checked on the header so a stalled chain costs no decode.
-		if !s.hdr.IsSelfContained && s.chainOpen && s.hdr.PayloadLen == 0 {
-			return s.fail(fmt.Errorf("gocql/dialer: segment chain made no progress (empty payload)"))
-		}
 
 		s.rdr.Reset(s.buf[headerSize:total])
 		payload, err := segment.ReadPayload(&s.rdr, s.hdr, s.comp, &s.scratch)
 		if err != nil {
 			return s.fail(fmt.Errorf("gocql/dialer: failed to decode segment payload: %w", err))
+		}
+		// Progress is the decoded payload, which is what readContinuationSegment
+		// measures: a compressed segment can carry no wire bytes and still decode to
+		// some.
+		if !s.hdr.IsSelfContained && s.chainOpen && len(payload) == 0 {
+			return s.fail(fmt.Errorf("gocql/dialer: segment chain made no progress (empty payload)"))
 		}
 
 		emitted := 0
