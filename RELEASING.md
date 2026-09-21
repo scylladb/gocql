@@ -2,6 +2,8 @@
 
 Releases are published only by the manually dispatched **Release** workflow. Do not create release tags or GitHub Releases by hand. A Go module becomes public when its tag is pushed, so an incorrectly tagged version cannot be unpublished.
 
+See [`ci/release/README.md`](ci/release/README.md) for the release controller's high-level logic, state machine, and trust boundaries.
+
 ## One-time repository setup
 
 Create GitHub App `gocql-release`, install it only on this repository, and grant repository permissions:
