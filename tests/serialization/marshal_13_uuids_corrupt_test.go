@@ -5,6 +5,7 @@ package serialization_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/gocql/gocql"
 	"github.com/gocql/gocql/internal/tests/serialization"
@@ -102,6 +103,57 @@ func TestMarshalUUIDsMustFail(t *testing.T) {
 				Data:   []byte("\x00"),
 				Values: mod.Values{"", make([]byte, 0), [16]byte{}, gocql.UUID{}}.AddVariants(mod.All...),
 			}.Run("small_data2", t, unmarshal)
+		})
+	}
+}
+
+// TestMarshalTimeUUIDMustFail covers the wrong-length arm of DecTime and
+// DecTimeR. It is separate from TestMarshalUUIDsMustFail because time.Time is
+// a timeuuid-only target: uuid.Unmarshal has no case for it, so it cannot join
+// the sets those four suites share.
+func TestMarshalTimeUUIDMustFail(t *testing.T) {
+	t.Parallel()
+
+	tType := gocql.NewNativeType(4, gocql.TypeTimeUUID)
+
+	type testSuite struct {
+		name      string
+		unmarshal func(bytes []byte, i any) error
+	}
+
+	testSuites := [2]testSuite{
+		{
+			name:      "serialization.timeuuid",
+			unmarshal: timeuuid.Unmarshal,
+		},
+		{
+			name:      "glob.timeuuid",
+			unmarshal: func(bytes []byte, i any) error { return gocql.Unmarshal(tType, bytes, i) },
+		},
+	}
+
+	for _, tSuite := range testSuites {
+		unmarshal := tSuite.unmarshal
+
+		t.Run(tSuite.name, func(t *testing.T) {
+			t.Parallel()
+
+			// DecTime accepts only 0 or 16 bytes; anything else is a length
+			// error rather than a partially decoded timestamp.
+			serialization.NegativeUnmarshalSet{
+				Data:   []byte("\xb6\xb7\x7c\x23\xc7\x76\x40\xff\x82\x8d\xa3\x85\xf3\xe8\xa2\xaf\xaf"),
+				Values: mod.Values{time.Time{}}.AddVariants(mod.Reference),
+			}.Run("big_data_time", t, unmarshal)
+
+			serialization.NegativeUnmarshalSet{
+				Data:   []byte("\xb6\xb7\x7c\x23\xc7\x76\x40\xff\x82\x8d\xa3\x85\xf3\xe8\xa2"),
+				Values: mod.Values{time.Time{}}.AddVariants(mod.Reference),
+			}.Run("small_data_time1", t, unmarshal)
+
+			serialization.NegativeUnmarshalSet{
+				Data:   []byte("\x00"),
+				Values: mod.Values{time.Time{}}.AddVariants(mod.Reference),
+			}.Run("small_data_time2", t, unmarshal)
 		})
 	}
 }
