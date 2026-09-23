@@ -89,6 +89,19 @@ func TestMarshalUUIDsMustFail(t *testing.T) {
 				}.AddVariants(mod.All...),
 			}.Run("corrupt_vals", t, marshal)
 
+			// The reject arm of the 45-character URN branch. Both values are
+			// exactly 45 characters, so they reach the prefix check rather
+			// than the length default: one prefix is unrelated, the other
+			// differs from "urn:uuid:" by a single character. Without the
+			// second, weakening the check to compare only "urn:" would go
+			// unnoticed.
+			serialization.NegativeMarshalSet{
+				Values: mod.Values{
+					"xyz:abcd:b6b77c23-c776-40ff-828d-a385f3e8a2af",
+					"urn:uuix:b6b77c23-c776-40ff-828d-a385f3e8a2af",
+				}.AddVariants(mod.All...),
+			}.Run("bad_urn_prefix", t, marshal)
+
 			serialization.NegativeUnmarshalSet{
 				Data:   []byte("\xb6\xb7\x7c\x23\xc7\x76\x40\xff\x82\x8d\xa3\x85\xf3\xe8\xa2\xaf\xaf"),
 				Values: mod.Values{"", make([]byte, 0), [16]byte{}, gocql.UUID{}}.AddVariants(mod.All...),

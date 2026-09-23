@@ -109,6 +109,27 @@ func TestMarshalUUIDs(t *testing.T) {
 				}.AddVariants(mod.All...),
 			}.Run("uuid", t, marshal, unmarshal)
 
+			// The alternative string spellings encString accepts besides the
+			// canonical 36-character form: the 45-character "urn:uuid:" URN,
+			// the 38-character brace form, and the 32-character form with no
+			// dashes. All three marshal to the same bytes; unmarshal always
+			// returns the canonical form, so these are marshal-only.
+			//
+			// timeuuid compared s[:9] against "urn:timeuuid:" here, which is
+			// thirteen characters and so never matched -- a urn:uuid: string
+			// was rejected with its own prefix quoted back at it, while the
+			// same input marshalled fine through uuid. Running this across all
+			// four suites is what keeps the two packages agreeing.
+			serialization.PositiveSet{
+				Data: []byte("\xe9\x39\xf5\x2a\xd6\x90\x11\xef\x9c\xd2\x02\x42\xac\x12\x00\x02"),
+				Values: mod.Values{
+					"urn:uuid:e939f52a-d690-11ef-9cd2-0242ac120002",
+					"URN:UUID:E939F52A-D690-11EF-9CD2-0242AC120002",
+					"{e939f52a-d690-11ef-9cd2-0242ac120002}",
+					"e939f52ad69011ef9cd20242ac120002",
+				}.AddVariants(mod.All...),
+			}.Run("uuid_string_forms", t, marshal, nil)
+
 			serialization.PositiveSet{
 				Data: []byte("\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"),
 				Values: mod.Values{
