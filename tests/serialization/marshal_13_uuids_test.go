@@ -132,7 +132,7 @@ func TestMarshalTimeUUID(t *testing.T) {
 		unmarshal func(bytes []byte, i any) error
 	}
 
-	testSuites := [4]testSuite{
+	testSuites := [2]testSuite{
 		{
 			name:      "serialization.timeuuid",
 			marshal:   timeuuid.Marshal,
