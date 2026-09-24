@@ -469,8 +469,15 @@ func (ks *KeyspaceMetadata) indexToCQL(w io.Writer, im *IndexMetadata) error {
 		)
 	}
 
+	// An index name is optional in CQL, but ident would render an empty one
+	// as "", which is a syntax error.
+	indexName := ""
+	if im.Name != "" {
+		indexName = cqlHelpers.ident(im.Name)
+	}
+
 	_, err := fmt.Fprintf(w, "\nCREATE INDEX %s ON %s.%s (%s);\n",
-		cqlHelpers.ident(im.Name),
+		indexName,
 		cqlHelpers.ident(im.KeyspaceName),
 		cqlHelpers.ident(im.TableName),
 		indexTarget,
