@@ -642,9 +642,6 @@ func cqlIdentifierNeedsQuotes(name string) bool {
 	return reserved
 }
 
-// ident renders name as a CQL identifier, quoting it only when it has to be
-// quoted so an ordinary schema keeps producing the output it always has. A
-// quote inside the name doubles, as in CQL.
 // identAll is ident over a list of names.
 func (h toCQLHelpers) identAll(names []string) []string {
 	out := make([]string, len(names))
@@ -654,6 +651,9 @@ func (h toCQLHelpers) identAll(names []string) []string {
 	return out
 }
 
+// ident renders name as a CQL identifier, quoting it only when it has to be
+// quoted so an ordinary schema keeps producing the output it always has. A
+// quote inside the name doubles, as in CQL.
 func (h toCQLHelpers) ident(name string) string {
 	if !cqlIdentifierNeedsQuotes(name) {
 		return name
@@ -860,8 +860,10 @@ type scyllaEncryptionOptions struct {
 //   - len_of_value bytes - value
 //
 // Every read is bounds-checked. The blob is whatever the server stored in the
-// table extension, and a short or truncated one used to panic a caller that
-// had only asked to render a schema.
+// table extension, and a short or truncated one used to panic here; the only
+// caller is a template func, so it surfaced as an opaque render error, not a
+// crash. The entry count is checked too -- an oversized one asks make() for an
+// allocation no recover can absorb.
 func (enc *scyllaEncryptionOptions) UnmarshalBinary(data []byte) error {
 	off := 0
 
