@@ -1,6 +1,7 @@
 <div align="center">
 
 ![Build Passing](https://github.com/scylladb/gocql/workflows/Build/badge.svg)
+[![Code Coverage](https://codecov.io/gh/scylladb/gocql/branch/master/graph/badge.svg)](https://codecov.io/gh/scylladb/gocql)
 [![Read the Fork Driver Docs](https://img.shields.io/badge/Read_the_Docs-ScyllaDB-blue)](https://gocql-driver.docs.scylladb.com/stable/)
 [![Protocol Specs](https://img.shields.io/badge/Protocol_Specs-ScyllaDB_Docs-blue)](https://github.com/scylladb/scylladb/blob/master/docs/dev/protocol-extensions.md)
 
