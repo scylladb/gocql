@@ -43,7 +43,7 @@ require (
 replace github.com/scylladb/gocql/lz4 => ./lz4
 
 require (
-	github.com/pierrec/lz4/v4 v4.1.29 // indirect
+	github.com/pierrec/lz4/v4 v4.1.30 // indirect
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/text v0.41.0 // indirect
