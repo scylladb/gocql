@@ -1669,3 +1669,31 @@ func TestToCQLIsDeterministic(t *testing.T) {
 		}
 	}
 }
+
+// TestBodyLiteral pins the rendering of a function body. $$...$$ has no escape,
+// so a body that could close it has to be quoted instead.
+func TestBodyLiteral(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name, body, want string
+	}{
+		// The common case must keep its $$ spelling, or every existing dump changes.
+		{"an ordinary body keeps $$", "return 1", "$$return 1$$"},
+		{"a body containing $$ is quoted", "return 1 --$$; DROP KEYSPACE ks; --",
+			`'return 1 --$$; DROP KEYSPACE ks; --'`},
+		// $$body$$ would let the terminator start one character early.
+		{"a body ending in $ is quoted", "return 1 --$", `'return 1 --$'`},
+		// Quoting is only safe if the quotes inside the body double.
+		{"a quote in a quoted body doubles", "return '$$'", `'return ''$$'''`},
+		// A single $ in the middle cannot close anything.
+		{"a lone $ keeps $$", "return 1 -- $ x", "$$return 1 -- $ x$$"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := cqlHelpers.bodyLiteral(tc.body); got != tc.want {
+				t.Errorf("bodyLiteral(%q) = %q, want %q", tc.body, got, tc.want)
+			}
+		})
+	}
+}

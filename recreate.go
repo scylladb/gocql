@@ -342,6 +342,7 @@ var functionTemplate = template.Must(template.New("functions").
 		"ident":       cqlHelpers.ident,
 		"zip":         cqlHelpers.zip,
 		"stripFrozen": cqlHelpers.stripFrozen,
+		"bodyLiteral": cqlHelpers.bodyLiteral,
 	}).
 	Parse(`
 CREATE FUNCTION {{ ident .keyspaceName }}.{{ ident .fm.Name }} ( 
@@ -353,7 +354,7 @@ CREATE FUNCTION {{ ident .keyspaceName }}.{{ ident .fm.Name }} (
     {{ if .fm.CalledOnNullInput }}CALLED{{ else }}RETURNS NULL{{ end }} ON NULL INPUT
     RETURNS {{ .fm.ReturnType }}
     LANGUAGE {{ .fm.Language }}
-    AS $${{ .fm.Body }}$$;
+    AS {{ bodyLiteral .fm.Body }};
 `))
 
 func (ks *KeyspaceMetadata) functionToCQL(w io.Writer, keyspaceName string, fm *FunctionMetadata) error {
@@ -524,6 +525,17 @@ func (h toCQLHelpers) zip(a []string, b []string) [][]string {
 // the value cannot close its own string.
 func (h toCQLHelpers) escapeString(v string) string {
 	return "'" + strings.ReplaceAll(v, "'", "''") + "'"
+}
+
+// bodyLiteral renders a function body. $$...$$ is the usual spelling, but a
+// body is server data and the literal has no escape: one containing $$ ends it
+// early and the rest is parsed as CQL, and one ending in $ lets the terminator
+// start a character early. Quote those instead.
+func (h toCQLHelpers) bodyLiteral(body string) string {
+	if strings.Contains(body+"$", "$$") {
+		return h.escapeString(body)
+	}
+	return "$$" + body + "$$"
 }
 
 // escape renders a CQL literal for a value whose type is not known until it
