@@ -1116,6 +1116,17 @@ func TestIndexToCQL(t *testing.T) {
 			want: "CREATE INDEX idx ON ks.t ((a,b), c);",
 		},
 		{
+			// The two spaces are the point: CREATE INDEX ON ks.t (...) is
+			// legal, because the name is optional, while an empty quoted
+			// identifier is a syntax error.
+			name: "an index with no name stays unnamed",
+			im: &IndexMetadata{
+				KeyspaceName: "ks", TableName: "t",
+				Options: map[string]string{"target": "col"},
+			},
+			want: "CREATE INDEX  ON ks.t (col);",
+		},
+		{
 			name: "custom indexes are skipped -- Scylla does not support them",
 			im: &IndexMetadata{
 				Name: "custom", KeyspaceName: "ks", TableName: "t", Kind: IndexKindCustom,
