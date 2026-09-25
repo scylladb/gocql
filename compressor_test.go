@@ -29,13 +29,17 @@ package gocql_test
 
 import (
 	"bytes"
+	"encoding/binary"
+	"math"
 	"os"
 	"testing"
 
 	"github.com/klauspost/compress/s2"
 	lz4mod "github.com/scylladb/gocql/lz4"
+	"github.com/stretchr/testify/require"
 
 	"github.com/gocql/gocql"
+	frm "github.com/gocql/gocql/internal/frame"
 )
 
 type frameExample struct {
@@ -244,5 +248,47 @@ func init() {
 		if err != nil {
 			panic("can't read file " + def.FilePath)
 		}
+	}
+}
+
+// TestSnappyCompressorDecodeRejectsHugeLength is the snappy counterpart of
+// TestLZ4Compressor_DecodeRejectsHugeLength in the lz4 module.
+//
+// A snappy block begins with a varint holding the decompressed length, and s2 allocates
+// that many bytes before it validates a single byte of the stream. s2 itself only
+// refuses a claim above 4 GiB, so without a bound here a handful of corrupt header bytes
+// on a short frame buy a multi-gigabyte allocation: the frame reader bounds the
+// compressed body it accepts, but nothing bounded what that body expanded into.
+func TestSnappyCompressorDecodeRejectsHugeLength(t *testing.T) {
+	t.Parallel()
+
+	c := gocql.SnappyCompressor{}
+
+	for _, tc := range []struct {
+		name   string
+		length uint64
+	}{
+		{"just above the limit", frm.MaxFrameSize + 1},
+		// Capped at MaxInt32 rather than s2's own 4 GiB ceiling. Above MaxInt32,
+		// s2.DecodedLen rejects the length itself where int is 32 bits wide and
+		// returns "s2: decoded block is too large", so the assertion below would be
+		// pinning s2's guard rather than this one. gocql does not build on a 32-bit
+		// platform today -- serialization/varint has constants that overflow int
+		// there -- so this is hygiene rather than a live case, but it keeps the test
+		// about the only thing it is for.
+		{"far above the limit", math.MaxInt32},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var hdr [binary.MaxVarintLen64]byte
+			n := binary.PutUvarint(hdr[:], tc.length)
+
+			// One trailing byte so the input is a plausible block rather than a bare
+			// header: the bound must reject it before the stream is even looked at.
+			_, err := c.Decode(append(hdr[:n], 0x00))
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "exceeds maximum")
+		})
 	}
 }
