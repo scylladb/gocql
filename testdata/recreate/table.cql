@@ -37,4 +37,4 @@ CREATE TABLE gocqlx_table.users_picture (
     body text static,
     posted_by text,
     PRIMARY KEY (userid, pictureid, posted_by)
-) WITH compression = {'sstable_compression': 'LZ4Compressor'};
+) WITH compression = {'class': 'LZ4Compressor'};
