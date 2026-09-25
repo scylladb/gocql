@@ -719,6 +719,23 @@ func (f *framer) finish() error {
 			return err
 		}
 
+		// The check at the top of this function measured the uncompressed body, which
+		// is the wrong side of Encode to bound. Snappy's block format has no stored-raw
+		// mode, so an incompressible body comes back larger than it went in: a body that
+		// fit the limit can exceed it once compressed. setLength below writes the
+		// compressed length, and that is the number this driver's own reader and the
+		// server both bound, so without this the frame goes out declaring a length its
+		// peer will refuse -- a remote failure, or a killed connection, in place of a
+		// local error the caller can act on.
+		//
+		// Checked before the append so an oversized result is never copied into the
+		// frame, and f.buf is dropped for the same reason the pre-check drops it: at
+		// this size it would otherwise sit in the pool.
+		if len(compressed) > frm.MaxFrameSize {
+			f.buf = make([]byte, defaultBufSize)
+			return ErrFrameTooBig
+		}
+
 		f.buf = append(f.buf[:headSize], compressed...)
 		bufLen = len(f.buf)
 	}

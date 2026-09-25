@@ -1942,3 +1942,50 @@ func Test_framer_v4NoCompressorLeavesTheBodyAlone(t *testing.T) {
 	require.Zero(t, w.buf[1]&frm.FlagCompress)
 	require.Equal(t, payload, w.buf[headSize:])
 }
+
+// inflatingCompressor returns a body just over the frame limit whatever it is given.
+//
+// It exists so the post-compression size guard can be exercised without building a
+// ~256 MiB incompressible payload to feed real snappy: the guard is reached through the
+// same branch either way, and the realistic route would cost a quarter-gigabyte
+// allocation plus the compression of it on every unit run.
+//
+// The slice is large but free: finish() rejects it before the append, so it is never
+// read or copied and stays untouched zero pages. That is why this test needs none of
+// the memory-pressure skips TestFrameWriteTooLong and TestFrameReadTooLong carry -- and
+// why a matching "exactly at the limit" case is deliberately absent. finish() would
+// accept that one and copy the whole 256 MiB into f.buf, which measured 0.54s under
+// -race against 0.00s here. Neither of the two pre-existing MaxFrameSize checks has an
+// exact-boundary test either, so the off-by-one it would guard is left to the > that
+// all three checks share.
+type inflatingCompressor struct{}
+
+func (inflatingCompressor) Name() string { return "inflating" }
+
+func (inflatingCompressor) Encode([]byte) ([]byte, error) {
+	return make([]byte, frm.MaxFrameSize+1), nil
+}
+
+func (inflatingCompressor) Decode(data []byte) ([]byte, error) { return data, nil }
+
+// Test_framer_v4CompressionMayNotOverflowTheFrameLimit covers the asymmetry between the
+// two size checks in finish(): the one at the top measures the uncompressed body, but
+// the length written into the header is the compressed one.
+//
+// Snappy grows an incompressible body, so a payload that passes the first check can
+// exceed the limit after Encode. Left unchecked the frame goes out declaring a length
+// that both this driver's reader and the server refuse, turning a local ErrFrameTooBig
+// into a remote rejection or a killed connection.
+func Test_framer_v4CompressionMayNotOverflowTheFrameLimit(t *testing.T) {
+	t.Parallel()
+
+	f := newFramer(inflatingCompressor{}, protoVersion4)
+	require.NotZero(t, f.flags&frm.FlagCompress)
+
+	f.writeHeader(f.flags, frm.OpQuery, 1)
+	f.buf = append(f.buf, []byte("a body well inside the limit before compression")...)
+
+	// The body above passes the pre-compression check; only the compressed size is
+	// over, so reaching ErrFrameTooBig proves the second check is the one that fired.
+	require.ErrorIs(t, f.finish(), ErrFrameTooBig)
+}
