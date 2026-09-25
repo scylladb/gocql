@@ -33,6 +33,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/rand"
 	"net"
 	"os"
 	"runtime"
@@ -1813,4 +1814,131 @@ func TestParseResultRowsRejectsMalformedVectorType(t *testing.T) {
 			require.Equal(t, test.want, rows.meta.columns[0].TypeInfo)
 		})
 	}
+}
+
+// Test_framer_v4SnappyRoundTrip drives a real body through the protocol v4 compression
+// path and back: framer.finish() compresses the body and rewrites the header length,
+// framer.readFrame() reads that length and decompresses it again.
+//
+// This is the default configuration -- discoverProtocol caps at protoVersion4, so a
+// NewCluster() user who sets a Compressor lands here and never on v5 segments -- and
+// until now nothing covered it. Test_defaultFramerFlags and Test_newFramer_compressFlag
+// check only that FlagCompress is set, and Test_readCompressedFrame is about v5 segments
+// with a no-op compressor that never compresses a byte. A snappy encode/decode
+// asymmetry, or a length field describing the wrong side of the compression, would have
+// gone unnoticed by all three.
+//
+// The framer is driven directly rather than through a query builder: the subject is the
+// compression layer, and a queryParams route would drag in v5-only option validation.
+func Test_framer_v4SnappyRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	incompressible := make([]byte, 64*1024)
+	// Fixed seed: an incompressible payload has to be the same bytes on every run, or a
+	// failure here would not reproduce.
+	rnd := rand.New(rand.NewSource(1))
+	rnd.Read(incompressible)
+
+	tests := []struct {
+		name    string
+		payload []byte
+		// shrinks records which side of the "not worth it" line the payload falls on.
+		// Both are legal on the wire; v4 compresses unconditionally either way.
+		shrinks bool
+	}{
+		{"compressible", bytes.Repeat([]byte("a"), 256*1024), true},
+		{"incompressible", incompressible, false},
+		// The frame.go "only compress frames which are big enough" TODO: snappy expands
+		// a body this short. Pinned here so the current behaviour is deliberate.
+		{"tiny", []byte("SELECT * FROM system.local"), false},
+		{"empty", []byte{}, false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			w := newFramer(SnappyCompressor{}, protoVersion4)
+			require.NotZero(t, w.flags&frm.FlagCompress, "v4 framer with a compressor must set FlagCompress")
+
+			w.writeHeader(w.flags, frm.OpQuery, 42)
+			w.buf = append(w.buf, test.payload...)
+			require.NoError(t, w.finish())
+
+			wire := append([]byte(nil), w.buf...)
+			require.NotZero(t, wire[1]&frm.FlagCompress, "the compress flag must reach the wire")
+
+			// The body must actually have been transformed, otherwise a compressor that
+			// silently returned its input would pass the round-trip below.
+			if len(test.payload) > 0 {
+				require.NotEqual(t, test.payload, wire[headSize:], "body was not compressed")
+			}
+			if test.shrinks {
+				require.Less(t, len(wire)-headSize, len(test.payload), "compressible payload should shrink")
+			} else {
+				// Snappy's block format has no stored-raw mode, so literal-only output
+				// always exceeds its input by the varint header plus tag bytes. This is
+				// the growth the frame.go "only compress frames which are big enough"
+				// TODO is about, and pinning it is why the short payloads are here.
+				require.Greater(t, len(wire)-headSize, len(test.payload), "incompressible payload should grow")
+			}
+
+			r := bytes.NewReader(wire)
+			head, err := readHeader(r, make([]byte, headSize))
+			require.NoError(t, err)
+			// setLength must describe the compressed body, not the original: a reader
+			// that trusted the uncompressed length would desync the connection.
+			require.Equal(t, len(wire)-headSize, head.Length)
+			require.NotZero(t, head.Flags&frm.FlagCompress)
+
+			rf := newFramer(SnappyCompressor{}, protoVersion4)
+			require.NoError(t, rf.readFrame(r, &head))
+			require.Zero(t, r.Len(), "readFrame must consume exactly the declared body")
+			// bytes.Equal rather than require.Equal: an empty body decodes to a nil
+			// slice, which is the same bytes but not the same value.
+			require.True(t, bytes.Equal(test.payload, rf.buf), "body did not survive the round trip")
+		})
+	}
+}
+
+// Test_framer_v4CompressedFrameNeedsACompressor covers the other half of the v4 read
+// path: a peer that sets FlagCompress on a connection the driver believes is
+// uncompressed. The body is unreadable, so this has to be an error rather than a body
+// parsed as plaintext.
+func Test_framer_v4CompressedFrameNeedsACompressor(t *testing.T) {
+	t.Parallel()
+
+	w := newFramer(SnappyCompressor{}, protoVersion4)
+	w.writeHeader(w.flags, frm.OpQuery, 1)
+	w.buf = append(w.buf, []byte("SELECT * FROM system.local")...)
+	require.NoError(t, w.finish())
+
+	r := bytes.NewReader(append([]byte(nil), w.buf...))
+	head, err := readHeader(r, make([]byte, headSize))
+	require.NoError(t, err)
+
+	rf := newFramer(nil, protoVersion4)
+	err = rf.readFrame(r, &head)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no compressor available with compressed frame body")
+}
+
+// Test_framer_v4NoCompressorLeavesTheBodyAlone is the uncompressed control for
+// Test_framer_v4SnappyRoundTrip: same framer, same payload, no compressor. It pins that
+// the compression above is driven by the compressor and not by something incidental to
+// finish().
+func Test_framer_v4NoCompressorLeavesTheBodyAlone(t *testing.T) {
+	t.Parallel()
+
+	payload := bytes.Repeat([]byte("a"), 1024)
+
+	w := newFramer(nil, protoVersion4)
+	require.Zero(t, w.flags&frm.FlagCompress)
+
+	w.writeHeader(w.flags, frm.OpQuery, 1)
+	w.buf = append(w.buf, payload...)
+	require.NoError(t, w.finish())
+
+	require.Zero(t, w.buf[1]&frm.FlagCompress)
+	require.Equal(t, payload, w.buf[headSize:])
 }
