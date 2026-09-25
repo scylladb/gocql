@@ -61,6 +61,28 @@ func TestHostInfo_Lookup(t *testing.T) {
 	}
 }
 
+// A port in a cfg.Hosts entry reaches HostInfo.port, which is narrowed to
+// uint16 when the address is translated. net.SplitHostPort does not range-check,
+// so resolveInitialEndpoint has to.
+func TestResolveInitialEndpoint_PortBounds(t *testing.T) {
+	t.Parallel()
+
+	resolver := NewSimpleDNSResolver(true)
+
+	for _, addr := range []string{"127.0.0.1:65536", "127.0.0.1:65537", "127.0.0.1:0", "127.0.0.1:-1"} {
+		hosts, err := resolveInitialEndpoint(resolver, addr, 9042)
+		if err == nil {
+			t.Errorf("%q: expected an error, got hosts %v", addr, hosts)
+		}
+	}
+
+	for _, addr := range []string{"127.0.0.1:1", "127.0.0.1:9042", "127.0.0.1:65535"} {
+		if _, err := resolveInitialEndpoint(resolver, addr, 9042); err != nil {
+			t.Errorf("%q: expected no error, got %v", addr, err)
+		}
+	}
+}
+
 func TestParseProtocol(t *testing.T) {
 	t.Parallel()
 

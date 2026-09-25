@@ -3386,10 +3386,15 @@ func TestSchemaReset(t *testing.T) {
 	}
 }
 
+// An unsupported ProtoVersion must surface as an error from CreateSession
+// rather than being swallowed. This used to be skipped because the assertion
+// depended on which error the server happened to return, which varied by
+// Cassandra version. The driver now rejects an out-of-range ProtoVersion in
+// config validation - 0x100 would otherwise truncate to 0 in the one-byte
+// frame header version - so the error is driver-side and deterministic.
 func TestCreateSession_DontSwallowError(t *testing.T) {
 	t.Parallel()
 
-	t.Skip("This test is bad, and the resultant error from cassandra changes between versions")
 	cluster := createCluster()
 	cluster.ProtoVersion = 0x100
 	session, err := cluster.CreateSession()
@@ -3399,16 +3404,8 @@ func TestCreateSession_DontSwallowError(t *testing.T) {
 		t.Fatal("expected to get an error for unsupported protocol")
 	}
 
-	if flagCassVersion.Major < 3 {
-		// TODO: we should get a distinct error type here which include the underlying
-		// cassandra error about the protocol version, for now check this here.
-		if !strings.Contains(err.Error(), "Invalid or unsupported protocol version") {
-			t.Fatalf(`expcted to get error "unsupported protocol version" got: %q`, err)
-		}
-	} else {
-		if !strings.Contains(err.Error(), "unsupported response version") {
-			t.Fatalf(`expcted to get error "unsupported response version" got: %q`, err)
-		}
+	if !strings.Contains(err.Error(), "ProtoVersion") {
+		t.Fatalf(`expected the error to name ProtoVersion, got: %q`, err)
 	}
 }
 

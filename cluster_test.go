@@ -114,6 +114,37 @@ func (segmentCapableCompressor) AppendDecompressed(dst, src []byte, _ uint32) ([
 	return append(dst, src...), nil
 }
 
+// TestValidateProtoVersionUpperBound covers the upper bound in Validate():
+// ProtoVersion has to fit the one-byte frame header version field, which
+// Session.dialWithoutObserver narrows it to, so 0x100 would otherwise truncate
+// to 0 rather than being reported.
+func TestValidateProtoVersionUpperBound(t *testing.T) {
+	t.Parallel()
+
+	for _, proto := range []int{0, protoVersion3, protoVersion5} {
+		cfg := NewCluster("127.0.0.1")
+		cfg.ProtoVersion = proto
+		cfg.Compressor = nil
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("ProtoVersion %d: expected no error, got %v", proto, err)
+		}
+	}
+
+	for _, proto := range []int{protoVersion5 + 1, 0x100, 0x101} {
+		cfg := NewCluster("127.0.0.1")
+		cfg.ProtoVersion = proto
+		cfg.Compressor = nil
+		err := cfg.Validate()
+		if err == nil {
+			t.Errorf("ProtoVersion %d: expected an error, got nil", proto)
+			continue
+		}
+		if !strings.Contains(err.Error(), "ProtoVersion") {
+			t.Errorf("ProtoVersion %d: error should name the setting, got %v", proto, err)
+		}
+	}
+}
+
 // TestValidate_ProtoV5CompressorCapability covers the capability gate in
 // Validate(): on ProtoVersion >= 5 a compressor must implement SegmentCompressor
 // (the real condition), not merely be a non-Snappy type. Below v5 the gate is

@@ -682,8 +682,8 @@ func (cfg *ClusterConfig) Validate() error {
 		}
 	}
 
-	if cfg.Port <= 0 || cfg.Port > 65535 {
-		return errors.New("Port should be a valid port number: a number between 1 and 65535")
+	if cfg.Port <= 0 || cfg.Port > maxPort {
+		return fmt.Errorf("Port should be a valid port number: a number between 1 and %d", maxPort)
 	}
 
 	if cfg.WriteTimeout < 0 {
@@ -720,6 +720,15 @@ func (cfg *ClusterConfig) Validate() error {
 
 	if cfg.ProtoVersion < 0 {
 		return errors.New("ProtoVersion should be positive number or zero")
+	}
+
+	// Zero means "discover the version from the server". Anything above the
+	// newest version the driver implements can only fail, and would be
+	// truncated into the one-byte frame header version on the way there (see
+	// Session.dialWithoutObserver), so reject it here where the error can still
+	// name the setting the user got wrong.
+	if cfg.ProtoVersion > protoVersion5 {
+		return fmt.Errorf("ProtoVersion %d is not supported, the highest supported version is %d", cfg.ProtoVersion, protoVersion5)
 	}
 
 	if cfg.ProtoVersion >= protoVersion5 && cfg.Compressor != nil {
@@ -776,6 +785,11 @@ func (cfg *ClusterConfig) Validate() error {
 
 const defaultCQLPort = 9042
 
+// maxPort is the largest value a TCP port can take. Ports are carried around as
+// int in the config and in HostInfo, but end up in a uint16 (see AddressPort),
+// so anything above this truncates rather than failing.
+const maxPort = 65535
+
 var (
 	ErrNoHosts              = errors.New("no hosts provided")
 	ErrNoConnectionsStarted = errors.New("no connections were made when creating the session")
@@ -804,8 +818,8 @@ func learnPortFromHosts(hosts []string) (int, error) {
 			continue
 		}
 		p, err := strconv.Atoi(portStr)
-		if err != nil || p <= 0 || p > 65535 {
-			return 0, fmt.Errorf("invalid port %q in host entry %q: port must be a number between 1 and 65535", portStr, addr)
+		if err != nil || p <= 0 || p > maxPort {
+			return 0, fmt.Errorf("invalid port %q in host entry %q: port must be a number between 1 and %d", portStr, addr, maxPort)
 		}
 		if sawPortless {
 			// Already saw a portless entry – return immediately.
