@@ -81,6 +81,18 @@ func asVectorType(t TypeInfo) (VectorType, bool) {
 	}, true
 }
 
+// hasVectorColumn reports whether any column is a vector type. Vector values are
+// dense, high-entropy floating point data that compresses poorly, so callers use
+// this to skip compression for statements that carry them.
+func hasVectorColumn(columns []ColumnInfo) bool {
+	for _, col := range columns {
+		if _, ok := asVectorType(col.TypeInfo); ok {
+			return true
+		}
+	}
+	return false
+}
+
 func goType(t TypeInfo) (reflect.Type, error) {
 	switch t.Type() {
 	case TypeVarchar, TypeAscii, TypeInet, TypeText:
