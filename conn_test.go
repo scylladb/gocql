@@ -4962,3 +4962,86 @@ func TestSystemRequestStateClauseFollowsTimeout(t *testing.T) {
 		require.Equal(t, time.Duration(0), timeout)
 	})
 }
+
+// recordingLogger captures log output for assertions.
+//
+// logger.go's testLogger is not usable here: it wraps a bare bytes.Buffer, and the
+// connection's own goroutines log while the test reads, which -race flags. The mutex is
+// the whole difference.
+type recordingLogger struct {
+	mu      sync.Mutex
+	capture bytes.Buffer
+}
+
+func (l *recordingLogger) Print(v ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	fmt.Fprint(&l.capture, v...)
+}
+
+func (l *recordingLogger) Printf(format string, v ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	fmt.Fprintf(&l.capture, format, v...)
+}
+
+func (l *recordingLogger) Println(v ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	fmt.Fprintln(&l.capture, v...)
+}
+
+func (l *recordingLogger) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.capture.String()
+}
+
+// TestStartupCompressorNotSupported covers the negotiation fallback: the server's
+// SUPPORTED response does not name the configured compressor, so the driver drops it and
+// continues uncompressed rather than sending a STARTUP the server would reject.
+//
+// The fallback itself is deliberate and stays. What is asserted here is that it is no
+// longer silent: a user who asked for snappy and got an uncompressed connection had no
+// way to find out short of reading driver internals, and on a mixed cluster this can
+// affect one node out of several. TestCompressorNegotiated is the integration-side check
+// that it does not happen on a healthy cluster.
+//
+// The server advertises lz4 rather than nothing, which is the sharper case: it separates
+// "this node offers no compression" from "this node offers a different algorithm", and
+// the warning has to name both sides to be worth logging.
+func TestStartupCompressorNotSupported(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	srv := NewTestServerWithAddressAndSupportedFactory("127.0.0.1:0", t, protoVersion4, ctx,
+		func(net.Conn) map[string][]string {
+			return map[string][]string{"COMPRESSION": {"lz4"}}
+		})
+	defer srv.Stop()
+
+	rec := &recordingLogger{}
+	cluster := testCluster(protoVersion4, srv.Address)
+	cluster.Compressor = SnappyCompressor{}
+	cluster.Logger = rec
+
+	db, err := cluster.CreateSession()
+	require.NoError(t, err)
+	defer db.Close()
+
+	conn := db.getConn()
+	require.NotNil(t, conn, "no connection available")
+
+	require.Nil(t, conn.compressor, "the refused compressor must be dropped")
+	// The flag is the part that actually matters: a framer still carrying FlagCompress
+	// against a server expecting plaintext would fail every request.
+	require.Zero(t, conn.framers.defaults.flags&frm.FlagCompress,
+		"cached framer flags must not claim compression")
+
+	logged := rec.String()
+	require.Contains(t, logged, "snappy", "the warning must name the compressor that was refused")
+	require.Contains(t, logged, "lz4", "the warning must name what the server offered instead")
+
+	// The connection is still expected to work -- the point of the fallback.
+	require.NoError(t, db.Query("void").Exec())
+}

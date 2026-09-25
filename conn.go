@@ -741,7 +741,16 @@ func (s *startupCoordinator) startup(ctx context.Context, startupCompleted *atom
 			}
 		}
 
+		// The server decides: a node that does not advertise the algorithm in its
+		// SUPPORTED response would reject a STARTUP naming it, so the connection
+		// continues uncompressed rather than failing. That is a silent downgrade of
+		// something the user explicitly asked for -- and on a mixed cluster it can
+		// affect one node out of several -- so say so once, per connection, naming
+		// what the node did offer. TestCompressorNegotiated is the integration-side
+		// check that this never happens on a healthy cluster.
 		if _, ok := m["COMPRESSION"]; !ok {
+			s.conn.logger.Printf("gocql: %s does not support the requested %q compression, continuing uncompressed (server offers: %v)\n",
+				s.conn.addr, name, comp)
 			s.conn.compressor = nil
 		}
 	}
