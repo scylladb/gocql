@@ -22,6 +22,14 @@ import (
 
 var updateGolden = flag.Bool("update-golden", false, "update golden files")
 
+// cassandraOverride returns override when running against Cassandra and it's set, else base.
+func cassandraOverride(base, override string) string {
+	if override != "" && *flagDistribution == "cassandra" {
+		return override
+	}
+	return base
+}
+
 func TestRecreateSchema(t *testing.T) {
 	t.Parallel()
 
@@ -41,7 +49,9 @@ func TestRecreateSchema(t *testing.T) {
 		FixedKeyspace   string // original keyspace name used in .cql files
 		FailWithTablets bool
 		Input           string
+		CassandraInput  string // overrides Input on Cassandra, when its CQL syntax requirements differ
 		Golden          string
+		CassandraGolden string // overrides Golden on Cassandra, when the rendered dump differs
 	}{
 		{
 			Name:          "Keyspace",
@@ -60,7 +70,12 @@ func TestRecreateSchema(t *testing.T) {
 			FixedKeyspace:   "gocqlx_mv",
 			FailWithTablets: failsOnOldScylla,
 			Input:           "testdata/recreate/materialized_views.cql",
-			Golden:          "testdata/recreate/materialized_views_golden.cql",
+			// Cassandra requires every MV primary key column not in the SELECT list
+			// to be explicitly restricted with IS NOT NULL; Scylla does not.
+			CassandraInput: "testdata/recreate/materialized_views_cassandra.cql",
+			Golden:         "testdata/recreate/materialized_views_golden.cql",
+			// Cassandra's rendered dump includes the extra IS NOT NULL restriction above.
+			CassandraGolden: "testdata/recreate/materialized_views_golden_cassandra.cql",
 		},
 		{
 			Name:            "Index",
@@ -102,7 +117,8 @@ func TestRecreateSchema(t *testing.T) {
 			ks := testKeyspaceName(t)
 			cleanup(t, session, ks)
 
-			in, err := os.ReadFile(test.Input)
+			input := cassandraOverride(test.Input, test.CassandraInput)
+			in, err := os.ReadFile(input)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -165,12 +181,13 @@ func TestRecreateSchema(t *testing.T) {
 				// Normalize from the cluster's unique keyspace name back to fixed name.
 				golden = []byte(strings.ReplaceAll(string(golden), ks, test.FixedKeyspace))
 			} else {
+				goldenPath := cassandraOverride(test.Golden, test.CassandraGolden)
 				if *updateGolden {
-					if err := os.WriteFile(test.Golden, []byte(dump), 0644); err != nil {
+					if err := os.WriteFile(goldenPath, []byte(dump), 0644); err != nil {
 						t.Fatal(err)
 					}
 				}
-				golden, err = os.ReadFile(test.Golden)
+				golden, err = os.ReadFile(goldenPath)
 				if err != nil {
 					t.Fatal(err)
 				}
