@@ -703,8 +703,15 @@ func (f *framer) setLength(length int) {
 func (f *framer) finish() error {
 	bufLen := len(f.buf)
 	if bufLen > frm.MaxFrameSize {
-		// huge app frame, lets remove it so it doesn't bloat the heap
+		// huge app frame, lets remove it so it doesn't bloat the heap.
+		//
+		// readBuffer is reset with it. On a write framer it is never read -- only
+		// releaseRead realigns buf to it -- but the pool keeps the two aliased to one
+		// array, and replacing buf alone breaks that: the framer would go back to the
+		// pool holding this 128-byte buf plus the previous, EWMA-sized readBuffer that
+		// nothing can reach. Two arrays where the pool intends one.
 		f.buf = make([]byte, defaultBufSize)
+		f.readBuffer = f.buf
 		return ErrFrameTooBig
 	}
 
@@ -729,10 +736,11 @@ func (f *framer) finish() error {
 		// local error the caller can act on.
 		//
 		// Checked before the append so an oversized result is never copied into the
-		// frame, and f.buf is dropped for the same reason the pre-check drops it: at
-		// this size it would otherwise sit in the pool.
+		// frame, and f.buf is dropped -- with readBuffer, for the reasons the
+		// pre-check gives -- because at this size it would otherwise sit in the pool.
 		if len(compressed) > frm.MaxFrameSize {
 			f.buf = make([]byte, defaultBufSize)
+			f.readBuffer = f.buf
 			return ErrFrameTooBig
 		}
 
