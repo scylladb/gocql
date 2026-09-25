@@ -5045,3 +5045,117 @@ func TestStartupCompressorNotSupported(t *testing.T) {
 	// The connection is still expected to work -- the point of the fallback.
 	require.NoError(t, db.Query("void").Exec())
 }
+
+// compressionInjectingAppInfo is an ApplicationInfo that writes the driver-owned
+// COMPRESSION key, which the interface does not prevent: UpdateStartupOptions is handed
+// the raw options map.
+type compressionInjectingAppInfo struct{ algorithm string }
+
+func (a compressionInjectingAppInfo) UpdateStartupOptions(opts map[string]string) {
+	opts["COMPRESSION"] = a.algorithm
+}
+
+// parseStartupOptions decodes a STARTUP body: [short n] then n [string][string] pairs.
+//
+// Done by hand rather than through a framer: the framer's readers advance over the
+// buffer the mock server still needs, and there is no readStringMap to borrow.
+func parseStartupOptions(tb testing.TB, body []byte) map[string]string {
+	tb.Helper()
+
+	readShort := func() int {
+		require.GreaterOrEqual(tb, len(body), 2, "truncated STARTUP body")
+		v := int(binary.BigEndian.Uint16(body))
+		body = body[2:]
+		return v
+	}
+	readString := func() string {
+		n := readShort()
+		require.GreaterOrEqual(tb, len(body), n, "truncated STARTUP string")
+		s := string(body[:n])
+		body = body[n:]
+		return s
+	}
+
+	opts := make(map[string]string)
+	for i, n := 0, readShort(); i < n; i++ {
+		k := readString()
+		opts[k] = readString()
+	}
+	return opts
+}
+
+// TestStartupCompressionIsDriverOwned pins that COMPRESSION in the STARTUP options is
+// always the driver's negotiated choice, never something an ApplicationInfo callback
+// left behind.
+//
+// The callback runs first and is handed the raw map, so it can set any key. The driver
+// overwrites the keys it always writes, but COMPRESSION is written only when the
+// server's SUPPORTED list names the configured compressor. On every other path a
+// callback-supplied value would otherwise be sent as though the driver had chosen it:
+// the server would compress with an algorithm the framers are not using, and every
+// frame after the handshake would be unreadable by one side.
+//
+// Both paths that skip the write are covered -- a compressor configured but refused,
+// and no compressor configured at all.
+func TestStartupCompressionIsDriverOwned(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		compressor Compressor
+	}{
+		{"configured compressor the server refuses", SnappyCompressor{}},
+		{"no compressor configured", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			var mu sync.Mutex
+			var startups []map[string]string
+
+			srv := newTestServerOpts{
+				addr:     "127.0.0.1:0",
+				protocol: protoVersion4,
+				supportedFactory: func(net.Conn) map[string][]string {
+					// The server does offer lz4, so the callback's value names a real
+					// algorithm. Only the driver's own compressor is unsupported.
+					return map[string][]string{"COMPRESSION": {"lz4"}}
+				},
+				recvHook: func(f *framer) {
+					if f.header.Op != frm.OpStartup {
+						return
+					}
+					mu.Lock()
+					defer mu.Unlock()
+					startups = append(startups, parseStartupOptions(t, append([]byte(nil), f.buf...)))
+				},
+			}.newServer(t, ctx)
+			defer srv.Stop()
+
+			cluster := testCluster(protoVersion4, srv.Address)
+			cluster.Compressor = tc.compressor
+			cluster.ApplicationInfo = compressionInjectingAppInfo{algorithm: "lz4"}
+
+			db, err := cluster.CreateSession()
+			require.NoError(t, err)
+			defer db.Close()
+
+			require.NoError(t, db.Query("void").Exec())
+
+			conn := db.getConn()
+			require.NotNil(t, conn)
+			require.Nil(t, conn.compressor, "no compressor was negotiated, so none may remain")
+			require.Zero(t, conn.framers.defaults.flags&frm.FlagCompress)
+
+			mu.Lock()
+			defer mu.Unlock()
+			require.NotEmpty(t, startups, "no STARTUP frame was observed")
+			for _, opts := range startups {
+				require.NotContains(t, opts, "COMPRESSION",
+					"STARTUP advertised a compression the driver is not using")
+				// The callback still reached the server, so the test is not passing
+				// because ApplicationInfo was ignored wholesale.
+				require.Contains(t, opts, "DRIVER_NAME")
+			}
+		})
+	}
+}

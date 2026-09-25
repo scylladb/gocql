@@ -719,8 +719,7 @@ func startupOptions(cqlVersion, driverName, driverVersion string, info Applicati
 }
 
 func (s *startupCoordinator) startup(ctx context.Context, startupCompleted *atomic.Bool) error {
-	// COMPRESSION and the CQL protocol extensions below are driver-owned too, and
-	// are already protected by being written after the callback has run.
+	// COMPRESSION and the CQL protocol extensions below are driver-owned too.
 	m := startupOptions(
 		s.conn.cfg.CQLVersion,
 		s.conn.session.cfg.DriverName,
@@ -730,6 +729,20 @@ func (s *startupCoordinator) startup(ctx context.Context, startupCompleted *atom
 		s.conn.session.id,
 		s.conn.isScyllaConn(),
 	)
+
+	// Writing after the callback is enough for the keys the driver always writes,
+	// but not for this one: COMPRESSION is written only when the server's SUPPORTED
+	// list names the configured compressor, so on any other path a value the
+	// ApplicationInfo callback put there would survive and be sent as if the driver
+	// had chosen it. The server would then compress to an algorithm the framers are
+	// not using -- or to one while no compressor is configured at all -- and every
+	// frame after the handshake would be unreadable by one side.
+	//
+	// Dropping it up front rather than reconciling it afterwards keeps the rule
+	// simple: the only COMPRESSION that can reach the server is one this block
+	// negotiated. It also keeps the presence check below honest, since the key can
+	// then only be there because the loop put it there.
+	delete(m, "COMPRESSION")
 
 	if s.conn.compressor != nil {
 		comp := s.conn.supported["COMPRESSION"]
