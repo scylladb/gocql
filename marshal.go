@@ -265,6 +265,8 @@ func Marshal(info TypeInfo, value any) ([]byte, error) {
 // unmarshal the data.
 // If value is a pointer to pointer, it is set to nil if the CQL value is
 // null. Otherwise, nulls are unmarshalled as zero value.
+// Variable-length vector elements must fit within the remaining payload; an
+// oversized element length returns an error.
 //
 // Supported conversions are as follows, other type combinations may be added in the future:
 //
@@ -1093,6 +1095,11 @@ func unmarshalVector(info VectorType, data []byte, value any) error {
 				m, p, err := readUnsignedVInt(data)
 				if err != nil {
 					return err
+				}
+				// Bound the unsigned length before narrowing it to int. Otherwise an
+				// overflowing length can become negative and decode as an empty value.
+				if m > uint64(len(data)-p) {
+					return unmarshalErrorf("unmarshal vector: unexpected eof")
 				}
 				elemSize = int(m)
 				offset = p
