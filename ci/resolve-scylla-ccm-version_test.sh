@@ -122,6 +122,8 @@ assert_resolves release:4.0.beta2 release:4.0.beta2
 assert_no_lookup
 assert_resolves unstable/master:latest unstable/master:latest
 assert_no_lookup
+assert_resolves unstable/master:latest:debug unstable/master:latest:debug
+assert_no_lookup
 assert_resolves unstable/branch-6.2:123:debug unstable/branch-6.2:123:debug
 assert_no_lookup
 assert_resolves unstable/master:2026-09-28T12:34:56Z unstable/master:2026-09-28T12:34:56Z
@@ -129,6 +131,10 @@ assert_no_lookup
 assert_resolves hotfix/branch-6.2:123 hotfix/branch-6.2:123
 assert_no_lookup
 assert_resolves hotfix/branch-6.2:123:debug hotfix/branch-6.2:123:debug
+assert_no_lookup
+assert_resolves hotfix/branch-6.2:2026-09-28T12:34:56Z:debug hotfix/branch-6.2:2026-09-28T12:34:56Z:debug
+assert_no_lookup
+assert_resolves hotfix/branch-6.2:latest hotfix/branch-6.2:latest
 assert_no_lookup
 
 assert_rejected release:2026
@@ -143,9 +149,16 @@ assert_rejected unstable/:123
 assert_rejected unstable/master:
 assert_rejected unstable/master:debug
 assert_rejected unstable/master::debug
+assert_rejected unstable/master:123:extra
+assert_rejected unstable/master:123:extra:debug
+assert_rejected unstable/master:2026-09-28T12:34:56
+assert_rejected unstable/master:2026-9-28T12:34:56Z
+assert_rejected unstable/master:2026-09-28T12:34:56Z:extra
 assert_rejected hotfix/
 assert_rejected hotfix/branch
 assert_rejected hotfix/branch:debug
+assert_rejected hotfix/branch:123:extra
+assert_rejected hotfix/branch:2026-09-28T12:34:56Z:extra
 
 : >"${lookup_log}"
 [[ -z $(resolve 2030.9) ]] || fail 'missing release produced output'
@@ -196,7 +209,7 @@ fi
 bash "${resolver}" --check release:2026.2.2
 bash "${resolver}" --check release:2026.2.0~rc1:debug
 bash "${resolver}" --check unstable/master:latest
-for invalid in release:2026.2 2026.2.2 unstable/master unstable/:123 unstable/master: unstable/master:debug hotfix/branch:debug; do
+for invalid in release:2026.2 2026.2.2 unstable/master unstable/:123 unstable/master: unstable/master:debug unstable/master:123:extra unstable/master:2026-09-28T12:34:56 hotfix/branch:debug hotfix/branch:123:extra; do
 	if bash "${resolver}" --check "${invalid}"; then
 		fail "check accepted invalid CCM reference ${invalid}"
 	fi
