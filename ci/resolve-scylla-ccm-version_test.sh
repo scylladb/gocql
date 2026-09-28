@@ -128,6 +128,8 @@ assert_resolves unstable/master:2026-09-28T12:34:56Z unstable/master:2026-09-28T
 assert_no_lookup
 assert_resolves hotfix/branch-6.2:123 hotfix/branch-6.2:123
 assert_no_lookup
+assert_resolves hotfix/branch-6.2:123:debug hotfix/branch-6.2:123:debug
+assert_no_lookup
 
 assert_rejected release:2026
 assert_rejected release:2026.2.0-dev
@@ -139,9 +141,11 @@ assert_rejected unstable/master
 assert_rejected unstable/
 assert_rejected unstable/:123
 assert_rejected unstable/master:
+assert_rejected unstable/master:debug
 assert_rejected unstable/master::debug
 assert_rejected hotfix/
 assert_rejected hotfix/branch
+assert_rejected hotfix/branch:debug
 
 : >"${lookup_log}"
 [[ -z $(resolve 2030.9) ]] || fail 'missing release produced output'
@@ -192,7 +196,7 @@ fi
 bash "${resolver}" --check release:2026.2.2
 bash "${resolver}" --check release:2026.2.0~rc1:debug
 bash "${resolver}" --check unstable/master:latest
-for invalid in release:2026.2 2026.2.2 unstable/master unstable/:123 unstable/master:; do
+for invalid in release:2026.2 2026.2.2 unstable/master unstable/:123 unstable/master: unstable/master:debug hotfix/branch:debug; do
 	if bash "${resolver}" --check "${invalid}"; then
 		fail "check accepted invalid CCM reference ${invalid}"
 	fi
