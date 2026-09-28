@@ -197,30 +197,29 @@ resolve-cassandra-version: .prepare-get-version
 	fi
 	echo "$${CASSANDRA_VERSION_RESOLVED}" >${CASSANDRA_VERSION_FILE}
 
-SCYLLA_VERSION_FILE=/tmp/scylla-version-${SCYLLA_VERSION}.resolved
+# Unstable references contain '/' and ':', so they cannot be used raw as a
+# cache filename. Encode underscores first so the three replacements cannot
+# collide (for example, unstable/a_b:c and unstable/a:b_c stay distinct).
+SCYLLA_VERSION_CACHE_KEY=$(subst :,_colon_,$(subst /,_slash_,$(subst _,_underscore_,$(SCYLLA_VERSION))))
+SCYLLA_VERSION_FILE=/tmp/scylla-version-${SCYLLA_VERSION_CACHE_KEY}.resolved
+SCYLLA_VERSION_RESOLVER=$(MAKEFILE_PATH)/ci/resolve-scylla-ccm-version.sh
 resolve-scylla-version: .prepare-get-version
 	@find "${SCYLLA_VERSION_FILE}" -mtime +0 -delete 2>/dev/null 1>&1 || true
+	SCYLLA_VERSION_CACHED=
 	if [[ -f "${SCYLLA_VERSION_FILE}" ]]; then
-		echo "Resolved ScyllaDB ${SCYLLA_VERSION} to $$(cat ${SCYLLA_VERSION_FILE})"
-		exit 0
+		SCYLLA_VERSION_CACHED=$$(cat "${SCYLLA_VERSION_FILE}")
+		# Cache files outlive this Makefile. Discard a partial release written by
+		# the old resolver rather than letting it reach CCM through the fast path.
+		if ! bash "${SCYLLA_VERSION_RESOLVER}" --check "$${SCYLLA_VERSION_CACHED}"; then
+			rm -f "${SCYLLA_VERSION_FILE}"
+			SCYLLA_VERSION_CACHED=
+		fi
 	fi
 
-	if [[ "${SCYLLA_VERSION}" == "LTS-LATEST" ]]; then
-		SCYLLA_VERSION_RESOLVED=`get-version --source dockerhub-imagetag --repo scylladb/scylla -filters "^[0-9]{4}$$.^[0-9]+$$.^[0-9]+$$ and LAST.1.LAST" | tr -d '\"'`
-	elif [[ "${SCYLLA_VERSION}" == "LTS-PRIOR" ]]; then
-		SCYLLA_VERSION_RESOLVED=`get-version --source dockerhub-imagetag --repo scylladb/scylla -filters "^[0-9]{4}$$.^[0-9]+$$.^[0-9]+$$ and LAST-1.1.LAST" | tr -d '\"'`
-		if [[ -z "$${SCYLLA_VERSION_RESOLVED}" ]]; then
-			SCYLLA_VERSION_RESOLVED=`get-version --source dockerhub-imagetag --repo scylladb/scylla-enterprise -filters "^[0-9]{4}$$.^[0-9]+$$.^[0-9]+$$ and LAST-1.1.LAST" | tr -d '\"'`
-		fi
-	elif [[ "${SCYLLA_VERSION}" == "LATEST" ]]; then
-		SCYLLA_VERSION_RESOLVED=`get-version --source dockerhub-imagetag --repo scylladb/scylla -filters "^[0-9]{4}$$.^[0-9]+$$.^[0-9]+$$ and LAST.LAST.LAST" | tr -d '\"'`
-	elif [[ "${SCYLLA_VERSION}" == "PRIOR" ]]; then
-		SCYLLA_VERSION_RESOLVED=`get-version --source dockerhub-imagetag --repo scylladb/scylla -filters "^[0-9]{4}$$.^[0-9]+$$.^[0-9]+$$ and LAST.LAST.LAST-1" | tr -d '\"'`
-	elif echo "${SCYLLA_VERSION}" | grep -P '^[0-9\.]+'; then
-		SCYLLA_VERSION_RESOLVED=${SCYLLA_VERSION}
+	if [[ -n "$${SCYLLA_VERSION_CACHED}" ]]; then
+		SCYLLA_VERSION_RESOLVED=$${SCYLLA_VERSION_CACHED}
 	else
-		echo "Unknown ScyllaDB version name '${SCYLLA_VERSION}'"
-		exit 1
+		SCYLLA_VERSION_RESOLVED=$$(GET_VERSION_BIN="${GET_VERSION_BIN}" bash "${SCYLLA_VERSION_RESOLVER}" "${SCYLLA_VERSION}")
 	fi
 
 	if [[ -z "$${SCYLLA_VERSION_RESOLVED}" ]]; then
@@ -240,7 +239,11 @@ resolve-scylla-version: .prepare-get-version
 	if [[ -n "$${GITHUB_ENV}" ]]; then
 		echo "SCYLLA_VERSION_RESOLVED=$${SCYLLA_VERSION_RESOLVED}" >>$${GITHUB_ENV}
 	fi
-	echo "$${SCYLLA_VERSION_RESOLVED}" >${SCYLLA_VERSION_FILE}
+	# Do not refresh the cache mtime on a hit. Aliases and partial release lines
+	# must be looked up again after the one-day expiry so they can advance.
+	if [[ -z "$${SCYLLA_VERSION_CACHED}" ]]; then
+		echo "$${SCYLLA_VERSION_RESOLVED}" >"${SCYLLA_VERSION_FILE}"
+	fi
 
 cassandra-start: .prepare-pki .prepare-cassandra-ccm .prepare-java resolve-cassandra-version
 	@if [ -d ${CCM_CONFIG_DIR}/${CCM_CASSANDRA_CLUSTER_NAME} ] && ccm switch ${CCM_CASSANDRA_CLUSTER_NAME} 2>/dev/null 1>&2 && ccm status | grep UP 2>/dev/null 1>&2; then
@@ -272,20 +275,19 @@ scylla-start: .prepare-pki .prepare-scylla-ccm .prepare-environment-update-aio-m
 		echo "Scylla cluster is already started";
 		exit 0;
 	fi
-	if [[ -z "$${SCYLLA_VERSION_RESOLVED}" ]]; then
-		SCYLLA_VERSION_RESOLVED=$$(cat '${SCYLLA_VERSION_FILE}')
-	fi
+	SCYLLA_VERSION_RESOLVED=$$(cat '${SCYLLA_VERSION_FILE}')
 	if [[ -z "$${SCYLLA_VERSION_RESOLVED}" ]]; then
 		echo "ScyllaDB version ${SCYLLA_VERSION} was not resolved"
+		exit 1
+	fi
+	if ! bash "${SCYLLA_VERSION_RESOLVER}" --check "$${SCYLLA_VERSION_RESOLVED}"; then
+		echo "ScyllaDB CCM version '$${SCYLLA_VERSION_RESOLVED}' does not name one release build or an unstable/hotfix build"
 		exit 1
 	fi
 	echo "Start scylla $(SCYLLA_VERSION)($${SCYLLA_VERSION_RESOLVED}) cluster"
 	ccm stop ${CCM_SCYLLA_CLUSTER_NAME} 2>/dev/null 1>&2 || true
 	ccm remove ${CCM_SCYLLA_CLUSTER_NAME} 2>/dev/null 1>&2 || true
-	if [[ "$${SCYLLA_VERSION_RESOLVED}" != *:* ]]; then
-		SCYLLA_VERSION_RESOLVED="release:$${SCYLLA_VERSION_RESOLVED}"
-	fi
-	ccm create ${CCM_SCYLLA_CLUSTER_NAME} -i ${CCM_SCYLLA_IP_PREFIX} --scylla -v $${SCYLLA_VERSION_RESOLVED} -n 3 -d --jvm_arg="--smp 2 --memory 1G --experimental-features udf --enable-user-defined-functions true"
+	ccm create ${CCM_SCYLLA_CLUSTER_NAME} -i ${CCM_SCYLLA_IP_PREFIX} --scylla -v "$${SCYLLA_VERSION_RESOLVED}" -n 3 -d --jvm_arg="--smp 2 --memory 1G --experimental-features udf --enable-user-defined-functions true"
 	ccm updateconf ${SCYLLA_CONFIG}
 	ccm start --wait-for-binary-proto --wait-other-notice --verbose
 	ccm status
@@ -306,18 +308,17 @@ download-cassandra: .prepare-cassandra-ccm resolve-cassandra-version
 	rm -rf /tmp/download.ccm
 
 download-scylla: .prepare-scylla-ccm resolve-scylla-version
-	@if [[ -z "$${SCYLLA_VERSION_RESOLVED}" ]]; then
-		SCYLLA_VERSION_RESOLVED=$$(cat '${SCYLLA_VERSION_FILE}')
-	fi
+	@SCYLLA_VERSION_RESOLVED=$$(cat '${SCYLLA_VERSION_FILE}')
 	if [[ -z "$${SCYLLA_VERSION_RESOLVED}" ]]; then
 		echo "ScyllaDB version ${SCYLLA_VERSION} was not resolved"
 		exit 1
 	fi
+	if ! bash "${SCYLLA_VERSION_RESOLVER}" --check "$${SCYLLA_VERSION_RESOLVED}"; then
+		echo "ScyllaDB CCM version '$${SCYLLA_VERSION_RESOLVED}' does not name one release build or an unstable/hotfix build"
+		exit 1
+	fi
 	rm -rf /tmp/download.ccm || true
 	mkdir /tmp/download.ccm || true
-	if [[ "$${SCYLLA_VERSION_RESOLVED}" != *:* ]]; then
-		SCYLLA_VERSION_RESOLVED="release:$${SCYLLA_VERSION_RESOLVED}"
-	fi
 	ccm create ccm_1 -i 127.0.254. -n 1:0 -v "$${SCYLLA_VERSION_RESOLVED}" --scylla --config-dir=/tmp/download.ccm
 	rm -rf /tmp/download.ccm
 
@@ -360,15 +361,16 @@ test-integration-scylla: scylla-start
 	else
 		echo "Cluster socket is not found"
 	fi
-	if [[ -z "$${SCYLLA_VERSION_RESOLVED}" ]]; then
-		SCYLLA_VERSION_RESOLVED=$$(cat '${SCYLLA_VERSION_FILE}')
-	fi
+	SCYLLA_VERSION_RESOLVED=$$(cat '${SCYLLA_VERSION_FILE}')
 	if [[ -z "$${SCYLLA_VERSION_RESOLVED}" ]]; then
 		echo "ScyllaDB version ${SCYLLA_VERSION} was not resolved"
 		exit 1
 	fi
-	echo "go test -v ${TEST_OPTS} -tags \"${TEST_INTEGRATION_TAGS}\" ${COVER_BUILD_ARGS} -timeout=${TEST_INTEGRATION_TIMEOUT} . -args -distribution scylla $${CLUSTER_SOCKET} -gocql.timeout=60s -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$${SCYLLA_VERSION_RESOLVED} -cluster=$$(ccm liveset) ${COVER_RUNTIME_ARGS}"
-	go test -v ${TEST_OPTS} -tags "${TEST_INTEGRATION_TAGS}" ${COVER_BUILD_ARGS} -timeout=${TEST_INTEGRATION_TIMEOUT} . -args -distribution scylla $${CLUSTER_SOCKET} -gocql.timeout=60s -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$${SCYLLA_VERSION_RESOLVED} -cluster=$$(ccm liveset) ${COVER_RUNTIME_ARGS}
+	# CCM references describe where a build came from, not the version string the
+	# test binary parses. Read the installed build so unstable references work too.
+	SCYLLA_SERVER_VERSION=$$(ccm node1 versionfrombuild | sed -E 's/~([[:alpha:]])/-\1/; s/^([0-9]+\.[0-9]+)\.([[:alpha:]])/\1.0-\2/')
+	echo "go test -v ${TEST_OPTS} -tags \"${TEST_INTEGRATION_TAGS}\" ${COVER_BUILD_ARGS} -timeout=${TEST_INTEGRATION_TIMEOUT} . -args -distribution scylla $${CLUSTER_SOCKET} -gocql.timeout=60s -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$${SCYLLA_SERVER_VERSION} -cluster=$$(ccm liveset) ${COVER_RUNTIME_ARGS}"
+	go test -v ${TEST_OPTS} -tags "${TEST_INTEGRATION_TAGS}" ${COVER_BUILD_ARGS} -timeout=${TEST_INTEGRATION_TIMEOUT} . -args -distribution scylla $${CLUSTER_SOCKET} -gocql.timeout=60s -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$${SCYLLA_SERVER_VERSION} -cluster=$$(ccm liveset) ${COVER_RUNTIME_ARGS}
 
 # The lz4 compressor lives in a nested module (lz4/go.mod), so the root "./..."
 # pattern does not reach it — it has to be invoked explicitly with `go test -C`,
@@ -376,6 +378,7 @@ test-integration-scylla: scylla-start
 # tests and benchmarks are green or red independently of CI.
 test-unit: .prepare-pki
 	@echo "Run unit tests"
+	bash ci/resolve-scylla-ccm-version_test.sh
 	go clean -testcache
 	go clean -C lz4 -testcache
 ifeq ($(shell if [[ -n "$${GITHUB_STEP_SUMMARY}" ]]; then echo "running-in-workflow"; else echo "running-in-shell"; fi), running-in-workflow)
