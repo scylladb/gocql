@@ -30,15 +30,19 @@ readonly exact_release_re='^([0-9]+\.[0-9]+\.[0-9]+|[0-9]+\.[0-9]+(\.[0-9]+)?[-.
 
 is_mutable_ccm_version() {
 	local version=$1
+	local reference
 	local type_and_branch
 	local branch
 	local build
 
-	[[ "${version}" == *:* ]] || return 1
 	[[ ! "${version}" =~ [[:space:]] ]] || return 1
-	type_and_branch=${version%%:*}
+	# CCM removes the terminal mode suffix before it parses type/branch:build.
+	# Validate that remaining reference so ':debug' cannot masquerade as a build.
+	reference=${version%:debug}
+	[[ "${reference}" == *:* ]] || return 1
+	type_and_branch=${reference%%:*}
 	branch=${type_and_branch#*/}
-	build=${version#*:}
+	build=${reference#*:}
 	build=${build%%:*}
 	[[ -n "${branch}" && -n "${build}" ]]
 }
