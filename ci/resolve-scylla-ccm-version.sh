@@ -27,6 +27,7 @@ set -euo pipefail
 # CCM normalizes the three spelling variants of numbered release candidates;
 # alpha/beta spellings follow the same exact, numbered-release convention.
 readonly exact_release_re='^([0-9]+\.[0-9]+\.[0-9]+|[0-9]+\.[0-9]+(\.[0-9]+)?[-.~](alpha|beta|rc)[0-9]+)$'
+readonly mutable_build_re='^(latest|[0-9]+|[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z)$'
 
 is_mutable_ccm_version() {
 	local version=$1
@@ -43,8 +44,7 @@ is_mutable_ccm_version() {
 	type_and_branch=${reference%%:*}
 	branch=${type_and_branch#*/}
 	build=${reference#*:}
-	build=${build%%:*}
-	[[ -n "${branch}" && -n "${build}" ]]
+	[[ -n "${branch}" && "${build}" =~ ${mutable_build_re} ]]
 }
 
 is_exact_ccm_version() {
