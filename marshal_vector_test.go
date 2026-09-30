@@ -968,8 +968,8 @@ func TestUnmarshalVectorRejectsInvalidElementLengths(t *testing.T) {
 		for _, dst := range []any{new([]string), new([1]string), new(any)} {
 			t.Run(fmt.Sprintf("%d/%T", length, dst), func(t *testing.T) {
 				err := unmarshalVector(makeVectorType(TypeText, "UTF8Type", 1), payload.Bytes(), dst)
-				if err == nil {
-					t.Fatalf("accepted element length %d with one payload byte: %v", length, dst)
+				if want := unmarshalErrorf("unmarshal vector: unexpected eof"); err != want {
+					t.Fatalf("element length %d: got %v, want %v", length, err, want)
 				}
 			})
 		}
