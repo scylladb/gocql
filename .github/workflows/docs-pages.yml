@@ -11,6 +11,11 @@ on:
       - "docs/**"
   workflow_dispatch:
 
+# The build job only reads the repo; the release job below overrides this with
+# the Pages/id-token scopes its deployment needs.
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
