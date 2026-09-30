@@ -4,6 +4,12 @@ on:
   pull_request_target:
     types: [labeled]
 
+# Both jobs only read the checked-out repositories; the image is pushed to
+# Docker Hub with the DOCKERHUB_* secrets, not GITHUB_TOKEN, so no write
+# scope is required. pull_request_target defaults to a read/write token.
+permissions:
+  contents: read
+
 jobs:
   # The image is a pure function of the PR head SHA, so it is built and pushed
   # once here rather than once per matrix leg below -- both legs previously
