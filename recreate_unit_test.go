@@ -1253,6 +1253,50 @@ func TestFunctionAndAggregateToCQL(t *testing.T) {
 		}
 	})
 
+	// TestBodyLiteral pins the rule; this pins the wiring. Without it the
+	// template could go back to interpolating the body straight into $$...$$
+	// and every other test would still pass.
+	t.Run("a body that could close its literal is quoted", func(t *testing.T) {
+		t.Parallel()
+
+		for _, tc := range []struct {
+			name, body, want, unsafe string
+		}{
+			{
+				name:   "a body containing $$",
+				body:   "return 1 --$$; DROP KEYSPACE ks; --",
+				want:   `AS 'return 1 --$$; DROP KEYSPACE ks; --';`,
+				unsafe: "$$return 1 --$$;",
+			},
+			{
+				name:   "a body ending in $",
+				body:   "return 1 --$",
+				want:   `AS 'return 1 --$';`,
+				unsafe: "$$return 1 --$$$;",
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+
+				poisoned := *fn
+				poisoned.Body = tc.body
+				var sb strings.Builder
+				if err := ks.functionToCQL(&sb, "ks", &poisoned); err != nil {
+					t.Fatalf("functionToCQL: %v", err)
+				}
+				got := sb.String()
+				if !strings.Contains(got, tc.want) {
+					t.Errorf("missing %q\n--- got ---\n%s", tc.want, got)
+				}
+				// The rendering where the body ends the literal itself, leaving
+				// what follows to be parsed as CQL of its own.
+				if strings.Contains(got, tc.unsafe) {
+					t.Errorf("body closed its own literal: found %q\n--- got ---\n%s", tc.unsafe, got)
+				}
+			})
+		}
+	})
+
 	t.Run("aggregate", func(t *testing.T) {
 		t.Parallel()
 
