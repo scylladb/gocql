@@ -105,21 +105,28 @@ jobs:
         with:
           python-version: '3.11'
 
-      # runner.arch qualifies both cache keys in this job because runner.os is
-      # "Linux" on either architecture, so a shared key would hand one lane the
-      # other's amd64 get-version in bin/ and x86_64 ScyllaDB relocatable in
-      # ~/.ccm. ~/.sdkman is listed for the amd64 lane; the arm64 image ships no
-      # JDK, and actions/cache is content to skip a path that is not there.
+      # Split so a Makefile edit restores pip/tools from the previous revision. sdkman has no
+      # restore-keys: .prepare-java only checks it exists, so a stale restore would pin old JDKs.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: /home/runner/.cache/pip
+          key: pip-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
+          restore-keys: |
+            pip-${{ runner.os }}-${{ runner.arch }}-
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: /home/runner/.sdkman
+          key: sdkman-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
+
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
-            /home/runner/.cache/pip
-            /home/runner/.local
-            /home/runner/.sdkman
             testdata/pki
             bin/
-          # CCM, pip and java versions are in Makefile
-          key: pr-check-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
+          key: tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
+          restore-keys: |
+            tools-${{ runner.os }}-${{ runner.arch }}-
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
@@ -193,16 +200,28 @@ jobs:
         with:
           python-version: '3.11'
 
+      # Split so a Makefile edit restores pip/tools from the previous revision. sdkman has no
+      # restore-keys: .prepare-java only checks it exists, so a stale restore would pin old JDKs.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: /home/runner/.cache/pip
+          key: pip-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
+          restore-keys: |
+            pip-${{ runner.os }}-${{ runner.arch }}-
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: /home/runner/.sdkman
+          key: sdkman-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
+
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
-            /home/runner/.cache/pip
-            /home/runner/.local
-            /home/runner/.sdkman
             testdata/pki
             bin/
-          # CCM, python and java versions are in Makefile
-          key: pr-check-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
+          key: tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
+          restore-keys: |
+            tools-${{ runner.os }}-${{ runner.arch }}-
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
