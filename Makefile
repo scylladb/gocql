@@ -261,10 +261,10 @@ cassandra-start: .prepare-pki .prepare-cassandra-ccm .prepare-java resolve-cassa
 	echo "Start Cassandra ${CASSANDRA_VERSION}($${CASSANDRA_VERSION_RESOLVED}) cluster"
 	ccm stop ${CCM_CASSANDRA_CLUSTER_NAME} 2>/dev/null 1>&2 || true
 	ccm remove ${CCM_CASSANDRA_CLUSTER_NAME} 2>/dev/null 1>&2 || true
-	ccm create ${CCM_CASSANDRA_CLUSTER_NAME} -i ${CCM_CASSANDRA_IP_PREFIX} -v "$${CASSANDRA_VERSION_RESOLVED}" -n3 -d --vnodes --jvm_arg="-Xmx256m -XX:NewSize=100m"
+	ccm create ${CCM_CASSANDRA_CLUSTER_NAME} -i ${CCM_CASSANDRA_IP_PREFIX} -v "$${CASSANDRA_VERSION_RESOLVED}" -n3 -d --vnodes --jvm_arg="-Xmx2g -XX:NewSize=512m"
 	ccm updateconf ${CASSANDRA_CONFIG}
 	for conf_dir in ${CCM_CONFIG_DIR}/${CCM_CASSANDRA_CLUSTER_NAME}/node*/conf; do \
-		sed -i 's/^#MAX_HEAP_SIZE=.*/MAX_HEAP_SIZE="256M"/' "$$conf_dir/cassandra-env.sh"; \
+		sed -i 's/^#MAX_HEAP_SIZE=.*/MAX_HEAP_SIZE="2G"/' "$$conf_dir/cassandra-env.sh"; \
 	done
 	ccm start --wait-for-binary-proto --wait-other-notice --verbose
 	ccm status
