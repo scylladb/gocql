@@ -20,9 +20,9 @@ codecov:
   # The coverage lane is a job of its own and is not gated on the rest of CI
   # (main.yml runs the same suites uninstrumented, in parallel), so waiting for
   # every other check to go green before processing an upload would only delay
-  # the report. The lane is also skippable -- the `disable-coverage-tests` label
-  # and the paths-ignore filters mean plenty of commits never upload at all --
-  # and require_ci_to_pass would turn each of those into a stuck report.
+  # the report. The lane also skips many commits outright -- it does not run on
+  # pull requests at all, and docs-only pushes are filtered out by paths-ignore
+  # -- so require_ci_to_pass would turn each of those into a stuck report.
   require_ci_to_pass: false
 
 # `go tool covdata textfmt` records import paths, not repository paths: the root
@@ -45,12 +45,12 @@ fixes:
 #
 # It does NOT cover a commit with no upload at all. Codecov builds no head
 # report for such a commit, and carryforward needs a report to fill in, so
-# there is nothing for it to run against. That is the shape of every skipped
-# coverage run here -- a docs-only push filtered out by paths-ignore, a pull
-# request labelled disable-coverage-tests -- and it needs no covering: with no
-# report, comparisons walk back to the nearest ancestor that has one, which is
-# the right baseline, and a run deliberately skipped has no business
-# manufacturing a status out of a blank upload.
+# there is nothing for it to run against. That is the shape of every commit
+# this lane does not run for -- every pull request, and docs-only pushes
+# filtered out by paths-ignore -- and it needs no covering: with no report,
+# comparisons walk back to the nearest ancestor that has one, which is the
+# right baseline, and a run deliberately skipped has no business manufacturing
+# a status out of a blank upload.
 flag_management:
   individual_flags:
     - name: root

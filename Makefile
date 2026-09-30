@@ -379,8 +379,12 @@ test-integration-scylla: scylla-start
 test-unit: .prepare-pki
 	@echo "Run unit tests"
 	bash ci/resolve-scylla-ccm-version_test.sh
+	# Keep the test cache so setup-go's restored GOCACHE skips unchanged tests;
+	# GOCQL_CLEAN_TESTCACHE=1 wipes it.
+ifneq ($(GOCQL_CLEAN_TESTCACHE),)
 	go clean -testcache
 	go clean -C lz4 -testcache
+endif
 ifeq ($(shell if [[ -n "$${GITHUB_STEP_SUMMARY}" ]]; then echo "running-in-workflow"; else echo "running-in-shell"; fi), running-in-workflow)
 	echo "### Unit Test Results" >>$${GITHUB_STEP_SUMMARY}
 	echo '```' >>$${GITHUB_STEP_SUMMARY}
@@ -397,6 +401,12 @@ else
 	go test -v -tags unit -timeout=5m -race ./... ${COVER_ARGS}
 	go test -C lz4 -v -tags unit -timeout=5m -race ./... ${COVER_ARGS}
 endif
+
+# arm64 only needs lz4's per-arch assembly tested; the root suite is arch-independent
+# and the arm64 integration lane covers the root's use of lz4.
+test-lz4:
+	@echo "Run lz4 unit tests"
+	go test -C lz4 -tags unit -timeout=5m -race ./...
 
 .prepare-coverage-dir:
 	@mkdir -p "${COVERAGE_DIR}"
@@ -557,25 +567,26 @@ check-lz4-pin:
 			exit 1
 		fi
 	done
-	ALLTAGS=$$(git tag -l 'lz4/v*' 2>/dev/null || true)
+	# ls-remote lets the workflow keep a shallow clone; --refs drops peeled ^{} entries.
+	ALLTAGS=$$(git ls-remote --tags --refs origin 'refs/tags/lz4/v*' 2>/dev/null | sed 's|.*refs/tags/lz4/||' || true)
 	if [[ -z "$${ALLTAGS}" ]]; then
 		if [[ -n "$${GITHUB_ACTIONS}" ]]; then
 			echo "::error::no lz4/v* tags found at all, so this check verified nothing."
-			echo "The workflow's checkout has stopped fetching tags."
+			echo "The workflow can no longer see the remote's tags."
 			exit 1
 		fi
-		echo "No lz4/v* tags present (clone without tags); skipping"
+		echo "No lz4/v* tags reachable (no origin); skipping"
 		exit 0
 	fi
 	# An existence question, not an ordering one: an untagged pin can sit between two
 	# tags, and so compare as older than the newest, while resolving for nobody.
-	if ! git rev-parse -q --verify "refs/tags/lz4/$${PINNED}" >/dev/null; then
+	if ! grep -Fqx "$${PINNED}" <<<"$${ALLTAGS}"; then
 		echo "::error::go.mod requires lz4 $${PINNED} but no lz4/$${PINNED} tag exists."
 		echo "Consumers cannot resolve the module. Tag it, or lower the require."
 		exit 1
 	fi
 	# Pre-releases are dropped because `sort -V` orders v1.20.0-rc1 after v1.20.0.
-	LATEST=$$(printf '%s\n' "$${ALLTAGS}" | sed 's|^lz4/||' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$$' | sort -V | tail -1 || true)
+	LATEST=$$(printf '%s\n' "$${ALLTAGS}" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$$' | sort -V | tail -1 || true)
 	if [[ -z "$${LATEST}" ]]; then
 		echo "Only pre-release lz4 tags present; the pin resolves, nothing to compare it against"
 	elif [[ "$${PINNED}" != "$${LATEST}" ]]; then

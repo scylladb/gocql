@@ -66,6 +66,15 @@ jobs:
           RELEASE_VERSION: ${{ inputs.version }}
         run: $RUNNER_TEMP/release-helper preflight
 
+  lint:
+    name: Lint
+    needs: preflight
+    uses: ./.github/workflows/lint.yml
+    permissions:
+      contents: read
+    with:
+      target_commit: ${{ needs.preflight.outputs.resolved_sha }}
+
   build:
     name: Full Build matrix
     needs: preflight
@@ -78,7 +87,7 @@ jobs:
 
   integration:
     name: Full Integration matrix
-    needs: [preflight, build]
+    needs: [preflight, lint]
     uses: ./.github/workflows/integration.yml
     permissions:
       contents: read
@@ -106,7 +115,7 @@ jobs:
 
   publication-gate:
     name: Final publication gate
-    needs: [preflight, build, integration, pre-release-integration, docs-precheck]
+    needs: [preflight, lint, build, integration, pre-release-integration, docs-precheck]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     outputs:
@@ -151,7 +160,7 @@ jobs:
   publish:
     name: Publish signed tag and GitHub Release
     if: inputs.mode == 'publish'
-    needs: [preflight, build, integration, publication-gate]
+    needs: [preflight, lint, build, integration, publication-gate]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: release
