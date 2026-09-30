@@ -18,6 +18,11 @@ on:
 permissions:
   contents: read
 
+# The build job only reads the repo; the release job below overrides this with
+# the Pages/id-token scopes its deployment needs.
+permissions:
+  contents: read
+
 jobs:
   select-target:
     runs-on: ubuntu-latest
