@@ -21,7 +21,6 @@ The following is a check list of requirements that need to be satisfied in order
 * The merge commit passes the regression test suite on GitHub Actions
 * `go fmt` has been applied to the submitted code
 * A correctly formatted commit message, see below
-* Notable changes (i.e. new features or changed behavior, bugfixes) are appropriately documented in CHANGELOG.md, functional changes also in godoc
 
 If there are any requirements that can't be reasonably satisfied, please state this either on the pull request or as part of discussion on the mailing list. Where appropriate, the core team may apply discretion and make an exception to these requirements.
 
