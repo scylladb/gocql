@@ -228,7 +228,7 @@ jobs:
         run: TEST_INTEGRATION_TAGS="ccm gocql_debug" make test-integration-scylla
 
   test-integration-cassandra:
-    name: Integration Tests On Cassandra (${{ matrix.cassandra-version }}, ${{ matrix.arch }})
+    name: Integration Tests On Cassandra (${{ matrix.cassandra-version }}, ${{ matrix.suite }}, ${{ matrix.arch }})
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 120
     needs: [build-amd64]
@@ -240,10 +240,18 @@ jobs:
     strategy:
       matrix:
         cassandra-version: [5-LATEST, 4-LATEST]
+        # The 5-LATEST lane is two jobs: the v4 suite plus the native-protocol-v5
+        # suite. They are split so the v5 run boots its own cluster in parallel
+        # instead of running as the tail of one runner and adding its ~2.5m serially.
+        suite: [default, protocol-v5]
         # One value today. It is spelled as a matrix dimension so this job reads the
         # same as the ScyllaDB one above and so an arm64 lane is one entry rather
         # than a copied job.
         arch: [amd64]
+        exclude:
+          # 4.x has no native protocol v5 to negotiate.
+          - cassandra-version: 4-LATEST
+            suite: protocol-v5
       fail-fast: false
     env:
       CASSANDRA_VERSION: ${{ matrix.cassandra-version }}
@@ -302,11 +310,11 @@ jobs:
           key: ccm-cassandra-${{ runner.os }}-${{ runner.arch }}-${{ steps.cassandra-version.outputs.value }}
 
       - name: Run integration suite with Cassandra ${{ matrix.cassandra-version }}(${{ steps.cassandra-version.outputs.value }})
-        if: steps.cassandra-version.outputs.value != 'NOT-FOUND'
+        if: matrix.suite == 'default' && steps.cassandra-version.outputs.value != 'NOT-FOUND'
         run: make test-integration-cassandra
 
       - name: Run CCM integration suite with Cassandra ${{ matrix.cassandra-version }}(${{ steps.cassandra-version.outputs.value }})
-        if: steps.cassandra-version.outputs.value != 'NOT-FOUND'
+        if: matrix.suite == 'default' && steps.cassandra-version.outputs.value != 'NOT-FOUND'
         run: TEST_INTEGRATION_TAGS="ccm gocql_debug" make test-integration-cassandra
 
       # Native protocol v5 is never negotiated automatically (discoverProtocol caps at
@@ -327,8 +335,8 @@ jobs:
       # suite. This lane compresses rather than running uncompressed so the
       # compressed-segment path is covered; the step below covers the other half.
       #
-      # cassandra-start short-circuits when the cluster is already up, so this costs one
-      # extra suite run rather than a second CCM bring-up.
+      # This is the `protocol-v5` matrix entry, so it boots its own Cassandra cluster
+      # in parallel with the v4 `default` job instead of running as that job's tail.
       #
       # TEST_INTEGRATION_TIMEOUT is raised for headroom, not because v5 is slower: in
       # back-to-back local runs v4 and v5 came out at 464s and 467s. The suite is simply
@@ -336,7 +344,7 @@ jobs:
       # overrunning go test's -timeout panics with a goroutine dump instead of reporting
       # the failing test. The default is left alone so only this new lane pays for it.
       - name: Run proto-5 suite with Cassandra ${{ matrix.cassandra-version }}(${{ steps.cassandra-version.outputs.value }})
-        if: matrix.cassandra-version == '5-LATEST' && steps.cassandra-version.outputs.value != 'NOT-FOUND'
+        if: matrix.suite == 'protocol-v5' && steps.cassandra-version.outputs.value != 'NOT-FOUND'
         run: |
           TEST_CQL_PROTOCOL=5 \
           TEST_COMPRESSOR=lz4 \
@@ -355,7 +363,7 @@ jobs:
       # would cost another eight minutes. Do not fold it into the lane above as a
       # duplicate; the compressor is the entire point of the difference.
       - name: Run proto-5 uncompressed framing tests with Cassandra ${{ matrix.cassandra-version }}(${{ steps.cassandra-version.outputs.value }})
-        if: matrix.cassandra-version == '5-LATEST' && steps.cassandra-version.outputs.value != 'NOT-FOUND'
+        if: matrix.suite == 'protocol-v5' && steps.cassandra-version.outputs.value != 'NOT-FOUND'
         run: |
           TEST_CQL_PROTOCOL=5 \
           TEST_COMPRESSOR=no-compression \
