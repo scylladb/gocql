@@ -265,8 +265,9 @@ func Marshal(info TypeInfo, value any) ([]byte, error) {
 // unmarshal the data.
 // If value is a pointer to pointer, it is set to nil if the CQL value is
 // null. Otherwise, nulls are unmarshalled as zero value.
-// Variable-length vector elements must fit within the remaining payload; an
-// oversized element length returns an error.
+// The built-in vector decoder requires variable-length elements to fit within
+// the remaining payload; an oversized element length returns an error. Values
+// implementing Unmarshaler handle their own decoding and validation instead.
 //
 // Supported conversions are as follows, other type combinations may be added in the future:
 //
