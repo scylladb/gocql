@@ -266,7 +266,7 @@ cassandra-start: .prepare-pki .prepare-cassandra-ccm .prepare-java resolve-cassa
 	for conf_dir in ${CCM_CONFIG_DIR}/${CCM_CASSANDRA_CLUSTER_NAME}/node*/conf; do \
 		sed -i 's/^#MAX_HEAP_SIZE=.*/MAX_HEAP_SIZE="2G"/' "$$conf_dir/cassandra-env.sh"; \
 	done
-	env -u JAVA11_HOME -u JAVA17_HOME -u JAVA_HOME_11_X64 -u JAVA_HOME_17_X64 ccm start --wait-for-binary-proto --wait-other-notice --verbose --jvm_arg="-Xmx2g -XX:NewSize=512m -Dcassandra.ring_delay_ms=1000 -Dcassandra.skip_wait_for_gossip_to_settle=0"
+	env -u JAVA11_HOME -u JAVA17_HOME -u JAVA_HOME_11_X64 -u JAVA_HOME_17_X64 ccm start --wait-for-binary-proto --wait-other-notice --verbose --jvm_arg="-Xmx2g -XX:NewSize=512m -Dcassandra.skip_wait_for_gossip_to_settle=0"
 	ccm status
 	ccm node1 nodetool status
 
