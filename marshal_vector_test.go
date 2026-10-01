@@ -22,7 +22,9 @@
 package gocql
 
 import (
+	"bytes"
 	"encoding/binary"
+	"fmt"
 	"math"
 	"math/bits"
 	"reflect"
@@ -955,5 +957,38 @@ func TestUnmarshalVectorZeroDimensionsDoesNotTouchSubType(t *testing.T) {
 				t.Errorf("decoded %#v, want an empty slice", dst)
 			}
 		})
+	}
+}
+
+func TestUnmarshalVectorRejectsInvalidElementLengths(t *testing.T) {
+	for _, length := range []uint64{math.MaxUint64, 1 << 63, 1 << 32, 1 << 31, 2} {
+		var payload bytes.Buffer
+		writeUnsignedVInt(&payload, length)
+		payload.WriteByte('x')
+		for _, dst := range []any{new([]string), new([1]string), new(any)} {
+			t.Run(fmt.Sprintf("%d/%T", length, dst), func(t *testing.T) {
+				err := unmarshalVector(makeVectorType(TypeText, "UTF8Type", 1), payload.Bytes(), dst)
+				if want := unmarshalErrorf("unmarshal vector: unexpected eof"); err != want {
+					t.Fatalf("element length %d: got %v, want %v", length, err, want)
+				}
+			})
+		}
+	}
+}
+
+func TestUnmarshalVectorTextLengthsRoundTrip(t *testing.T) {
+	for _, want := range [][]string{{"", "", ""}, {"a", "", "last"}, {strings.Repeat("x", 128)}} {
+		info := makeVectorType(TypeText, "UTF8Type", len(want))
+		data, err := marshalVector(info, want)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		if err := unmarshalVector(info, data, &got); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("got %q, want %q", got, want)
+		}
 	}
 }
