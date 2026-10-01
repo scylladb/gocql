@@ -31,13 +31,18 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
-	"math/rand"
+	"math/big"
+	mathrand "math/rand"
 	"net"
 	"os"
 	"strings"
@@ -1689,22 +1694,38 @@ func TestWriteCoalescing(t *testing.T) {
 	}()
 	enqueued := make(chan struct{})
 	resetTimer := make(chan struct{})
+	flushed := make(chan struct{}, 8)
 	w := &writeCoalescer{
 		writeCh: make(chan writeRequest),
 		c:       client,
 		quit:    ctx.Done(),
+		// A positive window is what makes a write inside an active burst arm
+		// the timer instead of flushing immediately -- see
+		// writeFlusherImpl's Nagle-style arming rule. It is never actually
+		// waited out here except via the manual timerC send below.
+		window: 500 * time.Millisecond,
 		testEnqueuedHook: func() {
 			enqueued <- struct{}{}
 		},
 		testFlushedHook: func() {
-			client.Close()
+			flushed <- struct{}{}
 		},
 	}
 	w.setWriteTimeout(500 * time.Millisecond)
 	timerC := make(chan time.Time, 1)
 	go func() {
-		w.writeFlusherImpl(timerC, func() { resetTimer <- struct{}{} })
+		w.writeFlusherImpl(timerC, func() { resetTimer <- struct{}{} }, func() {})
 	}()
+
+	// Warm up: the first write always flushes immediately, priming lastFlush
+	// so the batching-path writes below actually arm the timer.
+	go func() {
+		if _, err := w.writeContext(context.Background(), []byte("warmup")); err != nil {
+			t.Error(err)
+		}
+	}()
+	<-enqueued
+	<-flushed
 
 	go func() {
 		if _, err := w.writeContext(context.Background(), []byte("one")); err != nil {
@@ -1724,11 +1745,409 @@ func TestWriteCoalescing(t *testing.T) {
 
 	// flush
 	timerC <- time.Now()
+	<-flushed
 
+	client.Close()
 	<-done
 
-	if got := buf.String(); got != "onetwo" && got != "twoone" {
-		t.Fatalf("expected to get %q got %q", "onetwo or twoone", got)
+	if got := buf.String(); got != "warmuponetwo" && got != "warmuptwoone" {
+		t.Fatalf("expected to get %q got %q", `"warmup" followed by "one"+"two" in either order`, got)
+	}
+}
+
+// TestWriteCoalescing_FlushesImmediatelyWhenIdle: a write with no burst in
+// progress flushes without ever arming the timer.
+func TestWriteCoalescing_FlushesImmediatelyWhenIdle(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	server, client, err := tcpConnPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+	defer client.Close()
+
+	flushed := make(chan struct{}, 1)
+	w := &writeCoalescer{
+		writeCh: make(chan writeRequest),
+		c:       client,
+		quit:    ctx.Done(),
+		window:  500 * time.Millisecond,
+		testFlushedHook: func() {
+			flushed <- struct{}{}
+		},
+	}
+	w.setWriteTimeout(500 * time.Millisecond)
+	timerC := make(chan time.Time)
+	go func() {
+		w.writeFlusherImpl(timerC, func() {
+			t.Error("resetTimer must not be called for an immediate flush")
+		}, func() {
+			t.Error("stopTimer must not be called for an immediate flush")
+		})
+	}()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if _, err := w.writeContext(context.Background(), []byte("x")); err != nil {
+			t.Error(err)
+		}
+	}()
+
+	select {
+	case <-flushed:
+	case <-time.After(time.Second):
+		t.Fatal("write was never flushed")
+	}
+	<-done
+}
+
+// TestWriteCoalescing_FlushThreshold: a batch at flushThreshold flushes as
+// soon as the next write would push it over, which then starts its own batch.
+func TestWriteCoalescing_FlushThreshold(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	server, client, err := tcpConnPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+	defer client.Close()
+
+	var flushSizes []int
+	flushed := make(chan struct{}, 4)
+	w := &writeCoalescer{
+		writeCh:        make(chan writeRequest),
+		c:              client,
+		quit:           ctx.Done(),
+		window:         500 * time.Millisecond,
+		flushThreshold: 5,
+		testFlushSizeHook: func(n int) {
+			flushSizes = append(flushSizes, n)
+		},
+		testFlushedHook: func() {
+			flushed <- struct{}{}
+		},
+	}
+	w.setWriteTimeout(500 * time.Millisecond)
+	timerC := make(chan time.Time)
+	resetCalled := make(chan struct{}, 4)
+	go func() {
+		w.writeFlusherImpl(timerC, func() { resetCalled <- struct{}{} }, func() {})
+	}()
+
+	// First write ("aaa", 3 bytes) flushes immediately (idle coalescer), so
+	// it does not itself count toward the threshold test below.
+	go w.writeContext(context.Background(), []byte("aaa"))
+	<-flushed
+
+	// "bbb" (3 bytes) arrives with the batch empty: buffers below threshold
+	// (5), so it arms the timer rather than flushing.
+	go w.writeContext(context.Background(), []byte("bbb"))
+	select {
+	case <-resetCalled:
+	case <-time.After(time.Second):
+		t.Fatal("expected the timer to be armed for a batch below threshold")
+	}
+
+	// "ccc" (3 bytes) would push the buffered batch to 6 > 5: the buffered
+	// "bbb" must flush on its own first, then "ccc" starts a new batch.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if _, err := w.writeContext(context.Background(), []byte("ccc")); err != nil {
+			t.Error(err)
+		}
+	}()
+
+	select {
+	case <-flushed:
+	case <-time.After(time.Second):
+		t.Fatal("expected the over-threshold write to trigger a flush of the buffered batch")
+	}
+
+	// "ccc" itself started a fresh, empty-when-it-arrived batch, so it must
+	// have armed the timer rather than flushed immediately.
+	select {
+	case <-resetCalled:
+	case <-time.After(time.Second):
+		t.Fatal("expected the new batch started by the over-threshold write to arm the timer")
+	}
+	timerC <- time.Now()
+	<-flushed
+	<-done
+
+	if len(flushSizes) != 3 || flushSizes[0] != 1 || flushSizes[1] != 1 || flushSizes[2] != 1 {
+		t.Fatalf("expected three single-frame flushes (aaa alone, bbb alone, ccc alone), got %v", flushSizes)
+	}
+}
+
+// TestWriteCoalescing_OversizedFirstWriteFlushesImmediately: a write already
+// at or above flushThreshold must flush now, even as the very first write
+// (bufferedBytes starts at 0, so the pre-append threshold check can't see it).
+func TestWriteCoalescing_OversizedFirstWriteFlushesImmediately(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	server, client, err := tcpConnPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+	defer client.Close()
+
+	flushed := make(chan struct{}, 2)
+	resetCalled := make(chan struct{}, 2)
+	w := &writeCoalescer{
+		writeCh:        make(chan writeRequest),
+		c:              client,
+		quit:           ctx.Done(),
+		window:         time.Hour, // long enough that only the threshold, not idleness, can force a flush
+		flushThreshold: 5,
+		testFlushedHook: func() {
+			flushed <- struct{}{}
+		},
+	}
+	w.setWriteTimeout(500 * time.Millisecond)
+	timerC := make(chan time.Time)
+	go w.writeFlusherImpl(timerC, func() { resetCalled <- struct{}{} }, func() {})
+
+	// Prime lastFlush so the idle-flush path can't also explain the result below.
+	go w.writeContext(context.Background(), []byte("a"))
+	<-flushed
+
+	// First write of a fresh batch (bufferedBytes starts at 0), already >= threshold.
+	go w.writeContext(context.Background(), []byte("aaaaaa")) // 6 bytes >= threshold
+	select {
+	case <-flushed:
+	case <-resetCalled:
+		t.Fatal("oversized first write armed the timer instead of flushing immediately")
+	case <-time.After(time.Second):
+		t.Fatal("expected an oversized first write to flush immediately")
+	}
+}
+
+// sizeRecordingWriter is a deadlineWriter that records the byte length of
+// each Write call, for tests that need to catch a flush whose batch exceeds
+// flushThreshold in bytes (frame count alone can't show that).
+type sizeRecordingWriter struct {
+	mu    sync.Mutex
+	sizes []int
+}
+
+func (s *sizeRecordingWriter) SetWriteDeadline(time.Time) error { return nil }
+
+func (s *sizeRecordingWriter) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	s.sizes = append(s.sizes, len(p))
+	s.mu.Unlock()
+	return len(p), nil
+}
+
+// TestWriteCoalescing_DrainCapsAtFlushThreshold: under sustained concurrent
+// writers with mixed payload sizes, the bytes written by any single flush
+// (per-write check or timer-fire drain) must not exceed flushThreshold.
+// Mixed sizes matter: with uniform 1-byte payloads, frame count and byte
+// count coincide and a one-frame drain overshoot is invisible to a
+// frame-count assertion.
+func TestWriteCoalescing_DrainCapsAtFlushThreshold(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	const threshold = 10
+	sw := &sizeRecordingWriter{}
+	w := &writeCoalescer{
+		writeCh:        make(chan writeRequest),
+		c:              sw,
+		quit:           ctx.Done(),
+		window:         time.Hour,
+		flushThreshold: threshold,
+	}
+	w.setWriteTimeout(500 * time.Millisecond)
+	timerC := make(chan time.Time)
+	resetCalled := make(chan struct{}, 400)
+	go w.writeFlusherImpl(timerC, func() { resetCalled <- struct{}{} }, func() {})
+
+	payloads := [][]byte{
+		bytes.Repeat([]byte("a"), 3),
+		bytes.Repeat([]byte("b"), 4),
+		bytes.Repeat([]byte("c"), 6),
+		bytes.Repeat([]byte("d"), 8),
+	}
+
+	const n = 40
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			w.writeContext(context.Background(), payloads[i%len(payloads)])
+		}(i)
+	}
+
+	// Fire the timer whenever a batch arms, to flush partial batches that
+	// never reach flushThreshold on their own -- this is what exercises the
+	// drain loop.
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+loop:
+	for {
+		select {
+		case <-resetCalled:
+			timerC <- time.Now()
+		case <-done:
+			break loop
+		}
+	}
+
+	sw.mu.Lock()
+	defer sw.mu.Unlock()
+	for _, size := range sw.sizes {
+		if size > threshold {
+			t.Fatalf("flush wrote %d bytes, exceeds flushThreshold (%d): %v", size, threshold, sw.sizes)
+		}
+	}
+}
+
+// countingWriter is a deadlineWriter that is not a *net.TCPConn, standing in
+// for a writer without the writev fast path (e.g. a *tls.Conn).
+type countingWriter struct {
+	writes [][]byte
+}
+
+func (c *countingWriter) SetWriteDeadline(time.Time) error { return nil }
+
+func (c *countingWriter) Write(p []byte) (int, error) {
+	// flush reuses its scratch buffer, so copy p rather than keep it.
+	c.writes = append(c.writes, append([]byte(nil), p...))
+	return len(p), nil
+}
+
+// TestWriteCoalescer_NonWritevFlushIsOneWrite: flush concatenates a batch
+// into one Write call over a writer without the writev fast path (here a
+// fake; TestWriteCoalescer_TLSFlushIsOneRecord covers a real *tls.Conn).
+func TestWriteCoalescer_NonWritevFlushIsOneWrite(t *testing.T) {
+	cw := &countingWriter{}
+	w := &writeCoalescer{c: cw}
+
+	rc1 := make(chan writeResult, 1)
+	rc2 := make(chan writeResult, 1)
+	w.flush([]chan<- writeResult{rc1, rc2}, net.Buffers{[]byte("one"), []byte("two")})
+
+	if len(cw.writes) != 1 {
+		t.Fatalf("expected exactly one Write call for a non-writev batch, got %d", len(cw.writes))
+	}
+	if got := string(cw.writes[0]); got != "onetwo" {
+		t.Fatalf("expected one concatenated write %q, got %q", "onetwo", got)
+	}
+	if r := <-rc1; r.err != nil || r.n != 3 {
+		t.Fatalf("unexpected result for buffer 1: %+v", r)
+	}
+	if r := <-rc2; r.err != nil || r.n != 3 {
+		t.Fatalf("unexpected result for buffer 2: %+v", r)
+	}
+}
+
+// countingConn wraps a net.Conn and counts Write calls made after reset,
+// so TLS handshake writes don't count toward the assertion.
+type countingConn struct {
+	net.Conn
+	mu     sync.Mutex
+	writes int
+}
+
+func (c *countingConn) Write(p []byte) (int, error) {
+	c.mu.Lock()
+	c.writes++
+	c.mu.Unlock()
+	return c.Conn.Write(p)
+}
+
+func (c *countingConn) reset() {
+	c.mu.Lock()
+	c.writes = 0
+	c.mu.Unlock()
+}
+
+func (c *countingConn) count() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.writes
+}
+
+// generateSelfSignedTLSCert makes a throwaway ECDSA P256 cert for tests,
+// avoiding a dependency on testdata/pki generation tooling.
+func generateSelfSignedTLSCert(t *testing.T) tls.Certificate {
+	t.Helper()
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "gocql-test"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &priv.PublicKey, priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: priv}
+}
+
+// TestWriteCoalescer_TLSFlushIsOneRecord: over a real *tls.Conn, flush's
+// single concatenated Write produces exactly one write to the underlying
+// connection (one TLS record) -- the path DisableCoalesce used to skip for
+// TLS connections.
+func TestWriteCoalescer_TLSFlushIsOneRecord(t *testing.T) {
+	rawServer, rawClient, err := tcpConnPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rawServer.Close()
+	defer rawClient.Close()
+
+	cert := generateSelfSignedTLSCert(t)
+	cc := &countingConn{Conn: rawClient}
+
+	serverDone := make(chan string, 1)
+	go func() {
+		sconn := tls.Server(rawServer, &tls.Config{Certificates: []tls.Certificate{cert}})
+		buf := make([]byte, len("onetwo"))
+		if _, err := io.ReadFull(sconn, buf); err != nil {
+			t.Error(err)
+			serverDone <- ""
+			return
+		}
+		serverDone <- string(buf)
+	}()
+
+	cconn := tls.Client(cc, &tls.Config{InsecureSkipVerify: true})
+	if err := cconn.Handshake(); err != nil {
+		t.Fatal(err)
+	}
+	cc.reset()
+
+	w := &writeCoalescer{c: cconn}
+	rc1 := make(chan writeResult, 1)
+	rc2 := make(chan writeResult, 1)
+	w.flush([]chan<- writeResult{rc1, rc2}, net.Buffers{[]byte("one"), []byte("two")})
+
+	if r := <-rc1; r.err != nil {
+		t.Fatalf("unexpected error for buffer 1: %v", r.err)
+	}
+	if r := <-rc2; r.err != nil {
+		t.Fatalf("unexpected error for buffer 2: %v", r.err)
+	}
+
+	if got := <-serverDone; got != "onetwo" {
+		t.Fatalf("expected %q, got %q", "onetwo", got)
+	}
+	if n := cc.count(); n != 1 {
+		t.Fatalf("expected exactly one Write to the underlying connection (one TLS record), got %d", n)
 	}
 }
 
@@ -1749,7 +2168,7 @@ func TestWriteCoalescing_WriteAfterClose(t *testing.T) {
 		server.Close()
 		close(done)
 	}()
-	w := newWriteCoalescer(client, 0, 5*time.Millisecond, ctx.Done())
+	w := newWriteCoalescer(client, 0, 5*time.Millisecond, 0, ctx.Done())
 
 	// ensure 1 write works
 	if _, err := w.writeContext(context.Background(), []byte("one")); err != nil {
@@ -1770,6 +2189,29 @@ func TestWriteCoalescing_WriteAfterClose(t *testing.T) {
 		t.Fatal("expected to get error for write after closing")
 	} else if err != io.EOF {
 		t.Fatalf("expected to get EOF got %v", err)
+	}
+}
+
+// TestCoalesceWindow covers coalesceWindow's RTT-scaling and its fallback
+// when no RTT was measured.
+func TestCoalesceWindow(t *testing.T) {
+	tests := []struct {
+		name    string
+		rtt     time.Duration
+		maxWait time.Duration
+		want    time.Duration
+	}{
+		{"same-rack RTT scales to a small window", 200 * time.Microsecond, 200 * time.Microsecond, 10 * time.Microsecond},
+		{"cross-AZ RTT scales to a slightly larger window", time.Millisecond, 200 * time.Microsecond, 50 * time.Microsecond},
+		{"cross-DC RTT is capped at maxWait", 40 * time.Millisecond, 200 * time.Microsecond, 200 * time.Microsecond},
+		{"no RTT measured falls back to maxWait", 0, 200 * time.Microsecond, 200 * time.Microsecond},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := coalesceWindow(tt.rtt, tt.maxWait); got != tt.want {
+				t.Errorf("coalesceWindow() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -2225,7 +2667,7 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 				respFrame.writeHeader(0, frm.OpError, head.Stream)
 				respFrame.writeInt(0x1001)
 				respFrame.writeString("speculative error")
-				rand.Seed(time.Now().UnixNano())
+				mathrand.Seed(time.Now().UnixNano())
 				<-time.After(time.Millisecond * 120)
 			}
 		default:
