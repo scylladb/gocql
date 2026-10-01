@@ -261,12 +261,12 @@ cassandra-start: .prepare-pki .prepare-cassandra-ccm .prepare-java resolve-cassa
 	echo "Start Cassandra ${CASSANDRA_VERSION}($${CASSANDRA_VERSION_RESOLVED}) cluster"
 	ccm stop ${CCM_CASSANDRA_CLUSTER_NAME} 2>/dev/null 1>&2 || true
 	ccm remove ${CCM_CASSANDRA_CLUSTER_NAME} 2>/dev/null 1>&2 || true
-	env -u JAVA11_HOME -u JAVA17_HOME -u JAVA_HOME_11_X64 -u JAVA_HOME_17_X64 ccm create ${CCM_CASSANDRA_CLUSTER_NAME} -i ${CCM_CASSANDRA_IP_PREFIX} -v "$${CASSANDRA_VERSION_RESOLVED}" -n3 -d --vnodes --jvm_arg="-Xmx2g -XX:NewSize=512m -Dcassandra.ring_delay_ms=1000 -Dcassandra.skip_wait_for_gossip_to_settle=0"
+	env -u JAVA11_HOME -u JAVA17_HOME -u JAVA_HOME_11_X64 -u JAVA_HOME_17_X64 ccm create ${CCM_CASSANDRA_CLUSTER_NAME} -i ${CCM_CASSANDRA_IP_PREFIX} -v "$${CASSANDRA_VERSION_RESOLVED}" -n3 -d --vnodes
 	ccm updateconf ${CASSANDRA_CONFIG}
 	for conf_dir in ${CCM_CONFIG_DIR}/${CCM_CASSANDRA_CLUSTER_NAME}/node*/conf; do \
 		sed -i 's/^#MAX_HEAP_SIZE=.*/MAX_HEAP_SIZE="2G"/' "$$conf_dir/cassandra-env.sh"; \
 	done
-	env -u JAVA11_HOME -u JAVA17_HOME -u JAVA_HOME_11_X64 -u JAVA_HOME_17_X64 ccm start --wait-for-binary-proto --wait-other-notice --verbose
+	env -u JAVA11_HOME -u JAVA17_HOME -u JAVA_HOME_11_X64 -u JAVA_HOME_17_X64 ccm start --wait-for-binary-proto --wait-other-notice --verbose --jvm_arg="-Xmx2g -XX:NewSize=512m -Dcassandra.ring_delay_ms=1000 -Dcassandra.skip_wait_for_gossip_to_settle=0"
 	ccm status
 	ccm node1 nodetool status
 
