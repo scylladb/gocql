@@ -71,6 +71,52 @@ func (b brokenDNSResolver) LookupIP(host string) ([]net.IP, error) {
 	}
 }
 
+// recordingDialer reports whether dialWithoutObserver got as far as opening a
+// connection. It implements ShardDialer so the shard-aware branch is covered by
+// the same spy.
+type recordingDialer struct {
+	dialed bool
+}
+
+func (d *recordingDialer) DialHost(ctx context.Context, host *HostInfo) (*DialedHost, error) {
+	d.dialed = true
+	return nil, errors.New("recordingDialer: should not have been called")
+}
+
+func (d *recordingDialer) DialShard(ctx context.Context, host *HostInfo, shardID, nrShards int) (*DialedHost, error) {
+	d.dialed = true
+	return nil, errors.New("recordingDialer: should not have been called")
+}
+
+// ConnConfig.ProtoVersion is an int but Conn.version is a single byte, so a
+// version outside the supported range has to be rejected rather than truncated
+// (0x100 would become 0).
+//
+// This guard is the last line of defence rather than the first: ClusterConfig
+// validation rejects a user-set value earlier, and a version discovered from a
+// server error message is bounded by the time it gets here. Neither of those
+// covers this one, so it is asserted directly - including that no connection is
+// opened before the version is judged, since a rejected version must not leave a
+// socket behind.
+func TestDialWithoutObserver_ProtoVersionOutOfRange(t *testing.T) {
+	t.Parallel()
+
+	for _, proto := range []int{0, -1, protoVersion5 + 1, 0x100, 0x101} {
+		for _, nrShards := range []int{0, 2} {
+			dialer := &recordingDialer{}
+			cfg := &ConnConfig{ProtoVersion: proto, HostDialer: dialer}
+
+			conn, err := (&Session{}).dialWithoutObserver(context.Background(), nil, cfg, nil, 0, nrShards)
+			if err == nil {
+				t.Errorf("ProtoVersion %d (nrShards %d): expected an error, got conn %v", proto, nrShards, conn)
+			}
+			if dialer.dialed {
+				t.Errorf("ProtoVersion %d (nrShards %d): dialer was called for a rejected version", proto, nrShards)
+			}
+		}
+	}
+}
+
 func TestApprove(t *testing.T) {
 	tests := map[bool]bool{
 		approve("org.apache.cassandra.auth.PasswordAuthenticator", []string{}):                                             true,

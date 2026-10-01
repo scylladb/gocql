@@ -1169,6 +1169,21 @@ func translateAddressPort(addressTranslator AddressTranslator, host *HostInfo, a
 		if debug.Enabled {
 			logger.Printf("gocql: translated address %q to '%v:%d'", addr, newAddr, newPort)
 		}
+		// The legacy AddressTranslator returns an int, but AddressPort.Port is a
+		// uint16. Narrowing it unchecked would turn a translator bug into a
+		// plausible-looking port (65537 becomes 1) that we would then dial, so
+		// report it instead. AddressTranslatorV2 cannot overflow this way: it
+		// hands back an AddressPort, whose port is already a uint16.
+		//
+		// Zero is deliberately allowed through here. It is how an unset
+		// AddressPort spells "no address", and the shard-aware addresses are
+		// optional - scyllaDialer skips them when they are not IsValid. The cql
+		// port, which is the one dialed unconditionally, is required to be
+		// non-zero by translateHostAddresses.
+		if newPort < 0 || newPort > maxPort {
+			return AddressPort{}, fmt.Errorf("address translator returned out-of-range port %d for %q: port must be a number between 0 and %d",
+				newPort, addr, maxPort)
+		}
 		return AddressPort{
 			Address: newAddr,
 			Port:    uint16(newPort),

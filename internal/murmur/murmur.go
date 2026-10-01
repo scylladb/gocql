@@ -42,6 +42,16 @@ func fmix(n int64) int64 {
 	return n
 }
 
+// block sign-extends a single tail byte. Java's byte is signed, so Cassandra's
+// MurmurHash3 treats each tail byte as a value in -128..127; the driver has to
+// agree or the tokens it computes point at the wrong replicas
+// (TestMurmur3H1_CassandraSign pins this against a Cassandra-generated token).
+//
+// int8(p) is a same-width reinterpretation, not a narrowing conversion: p is
+// already 8 bits, so no bits are lost and there is no range to check. Static
+// analysis that tracks a value from, say, strconv.ParseInt into a partition key
+// flags this as an unchecked narrowing conversion, but the value has been 8 bits
+// wide since it was indexed out of the byte slice. Do not "fix" it.
 func block(p byte) int64 {
 	return int64(int8(p))
 }

@@ -159,6 +159,14 @@ func resolveInitialEndpoint(resolver DNSResolver, addr string, defaultPort int) 
 		}
 	}
 
+	// net.SplitHostPort only splits, it does not range-check. The port ends up in
+	// HostInfo.port, which is narrowed to uint16 when the address is translated
+	// (see translateHostAddresses), so an out-of-range value would silently wrap
+	// into a different port instead of being reported.
+	if port <= 0 || port > maxPort {
+		return nil, fmt.Errorf("invalid port %d in %q: port must be a number between 1 and %d", port, addr, maxPort)
+	}
+
 	// Check if host is a literal IP address
 	if ip := net.ParseIP(host); ip != nil {
 		if validIpAddr(ip) {

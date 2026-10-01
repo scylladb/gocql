@@ -368,12 +368,34 @@ func (s *Session) dial(ctx context.Context, host *HostInfo, connConfig *ConnConf
 }
 
 func translateHostAddresses(addressTranslator AddressTranslator, host *HostInfo, logger StdLogger) (translatedAddresses, error) {
+	// HostInfo.port is an int, but AddressPort.Port is a uint16. The value can
+	// come from outside the driver - a port parsed off a cfg.Hosts entry, or the
+	// native_port column of a peer row - so narrowing it without a check would
+	// wrap a bogus port into a plausible one (65536 becomes 0, 65537 becomes 1)
+	// and we would quietly dial the wrong thing.
+	port := host.Port()
+	if port <= 0 || port > maxPort {
+		return translatedAddresses{}, fmt.Errorf("invalid port %d for host %q: port must be a number between 1 and %d",
+			port, host.UntranslatedConnectAddress(), maxPort)
+	}
+
 	addr, err := translateAddressPort(addressTranslator, host, AddressPort{
 		Address: host.UntranslatedConnectAddress(),
-		Port:    uint16(host.Port()),
+		Port:    uint16(port),
 	}, logger)
 	if err != nil {
 		return translatedAddresses{}, fmt.Errorf("unable to translate regular cql address: %w", err)
+	}
+	// Both dialers check host.Port() for zero and then replace the address with
+	// the translated cql one unconditionally (see scyllaDialer.DialHost), so a
+	// translator that zeroes this port is caught nowhere else and would be dialed
+	// as :0. AddressTranslatorV2 can return it directly, the legacy API by
+	// returning 0 from Translate. The shard-aware addresses below are optional -
+	// scyllaDialer skips them unless they are IsValid - so they may legitimately
+	// come back unset and are not checked here.
+	if addr.Port == 0 {
+		return translatedAddresses{}, fmt.Errorf("address translator returned no port for the cql address of host %q",
+			host.UntranslatedConnectAddress())
 	}
 	resultedInfo := translatedAddresses{
 		CQL: addr,
@@ -445,6 +467,18 @@ func (s *Session) dialShard(ctx context.Context, host *HostInfo, connConfig *Con
 func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *ConnConfig, errorHandler ConnErrorHandler,
 	shardID, nrShards int) (*Conn, error) {
 
+	// Conn.version is the single byte that goes into the header of every frame
+	// on this connection, but ConnConfig.ProtoVersion is an int that can carry
+	// a value from outside the driver: a user-set ClusterConfig.ProtoVersion,
+	// or a version parsed out of a server error message during protocol
+	// discovery (see parseProtocolFromError). Converting an out-of-range value
+	// truncates it silently - 0x100 becomes 0 - and the connection then speaks
+	// a protocol nobody asked for, so reject it before dialing.
+	version := cfg.ProtoVersion
+	if version < protoVersion1 || version > protoVersion5 {
+		return nil, fmt.Errorf("gocql: unsupported protocol version: %d", cfg.ProtoVersion)
+	}
+
 	shardDialer, ok := cfg.HostDialer.(ShardDialer)
 	var (
 		dialedHost *DialedHost
@@ -471,7 +505,7 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 		},
 		cfg:           cfg,
 		calls:         make(map[int]*callReq),
-		version:       uint8(cfg.ProtoVersion),
+		version:       uint8(version),
 		isShardAware:  isShardAware,
 		addr:          dialedHost.Conn.RemoteAddr().String(),
 		errorHandler:  errorHandler,
