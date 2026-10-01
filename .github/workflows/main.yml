@@ -25,11 +25,29 @@ on:
       - .github/workflows/bench-tests.yml
       - .github/workflows/extended-ci-longevity-large-partitions-with-network-nemesis-1h-test.yml
 
+# Supersede in-flight runs for the same pull request. Without this, every push
+# to a PR leaves the previous run's build, seven cluster jobs and coverage to
+# finish, so a five-push PR pays for five pipelines. Pull requests share one
+# stable ref, so a new push cancels the old run; non-PR runs (master push, the
+# release workflow's call) are keyed by SHA instead, so they never replace one
+# another -- the default `queue: single` would otherwise drop an intermediate
+# master build when a third push arrives before the first has finished, and a
+# release build must never be cancelled by a later one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  build-amd64:
-    name: Build (amd64)
+  # Lint is split out from build-amd64 so the cluster jobs no longer queue behind
+  # the full amd64 unit suite, which is several times longer than linting. It is
+  # the arch-independent half of `make check` (golangci-lint, `go mod tidy -diff`,
+  # the lz4 tag pin); `make check` also builds with `-tags all`, which is what
+  # proves the tree compiles before any cluster is brought up. check-lz4-pin now
+  # reads tags from the remote (git ls-remote), so this checkout stays shallow.
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
@@ -37,31 +55,13 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.target_commit || github.sha }}
-          # make check's check-lz4-pin compares go.mod's lz4 require against the
-          # newest lz4/v* tag, so the tags have to be present. fetch-depth: 0 rather
-          # than fetch-tags on top of the default depth-1 fetch: it makes the tag set
-          # unconditional instead of dependent on which tags a shallow fetch chose to
-          # bring along. check-lz4-pin no longer skips when it finds none, so getting
-          # this wrong is now a failure rather than a silent pass.
-          fetch-depth: 0
 
-      # runner.arch qualifies the key, which it did not before. This entry is shared
-      # with the integration jobs, and the ScyllaDB one now runs on both
-      # architectures; runner.os is "Linux" on either, so an unqualified key would
-      # hand one lane the other's amd64 get-version in bin/ and x86_64 relocatables
-      # in ~/.ccm. Only the amd64 entries go cold, once.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
-          path: |
-            /home/runner/.cache/pip
-            /home/runner/.local
-            /home/runner/.ccm/scylla-repository
-            /home/runner/.ccm/repository
-            /home/runner/.sdkman
-            testdata/pki
-            bin/
-          # CCM, scylla, cassandra and java versions are in Makefile
-          key: pr-check-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
+          path: bin/
+          key: golangci-bin-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
+          restore-keys: |
+            golangci-bin-${{ runner.os }}-${{ runner.arch }}-
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
@@ -74,10 +74,40 @@ jobs:
       - name: Run linters
         run: make check
 
+  build-amd64:
+    name: Build (amd64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.target_commit || github.sha }}
+
+      # Only the generated PKI (test-unit's .prepare-pki prerequisite) is worth
+      # restoring here. The CCM repositories, JDK and bin/ the old combined entry
+      # carried belong to the integration jobs; pulling multi-gigabyte archives
+      # this lane never touches only made every cache miss slower. Linting, which
+      # is what used to need bin/, lives in the lint job above.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: testdata/pki
+          key: pki-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
+          restore-keys: |
+            pki-${{ runner.os }}-${{ runner.arch }}-
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            lz4/go.sum
+            tests/bench/go.sum
+            go.sum
+
       - name: Run unit tests
         run: make test-unit
-
-      - run: sudo sh -c "echo 2097152 >> /proc/sys/fs/aio-max-nr"
 
   # The arm64 counterpart, and the reason it exists: pierrec/lz4 ships hand-written
   # per-architecture decode assembly (internal/lz4block/decode_arm64.s), so the code
@@ -93,11 +123,11 @@ jobs:
   # with the unit tests either, since `go test` never compiles the `all`-tagged non-test
   # files (integration_only.go, internal/ccm, internal/debug/debug_on.go).
   #
-  # No actions/cache step, deliberately: the pr-check entry above holds CCM
-  # repositories, a JDK and amd64 binaries in bin/, and this lane uses none of them.
-  # Nothing it does need is expensive to recreate -- setup-go caches modules under its
-  # own arch-scoped key, and test-unit's .prepare-pki prerequisite regenerates the test
-  # certificates in seconds.
+  # No actions/cache step, deliberately: this lane needs none of what the
+  # integration jobs cache (CCM repositories, a JDK, get-version in bin/), and
+  # nothing it does need is expensive to recreate -- setup-go caches the Go
+  # modules under its own arch-scoped key, and test-lz4 needs neither the
+  # generated PKI nor the cluster tooling.
   build-arm64:
     name: Build (arm64)
     runs-on: ubuntu-24.04-arm
@@ -121,16 +151,23 @@ jobs:
       - name: Build
         run: make build
 
-      # test-unit descends into the nested lz4 module (see its recipe in the
-      # Makefile), so the decode assembly above needs no separate step.
-      - name: Run unit tests
-        run: make test-unit
+      # Only the nested lz4 module's tests: its per-architecture decode assembly
+      # is the entire reason this lane exists, and the root module's tests are
+      # architecture-independent. test-unit would repeat the whole root suite
+      # here to no effect; the root's use of the arm64 assembly is covered end to
+      # end by the arm64 integration lane (TEST_COMPRESSOR=lz4).
+      - name: Run lz4 unit tests
+        run: make test-lz4
 
   test-integration-scylla:
     name: Integration Tests On Scylla (${{ matrix.scylla-version }}, ${{ matrix.arch }})
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 120
-    needs: [build-amd64]
+    # Only on lint: the cluster jobs consume no artifact from build-amd64, so
+    # depending on it merely serialized the full amd64 unit suite ahead of every
+    # cluster bring-up. Lint still fails fast on an unbuildable or unlinted tree,
+    # which is what this gate is actually for.
+    needs: [lint]
     permissions:
       contents: read
     strategy:
@@ -169,21 +206,54 @@ jobs:
         with:
           python-version: '3.11'
 
-      # runner.arch qualifies both cache keys in this job because runner.os is
-      # "Linux" on either architecture, so a shared key would hand one lane the
-      # other's amd64 get-version in bin/ and x86_64 ScyllaDB relocatable in
-      # ~/.ccm. ~/.sdkman is listed for the amd64 lane; the arm64 image ships no
-      # JDK, and actions/cache is content to skip a path that is not there.
+      # The environment is cached as four independent entries rather than one
+      # combined key. A single entry keyed on the Makefile meant any edit -- even
+      # an unrelated CCM or Java version bump -- discarded the pip wheels, the CCM
+      # checkout, the JDK and the generated PKI together and re-downloaded all of
+      # it; restore-keys let each entry fall back to the previous revision
+      # instead of starting cold. runner.arch stays in every key because
+      # runner.os is "Linux" on either architecture and bin/ holds an
+      # arch-specific get-version.
+      #
+      # The CCM entry is keyed per distribution: install-cassandra-ccm and
+      # install-scylla-ccm both pip-install a package named `ccm` and record the
+      # active one in ~/.ccm/ccm-type, so a shared entry would hand, say, the
+      # Scylla job a ~/.local holding Cassandra CCM. Caching the stamp files is
+      # new: without them .prepare-scylla-ccm/.prepare-cassandra-ccm reinstalled
+      # CCM from git on every single job. ~/.sdkman is absent on the arm64 image;
+      # actions/cache is content to skip a path that is not there.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: /home/runner/.cache/pip
+          key: pip-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
+          restore-keys: |
+            pip-${{ runner.os }}-${{ runner.arch }}-
+
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
-            /home/runner/.cache/pip
             /home/runner/.local
-            /home/runner/.sdkman
+            /home/runner/.ccm/ccm-type
+            /home/runner/.ccm/ccm-version
+          key: ccm-install-scylla-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
+          restore-keys: |
+            ccm-install-scylla-${{ runner.os }}-${{ runner.arch }}-
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: /home/runner/.sdkman
+          key: sdkman-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
+          restore-keys: |
+            sdkman-${{ runner.os }}-${{ runner.arch }}-
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
             testdata/pki
             bin/
-          # CCM, pip and java versions are in Makefile
-          key: pr-check-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
+          key: tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
+          restore-keys: |
+            tools-${{ runner.os }}-${{ runner.arch }}-
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
@@ -231,7 +301,11 @@ jobs:
     name: Integration Tests On Cassandra (${{ matrix.cassandra-version }}, ${{ matrix.suite }}, ${{ matrix.arch }})
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 120
-    needs: [build-amd64]
+    # Only on lint: the cluster jobs consume no artifact from build-amd64, so
+    # depending on it merely serialized the full amd64 unit suite ahead of every
+    # cluster bring-up. Lint still fails fast on an unbuildable or unlinted tree,
+    # which is what this gate is actually for.
+    needs: [lint]
     # This job had no permissions block at all, having had no arm64 counterpart to
     # force the question, so it ran on the repository default while its neighbour was
     # pinned -- and it is the one job that hands GITHUB_TOKEN to a make target.
@@ -267,16 +341,41 @@ jobs:
         with:
           python-version: '3.11'
 
+      # Same four-way split as the ScyllaDB job above; see the comment there. The
+      # CCM entry is keyed ccm-cassandra- so it never restores a ~/.local built
+      # for Scylla CCM (and vice versa).
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: /home/runner/.cache/pip
+          key: pip-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
+          restore-keys: |
+            pip-${{ runner.os }}-${{ runner.arch }}-
+
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
-            /home/runner/.cache/pip
             /home/runner/.local
-            /home/runner/.sdkman
+            /home/runner/.ccm/ccm-type
+            /home/runner/.ccm/ccm-version
+          key: ccm-install-cassandra-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
+          restore-keys: |
+            ccm-install-cassandra-${{ runner.os }}-${{ runner.arch }}-
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: /home/runner/.sdkman
+          key: sdkman-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
+          restore-keys: |
+            sdkman-${{ runner.os }}-${{ runner.arch }}-
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
             testdata/pki
             bin/
-          # CCM, python and java versions are in Makefile
-          key: pr-check-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
+          key: tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
+          restore-keys: |
+            tools-${{ runner.os }}-${{ runner.arch }}-
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:

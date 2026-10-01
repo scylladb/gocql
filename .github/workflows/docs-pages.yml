@@ -11,9 +11,15 @@ on:
       - "docs/**"
   workflow_dispatch:
 
+# The build job only reads the repo; the release job below overrides this with
+# the Pages/id-token scopes its deployment needs.
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -80,6 +86,7 @@ jobs:
 
     # Specify runner + deployment step
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Deploy to GitHub Pages
         id: deployment

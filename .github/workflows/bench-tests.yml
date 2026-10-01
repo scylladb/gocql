@@ -11,6 +11,9 @@ on:
     # the job, and re-running the old workflow replays the payload that lacked it.
     types: [opened, synchronize, reopened, labeled]
 
+permissions:
+  contents: read
+
 jobs:
   bench-tests:
     # On a push to master the benchmarks always run; that is what the push trigger
@@ -25,6 +28,7 @@ jobs:
       && (github.event.action != 'labeled' || github.event.label.name == 'run-benchmark-tests'))
     name: Run benchmark tests
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
