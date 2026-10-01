@@ -1,6 +1,6 @@
 CREATE KEYSPACE gocqlx_udt WITH replication = {
   'class': 'NetworkTopologyStrategy',
-  'replication_factor': '2'
+  'replication_factor': '1'
 };
 
 CREATE TYPE gocqlx_udt.phone (

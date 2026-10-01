@@ -1,6 +1,6 @@
 CREATE KEYSPACE gocqlx_sec_idx WITH replication = {
   'class': 'NetworkTopologyStrategy',
-  'replication_factor': '2'
+  'replication_factor': '1'
 };
 
 
