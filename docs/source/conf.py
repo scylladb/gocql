@@ -7,12 +7,16 @@ from sphinx_scylladb_theme.utils import multiversion_regex_builder
 # -- Global variables
 
 # Builds documentation for the following tags and branches.
-TAGS = []
-BRANCHES = [
-    "master",
+TAGS = [
+    "v1.19.0",
+    "v1.18.3",
+    "v1.18.2",
+    "v1.18.1",
+    "v1.18.0",
 ]
+BRANCHES = []
 # Sets the latest version.
-LATEST_VERSION = "master"
+LATEST_VERSION = "v1.19.0"
 # Set which versions are not released yet.
 UNSTABLE_VERSIONS = []
 # Set which versions are deprecated
