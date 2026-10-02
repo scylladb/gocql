@@ -2286,6 +2286,24 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 			// <col_spec_0>
 			respFrame.writeString("col0")             // <name>
 			respFrame.writeShort(uint16(TypeBoolean)) // <type>
+		case "listint":
+			// One list<int> bind column, so a []int32 argument takes the pooled fast path.
+			respFrame.writeHeader(0, frm.OpResult, head.Stream)
+			respFrame.writeInt(frm.ResultKindPrepared)
+			respFrame.writeShortBytes(binary.BigEndian.AppendUint64(nil, 5))
+			writeResultMetadataID(5)
+			respFrame.writeInt(0) // <flags>
+			respFrame.writeInt(1) // <columns_count>
+			if srv.protocol >= protoVersion4 {
+				respFrame.writeInt(0) // <pk_count>
+			}
+			respFrame.writeString("ks")
+			respFrame.writeString("tbl")
+			respFrame.writeString("col")
+			respFrame.writeShort(uint16(TypeList))
+			respFrame.writeShort(uint16(TypeInt))
+			respFrame.writeInt(int32(frm.FlagNoMetaData))
+			respFrame.writeInt(0)
 		case "batchmetadata":
 			respFrame.writeHeader(0, frm.OpResult, head.Stream)
 			respFrame.writeInt(frm.ResultKindPrepared)
@@ -2373,6 +2391,12 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 				// <rows_count>
 				respFrame.writeInt(0)
 			}
+		case 5:
+			respFrame.writeHeader(0, frm.OpResult, head.Stream)
+			respFrame.writeInt(frm.ResultKindRows)
+			respFrame.writeInt(int32(frm.FlagNoMetaData))
+			respFrame.writeInt(0)
+			respFrame.writeInt(0)
 		case 2:
 			if flags&frm.FlagSkipMetaData != 0 {
 				respFrame.writeHeader(0, frm.OpResult, head.Stream)
