@@ -1741,3 +1741,21 @@ func TestBodyLiteral(t *testing.T) {
 		})
 	}
 }
+
+// KeyspaceMetadata has no field for Scylla's tablets setting, so keyspaceToCQL
+// cannot render it (scylladb/gocql#1055); flip this once it is modeled.
+func TestKeyspaceToCQLTabletsNotModeled(t *testing.T) {
+	ks := &KeyspaceMetadata{
+		Name:            "ks1",
+		StrategyClass:   "org.apache.cassandra.locator.NetworkTopologyStrategy",
+		StrategyOptions: map[string]any{"datacenter1": "2"},
+		DurableWrites:   true,
+	}
+	var sb strings.Builder
+	if err := ks.keyspaceToCQL(&sb); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(sb.String(), "tablets") {
+		t.Fatal("keyspaceToCQL now renders a tablets clause: update this test, see scylladb/gocql#1055")
+	}
+}
