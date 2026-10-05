@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - master
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - .github/workflows/docs-*
   pull_request:
     # labeled is here because the job below is gated on a label. Without it the gate
     # is unreachable on an open pull request: the condition reads the label list out
