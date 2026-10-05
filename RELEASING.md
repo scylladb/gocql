@@ -6,31 +6,14 @@ See [`ci/release/README.md`](ci/release/README.md) for the release controller's 
 
 ## One-time repository setup
 
-Create GitHub App `gocql-release`, install it only on this repository, and grant repository permissions:
-
-- Metadata: read
-- Contents: read and write
-
 Create GitHub Actions environment `release`. Configure no required reviewer. Limit deployment branches and tags to `master`. Add:
 
-- Variable `RELEASE_APP_ID`: `gocql-release` App ID
-- Secret `RELEASE_APP_PRIVATE_KEY`: App private key
 - Secret `GPG_PRIVATE_KEY`: armored private key matching `ci/release/release-signing-key.asc`
 - Secret `GPG_PASSPHRASE`: promoter-key passphrase
 
+The publish job grants its built-in `GITHUB_TOKEN` `contents: write` and `issues: read`. Keep the repository's Actions settings and tag rules compatible with that token; a tag ruleset that blocks GitHub Actions from creating release tags will stop publication.
+
 Committed trusted fingerprint: `DC4D ED58 7433 F319 EEE1 EB74 5BD1 EAD2 57F2 1B89`. Key rotation must update public-key file and fingerprint in reviewed PR before environment secret changes.
-
-After App and workflow installation, create active tag ruleset targeting `refs/tags/v*` and `refs/tags/lz4/v*`. Restrict creation, update, deletion. Give permanent "Always allow" bypass only to `gocql-release`; no role, team, admin, or other App bypass.
-
-Check ruleset and probe both patterns as normal maintainer:
-
-```sh
-gh api repos/scylladb/gocql/rulesets
-git push origin "$(git rev-parse HEAD):refs/tags/v-invalid-ruleset-probe"
-git push origin "$(git rev-parse HEAD):refs/tags/lz4/v-invalid-ruleset-probe"
-```
-
-Both pushes must fail. Commands create no local tags. If either succeeds, stop and remove probe only through audited break-glass process.
 
 ## Prepare candidate
 
@@ -54,7 +37,7 @@ Open **Actions → Release → Run workflow**, select `master`, enter:
 - `target`: `master` or a full SHA
 - `mode`: `validate`
 
-Validation performs target, both module, README, blocker, recovery-state, and full Build gates (amd64, arm64, ScyllaDB, Cassandra). It never enters `release` environment, receives no App/GPG credentials, creates no tag/Release. Run summary shows requested target, resolved SHA, both tags, release types, Latest behavior, and recovery actions. Confirm resolved SHA appears in every checkout.
+Validation performs target, both module, README, blocker, recovery-state, and full Build gates (amd64, arm64, ScyllaDB, Cassandra). It never enters `release` environment, receives no signing credentials, creates no tag/Release. Run summary shows requested target, resolved SHA, both tags, release types, Latest behavior, and recovery actions. Confirm resolved SHA appears in every checkout.
 
 Mappings:
 
@@ -83,7 +66,7 @@ gh workflow run release.yml --ref master \
   -f mode=publish
 ```
 
-Production job mints short-lived repository-scoped token (metadata-read, contents-write), imports promoter key, checks primary fingerprint, then publishes and verifies LZ4 before root. Both signed annotated tags point to the validated SHA. Each GitHub Release uses generated notes from its module's preceding tag and `--verify-tag`. Stable root releases become Latest. Root prereleases and all LZ4 releases use `latest=false`.
+Production uses its built-in `GITHUB_TOKEN`, imports promoter key, checks primary fingerprint, then publishes and verifies LZ4 before root. Both signed annotated tags point to the validated SHA. Each GitHub Release uses generated notes from its module's preceding tag and `--verify-tag`. Stable root releases become Latest. Root prereleases and all LZ4 releases use `latest=false`.
 
 Verify:
 
