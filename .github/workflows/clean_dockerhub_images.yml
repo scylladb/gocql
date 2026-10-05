@@ -5,6 +5,9 @@ on:
     - cron: '0 12 * * 1'  # Runs every Monday at noon (UTC)
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   cleanup:
     runs-on: ubuntu-latest

@@ -15,6 +15,9 @@ on:
     # the job, and re-running the old workflow replays the payload that lacked it.
     types: [opened, synchronize, reopened, labeled]
 
+permissions:
+  contents: read
+
 jobs:
   bench-tests:
     # On a push to master the benchmarks always run; that is what the push trigger
