@@ -1169,6 +1169,9 @@ func translateAddressPort(addressTranslator AddressTranslator, host *HostInfo, a
 		if debug.Enabled {
 			logger.Printf("gocql: translated address %q to '%v:%d'", addr, newAddr, newPort)
 		}
+		if newPort < 1 || newPort > 65535 {
+			return addr, fmt.Errorf("invalid translated port %d: port must be between 1 and 65535", newPort)
+		}
 		return AddressPort{
 			Address: newAddr,
 			Port:    uint16(newPort),

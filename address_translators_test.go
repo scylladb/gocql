@@ -28,6 +28,7 @@
 package gocql
 
 import (
+	"fmt"
 	"net"
 	"testing"
 
@@ -86,6 +87,32 @@ func TestTranslateHostAddresses_NoScyllaPorts(t *testing.T) {
 	tests.AssertEqual(t, "shard aware empty port", uint16(0), translated.ShardAware.Port)
 	tests.AssertTrue(t, "shard aware tls empty address", len(translated.ShardAwareTLS.Address) == 0)
 	tests.AssertEqual(t, "shard aware tls empty port", uint16(0), translated.ShardAwareTLS.Port)
+}
+
+func TestTranslateHostAddresses_InvalidPort(t *testing.T) {
+	for _, port := range []int{-1, 0, 65536} {
+		t.Run(fmt.Sprint(port), func(t *testing.T) {
+			host := HostInfoBuilder{ConnectAddress: net.ParseIP("10.0.0.1"), Port: port}.Build()
+			if _, err := translateHostAddresses(nil, &host, nil); err == nil {
+				t.Fatalf("expected invalid port %d to be rejected", port)
+			}
+		})
+	}
+}
+
+func TestTranslateAddressPort_InvalidTranslatedPort(t *testing.T) {
+	host := HostInfoBuilder{ConnectAddress: net.ParseIP("10.0.0.1"), Port: 9042}.Build()
+	addr := AddressPort{Address: host.UntranslatedConnectAddress(), Port: 9042}
+	for _, port := range []int{-1, 0, 65536} {
+		t.Run(fmt.Sprint(port), func(t *testing.T) {
+			translator := AddressTranslatorFunc(func(ip net.IP, originalPort int) (net.IP, int) {
+				return ip, port
+			})
+			if _, err := translateAddressPort(translator, &host, addr, nil); err == nil {
+				t.Fatalf("expected translated port %d to be rejected", port)
+			}
+		})
+	}
 }
 
 func TestTranslateHostAddresses_WithScyllaPorts(t *testing.T) {

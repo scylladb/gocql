@@ -29,6 +29,7 @@ package gocql
 
 import (
 	"crypto/tls"
+	"fmt"
 	"net"
 	"reflect"
 	"strings"
@@ -66,6 +67,18 @@ func TestNewCluster_WithHosts(t *testing.T) {
 	tests.AssertEqual(t, "cluster config hosts length", 2, len(cfg.Hosts))
 	tests.AssertEqual(t, "cluster config host 0", "addr1", cfg.Hosts[0])
 	tests.AssertEqual(t, "cluster config host 1", "addr2", cfg.Hosts[1])
+}
+
+func TestValidate_ProtoVersionRange(t *testing.T) {
+	for _, version := range []int{-1, 128, 256} {
+		t.Run(fmt.Sprint(version), func(t *testing.T) {
+			cfg := NewCluster("127.0.0.1")
+			cfg.ProtoVersion = version
+			if err := cfg.Validate(); err == nil {
+				t.Fatalf("expected protocol version %d to be rejected", version)
+			}
+		})
+	}
 }
 
 func TestValidateAndInitSSLDoesNotShareTLSConfigBetweenConfigCopies(t *testing.T) {
