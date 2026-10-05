@@ -4,6 +4,9 @@ on:
   pull_request_target:
     types: [labeled]
 
+permissions:
+  contents: read
+
 jobs:
   trigger-longevity-large-partitions-with-network-nemesis-1h-test:
     if: contains(github.event.pull_request.labels.*.name, 'extended-ci')
