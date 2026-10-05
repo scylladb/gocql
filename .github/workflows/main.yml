@@ -11,7 +11,7 @@ on:
     branches:
       - master
     paths-ignore:
-      - "*.md"
+      - "**.md"
       - "docs/**"
       - .github/workflows/docs-*
       - .github/workflows/bench-tests.yml
@@ -19,7 +19,7 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
     paths-ignore:
-      - "*.md"
+      - "**.md"
       - "docs/**"
       - .github/workflows/docs-*
       - .github/workflows/bench-tests.yml
