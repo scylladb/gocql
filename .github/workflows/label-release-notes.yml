@@ -12,8 +12,7 @@ on:
 
 permissions:
   contents: read
-  issues: write
-  pull-requests: read
+  pull-requests: write
 
 jobs:
   label:
@@ -31,9 +30,11 @@ jobs:
             exit 1
           fi
           changed_files=$(jq -r .changed_files "$RUNNER_TEMP/pr.json")
+          echo "PR #$PR_NUMBER has $changed_files changed files"
           gh api --paginate --slurp \
             "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files?per_page=100" \
             > "$RUNNER_TEMP/pr-files.json"
+          echo "Fetched changed file list for PR #$PR_NUMBER"
 
           # Check every changed path; mixed driver/support PRs stay in the notes.
           # Match the API's file count so truncated results cannot hide driver code.
@@ -49,6 +50,7 @@ jobs:
           ' "$RUNNER_TEMP/pr-files.json")
 
           if [[ "$eligible" == true ]]; then
+            echo "Adding omit-from-release-notes to PR #$PR_NUMBER"
             gh api --method POST \
               "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/labels" \
               -f 'labels[]=omit-from-release-notes' --silent
