@@ -52,6 +52,8 @@ Dispatch again from `master` with the same version and set `mode: publish`. To r
 
 Actions run names include mode, shared version, and requested target, making validation and publication runs distinguishable in history.
 
+The publish command uses GitHub's generated notes, which read `.github/release.yml` and omit PRs labeled `omit-from-release-notes`. The merge workflow adds that label when every changed file is documentation, tests, CI, or workflow configuration. Mixed PRs remain in the notes. To recheck an older merged PR, manually run **Label support-only release changes** with its PR number.
+
 Equivalent CLI dispatches reduce form-entry mistakes:
 
 ```sh
