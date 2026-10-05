@@ -12,11 +12,11 @@ that module path for compatibility. Add the replacement, then require the
 package:
 
 ```console
-go mod edit -replace=github.com/gocql/gocql=github.com/scylladb/gocql@v1.19.0
+go mod edit -replace=github.com/gocql/gocql=github.com/scylladb/gocql@v1.20.0
 go get github.com/gocql/gocql
 ```
 
-Replace `v1.19.0` with the intended released `v1` tag or a pseudo-version. The
+Replace `v1.20.0` with the intended released `v1` tag or a pseudo-version. The
 module path has no `/v2` suffix, so `v2` tags cannot be used here. See
 [available releases](https://github.com/scylladb/gocql/releases). Run
 `go mod tidy` after adding the Go source below.

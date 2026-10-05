@@ -58,7 +58,7 @@ Add the following line to your project `go.mod` file.
 replace github.com/gocql/gocql => github.com/scylladb/gocql <version>
 ```
 
-Replace `<version>` with a concrete released tag (for example `v1.19.0`) or a
+Replace `<version>` with a concrete released tag (for example `v1.20.0`) or a
 pseudo-version; `latest` is not a valid version in a `replace` directive. Note
 that the module path is `github.com/gocql/gocql` (no `/v2` suffix), so `v2.x`
 tags are not valid replacement versions here — use a `v1` tag or a
@@ -318,7 +318,7 @@ LZ4 support lives in a sub-module with its own `go.mod`, published as
 it needs no `replace` directive of its own, only the one from the Installation section:
 
 ```mod
-replace github.com/gocql/gocql => github.com/scylladb/gocql v1.19.0
+replace github.com/gocql/gocql => github.com/scylladb/gocql v1.20.0
 ```
 
 Then run `go mod tidy`.
