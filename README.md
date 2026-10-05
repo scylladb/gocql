@@ -350,7 +350,9 @@ gocql's `_test.go` files imports it, so no lz4 code is linked into your binary u
 your own `require github.com/scylladb/gocql/lz4 vX.Y.Z`; version selection takes the higher of
 the two.
 
-The two modules are versioned independently. The repository tag for the nested module is
+The two modules are released with the same version from one workflow run. The root module's
+`go.mod` can still pin an older published LZ4 version until its post-release bump. The
+repository tag for the nested module is
 prefixed with its directory (`lz4/v1.19.0`), while the version in a `go.mod` directive is
 `v1.19.0`.
 

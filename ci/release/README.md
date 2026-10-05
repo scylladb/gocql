@@ -1,6 +1,6 @@
 # Release controller
 
-The release controller implements the validation and publication policy used by the manually dispatched [Release workflow](../../.github/workflows/release.yml). It publishes the root `github.com/gocql/gocql` module and the independently versioned `github.com/scylladb/gocql/lz4` module.
+The release controller implements the validation and publication policy used by the manually dispatched [Release workflow](../../.github/workflows/release.yml). One dispatch publishes the root `github.com/gocql/gocql` module and the nested `github.com/scylladb/gocql/lz4` module with the same version from the same commit.
 
 This program is internal release tooling. It is not included in the gocql library or installed as a service. The workflow builds one binary from its revision on `master`, stores it as a short-lived workflow artifact, and uses that same binary for every release-control job. The candidate commit therefore supplies the code being released, but not the policy used to approve or publish it.
 
@@ -19,45 +19,45 @@ workflow inputs
                                 |
                      validate --+--> summary only
                                 |
-                      publish --+--> publish --> signed tag + GitHub Release
+                     publish --+--> publish LZ4 --> publish root
 ```
 
 The controller exposes three commands. The workflow supplies their environment and runs them in this order:
 
 1. `preflight`
    - Requires dispatch from `master` and mode `validate` or `publish`.
-   - Parses the selected module and canonical v1 SemVer.
+   - Parses canonical v1 SemVer and constructs both module candidates.
    - Fails if an open issue has the `release-blocker` label.
    - Fetches `origin/master`, resolves `master` or an exact 40-character commit SHA, requires that commit to be reachable from `master`, and checks it out detached.
-   - Validates the module path, root README version when releasing the root module, `go mod tidy -diff`, and `go mod verify`.
+   - Validates both module paths, root README version, `go mod tidy -diff`, and `go mod verify` for both modules.
    - Loads the committed public signing key and verifies its committed fingerprint.
-   - Inspects existing tag and GitHub Release state and chooses a recovery action.
-   - Emits the immutable commit SHA and release metadata for later jobs.
+   - Inspects both tags and GitHub Releases and chooses recovery actions.
+   - Emits the immutable commit SHA and both tags for later jobs.
 
 2. `gate`
    - Runs after the full Build matrix at the resolved SHA.
    - Requires the resolved target to remain a full commit SHA.
-   - Rechecks release blockers, the trusted public key, and remote tag/Release state.
+   - Rechecks release blockers, the trusted public key, and both remote tag/Release states.
    - Performs no mutation.
 
 3. `publish`
    - Runs only for `publish` mode, inside the protected `release` environment.
    - Checks release blockers again immediately before mutation.
-   - Rechecks remote state and succeeds without mutation if the release is already complete.
+   - Publishes LZ4 first, then root. Each step rechecks blockers and remote state and succeeds without mutation if that release is already complete.
    - When no tag exists, imports the private key, creates a signed annotated tag at the exact resolved SHA, verifies it locally against the committed fingerprint, and pushes it.
    - Creates the GitHub Release with generated notes starting at the highest preceding version tag reachable from the target.
-   - Polls and verifies the final tag, Release metadata, signature, target, and Latest state.
+   - Polls and verifies each final tag, Release metadata, signature, target, and Latest state before moving to the next module.
 
 `validate` mode runs `preflight`, the full Build matrix, and `gate`. It never runs `publish`, enters the `release` environment, or receives publication credentials.
 
 ## Candidate mapping
 
-| Input module | Required module path | Directory | Tag | Release title |
+| Module | Required module path | Directory | Tag | Release title |
 | --- | --- | --- | --- | --- |
 | `root` | `github.com/gocql/gocql` | repository root | `v<version>` | `v<version>` |
 | `lz4` | `github.com/scylladb/gocql/lz4` | `lz4` | `lz4/v<version>` | `lz4 v<version>` |
 
-Versions must be bare canonical v1 SemVer, such as `1.20.0` or `1.20.0-rc.1`. A leading `v`, build metadata, missing components, leading zeroes, and major versions other than 1 are rejected.
+One input supplies both versions. It must be bare canonical v1 SemVer, such as `1.20.0` or `1.20.0-rc.1`. A leading `v`, build metadata, missing components, leading zeroes, and major versions other than 1 are rejected.
 
 Stable root releases are created as Latest. Root prereleases and all LZ4 releases are created with `latest=false`.
 
@@ -77,7 +77,7 @@ An existing tag is valid only when it is annotated, GitHub reports a verified si
 
 For retrying an older stable root release, it may no longer be Latest if a higher stable root release has superseded it. A newly created stable root release must become Latest before publication succeeds.
 
-This state machine makes identical retries safe:
+This state machine applies to each module and makes identical retries safe, including a run that finished LZ4 but failed before root publication:
 
 - Failure before tag push: retry creates tag and Release.
 - Failure after tag push: retry verifies the tag and creates only the Release.

@@ -83,9 +83,10 @@ carries the guard even though the `duration` type has been served over v4 since 
 
 #### Releasing the lz4 Module
 
-The `lz4` sub-module is versioned independently of the parent and tagged with its directory
-prefix (`lz4/vX.Y.Z`). Its version is written down in four places, and `check-lz4-pin` verifies
-three of them:
+The `lz4` sub-module is released with the parent from one workflow dispatch, using the same
+version and commit. Go still requires a separate tag with its directory prefix (`lz4/vX.Y.Z`).
+The root module's currently pinned LZ4 version is written down in four places, and
+`check-lz4-pin` verifies three of them:
 
 - `go.mod` -- `require github.com/scylladb/gocql/lz4 vX.Y.Z`. It is inert locally, because the
   `replace` directive beside it redirects to `./lz4`, but consumers see the require and not
@@ -93,7 +94,7 @@ three of them:
 - `README.md` section 5.4 -- the `github.com/scylladb/gocql/lz4 vX.Y.Z` the prose quotes, and
   the `lz4/vX.Y.Z` tag reference below it. The third occurrence, the bare version at the end of
   the section, is deliberately left unchecked: it is indistinguishable from the parent module's
-  own version, which sits a few lines above it and moves independently.
+  own version, which sits a few lines above it and can differ from the current LZ4 pin.
 
 That neighbouring version is a release obligation of its own, and it belongs to the **parent**
 module rather than to this one: section 5.4 opens by telling consumers to pin
@@ -106,16 +107,16 @@ have.
 One gap remains: the Build workflow's `paths-ignore` skips `*.md`, so a pull request that
 edits **only** README.md never triggers it and `check-lz4-pin` never runs on the change it
 guards. Closing it would mean running the full integration matrix on documentation-only pull
-requests, which costs more than the gap does; the release flow above touches `go.mod` and
-README.md in the same commit, so Build does run for it.
+requests, which costs more than the gap does; release preparation updates the root replacement
+version in README.md and must be reviewed even if that is the only changed file.
 
-Tag first, then bump -- the order matters. A pin that lags its newest tag is only a warning,
-because a `require` is a lower bound: it still resolves, and the README's `replace` is what
-selects the version a consumer builds against. The window between pushing `lz4/vX.Y.Z` and
-landing the bump is therefore green. The reverse order is not: a pin naming a version that was
-never tagged resolves for nobody, and `check-lz4-pin` fails hard on it. That is also why the
-check tests whether the tag exists rather than whether the pin sorts newest -- an untagged
-version can sit between two tags and still compare as older than the newest one.
+Publish both tags first, then bump the pin -- the order matters. A pin that lags its newest tag
+is only a warning, because a `require` is a lower bound: it still resolves, and the README's
+`replace` selects the version a consumer builds against. The window between publishing
+`lz4/vX.Y.Z` and landing the bump is therefore green. The reverse order is not: a pin naming a
+version that was never tagged resolves for nobody, and `check-lz4-pin` fails hard on it. That is
+also why the check tests whether the tag exists rather than whether the pin sorts newest -- an
+untagged version can sit between two tags and still compare as older than the newest one.
 
 Renovate is deliberately disabled for `github.com/scylladb/gocql/lz4` (see `renovate.json`)
 because the version has to follow the release tag rather than a bot.

@@ -1,17 +1,11 @@
 name: Release
-run-name: ${{ inputs.mode }} ${{ inputs.module }} v${{ inputs.version }} @ ${{ inputs.target }}
+run-name: ${{ inputs.mode }} v${{ inputs.version }} @ ${{ inputs.target }}
 
 on:
   workflow_dispatch:
     inputs:
-      module:
-        description: Go module to release
-        required: true
-        type: choice
-        default: root
-        options: [root, lz4]
       version:
-        description: Bare canonical v1 SemVer (for example, 1.20.0 or 1.20.0-rc.1)
+        description: Bare canonical v1 SemVer for both modules (for example, 1.20.0 or 1.20.0-rc.1)
         required: true
         type: string
       target:
@@ -40,12 +34,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     outputs:
-      directory: ${{ steps.validate.outputs.directory }}
-      module_path: ${{ steps.validate.outputs.module_path }}
-      release_action: ${{ steps.validate.outputs.release_action }}
-      release_title: ${{ steps.validate.outputs.release_title }}
       resolved_sha: ${{ steps.validate.outputs.resolved_sha }}
-      tag: ${{ steps.validate.outputs.tag }}
+      root_tag: ${{ steps.validate.outputs.root_tag }}
+      lz4_tag: ${{ steps.validate.outputs.lz4_tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -71,7 +62,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_DISPATCH_REF: ${{ github.ref }}
           RELEASE_MODE: ${{ inputs.mode }}
-          RELEASE_MODULE: ${{ inputs.module }}
           RELEASE_TARGET: ${{ inputs.target }}
           RELEASE_VERSION: ${{ inputs.version }}
         run: $RUNNER_TEMP/release-helper preflight
@@ -107,7 +97,6 @@ jobs:
         id: gate
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_MODULE: ${{ inputs.module }}
           RELEASE_TARGET_COMMIT: ${{ needs.preflight.outputs.resolved_sha }}
           RELEASE_VERSION: ${{ inputs.version }}
         run: |
@@ -117,15 +106,16 @@ jobs:
         if: inputs.mode == 'validate'
         env:
           RELEASE_ACTION: ${{ steps.gate.outputs.release_action }}
-          RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
+          ROOT_TAG: ${{ needs.preflight.outputs.root_tag }}
+          LZ4_TAG: ${{ needs.preflight.outputs.lz4_tag }}
           TARGET_COMMIT: ${{ needs.preflight.outputs.resolved_sha }}
         run: |
           {
             echo "## Release validation passed"
             echo
-            echo "- Tag: \`$RELEASE_TAG\`"
+            echo "- Tags: \`$LZ4_TAG\`, \`$ROOT_TAG\`"
             echo "- Target: \`$TARGET_COMMIT\`"
-            echo "- Recovery action: \`$RELEASE_ACTION\`"
+            echo "- Recovery actions: \`$RELEASE_ACTION\`"
             echo "- No credentials were loaded and no remote state was created."
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -166,7 +156,6 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
-          RELEASE_MODULE: ${{ inputs.module }}
           RELEASE_QUERY_TOKEN: ${{ github.token }}
           RELEASE_TARGET_COMMIT: ${{ needs.preflight.outputs.resolved_sha }}
           RELEASE_VERSION: ${{ inputs.version }}

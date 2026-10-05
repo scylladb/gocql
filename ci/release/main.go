@@ -10,7 +10,7 @@ import (
 )
 
 type environment struct {
-	module, version, target, mode           string
+	version, target, mode                   string
 	dispatchRef, repository, apiURL         string
 	apiToken, blockerToken, output, summary string
 }
@@ -26,7 +26,7 @@ func run(ctx context.Context, args []string, runner commandRunner) error {
 		return fmt.Errorf("usage: go run ./ci/release <preflight|gate|publish>")
 	}
 	env := environment{
-		module: os.Getenv("RELEASE_MODULE"), version: os.Getenv("RELEASE_VERSION"), target: os.Getenv("RELEASE_TARGET_COMMIT"),
+		version: os.Getenv("RELEASE_VERSION"), target: os.Getenv("RELEASE_TARGET_COMMIT"),
 		mode:        os.Getenv("RELEASE_MODE"),
 		dispatchRef: os.Getenv("RELEASE_DISPATCH_REF"), repository: os.Getenv("GITHUB_REPOSITORY"), apiURL: os.Getenv("GITHUB_API_URL"),
 		apiToken: os.Getenv("GH_TOKEN"), blockerToken: os.Getenv("RELEASE_QUERY_TOKEN"), output: os.Getenv("GITHUB_OUTPUT"), summary: os.Getenv("GITHUB_STEP_SUMMARY"),
@@ -34,29 +34,41 @@ func run(ctx context.Context, args []string, runner commandRunner) error {
 	if env.target == "" {
 		env.target = os.Getenv("RELEASE_TARGET")
 	}
-	c, err := newCandidate(env.module, env.version)
+	candidates, err := releaseCandidates(env.version)
 	if err != nil {
 		return err
 	}
 	switch args[0] {
 	case "preflight":
-		return preflight(ctx, runner, env, c)
+		return preflight(ctx, runner, env, candidates)
 	case "gate":
 		if err := validateSHA(env.target); err != nil {
 			return err
 		}
-		return gate(ctx, runner, env, c)
+		return gate(ctx, runner, env, candidates)
 	case "publish":
 		if err := validateSHA(env.target); err != nil {
 			return err
 		}
-		return publish(ctx, runner, env, c)
+		return publish(ctx, runner, env, candidates)
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
 }
 
-func preflight(ctx context.Context, runner commandRunner, env environment, c candidate) error {
+func releaseCandidates(version string) ([]candidate, error) {
+	result := make([]candidate, 0, 2)
+	for _, module := range []string{"lz4", "root"} {
+		c, err := newCandidate(module, version)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, c)
+	}
+	return result, nil
+}
+
+func preflight(ctx context.Context, runner commandRunner, env environment, candidates []candidate) error {
 	if env.dispatchRef != "refs/heads/master" {
 		return fmt.Errorf("release workflow must be dispatched from master, got %q", env.dispatchRef)
 	}
@@ -75,39 +87,40 @@ func preflight(ctx context.Context, runner commandRunner, env environment, c can
 	if err != nil {
 		return err
 	}
-	if err := validateModuleFile(c); err != nil {
-		return err
-	}
-	if err := validateRootREADME(c); err != nil {
-		return err
-	}
-	goArgs := []string{}
-	if c.directory != "." {
-		goArgs = append(goArgs, "-C", c.directory)
-	}
-	if _, err := runner.run(ctx, command{name: "go", args: append(append([]string{}, goArgs...), "mod", "tidy", "-diff")}); err != nil {
-		return fmt.Errorf("module metadata is not tidy: %w", err)
-	}
-	if _, err := runner.run(ctx, command{name: "go", args: append(append([]string{}, goArgs...), "mod", "verify")}); err != nil {
-		return fmt.Errorf("module verification failed: %w", err)
+	for _, c := range candidates {
+		if err := validateModuleFile(c); err != nil {
+			return err
+		}
+		if err := validateRootREADME(c); err != nil {
+			return err
+		}
+		goArgs := []string{}
+		if c.directory != "." {
+			goArgs = append(goArgs, "-C", c.directory)
+		}
+		if _, err := runner.run(ctx, command{name: "go", args: append(append([]string{}, goArgs...), "mod", "tidy", "-diff")}); err != nil {
+			return fmt.Errorf("%s module metadata is not tidy: %w", c.module, err)
+		}
+		if _, err := runner.run(ctx, command{name: "go", args: append(append([]string{}, goArgs...), "mod", "verify")}); err != nil {
+			return fmt.Errorf("%s module verification failed: %w", c.module, err)
+		}
 	}
 	key, err := loadTrustedKey(ctx, runner)
 	if err != nil {
 		return err
 	}
 	defer key.close()
-	action, err := inspectReleaseState(ctx, api, gitTagVerifier{repo: repo, key: key}, c, resolved)
-	if err != nil {
-		return err
+	for _, c := range candidates {
+		action, err := inspectReleaseState(ctx, api, gitTagVerifier{repo: repo, key: key}, c, resolved)
+		if err != nil {
+			return err
+		}
+		if err := appendCandidateSummary(env.summary, env, c, resolved, action); err != nil {
+			return err
+		}
+		fmt.Printf("preflight passed for %s at %s (%s)\n", c.tag, resolved, action)
 	}
-	if err := appendOutputs(env.output, map[string]string{"directory": c.directory, "module_path": c.modulePath, "release_action": string(action), "release_title": c.title, "resolved_sha": resolved, "tag": c.tag}); err != nil {
-		return err
-	}
-	if err := appendCandidateSummary(env.summary, env, c, resolved, action); err != nil {
-		return err
-	}
-	fmt.Printf("preflight passed for %s at %s (%s)\n", c.tag, resolved, action)
-	return nil
+	return appendOutputs(env.output, map[string]string{"resolved_sha": resolved, "lz4_tag": candidates[0].tag, "root_tag": candidates[1].tag})
 }
 
 func validateReleaseMode(mode string) error {
@@ -147,7 +160,7 @@ func appendCandidateSummary(path string, env environment, c candidate, resolved 
 	return err
 }
 
-func gate(ctx context.Context, runner commandRunner, env environment, c candidate) error {
+func gate(ctx context.Context, runner commandRunner, env environment, candidates []candidate) error {
 	api, err := newGitHubAPI(env.apiURL, env.repository, env.apiToken)
 	if err != nil {
 		return err
@@ -160,18 +173,31 @@ func gate(ctx context.Context, runner commandRunner, env environment, c candidat
 		return err
 	}
 	defer key.close()
-	action, err := inspectReleaseState(ctx, api, gitTagVerifier{repo: gitRepository{runner: runner}, key: key}, c, strings.ToLower(env.target))
-	if err != nil {
+	var actions []string
+	for _, c := range candidates {
+		action, err := inspectReleaseState(ctx, api, gitTagVerifier{repo: gitRepository{runner: runner}, key: key}, c, strings.ToLower(env.target))
+		if err != nil {
+			return err
+		}
+		actions = append(actions, c.tag+": "+string(action))
+		fmt.Printf("publication gate passed for %s (%s)\n", c.tag, action)
+	}
+	if err := appendOutputs(env.output, map[string]string{"release_action": strings.Join(actions, "; ")}); err != nil {
 		return err
 	}
-	if err := appendOutputs(env.output, map[string]string{"release_action": string(action)}); err != nil {
-		return err
-	}
-	fmt.Printf("publication gate passed for %s (%s)\n", c.tag, action)
 	return nil
 }
 
-func publish(ctx context.Context, runner commandRunner, env environment, c candidate) error {
+func publish(ctx context.Context, runner commandRunner, env environment, candidates []candidate) error {
+	for _, c := range candidates {
+		if err := publishCandidate(ctx, runner, env, c); err != nil {
+			return fmt.Errorf("publish %s: %w", c.tag, err)
+		}
+	}
+	return nil
+}
+
+func publishCandidate(ctx context.Context, runner commandRunner, env environment, c candidate) error {
 	if env.blockerToken == "" {
 		return fmt.Errorf("RELEASE_QUERY_TOKEN is required for final blocker check")
 	}

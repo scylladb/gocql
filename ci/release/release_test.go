@@ -48,6 +48,25 @@ func TestModuleMappings(t *testing.T) {
 	}
 }
 
+func TestReleaseCandidates(t *testing.T) {
+	t.Parallel()
+	candidates, err := releaseCandidates("1.20.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 2 || candidates[0].tag != "lz4/v1.20.0" || candidates[1].tag != "v1.20.0" {
+		t.Fatalf("release order = %#v, want lz4 then root", candidates)
+	}
+	for _, c := range candidates {
+		if c.version != "1.20.0" {
+			t.Fatalf("%s has version %q", c.module, c.version)
+		}
+	}
+	if _, err := releaseCandidates("v1.20.0"); err == nil {
+		t.Fatal("invalid shared version accepted")
+	}
+}
+
 func TestCompareVersions(t *testing.T) {
 	ordered := []string{"1.0.0-alpha", "1.0.0-alpha.1", "1.0.0-alpha.beta", "1.0.0-beta", "1.0.0-beta.2", "1.0.0-beta.11", "1.0.0-rc.1", "1.0.0", "1.1.0"}
 	for i := 1; i < len(ordered); i++ {
