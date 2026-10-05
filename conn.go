@@ -368,9 +368,13 @@ func (s *Session) dial(ctx context.Context, host *HostInfo, connConfig *ConnConf
 }
 
 func translateHostAddresses(addressTranslator AddressTranslator, host *HostInfo, logger StdLogger) (translatedAddresses, error) {
+	port := host.Port()
+	if port < 1 || port > 65535 {
+		return translatedAddresses{}, fmt.Errorf("invalid CQL port %d for host %s: port must be between 1 and 65535", port, host.UntranslatedConnectAddress())
+	}
 	addr, err := translateAddressPort(addressTranslator, host, AddressPort{
 		Address: host.UntranslatedConnectAddress(),
-		Port:    uint16(host.Port()),
+		Port:    uint16(port),
 	}, logger)
 	if err != nil {
 		return translatedAddresses{}, fmt.Errorf("unable to translate regular cql address: %w", err)
@@ -444,6 +448,9 @@ func (s *Session) dialShard(ctx context.Context, host *HostInfo, connConfig *Con
 // If nrShards is zero, shard-aware dialing is disabled.
 func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *ConnConfig, errorHandler ConnErrorHandler,
 	shardID, nrShards int) (*Conn, error) {
+	if cfg.ProtoVersion < 0 || cfg.ProtoVersion > 127 {
+		return nil, fmt.Errorf("invalid protocol version %d: must be between 0 and 127", cfg.ProtoVersion)
+	}
 
 	shardDialer, ok := cfg.HostDialer.(ShardDialer)
 	var (

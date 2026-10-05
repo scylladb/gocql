@@ -718,8 +718,8 @@ func (cfg *ClusterConfig) Validate() error {
 		return errors.New("MaxWaitSchemaAgreement should be positive time.Duration or zero")
 	}
 
-	if cfg.ProtoVersion < 0 {
-		return errors.New("ProtoVersion should be positive number or zero")
+	if cfg.ProtoVersion < 0 || cfg.ProtoVersion > 127 {
+		return errors.New("ProtoVersion should be between 0 and 127")
 	}
 
 	if cfg.ProtoVersion >= protoVersion5 && cfg.Compressor != nil {
