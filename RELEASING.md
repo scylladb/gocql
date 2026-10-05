@@ -96,6 +96,12 @@ git tag --verify v1.20.0
 
 Repeat for `lz4/v1.20.0`. Object type must be `tag`; resolved commit must match requested SHA; signature must identify committed fingerprint.
 
+After the root tag exists, add it to `TAGS` in `docs/source/conf.py` and set
+`LATEST_VERSION` to it so the docs version selector and `/stable` point at the
+new release. Run `make -C docs test` and `make -C docs multiversion` before
+publishing the docs update. Do this after publication: the multiversion build
+cannot include a tag that does not exist yet.
+
 ## Retries and partial publication
 
 Rerun identical inputs after transient failure. Each module independently resumes from its verified state; LZ4 completes before root starts:

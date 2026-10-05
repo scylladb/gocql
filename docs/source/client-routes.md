@@ -157,9 +157,9 @@ and
 [native_shard_aware_transport_port_ssl_proxy_protocol](https://docs.scylladb.com/manual/stable/reference/configuration-parameters.html#confprop-native-shard-aware-transport-port-ssl-proxy-protocol)
 in the ScyllaDB configuration parameters reference.
 
-The default and `WithShardAwareness` option were added after `v1.19.0`. Use
-a later release or a pseudo-version containing commit `e36b80d0`. With
-`v1.19.0`, client routes leave advanced shard awareness enabled by default;
+The default and `WithShardAwareness` option are available in `v1.20.0` and
+later, or in a pseudo-version containing commit `e36b80d0`. With `v1.19.0`,
+client routes leave advanced shard awareness enabled by default;
 set `ClusterConfig.DisableShardAwarePort = true` when the endpoint does not
 preserve source ports.
 

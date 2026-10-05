@@ -19,8 +19,10 @@ When native protocol v5 is explicitly enabled, use LZ4 or no compression.
 Snappy does not support v5 transport segments. Protocol v5 is not selected by
 automatic protocol discovery and must currently be configured explicitly.
 
-The LZ4 module is versioned independently. Repository tags have an `lz4/`
-prefix, while `go.mod` uses the unprefixed version:
+The LZ4 module is tagged alongside the parent module. The parent module can
+still require an older published LZ4 version until its post-release pin update.
+Repository tags have an `lz4/` prefix, while `go.mod` uses the unprefixed
+version. For the version currently pinned by the parent module:
 
 ```text
 require github.com/scylladb/gocql/lz4 v1.19.0
