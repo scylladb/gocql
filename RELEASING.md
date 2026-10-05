@@ -37,7 +37,7 @@ Both pushes must fail. Commands create no local tags. If either succeeds, stop a
 1. Complete content-readiness checklist [#1068](https://github.com/scylladb/gocql/issues/1068). Workflow does not replace it.
 2. Resolve every open `release-blocker`. Workflow checks before CI and immediately before publication. API/parsing errors stop release.
 3. Merge release changes to `master`.
-4. Root release: update concrete root replacement in README.md to candidate `v1.x.y`; workflow requires match.
+4. Update concrete root replacement in README.md to candidate `v1.x.y`; workflow requires match. The same version is released for root and LZ4.
 5. Choose target `master` or a full 40-character SHA reachable from `master`. `master` is fetched and resolved once during preflight; every later job uses that immutable SHA. Other branches, abbreviated SHAs, and non-ancestors are rejected.
 
 Release-control code and trusted public-key material come from the workflow revision on `master`, not from the candidate commit. The controller is built once and passed to later jobs as a short-lived workflow artifact. This permits releasing an older reachable commit without trusting or requiring release scripts in that commit.
@@ -50,12 +50,11 @@ Published Go versions and source commits are immutable. Proxies/checksum databas
 
 Open **Actions → Release → Run workflow**, select `master`, enter:
 
-- `module`: `root` or `lz4`
-- `version`: bare candidate
+- `version`: bare candidate for both modules
 - `target`: `master` or a full SHA
 - `mode`: `validate`
 
-Validation performs target, module, README, both blocker, recovery-state, and full Build gates (amd64, arm64, ScyllaDB, Cassandra). It never enters `release` environment, receives no App/GPG credentials, creates no tag/Release. Run summary shows requested target, resolved SHA, computed tag, release type, Latest behavior, and recovery action. Confirm resolved SHA appears in every checkout.
+Validation performs target, both module, README, blocker, recovery-state, and full Build gates (amd64, arm64, ScyllaDB, Cassandra). It never enters `release` environment, receives no App/GPG credentials, creates no tag/Release. Run summary shows requested target, resolved SHA, both tags, release types, Latest behavior, and recovery actions. Confirm resolved SHA appears in every checkout.
 
 Mappings:
 
@@ -66,25 +65,25 @@ Gate test: temporary open `release-blocker` issue must stop validation. Remove l
 
 ## Publish
 
-Dispatch again from `master` with same module/version and set `mode: publish`. To reproduce a validated candidate after `master` moves, copy resolved SHA from validation summary into `target`; do not enter `master`. Serialized workflow reruns every check and full Build matrix before entering `release` environment.
+Dispatch again from `master` with the same version and set `mode: publish`. To reproduce a validated candidate after `master` moves, copy resolved SHA from validation summary into `target`; do not enter `master`. Serialized workflow reruns every check and full Build matrix before entering `release` environment.
 
-Actions run names include mode, module, version, and requested target, making validation and publication runs distinguishable in history.
+Actions run names include mode, shared version, and requested target, making validation and publication runs distinguishable in history.
 
 Equivalent CLI dispatches reduce form-entry mistakes:
 
 ```sh
 gh workflow run release.yml --ref master \
-  -f module=root -f version=1.20.0 -f target=master \
+  -f version=1.20.0 -f target=master \
   -f mode=validate
 
 # Copy resolved SHA from validation summary.
 TARGET_SHA=0123456789abcdef0123456789abcdef01234567
 gh workflow run release.yml --ref master \
-  -f module=root -f version=1.20.0 -f target="$TARGET_SHA" \
+  -f version=1.20.0 -f target="$TARGET_SHA" \
   -f mode=publish
 ```
 
-Production job mints short-lived repository-scoped token (metadata-read, contents-write), imports promoter key, checks primary fingerprint, creates signed annotated tag explicitly at validated SHA, then creates Release with generated notes from selected module's preceding tag and `--verify-tag`. Stable root releases become Latest. Root prereleases and all LZ4 releases use `latest=false`.
+Production job mints short-lived repository-scoped token (metadata-read, contents-write), imports promoter key, checks primary fingerprint, then publishes and verifies LZ4 before root. Both signed annotated tags point to the validated SHA. Each GitHub Release uses generated notes from its module's preceding tag and `--verify-tag`. Stable root releases become Latest. Root prereleases and all LZ4 releases use `latest=false`.
 
 Verify:
 
@@ -95,11 +94,11 @@ git rev-list -n 1 v1.20.0
 git tag --verify v1.20.0
 ```
 
-For LZ4 use `lz4/v1.20.0`. Object type must be `tag`; resolved commit must match requested SHA; signature must identify committed fingerprint.
+Repeat for `lz4/v1.20.0`. Object type must be `tag`; resolved commit must match requested SHA; signature must identify committed fingerprint.
 
 ## Retries and partial publication
 
-Rerun identical inputs after transient failure:
+Rerun identical inputs after transient failure. Each module independently resumes from its verified state; LZ4 completes before root starts:
 
 - No tag/Release: create signed tag, push, create Release.
 - Correct signed tag at exact SHA, no Release: create Release only.
@@ -109,9 +108,9 @@ Workflow fails closed for Release without tag, wrong target, lightweight/untrust
 
 Release-control jobs time out after 20 minutes, build jobs after 45 minutes, and integration jobs after 120 minutes. A stuck run therefore cannot hold the globally serialized release queue indefinitely.
 
-## LZ4 follow-up
+## LZ4 pin follow-up
 
-LZ4 versioning independent. Tag must exist before parent pin changes: tag first, then pin. After successful LZ4 release, open PR updating root `go.mod` requirement and every LZ4 README version. Run `make fix-go-mod-drift` and `make check`. Never merge pin first; consumers cannot resolve untagged version.
+The root release keeps its existing, resolvable LZ4 requirement. Its local `replace` makes the Build matrix test the LZ4 source being released, but consumers still resolve the version pinned in the root `go.mod`. Check compatibility with that pinned version before publication. After both releases succeed, open a PR updating root `go.mod` and every LZ4 README version, then run `make fix-go-mod-drift` and `make check`. The new tag must exist before the pin changes; consumers cannot resolve an untagged version. The next root release will carry the updated pin.
 
 ## Break glass
 
