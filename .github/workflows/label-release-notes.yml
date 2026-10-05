@@ -24,14 +24,35 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ inputs.pr_number || github.event.pull_request.number }}
         run: |
-          gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" > "$RUNNER_TEMP/pr.json"
+          api_with_retry() {
+            local attempt delay output
+            output=$(mktemp "$RUNNER_TEMP/gh-api.XXXXXX")
+            for ((attempt = 1; attempt <= 10; attempt++)); do
+              if gh api "$@" > "$output"; then
+                cat "$output"
+                rm -f "$output"
+                return 0
+              fi
+              if ((attempt == 10)); then
+                rm -f "$output"
+                echo "GitHub API request failed after 10 attempts" >&2
+                return 1
+              fi
+              delay=$((1 << (attempt - 1)))
+              if ((delay > 16)); then delay=16; fi
+              echo "GitHub API request failed (attempt $attempt/10); retrying in ${delay}s" >&2
+              sleep "$delay"
+            done
+          }
+
+          api_with_retry "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" > "$RUNNER_TEMP/pr.json"
           if [[ $(jq -r .merged_at "$RUNNER_TEMP/pr.json") == null ]]; then
             echo "PR #$PR_NUMBER has not been merged" >&2
             exit 1
           fi
           changed_files=$(jq -r .changed_files "$RUNNER_TEMP/pr.json")
           echo "PR #$PR_NUMBER has $changed_files changed files"
-          gh api --paginate --slurp \
+          api_with_retry --paginate --slurp \
             "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files?per_page=100" \
             > "$RUNNER_TEMP/pr-files.json"
           echo "Fetched changed file list for PR #$PR_NUMBER"
@@ -51,7 +72,7 @@ jobs:
 
           if [[ "$eligible" == true ]]; then
             echo "Adding omit-from-release-notes to PR #$PR_NUMBER"
-            gh api --method POST \
+            api_with_retry --method POST \
               "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/labels" \
               -f 'labels[]=omit-from-release-notes' --silent
             echo "Excluded PR #$PR_NUMBER from generated release notes"
