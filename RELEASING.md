@@ -10,8 +10,9 @@ Create GitHub Actions environment `release`. Configure no required reviewer. Lim
 
 - Secret `GPG_PRIVATE_KEY`: armored private key matching `ci/release/release-signing-key.asc`
 - Secret `GPG_PASSPHRASE`: promoter-key passphrase
+- Secret `RELEASE_PUBLISH_TOKEN`: fine-grained personal access token with `Contents: write` and `Workflows: write` access to this repository. The token must belong to an identity allowed to create release tags.
 
-The publish job grants its built-in `GITHUB_TOKEN` `contents: write` and `issues: read`. Keep the repository's Actions settings and tag rules compatible with that token; a tag ruleset that blocks GitHub Actions from creating release tags will stop publication.
+The publish job uses `RELEASE_PUBLISH_TOKEN` to push signed tags and create GitHub Releases. `Workflows: write` is required when a release tag introduces commits that change `.github/workflows/`. Its built-in `GITHUB_TOKEN` has `contents: read` and `issues: read` for checkout and the blocker check. Keep repository tag rules compatible with the publish token; a ruleset that blocks it from creating release tags will stop publication.
 
 Committed trusted fingerprint: `DC4D ED58 7433 F319 EEE1 EB74 5BD1 EAD2 57F2 1B89`. Key rotation must update public-key file and fingerprint in reviewed PR before environment secret changes.
 

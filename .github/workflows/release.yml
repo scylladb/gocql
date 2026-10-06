@@ -127,7 +127,7 @@ jobs:
     timeout-minutes: 20
     environment: release
     permissions:
-      contents: write
+      contents: read
       issues: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -142,11 +142,16 @@ jobs:
           path: ${{ runner.temp }}
       - name: Configure Git authentication
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh auth setup-git
+          GH_TOKEN: ${{ secrets.RELEASE_PUBLISH_TOKEN }}
+        run: |
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "RELEASE_PUBLISH_TOKEN is empty" >&2
+            exit 1
+          fi
+          gh auth setup-git
       - name: Publish or complete release
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_PUBLISH_TOKEN }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           RELEASE_QUERY_TOKEN: ${{ github.token }}
