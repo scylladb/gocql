@@ -88,9 +88,9 @@ This state machine applies to each module and makes identical retries safe, incl
 
 - `release-signing-key.asc` and `release-signing-key.fingerprint` are embedded into the controller binary and form its signing trust anchor.
 - Read-only workflow tokens query blockers, tags, and Releases during validation.
-- The private signing key, its passphrase, and `RELEASE_PUBLISH_TOKEN` are available only to the `publish` job. The built-in `GITHUB_TOKEN` has `contents: read` and `issues: read`.
+- The private signing key and its passphrase are available only to the `publish` job. That job's built-in `GITHUB_TOKEN` has `contents: write` and `issues: read`.
 - The private key must match the committed fingerprint. Tag creation uses the identity from the trusted key and a temporary isolated GnuPG home.
-- `RELEASE_PUBLISH_TOKEN` pushes the tag and creates the Release. It needs `Contents: write` and `Workflows: write` access because release tags can introduce workflow files. Repository tag rules must permit those operations.
+- The publish job's `GITHUB_TOKEN` pushes the tag and creates the Release. Repository tag rules must permit those operations.
 
 Any Git, GitHub API, parsing, signature, or state-verification error fails closed.
 
