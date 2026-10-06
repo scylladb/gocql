@@ -160,24 +160,3 @@ jobs:
         run: |
           chmod +x "$RUNNER_TEMP/release-helper"
           "$RUNNER_TEMP/release-helper" publish
-
-  test-unsigned-tag-push:
-    name: Test lightweight tag push permissions
-    if: github.ref == 'refs/heads/ci/release-workflow-push-token' && inputs.mode == 'validate'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-          ref: c99804c7cddf6dbc56921cab37144e857d564e39
-      - name: Push temporary lightweight tag
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh auth setup-git
-          tag="ci/unsigned-tag-permission-$GITHUB_RUN_ID"
-          git -c tag.gpgsign=false tag "$tag" c99804c7cddf6dbc56921cab37144e857d564e39
-          git push origin "refs/tags/$tag:refs/tags/$tag"
