@@ -9,11 +9,11 @@ See [`ci/release/README.md`](ci/release/README.md) for the release controller's 
 Create GitHub Actions environment `release`. Configure no required reviewer. Limit deployment branches and tags to `master`. Add:
 
 - Secret `GPG_PRIVATE_KEY`: armored private key matching `ci/release/release-signing-key.asc`
-- Secret `GPG_PASSPHRASE`: promoter-key passphrase
+- Secret `GPG_PASSPHRASE`: signing-key passphrase, if the private key is protected. Leave empty for the unprotected publisher key.
 
 The publish job grants its built-in `GITHUB_TOKEN` `contents: write` and `issues: read`. Keep the repository's Actions settings and tag rules compatible with that token; a tag ruleset that blocks GitHub Actions from creating release tags will stop publication.
 
-Committed trusted fingerprint: `DC4D ED58 7433 F319 EEE1 EB74 5BD1 EAD2 57F2 1B89`. Key rotation must update public-key file and fingerprint in reviewed PR before environment secret changes.
+Committed trusted fingerprint: `71A6 D227 11CD B7C2 446D 21CF BF4B F97A 8D4D F1AA`. Key rotation must update public-key file and fingerprint in reviewed PR before environment secret changes.
 
 ## Prepare candidate
 

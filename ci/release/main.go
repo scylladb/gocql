@@ -232,9 +232,6 @@ func publishCandidate(ctx context.Context, runner commandRunner, env environment
 			return err
 		}
 		passphrase := os.Getenv("GPG_PASSPHRASE")
-		if passphrase == "" {
-			return fmt.Errorf("GPG_PASSPHRASE is empty")
-		}
 		secretDir, err := os.MkdirTemp("", "gocql-release-sign-")
 		if err != nil {
 			return err
