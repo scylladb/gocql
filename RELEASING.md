@@ -21,7 +21,8 @@ Committed trusted fingerprint: `DC4D ED58 7433 F319 EEE1 EB74 5BD1 EAD2 57F2 1B8
 2. Resolve every open `release-blocker`. Workflow checks before CI and immediately before publication. API/parsing errors stop release.
 3. Merge release changes to `master`.
 4. Update concrete root replacement in README.md to candidate `v1.x.y`; workflow requires match. The same version is released for root and LZ4.
-5. Choose target `master` or a full 40-character SHA reachable from `master`. `master` is fetched and resolved once during preflight; every later job uses that immutable SHA. Other branches, abbreviated SHAs, and non-ancestors are rejected.
+5. If the tip commit changes `.github/workflows/`, merge a release-preparation commit that changes only non-workflow files before tagging. GitHub rejected the `v1.20.0` tag push when its target was a workflow-changing commit, even with `contents: write`; Java Driver's release tags point to a release commit without workflow changes.
+6. Choose target `master` or a full 40-character SHA reachable from `master`. `master` is fetched and resolved once during preflight; every later job uses that immutable SHA. Other branches, abbreviated SHAs, and non-ancestors are rejected.
 
 Release-control code and trusted public-key material come from the workflow revision on `master`, not from the candidate commit. The controller is built once and passed to later jobs as a short-lived workflow artifact. This permits releasing an older reachable commit without trusting or requiring release scripts in that commit.
 
