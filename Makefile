@@ -437,6 +437,9 @@ test-integration-cassandra-coverage: .prepare-coverage-dir
 # it doesn't recognize, so a ./... alongside those custom flags silently
 # collapses to just ".", which is why reusing test-integration-scylla for
 # this never actually ran internal/ccm's tests.
+ccm-test:
+	@go test -tags "ccm gocql_debug" -timeout=5m -v ./internal/ccm/...
+
 ccm-test-coverage: .prepare-coverage-dir
 	@go test -tags "ccm gocql_debug" -timeout=5m -v -cover -covermode=atomic -coverpkg=./... ./internal/ccm/... -args -test.gocoverdir="${COVERAGE_DIR}"
 
@@ -524,8 +527,7 @@ check-go-mod-drift:
 	go mod tidy -C lz4 -diff
 	go mod tidy -C tests/bench -diff
 
-# The one architecture-dependent part of check, split out so the arm64 lane can run
-# it without the linters, which are not. It is not redundant with test-unit either:
+# The architecture-dependent part of check. It is not redundant with test-unit:
 # `go test` compiles no non-test file the `all` tag guards -- integration_only.go,
 # internal/ccm, internal/debug/debug_on.go.
 build:

@@ -1,0 +1,301 @@
+name: Integration tests
+
+on:
+  workflow_call:
+    inputs:
+      scylla_versions:
+        description: Comma-separated ScyllaDB version names; empty skips ScyllaDB
+        required: false
+        default: ''
+        type: string
+      cassandra_versions:
+        description: Comma-separated Cassandra version names; empty skips Cassandra
+        required: false
+        default: ''
+        type: string
+      arch:
+        description: Comma-separated architectures (amd64,arm64)
+        required: true
+        type: string
+      target_commit:
+        description: Commit to test
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  matrix:
+    name: Select integration matrix
+    runs-on: ubuntu-latest
+    outputs:
+      scylla: ${{ steps.select.outputs.scylla }}
+      cassandra: ${{ steps.select.outputs.cassandra }}
+      has_scylla: ${{ steps.select.outputs.has_scylla }}
+      has_cassandra: ${{ steps.select.outputs.has_cassandra }}
+    steps:
+      - name: Expand version lists
+        id: select
+        env:
+          SCYLLA_VERSIONS: ${{ inputs.scylla_versions }}
+          CASSANDRA_VERSIONS: ${{ inputs.cassandra_versions }}
+          ARCH: ${{ inputs.arch }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+
+          def versions(value):
+              return list(dict.fromkeys(v.strip() for v in value.split(",") if v.strip()))
+
+          arches = versions(os.environ["ARCH"])
+          if not arches or any(arch not in ("amd64", "arm64") for arch in arches):
+              raise SystemExit("arch must contain amd64 and/or arm64")
+          scylla_versions = versions(os.environ["SCYLLA_VERSIONS"])
+          cassandra_versions = versions(os.environ["CASSANDRA_VERSIONS"])
+          scylla = [{"version": version, "arch": arch}
+                    for version in scylla_versions for arch in arches]
+          cassandra = [{"version": version, "suite": "default", "arch": arch}
+                       for version in cassandra_versions for arch in arches]
+          # Cassandra 5 gets one additional native-protocol-v5 lane per arch.
+          cassandra += [{"version": version, "suite": "protocol-v5", "arch": arch}
+                        for version in cassandra_versions for arch in arches
+                        if version.startswith(("5-", "5."))]
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              for name, value in (("scylla", scylla), ("cassandra", cassandra)):
+                  print(f"{name}={json.dumps(value, separators=(',', ':'))}", file=output)
+                  print(f"has_{name}={str(bool(value)).lower()}", file=output)
+          PY
+
+  test-integration-scylla:
+    name: Integration Tests On Scylla (${{ matrix.version }}, ${{ matrix.arch }})
+    if: needs.matrix.outputs.has_scylla == 'true'
+    needs: [matrix]
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        include: ${{ fromJSON(needs.matrix.outputs.scylla) }}
+      fail-fast: false
+    env:
+      SCYLLA_VERSION: ${{ matrix.version }}
+      # The arm64 entries exist for pierrec/lz4's hand-written
+      # internal/lz4block/decode_arm64.s, so run it against that code rather than
+      # against the snappy default: LZ4Compressor.Decode and AppendDecompressed are
+      # the entry points into that assembly, and nothing else here reaches it end to
+      # end. Possible only now that the root harness can build the nested lz4 module
+      # -- createCluster's `case "lz4"` is what this selects. snappy keeps its
+      # coverage on the amd64 lanes.
+      #
+      # Both arms of the expression are non-empty strings on purpose: TEST_COMPRESSOR
+      # is a `?=` default in the Makefile, so an empty value would still count as set
+      # and would silently select no-compression on those lanes.
+      TEST_COMPRESSOR: ${{ matrix.arch == 'arm64' && 'lz4' || 'snappy' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.target_commit }}
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.11'
+
+      # runner.arch qualifies both cache keys in this job because runner.os is
+      # "Linux" on either architecture, so a shared key would hand one lane the
+      # other's amd64 get-version in bin/ and x86_64 ScyllaDB relocatable in
+      # ~/.ccm. ~/.sdkman is listed for the amd64 lane; the arm64 image ships no
+      # JDK, and actions/cache is content to skip a path that is not there.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            /home/runner/.cache/pip
+            /home/runner/.local
+            /home/runner/.sdkman
+            testdata/pki
+            bin/
+          # CCM, pip and java versions are in Makefile
+          key: pr-check-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            lz4/go.sum
+            tests/bench/go.sum
+            go.sum
+
+      - name: Get scylla version
+        id: scylla-version
+        run: make resolve-scylla-version
+
+      - name: Require a resolved ScyllaDB version
+        if: steps.scylla-version.outputs.value == 'NOT-FOUND'
+        run: exit 1
+
+      - name: Pull CCM image from the cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        if: steps.scylla-version.outputs.value != 'NOT-FOUND'
+        id: ccm-cache
+        with:
+          path: ~/.ccm/repository
+          key: ccm-scylla-${{ runner.os }}-${{ runner.arch }}-${{ steps.scylla-version.outputs.value }}
+
+      - name: Download ScyllaDB (${{ steps.scylla-version.outputs.value }}) image
+        if: steps.ccm-cache.outputs.cache-hit != 'true' && steps.scylla-version.outputs.value != 'NOT-FOUND'
+        run: make download-scylla
+
+      - name: Save CCM ScyllaDB image into the cache
+        if: steps.ccm-cache.outputs.cache-hit != 'true' && steps.scylla-version.outputs.value != 'NOT-FOUND'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.ccm/repository
+          key: ccm-scylla-${{ runner.os }}-${{ runner.arch }}-${{ steps.scylla-version.outputs.value }}
+
+      - name: Run integration suite with ScyllaDB ${{ matrix.version }}(${{ steps.scylla-version.outputs.value }})
+        if: steps.scylla-version.outputs.value != 'NOT-FOUND'
+        run: make test-integration-scylla
+
+      - name: Run CCM integration suite with ScyllaDB ${{ matrix.version }}(${{ steps.scylla-version.outputs.value }})
+        if: steps.scylla-version.outputs.value != 'NOT-FOUND'
+        run: make ccm-test
+
+  test-integration-cassandra:
+    name: Integration Tests On Cassandra (${{ matrix.version }}, ${{ matrix.suite }}, ${{ matrix.arch }})
+    if: needs.matrix.outputs.has_cassandra == 'true'
+    needs: [matrix]
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    timeout-minutes: 120
+    # This job had no permissions block at all, having had no arm64 counterpart to
+    # force the question, so it ran on the repository default while its neighbour was
+    # pinned -- and it is the one job that hands GITHUB_TOKEN to a make target.
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        include: ${{ fromJSON(needs.matrix.outputs.cassandra) }}
+      fail-fast: false
+    env:
+      CASSANDRA_VERSION: ${{ matrix.version }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.target_commit }}
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.11'
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            /home/runner/.cache/pip
+            /home/runner/.local
+            /home/runner/.sdkman
+            testdata/pki
+            bin/
+          # CCM, python and java versions are in Makefile
+          key: pr-check-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            lz4/go.sum
+            tests/bench/go.sum
+            go.sum
+
+      - name: Get cassandra version
+        id: cassandra-version
+        run: make resolve-cassandra-version
+
+      - name: Require a resolved Cassandra version
+        if: steps.cassandra-version.outputs.value == 'NOT-FOUND'
+        run: exit 1
+
+      - name: Pull CCM image from the cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        if: steps.cassandra-version.outputs.value != 'NOT-FOUND'
+        id: ccm-cache
+        with:
+          path: ~/.ccm/repository
+          key: ccm-cassandra-${{ runner.os }}-${{ runner.arch }}-${{ steps.cassandra-version.outputs.value }}
+
+      - name: Download Cassandra (${{ steps.cassandra-version.outputs.value }}) image
+        if: steps.ccm-cache.outputs.cache-hit != 'true' && steps.cassandra-version.outputs.value != 'NOT-FOUND'
+        run: make download-cassandra
+
+      - name: Save CCM Cassandra image into the cache
+        if: steps.ccm-cache.outputs.cache-hit != 'true' && steps.cassandra-version.outputs.value != 'NOT-FOUND'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.ccm/repository
+          key: ccm-cassandra-${{ runner.os }}-${{ runner.arch }}-${{ steps.cassandra-version.outputs.value }}
+
+      - name: Run integration suite with Cassandra ${{ matrix.version }}(${{ steps.cassandra-version.outputs.value }})
+        if: matrix.suite == 'default' && steps.cassandra-version.outputs.value != 'NOT-FOUND'
+        run: make test-integration-cassandra
+
+      - name: Run CCM integration suite with Cassandra ${{ matrix.version }}(${{ steps.cassandra-version.outputs.value }})
+        if: matrix.suite == 'default' && steps.cassandra-version.outputs.value != 'NOT-FOUND'
+        run: make ccm-test
+
+      # Native protocol v5 is never negotiated automatically (discoverProtocol caps at
+      # v4), so at the default TEST_CQL_PROTOCOL=4 every ProtoVersion >= 5 test skips and
+      # the whole suite runs over v4 framing. This lane runs it over v5 instead, which is
+      # the only place segmentation, compressed segments, now_in_seconds, keyspace
+      # override and METADATA_CHANGED reach a live server.
+      #
+      # Cassandra only, and only 5-LATEST: ScyllaDB's protocol extensions are defined on
+      # top of v4 — SCYLLA_USE_METADATA_ID exists precisely to backport a v5 feature onto
+      # v4 — so there is no v5 to negotiate on the Scylla legs.
+      #
+      # lz4 is the only legal *compressor* on v5; no-compression stays a valid setting,
+      # and the step below uses it. Snappy is removed in v5: a v5 server still advertises
+      # it in its OPTIONS response, but STARTUP with COMPRESSION=snappy is rejected
+      # server-side, and ClusterConfig.Validate refuses any compressor that is not a
+      # SegmentCompressor once ProtoVersion >= 5, which would fail every session in the
+      # suite. This lane compresses rather than running uncompressed so the
+      # compressed-segment path is covered; the step below covers the other half.
+      #
+      # This is the `protocol-v5` matrix entry, so it boots its own Cassandra cluster
+      # in parallel with the v4 `default` job instead of running as that job's tail.
+      #
+      # TEST_INTEGRATION_TIMEOUT is raised for headroom, not because v5 is slower: in
+      # back-to-back local runs v4 and v5 came out at 464s and 467s. The suite is simply
+      # close to the 10m default whenever the machine is loaded (280s-470s observed), and
+      # overrunning go test's -timeout panics with a goroutine dump instead of reporting
+      # the failing test. The default is left alone so only this new lane pays for it.
+      - name: Run proto-5 suite with Cassandra ${{ matrix.version }}(${{ steps.cassandra-version.outputs.value }})
+        if: matrix.suite == 'protocol-v5' && steps.cassandra-version.outputs.value != 'NOT-FOUND'
+        run: |
+          TEST_CQL_PROTOCOL=5 \
+          TEST_COMPRESSOR=lz4 \
+          TEST_INTEGRATION_TIMEOUT=20m \
+          make test-integration-cassandra
+
+      # The lane above compresses every segment it sends, so on its own it leaves the
+      # uncompressed v5 framing with no integration coverage at all: segment.ReadHeader
+      # and the writer take a different header layout and CRC for compressed and
+      # uncompressed segments, and only the compressed half would be exercised.
+      #
+      # Scoped with -run rather than a second full suite: the two tests below are the
+      # ones whose subject is the framing itself -- TestLargeSizeQuery is the
+      # multi-segment split, TestPrepareExecuteMetadataChangedFlag is the v5 half of the
+      # result-metadata-id exchange -- so this costs seconds, where repeating the suite
+      # would cost another eight minutes. Do not fold it into the lane above as a
+      # duplicate; the compressor is the entire point of the difference.
+      - name: Run proto-5 uncompressed framing tests with Cassandra ${{ matrix.version }}(${{ steps.cassandra-version.outputs.value }})
+        if: matrix.suite == 'protocol-v5' && steps.cassandra-version.outputs.value != 'NOT-FOUND'
+        run: |
+          TEST_CQL_PROTOCOL=5 \
+          TEST_COMPRESSOR=no-compression \
+          TEST_OPTS="-run=TestLargeSizeQuery|TestPrepareExecuteMetadataChangedFlag" \
+          make test-integration-cassandra

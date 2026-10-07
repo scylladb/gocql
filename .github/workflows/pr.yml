@@ -1,0 +1,41 @@
+name: PR CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    # The required gate must report for every PR, including documentation changes.
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build
+    uses: ./.github/workflows/build.yml
+    with:
+      target_commit: ${{ github.sha }}
+      arch: amd64
+
+  integration:
+    name: Integration tests
+    needs: [build]
+    uses: ./.github/workflows/integration.yml
+    with:
+      target_commit: ${{ github.sha }}
+      scylla_versions: LATEST
+      cassandra_versions: ''
+      arch: amd64
+
+  gate:
+    name: Integration gate
+    if: always()
+    needs: [build, integration]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require build and integration jobs to pass
+        env:
+          BUILD_RESULT: ${{ needs.build.result }}
+          INTEGRATION_RESULT: ${{ needs.integration.result }}
+        run: |
+          test "$BUILD_RESULT" = success
+          test "$INTEGRATION_RESULT" = success

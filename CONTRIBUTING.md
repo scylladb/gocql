@@ -104,11 +104,13 @@ is ambiguous -- so bump it by hand at each **parent** release. Left behind, it h
 pin older than the section introducing it, which then describes a `go.mod` that release does not
 have.
 
-One gap remains: the Build workflow's `paths-ignore` skips `*.md`, so a pull request that
-edits **only** README.md never triggers it and `check-lz4-pin` never runs on the change it
-guards. Closing it would mean running the full integration matrix on documentation-only pull
-requests, which costs more than the gap does; release preparation updates the root replacement
-version in README.md and must be reviewed even if that is the only changed file.
+The PR CI workflow runs on every pull request, including documentation-only changes, so its
+required check is always reported. This also runs `check-lz4-pin` when a pull request edits
+only README.md. Pull requests run the current ScyllaDB integration suite on amd64. The merge
+queue runs build and unit tests on amd64 and arm64, then the full ScyllaDB and Cassandra
+integration matrix on amd64. Releases run the full integration matrix on both architectures.
+These callers pass comma-separated architecture and database-version lists to the reusable
+workflows; an empty ScyllaDB or Cassandra version list skips that database's integration job.
 
 Publish both tags first, then bump the pin -- the order matters. A pin that lags its newest tag
 is only a warning, because a `require` is a lower bound: it still resolves, and the README's

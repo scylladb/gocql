@@ -38,7 +38,7 @@ Open **Actions → Release → Run workflow**, select `master`, enter:
 - `target`: `master` or a full SHA
 - `mode`: `validate`
 
-Validation performs target, both module, README, blocker, recovery-state, and full Build gates (amd64, arm64, ScyllaDB, Cassandra). It never enters `release` environment, receives no signing credentials, creates no tag/Release. Run summary shows requested target, resolved SHA, both tags, release types, Latest behavior, and recovery actions. Confirm resolved SHA appears in every checkout.
+Validation performs target, both module, README, blocker, recovery-state, and full Build gates (all configured ScyllaDB and Cassandra integration combinations on both amd64 and arm64). It never enters `release` environment, receives no signing credentials, creates no tag/Release. Run summary shows requested target, resolved SHA, both tags, release types, Latest behavior, and recovery actions. Confirm resolved SHA appears in every checkout.
 
 Mappings:
 
