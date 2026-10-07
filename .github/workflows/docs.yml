@@ -1,0 +1,125 @@
+# Copyright (C) 2026 ScyllaDB
+name: Docs / Build and publish
+
+on:
+  workflow_call:
+    inputs:
+      target:
+        description: all, master, a root release tag, or a commit SHA for validation.
+        required: true
+        type: string
+      publish:
+        description: Deploy the complete Pages site after a successful build.
+        required: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Validate target and select checkout
+        id: target
+        env:
+          TARGET: ${{ inputs.target }}
+          PUBLISH: ${{ inputs.publish }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          case "$TARGET" in
+            all|master) checkout_ref="$DEFAULT_BRANCH" ;;
+            v1.*)
+              if [ "$PUBLISH" = true ]; then
+                checkout_ref="$DEFAULT_BRANCH"
+              else
+                checkout_ref="$TARGET"
+              fi
+              ;;
+            *)
+              if [ "$PUBLISH" = true ] || ! [[ "$TARGET" =~ ^[0-9a-f]{40}$ ]]; then
+                echo "Unsupported docs target: $TARGET" >&2
+                exit 1
+              fi
+              checkout_ref="$TARGET"
+              ;;
+          esac
+          echo "checkout_ref=$checkout_ref" >> "$GITHUB_OUTPUT"
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ steps.target.outputs.checkout_ref }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            /home/runner/.cache/pip
+            /home/runner/.cache/uv
+          key: docs-cache-${{ runner.os }}-${{ hashFiles('docs/pyproject.toml', 'docs/Makefile') }}
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - run: make -C docs setupenv
+
+      - name: Test release selection
+        run: python3 -m unittest discover -s docs -p 'test_*.py'
+
+      - name: Check one source tree
+        if: ${{ !inputs.publish && inputs.target != 'all' }}
+        run: make -C docs test
+
+      - name: Select published driver versions
+        if: ${{ inputs.publish || inputs.target == 'all' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET: ${{ inputs.target }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$RUNNER_TEMP/docs-releases.json"
+          case "$TARGET" in
+            v1.*) python3 docs/released_versions.py "$RUNNER_TEMP/docs-releases.json" "$TARGET" >> "$GITHUB_ENV" ;;
+            *) python3 docs/released_versions.py "$RUNNER_TEMP/docs-releases.json" >> "$GITHUB_ENV" ;;
+          esac
+
+      - name: Build complete site
+        if: ${{ inputs.publish || inputs.target == 'all' }}
+        env:
+          DOCS_INCLUDE_MASTER: 'true'
+        run: |
+          make -C docs multiversion
+          make -C docs redirects
+
+      - name: Package Pages site
+        if: ${{ inputs.publish }}
+        run: |
+          tar --dereference --hard-dereference \
+            --directory docs/_build/dirhtml/ \
+            -cf "$RUNNER_TEMP/artifact.tar" .
+
+      - name: Upload Pages artifact
+        if: ${{ inputs.publish }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: github-pages
+          path: ${{ runner.temp }}/artifact.tar
+          retention-days: 1
+
+  deploy:
+    if: ${{ inputs.publish }}
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5
