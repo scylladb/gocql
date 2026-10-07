@@ -12,14 +12,14 @@ For maintainer instructions and repository setup, see [RELEASING.md](../../RELEA
 workflow inputs
       |
       v
-  preflight -----> full Build matrix at resolved commit
+  preflight -----> full Build, driver matrix, and candidate docs build
       |                         |
       |                         v
       +---------------------> gate
                                 |
                      validate --+--> summary only
                                 |
-                     publish --+--> publish LZ4 --> publish root
+                     publish --+--> publish LZ4 --> publish root --> deploy docs
 ```
 
 The controller exposes three commands. The workflow supplies their environment and runs them in this order:
@@ -35,7 +35,7 @@ The controller exposes three commands. The workflow supplies their environment a
    - Emits the immutable commit SHA and both tags for later jobs.
 
 2. `gate`
-   - Runs after the full Build matrix at the resolved SHA.
+   - Runs after the full Build and driver matrices and the candidate docs build at the resolved SHA.
    - Requires the resolved target to remain a full commit SHA.
    - Rechecks release blockers, the trusted public key, and both remote tag/Release states.
    - Performs no mutation.
@@ -48,7 +48,7 @@ The controller exposes three commands. The workflow supplies their environment a
    - Creates the GitHub Release with generated notes starting at the highest preceding version tag reachable from the target.
    - Polls and verifies each final tag, Release metadata, signature, target, and Latest state before moving to the next module.
 
-`validate` mode runs `preflight`, the full Build matrix, and `gate`. It never runs `publish`, enters the `release` environment, or receives publication credentials.
+`validate` mode runs `preflight`, the full Build and driver matrices, the candidate docs build, and `gate`. It never runs `publish`, enters the `release` environment, or receives publication credentials. The Pages workflow runs after `publish` succeeds and builds its version menu from published root releases.
 
 ## Candidate mapping
 

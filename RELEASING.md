@@ -38,7 +38,7 @@ Open **Actions → Release → Run workflow**, select `master`, enter:
 - `target`: `master` or a full SHA
 - `mode`: `validate`
 
-Validation performs target, both module, README, blocker, recovery-state, and full Build gates (all configured ScyllaDB and Cassandra integration combinations on both amd64 and arm64). It also runs the [GoCQL driver matrix](https://github.com/scylladb/gocql-driver-matrix) against upstream gocql on Scylla `LATEST` and the candidate commit on Scylla `LATEST`, `PRIOR`, `LTS-LATEST`, and `LTS-PRIOR`. The candidate version selects the matrix's patches and ignore rules; add version-specific files there when the previous version's files do not apply. Validation never enters `release` environment, receives no signing credentials, or creates a tag/Release. Run summary shows requested target, resolved SHA, both tags, release types, Latest behavior, and recovery actions. Confirm resolved SHA appears in every checkout.
+Validation performs target, both module, README, blocker, recovery-state, full Build, and candidate documentation build gates (all configured ScyllaDB and Cassandra integration combinations run on both amd64 and arm64). It also runs the [GoCQL driver matrix](https://github.com/scylladb/gocql-driver-matrix) against upstream gocql on Scylla `LATEST` and the candidate commit on Scylla `LATEST`, `PRIOR`, `LTS-LATEST`, and `LTS-PRIOR`. The candidate version selects the matrix's patches and ignore rules; add version-specific files there when the previous version's files do not apply. Validation never enters `release` environment, receives no signing credentials, or creates a tag/Release. Run summary shows requested target, resolved SHA, both tags, release types, Latest behavior, and recovery actions. Confirm resolved SHA appears in every checkout.
 
 Mappings:
 
@@ -49,7 +49,7 @@ Gate test: temporary open `release-blocker` issue must stop validation. Remove l
 
 ## Publish
 
-Dispatch again from `master` with the same version and set `mode: publish`. To reproduce a validated candidate after `master` moves, copy resolved SHA from validation summary into `target`; do not enter `master`. Serialized workflow reruns every check, the full Build matrix, and the GoCQL driver matrix before entering `release` environment.
+Dispatch again from `master` with the same version and set `mode: publish`. To reproduce a validated candidate after `master` moves, copy resolved SHA from validation summary into `target`; do not enter `master`. Serialized workflow reruns every check, the full Build matrix, the candidate docs build, and the GoCQL driver matrix before entering `release` environment.
 
 Actions run names include mode, shared version, and requested target, making validation and publication runs distinguishable in history.
 
@@ -82,11 +82,13 @@ git tag --verify v1.20.0
 
 Repeat for `lz4/v1.20.0`. Object type must be `tag`; resolved commit must match requested SHA; signature must identify committed fingerprint.
 
-After the root tag exists, add it to `TAGS` in `docs/source/conf.py` and set
-`LATEST_VERSION` to it so the docs version selector and `/stable` point at the
-new release. Run `make -C docs test` and `make -C docs multiversion` before
-publishing the docs update. Do this after publication: the multiversion build
-cannot include a tag that does not exist yet.
+After both GitHub Releases are published and verified, the workflow builds and
+deploys the versioned docs to GitHub Pages. The Pages build selects published
+root releases for the version menu and points `/stable` at the highest stable
+version. The pre-publication docs gate builds the candidate source; the Pages
+build runs only after the release tag and GitHub Release exist. A failed Pages
+deployment can be retried by rerunning the same release inputs without moving
+or recreating either tag.
 
 ## Retries and partial publication
 
@@ -98,7 +100,7 @@ Rerun identical inputs after transient failure. Each module independently resume
 
 Workflow fails closed for Release without tag, wrong target, lightweight/untrusted/unverified tag, conflicting title/prerelease metadata, a new release with wrong Latest behavior, or Git/GitHub/parsing failure. A historical stable root release remains valid after a newer stable release supersedes it as Latest. Never repair by moving/deleting tag. Investigate; if public state may exist, issue new version.
 
-Release-control jobs time out after 20 minutes, build jobs after 45 minutes, driver integration jobs after 180 minutes, and local integration jobs after 120 minutes. A stuck run therefore cannot hold the globally serialized release queue indefinitely.
+Release-control jobs time out after 20 minutes, build jobs after 45 minutes, the candidate docs build after 30 minutes, driver integration jobs after 180 minutes, and local integration jobs after 120 minutes. A stuck run therefore cannot hold the globally serialized release queue indefinitely.
 
 ## LZ4 pin follow-up
 
