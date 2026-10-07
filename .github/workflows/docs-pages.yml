@@ -1,89 +1,62 @@
-name: "Docs / Publish"
-# For more information,
-# see https://sphinx-theme.scylladb.com/stable/deployment/production.html#available-workflows
+name: Docs / Publish
 
 on:
   push:
-    branches:
-      - master
-      - 'branch-**'
+    branches: [master]
     paths:
-      - "docs/**"
+      - 'docs/**'
+      - '.github/workflows/docs.yml'
+      - '.github/workflows/docs-pages.yml'
   workflow_dispatch:
+    inputs:
+      target:
+        description: all, master, or a published root release tag such as v1.20.0.
+        required: true
+        type: string
+        default: all
 
 permissions:
   contents: read
 
 jobs:
-  build:
+  select-target:
     runs-on: ubuntu-latest
+    outputs:
+      target: ${{ steps.select.outputs.target }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: github.event_name == 'push'
         with:
-          ref: ${{ github.event.repository.default_branch }}
-          persist-credentials: false
           fetch-depth: 0
-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        # actions/setup-python@v6 poetry cache feature requires poetry to be installed beforehand
-        # which makes use of it extremely awkward.
-        with:
-          path: |
-            /home/runner/.cache/pip
-            /home/runner/.cache/uv
-          key: docs-cache-${{ runner.os }}-${{ hashFiles('docs/pyproject.toml', 'docs/Makefile') }}
-
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
-        with:
-          python-version: '3.12'
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-
-      - name: Set up env
-        run: make -C docs setupenv
-
-      - name: Build docs
-        run: make -C docs multiversion
-
-      - name: Build redirects
-        run: make -C docs redirects
-
-      - name: Tar folder
+          persist-credentials: false
+      - name: Select docs target
+        id: select
+        env:
+          EVENT: ${{ github.event_name }}
+          REQUESTED_TARGET: ${{ inputs.target }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
         run: |
-          tar \
-            --dereference --hard-dereference \
-            --directory docs/_build/dirhtml/ \
-            -cvf ${{ runner.temp }}/artifact.tar \
-            .
+          if [ "$EVENT" != push ]; then
+            echo "target=$REQUESTED_TARGET" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files=$(git diff --name-only "$BEFORE" "$AFTER")
+          if [ -n "$files" ] && \
+             ! printf '%s\n' "$files" | grep -Ev '^docs/source/' >/dev/null && \
+             ! printf '%s\n' "$files" | grep -Fx 'docs/source/conf.py' >/dev/null; then
+            echo 'target=master' >> "$GITHUB_OUTPUT"
+          else
+            echo 'target=all' >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: github-pages
-          path: ${{ runner.temp }}/artifact.tar
-          retention-days: "1"
-
-  release:
-    # Add a dependency to the build job
-    needs: build
-
-    # Grant GITHUB_TOKEN the permissions required to make a Pages deployment
+  publish:
+    needs: select-target
+    uses: ./.github/workflows/docs.yml
     permissions:
-      pages: write # to deploy to Pages
-      id-token: write # to verify the deployment originates from an appropriate source
-      contents: read # to read private repo
-
-    # Deploy to the github-pages environment
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-
-    # Specify runner + deployment step
-    runs-on: ubuntu-latest
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5
+      contents: read
+      pages: write
+      id-token: write
+    with:
+      target: ${{ needs.select-target.outputs.target }}
+      publish: true

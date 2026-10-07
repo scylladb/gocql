@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 import warnings
+import json
+import os
 from datetime import date
 
 from sphinx_scylladb_theme.utils import multiversion_regex_builder
@@ -15,10 +17,19 @@ TAGS = [
     "v1.18.0",
 ]
 BRANCHES = []
+if os.environ.get("DOCS_INCLUDE_MASTER") == "true":
+    BRANCHES = ["master"]
 # Sets the latest version.
 LATEST_VERSION = "v1.19.0"
 # Set which versions are not released yet.
 UNSTABLE_VERSIONS = []
+# The Pages workflow selects published root releases. Local builds use the
+# curated list above when release metadata is unavailable.
+if release_versions := os.environ.get("DOCS_RELEASE_VERSIONS"):
+    versions = json.loads(release_versions)
+    TAGS = versions["tags"]
+    LATEST_VERSION = versions["latest"]
+    UNSTABLE_VERSIONS = versions["unstable"]
 # Set which versions are deprecated
 DEPRECATED_VERSIONS = [""]
 # Sets custom build.
@@ -88,7 +99,7 @@ smv_latest_version = LATEST_VERSION
 # Defines the new name for the latest version.
 smv_rename_latest_version = "stable"
 # Whitelist pattern for remotes (set to None to use local branches only)
-smv_remote_whitelist = r"^origin$"
+smv_remote_whitelist = None if os.environ.get("DOCS_INCLUDE_MASTER") == "true" else r"^origin$"
 # Pattern for released versions
 smv_released_pattern = r"^tags/.*$"
 # Format for versioned output directories inside the build directory
