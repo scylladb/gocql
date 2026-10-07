@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
 import warnings
-import json
-import os
 from datetime import date
 
 from sphinx_scylladb_theme.utils import multiversion_regex_builder
@@ -21,13 +19,6 @@ BRANCHES = []
 LATEST_VERSION = "v1.19.0"
 # Set which versions are not released yet.
 UNSTABLE_VERSIONS = []
-# The Pages workflow selects published root releases. Local builds use the
-# curated list above when release metadata is unavailable.
-if release_versions := os.environ.get("DOCS_RELEASE_VERSIONS"):
-    versions = json.loads(release_versions)
-    TAGS = versions["tags"]
-    LATEST_VERSION = versions["latest"]
-    UNSTABLE_VERSIONS = versions["unstable"]
 # Set which versions are deprecated
 DEPRECATED_VERSIONS = [""]
 # Sets custom build.
