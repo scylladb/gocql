@@ -82,9 +82,10 @@ git tag --verify v1.20.0
 
 Repeat for `lz4/v1.20.0`. Object type must be `tag`; resolved commit must match requested SHA; signature must identify committed fingerprint.
 
-After both GitHub Releases are published and verified, the workflow builds and
-deploys the versioned docs to GitHub Pages. The Pages build selects published
-root releases for the version menu and points `/stable` at the highest stable
+After both GitHub Releases are published and verified, the shared docs workflow
+builds and deploys the new version to GitHub Pages. Its `publish: false` call
+checks the candidate before publication; its `publish: true` call runs afterward.
+The Pages build selects published root releases for the version menu and points `/stable` at the highest stable
 version. The pre-publication docs gate builds the candidate source; the Pages
 build runs only after the release tag and GitHub Release exist. A failed Pages
 deployment can be retried by rerunning the same release inputs without moving
@@ -100,7 +101,7 @@ Rerun identical inputs after transient failure. Each module independently resume
 
 Workflow fails closed for Release without tag, wrong target, lightweight/untrusted/unverified tag, conflicting title/prerelease metadata, a new release with wrong Latest behavior, or Git/GitHub/parsing failure. A historical stable root release remains valid after a newer stable release supersedes it as Latest. Never repair by moving/deleting tag. Investigate; if public state may exist, issue new version.
 
-Release-control jobs time out after 20 minutes, build jobs after 45 minutes, the candidate docs build after 30 minutes, driver integration jobs after 180 minutes, and local integration jobs after 120 minutes. A stuck run therefore cannot hold the globally serialized release queue indefinitely.
+Release-control jobs time out after 20 minutes, build jobs after 45 minutes, docs build jobs after 60 minutes, driver integration jobs after 180 minutes, and local integration jobs after 120 minutes. A stuck run therefore cannot hold the globally serialized release queue indefinitely.
 
 ## LZ4 pin follow-up
 

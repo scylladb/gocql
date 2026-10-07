@@ -48,7 +48,7 @@ The controller exposes three commands. The workflow supplies their environment a
    - Creates the GitHub Release with generated notes starting at the highest preceding version tag reachable from the target.
    - Polls and verifies each final tag, Release metadata, signature, target, and Latest state before moving to the next module.
 
-`validate` mode runs `preflight`, the full Build and driver matrices, the candidate docs build, and `gate`. It never runs `publish`, enters the `release` environment, or receives publication credentials. The Pages workflow runs after `publish` succeeds and builds its version menu from published root releases.
+`validate` mode runs `preflight`, the full Build and driver matrices, the candidate docs build, and `gate`. It never runs `publish`, enters the `release` environment, or receives publication credentials. The same reusable docs workflow runs with `publish: false` before the gate and `publish: true` after the releases are verified. The Pages build takes its version menu from published root releases.
 
 ## Candidate mapping
 

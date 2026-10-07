@@ -10,7 +10,6 @@ on:
     paths:
       - "docs/**"
   workflow_dispatch:
-  workflow_call:
 
 permissions:
   contents: read
@@ -45,13 +44,6 @@ jobs:
 
       - name: Set up env
         run: make -C docs setupenv
-
-      - name: Select published driver versions
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$RUNNER_TEMP/docs-releases.json"
-          python3 docs/released_versions.py "$RUNNER_TEMP/docs-releases.json" >> "$GITHUB_ENV"
 
       - name: Build docs
         run: make -C docs multiversion
