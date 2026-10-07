@@ -1,0 +1,43 @@
+name: Merge queue CI
+
+on:
+  merge_group:
+    types: [checks_requested]
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build
+    uses: ./.github/workflows/build.yml
+    with:
+      target_commit: ${{ github.sha }}
+      # Build and unit tests run on both architectures.
+      arch: amd64,arm64
+
+  integration:
+    name: Integration tests
+    needs: [build]
+    uses: ./.github/workflows/integration.yml
+    with:
+      target_commit: ${{ github.sha }}
+      scylla_versions: LATEST,PRIOR,LTS-LATEST,LTS-PRIOR
+      cassandra_versions: 5-LATEST,4-LATEST
+      # Live database integration tests run on amd64 only.
+      arch: amd64
+
+  gate:
+    name: Integration gate
+    if: always()
+    needs: [build, integration]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require build and integration jobs to pass
+        env:
+          BUILD_RESULT: ${{ needs.build.result }}
+          INTEGRATION_RESULT: ${{ needs.integration.result }}
+        run: |
+          test "$BUILD_RESULT" = success
+          test "$INTEGRATION_RESULT" = success

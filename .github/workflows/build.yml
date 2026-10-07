@@ -1,0 +1,96 @@
+name: Shared build
+
+on:
+  workflow_call:
+    inputs:
+      target_commit:
+        description: Commit to build
+        required: true
+        type: string
+      arch:
+        description: Comma-separated architectures (amd64,arm64)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  matrix:
+    name: Select build matrix
+    runs-on: ubuntu-latest
+    outputs:
+      arch: ${{ steps.select.outputs.arch }}
+    steps:
+      - name: Expand architecture list
+        id: select
+        env:
+          ARCH: ${{ inputs.arch }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+
+          arch = list(dict.fromkeys(a.strip() for a in os.environ["ARCH"].split(",") if a.strip()))
+          if not arch or any(a not in ("amd64", "arm64") for a in arch):
+              raise SystemExit("arch must contain amd64 and/or arm64")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              print(f"arch={json.dumps(arch, separators=(',', ':'))}", file=output)
+          PY
+
+  build:
+    name: Build (${{ matrix.arch }})
+    needs: [matrix]
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    strategy:
+      # The caller selects one or both architectures; every entry uses the
+      # same checkout, lint, build, and unit-test steps.
+      matrix:
+        arch: ${{ fromJSON(needs.matrix.outputs.arch) }}
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.target_commit }}
+          # make check's check-lz4-pin compares go.mod's lz4 require against the
+          # newest lz4/v* tag, so the tags have to be present. fetch-depth: 0 rather
+          # than fetch-tags on top of the default depth-1 fetch: it makes the tag set
+          # unconditional instead of dependent on which tags a shallow fetch chose to
+          # bring along. check-lz4-pin no longer skips when it finds none, so getting
+          # this wrong is now a failure rather than a silent pass.
+          fetch-depth: 0
+
+      # runner.arch keeps cached binaries and relocatables separate across
+      # architectures; runner.os is "Linux" on both.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            /home/runner/.cache/pip
+            /home/runner/.local
+            /home/runner/.ccm/scylla-repository
+            /home/runner/.ccm/repository
+            /home/runner/.sdkman
+            testdata/pki
+            bin/
+          # CCM, scylla, cassandra and java versions are in Makefile
+          key: pr-check-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            lz4/go.sum
+            tests/bench/go.sum
+            go.sum
+
+      - name: Run linters
+        run: make check
+
+      - name: Run unit tests
+        run: make test-unit
+
+      - run: sudo sh -c "echo 2097152 >> /proc/sys/fs/aio-max-nr"
