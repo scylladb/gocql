@@ -88,9 +88,17 @@ jobs:
       cassandra_versions: 5-LATEST,4-LATEST
       arch: amd64,arm64
 
+  pre-release-integration:
+    name: Driver compatibility matrix
+    needs: preflight
+    uses: scylladb/gocql-driver-matrix/.github/workflows/driver-integration-matrix.yml@master
+    with:
+      driver_ref: ${{ needs.preflight.outputs.resolved_sha }}
+      driver_version: ${{ inputs.version }}
+
   publication-gate:
     name: Final publication gate
-    needs: [preflight, build, integration]
+    needs: [preflight, build, integration, pre-release-integration]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     outputs:

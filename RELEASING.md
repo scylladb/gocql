@@ -38,7 +38,7 @@ Open **Actions → Release → Run workflow**, select `master`, enter:
 - `target`: `master` or a full SHA
 - `mode`: `validate`
 
-Validation performs target, both module, README, blocker, recovery-state, and full Build gates (all configured ScyllaDB and Cassandra integration combinations on both amd64 and arm64). It never enters `release` environment, receives no signing credentials, creates no tag/Release. Run summary shows requested target, resolved SHA, both tags, release types, Latest behavior, and recovery actions. Confirm resolved SHA appears in every checkout.
+Validation performs target, both module, README, blocker, recovery-state, and full Build gates (all configured ScyllaDB and Cassandra integration combinations on both amd64 and arm64). It also runs the [GoCQL driver matrix](https://github.com/scylladb/gocql-driver-matrix) against upstream gocql on Scylla `LATEST` and the candidate commit on Scylla `LATEST`, `PRIOR`, `LTS-LATEST`, and `LTS-PRIOR`. The candidate version selects the matrix's patches and ignore rules; add version-specific files there when the previous version's files do not apply. Validation never enters `release` environment, receives no signing credentials, or creates a tag/Release. Run summary shows requested target, resolved SHA, both tags, release types, Latest behavior, and recovery actions. Confirm resolved SHA appears in every checkout.
 
 Mappings:
 
@@ -49,7 +49,7 @@ Gate test: temporary open `release-blocker` issue must stop validation. Remove l
 
 ## Publish
 
-Dispatch again from `master` with the same version and set `mode: publish`. To reproduce a validated candidate after `master` moves, copy resolved SHA from validation summary into `target`; do not enter `master`. Serialized workflow reruns every check and full Build matrix before entering `release` environment.
+Dispatch again from `master` with the same version and set `mode: publish`. To reproduce a validated candidate after `master` moves, copy resolved SHA from validation summary into `target`; do not enter `master`. Serialized workflow reruns every check, the full Build matrix, and the GoCQL driver matrix before entering `release` environment.
 
 Actions run names include mode, shared version, and requested target, making validation and publication runs distinguishable in history.
 
@@ -98,7 +98,7 @@ Rerun identical inputs after transient failure. Each module independently resume
 
 Workflow fails closed for Release without tag, wrong target, lightweight/untrusted/unverified tag, conflicting title/prerelease metadata, a new release with wrong Latest behavior, or Git/GitHub/parsing failure. A historical stable root release remains valid after a newer stable release supersedes it as Latest. Never repair by moving/deleting tag. Investigate; if public state may exist, issue new version.
 
-Release-control jobs time out after 20 minutes, build jobs after 45 minutes, and integration jobs after 120 minutes. A stuck run therefore cannot hold the globally serialized release queue indefinitely.
+Release-control jobs time out after 20 minutes, build jobs after 45 minutes, driver integration jobs after 180 minutes, and local integration jobs after 120 minutes. A stuck run therefore cannot hold the globally serialized release queue indefinitely.
 
 ## LZ4 pin follow-up
 
