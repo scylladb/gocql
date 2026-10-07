@@ -29,8 +29,9 @@ Multi-partition logged batches use the batch log to ensure all mutations
 eventually complete or none do. They do not provide cross-partition isolation:
 concurrent readers may observe mutations to different partitions separately.
 Recovery completes outstanding mutations rather than rolling back applied
-ones. An error does not always prove that no mutation occurred. After a timeout
-or post-send transport error, a `gocql.QueryError` with
+ones. An error does not always prove that no mutation occurred. After a timeout,
+a post-send transport error, or a server `WRITE_TIMEOUT`, `WRITE_FAILURE` or
+`CAS_WRITE_UNKNOWN` error, a `gocql.QueryError` with
 `PotentiallyExecuted() == true` means the final outcome is unknown. Reconcile
 application state before retrying a non-idempotent batch.
 
