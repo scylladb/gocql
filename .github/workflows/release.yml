@@ -101,9 +101,8 @@ jobs:
     needs: preflight
     uses: ./.github/workflows/docs.yml
     with:
-      mode: version
+      target: ${{ needs.preflight.outputs.resolved_sha }}
       publish: false
-      target_ref: ${{ needs.preflight.outputs.resolved_sha }}
 
   publication-gate:
     name: Final publication gate
@@ -196,6 +195,5 @@ jobs:
       pages: write
       id-token: write
     with:
-      mode: version
+      target: ${{ needs.preflight.outputs.root_tag }}
       publish: true
-      version: ${{ needs.preflight.outputs.root_tag }}
