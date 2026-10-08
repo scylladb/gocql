@@ -11,6 +11,17 @@ var (
 	minTimestamp = time.Date(-292275055, 5, 16, 16, 47, 4, 192*1000000, time.UTC)
 )
 
+// MaxTimestamp returns the latest time.Time representable as a CQL
+// timestamp. Exposed as a function (rather than a mutable package var) so
+// other marshal paths — e.g. the JIT encoder in the top-level gocql package —
+// can validate against the same bounds without duplicating these values or
+// risking them being mutated by an importer out from under concurrent
+// encoding.
+func MaxTimestamp() time.Time { return maxTimestamp }
+
+// MinTimestamp is MaxTimestamp's lower-bound counterpart.
+func MinTimestamp() time.Time { return minTimestamp }
+
 func EncInt64(v int64) ([]byte, error) {
 	return encInt64(v), nil
 }
