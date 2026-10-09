@@ -8,7 +8,19 @@ on:
 permissions:
   contents: read
 
+# Supersede in-flight runs for the same pull request so a push does not leave
+# the previous run's build and cluster jobs to finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  lint:
+    name: Lint
+    uses: ./.github/workflows/lint.yml
+    with:
+      target_commit: ${{ github.sha }}
+
   build:
     name: Build
     uses: ./.github/workflows/build.yml
@@ -18,7 +30,7 @@ jobs:
 
   integration:
     name: Integration tests
-    needs: [build]
+    needs: [lint]
     uses: ./.github/workflows/integration.yml
     with:
       target_commit: ${{ github.sha }}
@@ -29,13 +41,16 @@ jobs:
   gate:
     name: Integration gate
     if: always()
-    needs: [build, integration]
+    needs: [lint, build, integration]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Require build and integration jobs to pass
         env:
+          LINT_RESULT: ${{ needs.lint.result }}
           BUILD_RESULT: ${{ needs.build.result }}
           INTEGRATION_RESULT: ${{ needs.integration.result }}
         run: |
+          test "$LINT_RESULT" = success
           test "$BUILD_RESULT" = success
           test "$INTEGRATION_RESULT" = success
