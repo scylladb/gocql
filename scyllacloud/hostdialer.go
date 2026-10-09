@@ -127,9 +127,10 @@ func (s *SniHostDialer) connect(ctx context.Context, dialer gocql.Dialer, server
 		return nil, fmt.Errorf("can't finish TLS handshake with server %q SNI %q: %w", server, tlsConfig.ServerName, err)
 	}
 
+	// writeCoalescer now concatenates into one Write, so TLS no longer
+	// needs coalescing disabled.
 	return &gocql.DialedHost{
-		Conn:            tconn,
-		DisableCoalesce: true,
+		Conn: tconn,
 	}, nil
 }
 
