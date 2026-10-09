@@ -454,6 +454,13 @@ func (iter *Iter) RowData() (RowData, error) {
 		return RowData{}, iter.err
 	}
 
+	// Load the next page first: its metadata may differ (schema change).
+	for iter.pos >= iter.numRows && iter.fetchNextPage() {
+	}
+	if iter.err != nil {
+		return RowData{}, iter.err
+	}
+
 	columns, err := iter.getScanColumns()
 	if err != nil {
 		return RowData{}, err
@@ -589,13 +596,26 @@ func (iter *Iter) SliceMap() ([]map[string]any, error) {
 		return nil, iter.err
 	}
 
-	// Not checking for the error because we just did
 	rowData, err := iter.RowData()
 	if err != nil {
 		return nil, err
 	}
 	dataToReturn := make([]map[string]any, 0)
-	for iter.Scan(rowData.Values...) {
+	for {
+		// Scan would turn the page itself; do it here to refresh rowData, as
+		// the next page's columns can differ.
+		turned := false
+		for iter.pos >= iter.numRows && iter.fetchNextPage() {
+			turned = true
+		}
+		if turned {
+			if rowData, err = iter.RowData(); err != nil {
+				return nil, err
+			}
+		}
+		if !iter.Scan(rowData.Values...) {
+			break
+		}
 		m := make(map[string]any, len(rowData.Columns))
 		rowData.rowMap(m)
 		dataToReturn = append(dataToReturn, m)
