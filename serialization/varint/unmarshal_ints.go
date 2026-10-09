@@ -22,11 +22,10 @@ const (
 	negIntS8  = int(-1) << 8
 	negIntS16 = int(-1) << 16
 	negIntS24 = int(-1) << 24
-	negIntS32 = int(-1) << 32
-	negIntS40 = int(-1) << 40
-	negIntS48 = int(-1) << 48
-	negIntS56 = int(-1) << 56
 )
+
+// negIntS32, negIntS40, negIntS48, negIntS56 are defined in architecture-specific files
+// (unmarshal_ints_64bit.go and unmarshal_ints_32bit.go) because they overflow on 32-bit architectures
 
 func DecInt8(p []byte, v *int8) error {
 	if v == nil {
@@ -235,79 +234,8 @@ func DecInt64R(p []byte, v **int64) error {
 	return errBrokenData(p)
 }
 
-func DecInt(p []byte, v *int) error {
-	if v == nil {
-		return errNilReference(v)
-	}
-	switch len(p) {
-	case 0:
-		*v = 0
-		return nil
-	case 1:
-		*v = dec1toInt(p)
-		return nil
-	case 2:
-		*v = dec2toInt(p)
-	case 3:
-		*v = dec3toInt(p)
-	case 4:
-		*v = dec4toInt(p)
-	case 5:
-		*v = dec5toInt(p)
-	case 6:
-		*v = dec6toInt(p)
-	case 7:
-		*v = dec7toInt(p)
-	case 8:
-		*v = dec8toInt(p)
-	default:
-		return fmt.Errorf("failed to unmarshal varint: to unmarshal into int, the data value should be in the int range")
-	}
-	return errBrokenData(p)
-}
-
-func DecIntR(p []byte, v **int) error {
-	if v == nil {
-		return errNilReference(v)
-	}
-	switch len(p) {
-	case 0:
-		if p == nil {
-			*v = nil
-		} else {
-			*v = new(int)
-		}
-		return nil
-	case 1:
-		val := dec1toInt(p)
-		*v = &val
-		return nil
-	case 2:
-		val := dec2toInt(p)
-		*v = &val
-	case 3:
-		val := dec3toInt(p)
-		*v = &val
-	case 4:
-		val := dec4toInt(p)
-		*v = &val
-	case 5:
-		val := dec5toInt(p)
-		*v = &val
-	case 6:
-		val := dec6toInt(p)
-		*v = &val
-	case 7:
-		val := dec7toInt(p)
-		*v = &val
-	case 8:
-		val := dec8toInt(p)
-		*v = &val
-	default:
-		return fmt.Errorf("failed to unmarshal varint: to unmarshal into int, the data value should be in the int range")
-	}
-	return errBrokenData(p)
-}
+// DecInt and DecIntR are defined in architecture-specific files
+// (unmarshal_ints_64bit.go and unmarshal_ints_32bit.go)
 
 func dec1toInt8(p []byte) int8 {
 	return int8(p[0])
@@ -399,10 +327,9 @@ func dec4toInt64(p []byte) int64 {
 }
 
 func dec4toInt(p []byte) int {
-	if p[0] > 127 {
-		return negIntS32 | int(p[0])<<24 | int(p[1])<<16 | int(p[2])<<8 | int(p[3])
-	}
-	return int(p[0])<<24 | int(p[1])<<16 | int(p[2])<<8 | int(p[3])
+	// On both 32-bit and 64-bit, when int size matches the data size (4 bytes on 32-bit),
+	// the sign bit is naturally preserved by the type conversion
+	return int(int32(p[0])<<24 | int32(p[1])<<16 | int32(p[2])<<8 | int32(p[3]))
 }
 
 func dec5toInt64(p []byte) int64 {
@@ -412,25 +339,11 @@ func dec5toInt64(p []byte) int64 {
 	return int64(p[0])<<32 | int64(p[1])<<24 | int64(p[2])<<16 | int64(p[3])<<8 | int64(p[4])
 }
 
-func dec5toInt(p []byte) int {
-	if p[0] > 127 {
-		return negIntS40 | int(p[0])<<32 | int(p[1])<<24 | int(p[2])<<16 | int(p[3])<<8 | int(p[4])
-	}
-	return int(p[0])<<32 | int(p[1])<<24 | int(p[2])<<16 | int(p[3])<<8 | int(p[4])
-}
-
 func dec6toInt64(p []byte) int64 {
 	if p[0] > 127 {
 		return negInt64s48 | int64(p[0])<<40 | int64(p[1])<<32 | int64(p[2])<<24 | int64(p[3])<<16 | int64(p[4])<<8 | int64(p[5])
 	}
 	return int64(p[0])<<40 | int64(p[1])<<32 | int64(p[2])<<24 | int64(p[3])<<16 | int64(p[4])<<8 | int64(p[5])
-}
-
-func dec6toInt(p []byte) int {
-	if p[0] > 127 {
-		return negIntS48 | int(p[0])<<40 | int(p[1])<<32 | int(p[2])<<24 | int(p[3])<<16 | int(p[4])<<8 | int(p[5])
-	}
-	return int(p[0])<<40 | int(p[1])<<32 | int(p[2])<<24 | int(p[3])<<16 | int(p[4])<<8 | int(p[5])
 }
 
 func dec7toInt64(p []byte) int64 {
@@ -440,17 +353,10 @@ func dec7toInt64(p []byte) int64 {
 	return int64(p[0])<<48 | int64(p[1])<<40 | int64(p[2])<<32 | int64(p[3])<<24 | int64(p[4])<<16 | int64(p[5])<<8 | int64(p[6])
 }
 
-func dec7toInt(p []byte) int {
-	if p[0] > 127 {
-		return negIntS56 | int(p[0])<<48 | int(p[1])<<40 | int(p[2])<<32 | int(p[3])<<24 | int(p[4])<<16 | int(p[5])<<8 | int(p[6])
-	}
-	return int(p[0])<<48 | int(p[1])<<40 | int(p[2])<<32 | int(p[3])<<24 | int(p[4])<<16 | int(p[5])<<8 | int(p[6])
-}
-
 func dec8toInt64(p []byte) int64 {
 	return int64(p[0])<<56 | int64(p[1])<<48 | int64(p[2])<<40 | int64(p[3])<<32 | int64(p[4])<<24 | int64(p[5])<<16 | int64(p[6])<<8 | int64(p[7])
 }
 
-func dec8toInt(p []byte) int {
-	return int(p[0])<<56 | int(p[1])<<48 | int(p[2])<<40 | int(p[3])<<32 | int(p[4])<<24 | int(p[5])<<16 | int(p[6])<<8 | int(p[7])
-}
+// dec5toInt, dec6toInt, dec7toInt, dec8toInt are defined in architecture-specific files
+// (unmarshal_ints_64bit.go) as they require int to be 64-bit.
+// On 32-bit architectures, these functions are not available.
