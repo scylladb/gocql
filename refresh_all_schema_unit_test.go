@@ -3,7 +3,11 @@
 
 package gocql
 
-import "testing"
+import (
+	"errors"
+	"strings"
+	"testing"
+)
 
 // refreshAllSchemaSession returns a session whose schema mock knows ks1 with
 // tables t1 and t2, and ks2 with t3; all three are loaded into the cache and
@@ -115,4 +119,42 @@ func TestRefreshAllSchemaReplicationChanged(t *testing.T) {
 
 	refreshAllSchemaNow(t, s)
 	requireTablets(t, s, map[string]bool{"ks1.t1": false, "ks1.t2": false, "ks2.t3": true})
+}
+
+// A failed refresh reports the error and drops nothing. The keyspace query's
+// failure must not read as "keyspace does not exist": refreshAllSchema would
+// then evict the keyspace and all of its tablets.
+func TestRefreshAllSchemaError(t *testing.T) {
+	t.Parallel()
+
+	s, ctrl := refreshAllSchemaSession(t)
+	ctrl.setQueryError(errors.New("schema unavailable"))
+
+	err := s.metadataDescriber.refreshAllSchema()
+	if err == nil || !strings.Contains(err.Error(), "schema unavailable") {
+		t.Fatalf("refreshAllSchema error = %v, want the query error", err)
+	}
+	s.metadataDescriber.metadata.tabletsMetadata.Flush()
+	for _, ks := range []string{"ks1", "ks2"} {
+		if _, found := s.metadataDescriber.metadata.keyspaceMetadata.getKeyspace(ks); !found {
+			t.Errorf("keyspace %s was dropped after a failed refresh", ks)
+		}
+	}
+	requireTablets(t, s, map[string]bool{"ks1.t1": true, "ks1.t2": true, "ks2.t3": true})
+}
+
+// Loading a keyspace through a failing query reports the failure rather than
+// ErrKeyspaceDoesNotExist.
+func TestKeyspaceMetadataQueryError(t *testing.T) {
+	t.Parallel()
+
+	ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{"ks1": nil}}
+	s := newSchemaEventTestSessionWithMock(ctrl)
+	defer s.Close()
+	ctrl.setQueryError(errors.New("schema unavailable"))
+
+	_, err := getKeyspaceMetadata(s, "ks1")
+	if err == nil || errors.Is(err, ErrKeyspaceDoesNotExist) || !strings.Contains(err.Error(), "schema unavailable") {
+		t.Fatalf("getKeyspaceMetadata error = %v, want the query error", err)
+	}
 }

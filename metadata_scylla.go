@@ -1140,7 +1140,11 @@ func getKeyspaceMetadata(session *Session, keyspaceName string) (*KeyspaceMetada
 
 	iter := session.control.querySystem(stmt, keyspaceName)
 	if iter.NumRows() == 0 {
-		iter.Close()
+		// A failed query has no rows either; only an answer with no rows means
+		// the keyspace is gone.
+		if err := iter.Close(); err != nil {
+			return nil, fmt.Errorf("error querying keyspace schema: %w", err)
+		}
 		return nil, ErrKeyspaceDoesNotExist
 	}
 	iter.Scan(&keyspace.DurableWrites, &replication)
