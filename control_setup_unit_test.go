@@ -115,9 +115,10 @@ func newControlTestServer(t *testing.T, configure func(srv *controlTestServer)) 
 		}
 		srv.mu.Lock()
 		srv.locals++
+		localRows := srv.localRows
 		srv.mu.Unlock()
-		if srv.localRows != nil {
-			srv.localRows(stream, resp)
+		if localRows != nil {
+			localRows(stream, resp)
 			return true
 		}
 		writeRows(resp, stream, systemLocalCols, [][][]byte{systemLocalRow(net.IPv4(127, 0, 0, 1))})
