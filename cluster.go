@@ -623,7 +623,7 @@ func (cfg *ClusterConfig) Validate() error {
 	}
 
 	if cfg.InitialReconnectionPolicy.GetMaxRetries() <= 0 {
-		return errors.New("InitialReconnectionPolicy.GetMaxRetries returns negative number")
+		return errors.New("InitialReconnectionPolicy.GetMaxRetries must return a positive number")
 	}
 
 	if cfg.ReconnectionPolicy == nil {
@@ -631,7 +631,7 @@ func (cfg *ClusterConfig) Validate() error {
 	}
 
 	if cfg.ReconnectionPolicy.GetMaxRetries() <= 0 {
-		return errors.New("ReconnectionPolicy.GetMaxRetries returns negative number")
+		return errors.New("ReconnectionPolicy.GetMaxRetries must return a positive number")
 	}
 
 	if cfg.PageSize < 0 {

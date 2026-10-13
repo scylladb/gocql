@@ -4513,3 +4513,55 @@ func TestResolveRoutingKeyspaceTable(t *testing.T) {
 		})
 	}
 }
+
+// shrinkingRetryPolicy allows one attempt for its first `allowed`
+// GetMaxRetries calls, then none.
+type shrinkingRetryPolicy struct {
+	ConstantReconnectionPolicy
+	allowed int32
+	calls   atomic.Int32
+}
+
+func (p *shrinkingRetryPolicy) GetMaxRetries() int {
+	if p.calls.Add(1) <= p.allowed {
+		return 1
+	}
+	return 0
+}
+
+// TestNewSessionInitialPolicyNoAttempts covers an InitialReconnectionPolicy
+// that allows no attempts after Validate passed: NewSession must return an
+// error, not go on without a control connection.
+func TestNewSessionInitialPolicyNoAttempts(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		allowed int32
+		wantErr string
+	}{
+		// Validate's call passes, Session.init's sees zero.
+		{name: "after Validate", allowed: 1, wantErr: "no connection attempted"},
+		// Session.init must keep the limit it checked, not ask again.
+		{name: "after the check", allowed: 2, wantErr: "unable to connect to the cluster"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := NewCluster("127.0.0.1")
+			cfg.Port = 1 // refused, so an attempt fails fast
+			cfg.InitialReconnectionPolicy = &shrinkingRetryPolicy{allowed: tt.allowed}
+			cfg.Logger = nopLogger{}
+
+			s, err := NewSession(*cfg)
+			if err == nil {
+				s.Close()
+				t.Fatal("NewSession() = nil error, want one")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("NewSession() = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+}

@@ -349,7 +349,13 @@ func (s *Session) init() error {
 	if !s.cfg.disableControlConn {
 		s.control = createControlConn(s)
 		reconnectionPolicy := s.cfg.InitialReconnectionPolicy
-		for i := 0; i < reconnectionPolicy.GetMaxRetries(); i++ {
+		// Validate rejects a non-positive limit, but a custom policy can still
+		// return one here; read it once so the loop runs at least once.
+		maxRetries := reconnectionPolicy.GetMaxRetries()
+		if maxRetries <= 0 {
+			return fmt.Errorf("no connection attempted, %T.GetMaxRetries returned %d", reconnectionPolicy, maxRetries)
+		}
+		for i := 0; i < maxRetries; i++ {
 			if i != 0 {
 				time.Sleep(reconnectionPolicy.GetInterval(i))
 			}

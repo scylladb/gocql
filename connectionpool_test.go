@@ -32,6 +32,8 @@ import (
 	"crypto/tls"
 	"errors"
 	"net"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -547,6 +549,28 @@ func TestGetHostPoolByIDAbsent(t *testing.T) {
 				// it is what would panic before the fix.
 				t.Errorf("got non-nil HostPoolInfo (%T) for %s", info, tc.name)
 				t.Errorf("connection count reads %d", info.GetConnectionCount())
+			}
+		})
+	}
+}
+
+// TestHostConnPoolConnectNoAttempts covers a ReconnectionPolicy that allows no
+// attempts after Validate passed: connect must return an error, not hand a nil
+// conn to initConnPicker.
+func TestHostConnPoolConnectNoAttempts(t *testing.T) {
+	t.Parallel()
+
+	for _, retries := range []int{0, -1} {
+		t.Run(strconv.Itoa(retries), func(t *testing.T) {
+			session := &Session{
+				cfg:    ClusterConfig{ReconnectionPolicy: &ConstantReconnectionPolicy{MaxRetries: retries}},
+				logger: nopLogger{},
+			}
+			pool := newUndialedHostPool(t, session, "127.0.0.1")
+
+			err := pool.connect()
+			if err == nil || !strings.Contains(err.Error(), "no connection attempted") {
+				t.Fatalf("connect() = %v, want the no-attempts error", err)
 			}
 		})
 	}

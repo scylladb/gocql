@@ -584,6 +584,12 @@ func (pool *hostConnPool) connect() (err error) {
 	if err != nil {
 		return err
 	}
+	// Validate rejects a non-positive limit, but a custom policy can still
+	// return one here, which leaves conn nil without an error.
+	if conn == nil {
+		return fmt.Errorf("gocql: no connection attempted, %T.GetMaxRetries is not positive",
+			reconnectionPolicy)
+	}
 
 	if pool.keyspace != "" {
 		// set the keyspace
