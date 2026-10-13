@@ -2043,6 +2043,27 @@ type TestServer struct {
 	// exchange. req is positioned at the start of the body; req.header.Op tells
 	// the two apart. Set it via setAuthHook.
 	authHook func(req *framer, stream int, resp *framer)
+
+	// queryHook, when set, is offered every QUERY before the canned statements
+	// in process. It writes the whole response into resp and returns true, or
+	// returns false to fall through to them. Set it via setQueryHook.
+	queryHook func(query string, stream int, resp *framer) bool
+
+	// registerHook, when set, answers REGISTER. Without it REGISTER gets the
+	// generic "not supported" error. Set it via setRegisterHook.
+	registerHook func(events []string, stream int, resp *framer)
+}
+
+func (srv *TestServer) setQueryHook(hook func(query string, stream int, resp *framer) bool) {
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	srv.queryHook = hook
+}
+
+func (srv *TestServer) setRegisterHook(hook func(events []string, stream int, resp *framer)) {
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	srv.registerHook = hook
 }
 
 func (srv *TestServer) setAuthHook(hook func(req *framer, stream int, resp *framer)) {
@@ -2214,6 +2235,17 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 			break
 		}
 		respFrame.writeHeader(0, frm.OpReady, head.Stream)
+	case frm.OpRegister:
+		srv.mu.Lock()
+		hook := srv.registerHook
+		srv.mu.Unlock()
+		if hook == nil {
+			respFrame.writeHeader(0, frm.OpError, head.Stream)
+			respFrame.writeInt(0)
+			respFrame.writeString("not supported")
+			break
+		}
+		hook(reqFrame.readStringList(), head.Stream, respFrame)
 	case frm.OpAuthResponse:
 		srv.mu.Lock()
 		hook := srv.authHook
@@ -2242,6 +2274,12 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 			(strings.Contains(query, "system.peers") || strings.Contains(query, "system.local")) {
 			<-srv.ctx.Done()
 			return
+		}
+		srv.mu.Lock()
+		queryHook := srv.queryHook
+		srv.mu.Unlock()
+		if queryHook != nil && queryHook(query, head.Stream, respFrame) {
+			break
 		}
 		switch strings.ToLower(first) {
 		case "kill":
