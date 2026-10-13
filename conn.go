@@ -835,6 +835,11 @@ func (s *startupCoordinator) authenticateHandshake(ctx context.Context, authFram
 			}
 			return nil
 		case *frm.AuthChallengeFrame:
+			// A single-step authenticator such as PasswordAuthenticator returns no
+			// follow-up, so there is nothing to answer a further challenge with.
+			if challenger == nil {
+				return fmt.Errorf("unexpected authentication challenge from %s: the authenticator for %q does not support multi-step authentication", s.conn.addr, authFrame.Class)
+			}
 			resp, challenger, err = challenger.Challenge(v.Data)
 			if err != nil {
 				return err

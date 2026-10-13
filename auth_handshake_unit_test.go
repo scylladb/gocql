@@ -344,3 +344,16 @@ func TestAuthHandshakeAuthProvider(t *testing.T) {
 	cfg.AuthProvider = func(*HostInfo) (Authenticator, error) { return nil, errProvider }
 	requireHandshakeError(t, cfg, log, errProvider.Error())
 }
+
+// PasswordAuthenticator is single-step: it returns no follow-up
+// authenticator. A server that answers its credentials with a challenge
+// anyway must fail the connection, not dereference the missing one.
+func TestAuthHandshakeChallengeWithoutChallenger(t *testing.T) {
+	t.Parallel()
+
+	srv := newAuthTestServer(t, func([]byte) authReply {
+		return authReply{op: frm.OpAuthChallenge, data: []byte("more?")}
+	})
+	cfg, log := srv.cluster(PasswordAuthenticator{Username: "u", Password: "p"})
+	requireHandshakeError(t, cfg, log, "unexpected authentication challenge")
+}
