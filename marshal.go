@@ -33,6 +33,7 @@ import (
 	"math/big"
 	"math/bits"
 	"reflect"
+	"runtime"
 	"time"
 	"unsafe"
 
@@ -169,7 +170,22 @@ func (d *DirectUnmarshal) UnmarshalCQL(_ TypeInfo, data []byte) error {
 //
 // The marshal/unmarshal error provides a list of supported types when an unsupported type is attempted.
 
-func Marshal(info TypeInfo, value any) ([]byte, error) {
+func Marshal(info TypeInfo, value any) (data []byte, err error) {
+	// A value mutated concurrently (e.g. a torn string header) can fault while
+	// encoding; fail the query instead of crashing the process (#1160).
+	defer func() {
+		if r := recover(); r != nil {
+			re, ok := r.(runtime.Error)
+			if !ok {
+				panic(r)
+			}
+			data, err = nil, MarshalError{msg: fmt.Sprintf("gocql: failed to marshal %s value (%T)", info, value), cause: re}
+		}
+	}()
+	return marshal(info, value)
+}
+
+func marshal(info TypeInfo, value any) ([]byte, error) {
 	if info.Version() < protoVersion1 {
 		panic("protocol version not set")
 	}
