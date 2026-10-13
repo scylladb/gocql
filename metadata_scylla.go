@@ -1150,7 +1150,7 @@ func getKeyspaceMetadata(session *Session, keyspaceName string) (*KeyspaceMetada
 	iter.Scan(&keyspace.DurableWrites, &replication)
 	err := iter.Close()
 	if err != nil {
-		return nil, fmt.Errorf("error querying keyspace schema: %v", err)
+		return nil, fmt.Errorf("error querying keyspace schema: %w", err)
 	}
 
 	keyspace.StrategyClass = replication["class"]
@@ -1199,7 +1199,7 @@ func getTableMetadata(session *Session, keyspaceName string) ([]TableMetadata, e
 
 	err := iter.Close()
 	if err != nil && err != ErrNotFound {
-		return nil, fmt.Errorf("error querying table schema: %v", err)
+		return nil, fmt.Errorf("error querying table schema: %w", err)
 	}
 
 	conn := session.getConn()
@@ -1227,7 +1227,7 @@ func getTableMetadata(session *Session, keyspaceName string) ([]TableMetadata, e
 		tblName = ""
 	}
 	if err := iter.Close(); err != nil && err != ErrNotFound {
-		return nil, fmt.Errorf("error querying scylla table schema: %v", err)
+		return nil, fmt.Errorf("error querying scylla table schema: %w", err)
 	}
 
 	for i, t := range tables {
@@ -1438,7 +1438,7 @@ func getColumnMetadata(session *Session, keyspaceName string) ([]ColumnMetadata,
 	}
 
 	if err := iter.Close(); err != nil && err != ErrNotFound {
-		return nil, fmt.Errorf("error querying column schema: %v", err)
+		return nil, fmt.Errorf("error querying column schema: %w", err)
 	}
 
 	return columns, nil
@@ -1588,7 +1588,7 @@ func getCreateStatements(session *Session, keyspaceName string) ([]byte, error) 
 			// For such case schema statement is going to be recreated on the client side
 			return nil, nil
 		}
-		return nil, fmt.Errorf("error querying keyspace schema: %v", err)
+		return nil, fmt.Errorf("error querying keyspace schema: %w", err)
 	}
 
 	return []byte(strings.Join(createStatements, "\n")), nil
@@ -1636,7 +1636,7 @@ func getViewMetadata(session *Session, keyspaceName string) ([]ViewMetadata, err
 
 	err := iter.Close()
 	if err != nil && err != ErrNotFound {
-		return nil, fmt.Errorf("error querying view schema: %v", err)
+		return nil, fmt.Errorf("error querying view schema: %w", err)
 	}
 
 	return views, nil

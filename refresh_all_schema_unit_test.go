@@ -158,3 +158,19 @@ func TestKeyspaceMetadataQueryError(t *testing.T) {
 		t.Fatalf("getKeyspaceMetadata error = %v, want the query error", err)
 	}
 }
+
+// Whichever schema query fails first, its cause stays reachable with
+// errors.Is: the queries run concurrently, so every one of them has to wrap.
+func TestRefreshAllSchemaErrorUnwraps(t *testing.T) {
+	t.Parallel()
+
+	for i := 0; i < 20; i++ {
+		s, ctrl := refreshAllSchemaSession(t)
+		errSchema := errors.New("schema unavailable")
+		ctrl.setQueryError(errSchema)
+
+		if err := s.metadataDescriber.refreshAllSchema(); !errors.Is(err, errSchema) {
+			t.Fatalf("run %d: refreshAllSchema error = %v, which does not wrap the query error", i, err)
+		}
+	}
+}
