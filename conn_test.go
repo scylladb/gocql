@@ -2052,6 +2052,17 @@ type TestServer struct {
 	// registerHook, when set, answers REGISTER. Without it REGISTER gets the
 	// generic "not supported" error. Set it via setRegisterHook.
 	registerHook func(events []string, stream int, resp *framer)
+
+	// executeHook, when set, is offered every EXECUTE before the canned prepared
+	// ids in process. It writes the whole response into resp and returns true,
+	// or returns false to fall through to them. Set it via setExecuteHook.
+	executeHook func(id uint64, stream int, resp *framer) bool
+}
+
+func (srv *TestServer) setExecuteHook(hook func(id uint64, stream int, resp *framer) bool) {
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	srv.executeHook = hook
 }
 
 func (srv *TestServer) setQueryHook(hook func(query string, stream int, resp *framer) bool) {
@@ -2455,6 +2466,12 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 	case frm.OpExecute:
 		b := reqFrame.readShortBytesCopy()
 		id := binary.BigEndian.Uint64(b)
+		srv.mu.Lock()
+		executeHook := srv.executeHook
+		srv.mu.Unlock()
+		if executeHook != nil && executeHook(id, head.Stream, respFrame) {
+			break
+		}
 		if useMetadataID {
 			// The driver writes the result metadata id between the prepared id and the
 			// query parameters once the extension is negotiated. Consume it, or every

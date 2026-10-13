@@ -90,6 +90,9 @@ type controlTestServer struct {
 	locals    int
 	registers [][]string
 
+	// queries, when set, is offered every query first and returns true if it
+	// answered it.
+	queries func(query string, stream int, resp *framer) bool
 	// localRows, when set, replaces the system.local reply.
 	localRows func(stream int, resp *framer)
 	// registerReply, when set, replaces the READY reply to REGISTER.
@@ -104,6 +107,9 @@ func newControlTestServer(t *testing.T, configure func(srv *controlTestServer)) 
 		configure(srv)
 	}
 	srv.setQueryHook(func(query string, stream int, resp *framer) bool {
+		if srv.queries != nil && srv.queries(query, stream, resp) {
+			return true
+		}
 		if !strings.Contains(query, "system.local") {
 			return false
 		}
