@@ -2037,6 +2037,18 @@ type TestServer struct {
 	// of the body and the hook writes the whole response into resp. Set it via
 	// setBatchHook. Without it BATCH gets the generic "not supported" error.
 	batchHook func(req *framer, stream int, resp *framer)
+
+	// authHook, when set, answers STARTUP and AUTH_RESPONSE instead of the
+	// default READY and "not supported", so a test can drive an authentication
+	// exchange. req is positioned at the start of the body; req.header.Op tells
+	// the two apart. Set it via setAuthHook.
+	authHook func(req *framer, stream int, resp *framer)
+}
+
+func (srv *TestServer) setAuthHook(hook func(req *framer, stream int, resp *framer)) {
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	srv.authHook = hook
 }
 
 // testPrepareHook answers a PREPARE for query. writeResultMetadataID must be
@@ -2194,7 +2206,25 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 				return
 			}
 		}
+		srv.mu.Lock()
+		hook := srv.authHook
+		srv.mu.Unlock()
+		if hook != nil {
+			hook(reqFrame, head.Stream, respFrame)
+			break
+		}
 		respFrame.writeHeader(0, frm.OpReady, head.Stream)
+	case frm.OpAuthResponse:
+		srv.mu.Lock()
+		hook := srv.authHook
+		srv.mu.Unlock()
+		if hook == nil {
+			respFrame.writeHeader(0, frm.OpError, head.Stream)
+			respFrame.writeInt(0)
+			respFrame.writeString("not supported")
+			break
+		}
+		hook(reqFrame, head.Stream, respFrame)
 	case frm.OpOptions:
 		if atomic.LoadInt32(&srv.readyOnOptions) != 0 && srv.countOptions(conn) > 1 {
 			respFrame.writeHeader(0, frm.OpReady, head.Stream)
