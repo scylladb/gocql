@@ -1,0 +1,42 @@
+name: Lint
+
+on:
+  workflow_call:
+    inputs:
+      target_commit:
+        description: Commit to lint
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # Shallow clone is enough: check-lz4-pin reads tags via git ls-remote.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.target_commit }}
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: bin/
+          key: golangci-bin-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
+          restore-keys: |
+            golangci-bin-${{ runner.os }}-${{ runner.arch }}-
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            lz4/go.sum
+            tests/bench/go.sum
+            go.sum
+
+      - name: Run linters
+        run: make check

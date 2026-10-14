@@ -14,6 +14,12 @@ permissions:
   contents: read
 
 jobs:
+  lint:
+    name: Lint master
+    uses: ./.github/workflows/lint.yml
+    with:
+      target_commit: ${{ github.sha }}
+
   build:
     name: Build master
     uses: ./.github/workflows/build.yml
