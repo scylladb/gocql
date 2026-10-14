@@ -527,10 +527,23 @@ type Metadata struct {
 
 // queries the cluster for schema information for a specific keyspace and for tablets
 type metadataDescriber struct {
+	// keyspaceGroup deduplicates force-refreshes of a keyspace (used by
+	// refreshAllSchema, which must re-query even when the keyspace is already
+	// cached to observe schema changes).
 	keyspaceGroup singleflight.Group
-	tableGroup    singleflight.Group
-	session       *Session
-	metadata      *Metadata
+	// keyspaceEnsureGroup deduplicates load-if-absent refreshes (used by
+	// getKeyspaceInternal and the refreshTableSchema fallbacks). It is a
+	// separate group from keyspaceGroup on purpose: the ensure path skips the
+	// network queries when the keyspace is already published, and singleflight
+	// shares one flight's result across all its concurrent callers, so a
+	// skipping ensure flight must never be shared with a force-refresh caller.
+	// The only cost is that a rare force + cold-miss overlap on the same
+	// keyspace may run one flight per group; each common path still dedups
+	// within its own group.
+	keyspaceEnsureGroup singleflight.Group
+	tableGroup          singleflight.Group
+	session             *Session
+	metadata            *Metadata
 
 	// mu serialises refreshAllSchema calls so the snapshot-compare-refresh
 	// cycle runs as an atomic batch.  Individual keyspace/table refreshes
@@ -557,7 +570,7 @@ func (s *metadataDescriber) getKeyspaceInternal(keyspaceName string) (metadata *
 	metadata, found = s.metadata.keyspaceMetadata.getKeyspace(keyspaceName)
 	if !found {
 		wasReloaded = true
-		err = s.deduplicatedRefreshKeyspace(keyspaceName)
+		err = s.ensureKeyspaceLoaded(keyspaceName)
 		if err != nil {
 			return metadata, wasReloaded, err
 		}
@@ -687,7 +700,9 @@ func (s *metadataDescriber) invalidateTableSchema(keyspaceName, tableName string
 }
 
 // deduplicatedRefreshKeyspace collapses concurrent refreshKeyspaceSchema calls
-// for the same keyspace into a single in-flight operation.
+// for the same keyspace into a single in-flight operation. It always performs
+// the refresh (even when the keyspace is already cached), so it is used by
+// refreshAllSchema to observe schema changes to an existing keyspace.
 func (s *metadataDescriber) deduplicatedRefreshKeyspace(keyspaceName string) error {
 	_, err, _ := s.keyspaceGroup.Do(keyspaceName, func() (any, error) {
 		return nil, s.refreshKeyspaceSchema(keyspaceName)
@@ -695,11 +710,48 @@ func (s *metadataDescriber) deduplicatedRefreshKeyspace(keyspaceName string) err
 	return err
 }
 
+// ensureKeyspaceLoaded refreshes a keyspace only if it is not already
+// published, collapsing concurrent load-if-absent callers into a single
+// in-flight operation.
+//
+// Like the table path, singleflight only deduplicates calls that overlap in
+// time, so a caller reaching Do just after the previous flight completed would
+// start a second, redundant full refresh. The flight re-checks the published
+// metadata first and skips the network queries when a prior flight already
+// loaded the keyspace. It runs on keyspaceEnsureGroup rather than keyspaceGroup
+// so that a skipping ensure flight is never shared with a force-refresh caller
+// (see the metadataDescriber field comments). Errored refreshes do not publish
+// the keyspace, so retries are unaffected.
+func (s *metadataDescriber) ensureKeyspaceLoaded(keyspaceName string) error {
+	_, err, _ := s.keyspaceEnsureGroup.Do(keyspaceName, func() (any, error) {
+		if _, found := s.metadata.keyspaceMetadata.getKeyspace(keyspaceName); found {
+			// A prior flight already loaded this keyspace.
+			return nil, nil
+		}
+		return nil, s.refreshKeyspaceSchema(keyspaceName)
+	})
+	return err
+}
+
 // deduplicatedRefreshTable collapses concurrent refreshTableSchema calls
 // for the same keyspace/table into a single in-flight operation.
+//
+// singleflight only deduplicates calls that overlap in time: once a flight
+// completes it deletes its key, so a caller that reaches Do just after the
+// previous flight finished would start a second, redundant refresh. To close
+// that window the flight re-checks the published metadata first and skips the
+// network queries when a prior flight has already refreshed the table. This is
+// safe because the only caller (GetTable) invokes this exclusively when the
+// table is absent or invalidated; there is no force-refresh-when-present path.
 func (s *metadataDescriber) deduplicatedRefreshTable(keyspaceName, tableName string) error {
 	key := keyspaceName + "\x00" + tableName
 	_, err, _ := s.tableGroup.Do(key, func() (any, error) {
+		if ksMeta, found := s.metadata.keyspaceMetadata.getKeyspace(keyspaceName); found {
+			if _, ok := ksMeta.Tables[tableName]; ok {
+				// A prior flight already refreshed this table.
+				return nil, nil
+			}
+		}
 		return nil, s.refreshTableSchema(keyspaceName, tableName)
 	})
 	return err
@@ -836,7 +888,7 @@ func (s *metadataDescriber) refreshKeyspaceSchema(keyspaceName string) error {
 func (s *metadataDescriber) refreshTableSchema(keyspaceName, tableName string) error {
 	_, found := s.metadata.keyspaceMetadata.getKeyspace(keyspaceName)
 	if !found {
-		return s.deduplicatedRefreshKeyspace(keyspaceName)
+		return s.ensureKeyspaceLoaded(keyspaceName)
 	}
 
 	// Perform network queries outside the lock.
@@ -875,7 +927,7 @@ func (s *metadataDescriber) refreshTableSchema(keyspaceName, tableName string) e
 	if !applied {
 		// Keyspace was removed between the initial check and the update.
 		// Fall back to a full keyspace refresh to recover.
-		return s.deduplicatedRefreshKeyspace(keyspaceName)
+		return s.ensureKeyspaceLoaded(keyspaceName)
 	}
 	return nil
 }
