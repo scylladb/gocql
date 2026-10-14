@@ -3266,6 +3266,87 @@ func TestQueryExecutorSpeculativeAttemptOrdinalsFollowLaunchOrder(t *testing.T) 
 	}
 }
 
+// TestQueryExecutorServerWriteErrorsArePotentiallyExecuted covers #1075:
+// after WRITE_TIMEOUT, WRITE_FAILURE or CAS_WRITE_UNKNOWN the write may
+// already be applied, so the built-in retry policies must not replay a
+// non-idempotent statement on another host.
+func TestQueryExecutorServerWriteErrorsArePotentiallyExecuted(t *testing.T) {
+	t.Parallel()
+
+	policies := []struct {
+		name string
+		rt   RetryPolicy
+	}{
+		{"Simple", &SimpleRetryPolicy{NumRetries: 3}},
+		{"ExponentialBackoff", &ExponentialBackoffRetryPolicy{NumRetries: 3, Min: time.Millisecond, Max: time.Millisecond}},
+	}
+	cases := []struct {
+		name                    string
+		err                     error
+		idempotent              bool
+		wantExecutions          int
+		wantPotentiallyExecuted bool
+	}{
+		{"WriteTimeout", &RequestErrWriteTimeout{WriteType: "SIMPLE"}, false, 1, true},
+		{"WriteFailure", &RequestErrWriteFailure{WriteType: "SIMPLE"}, false, 1, true},
+		{"CASWriteUnknown", &RequestErrCASWriteUnknown{}, false, 1, true},
+		// Idempotent statements are still retried, once per host.
+		{"IdempotentWriteTimeout", &RequestErrWriteTimeout{WriteType: "SIMPLE"}, true, 2, true},
+		{"IdempotentWriteFailure", &RequestErrWriteFailure{WriteType: "SIMPLE"}, true, 2, true},
+		{"IdempotentCASWriteUnknown", &RequestErrCASWriteUnknown{}, true, 2, true},
+		// Nothing can have been written: still retried.
+		{"Unavailable", &RequestErrUnavailable{}, false, 2, false},
+		{"ReadTimeout", &RequestErrReadTimeout{}, false, 2, false},
+	}
+
+	for _, policy := range policies {
+		t.Run(policy.name, func(t *testing.T) {
+			for _, tc := range cases {
+				t.Run(tc.name, func(t *testing.T) {
+					host := (&HostInfo{hostId: UUID{19}}).setState(NodeUp)
+					secondHost := (&HostInfo{hostId: UUID{20}}).setState(NodeUp)
+					executor := newTestQueryExecutor(host)
+					executor.policy.AddHost(secondHost)
+					executor.pool.hostConnPools[secondHost.hostUUID()] = &hostConnPool{
+						host:       secondHost,
+						connPicker: staticConnPicker{conn: &Conn{host: secondHost}},
+					}
+
+					executions := 0
+					qry := &executorTestQuery{
+						ctx:         context.Background(),
+						rt:          policy.rt,
+						idempotent:  tc.idempotent,
+						consistency: One,
+					}
+					qry.executeFunc = func(context.Context, *Conn) *Iter {
+						executions++
+						return &Iter{err: tc.err}
+					}
+
+					iter, err := executor.executeQuery(qry, newQueryMetrics())
+					if err != nil {
+						t.Fatalf("executeQuery returned error: %v", err)
+					}
+					if executions != tc.wantExecutions {
+						t.Fatalf("statement executed %d times, want %d (last error: %v)", executions, tc.wantExecutions, iter.err)
+					}
+					if !errors.Is(iter.err, tc.err) {
+						t.Fatalf("error = %v, want it to wrap the %T server error", iter.err, tc.err)
+					}
+					var qErr *QueryError
+					if !errors.As(iter.err, &qErr) {
+						t.Fatalf("error has type %T, want *QueryError", iter.err)
+					}
+					if got := qErr.PotentiallyExecuted(); got != tc.wantPotentiallyExecuted {
+						t.Fatalf("PotentiallyExecuted() = %t, want %t", got, tc.wantPotentiallyExecuted)
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestQueryForExecutionPreservesConcreteTypes(t *testing.T) {
 	queryMetrics := newQueryMetrics()
 	finishUnobservedTestAttempt(queryMetrics, 4*time.Nanosecond)
