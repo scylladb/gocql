@@ -7,6 +7,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	frm "github.com/gocql/gocql/internal/frame"
 )
 
 // refreshAllSchemaSession returns a session whose schema mock knows ks1 with
@@ -172,5 +174,83 @@ func TestRefreshAllSchemaErrorUnwraps(t *testing.T) {
 		if err := s.metadataDescriber.refreshAllSchema(); !errors.Is(err, errSchema) {
 			t.Fatalf("run %d: refreshAllSchema error = %v, which does not wrap the query error", i, err)
 		}
+	}
+}
+
+// Each schema query wraps its error with %w, so the cause stays reachable
+// whichever query a refresh sees fail first.
+func TestSchemaQueryErrorsWrap(t *testing.T) {
+	t.Parallel()
+
+	errQuery := errors.New("query failed")
+	failing := &Iter{err: errQuery}
+
+	tests := []struct {
+		name    string
+		stmt    string // the failing statement contains this
+		iter    *Iter
+		call    func(s *Session) error
+		wantMsg string
+	}{
+		{"KeyspaceNoRows", "system_schema.keyspaces", failing,
+			func(s *Session) error { _, err := getKeyspaceMetadata(s, "ks1"); return err },
+			"error querying keyspace schema"},
+		// The row arrives but reading it fails.
+		{"KeyspaceRowUnreadable", "system_schema.keyspaces", &Iter{err: errQuery, numRows: 1},
+			func(s *Session) error { _, err := getKeyspaceMetadata(s, "ks1"); return err },
+			"error querying keyspace schema"},
+		{"Tables", "system_schema.tables", failing,
+			func(s *Session) error { _, err := getTableMetadata(s, "ks1"); return err },
+			"error querying table schema"},
+		{"Columns", "system_schema.columns", failing,
+			func(s *Session) error { _, err := getColumnMetadata(s, "ks1"); return err },
+			"error querying column schema"},
+		{"Views", "system_schema.views", failing,
+			func(s *Session) error { _, err := getViewMetadata(s, "ks1"); return err },
+			"error querying view schema"},
+		{"CreateStatements", "DESCRIBE KEYSPACE", failing,
+			func(s *Session) error { _, err := getCreateStatements(s, "ks1"); return err },
+			"error querying keyspace schema"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{"ks1": nil}}
+			ctrl.iterFor = func(stmt string) *Iter {
+				if strings.Contains(stmt, tc.stmt) {
+					return tc.iter
+				}
+				return nil
+			}
+			s := newSchemaEventTestSessionWithMock(ctrl)
+			defer s.Close()
+
+			err := tc.call(s)
+			if !errors.Is(err, errQuery) || !strings.Contains(err.Error(), tc.wantMsg) {
+				t.Fatalf("error = %v, want %q wrapping %v", err, tc.wantMsg, errQuery)
+			}
+		})
+	}
+}
+
+// Servers too old for DESCRIBE KEYSPACE answer it with a syntax error; the
+// create statements are then rebuilt client side, so it is not an error.
+func TestGetCreateStatementsDescribeUnsupported(t *testing.T) {
+	t.Parallel()
+
+	ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{"ks1": nil}}
+	ctrl.iterFor = func(stmt string) *Iter {
+		if strings.Contains(stmt, "DESCRIBE KEYSPACE") {
+			return &Iter{err: frm.ErrorFrame{Code: ErrCodeSyntax, Message: "line 1:0 no viable alternative"}}
+		}
+		return nil
+	}
+	s := newSchemaEventTestSessionWithMock(ctrl)
+	defer s.Close()
+
+	stmts, err := getCreateStatements(s, "ks1")
+	if err != nil || stmts != nil {
+		t.Fatalf("getCreateStatements = %q, %v; want nil, nil", stmts, err)
 	}
 }

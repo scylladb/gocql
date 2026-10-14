@@ -195,6 +195,9 @@ type schemaDataMock struct {
 	knownKeyspaces map[string][]tableInfo
 	queryDelay     time.Duration
 	queryError     error // if set, querySystem returns an Iter with this error
+	// iterFor, if set, is consulted first by query and querySystem; a non-nil
+	// result is returned as the statement's Iter.
+	iterFor func(statement string) *Iter
 }
 
 func (m *schemaDataMock) awaitSchemaAgreement() error {
@@ -208,10 +211,16 @@ func (m *schemaDataMock) query(statement string, values ...any) *Iter {
 	m.mu.Lock()
 	m.queries = append(m.queries, queryRecord{method: "query", stmt: statement})
 	delay := m.queryDelay
+	iterFor := m.iterFor
 	m.mu.Unlock()
 
 	if delay > 0 {
 		time.Sleep(delay)
+	}
+	if iterFor != nil {
+		if iter := iterFor(statement); iter != nil {
+			return iter
+		}
 	}
 
 	return &Iter{}
@@ -222,10 +231,16 @@ func (m *schemaDataMock) querySystem(statement string, values ...any) *Iter {
 	m.queries = append(m.queries, queryRecord{method: "querySystem", stmt: statement})
 	delay := m.queryDelay
 	queryErr := m.queryError
+	iterFor := m.iterFor
 	m.mu.Unlock()
 
 	if delay > 0 {
 		time.Sleep(delay)
+	}
+	if iterFor != nil {
+		if iter := iterFor(statement); iter != nil {
+			return iter
+		}
 	}
 
 	if queryErr != nil {
