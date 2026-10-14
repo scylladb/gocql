@@ -13,13 +13,12 @@ on:
         required: true
         type: boolean
 
-permissions:
-  contents: read
-
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    permissions:
+      contents: read
     steps:
       - name: Validate target and select checkout
         id: target
@@ -112,10 +111,8 @@ jobs:
     if: ${{ inputs.publish }}
     needs: build
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
+    # Inherit Pages permissions from a publish caller. Read-only callers cannot
+    # grant them, even when this job is skipped.
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
