@@ -182,8 +182,18 @@ cluster.WithOptions(
 TLS is supported. `system.client_routes` exposes both a plain `port` and a
 `tls_port` for each route; the driver selects both columns in its query and uses
 the `tls_port` whenever `ClusterConfig.SslOpts` is set. Every selected TLS
-route must provide `tls_port`. No client-routes-specific TLS configuration is
-needed.
+route must provide `tls_port`. The initial contact point is not translated, so
+configure its TLS discovery port separately.
+
+TLS certificate identity needs separate attention. The TLS handshake uses the
+translated proxy address, while a ScyllaDB Cloud node certificate may contain
+only that node's broadcast RPC IP. Enabling host verification without an
+explicit `ServerName` then checks the proxy address and fails. A single static
+`ServerName` cannot represent different per-node IPs. The driver does not know
+the seed node's identity before its first connection, so it cannot safely pick
+the broadcast RPC IP automatically. See [TLS with Client Routes](connecting/tls.md#tls-with-client-routes)
+for a configuration that checks the trusted CA without matching the proxy
+address, and for the security tradeoff of that choice.
 
 Custom `HostDialer` implementations are not supported with client routes.
 `HostInfo` exposes the translated route address but not its translated port,
