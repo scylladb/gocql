@@ -1,12 +1,9 @@
 package tests
 
 import (
-	"fmt"
 	"reflect"
 	"strconv"
 	"testing"
-
-	"github.com/google/uuid"
 )
 
 func AssertTrue(t *testing.T, description string, value bool) {
@@ -35,14 +32,6 @@ func AssertNil(t *testing.T, description string, actual any) {
 	if actual != nil {
 		t.Fatalf("expected %s to be (nil) but was (%+v) instead", description, actual)
 	}
-}
-
-func RandomUUID() string {
-	val, err := uuid.NewRandom()
-	if err != nil {
-		panic(fmt.Sprintf("failed to generate UUID: %s", err.Error()))
-	}
-	return val.String()
 }
 
 // GenerateHostNames generates a slice of host names with the format "host0", "host1", ..., "hostN-1",
