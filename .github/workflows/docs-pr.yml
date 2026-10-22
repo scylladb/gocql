@@ -6,13 +6,13 @@ on:
   push:
     paths:
       - "docs/**"
-      - ".github/workflows/docs-pr.yml"
+      - ".github/workflows/docs-*.yml"
       - ".github/workflows/docs.yml"
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
       - "docs/**"
-      - ".github/workflows/docs-pr.yml"
+      - ".github/workflows/docs-*.yml"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
 
@@ -21,7 +21,41 @@ permissions:
 
 jobs:
   build:
-    uses: ./.github/workflows/docs.yml
-    with:
-      target: ${{ github.sha }}
-      publish: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            /home/runner/.cache/pip
+            /home/runner/.cache/uv
+          key: docs-cache-${{ runner.os }}-${{ hashFiles('docs/pyproject.toml', 'docs/Makefile') }}
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - run: make -C docs setupenv
+
+      - name: Test release selection
+        run: python3 -m unittest discover -s docs -p 'test_*.py'
+
+      - name: Build docs
+        id: docs-build
+        shell: bash
+        run: |
+          make -C docs test SPHINXOPTS="-j auto -w $RUNNER_TEMP/docs-warnings.log" \
+            2>&1 | tee "$RUNNER_TEMP/docs-build.log"
+
+      - name: Summarize docs diagnostics
+        if: always()
+        uses: scylladb/sphinx-scylladb-theme/.github/actions/docs-report@0d821fc4038ee9ad6363362c02035132489bf3f6
+        with:
+          build-outcome: ${{ steps.docs-build.outcome }}
