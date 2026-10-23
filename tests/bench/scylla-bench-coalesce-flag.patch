@@ -1,0 +1,36 @@
+diff --git a/main.go b/main.go
+index 8dff1d4..7b7a2d3 100644
+--- a/main.go
++++ b/main.go
+@@ -360,6 +360,8 @@ func main() {
+ 		datacenter string
+ 		rack       string
+ 
++		writeCoalesceWaitTime time.Duration
++
+ 		showVersion     bool
+ 		showJSONVersion bool
+ 	)
+@@ -599,6 +601,12 @@ func main() {
+ 	flag.StringVar(&datacenter, "datacenter", "", "datacenter for the rack-aware policy")
+ 	//nolint:lll
+ 	flag.StringVar(&rack, "rack", "", "rack for the rack-aware policy")
++	flag.DurationVar(
++		&writeCoalesceWaitTime,
++		"write-coalesce-wait-time",
++		-1,
++		"gocql WriteCoalesceWaitTime; 0 disables coalescing, <0 keeps the driver default",
++	)
+ 	flag.IntVar(
+ 		&maxErrorsAtRow,
+ 		"error-at-row-limit",
+@@ -776,6 +784,9 @@ func main() {
+ 	cluster.PageSize = pageSize
+ 	cluster.Timeout = timeout
+ 	cluster.MetadataSchemaRequestTimeout = metadataSchemaRequestTimeout
++	if writeCoalesceWaitTime >= 0 {
++		cluster.WriteCoalesceWaitTime = writeCoalesceWaitTime
++	}
+ 
+ 	policy, policyName, err := newHostSelectionPolicy(
+ 		hostSelectionPolicy,
