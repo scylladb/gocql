@@ -1,0 +1,8 @@
+# Copyright (C) 2026 ScyllaDB
+# One union must match every reported filename, including docs + tests + CI.
+# Keep runtime manifests, the root Makefile, release controls, unknown paths,
+# and ordinary Go helpers imported by production visible in generated notes.
+omit-from-release-notes:
+  - changed-files:
+      - all-globs-to-all-files:
+          - "{docs/source/**,testdata/**,tests/**,.github/assets/**,.github/dependabot.yml,.github/issue_template.md,.github/workflows/{bench-tests,build,call_jira_sync,clean_dockerhub_images,coverage,docs-pages,docs-pr,docs,extended-ci-longevity-large-partitions-with-network-nemesis-1h-test,integration,main,merge-queue,pr}.yml,**/testdata/**,**/*_test.go,README.md,CONTRIBUTING.md,RELEASING.md,internal/eventbus/README.md,docs/README.md,docs/Makefile,docs/pyproject.toml,docs/uv.lock,docs/released_versions.py,docs/test_released_versions.py,docs/_utils/redirects.yaml,.gitignore,.golangci.yml,codecov.yml,renovate.json,integration.sh,install_test_deps.sh,ci/resolve-scylla-ccm-version.sh,ci/resolve-scylla-ccm-version_test.sh,ci/clean-old-temporary-docker-images.py}"
