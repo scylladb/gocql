@@ -1,10 +1,12 @@
 // Copyright (C) 2026 ScyllaDB SPDX-License-Identifier: Apache-2.0
 const assert = require('node:assert/strict');
 const {readFileSync} = require('node:fs');
+const {createRequire} = require('node:module');
 const {join} = require('node:path');
 const {test} = require('node:test');
 const yaml = require('js-yaml');
 const guard = require('../scripts/release-notes-guard.cjs');
+const workflowRequire = createRequire(join(__dirname, '../../package.json'));
 
 const repo = {owner: 'scylladb', repo: 'gocql'};
 const label = 'omit-from-release-notes';
@@ -63,7 +65,7 @@ function fixture(options = {}) {
   return {github, labels, calls};
 }
 
-async function adapter(f, hash, overrides = {}, load = () => guard) {
+async function adapter(f, hash, overrides = {}, load = workflowRequire) {
   const env = {PR_NUMBER: '20', CONFIRMED_PR: 'true', TARGET_OUTCOME: 'success',
     CHECKOUT_OUTCOME: 'success', INSTALL_OUTCOME: 'success',
     GUARD_OUTCOME: 'success', LABELER_OUTCOME: 'success', UNSAFE_RENAME: 'false',
@@ -430,7 +432,7 @@ test('workflow adapters use environment input and emit bounded verified snapshot
   const outputs = {};
   const f = fixture();
   await run(f.github, {repo}, {setOutput: (key, value) => { outputs[key] = value; }, info: () => {}},
-    () => guard, {env: {PR_NUMBER: '20'}});
+    workflowRequire, {env: {PR_NUMBER: '20'}});
   assert.deepEqual(Object.keys(outputs), ['hash', 'unsafe-rename']);
   assert.equal(outputs['unsafe-rename'], 'false');
   const invalid = await adapter(f, '', {PR_NUMBER: '01'});
