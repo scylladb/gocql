@@ -122,6 +122,7 @@ const (
 	lwtAddMetadataMarkKey = "SCYLLA_LWT_ADD_METADATA_MARK"
 	rateLimitError        = "SCYLLA_RATE_LIMIT_ERROR"
 	tabletsRoutingV1      = "TABLETS_ROUTING_V1"
+	tabletsRoutingV2      = "TABLETS_ROUTING_V2_EXPERIMENTAL"
 	scyllaUseMetadataID   = "SCYLLA_USE_METADATA_ID"
 )
 
@@ -152,6 +153,15 @@ func (ext *tabletsRoutingV1Ext) serialize() map[string]string {
 
 func (ext *tabletsRoutingV1Ext) name() string {
 	return tabletsRoutingV1
+}
+
+// tabletsRoutingV2Ext negotiates version feedback and leader-ordered replicas.
+// Its wire format is incompatible with V1, so negotiate only one version.
+type tabletsRoutingV2Ext struct{}
+
+func (*tabletsRoutingV2Ext) name() string { return tabletsRoutingV2 }
+func (*tabletsRoutingV2Ext) serialize() map[string]string {
+	return map[string]string{tabletsRoutingV2: ""}
 }
 
 // "Rate limit" CQL Protocol Extension.
@@ -408,8 +418,9 @@ func parseCQLProtocolExtensions(supported map[string][]string, version byte, log
 		exts = append(exts, rateLimitExt)
 	}
 
-	tabletsExt := newTabletsRoutingV1Ext(supported)
-	if tabletsExt != nil {
+	if _, ok := supported[tabletsRoutingV2]; ok {
+		exts = append(exts, &tabletsRoutingV2Ext{})
+	} else if tabletsExt := newTabletsRoutingV1Ext(supported); tabletsExt != nil {
 		exts = append(exts, tabletsExt)
 	}
 
