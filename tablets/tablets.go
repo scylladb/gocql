@@ -185,7 +185,16 @@ type TabletInfo struct {
 	replicas     []ReplicaInfo
 	firstToken   int64
 	lastToken    int64
+	version      uint64
+	hasVersion   bool
 }
+
+// Version returns the V2 tablet version and whether it is known.
+// V1 tablet hints have no version, including when the V2 version is zero.
+func (t TabletInfo) Version() (uint64, bool) { return t.version, t.hasVersion }
+
+// Version returns the V2 tablet version and whether it is known.
+func (e TabletEntry) Version() (uint64, bool) { return e.version, e.hasVersion }
 
 func (t TabletInfo) KeyspaceName() string {
 	return t.keyspaceName
@@ -221,6 +230,8 @@ type TabletEntry struct {
 	replicas   []ReplicaInfo
 	firstToken int64
 	lastToken  int64
+	version    uint64
+	hasVersion bool
 }
 
 type TabletEntryList []TabletEntry
@@ -424,6 +435,7 @@ func (t TabletEntryList) removeEntriesWithHost(hostID HostUUID) TabletEntryList 
 // toEntry converts a TabletInfo to a TabletEntry.
 func (t TabletInfo) toEntry() TabletEntry {
 	return TabletEntry{
+		version: t.version, hasVersion: t.hasVersion,
 		replicas:   slices.Clone(t.replicas),
 		firstToken: t.firstToken,
 		lastToken:  t.lastToken,
@@ -433,6 +445,7 @@ func (t TabletInfo) toEntry() TabletEntry {
 // toTabletInfo converts a TabletEntry back to a TabletInfo.
 func (e TabletEntry) toTabletInfo(keyspace, table string) TabletInfo {
 	return TabletInfo{
+		version: e.version, hasVersion: e.hasVersion,
 		keyspaceName: keyspace,
 		tableName:    table,
 		replicas:     slices.Clone(e.replicas),

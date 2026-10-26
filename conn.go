@@ -268,6 +268,7 @@ type Conn struct {
 	writeTimeout     atomic.Int64
 	mu               sync.Mutex
 	tabletsRoutingV1 int32
+	tabletsRoutingV2 int32
 	headerBuf        [headSize]byte
 	isShardAware     bool
 	// true if connection close process for the connection started.
@@ -2690,25 +2691,21 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 			len(info.response.columns) != 0,
 		)
 
-		frame = &writeExecuteFrame{
-			preparedID:       info.id,
-			resultMetadataID: info.resultMetadataID,
-			params:           params,
-			customPayload:    qry.customPayload,
-		}
-
 		// Set "lwt", keyspace", "table" property in the query if it is present in preparedMetadata
-		routingKeyspace = info.request.keyspace
-		if routingKeyspace == "" {
-			routingKeyspace = usedKeyspace
-		}
-		routingTable = info.request.table
+		routingKeyspace, routingTable = resolveRoutingKeyspaceTable(&info.request, usedKeyspace)
 
 		qry.routingInfo.mu.Lock()
 		qry.routingInfo.lwt = info.request.lwt
 		qry.routingInfo.keyspace = routingKeyspace
 		qry.routingInfo.table = routingTable
 		qry.routingInfo.mu.Unlock()
+		if c.isTabletsRoutingV2() {
+			params.tabletVersionBlock = c.session.tabletVersionBlock(qry, &info.request, params.values, routingKeyspace, routingTable)
+		}
+		frame = &writeExecuteFrame{
+			preparedID: info.id, resultMetadataID: info.resultMetadataID,
+			params: params, customPayload: qry.customPayload,
+		}
 	} else {
 		frame = &writeQueryFrame{
 			statement:     qry.stmt,
@@ -2736,8 +2733,14 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 	}
 
 	if len(framer.customPayload) > 0 {
-		if hint, ok := framer.customPayload["tablets-routing-v1"]; ok {
-			tablet, err := unmarshalTabletHint(hint, c.version, routingKeyspace, routingTable)
+		hint, hasHint := framer.customPayload["tablets-routing-v1"]
+		parseHint := tablets.ParseHint
+		if c.isTabletsRoutingV2() {
+			hint, hasHint = framer.customPayload["tablets-routing-v2"]
+			parseHint = tablets.ParseHintV2
+		}
+		if hasHint {
+			tablet, err := parseHint(hint, routingKeyspace, routingTable)
 			if err != nil {
 				return newErrorIterWithReleasedFramer(err, framer).
 					bindWarningHandlerWithMetrics(qry, metrics, warningHandler)

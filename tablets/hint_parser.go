@@ -35,6 +35,15 @@ import (
 // allocated 34 objects per call; the direct parser does 1 allocation
 // (the replicas slice) and is ~22x faster.
 func ParseHint(data []byte, keyspace, table string) (TabletInfo, error) {
+	return parseHint(data, keyspace, table, false)
+}
+
+// ParseHintV2 parses the V2 tuple, which appends a bigint tablet version to V1.
+func ParseHintV2(data []byte, keyspace, table string) (TabletInfo, error) {
+	return parseHint(data, keyspace, table, true)
+}
+
+func parseHint(data []byte, keyspace, table string, v2 bool) (TabletInfo, error) {
 	r := cqlproto.NewReader(data)
 
 	firstToken, _ := r.ReadBigInt()
@@ -73,5 +82,19 @@ func ParseHint(data []byte, keyspace, table string) (TabletInfo, error) {
 		replicas[i] = NewReplicaInfo(HostUUID(hostUUID), int(shardID))
 	}
 
-	return NewTabletInfo(keyspace, table, firstToken, lastToken, replicas)
+	tablet, err := NewTabletInfo(keyspace, table, firstToken, lastToken, replicas)
+	if err != nil {
+		return TabletInfo{}, err
+	}
+	if v2 {
+		version, present := r.ReadBigInt()
+		if r.Err() != nil {
+			return TabletInfo{}, r.Err()
+		}
+		if !present {
+			return TabletInfo{}, fmt.Errorf("null tablet version")
+		}
+		tablet.version, tablet.hasVersion = uint64(version), true
+	}
+	return tablet, nil
 }

@@ -279,6 +279,7 @@ type framer struct {
 	flags                 byte
 	proto                 byte
 	tabletsRoutingV1      bool
+	tabletsRoutingV2      bool
 	scyllaUseMetadataID   bool
 	released              atomic.Bool
 }
@@ -319,6 +320,7 @@ func newFramer(compressor Compressor, version byte) *framer {
 	f.traceID = nil
 
 	f.tabletsRoutingV1 = false
+	f.tabletsRoutingV2 = false
 	f.scyllaUseMetadataID = false
 
 	return f
@@ -1493,6 +1495,8 @@ type queryParams struct {
 	serialConsistency     Consistency
 	skipMeta              bool
 	defaultTimestamp      bool
+	// V2 appends this sampled tablet-version byte to every EXECUTE.
+	tabletVersionBlock byte
 }
 
 func (q queryParams) String() string {
@@ -1736,6 +1740,10 @@ func (f *framer) writeExecuteFrame(streamID int, preparedID, resultMetadataID []
 
 	if err := f.writeQueryParams(params); err != nil {
 		return err
+	}
+
+	if f.tabletsRoutingV2 {
+		f.writeByte(params.tabletVersionBlock)
 	}
 
 	return f.finish()
