@@ -72,6 +72,8 @@ Before publishing, verify every merged PR since the candidate's preceding versio
 
 Release publication is asynchronous and does not automatically wait for classification. If manual verification is missed, generated notes can retain omissions or unwanted support entries. Backfills affect future generated notes and do not rewrite published text.
 
+The marker is for GitHub release notes. The local Jira caller skips whole-name `omit-from-release-notes` labeled/unlabeled events, including manual changes. Automatic default-`GITHUB_TOKEN` label mutations do not trigger another label-event workflow. Other Jira events are preserved. Existing Jira copies are not cleaned, and other synchronization paths may restore them.
+
 Equivalent CLI dispatches reduce form-entry mistakes:
 
 ```sh

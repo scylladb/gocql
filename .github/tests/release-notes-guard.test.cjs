@@ -446,6 +446,30 @@ test('workflow adapters use environment input and emit bounded verified snapshot
   for (const script of scripts) assert.ok(!script.includes('${{'));
 });
 
+test('local Jira caller filters only whole marker add/remove events', () => {
+  const jira = yaml.load(readFileSync(join(__dirname, '../workflows/call_jira_sync.yml'), 'utf8'));
+  const condition = jira.jobs['jira-sync'].if;
+  // GitHub string comparisons are case-insensitive. Normalize event values to
+  // exercise that documented expression behavior, including absent labels.
+  const evaluate = (action, name) => new Function('github', `return ${condition}`)({
+    event: {action, label: {name: name?.toLowerCase() ?? ''}}
+  });
+  for (const action of ['labeled', 'unlabeled']) {
+    for (const name of [label, 'OMIT-FROM-RELEASE-NOTES', 'Omit-from-release-notes']) {
+      assert.equal(evaluate(action, name), false, `${action}: ${name}`);
+    }
+    for (const name of ['prefix-omit-from-release-notes', 'omit-from-release-notes-extra',
+      'bug', '', undefined]) assert.equal(evaluate(action, name), true);
+  }
+  for (const action of ['opened', 'edited', 'ready_for_review', 'review_requested', 'closed']) {
+    assert.equal(evaluate(action, label), true, action);
+  }
+  assert.deepEqual(jira.on.pull_request_target.types,
+    ['opened', 'edited', 'ready_for_review', 'review_requested', 'labeled', 'unlabeled', 'closed']);
+  assert.equal(jira.jobs['jira-sync'].uses,
+    'scylladb/github-automation/.github/workflows/main_pr_events_jira_sync.yml@main');
+});
+
 test('merged-PR backfills load event tooling rather than the old PR base or head', () => {
   const expression = steps.find(step => step.id === 'checkout').with.ref.replace(/^\$\{\{\s*|\s*\}\}$/g, '');
   const checkoutRef = new Function('github', `return ${expression}`);
