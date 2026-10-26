@@ -5339,6 +5339,40 @@ func TestStartupCompressionIsDriverOwned(t *testing.T) {
 	}
 }
 
+func TestControlConnLogsOptionsRoundTrip(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	srv := newTestServerOpts{addr: "127.0.0.1:0", protocol: defaultProto}.newServer(t, ctx)
+	defer srv.Stop()
+
+	log := &recordingLogger{}
+	cluster := testCluster(defaultProto, srv.Address)
+	cluster.Logger = log
+	cluster.NumConns = 1
+	db, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	defer db.Close()
+	if err := waitForPoolSize(db, 1, 10*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(log.String(), "OPTIONS round-trip"); n != 0 {
+		t.Fatalf("data connection logged %d OPTIONS round-trip lines:\n%s", n, log.String())
+	}
+
+	// Test sessions run without a control connection, so dial one by hand.
+	conn, err := db.dial(db.ctx, db.GetHosts()[0], db.controlConnConfig(), connErrorHandlerFn(func(*Conn, error, bool) {}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.Close()
+	if n := strings.Count(log.String(), "OPTIONS round-trip"); n != 1 {
+		t.Fatalf("expected 1 OPTIONS round-trip line, got %d:\n%s", n, log.String())
+	}
+}
+
 func TestHeartbeatLatencyWarning(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

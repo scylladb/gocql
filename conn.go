@@ -665,9 +665,14 @@ func (s *startupCoordinator) write(ctx context.Context, frame frameBuilder, star
 }
 
 func (s *startupCoordinator) options(ctx context.Context, startupCompleted *atomic.Bool) error {
+	start := time.Now()
 	frame, err := s.write(ctx, &writeOptionsFrame{}, startupCompleted)
 	if err != nil {
 		return err
+	}
+	// Free latency sample of the control node, reported on every (re)connect.
+	if s.conn.cfg.isControlConn {
+		s.conn.logger.Printf("gocql: control connection to %s: OPTIONS round-trip %v\n", s.conn.addr, time.Since(start))
 	}
 
 	v, ok := frame.(*frm.SupportedFrame)
