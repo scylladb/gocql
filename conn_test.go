@@ -1047,6 +1047,48 @@ func TestControlHeartBeatSurvivesUnexpectedOptionsResponse(t *testing.T) {
 	}
 }
 
+// The control loop's probes keep the data loop idle-skipping on a control
+// connection, so the control loop has to time its own probes.
+func TestControlHeartBeatWarnsWhenSlow(t *testing.T) {
+	t.Parallel()
+
+	const testTimeout = 10 * time.Second
+
+	log := &recordingLogger{}
+	conn, server := newTestExecConn(t, testContextWriter{})
+	conn.version = protoVersion4
+	defer server.Close()
+
+	sess := &Session{logger: log, connCfg: &ConnConfig{}}
+	sess.cfg.HeartbeatSlowThreshold = time.Millisecond
+	cc := &controlConn{session: sess, quit: make(chan struct{})}
+	cc.conn.Store(&connHost{conn: conn})
+
+	go cc.heartBeat()
+	defer close(cc.quit)
+
+	call := waitForSingleCallWithin(t, conn, testTimeout)
+	time.Sleep(10 * time.Millisecond)
+	supported := []byte{
+		protoVersion4 | protoDirectionMask, 0x00,
+		byte(call.streamID >> 8), byte(call.streamID),
+		byte(frm.OpSupported),
+		0x00, 0x00, 0x00, 0x02, // body: an empty string multimap
+		0x00, 0x00,
+	}
+	if err := conn.processFrameSource(context.Background(), frameSource{r: bytes.NewReader(supported)}); err != nil {
+		t.Fatalf("delivering the SUPPORTED reply to the heartbeat: %v", err)
+	}
+
+	deadline := time.Now().Add(testTimeout)
+	for !strings.Contains(log.String(), "exceeding threshold") {
+		if time.Now().After(deadline) {
+			t.Fatalf("the slow control heartbeat was not reported; log:\n%s", log.String())
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 // Dropping the beat interval to 1s only pays off if every failed beat is counted.
 // An ERROR reply is the one outcome that used to count for nothing, so a peer that
 // answers one OPTIONS with an unexpected frame and the rest with ERROR would hold
@@ -1915,6 +1957,7 @@ type newTestServerOpts struct {
 	protocol         uint8
 	supportedFactory testSupportedFactory
 	recvHook         func(*framer)
+	recvConnHook     func(net.Conn, *framer)
 }
 
 func (nts newTestServerOpts) newServer(t testing.TB, ctx context.Context) *TestServer {
@@ -1942,6 +1985,7 @@ func (nts newTestServerOpts) newServer(t testing.TB, ctx context.Context) *TestS
 
 		supportedFactory: nts.supportedFactory,
 		onRecv:           nts.recvHook,
+		onRecvConn:       nts.recvConnHook,
 	}
 
 	go srv.closeWatch()
@@ -2057,6 +2101,9 @@ type TestServer struct {
 	// ids in process. It writes the whole response into resp and returns true,
 	// or returns false to fall through to them. Set it via setExecuteHook.
 	executeHook func(id uint64, stream int, resp *framer) bool
+
+	// onRecvConn is like onRecv but also receives the server-side conn.
+	onRecvConn func(net.Conn, *framer)
 }
 
 func (srv *TestServer) setExecuteHook(hook func(id uint64, stream int, resp *framer) bool) {
@@ -2154,6 +2201,9 @@ func (srv *TestServer) serve() {
 
 				if srv.onRecv != nil {
 					srv.onRecv(framer)
+				}
+				if srv.onRecvConn != nil {
+					srv.onRecvConn(conn, framer)
 				}
 
 				go srv.process(conn, framer, exts)
@@ -5286,5 +5336,218 @@ func TestStartupCompressionIsDriverOwned(t *testing.T) {
 				require.Contains(t, opts, "DRIVER_NAME")
 			}
 		})
+	}
+}
+
+func TestControlConnLogsOptionsRoundTrip(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	srv := newTestServerOpts{addr: "127.0.0.1:0", protocol: defaultProto}.newServer(t, ctx)
+	defer srv.Stop()
+
+	log := &recordingLogger{}
+	cluster := testCluster(defaultProto, srv.Address)
+	cluster.Logger = log
+	cluster.NumConns = 1
+	db, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	defer db.Close()
+	if err := waitForPoolSize(db, 1, 10*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(log.String(), "OPTIONS round-trip"); n != 0 {
+		t.Fatalf("data connection logged %d OPTIONS round-trip lines:\n%s", n, log.String())
+	}
+
+	// Test sessions run without a control connection, so dial one by hand.
+	conn, err := db.dial(db.ctx, db.GetHosts()[0], db.controlConnConfig(), connErrorHandlerFn(func(*Conn, error, bool) {}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.Close()
+	if n := strings.Count(log.String(), "OPTIONS round-trip"); n != 1 {
+		t.Fatalf("expected 1 OPTIONS round-trip line, got %d:\n%s", n, log.String())
+	}
+}
+
+func TestHeartbeatLatencyWarning(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	// Count OPTIONS frames after startup to detect heartbeat.
+	var optionsCount atomic.Int32
+
+	srv := newTestServerOpts{
+		addr:     "127.0.0.1:0",
+		protocol: defaultProto,
+		recvHook: func(f *framer) {
+			if f.header.Op == frm.OpOptions {
+				count := optionsCount.Add(1)
+				// Delay heartbeat OPTIONS (not the initial handshake one).
+				// The first OPTIONS is from startup handshake; subsequent ones are heartbeats.
+				if count > 1 {
+					time.Sleep(50 * time.Millisecond)
+				}
+			}
+		},
+	}.newServer(t, ctx)
+	defer srv.Stop()
+
+	log := &recordingLogger{}
+
+	cluster := testCluster(defaultProto, srv.Address)
+	cluster.Logger = log
+	// Set threshold lower than the injected delay so warning is triggered.
+	cluster.HeartbeatSlowThreshold = 10 * time.Millisecond
+	cluster.NumConns = 1
+	db, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	// Poll rather than sleep: a probe that misses the 1s tick is due 30s later.
+	deadline := time.Now().Add(35 * time.Second)
+	for !strings.Contains(log.String(), "exceeding threshold") && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	// Stop heartbeat goroutines so the log content is final.
+	db.Close()
+
+	logOutput := log.String()
+	if !strings.Contains(logOutput, "heartbeat to") || !strings.Contains(logOutput, "exceeding threshold") {
+		t.Fatalf("expected heartbeat latency warning in log, got: %q", logOutput)
+	}
+	if !strings.Contains(logOutput, "10ms") {
+		t.Fatalf("expected threshold reported in milliseconds, got: %q", logOutput)
+	}
+	// Only one heartbeat fires within the window; expect exactly one warning.
+	count := strings.Count(logOutput, "exceeding threshold")
+	if count != 1 {
+		t.Fatalf("expected exactly 1 heartbeat warning (suppression), got %d in: %q", count, logOutput)
+	}
+}
+
+func TestHeartbeatLatencyNoWarningWhenDisabled(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	srv := newTestServerOpts{
+		addr:     "127.0.0.1:0",
+		protocol: defaultProto,
+		recvHook: func(f *framer) {
+			if f.header.Op == frm.OpOptions {
+				time.Sleep(20 * time.Millisecond)
+			}
+		},
+	}.newServer(t, ctx)
+	defer srv.Stop()
+
+	log := &recordingLogger{}
+
+	cluster := testCluster(defaultProto, srv.Address)
+	cluster.Logger = log
+	// HeartbeatSlowThreshold is zero (default) — no warnings should be emitted.
+	db, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	time.Sleep(2 * time.Second)
+
+	db.Close()
+
+	logOutput := log.String()
+	if strings.Contains(logOutput, "exceeding threshold") {
+		t.Fatalf("expected no heartbeat warning when disabled, got: %q", logOutput)
+	}
+}
+
+func TestHeartbeatLatencyNoWarningWhenFast(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	// No delay injected — heartbeat should be fast.
+	srv := NewTestServer(t, defaultProto, ctx)
+	defer srv.Stop()
+
+	log := &recordingLogger{}
+
+	cluster := testCluster(defaultProto, srv.Address)
+	cluster.Logger = log
+	// Set a generous threshold that local loopback will never exceed.
+	cluster.HeartbeatSlowThreshold = 5 * time.Second
+	db, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	time.Sleep(2 * time.Second)
+
+	db.Close()
+
+	logOutput := log.String()
+	if strings.Contains(logOutput, "exceeding threshold") {
+		t.Fatalf("expected no heartbeat warning for fast response, got: %q", logOutput)
+	}
+}
+
+// TestHeartbeatSkippedOnActiveConnection verifies that a connection with
+// recent traffic is not probed with heartbeat OPTIONS.
+func TestHeartbeatSkippedOnActiveConnection(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	// Per-connection OPTIONS counts, in connection arrival order.
+	var (
+		mu      sync.Mutex
+		order   []net.Conn
+		options = map[net.Conn]int{}
+	)
+	srv := newTestServerOpts{
+		addr:     "127.0.0.1:0",
+		protocol: defaultProto,
+		recvConnHook: func(conn net.Conn, f *framer) {
+			if f.header.Op != frm.OpOptions {
+				return
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if _, seen := options[conn]; !seen {
+				order = append(order, conn)
+			}
+			options[conn]++
+		},
+	}.newServer(t, ctx)
+	defer srv.Stop()
+
+	cluster := testCluster(defaultProto, srv.Address)
+	cluster.NumConns = 1
+	db, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	defer db.Close()
+
+	// Keep the data connection busy across the first heartbeat tick (~1s).
+	deadline := time.Now().Add(2200 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if err := db.Query("void").Exec(); err != nil {
+			t.Fatalf("query: %v", err)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	// testCluster disables the control conn, so the data conn is the only one.
+	if len(order) != 1 {
+		t.Fatalf("expected 1 connection, got %d", len(order))
+	}
+	if got := options[order[0]]; got != 1 {
+		t.Fatalf("expected only the handshake OPTIONS on the busy connection, got %d", got)
 	}
 }
