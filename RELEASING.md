@@ -53,7 +53,24 @@ Dispatch again from `master` with the same version and set `mode: publish`. To r
 
 Actions run names include mode, shared version, and requested target, making validation and publication runs distinguishable in history.
 
-The publish command uses GitHub's generated notes, which read `.github/release.yml` and omit PRs labeled `omit-from-release-notes`. The merge workflow adds that label when every changed file is documentation, tests, CI, or workflow configuration. Mixed PRs remain in the notes. To recheck an older merged PR, manually run **Label support-only release changes** with its PR number.
+The publish command uses GitHub's generated notes, which read `.github/release.yml` and omit PRs labeled `omit-from-release-notes`. **Label support-only release changes** runs pinned `actions/labeler` when a PR is opened, updated, reopened, edited, or closed. Its `.github/labeler.yml` filename union must match every changed filename. Documentation, Go test files, dedicated fixtures/benchmarks, and selected CI/development files qualify, including mixtures of those paths.
+
+Root and LZ4 module manifests, production code, release-controller code, the root Makefile, release-note controls, unknown paths, and mixed support/production PRs stay visible. Test helper packages can be imported by production code, so their ordinary Go files stay visible too. The guard reads this same policy for both paths of renames, rejects empty, incomplete or changing file metadata, and checks the actual label after the action. `sync-labels: true` removes the label when a complete classification no longer matches.
+
+Runs are serialized per PR and use trusted workflow-revision tooling without checking out or executing PR code. Manual dispatch must run from `master`; its target is confirmed as a PR before checkout or dependency setup. Unconfirmed targets, including ordinary issues, receive no label writes. For confirmed PRs, failed or unexpectedly skipped setup/classification attempts omission-label cleanup without depending on the checkout or installed helper. Failed verification also attempts cleanup. Errors remain visible, and API outages can prevent removal. Before/after snapshot checks do not make classification atomic or race-free.
+
+Before publishing, verify every merged PR since the candidate's preceding version tag whose labels will feed generated notes, including PRs that already carry the omission marker:
+
+1. Recheck each PR using **Actions → Label support-only release changes → Run workflow**, select `master`, and supply `pr_number`. The equivalent command is:
+
+   ```sh
+   gh workflow run label-release-notes.yml --ref master -f pr_number=123
+   ```
+
+2. Wait for that run to succeed. Confirm its PR number and logged final head/base, file count, snapshot hash and `omit` value. Check that the run describes the PR's final merged contents, not an earlier revision, and inspect the actual PR label and files against the policy. A failed, skipped, pending or outdated run does not establish eligibility; investigate and rerun before publishing.
+3. Dispatch **Release** only after these checks. Recheck any PR whose contents or classification changed during verification.
+
+Release publication is asynchronous and does not automatically wait for classification. If manual verification is missed, generated notes can retain omissions or unwanted support entries. Backfills affect future generated notes and do not rewrite published text.
 
 Equivalent CLI dispatches reduce form-entry mistakes:
 
