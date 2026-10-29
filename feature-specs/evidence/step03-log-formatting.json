@@ -1,0 +1,772 @@
+[
+  {
+    "file": "feature-specs/evidence/step03-accepted-source-bench.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-accepted-source-bench.log",
+    "raw_sha256": "8a9deef64fd82ff75099191443ea265e774f4d53cc9784943defbee8d2fec407",
+    "retained_sha256": "ad57f49c08315680ce1b500fe4d479161344e766419c782bc5cc012cf2538c93",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-accepted-source-ccm-build.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-accepted-source-ccm-build.log",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-accepted-source-focused-race.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-accepted-source-focused-race.log",
+    "raw_sha256": "7f4842e9b0f1db0243d39007f2e4e0c978a26c2b23d568c29efbe98ce85f0593",
+    "retained_sha256": "1e2a846a386cc55c752ec6e3a13ad5a9065271f454f7c8e054259003fb977eaa",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-accepted-source-fuzz-history.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-accepted-source-fuzz-history.log",
+    "raw_sha256": "7794f19f6ea5f1f34d220aec5d3e03295cc622680d06968045d163292ae9144f",
+    "retained_sha256": "479881cbf18f5de65ce2f9dea0e77df928029de22959ae7ed5761953b3134b3e",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-accepted-source-fuzz-page.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-accepted-source-fuzz-page.log",
+    "raw_sha256": "23b9dcc2263be0eb19e6125dc402238dd3d420a35332e9e39c964dc57105a901",
+    "retained_sha256": "5caeb46443aaea343487260cb5a3d60487c2c2380b258091a2689f1426968f7c",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-accepted-source-integration-race-build.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-accepted-source-integration-race-build.log",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-accepted-source-required-conflict-refresh.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-accepted-source-required-conflict-refresh.log",
+    "raw_sha256": "79d11bfae6d5328e324fc0364f6e2590125e40753a82157a57a9debd9391ac3c",
+    "retained_sha256": "a9621a7f856b0dd52d84947eca01853b42b09788838d7a800ece6ff6ec794d90",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-accepted-source-spec-verifier.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-accepted-source-spec-verifier.log",
+    "raw_sha256": "d917fd30d32ac1dcf5211b8f90122e2892ee48305e5b2f53184e255a32b9f1b4",
+    "retained_sha256": "d917fd30d32ac1dcf5211b8f90122e2892ee48305e5b2f53184e255a32b9f1b4",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-accepted-source-unit-race.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-accepted-source-unit-race.log",
+    "raw_sha256": "42bee360c255d05f3b3cc82406bf424795b35e29ed324ba759dca8edb67d7248",
+    "retained_sha256": "258bcb9aeea78cccf4f4d61168646419d2e60dfe8639a41daf180f15ca1cbda7",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-accepted-source-vet.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-accepted-source-vet.log",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-bench.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-bench.log",
+    "raw_sha256": "814f94d6e539820364d13c4def0a57aead910b410644a92f01c8494802ca2e32",
+    "retained_sha256": "5152d48d4c1ae32d5609e0bcbfbf8c3abf0a8895e3863c4d0c05c9fc84f45ffe",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-cassandra-node1-failure.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-cassandra-node1-failure.log",
+    "raw_sha256": "0f990eb1e6d098ea2664e8002892cb8ed560b02411a46ab64518dc33f954affb",
+    "retained_sha256": "b5f4db7487345c7edd4d0528d96bda7b1966e47ca2098a6376c058e4c54d291c",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-cassandra-node2-failure.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-cassandra-node2-failure.log",
+    "raw_sha256": "61a09abb271c538a142adf85c429acd7b13644212299f19d41d68c7815386c61",
+    "retained_sha256": "f11f6cb534997151b34179397e05bcee7dfe2f0dd2b4569163b81ed922152caa",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-cassandra-node3-failure.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-cassandra-node3-failure.log",
+    "raw_sha256": "65efcf8b8c31937e7c1d9f24e5052973658ff180959ef60c217221c4fa5889bb",
+    "retained_sha256": "65efcf8b8c31937e7c1d9f24e5052973658ff180959ef60c217221c4fa5889bb",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-cassandra-v5-cleanup.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-cassandra-v5-cleanup.log",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-cassandra-v5-coordinator-cleanup.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-cassandra-v5-coordinator-cleanup.log",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-cassandra-v5-coordinator-race.jsonl",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-cassandra-v5-coordinator-race.jsonl",
+    "raw_sha256": "5e22a4e9ac0b9fcc6147acc2352c505df70e7681a7b78cb8decc3b8b792627ea",
+    "retained_sha256": "5e22a4e9ac0b9fcc6147acc2352c505df70e7681a7b78cb8decc3b8b792627ea",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-cassandra-v5-final-cleanup.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-cassandra-v5-final-cleanup.log",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-cassandra-v5-final-fenced-cleanup.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-cassandra-v5-final-fenced-cleanup.log",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-cassandra-v5-final-fenced-race.jsonl",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-cassandra-v5-final-fenced-race.jsonl",
+    "raw_sha256": "fa06c62ed9763e76685cb2eeaa8798c0d7ac9900f86d8f2aef59bceed1b88161",
+    "retained_sha256": "fa06c62ed9763e76685cb2eeaa8798c0d7ac9900f86d8f2aef59bceed1b88161",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-cassandra-v5-final-race.jsonl",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-cassandra-v5-final-race.jsonl",
+    "raw_sha256": "48022d6f67d2168a1d6f4ade23dc0112ae78429eb03b1a2be01edf9e7205ddd5",
+    "retained_sha256": "48022d6f67d2168a1d6f4ade23dc0112ae78429eb03b1a2be01edf9e7205ddd5",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-cassandra-v5-race.jsonl",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-cassandra-v5-race.jsonl",
+    "raw_sha256": "a8faa17f94dfe88cb4e706a4d54d9bdd79923dd4152210d0cdc44dc6a3f66662",
+    "retained_sha256": "a8faa17f94dfe88cb4e706a4d54d9bdd79923dd4152210d0cdc44dc6a3f66662",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-cassandra-v5-release-cleanup.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-cassandra-v5-release-cleanup.log",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-cassandra-v5-release-race.jsonl",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-cassandra-v5-release-race.jsonl",
+    "raw_sha256": "cefdd1818bb18cfb8a8c2307d272003aae055fbb8f923228187b5ada11d72a14",
+    "retained_sha256": "cefdd1818bb18cfb8a8c2307d272003aae055fbb8f923228187b5ada11d72a14",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-cassandra-v5-scoped-final-cleanup.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-cassandra-v5-scoped-final-cleanup.log",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-cassandra-v5-scoped-final-race.jsonl",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-cassandra-v5-scoped-final-race.jsonl",
+    "raw_sha256": "653be086ed0cb3848b47d9333ba15fd19dd97bd6c3dc8653b2933daf2fd948e3",
+    "retained_sha256": "653be086ed0cb3848b47d9333ba15fd19dd97bd6c3dc8653b2933daf2fd948e3",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-conflict-focused-race.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-conflict-focused-race.log",
+    "raw_sha256": "d6810197eb1c92c2899830d9b5a13c0b2420e9c8f8fdcbabe25bd8c23041ee7d",
+    "retained_sha256": "9bea0df2473234f7f67d5ecf1c9d4b9afca0632594860f7058b06cebcc64b76d",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-discovery-bookkeeping-race.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-discovery-bookkeeping-race.log",
+    "raw_sha256": "fd5159fe5d1ea59f0994aa532c4f48abe93219bc7588e5b12c79fdc7b6b060fa",
+    "retained_sha256": "3ee7c82a9ffa8becac207909be94ae45cbc01e1495f3c0d716ce14ae7c2c3ed0",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-fence-final-focused-race.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-fence-final-focused-race.log",
+    "raw_sha256": "fd32d028e94b8410979dcb77331dfdc9a02d0ebfb875ea4b72938c0493887098",
+    "retained_sha256": "0620a7e2995b89f3ec1b90383c2d8d1361241a3cf1255fa9571b6338c8ad6a60",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-final-bench.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-final-bench.log",
+    "raw_sha256": "ca8bc02f5bb811aa1913fa51dbbcf0e525b14bb541422665ee5b81fc3962cf9b",
+    "retained_sha256": "2b07016e4eb95df0fb10e28bbad18248c079a33d49fd8337c4feea4ded0af216",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-final-cache-cleanup.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-final-cache-cleanup.log",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-final-cache-race.jsonl",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-final-cache-race.jsonl",
+    "raw_sha256": "cd4e9cd0a01f4ebc420d832c645fb5fc55b8b269a752ff8cb5382fa8e09d6b97",
+    "retained_sha256": "cd4e9cd0a01f4ebc420d832c645fb5fc55b8b269a752ff8cb5382fa8e09d6b97",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-final-cassandra-health.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-final-cassandra-health.log",
+    "raw_sha256": "b191727361a48fbf2ecf2676b91d10bcc2324e97f8d992acd03771a370cead5b",
+    "retained_sha256": "c35ed6fe5aee6c5ece4ad2c4be6d6327ba42aeee5582bcefa72402aaf4bc5bae",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-final-ccm-build.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-final-ccm-build.log",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-final-fenced-bench.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-final-fenced-bench.log",
+    "raw_sha256": "0d668eccb300ad6ed24bebe03b01ba7b128016498b213a6714013389d1750a71",
+    "retained_sha256": "237f036e59ee06a3d161ec393158c07812ed490be350467ae8e41668f85c6d2c",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-final-fenced-ccm-build.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-final-fenced-ccm-build.log",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-final-fenced-focused-race.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-final-fenced-focused-race.log",
+    "raw_sha256": "a3e54804ec558acd44d9aedec64da37e4aa2d80590e773b16b4ac378e62d711b",
+    "retained_sha256": "ac3e57ff5017e11ca6ab3db9617b2468a2be511c4b941381b92b0303e8209760",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-final-fenced-fuzz-history.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-final-fenced-fuzz-history.log",
+    "raw_sha256": "1beb1f08335f2c7f53a1972085d7762dbe93140035624c497265f4c60ae49181",
+    "retained_sha256": "2f61fea16831a7bb114822928fa20eaa0f0a2392c533ab4bc89e0b23011566e9",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-final-fenced-fuzz-page.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-final-fenced-fuzz-page.log",
+    "raw_sha256": "7455176563009b32235e1b0ab3f2a5874694c04f85350beb9f73f67aa45eed42",
+    "retained_sha256": "984ba47cf6ff6821281f6aba950fbe6ba17e421aede8d4eec5d0437b98802dc6",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-final-fenced-integration-race-build.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-final-fenced-integration-race-build.log",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-final-fenced-required-conflict-refresh.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-final-fenced-required-conflict-refresh.log",
+    "raw_sha256": "37ee2f77dc1954d24d062bd1eb5569b2ad8b84e4db49c9c5351a83394c89d00e",
+    "retained_sha256": "52972825446ffd51caef6f5ec9a2ee91154c4939b25b12c21d1be89b6ad7336d",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-final-fenced-spec-verifier.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-final-fenced-spec-verifier.log",
+    "raw_sha256": "d917fd30d32ac1dcf5211b8f90122e2892ee48305e5b2f53184e255a32b9f1b4",
+    "retained_sha256": "d917fd30d32ac1dcf5211b8f90122e2892ee48305e5b2f53184e255a32b9f1b4",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-final-fenced-unit-race.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-final-fenced-unit-race.log",
+    "raw_sha256": "1e620bc0aa3aadb94d5de5b171a9b01b03a80f23ffe68527cc4594844b62c783",
+    "retained_sha256": "c845d4631236401d63085b92db510065cc0eee4f06e677a2e902ca54c34f4b68",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-final-fenced-vet.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-final-fenced-vet.log",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-final-focused-race.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-final-focused-race.log",
+    "raw_sha256": "dbf2cc5134bbaad28fecf465fb757fb40779ed0f684cc5e706dbaf30a14a2204",
+    "retained_sha256": "505a8d4b93652719592917c9456a36449bd78917d3f78954352f6f3fde3f3e72",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-final-fuzz-history.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-final-fuzz-history.log",
+    "raw_sha256": "8fe902f8ec8b19145328de8d1aec9190f98a904089d0f63d25c6104a41858a6f",
+    "retained_sha256": "440161280a8d37962bed5716500088da3fa5cc535ace1867df413b3d0009de0e",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-final-fuzz-page.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-final-fuzz-page.log",
+    "raw_sha256": "a2bcbf43590510de00f987fc891c88a2cc414e5f5001dccd5ff0de0293169f09",
+    "retained_sha256": "62f3439fad2e20f835e97d409e1378878f05eba620f842cfd62e3d585bbb18af",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-final-integration-race-build.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-final-integration-race-build.log",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-final-spec-verifier.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-final-spec-verifier.log",
+    "raw_sha256": "d917fd30d32ac1dcf5211b8f90122e2892ee48305e5b2f53184e255a32b9f1b4",
+    "retained_sha256": "d917fd30d32ac1dcf5211b8f90122e2892ee48305e5b2f53184e255a32b9f1b4",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-final-stable-health-addressed.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-final-stable-health-addressed.log",
+    "raw_sha256": "b001ab2fb3e4f0eac2d3bdeccb8234d32da882ba27538c1bfe8915b73b5c0fb6",
+    "retained_sha256": "a93ea1709d2aae7e970f522f341ded2715ddc03c6b19961271c84ded5dff22fd",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-final-stable-health.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-final-stable-health.log",
+    "raw_sha256": "7c1dbc4b879a64fbf2284f3930a70e3db23ebe5fb8e4a1bfe9255bf0db52ec15",
+    "retained_sha256": "7c1dbc4b879a64fbf2284f3930a70e3db23ebe5fb8e4a1bfe9255bf0db52ec15",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-final-unit-race.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-final-unit-race.log",
+    "raw_sha256": "f04a3631cdc011688efd49a3e9d759789afe85be3df753b56c965850090575f5",
+    "retained_sha256": "85ec650a25b6830bbb71a9b6c70edd6786e69d957d18fb0b57df059e88b2ca7d",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-final-vet.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-final-vet.log",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-focused-race-initial.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-focused-race-initial.log",
+    "raw_sha256": "7f4086427aaf149fa8d96019832b6c806d6bbafbecd989b66813c495dba769cc",
+    "retained_sha256": "bd56d545f9dd573ccca1a4ebf885c261c70f9c78657df597e80e0ff78c3c56d8",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-focused-race.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-focused-race.log",
+    "raw_sha256": "dbf2cc5134bbaad28fecf465fb757fb40779ed0f684cc5e706dbaf30a14a2204",
+    "retained_sha256": "505a8d4b93652719592917c9456a36449bd78917d3f78954352f6f3fde3f3e72",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-history-bench-final.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-history-bench-final.log",
+    "raw_sha256": "d37f45413161852df7da0e8a61fcc60a4124725508c375f85a2dc2939fd9d1f2",
+    "retained_sha256": "236faad6816de8d1700764a86e5804bb534ac60c7fd495484822bf016e1d5d1c",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-integration-race-build.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-integration-race-build.log",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-last-focused-race.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-last-focused-race.log",
+    "raw_sha256": "d6810197eb1c92c2899830d9b5a13c0b2420e9c8f8fdcbabe25bd8c23041ee7d",
+    "retained_sha256": "9bea0df2473234f7f67d5ecf1c9d4b9afca0632594860f7058b06cebcc64b76d",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-post-fix-bench.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-post-fix-bench.log",
+    "raw_sha256": "cc4a6f7415cc24ab98d54ca9648ffc11c0b923d61acba315bad3f911368a1346",
+    "retained_sha256": "a806e65fd106143b2f8aed146ae85303e72908a59c02ad55d3bc16e56afc3642",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-post-fix-ccm-build.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-post-fix-ccm-build.log",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-post-fix-focused-race.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-post-fix-focused-race.log",
+    "raw_sha256": "d6810197eb1c92c2899830d9b5a13c0b2420e9c8f8fdcbabe25bd8c23041ee7d",
+    "retained_sha256": "9bea0df2473234f7f67d5ecf1c9d4b9afca0632594860f7058b06cebcc64b76d",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-post-fix-fuzz-history.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-post-fix-fuzz-history.log",
+    "raw_sha256": "acea18d40939501061ca9cb94f8e49c1bd9dc32abc6c86b92f3046438211308f",
+    "retained_sha256": "875ec9efe6b106cbea2094268930ab1f59ad1e188a419a874141a112a705fb7f",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-post-fix-fuzz-page.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-post-fix-fuzz-page.log",
+    "raw_sha256": "9b0b8548f85678482bb4ba64d531c5b52724e487cb550e5b5dc4feed736b7183",
+    "retained_sha256": "a245b78a8de0ccdc865bcfa426dc0e39c239bea1d10c492604d7d796b1be2a27",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-post-fix-integration-race-build.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-post-fix-integration-race-build.log",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-post-fix-spec-verifier.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-post-fix-spec-verifier.log",
+    "raw_sha256": "d917fd30d32ac1dcf5211b8f90122e2892ee48305e5b2f53184e255a32b9f1b4",
+    "retained_sha256": "d917fd30d32ac1dcf5211b8f90122e2892ee48305e5b2f53184e255a32b9f1b4",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-post-fix-unit-race.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-post-fix-unit-race.log",
+    "raw_sha256": "bf43f77ee7b04e74101c78733fc8214b8a4b0b6b00c03e86ecf4c64c7b2987b5",
+    "retained_sha256": "c29d27fbf9693f0c83e8080f56c92a0b46ffd39c21bace85622043ebebfd1df8",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-post-fix-vet.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-post-fix-vet.log",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-predecessor-live-paging-clean.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-predecessor-live-paging-clean.log",
+    "raw_sha256": "bfae61b741a87f62175e901db4d97e0fa3fdc91373f5f1a36c833c8804c93547",
+    "retained_sha256": "bfae61b741a87f62175e901db4d97e0fa3fdc91373f5f1a36c833c8804c93547",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-predecessor-live-paging.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-predecessor-live-paging.log",
+    "raw_sha256": "047b05c5c1ab10502ff6cd3b3417b6c057d86affedd130bf24f91553bd26a407",
+    "retained_sha256": "047b05c5c1ab10502ff6cd3b3417b6c057d86affedd130bf24f91553bd26a407",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-publication-fence-race.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-publication-fence-race.log",
+    "raw_sha256": "5f2c14e33fb03c3248b1060c9f3624f8aa3b9019078850c0ce7e8a98ffae66b4",
+    "retained_sha256": "3df1b87a3718d84d8dddb3a7fa66278156847b1a0221a0ffcf4f478989d8d6d9",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-release-bench.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-release-bench.log",
+    "raw_sha256": "f9aef6c9d3267d107d52e8827da401fddb4ff6fc3fde7788dda9095f19a6f916",
+    "retained_sha256": "97f0a6bab07a7bdfe610277fcec3795845dadf53d4c76b32b6a7b1cf1c3274d0",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-release-ccm-build.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-release-ccm-build.log",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-release-focused-race.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-release-focused-race.log",
+    "raw_sha256": "33463277a3226ff9f58142ec81748818f8e37bb473a3735597bc68281aa70bea",
+    "retained_sha256": "ba3bc2b87f94b5c73247a8f775d6090f884e67cc5e2c299bd8797e1422c100ec",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-release-fuzz-history.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-release-fuzz-history.log",
+    "raw_sha256": "35bff9a877ca772567d3b4c3469acdda42d64a22deb2d54552d8c7b55aa6624a",
+    "retained_sha256": "810e7936205046e69649ab76cb4a9972e9d83fd6234dc1cf368183117781d080",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-release-fuzz-page.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-release-fuzz-page.log",
+    "raw_sha256": "36b7e55593b26ccd94e36f6c9752300c0f198a24f01ce78bf2fc28dfbc875616",
+    "retained_sha256": "e8e34630a9cb632f95303021eb4e27cff5833bc03d5bd874d799c525e0667e20",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-release-integration-race-build.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-release-integration-race-build.log",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-release-required-conflict-refresh.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-release-required-conflict-refresh.log",
+    "raw_sha256": "22ce26eb5f4dffbae46196b1a2163c11e403f744d1f7b7ec513cb7f27a235ecd",
+    "retained_sha256": "ec11aa9a56d90bf79cc3b62514fff2783413a44299082a928b10f02fbc5ebd8d",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-release-spec-verifier.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-release-spec-verifier.log",
+    "raw_sha256": "d917fd30d32ac1dcf5211b8f90122e2892ee48305e5b2f53184e255a32b9f1b4",
+    "retained_sha256": "d917fd30d32ac1dcf5211b8f90122e2892ee48305e5b2f53184e255a32b9f1b4",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-release-unit-race.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-release-unit-race.log",
+    "raw_sha256": "81f01f298c16aa70666fdf91eb0f62a8da15443d35c7bb29d400cbdc117da040",
+    "retained_sha256": "f66d3b761ea8d152014f4b89dbbe673abd26835e51f32710c6d96b1e583bf6ff",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-release-vet.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-release-vet.log",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-required-conflict-refresh-race.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-required-conflict-refresh-race.log",
+    "raw_sha256": "22ce26eb5f4dffbae46196b1a2163c11e403f744d1f7b7ec513cb7f27a235ecd",
+    "retained_sha256": "ec11aa9a56d90bf79cc3b62514fff2783413a44299082a928b10f02fbc5ebd8d",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-scoped-conflict-focused.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-scoped-conflict-focused.log",
+    "raw_sha256": "3ce8626306f0ac1e729916b43e90485bc8cec5091957db09fc4f0cb30722e06c",
+    "retained_sha256": "d96fd01a671d557d5a3b3ad8b20c18ea9c888ed95e3349b03f868ae8aa5ba1eb",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-scoped-final-bench.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-scoped-final-bench.log",
+    "raw_sha256": "ce4ed13206f60ca3d9190b37e83ff38dbde51332715ca1c52e789fefd2decfea",
+    "retained_sha256": "27b51322d33925741357c721259a0ea15aff425247e7eff9d4bf06b749e7274f",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-scoped-final-ccm-build.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-scoped-final-ccm-build.log",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-scoped-final-focused-race.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-scoped-final-focused-race.log",
+    "raw_sha256": "70d4ef5f8deeab56c3a07c63624ee89d78ff629d6476a625e78c5b9f53c0eca4",
+    "retained_sha256": "2b40d2db5ceea6b21ea05a37f42a9531f12cc5ba903f444694cfc4fb074543db",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-scoped-final-fuzz-history.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-scoped-final-fuzz-history.log",
+    "raw_sha256": "715f236beb4bc2fb60c8bdc49a71f8168c8539fd8f3481def1dc7bbc58e754a7",
+    "retained_sha256": "0fc924ed638bcbcb72cbc9b95fefd44b5b315753635dbd4778bcb1bb92cdc761",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-scoped-final-fuzz-page.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-scoped-final-fuzz-page.log",
+    "raw_sha256": "34e8aa98593e2fa149f8c6c4c3155142fdd9dcb80c5e53347ef39ec5cf8e07e0",
+    "retained_sha256": "1fff22ceccaca0f5ea5f0851672f9b54a2031e1c06043c14268e2fedecf689af",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-scoped-final-integration-race-build.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-scoped-final-integration-race-build.log",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-scoped-final-required-conflict-refresh.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-scoped-final-required-conflict-refresh.log",
+    "raw_sha256": "220b1aed84b6fb70ef408aad5b431ed9ae9c05d60a713ae06aa4e96eb080f467",
+    "retained_sha256": "07d5bd593b8c8485052e5eb8165037098638db1354cbba0e3b9d471b848354a1",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-scoped-final-spec-verifier.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-scoped-final-spec-verifier.log",
+    "raw_sha256": "d917fd30d32ac1dcf5211b8f90122e2892ee48305e5b2f53184e255a32b9f1b4",
+    "retained_sha256": "d917fd30d32ac1dcf5211b8f90122e2892ee48305e5b2f53184e255a32b9f1b4",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-scoped-final-unit-race.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-scoped-final-unit-race.log",
+    "raw_sha256": "c5adf94b13f3b8e2036ad976ffe5cdc09788570a7e3fdbde90c90fc2eee9bb7f",
+    "retained_sha256": "c5a8c6995e96a77eecff16a2af9df016b3a48705daad6ac44d33f5e0ef1ce3f4",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-scoped-final-vet.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-scoped-final-vet.log",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-scoped-refresh-fixture-diagnostic.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-scoped-refresh-fixture-diagnostic.log",
+    "raw_sha256": "7e8b3eceacf2c0b469fda3e0a83d81b3575aad0ff644f7e45ccff24a8740f076",
+    "retained_sha256": "a1a1293b2bae7589c522fad81e4ee9fa63c688c4adeddee850e03a407f9cb44a",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-scoped-required-refresh-race.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-scoped-required-refresh-race.log",
+    "raw_sha256": "bb186ead4f43287f180a15c63d7ebafbd5ae98657e5b7432ec020f0f961b5e9d",
+    "retained_sha256": "ce40c9ed152b686f9f103013cd6331435df5b950753223b06fa96fcbd2474f8d",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-stable-final-fenced-race-1-cleanup.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-stable-final-fenced-race-1-cleanup.log",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-stable-final-fenced-race-1.jsonl",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-stable-final-fenced-race-1.jsonl",
+    "raw_sha256": "274b2f6f9d6277c30f164506a5645bf01d60e1300ecaa9aa0323f705add886cb",
+    "retained_sha256": "274b2f6f9d6277c30f164506a5645bf01d60e1300ecaa9aa0323f705add886cb",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-stable-final-race-1-cleanup.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-stable-final-race-1-cleanup.log",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-stable-final-race-1.jsonl",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-stable-final-race-1.jsonl",
+    "raw_sha256": "04d0c05c682ed980139359e828830bb87af90ad8f4e0fe60f69dd1c177f2fdc4",
+    "retained_sha256": "04d0c05c682ed980139359e828830bb87af90ad8f4e0fe60f69dd1c177f2fdc4",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-stable-final-race-2-cleanup.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-stable-final-race-2-cleanup.log",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-stable-final-race-2.jsonl",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-stable-final-race-2.jsonl",
+    "raw_sha256": "c44b43268e76670787b957d30270313672810a180412c04e3ba785508cbd3c72",
+    "retained_sha256": "c44b43268e76670787b957d30270313672810a180412c04e3ba785508cbd3c72",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-stable-intermediate-race-1-cleanup.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-stable-intermediate-race-1-cleanup.log",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-stable-intermediate-race-1.jsonl",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-stable-intermediate-race-1.jsonl",
+    "raw_sha256": "695a4d1a19f1b8e6a73df390706434992a15152e5afcd17b56ab84086041426c",
+    "retained_sha256": "695a4d1a19f1b8e6a73df390706434992a15152e5afcd17b56ab84086041426c",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-stable-intermediate-race-2-cleanup.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-stable-intermediate-race-2-cleanup.log",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-stable-intermediate-race-2.jsonl",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-stable-intermediate-race-2.jsonl",
+    "raw_sha256": "df5e1f22d0165dca6fc26db667cc4001e970c514b20f8f98179e43d9a357b090",
+    "retained_sha256": "df5e1f22d0165dca6fc26db667cc4001e970c514b20f8f98179e43d9a357b090",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-stable-release-race-1-cleanup.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-stable-release-race-1-cleanup.log",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-stable-release-race-1.jsonl",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-stable-release-race-1.jsonl",
+    "raw_sha256": "f14318b5fff6582e07a7630c0fc0728e69aa385fc836745e434698b272d244d5",
+    "retained_sha256": "f14318b5fff6582e07a7630c0fc0728e69aa385fc836745e434698b272d244d5",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-stable-scoped-final-race-1-cleanup.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-stable-scoped-final-race-1-cleanup.log",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-stable-scoped-final-race-1.jsonl",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-stable-scoped-final-race-1.jsonl",
+    "raw_sha256": "c05eaa5826416a7a068459faa1a1292be5bea4dc572f359899b296e4de0d8cee",
+    "retained_sha256": "c05eaa5826416a7a068459faa1a1292be5bea4dc572f359899b296e4de0d8cee",
+    "normalized": false
+  },
+  {
+    "file": "feature-specs/evidence/step03-stale-cache-bound-race.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-stale-cache-bound-race.log",
+    "raw_sha256": "3ce8626306f0ac1e729916b43e90485bc8cec5091957db09fc4f0cb30722e06c",
+    "retained_sha256": "d96fd01a671d557d5a3b3ad8b20c18ea9c888ed95e3349b03f868ae8aa5ba1eb",
+    "normalized": true
+  },
+  {
+    "file": "feature-specs/evidence/step03-unit-race.log",
+    "raw_archive": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-raw-evidence/step03-unit-race.log",
+    "raw_sha256": "994a466218189a81f0c30e38e259c0e32ebd71e98d0ebc48ca86dfd9773473db",
+    "retained_sha256": "32155024d22e7619a3fc070ce4eb1b3e06518b79fdf8cc6fdbde50da59661e67",
+    "normalized": true
+  }
+]

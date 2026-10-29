@@ -400,6 +400,23 @@ Topology/status, route, placement and unrelated schema publications must not
 force global PREPARE/Compile storms. Host restarts and actual UNPREPARED still
 repair the affected host entry and validate the immutable bound schema.
 
+Step 03's conflict reconciliation refinement is outside the historical design
+review result. Reuse the existing bounded retry scheduler with a coalesced set
+of at most 64 distinct pending keyspaces, counting in-flight scopes against that
+same bound. Fetch a known keyspace through typed WHERE queries and scoped
+DESCRIBE, validate its schema internally, and publish only the configured
+MetadataMode/keyspace-filter representation. Disabled/excluded metadata must
+remain unexposed; Minimal must not gain full table/type data. Only an unknown
+statement scope may enumerate all keyspaces internally, under existing limits.
+Do not perform synchronous schema I/O while holding prepared or pager locks.
+An overflow must propagate ProtocolError (stage "prepared schema
+reconciliation") to the logical operation and preserve previously delivered
+page owners. Leave unscheduled/failed conflict epochs dirty; allow registration
+retry when space is available, retain failed scopes for bounded scheduled retry,
+and allow new conflicts after successful reconciliation. Opaque metadata IDs
+supply no ordering. A typed relevant-schema query, coalescing, failure retry,
+overflow, and no-unrelated-query/publication tests are part of the step 03 gate.
+
 ## Placement feedback publication cost
 
 The receive path decodes bounded placement control fields and enqueues owned

@@ -63,6 +63,7 @@ type typedBatchItem struct {
 	valueCount int
 }
 type responsePage struct {
+	metadata                            *typedResultMetadata
 	metadataChanged                     bool
 	owner                               *wire.Lease
 	rows                                wire.Chain
@@ -99,6 +100,8 @@ type executionRequest struct {
 
 var (
 	ErrClosed           = errors.New("gocql: closed")
+	ErrPagingStateLimit = errors.New("gocql: paging state history limit exceeded")
+	ErrPagingComplete   = errors.New("gocql: completed page cannot be resumed")
 	ErrPagingNoProgress = errors.New("gocql: paging made no progress")
 	ErrNoRows           = errors.New("gocql: no rows")
 	ErrMultipleRows     = errors.New("gocql: multiple rows")

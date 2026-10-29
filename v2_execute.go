@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -12,7 +13,6 @@ import (
 
 type prepareCacheKey struct {
 	cql, keyspace string
-	generation    uint64
 }
 type prepareFlight struct {
 	done  chan struct{}
@@ -20,6 +20,10 @@ type prepareFlight struct {
 	err   error
 }
 type sessionRuntime struct {
+	schema                                                       *preparedSchemaTracker
+	prepareWorkersMu                                             sync.Mutex
+	prepareWorkers                                               sync.WaitGroup
+	prepareWorkersClosed                                         bool
 	preparing                                                    map[prepareCacheKey]*prepareFlight
 	prepareOrder                                                 []prepareCacheKey
 	mu                                                           sync.Mutex
@@ -108,13 +112,19 @@ func (s *Session) selectTypedConn(ctx context.Context, routing RoutingInfo, plan
 func (s *Session) prepareTyped(ctx context.Context, statement, keyspace string, options PrepareOptions) (state *preparedState, err error) {
 	rt := s.typedRuntime()
 	generation := s.typedGeneration()
-	key := prepareCacheKey{cql: statement, keyspace: keyspace, generation: generation}
+	tracker := rt.schemaTracker()
+	started := tracker.start()
+	key := prepareCacheKey{cql: statement, keyspace: keyspace}
 	rt.mu.Lock()
 	cached := rt.prepared[key]
-	if cached != nil {
+	if cached != nil && cached.cacheCurrent() {
 		rt.touchPrepare(key)
 		rt.mu.Unlock()
 		return cached, nil
+	}
+	if cached != nil {
+		delete(rt.prepared, key)
+		rt.forgetPrepareOrder(key)
 	}
 	if flight := rt.preparing[key]; flight != nil {
 		rt.mu.Unlock()
@@ -163,29 +173,194 @@ func (s *Session) prepareTyped(ctx context.Context, statement, keyspace string, 
 	if page == nil {
 		return nil, &ProtocolError{Stage: "prepare", Err: fmt.Errorf("missing response")}
 	}
-	info := PreparedInfo{Keyspace: keyspace, PartitionKeyIndexes: append([]int(nil), page.pkIndexes...), Conditional: page.lwt || conditionalCQL(statement), Generation: generation}
-	if col, ok := page.bindColumns.At(0); ok {
-		if info.Keyspace == "" {
-			info.Keyspace = col.Keyspace
-		}
-		info.Table = col.Table
+	info, err := s.hostPreparedInfo(conn, page, &preparedState{statement: statement, keyspace: keyspace})
+	if err != nil {
+		return nil, err
 	}
-	if info.Table == "" {
-		if col, ok := page.columns.At(0); ok {
-			info.Table = col.Table
-			if info.Keyspace == "" {
-				info.Keyspace = col.Keyspace
+	info.Generation = generation
+	dependencies := tracker.dependencies(info.Keyspace, page.bindColumns, page.columns)
+	epoch := dependencies.since(started)
+	result := &typedResultMetadata{columns: page.columns, epoch: epoch, tracker: dependencies.tracker}
+	state = &preparedState{session: s, protocol: conn.version, statement: statement, keyspace: keyspace, parameters: page.bindColumns, columns: page.columns, info: info, dependencies: dependencies, initialEpoch: epoch, result: result, resultHost: conn.host.hostUUID(), partitioner: s.preparedPartitionerName(info.Keyspace, info.Table), hosts: map[UUID]*hostPrepared{conn.host.hostUUID(): {id: page.preparedID, metadataID: page.metadataID, columns: page.columns, generation: generation, revision: 1, epoch: epoch, result: result}}}
+
+	tracker.mu.RLock()
+	defer tracker.mu.RUnlock()
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if cached = rt.prepared[key]; cached != nil && cached.cacheCurrent() {
+		rt.touchPrepare(key)
+		return cached, nil
+	}
+	limit := rt.config.PreparedCacheSize
+	if rt.profile == nil && limit == 0 {
+		limit = 1000
+	}
+	if limit == 0 || !epoch.current() {
+		return state, nil
+	}
+	for len(rt.prepared) >= limit && len(rt.prepareOrder) > 0 {
+		old := rt.prepareOrder[0]
+		rt.prepareOrder[0] = prepareCacheKey{}
+		rt.prepareOrder = rt.prepareOrder[1:]
+		delete(rt.prepared, old)
+	}
+	rt.prepared[key] = state
+	rt.touchPrepare(key)
+	return state, nil
+}
+func (s *Session) prepareOnConn(ctx context.Context, conn *Conn, state *preparedState, values encodedValues, force bool) (*hostPrepared, error) {
+	return s.prepareOnConnExpected(ctx, conn, state, values, force, nil)
+}
+func (s *Session) prepareOnConnExpected(ctx context.Context, conn *Conn, state *preparedState, values encodedValues, force bool, failed *hostPrepared) (*hostPrepared, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if s.Closed() {
+		return nil, ErrClosed
+	}
+	if err := state.reconcilePendingConflict(); err != nil {
+		return nil, err
+	}
+	id := conn.host.hostUUID()
+	state.mu.RLock()
+	cached := state.hosts[id]
+	state.mu.RUnlock()
+	if cached != nil && cached.epoch.current() && (!force || failed != nil && cached != failed) {
+		return cached, nil
+	}
+	epoch := state.dependencies.snapshot()
+	state.mu.Lock()
+	cached = state.hosts[id]
+	if cached != nil && cached.epoch.current() && (!force || failed != nil && cached != failed) {
+		state.mu.Unlock()
+		return cached, nil
+	}
+	flight := state.preparing[id]
+	if flight == nil || flight.previous != cached || !flight.epoch.equal(epoch) {
+		flight = &hostPrepareFlight{done: make(chan struct{}), previous: cached, epoch: epoch, started: state.dependencies.tracker.start()}
+		if state.preparing == nil {
+			state.preparing = make(map[UUID]*hostPrepareFlight)
+		}
+		rt := s.typedRuntime()
+		if !rt.beginPreparedWorker(s) {
+			state.mu.Unlock()
+			return nil, ErrClosed
+		}
+		state.preparing[id] = flight
+		parameters := values.columns
+		go func() {
+			defer rt.prepareWorkers.Done()
+			timeout := s.typedRuntime().config.Metadata.RequestTimeout
+			if timeout <= 0 {
+				timeout = 60 * time.Second
+			}
+			sharedCtx, cancel := context.WithTimeout(conn.ctx, timeout)
+			defer cancel()
+			result, err := s.prepareHost(sharedCtx, conn, state, parameters, flight)
+			state.mu.Lock()
+			flight.result = result
+			flight.err = err
+			if state.preparing[id] == flight {
+				delete(state.preparing, id)
+			}
+			close(flight.done)
+			state.mu.Unlock()
+		}()
+	}
+	flight.waiters.Add(1)
+	state.mu.Unlock()
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-flight.done:
+		return flight.result, flight.err
+	}
+}
+func (s *Session) prepareHost(ctx context.Context, conn *Conn, state *preparedState, parameters Columns, flight *hostPrepareFlight) (entry *hostPrepared, err error) {
+	conflict := false
+	defer func() {
+		if conflict {
+			if refreshErr := state.noteMetadataConflict(); err == nil {
+				err = refreshErr
 			}
 		}
+	}()
+	wireKeyspace := state.keyspace
+	if conn.version < 5 {
+		wireKeyspace = ""
 	}
-	if conn.version < 4 && len(info.PartitionKeyIndexes) == 0 && info.Keyspace != "" && info.Table != "" {
-		if table := s.Metadata().keyspaces[info.Keyspace]; table != nil {
-			if metadata := table.Tables[info.Table]; metadata != nil {
-				for _, key := range metadata.PartitionKey {
+	page, err := conn.executeTyped(ctx, &attemptRequest{statement: state.statement, keyspace: wireKeyspace, prepare: true})
+	if page != nil {
+		defer page.owner.Release()
+	}
+	if err != nil {
+		return nil, err
+	}
+	if page == nil {
+		return nil, &ProtocolError{Stage: "prepare", Err: fmt.Errorf("missing response")}
+	}
+	if !state.parameters.Equal(page.bindColumns) || !parameters.Equal(page.bindColumns) {
+		return nil, &SchemaChangedError{Statement: state.statement, Previous: parameters, Current: page.bindColumns}
+	}
+	info, err := s.hostPreparedInfo(conn, page, state)
+	if err != nil {
+		return nil, err
+	}
+	if !slices.Equal(info.PartitionKeyIndexes, state.info.PartitionKeyIndexes) || info.Keyspace != state.info.Keyspace || info.Table != state.info.Table || info.Conditional != state.info.Conditional || s.preparedPartitionerName(info.Keyspace, info.Table) != state.partitioner {
+		return nil, &SchemaChangedError{Statement: state.statement, Previous: state.parameters, Current: page.bindColumns}
+	}
+	revision := uint64(1)
+	if flight.previous != nil {
+		revision = flight.previous.revision + 1
+	}
+	state.dependencies.extend(state.info.Keyspace, state.parameters, page.columns)
+	epoch := state.dependencies.since(flight.started)
+	result := &typedResultMetadata{columns: page.columns, epoch: epoch, tracker: state.dependencies.tracker}
+	state.mu.RLock()
+	if state.result != nil && state.result.columns.Equal(page.columns) {
+		result.columns = state.result.columns
+		if state.result.epoch.equal(epoch) {
+			result = state.result
+		}
+	}
+	state.mu.RUnlock()
+	candidate := &hostPrepared{id: page.preparedID, metadataID: page.metadataID, columns: result.columns, generation: s.typedGeneration(), revision: revision, epoch: epoch, result: result}
+
+	// Exact-entry/epoch CAS. A losing response keeps its own immutable candidate;
+	// it is never republished against a newly loaded host revision.
+	state.dependencies.tracker.mu.RLock()
+	defer state.dependencies.tracker.mu.RUnlock()
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if state.hosts[conn.host.hostUUID()] == flight.previous && flight.epoch.current() && candidate.epoch.current() {
+		state.hosts[conn.host.hostUUID()] = candidate
+		conflict = state.resultHost != conn.host.hostUUID() && state.result != nil && !state.result.columns.Equal(result.columns)
+		if !conflict {
+			state.resultHost = conn.host.hostUUID()
+			state.result = result
+			state.initialEpoch = candidate.epoch
+			state.columns = result.columns
+		}
+	}
+	return candidate, nil
+}
+func (s *Session) hostPreparedInfo(conn *Conn, page *responsePage, state *preparedState) (PreparedInfo, error) {
+	info := PreparedInfo{Keyspace: state.keyspace, PartitionKeyIndexes: page.pkIndexes, Conditional: page.lwt || conditionalCQL(state.statement)}
+	for _, columns := range []Columns{page.bindColumns, page.columns} {
+		if col, ok := columns.At(0); ok && info.Table == "" {
+			if col.Keyspace != "" {
+				info.Keyspace = col.Keyspace
+			}
+			info.Table = col.Table
+		}
+	}
+	if conn.version < 4 && len(info.PartitionKeyIndexes) == 0 && info.Table != "" {
+		if ks := s.Metadata().keyspaces[info.Keyspace]; ks != nil {
+			if table := ks.Tables[info.Table]; table != nil {
+				for _, key := range table.PartitionKey {
 					index := -1
-					for i := 0; i < page.bindColumns.Len(); i++ {
-						column, _ := page.bindColumns.At(i)
-						if column.Keyspace == info.Keyspace && column.Table == info.Table && column.Name == key.Name {
+					for i, c := range page.bindColumns.columns {
+						if c.Name == key.Name && c.Table == info.Table && c.Keyspace == info.Keyspace {
 							index = i
 							break
 						}
@@ -201,84 +376,80 @@ func (s *Session) prepareTyped(ctx context.Context, statement, keyspace string, 
 	}
 	for _, index := range info.PartitionKeyIndexes {
 		if index < 0 || index >= page.bindColumns.Len() {
-			return nil, &ProtocolError{Stage: "prepare", Err: fmt.Errorf("invalid partition key index %d", index)}
+			return PreparedInfo{}, &ProtocolError{Stage: "prepare", Err: fmt.Errorf("invalid partition key index %d", index)}
 		}
 	}
-	state = &preparedState{session: s, protocol: conn.version, statement: statement, keyspace: keyspace, parameters: page.bindColumns, columns: page.columns, info: info, hosts: map[UUID]hostPrepared{conn.host.hostUUID(): {id: append([]byte(nil), page.preparedID...), metadataID: append([]byte(nil), page.metadataID...), columns: page.columns, generation: generation}}}
-	rt.mu.Lock()
-	defer rt.mu.Unlock()
-	if cached = rt.prepared[key]; cached != nil {
-		rt.touchPrepare(key)
-		return cached, nil
-	}
-	limit := rt.config.PreparedCacheSize
-	if rt.profile == nil && limit == 0 {
-		limit = 1000
-	}
-	if limit == 0 {
-		return state, nil
-	}
-	if len(rt.prepared) >= limit && len(rt.prepareOrder) > 0 {
-		old := rt.prepareOrder[0]
-		rt.prepareOrder = rt.prepareOrder[1:]
-		delete(rt.prepared, old)
-	}
-	rt.prepared[key] = state
-	rt.touchPrepare(key)
-	return state, nil
+	return info, nil
 }
-func (s *Session) prepareOnConn(ctx context.Context, conn *Conn, state *preparedState, values encodedValues, force bool) (hostPrepared, error) {
-	generation := s.typedGeneration()
-	id := conn.host.hostUUID()
+
+// selectPreparedResponse resolves a response using only the attempt's retained
+// immutable entry. Later schema events do not invalidate bytes already received.
+func selectPreparedResponse(state *preparedState, host UUID, prepared *hostPrepared, sentID []byte, tracksID bool, response *responsePage, observed ...uint64) (err error) {
+	if response.noMetadata {
+		if prepared == nil || prepared.result == nil || prepared.columns.Len() != response.columnCount || !bytes.Equal(prepared.metadataID, sentID) || len(response.metadataID) > 0 && !bytes.Equal(response.metadataID, prepared.metadataID) || tracksID && len(prepared.metadataID) == 0 {
+			return &ProtocolError{Stage: "result metadata", Err: fmt.Errorf("missing matching metadata")}
+		}
+		response.columns = prepared.columns
+		response.metadata = prepared.result
+		return nil
+	}
+	if state == nil || prepared == nil || response.kind != 2 {
+		return nil
+	}
+	conflict := false
+	defer func() {
+		if conflict {
+			if refreshErr := state.noteMetadataConflict(); err == nil {
+				err = refreshErr
+			}
+		}
+	}()
 	state.mu.RLock()
-	cached, ok := state.hosts[id]
-	expected := state.parameters
+	conflict = state.hosts[host] == prepared && state.resultHost != host && state.result != nil && !state.result.columns.Equal(response.columns)
 	state.mu.RUnlock()
-	if ok && !force && cached.generation == generation {
-		return cached, nil
+	changed := !prepared.columns.Equal(response.columns) || len(response.metadataID) > 0 && !bytes.Equal(prepared.metadataID, response.metadataID)
+	if !changed {
+		response.columns = prepared.columns
+		response.metadata = prepared.result
+		return nil
 	}
-	wireKeyspace := state.keyspace
-	if conn.version < 5 {
-		wireKeyspace = ""
+	result := prepared.result
+	if !prepared.columns.Equal(response.columns) {
+		result = &typedResultMetadata{columns: response.columns, tracker: state.dependencies.tracker}
 	}
-	page, err := conn.executeTyped(ctx, &attemptRequest{statement: state.statement, keyspace: wireKeyspace, prepare: true})
-	if page != nil {
-		defer page.owner.Release()
+	response.metadata = result
+	started := state.dependencies.tracker.start()
+	if len(observed) > 0 {
+		started = observed[0]
 	}
-	if err != nil {
-		return hostPrepared{}, err
+	state.dependencies.extend(state.info.Keyspace, state.parameters, response.columns)
+	candidate := *prepared
+	candidate.epoch = state.dependencies.since(started)
+	if result != prepared.result {
+		result.epoch = candidate.epoch
 	}
-	if page == nil {
-		return hostPrepared{}, &ProtocolError{Stage: "prepare", Err: fmt.Errorf("missing response")}
+	candidate.revision++
+	candidate.columns = result.columns
+	candidate.result = result
+	candidate.metadataChanged = response.metadataChanged
+	if len(response.metadataID) > 0 {
+		candidate.metadataID = response.metadataID
 	}
-	if !expected.Equal(page.bindColumns) {
-		return hostPrepared{}, &SchemaChangedError{Statement: state.statement, Previous: expected, Current: page.bindColumns}
-	}
-	for _, index := range page.pkIndexes {
-		if index < 0 || index >= len(values.cells) {
-			return hostPrepared{}, &ProtocolError{Stage: "prepare", Err: fmt.Errorf("invalid partition key index %d", index)}
+	state.dependencies.tracker.mu.RLock()
+	defer state.dependencies.tracker.mu.RUnlock()
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if state.hosts[host] == prepared && prepared.epoch.current() && candidate.epoch.current() {
+		conflict = conflict || state.resultHost != host && state.result != nil && !state.result.columns.Equal(response.columns)
+		state.hosts[host] = &candidate
+		if state.result == prepared.result && !conflict {
+			state.resultHost = host
+			state.result = result
+			state.initialEpoch = candidate.epoch
+			state.columns = result.columns
 		}
 	}
-	previous := cached
-	cached = hostPrepared{id: append([]byte(nil), page.preparedID...), metadataID: append([]byte(nil), page.metadataID...), columns: page.columns, generation: generation, revision: previous.revision}
-	if !previous.columns.Equal(page.columns) || !bytes.Equal(previous.metadataID, page.metadataID) {
-		cached.revision++
-	}
-	state.mu.Lock()
-	current, exists := state.hosts[id]
-	if exists && current.generation >= generation && (current.generation > generation || current.revision > previous.revision) {
-		state.mu.Unlock()
-		return current, nil
-	}
-	if generation >= state.info.Generation {
-		state.hosts[id] = cached
-		state.columns = page.columns
-		state.info.Generation = generation
-		state.info.PartitionKeyIndexes = append([]int(nil), page.pkIndexes...)
-		state.info.Conditional = page.lwt || conditionalCQL(state.statement)
-	}
-	state.mu.Unlock()
-	return cached, nil
+	return nil
 }
 
 type logicalExecution struct {
@@ -404,14 +575,18 @@ func Run[R any](ctx context.Context, s *Session, b *Bound[R], options Options) (
 		request.logical.finish(executionErrorResult(err), err)
 		return nil, err
 	}
-	page, err := newPage(response, b.rows, nil)
+	plans := b.plans
+	if plans == nil {
+		plans = &resultPlanCache[R]{}
+	}
+	page, err := newPageWithPlans(response, b.rows, plans, nil)
 	if err != nil {
 		cancel()
 		request.owner.release()
 		request.logical.finish(response.result, err)
 		return nil, err
 	}
-	rows := &Rows[R]{ctx: runctx, cancel: cancel, session: s, request: request, decoder: b.rows, page: page, info: response.result, seen: make(map[string]struct{})}
+	rows := &Rows[R]{ctx: runctx, cancel: cancel, session: s, request: request, decoder: b.rows, page: page, info: response.result, plans: plans, history: pagingHistory{maxCount: s.typedRuntime().config.Limits.MaxPagingStates, maxBytes: s.typedRuntime().config.Limits.MaxPagingStateBytes}}
 	rows.startPrefetch()
 	rows.release = func() { request.owner.release(); request.logical.finish(rows.info, rows.err) }
 	return rows, nil
@@ -424,7 +599,7 @@ func RunUnpaged[R any](ctx context.Context, s *Session, b *Bound[R], options Opt
 }
 func runSinglePage[R any](ctx context.Context, s *Session, b *Bound[R], state PageState, options Options, unpaged bool) (*Page[R], error) {
 	if state.Complete() {
-		return nil, typeValidation("page state", "completed page cannot be resumed")
+		return nil, ErrPagingComplete
 	}
 	runctx, cancel, request, err := admitExecution(ctx, s, b, options)
 	if err != nil {
@@ -448,13 +623,20 @@ func runSinglePage[R any](ctx context.Context, s *Session, b *Bound[R], state Pa
 		request.logical.finish(response.result, err)
 		return nil, err
 	}
-	page, err := newPage(response, b.rows, nil)
+	plans := b.plans
+	if plans == nil {
+		plans = &resultPlanCache[R]{}
+	}
+	page, err := newPageWithPlans(response, b.rows, plans, nil)
 	if err != nil {
 		cancel()
 		request.owner.release()
 		request.logical.finish(response.result, err)
 		return nil, err
 	}
+	page.ctx = runctx
+	page.cancel = cancel
+	page.session = s
 	page.release = func() { cancel(); request.owner.release(); request.logical.finish(response.result, page.err) }
 	return page, nil
 }
@@ -628,7 +810,7 @@ func (s *Session) executePage(ctx context.Context, request *executionRequest, st
 				response.result = aggregate
 				response.result.Rows = int64(response.rowCount)
 				if response.pagingState != nil {
-					response.state = RestorePageState(response.pagingState)
+					response.state = PageState{token: response.pagingState, kind: 1}
 				} else {
 					response.state = completePageState()
 				}
@@ -723,7 +905,7 @@ func (s *Session) executeTypedAttempt(ctx context.Context, conn *Conn, request *
 		wireRequest.keyspace = ""
 	}
 	if state.More() {
-		wireRequest.pagingState = state.Bytes()
+		wireRequest.pagingState = state.token
 	}
 	if request.options.profile.SerialConsistency.Set {
 		wireRequest.serialConsistency = request.options.profile.SerialConsistency.Value
@@ -736,7 +918,7 @@ func (s *Session) executeTypedAttempt(ctx context.Context, conn *Conn, request *
 		now := opts.NowInSeconds.Value
 		wireRequest.nowInSeconds = &now
 	}
-	var prepared hostPrepared
+	var prepared *hostPrepared
 	var err error
 	if request.prepared != nil {
 		prepared, err = s.prepareOnConn(ctx, conn, request.prepared, request.values, false)
@@ -757,6 +939,10 @@ func (s *Session) executeTypedAttempt(ctx context.Context, conn *Conn, request *
 	defer lease.Release()
 	wireRequest.lease = lease
 	for repair := 0; repair < 2; repair++ {
+		observed := uint64(0)
+		if request.prepared != nil {
+			observed = request.prepared.dependencies.tracker.start()
+		}
 		response, executeErr := conn.executeTyped(ctx, wireRequest)
 		s.applyTypedFeedback(response, request.routing)
 		var unprepared *RequestErrUnprepared
@@ -765,7 +951,7 @@ func (s *Session) executeTypedAttempt(ctx context.Context, conn *Conn, request *
 				response.owner.Release()
 			}
 			if request.prepared != nil && bytes.Equal(unprepared.StatementId, wireRequest.preparedID) {
-				prepared, err = s.prepareOnConn(ctx, conn, request.prepared, request.values, true)
+				prepared, err = s.prepareOnConnExpected(ctx, conn, request.prepared, request.values, true, prepared)
 				if err != nil {
 					return nil, err
 				}
@@ -792,33 +978,9 @@ func (s *Session) executeTypedAttempt(ctx context.Context, conn *Conn, request *
 		if response == nil {
 			return nil, &ProtocolError{Stage: "execute", Err: fmt.Errorf("missing response")}
 		}
-		if response.noMetadata {
-			if request.prepared == nil || prepared.generation != s.typedGeneration() || prepared.columns.Len() != response.columnCount || !bytes.Equal(prepared.metadataID, wireRequest.resultMetadataID) || (len(response.metadataID) > 0 && !bytes.Equal(response.metadataID, prepared.metadataID)) || (conn.tracksResultMetadataID() && len(prepared.metadataID) == 0) {
-				response.owner.Release()
-				return nil, &ProtocolError{Stage: "result metadata", Err: fmt.Errorf("missing matching metadata")}
-			}
-			response.columns = prepared.columns
-		}
-		if request.prepared != nil && !response.noMetadata && response.kind == 2 {
-			state := request.prepared
-			state.mu.Lock()
-			hp := state.hosts[conn.host.hostUUID()]
-			if prepared.generation >= state.info.Generation && hp.generation == prepared.generation && hp.revision == prepared.revision && bytes.Equal(hp.metadataID, prepared.metadataID) {
-				changed := !hp.columns.Equal(response.columns) || (len(response.metadataID) > 0 && !bytes.Equal(hp.metadataID, response.metadataID))
-				if state.columns.Equal(prepared.columns) {
-					state.columns = response.columns
-				}
-				hp.columns = response.columns
-				if len(response.metadataID) > 0 {
-					hp.metadataID = append([]byte(nil), response.metadataID...)
-				}
-				if changed {
-					hp.revision++
-				}
-				hp.metadataChanged = response.metadataChanged
-				state.hosts[conn.host.hostUUID()] = hp
-			}
-			state.mu.Unlock()
+		if err := selectPreparedResponse(request.prepared, conn.host.hostUUID(), prepared, wireRequest.resultMetadataID, conn.tracksResultMetadataID(), response, observed); err != nil {
+			response.owner.Release()
+			return nil, err
 		}
 
 		if response.schemaChange {
@@ -894,14 +1056,18 @@ func (s *Session) pickTypedPool(pool *hostConnPool, target Target, routing Routi
 	return picker.leastBusyConn()
 }
 
-func (rt *sessionRuntime) touchPrepare(key prepareCacheKey) {
-	for i, old := range rt.prepareOrder {
-		if old == key {
-			copy(rt.prepareOrder[i:], rt.prepareOrder[i+1:])
-			rt.prepareOrder = rt.prepareOrder[:len(rt.prepareOrder)-1]
-			break
+func (rt *sessionRuntime) forgetPrepareOrder(key prepareCacheKey) {
+	order := rt.prepareOrder[:0]
+	for _, old := range rt.prepareOrder {
+		if old != key {
+			order = append(order, old)
 		}
 	}
+	clear(rt.prepareOrder[len(order):])
+	rt.prepareOrder = order
+}
+func (rt *sessionRuntime) touchPrepare(key prepareCacheKey) {
+	rt.forgetPrepareOrder(key)
 	rt.prepareOrder = append(rt.prepareOrder, key)
 }
 

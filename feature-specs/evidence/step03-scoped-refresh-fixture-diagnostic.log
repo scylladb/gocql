@@ -1,0 +1,10 @@
+--- FAIL: TestV2PreparedConflictRunsOnlyRelevantTypedRefresh (10.01s)
+    --- FAIL: TestV2PreparedConflictRunsOnlyRelevantTypedRefresh/disabled (5.00s)
+        v2_prepared_conflict_unit_test.go:104: required reconciliation did not finish
+    --- FAIL: TestV2PreparedConflictRunsOnlyRelevantTypedRefresh/excluded (5.00s)
+        v2_prepared_conflict_unit_test.go:104: required reconciliation did not finish
+--- FAIL: TestV2PreparedConflictRefreshRetriesDirtyScope (5.00s)
+    v2_prepared_conflict_unit_test.go:138: required reconciliation did not finish
+FAIL
+FAIL    github.com/scylladb/gocql/v2    15.028s
+FAIL

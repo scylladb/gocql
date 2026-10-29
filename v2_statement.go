@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/scylladb/gocql/v2/internal/wire"
 )
@@ -27,6 +28,8 @@ type PreparedInfo struct {
 	Generation          uint64
 }
 type hostPrepared struct {
+	epoch           preparedSchemaStamp
+	result          *typedResultMetadata
 	revision        uint64
 	metadataChanged bool
 	id, metadataID  []byte
@@ -34,22 +37,43 @@ type hostPrepared struct {
 	generation      uint64
 }
 type preparedState struct {
+	conflictDirty       atomic.Bool
+	conflictMu          sync.Mutex
+	conflictEpoch       atomic.Uint64
+	conflictRefresh     atomic.Bool
+	resultHost          UUID
+	result              *typedResultMetadata
 	mu                  sync.RWMutex
 	session             *Session
 	protocol            uint8
 	statement, keyspace string
 	parameters, columns Columns
 	info                PreparedInfo
-	hosts               map[UUID]hostPrepared
+	hosts               map[UUID]*hostPrepared
+	preparing           map[UUID]*hostPrepareFlight
+	dependencies        *preparedDependencies
+	partitioner         string
+	initialEpoch        preparedSchemaStamp
+}
+type hostPrepareFlight struct {
+	started  uint64
+	waiters  atomic.Int32
+	done     chan struct{}
+	previous *hostPrepared
+	epoch    preparedSchemaStamp
+	result   *hostPrepared
+	err      error
 }
 type Prepared[P, R any] struct {
 	state  *preparedState
 	params ParamPlan[P]
 	rows   RowDecoder[R]
+	plans  *resultPlanCache[R]
 }
 type Bound[R any] struct {
 	request executionRequest
 	rows    RowDecoder[R]
+	plans   *resultPlanCache[R]
 }
 
 func Prepare[P, R any](ctx context.Context, s *Session, statement Statement[P, R], options PrepareOptions) (*Prepared[P, R], error) {
@@ -77,10 +101,11 @@ func Prepare[P, R any](ctx context.Context, s *Session, statement Statement[P, R
 	if err != nil {
 		return nil, err
 	}
-	if _, err = compileRowPlan(statement.Rows, columns); err != nil {
+	rows, err := compileRowPlan(statement.Rows, columns)
+	if err != nil {
 		return nil, err
 	}
-	return &Prepared[P, R]{state: state, params: plan, rows: statement.Rows}, nil
+	return &Prepared[P, R]{state: state, params: plan, rows: statement.Rows, plans: &resultPlanCache[R]{columns: columns, plan: rows}}, nil
 }
 func validateStatement[P, R any](s Statement[P, R]) error {
 	if strings.TrimSpace(s.CQL) == "" {
@@ -144,7 +169,7 @@ func bindPrepared[P, R any](p *Prepared[P, R], value P, owned bool) (*Bound[R], 
 	if err != nil {
 		return nil, err
 	}
-	return &Bound[R]{request: executionRequest{statement: statement, keyspace: keyspace, prepared: p.state, values: values, owner: newInputOwner(), routing: RoutingInfo{Keyspace: info.Keyspace, Table: info.Table, Token: token, Conditional: info.Conditional}}, rows: p.rows}, nil
+	return &Bound[R]{request: executionRequest{statement: statement, keyspace: keyspace, prepared: p.state, values: values, owner: newInputOwner(), routing: RoutingInfo{Keyspace: info.Keyspace, Table: info.Table, Token: token, Conditional: info.Conditional}}, rows: p.rows, plans: p.plans}, nil
 }
 func BindUnpreparedBorrowed[P, R any](s Statement[P, R], columns Columns, value P) (*Bound[R], error) {
 	return bindUnprepared(s, columns, value, false)
@@ -164,7 +189,7 @@ func bindUnprepared[P, R any](s Statement[P, R], columns Columns, value P, owned
 	if err != nil {
 		return nil, err
 	}
-	return &Bound[R]{request: executionRequest{statement: s.CQL, values: values, owner: newInputOwner(), routing: RoutingInfo{Conditional: conditionalCQL(s.CQL)}}, rows: s.Rows}, nil
+	return &Bound[R]{request: executionRequest{statement: s.CQL, values: values, owner: newInputOwner(), routing: RoutingInfo{Conditional: conditionalCQL(s.CQL)}}, rows: s.Rows, plans: &resultPlanCache[R]{}}, nil
 }
 func encodeParameters[P any](plan ParamPlan[P], columns Columns, value P, owned, allowUnset bool) (encodedValues, error) {
 	if columns.Len() > 65535 {

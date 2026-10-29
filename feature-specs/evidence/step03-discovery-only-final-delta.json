@@ -1,0 +1,13 @@
+{
+  "changed_paths": {
+    "v2_execute.go": {
+      "before": "4fd879affd936efb9693bb768e877812bdfd810eaaed08906accc9ba715dec3b",
+      "after": "3196e3be2ca60bf6b6e7ce52c290261e473be890623b5bbcfcfab3d3cc93905d"
+    },
+    "v2_prepared_paging_test.go": {
+      "before": "78c617680f01c6864f66826d89e6b954ee1b99e19bfbdcd20b54f8425f289f57",
+      "after": "1b04d24106128d0c26d7c9ce723526aa1bd9c78a216c080f0dbf8d61982ed98e"
+    }
+  },
+  "description": "Remove stale/duplicate discovery LRU order records and preserve capacity after failed stale prepare/concurrent misses; targeted live cache race and full current-source checks pass. Earlier stable/v5 lane driver differs only at this discovery bookkeeping seam."
+}

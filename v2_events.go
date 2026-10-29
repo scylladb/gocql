@@ -218,6 +218,7 @@ func (s *Session) publishV2Event(source oldevents.Event) {
 		return
 	}
 	if e.Kind == SchemaEvent {
+		s.invalidatePreparedSchema(e)
 		p.mu.Lock()
 		p.schemaEpoch[e.Keyspace]++
 		p.schemaGeneration.Add(1)

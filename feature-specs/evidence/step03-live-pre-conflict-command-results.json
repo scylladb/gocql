@@ -1,0 +1,86 @@
+[
+  {
+    "name": "stable-final-race-1-cleanup",
+    "command": [
+      "podman",
+      "exec",
+      "gocql-api-node1",
+      "cqlsh",
+      "-e",
+      "DROP TABLE IF EXISTS gocql_test.testpaging; DROP TABLE IF EXISTS gocql_test.testpagingwithallowfiltering; DROP TABLE IF EXISTS gocql_test.testpagingwithbind; DROP TABLE IF EXISTS gocql_test.testrebindqueryinfo; DROP TABLE IF EXISTS gocql_test.teststaticqueryinfo; DROP TABLE IF EXISTS gocql_test.testboundqueryinfo; DROP TABLE IF EXISTS gocql_test.testmanualquerypaging; DROP TABLE IF EXISTS gocql_test.testprepare_preparedcacheeviction; DROP TABLE IF EXISTS gocql_test.testprepareexecutescyllaemptymetadataid;"
+    ],
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step03-stable-final-race-1-cleanup.log"
+  },
+  {
+    "name": "stable-final-race-1",
+    "command": [
+      "go",
+      "test",
+      "-json",
+      "-race",
+      "-tags",
+      "integration gocql_debug",
+      "-run",
+      "^(TestPaging|TestPagingWithAllowFiltering|TestPagingWithBind|TestRebindQueryInfo|TestStaticQueryInfo|TestBoundQueryInfo|TestManualQueryPaging|TestPrepare_PreparedCacheEviction|TestPrepareExecuteScyllaEmptyMetadataID|TestV2PreparedPagingConcurrentSchemaAndDestinations)$",
+      "-count=1",
+      "-timeout=8m",
+      "-parallel=8",
+      ".",
+      "-args",
+      "-distribution=scylla",
+      "-gocql.timeout=60s",
+      "-proto=4",
+      "-rf=3",
+      "-clusterSize=3",
+      "-autowait=2000ms",
+      "-compressor=snappy",
+      "-gocql.cversion=2026.3.4",
+      "-cluster=127.0.20.1,127.0.20.2,127.0.20.3"
+    ],
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step03-stable-final-race-1.jsonl"
+  },
+  {
+    "name": "stable-final-race-2-cleanup",
+    "command": [
+      "podman",
+      "exec",
+      "gocql-api-node1",
+      "cqlsh",
+      "-e",
+      "DROP TABLE IF EXISTS gocql_test.testpaging; DROP TABLE IF EXISTS gocql_test.testpagingwithallowfiltering; DROP TABLE IF EXISTS gocql_test.testpagingwithbind; DROP TABLE IF EXISTS gocql_test.testrebindqueryinfo; DROP TABLE IF EXISTS gocql_test.teststaticqueryinfo; DROP TABLE IF EXISTS gocql_test.testboundqueryinfo; DROP TABLE IF EXISTS gocql_test.testmanualquerypaging; DROP TABLE IF EXISTS gocql_test.testprepare_preparedcacheeviction; DROP TABLE IF EXISTS gocql_test.testprepareexecutescyllaemptymetadataid;"
+    ],
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step03-stable-final-race-2-cleanup.log"
+  },
+  {
+    "name": "stable-final-race-2",
+    "command": [
+      "go",
+      "test",
+      "-json",
+      "-race",
+      "-tags",
+      "integration gocql_debug",
+      "-run",
+      "^(TestPaging|TestPagingWithAllowFiltering|TestPagingWithBind|TestRebindQueryInfo|TestStaticQueryInfo|TestBoundQueryInfo|TestManualQueryPaging|TestPrepare_PreparedCacheEviction|TestPrepareExecuteScyllaEmptyMetadataID|TestV2PreparedPagingConcurrentSchemaAndDestinations)$",
+      "-count=1",
+      "-timeout=8m",
+      "-parallel=8",
+      ".",
+      "-args",
+      "-distribution=scylla",
+      "-gocql.timeout=60s",
+      "-proto=4",
+      "-rf=3",
+      "-clusterSize=3",
+      "-autowait=2000ms",
+      "-compressor=snappy",
+      "-gocql.cversion=2026.3.4",
+      "-cluster=127.0.20.1,127.0.20.2,127.0.20.3"
+    ],
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step03-stable-final-race-2.jsonl"
+  }
+]

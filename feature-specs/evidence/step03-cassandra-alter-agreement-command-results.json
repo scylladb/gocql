@@ -1,0 +1,45 @@
+[
+  {
+    "name": "cassandra-v5-cleanup",
+    "command": [
+      "podman",
+      "exec",
+      "gocql-api-cassandra1",
+      "cqlsh",
+      "127.0.21.1",
+      "-e",
+      "DROP TABLE IF EXISTS gocql_test.testpagingwithbind; DROP TABLE IF EXISTS gocql_test.testmanualquerypaging; DROP TABLE IF EXISTS gocql_test.testprepare_preparedcacheeviction; DROP TABLE IF EXISTS gocql_test.testprepareexec_e056c00c49892710_etadata_changed;"
+    ],
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step03-cassandra-v5-final-cleanup.log"
+  },
+  {
+    "name": "cassandra-v5-race",
+    "command": [
+      "go",
+      "test",
+      "-json",
+      "-race",
+      "-tags",
+      "integration gocql_debug",
+      "-run",
+      "^(TestPagingWithBind|TestManualQueryPaging|TestPrepare_PreparedCacheEviction|TestPrepareExecuteMetadataChangedFlag|TestV2PreparedPagingConcurrentSchemaAndDestinations)$",
+      "-count=1",
+      "-timeout=8m",
+      "-parallel=5",
+      ".",
+      "-args",
+      "-distribution=cassandra",
+      "-gocql.timeout=60s",
+      "-proto=5",
+      "-rf=3",
+      "-clusterSize=3",
+      "-autowait=2000ms",
+      "-compressor=lz4",
+      "-gocql.cversion=5.0.9",
+      "-cluster=127.0.21.1,127.0.21.2,127.0.21.3"
+    ],
+    "exit_code": 1,
+    "log": "feature-specs/evidence/step03-cassandra-v5-final-race.jsonl"
+  }
+]

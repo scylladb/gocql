@@ -1,0 +1,163 @@
+[
+  {
+    "name": "required-conflict-refresh",
+    "command": [
+      "go",
+      "test",
+      "-race",
+      "-tags",
+      "unit",
+      "-run",
+      "^TestV2PreparedConflict",
+      "-count=1",
+      "-timeout=30s",
+      "."
+    ],
+    "environment": {},
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step03-scoped-final-required-conflict-refresh.log"
+  },
+  {
+    "name": "focused-race",
+    "command": [
+      "go",
+      "test",
+      "-race",
+      "-run",
+      "^TestV2(Page|Rows|Paging|ResultPlan|Prepared|PrepareHost|WarmPrepared|ManualPage|Pager)",
+      "-count=1",
+      "-timeout=30s",
+      "."
+    ],
+    "environment": {},
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step03-scoped-final-focused-race.log"
+  },
+  {
+    "name": "unit-race",
+    "command": [
+      "go",
+      "test",
+      "-race",
+      "-tags",
+      "unit",
+      "-count=1",
+      "-timeout=5m",
+      "./..."
+    ],
+    "environment": {},
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step03-scoped-final-unit-race.log"
+  },
+  {
+    "name": "vet",
+    "command": [
+      "go",
+      "vet",
+      "-tags",
+      "unit",
+      "./..."
+    ],
+    "environment": {},
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step03-scoped-final-vet.log"
+  },
+  {
+    "name": "integration-race-build",
+    "command": [
+      "go",
+      "test",
+      "-c",
+      "-race",
+      "-tags",
+      "integration gocql_debug",
+      "-o",
+      "/tmp/gocql-v2-step03-integration-race.test",
+      "."
+    ],
+    "environment": {},
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step03-scoped-final-integration-race-build.log"
+  },
+  {
+    "name": "ccm-build",
+    "command": [
+      "go",
+      "test",
+      "-c",
+      "-tags",
+      "ccm",
+      "-o",
+      "/tmp/gocql-v2-step03-ccm.test",
+      "./internal/ccm"
+    ],
+    "environment": {},
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step03-scoped-final-ccm-build.log"
+  },
+  {
+    "name": "bench",
+    "command": [
+      "go",
+      "test",
+      "-run",
+      "^$",
+      "-bench",
+      "^BenchmarkV2(PagingHistoryLookup|WarmPreparedSelection|PageCallerDestination|ResultPlanExactEntry)$",
+      "-benchmem",
+      "-benchtime=100ms",
+      "."
+    ],
+    "environment": {},
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step03-scoped-final-bench.log"
+  },
+  {
+    "name": "spec-verifier",
+    "command": [
+      "python3",
+      "feature-specs/verify.py"
+    ],
+    "environment": {},
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step03-scoped-final-spec-verifier.log"
+  },
+  {
+    "name": "fuzz-page",
+    "command": [
+      "go",
+      "test",
+      "-run",
+      "^$",
+      "-fuzz",
+      "^FuzzV2PageDestinationFraming$",
+      "-fuzztime=5s",
+      "-parallel=2",
+      "."
+    ],
+    "environment": {
+      "GOMAXPROCS": "2"
+    },
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step03-scoped-final-fuzz-page.log"
+  },
+  {
+    "name": "fuzz-history",
+    "command": [
+      "go",
+      "test",
+      "-run",
+      "^$",
+      "-fuzz",
+      "^FuzzV2PagingHistoryBudgets$",
+      "-fuzztime=5s",
+      "-parallel=2",
+      "."
+    ],
+    "environment": {
+      "GOMAXPROCS": "2"
+    },
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step03-scoped-final-fuzz-history.log"
+  }
+]

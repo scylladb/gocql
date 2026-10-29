@@ -1,0 +1,404 @@
+2026/10/29 16:07:08 logger.go:59: scylla: 127.0.20.2:9042 new conn picker sharding options {ScyllaHostFeatures:{partitioner:org.apache.cassandra.dht.Murmur3Partitioner shardingAlgorithm:biased-token-round-robin nrShards:2 msbIgnore:12 lwtFlagMask:2147483648 rateLimitErrorCode:61440 shardAwarePort:19042 shardAwarePortTLS:19142 isMetadataIDSupported:true isScylla:true} shard:1}
+2026/10/29 16:07:08 logger.go:59: scylla: 127.0.20.2:9042 put shard 1 connection total: 1 missing: 1
+2026/10/29 16:07:08 logger.go:59: scylla: 127.0.20.3:9042 new conn picker sharding options {ScyllaHostFeatures:{partitioner:org.apache.cassandra.dht.Murmur3Partitioner shardingAlgorithm:biased-token-round-robin nrShards:2 msbIgnore:12 lwtFlagMask:2147483648 rateLimitErrorCode:61440 shardAwarePort:19042 shardAwarePortTLS:19142 isMetadataIDSupported:true isScylla:true} shard:0}
+2026/10/29 16:07:08 logger.go:59: scylla: 127.0.20.3:9042 put shard 0 connection total: 1 missing: 1
+2026/10/29 16:07:08 logger.go:59: gocql: Session.handleNodeConnected: 127.0.20.2:9042
+2026/10/29 16:07:08 logger.go:59: scylla: connecting to shard 0
+2026/10/29 16:07:08 logger.go:59: scylla: 127.0.20.1:9042 new conn picker sharding options {ScyllaHostFeatures:{partitioner:org.apache.cassandra.dht.Murmur3Partitioner shardingAlgorithm:biased-token-round-robin nrShards:2 msbIgnore:12 lwtFlagMask:2147483648 rateLimitErrorCode:61440 shardAwarePort:19042 shardAwarePortTLS:19142 isMetadataIDSupported:true isScylla:true} shard:0}
+2026/10/29 16:07:08 logger.go:59: scylla: connecting to shard 1
+2026/10/29 16:07:08 logger.go:59: scylla: 127.0.20.1:9042 put shard 0 connection total: 1 missing: 1
+2026/10/29 16:07:08 logger.go:59: gocql: Session.handleNodeConnected: 127.0.20.3:9042
+2026/10/29 16:07:08 logger.go:59: gocql: Session.handleNodeConnected: 127.0.20.1:9042
+2026/10/29 16:07:08 logger.go:59: scylla: connecting to shard 1
+2026/10/29 16:07:08 logger.go:59: scylla: 127.0.20.2:9042 put shard 0 connection total: 2 missing: 0
+2026/10/29 16:07:08 logger.go:59: scylla: 127.0.20.2:9042 no excess connections to close
+2026/10/29 16:07:08 logger.go:59: scylla: 127.0.20.3:9042 put shard 1 connection total: 2 missing: 0
+2026/10/29 16:07:08 logger.go:59: gocql: conns of pool after stopped "127.0.20.2": 2
+2026/10/29 16:07:08 logger.go:59: scylla: 127.0.20.3:9042 no excess connections to close
+2026/10/29 16:07:08 logger.go:59: gocql: conns of pool after stopped "127.0.20.3": 2
+2026/10/29 16:07:08 logger.go:59: scylla: 127.0.20.1:9042 put shard 1 connection total: 2 missing: 0
+2026/10/29 16:07:08 logger.go:59: scylla: 127.0.20.1:9042 no excess connections to close
+2026/10/29 16:07:08 logger.go:59: gocql: conns of pool after stopped "127.0.20.1": 2
+2026/10/29 16:07:08 logger.go:59: scylla: 127.0.20.2:9042 closing 2 connections
+2026/10/29 16:07:08 logger.go:59: scylla: 127.0.20.2:9042 no excess connections to close
+2026/10/29 16:07:08 logger.go:59: scylla: 127.0.20.1:9042 closing 2 connections
+2026/10/29 16:07:08 logger.go:59: scylla: 127.0.20.1:9042 no excess connections to close
+2026/10/29 16:07:08 logger.go:59: scylla: 127.0.20.3:9042 closing 2 connections
+2026/10/29 16:07:08 logger.go:59: scylla: 127.0.20.3:9042 no excess connections to close
+2026/10/29 16:07:08 logger.go:59: scylla: 127.0.20.1:9042 new conn picker sharding options {ScyllaHostFeatures:{partitioner:org.apache.cassandra.dht.Murmur3Partitioner shardingAlgorithm:biased-token-round-robin nrShards:2 msbIgnore:12 lwtFlagMask:2147483648 rateLimitErrorCode:61440 shardAwarePort:19042 shardAwarePortTLS:19142 isMetadataIDSupported:true isScylla:true} shard:0}
+2026/10/29 16:07:08 logger.go:59: scylla: 127.0.20.3:9042 new conn picker sharding options {ScyllaHostFeatures:{partitioner:org.apache.cassandra.dht.Murmur3Partitioner shardingAlgorithm:biased-token-round-robin nrShards:2 msbIgnore:12 lwtFlagMask:2147483648 rateLimitErrorCode:61440 shardAwarePort:19042 shardAwarePortTLS:19142 isMetadataIDSupported:true isScylla:true} shard:1}
+2026/10/29 16:07:08 logger.go:59: scylla: 127.0.20.3:9042 put shard 1 connection total: 1 missing: 1
+2026/10/29 16:07:08 logger.go:59: scylla: 127.0.20.1:9042 put shard 0 connection total: 1 missing: 1
+2026/10/29 16:07:08 logger.go:59: gocql: Session.handleNodeConnected: 127.0.20.3:9042
+2026/10/29 16:07:08 logger.go:59: scylla: 127.0.20.2:9042 new conn picker sharding options {ScyllaHostFeatures:{partitioner:org.apache.cassandra.dht.Murmur3Partitioner shardingAlgorithm:biased-token-round-robin nrShards:2 msbIgnore:12 lwtFlagMask:2147483648 rateLimitErrorCode:61440 shardAwarePort:19042 shardAwarePortTLS:19142 isMetadataIDSupported:true isScylla:true} shard:0}
+2026/10/29 16:07:08 logger.go:59: scylla: 127.0.20.2:9042 put shard 0 connection total: 1 missing: 1
+2026/10/29 16:07:08 logger.go:59: gocql: Session.handleNodeConnected: 127.0.20.1:9042
+2026/10/29 16:07:08 logger.go:59: scylla: connecting to shard 1
+2026/10/29 16:07:08 logger.go:59: scylla: connecting to shard 0
+2026/10/29 16:07:08 logger.go:59: gocql: Session.handleNodeConnected: 127.0.20.2:9042
+2026/10/29 16:07:08 logger.go:59: scylla: connecting to shard 1
+2026/10/29 16:07:08 logger.go:59: scylla: 127.0.20.1:9042 put shard 1 connection total: 2 missing: 0
+2026/10/29 16:07:08 logger.go:59: scylla: 127.0.20.1:9042 no excess connections to close
+2026/10/29 16:07:08 logger.go:59: gocql: conns of pool after stopped "127.0.20.1": 2
+2026/10/29 16:07:08 logger.go:59: scylla: 127.0.20.2:9042 put shard 1 connection total: 2 missing: 0
+2026/10/29 16:07:08 logger.go:59: scylla: 127.0.20.2:9042 no excess connections to close
+2026/10/29 16:07:08 logger.go:59: gocql: conns of pool after stopped "127.0.20.2": 2
+2026/10/29 16:07:08 logger.go:59: scylla: 127.0.20.3:9042 put shard 0 connection total: 2 missing: 0
+2026/10/29 16:07:08 logger.go:59: scylla: 127.0.20.3:9042 no excess connections to close
+2026/10/29 16:07:08 logger.go:59: gocql: conns of pool after stopped "127.0.20.3": 2
+2026/10/29 16:07:08 logger.go:59: gocql: handling frame: [event schema_change_keyspace change="CREATED" keyspace="gocql_check_tablets_enabled"]
+2026/10/29 16:07:09 logger.go:59: [977b59fa-a627-42a8-9a8d-a3297d524002] warnings: [Using Replication Factor replication_factor=1 lower than the minimum_replication_factor_warn_threshold=3 is not recommended.]
+2026/10/29 16:07:09 logger.go:59: gocql: handling frame: [event schema_change_keyspace change="DROPPED" keyspace="gocql_check_tablets_enabled"]
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 closing 2 connections
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 no excess connections to close
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 closing 2 connections
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 no excess connections to close
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 closing 2 connections
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 no excess connections to close
+=== RUN   TestPaging
+=== PAUSE TestPaging
+=== RUN   TestPagingWithAllowFiltering
+=== PAUSE TestPagingWithAllowFiltering
+=== RUN   TestPagingWithBind
+=== PAUSE TestPagingWithBind
+=== RUN   TestRebindQueryInfo
+=== PAUSE TestRebindQueryInfo
+=== RUN   TestStaticQueryInfo
+=== PAUSE TestStaticQueryInfo
+=== RUN   TestBoundQueryInfo
+=== PAUSE TestBoundQueryInfo
+=== RUN   TestPrepare_PreparedCacheEviction
+=== PAUSE TestPrepare_PreparedCacheEviction
+=== RUN   TestManualQueryPaging
+=== PAUSE TestManualQueryPaging
+=== CONT  TestPaging
+=== CONT  TestStaticQueryInfo
+=== CONT  TestPagingWithBind
+=== CONT  TestRebindQueryInfo
+=== CONT  TestPrepare_PreparedCacheEviction
+=== CONT  TestPagingWithAllowFiltering
+=== CONT  TestManualQueryPaging
+=== CONT  TestBoundQueryInfo
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 new conn picker sharding options {ScyllaHostFeatures:{partitioner:org.apache.cassandra.dht.Murmur3Partitioner shardingAlgorithm:biased-token-round-robin nrShards:2 msbIgnore:12 lwtFlagMask:2147483648 rateLimitErrorCode:61440 shardAwarePort:19042 shardAwarePortTLS:19142 isMetadataIDSupported:true isScylla:true} shard:1}
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 put shard 1 connection total: 1 missing: 1
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 new conn picker sharding options {ScyllaHostFeatures:{partitioner:org.apache.cassandra.dht.Murmur3Partitioner shardingAlgorithm:biased-token-round-robin nrShards:2 msbIgnore:12 lwtFlagMask:2147483648 rateLimitErrorCode:61440 shardAwarePort:19042 shardAwarePortTLS:19142 isMetadataIDSupported:true isScylla:true} shard:0}
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 put shard 0 connection total: 1 missing: 1
+2026/10/29 16:07:11 logger.go:59: gocql: Session.handleNodeConnected: 127.0.20.3:9042
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 new conn picker sharding options {ScyllaHostFeatures:{partitioner:org.apache.cassandra.dht.Murmur3Partitioner shardingAlgorithm:biased-token-round-robin nrShards:2 msbIgnore:12 lwtFlagMask:2147483648 rateLimitErrorCode:61440 shardAwarePort:19042 shardAwarePortTLS:19142 isMetadataIDSupported:true isScylla:true} shard:0}
+2026/10/29 16:07:11 logger.go:59: scylla: connecting to shard 1
+2026/10/29 16:07:11 logger.go:59: scylla: connecting to shard 0
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 put shard 0 connection total: 1 missing: 1
+2026/10/29 16:07:11 logger.go:59: gocql: Session.handleNodeConnected: 127.0.20.1:9042
+2026/10/29 16:07:11 logger.go:59: gocql: Session.handleNodeConnected: 127.0.20.2:9042
+2026/10/29 16:07:11 logger.go:59: scylla: connecting to shard 1
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 put shard 1 connection total: 2 missing: 0
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 no excess connections to close
+2026/10/29 16:07:11 logger.go:59: gocql: conns of pool after stopped "127.0.20.1": 2
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 put shard 0 connection total: 2 missing: 0
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 no excess connections to close
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 put shard 1 connection total: 2 missing: 0
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 no excess connections to close
+2026/10/29 16:07:11 logger.go:59: gocql: conns of pool after stopped "127.0.20.3": 2
+2026/10/29 16:07:11 logger.go:59: gocql: conns of pool after stopped "127.0.20.2": 2
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 closing 2 connections
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 no excess connections to close
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 closing 2 connections
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 no excess connections to close
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 closing 2 connections
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 no excess connections to close
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 new conn picker sharding options {ScyllaHostFeatures:{partitioner:org.apache.cassandra.dht.Murmur3Partitioner shardingAlgorithm:biased-token-round-robin nrShards:2 msbIgnore:12 lwtFlagMask:2147483648 rateLimitErrorCode:61440 shardAwarePort:19042 shardAwarePortTLS:19142 isMetadataIDSupported:true isScylla:true} shard:0}
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 put shard 0 connection total: 1 missing: 1
+2026/10/29 16:07:11 logger.go:59: gocql: Session.handleNodeConnected: 127.0.20.2:9042
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 new conn picker sharding options {ScyllaHostFeatures:{partitioner:org.apache.cassandra.dht.Murmur3Partitioner shardingAlgorithm:biased-token-round-robin nrShards:2 msbIgnore:12 lwtFlagMask:2147483648 rateLimitErrorCode:61440 shardAwarePort:19042 shardAwarePortTLS:19142 isMetadataIDSupported:true isScylla:true} shard:0}
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 put shard 0 connection total: 1 missing: 1
+2026/10/29 16:07:11 logger.go:59: scylla: connecting to shard 1
+2026/10/29 16:07:11 logger.go:59: gocql: Session.handleNodeConnected: 127.0.20.3:9042
+2026/10/29 16:07:11 logger.go:59: scylla: connecting to shard 1
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 new conn picker sharding options {ScyllaHostFeatures:{partitioner:org.apache.cassandra.dht.Murmur3Partitioner shardingAlgorithm:biased-token-round-robin nrShards:2 msbIgnore:12 lwtFlagMask:2147483648 rateLimitErrorCode:61440 shardAwarePort:19042 shardAwarePortTLS:19142 isMetadataIDSupported:true isScylla:true} shard:0}
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 put shard 0 connection total: 1 missing: 1
+2026/10/29 16:07:11 logger.go:59: gocql: Session.handleNodeConnected: 127.0.20.1:9042
+2026/10/29 16:07:11 logger.go:59: scylla: connecting to shard 1
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 new conn picker sharding options {ScyllaHostFeatures:{partitioner:org.apache.cassandra.dht.Murmur3Partitioner shardingAlgorithm:biased-token-round-robin nrShards:2 msbIgnore:12 lwtFlagMask:2147483648 rateLimitErrorCode:61440 shardAwarePort:19042 shardAwarePortTLS:19142 isMetadataIDSupported:true isScylla:true} shard:1}
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 new conn picker sharding options {ScyllaHostFeatures:{partitioner:org.apache.cassandra.dht.Murmur3Partitioner shardingAlgorithm:biased-token-round-robin nrShards:2 msbIgnore:12 lwtFlagMask:2147483648 rateLimitErrorCode:61440 shardAwarePort:19042 shardAwarePortTLS:19142 isMetadataIDSupported:true isScylla:true} shard:1}
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 put shard 1 connection total: 1 missing: 1
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 put shard 1 connection total: 1 missing: 1
+2026/10/29 16:07:11 logger.go:59: scylla: connecting to shard 0
+2026/10/29 16:07:11 logger.go:59: scylla: connecting to shard 0
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 new conn picker sharding options {ScyllaHostFeatures:{partitioner:org.apache.cassandra.dht.Murmur3Partitioner shardingAlgorithm:biased-token-round-robin nrShards:2 msbIgnore:12 lwtFlagMask:2147483648 rateLimitErrorCode:61440 shardAwarePort:19042 shardAwarePortTLS:19142 isMetadataIDSupported:true isScylla:true} shard:1}
+2026/10/29 16:07:11 logger.go:59: gocql: Session.handleNodeConnected: 127.0.20.2:9042
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 put shard 1 connection total: 1 missing: 1
+2026/10/29 16:07:11 logger.go:59: gocql: Session.handleNodeConnected: 127.0.20.3:9042
+2026/10/29 16:07:11 logger.go:59: scylla: connecting to shard 0
+2026/10/29 16:07:11 logger.go:59: gocql: Session.handleNodeConnected: 127.0.20.1:9042
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 put shard 1 connection total: 2 missing: 0
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 no excess connections to close
+2026/10/29 16:07:11 logger.go:59: gocql: conns of pool after stopped "127.0.20.3": 2
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 put shard 1 connection total: 2 missing: 0
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 no excess connections to close
+2026/10/29 16:07:11 logger.go:59: gocql: conns of pool after stopped "127.0.20.1": 2
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 new conn picker sharding options {ScyllaHostFeatures:{partitioner:org.apache.cassandra.dht.Murmur3Partitioner shardingAlgorithm:biased-token-round-robin nrShards:2 msbIgnore:12 lwtFlagMask:2147483648 rateLimitErrorCode:61440 shardAwarePort:19042 shardAwarePortTLS:19142 isMetadataIDSupported:true isScylla:true} shard:0}
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 put shard 0 connection total: 2 missing: 0
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 put shard 0 connection total: 1 missing: 1
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 new conn picker sharding options {ScyllaHostFeatures:{partitioner:org.apache.cassandra.dht.Murmur3Partitioner shardingAlgorithm:biased-token-round-robin nrShards:2 msbIgnore:12 lwtFlagMask:2147483648 rateLimitErrorCode:61440 shardAwarePort:19042 shardAwarePortTLS:19142 isMetadataIDSupported:true isScylla:true} shard:1}
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 no excess connections to close
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 put shard 1 connection total: 1 missing: 1
+2026/10/29 16:07:11 logger.go:59: gocql: Session.handleNodeConnected: 127.0.20.3:9042
+2026/10/29 16:07:11 logger.go:59: scylla: connecting to shard 0
+2026/10/29 16:07:11 logger.go:59: gocql: Session.handleNodeConnected: 127.0.20.1:9042
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 new conn picker sharding options {ScyllaHostFeatures:{partitioner:org.apache.cassandra.dht.Murmur3Partitioner shardingAlgorithm:biased-token-round-robin nrShards:2 msbIgnore:12 lwtFlagMask:2147483648 rateLimitErrorCode:61440 shardAwarePort:19042 shardAwarePortTLS:19142 isMetadataIDSupported:true isScylla:true} shard:0}
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 put shard 0 connection total: 1 missing: 1
+2026/10/29 16:07:11 logger.go:59: gocql: Session.handleNodeConnected: 127.0.20.1:9042
+2026/10/29 16:07:11 logger.go:59: scylla: connecting to shard 1
+2026/10/29 16:07:11 logger.go:59: gocql: conns of pool after stopped "127.0.20.2": 2
+2026/10/29 16:07:11 logger.go:59: scylla: connecting to shard 1
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 put shard 0 connection total: 2 missing: 0
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 no excess connections to close
+2026/10/29 16:07:11 logger.go:59: gocql: conns of pool after stopped "127.0.20.3": 2
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 new conn picker sharding options {ScyllaHostFeatures:{partitioner:org.apache.cassandra.dht.Murmur3Partitioner shardingAlgorithm:biased-token-round-robin nrShards:2 msbIgnore:12 lwtFlagMask:2147483648 rateLimitErrorCode:61440 shardAwarePort:19042 shardAwarePortTLS:19142 isMetadataIDSupported:true isScylla:true} shard:0}
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 put shard 0 connection total: 1 missing: 1
+2026/10/29 16:07:11 logger.go:59: gocql: Session.handleNodeConnected: 127.0.20.2:9042
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 new conn picker sharding options {ScyllaHostFeatures:{partitioner:org.apache.cassandra.dht.Murmur3Partitioner shardingAlgorithm:biased-token-round-robin nrShards:2 msbIgnore:12 lwtFlagMask:2147483648 rateLimitErrorCode:61440 shardAwarePort:19042 shardAwarePortTLS:19142 isMetadataIDSupported:true isScylla:true} shard:0}
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 put shard 0 connection total: 1 missing: 1
+2026/10/29 16:07:11 logger.go:59: gocql: Session.handleNodeConnected: 127.0.20.3:9042
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 new conn picker sharding options {ScyllaHostFeatures:{partitioner:org.apache.cassandra.dht.Murmur3Partitioner shardingAlgorithm:biased-token-round-robin nrShards:2 msbIgnore:12 lwtFlagMask:2147483648 rateLimitErrorCode:61440 shardAwarePort:19042 shardAwarePortTLS:19142 isMetadataIDSupported:true isScylla:true} shard:1}
+2026/10/29 16:07:11 logger.go:59: scylla: connecting to shard 1
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 put shard 1 connection total: 1 missing: 1
+2026/10/29 16:07:11 logger.go:59: scylla: connecting to shard 1
+2026/10/29 16:07:11 logger.go:59: gocql: Session.handleNodeConnected: 127.0.20.3:9042
+2026/10/29 16:07:11 logger.go:59: scylla: connecting to shard 0
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 new conn picker sharding options {ScyllaHostFeatures:{partitioner:org.apache.cassandra.dht.Murmur3Partitioner shardingAlgorithm:biased-token-round-robin nrShards:2 msbIgnore:12 lwtFlagMask:2147483648 rateLimitErrorCode:61440 shardAwarePort:19042 shardAwarePortTLS:19142 isMetadataIDSupported:true isScylla:true} shard:1}
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 put shard 1 connection total: 1 missing: 1
+2026/10/29 16:07:11 logger.go:59: gocql: Session.handleNodeConnected: 127.0.20.2:9042
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 new conn picker sharding options {ScyllaHostFeatures:{partitioner:org.apache.cassandra.dht.Murmur3Partitioner shardingAlgorithm:biased-token-round-robin nrShards:2 msbIgnore:12 lwtFlagMask:2147483648 rateLimitErrorCode:61440 shardAwarePort:19042 shardAwarePortTLS:19142 isMetadataIDSupported:true isScylla:true} shard:1}
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 put shard 0 connection total: 2 missing: 0
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 put shard 1 connection total: 1 missing: 1
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 no excess connections to close
+2026/10/29 16:07:11 logger.go:59: gocql: Session.handleNodeConnected: 127.0.20.2:9042
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 new conn picker sharding options {ScyllaHostFeatures:{partitioner:org.apache.cassandra.dht.Murmur3Partitioner shardingAlgorithm:biased-token-round-robin nrShards:2 msbIgnore:12 lwtFlagMask:2147483648 rateLimitErrorCode:61440 shardAwarePort:19042 shardAwarePortTLS:19142 isMetadataIDSupported:true isScylla:true} shard:0}
+2026/10/29 16:07:11 logger.go:59: scylla: connecting to shard 0
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 put shard 0 connection total: 1 missing: 1
+2026/10/29 16:07:11 logger.go:59: gocql: conns of pool after stopped "127.0.20.1": 2
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 new conn picker sharding options {ScyllaHostFeatures:{partitioner:org.apache.cassandra.dht.Murmur3Partitioner shardingAlgorithm:biased-token-round-robin nrShards:2 msbIgnore:12 lwtFlagMask:2147483648 rateLimitErrorCode:61440 shardAwarePort:19042 shardAwarePortTLS:19142 isMetadataIDSupported:true isScylla:true} shard:1}
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 put shard 1 connection total: 1 missing: 1
+2026/10/29 16:07:11 logger.go:59: gocql: Session.handleNodeConnected: 127.0.20.1:9042
+2026/10/29 16:07:11 logger.go:59: scylla: connecting to shard 0
+2026/10/29 16:07:11 logger.go:59: gocql: Session.handleNodeConnected: 127.0.20.3:9042
+2026/10/29 16:07:11 logger.go:59: scylla: connecting to shard 1
+2026/10/29 16:07:11 logger.go:59: scylla: connecting to shard 0
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 new conn picker sharding options {ScyllaHostFeatures:{partitioner:org.apache.cassandra.dht.Murmur3Partitioner shardingAlgorithm:biased-token-round-robin nrShards:2 msbIgnore:12 lwtFlagMask:2147483648 rateLimitErrorCode:61440 shardAwarePort:19042 shardAwarePortTLS:19142 isMetadataIDSupported:true isScylla:true} shard:1}
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 put shard 1 connection total: 1 missing: 1
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 new conn picker sharding options {ScyllaHostFeatures:{partitioner:org.apache.cassandra.dht.Murmur3Partitioner shardingAlgorithm:biased-token-round-robin nrShards:2 msbIgnore:12 lwtFlagMask:2147483648 rateLimitErrorCode:61440 shardAwarePort:19042 shardAwarePortTLS:19142 isMetadataIDSupported:true isScylla:true} shard:0}
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 put shard 0 connection total: 1 missing: 1
+2026/10/29 16:07:11 logger.go:59: gocql: Session.handleNodeConnected: 127.0.20.2:9042
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 put shard 1 connection total: 2 missing: 0
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 no excess connections to close
+2026/10/29 16:07:11 logger.go:59: scylla: connecting to shard 1
+2026/10/29 16:07:11 logger.go:59: gocql: conns of pool after stopped "127.0.20.2": 2
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 put shard 0 connection total: 2 missing: 0
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 no excess connections to close
+2026/10/29 16:07:11 logger.go:59: gocql: conns of pool after stopped "127.0.20.1": 2
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 put shard 1 connection total: 2 missing: 0
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 no excess connections to close
+2026/10/29 16:07:11 logger.go:59: gocql: conns of pool after stopped "127.0.20.3": 2
+2026/10/29 16:07:11 logger.go:59: gocql: Session.handleNodeConnected: 127.0.20.1:9042
+2026/10/29 16:07:11 logger.go:59: scylla: connecting to shard 0
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 put shard 0 connection total: 2 missing: 0
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 put shard 1 connection total: 2 missing: 0
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 no excess connections to close
+2026/10/29 16:07:11 logger.go:59: gocql: conns of pool after stopped "127.0.20.1": 2
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 no excess connections to close
+2026/10/29 16:07:11 logger.go:59: gocql: conns of pool after stopped "127.0.20.3": 2
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 new conn picker sharding options {ScyllaHostFeatures:{partitioner:org.apache.cassandra.dht.Murmur3Partitioner shardingAlgorithm:biased-token-round-robin nrShards:2 msbIgnore:12 lwtFlagMask:2147483648 rateLimitErrorCode:61440 shardAwarePort:19042 shardAwarePortTLS:19142 isMetadataIDSupported:true isScylla:true} shard:1}
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 put shard 1 connection total: 1 missing: 1
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 new conn picker sharding options {ScyllaHostFeatures:{partitioner:org.apache.cassandra.dht.Murmur3Partitioner shardingAlgorithm:biased-token-round-robin nrShards:2 msbIgnore:12 lwtFlagMask:2147483648 rateLimitErrorCode:61440 shardAwarePort:19042 shardAwarePortTLS:19142 isMetadataIDSupported:true isScylla:true} shard:0}
+2026/10/29 16:07:11 logger.go:59: gocql: Session.handleNodeConnected: 127.0.20.1:9042
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 put shard 0 connection total: 1 missing: 1
+2026/10/29 16:07:11 logger.go:59: gocql: Session.handleNodeConnected: 127.0.20.2:9042
+2026/10/29 16:07:11 logger.go:59: scylla: connecting to shard 0
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 new conn picker sharding options {ScyllaHostFeatures:{partitioner:org.apache.cassandra.dht.Murmur3Partitioner shardingAlgorithm:biased-token-round-robin nrShards:2 msbIgnore:12 lwtFlagMask:2147483648 rateLimitErrorCode:61440 shardAwarePort:19042 shardAwarePortTLS:19142 isMetadataIDSupported:true isScylla:true} shard:0}
+2026/10/29 16:07:11 logger.go:59: scylla: connecting to shard 1
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 put shard 0 connection total: 1 missing: 1
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 new conn picker sharding options {ScyllaHostFeatures:{partitioner:org.apache.cassandra.dht.Murmur3Partitioner shardingAlgorithm:biased-token-round-robin nrShards:2 msbIgnore:12 lwtFlagMask:2147483648 rateLimitErrorCode:61440 shardAwarePort:19042 shardAwarePortTLS:19142 isMetadataIDSupported:true isScylla:true} shard:1}
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 put shard 1 connection total: 1 missing: 1
+2026/10/29 16:07:11 logger.go:59: scylla: connecting to shard 1
+2026/10/29 16:07:11 logger.go:59: gocql: Session.handleNodeConnected: 127.0.20.1:9042
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 put shard 1 connection total: 2 missing: 0
+2026/10/29 16:07:11 logger.go:59: gocql: Session.handleNodeConnected: 127.0.20.2:9042
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 no excess connections to close
+2026/10/29 16:07:11 logger.go:59: gocql: conns of pool after stopped "127.0.20.3": 2
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 put shard 1 connection total: 2 missing: 0
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 no excess connections to close
+2026/10/29 16:07:11 logger.go:59: scylla: connecting to shard 0
+2026/10/29 16:07:11 logger.go:59: gocql: conns of pool after stopped "127.0.20.2": 2
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 new conn picker sharding options {ScyllaHostFeatures:{partitioner:org.apache.cassandra.dht.Murmur3Partitioner shardingAlgorithm:biased-token-round-robin nrShards:2 msbIgnore:12 lwtFlagMask:2147483648 rateLimitErrorCode:61440 shardAwarePort:19042 shardAwarePortTLS:19142 isMetadataIDSupported:true isScylla:true} shard:0}
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 put shard 0 connection total: 1 missing: 1
+2026/10/29 16:07:11 logger.go:59: gocql: Session.handleNodeConnected: 127.0.20.3:9042
+2026/10/29 16:07:11 logger.go:59: scylla: connecting to shard 1
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 put shard 0 connection total: 2 missing: 0
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 no excess connections to close
+2026/10/29 16:07:11 logger.go:59: gocql: conns of pool after stopped "127.0.20.3": 2
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 new conn picker sharding options {ScyllaHostFeatures:{partitioner:org.apache.cassandra.dht.Murmur3Partitioner shardingAlgorithm:biased-token-round-robin nrShards:2 msbIgnore:12 lwtFlagMask:2147483648 rateLimitErrorCode:61440 shardAwarePort:19042 shardAwarePortTLS:19142 isMetadataIDSupported:true isScylla:true} shard:1}
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 put shard 1 connection total: 1 missing: 1
+2026/10/29 16:07:11 logger.go:59: gocql: Session.handleNodeConnected: 127.0.20.3:9042
+2026/10/29 16:07:11 logger.go:59: scylla: connecting to shard 0
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 put shard 1 connection total: 2 missing: 0
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 no excess connections to close
+2026/10/29 16:07:11 logger.go:59: gocql: conns of pool after stopped "127.0.20.1": 2
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 put shard 0 connection total: 2 missing: 0
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 no excess connections to close
+2026/10/29 16:07:11 logger.go:59: gocql: conns of pool after stopped "127.0.20.2": 2
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 put shard 1 connection total: 2 missing: 0
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 put shard 0 connection total: 2 missing: 0
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 no excess connections to close
+2026/10/29 16:07:11 logger.go:59: gocql: conns of pool after stopped "127.0.20.2": 2
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 no excess connections to close
+2026/10/29 16:07:11 logger.go:59: gocql: conns of pool after stopped "127.0.20.2": 2
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 put shard 1 connection total: 2 missing: 0
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 no excess connections to close
+2026/10/29 16:07:11 logger.go:59: gocql: conns of pool after stopped "127.0.20.1": 2
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 put shard 0 connection total: 2 missing: 0
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 no excess connections to close
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 put shard 0 connection total: 2 missing: 0
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 put shard 1 connection total: 2 missing: 0
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.1:9042 no excess connections to close
+2026/10/29 16:07:11 logger.go:59: gocql: conns of pool after stopped "127.0.20.1": 2
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 no excess connections to close
+2026/10/29 16:07:11 logger.go:59: gocql: conns of pool after stopped "127.0.20.3": 2
+2026/10/29 16:07:11 logger.go:59: gocql: conns of pool after stopped "127.0.20.1": 2
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 put shard 0 connection total: 2 missing: 0
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.3:9042 no excess connections to close
+2026/10/29 16:07:11 logger.go:59: gocql: conns of pool after stopped "127.0.20.3": 2
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 put shard 1 connection total: 2 missing: 0
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 no excess connections to close
+2026/10/29 16:07:11 logger.go:59: gocql: conns of pool after stopped "127.0.20.2": 2
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 put shard 0 connection total: 2 missing: 0
+2026/10/29 16:07:11 logger.go:59: scylla: 127.0.20.2:9042 no excess connections to close
+2026/10/29 16:07:11 logger.go:59: gocql: conns of pool after stopped "127.0.20.2": 2
+=== RUN   TestPagingWithAllowFiltering/Prepare
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testpagingwithbind"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testpagingwithbind"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testpagingwithbind"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testpagingwithbind"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testpagingwithbind"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testpagingwithbind"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testpagingwithbind"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testboundqueryinfo"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testboundqueryinfo"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testboundqueryinfo"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testboundqueryinfo"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testboundqueryinfo"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testboundqueryinfo"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testboundqueryinfo"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testrebindqueryinfo"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testrebindqueryinfo"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testrebindqueryinfo"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testrebindqueryinfo"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testrebindqueryinfo"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testrebindqueryinfo"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testrebindqueryinfo"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="teststaticqueryinfo"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="teststaticqueryinfo"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="teststaticqueryinfo"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="teststaticqueryinfo"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="teststaticqueryinfo"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="teststaticqueryinfo"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="teststaticqueryinfo"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testpaging"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testpaging"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testpaging"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testpaging"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testpaging"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testpaging"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testpaging"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testpagingwithallowfiltering"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testpagingwithallowfiltering"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testpagingwithallowfiltering"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testpagingwithallowfiltering"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testpagingwithallowfiltering"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testpagingwithallowfiltering"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testpagingwithallowfiltering"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testprepare_preparedcacheeviction"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testprepare_preparedcacheeviction"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testprepare_preparedcacheeviction"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testprepare_preparedcacheeviction"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testprepare_preparedcacheeviction"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testprepare_preparedcacheeviction"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testprepare_preparedcacheeviction"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testmanualquerypaging"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testmanualquerypaging"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testmanualquerypaging"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testmanualquerypaging"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testmanualquerypaging"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testmanualquerypaging"]
+2026/10/29 16:07:11 logger.go:59: gocql: handling frame: [event schema_change change="CREATED" keyspace="gocql_test" object="testmanualquerypaging"]
+2026/10/29 16:07:12 logger.go:59: scylla: 127.0.20.3:9042 closing 2 connections
+2026/10/29 16:07:12 logger.go:59: scylla: 127.0.20.3:9042 no excess connections to close
+2026/10/29 16:07:12 logger.go:59: scylla: 127.0.20.2:9042 closing 2 connections
+2026/10/29 16:07:12 logger.go:59: scylla: 127.0.20.2:9042 no excess connections to close
+2026/10/29 16:07:12 logger.go:59: scylla: 127.0.20.1:9042 closing 2 connections
+2026/10/29 16:07:12 logger.go:59: scylla: 127.0.20.1:9042 no excess connections to close
+--- PASS: TestPaging (1.11s)
+2026/10/29 16:07:13 logger.go:59: scylla: 127.0.20.2:9042 closing 2 connections
+2026/10/29 16:07:13 logger.go:59: scylla: 127.0.20.2:9042 no excess connections to close
+2026/10/29 16:07:13 logger.go:59: scylla: 127.0.20.1:9042 closing 2 connections
+2026/10/29 16:07:13 logger.go:59: scylla: 127.0.20.1:9042 no excess connections to close
+2026/10/29 16:07:13 logger.go:59: scylla: 127.0.20.3:9042 closing 2 connections
+2026/10/29 16:07:13 logger.go:59: scylla: 127.0.20.3:9042 no excess connections to close
+--- PASS: TestStaticQueryInfo (1.99s)
+2026/10/29 16:07:13 logger.go:59: scylla: 127.0.20.2:9042 closing 2 connections
+2026/10/29 16:07:13 logger.go:59: scylla: 127.0.20.2:9042 no excess connections to close
+2026/10/29 16:07:13 logger.go:59: scylla: 127.0.20.1:9042 closing 2 connections
+2026/10/29 16:07:13 logger.go:59: scylla: 127.0.20.1:9042 no excess connections to close
+2026/10/29 16:07:13 logger.go:59: scylla: 127.0.20.3:9042 closing 2 connections
+2026/10/29 16:07:13 logger.go:59: scylla: 127.0.20.3:9042 no excess connections to close
+--- PASS: TestRebindQueryInfo (2.09s)
+2026/10/29 16:07:13 logger.go:59: scylla: 127.0.20.1:9042 closing 2 connections
+2026/10/29 16:07:13 logger.go:59: scylla: 127.0.20.1:9042 no excess connections to close
+2026/10/29 16:07:13 logger.go:59: scylla: 127.0.20.3:9042 closing 2 connections
+2026/10/29 16:07:13 logger.go:59: scylla: 127.0.20.3:9042 no excess connections to close
+2026/10/29 16:07:13 logger.go:59: scylla: 127.0.20.2:9042 closing 2 connections
+2026/10/29 16:07:13 logger.go:59: scylla: 127.0.20.2:9042 no excess connections to close
+--- PASS: TestPrepare_PreparedCacheEviction (2.12s)
+2026/10/29 16:07:13 logger.go:59: scylla: 127.0.20.2:9042 closing 2 connections
+2026/10/29 16:07:13 logger.go:59: scylla: 127.0.20.2:9042 no excess connections to close
+2026/10/29 16:07:13 logger.go:59: scylla: 127.0.20.1:9042 closing 2 connections
+2026/10/29 16:07:13 logger.go:59: scylla: 127.0.20.1:9042 no excess connections to close
+2026/10/29 16:07:13 logger.go:59: scylla: 127.0.20.3:9042 closing 2 connections
+2026/10/29 16:07:13 logger.go:59: scylla: 127.0.20.3:9042 no excess connections to close
+--- PASS: TestManualQueryPaging (2.15s)
+2026/10/29 16:07:13 logger.go:59: scylla: 127.0.20.1:9042 closing 2 connections
+2026/10/29 16:07:13 logger.go:59: scylla: 127.0.20.1:9042 no excess connections to close
+2026/10/29 16:07:13 logger.go:59: scylla: 127.0.20.2:9042 closing 2 connections
+2026/10/29 16:07:13 logger.go:59: scylla: 127.0.20.2:9042 no excess connections to close
+2026/10/29 16:07:13 logger.go:59: scylla: 127.0.20.3:9042 closing 2 connections
+2026/10/29 16:07:13 logger.go:59: scylla: 127.0.20.3:9042 no excess connections to close
+--- PASS: TestBoundQueryInfo (2.15s)
+=== RUN   TestPagingWithAllowFiltering/AutoPagination
+=== RUN   TestPagingWithAllowFiltering/AutoPagination/ONE
+=== RUN   TestPagingWithAllowFiltering/AutoPagination/QUORUM
+2026/10/29 16:07:13 logger.go:59: scylla: 127.0.20.3:9042 closing 2 connections
+2026/10/29 16:07:13 logger.go:59: scylla: 127.0.20.3:9042 no excess connections to close
+2026/10/29 16:07:13 logger.go:59: scylla: 127.0.20.2:9042 closing 2 connections
+2026/10/29 16:07:13 logger.go:59: scylla: 127.0.20.2:9042 no excess connections to close
+2026/10/29 16:07:13 logger.go:59: scylla: 127.0.20.1:9042 closing 2 connections
+2026/10/29 16:07:13 logger.go:59: scylla: 127.0.20.1:9042 no excess connections to close
+--- PASS: TestPagingWithBind (2.25s)
+=== RUN   TestPagingWithAllowFiltering/ManualPagination
+=== RUN   TestPagingWithAllowFiltering/ManualPagination/ONE
+=== RUN   TestPagingWithAllowFiltering/ManualPagination/QUORUM
+2026/10/29 16:07:22 logger.go:59: gocql: handling frame: [event schema_change change="DROPPED" keyspace="gocql_test" object="testpagingwithallowfiltering"]
+2026/10/29 16:07:23 logger.go:59: scylla: 127.0.20.3:9042 closing 2 connections
+2026/10/29 16:07:23 logger.go:59: scylla: 127.0.20.3:9042 no excess connections to close
+2026/10/29 16:07:23 logger.go:59: scylla: 127.0.20.1:9042 closing 2 connections
+2026/10/29 16:07:23 logger.go:59: scylla: 127.0.20.1:9042 no excess connections to close
+2026/10/29 16:07:23 logger.go:59: scylla: 127.0.20.2:9042 closing 2 connections
+2026/10/29 16:07:23 logger.go:59: scylla: 127.0.20.2:9042 no excess connections to close
+--- PASS: TestPagingWithAllowFiltering (11.97s)
+    --- PASS: TestPagingWithAllowFiltering/Prepare (2.16s)
+    --- PASS: TestPagingWithAllowFiltering/AutoPagination (0.05s)
+        --- PASS: TestPagingWithAllowFiltering/AutoPagination/ONE (0.02s)
+        --- PASS: TestPagingWithAllowFiltering/AutoPagination/QUORUM (0.02s)
+    --- PASS: TestPagingWithAllowFiltering/ManualPagination (0.03s)
+        --- PASS: TestPagingWithAllowFiltering/ManualPagination/ONE (0.02s)
+        --- PASS: TestPagingWithAllowFiltering/ManualPagination/QUORUM (0.01s)
+PASS

@@ -13,13 +13,13 @@ Archive SHA-256: `54f68b3d4c34e1c1b77a6dec28eff531a84720b7da0040c4fbc4d79209cba2
 Preparation: streaming signatures/task reconciliation settled; unit race
 baseline and specification traceability verifier passed. The focused API
 preflight budget clarification has been applied.
-No implementation step has been accepted yet.
+Preparation accepted at commit `f2fb206`. Steps 01 and 02 are accepted at `6cfb37a` and `1fc00bf`; step 03 is active.
 
 | Step | Branch | State | Agent / committed evidence |
 | --- | --- | --- | --- |
-| 1 | `v2-01-wire-protocol` | Pending | — |
-| 2 | `v2-02-codecs` | Pending | — |
-| 3 | `v2-03-prepared-paging` | Pending | — |
+| 1 | `v2-01-wire-protocol` | Accepted | `/root/step01_wire_protocol`; `6cfb37a`; [handoff](01-wire-protocol.md) |
+| 2 | `v2-02-codecs` | Accepted | `/root/step02_codecs`; `1fc00bf`; [handoff](02-codecs.md) |
+| 3 | `v2-03-prepared-paging` | Active | `/root/step03_prepared_paging`; predecessor `1fc00bf` |
 | 4 | `v2-04-transport-pools` | Pending | — |
 | 5 | `v2-05-metadata-control` | Pending | — |
 | 6 | `v2-06-tablet-routing` | Pending | — |
@@ -44,3 +44,8 @@ streaming receive acceptance criteria, package dependency rules, required
 configuration/routing functionality, and a real successful applicable lane for
 each of the 174 baseline tests. Skips, compile-only checks and old-tree passes
 do not discharge those requirements.
+
+Known later follow-ups from step 02: full-root GOARCH=386 compilation fails
+in unchanged legacy serialization constants (step 10 removal audit); benchmark
+submodule needs manifest consolidation (step 13). Neither diagnostic is counted
+as a successful required lane. See step 02 evidence for exact retained results.

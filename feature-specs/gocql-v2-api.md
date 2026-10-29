@@ -646,8 +646,18 @@ loaded entry. A losing response still decodes with its matching retained or
 response-supplied metadata. Prepared IDs and result metadata IDs are opaque
 equality tokens, not ordered server schema versions. These fences prevent local
 stale-update races; conflicting remote observations require a typed metadata
-refresh and cannot be represented as proven global schema chronology. No unsafe
-cache-metadata opt-in bypasses these rules.
+refresh and cannot be represented as proven global schema chronology. Step 03 specifies
+bounded conflict reconciliation outside the historical design-review cycles:
+coalesce at most 64 distinct pending keyspaces and query a known statement's
+relevant keyspace through the typed schema path. Required internal validation
+can run when optional schema metadata is disabled or filtered, but publication
+continues to honor that mode/filter; it does not expose unrelated schema.
+Only an unknown statement scope requires full internal enumeration under the
+existing metadata limits. Queue exhaustion returns a ProtocolError with stage
+"prepared schema reconciliation" through the logical operation. Earlier delivered
+matching pages remain valid. Unscheduled/failed conflicts stay dirty, so later
+calls can retry and scheduled failures are retried without broadening scope.
+No unsafe cache-metadata opt-in bypasses these rules.
 
 ## Rows, pages, leases and conditional results
 
@@ -707,8 +717,8 @@ This section decodes from received page storage. The separate
 incremental receive decoding into final caller storage through the separate
 RunStream API below; this NextInto contract remains the buffered path.
 
-Status: required design addition; NextInto and DecodeInto remain pending
-implementation and verification. Applications define the row representation
+Implementation: DecodeInto is supplied by step 02 and NextInto by step 03;
+final-tree release verification remains a later gate. Applications define the row representation
 and may provide a reusable instance for decoding:
 
 ```go

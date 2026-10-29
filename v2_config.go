@@ -73,6 +73,8 @@ type ReconnectPolicy interface {
 type ProtocolLimits struct {
 	MaxFrameBytes, MaxDecompressedBytes int64
 	MaxMetadataDepth                    int
+	MaxPagingStates                     int
+	MaxPagingStateBytes                 int64
 }
 type MetadataOptions struct {
 	Mode                                                          MetadataMode
@@ -104,7 +106,7 @@ func DefaultConfig(contactPoints ...string) Config {
 	profile := defaultProfile()
 	profile.Routing, _ = NewRoutingPolicy(RoutingOptions{TokenAware: true, ShuffleReplicas: true})
 	handle, _ := NewProfile(profile)
-	return Config{ContactPoints: append([]string(nil), contactPoints...), Port: 9042, CQLVersion: "3.0.0", ConnectTimeout: 11 * time.Second, DNSTimeout: 11 * time.Second, WriteTimeout: 10 * time.Second, KeepaliveInterval: 5 * time.Second, KeepaliveTimeout: 11 * time.Second, SocketKeepalive: 15 * time.Second, NoDelay: true, CoalesceWait: 200 * time.Microsecond, Pool: PoolOptions{ConnectionsPerShard: 1, MaxExcessPerShard: 2, MaxRequestsPerConnection: 32768, MaxOrphanedStreams: 1024, ShardAwarePort: true}, Metadata: MetadataOptions{Mode: MetadataFull, InitialDiscovery: true, RequestTimeout: 60 * time.Second, AgreementTimeout: 60 * time.Second, AgreementPoll: 200 * time.Millisecond, AutomaticAgreement: true, RefreshAfterAgreement: true, TopologyEvents: true, StatusEvents: true, SchemaEvents: true, ClientRouteEvents: true}, Limits: ProtocolLimits{MaxFrameBytes: 256 << 20, MaxDecompressedBytes: 256 << 20, MaxMetadataDepth: 64}, PreparedCacheSize: 1000, Partitioners: map[string]TokenPartitioner{"org.apache.cassandra.dht.Murmur3Partitioner": Murmur3TokenPartitioner, "Murmur3Partitioner": Murmur3TokenPartitioner, "com.scylladb.dht.CDCPartitioner": CDCTokenPartitioner, "CDCPartitioner": CDCTokenPartitioner}, DefaultProfile: handle, Reconnect: defaultReconnectPolicy{}, ReportConfiguration: true, TimestampGenerator: newTimestampGenerator()}
+	return Config{ContactPoints: append([]string(nil), contactPoints...), Port: 9042, CQLVersion: "3.0.0", ConnectTimeout: 11 * time.Second, DNSTimeout: 11 * time.Second, WriteTimeout: 10 * time.Second, KeepaliveInterval: 5 * time.Second, KeepaliveTimeout: 11 * time.Second, SocketKeepalive: 15 * time.Second, NoDelay: true, CoalesceWait: 200 * time.Microsecond, Pool: PoolOptions{ConnectionsPerShard: 1, MaxExcessPerShard: 2, MaxRequestsPerConnection: 32768, MaxOrphanedStreams: 1024, ShardAwarePort: true}, Metadata: MetadataOptions{Mode: MetadataFull, InitialDiscovery: true, RequestTimeout: 60 * time.Second, AgreementTimeout: 60 * time.Second, AgreementPoll: 200 * time.Millisecond, AutomaticAgreement: true, RefreshAfterAgreement: true, TopologyEvents: true, StatusEvents: true, SchemaEvents: true, ClientRouteEvents: true}, Limits: ProtocolLimits{MaxFrameBytes: 256 << 20, MaxDecompressedBytes: 256 << 20, MaxMetadataDepth: 64, MaxPagingStates: 65536, MaxPagingStateBytes: 16 << 20}, PreparedCacheSize: 1000, Partitioners: map[string]TokenPartitioner{"org.apache.cassandra.dht.Murmur3Partitioner": Murmur3TokenPartitioner, "Murmur3Partitioner": Murmur3TokenPartitioner, "com.scylladb.dht.CDCPartitioner": CDCTokenPartitioner, "CDCPartitioner": CDCTokenPartitioner}, DefaultProfile: handle, Reconnect: defaultReconnectPolicy{}, ReportConfiguration: true, TimestampGenerator: newTimestampGenerator()}
 }
 func newTimestampGenerator() func() int64 {
 	var last atomic.Int64
@@ -145,6 +147,9 @@ func validateConfig(config Config) error {
 	}
 	if config.Limits.MaxFrameBytes <= 0 || config.Limits.MaxDecompressedBytes <= 0 || config.Limits.MaxMetadataDepth <= 0 {
 		return typeValidation("protocol limits", "must be positive")
+	}
+	if config.Limits.MaxPagingStates <= 0 || config.Limits.MaxPagingStateBytes <= 0 {
+		return typeValidation("paging limits", "must be positive")
 	}
 	if config.Limits.MaxMetadataDepth > 128 || config.Limits.MaxFrameBytes > 1<<31-1 || config.Limits.MaxDecompressedBytes > 1<<31-1 {
 		return typeValidation("protocol limits", "limits exceed supported protocol range")

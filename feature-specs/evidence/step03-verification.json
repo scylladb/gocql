@@ -1,0 +1,594 @@
+{
+  "agent": "/root/step03_prepared_paging",
+  "branch": "v2-03-prepared-paging",
+  "predecessor": "1fc00bfe1745ef7d16a4d2fc0200f4588eb3a2ad",
+  "toolchain": "go version go1.25.0 linux/amd64",
+  "gate": "Step03 prepared/paging gate satisfied. Source-stable full checks plus final live cache race; prior full focused live lanes have an explicit isolated final discovery-bookkeeping delta. Full release matrix remains pending.",
+  "commands": [
+    {
+      "name": "required-conflict-refresh",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-tags",
+        "unit",
+        "-run",
+        "^TestV2PreparedConflict",
+        "-count=1",
+        "-timeout=30s",
+        "."
+      ],
+      "environment": {},
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step03-accepted-source-required-conflict-refresh.log",
+      "log_sha256": "a9621a7f856b0dd52d84947eca01853b42b09788838d7a800ece6ff6ec794d90",
+      "source_snapshot": "feature-specs/evidence/step03-final-source-snapshot.json"
+    },
+    {
+      "name": "focused-race",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-tags",
+        "unit",
+        "-run",
+        "^TestV2",
+        "-count=1",
+        "-timeout=30s",
+        "."
+      ],
+      "environment": {},
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step03-accepted-source-focused-race.log",
+      "log_sha256": "1e2a846a386cc55c752ec6e3a13ad5a9065271f454f7c8e054259003fb977eaa",
+      "source_snapshot": "feature-specs/evidence/step03-final-source-snapshot.json"
+    },
+    {
+      "name": "unit-race",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-tags",
+        "unit",
+        "-count=1",
+        "-timeout=5m",
+        "./..."
+      ],
+      "environment": {},
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step03-accepted-source-unit-race.log",
+      "log_sha256": "258bcb9aeea78cccf4f4d61168646419d2e60dfe8639a41daf180f15ca1cbda7",
+      "source_snapshot": "feature-specs/evidence/step03-final-source-snapshot.json"
+    },
+    {
+      "name": "vet",
+      "command": [
+        "go",
+        "vet",
+        "-tags",
+        "unit",
+        "./..."
+      ],
+      "environment": {},
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step03-accepted-source-vet.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_snapshot": "feature-specs/evidence/step03-final-source-snapshot.json"
+    },
+    {
+      "name": "integration-race-build",
+      "command": [
+        "go",
+        "test",
+        "-c",
+        "-race",
+        "-tags",
+        "integration gocql_debug",
+        "-o",
+        "/tmp/gocql-v2-step03-integration-race.test",
+        "."
+      ],
+      "environment": {},
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step03-accepted-source-integration-race-build.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_snapshot": "feature-specs/evidence/step03-final-source-snapshot.json"
+    },
+    {
+      "name": "ccm-build",
+      "command": [
+        "go",
+        "test",
+        "-c",
+        "-tags",
+        "ccm",
+        "-o",
+        "/tmp/gocql-v2-step03-ccm.test",
+        "./internal/ccm"
+      ],
+      "environment": {},
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step03-accepted-source-ccm-build.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_snapshot": "feature-specs/evidence/step03-final-source-snapshot.json"
+    },
+    {
+      "name": "bench",
+      "command": [
+        "go",
+        "test",
+        "-run",
+        "^$",
+        "-bench",
+        "^BenchmarkV2(PagingHistoryLookup|WarmPreparedSelection|PageCallerDestination|ResultPlanExactEntry)$",
+        "-benchmem",
+        "-benchtime=100ms",
+        "."
+      ],
+      "environment": {},
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step03-accepted-source-bench.log",
+      "log_sha256": "ad57f49c08315680ce1b500fe4d479161344e766419c782bc5cc012cf2538c93",
+      "source_snapshot": "feature-specs/evidence/step03-final-source-snapshot.json"
+    },
+    {
+      "name": "spec-verifier",
+      "command": [
+        "python3",
+        "feature-specs/verify.py"
+      ],
+      "environment": {},
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step03-accepted-source-spec-verifier.log",
+      "log_sha256": "d917fd30d32ac1dcf5211b8f90122e2892ee48305e5b2f53184e255a32b9f1b4",
+      "source_snapshot": "feature-specs/evidence/step03-final-source-snapshot.json"
+    },
+    {
+      "name": "fuzz-page",
+      "command": [
+        "go",
+        "test",
+        "-run",
+        "^$",
+        "-fuzz",
+        "^FuzzV2PageDestinationFraming$",
+        "-fuzztime=5s",
+        "-parallel=2",
+        "."
+      ],
+      "environment": {
+        "GOMAXPROCS": "2"
+      },
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step03-accepted-source-fuzz-page.log",
+      "log_sha256": "5caeb46443aaea343487260cb5a3d60487c2c2380b258091a2689f1426968f7c",
+      "source_snapshot": "feature-specs/evidence/step03-final-source-snapshot.json"
+    },
+    {
+      "name": "fuzz-history",
+      "command": [
+        "go",
+        "test",
+        "-run",
+        "^$",
+        "-fuzz",
+        "^FuzzV2PagingHistoryBudgets$",
+        "-fuzztime=5s",
+        "-parallel=2",
+        "."
+      ],
+      "environment": {
+        "GOMAXPROCS": "2"
+      },
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step03-accepted-source-fuzz-history.log",
+      "log_sha256": "479881cbf18f5de65ce2f9dea0e77df928029de22959ae7ed5761953b3134b3e",
+      "source_snapshot": "feature-specs/evidence/step03-final-source-snapshot.json"
+    },
+    {
+      "name": "final-cache-cleanup",
+      "command": [
+        "podman",
+        "exec",
+        "gocql-api-node1",
+        "cqlsh",
+        "-e",
+        "DROP TABLE IF EXISTS gocql_test.testprepare_preparedcacheeviction;"
+      ],
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step03-final-cache-cleanup.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_snapshot": "feature-specs/evidence/step03-final-source-snapshot.json"
+    },
+    {
+      "name": "final-cache-race",
+      "command": [
+        "go",
+        "test",
+        "-json",
+        "-race",
+        "-tags",
+        "integration gocql_debug",
+        "-run",
+        "^TestPrepare_PreparedCacheEviction$",
+        "-count=1",
+        "-timeout=3m",
+        ".",
+        "-args",
+        "-distribution=scylla",
+        "-gocql.timeout=60s",
+        "-proto=4",
+        "-rf=3",
+        "-clusterSize=3",
+        "-compressor=snappy",
+        "-gocql.cversion=2026.3.4",
+        "-cluster=127.0.20.1,127.0.20.2,127.0.20.3"
+      ],
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step03-final-cache-race.jsonl",
+      "log_sha256": "cd4e9cd0a01f4ebc420d832c645fb5fc55b8b269a752ff8cb5382fa8e09d6b97",
+      "source_snapshot": "feature-specs/evidence/step03-final-source-snapshot.json"
+    },
+    {
+      "name": "stable-health",
+      "command": [
+        "podman",
+        "exec",
+        "gocql-api-node1",
+        "nodetool",
+        "-h",
+        "127.0.20.1",
+        "status"
+      ],
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step03-final-stable-health-addressed.log",
+      "log_sha256": "a93ea1709d2aae7e970f522f341ded2715ddc03c6b19961271c84ded5dff22fd",
+      "source_snapshot": "fixture health observation; no source dependency"
+    },
+    {
+      "name": "cassandra-health",
+      "command": [
+        "podman",
+        "exec",
+        "gocql-api-cassandra1",
+        "nodetool",
+        "-p",
+        "7191",
+        "status"
+      ],
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step03-final-cassandra-health.log",
+      "log_sha256": "c35ed6fe5aee6c5ece4ad2c4be6d6327ba42aeee5582bcefa72402aaf4bc5bae",
+      "source_snapshot": "fixture health observation; no source dependency"
+    }
+  ],
+  "earlier_live_lane_commands": [
+    {
+      "name": "stable-final-fenced-race-1-cleanup",
+      "command": [
+        "podman",
+        "exec",
+        "gocql-api-node1",
+        "cqlsh",
+        "-e",
+        "DROP TABLE IF EXISTS gocql_test.testpaging; DROP TABLE IF EXISTS gocql_test.testpagingwithallowfiltering; DROP TABLE IF EXISTS gocql_test.testpagingwithbind; DROP TABLE IF EXISTS gocql_test.testrebindqueryinfo; DROP TABLE IF EXISTS gocql_test.teststaticqueryinfo; DROP TABLE IF EXISTS gocql_test.testboundqueryinfo; DROP TABLE IF EXISTS gocql_test.testmanualquerypaging; DROP TABLE IF EXISTS gocql_test.testprepare_preparedcacheeviction; DROP TABLE IF EXISTS gocql_test.testprepareexecutescyllaemptymetadataid;"
+      ],
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step03-stable-final-fenced-race-1-cleanup.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_snapshot": "feature-specs/evidence/step03-before-discovery-fix-source-snapshot.json"
+    },
+    {
+      "name": "stable-final-fenced-race-1",
+      "command": [
+        "go",
+        "test",
+        "-json",
+        "-race",
+        "-tags",
+        "integration gocql_debug",
+        "-run",
+        "^(TestPaging|TestPagingWithAllowFiltering|TestPagingWithBind|TestRebindQueryInfo|TestStaticQueryInfo|TestBoundQueryInfo|TestManualQueryPaging|TestPrepare_PreparedCacheEviction|TestPrepareExecuteScyllaEmptyMetadataID|TestV2PreparedPagingConcurrentSchemaAndDestinations)$",
+        "-count=1",
+        "-timeout=8m",
+        "-parallel=8",
+        ".",
+        "-args",
+        "-distribution=scylla",
+        "-gocql.timeout=60s",
+        "-proto=4",
+        "-rf=3",
+        "-clusterSize=3",
+        "-autowait=2000ms",
+        "-compressor=snappy",
+        "-gocql.cversion=2026.3.4",
+        "-cluster=127.0.20.1,127.0.20.2,127.0.20.3"
+      ],
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step03-stable-final-fenced-race-1.jsonl",
+      "log_sha256": "274b2f6f9d6277c30f164506a5645bf01d60e1300ecaa9aa0323f705add886cb",
+      "source_snapshot": "feature-specs/evidence/step03-before-discovery-fix-source-snapshot.json"
+    },
+    {
+      "name": "cassandra-v5-cleanup",
+      "command": [
+        "podman",
+        "exec",
+        "gocql-api-cassandra1",
+        "cqlsh",
+        "127.0.21.1",
+        "-e",
+        "DROP TABLE IF EXISTS gocql_test.testpagingwithbind; DROP TABLE IF EXISTS gocql_test.testmanualquerypaging; DROP TABLE IF EXISTS gocql_test.testprepare_preparedcacheeviction; DROP TABLE IF EXISTS gocql_test.testprepareexec_e056c00c49892710_etadata_changed;"
+      ],
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step03-cassandra-v5-final-fenced-cleanup.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_snapshot": "feature-specs/evidence/step03-before-discovery-fix-source-snapshot.json"
+    },
+    {
+      "name": "cassandra-v5-race",
+      "command": [
+        "go",
+        "test",
+        "-json",
+        "-race",
+        "-tags",
+        "integration gocql_debug",
+        "-run",
+        "^(TestPagingWithBind|TestManualQueryPaging|TestPrepare_PreparedCacheEviction|TestPrepareExecuteMetadataChangedFlag|TestV2PreparedPagingConcurrentSchemaAndDestinations)$",
+        "-count=1",
+        "-timeout=8m",
+        "-parallel=5",
+        ".",
+        "-args",
+        "-distribution=cassandra",
+        "-gocql.timeout=60s",
+        "-proto=5",
+        "-rf=3",
+        "-clusterSize=3",
+        "-autowait=2000ms",
+        "-compressor=lz4",
+        "-gocql.cversion=5.0.9",
+        "-cluster=127.0.21.1,127.0.21.2,127.0.21.3"
+      ],
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step03-cassandra-v5-final-fenced-race.jsonl",
+      "log_sha256": "fa06c62ed9763e76685cb2eeaa8798c0d7ac9900f86d8f2aef59bceed1b88161",
+      "source_snapshot": "feature-specs/evidence/step03-before-discovery-fix-source-snapshot.json"
+    }
+  ],
+  "database_outcomes": [
+    {
+      "log": "feature-specs/evidence/step03-stable-final-fenced-race-1.jsonl",
+      "outcomes": [
+        {
+          "Action": "pass",
+          "Test": "TestPrepareExecuteScyllaEmptyMetadataID",
+          "Elapsed": 3.16
+        },
+        {
+          "Action": "pass",
+          "Test": "TestStaticQueryInfo",
+          "Elapsed": 1.87
+        },
+        {
+          "Action": "pass",
+          "Test": "TestRebindQueryInfo",
+          "Elapsed": 1.95
+        },
+        {
+          "Action": "pass",
+          "Test": "TestPagingWithBind",
+          "Elapsed": 1.98
+        },
+        {
+          "Action": "pass",
+          "Test": "TestPaging",
+          "Elapsed": 2
+        },
+        {
+          "Action": "pass",
+          "Test": "TestManualQueryPaging",
+          "Elapsed": 2.83
+        },
+        {
+          "Action": "pass",
+          "Test": "TestPagingWithAllowFiltering/Prepare",
+          "Elapsed": 1.37
+        },
+        {
+          "Action": "pass",
+          "Test": "TestPagingWithAllowFiltering/AutoPagination/ONE",
+          "Elapsed": 0.03
+        },
+        {
+          "Action": "pass",
+          "Test": "TestPagingWithAllowFiltering/AutoPagination/QUORUM",
+          "Elapsed": 0.03
+        },
+        {
+          "Action": "pass",
+          "Test": "TestPagingWithAllowFiltering/AutoPagination",
+          "Elapsed": 0.05
+        },
+        {
+          "Action": "pass",
+          "Test": "TestPagingWithAllowFiltering/ManualPagination/ONE",
+          "Elapsed": 0.03
+        },
+        {
+          "Action": "pass",
+          "Test": "TestPagingWithAllowFiltering/ManualPagination/QUORUM",
+          "Elapsed": 0.03
+        },
+        {
+          "Action": "pass",
+          "Test": "TestPagingWithAllowFiltering/ManualPagination",
+          "Elapsed": 0.05
+        },
+        {
+          "Action": "pass",
+          "Test": "TestPagingWithAllowFiltering",
+          "Elapsed": 1.98
+        },
+        {
+          "Action": "pass",
+          "Test": "TestPrepare_PreparedCacheEviction",
+          "Elapsed": 3.86
+        },
+        {
+          "Action": "pass",
+          "Test": "TestBoundQueryInfo",
+          "Elapsed": 3.87
+        },
+        {
+          "Action": "pass",
+          "Test": "TestV2PreparedPagingConcurrentSchemaAndDestinations",
+          "Elapsed": 25.95
+        },
+        {
+          "Action": "pass",
+          "Elapsed": 31.358
+        }
+      ],
+      "package_passed": true
+    },
+    {
+      "log": "feature-specs/evidence/step03-cassandra-v5-final-fenced-race.jsonl",
+      "outcomes": [
+        {
+          "Action": "pass",
+          "Test": "TestPrepareExecuteMetadataChangedFlag/native_protocol_v5",
+          "Elapsed": 1.85
+        },
+        {
+          "Action": "skip",
+          "Test": "TestPrepareExecuteMetadataChangedFlag/protocol_v4_with_SCYLLA_USE_METADATA_ID",
+          "Elapsed": 0.04
+        },
+        {
+          "Action": "pass",
+          "Test": "TestPrepareExecuteMetadataChangedFlag",
+          "Elapsed": 1.89
+        },
+        {
+          "Action": "pass",
+          "Test": "TestPagingWithBind",
+          "Elapsed": 1.21
+        },
+        {
+          "Action": "pass",
+          "Test": "TestManualQueryPaging",
+          "Elapsed": 1.26
+        },
+        {
+          "Action": "pass",
+          "Test": "TestPrepare_PreparedCacheEviction",
+          "Elapsed": 1.26
+        },
+        {
+          "Action": "pass",
+          "Test": "TestV2PreparedPagingConcurrentSchemaAndDestinations",
+          "Elapsed": 19.98
+        },
+        {
+          "Action": "pass",
+          "Elapsed": 22.896
+        }
+      ],
+      "package_passed": true
+    },
+    {
+      "log": "feature-specs/evidence/step03-final-cache-race.jsonl",
+      "outcomes": [
+        {
+          "Action": "pass",
+          "Test": "TestPrepare_PreparedCacheEviction",
+          "Elapsed": 2.06
+        },
+        {
+          "Action": "pass",
+          "Elapsed": 4.693
+        }
+      ],
+      "package_passed": true
+    }
+  ],
+  "source_sha256": {
+    "cassandra_test.go": "f2105c404bb402792c689dda5570709e2db8903c471f0da206d9b3f90f334abf",
+    "feature-specs/gocql-v2-api.md": "88550e2ef01ed448a4dca1d281421bba1baaf8224cd287230135f1ae5957ac15",
+    "feature-specs/gocql-v2-implementation.md": "7d4834650465d06e94efbe3f8b46acf1cac9357ec27dc982d4b90ab0fc001e8f",
+    "session.go": "3fb9a626eb28d6f10b618d62bf320c7034df245022ae8540b60d72d276c5ff14",
+    "v2_config.go": "62a91aaef67cd5de4e8c7053c0b681b398fde0acaef734f30e35cc0c47eb31d0",
+    "v2_events.go": "1c24cbc67b128fa177800453235f17ce799df02070e9811b390f086a6f924edf",
+    "v2_execute.go": "3196e3be2ca60bf6b6e7ce52c290261e473be890623b5bbcfcfab3d3cc93905d",
+    "v2_metadata.go": "e47a3fe88bbf52bc123f8ad598d32d4cade46970468c1475c69affb6742992d2",
+    "v2_prepared_conflict_unit_test.go": "45341b6347eab911711017c7ab0583c86fdbefbf4c49f6015b342bcb49d8ee52",
+    "v2_prepared_paging_bench_test.go": "e3903c13ac57dac46a1d987572e58d3b595e2130c39676432519fa816bed60e3",
+    "v2_prepared_paging_fuzz_test.go": "971a2a044947b0a24fa6e1a3f9790d0d484350e30d79e511de59499de230644a",
+    "v2_prepared_paging_integration_test.go": "5ab679db4e236e7e18176bee4887740960addfa70741ae653684d781398f7e35",
+    "v2_prepared_paging_test.go": "1b04d24106128d0c26d7c9ce723526aa1bd9c78a216c080f0dbf8d61982ed98e",
+    "v2_prepared_refresh.go": "86c71da56269f9b69900a2ad40cb34af8b8a3fcb7793275b0a70304a5c1229aa",
+    "v2_prepared_schema.go": "b9dd3d5df9a64a9753cd009ef7cd45dd6aee2cdfa98d1f86b96d2054c3e48362",
+    "v2_result.go": "c7b98b86918d0ab886d1406f3224cd184530b3be9bd5b6073ddf687b89c74cf5",
+    "v2_runtime_types.go": "3335b39e14fa0a40f2eded0d9b4b2d4c78353141940a9eeb40a77c0375fd1ad9",
+    "v2_statement.go": "9d121eef95fc4cdaec3ba12eb3ff1aee03f0c6b78d80b42e4f06a2b468ca9309"
+  },
+  "earlier_live_source_delta": "feature-specs/evidence/step03-discovery-only-final-delta.json",
+  "diagnostics": [
+    {
+      "log": "feature-specs/evidence/step03-predecessor-live-paging.log",
+      "exit_code": 1,
+      "disposition": "Task-owned stale table collision; no original metadata-error reproduction claimed."
+    },
+    {
+      "log": "feature-specs/evidence/step03-predecessor-live-paging-clean.log",
+      "exit_code": 0,
+      "disposition": "Clean predecessor eight-test lane passed; rare historical metadata failure not observed in this attempt."
+    },
+    {
+      "log": "feature-specs/evidence/step03-cassandra-v5-race.jsonl",
+      "exit_code": 1,
+      "disposition": "Dependent write before ALTER propagation; retained server logs show Unknown column new_col. Exact-coordinator CREATE/ALTER+all-node agreement fixture corrected; complete subsequent v5 lane passed."
+    },
+    {
+      "log": "feature-specs/evidence/step03-cassandra-v5-final-race.jsonl",
+      "exit_code": 1,
+      "disposition": "Same fixture issue during initial unpinned CREATE; entire sequence then pinned and successful lane retained."
+    },
+    {
+      "log": "feature-specs/evidence/step03-final-focused-race.log",
+      "exit_code": 1,
+      "disposition": "New test fixture omitted result-entry epoch; production constructors already populated it. Corrected helper and publication gate tests now pass."
+    },
+    {
+      "log": "feature-specs/evidence/step03-scoped-refresh-fixture-diagnostic.log",
+      "exit_code": 1,
+      "disposition": "Strict source fixture wrongly rejected exact relevant scoped DESCRIBE; corrected while continuing to reject unrelated/unscoped queries."
+    },
+    {
+      "log": "feature-specs/evidence/step03-final-stable-health.log",
+      "exit_code": 2,
+      "disposition": "nodetool default localhost does not match fixture address; explicit -h 127.0.20.1 succeeds and reports all three UN."
+    }
+  ],
+  "log_formatting": "feature-specs/evidence/step03-log-formatting.json",
+  "fixture_reservations": "All step03 database lanes are terminal; stable/Cassandra task fixtures released for subsequent sequential work.",
+  "retained_command_runners": [
+    {
+      "path": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-command-runners/gocql-step03-checks.py",
+      "sha256": "748f3d87859899bbc8c9a700bece98772a87595ed75ab27dc696d5be059802b1"
+    },
+    {
+      "path": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-command-runners/gocql-step03-live.py",
+      "sha256": "8d170cffaacc6a5c7d733cae74d930e5b669fe89788c22def7f662317130d06b"
+    },
+    {
+      "path": "/extra/scylladb/gocql-v2-execution-checkpoints/step03-command-runners/gocql-step03-cassandra.py",
+      "sha256": "b72212e8f4ba95aaa928b099e0eec013ca47e44f9feff31d22e985fbbc4e03ef"
+    }
+  ]
+}

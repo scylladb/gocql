@@ -1,8 +1,10 @@
 package gocql
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"hash/maphash"
 	"sync"
 	"time"
 
@@ -68,19 +70,29 @@ func (l *PageLease) Close() {
 }
 
 type Page[R any] struct {
-	response *responsePage
-	plan     RowPlan[R]
-	cursor   *wire.Cursor
-	reader   RowReader
-	index    int32
-	current  R
-	valid    bool
-	err      error
-	closed   bool
-	release  func()
+	pendingRelease func()
+	mu             sync.Mutex
+	destination    *R
+	ctx            context.Context
+	cancel         context.CancelFunc
+	session        *Session
+	response       *responsePage
+	plan           RowPlan[R]
+	cursor         *wire.Cursor
+	reader         RowReader
+	index          int32
+	current        R
+	valid          bool
+	err            error
+	closed         bool
+	exhausted      bool
+	release        func()
 }
 
 func newPage[R any](response *responsePage, decoder RowDecoder[R], release func()) (*Page[R], error) {
+	return newPageWithPlans(response, decoder, nil, release)
+}
+func newPageWithPlans[R any](response *responsePage, decoder RowDecoder[R], plans *resultPlanCache[R], release func()) (*Page[R], error) {
 	if response == nil {
 		return nil, typeValidation("response", "nil response")
 	}
@@ -88,7 +100,13 @@ func newPage[R any](response *responsePage, decoder RowDecoder[R], release func(
 		response.owner.Release()
 		return nil, typeValidation("rows", "nil row decoder")
 	}
-	plan, err := compileRowPlan(decoder, response.columns)
+	var plan RowPlan[R]
+	var err error
+	if plans == nil {
+		plan, err = compileRowPlan(decoder, response.columns)
+	} else {
+		plan, err = plans.selectPlan(response, decoder)
+	}
 	if err != nil {
 		response.owner.Release()
 		return nil, err
@@ -100,62 +118,151 @@ func newPage[R any](response *responsePage, decoder RowDecoder[R], release func(
 	return &Page[R]{response: response, plan: plan, cursor: wire.NewCursor(response.rows), release: release}, nil
 }
 func (p *Page[R]) Next() bool {
-	if p == nil || p.closed || p.err != nil {
+	if p == nil {
 		return false
 	}
+	p.mu.Lock()
+	defer p.unlockAfterAdvance()
+	return p.advance(nil, false)
+}
+func (p *Page[R]) NextInto(dst *R) bool {
+	if p == nil {
+		clearDestination(dst)
+		return false
+	}
+	p.mu.Lock()
+	defer p.unlockAfterAdvance()
+	ok := p.advance(dst, true)
+	if !ok {
+		clearDestination(dst)
+	}
+	return ok
+}
+func clearDestination[R any](dst *R) {
+	if dst != nil {
+		var zero R
+		*dst = zero
+	}
+}
+func (p *Page[R]) advance(dst *R, into bool) bool {
 	p.valid = false
+	p.destination = nil
+	if p.closed || p.exhausted || p.err != nil {
+		return false
+	}
+	if into && dst == nil {
+		p.err = typeValidation("destination", "nil row destination")
+		return false
+	}
+	if p.session != nil && p.session.Closed() {
+		p.err = ErrClosed
+		p.closeLocked()
+		return false
+	}
+	if p.ctx != nil && p.ctx.Err() != nil {
+		p.err = p.ctx.Err()
+		p.closeLocked()
+		return false
+	}
 	if p.index >= p.response.rowCount {
+		p.exhausted = true
+		p.reader = RowReader{}
+		clearDestination(&p.current)
 		if err := p.cursor.RequireEnd(); err != nil {
 			p.err = &ProtocolError{Stage: "rows", Err: err}
 		}
 		return false
 	}
 	p.reader = RowReader{columns: p.response.columns, cursor: p.cursor, lease: p.response.owner}
-	reader := &p.reader
-	row, err := p.plan.Decode(reader)
+	var err error
+	if into {
+		// The plan receives the actual application destination, never a row temporary.
+		clearDestination(dst)
+		err = p.plan.DecodeInto(&p.reader, dst)
+	} else {
+		p.current, err = p.plan.Decode(&p.reader)
+	}
 	if err == nil {
-		err = finishRowReader(reader)
+		err = finishRowReader(&p.reader)
+	}
+	if err == nil && p.ctx != nil {
+		err = p.ctx.Err()
+	}
+	if err == nil && p.session != nil && p.session.Closed() {
+		err = ErrClosed
 	}
 	if err != nil {
 		p.err = err
+		clearDestination(&p.current)
 		return false
 	}
 	p.index++
-	p.current = row
 	p.valid = true
+	if into {
+		p.destination = dst
+		clearDestination(&p.current)
+	}
 	return true
 }
-func (p *Page[R]) Row() R {
-	if p == nil || !p.valid || p.closed {
-		panic(ErrNoRows)
+func (p *Page[R]) currentRow() R {
+	if p.destination != nil {
+		return *p.destination
 	}
 	return p.current
+}
+func (p *Page[R]) Row() R {
+	if p == nil {
+		panic(ErrNoRows)
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.valid || p.closed {
+		panic(ErrNoRows)
+	}
+	return p.currentRow()
 }
 func (p *Page[R]) Err() error {
 	if p == nil {
 		return nil
 	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	return p.err
 }
 func (p *Page[R]) Close() error {
 	if p == nil {
 		return nil
 	}
-	if !p.closed {
-		p.closed = true
-		p.valid = false
-		var zero R
-		p.current = zero
-		p.response.owner.Release()
-		if p.release != nil {
-			p.release()
-			p.release = nil
-		}
+	if p.cancel != nil {
+		p.cancel()
 	}
+	p.mu.Lock()
+	defer p.unlockAfterAdvance()
+	p.closeLocked()
 	return p.err
 }
+func (p *Page[R]) closeLocked() {
+	if p.closed {
+		return
+	}
+	p.closed = true
+	p.valid = false
+	p.destination = nil
+	clearDestination(&p.current)
+	p.reader = RowReader{}
+	p.response.owner.Release()
+	if p.release != nil {
+		p.pendingRelease = p.release
+		p.release = nil
+	}
+}
 func (p *Page[R]) Retain() (*PageLease, error) {
-	if p == nil || !p.valid || p.closed {
+	if p == nil {
+		return nil, ErrNoRows
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.valid || p.closed {
 		return nil, ErrNoRows
 	}
 	if !p.response.owner.Retain() {
@@ -164,11 +271,17 @@ func (p *Page[R]) Retain() (*PageLease, error) {
 	return &PageLease{owner: p.response.owner}, nil
 }
 func (p *Page[R]) Clone() (R, error) {
-	if p == nil || !p.valid || p.closed {
+	if p == nil {
 		var zero R
 		return zero, ErrNoRows
 	}
-	return p.plan.Clone(p.current), nil
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.valid || p.closed {
+		var zero R
+		return zero, ErrNoRows
+	}
+	return p.plan.Clone(p.currentRow()), nil
 }
 func (p *Page[R]) State() PageState {
 	if p == nil {
@@ -184,9 +297,14 @@ func (p *Page[R]) Info() Result {
 }
 
 type Rows[R any] struct {
-	rejectColumns bool
-	terminalErr   error
-	future        *pageFuture
+	pendingRelease func()
+	mu             sync.Mutex
+	plans          *resultPlanCache[R]
+	history        pagingHistory
+	nextErr        error
+	rejectColumns  bool
+	terminalErr    error
+	future         *pageFuture
 
 	ctx     context.Context
 	cancel  context.CancelFunc
@@ -198,31 +316,77 @@ type Rows[R any] struct {
 	err     error
 	closed  bool
 	valid   bool
-	seen    map[string]struct{}
 	release func()
 }
 
 func (r *Rows[R]) Next() bool {
+	if r == nil {
+		return false
+	}
+	r.mu.Lock()
+	defer r.unlockAfterAdvance()
+	return r.advance(nil, false)
+}
+func (r *Rows[R]) NextInto(dst *R) bool {
+	if r == nil {
+		clearDestination(dst)
+		return false
+	}
+	r.mu.Lock()
+	defer r.unlockAfterAdvance()
+	ok := r.advance(dst, true)
+	if !ok {
+		clearDestination(dst)
+	}
+	return ok
+}
+func (r *Rows[R]) advance(dst *R, into bool) bool {
 	if r == nil || r.closed || r.err != nil {
 		return false
 	}
 	r.valid = false
+	if into && dst == nil {
+		r.err = typeValidation("destination", "nil row destination")
+		r.closeLocked()
+		return false
+	}
 	for {
 		if r.rejectColumns && r.page != nil && r.page.Columns().Len() != 0 && r.terminalErr == nil {
 			r.terminalErr = typeValidation("Exec", "result columns require Run")
 		}
-		if err := r.ctx.Err(); err != nil {
-			r.err = err
-			_ = r.Close()
+		if r.session != nil && r.session.Closed() {
+			r.err = ErrClosed
+			r.closeLocked()
 			return false
 		}
-		if r.page.Next() {
+		if err := r.ctx.Err(); err != nil {
+			r.err = err
+			r.closeLocked()
+			return false
+		}
+		var advanced bool
+		if into {
+			advanced = r.page.NextInto(dst)
+		} else {
+			advanced = r.page.Next()
+		}
+		if advanced {
+			if err := r.ctx.Err(); err != nil {
+				r.err = err
+				r.closeLocked()
+				return false
+			}
+			if r.session != nil && r.session.Closed() {
+				r.err = ErrClosed
+				r.closeLocked()
+				return false
+			}
 			r.valid = true
 			return true
 		}
 		if err := r.page.Err(); err != nil {
 			r.err = err
-			_ = r.Close()
+			r.closeLocked()
 			return false
 		}
 		state := r.page.State()
@@ -231,16 +395,21 @@ func (r *Rows[R]) Next() bool {
 			if r.err == nil {
 				r.err = r.terminalErr
 			}
-			_ = r.Close()
+			r.closeLocked()
 			return false
 		}
-		key := string(state.token)
-		if _, ok := r.seen[key]; ok {
-			r.err = ErrPagingNoProgress
-			_ = r.Close()
+		if r.nextErr != nil {
+			r.err = r.nextErr
+			r.closeLocked()
 			return false
 		}
-		r.seen[key] = struct{}{}
+		if r.future == nil {
+			if err := r.history.add(state); err != nil {
+				r.err = err
+				r.closeLocked()
+				return false
+			}
+		}
 		var response *responsePage
 		var err error
 		if r.future != nil {
@@ -252,21 +421,26 @@ func (r *Rows[R]) Next() bool {
 		if err != nil {
 			mergeResult(&r.info, executionErrorResult(err))
 			r.err = err
-			_ = r.Close()
+			r.closeLocked()
 			return false
 		}
 		mergeResult(&r.info, response.result)
-		r.page, err = newPage(response, r.decoder, nil)
+		r.page, err = newPageWithPlans(response, r.decoder, r.plans, nil)
 		if err != nil {
 			r.err = err
-			_ = r.Close()
+			r.closeLocked()
 			return false
 		}
 		r.startPrefetch()
 	}
 }
 func (r *Rows[R]) Row() R {
-	if r == nil || !r.valid || r.closed {
+	if r == nil {
+		panic(ErrNoRows)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.valid || r.closed {
 		panic(ErrNoRows)
 	}
 	return r.page.Row()
@@ -275,44 +449,67 @@ func (r *Rows[R]) Err() error {
 	if r == nil {
 		return nil
 	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	return r.err
 }
 func (r *Rows[R]) Close() error {
 	if r == nil {
 		return nil
 	}
-	if !r.closed {
-		r.closed = true
-		r.valid = false
-		if r.page != nil {
-			if err := r.page.Close(); r.err == nil {
-				r.err = err
-			}
-		}
-		if r.cancel != nil {
-			r.cancel()
-		}
-		if r.future != nil {
-			r.future.close()
-			r.future = nil
-		}
-		if r.release != nil {
-			r.release()
-			r.release = nil
-		}
+	if r.cancel != nil {
+		r.cancel()
 	}
+	r.mu.Lock()
+	defer r.unlockAfterAdvance()
+	r.closeLocked()
 	return r.err
 }
+func (r *Rows[R]) closeLocked() {
+	if r.closed {
+		return
+	}
+	r.closed = true
+	r.valid = false
+	if r.page != nil {
+		if err := r.page.Close(); r.err == nil {
+			r.err = err
+		}
+	}
+	if r.cancel != nil {
+		r.cancel()
+	}
+	if r.future != nil {
+		r.future.close()
+		r.future = nil
+	}
+	r.history.clear()
+	if r.release != nil {
+		r.pendingRelease = r.release
+		r.release = nil
+	}
+}
 func (r *Rows[R]) Retain() (*PageLease, error) {
-	if r == nil || !r.valid || r.closed {
+	if r == nil {
+		return nil, ErrNoRows
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.valid || r.closed {
 		return nil, ErrNoRows
 	}
 	return r.page.Retain()
 }
 func (r *Rows[R]) Clone() (R, error) {
-	if r == nil || !r.valid || r.closed {
-		var zero R
-		return zero, ErrNoRows
+	if r == nil {
+		var z R
+		return z, ErrNoRows
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.valid || r.closed {
+		var z R
+		return z, ErrNoRows
 	}
 	return r.page.Clone()
 }
@@ -320,7 +517,122 @@ func (r *Rows[R]) Info() Result {
 	if r == nil {
 		return Result{}
 	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	return cloneResult(r.info)
+}
+
+// pagingHistory owns references to the same immutable tokens sent on the wire.
+// Hash collisions compare full bytes; count and payload budgets are independent.
+// This nongeneric state machine is also used by the incremental streaming pager.
+type pagingHistoryEntry struct {
+	state PageState
+	next  *pagingHistoryEntry
+}
+type pagingHistory struct {
+	seed     maphash.Seed
+	entries  map[uint64]pagingHistoryEntry
+	count    int
+	bytes    int64
+	maxCount int
+	maxBytes int64
+}
+
+func (h *pagingHistory) add(state PageState) error {
+	if !state.More() {
+		return nil
+	}
+	if h.entries == nil {
+		h.seed = maphash.MakeSeed()
+		h.entries = make(map[uint64]pagingHistoryEntry)
+	}
+	hash := maphash.Bytes(h.seed, state.token)
+	entry, exists := h.entries[hash]
+	if exists {
+		if bytes.Equal(entry.state.token, state.token) {
+			return ErrPagingNoProgress
+		}
+		for p := entry.next; p != nil; p = p.next {
+			if bytes.Equal(p.state.token, state.token) {
+				return ErrPagingNoProgress
+			}
+		}
+	}
+	maxCount, maxBytes := h.maxCount, h.maxBytes
+	if maxCount == 0 {
+		maxCount = 65536
+	}
+	if maxBytes == 0 {
+		maxBytes = 16 << 20
+	}
+	if h.count >= maxCount || int64(len(state.token)) > maxBytes-h.bytes {
+		return ErrPagingStateLimit
+	}
+	candidate := pagingHistoryEntry{state: state}
+	if exists {
+		previous := entry
+		candidate.next = &previous
+	}
+	h.entries[hash] = candidate
+	h.count++
+	h.bytes += int64(len(state.token))
+	return nil
+}
+func (h *pagingHistory) clear() { h.entries = nil; h.count = 0; h.bytes = 0 }
+
+// resultPlanCache is scoped to one application decoder/handle, not CQL. Only
+// its current shape is retained; live pages own previous selected plans.
+type typedResultMetadata struct {
+	tracker *preparedSchemaTracker
+	columns Columns
+	epoch   preparedSchemaStamp
+}
+type resultPlanCache[R any] struct {
+	mu       sync.Mutex
+	entry    *typedResultMetadata
+	columns  Columns
+	plan     RowPlan[R]
+	revision uint64
+}
+
+func (c *resultPlanCache[R]) selectPlan(response *responsePage, decoder RowDecoder[R]) (RowPlan[R], error) {
+	entry := response.metadata
+	if entry == nil {
+		entry = &typedResultMetadata{columns: response.columns}
+		response.metadata = entry
+	}
+	c.mu.Lock()
+	if c.plan != nil && c.entry == entry {
+		plan := c.plan
+		c.mu.Unlock()
+		return plan, nil
+	}
+	previous, columns := c.plan, c.columns
+	c.revision++
+	revision := c.revision
+	c.mu.Unlock()
+	var plan RowPlan[R]
+	var err error
+	if previous != nil && columns.Equal(response.columns) {
+		plan = previous
+	} else {
+		plan, err = compileRowPlan(decoder, response.columns)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if entry.tracker != nil {
+		entry.tracker.mu.RLock()
+		defer entry.tracker.mu.RUnlock()
+	}
+	c.mu.Lock()
+	if c.revision == revision && entry.epoch.current() {
+		c.entry = entry
+		c.columns = response.columns
+		c.plan = plan
+	}
+	c.mu.Unlock()
+	return plan, nil
 }
 
 type CASResult[R any] struct {
@@ -453,7 +765,8 @@ func (r *Rows[R]) startPrefetch() {
 	if !state.More() {
 		return
 	}
-	if _, seen := r.seen[string(state.token)]; seen {
+	if err := r.history.add(state); err != nil {
+		r.nextErr = err
 		return
 	}
 	future := &pageFuture{done: make(chan struct{})}
@@ -483,7 +796,12 @@ func (p *Page[R]) Columns() Columns {
 
 // Columns returns the current page's actual physical result metadata.
 func (r *Rows[R]) Columns() Columns {
-	if r == nil || r.page == nil {
+	if r == nil {
+		return Columns{}
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.page == nil {
 		return Columns{}
 	}
 	return r.page.Columns()
@@ -517,4 +835,22 @@ func (p execRowsPlan) DecodeInto(reader *RowReader, dst *Unit) error {
 		}
 	}
 	return nil
+}
+
+// Completion observers may inspect their iterator; invoke them after unlocking.
+func (p *Page[R]) unlockAfterAdvance() {
+	release := p.pendingRelease
+	p.pendingRelease = nil
+	p.mu.Unlock()
+	if release != nil {
+		release()
+	}
+}
+func (r *Rows[R]) unlockAfterAdvance() {
+	release := r.pendingRelease
+	r.pendingRelease = nil
+	r.mu.Unlock()
+	if release != nil {
+		release()
+	}
 }

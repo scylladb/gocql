@@ -1,0 +1,5 @@
+--- FAIL: TestV2ResultPlanCompileSchemaFenceKeepsRetainedPage (0.00s)
+    v2_prepared_paging_test.go:994: compile published through changed schema epoch
+FAIL
+FAIL    github.com/scylladb/gocql/v2    0.014s
+FAIL

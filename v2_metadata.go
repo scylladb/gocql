@@ -157,29 +157,33 @@ type TraceEvent struct {
 }
 
 type v2PeripheralState struct {
-	snapshot          atomic.Pointer[MetadataSnapshot]
-	publishMu         sync.Mutex
-	mu                sync.Mutex
-	subscribers       map[*Subscription]struct{}
-	closed            bool
-	config            Config
-	schemaEpoch       map[string]uint64
-	schemaDropped     map[string]bool
-	retryScheduled    atomic.Bool
-	periodicOnce      sync.Once
-	schemaGeneration  atomic.Uint64
-	feedbackOnce      sync.Once
-	feedbackMu        sync.Mutex
-	feedback          map[v2TabletFeedbackKey]v2PendingTabletFeedback
-	feedbackWake      chan struct{}
-	done              chan struct{}
-	latencyMu         sync.Mutex
-	latency           [1024]time.Duration
-	latencyCount      uint64
-	orphans           atomic.Uint64
-	schemaStale       map[string]bool
-	feedbackResync    bool
-	knownTabletTables map[metadataTable]bool
+	snapshot               atomic.Pointer[MetadataSnapshot]
+	publishMu              sync.Mutex
+	mu                     sync.Mutex
+	subscribers            map[*Subscription]struct{}
+	closed                 bool
+	config                 Config
+	schemaEpoch            map[string]uint64
+	schemaDropped          map[string]bool
+	retryScheduled         atomic.Bool
+	schemaRetryNeeded      atomic.Bool
+	preparedRefreshScopes  map[string]uint64
+	preparedRefreshVersion uint64
+	schemaReconciled       atomic.Uint64
+	periodicOnce           sync.Once
+	schemaGeneration       atomic.Uint64
+	feedbackOnce           sync.Once
+	feedbackMu             sync.Mutex
+	feedback               map[v2TabletFeedbackKey]v2PendingTabletFeedback
+	feedbackWake           chan struct{}
+	done                   chan struct{}
+	latencyMu              sync.Mutex
+	latency                [1024]time.Duration
+	latencyCount           uint64
+	orphans                atomic.Uint64
+	schemaStale            map[string]bool
+	feedbackResync         bool
+	knownTabletTables      map[metadataTable]bool
 }
 
 func (s *Session) peripheral() *v2PeripheralState {
@@ -402,6 +406,7 @@ func (s *Session) publishV2Metadata() {
 			}
 		}
 	}
+	s.updatePreparedSchemaSnapshot(old, m)
 	p.snapshot.Store(m)
 }
 func snapshotV2Host(s *Session, h *HostInfo) (HostSnapshot, error) {
@@ -1771,6 +1776,10 @@ func (s *Session) refreshV2KeyspaceAttempt(ctx context.Context, name string, att
 	return nil
 }
 func (s *Session) scheduleV2SchemaRetry() {
+	s.peripheral().schemaRetryNeeded.Store(true)
+	s.startV2SchemaRetry()
+}
+func (s *Session) startV2SchemaRetry() {
 	p := s.peripheral()
 	if !p.retryScheduled.CompareAndSwap(false, true) {
 		return
@@ -1788,6 +1797,7 @@ func (s *Session) scheduleV2SchemaRetry() {
 		p.mu.Lock()
 		closed := p.closed
 		timeout := p.config.Metadata.RequestTimeout
+		scopes := maps.Clone(p.preparedRefreshScopes)
 		p.mu.Unlock()
 		if closed {
 			p.retryScheduled.Store(false)
@@ -1797,14 +1807,32 @@ func (s *Session) scheduleV2SchemaRetry() {
 			timeout = time.Minute
 		}
 		ctx, cancel := context.WithTimeout(ctx, timeout)
-		err := s.refreshV2AllSchema(ctx)
+		if p.schemaRetryNeeded.Swap(false) {
+			if err := s.refreshV2AllSchema(ctx); err != nil {
+				p.schemaRetryNeeded.Store(true)
+			}
+		}
+		for keyspace, version := range scopes {
+			if err := s.reconcileV2PreparedScope(ctx, keyspace); err == nil {
+				p.mu.Lock()
+				if p.preparedRefreshScopes[keyspace] == version {
+					delete(p.preparedRefreshScopes, keyspace)
+				}
+				p.mu.Unlock()
+				p.schemaReconciled.Add(1)
+			}
+		}
 		cancel()
 		p.retryScheduled.Store(false)
-		if err != nil && !s.Closed() {
-			s.scheduleV2SchemaRetry()
+		p.mu.Lock()
+		pending := len(p.preparedRefreshScopes) > 0
+		p.mu.Unlock()
+		if (pending || p.schemaRetryNeeded.Load()) && !s.Closed() {
+			s.startV2SchemaRetry()
 		}
 	}()
 }
+
 func fetchV2Keyspace(ctx context.Context, s *Session, base *KeyspaceMetadata) (*KeyspaceMetadata, error) {
 	var tables []TableMetadata
 	var columns []ColumnMetadata

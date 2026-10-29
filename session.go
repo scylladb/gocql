@@ -674,6 +674,7 @@ func (s *Session) Close() error {
 	}
 	s.isClosing = true
 	s.sessionStateMu.Unlock()
+	preparedRuntime := s.stopPreparedWorkers()
 
 	if s.pool != nil {
 		s.pool.Close()
@@ -713,6 +714,9 @@ func (s *Session) Close() error {
 
 	if s.metadataDescriber != nil && s.metadataDescriber.metadata != nil {
 		s.metadataDescriber.metadata.tabletsMetadata.Close()
+	}
+	if preparedRuntime != nil {
+		preparedRuntime.prepareWorkers.Wait()
 	}
 	s.closeV2Peripheral()
 	return nil

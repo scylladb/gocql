@@ -2175,14 +2175,17 @@ func TestPrepareExecuteMetadataChangedFlag(t *testing.T) {
 func runMetadataChangedFlow(t *testing.T, session *Session, conn *Conn, table string) {
 	t.Helper()
 	qualified := "gocql_test." + table
-	cassandraDDL(t, session, "CREATE TABLE "+qualified+"(id int PRIMARY KEY)")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	host := Option[UUID]{Value: conn.host.hostUUID(), Set: true}
 	options := Options{HostID: host, connection: conn}
 	prepareOptions := PrepareOptions{HostID: host, connection: conn}
+	create := cassandraUnprepared(t, "CREATE TABLE "+qualified+"(id int PRIMARY KEY)", NoRows)
+	_, err := Exec(ctx, session, create, options)
+	require.NoError(t, err)
+	require.NoError(t, session.awaitV2SchemaAgreementOn(ctx, conn))
 	write := cassandraWriteBound(t, session, "INSERT INTO "+qualified+"(id) VALUES(?)", []Value{IntValue(1)}, prepareOptions)
-	_, err := Exec(ctx, session, write, options)
+	_, err = Exec(ctx, session, write, options)
 	require.NoError(t, err)
 	prepared := cassandraPrepared(t, session, Statement[Unit, DynamicRow]{CQL: "SELECT * FROM " + qualified, Params: NoParams, Rows: DynamicRows}, prepareOptions)
 	bound := cassandraBound(t, prepared, Unit{})
@@ -2193,8 +2196,9 @@ func runMetadataChangedFlow(t *testing.T, session *Session, conn *Conn, table st
 		t.Helper()
 		prepared.state.mu.RLock()
 		defer prepared.state.mu.RUnlock()
-		v, ok := prepared.state.hosts[host.Value]
+		entry, ok := prepared.state.hosts[host.Value]
 		require.True(t, ok)
+		v := *entry
 		v.id = append([]byte(nil), v.id...)
 		v.metadataID = append([]byte(nil), v.metadataID...)
 		return v
@@ -2204,7 +2208,9 @@ func runMetadataChangedFlow(t *testing.T, session *Session, conn *Conn, table st
 	alter := cassandraUnprepared(t, "ALTER TABLE "+qualified+" ADD new_col int", NoRows)
 	_, err = Exec(ctx, session, alter, options)
 	require.NoError(t, err)
-	require.NoError(t, session.AwaitSchemaAgreement(ctx))
+	// Include the exact host that applied ALTER; checking another host can
+	// falsely agree on the old version before schema propagation starts.
+	require.NoError(t, session.awaitV2SchemaAgreementOn(ctx, conn))
 	write = cassandraWriteBound(t, session, "INSERT INTO "+qualified+"(id,new_col) VALUES(?,?)", []Value{IntValue(2), IntValue(10)}, prepareOptions)
 	_, err = Exec(ctx, session, write, options)
 	require.NoError(t, err)
@@ -2239,7 +2245,7 @@ func runMetadataChangedFlow(t *testing.T, session *Session, conn *Conn, table st
 	stale := before
 	stale.revision = after.revision
 	prepared.state.mu.Lock()
-	prepared.state.hosts[host.Value] = stale
+	prepared.state.hosts[host.Value] = &stale
 	prepared.state.mu.Unlock()
 	checkRows()
 	healed := cached()
@@ -2357,12 +2363,13 @@ func TestPrepareExecuteScyllaEmptyMetadataID(t *testing.T) {
 	bound := cassandraBound(t, prepared, int32(1))
 	cassandraReadBound(t, session, bound, Options{HostID: host, connection: conn})
 	prepared.state.mu.Lock()
-	cached, ok := prepared.state.hosts[host.Value]
+	entry, ok := prepared.state.hosts[host.Value]
 	require.True(t, ok)
+	cached := *entry
 	require.NotEmpty(t, cached.metadataID)
 	cached.metadataID = nil
 	cached.revision++
-	prepared.state.hosts[host.Value] = cached
+	prepared.state.hosts[host.Value] = &cached
 	prepared.state.mu.Unlock()
 	row := cassandraReadBound(t, session, bound, Options{HostID: host, connection: conn})
 	require.Equal(t, int64(1), cassandraInt(t, row, "id"))

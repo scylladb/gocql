@@ -1,0 +1,20 @@
+{
+  "cassandra_test.go": "f2105c404bb402792c689dda5570709e2db8903c471f0da206d9b3f90f334abf",
+  "feature-specs/gocql-v2-api.md": "88550e2ef01ed448a4dca1d281421bba1baaf8224cd287230135f1ae5957ac15",
+  "feature-specs/gocql-v2-implementation.md": "7d4834650465d06e94efbe3f8b46acf1cac9357ec27dc982d4b90ab0fc001e8f",
+  "session.go": "3fb9a626eb28d6f10b618d62bf320c7034df245022ae8540b60d72d276c5ff14",
+  "v2_config.go": "62a91aaef67cd5de4e8c7053c0b681b398fde0acaef734f30e35cc0c47eb31d0",
+  "v2_events.go": "1c24cbc67b128fa177800453235f17ce799df02070e9811b390f086a6f924edf",
+  "v2_execute.go": "3196e3be2ca60bf6b6e7ce52c290261e473be890623b5bbcfcfab3d3cc93905d",
+  "v2_metadata.go": "e47a3fe88bbf52bc123f8ad598d32d4cade46970468c1475c69affb6742992d2",
+  "v2_prepared_conflict_unit_test.go": "45341b6347eab911711017c7ab0583c86fdbefbf4c49f6015b342bcb49d8ee52",
+  "v2_prepared_paging_bench_test.go": "e3903c13ac57dac46a1d987572e58d3b595e2130c39676432519fa816bed60e3",
+  "v2_prepared_paging_fuzz_test.go": "971a2a044947b0a24fa6e1a3f9790d0d484350e30d79e511de59499de230644a",
+  "v2_prepared_paging_integration_test.go": "5ab679db4e236e7e18176bee4887740960addfa70741ae653684d781398f7e35",
+  "v2_prepared_paging_test.go": "1b04d24106128d0c26d7c9ce723526aa1bd9c78a216c080f0dbf8d61982ed98e",
+  "v2_prepared_refresh.go": "86c71da56269f9b69900a2ad40cb34af8b8a3fcb7793275b0a70304a5c1229aa",
+  "v2_prepared_schema.go": "b9dd3d5df9a64a9753cd009ef7cd45dd6aee2cdfa98d1f86b96d2054c3e48362",
+  "v2_result.go": "c7b98b86918d0ab886d1406f3224cd184530b3be9bd5b6073ddf687b89c74cf5",
+  "v2_runtime_types.go": "3335b39e14fa0a40f2eded0d9b4b2d4c78353141940a9eeb40a77c0375fd1ad9",
+  "v2_statement.go": "9d121eef95fc4cdaec3ba12eb3ff1aee03f0c6b78d80b42e4f06a2b468ca9309"
+}

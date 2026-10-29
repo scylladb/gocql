@@ -1,0 +1,42 @@
+[
+  {
+    "name": "final-cache-cleanup",
+    "command": [
+      "podman",
+      "exec",
+      "gocql-api-node1",
+      "cqlsh",
+      "-e",
+      "DROP TABLE IF EXISTS gocql_test.testprepare_preparedcacheeviction;"
+    ],
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step03-final-cache-cleanup.log"
+  },
+  {
+    "name": "final-cache-race",
+    "command": [
+      "go",
+      "test",
+      "-json",
+      "-race",
+      "-tags",
+      "integration gocql_debug",
+      "-run",
+      "^TestPrepare_PreparedCacheEviction$",
+      "-count=1",
+      "-timeout=3m",
+      ".",
+      "-args",
+      "-distribution=scylla",
+      "-gocql.timeout=60s",
+      "-proto=4",
+      "-rf=3",
+      "-clusterSize=3",
+      "-compressor=snappy",
+      "-gocql.cversion=2026.3.4",
+      "-cluster=127.0.20.1,127.0.20.2,127.0.20.3"
+    ],
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step03-final-cache-race.jsonl"
+  }
+]
