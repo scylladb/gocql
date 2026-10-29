@@ -1,0 +1,9 @@
+{
+  "predecessor": "6cfb37a",
+  "diagnostic": "Optional GOARCH=386 root compile fails before v2 code in unchanged legacy serialization constants. These legacy modules are scheduled for removal in step10; no passing root-386 result claimed.",
+  "unchanged_files": {
+    "serialization/varint/unmarshal_ints.go": "6a5c95ff75899d6ba105ce89ca33f3694d7192b255d41826409dc9fadc369c34",
+    "serialization/varint/marshal_ints.go": "2c09a37404909260c0688f89fb7b57139a4cdcb5dc34f93c1b175b0f11f1ea9d",
+    "serialization/cqlint/unmarshal_utils.go": "fd1c94e737bea00df5b9a110270b0d30a068a69f038b7c013f2722fbccb33ebb"
+  }
+}

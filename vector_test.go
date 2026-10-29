@@ -137,7 +137,7 @@ func TestVector_Types(t *testing.T) {
 	times := []time.Time{parse("15:04:05", "01:00:00"), parse("15:04:05", "15:23:59"), parse("15:04:05.000", "10:31:45.987")}
 	// The historical time subcase stores timestamp values anchored at year zero.
 	// Preserve that wire coverage alongside the scalar time fixtures above.
-	ascii := NamedScalar(ASCIICodec, func(s string) Text { return BorrowText(s) }, func(t Text) string { return t.String() })
+	ascii := NamedScalar(ASCIICodec, func(s string) Text { return codecTestMust(BorrowText(s)) }, func(t Text) string { return t.String() })
 	uintVarint := NamedScalar(VarintCodec, func(n uint64) Varint { return VarintFromBigInt(new(big.Int).SetUint64(n)) }, func(n Varint) uint64 { return n.BigInt().Uint64() })
 	type triple struct {
 		Text  string
@@ -217,7 +217,7 @@ func TestVector_MarshalerUDT(t *testing.T) {
 	table, typ := serializationTableName(t), serializationTypeName(t)
 	serializationDDL(t, s, fmt.Sprintf("CREATE TYPE %s(first_name text,last_name text,age int)", typ))
 	serializationDDL(t, s, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,couple vector<%s,2>)", table, typ))
-	codec := serializationUDT(Params(Param("first_name", serializationString, func(v person) string { return v.FirstName }), Param("last_name", serializationString, func(v person) string { return v.LastName }), Param("age", Int32, func(v person) int32 { return v.Age })), Row(Column("first_name", serializationString, func(v *person) *string { return &v.FirstName }), Column("last_name", serializationString, func(v *person) *string { return &v.LastName }), Column("age", Int32, func(v *person) *int32 { return &v.Age })), UDTOptions{})
+	codec := serializationUDT(Params(Param("first_name", serializationString, func(v person) string { return v.FirstName }), Param("last_name", serializationString, func(v person) string { return v.LastName }), Param("age", Int32, func(v person) int32 { return v.Age })), Row(Column("first_name", serializationString, func(v *person) *string { return &v.FirstName }), Column("last_name", serializationString, func(v *person) *string { return &v.LastName }), Column("age", Int32, func(v *person) *int32 { return &v.Age })), serializationUDTOptions(typ))
 	want := []person{{"Johny", "Bravo", 25}, {"Capitan", "Planet", 5}}
 	require.Equal(t, want, serializationRoundTrip(t, s, table, "couple", 1, serializationVector(codec), want))
 }

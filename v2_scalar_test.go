@@ -267,7 +267,7 @@ func TestV2ScalarTextValidationAndBorrowing(t *testing.T) {
 	if _, err := ASCIICodec.Decode(scalarReader(t, TypeAscii, Present, []byte{0x7f}, []byte{0x80})); err == nil {
 		t.Fatal("decoded non-ASCII")
 	}
-	if _, err := scalarEncode(t, ASCIICodec, TypeAscii, BorrowText("é")); err == nil {
+	if _, err := scalarEncode(t, ASCIICodec, TypeAscii, codecTestMust(BorrowText("é"))); err == nil {
 		t.Fatal("borrowed Text bypassed ASCII validation")
 	}
 	if err := StringEncoder.CheckType(scalarType(t, TypeAscii)); err == nil {

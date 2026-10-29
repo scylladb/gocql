@@ -1,0 +1,24 @@
+goos: linux
+goarch: amd64
+pkg: github.com/scylladb/gocql/v2
+cpu: AMD Ryzen 9 9950X3D 16-Core Processor
+BenchmarkV2ContainerIteration/1-32                558067               221.9 ns/op        36.06 MB/s         376 B/op          3 allocs/op
+BenchmarkV2ContainerIteration/1024-32                991            119520 ns/op          68.54 MB/s         376 B/op          3 allocs/op
+BenchmarkV2ContainerSegmentedIteration-32            794            148598 ns/op          55.16 MB/s         376 B/op          3 allocs/op
+BenchmarkV2ContainerCompiledDecode-32               2229             52760 ns/op         155.35 MB/s           0 B/op          0 allocs/op
+BenchmarkV2ContainerTupleIteration-32                405            294889 ns/op            4484 B/op       1027 allocs/op
+BenchmarkV2RoutingCompositeSpans-32                99346              1201 ns/op        6820.83 MB/s           0 B/op          0 allocs/op
+BenchmarkV2RowScalarPlan-32                       631429               168.9 ns/op           160 B/op          2 allocs/op
+BenchmarkV2ScalarInt64Decode-32                  1677610                71.58 ns/op      111.76 MB/s           0 B/op          0 allocs/op
+BenchmarkV2ScalarBlobDecode-32                   2411212                50.83 ns/op     20627891.76 MB/s               0 B/op          0 allocs/op
+BenchmarkV2ScalarTextDecode-32                       250            484473 ns/op        2164.37 MB/s           0 B/op          0 allocs/op
+BenchmarkV2ScalarVarintDecode-32                 1631792                71.59 ns/op     14646775.34 MB/s               0 B/op          0 allocs/op
+BenchmarkV2ScalarBlobEncodeBorrowed-32            870340               136.1 ns/op      7703429.31 MB/s      352 B/op          6 allocs/op
+BenchmarkV2RowDestinationFragments/fragments=1/into=false-32              227564               480.8 ns/op             0 B/op          0 allocs/op
+BenchmarkV2RowDestinationFragments/fragments=1/into=true-32               541926               239.2 ns/op             0 B/op          0 allocs/op
+BenchmarkV2RowDestinationFragments/fragments=1024/into=false-32            65562              1792 ns/op               0 B/op          0 allocs/op
+BenchmarkV2RowDestinationFragments/fragments=1024/into=true-32             81235              1422 ns/op               0 B/op          0 allocs/op
+BenchmarkV2RowDestinationFragments/fragments=65536/into=false-32            1490             81061 ns/op               3 B/op          0 allocs/op
+BenchmarkV2RowDestinationFragments/fragments=65536/into=true-32             1477             75828 ns/op               0 B/op          0 allocs/op
+PASS
+ok      github.com/scylladb/gocql/v2    2.325s

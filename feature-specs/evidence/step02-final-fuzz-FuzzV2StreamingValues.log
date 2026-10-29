@@ -1,0 +1,6 @@
+fuzz: elapsed: 0s, gathering baseline coverage: 0/47 completed
+fuzz: elapsed: 0s, gathering baseline coverage: 47/47 completed, now fuzzing with 2 workers
+fuzz: elapsed: 3s, execs: 68088 (22693/sec), new interesting: 3 (total: 50)
+fuzz: elapsed: 5s, execs: 116819 (24111/sec), new interesting: 3 (total: 50)
+PASS
+ok      github.com/scylladb/gocql/v2    5.031s

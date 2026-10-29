@@ -561,7 +561,7 @@ func serializationFixtureValue(kind Type, input any) (Value, error) {
 	case string:
 		switch kind {
 		case TypeText, TypeVarchar:
-			return TextValue(v), nil
+			return TextValue(v)
 		case TypeAscii:
 			return ASCIIValue(v)
 		case TypeBlob:
@@ -706,4 +706,8 @@ func serializationTableName(t testing.TB, parts ...string) string {
 }
 func serializationTypeName(t testing.TB, parts ...string) string {
 	return serializationTableName(t, parts...)
+}
+
+func serializationUDTOptions(name string) UDTOptions {
+	return UDTOptions{Keyspace: "gocql_test", Name: name}
 }

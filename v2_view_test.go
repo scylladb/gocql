@@ -104,12 +104,12 @@ func TestV2FoundationTextChunks(t *testing.T) {
 	}
 	clone := text.Clone()
 	lease.Release()
-	foundationPanicReleased(t, func() { text.String() })
+	foundationPanicReleased(t, func() { _ = text.String() })
 	foundationPanicReleased(t, func() { text.Clone() })
 	if clone.String() != string(data) {
 		t.Fatal("text clone did not detach")
 	}
-	borrowed := BorrowText("source")
+	borrowed := codecTestMust(BorrowText("source"))
 	if borrowed.String() != "source" {
 		t.Fatal("external string view failed")
 	}
@@ -119,15 +119,14 @@ func TestV2FoundationTextChunks(t *testing.T) {
 }
 
 func TestV2FoundationBorrowTextValidation(t *testing.T) {
-	defer func() {
-		recovered := recover()
-		err, ok := recovered.(error)
-		var validation *ValidationError
-		if !ok || !errors.As(err, &validation) {
-			t.Fatalf("invalid UTF-8 panic: %v", recovered)
-		}
-	}()
-	BorrowText(string([]byte{0xff}))
+	_, err := BorrowText(string([]byte{0xff}))
+	var validation *ValidationError
+	if !errors.As(err, &validation) {
+		t.Fatalf("invalid UTF-8: %v", err)
+	}
+	if _, err := TextValue(string([]byte{0xff})); !errors.As(err, &validation) {
+		t.Fatalf("invalid dynamic text: %v", err)
+	}
 }
 func TestV2FoundationConcurrentRetainedViews(t *testing.T) {
 	data := []byte("immutable retained page")

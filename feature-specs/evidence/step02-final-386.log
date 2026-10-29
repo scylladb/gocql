@@ -1,0 +1,16 @@
+# github.com/scylladb/gocql/v2/serialization/varint
+serialization/varint/unmarshal_ints.go:25:14: int(-1) << 32 (constant -4294967296 of type int) overflows int
+serialization/varint/unmarshal_ints.go:26:14: int(-1) << 40 (constant -1099511627776 of type int) overflows int
+serialization/varint/unmarshal_ints.go:27:14: int(-1) << 48 (constant -281474976710656 of type int) overflows int
+serialization/varint/unmarshal_ints.go:28:14: int(-1) << 56 (constant -72057594037927936 of type int) overflows int
+serialization/varint/marshal_ints.go:120:10: maxInt40 (untyped int constant 549755813887) overflows int
+serialization/varint/marshal_ints.go:120:27: minInt40 (untyped int constant -549755813888) overflows int
+serialization/varint/marshal_ints.go:123:10: maxInt48 (untyped int constant 140737488355327) overflows int
+serialization/varint/marshal_ints.go:123:27: minInt48 (untyped int constant -140737488355328) overflows int
+serialization/varint/marshal_ints.go:126:10: maxInt56 (untyped int constant 36028797018963967) overflows int
+serialization/varint/marshal_ints.go:126:27: minInt56 (untyped int constant -36028797018963968) overflows int
+serialization/varint/marshal_ints.go:126:27: too many errors
+# github.com/scylladb/gocql/v2/serialization/cqlint
+serialization/cqlint/unmarshal_utils.go:13:13: int(-1) << 32 (constant -4294967296 of type int) overflows int
+FAIL    github.com/scylladb/gocql/v2 [build failed]
+FAIL

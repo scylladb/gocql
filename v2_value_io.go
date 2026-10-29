@@ -123,6 +123,7 @@ func (w *ValueWriter) setState(state CellState) error {
 	w.state = state
 	return nil
 }
+func (w *ValueWriter) Empty() error { return w.emptyValue() }
 func (w *ValueWriter) Null() error  { return w.setState(Null) }
 func (w *ValueWriter) Unset() error { return w.setState(Unset) }
 func (w *ValueWriter) emptyValue() error {

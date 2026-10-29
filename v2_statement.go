@@ -73,11 +73,11 @@ func Prepare[P, R any](ctx context.Context, s *Session, statement Statement[P, R
 	state.mu.RLock()
 	parameters, columns := state.parameters, state.columns
 	state.mu.RUnlock()
-	plan, err := statement.Params.Compile(parameters)
+	plan, err := compileParamPlan(statement.Params, parameters)
 	if err != nil {
 		return nil, err
 	}
-	if _, err = statement.Rows.Compile(columns); err != nil {
+	if _, err = compileRowPlan(statement.Rows, columns); err != nil {
 		return nil, err
 	}
 	return &Prepared[P, R]{state: state, params: plan, rows: statement.Rows}, nil
@@ -156,7 +156,7 @@ func bindUnprepared[P, R any](s Statement[P, R], columns Columns, value P, owned
 	if err := validateStatement(s); err != nil {
 		return nil, err
 	}
-	plan, err := s.Params.Compile(columns)
+	plan, err := compileParamPlan(s.Params, columns)
 	if err != nil {
 		return nil, err
 	}

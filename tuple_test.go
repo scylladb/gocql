@@ -202,14 +202,14 @@ func TestTuple_NestedCollection(t *testing.T) {
 		n, _ := v[0].Signed()
 		x, _ := v[1].Text()
 		return serializationMixedTuple{int32(n), x.String()}
-	}, func(v serializationMixedTuple) []Value { return []Value{IntValue(v.A), TextValue(v.B)} })
+	}, func(v serializationMixedTuple) []Value { return []Value{IntValue(v.A), codecTestMust(TextValue(v.B))} })
 	arrayCodec := NamedScalar(serializationMixedTupleCodec, func(v [2]Value) serializationMixedTuple {
 		n, _ := v[0].Signed()
 		x, _ := v[1].Text()
 		return serializationMixedTuple{int32(n), x.String()}
-	}, func(v serializationMixedTuple) [2]Value { return [2]Value{IntValue(v.A), TextValue(v.B)} })
+	}, func(v serializationMixedTuple) [2]Value { return [2]Value{IntValue(v.A), codecTestMust(TextValue(v.B))} })
 	t.Run("slice", func(t *testing.T) {
-		input := [][]Value{{IntValue(1), TextValue("2")}, {IntValue(3), TextValue("4")}}
+		input := [][]Value{{IntValue(1), codecTestMust(TextValue("2"))}, {IntValue(3), codecTestMust(TextValue("4"))}}
 		got := serializationRoundTrip(t, s, table, "val", 0, serializationList(sliceCodec), input)
 		for i := range got {
 			for j := range got[i] {
@@ -218,7 +218,7 @@ func TestTuple_NestedCollection(t *testing.T) {
 		}
 	})
 	t.Run("array", func(t *testing.T) {
-		input := [][2]Value{{IntValue(1), TextValue("2")}, {IntValue(3), TextValue("4")}}
+		input := [][2]Value{{IntValue(1), codecTestMust(TextValue("2"))}, {IntValue(3), codecTestMust(TextValue("4"))}}
 		got := serializationRoundTrip(t, s, table, "val", 1, serializationList(arrayCodec), input)
 		for i := range got {
 			for j := range got[i] {

@@ -88,7 +88,7 @@ func newPage[R any](response *responsePage, decoder RowDecoder[R], release func(
 		response.owner.Release()
 		return nil, typeValidation("rows", "nil row decoder")
 	}
-	plan, err := decoder.Compile(response.columns)
+	plan, err := compileRowPlan(decoder, response.columns)
 	if err != nil {
 		response.owner.Release()
 		return nil, err
@@ -353,7 +353,7 @@ func (c casRows[R]) Compile(columns Columns) (RowPlan[CASResult[R]], error) {
 		if c.decoder == nil {
 			return nil, typeValidation("CAS result", "nil previous-value decoder")
 		}
-		p.previous, err = c.decoder.Compile(previous)
+		p.previous, err = compileRowPlan(c.decoder, previous)
 		if err != nil {
 			return nil, err
 		}
@@ -362,24 +362,36 @@ func (c casRows[R]) Compile(columns Columns) (RowPlan[CASResult[R]], error) {
 }
 func (p casRowPlan[R]) Decode(reader *RowReader) (CASResult[R], error) {
 	var result CASResult[R]
-	applied, err := ReadColumn(reader, Bool)
+	err := p.DecodeInto(reader, &result)
 	if err != nil {
-		return result, err
-	}
-	result.Applied = applied
-	if p.previous != nil {
-		sub := &RowReader{columns: p.columns, cursor: reader.cursor, lease: reader.lease}
-		value, err := p.previous.Decode(sub)
-		if err == nil {
-			err = finishRowReader(sub)
-		}
-		if err != nil {
-			return result, err
-		}
-		reader.index += p.columns.Len()
-		result.Previous = Option[R]{Value: value, Set: true}
+		return CASResult[R]{}, err
 	}
 	return result, nil
+}
+func (p casRowPlan[R]) DecodeInto(reader *RowReader, dst *CASResult[R]) error {
+	if dst == nil {
+		return typeValidation("destination", "nil CAS destination")
+	}
+	*dst = CASResult[R]{}
+	if err := readColumnInto(reader, Bool, &dst.Applied); err != nil {
+		return err
+	}
+	if p.previous == nil {
+		return nil
+	}
+	columns, index := reader.columns, reader.index
+	reader.columns, reader.index = p.columns, 0
+	err := p.previous.DecodeInto(reader, &dst.Previous.Value)
+	if err == nil {
+		err = finishRowReader(reader)
+	}
+	reader.columns, reader.index = columns, index
+	if err != nil {
+		return err
+	}
+	reader.index += p.columns.Len()
+	dst.Previous.Set = true
+	return nil
 }
 func (p casRowPlan[R]) Clone(value CASResult[R]) CASResult[R] {
 	if value.Previous.Set {
@@ -493,3 +505,16 @@ func (p execRowsPlan) Decode(reader *RowReader) (Unit, error) {
 	return Unit{}, nil
 }
 func (execRowsPlan) Clone(value Unit) Unit { return value }
+
+func (p execRowsPlan) DecodeInto(reader *RowReader, dst *Unit) error {
+	if dst == nil {
+		return typeValidation("destination", "nil row destination")
+	}
+	*dst = Unit{}
+	for i := 0; i < p.count; i++ {
+		if err := reader.SkipColumn(); err != nil {
+			return err
+		}
+	}
+	return nil
+}

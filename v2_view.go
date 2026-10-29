@@ -25,13 +25,13 @@ type Text struct{ bytes Bytes }
 // all operations using the resulting view have completed.
 func BorrowBytes(b []byte) Bytes { c, _ := wire.NewChain(wire.Borrow(b)); return Bytes{chain: c} }
 
-// BorrowText borrows a valid UTF-8 string. Invalid UTF-8 panics with ValidationError.
-func BorrowText(s string) Text {
+// BorrowText borrows a valid UTF-8 string, rejecting malformed input without a panic.
+func BorrowText(s string) (Text, error) {
 	if !utf8.ValidString(s) {
-		panic(typeValidation("text", "invalid UTF-8"))
+		return Text{}, typeValidation("text", "invalid UTF-8")
 	}
 	c, _ := wire.NewChain(wire.BorrowString(s))
-	return Text{bytes: Bytes{chain: c}}
+	return Text{bytes: Bytes{chain: c}}, nil
 }
 func (b Bytes) Len() int64 { return b.chain.Len() }
 func (b Bytes) checkAlive() error {

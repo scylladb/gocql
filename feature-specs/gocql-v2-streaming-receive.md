@@ -92,6 +92,22 @@ StreamRow requires an explicit callback for unmapped application state. Custom
 StreamRowPlan.Reset has the same responsibility; do not inherit the
 buffered NextInto rule that zeroes an entire R and discards its supplied slices.
 
+Step 02 corrected an optional declaration-capability gap outside the historical
+review cycles. StreamResetter[T] { Reset(*T) } provides metadata-independent
+reset for a decoder declaration. All built-in scalar/payload, nullable/empty,
+collection/map/vector, tuple/UDT, encoded and row compositions preserve seeded
+storage through this reset, recursively requiring suitable capabilities from
+custom descendants when their application mapping is absent. An application
+UDT field missing from database metadata has no DataType to compile: with
+AllowMissingFields, its declaration must support this reset or Compile returns
+a clear ValidationError. A custom declaration can implement StreamResetter to
+allow the missing mapping. Actual mapped custom fields use compiled plan.Reset
+without being required to implement this optional declaration capability.
+Synthetic descriptors, reflection, arbitrary-value zeroing and whole-row
+intermediates cannot replace the capability. The application's reset callback
+still clears unmapped Go state while preserving mapped storage. Capacity reuse,
+missing-custom-field rejection and explicit custom resets are agent 02 gates.
+
 NextInto returns true only for one complete, validated row. Nil destinations
 fail before consuming a row. Exhaustion returns false with no error; malformed
 data, insufficient capacity and cancellation are terminal errors. On failure,

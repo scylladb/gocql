@@ -1,0 +1,73 @@
+[
+  {
+    "command": [
+      "go",
+      "test",
+      "-run",
+      "^$",
+      "-fuzz",
+      "^FuzzV2StreamingValues$",
+      "-fuzztime=3s",
+      "-parallel=2",
+      "."
+    ],
+    "cwd": ".",
+    "environment": {
+      "GOMAXPROCS": "2"
+    },
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step02-final-tree-fuzz-stream.log"
+  },
+  {
+    "command": [
+      "go",
+      "test",
+      "-run",
+      "^$",
+      "-fuzz",
+      "^FuzzV2ScalarUTF8$",
+      "-fuzztime=3s",
+      "-parallel=2",
+      "."
+    ],
+    "cwd": ".",
+    "environment": {
+      "GOMAXPROCS": "2"
+    },
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step02-final-tree-fuzz-text.log"
+  },
+  {
+    "command": [
+      "go",
+      "test",
+      "-c",
+      "-tags",
+      "ccm",
+      "-o",
+      "/tmp/gocql-v2-step02-ccm.test",
+      "./internal/ccm"
+    ],
+    "cwd": ".",
+    "environment": {
+      "GOMAXPROCS": "2"
+    },
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step02-final-tree-ccm-build.log"
+  },
+  {
+    "command": [
+      "go",
+      "test",
+      "-run",
+      "^$",
+      "./..."
+    ],
+    "cwd": "tests/bench",
+    "environment": {
+      "GOMAXPROCS": "2"
+    },
+    "exit_code": 1,
+    "log": "feature-specs/evidence/step02-bench-module-build.log"
+  }
+]

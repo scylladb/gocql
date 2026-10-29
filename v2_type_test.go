@@ -75,7 +75,7 @@ func TestV2FoundationDescriptorImmutability(t *testing.T) {
 }
 func TestV2FoundationDescriptorValidation(t *testing.T) {
 	integer := foundationScalar(t, TypeInt)
-	cases := []func() (DataType, error){func() (DataType, error) { return ScalarType(TypeList) }, func() (DataType, error) { return ScalarType(TypeCustom) }, func() (DataType, error) { return ListType(DataType{}) }, func() (DataType, error) { return MapType(integer, DataType{}) }, func() (DataType, error) { return TupleType() }, func() (DataType, error) { return VectorDataType(integer, 0) }, func() (DataType, error) { return UDTType("", "record") }, func() (DataType, error) {
+	cases := []func() (DataType, error){func() (DataType, error) { return ScalarType(TypeList) }, func() (DataType, error) { return ScalarType(TypeCustom) }, func() (DataType, error) { return ListType(DataType{}) }, func() (DataType, error) { return MapType(integer, DataType{}) }, func() (DataType, error) { return VectorDataType(integer, 0) }, func() (DataType, error) { return UDTType("", "record") }, func() (DataType, error) {
 		return UDTType("ks", "record", ColumnSpec{Name: "x", Type: integer}, ColumnSpec{Name: "x", Type: integer})
 	}}
 	for i, test := range cases {

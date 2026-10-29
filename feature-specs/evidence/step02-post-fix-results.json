@@ -1,0 +1,90 @@
+[
+  {
+    "command": [
+      "go",
+      "test",
+      "-race",
+      "-run",
+      "^TestV2",
+      "-count=1",
+      "-timeout=3m",
+      "."
+    ],
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step02-post-fix-focused-race.log"
+  },
+  {
+    "command": [
+      "go",
+      "test",
+      "-run",
+      "^TestV2(TupleValueIterationAllocationsDoNotScale|Container.*AllocationsDoNotScale)$",
+      "-count=1",
+      "."
+    ],
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step02-post-fix-allocation-check.log"
+  },
+  {
+    "command": [
+      "go",
+      "test",
+      "-race",
+      "-tags",
+      "unit",
+      "-count=1",
+      "-timeout=5m",
+      "./..."
+    ],
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step02-post-fix-unit-race.log"
+  },
+  {
+    "command": [
+      "go",
+      "test",
+      "-c",
+      "-tags",
+      "integration gocql_debug",
+      "-o",
+      "/tmp/gocql-v2-step02-integration.test",
+      "."
+    ],
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step02-post-fix-integration-build.log"
+  },
+  {
+    "command": [
+      "go",
+      "vet",
+      "-tags",
+      "unit",
+      "./..."
+    ],
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step02-post-fix-vet.log"
+  },
+  {
+    "command": [
+      "go",
+      "test",
+      "-run",
+      "^$",
+      "-bench",
+      "^BenchmarkV2(Container|Scalar|StreamFinalStorage|StreamingNestedElements|RowDestinationFragments)",
+      "-benchmem",
+      "-benchtime=100ms",
+      "."
+    ],
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step02-post-fix-codec-bench.log"
+  },
+  {
+    "command": [
+      "python3",
+      "feature-specs/verify.py"
+    ],
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step02-post-fix-spec-verifier.log"
+  }
+]

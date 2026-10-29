@@ -56,8 +56,8 @@ func MapType(key, value DataType) (DataType, error) {
 	return DataType{descriptor: &dataTypeDescriptor{kind: TypeMap, key: key, element: value}}, nil
 }
 func TupleType(fields ...DataType) (DataType, error) {
-	if len(fields) == 0 || len(fields) > math.MaxUint16 {
-		return DataType{}, typeValidation("fields", "tuple requires 1..65535 fields")
+	if len(fields) > math.MaxUint16 {
+		return DataType{}, typeValidation("fields", "tuple requires 0..65535 fields")
 	}
 	columns := make([]ColumnSpec, len(fields))
 	for i, t := range fields {
@@ -181,8 +181,37 @@ func (t DataType) Equal(other DataType) bool {
 	if t.descriptor == nil || other.descriptor == nil {
 		return false
 	}
+	return equalDataTypes(t, other, make(map[typeDescriptorPair]bool))
+}
+
+type typeDescriptorPair struct{ a, b *dataTypeDescriptor }
+
+func equalDataTypes(t, other DataType, seen map[typeDescriptorPair]bool) bool {
+	if t.descriptor == other.descriptor {
+		return true
+	}
+	if t.descriptor == nil || other.descriptor == nil {
+		return false
+	}
+	key := typeDescriptorPair{t.descriptor, other.descriptor}
+	if seen[key] {
+		return true
+	}
 	a, b := t.descriptor, other.descriptor
-	return a.kind == b.kind && a.dimension == b.dimension && a.keyspace == b.keyspace && a.name == b.name && a.element.Equal(b.element) && a.key.Equal(b.key) && a.fields.Equal(b.fields)
+	if a.kind != b.kind || a.dimension != b.dimension || a.keyspace != b.keyspace || a.name != b.name || a.fields.Len() != b.fields.Len() {
+		return false
+	}
+	seen[key] = true
+	if !equalDataTypes(a.element, b.element, seen) || !equalDataTypes(a.key, b.key, seen) {
+		return false
+	}
+	for i, x := range a.fields.columns {
+		y := b.fields.columns[i]
+		if x.Name != y.Name || x.Table != y.Table || x.Keyspace != y.Keyspace || !equalDataTypes(x.Type, y.Type, seen) {
+			return false
+		}
+	}
+	return true
 }
 
 // fingerprint is an unambiguous structural encoding, not a hash. Equality still

@@ -346,3 +346,7 @@ func (s *Stream) RequireEnd() error {
 	}
 	return nil
 }
+
+// Context and Limits expose immutable admission data to typed streaming readers.
+func (s *Stream) Context() context.Context { return s.state.ctx }
+func (s *Stream) Limits() StreamLimits     { return s.state.limits }

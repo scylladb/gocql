@@ -1,0 +1,27 @@
+goos: linux
+goarch: amd64
+pkg: github.com/scylladb/gocql/v2
+cpu: AMD Ryzen 9 9950X3D 16-Core Processor
+BenchmarkV2ContainerIteration/1-32                511218               211.1 ns/op        37.89 MB/s         376 B/op          3 allocs/op
+BenchmarkV2ContainerIteration/1024-32               1071            111832 ns/op          73.25 MB/s         376 B/op          3 allocs/op
+BenchmarkV2ContainerSegmentedIteration-32            793            146508 ns/op          55.94 MB/s         376 B/op          3 allocs/op
+BenchmarkV2ContainerCompiledDecode-32               2349             52136 ns/op         157.20 MB/s           0 B/op          0 allocs/op
+BenchmarkV2ContainerTupleIteration-32                374            301259 ns/op             402 B/op          3 allocs/op
+BenchmarkV2ScalarInt64Decode-32                  1664834                71.55 ns/op      111.82 MB/s           0 B/op          0 allocs/op
+BenchmarkV2ScalarBlobDecode-32                   2445169                49.08 ns/op     21362987.82 MB/s               0 B/op          0 allocs/op
+BenchmarkV2ScalarTextDecode-32                       249            459689 ns/op        2281.05 MB/s           0 B/op          0 allocs/op
+BenchmarkV2ScalarVarintDecode-32                 1767723                70.09 ns/op     14960771.53 MB/s               0 B/op          0 allocs/op
+BenchmarkV2ScalarBlobEncodeBorrowed-32            888862               135.6 ns/op      7732076.48 MB/s      352 B/op          6 allocs/op
+BenchmarkV2StreamFinalStorage/32-32                53902              2347 ns/op         436.38 MB/s            32.00 rows/op        216 B/op          4 allocs/op
+BenchmarkV2StreamFinalStorage/4096-32              39603              2912 ns/op        45006.59 MB/s           32.00 rows/op        216 B/op          4 allocs/op
+BenchmarkV2StreamFinalStorage/512000-32              726            166748 ns/op        98255.78 MB/s           32.00 rows/op        216 B/op          4 allocs/op
+BenchmarkV2StreamingNestedElements/16-32            1525             80688 ns/op               512.0 elements/op             264 B/op          6 allocs/op
+BenchmarkV2StreamingNestedElements/1024-32            26           4982514 ns/op             32768 elements/op       264 B/op          6 allocs/op
+BenchmarkV2RowDestinationFragments/fragments=1/into=false-32              214269               471.5 ns/op             0 B/op          0 allocs/op
+BenchmarkV2RowDestinationFragments/fragments=1/into=true-32               496760               238.2 ns/op             0 B/op          0 allocs/op
+BenchmarkV2RowDestinationFragments/fragments=1024/into=false-32            70340              1733 ns/op               0 B/op          0 allocs/op
+BenchmarkV2RowDestinationFragments/fragments=1024/into=true-32             83692              1460 ns/op               0 B/op          0 allocs/op
+BenchmarkV2RowDestinationFragments/fragments=65536/into=false-32            1515             78760 ns/op               4 B/op          0 allocs/op
+BenchmarkV2RowDestinationFragments/fragments=65536/into=true-32             1687             80865 ns/op               0 B/op          0 allocs/op
+PASS
+ok      github.com/scylladb/gocql/v2    2.782s

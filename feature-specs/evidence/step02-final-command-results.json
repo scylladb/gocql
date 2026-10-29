@@ -1,0 +1,157 @@
+[
+  {
+    "name": "final-focused-race",
+    "command": [
+      "go",
+      "test",
+      "-race",
+      "-run",
+      "^TestV2",
+      "-count=1",
+      "-timeout=3m",
+      "."
+    ],
+    "environment": {},
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step02-final-focused-race.log"
+  },
+  {
+    "name": "final-full-unit-race",
+    "command": [
+      "go",
+      "test",
+      "-race",
+      "-tags",
+      "unit",
+      "-count=1",
+      "-timeout=5m",
+      "./..."
+    ],
+    "environment": {},
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step02-final-full-unit-race.log"
+  },
+  {
+    "name": "final-integration-build",
+    "command": [
+      "go",
+      "test",
+      "-c",
+      "-tags",
+      "integration gocql_debug",
+      "-o",
+      "/tmp/gocql-v2-step02-integration.test",
+      "."
+    ],
+    "environment": {},
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step02-final-integration-build.log"
+  },
+  {
+    "name": "final-ccm-build",
+    "command": [
+      "go",
+      "test",
+      "-c",
+      "-tags",
+      "ccm",
+      "-o",
+      "/tmp/gocql-v2-step02-ccm.test",
+      "./internal/ccm"
+    ],
+    "environment": {},
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step02-final-ccm-build.log"
+  },
+  {
+    "name": "final-vet",
+    "command": [
+      "go",
+      "vet",
+      "-tags",
+      "unit",
+      "./..."
+    ],
+    "environment": {},
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step02-final-vet.log"
+  },
+  {
+    "name": "final-386",
+    "command": [
+      "go",
+      "test",
+      "-run",
+      "^TestV2",
+      "-count=1",
+      "."
+    ],
+    "environment": {
+      "GOARCH": "386"
+    },
+    "exit_code": 1,
+    "log": "feature-specs/evidence/step02-final-386.log"
+  },
+  {
+    "name": "final-386-foundations",
+    "command": [
+      "go",
+      "test",
+      "-count=1",
+      "./internal/wire",
+      "./internal/wirecompress",
+      "./internal/murmur",
+      "./internal/segment",
+      "./internal/frame"
+    ],
+    "environment": {
+      "GOARCH": "386"
+    },
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step02-final-386-foundations.log"
+  },
+  {
+    "name": "final-spec-verifier",
+    "command": [
+      "python3",
+      "feature-specs/verify.py"
+    ],
+    "environment": {},
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step02-final-spec-verifier.log"
+  },
+  {
+    "name": "final-bench",
+    "command": [
+      "go",
+      "test",
+      "-run",
+      "^$",
+      "-bench",
+      "^BenchmarkV2(StreamFinalStorage|StreamingNestedElements|RowDestinationFragments)$",
+      "-benchmem",
+      "-benchtime=100ms",
+      "."
+    ],
+    "environment": {},
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step02-final-bench.log"
+  },
+  {
+    "name": "existing-codec-bench",
+    "command": [
+      "go",
+      "test",
+      "-run",
+      "^$",
+      "-bench",
+      "^BenchmarkV2(Scalar|Segmented|Container|Row|Routing)",
+      "-benchmem",
+      "-benchtime=100ms",
+      "."
+    ],
+    "environment": {},
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step02-existing-codec-bench.log"
+  }
+]

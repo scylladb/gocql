@@ -1,0 +1,17 @@
+goos: linux
+goarch: amd64
+pkg: github.com/scylladb/gocql/v2
+cpu: AMD Ryzen 9 9950X3D 16-Core Processor
+BenchmarkV2StreamFinalStorage/32-32                52010              2378 ns/op         430.66 MB/s            32.00 rows/op        216 B/op          4 allocs/op
+BenchmarkV2StreamFinalStorage/4096-32              40735              3060 ns/op        42838.36 MB/s           32.00 rows/op        216 B/op          4 allocs/op
+BenchmarkV2StreamFinalStorage/512000-32              619            191972 ns/op        85345.99 MB/s           32.00 rows/op        216 B/op          4 allocs/op
+BenchmarkV2StreamingNestedElements/16-32            1438             83664 ns/op               512.0 elements/op             264 B/op          6 allocs/op
+BenchmarkV2StreamingNestedElements/1024-32                    25           5307967 ns/op             32768 elements/op       264 B/op          6 allocs/op
+BenchmarkV2RowDestinationFragments/fragments=1/into=false-32              245283               486.1 ns/op             0 B/op          0 allocs/op
+BenchmarkV2RowDestinationFragments/fragments=1/into=true-32               481627               240.9 ns/op             0 B/op          0 allocs/op
+BenchmarkV2RowDestinationFragments/fragments=1024/into=false-32            68510              2002 ns/op               0 B/op          0 allocs/op
+BenchmarkV2RowDestinationFragments/fragments=1024/into=true-32             84238              1450 ns/op               0 B/op          0 allocs/op
+BenchmarkV2RowDestinationFragments/fragments=65536/into=false-32            1531             77606 ns/op               3 B/op          0 allocs/op
+BenchmarkV2RowDestinationFragments/fragments=65536/into=true-32             1645             73780 ns/op               0 B/op          0 allocs/op
+PASS
+ok      github.com/scylladb/gocql/v2    1.706s

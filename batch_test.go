@@ -70,9 +70,9 @@ func TestBatch_WithTimestamp(t *testing.T) {
 	table := testTableName(t)
 	require.NoError(t, v2CreateTable(ctx, session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (id int primary key, val text)`, table)))
 	micros := time.Now().UnixMicro() - 1000
-	first := sessionTestBind(t, session, fmt.Sprintf("INSERT INTO gocql_test.%s (id, val) VALUES (?, ?)", table), IntValue(1), TextValue("val"))
+	first := sessionTestBind(t, session, fmt.Sprintf("INSERT INTO gocql_test.%s (id, val) VALUES (?, ?)", table), IntValue(1), codecTestMust(TextValue("val")))
 	defer first.Close()
-	second := sessionTestBind(t, session, fmt.Sprintf("INSERT INTO gocql_test.%s (id, val) VALUES (?, ?)", table), IntValue(2), TextValue("val"))
+	second := sessionTestBind(t, session, fmt.Sprintf("INSERT INTO gocql_test.%s (id, val) VALUES (?, ?)", table), IntValue(2), codecTestMust(TextValue("val")))
 	defer second.Close()
 	_, err := ExecBatch(ctx, session, LoggedBatch, []BatchItem{sessionTestItem(t, first), sessionTestItem(t, second)}, Options{Timestamp: Option[int64]{Value: micros, Set: true}})
 	require.NoError(t, err)
@@ -92,7 +92,7 @@ func TestBatch_WithNowInSeconds(t *testing.T) {
 	}
 	table := testTableName(t)
 	require.NoError(t, v2CreateTable(ctx, session, fmt.Sprintf(`CREATE TABLE %s (id int primary key, val text)`, table)))
-	bound := sessionTestBind(t, session, fmt.Sprintf("INSERT INTO %s (id, val) VALUES (?, ?) USING TTL 20", table), IntValue(1), TextValue("val"))
+	bound := sessionTestBind(t, session, fmt.Sprintf("INSERT INTO %s (id, val) VALUES (?, ?) USING TTL 20", table), IntValue(1), codecTestMust(TextValue("val")))
 	defer bound.Close()
 	_, err := ExecBatch(ctx, session, LoggedBatch, []BatchItem{sessionTestItem(t, bound)}, Options{NowInSeconds: Option[int32]{Value: 0, Set: true}})
 	require.NoError(t, err)
@@ -125,10 +125,10 @@ func TestBatch_SetKeyspace(t *testing.T) {
 	// member CQL still exercises the v5 BATCH keyspace flag.
 	prepared, err := Prepare(ctx, session, Statement[[]Value, Unit]{CQL: "INSERT INTO batch_keyspace(id, value) VALUES (?, ?)", Params: DynamicParams, Rows: NoRows}, PrepareOptions{Keyspace: keyspace})
 	require.NoError(t, err)
-	first, err := BindOwned(prepared, []Value{IntValue(1), TextValue("val1")})
+	first, err := BindOwned(prepared, []Value{IntValue(1), codecTestMust(TextValue("val1"))})
 	require.NoError(t, err)
 	defer first.Close()
-	second, err := BindOwned(prepared, []Value{IntValue(2), TextValue("val2")})
+	second, err := BindOwned(prepared, []Value{IntValue(2), codecTestMust(TextValue("val2"))})
 	require.NoError(t, err)
 	defer second.Close()
 	_, err = ExecBatch(ctx, session, LoggedBatch, []BatchItem{sessionTestItem(t, first), sessionTestItem(t, second)}, Options{Keyspace: keyspace})

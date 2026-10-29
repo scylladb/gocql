@@ -1,0 +1,15 @@
+{
+  "command": [
+    "go",
+    "test",
+    "-mod=mod",
+    "-modfile=/tmp/gocql-v2-step02-bench.mod",
+    "-run",
+    "^$",
+    "./..."
+  ],
+  "cwd": "tests/bench",
+  "exit_code": 0,
+  "log": "feature-specs/evidence/step02-bench-module-alternate-manifest-build.log",
+  "note": "Original benchmark module manifest requires tidy. Alternate manifest preserves source and uses absolute local replacement; original module files unchanged."
+}

@@ -208,3 +208,11 @@ func TestV2FoundationOversizedValues(t *testing.T) {
 		t.Fatal("oversized cell was not rolled back")
 	}
 }
+
+// codecTestMust unwraps checked constructors for known-valid fixture values.
+func codecTestMust[T any](v T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return v
+}

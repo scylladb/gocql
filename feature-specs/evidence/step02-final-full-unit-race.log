@@ -1,0 +1,49 @@
+ok      github.com/scylladb/gocql/v2    14.744s
+ok      github.com/scylladb/gocql/v2/ci/release 1.013s
+ok      github.com/scylladb/gocql/v2/debounce   40.944s
+ok      github.com/scylladb/gocql/v2/dialer     1.030s
+ok      github.com/scylladb/gocql/v2/dialer/recorder    1.115s
+ok      github.com/scylladb/gocql/v2/dialer/replayer    1.092s
+ok      github.com/scylladb/gocql/v2/events     1.010s
+ok      github.com/scylladb/gocql/v2/hostpolicy 1.020s
+ok      github.com/scylladb/gocql/v2/internal/cqlproto  1.010s
+ok      github.com/scylladb/gocql/v2/internal/crc       1.012s
+?       github.com/scylladb/gocql/v2/internal/debug     [no test files]
+ok      github.com/scylladb/gocql/v2/internal/eventbus  1.423s
+ok      github.com/scylladb/gocql/v2/internal/frame     1.010s
+ok      github.com/scylladb/gocql/v2/internal/lru       1.036s
+ok      github.com/scylladb/gocql/v2/internal/murmur    1.338s
+ok      github.com/scylladb/gocql/v2/internal/segment   1.103s
+ok      github.com/scylladb/gocql/v2/internal/streams   1.039s
+ok      github.com/scylladb/gocql/v2/internal/tests     1.018s
+?       github.com/scylladb/gocql/v2/internal/tests/mock        [no test files]
+ok      github.com/scylladb/gocql/v2/internal/tests/serialization       1.027s
+?       github.com/scylladb/gocql/v2/internal/tests/serialization/mod   [no test files]
+?       github.com/scylladb/gocql/v2/internal/tests/serialization/valcases      [no test files]
+ok      github.com/scylladb/gocql/v2/internal/wire      1.103s
+ok      github.com/scylladb/gocql/v2/internal/wirecompress      5.246s
+ok      github.com/scylladb/gocql/v2/scyllacloud        1.118s
+?       github.com/scylladb/gocql/v2/serialization/ascii        [no test files]
+?       github.com/scylladb/gocql/v2/serialization/bigint       [no test files]
+ok      github.com/scylladb/gocql/v2/serialization/blob 1.007s
+?       github.com/scylladb/gocql/v2/serialization/boolean      [no test files]
+?       github.com/scylladb/gocql/v2/serialization/counter      [no test files]
+?       github.com/scylladb/gocql/v2/serialization/cqlint       [no test files]
+?       github.com/scylladb/gocql/v2/serialization/cqltime      [no test files]
+?       github.com/scylladb/gocql/v2/serialization/date [no test files]
+?       github.com/scylladb/gocql/v2/serialization/decimal      [no test files]
+?       github.com/scylladb/gocql/v2/serialization/double       [no test files]
+ok      github.com/scylladb/gocql/v2/serialization/duration     1.014s
+?       github.com/scylladb/gocql/v2/serialization/float        [no test files]
+?       github.com/scylladb/gocql/v2/serialization/inet [no test files]
+?       github.com/scylladb/gocql/v2/serialization/smallint     [no test files]
+?       github.com/scylladb/gocql/v2/serialization/text [no test files]
+?       github.com/scylladb/gocql/v2/serialization/timestamp    [no test files]
+?       github.com/scylladb/gocql/v2/serialization/timeuuid     [no test files]
+?       github.com/scylladb/gocql/v2/serialization/tinyint      [no test files]
+?       github.com/scylladb/gocql/v2/serialization/uuid [no test files]
+?       github.com/scylladb/gocql/v2/serialization/varchar      [no test files]
+ok      github.com/scylladb/gocql/v2/serialization/varint       1.150s
+ok      github.com/scylladb/gocql/v2/tablets    2.558s
+ok      github.com/scylladb/gocql/v2/tests/affinity     1.187s
+ok      github.com/scylladb/gocql/v2/tests/serialization        1.643s

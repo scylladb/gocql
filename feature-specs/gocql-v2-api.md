@@ -845,6 +845,8 @@ type StreamRowPlan[R any] interface {
 type StreamDecoder[T any] interface {
     Compile(DataType) (StreamValuePlan[T], error)
 }
+// Optional declaration capability; no server DataType is needed.
+type StreamResetter[T any] interface { Reset(*T) }
 type StreamValuePlan[T any] interface {
     Reset(*T)
     DecodeInto(*StreamValueReader, *T) error
@@ -963,6 +965,33 @@ storage. StreamRow requires a non-nil application reset callback for unmapped
 Go state, then resets mapped fields through child plans. The callback must
 preserve mapped storage. A custom plan has the same explicit responsibility;
 there is no promise to zero an arbitrary R while preserving its unknown storage.
+Step 02 discovered and corrected a declaration-capability gap outside the
+historical design reviews: an application UDT field absent from database
+metadata has no DataType with which to compile its value plan. StreamResetter[T]
+is an optional capability on decoder declarations (including row declarations),
+providing metadata-independent Reset while preserving caller-seeded byte and
+nested storage. Built-in scalar, text/blob/numeric payload, nullable/empty,
+collection/map/vector, tuple/UDT, encoded-value and row compositions provide this
+reset behavior recursively. For compositions with custom descendants, the
+required declaration reset capability must be available for every absent
+application mapping; it cannot be inferred from the custom Go representation.
+
+With UDTOptions.AllowMissingFields, compilation permits an application field
+missing from database metadata only when its decoder declaration supports
+StreamResetter for that destination. Missing custom-field capability produces a
+clear ValidationError during Compile, before row decoding; implementing
+StreamResetter allows that custom field to participate. The declaration Reset
+clears its logical value while preserving seeded storage, just like built-in
+reset. This also applies recursively to missing fields inside compositions.
+Mapped custom fields continue to use their successfully compiled
+StreamValuePlan.Reset and need not implement declaration StreamResetter.
+Custom row declarations used as tuple/UDT compositions follow the same rule
+when metadata-independent reset is required. No synthetic DataType, reflection,
+whole-row temporary or zero-assignment of arbitrary V supplies a substitute.
+StreamRow's application callback retains responsibility for unmapped Go state
+and must preserve mapped storage; this optional capability does not shift that
+responsibility or relax the complete streaming type-support requirements.
+
 Unlike buffered NextInto, false does not clear the whole destination. After a
 failed attempt its contents may be partial and are invalid. Nil on an active
 cursor is terminal ValidationError before row consumption. A terminal cursor

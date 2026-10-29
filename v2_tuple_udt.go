@@ -13,6 +13,7 @@ import (
 // UDTOptions explicitly relaxes field matching. AllowMissingFields concerns
 // fields absent from metadata, not null or absent serialized field values.
 type UDTOptions struct {
+	Keyspace, Name           string
 	AllowExtraDatabaseFields bool
 	AllowMissingFields       bool
 }
@@ -51,6 +52,11 @@ func (c recordEncoder[T]) CheckType(typ DataType) error {
 	return err
 }
 func (c recordEncoder[T]) compileValueEncoder(typ DataType) (Encoder[T], error) {
+	if c.kind == TypeUDT {
+		if err := checkUDTIdentity(typ, c.options); err != nil {
+			return nil, err
+		}
+	}
 	columns, err := recordColumns(typ, c.kind)
 	if err != nil {
 		return nil, err
@@ -62,7 +68,7 @@ func (c recordEncoder[T]) compileValueEncoder(typ DataType) (Encoder[T], error) 
 	if c.kind == TypeUDT {
 		plan, err = compileUDTParamEncoder(c.codec, columns, c.options)
 	} else {
-		plan, err = c.codec.Compile(columns)
+		plan, err = compileParamPlan(c.codec, columns)
 	}
 	if err != nil {
 		return nil, err
@@ -100,6 +106,7 @@ type recordDecoder[T any] struct {
 	columns Columns
 	plan    RowPlan[T]
 	readers *sync.Pool
+	values  *sync.Pool
 }
 
 type recordReaderState struct {
@@ -120,6 +127,11 @@ func (c recordDecoder[T]) CheckType(typ DataType) error {
 	return err
 }
 func (c recordDecoder[T]) compileValueDecoder(typ DataType) (Decoder[T], error) {
+	if c.kind == TypeUDT {
+		if err := checkUDTIdentity(typ, c.options); err != nil {
+			return nil, err
+		}
+	}
 	columns, err := recordColumns(typ, c.kind)
 	if err != nil {
 		return nil, err
@@ -131,51 +143,68 @@ func (c recordDecoder[T]) compileValueDecoder(typ DataType) (Decoder[T], error) 
 	if c.kind == TypeUDT {
 		plan, err = compileUDTRowDecoder(c.codec, columns, c.options)
 	} else {
-		plan, err = c.codec.Compile(columns)
+		plan, err = compileRowPlan(c.codec, columns)
 	}
 	if err != nil {
 		return nil, err
 	}
 	c.typ, c.columns, c.plan = typ, columns, plan
 	c.readers = &sync.Pool{New: func() any { return new(recordReaderState) }}
+	c.values = &sync.Pool{New: func() any { return new(T) }}
 	return c, nil
 }
 func (c recordDecoder[T]) Decode(r ValueReader) (T, error) {
-	var zero T
 	if c.plan == nil {
 		bound, err := c.compileValueDecoder(r.Type())
 		if err != nil {
-			return zero, err
+			return *new(T), err
 		}
 		return bound.Decode(r)
 	}
+	slot := c.values.Get().(*T)
+	err := c.DecodeInto(r, slot)
+	value := *slot
+	var zero T
+	*slot = zero
+	c.values.Put(slot)
+	if err != nil {
+		return zero, err
+	}
+	return value, nil
+}
+func (c recordDecoder[T]) DecodeInto(r ValueReader, dst *T) error {
+	if dst == nil {
+		return typeValidation("destination", "nil record destination")
+	}
+	if c.plan == nil {
+		bound, err := c.compileValueDecoder(r.Type())
+		if err != nil {
+			return err
+		}
+		return bound.(valueIntoDecoder[T]).DecodeInto(r, dst)
+	}
 	if !c.typ.Equal(r.Type()) {
-		return zero, typeValidation("type", "tuple/UDT identity or fields changed after compilation")
+		return typeValidation("type", "tuple/UDT identity or fields changed after compilation")
 	}
 	if err := requirePresent(r); err != nil {
-		return zero, err
+		return err
 	}
 	if err := validateRecordBody(r, c.columns); err != nil {
-		return zero, err
+		return err
 	}
 	state := c.readers.Get().(*recordReaderState)
 	state.cursor = *wire.NewCursor(r.body)
 	state.reader = RowReader{columns: c.columns, cursor: &state.cursor, lease: r.lease, allowMissing: true}
-	value, err := c.plan.Decode(&state.reader)
+	err := c.plan.DecodeInto(&state.reader, dst)
 	if err == nil {
 		err = finishRowReader(&state.reader)
 	}
 	if err == nil {
 		err = state.cursor.RequireEnd()
 	}
-	// Neither pooled cursor retains the page nor the metadata after the call.
-	// Returned value views hold their own immutable range and lease descriptors.
 	*state = recordReaderState{}
 	c.readers.Put(state)
-	if err != nil {
-		return zero, err
-	}
-	return value, nil
+	return err
 }
 func (c recordDecoder[T]) Clone(value T) T {
 	return c.codec.Clone(value)
@@ -324,7 +353,7 @@ func compileUDTParamEncoder[T any](codec ParamEncoder[T], columns Columns, optio
 	if compiler, ok := codec.(udtParamCompiler[T]); ok {
 		return compiler.compileUDT(columns, options)
 	}
-	return codec.Compile(columns)
+	return compileParamPlan(codec, columns)
 }
 func compileUDTRowDecoder[T any](codec RowDecoder[T], columns Columns, options UDTOptions) (RowPlan[T], error) {
 	if codec == nil {
@@ -333,7 +362,7 @@ func compileUDTRowDecoder[T any](codec RowDecoder[T], columns Columns, options U
 	if compiler, ok := codec.(udtRowCompiler[T]); ok {
 		return compiler.compileUDT(columns, options)
 	}
-	return codec.Compile(columns)
+	return compileRowPlan(codec, columns)
 }
 func (c paramsCodec[T]) compileUDT(columns Columns, options UDTOptions) (ParamPlan[T], error) {
 	return compileUDTParams(c, columns, options)
@@ -397,4 +426,15 @@ func (c pairedRows[A, B]) compileUDT(columns Columns, options UDTOptions) (RowPl
 		return nil, err
 	}
 	return pairedRowPlan[A, B]{left: left, right: right, a: a, b: b}, nil
+}
+
+func checkUDTIdentity(typ DataType, options UDTOptions) error {
+	ks, name, ok := typ.UDTName()
+	if !ok || options.Keyspace == "" || options.Name == "" {
+		return typeValidation("UDT identity", "expected keyspace and name are required")
+	}
+	if ks != options.Keyspace || name != options.Name {
+		return typeValidation("UDT identity", "expected %s.%s, got %s.%s", options.Keyspace, options.Name, ks, name)
+	}
+	return nil
 }

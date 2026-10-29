@@ -1,0 +1,3 @@
+# github.com/scylladb/gocql/v2
+# [github.com/scylladb/gocql/v2]
+./v2_view_test.go:107:38: result of (github.com/scylladb/gocql/v2.Text).String call not used

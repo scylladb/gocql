@@ -671,6 +671,25 @@ values drain through bounded validation/discard scratch. Raw v3/v4 bulk reads
 pass the actual caller ranges to the plaintext connection reader; bounded
 read-ahead prefixes are counted separately.
 
+Step 02 corrected the absent-UDT-field reset gap after execution preparation;
+this extension is outside the historical design review result. Implement the
+optional declaration StreamResetter[T] { Reset(*T) } capability separately from
+the mandatory compiled StreamValuePlan/StreamRowPlan.Reset. Built-in scalar,
+payload, nullable/empty, collection/map/vector, tuple/UDT, encoded and row
+compositions perform metadata-independent reset preserving preseeded backing and
+nested capacity. Compositions propagate this requirement to custom descendants
+when their mapping is absent. AllowMissingFields does not invent a DataType:
+compilation of an absent application UDT field requires its declaration's reset
+capability, otherwise return a clear ValidationError before decode. Ordinary
+mapped custom declarations need no optional Reset because their compiled plan
+already supplies it. Custom declarations may add StreamResetter explicitly to
+support missing mappings. Reject unavailable capability rather than zeroing an
+arbitrary Go value, reflecting over it, compiling synthetic metadata or creating
+a complete-row temporary. The application callback still owns unmapped Go-state
+reset. Agent 02 tests nested seeded capacities, missing custom-field rejection,
+explicit custom declaration reset and mapped custom plans without the optional
+capability; these are part of the codec handoff, not a scope reduction.
+
 Reserve a pool slot before submission, either for a quiescent existing
 connection or a replacement created under the same pool connection budget.
 A reservation CAS/state transition excludes all shared admissions, waits for

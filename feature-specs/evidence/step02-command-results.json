@@ -1,0 +1,79 @@
+[
+  {
+    "name": "focused-race",
+    "command": [
+      "go",
+      "test",
+      "-race",
+      "-run",
+      "^TestV2",
+      "-count=1",
+      "-timeout=3m",
+      "."
+    ],
+    "environment": {},
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step02-focused-race.log"
+  },
+  {
+    "name": "full-unit-race",
+    "command": [
+      "go",
+      "test",
+      "-race",
+      "-tags",
+      "unit",
+      "-count=1",
+      "-timeout=5m",
+      "./..."
+    ],
+    "environment": {},
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step02-full-unit-race.log"
+  },
+  {
+    "name": "integration-build",
+    "command": [
+      "go",
+      "test",
+      "-c",
+      "-tags",
+      "integration gocql_debug",
+      "-o",
+      "/tmp/gocql-v2-step02-integration.test",
+      "."
+    ],
+    "environment": {},
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step02-integration-build.log"
+  },
+  {
+    "name": "ccm-build",
+    "command": [
+      "go",
+      "test",
+      "-c",
+      "-tags",
+      "ccm",
+      "-o",
+      "/tmp/gocql-v2-step02-ccm.test",
+      "./internal/ccm"
+    ],
+    "environment": {},
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step02-ccm-build.log"
+  },
+  {
+    "name": "vet",
+    "command": [
+      "go",
+      "vet",
+      "-tags",
+      "unit",
+      "./..."
+    ],
+    "environment": {},
+    "exit_code": 1,
+    "log": "feature-specs/evidence/step02-vet.log"
+  }
+]

@@ -1,0 +1,38 @@
+[
+  {
+    "command": [
+      "go",
+      "test",
+      "-run",
+      "^$",
+      "-fuzz",
+      "^FuzzV2StreamingValues$",
+      "-fuzztime=5s",
+      "-parallel=2",
+      "."
+    ],
+    "environment": {
+      "GOMAXPROCS": "2"
+    },
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step02-final-fuzz-FuzzV2StreamingValues.log"
+  },
+  {
+    "command": [
+      "go",
+      "test",
+      "-run",
+      "^$",
+      "-fuzz",
+      "^FuzzV2ScalarUTF8$",
+      "-fuzztime=5s",
+      "-parallel=2",
+      "."
+    ],
+    "environment": {
+      "GOMAXPROCS": "2"
+    },
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step02-final-fuzz-FuzzV2ScalarUTF8.log"
+  }
+]

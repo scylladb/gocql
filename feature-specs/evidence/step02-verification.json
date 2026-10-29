@@ -1,0 +1,284 @@
+{
+  "agent": "/root/step02_codecs",
+  "branch": "v2-02-codecs",
+  "predecessor": "6cfb37a99dea150d2a50b06ea1fba7944e74b30d",
+  "toolchain": "go version go1.25.0 linux/amd64",
+  "gate": "Step02 codec gate satisfied on amd64; later runtime/streaming/release gates remain pending.",
+  "commands": [
+    {
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-run",
+        "^TestV2",
+        "-count=1",
+        "-timeout=3m",
+        "."
+      ],
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step02-post-fix-focused-race.log",
+      "log_sha256": "71c1559f86fcdc7bb3d9f3e3f2d3b198c06167f56759ef90aa4ce9bd17064710"
+    },
+    {
+      "command": [
+        "go",
+        "test",
+        "-run",
+        "^TestV2(TupleValueIterationAllocationsDoNotScale|Container.*AllocationsDoNotScale)$",
+        "-count=1",
+        "."
+      ],
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step02-post-fix-allocation-check.log",
+      "log_sha256": "5b62b2660095704f4b88f44ab18ab95c89bb855146a3884d00412ce7626786ea"
+    },
+    {
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-tags",
+        "unit",
+        "-count=1",
+        "-timeout=5m",
+        "./..."
+      ],
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step02-post-fix-unit-race.log",
+      "log_sha256": "789582dfbb5c9863db5ec0bfa744d7644e4c1bc6a043ff9f0a07ab82c4287fa5"
+    },
+    {
+      "command": [
+        "go",
+        "test",
+        "-c",
+        "-tags",
+        "integration gocql_debug",
+        "-o",
+        "/tmp/gocql-v2-step02-integration.test",
+        "."
+      ],
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step02-post-fix-integration-build.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "go",
+        "vet",
+        "-tags",
+        "unit",
+        "./..."
+      ],
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step02-post-fix-vet.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "go",
+        "test",
+        "-run",
+        "^$",
+        "-bench",
+        "^BenchmarkV2(Container|Scalar|StreamFinalStorage|StreamingNestedElements|RowDestinationFragments)",
+        "-benchmem",
+        "-benchtime=100ms",
+        "."
+      ],
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step02-post-fix-codec-bench.log",
+      "log_sha256": "1d441d8955b259864c2e03bed1f48f3cacf0c722b24f03fa17c72c386772fec9"
+    },
+    {
+      "command": [
+        "python3",
+        "feature-specs/verify.py"
+      ],
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step02-post-fix-spec-verifier.log",
+      "log_sha256": "d917fd30d32ac1dcf5211b8f90122e2892ee48305e5b2f53184e255a32b9f1b4"
+    },
+    {
+      "command": [
+        "go",
+        "test",
+        "-run",
+        "^$",
+        "-fuzz",
+        "^FuzzV2StreamingValues$",
+        "-fuzztime=3s",
+        "-parallel=2",
+        "."
+      ],
+      "cwd": ".",
+      "environment": {
+        "GOMAXPROCS": "2"
+      },
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step02-final-tree-fuzz-stream.log",
+      "log_sha256": "59679393ade86005cf61c25cd8a4e0854d993d48b83c4282b83ee457808bff52"
+    },
+    {
+      "command": [
+        "go",
+        "test",
+        "-run",
+        "^$",
+        "-fuzz",
+        "^FuzzV2ScalarUTF8$",
+        "-fuzztime=3s",
+        "-parallel=2",
+        "."
+      ],
+      "cwd": ".",
+      "environment": {
+        "GOMAXPROCS": "2"
+      },
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step02-final-tree-fuzz-text.log",
+      "log_sha256": "338745ece09279afce3963068085f31c16e6796de4e802722242c1049e3d8789"
+    },
+    {
+      "command": [
+        "go",
+        "test",
+        "-c",
+        "-tags",
+        "ccm",
+        "-o",
+        "/tmp/gocql-v2-step02-ccm.test",
+        "./internal/ccm"
+      ],
+      "cwd": ".",
+      "environment": {
+        "GOMAXPROCS": "2"
+      },
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step02-final-tree-ccm-build.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "final-386-foundations",
+      "command": [
+        "go",
+        "test",
+        "-count=1",
+        "./internal/wire",
+        "./internal/wirecompress",
+        "./internal/murmur",
+        "./internal/segment",
+        "./internal/frame"
+      ],
+      "environment": {
+        "GOARCH": "386"
+      },
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step02-final-386-foundations.log",
+      "log_sha256": "59013ade261ac8e87e08b06c5bffdc02b7e313e4361348c42d87c6c6a8434457"
+    },
+    {
+      "command": [
+        "go",
+        "test",
+        "-mod=mod",
+        "-modfile=/tmp/gocql-v2-step02-bench.mod",
+        "-run",
+        "^$",
+        "./..."
+      ],
+      "cwd": "tests/bench",
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step02-bench-module-alternate-manifest-build.log",
+      "note": "Original benchmark module manifest requires tidy. Alternate manifest preserves source and uses absolute local replacement; original module files unchanged.",
+      "log_sha256": "82611780e32eed86649a92031101e2244fa0edcc6ac78387fa39151016129b3e"
+    }
+  ],
+  "diagnostics": [
+    {
+      "required": false,
+      "exit_code": 1,
+      "command": [
+        "go",
+        "test",
+        "-run",
+        "^TestV2",
+        "-count=1",
+        "."
+      ],
+      "environment": {
+        "GOARCH": "386"
+      },
+      "log": "feature-specs/evidence/step02-final-386.log",
+      "disposition": "Unchanged legacy serialization compile failure; step10 removal follow-up, accepted by root."
+    },
+    {
+      "required": false,
+      "exit_code": 1,
+      "command": [
+        "go",
+        "test",
+        "-run",
+        "^$",
+        "./..."
+      ],
+      "cwd": "tests/bench",
+      "log": "feature-specs/evidence/step02-bench-module-build.log",
+      "disposition": "Existing manifest requires tidy; alternate-manifest source compilation passes, consolidation remains step13."
+    },
+    {
+      "exit_code": 1,
+      "log": "feature-specs/evidence/step02-vet.log",
+      "disposition": "Unused result in migrated test assertion corrected; final vet passes."
+    },
+    {
+      "exit_code": 1,
+      "log": "feature-specs/evidence/step02-race-pool-allocation-diagnostic.log",
+      "disposition": "Allocation assertion moved to !race because Go intentionally randomly drops sync.Pool entries under instrumentation; explicit non-race assertion and full race concurrency pass."
+    }
+  ],
+  "source_sha256": {
+    "batch_test.go": "5eb2a603338eb57221f0d7d4c5683ce1f8806227b0b434cdf1b00fef93dfcaa4",
+    "cassandra_test.go": "6e384a88b147bb2bcbd1c5df3e3e1cf6e0474c39d7f1e82a26f44f2c6c2d00c1",
+    "feature-specs/execution/02-codecs.md": "0d67fc50ef2fa633129a4a0016d36da277e712e433fbeb4aef1f5d07ab9c0a12",
+    "feature-specs/gocql-v2-api.md": "9397d76237c3b41a8b5c671b94746fcbcefeccb8c927a31977327738bde43b31",
+    "feature-specs/gocql-v2-implementation.md": "5d4bfeb46952aa62ced8f8340d0fd9888f707319c2a01a4b5b0a4ce6223935fb",
+    "feature-specs/gocql-v2-streaming-receive.md": "ada2fd139c2557aefb4d035dae264151040e307a9169130ecc285d6a4eae2424",
+    "integration_serialization_scylla_test.go": "6bf7eee89c92d528b0e8ffe7eafbb8b42d6e106d6a4634284c5506827da7c434",
+    "internal/wire/stream.go": "95ee0ca9ffe9090f9e8631b926877020160162b808a240897390fc86756c3b0a",
+    "tuple_test.go": "c8a791cdde5035f9ce168856add4d15535b3128050cf13987d20fd5ff89c5906",
+    "udt_test.go": "aa2ed7d1e4cdfda7f886003e0b9f09710ca34ef5b28e21a070a170ed6ff8981f",
+    "v2_codec_allocations_test.go": "3accd0f4454062965b515f850d316ec8de7e96b2d7aa08707c9281a6b5a3ff9e",
+    "v2_codec_direct_test.go": "9d7ffab174b26883191a837d370c967a561553acf1c2920cc2f46294b2860bcd",
+    "v2_collections.go": "bbae2234a986ee72051702d358e5fc84a7df9085331fbbe337b2125bf2a6b3a1",
+    "v2_dynamic.go": "4c756579143c91710f51d5653e1b509336afd06757027ad9698247d9dbb95602",
+    "v2_dynamic_test.go": "5a273080b9574f1167a3e78e4bd3247cb8e9d0d845cd7ef91492844af14c1b8b",
+    "v2_metadata.go": "e7b1f476cbb9763eb69caffbda977c8836806f3289beb673ff21d2d5765e4150",
+    "v2_result.go": "fa5421fcaf75c9cd7f7b434c814c46feaf205f969f4f7c98e120bb6319213f57",
+    "v2_rows_codec.go": "b2d511fdb3d2aca2c1e8104bc0cab7bb09c90e7a365603ecd099a7785dc27b06",
+    "v2_scalar.go": "0906d94a5f2e0b13d0a994569b3589a4b7f6fb98390483d23f0c77f03c8c3b70",
+    "v2_scalar_test.go": "4898eb37612463926559cc39997cf8a5c2af9a3ff1dbd9709a7c5223a1a33087",
+    "v2_serialization_fixture_test.go": "5ea5a8c8b226a65fff51ae52c594a2e7e9330163ad5deac9cecf137a2f0b8979",
+    "v2_statement.go": "5afc3a9fb0bd9c1cf5c614a1fdc340518bd0eb318abf0ebaebfab1b43bf56f83",
+    "v2_stream_codec_bench_test.go": "1d3bd752681b05f3a68d3584765f767cb1f88376cc15fbfaf6b2d641dfbd87f9",
+    "v2_stream_codec_test.go": "3ca15eb0559b199f496dd86a5b2dfab296c691c8b83797130ff8cfa0d32f4d40",
+    "v2_stream_collections.go": "e980e79d64ed7122dc6c1f141084775039e8a6aa96eac8d98e4f8777904266b7",
+    "v2_stream_custom_test.go": "84c1c12bb57c86b062251ee30cd8d266879173a3a02916cb42acbbd7853fb1ed",
+    "v2_stream_fuzz_test.go": "dd84538bf3855a9f9d0d17187b92f73f562d1b8dbb77b62e32d55bf05f7d294b",
+    "v2_stream_reader.go": "25986a62655803c11a532369acbac4b42ca4fdb6677bb0b482d0661a7d6e9079",
+    "v2_stream_rows.go": "1e3c7ab79f29b38d2c0d93b8499f5252090946b6ee1341bf6f28a5743c90caf1",
+    "v2_stream_scalar.go": "0a65fef5b34682447eb974a98daeb44059c316f2ee9241d14b16d4ca0ac8b3f9",
+    "v2_stream_validate.go": "5304f34ac38a645577ea4c96c842158332903dca0182a3ed1788747a782ad207",
+    "v2_tuple_udt.go": "8d4f2e72f3774c4f5e319ff48c20911809aaecb59a5a4dc8e5626c39545cc359",
+    "v2_tuple_udt_test.go": "58a6f2249310965f0b328b4d4eb85d100ddb31ef59c4179008956d37d5937d86",
+    "v2_type.go": "43e2c126937db71c2336466d945e5ec8660f80419dcc2210c798fe98478efc15",
+    "v2_type_test.go": "129792c73325c4859bff1ebfb043ec00223e279f561d528091bee85a8fbc5401",
+    "v2_value_api_test.go": "39eb588e2a92fefc9f1203870ef0b9ee9ed188a2cb7aa901cb7689f67826e79e",
+    "v2_value_io.go": "869099d8ee36b63b9ef851d6e29cb3a49e08e1dd1dca81f6a5559bd78a1cbc52",
+    "v2_view.go": "6b2f125211fd05612e15011066d559bde7c871301a6ec6e36e798c45153d1a88",
+    "v2_view_test.go": "389b855797f986380df551bdf8ec5e6f8adc95cb81624b97af76cac46f2f20f9",
+    "vector_test.go": "325e8023bddf4ce4d1ce5362e23c5fb8d7fc560910f761d0b6b955ef1d7649c6",
+    "wiki_test.go": "20f4204626c15c45b3e00660c68d138eaddcf3cf0da8630f3f170ba89cd287b1"
+  }
+}

@@ -170,7 +170,7 @@ func (w *WikiTest) SelectPage(page *WikiPage, title string, revid UUID) error {
 	if err != nil {
 		return err
 	}
-	result, err := serializationOne(w.session, fmt.Sprintf("SELECT title,revid,body,views,protected,modified,tags,attachments,rating FROM %s WHERE title=? AND revid=? LIMIT 1", w.table), wikiRows, TextValue(title), revision)
+	result, err := serializationOne(w.session, fmt.Sprintf("SELECT title,revid,body,views,protected,modified,tags,attachments,rating FROM %s WHERE title=? AND revid=? LIMIT 1", w.table), wikiRows, codecTestMust(TextValue(title)), revision)
 	if err == nil {
 		*page = result
 	}

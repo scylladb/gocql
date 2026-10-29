@@ -267,7 +267,7 @@ func TestSerializationSimpleTypesCassandra(t *testing.T) {
 								t.Fatal(err)
 							}
 							id := vc.Name + "/" + lc.LangType
-							_, err = v2Exec(t.Context(), s, fmt.Sprintf("INSERT INTO %s(test_id,test_col) VALUES(?,?)", tables[i]), TextValue(id), input)
+							_, err = v2Exec(t.Context(), s, fmt.Sprintf("INSERT INTO %s(test_id,test_col) VALUES(?,?)", tables[i]), codecTestMust(TextValue(id)), input)
 							if (err != nil) != lc.ErrInsert {
 								t.Fatalf("insert error: %v (expected error %t)", err, lc.ErrInsert)
 							}
@@ -275,9 +275,9 @@ func TestSerializationSimpleTypesCassandra(t *testing.T) {
 								return
 							}
 							cql := fmt.Sprintf("SELECT test_col FROM %s WHERE test_id=?", tables[i])
-							got := serializationColumn(t, s, cql, TextValue(id))
+							got := serializationColumn(t, s, cql, codecTestMust(TextValue(id)))
 							assertSerializationValue(t, input, got)
-							raw, err := serializationOne(s, cql, OneColumn(serializationRawDecoder{}), TextValue(id))
+							raw, err := serializationOne(s, cql, OneColumn(serializationRawDecoder{}), codecTestMust(TextValue(id)))
 							if err != nil {
 								t.Fatal(err)
 							}
@@ -434,7 +434,7 @@ func TestSliceMapMapScanTypes(t *testing.T) {
 	cases := []serializationDynamicCase{
 		{"tinyint", "42", TinyIntValue(42)}, {"smallint", "1234", SmallIntValue(1234)}, {"int", "123456", IntValue(123456)}, {"bigint", "1234567890", BigIntValue(1234567890)},
 		{"float", "3.14", FloatValue(3.14)}, {"double", "2.718281828", DoubleValue(2.718281828)}, {"boolean", "true", BoolValue(true)},
-		{"text", "'hello world'", TextValue("hello world")}, {"ascii", "'hello ascii'", serializationMustValue(ASCIIValue("hello ascii"))}, {"varchar", "'hello varchar'", TextValue("hello varchar")},
+		{"text", "'hello world'", codecTestMust(TextValue("hello world"))}, {"ascii", "'hello ascii'", serializationMustValue(ASCIIValue("hello ascii"))}, {"varchar", "'hello varchar'", codecTestMust(TextValue("hello varchar"))},
 		{"timestamp", "1388534400000", TimestampValue(1388534400000)}, {"uuid", "550e8400-e29b-41d4-a716-446655440000", UUIDValue(mustParseUUID("550e8400-e29b-41d4-a716-446655440000"))},
 		{"timeuuid", "60d79c23-5793-11f0-8afe-bcfce78b517a", serializationMustValue(TimeUUIDValue(TimeUUID(mustParseUUID("60d79c23-5793-11f0-8afe-bcfce78b517a"))))},
 		{"inet", "'127.0.0.1'", serializationMustValue(InetValue(netip.MustParseAddr("127.0.0.1")))}, {"blob", "0x48656c6c6f", BlobValue([]byte("Hello"))},
@@ -480,7 +480,7 @@ func TestSliceMapMapScanTupleTypes(t *testing.T) {
 		t.Fatal(err)
 	}
 	typ := serializationMustType(TupleType(serializationMustType(ScalarType(TypeInt)), serializationMustType(ScalarType(TypeText))))
-	checkDynamicSerializationCases(t, s, table, []serializationDynamicCase{{"tuple", "(42,'hello')", serializationMustValue(TupleValue(typ, []Value{IntValue(42), TextValue("hello")}))}})
+	checkDynamicSerializationCases(t, s, table, []serializationDynamicCase{{"tuple", "(42,'hello')", serializationMustValue(TupleValue(typ, []Value{IntValue(42), codecTestMust(TextValue("hello"))}))}})
 }
 func TestSliceMapMapScanVectorTypes(t *testing.T) {
 	t.Parallel()
@@ -494,7 +494,7 @@ func TestSliceMapMapScanVectorTypes(t *testing.T) {
 	}
 	fl := serializationMustType(VectorDataType(serializationMustType(ScalarType(TypeFloat)), 3))
 	tx := serializationMustType(VectorDataType(serializationMustType(ScalarType(TypeText)), 2))
-	checkDynamicSerializationCases(t, s, table, []serializationDynamicCase{{"vector_float", "[1.0,2.5,-3.0]", serializationMustValue(VectorValue(fl, []Value{FloatValue(1), FloatValue(2.5), FloatValue(-3)}))}, {"vector_text", "['hello','world']", serializationMustValue(VectorValue(tx, []Value{TextValue("hello"), TextValue("world")}))}})
+	checkDynamicSerializationCases(t, s, table, []serializationDynamicCase{{"vector_float", "[1.0,2.5,-3.0]", serializationMustValue(VectorValue(fl, []Value{FloatValue(1), FloatValue(2.5), FloatValue(-3)}))}, {"vector_text", "['hello','world']", serializationMustValue(VectorValue(tx, []Value{codecTestMust(TextValue("hello")), codecTestMust(TextValue("world"))}))}})
 }
 func TestSliceMapMapScanCollectionTypes(t *testing.T) {
 	t.Parallel()
@@ -508,8 +508,8 @@ func TestSliceMapMapScanCollectionTypes(t *testing.T) {
 	tx, in := serializationMustType(ScalarType(TypeText)), serializationMustType(ScalarType(TypeInt))
 	list, set, mp := serializationMustType(ListType(tx)), serializationMustType(SetType(in)), serializationMustType(MapType(tx, in))
 	checkDynamicSerializationCases(t, s, table, []serializationDynamicCase{
-		{"list", "['a','b','c']", serializationMustValue(ListValue(list, []Value{TextValue("a"), TextValue("b"), TextValue("c")}))},
+		{"list", "['a','b','c']", serializationMustValue(ListValue(list, []Value{codecTestMust(TextValue("a")), codecTestMust(TextValue("b")), codecTestMust(TextValue("c"))}))},
 		{"set", "{1,2,3}", serializationMustValue(SetValue(set, []Value{IntValue(1), IntValue(2), IntValue(3)}))},
-		{"map", "{'key1':1,'key2':2}", serializationMustValue(MapValue(mp, []ValueEntry{{Key: TextValue("key1"), Value: IntValue(1)}, {Key: TextValue("key2"), Value: IntValue(2)}}))},
+		{"map", "{'key1':1,'key2':2}", serializationMustValue(MapValue(mp, []ValueEntry{{Key: codecTestMust(TextValue("key1")), Value: IntValue(1)}, {Key: codecTestMust(TextValue("key2")), Value: IntValue(2)}}))},
 	})
 }

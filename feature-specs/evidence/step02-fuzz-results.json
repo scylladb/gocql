@@ -1,0 +1,20 @@
+[
+  {
+    "command": [
+      "go",
+      "test",
+      "-run",
+      "^$",
+      "-fuzz",
+      "^FuzzV2StreamingValues$",
+      "-fuzztime=5s",
+      "-parallel=2",
+      "."
+    ],
+    "environment": {
+      "GOMAXPROCS": "2"
+    },
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step02-fuzz-stream-values.log"
+  }
+]

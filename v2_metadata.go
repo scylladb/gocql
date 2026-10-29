@@ -1112,16 +1112,28 @@ func (d v2SchemaRows[R]) Compile(columns Columns) (RowPlan[R], error) {
 }
 func (d v2SchemaRows[R]) Clone(v R) R { return v }
 func (p v2SchemaRowPlan[R]) Decode(reader *RowReader) (R, error) {
-	var row R
+	var result R
+	err := p.DecodeInto(reader, &result)
+	if err != nil {
+		return *new(R), err
+	}
+	return result, nil
+}
+func (p v2SchemaRowPlan[R]) DecodeInto(reader *RowReader, dst *R) error {
+	if dst == nil {
+		return typeValidation("destination", "nil schema row destination")
+	}
+	var zero R
+	*dst = zero
 	if p.initialize != nil {
-		row = *p.initialize()
+		*dst = *p.initialize()
 	}
 	for _, step := range p.steps {
-		if err := step(&row, reader); err != nil {
-			return row, err
+		if err := step(dst, reader); err != nil {
+			return err
 		}
 	}
-	return row, nil
+	return nil
 }
 func (p v2SchemaRowPlan[R]) Clone(v R) R { return v }
 

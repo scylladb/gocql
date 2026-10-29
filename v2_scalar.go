@@ -332,59 +332,71 @@ func (c textCodec) Decode(r ValueReader) (Text, error) {
 }
 func (textCodec) Clone(v Text) Text { return v.Clone() }
 
-// validateText carries the UTF-8 state across spans without joining payloads.
-func validateText(b Bytes, ascii bool) error {
-	remaining := 0
-	low, high := byte(0x80), byte(0xbf)
-	err := b.each(func(s wire.Span) error {
-		for _, v := range s.Bytes() {
-			if ascii {
-				if v >= utf8.RuneSelf {
-					return errors.New("gocql: invalid ASCII")
-				}
-				continue
+// textValidation shares incremental UTF-8/ASCII rules between borrowed spans
+// and final-storage streaming. It never constructs a string or retains a chunk.
+type textValidation struct {
+	ascii     bool
+	remaining int
+	low, high byte
+}
+
+func newTextValidation(ascii bool) textValidation {
+	return textValidation{ascii: ascii, low: 0x80, high: 0xbf}
+}
+func (v *textValidation) write(b []byte) error {
+	for _, c := range b {
+		if v.ascii {
+			if c >= utf8.RuneSelf {
+				return errors.New("gocql: invalid ASCII")
 			}
-			if remaining > 0 {
-				if v < low || v > high {
-					return errors.New("gocql: invalid UTF-8")
-				}
-				remaining--
-				low, high = 0x80, 0xbf
-				continue
-			}
-			switch {
-			case v < 0x80:
-			case v >= 0xc2 && v <= 0xdf:
-				remaining = 1
-			case v >= 0xe0 && v <= 0xef:
-				remaining = 2
-				if v == 0xe0 {
-					low = 0xa0
-				}
-				if v == 0xed {
-					high = 0x9f
-				}
-			case v >= 0xf0 && v <= 0xf4:
-				remaining = 3
-				if v == 0xf0 {
-					low = 0x90
-				}
-				if v == 0xf4 {
-					high = 0x8f
-				}
-			default:
+			continue
+		}
+		if v.remaining > 0 {
+			if c < v.low || c > v.high {
 				return errors.New("gocql: invalid UTF-8")
 			}
+			v.remaining--
+			v.low, v.high = 0x80, 0xbf
+			continue
 		}
-		return nil
-	})
-	if err != nil {
-		return err
+		switch {
+		case c < 0x80:
+		case c >= 0xc2 && c <= 0xdf:
+			v.remaining = 1
+		case c >= 0xe0 && c <= 0xef:
+			v.remaining = 2
+			if c == 0xe0 {
+				v.low = 0xa0
+			}
+			if c == 0xed {
+				v.high = 0x9f
+			}
+		case c >= 0xf0 && c <= 0xf4:
+			v.remaining = 3
+			if c == 0xf0 {
+				v.low = 0x90
+			}
+			if c == 0xf4 {
+				v.high = 0x8f
+			}
+		default:
+			return errors.New("gocql: invalid UTF-8")
+		}
 	}
-	if remaining != 0 {
+	return nil
+}
+func (v *textValidation) finish() error {
+	if v.remaining != 0 {
 		return errors.New("gocql: truncated UTF-8")
 	}
 	return nil
+}
+func validateText(b Bytes, ascii bool) error {
+	v := newTextValidation(ascii)
+	if err := b.each(func(s wire.Span) error { return v.write(s.Bytes()) }); err != nil {
+		return err
+	}
+	return v.finish()
 }
 
 // NamedScalar adapts a named application type through explicitly typed conversions.
@@ -393,12 +405,21 @@ func NamedScalar[A, B any](base Codec[B], to func(A) B, from func(B) A) Codec[A]
 }
 
 type namedScalar[A, B any] struct {
-	base Codec[B]
-	to   func(A) B
-	from func(B) A
+	base    Codec[B]
+	to      func(A) B
+	from    func(B) A
+	encoder Encoder[B]
+	decoder Decoder[B]
+	typ     DataType
 }
 
 func (c namedScalar[A, B]) CheckType(t DataType) error {
+	if c.typ.descriptor != nil {
+		if c.typ.Equal(t) {
+			return nil
+		}
+		return typeValidation("type", "compiled mapped scalar metadata changed")
+	}
 	if c.base == nil || c.to == nil || c.from == nil {
 		return errors.New("gocql: incomplete named scalar adapter")
 	}
@@ -408,14 +429,22 @@ func (c namedScalar[A, B]) Encode(w *ValueWriter, v A) error {
 	if e := c.CheckType(w.Type()); e != nil {
 		return e
 	}
-	return c.base.Encode(w, c.to(v))
+	encoder := c.encoder
+	if encoder == nil {
+		encoder = c.base
+	}
+	return encoder.Encode(w, c.to(v))
 }
 func (c namedScalar[A, B]) Decode(r ValueReader) (A, error) {
 	var zero A
 	if e := c.CheckType(r.Type()); e != nil {
 		return zero, e
 	}
-	v, e := c.base.Decode(r)
+	decoder := c.decoder
+	if decoder == nil {
+		decoder = c.base
+	}
+	v, e := decoder.Decode(r)
 	if e != nil {
 		return zero, e
 	}
@@ -424,14 +453,27 @@ func (c namedScalar[A, B]) Decode(r ValueReader) (A, error) {
 func (c namedScalar[A, B]) Clone(v A) A { return c.from(c.base.Clone(c.to(v))) }
 
 func NullableCodec[T any](base Codec[T]) Codec[Nullable[T]] {
-	return nullableCodec[T]{nullableEncoder[T]{base}, nullableDecoder[T]{base}}
+	return nullableCodec[T]{nullableEncoder[T]{base: base}, nullableDecoder[T]{base: base}}
 }
-func NullableEncoder[T any](base Encoder[T]) Encoder[Nullable[T]] { return nullableEncoder[T]{base} }
-func NullableDecoder[T any](base Decoder[T]) Decoder[Nullable[T]] { return nullableDecoder[T]{base} }
+func NullableEncoder[T any](base Encoder[T]) Encoder[Nullable[T]] {
+	return nullableEncoder[T]{base: base}
+}
+func NullableDecoder[T any](base Decoder[T]) Decoder[Nullable[T]] {
+	return nullableDecoder[T]{base: base}
+}
 
-type nullableEncoder[T any] struct{ base Encoder[T] }
+type nullableEncoder[T any] struct {
+	base Encoder[T]
+	typ  DataType
+}
 
 func (c nullableEncoder[T]) CheckType(t DataType) error {
+	if c.typ.descriptor != nil {
+		if c.typ.Equal(t) {
+			return nil
+		}
+		return typeValidation("type", "compiled wrapper metadata changed")
+	}
 	if c.base == nil {
 		return errors.New("gocql: nil nullable encoder")
 	}
@@ -447,9 +489,18 @@ func (c nullableEncoder[T]) Encode(w *ValueWriter, v Nullable[T]) error {
 	return c.base.Encode(w, v.Value)
 }
 
-type nullableDecoder[T any] struct{ base Decoder[T] }
+type nullableDecoder[T any] struct {
+	base Decoder[T]
+	typ  DataType
+}
 
 func (c nullableDecoder[T]) CheckType(t DataType) error {
+	if c.typ.descriptor != nil {
+		if c.typ.Equal(t) {
+			return nil
+		}
+		return typeValidation("type", "compiled wrapper metadata changed")
+	}
 	if c.base == nil {
 		return errors.New("gocql: nil nullable decoder")
 	}
@@ -488,11 +539,20 @@ type nullableCodec[T any] struct {
 }
 
 func (c nullableCodec[T]) CheckType(t DataType) error          { return c.nullableEncoder.CheckType(t) }
-func BindEncoder[T any](base Encoder[T]) Encoder[BindValue[T]] { return bindEncoder[T]{base} }
+func BindEncoder[T any](base Encoder[T]) Encoder[BindValue[T]] { return bindEncoder[T]{base: base} }
 
-type bindEncoder[T any] struct{ base Encoder[T] }
+type bindEncoder[T any] struct {
+	base Encoder[T]
+	typ  DataType
+}
 
 func (c bindEncoder[T]) CheckType(t DataType) error {
+	if c.typ.descriptor != nil {
+		if c.typ.Equal(t) {
+			return nil
+		}
+		return typeValidation("type", "compiled wrapper metadata changed")
+	}
 	if c.base == nil {
 		return errors.New("gocql: nil bind encoder")
 	}
@@ -514,9 +574,14 @@ func (c bindEncoder[T]) Encode(w *ValueWriter, v BindValue[T]) error {
 	}
 }
 
-func EmptyCodec[T any](base Codec[T]) Codec[EmptyValueOf[T]] { return emptyCodec[T]{base} }
+func EmptyCodec[T any](base Codec[T]) Codec[EmptyValueOf[T]] { return emptyCodec[T]{base: base} }
 
-type emptyCodec[T any] struct{ base Codec[T] }
+type emptyCodec[T any] struct {
+	base    Codec[T]
+	encoder Encoder[T]
+	decoder Decoder[T]
+	typ     DataType
+}
 
 func emptySupported(t DataType) bool {
 	switch t.Kind() {
@@ -526,6 +591,12 @@ func emptySupported(t DataType) bool {
 	return false
 }
 func (c emptyCodec[T]) CheckType(t DataType) error {
+	if c.typ.descriptor != nil {
+		if c.typ.Equal(t) {
+			return nil
+		}
+		return typeValidation("type", "compiled wrapper metadata changed")
+	}
 	if c.base == nil {
 		return errors.New("gocql: nil empty codec")
 	}
@@ -543,6 +614,9 @@ func (c emptyCodec[T]) Encode(w *ValueWriter, v EmptyValueOf[T]) error {
 	}
 	if v.Empty {
 		return w.emptyValue()
+	}
+	if c.encoder != nil {
+		return c.encoder.Encode(w, v.Value)
 	}
 	return c.base.Encode(w, v.Value)
 }
@@ -562,7 +636,11 @@ func (c emptyCodec[T]) Decode(r ValueReader) (EmptyValueOf[T], error) {
 		}
 		return EmptyValueOf[T]{Empty: true}, nil
 	}
-	v, e := c.base.Decode(r)
+	decoder := c.decoder
+	if decoder == nil {
+		decoder = c.base
+	}
+	v, e := decoder.Decode(r)
 	if e != nil {
 		return EmptyValueOf[T]{}, e
 	}
@@ -574,4 +652,118 @@ func (c emptyCodec[T]) Clone(v EmptyValueOf[T]) EmptyValueOf[T] {
 		return v
 	}
 	return EmptyValueOf[T]{Empty: true}
+}
+
+func (c nullableEncoder[T]) compileValueEncoder(t DataType) (Encoder[Nullable[T]], error) {
+	base, err := compileValueEncoder(c.base, t)
+	if err != nil {
+		return nil, err
+	}
+	c.base, c.typ = base, t
+	return c, nil
+}
+func (c nullableDecoder[T]) compileValueDecoder(t DataType) (Decoder[Nullable[T]], error) {
+	base, err := compileValueDecoder(c.base, t)
+	if err != nil {
+		return nil, err
+	}
+	c.base, c.typ = base, t
+	return c, nil
+}
+func (c nullableDecoder[T]) DecodeInto(r ValueReader, dst *Nullable[T]) error {
+	if dst == nil {
+		return typeValidation("destination", "nil nullable destination")
+	}
+	*dst = Nullable[T]{}
+	if err := c.CheckType(r.Type()); err != nil {
+		return err
+	}
+	if r.err != nil {
+		return r.err
+	}
+	if r.State() == Null {
+		return r.Bytes().checkAlive()
+	}
+	if err := decodeValueInto(c.base, r, &dst.Value); err != nil {
+		return err
+	}
+	dst.Valid = true
+	return nil
+}
+func (c bindEncoder[T]) compileValueEncoder(t DataType) (Encoder[BindValue[T]], error) {
+	base, err := compileValueEncoder(c.base, t)
+	if err != nil {
+		return nil, err
+	}
+	c.base, c.typ = base, t
+	return c, nil
+}
+func (c emptyCodec[T]) compileValueEncoder(t DataType) (Encoder[EmptyValueOf[T]], error) {
+	if err := c.CheckType(t); err != nil {
+		return nil, err
+	}
+	base, err := compileValueEncoder(c.base, t)
+	if err != nil {
+		return nil, err
+	}
+	c.encoder, c.typ = base, t
+	return c, nil
+}
+func (c emptyCodec[T]) compileValueDecoder(t DataType) (Decoder[EmptyValueOf[T]], error) {
+	if err := c.CheckType(t); err != nil {
+		return nil, err
+	}
+	base, err := compileValueDecoder(c.base, t)
+	if err != nil {
+		return nil, err
+	}
+	c.decoder, c.typ = base, t
+	return c, nil
+}
+func (c emptyCodec[T]) DecodeInto(r ValueReader, dst *EmptyValueOf[T]) error {
+	if dst == nil {
+		return typeValidation("destination", "nil empty destination")
+	}
+	*dst = EmptyValueOf[T]{}
+	if err := c.CheckType(r.Type()); err != nil {
+		return err
+	}
+	if r.err != nil {
+		return r.err
+	}
+	if r.State() == Empty || (r.State() == Present && r.Bytes().Len() == 0) {
+		if err := r.Bytes().checkAlive(); err != nil {
+			return err
+		}
+		dst.Empty = true
+		return nil
+	}
+	decoder := c.decoder
+	if decoder == nil {
+		decoder = c.base
+	}
+	return decodeValueInto(decoder, r, &dst.Value)
+}
+
+func (c namedScalar[A, B]) compileValueEncoder(t DataType) (Encoder[A], error) {
+	if c.to == nil || c.from == nil {
+		return nil, typeValidation("codec", "nil scalar mapping")
+	}
+	base, err := compileValueEncoder(c.base, t)
+	if err != nil {
+		return nil, err
+	}
+	c.encoder, c.typ = base, t
+	return c, nil
+}
+func (c namedScalar[A, B]) compileValueDecoder(t DataType) (Decoder[A], error) {
+	if c.to == nil || c.from == nil {
+		return nil, typeValidation("codec", "nil scalar mapping")
+	}
+	base, err := compileValueDecoder(c.base, t)
+	if err != nil {
+		return nil, err
+	}
+	c.decoder, c.typ = base, t
+	return c, nil
 }

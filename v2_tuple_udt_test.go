@@ -91,15 +91,15 @@ func TestV2UDTNamedEvolutionOptions(t *testing.T) {
 		Column("id", Int32, func(v *record) *int32 { return &v.ID }),
 		Column("body", TextCodec, func(v *record) *Text { return &v.Body }),
 	)
-	if err := UDTEncoder(params, UDTOptions{}).CheckType(typ); err == nil {
+	if err := UDTEncoder(params, UDTOptions{Keyspace: "ks", Name: "record"}).CheckType(typ); err == nil {
 		t.Fatal("extra database field accepted without option")
 	}
-	if err := UDTDecoder(rows, UDTOptions{}).CheckType(typ); err == nil {
+	if err := UDTDecoder(rows, UDTOptions{Keyspace: "ks", Name: "record"}).CheckType(typ); err == nil {
 		t.Fatal("extra database field accepted without option")
 	}
-	options := UDTOptions{AllowExtraDatabaseFields: true}
+	options := UDTOptions{Keyspace: "ks", Name: "record", AllowExtraDatabaseFields: true}
 	encoder, decoder := UDTEncoder(params, options), UDTDecoder(rows, options)
-	encoded := containerGolden(t, typ, encoder, record{ID: 7, Body: BorrowText("x")}, "0000000178ffffffff0000000400000007")
+	encoded := containerGolden(t, typ, encoder, record{ID: 7, Body: codecTestMust(BorrowText("x"))}, "0000000178ffffffff0000000400000007")
 	decoded, err := DecodeValue(decoder, encoded)
 	if err != nil || decoded.ID != 7 || decoded.Body.String() != "x" {
 		t.Fatalf("UDT=%+v err=%v", decoded, err)
@@ -122,7 +122,7 @@ func TestV2UDTNamedEvolutionOptions(t *testing.T) {
 		Param("body", TextCodec, func(v record) Text { return v.Body }),
 		Param("gone", Int32, func(v record) int32 { return v.Missing }),
 	)
-	containerGolden(t, typ, UDTEncoder(missingParams, options), record{ID: 7, Body: BorrowText("x"), Missing: 42}, "0000000178ffffffff0000000400000007")
+	containerGolden(t, typ, UDTEncoder(missingParams, options), record{ID: 7, Body: codecTestMust(BorrowText("x")), Missing: 42}, "0000000178ffffffff0000000400000007")
 	// The compiled identity includes the keyspace and UDT name, not just fields.
 	bound, err := compileValueDecoder(decoder, typ)
 	if err != nil {
@@ -145,7 +145,7 @@ func TestV2UDTMissingMetadataDiffersFromNull(t *testing.T) {
 		Column("body", TextCodec, func(v *record) *Text { return &v.Body }),
 	)
 	short, _ := hex.DecodeString("0000000400000007")
-	for _, options := range []UDTOptions{{}, {AllowMissingFields: true}, {AllowExtraDatabaseFields: true, AllowMissingFields: true}} {
+	for _, options := range []UDTOptions{{Keyspace: "ks", Name: "record"}, {Keyspace: "ks", Name: "record", AllowMissingFields: true}, {Keyspace: "ks", Name: "record", AllowExtraDatabaseFields: true, AllowMissingFields: true}} {
 		if _, err := DecodeValue(UDTDecoder(rows, options), containerValue(t, typ, short)); err == nil {
 			t.Fatal("missing serialized field became zero through AllowMissingFields")
 		}
@@ -158,7 +158,7 @@ func TestV2UDTMissingMetadataDiffersFromNull(t *testing.T) {
 		Column("id", Int32, func(v *nullableRecord) *int32 { return &v.ID }),
 		Column("body", NullableDecoder(TextCodec), func(v *nullableRecord) *Nullable[Text] { return &v.Body }),
 	)
-	got, err := DecodeValue(UDTDecoder(nullableRows, UDTOptions{}), containerValue(t, typ, short))
+	got, err := DecodeValue(UDTDecoder(nullableRows, UDTOptions{Keyspace: "ks", Name: "record"}), containerValue(t, typ, short))
 	if err != nil || got.ID != 7 || got.Body.Valid {
 		t.Fatalf("nullable suffix=%+v err=%v", got, err)
 	}
@@ -166,7 +166,7 @@ func TestV2UDTMissingMetadataDiffersFromNull(t *testing.T) {
 
 func TestV2UDTIgnoredSuffixStillValidatesFraming(t *testing.T) {
 	typ, _ := UDTType("ks", "record", ColumnSpec{Name: "id", Type: rowTestType(t, TypeInt)}, ColumnSpec{Name: "ignored", Type: rowTestType(t, TypeBlob)})
-	decoder := UDTDecoder(Row(Column("id", Int32, func(v *int32) *int32 { return v })), UDTOptions{AllowExtraDatabaseFields: true})
+	decoder := UDTDecoder(Row(Column("id", Int32, func(v *int32) *int32 { return v })), UDTOptions{Keyspace: "ks", Name: "record", AllowExtraDatabaseFields: true})
 	for _, bad := range []string{"000000040000000700", "00000004000000070000000401", "0000000400000007fffffffe", "0000000400000007ffffffff00"} {
 		body, _ := hex.DecodeString(bad)
 		if _, err := DecodeValue(decoder, containerValue(t, typ, body)); err == nil {
@@ -178,7 +178,7 @@ func TestV2UDTIgnoredSuffixStillValidatesFraming(t *testing.T) {
 func TestV2UDTOptionsPropagateThroughComposition(t *testing.T) {
 	integer := rowTestType(t, TypeInt)
 	typ, _ := UDTType("ks", "record", ColumnSpec{Name: "id", Type: integer}, ColumnSpec{Name: "extra", Type: integer})
-	options := UDTOptions{AllowExtraDatabaseFields: true}
+	options := UDTOptions{Keyspace: "ks", Name: "record", AllowExtraDatabaseFields: true}
 	params := MapParams(Params(Param("id", Int32, func(v int32) int32 { return v })), func(v int64) int32 { return int32(v) })
 	rows := MapRows(Row(Column("id", Int32, func(v *int32) *int32 { return v })), func(v int32) int64 { return int64(v) }, func(v int64) int64 { return v })
 	encoded := containerGolden(t, typ, UDTEncoder(params, options), int64(7), "0000000400000007ffffffff")

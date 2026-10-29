@@ -33,6 +33,7 @@ type RowDecoder[R any] interface {
 
 type RowPlan[R any] interface {
 	Decode(*RowReader) (R, error)
+	DecodeInto(*RowReader, *R) error
 	Clone(R) R
 }
 
@@ -305,12 +306,7 @@ func (f outputField[R, V]) decode(reader *RowReader, row *R) error {
 	if field == nil {
 		return fmt.Errorf("gocql: output field accessor returned nil")
 	}
-	value, err := ReadColumn(reader, f.codec)
-	if err != nil {
-		return err
-	}
-	*field = value
-	return nil
+	return readColumnInto(reader, f.codec, field)
 }
 func (f outputField[R, V]) clone(dst, source *R) {
 	*f.field(dst) = f.codec.Clone(*f.field(source))
@@ -372,18 +368,28 @@ func (c rowCodec[R]) Compile(columns Columns) (RowPlan[R], error) {
 }
 func (p rowPlan[R]) Decode(reader *RowReader) (R, error) {
 	row := p.scratch.Get().(*R)
-	var zero R
-	for _, field := range p.ordered {
-		if err := field.decode(reader, row); err != nil {
-			*row = zero
-			p.scratch.Put(row)
-			return zero, err
-		}
-	}
+	err := p.DecodeInto(reader, row)
 	result := *row
+	var zero R
 	*row = zero
 	p.scratch.Put(row)
+	if err != nil {
+		return zero, err
+	}
 	return result, nil
+}
+func (p rowPlan[R]) DecodeInto(reader *RowReader, dst *R) error {
+	if dst == nil {
+		return typeValidation("destination", "nil row destination")
+	}
+	var zero R
+	*dst = zero
+	for _, field := range p.ordered {
+		if err := field.decode(reader, dst); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 func (p rowPlan[R]) Clone(source R) R {
 	dst := source
@@ -418,6 +424,14 @@ func (c singleColumnRows[T]) Clone(value T) T { return c.decoder.Clone(value) }
 func (p singleColumnPlan[T]) Decode(reader *RowReader) (T, error) {
 	return ReadColumn(reader, p.decoder)
 }
+func (p singleColumnPlan[T]) DecodeInto(reader *RowReader, dst *T) error {
+	if dst == nil {
+		return typeValidation("destination", "nil row destination")
+	}
+	var zero T
+	*dst = zero
+	return readColumnInto(reader, p.decoder, dst)
+}
 func (p singleColumnPlan[T]) Clone(value T) T { return p.decoder.Clone(value) }
 
 var NoParams ParamEncoder[Unit] = Params[Unit]()
@@ -439,7 +453,7 @@ func (c mappedParams[A, B]) Compile(columns Columns) (ParamPlan[A], error) {
 	if c.codec == nil || c.mapValue == nil {
 		return nil, fmt.Errorf("gocql: nil parameter mapping")
 	}
-	plan, err := c.codec.Compile(columns)
+	plan, err := compileParamPlan(c.codec, columns)
 	if err != nil {
 		return nil, err
 	}
@@ -473,7 +487,7 @@ func (c mappedRows[A, B]) Compile(columns Columns) (RowPlan[B], error) {
 	if c.codec == nil || c.mapValue == nil || c.cloneValue == nil {
 		return nil, fmt.Errorf("gocql: nil row mapping")
 	}
-	plan, err := c.codec.Compile(columns)
+	plan, err := compileRowPlan(c.codec, columns)
 	if err != nil {
 		return nil, err
 	}
@@ -486,6 +500,19 @@ func (p mappedRowPlan[A, B]) Decode(reader *RowReader) (B, error) {
 		return zero, err
 	}
 	return p.mapValue(v), nil
+}
+func (p mappedRowPlan[A, B]) DecodeInto(reader *RowReader, dst *B) error {
+	if dst == nil {
+		return typeValidation("destination", "nil row destination")
+	}
+	var zero B
+	*dst = zero
+	value, err := p.plan.Decode(reader)
+	if err != nil {
+		return err
+	}
+	*dst = p.mapValue(value) // Explicit value-returning application mapping.
+	return nil
 }
 func (p mappedRowPlan[A, B]) Clone(value B) B { return p.cloneValue(value) }
 
@@ -525,11 +552,11 @@ func (c pairedParams[A, B]) Compile(columns Columns) (ParamPlan[Pair[A, B]], err
 	if err != nil {
 		return nil, err
 	}
-	a, err := c.a.Compile(left)
+	a, err := compileParamPlan(c.a, left)
 	if err != nil {
 		return nil, err
 	}
-	b, err := c.b.Compile(right)
+	b, err := compileParamPlan(c.b, right)
 	if err != nil {
 		return nil, err
 	}
@@ -590,11 +617,11 @@ func (c pairedRows[A, B]) Compile(columns Columns) (RowPlan[Pair[A, B]], error) 
 	if err != nil {
 		return nil, err
 	}
-	a, err := c.a.Compile(left)
+	a, err := compileRowPlan(c.a, left)
 	if err != nil {
 		return nil, err
 	}
-	b, err := c.b.Compile(right)
+	b, err := compileRowPlan(c.b, right)
 	if err != nil {
 		return nil, err
 	}
@@ -602,6 +629,17 @@ func (c pairedRows[A, B]) Compile(columns Columns) (RowPlan[Pair[A, B]], error) 
 }
 func (p pairedRowPlan[A, B]) Decode(r *RowReader) (Pair[A, B], error) {
 	var result Pair[A, B]
+	err := p.DecodeInto(r, &result)
+	if err != nil {
+		return Pair[A, B]{}, err
+	}
+	return result, nil
+}
+func (p pairedRowPlan[A, B]) DecodeInto(r *RowReader, dst *Pair[A, B]) error {
+	if dst == nil {
+		return typeValidation("destination", "nil row destination")
+	}
+	*dst = Pair[A, B]{}
 	columns, index := r.columns, r.index
 	completed := false
 	defer func() {
@@ -611,23 +649,23 @@ func (p pairedRowPlan[A, B]) Decode(r *RowReader) (Pair[A, B], error) {
 		}
 	}()
 	r.columns, r.index = p.left, 0
-	av, err := p.a.Decode(r)
+	err := p.a.DecodeInto(r, &dst.First)
 	if err == nil {
 		err = finishRowReader(r)
 	}
 	if err != nil {
-		return result, err
+		return err
 	}
 	r.columns, r.index = p.right, 0
-	bv, err := p.b.Decode(r)
+	err = p.b.DecodeInto(r, &dst.Second)
 	if err == nil {
 		err = finishRowReader(r)
 	}
 	if err != nil {
-		return result, err
+		return err
 	}
 	completed = true
-	return Pair[A, B]{First: av, Second: bv}, nil
+	return nil
 }
 func (p pairedRowPlan[A, B]) Clone(value Pair[A, B]) Pair[A, B] {
 	return Pair[A, B]{First: p.a.Clone(value.First), Second: p.b.Clone(value.Second)}
@@ -647,7 +685,11 @@ func compileValueDecoder[T any](decoder Decoder[T], typ DataType) (Decoder[T], e
 		return nil, fmt.Errorf("gocql: nil value decoder")
 	}
 	if compiled, ok := decoder.(compiledValueDecoder[T]); ok {
-		return compiled.compileValueDecoder(typ)
+		value, err := compiled.compileValueDecoder(typ)
+		if err == nil && value == nil {
+			err = typeValidation("decoder", "Compile returned a nil value decoder")
+		}
+		return value, err
 	}
 	if err := decoder.CheckType(typ); err != nil {
 		return nil, err
@@ -659,10 +701,63 @@ func compileValueEncoder[T any](encoder Encoder[T], typ DataType) (Encoder[T], e
 		return nil, fmt.Errorf("gocql: nil value encoder")
 	}
 	if compiled, ok := encoder.(compiledValueEncoder[T]); ok {
-		return compiled.compileValueEncoder(typ)
+		value, err := compiled.compileValueEncoder(typ)
+		if err == nil && value == nil {
+			err = typeValidation("encoder", "Compile returned a nil value encoder")
+		}
+		return value, err
 	}
 	if err := encoder.CheckType(typ); err != nil {
 		return nil, err
 	}
 	return encoder, nil
+}
+
+// Aggregate codecs propagate an actual field address; scalar decoders return
+// only their scalar value. This is deliberately not an entire-row adapter.
+type valueIntoDecoder[T any] interface{ DecodeInto(ValueReader, *T) error }
+
+func decodeValueInto[T any](decoder Decoder[T], reader ValueReader, dst *T) error {
+	if dst == nil {
+		return typeValidation("destination", "nil value destination")
+	}
+	if direct, ok := decoder.(valueIntoDecoder[T]); ok {
+		return direct.DecodeInto(reader, dst)
+	}
+	value, err := decoder.Decode(reader)
+	if err == nil {
+		*dst = value
+	}
+	return err
+}
+func readColumnInto[T any](r *RowReader, decoder Decoder[T], dst *T) error {
+	if decoder == nil {
+		return typeValidation("decoder", "nil column decoder")
+	}
+	value, err := r.nextValue()
+	if err == nil {
+		err = decodeValueInto(decoder, value, dst)
+	}
+	return err
+}
+
+func compileRowPlan[R any](decoder RowDecoder[R], columns Columns) (RowPlan[R], error) {
+	if decoder == nil {
+		return nil, typeValidation("decoder", "nil row decoder")
+	}
+	plan, err := decoder.Compile(columns)
+	if err == nil && plan == nil {
+		err = typeValidation("decoder", "Compile returned a nil row plan")
+	}
+	return plan, err
+}
+func compileParamPlan[P any](encoder ParamEncoder[P], columns Columns) (ParamPlan[P], error) {
+	if encoder == nil {
+		return nil, typeValidation("encoder", "nil parameter encoder")
+	}
+	plan, err := encoder.Compile(columns)
+	if err == nil && plan == nil {
+		err = typeValidation("encoder", "Compile returned a nil parameter plan")
+	}
+	return plan, err
 }

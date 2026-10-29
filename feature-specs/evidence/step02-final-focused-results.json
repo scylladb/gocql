@@ -1,0 +1,33 @@
+[
+  {
+    "name": "final-focused-race",
+    "command": [
+      "go",
+      "test",
+      "-race",
+      "-run",
+      "^TestV2",
+      "-count=1",
+      "-timeout=3m",
+      "."
+    ],
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step02-final-focused-race.log"
+  },
+  {
+    "name": "bench",
+    "command": [
+      "go",
+      "test",
+      "-run",
+      "^$",
+      "-bench",
+      "^BenchmarkV2(StreamFinalStorage|StreamingNestedElements|RowDestinationFragments)$",
+      "-benchmem",
+      "-benchtime=100ms",
+      "."
+    ],
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step02-bench.log"
+  }
+]

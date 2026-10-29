@@ -29,6 +29,7 @@ type Value struct {
 	encoded     bool
 	count       int
 	vectorWidth int64
+	shape       *streamValidationPlan
 }
 
 type ValueField struct {
@@ -82,10 +83,14 @@ func DoubleValue(n float64) Value {
 	v.bits = math.Float64bits(n)
 	return v
 }
-func TextValue(s string) Value {
+func TextValue(s string) (Value, error) {
+	text, err := BorrowText(s)
+	if err != nil {
+		return Value{}, err
+	}
 	v := dynamicScalar(TypeText)
-	v.bytes = BorrowText(s).Bytes()
-	return v
+	v.bytes = text.Bytes()
+	return v, nil
 }
 func ASCIIValue(s string) (Value, error) {
 	v := dynamicScalar(TypeAscii)
@@ -253,59 +258,75 @@ type dynamicCodec struct{}
 
 func (dynamicCodec) CheckType(t DataType) error { return checkDynamicType(t, 0) }
 func checkDynamicType(t DataType, depth int) error {
+	_, err := checkedTypeHeight(t, depth, make(map[*dataTypeDescriptor]int), make(map[*dataTypeDescriptor]bool))
+	return err
+}
+func checkedTypeHeight(t DataType, depth int, heights map[*dataTypeDescriptor]int, active map[*dataTypeDescriptor]bool) (int, error) {
 	if err := validateDataType(t); err != nil {
-		return err
+		return 0, err
 	}
 	if depth > 128 {
-		return typeValidation("type", "dynamic nesting exceeds 128")
+		return 0, typeValidation("type", "dynamic nesting exceeds 128")
 	}
 	d := t.descriptor
+	if height, ok := heights[d]; ok {
+		if depth+height > 128 {
+			return 0, typeValidation("type", "dynamic nesting exceeds 128")
+		}
+		return height, nil
+	}
+	if active[d] {
+		return 0, typeValidation("type", "cyclic descriptor")
+	}
+	active[d] = true
+	height := 0
+	child := func(t DataType) error {
+		h, err := checkedTypeHeight(t, depth+1, heights, active)
+		height = max(height, h+1)
+		return err
+	}
+	var err error
 	switch d.kind {
 	case TypeList, TypeSet:
-		return checkDynamicType(d.element, depth+1)
+		err = child(d.element)
 	case TypeMap:
-		if err := checkDynamicType(d.key, depth+1); err != nil {
-			return err
+		err = child(d.key)
+		if err == nil {
+			err = child(d.element)
 		}
-		return checkDynamicType(d.element, depth+1)
 	case TypeTuple, TypeUDT:
-		if d.kind == TypeTuple && d.fields.Len() == 0 {
-			return typeValidation("type", "tuple has no fields")
-		}
 		if d.kind == TypeUDT && (d.keyspace == "" || d.name == "") {
-			return typeValidation("type", "UDT identity is incomplete")
+			return 0, typeValidation("type", "UDT identity is incomplete")
 		}
+		names := make(map[string]bool)
 		for i, f := range d.fields.columns {
 			if d.kind == TypeUDT {
-				if f.Name == "" {
-					return typeValidation("type", "UDT field %d has no name", i)
+				if f.Name == "" || names[f.Name] {
+					return 0, typeValidation("type", "empty or duplicate UDT field %q", f.Name)
 				}
-				for j := 0; j < i; j++ {
-					if d.fields.columns[j].Name == f.Name {
-						return typeValidation("type", "duplicate UDT field %q", f.Name)
-					}
-				}
+				names[f.Name] = true
 			}
-			if err := checkDynamicType(f.Type, depth+1); err != nil {
-				return fmt.Errorf("dynamic field %d: %w", i, err)
+			if err = child(f.Type); err != nil {
+				return 0, fmt.Errorf("dynamic field %d: %w", i, err)
 			}
 		}
-		return nil
 	case TypeCustom:
 		if d.dimension == 0 {
-			return typeValidation("type", "incomplete vector type")
+			return 0, typeValidation("type", "incomplete vector type")
 		}
-		if err := checkDynamicType(d.element, depth+1); err != nil {
-			return err
+		err = child(d.element)
+		if err == nil {
+			_, err = vectorFixedWidth(t)
 		}
-		_, err := vectorFixedWidth(t)
-		return err
 	default:
-		if _, err := ScalarType(d.kind); err != nil {
-			return err
-		}
-		return nil
+		_, err = ScalarType(d.kind)
 	}
+	if err != nil {
+		return 0, err
+	}
+	delete(active, d)
+	heights[d] = height
+	return height, nil
 }
 func dynamicCompatible(actual, wanted DataType) bool {
 	if actual.Equal(wanted) {
@@ -315,7 +336,7 @@ func dynamicCompatible(actual, wanted DataType) bool {
 	return (actual.Kind() == TypeText || actual.Kind() == TypeVarchar) && (wanted.Kind() == TypeText || wanted.Kind() == TypeVarchar)
 }
 func checkDynamicValue(t DataType, v Value, nested bool) error {
-	if err := DynamicCodec.CheckType(v.typ); err != nil {
+	if err := validateDataType(v.typ); err != nil {
 		return err
 	}
 	if !dynamicCompatible(v.typ, t) {
@@ -340,6 +361,9 @@ func dynamicAggregate(t DataType, kind Type, values []Value) (Value, error) {
 	if err := DynamicCodec.CheckType(t); err != nil {
 		return Value{}, err
 	}
+	return dynamicAggregateChecked(t, kind, values)
+}
+func dynamicAggregateChecked(t DataType, kind Type, values []Value) (Value, error) {
 	if t.Kind() != kind {
 		return Value{}, typeValidation("type", "expected %s, got %s", kind, t)
 	}
@@ -380,6 +404,9 @@ func MapValue(t DataType, entries []ValueEntry) (Value, error) {
 	if err := DynamicCodec.CheckType(t); err != nil {
 		return Value{}, err
 	}
+	return mapValueChecked(t, entries)
+}
+func mapValueChecked(t DataType, entries []ValueEntry) (Value, error) {
 	if t.Kind() != TypeMap {
 		return Value{}, typeValidation("type", "expected map, got %s", t)
 	}
@@ -400,6 +427,9 @@ func UDTValue(t DataType, fields []ValueField) (Value, error) {
 	if err := DynamicCodec.CheckType(t); err != nil {
 		return Value{}, err
 	}
+	return udtValueChecked(t, fields)
+}
+func udtValueChecked(t DataType, fields []ValueField) (Value, error) {
 	if t.Kind() != TypeUDT {
 		return Value{}, typeValidation("type", "expected UDT, got %s", t)
 	}
@@ -437,6 +467,9 @@ func (dynamicCodec) Encode(w *ValueWriter, v Value) error {
 	if err := DynamicCodec.CheckType(w.Type()); err != nil {
 		return err
 	}
+	return encodeDynamicChecked(w, v)
+}
+func encodeDynamicChecked(w *ValueWriter, v Value) error {
 	if err := checkDynamicValue(w.Type(), v, !w.allowUnset); err != nil {
 		return err
 	}
@@ -506,6 +539,10 @@ func (dynamicCodec) Decode(r ValueReader) (Value, error) {
 	if err := DynamicCodec.CheckType(r.Type()); err != nil {
 		return Value{}, err
 	}
+	return decodeDynamicChecked(r)
+}
+func decodeDynamicChecked(r ValueReader) (Value, error) { return decodeDynamicWithPlan(r, nil) }
+func decodeDynamicWithPlan(r ValueReader, shape *streamValidationPlan) (Value, error) {
 	if r.err != nil {
 		return Value{}, r.err
 	}
@@ -518,13 +555,13 @@ func (dynamicCodec) Decode(r ValueReader) (Value, error) {
 	case Unset:
 		return Value{}, typeValidation("state", "unset cannot be decoded as a result")
 	case Empty:
-		return EmptyValue(r.Type())
+		return Value{typ: r.Type(), state: Empty}, nil
 	case Present:
 	default:
 		return Value{}, typeValidation("state", "invalid state %d", r.State())
 	}
 	if r.Bytes().Len() == 0 && emptySupported(r.Type()) {
-		return EmptyValue(r.Type())
+		return Value{typ: r.Type(), state: Empty}, nil
 	}
 	switch r.Type().Kind() {
 	case TypeBoolean:
@@ -570,16 +607,20 @@ func (dynamicCodec) Decode(r ValueReader) (Value, error) {
 	case TypeDecimal:
 		return decodeDynamicScalar(r, DecimalCodec, DecimalValue)
 	default:
-		return decodeDynamicAggregate(r)
+		return decodeDynamicAggregate(r, shape)
 	}
 }
 
-func decodeDynamicAggregate(r ValueReader) (Value, error) {
-	v := Value{typ: r.Type(), encoded: true}
+func decodeDynamicAggregate(r ValueReader, shape *streamValidationPlan) (Value, error) {
+	v := Value{typ: r.Type(), encoded: true, shape: shape}
 	var err error
 	switch r.Type().Kind() {
 	case TypeList, TypeSet, TypeCustom:
-		v.bytes, v.count, v.vectorWidth, err = validateSequenceBody(r, r.Type().Kind())
+		if shape == nil {
+			v.bytes, v.count, v.vectorWidth, err = validateSequenceBody(r, r.Type().Kind())
+		} else {
+			v.bytes, v.count, v.vectorWidth, err = validateSequenceLayout(r, r.Type().Kind(), r.Type().descriptor.element, shape.width)
+		}
 	case TypeMap:
 		v.bytes, v.count, err = validateMapBody(r)
 	case TypeTuple, TypeUDT:
@@ -606,7 +647,7 @@ func decodeDynamicAggregate(r ValueReader) (Value, error) {
 func dynamicCursor(b Bytes) ValueCursor {
 	return ValueCursor{cursor: *wire.NewCursor(b.chain), initialized: true, lease: b.lease, initial: b.Len()}
 }
-func dynamicField(c *ValueCursor, t DataType) (Value, error) {
+func dynamicField(c *ValueCursor, t DataType, shape *streamValidationPlan) (Value, error) {
 	if err := c.check(); err != nil {
 		return Value{}, err
 	}
@@ -617,7 +658,7 @@ func dynamicField(c *ValueCursor, t DataType) (Value, error) {
 	if err != nil {
 		return Value{}, err
 	}
-	return DynamicCodec.Decode(r)
+	return decodeDynamicWithPlan(r, shape)
 }
 
 // Elements returns an independent iterator over list, set, vector, or tuple
@@ -627,12 +668,12 @@ func (v Value) Elements() (*ValueIterator[Value], error) {
 		return nil, err
 	}
 	if !v.encoded {
-		return newValueIterator(len(v.values), func(i int) (Value, error) { return v.values[i], nil }), nil
+		return newValueIterator(len(v.values), func(i int) (Value, error) { return v.values[i], nil }, func(v Value) Value { return v.Clone() }), nil
 	}
 	typ := v.typ
-	return &ValueIterator[Value]{count: v.count, cursor: dynamicCursor(v.bytes), nextCursor: func(c *ValueCursor, i int) (Value, error) {
+	return &ValueIterator[Value]{clone: func(v Value) Value { return v.Clone() }, count: v.count, cursor: dynamicCursor(v.bytes), nextCursor: func(c *ValueCursor, i int) (Value, error) {
 		if typ.Kind() == TypeTuple {
-			return dynamicField(c, typ.descriptor.fields.columns[i].Type)
+			return dynamicField(c, typ.descriptor.fields.columns[i].Type, dynamicShapeField(v.shape, i))
 		}
 		var r ValueReader
 		var err error
@@ -644,7 +685,7 @@ func (v Value) Elements() (*ValueIterator[Value], error) {
 		if err != nil {
 			return Value{}, err
 		}
-		return DynamicCodec.Decode(r)
+		return decodeDynamicWithPlan(r, dynamicShapeElement(v.shape))
 	}}, nil
 }
 func (v Value) Entries() (*ValueIterator[ValueEntry], error) {
@@ -652,9 +693,9 @@ func (v Value) Entries() (*ValueIterator[ValueEntry], error) {
 		return nil, err
 	}
 	if !v.encoded {
-		return newValueIterator(len(v.entries), func(i int) (ValueEntry, error) { return v.entries[i], nil }), nil
+		return newValueIterator(len(v.entries), func(i int) (ValueEntry, error) { return v.entries[i], nil }, cloneDynamicEntry), nil
 	}
-	return &ValueIterator[ValueEntry]{count: v.count, cursor: dynamicCursor(v.bytes), nextCursor: func(c *ValueCursor, _ int) (ValueEntry, error) {
+	return &ValueIterator[ValueEntry]{clone: cloneDynamicEntry, count: v.count, cursor: dynamicCursor(v.bytes), nextCursor: func(c *ValueCursor, _ int) (ValueEntry, error) {
 		key, err := c.Child(v.typ.descriptor.key)
 		if err != nil {
 			return ValueEntry{}, err
@@ -663,11 +704,11 @@ func (v Value) Entries() (*ValueIterator[ValueEntry], error) {
 		if err != nil {
 			return ValueEntry{}, err
 		}
-		k, err := DynamicCodec.Decode(key)
+		k, err := decodeDynamicWithPlan(key, dynamicShapeKey(v.shape))
 		if err != nil {
 			return ValueEntry{}, err
 		}
-		valueDecoded, err := DynamicCodec.Decode(value)
+		valueDecoded, err := decodeDynamicWithPlan(value, dynamicShapeElement(v.shape))
 		if err != nil {
 			return ValueEntry{}, err
 		}
@@ -694,26 +735,27 @@ func (v Value) Fields() (*ValueIterator[ValueField], error) {
 				}
 			}
 			return ValueField{}, typeValidation("fields", "missing UDT field %q", field.Name)
-		}), nil
+		}, cloneDynamicField), nil
 	}
-	return &ValueIterator[ValueField]{count: columns.Len(), cursor: dynamicCursor(v.bytes), nextCursor: func(c *ValueCursor, i int) (ValueField, error) {
+	return &ValueIterator[ValueField]{clone: cloneDynamicField, count: columns.Len(), cursor: dynamicCursor(v.bytes), nextCursor: func(c *ValueCursor, i int) (ValueField, error) {
 		col := columns.columns[i]
-		value, err := dynamicField(c, col.Type)
+		value, err := dynamicField(c, col.Type, dynamicShapeField(v.shape, i))
 		if err != nil {
 			return ValueField{}, err
 		}
 		return ValueField{Name: col.Name, Value: value}, nil
 	}}, nil
 }
-func encodeDynamicChild(w *ValueWriter, typ DataType, v Value) error {
-	return w.Child(typ, func(child *ValueWriter) error { return DynamicCodec.Encode(child, v) })
+func encodeDynamicChild(w *ValueWriter, typ DataType, v Value, shape *streamValidationPlan) error {
+	v.shape = shape
+	return w.Child(typ, func(child *ValueWriter) error { return encodeDynamicChecked(child, v) })
 }
 func encodeDynamicAggregate(w *ValueWriter, v Value) error {
 	typ := w.Type()
 	switch typ.Kind() {
 	case TypeList, TypeSet, TypeCustom, TypeTuple:
 		if !v.encoded {
-			if _, err := dynamicAggregate(v.typ, v.typ.Kind(), v.values); err != nil {
+			if _, err := dynamicAggregateChecked(v.typ, v.typ.Kind(), v.values); err != nil {
 				return err
 			}
 		}
@@ -744,7 +786,11 @@ func encodeDynamicAggregate(w *ValueWriter, v Value) error {
 		}
 		var width int64
 		if typ.Kind() == TypeCustom {
-			width, err = vectorFixedWidth(typ.descriptor.element)
+			if v.shape != nil {
+				width = v.shape.width
+			} else {
+				width, err = vectorFixedWidth(typ.descriptor.element)
+			}
 			if err != nil {
 				return err
 			}
@@ -757,9 +803,9 @@ func encodeDynamicAggregate(w *ValueWriter, v Value) error {
 				childType = typ.descriptor.fields.columns[i].Type
 			}
 			if typ.Kind() == TypeCustom {
-				err = writeVectorElement(w, childType, width, DynamicCodec, value)
+				err = writeVectorElement(w, childType, width, checkedDynamicEncoder{typ: childType, shape: dynamicShapeChild(v.shape, childType)}, value)
 			} else {
-				err = encodeDynamicChild(w, childType, value)
+				err = encodeDynamicChild(w, childType, value, dynamicShapeChild(v.shape, childType))
 			}
 			if err != nil {
 				return fmt.Errorf("dynamic element %d: %w", i, err)
@@ -769,7 +815,7 @@ func encodeDynamicAggregate(w *ValueWriter, v Value) error {
 		return iterator.Err()
 	case TypeMap:
 		if !v.encoded {
-			if _, err := MapValue(v.typ, v.entries); err != nil {
+			if _, err := mapValueChecked(v.typ, v.entries); err != nil {
 				return err
 			}
 		}
@@ -789,17 +835,17 @@ func encodeDynamicAggregate(w *ValueWriter, v Value) error {
 		}
 		for iterator.Next() {
 			e := iterator.Value()
-			if err := encodeDynamicChild(w, typ.descriptor.key, e.Key); err != nil {
+			if err := encodeDynamicChild(w, typ.descriptor.key, e.Key, dynamicShapeKey(v.shape)); err != nil {
 				return err
 			}
-			if err := encodeDynamicChild(w, typ.descriptor.element, e.Value); err != nil {
+			if err := encodeDynamicChild(w, typ.descriptor.element, e.Value, dynamicShapeElement(v.shape)); err != nil {
 				return err
 			}
 		}
 		return iterator.Err()
 	case TypeUDT:
 		if !v.encoded {
-			if _, err := UDTValue(v.typ, v.fields); err != nil {
+			if _, err := udtValueChecked(v.typ, v.fields); err != nil {
 				return err
 			}
 		}
@@ -814,7 +860,7 @@ func encodeDynamicAggregate(w *ValueWriter, v Value) error {
 			if f.Name != col.Name {
 				return typeValidation("fields", "expected %q, got %q", col.Name, f.Name)
 			}
-			if err := encodeDynamicChild(w, col.Type, f.Value); err != nil {
+			if err := encodeDynamicChild(w, col.Type, f.Value, dynamicShapeField(v.shape, index)); err != nil {
 				return fmt.Errorf("dynamic field %s: %w", f.Name, err)
 			}
 			index++
@@ -833,9 +879,13 @@ var DynamicParams ParamEncoder[[]Value] = dynamicParamsCodec{}
 var NamedDynamicParams ParamEncoder[[]ValueField] = namedDynamicParamsCodec{}
 
 type dynamicParamsCodec struct{}
-type dynamicParamsPlan struct{ columns Columns }
+type dynamicParamsPlan struct {
+	columns Columns
+	shapes  []*streamValidationPlan
+}
 type namedDynamicParamsCodec struct{}
 type namedDynamicParamsPlan struct {
+	shapes  []*streamValidationPlan
 	columns Columns
 	names   []string
 	lookup  map[string]int
@@ -854,13 +904,21 @@ func (dynamicParamsCodec) Compile(columns Columns) (ParamPlan[[]Value], error) {
 	if err := checkDynamicColumns(columns); err != nil {
 		return nil, err
 	}
-	return dynamicParamsPlan{columns: columns}, nil
+	shapes, err := compileDynamicColumnShapes(columns)
+	if err != nil {
+		return nil, err
+	}
+	return dynamicParamsPlan{columns: columns, shapes: shapes}, nil
 }
 func (namedDynamicParamsCodec) Compile(columns Columns) (ParamPlan[[]ValueField], error) {
 	if err := checkDynamicColumns(columns); err != nil {
 		return nil, err
 	}
-	p := namedDynamicParamsPlan{columns: columns, lookup: make(map[string]int), ordered: make([]int, columns.Len())}
+	shapes, err := compileDynamicColumnShapes(columns)
+	if err != nil {
+		return nil, err
+	}
+	p := namedDynamicParamsPlan{columns: columns, lookup: make(map[string]int), ordered: make([]int, columns.Len()), shapes: shapes}
 	for i, c := range columns.columns {
 		if c.Name == "" {
 			return nil, typeValidation("parameters", "marker %d has no name", i)
@@ -899,7 +957,7 @@ func (p dynamicParamsPlan) Encode(w *ParamWriter, values []Value) error {
 	}
 	mark, start := w.builder.Mark(), w.index
 	for _, v := range values {
-		if err := WriteParam(w, DynamicCodec, v); err != nil {
+		if err := WriteParam(w, checkedDynamicEncoder{typ: p.columns.columns[w.index-start].Type, shape: p.shapes[w.index-start]}, v); err != nil {
 			w.builder.Rollback(mark)
 			w.index = start
 			return err
@@ -935,7 +993,7 @@ func (p namedDynamicParamsPlan) Encode(w *ParamWriter, fields []ValueField) erro
 	}
 	mark, start := w.builder.Mark(), w.index
 	for _, index := range p.ordered {
-		if err := WriteParam(w, DynamicCodec, fields[positions[index]].Value); err != nil {
+		if err := WriteParam(w, checkedDynamicEncoder{typ: p.columns.columns[w.index-start].Type, shape: p.shapes[w.index-start]}, fields[positions[index]].Value); err != nil {
 			w.builder.Rollback(mark)
 			w.index = start
 			return err
@@ -952,6 +1010,7 @@ type dynamicRowsCodec struct{}
 func (dynamicRowsCodec) Clone(r DynamicRow) DynamicRow { return r.Clone() }
 
 type dynamicRowsPlan struct {
+	shapes  []*streamValidationPlan
 	columns Columns
 	lookup  map[string]int
 }
@@ -959,6 +1018,7 @@ type dynamicRowsPlan struct {
 // DynamicRow stores one encoded physical row. Its immutable name index is shared
 // with the compiled plan; each access uses an independent cursor.
 type DynamicRow struct {
+	shapes       []*streamValidationPlan
 	columns      Columns
 	lookup       map[string]int
 	body         Bytes
@@ -985,7 +1045,7 @@ func (r DynamicRow) At(index int) (Value, error) {
 		value, err := readValue(cursor, col.Type, r.body.lease, false)
 		if err == nil && i == index {
 			var decoded Value
-			decoded, err = DynamicCodec.Decode(value)
+			decoded, err = decodeDynamicWithPlan(value, r.shapes[i])
 			if err == nil {
 				return decoded, nil
 			}
@@ -1010,8 +1070,13 @@ func (dynamicRowsCodec) Compile(columns Columns) (RowPlan[DynamicRow], error) {
 	if err := checkDynamicColumns(columns); err != nil {
 		return nil, err
 	}
-	p := dynamicRowsPlan{columns: columns, lookup: make(map[string]int, columns.Len())}
+	p := dynamicRowsPlan{columns: columns, lookup: make(map[string]int, columns.Len()), shapes: make([]*streamValidationPlan, columns.Len())}
 	for i, col := range columns.columns {
+		shape, err := compileStreamValidation(col.Type, 0)
+		if err != nil {
+			return nil, err
+		}
+		p.shapes[i] = shape
 		if _, exists := p.lookup[col.Name]; exists {
 			p.lookup[col.Name] = -1
 		} else {
@@ -1021,25 +1086,145 @@ func (dynamicRowsCodec) Compile(columns Columns) (RowPlan[DynamicRow], error) {
 	return p, nil
 }
 func (p dynamicRowsPlan) Clone(r DynamicRow) DynamicRow { return r.Clone() }
-func (p dynamicRowsPlan) Decode(r *RowReader) (DynamicRow, error) {
+func (p dynamicRowsPlan) DecodeInto(r *RowReader, dst *DynamicRow) error {
+	if dst == nil {
+		return typeValidation("destination", "nil dynamic row destination")
+	}
+	*dst = DynamicRow{}
 	if r == nil || r.cursor == nil {
-		return DynamicRow{}, typeValidation("reader", "nil row reader")
+		return typeValidation("reader", "nil row reader")
 	}
 	if err := dynamicMetadataMatches(p.columns, r.columns, r.index); err != nil {
-		return DynamicRow{}, err
+		return err
 	}
 	if r.lease != nil && !r.lease.Alive() {
-		return DynamicRow{}, ErrReleased
+		return ErrReleased
 	}
 	start := *r.cursor
 	for range p.columns.columns {
 		if _, err := r.nextValue(); err != nil {
-			return DynamicRow{}, err
+			return err
 		}
 	}
 	body, err := start.Take(start.Remaining() - r.cursor.Remaining())
 	if err != nil {
+		return err
+	}
+	dst.shapes = p.shapes
+	dst.columns, dst.lookup, dst.body, dst.allowMissing = p.columns, p.lookup, Bytes{chain: body, lease: r.lease}, r.allowMissing
+	return nil
+}
+func (p dynamicRowsPlan) Decode(r *RowReader) (DynamicRow, error) {
+	var result DynamicRow
+	err := p.DecodeInto(r, &result)
+	if err != nil {
 		return DynamicRow{}, err
 	}
-	return DynamicRow{columns: p.columns, lookup: p.lookup, body: Bytes{chain: body, lease: r.lease}, allowMissing: r.allowMissing}, nil
+	return result, nil
+}
+
+type checkedDynamicDecoder struct {
+	typ   DataType
+	shape *streamValidationPlan
+}
+
+func (c checkedDynamicDecoder) CheckType(t DataType) error {
+	if !c.typ.Equal(t) {
+		return typeValidation("type", "compiled dynamic metadata changed")
+	}
+	return nil
+}
+func (c checkedDynamicDecoder) Decode(r ValueReader) (Value, error) {
+	if err := c.CheckType(r.Type()); err != nil {
+		return Value{}, err
+	}
+	return decodeDynamicWithPlan(r, c.shape)
+}
+func (c checkedDynamicDecoder) Clone(v Value) Value { return v.Clone() }
+func (dynamicCodec) compileValueDecoder(t DataType) (Decoder[Value], error) {
+	if err := DynamicCodec.CheckType(t); err != nil {
+		return nil, err
+	}
+	shape, err := compileStreamValidation(t, 0)
+	if err != nil {
+		return nil, err
+	}
+	return checkedDynamicDecoder{typ: t, shape: shape}, nil
+}
+
+func cloneDynamicEntry(v ValueEntry) ValueEntry {
+	return ValueEntry{Key: v.Key.Clone(), Value: v.Value.Clone()}
+}
+func cloneDynamicField(v ValueField) ValueField {
+	return ValueField{Name: v.Name, Value: v.Value.Clone()}
+}
+
+type checkedDynamicEncoder struct {
+	typ   DataType
+	shape *streamValidationPlan
+}
+
+func (c checkedDynamicEncoder) CheckType(t DataType) error {
+	if !c.typ.Equal(t) {
+		return typeValidation("type", "compiled dynamic metadata changed")
+	}
+	return nil
+}
+func (c checkedDynamicEncoder) Encode(w *ValueWriter, v Value) error {
+	if w == nil {
+		return typeValidation("writer", "nil writer")
+	}
+	if err := c.CheckType(w.Type()); err != nil {
+		return err
+	}
+	v.shape = c.shape
+	return encodeDynamicChecked(w, v)
+}
+func (dynamicCodec) compileValueEncoder(t DataType) (Encoder[Value], error) {
+	if err := DynamicCodec.CheckType(t); err != nil {
+		return nil, err
+	}
+	shape, err := compileStreamValidation(t, 0)
+	if err != nil {
+		return nil, err
+	}
+	return checkedDynamicEncoder{typ: t, shape: shape}, nil
+}
+
+func dynamicShapeElement(p *streamValidationPlan) *streamValidationPlan {
+	if p == nil {
+		return nil
+	}
+	return p.element
+}
+func dynamicShapeKey(p *streamValidationPlan) *streamValidationPlan {
+	if p == nil {
+		return nil
+	}
+	return p.key
+}
+func dynamicShapeField(p *streamValidationPlan, index int) *streamValidationPlan {
+	if p == nil || index < 0 || index >= len(p.fields) {
+		return nil
+	}
+	return p.fields[index]
+}
+func dynamicShapeChild(p *streamValidationPlan, t DataType) *streamValidationPlan {
+	if p == nil {
+		return nil
+	}
+	return p.children[t.descriptor]
+}
+
+func compileDynamicColumnShapes(columns Columns) ([]*streamValidationPlan, error) {
+	plans := make([]*streamValidationPlan, columns.Len())
+	memo := make(map[*dataTypeDescriptor]*streamValidationPlan)
+	for i, c := range columns.columns {
+		p, err := compileStreamValidationMemo(c.Type, 0, memo)
+		if err != nil {
+			return nil, err
+		}
+		plans[i] = p
+	}
+	return plans, nil
 }

@@ -330,7 +330,7 @@ func TestCAS(t *testing.T) {
 	modified := Timestamp(time.Now().UnixMilli())
 	revValue := cassandraValue(TimeUUIDValue(TimeUUID(rev)))
 	insertCQL := fmt.Sprintf("INSERT INTO %s(title,revid,last_modified) VALUES (?,?,?) IF NOT EXISTS", table)
-	values := []Value{TextValue(title), revValue, TimestampValue(modified)}
+	values := []Value{codecTestMust(TextValue(title)), revValue, TimestampValue(modified)}
 	insert := cassandraCASBound(t, session, insertCQL, values, DynamicRows)
 	first := cassandraReadBound(t, session, insert, Options{})
 	require.True(t, first.Applied)
@@ -342,14 +342,14 @@ func TestCAS(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, rev, gotRev)
 	deleteCQL := fmt.Sprintf("DELETE FROM %s WHERE title=? AND revid=? IF last_modified=?", table)
-	failedDelete := cassandraCASBound(t, session, deleteCQL, []Value{TextValue(title), revValue, TimestampValue(modified + 10000)}, DynamicRows)
+	failedDelete := cassandraCASBound(t, session, deleteCQL, []Value{codecTestMust(TextValue(title)), revValue, TimestampValue(modified + 10000)}, DynamicRows)
 	deleted := cassandraReadBound(t, session, failedDelete, Options{})
 	require.False(t, deleted.Applied)
 	require.Equal(t, int64(modified), cassandraInt(t, deleted.Previous.Value, "last_modified"))
 	// Missing or incompatible previous-value decoders fail explicitly.
 	invalid, err := Prepare(context.Background(), session, Statement[[]Value, CASResult[Unit]]{CQL: deleteCQL, Params: DynamicParams, Rows: CASRows(NoRows)}, PrepareOptions{})
 	if err == nil {
-		bound := cassandraBound(t, invalid, []Value{TextValue(title), revValue, TimestampValue(modified + 10000)})
+		bound := cassandraBound(t, invalid, []Value{codecTestMust(TextValue(title)), revValue, TimestampValue(modified + 10000)})
 		rows, e := Run(context.Background(), session, bound, Options{})
 		if rows != nil {
 			defer rows.Close()
@@ -377,7 +377,7 @@ func TestCAS(t *testing.T) {
 		require.Equal(t, wantRows, count)
 	}
 	runBatch([]BatchItem{cassandraItem(t, insert)}, true, 1)
-	other := cassandraCASBound(t, session, insertCQL, []Value{TextValue(title + "_foo"), revValue, TimestampValue(modified)}, DynamicRows)
+	other := cassandraCASBound(t, session, insertCQL, []Value{codecTestMust(TextValue(title + "_foo")), revValue, TimestampValue(modified)}, DynamicRows)
 	runBatch([]BatchItem{cassandraItem(t, other)}, true, 1)
 	runBatch([]BatchItem{cassandraItem(t, other)}, false, 1)
 	var seed, conditional []BatchItem
@@ -385,8 +385,8 @@ func TestCAS(t *testing.T) {
 		r, e := ParseUUID(id)
 		require.NoError(t, e)
 		rv := cassandraValue(TimeUUIDValue(TimeUUID(r)))
-		seed = append(seed, cassandraItem(t, cassandraWriteBound(t, session, fmt.Sprintf("INSERT INTO %s(title,revid,last_modified) VALUES (?,?,?)", table), []Value{TextValue("_foo"), rv, TimestampValue(modified)}, PrepareOptions{})))
-		conditional = append(conditional, cassandraItem(t, cassandraCASBound(t, session, fmt.Sprintf("UPDATE %s SET last_modified=? WHERE title=? AND revid=? IF last_modified=?", table), []Value{TimestampValue(modified + 10000), TextValue("_foo"), rv, TimestampValue(modified + 20000)}, DynamicRows)))
+		seed = append(seed, cassandraItem(t, cassandraWriteBound(t, session, fmt.Sprintf("INSERT INTO %s(title,revid,last_modified) VALUES (?,?,?)", table), []Value{codecTestMust(TextValue("_foo")), rv, TimestampValue(modified)}, PrepareOptions{})))
+		conditional = append(conditional, cassandraItem(t, cassandraCASBound(t, session, fmt.Sprintf("UPDATE %s SET last_modified=? WHERE title=? AND revid=? IF last_modified=?", table), []Value{TimestampValue(modified + 10000), codecTestMust(TextValue("_foo")), rv, TimestampValue(modified + 20000)}, DynamicRows)))
 	}
 	cassandraBatch(t, session, LoggedBatch, seed, Options{})
 	runBatch(conditional, false, 2)
@@ -403,7 +403,7 @@ func TestCAS(t *testing.T) {
 	}
 	for _, batch := range []bool{false, true} {
 		badDecoder := CASRows(OneColumn(Bool))
-		bound := cassandraDynamicBound(t, session, fmt.Sprintf("UPDATE %s SET last_modified=? WHERE title=? AND revid=? IF last_modified=?", table), []Value{TimestampValue(modified + 10000), TextValue("_foo"), cassandraValue(TimeUUIDValue(TimeUUID(cassandraUUID("3e4ad2f1-73a4-11e5-9381-29463d90c3f0")))), TimestampValue(modified + 20000)}, PrepareOptions{})
+		bound := cassandraDynamicBound(t, session, fmt.Sprintf("UPDATE %s SET last_modified=? WHERE title=? AND revid=? IF last_modified=?", table), []Value{TimestampValue(modified + 10000), codecTestMust(TextValue("_foo")), cassandraValue(TimeUUIDValue(TimeUUID(cassandraUUID("3e4ad2f1-73a4-11e5-9381-29463d90c3f0")))), TimestampValue(modified + 20000)}, PrepareOptions{})
 		if batch {
 			page, e := RunBatch(context.Background(), session, LoggedBatch, []BatchItem{cassandraItem(t, bound)}, badDecoder, Options{})
 			if page != nil {
@@ -472,7 +472,7 @@ func TestMapScanCAS(t *testing.T) {
 	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(title varchar,revid timeuuid,last_modified timestamp,deleted boolean,PRIMARY KEY(title,revid))", table))
 	rev := NewTimeUUID()
 	modified := Timestamp(time.Now().UnixMilli())
-	bound := cassandraCASBound(t, session, fmt.Sprintf("INSERT INTO %s(title,revid,last_modified,deleted) VALUES(?,?,?,?) IF NOT EXISTS", table), []Value{TextValue("baz"), cassandraValue(TimeUUIDValue(TimeUUID(rev))), TimestampValue(modified), BoolValue(false)}, DynamicRows)
+	bound := cassandraCASBound(t, session, fmt.Sprintf("INSERT INTO %s(title,revid,last_modified,deleted) VALUES(?,?,?,?) IF NOT EXISTS", table), []Value{codecTestMust(TextValue("baz")), cassandraValue(TimeUUIDValue(TimeUUID(rev))), TimestampValue(modified), BoolValue(false)}, DynamicRows)
 	require.True(t, cassandraReadBound(t, session, bound, Options{}).Applied)
 	result := cassandraReadBound(t, session, bound, Options{})
 	require.False(t, result.Applied)
@@ -644,7 +644,7 @@ func TestMapScanWithRefMap(t *testing.T) {
 	require.Equal(t, "testtext", got.Text.String())
 	require.Equal(t, FullName{"John", "Doe"}, got.Name)
 	require.Equal(t, int32(100), got.Number)
-	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(testtext,testint) VALUES(?,?)", table), TextValue("null-int"), NullValue(IntValue(0).Type()))
+	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(testtext,testint) VALUES(?,?)", table), codecTestMust(TextValue("null-int")), NullValue(IntValue(0).Type()))
 	nullable := cassandraPrepared(t, session, Statement[string, Nullable[int32]]{CQL: fmt.Sprintf("SELECT testint FROM %s WHERE testtext=?", table), Params: OneParam(StringEncoder), Rows: OneColumn(NullableCodec(Int32))}, PrepareOptions{})
 	require.False(t, cassandraReadBound(t, session, cassandraBound(t, nullable, "null-int"), Options{}).Valid)
 }
@@ -655,8 +655,8 @@ func TestMapScan(t *testing.T) {
 	defer session.Close()
 	table := testTableName(t)
 	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(fullname text PRIMARY KEY,age int,address inet,data blob)", table))
-	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(fullname,age,address) VALUES(?,?,?)", table), TextValue("Grace Hopper"), IntValue(31), cassandraValue(InetValue(netip.MustParseAddr("10.0.0.1"))))
-	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(fullname,age,address,data) VALUES(?,?,?,?)", table), TextValue("Ada Lovelace"), IntValue(30), cassandraValue(InetValue(netip.MustParseAddr("10.0.0.2"))), BlobValue([]byte(`{"foo": "bar"}`)))
+	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(fullname,age,address) VALUES(?,?,?)", table), codecTestMust(TextValue("Grace Hopper")), IntValue(31), cassandraValue(InetValue(netip.MustParseAddr("10.0.0.1"))))
+	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(fullname,age,address,data) VALUES(?,?,?,?)", table), codecTestMust(TextValue("Ada Lovelace")), IntValue(30), cassandraValue(InetValue(netip.MustParseAddr("10.0.0.2"))), BlobValue([]byte(`{"foo": "bar"}`)))
 	rows := cassandraRows(t, session, cassandraUnprepared(t, "SELECT * FROM "+table, DynamicRows), Options{})
 	require.Len(t, rows, 2)
 	for i, want := range []struct {
@@ -700,7 +700,7 @@ func TestSliceMap(t *testing.T) {
 	require.NoError(t, err)
 	bigInt, ok := new(big.Int).SetString("830169365738487321165427203929228", 10)
 	require.True(t, ok)
-	expected := []ValueField{{"testuuid", cassandraValue(TimeUUIDValue(TimeUUID(NewTimeUUID())))}, {"testtimestamp", TimestampValue(Timestamp(time.Now().UnixMilli()))}, {"testvarchar", TextValue("Test VarChar")}, {"testbigint", BigIntValue(time.Now().Unix())}, {"testblob", BlobValue([]byte("test blob"))}, {"testbool", BoolValue(true)}, {"testfloat", FloatValue(4.564)}, {"testdouble", DoubleValue(4.815162342)}, {"testint", IntValue(2343)}, {"testdecimal", DecimalValue(Decimal{Unscaled: VarintFromBigInt(big.NewInt(100))})}, {"testlist", cassandraValue(ListValue(listType, []Value{TextValue("quux"), TextValue("foo"), TextValue("bar"), TextValue("baz"), TextValue("quux")}))}, {"testset", cassandraValue(SetValue(setType, []Value{IntValue(1), IntValue(2), IntValue(3), IntValue(4), IntValue(5), IntValue(6), IntValue(7), IntValue(8), IntValue(9)}))}, {"testmap", cassandraValue(MapValue(mapType, []ValueEntry{{TextValue("field1"), TextValue("val1")}, {TextValue("field2"), TextValue("val2")}, {TextValue("field3"), TextValue("val3")}}))}, {"testvarint", VarintValue(VarintFromBigInt(bigInt))}, {"testinet", cassandraValue(InetValue(netip.MustParseAddr("213.212.2.19")))}}
+	expected := []ValueField{{"testuuid", cassandraValue(TimeUUIDValue(TimeUUID(NewTimeUUID())))}, {"testtimestamp", TimestampValue(Timestamp(time.Now().UnixMilli()))}, {"testvarchar", codecTestMust(TextValue("Test VarChar"))}, {"testbigint", BigIntValue(time.Now().Unix())}, {"testblob", BlobValue([]byte("test blob"))}, {"testbool", BoolValue(true)}, {"testfloat", FloatValue(4.564)}, {"testdouble", DoubleValue(4.815162342)}, {"testint", IntValue(2343)}, {"testdecimal", DecimalValue(Decimal{Unscaled: VarintFromBigInt(big.NewInt(100))})}, {"testlist", cassandraValue(ListValue(listType, []Value{codecTestMust(TextValue("quux")), codecTestMust(TextValue("foo")), codecTestMust(TextValue("bar")), codecTestMust(TextValue("baz")), codecTestMust(TextValue("quux"))}))}, {"testset", cassandraValue(SetValue(setType, []Value{IntValue(1), IntValue(2), IntValue(3), IntValue(4), IntValue(5), IntValue(6), IntValue(7), IntValue(8), IntValue(9)}))}, {"testmap", cassandraValue(MapValue(mapType, []ValueEntry{{codecTestMust(TextValue("field1")), codecTestMust(TextValue("val1"))}, {codecTestMust(TextValue("field2")), codecTestMust(TextValue("val2"))}, {codecTestMust(TextValue("field3")), codecTestMust(TextValue("val3"))}}))}, {"testvarint", VarintValue(VarintFromBigInt(bigInt))}, {"testinet", cassandraValue(InetValue(netip.MustParseAddr("213.212.2.19")))}}
 	var values []Value
 	for _, field := range expected {
 		values = append(values, field.Value)
@@ -772,7 +772,7 @@ func TestScanWithNilArguments(t *testing.T) {
 	table := testTableName(t)
 	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(foo varchar,bar int,PRIMARY KEY(foo,bar))", table))
 	for i := int32(1); i <= 20; i++ {
-		cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(foo,bar) VALUES(?,?)", table), TextValue("squares"), IntValue(i*i))
+		cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(foo,bar) VALUES(?,?)", table), codecTestMust(TextValue("squares")), IntValue(i*i))
 	}
 	type result struct{ N int32 }
 	decoder := Row(IgnoreColumn[result]("foo"), Column("bar", Int32, func(r *result) *int32 { return &r.N }))
@@ -795,7 +795,7 @@ func TestScanCASWithNilArguments(t *testing.T) {
 	table := testTableName(t)
 	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(foo varchar,bar varchar,PRIMARY KEY(foo,bar))", table))
 	cql := fmt.Sprintf("INSERT INTO %s(foo,bar) VALUES(?,?) IF NOT EXISTS", table)
-	values := []Value{TextValue("baz"), TextValue("baz")}
+	values := []Value{codecTestMust(TextValue("baz")), codecTestMust(TextValue("baz"))}
 	ignored := Row(IgnoreColumn[Unit]("foo"), IgnoreColumn[Unit]("bar"))
 	require.True(t, cassandraReadBound(t, session, cassandraCASBound(t, session, cql, values, ignored), Options{}).Applied)
 	type result struct{ Text Text }
@@ -818,8 +818,8 @@ func TestRebindQueryInfo(t *testing.T) {
 	defer session.Close()
 	table := testTableName(t)
 	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,value text)", table))
-	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(id,value) VALUES(?,?)", table), IntValue(23), TextValue("quux"))
-	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(id,value) VALUES(?,?)", table), IntValue(24), TextValue("w00t"))
+	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(id,value) VALUES(?,?)", table), IntValue(23), codecTestMust(TextValue("quux")))
+	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(id,value) VALUES(?,?)", table), IntValue(24), codecTestMust(TextValue("w00t")))
 	prepared := cassandraPrepared(t, session, Statement[int32, Text]{CQL: fmt.Sprintf("SELECT value FROM %s WHERE id=?", table), Params: OneParam(Int32), Rows: OneColumn(TextCodec)}, PrepareOptions{})
 	first := cassandraBound(t, prepared, int32(23))
 	second := cassandraBound(t, prepared, int32(24))
@@ -835,7 +835,7 @@ func TestStaticQueryInfo(t *testing.T) {
 	defer session.Close()
 	table := testTableName(t)
 	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,value text)", table))
-	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(id,value) VALUES(?,?)", table), IntValue(113), TextValue("foo"))
+	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(id,value) VALUES(?,?)", table), IntValue(113), codecTestMust(TextValue("foo")))
 	prepared := cassandraPrepared(t, session, Statement[int32, DynamicRow]{CQL: fmt.Sprintf("SELECT id,value FROM %s WHERE id=?", table), Params: OneParam(Int32), Rows: DynamicRows}, PrepareOptions{})
 	require.Equal(t, 1, prepared.Parameters().Len())
 	bound := cassandraBound(t, prepared, int32(113))
@@ -1032,7 +1032,7 @@ func TestPrepare_ReprepareStatement(t *testing.T) {
 	id := append([]byte(nil), bound.request.prepared.hosts[conn.host.hostUUID()].id...)
 	bound.request.prepared.mu.RUnlock()
 	require.NotEqual(t, []byte("foobar"), id)
-	require.Equal(t, int64(7), cassandraInt(t, cassandraRead(t, session, "SELECT bar FROM "+table+" WHERE foo=?", TextValue("bar")), "bar"))
+	require.Equal(t, int64(7), cassandraInt(t, cassandraRead(t, session, "SELECT bar FROM "+table+" WHERE foo=?", codecTestMust(TextValue("bar"))), "bar"))
 }
 
 func TestPrepare_ReprepareBatch(t *testing.T) {
@@ -1046,7 +1046,7 @@ func TestPrepare_ReprepareBatch(t *testing.T) {
 	id := append([]byte(nil), bound.request.prepared.hosts[conn.host.hostUUID()].id...)
 	bound.request.prepared.mu.RUnlock()
 	require.NotEqual(t, []byte("foobar"), id)
-	require.Equal(t, int64(7), cassandraInt(t, cassandraRead(t, session, "SELECT bar FROM "+table+" WHERE foo=?", TextValue("bar")), "bar"))
+	require.Equal(t, int64(7), cassandraInt(t, cassandraRead(t, session, "SELECT bar FROM "+table+" WHERE foo=?", codecTestMust(TextValue("bar"))), "bar"))
 }
 
 func TestQueryInfo(t *testing.T) {
@@ -1110,11 +1110,11 @@ func TestPrepare_PreparedCacheKey(t *testing.T) {
 	for _, s := range []*Session{session, other} {
 		cassandraDDL(t, s, fmt.Sprintf("CREATE TABLE %s(id varchar PRIMARY KEY,field varchar)", table))
 	}
-	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(id,field) VALUES(?,?)", table), TextValue("key"), TextValue("one"))
-	cassandraWrite(t, other, fmt.Sprintf("INSERT INTO %s(id,field) VALUES(?,?)", table), TextValue("key"), TextValue("two"))
+	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(id,field) VALUES(?,?)", table), codecTestMust(TextValue("key")), codecTestMust(TextValue("one")))
+	cassandraWrite(t, other, fmt.Sprintf("INSERT INTO %s(id,field) VALUES(?,?)", table), codecTestMust(TextValue("key")), codecTestMust(TextValue("two")))
 	cql := fmt.Sprintf("SELECT field FROM %s WHERE id=?", table)
-	require.Equal(t, "one", cassandraText(t, cassandraRead(t, session, cql, TextValue("key")), "field"))
-	require.Equal(t, "two", cassandraText(t, cassandraRead(t, other, cql, TextValue("key")), "field"))
+	require.Equal(t, "one", cassandraText(t, cassandraRead(t, session, cql, codecTestMust(TextValue("key"))), "field"))
+	require.Equal(t, "two", cassandraText(t, cassandraRead(t, other, cql, codecTestMust(TextValue("key"))), "field"))
 }
 
 // TestMarshalFloat64Ptr tests to see that a pointer to a float64 is marshalled correctly.
@@ -1144,7 +1144,7 @@ func TestMarshalInet(t *testing.T) {
 	ipFromNet, ok := netip.AddrFromSlice(net.ParseIP("222.43.54.65"))
 	require.True(t, ok)
 	for _, want := range []netip.Addr{netip.MustParseAddr("123.34.45.56"), ipFromNet.Unmap()} {
-		cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(ip,name) VALUES(?,?)", table), cassandraValue(InetValue(want)), TextValue("Test IP"))
+		cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(ip,name) VALUES(?,?)", table), cassandraValue(InetValue(want)), codecTestMust(TextValue("Test IP")))
 		for i := 0; i < 2; i++ {
 			row := cassandraRead(t, session, "SELECT ip FROM "+table)
 			got, err := cassandraField(t, row, "ip").Inet()
@@ -1165,20 +1165,20 @@ func TestVarint(t *testing.T) {
 	insert := fmt.Sprintf("INSERT INTO %s(id,test) VALUES(?,?)", table)
 	selectCQL := "SELECT test FROM " + table
 	for _, want := range []int64{0, -1, int64(math.MaxInt32) + 1} {
-		cassandraWrite(t, session, insert, TextValue("id"), VarintValue(VarintFromBigInt(big.NewInt(want))))
+		cassandraWrite(t, session, insert, codecTestMust(TextValue("id")), VarintValue(VarintFromBigInt(big.NewInt(want))))
 		row := cassandraRead(t, session, selectCQL)
 		got, err := cassandraField(t, row, "test").Varint()
 		require.NoError(t, err)
 		require.Equal(t, want, got.BigInt().Int64())
 	}
-	cassandraWrite(t, session, insert, TextValue("id"), NullValue(VarintValue(Varint{}).Type()))
+	cassandraWrite(t, session, insert, codecTestMust(TextValue("id")), NullValue(VarintValue(Varint{}).Type()))
 	nullable := cassandraUnprepared(t, selectCQL, OneColumn(NullableCodec(VarintCodec)))
 	null := cassandraReadBound(t, session, nullable, Options{})
 	require.False(t, null.Valid)
 	require.Zero(t, null.Value.BigInt().Sign())
 	biggie, ok := new(big.Int).SetString("36893488147419103232", 10)
 	require.True(t, ok)
-	cassandraWrite(t, session, insert, TextValue("id"), VarintValue(VarintFromBigInt(biggie)))
+	cassandraWrite(t, session, insert, codecTestMust(TextValue("id")), VarintValue(VarintFromBigInt(biggie)))
 	got, err := cassandraField(t, cassandraRead(t, session, selectCQL), "test").Varint()
 	require.NoError(t, err)
 	require.Equal(t, biggie.String(), got.BigInt().String())
@@ -1723,7 +1723,7 @@ func TestTokenAwareConnPool(t *testing.T) {
 	for _, name := range []string{table, other} {
 		cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,data text)", name))
 	}
-	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(id,data) VALUES(?,?)", table), IntValue(42), TextValue("8 * 6 ="))
+	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(id,data) VALUES(?,?)", table), IntValue(42), codecTestMust(TextValue("8 * 6 =")))
 	bound := cassandraDynamicBound(t, session, fmt.Sprintf("SELECT data FROM %s WHERE id=?", table), []Value{IntValue(42)}, PrepareOptions{})
 	require.True(t, bound.Routing().Token.Set)
 	require.Equal(t, "8 * 6 =", cassandraText(t, cassandraReadBound(t, session, bound, Options{Consistency: Option[Consistency]{Value: One, Set: true}}), "data"))
@@ -1814,8 +1814,8 @@ func TestJSONSupport(t *testing.T) {
 	}
 	table := testTableName(t)
 	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id text PRIMARY KEY,age int,state text)", table))
-	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s JSON ?", table), TextValue(`{"id": "user123", "age": 42, "state": "TX"}`))
-	row := cassandraRead(t, session, fmt.Sprintf("SELECT id,age,state FROM %s WHERE id=?", table), TextValue("user123"))
+	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s JSON ?", table), codecTestMust(TextValue(`{"id": "user123", "age": 42, "state": "TX"}`)))
+	row := cassandraRead(t, session, fmt.Sprintf("SELECT id,age,state FROM %s WHERE id=?", table), codecTestMust(TextValue("user123")))
 	require.Equal(t, "user123", cassandraText(t, row, "id"))
 	require.Equal(t, int64(42), cassandraInt(t, row, "age"))
 	require.Equal(t, "TX", cassandraText(t, row, "state"))
@@ -1858,12 +1858,12 @@ func TestSchemaReset(t *testing.T) {
 	defer session.Close()
 	table := testTableName(t)
 	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id text PRIMARY KEY)", table))
-	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(id) VALUES(?)", table), TextValue("test"))
+	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(id) VALUES(?)", table), codecTestMust(TextValue("test")))
 	selectCQL := fmt.Sprintf("SELECT * FROM %s WHERE id=?", table)
-	before := cassandraDynamicBound(t, session, selectCQL, []Value{TextValue("test")}, PrepareOptions{})
+	before := cassandraDynamicBound(t, session, selectCQL, []Value{codecTestMust(TextValue("test"))}, PrepareOptions{})
 	require.Equal(t, "test", cassandraText(t, cassandraReadBound(t, session, before, Options{}), "id"))
 	cassandraDDL(t, session, fmt.Sprintf("ALTER TABLE %s ADD val text", table))
-	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(id,val) VALUES(?,?)", table), TextValue("test"), TextValue("test-val"))
+	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(id,val) VALUES(?,?)", table), codecTestMust(TextValue("test")), codecTestMust(TextValue("test-val")))
 	row := cassandraReadBound(t, session, before, Options{})
 	require.Equal(t, "test", cassandraText(t, row, "id"))
 	require.Equal(t, "test-val", cassandraText(t, row, "val"))
@@ -1903,8 +1903,8 @@ func TestUnsetCol(t *testing.T) {
 	table := testTableName(t)
 	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,my_int int,my_text text)", table))
 	cql := fmt.Sprintf("INSERT INTO %s(id,my_int,my_text) VALUES(?,?,?)", table)
-	cassandraWrite(t, session, cql, IntValue(1), IntValue(2), TextValue("3"))
-	cassandraWrite(t, session, cql, IntValue(1), UnsetDynamic(IntValue(0).Type()), UnsetDynamic(TextValue("").Type()))
+	cassandraWrite(t, session, cql, IntValue(1), IntValue(2), codecTestMust(TextValue("3")))
+	cassandraWrite(t, session, cql, IntValue(1), UnsetDynamic(IntValue(0).Type()), UnsetDynamic(codecTestMust(TextValue("")).Type()))
 	row := cassandraRead(t, session, "SELECT id,my_int,my_text FROM "+table)
 	require.Equal(t, int64(1), cassandraInt(t, row, "id"))
 	require.Equal(t, int64(2), cassandraInt(t, row, "my_int"))
@@ -1923,7 +1923,7 @@ func TestUnsetColBatch(t *testing.T) {
 	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,my_int int,my_text text)", table))
 	cql := fmt.Sprintf("INSERT INTO %s(id,my_int,my_text) VALUES(?,?,?)", table)
 	var items []BatchItem
-	for _, values := range [][]Value{{IntValue(1), IntValue(1), UnsetDynamic(TextValue("").Type())}, {IntValue(1), UnsetDynamic(IntValue(0).Type()), TextValue("")}, {IntValue(2), IntValue(2), UnsetDynamic(TextValue("").Type())}} {
+	for _, values := range [][]Value{{IntValue(1), IntValue(1), UnsetDynamic(codecTestMust(TextValue("")).Type())}, {IntValue(1), UnsetDynamic(IntValue(0).Type()), codecTestMust(TextValue(""))}, {IntValue(2), IntValue(2), UnsetDynamic(codecTestMust(TextValue("")).Type())}} {
 		items = append(items, cassandraItem(t, cassandraWriteBound(t, session, cql, values, PrepareOptions{})))
 	}
 	info := cassandraBatch(t, session, LoggedBatch, items, Options{})
@@ -1943,7 +1943,7 @@ func TestQuery_NamedValues(t *testing.T) {
 	table := testTableName(t)
 	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,value text)", table))
 	prepared := cassandraPrepared(t, session, Statement[[]ValueField, Unit]{CQL: fmt.Sprintf("INSERT INTO %s(id,value) VALUES(:id,:value)", table), Params: NamedDynamicParams, Rows: NoRows}, PrepareOptions{})
-	bound := cassandraBound(t, prepared, []ValueField{{Name: "value", Value: TextValue("i am a value")}, {Name: "id", Value: IntValue(1)}})
+	bound := cassandraBound(t, prepared, []ValueField{{Name: "value", Value: codecTestMust(TextValue("i am a value"))}, {Name: "id", Value: IntValue(1)}})
 	_, err := Exec(context.Background(), session, bound, Options{})
 	require.NoError(t, err)
 	read := cassandraPrepared(t, session, Statement[[]ValueField, Text]{CQL: fmt.Sprintf("SELECT value FROM %s WHERE id=:id", table), Params: NamedDynamicParams, Rows: OneColumn(TextCodec)}, PrepareOptions{})
@@ -1987,7 +1987,7 @@ func TestQuery_WithNowInSeconds(t *testing.T) {
 	}
 	table := testTableName(t)
 	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,val text)", table))
-	write := cassandraWriteBound(t, session, fmt.Sprintf("INSERT INTO %s(id,val) VALUES(?,?) USING TTL 20", table), []Value{IntValue(1), TextValue("val")}, PrepareOptions{})
+	write := cassandraWriteBound(t, session, fmt.Sprintf("INSERT INTO %s(id,val) VALUES(?,?) USING TTL 20", table), []Value{IntValue(1), codecTestMust(TextValue("val"))}, PrepareOptions{})
 	_, err := Exec(context.Background(), session, write, Options{NowInSeconds: Option[int32]{Value: 0, Set: true}})
 	require.NoError(t, err)
 	read := cassandraPrepared(t, session, Statement[int32, int32]{CQL: fmt.Sprintf("SELECT TTL(val) FROM %s WHERE id=?", table), Params: OneParam(Int32), Rows: OneColumn(Int32)}, PrepareOptions{})
@@ -2005,7 +2005,7 @@ func TestQuery_SetKeyspace(t *testing.T) {
 	cassandraDDL(t, session, fmt.Sprintf("CREATE KEYSPACE %s WITH replication={'class':'SimpleStrategy','replication_factor':'1'}", ks))
 	defer cassandraDDL(t, session, "DROP KEYSPACE "+ks)
 	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s.%s(id int PRIMARY KEY,value text)", ks, table))
-	write := cassandraWriteBound(t, session, fmt.Sprintf("INSERT INTO %s(id,value) VALUES(?,?)", table), []Value{IntValue(1), TextValue("text")}, PrepareOptions{Keyspace: ks})
+	write := cassandraWriteBound(t, session, fmt.Sprintf("INSERT INTO %s(id,value) VALUES(?,?)", table), []Value{IntValue(1), codecTestMust(TextValue("text"))}, PrepareOptions{Keyspace: ks})
 	_, err := Exec(context.Background(), session, write, Options{Keyspace: ks})
 	require.NoError(t, err)
 	prepared := cassandraPrepared(t, session, Statement[Unit, DynamicRow]{CQL: "SELECT * FROM " + table, Params: NoParams, Rows: DynamicRows}, PrepareOptions{Keyspace: ks})
@@ -2027,7 +2027,7 @@ func TestLargeSizeQuery(t *testing.T) {
 	table := testTableName(t)
 	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,text_col text)", table))
 	text := strings.Repeat("a", 500000)
-	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(id,text_col) VALUES(?,?)", table), IntValue(1), TextValue(text))
+	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(id,text_col) VALUES(?,?)", table), IntValue(1), codecTestMust(TextValue(text)))
 	require.Equal(t, text, cassandraText(t, cassandraRead(t, session, "SELECT text_col FROM "+table), "text_col"))
 }
 
@@ -2095,7 +2095,7 @@ func TestQueryCompressionNotWorthIt(t *testing.T) {
 	table := testTableName(t)
 	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,text_col text)", table))
 	text := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$%^&*()_+"
-	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(id,text_col) VALUES(?,?)", table), IntValue(1), TextValue(text))
+	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(id,text_col) VALUES(?,?)", table), IntValue(1), codecTestMust(TextValue(text)))
 	require.Equal(t, text, cassandraText(t, cassandraRead(t, session, fmt.Sprintf("SELECT text_col FROM %s WHERE id=?", table), IntValue(1)), "text_col"))
 }
 

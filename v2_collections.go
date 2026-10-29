@@ -27,10 +27,11 @@ type ValueIterator[T any] struct {
 	value        T
 	err          error
 	done         bool
+	clone        func(T) T
 }
 
-func newValueIterator[T any](count int, next func(int) (T, error)) *ValueIterator[T] {
-	return &ValueIterator[T]{count: count, next: next}
+func newValueIterator[T any](count int, next func(int) (T, error), clone func(T) T) *ValueIterator[T] {
+	return &ValueIterator[T]{count: count, next: next, clone: clone}
 }
 
 func (i *ValueIterator[T]) Next() bool {
@@ -81,14 +82,21 @@ func (i *ValueIterator[T]) Err() error {
 }
 
 // Collect explicitly materializes the iterator's remaining values. It returns
-// no partial slice on failure and does not detach borrowed values within it.
+// no partial slice on failure and recursively detaches every yielded value.
 func Collect[T any](i *ValueIterator[T]) ([]T, error) {
 	if i == nil {
 		return nil, typeValidation("iterator", "nil iterator")
 	}
+	if i.clone == nil && i.count > i.index {
+		return nil, typeValidation("iterator", "missing ownership-detaching clone")
+	}
 	values := make([]T, 0, max(0, i.count-i.index))
 	for i.Next() {
-		values = append(values, i.Value())
+		value := i.Value()
+		if i.clone != nil {
+			value = i.clone(value)
+		}
+		values = append(values, value)
 	}
 	if err := i.Err(); err != nil {
 		return nil, err
@@ -112,6 +120,11 @@ func (s Sequence[T]) Clone() Sequence[T] { s.body = s.body.Clone(); return s }
 func (s Sequence[T]) Iterator() *ValueIterator[T] {
 	r := ValueReader{body: s.body.chain, lease: s.body.lease}
 	i := &ValueIterator[T]{count: s.count, cursor: r.cursorValue()}
+	if s.decoder == nil {
+		i.err = typeValidation("iterator", "uninitialized sequence")
+		return i
+	}
+	i.clone = s.decoder.Clone
 	if err := s.body.checkAlive(); err != nil {
 		i.err = err
 		return i
@@ -150,7 +163,12 @@ func (m Mapping[K, V]) Len() int             { return m.count }
 func (m Mapping[K, V]) Clone() Mapping[K, V] { m.body = m.body.Clone(); return m }
 func (m Mapping[K, V]) Iterator() *ValueIterator[Entry[K, V]] {
 	r := ValueReader{body: m.body.chain, lease: m.body.lease}
-	i := &ValueIterator[Entry[K, V]]{count: m.count, cursor: r.cursorValue()}
+	if m.keyDecoder == nil || m.valueDecoder == nil {
+		return &ValueIterator[Entry[K, V]]{err: typeValidation("iterator", "uninitialized mapping")}
+	}
+	i := &ValueIterator[Entry[K, V]]{count: m.count, cursor: r.cursorValue(), clone: func(v Entry[K, V]) Entry[K, V] {
+		return Entry[K, V]{Key: m.keyDecoder.Clone(v.Key), Value: m.valueDecoder.Clone(v.Value)}
+	}}
 	if err := m.body.checkAlive(); err != nil {
 		i.err = err
 		return i
