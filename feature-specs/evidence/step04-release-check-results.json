@@ -1,0 +1,165 @@
+[
+  {
+    "name": "full-unit-race",
+    "command": [
+      "go",
+      "test",
+      "-race",
+      "-tags",
+      "unit",
+      "-count=1",
+      "-timeout=5m",
+      "./..."
+    ],
+    "environment": {},
+    "exit_code": 0,
+    "elapsed_seconds": 35.566320180892944,
+    "log": "feature-specs/evidence/step04-release-full-unit-race.log",
+    "source_snapshot": "feature-specs/evidence/step04-release-source.json"
+  },
+  {
+    "name": "focused-race",
+    "command": [
+      "go",
+      "test",
+      "-race",
+      "-tags",
+      "unit",
+      "-run",
+      "^(TestV2|TestTyped|TestStep04LateTableRefreshEntrant)",
+      "-count=2",
+      "-timeout=2m",
+      "."
+    ],
+    "environment": {},
+    "exit_code": 0,
+    "elapsed_seconds": 16.994195461273193,
+    "log": "feature-specs/evidence/step04-release-focused-race.log",
+    "source_snapshot": "feature-specs/evidence/step04-release-source.json"
+  },
+  {
+    "name": "vet",
+    "command": [
+      "go",
+      "vet",
+      "-tags",
+      "unit",
+      "./..."
+    ],
+    "environment": {},
+    "exit_code": 0,
+    "elapsed_seconds": 6.073960542678833,
+    "log": "feature-specs/evidence/step04-release-vet.log",
+    "source_snapshot": "feature-specs/evidence/step04-release-source.json"
+  },
+  {
+    "name": "integration-race-build",
+    "command": [
+      "go",
+      "test",
+      "-c",
+      "-race",
+      "-tags",
+      "integration gocql_debug",
+      "-o",
+      "/tmp/gocql-v2-step04.integration-race.test",
+      "."
+    ],
+    "environment": {},
+    "exit_code": 0,
+    "elapsed_seconds": 26.690057277679443,
+    "log": "feature-specs/evidence/step04-release-integration-race-build.log",
+    "source_snapshot": "feature-specs/evidence/step04-release-source.json"
+  },
+  {
+    "name": "ccm-build",
+    "command": [
+      "go",
+      "test",
+      "-c",
+      "-tags",
+      "ccm",
+      "-o",
+      "/tmp/gocql-v2-step04.ccm.test",
+      "./internal/ccm"
+    ],
+    "environment": {},
+    "exit_code": 0,
+    "elapsed_seconds": 0.03973245620727539,
+    "log": "feature-specs/evidence/step04-release-ccm-build.log",
+    "source_snapshot": "feature-specs/evidence/step04-release-source.json"
+  },
+  {
+    "name": "386-foundations",
+    "command": [
+      "go",
+      "test",
+      "-tags",
+      "unit",
+      "-count=1",
+      "./internal/streams",
+      "./internal/frame",
+      "./internal/segment"
+    ],
+    "environment": {
+      "GOARCH": "386"
+    },
+    "exit_code": 0,
+    "elapsed_seconds": 0.1304023265838623,
+    "log": "feature-specs/evidence/step04-release-386-foundations.log",
+    "source_snapshot": "feature-specs/evidence/step04-release-source.json"
+  },
+  {
+    "name": "perf",
+    "command": [
+      "go",
+      "test",
+      "-run",
+      "^$",
+      "-bench",
+      "^BenchmarkV2(ExclusiveTransport|ExclusiveRowsScaling|TLSWriteAmplification|TLSReceiveAmplification)$",
+      "-benchmem",
+      "-benchtime=100ms",
+      "-timeout=90s",
+      "."
+    ],
+    "environment": {},
+    "exit_code": 0,
+    "elapsed_seconds": 7.612222671508789,
+    "log": "feature-specs/evidence/step04-release-perf.log",
+    "source_snapshot": "feature-specs/evidence/step04-release-source.json"
+  },
+  {
+    "name": "fuzz",
+    "command": [
+      "go",
+      "test",
+      "-run",
+      "^$",
+      "-fuzz",
+      "^FuzzV2ExclusiveIncrementalFraming$",
+      "-fuzztime=5s",
+      "-parallel=2",
+      "."
+    ],
+    "environment": {
+      "GOMAXPROCS": "2"
+    },
+    "exit_code": 0,
+    "elapsed_seconds": 17.66102886199951,
+    "log": "feature-specs/evidence/step04-release-fuzz.log",
+    "source_snapshot": "feature-specs/evidence/step04-release-source.json"
+  },
+  {
+    "name": "spec-verifier",
+    "command": [
+      "python3",
+      "feature-specs/verify.py"
+    ],
+    "environment": {},
+    "exit_code": 0,
+    "elapsed_seconds": 0.09601855278015137,
+    "log": "feature-specs/evidence/step04-release-spec-verifier.log",
+    "source_snapshot": "feature-specs/evidence/step04-release-source.json"
+  }
+]

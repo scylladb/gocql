@@ -29,6 +29,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
+	"net/netip"
 	"strconv"
 	"strings"
 )
@@ -46,6 +47,10 @@ type HostDialer interface {
 
 // DialedHost contains information about established connection to a host.
 type DialedHost struct {
+	shardTarget    Option[uint32]
+	targetEpoch    uint64
+	sharderEpoch   uint64
+	validateTarget func(context.Context) error
 	// Conn used to communicate with the server.
 	Conn net.Conn
 
@@ -56,7 +61,7 @@ type DialedHost struct {
 
 // defaultHostDialer dials host in a default way.
 type defaultHostDialer struct {
-	dialer    Dialer
+	dialer    legacyDialer
 	tlsConfig *tls.Config
 }
 
@@ -87,11 +92,13 @@ func tlsConfigForAddr(tlsConfig *tls.Config, addr string) *tls.Config {
 	// the TLS config is safe to be reused by connections but it must not
 	// be modified after being used.
 	if !tlsConfig.InsecureSkipVerify && tlsConfig.ServerName == "" {
-		colonPos := strings.LastIndex(addr, ":")
-		if colonPos == -1 {
-			colonPos = len(addr)
+		hostname, _, err := net.SplitHostPort(addr)
+		if err != nil {
+			hostname = strings.Trim(addr, "[]")
 		}
-		hostname := addr[:colonPos]
+		if ip, err := netip.ParseAddr(hostname); err == nil {
+			hostname = ip.WithZone("").String()
+		}
 		// clone config to avoid modifying the shared one.
 		tlsConfig = tlsConfig.Clone()
 		tlsConfig.ServerName = hostname

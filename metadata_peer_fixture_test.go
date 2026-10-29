@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	frm "github.com/scylladb/gocql/v2/internal/frame"
 )
@@ -24,7 +25,8 @@ type incompletePeerDialer struct {
 	injected atomic.Int64
 }
 
-func (d *incompletePeerDialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
+func (d *incompletePeerDialer) DialContext(ctx context.Context, target DialTarget) (net.Conn, error) {
+	network, address := target.Network, target.Address
 	conn, err := d.Dialer.DialContext(ctx, network, address)
 	if err != nil {
 		return nil, err
@@ -168,3 +170,16 @@ func (c *incompletePeerConn) Read(p []byte) (int, error) {
 	c.pending = c.pending[n:]
 	return n, nil
 }
+
+func (c *incompletePeerConn) SetNoDelay(v bool) error   { return c.Conn.(*net.TCPConn).SetNoDelay(v) }
+func (c *incompletePeerConn) SetKeepAlive(v bool) error { return c.Conn.(*net.TCPConn).SetKeepAlive(v) }
+func (c *incompletePeerConn) SetKeepAlivePeriod(v time.Duration) error {
+	return c.Conn.(*net.TCPConn).SetKeepAlivePeriod(v)
+}
+func (c *incompletePeerConn) SetReadBuffer(v int) error {
+	return c.Conn.(*net.TCPConn).SetReadBuffer(v)
+}
+func (c *incompletePeerConn) SetWriteBuffer(v int) error {
+	return c.Conn.(*net.TCPConn).SetWriteBuffer(v)
+}
+func (c *incompletePeerConn) SetLinger(v int) error { return c.Conn.(*net.TCPConn).SetLinger(v) }

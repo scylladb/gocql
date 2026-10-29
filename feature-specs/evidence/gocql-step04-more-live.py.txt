@@ -1,0 +1,18 @@
+import subprocess,hashlib,json,pathlib,time
+root=pathlib.Path('/extra/scylladb/gocql')
+common=['go','test','-json','-race','-tags','integration gocql_debug','-count=1','-timeout=10m','-parallel=1','.']
+lanes=[('stable-tls',['-run','^(TestV2TransportPoolSizingLive|TestV2ExclusiveTransportLive|TestShardAwarePortIntegrationNoReconnections|TestShardAwarePortIntegrationMaliciousNAT|TestShardAwarePortIntegrationUnreachable|TestShardAwarePortIntegrationUnusedIfNotEnabled|TestUnixSockets)$'],['-distribution=scylla','-gocql.timeout=60s','-proto=4','-rf=3','-clusterSize=3','-autowait=2000ms','-compressor=no-compression','-gocql.cversion=2026.3.4','-cluster=127.0.20.1,127.0.20.2,127.0.20.3','-runssl','-cluster-socket=/extra/scylladb/gocql-api-test-cluster/cql.m']),('cassandra-v5-lz4-tls',['-run','^(TestV2TransportPoolSizingLive|TestV2ExclusiveTransportLive)$'],['-distribution=cassandra','-gocql.timeout=60s','-proto=5','-rf=3','-clusterSize=3','-autowait=2000ms','-compressor=lz4','-gocql.cversion=5.0.9','-cluster=127.0.21.1,127.0.21.2,127.0.21.3','-runssl']),('cassandra-v5-raw',['-run','^(TestV2ExclusiveTransportLive)$'],['-distribution=cassandra','-gocql.timeout=60s','-proto=5','-rf=3','-clusterSize=3','-autowait=2000ms','-compressor=no-compression','-gocql.cversion=5.0.9','-cluster=127.0.21.1,127.0.21.2,127.0.21.3'])]
+paths=subprocess.check_output(['git','ls-files','--cached','--others','--exclude-standard','*.go'],cwd=root,text=True).splitlines()
+snapshot={p:hashlib.sha256((root/p).read_bytes()).hexdigest() for p in paths if (root/p).is_file()}
+(root/'feature-specs/evidence/step04-live-more-source.json').write_text(json.dumps(snapshot,indent=2)+'\n')
+results=[]
+for name,selector,args in lanes:
+ cmd=common[:9]+selector+common[9:]+['-args']+args
+ log=root/f'feature-specs/evidence/step04-live-{name}.jsonl'
+ start=time.time()
+ with log.open('w') as out:p=subprocess.run(cmd,cwd=root,stdout=out,stderr=subprocess.STDOUT)
+ record={'name':name,'command':cmd,'exit_code':p.returncode,'elapsed_seconds':time.time()-start,'log':str(log.relative_to(root)),'source_snapshot':'feature-specs/evidence/step04-live-more-source.json'}
+ results.append(record)
+ (root/'feature-specs/evidence/step04-live-more-results.json').write_text(json.dumps(results,indent=2)+'\n')
+ print(json.dumps(record),flush=True)
+ if p.returncode:break

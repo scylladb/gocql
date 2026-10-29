@@ -138,7 +138,8 @@ func TestCloudConnection(t *testing.T) {
 	fixtureTLS := cluster.TLS
 	cluster, err = scyllacloud.NewCloudCluster(configPath, func(config *gocql.Config) {
 		// Forward connections directed to node domain to our test SNI proxy.
-		config.Dialer = dialerContextFunc(func(ctx context.Context, network, addr string) (net.Conn, error) {
+		config.Dialer = gocql.DialerFunc(func(ctx context.Context, target gocql.DialTarget) (net.Conn, error) {
+			network, addr := target.Network, target.Address
 			if strings.Contains(addr, cc.Datacenters[datacenterName].NodeDomain) {
 				addr = cc.Datacenters[datacenterName].Server
 			}
@@ -151,8 +152,8 @@ func TestCloudConnection(t *testing.T) {
 	// The test backend identifies itself by URI SAN. Preserve UUID-based SNI
 	// and client authentication while validating its CA and fixture URI.
 	cloudTLS := cluster.TLSForHost
-	cluster.TLSForHost = func(host gocql.HostSnapshot) (*tls.Config, error) {
-		config, err := cloudTLS(host)
+	cluster.TLSForHost = func(ctx context.Context, host gocql.HostSnapshot) (*tls.Config, error) {
+		config, err := cloudTLS(ctx, host)
 		if err != nil {
 			return nil, err
 		}

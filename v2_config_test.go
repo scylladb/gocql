@@ -64,7 +64,8 @@ func TestV2RuntimeDNSContextAndDialHost(t *testing.T) {
 	var calls atomic.Int32
 	client, server := net.Pipe()
 	defer server.Close()
-	config.DialHost = func(ctx context.Context, host HostSnapshot) (net.Conn, error) {
+	config.DialHost = func(ctx context.Context, target DialTarget) (net.Conn, error) {
+		host := target.Host
 		calls.Add(1)
 		if host.Datacenter != "dc" || host.Address != netip.MustParseAddrPort("127.0.0.1:9042") {
 			t.Fatalf("host snapshot %+v", host)

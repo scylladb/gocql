@@ -1010,10 +1010,14 @@ func (s *Session) executeTypedAttempt(ctx context.Context, conn *Conn, request *
 // pickTypedPool carries native shard targets through connection selection without
 // manufacturing an old query object or discarding table-specific tablet routing.
 func (s *Session) pickTypedPool(pool *hostConnPool, target Target, routing RoutingInfo) *Conn {
+	defer pool.requestTypedRepair()
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
 	if !pool.pickable() {
 		return nil
+	}
+	if picker, ok := pool.connPicker.(*typedConnPicker); ok {
+		return picker.pickTarget(target, routing)
 	}
 	picker, ok := pool.connPicker.(*scyllaConnPicker)
 	if !ok {

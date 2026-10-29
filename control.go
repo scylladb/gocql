@@ -174,7 +174,13 @@ func resolveInitialEndpoint(resolver DNSResolver, addr string, defaultPort int) 
 	}
 
 	// Look up host in DNS
-	ips, err := resolver.LookupIP(host)
+	var ips []net.IP
+	var setupDeadline time.Time
+	if typed, ok := resolver.(*v2DNSResolver); ok {
+		ips, setupDeadline, err = typed.lookupSetup(host)
+	} else {
+		ips, err = resolver.LookupIP(host)
+	}
 	if err != nil {
 		return nil, err
 	} else if len(ips) == 0 {
@@ -191,6 +197,7 @@ func resolveInitialEndpoint(resolver DNSResolver, addr string, defaultPort int) 
 				Port:           port,
 			}
 			hh := hb.Build()
+			hh.initialSetupDeadline = setupDeadline
 			hosts = append(hosts, &hh)
 		}
 	}
@@ -335,8 +342,12 @@ type connHost struct {
 }
 
 func (c *controlConn) setupConn(conn *Conn) error {
+	setupCtx, cancel := conn.openingContext(conn.ctx)
+	defer cancel()
+	stopAndJoin := conn.setupCancellation(setupCtx)
+	defer stopAndJoin()
 	// we need up-to-date host info for the filterHost call below
-	iter := conn.querySystem(context.TODO(), qrySystemLocal)
+	iter := conn.querySystem(setupCtx, qrySystemLocal)
 	host, err := hostInfoFromIter(iter, c.session.cfg.Port)
 	if err != nil {
 		return err
@@ -346,10 +357,17 @@ func (c *controlConn) setupConn(conn *Conn) error {
 		return fmt.Errorf("host was filtered: %v", host.ConnectAddress())
 	}
 
-	if err := c.registerEvents(conn); err != nil {
+	if err := c.registerEventsContext(setupCtx, conn); err != nil {
 		return fmt.Errorf("register events: %v", err)
 	}
 
+	if err := conn.validateOpeningTarget(setupCtx); err != nil {
+		return err
+	}
+	stopAndJoin()
+	if err := setupCtx.Err(); err != nil {
+		return err
+	}
 	ch := &connHost{
 		conn: conn,
 		host: host,
@@ -382,6 +400,11 @@ func (c *controlConn) setupConn(conn *Conn) error {
 }
 
 func (c *controlConn) registerEvents(conn *Conn) error {
+	ctx, cancel := conn.openingContext(conn.ctx)
+	defer cancel()
+	return c.registerEventsContext(ctx, conn)
+}
+func (c *controlConn) registerEventsContext(ctx context.Context, conn *Conn) error {
 	var events []string
 
 	if !c.session.cfg.Events.DisableTopologyEvents {
@@ -401,7 +424,7 @@ func (c *controlConn) registerEvents(conn *Conn) error {
 		return nil
 	}
 
-	framer, err := conn.exec(context.Background(),
+	framer, err := conn.exec(ctx,
 		&writeRegisterFrame{
 			events: events,
 		}, nil, conn.cfg.ConnectTimeout)

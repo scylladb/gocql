@@ -1,0 +1,190 @@
+--- FAIL: TestSimple (0.00s)
+    conn_test.go:140: 0x3: EOF (potentially executed: true)
+--- FAIL: TestCancel (0.00s)
+    conn_test.go:381: expected to get context cancel error: 'context canceled', got 'EOF (potentially executed: true)'
+--- FAIL: TestQueryRetry (0.00s)
+    conn_test.go:438: expected requests 0 to match query attempts 1
+--- FAIL: TestQueryMultinodeWithMetrics (0.00s)
+    conn_test.go:500: expected requests 0 to match query attempts 1
+--- FAIL: TestSpeculativeExecution (0.00s)
+    conn_test.go:573: The query failed with 'gocql: host pool does not have connections (potentially executed: true)'!
+    conn_test.go:586: error: none of 3 nodes was attempted 4 times!
+--- FAIL: TestQueryTimeout (0.00s)
+    conn_test.go:651: expected to get gocql: no response received from cassandra within timeout period for timeout got EOF (potentially executed: true)
+--- FAIL: TestQueryTimeoutClose (0.05s)
+    conn_test.go:745: expected to get gocql: connection closed waiting for response or an error wrapping it, got EOF (potentially executed: true)
+2026/10/29 17:15:31 logger.go:59: gocql: received response for stream which has no handler: header=[header version=[version=4 direction=RESP] flags=0x0 stream=0 op=RESULT length=4]
+--- FAIL: TestStream0 (0.00s)
+    conn_test.go:776: expected to get an error on stream 0
+--- FAIL: TestHeartBeatSurvivesUnexpectedOptionsResponse (10.00s)
+    conn_test.go:984: heartBeat never logged the unexpected OPTIONS reply
+2026/10/29 17:15:41 logger.go:60: warning: skipping result metadata can lead to unpredictable results if columns involved in a prepared query are altered, on connections that exchange no result metadata ID (protocol v4 or lower without the SCYLLA_USE_METADATA_ID extension).
+--- FAIL: TestSkipMetadata (0.00s)
+    conn_test.go:1793: expected no error got: EOF (potentially executed: true)
+--- FAIL: TestPrepareBatchMetadataMultipleKeyspaceTables (0.00s)
+    conn_test.go:1823: prepareStatement failed: EOF (potentially executed: true)
+--- FAIL: TestFrameHeaderObserver (0.00s)
+    conn_test.go:1878: EOF (potentially executed: true)
+--- FAIL: TestExecuteMetadataChangedWithoutColumns (0.00s)
+    conn_test.go:3099: unexpected error: EOF (potentially executed: true)
+--- FAIL: TestStartupCompressorNotSupported (0.00s)
+    conn_test.go:5175:
+            Error Trace:    /extra/scylladb/gocql/conn_test.go:5175
+            Error:          Received unexpected error:
+                            EOF (potentially executed: true)
+            Test:           TestStartupCompressorNotSupported
+2026/10/29 17:15:41 logger.go:59: gocql: 127.0.0.1:46411 does not support the requested "snappy" compression, continuing uncompressed (server offers: [lz4])
+2026/10/29 17:15:41 logger.go:59: gocql: 127.0.0.1:46411 does not support the requested "snappy" compression, continuing uncompressed (server offers: [lz4])
+--- FAIL: TestStartupCompressionIsDriverOwned (0.00s)
+    --- FAIL: TestStartupCompressionIsDriverOwned/configured_compressor_the_server_refuses (0.00s)
+        conn_test.go:5271:
+                Error Trace:    /extra/scylladb/gocql/conn_test.go:5271
+                Error:          Received unexpected error:
+                                EOF (potentially executed: true)
+                Test:           TestStartupCompressionIsDriverOwned/configured_compressor_the_server_refuses
+    --- FAIL: TestStartupCompressionIsDriverOwned/no_compressor_configured (0.00s)
+        conn_test.go:5271:
+                Error Trace:    /extra/scylladb/gocql/conn_test.go:5271
+                Error:          Received unexpected error:
+                                EOF (potentially executed: true)
+                Test:           TestStartupCompressionIsDriverOwned/no_compressor_configured
+--- FAIL: TestEffectiveInFlightMaxMatchesStreamGenerator (0.00s)
+    driver_config_test.go:194: effectiveInFlightMax(1) = 63, but the generator allows 1
+    driver_config_test.go:194: effectiveInFlightMax(64) = 63, but the generator allows 64
+    driver_config_test.go:194: effectiveInFlightMax(100) = 127, but the generator allows 100
+    driver_config_test.go:194: effectiveInFlightMax(512) = 511, but the generator allows 512
+    driver_config_test.go:194: effectiveInFlightMax(1000) = 1023, but the generator allows 1000
+    driver_config_test.go:194: effectiveInFlightMax(32766) = 32767, but the generator allows 32766
+--- FAIL: TestAsyncSessionInit (0.02s)
+    session_unit_test.go:138: unexpected error from void
+--- FAIL: TestRoutingKeyInfoFromPreparedPartitionKey (0.00s)
+    routing_key_unit_test.go:299: routingKeyInfo: EOF (potentially executed: true)
+--- FAIL: TestRoutingKeyInfoLWTWithExtension (0.00s)
+    routing_key_unit_test.go:745: INSERT INTO ks1.tbl1 (a, b, c) VALUES (?, ?, ?): EOF (potentially executed: true)
+--- FAIL: TestRoutingKeyInfoPerColumnTableSpec (0.00s)
+    routing_key_unit_test.go:336: EOF (potentially executed: true)
+--- FAIL: TestQueryGetRoutingKey (0.00s)
+    --- FAIL: TestQueryGetRoutingKey/Computed (0.00s)
+        routing_key_unit_test.go:586: EOF (potentially executed: true)
+--- FAIL: TestRoutingKeyInfoErrorsAreNotCached (0.00s)
+    --- FAIL: TestRoutingKeyInfoErrorsAreNotCached/CDCPartitionerLookupFails (0.00s)
+        routing_key_unit_test.go:406: call 1: the error was cached
+    --- FAIL: TestRoutingKeyInfoErrorsAreNotCached/PrepareFails (0.00s)
+        routing_key_unit_test.go:406: call 1: the error was cached
+--- FAIL: TestRoutingKeyInfoCacheKeyIncludesKeyspace (0.02s)
+    routing_key_unit_test.go:484: EOF (potentially executed: true)
+--- FAIL: TestRoutingKeyInfoConcurrentLookupsShareOnePrepare (0.02s)
+    routing_key_unit_test.go:461: lookup 0: EOF (potentially executed: true)
+--- FAIL: TestRoutingKeyInfoCDCPartitioner (0.00s)
+    routing_key_unit_test.go:431: EOF (potentially executed: true)
+--- FAIL: TestRoutingKeyInfoNoBoundColumns (0.00s)
+    routing_key_unit_test.go:352: call 0: routingKeyInfo = <nil>, EOF (potentially executed: true); want nil, nil
+--- FAIL: TestRoutingKeyInfoNotLWTWithoutExtension (0.00s)
+    routing_key_unit_test.go:644: EOF (potentially executed: true)
+--- FAIL: TestBatchGetRoutingKey (0.04s)
+    --- FAIL: TestBatchGetRoutingKey/FromFirstEntry (0.00s)
+        routing_key_unit_test.go:690: EOF (potentially executed: true)
+2026/10/29 17:15:47 logger.go:59: scylla: connection to shard-aware address 127.0.0.1:35053 resulted in wrong shard being assigned; please check that you are not behind a NAT or AddressTranslater which changes source ports; falling back to non-shard-aware port for 5m0s
+--- FAIL: TestBatchExecuteWireFormat (0.01s)
+    batch_exec_unit_test.go:184: Exec: EOF (potentially executed: true)
+--- FAIL: TestBatchExecuteServerError (0.01s)
+    batch_exec_unit_test.go:333: Exec error = EOF (potentially executed: true), want the server's invalid-request error
+--- FAIL: TestAuthHandshakePassword (0.01s)
+    auth_handshake_unit_test.go:147: query after authenticating: EOF (potentially executed: true)
+--- FAIL: TestBatchExecuteReprepareOnUnprepared (0.01s)
+    batch_exec_unit_test.go:355: Exec: EOF (potentially executed: true)
+2026/10/29 17:15:47 logger.go:60: gocql: WARNING - DisableStrictCertificateValidation is deprecated and will be removed in a future version. Please ensure your certificate chains are properly configured to work with strict validation.
+--- FAIL: TestRoutingKeyInfoFromTableMetadata (0.00s)
+    --- FAIL: TestRoutingKeyInfoFromTableMetadata/TableMetadataMissing (0.00s)
+        routing_key_unit_test.go:568: err = EOF (potentially executed: true), want ErrNotFound
+    --- FAIL: TestRoutingKeyInfoFromTableMetadata/PartitionKeyColumnNotBound (0.00s)
+        routing_key_unit_test.go:557: routingKeyInfo = <nil>, EOF (potentially executed: true); want nil, nil when a partition key column is not bound
+    --- FAIL: TestRoutingKeyInfoFromTableMetadata/PartitionKeyMappedByName (0.00s)
+        routing_key_unit_test.go:536: EOF (potentially executed: true)
+2026/10/29 17:15:48 logger.go:59: scylla: connection to shard-aware address 127.0.0.1:42095 resulted in wrong shard being assigned; please check that you are not behind a NAT or AddressTranslater which changes source ports; falling back to non-shard-aware port for 5m0s
+--- FAIL: TestMapExecuteBatchCAS (0.00s)
+    --- FAIL: TestMapExecuteBatchCAS/Applied (0.00s)
+        batch_exec_unit_test.go:520: MapExecuteBatchCAS: EOF (potentially executed: true)
+    --- FAIL: TestMapExecuteBatchCAS/NotAppliedReturnsExistingRow (0.00s)
+        batch_exec_unit_test.go:493: MapExecuteBatchCAS: EOF (potentially executed: true)
+    --- FAIL: TestMapExecuteBatchCAS/NoAppliedColumn (0.00s)
+        batch_exec_unit_test.go:543: MapExecuteBatchCAS: EOF (potentially executed: true)
+--- FAIL: TestExecuteBatchCAS (0.00s)
+    --- FAIL: TestExecuteBatchCAS/NotAppliedReturnsExistingRow (0.00s)
+        batch_exec_unit_test.go:433: ExecuteBatchCAS: EOF (potentially executed: true)
+    --- FAIL: TestExecuteBatchCAS/AppliedOnlyColumn (0.00s)
+        batch_exec_unit_test.go:453: ExecuteBatchCAS: EOF (potentially executed: true)
+--- FAIL: TestBatchExecuteLWT (0.00s)
+    --- FAIL: TestBatchExecuteLWT/OneConditional (0.00s)
+        batch_exec_unit_test.go:395: Exec: EOF (potentially executed: true)
+    --- FAIL: TestBatchExecuteLWT/NoConditional (0.00s)
+        batch_exec_unit_test.go:395: Exec: EOF (potentially executed: true)
+    --- FAIL: TestBatchExecuteLWT/InlineIsNeverMarked (0.00s)
+        batch_exec_unit_test.go:395: Exec: EOF (potentially executed: true)
+2026/10/29 17:15:48 logger.go:59: gocql: unable to dial control conn 127.0.0.1:1: dial tcp 127.0.0.1:1: connect: connection refused
+2026/10/29 17:15:48 logger.go:59: gocql: unable to dial control conn 127.0.0.1:1: dial tcp 127.0.0.1:1: connect: connection refused
+2026/10/29 17:15:48 logger.go:59: gocql: unable to dial control conn 127.0.0.1:1: dial tcp 127.0.0.1:1: connect: connection refused
+2026/10/29 17:15:48 logger.go:59: gocql: unable to dial control conn 127.0.0.1:1: dial tcp 127.0.0.1:1: connect: connection refused
+2026/10/29 17:15:48 logger.go:59: gocql: unable to dial control conn 127.0.0.1:1: dial tcp 127.0.0.1:1: connect: connection refused
+2026/10/29 17:15:48 logger.go:59: gocql: unable to dial control conn 127.0.0.1:1: dial tcp 127.0.0.1:1: connect: connection refused
+--- FAIL: TestBatchExecuteFailsBeforeSending (0.00s)
+    --- FAIL: TestBatchExecuteFailsBeforeSending/BindingValueCountMismatch (0.00s)
+        batch_exec_unit_test.go:297: Exec error = EOF (potentially executed: true)
+    --- FAIL: TestBatchExecuteFailsBeforeSending/BindingError (0.00s)
+        batch_exec_unit_test.go:297: Exec error = EOF (potentially executed: true)
+    --- FAIL: TestBatchExecuteFailsBeforeSending/ArgCountMismatch (0.00s)
+        batch_exec_unit_test.go:297: Exec error = EOF (potentially executed: true)
+    --- FAIL: TestBatchExecuteFailsBeforeSending/PrepareError (0.00s)
+        batch_exec_unit_test.go:297: Exec error = EOF (potentially executed: true)
+2026/10/29 17:15:48 logger.go:59: scylla: connection to shard-aware address 127.0.0.1:44521 resulted in wrong shard being assigned; please check that you are not behind a NAT or AddressTranslater which changes source ports; falling back to non-shard-aware port for 5m0s
+FAIL
+FAIL    github.com/scylladb/gocql/v2    26.880s
+ok      github.com/scylladb/gocql/v2/ci/release 1.011s
+ok      github.com/scylladb/gocql/v2/debounce   35.950s
+ok      github.com/scylladb/gocql/v2/dialer 1.023s
+ok      github.com/scylladb/gocql/v2/dialer/recorder    1.091s
+ok      github.com/scylladb/gocql/v2/dialer/replayer    1.079s
+ok      github.com/scylladb/gocql/v2/events 1.006s
+ok      github.com/scylladb/gocql/v2/hostpolicy 1.011s
+ok      github.com/scylladb/gocql/v2/internal/cqlproto  1.010s
+ok      github.com/scylladb/gocql/v2/internal/crc   1.010s
+?       github.com/scylladb/gocql/v2/internal/debug [no test files]
+ok      github.com/scylladb/gocql/v2/internal/eventbus  1.413s
+ok      github.com/scylladb/gocql/v2/internal/frame 1.010s
+ok      github.com/scylladb/gocql/v2/internal/lru   1.009s
+ok      github.com/scylladb/gocql/v2/internal/murmur    1.250s
+ok      github.com/scylladb/gocql/v2/internal/segment   1.060s
+ok      github.com/scylladb/gocql/v2/internal/streams   1.019s
+ok      github.com/scylladb/gocql/v2/internal/tests 1.009s
+?       github.com/scylladb/gocql/v2/internal/tests/mock    [no test files]
+ok      github.com/scylladb/gocql/v2/internal/tests/serialization   1.008s
+?       github.com/scylladb/gocql/v2/internal/tests/serialization/mod   [no test files]
+?       github.com/scylladb/gocql/v2/internal/tests/serialization/valcases  [no test files]
+ok      github.com/scylladb/gocql/v2/internal/wire  1.104s
+ok      github.com/scylladb/gocql/v2/internal/wirecompress  4.525s
+ok      github.com/scylladb/gocql/v2/scyllacloud    1.045s
+?       github.com/scylladb/gocql/v2/serialization/ascii    [no test files]
+?       github.com/scylladb/gocql/v2/serialization/bigint   [no test files]
+ok      github.com/scylladb/gocql/v2/serialization/blob 1.005s
+?       github.com/scylladb/gocql/v2/serialization/boolean  [no test files]
+?       github.com/scylladb/gocql/v2/serialization/counter  [no test files]
+?       github.com/scylladb/gocql/v2/serialization/cqlint   [no test files]
+?       github.com/scylladb/gocql/v2/serialization/cqltime  [no test files]
+?       github.com/scylladb/gocql/v2/serialization/date [no test files]
+?       github.com/scylladb/gocql/v2/serialization/decimal  [no test files]
+?       github.com/scylladb/gocql/v2/serialization/double   [no test files]
+ok      github.com/scylladb/gocql/v2/serialization/duration 1.007s
+?       github.com/scylladb/gocql/v2/serialization/float    [no test files]
+?       github.com/scylladb/gocql/v2/serialization/inet [no test files]
+?       github.com/scylladb/gocql/v2/serialization/smallint [no test files]
+?       github.com/scylladb/gocql/v2/serialization/text [no test files]
+?       github.com/scylladb/gocql/v2/serialization/timestamp    [no test files]
+?       github.com/scylladb/gocql/v2/serialization/timeuuid [no test files]
+?       github.com/scylladb/gocql/v2/serialization/tinyint  [no test files]
+?       github.com/scylladb/gocql/v2/serialization/uuid [no test files]
+?       github.com/scylladb/gocql/v2/serialization/varchar  [no test files]
+ok      github.com/scylladb/gocql/v2/serialization/varint   1.120s
+ok      github.com/scylladb/gocql/v2/tablets    2.512s
+ok      github.com/scylladb/gocql/v2/tests/affinity 1.148s
+ok      github.com/scylladb/gocql/v2/tests/serialization    1.596s
+FAIL

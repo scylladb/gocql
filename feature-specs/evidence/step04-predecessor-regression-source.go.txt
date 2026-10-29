@@ -1,0 +1,16 @@
+//go:build unit
+package gocql
+import "testing"
+func TestStep04LateTableRefreshEntrant(t *testing.T){
+ ctrl:=&schemaDataMock{knownKeyspaces:map[string][]tableInfo{"test_ks":{{name:"tbl_a",columns:[]columnInfo{{name:"id",kind:"partition_key",position:0}}}}}}
+ s:=newSchemaEventTestSessionWithMock(ctrl);defer s.Close();populateKeyspace(s,"test_ks","tbl_a")
+ s.metadataDescriber.invalidateTableSchema("test_ks","tbl_a")
+ snapshot,reloaded,err:=s.metadataDescriber.getKeyspaceInternal("test_ks");if err!=nil{t.Fatal(err)}
+ _,needed,err:=s.metadataDescriber.getTableFromSnapshot("test_ks","tbl_a",snapshot,reloaded);if err!=nil||!needed{t.Fatal(needed,err)}
+ // Caller A is now paused after deciding refreshNeeded. Caller B completes
+ // its entire flight before A can enter the singleflight group.
+ if err:=s.metadataDescriber.deduplicatedRefreshTable("test_ks","tbl_a");err!=nil{t.Fatal(err)}
+ ctrl.resetQueries()
+ if err:=s.metadataDescriber.deduplicatedRefreshTable("test_ks","tbl_a");err!=nil{t.Fatal(err)}
+ if got:=ctrl.getQueryCount();got!=0{t.Fatalf("stale entrant after completed flight reissued %d schema queries",got)}
+}

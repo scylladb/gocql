@@ -67,7 +67,7 @@ type ClusterConfig struct {
 	// Dialer will be used to establish all connections created for this Cluster.
 	// If not provided, a default dialer configured with ConnectTimeout will be used.
 	// Dialer is ignored if HostDialer is provided.
-	Dialer Dialer
+	Dialer legacyDialer
 	// ApplicationInfo reports application information to the server by inserting it into options of the STARTUP frame
 	ApplicationInfo ApplicationInfo
 	// DNSResolver Resolves DNS names to IP addresses
@@ -428,7 +428,7 @@ func (r SimpleDNSResolver) LookupIP(host string) ([]net.IP, error) {
 
 var defaultDnsResolver = NewSimpleDNSResolver(os.Getenv("GOCQL_HOST_LOOKUP_PREFER_V4") == "true")
 
-type Dialer interface {
+type legacyDialer interface {
 	DialContext(ctx context.Context, network, addr string) (net.Conn, error)
 }
 
@@ -650,8 +650,8 @@ func (cfg *ClusterConfig) Validate() error {
 		return errors.New("SocketKeepalive should be positive time.Duration or zero")
 	}
 
-	if cfg.MaxRequestsPerConn < 0 {
-		return errors.New("MaxRequestsPerConn should be positive number or zero")
+	if cfg.MaxRequestsPerConn < 0 || cfg.MaxRequestsPerConn > 32768 {
+		return errors.New("MaxRequestsPerConn must be 0..32768")
 	}
 
 	if cfg.NumConns < 0 {

@@ -1,0 +1,6 @@
+# github.com/scylladb/gocql/v2 [github.com/scylladb/gocql/v2.test]
+./connectionpool.go:291:32: undefined: context
+./connectionpool.go:292:32: undefined: context
+./connectionpool.go:304:29: undefined: context
+FAIL    github.com/scylladb/gocql/v2 [build failed]
+FAIL

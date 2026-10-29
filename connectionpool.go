@@ -25,6 +25,7 @@
 package gocql
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"net"
@@ -281,9 +282,17 @@ type hostConnPool struct {
 	keyspace   string
 	size       int
 	// protection for connPicker, closed, filling
-	mu      sync.RWMutex
-	closed  bool
-	filling bool
+	mu                            sync.RWMutex
+	closed                        bool
+	filling                       bool
+	state                         poolState
+	generation                    uint64
+	reconnectAttempt              int
+	started                       bool
+	reservationChanged            chan struct{}
+	repairScheduled, retryStopped bool
+	repairCtx                     context.Context
+	repairCancel                  context.CancelFunc
 }
 
 func (pool *hostConnPool) String() string {
@@ -295,7 +304,13 @@ func (pool *hostConnPool) String() string {
 }
 
 func newHostConnPool(session *Session, host *HostInfo, size int, keyspace string) *hostConnPool {
+	baseCtx := session.ctx
+	if baseCtx == nil {
+		baseCtx = context.Background()
+	}
+	repairCtx, repairCancel := context.WithCancel(baseCtx)
 	pool := &hostConnPool{
+		repairCtx: repairCtx, repairCancel: repairCancel,
 		session:    session,
 		host:       host,
 		size:       size,
@@ -313,6 +328,7 @@ func newHostConnPool(session *Session, host *HostInfo, size int, keyspace string
 
 // Pick a connection from this connection pool for the given query.
 func (pool *hostConnPool) Pick(token Token, qry ExecutableQuery) *Conn {
+	defer pool.requestTypedRepair()
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
 
@@ -327,6 +343,7 @@ func (pool *hostConnPool) Pick(token Token, qry ExecutableQuery) *Conn {
 // the Token interface boxing. Picks fall back to the boxed path when the
 // connPicker does not support raw-int64 picking.
 func (pool *hostConnPool) PickInt64(token int64, qry ExecutableQuery) *Conn {
+	defer pool.requestTypedRepair()
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
 
@@ -359,9 +376,12 @@ func (pool *hostConnPool) pickable() bool {
 	}
 
 	size, missing := pool.connPicker.Size()
-	if missing > 0 {
-		// try to fill the pool
-		go pool.fill_debounce()
+	if missing > 0 && !pool.retryStopped {
+		// Legacy callers retain their existing debounce path. Typed runtime repair
+		// is requested after releasing pool.mu and always uses ReconnectPolicy.
+		if _, typed := pool.session.v2PoolConfig(); !typed {
+			go pool.fill_debounce()
+		}
 
 		if size == 0 {
 			return false
@@ -397,6 +417,12 @@ func (pool *hostConnPool) Close() {
 		return
 	}
 	pool.closed = true
+	pool.state = poolClosed
+	pool.generation++
+	pool.signalReservationLocked()
+	if pool.repairCancel != nil {
+		pool.repairCancel()
+	}
 	pool.mu.Unlock()
 
 	pool.connPicker.Close()
@@ -404,6 +430,23 @@ func (pool *hostConnPool) Close() {
 
 // Fill the connection pool
 func (pool *hostConnPool) fill() {
+	if _, typed := pool.session.v2PoolConfig(); !typed {
+		pool.fillNow()
+		return
+	}
+	pool.mu.Lock()
+	initial := !pool.started && !pool.closed
+	if initial {
+		pool.started = true
+	}
+	pool.mu.Unlock()
+	if initial {
+		pool.fillNow()
+	} else {
+		pool.scheduleTypedRepair()
+	}
+}
+func (pool *hostConnPool) fillNow() {
 	pool.mu.RLock()
 	// avoid filling a closed pool, or concurrent filling
 	if pool.closed || pool.filling {
@@ -434,6 +477,9 @@ func (pool *hostConnPool) fill() {
 
 	// ok fill the pool
 	pool.filling = true
+	if startCount == 0 {
+		pool.state = poolInitializing
+	}
 
 	// allow others to access the pool while filling
 	pool.mu.Unlock()
@@ -500,15 +546,31 @@ func (pool *hostConnPool) fillingStopped(err error) {
 		// wait for some time to avoid back-to-back filling
 		// this provides some time between failed attempts
 		// to fill the pool for the host to recover
-		time.Sleep(time.Duration(rand.Int31n(100)+31) * time.Millisecond)
+		if _, typed := pool.session.v2PoolConfig(); !typed {
+			time.Sleep(time.Duration(rand.Int31n(100)+31) * time.Millisecond)
+		}
 	}
 
 	pool.mu.Lock()
 	pool.filling = false
-	count, _ := pool.connPicker.Size()
+	count, missing := pool.connPicker.Size()
+	if !pool.closed {
+		if count > 0 {
+			pool.state = poolReady
+			if err == nil && missing == 0 {
+				pool.reconnectAttempt = 0
+				pool.retryStopped = false
+			}
+		} else if err != nil {
+			pool.state = poolBroken
+		}
+	}
 	host := pool.host
 	port := pool.host.Port()
 	pool.mu.Unlock()
+	if missing > 0 {
+		pool.scheduleTypedRepair()
+	}
 
 	// if we errored and the size is now zero, make sure the host is marked as down
 	// see https://github.com/apache/cassandra-gocql-driver/issues/1614
@@ -524,38 +586,60 @@ func (pool *hostConnPool) fillingStopped(err error) {
 
 // connectMany creates new connections concurrent.
 func (pool *hostConnPool) connectMany(count int) error {
-	if count == 0 {
+	if count <= 0 {
 		return nil
 	}
-	var (
-		wg         sync.WaitGroup
-		mu         sync.Mutex
-		connectErr error
-	)
-	wg.Add(count)
-	for i := 0; i < count; i++ {
+	workers := min(count, 32)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var connectErr error
+	next := 0
+	wg.Add(workers)
+	for i := 0; i < workers; i++ {
 		go func() {
 			defer wg.Done()
-			err := pool.connect()
-			pool.logConnectErr(err)
-			if err != nil {
+			for {
 				mu.Lock()
-				connectErr = err
+				if connectErr != nil || next >= count {
+					mu.Unlock()
+					return
+				}
+				next++
 				mu.Unlock()
+				if pool.repairCtx.Err() != nil {
+					return
+				}
+				err := pool.connect()
+				pool.logConnectErr(err)
+				if err != nil {
+					mu.Lock()
+					if connectErr == nil {
+						connectErr = err
+					}
+					mu.Unlock()
+					return
+				}
 			}
 		}()
 	}
-	// wait for all connections are done
 	wg.Wait()
-
 	return connectErr
 }
 
 // create a new connection to the host and add it to the pool
 func (pool *hostConnPool) connect() (err error) {
 	pool.mu.Lock()
-	shardID, nrShards := pool.connPicker.NextShard()
+	picker := pool.connPicker
+	shardID, nrShards := picker.NextShard()
+	generation := pool.generation
+	var pickerGeneration uint64
+	if typed, ok := picker.(*typedConnPicker); ok {
+		pickerGeneration = typed.openingGeneration()
+	}
 	pool.mu.Unlock()
+	if typed, ok := picker.(*typedConnPicker); ok {
+		defer typed.dialFinished(shardID, nrShards)
+	}
 
 	// TODO: provide a more robust connection retry mechanism, we should also
 	// be able to detect hosts that come up by trying to connect to downed ones.
@@ -563,7 +647,7 @@ func (pool *hostConnPool) connect() (err error) {
 	var conn *Conn
 	reconnectionPolicy := pool.session.cfg.ReconnectionPolicy
 	for i := 0; i < reconnectionPolicy.GetMaxRetries(); i++ {
-		conn, err = pool.session.connectShard(pool.session.ctx, pool.host, pool, shardID, nrShards)
+		conn, err = pool.session.connectShard(pool.repairCtx, pool.host, pool, shardID, nrShards)
 		if err == nil {
 			break
 		}
@@ -591,75 +675,140 @@ func (pool *hostConnPool) connect() (err error) {
 			reconnectionPolicy)
 	}
 
+	openingCtx, openingCancel := conn.openingContext(pool.repairCtx)
+	defer openingCancel()
+	stopAndJoin := conn.setupCancellation(openingCtx)
+	defer stopAndJoin()
 	if pool.keyspace != "" {
-		// set the keyspace
-		if err = conn.UseKeyspace(pool.keyspace); err != nil {
+		if err = conn.useKeyspaceContext(openingCtx, pool.keyspace); err != nil {
 			conn.Close()
 			return err
 		}
 	}
+	if err = conn.validateOpeningTarget(openingCtx); err != nil {
+		conn.Close()
+		return err
+	}
+	// A setup cancellation callback cannot survive publication and later close a
+	// connection after it has begun serving unrelated requests.
+	stopAndJoin()
+	if err = openingCtx.Err(); err != nil {
+		conn.Close()
+		return err
+	}
 
 	// add the Conn to the pool
 	pool.mu.Lock()
-	if pool.closed {
+	if pool.closed || generation != pool.generation || openingCtx.Err() != nil {
 		pool.mu.Unlock()
 		conn.Close()
 		return nil
 	}
 
+	typed := conn.cfg != nil && conn.cfg.TypedConfig != nil
+	if typed {
+		pool.host.mu.Lock()
+		if conn.targetEpoch != pool.host.transportGeneration || conn.openingSharderEpoch != pool.host.sharderGeneration && (conn.scyllaSupported.nrShards != pool.host.scyllaFeatures.nrShards || conn.scyllaSupported.msbIgnore != pool.host.scyllaFeatures.msbIgnore) {
+			pool.host.mu.Unlock()
+			pool.mu.Unlock()
+			conn.Close()
+			return typeValidation("pool generation", "opening attempt belongs to superseded endpoint/route")
+		}
+	}
 	// lazily initialize the connPicker when we know the required type
-	pool.initConnPicker(conn)
-	if err := pool.connPicker.Put(conn); err != nil {
+	if err := pool.initConnPicker(conn); err != nil {
+		if typed {
+			pool.host.mu.Unlock()
+		}
 		pool.mu.Unlock()
+		conn.Close()
+		return err
+	}
+	put := func() error {
+		if p, ok := pool.connPicker.(*typedConnPicker); ok {
+			_, oldTyped := picker.(*typedConnPicker)
+			if !oldTyped {
+				return p.putInitial(conn)
+			}
+			return p.put(conn, pickerGeneration, true)
+		}
+		return pool.connPicker.Put(conn)
+	}
+	if err := put(); err != nil {
+		if typed {
+			pool.host.mu.Unlock()
+		}
+		pool.mu.Unlock()
+		if p, ok := pool.connPicker.(*typedConnPicker); ok {
+			closeConns(p.takeRetired()...)
+		}
 		conn.Close()
 		if debug.Enabled {
 			pool.logger.Printf("gocql: pool connection was not added to the pool: %w", err)
 		}
 		return nil
 	}
+	if typed {
+		if pool.host.scyllaFeatures != conn.scyllaSupported.ScyllaHostFeatures {
+			pool.host.setScyllaFeaturesLocked(conn.scyllaSupported.ScyllaHostFeatures)
+		}
+		pool.host.mu.Unlock()
+	}
+	pool.state = poolReady
+	pool.signalReservationLocked()
 	pool.mu.Unlock()
+	if p, ok := pool.connPicker.(*typedConnPicker); ok {
+		closeConns(p.takeRetired()...)
+	}
 	conn.finalizeConnection()
 
 	return nil
 }
 
-func (pool *hostConnPool) initConnPicker(conn *Conn) {
+func (pool *hostConnPool) initConnPicker(conn *Conn) error {
 	if _, ok := pool.connPicker.(nopConnPicker); !ok {
-		return
+		return nil
 	}
-
-	// Use the shard-aware picker only when the server enabled shard awareness (nrShards != 0).
+	if cfg, ok := pool.session.v2PoolConfig(); ok {
+		picker, err := newTypedConnPicker(conn, cfg.Pool)
+		if err != nil {
+			return err
+		}
+		pool.connPicker = picker
+		return nil
+	}
 	if conn.isScyllaConn() && conn.getScyllaSupported().nrShards != 0 {
 		pool.connPicker = newScyllaConnPicker(conn, pool.logger)
-		return
+		return nil
 	}
-
 	pool.connPicker = newDefaultConnPicker(pool.size)
+	return nil
 }
 
 // handle any error from a Conn
 func (pool *hostConnPool) HandleError(conn *Conn, err error, closed bool) {
 	if !closed {
-		// still an open connection, so continue using it
 		return
 	}
-
-	// TODO: track the number of errors per host and detect when a host is dead,
-	// then also have something which can detect when a host comes back.
 	pool.mu.Lock()
-	defer pool.mu.Unlock()
-
 	if pool.closed {
-		// pool closed
+		pool.mu.Unlock()
 		return
 	}
-
-	if debug.Enabled {
-		pool.logger.Printf("gocql: pool connection error %q: %v\n", conn.addr, err)
-	}
-
 	pool.connPicker.Remove(conn)
-	go pool.fill_debounce()
+	pool.signalReservationLocked()
+	if n, _ := pool.connPicker.Size(); n == 0 {
+		pool.state = poolBroken
+	}
+	pool.mu.Unlock()
+	if debug.Enabled {
+		pool.logger.Printf("gocql: pool connection error %q: %v", conn.addr, err)
+	}
+	if _, typed := pool.session.v2PoolConfig(); typed {
+		pool.scheduleTypedRepair()
+	} else {
+		go pool.fill_debounce()
+	}
 }
 
 func (pool *hostConnPool) GetConnectionCount() int {

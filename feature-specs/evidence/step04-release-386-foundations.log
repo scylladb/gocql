@@ -1,0 +1,3 @@
+ok      github.com/scylladb/gocql/v2/internal/streams   0.007s
+ok      github.com/scylladb/gocql/v2/internal/frame 0.001s
+ok      github.com/scylladb/gocql/v2/internal/segment   0.013s

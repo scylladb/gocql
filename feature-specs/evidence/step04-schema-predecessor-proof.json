@@ -1,0 +1,21 @@
+{
+  "predecessor": "30714309c6770a4651f49aff2c912c101d41908d",
+  "metadata_scylla_sha256": "f05d1bb9fb1d019d219ceb3cf9afc16d48c92330eca9dc1aa94a8dfcbea59aee",
+  "regression_source": "feature-specs/evidence/step04-predecessor-regression-source.go.txt",
+  "regression_source_sha256": "a029d281962b9a844851da50ae517e43f2ddc14e6733dbb78de1032127227821",
+  "command": [
+    "go",
+    "test",
+    "-race",
+    "-tags",
+    "unit",
+    "-run",
+    "^TestStep04LateTableRefreshEntrant$",
+    "-count=1",
+    "-timeout=30s",
+    "."
+  ],
+  "cwd": "/tmp/gocql-step04-predecessor-3071430",
+  "exit_code": 1,
+  "log": "feature-specs/evidence/step04-schema-window-predecessor.log"
+}

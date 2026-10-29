@@ -151,17 +151,16 @@ func TestBuildRequestsReport_InFlightMax(t *testing.T) {
 		want               int
 	}{
 		// The reported number is what a connection can actually have
-		// outstanding, which is one below the stream count: streams.NewLimited
-		// rounds up to a multiple of 64 and reserves stream 0.
-		{"unset falls back to the streams default, less the reserved stream", 0, 32767},
-		{"an exact multiple of 64 loses only the reserved stream", 512, 511},
-		{"a value that is not a multiple of 64 is rounded up", 100, 127},
-		{"a value above the CQL stream-id range is clamped", 40000, 32767},
-		// Rounding up to a multiple of 64 overflows to a negative within 63 of
-		// the integer limit, and Validate rejects only a negative
-		// MaxRequestsPerConn, so such a value does reach the report.
-		{"a value near the integer limit does not overflow", math.MaxInt, 32767},
-		{"the largest value that would overflow the rounding", math.MaxInt - 1, 32767},
+		// outstanding, capped only by the native ID range. Stream 0 is valid
+		// and the configured generator capacity is exact.
+		{"unset falls back to the streams default, with all nonnegative IDs", 0, 32768},
+		{"an exact configured capacity is reported", 512, 512},
+		{"a non-aligned configured capacity stays exact", 100, 100},
+		{"a value above the CQL stream-id range is clamped", 40000, 32768},
+		// Reporting remains defensive for invalid legacy snapshots even though
+		// connection setup rejects values outside the native ID range.
+		{"a value near the integer limit does not overflow", math.MaxInt, 32768},
+		{"an invalid huge snapshot remains clamped", math.MaxInt - 1, 32768},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -171,10 +170,9 @@ func TestBuildRequestsReport_InFlightMax(t *testing.T) {
 			if got.InFlight.Max != tt.want {
 				t.Errorf("in-flight.max = %d, want %d", got.InFlight.Max, tt.want)
 			}
-			// The schema constrains this field to 1..32767; nothing the user can
-			// configure may push the report outside it.
+			// The runtime cannot exceed the native nonnegative stream-ID capacity.
 			if got.InFlight.Max < 1 || got.InFlight.Max > maxReportableInFlight {
-				t.Errorf("in-flight.max = %d, outside the schema's 1..%d range", got.InFlight.Max, maxReportableInFlight)
+				t.Errorf("in-flight.max = %d, outside the native 1..%d capacity", got.InFlight.Max, maxReportableInFlight)
 			}
 		})
 	}

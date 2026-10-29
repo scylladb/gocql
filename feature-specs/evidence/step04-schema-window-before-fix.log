@@ -1,0 +1,5 @@
+--- FAIL: TestStep04LateTableRefreshEntrant (0.00s)
+    v2_transport_schema_regression_unit_test.go:15: stale entrant after completed flight reissued 4 schema queries
+FAIL
+FAIL    github.com/scylladb/gocql/v2    0.019s
+FAIL

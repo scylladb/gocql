@@ -1,0 +1,6 @@
+--- FAIL: TestV2OrphanBudgetUsesExactCapacity (0.00s)
+    v2_transport_pool_test.go:281: capacity 2 request 1 ended before write: attempting to use stream already in use: 0 -> 0 (potentially executed: false)
+    v2_transport_pool_test.go:267: EOF
+FAIL
+FAIL    github.com/scylladb/gocql/v2    0.043s
+FAIL

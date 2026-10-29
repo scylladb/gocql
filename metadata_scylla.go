@@ -697,6 +697,14 @@ func (s *metadataDescriber) deduplicatedRefreshKeyspace(keyspaceName string) err
 func (s *metadataDescriber) deduplicatedRefreshTable(keyspaceName, tableName string) error {
 	key := keyspaceName + "\x00" + tableName
 	_, err, _ := s.tableGroup.Do(key, func() (any, error) {
+		// A caller may arrive here after deciding to refresh an old snapshot but
+		// after another flight already published and completed. Recheck the current
+		// immutable snapshot inside this flight before issuing network queries.
+		if current, ok := s.metadata.keyspaceMetadata.getKeyspace(keyspaceName); ok {
+			if _, present := current.Tables[tableName]; present {
+				return nil, nil
+			}
+		}
 		return nil, s.refreshTableSchema(keyspaceName, tableName)
 	})
 	return err

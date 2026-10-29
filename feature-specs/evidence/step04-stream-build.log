@@ -1,0 +1,6 @@
+# github.com/scylladb/gocql/v2 [github.com/scylladb/gocql/v2.test]
+./v2_transport_tablet.go:29:26: child.cursor.Uint64 undefined (type typedMetadataCursor has no field or method Uint64)
+./v2_transport_tablet.go:46:24: id.cursor.Uint64 undefined (type typedMetadataCursor has no field or method Uint64)
+./v2_transport_tablet.go:48:24: id.cursor.Uint64 undefined (type typedMetadataCursor has no field or method Uint64)
+FAIL    github.com/scylladb/gocql/v2 [build failed]
+FAIL

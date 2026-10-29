@@ -1,0 +1,87 @@
+panic: test timed out after 45s
+    running tests:
+        TestV2OrphanBudgetUsesExactCapacity (45s)
+
+goroutine 63 [running]:
+testing.(*M).startAlarm.func1()
+    /usr/local/go/src/testing/testing.go:2682 +0x605
+created by time.goFunc
+    /usr/local/go/src/time/sleep.go:215 +0x45
+
+goroutine 1 [chan receive]:
+testing.(*T).Run(0xc000200380, {0x1187706, 0x23}, 0x11a6848)
+    /usr/local/go/src/testing/testing.go:2005 +0x9fe
+testing.runTests.func1(0xc000200380)
+    /usr/local/go/src/testing/testing.go:2477 +0x86
+testing.tRunner(0xc000200380, 0xc00004fa78)
+    /usr/local/go/src/testing/testing.go:1934 +0x21d
+testing.runTests(0xc000010378, {0x182dda0, 0xaf, 0xaf}, {0x107dee0?, 0xc0000fc0c0?, 0x1830d60?})
+    /usr/local/go/src/testing/testing.go:2475 +0x96d
+testing.(*M).Run(0xc0000f68c0)
+    /usr/local/go/src/testing/testing.go:2337 +0xed5
+github.com/scylladb/gocql/v2.TestMain(0xc0000f68c0)
+    /extra/scylladb/gocql/common_test.go:76 +0xdd
+main.main()
+    _testmain.go:461 +0x172
+
+goroutine 69 [sync.WaitGroup.Wait]:
+sync.runtime_SemacquireWaitGroup(0xc000012970?, 0x0?)
+    /usr/local/go/src/runtime/sema.go:114 +0x2e
+sync.(*WaitGroup).Wait(0xc000012970)
+    /usr/local/go/src/sync/waitgroup.go:206 +0xd3
+github.com/scylladb/gocql/v2.TestV2OrphanBudgetUsesExactCapacity(0xc0002d0c40)
+    /extra/scylladb/gocql/v2_transport_pool_test.go:294 +0x81f
+testing.tRunner(0xc0002d0c40, 0x11a6848)
+    /usr/local/go/src/testing/testing.go:1934 +0x21d
+created by testing.(*T).Run in goroutine 1
+    /usr/local/go/src/testing/testing.go:1997 +0x9d3
+
+goroutine 90 [select]:
+net.(*pipe).read(0xc000294300, {0xc00026c597, 0x9, 0x4b5f25?})
+    /usr/local/go/src/net/pipe.go:159 +0x24d
+net.(*pipe).Read(0xc000294300, {0xc00026c597, 0x9, 0x9})
+    /usr/local/go/src/net/pipe.go:142 +0x49
+io.ReadAtLeast({0x728a7abc00d0, 0xc000294300}, {0xc00026c597, 0x9, 0x9}, 0x9)
+    /usr/local/go/src/io/io.go:335 +0xcb
+io.ReadFull(...)
+    /usr/local/go/src/io/io.go:354
+github.com/scylladb/gocql/v2.typedTestReadRequest(0xc0002d0c40, 0xc00029a308, {0x12f2db8, 0xc000294300})
+    /extra/scylladb/gocql/v2_transport_test.go:101 +0x125
+github.com/scylladb/gocql/v2.TestV2OrphanBudgetUsesExactCapacity.func1()
+    /extra/scylladb/gocql/v2_transport_pool_test.go:269 +0x77
+created by github.com/scylladb/gocql/v2.TestV2OrphanBudgetUsesExactCapacity in goroutine 69
+    /extra/scylladb/gocql/v2_transport_pool_test.go:267 +0x80b
+
+goroutine 89 [select]:
+net.(*pipe).read(0xc000294380, {0xc00029a5c4, 0x1, 0x0?})
+    /usr/local/go/src/net/pipe.go:159 +0x24d
+net.(*pipe).Read(0xc000294380, {0xc00029a5c4, 0x1, 0x9})
+    /usr/local/go/src/net/pipe.go:142 +0x49
+io.ReadAtLeast({0x728a7abc00d0, 0xc000294380}, {0xc00029a5c4, 0x1, 0x9}, 0x1)
+    /usr/local/go/src/io/io.go:335 +0xcb
+io.ReadFull(...)
+    /usr/local/go/src/io/io.go:354
+github.com/scylladb/gocql/v2.(*connReader).Read(0xc000342240, {0xc00029a5c4, 0x1, 0x9})
+    /extra/scylladb/gocql/conn.go:1801 +0x185
+github.com/scylladb/gocql/v2.(*headerReader).Read(0xc00029a448, {0xc00029a5c4, 0x9, 0x9})
+    /extra/scylladb/gocql/conn.go:1502 +0x96
+io.ReadAtLeast({0x12dbda0, 0xc00029a448}, {0xc00029a5c4, 0x9, 0x9}, 0x9)
+    /usr/local/go/src/io/io.go:335 +0xcb
+io.ReadFull(...)
+    /usr/local/go/src/io/io.go:354
+github.com/scylladb/gocql/v2.readHeader({0x12dbda0, 0xc00029a448}, {0xc00029a5c4, 0xc0000c79b0?, 0x9})
+    /extra/scylladb/gocql/frame.go:343 +0x9c
+github.com/scylladb/gocql/v2.(*Conn).readFrameHeader(0xc00029a308, {0x728a7abc0130, 0xc000342240})
+    /extra/scylladb/gocql/conn.go:1227 +0x25c
+github.com/scylladb/gocql/v2.(*Conn).processFrameSource(0xc00029a308, {0x12ebdb0, 0xc0002600f0}, {0x0, {{{0x0, 0x0, 0x0}}, {0x0, 0x0, 0x0}, ...}, ...})
+    /extra/scylladb/gocql/conn.go:1245 +0x20e
+github.com/scylladb/gocql/v2.(*Conn).processFrame(...)
+    /extra/scylladb/gocql/conn.go:1199
+github.com/scylladb/gocql/v2.(*Conn).recv(0xc00029a308, {0x12ebdb0, 0xc0002600f0}, 0x1)
+    /extra/scylladb/gocql/conn.go:1141 +0x188
+github.com/scylladb/gocql/v2.(*Conn).serve(0xc00029a308, {0x12ebdb0, 0xc0002600f0})
+    /extra/scylladb/gocql/conn.go:1027 +0x73
+created by github.com/scylladb/gocql/v2.TestV2OrphanBudgetUsesExactCapacity in goroutine 69
+    /extra/scylladb/gocql/v2_transport_pool_test.go:264 +0x657
+FAIL    github.com/scylladb/gocql/v2    45.055s
+FAIL

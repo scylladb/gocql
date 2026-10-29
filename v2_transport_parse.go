@@ -14,7 +14,7 @@ import (
 // Its sticky error makes every metadata read checked, without panic/recover.
 type typedParser struct {
 	maxDepth   int
-	cursor     *wire.Cursor
+	cursor     typedMetadataCursor
 	err        error
 	proto      byte
 	metadataID bool
@@ -59,6 +59,14 @@ func (p *typedParser) take(n int64) wire.Chain {
 	return v
 }
 func (p *typedParser) copy(n int) []byte {
+	if v, ok := p.cursor.(*streamMetadataCursor); ok {
+		if p.err != nil {
+			return nil
+		}
+		b, err := v.copy(int64(n))
+		p.check(err)
+		return b
+	}
 	c := p.take(int64(n))
 	if p.err != nil {
 		return nil
@@ -70,6 +78,18 @@ func (p *typedParser) copy(n int) []byte {
 }
 func (p *typedParser) str() string {
 	n := int(p.u16())
+	if v, ok := p.cursor.(*streamMetadataCursor); ok {
+		if p.err != nil {
+			return ""
+		}
+		p.reserveAllocation(int64(n))
+		if p.err != nil {
+			return ""
+		}
+		b, err := v.copy(int64(n))
+		p.check(err)
+		return string(b)
+	}
 	c := p.take(int64(n))
 	if p.err != nil {
 		return ""
@@ -105,6 +125,10 @@ func (p *typedParser) strings() []string {
 		p.check(fmt.Errorf("gocql: invalid string list count"))
 		return nil
 	}
+	p.reserveAllocation(int64(n) * 16)
+	if p.err != nil {
+		return nil
+	}
 	out := make([]string, n)
 	for i := range out {
 		out[i] = p.str()
@@ -120,6 +144,7 @@ func (p *typedParser) dataType(depth int) DataType {
 		p.check(fmt.Errorf("gocql: metadata nesting exceeds %d", maxDepth))
 		return DataType{}
 	}
+	p.reserveAllocation(160)
 	kind := Type(p.u16())
 	if p.err != nil {
 		return DataType{}
@@ -144,6 +169,10 @@ func (p *typedParser) dataType(depth int) DataType {
 			p.check(fmt.Errorf("gocql: truncated tuple metadata"))
 			return DataType{}
 		}
+		p.reserveAllocation(int64(n) * 8)
+		if p.err != nil {
+			return DataType{}
+		}
 		fields := make([]DataType, n)
 		for i := range fields {
 			fields[i] = p.dataType(depth + 1)
@@ -154,6 +183,10 @@ func (p *typedParser) dataType(depth int) DataType {
 		n := int(p.u16())
 		if int64(n) > p.cursor.Remaining()/4 {
 			p.check(fmt.Errorf("gocql: truncated UDT metadata"))
+			return DataType{}
+		}
+		p.reserveAllocation(int64(n) * 96)
+		if p.err != nil {
 			return DataType{}
 		}
 		fields := make([]ColumnSpec, n)
@@ -197,10 +230,55 @@ func (p *typedParser) dataType(depth int) DataType {
 	return result
 }
 
+type typedMetadataCursor interface {
+	Uint8() (uint8, error)
+	Uint16() (uint16, error)
+	Uint32() (uint32, error)
+	Uint64() (uint64, error)
+	Take(int64) (wire.Chain, error)
+	Remaining() int64
+	RequireEnd() error
+}
+type parsedMetadata struct {
+	pagingState, metadataID          []byte
+	pkIndexes                        []int
+	lwt, noMetadata, metadataChanged bool
+}
+
+func (p *typedParser) reserveAllocation(n int64) {
+	if v, ok := p.cursor.(*streamMetadataCursor); ok {
+		p.check(v.reserve(n))
+	}
+}
 func (p *typedParser) metadata(page *responsePage, prepared bool, flagLWT int) (Columns, int) {
-	flags := p.i32()
+	m := parsedMetadata{}
+	cols, count := p.metadataFields(&m, prepared, flagLWT)
+	if prepared {
+		page.pkIndexes = m.pkIndexes
+		page.lwt = m.lwt
+	} else {
+		page.noMetadata = m.noMetadata
+		page.metadataChanged = m.metadataChanged
+	}
+	if m.pagingState != nil {
+		page.pagingState = m.pagingState
+	}
+	if m.metadataID != nil {
+		page.metadataID = m.metadataID
+	}
+	return cols, count
+}
+func (p *typedParser) metadataFields(page *parsedMetadata, prepared bool, flagLWT int) (Columns, int) {
+	flags := uint32(p.i32())
+	allowed := uint32(frm.FlagGlobalTableSpec | frm.FlagHasMorePages | frm.FlagNoMetaData | frm.FlagMetaDataChanged)
+	if prepared {
+		allowed |= uint32(flagLWT)
+	}
+	if flags & ^allowed != 0 {
+		p.check(fmt.Errorf("gocql: unknown metadata flags 0x%x", flags))
+	}
 	if !prepared {
-		page.metadataChanged = flags&frm.FlagMetaDataChanged != 0
+		page.metadataChanged = flags&uint32(frm.FlagMetaDataChanged) != 0
 	}
 	count := p.i32()
 	if count < 0 {
@@ -218,19 +296,19 @@ func (p *typedParser) metadata(page *responsePage, prepared bool, flagLWT int) (
 		}
 	}
 	if prepared {
-		page.lwt = flagLWT != 0 && flags&flagLWT != 0
+		page.lwt = flagLWT != 0 && flags&uint32(flagLWT) != 0
 	}
-	if flags&frm.FlagHasMorePages != 0 {
+	if flags&uint32(frm.FlagHasMorePages) != 0 {
 		page.pagingState = p.bytes()
 		if page.pagingState == nil {
 			p.check(fmt.Errorf("gocql: continuation flag has null paging state"))
 		}
 	}
-	if !prepared && p.metadataID && flags&frm.FlagMetaDataChanged != 0 {
+	if !prepared && p.metadataID && flags&uint32(frm.FlagMetaDataChanged) != 0 {
 		page.metadataID = p.shortBytes()
 	}
-	if flags&frm.FlagNoMetaData != 0 {
-		if !prepared && flags&frm.FlagMetaDataChanged != 0 {
+	if flags&uint32(frm.FlagNoMetaData) != 0 {
+		if !prepared && flags&uint32(frm.FlagMetaDataChanged) != 0 {
 			p.check(fmt.Errorf("gocql: metadata changed response omitted its column metadata"))
 		}
 		if !prepared {
@@ -238,13 +316,17 @@ func (p *typedParser) metadata(page *responsePage, prepared bool, flagLWT int) (
 		}
 		return Columns{}, count
 	}
-	global := flags&frm.FlagGlobalTableSpec != 0
+	global := flags&uint32(frm.FlagGlobalTableSpec) != 0
 	keyspace, table := "", ""
 	if global {
 		keyspace, table = p.str(), p.str()
 	}
 	if int64(count) > p.cursor.Remaining()/4 {
 		p.check(fmt.Errorf("gocql: column count %d exceeds remaining metadata", count))
+		return Columns{}, 0
+	}
+	p.reserveAllocation(int64(count) * 96)
+	if p.err != nil {
 		return Columns{}, 0
 	}
 	columns := make([]ColumnSpec, count)
@@ -360,6 +442,10 @@ func (c *Conn) parseTypedResponse(head frm.FrameHeader, body wire.Chain, owner *
 
 func (p *typedParser) errorMap() ErrorMap {
 	n := p.count(4)
+	p.reserveAllocation(int64(n) * 64)
+	if p.err != nil {
+		return nil
+	}
 	out := make(ErrorMap, n)
 	for i := 0; i < n; i++ {
 		length := int(p.u8())

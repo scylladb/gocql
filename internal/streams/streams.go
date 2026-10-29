@@ -47,21 +47,16 @@ func New() *IDGenerator {
 }
 
 func NewLimited(maxStreams int) *IDGenerator {
-	// Round up maxStreams to a nearest
-	// multiple of 64
-	maxStreams = ((maxStreams + 63) / 64) * 64
-
-	buckets := maxStreams / 64
-	// reserve stream 0
-	streams := make([]uint64, buckets)
-	streams[0] = 1 << 63
-
-	return &IDGenerator{
-		NumStreams: maxStreams,
-		streams:    streams,
-		numBuckets: uint32(buckets),
-		offset:     uint32(buckets) - 1,
+	if maxStreams < 1 || maxStreams > 32768 {
+		panic("streams: capacity must be 1..32768")
 	}
+	buckets := (maxStreams + 63) / 64
+	bits := make([]uint64, buckets)
+	// Bits outside the exact configured capacity are permanently unavailable.
+	if used := maxStreams % 64; used != 0 {
+		bits[buckets-1] = (uint64(1) << uint(64-used)) - 1
+	}
+	return &IDGenerator{NumStreams: maxStreams, streams: bits, numBuckets: uint32(buckets), offset: uint32(buckets) - 1}
 }
 
 func streamFromBucket(bucket, streamInBucket int) int {
@@ -147,7 +142,6 @@ func (s *IDGenerator) Clear(stream int) (inuse bool) {
 		}
 	}
 
-	// TODO: make this account for 0 stream being reserved
 	if atomic.AddInt32(&s.inuseStreams, -1) < 0 {
 		// TODO(zariel): remove this
 		panic("negative streams inuse")
@@ -157,7 +151,7 @@ func (s *IDGenerator) Clear(stream int) (inuse bool) {
 }
 
 func (s *IDGenerator) Available() int {
-	return s.NumStreams - int(atomic.LoadInt32(&s.inuseStreams)) - 1
+	return s.NumStreams - int(atomic.LoadInt32(&s.inuseStreams))
 }
 
 func (s *IDGenerator) InUse() int {

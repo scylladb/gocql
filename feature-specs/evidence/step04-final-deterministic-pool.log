@@ -1,0 +1,5 @@
+--- FAIL: TestV2ExclusiveAcquisitionDrainsAcceptedWriterOwnership (0.01s)
+    v2_transport_pool_test.go:646: io: read/write on closed pipe
+FAIL
+FAIL    github.com/scylladb/gocql/v2    0.061s
+FAIL

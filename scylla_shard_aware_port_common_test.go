@@ -16,7 +16,7 @@ import (
 // Each fixture supplies its own construction path; integration fixtures use
 // Config/Connect while unit servers can disable their unsupported control path.
 type shardAwareTestCluster struct {
-	connect func(context.Context, Dialer, bool) (*Session, error)
+	connect func(context.Context, legacyDialer, bool) (*Session, error)
 	useTLS  bool
 	port    uint16
 }
@@ -84,16 +84,13 @@ func testShardAwarePortNoReconnections(t *testing.T, makeCluster makeClusterTest
 					continue
 				}
 
-				// Verify that we have a sharded connPicker
-				shardedPicker, ok := hostPool.connPicker.(*scyllaConnPicker)
-				if !ok {
+				// Both typed and migration pickers expose actual shard membership.
+				numberOfShards := hostPool.GetShardCount()
+				if numberOfShards <= 0 {
 					t.Errorf("not a sharded connection")
 					continue
 				}
 
-				numberOfShards := shardedPicker.nrShards
-
-				// Verify that there were no duplicate connections to the same shard
 				// Make sure that we didn't connect to the same shard twice
 				// There should be numberOfShards-1 connections to the new port
 				events := dialer.connectionEvents(host.ConnectAddress().String())
@@ -268,7 +265,7 @@ func checkIfPoolsStoppedFilling(sess *Session) bool {
 		hostPool, _ := sess.pool.getPool(host)
 
 		hostPool.mu.Lock()
-		isFilling := hostPool.filling
+		isFilling := hostPool.filling || hostPool.repairScheduled
 		hostPool.mu.Unlock()
 
 		if isFilling {

@@ -1,0 +1,7 @@
+# github.com/scylladb/gocql/v2 [github.com/scylladb/gocql/v2.test]
+./conn.go:535:3: duplicate field name openingSharderEpoch in struct literal
+./connectionpool.go:698:97: pool.host.sharderGeneration undefined (type *HostInfo has no field or method sharderGeneration)
+./host_source.go:588:5: h.sharderGeneration undefined (type *HostInfo has no field or method sharderGeneration)
+./host_source.go:886:11: h.sharderGeneration undefined (type *HostInfo has no field or method sharderGeneration)
+FAIL    github.com/scylladb/gocql/v2 [build failed]
+FAIL

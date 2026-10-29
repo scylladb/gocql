@@ -1,0 +1,10 @@
+# github.com/scylladb/gocql/v2 [github.com/scylladb/gocql/v2.test]
+./v2_stream_transport.go:519:18: cannot use make(chan connEvent, 32) (value of type chan connEvent) as chan frame value in assignment
+./v2_stream_transport.go:525:12: e.release undefined (type frame has no field or method release)
+./v2_stream_transport.go:526:10: e.release undefined (type frame has no field or method release)
+./v2_stream_transport.go:538:30: e.value undefined (type frame has no field or method value)
+./v2_stream_transport.go:539:11: e.release undefined (type frame has no field or method release)
+./v2_stream_transport.go:540:9: e.release undefined (type frame has no field or method release)
+./v2_stream_transport.go:547:23: cannot use connEvent{…} (value of struct type connEvent) as frame value in send: connEvent does not implement frame (missing method Header)
+FAIL    github.com/scylladb/gocql/v2 [build failed]
+FAIL

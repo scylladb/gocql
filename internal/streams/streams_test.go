@@ -41,7 +41,7 @@ func TestUsesAllStreams(t *testing.T) {
 
 	got := make(map[int]struct{})
 
-	for i := 1; i < streams.NumStreams; i++ {
+	for i := 0; i < streams.NumStreams; i++ {
 		stream, ok := streams.GetStream()
 		if !ok {
 			t.Fatalf("unable to get stream %d", i)
@@ -59,13 +59,13 @@ func TestUsesAllStreams(t *testing.T) {
 		}
 	}
 
-	for i := 1; i < streams.NumStreams; i++ {
+	for i := 0; i < streams.NumStreams; i++ {
 		if _, ok := got[i]; !ok {
 			t.Errorf("did not use stream %d", i)
 		}
 	}
-	if _, ok := got[0]; ok {
-		t.Fatal("expected to not use stream 0")
+	if _, ok := got[0]; !ok {
+		t.Fatal("stream 0 was not used")
 	}
 
 	for i, bucket := range streams.streams {

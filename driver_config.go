@@ -512,33 +512,17 @@ func buildRequestsReport(cfg *ClusterConfig) requestsReport {
 // uses when MaxRequestsPerConn is left unset.
 const defaultMaxStreams = 32768
 
-// maxReportableInFlight is the most requests a connection can ever have
-// outstanding: the CQL v3+ stream id is a signed 16-bit value, so ids 0..32767
-// are all there are. The schema constrains this field only to a positive
-// integer, so this bound is the protocol's, not the schema's.
-const maxReportableInFlight = 32767
+// Native nonnegative signed-short stream IDs 0..32767 give 32768 slots. The
+// reporting schema accepts any positive integer and can represent this exactly.
+const maxReportableInFlight = 32768
 
-// effectiveInFlightMax reports how many requests can actually be in flight on
-// one connection, which is not the configured limit. streams.NewLimited rounds
-// the limit up to a multiple of 64 and then reserves stream 0, so a configured
-// 100 really permits 127, and the 32768-stream default really permits 32767.
-//
-// A configured value above the stream-id range is clamped: gocql does not
-// reject it, but the protocol cannot address those streams, so reporting it
-// verbatim would claim a concurrency the connection can never reach.
+// effectiveInFlightMax reports the exact configured runtime capacity.
 func effectiveInFlightMax(configured int) int {
 	if configured <= 0 {
 		configured = defaultMaxStreams
 	}
-	if configured >= maxReportableInFlight {
-		// Short-circuit before the rounding below, which overflows to a
-		// negative within 63 of the integer limit. The result is capped here
-		// anyway, so nothing is lost. ClusterConfig.Validate rejects only a
-		// negative MaxRequestsPerConn, so a value that large does reach this.
-		return maxReportableInFlight
-	}
-	inFlight := (((configured + 63) / 64) * 64) - 1
-	return min(inFlight, maxReportableInFlight)
+	// Invalid legacy inputs above the native range cannot increase capacity.
+	return min(configured, maxReportableInFlight)
 }
 
 // shardAwareEnabled reports whether the client can reach ScyllaDB's

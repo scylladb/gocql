@@ -1,0 +1,4 @@
+# github.com/scylladb/gocql/v2
+v2_transport_pool_test.go:307:49: expected statement, found ')'
+FAIL    github.com/scylladb/gocql/v2 [setup failed]
+FAIL

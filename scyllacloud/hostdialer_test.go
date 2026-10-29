@@ -13,6 +13,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"math/big"
 	"net"
 	"net/http/httptest"
@@ -37,7 +38,7 @@ func TestHostSNIDialer_InvalidConnectionConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	dialer := &gocql.ScyllaShardAwareDialer{Dialer: net.Dialer{}}
+	dialer := gocql.DefaultDialer{}
 
 	tt := []struct {
 		name          string
@@ -116,7 +117,7 @@ func TestHostSNIDialer_InvalidConnectionConfig(t *testing.T) {
 			t.Parallel()
 
 			hostDialer := NewSniHostDialer(tc.connConfig, dialer)
-			_, err := hostDialer.TLSForHost(tc.hostInfo)
+			_, err := hostDialer.TLSForHost(context.Background(), tc.hostInfo)
 			if !tests.ErrEqual(err, tc.expectedError) {
 				t.Errorf("expected error to be %#v, got %#v", tc.expectedError, err)
 			}
@@ -188,15 +189,15 @@ func TestHostSNIDialer_ServerNameIdentifiers(t *testing.T) {
 			server.StartTLS()
 			defer server.Close()
 
-			dialer := &gocql.ScyllaShardAwareDialer{Dialer: net.Dialer{}}
+			dialer := gocql.DefaultDialer{}
 			connConfig := tc.connConfig(server.Listener.Addr().String(), serverCertPem, clientCertPem, clientKeyPem)
 			hostDialer := NewSniHostDialer(connConfig, dialer)
 
-			tlsConfig, err := hostDialer.TLSForHost(tc.hostInfo)
+			tlsConfig, err := hostDialer.TLSForHost(context.Background(), tc.hostInfo)
 			if err != nil {
 				t.Fatal(err)
 			}
-			conn, err := hostDialer.DialHost(ctx, tc.hostInfo)
+			conn, err := hostDialer.DialHost(ctx, gocql.DialTarget{Host: tc.hostInfo})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -431,7 +432,7 @@ func TestHostSNIDialer_DatacenterRouting(t *testing.T) {
 				server.Close()
 				return client, nil
 			})
-			conn, err := NewSniHostDialer(config, dialer).DialHost(ctx, tc.host)
+			conn, err := NewSniHostDialer(config, dialer).DialHost(ctx, gocql.DialTarget{Host: tc.host})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -445,6 +446,137 @@ func TestHostSNIDialer_DatacenterRouting(t *testing.T) {
 
 type cloudTestDialer func(context.Context, string, string) (net.Conn, error)
 
-func (d cloudTestDialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
+func (d cloudTestDialer) DialContext(ctx context.Context, target gocql.DialTarget) (net.Conn, error) {
+	network, address := target.Network, target.Address
 	return d(ctx, network, address)
+}
+
+type cloudTCPControlsRecorder struct {
+	*net.TCPConn
+	noDelay, keepalive []bool
+}
+
+func (c *cloudTCPControlsRecorder) SetNoDelay(v bool) error {
+	c.noDelay = append(c.noDelay, v)
+	return c.TCPConn.SetNoDelay(v)
+}
+func (c *cloudTCPControlsRecorder) SetKeepAlive(v bool) error {
+	c.keepalive = append(c.keepalive, v)
+	return c.TCPConn.SetKeepAlive(v)
+}
+func TestHostSNIDialerSOCKSPreservesRawSocketControls(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	done := make(chan error, 1)
+	go func() {
+		c, err := listener.Accept()
+		if err != nil {
+			done <- err
+			return
+		}
+		defer c.Close()
+		c.SetDeadline(time.Now().Add(5 * time.Second))
+		var greeting [2]byte
+		if _, err = io.ReadFull(c, greeting[:]); err != nil {
+			done <- err
+			return
+		}
+		if greeting[0] != 5 {
+			done <- fmt.Errorf("wrong SOCKS version")
+			return
+		}
+		if _, err = io.CopyN(io.Discard, c, int64(greeting[1])); err != nil {
+			done <- err
+			return
+		}
+		if _, err = c.Write([]byte{5, 0}); err != nil {
+			done <- err
+			return
+		}
+		var request [4]byte
+		if _, err = io.ReadFull(c, request[:]); err != nil {
+			done <- err
+			return
+		}
+		var addressBytes int64
+		switch request[3] {
+		case 1:
+			addressBytes = 4
+		case 4:
+			addressBytes = 16
+		case 3:
+			var n [1]byte
+			if _, err = io.ReadFull(c, n[:]); err != nil {
+				done <- err
+				return
+			}
+			addressBytes = int64(n[0])
+		default:
+			done <- fmt.Errorf("unsupported SOCKS address type")
+			return
+		}
+		if _, err = io.CopyN(io.Discard, c, addressBytes+2); err != nil {
+			done <- err
+			return
+		}
+		if _, err = c.Write([]byte{5, 0, 0, 1, 127, 0, 0, 1, 0x23, 0x52}); err != nil {
+			done <- err
+			return
+		}
+		var end [1]byte
+		_, err = c.Read(end[:])
+		if err == io.EOF {
+			err = nil
+		}
+		done <- err
+	}()
+	captured := make(chan *cloudTCPControlsRecorder, 1)
+	dialer := gocql.DialerFunc(func(ctx context.Context, target gocql.DialTarget) (net.Conn, error) {
+		raw, err := (gocql.DefaultDialer{}).DialContext(ctx, target)
+		if err != nil {
+			return nil, err
+		}
+		record := &cloudTCPControlsRecorder{TCPConn: raw.(*net.TCPConn)}
+		captured <- record
+		return record, nil
+	})
+	config := &ConnectionConfig{Datacenters: map[string]*Datacenter{"local": {Server: "cql.example:9042", ProxyURL: "socks5://" + listener.Addr().String()}}, Contexts: map[string]*Context{"default": {DatacenterName: "local"}}, CurrentContext: "default"}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	conn, err := NewSniHostDialer(config, dialer).DialHost(ctx, gocql.DialTarget{Network: "tcp", Address: "cql.example:9042"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	controls, ok := conn.(interface {
+		SetNoDelay(bool) error
+		SetKeepAlive(bool) error
+		SetReadBuffer(int) error
+	})
+	if !ok {
+		conn.Close()
+		t.Fatal("SOCKS wrapper hid raw socket controls")
+	}
+	if err = controls.SetNoDelay(false); err != nil {
+		conn.Close()
+		t.Fatal(err)
+	}
+	if err = controls.SetKeepAlive(false); err != nil {
+		conn.Close()
+		t.Fatal(err)
+	}
+	if err = controls.SetReadBuffer(4096); err != nil {
+		conn.Close()
+		t.Fatal(err)
+	}
+	raw := <-captured
+	if len(raw.noDelay) != 1 || raw.noDelay[0] || len(raw.keepalive) != 1 || raw.keepalive[0] {
+		t.Fatal("SOCKS settings not forwarded to real raw socket")
+	}
+	conn.Close()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
 }

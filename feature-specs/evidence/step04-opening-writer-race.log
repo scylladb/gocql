@@ -1,0 +1,63 @@
+==================
+WARNING: DATA RACE
+Read at 0x00c00018058b by goroutine 14:
+  testing.(*common).destination()
+      /usr/local/go/src/testing/testing.go:1049 +0x96
+  testing.(*outputWriter).Write()
+      /usr/local/go/src/testing/testing.go:1133 +0x9a
+  testing.(*common).log()
+      /usr/local/go/src/testing/testing.go:1040 +0x164
+  testing.(*common).Error()
+      /usr/local/go/src/testing/testing.go:1197 +0x76
+  github.com/scylladb/gocql/v2.step04WriteResponse()
+      /extra/scylladb/gocql/v2_transport_pool_test.go:57 +0x1ca
+  github.com/scylladb/gocql/v2.TestV2ExclusiveAcquisitionDrainsAcceptedWriterOwnership.func3()
+      /extra/scylladb/gocql/v2_transport_pool_test.go:646 +0x6e4
+
+Previous write at 0x00c00018058b by goroutine 9:
+  testing.tRunner.func1()
+      /usr/local/go/src/testing/testing.go:1921 +0x904
+  runtime.deferreturn()
+      /usr/local/go/src/runtime/panic.go:589 +0x5d
+  testing.(*T).Run.gowrap1()
+      /usr/local/go/src/testing/testing.go:1997 +0x44
+
+Goroutine 14 (running) created at:
+  github.com/scylladb/gocql/v2.TestV2ExclusiveAcquisitionDrainsAcceptedWriterOwnership()
+      /extra/scylladb/gocql/v2_transport_pool_test.go:644 +0xdfc
+  testing.tRunner()
+      /usr/local/go/src/testing/testing.go:1934 +0x21c
+  testing.(*T).Run.gowrap1()
+      /usr/local/go/src/testing/testing.go:1997 +0x44
+
+Goroutine 9 (running) created at:
+  testing.(*T).Run()
+      /usr/local/go/src/testing/testing.go:1997 +0x9d2
+  testing.runTests.func1()
+      /usr/local/go/src/testing/testing.go:2477 +0x85
+  testing.tRunner()
+      /usr/local/go/src/testing/testing.go:1934 +0x21c
+  testing.runTests()
+      /usr/local/go/src/testing/testing.go:2475 +0x96c
+  testing.(*M).Run()
+      /usr/local/go/src/testing/testing.go:2337 +0xed4
+  github.com/scylladb/gocql/v2.TestMain()
+      /extra/scylladb/gocql/common_test.go:76 +0xdc
+  main.main()
+      _testmain.go:507 +0x171
+==================
+panic: Fail in goroutine after TestV2ExclusiveAcquisitionDrainsAcceptedWriterOwnership has completed
+
+goroutine 19 [running]:
+testing.(*common).Fail(0xc000180540)
+    /usr/local/go/src/testing/testing.go:960 +0x179
+testing.(*common).Error(0xc000180540, {0xc0001b5eb0, 0x1, 0x1})
+    /usr/local/go/src/testing/testing.go:1198 +0x85
+github.com/scylladb/gocql/v2.step04WriteResponse(0xc000180540, 0xc00044e008, {0x1329898, 0xc0001cf100}, 0x0, {0xc00020c000, 0x26, 0x40})
+    /extra/scylladb/gocql/v2_transport_pool_test.go:57 +0x1cb
+github.com/scylladb/gocql/v2.TestV2ExclusiveAcquisitionDrainsAcceptedWriterOwnership.func3()
+    /extra/scylladb/gocql/v2_transport_pool_test.go:646 +0x6e5
+created by github.com/scylladb/gocql/v2.TestV2ExclusiveAcquisitionDrainsAcceptedWriterOwnership in goroutine 8
+    /extra/scylladb/gocql/v2_transport_pool_test.go:644 +0xdfd
+FAIL    github.com/scylladb/gocql/v2    0.021s
+FAIL

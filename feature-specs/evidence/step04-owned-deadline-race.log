@@ -1,0 +1,5 @@
+# github.com/scylladb/gocql/v2 [github.com/scylladb/gocql/v2.test]
+./control.go:178:6: err redeclared in this block
+    ./control.go:151:17: other declaration of err
+FAIL    github.com/scylladb/gocql/v2 [build failed]
+FAIL

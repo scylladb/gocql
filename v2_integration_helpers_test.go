@@ -115,7 +115,7 @@ func createV2Cluster(opts ...func(*Config)) Config {
 		config.TLS = fixtureTLS
 		// The per-host API uses this complete TLS configuration directly and
 		// avoids the legacy SSL option's mandatory DNS verification override.
-		config.TLSForHost = func(HostSnapshot) (*tls.Config, error) {
+		config.TLSForHost = func(context.Context, HostSnapshot) (*tls.Config, error) {
 			return fixtureTLS.Clone(), nil
 		}
 	}

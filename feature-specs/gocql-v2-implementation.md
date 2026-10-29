@@ -1225,3 +1225,66 @@ suites once stable; do not repeatedly run broad suites without new changes or
 unresolved failures. All completion reporting distinguishes implemented, tested,
 skipped and blocked. The 60 reference-spec reviews prove reference quality only,
 not Go v2 implementation or integration success.
+
+
+## Step 04 transport seam clarification
+
+Named Unix contacts and strict local-only behavior follow the API's transport
+setup section. Bootstrap placeholders remain private; broad discovery-disabled
+identity reconciliation still belongs to step 05. Context-aware hooks select raw
+endpoints first and apply TLS exactly once. Defensive snapshots clone mutable
+TLS containers/DER/OCSP/SCT buffers, while immutable parsed trust certificates,
+private keys, provider callbacks and session caches keep shared obligations.
+Positive CoalesceWait is supported for typed TLS by ordered span writes under
+one writer serialization boundary, without driver plaintext assembly. Valid
+requested compression must be advertised by the server; typed setup rejects an
+unsupported algorithm before STARTUP instead of silently running raw. Raw TCP
+wrappers must expose requested socket-control methods or fail explicitly; cloud
+SOCKS IO wrappers forward those methods to their actual raw socket.
+
+Typed pools separate membership from sizing: positive per-host count caps the
+total and avoids targeted filling; otherwise counts/pending dials are maintained
+per actual shard. Per-shard excess is bounded by that shard's configured count,
+including zero. Endpoints and sharder revisions fence late successes, including
+incompatible initial opens before a typed picker was installed. Typed repair
+triggers after errors or acquisition use the configured policy/backoff; startup's
+first fill is distinct. A stop decision cannot be bypassed by a later query.
+Normal requests use another free eligible connection or await a reserved slot
+under their context; strict host/shard targeting is preserved and no extra slot
+is manufactured.
+
+The current transport-only incremental seam is exclusiveConn.exchange plus
+streamResponse/decodeStreamRow. exchange installs receive ownership before
+writing, returns checked metadata/row count before row payload, and owns the
+page context used for every row read. There is no extra per-row context API.
+Reservation-lifetime cancellation is registered once; a distinct page context
+has at most one watcher, invalidated under a generation gate at exact completion.
+Canceled generations cannot close a later page or a reused shared connection.
+No per-row AfterFunc/scheduler allocation is permitted. Runtime step 07 must
+compose these seams with admission, prepared fences, metadata plans, paging and
+public RunStream; it must merge session/request lifetimes and join its cursor
+registry on shutdown.
+
+Reader handoff acknowledges complete frame/v5-segment boundaries, finishes a
+partial header/event, and never transfers unread buffered unit bytes. Native
+v5 retains one bounded verified arena. Reusable release consumes only legitimate
+control frames already in that final unit, without waiting for another socket
+unit; malformed leftovers poison the connection. Close clears both unit storage
+and interface-held data slices, and response release drops reader/body/control
+references. Caller-owned output remains independent.
+
+A bounded event worker transfers metadata/control charges with each queued
+record, releases them after consumption or terminal drain, and rejects terminal
+admission atomically with shutdown. Overflow is explicit and poisons the affected
+streaming connection. Conn.waitEventDispatch is the tracked join seam for the
+broader step 05/07 session lifecycle; this step does not claim all existing
+metadata/control worker shutdown paths have been reconciled.
+
+Driver configuration reporting, runtime capacity and metrics support all
+32,768 nonnegative native stream IDs exactly. The reporting schema accepts
+positive integers; the earlier inferred32,767 schema cap was disproven by
+inspection and removed. Advertised shard counts are checked nonzero16-bit
+values, IDs are below that count, and ignored MSBs are0..63 (explicit0 is valid).
+Actual target/excess arithmetic is checked before allocation. Valid large pool
+targets retain their requested size while opening at most32 connections at a
+time, stopping a failed batch for policy-governed repair.

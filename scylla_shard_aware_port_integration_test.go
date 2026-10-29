@@ -5,6 +5,7 @@ package gocql
 
 import (
 	"context"
+	"net"
 	"testing"
 )
 
@@ -37,8 +38,13 @@ func makeIntegrationShardAwareCluster() shardAwareTestCluster {
 	return shardAwareTestCluster{
 		useTLS: config.TLS != nil || config.TLSForHost != nil,
 		port:   shardTestContactPort(config.ContactPoints, config.Port),
-		connect: func(ctx context.Context, dialer Dialer, disableShardAwarePort bool) (*Session, error) {
-			config.Dialer = dialer
+		connect: func(ctx context.Context, dialer legacyDialer, disableShardAwarePort bool) (*Session, error) {
+			config.Dialer = DialerFunc(func(ctx context.Context, target DialTarget) (net.Conn, error) {
+				if target.LocalAddress.IsValid() {
+					ctx = context.WithValue(ctx, scyllaSourcePortCtx{}, target.LocalAddress.Port())
+				}
+				return dialer.DialContext(ctx, target.Network, target.Address)
+			})
 			config.Pool.ShardAwarePort = !disableShardAwarePort
 			return Connect(ctx, config)
 		},

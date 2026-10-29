@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	lz4 "github.com/scylladb/gocql/lz4"
+	"math"
 	"math/rand/v2"
 	"net"
 	"net/netip"
@@ -13,7 +14,7 @@ import (
 
 type Config struct {
 	// DialHost opens a raw socket using immutable host metadata; TLS is applied afterward.
-	DialHost                                          func(context.Context, HostSnapshot) (net.Conn, error)
+	DialHost                                          func(context.Context, DialTarget) (net.Conn, error)
 	ReadTimeout                                       time.Duration
 	ContactPoints                                     []string
 	Port                                              uint16
@@ -29,7 +30,7 @@ type Config struct {
 	Dialer                                            Dialer
 	DNSResolver                                       DNSResolver
 	TLS                                               *tls.Config
-	TLSForHost                                        func(HostSnapshot) (*tls.Config, error)
+	TLSForHost                                        func(context.Context, HostSnapshot) (*tls.Config, error)
 	Auth                                              AuthProvider
 	Compression                                       Compression
 	CoalesceWait                                      time.Duration
@@ -106,7 +107,7 @@ func DefaultConfig(contactPoints ...string) Config {
 	profile := defaultProfile()
 	profile.Routing, _ = NewRoutingPolicy(RoutingOptions{TokenAware: true, ShuffleReplicas: true})
 	handle, _ := NewProfile(profile)
-	return Config{ContactPoints: append([]string(nil), contactPoints...), Port: 9042, CQLVersion: "3.0.0", ConnectTimeout: 11 * time.Second, DNSTimeout: 11 * time.Second, WriteTimeout: 10 * time.Second, KeepaliveInterval: 5 * time.Second, KeepaliveTimeout: 11 * time.Second, SocketKeepalive: 15 * time.Second, NoDelay: true, CoalesceWait: 200 * time.Microsecond, Pool: PoolOptions{ConnectionsPerShard: 1, MaxExcessPerShard: 2, MaxRequestsPerConnection: 32768, MaxOrphanedStreams: 1024, ShardAwarePort: true}, Metadata: MetadataOptions{Mode: MetadataFull, InitialDiscovery: true, RequestTimeout: 60 * time.Second, AgreementTimeout: 60 * time.Second, AgreementPoll: 200 * time.Millisecond, AutomaticAgreement: true, RefreshAfterAgreement: true, TopologyEvents: true, StatusEvents: true, SchemaEvents: true, ClientRouteEvents: true}, Limits: ProtocolLimits{MaxFrameBytes: 256 << 20, MaxDecompressedBytes: 256 << 20, MaxMetadataDepth: 64, MaxPagingStates: 65536, MaxPagingStateBytes: 16 << 20}, PreparedCacheSize: 1000, Partitioners: map[string]TokenPartitioner{"org.apache.cassandra.dht.Murmur3Partitioner": Murmur3TokenPartitioner, "Murmur3Partitioner": Murmur3TokenPartitioner, "com.scylladb.dht.CDCPartitioner": CDCTokenPartitioner, "CDCPartitioner": CDCTokenPartitioner}, DefaultProfile: handle, Reconnect: defaultReconnectPolicy{}, ReportConfiguration: true, TimestampGenerator: newTimestampGenerator()}
+	return Config{ContactPoints: append([]string(nil), contactPoints...), Port: 9042, CQLVersion: "3.0.0", ConnectTimeout: 5 * time.Second, DNSTimeout: 5 * time.Second, KeepaliveInterval: 30 * time.Second, KeepaliveTimeout: 30 * time.Second, NoDelay: true, Pool: PoolOptions{ConnectionsPerShard: 1, MaxExcessPerShard: 2, MaxRequestsPerConnection: 32768, MaxOrphanedStreams: 1024, ShardAwarePort: true, SourcePortStart: 49152, SourcePortEnd: 65535}, Metadata: MetadataOptions{Mode: MetadataFull, InitialDiscovery: true, RequestTimeout: 60 * time.Second, AgreementTimeout: 60 * time.Second, AgreementPoll: 200 * time.Millisecond, AutomaticAgreement: true, RefreshAfterAgreement: true, TopologyEvents: true, StatusEvents: true, SchemaEvents: true, ClientRouteEvents: true}, Limits: ProtocolLimits{MaxFrameBytes: 256 << 20, MaxDecompressedBytes: 256 << 20, MaxMetadataDepth: 64, MaxPagingStates: 65536, MaxPagingStateBytes: 16 << 20}, PreparedCacheSize: 1000, Partitioners: map[string]TokenPartitioner{"org.apache.cassandra.dht.Murmur3Partitioner": Murmur3TokenPartitioner, "Murmur3Partitioner": Murmur3TokenPartitioner, "com.scylladb.dht.CDCPartitioner": CDCTokenPartitioner, "CDCPartitioner": CDCTokenPartitioner}, DefaultProfile: handle, Reconnect: defaultReconnectPolicy{}, ReportConfiguration: true, TimestampGenerator: newTimestampGenerator()}
 }
 func newTimestampGenerator() func() int64 {
 	var last atomic.Int64
@@ -124,6 +125,9 @@ func newTimestampGenerator() func() int64 {
 	}
 }
 func validateConfig(config Config) error {
+	if _, err := unixContact(config); err != nil {
+		return err
+	}
 	if len(config.ContactPoints) == 0 {
 		return typeValidation("contact points", "at least one contact point is required")
 	}
@@ -135,6 +139,9 @@ func validateConfig(config Config) error {
 	}
 	if config.ReadTimeout < 0 || config.ConnectTimeout < 0 || config.DNSTimeout < 0 || config.WriteTimeout < 0 || config.KeepaliveInterval < 0 || config.KeepaliveTimeout < 0 || config.SocketKeepalive < 0 || config.CoalesceWait < 0 {
 		return typeValidation("timeouts", "must not be negative")
+	}
+	if config.Protocol == 5 && config.Compression == SnappyCompression {
+		return &UnsupportedSettingError{Setting: "compression", Reason: "native protocol5 supports raw or LZ4 segments"}
 	}
 	if config.Compression > SnappyCompression {
 		return typeValidation("compression", "unknown algorithm")
@@ -153,6 +160,9 @@ func validateConfig(config Config) error {
 	}
 	if config.Limits.MaxMetadataDepth > 128 || config.Limits.MaxFrameBytes > 1<<31-1 || config.Limits.MaxDecompressedBytes > 1<<31-1 {
 		return typeValidation("protocol limits", "limits exceed supported protocol range")
+	}
+	if config.Linger.Set && (config.Linger.Value < 0 || config.Linger.Value%time.Second != 0 || config.Linger.Value/time.Second > math.MaxInt32) {
+		return typeValidation("linger", "must be nonnegative whole seconds within int32 range")
 	}
 	if config.ReceiveBuffer.Set && config.ReceiveBuffer.Value < 0 || config.SendBuffer.Set && config.SendBuffer.Value < 0 {
 		return typeValidation("socket buffers", "must not be negative")
@@ -181,10 +191,13 @@ func validateConfig(config Config) error {
 	if config.PreparedCacheSize < 0 {
 		return typeValidation("prepared cache", "must not be negative")
 	}
-	if config.Pool.ConnectionsPerHost < 0 || config.Pool.ConnectionsPerShard < 0 || config.Pool.MaxExcessPerShard < 0 || config.Pool.MaxRequestsPerConnection < 0 || config.Pool.MaxRequestsPerConnection > 32768 || config.Pool.MaxOrphanedStreams < 0 {
+	if config.Pool.ConnectionsPerHost < 0 || config.Pool.ConnectionsPerShard < 0 || config.Pool.MaxExcessPerShard < 0 || config.Pool.MaxRequestsPerConnection <= 0 || config.Pool.MaxRequestsPerConnection > 32768 || config.Pool.MaxOrphanedStreams < 0 {
 		return typeValidation("pool", "invalid pool limits")
 	}
-	if config.Pool.SourcePortStart > config.Pool.SourcePortEnd {
+	if config.Pool.ConnectionsPerHost == 0 && config.Pool.ConnectionsPerShard == 0 {
+		return typeValidation("pool", "host or shard connection count must be positive")
+	}
+	if config.Pool.ShardAwarePort && (config.Pool.SourcePortStart < 1024 || config.Pool.SourcePortStart > config.Pool.SourcePortEnd) {
 		return typeValidation("source ports", "invalid range")
 	}
 	return nil
@@ -193,7 +206,7 @@ func snapshotConfig(config Config) Config {
 	config.ContactPoints = append([]string(nil), config.ContactPoints...)
 	config.Metadata.Keyspaces = append([]string(nil), config.Metadata.Keyspaces...)
 	if config.TLS != nil {
-		config.TLS = config.TLS.Clone()
+		config.TLS = cloneV2TLSConfig(config.TLS)
 	}
 	if config.ClientRoutes != nil {
 		routes := *config.ClientRoutes
@@ -219,7 +232,11 @@ func Connect(ctx context.Context, config Config) (*Session, error) {
 		return nil, err
 	}
 	config = snapshotConfig(config)
-	legacy := NewCluster(config.ContactPoints...)
+	contacts := config.ContactPoints
+	if path, _ := unixContact(config); path != "" {
+		contacts = []string{"127.0.0.1"}
+	}
+	legacy := NewCluster(contacts...)
 	profile := config.DefaultProfile.Snapshot()
 	legacy.Port = int(config.Port)
 	legacy.ProtoVersion = config.Protocol
@@ -236,10 +253,10 @@ func Connect(ctx context.Context, config Config) (*Session, error) {
 	legacy.MaxPreparedStmts = config.PreparedCacheSize
 	legacy.MaxRequestsPerConn = config.Pool.MaxRequestsPerConnection
 	legacy.MaxExcessShardConnectionsRate = float32(config.Pool.MaxExcessPerShard)
-	legacy.DisableShardAwarePort = !config.Pool.ShardAwarePort
+	legacy.DisableShardAwarePort = !config.Pool.ShardAwarePort || config.Pool.ConnectionsPerHost > 0
 	legacy.NumConns = config.Pool.ConnectionsPerHost
 	if legacy.NumConns == 0 {
-		legacy.NumConns = 1
+		legacy.NumConns = config.Pool.ConnectionsPerShard
 	}
 	legacy.DisableInitialHostLookup = !config.Metadata.InitialDiscovery
 	legacy.MetadataSchemaRequestTimeout = config.Metadata.RequestTimeout
@@ -282,11 +299,27 @@ func Connect(ctx context.Context, config Config) (*Session, error) {
 			return err == nil && config.HostFilter(snapshot)
 		})
 	}
-	legacy.Dialer = &v2SocketDialer{base: config.Dialer, config: config}
-	if config.TLSForHost != nil || config.DialHost != nil {
-		legacy.HostDialer = &v2TLSHostDialer{config: config, dialer: legacy.Dialer, legacy: legacy}
+	hostDialer := &v2TLSHostDialer{config: config, legacy: legacy}
+	legacy.HostDialer = hostDialer
+	var typedSession *Session
+	if path, _ := unixContact(config); path != "" {
+		hostDialer.unixHostID = func() UUID {
+			if typedSession != nil && typedSession.control != nil {
+				if current := typedSession.control.getConn(); current != nil && current.host != nil {
+					return current.host.hostUUID()
+				}
+			}
+			return UUID{}
+		}
+		previous := legacy.HostFilter
+		legacy.HostFilter = HostFilterFunc(func(host *HostInfo) bool {
+			if local := hostDialer.unixHostID(); !local.IsEmpty() && !host.hostUUID().IsEmpty() && host.hostUUID() != local {
+				return false
+			}
+			return previous == nil || previous.Accept(host)
+		})
 	}
-	resolver := &v2DNSResolver{base: config.DNSResolver, timeout: config.DNSTimeout}
+	resolver := &v2DNSResolver{base: config.DNSResolver, timeout: config.DNSTimeout, setupTimeout: config.ConnectTimeout}
 	resolver.startup.Store(&contextBox{ctx: ctx})
 	legacy.DNSResolver = resolver
 	if config.ClientRoutes != nil {
@@ -296,16 +329,18 @@ func Connect(ctx context.Context, config Config) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
+	typedSession = s
 	rt := s.typedRuntime()
 	rt.profile = config.DefaultProfile
 	rt.config = config
 	s.connCfg.TypedAuth = config.Auth
 	s.connCfg.TypedLimits = config.Limits
+	s.connCfg.TypedConfig = &rt.config
 	s.configureV2Peripheral(config)
 	stop := context.AfterFunc(ctx, s.cancel)
 	err = s.init()
 	stopped := stop()
-	resolver.startup.Store(nil)
+	resolver.clearStartup()
 	if !stopped || ctx.Err() != nil {
 		if err == nil {
 			err = ctx.Err()
@@ -334,16 +369,32 @@ func OpenSingleHost(ctx context.Context, config Config, hostID UUID) (*Session, 
 
 type contextBox struct{ ctx context.Context }
 type v2DNSResolver struct {
-	base    DNSResolver
-	timeout time.Duration
-	startup atomic.Pointer[contextBox]
+	base                  DNSResolver
+	timeout, setupTimeout time.Duration
+	startup               atomic.Pointer[contextBox]
 }
 
-func (r *v2DNSResolver) LookupIP(host string) ([]net.IP, error) {
-	ctx := context.Background()
+func (r *v2DNSResolver) baseContext() context.Context {
 	if box := r.startup.Load(); box != nil {
-		ctx = box.ctx
+		return box.ctx
 	}
+	return context.Background()
+}
+func (r *v2DNSResolver) LookupIP(host string) ([]net.IP, error) {
+	return r.lookupIP(r.baseContext(), host)
+}
+func (r *v2DNSResolver) lookupSetup(host string) ([]net.IP, time.Time, error) {
+	ctx := r.baseContext()
+	cancel := func() {}
+	if r.setupTimeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, r.setupTimeout)
+	}
+	defer cancel()
+	deadline, _ := ctx.Deadline()
+	ips, err := r.lookupIP(ctx, host)
+	return ips, deadline, err
+}
+func (r *v2DNSResolver) lookupIP(ctx context.Context, host string) ([]net.IP, error) {
 	if r.timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, r.timeout)
@@ -365,119 +416,7 @@ func (r *v2DNSResolver) LookupIP(host string) ([]net.IP, error) {
 		return nil, ctx.Err()
 	}
 }
-
-type v2SocketDialer struct {
-	base   Dialer
-	config Config
-}
-
-func (d *v2SocketDialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
-	base := d.base
-	if base == nil {
-		dialer := &net.Dialer{Timeout: d.config.ConnectTimeout, KeepAlive: d.config.SocketKeepalive}
-		sourcePort := ScyllaGetSourcePort(ctx)
-		if d.config.LocalAddress.IsValid() || sourcePort != 0 {
-			address := &net.TCPAddr{Port: int(sourcePort)}
-			if d.config.LocalAddress.IsValid() {
-				address.IP = net.IP(d.config.LocalAddress.AsSlice())
-			}
-			dialer.LocalAddr = address
-		}
-		base = dialer
-	}
-	conn, err := base.DialContext(ctx, network, address)
-	if err != nil {
-		return nil, err
-	}
-	if tcp, ok := conn.(*net.TCPConn); ok {
-		err = tcp.SetNoDelay(d.config.NoDelay)
-		if err == nil && d.config.ReceiveBuffer.Set {
-			err = tcp.SetReadBuffer(d.config.ReceiveBuffer.Value)
-		}
-		if err == nil && d.config.SendBuffer.Set {
-			err = tcp.SetWriteBuffer(d.config.SendBuffer.Value)
-		}
-		if err == nil && d.config.Linger.Set {
-			err = tcp.SetLinger(int(d.config.Linger.Value / time.Second))
-		}
-		if err != nil {
-			conn.Close()
-			return nil, err
-		}
-	}
-	return conn, nil
-}
-
-type v2TLSHostDialer struct {
-	legacy *ClusterConfig
-	config Config
-	dialer Dialer
-}
-
-func (d *v2TLSHostDialer) DialHost(ctx context.Context, host *HostInfo) (*DialedHost, error) {
-	snapshot, err := snapshotV2Host(nil, host)
-	if err != nil {
-		return nil, err
-	}
-	config := d.config.TLS
-	if d.config.TLSForHost != nil {
-		config, err = d.config.TLSForHost(snapshot)
-		if err != nil {
-			return nil, err
-		}
-		if config == nil {
-			return nil, typeValidation("TLSForHost", "nil TLS config")
-		}
-	}
-	if config != nil {
-		config = config.Clone()
-	}
-	if d.config.DialHost != nil {
-		conn, err := d.config.DialHost(ctx, snapshot)
-		if err != nil {
-			if conn != nil {
-				conn.Close()
-			}
-			return nil, err
-		}
-		if conn == nil {
-			return nil, typeValidation("DialHost", "nil connection")
-		}
-		return WrapTLS(ctx, conn, snapshot.Address.String(), config)
-	}
-	delegate := defaultHostDialer{dialer: d.dialer, tlsConfig: config}
-	return delegate.DialHost(ctx, host)
-}
-
-// DialShard applies host-specific TLS while preserving Scylla's source-port routing.
-func (d *v2TLSHostDialer) DialShard(ctx context.Context, host *HostInfo, shard, shards int) (*DialedHost, error) {
-	if d.config.DialHost != nil {
-		return d.DialHost(ctx, host)
-	}
-	snapshot, err := snapshotV2Host(nil, host)
-	if err != nil {
-		return nil, err
-	}
-	config := d.config.TLS
-	if d.config.TLSForHost != nil {
-		config, err = d.config.TLSForHost(snapshot)
-		if err != nil {
-			return nil, err
-		}
-		if config == nil {
-			return nil, typeValidation("TLSForHost", "nil TLS config")
-		}
-	}
-	if config != nil {
-		config = config.Clone()
-	}
-	legacy := d.legacy
-	if legacy == nil {
-		legacy = NewCluster()
-	}
-	delegate := scyllaDialer{dialer: d.dialer, tlsConfig: config, cfg: legacy, logger: legacy.logger()}
-	return delegate.DialShard(ctx, host, shard, shards)
-}
+func (r *v2DNSResolver) clearStartup() { r.startup.Store(nil) }
 
 type defaultReconnectPolicy struct{}
 

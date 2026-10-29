@@ -1,0 +1,8 @@
+# github.com/scylladb/gocql/v2 [github.com/scylladb/gocql/v2.test]
+./conn.go:505:3: unknown field targetEpoch in struct literal of type Conn
+./conn.go:506:3: unknown field validateTarget in struct literal of type Conn
+./connectionpool.go:649:10: conn.validateTarget undefined (type *Conn has no field or method validateTarget)
+./connectionpool.go:651:14: conn.validateTarget undefined (type *Conn has no field or method validateTarget)
+./connectionpool.go:669:11: conn.targetEpoch undefined (type *Conn has no field or method targetEpoch)
+FAIL    github.com/scylladb/gocql/v2 [build failed]
+FAIL

@@ -1,0 +1,459 @@
+{
+  "agent": "/root/step04_transport_pools",
+  "branch": "v2-04-transport-pools",
+  "predecessor": "30714309c6770a4651f49aff2c912c101d41908d",
+  "gate": "Step04 transport/pool/exclusive incremental receive seam gate satisfied on frozen release source; public RunStream and broader metadata/session lifecycle remain later assigned gates.",
+  "source_sha256": {
+    "cloud_cluster_test.go": "1121bdd07a9d2687521994880e09c22179ed45fe5ccfd6d13c887bce32f4eac2",
+    "cluster.go": "dc09491d61a21c9d4d4e93e4ef931c03d5ee6d46a703d3b74ea6b66ac43cfd53",
+    "conn.go": "84d07121e1231b9f8e4b0dea4c4d1b61274fed5b5cb581ee9c7604085911066f",
+    "conn_test.go": "4b6c02b9529e7359d655339aa2a00d1a870824096bf0c8923a2109f8ad7f90e6",
+    "connectionpool.go": "93ecc0418f281b47ecec8bacaecd161f5970e3901825f74519db2c9ad210238d",
+    "control.go": "d97a50b521fd10e18c07ca02d82db346998c7bc9f379823e953867d370f98a9c",
+    "control_integration_test.go": "8bfa950717c2fcda6491045e6dfddb05f37d6c49b35750f0fc5fdafaaa067aa7",
+    "dial.go": "1568a4a52cf4b3101fc8c3e742bc84294619405570f8ee819e0041d7dbed11f0",
+    "driver_config.go": "be7b749aeff76682cfe95e9657af029197098ecfc996d6e7d0b1dcbedc389205",
+    "driver_config_test.go": "6a5e52bca98f7f0ffa74283f77ad9fd3b9bb3ed9c007debd66af096950bf741e",
+    "feature-specs/gocql-v2-api.md": "47fe099a5402f858690161046aebad5ec88f93027dd551cc248a72da5c87c812",
+    "feature-specs/gocql-v2-implementation.md": "89547184c5c3e07929acfc2b6f7050a34ffb7b83fd45b67ee3acbc054ad2bd4b",
+    "host_source.go": "c7740239a100ab7b6e5dcc74cfc89155b337b232c3caf91df0996c90cf8e083c",
+    "internal/streams/streams.go": "728211180c7774e09ccfba0aa8413c02da1a9f0cd833b673276b367a3f712899",
+    "internal/streams/streams_test.go": "f4271fbeb81bd87f91b975635ce47eb0badacc8424adf5914205e3d4c684a45e",
+    "metadata_peer_fixture_test.go": "062aa7a611f88f261c05d879e4e9aa6d3a27d2d6a0a8c42c256919d4e13e6992",
+    "metadata_scylla.go": "b8de84a064e2c34572307b45ecb3a1e30d45d4f3072796ff022b1bf597d7bed8",
+    "scylla.go": "39046cbb5d3e45ef83f2d8b29a1666519e65b7414dd9a45f4aca895092cd9638",
+    "scylla_shard_aware_port_common_test.go": "b03a36dc6ad90816a3e12d0699c10c5b1a39b64f31b508d443e41067a59fcc09",
+    "scylla_shard_aware_port_integration_test.go": "d2154d795ed6018bdcc337088bc4b99fa365ae443b4113663ccf6acd71cf27bb",
+    "scylla_shard_aware_port_mocked_test.go": "ac8c1e9eb96dacc9e97ead953f0588d6216ef0442c90252b15865a2930cad26a",
+    "scyllacloud/cluster.go": "3854015dea67860a7243a8f9352fedeb8e5e663bf4756314bc744595380145f0",
+    "scyllacloud/hostdialer.go": "26ac3c845884e1cf8c7cc93acb909ccebbe3e2790f32b129c673add84130cf01",
+    "scyllacloud/hostdialer_test.go": "367e5cf9eb532f0730905d87188f78d34a769b021b86c684b6b276e7e08ba2e0",
+    "v2_config.go": "9367bc98dec591ec126ffe88b07dfd7b2108c98c765667bdef19ebb819b1f994",
+    "v2_config_test.go": "9f3573b4d1e79f7c34ca4ce8923f4a15ecb147029bd825699a4dd635cff64674",
+    "v2_connection_state.go": "ed26e1cc1edc65befc1681435a66dd33f199403e531d7d643898e628c2e04c3b",
+    "v2_dial.go": "5c6043a46080a80f7f54a9333c8d89bf8e6ce1421ec8bec8ed03e41fab975024",
+    "v2_execute.go": "7e1c4f5bccbee95144a73511ff5c3f49183f034df83f9842aef3b2f512dc5318",
+    "v2_integration_helpers_test.go": "61cf586f6465ea9779732170f9e07f8470d5c61a11f5e42b356f512675bb1b58",
+    "v2_metadata.go": "499bfc78ff570afaab59a2856ee2907ea1d5b25b2dfad00fecf6bc117fe181f7",
+    "v2_pool.go": "cdb1131dd7930f96b12bc8a4c82f5e25251a47ed92533c086522fd18224732f3",
+    "v2_pool_limits.go": "84a9a05dfdb3a58d24a7bfc9fe8b932c9d82d722b2f622928f8be41bac05c771",
+    "v2_pool_limits_test.go": "7876b4ab89e8ce8fb0ab36260a621796bda320250f85cea7a1bbfe9a01921971",
+    "v2_stream_transport.go": "8d397f1f119a9ae2daf535f951286930630306ce871bd4d947c79aee77601ee5",
+    "v2_stream_transport_bench_test.go": "ba36ee23cf0ee0cac9307e4400e394d1aacf93d2f3d3314bb5016e6b8147e3d1",
+    "v2_transport.go": "3ea00d0ef9a586e7ed506470449effc1655173003bf75b269092b9ab574178f5",
+    "v2_transport_parse.go": "617dff263c4bb3ee699eb3a20995896881fb3465c8d60b1461794a92490b9294",
+    "v2_transport_pool_integration_test.go": "99bc58b54a84d976881c4c4b52c7b4c8e7add916d1dd86510e81beecf9dfb196",
+    "v2_transport_pool_test.go": "802704d7fe3781e833033ecfbf1ffaafeb9193c3208a359ea8b65d430ecef6dc",
+    "v2_transport_schema_regression_unit_test.go": "1d58f1f0a2fcc6458fcccddb5cc70ff7d932b7cfe4271c68c1a7b34d8ccfeb6d",
+    "v2_transport_settings_test.go": "c4f03e311321aad24212c3bfae9f5409725fee2f50287fa73b09623ab140f2cb"
+  },
+  "commands": [
+    {
+      "name": "full-unit-race",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-tags",
+        "unit",
+        "-count=1",
+        "-timeout=5m",
+        "./..."
+      ],
+      "environment": {},
+      "exit_code": 0,
+      "elapsed_seconds": 35.566320180892944,
+      "log": "feature-specs/evidence/step04-release-full-unit-race.log",
+      "source_snapshot": "feature-specs/evidence/step04-release-source.json",
+      "log_sha256": "af658bc1a6577d3ea9a287ed2cfd4160b6a6140371bc05f2d7e2cb65b85d7aba"
+    },
+    {
+      "name": "focused-race",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-tags",
+        "unit",
+        "-run",
+        "^(TestV2|TestTyped|TestStep04LateTableRefreshEntrant)",
+        "-count=2",
+        "-timeout=2m",
+        "."
+      ],
+      "environment": {},
+      "exit_code": 0,
+      "elapsed_seconds": 16.994195461273193,
+      "log": "feature-specs/evidence/step04-release-focused-race.log",
+      "source_snapshot": "feature-specs/evidence/step04-release-source.json",
+      "log_sha256": "da0f7660e5c5cc545bb8abb53d424d608d9494c0acf251665f9c005bf9465970"
+    },
+    {
+      "name": "vet",
+      "command": [
+        "go",
+        "vet",
+        "-tags",
+        "unit",
+        "./..."
+      ],
+      "environment": {},
+      "exit_code": 0,
+      "elapsed_seconds": 6.073960542678833,
+      "log": "feature-specs/evidence/step04-release-vet.log",
+      "source_snapshot": "feature-specs/evidence/step04-release-source.json",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "integration-race-build",
+      "command": [
+        "go",
+        "test",
+        "-c",
+        "-race",
+        "-tags",
+        "integration gocql_debug",
+        "-o",
+        "/tmp/gocql-v2-step04.integration-race.test",
+        "."
+      ],
+      "environment": {},
+      "exit_code": 0,
+      "elapsed_seconds": 26.690057277679443,
+      "log": "feature-specs/evidence/step04-release-integration-race-build.log",
+      "source_snapshot": "feature-specs/evidence/step04-release-source.json",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "ccm-build",
+      "command": [
+        "go",
+        "test",
+        "-c",
+        "-tags",
+        "ccm",
+        "-o",
+        "/tmp/gocql-v2-step04.ccm.test",
+        "./internal/ccm"
+      ],
+      "environment": {},
+      "exit_code": 0,
+      "elapsed_seconds": 0.03973245620727539,
+      "log": "feature-specs/evidence/step04-release-ccm-build.log",
+      "source_snapshot": "feature-specs/evidence/step04-release-source.json",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "386-foundations",
+      "command": [
+        "go",
+        "test",
+        "-tags",
+        "unit",
+        "-count=1",
+        "./internal/streams",
+        "./internal/frame",
+        "./internal/segment"
+      ],
+      "environment": {
+        "GOARCH": "386"
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 0.1304023265838623,
+      "log": "feature-specs/evidence/step04-release-386-foundations.log",
+      "source_snapshot": "feature-specs/evidence/step04-release-source.json",
+      "log_sha256": "72a0d04f0ee47f130604d232e290d2682f4a5b98d79a6357ff936064e8eea294"
+    },
+    {
+      "name": "perf",
+      "command": [
+        "go",
+        "test",
+        "-run",
+        "^$",
+        "-bench",
+        "^BenchmarkV2(ExclusiveTransport|ExclusiveRowsScaling|TLSWriteAmplification|TLSReceiveAmplification)$",
+        "-benchmem",
+        "-benchtime=100ms",
+        "-timeout=90s",
+        "."
+      ],
+      "environment": {},
+      "exit_code": 0,
+      "elapsed_seconds": 7.612222671508789,
+      "log": "feature-specs/evidence/step04-release-perf.log",
+      "source_snapshot": "feature-specs/evidence/step04-release-source.json",
+      "log_sha256": "423861e4ca429670c7667d3dcb8e740d4d1efd396c128842d6d7ed98ddd7f040"
+    },
+    {
+      "name": "fuzz",
+      "command": [
+        "go",
+        "test",
+        "-run",
+        "^$",
+        "-fuzz",
+        "^FuzzV2ExclusiveIncrementalFraming$",
+        "-fuzztime=5s",
+        "-parallel=2",
+        "."
+      ],
+      "environment": {
+        "GOMAXPROCS": "2"
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 17.66102886199951,
+      "log": "feature-specs/evidence/step04-release-fuzz.log",
+      "source_snapshot": "feature-specs/evidence/step04-release-source.json",
+      "log_sha256": "4937734f7b59c2c677331114f4165a593f526b72571a739a63c7bbe64416bb20"
+    },
+    {
+      "name": "spec-verifier",
+      "command": [
+        "python3",
+        "feature-specs/verify.py"
+      ],
+      "environment": {},
+      "exit_code": 0,
+      "elapsed_seconds": 0.09601855278015137,
+      "log": "feature-specs/evidence/step04-release-spec-verifier.log",
+      "source_snapshot": "feature-specs/evidence/step04-release-source.json",
+      "log_sha256": "d917fd30d32ac1dcf5211b8f90122e2892ee48305e5b2f53184e255a32b9f1b4"
+    },
+    {
+      "name": "stable-raw",
+      "command": [
+        "go",
+        "test",
+        "-json",
+        "-race",
+        "-tags",
+        "integration gocql_debug",
+        "-count=1",
+        "-timeout=10m",
+        "-parallel=1",
+        "-run",
+        "^(TestV2TransportPoolSizingLive|TestV2ExclusiveTransportLive)$",
+        ".",
+        "-args",
+        "-distribution=scylla",
+        "-gocql.timeout=60s",
+        "-proto=4",
+        "-rf=3",
+        "-clusterSize=3",
+        "-autowait=2000ms",
+        "-compressor=no-compression",
+        "-gocql.cversion=2026.3.4",
+        "-cluster=127.0.20.1,127.0.20.2,127.0.20.3"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 34.60241174697876,
+      "log": "feature-specs/evidence/step04-release-live-stable-raw.jsonl",
+      "source_snapshot": "feature-specs/evidence/step04-release-source.json",
+      "log_sha256": "63651ff3ee0bdb0f88da770189e9a2eedf4687235d4fe90dcc952f1c5f9827e4"
+    },
+    {
+      "name": "stable-tls",
+      "command": [
+        "go",
+        "test",
+        "-json",
+        "-race",
+        "-tags",
+        "integration gocql_debug",
+        "-count=1",
+        "-timeout=10m",
+        "-parallel=1",
+        "-run",
+        "^(TestV2TransportPoolSizingLive|TestV2ExclusiveTransportLive|TestShardAwarePortIntegrationNoReconnections|TestShardAwarePortIntegrationMaliciousNAT|TestShardAwarePortIntegrationUnreachable|TestShardAwarePortIntegrationUnusedIfNotEnabled|TestUnixSockets)$",
+        ".",
+        "-args",
+        "-distribution=scylla",
+        "-gocql.timeout=60s",
+        "-proto=4",
+        "-rf=3",
+        "-clusterSize=3",
+        "-autowait=2000ms",
+        "-compressor=no-compression",
+        "-gocql.cversion=2026.3.4",
+        "-cluster=127.0.20.1,127.0.20.2,127.0.20.3",
+        "-runssl",
+        "-cluster-socket=/extra/scylladb/gocql-api-test-cluster/cql.m"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 8.558205604553223,
+      "log": "feature-specs/evidence/step04-release-live-stable-tls.jsonl",
+      "source_snapshot": "feature-specs/evidence/step04-release-source.json",
+      "log_sha256": "3d2c80b1db7631e6fe8bad8c17ea1642ca97fe7a0ce1eeaceae7740206bd55dd"
+    },
+    {
+      "name": "cassandra-v5-lz4-tls",
+      "command": [
+        "go",
+        "test",
+        "-json",
+        "-race",
+        "-tags",
+        "integration gocql_debug",
+        "-count=1",
+        "-timeout=10m",
+        "-parallel=1",
+        "-run",
+        "^(TestV2TransportPoolSizingLive|TestV2ExclusiveTransportLive)$",
+        ".",
+        "-args",
+        "-distribution=cassandra",
+        "-gocql.timeout=60s",
+        "-proto=5",
+        "-rf=3",
+        "-clusterSize=3",
+        "-autowait=2000ms",
+        "-compressor=lz4",
+        "-gocql.cversion=5.0.9",
+        "-cluster=127.0.21.1,127.0.21.2,127.0.21.3",
+        "-runssl"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 4.532848119735718,
+      "log": "feature-specs/evidence/step04-release-live-cassandra-v5-lz4-tls.jsonl",
+      "source_snapshot": "feature-specs/evidence/step04-release-source.json",
+      "log_sha256": "d20230980f6f8eca239443a47470d84779f2fa096356cf670c38ea15727e87b8"
+    },
+    {
+      "name": "cassandra-v5-raw",
+      "command": [
+        "go",
+        "test",
+        "-json",
+        "-race",
+        "-tags",
+        "integration gocql_debug",
+        "-count=1",
+        "-timeout=10m",
+        "-parallel=1",
+        "-run",
+        "^(TestV2ExclusiveTransportLive)$",
+        ".",
+        "-args",
+        "-distribution=cassandra",
+        "-gocql.timeout=60s",
+        "-proto=5",
+        "-rf=3",
+        "-clusterSize=3",
+        "-autowait=2000ms",
+        "-compressor=no-compression",
+        "-gocql.cversion=5.0.9",
+        "-cluster=127.0.21.1,127.0.21.2,127.0.21.3"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 5.234956979751587,
+      "log": "feature-specs/evidence/step04-release-live-cassandra-v5-raw.jsonl",
+      "source_snapshot": "feature-specs/evidence/step04-release-source.json",
+      "log_sha256": "6b1df03bc48e0f34085e9758bc3c7a55ffbd881aaa7bfd09f404248f20e7ad92"
+    }
+  ],
+  "database_outcomes": [
+    {
+      "log": "feature-specs/evidence/step04-release-live-stable-raw.jsonl",
+      "package": "pass",
+      "top_level": {
+        "pass": [
+          "TestV2TransportPoolSizingLive",
+          "TestV2ExclusiveTransportLive"
+        ],
+        "fail": [],
+        "skip": []
+      },
+      "subtest_skips": []
+    },
+    {
+      "log": "feature-specs/evidence/step04-release-live-stable-tls.jsonl",
+      "package": "pass",
+      "top_level": {
+        "pass": [
+          "TestV2TransportPoolSizingLive",
+          "TestV2ExclusiveTransportLive",
+          "TestUnixSockets",
+          "TestShardAwarePortIntegrationUnusedIfNotEnabled",
+          "TestShardAwarePortIntegrationUnreachable",
+          "TestShardAwarePortIntegrationNoReconnections",
+          "TestShardAwarePortIntegrationMaliciousNAT"
+        ],
+        "fail": [],
+        "skip": []
+      },
+      "subtest_skips": []
+    },
+    {
+      "log": "feature-specs/evidence/step04-release-live-cassandra-v5-lz4-tls.jsonl",
+      "package": "pass",
+      "top_level": {
+        "pass": [
+          "TestV2TransportPoolSizingLive",
+          "TestV2ExclusiveTransportLive"
+        ],
+        "fail": [],
+        "skip": []
+      },
+      "subtest_skips": []
+    },
+    {
+      "log": "feature-specs/evidence/step04-release-live-cassandra-v5-raw.jsonl",
+      "package": "pass",
+      "top_level": {
+        "pass": [
+          "TestV2ExclusiveTransportLive"
+        ],
+        "fail": [],
+        "skip": []
+      },
+      "subtest_skips": []
+    }
+  ],
+  "raw_evidence": "feature-specs/evidence/step04-log-formatting.json",
+  "environment": "feature-specs/evidence/step04-environment.json",
+  "diagnostics": [
+    {
+      "log": "feature-specs/evidence/step04-first-full-unit.log",
+      "outcome": "Intermediate setup-context/coalescer lifecycle regression fixed; worker now uses connection lifetime, final full gate passes."
+    },
+    {
+      "log": "feature-specs/evidence/step04-full-unit3.log",
+      "outcome": "One duplicate-query schema race observed; deterministic same-source and unchanged predecessor reproduction retained, narrow in-flight recheck preserves newer invalidation."
+    },
+    {
+      "log": "feature-specs/evidence/step04-schema-window-predecessor.log",
+      "exit_code": 1,
+      "outcome": "Unchanged predecessor deterministically reissues4queries after a stale entrant arrives after completed flight; proof manifest retained."
+    },
+    {
+      "log": "feature-specs/evidence/step04-schema-predecessor-diagnostic.log",
+      "exit_code": 0,
+      "outcome": "Original stochastic test passed20repeats on predecessor; this does not replace deterministic predecessor failure proof."
+    },
+    {
+      "log": "feature-specs/evidence/step04-opening-writer-race.log",
+      "outcome": "New accepted-writer fixture initially left a late peer goroutine; explicit join corrected test lifecycle and final race passes."
+    },
+    {
+      "log": "feature-specs/evidence/step04-rows-before-cancel-amortization.log",
+      "outcome": "4146allocations at1024rows exposed per-row cancellation registration; final page setup constant45allocations independent of row count."
+    },
+    {
+      "logs": "step04-final-*/step04-live-*",
+      "outcome": "Preceding source results retained; only release-source command/hash entries above prove current gate."
+    }
+  ],
+  "reservations": {
+    "stable": "127.0.20.1..3",
+    "cassandra": "127.0.21.1..3",
+    "state": "released after all owned live processes terminal"
+  },
+  "remaining_later_gates": [
+    "Step05 typed topology/control/client routes, discovery-disabled identities, global host/event publication ordering, full event worker orchestration/join",
+    "Step06 leader/tablet/strict routing completion",
+    "Step07 public RunStream/admission/prepared-plan/paging composition, session/request merge and cursor registry shutdown join, full configuration/execution/observers",
+    "Step08 full fixtures/cloud logger repair and broader server failures",
+    "Steps09-17 complete baseline174migration, legacy extraction/docs/fullmatrix/performance/reviews/final release audit"
+  ]
+}

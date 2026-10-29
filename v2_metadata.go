@@ -430,6 +430,13 @@ func snapshotV2Host(s *Session, h *HostInfo) (HostSnapshot, error) {
 	h.mu.RUnlock()
 	out.Shards = uint32(h.ScyllaShardCount())
 	if s != nil {
+		if cfg, ok := s.v2PoolConfig(); ok {
+			if path, _ := unixContact(*cfg); path != "" && out.ID.IsEmpty() {
+				out.Address = netip.AddrPort{}
+			}
+		}
+	}
+	if s != nil {
 		out.Enabled = !s.cfg.filterHost(h)
 		if s.pool != nil {
 			pool, ok := s.pool.getPool(h)

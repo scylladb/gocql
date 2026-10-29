@@ -1,0 +1,9 @@
+# github.com/scylladb/gocql/v2 [github.com/scylladb/gocql/v2.test]
+./v2_transport_parse.go:281:26: invalid operation: flags & frm.FlagMetaDataChanged (mismatched types uint32 and int)
+./v2_transport_parse.go:301:5: invalid operation: flags & frm.FlagHasMorePages (mismatched types uint32 and int)
+./v2_transport_parse.go:307:34: invalid operation: flags & frm.FlagMetaDataChanged (mismatched types uint32 and int)
+./v2_transport_parse.go:310:5: invalid operation: flags & frm.FlagNoMetaData (mismatched types uint32 and int)
+./v2_transport_parse.go:311:19: invalid operation: flags & frm.FlagMetaDataChanged (mismatched types uint32 and int)
+./v2_transport_parse.go:319:12: invalid operation: flags & frm.FlagGlobalTableSpec (mismatched types uint32 and int)
+FAIL    github.com/scylladb/gocql/v2 [build failed]
+FAIL

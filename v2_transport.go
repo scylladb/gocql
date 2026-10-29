@@ -18,6 +18,10 @@ import (
 // Canonical values are borrowed unchanged; retries and metadata repair belong to
 // the execution layer. A received page owns its storage independently of Conn.
 func (c *Conn) executeTyped(ctx context.Context, req *attemptRequest) (*responsePage, error) {
+	if err := c.beginShared(ctx); err != nil {
+		return nil, &QueryError{err: err}
+	}
+	defer c.endShared()
 	if err := ctx.Err(); err != nil {
 		return nil, &QueryError{err: err}
 	}
@@ -142,9 +146,15 @@ func (c *Conn) executeTyped(ctx context.Context, req *attemptRequest) (*response
 		return resp.page, nil
 	case <-timeoutCh:
 		stopWaiting = true
+		if c.markOrphan(call) {
+			closeErr = errOrphanBudget
+		}
 		return nil, &QueryError{err: ErrTimeoutNoResponse, potentiallyExecuted: true, timeout: req.timeout, inFlight: c.streams.InUse()}
 	case <-ctx.Done():
 		stopWaiting = true
+		if c.markOrphan(call) {
+			closeErr = errOrphanBudget
+		}
 		return nil, &QueryError{err: ctx.Err(), potentiallyExecuted: true, timeout: req.timeout, inFlight: c.streams.InUse()}
 	case <-c.ctx.Done():
 		stopWaiting = true

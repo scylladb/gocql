@@ -1,0 +1,26 @@
+goos: linux
+goarch: amd64
+pkg: github.com/scylladb/gocql/v2
+cpu: AMD Ryzen 9 9950X3D 16-Core Processor
+BenchmarkV2ExclusiveTransport/raw4/1024-32             43897          2751 ns/op     372.21 MB/s            14.00 reads/op      5096 B/op         42 allocs/op
+BenchmarkV2ExclusiveTransport/raw4/409600-32           15142         11830 ns/op    34625.00 MB/s           14.00 reads/op      5096 B/op         42 allocs/op
+BenchmarkV2ExclusiveTransport/raw4/8388608-32            369        317916 ns/op    26386.24 MB/s           14.00 reads/op      5096 B/op         42 allocs/op
+BenchmarkV2ExclusiveTransport/raw5/1024-32             31743          3330 ns/op     307.49 MB/s             3.000 reads/op     131087 transform-B        1071 unit-copy-B/op       6320 B/op         55 allocs/op
+BenchmarkV2ExclusiveTransport/raw5/409600-32            3337         36010 ns/op    11374.68 MB/s           12.00 reads/op      131087 transform-B      409647 unit-copy-B/op       6320 B/op         55 allocs/op
+BenchmarkV2ExclusiveTransport/raw5/8388608-32            157        735020 ns/op    11412.75 MB/s          195.0 reads/op       131087 transform-B     8388655 unit-copy-B/op       6320 B/op         55 allocs/op
+BenchmarkV2ExclusiveTransport/lz4v5/1024-32            26752          4493 ns/op     227.90 MB/s             3.000 reads/op     262158 transform-B        1071 unit-copy-B/op       6448 B/op         59 allocs/op
+BenchmarkV2ExclusiveTransport/lz4v5/409600-32           1136        110214 ns/op    3716.39 MB/s            12.00 reads/op      262158 transform-B      409647 unit-copy-B/op       6448 B/op         59 allocs/op
+BenchmarkV2ExclusiveTransport/lz4v5/8388608-32            52       2331866 ns/op    3597.38 MB/s           195.0 reads/op       262158 transform-B     8388655 unit-copy-B/op       6448 B/op         59 allocs/op
+BenchmarkV2ExclusiveRowsScaling/1-32                   41935          2692 ns/op        5272 B/op         45 allocs/op
+BenchmarkV2ExclusiveRowsScaling/32-32                  17260          7390 ns/op        5272 B/op         45 allocs/op
+BenchmarkV2ExclusiveRowsScaling/1024-32                  732        148497 ns/op        5272 B/op         45 allocs/op
+BenchmarkV2TLSWriteAmplification/bytes=65536/fragments=1-32                 4398         25229 ns/op    2597.65 MB/s             0 driver-gather-B/op            1.000 plaintext-spans/op        65624 tls-wire-B/op             4.000 tls-writes/op         151 B/op          6 allocs/op
+BenchmarkV2TLSWriteAmplification/bytes=65536/fragments=16-32                3183         41461 ns/op    1580.68 MB/s             0 driver-gather-B/op           16.00 plaintext-spans/op         65888 tls-wire-B/op            16.00 tls-writes/op     1155 B/op         22 allocs/op
+BenchmarkV2TLSWriteAmplification/bytes=65536/fragments=1024-32               117       1057899 ns/op      61.95 MB/s             0 driver-gather-B/op         1024 plaintext-spans/op        88064 tls-wire-B/op          1024 tls-writes/op       84138 B/op       1036 allocs/op
+BenchmarkV2TLSWriteAmplification/bytes=409600/fragments=1-32                 826        145261 ns/op    2819.75 MB/s             0 driver-gather-B/op            1.000 plaintext-spans/op       410150 tls-wire-B/op            25.00 tls-writes/op      650 B/op         27 allocs/op
+BenchmarkV2TLSWriteAmplification/bytes=409600/fragments=16-32                728        158012 ns/op    2592.20 MB/s             0 driver-gather-B/op           16.00 plaintext-spans/op        410304 tls-wire-B/op            32.00 tls-writes/op     1535 B/op         37 allocs/op
+BenchmarkV2TLSWriteAmplification/bytes=409600/fragments=1024-32              100       1196102 ns/op     342.45 MB/s             0 driver-gather-B/op         1024 plaintext-spans/op       432128 tls-wire-B/op          1024 tls-writes/op       84171 B/op       1036 allocs/op
+BenchmarkV2TLSReceiveAmplification/4096-32                                 10000         10941 ns/op     374.38 MB/s             0 driver-gather-B/op            1.000 net-reads/op         14.00 plaintext-reads/op          4096 tls-output-handoff-B/op        4165 tls-wire-read-B/op       5304 B/op         48 allocs/op
+BenchmarkV2TLSReceiveAmplification/409600-32                                 730        174903 ns/op    2341.87 MB/s             0 driver-gather-B/op           26.00 net-reads/op          39.00 plaintext-reads/op        409600 tls-output-handoff-B/op      410219 tls-wire-read-B/op       6056 B/op         73 allocs/op
+PASS
+ok      github.com/scylladb/gocql/v2    3.156s

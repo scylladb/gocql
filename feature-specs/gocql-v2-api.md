@@ -1476,3 +1476,44 @@ concrete native-protocol errors; wrappers must preserve both through errors.As.
 Unrecognized future server errors retain code and opaque details. Invalid
 lengths and metadata never panic or allocate based on unbounded advertised
 counts.
+
+
+### Transport setup details settled during step 04
+
+A Unix maintenance target is one `ContactPoints` entry `unix:/absolute/path`;
+a bare absolute path is accepted as a convenience. It requires explicit
+`Protocol = 3` and `Metadata.InitialDiscovery = false`. Mixed Unix/TCP contacts,
+TLS or TLSForHost, and explicit LocalAddress on this transport fail with
+UnsupportedSettingError. Default shard settings do not target a Unix socket.
+Dialer receives Network `unix` and the exact path as Address; an unknown
+bootstrap Host.Address is invalid rather than a fabricated TCP endpoint. A
+socket represents only its reconciled local host, so remote strict targets fail.
+For example:
+
+```go
+config := DefaultConfig("unix:/run/scylla/cql.m")
+config.Protocol = 3
+config.Metadata.InitialDiscovery = false
+session, err := Connect(ctx, config)
+```
+
+The context-aware Dialer, DialHost and TLSForHost contracts above apply to all
+new connections. DefaultDialer implements the raw target contract; DialerFunc
+adapts a function. TCP endpoints and source ranges are selected before hooks;
+TLSForHost nil inherits TLS, and cannot downgrade required TLS. TLS containers,
+trust-pool containers and certificate byte arrays are snapshotted. Private keys,
+callbacks, parsed trust-certificate objects and session caches/providers retain
+their immutable/shared concurrency obligations. TLSForHost can be called again
+before publication to verify that its SNI/TLS target is still current, always
+outside driver locks. A superseded endpoint, route or sharder opening is closed.
+
+The per-connection setup deadline starts before its target resolution and is
+not restarted for translation, raw dialing, TLS, authentication, initial USE,
+REGISTER, or final target validation. DNS's local timeout only shortens lookup.
+Each resolved contact/opening owns its deadline, even when aliases or ports
+share an IP. A failed physical opening can be retried under a new attempt budget
+and reconnect policy; it never extends the spent attempt or caller deadline.
+
+This clarification records implemented transport seams; public RunStream and
+its execution/paging composition remain later step 07 work. It does not extend
+the historical design review results or establish full release verification.

@@ -747,8 +747,8 @@ func TestQueryTimeoutClose(t *testing.T) {
 }
 
 func TestStream0(t *testing.T) {
-	// TODO: replace this with type check
-	const expErr = "gocql: received unexpected frame on stream 0"
+	// Native stream 0 is valid; unsolicited responses follow the ordinary
+	// discard path rather than being misclassified as a reserved stream.
 
 	var buf bytes.Buffer
 	f := newFramer(nil, protoVersion4)
@@ -772,10 +772,8 @@ func TestStream0(t *testing.T) {
 	}
 
 	err := conn.recv(context.Background(), false)
-	if err == nil {
-		t.Fatal("expected to get an error on stream 0")
-	} else if !strings.HasPrefix(err.Error(), expErr) {
-		t.Fatalf("expected to get error prefix %q got %q", expErr, err.Error())
+	if err != nil {
+		t.Fatalf("valid nonnegative stream rejected: %v", err)
 	}
 }
 

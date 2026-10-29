@@ -5,7 +5,6 @@ package scyllacloud
 import (
 	"crypto/tls"
 	"fmt"
-	"net"
 	"os"
 
 	"sigs.k8s.io/yaml"
@@ -107,7 +106,7 @@ func NewCloudCluster(bundlePath string, options ...func(*gocql.Config)) (gocql.C
 	}
 	dialer := cc.Dialer
 	if dialer == nil {
-		dialer = &net.Dialer{Timeout: cc.ConnectTimeout, KeepAlive: cc.SocketKeepalive}
+		dialer = gocql.DefaultDialer{ConnectTimeout: cc.ConnectTimeout, SocketKeepalive: cc.SocketKeepalive}
 	}
 	hostDialer := NewSniHostDialer(connConf, dialer)
 	cc.DialHost = hostDialer.DialHost

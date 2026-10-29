@@ -172,7 +172,10 @@ func newRateLimitExt(supported map[string][]string, logger StdLogger) *rateLimit
 
 	if v, found := supported[rateLimitError]; found {
 		for i := range v {
-			splitVal := strings.Split(v[i], "=")
+			splitVal := strings.SplitN(v[i], "=", 2)
+			if len(splitVal) != 2 {
+				continue
+			}
 			if splitVal[0] == rateLimitErrorCode {
 				var (
 					err       error
@@ -181,8 +184,8 @@ func newRateLimitExt(supported map[string][]string, logger StdLogger) *rateLimit
 				if errorCode, err = strconv.Atoi(splitVal[1]); err != nil {
 					if debug.Enabled {
 						logger.Printf("scylla: failed to parse %s value %v: %s", rateLimitErrorCode, splitVal[1], err)
-						return nil
 					}
+					return nil
 				}
 				return &rateLimitExt{
 					rateLimitErrorCode: errorCode,
@@ -226,17 +229,22 @@ func newLwtAddMetaMarkExt(supported map[string][]string, logger StdLogger) *lwtA
 
 	if v, found := supported[lwtAddMetadataMarkKey]; found {
 		for i := range v {
-			splitVal := strings.Split(v[i], "=")
+			splitVal := strings.SplitN(v[i], "=", 2)
+			if len(splitVal) != 2 {
+				continue
+			}
 			if splitVal[0] == lwtOptMetaBitMaskKey {
 				var (
 					err     error
 					bitMask int
 				)
-				if bitMask, err = strconv.Atoi(splitVal[1]); err != nil {
+				value, parseErr := strconv.ParseUint(splitVal[1], 10, 32)
+				bitMask, err = int(value), parseErr
+				if err != nil {
 					if debug.Enabled {
 						logger.Printf("scylla: failed to parse %s value %v: %s", lwtOptMetaBitMaskKey, splitVal[1], err)
-						return nil
 					}
+					return nil
 				}
 				return &lwtAddMetadataMarkExt{
 					lwtOptMetaBitMask: bitMask,
@@ -249,7 +257,7 @@ func newLwtAddMetaMarkExt(supported map[string][]string, logger StdLogger) *lwtA
 
 func (ext *lwtAddMetadataMarkExt) serialize() map[string]string {
 	return map[string]string{
-		lwtAddMetadataMarkKey: fmt.Sprintf("LWT_OPTIMIZATION_META_BIT_MASK=%d", ext.lwtOptMetaBitMask),
+		lwtAddMetadataMarkKey: fmt.Sprintf("LWT_OPTIMIZATION_META_BIT_MASK=%d", uint32(ext.lwtOptMetaBitMask)),
 	}
 }
 
@@ -312,21 +320,21 @@ func parseSupported(supported map[string][]string, logger StdLogger) ScyllaConne
 		err error
 	)
 
-	if s, ok := supported[scyllaShard]; ok {
+	if s, ok := supported[scyllaShard]; ok && len(s) > 0 {
 		if si.shard, err = strconv.Atoi(s[0]); err != nil {
 			if debug.Enabled {
 				logger.Printf("scylla: failed to parse %s value %v: %s", scyllaShard, s, err)
 			}
 		}
 	}
-	if s, ok := supported[scyllaNrShards]; ok {
+	if s, ok := supported[scyllaNrShards]; ok && len(s) > 0 {
 		if si.nrShards, err = strconv.Atoi(s[0]); err != nil {
 			if debug.Enabled {
 				logger.Printf("scylla: failed to parse %s value %v: %s", scyllaNrShards, s, err)
 			}
 		}
 	}
-	if s, ok := supported[scyllaShardingIgnoreMSB]; ok {
+	if s, ok := supported[scyllaShardingIgnoreMSB]; ok && len(s) > 0 {
 		if si.msbIgnore, err = strconv.ParseUint(s[0], 10, 64); err != nil {
 			if debug.Enabled {
 				logger.Printf("scylla: failed to parse %s value %v: %s", scyllaShardingIgnoreMSB, s, err)
@@ -334,13 +342,13 @@ func parseSupported(supported map[string][]string, logger StdLogger) ScyllaConne
 		}
 	}
 
-	if s, ok := supported[scyllaPartitioner]; ok {
+	if s, ok := supported[scyllaPartitioner]; ok && len(s) > 0 {
 		si.partitioner = s[0]
 	}
-	if s, ok := supported[scyllaShardingAlgorithm]; ok {
+	if s, ok := supported[scyllaShardingAlgorithm]; ok && len(s) > 0 {
 		si.shardingAlgorithm = s[0]
 	}
-	if s, ok := supported[scyllaShardAwarePort]; ok {
+	if s, ok := supported[scyllaShardAwarePort]; ok && len(s) > 0 {
 		if shardAwarePort, err := strconv.ParseUint(s[0], 10, 16); err != nil {
 			if debug.Enabled {
 				logger.Printf("scylla: failed to parse %s value %v: %s", scyllaShardAwarePort, s, err)
@@ -349,7 +357,7 @@ func parseSupported(supported map[string][]string, logger StdLogger) ScyllaConne
 			si.shardAwarePort = uint16(shardAwarePort)
 		}
 	}
-	if s, ok := supported[scyllaShardAwarePortSSL]; ok {
+	if s, ok := supported[scyllaShardAwarePortSSL]; ok && len(s) > 0 {
 		if shardAwarePortTLS, err := strconv.ParseUint(s[0], 10, 16); err != nil {
 			if debug.Enabled {
 				logger.Printf("scylla: failed to parse %s value %v: %s", scyllaShardAwarePortSSL, s, err)
@@ -375,7 +383,14 @@ func parseSupported(supported map[string][]string, logger StdLogger) ScyllaConne
 	_, hasRateLimit := supported[rateLimitError]
 	si.isScylla = hasLWT || hasRateLimit || si.isMetadataIDSupported || si.nrShards != 0
 
-	if si.partitioner != "org.apache.cassandra.dht.Murmur3Partitioner" || si.shardingAlgorithm != "biased-token-round-robin" || si.nrShards == 0 || si.msbIgnore == 0 {
+	complete := true
+	for _, key := range []string{scyllaShard, scyllaNrShards, scyllaPartitioner, scyllaShardingAlgorithm, scyllaShardingIgnoreMSB} {
+		v, ok := supported[key]
+		if !ok || len(v) == 0 || v[0] == "" {
+			complete = false
+		}
+	}
+	if !complete || si.shard < 0 || si.shard >= si.nrShards || si.nrShards > 65535 || si.msbIgnore > 63 || si.partitioner != "org.apache.cassandra.dht.Murmur3Partitioner" || si.shardingAlgorithm != "biased-token-round-robin" || si.nrShards <= 0 {
 		if debug.Enabled {
 			logger.Printf("scylla: unsupported sharding configuration, partitioner=%s, algorithm=%s, no_shards=%d, msb_ignore=%d",
 				si.partitioner, si.shardingAlgorithm, si.nrShards, si.msbIgnore)
@@ -877,7 +892,7 @@ type ShardDialer interface {
 
 // A dialer which dials a particular shard
 type scyllaDialer struct {
-	dialer    Dialer
+	dialer    legacyDialer
 	logger    StdLogger
 	tlsConfig *tls.Config
 	cfg       *ClusterConfig

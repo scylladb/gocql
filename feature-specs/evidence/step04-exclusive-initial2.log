@@ -1,0 +1,6 @@
+--- FAIL: TestV2OrphanBudgetUsesExactCapacity (1.00s)
+    v2_transport_pool_test.go:281: request not written
+    v2_transport_pool_test.go:267: EOF
+FAIL
+FAIL    github.com/scylladb/gocql/v2    1.044s
+FAIL

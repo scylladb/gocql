@@ -142,9 +142,10 @@ type SslOptions struct {
 }
 
 type ConnConfig struct {
+	TypedConfig     *Config
 	TypedAuth       AuthProvider
 	TypedLimits     ProtocolLimits
-	Dialer          Dialer
+	Dialer          legacyDialer
 	Logger          StdLogger
 	Authenticator   Authenticator
 	Compressor      Compressor
@@ -197,15 +198,30 @@ type ConnInterface interface {
 // queries, but users are usually advised to use a more reliable, higher
 // level API.
 type Conn struct {
-	auth           Authenticator
-	cfg            *ConnConfig
-	frameObserver  FrameHeaderObserver
-	streamObserver StreamObserver
-	w              contextWriter
-	logger         StdLogger
-	ctx            context.Context
-	errorHandler   ConnErrorHandler
-	compressor     Compressor
+	openingSharderEpoch                       uint64
+	openingDeadline                           time.Time
+	eventMu                                   sync.Mutex
+	eventsClosed                              bool
+	eventDone                                 chan struct{}
+	targetEpoch                               uint64
+	validateTarget                            func(context.Context) error
+	streamBudget                              *streamMetadataBudget
+	eventOnce                                 sync.Once
+	eventQueue                                chan connEvent
+	exclusiveFlag                             atomic.Bool
+	sharedOps, orphans                        int
+	sharedChanged                             chan struct{}
+	pauseWanted                               bool
+	readerPaused, readerResume, readerResumed chan struct{}
+	auth                                      Authenticator
+	cfg                                       *ConnConfig
+	frameObserver                             FrameHeaderObserver
+	streamObserver                            StreamObserver
+	w                                         contextWriter
+	logger                                    StdLogger
+	ctx                                       context.Context
+	errorHandler                              ConnErrorHandler
+	compressor                                Compressor
 	// segCompressor is compressor narrowed to the two Append methods the v5 segment
 	// codec takes, resolved once by resolveSegmentCompressor during the handshake. The
 	// receive path would otherwise repeat that assertion for every segment it reads,
@@ -273,6 +289,7 @@ type Conn struct {
 	tabletsRoutingV1 int32
 	headerBuf        [headSize]byte
 	isShardAware     bool
+	requestedShard   Option[uint32]
 	// true if connection close process for the connection started.
 	// closed is protected by mu.
 	closed     bool
@@ -415,8 +432,24 @@ func translateHostAddresses(addressTranslator AddressTranslator, host *HostInfo,
 // dialShard establishes a connection to a host/shard and notifies the session's connectObserver.
 // If nrShards is zero, shard-aware dialing is disabled.
 // note: every connection needs to get `conn.finalizeConnection` called on it when initialization process is done
+type connectionLifetimeKey struct{}
+
 func (s *Session) dialShard(ctx context.Context, host *HostInfo, connConfig *ConnConfig, errorHandler ConnErrorHandler,
 	shardID, nrShards int) (*Conn, error) {
+	lifetimeCtx := ctx
+	if connConfig.TypedConfig != nil {
+		if connConfig.ConnectTimeout > 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, connConfig.ConnectTimeout)
+			defer cancel()
+		}
+		if deadline := host.claimSetupDeadline(); !deadline.IsZero() {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithDeadline(ctx, deadline)
+			defer cancel()
+		}
+		ctx = context.WithValue(ctx, connectionLifetimeKey{}, lifetimeCtx)
+	}
 	var obs ObservedConnect
 
 	current := host.getTranslatedConnectionInfo()
@@ -451,6 +484,15 @@ func (s *Session) dialShard(ctx context.Context, host *HostInfo, connConfig *Con
 // If nrShards is zero, shard-aware dialing is disabled.
 func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *ConnConfig, errorHandler ConnErrorHandler,
 	shardID, nrShards int) (*Conn, error) {
+	lifetimeCtx := ctx
+	if value, ok := ctx.Value(connectionLifetimeKey{}).(context.Context); ok {
+		lifetimeCtx = value
+	}
+	if cfg.ConnectTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, cfg.ConnectTimeout)
+		defer cancel()
+	}
 	if cfg.ProtoVersion < 0 || cfg.ProtoVersion > 127 {
 		return nil, fmt.Errorf("invalid protocol version %d: must be between 0 and 127", cfg.ProtoVersion)
 	}
@@ -473,29 +515,38 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 		return nil, err
 	}
 
-	ctx, cancel := context.WithCancel(ctx)
+	if cfg.TypedConfig != nil {
+		isShardAware = dialedHost.shardTarget.Set
+	}
+	openingDeadline, _ := ctx.Deadline()
+	connectionCtx, cancel := context.WithCancel(lifetimeCtx)
 	c := &Conn{
 		r: &connReader{
 			conn: dialedHost.Conn,
 		},
-		cfg:           cfg,
-		calls:         make(map[int]*callReq),
-		version:       uint8(cfg.ProtoVersion),
-		isShardAware:  isShardAware,
-		addr:          dialedHost.Conn.RemoteAddr().String(),
-		errorHandler:  errorHandler,
-		compressor:    cfg.Compressor,
-		session:       s,
-		streams:       s.streamIDGenerator(),
-		host:          host,
-		isSchemaV2:    true, // Try using "system.peers_v2" until proven otherwise
-		frameObserver: s.frameObserver,
+		cfg:                 cfg,
+		calls:               make(map[int]*callReq),
+		version:             uint8(cfg.ProtoVersion),
+		isShardAware:        isShardAware,
+		requestedShard:      dialedHost.shardTarget,
+		targetEpoch:         dialedHost.targetEpoch,
+		openingSharderEpoch: dialedHost.sharderEpoch,
+		openingDeadline:     openingDeadline,
+		validateTarget:      dialedHost.validateTarget,
+		addr:                dialedHost.Conn.RemoteAddr().String(),
+		errorHandler:        errorHandler,
+		compressor:          cfg.Compressor,
+		session:             s,
+		streams:             s.streamIDGenerator(),
+		host:                host,
+		isSchemaV2:          true, // Try using "system.peers_v2" until proven otherwise
+		frameObserver:       s.frameObserver,
 		w: &deadlineContextWriter{
 			w:         dialedHost.Conn,
 			semaphore: make(chan struct{}, 1),
 			quit:      make(chan struct{}),
 		},
-		ctx:            ctx,
+		ctx:            connectionCtx,
 		cancel:         cancel,
 		logger:         cfg.logger(),
 		streamObserver: s.streamObserver,
@@ -551,21 +602,25 @@ func (c *Conn) init(ctx context.Context, dialedHost *DialedHost) error {
 	}
 
 	// dont coalesce startup frames
-	if c.session.cfg.WriteCoalesceWaitTime > 0 && !c.cfg.disableCoalesce && !dialedHost.DisableCoalesce {
-		c.w = newWriteCoalescer(dialedHost.Conn, c.cfg.ConnectTimeout, c.session.cfg.WriteCoalesceWaitTime, ctx.Done())
+	if c.session.cfg.WriteCoalesceWaitTime > 0 && !c.cfg.disableCoalesce && (!dialedHost.DisableCoalesce || c.cfg.TypedConfig != nil) {
+		c.w = newWriteCoalescer(dialedHost.Conn, c.cfg.ConnectTimeout, c.session.cfg.WriteCoalesceWaitTime, c.ctx.Done())
 	}
 
 	if c.isScyllaConn() { // ScyllaDB does not support system.peers_v2
 		c.setSchemaV2(false)
 	}
 
-	go c.serve(ctx)
-	go c.heartBeat(ctx)
+	go c.serve(c.ctx)
+	go c.heartBeat(c.ctx)
 
 	return nil
 }
 
 func (c *Conn) Write(p []byte) (n int, err error) {
+	if err = c.beginShared(c.ctx); err != nil {
+		return 0, err
+	}
+	defer c.endShared()
 	return c.w.writeContext(context.Background(), p)
 }
 
@@ -575,6 +630,9 @@ func (c *Conn) Write(p []byte) (n int, err error) {
 // read-deadline handling); Read is retained so that *Conn keeps satisfying
 // io.Reader for external callers, as it does io.Writer via Write.
 func (c *Conn) Read(p []byte) (n int, err error) {
+	if c.exclusiveFlag.Load() {
+		return 0, &UnsupportedSettingError{Setting: "raw connection read", Reason: "reader is reserved for streaming"}
+	}
 	return c.r.Read(p)
 }
 
@@ -674,11 +732,18 @@ func (s *startupCoordinator) options(ctx context.Context, startupCompleted *atom
 		return NewErrProtocol("Unknown type of response to startup frame: %T", frame)
 	}
 	// Keep raw supported multimap for debug purposes
+	if config := s.conn.cfg.TypedConfig; config != nil {
+		if err := validateV2Supported(v.Supported, config.Pool); err != nil {
+			return err
+		}
+	}
 	s.conn.supported = v.Supported
 	s.conn.scyllaSupported = parseSupported(s.conn.supported, s.conn.logger)
 	s.conn.recalculateSystemRequestTimeout()
-	if current := s.conn.host.ScyllaFeatures(); current != s.conn.scyllaSupported.ScyllaHostFeatures {
-		s.conn.host.setScyllaFeatures(s.conn.scyllaSupported.ScyllaHostFeatures)
+	if _, poolOwned := s.conn.errorHandler.(*hostConnPool); !poolOwned || s.conn.cfg.TypedConfig == nil {
+		if current := s.conn.host.ScyllaFeatures(); current != s.conn.scyllaSupported.ScyllaHostFeatures {
+			s.conn.host.setScyllaFeatures(s.conn.scyllaSupported.ScyllaHostFeatures)
+		}
 	}
 	s.conn.cqlProtoExts = parseCQLProtocolExtensions(s.conn.supported, s.conn.version, s.conn.logger)
 
@@ -771,6 +836,9 @@ func (s *startupCoordinator) startup(ctx context.Context, startupCompleted *atom
 		// what the node did offer. TestCompressorNegotiated is the integration-side
 		// check that this never happens on a healthy cluster.
 		if _, ok := m["COMPRESSION"]; !ok {
+			if s.conn.cfg.TypedConfig != nil {
+				return &UnsupportedSettingError{Setting: "compression", Reason: "server does not advertise requested " + name}
+			}
 			s.conn.logger.Printf("gocql: %s does not support the requested %q compression, continuing uncompressed (server offers: %v)\n",
 				s.conn.addr, name, comp)
 			s.conn.compressor = nil
@@ -874,6 +942,7 @@ func (c *Conn) closeWithError(err error) {
 		return
 	}
 	c.closed = true
+	c.changeLocked()
 	callsToClose := c.calls
 	// It is safe to change c.calls to nil. Nobody should use it after c.closed is set to true.
 	c.calls = nil
@@ -998,6 +1067,12 @@ func (c *Conn) Close() {
 func (c *Conn) serve(ctx context.Context) {
 	var err error
 	for {
+		if c.pauseSharedReader(ctx) {
+			if ctx.Err() != nil {
+				break
+			}
+			continue
+		}
 		err = c.recv(ctx, true)
 		if err == nil {
 			continue
@@ -1048,6 +1123,10 @@ func (p *protocolError) Error() string {
 }
 
 func (c *Conn) heartBeat(ctx context.Context) {
+	if c.cfg != nil && c.cfg.TypedConfig != nil {
+		c.typedHeartbeat(ctx)
+		return
+	}
 	sleepTime := 1 * time.Second
 	timer := time.NewTimer(sleepTime)
 	defer timer.Stop()
@@ -1247,9 +1326,9 @@ func (c *Conn) processFrameSource(ctx context.Context, src frameSource) error {
 		return fmt.Errorf("gocql: frame header declares a %d byte body but only %d bytes remain in the self-contained segment", head.Length, src.segment.Len())
 	}
 
-	if head.Stream > c.streams.NumStreams {
+	if head.Stream >= c.streams.NumStreams {
 		return fmt.Errorf("gocql: frame header stream is beyond call expected bounds: %d", head.Stream)
-	} else if head.Stream <= 0 {
+	} else if head.Stream < 0 {
 		// reserved stream that we dont use, probably due to a protocol error
 		// or a bug in Cassandra, this should be an error, parse it and return.
 		framer, err := c.readFrameIntoFramer(src, head)
@@ -1273,7 +1352,9 @@ func (c *Conn) processFrameSource(ctx context.Context, src frameSource) error {
 
 		if head.Stream == -1 { // reserved stream for events
 			if c.session != nil {
-				go c.session.handleEvent(frame)
+				if err := c.dispatchEvent(frame); err != nil {
+					return err
+				}
 			}
 			return nil
 		}
@@ -1398,7 +1479,14 @@ func (c *Conn) abandonRecvCall(call *callReq, framer *framer) {
 }
 
 func (c *Conn) releaseStream(call *callReq) {
+	c.mu.Lock()
+	if call.orphaned {
+		c.orphans--
+		call.orphaned = false
+	}
 	c.streams.Clear(call.streamID)
+	c.changeLocked()
+	c.mu.Unlock()
 
 	if call.streamObserverContext != nil {
 		call.streamObserverEndOnce.Do(func() {
@@ -1708,7 +1796,9 @@ type connReadSource interface {
 
 // connReader implements connReadSource.
 type connReader struct {
-	conn net.Conn
+	deadlineMu sync.Mutex
+	pause      atomic.Bool
+	conn       net.Conn
 	// r is an explicit compatibility source used by legacy fixtures. Production
 	// connections leave it nil so header reads cannot prefetch body bytes.
 	r       *bufio.Reader
@@ -1795,10 +1885,15 @@ func (c *connReader) Read(p []byte) (n int, err error) {
 // deadlineContextWriter.writeContext and writeCoalescer.flush both report
 // SetWriteDeadline failures instead of writing anyway.
 func (c *connReader) armDeadline() error {
+	c.deadlineMu.Lock()
+	defer c.deadlineMu.Unlock()
 	if c.conn == nil {
 		return nil
 	}
 	if c.disarm.Load() {
+		if c.pause.Load() {
+			return c.conn.SetReadDeadline(time.Now())
+		}
 		// The read deadline is disarmed around the frame/segment header read in
 		// the serve() loop: on an idle connection that read blocks indefinitely
 		// waiting for the next frame, so a short ReadTimeout must not fire here.
@@ -1822,7 +1917,9 @@ func (c *connReader) armDeadline() error {
 // timeout value untouched so it can be toggled without racing a concurrent
 // finalizeConnection.
 func (c *connReader) setDisarm(v bool) {
+	c.deadlineMu.Lock()
 	c.disarm.Store(v)
+	c.deadlineMu.Unlock()
 }
 
 func (c *connReader) Close() error {
@@ -1842,7 +1939,8 @@ func (c *connReader) GetTimeout() time.Duration {
 }
 
 type callReq struct {
-	typed bool
+	orphaned bool
+	typed    bool
 	// streamObserverContext is notified about events regarding this stream
 	streamObserverContext StreamObserverContext
 	// resp will receive the frame that was sent as a response to this stream.
@@ -1868,6 +1966,7 @@ func getCallReq(streamID int) *callReq {
 	call := callReqPool.Get().(*callReq)
 	call.timeout = make(chan struct{})
 	call.typed = false
+	call.orphaned = false
 	call.streamID = streamID
 	call.streamObserverContext = nil
 	call.streamObserverEndOnce = sync.Once{}
@@ -2201,6 +2300,13 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, reques
 }
 
 func (c *Conn) execInternal(ctx context.Context, req frameBuilder, tracer Tracer, requestTimeout time.Duration, startupCompleted bool) (*framer, error) {
+	if err := c.beginShared(ctx); err != nil {
+		return nil, &QueryError{err: err}
+	}
+	defer c.endShared()
+	return c.execAdmitted(ctx, req, tracer, requestTimeout, startupCompleted)
+}
+func (c *Conn) execAdmitted(ctx context.Context, req frameBuilder, tracer Tracer, requestTimeout time.Duration, startupCompleted bool) (*framer, error) {
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return nil, &QueryError{err: ctxErr, potentiallyExecuted: false}
 	}
@@ -2378,9 +2484,15 @@ func (c *Conn) execInternal(ctx context.Context, req frameBuilder, tracer Tracer
 		return resp.framer, nil
 	case <-timeoutCh:
 		stopWaiting = true
+		if c.markOrphan(call) {
+			closeErr = errOrphanBudget
+		}
 		return nil, &QueryError{err: ErrTimeoutNoResponse, potentiallyExecuted: true, timeout: requestTimeout, inFlight: c.streams.InUse()}
 	case <-ctxDone:
 		stopWaiting = true
+		if c.markOrphan(call) {
+			closeErr = errOrphanBudget
+		}
 		return nil, &QueryError{err: ctx.Err(), potentiallyExecuted: true, timeout: requestTimeout, inFlight: c.streams.InUse()}
 	case <-c.ctx.Done():
 		stopWaiting = true
@@ -2905,6 +3017,9 @@ func (c *Conn) Address() string {
 }
 
 func (c *Conn) AvailableStreams() int {
+	if c.exclusiveFlag.Load() {
+		return 0
+	}
 	return c.streams.Available()
 }
 
@@ -2912,11 +3027,12 @@ func useKeyspaceStmt(keyspace string) string {
 	return `USE "` + strings.ReplaceAll(keyspace, `"`, `""`) + `"`
 }
 
-func (c *Conn) UseKeyspace(keyspace string) error {
+func (c *Conn) UseKeyspace(keyspace string) error { return c.useKeyspaceContext(c.ctx, keyspace) }
+func (c *Conn) useKeyspaceContext(ctx context.Context, keyspace string) error {
 	q := &writeQueryFrame{statement: useKeyspaceStmt(keyspace)}
 	q.params.consistency = c.session.cons
 
-	framer, err := c.exec(c.ctx, q, nil, c.cfg.ConnectTimeout)
+	framer, err := c.exec(ctx, q, nil, c.cfg.ConnectTimeout)
 	if err != nil {
 		return err
 	}

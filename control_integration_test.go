@@ -17,8 +17,8 @@ type unixSocketDialer struct {
 	socketPath string
 }
 
-func (d unixSocketDialer) DialContext(_ context.Context, _, _ string) (net.Conn, error) {
-	return d.dialer.Dial("unix", d.socketPath)
+func (d unixSocketDialer) DialContext(ctx context.Context, target DialTarget) (net.Conn, error) {
+	return d.dialer.DialContext(ctx, target.Network, target.Address)
 }
 
 func TestUnixSockets(t *testing.T) {
@@ -43,17 +43,10 @@ func TestUnixSockets(t *testing.T) {
 	c.Metadata.TopologyEvents = false
 	c.Metadata.SchemaEvents = false
 
-	d := net.Dialer{
-		Timeout: c.ConnectTimeout,
-	}
-	if c.SocketKeepalive > 0 {
-		d.KeepAlive = c.SocketKeepalive
-	}
-
-	c.Dialer = unixSocketDialer{
-		dialer:     d,
-		socketPath: socketFiles[0],
-	}
+	c.ContactPoints = []string{"unix:" + socketFiles[0]}
+	c.Dialer = DialerFunc(func(ctx context.Context, target DialTarget) (net.Conn, error) {
+		return (&net.Dialer{Timeout: c.ConnectTimeout}).DialContext(ctx, target.Network, target.Address)
+	})
 
 	sess, err := Connect(context.Background(), c)
 	if err != nil {

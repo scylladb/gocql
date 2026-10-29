@@ -1,0 +1,2 @@
+# github.com/scylladb/gocql/v2 [github.com/scylladb/gocql/v2.test]
+./v2_integration_helpers_test.go:118:23: cannot use func(HostSnapshot) (*tls.Config, error) {…} (value of type func(HostSnapshot) (*tls.Config, error)) as func(context.Context, HostSnapshot) (*tls.Config, error) value in assignment

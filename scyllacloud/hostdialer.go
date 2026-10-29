@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"sync"
+	"time"
 
 	"golang.org/x/net/proxy"
 
@@ -23,7 +25,7 @@ type SniHostDialer struct {
 
 func NewSniHostDialer(connConfig *ConnectionConfig, dialer gocql.Dialer) *SniHostDialer {
 	if dialer == nil {
-		dialer = &net.Dialer{}
+		dialer = gocql.DefaultDialer{}
 	}
 	return &SniHostDialer{connConfig: connConfig, dialer: dialer}
 }
@@ -45,20 +47,36 @@ func (s *SniHostDialer) datacenter(host gocql.HostSnapshot) (*Datacenter, error)
 
 // DialHost opens the raw connection; Connect applies TLSForHost and performs the
 // TLS handshake. The supplied context bounds both direct and SOCKS dialing.
-func (s *SniHostDialer) DialHost(ctx context.Context, host gocql.HostSnapshot) (net.Conn, error) {
-	dc, err := s.datacenter(host)
+func (s *SniHostDialer) DialHost(ctx context.Context, target gocql.DialTarget) (net.Conn, error) {
+	dc, err := s.datacenter(target.Host)
 	if err != nil {
 		return nil, err
 	}
-	dialer := s.dialer
+	var rawMu sync.Mutex
+	var proxyRaw net.Conn
+	dial := func(ctx context.Context, network, address string) (net.Conn, error) {
+		t := target
+		t.Network, t.Address = network, address
+		return s.dialer.DialContext(ctx, t)
+	}
 	if dc.ProxyURL != "" {
 		u, err := url.Parse(dc.ProxyURL)
 		if err != nil {
 			return nil, fmt.Errorf("can't parse proxy URL %q: %w", dc.ProxyURL, err)
 		}
-		base := dialer
+		base := dial
 		d, err := proxy.FromURL(u, proxyDialerFunc(func(network, address string) (net.Conn, error) {
-			return base.DialContext(ctx, network, address)
+			conn, err := base(ctx, network, address)
+			if err != nil {
+				if conn != nil {
+					conn.Close()
+				}
+				return nil, err
+			}
+			rawMu.Lock()
+			proxyRaw = conn
+			rawMu.Unlock()
+			return conn, nil
 		}))
 		if err != nil {
 			return nil, fmt.Errorf("can't create proxy dialer: %w", err)
@@ -67,20 +85,32 @@ func (s *SniHostDialer) DialHost(ctx context.Context, host gocql.HostSnapshot) (
 		if !ok {
 			return nil, fmt.Errorf("cloud proxy %q does not support context dialing", dc.ProxyURL)
 		}
-		dialer = contextDialer
+		dial = contextDialer.DialContext
 	}
 	server := dc.Server
 	if _, _, err := net.SplitHostPort(server); err != nil {
 		server = net.JoinHostPort(server, "443")
 	}
-	conn, err := dialer.DialContext(ctx, "tcp", server)
+	conn, err := dial(ctx, "tcp", server)
 	if err != nil {
+		if conn != nil {
+			conn.Close()
+		}
 		return nil, fmt.Errorf("can't connect to %q: %w", server, err)
+	}
+	rawMu.Lock()
+	raw := proxyRaw
+	rawMu.Unlock()
+	if raw != nil {
+		return &cloudSocketConn{Conn: conn, socket: raw}, nil
 	}
 	return conn, nil
 }
 
-func (s *SniHostDialer) TLSForHost(host gocql.HostSnapshot) (*tls.Config, error) {
+func (s *SniHostDialer) TLSForHost(ctx context.Context, host gocql.HostSnapshot) (*tls.Config, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if host.ID == (gocql.UUID{}) {
 		return s.initialTLS()
 	}
@@ -137,4 +167,52 @@ type proxyDialerFunc func(network, addr string) (net.Conn, error)
 
 func (d proxyDialerFunc) Dial(network, addr string) (net.Conn, error) {
 	return d(network, addr)
+}
+
+// Proxy IO wrappers may hide the raw TCP method set. Preserve actual socket
+// controls from the raw dial, so the driver applies its requested settings to
+// the real underlying connection rather than silently skipping them.
+type cloudSocketConn struct {
+	net.Conn
+	socket net.Conn
+}
+
+func (c *cloudSocketConn) unsupported(name string) error {
+	return &gocql.UnsupportedSettingError{Setting: name, Reason: "cloud raw dialer does not expose TCP controls"}
+}
+func (c *cloudSocketConn) SetNoDelay(v bool) error {
+	if s, ok := c.socket.(interface{ SetNoDelay(bool) error }); ok {
+		return s.SetNoDelay(v)
+	}
+	return c.unsupported("TCP_NODELAY")
+}
+func (c *cloudSocketConn) SetKeepAlive(v bool) error {
+	if s, ok := c.socket.(interface{ SetKeepAlive(bool) error }); ok {
+		return s.SetKeepAlive(v)
+	}
+	return c.unsupported("TCP keepalive")
+}
+func (c *cloudSocketConn) SetKeepAlivePeriod(v time.Duration) error {
+	if s, ok := c.socket.(interface{ SetKeepAlivePeriod(time.Duration) error }); ok {
+		return s.SetKeepAlivePeriod(v)
+	}
+	return c.unsupported("TCP keepalive period")
+}
+func (c *cloudSocketConn) SetReadBuffer(v int) error {
+	if s, ok := c.socket.(interface{ SetReadBuffer(int) error }); ok {
+		return s.SetReadBuffer(v)
+	}
+	return c.unsupported("receive buffer")
+}
+func (c *cloudSocketConn) SetWriteBuffer(v int) error {
+	if s, ok := c.socket.(interface{ SetWriteBuffer(int) error }); ok {
+		return s.SetWriteBuffer(v)
+	}
+	return c.unsupported("send buffer")
+}
+func (c *cloudSocketConn) SetLinger(v int) error {
+	if s, ok := c.socket.(interface{ SetLinger(int) error }); ok {
+		return s.SetLinger(v)
+	}
+	return c.unsupported("linger")
 }

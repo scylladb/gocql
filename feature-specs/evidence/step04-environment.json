@@ -1,0 +1,19 @@
+{
+  "go": "go version go1.25.0 linux/amd64",
+  "containers": [
+    "gocql-api-node1 docker.io/scylladb/scylla:2026.3 Up 18 hours",
+    "gocql-api-node2 docker.io/scylladb/scylla:2026.3 Up 18 hours",
+    "gocql-api-node3 docker.io/scylladb/scylla:2026.3 Up 18 hours",
+    "gocql-api-cassandra1 docker.io/library/cassandra:5.0 Up 17 hours",
+    "gocql-api-cassandra2 docker.io/library/cassandra:5.0 Up 17 hours",
+    "gocql-api-cassandra3 docker.io/library/cassandra:5.0 Up 17 hours",
+    "gocql-api-nightly1 docker.io/scylladb/scylla-nightly:latest Up 18 hours",
+    "gocql-api-nightly2 docker.io/scylladb/scylla-nightly:latest Up 18 hours",
+    "gocql-api-nightly3 docker.io/scylladb/scylla-nightly:latest Up 18 hours"
+  ],
+  "certificates": {
+    "testdata/pki/ca.crt": "630dfe0d96f0d1c770c631d2e9827078ac790dae83bb8abb73c5d55a97797d12",
+    "testdata/pki/gocql.crt": "ace4923aa672dacc8deebe8623c39c32a46ababe164519af00114dd97b50d521",
+    "testdata/pki/cassandra.crt": "4b675511cbb8445449d1c7a37c6bdaddc3bb0b0553c32668371905a00bb75586"
+  }
+}

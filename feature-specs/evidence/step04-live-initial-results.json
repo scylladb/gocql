@@ -1,0 +1,32 @@
+[
+  {
+    "command": [
+      "go",
+      "test",
+      "-json",
+      "-race",
+      "-tags",
+      "integration gocql_debug",
+      "-run",
+      "^(TestV2TransportPoolSizingLive|TestV2ExclusiveTransportLive)$",
+      "-count=1",
+      "-timeout=8m",
+      "-parallel=1",
+      ".",
+      "-args",
+      "-distribution=scylla",
+      "-gocql.timeout=60s",
+      "-proto=4",
+      "-rf=3",
+      "-clusterSize=3",
+      "-autowait=2000ms",
+      "-compressor=no-compression",
+      "-gocql.cversion=2026.3.4",
+      "-cluster=127.0.20.1,127.0.20.2,127.0.20.3"
+    ],
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step04-live-stable-raw-initial.jsonl",
+    "elapsed_seconds": 26.54894471168518,
+    "source_snapshot": "feature-specs/evidence/step04-live-initial-source.json"
+  }
+]
