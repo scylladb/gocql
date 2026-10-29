@@ -7,10 +7,10 @@ import (
 	"math"
 	"testing"
 
-	"github.com/gocql/gocql"
-	"github.com/gocql/gocql/internal/tests/serialization"
-	"github.com/gocql/gocql/internal/tests/serialization/mod"
-	"github.com/gocql/gocql/serialization/double"
+	"github.com/scylladb/gocql/v2"
+	"github.com/scylladb/gocql/v2/internal/tests/serialization"
+	"github.com/scylladb/gocql/v2/internal/tests/serialization/mod"
+	"github.com/scylladb/gocql/v2/serialization/double"
 )
 
 func TestMarshalDouble(t *testing.T) {

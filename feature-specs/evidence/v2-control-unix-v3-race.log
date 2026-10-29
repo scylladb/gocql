@@ -1,0 +1,6 @@
+2026/10/29 09:04:58 logger.go:59: [6a8d9885-def0-4e53-8d33-72a3a18da923] warnings: [Using Replication Factor replication_factor=1 lower than the minimum_replication_factor_warn_threshold=3 is not recommended.]
+=== RUN   TestUnixSockets
+=== PAUSE TestUnixSockets
+=== CONT  TestUnixSockets
+--- PASS: TestUnixSockets (0.04s)
+PASS

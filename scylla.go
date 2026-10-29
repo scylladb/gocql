@@ -14,7 +14,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gocql/gocql/internal/debug"
+	"github.com/scylladb/gocql/v2/internal/debug"
 )
 
 // ScyllaFeatures represents Scylla connection options as sent in SUPPORTED

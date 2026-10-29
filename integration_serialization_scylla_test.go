@@ -5,18 +5,16 @@ package gocql
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
+	"github.com/scylladb/gocql/v2/internal/tests/serialization/valcases"
+	"gopkg.in/inf.v0"
 	"math/big"
-	"reflect"
+	"net/netip"
 	"strings"
 	"testing"
 	"time"
-	"unsafe"
-
-	"gopkg.in/inf.v0"
-
-	"github.com/gocql/gocql/internal/tests/serialization/valcases"
 )
 
 // truncateTable executes a TRUNCATE on the given fully-qualified table, retrying
@@ -28,7 +26,8 @@ import (
 func truncateTable(t *testing.T, session *Session, fqTable string) error {
 	t.Helper()
 	return retryOnTopologyBusy(func() error {
-		return session.Query("TRUNCATE " + fqTable).Exec()
+		_, err := v2Exec(context.Background(), session, "TRUNCATE "+fqTable)
+		return err
 	})
 }
 
@@ -172,908 +171,345 @@ func TestRetryOnTopologyBusy(t *testing.T) {
 
 func TestSerializationSimpleTypesCassandra(t *testing.T) {
 	t.Parallel()
-
-	const (
-		pkColumn   = "test_id"
-		testColumn = "test_col"
-	)
-
-	typeCases := valcases.GetSimple()
-
-	session := createSession(t)
-	defer session.Close()
-
-	//Checks data and values conversion
+	types := valcases.GetSimple()
+	// Preserve every one of the 96 binary fixtures and every language adapter.
 	t.Run("Marshal", func(t *testing.T) {
-		for _, tc := range typeCases {
-			checkTypeMarshal(t, tc)
+		for _, tc := range types {
+			t.Run(tc.CQLName, func(t *testing.T) {
+				for _, vc := range tc.Cases {
+					for _, lc := range vc.LangCases {
+						t.Run(vc.Name+"/"+lc.LangType, func(t *testing.T) {
+							typ, err := ScalarType(Type(tc.CQLType))
+							if err != nil {
+								t.Fatal(err)
+							}
+							value, err := serializationFixtureValue(Type(tc.CQLType), lc.Value)
+							if err != nil {
+								t.Fatal(err)
+							}
+							for _, owned := range []bool{false, true} {
+								var encoded EncodedValue
+								if owned {
+									encoded, err = EncodeValueOwned(typ, DynamicCodec, value)
+								} else {
+									encoded, err = EncodeValueBorrowed(typ, DynamicCodec, value)
+								}
+								if (err != nil) != lc.ErrInsert {
+									t.Fatalf("encode error: %v (expected error %t)", err, lc.ErrInsert)
+								}
+								if err != nil {
+									continue
+								}
+								if !bytes.Equal(vc.Data, encoded.Bytes().OwnedBytes()) {
+									t.Fatalf("binary fixture: expected %x, got %x", vc.Data, encoded.Bytes().OwnedBytes())
+								}
+								if (vc.Data == nil) != (encoded.State() == Null) {
+									t.Fatalf("null/present distinction lost: %s", vc.Name)
+								}
+							}
+						})
+					}
+				}
+			})
 		}
 	})
-
 	t.Run("Unmarshal", func(t *testing.T) {
-		for _, tc := range typeCases {
-			checkTypeUnmarshal(t, tc)
+		for _, tc := range types {
+			t.Run(tc.CQLName, func(t *testing.T) {
+				for _, vc := range tc.Cases {
+					for _, lc := range vc.LangCases {
+						t.Run(vc.Name+"/"+lc.LangType, func(t *testing.T) {
+							typ, err := ScalarType(Type(tc.CQLType))
+							if err != nil {
+								t.Fatal(err)
+							}
+							state := Present
+							if vc.Data == nil {
+								state = Null
+							}
+							encoded, err := NewEncodedValue(typ, state, BorrowBytes(vc.Data))
+							if err != nil {
+								t.Fatal(err)
+							}
+							actual, err := DecodeValue(DynamicCodec, encoded)
+							if (err != nil) != lc.ErrSelect {
+								t.Fatalf("decode error: %v (expected error %t)", err, lc.ErrSelect)
+							}
+							if err != nil {
+								return
+							}
+							expected, err := serializationFixtureValue(Type(tc.CQLType), lc.Value)
+							if err != nil {
+								t.Fatal(err)
+							}
+							assertSerializationValue(t, expected, actual)
+						})
+					}
+				}
+			})
 		}
 	})
-
-	//Create are tables
-	tables := make([]string, len(typeCases))
-	for i, tc := range typeCases {
-		table := testTableName(t, tc.CQLName)
-
-		stmt := fmt.Sprintf(`CREATE TABLE %s (%s text, %s %s, PRIMARY KEY (test_id))`, table, pkColumn, testColumn, tc.CQLName)
-		if err := createTable(session, stmt); err != nil {
-			t.Fatalf("failed to create table for cqltype (%s) with error '%v'", tc.CQLName, err)
-		}
-		tables[i] = table
+	s := createV2Session(t)
+	defer s.Close()
+	tables := make([]string, len(types))
+	for i, tc := range types {
+		tables[i] = serializationTableName(t, tc.CQLName)
+		serializationDDL(t, s, fmt.Sprintf("CREATE TABLE %s(test_id text PRIMARY KEY,test_col %s)", tables[i], tc.CQLName))
 	}
-
-	//Check Insert and Select are values
 	t.Run("InsertSelect", func(t *testing.T) {
-		for i, tc := range typeCases {
-			insertStmt := fmt.Sprintf("INSERT INTO %s (%s, %s) VALUES(?, ?)", tables[i], pkColumn, testColumn)
-			selectStmt := fmt.Sprintf("SELECT %s FROM %s WHERE %s = ?", testColumn, tables[i], pkColumn)
-
-			checkTypeInsertSelect(t, session, insertStmt, selectStmt, tc)
-		}
-	})
-}
-
-func checkTypeMarshal(t *testing.T, tc valcases.SimpleTypeCases) {
-	cqlName := tc.CQLName
-	t.Run(cqlName, func(t *testing.T) {
-		tp := Type(tc.CQLType)
-		cqlType := NewNativeType(4, tp)
-
-		for _, valCase := range tc.Cases {
-			for _, langCase := range valCase.LangCases {
-				receivedData, err := Marshal(cqlType, langCase.Value)
-
-				if !langCase.ErrInsert && err != nil {
-					t.Errorf("failed to marshal case (%s)(%s) value (%T) with error '%v'", valCase.Name, langCase.LangType, langCase.Value, err)
-				} else if langCase.ErrInsert && err == nil {
-					t.Errorf("expected an error on marshal case (%s)(%s) value (%T)(%[2]v), but have no error", valCase.Name, langCase.LangType, langCase.Value)
-				} else if !bytes.Equal(valCase.Data, receivedData) {
-					t.Errorf("failed to equal case (%s)(%s) data: expected %d, got %d", valCase.Name, langCase.LangType, valCase.Data, receivedData)
+		for i, tc := range types {
+			t.Run(tc.CQLName, func(t *testing.T) {
+				for _, vc := range tc.Cases {
+					for _, lc := range vc.LangCases {
+						t.Run(vc.Name+"/"+lc.LangType, func(t *testing.T) {
+							input, err := serializationFixtureValue(Type(tc.CQLType), lc.Value)
+							if err != nil {
+								t.Fatal(err)
+							}
+							id := vc.Name + "/" + lc.LangType
+							_, err = v2Exec(t.Context(), s, fmt.Sprintf("INSERT INTO %s(test_id,test_col) VALUES(?,?)", tables[i]), TextValue(id), input)
+							if (err != nil) != lc.ErrInsert {
+								t.Fatalf("insert error: %v (expected error %t)", err, lc.ErrInsert)
+							}
+							if err != nil {
+								return
+							}
+							cql := fmt.Sprintf("SELECT test_col FROM %s WHERE test_id=?", tables[i])
+							got := serializationColumn(t, s, cql, TextValue(id))
+							assertSerializationValue(t, input, got)
+							raw, err := serializationOne(s, cql, OneColumn(serializationRawDecoder{}), TextValue(id))
+							if err != nil {
+								t.Fatal(err)
+							}
+							if !bytes.Equal(vc.Data, raw.Bytes().OwnedBytes()) {
+								t.Fatalf("database binary fixture: expected %x, got %x", vc.Data, raw.Bytes().OwnedBytes())
+							}
+							if (vc.Data == nil) != (raw.State() == Null) {
+								t.Fatal("database null/present distinction lost")
+							}
+						})
+					}
 				}
-			}
-		}
-	})
-}
-
-func checkTypeUnmarshal(t *testing.T, tc valcases.SimpleTypeCases) {
-	cqlName := tc.CQLName
-	t.Run(cqlName, func(t *testing.T) {
-		tp := Type(tc.CQLType)
-		cqlType := NewNativeType(4, tp)
-
-		for _, valCase := range tc.Cases {
-			for _, langCase := range valCase.LangCases {
-				received := newRef(langCase.Value)
-
-				err := Unmarshal(cqlType, valCase.Data, received)
-				if !langCase.ErrSelect && err != nil {
-					t.Errorf("failed to unmarshal case (%s)(%s) value (%T) with error '%v'", valCase.Name, langCase.LangType, langCase.Value, err)
-				}
-				if langCase.ErrSelect && err == nil {
-					t.Errorf("expected an error on unmarshal case (%s)(%s) value (%T)(%[2]v), but have no error", valCase.Name, langCase.LangType, langCase.Value)
-				}
-				received = deReference(received)
-				if !equalVals(langCase.Value, received) {
-					t.Errorf("failed to equal case (%s)(%s) value: expected %d, got %d", valCase.Name, langCase.LangType, langCase.Value, received)
-				}
-			}
-		}
-	})
-}
-
-func checkTypeInsertSelect(t *testing.T, session *Session, insertStmt, selectStmt string, tc valcases.SimpleTypeCases) {
-	cqlName := tc.CQLName
-	t.Run(cqlName, func(t *testing.T) {
-		tp := Type(tc.CQLType)
-		cqlType := NewNativeType(4, tp)
-
-		for _, valCase := range tc.Cases {
-			valCaseName := valCase.Name
-
-			for _, langCase := range valCase.LangCases {
-				var insertedValue any
-				//Check Insert value as values
-				insertedValue = langCase.Value
-				err := session.Query(insertStmt, valCaseName, insertedValue).Exec()
-				if !langCase.ErrInsert && err != nil {
-					t.Errorf("failed to insert case (%s) value (%T)(%[2]v) with error '%v'", valCaseName, insertedValue, err)
-				} else if langCase.ErrInsert && err == nil {
-					t.Errorf("expected an error on insert case (%s) value (%T)(%[2]v), but have no error", valCaseName, insertedValue, err)
-				}
-
-				//Check Select value as value
-				selectedValue := newRef(langCase.Value)
-				err = session.Query(selectStmt, valCase.Name).Scan(selectedValue)
-				if !langCase.ErrSelect && err != nil {
-					t.Errorf("failed to select case (%s) value (%T) with error '%v'", valCaseName, selectedValue, err)
-				} else if langCase.ErrSelect && err == nil {
-					t.Errorf("expected an error on select case (%s) value (%T)(%[2]v), but have no error", valCaseName, selectedValue)
-				}
-				selectedValue = deReference(selectedValue)
-				if !equalVals(langCase.Value, selectedValue) {
-					t.Errorf("failed to equal case (%s) value: expected: %d, got: %d", valCaseName, langCase.Value, selectedValue)
-				}
-
-				//Check Select value as bytes
-				selectedValue = &DirectUnmarshal{}
-				err = session.Query(selectStmt, valCase.Name).Scan(selectedValue)
-				if err != nil {
-					t.Errorf("failed to select case (%s) value (%T) for cqltype (%s) with error '%v'", valCaseName, selectedValue, cqlType, err)
-				}
-				selectedValue = *(*[]byte)(selectedValue.(*DirectUnmarshal))
-				if !equalVals(valCase.Data, selectedValue) {
-					t.Errorf("failed to equal case (%s) value for cqltype (%s): expected: %d, got: %d", valCaseName, cqlType, valCase.Data, selectedValue)
-				}
-			}
-		}
-	})
-}
-
-// newRef returns the nil reference to the input type value (*type)(nil)
-func newRef(in any) any {
-	out := reflect.New(reflect.TypeOf(in)).Interface()
-	return out
-}
-
-func deReference(in any) any {
-	return reflect.Indirect(reflect.ValueOf(in)).Interface()
-}
-
-func equalVals(in1, in2 any) bool {
-	rin1 := reflect.ValueOf(in1)
-	rin2 := reflect.ValueOf(in2)
-	if rin1.Kind() != rin2.Kind() {
-		return false
-	}
-	if rin1.Kind() == reflect.Ptr && (rin1.IsNil() || rin2.IsNil()) {
-		return rin1.IsNil() && rin2.IsNil()
-	}
-
-	switch vin1 := in1.(type) {
-	case float32:
-		vin2 := in2.(float32)
-		return *(*[4]byte)(unsafe.Pointer(&vin1)) == *(*[4]byte)(unsafe.Pointer(&vin2))
-	case *float32:
-		vin2 := in2.(*float32)
-		return *(*[4]byte)(unsafe.Pointer(vin1)) == *(*[4]byte)(unsafe.Pointer(vin2))
-	case float64:
-		vin2 := in2.(float64)
-		return *(*[8]byte)(unsafe.Pointer(&vin1)) == *(*[8]byte)(unsafe.Pointer(&vin2))
-	case *float64:
-		vin2 := in2.(*float64)
-		return *(*[8]byte)(unsafe.Pointer(vin1)) == *(*[8]byte)(unsafe.Pointer(vin2))
-	case big.Int:
-		vin2 := in2.(big.Int)
-		return vin1.Cmp(&vin2) == 0
-	case *big.Int:
-		vin2 := in2.(*big.Int)
-		return vin1.Cmp(vin2) == 0
-	case inf.Dec:
-		vin2 := in2.(inf.Dec)
-		if vin1.Scale() != vin2.Scale() {
-			return false
-		}
-		return vin1.UnscaledBig().Cmp(vin2.UnscaledBig()) == 0
-	case *inf.Dec:
-		vin2 := in2.(*inf.Dec)
-		if vin1.Scale() != vin2.Scale() {
-			return false
-		}
-		return vin1.UnscaledBig().Cmp(vin2.UnscaledBig()) == 0
-	case fmt.Stringer:
-		vin2 := in2.(fmt.Stringer)
-		return vin1.String() == vin2.String()
-	default:
-		return reflect.DeepEqual(in1, in2)
-	}
-}
-
-// SliceMapTypesTestCase defines a test case for validating SliceMap/MapScan behavior
-type SliceMapTypesTestCase struct {
-	CQLType           string
-	CQLValue          string // Non-NULL value to insert
-	ExpectedValue     any    // Expected value for non-NULL case
-	ExpectedNullValue any    // Expected value for NULL
-}
-
-// compareCollectionValues compares collection values (lists, sets, maps) with special handling
-func compareCollectionValues(t *testing.T, cqlType string, expected, actual any) bool {
-	switch {
-	case strings.HasPrefix(cqlType, "set<"):
-		// Sets are returned as slices, but order is not guaranteed
-		expectedSlice := reflect.ValueOf(expected)
-		actualSlice := reflect.ValueOf(actual)
-		if expectedSlice.Kind() != reflect.Slice || actualSlice.Kind() != reflect.Slice {
-			return false
-		}
-		if expectedSlice.Len() != actualSlice.Len() {
-			return false
-		}
-
-		// Convert to maps for unordered comparison
-		expectedSet := make(map[any]bool)
-		for i := 0; i < expectedSlice.Len(); i++ {
-			expectedSet[expectedSlice.Index(i).Interface()] = true
-		}
-
-		actualSet := make(map[any]bool)
-		for i := 0; i < actualSlice.Len(); i++ {
-			actualSet[actualSlice.Index(i).Interface()] = true
-		}
-
-		return reflect.DeepEqual(expectedSet, actualSet)
-
-	default:
-		// For lists, maps, and other collections, reflect.DeepEqual works fine
-		return reflect.DeepEqual(expected, actual)
-	}
-}
-
-// compareValues compares expected and actual values with type-specific logic
-func compareValues(t *testing.T, cqlType string, expected, actual any) bool {
-	switch cqlType {
-	case "varint":
-		// big.Int needs Cmp() for proper comparison, but handle nil pointers safely
-		if expectedBig, ok := expected.(*big.Int); ok {
-			if actualBig, ok := actual.(*big.Int); ok {
-				// Handle nil cases
-				if expectedBig == nil && actualBig == nil {
-					return true
-				}
-				if expectedBig == nil || actualBig == nil {
-					return false
-				}
-				return expectedBig.Cmp(actualBig) == 0
-			}
-		}
-		return reflect.DeepEqual(expected, actual)
-
-	case "decimal":
-		// inf.Dec needs Cmp() for proper comparison, but handle nil pointers safely
-		if expectedDec, ok := expected.(*inf.Dec); ok {
-			if actualDec, ok := actual.(*inf.Dec); ok {
-				// Handle nil cases
-				if expectedDec == nil && actualDec == nil {
-					return true
-				}
-				if expectedDec == nil || actualDec == nil {
-					return false
-				}
-				return expectedDec.Cmp(actualDec) == 0
-			}
-		}
-		return reflect.DeepEqual(expected, actual)
-
-	default:
-		// reflect.DeepEqual handles nil vs empty slice/map distinction correctly for all types
-		// including inet (net.IP), blob ([]byte), collections ([]T, map[K]V), etc.
-		// This is critical for catching zero value behavior changes in the driver
-		return reflect.DeepEqual(expected, actual)
-	}
-}
-
-// TestSliceMapMapScanTypes tests SliceMap and MapScan with various CQL types
-func TestSliceMapMapScanTypes(t *testing.T) {
-	t.Parallel()
-
-	session := createSession(t)
-	defer session.Close()
-
-	table := testTableName(t)
-	tableCQL := fmt.Sprintf(`
-		CREATE TABLE IF NOT EXISTS gocql_test.%s (
-			id int PRIMARY KEY,
-			tinyint_col tinyint,
-			smallint_col smallint,
-			int_col int,
-			bigint_col bigint,
-			float_col float,
-			double_col double,
-			boolean_col boolean,
-			text_col text,
-			ascii_col ascii,
-			varchar_col varchar,
-			timestamp_col timestamp,
-			uuid_col uuid,
-			timeuuid_col timeuuid,
-			inet_col inet,
-			blob_col blob,
-			varint_col varint,
-			decimal_col decimal,
-			date_col date,
-			time_col time,
-			duration_col duration
-		)`, table)
-
-	if err := createTable(session, tableCQL); err != nil {
-		t.Fatal("Failed to create test table:", err)
-	}
-
-	if err := truncateTable(t, session, fmt.Sprintf("gocql_test.%s", table)); err != nil {
-		t.Fatal("Failed to truncate test table:", err)
-	}
-
-	testCases := []SliceMapTypesTestCase{
-		{"tinyint", "42", int8(42), int8(0)},
-		{"smallint", "1234", int16(1234), int16(0)},
-		{"int", "123456", int(123456), int(0)},
-		{"bigint", "1234567890", int64(1234567890), int64(0)},
-		{"float", "3.14", float32(3.14), float32(0)},
-		{"double", "2.718281828", float64(2.718281828), float64(0)},
-		{"boolean", "true", true, false},
-		{"text", "'hello world'", "hello world", ""},
-		{"ascii", "'hello ascii'", "hello ascii", ""},
-		{"varchar", "'hello varchar'", "hello varchar", ""},
-		{"timestamp", "1388534400000", time.Unix(1388534400, 0).UTC(), time.Time{}},
-		{"uuid", "550e8400-e29b-41d4-a716-446655440000", mustParseUUID("550e8400-e29b-41d4-a716-446655440000"), UUID{}},
-		{"timeuuid", "60d79c23-5793-11f0-8afe-bcfce78b517a", mustParseUUID("60d79c23-5793-11f0-8afe-bcfce78b517a"), UUID{}},
-		{"inet", "'127.0.0.1'", "127.0.0.1", ""},
-		{"blob", "0x48656c6c6f", []byte("Hello"), []byte(nil)},
-		{"varint", "123456789012345678901234567890", mustParseBigInt("123456789012345678901234567890"), (*big.Int)(nil)},
-		{"decimal", "123.45", mustParseDecimal("123.45"), (*inf.Dec)(nil)},
-		{"date", "'2015-05-03'", time.Date(2015, 5, 3, 0, 0, 0, 0, time.UTC), time.Date(-5877641, 06, 23, 0, 0, 0, 0, time.UTC)},
-		{"time", "'13:30:54.234'", 13*time.Hour + 30*time.Minute + 54*time.Second + 234*time.Millisecond, time.Duration(0)},
-		{"duration", "1y2mo3d4h5m6s789ms", mustCreateDuration(14, 3, 4*time.Hour+5*time.Minute+6*time.Second+789*time.Millisecond), Duration{}},
-	}
-
-	for i, tc := range testCases {
-		t.Run(tc.CQLType, func(t *testing.T) {
-			testSliceMapMapScanSimple(t, session, tc, i, table)
-		})
-	}
-}
-
-// Simplified test function that tests both SliceMap and MapScan with both NULL and non-NULL values
-func testSliceMapMapScanSimple(t *testing.T, session *Session, tc SliceMapTypesTestCase, id int, table string) {
-	colName := tc.CQLType + "_col"
-
-	t.Run("NonNull", func(t *testing.T) {
-		insertQuery := fmt.Sprintf("INSERT INTO gocql_test.%s (id, %s) VALUES (?, %s)", table, colName, tc.CQLValue)
-		if err := session.Query(insertQuery, id*2).Exec(); err != nil {
-			t.Fatalf("Failed to insert non-NULL value: %v", err)
-		}
-
-		for _, method := range []string{"SliceMap", "MapScan"} {
-			t.Run(method, func(t *testing.T) {
-				result := queryAndExtractValue(t, session, colName, id*2, method, table)
-				validateResult(t, tc.CQLType, tc.ExpectedValue, result, method, "non-NULL")
 			})
 		}
 	})
-
-	t.Run("Null", func(t *testing.T) {
-		insertQuery := fmt.Sprintf("INSERT INTO gocql_test.%s (id, %s) VALUES (?, NULL)", table, colName)
-		if err := session.Query(insertQuery, id*2+1).Exec(); err != nil {
-			t.Fatalf("Failed to insert NULL value: %v", err)
-		}
-
-		// Test both SliceMap and MapScan
-		for _, method := range []string{"SliceMap", "MapScan"} {
-			t.Run(method, func(t *testing.T) {
-				result := queryAndExtractValue(t, session, colName, id*2+1, method, table)
-				validateResult(t, tc.CQLType, tc.ExpectedNullValue, result, method, "NULL")
-			})
-		}
-	})
-}
-
-func queryAndExtractValue(t *testing.T, session *Session, colName string, id int, method string, table string) any {
-	fmt.Println("queryAndExtractValue")
-	selectQuery := fmt.Sprintf("SELECT %s FROM gocql_test.%s WHERE id = ?", colName, table)
-
-	switch method {
-	case "SliceMap":
-		iter := session.Query(selectQuery, id).Iter()
-		sliceResults, err := iter.SliceMap()
-		fmt.Println("Slice results: ", sliceResults[0][colName])
-		iter.Close()
-		if err != nil {
-			t.Fatalf("SliceMap failed: %v", err)
-		}
-		if len(sliceResults) != 1 {
-			t.Fatalf("Expected 1 result, got %d", len(sliceResults))
-		}
-		return sliceResults[0][colName]
-
-	case "MapScan":
-		mapResult := make(map[string]any)
-		if err := session.Query(selectQuery, id).MapScan(mapResult); err != nil {
-			t.Fatalf("MapScan failed: %v", err)
-		}
-		return mapResult[colName]
-
-	default:
-		t.Fatalf("Unknown method: %s", method)
-		return nil
-	}
-}
-
-func validateResult(t *testing.T, cqlType string, expected, actual any, method, valueType string) {
-	if expected != nil && actual != nil {
-		expectedType := reflect.TypeOf(expected)
-		actualType := reflect.TypeOf(actual)
-		if expectedType != actualType {
-			t.Errorf("%s %s %s: expected type %v, got %v", method, valueType, cqlType, expectedType, actualType)
-		}
-	}
-
-	if !compareValues(t, cqlType, expected, actual) {
-		t.Errorf("%s %s %s: expected value %v (type %T), got %v (type %T)",
-			method, valueType, cqlType, expected, expected, actual, actual)
-	}
 }
 
 func mustParseUUID(s string) UUID {
-	u, err := ParseUUID(s)
-	if err != nil {
-		panic(err)
+	u, e := ParseUUID(s)
+	if e != nil {
+		panic(e)
 	}
 	return u
 }
-
 func mustParseBigInt(s string) *big.Int {
-	i := new(big.Int)
-	if _, ok := i.SetString(s, 10); !ok {
-		panic("failed to parse big.Int: " + s)
+	n, ok := new(big.Int).SetString(s, 10)
+	if !ok {
+		panic(s)
 	}
-	return i
+	return n
 }
-
 func mustParseDecimal(s string) *inf.Dec {
-	dec := new(inf.Dec)
-	if _, ok := dec.SetString(s); !ok {
-		panic("failed to parse inf.Dec: " + s)
+	n, ok := new(inf.Dec).SetString(s)
+	if !ok {
+		panic(s)
 	}
-	return dec
+	return n
+}
+func mustCreateDuration(m, d int32, n time.Duration) Duration {
+	return Duration{Months: m, Days: d, Nanoseconds: int64(n)}
+}
+func serializationMustValue(v Value, err error) Value {
+	if err != nil {
+		panic(err)
+	}
+	return v
+}
+func serializationMustType(v DataType, err error) DataType {
+	if err != nil {
+		panic(err)
+	}
+	return v
 }
 
-func mustCreateDuration(months int32, days int32, timeDuration time.Duration) Duration {
-	return Duration{
-		Months:      months,
-		Days:        days,
-		Nanoseconds: timeDuration.Nanoseconds(),
+// Historical method subcase names identify the preserved coverage: collection
+// of cloned rows and single-row access with an explicitly retained page.
+func dynamicSerializationResult(t *testing.T, s *Session, cql, method string, args ...Value) Value {
+	t.Helper()
+	rows, err := v2Query(t.Context(), s, cql, args...)
+	if err != nil {
+		t.Fatal(err)
 	}
+	defer rows.Close()
+	if !rows.Next() {
+		t.Fatalf("expected one row: %v", rows.Err())
+	}
+	var row DynamicRow
+	if method == "SliceMap" {
+		row, err = rows.Clone()
+		if err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		lease, e := rows.Retain()
+		if e != nil {
+			t.Fatal(e)
+		}
+		defer lease.Close()
+		row = rows.Row()
+		if e = rows.Close(); e != nil {
+			t.Fatal(e)
+		}
+		row = row.Clone()
+	}
+	if row.Columns().Len() != 1 {
+		t.Fatalf("expected one physical column, got %d", row.Columns().Len())
+	}
+	v, err := row.At(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if method == "SliceMap" {
+		if rows.Next() {
+			t.Fatal("more than one row")
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return v.Clone()
 }
 
-// TestSliceMapMapScanCounterTypes tests counter types separately since they have special restrictions
-// (counter columns can't be mixed with other column types in the same table)
+type serializationDynamicCase struct {
+	name, cql string
+	expected  Value
+}
+
+func checkDynamicSerializationCases(t *testing.T, s *Session, table string, cases []serializationDynamicCase) {
+	t.Helper()
+	for i, tc := range cases {
+		run := func(t *testing.T) {
+			for _, present := range []bool{true, false} {
+				name, literal := "NonNull", tc.cql
+				expected := tc.expected
+				if !present {
+					name, literal = "Null", "NULL"
+					expected = NullValue(tc.expected.Type())
+				}
+				t.Run(name, func(t *testing.T) {
+					id := int32(i * 2)
+					if !present {
+						id++
+					}
+					serializationWrite(t, s, fmt.Sprintf("INSERT INTO %s(id,%s_col) VALUES(?,%s)", table, tc.name, literal), IntValue(id))
+					for _, method := range []string{"SliceMap", "MapScan"} {
+						t.Run(method, func(t *testing.T) {
+							got := dynamicSerializationResult(t, s, fmt.Sprintf("SELECT %s_col FROM %s WHERE id=?", tc.name, table), method, IntValue(id))
+							assertSerializationValue(t, expected, got)
+						})
+					}
+				})
+			}
+		}
+		if tc.name == "tuple" {
+			run(t)
+			continue
+		}
+		label := tc.name
+		if strings.HasPrefix(label, "vector_") || label == "list" || label == "set" || label == "map" {
+			label += "_col"
+		}
+		t.Run(label, run)
+	}
+}
+func TestSliceMapMapScanTypes(t *testing.T) {
+	t.Parallel()
+	s := createV2Session(t)
+	defer s.Close()
+	table := serializationTableName(t)
+	date, err := DateFromTime(time.Date(2015, 5, 3, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []serializationDynamicCase{
+		{"tinyint", "42", TinyIntValue(42)}, {"smallint", "1234", SmallIntValue(1234)}, {"int", "123456", IntValue(123456)}, {"bigint", "1234567890", BigIntValue(1234567890)},
+		{"float", "3.14", FloatValue(3.14)}, {"double", "2.718281828", DoubleValue(2.718281828)}, {"boolean", "true", BoolValue(true)},
+		{"text", "'hello world'", TextValue("hello world")}, {"ascii", "'hello ascii'", serializationMustValue(ASCIIValue("hello ascii"))}, {"varchar", "'hello varchar'", TextValue("hello varchar")},
+		{"timestamp", "1388534400000", TimestampValue(1388534400000)}, {"uuid", "550e8400-e29b-41d4-a716-446655440000", UUIDValue(mustParseUUID("550e8400-e29b-41d4-a716-446655440000"))},
+		{"timeuuid", "60d79c23-5793-11f0-8afe-bcfce78b517a", serializationMustValue(TimeUUIDValue(TimeUUID(mustParseUUID("60d79c23-5793-11f0-8afe-bcfce78b517a"))))},
+		{"inet", "'127.0.0.1'", serializationMustValue(InetValue(netip.MustParseAddr("127.0.0.1")))}, {"blob", "0x48656c6c6f", BlobValue([]byte("Hello"))},
+		{"varint", "123456789012345678901234567890", VarintValue(VarintFromBigInt(mustParseBigInt("123456789012345678901234567890")))},
+		{"decimal", "123.45", DecimalValue(Decimal{Scale: 2, Unscaled: VarintFromBigInt(big.NewInt(12345))})}, {"date", "'2015-05-03'", DateValue(date)},
+		{"time", "'13:30:54.234'", serializationMustValue(TimeValue(TimeOfDay(13*time.Hour + 30*time.Minute + 54*time.Second + 234*time.Millisecond)))},
+		{"duration", "1y2mo3d4h5m6s789ms", serializationMustValue(DurationValue(mustCreateDuration(14, 3, 4*time.Hour+5*time.Minute+6*time.Second+789*time.Millisecond)))},
+	}
+	cols := ""
+	for _, tc := range cases {
+		cols += fmt.Sprintf(",%s_col %s", tc.name, tc.name)
+	}
+	serializationDDL(t, s, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY%s)", table, cols))
+	if err := truncateTable(t, s, table); err != nil {
+		t.Fatal(err)
+	}
+	checkDynamicSerializationCases(t, s, table, cases)
+}
 func TestSliceMapMapScanCounterTypes(t *testing.T) {
 	t.Parallel()
-
-	session := createSessionFromClusterTabletsDisabled(createCluster(), t)
-	defer session.Close()
-
-	// Create separate table for counter types
-	table := testTableName(t)
-	if err := createTable(session, fmt.Sprintf(`
-		CREATE TABLE IF NOT EXISTS gocql_test_tablets_disabled.%s (
-			id int PRIMARY KEY,
-			counter_col counter
-		)
-	`, table)); err != nil {
-		t.Fatal("Failed to create counter test table:", err)
+	s := createV2SessionFromConfig(createV2Cluster(), t, true)
+	defer s.Close()
+	table := serializationTableName(t)
+	serializationDDL(t, s, fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s(id int PRIMARY KEY,counter_col counter)", table))
+	if err := truncateTable(t, s, table); err != nil {
+		t.Fatal(err)
 	}
-
-	// Clear existing data
-	if err := truncateTable(t, session, fmt.Sprintf("gocql_test_tablets_disabled.%s", table)); err != nil {
-		t.Fatal("Failed to truncate counter test table:", err)
-	}
-
-	testID := 1
-	expectedValue := int64(42)
-
-	// Increment counter (can't INSERT into counter, must UPDATE)
-	err := session.Query(fmt.Sprintf("UPDATE gocql_test_tablets_disabled.%s SET counter_col = counter_col + 42 WHERE id = ?", table), testID).Exec()
-	if err != nil {
-		t.Fatalf("Failed to increment counter: %v", err)
-	}
-
-	// Test both SliceMap and MapScan
+	serializationWrite(t, s, fmt.Sprintf("UPDATE %s SET counter_col=counter_col+42 WHERE id=?", table), IntValue(1))
 	for _, method := range []string{"SliceMap", "MapScan"} {
 		t.Run(method, func(t *testing.T) {
-			var result any
-
-			selectQuery := fmt.Sprintf("SELECT counter_col FROM gocql_test_tablets_disabled.%s WHERE id = ?", table)
-			if method == "SliceMap" {
-				iter := session.Query(selectQuery, testID).Iter()
-				sliceResults, err := iter.SliceMap()
-				iter.Close()
-				if err != nil {
-					t.Fatalf("SliceMap failed: %v", err)
-				}
-				if len(sliceResults) != 1 {
-					t.Fatalf("Expected 1 result, got %d", len(sliceResults))
-				}
-				result = sliceResults[0]["counter_col"]
-			} else {
-				mapResult := make(map[string]any)
-				if err := session.Query(selectQuery, testID).MapScan(mapResult); err != nil {
-					t.Fatalf("MapScan failed: %v", err)
-				}
-				result = mapResult["counter_col"]
-			}
-
-			validateResult(t, "counter", expectedValue, result, method, "incremented")
+			got := dynamicSerializationResult(t, s, fmt.Sprintf("SELECT counter_col FROM %s WHERE id=?", table), method, IntValue(1))
+			assertSerializationValue(t, CounterValue(42), got)
 		})
 	}
 }
-
-// TestSliceMapMapScanTupleTypes tests tuple types separately since they have special handling
-// (tuple elements get split into individual columns)
 func TestSliceMapMapScanTupleTypes(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
-	defer session.Close()
-
-	// Create test table with tuple column
-	table := testTableName(t)
-	if err := createTable(session, fmt.Sprintf(`
-		CREATE TABLE IF NOT EXISTS gocql_test.%s (
-			id int PRIMARY KEY,
-			tuple_col tuple<int, text>
-		)
-	`, table)); err != nil {
-		t.Fatal("Failed to create tuple test table:", err)
+	s := createV2Session(t)
+	defer s.Close()
+	table := serializationTableName(t)
+	serializationDDL(t, s, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,tuple_col tuple<int,text>)", table))
+	if err := truncateTable(t, s, table); err != nil {
+		t.Fatal(err)
 	}
-
-	// Clear existing data
-	if err := truncateTable(t, session, fmt.Sprintf("gocql_test.%s", table)); err != nil {
-		t.Fatal("Failed to truncate tuple test table:", err)
-	}
-
-	// Test non-NULL tuple
-	t.Run("NonNull", func(t *testing.T) {
-		testID := 1
-		// Insert tuple value
-		err := session.Query(fmt.Sprintf("INSERT INTO gocql_test.%s (id, tuple_col) VALUES (?, (42, 'hello'))", table), testID).Exec()
-		if err != nil {
-			t.Fatalf("Failed to insert tuple value: %v", err)
-		}
-
-		// Test both SliceMap and MapScan
-		for _, method := range []string{"SliceMap", "MapScan"} {
-			t.Run(method, func(t *testing.T) {
-				var result map[string]any
-
-				selectQuery := fmt.Sprintf("SELECT tuple_col FROM gocql_test.%s WHERE id = ?", table)
-				if method == "SliceMap" {
-					iter := session.Query(selectQuery, testID).Iter()
-					sliceResults, err := iter.SliceMap()
-					iter.Close()
-					if err != nil {
-						t.Fatalf("SliceMap failed: %v", err)
-					}
-					if len(sliceResults) != 1 {
-						t.Fatalf("Expected 1 result, got %d", len(sliceResults))
-					}
-					result = sliceResults[0]
-				} else {
-					result = make(map[string]any)
-					if err := session.Query(selectQuery, testID).MapScan(result); err != nil {
-						t.Fatalf("MapScan failed: %v", err)
-					}
-				}
-
-				// Check tuple elements (tuples get split into individual columns)
-				elem0Key := TupleColumnName("tuple_col", 0)
-				elem1Key := TupleColumnName("tuple_col", 1)
-
-				if result[elem0Key] != 42 {
-					t.Errorf("%s tuple[0]: expected 42, got %v", method, result[elem0Key])
-				}
-				if result[elem1Key] != "hello" {
-					t.Errorf("%s tuple[1]: expected 'hello', got %v", method, result[elem1Key])
-				}
-			})
-		}
-	})
-
-	// Test NULL tuple
-	t.Run("Null", func(t *testing.T) {
-		testID := 2
-		// Insert NULL tuple
-		err := session.Query(fmt.Sprintf("INSERT INTO gocql_test.%s (id, tuple_col) VALUES (?, NULL)", table), testID).Exec()
-		if err != nil {
-			t.Fatalf("Failed to insert NULL tuple: %v", err)
-		}
-
-		// Test both SliceMap and MapScan
-		for _, method := range []string{"SliceMap", "MapScan"} {
-			t.Run(method, func(t *testing.T) {
-				var result map[string]any
-
-				selectQuery := fmt.Sprintf("SELECT tuple_col FROM gocql_test.%s WHERE id = ?", table)
-				if method == "SliceMap" {
-					iter := session.Query(selectQuery, testID).Iter()
-					sliceResults, err := iter.SliceMap()
-					iter.Close()
-					if err != nil {
-						t.Fatalf("SliceMap failed: %v", err)
-					}
-					if len(sliceResults) != 1 {
-						t.Fatalf("Expected 1 result, got %d", len(sliceResults))
-					}
-					result = sliceResults[0]
-				} else {
-					result = make(map[string]any)
-					if err := session.Query(selectQuery, testID).MapScan(result); err != nil {
-						t.Fatalf("MapScan failed: %v", err)
-					}
-				}
-
-				// Check tuple elements (NULL tuple gives zero values)
-				elem0Key := TupleColumnName("tuple_col", 0)
-				elem1Key := TupleColumnName("tuple_col", 1)
-
-				if result[elem0Key] != 0 {
-					t.Errorf("%s NULL tuple[0]: expected 0, got %v", method, result[elem0Key])
-				}
-				if result[elem1Key] != "" {
-					t.Errorf("%s NULL tuple[1]: expected '', got %v", method, result[elem1Key])
-				}
-			})
-		}
-	})
+	typ := serializationMustType(TupleType(serializationMustType(ScalarType(TypeInt)), serializationMustType(ScalarType(TypeText))))
+	checkDynamicSerializationCases(t, s, table, []serializationDynamicCase{{"tuple", "(42,'hello')", serializationMustValue(TupleValue(typ, []Value{IntValue(42), TextValue("hello")}))}})
 }
-
-// TestSliceMapMapScanVectorTypes tests vector types separately since they need Cassandra 5.0+ and special table setup
-// (vectors need separate tables and version checks)
 func TestSliceMapMapScanVectorTypes(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
-	defer session.Close()
-
-	if *flagDistribution == "cassandra" && flagCassVersion.Before(5, 0, 0) {
-		t.Skip("Vector types have been introduced in Cassandra 5.0")
+	serializationVectorGate(t, false)
+	s := createV2Session(t)
+	defer s.Close()
+	table := serializationTableName(t)
+	serializationDDL(t, s, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,vector_float_col vector<float,3>,vector_text_col vector<text,2>)", table))
+	if err := truncateTable(t, s, table); err != nil {
+		t.Fatal(err)
 	}
-
-	if *flagDistribution == "scylla" && flagCassVersion.Before(2025, 3, 0) {
-		t.Skip("Vector types have been introduced in ScyllaDB 2025.3")
-	}
-
-	// Create test table with vector columns
-	table := testTableName(t)
-	if err := createTable(session, fmt.Sprintf(`
-		CREATE TABLE IF NOT EXISTS gocql_test.%s (
-			id int PRIMARY KEY,
-			vector_float_col vector<float, 3>,
-			vector_text_col vector<text, 2>
-		)
-	`, table)); err != nil {
-		t.Fatal("Failed to create vector test table:", err)
-	}
-
-	// Clear existing data
-	if err := truncateTable(t, session, fmt.Sprintf("gocql_test.%s", table)); err != nil {
-		t.Fatal("Failed to truncate vector test table:", err)
-	}
-
-	testCases := []struct {
-		colName       string
-		cqlValue      string
-		expectedValue any
-		expectedNull  any
-	}{
-		{"vector_float_col", "[1.0, 2.5, -3.0]", []float32{1.0, 2.5, -3.0}, []float32(nil)},
-		{"vector_text_col", "['hello', 'world']", []string{"hello", "world"}, []string(nil)},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.colName, func(t *testing.T) {
-			// Test non-NULL value
-			t.Run("NonNull", func(t *testing.T) {
-				testID := 1
-				// Insert non-NULL value
-				insertQuery := fmt.Sprintf("INSERT INTO gocql_test.%s (id, %s) VALUES (?, %s)", table, tc.colName, tc.cqlValue)
-				if err := session.Query(insertQuery, testID).Exec(); err != nil {
-					t.Fatalf("Failed to insert non-NULL value: %v", err)
-				}
-
-				// Test both SliceMap and MapScan
-				for _, method := range []string{"SliceMap", "MapScan"} {
-					t.Run(method, func(t *testing.T) {
-						var result any
-
-						selectQuery := fmt.Sprintf("SELECT %s FROM gocql_test.%s WHERE id = ?", tc.colName, table)
-						if method == "SliceMap" {
-							iter := session.Query(selectQuery, testID).Iter()
-							sliceResults, err := iter.SliceMap()
-							iter.Close()
-							if err != nil {
-								t.Fatalf("SliceMap failed: %v", err)
-							}
-							if len(sliceResults) != 1 {
-								t.Fatalf("Expected 1 result, got %d", len(sliceResults))
-							}
-							result = sliceResults[0][tc.colName]
-						} else {
-							mapResult := make(map[string]any)
-							if err := session.Query(selectQuery, testID).MapScan(mapResult); err != nil {
-								t.Fatalf("MapScan failed: %v", err)
-							}
-							result = mapResult[tc.colName]
-						}
-
-						validateResult(t, tc.colName, tc.expectedValue, result, method, "non-NULL")
-					})
-				}
-			})
-
-			// Test NULL value
-			t.Run("Null", func(t *testing.T) {
-				testID := 2
-				// Insert NULL value
-				insertQuery := fmt.Sprintf("INSERT INTO gocql_test.%s (id, %s) VALUES (?, NULL)", table, tc.colName)
-				if err := session.Query(insertQuery, testID).Exec(); err != nil {
-					t.Fatalf("Failed to insert NULL value: %v", err)
-				}
-
-				// Test both SliceMap and MapScan
-				for _, method := range []string{"SliceMap", "MapScan"} {
-					t.Run(method, func(t *testing.T) {
-						var result any
-
-						selectQuery := fmt.Sprintf("SELECT %s FROM gocql_test.%s WHERE id = ?", tc.colName, table)
-						if method == "SliceMap" {
-							iter := session.Query(selectQuery, testID).Iter()
-							sliceResults, err := iter.SliceMap()
-							iter.Close()
-							if err != nil {
-								t.Fatalf("SliceMap failed: %v", err)
-							}
-							if len(sliceResults) != 1 {
-								t.Fatalf("Expected 1 result, got %d", len(sliceResults))
-							}
-							result = sliceResults[0][tc.colName]
-						} else {
-							mapResult := make(map[string]any)
-							if err := session.Query(selectQuery, testID).MapScan(mapResult); err != nil {
-								t.Fatalf("MapScan failed: %v", err)
-							}
-							result = mapResult[tc.colName]
-						}
-
-						// Vectors should return nil slices for NULL values for consistency
-						validateResult(t, tc.colName, tc.expectedNull, result, method, "NULL")
-					})
-				}
-			})
-		})
-	}
+	fl := serializationMustType(VectorDataType(serializationMustType(ScalarType(TypeFloat)), 3))
+	tx := serializationMustType(VectorDataType(serializationMustType(ScalarType(TypeText)), 2))
+	checkDynamicSerializationCases(t, s, table, []serializationDynamicCase{{"vector_float", "[1.0,2.5,-3.0]", serializationMustValue(VectorValue(fl, []Value{FloatValue(1), FloatValue(2.5), FloatValue(-3)}))}, {"vector_text", "['hello','world']", serializationMustValue(VectorValue(tx, []Value{TextValue("hello"), TextValue("world")}))}})
 }
-
-// TestSliceMapMapScanCollectionTypes tests collection types separately since they have special handling
-// (collections should return nil slices/maps for NULL values for consistency with other slice-based types)
 func TestSliceMapMapScanCollectionTypes(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
-	defer session.Close()
-
-	// Create test table with collection columns
-	table := testTableName(t)
-	if err := createTable(session, fmt.Sprintf(`
-		CREATE TABLE IF NOT EXISTS gocql_test.%s (
-			id int PRIMARY KEY,
-			list_col list<text>,
-			set_col set<int>,
-			map_col map<text, int>
-		)
-	`, table)); err != nil {
-		t.Fatal("Failed to create collection test table:", err)
+	s := createV2Session(t)
+	defer s.Close()
+	table := serializationTableName(t)
+	serializationDDL(t, s, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,list_col list<text>,set_col set<int>,map_col map<text,int>)", table))
+	if err := truncateTable(t, s, table); err != nil {
+		t.Fatal(err)
 	}
-
-	// Clear existing data
-	if err := truncateTable(t, session, fmt.Sprintf("gocql_test.%s", table)); err != nil {
-		t.Fatal("Failed to truncate collection test table:", err)
-	}
-
-	testCases := []struct {
-		colName       string
-		cqlValue      string
-		expectedValue any
-		expectedNull  any
-	}{
-		{"list_col", "['a', 'b', 'c']", []string{"a", "b", "c"}, []string(nil)},
-		{"set_col", "{1, 2, 3}", []int{1, 2, 3}, []int(nil)},
-		{"map_col", "{'key1': 1, 'key2': 2}", map[string]int{"key1": 1, "key2": 2}, map[string]int(nil)},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.colName, func(t *testing.T) {
-			// Test non-NULL value
-			t.Run("NonNull", func(t *testing.T) {
-				testID := 1
-				// Insert non-NULL value
-				insertQuery := fmt.Sprintf("INSERT INTO gocql_test.%s (id, %s) VALUES (?, %s)", table, tc.colName, tc.cqlValue)
-				if err := session.Query(insertQuery, testID).Exec(); err != nil {
-					t.Fatalf("Failed to insert non-NULL value: %v", err)
-				}
-
-				// Test both SliceMap and MapScan
-				for _, method := range []string{"SliceMap", "MapScan"} {
-					t.Run(method, func(t *testing.T) {
-						var result any
-
-						selectQuery := fmt.Sprintf("SELECT %s FROM gocql_test.%s WHERE id = ?", tc.colName, table)
-						if method == "SliceMap" {
-							iter := session.Query(selectQuery, testID).Iter()
-							sliceResults, err := iter.SliceMap()
-							iter.Close()
-							if err != nil {
-								t.Fatalf("SliceMap failed: %v", err)
-							}
-							if len(sliceResults) != 1 {
-								t.Fatalf("Expected 1 result, got %d", len(sliceResults))
-							}
-							result = sliceResults[0][tc.colName]
-						} else {
-							mapResult := make(map[string]any)
-							if err := session.Query(selectQuery, testID).MapScan(mapResult); err != nil {
-								t.Fatalf("MapScan failed: %v", err)
-							}
-							result = mapResult[tc.colName]
-						}
-
-						// For sets, we need special comparison since order is not guaranteed
-						if strings.HasPrefix(tc.colName, "set_") {
-							if !compareCollectionValues(t, tc.colName, tc.expectedValue, result) {
-								t.Errorf("%s non-NULL %s: expected %v, got %v", method, tc.colName, tc.expectedValue, result)
-							}
-						} else {
-							validateResult(t, tc.colName, tc.expectedValue, result, method, "non-NULL")
-						}
-					})
-				}
-			})
-
-			// Test NULL value
-			t.Run("Null", func(t *testing.T) {
-				testID := 2
-				// Insert NULL value
-				insertQuery := fmt.Sprintf("INSERT INTO gocql_test.%s (id, %s) VALUES (?, NULL)", table, tc.colName)
-				if err := session.Query(insertQuery, testID).Exec(); err != nil {
-					t.Fatalf("Failed to insert NULL value: %v", err)
-				}
-
-				// Test both SliceMap and MapScan
-				for _, method := range []string{"SliceMap", "MapScan"} {
-					t.Run(method, func(t *testing.T) {
-						var result any
-
-						selectQuery := fmt.Sprintf("SELECT %s FROM gocql_test.%s WHERE id = ?", tc.colName, table)
-						if method == "SliceMap" {
-							iter := session.Query(selectQuery, testID).Iter()
-							sliceResults, err := iter.SliceMap()
-							iter.Close()
-							if err != nil {
-								t.Fatalf("SliceMap failed: %v", err)
-							}
-							if len(sliceResults) != 1 {
-								t.Fatalf("Expected 1 result, got %d", len(sliceResults))
-							}
-							result = sliceResults[0][tc.colName]
-						} else {
-							mapResult := make(map[string]any)
-							if err := session.Query(selectQuery, testID).MapScan(mapResult); err != nil {
-								t.Fatalf("MapScan failed: %v", err)
-							}
-							result = mapResult[tc.colName]
-						}
-
-						// Collections should return nil slices/maps for NULL values for consistency
-						validateResult(t, tc.colName, tc.expectedNull, result, method, "NULL")
-					})
-				}
-			})
-		})
-	}
+	tx, in := serializationMustType(ScalarType(TypeText)), serializationMustType(ScalarType(TypeInt))
+	list, set, mp := serializationMustType(ListType(tx)), serializationMustType(SetType(in)), serializationMustType(MapType(tx, in))
+	checkDynamicSerializationCases(t, s, table, []serializationDynamicCase{
+		{"list", "['a','b','c']", serializationMustValue(ListValue(list, []Value{TextValue("a"), TextValue("b"), TextValue("c")}))},
+		{"set", "{1,2,3}", serializationMustValue(SetValue(set, []Value{IntValue(1), IntValue(2), IntValue(3)}))},
+		{"map", "{'key1':1,'key2':2}", serializationMustValue(MapValue(mp, []ValueEntry{{Key: TextValue("key1"), Value: IntValue(1)}, {Key: TextValue("key2"), Value: IntValue(2)}}))},
+	})
 }

@@ -24,7 +24,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/gocql/gocql/internal/crc"
+	"github.com/scylladb/gocql/v2/internal/crc"
 )
 
 // The helpers below build or read one whole segment in a single call, each with

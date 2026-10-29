@@ -25,8 +25,8 @@ import (
 	"net"
 	"testing"
 
-	"github.com/gocql/gocql/events"
-	frm "github.com/gocql/gocql/internal/frame"
+	"github.com/scylladb/gocql/v2/events"
+	frm "github.com/scylladb/gocql/v2/internal/frame"
 )
 
 func TestFrameToEvent_TopologyChange(t *testing.T) {

@@ -29,92 +29,78 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/gocql/gocql"
+	"github.com/scylladb/gocql/v2"
 )
 
-// ExampleSession_MapExecuteBatchCAS demonstrates how to execute a batch lightweight transaction.
-func ExampleSession_MapExecuteBatchCAS() {
-	/* The example assumes the following CQL was used to setup the keyspace:
-	create keyspace example with replication = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };
-	create table example.my_lwt_batch_table(pk text, ck text, version int, value text, PRIMARY KEY(pk, ck));
-	*/
-	cluster := gocql.NewCluster("localhost:9042")
-	cluster.Keyspace = "example"
-	cluster.ProtoVersion = 4
-	session, err := cluster.CreateSession()
+// ExampleRunBatch_conditional consumes every typed row returned by a conditional batch.
+func ExampleRunBatch_conditional() {
+	// Assumes example.my_lwt_batch_table(pk text, ck text, version int, value text,
+	// PRIMARY KEY(pk, ck)), with initial rows (pk1,ck1,1,a) and (pk1,ck2,1,A).
+	ctx := context.Background()
+	config := gocql.DefaultConfig("localhost:9042")
+	config.Keyspace = "example"
+	session, err := gocql.Connect(ctx, config)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer session.Close()
-
-	ctx := context.Background()
-
-	err = session.Query("INSERT INTO example.my_lwt_batch_table (pk, ck, version, value) VALUES (?, ?, ?, ?)",
-		"pk1", "ck1", 1, "a").WithContext(ctx).Exec()
+	type update struct {
+		PK, CK, Value string
+		Version       int32
+	}
+	type previous struct {
+		PK, CK  gocql.Text
+		Version int32
+	}
+	previousRows := gocql.Row(
+		gocql.Column("pk", gocql.TextCodec, func(v *previous) *gocql.Text { return &v.PK }),
+		gocql.Column("ck", gocql.TextCodec, func(v *previous) *gocql.Text { return &v.CK }),
+		gocql.Column("version", gocql.Int32, func(v *previous) *int32 { return &v.Version }),
+	)
+	conditional := gocql.CASRows(previousRows)
+	prepared, err := gocql.Prepare(ctx, session, gocql.Statement[update, gocql.CASResult[previous]]{
+		CQL: "UPDATE example.my_lwt_batch_table SET value=? WHERE pk=? AND ck=? IF version=?",
+		Params: gocql.Params(
+			gocql.Param("value", gocql.StringEncoder, func(v update) string { return v.Value }),
+			gocql.Param("pk", gocql.StringEncoder, func(v update) string { return v.PK }),
+			gocql.Param("ck", gocql.StringEncoder, func(v update) string { return v.CK }),
+			gocql.Param("version", gocql.Int32, func(v update) int32 { return v.Version }),
+		), Rows: conditional,
+	}, gocql.PrepareOptions{})
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	err = session.Query("INSERT INTO example.my_lwt_batch_table (pk, ck, version, value) VALUES (?, ?, ?, ?)",
-		"pk1", "ck2", 1, "A").WithContext(ctx).Exec()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	executeBatch := func(ck2Version int) {
-		b := session.Batch(gocql.LoggedBatch)
-		b.Entries = append(b.Entries, gocql.BatchEntry{
-			Stmt: "UPDATE my_lwt_batch_table SET value=? WHERE pk=? AND ck=? IF version=?",
-			Args: []any{"b", "pk1", "ck1", 1},
-		})
-		b.Entries = append(b.Entries, gocql.BatchEntry{
-			Stmt: "UPDATE my_lwt_batch_table SET value=? WHERE pk=? AND ck=? IF version=?",
-			Args: []any{"B", "pk1", "ck2", ck2Version},
-		})
-		m := make(map[string]any)
-		applied, iter, err := session.MapExecuteBatchCAS(b.WithContext(ctx), m)
+	var entries []gocql.BatchItem
+	for _, value := range []update{{"pk1", "ck1", "b", 1}, {"pk1", "ck2", "B", 0}} {
+		bound, err := gocql.BindOwned(prepared, value)
 		if err != nil {
 			log.Fatal(err)
 		}
-		fmt.Println(applied, m)
-
-		m = make(map[string]any)
-		for iter.MapScan(m) {
-			fmt.Println(m)
-			m = make(map[string]any)
-		}
-
-		if err := iter.Close(); err != nil {
-			log.Fatal(err)
-		}
-	}
-
-	printState := func() {
-		scanner := session.Query("SELECT ck, value FROM example.my_lwt_batch_table WHERE pk = ?", "pk1").
-			WithContext(ctx).Iter().Scanner()
-		for scanner.Next() {
-			var ck, value string
-			err = scanner.Scan(&ck, &value)
-			if err != nil {
-				log.Fatal(err)
+		defer func() {
+			bound.Close()
+			if err := bound.Wait(ctx); err != nil {
+				log.Print(err)
 			}
-			fmt.Println(ck, value)
-		}
-		if err := scanner.Err(); err != nil {
+		}()
+		entry, err := gocql.BatchEntry(bound)
+		if err != nil {
 			log.Fatal(err)
 		}
+		entries = append(entries, entry)
 	}
-
-	executeBatch(0)
-	printState()
-	executeBatch(1)
-	printState()
-
-	// false map[ck:ck1 pk:pk1 version:1]
-	// map[[applied]:false ck:ck2 pk:pk1 version:1]
-	// ck1 a
-	// ck2 A
-	// true map[]
-	// ck1 b
-	// ck2 B
+	page, err := gocql.RunBatch(ctx, session, gocql.LoggedBatch, entries, conditional, gocql.Options{})
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer page.Close()
+	for page.Next() {
+		value := page.Row()
+		fmt.Println("applied:", value.Applied)
+		if value.Previous.Set {
+			fmt.Println(value.Previous.Value.CK.String(), value.Previous.Value.Version)
+		}
+	}
+	if err := page.Err(); err != nil {
+		log.Fatal(err)
+	}
 }

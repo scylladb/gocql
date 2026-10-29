@@ -1,0 +1,37 @@
+REVIEW-CORRECTED CONCLUSIONS: LOCAL CACHE / WORKER / SOCKET EXPERIMENT
+
+This supersedes pre-review/conclusions.txt. Original raw measurements are preserved.
+144 successful measurements: 24 cases x six randomized repetitions; 2 s warmup and 10 s measurement.
+Client CPUs 8,10,12,14; echo-server CPUs 17,18,20,23; Go 1.25.0, GOMAXPROCS=4.
+
+RETAINED THROUGHPUT OBSERVATIONS
+For this synthetic mutable-LRU + encoding + loopback workload, ordinary Go scheduling with owner-local shards outperformed pinned workers in the TCP cases. This is exploratory evidence for this setup only, not a general affinity or gocql/database result.
+
+Balanced TCP median throughput (million 256-byte records/s; 32-record batches):
+tcp-64MiB-update1-A-shared: 4.579 M records/s
+tcp-64MiB-update1-B-shared-pinned: 1.958 M records/s
+tcp-64MiB-update1-C-sharded: 5.566 M records/s
+tcp-64MiB-update1-D-sharded-pinned: 4.328 M records/s
+tcp-64MiB-update1-E-sharded-pinned-socket: 4.383 M records/s
+
+Within-block paired pinning throughput changes: balanced TCP -22.4%; skewed TCP -21.8%. The CPU-only paired changes ranged from -6.1% to +1.4%, without a dependable pinning benefit. These throughput counts are unaffected by the identified latency sampling bias, but remain specific to the simplified workload.
+
+WITHDRAWN LATENCY CLAIMS
+The old every-256-batch sampling repeatedly selected the same input positions. Legacy p99 statistics and all latency ratios are invalid as representative workload latency. The earlier 3.2x p99 claim is withdrawn. Corrected summary.json/report.txt withhold them; pre-review copies are historical only.
+
+SOCKET FEASIBILITY, NOT SUSTAINED AFFINITY
+All 48 original socket-option workers already reported incoming CPUs different from their target at measurement start after warmup, and again at completion. The one-time option setting succeeded but did not maintain the requested placement. E is therefore a feasibility probe only. No E/D sustained socket-affinity throughput comparison is supported or emitted by the corrected summarizer.
+
+LIMITS
+Every lookup mutates the synthetic LRU. Sharding removes a global mutex and shared LRU; it does not demonstrate hardware affinity benefits or performance of immutable prepared handles. There is no CQL stack, gocql execution, database, TLS or physical NIC in this experiment.
+Worker completion variation is not attributed per-vCPU load. The host was shared; hardware cache-miss and full migration counters were unavailable. Do not infer a cache-locality mechanism or universal load-balancing conclusion from these throughput observations.
+
+REVIEW FIXES
+The corrected harness uses one random latency sample per 256-batch window plus a full-run reservoir. It records socket status after warmup and during/after traffic, requires unique expected case/repetition identities and paired seeds, and carries repository license/copyright notices.
+Original environment.json/source hashes identify the old measured sources; they are not claims that the modified source produced the old data. See review-corrections.json and the separate post-review-validation directory for current verification.
+
+REPRODUCE
+GO111MODULE=off GOWORK=off go test -race -count=1 ./tests/affinity
+python3 -m unittest discover -s tests/affinity -p "test_*.py" -v
+python3 tests/affinity/run.py --output <fresh-directory>
+python3 tests/affinity/summarize.py <fresh-directory>

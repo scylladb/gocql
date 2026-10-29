@@ -9,7 +9,7 @@ import (
 
 	"gopkg.in/inf.v0"
 
-	"github.com/gocql/gocql/internal/tests/serialization/mod"
+	"github.com/scylladb/gocql/v2/internal/tests/serialization/mod"
 )
 
 func equalData(in1, in2 []byte) bool {

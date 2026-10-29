@@ -3,8 +3,8 @@ package dialer
 import (
 	"testing"
 
-	frm "github.com/gocql/gocql/internal/frame"
-	"github.com/gocql/gocql/internal/murmur"
+	frm "github.com/scylladb/gocql/v2/internal/frame"
+	"github.com/scylladb/gocql/v2/internal/murmur"
 )
 
 // This file pins GetFrameHash's output for a spread of real frame shapes, as a

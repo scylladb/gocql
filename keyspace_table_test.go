@@ -32,78 +32,66 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/gocql/gocql/internal/tests"
+	"github.com/scylladb/gocql/v2/internal/tests"
 )
 
-// Keyspace_table checks if Query.Keyspace() is updated based on prepared statement
+// TestKeyspaceTable checks that fully qualified prepared statements retain the
+// server's keyspace/table metadata independently of later configuration changes.
 func TestKeyspaceTable(t *testing.T) {
 	t.Parallel()
-
-	cluster := createCluster()
-
-	fallback := RoundRobinHostPolicy()
-	cluster.PoolConfig.HostSelectionPolicy = TokenAwareHostPolicy(fallback)
-
-	session, err := cluster.CreateSession()
-	if err != nil {
-		t.Fatal("createSession:", err)
-	}
-
-	cluster.Keyspace = "wrong_keyspace"
-
-	keyspace := testKeyspaceName(t)
-	table := testTableName(t)
-
-	err = createTable(session, `DROP KEYSPACE IF EXISTS `+keyspace)
-	if err != nil {
-		t.Fatal("unable to drop keyspace:", err)
-	}
-
-	err = createTable(session, fmt.Sprintf(`CREATE KEYSPACE %s
-	WITH replication = {
-		'class' : 'NetworkTopologyStrategy',
-		'replication_factor' : 1
-	}`, keyspace))
-
-	if err != nil {
-		t.Fatal("unable to create keyspace:", err)
-	}
-
-	if err := session.control.awaitSchemaAgreement(); err != nil {
-		t.Fatal(err)
-	}
-
-	err = createTable(session, fmt.Sprintf(`CREATE TABLE %s.%s (pk int, ck int, v int, PRIMARY KEY (pk, ck));
-	`, keyspace, table))
-
-	if err != nil {
-		t.Fatal("unable to create table:", err)
-	}
-
-	if err := session.control.awaitSchemaAgreement(); err != nil {
-		t.Fatal(err)
-	}
-
 	ctx := context.Background()
-
-	// insert a row
-	if err := session.Query(fmt.Sprintf(`INSERT INTO %s.%s(pk, ck, v) VALUES (?, ?, ?)`, keyspace, table),
-		1, 2, 3).WithContext(ctx).Consistency(One).Exec(); err != nil {
+	cluster := createV2Cluster()
+	v2ConfigureRouting(t, &cluster, RoutingOptions{TokenAware: true})
+	session, err := Connect(ctx, cluster)
+	if err != nil {
+		t.Fatal("connect:", err)
+	}
+	defer session.Close()
+	cluster.Keyspace = "wrong_keyspace"
+	keyspace, table := v2SchemaRoutingName(t), v2SchemaRoutingName(t)
+	v2CreateRoutingKeyspace(t, session, keyspace, 1)
+	defer cleanup(t, session, keyspace)
+	if err := v2CreateTable(ctx, session, fmt.Sprintf(`CREATE TABLE %s.%s (pk int, ck int, v int, PRIMARY KEY (pk, ck))`, keyspace, table)); err != nil {
 		t.Fatal(err)
 	}
-
-	var pk int
-
-	/* Search for a specific set of records whose 'pk' column matches
-	 * the value of inserted row. */
-	qry := session.Query(fmt.Sprintf(`SELECT pk FROM %s.%s WHERE pk = ? LIMIT 1`, keyspace, table),
-		1).WithContext(ctx).Consistency(One)
-	if err := qry.Scan(&pk); err != nil {
+	if _, err := v2SchemaRoutingExec(ctx, session, fmt.Sprintf(`INSERT INTO %s.%s(pk, ck, v) VALUES (?, ?, ?)`, keyspace, table), Options{Consistency: Option[Consistency]{Value: One, Set: true}}, IntValue(1), IntValue(2), IntValue(3)); err != nil {
 		t.Fatal(err)
 	}
-
-	// cluster.Keyspace was set to "wrong_keyspace", but during prepering statement
-	// Keyspace in Query should be changed to "test" and Table should be changed to table1
-	tests.AssertEqual(t, "qry.Keyspace()", keyspace, qry.Keyspace())
-	tests.AssertEqual(t, "qry.Table()", table, qry.Table())
+	prepared, err := Prepare(ctx, session, Statement[[]Value, DynamicRow]{CQL: fmt.Sprintf(`SELECT pk FROM %s.%s WHERE pk = ? LIMIT 1`, keyspace, table), Params: DynamicParams, Rows: DynamicRows}, PrepareOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bound, err := BindOwned(prepared, []Value{IntValue(1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer bound.Close()
+	rows, err := Run(ctx, session, bound, Options{Consistency: Option[Consistency]{Value: One, Set: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		t.Fatalf("missing row: %v", rows.Err())
+	}
+	row := rows.Row()
+	tests.AssertEqual(t, "pk", int32(1), v2SchemaRoutingInt(t, row, "pk"))
+	if rows.Next() {
+		t.Fatal("unexpected extra row")
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	info := prepared.Info()
+	tests.AssertEqual(t, "prepared.Keyspace", keyspace, info.Keyspace)
+	tests.AssertEqual(t, "prepared.Table", table, info.Table)
+	tests.AssertEqual(t, "bound.Keyspace", keyspace, bound.Routing().Keyspace)
+	tests.AssertEqual(t, "bound.Table", table, bound.Routing().Table)
+	tests.AssertTrue(t, "partition-key token is available", bound.Routing().Token.Set)
+	metadata, ok := session.Metadata().Keyspace(keyspace)
+	tests.AssertTrue(t, "keyspace is present", ok)
+	tableMetadata := metadata.Tables[table]
+	tests.AssertTrue(t, "table is present", tableMetadata != nil)
+	tests.AssertEqual(t, "partition key metadata", "pk", tableMetadata.PartitionKey[0].Name)
+	tests.AssertEqual(t, "clustering key metadata", "ck", tableMetadata.ClusteringColumns[0].Name)
 }

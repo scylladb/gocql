@@ -1,0 +1,41 @@
+LOCAL AFFINITY EXPERIMENT
+Runs: 16; complete matrix: False
+Total measured operations: 7,842,477,632
+Throughput: median across repetitions; latency: median sampled-batch p99.
+
+Case | Mops/s median [min,max] | worker completion CV | batch p99 ms | client CPU cores
+cpu-1MiB-update0-A-shared | 16.707 [16.707,16.707] | 0.018 | 0.084 | 1.72
+cpu-1MiB-update0-B-shared-pinned | 28.089 [28.089,28.089] | 0.138 | 0.134 | 1.59
+cpu-1MiB-update0-C-sharded | 178.188 [178.188,178.188] | 0.005 | 0.001 | 4.00
+cpu-1MiB-update0-D-sharded-pinned | 181.196 [181.196,181.196] | 0.026 | 0.001 | 3.99
+cpu-1MiB-update1-A-shared | 19.337 [19.337,19.337] | 0.009 | 0.066 | 1.75
+cpu-1MiB-update1-C-sharded | 195.278 [195.278,195.278] | 0.007 | 0.001 | 4.00
+cpu-64MiB-update0-A-shared | 5.626 [5.626,5.626] | 0.019 | 0.480 | 1.17
+cpu-64MiB-update0-C-sharded | 61.401 [61.401,61.401] | 0.582 | 0.005 | 4.00
+cpu-64MiB-update1-A-shared | 5.284 [5.284,5.284] | 0.027 | 0.437 | 1.17
+cpu-64MiB-update1-B-shared-pinned | 6.335 [6.335,6.335] | 0.245 | 1.273 | 1.15
+cpu-64MiB-update1-D-sharded-pinned | 65.779 [65.779,65.779] | 0.534 | 0.005 | 3.99
+tcp-64MiB-update1-A-shared | 3.549 [3.549,3.549] | 0.002 | 0.115 | 1.62
+tcp-64MiB-update1-C-sharded | 7.244 [7.244,7.244] | 0.003 | 0.049 | 2.01
+tcp-64MiB-update1-D-sharded-pinned | 5.220 [5.220,5.220] | 0.057 | 0.042 | 1.90
+tcp-64MiB-update1-skew-C-sharded | 2.684 [2.684,2.684] | 1.270 | 1.411 | 0.96
+tcp-64MiB-update1-skew-E-sharded-pinned-socket | 1.668 [1.668,1.668] | 1.270 | 2.673 | 0.99
+
+PAIRED COMPARISONS: throughput gain; exploratory 95% bootstrap interval
+cpu-1MiB-update0: D-sharded-pinned/C-sharded: +1.7% [+1.7%,+1.7%]; batch p99 ratio 0.99; worker CV change +0.021
+cpu-1MiB-update0: C-sharded/A-shared: +966.5% [+966.5%,+966.5%]; batch p99 ratio 0.01; worker CV change -0.014
+cpu-1MiB-update0: B-shared-pinned/A-shared: +68.1% [+68.1%,+68.1%]; batch p99 ratio 1.59; worker CV change +0.119
+cpu-1MiB-update1: C-sharded/A-shared: +909.8% [+909.8%,+909.8%]; batch p99 ratio 0.02; worker CV change -0.003
+cpu-64MiB-update0: C-sharded/A-shared: +991.4% [+991.4%,+991.4%]; batch p99 ratio 0.01; worker CV change +0.563
+tcp-64MiB-update1: D-sharded-pinned/C-sharded: -27.9% [-27.9%,-27.9%]; batch p99 ratio 0.86; worker CV change +0.054
+tcp-64MiB-update1: C-sharded/A-shared: +104.1% [+104.1%,+104.1%]; batch p99 ratio 0.43; worker CV change +0.001
+
+Pinned CPU samples: 352,112; unpinned sampled CPU changes: 39,441.
+Socket workers reporting incoming CPU different from target: 4/4.
+Observed incoming CPUs: [10, 15]; NAPI IDs: [0].
+
+Synthetic cache/LRU/encoding/loopback experiment; no actual gocql, database, TLS or physical NIC.
+LRU ownership/lock removal is distinct from worker pinning; compare D/C for pinning and E/D for socket option.
+Latency describes sampled batches of 32 operations, not per-query p99. Skew includes bounded queue time.
+Bootstrap intervals resample six randomized blocks; exploratory shared-host evidence, not independent certification.
+perf counters unavailable; no cache-miss or full migration measurement.

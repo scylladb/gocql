@@ -15,7 +15,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-module github.com/gocql/gocql
+module github.com/scylladb/gocql/v2
 
 require (
 	github.com/google/go-cmp v0.7.0
@@ -55,13 +55,6 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/stretchr/testify v1.12.1
-)
-
-retract (
-	v1.10.0 // tag from kiwicom/gocql added by mistake to scylladb/gocql
-	v1.9.0 // tag from kiwicom/gocql added by mistake to scylladb/gocql
-	v1.8.1 // tag from kiwicom/gocql added by mistake to scylladb/gocql
-	v1.8.0 // tag from kiwicom/gocql added by mistake to scylladb/gocql
 )
 
 go 1.25.0

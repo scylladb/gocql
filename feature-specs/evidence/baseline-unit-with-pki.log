@@ -1,0 +1,46 @@
+ok  	github.com/gocql/gocql	12.977s
+ok  	github.com/gocql/gocql/ci/release	(cached)
+ok  	github.com/gocql/gocql/debounce	(cached)
+ok  	github.com/gocql/gocql/dialer	(cached)
+ok  	github.com/gocql/gocql/dialer/recorder	(cached)
+ok  	github.com/gocql/gocql/dialer/replayer	(cached)
+ok  	github.com/gocql/gocql/events	(cached)
+ok  	github.com/gocql/gocql/hostpolicy	(cached)
+ok  	github.com/gocql/gocql/internal/cqlproto	(cached)
+ok  	github.com/gocql/gocql/internal/crc	(cached)
+?   	github.com/gocql/gocql/internal/debug	[no test files]
+ok  	github.com/gocql/gocql/internal/eventbus	(cached)
+ok  	github.com/gocql/gocql/internal/frame	(cached)
+ok  	github.com/gocql/gocql/internal/lru	(cached)
+ok  	github.com/gocql/gocql/internal/murmur	(cached)
+ok  	github.com/gocql/gocql/internal/segment	(cached)
+ok  	github.com/gocql/gocql/internal/streams	(cached)
+ok  	github.com/gocql/gocql/internal/tests	(cached)
+?   	github.com/gocql/gocql/internal/tests/mock	[no test files]
+ok  	github.com/gocql/gocql/internal/tests/serialization	(cached)
+?   	github.com/gocql/gocql/internal/tests/serialization/mod	[no test files]
+?   	github.com/gocql/gocql/internal/tests/serialization/valcases	[no test files]
+ok  	github.com/gocql/gocql/scyllacloud	0.045s
+?   	github.com/gocql/gocql/serialization/ascii	[no test files]
+?   	github.com/gocql/gocql/serialization/bigint	[no test files]
+ok  	github.com/gocql/gocql/serialization/blob	(cached)
+?   	github.com/gocql/gocql/serialization/boolean	[no test files]
+?   	github.com/gocql/gocql/serialization/counter	[no test files]
+?   	github.com/gocql/gocql/serialization/cqlint	[no test files]
+?   	github.com/gocql/gocql/serialization/cqltime	[no test files]
+?   	github.com/gocql/gocql/serialization/date	[no test files]
+?   	github.com/gocql/gocql/serialization/decimal	[no test files]
+?   	github.com/gocql/gocql/serialization/double	[no test files]
+ok  	github.com/gocql/gocql/serialization/duration	(cached)
+?   	github.com/gocql/gocql/serialization/float	[no test files]
+?   	github.com/gocql/gocql/serialization/inet	[no test files]
+?   	github.com/gocql/gocql/serialization/smallint	[no test files]
+?   	github.com/gocql/gocql/serialization/text	[no test files]
+?   	github.com/gocql/gocql/serialization/timestamp	[no test files]
+?   	github.com/gocql/gocql/serialization/timeuuid	[no test files]
+?   	github.com/gocql/gocql/serialization/tinyint	[no test files]
+?   	github.com/gocql/gocql/serialization/uuid	[no test files]
+?   	github.com/gocql/gocql/serialization/varchar	[no test files]
+ok  	github.com/gocql/gocql/serialization/varint	(cached)
+ok  	github.com/gocql/gocql/tablets	(cached)
+ok  	github.com/gocql/gocql/tests/serialization	(cached)

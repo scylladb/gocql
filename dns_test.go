@@ -4,6 +4,7 @@
 package gocql
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -58,68 +59,74 @@ func MustIP(ip string) net.IP {
 func TestDNS(t *testing.T) {
 	t.Parallel()
 
-	checkIfSessionWorking := func(t *testing.T, cluster *ClusterConfig, hosts []string) {
-		s, err := cluster.CreateSession()
+	checkIfSessionWorking := func(t *testing.T, cluster Config, hosts []string) {
+		s, err := Connect(context.Background(), cluster)
 		if err != nil {
 			t.Fatalf("failed to create session: %v", err)
 		}
 		defer s.Close()
 
-		err = s.refreshRingNow()
+		err = s.RefreshMetadata(context.Background())
 		if err != nil {
 			t.Fatalf("failed to refresh ring: %v", err)
 		}
 
-		err = s.Query("select * from system.peers").Exec()
+		rows, err := v2Query(context.Background(), s, "select * from system.peers")
+		if err == nil {
+			for rows.Next() {
+			}
+			err = rows.Err()
+			rows.Close()
+		}
 		if err != nil {
 			t.Fatalf("failed to execute query: %v", err)
 		}
-		ringHosts := s.hostSource.getHostsList()
+		ringHosts := s.Metadata().Hosts()
 		if len(ringHosts) != len(hosts) {
 			t.Fatalf("wrong number of hosts: got %d, want %d", len(ringHosts), len(hosts))
 		}
 	}
 
-	OneDNSPerNode := func(c *ClusterConfig) {
+	OneDNSPerNode := func(c *Config) {
 		r := newMockDNSResolver()
 		var dnsRecords []string
-		for id, host := range c.Hosts {
+		for id, host := range c.ContactPoints {
 			dns := fmt.Sprintf("node%d.cluster.local", id+1)
 			dnsRecords = append(dnsRecords, dns)
 			r.Update(dns, MustIP(host))
 		}
 		c.DNSResolver = r
-		c.Hosts = dnsRecords
+		c.ContactPoints = dnsRecords
 	}
 
-	OneDNSPerCluster := func(c *ClusterConfig) {
+	OneDNSPerCluster := func(c *Config) {
 		r := newMockDNSResolver()
 		var hostIPs []net.IP
-		for _, host := range c.Hosts {
+		for _, host := range c.ContactPoints {
 			hostIPs = append(hostIPs, MustIP(host))
 		}
 		r.Update("cluster.local", hostIPs...)
 		c.DNSResolver = r
-		c.Hosts = []string{"cluster.local"}
+		c.ContactPoints = []string{"cluster.local"}
 	}
 
-	OneDNSPerClusterFirstBroken := func(c *ClusterConfig) {
+	OneDNSPerClusterFirstBroken := func(c *Config) {
 		r := newMockDNSResolver()
 		var hostIPs []net.IP
-		for _, host := range c.Hosts {
+		for _, host := range c.ContactPoints {
 			hostIPs = append(hostIPs, MustIP(host))
 		}
 		hostIPs[0] = MustIP("0.0.0.0")
 		r.Update("cluster.local", hostIPs...)
 		c.DNSResolver = r
-		c.Hosts = []string{"cluster.local"}
+		c.ContactPoints = []string{"cluster.local"}
 	}
 
-	WithAddressTranslator := func(c *ClusterConfig) {
+	WithAddressTranslator := func(c *Config) {
 		var toAddresses []net.IP
 		var fromAddresses []net.IP
 		var clusterHosts []string
-		for _, host := range c.Hosts {
+		for _, host := range c.ContactPoints {
 			ip := MustIP(host)
 
 			var fromAddress net.IP
@@ -147,38 +154,38 @@ func TestDNS(t *testing.T) {
 			}
 			panic("failed to translate address")
 		})
-		c.Hosts = clusterHosts
+		c.ContactPoints = clusterHosts
 	}
 
 	testCases := []struct {
 		name        string
-		clusterMods []func(*ClusterConfig)
+		clusterMods []func(*Config)
 	}{
 		{
 			name:        "OneDNSPerNode",
-			clusterMods: []func(*ClusterConfig){OneDNSPerNode},
+			clusterMods: []func(*Config){OneDNSPerNode},
 		},
 		{
 			name:        "OneDNSPerCluster",
-			clusterMods: []func(*ClusterConfig){OneDNSPerCluster},
+			clusterMods: []func(*Config){OneDNSPerCluster},
 		},
 		{
 			name:        "AddressTranslator+OneDNSPerNode",
-			clusterMods: []func(*ClusterConfig){WithAddressTranslator, OneDNSPerNode},
+			clusterMods: []func(*Config){WithAddressTranslator, OneDNSPerNode},
 		},
 		{
 			name:        "AddressTranslator+OneDNSPerCluster",
-			clusterMods: []func(*ClusterConfig){WithAddressTranslator, OneDNSPerCluster},
+			clusterMods: []func(*Config){WithAddressTranslator, OneDNSPerCluster},
 		},
 		{
 			name:        "OneDNSPerClusterFirstBroken",
-			clusterMods: []func(*ClusterConfig){OneDNSPerClusterFirstBroken},
+			clusterMods: []func(*Config){OneDNSPerClusterFirstBroken},
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			cluster := createCluster(tc.clusterMods...)
+			cluster := createV2Cluster(tc.clusterMods...)
 			checkIfSessionWorking(t, cluster, getClusterHosts())
 		})
 	}

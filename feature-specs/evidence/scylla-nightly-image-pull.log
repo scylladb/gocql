@@ -1,0 +1,7 @@
+Trying to pull docker.io/scylladb/scylla-nightly:latest...
+Getting image source signatures
+Copying blob sha256:6a31e8826f15bb74749f9825df5e289b7d233f3fa8deed658b83a1f874572b36
+Copying blob sha256:8f4a4ef7ec87af1eb84ab8382222fe461e965d7d1c9f8b34dd0890b7009a51bb
+Copying config sha256:ba0725b0c7e049636182764760c7b9d5477f59bd8ec117562f3ba927d70264b1
+Writing manifest to image destination
+ba0725b0c7e049636182764760c7b9d5477f59bd8ec117562f3ba927d70264b1

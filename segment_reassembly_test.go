@@ -32,9 +32,10 @@ import (
 	"testing"
 	"time"
 
-	frm "github.com/gocql/gocql/internal/frame"
-	"github.com/gocql/gocql/internal/segment"
-	"github.com/gocql/gocql/internal/streams"
+	frm "github.com/scylladb/gocql/v2/internal/frame"
+	"github.com/scylladb/gocql/v2/internal/segment"
+	"github.com/scylladb/gocql/v2/internal/streams"
+	"github.com/scylladb/gocql/v2/internal/wire"
 )
 
 // segmentReader is a minimal connReadSource backed by an in-memory byte stream,
@@ -124,60 +125,90 @@ func TestRecvSplitFrameRejectsOverlongStream(t *testing.T) {
 	}
 }
 
-// TestRecvSplitFrameAllocatesExactlyOneFrameBuffer pins the reassembly buffer
-// against the two allocation regressions it is shaped to avoid: growing it as
-// payloads arrive (a bytes.Buffer reaches ~2x the frame size), and then copying
-// the assembled frame into the read framer instead of handing it over. Both are
-// invisible in the output but double or triple the memory a single large response
-// occupies.
+// TestRecvSplitFrameAllocatesExactlyOneFrameBuffer retains its original identity
+// and memory bound, translated to the typed transport: one final receive buffer
+// per segment, with no additional frame-sized reassembly or legacy-framer copy.
 func TestRecvSplitFrameAllocatesExactlyOneFrameBuffer(t *testing.T) {
 	const bodyLen = 3 * segment.MaxPayloadSize
-
-	// Enough streams to also let the framer pool warm up.
 	const runs = 4
-	body := bytes.Repeat([]byte{0x5A}, bodyLen)
-	frame := make([]byte, headSize)
-	frame[0] = protoVersion5 | protoDirectionMask
-	// Stream -1 is the event stream: with no session attached, processFrame parses
-	// the frame and drops it, which is all this test needs. A READY frame carries
-	// no body fields, so the filler body is never inspected.
-	binary.BigEndian.PutUint16(frame[2:4], uint16(0xFFFF))
-	frame[4] = byte(frm.OpReady)
-	binary.BigEndian.PutUint32(frame[5:headSize], uint32(bodyLen))
-	frame = append(frame, body...)
-
+	body := typedTestRowsBody(bytes.Repeat([]byte{0x5A}, bodyLen))
+	frame := typedTestResponse(t, protoVersion5, 1, body)
 	var stream []byte
 	for src := frame; len(src) > 0; {
 		n := min(len(src), segment.MaxPayloadSize)
 		stream = append(stream, mustUncompressedSegment(t, src[:n], false)...)
 		src = src[n:]
 	}
-
-	c := &Conn{
-		r:       newSegmentReader(bytes.Repeat(stream, runs)),
-		streams: streams.New(),
-		logger:  &defaultLogger{},
-	}
+	reader := &typedSegmentAllocationReader{segmentReader: newSegmentReader(bytes.Repeat(stream, runs))}
+	c := &Conn{version: protoVersion5, r: reader, streams: streams.New(), calls: make(map[int]*callReq), logger: &defaultLogger{}}
 	c.initFramerCache()
-
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
 	for i := 0; i < runs; i++ {
-		// Stream 0 is unused, so processFrame parses and drops the frame; that is
-		// enough to exercise reassembly and the framer hand-over.
+		// A buffered receiver replaces the execution goroutine so process-wide
+		// allocation accounting measures the receive path without scheduling noise.
+		call := &callReq{typed: true, streamID: 1, resp: make(chan callResp, 1), timeout: make(chan struct{})}
+		c.calls[1] = call
+		reader.payloads = nil
 		if err := c.recvSegment(context.Background()); err != nil {
-			t.Fatalf("run %d: recvSegment: %v", i, err)
+			t.Fatalf("run %d: %v", i, err)
 		}
+		response := <-call.resp
+		if response.err != nil {
+			t.Fatal(response.err)
+		}
+		page := response.page
+		if page == nil || page.rowCount != 1 {
+			t.Fatal("typed response was not delivered")
+		}
+		count := 0
+		err := page.rows.Each(func(span wire.Span) error {
+			data := span.Bytes()
+			matched := false
+			// Match the actual socket Read destination, not a buffer constructed by
+			// the parser after receiving: every row span must borrow a final segment.
+			for _, received := range reader.payloads {
+				for offset := 0; offset+len(data) <= len(received); offset++ {
+					if &data[0] == &received[offset] {
+						matched = true
+						break
+					}
+				}
+				if matched {
+					break
+				}
+			}
+			if !matched {
+				t.Error("row payload was copied out of its receive segment")
+			}
+			count++
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if count < 3 {
+			t.Fatal("split response was flattened into a frame buffer")
+		}
+		page.owner.Release()
 	}
 	runtime.ReadMemStats(&after)
-
-	// One buffer per frame, sized to the frame: anything much above that means
-	// either the buffer was grown into or the frame was copied again.
 	allocated := after.TotalAlloc - before.TotalAlloc
 	if limit := uint64(runs) * uint64(len(frame)) * 3 / 2; allocated > limit {
-		t.Errorf("reassembling %d frames of %d bytes allocated %d bytes, want at most %d",
-			runs, len(frame), allocated, limit)
+		t.Errorf("receiving %d frames of %d bytes allocated %d bytes, want at most %d", runs, len(frame), allocated, limit)
 	}
+}
+
+type typedSegmentAllocationReader struct {
+	*segmentReader
+	payloads [][]byte
+}
+
+func (r *typedSegmentAllocationReader) Read(p []byte) (int, error) {
+	if len(p) > headSize {
+		r.payloads = append(r.payloads, p)
+	}
+	return r.segmentReader.Read(p)
 }
 
 // TestRecvSplitFrameRejectsOversizedLength drives recvSplitFrame with a CQL

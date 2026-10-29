@@ -15,8 +15,8 @@ import (
 	"errors"
 	"sort"
 
-	frm "github.com/gocql/gocql/internal/frame"
-	"github.com/gocql/gocql/internal/murmur"
+	frm "github.com/scylladb/gocql/v2/internal/frame"
+	"github.com/scylladb/gocql/v2/internal/murmur"
 )
 
 // ErrSegmentCompressorRequired is returned when a connection negotiated compression

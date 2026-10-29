@@ -31,8 +31,8 @@ import (
 	"net"
 	"testing"
 
-	frm "github.com/gocql/gocql/internal/frame"
-	"github.com/gocql/gocql/internal/tests/mock"
+	frm "github.com/scylladb/gocql/v2/internal/frame"
+	"github.com/scylladb/gocql/v2/internal/tests/mock"
 )
 
 type trackingMockFramer struct {

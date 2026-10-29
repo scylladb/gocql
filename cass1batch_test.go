@@ -28,6 +28,8 @@
 package gocql
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -36,12 +38,12 @@ import (
 func TestProto1BatchInsert(t *testing.T) {
 	t.Parallel()
 
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
 
 	table := testTableName(t)
 
-	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int primary key)", table)); err != nil {
+	if err := v2CreateTable(context.Background(), session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int primary key)", table)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -49,8 +51,9 @@ func TestProto1BatchInsert(t *testing.T) {
 	end := "APPLY BATCH"
 	query := fmt.Sprintf("INSERT INTO %s (id) VALUES (?)", table)
 	fullQuery := strings.Join([]string{begin, query, end}, "\n")
-	args := []any{5}
-	if err := session.Query(fullQuery, args...).Consistency(Quorum).Exec(); err != nil {
+	bound := sessionTestBind(t, session, fullQuery, IntValue(5))
+	defer bound.Close()
+	if _, err := Exec(context.Background(), session, bound, Options{Consistency: Option[Consistency]{Value: Quorum, Set: true}}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -83,10 +86,22 @@ func TestShouldPrepareFunction(t *testing.T) {
       );`, false},
 	}
 
+	// Automatic keyword-based preparation was removed: every original CQL
+	// case can now be bound explicitly as QUERY, and Prepare explicitly asks
+	// the server for metadata, including DDL previously classified false.
+	session := &Session{logger: nopLogger{}}
+	defer session.Close()
 	for _, test := range shouldPrepareTests {
-		q := &Query{stmt: test.Stmt, routingInfo: &queryRoutingInfo{}}
-		if got := q.shouldPrepare(); got != test.Result {
-			t.Fatalf("%q: got %v, expected %v\n", test.Stmt, got, test.Result)
-		}
+		t.Run(fmt.Sprintf("formerly_prepared_%t_%s", test.Result, firstCQLWord(test.Stmt)), func(t *testing.T) {
+			statement := Statement[Unit, Unit]{CQL: test.Stmt, Params: NoParams, Rows: NoRows}
+			bound, err := BindUnpreparedOwned(statement, NewColumns(), Unit{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			bound.Close()
+			if _, err := Prepare(context.Background(), session, statement, PrepareOptions{}); !errors.Is(err, ErrNoConnections) {
+				t.Fatalf("explicit Prepare must attempt a connection for %q: %v", test.Stmt, err)
+			}
+		})
 	}
 }

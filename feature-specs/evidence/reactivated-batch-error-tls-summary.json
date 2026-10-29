@@ -1,0 +1,29 @@
+{
+  "exit_code": 1,
+  "counts_including_subtests": {
+    "pass": 2,
+    "fail": 1
+  },
+  "package_results": [
+    {
+      "Time": "2026-10-29T01:24:14.248105107-04:00",
+      "Action": "fail",
+      "Package": "github.com/gocql/gocql",
+      "Elapsed": 10.445
+    }
+  ],
+  "tests": [
+    {
+      "test": "TestCreateSession_DontSwallowError",
+      "result": "pass"
+    },
+    {
+      "test": "TestTLSTicketResumption",
+      "result": "fail"
+    },
+    {
+      "test": "TestUnpreparedBatch",
+      "result": "pass"
+    }
+  ]
+}

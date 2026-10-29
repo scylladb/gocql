@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	frm "github.com/gocql/gocql/internal/frame"
+	frm "github.com/scylladb/gocql/v2/internal/frame"
 )
 
 // collect feeds the splitter and returns the frames it emitted, copied because the

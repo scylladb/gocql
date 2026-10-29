@@ -224,7 +224,7 @@ func (rs *ringTestServer) session(t *testing.T, configure func(cfg *ClusterConfi
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
-	t.Cleanup(s.Close)
+	t.Cleanup(func() { _ = s.Close() })
 	return s
 }
 

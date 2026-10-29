@@ -6,7 +6,7 @@ package serialization_test
 import (
 	"testing"
 
-	"github.com/gocql/gocql"
+	"github.com/scylladb/gocql/v2"
 )
 
 func TestMarshalUnsetColumn(t *testing.T) {

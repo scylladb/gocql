@@ -35,494 +35,242 @@ import (
 )
 
 type position struct {
-	Lat     int    `cql:"lat"`
-	Lon     int    `cql:"lon"`
-	Padding string `json:"padding"`
+	Lat, Lon int32
+	Padding  string
 }
 
-// NOTE: due to current implementation details it is not currently possible to use
-// a pointer receiver type for the UDTMarshaler interface to handle UDT's
-func (p position) MarshalUDT(name string, info TypeInfo) ([]byte, error) {
-	switch name {
-	case "lat":
-		return Marshal(info, p.Lat)
-	case "lon":
-		return Marshal(info, p.Lon)
-	case "padding":
-		return Marshal(info, p.Padding)
-	default:
-		return nil, fmt.Errorf("unknown column for position: %q", name)
-	}
-}
+var positionFields = serializationUDT(
+	Params(Param("lat", Int32, func(p position) int32 { return p.Lat }), Param("lon", Int32, func(p position) int32 { return p.Lon }), Param("padding", serializationString, func(p position) string { return p.Padding })),
+	Row(Column("lat", Int32, func(p *position) *int32 { return &p.Lat }), Column("lon", Int32, func(p *position) *int32 { return &p.Lon }), Column("padding", serializationString, func(p *position) *string { return &p.Padding })), UDTOptions{})
 
-func (p *position) UnmarshalUDT(name string, info TypeInfo, data []byte) error {
-	switch name {
-	case "lat":
-		return Unmarshal(info, data, &p.Lat)
-	case "lon":
-		return Unmarshal(info, data, &p.Lon)
-	case "padding":
-		return Unmarshal(info, data, &p.Padding)
-	default:
-		return fmt.Errorf("unknown column for position: %q", name)
-	}
-}
+// The original per-member hooks become an application-owned typed Codec.
+// Clone is valid before any metadata has been compiled.
+type positionCodec struct{}
 
+func (positionCodec) CheckType(t DataType) error              { return positionFields.CheckType(t) }
+func (positionCodec) Encode(w *ValueWriter, p position) error { return positionFields.Encode(w, p) }
+func (positionCodec) Decode(r ValueReader) (position, error)  { return positionFields.Decode(r) }
+func (positionCodec) Clone(p position) position               { return p }
+
+func udtTable(t *testing.T, s *Session, fields string) (string, string) {
+	t.Helper()
+	table, typ := serializationTableName(t), serializationTypeName(t)
+	serializationDDL(t, s, fmt.Sprintf("CREATE TYPE %s(%s)", typ, fields))
+	serializationDDL(t, s, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,udt_col frozen<%s>)", table, typ))
+	return table, typ
+}
 func TestUDT_Marshaler(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
-	defer session.Close()
-
-	table := testTableName(t)
-	typeName := testTypeName(t)
-
-	err := createTable(session, fmt.Sprintf(`CREATE TYPE gocql_test.%s(
-		lat int,
-		lon int,
-		padding text);`, typeName))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s(
-		id int,
-		name text,
-		loc frozen<%s>,
-
-		primary key(id)
-	);`, table, typeName))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	const (
-		expLat = -1
-		expLon = 2
-	)
-	pad := strings.Repeat("X", 1000)
-
-	err = session.Query(fmt.Sprintf("INSERT INTO %s(id, name, loc) VALUES(?, ?, ?)", table), 1, "test", &position{expLat, expLon, pad}).Exec()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	pos := &position{}
-
-	err = session.Query(fmt.Sprintf("SELECT loc FROM %s WHERE id = ?", table), 1).Scan(pos)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if pos.Lat != expLat {
-		t.Errorf("expeceted lat to be be %d got %d", expLat, pos.Lat)
-	}
-	if pos.Lon != expLon {
-		t.Errorf("expeceted lon to be be %d got %d", expLon, pos.Lon)
-	}
-	if pos.Padding != pad {
-		t.Errorf("expected to get padding %q got %q\n", pad, pos.Padding)
+	s := createV2Session(t)
+	defer s.Close()
+	table, _ := udtTable(t, s, "lat int,lon int,padding text")
+	want := position{-1, 2, strings.Repeat("X", 1000)}
+	got := serializationRoundTrip(t, s, table, "udt_col", 1, positionCodec{}, want)
+	if got != want {
+		t.Fatalf("custom position codec: expected %+v, got %+v", want, got)
 	}
 }
+
+type serializationHorse struct{ Name, Owner string }
+
+var serializationHorseCodec = serializationUDT(
+	Params(Param("name", serializationString, func(v serializationHorse) string { return v.Name }), Param("owner", serializationString, func(v serializationHorse) string { return v.Owner })),
+	Row(Column("name", serializationString, func(v *serializationHorse) *string { return &v.Name }), Column("owner", serializationString, func(v *serializationHorse) *string { return &v.Owner })), UDTOptions{})
 
 func TestUDT_Reflect(t *testing.T) {
 	t.Parallel()
-
-	// Uses reflection instead of implementing the marshaling type
-	session := createSession(t)
-	defer session.Close()
-
-	table := testTableName(t)
-	typeName := testTypeName(t)
-
-	err := createTable(session, fmt.Sprintf(`CREATE TYPE gocql_test.%s(
-		name text,
-		owner text);`, typeName))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s(
-		position int,
-		horse frozen<%s>,
-
-		primary key(position)
-	);`, table, typeName))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	type horse struct {
-		Name  string `cql:"name"`
-		Owner string `cql:"owner"`
-	}
-
-	insertedHorse := &horse{
-		Name:  "pony",
-		Owner: "jim",
-	}
-
-	err = session.Query(fmt.Sprintf("INSERT INTO %s(position, horse) VALUES(?, ?)", table), 1, insertedHorse).Exec()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	retrievedHorse := &horse{}
-	err = session.Query(fmt.Sprintf("SELECT horse FROM %s WHERE position = ?", table), 1).Scan(retrievedHorse)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if *retrievedHorse != *insertedHorse {
-		t.Fatalf("expected to get %+v got %+v", insertedHorse, retrievedHorse)
+	s := createV2Session(t)
+	defer s.Close()
+	table, _ := udtTable(t, s, "name text,owner text")
+	// Explicit accessors replace struct-tag discovery while preserving both fields.
+	want := serializationHorse{"pony", "jim"}
+	got := serializationRoundTrip(t, s, table, "udt_col", 1, serializationHorseCodec, want)
+	if got != want {
+		t.Fatalf("expected %+v, got %+v", want, got)
 	}
 }
-
 func TestUDT_NullObject(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
-	defer session.Close()
-
-	table := testTableName(t)
-	typeName := testTypeName(t)
-
-	err := createTable(session, fmt.Sprintf(`CREATE TYPE gocql_test.%s(
-		name text,
-		owner text);`, typeName))
+	s := createV2Session(t)
+	defer s.Close()
+	table, _ := udtTable(t, s, "name text,owner text")
+	serializationWrite(t, s, fmt.Sprintf("INSERT INTO %s(id) VALUES(1)", table))
+	got := Nullable[serializationHorse]{Value: serializationHorse{"temp", "temp"}, Valid: true}
+	var err error
+	got, err = serializationOne(s, fmt.Sprintf("SELECT udt_col FROM %s WHERE id=1", table), OneColumn(NullableDecoder(serializationHorseCodec)))
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	err = createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s(
-		id uuid,
-		udt_col frozen<%s>,
-
-		primary key(id)
-	);`, table, typeName))
-	if err != nil {
-		t.Fatal(err)
+	if got.Valid || got.Value != (serializationHorse{}) {
+		t.Fatalf("null UDT did not reset destination: %+v", got)
 	}
-
-	type col struct {
-		Name  string `cql:"name"`
-		Owner string `cql:"owner"`
-	}
-
-	id := TimeUUID()
-	err = session.Query(fmt.Sprintf("INSERT INTO %s(id) VALUES(?)", table), id).Exec()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	readCol := &col{
-		Name:  "temp",
-		Owner: "temp",
-	}
-
-	err = session.Query(fmt.Sprintf("SELECT udt_col FROM %s WHERE id = ?", table), id).Scan(readCol)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if readCol.Name != "" {
-		t.Errorf("expected empty string to be returned for null udt: got %q", readCol.Name)
-	}
-	if readCol.Owner != "" {
-		t.Errorf("expected empty string to be returned for null udt: got %q", readCol.Owner)
+	if _, err := serializationOne(s, fmt.Sprintf("SELECT udt_col FROM %s WHERE id=1", table), OneColumn(serializationHorseCodec)); err == nil {
+		t.Fatal("nonnullable UDT accepted null")
 	}
 }
-
 func TestMapScanUDT(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
-	defer session.Close()
-
-	table := testTableName(t)
-	typeName := testTypeName(t)
-
-	err := createTable(session, fmt.Sprintf(`CREATE TYPE gocql_test.%s (
-		created_timestamp timestamp,
-		message text
-	);`, typeName))
+	s := createV2Session(t)
+	defer s.Close()
+	table, typ := serializationTableName(t), serializationTypeName(t)
+	serializationDDL(t, s, fmt.Sprintf("CREATE TYPE %s(created_timestamp timestamp,message text)", typ))
+	serializationDDL(t, s, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,type int,log_entries list<frozen<%s>>)", table, typ))
+	type entry struct {
+		Created Timestamp
+		Message string
+	}
+	codec := serializationUDT(Params(Param("created_timestamp", TimestampCodec, func(v entry) Timestamp { return v.Created }), Param("message", serializationString, func(v entry) string { return v.Message })), Row(Column("created_timestamp", TimestampCodec, func(v *entry) *Timestamp { return &v.Created }), Column("message", serializationString, func(v *entry) *string { return &v.Message })), UDTOptions{})
+	now := time.Now().Truncate(time.Millisecond)
+	stamp, err := TimestampFromTime(now)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	err = createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (
-		id uuid PRIMARY KEY,
-		type int,
-		log_entries list<frozen <%s>>
-	);`, table, typeName))
+	want := []entry{{stamp, "test time now"}}
+	serializationRoundTrip(t, s, table, "log_entries", 1, serializationList(codec), want)
+	serializationWrite(t, s, fmt.Sprintf("UPDATE %s SET type=1 WHERE id=1", table))
+	rows, err := v2Query(t.Context(), s, fmt.Sprintf("SELECT * FROM %s WHERE id=1", table))
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	entry := []struct {
-		CreatedTimestamp time.Time `cql:"created_timestamp"`
-		Message          string    `cql:"message"`
-	}{
-		{
-			CreatedTimestamp: time.Now().Truncate(time.Millisecond),
-			Message:          "test time now",
-		},
+	if !rows.Next() {
+		t.Fatalf("missing row: %v", rows.Err())
 	}
-
-	id, _ := RandomUUID()
-	const typ = 1
-
-	err = session.Query(fmt.Sprintf("INSERT INTO %s(id, type, log_entries) VALUES (?, ?, ?)", table), id, typ, entry).Exec()
+	lease, err := rows.Retain()
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	rawResult := map[string]any{}
-	err = session.Query(fmt.Sprintf(`SELECT * FROM %s WHERE id = ?`, table), id).MapScan(rawResult)
+	defer lease.Close()
+	retained := rows.Row()
+	clone, err := rows.Clone()
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	logEntries, ok := rawResult["log_entries"].([]map[string]any)
-	if !ok {
-		t.Fatal("log_entries not in scanned map")
+	if err := rows.Close(); err != nil {
+		t.Fatal(err)
 	}
-
-	if len(logEntries) != 1 {
-		t.Fatalf("expected to get 1 log_entry got %d", len(logEntries))
-	}
-
-	logEntry := logEntries[0]
-
-	timestamp, ok := logEntry["created_timestamp"]
-	if !ok {
-		t.Error("created_timestamp not unmarshalled into map")
-	} else {
-		if ts, ok := timestamp.(time.Time); ok {
-			if !ts.In(time.UTC).Equal(entry[0].CreatedTimestamp.In(time.UTC)) {
-				t.Errorf("created_timestamp not equal to stored: got %v expected %v", ts.In(time.UTC), entry[0].CreatedTimestamp.In(time.UTC))
-			}
-		} else {
-			t.Errorf("created_timestamp was not time.Time got: %T", timestamp)
+	for _, r := range []DynamicRow{retained, clone} {
+		v, err := r.Get("log_entries")
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
-
-	message, ok := logEntry["message"]
-	if !ok {
-		t.Error("message not unmarshalled into map")
-	} else {
-		if ts, ok := message.(string); ok {
-			if ts != message {
-				t.Errorf("message not equal to stored: got %v expected %v", ts, entry[0].Message)
+		it, err := v.Elements()
+		if err != nil {
+			t.Fatal(err)
+		}
+		entries, err := Collect(it)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(entries) != 1 {
+			t.Fatalf("expected 1 entry, got %d", len(entries))
+		}
+		fs, err := entries[0].Fields()
+		if err != nil {
+			t.Fatal(err)
+		}
+		fields, err := Collect(fs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(fields) != 2 {
+			t.Fatalf("expected timestamp and message, got %d fields", len(fields))
+		}
+		for _, f := range fields {
+			switch f.Name {
+			case "created_timestamp":
+				n, e := f.Value.Signed()
+				if e != nil || Timestamp(n) != stamp {
+					t.Fatalf("timestamp: %d %v", n, e)
+				}
+			case "message":
+				v, e := f.Value.Text()
+				if e != nil || v.String() != want[0].Message {
+					t.Fatalf("message: %v %v", v, e)
+				}
+			default:
+				t.Fatalf("unexpected field %q", f.Name)
 			}
-		} else {
-			t.Errorf("message was not string got: %T", message)
 		}
 	}
 }
-
 func TestUDT_MissingField(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
-	defer session.Close()
-
-	table := testTableName(t)
-	typeName := testTypeName(t)
-
-	err := createTable(session, fmt.Sprintf(`CREATE TYPE gocql_test.%s(
-		name text,
-		owner text);`, typeName))
-	if err != nil {
-		t.Fatal(err)
+	s := createV2Session(t)
+	defer s.Close()
+	table, _ := udtTable(t, s, "name text,owner text")
+	type col struct{ Name string }
+	p := Params(Param("name", serializationString, func(v col) string { return v.Name }))
+	r := Row(Column("name", serializationString, func(v *col) *string { return &v.Name }))
+	strict := serializationUDT(p, r, UDTOptions{})
+	if err := serializationExec(s, fmt.Sprintf("INSERT INTO %s(id,udt_col) VALUES(1,?)", table), OneParam(strict), col{"test"}); err == nil {
+		t.Fatal("strict UDT accepted an unaccounted database field")
 	}
-
-	err = createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s(
-		id uuid,
-		udt_col frozen<%s>,
-
-		primary key(id)
-	);`, table, typeName))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	type col struct {
-		Name string `cql:"name"`
-	}
-
-	writeCol := &col{
-		Name: "test",
-	}
-
-	id := TimeUUID()
-	err = session.Query(fmt.Sprintf("INSERT INTO %s(id, udt_col) VALUES(?, ?)", table), id, writeCol).Exec()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	readCol := &col{}
-	err = session.Query(fmt.Sprintf("SELECT udt_col FROM %s WHERE id = ?", table), id).Scan(readCol)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if readCol.Name != writeCol.Name {
-		t.Errorf("expected %q: got %q", writeCol.Name, readCol.Name)
+	codec := serializationUDT(p, r, UDTOptions{AllowExtraDatabaseFields: true})
+	want := col{"test"}
+	got := serializationRoundTrip(t, s, table, "udt_col", 1, codec, want)
+	if got != want {
+		t.Fatalf("expected %+v, got %+v", want, got)
 	}
 }
-
 func TestUDT_EmptyCollections(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
-	defer session.Close()
-
-	table := testTableName(t)
-	typeName := testTypeName(t)
-
-	err := createTable(session, fmt.Sprintf(`CREATE TYPE gocql_test.%s(
-		a list<text>,
-		b map<text, text>,
-		c set<text>
-	);`, typeName))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s(
-		id uuid,
-		udt_col frozen<%s>,
-
-		primary key(id)
-	);`, table, typeName))
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	s := createV2Session(t)
+	defer s.Close()
+	table, _ := udtTable(t, s, "a list<text>,b map<text,text>,c set<text>")
 	type udt struct {
-		A []string          `cql:"a"`
-		B map[string]string `cql:"b"`
-		C []string          `cql:"c"`
+		A Nullable[[]string]
+		B Nullable[map[string]string]
+		C Nullable[[]string]
 	}
-
-	id := TimeUUID()
-	err = session.Query(fmt.Sprintf("INSERT INTO %s(id, udt_col) VALUES(?, ?)", table), id, &udt{}).Exec()
-	if err != nil {
-		t.Fatal(err)
+	list, mp, set := NullableCodec(serializationList(serializationString)), NullableCodec(serializationMap(serializationString, serializationString)), NullableCodec(serializationSet(serializationString))
+	codec := serializationUDT(Params(Param("a", list, func(v udt) Nullable[[]string] { return v.A }), Param("b", mp, func(v udt) Nullable[map[string]string] { return v.B }), Param("c", set, func(v udt) Nullable[[]string] { return v.C })), Row(Column("a", list, func(v *udt) *Nullable[[]string] { return &v.A }), Column("b", mp, func(v *udt) *Nullable[map[string]string] { return &v.B }), Column("c", set, func(v *udt) *Nullable[[]string] { return &v.C })), UDTOptions{})
+	got := serializationRoundTrip(t, s, table, "udt_col", 1, codec, udt{})
+	if got.A.Valid || got.B.Valid || got.C.Valid || got.A.Value != nil || got.B.Value != nil || got.C.Value != nil {
+		t.Fatalf("null collections: %+v", got)
 	}
-
-	var val udt
-	err = session.Query(fmt.Sprintf("SELECT udt_col FROM %s WHERE id=?", table), id).Scan(&val)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if val.A != nil {
-		t.Errorf("expected to get nil got %#+v", val.A)
-	}
-	if val.B != nil {
-		t.Errorf("expected to get nil got %#+v", val.B)
-	}
-	if val.C != nil {
-		t.Errorf("expected to get nil got %#+v", val.C)
+	got = serializationRoundTrip(t, s, table, "udt_col", 2, codec, udt{A: Nullable[[]string]{Valid: true}, B: Nullable[map[string]string]{Valid: true}, C: Nullable[[]string]{Valid: true}})
+	if !got.A.Valid || !got.B.Valid || !got.C.Valid || len(got.A.Value) != 0 || len(got.B.Value) != 0 || len(got.C.Value) != 0 {
+		t.Fatalf("present empty collections: %+v", got)
 	}
 }
-
 func TestUDT_UpdateField(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
-	defer session.Close()
-
-	table := testTableName(t)
-	typeName := testTypeName(t)
-
-	err := createTable(session, fmt.Sprintf(`CREATE TYPE gocql_test.%s(
-		name text,
-		owner text);`, typeName))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s(
-		id uuid,
-		udt_col frozen<%s>,
-
-		primary key(id)
-	);`, table, typeName))
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	s := createV2Session(t)
+	defer s.Close()
+	table, typ := udtTable(t, s, "name text,owner text")
 	type col struct {
-		Name  string `cql:"name"`
-		Owner string `cql:"owner"`
-		Data  string `cql:"data"`
+		Name, Owner string
+		Data        Nullable[string]
 	}
-
-	writeCol := &col{
-		Name:  "test-name",
-		Owner: "test-owner",
+	p := Params(Param("name", serializationString, func(v col) string { return v.Name }), Param("owner", serializationString, func(v col) string { return v.Owner }), Param("data", NullableCodec(serializationString), func(v col) Nullable[string] { return v.Data }))
+	r := Row(Column("name", serializationString, func(v *col) *string { return &v.Name }), Column("owner", serializationString, func(v *col) *string { return &v.Owner }), Column("data", NullableCodec(serializationString), func(v *col) *Nullable[string] { return &v.Data }))
+	want := col{Name: "test-name", Owner: "test-owner"}
+	if err := serializationExec(s, fmt.Sprintf("INSERT INTO %s(id,udt_col) VALUES(1,?)", table), OneParam(UDTEncoder(p, UDTOptions{})), want); err == nil {
+		t.Fatal("unknown application field accepted without AllowMissingFields")
 	}
-
-	id := TimeUUID()
-	err = session.Query(fmt.Sprintf("INSERT INTO %s(id, udt_col) VALUES(?, ?)", table), id, writeCol).Exec()
+	if err := serializationExec(s, fmt.Sprintf("INSERT INTO %s(id,udt_col) VALUES(1,?)", table), OneParam(UDTEncoder(p, UDTOptions{AllowMissingFields: true})), want); err != nil {
+		t.Fatal(err)
+	}
+	serializationDDL(t, s, fmt.Sprintf("ALTER TYPE %s ADD data text", typ))
+	got, err := serializationOne(s, fmt.Sprintf("SELECT udt_col FROM %s WHERE id=1", table), OneColumn(UDTDecoder(r, UDTOptions{})))
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	if err := createTable(session, fmt.Sprintf(`ALTER TYPE gocql_test.%s ADD data text;`, typeName)); err != nil {
-		t.Fatal(err)
-	}
-
-	readCol := &col{}
-	err = session.Query(fmt.Sprintf("SELECT udt_col FROM %s WHERE id = ?", table), id).Scan(readCol)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if *readCol != *writeCol {
-		t.Errorf("expected %+v: got %+v", *writeCol, *readCol)
+	if got != want {
+		t.Fatalf("added trailing field: expected %+v, got %+v", want, got)
 	}
 }
-
 func TestUDT_ScanNullUDT(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
-	defer session.Close()
-
-	table := testTableName(t)
-	typeName := testTypeName(t)
-
-	err := createTable(session, fmt.Sprintf(`CREATE TYPE gocql_test.%s(
-		lat int,
-		lon int,
-		padding text);`, typeName))
+	s := createV2Session(t)
+	defer s.Close()
+	table, _ := udtTable(t, s, "lat int,lon int,padding text")
+	serializationWrite(t, s, fmt.Sprintf("INSERT INTO %s(id) VALUES(1)", table))
+	got, err := serializationOne(s, fmt.Sprintf("SELECT udt_col FROM %s WHERE id=1", table), OneColumn(NullableDecoder(positionCodec{})))
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	err = createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s(
-		id int,
-		name text,
-		loc frozen<%s>,
-		primary key(id)
-	);`, table, typeName))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = session.Query(fmt.Sprintf("INSERT INTO %s(id, name) VALUES(?, ?)", table), 1, "test").Exec()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	pos := &position{}
-
-	err = session.Query(fmt.Sprintf("SELECT loc FROM %s WHERE id = ?", table), 1).Scan(pos)
-	if err != nil {
-		t.Fatal(err)
+	if got.Valid {
+		t.Fatal("expected null custom UDT")
 	}
 }

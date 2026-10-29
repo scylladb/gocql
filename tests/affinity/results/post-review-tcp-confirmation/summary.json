@@ -1,0 +1,163 @@
+{
+  "raw_result_sha256": "2737bc7f92f0ac07c9c62a91a886bfceb5c0d08ca8e471e751fc24006c38fb87",
+  "total_runs": 30,
+  "total_operations": 1311712896,
+  "complete": true,
+  "missing_case_repetitions": [],
+  "latency_valid": true,
+  "summaries": [
+    {
+      "label": "tcp-64MiB-update1-A-shared",
+      "runs": 6,
+      "mops_median": 4.826073801845396,
+      "mops_min": 4.592692432529864,
+      "mops_max": 5.029601565042494,
+      "worker_completion_cv_median": 0.0010442742541285253,
+      "client_cores_median": 1.9688823412508172,
+      "client_cpu_seconds_per_million_ops_median": 0.40947308719167386,
+      "batch_p99_ms_median": 0.0635345,
+      "allocations_per_million_ops_median": 1.6778456358909009,
+      "server_cores_including_setup_warmup_median": 0.9856068499948193
+    },
+    {
+      "label": "tcp-64MiB-update1-B-shared-pinned",
+      "runs": 6,
+      "mops_median": 2.115213203509152,
+      "mops_min": 2.025246357639115,
+      "mops_max": 2.188649472737798,
+      "worker_completion_cv_median": 0.032841373091459555,
+      "client_cores_median": 1.2912076723497168,
+      "client_cpu_seconds_per_million_ops_median": 0.6085443622198354,
+      "batch_p99_ms_median": 0.105079,
+      "allocations_per_million_ops_median": 3.525311910794409,
+      "server_cores_including_setup_warmup_median": 0.4615668060678491
+    },
+    {
+      "label": "tcp-64MiB-update1-C-sharded",
+      "runs": 6,
+      "mops_median": 5.681235534563568,
+      "mops_min": 5.492141066139679,
+      "mops_max": 5.725748945384745,
+      "worker_completion_cv_median": 0.0013297666893643334,
+      "client_cores_median": 2.099293006683496,
+      "client_cpu_seconds_per_million_ops_median": 0.3692921294382123,
+      "batch_p99_ms_median": 0.0405365,
+      "allocations_per_million_ops_median": 0.8448826699029404,
+      "server_cores_including_setup_warmup_median": 1.4397992270418716
+    },
+    {
+      "label": "tcp-64MiB-update1-D-sharded-pinned",
+      "runs": 6,
+      "mops_median": 4.6983951157720965,
+      "mops_min": 4.166720102712792,
+      "mops_max": 5.0143206157855165,
+      "worker_completion_cv_median": 0.011052928504276905,
+      "client_cores_median": 1.9736454095730238,
+      "client_cpu_seconds_per_million_ops_median": 0.42040922073782117,
+      "batch_p99_ms_median": 0.042565,
+      "allocations_per_million_ops_median": 1.1214498848735868,
+      "server_cores_including_setup_warmup_median": 1.2156876158425591
+    },
+    {
+      "label": "tcp-64MiB-update1-E-sharded-pinned-socket-once",
+      "runs": 6,
+      "mops_median": 4.589531947576884,
+      "mops_min": 4.283796323070737,
+      "mops_max": 5.022796395119979,
+      "worker_completion_cv_median": 0.011112930101047956,
+      "client_cores_median": 1.9118504363288022,
+      "client_cpu_seconds_per_million_ops_median": 0.41567106459471986,
+      "batch_p99_ms_median": 0.043687500000000004,
+      "allocations_per_million_ops_median": 489.42495961384157,
+      "server_cores_including_setup_warmup_median": 1.1692801775291721
+    }
+  ],
+  "comparisons": [
+    {
+      "workload": "tcp-64MiB-update1",
+      "comparison": "D-sharded-pinned/C-sharded",
+      "meaning": "pinning after sharding",
+      "paired_runs": 6,
+      "paired_median_gain_percent": -16.61606567646894,
+      "bootstrap_median_95_percent_interval": [
+        -21.745286798281793,
+        -13.817422752752329
+      ],
+      "paired_gain_percent": [
+        -15.914882693509158,
+        -15.217783008377817,
+        -24.133046610882115,
+        -17.31724865942872,
+        -12.41706249712684,
+        -19.357526985681474
+      ],
+      "paired_median_batch_p99_ratio": 1.0910970287220547,
+      "paired_median_worker_cv_change": 0.009974461941946958
+    },
+    {
+      "workload": "tcp-64MiB-update1",
+      "comparison": "C-sharded/A-shared",
+      "meaning": "sharding plus removing shared lock",
+      "paired_runs": 6,
+      "paired_median_gain_percent": 16.938284651478284,
+      "bootstrap_median_95_percent_interval": [
+        14.15990641935676,
+        20.310813345393306
+      ],
+      "paired_gain_percent": [
+        17.076089538021712,
+        20.831080819640313,
+        15.344145503829143,
+        19.790545871146282,
+        16.800479764934884,
+        12.975667334884378
+      ],
+      "paired_median_batch_p99_ratio": 0.6282283030308445,
+      "paired_median_worker_cv_change": 0.00039567000605285053
+    },
+    {
+      "workload": "tcp-64MiB-update1",
+      "comparison": "B-shared-pinned/A-shared",
+      "meaning": "pinning shared cache",
+      "paired_runs": 6,
+      "paired_median_gain_percent": -56.65818661138483,
+      "bootstrap_median_95_percent_interval": [
+        -57.03776758138852,
+        -54.658248837552236
+      ],
+      "paired_gain_percent": [
+        -56.72776846260239,
+        -56.91863635655478,
+        -56.58860476016727,
+        -53.967195066267394,
+        -55.34930260883708,
+        -57.15689880622228
+      ],
+      "paired_median_batch_p99_ratio": 1.6200236875585337,
+      "paired_median_worker_cv_change": 0.031822352210082165
+    }
+  ],
+  "pinned_cpu_samples": 83636,
+  "unpinned_sampled_cpu_changes": 55934,
+  "socket_workers": 24,
+  "socket_workers_incoming_cpu_changed_from_target": 24,
+  "socket_workers_target_missing_at_measurement_start": 24,
+  "socket_affinity_status": "unsupported-observed-mismatch",
+  "socket_observed_cpu_values": [
+    17,
+    18,
+    20,
+    23
+  ],
+  "socket_observed_napi_values": [
+    0
+  ],
+  "notes": [
+    "Synthetic cache/LRU/encoding/loopback experiment; no actual gocql, database, TLS or physical NIC.",
+    "LRU ownership/lock removal is distinct from worker pinning; compare D/C for worker pinning.",
+    "E is a one-time socket-option feasibility probe, not a maintained socket-affinity throughput treatment.",
+    "Latency describes sampled batches of 32 operations, not per-query p99. Skew includes bounded queue time.",
+    "Bootstrap intervals resample up to 6 randomized blocks; exploratory shared-host evidence.",
+    "No hardware cache-miss or full migration counters are collected by this harness."
+  ]
+}

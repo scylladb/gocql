@@ -8,7 +8,7 @@ import (
 
 	"gopkg.in/inf.v0"
 
-	"github.com/gocql/gocql/serialization/duration"
+	"github.com/scylladb/gocql/v2/serialization/duration"
 )
 
 var simpleTypesCases = SimpleTypes{

@@ -1,0 +1,8 @@
+# github.com/scylladb/gocql/v2 [github.com/scylladb/gocql/v2.test]
+./v2_metadata.go:683:153: conn.getSystemRequestTimeout undefined (type *Conn has no field or method getSystemRequestTimeout)
+./v2_metadata.go:799:39: cannot use conn (variable of interface type ConnInterface) as *Conn value in argument to readV2SystemRows: need type assertion
+./v2_metadata.go:803:39: cannot use conn (variable of interface type ConnInterface) as *Conn value in argument to readV2SystemRows: need type assertion
+./v2_metadata.go:811:15: conn.host undefined (type ConnInterface has no field or method host)
+./v2_result.go:326:9: cannot use casRows[R]{…} (value of struct type casRows[R]) as RowDecoder[CASResult[R]] value in return statement: casRows[R] does not implement RowDecoder[CASResult[R]] (missing method Clone)
+FAIL	github.com/scylladb/gocql/v2 [build failed]
+FAIL

@@ -126,7 +126,7 @@ func TestInvalidUUIDLength(t *testing.T) {
 		t.Fatalf("expected invalid UUID error, got '%v' ", err)
 	}
 
-	_, err = UUIDFromBytes(TimeUUID().Bytes()[:15])
+	_, err = UUIDFromBytes(NewTimeUUID().Bytes()[:15])
 	if err == nil || err.Error() != "UUIDs must be exactly 16 bytes long" {
 		t.Fatalf("expected error '%v', got '%v'", "UUIDs must be exactly 16 bytes long", err)
 	}
@@ -222,7 +222,7 @@ func TestTimeUUID(t *testing.T) {
 	var node []byte
 	timestamp := int64(0)
 	for i := 0; i < 20; i++ {
-		uuid := TimeUUID()
+		uuid := NewTimeUUID()
 
 		if variant := uuid.Variant(); variant != VariantIETF {
 			t.Errorf("wrong variant. expected %d got %d", VariantIETF, variant)

@@ -232,7 +232,7 @@ func BenchmarkRowDataAllocation(b *testing.B) {
 func BenchmarkDereference(b *testing.B) {
 	n := 42
 	s := "hello"
-	u := TimeUUID()
+	u := NewTimeUUID()
 
 	b.Run("int_ptr", func(b *testing.B) {
 		b.ReportAllocs()

@@ -1,0 +1,7 @@
+# github.com/scylladb/gocql/v2 [github.com/scylladb/gocql/v2.test]
+./v2_dynamic_test.go:6:2: "errors" imported and not used
+./v2_dynamic_test.go:8:2: "strings" imported and not used
+./v2_dynamic_test.go:9:2: "sync" imported and not used
+./v2_dynamic_test.go:12:2: "github.com/scylladb/gocql/v2/internal/wire" imported and not used
+FAIL	github.com/scylladb/gocql/v2 [build failed]
+FAIL

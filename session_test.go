@@ -30,294 +30,294 @@ package gocql
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
-	"net"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
+
+// Typed request helpers keep parameter construction explicit and bind inputs once.
+func sessionTestBind(t testing.TB, session *Session, cql string, values ...Value) *Bound[Unit] {
+	t.Helper()
+	prepared, err := Prepare(context.Background(), session, Statement[[]Value, Unit]{CQL: cql, Params: DynamicParams, Rows: NoRows}, PrepareOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bound, err := BindOwned(prepared, values)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return bound
+}
+func sessionTestItem[R any](t testing.TB, bound *Bound[R]) BatchItem {
+	t.Helper()
+	item, err := BatchEntry(bound)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return item
+}
+func sessionTestInt(t testing.TB, row DynamicRow, name string) int64 {
+	t.Helper()
+	value, err := row.Get(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	integer, err := value.Signed()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return integer
+}
 
 func TestSessionAPI(t *testing.T) {
 	t.Parallel()
+	ctx := context.Background()
+	config := DefaultConfig("127.0.0.1")
+	profile := config.DefaultProfile.Snapshot()
+	profile.Consistency, profile.PageSize, profile.Prefetch = All, 100, 1
+	require.NoError(t, config.DefaultProfile.Replace(profile))
+	// Session setters are replaced by atomic profile snapshots. Fractional
+	// prefetch became a bounded count of zero or one physical page.
+	session := &Session{logger: nopLogger{}}
+	session.typedRuntime().profile = config.DefaultProfile
+	defer session.Close()
+	resolved, err := resolveOptions(session, Options{Trace: true})
+	require.NoError(t, err)
+	require.Equal(t, All, resolved.profile.Consistency)
+	require.Equal(t, int32(100), resolved.profile.PageSize)
+	require.Equal(t, 1, resolved.profile.Prefetch)
+	require.True(t, resolved.options.Trace)
 
-	cfg := &ClusterConfig{}
-
-	s := &Session{
-		cfg:    *cfg,
-		cons:   Quorum,
-		policy: RoundRobinHostPolicy(),
-		logger: cfg.logger(),
-	}
-
-	s.pool = cfg.PoolConfig.buildPool(s)
-	s.executor = &queryExecutor{
-		pool:   s.pool,
-		policy: s.policy,
-	}
-	defer s.Close()
-
-	s.SetConsistency(All)
-	if s.cons != All {
-		t.Fatalf("expected consistency 'All', got '%v'", s.cons)
-	}
-
-	s.SetPageSize(100)
-	if s.pageSize != 100 {
-		t.Fatalf("expected pageSize 100, got %v", s.pageSize)
-	}
-
-	s.SetPrefetch(0.75)
-	if s.prefetch != 0.75 {
-		t.Fatalf("expceted prefetch 0.75, got %v", s.prefetch)
-	}
-
-	trace := NewTracer(nil)
-
-	s.SetTrace(trace)
-	if s.trace != trace {
-		t.Fatalf("expected tracer '%v',got '%v'", trace, s.trace)
-	}
-
-	qry := s.Query("test", 1)
-	if v, ok := qry.values[0].(int); !ok {
-		t.Fatalf("expected qry.values[0] to be an int, got %v", qry.values[0])
-	} else if v != 1 {
-		t.Fatalf("expceted qry.values[0] to be 1, got %v", v)
-	} else if qry.stmt != "test" {
-		t.Fatalf("expected qry.stmt to be 'test', got '%v'", qry.stmt)
-	}
-
-	boundQry := s.Bind("test", func(q *QueryInfo) ([]any, error) {
-		return nil, nil
-	})
-	if boundQry.binding == nil {
-		t.Fatal("expected qry.binding to be defined, got nil")
-	} else if boundQry.stmt != "test" {
-		t.Fatalf("expected qry.stmt to be 'test', got '%v'", boundQry.stmt)
-	}
-
-	itr := qry.Iter()
-	if itr.err != ErrSessionNotReady {
-		t.Fatalf("expected itr.err to be '%v', got '%v'", ErrSessionNotReady, itr.err)
-	}
-
-	testBatch := s.Batch(LoggedBatch)
-	testBatch.Query("test")
-	err := s.ExecuteBatch(testBatch)
-
-	if err != ErrSessionNotReady {
-		t.Fatalf("expected session.ExecuteBatch to return '%v', got '%v'", ErrSessionNotReady, err)
-	}
-
-	s.Close()
-	if !s.Closed() {
-		t.Fatal("expected s.Closed() to be true, got false")
-	}
-	//Should just return cleanly
-	s.Close()
-
-	err = s.ExecuteBatch(testBatch)
-	if err != ErrSessionClosed {
-		t.Fatalf("expected session.ExecuteBatch to return '%v', got '%v'", ErrSessionClosed, err)
-	}
+	intType, err := ScalarType(TypeInt)
+	require.NoError(t, err)
+	var encoded int32
+	statement := Statement[int32, Unit]{CQL: "INSERT INTO test(id) VALUES (?)", Params: Params(ParamAt(0, Int32, func(n int32) int32 { encoded = n; return n })), Rows: NoRows}
+	bound, err := BindUnpreparedOwned(statement, NewColumns(ColumnSpec{Name: "id", Type: intType}), int32(1))
+	require.NoError(t, err)
+	defer bound.Close()
+	require.Equal(t, int32(1), encoded, "typed parameter accessor replaces callback binding")
+	// An incomplete session now reports ErrNoConnections from the typed path.
+	// It does not construct the old mutable Query/Iter error holder.
+	_, err = Run(ctx, session, bound, Options{})
+	require.ErrorIs(t, err, ErrNoConnections)
+	batch := []BatchItem{sessionTestItem(t, bound)}
+	_, err = ExecBatch(ctx, session, LoggedBatch, batch, Options{})
+	require.ErrorIs(t, err, ErrNoConnections)
+	require.NoError(t, session.Close())
+	require.True(t, session.Closed())
+	require.NoError(t, session.Close())
+	_, err = ExecBatch(ctx, session, LoggedBatch, batch, Options{})
+	require.ErrorIs(t, err, ErrClosed)
+	_, err = Exec(ctx, session, bound, Options{})
+	require.ErrorIs(t, err, ErrClosed)
 }
 
-type funcQueryObserver func(context.Context, ObservedQuery)
+type sessionTestObserver struct {
+	mu       sync.Mutex
+	requests []RequestEvent
+	attempts []AttemptEvent
+}
 
-func (f funcQueryObserver) ObserveQuery(ctx context.Context, o ObservedQuery) {
-	f(ctx, o)
+func (o *sessionTestObserver) ObserveRequest(e RequestEvent) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.requests = append(o.requests, e)
+}
+func (o *sessionTestObserver) ObserveAttempt(e AttemptEvent) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.attempts = append(o.attempts, e)
+}
+func (o *sessionTestObserver) snapshot() ([]RequestEvent, []AttemptEvent) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return append([]RequestEvent(nil), o.requests...), append([]AttemptEvent(nil), o.attempts...)
+}
+
+type sessionTestRetry struct {
+	action      RetryAction
+	maxAttempts int
+}
+
+func (p sessionTestRetry) Decide(e AttemptError) RetryDecision {
+	if e.Attempt >= p.maxAttempts {
+		return RetryDecision{Action: StopRetry}
+	}
+	return RetryDecision{Action: p.action}
 }
 
 func TestQueryBasicAPI(t *testing.T) {
 	t.Parallel()
+	ctx := context.Background()
+	session := createV2Session(t)
+	defer session.Close()
+	table := testTableName(t)
+	require.NoError(t, v2CreateTable(ctx, session, fmt.Sprintf("CREATE TABLE %s (id int PRIMARY KEY)", table)))
+	prepared, err := Prepare(ctx, session, Statement[int32, Unit]{CQL: fmt.Sprintf("INSERT INTO %s(id) VALUES (?)", table), Params: OneParam(Int32), Rows: NoRows}, PrepareOptions{})
+	require.NoError(t, err)
+	require.Equal(t, 1, prepared.Parameters().Len())
+	require.Equal(t, table, prepared.Info().Table)
+	original, err := BindOwned(prepared, int32(1))
+	require.NoError(t, err)
+	defer original.Close()
+	rebound, err := BindOwned(prepared, int32(2))
+	require.NoError(t, err)
+	defer rebound.Close()
 
-	qry := &Query{routingInfo: &queryRoutingInfo{}}
+	// Query setters become per-admission Options. Trace IDs and timing belong
+	// to each execution result; a Bound never accumulates mutable metrics.
+	zero := Result{}
+	require.Zero(t, zero.Attempts)
+	require.Zero(t, zero.Latency)
+	retry := sessionTestRetry{action: RetryNext, maxAttempts: 3}
+	observer := new(sessionTestObserver)
+	options := Options{Consistency: Option[Consistency]{Value: All, Set: true}, SerialConsistency: Option[Option[Consistency]]{Value: Option[Consistency]{Value: LocalSerial, Set: true}, Set: true}, PageSize: Option[int32]{Value: 10, Set: true}, Prefetch: Option[int]{Value: 1, Set: true}, Retry: retry, Trace: true, Observer: observer}
+	resolved, err := resolveOptions(session, options)
+	require.NoError(t, err)
+	require.Equal(t, All, resolved.profile.Consistency)
+	require.Equal(t, LocalSerial, resolved.profile.SerialConsistency.Value)
+	require.Equal(t, int32(10), resolved.profile.PageSize)
+	require.Equal(t, 1, resolved.profile.Prefetch)
+	require.Equal(t, retry, resolved.profile.Retry)
+	serialRead := options
+	serialRead.Consistency.Value = LocalSerial
+	resolvedSerial, err := resolveOptions(session, serialRead)
+	require.NoError(t, err)
+	require.Equal(t, LocalSerial, resolvedSerial.profile.Consistency)
 
-	// Initiate host
-	ip := "127.0.0.1"
-	hostID := TimeUUID()
-
-	qry.metrics = preFilledQueryMetrics(map[UUID]*hostMetrics{hostID: {Attempts: 0, TotalLatency: 0}})
-	if qry.Latency() != 0 {
-		t.Fatalf("expected Query.Latency() to return 0, got %v", qry.Latency())
+	for _, bound := range []*Bound[Unit]{original, rebound, original} {
+		result, err := Exec(ctx, session, bound, options)
+		require.NoError(t, err)
+		require.Equal(t, 1, result.Attempts)
+		require.Greater(t, result.Latency, time.Duration(0))
+		require.Equal(t, All, result.AchievedConsistency)
+		require.NotEmpty(t, result.TraceIDs)
 	}
-
-	qry.metrics = preFilledQueryMetrics(map[UUID]*hostMetrics{hostID: {Attempts: 2, TotalLatency: 4}})
-	if qry.Attempts() != 2 {
-		t.Fatalf("expected Query.Attempts() to return 2, got %v", qry.Attempts())
+	requests, attempts := observer.snapshot()
+	require.Len(t, requests, 3)
+	require.Len(t, attempts, 3)
+	for i := range attempts {
+		require.Equal(t, 1, attempts[i].Attempt)
+		require.NoError(t, attempts[i].Err)
 	}
-	if qry.Latency() != 2 {
-		t.Fatalf("expected Query.Latency() to return 2, got %v", qry.Latency())
+	for _, id := range []int32{1, 2} {
+		row, err := v2ReadOne(ctx, session, fmt.Sprintf("SELECT id FROM %s WHERE id=?", table), IntValue(id))
+		require.NoError(t, err)
+		require.Equal(t, int64(id), sessionTestInt(t, row, "id"))
 	}
-
-	qry.AddAttempts(2, &HostInfo{hostname: ip, connectAddress: net.ParseIP(ip), port: 9042})
-	if qry.Attempts() != 4 {
-		t.Fatalf("expected Query.Attempts() to return 4, got %v", qry.Attempts())
-	}
-
-	qry.Consistency(All)
-	if qry.GetConsistency() != All {
-		t.Fatalf("expected Query.GetConsistency to return 'All', got '%s'", qry.GetConsistency())
-	}
-
-	qry.Consistency(LocalSerial)
-	if qry.GetConsistency() != LocalSerial {
-		t.Fatalf("expected Query.GetConsistency to return 'LocalSerial', got '%s'", qry.GetConsistency())
-	}
-
-	qry.SerialConsistency(LocalSerial)
-	if qry.GetConsistency() != LocalSerial {
-		t.Fatalf("expected Query.GetConsistency to return 'LocalSerial', got '%s'", qry.GetConsistency())
-	}
-
-	trace := NewTracer(nil)
-	qry.Trace(trace)
-	if qry.trace != trace {
-		t.Fatalf("expected Query.Trace to be '%v', got '%v'", trace, qry.trace)
-	}
-
-	observer := funcQueryObserver(func(context.Context, ObservedQuery) {})
-	qry.Observer(observer)
-	if qry.observer == nil { // can't compare func to func, checking not nil instead
-		t.Fatal("expected Query.QueryObserver to be set, got nil")
-	}
-
-	qry.PageSize(10)
-	if qry.pageSize != 10 {
-		t.Fatalf("expected Query.PageSize to be 10, got %v", qry.pageSize)
-	}
-
-	qry.Prefetch(0.75)
-	if qry.prefetch != 0.75 {
-		t.Fatalf("expected Query.Prefetch to be 0.75, got %v", qry.prefetch)
-	}
-
-	rt := &SimpleRetryPolicy{NumRetries: 3}
-	if qry.RetryPolicy(rt); qry.rt != rt {
-		t.Fatalf("expected Query.RetryPolicy to be '%v', got '%v'", rt, qry.rt)
-	}
-
-	qry.Bind(qry)
-	if qry.values[0] != qry {
-		t.Fatalf("expected Query.Values[0] to be '%v', got '%v'", qry, qry.values[0])
-	}
+	// Freeze a profile at admission, then replace it while the request remains
+	// admitted. This directly covers the setter-to-snapshot migration boundary.
+	profile := session.typedRuntime().profile.Snapshot()
+	profile.PageSize = 10
+	handle, err := NewProfile(profile)
+	require.NoError(t, err)
+	_, cancel, admitted, err := admitExecution(ctx, session, original, Options{Profile: handle})
+	require.NoError(t, err)
+	profile.PageSize = 100
+	require.NoError(t, handle.Replace(profile))
+	require.Equal(t, int32(10), admitted.options.profile.PageSize)
+	require.Equal(t, int32(100), handle.Snapshot().PageSize)
+	admitted.logical.finish(Result{}, nil)
+	admitted.owner.release()
+	cancel()
+	original.Close()
+	require.NoError(t, original.Wait(ctx))
+	_, err = Exec(ctx, session, original, Options{})
+	require.ErrorIs(t, err, ErrClosed)
 }
 
 func TestQueryShouldPrepare(t *testing.T) {
 	t.Parallel()
-
 	toPrepare := []string{"select * ", "INSERT INTO", "update table", "delete from", "begin batch"}
 	cantPrepare := []string{"create table", "USE table", "LIST keyspaces", "alter table", "drop table", "grant user", "revoke user"}
-
-	for i := 0; i < len(toPrepare); i++ {
-		q := &Query{stmt: toPrepare[i], routingInfo: &queryRoutingInfo{}}
-		if !q.shouldPrepare() {
-			t.Fatalf("expected Query.shouldPrepare to return true, got false for statement '%v'", toPrepare[i])
-		}
-	}
-
-	for i := 0; i < len(cantPrepare); i++ {
-		q := &Query{stmt: cantPrepare[i], routingInfo: &queryRoutingInfo{}}
-		if q.shouldPrepare() {
-			t.Fatalf("expected Query.shouldPrepare to return false, got true for statement '%v'", cantPrepare[i])
-		}
+	// Preparation is explicit in v2. Preserve every old classification input:
+	// non-USE statements bind without keyword guessing, and explicit Prepare
+	// reaches connection selection even for formerly unprepared DDL.
+	session := &Session{logger: nopLogger{}}
+	defer session.Close()
+	for _, cql := range append(toPrepare, cantPrepare...) {
+		t.Run(cql, func(t *testing.T) {
+			statement := Statement[Unit, Unit]{CQL: cql, Params: NoParams, Rows: NoRows}
+			bound, err := BindUnpreparedOwned(statement, NewColumns(), Unit{})
+			if firstCQLWord(cql) == "USE" {
+				require.ErrorIs(t, err, ErrUseStmt)
+				_, err = Prepare(context.Background(), session, statement, PrepareOptions{})
+				require.ErrorIs(t, err, ErrUseStmt)
+				return
+			}
+			require.NoError(t, err)
+			bound.Close()
+			_, err = Prepare(context.Background(), session, statement, PrepareOptions{})
+			require.ErrorIs(t, err, ErrNoConnections)
+		})
 	}
 }
 
 func TestBatchBasicAPI(t *testing.T) {
 	t.Parallel()
-
-	cfg := &ClusterConfig{RetryPolicy: &SimpleRetryPolicy{NumRetries: 2}}
-
-	s := &Session{
-		cfg:    *cfg,
-		cons:   Quorum,
-		logger: cfg.logger(),
-	}
-	defer s.Close()
-
-	s.pool = cfg.PoolConfig.buildPool(s)
-
-	// Test UnloggedBatch
-	b := s.Batch(UnloggedBatch)
-	if b.Type != UnloggedBatch {
-		t.Fatalf("expceted batch.Type to be '%v', got '%v'", UnloggedBatch, b.Type)
-	} else if b.rt != cfg.RetryPolicy {
-		t.Fatalf("expceted batch.RetryPolicy to be '%v', got '%v'", cfg.RetryPolicy, b.rt)
-	}
-
-	// Test LoggedBatch
-	b = s.Batch(LoggedBatch)
-	if b.Type != LoggedBatch {
-		t.Fatalf("expected batch.Type to be '%v', got '%v'", LoggedBatch, b.Type)
-	}
-
-	ip := "127.0.0.1"
-	hostID := TimeUUID()
-
-	// Test attempts
-	b.metrics = preFilledQueryMetrics(map[UUID]*hostMetrics{hostID: {Attempts: 1}})
-	if b.Attempts() != 1 {
-		t.Fatalf("expected batch.Attempts() to return %v, got %v", 1, b.Attempts())
-	}
-
-	b.AddAttempts(2, &HostInfo{hostname: ip, connectAddress: net.ParseIP(ip), port: 9042})
-	if b.Attempts() != 3 {
-		t.Fatalf("expected batch.Attempts() to return %v, got %v", 3, b.Attempts())
-	}
-
-	// Test latency
-	if b.Latency() != 0 {
-		t.Fatalf("expected batch.Latency() to be 0, got %v", b.Latency())
-	}
-
-	b.metrics = preFilledQueryMetrics(map[UUID]*hostMetrics{hostID: {Attempts: 1, TotalLatency: 4}})
-	if b.Latency() != 4 {
-		t.Fatalf("expected batch.Latency() to return %v, got %v", 4, b.Latency())
-	}
-
-	// Test Consistency
-	b.Cons = One
-	if b.GetConsistency() != One {
-		t.Fatalf("expected batch.GetConsistency() to return 'One', got '%s'", b.GetConsistency())
-	}
-
-	trace := NewTracer(nil)
-	b.Trace(trace)
-	if b.trace != trace {
-		t.Fatalf("expected batch.Trace to be '%v', got '%v'", trace, b.trace)
-	}
-
-	// Test batch.Query()
-	b.Query("test", 1)
-	if b.Entries[0].Stmt != "test" {
-		t.Fatalf("expected batch.Entries[0].Statement to be 'test', got '%v'", b.Entries[0].Stmt)
-	} else if b.Entries[0].Args[0].(int) != 1 {
-		t.Fatalf("expected batch.Entries[0].Args[0] to be 1, got %v", b.Entries[0].Args[0])
-	}
-
-	b.Bind("test2", func(q *QueryInfo) ([]any, error) {
-		return nil, nil
+	ctx := context.Background()
+	retry := sessionTestRetry{action: RetryNext, maxAttempts: 2}
+	session := createV2Session(t, func(config *Config) {
+		profile := config.DefaultProfile.Snapshot()
+		profile.Retry = retry
+		require.NoError(t, config.DefaultProfile.Replace(profile))
 	})
-
-	if b.Entries[1].Stmt != "test2" {
-		t.Fatalf("expected batch.Entries[1].Statement to be 'test2', got '%v'", b.Entries[1].Stmt)
-	} else if b.Entries[1].binding == nil {
-		t.Fatal("expected batch.Entries[1].binding to be defined, got nil")
+	defer session.Close()
+	table := testTableName(t)
+	require.NoError(t, v2CreateTable(ctx, session, fmt.Sprintf("CREATE TABLE %s (id int PRIMARY KEY)", table)))
+	first := sessionTestBind(t, session, fmt.Sprintf("INSERT INTO %s(id) VALUES (?)", table), IntValue(1))
+	defer first.Close()
+	second := sessionTestBind(t, session, fmt.Sprintf("INSERT INTO %s(id) VALUES (?)", table), IntValue(2))
+	defer second.Close()
+	items := []BatchItem{sessionTestItem(t, first), sessionTestItem(t, second)}
+	require.Len(t, items, 2)
+	inherited, err := resolveOptions(session, Options{})
+	require.NoError(t, err)
+	require.Equal(t, retry, inherited.profile.Retry)
+	override := sessionTestRetry{action: RetryNext, maxAttempts: 4}
+	observer := new(sessionTestObserver)
+	options := Options{Consistency: Option[Consistency]{Value: One, Set: true}, Retry: override, Trace: true, Observer: observer}
+	resolved, err := resolveOptions(session, options)
+	require.NoError(t, err)
+	require.Equal(t, override, resolved.profile.Retry)
+	require.Equal(t, One, resolved.profile.Consistency)
+	require.True(t, resolved.options.Trace)
+	// Native batch kind remains explicit; entries are immutable bound plans.
+	// Per-request Result/Observer replace attempts/latency on a mutable batch.
+	require.Zero(t, (Result{}).Attempts)
+	require.Zero(t, (Result{}).Latency)
+	for _, kind := range []BatchKind{UnloggedBatch, LoggedBatch} {
+		result, err := ExecBatch(ctx, session, kind, items, options)
+		require.NoError(t, err)
+		require.Equal(t, 1, result.Attempts)
+		require.Greater(t, result.Latency, time.Duration(0))
+		require.Equal(t, One, result.AchievedConsistency)
+		require.NotEmpty(t, result.TraceIDs)
 	}
-
-	// Test RetryPolicy
-	r := &SimpleRetryPolicy{NumRetries: 4}
-
-	b.RetryPolicy(r)
-	if b.rt != r {
-		t.Fatalf("expected batch.RetryPolicy to be '%v', got '%v'", r, b.rt)
+	requests, attempts := observer.snapshot()
+	require.Len(t, requests, 2)
+	require.Len(t, attempts, 2)
+	for _, request := range requests {
+		require.Len(t, request.BatchStatements, 2)
 	}
-
-	if b.Size() != 2 {
-		t.Fatalf("expected batch.Size() to return 2, got %v", b.Size())
+	for _, id := range []int32{1, 2} {
+		row, err := v2ReadOne(ctx, session, fmt.Sprintf("SELECT id FROM %s WHERE id=?", table), IntValue(id))
+		require.NoError(t, err)
+		require.Equal(t, int64(id), sessionTestInt(t, row, "id"))
 	}
-
+	// BatchEntry is only a descriptor. Closing any member prevents the entire
+	// batch admission, and other members remain available for separate work.
+	first.Close()
+	_, err = ExecBatch(ctx, session, LoggedBatch, items, options)
+	require.ErrorIs(t, err, ErrClosed)
+	require.NoError(t, first.Wait(ctx))
+	_, err = Exec(ctx, session, second, Options{})
+	require.NoError(t, err)
 }
 
 func TestConsistencyNames(t *testing.T) {
@@ -366,79 +366,44 @@ func TestIsUseStatement(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		v := isUseStatement(tc.input)
+		bound, err := BindUnpreparedOwned(Statement[Unit, Unit]{CQL: tc.input, Params: NoParams, Rows: NoRows}, NewColumns(), Unit{})
+		if bound != nil {
+			bound.Close()
+		}
+		v := errors.Is(err, ErrUseStmt)
 		if v != tc.exp {
 			t.Fatalf("expected %v but got %v for statement %q", tc.exp, v, tc.input)
 		}
 	}
 }
 
-type simpleTestRetryPolycy struct {
-	RetryType  RetryType
-	NumRetries int
-}
-
-func (p *simpleTestRetryPolycy) Attempt(q RetryableQuery) bool {
-	return q.Attempts() <= p.NumRetries
-}
-
-func (p *simpleTestRetryPolycy) GetRetryType(error) RetryType {
-	return p.RetryType
-}
-
-// TestRetryType_IgnoreRethrow verify that with Ignore/Rethrow retry types:
-// - retries stopped
-// - return error is not nil on Rethrow, Ignore
-// - observed error is not nil
+// The old Ignore mode stopped retries but preserved errors. Its v2 equivalent
+// is StopRetry; IgnoreWriteError is a separate explicit error-suppression policy.
 func TestRetryType_IgnoreRethrow(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
-	var observedErr error
-	var observedAttempts int
-
-	resetObserved := func() {
-		observedErr = nil
-		observedAttempts = 0
-	}
-
-	observer := funcQueryObserver(func(ctx context.Context, o ObservedQuery) {
-		observedErr = o.Err
-		observedAttempts++
-	})
-
-	for i, caseParams := range []struct {
-		retries   int
-		retryType RetryType
-	}{
-		{0, Ignore},  // check that stops retries
-		{1, Ignore},  // check that stops retries
-		{0, Rethrow}, // check that stops retries
-		{1, Rethrow}, // check that stops retries
-	} {
-		retryPolicy := &simpleTestRetryPolycy{RetryType: caseParams.retryType, NumRetries: caseParams.retries}
-
-		err := session.Query("INSERT INTO gocql_test.invalid_table(value) VALUES(1)").Idempotent(true).RetryPolicy(retryPolicy).Observer(observer).Exec()
-
-		if err == nil {
-			t.Fatalf("case %d [%v] Expected unconfigured table error, got: nil", i, caseParams.retryType)
+	ctx := context.Background()
+	bound, err := BindUnpreparedOwned(Statement[Unit, Unit]{CQL: "INSERT INTO gocql_test.invalid_table(value) VALUES(1)", Params: NoParams, Rows: NoRows}, NewColumns(), Unit{})
+	require.NoError(t, err)
+	defer bound.Close()
+	for _, mode := range []string{"Ignore", "Rethrow"} {
+		for _, retries := range []int{0, 1} {
+			t.Run(fmt.Sprintf("%s/%d", mode, retries), func(t *testing.T) {
+				observer := new(sessionTestObserver)
+				retry := sessionTestRetry{action: StopRetry, maxAttempts: retries + 1}
+				_, err := Exec(ctx, session, bound, Options{Idempotent: true, Retry: retry, Observer: observer})
+				require.Error(t, err)
+				var server RequestError
+				require.ErrorAs(t, err, &server)
+				requests, attempts := observer.snapshot()
+				require.Len(t, requests, 1)
+				require.Len(t, attempts, 1)
+				require.Error(t, requests[0].Err)
+				require.Error(t, attempts[0].Err)
+				require.Equal(t, 1, requests[0].Result.Attempts)
+			})
 		}
-
-		if observedErr == nil {
-			t.Fatalf("case %d expected unconfigured table error in Obserer, got: nil", i)
-		}
-
-		expectedAttempts := caseParams.retries
-		if expectedAttempts == 0 {
-			expectedAttempts = 1
-		}
-		if observedAttempts != expectedAttempts {
-			t.Fatalf("case %d expected %d attempts, got: %d", i, expectedAttempts, observedAttempts)
-		}
-
-		resetObserved()
 	}
 }
 
@@ -454,6 +419,10 @@ func (c *sessionCache) Get(sessionKey string) (session *tls.ClientSessionState, 
 }
 
 func (c *sessionCache) Put(sessionKey string, cs *tls.ClientSessionState) {
+	if cs == nil {
+		c.orig.Put(sessionKey, nil)
+		return
+	}
 	ticket, _, err := cs.ResumptionState()
 	if err != nil {
 		panic(err)
@@ -486,30 +455,38 @@ func newSessionCache() *sessionCache {
 	}
 }
 
-func withSessionCache(cache tls.ClientSessionCache) func(config *ClusterConfig) {
-	return func(config *ClusterConfig) {
-		config.SslOpts = &SslOptions{
-			EnableHostVerification: false,
-			Config: &tls.Config{
-				ClientSessionCache: cache,
-				InsecureSkipVerify: true,
-			},
-		}
+func withSessionCache(cache tls.ClientSessionCache) func(*Config) {
+	return func(config *Config) {
+		// Preserve fixture roots, mutual TLS identity, and verifier callbacks.
+		config.TLS = config.TLS.Clone()
+		config.TLS.ClientSessionCache = cache
 	}
 }
 
 func TestTLSTicketResumption(t *testing.T) {
 	t.Parallel()
 
-	t.Skip("TLS ticket resumption is only supported by 2025.2 and later")
+	if !*flagRunSslTest || *flagDistribution != "scylla" {
+		t.Skip("requires a ScyllaDB TLS fixture")
+	}
+	if flagCassVersion.Major < 2025 || (flagCassVersion.Major == 2025 && flagCassVersion.Minor < 2) {
+		t.Skip("TLS ticket resumption requires ScyllaDB 2025.2 or later")
+	}
 
 	c := newSessionCache()
-	session := createSession(t, withSessionCache(c))
+	var handshakes, resumed atomic.Int64
+	session := createV2Session(t, withSessionCache(c), func(config *Config) {
+		config.TLS.VerifyConnection = func(state tls.ConnectionState) error {
+			handshakes.Add(1)
+			if state.DidResume {
+				resumed.Add(1)
+			}
+			return nil
+		}
+	})
 	defer session.Close()
 
 	waitAllConnectionsOpened := func() error {
-		println("wait all connections opened")
-		defer println("end of wait all connections closed")
 		endtime := time.Now().UTC().Add(time.Second * 10)
 		for {
 			if time.Now().UTC().After(endtime) {
@@ -534,22 +511,17 @@ func TestTLSTicketResumption(t *testing.T) {
 		t.Fatal("no tickets learned, which means that server does not support TLS tickets")
 	}
 
-	session.CloseAllConnections()
-	if err := waitAllConnectionsOpened(); err != nil {
-		t.Fatal(err)
-	}
-	newTickets1 := c.NumberOfTickets()
-
-	session.CloseAllConnections()
-	if err := waitAllConnectionsOpened(); err != nil {
-		t.Fatal(err)
-	}
-	newTickets2 := c.NumberOfTickets()
-
-	if newTickets1 != tickets {
-		t.Fatalf("new tickets learned, it looks like tls tickets where not reused: new %d, was %d", newTickets1, tickets)
-	}
-	if newTickets2 != tickets {
-		t.Fatalf("new tickets learned, it looks like tls tickets where not reused: new %d, was %d", newTickets2, tickets)
+	for round := 0; round < 2; round++ {
+		previousHandshakes, previousResumed := handshakes.Load(), resumed.Load()
+		session.CloseAllConnections()
+		if err := waitAllConnectionsOpened(); err != nil {
+			t.Fatal(err)
+		}
+		if handshakes.Load() <= previousHandshakes {
+			t.Fatal("pool reconnection did not establish new TLS connections")
+		}
+		if resumed.Load() <= previousResumed {
+			t.Fatal("none of the replacement TLS connections resumed a session")
+		}
 	}
 }

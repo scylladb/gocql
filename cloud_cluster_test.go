@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"os"
 	"strings"
 	"sync"
@@ -18,8 +19,8 @@ import (
 
 	"sigs.k8s.io/yaml"
 
-	"github.com/gocql/gocql"
-	"github.com/gocql/gocql/scyllacloud"
+	"github.com/scylladb/gocql/v2"
+	"github.com/scylladb/gocql/v2/scyllacloud"
 )
 
 func TestCloudConnection(t *testing.T) {
@@ -42,32 +43,42 @@ func TestCloudConnection(t *testing.T) {
 
 	hosts := map[string]string{}
 
-	cluster := gocql.CreateCluster(func(config *gocql.ClusterConfig) {
+	cluster := gocql.CreateV2Cluster(func(config *gocql.Config) {
 		config.Port = sslPort
 	})
-	session, err := cluster.CreateSession()
+	session, err := gocql.Connect(ctx, cluster)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	var localAddress string
-	var localHostID gocql.UUID
-	scanner := session.Query("SELECT broadcast_address, host_id FROM system.local WHERE key='local'").Iter().Scanner()
-	if scanner.Next() {
-		if err := scanner.Scan(&localAddress, &localHostID); err != nil {
-			t.Fatal(err)
-		}
-		hosts[localHostID.String()] = net.JoinHostPort(localAddress, fmt.Sprintf("%d", sslPort))
+	defer session.Close()
+	rows, err := cloudHostRows(ctx, session, "SELECT broadcast_address, host_id FROM system.local WHERE key='local'", gocql.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rows.Next() {
+		t.Fatalf("read local host: %v", rows.Err())
+	}
+	local := rows.Row()
+	localAddress, localHostID := local.First.String(), local.Second
+	hosts[localHostID.String()] = net.JoinHostPort(localAddress, fmt.Sprintf("%d", sslPort))
+	if err := rows.Close(); err != nil {
+		t.Fatal(err)
 	}
 
-	var peerAddress string
-	var peerHostID gocql.UUID
-	scanner = session.Query("SELECT peer, host_id FROM system.peers").Iter().Scanner()
-	for scanner.Next() {
-		if err := scanner.Scan(&peerAddress, &peerHostID); err != nil {
-			t.Fatal(err)
-		}
-		hosts[peerHostID.String()] = net.JoinHostPort(peerAddress, fmt.Sprintf("%d", sslPort))
+	// Both system tables must describe the same coordinator's view of the ring.
+	rows, err = cloudHostRows(ctx, session, "SELECT peer, host_id FROM system.peers", gocql.Options{
+		HostID: gocql.Option[gocql.UUID]{Value: localHostID, Set: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		peer := rows.Row()
+		hosts[peer.Second.String()] = net.JoinHostPort(peer.First.String(), fmt.Sprintf("%d", sslPort))
+	}
+	if err := rows.Close(); err != nil {
+		t.Fatal(err)
 	}
 
 	session.Close()
@@ -124,30 +135,62 @@ func TestCloudConnection(t *testing.T) {
 	}
 	defer os.RemoveAll(configPath)
 
-	cluster, err = scyllacloud.NewCloudCluster(configPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Forward connections directed to node domain to our test sni proxy.
-	cluster.Dialer = dialerContextFunc(func(ctx context.Context, network, addr string) (net.Conn, error) {
-		if strings.Contains(addr, cc.Datacenters[datacenterName].NodeDomain) {
-			addr = cc.Datacenters[datacenterName].Server
-		}
-		return net.Dial(network, addr)
+	fixtureTLS := cluster.TLS
+	cluster, err = scyllacloud.NewCloudCluster(configPath, func(config *gocql.Config) {
+		// Forward connections directed to node domain to our test SNI proxy.
+		config.Dialer = dialerContextFunc(func(ctx context.Context, network, addr string) (net.Conn, error) {
+			if strings.Contains(addr, cc.Datacenters[datacenterName].NodeDomain) {
+				addr = cc.Datacenters[datacenterName].Server
+			}
+			return (&net.Dialer{}).DialContext(ctx, network, addr)
+		})
 	})
-
-	session, err = cluster.CreateSession()
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The test backend identifies itself by URI SAN. Preserve UUID-based SNI
+	// and client authentication while validating its CA and fixture URI.
+	cloudTLS := cluster.TLSForHost
+	cluster.TLSForHost = func(host gocql.HostSnapshot) (*tls.Config, error) {
+		config, err := cloudTLS(host)
+		if err != nil {
+			return nil, err
+		}
+		config.InsecureSkipVerify = true
+		config.VerifyConnection = fixtureTLS.VerifyConnection
+		return config, nil
+	}
+	session, err = gocql.Connect(ctx, cluster)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
 
 	if err := gocql.WaitUntilPoolsStopFilling(ctx, session, 10*time.Second); err != nil {
 		t.Fatal(err)
 	}
 
-	ringHosts := gocql.GetRingAllHosts(session)
+	ringHosts := session.Metadata().Hosts()
 	if len(ringHosts) != len(hosts) {
 		t.Errorf("expected %d hosts in ring, got %d", len(hosts), len(ringHosts))
+	}
+
+	for _, host := range ringHosts {
+		rows, err := cloudHostRows(ctx, session, "SELECT broadcast_address, host_id FROM system.local WHERE key='local'", gocql.Options{
+			HostID: gocql.Option[gocql.UUID]{Value: host.ID, Set: true},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !rows.Next() {
+			t.Fatalf("read cloud host %s: %v", host.ID, rows.Err())
+		}
+		if actual := rows.Row().Second; actual != host.ID {
+			t.Errorf("SNI route for %s reached host %s", host.ID, actual)
+		}
+		if err := rows.Close(); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	snisCount := map[string]int{}
@@ -162,10 +205,24 @@ func TestCloudConnection(t *testing.T) {
 		if !ok {
 			t.Errorf("not found connection to host %q", hostID)
 		}
-		if count != cluster.NumConns {
-			t.Errorf("expected %d connections to host %q, got %d", cluster.NumConns, sni, count)
+		if count != cluster.Pool.ConnectionsPerHost {
+			t.Errorf("expected %d connections to host %q, got %d", cluster.Pool.ConnectionsPerHost, sni, count)
 		}
 	}
+}
+
+func cloudHostRows(ctx context.Context, session *gocql.Session, cql string, options gocql.Options) (*gocql.Rows[gocql.Pair[netip.Addr, gocql.UUID]], error) {
+	statement := gocql.Statement[gocql.Unit, gocql.Pair[netip.Addr, gocql.UUID]]{
+		CQL:    cql,
+		Params: gocql.NoParams,
+		Rows:   gocql.PairRows(1, gocql.OneColumn(gocql.InetCodec), gocql.OneColumn(gocql.UUIDCodec)),
+	}
+	bound, err := gocql.BindUnpreparedOwned(statement, gocql.NewColumns(), gocql.Unit{})
+	if err != nil {
+		return nil, err
+	}
+	defer bound.Close()
+	return gocql.Run(ctx, session, bound, options)
 }
 
 func writeYamlToTempFile(obj any) (string, error) {
@@ -252,7 +309,8 @@ func (p *sniProxy) handleConnection(conn net.Conn) {
 	p.events = append(p.events, hello.ServerName)
 	p.mu.Unlock()
 
-	backend, ok := p.hosts[hello.ServerName]
+	hostID, _, _ := strings.Cut(hello.ServerName, ".")
+	backend, ok := p.hosts[hostID]
 	if !ok {
 		backend = p.defaultBackend
 	}

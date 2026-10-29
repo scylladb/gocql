@@ -1,0 +1,28 @@
+{
+  "exit_code": 0,
+  "counts_including_subtests": {
+    "pass": 3
+  },
+  "package_results": [
+    {
+      "Time": "2026-10-29T01:20:00.994942245-04:00",
+      "Action": "pass",
+      "Package": "github.com/gocql/gocql",
+      "Elapsed": 11.652
+    }
+  ],
+  "tests": [
+    {
+      "test": "TestCustomPayloadValues",
+      "result": "pass"
+    },
+    {
+      "test": "TestWriteFailure",
+      "result": "pass"
+    },
+    {
+      "test": "TestCustomPayloadMessages",
+      "result": "pass"
+    }
+  ]
+}

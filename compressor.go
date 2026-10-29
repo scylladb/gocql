@@ -29,7 +29,7 @@ import (
 
 	"github.com/klauspost/compress/s2"
 
-	frm "github.com/gocql/gocql/internal/frame"
+	frm "github.com/scylladb/gocql/v2/internal/frame"
 )
 
 // Compressor is the interface that must be implemented by frame compressors.

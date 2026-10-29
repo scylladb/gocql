@@ -41,20 +41,21 @@ import (
 )
 
 var (
-	flagCluster       = flag.String("cluster", "127.0.0.1", "a comma-separated list of host:port tuples")
-	flagProto         = flag.Int("proto", 0, "protcol version")
-	flagCQL           = flag.String("cql", "3.0.0", "CQL version")
-	flagRF            = flag.Int("rf", 1, "replication factor for test keyspace")
-	clusterSize       = flag.Int("clusterSize", 1, "the expected size of the cluster")
-	flagRetry         = flag.Int("retries", 5, "number of times to retry queries")
-	flagAutoWait      = flag.Duration("autowait", 1000*time.Millisecond, "time to wait for autodiscovery to fill the hosts poll")
-	flagRunSslTest    = flag.Bool("runssl", false, "Set to true to run ssl test")
-	flagRunAuthTest   = flag.Bool("runauth", false, "Set to true to run authentication test")
-	flagCompressTest  = flag.String("compressor", "no-compression", "compressor to use")
-	flagTimeout       = flag.Duration("gocql.timeout", 5*time.Second, "sets the connection `timeout` for all operations")
-	flagClusterSocket = flag.String("cluster-socket", "", "nodes socket files separated by comma")
-	flagDistribution  = flag.String("distribution", "scylla", "database distribution - scylla or cassandra")
-	flagCassVersion   cassVersion
+	flagCluster           = flag.String("cluster", "127.0.0.1", "a comma-separated list of host:port tuples")
+	flagProto             = flag.Int("proto", 0, "protcol version")
+	flagCQL               = flag.String("cql", "3.0.0", "CQL version")
+	flagRF                = flag.Int("rf", 1, "replication factor for test keyspace")
+	clusterSize           = flag.Int("clusterSize", 1, "the expected size of the cluster")
+	flagRetry             = flag.Int("retries", 5, "number of times to retry queries")
+	flagAutoWait          = flag.Duration("autowait", 1000*time.Millisecond, "time to wait for autodiscovery to fill the hosts poll")
+	flagRunSslTest        = flag.Bool("runssl", false, "Set to true to run ssl test")
+	flagRunAuthTest       = flag.Bool("runauth", false, "Set to true to run authentication test")
+	flagCassandraFixtures = flag.Bool("runcassandrafixtures", false, "Run tests requiring Cassandra custom-payload mirroring and test-keyspace write failures")
+	flagCompressTest      = flag.String("compressor", "no-compression", "compressor to use")
+	flagTimeout           = flag.Duration("gocql.timeout", 5*time.Second, "sets the connection `timeout` for all operations")
+	flagClusterSocket     = flag.String("cluster-socket", "", "nodes socket files separated by comma")
+	flagDistribution      = flag.String("distribution", "scylla", "database distribution - scylla or cassandra")
+	flagCassVersion       cassVersion
 )
 
 // integrationTestSetup is set by an init() in an integration-tagged file to run
@@ -211,7 +212,7 @@ func initTabletProbes() {
 }
 
 func createTable(s *Session, table string) error {
-	if err := s.Query(table).RetryPolicy(&SimpleRetryPolicy{NumRetries: 3}).Idempotent(true).Exec(); err != nil {
+	if err := s.Query(table).oldRetryPolicy(&SimpleRetryPolicy{NumRetries: 3}).Idempotent(true).Exec(); err != nil {
 		log.Printf("error creating table table=%q err=%v\n", table, err)
 		return err
 	}
@@ -245,7 +246,7 @@ func createTable(s *Session, table string) error {
 // executed and cache-invalidated individually.
 func createTables(s *Session, ddls ...string) error {
 	for _, ddl := range ddls {
-		if err := s.Query(ddl).RetryPolicy(&SimpleRetryPolicy{NumRetries: 3}).Idempotent(true).Exec(); err != nil {
+		if err := s.Query(ddl).oldRetryPolicy(&SimpleRetryPolicy{NumRetries: 3}).Idempotent(true).Exec(); err != nil {
 			log.Printf("error creating table table=%q err=%v\n", ddl, err)
 			return err
 		}
@@ -311,9 +312,12 @@ func createCluster(opts ...func(*ClusterConfig)) *ClusterConfig {
 	cluster.CQLVersion = *flagCQL
 	cluster.Timeout = *flagTimeout
 	cluster.Consistency = Quorum
+	if *flagRunAuthTest {
+		cluster.Authenticator = PasswordAuthenticator{Username: "cassandra", Password: "cassandra"}
+	}
 	cluster.MaxWaitSchemaAgreement = 2 * time.Minute // travis might be slow
 	if *flagRetry > 0 {
-		cluster.RetryPolicy = &SimpleRetryPolicy{NumRetries: *flagRetry}
+		cluster.oldRetryPolicy = &SimpleRetryPolicy{NumRetries: *flagRetry}
 	}
 
 	switch *flagCompressTest {

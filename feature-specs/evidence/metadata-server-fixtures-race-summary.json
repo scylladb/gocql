@@ -1,0 +1,32 @@
+{
+  "exit_code": 0,
+  "counts_including_subtests": {
+    "pass": 4
+  },
+  "package_results": [
+    {
+      "Time": "2026-10-29T01:39:09.233697411-04:00",
+      "Action": "pass",
+      "Package": "github.com/gocql/gocql",
+      "Elapsed": 5.554
+    }
+  ],
+  "tests": [
+    {
+      "test": "TestInvalidPeerEntry",
+      "result": "pass"
+    },
+    {
+      "test": "TestCustomPayloadValues",
+      "result": "pass"
+    },
+    {
+      "test": "TestCustomPayloadMessages",
+      "result": "pass"
+    },
+    {
+      "test": "TestWriteFailure",
+      "result": "pass"
+    }
+  ]
+}

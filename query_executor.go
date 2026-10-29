@@ -38,7 +38,7 @@ type ExecutableQuery interface {
 	releaseAfterExecution() // Used when a goroutine finishes its execution attempts, either with ok result or an error.
 	execute(ctx context.Context, conn *Conn, metrics *queryMetrics) *Iter
 	finishAttempt(token attemptToken, keyspace string, end time.Time, iter *Iter, host *HostInfo)
-	retryPolicy() RetryPolicy
+	retryPolicy() oldRetryPolicy
 	speculativeExecutionPolicy() SpeculativeExecutionPolicy
 	GetRoutingKey() ([]byte, error)
 	Keyspace() string
@@ -208,7 +208,7 @@ func queryForSpeculativeExecution(qry ExecutableQuery, metrics *queryMetrics) Ex
 		executionBatch.metrics = metrics
 		executionBatch.metricsOwner = queryMetricsOwner{}
 		executionBatch.executionAttempts = nil
-		executionBatch.Entries = append([]BatchEntry(nil), qry.Entries...)
+		executionBatch.Entries = append([]legacyBatchEntry(nil), qry.Entries...)
 		return &executionBatch
 	default:
 		return qry.withContext(qry.Context())
@@ -375,7 +375,7 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, metrics *qu
 			retryType = getRetryType(iter.err)
 		}
 
-		// If query is unsuccessful, check the error with RetryPolicy to retry
+		// If query is unsuccessful, check the error with oldRetryPolicy to retry
 		switch retryType {
 		case Retry:
 			iter.finalize(true)

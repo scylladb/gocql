@@ -189,7 +189,7 @@
 // To execute a query without reading results, use Query.Exec:
 //
 //	 err := session.Query(`INSERT INTO tweet (timeline, id, text) VALUES (?, ?, ?)`,
-//			"me", gocql.TimeUUID(), "hello world").WithContext(ctx).Exec()
+//			"me", gocql.NewTimeUUID(), "hello world").WithContext(ctx).Exec()
 //
 // Single row can be read by calling Query.Scan:
 //
@@ -238,11 +238,11 @@
 //	results := make(chan error, 2)
 //	go func() {
 //		results <- session.Query(`INSERT INTO tweet (timeline, id, text) VALUES (?, ?, ?)`,
-//			"me", gocql.TimeUUID(), "hello world 1").Exec()
+//			"me", gocql.NewTimeUUID(), "hello world 1").Exec()
 //	}()
 //	go func() {
 //		results <- session.Query(`INSERT INTO tweet (timeline, id, text) VALUES (?, ?, ?)`,
-//			"me", gocql.TimeUUID(), "hello world 2").Exec()
+//			"me", gocql.NewTimeUUID(), "hello world 2").Exec()
 //	}()
 //
 // # Nulls
@@ -374,8 +374,8 @@
 // multiple times without affecting its result. Non-idempotent queries are not eligible for retrying nor speculative
 // execution.
 //
-// Idempotent queries are retried in case of errors based on the configured RetryPolicy.
-// If the query is LWT and the configured RetryPolicy additionally implements LWTRetryPolicy
+// Idempotent queries are retried in case of errors based on the configured oldRetryPolicy.
+// If the query is LWT and the configured oldRetryPolicy additionally implements LWTRetryPolicy
 // interface, then the policy will be cast to LWTRetryPolicy and used this way.
 //
 // Queries can be retried even before they fail by setting a SpeculativeExecutionPolicy. The policy can
@@ -416,4 +416,4 @@
 // There is also a new implementation of Tracer - TracerEnhanced, that is intended to be more reliable and convinient to use.
 // It has a funcionality to check if trace is ready to be extracted and only actually gets it if requested which makes
 // the impact on a performance smaller.
-package gocql // import "github.com/gocql/gocql"
+package gocql // import "github.com/scylladb/gocql/v2"

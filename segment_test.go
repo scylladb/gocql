@@ -23,7 +23,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gocql/gocql/internal/segment"
+	"github.com/scylladb/gocql/v2/internal/segment"
 )
 
 // Segment builders for the tests in this package, which construct transport

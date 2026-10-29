@@ -25,15 +25,16 @@ import (
 	"fmt"
 	"log"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/gocql/gocql/internal/tests/mock"
-	"github.com/gocql/gocql/tablets"
+	"github.com/scylladb/gocql/v2/internal/tests/mock"
+	"github.com/scylladb/gocql/v2/tablets"
 
-	frm "github.com/gocql/gocql/internal/frame"
+	frm "github.com/scylladb/gocql/v2/internal/frame"
 )
 
 var (
@@ -245,6 +246,24 @@ func (m *schemaDataMock) querySystem(statement string, values ...any) *Iter {
 
 	if queryErr != nil {
 		return &Iter{err: queryErr}
+	}
+
+	if statement == "SELECT keyspace_name, durable_writes, replication FROM system_schema.keyspaces" {
+		meta := resultMetadata{
+			columns:        append([]ColumnInfo{{Name: "keyspace_name", TypeInfo: typeVarchar}}, keyspaceMeta.columns...),
+			actualColCount: 3,
+			colCount:       3,
+		}
+		names := make([]string, 0, len(m.knownKeyspaces))
+		for name := range m.knownKeyspaces {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		rows := make([][][]byte, 0, len(names))
+		for _, name := range names {
+			rows = append(rows, append([][]byte{[]byte(name)}, makeKeyspaceRow(true)...))
+		}
+		return makeIter(meta, rows...)
 	}
 
 	if strings.HasPrefix(statement, "SELECT durable_writes, replication FROM system_schema.keyspaces") {
@@ -740,7 +759,7 @@ func TestHandleSchemaEvent(t *testing.T) {
 			"SELECT * FROM system_schema.types WHERE keyspace_name = ?":                               1,
 			"SELECT * FROM system_schema.indexes WHERE keyspace_name = ?":                             1,
 			"SELECT * FROM system_schema.views WHERE keyspace_name = ?":                               1,
-			fmt.Sprintf("DESCRIBE KEYSPACE %s WITH INTERNALS", ksName):                                1,
+			fmt.Sprintf("DESCRIBE KEYSPACE %q WITH INTERNALS", ksName):                                1,
 		}
 	}
 	tableRefresh := map[string]int{

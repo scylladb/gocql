@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	rootModulePath = "github.com/gocql/gocql"
+	rootModulePath = "github.com/scylladb/gocql/v2"
 	lz4ModulePath  = "github.com/scylladb/gocql/lz4"
 )
 

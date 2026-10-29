@@ -1,0 +1,20 @@
+{
+  "exit_code": 0,
+  "counts_including_subtests": {
+    "pass": 1
+  },
+  "package_results": [
+    {
+      "Time": "2026-10-29T01:25:56.678875507-04:00",
+      "Action": "pass",
+      "Package": "github.com/gocql/gocql",
+      "Elapsed": 7.838
+    }
+  ],
+  "tests": [
+    {
+      "test": "TestTLSTicketResumption",
+      "result": "pass"
+    }
+  ]
+}

@@ -29,62 +29,88 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/gocql/gocql"
+	"github.com/scylladb/gocql/v2"
 )
 
-// Example_batch demonstrates how to execute a batch of statements.
-func Example_batch() {
-	/* The example assumes the following CQL was used to setup the keyspace:
-	create keyspace example with replication = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };
-	create table example.batches(pk int, ck int, description text, PRIMARY KEY(pk, ck));
-	*/
-	cluster := gocql.NewCluster("localhost:9042")
-	cluster.Keyspace = "example"
-	cluster.ProtoVersion = 4
-	session, err := cluster.CreateSession()
+// ExampleExecBatch demonstrates typed batch inputs and borrowed result rows.
+func ExampleExecBatch() {
+	// Assumes example.batches(pk int, ck int, description text, PRIMARY KEY(pk, ck)).
+	ctx := context.Background()
+	config := gocql.DefaultConfig("localhost:9042")
+	config.Keyspace = "example"
+	session, err := gocql.Connect(ctx, config)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer session.Close()
-
-	ctx := context.Background()
-
-	b := session.Batch(gocql.UnloggedBatch).WithContext(ctx)
-	b.Entries = append(b.Entries, gocql.BatchEntry{
-		Stmt:       "INSERT INTO example.batches (pk, ck, description) VALUES (?, ?, ?)",
-		Args:       []any{1, 2, "1.2"},
-		Idempotent: true,
-	})
-	b.Entries = append(b.Entries, gocql.BatchEntry{
-		Stmt:       "INSERT INTO example.batches (pk, ck, description) VALUES (?, ?, ?)",
-		Args:       []any{1, 3, "1.3"},
-		Idempotent: true,
-	})
-
-	err = session.ExecuteBatch(b)
+	type item struct {
+		PK, CK      int32
+		Description string
+	}
+	params := gocql.Params(
+		gocql.Param("pk", gocql.Int32, func(v item) int32 { return v.PK }),
+		gocql.Param("ck", gocql.Int32, func(v item) int32 { return v.CK }),
+		gocql.Param("description", gocql.StringEncoder, func(v item) string { return v.Description }),
+	)
+	prepared, err := gocql.Prepare(ctx, session, gocql.Statement[item, gocql.Unit]{
+		CQL:    "INSERT INTO example.batches (pk, ck, description) VALUES (?, ?, ?)",
+		Params: params, Rows: gocql.NoRows,
+	}, gocql.PrepareOptions{})
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	err = b.Query("INSERT INTO example.batches (pk, ck, description) VALUES (?, ?, ?)", 1, 4, "1.4").
-		Query("INSERT INTO example.batches (pk, ck, description) VALUES (?, ?, ?)", 1, 5, "1.5").
-		Exec()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	scanner := session.Query("SELECT pk, ck, description FROM example.batches").Iter().Scanner()
-	for scanner.Next() {
-		var pk, ck int32
-		var description string
-		err = scanner.Scan(&pk, &ck, &description)
+	var entries []gocql.BatchItem
+	for _, value := range []item{{1, 2, "1.2"}, {1, 3, "1.3"}, {1, 4, "1.4"}, {1, 5, "1.5"}} {
+		bound, err := gocql.BindOwned(prepared, value)
 		if err != nil {
 			log.Fatal(err)
 		}
-		fmt.Println(pk, ck, description)
+		defer func() {
+			bound.Close()
+			if err := bound.Wait(ctx); err != nil {
+				log.Print(err)
+			}
+		}()
+		entry, err := gocql.BatchEntry(bound)
+		if err != nil {
+			log.Fatal(err)
+		}
+		entries = append(entries, entry)
 	}
-	// 1 2 1.2
-	// 1 3 1.3
-	// 1 4 1.4
-	// 1 5 1.5
+	if _, err := gocql.ExecBatch(ctx, session, gocql.UnloggedBatch, entries, gocql.Options{Idempotent: true}); err != nil {
+		log.Fatal(err)
+	}
+	type result struct {
+		PK, CK      int32
+		Description gocql.Text
+	}
+	row := gocql.Row(
+		gocql.Column("pk", gocql.Int32, func(v *result) *int32 { return &v.PK }),
+		gocql.Column("ck", gocql.Int32, func(v *result) *int32 { return &v.CK }),
+		gocql.Column("description", gocql.TextCodec, func(v *result) *gocql.Text { return &v.Description }),
+	)
+	bound, err := gocql.BindUnpreparedOwned(gocql.Statement[gocql.Unit, result]{
+		CQL: "SELECT pk, ck, description FROM example.batches", Params: gocql.NoParams, Rows: row,
+	}, gocql.NewColumns(), gocql.Unit{})
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer func() {
+		bound.Close()
+		if err := bound.Wait(ctx); err != nil {
+			log.Print(err)
+		}
+	}()
+	rows, err := gocql.Run(ctx, session, bound, gocql.Options{})
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		value := rows.Row()
+		fmt.Println(value.PK, value.CK, value.Description.String())
+	}
+	if err := rows.Err(); err != nil {
+		log.Fatal(err)
+	}
 }

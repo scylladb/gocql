@@ -6,23 +6,22 @@ package gocql
 import (
 	"testing"
 
-	"github.com/gocql/gocql/internal/tests"
+	"github.com/scylladb/gocql/v2/internal/tests"
 )
 
 func TestSchemaQueries(t *testing.T) {
 	t.Parallel()
 
-	cluster := createCluster()
+	cluster := createV2Cluster()
 
-	fallback := RoundRobinHostPolicy()
-	cluster.PoolConfig.HostSelectionPolicy = TokenAwareHostPolicy(fallback)
+	v2ConfigureRouting(t, &cluster, RoutingOptions{TokenAware: true})
 
-	session := createSessionFromCluster(cluster, t)
+	session := createV2SessionFromConfig(cluster, t, false)
 	defer session.Close()
 
-	keyspaceMetadata, err := session.metadataDescriber.GetKeyspace("gocql_test")
-	if err != nil {
-		t.Fatal("unable to get keyspace metadata for keyspace: ", err)
+	keyspaceMetadata, ok := session.Metadata().Keyspace("gocql_test")
+	if !ok {
+		t.Fatal("keyspace missing from typed metadata snapshot")
 	}
-	tests.AssertTrue(t, "keyspace present in metadataDescriber", keyspaceMetadata.Name == "gocql_test")
+	tests.AssertTrue(t, "keyspace present in metadata snapshot", keyspaceMetadata.Name == "gocql_test")
 }

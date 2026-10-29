@@ -1,0 +1,102 @@
+--- FAIL: TestSSLSimple (0.00s)
+    conn_test.go:1965: Failed parsing or appending certs
+--- FAIL: TestSSLSimpleNoClientCert (0.00s)
+    conn_test.go:1965: Failed parsing or appending certs
+--- FAIL: TestPolicyConnPoolSSL (0.00s)
+    conn_test.go:1965: Failed parsing or appending certs
+2026/10/29 00:52:18 logger.go:60: warning: skipping result metadata can lead to unpredictable results if columns involved in a prepared query are altered, on connections that exchange no result metadata ID (protocol v4 or lower without the SCYLLA_USE_METADATA_ID extension).
+2026/10/29 00:52:18 logger.go:59: gocql: 127.0.0.1:39053 does not support the requested "snappy" compression, continuing uncompressed (server offers: [lz4])
+2026/10/29 00:52:18 logger.go:59: gocql: 127.0.0.1:39053 does not support the requested "snappy" compression, continuing uncompressed (server offers: [lz4])
+2026/10/29 00:52:19 logger.go:59: scylla: connection to shard-aware address 127.0.0.1:39127 resulted in wrong shard being assigned; please check that you are not behind a NAT or AddressTranslater which changes source ports; falling back to non-shard-aware port for 5m0s
+2026/10/29 00:52:19 logger.go:60: gocql: WARNING - DisableStrictCertificateValidation is deprecated and will be removed in a future version. Please ensure your certificate chains are properly configured to work with strict validation.
+2026/10/29 00:52:19 logger.go:59: scylla: connection to shard-aware address 127.0.0.1:33263 resulted in wrong shard being assigned; please check that you are not behind a NAT or AddressTranslater which changes source ports; falling back to non-shard-aware port for 5m0s
+2026/10/29 00:52:19 logger.go:59: gocql: unable to dial control conn 127.0.0.1:1: dial tcp 127.0.0.1:1: connect: connection refused
+2026/10/29 00:52:19 logger.go:59: gocql: unable to dial control conn 127.0.0.1:1: dial tcp 127.0.0.1:1: connect: connection refused
+2026/10/29 00:52:19 logger.go:59: gocql: unable to dial control conn 127.0.0.1:1: dial tcp 127.0.0.1:1: connect: connection refused
+2026/10/29 00:52:19 logger.go:59: gocql: unable to dial control conn 127.0.0.1:1: dial tcp 127.0.0.1:1: connect: connection refused
+2026/10/29 00:52:19 logger.go:59: gocql: unable to dial control conn 127.0.0.1:1: dial tcp 127.0.0.1:1: connect: connection refused
+2026/10/29 00:52:19 logger.go:59: gocql: unable to dial control conn 127.0.0.1:1: dial tcp 127.0.0.1:1: connect: connection refused
+--- FAIL: TestShardAwarePortMockedUnusedIfNotEnabled (0.25s)
+    --- FAIL: TestShardAwarePortMockedUnusedIfNotEnabled/with_TLS (0.00s)
+        conn_test.go:1965: Failed parsing or appending certs
+--- FAIL: TestShardAwarePortMockedNoReconnections (0.31s)
+    --- FAIL: TestShardAwarePortMockedNoReconnections/with_TLS (0.00s)
+        conn_test.go:1965: Failed parsing or appending certs
+--- FAIL: TestShardAwarePortMockedUnreachable (0.50s)
+    --- FAIL: TestShardAwarePortMockedUnreachable/with_TLS (0.00s)
+        conn_test.go:1965: Failed parsing or appending certs
+--- FAIL: TestShardAwarePortMockedMaliciousNAT (1.31s)
+    --- FAIL: TestShardAwarePortMockedMaliciousNAT/with_TLS (0.00s)
+        conn_test.go:1965: Failed parsing or appending certs
+FAIL
+FAIL	github.com/gocql/gocql	12.904s
+ok  	github.com/gocql/gocql/ci/release	0.004s
+ok  	github.com/gocql/gocql/debounce	34.341s
+ok  	github.com/gocql/gocql/dialer	0.007s
+ok  	github.com/gocql/gocql/dialer/recorder	0.016s
+ok  	github.com/gocql/gocql/dialer/replayer	0.056s
+ok  	github.com/gocql/gocql/events	0.002s
+ok  	github.com/gocql/gocql/hostpolicy	0.003s
+ok  	github.com/gocql/gocql/internal/cqlproto	0.002s
+ok  	github.com/gocql/gocql/internal/crc	0.003s
+?   	github.com/gocql/gocql/internal/debug	[no test files]
+ok  	github.com/gocql/gocql/internal/eventbus	0.403s
+ok  	github.com/gocql/gocql/internal/frame	0.002s
+ok  	github.com/gocql/gocql/internal/lru	0.002s
+ok  	github.com/gocql/gocql/internal/murmur	0.002s
+ok  	github.com/gocql/gocql/internal/segment	0.003s
+ok  	github.com/gocql/gocql/internal/streams	0.005s
+ok  	github.com/gocql/gocql/internal/tests	0.003s
+?   	github.com/gocql/gocql/internal/tests/mock	[no test files]
+ok  	github.com/gocql/gocql/internal/tests/serialization	0.002s
+?   	github.com/gocql/gocql/internal/tests/serialization/mod	[no test files]
+?   	github.com/gocql/gocql/internal/tests/serialization/valcases	[no test files]
+--- FAIL: TestCloudCluster (0.00s)
+    config_test.go:189: open ../testdata/pki/ca.crt: no such file or directory
+    --- FAIL: TestCloudCluster/certificate_and_key_data_has_priority_over_path_to_file_containing_it (0.00s)
+panic: test executed panic(nil) or runtime.Goexit
+
+goroutine 8 [running]:
+testing.tRunner.func1.2({0x8199c0, 0xc00160})
+	/usr/local/go/src/testing/testing.go:1872 +0x237
+testing.tRunner.func1()
+	/usr/local/go/src/testing/testing.go:1875 +0x35b
+runtime.Goexit()
+	/usr/local/go/src/runtime/panic.go:615 +0x5e
+testing.(*common).FailNow(0xc000102fc0)
+	/usr/local/go/src/testing/testing.go:1013 +0x4a
+testing.(*common).Fatal(0xc000102fc0, {0xc0000afea0?, 0x8a6754?, 0xf?})
+	/usr/local/go/src/testing/testing.go:1212 +0x4f
+github.com/gocql/gocql/scyllacloud.TestCloudCluster.func14()
+	/extra/scylladb/gocql/scyllacloud/config_test.go:189 +0x316
+github.com/gocql/gocql/scyllacloud.TestCloudCluster.func15(0xc0000ee540)
+	/extra/scylladb/gocql/scyllacloud/config_test.go:219 +0x49
+testing.tRunner(0xc0000ee540, 0xc00020af40)
+	/usr/local/go/src/testing/testing.go:1934 +0xea
+created by testing.(*T).Run in goroutine 21
+	/usr/local/go/src/testing/testing.go:1997 +0x465
+FAIL	github.com/gocql/gocql/scyllacloud	0.006s
+?   	github.com/gocql/gocql/serialization/ascii	[no test files]
+?   	github.com/gocql/gocql/serialization/bigint	[no test files]
+ok  	github.com/gocql/gocql/serialization/blob	0.002s
+?   	github.com/gocql/gocql/serialization/boolean	[no test files]
+?   	github.com/gocql/gocql/serialization/counter	[no test files]
+?   	github.com/gocql/gocql/serialization/cqlint	[no test files]
+?   	github.com/gocql/gocql/serialization/cqltime	[no test files]
+?   	github.com/gocql/gocql/serialization/date	[no test files]
+?   	github.com/gocql/gocql/serialization/decimal	[no test files]
+?   	github.com/gocql/gocql/serialization/double	[no test files]
+ok  	github.com/gocql/gocql/serialization/duration	0.001s
+?   	github.com/gocql/gocql/serialization/float	[no test files]
+?   	github.com/gocql/gocql/serialization/inet	[no test files]
+?   	github.com/gocql/gocql/serialization/smallint	[no test files]
+?   	github.com/gocql/gocql/serialization/text	[no test files]
+?   	github.com/gocql/gocql/serialization/timestamp	[no test files]
+?   	github.com/gocql/gocql/serialization/timeuuid	[no test files]
+?   	github.com/gocql/gocql/serialization/tinyint	[no test files]
+?   	github.com/gocql/gocql/serialization/uuid	[no test files]
+?   	github.com/gocql/gocql/serialization/varchar	[no test files]
+ok  	github.com/gocql/gocql/serialization/varint	0.013s
+ok  	github.com/gocql/gocql/tablets	0.043s
+ok  	github.com/gocql/gocql/tests/serialization	0.129s
+FAIL

@@ -1,0 +1,8 @@
+{
+  "raw_sha256": "bc3770a90e69484bcb45d48d92b67491b3a2d0a95fdd058c26f1f8beab1abbc4",
+  "raw_results_modified": false,
+  "latency_status": "invalid-phase-locked-sampling; derived p99 and ratios withdrawn",
+  "socket_status": "one-time-setting feasibility only; requested target already absent after warmup",
+  "source_status": "environment.json identifies original pre-fix sources; current harness intentionally differs",
+  "derived_reports": "pre-review copies are superseded; corrected summarizer withholds legacy latency and socket-affinity throughput comparisons"
+}

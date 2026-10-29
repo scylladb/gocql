@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gocql/gocql"
-	"github.com/gocql/gocql/dialer"
+	"github.com/scylladb/gocql/v2"
+	"github.com/scylladb/gocql/v2/dialer"
 )
 
 // Option configures a ReplayDialer.

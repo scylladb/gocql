@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"slices"
 
-	frm "github.com/gocql/gocql/internal/frame"
+	frm "github.com/scylladb/gocql/v2/internal/frame"
 )
 
 // FrameHeaderLen is the CQL frame header these dialers slice on: version, flags, a

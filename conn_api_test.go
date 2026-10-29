@@ -25,7 +25,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/gocql/gocql"
+	"github.com/scylladb/gocql/v2"
 )
 
 // *gocql.Conn has exposed both Read and Write since before the read-path

@@ -43,9 +43,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	frm "github.com/gocql/gocql/internal/frame"
-	"github.com/gocql/gocql/internal/segment"
-	"github.com/gocql/gocql/internal/tests"
+	frm "github.com/scylladb/gocql/v2/internal/frame"
+	"github.com/scylladb/gocql/v2/internal/segment"
+	"github.com/scylladb/gocql/v2/internal/tests"
 )
 
 func TestFuzzBugs(t *testing.T) {

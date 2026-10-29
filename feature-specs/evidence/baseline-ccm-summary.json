@@ -1,0 +1,20 @@
+{
+  "exit_code": 0,
+  "counts_including_subtests": {
+    "pass": 1
+  },
+  "package_results": [
+    {
+      "Time": "2026-10-29T01:13:02.642611894-04:00",
+      "Action": "pass",
+      "Package": "github.com/gocql/gocql/internal/ccm",
+      "Elapsed": 4.035
+    }
+  ],
+  "tests": [
+    {
+      "test": "TestCCM",
+      "result": "pass"
+    }
+  ]
+}

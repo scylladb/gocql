@@ -29,9 +29,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gocql/gocql/events"
-	"github.com/gocql/gocql/internal/debug"
-	frm "github.com/gocql/gocql/internal/frame"
+	"github.com/scylladb/gocql/v2/events"
+	"github.com/scylladb/gocql/v2/internal/debug"
+	frm "github.com/scylladb/gocql/v2/internal/frame"
 )
 
 type eventDebouncer struct {
@@ -109,6 +109,7 @@ func (e *eventDebouncer) debounce(frame frame) {
 }
 
 func (s *Session) publishEvent(event events.Event) {
+	s.publishV2Event(event)
 	if s.eventBus == nil {
 		return
 	}
@@ -142,20 +143,27 @@ func (s *Session) handleEvent(frame frame) {
 }
 
 func (s *Session) handleSchemaEvent(frames []frame) {
+	s.publishV2Metadata()
+	defer s.publishV2Metadata()
+	defer s.scheduleV2SchemaRetry()
 	// TODO: debounce events
 	for _, frame := range frames {
 		switch f := frame.(type) {
 		case *frm.SchemaChangeKeyspace:
+			s.markV2SchemaStale(f.Keyspace, f.Change == "DROPPED")
 			s.metadataDescriber.invalidateKeyspaceSchema(f.Keyspace)
 			s.handleKeyspaceChange(f.Keyspace, f.Change)
 		case *frm.SchemaChangeTable:
 			s.metadataDescriber.invalidateTableSchema(f.Keyspace, f.Object)
 			s.handleTableChange(f.Keyspace, f.Object, f.Change)
 		case *frm.SchemaChangeAggregate:
+			s.markV2SchemaStale(f.Keyspace, false)
 			s.metadataDescriber.invalidateKeyspaceSchema(f.Keyspace)
 		case *frm.SchemaChangeFunction:
+			s.markV2SchemaStale(f.Keyspace, false)
 			s.metadataDescriber.invalidateKeyspaceSchema(f.Keyspace)
 		case *frm.SchemaChangeType:
+			s.markV2SchemaStale(f.Keyspace, false)
 			s.metadataDescriber.invalidateKeyspaceSchema(f.Keyspace)
 		}
 	}
@@ -261,11 +269,13 @@ func (s *Session) startPoolFill(host *HostInfo) {
 }
 
 func (s *Session) handleNodeConnected(host *HostInfo) {
+	defer s.publishV2Metadata()
 	if debug.Enabled {
 		s.logger.Printf("gocql: Session.handleNodeConnected: %s:%d\n", host.ConnectAddress(), host.Port())
 	}
 
 	host.setState(NodeUp)
+	s.observeV2Lifecycle(LifecycleEvent{Kind: "host", Stage: "connected", HostID: host.hostUUID(), At: time.Now()})
 
 	if !s.cfg.filterHost(host) {
 		s.policy.HostUp(host)
@@ -273,6 +283,7 @@ func (s *Session) handleNodeConnected(host *HostInfo) {
 }
 
 func (s *Session) handleNodeDown(ip net.IP, port int) {
+	defer s.publishV2Metadata()
 	if debug.Enabled {
 		s.logger.Printf("gocql: Session.handleNodeDown: %s:%d\n", ip.String(), port)
 	}
@@ -280,6 +291,7 @@ func (s *Session) handleNodeDown(ip net.IP, port int) {
 	host, ok := s.hostSource.getHostByIP(ip.String())
 	if ok {
 		host.setState(NodeDown)
+		s.observeV2Lifecycle(LifecycleEvent{Kind: "host", Stage: "down", HostID: host.hostUUID(), At: time.Now()})
 		if s.cfg.filterHost(host) {
 			return
 		}

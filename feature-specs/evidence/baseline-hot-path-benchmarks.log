@@ -1,0 +1,14 @@
+goos: linux
+goarch: amd64
+pkg: github.com/gocql/gocql
+cpu: AMD Ryzen 9 9950X3D 16-Core Processor          
+BenchmarkUnmarshalVarchar-32            	127972635	         9.256 ns/op	       0 B/op	       0 allocs/op
+BenchmarkUnmarshalUUID-32               	334474149	         3.793 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTabletAwarePick/Hosts10-32     	 4192003	       299.1 ns/op	     360 B/op	       8 allocs/op
+BenchmarkTabletAwarePick/Hosts50-32     	 3855452	       316.2 ns/op	     360 B/op	       8 allocs/op
+BenchmarkTabletAwarePick/Hosts100-32    	 3689130	       314.1 ns/op	     360 B/op	       8 allocs/op
+BenchmarkTokenAwarePickReplicaMap/Hosts10-32         	 6337530	       193.1 ns/op	     344 B/op	       7 allocs/op
+BenchmarkTokenAwarePickReplicaMap/Hosts50-32         	 6144038	       198.5 ns/op	     344 B/op	       7 allocs/op
+BenchmarkTokenAwarePickReplicaMap/Hosts100-32        	 5991828	       197.1 ns/op	     344 B/op	       7 allocs/op
+PASS
+ok  	github.com/gocql/gocql	12.684s

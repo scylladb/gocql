@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gocql/gocql/dialer"
+	"github.com/scylladb/gocql/v2/dialer"
 )
 
 // TestConnectionRecorderFailKeepsOneCause pins that fail reports the latched failure

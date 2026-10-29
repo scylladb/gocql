@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gocql/gocql/events"
-	"github.com/gocql/gocql/internal/eventbus"
+	"github.com/scylladb/gocql/v2/events"
+	"github.com/scylladb/gocql/v2/internal/eventbus"
 )
 
 func TestSessionEventBusPublishesEvents(t *testing.T) {

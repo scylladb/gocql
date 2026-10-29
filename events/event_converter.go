@@ -19,7 +19,7 @@
 package events
 
 import (
-	frm "github.com/gocql/gocql/internal/frame"
+	frm "github.com/scylladb/gocql/v2/internal/frame"
 )
 
 // FrameToEvent converts an internal frame to a public Event interface.

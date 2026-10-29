@@ -1,0 +1,381 @@
+{
+  "repository": "scylladb/gocql",
+  "revision": "1ceaac8172bda26e8b8d701ac356982d33729b27",
+  "test_count": 174,
+  "files": [
+    {
+      "file": "batch_test.go",
+      "build_constraint": "integration",
+      "sha256": "c4332a666f170e5ea3a01ba7bebed86be0bc440e3c963802a353024f44e3423b",
+      "tests": [
+        "TestBatch_Errors",
+        "TestBatch_WithTimestamp",
+        "TestBatch_WithNowInSeconds",
+        "TestBatch_SetKeyspace"
+      ]
+    },
+    {
+      "file": "cass1batch_test.go",
+      "build_constraint": "integration",
+      "sha256": "c62b2d02f97b39f4b2b3522e0c83a8b9c2fa613bf7f2d184c92098db04672386",
+      "tests": [
+        "TestProto1BatchInsert",
+        "TestShouldPrepareFunction"
+      ]
+    },
+    {
+      "file": "cassandra_test.go",
+      "build_constraint": "integration",
+      "sha256": "d3a0a83e6313e3c72ca76e63bc87c3f06302221299bd0e60e9b205e908a3dcb9",
+      "tests": [
+        "TestEmptyHosts",
+        "TestInvalidPeerEntry",
+        "TestUseStatementError",
+        "TestInvalidKeyspace",
+        "TestTracing",
+        "TestObserve",
+        "TestObserve_Pagination",
+        "TestPaging",
+        "TestPagingWithAllowFiltering",
+        "TestPagingWithBind",
+        "TestCAS",
+        "TestConsistencySerial",
+        "TestDurationType",
+        "TestMapScanCAS",
+        "TestBatch",
+        "TestUnpreparedBatch",
+        "TestBatchLimit",
+        "TestWhereIn",
+        "TestTooManyQueryArgs",
+        "TestNotEnoughQueryArgs",
+        "TestCreateSessionTimeout",
+        "TestReconnection",
+        "TestMapScanWithRefMap",
+        "TestMapScan",
+        "TestSliceMap",
+        "Test_RetryPolicyIdempotence",
+        "TestSmallInt",
+        "TestScanWithNilArguments",
+        "TestScanCASWithNilArguments",
+        "TestRebindQueryInfo",
+        "TestStaticQueryInfo",
+        "TestBoundQueryInfo",
+        "TestBatchQueryInfo",
+        "TestPrepare_MissingSchemaPrepare",
+        "TestPrepare_ReprepareStatement",
+        "TestPrepare_ReprepareBatch",
+        "TestQueryInfo",
+        "TestPrepare_PreparedCacheEviction",
+        "TestPrepare_PreparedCacheKey",
+        "TestMarshalFloat64Ptr",
+        "TestMarshalInet",
+        "TestVarint",
+        "TestQueryStats",
+        "TestIterHost",
+        "TestBatchStats",
+        "TestBatchObserve",
+        "TestNilInQuery",
+        "TestEmptyTimestamp",
+        "TestGetKeyspaceMetadata",
+        "TestSessionMetadataAPIs",
+        "TestGetKeyspaceMetadataFails",
+        "TestRoutingKey",
+        "TestTokenAwareConnPool",
+        "TestNegativeStream",
+        "TestManualQueryPaging",
+        "TestSessionBindRoutingKey",
+        "TestJSONSupport",
+        "TestUnmarshallNestedTypes",
+        "TestSchemaReset",
+        "TestCreateSession_DontSwallowError",
+        "TestControl_DiscoverProtocol",
+        "TestUnsetCol",
+        "TestUnsetColBatch",
+        "TestQuery_NamedValues",
+        "TestQuery_SetHostID",
+        "TestQuery_WithNowInSeconds",
+        "TestQuery_SetKeyspace",
+        "TestLargeSizeQuery",
+        "TestCompressorNegotiated",
+        "TestQueryCompressionNotWorthIt",
+        "TestPrepareExecuteMetadataChangedFlag",
+        "TestStmtCacheUsesOverriddenKeyspace",
+        "TestRoutingKeyCacheUsesOverriddenKeyspace",
+        "TestPrepareExecuteScyllaEmptyMetadataID"
+      ]
+    },
+    {
+      "file": "client_routes_test.go",
+      "build_constraint": "integration",
+      "sha256": "8856455e9a2e87b6768170d7d391529ce1b77dc965e38cfaac2155529dad837a",
+      "tests": [
+        "TestGetHostPortMapping"
+      ]
+    },
+    {
+      "file": "cloud_cluster_test.go",
+      "build_constraint": "integration",
+      "sha256": "b895b48b9dc607ae3997eca5912c945f2f2b3fd4da750975c0f70c4b39f2e59b",
+      "tests": [
+        "TestCloudConnection"
+      ]
+    },
+    {
+      "file": "control_integration_test.go",
+      "build_constraint": "integration",
+      "sha256": "6516a8d8b23f83e0385a08abb023d42b314cfa816f5669387e33f1769dda884e",
+      "tests": [
+        "TestUnixSockets"
+      ]
+    },
+    {
+      "file": "dns_test.go",
+      "build_constraint": "integration",
+      "sha256": "4ce01097dcbac5a80c138c222e9512e9fd689b21f9cc067467f109097608ffee",
+      "tests": [
+        "TestDNS"
+      ]
+    },
+    {
+      "file": "errors_test.go",
+      "build_constraint": "integration",
+      "sha256": "106db32c72a9520c191f6671339a96aff0d25652b3e21381619583c00c5baccd",
+      "tests": [
+        "TestErrorsParse"
+      ]
+    },
+    {
+      "file": "exec_test.go",
+      "build_constraint": "integration",
+      "sha256": "843c1c409dc21f89d94dbbdfd222feee808012dc3be78038f300b5effcc321bd",
+      "tests": [
+        "TestSingleHostQueryExecutor"
+      ]
+    },
+    {
+      "file": "export_test.go",
+      "build_constraint": "integration",
+      "sha256": "6fc8d714cce5bb6cdcdc9202c47181ec378c74cbadc252a5700112c4fab826be",
+      "tests": []
+    },
+    {
+      "file": "integration_serialization_scylla_test.go",
+      "build_constraint": "integration",
+      "sha256": "d6ce9955728467f8b249b2a7ae81631fad8830c0e6881884f81c9683f959fbfb",
+      "tests": [
+        "TestRetryOnTopologyBusy",
+        "TestSerializationSimpleTypesCassandra",
+        "TestSliceMapMapScanTypes",
+        "TestSliceMapMapScanCounterTypes",
+        "TestSliceMapMapScanTupleTypes",
+        "TestSliceMapMapScanVectorTypes",
+        "TestSliceMapMapScanCollectionTypes"
+      ]
+    },
+    {
+      "file": "integration_test.go",
+      "build_constraint": "integration",
+      "sha256": "3d24261c0d8c6808854c419429396a44ca1edefff4799dcf5262e01cf2f5f2cc",
+      "tests": [
+        "TestAuthentication",
+        "TestGetHostsFromSystem",
+        "TestRingDiscovery",
+        "TestHostFilterDiscovery",
+        "TestHostFilterInitial",
+        "TestApplicationInformation",
+        "TestDriverConfigReporting",
+        "TestWriteFailure",
+        "TestCustomPayloadMessages",
+        "TestCustomPayloadValues",
+        "TestSessionAwaitSchemaAgreement",
+        "TestSessionAwaitSchemaAgreementSessionClosed",
+        "TestSessionAwaitSchemaAgreementContextCanceled",
+        "TestNewConnectWithLowTimeout"
+      ]
+    },
+    {
+      "file": "internal/ccm/ccm_test.go",
+      "build_constraint": "all || ccm",
+      "sha256": "63198aa3898239060f7b30a9ff69a430014375b65017a4d2e870dbdafb1d3159",
+      "tests": [
+        "TestCCM"
+      ]
+    },
+    {
+      "file": "keyspace_table_test.go",
+      "build_constraint": "integration",
+      "sha256": "423eea8e3d11edc9e9d4351004eff663bd87fe7e0031da05006de900402579df",
+      "tests": [
+        "TestKeyspaceTable"
+      ]
+    },
+    {
+      "file": "policies_integration_test.go",
+      "build_constraint": "integration",
+      "sha256": "e6ee91620e51e836290c6ba936f2e4cbb2f3406e3364020dee5a03da0f100f4e",
+      "tests": [
+        "TestDCValidationTokenAware",
+        "TestDCValidationDCAware",
+        "TestDCValidationRackAware",
+        "TestTokenAwareHostPolicy",
+        "TestNoHangAllHostsDown"
+      ]
+    },
+    {
+      "file": "recreate_test.go",
+      "build_constraint": "integration",
+      "sha256": "84cacd7669a2185d742c5da988d1a2e67d15e088c7038ff6a2a276da6888be70",
+      "tests": [
+        "TestRecreateSchema"
+      ]
+    },
+    {
+      "file": "schema_queries_test.go",
+      "build_constraint": "integration",
+      "sha256": "cb6a45692660a18818c059c0fd5731901b6f3550aa83bcd8abf8c52c4da26c70",
+      "tests": [
+        "TestSchemaQueries"
+      ]
+    },
+    {
+      "file": "scylla_shard_aware_port_common_test.go",
+      "build_constraint": "integration || unit",
+      "sha256": "14b27eae65cfaad88595c1e8bd4ebca5f6241529b3422be984232e9a8eba53bb",
+      "tests": []
+    },
+    {
+      "file": "scylla_shard_aware_port_integration_test.go",
+      "build_constraint": "integration",
+      "sha256": "952d4a20b845c0188d50b37a564e89ea0817ed6d4e69b76c4c2c609bef7fbc3a",
+      "tests": [
+        "TestShardAwarePortIntegrationNoReconnections",
+        "TestShardAwarePortIntegrationMaliciousNAT",
+        "TestShardAwarePortIntegrationUnreachable",
+        "TestShardAwarePortIntegrationUnusedIfNotEnabled"
+      ]
+    },
+    {
+      "file": "select_without_from_integration_test.go",
+      "build_constraint": "integration",
+      "sha256": "28f34a4c5207033c191c6e24f057ac31bda47c77a636bbf4a32dbbb61c0e625c",
+      "tests": [
+        "TestSelectWithoutFromLiteral",
+        "TestSelectWithoutFromFilteredOut",
+        "TestSelectWithoutFromNow",
+        "TestSelectWithoutFromFunctionCast",
+        "TestSelectWithoutFromMultipleSelectors",
+        "TestSelectWithoutFromAlias",
+        "TestSelectWithoutFromExecutionModes",
+        "TestSelectWithoutFromBindMarker",
+        "TestSelectWithoutFromRoutingKey",
+        "TestSelectWithoutFromTokenAware",
+        "TestSelectWithoutFromMapScan",
+        "TestSelectWithoutFromAggregate",
+        "TestSelectWithoutFromJSON",
+        "TestSelectWithoutFromWithKeyspace",
+        "TestSelectWithoutFromUnqualifiedUDF",
+        "TestSelectWithoutFromRejected"
+      ]
+    },
+    {
+      "file": "session_event_bus_integration_test.go",
+      "build_constraint": "integration",
+      "sha256": "fbe9383e2621c5ffffa21e8857a8ec3351ae6a730000d733532fa20efe1db53c",
+      "tests": [
+        "TestSessionEventBusReceivesSchemaChangeEvent",
+        "TestSessionEventBusReceivesControlReconnectEvent"
+      ]
+    },
+    {
+      "file": "session_test.go",
+      "build_constraint": "integration",
+      "sha256": "aa1ca274e9cc3a8a1d2ac5e271d017f180cb7c507456dd1613ac3aed849687e2",
+      "tests": [
+        "TestSessionAPI",
+        "TestQueryBasicAPI",
+        "TestQueryShouldPrepare",
+        "TestBatchBasicAPI",
+        "TestConsistencyNames",
+        "TestIsUseStatement",
+        "TestRetryType_IgnoreRethrow",
+        "TestTLSTicketResumption"
+      ]
+    },
+    {
+      "file": "stress_test.go",
+      "build_constraint": "integration",
+      "sha256": "743cdf6150d8df12708c6650e6bda0491f8120c86a0941b17f82c99a66fedee3",
+      "tests": []
+    },
+    {
+      "file": "tablet_integration_test.go",
+      "build_constraint": "integration",
+      "sha256": "e9b92ab6b25c50870e453aa177c080741e850bb7f26c74f54e933aee70a91947",
+      "tests": [
+        "TestTablets"
+      ]
+    },
+    {
+      "file": "tracer_test.go",
+      "build_constraint": "integration",
+      "sha256": "3a9625c4872c7e7cb1498735f06c5960d4c00436bcec416e157e6b64f45558c8",
+      "tests": [
+        "TestTracingNewAPI"
+      ]
+    },
+    {
+      "file": "tuple_test.go",
+      "build_constraint": "integration",
+      "sha256": "4bbc04570aeb89edcfc8bfa84fd6fa9dea89984056ed65e1b74440f45e43f63e",
+      "tests": [
+        "TestTupleSimple",
+        "TestTuple_NullTuple",
+        "TestTuple_TupleNotSet",
+        "TestTupleMapScan",
+        "TestTupleMapScanNil",
+        "TestTupleMapScanNotSet",
+        "TestTupleLastFieldEmpty",
+        "TestTuple_NestedCollection",
+        "TestTuple_NullableNestedCollection"
+      ]
+    },
+    {
+      "file": "udt_test.go",
+      "build_constraint": "integration",
+      "sha256": "626cc74838f133632f9a99a7ccb6e7b942980460244a81e3385efdd1aba913b7",
+      "tests": [
+        "TestUDT_Marshaler",
+        "TestUDT_Reflect",
+        "TestUDT_NullObject",
+        "TestMapScanUDT",
+        "TestUDT_MissingField",
+        "TestUDT_EmptyCollections",
+        "TestUDT_UpdateField",
+        "TestUDT_ScanNullUDT"
+      ]
+    },
+    {
+      "file": "vector_test.go",
+      "build_constraint": "integration",
+      "sha256": "b855ff4f4bfd4b236404edd770926588280abff4a5b62c44c6dad9c8060dd569",
+      "tests": [
+        "TestVector_Marshaler",
+        "TestVector_Types",
+        "TestVector_MarshalerUDT",
+        "TestVector_Empty",
+        "TestVector_MissingDimension",
+        "TestVector_SubTypeParsing"
+      ]
+    },
+    {
+      "file": "wiki_test.go",
+      "build_constraint": "integration",
+      "sha256": "2e7857c09493814cdb87011fd3e9dfc7d4251413957600f1d80f5082ae397f61",
+      "tests": [
+        "TestWikiCreateSchema",
+        "TestWikiCreatePages",
+        "TestWikiTypicalCRUD"
+      ]
+    }
+  ]
+}

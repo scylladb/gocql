@@ -231,21 +231,21 @@ const (
 // unknown to the query executor.
 var ErrUnknownRetryType = errors.New("unknown retry type returned by retry policy")
 
-// RetryPolicy interface is used by gocql to determine if a query can be attempted
+// oldRetryPolicy interface is used by gocql to determine if a query can be attempted
 // again after a retryable error has been received. The interface allows gocql
 // users to implement their own logic to determine if a query can be attempted
 // again.
 //
-// See SimpleRetryPolicy as an example of implementing and using a RetryPolicy
+// See SimpleRetryPolicy as an example of implementing and using a oldRetryPolicy
 // interface.
-type RetryPolicy interface {
+type oldRetryPolicy interface {
 	Attempt(RetryableQuery) bool
 	GetRetryType(error) RetryType
 }
 
-// LWTRetryPolicy is a similar interface to RetryPolicy
-// If a query is recognized as an LWT query and its RetryPolicy satisfies this
-// interface, then this interface will be used instead of RetryPolicy.
+// LWTRetryPolicy is a similar interface to oldRetryPolicy
+// If a query is recognized as an LWT query and its oldRetryPolicy satisfies this
+// interface, then this interface will be used instead of oldRetryPolicy.
 type LWTRetryPolicy interface {
 	AttemptLWT(RetryableQuery) bool
 	GetRetryTypeLWT(error) RetryType
@@ -256,16 +256,16 @@ type LWTRetryPolicy interface {
 // See below for examples of usage:
 //
 //	//Assign to the cluster
-//	cluster.RetryPolicy = &gocql.SimpleRetryPolicy{NumRetries: 3}
+//	cluster.oldRetryPolicy = &gocql.SimpleRetryPolicy{NumRetries: 3}
 //
 //	//Assign to a query
-//	query.RetryPolicy(&gocql.SimpleRetryPolicy{NumRetries: 1})
+//	query.oldRetryPolicy(&gocql.SimpleRetryPolicy{NumRetries: 1})
 type SimpleRetryPolicy struct {
 	NumRetries int // Number of times to retry a query
 }
 
-// defaultRetryPolicy is the shared fallback when no RetryPolicy is configured.
-var defaultRetryPolicy RetryPolicy = &SimpleRetryPolicy{NumRetries: 3}
+// defaultRetryPolicy is the shared fallback when no oldRetryPolicy is configured.
+var defaultRetryPolicy oldRetryPolicy = &SimpleRetryPolicy{NumRetries: 3}
 
 // Attempt tells gocql to attempt the query again based on query.Attempts being less
 // than the NumRetries defined in the policy.

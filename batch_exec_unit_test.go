@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	frm "github.com/gocql/gocql/internal/frame"
+	frm "github.com/scylladb/gocql/v2/internal/frame"
 )
 
 // receivedBatchStmt is one statement of a BATCH as the server decoded it:

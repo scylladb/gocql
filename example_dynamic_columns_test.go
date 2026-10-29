@@ -32,7 +32,7 @@ import (
 	"reflect"
 	"text/tabwriter"
 
-	gocql "github.com/gocql/gocql"
+	gocql "github.com/scylladb/gocql/v2"
 )
 
 // Example_dynamicColumns demonstrates how to handle dynamic column list.

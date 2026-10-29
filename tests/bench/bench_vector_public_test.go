@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/gocql/gocql"
+	"github.com/scylladb/gocql/v2"
 )
 
 const vectorProto = 4

@@ -24,7 +24,7 @@ package gocql
 import (
 	"testing"
 
-	"github.com/gocql/gocql/internal/lru"
+	"github.com/scylladb/gocql/v2/internal/lru"
 )
 
 func newTestPreparedLRU() *preparedLRU {

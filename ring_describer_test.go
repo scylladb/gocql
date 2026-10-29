@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gocql/gocql/internal/tests"
+	"github.com/scylladb/gocql/v2/internal/tests"
 
-	"github.com/gocql/gocql/internal/tests/mock"
+	"github.com/scylladb/gocql/v2/internal/tests/mock"
 )
 
 func TestGetClusterPeerInfoZeroToken(t *testing.T) {

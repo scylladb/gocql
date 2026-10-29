@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gocql/gocql/dialer"
-	"github.com/gocql/gocql/dialer/replayer"
-	"github.com/gocql/gocql/internal/segment"
+	"github.com/scylladb/gocql/v2/dialer"
+	"github.com/scylladb/gocql/v2/dialer/replayer"
+	"github.com/scylladb/gocql/v2/internal/segment"
 )
 
 // passthroughCompressor is a no-op compressor that honours the append contract. A real

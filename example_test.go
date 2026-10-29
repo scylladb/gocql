@@ -29,7 +29,7 @@ import (
 	"fmt"
 	"log"
 
-	gocql "github.com/gocql/gocql"
+	gocql "github.com/scylladb/gocql/v2"
 )
 
 func Example() {
@@ -52,7 +52,7 @@ func Example() {
 
 	// insert a tweet
 	if err := session.Query(`INSERT INTO tweet (timeline, id, text) VALUES (?, ?, ?)`,
-		"me", gocql.TimeUUID(), "hello world").WithContext(ctx).Exec(); err != nil {
+		"me", gocql.NewTimeUUID(), "hello world").WithContext(ctx).Exec(); err != nil {
 		log.Fatal(err)
 	}
 

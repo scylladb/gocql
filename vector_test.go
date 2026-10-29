@@ -29,373 +29,228 @@ package gocql
 
 import (
 	"fmt"
-	"net"
+	"github.com/scylladb/gocql/v2/internal/tests"
+	"github.com/stretchr/testify/require"
+	"gopkg.in/inf.v0"
+	"math/big"
+	"net/netip"
 	"reflect"
 	"sort"
 	"testing"
 	"time"
-
-	"github.com/stretchr/testify/require"
-	"gopkg.in/inf.v0"
-
-	"github.com/gocql/gocql/internal/tests"
 )
 
 type person struct {
-	FirstName string `cql:"first_name"`
-	LastName  string `cql:"last_name"`
-	Age       int    `cql:"age"`
+	FirstName, LastName string
+	Age                 int32
 }
 
 func (p person) String() string {
 	return fmt.Sprintf("Person{firstName: %s, lastName: %s, Age: %d}", p.FirstName, p.LastName, p.Age)
 }
+func serializationVectorGate(t *testing.T, allTypes bool) {
+	t.Helper()
+	if *flagDistribution == "cassandra" && flagCassVersion.Before(5, 0, 0) {
+		t.Skip("Vector types have been introduced in Cassandra 5.0")
+	}
+	minor := 3
+	if allTypes {
+		minor = 4
+	}
+	if *flagDistribution == "scylla" && flagCassVersion.Before(2025, minor, 0) {
+		t.Skipf("Vector types require ScyllaDB 2025.%d", minor)
+	}
+}
+
+var serializationBlob = NamedScalar(BlobCodec, func(v []byte) Bytes { return BorrowBytes(v) }, func(v Bytes) []byte { return v.OwnedBytes() })
+var serializationTimestamp = NamedScalar(TimestampCodec, func(v time.Time) Timestamp {
+	n, e := TimestampFromTime(v)
+	if e != nil {
+		panic(e)
+	}
+	return n
+}, func(v Timestamp) time.Time {
+	n, e := v.Time()
+	if e != nil {
+		panic(e)
+	}
+	return n.UTC()
+})
+var serializationDate = NamedScalar(DateCodec, func(v time.Time) Date {
+	n, e := DateFromTime(v)
+	if e != nil {
+		panic(e)
+	}
+	return n
+}, func(v Date) time.Time {
+	n, e := v.Time()
+	if e != nil {
+		panic(e)
+	}
+	return n.UTC()
+})
+var serializationDecimal = NamedScalar(DecimalCodec, func(v inf.Dec) Decimal { return Decimal{int32(v.Scale()), VarintFromBigInt(v.UnscaledBig())} }, func(v Decimal) inf.Dec { return *inf.NewDecBig(v.Unscaled.BigInt(), inf.Scale(v.Scale)) })
 
 func TestVector_Marshaler(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
-	defer session.Close()
-
-	if *flagDistribution == "cassandra" && flagCassVersion.Before(5, 0, 0) {
-		t.Skip("Vector types have been introduced in Cassandra 5.0")
-	}
-
-	if *flagDistribution == "scylla" && flagCassVersion.Before(2025, 3, 0) {
-		t.Skip("Vector types have been introduced in ScyllaDB 2025.3")
-	}
-
-	fixedTable := testTableName(t, "fixed")
-	variableTable := testTableName(t, "variable")
-
-	err := createTable(session, fmt.Sprintf(`CREATE TABLE IF NOT EXISTS gocql_test.%s(id int primary key, vec vector<float, 3>);`, fixedTable))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = createTable(session, fmt.Sprintf(`CREATE TABLE IF NOT EXISTS gocql_test.%s(id int primary key, vec vector<text, 4>);`, variableTable))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	insertFixVec := []float32{8, 2.5, -5.0}
-	err = session.Query(fmt.Sprintf("INSERT INTO %s(id, vec) VALUES(?, ?)", fixedTable), 1, insertFixVec).Exec()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var selectFixVec []float32
-	err = session.Query(fmt.Sprintf("SELECT vec FROM %s WHERE id = ?", fixedTable), 1).Scan(&selectFixVec)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tests.AssertDeepEqual(t, "fixed size element vector", insertFixVec, selectFixVec)
-
-	longText := tests.RandomText(500)
-	insertVarVec := []string{"apache", "cassandra", longText, "gocql"}
-	err = session.Query(fmt.Sprintf("INSERT INTO %s(id, vec) VALUES(?, ?)", variableTable), 1, insertVarVec).Exec()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var selectVarVec []string
-	err = session.Query(fmt.Sprintf("SELECT vec FROM %s WHERE id = ?", variableTable), 1).Scan(&selectVarVec)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tests.AssertDeepEqual(t, "variable size element vector", insertVarVec, selectVarVec)
+	serializationVectorGate(t, false)
+	s := createV2Session(t)
+	defer s.Close()
+	fixed, variable := serializationTableName(t, "fixed"), serializationTableName(t, "variable")
+	serializationDDL(t, s, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,vec vector<float,3>)", fixed))
+	serializationDDL(t, s, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,vec vector<text,4>)", variable))
+	floats := []float32{8, 2.5, -5}
+	require.Equal(t, floats, serializationRoundTrip(t, s, fixed, "vec", 1, serializationVector(Float32), floats))
+	texts := []string{"apache", "cassandra", tests.RandomText(500), "gocql"}
+	require.Equal(t, texts, serializationRoundTrip(t, s, variable, "vec", 1, serializationVector(serializationString), texts))
 }
 
+type serializationVectorCase struct {
+	name, cql string
+	run       func(*testing.T, *Session, string, string)
+}
+
+func vectorCase[T any](name, cql string, codec Codec[T], input []T, compare func(*testing.T, []T, []T)) serializationVectorCase {
+	return serializationVectorCase{name, cql, func(t *testing.T, s *Session, table, column string) {
+		got := serializationRoundTrip(t, s, table, column, 1, serializationVector(codec), input)
+		if compare != nil {
+			compare(t, input, got)
+		} else if !reflect.DeepEqual(input, got) {
+			t.Fatalf("expected %#v, got %#v", input, got)
+		}
+	}}
+}
 func TestVector_Types(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
-	defer session.Close()
-
-	if *flagDistribution == "cassandra" && flagCassVersion.Before(5, 0, 0) {
-		t.Skip("Vector types have been introduced in Cassandra 5.0")
+	serializationVectorGate(t, true)
+	s := createV2Session(t)
+	defer s.Close()
+	parse := func(layout, value string) time.Time {
+		v, e := time.Parse(layout, value)
+		if e != nil {
+			t.Fatal(e)
+		}
+		return v
 	}
-
-	if *flagDistribution == "scylla" && flagCassVersion.Before(2025, 4, 0) {
-		t.Skip("Vector types are useful in ScyllaDB from 2025.4 and on")
+	timestamps := []time.Time{parse("2006-01-02", "2000-01-01"), parse("2006-01-02 15:04:05", "2024-01-01 10:31:45"), parse("2006-01-02 15:04:05.000", "2024-05-01 10:31:45.987")}
+	dates := []time.Time{parse("2006-01-02", "2000-01-01"), parse("2006-01-02", "2022-03-14"), parse("2006-01-02", "2024-12-31")}
+	times := []time.Time{parse("15:04:05", "01:00:00"), parse("15:04:05", "15:23:59"), parse("15:04:05.000", "10:31:45.987")}
+	// The historical time subcase stores timestamp values anchored at year zero.
+	// Preserve that wire coverage alongside the scalar time fixtures above.
+	ascii := NamedScalar(ASCIICodec, func(s string) Text { return BorrowText(s) }, func(t Text) string { return t.String() })
+	uintVarint := NamedScalar(VarintCodec, func(n uint64) Varint { return VarintFromBigInt(new(big.Int).SetUint64(n)) }, func(n Varint) uint64 { return n.BigInt().Uint64() })
+	type triple struct {
+		Text  string
+		Int   int32
+		Float float32
 	}
-
-	timestamp1, _ := time.Parse("2006-01-02", "2000-01-01")
-	timestamp2, _ := time.Parse("2006-01-02 15:04:05", "2024-01-01 10:31:45")
-	timestamp3, _ := time.Parse("2006-01-02 15:04:05.000", "2024-05-01 10:31:45.987")
-
-	date1, _ := time.Parse("2006-01-02", "2000-01-01")
-	date2, _ := time.Parse("2006-01-02", "2022-03-14")
-	date3, _ := time.Parse("2006-01-02", "2024-12-31")
-
-	time1, _ := time.Parse("15:04:05", "01:00:00")
-	time2, _ := time.Parse("15:04:05", "15:23:59")
-	time3, _ := time.Parse("15:04:05.000", "10:31:45.987")
-
-	duration1 := Duration{0, 1, 1920000000000}
-	duration2 := Duration{1, 1, 1920000000000}
-	duration3 := Duration{31, 0, 60000000000}
-
-	map1 := make(map[string]int)
-	map1["a"] = 1
-	map1["b"] = 2
-	map1["c"] = 3
-	map2 := make(map[string]int)
-	map2["abc"] = 123
-	map3 := make(map[string]int)
-
-	testCases := []struct {
-		name       string
-		cqlType    string
-		value      any
-		comparator func(*testing.T, any, any)
-	}{
-		{name: "ascii", cqlType: TypeAscii.String(), value: []string{"a", "1", "Z"}},
-		{name: "bigint", cqlType: TypeBigInt.String(), value: []int64{1, 2, 3}},
-		{name: "blob", cqlType: TypeBlob.String(), value: [][]byte{[]byte{1, 2, 3}, []byte{4, 5, 6, 7}, []byte{8, 9}}},
-		{name: "boolean", cqlType: TypeBoolean.String(), value: []bool{true, false, true}},
-		{name: "counter", cqlType: TypeCounter.String(), value: []int64{5, 6, 7}},
-		{name: "decimal", cqlType: TypeDecimal.String(), value: []inf.Dec{*inf.NewDec(1, 0), *inf.NewDec(2, 1), *inf.NewDec(-3, 2)}},
-		{name: "double", cqlType: TypeDouble.String(), value: []float64{0.1, -1.2, 3}},
-		{name: "float", cqlType: TypeFloat.String(), value: []float32{0.1, -1.2, 3}},
-		{name: "int", cqlType: TypeInt.String(), value: []int32{1, 2, 3}},
-		{name: "text", cqlType: TypeText.String(), value: []string{"a", "b", "c"}},
-		{name: "timestamp", cqlType: TypeTimestamp.String(), value: []time.Time{timestamp1, timestamp2, timestamp3}},
-		{name: "uuid", cqlType: TypeUUID.String(), value: []UUID{MustRandomUUID(), MustRandomUUID(), MustRandomUUID()}},
-		{name: "varchar", cqlType: TypeVarchar.String(), value: []string{"abc", "def", "ghi"}},
-		{name: "varint", cqlType: TypeVarint.String(), value: []uint64{uint64(1234), uint64(123498765), uint64(18446744073709551615)}},
-		{name: "timeuuid", cqlType: TypeTimeUUID.String(), value: []UUID{TimeUUID(), TimeUUID(), TimeUUID()}},
-		{
-			name:    "inet",
-			cqlType: TypeInet.String(),
-			value:   []net.IP{net.IPv4(127, 0, 0, 1), net.IPv4(192, 168, 1, 1), net.IPv4(8, 8, 8, 8)},
-			comparator: func(t *testing.T, e any, a any) {
-				expected := e.([]net.IP)
-				actual := a.([]net.IP)
-				tests.AssertEqual(t, "vector size", len(expected), len(actual))
-				for i, _ := range expected {
-					tests.AssertTrue(t, "vector", expected[i].Equal(actual[i]))
+	tripleCodec := serializationTuple(Params(ParamAt(0, serializationString, func(v triple) string { return v.Text }), ParamAt(1, Int32, func(v triple) int32 { return v.Int }), ParamAt(2, Float32, func(v triple) float32 { return v.Float })), Row(ColumnAt(0, serializationString, func(v *triple) *string { return &v.Text }), ColumnAt(1, Int32, func(v *triple) *int32 { return &v.Int }), ColumnAt(2, Float32, func(v *triple) *float32 { return &v.Float })))
+	type textList struct {
+		Text string
+		List []string
+	}
+	textListCodec := serializationTuple(Params(ParamAt(0, serializationString, func(v textList) string { return v.Text }), ParamAt(1, serializationList(serializationString), func(v textList) []string { return v.List })), Row(ColumnAt(0, serializationString, func(v *textList) *string { return &v.Text }), ColumnAt(1, serializationList(serializationString), func(v *textList) *[]string { return &v.List })))
+	cases := []serializationVectorCase{
+		vectorCase("ascii", "ascii", ascii, []string{"a", "1", "Z"}, nil),
+		vectorCase("bigint", "bigint", Int64, []int64{1, 2, 3}, nil),
+		vectorCase("blob", "blob", serializationBlob, [][]byte{{1, 2, 3}, {4, 5, 6, 7}, {8, 9}}, nil),
+		vectorCase("boolean", "boolean", Bool, []bool{true, false, true}, nil),
+		vectorCase("counter", "counter", CounterCodec, []Counter{5, 6, 7}, nil),
+		vectorCase("decimal", "decimal", serializationDecimal, []inf.Dec{*inf.NewDec(1, 0), *inf.NewDec(2, 1), *inf.NewDec(-3, 2)}, nil),
+		vectorCase("double", "double", Float64, []float64{0.1, -1.2, 3}, nil),
+		vectorCase("float", "float", Float32, []float32{0.1, -1.2, 3}, nil),
+		vectorCase("int", "int", Int32, []int32{1, 2, 3}, nil),
+		vectorCase("text", "text", serializationString, []string{"a", "b", "c"}, nil),
+		vectorCase("timestamp", "timestamp", serializationTimestamp, timestamps, nil),
+		vectorCase("uuid", "uuid", UUIDCodec, []UUID{MustRandomUUID(), MustRandomUUID(), MustRandomUUID()}, nil),
+		vectorCase("varchar", "varchar", serializationString, []string{"abc", "def", "ghi"}, nil),
+		vectorCase("varint", "varint", uintVarint, []uint64{1234, 123498765, 18446744073709551615}, nil),
+		vectorCase("timeuuid", "timeuuid", TimeUUIDCodec, []TimeUUID{TimeUUID(NewTimeUUID()), TimeUUID(NewTimeUUID()), TimeUUID(NewTimeUUID())}, nil),
+		vectorCase("inet", "inet", InetCodec, []netip.Addr{netip.MustParseAddr("127.0.0.1"), netip.MustParseAddr("192.168.1.1"), netip.MustParseAddr("8.8.8.8")}, nil),
+		vectorCase("date", "date", serializationDate, dates, nil),
+		vectorCase("time", "timestamp", serializationTimestamp, times, nil),
+		vectorCase("smallint", "smallint", Int16, []int16{127, 256, -1234}, nil),
+		vectorCase("tinyint", "tinyint", Int8, []int8{127, 9, -123}, nil),
+		vectorCase("duration", "duration", DurationCodec, []Duration{{0, 1, 1920000000000}, {1, 1, 1920000000000}, {31, 0, 60000000000}}, nil),
+		vectorCase("vector_vector_float", "vector<float,5>", serializationVector(Float32), [][]float32{{0.1, -1.2, 3, 5, 5}, {10.1, -122222.0002, 35, 1, 1}, {0, 0, 0, 0, 0}}, nil),
+		vectorCase("vector_vector_set_float", "vector<set<float>,5>", serializationVector(serializationSet(Float32)), [][][]float32{{{1, 2}, {2, -1}, {3}, {0}, {-1.3}}, {{2, 3}, {2, -1}, {3}, {0}, {-1.3}}, {{1, 1000}, {0}, {}, {12, 14, 15, 16}, {-1.3}}}, func(t *testing.T, want, got [][][]float32) {
+			require.Len(t, got, len(want))
+			for i := range want {
+				require.Len(t, got[i], len(want[i]))
+				for j := range want[i] {
+					a, b := append([]float32(nil), want[i][j]...), append([]float32(nil), got[i][j]...)
+					sort.Slice(a, func(i, j int) bool { return a[i] < a[j] })
+					sort.Slice(b, func(i, j int) bool { return b[i] < b[j] })
+					require.Equal(t, a, b)
 				}
-			},
-		},
-		{name: "date", cqlType: TypeDate.String(), value: []time.Time{date1, date2, date3}},
-		{name: "time", cqlType: TypeTimestamp.String(), value: []time.Time{time1, time2, time3}},
-		{name: "smallint", cqlType: TypeSmallInt.String(), value: []int16{127, 256, -1234}},
-		{name: "tinyint", cqlType: TypeTinyInt.String(), value: []int8{127, 9, -123}},
-		{name: "duration", cqlType: TypeDuration.String(), value: []Duration{duration1, duration2, duration3}},
-		{name: "vector_vector_float", cqlType: "vector<float, 5>", value: [][]float32{{0.1, -1.2, 3, 5, 5}, {10.1, -122222.0002, 35.0, 1, 1}, {0, 0, 0, 0, 0}}},
-		{
-			name:    "vector_vector_set_float",
-			cqlType: "vector<set<float>, 5>",
-			value: [][][]float32{
-				{{1, 2}, {2, -1}, {3}, {0}, {-1.3}},
-				{{2, 3}, {2, -1}, {3}, {0}, {-1.3}},
-				{{1, 1000.0}, {0}, {}, {12, 14, 15, 16}, {-1.3}},
-			},
-			comparator: func(t *testing.T, e any, a any) {
-				expected := e.([][][]float32)
-				actual := a.([][][]float32)
-				tests.AssertEqual(t, "vector size", len(expected), len(actual))
-				for i := range expected {
-					expVector := expected[i]
-					actVector := actual[i]
-					tests.AssertEqual(t, "vector size", len(expVector), len(actVector))
-					for j := range expVector {
-						expSet := append([]float32(nil), expVector[j]...)
-						actSet := append([]float32(nil), actVector[j]...)
-						sort.Slice(expSet, func(a, b int) bool { return expSet[a] < expSet[b] })
-						sort.Slice(actSet, func(a, b int) bool { return actSet[a] < actSet[b] })
-						tests.AssertDeepEqual(t, "vector set", expSet, actSet)
-					}
-				}
-			},
-		},
-		{name: "vector_tuple_text_int_float", cqlType: "tuple<text, int, float>", value: [][]any{{"a", 1, float32(0.5)}, {"b", 2, float32(-1.2)}, {"c", 3, float32(0)}}},
-		{name: "vector_tuple_text_list_text", cqlType: "tuple<text, list<text>>", value: [][]any{{"a", []string{"b", "c"}}, {"d", []string{"e", "g", "f"}}, {"h", []string{"i"}}}},
-		{
-			name:    "vector_set_text",
-			cqlType: "set<text>",
-			value:   [][]string{{"a", "b"}, {"c", "d"}, {"f", "e"}},
-			comparator: func(t *testing.T, e any, a any) {
-				expected := e.([][]string)
-				actual := a.([][]string)
-				tests.AssertEqual(t, "vector size", len(expected), len(actual))
-				for i := range expected {
-					expSet := append([]string(nil), expected[i]...)
-					actSet := append([]string(nil), actual[i]...)
-					sort.Strings(expSet)
-					sort.Strings(actSet)
-					tests.AssertDeepEqual(t, "vector set", expSet, actSet)
-				}
-			},
-		},
-		{name: "vector_list_int", cqlType: "list<int>", value: [][]int32{{1, 2, 3}, {-1, -2, -3}, {0, 0, 0}}},
-		{name: "vector_map_text_int", cqlType: "map<text, int>", value: []map[string]int{map1, map2, map3}},
-	}
-
-	// Create a single table with one column per test case to reduce schema
-	// change pressure (rapid CREATE TABLE statements can destabilize nodes
-	// in resource-constrained CI environments, see scylladb#739).
-	tableName := testTableName(t, "all_types")
-	var cols string
-	for _, tc := range testCases {
-		cols += fmt.Sprintf(", vec_%s vector<%s, 3>", tc.name, tc.cqlType)
-	}
-	err := createTable(session, fmt.Sprintf(`CREATE TABLE IF NOT EXISTS gocql_test.%s(id int primary key%s);`, tableName, cols))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	for _, test := range testCases {
-		t.Run(test.name, func(t *testing.T) {
-			colName := "vec_" + test.name
-
-			err := session.Query(fmt.Sprintf("INSERT INTO %s(id, %s) VALUES(?, ?)", tableName, colName), 1, test.value).Exec()
-			if err != nil {
-				t.Fatal(err)
 			}
-
-			v := reflect.New(reflect.TypeOf(test.value))
-			err = session.Query(fmt.Sprintf("SELECT %s FROM %s WHERE id = ?", colName, tableName), 1).Scan(v.Interface())
-			if err != nil {
-				t.Fatal(err)
+		}),
+		vectorCase("vector_tuple_text_int_float", "tuple<text,int,float>", tripleCodec, []triple{{"a", 1, 0.5}, {"b", 2, -1.2}, {"c", 3, 0}}, nil),
+		vectorCase("vector_tuple_text_list_text", "tuple<text,list<text>>", textListCodec, []textList{{"a", []string{"b", "c"}}, {"d", []string{"e", "g", "f"}}, {"h", []string{"i"}}}, nil),
+		vectorCase("vector_set_text", "set<text>", serializationSet(serializationString), [][]string{{"a", "b"}, {"c", "d"}, {"f", "e"}}, func(t *testing.T, want, got [][]string) {
+			require.Len(t, got, len(want))
+			for i := range want {
+				a, b := append([]string(nil), want[i]...), append([]string(nil), got[i]...)
+				sort.Strings(a)
+				sort.Strings(b)
+				require.Equal(t, a, b)
 			}
-			if test.comparator != nil {
-				test.comparator(t, test.value, v.Elem().Interface())
-			} else {
-				tests.AssertDeepEqual(t, "vector", test.value, v.Elem().Interface())
-			}
-		})
+		}),
+		vectorCase("vector_list_int", "list<int>", serializationList(Int32), [][]int32{{1, 2, 3}, {-1, -2, -3}, {0, 0, 0}}, nil),
+		vectorCase("vector_map_text_int", "map<text,int>", serializationMap(serializationString, Int32), []map[string]int32{{"a": 1, "b": 2, "c": 3}, {"abc": 123}, {}}, nil),
+	}
+	table := serializationTableName(t, "all_types")
+	cols := ""
+	for _, tc := range cases {
+		cols += fmt.Sprintf(",vec_%s vector<%s,3>", tc.name, tc.cql)
+	}
+	serializationDDL(t, s, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY%s)", table, cols))
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) { tc.run(t, s, table, "vec_"+tc.name) })
 	}
 }
-
 func TestVector_MarshalerUDT(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
-	defer session.Close()
-
-	if *flagDistribution == "cassandra" && flagCassVersion.Before(5, 0, 0) {
-		t.Skip("Vector types have been introduced in Cassandra 5.0")
-	}
-
-	if *flagDistribution == "scylla" && flagCassVersion.Before(2025, 3, 0) {
-		t.Skip("Vector types have been introduced in ScyllaDB 2025.3")
-	}
-
-	table := testTableName(t)
-	typeName := testTypeName(t)
-
-	err := createTable(session, fmt.Sprintf(`CREATE TYPE gocql_test.%s(
-		first_name text,
-		last_name text,
-		age int);`, typeName))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s(
-		id int,
-		couple vector<%s, 2>,
-		primary key(id)
-	);`, table, typeName))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	p1 := person{"Johny", "Bravo", 25}
-	p2 := person{"Capitan", "Planet", 5}
-	insVec := []person{p1, p2}
-
-	err = session.Query(fmt.Sprintf("INSERT INTO %s(id, couple) VALUES(?, ?)", table), 1, insVec).Exec()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var selVec []person
-
-	err = session.Query(fmt.Sprintf("SELECT couple FROM %s WHERE id = ?", table), 1).Scan(&selVec)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	tests.AssertDeepEqual(t, "udt", &insVec, &selVec)
+	serializationVectorGate(t, false)
+	s := createV2Session(t)
+	defer s.Close()
+	table, typ := serializationTableName(t), serializationTypeName(t)
+	serializationDDL(t, s, fmt.Sprintf("CREATE TYPE %s(first_name text,last_name text,age int)", typ))
+	serializationDDL(t, s, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,couple vector<%s,2>)", table, typ))
+	codec := serializationUDT(Params(Param("first_name", serializationString, func(v person) string { return v.FirstName }), Param("last_name", serializationString, func(v person) string { return v.LastName }), Param("age", Int32, func(v person) int32 { return v.Age })), Row(Column("first_name", serializationString, func(v *person) *string { return &v.FirstName }), Column("last_name", serializationString, func(v *person) *string { return &v.LastName }), Column("age", Int32, func(v *person) *int32 { return &v.Age })), UDTOptions{})
+	want := []person{{"Johny", "Bravo", 25}, {"Capitan", "Planet", 5}}
+	require.Equal(t, want, serializationRoundTrip(t, s, table, "couple", 1, serializationVector(codec), want))
 }
-
 func TestVector_Empty(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
-	defer session.Close()
-
-	if *flagDistribution == "cassandra" && flagCassVersion.Before(5, 0, 0) {
-		t.Skip("Vector types have been introduced in Cassandra 5.0")
-	}
-
-	if *flagDistribution == "scylla" && flagCassVersion.Before(2025, 3, 0) {
-		t.Skip("Vector types have been introduced in ScyllaDB 2025.3")
-	}
-
-	fixedTable := testTableName(t, "fixed")
-	variableTable := testTableName(t, "variable")
-
-	err := createTable(session, fmt.Sprintf(`CREATE TABLE IF NOT EXISTS gocql_test.%s(id int primary key, vec vector<float, 3>);`, fixedTable))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = createTable(session, fmt.Sprintf(`CREATE TABLE IF NOT EXISTS gocql_test.%s(id int primary key, vec vector<text, 4>);`, variableTable))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = session.Query(fmt.Sprintf("INSERT INTO %s(id) VALUES(?)", fixedTable), 1).Exec()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var selectFixVec []float32
-	err = session.Query(fmt.Sprintf("SELECT vec FROM %s WHERE id = ?", fixedTable), 1).Scan(&selectFixVec)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tests.AssertTrue(t, "fixed size element vector is empty", selectFixVec == nil)
-
-	err = session.Query(fmt.Sprintf("INSERT INTO %s(id) VALUES(?)", variableTable), 1).Exec()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var selectVarVec []string
-	err = session.Query(fmt.Sprintf("SELECT vec FROM %s WHERE id = ?", variableTable), 1).Scan(&selectVarVec)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tests.AssertTrue(t, "variable size element vector is empty", selectVarVec == nil)
+	serializationVectorGate(t, false)
+	s := createV2Session(t)
+	defer s.Close()
+	fixed, variable := serializationTableName(t, "fixed"), serializationTableName(t, "variable")
+	serializationDDL(t, s, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,vec vector<float,3>)", fixed))
+	serializationDDL(t, s, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,vec vector<text,4>)", variable))
+	serializationWrite(t, s, fmt.Sprintf("INSERT INTO %s(id) VALUES(1)", fixed))
+	serializationWrite(t, s, fmt.Sprintf("INSERT INTO %s(id) VALUES(1)", variable))
+	fl, e := serializationOne(s, fmt.Sprintf("SELECT vec FROM %s WHERE id=1", fixed), OneColumn(NullableDecoder(serializationVector(Float32))))
+	require.NoError(t, e)
+	require.False(t, fl.Valid)
+	require.Nil(t, fl.Value)
+	tx, e := serializationOne(s, fmt.Sprintf("SELECT vec FROM %s WHERE id=1", variable), OneColumn(NullableDecoder(serializationVector(serializationString))))
+	require.NoError(t, e)
+	require.False(t, tx.Valid)
+	require.Nil(t, tx.Value)
 }
-
 func TestVector_MissingDimension(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
-	defer session.Close()
-
-	if *flagDistribution == "cassandra" && flagCassVersion.Before(5, 0, 0) {
-		t.Skip("Vector types have been introduced in Cassandra 5.0")
+	serializationVectorGate(t, false)
+	s := createV2Session(t)
+	defer s.Close()
+	table := serializationTableName(t)
+	serializationDDL(t, s, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,vec vector<float,3>)", table))
+	for _, v := range [][]float32{{8, -5}, {8, -5, 1, 3}} {
+		err := serializationExec(s, fmt.Sprintf("INSERT INTO %s(id,vec) VALUES(1,?)", table), OneParam(VectorEncoder(Float32)), v)
+		require.Error(t, err, "expected vector with 3 dimensions, received %d", len(v))
 	}
-
-	if *flagDistribution == "scylla" && flagCassVersion.Before(2025, 3, 0) {
-		t.Skip("Vector types have been introduced in ScyllaDB 2025.3")
-	}
-
-	table := testTableName(t)
-
-	err := createTable(session, fmt.Sprintf(`CREATE TABLE IF NOT EXISTS gocql_test.%s(id int primary key, vec vector<float, 3>);`, table))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = session.Query(fmt.Sprintf("INSERT INTO %s(id, vec) VALUES(?, ?)", table), 1, []float32{8, -5.0}).Exec()
-	require.Error(t, err, "expected vector with 3 dimensions, received 2")
-
-	err = session.Query(fmt.Sprintf("INSERT INTO %s(id, vec) VALUES(?, ?)", table), 1, []float32{8, -5.0, 1, 3}).Exec()
-	require.Error(t, err, "expected vector with 3 dimensions, received 4")
 }
 
 func TestVector_SubTypeParsing(t *testing.T) {
@@ -490,10 +345,16 @@ func TestVector_SubTypeParsing(t *testing.T) {
 			f.writeShort(0)
 			f.writeString(fmt.Sprintf("%sVectorType(%s, 2)", prefix, test.custom))
 			parsedType := f.readTypeInfo()
-			require.IsType(t, parsedType, VectorType{})
-			vectorType := parsedType.(VectorType)
-			tests.AssertEqual(t, "dimensions", 2, vectorType.Dimensions)
-			tests.AssertDeepEqual(t, "vector", test.expected, vectorType.SubType)
+			descriptor, err := dataTypeFromInfo(parsedType)
+			require.NoError(t, err)
+			dimension, ok := descriptor.Dimension()
+			require.True(t, ok)
+			require.Equal(t, uint16(2), dimension)
+			element, ok := descriptor.Element()
+			require.True(t, ok)
+			expected, err := dataTypeFromInfo(test.expected)
+			require.NoError(t, err)
+			require.True(t, expected.Equal(element), "expected %s, got %s", expected, element)
 		})
 	}
 }

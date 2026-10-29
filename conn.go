@@ -39,12 +39,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	frm "github.com/gocql/gocql/internal/frame"
-	"github.com/gocql/gocql/tablets"
+	frm "github.com/scylladb/gocql/v2/internal/frame"
+	"github.com/scylladb/gocql/v2/tablets"
 
-	"github.com/gocql/gocql/internal/lru"
-	"github.com/gocql/gocql/internal/segment"
-	"github.com/gocql/gocql/internal/streams"
+	"github.com/scylladb/gocql/v2/internal/lru"
+	"github.com/scylladb/gocql/v2/internal/segment"
+	"github.com/scylladb/gocql/v2/internal/streams"
+	"github.com/scylladb/gocql/v2/internal/wire"
 )
 
 // approve the authenticator with the list of allowed authenticators. If the provided list is empty,
@@ -141,6 +142,8 @@ type SslOptions struct {
 }
 
 type ConnConfig struct {
+	TypedAuth       AuthProvider
+	TypedLimits     ProtocolLimits
 	Dialer          Dialer
 	Logger          StdLogger
 	Authenticator   Authenticator
@@ -474,7 +477,6 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 	c := &Conn{
 		r: &connReader{
 			conn: dialedHost.Conn,
-			r:    bufio.NewReader(dialedHost.Conn),
 		},
 		cfg:           cfg,
 		calls:         make(map[int]*callReq),
@@ -810,6 +812,13 @@ func (s *startupCoordinator) startup(ctx context.Context, startupCompleted *atom
 }
 
 func (s *startupCoordinator) authenticateHandshake(ctx context.Context, authFrame *frm.AuthenticateFrame, startupCompleted *atomic.Bool) error {
+	if s.conn.cfg != nil && s.conn.cfg.TypedAuth != nil {
+		host, _ := snapshotV2Host(nil, s.conn.host)
+		auth := newV2Authenticator(ctx, host, s.conn.cfg.TypedAuth)
+		s.conn.auth = auth
+		defer auth.Close()
+	}
+
 	if s.conn.auth == nil {
 		return fmt.Errorf("authentication required (using %q)", authFrame.Class)
 	}
@@ -870,13 +879,16 @@ func (c *Conn) closeWithError(err error) {
 	c.calls = nil
 	c.mu.Unlock()
 
+	// Close the socket before joining calls: an accepted span write may be
+	// blocked in the kernel (or TLS). Waiting for that call before interrupting
+	// the socket would deadlock shutdown and retain its input indefinitely.
 	var cerr error
 	if err == nil {
 		// Graceful closes do not inject an error into call.resp, so cancel the
 		// connection first to unblock any exec() calls before waiting for them.
 		c.cancel()
-		cerr = c.close()
 	}
+	cerr = c.close()
 
 	// Dedup by identity: a duplicate entry's callReq was already recycled to the
 	// global pool, so re-reading it here would race with whoever reused it.
@@ -915,7 +927,6 @@ func (c *Conn) closeWithError(err error) {
 
 	if err != nil {
 		c.cancel()
-		cerr = c.close()
 	}
 
 	if err != nil {
@@ -1112,7 +1123,9 @@ func (c *Conn) recv(ctx context.Context, startupCompleted bool) error {
 // pointer, so it goes last to keep the pointer-scanned prefix short. It belongs
 // with r.
 type frameSource struct {
-	r io.Reader
+	owner *wire.Lease
+	chain wire.Chain
+	r     io.Reader
 	// segment, when non-nil, is the self-contained v5 segment payload r reads
 	// from. Such a segment carries only whole frames, so a header declaring a body
 	// longer than what is left in the segment is a framing violation, and
@@ -1147,6 +1160,9 @@ type frameSource struct {
 // readBody fills f with the frame body described by head, either by reading it
 // from s.r or by adopting the buffer s already holds.
 func (s frameSource) readBody(f *framer, head *frm.FrameHeader) error {
+	if s.owner != nil {
+		return f.readFrame(newChainReader(s.chain), head)
+	}
 	if s.body != nil {
 		return f.adoptFrameBody(s.body, head)
 	}
@@ -1297,6 +1313,10 @@ func (c *Conn) processFrameSource(ctx context.Context, src frameSource) error {
 		return c.discardFrame(r, head)
 	}
 
+	if call.typed {
+		return c.receiveTypedCall(ctx, call, src, head)
+	}
+
 	framer := c.getReadFramer()
 
 	err = src.readBody(framer, &head)
@@ -1390,51 +1410,7 @@ func (c *Conn) releaseStream(call *callReq) {
 }
 
 func (c *Conn) recvSegment(ctx context.Context) error {
-	// Read the first segment's header with the read deadline disarmed: on an
-	// idle connection the serve() loop blocks here waiting for the peer to
-	// start sending the next frame, and that wait must not be bounded by
-	// ReadTimeout. Only the wait for the header's first byte is unbounded — the
-	// rest of the header (headerReader), the payload of this segment and any
-	// continuation segments are all read with the deadline re-armed, so a peer that
-	// starts sending and then stalls mid-read is caught by the per-read ReadTimeout.
-	//
-	// Note the deadline is per-read (see connReader.Read), not per-frame: a
-	// single logical CQL frame may span many segments (recvSplitFrame), so
-	// ReadTimeout bounds how long any one read may stall, not the total time
-	// to assemble a frame. And a read that stalls but keeps making progress is
-	// resumed up to maxReadAttempts times, so one read can take that multiple of
-	// ReadTimeout before failing — only a read that delivers nothing fails within a
-	// single one. A peer that keeps trickling progress is therefore not bounded by
-	// ReadTimeout at all: recvSplitFrame's reassembled-size check bounds how much it
-	// can send, and heartBeat bounds how long it can hold the connection — six
-	// unanswered OPTIONS close it while serve() is blocked here.
-	//
-	// netStart/netEnd bracket this read for FrameHeaderObserver. The CQL headers
-	// inside are parsed out of memory further down, so timing them there would
-	// report the parse rather than the network wait the observer documents; the
-	// window is measured here and carried to processFrameSource instead. Sampled
-	// only when an observer is installed, so an unobserved connection pays nothing.
-	netStart := c.observedNow()
-	hdr, err := c.readFirstSegmentHeader()
-	if err != nil {
-		return err
-	}
-
-	payload, err := c.readSegmentPayload(hdr)
-	if err != nil {
-		return err
-	}
-	netEnd := c.observedNow()
-
-	if hdr.IsSelfContained {
-		// The segment holds one or more complete CQL frames.
-		return c.processAllFramesInSegment(ctx, bytes.NewReader(payload), netStart, netEnd)
-	}
-
-	// The segment is the first slice of a single large CQL frame split across
-	// several non-self-contained segments; reassemble the whole frame before
-	// processing it.
-	return c.recvSplitFrame(ctx, payload, netStart, netEnd)
+	return c.recvLeasedSegment(ctx)
 }
 
 // observedNow returns the current time when a frame header observer is
@@ -1461,8 +1437,8 @@ func (c *Conn) observedNow() time.Time {
 // The disarm is per-read (connReader.armDeadline runs once per read attempt), so
 // bounding it means capping the first read to a single byte and clearing the disarm
 // before the next one; the remainder is then read with the deadline armed. Capping
-// costs one extra read of a bufio.Reader, which the first read has already filled
-// from the socket.
+// performs a separate socket read. The production reader intentionally does not
+// prefetch payload bytes: bodies are read directly into their final leased storage.
 //
 // n counts the bytes delivered. That is the caller's benign-vs-fatal signal for a
 // header-read timeout: nothing consumed is the idle peer, part of a header consumed
@@ -1732,7 +1708,9 @@ type connReadSource interface {
 
 // connReader implements connReadSource.
 type connReader struct {
-	conn    net.Conn
+	conn net.Conn
+	// r is an explicit compatibility source used by legacy fixtures. Production
+	// connections leave it nil so header reads cannot prefetch body bytes.
 	r       *bufio.Reader
 	timeout atomic.Int64
 	disarm  atomic.Bool
@@ -1779,7 +1757,11 @@ func (c *connReader) Read(p []byte) (n int, err error) {
 			return n, fmt.Errorf("%w: %w", errArmReadDeadline, aerr)
 		}
 
-		nn, rerr := io.ReadFull(c.r, p[n:])
+		var source io.Reader = c.conn
+		if c.r != nil {
+			source = c.r
+		} // Legacy test readers may supply an explicit buffer.
+		nn, rerr := io.ReadFull(source, p[n:])
 		n += nn
 		if rerr == nil {
 			return n, nil
@@ -1860,6 +1842,7 @@ func (c *connReader) GetTimeout() time.Duration {
 }
 
 type callReq struct {
+	typed bool
 	// streamObserverContext is notified about events regarding this stream
 	streamObserverContext StreamObserverContext
 	// resp will receive the frame that was sent as a response to this stream.
@@ -1884,6 +1867,7 @@ var callReqPool = sync.Pool{
 func getCallReq(streamID int) *callReq {
 	call := callReqPool.Get().(*callReq)
 	call.timeout = make(chan struct{})
+	call.typed = false
 	call.streamID = streamID
 	call.streamObserverContext = nil
 	call.streamObserverEndOnce = sync.Once{}
@@ -1927,11 +1911,16 @@ func (c *Conn) removeCallIfOpen(streamID int) bool {
 		return false
 	}
 
+	if _, present := c.calls[streamID]; !present {
+		// A receive path already detached this call and owns its cleanup.
+		return false
+	}
 	delete(c.calls, streamID)
 	return true
 }
 
 type callResp struct {
+	page *responsePage
 	// framer is the response frame.
 	// May be nil if err is not nil.
 	framer *framer
@@ -2034,7 +2023,8 @@ type writeRequest struct {
 	// resultChan is a channel (with buffer size 1) where to send results of the write.
 	resultChan chan<- writeResult
 	// data to write.
-	data []byte
+	data  []byte
+	chain wire.Chain
 }
 
 type writeResult struct {
@@ -2096,11 +2086,18 @@ func (w *writeCoalescer) writeFlusherImpl(timerC <-chan time.Time, resetTimer fu
 
 	var buffers net.Buffers
 	var resultChans []chan<- writeResult
+	var sizes []int64
 
 	for {
 		select {
 		case req := <-w.writeCh:
-			buffers = append(buffers, req.data)
+			if req.data != nil {
+				buffers = append(buffers, req.data)
+				sizes = append(sizes, int64(len(req.data)))
+			} else {
+				_ = req.chain.Each(func(s wire.Span) error { buffers = append(buffers, s.Bytes()); return nil })
+				sizes = append(sizes, req.chain.Len())
+			}
 			resultChans = append(resultChans, req.resultChan)
 			if !running {
 				// Start timer on first write.
@@ -2120,9 +2117,10 @@ func (w *writeCoalescer) writeFlusherImpl(timerC <-chan time.Time, resetTimer fu
 			return
 		case <-timerC:
 			running = false
-			w.flush(resultChans, buffers)
+			w.flushSizes(resultChans, buffers, sizes)
 			buffers = nil
 			resultChans = nil
+			sizes = nil
 			if w.testFlushedHook != nil {
 				w.testFlushedHook()
 			}
@@ -2131,42 +2129,43 @@ func (w *writeCoalescer) writeFlusherImpl(timerC <-chan time.Time, resetTimer fu
 }
 
 func (w *writeCoalescer) flush(resultChans []chan<- writeResult, buffers net.Buffers) {
-	// Flush everything we have so far.
+	sizes := make([]int64, len(buffers))
+	for i, b := range buffers {
+		sizes[i] = int64(len(b))
+	}
+	w.flushSizes(resultChans, buffers, sizes)
+}
+
+func (w *writeCoalescer) flushSizes(resultChans []chan<- writeResult, buffers net.Buffers, sizes []int64) {
 	timeout := w.timeout.Load()
 	if timeout > 0 {
-		err := w.c.SetWriteDeadline(time.Now().Add(time.Duration(timeout)))
-		if err != nil {
-			for i := range resultChans {
-				resultChans[i] <- writeResult{
-					n:   0,
-					err: err,
-				}
+		if err := w.c.SetWriteDeadline(time.Now().Add(time.Duration(timeout))); err != nil {
+			for _, ch := range resultChans {
+				ch <- writeResult{err: err}
 			}
 			return
 		}
 	}
-	// Copy buffers because WriteTo modifies buffers in-place.
-	buffers2 := make(net.Buffers, len(buffers))
-	copy(buffers2, buffers)
-	n, err := buffers2.WriteTo(w.c)
-	// Writes of bytes before n succeeded, writes of bytes starting from n failed with err.
-	// Use n as remaining byte counter.
-	for i := range buffers {
-		if int64(len(buffers[i])) <= n {
-			// this buffer was fully written.
-			resultChans[i] <- writeResult{
-				n:   len(buffers[i]),
-				err: nil,
-			}
-			n -= int64(len(buffers[i]))
-		} else {
-			// this buffer was not (fully) written.
-			resultChans[i] <- writeResult{
-				n:   int(n),
-				err: err,
-			}
-			n = 0
+	scratch := append(net.Buffers(nil), buffers...)
+	n, err := writeSpanBuffers(w.c, scratch)
+	var total int64
+	for _, size := range sizes {
+		total += size
+	}
+	if err == nil && n != total {
+		err = io.ErrShortWrite
+	}
+	for i, size := range sizes {
+		completed := min(n, size)
+		if completed < 0 {
+			completed = 0
 		}
+		resultErr := err
+		if completed == size {
+			resultErr = nil
+		}
+		resultChans[i] <- writeResult{n: int(completed), err: resultErr}
+		n -= completed
 	}
 }
 

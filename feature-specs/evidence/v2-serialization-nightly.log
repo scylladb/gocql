@@ -1,0 +1,1895 @@
+2026/10/29 09:01:39 logger.go:59: [e60adfb2-45f1-4104-b29b-d8625be6e65d] warnings: [Using Replication Factor replication_factor=1 lower than the minimum_replication_factor_warn_threshold=3 is not recommended.]
+=== RUN   TestRetryOnTopologyBusy
+=== PAUSE TestRetryOnTopologyBusy
+=== RUN   TestSerializationSimpleTypesCassandra
+=== PAUSE TestSerializationSimpleTypesCassandra
+=== RUN   TestSliceMapMapScanTypes
+=== PAUSE TestSliceMapMapScanTypes
+=== RUN   TestSliceMapMapScanCounterTypes
+=== PAUSE TestSliceMapMapScanCounterTypes
+=== RUN   TestSliceMapMapScanTupleTypes
+=== PAUSE TestSliceMapMapScanTupleTypes
+=== RUN   TestSliceMapMapScanVectorTypes
+=== PAUSE TestSliceMapMapScanVectorTypes
+=== RUN   TestSliceMapMapScanCollectionTypes
+=== PAUSE TestSliceMapMapScanCollectionTypes
+=== RUN   TestTupleSimple
+=== PAUSE TestTupleSimple
+=== RUN   TestTuple_NullTuple
+=== PAUSE TestTuple_NullTuple
+=== RUN   TestTuple_TupleNotSet
+=== PAUSE TestTuple_TupleNotSet
+=== RUN   TestTupleMapScan
+=== PAUSE TestTupleMapScan
+=== RUN   TestTupleMapScanNil
+=== PAUSE TestTupleMapScanNil
+=== RUN   TestTupleMapScanNotSet
+=== PAUSE TestTupleMapScanNotSet
+=== RUN   TestTupleLastFieldEmpty
+=== PAUSE TestTupleLastFieldEmpty
+=== RUN   TestTuple_NestedCollection
+=== PAUSE TestTuple_NestedCollection
+=== RUN   TestTuple_NullableNestedCollection
+=== PAUSE TestTuple_NullableNestedCollection
+=== RUN   TestUDT_Marshaler
+=== PAUSE TestUDT_Marshaler
+=== RUN   TestUDT_Reflect
+=== PAUSE TestUDT_Reflect
+=== RUN   TestUDT_NullObject
+=== PAUSE TestUDT_NullObject
+=== RUN   TestMapScanUDT
+=== PAUSE TestMapScanUDT
+=== RUN   TestUDT_MissingField
+=== PAUSE TestUDT_MissingField
+=== RUN   TestUDT_EmptyCollections
+=== PAUSE TestUDT_EmptyCollections
+=== RUN   TestUDT_UpdateField
+=== PAUSE TestUDT_UpdateField
+=== RUN   TestUDT_ScanNullUDT
+=== PAUSE TestUDT_ScanNullUDT
+=== RUN   TestVector_Marshaler
+=== PAUSE TestVector_Marshaler
+=== RUN   TestVector_Types
+=== PAUSE TestVector_Types
+=== RUN   TestVector_MarshalerUDT
+=== PAUSE TestVector_MarshalerUDT
+=== RUN   TestVector_Empty
+=== PAUSE TestVector_Empty
+=== RUN   TestVector_MissingDimension
+=== PAUSE TestVector_MissingDimension
+=== RUN   TestVector_SubTypeParsing
+=== PAUSE TestVector_SubTypeParsing
+=== RUN   TestWikiCreateSchema
+=== PAUSE TestWikiCreateSchema
+=== RUN   TestWikiCreatePages
+=== PAUSE TestWikiCreatePages
+=== RUN   TestWikiTypicalCRUD
+=== PAUSE TestWikiTypicalCRUD
+=== CONT  TestRetryOnTopologyBusy
+=== RUN   TestRetryOnTopologyBusy/retries_busy_then_succeeds
+=== RUN   TestRetryOnTopologyBusy/does_not_retry_non-busy_errors
+=== RUN   TestRetryOnTopologyBusy/gives_up_after_max_attempts
+=== RUN   TestRetryOnTopologyBusy/isTopologyBusyErr_classification
+=== RUN   TestRetryOnTopologyBusy/retries_the_TRUNCATE-variant_busy_error
+--- PASS: TestRetryOnTopologyBusy (0.00s)
+    --- PASS: TestRetryOnTopologyBusy/retries_busy_then_succeeds (0.00s)
+    --- PASS: TestRetryOnTopologyBusy/does_not_retry_non-busy_errors (0.00s)
+    --- PASS: TestRetryOnTopologyBusy/gives_up_after_max_attempts (0.00s)
+    --- PASS: TestRetryOnTopologyBusy/isTopologyBusyErr_classification (0.00s)
+    --- PASS: TestRetryOnTopologyBusy/retries_the_TRUNCATE-variant_busy_error (0.00s)
+=== CONT  TestWikiTypicalCRUD
+--- PASS: TestWikiTypicalCRUD (2.16s)
+=== CONT  TestUDT_Marshaler
+--- PASS: TestUDT_Marshaler (1.92s)
+=== CONT  TestUDT_ScanNullUDT
+--- PASS: TestUDT_ScanNullUDT (2.12s)
+=== CONT  TestUDT_UpdateField
+--- PASS: TestUDT_UpdateField (4.80s)
+=== CONT  TestUDT_EmptyCollections
+--- PASS: TestUDT_EmptyCollections (2.12s)
+=== CONT  TestVector_Marshaler
+--- PASS: TestVector_Marshaler (2.96s)
+=== CONT  TestUDT_MissingField
+--- PASS: TestUDT_MissingField (2.12s)
+=== CONT  TestWikiCreatePages
+--- PASS: TestWikiCreatePages (0.91s)
+=== CONT  TestWikiCreateSchema
+--- PASS: TestWikiCreateSchema (1.08s)
+=== CONT  TestVector_SubTypeParsing
+=== RUN   TestVector_SubTypeParsing/text
+=== RUN   TestVector_SubTypeParsing/set_int
+=== RUN   TestVector_SubTypeParsing/udt
+=== RUN   TestVector_SubTypeParsing/tuple
+=== RUN   TestVector_SubTypeParsing/vector_vector_inet
+=== RUN   TestVector_SubTypeParsing/map_int_vector_text
+=== RUN   TestVector_SubTypeParsing/set_map_vector_text_text
+--- PASS: TestVector_SubTypeParsing (0.00s)
+    --- PASS: TestVector_SubTypeParsing/text (0.00s)
+    --- PASS: TestVector_SubTypeParsing/set_int (0.00s)
+    --- PASS: TestVector_SubTypeParsing/udt (0.00s)
+    --- PASS: TestVector_SubTypeParsing/tuple (0.00s)
+    --- PASS: TestVector_SubTypeParsing/vector_vector_inet (0.00s)
+    --- PASS: TestVector_SubTypeParsing/map_int_vector_text (0.00s)
+    --- PASS: TestVector_SubTypeParsing/set_map_vector_text_text (0.00s)
+=== CONT  TestMapScanUDT
+--- PASS: TestMapScanUDT (2.75s)
+=== CONT  TestVector_MissingDimension
+--- PASS: TestVector_MissingDimension (0.27s)
+=== CONT  TestUDT_Reflect
+--- PASS: TestUDT_Reflect (1.91s)
+=== CONT  TestVector_Empty
+--- PASS: TestVector_Empty (2.94s)
+=== CONT  TestVector_Types
+=== RUN   TestVector_Types/ascii
+=== RUN   TestVector_Types/bigint
+=== RUN   TestVector_Types/blob
+=== RUN   TestVector_Types/boolean
+=== RUN   TestVector_Types/counter
+=== RUN   TestVector_Types/decimal
+=== RUN   TestVector_Types/double
+=== RUN   TestVector_Types/float
+=== RUN   TestVector_Types/int
+=== RUN   TestVector_Types/text
+=== RUN   TestVector_Types/timestamp
+=== RUN   TestVector_Types/uuid
+=== RUN   TestVector_Types/varchar
+=== RUN   TestVector_Types/varint
+=== RUN   TestVector_Types/timeuuid
+=== RUN   TestVector_Types/inet
+=== RUN   TestVector_Types/date
+=== RUN   TestVector_Types/time
+=== RUN   TestVector_Types/smallint
+=== RUN   TestVector_Types/tinyint
+=== RUN   TestVector_Types/duration
+=== RUN   TestVector_Types/vector_vector_float
+=== RUN   TestVector_Types/vector_vector_set_float
+=== RUN   TestVector_Types/vector_tuple_text_int_float
+=== RUN   TestVector_Types/vector_tuple_text_list_text
+=== RUN   TestVector_Types/vector_set_text
+=== RUN   TestVector_Types/vector_list_int
+=== RUN   TestVector_Types/vector_map_text_int
+--- PASS: TestVector_Types (1.24s)
+    --- PASS: TestVector_Types/ascii (0.01s)
+    --- PASS: TestVector_Types/bigint (0.01s)
+    --- PASS: TestVector_Types/blob (0.01s)
+    --- PASS: TestVector_Types/boolean (0.01s)
+    --- PASS: TestVector_Types/counter (0.01s)
+    --- PASS: TestVector_Types/decimal (0.01s)
+    --- PASS: TestVector_Types/double (0.00s)
+    --- PASS: TestVector_Types/float (0.00s)
+    --- PASS: TestVector_Types/int (0.01s)
+    --- PASS: TestVector_Types/text (0.01s)
+    --- PASS: TestVector_Types/timestamp (0.01s)
+    --- PASS: TestVector_Types/uuid (0.01s)
+    --- PASS: TestVector_Types/varchar (0.01s)
+    --- PASS: TestVector_Types/varint (0.01s)
+    --- PASS: TestVector_Types/timeuuid (0.01s)
+    --- PASS: TestVector_Types/inet (0.01s)
+    --- PASS: TestVector_Types/date (0.01s)
+    --- PASS: TestVector_Types/time (0.01s)
+    --- PASS: TestVector_Types/smallint (0.00s)
+    --- PASS: TestVector_Types/tinyint (0.01s)
+    --- PASS: TestVector_Types/duration (0.01s)
+    --- PASS: TestVector_Types/vector_vector_float (0.01s)
+    --- PASS: TestVector_Types/vector_vector_set_float (0.01s)
+    --- PASS: TestVector_Types/vector_tuple_text_int_float (0.01s)
+    --- PASS: TestVector_Types/vector_tuple_text_list_text (0.01s)
+    --- PASS: TestVector_Types/vector_set_text (0.01s)
+    --- PASS: TestVector_Types/vector_list_int (0.01s)
+    --- PASS: TestVector_Types/vector_map_text_int (0.01s)
+=== CONT  TestVector_MarshalerUDT
+--- PASS: TestVector_MarshalerUDT (2.75s)
+=== CONT  TestUDT_NullObject
+--- PASS: TestUDT_NullObject (2.95s)
+=== CONT  TestSliceMapMapScanTupleTypes
+=== RUN   TestSliceMapMapScanTupleTypes/NonNull
+=== RUN   TestSliceMapMapScanTupleTypes/NonNull/SliceMap
+=== RUN   TestSliceMapMapScanTupleTypes/NonNull/MapScan
+=== RUN   TestSliceMapMapScanTupleTypes/Null
+=== RUN   TestSliceMapMapScanTupleTypes/Null/SliceMap
+=== RUN   TestSliceMapMapScanTupleTypes/Null/MapScan
+--- PASS: TestSliceMapMapScanTupleTypes (1.12s)
+    --- PASS: TestSliceMapMapScanTupleTypes/NonNull (0.01s)
+        --- PASS: TestSliceMapMapScanTupleTypes/NonNull/SliceMap (0.00s)
+        --- PASS: TestSliceMapMapScanTupleTypes/NonNull/MapScan (0.00s)
+    --- PASS: TestSliceMapMapScanTupleTypes/Null (0.00s)
+        --- PASS: TestSliceMapMapScanTupleTypes/Null/SliceMap (0.00s)
+        --- PASS: TestSliceMapMapScanTupleTypes/Null/MapScan (0.00s)
+=== CONT  TestTuple_NullTuple
+--- PASS: TestTuple_NullTuple (1.08s)
+=== CONT  TestTupleMapScanNotSet
+--- PASS: TestTupleMapScanNotSet (0.87s)
+=== CONT  TestTupleMapScanNil
+--- PASS: TestTupleMapScanNil (2.09s)
+=== CONT  TestSliceMapMapScanVectorTypes
+=== RUN   TestSliceMapMapScanVectorTypes/vector_float_col
+=== RUN   TestSliceMapMapScanVectorTypes/vector_float_col/NonNull
+=== RUN   TestSliceMapMapScanVectorTypes/vector_float_col/NonNull/SliceMap
+=== RUN   TestSliceMapMapScanVectorTypes/vector_float_col/NonNull/MapScan
+=== RUN   TestSliceMapMapScanVectorTypes/vector_float_col/Null
+=== RUN   TestSliceMapMapScanVectorTypes/vector_float_col/Null/SliceMap
+=== RUN   TestSliceMapMapScanVectorTypes/vector_float_col/Null/MapScan
+=== RUN   TestSliceMapMapScanVectorTypes/vector_text_col
+=== RUN   TestSliceMapMapScanVectorTypes/vector_text_col/NonNull
+=== RUN   TestSliceMapMapScanVectorTypes/vector_text_col/NonNull/SliceMap
+=== RUN   TestSliceMapMapScanVectorTypes/vector_text_col/NonNull/MapScan
+=== RUN   TestSliceMapMapScanVectorTypes/vector_text_col/Null
+=== RUN   TestSliceMapMapScanVectorTypes/vector_text_col/Null/SliceMap
+=== RUN   TestSliceMapMapScanVectorTypes/vector_text_col/Null/MapScan
+--- PASS: TestSliceMapMapScanVectorTypes (0.94s)
+    --- PASS: TestSliceMapMapScanVectorTypes/vector_float_col (0.02s)
+        --- PASS: TestSliceMapMapScanVectorTypes/vector_float_col/NonNull (0.01s)
+            --- PASS: TestSliceMapMapScanVectorTypes/vector_float_col/NonNull/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanVectorTypes/vector_float_col/NonNull/MapScan (0.00s)
+        --- PASS: TestSliceMapMapScanVectorTypes/vector_float_col/Null (0.01s)
+            --- PASS: TestSliceMapMapScanVectorTypes/vector_float_col/Null/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanVectorTypes/vector_float_col/Null/MapScan (0.00s)
+    --- PASS: TestSliceMapMapScanVectorTypes/vector_text_col (0.01s)
+        --- PASS: TestSliceMapMapScanVectorTypes/vector_text_col/NonNull (0.01s)
+            --- PASS: TestSliceMapMapScanVectorTypes/vector_text_col/NonNull/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanVectorTypes/vector_text_col/NonNull/MapScan (0.00s)
+        --- PASS: TestSliceMapMapScanVectorTypes/vector_text_col/Null (0.00s)
+            --- PASS: TestSliceMapMapScanVectorTypes/vector_text_col/Null/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanVectorTypes/vector_text_col/Null/MapScan (0.00s)
+=== CONT  TestTuple_NullableNestedCollection
+=== RUN   TestTuple_NullableNestedCollection/slice
+=== RUN   TestTuple_NullableNestedCollection/array
+=== RUN   TestTuple_NullableNestedCollection/struct
+--- PASS: TestTuple_NullableNestedCollection (1.89s)
+    --- PASS: TestTuple_NullableNestedCollection/slice (0.01s)
+    --- PASS: TestTuple_NullableNestedCollection/array (0.00s)
+    --- PASS: TestTuple_NullableNestedCollection/struct (0.00s)
+=== CONT  TestSliceMapMapScanCollectionTypes
+=== RUN   TestSliceMapMapScanCollectionTypes/list_col
+=== RUN   TestSliceMapMapScanCollectionTypes/list_col/NonNull
+=== RUN   TestSliceMapMapScanCollectionTypes/list_col/NonNull/SliceMap
+=== RUN   TestSliceMapMapScanCollectionTypes/list_col/NonNull/MapScan
+=== RUN   TestSliceMapMapScanCollectionTypes/list_col/Null
+=== RUN   TestSliceMapMapScanCollectionTypes/list_col/Null/SliceMap
+=== RUN   TestSliceMapMapScanCollectionTypes/list_col/Null/MapScan
+=== RUN   TestSliceMapMapScanCollectionTypes/set_col
+=== RUN   TestSliceMapMapScanCollectionTypes/set_col/NonNull
+=== RUN   TestSliceMapMapScanCollectionTypes/set_col/NonNull/SliceMap
+=== RUN   TestSliceMapMapScanCollectionTypes/set_col/NonNull/MapScan
+=== RUN   TestSliceMapMapScanCollectionTypes/set_col/Null
+=== RUN   TestSliceMapMapScanCollectionTypes/set_col/Null/SliceMap
+=== RUN   TestSliceMapMapScanCollectionTypes/set_col/Null/MapScan
+=== RUN   TestSliceMapMapScanCollectionTypes/map_col
+=== RUN   TestSliceMapMapScanCollectionTypes/map_col/NonNull
+=== RUN   TestSliceMapMapScanCollectionTypes/map_col/NonNull/SliceMap
+=== RUN   TestSliceMapMapScanCollectionTypes/map_col/NonNull/MapScan
+=== RUN   TestSliceMapMapScanCollectionTypes/map_col/Null
+=== RUN   TestSliceMapMapScanCollectionTypes/map_col/Null/SliceMap
+=== RUN   TestSliceMapMapScanCollectionTypes/map_col/Null/MapScan
+--- PASS: TestSliceMapMapScanCollectionTypes (1.95s)
+    --- PASS: TestSliceMapMapScanCollectionTypes/list_col (0.01s)
+        --- PASS: TestSliceMapMapScanCollectionTypes/list_col/NonNull (0.01s)
+            --- PASS: TestSliceMapMapScanCollectionTypes/list_col/NonNull/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanCollectionTypes/list_col/NonNull/MapScan (0.00s)
+        --- PASS: TestSliceMapMapScanCollectionTypes/list_col/Null (0.00s)
+            --- PASS: TestSliceMapMapScanCollectionTypes/list_col/Null/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanCollectionTypes/list_col/Null/MapScan (0.00s)
+    --- PASS: TestSliceMapMapScanCollectionTypes/set_col (0.01s)
+        --- PASS: TestSliceMapMapScanCollectionTypes/set_col/NonNull (0.01s)
+            --- PASS: TestSliceMapMapScanCollectionTypes/set_col/NonNull/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanCollectionTypes/set_col/NonNull/MapScan (0.00s)
+        --- PASS: TestSliceMapMapScanCollectionTypes/set_col/Null (0.01s)
+            --- PASS: TestSliceMapMapScanCollectionTypes/set_col/Null/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanCollectionTypes/set_col/Null/MapScan (0.00s)
+    --- PASS: TestSliceMapMapScanCollectionTypes/map_col (0.01s)
+        --- PASS: TestSliceMapMapScanCollectionTypes/map_col/NonNull (0.01s)
+            --- PASS: TestSliceMapMapScanCollectionTypes/map_col/NonNull/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanCollectionTypes/map_col/NonNull/MapScan (0.00s)
+        --- PASS: TestSliceMapMapScanCollectionTypes/map_col/Null (0.01s)
+            --- PASS: TestSliceMapMapScanCollectionTypes/map_col/Null/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanCollectionTypes/map_col/Null/MapScan (0.00s)
+=== CONT  TestTuple_NestedCollection
+=== RUN   TestTuple_NestedCollection/slice
+=== RUN   TestTuple_NestedCollection/array
+=== RUN   TestTuple_NestedCollection/struct
+--- PASS: TestTuple_NestedCollection (2.10s)
+    --- PASS: TestTuple_NestedCollection/slice (0.01s)
+    --- PASS: TestTuple_NestedCollection/array (0.00s)
+    --- PASS: TestTuple_NestedCollection/struct (0.00s)
+=== CONT  TestTupleSimple
+--- PASS: TestTupleSimple (2.10s)
+=== CONT  TestTupleLastFieldEmpty
+--- PASS: TestTupleLastFieldEmpty (0.88s)
+=== CONT  TestSliceMapMapScanTypes
+=== RUN   TestSliceMapMapScanTypes/tinyint
+=== RUN   TestSliceMapMapScanTypes/tinyint/NonNull
+=== RUN   TestSliceMapMapScanTypes/tinyint/NonNull/SliceMap
+=== RUN   TestSliceMapMapScanTypes/tinyint/NonNull/MapScan
+=== RUN   TestSliceMapMapScanTypes/tinyint/Null
+=== RUN   TestSliceMapMapScanTypes/tinyint/Null/SliceMap
+=== RUN   TestSliceMapMapScanTypes/tinyint/Null/MapScan
+=== RUN   TestSliceMapMapScanTypes/smallint
+=== RUN   TestSliceMapMapScanTypes/smallint/NonNull
+=== RUN   TestSliceMapMapScanTypes/smallint/NonNull/SliceMap
+=== RUN   TestSliceMapMapScanTypes/smallint/NonNull/MapScan
+=== RUN   TestSliceMapMapScanTypes/smallint/Null
+=== RUN   TestSliceMapMapScanTypes/smallint/Null/SliceMap
+=== RUN   TestSliceMapMapScanTypes/smallint/Null/MapScan
+=== RUN   TestSliceMapMapScanTypes/int
+=== RUN   TestSliceMapMapScanTypes/int/NonNull
+=== RUN   TestSliceMapMapScanTypes/int/NonNull/SliceMap
+=== RUN   TestSliceMapMapScanTypes/int/NonNull/MapScan
+=== RUN   TestSliceMapMapScanTypes/int/Null
+=== RUN   TestSliceMapMapScanTypes/int/Null/SliceMap
+=== RUN   TestSliceMapMapScanTypes/int/Null/MapScan
+=== RUN   TestSliceMapMapScanTypes/bigint
+=== RUN   TestSliceMapMapScanTypes/bigint/NonNull
+=== RUN   TestSliceMapMapScanTypes/bigint/NonNull/SliceMap
+=== RUN   TestSliceMapMapScanTypes/bigint/NonNull/MapScan
+=== RUN   TestSliceMapMapScanTypes/bigint/Null
+=== RUN   TestSliceMapMapScanTypes/bigint/Null/SliceMap
+=== RUN   TestSliceMapMapScanTypes/bigint/Null/MapScan
+=== RUN   TestSliceMapMapScanTypes/float
+=== RUN   TestSliceMapMapScanTypes/float/NonNull
+=== RUN   TestSliceMapMapScanTypes/float/NonNull/SliceMap
+=== RUN   TestSliceMapMapScanTypes/float/NonNull/MapScan
+=== RUN   TestSliceMapMapScanTypes/float/Null
+=== RUN   TestSliceMapMapScanTypes/float/Null/SliceMap
+=== RUN   TestSliceMapMapScanTypes/float/Null/MapScan
+=== RUN   TestSliceMapMapScanTypes/double
+=== RUN   TestSliceMapMapScanTypes/double/NonNull
+=== RUN   TestSliceMapMapScanTypes/double/NonNull/SliceMap
+=== RUN   TestSliceMapMapScanTypes/double/NonNull/MapScan
+=== RUN   TestSliceMapMapScanTypes/double/Null
+=== RUN   TestSliceMapMapScanTypes/double/Null/SliceMap
+=== RUN   TestSliceMapMapScanTypes/double/Null/MapScan
+=== RUN   TestSliceMapMapScanTypes/boolean
+=== RUN   TestSliceMapMapScanTypes/boolean/NonNull
+=== RUN   TestSliceMapMapScanTypes/boolean/NonNull/SliceMap
+=== RUN   TestSliceMapMapScanTypes/boolean/NonNull/MapScan
+=== RUN   TestSliceMapMapScanTypes/boolean/Null
+=== RUN   TestSliceMapMapScanTypes/boolean/Null/SliceMap
+=== RUN   TestSliceMapMapScanTypes/boolean/Null/MapScan
+=== RUN   TestSliceMapMapScanTypes/text
+=== RUN   TestSliceMapMapScanTypes/text/NonNull
+=== RUN   TestSliceMapMapScanTypes/text/NonNull/SliceMap
+=== RUN   TestSliceMapMapScanTypes/text/NonNull/MapScan
+=== RUN   TestSliceMapMapScanTypes/text/Null
+=== RUN   TestSliceMapMapScanTypes/text/Null/SliceMap
+=== RUN   TestSliceMapMapScanTypes/text/Null/MapScan
+=== RUN   TestSliceMapMapScanTypes/ascii
+=== RUN   TestSliceMapMapScanTypes/ascii/NonNull
+=== RUN   TestSliceMapMapScanTypes/ascii/NonNull/SliceMap
+=== RUN   TestSliceMapMapScanTypes/ascii/NonNull/MapScan
+=== RUN   TestSliceMapMapScanTypes/ascii/Null
+=== RUN   TestSliceMapMapScanTypes/ascii/Null/SliceMap
+=== RUN   TestSliceMapMapScanTypes/ascii/Null/MapScan
+=== RUN   TestSliceMapMapScanTypes/varchar
+=== RUN   TestSliceMapMapScanTypes/varchar/NonNull
+=== RUN   TestSliceMapMapScanTypes/varchar/NonNull/SliceMap
+=== RUN   TestSliceMapMapScanTypes/varchar/NonNull/MapScan
+=== RUN   TestSliceMapMapScanTypes/varchar/Null
+=== RUN   TestSliceMapMapScanTypes/varchar/Null/SliceMap
+=== RUN   TestSliceMapMapScanTypes/varchar/Null/MapScan
+=== RUN   TestSliceMapMapScanTypes/timestamp
+=== RUN   TestSliceMapMapScanTypes/timestamp/NonNull
+=== RUN   TestSliceMapMapScanTypes/timestamp/NonNull/SliceMap
+=== RUN   TestSliceMapMapScanTypes/timestamp/NonNull/MapScan
+=== RUN   TestSliceMapMapScanTypes/timestamp/Null
+=== RUN   TestSliceMapMapScanTypes/timestamp/Null/SliceMap
+=== RUN   TestSliceMapMapScanTypes/timestamp/Null/MapScan
+=== RUN   TestSliceMapMapScanTypes/uuid
+=== RUN   TestSliceMapMapScanTypes/uuid/NonNull
+=== RUN   TestSliceMapMapScanTypes/uuid/NonNull/SliceMap
+=== RUN   TestSliceMapMapScanTypes/uuid/NonNull/MapScan
+=== RUN   TestSliceMapMapScanTypes/uuid/Null
+=== RUN   TestSliceMapMapScanTypes/uuid/Null/SliceMap
+=== RUN   TestSliceMapMapScanTypes/uuid/Null/MapScan
+=== RUN   TestSliceMapMapScanTypes/timeuuid
+=== RUN   TestSliceMapMapScanTypes/timeuuid/NonNull
+=== RUN   TestSliceMapMapScanTypes/timeuuid/NonNull/SliceMap
+=== RUN   TestSliceMapMapScanTypes/timeuuid/NonNull/MapScan
+=== RUN   TestSliceMapMapScanTypes/timeuuid/Null
+=== RUN   TestSliceMapMapScanTypes/timeuuid/Null/SliceMap
+=== RUN   TestSliceMapMapScanTypes/timeuuid/Null/MapScan
+=== RUN   TestSliceMapMapScanTypes/inet
+=== RUN   TestSliceMapMapScanTypes/inet/NonNull
+=== RUN   TestSliceMapMapScanTypes/inet/NonNull/SliceMap
+=== RUN   TestSliceMapMapScanTypes/inet/NonNull/MapScan
+=== RUN   TestSliceMapMapScanTypes/inet/Null
+=== RUN   TestSliceMapMapScanTypes/inet/Null/SliceMap
+=== RUN   TestSliceMapMapScanTypes/inet/Null/MapScan
+=== RUN   TestSliceMapMapScanTypes/blob
+=== RUN   TestSliceMapMapScanTypes/blob/NonNull
+=== RUN   TestSliceMapMapScanTypes/blob/NonNull/SliceMap
+=== RUN   TestSliceMapMapScanTypes/blob/NonNull/MapScan
+=== RUN   TestSliceMapMapScanTypes/blob/Null
+=== RUN   TestSliceMapMapScanTypes/blob/Null/SliceMap
+=== RUN   TestSliceMapMapScanTypes/blob/Null/MapScan
+=== RUN   TestSliceMapMapScanTypes/varint
+=== RUN   TestSliceMapMapScanTypes/varint/NonNull
+=== RUN   TestSliceMapMapScanTypes/varint/NonNull/SliceMap
+=== RUN   TestSliceMapMapScanTypes/varint/NonNull/MapScan
+=== RUN   TestSliceMapMapScanTypes/varint/Null
+=== RUN   TestSliceMapMapScanTypes/varint/Null/SliceMap
+=== RUN   TestSliceMapMapScanTypes/varint/Null/MapScan
+=== RUN   TestSliceMapMapScanTypes/decimal
+=== RUN   TestSliceMapMapScanTypes/decimal/NonNull
+=== RUN   TestSliceMapMapScanTypes/decimal/NonNull/SliceMap
+=== RUN   TestSliceMapMapScanTypes/decimal/NonNull/MapScan
+=== RUN   TestSliceMapMapScanTypes/decimal/Null
+=== RUN   TestSliceMapMapScanTypes/decimal/Null/SliceMap
+=== RUN   TestSliceMapMapScanTypes/decimal/Null/MapScan
+=== RUN   TestSliceMapMapScanTypes/date
+=== RUN   TestSliceMapMapScanTypes/date/NonNull
+=== RUN   TestSliceMapMapScanTypes/date/NonNull/SliceMap
+=== RUN   TestSliceMapMapScanTypes/date/NonNull/MapScan
+=== RUN   TestSliceMapMapScanTypes/date/Null
+=== RUN   TestSliceMapMapScanTypes/date/Null/SliceMap
+=== RUN   TestSliceMapMapScanTypes/date/Null/MapScan
+=== RUN   TestSliceMapMapScanTypes/time
+=== RUN   TestSliceMapMapScanTypes/time/NonNull
+=== RUN   TestSliceMapMapScanTypes/time/NonNull/SliceMap
+=== RUN   TestSliceMapMapScanTypes/time/NonNull/MapScan
+=== RUN   TestSliceMapMapScanTypes/time/Null
+=== RUN   TestSliceMapMapScanTypes/time/Null/SliceMap
+=== RUN   TestSliceMapMapScanTypes/time/Null/MapScan
+=== RUN   TestSliceMapMapScanTypes/duration
+=== RUN   TestSliceMapMapScanTypes/duration/NonNull
+=== RUN   TestSliceMapMapScanTypes/duration/NonNull/SliceMap
+=== RUN   TestSliceMapMapScanTypes/duration/NonNull/MapScan
+=== RUN   TestSliceMapMapScanTypes/duration/Null
+=== RUN   TestSliceMapMapScanTypes/duration/Null/SliceMap
+=== RUN   TestSliceMapMapScanTypes/duration/Null/MapScan
+--- PASS: TestSliceMapMapScanTypes (2.20s)
+    --- PASS: TestSliceMapMapScanTypes/tinyint (0.01s)
+        --- PASS: TestSliceMapMapScanTypes/tinyint/NonNull (0.01s)
+            --- PASS: TestSliceMapMapScanTypes/tinyint/NonNull/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/tinyint/NonNull/MapScan (0.00s)
+        --- PASS: TestSliceMapMapScanTypes/tinyint/Null (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/tinyint/Null/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/tinyint/Null/MapScan (0.00s)
+    --- PASS: TestSliceMapMapScanTypes/smallint (0.01s)
+        --- PASS: TestSliceMapMapScanTypes/smallint/NonNull (0.01s)
+            --- PASS: TestSliceMapMapScanTypes/smallint/NonNull/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/smallint/NonNull/MapScan (0.00s)
+        --- PASS: TestSliceMapMapScanTypes/smallint/Null (0.01s)
+            --- PASS: TestSliceMapMapScanTypes/smallint/Null/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/smallint/Null/MapScan (0.00s)
+    --- PASS: TestSliceMapMapScanTypes/int (0.01s)
+        --- PASS: TestSliceMapMapScanTypes/int/NonNull (0.01s)
+            --- PASS: TestSliceMapMapScanTypes/int/NonNull/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/int/NonNull/MapScan (0.00s)
+        --- PASS: TestSliceMapMapScanTypes/int/Null (0.01s)
+            --- PASS: TestSliceMapMapScanTypes/int/Null/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/int/Null/MapScan (0.00s)
+    --- PASS: TestSliceMapMapScanTypes/bigint (0.01s)
+        --- PASS: TestSliceMapMapScanTypes/bigint/NonNull (0.01s)
+            --- PASS: TestSliceMapMapScanTypes/bigint/NonNull/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/bigint/NonNull/MapScan (0.00s)
+        --- PASS: TestSliceMapMapScanTypes/bigint/Null (0.01s)
+            --- PASS: TestSliceMapMapScanTypes/bigint/Null/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/bigint/Null/MapScan (0.00s)
+    --- PASS: TestSliceMapMapScanTypes/float (0.01s)
+        --- PASS: TestSliceMapMapScanTypes/float/NonNull (0.01s)
+            --- PASS: TestSliceMapMapScanTypes/float/NonNull/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/float/NonNull/MapScan (0.00s)
+        --- PASS: TestSliceMapMapScanTypes/float/Null (0.01s)
+            --- PASS: TestSliceMapMapScanTypes/float/Null/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/float/Null/MapScan (0.00s)
+    --- PASS: TestSliceMapMapScanTypes/double (0.02s)
+        --- PASS: TestSliceMapMapScanTypes/double/NonNull (0.01s)
+            --- PASS: TestSliceMapMapScanTypes/double/NonNull/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/double/NonNull/MapScan (0.00s)
+        --- PASS: TestSliceMapMapScanTypes/double/Null (0.01s)
+            --- PASS: TestSliceMapMapScanTypes/double/Null/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/double/Null/MapScan (0.00s)
+    --- PASS: TestSliceMapMapScanTypes/boolean (0.01s)
+        --- PASS: TestSliceMapMapScanTypes/boolean/NonNull (0.01s)
+            --- PASS: TestSliceMapMapScanTypes/boolean/NonNull/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/boolean/NonNull/MapScan (0.00s)
+        --- PASS: TestSliceMapMapScanTypes/boolean/Null (0.01s)
+            --- PASS: TestSliceMapMapScanTypes/boolean/Null/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/boolean/Null/MapScan (0.00s)
+    --- PASS: TestSliceMapMapScanTypes/text (0.01s)
+        --- PASS: TestSliceMapMapScanTypes/text/NonNull (0.01s)
+            --- PASS: TestSliceMapMapScanTypes/text/NonNull/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/text/NonNull/MapScan (0.00s)
+        --- PASS: TestSliceMapMapScanTypes/text/Null (0.01s)
+            --- PASS: TestSliceMapMapScanTypes/text/Null/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/text/Null/MapScan (0.00s)
+    --- PASS: TestSliceMapMapScanTypes/ascii (0.01s)
+        --- PASS: TestSliceMapMapScanTypes/ascii/NonNull (0.01s)
+            --- PASS: TestSliceMapMapScanTypes/ascii/NonNull/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/ascii/NonNull/MapScan (0.00s)
+        --- PASS: TestSliceMapMapScanTypes/ascii/Null (0.01s)
+            --- PASS: TestSliceMapMapScanTypes/ascii/Null/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/ascii/Null/MapScan (0.00s)
+    --- PASS: TestSliceMapMapScanTypes/varchar (0.01s)
+        --- PASS: TestSliceMapMapScanTypes/varchar/NonNull (0.01s)
+            --- PASS: TestSliceMapMapScanTypes/varchar/NonNull/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/varchar/NonNull/MapScan (0.00s)
+        --- PASS: TestSliceMapMapScanTypes/varchar/Null (0.01s)
+            --- PASS: TestSliceMapMapScanTypes/varchar/Null/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/varchar/Null/MapScan (0.00s)
+    --- PASS: TestSliceMapMapScanTypes/timestamp (0.02s)
+        --- PASS: TestSliceMapMapScanTypes/timestamp/NonNull (0.01s)
+            --- PASS: TestSliceMapMapScanTypes/timestamp/NonNull/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/timestamp/NonNull/MapScan (0.00s)
+        --- PASS: TestSliceMapMapScanTypes/timestamp/Null (0.01s)
+            --- PASS: TestSliceMapMapScanTypes/timestamp/Null/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/timestamp/Null/MapScan (0.00s)
+    --- PASS: TestSliceMapMapScanTypes/uuid (0.01s)
+        --- PASS: TestSliceMapMapScanTypes/uuid/NonNull (0.01s)
+            --- PASS: TestSliceMapMapScanTypes/uuid/NonNull/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/uuid/NonNull/MapScan (0.00s)
+        --- PASS: TestSliceMapMapScanTypes/uuid/Null (0.01s)
+            --- PASS: TestSliceMapMapScanTypes/uuid/Null/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/uuid/Null/MapScan (0.00s)
+    --- PASS: TestSliceMapMapScanTypes/timeuuid (0.02s)
+        --- PASS: TestSliceMapMapScanTypes/timeuuid/NonNull (0.01s)
+            --- PASS: TestSliceMapMapScanTypes/timeuuid/NonNull/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/timeuuid/NonNull/MapScan (0.00s)
+        --- PASS: TestSliceMapMapScanTypes/timeuuid/Null (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/timeuuid/Null/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/timeuuid/Null/MapScan (0.00s)
+    --- PASS: TestSliceMapMapScanTypes/inet (0.02s)
+        --- PASS: TestSliceMapMapScanTypes/inet/NonNull (0.01s)
+            --- PASS: TestSliceMapMapScanTypes/inet/NonNull/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/inet/NonNull/MapScan (0.00s)
+        --- PASS: TestSliceMapMapScanTypes/inet/Null (0.01s)
+            --- PASS: TestSliceMapMapScanTypes/inet/Null/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/inet/Null/MapScan (0.00s)
+    --- PASS: TestSliceMapMapScanTypes/blob (0.01s)
+        --- PASS: TestSliceMapMapScanTypes/blob/NonNull (0.01s)
+            --- PASS: TestSliceMapMapScanTypes/blob/NonNull/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/blob/NonNull/MapScan (0.00s)
+        --- PASS: TestSliceMapMapScanTypes/blob/Null (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/blob/Null/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/blob/Null/MapScan (0.00s)
+    --- PASS: TestSliceMapMapScanTypes/varint (0.02s)
+        --- PASS: TestSliceMapMapScanTypes/varint/NonNull (0.01s)
+            --- PASS: TestSliceMapMapScanTypes/varint/NonNull/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/varint/NonNull/MapScan (0.00s)
+        --- PASS: TestSliceMapMapScanTypes/varint/Null (0.01s)
+            --- PASS: TestSliceMapMapScanTypes/varint/Null/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/varint/Null/MapScan (0.00s)
+    --- PASS: TestSliceMapMapScanTypes/decimal (0.01s)
+        --- PASS: TestSliceMapMapScanTypes/decimal/NonNull (0.01s)
+            --- PASS: TestSliceMapMapScanTypes/decimal/NonNull/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/decimal/NonNull/MapScan (0.00s)
+        --- PASS: TestSliceMapMapScanTypes/decimal/Null (0.01s)
+            --- PASS: TestSliceMapMapScanTypes/decimal/Null/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/decimal/Null/MapScan (0.00s)
+    --- PASS: TestSliceMapMapScanTypes/date (0.01s)
+        --- PASS: TestSliceMapMapScanTypes/date/NonNull (0.01s)
+            --- PASS: TestSliceMapMapScanTypes/date/NonNull/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/date/NonNull/MapScan (0.00s)
+        --- PASS: TestSliceMapMapScanTypes/date/Null (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/date/Null/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/date/Null/MapScan (0.00s)
+    --- PASS: TestSliceMapMapScanTypes/time (0.01s)
+        --- PASS: TestSliceMapMapScanTypes/time/NonNull (0.01s)
+            --- PASS: TestSliceMapMapScanTypes/time/NonNull/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/time/NonNull/MapScan (0.00s)
+        --- PASS: TestSliceMapMapScanTypes/time/Null (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/time/Null/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/time/Null/MapScan (0.00s)
+    --- PASS: TestSliceMapMapScanTypes/duration (0.02s)
+        --- PASS: TestSliceMapMapScanTypes/duration/NonNull (0.01s)
+            --- PASS: TestSliceMapMapScanTypes/duration/NonNull/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/duration/NonNull/MapScan (0.00s)
+        --- PASS: TestSliceMapMapScanTypes/duration/Null (0.01s)
+            --- PASS: TestSliceMapMapScanTypes/duration/Null/SliceMap (0.00s)
+            --- PASS: TestSliceMapMapScanTypes/duration/Null/MapScan (0.00s)
+=== CONT  TestSerializationSimpleTypesCassandra
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/boolean
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/boolean/max/bool
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/boolean/min/bool
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/boolean/nil/bool
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/tinyint
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/tinyint/max/int8
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/tinyint/max/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/tinyint/min/int8
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/tinyint/min/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/tinyint/+1/int8
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/tinyint/+1/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/tinyint/-1/int8
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/tinyint/-1/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/tinyint/zeros/int8
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/tinyint/zeros/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/tinyint/nil/int8
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/tinyint/nil/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/smallint
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/smallint/max/int16
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/smallint/max/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/smallint/min/int16
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/smallint/min/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/smallint/+1/int16
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/smallint/+1/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/smallint/-1/int16
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/smallint/-1/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/smallint/zeros/int16
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/smallint/zeros/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/smallint/nil/int16
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/smallint/nil/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/int
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/int/max/int32
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/int/max/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/int/min/int32
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/int/min/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/int/+1/int32
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/int/+1/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/int/-1/int32
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/int/-1/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/int/zeros/int32
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/int/zeros/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/int/nil/int32
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/int/nil/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/bigint
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/bigint/max/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/bigint/max/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/bigint/min/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/bigint/min/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/bigint/+1/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/bigint/+1/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/bigint/-1/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/bigint/-1/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/bigint/zeros/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/bigint/zeros/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/bigint/nil/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/bigint/nil/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/varint
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/varint/max/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/varint/max/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/varint/max/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/varint/min/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/varint/min/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/varint/min/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/varint/+1/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/varint/+1/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/varint/+1/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/varint/-1/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/varint/-1/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/varint/-1/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/varint/zeros/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/varint/zeros/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/varint/zeros/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/varint/nil/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/varint/nil/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/varint/nil/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/varint/nil/string_ref
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/float
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/float/max/float32
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/float/min/float32
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/float/smallest_pos/float32
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/float/smallest_neg/float32
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/float/zeros/float32
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/float/nil/float32
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/double
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/double/max/float64
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/double/min/float64
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/double/smallest_pos/float64
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/double/smallest_neg/float64
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/double/zeros/float64
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/double/nil/float64
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/decimal
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/decimal/max/inf.Dec
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/decimal/max/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/decimal/min/inf.Dec
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/decimal/min/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/decimal/zeros/inf.Dec
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/decimal/zeros/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/decimal/nil/inf.Dec
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/decimal/nil/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/decimal/nil/string_ref
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/varchar
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/varchar/val/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/varchar/zeros/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/varchar/nil/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/text
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/text/val/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/text/zeros/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/text/nil/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/blob
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/blob/val/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/blob/zeros/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/blob/nil/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/ascii
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/ascii/val/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/ascii/zeros/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/ascii/nil/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/uuid
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/uuid/max/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/uuid/max/[16]byte
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/uuid/val/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/uuid/val/[16]byte
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/uuid/zeros/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/uuid/zeros/[16]byte
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/uuid/nil/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/uuid/nil/string_ref
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/uuid/nil/[16]byte
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/timeuuid
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/timeuuid/max/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/timeuuid/max/[16]byte
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/timeuuid/val/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/timeuuid/val/[16]byte
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/timeuuid/zeros/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/timeuuid/zeros/[16]byte
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/timeuuid/nil/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/timeuuid/nil/string_ref
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/timeuuid/nil/[16]byte
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/inet
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/inet/v6max/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/inet/v6max/net.IP
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/inet/v4max/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/inet/v4max/net.IP
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/inet/v6zeros/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/inet/v6zeros/net.IP
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/inet/v4zeros/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/inet/v4zeros/net.IP
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/inet/nil/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/inet/nil/string_ref
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/inet/nil/net.IP
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/inet/nil/net.IP_ref
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/time
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/time/max/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/time/max/time.Duration
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/time/zeros/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/time/zeros/time.Duration
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/time/nil/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/time/nil/time.Duration
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/timestamp
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/timestamp/max/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/timestamp/max/time.Time
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/timestamp/min/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/timestamp/min/time.Time
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/timestamp/+1/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/timestamp/+1/time.Time
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/timestamp/-1/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/timestamp/-1/time.Time
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/timestamp/zeros/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/timestamp/zeros/time.Time
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/timestamp/nil/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/timestamp/nil/time.Time
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/date
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/date/max/uint32
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/date/max/int32
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/date/max/time.Time
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/date/max/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/date/mid/uint32
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/date/mid/int32
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/date/mid/time.Time
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/date/mid/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/date/1/uint32
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/date/1/int32
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/date/1/time.Time
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/date/1/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/date/zeros/uint32
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/date/zeros/int32
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/date/zeros/time.Time
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/date/zeros/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/date/nil/int32
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/date/nil/time.Time
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/date/nil/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/date/nil/string_ref
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/duration
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/duration/max/duration
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/duration/max/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/duration/min/duration
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/duration/min/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/duration/+1/duration
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/duration/+1/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/duration/-1/duration
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/duration/-1/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/duration/maxNanos/duration
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/duration/maxNanos/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/duration/maxNanos/time.Duration
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/duration/maxNanos/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/duration/minNanos/duration
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/duration/minNanos/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/duration/minNanos/time.Duration
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/duration/minNanos/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/duration/zeros/duration
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/duration/zeros/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/duration/zeros/time.Duration
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/duration/zeros/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/duration/nil/duration
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/duration/nil/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/duration/nil/time.Duration
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/duration/nil/string
+=== RUN   TestSerializationSimpleTypesCassandra/Marshal/duration/nil/string_ref
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/boolean
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/boolean/max/bool
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/boolean/min/bool
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/boolean/nil/bool
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/tinyint
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/tinyint/max/int8
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/tinyint/max/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/tinyint/min/int8
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/tinyint/min/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/tinyint/+1/int8
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/tinyint/+1/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/tinyint/-1/int8
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/tinyint/-1/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/tinyint/zeros/int8
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/tinyint/zeros/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/tinyint/nil/int8
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/tinyint/nil/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/smallint
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/smallint/max/int16
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/smallint/max/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/smallint/min/int16
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/smallint/min/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/smallint/+1/int16
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/smallint/+1/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/smallint/-1/int16
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/smallint/-1/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/smallint/zeros/int16
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/smallint/zeros/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/smallint/nil/int16
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/smallint/nil/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/int
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/int/max/int32
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/int/max/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/int/min/int32
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/int/min/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/int/+1/int32
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/int/+1/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/int/-1/int32
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/int/-1/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/int/zeros/int32
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/int/zeros/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/int/nil/int32
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/int/nil/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/bigint
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/bigint/max/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/bigint/max/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/bigint/min/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/bigint/min/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/bigint/+1/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/bigint/+1/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/bigint/-1/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/bigint/-1/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/bigint/zeros/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/bigint/zeros/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/bigint/nil/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/bigint/nil/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/varint
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/varint/max/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/varint/max/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/varint/max/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/varint/min/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/varint/min/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/varint/min/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/varint/+1/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/varint/+1/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/varint/+1/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/varint/-1/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/varint/-1/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/varint/-1/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/varint/zeros/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/varint/zeros/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/varint/zeros/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/varint/nil/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/varint/nil/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/varint/nil/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/varint/nil/string_ref
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/float
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/float/max/float32
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/float/min/float32
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/float/smallest_pos/float32
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/float/smallest_neg/float32
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/float/zeros/float32
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/float/nil/float32
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/double
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/double/max/float64
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/double/min/float64
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/double/smallest_pos/float64
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/double/smallest_neg/float64
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/double/zeros/float64
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/double/nil/float64
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/decimal
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/decimal/max/inf.Dec
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/decimal/max/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/decimal/min/inf.Dec
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/decimal/min/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/decimal/zeros/inf.Dec
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/decimal/zeros/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/decimal/nil/inf.Dec
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/decimal/nil/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/decimal/nil/string_ref
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/varchar
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/varchar/val/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/varchar/zeros/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/varchar/nil/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/text
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/text/val/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/text/zeros/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/text/nil/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/blob
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/blob/val/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/blob/zeros/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/blob/nil/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/ascii
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/ascii/val/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/ascii/zeros/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/ascii/nil/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/uuid
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/uuid/max/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/uuid/max/[16]byte
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/uuid/val/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/uuid/val/[16]byte
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/uuid/zeros/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/uuid/zeros/[16]byte
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/uuid/nil/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/uuid/nil/string_ref
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/uuid/nil/[16]byte
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/timeuuid
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/timeuuid/max/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/timeuuid/max/[16]byte
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/timeuuid/val/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/timeuuid/val/[16]byte
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/timeuuid/zeros/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/timeuuid/zeros/[16]byte
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/timeuuid/nil/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/timeuuid/nil/string_ref
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/timeuuid/nil/[16]byte
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/inet
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/inet/v6max/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/inet/v6max/net.IP
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/inet/v4max/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/inet/v4max/net.IP
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/inet/v6zeros/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/inet/v6zeros/net.IP
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/inet/v4zeros/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/inet/v4zeros/net.IP
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/inet/nil/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/inet/nil/string_ref
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/inet/nil/net.IP
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/inet/nil/net.IP_ref
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/time
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/time/max/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/time/max/time.Duration
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/time/zeros/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/time/zeros/time.Duration
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/time/nil/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/time/nil/time.Duration
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/timestamp
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/timestamp/max/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/timestamp/max/time.Time
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/timestamp/min/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/timestamp/min/time.Time
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/timestamp/+1/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/timestamp/+1/time.Time
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/timestamp/-1/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/timestamp/-1/time.Time
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/timestamp/zeros/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/timestamp/zeros/time.Time
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/timestamp/nil/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/timestamp/nil/time.Time
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/date
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/date/max/uint32
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/date/max/int32
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/date/max/time.Time
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/date/max/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/date/mid/uint32
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/date/mid/int32
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/date/mid/time.Time
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/date/mid/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/date/1/uint32
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/date/1/int32
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/date/1/time.Time
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/date/1/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/date/zeros/uint32
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/date/zeros/int32
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/date/zeros/time.Time
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/date/zeros/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/date/nil/int32
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/date/nil/time.Time
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/date/nil/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/date/nil/string_ref
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/duration
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/duration/max/duration
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/duration/max/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/duration/min/duration
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/duration/min/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/duration/+1/duration
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/duration/+1/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/duration/-1/duration
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/duration/-1/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/duration/maxNanos/duration
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/duration/maxNanos/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/duration/maxNanos/time.Duration
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/duration/maxNanos/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/duration/minNanos/duration
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/duration/minNanos/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/duration/minNanos/time.Duration
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/duration/minNanos/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/duration/zeros/duration
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/duration/zeros/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/duration/zeros/time.Duration
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/duration/zeros/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/duration/nil/duration
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/duration/nil/int64
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/duration/nil/time.Duration
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/duration/nil/string
+=== RUN   TestSerializationSimpleTypesCassandra/Unmarshal/duration/nil/string_ref
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/boolean
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/boolean/max/bool
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/boolean/min/bool
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/boolean/nil/bool
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/tinyint
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/tinyint/max/int8
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/tinyint/max/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/tinyint/min/int8
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/tinyint/min/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/tinyint/+1/int8
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/tinyint/+1/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/tinyint/-1/int8
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/tinyint/-1/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/tinyint/zeros/int8
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/tinyint/zeros/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/tinyint/nil/int8
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/tinyint/nil/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/smallint
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/smallint/max/int16
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/smallint/max/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/smallint/min/int16
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/smallint/min/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/smallint/+1/int16
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/smallint/+1/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/smallint/-1/int16
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/smallint/-1/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/smallint/zeros/int16
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/smallint/zeros/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/smallint/nil/int16
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/smallint/nil/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/int
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/int/max/int32
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/int/max/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/int/min/int32
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/int/min/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/int/+1/int32
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/int/+1/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/int/-1/int32
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/int/-1/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/int/zeros/int32
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/int/zeros/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/int/nil/int32
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/int/nil/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/bigint
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/bigint/max/int64
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/bigint/max/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/bigint/min/int64
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/bigint/min/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/bigint/+1/int64
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/bigint/+1/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/bigint/-1/int64
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/bigint/-1/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/bigint/zeros/int64
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/bigint/zeros/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/bigint/nil/int64
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/bigint/nil/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/varint
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/varint/max/int64
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/varint/max/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/varint/max/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/varint/min/int64
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/varint/min/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/varint/min/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/varint/+1/int64
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/varint/+1/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/varint/+1/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/varint/-1/int64
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/varint/-1/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/varint/-1/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/varint/zeros/int64
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/varint/zeros/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/varint/zeros/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/varint/nil/int64
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/varint/nil/big.Int
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/varint/nil/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/varint/nil/string_ref
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/float
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/float/max/float32
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/float/min/float32
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/float/smallest_pos/float32
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/float/smallest_neg/float32
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/float/zeros/float32
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/float/nil/float32
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/double
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/double/max/float64
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/double/min/float64
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/double/smallest_pos/float64
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/double/smallest_neg/float64
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/double/zeros/float64
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/double/nil/float64
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/decimal
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/decimal/max/inf.Dec
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/decimal/max/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/decimal/min/inf.Dec
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/decimal/min/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/decimal/zeros/inf.Dec
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/decimal/zeros/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/decimal/nil/inf.Dec
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/decimal/nil/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/decimal/nil/string_ref
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/varchar
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/varchar/val/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/varchar/zeros/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/varchar/nil/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/text
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/text/val/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/text/zeros/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/text/nil/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/blob
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/blob/val/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/blob/zeros/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/blob/nil/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/ascii
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/ascii/val/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/ascii/zeros/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/ascii/nil/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/uuid
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/uuid/max/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/uuid/max/[16]byte
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/uuid/val/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/uuid/val/[16]byte
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/uuid/zeros/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/uuid/zeros/[16]byte
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/uuid/nil/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/uuid/nil/string_ref
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/uuid/nil/[16]byte
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/timeuuid
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/timeuuid/max/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/timeuuid/max/[16]byte
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/timeuuid/val/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/timeuuid/val/[16]byte
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/timeuuid/zeros/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/timeuuid/zeros/[16]byte
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/timeuuid/nil/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/timeuuid/nil/string_ref
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/timeuuid/nil/[16]byte
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/inet
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/inet/v6max/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/inet/v6max/net.IP
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/inet/v4max/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/inet/v4max/net.IP
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/inet/v6zeros/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/inet/v6zeros/net.IP
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/inet/v4zeros/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/inet/v4zeros/net.IP
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/inet/nil/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/inet/nil/string_ref
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/inet/nil/net.IP
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/inet/nil/net.IP_ref
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/time
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/time/max/int64
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/time/max/time.Duration
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/time/zeros/int64
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/time/zeros/time.Duration
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/time/nil/int64
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/time/nil/time.Duration
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/timestamp
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/timestamp/max/int64
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/timestamp/max/time.Time
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/timestamp/min/int64
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/timestamp/min/time.Time
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/timestamp/+1/int64
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/timestamp/+1/time.Time
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/timestamp/-1/int64
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/timestamp/-1/time.Time
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/timestamp/zeros/int64
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/timestamp/zeros/time.Time
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/timestamp/nil/int64
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/timestamp/nil/time.Time
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/date
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/date/max/uint32
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/date/max/int32
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/date/max/time.Time
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/date/max/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/date/mid/uint32
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/date/mid/int32
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/date/mid/time.Time
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/date/mid/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/date/1/uint32
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/date/1/int32
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/date/1/time.Time
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/date/1/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/date/zeros/uint32
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/date/zeros/int32
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/date/zeros/time.Time
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/date/zeros/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/date/nil/int32
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/date/nil/time.Time
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/date/nil/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/date/nil/string_ref
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/duration
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/duration/max/duration
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/duration/max/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/duration/min/duration
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/duration/min/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/duration/+1/duration
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/duration/+1/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/duration/-1/duration
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/duration/-1/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/duration/maxNanos/duration
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/duration/maxNanos/int64
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/duration/maxNanos/time.Duration
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/duration/maxNanos/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/duration/minNanos/duration
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/duration/minNanos/int64
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/duration/minNanos/time.Duration
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/duration/minNanos/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/duration/zeros/duration
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/duration/zeros/int64
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/duration/zeros/time.Duration
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/duration/zeros/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/duration/nil/duration
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/duration/nil/int64
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/duration/nil/time.Duration
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/duration/nil/string
+=== RUN   TestSerializationSimpleTypesCassandra/InsertSelect/duration/nil/string_ref
+--- PASS: TestSerializationSimpleTypesCassandra (27.59s)
+    --- PASS: TestSerializationSimpleTypesCassandra/Marshal (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Marshal/boolean (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/boolean/max/bool (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/boolean/min/bool (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/boolean/nil/bool (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Marshal/tinyint (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/tinyint/max/int8 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/tinyint/max/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/tinyint/min/int8 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/tinyint/min/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/tinyint/+1/int8 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/tinyint/+1/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/tinyint/-1/int8 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/tinyint/-1/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/tinyint/zeros/int8 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/tinyint/zeros/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/tinyint/nil/int8 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/tinyint/nil/big.Int (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Marshal/smallint (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/smallint/max/int16 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/smallint/max/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/smallint/min/int16 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/smallint/min/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/smallint/+1/int16 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/smallint/+1/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/smallint/-1/int16 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/smallint/-1/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/smallint/zeros/int16 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/smallint/zeros/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/smallint/nil/int16 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/smallint/nil/big.Int (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Marshal/int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/int/max/int32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/int/max/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/int/min/int32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/int/min/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/int/+1/int32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/int/+1/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/int/-1/int32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/int/-1/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/int/zeros/int32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/int/zeros/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/int/nil/int32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/int/nil/big.Int (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Marshal/bigint (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/bigint/max/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/bigint/max/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/bigint/min/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/bigint/min/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/bigint/+1/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/bigint/+1/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/bigint/-1/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/bigint/-1/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/bigint/zeros/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/bigint/zeros/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/bigint/nil/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/bigint/nil/big.Int (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Marshal/varint (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/varint/max/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/varint/max/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/varint/max/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/varint/min/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/varint/min/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/varint/min/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/varint/+1/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/varint/+1/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/varint/+1/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/varint/-1/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/varint/-1/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/varint/-1/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/varint/zeros/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/varint/zeros/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/varint/zeros/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/varint/nil/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/varint/nil/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/varint/nil/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/varint/nil/string_ref (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Marshal/float (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/float/max/float32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/float/min/float32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/float/smallest_pos/float32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/float/smallest_neg/float32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/float/zeros/float32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/float/nil/float32 (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Marshal/double (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/double/max/float64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/double/min/float64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/double/smallest_pos/float64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/double/smallest_neg/float64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/double/zeros/float64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/double/nil/float64 (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Marshal/decimal (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/decimal/max/inf.Dec (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/decimal/max/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/decimal/min/inf.Dec (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/decimal/min/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/decimal/zeros/inf.Dec (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/decimal/zeros/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/decimal/nil/inf.Dec (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/decimal/nil/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/decimal/nil/string_ref (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Marshal/varchar (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/varchar/val/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/varchar/zeros/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/varchar/nil/string (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Marshal/text (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/text/val/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/text/zeros/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/text/nil/string (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Marshal/blob (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/blob/val/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/blob/zeros/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/blob/nil/string (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Marshal/ascii (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/ascii/val/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/ascii/zeros/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/ascii/nil/string (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Marshal/uuid (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/uuid/max/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/uuid/max/[16]byte (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/uuid/val/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/uuid/val/[16]byte (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/uuid/zeros/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/uuid/zeros/[16]byte (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/uuid/nil/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/uuid/nil/string_ref (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/uuid/nil/[16]byte (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Marshal/timeuuid (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/timeuuid/max/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/timeuuid/max/[16]byte (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/timeuuid/val/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/timeuuid/val/[16]byte (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/timeuuid/zeros/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/timeuuid/zeros/[16]byte (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/timeuuid/nil/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/timeuuid/nil/string_ref (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/timeuuid/nil/[16]byte (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Marshal/inet (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/inet/v6max/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/inet/v6max/net.IP (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/inet/v4max/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/inet/v4max/net.IP (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/inet/v6zeros/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/inet/v6zeros/net.IP (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/inet/v4zeros/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/inet/v4zeros/net.IP (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/inet/nil/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/inet/nil/string_ref (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/inet/nil/net.IP (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/inet/nil/net.IP_ref (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Marshal/time (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/time/max/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/time/max/time.Duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/time/zeros/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/time/zeros/time.Duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/time/nil/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/time/nil/time.Duration (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Marshal/timestamp (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/timestamp/max/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/timestamp/max/time.Time (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/timestamp/min/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/timestamp/min/time.Time (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/timestamp/+1/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/timestamp/+1/time.Time (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/timestamp/-1/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/timestamp/-1/time.Time (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/timestamp/zeros/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/timestamp/zeros/time.Time (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/timestamp/nil/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/timestamp/nil/time.Time (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Marshal/date (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/date/max/uint32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/date/max/int32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/date/max/time.Time (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/date/max/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/date/mid/uint32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/date/mid/int32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/date/mid/time.Time (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/date/mid/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/date/1/uint32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/date/1/int32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/date/1/time.Time (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/date/1/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/date/zeros/uint32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/date/zeros/int32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/date/zeros/time.Time (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/date/zeros/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/date/nil/int32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/date/nil/time.Time (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/date/nil/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/date/nil/string_ref (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Marshal/duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/duration/max/duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/duration/max/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/duration/min/duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/duration/min/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/duration/+1/duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/duration/+1/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/duration/-1/duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/duration/-1/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/duration/maxNanos/duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/duration/maxNanos/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/duration/maxNanos/time.Duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/duration/maxNanos/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/duration/minNanos/duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/duration/minNanos/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/duration/minNanos/time.Duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/duration/minNanos/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/duration/zeros/duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/duration/zeros/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/duration/zeros/time.Duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/duration/zeros/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/duration/nil/duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/duration/nil/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/duration/nil/time.Duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/duration/nil/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Marshal/duration/nil/string_ref (0.00s)
+    --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/boolean (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/boolean/max/bool (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/boolean/min/bool (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/boolean/nil/bool (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/tinyint (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/tinyint/max/int8 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/tinyint/max/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/tinyint/min/int8 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/tinyint/min/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/tinyint/+1/int8 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/tinyint/+1/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/tinyint/-1/int8 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/tinyint/-1/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/tinyint/zeros/int8 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/tinyint/zeros/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/tinyint/nil/int8 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/tinyint/nil/big.Int (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/smallint (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/smallint/max/int16 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/smallint/max/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/smallint/min/int16 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/smallint/min/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/smallint/+1/int16 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/smallint/+1/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/smallint/-1/int16 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/smallint/-1/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/smallint/zeros/int16 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/smallint/zeros/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/smallint/nil/int16 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/smallint/nil/big.Int (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/int/max/int32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/int/max/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/int/min/int32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/int/min/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/int/+1/int32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/int/+1/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/int/-1/int32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/int/-1/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/int/zeros/int32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/int/zeros/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/int/nil/int32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/int/nil/big.Int (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/bigint (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/bigint/max/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/bigint/max/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/bigint/min/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/bigint/min/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/bigint/+1/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/bigint/+1/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/bigint/-1/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/bigint/-1/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/bigint/zeros/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/bigint/zeros/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/bigint/nil/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/bigint/nil/big.Int (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/varint (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/varint/max/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/varint/max/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/varint/max/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/varint/min/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/varint/min/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/varint/min/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/varint/+1/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/varint/+1/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/varint/+1/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/varint/-1/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/varint/-1/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/varint/-1/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/varint/zeros/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/varint/zeros/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/varint/zeros/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/varint/nil/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/varint/nil/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/varint/nil/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/varint/nil/string_ref (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/float (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/float/max/float32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/float/min/float32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/float/smallest_pos/float32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/float/smallest_neg/float32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/float/zeros/float32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/float/nil/float32 (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/double (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/double/max/float64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/double/min/float64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/double/smallest_pos/float64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/double/smallest_neg/float64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/double/zeros/float64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/double/nil/float64 (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/decimal (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/decimal/max/inf.Dec (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/decimal/max/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/decimal/min/inf.Dec (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/decimal/min/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/decimal/zeros/inf.Dec (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/decimal/zeros/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/decimal/nil/inf.Dec (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/decimal/nil/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/decimal/nil/string_ref (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/varchar (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/varchar/val/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/varchar/zeros/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/varchar/nil/string (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/text (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/text/val/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/text/zeros/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/text/nil/string (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/blob (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/blob/val/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/blob/zeros/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/blob/nil/string (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/ascii (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/ascii/val/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/ascii/zeros/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/ascii/nil/string (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/uuid (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/uuid/max/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/uuid/max/[16]byte (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/uuid/val/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/uuid/val/[16]byte (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/uuid/zeros/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/uuid/zeros/[16]byte (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/uuid/nil/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/uuid/nil/string_ref (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/uuid/nil/[16]byte (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/timeuuid (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/timeuuid/max/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/timeuuid/max/[16]byte (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/timeuuid/val/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/timeuuid/val/[16]byte (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/timeuuid/zeros/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/timeuuid/zeros/[16]byte (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/timeuuid/nil/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/timeuuid/nil/string_ref (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/timeuuid/nil/[16]byte (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/inet (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/inet/v6max/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/inet/v6max/net.IP (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/inet/v4max/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/inet/v4max/net.IP (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/inet/v6zeros/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/inet/v6zeros/net.IP (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/inet/v4zeros/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/inet/v4zeros/net.IP (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/inet/nil/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/inet/nil/string_ref (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/inet/nil/net.IP (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/inet/nil/net.IP_ref (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/time (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/time/max/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/time/max/time.Duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/time/zeros/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/time/zeros/time.Duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/time/nil/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/time/nil/time.Duration (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/timestamp (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/timestamp/max/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/timestamp/max/time.Time (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/timestamp/min/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/timestamp/min/time.Time (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/timestamp/+1/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/timestamp/+1/time.Time (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/timestamp/-1/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/timestamp/-1/time.Time (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/timestamp/zeros/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/timestamp/zeros/time.Time (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/timestamp/nil/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/timestamp/nil/time.Time (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/date (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/date/max/uint32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/date/max/int32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/date/max/time.Time (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/date/max/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/date/mid/uint32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/date/mid/int32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/date/mid/time.Time (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/date/mid/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/date/1/uint32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/date/1/int32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/date/1/time.Time (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/date/1/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/date/zeros/uint32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/date/zeros/int32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/date/zeros/time.Time (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/date/zeros/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/date/nil/int32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/date/nil/time.Time (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/date/nil/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/date/nil/string_ref (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/duration/max/duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/duration/max/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/duration/min/duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/duration/min/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/duration/+1/duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/duration/+1/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/duration/-1/duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/duration/-1/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/duration/maxNanos/duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/duration/maxNanos/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/duration/maxNanos/time.Duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/duration/maxNanos/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/duration/minNanos/duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/duration/minNanos/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/duration/minNanos/time.Duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/duration/minNanos/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/duration/zeros/duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/duration/zeros/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/duration/zeros/time.Duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/duration/zeros/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/duration/nil/duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/duration/nil/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/duration/nil/time.Duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/duration/nil/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/Unmarshal/duration/nil/string_ref (0.00s)
+    --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect (0.84s)
+        --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/boolean (0.02s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/boolean/max/bool (0.01s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/boolean/min/bool (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/boolean/nil/bool (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/tinyint (0.05s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/tinyint/max/int8 (0.01s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/tinyint/max/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/tinyint/min/int8 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/tinyint/min/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/tinyint/+1/int8 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/tinyint/+1/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/tinyint/-1/int8 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/tinyint/-1/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/tinyint/zeros/int8 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/tinyint/zeros/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/tinyint/nil/int8 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/tinyint/nil/big.Int (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/smallint (0.05s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/smallint/max/int16 (0.01s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/smallint/max/big.Int (0.01s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/smallint/min/int16 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/smallint/min/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/smallint/+1/int16 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/smallint/+1/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/smallint/-1/int16 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/smallint/-1/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/smallint/zeros/int16 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/smallint/zeros/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/smallint/nil/int16 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/smallint/nil/big.Int (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/int (0.04s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/int/max/int32 (0.01s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/int/max/big.Int (0.01s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/int/min/int32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/int/min/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/int/+1/int32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/int/+1/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/int/-1/int32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/int/-1/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/int/zeros/int32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/int/zeros/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/int/nil/int32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/int/nil/big.Int (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/bigint (0.05s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/bigint/max/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/bigint/max/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/bigint/min/int64 (0.01s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/bigint/min/big.Int (0.01s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/bigint/+1/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/bigint/+1/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/bigint/-1/int64 (0.01s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/bigint/-1/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/bigint/zeros/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/bigint/zeros/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/bigint/nil/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/bigint/nil/big.Int (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/varint (0.08s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/varint/max/int64 (0.01s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/varint/max/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/varint/max/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/varint/min/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/varint/min/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/varint/min/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/varint/+1/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/varint/+1/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/varint/+1/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/varint/-1/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/varint/-1/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/varint/-1/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/varint/zeros/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/varint/zeros/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/varint/zeros/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/varint/nil/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/varint/nil/big.Int (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/varint/nil/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/varint/nil/string_ref (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/float (0.03s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/float/max/float32 (0.01s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/float/min/float32 (0.01s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/float/smallest_pos/float32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/float/smallest_neg/float32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/float/zeros/float32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/float/nil/float32 (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/double (0.03s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/double/max/float64 (0.01s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/double/min/float64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/double/smallest_pos/float64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/double/smallest_neg/float64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/double/zeros/float64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/double/nil/float64 (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/decimal (0.04s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/decimal/max/inf.Dec (0.01s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/decimal/max/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/decimal/min/inf.Dec (0.01s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/decimal/min/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/decimal/zeros/inf.Dec (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/decimal/zeros/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/decimal/nil/inf.Dec (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/decimal/nil/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/decimal/nil/string_ref (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/varchar (0.02s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/varchar/val/string (0.01s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/varchar/zeros/string (0.01s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/varchar/nil/string (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/text (0.02s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/text/val/string (0.01s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/text/zeros/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/text/nil/string (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/blob (0.02s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/blob/val/string (0.01s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/blob/zeros/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/blob/nil/string (0.01s)
+        --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/ascii (0.02s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/ascii/val/string (0.01s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/ascii/zeros/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/ascii/nil/string (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/uuid (0.04s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/uuid/max/string (0.01s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/uuid/max/[16]byte (0.01s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/uuid/val/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/uuid/val/[16]byte (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/uuid/zeros/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/uuid/zeros/[16]byte (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/uuid/nil/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/uuid/nil/string_ref (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/uuid/nil/[16]byte (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/timeuuid (0.04s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/timeuuid/max/string (0.01s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/timeuuid/max/[16]byte (0.01s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/timeuuid/val/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/timeuuid/val/[16]byte (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/timeuuid/zeros/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/timeuuid/zeros/[16]byte (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/timeuuid/nil/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/timeuuid/nil/string_ref (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/timeuuid/nil/[16]byte (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/inet (0.05s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/inet/v6max/string (0.01s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/inet/v6max/net.IP (0.01s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/inet/v4max/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/inet/v4max/net.IP (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/inet/v6zeros/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/inet/v6zeros/net.IP (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/inet/v4zeros/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/inet/v4zeros/net.IP (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/inet/nil/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/inet/nil/string_ref (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/inet/nil/net.IP (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/inet/nil/net.IP_ref (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/time (0.03s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/time/max/int64 (0.01s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/time/max/time.Duration (0.01s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/time/zeros/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/time/zeros/time.Duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/time/nil/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/time/nil/time.Duration (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/timestamp (0.05s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/timestamp/max/int64 (0.01s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/timestamp/max/time.Time (0.01s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/timestamp/min/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/timestamp/min/time.Time (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/timestamp/+1/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/timestamp/+1/time.Time (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/timestamp/-1/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/timestamp/-1/time.Time (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/timestamp/zeros/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/timestamp/zeros/time.Time (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/timestamp/nil/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/timestamp/nil/time.Time (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/date (0.08s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/date/max/uint32 (0.01s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/date/max/int32 (0.01s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/date/max/time.Time (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/date/max/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/date/mid/uint32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/date/mid/int32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/date/mid/time.Time (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/date/mid/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/date/1/uint32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/date/1/int32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/date/1/time.Time (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/date/1/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/date/zeros/uint32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/date/zeros/int32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/date/zeros/time.Time (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/date/zeros/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/date/nil/int32 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/date/nil/time.Time (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/date/nil/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/date/nil/string_ref (0.00s)
+        --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/duration (0.10s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/duration/max/duration (0.01s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/duration/max/string (0.01s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/duration/min/duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/duration/min/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/duration/+1/duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/duration/+1/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/duration/-1/duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/duration/-1/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/duration/maxNanos/duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/duration/maxNanos/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/duration/maxNanos/time.Duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/duration/maxNanos/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/duration/minNanos/duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/duration/minNanos/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/duration/minNanos/time.Duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/duration/minNanos/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/duration/zeros/duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/duration/zeros/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/duration/zeros/time.Duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/duration/zeros/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/duration/nil/duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/duration/nil/int64 (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/duration/nil/time.Duration (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/duration/nil/string (0.00s)
+            --- PASS: TestSerializationSimpleTypesCassandra/InsertSelect/duration/nil/string_ref (0.00s)
+=== CONT  TestTuple_TupleNotSet
+--- PASS: TestTuple_TupleNotSet (1.09s)
+=== CONT  TestSliceMapMapScanCounterTypes
+=== RUN   TestSliceMapMapScanCounterTypes/SliceMap
+=== RUN   TestSliceMapMapScanCounterTypes/MapScan
+--- PASS: TestSliceMapMapScanCounterTypes (1.16s)
+    --- PASS: TestSliceMapMapScanCounterTypes/SliceMap (0.00s)
+    --- PASS: TestSliceMapMapScanCounterTypes/MapScan (0.00s)
+=== CONT  TestTupleMapScan
+--- PASS: TestTupleMapScan (1.08s)
+PASS
+ok  	github.com/scylladb/gocql/v2	85.392s

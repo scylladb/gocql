@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gocql/gocql/dialer"
-	frm "github.com/gocql/gocql/internal/frame"
+	"github.com/scylladb/gocql/v2/dialer"
+	frm "github.com/scylladb/gocql/v2/internal/frame"
 )
 
 // benchRecordings are the captured connections checked into tests/bench, which the

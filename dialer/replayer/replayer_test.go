@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gocql/gocql/dialer"
+	"github.com/scylladb/gocql/v2/dialer"
 )
 
 // optionsFrame builds a body-less OPTIONS frame with the given version byte.

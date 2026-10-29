@@ -67,8 +67,24 @@ func (c *Cursor) RequireEnd() error
 NewChain copies descriptors, not payloads. Chains and their input descriptor
 slices cannot mutate each other; chains may share immutable descriptor backing
 with each other. Single-span ranges should stay inline to avoid an allocation.
-Slice may allocate descriptors for a multi-span range, but never gathers
-payload. All lengths/offset additions are checked before conversion to int.
+A sliced range stores trimmed endpoints and shares immutable middle descriptors;
+Slice/Take must not allocate a descriptor array per fragmented cell. Internal
+cursors are value state embedded in readers/iterators, even though public cursor
+constructors may return pointers. Sequential Take/Skip starts at the current
+span, never rescans consumed prefixes, and visits O(spans crossed + 1)
+descriptors per operation. Traversing N nonoverlapping cells across S spans
+at one framing level therefore takes O(N + S) descriptor work, excluding
+requested payload validation. For fragmented nested-body jumps/random ranges,
+share a prefix-offset index built at most once per source descriptor backing
+in O(S) time/storage. It locates both range endpoints in O(log S) or better;
+Skip/Take can jump over an unvisited child without walking all its spans again
+at every ancestor. Child views share that index and trimmed endpoints, with no
+per-cell index allocation. Across J such jumps, budget O(N + S + J log S)
+descriptor work, not O(depth * S) rescanning of nested payload spans. Pure
+streaming codecs/hashing/checksums keep the linear cursor path and do not pay a
+binary search per byte. Random Slice may use the same index; sequential codecs,
+hashing, compression and segmentation never repeatedly rescan root prefixes.
+All lengths/offset additions are checked before conversion to int.
 CopyTo is an explicit materialization API; a short destination returns
 io.ErrShortBuffer. Cursor failed reads leave position unchanged and return
 io.ErrUnexpectedEOF for truncation. Scalar reads fold bytes into the scalar,
@@ -80,8 +96,13 @@ offset before a placeholder Uint32. Patching through borrowed spans, stale
 marks, or foreign marks fails. Invalid Rollback is a safe no-op; valid rollback
 retracts both descriptors and owned bytes. Freeze transfers slab and descriptor
 ownership, invalidates old marks, and starts fresh slabs on later writes. Slab
-extension must never copy previously emitted payload into a larger slab. New
-small scalar/header fields may share a slab while contiguous. Unsafe
+extension must never copy previously emitted payload into a larger slab. Adjacent
+scalar/header writes in the same slab must extend one span descriptor while
+unpublished, rather than append a descriptor for every Uint8/Uint32 call. Slabs
+remain non-growing, and borrowed payload boundaries and framing order remain
+intact. Freeze may compact adjacent ranges only when they reference the same
+backing storage and ownership; it never gathers distinct payloads. Marks retain
+their logical-byte meaning across descriptor coalescing. Unsafe
 string-to-byte views are confined to wire.BorrowString and are read-only for
 their entire lifetime.
 
@@ -91,7 +112,14 @@ not pooled. Chain() is valid only while a reference is held. Root Bytes/Text
 carry the lease identity for error detection. Page leases aggregate segment
 leases by retaining/releasing them in their finalizer; segment storage may
 return to pools only at final release. A page does not reference outbound
-binding storage.
+binding storage. Rows, cells, range slices and lazy elements borrow the page's
+held reference; constructing/advancing each view does not Retain/Release an
+independent lease. Retain adds a reference only for an explicit PageLease or an
+actual owner transfer requiring one. A page retains each distinct physical
+segment once, not once per cell/range into that segment. Internal synchronous
+scalar/byte loops use their already-held owner and avoid an atomic refcount
+operation per byte/element; public released-view checks still run at observable
+access boundaries. Connection/parser scratch never becomes a stable lease.
 
 ## Current root-package stabilization seams
 
@@ -140,8 +168,19 @@ forbidden. abortValueWriter rolls back when the codec returns an error; no
 emitted frame survives failure. `newRowReader` is scoped to one row's framed
 cell chain. Decoding counts physical cells, permits positional cursor access,
 and exposes immutable indexed descriptors internally so compiled name plans can
-access out-of-order columns without copying cell bytes. finishRowReader
-validates expected count and trailing bytes. RowReader.allowMissing is false for
+access out-of-order columns without copying cell bytes. Built-in named plans
+compile accessors into physical wire order and assign directly to the selected
+Go fields. Positional/ordered decoding streams the row in one framing pass;
+ignored cells use checked skips. If a custom plan needs temporary indexed
+access during Decode, build at most one current-row offset index and reuse
+pager-local scratch capacity across rows. An escaping DynamicRow instead owns
+its index under the row/page lifetime described below. Neither path rescans the
+row for each field or indexes the entire page eagerly. Published views contain
+immutable byte ranges/metadata, never references to scratch that the next row
+overwrites. Internal RowReader and
+ValueReader/cursor state must not require a heap object per cell.
+finishRowReader validates expected count and trailing bytes. RowReader.allowMissing
+is false for
 ordinary result rows. Tuple/UDT decoding may explicitly enable it where trailing
 omitted members are permitted: only an exact end of the encoded body synthesizes
 a null for each remaining metadata field. An incomplete length prefix or body is
@@ -162,6 +201,77 @@ custom decoders must implement explicit detachment. Clone never depends on a
 mutable first-plan cache, successful prior Compile/Decode, or server metadata
 remembered by the decoder. A compiled plan may delegate Clone to its immutable
 RowDecoder.
+
+### Direct decoding into caller storage (pending)
+
+This seam consumes retained page bytes. Incremental socket-to-destination
+decoding without full response/page accumulation is a separate
+[streaming receive feature draft](gocql-v2-streaming-receive.md), with additional
+codec, exclusive transport, integrity and memory-budget requirements.
+
+Add required RowPlan.DecodeInto(*RowReader, *R) error and
+Rows/Page.NextInto(dst *R) bool as specified in the public API contract. This is
+planned work, not a completed capability of the current implementation.
+The composition task owns DecodeInto for every built-in row plan and its child
+compositions; the prepared/paging task owns iterator integration and lifetime
+behavior. Custom plans must implement the same interface explicitly.
+
+Use the destination supplied to each call, with no shared destination captured
+in a compiled plan or column accessor. Built-in field plans zero the destination
+then assign scalars and borrowed view descriptors directly to its fields. Remove
+pooled whole-row scratch from this path; Decode may create a local destination
+and delegate to DecodeInto. Avoid a fallback that calls Decode and copies a
+temporary complete row into dst. Explicit value-returning MapRows callbacks
+retain their documented mapping work and are measured separately.
+
+Next and NextInto share row framing, plan selection, page transition, terminal
+error and cleanup machinery. Select an internal current-row slot for Next and
+the caller slot for NextInto. Keep at most the current destination pointer so
+Row/Clone work after either form; drop that pointer before the next advance or
+Close and never let prefetch/background tasks access it. Clear a non-nil supplied
+destination on every false result; nil on an active iterator fails before row
+consumption or paging I/O. Iterator cleanup must not modify a previous caller
+destination when a different slot is used or Close is called. Compiled plans
+remain immutable and safely shareable across independent iterators.
+
+Borrowed fields refer to the same receive/decompression segments and stable
+page owner as ordinary decoding. No implicit retain per field/row, payload copy
+or cell flattening is introduced. Retain pins bytes, not the caller's reusable
+struct; holding an old row requires both preserved view descriptors and its
+lease. Clone remains the explicit recursive detachment operation.
+
+Acceptance requires reused/preseeded destinations, named/positional fields,
+unmapped Go-field reset, nil input, zero rows, mixed Next/NextInto, different
+destinations, Row/Clone consistency, terminal codec/framing/metadata failures,
+and cancellation/Close. Exercise automatic paging across empty continuations,
+manual pages, retained old views during buffer reuse, and custom/composed plans.
+Check that custom DecodeInto is actually invoked without Decode on this path,
+and that shared plans never retain destinations or race across independent
+iterators. Benchmark narrow and wide scalar/text/blob/container row shapes after
+compilation, with split cells and increasing payload sizes. Prove receive backing
+identity, zero variable-payload copy bytes and no driver-owned whole-row temporary
+on the direct path; report allocation costs and explicit mapping/clone work
+separately from payload copies.
+
+Compilation recursively creates immutable built-in value bindings, including
+nested tuple/UDT layouts, fixed vector widths and collection child bindings.
+These are internal typed adapters; no extra public codec method is required.
+Built-in Encode/Decode hot loops use those checked bindings and internal
+immutable descriptor access, avoiding public Fields defensive copies or
+recursive type walks for every element. Custom codecs keep their documented
+Encode/Decode behavior and receive the full descriptor; do not bypass their
+validation by treating arbitrary custom implementations as built-ins.
+
+Keep the current result-plan cache with the typed prepared handle/decoder, not
+the global nongeneric prepared cache. Exact immutable result-entry hits select
+it in O(1); observing a new metadata entry requires compatibility validation
+before reuse or compilation, even for an empty page. Bound the cache to the
+current entry/shape plus plans held by live pages, rather than accumulating all
+schema versions. In-flight pages retain matching older metadata/plans. Do not
+hold a cache lock while invoking user Compile/CheckType; compile candidates
+outside locks and publish under the exact revision/epoch fence. Concurrent cold
+misses may build redundant candidates, but steady unchanged pages must neither
+recompile nor recopy their metadata.
 
 The runtime responsibility covers `v2_statement.go`, `v2_execute.go`,
 `v2_result.go`, `v2_profiles.go`, `v2_batch.go`, and session/pool/control
@@ -247,6 +357,123 @@ not merely a query-completion notification. Subscriber overflow and agreement
 scope follow the API contract, including publication-before-event and mandatory
 DDL coordinator.
 
+## Admission and optional work
+
+NewProfile/Replace validate and publish immutable profiles. Admission atomically
+loads one version, validates explicit overrides once and stores resolved options
+for the logical request; retries/pages reuse it without whole-profile copies,
+validation or new custom-payload descriptor arrays. A batch has one resolved
+options/payload descriptor snapshot protected by all of its member admissions.
+Required per-attempt feature checks and identity/drain accounting still run.
+
+The default non-speculative path creates no speculation goroutine, timer,
+metrics snapshot or candidate queue. Prefetch=0 creates no prefetch worker;
+Exec/unpaged/final-page paths do not create an idle pager worker. Reuse bounded
+pager scheduling state across continuations rather than spawning a worker for
+every row/page. Derive a local deadline timer only when it shortens the parent
+deadline; cancellation, session shutdown and writer drain remain effective even
+when no new timer is necessary. Timer reuse must respect request identity and
+must never deliver an old timeout to a new attempt/stream.
+
+Compute observer enablement once per admission and avoid constructing unused
+RequestEvent/AttemptEvent payloads or formatting successful-path diagnostics.
+Configured user observers and policy Observe still receive their exact terminal
+callbacks, outside driver locks. Metrics counters/latency samples use bounded
+per-host/shard or striped state rather than one global completion mutex. Build
+percentile summaries periodically and read published summaries; do not sort
+request histories on each completion, policy call or Metrics access. Document
+the summary refresh interval in implementation evidence; this does not relax
+exact request/attempt counts or remove Result latency/attempt accounting.
+
+## Prepared-cache hot path
+
+The bounded session LRU discovers/prepares handles; live bindings keep direct
+prepared-state references through eviction. A warm Run/retry/page reads the
+selected host entry without reacquiring a session-wide LRU lock or moving an LRU
+node. Lazy per-host preparation deduplicates only matching host/keyspace/CQL
+misses; unrelated statements/hosts do not wait behind network preparation or
+user codec compilation. Cancellable waiters and exact metadata revision fences
+remain required. Scope schema epochs to known statement dependencies, using a
+conservative keyspace/schema refresh when dependency information is incomplete;
+do not equate every MetadataSnapshot generation with prepared invalidation.
+Topology/status, route, placement and unrelated schema publications must not
+force global PREPARE/Compile storms. Host restarts and actual UNPREPARED still
+repair the affected host entry and validate the immutable bound schema.
+
+## Placement feedback publication cost
+
+The receive path decodes bounded placement control fields and enqueues owned
+feedback without retaining the whole response/page lease for background work.
+Account for any control-metadata detachment separately from row payload copies.
+After validating request identity/schema/placement epochs, compare the affected
+range, opaque version and ordered replica/shard contents. An exact unchanged
+observation does not clone/publish a snapshot, advance a generation or emit a
+metadata-change event. Equality of the version token alone cannot establish an
+unchanged mapping or authorize stale feedback.
+
+Changed placement updates structurally share unaffected keyspaces/tables/ranges
+and routing indices. Work is proportional to the affected ranges plus index
+maintenance, not a full cluster/schema clone per feedback response. Overlapping
+range replacement and original leader/replica order remain atomic. Coalesce
+pending updates by identity/range only where their epoch/validation semantics
+permit; retain no unbounded version history. Saturation still invalidates via a
+bounded atomic epoch even with a full queue. Rebuild only affected placement
+indices asynchronously; schema/host indices remain shared until their own
+inputs change. Successful requests never wait for this publication work.
+
+## Routing selection cost
+
+Build immutable host-ID indices, locality tiers, vnode replica placement and
+shared fallback order when the relevant topology/replication changes. Publish
+those structures with the snapshot. Built-in request selection uses private
+views, never MetadataSnapshot.Hosts/Replicas defensive-copy accessors. A vnode
+lookup is O(log token ranges + replicas examined); a tablet lookup uses its
+range index, including unknown/invalidation checks. The successful first-target
+path must not enumerate all H hosts, allocate a host map/dedup set, sort H
+targets, or materialize a complete QueryPlan. QueryPlan.Next walks locality and
+fallback tiers lazily; it tracks only emitted/replica identities needed to avoid
+duplicates. Ordinary shuffling uses private bounded replica-index state, never
+mutates shared replica order, and preserves leader/locality/latency rules.
+Unknown/conditional ordering remains deterministic. Speculative branches share
+serialized advancement; retries may lazily reach later targets. An explicitly
+pinned host uses the host-ID index directly. Recheck eligibility and strict shard
+requirements at acquisition without rebuilding the entire topology.
+
+Latency samples update per-host state without serializing every request behind
+one policy-wide mutex. Publish exclusion/ranking decisions at UpdateInterval,
+with MinimumSamples, Scale and RetryPeriod semantics preserved. Plans consume
+that bounded-staleness decision snapshot rather than sorting the full cluster
+on every request; probe reservation is concurrency-safe and becomes eligible
+when RetryPeriod expires, even between periodic updates. Enabled/connected/up
+state and configured locality remain authoritative at acquisition. User policy
+methods still run outside driver locks; these fast paths do not bypass custom
+Plan/Observe callbacks.
+
+## Lazy container traversal
+
+List/set/map and variable-width vector construction checks their immediate
+count/length framing with a sequential cursor and checked skips. It does not
+recursively walk nested payloads, call child Decode, build element objects or
+allocate an element-offset table. Child layout and scalar semantics are checked
+on demand. At most one enclosing layout scan plus one iterator pass is expected
+for each visited container; repeated user-created iterators are separate work.
+Nested-body skips locate endpoints using the shared source span-offset index;
+shallow validation must not walk every skipped fragment again at each ancestor.
+Count such jumps separately from linear streaming descriptor visits.
+Fixed-width vectors reuse their compiled checked width and require only an
+aggregate-length check before iteration. Nested fixed vectors do not recompute
+width or scan elements to establish shape. Truncation, invalid child states and
+trailing enclosing bytes still fail before publishing that container.
+
+DynamicRows has a compiled immutable name-to-index lookup and builds a physical
+cell-offset index at most once on first At/Get for each row. That index belongs
+to the borrowed row/page, shares no mutable pager scratch with later rows, and
+is released with the row/page owner. No variable payload is materialized for the
+index. Repeated access is independent of column position after indexing;
+iteration over dynamic aggregates uses the same sequential wire cursors as
+typed containers. Report dynamic row index allocations separately from typed
+streaming rows and lazy scalar element traversal.
+
 ## Sending, compression, receive ownership and limits
 
 The transport responsibility covers `conn.go`, `frame.go`, `framer.go`,
@@ -302,7 +529,14 @@ every accepted request once, and handles partial writes across requests
 correctly. net.Buffers descriptor scratch is private because WriteTo mutates it;
 keep the lock across all writev batches when the OS iovec limit is exceeded. TLS
 writes the same ordered spans under this lock. No driver plaintext gather is
-introduced for TLS.
+introduced for TLS. Build mutable iovec/segment descriptor scratch once per
+accepted write/coalesced group, reuse its capacity after completion, and clear
+borrowed references before pooling it. Descriptor mutation never reaches the
+immutable bound chains. Do not recreate a full descriptor list for every OS
+writev batch or v5 segment. Count spans, write calls and TLS record/wire-byte
+amplification as well as payload copies: many tiny borrowed spans can still be
+expensive under crypto/tls. Report that residual cost; zero driver copies alone
+does not establish fast TLS throughput.
 
 Each accepted request has a stable connection-local identity distinct from its
 wire stream ID; identity reuse while cancellation/response records can survive
@@ -344,7 +578,14 @@ func AppendSnappy(dst []byte, source wire.Chain) ([]byte, error)
 LZ4 emits a raw block; v4 transport prepends the four-byte big-endian raw
 length, while v5 uses per-segment raw blocks and no such prefix. Snappy emits
 its native raw block including input-length varint. Both read matches across
-spans and write final compressed output without gathering source.
+spans and write final compressed output without gathering source. Sequential
+compression, checksums and segmentation advance span cursors; they never locate
+every byte/segment by rescanning the chain from its root. Compression match
+lookups use bounded position-aware span state or a shared prefix-offset index
+built once per source, with O(log S) or better lookup across S spans. Indexes
+contain descriptors/offsets only, never a copied payload dictionary. Report
+compression algorithm work separately from span-lookup overhead; a payload
+split into S fragments must not acquire a bytes-times-S descriptor scan.
 Always-literal/stored output is not sufficient: repetitive input must compress.
 v5 chooses original source spans when transformed bytes are not smaller; it must
 not copy raw input into a failed compression destination. Compression output is
@@ -381,7 +622,15 @@ equality history under MaxPagingStates (default 65,536) and MaxPagingStateBytes
 (default 16 MiB); positive validated budgets bound control-token storage even
 with request timeouts disabled. History exhaustion returns ErrPagingStateLimit,
 while any repeated state (including an empty token or nonconsecutive cycle)
-returns ErrPagingNoProgress. Manual page calls do not share history.
+returns ErrPagingNoProgress. Manual page calls do not share history. Automatic
+history uses hash-indexed
+lookup with exact token comparison on collisions, not a linear list of all
+previous states. Hashing consumes each incoming token once; share its immutable
+owned representation across history and continuation envelopes. Public
+PageState.Bytes and RestorePageState remain explicit copy boundaries. Allocate
+history incrementally, not at the maximum 65,536-entry default for every pager;
+release it on terminal completion/Close. Count/index overhead is bounded by
+MaxPagingStates in addition to the MaxPagingStateBytes token budget.
 
 Zero-copy is a driver protocol/codec ownership contract, not a claim of zero
 physical OS/TLS copies. Scalar wire encoding, compression/decompression,
@@ -752,6 +1001,8 @@ Migration translations are mandatory:
    codecs, every split point of lengths/scalars/UTF-8, overflow/truncation/trailing
    bytes, lazy terminal errors, strict UDT/vector schema changes, and rollback.
    Protocol fuzzing bounds allocation by configured limits and never panics.
+   Caller-destination decoding also satisfies the direct-write, reuse, mixed
+   iteration, terminal failure and buffer-lifetime cases above for Rows and Page.
 3. **Ownership/race gate:** tests retain old pages while new ones reuse the pool;
    close rows with prefetched results; cancel before/after admission; complete a
    speculative winner while a loser write blocks; retry/reprepare; use a pager;
@@ -789,13 +1040,20 @@ Migration translations are mandatory:
 7. **Performance gate:** save benchmark commands/environment/results and compare
    to the pinned pre-v2 baseline. Measure the cases below with allocation counters
    plus backing-identity/copy instrumentation. No passing benchmark excuses an
-   observed forbidden copy; lower allocation alone is insufficient.
+   observed forbidden copy; lower allocation alone is insufficient. Also verify
+   the algorithmic/optional-work bounds below. Save the exact benchmark revision,
+   Go version, CPU, GOMAXPROCS, server/protocol/TLS/compression settings and
+   concurrency; separate cold compilation/preparation from warm execution.
+   Focused checks gate each owning implementation task, rather than first
+   measuring these costs after package extraction. Final performance/release
+   tasks repeat affected measurements on the final pinned tree.
 
 | Benchmark (steady state after plan compilation) | Required evidence |
 | --- | --- |
 | Scalar encode/decode, owned scalar arena | Zero per-scalar heap allocations; one serialization write; no standalone scalar payload buffers. |
 | Borrowed text/blob 0 B, 32 B, 4 KiB, 500 KiB | Zero payload-copy bytes at bind, uncompressed frame/segment assembly and decode, independent of input size. Descriptor/slab allocations reported separately. |
-| Typed row scalar/text/blob; fragmented cell | Zero per-cell heap allocations for contiguous ranges; fragmented descriptor allocations recorded/bounded, zero flattened payload bytes. |
+| Typed row scalar/text/blob; fragmented cell | Zero per-cell heap allocations, including shared fragmented range descriptors; O(cells + spans) sequential descriptor work, zero flattened payload bytes. Row-owned dynamic indices and explicit iterator objects are reported separately. |
+| NextInto into reused narrow/wide application rows; scalar/text/blob/container fields and split cells | Direct destination writes with no driver-owned complete-row temporary, zero variable-payload copy bytes, and identical leased receive backing. Report steady allocations against Next/Row; explicit MapRows callbacks and Clone/materialization costs are separate. |
 | Lazy list/map/tuple/UDT/vector traversal | No per-element payload copies or reflection; scalar iteration no per-element allocations. Explicit Collect/Clone measured separately. |
 | Dynamic Value row/collection access | No reflect/`any` destinations, no eager variable payload materialization; decoder schema plan reused. |
 | Single/composite routing, Murmur3/CDC | Encoders invoked once at bind, streaming composite token produces baseline-equivalent bytes/hash, zero routing key payload allocation. |
@@ -803,8 +1061,29 @@ Migration translations are mandatory:
 | v5 segment send/receive, large split frames | Zero assembly/reassembly payload-copy bytes; segment/header/CRC allocations separate; throughput measured at several span sizes. |
 | LZ4/Snappy compressible/incompressible | No source gather/output-to-frame copy; transformed bytes/count and compression ratio recorded; useful ratio on repetitive payload. |
 | TLS transport | No driver gather; standard-library TLS costs explicitly labeled and measured separately from protocol transform. |
-| Paging/prefetch/retention | Zero cell clone on ordinary Next, page lease bounded by demand, retained old page uncorrupted; explicit Clone cost separate. |
+| Paging/prefetch/retention | Zero cell clone on ordinary Next/NextInto, page lease bounded by demand, retained old page uncorrupted; explicit Clone cost separate. |
 | Connection selection/policy/snapshot | No payload work, bounded/zero steady selection allocations; plan feedback remains race-free. |
+
+| Scaling/contention workload | Required cost check |
+| --- | --- |
+| Independently grow cells N and fragments S; nested containers/vectors at several depths | O(N + S) nonoverlapping sequential traversal; nested/random jumps J add at most O(J log S) lookup over one shared O(S) offset index. Immediate-level validation, no recursive compilation/per-cell descriptor arrays. Count visits, jumps and compilations separately. |
+| Repeated pages with stable and changed result entries | Zero warm Compile/CheckType/name-map rebuilds; changed shape validates once per published candidate; old pages retain the correct plan. |
+| Host counts 3, 30, 300 with fixed replica count; pinned and fallback cases | Successful first replica/pinned lookup performs no full-host scan/copy/sort; fallback work occurs only when advanced. Include latency on/off and conditional/leader cases. |
+| Paging histories 1, 1,000, 10,000; empty and colliding/nonconsecutive tokens | Expected hash-indexed lookup/insertion proportional to incoming token bytes, exact equality on collisions, incremental bounded history memory, no internal PageState.Bytes copies. |
+| Concurrent warm bindings vs unrelated schema/placement changes | No global LRU touch per attempt/page, unrelated reprepare storm or policy-wide completion lock; retain generation/cancellation race checks. |
+| Observation/speculation/prefetch disabled vs enabled; default Options | Disabled features create no unused events/workers/timers/metrics snapshots; counters and configured callbacks remain exact. Record scheduler allocations and mutex/block profiles. |
+| Identical vs changed tablet feedback with many tables/ranges | Identical validated feedback causes no publication; changed feedback shares unaffected state, queue memory stays bounded and receive pages are not pinned. |
+| Many tiny fields/spans, mixed large blobs, coalesced writes over OS iovec limit, TLS on/off | Adjacent slab span count, descriptor allocations, syscall counts, TLS wire bytes/records and CPU expose amplification hidden by zero-copy counts. |
+| Retained pages/prefetch and borrowed/owned binds under concurrency | Record peak leased/decompressed/slab bytes, GC allocation bytes/op and refcount operations per owner transfer, separate from requested Clone/Collect. Per-cell views add no retain/release churn. |
+
+Measure ns/op, bytes/op, allocs/op, throughput and CPU for microbenchmarks;
+record end-to-end p50/p95/p99 under fixed concurrency where applicable. Use
+operation counters/scaling curves and profiles to distinguish algorithmic growth
+from benchmark noise. Compare equivalent semantics on the same environment;
+explain and resolve material hot-path regressions before accepting the owning
+task. Preserve correctness, ownership and zero-copy gates while tuning. Report
+custom-codec/policy costs and explicit public copies separately; neither can be
+used to hide built-in overhead.
 
 Run focused unit/race tests during module integration and the required full
 suites once stable; do not repeatedly run broad suites without new changes or

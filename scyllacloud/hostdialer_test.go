@@ -21,8 +21,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gocql/gocql"
-	"github.com/gocql/gocql/internal/tests"
+	"github.com/scylladb/gocql/v2"
+	"github.com/scylladb/gocql/v2/internal/tests"
 )
 
 const (
@@ -31,9 +31,6 @@ const (
 
 func TestHostSNIDialer_InvalidConnectionConfig(t *testing.T) {
 	t.Parallel()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	_, serverCertPem, clientCertPem, clientKeyPem, err := setupTLSServer(nil)
 	if err != nil {
@@ -45,7 +42,7 @@ func TestHostSNIDialer_InvalidConnectionConfig(t *testing.T) {
 	tt := []struct {
 		name          string
 		connConfig    *ConnectionConfig
-		hostInfo      *gocql.HostInfo
+		hostInfo      gocql.HostSnapshot
 		expectedError error
 	}{
 		{
@@ -55,7 +52,7 @@ func TestHostSNIDialer_InvalidConnectionConfig(t *testing.T) {
 				cc.CurrentContext = ""
 				return cc
 			}(),
-			hostInfo:      &gocql.HostInfo{},
+			hostInfo:      gocql.HostSnapshot{},
 			expectedError: fmt.Errorf("can't get client certificate from configuration: %w", fmt.Errorf("can't get current auth info: %w", fmt.Errorf("can't get current context config: %w", fmt.Errorf("current context can't be empty")))),
 		},
 		{
@@ -65,7 +62,7 @@ func TestHostSNIDialer_InvalidConnectionConfig(t *testing.T) {
 				cc.CurrentContext = "unknown-context"
 				return cc
 			}(),
-			hostInfo:      &gocql.HostInfo{},
+			hostInfo:      gocql.HostSnapshot{},
 			expectedError: fmt.Errorf("can't get client certificate from configuration: %w", fmt.Errorf("can't get current auth info: %w", fmt.Errorf("can't get current context config: %w", fmt.Errorf(`context "unknown-context" does not exists`)))),
 		},
 		{
@@ -75,25 +72,25 @@ func TestHostSNIDialer_InvalidConnectionConfig(t *testing.T) {
 				cc.Contexts[cc.CurrentContext].AuthInfoName = "unknown-authinfo"
 				return cc
 			}(),
-			hostInfo:      &gocql.HostInfo{},
+			hostInfo:      gocql.HostSnapshot{},
 			expectedError: fmt.Errorf("can't get client certificate from configuration: %w", fmt.Errorf("can't get current auth info: %w", fmt.Errorf(`authInfo "unknown-authinfo" does not exists`))),
 		},
 		{
 			name:          "empty client certificate",
 			connConfig:    newBasicConnectionConf("127.0.0.1:9142", serverCertPem, nil, clientKeyPem),
-			hostInfo:      &gocql.HostInfo{},
+			hostInfo:      gocql.HostSnapshot{},
 			expectedError: fmt.Errorf("can't get client certificate from configuration: %w", fmt.Errorf("can't read client certificate: %w", &os.PathError{Op: "open", Path: "", Err: syscall.ENOENT})),
 		},
 		{
 			name:          "empty client key",
 			connConfig:    newBasicConnectionConf("127.0.0.1:9142", serverCertPem, clientCertPem, nil),
-			hostInfo:      &gocql.HostInfo{},
+			hostInfo:      gocql.HostSnapshot{},
 			expectedError: fmt.Errorf("can't get client certificate from configuration: %w", fmt.Errorf("can't read client key: %w", &os.PathError{Op: "open", Path: "", Err: syscall.ENOENT})),
 		},
 		{
 			name:          "empty certificate authority",
 			connConfig:    newBasicConnectionConf("127.0.0.1:9142", nil, clientCertPem, clientKeyPem),
-			hostInfo:      &gocql.HostInfo{},
+			hostInfo:      gocql.HostSnapshot{},
 			expectedError: fmt.Errorf("can't get root CA from configuration: %w", fmt.Errorf(`datacenter "us-east-1" does not include certificate authority`)),
 		},
 		{
@@ -103,19 +100,13 @@ func TestHostSNIDialer_InvalidConnectionConfig(t *testing.T) {
 				cc.Contexts[cc.CurrentContext].DatacenterName = "unknown-datacenter"
 				return cc
 			}(),
-			hostInfo:      &gocql.HostInfo{},
+			hostInfo:      gocql.HostSnapshot{},
 			expectedError: fmt.Errorf("can't get current datacenter config: %w", fmt.Errorf(`datacenter "unknown-datacenter" does not exists`)),
 		},
 		{
-			name:       "unknown host datacenter",
-			connConfig: newBasicConnectionConf("127.0.0.1:9142", serverCertPem, clientCertPem, clientKeyPem),
-			hostInfo: func() *gocql.HostInfo {
-				hi := gocql.HostInfoBuilder{
-					DataCenter: "unknown-datacenter",
-					HostId:     "a0000000-0000-0000-0000-000000000099",
-				}.Build()
-				return &hi
-			}(),
+			name:          "unknown host datacenter",
+			connConfig:    newBasicConnectionConf("127.0.0.1:9142", serverCertPem, clientCertPem, clientKeyPem),
+			hostInfo:      gocql.HostSnapshot{Datacenter: "unknown-datacenter", ID: gocql.ParseUUIDMust("a0000000-0000-0000-0000-000000000099")},
 			expectedError: fmt.Errorf(`datacenter "unknown-datacenter" configuration not found in connection bundle`),
 		},
 	}
@@ -125,7 +116,7 @@ func TestHostSNIDialer_InvalidConnectionConfig(t *testing.T) {
 			t.Parallel()
 
 			hostDialer := NewSniHostDialer(tc.connConfig, dialer)
-			_, err := hostDialer.DialHost(ctx, tc.hostInfo)
+			_, err := hostDialer.TLSForHost(tc.hostInfo)
 			if !tests.ErrEqual(err, tc.expectedError) {
 				t.Errorf("expected error to be %#v, got %#v", tc.expectedError, err)
 			}
@@ -139,12 +130,12 @@ func TestHostSNIDialer_ServerNameIdentifiers(t *testing.T) {
 	tt := []struct {
 		name        string
 		connConfig  func(server string, serverCertPem, clientCertPem, clientKeyPem []byte) *ConnectionConfig
-		hostInfo    *gocql.HostInfo
+		hostInfo    gocql.HostSnapshot
 		expectedSNI func(config *ConnectionConfig) string
 	}{
 		{
 			name:       "node domain as SNI when host info is unknown",
-			hostInfo:   &gocql.HostInfo{},
+			hostInfo:   gocql.HostSnapshot{},
 			connConfig: newBasicConnectionConf,
 			expectedSNI: func(_ *ConnectionConfig) string {
 				return "node.scylladb.com"
@@ -152,7 +143,7 @@ func TestHostSNIDialer_ServerNameIdentifiers(t *testing.T) {
 		},
 		{
 			name:     "server as SNI when host info is unknown and node domain is empty",
-			hostInfo: &gocql.HostInfo{},
+			hostInfo: gocql.HostSnapshot{},
 			connConfig: func(server string, serverCertPem, clientCertPem, clientKeyPem []byte) *ConnectionConfig {
 				cc := newBasicConnectionConf(server, serverCertPem, clientCertPem, clientKeyPem)
 				dcConf := cc.Datacenters[cc.Contexts[cc.CurrentContext].DatacenterName]
@@ -166,14 +157,8 @@ func TestHostSNIDialer_ServerNameIdentifiers(t *testing.T) {
 			},
 		},
 		{
-			name: "host SNI when host is known",
-			hostInfo: func() *gocql.HostInfo {
-				hi := gocql.HostInfoBuilder{
-					DataCenter: "us-east-1",
-					HostId:     "a0000000-0000-0000-0000-000000000001",
-				}.Build()
-				return &hi
-			}(),
+			name:       "host SNI when host is known",
+			hostInfo:   gocql.HostSnapshot{Datacenter: "us-east-1", ID: gocql.ParseUUIDMust("a0000000-0000-0000-0000-000000000001")},
 			connConfig: newBasicConnectionConf,
 			expectedSNI: func(_ *ConnectionConfig) string {
 				return "a0000000-0000-0000-0000-000000000001.node.scylladb.com"
@@ -207,14 +192,25 @@ func TestHostSNIDialer_ServerNameIdentifiers(t *testing.T) {
 			connConfig := tc.connConfig(server.Listener.Addr().String(), serverCertPem, clientCertPem, clientKeyPem)
 			hostDialer := NewSniHostDialer(connConfig, dialer)
 
-			_, err = hostDialer.DialHost(ctx, tc.hostInfo)
+			tlsConfig, err := hostDialer.TLSForHost(tc.hostInfo)
 			if err != nil {
+				t.Fatal(err)
+			}
+			conn, err := hostDialer.DialHost(ctx, tc.hostInfo)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer conn.Close()
+			if err := tls.Client(conn, tlsConfig).HandshakeContext(ctx); err != nil {
 				t.Fatal(err)
 			}
 
 			select {
 			case receivedState := <-connectionStateCh:
 				expectedSNI := tc.expectedSNI(connConfig)
+				if len(receivedState.PeerCertificates) != 1 {
+					t.Errorf("expected client certificate, got %d", len(receivedState.PeerCertificates))
+				}
 				if receivedState.ServerName != expectedSNI {
 					t.Errorf("expected %q SNI, got %q", expectedSNI, receivedState.ServerName)
 				}
@@ -403,4 +399,52 @@ func encodePrivateKey(key *rsa.PrivateKey) ([]byte, error) {
 	}
 
 	return buffer.Bytes(), nil
+}
+
+func TestHostSNIDialer_DatacenterRouting(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		host gocql.HostSnapshot
+		want string
+	}{
+		{name: "initial contact", want: "initial.example:443"},
+		{name: "discovered remote datacenter", host: gocql.HostSnapshot{ID: gocql.ParseUUIDMust("a0000000-0000-0000-0000-000000000002"), Datacenter: "remote"}, want: "remote.example:9142"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			config := &ConnectionConfig{
+				Datacenters: map[string]*Datacenter{
+					"initial": {Server: "initial.example"},
+					"remote":  {Server: "remote.example:9142"},
+				},
+				Contexts:       map[string]*Context{"default": {DatacenterName: "initial"}},
+				CurrentContext: "default",
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			called := false
+			dialer := cloudTestDialer(func(gotCtx context.Context, network, address string) (net.Conn, error) {
+				called = true
+				if gotCtx != ctx || network != "tcp" || address != tc.want {
+					t.Errorf("dial got context %v, network %q, address %q; want original context, tcp, %q", gotCtx == ctx, network, address, tc.want)
+				}
+				client, server := net.Pipe()
+				server.Close()
+				return client, nil
+			})
+			conn, err := NewSniHostDialer(config, dialer).DialHost(ctx, tc.host)
+			if err != nil {
+				t.Fatal(err)
+			}
+			conn.Close()
+			if !called {
+				t.Fatal("custom socket dialer was not called")
+			}
+		})
+	}
+}
+
+type cloudTestDialer func(context.Context, string, string) (net.Conn, error)
+
+func (d cloudTestDialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	return d(ctx, network, address)
 }

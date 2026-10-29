@@ -1,0 +1,8 @@
+{"Time":"2026-10-29T09:10:41.532209167-04:00","Action":"start","Package":"command-line-arguments"}
+{"Time":"2026-10-29T09:10:41.534094746-04:00","Action":"run","Package":"command-line-arguments","Test":"TestV2RuntimeDatabaseSmoke"}
+{"Time":"2026-10-29T09:10:41.534120024-04:00","Action":"output","Package":"command-line-arguments","Test":"TestV2RuntimeDatabaseSmoke","Output":"=== RUN   TestV2RuntimeDatabaseSmoke\n"}
+{"Time":"2026-10-29T09:10:45.357141692-04:00","Action":"output","Package":"command-line-arguments","Test":"TestV2RuntimeDatabaseSmoke","Output":"--- PASS: TestV2RuntimeDatabaseSmoke (3.82s)\n"}
+{"Time":"2026-10-29T09:10:45.357171198-04:00","Action":"pass","Package":"command-line-arguments","Test":"TestV2RuntimeDatabaseSmoke","Elapsed":3.82}
+{"Time":"2026-10-29T09:10:45.35718319-04:00","Action":"output","Package":"command-line-arguments","Output":"PASS\n"}
+{"Time":"2026-10-29T09:10:45.358113867-04:00","Action":"output","Package":"command-line-arguments","Output":"ok  \tcommand-line-arguments\t3.826s\n"}
+{"Time":"2026-10-29T09:10:45.358128414-04:00","Action":"pass","Package":"command-line-arguments","Elapsed":3.826}

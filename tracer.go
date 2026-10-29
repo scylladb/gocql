@@ -1,8 +1,10 @@
 package gocql
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"net/netip"
 	"sync"
 	"time"
 )
@@ -46,79 +48,53 @@ func (t *TraceWriter) SetSleepInterval(sleepInterval time.Duration) {
 }
 
 func (t *TraceWriter) Trace(traceId []byte) {
-	var (
-		timestamp time.Time
-		activity  string
-		source    string
-		elapsed   int
-		thread    string
-	)
 
 	t.mu.Lock()
 	defer t.mu.Unlock()
-
-	fetchAttempts := 1
-	if t.maxAttempts > 0 {
-		fetchAttempts = t.maxAttempts
+	tracer := NewTracer(t.session)
+	attempts := t.maxAttempts
+	if attempts <= 0 {
+		attempts = 1
 	}
-
-	isDone := false
-	for i := 0; i < fetchAttempts; i++ {
-		var duration int
-
-		iter := t.session.control.querySystem(`SELECT duration
-			FROM system_traces.sessions
-			WHERE session_id = ?`, traceId)
-		iter.Scan(&duration)
-		if duration > 0 {
-			isDone = true
-		}
-
-		if err := iter.Close(); err != nil {
+	ready := false
+	for i := 0; i < attempts; i++ {
+		var err error
+		ready, err = tracer.IsReady(traceId)
+		if err != nil {
 			fmt.Fprintln(t.w, "Error:", err)
 			return
 		}
-
-		if isDone || i == fetchAttempts-1 {
+		if ready || i == attempts-1 {
 			break
 		}
-
-		time.Sleep(t.sleepInterval)
+		timer := time.NewTimer(t.sleepInterval)
+		ctx := v2SchemaContext(t.session)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			fmt.Fprintln(t.w, "Error:", ctx.Err())
+			return
+		case <-timer.C:
+		}
 	}
-	if !isDone {
+	if !ready {
 		fmt.Fprintln(t.w, "Error: failed to wait tracing to complete. !!! Tracing is incomplete !!!")
 	}
-
-	var (
-		coordinator string
-		duration    int
-	)
-
-	iter := t.session.control.querySystem(`SELECT coordinator, duration
-		FROM system_traces.sessions
-		WHERE session_id = ?`, traceId)
-
-	iter.Scan(&coordinator, &duration)
-	if err := iter.Close(); err != nil {
+	coordinator, duration, err := tracer.GetCoordinatorTime(traceId)
+	if err != nil {
 		fmt.Fprintln(t.w, "Error:", err)
 		return
 	}
-
-	fmt.Fprintf(t.w, "Tracing session %016x (coordinator: %s, duration: %v):\n",
-		traceId, coordinator, time.Duration(duration)*time.Microsecond)
-
-	iter = t.session.control.querySystem(`SELECT event_id, activity, source, source_elapsed, thread
-			FROM system_traces.events
-			WHERE session_id = ?`, traceId)
-
-	for iter.Scan(&timestamp, &activity, &source, &elapsed, &thread) {
-		fmt.Fprintf(t.w, "%s: %s [%s] (source: %s, elapsed: %d)\n",
-			timestamp.Format("2006/01/02 15:04:05.999999"), activity, thread, source, elapsed)
-	}
-
-	if err := iter.Close(); err != nil {
+	fmt.Fprintf(t.w, "Tracing session %016x (coordinator: %s, duration: %v):\n", traceId, coordinator, duration)
+	activities, err := tracer.GetActivities(traceId)
+	if err != nil {
 		fmt.Fprintln(t.w, "Error:", err)
+		return
 	}
+	for _, e := range activities {
+		fmt.Fprintf(t.w, "%s: %s [%s] (source: %s, elapsed: %d)\n", e.Timestamp.Format("2006/01/02 15:04:05.999999"), e.Activity, e.Thread, e.Source, e.Elapsed)
+	}
+
 }
 
 type TracerEnhanced struct {
@@ -144,44 +120,27 @@ func (t *TracerEnhanced) AllTraceIDs() [][]byte {
 }
 
 func (t *TracerEnhanced) IsReady(traceId []byte) (bool, error) {
-	isDone := false
-	var duration int
-
-	iter := t.session.control.querySystem(`SELECT duration
-		FROM system_traces.sessions
-		WHERE session_id = ?`, traceId)
-	iter.Scan(&duration)
-	if duration > 0 {
-		isDone = true
-	}
-
-	if err := iter.Close(); err != nil {
+	rows, err := readV2TraceRows(t.session, traceId, "SELECT duration FROM system_traces.sessions WHERE session_id = ?", OneColumn(NullableCodec(Int32)))
+	if err != nil {
 		return false, err
 	}
-
-	if isDone {
-		return true, nil
-	}
-
-	return false, nil
+	return len(rows) > 0 && rows[0].Valid && rows[0].Value > 0, nil
 }
 
 func (t *TracerEnhanced) GetCoordinatorTime(traceId []byte) (string, time.Duration, error) {
-	var (
-		coordinator string
-		duration    int
-	)
-
-	iter := t.session.control.querySystem(`SELECT coordinator, duration
-		FROM system_traces.sessions
-		WHERE session_id = ?`, traceId)
-
-	iter.Scan(&coordinator, &duration)
-	if err := iter.Close(); err != nil {
-		return coordinator, time.Duration(duration) * time.Microsecond, err
+	type row struct {
+		coordinator netip.Addr
+		duration    Nullable[int32]
 	}
-
-	return coordinator, time.Duration(duration) * time.Microsecond, nil
+	decoder := Row(Column("coordinator", InetCodec, func(r *row) *netip.Addr { return &r.coordinator }), Column("duration", NullableCodec(Int32), func(r *row) *Nullable[int32] { return &r.duration }))
+	rows, err := readV2TraceRows(t.session, traceId, "SELECT coordinator, duration FROM system_traces.sessions WHERE session_id = ?", decoder)
+	if err != nil {
+		return "", 0, err
+	}
+	if len(rows) == 0 {
+		return "", 0, ErrNoRows
+	}
+	return rows[0].coordinator.String(), time.Duration(rows[0].duration.Value) * time.Microsecond, nil
 }
 
 type TraceEntry struct {
@@ -193,27 +152,44 @@ type TraceEntry struct {
 }
 
 func (t *TracerEnhanced) GetActivities(traceId []byte) ([]TraceEntry, error) {
-	iter := t.session.control.querySystem(`SELECT event_id, activity, source, source_elapsed, thread
-		FROM system_traces.events
-		WHERE session_id = ?`, traceId)
-
-	var (
-		timestamp time.Time
-		activity  string
-		source    string
-		elapsed   int
-		thread    string
-	)
-
-	var activities []TraceEntry
-
-	for iter.Scan(&timestamp, &activity, &source, &elapsed, &thread) {
-		activities = append(activities, TraceEntry{Timestamp: timestamp, Activity: activity, Source: source, Elapsed: elapsed, Thread: thread})
-	}
-
-	if err := iter.Close(); err != nil {
+	decoder := Row(Column("event_id", TimeUUIDCodec, func(r *traceActivityRow) *TimeUUID { return &r.id }), Column("activity", TextCodec, func(r *traceActivityRow) *Text { return &r.activity }), Column("source", InetCodec, func(r *traceActivityRow) *netip.Addr { return &r.source }), Column("source_elapsed", NullableCodec(Int32), func(r *traceActivityRow) *Nullable[int32] { return &r.elapsed }), Column("thread", TextCodec, func(r *traceActivityRow) *Text { return &r.thread }))
+	rows, err := readV2TraceRows(t.session, traceId, "SELECT event_id, activity, source, source_elapsed, thread FROM system_traces.events WHERE session_id = ?", decoder)
+	if err != nil {
 		return nil, err
 	}
+	out := make([]TraceEntry, len(rows))
+	for i, r := range rows {
+		out[i] = TraceEntry{Timestamp: UUID(r.id).Time(), Activity: r.activity.String(), Source: r.source.String(), Thread: r.thread.String(), Elapsed: int(r.elapsed.Value)}
+	}
+	return out, nil
+}
 
-	return activities, nil
+func readV2TraceRows[R any](s *Session, traceID []byte, cql string, decoder RowDecoder[R]) ([]R, error) {
+	if s == nil || s.Closed() {
+		return nil, ErrClosed
+	}
+	if len(traceID) != 16 {
+		return nil, typeValidation("trace ID", "must contain 16 bytes")
+	}
+	if s.control == nil {
+		return nil, errNoControl
+	}
+	backend, ok := s.control.(v2SystemQueryer)
+	if !ok {
+		return nil, typeValidation("tracing", "control connection does not support typed requests")
+	}
+	var id UUID
+	copy(id[:], traceID)
+	typ, err := ScalarType(TypeUUID)
+	if err != nil {
+		return nil, err
+	}
+	ctx := v2SchemaContext(s)
+	timeout := s.cfg.MetadataSchemaRequestTimeout
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	return readV2SystemRowsVia(ctx, 4, timeout, backend.queryV2System, Statement[UUID, R]{CQL: cql, Params: OneParam(UUIDCodec), Rows: decoder}, NewColumns(ColumnSpec{Name: "session_id", Type: typ}), id)
 }

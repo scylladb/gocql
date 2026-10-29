@@ -41,12 +41,12 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/gocql/gocql/debounce"
-	"github.com/gocql/gocql/events"
-	"github.com/gocql/gocql/internal/debug"
-	"github.com/gocql/gocql/internal/eventbus"
-	"github.com/gocql/gocql/internal/lru"
-	"github.com/gocql/gocql/tablets"
+	"github.com/scylladb/gocql/v2/debounce"
+	"github.com/scylladb/gocql/v2/events"
+	"github.com/scylladb/gocql/v2/internal/debug"
+	"github.com/scylladb/gocql/v2/internal/eventbus"
+	"github.com/scylladb/gocql/v2/internal/lru"
+	"github.com/scylladb/gocql/v2/tablets"
 )
 
 // Session is the interface used by users to interact with the database.
@@ -59,6 +59,10 @@ import (
 // and automatically sets a default consistency level on all operations
 // that do not have a consistency level set.
 type Session struct {
+	typedMu      sync.Mutex
+	typedState   *sessionRuntime
+	v2Peripheral atomic.Pointer[v2PeripheralState]
+
 	warningHandler       WarningHandler
 	queryObserver        QueryObserver
 	control              controlConnection
@@ -542,17 +546,14 @@ func (s *Session) init() error {
 // AwaitSchemaAgreement returns an error in case schema versions are not the same
 // after the timeout specified in MaxWaitSchemaAgreement elapses.
 func (s *Session) AwaitSchemaAgreement(ctx context.Context) error {
-	if s.cfg.disableControlConn {
-		return errNoControl
-	}
-	if err := s.Ready(); err != nil {
-		return err
-	}
-	ch := s.control.getConn()
-	return (&Iter{err: ch.conn.awaitSchemaAgreement(ctx)}).err
+	return s.awaitV2SchemaAgreement(ctx)
 }
 
 func (s *Session) reconnectDownedHosts(intv time.Duration) {
+	if policy := s.typedRuntime().config.Reconnect; policy != nil {
+		s.reconnectTypedDownedHosts(policy, intv)
+		return
+	}
 	reconnectTicker := time.NewTicker(intv)
 	defer reconnectTicker.Stop()
 
@@ -664,12 +665,12 @@ func (s *Session) Bind(stmt string, b func(q *QueryInfo) ([]any, error)) *Query 
 
 // Close closes all connections. The session is unusable after this
 // operation.
-func (s *Session) Close() {
+func (s *Session) Close() error {
 
 	s.sessionStateMu.Lock()
 	if s.isClosing {
 		s.sessionStateMu.Unlock()
-		return
+		return nil
 	}
 	s.isClosing = true
 	s.sessionStateMu.Unlock()
@@ -713,11 +714,13 @@ func (s *Session) Close() {
 	if s.metadataDescriber != nil && s.metadataDescriber.metadata != nil {
 		s.metadataDescriber.metadata.tabletsMetadata.Close()
 	}
+	s.closeV2Peripheral()
+	return nil
 }
 
 func (s *Session) Closed() bool {
 	s.sessionStateMu.RLock()
-	closed := s.isClosed
+	closed := s.isClosed || s.isClosing
 	s.sessionStateMu.RUnlock()
 	return closed
 }
@@ -1812,7 +1815,7 @@ type Query struct {
 	// query context instead of chaining each page under the previous page fetch.
 	pageContextParent context.Context
 	spec              SpeculativeExecutionPolicy
-	rt                RetryPolicy
+	rt                oldRetryPolicy
 	conn              ConnInterface
 	observer          QueryObserver
 	metrics           *queryMetrics
@@ -1901,7 +1904,7 @@ func (q *Query) defaultsFromSession() {
 	q.trace = s.trace
 	q.observer = s.queryObserver
 	q.prefetch = s.prefetch
-	q.rt = s.cfg.RetryPolicy
+	q.rt = s.cfg.oldRetryPolicy
 	q.serialCons = s.cfg.SerialConsistency
 	q.defaultTimestamp = s.cfg.DefaultTimestamp
 	q.idempotent = s.cfg.DefaultIdempotence
@@ -2148,7 +2151,7 @@ func (q *Query) finishAttempt(token attemptToken, keyspace string, end time.Time
 	}
 }
 
-func (q *Query) retryPolicy() RetryPolicy {
+func (q *Query) retryPolicy() oldRetryPolicy {
 	return q.rt
 }
 
@@ -2320,8 +2323,8 @@ func (q *Query) Prefetch(p float64) *Query {
 	return q
 }
 
-// RetryPolicy sets the policy to use when retrying the query.
-func (q *Query) RetryPolicy(r RetryPolicy) *Query {
+// oldRetryPolicy sets the policy to use when retrying the query.
+func (q *Query) oldRetryPolicy(r oldRetryPolicy) *Query {
 	q.rt = r
 	return q
 }
@@ -3332,7 +3335,7 @@ func (n *nextIter) fetch() *Iter {
 
 type Batch struct {
 	context  context.Context
-	rt       RetryPolicy
+	rt       oldRetryPolicy
 	spec     SpeculativeExecutionPolicy
 	trace    Tracer
 	observer BatchObserver
@@ -3350,7 +3353,7 @@ type Batch struct {
 	// If it is empty, then the host is picked by HostSelectionPolicy
 	hostID                string
 	routingKey            []byte
-	Entries               []BatchEntry
+	Entries               []legacyBatchEntry
 	defaultTimestampValue int64
 	// requestTimeout is a timeout on waiting for response from server
 	requestTimeout   time.Duration
@@ -3379,7 +3382,7 @@ func (s *Session) Batch(typ BatchType) *Batch {
 	s.mu.RLock()
 	batch := &Batch{
 		Type:             typ,
-		rt:               s.cfg.RetryPolicy,
+		rt:               s.cfg.oldRetryPolicy,
 		serialCons:       s.cfg.SerialConsistency,
 		trace:            s.trace,
 		observer:         s.batchObserver,
@@ -3510,7 +3513,7 @@ func (b *Batch) SpeculativeExecutionPolicy(sp SpeculativeExecutionPolicy) *Batch
 
 // Query adds the query to the batch operation
 func (b *Batch) Query(stmt string, args ...any) *Batch {
-	b.Entries = append(b.Entries, BatchEntry{Stmt: stmt, Args: args})
+	b.Entries = append(b.Entries, legacyBatchEntry{Stmt: stmt, Args: args})
 	return b
 }
 
@@ -3518,15 +3521,15 @@ func (b *Batch) Query(stmt string, args ...any) *Batch {
 // that will be invoked when the batch is executed. The binding callback allows the application
 // to define which query argument values will be marshalled as part of the batch execution.
 func (b *Batch) Bind(stmt string, bind func(q *QueryInfo) ([]any, error)) {
-	b.Entries = append(b.Entries, BatchEntry{Stmt: stmt, binding: bind})
+	b.Entries = append(b.Entries, legacyBatchEntry{Stmt: stmt, binding: bind})
 }
 
-func (b *Batch) retryPolicy() RetryPolicy {
+func (b *Batch) retryPolicy() oldRetryPolicy {
 	return b.rt
 }
 
-// RetryPolicy sets the retry policy to use when executing the batch operation
-func (b *Batch) RetryPolicy(r RetryPolicy) *Batch {
+// oldRetryPolicy sets the retry policy to use when executing the batch operation
+func (b *Batch) oldRetryPolicy(r oldRetryPolicy) *Batch {
 	b.rt = r
 	return b
 }
@@ -3781,7 +3784,7 @@ const (
 	CounterBatch  BatchType = 2
 )
 
-type BatchEntry struct {
+type legacyBatchEntry struct {
 	binding    func(q *QueryInfo) ([]any, error)
 	Stmt       string
 	Args       []any

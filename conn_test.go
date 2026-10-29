@@ -51,9 +51,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	frm "github.com/gocql/gocql/internal/frame"
+	frm "github.com/scylladb/gocql/v2/internal/frame"
 
-	"github.com/gocql/gocql/internal/streams"
+	"github.com/scylladb/gocql/v2/internal/streams"
 )
 
 const (
@@ -427,7 +427,7 @@ func TestQueryRetry(t *testing.T) {
 
 	rt := &SimpleRetryPolicy{NumRetries: 1}
 
-	qry := db.Query("kill").RetryPolicy(rt)
+	qry := db.Query("kill").oldRetryPolicy(rt)
 	if err := qry.Exec(); err == nil {
 		t.Fatalf("expected error")
 	}
@@ -474,7 +474,7 @@ func TestQueryMultinodeWithMetrics(t *testing.T) {
 	// 1 retry per host
 	rt := &SimpleRetryPolicy{NumRetries: 3}
 	observer := &testQueryObserver{metrics: make(map[string]*hostMetrics), verbose: false, logger: log}
-	qry := db.Query("kill").RetryPolicy(rt).Observer(observer).Idempotent(true)
+	qry := db.Query("kill").oldRetryPolicy(rt).Observer(observer).Idempotent(true)
 	if err := qry.Exec(); err == nil {
 		t.Fatalf("expected error")
 	}
@@ -566,7 +566,7 @@ func TestSpeculativeExecution(t *testing.T) {
 	sp := &SimpleSpeculativeExecution{NumAttempts: 1, TimeoutDelay: 200 * time.Millisecond}
 
 	// Build the query
-	qry := db.Query("speculative").RetryPolicy(rt).SetSpeculativeExecutionPolicy(sp).Idempotent(true)
+	qry := db.Query("speculative").oldRetryPolicy(rt).SetSpeculativeExecutionPolicy(sp).Idempotent(true)
 
 	// Execute the query and close, check that it doesn't error out
 	if err := qry.Exec(); err != nil {

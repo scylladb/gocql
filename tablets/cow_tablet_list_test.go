@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gocql/gocql/internal/tests"
+	"github.com/scylladb/gocql/v2/internal/tests"
 )
 
 func testHostUUID(s string) HostUUID {

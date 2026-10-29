@@ -13,7 +13,15 @@ import (
 	"time"
 )
 
-type makeClusterTestFunc func() *ClusterConfig
+// Each fixture supplies its own construction path; integration fixtures use
+// Config/Connect while unit servers can disable their unsupported control path.
+type shardAwareTestCluster struct {
+	connect func(context.Context, Dialer, bool) (*Session, error)
+	useTLS  bool
+	port    uint16
+}
+
+type makeClusterTestFunc func() shardAwareTestCluster
 
 func testShardAwarePortNoReconnections(t *testing.T, makeCluster makeClusterTestFunc) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -43,19 +51,19 @@ func testShardAwarePortNoReconnections(t *testing.T, makeCluster makeClusterTest
 			// made for each session separately
 			dialer := newLoggingTestDialer()
 			cluster := makeCluster()
-			cluster.PoolConfig.HostSelectionPolicy = TokenAwareHostPolicy(RoundRobinHostPolicy())
-			cluster.Dialer = dialer
 
-			useTLS := cluster.SslOpts != nil
+			useTLS := cluster.useTLS
 
-			sess, err := cluster.CreateSession()
+			sess, err := cluster.connect(ctx, dialer, false)
 			if err != nil {
+				pushErr(fmt.Errorf("create session: %w", err))
 				cancel()
 				return
 			}
 			defer sess.Close()
 
 			if err := waitUntilPoolsStopFilling(ctx, sess, 10*time.Second); err != nil {
+				pushErr(fmt.Errorf("wait for connection pools: %w", err))
 				cancel()
 				return
 			}
@@ -88,7 +96,7 @@ func testShardAwarePortNoReconnections(t *testing.T, makeCluster makeClusterTest
 				// Verify that there were no duplicate connections to the same shard
 				// Make sure that we didn't connect to the same shard twice
 				// There should be numberOfShards-1 connections to the new port
-				events := dialer.events[host.ConnectAddress().String()]
+				events := dialer.connectionEvents(host.ConnectAddress().String())
 				shardAwareConnectionCount := 0
 				shardsConnected := make(map[int]testConnectionEvent)
 				for _, evt := range events {
@@ -123,10 +131,9 @@ func testShardAwarePortNoReconnections(t *testing.T, makeCluster makeClusterTest
 
 func testShardAwarePortMaliciousNAT(t *testing.T, makeCluster makeClusterTestFunc) {
 	cluster := makeCluster()
-	cluster.PoolConfig.HostSelectionPolicy = TokenAwareHostPolicy(RoundRobinHostPolicy())
-	cluster.Dialer = &sourcePortOffByOneTestDialer{}
+	dialer := &sourcePortOffByOneTestDialer{}
 
-	sess, err := cluster.CreateSession()
+	sess, err := cluster.connect(context.Background(), dialer, false)
 	if err != nil {
 		t.Fatalf("an error occurred while creating a session: %s", err)
 	}
@@ -155,10 +162,9 @@ func testShardAwarePortMaliciousNAT(t *testing.T, makeCluster makeClusterTestFun
 
 func testShardAwarePortUnreachable(t *testing.T, makeCluster makeClusterTestFunc) {
 	cluster := makeCluster()
-	cluster.PoolConfig.HostSelectionPolicy = TokenAwareHostPolicy(RoundRobinHostPolicy())
-	cluster.Dialer = &allowOnlyNonShardAwarePortDialer{allowedPort: getClusterPort(cluster)}
+	dialer := &allowOnlyNonShardAwarePortDialer{allowedPort: cluster.port}
 
-	sess, err := cluster.CreateSession()
+	sess, err := cluster.connect(context.Background(), dialer, false)
 	if err != nil {
 		t.Fatalf("an error occurred while creating a session: %s", err)
 	}
@@ -187,15 +193,11 @@ func testShardAwarePortUnreachable(t *testing.T, makeCluster makeClusterTestFunc
 func testShardAwarePortUnusedIfNotEnabled(t *testing.T, makeCluster makeClusterTestFunc) {
 	dialer := newLoggingTestDialer()
 	cluster := makeCluster()
-	cluster.PoolConfig.HostSelectionPolicy = TokenAwareHostPolicy(RoundRobinHostPolicy())
 
-	// Explicitly disable the shard aware port
-	cluster.DisableShardAwarePort = true
-	cluster.Dialer = dialer
+	useTLS := cluster.useTLS
 
-	useTLS := cluster.SslOpts != nil
-
-	sess, err := cluster.CreateSession()
+	// Explicitly disable the shard aware port.
+	sess, err := cluster.connect(context.Background(), dialer, true)
 	if err != nil {
 		t.Fatalf("an error occurred while creating a session: %s", err)
 	}
@@ -217,7 +219,7 @@ func testShardAwarePortUnusedIfNotEnabled(t *testing.T, makeCluster makeClusterT
 			continue
 		}
 
-		events, _ := dialer.events[host.ConnectAddress().String()]
+		events := dialer.connectionEvents(host.ConnectAddress().String())
 
 		for _, evt := range events {
 			if evt.destinationPort == shardAwarePort {
@@ -294,13 +296,13 @@ func checkIfPoolsAreFull(sess *Session) bool {
 	return true
 }
 
-func getClusterPort(cluster *ClusterConfig) uint16 {
-	_, portStr, _ := net.SplitHostPort(cluster.Hosts[0])
+func shardTestContactPort(contactPoints []string, defaultPort uint16) uint16 {
+	_, portStr, _ := net.SplitHostPort(contactPoints[0])
 	port, _ := strconv.Atoi(portStr)
 
 	if port == 0 {
-		// Assume default if it's not explicitly specified
-		return 9042
+		// A contact point without a port uses the configured transport port.
+		return defaultPort
 	}
 	return uint16(port)
 }
@@ -358,8 +360,6 @@ func newLoggingTestDialer() *loggingTestDialer {
 }
 
 func (ltd *loggingTestDialer) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
-	sourcePort := ScyllaGetSourcePort(ctx)
-
 	ipaddr, destinationPortStr, err := net.SplitHostPort(addr)
 	if err != nil {
 		return nil, err
@@ -376,11 +376,17 @@ func (ltd *loggingTestDialer) DialContext(ctx context.Context, network, addr str
 		defer ltd.mu.Unlock()
 
 		evt := testConnectionEvent{
-			sourcePort:      sourcePort,
+			sourcePort:      uint16(conn.LocalAddr().(*net.TCPAddr).Port),
 			destinationPort: uint16(destinationPort),
 		}
 		ltd.events[ipaddr] = append(ltd.events[ipaddr], evt)
 	}
 
 	return conn, err
+}
+
+func (ltd *loggingTestDialer) connectionEvents(address string) []testConnectionEvent {
+	ltd.mu.Lock()
+	defer ltd.mu.Unlock()
+	return append([]testConnectionEvent(nil), ltd.events[address]...)
 }

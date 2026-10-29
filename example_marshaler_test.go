@@ -31,7 +31,7 @@ import (
 	"strconv"
 	"strings"
 
-	gocql "github.com/gocql/gocql"
+	gocql "github.com/scylladb/gocql/v2"
 )
 
 // MyMarshaler implements Marshaler and Unmarshaler.

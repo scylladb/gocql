@@ -28,6 +28,7 @@
 package gocql
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -37,137 +38,114 @@ import (
 
 func TestBatch_Errors(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	ctx := context.Background()
+	session := createV2Session(t)
 	defer session.Close()
-
 	table := testTableName(t)
+	require.NoError(t, v2CreateTable(ctx, session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (id int primary key, val inet)`, table)))
 
-	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (id int primary key, val inet)`, table)); err != nil {
-		t.Fatal(err)
-	}
-
-	b := session.Batch(LoggedBatch)
-	b = b.Query(fmt.Sprintf("SELECT * FROM gocql_test.%s WHERE id=2 AND val=?", table), nil)
-	if err := b.Exec(); err == nil {
-		t.Fatal("expected to get error for invalid query in batch")
-	}
+	// Keep the invalid SELECT inside the native BATCH, so the server rejects
+	// the batch itself rather than a preceding PREPARE operation.
+	inet, err := ScalarType(TypeInet)
+	require.NoError(t, err)
+	bound, err := BindUnpreparedOwned(Statement[[]Value, Unit]{
+		CQL:    fmt.Sprintf("SELECT * FROM gocql_test.%s WHERE id=2 AND val=?", table),
+		Params: DynamicParams, Rows: NoRows,
+	}, NewColumns(ColumnSpec{Name: "val", Type: inet}), []Value{NullValue(inet)})
+	require.NoError(t, err)
+	defer bound.Close()
+	item, err := BatchEntry(bound)
+	require.NoError(t, err)
+	_, err = ExecBatch(ctx, session, LoggedBatch, []BatchItem{item}, Options{})
+	require.Error(t, err, "expected to get error for invalid query in batch")
+	var server RequestError
+	require.ErrorAs(t, err, &server)
 }
 
 func TestBatch_WithTimestamp(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	ctx := context.Background()
+	session := createV2Session(t)
 	defer session.Close()
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (id int primary key, val text)`, table)); err != nil {
-		t.Fatal(err)
-	}
-
-	micros := time.Now().UnixNano()/1e3 - 1000
-
-	b := session.Batch(LoggedBatch)
-	b.WithTimestamp(micros)
-	b = b.Query(fmt.Sprintf("INSERT INTO gocql_test.%s (id, val) VALUES (?, ?)", table), 1, "val")
-	b = b.Query(fmt.Sprintf("INSERT INTO gocql_test.%s (id, val) VALUES (?, ?)", table), 2, "val")
-
-	if err := b.Exec(); err != nil {
-		t.Fatal(err)
-	}
-
-	var storedTs int64
-	if err := session.Query(fmt.Sprintf(`SELECT writetime(val) FROM gocql_test.%s WHERE id = ?`, table), 1).Scan(&storedTs); err != nil {
-		t.Fatal(err)
-	}
-
-	if storedTs != micros {
-		t.Errorf("got ts %d, expected %d", storedTs, micros)
+	require.NoError(t, v2CreateTable(ctx, session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (id int primary key, val text)`, table)))
+	micros := time.Now().UnixMicro() - 1000
+	first := sessionTestBind(t, session, fmt.Sprintf("INSERT INTO gocql_test.%s (id, val) VALUES (?, ?)", table), IntValue(1), TextValue("val"))
+	defer first.Close()
+	second := sessionTestBind(t, session, fmt.Sprintf("INSERT INTO gocql_test.%s (id, val) VALUES (?, ?)", table), IntValue(2), TextValue("val"))
+	defer second.Close()
+	_, err := ExecBatch(ctx, session, LoggedBatch, []BatchItem{sessionTestItem(t, first), sessionTestItem(t, second)}, Options{Timestamp: Option[int64]{Value: micros, Set: true}})
+	require.NoError(t, err)
+	for _, id := range []int32{1, 2} {
+		row, err := v2ReadOne(ctx, session, fmt.Sprintf(`SELECT writetime(val) AS written FROM gocql_test.%s WHERE id = ?`, table), IntValue(id))
+		require.NoError(t, err)
+		require.Equal(t, micros, sessionTestInt(t, row, "written"))
 	}
 }
 
 func TestBatch_WithNowInSeconds(t *testing.T) {
-	session := createSession(t)
+	ctx := context.Background()
+	session := createV2Session(t)
 	defer session.Close()
-
 	if session.cfg.ProtoVersion < protoVersion5 {
 		t.Skip("Batch now in seconds are only available on protocol >= 5")
 	}
+	table := testTableName(t)
+	require.NoError(t, v2CreateTable(ctx, session, fmt.Sprintf(`CREATE TABLE %s (id int primary key, val text)`, table)))
+	bound := sessionTestBind(t, session, fmt.Sprintf("INSERT INTO %s (id, val) VALUES (?, ?) USING TTL 20", table), IntValue(1), TextValue("val"))
+	defer bound.Close()
+	_, err := ExecBatch(ctx, session, LoggedBatch, []BatchItem{sessionTestItem(t, bound)}, Options{NowInSeconds: Option[int32]{Value: 0, Set: true}})
+	require.NoError(t, err)
 
-	if err := createTable(session, `CREATE TABLE IF NOT EXISTS batch_now_in_seconds (id int primary key, val text)`); err != nil {
-		t.Fatal(err)
-	}
-
-	b := session.NewBatch(LoggedBatch)
-	b.WithNowInSeconds(0)
-	b.Query("INSERT INTO batch_now_in_seconds (id, val) VALUES (?, ?) USING TTL 20", 1, "val")
-	if err := session.ExecuteBatch(b); err != nil {
-		t.Fatal(err)
-	}
-
-	var remainingTTL int
-	err := session.Query(`SELECT TTL(val) FROM batch_now_in_seconds WHERE id = ?`, 1).
-		WithNowInSeconds(10).
-		Scan(&remainingTTL)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	require.Equal(t, 10, remainingTTL)
+	prepared, err := Prepare(ctx, session, Statement[int32, int32]{CQL: fmt.Sprintf(`SELECT TTL(val) FROM %s WHERE id = ?`, table), Params: OneParam(Int32), Rows: OneColumn(Int32)}, PrepareOptions{})
+	require.NoError(t, err)
+	read, err := BindOwned(prepared, int32(1))
+	require.NoError(t, err)
+	defer read.Close()
+	rows, err := Run(ctx, session, read, Options{NowInSeconds: Option[int32]{Value: 10, Set: true}})
+	require.NoError(t, err)
+	defer rows.Close()
+	require.True(t, rows.Next())
+	require.Equal(t, int32(10), rows.Row())
+	require.False(t, rows.Next())
+	require.NoError(t, rows.Err())
 }
 
 func TestBatch_SetKeyspace(t *testing.T) {
-	session := createSession(t)
+	ctx := context.Background()
+	session := createV2Session(t)
 	defer session.Close()
-
 	if session.cfg.ProtoVersion < protoVersion5 {
 		t.Skip("keyspace for BATCH message is not supported in protocol < 5")
 	}
-
-	const keyspaceStmt = `
-		CREATE KEYSPACE IF NOT EXISTS gocql_keyspace_override_test
-		WITH replication = {
-			'class': 'SimpleStrategy',
-			'replication_factor': '1'
-		};
-`
-
-	err := session.Query(keyspaceStmt).Exec()
-	if err != nil {
-		t.Fatal(err)
+	const keyspace = "gocql_keyspace_override_test"
+	require.NoError(t, v2CreateTable(ctx, session, `CREATE KEYSPACE IF NOT EXISTS `+keyspace+` WITH replication = {'class': 'SimpleStrategy', 'replication_factor': '1'}`))
+	require.NoError(t, v2CreateTable(ctx, session, "CREATE TABLE IF NOT EXISTS "+keyspace+".batch_keyspace(id int, value text, PRIMARY KEY (id))"))
+	// Explicit prepare keyspace and execution keyspace must agree. Unqualified
+	// member CQL still exercises the v5 BATCH keyspace flag.
+	prepared, err := Prepare(ctx, session, Statement[[]Value, Unit]{CQL: "INSERT INTO batch_keyspace(id, value) VALUES (?, ?)", Params: DynamicParams, Rows: NoRows}, PrepareOptions{Keyspace: keyspace})
+	require.NoError(t, err)
+	first, err := BindOwned(prepared, []Value{IntValue(1), TextValue("val1")})
+	require.NoError(t, err)
+	defer first.Close()
+	second, err := BindOwned(prepared, []Value{IntValue(2), TextValue("val2")})
+	require.NoError(t, err)
+	defer second.Close()
+	_, err = ExecBatch(ctx, session, LoggedBatch, []BatchItem{sessionTestItem(t, first), sessionTestItem(t, second)}, Options{Keyspace: keyspace})
+	require.NoError(t, err)
+	rows, err := v2Query(ctx, session, "SELECT id, value FROM "+keyspace+".batch_keyspace")
+	require.NoError(t, err)
+	defer rows.Close()
+	got := map[int64]string{}
+	for rows.Next() {
+		row := rows.Row()
+		value, err := row.Get("value")
+		require.NoError(t, err)
+		text, err := value.Text()
+		require.NoError(t, err)
+		got[sessionTestInt(t, row, "id")] = text.String()
 	}
-
-	err = createTable(session, "CREATE TABLE IF NOT EXISTS gocql_keyspace_override_test.batch_keyspace(id int, value text, PRIMARY KEY (id))")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	ids := []int{1, 2}
-	texts := []string{"val1", "val2"}
-
-	b := session.NewBatch(LoggedBatch).SetKeyspace("gocql_keyspace_override_test")
-	b.Query("INSERT INTO batch_keyspace(id, value) VALUES (?, ?)", ids[0], texts[0])
-	b.Query("INSERT INTO batch_keyspace(id, value) VALUES (?, ?)", ids[1], texts[1])
-	err = session.ExecuteBatch(b)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var (
-		id   int
-		text string
-	)
-
-	iter := session.Query("SELECT * FROM gocql_keyspace_override_test.batch_keyspace").Iter()
-
-	got := map[int]string{}
-	for iter.Scan(&id, &text) {
-		got[id] = text
-	}
-	require.NoError(t, iter.Close())
-	require.Equal(t, map[int]string{
-		ids[0]: texts[0],
-		ids[1]: texts[1],
-	}, got)
+	require.NoError(t, rows.Err())
+	require.NoError(t, rows.Close())
+	require.Equal(t, map[int64]string{1: "val1", 2: "val2"}, got)
 }

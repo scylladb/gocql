@@ -75,6 +75,7 @@ type RowDecoder[R any] interface {
 }
 type RowPlan[R any] interface {
     Decode(*RowReader) (R, error)
+    DecodeInto(*RowReader, *R) error
     Clone(R) R
 }
 ```
@@ -86,7 +87,28 @@ per-call state. Encode/Decode get the checked full descriptor. Custom
 implementations must not assume their callers have run CheckType; public entry
 points always do. Custom `Clone` must recursively detach all borrowed storage;
 scalar implementations return the value unchanged. Compilation may allocate
-descriptor/mapping storage; row and scalar decoding must not repeat it.
+descriptor/mapping storage; row and scalar decoding must not repeat it. Built-in
+compositions recursively bind child codecs and tuple/UDT field mappings during
+Compile, including children of collections/vectors. Execution of those checked
+plans reuses the bindings without recursive CheckType, Fields copies, name
+lookup or nested plan construction per value/element. Value-dependent width,
+state, text and framing validation still runs on every value. Standalone public
+encode/decode calls validate their supplied descriptor on each call; arbitrary
+custom codec work is accounted for separately.
+
+RowPlan.DecodeInto is required for built-in and custom row plans. It fills a
+non-nil caller-supplied destination using the checked metadata without retaining
+the destination in the shared plan. It replaces the previous value, including
+zeroing unmapped Go fields; custom plans must honor the same rule. Decode is
+the value-returning convenience over the same decoding implementation. Built-in
+Row field plans decode directly into destination fields: implementing DecodeInto
+as Decode followed by assignment of an entire temporary R is not sufficient.
+Compositions propagate destination fields to child plans where their semantics
+permit; MapRows still invokes its explicitly supplied value-returning mapper,
+whose work is accounted for separately. On an error, low-level DecodeInto may
+have partially written the destination; the public iterator clears it before
+returning false. Nil returns ValidationError. Plans must never retain reader or
+destination pointers or capture per-call mutable state.
 
 RowDecoder.Clone is required independently of Compile: it recursively detaches
 the logical Go value using its declared field codecs, without needing actual
@@ -191,7 +213,11 @@ serialization implementation is permitted.
 
 No field discovery uses reflection or struct tags. Applications compose typed
 accessors, or generate equivalent Go implementations. Named parameters are
-mapped to server order once. Duplicate marker names may reuse one input field;
+mapped to server order once. Named result plans likewise resolve names once and
+decode in physical wire order, assigning each value through its compiled field
+accessor. Fragmented cells remain immutable range views; sequential traversal
+does not rescan earlier spans or allocate descriptor arrays per cell. Duplicate
+marker names may reuse one input field;
 unused or missing source names fail with deterministic diagnostics. Result
 aliases are the column names. Duplicate selected names require positional
 mapping. All selected columns must be accounted for, including explicit ignored
@@ -378,8 +404,18 @@ partial slice. Iterators are allocation-free per element, stop permanently on
 the first error, enforce counts, reject malformed negative
 lengths/overflows/trailing payload, and never publish partial malformed values.
 A successful lazy decode validates enclosing framing/count structure; each
-scalar is checked when requested. An early-stopped iterator does not claim
-semantic validation of unvisited scalar values.
+scalar is checked when requested. Enclosing validation walks only immediate
+child lengths/states, skipping child bodies without decoding descendants or
+allocating an offset per element. A nested container validates its own layout
+when that child is requested. Fragmented nested-body skips share a source
+span-offset index, avoiding a walk through every skipped span at every ancestor;
+they add at most logarithmic span-lookup work per jump. Ordinary nonoverlapping
+sequential traversal remains linear in cells plus spans, and scalar validation
+reads only the requested payload. Fixed-width vectors check the compiled aggregate width
+against the body length without an element prepass; scalar semantics remain
+checked during iteration. An explicit second Iterator is a new traversal.
+An early-stopped iterator does not claim semantic validation of unvisited
+scalar values or unvisited nested bodies.
 
 Tuples preserve physical columns: they never expand implicitly into destination
 arguments. Missing serialized trailing tuple/UDT members are null only where the
@@ -417,7 +453,7 @@ values or `map[string]any`. Value's private representation contains the actual
 DataType, state, scalar payload or a lazy encoded aggregate. Constructors store
 borrowed input payloads; normal binding lifetime rules apply. Decoded Value and
 DynamicRow borrow the current page owner without acquiring an independent lease
-reference. Their views expire under the same Next/Close rule as typed rows; only
+reference. Their views expire under the same Next/NextInto/Close rule as typed rows; only
 an explicit PageLease or Clone extends their usable lifetime. An aggregate may
 hold explicitly supplied `[]Value` descriptors on input or encoded bytes on
 output, but neither form causes eager payload flattening.
@@ -483,8 +519,13 @@ func (r DynamicRow) Clone() DynamicRow
 
 Named dynamic binding uses `Params[[]ValueField]` accessors or the dedicated
 `NamedDynamicParams ParamEncoder[[]ValueField]`. Duplicate names are rejected.
-Dynamic aggregate variants must match the actual outer type, including list
-versus set versus vector, and a UDT's identity. Dynamic malformed scalars are
+DynamicRows compiles column name lookup once per result shape. At/Get use a
+single lazily built physical-cell offset index per current row for repeated
+random access, without eagerly decoding values; there is no whole-row rescan
+for each access. Its descriptors remain owned by that row/page and cannot alias
+scratch reused by later rows. Dynamic aggregate variants must match the actual
+outer type, including list versus set versus vector, and a UDT's identity.
+Dynamic malformed scalars are
 rejected with the same rules as typed codecs; no implicit universal Empty
 fallback.
 
@@ -529,7 +570,13 @@ type Option[T any] struct { Value T; Set bool }
 
 Prepare runs under its context including DNS/pool acquisition and all local
 preparation. It prepares one eligible connection, installs metadata and caches
-by exact CQL, effective keyspace and schema generation. Other hosts prepare
+by exact CQL, effective keyspace and schema generation. Generation validity is
+scoped to the statement's known table/type/partitioner dependencies; an
+unrelated topology publication or schema change does not invalidate every
+prepared entry. If dependencies are unavailable, conservatively refresh the
+relevant schema scope. A live prepared/bound handle accesses its immutable state
+directly; executing it does not touch a session-wide LRU on every attempt/page.
+Other hosts prepare
 lazily; background warming may be enabled, but is never an implicit all-host
 latency requirement. The server ID remains per-host/per-generation. A cache hit
 still checks the supplied codec plans; a handle remains valid after LRU
@@ -581,7 +628,14 @@ parameter types/order/identity. A change to any of these requires a new explicit
 prepare/bind and fails the old binding with SchemaChangedError before resend.
 Compatible metadata may update per-host prepared IDs without re-encoding or
 mutating the binding's canonical routing inputs. Actual result metadata always
-selects/recompiles RowPlan before rows are exposed, including empty pages.
+selects a compatible RowPlan before rows are exposed, including empty pages.
+Reuse the immutable plan when the exact validated result entry is unchanged;
+compile only on first use or a changed result shape. A new entry with the same
+shape may reuse a plan after structural equality is established once. Plan reuse
+is scoped to this handle's RowDecoder, never just CQL or a type fingerprint;
+different application decoders cannot share an unchecked plan. Changed or
+NO_METADATA responses still pass the generation/ID fences below. Pages retain
+their selected plan independently of later cache replacement.
 Cached NO_METADATA requires a matching generation, column count and negotiated
 ID; otherwise obtain valid metadata or return a protocol error. Atomic
 generation/CAS updates prevent a stale response from overwriting newer local
@@ -600,6 +654,7 @@ cache-metadata opt-in bypasses these rules.
 ```go
 type Rows[R any] struct { /* automatic pager */ }
 func (r *Rows[R]) Next() bool
+func (r *Rows[R]) NextInto(dst *R) bool
 func (r *Rows[R]) Row() R
 func (r *Rows[R]) Err() error
 func (r *Rows[R]) Close() error
@@ -610,6 +665,7 @@ func (r *Rows[R]) Columns() Columns
 
 type Page[R any] struct { /* exactly one response page */ }
 func (p *Page[R]) Next() bool
+func (p *Page[R]) NextInto(dst *R) bool
 func (p *Page[R]) Row() R
 func (p *Page[R]) Err() error
 func (p *Page[R]) Close() error
@@ -632,9 +688,10 @@ type CASResult[R any] struct { Applied bool; Previous Option[R] }
 func CASRows[R any](RowDecoder[R]) RowDecoder[CASResult[R]]
 ```
 
-Row() is valid after successful Next; its views remain valid until the **next**
-Next call or Close, whichever comes first. Retain pins the current physical page
-before advancing; its owner has stable identity independent of pooled parsers.
+Row() is valid after successful Next or NextInto; its views remain valid until
+the **next** Next/NextInto call or Close, whichever comes first. Retain pins the
+current physical page before advancing; its owner has stable identity independent
+of pooled parsers.
 All views from that page remain valid until that lease closes. Clone detaches
 the current row using RowPlan.Clone. Copying a Go row struct does not detach it.
 Access through a released view reports ErrReleased where a method returns error;
@@ -643,6 +700,73 @@ recycled storage. Len/type metadata remain inspectable. Do not concurrently use
 a view while closing its last lease. Retained leases are independent of
 Session.Close.
 
+### Caller-supplied result destinations
+
+This section decodes from received page storage. The separate
+[streaming receive feature draft](gocql-v2-streaming-receive.md) proposes
+incremental receive decoding into final caller storage; its streaming entry
+point and codec signatures are not settled by this NextInto contract.
+
+Status: required design addition; NextInto and DecodeInto remain pending
+implementation and verification. Applications define the row representation
+and may provide a reusable instance for decoding:
+
+```go
+type UserView struct {
+    ID int32
+    Name Text
+    Payload Bytes
+}
+
+var user UserView
+for rows.NextInto(&user) {
+    consume(user) // Text and Bytes reference the leased receive storage
+}
+if err := rows.Err(); err != nil {
+    return err
+}
+```
+
+NextInto advances exactly one logical row, using the same framing, plan
+selection, metadata validation and automatic/explicit paging rules as Next.
+The compiled RowPlan.DecodeInto fills dst directly. The driver does not first
+decode a complete temporary row, copy payloads, flatten split cells, or discover
+fields through reflection. Text, Bytes and lazy container fields preserve the
+original immutable receive/decompression backing and its page lease identity.
+Fixed-width Go fields hold decoded values; compression/TLS transformations
+retain their separately documented cost and ownership boundaries. Neither a Go
+string nor an owned byte slice is implicitly materialized.
+
+Every successful call replaces dst, including resetting fields not populated by
+the declared decoder. On false, any non-nil dst is set to its zero value, whether
+the cause is exhaustion, closure, cancellation, metadata/framing failure or a
+codec error. Partially decoded rows are never published as successful. The first
+error is terminal and available through Err; exhaustion alone is not an error.
+On an active iterator, nil dst produces terminal ValidationError before consuming
+a row or performing paging I/O. A terminal iterator stays terminal and preserves
+its existing error. A failed call does not promise rollback of cursor progress.
+
+Next and NextInto may be interleaved; every call advances, so NextInto after Next
+reads the following row. After successful NextInto, Row returns the current
+contents of *dst and Clone detaches those contents with the selected RowPlan.
+The iterator may retain that destination pointer only until the next advance or
+Close; no shared plan, prefetch worker or other background task may retain or
+write it. Caller changes to the current destination are reflected by Row/Clone.
+Advancing with a different destination or closing the iterator must not modify
+the earlier destination, although its borrowed views still expire under the
+advance/Close rule. Iteration and access/mutation of its current destination
+are not concurrent operations; independent iterators may share compiled plans,
+but require separate destination storage.
+
+Retain after successful NextInto pins the current page just as after Next; it
+does not pin the Go destination or preserve fields overwritten on reuse. To keep
+a borrowed row while reusing dst, copy its view descriptors into another value
+and retain the page before advancing, then close that lease after use. Use Clone
+instead for fully detached data. Simply storing dst or copying its Go struct
+without a page lease does not extend buffer lifetime.
+
+### Paging and conditional results
+
 Rows owns one current page and at most the configured bounded prefetch. Next
 consumes empty pages with continuations, propagates the first error terminally,
 and never loses an error behind partial results. Context governs the entire
@@ -650,7 +774,13 @@ pager lifetime; a separate configured per-page timeout may shorten it. Repeated
 continuation states are compared against every previously returned continuation
 in that automatic pager, including empty tokens: A → B → A therefore returns
 ErrPagingNoProgress before another fetch of A. Token equality checks full bytes;
-a hash alone is insufficient. Retained history is bounded by Config.Limits
+a hash alone is insufficient. Use a hash-indexed history with full-byte collision
+checks, giving expected O(token bytes) insertion/lookup rather than scanning all
+prior states on every page. Retain one immutable owned token representation for
+history, next-page sending and PageState; internal use never calls the public
+copying Bytes() accessor. Count the history entry/index storage under the count
+budget and token bytes under the byte budget. Explicit Bytes() calls still copy.
+Retained history is bounded by Config.Limits
 MaxPagingStates (default 65,536) and MaxPagingStateBytes (default 16 MiB);
 exhausting either returns terminal ErrPagingStateLimit before storing/fetching
 the next state. Both budgets must be positive. Manual RunPage keeps no
@@ -731,7 +861,12 @@ type Result struct {
 A zero Options inherits the selected session profile, is non-idempotent, and has
 no tracing/timestamp/keyspace override. Override validation returns typed
 errors, not panics. Profile objects are validated immutable snapshots; Replace
-affects new admissions only, never active retries or later pages. Defaults:
+affects new admissions only, never active retries or later pages. Admission loads
+one immutable profile version, validates only per-call overrides and shares the
+resolved options across attempts/pages. It does not revalidate or deep-copy the
+whole profile on each attempt. CustomPayload descriptor copying occurs once per
+logical admission (once for a batch), with all member drains still covering it.
+Defaults:
 LOCAL_QUORUM, LOCAL_SERIAL, 30-second request timeout, 5,000-row pages, one-page
 prefetch, no speculation, and the safe retry policy. Caller context always
 bounds request work, including preparation, metadata refresh, agreement,
@@ -843,7 +978,13 @@ ordinary requests, deterministic conditional ordering and no remote fallback
 unless allowed. Validate runs at session startup and on eligible-topology
 changes; missing preferred DC/rack returns a configuration error rather than an
 empty plan. Plan itself never does I/O or reports a hidden failure through a
-panic.
+panic. The built-in policy reads private immutable host/replica indices and
+produces its first eligible replica without enumerating/copying the full host
+list or constructing all fallback targets. It advances fallback lazily only
+when needed. Public defensive metadata accessors are inspection APIs, not the
+built-in routing path. A plan captures a placement/topology snapshot; pool
+acquisition still rechecks current availability and target strictness. Custom
+policies retain their public Plan seam and account for their own work.
 
 ```go
 type RoutingOptions struct {
@@ -906,7 +1047,12 @@ Policies may not mutate request inputs; no observer receives `[]any`. Observer
 callbacks are synchronous and must not block; panic containment logs observer
 failure without corrupting execution. There is one terminal request event and
 one terminal event per started attempt, including cancellation and speculative
-losers. Row cardinality is separate from successful server execution. Trace
+losers, for each configured observer. When no observer is configured, skip event
+construction, batch-statement arrays and diagnostic formatting. Required policy
+Observe feedback, metrics and Result accounting still run. Latency percentile
+snapshots are maintained outside individual request completion; disabled
+speculation does not fetch a MetricsSnapshot or create a scheduler/timer. Row
+cardinality is separate from successful server execution. Trace
 IDs/warnings are preserved per response; Result aggregates across consumed
 pages. Tracing lookup uses typed internal queries and context-bounded readiness
 polling.
@@ -921,7 +1067,14 @@ SERIAL/LOCAL_SERIAL and prepared LWT markers force conditional classification
 regardless of declarations. Plan advancement is serialized across speculative
 branches. Valid feedback accepted from completed responses is applied at most
 once even if the branch loses; bounded coalescing may supersede equivalent
-updates. Feedback must not block successful execution. On queue saturation,
+updates. Feedback must not block successful execution. Equivalent feedback with
+the same
+validated identity/epochs, range, version and ordered replicas/shards is a no-op;
+version equality alone is insufficient. Publish changed placement with
+structural sharing of unaffected tables/ranges instead of rebuilding complete
+cluster/schema snapshots for every response. Queued feedback owns only its
+bounded decoded control data and does not pin the response page. On queue
+saturation,
 advance a placement invalidation epoch (globally if necessary), mark affected
 mappings unknown and surface a diagnostic; later EXECUTE responses relearn
 placement. Do not retain known-stale mappings, leak page owners, or fail a
@@ -992,7 +1145,7 @@ Session.Close atomically rejects new session work, sets Closed()==true, cancels
 active requests/pagers and background control/pool work, and closes connections
 to interrupt blocked I/O. It waits for accepted writers and driver workers to
 finish and releases only undelivered/prefetched pages. A delivered current page
-keeps its independent output owner until the application's next Next or
+keeps its independent output owner until the application's next Next/NextInto or
 Rows/Page Close, so Session.Close cannot recycle a still-valid current row.
 Shutdown and binding input drains do not wait for that output owner or
 independently retained PageLease objects. A subsequent Next releases the current

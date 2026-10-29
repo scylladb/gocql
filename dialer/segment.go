@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/gocql/gocql/internal/segment"
+	"github.com/scylladb/gocql/v2/internal/segment"
 )
 
 // SegmentCompressor compresses and decompresses protocol v5 transport segment

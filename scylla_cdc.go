@@ -5,7 +5,7 @@ import (
 	"math"
 	"strings"
 
-	"github.com/gocql/gocql/internal/debug"
+	"github.com/scylladb/gocql/v2/internal/debug"
 )
 
 // cdc partitioner

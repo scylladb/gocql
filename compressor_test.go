@@ -38,8 +38,8 @@ import (
 	lz4mod "github.com/scylladb/gocql/lz4"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gocql/gocql"
-	frm "github.com/gocql/gocql/internal/frame"
+	"github.com/scylladb/gocql/v2"
+	frm "github.com/scylladb/gocql/v2/internal/frame"
 )
 
 type frameExample struct {

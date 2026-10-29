@@ -1,0 +1,235 @@
+2026/10/29 09:00:02 logger.go:59: [6a8d9885-def0-4e53-8d33-72a3a18da923] warnings: [Using Replication Factor replication_factor=1 lower than the minimum_replication_factor_warn_threshold=3 is not recommended.]
+=== RUN   TestErrorsParse
+=== PAUSE TestErrorsParse
+=== RUN   TestGetHostsFromSystem
+=== PAUSE TestGetHostsFromSystem
+=== RUN   TestRingDiscovery
+=== PAUSE TestRingDiscovery
+=== RUN   TestSessionAwaitSchemaAgreement
+=== PAUSE TestSessionAwaitSchemaAgreement
+=== RUN   TestSessionAwaitSchemaAgreementSessionClosed
+=== PAUSE TestSessionAwaitSchemaAgreementSessionClosed
+=== RUN   TestSessionAwaitSchemaAgreementContextCanceled
+=== PAUSE TestSessionAwaitSchemaAgreementContextCanceled
+=== RUN   TestNewConnectWithLowTimeout
+=== PAUSE TestNewConnectWithLowTimeout
+=== RUN   TestSessionEventBusReceivesSchemaChangeEvent
+--- PASS: TestSessionEventBusReceivesSchemaChangeEvent (0.04s)
+=== RUN   TestSessionEventBusReceivesControlReconnectEvent
+=== PAUSE TestSessionEventBusReceivesControlReconnectEvent
+=== CONT  TestGetHostsFromSystem
+=== CONT  TestSessionAwaitSchemaAgreementSessionClosed
+=== CONT  TestSessionEventBusReceivesControlReconnectEvent
+=== CONT  TestRingDiscovery
+--- PASS: TestSessionEventBusReceivesControlReconnectEvent (0.03s)
+=== CONT  TestSessionAwaitSchemaAgreement
+--- PASS: TestSessionAwaitSchemaAgreementSessionClosed (0.08s)
+=== CONT  TestSessionAwaitSchemaAgreementContextCanceled
+--- PASS: TestRingDiscovery (0.08s)
+=== CONT  TestNewConnectWithLowTimeout
+=== RUN   TestNewConnectWithLowTimeout/1ns
+=== RUN   TestNewConnectWithLowTimeout/1ns/Timeout
+=== RUN   TestNewConnectWithLowTimeout/1ns/Timeout/Connect
+--- PASS: TestSessionAwaitSchemaAgreement (0.06s)
+=== CONT  TestErrorsParse
+=== RUN   TestNewConnectWithLowTimeout/1ns/Timeout/Regular_Query
+=== RUN   TestNewConnectWithLowTimeout/1ns/Timeout/Query_from_control_connection
+=== RUN   TestNewConnectWithLowTimeout/1ns/Timeout/Query_from_control_connection_after_reconnect
+--- PASS: TestGetHostsFromSystem (0.11s)
+--- PASS: TestSessionAwaitSchemaAgreementContextCanceled (0.03s)
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh the schema: gocql: metadata generation 5 preserved 1 stale keyspaces (gocql_test: schema changed during refresh)
+=== RUN   TestNewConnectWithLowTimeout/1ns/MetadataSchemaRequestTimeout
+=== RUN   TestNewConnectWithLowTimeout/1ns/MetadataSchemaRequestTimeout/Connect
+=== RUN   TestNewConnectWithLowTimeout/1ns/MetadataSchemaRequestTimeout/Regular_Query
+=== RUN   TestNewConnectWithLowTimeout/1ns/MetadataSchemaRequestTimeout/Query_from_control_connection
+=== RUN   TestNewConnectWithLowTimeout/1ns/MetadataSchemaRequestTimeout/Query_from_control_connection_after_reconnect
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh ring: unable to fetch peer host info: gocql: no response received from cassandra within timeout period (timeout: 1ns, in-flight: 2) (potentially executed: true)
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh the schema: error querying keyspace schema: gocql: no response received from cassandra within timeout period (timeout: 1ns, in-flight: 3) (potentially executed: true)
+=== RUN   TestNewConnectWithLowTimeout/1ns/WriteTimeout
+=== RUN   TestNewConnectWithLowTimeout/1ns/WriteTimeout/Connect
+=== RUN   TestNewConnectWithLowTimeout/1ns/WriteTimeout/Regular_Query
+=== RUN   TestNewConnectWithLowTimeout/1ns/WriteTimeout/Query_from_control_connection
+=== RUN   TestNewConnectWithLowTimeout/1ns/WriteTimeout/Query_from_control_connection_after_reconnect
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh ring: could not retrieve local host info: gocql: connection closed waiting for response (potentially executed: false)
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh the schema: error querying keyspace schema: gocql: connection closed waiting for response (potentially executed: false)
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh ring: unable to fetch peer host info: gocql: connection closed waiting for response (potentially executed: false)
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh the schema: error querying keyspace schema: gocql: connection closed waiting for response (potentially executed: false)
+=== RUN   TestNewConnectWithLowTimeout/1ns/ReadTimeout
+=== RUN   TestNewConnectWithLowTimeout/1ns/ReadTimeout/Connect
+=== RUN   TestNewConnectWithLowTimeout/1ns/ReadTimeout/Regular_Query
+=== RUN   TestNewConnectWithLowTimeout/1ns/ReadTimeout/Query_from_control_connection
+=== RUN   TestNewConnectWithLowTimeout/1ns/ReadTimeout/Query_from_control_connection_after_reconnect
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh ring: unable to fetch peer host info: read tcp 127.0.0.1:46998->127.0.23.1:9042: i/o timeout (potentially executed: true)
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh the schema: error querying keyspace schema: gocql: connection closed waiting for response (potentially executed: false)
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh ring: unable to fetch peer host info: read tcp 127.0.0.1:47016->127.0.23.1:9042: i/o timeout (potentially executed: true)
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh the schema: error querying keyspace schema: gocql: connection closed waiting for response (potentially executed: false)
+--- PASS: TestErrorsParse (0.09s)
+=== RUN   TestNewConnectWithLowTimeout/1ns/AllTimeouts
+=== RUN   TestNewConnectWithLowTimeout/1ns/AllTimeouts/Connect
+=== RUN   TestNewConnectWithLowTimeout/1ns/AllTimeouts/Regular_Query
+=== RUN   TestNewConnectWithLowTimeout/1ns/AllTimeouts/Query_from_control_connection
+=== RUN   TestNewConnectWithLowTimeout/1ns/AllTimeouts/Query_from_control_connection_after_reconnect
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh ring: could not retrieve local host info: gocql: connection closed waiting for response (potentially executed: false)
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh the schema: error querying keyspace schema: gocql: connection closed waiting for response (potentially executed: false)
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh ring: unable to fetch peer host info: gocql: connection closed waiting for response (potentially executed: false)
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh the schema: error querying keyspace schema: gocql: connection closed waiting for response (potentially executed: false)
+=== RUN   TestNewConnectWithLowTimeout/10ns
+=== RUN   TestNewConnectWithLowTimeout/10ns/Timeout
+=== RUN   TestNewConnectWithLowTimeout/10ns/Timeout/Connect
+=== RUN   TestNewConnectWithLowTimeout/10ns/Timeout/Regular_Query
+=== RUN   TestNewConnectWithLowTimeout/10ns/Timeout/Query_from_control_connection
+=== RUN   TestNewConnectWithLowTimeout/10ns/Timeout/Query_from_control_connection_after_reconnect
+=== RUN   TestNewConnectWithLowTimeout/10ns/MetadataSchemaRequestTimeout
+=== RUN   TestNewConnectWithLowTimeout/10ns/MetadataSchemaRequestTimeout/Connect
+=== RUN   TestNewConnectWithLowTimeout/10ns/MetadataSchemaRequestTimeout/Regular_Query
+=== RUN   TestNewConnectWithLowTimeout/10ns/MetadataSchemaRequestTimeout/Query_from_control_connection
+=== RUN   TestNewConnectWithLowTimeout/10ns/MetadataSchemaRequestTimeout/Query_from_control_connection_after_reconnect
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh ring: could not retrieve local host info: gocql: no response received from cassandra within timeout period (timeout: 10ns, in-flight: 1) (potentially executed: true)
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh the schema: error querying keyspace schema: gocql: no response received from cassandra within timeout period (timeout: 10ns, in-flight: 2) (potentially executed: true)
+=== RUN   TestNewConnectWithLowTimeout/10ns/WriteTimeout
+=== RUN   TestNewConnectWithLowTimeout/10ns/WriteTimeout/Connect
+=== RUN   TestNewConnectWithLowTimeout/10ns/WriteTimeout/Regular_Query
+=== RUN   TestNewConnectWithLowTimeout/10ns/WriteTimeout/Query_from_control_connection
+=== RUN   TestNewConnectWithLowTimeout/10ns/WriteTimeout/Query_from_control_connection_after_reconnect
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh ring: unable to fetch peer host info: gocql: connection closed waiting for response (potentially executed: false)
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh the schema: error querying keyspace schema: gocql: connection closed waiting for response (potentially executed: false)
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh ring: unable to fetch peer host info: gocql: connection closed waiting for response (potentially executed: false)
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh the schema: error querying keyspace schema: gocql: connection closed waiting for response (potentially executed: false)
+=== RUN   TestNewConnectWithLowTimeout/10ns/ReadTimeout
+=== RUN   TestNewConnectWithLowTimeout/10ns/ReadTimeout/Connect
+=== RUN   TestNewConnectWithLowTimeout/10ns/ReadTimeout/Regular_Query
+=== RUN   TestNewConnectWithLowTimeout/10ns/ReadTimeout/Query_from_control_connection
+=== RUN   TestNewConnectWithLowTimeout/10ns/ReadTimeout/Query_from_control_connection_after_reconnect
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh ring: unable to fetch peer host info: gocql: connection closed waiting for response (potentially executed: false)
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh the schema: error querying keyspace schema: gocql: connection closed waiting for response (potentially executed: false)
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh ring: unable to fetch peer host info: read tcp 127.0.0.1:47258->127.0.23.1:9042: i/o timeout (potentially executed: true)
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh the schema: error querying keyspace schema: gocql: connection closed waiting for response (potentially executed: false)
+=== RUN   TestNewConnectWithLowTimeout/10ns/AllTimeouts
+=== RUN   TestNewConnectWithLowTimeout/10ns/AllTimeouts/Connect
+=== RUN   TestNewConnectWithLowTimeout/10ns/AllTimeouts/Regular_Query
+=== RUN   TestNewConnectWithLowTimeout/10ns/AllTimeouts/Query_from_control_connection
+=== RUN   TestNewConnectWithLowTimeout/10ns/AllTimeouts/Query_from_control_connection_after_reconnect
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh ring: unable to fetch peer host info: gocql: connection closed waiting for response (potentially executed: false)
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh the schema: error querying keyspace schema: gocql: connection closed waiting for response (potentially executed: false)
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh ring: unable to fetch peer host info: set tcp 127.0.0.1:47314: use of closed network connection (potentially executed: true)
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh the schema: error querying keyspace schema: gocql: connection closed waiting for response (potentially executed: false)
+=== RUN   TestNewConnectWithLowTimeout/100ns
+=== RUN   TestNewConnectWithLowTimeout/100ns/Timeout
+=== RUN   TestNewConnectWithLowTimeout/100ns/Timeout/Connect
+=== RUN   TestNewConnectWithLowTimeout/100ns/Timeout/Regular_Query
+=== RUN   TestNewConnectWithLowTimeout/100ns/Timeout/Query_from_control_connection
+=== RUN   TestNewConnectWithLowTimeout/100ns/Timeout/Query_from_control_connection_after_reconnect
+=== RUN   TestNewConnectWithLowTimeout/100ns/MetadataSchemaRequestTimeout
+=== RUN   TestNewConnectWithLowTimeout/100ns/MetadataSchemaRequestTimeout/Connect
+=== RUN   TestNewConnectWithLowTimeout/100ns/MetadataSchemaRequestTimeout/Regular_Query
+=== RUN   TestNewConnectWithLowTimeout/100ns/MetadataSchemaRequestTimeout/Query_from_control_connection
+=== RUN   TestNewConnectWithLowTimeout/100ns/MetadataSchemaRequestTimeout/Query_from_control_connection_after_reconnect
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh ring: could not retrieve local host info: gocql: no response received from cassandra within timeout period (timeout: 100ns, in-flight: 1) (potentially executed: true)
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh the schema: error querying keyspace schema: gocql: no response received from cassandra within timeout period (timeout: 100ns, in-flight: 1) (potentially executed: true)
+=== RUN   TestNewConnectWithLowTimeout/100ns/WriteTimeout
+=== RUN   TestNewConnectWithLowTimeout/100ns/WriteTimeout/Connect
+=== RUN   TestNewConnectWithLowTimeout/100ns/WriteTimeout/Regular_Query
+=== RUN   TestNewConnectWithLowTimeout/100ns/WriteTimeout/Query_from_control_connection
+=== RUN   TestNewConnectWithLowTimeout/100ns/WriteTimeout/Query_from_control_connection_after_reconnect
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh ring: unable to fetch peer host info: write tcp 127.0.0.1:47430->127.0.23.1:9042: i/o timeout (potentially executed: true)
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh the schema: error querying keyspace schema: gocql: connection closed waiting for response (potentially executed: false)
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh ring: unable to fetch peer host info: gocql: connection closed waiting for response (potentially executed: false)
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh the schema: error querying keyspace schema: gocql: connection closed waiting for response (potentially executed: false)
+=== RUN   TestNewConnectWithLowTimeout/100ns/ReadTimeout
+=== RUN   TestNewConnectWithLowTimeout/100ns/ReadTimeout/Connect
+=== RUN   TestNewConnectWithLowTimeout/100ns/ReadTimeout/Regular_Query
+=== RUN   TestNewConnectWithLowTimeout/100ns/ReadTimeout/Query_from_control_connection
+=== RUN   TestNewConnectWithLowTimeout/100ns/ReadTimeout/Query_from_control_connection_after_reconnect
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh ring: unable to fetch peer host info: read tcp 127.0.0.1:47480->127.0.23.1:9042: i/o timeout (potentially executed: true)
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh the schema: error querying keyspace schema: gocql: connection closed waiting for response (potentially executed: false)
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh ring: could not retrieve local host info: read tcp 127.0.0.1:47506->127.0.23.1:9042: i/o timeout (potentially executed: true)
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh the schema: error querying keyspace schema: gocql: connection closed waiting for response (potentially executed: false)
+=== RUN   TestNewConnectWithLowTimeout/100ns/AllTimeouts
+=== RUN   TestNewConnectWithLowTimeout/100ns/AllTimeouts/Connect
+=== RUN   TestNewConnectWithLowTimeout/100ns/AllTimeouts/Regular_Query
+=== RUN   TestNewConnectWithLowTimeout/100ns/AllTimeouts/Query_from_control_connection
+=== RUN   TestNewConnectWithLowTimeout/100ns/AllTimeouts/Query_from_control_connection_after_reconnect
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh ring: could not retrieve local host info: gocql: connection closed waiting for response (potentially executed: false)
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh the schema: error querying keyspace schema: gocql: connection closed waiting for response (potentially executed: false)
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh ring: unable to fetch peer host info: write tcp 127.0.0.1:47578->127.0.23.1:9042: i/o timeout (potentially executed: true)
+2026/10/29 09:00:02 logger.go:59: gocql: unable to refresh the schema: error querying keyspace schema: gocql: connection closed waiting for response (potentially executed: false)
+--- PASS: TestNewConnectWithLowTimeout (0.28s)
+    --- PASS: TestNewConnectWithLowTimeout/1ns (0.11s)
+        --- PASS: TestNewConnectWithLowTimeout/1ns/Timeout (0.04s)
+            --- PASS: TestNewConnectWithLowTimeout/1ns/Timeout/Connect (0.01s)
+            --- PASS: TestNewConnectWithLowTimeout/1ns/Timeout/Regular_Query (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/1ns/Timeout/Query_from_control_connection (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/1ns/Timeout/Query_from_control_connection_after_reconnect (0.03s)
+        --- PASS: TestNewConnectWithLowTimeout/1ns/MetadataSchemaRequestTimeout (0.02s)
+            --- PASS: TestNewConnectWithLowTimeout/1ns/MetadataSchemaRequestTimeout/Connect (0.01s)
+            --- PASS: TestNewConnectWithLowTimeout/1ns/MetadataSchemaRequestTimeout/Regular_Query (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/1ns/MetadataSchemaRequestTimeout/Query_from_control_connection (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/1ns/MetadataSchemaRequestTimeout/Query_from_control_connection_after_reconnect (0.01s)
+        --- PASS: TestNewConnectWithLowTimeout/1ns/WriteTimeout (0.02s)
+            --- PASS: TestNewConnectWithLowTimeout/1ns/WriteTimeout/Connect (0.01s)
+            --- PASS: TestNewConnectWithLowTimeout/1ns/WriteTimeout/Regular_Query (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/1ns/WriteTimeout/Query_from_control_connection (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/1ns/WriteTimeout/Query_from_control_connection_after_reconnect (0.01s)
+        --- PASS: TestNewConnectWithLowTimeout/1ns/ReadTimeout (0.02s)
+            --- PASS: TestNewConnectWithLowTimeout/1ns/ReadTimeout/Connect (0.01s)
+            --- PASS: TestNewConnectWithLowTimeout/1ns/ReadTimeout/Regular_Query (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/1ns/ReadTimeout/Query_from_control_connection (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/1ns/ReadTimeout/Query_from_control_connection_after_reconnect (0.01s)
+        --- PASS: TestNewConnectWithLowTimeout/1ns/AllTimeouts (0.01s)
+            --- PASS: TestNewConnectWithLowTimeout/1ns/AllTimeouts/Connect (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/1ns/AllTimeouts/Regular_Query (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/1ns/AllTimeouts/Query_from_control_connection (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/1ns/AllTimeouts/Query_from_control_connection_after_reconnect (0.01s)
+    --- PASS: TestNewConnectWithLowTimeout/10ns (0.09s)
+        --- PASS: TestNewConnectWithLowTimeout/10ns/Timeout (0.03s)
+            --- PASS: TestNewConnectWithLowTimeout/10ns/Timeout/Connect (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/10ns/Timeout/Regular_Query (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/10ns/Timeout/Query_from_control_connection (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/10ns/Timeout/Query_from_control_connection_after_reconnect (0.02s)
+        --- PASS: TestNewConnectWithLowTimeout/10ns/MetadataSchemaRequestTimeout (0.01s)
+            --- PASS: TestNewConnectWithLowTimeout/10ns/MetadataSchemaRequestTimeout/Connect (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/10ns/MetadataSchemaRequestTimeout/Regular_Query (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/10ns/MetadataSchemaRequestTimeout/Query_from_control_connection (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/10ns/MetadataSchemaRequestTimeout/Query_from_control_connection_after_reconnect (0.01s)
+        --- PASS: TestNewConnectWithLowTimeout/10ns/WriteTimeout (0.02s)
+            --- PASS: TestNewConnectWithLowTimeout/10ns/WriteTimeout/Connect (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/10ns/WriteTimeout/Regular_Query (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/10ns/WriteTimeout/Query_from_control_connection (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/10ns/WriteTimeout/Query_from_control_connection_after_reconnect (0.01s)
+        --- PASS: TestNewConnectWithLowTimeout/10ns/ReadTimeout (0.02s)
+            --- PASS: TestNewConnectWithLowTimeout/10ns/ReadTimeout/Connect (0.01s)
+            --- PASS: TestNewConnectWithLowTimeout/10ns/ReadTimeout/Regular_Query (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/10ns/ReadTimeout/Query_from_control_connection (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/10ns/ReadTimeout/Query_from_control_connection_after_reconnect (0.01s)
+        --- PASS: TestNewConnectWithLowTimeout/10ns/AllTimeouts (0.01s)
+            --- PASS: TestNewConnectWithLowTimeout/10ns/AllTimeouts/Connect (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/10ns/AllTimeouts/Regular_Query (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/10ns/AllTimeouts/Query_from_control_connection (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/10ns/AllTimeouts/Query_from_control_connection_after_reconnect (0.01s)
+    --- PASS: TestNewConnectWithLowTimeout/100ns (0.08s)
+        --- PASS: TestNewConnectWithLowTimeout/100ns/Timeout (0.03s)
+            --- PASS: TestNewConnectWithLowTimeout/100ns/Timeout/Connect (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/100ns/Timeout/Regular_Query (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/100ns/Timeout/Query_from_control_connection (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/100ns/Timeout/Query_from_control_connection_after_reconnect (0.02s)
+        --- PASS: TestNewConnectWithLowTimeout/100ns/MetadataSchemaRequestTimeout (0.01s)
+            --- PASS: TestNewConnectWithLowTimeout/100ns/MetadataSchemaRequestTimeout/Connect (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/100ns/MetadataSchemaRequestTimeout/Regular_Query (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/100ns/MetadataSchemaRequestTimeout/Query_from_control_connection (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/100ns/MetadataSchemaRequestTimeout/Query_from_control_connection_after_reconnect (0.01s)
+        --- PASS: TestNewConnectWithLowTimeout/100ns/WriteTimeout (0.02s)
+            --- PASS: TestNewConnectWithLowTimeout/100ns/WriteTimeout/Connect (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/100ns/WriteTimeout/Regular_Query (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/100ns/WriteTimeout/Query_from_control_connection (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/100ns/WriteTimeout/Query_from_control_connection_after_reconnect (0.01s)
+        --- PASS: TestNewConnectWithLowTimeout/100ns/ReadTimeout (0.01s)
+            --- PASS: TestNewConnectWithLowTimeout/100ns/ReadTimeout/Connect (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/100ns/ReadTimeout/Regular_Query (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/100ns/ReadTimeout/Query_from_control_connection (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/100ns/ReadTimeout/Query_from_control_connection_after_reconnect (0.01s)
+        --- PASS: TestNewConnectWithLowTimeout/100ns/AllTimeouts (0.01s)
+            --- PASS: TestNewConnectWithLowTimeout/100ns/AllTimeouts/Connect (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/100ns/AllTimeouts/Regular_Query (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/100ns/AllTimeouts/Query_from_control_connection (0.00s)
+            --- PASS: TestNewConnectWithLowTimeout/100ns/AllTimeouts/Query_from_control_connection_after_reconnect (0.01s)
+PASS

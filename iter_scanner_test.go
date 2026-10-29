@@ -26,7 +26,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/gocql/gocql/internal/tests/mock"
+	"github.com/scylladb/gocql/v2/internal/tests/mock"
 )
 
 // TestIterScannerColumnCountChangeAcrossPageTurn covers a schema change landing

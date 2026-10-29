@@ -1,0 +1,33 @@
+{
+  "unit_race": {
+    "command": "GO111MODULE=off GOWORK=off go test -race -count=1 ./tests/affinity",
+    "result": "PASS; cache/encoding equivalence, concurrent shared LRU integrity, complete disjoint input partitions"
+  },
+  "go_vet": {
+    "command": "GO111MODULE=off GOWORK=off go vet ./tests/affinity",
+    "result": "PASS"
+  },
+  "smoke": {
+    "command": "python3 tests/affinity/run.py --phase smoke --repeats 1 --duration 1s --warmup 200ms --output /tmp/gocql-affinity-smoke-20261029-02",
+    "result": "PASS; five CPU/TCP/skew/affinity/socket cases; earlier mixed-LLC CPU selection was only used for smoke"
+  },
+  "perf": {
+    "command": "perf stat -e context-switches,cpu-migrations,cache-misses -- true",
+    "result": "UNAVAILABLE: perf_event_paranoid=4; host configuration left as-is"
+  },
+  "pilot": {
+    "result": "16 completed runs retained separately; interrupted because client CPUs had heterogeneous L3 domains; excluded from final statistics"
+  },
+  "final_matrix_audit": {
+    "result": "PASS",
+    "successful_runs": 144,
+    "cases": 24,
+    "repeats_per_case": 6,
+    "source_hashes_match": true,
+    "pinned_cpu_samples": 4110600,
+    "pinned_cpu_placement_violations": 0,
+    "socket_option_workers": 48,
+    "echo_server_stopped": true,
+    "raw_sha256": "fba790ed40cf449b8610905f8b0b26b4086203a66db878fe2c9214b53d03b356"
+  }
+}

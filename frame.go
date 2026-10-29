@@ -38,8 +38,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	frm "github.com/gocql/gocql/internal/frame"
-	"github.com/gocql/gocql/internal/segment"
+	frm "github.com/scylladb/gocql/v2/internal/frame"
+	"github.com/scylladb/gocql/v2/internal/segment"
 )
 
 type unsetColumn struct{}

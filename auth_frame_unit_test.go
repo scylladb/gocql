@@ -8,7 +8,7 @@ import (
 	"reflect"
 	"testing"
 
-	frm "github.com/gocql/gocql/internal/frame"
+	frm "github.com/scylladb/gocql/v2/internal/frame"
 )
 
 func parseOpBody(op frm.Op, body []byte) (frame, error) {

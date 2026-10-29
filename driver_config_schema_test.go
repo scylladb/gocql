@@ -178,7 +178,7 @@ func driverConfigCases() []struct {
 		},
 		{
 			name: "typed-nil retry policy",
-			cfg:  func(c *ClusterConfig) { c.RetryPolicy = (*SimpleRetryPolicy)(nil) },
+			cfg:  func(c *ClusterConfig) { c.oldRetryPolicy = (*SimpleRetryPolicy)(nil) },
 		},
 		{
 			name:   "typed-nil load balancing fallback",
@@ -203,32 +203,32 @@ func driverConfigCases() []struct {
 		{
 			name: "downgrading consistency retry policy",
 			cfg: func(c *ClusterConfig) {
-				c.RetryPolicy = &DowngradingConsistencyRetryPolicy{ConsistencyLevelsToTry: []Consistency{One, Any}}
+				c.oldRetryPolicy = &DowngradingConsistencyRetryPolicy{ConsistencyLevelsToTry: []Consistency{One, Any}}
 			},
 		},
 		{
 			name: "exponential backoff retry policy with max below min",
 			cfg: func(c *ClusterConfig) {
-				c.RetryPolicy = &ExponentialBackoffRetryPolicy{NumRetries: 3, Min: 5 * time.Second, Max: time.Second}
+				c.oldRetryPolicy = &ExponentialBackoffRetryPolicy{NumRetries: 3, Min: 5 * time.Second, Max: time.Second}
 			},
 		},
 		{
 			name: "exponential backoff retry policy with sub-millisecond bounds",
 			cfg: func(c *ClusterConfig) {
-				c.RetryPolicy = &ExponentialBackoffRetryPolicy{NumRetries: 3, Min: time.Microsecond, Max: 2 * time.Microsecond}
+				c.oldRetryPolicy = &ExponentialBackoffRetryPolicy{NumRetries: 3, Min: time.Microsecond, Max: 2 * time.Microsecond}
 			},
 		},
 		{
 			name: "custom retry policy",
-			cfg:  func(c *ClusterConfig) { c.RetryPolicy = &fakeRetryPolicy{RetryPolicy: &SimpleRetryPolicy{}} },
+			cfg:  func(c *ClusterConfig) { c.oldRetryPolicy = &fakeRetryPolicy{oldRetryPolicy: &SimpleRetryPolicy{}} },
 		},
 		{
 			name: "simple retry policy with a negative retry limit",
-			cfg:  func(c *ClusterConfig) { c.RetryPolicy = &SimpleRetryPolicy{NumRetries: -1} },
+			cfg:  func(c *ClusterConfig) { c.oldRetryPolicy = &SimpleRetryPolicy{NumRetries: -1} },
 		},
 		{
 			name: "exponential backoff retry policy with a negative retry limit",
-			cfg:  func(c *ClusterConfig) { c.RetryPolicy = &ExponentialBackoffRetryPolicy{NumRetries: -2} },
+			cfg:  func(c *ClusterConfig) { c.oldRetryPolicy = &ExponentialBackoffRetryPolicy{NumRetries: -2} },
 		},
 		{
 			name: "tls without hostname verification",

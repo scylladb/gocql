@@ -7,8 +7,8 @@ package gocql
 
 import (
 	"context"
+	"errors"
 	"flag"
-	"fmt"
 	"os"
 	"regexp"
 	"sort"
@@ -16,8 +16,6 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-
-	frm "github.com/gocql/gocql/internal/frame"
 )
 
 var updateGolden = flag.Bool("update-golden", false, "update golden files")
@@ -38,11 +36,11 @@ func TestRecreateSchema(t *testing.T) {
 		failsOnOldScylla = true
 	}
 
-	session := createSessionFromClusterTabletsDisabled(createCluster(), t)
+	session := createV2SessionFromConfig(createV2Cluster(), t, true)
 	defer session.Close()
 
 	getStmtFromCluster := isDescribeKeyspaceSupported(t, session)
-	tabletsAutoEnabled := isTabletsSupported() && isTabletsAutoEnabled()
+	tabletsAutoEnabled := v2SchemaRoutingTabletsAutoEnabled(t, session)
 
 	tcs := []struct {
 		Name            string
@@ -118,7 +116,7 @@ func TestRecreateSchema(t *testing.T) {
 
 			// Generate a unique keyspace name to avoid collisions under parallel execution.
 			// Replace the fixed keyspace name in CQL input/golden files with the unique name.
-			ks := testKeyspaceName(t)
+			ks := v2SchemaRoutingName(t)
 			cleanup(t, session, ks)
 
 			input := cassandraOverride(test.Input, test.CassandraInput)
@@ -132,21 +130,10 @@ func TestRecreateSchema(t *testing.T) {
 
 			queries := trimQueries(strings.Split(inStr, ";"))
 			for _, q := range queries {
-				qr := session.Query(q, nil)
-				err = qr.Exec()
+				_, err = v2Exec(context.Background(), session, q)
 				if err != nil {
 					break
 				}
-				qr.Release()
-			}
-
-			err = session.AwaitSchemaAgreement(context.Background())
-			if err != nil {
-				t.Fatal("failed to await for schema agreement", err)
-			}
-			err = session.metadataDescriber.refreshKeyspaceSchema(ks)
-			if err != nil {
-				t.Fatal("failed to read schema for keyspace", err)
 			}
 
 			if tabletsAutoEnabled && test.FailWithTablets {
@@ -161,9 +148,15 @@ func TestRecreateSchema(t *testing.T) {
 				t.Fatal("invalid input query", err)
 			}
 
-			km, err := session.KeyspaceMetadata(ks)
-			if err != nil {
-				t.Fatal("dump schema", err)
+			if err := session.AwaitSchemaAgreement(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if err := session.RefreshMetadata(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			km, ok := session.Metadata().Keyspace(ks)
+			if !ok {
+				t.Fatal("keyspace missing from typed metadata snapshot:", ks)
 			}
 			dump, err := km.ToCQL()
 			if err != nil {
@@ -177,7 +170,7 @@ func TestRecreateSchema(t *testing.T) {
 
 			var golden []byte
 			if getStmtFromCluster {
-				golden, err = getCreateStatements(session, ks)
+				golden, err = getV2CreateStatements(context.Background(), session, ks)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -216,14 +209,11 @@ func TestRecreateSchema(t *testing.T) {
 			// Exec dumped queries to check if they are CQL-correct.
 			// Substitute the fixed keyspace name back to the unique name for execution.
 			cleanup(t, session, ks)
-			session.metadataDescriber.invalidateKeyspaceSchema(ks)
 
 			for _, q := range trimQueries(strings.Split(strings.ReplaceAll(dump, test.FixedKeyspace, ks), ";")) {
-				qr := session.Query(q, nil)
-				if err := qr.Exec(); err != nil {
+				if _, err := v2Exec(context.Background(), session, q); err != nil {
 					t.Fatal("invalid dump query", q, err)
 				}
-				qr.Release()
 			}
 
 			// Check if new dump is the same as previous
@@ -231,13 +221,13 @@ func TestRecreateSchema(t *testing.T) {
 			if err != nil {
 				t.Fatal("failed to await for schema agreement", err)
 			}
-			err = session.metadataDescriber.refreshKeyspaceSchema(ks)
+			err = session.RefreshMetadata(context.Background())
 			if err != nil {
 				t.Fatal("failed to read schema for keyspace", err)
 			}
-			km, err = session.KeyspaceMetadata(ks)
-			if err != nil {
-				t.Fatal("dump schema", err)
+			km, ok = session.Metadata().Keyspace(ks)
+			if !ok {
+				t.Fatal("recreated keyspace missing from typed metadata snapshot:", ks)
 			}
 			secondDump, err := km.ToCQL()
 			if err != nil {
@@ -260,9 +250,13 @@ func TestRecreateSchema(t *testing.T) {
 func isDescribeKeyspaceSupported(t *testing.T, s *Session) bool {
 	t.Helper()
 
-	err := s.control.query(fmt.Sprintf(`DESCRIBE KEYSPACE system WITH INTERNALS`)).Close()
+	rows, err := v2Query(context.Background(), s, `DESCRIBE KEYSPACE system WITH INTERNALS`)
+	if err == nil {
+		err = rows.Close()
+	}
 	if err != nil {
-		if errFrame, ok := err.(frm.ErrorFrame); ok && errFrame.Code == ErrCodeSyntax {
+		var server RequestError
+		if errors.As(err, &server) && server.GetCode() == ErrCodeSyntax {
 			// DESCRIBE KEYSPACE is not supported on older versions of Cassandra and Scylla
 			// For such case schema statement is going to be recreated on the client side
 			return false
@@ -273,11 +267,9 @@ func isDescribeKeyspaceSupported(t *testing.T, s *Session) bool {
 }
 
 func cleanup(t *testing.T, session *Session, keyspace string) {
-	qr := session.Query(`DROP KEYSPACE IF EXISTS ` + keyspace)
-	if err := qr.Exec(); err != nil {
+	if err := v2CreateTable(context.Background(), session, `DROP KEYSPACE IF EXISTS `+keyspace); err != nil {
 		t.Fatalf("unable to drop keyspace: %v", err)
 	}
-	qr.Release()
 }
 
 func sortQueries(in []string) []string {
@@ -306,4 +298,24 @@ func trimSchema(s string) string {
 	// Remove temporary items from the scheme, in particular schema version:
 	// ) WITH ID = cf0364d0-3b85-11ef-b79d-80a2ee1928c0
 	return strings.ReplaceAll(schemaVersion.ReplaceAllString(s, " WITH"), "\n\n", "\n")
+}
+
+// Probe server-default tablet behavior in an isolated keyspace using typed rows.
+func v2SchemaRoutingTabletsAutoEnabled(t *testing.T, session *Session) bool {
+	t.Helper()
+	supported, err := v2TabletsSupported(context.Background(), session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !supported {
+		return false
+	}
+	keyspace := v2SchemaRoutingName(t)
+	v2CreateRoutingKeyspace(t, session, keyspace, 1)
+	defer cleanup(t, session, keyspace)
+	statements, err := getV2CreateStatements(context.Background(), session, keyspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.Contains(strings.ToLower(string(statements)), "and tablets")
 }

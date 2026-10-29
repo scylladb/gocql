@@ -28,786 +28,418 @@
 package gocql
 
 import (
-	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"math"
 	"math/big"
 	"net"
-	"reflect"
+	"net/netip"
 	"sort"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
-	"unicode"
 
-	frm "github.com/gocql/gocql/internal/frame"
-	"github.com/gocql/gocql/internal/tests"
+	frm "github.com/scylladb/gocql/v2/internal/frame"
+	"github.com/scylladb/gocql/v2/internal/murmur"
 
 	"github.com/stretchr/testify/require"
-	"gopkg.in/inf.v0"
 )
 
 func TestEmptyHosts(t *testing.T) {
 	t.Parallel()
-
-	cluster := createCluster()
-	cluster.Hosts = nil
-	if session, err := cluster.CreateSession(); err == nil {
+	config := createV2Cluster()
+	config.ContactPoints = nil
+	session, err := Connect(context.Background(), config)
+	if err == nil {
 		session.Close()
-		t.Error("expected err, got nil")
+		t.Fatal("expected error for empty contact points")
 	}
 }
 
 func TestInvalidPeerEntry(t *testing.T) {
 	t.Parallel()
-
-	t.Skip("dont mutate system tables, rewrite this to test what we mean to test")
-	session := createSession(t)
-
-	// rack, release_version, schema_version, tokens are all null
-	query := session.Query("INSERT into system.peers (peer, data_center, host_id, rpc_address) VALUES (?, ?, ?, ?)",
-		"169.254.235.45",
-		"datacenter1",
-		"35c0ec48-5109-40fd-9281-9e9d4add2f1e",
-		"169.254.235.45",
-	)
-
-	if err := query.Exec(); err != nil {
-		t.Fatal(err)
+	if *flagDistribution != "cassandra" {
+		t.Skip("incomplete-peer wire fixture uses Cassandra's native v4 metadata")
 	}
-
-	session.Close()
-
-	cluster := createCluster()
-	cluster.PoolConfig.HostSelectionPolicy = TokenAwareHostPolicy(RoundRobinHostPolicy())
-	session = createSessionFromCluster(cluster, t)
-	defer func() {
-		session.Query("DELETE from system.peers where peer = ?", "169.254.235.45").Exec()
-		session.Close()
-	}()
-
-	// check we can perform a query
-	iter := session.Query("select peer from system.peers").Iter()
-	var peer string
-	for iter.Scan(&peer) {
+	fixture := &incompletePeerDialer{}
+	config := createV2Cluster(func(c *Config) { c.Protocol = 4; c.Compression = NoCompression; c.TLS = nil; c.Dialer = fixture })
+	session, err := Connect(context.Background(), config)
+	require.NoError(t, err)
+	defer session.Close()
+	require.Positive(t, fixture.injected.Load(), "discovery must consume injected incomplete peer")
+	hosts := session.Metadata().Hosts()
+	require.Len(t, hosts, *clusterSize)
+	for _, host := range hosts {
+		require.NotEqual(t, "35c0ec48-5109-40fd-9281-9e9d4add2f1e", host.ID.String())
 	}
-	if err := iter.Close(); err != nil {
-		t.Fatal(err)
-	}
+	require.Equal(t, "local", cassandraText(t, cassandraRead(t, session, "SELECT key FROM system.local"), "key"))
 }
 
 // TestUseStatementError checks to make sure the correct error is returned when the user tries to execute a use statement.
 func TestUseStatementError(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
-	if err := session.Query("USE gocql_test").Exec(); err != nil {
-		if err != ErrUseStmt {
-			t.Fatalf("expected ErrUseStmt, got: %v", err)
-		}
-	} else {
-		t.Fatal("expected err, got nil.")
-	}
+	_, err := v2Exec(context.Background(), session, "USE gocql_test")
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrUseStmt)
 }
 
 // TestInvalidKeyspace checks that an invalid keyspace will return promptly and without a flood of connections
 func TestInvalidKeyspace(t *testing.T) {
 	t.Parallel()
-
-	cluster := createCluster()
-	cluster.Keyspace = "invalidKeyspace"
-	session, err := cluster.CreateSession()
-	if err != nil {
-		if err != ErrNoConnectionsStarted {
-			t.Fatalf("Expected ErrNoConnections but got %v", err)
-		}
-	} else {
-		session.Close() //Clean up the session
-		t.Fatal("expected err, got nil.")
+	config := createV2Cluster()
+	config.Keyspace = "invalidKeyspace"
+	session, err := Connect(context.Background(), config)
+	if err == nil {
+		session.Close()
+		t.Fatal("expected invalid keyspace to fail")
 	}
+	require.Error(t, err)
 }
 
 func TestTracing(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (id int primary key)`, table)); err != nil {
-		t.Fatal("create:", err)
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s (id int PRIMARY KEY)", table))
+	write := cassandraWriteBound(t, session, fmt.Sprintf("INSERT INTO %s (id) VALUES (?)", table), []Value{IntValue(42)}, PrepareOptions{})
+	result, err := Exec(context.Background(), session, write, Options{Trace: true})
+	require.NoError(t, err)
+	require.NotEmpty(t, result.TraceIDs)
+	checkTrace := func(ids []UUID) {
+		t.Helper()
+		require.NotEmpty(t, ids)
+		for _, id := range ids {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			trace, err := session.Trace(ctx, id)
+			cancel()
+			require.NoError(t, err)
+			require.Equal(t, id, trace.ID)
+			require.NotEmpty(t, trace.Events)
+		}
 	}
-
-	buf := &bytes.Buffer{}
-	trace := &TraceWriter{session: session, w: buf}
-	if err := session.Query(fmt.Sprintf(`INSERT INTO %s (id) VALUES (?)`, table), 42).Trace(trace).Exec(); err != nil {
-		t.Fatal("insert:", err)
-	} else if buf.Len() == 0 {
-		t.Fatal("insert: failed to obtain any tracing")
-	}
-	trace.mu.Lock()
-	buf.Reset()
-	trace.mu.Unlock()
-
-	var value int
-	if err := session.Query(fmt.Sprintf(`SELECT id FROM %s WHERE id = ?`, table), 42).Trace(trace).Scan(&value); err != nil {
-		t.Fatal("select:", err)
-	} else if value != 42 {
-		t.Fatalf("value: expected %d, got %d", 42, value)
-	} else if buf.Len() == 0 {
-		t.Fatal("select: failed to obtain any tracing")
-	}
-
-	// also works from session tracer
-	session.SetTrace(trace)
-	trace.mu.Lock()
-	buf.Reset()
-	trace.mu.Unlock()
-	if err := session.Query(fmt.Sprintf(`SELECT id FROM %s WHERE id = ?`, table), 42).Scan(&value); err != nil {
-		t.Fatal("select:", err)
-	}
-	if buf.Len() == 0 {
-		t.Fatal("select: failed to obtain any tracing")
+	checkTrace(result.TraceIDs)
+	read := cassandraDynamicBound(t, session, fmt.Sprintf("SELECT id FROM %s WHERE id = ?", table), []Value{IntValue(42)}, PrepareOptions{})
+	// Options are explicit per execution; the same binding can be traced repeatedly.
+	for i := 0; i < 2; i++ {
+		rows, err := Run(context.Background(), session, read, Options{Trace: true})
+		require.NoError(t, err)
+		defer rows.Close()
+		require.True(t, rows.Next())
+		require.Equal(t, int64(42), cassandraInt(t, rows.Row(), "id"))
+		require.False(t, rows.Next())
+		require.NoError(t, rows.Close())
+		checkTrace(rows.Info().TraceIDs)
 	}
 }
 
 func TestObserve(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (id int primary key)`, table)); err != nil {
-		t.Fatal("create:", err)
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s (id int PRIMARY KEY)", table))
+	observer := &cassandraObserver{}
+	check := func(stmt string, wantErr bool) {
+		t.Helper()
+		events, attempts := observer.snapshot()
+		require.Len(t, events, 1)
+		require.NotEmpty(t, attempts)
+		require.Equal(t, stmt, events[0].Statement)
+		require.Equal(t, "gocql_test", events[0].Routing.Keyspace)
+		require.Equal(t, wantErr, events[0].Err != nil)
 	}
-
-	var (
-		observedErr      error
-		observedKeyspace string
-		observedStmt     string
-	)
-
-	const keyspace = "gocql_test"
-
-	resetObserved := func() {
-		observedErr = errors.New("placeholder only") // used to distinguish err=nil cases
-		observedKeyspace = ""
-		observedStmt = ""
-	}
-
-	observer := funcQueryObserver(func(ctx context.Context, o ObservedQuery) {
-		observedKeyspace = o.Keyspace
-		observedStmt = o.Statement
-		observedErr = o.Err
-	})
-
-	// select before inserted, will error but the reporting is err=nil as the query is valid
-	resetObserved()
-	var value int
-	if err := session.Query(fmt.Sprintf(`SELECT id FROM %s WHERE id = ?`, table), 43).Observer(observer).Scan(&value); err == nil {
-		t.Fatal("select: expected error")
-	} else if observedErr != nil {
-		t.Fatalf("select: observed error expected nil, got %q", observedErr)
-	} else if observedKeyspace != keyspace {
-		t.Fatal("select: unexpected observed keyspace", observedKeyspace)
-	} else if observedStmt != fmt.Sprintf(`SELECT id FROM %s WHERE id = ?`, table) {
-		t.Fatal("select: unexpected observed stmt", observedStmt)
-	}
-
-	resetObserved()
-	if err := session.Query(fmt.Sprintf(`INSERT INTO %s (id) VALUES (?)`, table), 42).Observer(observer).Exec(); err != nil {
-		t.Fatal("insert:", err)
-	} else if observedErr != nil {
-		t.Fatal("insert:", observedErr)
-	} else if observedKeyspace != keyspace {
-		t.Fatal("insert: unexpected observed keyspace", observedKeyspace)
-	} else if observedStmt != fmt.Sprintf(`INSERT INTO %s (id) VALUES (?)`, table) {
-		t.Fatal("insert: unexpected observed stmt", observedStmt)
-	}
-
-	resetObserved()
-	value = 0
-	if err := session.Query(fmt.Sprintf(`SELECT id FROM %s WHERE id = ?`, table), 42).Observer(observer).Scan(&value); err != nil {
-		t.Fatal("select:", err)
-	} else if value != 42 {
-		t.Fatalf("value: expected %d, got %d", 42, value)
-	} else if observedErr != nil {
-		t.Fatal("select:", observedErr)
-	} else if observedKeyspace != keyspace {
-		t.Fatal("select: unexpected observed keyspace", observedKeyspace)
-	} else if observedStmt != fmt.Sprintf(`SELECT id FROM %s WHERE id = ?`, table) {
-		t.Fatal("select: unexpected observed stmt", observedStmt)
-	}
-
-	// also works from session observer
-	resetObserved()
-	oSession := createSession(t, func(config *ClusterConfig) { config.QueryObserver = observer })
-	if err := oSession.Query(fmt.Sprintf(`SELECT id FROM %s WHERE id = ?`, table), 42).Scan(&value); err != nil {
-		t.Fatal("select:", err)
-	} else if observedErr != nil {
-		t.Fatal("select:", err)
-	} else if observedKeyspace != keyspace {
-		t.Fatal("select: unexpected observed keyspace", observedKeyspace)
-	} else if observedStmt != fmt.Sprintf(`SELECT id FROM %s WHERE id = ?`, table) {
-		t.Fatal("select: unexpected observed stmt", observedStmt)
-	}
-
-	// reports errors when the query is poorly formed
-	resetObserved()
-	value = 0
-	if err := session.Query(`SELECT id FROM unknown_table WHERE id = ?`, 42).Observer(observer).Scan(&value); err == nil {
-		t.Fatal("select: expecting error")
-	} else if observedErr == nil {
-		t.Fatal("select: expecting observed error")
-	} else if observedKeyspace != keyspace {
-		t.Fatal("select: unexpected observed keyspace", observedKeyspace)
-	} else if observedStmt != `SELECT id FROM unknown_table WHERE id = ?` {
-		t.Fatal("select: unexpected observed stmt", observedStmt)
-	}
+	selectCQL := fmt.Sprintf("SELECT id FROM %s WHERE id = ?", table)
+	read := cassandraDynamicBound(t, session, selectCQL, []Value{IntValue(43)}, PrepareOptions{})
+	rows, err := Run(context.Background(), session, read, Options{Observer: observer})
+	require.NoError(t, err)
+	defer rows.Close()
+	require.False(t, rows.Next())
+	require.NoError(t, rows.Close())
+	check(selectCQL, false)
+	observer.reset()
+	insertCQL := fmt.Sprintf("INSERT INTO %s (id) VALUES (?)", table)
+	write := cassandraWriteBound(t, session, insertCQL, []Value{IntValue(42)}, PrepareOptions{})
+	_, err = Exec(context.Background(), session, write, Options{Observer: observer})
+	require.NoError(t, err)
+	check(insertCQL, false)
+	observer.reset()
+	read = cassandraDynamicBound(t, session, selectCQL, []Value{IntValue(42)}, PrepareOptions{})
+	require.Equal(t, int64(42), cassandraInt(t, cassandraReadBound(t, session, read, Options{Observer: observer}), "id"))
+	check(selectCQL, false)
+	observer.reset()
+	other := createV2Session(t, func(c *Config) { c.Observer = observer })
+	defer other.Close()
+	observer.reset()
+	read = cassandraDynamicBound(t, other, selectCQL, []Value{IntValue(42)}, PrepareOptions{})
+	require.Equal(t, int64(42), cassandraInt(t, cassandraReadBound(t, other, read, Options{}), "id"))
+	check(selectCQL, false)
+	observer.reset()
+	bad := cassandraUnprepared(t, "SELECT id FROM unknown_table WHERE id = 42", DynamicRows)
+	_, err = Run(context.Background(), session, bad, Options{Observer: observer})
+	require.Error(t, err)
+	check("SELECT id FROM unknown_table WHERE id = 42", true)
 }
 
 func TestObserve_Pagination(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (id int, PRIMARY KEY (id))`, table)); err != nil {
-		t.Fatal("create:", err)
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s (id int PRIMARY KEY)", table))
+	for i := int32(0); i < 50; i++ {
+		cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s (id) VALUES (?)", table), IntValue(i))
 	}
-
-	var observedRows int
-
-	resetObserved := func() {
-		observedRows = -1
-	}
-
-	observer := funcQueryObserver(func(ctx context.Context, o ObservedQuery) {
-		observedRows = o.Rows
-	})
-
-	// insert 100 entries, relevant for pagination
+	observer := &cassandraObserver{}
+	bound := cassandraUnprepared(t, fmt.Sprintf("SELECT id FROM %s LIMIT 100", table), DynamicRows)
+	// The typed observer reports each transport attempt and one completed logical
+	// request; row counts belong to Result instead of mutable per-page callbacks.
+	rows, err := Run(context.Background(), session, bound, Options{PageSize: Option[int32]{Value: 10, Set: true}, Prefetch: Option[int]{Value: 0, Set: true}, Observer: observer})
+	require.NoError(t, err)
+	defer rows.Close()
 	for i := 0; i < 50; i++ {
-		if err := session.Query(fmt.Sprintf(`INSERT INTO %s (id) VALUES (?)`, table), i).Exec(); err != nil {
-			t.Fatal("insert:", err)
-		}
+		require.True(t, rows.Next(), "row %d: %v", i, rows.Err())
+		_, attempts := observer.snapshot()
+		require.Equal(t, i/10+1, len(attempts))
 	}
-
-	resetObserved()
-
-	// read the 100 entries in paginated entries of size 10. Expecting 5 observations, each with 10 rows
-	scanner := session.Query(fmt.Sprintf(`SELECT id FROM %s LIMIT 100`, table)).
-		Observer(observer).
-		PageSize(10).
-		Iter().Scanner()
-	for i := 0; i < 50; i++ {
-		if !scanner.Next() {
-			t.Fatalf("next: should still be true: %d: %v", i, scanner.Err())
-		}
-		if i%10 == 0 {
-			if observedRows != 10 {
-				t.Fatalf("next: expecting a paginated query with 10 entries, got: %d (%d)", observedRows, i)
-			}
-		} else if observedRows != -1 {
-			t.Fatalf("next: not expecting paginated query (-1 entries), got: %d", observedRows)
-		}
-
-		resetObserved()
-	}
-
-	if scanner.Next() {
-		t.Fatal("next: no more entries where expected")
-	}
+	require.False(t, rows.Next())
+	require.NoError(t, rows.Close())
+	events, attempts := observer.snapshot()
+	require.Len(t, events, 1)
+	require.GreaterOrEqual(t, len(attempts), 5)
+	require.Equal(t, int64(50), events[0].Result.Rows)
 }
 
 func TestPaging(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int primary key)", table)); err != nil {
-		t.Fatal("create table:", err)
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s (id int PRIMARY KEY)", table))
+	for i := int32(0); i < 100; i++ {
+		cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s (id) VALUES (?)", table), IntValue(i))
 	}
-	for i := 0; i < 100; i++ {
-		if err := session.Query(fmt.Sprintf("INSERT INTO %s (id) VALUES (?)", table), i).Exec(); err != nil {
-			t.Fatal("insert:", err)
-		}
-	}
-
-	iter := session.Query(fmt.Sprintf("SELECT id FROM %s", table)).PageSize(10).Iter()
-	var id int
-	count := 0
-	for iter.Scan(&id) {
-		count++
-	}
-	if err := iter.Close(); err != nil {
-		t.Fatal("close:", err)
-	}
-	if count != 100 {
-		t.Fatalf("expected %d, got %d", 100, count)
-	}
+	bound := cassandraUnprepared(t, fmt.Sprintf("SELECT id FROM %s", table), DynamicRows)
+	rows := cassandraRows(t, session, bound, Options{PageSize: Option[int32]{Value: 10, Set: true}})
+	require.Len(t, rows, 100)
 }
 
 func TestPagingWithAllowFiltering(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
-
+	session := createV2Session(t)
+	defer session.Close()
 	table := testTableName(t)
-
-	t.Cleanup(func() {
-		if err := session.Query(fmt.Sprintf("DROP TABLE gocql_test.%s", table)).Exec(); err != nil {
-			t.Fatal("drop table:", err)
+	const targetP1, targetP2, totalExpectedResults, pageSize, deletedRangeStart, deletedRangeEnd = 50, 50, 30, 5, 10, 20
+	selectCQL := fmt.Sprintf("SELECT c1,f1 FROM %s WHERE p1=50 AND p2=50 AND f1<30 ALLOW FILTERING", table)
+	validate := func(t *testing.T, rows []DynamicRow) {
+		t.Helper()
+		var got []int
+		for _, row := range rows {
+			c1, f1 := cassandraInt(t, row, "c1"), cassandraInt(t, row, "f1")
+			require.Equal(t, c1, f1)
+			got = append(got, int(f1))
 		}
-		session.Close()
-	})
-
-	const (
-		targetP1             = 50
-		targetP2             = 50
-		totalExpectedResults = 30
-		pageSize             = 5
-		deletedRageStart     = 10
-		deletedRageEnd       = 20
-		// Some record range is being deleted, to test tombstones appearance
-		expectedCount = totalExpectedResults - (deletedRageEnd - deletedRageStart)
-	)
-
-	paginatedSelect := fmt.Sprintf("SELECT c1, f1 FROM gocql_test.%s WHERE p1 = %d AND p2 = %d AND f1 < %d ALLOW FILTERING;", table, targetP1, targetP2, totalExpectedResults)
-	validateResult := func(t *testing.T, results []int) {
-		if len(results) != expectedCount {
-			t.Fatalf("expected %d got %d: %d", expectedCount, len(results), results)
-		}
-
-		sort.Ints(results)
-
-		expect := make([]int, 0, expectedCount)
+		sort.Ints(got)
+		var want []int
 		for i := 0; i < totalExpectedResults; i++ {
-			if i >= deletedRageStart && i < deletedRageEnd {
-				continue
+			if i < deletedRangeStart || i >= deletedRangeEnd {
+				want = append(want, i)
 			}
-			expect = append(expect, i)
 		}
-
-		if !reflect.DeepEqual(results, expect) {
-			t.Fatalf("expected %v\ngot %v", expect, results)
-		}
+		require.Equal(t, want, got)
 	}
-
 	t.Run("Prepare", func(t *testing.T) {
-		if err := createTable(session,
-			fmt.Sprintf("CREATE TABLE gocql_test.%s (p1 int, p2 int, c1 int, f1 int, "+
-				"PRIMARY KEY ((p1, p2), c1)) WITH CLUSTERING ORDER BY (c1 DESC)", table)); err != nil {
-			t.Fatal("create table:", err)
+		cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s (p1 int,p2 int,c1 int,f1 int,PRIMARY KEY ((p1,p2),c1)) WITH CLUSTERING ORDER BY (c1 DESC)", table))
+		for i := int32(0); i < 100; i++ {
+			cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s (p1,p2,c1,f1) VALUES (?,?,?,?)", table), IntValue(i), IntValue(i), IntValue(i), IntValue(i))
+			cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s (p1,p2,c1,f1) VALUES (?,?,?,?)", table), IntValue(targetP1), IntValue(targetP2), IntValue(i), IntValue(i))
 		}
-
-		// Insert extra records
-		for i := 0; i < 100; i++ {
-			if err := session.Query(fmt.Sprintf("INSERT INTO gocql_test.%s (p1,p2,c1,f1) VALUES (?,?,?,?)", table), i, i, i, i).Exec(); err != nil {
-				t.Fatal("insert:", err)
-			}
-		}
-
-		// Insert records to a target partition
-		for i := 0; i < 100; i++ {
-			if err := session.Query(fmt.Sprintf("INSERT INTO gocql_test.%s (p1,p2,c1,f1) VALUES (?,?,?,?)", table), targetP1, targetP2, i, i).Exec(); err != nil {
-				t.Fatal("insert:", err)
-			}
-		}
-
-		if err := session.Query(fmt.Sprintf("DELETE FROM gocql_test.%s WHERE p1 = ? AND p2 = ? AND c1 >= ? AND c1 < ?", table), targetP1, targetP2, deletedRageStart, deletedRageEnd).Exec(); err != nil {
-			t.Fatal("insert:", err)
-		}
+		cassandraWrite(t, session, fmt.Sprintf("DELETE FROM %s WHERE p1=? AND p2=? AND c1>=? AND c1<?", table), IntValue(targetP1), IntValue(targetP2), IntValue(deletedRangeStart), IntValue(deletedRangeEnd))
 	})
-
+	bound := cassandraUnprepared(t, selectCQL, DynamicRows)
 	t.Run("AutoPagination", func(t *testing.T) {
 		for _, c := range []Consistency{One, Quorum} {
 			t.Run(c.String(), func(t *testing.T) {
-				iter := session.Query(paginatedSelect).Consistency(c).PageSize(pageSize).Iter()
-
-				var c1, f1 int
-				var results []int
-
-				for iter.Scan(&c1, &f1) {
-					if c1 != f1 {
-						t.Fatalf("expected c1 and f1 values to be the same, but got c1=%d f1=%d", c1, f1)
-					}
-					results = append(results, f1)
-				}
-				if err := iter.Close(); err != nil {
-					t.Fatal("select:", err.Error())
-				}
-				validateResult(t, results)
+				validate(t, cassandraRows(t, session, bound, Options{Consistency: Option[Consistency]{Value: c, Set: true}, PageSize: Option[int32]{Value: pageSize, Set: true}}))
 			})
 		}
 	})
-
 	t.Run("ManualPagination", func(t *testing.T) {
 		for _, c := range []Consistency{One, Quorum} {
 			t.Run(c.String(), func(t *testing.T) {
-
-				var c1, f1 int
-				var results []int
-				var currentPageState []byte
-
-				qry := session.Query(paginatedSelect).Consistency(c).PageSize(pageSize)
-
+				var result []DynamicRow
+				state := StartPage()
 				for {
-					iter := qry.PageState(currentPageState).Iter()
-
-					// Here we make sure that all iterator, but last one have some data in it
-					if !iter.LastPage() && iter.NumRows() == 0 {
-						t.Errorf("expected at least one row, but got 0")
+					page, err := RunPage(context.Background(), session, bound, state, Options{Consistency: Option[Consistency]{Value: c, Set: true}, PageSize: Option[int32]{Value: pageSize, Set: true}})
+					require.NoError(t, err)
+					defer page.Close()
+					next := page.State()
+					// RunPage exposes empty tombstone/filter pages. Their continuation
+					// must still advance, and their reported count must match decoded rows.
+					pageRows := int64(0)
+					for page.Next() {
+						pageRows++
+						row, err := page.Clone()
+						require.NoError(t, err)
+						result = append(result, row)
 					}
-					for iter.Scan(&c1, &f1) {
-						if c1 != f1 {
-							t.Fatalf("expected c1 and f1 values to be the same, but got c1=%d f1=%d", c1, f1)
-						}
-						results = append(results, f1)
-					}
-					if err := iter.Close(); err != nil {
-						t.Fatal("select:", err.Error())
-					}
-					if iter.LastPage() {
+					require.Equal(t, page.Info().Rows, pageRows)
+					require.NoError(t, page.Close())
+					if next.Complete() {
 						break
 					}
-					newPageState := iter.PageState()
-					if len(currentPageState) == len(newPageState) && bytes.Compare(newPageState, currentPageState) == 0 {
-						t.Fatalf("page state did not change")
-					}
-					currentPageState = newPageState
+					require.NotEqual(t, state.Bytes(), next.Bytes())
+					state = RestorePageState(next.Bytes())
 				}
-
-				validateResult(t, results)
+				validate(t, result)
 			})
 		}
 	})
-
+	cassandraDDL(t, session, "DROP TABLE "+table)
 }
 
 func TestPagingWithBind(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int, val int, primary key(id,val))", table)); err != nil {
-		t.Fatal("create table:", err)
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s (id int,val int,PRIMARY KEY(id,val))", table))
+	for i := int32(0); i < 100; i++ {
+		cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(id,val) VALUES (?,?)", table), IntValue(1), IntValue(i))
 	}
-	for i := 0; i < 100; i++ {
-		if err := session.Query(fmt.Sprintf("INSERT INTO %s (id,val) VALUES (?,?)", table), 1, i).Exec(); err != nil {
-			t.Fatal("insert:", err)
-		}
-	}
-
-	q := session.Query(fmt.Sprintf("SELECT val FROM %s WHERE id = ? AND val < ?", table), 1, 50).PageSize(10)
-	iter := q.Iter()
-	var id int
-	count := 0
-	for iter.Scan(&id) {
-		count++
-	}
-	if err := iter.Close(); err != nil {
-		t.Fatal("close:", err)
-	}
-	if count != 50 {
-		t.Fatalf("expected %d, got %d", 50, count)
-	}
-
-	iter = q.Bind(1, 20).Iter()
-	count = 0
-	for iter.Scan(&id) {
-		count++
-	}
-	if count != 20 {
-		t.Fatalf("expected %d, got %d", 20, count)
-	}
-	if err := iter.Close(); err != nil {
-		t.Fatal("close:", err)
-	}
+	prepared := cassandraPrepared(t, session, Statement[[]Value, DynamicRow]{CQL: fmt.Sprintf("SELECT val FROM %s WHERE id=? AND val<?", table), Params: DynamicParams, Rows: DynamicRows}, PrepareOptions{})
+	first := cassandraBound(t, prepared, []Value{IntValue(1), IntValue(50)})
+	second := cassandraBound(t, prepared, []Value{IntValue(1), IntValue(20)})
+	options := Options{PageSize: Option[int32]{Value: 10, Set: true}}
+	require.Len(t, cassandraRows(t, session, first, options), 50)
+	require.Len(t, cassandraRows(t, session, second, options), 20)
+	require.Len(t, cassandraRows(t, session, first, options), 50, "new binding must not mutate old binding")
 }
 
 func TestCAS(t *testing.T) {
 	t.Parallel()
-
-	cluster := createCluster()
-	cluster.SerialConsistency = LocalSerial
-	session := createSessionFromClusterTabletsDisabled(cluster, t)
+	session := createV2SessionFromConfig(createV2Cluster(), t, true)
 	defer session.Close()
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf(`CREATE TABLE %s (
-			title         varchar,
-			revid   	  timeuuid,
-			last_modified timestamp,
-			PRIMARY KEY (title, revid)
-		)`, table)); err != nil {
-		t.Fatal("create:", err)
-	}
-
-	title, revid, modified := "baz", TimeUUID(), time.Now()
-	var titleCAS string
-	var revidCAS UUID
-	var modifiedCAS time.Time
-
-	if applied, err := session.Query(fmt.Sprintf(`INSERT INTO %s (title, revid, last_modified)
-		VALUES (?, ?, ?) IF NOT EXISTS`,
-		table), title, revid, modified).ScanCAS(&titleCAS, &revidCAS, &modifiedCAS); err != nil {
-		t.Fatal("insert:", err)
-	} else if !applied {
-		t.Fatal("insert should have been applied")
-	}
-
-	if applied, err := session.Query(fmt.Sprintf(`INSERT INTO %s (title, revid, last_modified)
-		VALUES (?, ?, ?) IF NOT EXISTS`,
-		table), title, revid, modified).ScanCAS(&titleCAS, &revidCAS, &modifiedCAS); err != nil {
-		t.Fatal("insert:", err)
-	} else if applied {
-		t.Fatal("insert should not have been applied")
-	} else if title != titleCAS || revid != revidCAS {
-		t.Fatalf("expected %s/%v/%v but got %s/%v/%v", title, revid, modified, titleCAS, revidCAS, modifiedCAS)
-	}
-
-	tenSecondsLater := modified.Add(10 * time.Second)
-
-	if applied, err := session.Query(fmt.Sprintf(`DELETE FROM %s WHERE title = ? and revid = ? IF last_modified = ?`,
-		table), title, revid, tenSecondsLater).ScanCAS(&modifiedCAS); err != nil {
-		t.Fatal("delete:", err)
-	} else if applied {
-		t.Fatal("delete should have not been applied")
-	}
-
-	if modifiedCAS.Unix() != tenSecondsLater.Add(-10*time.Second).Unix() {
-		t.Fatalf("Was expecting modified CAS to be %v; but was one second later", modifiedCAS.UTC())
-	}
-
-	if _, err := session.Query(fmt.Sprintf(`DELETE FROM %s WHERE title = ? and revid = ? IF last_modified = ?`,
-		table), title, revid, tenSecondsLater).ScanCAS(); !strings.HasPrefix(err.Error(), "gocql: not enough columns to scan into") {
-		t.Fatalf("delete: was expecting count mismatch error but got: %q", err.Error())
-	}
-
-	if applied, err := session.Query(fmt.Sprintf(`DELETE FROM %s WHERE title = ? and revid = ? IF last_modified = ?`,
-		table), title, revid, modified).ScanCAS(&modifiedCAS); err != nil {
-		t.Fatal("delete:", err)
-	} else if !applied {
-		t.Fatal("delete should have been applied")
-	}
-
-	if err := session.Query(fmt.Sprintf(`TRUNCATE %s`, table)).Exec(); err != nil {
-		t.Fatal("truncate:", err)
-	}
-
-	successBatch := session.Batch(LoggedBatch)
-	successBatch.Query(fmt.Sprintf("INSERT INTO %s (title, revid, last_modified) VALUES (?, ?, ?) IF NOT EXISTS", table), title, revid, modified)
-	if applied, _, err := session.ExecuteBatchCAS(successBatch, &titleCAS, &revidCAS, &modifiedCAS); err != nil {
-		t.Fatal("insert:", err)
-	} else if !applied {
-		t.Fatalf("insert should have been applied: title=%v revID=%v modified=%v", titleCAS, revidCAS, modifiedCAS)
-	}
-
-	successBatch = session.Batch(LoggedBatch)
-	successBatch.Query(fmt.Sprintf("INSERT INTO %s (title, revid, last_modified) VALUES (?, ?, ?) IF NOT EXISTS", table), title+"_foo", revid, modified)
-	casMap := make(map[string]any)
-	if applied, _, err := session.MapExecuteBatchCAS(successBatch, casMap); err != nil {
-		t.Fatal("insert:", err)
-	} else if !applied {
-		t.Fatal("insert should have been applied")
-	}
-
-	failBatch := session.Batch(LoggedBatch)
-	failBatch.Query(fmt.Sprintf("INSERT INTO %s (title, revid, last_modified) VALUES (?, ?, ?) IF NOT EXISTS", table), title, revid, modified)
-	if applied, _, err := session.ExecuteBatchCAS(successBatch, &titleCAS, &revidCAS, &modifiedCAS); err != nil {
-		t.Fatal("insert:", err)
-	} else if applied {
-		t.Fatalf("insert should have not been applied: title=%v revID=%v modified=%v", titleCAS, revidCAS, modifiedCAS)
-	}
-
-	insertBatch := session.Batch(LoggedBatch)
-	if *flagDistribution == "cassandra" && flagCassVersion.AtLeast(4, 1, 0) {
-		insertBatch.Query(fmt.Sprintf("INSERT INTO %s (title, revid, last_modified) VALUES ('_foo', 2c3af400-73a4-11e5-9381-29463d90c3f0, toTimestamp(NOW()))", table))
-		insertBatch.Query(fmt.Sprintf("INSERT INTO %s (title, revid, last_modified) VALUES ('_foo', 3e4ad2f1-73a4-11e5-9381-29463d90c3f0, toTimestamp(NOW()))", table))
-	} else {
-		insertBatch.Query(fmt.Sprintf("INSERT INTO %s (title, revid, last_modified) VALUES ('_foo', 2c3af400-73a4-11e5-9381-29463d90c3f0, DATEOF(NOW()))", table))
-		insertBatch.Query(fmt.Sprintf("INSERT INTO %s (title, revid, last_modified) VALUES ('_foo', 3e4ad2f1-73a4-11e5-9381-29463d90c3f0, DATEOF(NOW()))", table))
-	}
-	if err := session.ExecuteBatch(insertBatch); err != nil {
-		t.Fatal("insert:", err)
-	}
-
-	failBatch = session.Batch(LoggedBatch)
-	if *flagDistribution == "cassandra" && flagCassVersion.AtLeast(4, 1, 0) {
-		failBatch.Query(fmt.Sprintf("UPDATE %s SET last_modified = toTimestamp(NOW()) WHERE title='_foo' AND revid=2c3af400-73a4-11e5-9381-29463d90c3f0 IF last_modified=toTimestamp(NOW());", table))
-		failBatch.Query(fmt.Sprintf("UPDATE %s SET last_modified = toTimestamp(NOW()) WHERE title='_foo' AND revid=3e4ad2f1-73a4-11e5-9381-29463d90c3f0 IF last_modified=toTimestamp(NOW());", table))
-	} else {
-		failBatch.Query(fmt.Sprintf("UPDATE %s SET last_modified = DATEOF(NOW()) WHERE title='_foo' AND revid=2c3af400-73a4-11e5-9381-29463d90c3f0 IF last_modified=DATEOF(NOW());", table))
-		failBatch.Query(fmt.Sprintf("UPDATE %s SET last_modified = DATEOF(NOW()) WHERE title='_foo' AND revid=3e4ad2f1-73a4-11e5-9381-29463d90c3f0 IF last_modified=DATEOF(NOW());", table))
-	}
-	if applied, iter, err := session.ExecuteBatchCAS(failBatch, &titleCAS, &revidCAS, &modifiedCAS); err != nil {
-		t.Fatal("insert:", err)
-	} else if applied {
-		t.Fatalf("insert should have not been applied: title=%v revID=%v modified=%v", titleCAS, revidCAS, modifiedCAS)
-	} else {
-		if scan := iter.Scan(&applied, &titleCAS, &revidCAS, &modifiedCAS); scan && applied {
-			t.Fatalf("insert should have been applied: title=%v revID=%v modified=%v", titleCAS, revidCAS, modifiedCAS)
-		} else if !scan {
-			t.Fatal("should have scanned another row")
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(title varchar,revid timeuuid,last_modified timestamp,PRIMARY KEY(title,revid))", table))
+	title := "baz"
+	rev := NewTimeUUID()
+	modified := Timestamp(time.Now().UnixMilli())
+	revValue := cassandraValue(TimeUUIDValue(TimeUUID(rev)))
+	insertCQL := fmt.Sprintf("INSERT INTO %s(title,revid,last_modified) VALUES (?,?,?) IF NOT EXISTS", table)
+	values := []Value{TextValue(title), revValue, TimestampValue(modified)}
+	insert := cassandraCASBound(t, session, insertCQL, values, DynamicRows)
+	first := cassandraReadBound(t, session, insert, Options{})
+	require.True(t, first.Applied)
+	second := cassandraReadBound(t, session, insert, Options{})
+	require.False(t, second.Applied)
+	require.True(t, second.Previous.Set)
+	require.Equal(t, title, cassandraText(t, second.Previous.Value, "title"))
+	gotRev, err := cassandraField(t, second.Previous.Value, "revid").UUID()
+	require.NoError(t, err)
+	require.Equal(t, rev, gotRev)
+	deleteCQL := fmt.Sprintf("DELETE FROM %s WHERE title=? AND revid=? IF last_modified=?", table)
+	failedDelete := cassandraCASBound(t, session, deleteCQL, []Value{TextValue(title), revValue, TimestampValue(modified + 10000)}, DynamicRows)
+	deleted := cassandraReadBound(t, session, failedDelete, Options{})
+	require.False(t, deleted.Applied)
+	require.Equal(t, int64(modified), cassandraInt(t, deleted.Previous.Value, "last_modified"))
+	// Missing or incompatible previous-value decoders fail explicitly.
+	invalid, err := Prepare(context.Background(), session, Statement[[]Value, CASResult[Unit]]{CQL: deleteCQL, Params: DynamicParams, Rows: CASRows(NoRows)}, PrepareOptions{})
+	if err == nil {
+		bound := cassandraBound(t, invalid, []Value{TextValue(title), revValue, TimestampValue(modified + 10000)})
+		rows, e := Run(context.Background(), session, bound, Options{})
+		if rows != nil {
+			defer rows.Close()
 		}
-		if err := iter.Close(); err != nil {
-			t.Fatal("scan:", err)
+		err = e
+	}
+	require.Error(t, err)
+	successDelete := cassandraCASBound(t, session, deleteCQL, values, DynamicRows)
+	require.True(t, cassandraReadBound(t, session, successDelete, Options{}).Applied)
+	cassandraWrite(t, session, "TRUNCATE "+table)
+	runBatch := func(items []BatchItem, wantApplied bool, wantRows int) {
+		t.Helper()
+		page, err := RunBatch(context.Background(), session, LoggedBatch, items, CASRows(DynamicRows), Options{})
+		require.NoError(t, err)
+		defer page.Close()
+		count := 0
+		for page.Next() {
+			require.Equal(t, wantApplied, page.Row().Applied)
+			if !wantApplied {
+				require.True(t, page.Row().Previous.Set)
+			}
+			count++
 		}
+		require.NoError(t, page.Close())
+		require.Equal(t, wantRows, count)
 	}
-
-	casMap = make(map[string]any)
-	if applied, err := session.Query(fmt.Sprintf(`SELECT revid FROM %s WHERE title = ?`, table),
-		title+"_foo").MapScanCAS(casMap); err != nil {
-		t.Fatal("select:", err)
-	} else if applied {
-		t.Fatal("select shouldn't have returned applied")
+	runBatch([]BatchItem{cassandraItem(t, insert)}, true, 1)
+	other := cassandraCASBound(t, session, insertCQL, []Value{TextValue(title + "_foo"), revValue, TimestampValue(modified)}, DynamicRows)
+	runBatch([]BatchItem{cassandraItem(t, other)}, true, 1)
+	runBatch([]BatchItem{cassandraItem(t, other)}, false, 1)
+	var seed, conditional []BatchItem
+	for _, id := range []string{"2c3af400-73a4-11e5-9381-29463d90c3f0", "3e4ad2f1-73a4-11e5-9381-29463d90c3f0"} {
+		r, e := ParseUUID(id)
+		require.NoError(t, e)
+		rv := cassandraValue(TimeUUIDValue(TimeUUID(r)))
+		seed = append(seed, cassandraItem(t, cassandraWriteBound(t, session, fmt.Sprintf("INSERT INTO %s(title,revid,last_modified) VALUES (?,?,?)", table), []Value{TextValue("_foo"), rv, TimestampValue(modified)}, PrepareOptions{})))
+		conditional = append(conditional, cassandraItem(t, cassandraCASBound(t, session, fmt.Sprintf("UPDATE %s SET last_modified=? WHERE title=? AND revid=? IF last_modified=?", table), []Value{TimestampValue(modified + 10000), TextValue("_foo"), rv, TimestampValue(modified + 20000)}, DynamicRows)))
 	}
-
-	if _, err := session.Query(fmt.Sprintf(`SELECT revid FROM %s WHERE title = ?`, table),
-		title+"_foo").ScanCAS(&revidCAS); err == nil {
-		t.Fatal("select: should have returned an error")
+	cassandraBatch(t, session, LoggedBatch, seed, Options{})
+	runBatch(conditional, false, 2)
+	// CASRows rejects ordinary SELECTs and unconditional batches; the former
+	// MapScanCAS silent false result is replaced by validated result metadata.
+	_, err = Prepare(context.Background(), session, Statement[[]Value, CASResult[DynamicRow]]{CQL: fmt.Sprintf("SELECT revid FROM %s WHERE title=?", table), Params: DynamicParams, Rows: CASRows(DynamicRows)}, PrepareOptions{})
+	require.Error(t, err)
+	for i := 0; i < 2; i++ {
+		page, err := RunBatch(context.Background(), session, LoggedBatch, seed, CASRows(DynamicRows), Options{})
+		if page != nil {
+			page.Close()
+		}
+		require.Error(t, err)
 	}
-
-	notCASBatch := session.Batch(LoggedBatch)
-	notCASBatch.Query(fmt.Sprintf("INSERT INTO %s (title, revid, last_modified) VALUES (?, ?, ?)", table), title+"_baz", revid, modified)
-	casMap = make(map[string]any)
-	if _, _, err := session.MapExecuteBatchCAS(notCASBatch, casMap); err != ErrNotFound {
-		t.Fatal("insert should have returned not found:", err)
-	}
-
-	notCASBatch = session.Batch(LoggedBatch)
-	notCASBatch.Query(fmt.Sprintf("INSERT INTO %s (title, revid, last_modified) VALUES (?, ?, ?)", table), title+"_baz", revid, modified)
-	casMap = make(map[string]any)
-	if _, _, err := session.ExecuteBatchCAS(notCASBatch, &revidCAS); err != ErrNotFound {
-		t.Fatal("insert should have returned not found:", err)
-	}
-
-	failBatch = session.Batch(LoggedBatch)
-	failBatch.Query(fmt.Sprintf("UPDATE %s SET last_modified = TOTIMESTAMP(NOW()) WHERE title='_foo' AND revid=3e4ad2f1-73a4-11e5-9381-29463d90c3f0 IF last_modified = ?", table), modified)
-	if _, _, err := session.ExecuteBatchCAS(failBatch, new(bool)); err == nil {
-		t.Fatal("update should have errored")
-	}
-	// make sure MapScanCAS does not panic when MapScan fails
-	casMap = make(map[string]any)
-	casMap["last_modified"] = false
-	if _, err := session.Query(fmt.Sprintf(`UPDATE %s SET last_modified = TOTIMESTAMP(NOW()) WHERE title='_foo' AND revid=3e4ad2f1-73a4-11e5-9381-29463d90c3f0 IF last_modified = ?`, table),
-		modified).MapScanCAS(casMap); err == nil {
-		t.Fatal("update should hvae errored", err)
-	}
-
-	// make sure MapExecuteBatchCAS does not panic when MapScan fails
-	failBatch = session.Batch(LoggedBatch)
-	failBatch.Query(fmt.Sprintf("UPDATE %s SET last_modified = TOTIMESTAMP(NOW()) WHERE title='_foo' AND revid=3e4ad2f1-73a4-11e5-9381-29463d90c3f0 IF last_modified = ?", table), modified)
-	casMap = make(map[string]any)
-	casMap["last_modified"] = false
-	if _, _, err := session.MapExecuteBatchCAS(failBatch, casMap); err == nil {
-		t.Fatal("update should have errored")
+	for _, batch := range []bool{false, true} {
+		badDecoder := CASRows(OneColumn(Bool))
+		bound := cassandraDynamicBound(t, session, fmt.Sprintf("UPDATE %s SET last_modified=? WHERE title=? AND revid=? IF last_modified=?", table), []Value{TimestampValue(modified + 10000), TextValue("_foo"), cassandraValue(TimeUUIDValue(TimeUUID(cassandraUUID("3e4ad2f1-73a4-11e5-9381-29463d90c3f0")))), TimestampValue(modified + 20000)}, PrepareOptions{})
+		if batch {
+			page, e := RunBatch(context.Background(), session, LoggedBatch, []BatchItem{cassandraItem(t, bound)}, badDecoder, Options{})
+			if page != nil {
+				page.Close()
+			}
+			require.Error(t, e)
+		} else {
+			bad := &Bound[CASResult[bool]]{request: bound.request, rows: badDecoder}
+			rows, e := Run(context.Background(), session, bad, Options{})
+			if rows != nil {
+				rows.Close()
+			}
+			require.Error(t, e)
+		}
 	}
 }
 
 func TestConsistencySerial(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
 	table := testTableName(t)
-
-	type testStruct struct {
-		name               string
-		id                 int
-		consistency        Consistency
-		expectedPanicValue string
-	}
-
-	testCases := []testStruct{
-		{
-			name:               "Any",
-			consistency:        Any,
-			expectedPanicValue: "Serial consistency can only be SERIAL or LOCAL_SERIAL got ANY",
-		}, {
-			name:               "One",
-			consistency:        One,
-			expectedPanicValue: "Serial consistency can only be SERIAL or LOCAL_SERIAL got ONE",
-		}, {
-			name:               "Two",
-			consistency:        Two,
-			expectedPanicValue: "Serial consistency can only be SERIAL or LOCAL_SERIAL got TWO",
-		}, {
-			name:               "Three",
-			consistency:        Three,
-			expectedPanicValue: "Serial consistency can only be SERIAL or LOCAL_SERIAL got THREE",
-		}, {
-			name:               "Quorum",
-			consistency:        Quorum,
-			expectedPanicValue: "Serial consistency can only be SERIAL or LOCAL_SERIAL got QUORUM",
-		}, {
-			name:               "LocalQuorum",
-			consistency:        LocalQuorum,
-			expectedPanicValue: "Serial consistency can only be SERIAL or LOCAL_SERIAL got LOCAL_QUORUM",
-		}, {
-			name:               "EachQuorum",
-			consistency:        EachQuorum,
-			expectedPanicValue: "Serial consistency can only be SERIAL or LOCAL_SERIAL got EACH_QUORUM",
-		}, {
-			name:               "Serial",
-			id:                 8,
-			consistency:        Serial,
-			expectedPanicValue: "",
-		}, {
-			name:               "LocalSerial",
-			id:                 9,
-			consistency:        LocalSerial,
-			expectedPanicValue: "",
-		}, {
-			name:               "LocalOne",
-			consistency:        LocalOne,
-			expectedPanicValue: "Serial consistency can only be SERIAL or LOCAL_SERIAL got LOCAL_ONE",
-		},
-	}
-
-	err := session.Query(fmt.Sprintf("CREATE TABLE IF NOT EXISTS gocql_test.%s (id int PRIMARY KEY)", table)).Exec()
-	if err != nil {
-		t.Fatalf("can't create table:%v", err)
-	}
-
-	for _, tc := range testCases {
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY)", table))
+	for i, tc := range []struct {
+		name        string
+		consistency Consistency
+	}{{"Any", Any}, {"One", One}, {"Two", Two}, {"Three", Three}, {"Quorum", Quorum}, {"LocalQuorum", LocalQuorum}, {"EachQuorum", EachQuorum}, {"Serial", Serial}, {"LocalSerial", LocalSerial}, {"LocalOne", LocalOne}} {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.expectedPanicValue == "" {
-				err = session.Query(fmt.Sprintf("INSERT INTO gocql_test.%s (id) VALUES (?)", table), tc.id).SerialConsistency(tc.consistency).Exec()
-				if err != nil {
-					t.Fatal(err)
-				}
-
-				var receivedID int
-				err = session.Query(fmt.Sprintf("SELECT * FROM gocql_test.%s WHERE id=?", table), tc.id).Scan(&receivedID)
-				if err != nil {
-					t.Fatal(err)
-				}
-
-				require.Equal(t, tc.id, receivedID)
+			bound := cassandraWriteBound(t, session, fmt.Sprintf("INSERT INTO %s(id) VALUES (?)", table), []Value{IntValue(int32(i + 1))}, PrepareOptions{})
+			_, err := Exec(context.Background(), session, bound, Options{SerialConsistency: Option[Option[Consistency]]{Set: true, Value: Option[Consistency]{Set: true, Value: tc.consistency}}})
+			if tc.consistency == Serial || tc.consistency == LocalSerial {
+				require.NoError(t, err)
+				require.Equal(t, int64(i+1), cassandraInt(t, cassandraRead(t, session, fmt.Sprintf("SELECT id FROM %s WHERE id=?", table), IntValue(int32(i+1))), "id"))
 			} else {
-				require.PanicsWithValue(t, tc.expectedPanicValue, func() {
-					session.Query(fmt.Sprintf("INSERT INTO gocql_test.%s (id) VALUES (?)", table), tc.id).SerialConsistency(tc.consistency)
-				})
+				require.Error(t, err)
+				require.Contains(t, err.Error(), "serial consistency")
 			}
 		})
 	}
@@ -815,310 +447,155 @@ func TestConsistencySerial(t *testing.T) {
 
 func TestDurationType(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
-	// This guard is stricter than the type. Nothing in the driver gates TypeDuration on
-	// the protocol version -- marshal.go handles 0x0015 unconditionally, and frame.go's
-	// fast path covers every id up to it -- and Cassandra has served `duration` over v4
-	// since 3.11. The guard is left alone here: relaxing it is a change of its own, with
-	// its own testing. The message should not assert a limit that does not exist, though;
-	// the previous one said "protocol version >= 4", which is what pointed this out.
-	if session.cfg.ProtoVersion < protoVersion5 {
+	if session.cfg.ProtoVersion < 5 {
 		t.Skip("skipped below protocol 5 by this test's own guard, not by a limit of the duration type")
 	}
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (
-		k int primary key, v duration
-	)`, table)); err != nil {
-		t.Fatal("create:", err)
-	}
-
-	durations := []Duration{
-		Duration{
-			Months:      250,
-			Days:        500,
-			Nanoseconds: 300010001,
-		},
-		Duration{
-			Months:      -250,
-			Days:        -500,
-			Nanoseconds: -300010001,
-		},
-		Duration{
-			Months:      0,
-			Days:        128,
-			Nanoseconds: 127,
-		},
-		Duration{
-			Months:      0x7FFFFFFF,
-			Days:        0x7FFFFFFF,
-			Nanoseconds: 0x7FFFFFFFFFFFFFFF,
-		},
-	}
-	for _, durationSend := range durations {
-		if err := session.Query(fmt.Sprintf(`INSERT INTO gocql_test.%s (k, v) VALUES (1, ?)`, table), durationSend).Exec(); err != nil {
-			t.Fatal(err)
-		}
-
-		var id int
-		var duration Duration
-		if err := session.Query(fmt.Sprintf(`SELECT k, v FROM gocql_test.%s`, table)).Scan(&id, &duration); err != nil {
-			t.Fatal(err)
-		}
-		if duration.Months != durationSend.Months || duration.Days != durationSend.Days || duration.Nanoseconds != durationSend.Nanoseconds {
-			t.Fatalf("Unexpeted value returned, expected=%v, received=%v", durationSend, duration)
-		}
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(k int PRIMARY KEY,v duration)", table))
+	for _, want := range []Duration{{Months: 250, Days: 500, Nanoseconds: 300010001}, {Months: -250, Days: -500, Nanoseconds: -300010001}, {Days: 128, Nanoseconds: 127}, {Months: 0x7fffffff, Days: 0x7fffffff, Nanoseconds: 0x7fffffffffffffff}} {
+		cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(k,v) VALUES(1,?)", table), cassandraValue(DurationValue(want)))
+		row := cassandraRead(t, session, "SELECT k,v FROM "+table)
+		require.Equal(t, int64(1), cassandraInt(t, row, "k"))
+		got, e := cassandraField(t, row, "v").Duration()
+		require.NoError(t, e)
+		require.Equal(t, want, got)
 	}
 }
 
 func TestMapScanCAS(t *testing.T) {
 	t.Parallel()
-
-	session := createSessionFromClusterTabletsDisabled(createCluster(), t)
+	session := createV2SessionFromConfig(createV2Cluster(), t, true)
 	defer session.Close()
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf(`CREATE TABLE %s (
-			title         varchar,
-			revid   	  timeuuid,
-			last_modified timestamp,
-			deleted boolean,
-			PRIMARY KEY (title, revid)
-		)`, table)); err != nil {
-		t.Fatal("create:", err)
-	}
-
-	title, revid, modified, deleted := "baz", TimeUUID(), time.Now(), false
-	mapCAS := map[string]any{}
-
-	if applied, err := session.Query(fmt.Sprintf(`INSERT INTO %s (title, revid, last_modified, deleted)
-		VALUES (?, ?, ?, ?) IF NOT EXISTS`, table),
-		title, revid, modified, deleted).MapScanCAS(mapCAS); err != nil {
-		t.Fatal("insert:", err)
-	} else if !applied {
-		t.Fatalf("insert should have been applied: title=%v revID=%v modified=%v", title, revid, modified)
-	}
-
-	mapCAS = map[string]any{}
-	if applied, err := session.Query(fmt.Sprintf(`INSERT INTO %s (title, revid, last_modified, deleted)
-		VALUES (?, ?, ?, ?) IF NOT EXISTS`, table),
-		title, revid, modified, deleted).MapScanCAS(mapCAS); err != nil {
-		t.Fatal("insert:", err)
-	} else if applied {
-		t.Fatalf("insert should have been applied: title=%v revID=%v modified=%v", title, revid, modified)
-	} else if title != mapCAS["title"] || revid != mapCAS["revid"] || deleted != mapCAS["deleted"] {
-		t.Fatalf("expected %s/%v/%v/%v but got %s/%v/%v%v", title, revid, modified, false, mapCAS["title"], mapCAS["revid"], mapCAS["last_modified"], mapCAS["deleted"])
-	}
-
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(title varchar,revid timeuuid,last_modified timestamp,deleted boolean,PRIMARY KEY(title,revid))", table))
+	rev := NewTimeUUID()
+	modified := Timestamp(time.Now().UnixMilli())
+	bound := cassandraCASBound(t, session, fmt.Sprintf("INSERT INTO %s(title,revid,last_modified,deleted) VALUES(?,?,?,?) IF NOT EXISTS", table), []Value{TextValue("baz"), cassandraValue(TimeUUIDValue(TimeUUID(rev))), TimestampValue(modified), BoolValue(false)}, DynamicRows)
+	require.True(t, cassandraReadBound(t, session, bound, Options{}).Applied)
+	result := cassandraReadBound(t, session, bound, Options{})
+	require.False(t, result.Applied)
+	require.True(t, result.Previous.Set)
+	row := result.Previous.Value
+	require.Equal(t, "baz", cassandraText(t, row, "title"))
+	got, e := cassandraField(t, row, "revid").UUID()
+	require.NoError(t, e)
+	require.Equal(t, rev, got)
+	require.False(t, cassandraBool(t, row, "deleted"))
+	require.Equal(t, int64(modified), cassandraInt(t, row, "last_modified"))
 }
 
 func TestBatch(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (id int primary key)`, table)); err != nil {
-		t.Fatal("create table:", err)
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY)", table))
+	prepared := cassandraPrepared(t, session, Statement[int32, Unit]{CQL: fmt.Sprintf("INSERT INTO %s(id) VALUES(?)", table), Params: OneParam(Int32), Rows: NoRows}, PrepareOptions{})
+	var items []BatchItem
+	for i := int32(0); i < 100; i++ {
+		items = append(items, cassandraItem(t, cassandraBound(t, prepared, i)))
 	}
-
-	batch := session.Batch(LoggedBatch)
-	for i := 0; i < 100; i++ {
-		batch.Query(fmt.Sprintf(`INSERT INTO %s (id) VALUES (?)`, table), i)
-	}
-
-	if err := session.ExecuteBatch(batch); err != nil {
-		t.Fatal("execute batch:", err)
-	}
-
-	count := 0
-	if err := session.Query(fmt.Sprintf(`SELECT COUNT(*) FROM %s`, table)).Scan(&count); err != nil {
-		t.Fatal("select count:", err)
-	} else if count != 100 {
-		t.Fatalf("count: expected %d, got %d\n", 100, count)
-	}
+	cassandraBatch(t, session, LoggedBatch, items, Options{})
+	require.Equal(t, int64(100), cassandraInt(t, cassandraRead(t, session, "SELECT COUNT(*) FROM "+table), "count"))
 }
 
 func TestUnpreparedBatch(t *testing.T) {
 	t.Parallel()
-
-	t.Skip("FLAKE skipping")
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (id int primary key, c counter)`, table)); err != nil {
-		t.Fatal("create table:", err)
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,c counter)", table))
+	bound := cassandraUnprepared(t, fmt.Sprintf("UPDATE %s SET c=c+1 WHERE id=1", table), NoRows)
+	items := make([]BatchItem, 100)
+	for i := range items {
+		items[i] = cassandraItem(t, bound)
 	}
-
-	batch := session.Batch(UnloggedBatch)
-
-	for i := 0; i < 100; i++ {
-		batch.Query(fmt.Sprintf(`UPDATE %s SET c = c + 1 WHERE id = 1`, table))
-	}
-
-	if err := session.ExecuteBatch(batch); err != nil {
-		t.Fatal("execute batch:", err)
-	}
-
-	count := 0
-	if err := session.Query(fmt.Sprintf(`SELECT COUNT(*) FROM %s`, table)).Scan(&count); err != nil {
-		t.Fatal("select count:", err)
-	} else if count != 1 {
-		t.Fatalf("count: expected %d, got %d\n", 100, count)
-	}
-
-	if err := session.Query(fmt.Sprintf(`SELECT c FROM %s`, table)).Scan(&count); err != nil {
-		t.Fatal("select count:", err)
-	} else if count != 100 {
-		t.Fatalf("count: expected %d, got %d\n", 100, count)
-	}
+	cassandraBatch(t, session, UnloggedBatch, items, Options{})
+	require.Equal(t, int64(1), cassandraInt(t, cassandraRead(t, session, "SELECT COUNT(*) FROM "+table), "count"))
+	require.Equal(t, int64(100), cassandraInt(t, cassandraRead(t, session, "SELECT c FROM "+table), "c"))
 }
 
 // TestBatchLimit tests gocql to make sure batch operations larger than the maximum
 // statement limit are not submitted to a cassandra node.
 func TestBatchLimit(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (id int primary key)`, table)); err != nil {
-		t.Fatal("create table:", err)
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY)", table))
+	bound := cassandraWriteBound(t, session, fmt.Sprintf("INSERT INTO %s(id) VALUES(?)", table), []Value{IntValue(1)}, PrepareOptions{})
+	items := make([]BatchItem, 65537)
+	for i := range items {
+		items[i] = cassandraItem(t, bound)
 	}
-
-	batch := session.Batch(LoggedBatch)
-	for i := 0; i < 65537; i++ {
-		batch.Query(fmt.Sprintf(`INSERT INTO %s (id) VALUES (?)`, table), i)
-	}
-	if err := session.ExecuteBatch(batch); err != ErrTooManyStmts {
-		t.Fatal("gocql attempted to execute a batch larger than the support limit of statements.")
-	}
-
+	before := session.Metrics()
+	_, err := ExecBatch(context.Background(), session, LoggedBatch, items, Options{})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "65535")
+	require.Equal(t, before.Requests, session.Metrics().Requests, "oversized batches must be rejected before submission")
 }
 
 func TestWhereIn(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (id int, cluster int, primary key (id,cluster))`, table)); err != nil {
-		t.Fatal("create table:", err)
-	}
-
-	if err := session.Query(fmt.Sprintf("INSERT INTO %s (id, cluster) VALUES (?,?)", table), 100, 200).Exec(); err != nil {
-		t.Fatal("insert:", err)
-	}
-
-	iter := session.Query(fmt.Sprintf("SELECT * FROM %s WHERE id = ? AND cluster IN (?)", table), 100, 200).Iter()
-	var id, cluster int
-	count := 0
-	for iter.Scan(&id, &cluster) {
-		count++
-	}
-
-	if id != 100 || cluster != 200 {
-		t.Fatalf("Was expecting id and cluster to be (100,200) but were (%d,%d)", id, cluster)
-	}
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id int,cluster int,PRIMARY KEY(id,cluster))", table))
+	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(id,cluster) VALUES(?,?)", table), IntValue(100), IntValue(200))
+	row := cassandraRead(t, session, fmt.Sprintf("SELECT * FROM %s WHERE id=? AND cluster IN (?)", table), IntValue(100), IntValue(200))
+	require.Equal(t, int64(100), cassandraInt(t, row, "id"))
+	require.Equal(t, int64(200), cassandraInt(t, row, "cluster"))
 }
 
 // TestTooManyQueryArgs tests to make sure the library correctly handles the application level bug
 // whereby too many query arguments are passed to a query
 func TestTooManyQueryArgs(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (id int primary key, value int)`, table)); err != nil {
-		t.Fatal("create table:", err)
-	}
-
-	_, err := session.Query(fmt.Sprintf(`SELECT * FROM %s WHERE id = ?`, table), 1, 2).Iter().SliceMap()
-
-	if err == nil {
-		t.Fatal("'SELECT * FROM <table> WHERE id = ?, 1, 2' should return an error")
-	}
-
-	batch := session.Batch(UnloggedBatch)
-	batch.Query(fmt.Sprintf("INSERT INTO %s (id, value) VALUES (?, ?)", table), 1, 2, 3)
-	err = session.ExecuteBatch(batch)
-
-	if err == nil {
-		t.Fatal("'`INSERT INTO too_many_query_args (id, value) VALUES (?, ?)`, 1, 2, 3' should return an error")
-	}
-
-	// TODO: should indicate via an error code that it is an invalid arg?
-
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,value int)", table))
+	read := cassandraPrepared(t, session, Statement[[]Value, DynamicRow]{CQL: fmt.Sprintf("SELECT * FROM %s WHERE id=?", table), Params: DynamicParams, Rows: DynamicRows}, PrepareOptions{})
+	_, err := BindOwned(read, []Value{IntValue(1), IntValue(2)})
+	require.Error(t, err)
+	write := cassandraPrepared(t, session, Statement[[]Value, Unit]{CQL: fmt.Sprintf("INSERT INTO %s(id,value) VALUES(?,?)", table), Params: DynamicParams, Rows: NoRows}, PrepareOptions{})
+	_, err = BindOwned(write, []Value{IntValue(1), IntValue(2), IntValue(3)})
+	require.Error(t, err, "invalid batch entry must fail during binding")
 }
 
 // TestNotEnoughQueryArgs tests to make sure the library correctly handles the application level bug
 // whereby not enough query arguments are passed to a query
 func TestNotEnoughQueryArgs(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (id int, cluster int, value int, primary key (id, cluster))`, table)); err != nil {
-		t.Fatal("create table:", err)
-	}
-
-	_, err := session.Query(fmt.Sprintf(`SELECT * FROM %s WHERE id = ? and cluster = ?`, table), 1).Iter().SliceMap()
-
-	if err == nil {
-		t.Fatal("'SELECT * FROM <table> WHERE id = ? and cluster = ?, 1' should return an error")
-	}
-
-	batch := session.Batch(UnloggedBatch)
-	batch.Query(fmt.Sprintf("INSERT INTO %s (id, cluster, value) VALUES (?, ?, ?)", table), 1, 2)
-	err = session.ExecuteBatch(batch)
-
-	if err == nil {
-		t.Fatal("'`INSERT INTO not_enough_query_args (id, cluster, value) VALUES (?, ?, ?)`, 1, 2' should return an error")
-	}
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id int,cluster int,value int,PRIMARY KEY(id,cluster))", table))
+	read := cassandraPrepared(t, session, Statement[[]Value, DynamicRow]{CQL: fmt.Sprintf("SELECT * FROM %s WHERE id=? AND cluster=?", table), Params: DynamicParams, Rows: DynamicRows}, PrepareOptions{})
+	_, err := BindOwned(read, []Value{IntValue(1)})
+	require.Error(t, err)
+	write := cassandraPrepared(t, session, Statement[[]Value, Unit]{CQL: fmt.Sprintf("INSERT INTO %s(id,cluster,value) VALUES(?,?,?)", table), Params: DynamicParams, Rows: NoRows}, PrepareOptions{})
+	_, err = BindOwned(write, []Value{IntValue(1), IntValue(2)})
+	require.Error(t, err, "invalid batch entry must fail during binding")
 }
 
 // TestCreateSessionTimeout tests to make sure the CreateSession function timeouts out correctly
 // and prevents an infinite loop of connection retries.
 func TestCreateSessionTimeout(t *testing.T) {
 	t.Parallel()
-
-	ctx, cancel := context.WithCancel(context.Background())
+	config := createV2Cluster()
+	config.ContactPoints = []string{"127.0.0.1:1"}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-
-	go func() {
-		select {
-		case <-time.After(2 * time.Second):
-			t.Error("no startup timeout")
-		case <-ctx.Done():
-		}
-	}()
-
-	cluster := createCluster()
-	cluster.Hosts = []string{"127.0.0.1:1"}
-	session, err := cluster.CreateSession()
+	start := time.Now()
+	session, err := Connect(ctx, config)
 	if err == nil {
 		session.Close()
-		t.Fatal("expected ErrNoConnectionsStarted, but no error was returned.")
+		t.Fatal("expected startup failure")
 	}
+	require.Less(t, time.Since(start), 2*time.Second)
 }
 
 // TestReconnection verifies that a node marked down is eventually reconnected.
@@ -1127,31 +604,14 @@ func TestCreateSessionTimeout(t *testing.T) {
 //
 //nolint:paralleltest // mutates shared HostInfo state via handleNodeDown()
 func TestReconnection(t *testing.T) {
-	cluster := createCluster()
-	cluster.ReconnectInterval = 1 * time.Second
-	session := createSessionFromCluster(cluster, t)
+	config := createV2Cluster(func(c *Config) { c.Reconnect = cassandraReconnect{} })
+	session := createV2SessionFromConfig(config, t, false)
 	defer session.Close()
-
-	h := session.hostSource.getHostsList()[0]
-	session.handleNodeDown(h.ConnectAddress(), h.Port())
-
-	if h.State() != NodeDown {
-		t.Fatal("Host should be NodeDown but not.")
-	}
-
-	// Poll rather than sleep a fixed amount. The reconnect costs one
-	// ReconnectInterval tick, and after that a dial and an asynchronous
-	// handleNodeConnected -- measured at ~4ms locally, but there is no constant
-	// that is both tight enough to keep the test quick and loose enough to
-	// survive a loaded runner. Polling gets the fast path and the tolerance.
-	deadline := time.After(cluster.ReconnectInterval + 30*time.Second)
-	for h.State() != NodeUp {
-		select {
-		case <-deadline:
-			t.Fatal("Host should be NodeUp but not. Failed to reconnect.")
-		case <-time.After(10 * time.Millisecond):
-		}
-	}
+	host := session.hostSource.getHostsList()[0]
+	session.handleNodeDown(host.ConnectAddress(), host.Port())
+	defer host.setState(NodeUp)
+	require.Equal(t, NodeDown, host.State())
+	require.True(t, pollUntil(31*time.Second, func() bool { return host.State() == NodeUp }), "host did not reconnect")
 }
 
 type FullName struct {
@@ -1159,637 +619,276 @@ type FullName struct {
 	LastName  string
 }
 
-func (n FullName) MarshalCQL(info TypeInfo) ([]byte, error) {
-	return []byte(n.FirstName + " " + n.LastName), nil
-}
-
-func (n *FullName) UnmarshalCQL(info TypeInfo, data []byte) error {
-	t := strings.SplitN(string(data), " ", 2)
-	n.FirstName, n.LastName = t[0], t[1]
-	return nil
-}
-
 func TestMapScanWithRefMap(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
 	table := testTableName(t)
-	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (
-			testtext       text PRIMARY KEY,
-			testfullname   text,
-			testint        int,
-		)`, table)); err != nil {
-		t.Fatal("create table:", err)
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(testtext text PRIMARY KEY,testfullname text,testint int)", table))
+	type input struct {
+		Text   string
+		Name   FullName
+		Number int32
 	}
-	m := make(map[string]any)
-	m["testtext"] = "testtext"
-	m["testfullname"] = FullName{FirstName: "John", LastName: "Doe"}
-	m["testint"] = 100
-
-	if err := session.Query(fmt.Sprintf(`INSERT INTO %s (testtext, testfullname, testint) values (?,?,?)`, table),
-		m["testtext"], m["testfullname"], m["testint"]).Exec(); err != nil {
-		t.Fatal("insert:", err)
+	params := Params(Param("testtext", StringEncoder, func(v input) string { return v.Text }), Param("testfullname", fullNameCodec{}, func(v input) FullName { return v.Name }), Param("testint", Int32, func(v input) int32 { return v.Number }))
+	prepared := cassandraPrepared(t, session, Statement[input, Unit]{CQL: fmt.Sprintf("INSERT INTO %s(testtext,testfullname,testint) VALUES(?,?,?)", table), Params: params, Rows: NoRows}, PrepareOptions{})
+	_, err := Exec(context.Background(), session, cassandraBound(t, prepared, input{"testtext", FullName{"John", "Doe"}, 100}), Options{})
+	require.NoError(t, err)
+	type output struct {
+		Text   Text
+		Name   FullName
+		Number int32
 	}
-
-	var testText string
-	var testFullName FullName
-	ret := map[string]any{
-		"testtext":     &testText,
-		"testfullname": &testFullName,
-		// testint is not set here.
-	}
-	iter := session.Query(fmt.Sprintf(`SELECT * FROM %s`, table)).Iter()
-	if ok := iter.MapScan(ret); !ok {
-		t.Fatal("select:", iter.Close())
-	} else {
-		if ret["testtext"] != "testtext" {
-			t.Fatal("returned testtext did not match")
-		}
-		f := ret["testfullname"].(FullName)
-		if f.FirstName != "John" || f.LastName != "Doe" {
-			t.Fatal("returned testfullname did not match")
-		}
-		if ret["testint"] != 100 {
-			t.Fatal("returned testinit did not match")
-		}
-	}
-	if testText != "testtext" {
-		t.Fatal("returned testtext did not match")
-	}
-	if testFullName.FirstName != "John" || testFullName.LastName != "Doe" {
-		t.Fatal("returned testfullname did not match")
-	}
-
-	// using MapScan to read a nil int value
-	intp := new(int64)
-	ret = map[string]any{
-		"testint": &intp,
-	}
-	if err := session.Query(fmt.Sprintf("INSERT INTO %s(testtext, testint) VALUES(?, ?)", table), "null-int", nil).Exec(); err != nil {
-		t.Fatal(err)
-	}
-	err := session.Query(fmt.Sprintf(`SELECT testint FROM %s WHERE testtext = ?`, table), "null-int").MapScan(ret)
-	if err != nil {
-		t.Fatal(err)
-	} else if v := ret["testint"].(*int64); v != nil {
-		t.Fatalf("testint should be nil got %+#v", v)
-	}
-
+	decoder := Row(Column("testtext", TextCodec, func(v *output) *Text { return &v.Text }), Column("testfullname", fullNameCodec{}, func(v *output) *FullName { return &v.Name }), Column("testint", Int32, func(v *output) *int32 { return &v.Number }))
+	got := cassandraReadBound(t, session, cassandraUnprepared(t, "SELECT * FROM "+table, decoder), Options{})
+	require.Equal(t, "testtext", got.Text.String())
+	require.Equal(t, FullName{"John", "Doe"}, got.Name)
+	require.Equal(t, int32(100), got.Number)
+	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(testtext,testint) VALUES(?,?)", table), TextValue("null-int"), NullValue(IntValue(0).Type()))
+	nullable := cassandraPrepared(t, session, Statement[string, Nullable[int32]]{CQL: fmt.Sprintf("SELECT testint FROM %s WHERE testtext=?", table), Params: OneParam(StringEncoder), Rows: OneColumn(NullableCodec(Int32))}, PrepareOptions{})
+	require.False(t, cassandraReadBound(t, session, cassandraBound(t, nullable, "null-int"), Options{}).Valid)
 }
 
 func TestMapScan(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
 	table := testTableName(t)
-	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (
-			fullname       text PRIMARY KEY,
-			age            int,
-			address        inet,
-			data           blob,
-		)`, table)); err != nil {
-		t.Fatal("create table:", err)
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(fullname text PRIMARY KEY,age int,address inet,data blob)", table))
+	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(fullname,age,address) VALUES(?,?,?)", table), TextValue("Grace Hopper"), IntValue(31), cassandraValue(InetValue(netip.MustParseAddr("10.0.0.1"))))
+	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(fullname,age,address,data) VALUES(?,?,?,?)", table), TextValue("Ada Lovelace"), IntValue(30), cassandraValue(InetValue(netip.MustParseAddr("10.0.0.2"))), BlobValue([]byte(`{"foo": "bar"}`)))
+	rows := cassandraRows(t, session, cassandraUnprepared(t, "SELECT * FROM "+table, DynamicRows), Options{})
+	require.Len(t, rows, 2)
+	for i, want := range []struct {
+		name    string
+		age     int64
+		address string
+	}{{"Ada Lovelace", 30, "10.0.0.2"}, {"Grace Hopper", 31, "10.0.0.1"}} {
+		row := rows[i]
+		require.Equal(t, want.name, cassandraText(t, row, "fullname"))
+		require.Equal(t, want.age, cassandraInt(t, row, "age"))
+		ip, err := cassandraField(t, row, "address").Inet()
+		require.NoError(t, err)
+		require.Equal(t, want.address, ip.String())
+		data := cassandraField(t, row, "data")
+		if i == 0 {
+			b, e := data.Bytes()
+			require.NoError(t, e)
+			require.Equal(t, []byte(`{"foo": "bar"}`), b.OwnedBytes())
+		} else {
+			require.Equal(t, Null, data.State())
+		}
 	}
-
-	if err := session.Query(fmt.Sprintf(`INSERT INTO %s (fullname, age, address) values (?,?,?)`, table),
-		"Grace Hopper", 31, net.ParseIP("10.0.0.1")).Exec(); err != nil {
-		t.Fatal("insert:", err)
-	}
-	if err := session.Query(fmt.Sprintf(`INSERT INTO %s (fullname, age, address, data) values (?,?,?,?)`, table),
-		"Ada Lovelace", 30, net.ParseIP("10.0.0.2"), []byte(`{"foo": "bar"}`)).Exec(); err != nil {
-		t.Fatal("insert:", err)
-	}
-
-	iter := session.Query(fmt.Sprintf(`SELECT * FROM %s`, table)).Iter()
-
-	// First iteration
-	row := make(map[string]any)
-	if !iter.MapScan(row) {
-		t.Fatal("select:", iter.Close())
-	}
-	tests.AssertEqual(t, "fullname", "Ada Lovelace", row["fullname"])
-	tests.AssertEqual(t, "age", 30, row["age"])
-	tests.AssertEqual(t, "address", "10.0.0.2", row["address"])
-	tests.AssertDeepEqual(t, "data", []byte(`{"foo": "bar"}`), row["data"])
-
-	// Second iteration using a new map
-	row = make(map[string]any)
-	if !iter.MapScan(row) {
-		t.Fatal("select:", iter.Close())
-	}
-	tests.AssertEqual(t, "fullname", "Grace Hopper", row["fullname"])
-	tests.AssertEqual(t, "age", 31, row["age"])
-	tests.AssertEqual(t, "address", "10.0.0.1", row["address"])
-	tests.AssertDeepEqual(t, "data", []byte(nil), row["data"])
 }
 
 func TestSliceMap(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
 	table := testTableName(t)
-	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (
-			testuuid       timeuuid PRIMARY KEY,
-			testtimestamp  timestamp,
-			testvarchar    varchar,
-			testbigint     bigint,
-			testblob       blob,
-			testbool       boolean,
-			testfloat      float,
-			testdouble     double,
-			testint        int,
-			testdecimal    decimal,
-			testlist       list<text>,
-			testset        set<int>,
-			testmap        map<varchar, varchar>,
-			testvarint     varint,
-			testinet			 inet
-		)`, table)); err != nil {
-		t.Fatal("create table:", err)
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(testuuid timeuuid PRIMARY KEY,testtimestamp timestamp,testvarchar varchar,testbigint bigint,testblob blob,testbool boolean,testfloat float,testdouble double,testint int,testdecimal decimal,testlist list<text>,testset set<int>,testmap map<varchar,varchar>,testvarint varint,testinet inet)", table))
+	textType, err := ScalarType(TypeVarchar)
+	require.NoError(t, err)
+	intType := IntValue(0).Type()
+	listType, err := ListType(textType)
+	require.NoError(t, err)
+	setType, err := SetType(intType)
+	require.NoError(t, err)
+	varcharType, err := ScalarType(TypeVarchar)
+	require.NoError(t, err)
+	mapType, err := MapType(varcharType, varcharType)
+	require.NoError(t, err)
+	bigInt, ok := new(big.Int).SetString("830169365738487321165427203929228", 10)
+	require.True(t, ok)
+	expected := []ValueField{{"testuuid", cassandraValue(TimeUUIDValue(TimeUUID(NewTimeUUID())))}, {"testtimestamp", TimestampValue(Timestamp(time.Now().UnixMilli()))}, {"testvarchar", TextValue("Test VarChar")}, {"testbigint", BigIntValue(time.Now().Unix())}, {"testblob", BlobValue([]byte("test blob"))}, {"testbool", BoolValue(true)}, {"testfloat", FloatValue(4.564)}, {"testdouble", DoubleValue(4.815162342)}, {"testint", IntValue(2343)}, {"testdecimal", DecimalValue(Decimal{Unscaled: VarintFromBigInt(big.NewInt(100))})}, {"testlist", cassandraValue(ListValue(listType, []Value{TextValue("quux"), TextValue("foo"), TextValue("bar"), TextValue("baz"), TextValue("quux")}))}, {"testset", cassandraValue(SetValue(setType, []Value{IntValue(1), IntValue(2), IntValue(3), IntValue(4), IntValue(5), IntValue(6), IntValue(7), IntValue(8), IntValue(9)}))}, {"testmap", cassandraValue(MapValue(mapType, []ValueEntry{{TextValue("field1"), TextValue("val1")}, {TextValue("field2"), TextValue("val2")}, {TextValue("field3"), TextValue("val3")}}))}, {"testvarint", VarintValue(VarintFromBigInt(bigInt))}, {"testinet", cassandraValue(InetValue(netip.MustParseAddr("213.212.2.19")))}}
+	var values []Value
+	for _, field := range expected {
+		values = append(values, field.Value)
 	}
-	m := make(map[string]any)
-
-	bigInt := new(big.Int)
-	if _, ok := bigInt.SetString("830169365738487321165427203929228", 10); !ok {
-		t.Fatal("Failed setting bigint by string")
-	}
-
-	m["testuuid"] = TimeUUID()
-	m["testvarchar"] = "Test VarChar"
-	m["testbigint"] = time.Now().Unix()
-	m["testtimestamp"] = time.Now().Truncate(time.Millisecond).UTC()
-	m["testblob"] = []byte("test blob")
-	m["testbool"] = true
-	m["testfloat"] = float32(4.564)
-	m["testdouble"] = float64(4.815162342)
-	m["testint"] = 2343
-	m["testdecimal"] = inf.NewDec(100, 0)
-	m["testlist"] = []string{"quux", "foo", "bar", "baz", "quux"}
-	m["testset"] = []int{1, 2, 3, 4, 5, 6, 7, 8, 9}
-	m["testmap"] = map[string]string{"field1": "val1", "field2": "val2", "field3": "val3"}
-	m["testvarint"] = bigInt
-	m["testinet"] = "213.212.2.19"
-	sliceMap := []map[string]any{m}
-	if err := session.Query(fmt.Sprintf(`INSERT INTO %s (testuuid, testtimestamp, testvarchar, testbigint, testblob, testbool, testfloat, testdouble, testint, testdecimal, testlist, testset, testmap, testvarint, testinet) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, table),
-		m["testuuid"], m["testtimestamp"], m["testvarchar"], m["testbigint"], m["testblob"], m["testbool"], m["testfloat"], m["testdouble"], m["testint"], m["testdecimal"], m["testlist"], m["testset"], m["testmap"], m["testvarint"], m["testinet"]).Exec(); err != nil {
-		t.Fatal("insert:", err)
-	}
-	if returned, retErr := session.Query(fmt.Sprintf(`SELECT * FROM %s`, table)).Iter().SliceMap(); retErr != nil {
-		t.Fatal("select:", retErr)
-	} else {
-		matchSliceMap(t, sliceMap, returned[0])
-	}
-
-	// Test for Iter.MapScan()
-	{
-		testMap := make(map[string]any)
-		if !session.Query(fmt.Sprintf(`SELECT * FROM %s`, table)).Iter().MapScan(testMap) {
-			t.Fatal("MapScan failed to work with one row")
+	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(testuuid,testtimestamp,testvarchar,testbigint,testblob,testbool,testfloat,testdouble,testint,testdecimal,testlist,testset,testmap,testvarint,testinet) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", table), values...)
+	check := func(row DynamicRow) {
+		t.Helper()
+		require.Equal(t, len(expected), row.Columns().Len())
+		for _, field := range expected {
+			actual := cassandraField(t, row, field.Name)
+			want, err := EncodeValueOwned(actual.Type(), DynamicCodec, field.Value)
+			require.NoError(t, err, field.Name)
+			got, err := EncodeValueOwned(actual.Type(), DynamicCodec, actual)
+			require.NoError(t, err, field.Name)
+			require.Equal(t, want.State(), got.State(), field.Name)
+			require.Equal(t, want.Bytes().OwnedBytes(), got.Bytes().OwnedBytes(), field.Name)
 		}
-		matchSliceMap(t, sliceMap, testMap)
 	}
-
-	// Test for Query.MapScan()
-	{
-		testMap := make(map[string]any)
-		if session.Query(fmt.Sprintf(`SELECT * FROM %s`, table)).MapScan(testMap) != nil {
-			t.Fatal("MapScan failed to work with one row")
-		}
-		matchSliceMap(t, sliceMap, testMap)
-	}
-}
-func matchSliceMap(t *testing.T, sliceMap []map[string]any, testMap map[string]any) {
-	if sliceMap[0]["testuuid"] != testMap["testuuid"] {
-		t.Fatal("returned testuuid did not match")
-	}
-	if sliceMap[0]["testtimestamp"] != testMap["testtimestamp"] {
-		t.Fatal("returned testtimestamp did not match")
-	}
-	if sliceMap[0]["testvarchar"] != testMap["testvarchar"] {
-		t.Fatal("returned testvarchar did not match")
-	}
-	if sliceMap[0]["testbigint"] != testMap["testbigint"] {
-		t.Fatal("returned testbigint did not match")
-	}
-	if !reflect.DeepEqual(sliceMap[0]["testblob"], testMap["testblob"]) {
-		t.Fatal("returned testblob did not match")
-	}
-	if sliceMap[0]["testbool"] != testMap["testbool"] {
-		t.Fatal("returned testbool did not match")
-	}
-	if sliceMap[0]["testfloat"] != testMap["testfloat"] {
-		t.Fatal("returned testfloat did not match")
-	}
-	if sliceMap[0]["testdouble"] != testMap["testdouble"] {
-		t.Fatal("returned testdouble did not match")
-	}
-	if sliceMap[0]["testinet"] != testMap["testinet"] {
-		t.Fatal("returned testinet did not match")
-	}
-
-	expectedDecimal := sliceMap[0]["testdecimal"].(*inf.Dec)
-	returnedDecimal := testMap["testdecimal"].(*inf.Dec)
-
-	if expectedDecimal.Cmp(returnedDecimal) != 0 {
-		t.Fatal("returned testdecimal did not match")
-	}
-
-	if !reflect.DeepEqual(sliceMap[0]["testlist"], testMap["testlist"]) {
-		t.Fatal("returned testlist did not match")
-	}
-	if !reflect.DeepEqual(sliceMap[0]["testset"], testMap["testset"]) {
-		t.Fatal("returned testset did not match")
-	}
-	if !reflect.DeepEqual(sliceMap[0]["testmap"], testMap["testmap"]) {
-		t.Fatal("returned testmap did not match")
-	}
-	if sliceMap[0]["testint"] != testMap["testint"] {
-		t.Fatal("returned testint did not match")
-	}
-}
-
-type MyRetryPolicy struct {
-}
-
-func (*MyRetryPolicy) Attempt(q RetryableQuery) bool {
-	if q.Attempts() > 5 {
-		return false
-	}
-	return true
-}
-
-func (*MyRetryPolicy) GetRetryType(err error) RetryType {
-	var executedErr *QueryError
-	if errors.As(err, &executedErr) && !executedErr.IsIdempotent() {
-		return Ignore
-	}
-	return Retry
+	// Preserve the three result-consumption forms as cloned slices, a cursor,
+	// and an exactly-one-row read, all with explicit dynamic values.
+	bound := cassandraUnprepared(t, "SELECT * FROM "+table, DynamicRows)
+	rows := cassandraRows(t, session, bound, Options{})
+	require.Len(t, rows, 1)
+	check(rows[0])
+	cursor, err := Run(context.Background(), session, bound, Options{})
+	require.NoError(t, err)
+	defer cursor.Close()
+	require.True(t, cursor.Next())
+	check(cursor.Row())
+	require.NoError(t, cursor.Close())
+	check(cassandraRead(t, session, "SELECT * FROM "+table))
 }
 
 func Test_RetryPolicyIdempotence(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
-	testCases := []struct {
-		name                  string
-		idempotency           bool
-		expectedNumberOfTries int
-	}{
-		{
-			name:                  "with retry",
-			idempotency:           true,
-			expectedNumberOfTries: 6,
-		},
-		{
-			name:                  "without retry",
-			idempotency:           false,
-			expectedNumberOfTries: 1,
-		},
-	}
-
-	for _, tc := range testCases {
+	for _, tc := range []struct {
+		name       string
+		idempotent bool
+		attempts   int
+	}{{"with retry", true, 6}, {"without retry", false, 1}} {
 		t.Run(tc.name, func(t *testing.T) {
-			q := session.Query("INSERT INTO  gocql_test.not_existing_table(event_id, time, args) VALUES (?,?,?)", 4, UUIDFromTime(time.Now()), "test")
-
-			q.Idempotent(tc.idempotency)
-			q.RetryPolicy(&MyRetryPolicy{})
-			q.Consistency(All)
-
-			_ = q.Exec()
-			require.Equal(t, tc.expectedNumberOfTries, q.Attempts())
+			observer := &cassandraObserver{}
+			bound := cassandraUnprepared(t, "INSERT INTO gocql_test.not_existing_table(event_id,time,args) VALUES(4,now(),'test')", NoRows)
+			_, err := Exec(context.Background(), session, bound, Options{Idempotent: tc.idempotent, Retry: cassandraRetry{}, Consistency: Option[Consistency]{Value: All, Set: true}, Observer: observer})
+			require.Error(t, err)
+			events, attempts := observer.snapshot()
+			require.Len(t, attempts, tc.attempts)
+			require.Len(t, events, 1)
 		})
 	}
 }
 
 func TestSmallInt(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (
-			testsmallint  smallint PRIMARY KEY,
-		)`, table)); err != nil {
-		t.Fatal("create table:", err)
-	}
-	m := make(map[string]any)
-	m["testsmallint"] = int16(2)
-	sliceMap := []map[string]any{m}
-	if err := session.Query(fmt.Sprintf(`INSERT INTO %s (testsmallint) VALUES (?)`, table),
-		m["testsmallint"]).Exec(); err != nil {
-		t.Fatal("insert:", err)
-	}
-	if returned, retErr := session.Query(fmt.Sprintf(`SELECT * FROM %s`, table)).Iter().SliceMap(); retErr != nil {
-		t.Fatal("select:", retErr)
-	} else {
-		if sliceMap[0]["testsmallint"] != returned[0]["testsmallint"] {
-			t.Fatal("returned testsmallint did not match")
-		}
-	}
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(testsmallint smallint PRIMARY KEY)", table))
+	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(testsmallint) VALUES(?)", table), SmallIntValue(2))
+	require.Equal(t, int64(2), cassandraInt(t, cassandraRead(t, session, "SELECT * FROM "+table), "testsmallint"))
 }
 
 func TestScanWithNilArguments(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (
-			foo   varchar,
-			bar   int,
-			PRIMARY KEY (foo, bar)
-	)`, table)); err != nil {
-		t.Fatal("create:", err)
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(foo varchar,bar int,PRIMARY KEY(foo,bar))", table))
+	for i := int32(1); i <= 20; i++ {
+		cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(foo,bar) VALUES(?,?)", table), TextValue("squares"), IntValue(i*i))
 	}
-	for i := 1; i <= 20; i++ {
-		if err := session.Query(fmt.Sprintf("INSERT INTO %s (foo, bar) VALUES (?, ?)", table),
-			"squares", i*i).Exec(); err != nil {
-			t.Fatal("insert:", err)
-		}
+	type result struct{ N int32 }
+	decoder := Row(IgnoreColumn[result]("foo"), Column("bar", Int32, func(r *result) *int32 { return &r.N }))
+	prepared := cassandraPrepared(t, session, Statement[string, result]{CQL: fmt.Sprintf("SELECT * FROM %s WHERE foo=?", table), Params: OneParam(StringEncoder), Rows: decoder}, PrepareOptions{})
+	rows, err := Run(context.Background(), session, cassandraBound(t, prepared, "squares"), Options{})
+	require.NoError(t, err)
+	defer rows.Close()
+	var sum int32
+	for rows.Next() {
+		sum += rows.Row().N
 	}
-
-	iter := session.Query(fmt.Sprintf("SELECT * FROM %s WHERE foo = ?", table), "squares").Iter()
-	var n int
-	count := 0
-	for iter.Scan(nil, &n) {
-		count += n
-	}
-	if err := iter.Close(); err != nil {
-		t.Fatal("close:", err)
-	}
-	if count != 2870 {
-		t.Fatalf("expected %d, got %d", 2870, count)
-	}
+	require.NoError(t, rows.Close())
+	require.Equal(t, int32(2870), sum)
 }
 
 func TestScanCASWithNilArguments(t *testing.T) {
 	t.Parallel()
-
-	session := createSessionFromClusterTabletsDisabled(createCluster(), t)
+	session := createV2SessionFromConfig(createV2Cluster(), t, true)
 	defer session.Close()
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf(`CREATE TABLE %s (
-		foo   varchar,
-		bar   varchar,
-		PRIMARY KEY (foo, bar)
-	)`, table)); err != nil {
-		t.Fatal("create:", err)
-	}
-
-	foo := "baz"
-	var cas string
-
-	if applied, err := session.Query(fmt.Sprintf(`INSERT INTO %s (foo, bar)
-		VALUES (?, ?) IF NOT EXISTS`, table),
-		foo, foo).ScanCAS(nil, nil); err != nil {
-		t.Fatal("insert:", err)
-	} else if !applied {
-		t.Fatal("insert should have been applied")
-	}
-
-	if applied, err := session.Query(fmt.Sprintf(`INSERT INTO %s (foo, bar)
-		VALUES (?, ?) IF NOT EXISTS`, table),
-		foo, foo).ScanCAS(&cas, nil); err != nil {
-		t.Fatal("insert:", err)
-	} else if applied {
-		t.Fatal("insert should not have been applied")
-	} else if foo != cas {
-		t.Fatalf("expected %v but got %v", foo, cas)
-	}
-
-	if applied, err := session.Query(fmt.Sprintf(`INSERT INTO %s (foo, bar)
-		VALUES (?, ?) IF NOT EXISTS`, table),
-		foo, foo).ScanCAS(nil, &cas); err != nil {
-		t.Fatal("insert:", err)
-	} else if applied {
-		t.Fatal("insert should not have been applied")
-	} else if foo != cas {
-		t.Fatalf("expected %v but got %v", foo, cas)
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(foo varchar,bar varchar,PRIMARY KEY(foo,bar))", table))
+	cql := fmt.Sprintf("INSERT INTO %s(foo,bar) VALUES(?,?) IF NOT EXISTS", table)
+	values := []Value{TextValue("baz"), TextValue("baz")}
+	ignored := Row(IgnoreColumn[Unit]("foo"), IgnoreColumn[Unit]("bar"))
+	require.True(t, cassandraReadBound(t, session, cassandraCASBound(t, session, cql, values, ignored), Options{}).Applied)
+	type result struct{ Text Text }
+	for _, selected := range []string{"foo", "bar"} {
+		other := "foo"
+		if selected == "foo" {
+			other = "bar"
+		}
+		decoder := Row(Column(selected, TextCodec, func(v *result) *Text { return &v.Text }), IgnoreColumn[result](other))
+		got := cassandraReadBound(t, session, cassandraCASBound(t, session, cql, values, decoder), Options{})
+		require.False(t, got.Applied)
+		require.True(t, got.Previous.Set)
+		require.Equal(t, "baz", got.Previous.Value.Text.String())
 	}
 }
 
 func TestRebindQueryInfo(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int, value text, PRIMARY KEY (id))", table)); err != nil {
-		t.Fatalf("failed to create table with error '%v'", err)
-	}
-
-	if err := session.Query(fmt.Sprintf("INSERT INTO %s (id, value) VALUES (?, ?)", table), 23, "quux").Exec(); err != nil {
-		t.Fatalf("insert into rebind_query failed, err '%v'", err)
-	}
-
-	if err := session.Query(fmt.Sprintf("INSERT INTO %s (id, value) VALUES (?, ?)", table), 24, "w00t").Exec(); err != nil {
-		t.Fatalf("insert into rebind_query failed, err '%v'", err)
-	}
-
-	q := session.Query(fmt.Sprintf("SELECT value FROM %s WHERE ID = ?", table))
-	q.Bind(23)
-
-	iter := q.Iter()
-	var value string
-	for iter.Scan(&value) {
-	}
-
-	if value != "quux" {
-		t.Fatalf("expected %v but got %v", "quux", value)
-	}
-
-	q.Bind(24)
-	iter = q.Iter()
-
-	for iter.Scan(&value) {
-	}
-
-	if value != "w00t" {
-		t.Fatalf("expected %v but got %v", "w00t", value)
-	}
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,value text)", table))
+	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(id,value) VALUES(?,?)", table), IntValue(23), TextValue("quux"))
+	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(id,value) VALUES(?,?)", table), IntValue(24), TextValue("w00t"))
+	prepared := cassandraPrepared(t, session, Statement[int32, Text]{CQL: fmt.Sprintf("SELECT value FROM %s WHERE id=?", table), Params: OneParam(Int32), Rows: OneColumn(TextCodec)}, PrepareOptions{})
+	first := cassandraBound(t, prepared, int32(23))
+	second := cassandraBound(t, prepared, int32(24))
+	require.Equal(t, "quux", cassandraReadBound(t, session, first, Options{}).String())
+	require.Equal(t, "w00t", cassandraReadBound(t, session, second, Options{}).String())
+	require.Equal(t, "quux", cassandraReadBound(t, session, first, Options{}).String())
 }
 
 // TestStaticQueryInfo makes sure that the application can manually bind query parameters using the simplest possible static binding strategy
 func TestStaticQueryInfo(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int, value text, PRIMARY KEY (id))", table)); err != nil {
-		t.Fatalf("failed to create table with error '%v'", err)
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,value text)", table))
+	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(id,value) VALUES(?,?)", table), IntValue(113), TextValue("foo"))
+	prepared := cassandraPrepared(t, session, Statement[int32, DynamicRow]{CQL: fmt.Sprintf("SELECT id,value FROM %s WHERE id=?", table), Params: OneParam(Int32), Rows: DynamicRows}, PrepareOptions{})
+	require.Equal(t, 1, prepared.Parameters().Len())
+	bound := cassandraBound(t, prepared, int32(113))
+	for i := 0; i < 2; i++ {
+		row := cassandraReadBound(t, session, bound, Options{})
+		require.Equal(t, int64(113), cassandraInt(t, row, "id"))
+		require.Equal(t, "foo", cassandraText(t, row, "value"))
 	}
-
-	if err := session.Query(fmt.Sprintf("INSERT INTO %s (id, value) VALUES (?, ?)", table), 113, "foo").Exec(); err != nil {
-		t.Fatalf("insert into static_query_info failed, err '%v'", err)
-	}
-
-	autobinder := func(q *QueryInfo) ([]any, error) {
-		values := make([]any, 1)
-		values[0] = 113
-		return values, nil
-	}
-
-	qry := session.Bind(fmt.Sprintf("SELECT id, value FROM %s WHERE id = ?", table), autobinder)
-
-	if err := qry.Exec(); err != nil {
-		t.Fatalf("expose query info failed, error '%v'", err)
-	}
-
-	iter := qry.Iter()
-
-	var id int
-	var value string
-
-	iter.Scan(&id, &value)
-
-	if err := iter.Close(); err != nil {
-		t.Fatalf("query with exposed info failed, err '%v'", err)
-	}
-
-	if value != "foo" {
-		t.Fatalf("Expected value %s, but got %s", "foo", value)
-	}
-
 }
 
 type ClusteredKeyValue struct {
-	Id      int
-	Cluster int
+	Id      int32
+	Cluster int32
 	Value   string
-}
-
-func (kv *ClusteredKeyValue) Bind(q *QueryInfo) ([]any, error) {
-	values := make([]any, len(q.Args))
-
-	for i, info := range q.Args {
-		fieldName := upcaseInitial(info.Name)
-		value := reflect.ValueOf(kv)
-		field := reflect.Indirect(value).FieldByName(fieldName)
-		values[i] = field.Addr().Interface()
-	}
-
-	return values, nil
-}
-
-func upcaseInitial(str string) string {
-	for i, v := range str {
-		return string(unicode.ToUpper(v)) + str[i+1:]
-	}
-	return ""
 }
 
 // TestBoundQueryInfo makes sure that the application can manually bind query parameters using the query meta data supplied at runtime
 func TestBoundQueryInfo(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int, cluster int, value text, PRIMARY KEY (id, cluster))", table)); err != nil {
-		t.Fatalf("failed to create table with error '%v'", err)
-	}
-
-	write := &ClusteredKeyValue{Id: 200, Cluster: 300, Value: "baz"}
-
-	insert := session.Bind(fmt.Sprintf("INSERT INTO %s (id, cluster, value) VALUES (?, ?,?)", table), write.Bind)
-
-	if err := insert.Exec(); err != nil {
-		t.Fatalf("insert into clustered_query_info failed, err '%v'", err)
-	}
-
-	read := &ClusteredKeyValue{Id: 200, Cluster: 300}
-
-	qry := session.Bind(fmt.Sprintf("SELECT id, cluster, value FROM %s WHERE id = ? and cluster = ?", table), read.Bind)
-
-	iter := qry.Iter()
-
-	var id, cluster int
-	var value string
-
-	iter.Scan(&id, &cluster, &value)
-
-	if err := iter.Close(); err != nil {
-		t.Fatalf("query with clustered_query_info info failed, err '%v'", err)
-	}
-
-	if value != "baz" {
-		t.Fatalf("Expected value %s, but got %s", "baz", value)
-	}
-
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id int,cluster int,value text,PRIMARY KEY(id,cluster))", table))
+	params := Params(Param("value", StringEncoder, func(v ClusteredKeyValue) string { return v.Value }), Param("cluster", Int32, func(v ClusteredKeyValue) int32 { return v.Cluster }), Param("id", Int32, func(v ClusteredKeyValue) int32 { return v.Id }))
+	prepared := cassandraPrepared(t, session, Statement[ClusteredKeyValue, Unit]{CQL: fmt.Sprintf("INSERT INTO %s(id,cluster,value) VALUES(?,?,?)", table), Params: params, Rows: NoRows}, PrepareOptions{})
+	require.Equal(t, 3, prepared.Parameters().Len())
+	_, err := Exec(context.Background(), session, cassandraBound(t, prepared, ClusteredKeyValue{200, 300, "baz"}), Options{})
+	require.NoError(t, err)
+	readParams := Params(Param("cluster", Int32, func(v ClusteredKeyValue) int32 { return v.Cluster }), Param("id", Int32, func(v ClusteredKeyValue) int32 { return v.Id }))
+	read := cassandraPrepared(t, session, Statement[ClusteredKeyValue, DynamicRow]{CQL: fmt.Sprintf("SELECT id,cluster,value FROM %s WHERE id=? AND cluster=?", table), Params: readParams, Rows: DynamicRows}, PrepareOptions{})
+	row := cassandraReadBound(t, session, cassandraBound(t, read, ClusteredKeyValue{Id: 200, Cluster: 300}), Options{})
+	require.Equal(t, "baz", cassandraText(t, row, "value"))
+	require.Equal(t, int64(200), cassandraInt(t, row, "id"))
+	require.Equal(t, int64(300), cassandraInt(t, row, "cluster"))
 }
 
 // TestBatchQueryInfo makes sure that the application can manually bind query parameters when executing in a batch
 func TestBatchQueryInfo(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int, cluster int, value text, PRIMARY KEY (id, cluster))", table)); err != nil {
-		t.Fatalf("failed to create table with error '%v'", err)
-	}
-
-	write := func(q *QueryInfo) ([]any, error) {
-		values := make([]any, 3)
-		values[0] = 4000
-		values[1] = 5000
-		values[2] = "bar"
-		return values, nil
-	}
-
-	batch := session.Batch(LoggedBatch)
-	batch.Bind(fmt.Sprintf("INSERT INTO %s (id, cluster, value) VALUES (?, ?,?)", table), write)
-
-	if err := session.ExecuteBatch(batch); err != nil {
-		t.Fatalf("batch insert into batch_query_info failed, err '%v'", err)
-	}
-
-	read := func(q *QueryInfo) ([]any, error) {
-		values := make([]any, 2)
-		values[0] = 4000
-		values[1] = 5000
-		return values, nil
-	}
-
-	qry := session.Bind(fmt.Sprintf("SELECT id, cluster, value FROM %s WHERE id = ? and cluster = ?", table), read)
-
-	iter := qry.Iter()
-
-	var id, cluster int
-	var value string
-
-	iter.Scan(&id, &cluster, &value)
-
-	if err := iter.Close(); err != nil {
-		t.Fatalf("query with batch_query_info info failed, err '%v'", err)
-	}
-
-	if value != "bar" {
-		t.Fatalf("Expected value %s, but got %s", "bar", value)
-	}
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id int,cluster int,value text,PRIMARY KEY(id,cluster))", table))
+	params := Params(Param("id", Int32, func(v ClusteredKeyValue) int32 { return v.Id }), Param("cluster", Int32, func(v ClusteredKeyValue) int32 { return v.Cluster }), Param("value", StringEncoder, func(v ClusteredKeyValue) string { return v.Value }))
+	prepared := cassandraPrepared(t, session, Statement[ClusteredKeyValue, Unit]{CQL: fmt.Sprintf("INSERT INTO %s(id,cluster,value) VALUES(?,?,?)", table), Params: params, Rows: NoRows}, PrepareOptions{})
+	require.Equal(t, 3, prepared.Parameters().Len())
+	bound := cassandraBound(t, prepared, ClusteredKeyValue{4000, 5000, "bar"})
+	cassandraBatch(t, session, LoggedBatch, []BatchItem{cassandraItem(t, bound)}, Options{})
+	read := cassandraDynamicBound(t, session, fmt.Sprintf("SELECT id,cluster,value FROM %s WHERE id=? AND cluster=?", table), []Value{IntValue(4000), IntValue(5000)}, PrepareOptions{})
+	row := cassandraReadBound(t, session, read, Options{})
+	require.Equal(t, "bar", cassandraText(t, row, "value"))
+	require.Equal(t, int64(4000), cassandraInt(t, row, "id"))
+	require.Equal(t, int64(5000), cassandraInt(t, row, "cluster"))
 }
 
 // hostConnWaitTimeout bounds the waits below. Generous on purpose: exceeding it means
@@ -1815,9 +914,9 @@ func pollUntil(timeout time.Duration, cond func() bool) bool {
 // waitForHostConns returns one pooled connection per host the session considers up,
 // waiting until every one of them has yielded a connection.
 //
-// createSession waits for schema agreement, not for connections, and hostConnPool.pickable
+// createV2Session waits for schema agreement, not for connections, and hostConnPool.pickable
 // reports false while a pool is still empty -- it only schedules the fill. A host walk run
-// straight after createSession therefore skips whichever pools have not come up yet, which
+// straight after createV2Session therefore skips whichever pools have not come up yet, which
 // silently narrows a per-host assertion down to the node that answered first.
 //
 // The host list is re-read on every attempt, so a host marked up while this waits is
@@ -1878,7 +977,7 @@ func waitForHostConns(t *testing.T, session *Session) map[string]*Conn {
 
 // getRandomConn returns a pooled connection, waiting for one rather than failing the
 // moment none is pickable. See waitForHostConns: an empty pool straight after
-// createSession is a pool still filling, not an anomaly.
+// createV2Session is a pool still filling, not an anomaly.
 func getRandomConn(t *testing.T, session *Session) *Conn {
 	t.Helper()
 
@@ -1892,593 +991,277 @@ func getRandomConn(t *testing.T, session *Session) *Conn {
 	return conn
 }
 
-func injectInvalidPreparedStatement(t *testing.T, session *Session, table string) (string, *Conn) {
-	if err := createTable(session, `CREATE TABLE gocql_test.`+table+` (
-			foo   varchar,
-			bar   int,
-			PRIMARY KEY (foo, bar)
-	)`); err != nil {
-		t.Fatal("create:", err)
-	}
-
-	stmt := "INSERT INTO " + table + " (foo, bar) VALUES (?, 7)"
-
+func injectInvalidPreparedStatement(t *testing.T, session *Session, table string) (*Bound[Unit], *Conn) {
+	t.Helper()
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(foo varchar,bar int,PRIMARY KEY(foo,bar))", table))
 	conn := getRandomConn(t, session)
-
-	flight := new(inflightPrepare)
-	key := session.stmtsLRU.keyFor(conn.host.hostUUID(), "", stmt)
-	session.stmtsLRU.add(key, flight)
-
-	flight.preparedStatment = &preparedStatment{
-		id: []byte{'f', 'o', 'o', 'b', 'a', 'r'},
-		request: preparedMetadata{
-			resultMetadata: resultMetadata{
-				colCount:       1,
-				actualColCount: 1,
-				columns: []ColumnInfo{
-					{
-						Keyspace: "gocql_test",
-						Table:    table,
-						Name:     "foo",
-						TypeInfo: NativeType{
-							typ: TypeVarchar,
-						},
-					},
-				},
-			},
-		},
-	}
-
-	return stmt, conn
+	prepared := cassandraPrepared(t, session, Statement[string, Unit]{CQL: fmt.Sprintf("INSERT INTO %s(foo,bar) VALUES(?,7)", table), Params: OneParam(StringEncoder), Rows: NoRows}, PrepareOptions{HostID: Option[UUID]{Value: conn.host.hostUUID(), Set: true}, connection: conn})
+	prepared.state.mu.Lock()
+	host := prepared.state.hosts[conn.host.hostUUID()]
+	host.id = []byte("foobar")
+	prepared.state.hosts[conn.host.hostUUID()] = host
+	prepared.state.mu.Unlock()
+	return cassandraBound(t, prepared, "bar"), conn
 }
 
 func TestPrepare_MissingSchemaPrepare(t *testing.T) {
 	t.Parallel()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	s := createSession(t)
-	conn := getRandomConn(t, s)
-	defer s.Close()
-
+	session := createV2Session(t)
+	defer session.Close()
 	table := testTableName(t)
-
-	insertQry := s.Query(fmt.Sprintf("INSERT INTO %s (val) VALUES (?)", table), 5)
-	if err := conn.executeQuery(ctx, insertQry).err; err == nil {
-		t.Fatal("expected error, but got nil.")
-	}
-
-	if err := createTable(s, fmt.Sprintf("CREATE TABLE gocql_test.%s (val int, PRIMARY KEY (val))", table)); err != nil {
-		t.Fatal("create table:", err)
-	}
-
-	if err := conn.executeQuery(ctx, insertQry).err; err != nil {
-		t.Fatal(err) // unconfigured columnfamily
-	}
+	conn := getRandomConn(t, session)
+	statement := Statement[int32, Unit]{CQL: fmt.Sprintf("INSERT INTO %s(val) VALUES(?)", table), Params: OneParam(Int32), Rows: NoRows}
+	options := PrepareOptions{HostID: Option[UUID]{Value: conn.host.hostUUID(), Set: true}}
+	_, err := Prepare(context.Background(), session, statement, options)
+	require.Error(t, err)
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(val int PRIMARY KEY)", table))
+	prepared := cassandraPrepared(t, session, statement, options)
+	_, err = Exec(context.Background(), session, cassandraBound(t, prepared, int32(5)), Options{HostID: options.HostID})
+	require.NoError(t, err)
 }
 
 func TestPrepare_ReprepareStatement(t *testing.T) {
 	t.Parallel()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
 	table := testTableName(t)
-
-	stmt, conn := injectInvalidPreparedStatement(t, session, table)
-	query := session.Query(stmt, "bar")
-	if err := conn.executeQuery(ctx, query).Close(); err != nil {
-		t.Fatalf("Failed to execute query for reprepare statement: %v", err)
-	}
+	bound, conn := injectInvalidPreparedStatement(t, session, table)
+	_, err := Exec(context.Background(), session, bound, Options{HostID: Option[UUID]{Value: conn.host.hostUUID(), Set: true}, connection: conn})
+	require.NoError(t, err)
+	bound.request.prepared.mu.RLock()
+	id := append([]byte(nil), bound.request.prepared.hosts[conn.host.hostUUID()].id...)
+	bound.request.prepared.mu.RUnlock()
+	require.NotEqual(t, []byte("foobar"), id)
+	require.Equal(t, int64(7), cassandraInt(t, cassandraRead(t, session, "SELECT bar FROM "+table+" WHERE foo=?", TextValue("bar")), "bar"))
 }
 
 func TestPrepare_ReprepareBatch(t *testing.T) {
 	t.Parallel()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
 	table := testTableName(t)
-
-	stmt, conn := injectInvalidPreparedStatement(t, session, table)
-	batch := session.Batch(UnloggedBatch)
-	batch.Query(stmt, "bar")
-	if err := conn.executeBatch(ctx, batch).Close(); err != nil {
-		t.Fatalf("Failed to execute query for reprepare statement: %v", err)
-	}
+	bound, conn := injectInvalidPreparedStatement(t, session, table)
+	cassandraBatch(t, session, UnloggedBatch, []BatchItem{cassandraItem(t, bound)}, Options{HostID: Option[UUID]{Value: conn.host.hostUUID(), Set: true}, connection: conn})
+	bound.request.prepared.mu.RLock()
+	id := append([]byte(nil), bound.request.prepared.hosts[conn.host.hostUUID()].id...)
+	bound.request.prepared.mu.RUnlock()
+	require.NotEqual(t, []byte("foobar"), id)
+	require.Equal(t, int64(7), cassandraInt(t, cassandraRead(t, session, "SELECT bar FROM "+table+" WHERE foo=?", TextValue("bar")), "bar"))
 }
 
 func TestQueryInfo(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
-	conn := getRandomConn(t, session)
-	info, err := conn.prepareStatement(context.Background(), "SELECT release_version, host_id FROM system.local WHERE key = ?", nil, conn.getCurrentKeyspace(), time.Second)
-
-	if err != nil {
-		t.Fatalf("Failed to execute query for preparing statement: %v", err)
-	}
-
-	if x := len(info.request.columns); x != 1 {
-		t.Fatalf("Was not expecting meta data for %d query arguments, but got %d\n", 1, x)
-	}
-
-	if x := len(info.response.columns); x != 2 {
-		t.Fatalf("Was not expecting meta data for %d result columns, but got %d\n", 2, x)
-	}
+	prepared := cassandraPrepared(t, session, Statement[string, DynamicRow]{CQL: "SELECT release_version,host_id FROM system.local WHERE key=?", Params: OneParam(StringEncoder), Rows: DynamicRows}, PrepareOptions{})
+	require.Equal(t, 1, prepared.Parameters().Len())
+	require.Equal(t, 2, prepared.Columns().Len())
 }
 
 // TestPreparedCacheEviction will make sure that the cache size is maintained
 func TestPrepare_PreparedCacheEviction(t *testing.T) {
 	t.Parallel()
-
 	const maxPrepared = 4
-
-	clusterHosts := getClusterHosts()
-	host := clusterHosts[0]
-	cluster := createCluster()
-	cluster.MaxPreparedStmts = maxPrepared
-	cluster.Events.DisableSchemaEvents = true
-	cluster.Hosts = []string{host}
-
-	cluster.HostFilter = WhiteListHostFilter(host)
-
-	session := createSessionFromCluster(cluster, t)
+	session := createV2Session(t, func(c *Config) { c.PreparedCacheSize = maxPrepared; c.Metadata.SchemaEvents = false })
 	defer session.Close()
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int,mod int,PRIMARY KEY (id))", table)); err != nil {
-		t.Fatalf("failed to create table with error '%v'", err)
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,mod int)", table))
+	runtime := session.typedRuntime()
+	runtime.mu.Lock()
+	clear(runtime.prepared)
+	runtime.prepareOrder = nil
+	runtime.mu.Unlock()
+	insert := fmt.Sprintf("INSERT INTO %s(id,mod) VALUES(?,?)", table)
+	for i := int32(0); i < 2; i++ {
+		cassandraWrite(t, session, insert, IntValue(i), IntValue(10000%(i+1)))
 	}
-	// clear the cache
-	session.stmtsLRU.clear()
-
-	//Fill the table
-	for i := 0; i < 2; i++ {
-		if err := session.Query(fmt.Sprintf("INSERT INTO %s (id,mod) VALUES (?, ?)", table), i, 10000%(i+1)).Exec(); err != nil {
-			t.Fatalf("insert into prepcachetest failed, err '%v'", err)
-		}
+	selects := []string{fmt.Sprintf("SELECT id,mod FROM %s WHERE id=0", table), fmt.Sprintf("SELECT id,mod FROM %s WHERE id=1", table)}
+	for _, cql := range selects {
+		prepared := cassandraPrepared(t, session, Statement[Unit, DynamicRow]{CQL: cql, Params: NoParams, Rows: DynamicRows}, PrepareOptions{})
+		cassandraReadBound(t, session, cassandraBound(t, prepared, Unit{}), Options{})
 	}
-	//Populate the prepared statement cache with select statements
-	var id, mod int
-	for i := 0; i < 2; i++ {
-		err := session.Query(fmt.Sprintf("SELECT id,mod FROM %s WHERE id = ", table)+strconv.FormatInt(int64(i), 10)).Scan(&id, &mod)
-		if err != nil {
-			t.Fatalf("select from prepcachetest failed, error '%v'", err)
-		}
+	update := fmt.Sprintf("UPDATE %s SET mod=? WHERE id=?", table)
+	cassandraWrite(t, session, update, IntValue(1), IntValue(11))
+	del := fmt.Sprintf("DELETE FROM %s WHERE id=?", table)
+	cassandraWrite(t, session, del, IntValue(1))
+	cassandraWrite(t, session, insert, IntValue(3), IntValue(11))
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	require.Len(t, runtime.prepared, maxPrepared)
+	cached := map[string]bool{}
+	for key := range runtime.prepared {
+		cached[key.cql] = true
 	}
-
-	//generate an update statement to test they are prepared
-	err := session.Query(fmt.Sprintf("UPDATE %s SET mod = ? WHERE id = ?", table), 1, 11).Exec()
-	if err != nil {
-		t.Fatalf("update prepcachetest failed, error '%v'", err)
-	}
-
-	//generate a delete statement to test they are prepared
-	err = session.Query(fmt.Sprintf("DELETE FROM %s WHERE id = ?", table), 1).Exec()
-	if err != nil {
-		t.Fatalf("delete from prepcachetest failed, error '%v'", err)
-	}
-
-	//generate an insert statement to test they are prepared
-	err = session.Query(fmt.Sprintf("INSERT INTO %s (id,mod) VALUES (?, ?)", table), 3, 11).Exec()
-	if err != nil {
-		t.Fatalf("insert into prepcachetest failed, error '%v'", err)
-	}
-
-	session.stmtsLRU.mu.Lock()
-	defer session.stmtsLRU.mu.Unlock()
-
-	//Make sure the cache size is maintained
-	if session.stmtsLRU.lru.Len() != session.stmtsLRU.lru.MaxEntries {
-		t.Fatalf("expected cache size of %v, got %v", session.stmtsLRU.lru.MaxEntries, session.stmtsLRU.lru.Len())
-	}
-
-	// Walk through all the configured hosts and test cache retention and eviction
-	for _, host := range session.hostSource.hosts {
-		_, ok := session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host.hostUUID(), session.cfg.Keyspace, fmt.Sprintf("SELECT id,mod FROM %s WHERE id = 0", table)))
-		if ok {
-			t.Errorf("expected first select to be purged but was in cache for host=%q", host)
-		}
-
-		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host.hostUUID(), session.cfg.Keyspace, fmt.Sprintf("SELECT id,mod FROM %s WHERE id = 1", table)))
-		if !ok {
-			t.Errorf("exepected second select to be in cache for host=%q", host)
-		}
-
-		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host.hostUUID(), session.cfg.Keyspace, fmt.Sprintf("INSERT INTO %s (id,mod) VALUES (?, ?)", table)))
-		if !ok {
-			t.Errorf("expected insert to be in cache for host=%q", host)
-		}
-
-		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host.hostUUID(), session.cfg.Keyspace, fmt.Sprintf("UPDATE %s SET mod = ? WHERE id = ?", table)))
-		if !ok {
-			t.Errorf("expected update to be in cached for host=%q", host)
-		}
-
-		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host.hostUUID(), session.cfg.Keyspace, fmt.Sprintf("DELETE FROM %s WHERE id = ?", table)))
-		if !ok {
-			t.Errorf("expected delete to be cached for host=%q", host)
-		}
+	require.False(t, cached[selects[0]])
+	for _, cql := range []string{selects[1], insert, update, del} {
+		require.True(t, cached[cql], "expected cached %q", cql)
 	}
 }
 
 func TestPrepare_PreparedCacheKey(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
 	table := testTableName(t)
-
-	// create a second keyspace with a unique name to avoid collisions under parallel execution
-	ks2 := testKeyspaceName(t, "ks2")
-	cluster2 := createCluster()
-	createKeyspace(t, cluster2, ks2, false)
-	cluster2.Keyspace = ks2
-	session2, err := cluster2.CreateSession()
-	if err != nil {
-		t.Fatal("create session:", err)
+	ks := testKeyspaceName(t, "ks2")
+	other := cassandraOtherSession(t, session, ks)
+	defer other.Close()
+	defer cassandraDDL(t, session, "DROP KEYSPACE "+ks)
+	for _, s := range []*Session{session, other} {
+		cassandraDDL(t, s, fmt.Sprintf("CREATE TABLE %s(id varchar PRIMARY KEY,field varchar)", table))
 	}
-	defer session2.Close()
-
-	// both keyspaces have a table named "test_stmt_cache_key"
-	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id varchar primary key, field varchar)", table)); err != nil {
-		t.Fatal("create table:", err)
-	}
-	if err := createTable(session2, fmt.Sprintf("CREATE TABLE %s.%s (id varchar primary key, field varchar)", ks2, table)); err != nil {
-		t.Fatal("create table:", err)
-	}
-
-	// both tables have a single row with the same partition key but different column value
-	if err = session.Query(fmt.Sprintf(`INSERT INTO %s (id, field) VALUES (?, ?)`, table), "key", "one").Exec(); err != nil {
-		t.Fatal("insert:", err)
-	}
-	if err = session2.Query(fmt.Sprintf(`INSERT INTO %s (id, field) VALUES (?, ?)`, table), "key", "two").Exec(); err != nil {
-		t.Fatal("insert:", err)
-	}
-
-	// should be able to see different values in each keyspace
-	var value string
-	if err = session.Query(fmt.Sprintf("SELECT field FROM %s WHERE id = ?", table), "key").Scan(&value); err != nil {
-		t.Fatal("select:", err)
-	}
-	if value != "one" {
-		t.Errorf("Expected one, got %s", value)
-	}
-
-	if err = session2.Query(fmt.Sprintf("SELECT field FROM %s WHERE id = ?", table), "key").Scan(&value); err != nil {
-		t.Fatal("select:", err)
-	}
-	if value != "two" {
-		t.Errorf("Expected two, got %s", value)
-	}
+	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(id,field) VALUES(?,?)", table), TextValue("key"), TextValue("one"))
+	cassandraWrite(t, other, fmt.Sprintf("INSERT INTO %s(id,field) VALUES(?,?)", table), TextValue("key"), TextValue("two"))
+	cql := fmt.Sprintf("SELECT field FROM %s WHERE id=?", table)
+	require.Equal(t, "one", cassandraText(t, cassandraRead(t, session, cql, TextValue("key")), "field"))
+	require.Equal(t, "two", cassandraText(t, cassandraRead(t, other, cql, TextValue("key")), "field"))
 }
 
 // TestMarshalFloat64Ptr tests to see that a pointer to a float64 is marshalled correctly.
 func TestMarshalFloat64Ptr(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id double, test double, primary key (id))", table)); err != nil {
-		t.Fatal("create table:", err)
-	}
-	testNum := float64(7500)
-	if err := session.Query(fmt.Sprintf(`INSERT INTO %s (id,test) VALUES (?,?)`, table), float64(7500.00), &testNum).Exec(); err != nil {
-		t.Fatal("insert float64:", err)
-	}
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id double PRIMARY KEY,test double)", table))
+	testNum := 7500.0
+	params := Params(Param("id", Float64, func(v *float64) float64 { return *v }), Param("test", Float64, func(v *float64) float64 { return *v }))
+	prepared := cassandraPrepared(t, session, Statement[*float64, Unit]{CQL: fmt.Sprintf("INSERT INTO %s(id,test) VALUES(?,?)", table), Params: params, Rows: NoRows}, PrepareOptions{})
+	_, err := Exec(context.Background(), session, cassandraBound(t, prepared, &testNum), Options{})
+	require.NoError(t, err)
+	got, err := cassandraField(t, cassandraRead(t, session, "SELECT test FROM "+table), "test").Float()
+	require.NoError(t, err)
+	require.Equal(t, testNum, got)
 }
 
 // TestMarshalInet tests to see that a pointer to a float64 is marshalled correctly.
 func TestMarshalInet(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (ip inet, name text, primary key (ip))", table)); err != nil {
-		t.Fatal("create table:", err)
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(ip inet PRIMARY KEY,name text)", table))
+	ipFromNet, ok := netip.AddrFromSlice(net.ParseIP("222.43.54.65"))
+	require.True(t, ok)
+	for _, want := range []netip.Addr{netip.MustParseAddr("123.34.45.56"), ipFromNet.Unmap()} {
+		cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(ip,name) VALUES(?,?)", table), cassandraValue(InetValue(want)), TextValue("Test IP"))
+		for i := 0; i < 2; i++ {
+			row := cassandraRead(t, session, "SELECT ip FROM "+table)
+			got, err := cassandraField(t, row, "ip").Inet()
+			require.NoError(t, err)
+			require.Equal(t, want.String(), got.String())
+			require.Equal(t, want, got)
+		}
+		cassandraWrite(t, session, fmt.Sprintf("DELETE FROM %s WHERE ip=?", table), cassandraValue(InetValue(want)))
 	}
-	stringIp := "123.34.45.56"
-	if err := session.Query(fmt.Sprintf(`INSERT INTO %s (ip,name) VALUES (?,?)`, table), stringIp, "Test IP 1").Exec(); err != nil {
-		t.Fatal("insert string inet:", err)
-	}
-	var stringResult string
-	if err := session.Query(fmt.Sprintf("SELECT ip FROM %s", table)).Scan(&stringResult); err != nil {
-		t.Fatalf("select for string from table 1 failed: %v", err)
-	}
-	if stringResult != stringIp {
-		t.Errorf("Expected %s, was %s", stringIp, stringResult)
-	}
-
-	var ipResult net.IP
-	if err := session.Query(fmt.Sprintf("SELECT ip FROM %s", table)).Scan(&ipResult); err != nil {
-		t.Fatalf("select for net.IP from table 1 failed: %v", err)
-	}
-	if ipResult.String() != stringIp {
-		t.Errorf("Expected %s, was %s", stringIp, ipResult.String())
-	}
-
-	if err := session.Query(fmt.Sprintf(`DELETE FROM %s WHERE ip = ?`, table), stringIp).Exec(); err != nil {
-		t.Fatal("delete inet table:", err)
-	}
-
-	netIp := net.ParseIP("222.43.54.65")
-	if err := session.Query(fmt.Sprintf(`INSERT INTO %s (ip,name) VALUES (?,?)`, table), netIp, "Test IP 2").Exec(); err != nil {
-		t.Fatal("insert netIp inet:", err)
-	}
-
-	if err := session.Query(fmt.Sprintf("SELECT ip FROM %s", table)).Scan(&stringResult); err != nil {
-		t.Fatalf("select for string from table 2 failed: %v", err)
-	}
-	if stringResult != netIp.String() {
-		t.Errorf("Expected %s, was %s", netIp.String(), stringResult)
-	}
-	if err := session.Query(fmt.Sprintf("SELECT ip FROM %s", table)).Scan(&ipResult); err != nil {
-		t.Fatalf("select for net.IP from table 2 failed: %v", err)
-	}
-	if ipResult.String() != netIp.String() {
-		t.Errorf("Expected %s, was %s", netIp.String(), ipResult.String())
-	}
-
 }
 
 func TestVarint(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id varchar, test varint, test2 varint, primary key (id))", table)); err != nil {
-		t.Fatalf("failed to create table with error '%v'", err)
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id varchar PRIMARY KEY,test varint,test2 varint)", table))
+	insert := fmt.Sprintf("INSERT INTO %s(id,test) VALUES(?,?)", table)
+	selectCQL := "SELECT test FROM " + table
+	for _, want := range []int64{0, -1, int64(math.MaxInt32) + 1} {
+		cassandraWrite(t, session, insert, TextValue("id"), VarintValue(VarintFromBigInt(big.NewInt(want))))
+		row := cassandraRead(t, session, selectCQL)
+		got, err := cassandraField(t, row, "test").Varint()
+		require.NoError(t, err)
+		require.Equal(t, want, got.BigInt().Int64())
 	}
-
-	if err := session.Query(fmt.Sprintf(`INSERT INTO %s (id, test) VALUES (?, ?)`, table), "id", 0).Exec(); err != nil {
-		t.Fatalf("insert varint: %v", err)
-	}
-
-	var result int
-	if err := session.Query(fmt.Sprintf("SELECT test FROM %s", table)).Scan(&result); err != nil {
-		t.Fatalf("select failed: %v", err)
-	}
-
-	if result != 0 {
-		t.Errorf("Expected 0, was %d", result)
-	}
-
-	if err := session.Query(fmt.Sprintf(`INSERT INTO %s (id, test) VALUES (?, ?)`, table), "id", -1).Exec(); err != nil {
-		t.Fatalf("insert varint: %v", err)
-	}
-
-	if err := session.Query(fmt.Sprintf("SELECT test FROM %s", table)).Scan(&result); err != nil {
-		t.Fatalf("select failed: %v", err)
-	}
-
-	if result != -1 {
-		t.Errorf("Expected -1, was %d", result)
-	}
-
-	if err := session.Query(fmt.Sprintf(`INSERT INTO %s (id, test) VALUES (?, ?)`, table), "id", nil).Exec(); err != nil {
-		t.Fatalf("insert varint: %v", err)
-	}
-
-	if err := session.Query(fmt.Sprintf("SELECT test FROM %s", table)).Scan(&result); err != nil {
-		t.Fatalf("select failed: %v", err)
-	}
-
-	if result != 0 {
-		t.Errorf("Expected 0, was %d", result)
-	}
-
-	var nullableResult *int
-
-	if err := session.Query(fmt.Sprintf("SELECT test FROM %s", table)).Scan(&nullableResult); err != nil {
-		t.Fatalf("select failed: %v", err)
-	}
-
-	if nullableResult != nil {
-		t.Errorf("Expected nil, was %d", nullableResult)
-	}
-
-	if err := session.Query(fmt.Sprintf(`INSERT INTO %s (id, test) VALUES (?, ?)`, table), "id", int64(math.MaxInt32)+1).Exec(); err != nil {
-		t.Fatalf("insert varint: %v", err)
-	}
-
-	var result64 int64
-	if err := session.Query(fmt.Sprintf("SELECT test FROM %s", table)).Scan(&result64); err != nil {
-		t.Fatalf("select failed: %v", err)
-	}
-
-	if result64 != int64(math.MaxInt32)+1 {
-		t.Errorf("Expected %d, was %d", int64(math.MaxInt32)+1, result64)
-	}
-
-	biggie := new(big.Int)
-	biggie.SetString("36893488147419103232", 10) // > 2**64
-	if err := session.Query(fmt.Sprintf(`INSERT INTO %s (id, test) VALUES (?, ?)`, table), "id", biggie).Exec(); err != nil {
-		t.Fatalf("insert varint: %v", err)
-	}
-
-	resultBig := new(big.Int)
-	if err := session.Query(fmt.Sprintf("SELECT test FROM %s", table)).Scan(resultBig); err != nil {
-		t.Fatalf("select failed: %v", err)
-	}
-
-	if resultBig.String() != biggie.String() {
-		t.Errorf("Expected %s, was %s", biggie.String(), resultBig.String())
-	}
-
-	err := session.Query(fmt.Sprintf("SELECT test FROM %s", table)).Scan(&result64)
-	if err == nil || strings.Index(err.Error(), "the data value should be in the int64 range") == -1 {
-		t.Errorf("expected out of range error since value is too big for int64, result:%d", result64)
-	}
-
-	// value not set in cassandra, leave bind variable empty
-	resultBig = new(big.Int)
-	if err := session.Query(fmt.Sprintf("SELECT test2 FROM %s", table)).Scan(resultBig); err != nil {
-		t.Fatalf("select failed: %v", err)
-	}
-
-	if resultBig.Int64() != 0 {
-		t.Errorf("Expected %s, was %s", biggie.String(), resultBig.String())
-	}
-
-	// can use double pointer to explicitly detect value is not set in cassandra
-	if err := session.Query(fmt.Sprintf("SELECT test2 FROM %s", table)).Scan(&resultBig); err != nil {
-		t.Fatalf("select failed: %v", err)
-	}
-
-	if resultBig != nil {
-		t.Errorf("Expected %v, was %v", nil, *resultBig)
-	}
+	cassandraWrite(t, session, insert, TextValue("id"), NullValue(VarintValue(Varint{}).Type()))
+	nullable := cassandraUnprepared(t, selectCQL, OneColumn(NullableCodec(VarintCodec)))
+	null := cassandraReadBound(t, session, nullable, Options{})
+	require.False(t, null.Valid)
+	require.Zero(t, null.Value.BigInt().Sign())
+	biggie, ok := new(big.Int).SetString("36893488147419103232", 10)
+	require.True(t, ok)
+	cassandraWrite(t, session, insert, TextValue("id"), VarintValue(VarintFromBigInt(biggie)))
+	got, err := cassandraField(t, cassandraRead(t, session, selectCQL), "test").Varint()
+	require.NoError(t, err)
+	require.Equal(t, biggie.String(), got.BigInt().String())
+	rows, err := Run(context.Background(), session, cassandraUnprepared(t, selectCQL, OneColumn(cassandraVarintInt64{})), Options{})
+	require.NoError(t, err)
+	defer rows.Close()
+	require.False(t, rows.Next())
+	require.ErrorContains(t, rows.Close(), "int64 range")
+	absent := cassandraReadBound(t, session, cassandraUnprepared(t, "SELECT test2 FROM "+table, OneColumn(NullableCodec(VarintCodec))), Options{})
+	require.False(t, absent.Valid)
+	require.Zero(t, absent.Value.BigInt().Sign())
 }
 
 // TestQueryStats confirms that the stats are returning valid data. Accuracy may be questionable.
 func TestQueryStats(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-	qry := session.Query("SELECT * FROM system.peers")
-	if err := qry.Exec(); err != nil {
-		t.Fatalf("query failed. %v", err)
-	} else {
-		if qry.Attempts() < 1 {
-			t.Fatal("expected at least 1 attempt, but got 0")
-		}
-		if qry.Latency() <= 0 {
-			t.Fatalf("expected latency to be greater than 0, but got %v instead.", qry.Latency())
-		}
+	before := session.Metrics()
+	rows, err := v2Query(context.Background(), session, "SELECT * FROM system.peers")
+	require.NoError(t, err)
+	for rows.Next() {
 	}
+	require.NoError(t, rows.Close())
+	info := rows.Info()
+	require.Positive(t, info.Attempts)
+	require.Positive(t, info.Latency)
+	require.Greater(t, session.Metrics().Requests, before.Requests)
 }
 
 // TestIterHosts confirms that host is added to Iter when the query succeeds.
 func TestIterHost(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-	iter := session.Query("SELECT * FROM system.peers").Iter()
-
-	// check if Host method works
-	if iter.Host() == nil {
-		t.Error("No host in iter")
-	}
+	rows, err := v2Query(context.Background(), session, "SELECT * FROM system.peers")
+	require.NoError(t, err)
+	defer rows.Close()
+	require.NotEqual(t, UUID{}, rows.Info().HostID)
 }
 
 // TestBatchStats confirms that the stats are returning valid data. Accuracy may be questionable.
 func TestBatchStats(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int, PRIMARY KEY (id))", table)); err != nil {
-		t.Fatalf("failed to create table with error '%v'", err)
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY)", table))
+	var items []BatchItem
+	for _, id := range []int32{1, 2} {
+		items = append(items, cassandraItem(t, cassandraWriteBound(t, session, fmt.Sprintf("INSERT INTO %s(id) VALUES(?)", table), []Value{IntValue(id)}, PrepareOptions{})))
 	}
-
-	b := session.Batch(LoggedBatch)
-	b.Query(fmt.Sprintf("INSERT INTO %s (id) VALUES (?)", table), 1)
-	b.Query(fmt.Sprintf("INSERT INTO %s (id) VALUES (?)", table), 2)
-
-	if err := session.ExecuteBatch(b); err != nil {
-		t.Fatalf("query failed. %v", err)
-	} else {
-		if b.Attempts() < 1 {
-			t.Fatal("expected at least 1 attempt, but got 0")
-		}
-		if b.Latency() <= 0 {
-			t.Fatalf("expected latency to be greater than 0, but got %v instead.", b.Latency())
-		}
-	}
-}
-
-type funcBatchObserver func(context.Context, ObservedBatch)
-
-func (f funcBatchObserver) ObserveBatch(ctx context.Context, o ObservedBatch) {
-	f(ctx, o)
+	info := cassandraBatch(t, session, LoggedBatch, items, Options{})
+	require.Positive(t, info.Attempts)
+	require.Positive(t, info.Latency)
 }
 
 func TestBatchObserve(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (id int, other int, PRIMARY KEY (id))`, table)); err != nil {
-		t.Fatal("create table:", err)
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,other int)", table))
+	observer := &cassandraObserver{}
+	var items []BatchItem
+	var cqls []string
+	for i := int32(0); i < 100; i++ {
+		cql := fmt.Sprintf("INSERT INTO %s(id,other) VALUES(?,%d)", table, i)
+		cqls = append(cqls, cql)
+		items = append(items, cassandraItem(t, cassandraWriteBound(t, session, cql, []Value{IntValue(i)}, PrepareOptions{})))
 	}
-
-	type observation struct {
-		observedErr      error
-		observedKeyspace string
-		observedStmts    []string
-		observedValues   [][]any
-	}
-
-	var observedBatch *observation
-
-	batch := session.Batch(LoggedBatch)
-	batch.Observer(funcBatchObserver(func(ctx context.Context, o ObservedBatch) {
-		if observedBatch != nil {
-			t.Fatal("batch observe called more than once")
-		}
-
-		observedBatch = &observation{
-			observedKeyspace: o.Keyspace,
-			observedStmts:    o.Statements,
-			observedErr:      o.Err,
-			observedValues:   o.Values,
-		}
-	}))
-	for i := 0; i < 100; i++ {
-		// hard coding 'i' into one of the values for better  testing of observation
-		batch.Query(fmt.Sprintf(`INSERT INTO %s (id,other) VALUES (?,%d)`, table, i), i)
-	}
-
-	if err := session.ExecuteBatch(batch); err != nil {
-		t.Fatal("execute batch:", err)
-	}
-	if observedBatch == nil {
-		t.Fatal("batch observation has not been called")
-	}
-	if len(observedBatch.observedStmts) != 100 {
-		t.Fatal("expecting 100 observed statements, got", len(observedBatch.observedStmts))
-	}
-	if observedBatch.observedErr != nil {
-		t.Fatal("not expecting to observe an error", observedBatch.observedErr)
-	}
-	if observedBatch.observedKeyspace != "gocql_test" {
-		t.Fatalf("expecting keyspace 'gocql_test', got %q", observedBatch.observedKeyspace)
-	}
-	for i, stmt := range observedBatch.observedStmts {
-		if stmt != fmt.Sprintf(`INSERT INTO %s (id,other) VALUES (?,%d)`, table, i) {
-			t.Fatal("unexpected query", stmt)
-		}
-
-		tests.AssertDeepEqual(t, "observed value", []any{i}, observedBatch.observedValues[i])
+	cassandraBatch(t, session, LoggedBatch, items, Options{Observer: observer})
+	events, _ := observer.snapshot()
+	require.Len(t, events, 1)
+	require.NoError(t, events[0].Err)
+	require.Equal(t, "gocql_test", events[0].Routing.Keyspace)
+	require.Equal(t, cqls, events[0].BatchStatements)
+	// Observations expose typed parameter descriptors, never retained input
+	// payloads. Verify each bound value by reading the resulting rows.
+	rows := cassandraRows(t, session, cassandraUnprepared(t, "SELECT id,other FROM "+table, DynamicRows), Options{})
+	require.Len(t, rows, 100)
+	for _, row := range rows {
+		require.Equal(t, cassandraInt(t, row, "id"), cassandraInt(t, row, "other"))
 	}
 }
 
@@ -2486,65 +1269,38 @@ func TestBatchObserve(t *testing.T) {
 // TODO validate the nil value by reading back the nil. Need to fix Unmarshalling.
 func TestNilInQuery(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int, count int, PRIMARY KEY (id))", table)); err != nil {
-		t.Fatalf("failed to create table with error '%v'", err)
-	}
-	if err := session.Query(fmt.Sprintf("INSERT INTO %s (id,count) VALUES (?,?)", table), 1, nil).Exec(); err != nil {
-		t.Fatalf("failed to insert with err: %v", err)
-	}
-
-	var id int
-
-	if err := session.Query(fmt.Sprintf("SELECT id FROM %s", table)).Scan(&id); err != nil {
-		t.Fatalf("failed to select with err: %v", err)
-	} else if id != 1 {
-		t.Fatalf("expected id to be 1, got %v", id)
-	}
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,count int)", table))
+	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(id,count) VALUES(?,?)", table), IntValue(1), NullValue(IntValue(0).Type()))
+	row := cassandraRead(t, session, "SELECT id,count FROM "+table)
+	require.Equal(t, int64(1), cassandraInt(t, row, "id"))
+	require.Equal(t, Null, cassandraField(t, row, "count").State())
 }
 
 // Don't initialize time.Time bind variable if cassandra timestamp column is empty
 func TestEmptyTimestamp(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
-
+	session := createV2Session(t)
 	defer session.Close()
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int, time timestamp, num int, PRIMARY KEY (id))", table)); err != nil {
-		t.Fatalf("failed to create table with error '%v'", err)
-	}
-
-	if err := session.Query(fmt.Sprintf("INSERT INTO %s (id, num) VALUES (?,?)", table), 1, 561).Exec(); err != nil {
-		t.Fatalf("failed to insert with err: %v", err)
-	}
-
-	var timeVal time.Time
-
-	if err := session.Query(fmt.Sprintf("SELECT time FROM %s where id = ?", table), 1).Scan(&timeVal); err != nil {
-		t.Fatalf("failed to select with err: %v", err)
-	}
-
-	if !timeVal.IsZero() {
-		t.Errorf("time.Time bind variable should be zero (was %s)", timeVal)
-	}
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,time timestamp,num int)", table))
+	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(id,num) VALUES(?,?)", table), IntValue(1), IntValue(561))
+	read := cassandraPrepared(t, session, Statement[int32, Nullable[Timestamp]]{CQL: fmt.Sprintf("SELECT time FROM %s WHERE id=?", table), Params: OneParam(Int32), Rows: OneColumn(NullableCodec(TimestampCodec))}, PrepareOptions{})
+	value := cassandraReadBound(t, session, cassandraBound(t, read, int32(1)), Options{})
+	require.False(t, value.Valid)
+	require.Zero(t, value.Value)
 }
 
 // Integration test of just querying for data from the system.schema_keyspace table where the keyspace DOES exist.
 func TestGetKeyspaceMetadata(t *testing.T) {
 	t.Parallel()
 
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
 
-	keyspaceMetadata, err := getKeyspaceMetadata(session, "gocql_test")
+	keyspaceMetadata, err := cassandraKeyspace(session, "gocql_test")
 	if err != nil {
 		t.Fatalf("failed to query the keyspace metadata with err: %v", err)
 	}
@@ -2576,34 +1332,34 @@ func TestGetKeyspaceMetadata(t *testing.T) {
 func TestSessionMetadataAPIs(t *testing.T) {
 	t.Parallel()
 
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
 
 	const ks = "gocql_test"
 
-	if _, err := session.KeyspaceMetadata(ks); err != nil {
+	if _, err := cassandraKeyspace(session, ks); err != nil {
 		t.Fatalf("failed to get initial keyspace metadata: %v", err)
 	}
 
 	waitForSchemaRefresh := func() {
-		if err := session.control.awaitSchemaAgreement(); err != nil {
+		if err := session.AwaitSchemaAgreement(context.Background()); err != nil {
 			t.Logf("schema agreement warning: %v", err)
 		}
-		session.metadataDescriber.invalidateKeyspaceSchema(ks)
+		require.NoError(t, session.RefreshMetadata(context.Background()))
 	}
 
 	t.Run("TableMetadata", func(t *testing.T) {
 		t.Run("basic_table_after_create", func(t *testing.T) {
 			table := testTableName(t)
-			if err := createTable(session, fmt.Sprintf(
+			if err := v2CreateTable(context.Background(), session, fmt.Sprintf(
 				"CREATE TABLE IF NOT EXISTS %s.%s (pk int PRIMARY KEY, v int)", ks, table)); err != nil {
 				t.Fatalf("create table: %v", err)
 			}
-			defer session.Query(fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", ks, table)).Exec()
+			defer v2Exec(context.Background(), session, fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", ks, table))
 
 			waitForSchemaRefresh()
 
-			tm, err := session.TableMetadata(ks, table)
+			tm, err := cassandraTable(session, ks, table)
 			if err != nil {
 				t.Fatalf("TableMetadata failed: %v", err)
 			}
@@ -2617,15 +1373,15 @@ func TestSessionMetadataAPIs(t *testing.T) {
 
 		t.Run("columns_and_partition_key", func(t *testing.T) {
 			table := testTableName(t)
-			if err := createTable(session, fmt.Sprintf(
+			if err := v2CreateTable(context.Background(), session, fmt.Sprintf(
 				"CREATE TABLE IF NOT EXISTS %s.%s (pk1 int, pk2 text, ck int, val blob, PRIMARY KEY ((pk1, pk2), ck))", ks, table)); err != nil {
 				t.Fatalf("create table: %v", err)
 			}
-			defer session.Query(fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", ks, table)).Exec()
+			defer v2Exec(context.Background(), session, fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", ks, table))
 
 			waitForSchemaRefresh()
 
-			tm, err := session.TableMetadata(ks, table)
+			tm, err := cassandraTable(session, ks, table)
 			if err != nil {
 				t.Fatalf("TableMetadata failed: %v", err)
 			}
@@ -2654,22 +1410,22 @@ func TestSessionMetadataAPIs(t *testing.T) {
 			}
 
 			table := testTableName(t)
-			if err := createTable(session, fmt.Sprintf(
+			if err := v2CreateTable(context.Background(), session, fmt.Sprintf(
 				"CREATE TABLE IF NOT EXISTS %s.%s (pk int PRIMARY KEY, v int)", ks, table)); err != nil {
 				t.Fatalf("create table: %v", err)
 			}
-			defer session.Query(fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", ks, table)).Exec()
+			defer v2Exec(context.Background(), session, fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", ks, table))
 
 			idxName := table + "_v_idx"
-			if err := createTable(session, fmt.Sprintf(
+			if err := v2CreateTable(context.Background(), session, fmt.Sprintf(
 				"CREATE INDEX IF NOT EXISTS %s ON %s.%s (v)", idxName, ks, table)); err != nil {
 				t.Fatalf("create index: %v", err)
 			}
 
 			waitForSchemaRefresh()
 
-			session.metadataDescriber.invalidateKeyspaceSchema(ks)
-			km, err := session.KeyspaceMetadata(ks)
+			require.NoError(t, session.RefreshMetadata(context.Background()))
+			km, err := cassandraKeyspace(session, ks)
 			if err != nil {
 				t.Fatalf("KeyspaceMetadata failed: %v", err)
 			}
@@ -2688,14 +1444,14 @@ func TestSessionMetadataAPIs(t *testing.T) {
 
 			baseTable := testTableName(t, "base")
 			viewName := testTableName(t, "view")
-			if err := createTable(session, fmt.Sprintf(
+			if err := v2CreateTable(context.Background(), session, fmt.Sprintf(
 				"CREATE TABLE IF NOT EXISTS %s.%s (pk int, ck int, v int, PRIMARY KEY (pk, ck))", ks, baseTable)); err != nil {
 				t.Fatalf("create base table: %v", err)
 			}
-			defer session.Query(fmt.Sprintf("DROP MATERIALIZED VIEW IF EXISTS %s.%s", ks, viewName)).Exec()
-			defer session.Query(fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", ks, baseTable)).Exec()
+			defer v2Exec(context.Background(), session, fmt.Sprintf("DROP MATERIALIZED VIEW IF EXISTS %s.%s", ks, viewName))
+			defer v2Exec(context.Background(), session, fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", ks, baseTable))
 
-			if err := createTable(session, fmt.Sprintf(
+			if err := v2CreateTable(context.Background(), session, fmt.Sprintf(
 				"CREATE MATERIALIZED VIEW IF NOT EXISTS %s.%s AS SELECT pk, ck, v FROM %s.%s WHERE pk IS NOT NULL AND ck IS NOT NULL AND v IS NOT NULL PRIMARY KEY (v, pk, ck)",
 				ks, viewName, ks, baseTable)); err != nil {
 				t.Fatalf("create materialized view: %v", err)
@@ -2703,7 +1459,7 @@ func TestSessionMetadataAPIs(t *testing.T) {
 
 			waitForSchemaRefresh()
 
-			tm, err := session.TableMetadata(ks, baseTable)
+			tm, err := cassandraTable(session, ks, baseTable)
 			if err != nil {
 				t.Fatalf("TableMetadata for base table failed: %v", err)
 			}
@@ -2711,8 +1467,8 @@ func TestSessionMetadataAPIs(t *testing.T) {
 				t.Errorf("expected table name %q, got %q", baseTable, tm.Name)
 			}
 
-			session.metadataDescriber.invalidateKeyspaceSchema(ks)
-			km, err := session.KeyspaceMetadata(ks)
+			require.NoError(t, session.RefreshMetadata(context.Background()))
+			km, err := cassandraKeyspace(session, ks)
 			if err != nil {
 				t.Fatalf("KeyspaceMetadata failed: %v", err)
 			}
@@ -2726,20 +1482,20 @@ func TestSessionMetadataAPIs(t *testing.T) {
 
 		t.Run("after_alter_table", func(t *testing.T) {
 			table := testTableName(t)
-			if err := createTable(session, fmt.Sprintf(
+			if err := v2CreateTable(context.Background(), session, fmt.Sprintf(
 				"CREATE TABLE IF NOT EXISTS %s.%s (pk int PRIMARY KEY, v int)", ks, table)); err != nil {
 				t.Fatalf("create table: %v", err)
 			}
-			defer session.Query(fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", ks, table)).Exec()
+			defer v2Exec(context.Background(), session, fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", ks, table))
 
-			if err := createTable(session, fmt.Sprintf(
+			if err := v2CreateTable(context.Background(), session, fmt.Sprintf(
 				"ALTER TABLE %s.%s ADD v2 text", ks, table)); err != nil {
 				t.Fatalf("alter table: %v", err)
 			}
 
 			waitForSchemaRefresh()
 
-			tm, err := session.TableMetadata(ks, table)
+			tm, err := cassandraTable(session, ks, table)
 			if err != nil {
 				t.Fatalf("TableMetadata failed: %v", err)
 			}
@@ -2750,29 +1506,29 @@ func TestSessionMetadataAPIs(t *testing.T) {
 
 		t.Run("after_drop_and_recreate", func(t *testing.T) {
 			table := testTableName(t)
-			if err := createTable(session, fmt.Sprintf(
+			if err := v2CreateTable(context.Background(), session, fmt.Sprintf(
 				"CREATE TABLE IF NOT EXISTS %s.%s (pk int PRIMARY KEY, v int)", ks, table)); err != nil {
 				t.Fatalf("create table: %v", err)
 			}
 
 			waitForSchemaRefresh()
 
-			if _, err := session.TableMetadata(ks, table); err != nil {
+			if _, err := cassandraTable(session, ks, table); err != nil {
 				t.Fatalf("TableMetadata before drop failed: %v", err)
 			}
 
-			if err := createTable(session, fmt.Sprintf("DROP TABLE %s.%s", ks, table)); err != nil {
+			if err := v2CreateTable(context.Background(), session, fmt.Sprintf("DROP TABLE %s.%s", ks, table)); err != nil {
 				t.Fatalf("drop table: %v", err)
 			}
-			if err := createTable(session, fmt.Sprintf(
+			if err := v2CreateTable(context.Background(), session, fmt.Sprintf(
 				"CREATE TABLE %s.%s (pk text PRIMARY KEY, new_col int)", ks, table)); err != nil {
 				t.Fatalf("recreate table: %v", err)
 			}
-			defer session.Query(fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", ks, table)).Exec()
+			defer v2Exec(context.Background(), session, fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", ks, table))
 
 			waitForSchemaRefresh()
 
-			tm, err := session.TableMetadata(ks, table)
+			tm, err := cassandraTable(session, ks, table)
 			if err != nil {
 				t.Fatalf("TableMetadata after recreate failed: %v", err)
 			}
@@ -2785,49 +1541,35 @@ func TestSessionMetadataAPIs(t *testing.T) {
 		})
 
 		t.Run("nonexistent_table", func(t *testing.T) {
-			_, err := session.TableMetadata(ks, "does_not_exist_at_all")
-			if err == nil {
-				t.Fatal("expected error for nonexistent table, got nil")
-			}
-			if !errors.Is(err, ErrNotFound) {
-				t.Errorf("expected ErrNotFound, got: %v", err)
-			}
+			km, found := session.Metadata().Keyspace(ks)
+			require.True(t, found)
+			_, found = km.Tables["does_not_exist_at_all"]
+			require.False(t, found)
 		})
 
 		t.Run("empty_table_name", func(t *testing.T) {
-			_, err := session.TableMetadata(ks, "")
-			if err == nil {
-				t.Fatal("expected error for empty table name, got nil")
-			}
-			if !errors.Is(err, ErrNoTable) {
-				t.Errorf("expected ErrNoTable, got: %v", err)
-			}
+			km, found := session.Metadata().Keyspace(ks)
+			require.True(t, found)
+			_, found = km.Tables[""]
+			require.False(t, found)
 		})
 
-		t.Run("empty_keyspace", func(t *testing.T) {
-			_, err := session.TableMetadata("", "some_table")
-			if err == nil {
-				t.Fatal("expected error for empty keyspace, got nil")
-			}
-			if !errors.Is(err, ErrNoKeyspace) {
-				t.Errorf("expected ErrNoKeyspace, got: %v", err)
-			}
-		})
+		t.Run("empty_keyspace", func(t *testing.T) { _, found := session.Metadata().Keyspace(""); require.False(t, found) })
 	})
 
 	t.Run("KeyspaceMetadata", func(t *testing.T) {
 		t.Run("includes_new_table", func(t *testing.T) {
 			table := testTableName(t)
-			if err := createTable(session, fmt.Sprintf(
+			if err := v2CreateTable(context.Background(), session, fmt.Sprintf(
 				"CREATE TABLE IF NOT EXISTS %s.%s (pk int PRIMARY KEY, v int)", ks, table)); err != nil {
 				t.Fatalf("create table: %v", err)
 			}
-			defer session.Query(fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", ks, table)).Exec()
+			defer v2Exec(context.Background(), session, fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", ks, table))
 
 			waitForSchemaRefresh()
 
-			session.metadataDescriber.invalidateKeyspaceSchema(ks)
-			km, err := session.KeyspaceMetadata(ks)
+			require.NoError(t, session.RefreshMetadata(context.Background()))
+			km, err := cassandraKeyspace(session, ks)
 			if err != nil {
 				t.Fatalf("KeyspaceMetadata failed: %v", err)
 			}
@@ -2838,15 +1580,15 @@ func TestSessionMetadataAPIs(t *testing.T) {
 
 		t.Run("excludes_dropped_table", func(t *testing.T) {
 			table := testTableName(t)
-			if err := createTable(session, fmt.Sprintf(
+			if err := v2CreateTable(context.Background(), session, fmt.Sprintf(
 				"CREATE TABLE IF NOT EXISTS %s.%s (pk int PRIMARY KEY, v int)", ks, table)); err != nil {
 				t.Fatalf("create table: %v", err)
 			}
 
 			waitForSchemaRefresh()
 
-			session.metadataDescriber.invalidateKeyspaceSchema(ks)
-			km, err := session.KeyspaceMetadata(ks)
+			require.NoError(t, session.RefreshMetadata(context.Background()))
+			km, err := cassandraKeyspace(session, ks)
 			if err != nil {
 				t.Fatalf("KeyspaceMetadata before drop failed: %v", err)
 			}
@@ -2854,14 +1596,14 @@ func TestSessionMetadataAPIs(t *testing.T) {
 				t.Fatalf("expected table %q before drop", table)
 			}
 
-			if err := createTable(session, fmt.Sprintf("DROP TABLE %s.%s", ks, table)); err != nil {
+			if err := v2CreateTable(context.Background(), session, fmt.Sprintf("DROP TABLE %s.%s", ks, table)); err != nil {
 				t.Fatalf("drop table: %v", err)
 			}
 
 			waitForSchemaRefresh()
 
-			session.metadataDescriber.invalidateKeyspaceSchema(ks)
-			km, err = session.KeyspaceMetadata(ks)
+			require.NoError(t, session.RefreshMetadata(context.Background()))
+			km, err = cassandraKeyspace(session, ks)
 			if err != nil {
 				t.Fatalf("KeyspaceMetadata after drop failed: %v", err)
 			}
@@ -2873,17 +1615,17 @@ func TestSessionMetadataAPIs(t *testing.T) {
 		t.Run("multiple_tables", func(t *testing.T) {
 			tables := []string{testTableName(t, "a"), testTableName(t, "b"), testTableName(t, "c")}
 			for _, table := range tables {
-				if err := createTable(session, fmt.Sprintf(
+				if err := v2CreateTable(context.Background(), session, fmt.Sprintf(
 					"CREATE TABLE IF NOT EXISTS %s.%s (pk int PRIMARY KEY)", ks, table)); err != nil {
 					t.Fatalf("create table %s: %v", table, err)
 				}
-				defer session.Query(fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", ks, table)).Exec()
+				defer v2Exec(context.Background(), session, fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", ks, table))
 			}
 
 			waitForSchemaRefresh()
 
-			session.metadataDescriber.invalidateKeyspaceSchema(ks)
-			km, err := session.KeyspaceMetadata(ks)
+			require.NoError(t, session.RefreshMetadata(context.Background()))
+			km, err := cassandraKeyspace(session, ks)
 			if err != nil {
 				t.Fatalf("KeyspaceMetadata failed: %v", err)
 			}
@@ -2895,21 +1637,11 @@ func TestSessionMetadataAPIs(t *testing.T) {
 		})
 
 		t.Run("nonexistent_keyspace", func(t *testing.T) {
-			_, err := session.KeyspaceMetadata("keyspace_that_does_not_exist_xyz")
-			if err == nil {
-				t.Fatal("expected error for nonexistent keyspace, got nil")
-			}
+			_, found := session.Metadata().Keyspace("keyspace_that_does_not_exist_xyz")
+			require.False(t, found)
 		})
 
-		t.Run("empty_keyspace", func(t *testing.T) {
-			_, err := session.KeyspaceMetadata("")
-			if err == nil {
-				t.Fatal("expected error for empty keyspace, got nil")
-			}
-			if !errors.Is(err, ErrNoKeyspace) {
-				t.Errorf("expected ErrNoKeyspace, got: %v", err)
-			}
-		})
+		t.Run("empty_keyspace", func(t *testing.T) { _, found := session.Metadata().Keyspace(""); require.False(t, found) })
 	})
 }
 
@@ -2932,206 +1664,75 @@ func columnNames(columns map[string]*ColumnMetadata) []string {
 // Integration test of just querying for data from the system.schema_keyspace table where the keyspace DOES NOT exist.
 func TestGetKeyspaceMetadataFails(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
-	_, err := getKeyspaceMetadata(session, "gocql_keyspace_does_not_exist")
-
-	if err != ErrKeyspaceDoesNotExist || err == nil {
-		t.Fatalf("Expected error of type ErrKeySpaceDoesNotExist. Instead, error was %v", err)
-	}
+	_, found := session.Metadata().Keyspace("gocql_keyspace_does_not_exist")
+	require.False(t, found, "snapshot must report a missing keyspace")
 }
 
 // Integration test of the routing key calculation
 func TestRoutingKey(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t, func(c *Config) { c.Metadata.SchemaEvents = false })
 	defer session.Close()
-
-	singleTable := testTableName(t, "single")
-	compositeTable := testTableName(t, "composite")
-
-	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (first_id int, second_id int, PRIMARY KEY (first_id, second_id))", singleTable)); err != nil {
-		t.Fatalf("failed to create table with error '%v'", err)
-	}
-	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (first_id int, second_id int, PRIMARY KEY ((first_id, second_id)))", compositeTable)); err != nil {
-		t.Fatalf("failed to create table with error '%v'", err)
-	}
-
-	initCacheSize := session.routingKeyInfoCache.lru.Len()
-
-	routingKeyInfo, err := session.routingKeyInfo(context.Background(), fmt.Sprintf("SELECT * FROM %s WHERE second_id=? AND first_id=?", singleTable), "", time.Second)
-	if err != nil {
-		t.Fatalf("failed to get routing key info due to error: %v", err)
-	}
-	if routingKeyInfo == nil {
-		t.Fatal("Expected routing key info, but was nil")
-	}
-	if len(routingKeyInfo.indexes) != 1 {
-		t.Fatalf("Expected routing key indexes length to be 1 but was %d", len(routingKeyInfo.indexes))
-	}
-	if routingKeyInfo.indexes[0] != 1 {
-		t.Errorf("Expected routing key index[0] to be 1 but was %d", routingKeyInfo.indexes[0])
-	}
-	if len(routingKeyInfo.types) != 1 {
-		t.Fatalf("Expected routing key types length to be 1 but was %d", len(routingKeyInfo.types))
-	}
-	if routingKeyInfo.types[0] == nil {
-		t.Fatal("Expected routing key types[0] to be non-nil")
-	}
-	if routingKeyInfo.types[0].Type() != TypeInt {
-		t.Fatalf("Expected routing key types[0].Type to be %v but was %v", TypeInt, routingKeyInfo.types[0].Type())
-	}
-
-	// verify the cache is working
-	routingKeyInfo, err = session.routingKeyInfo(
-		context.Background(),
-		fmt.Sprintf("SELECT * FROM %s WHERE second_id=? AND first_id=?", singleTable),
-		// Routing info will be pulled from cached prepared statement, it should work with minimal timeout
-		"", time.Nanosecond)
-	if err != nil {
-		t.Fatalf("failed to get routing key info due to error: %v", err)
-	}
-	if len(routingKeyInfo.indexes) != 1 {
-		t.Fatalf("Expected routing key indexes length to be 1 but was %d", len(routingKeyInfo.indexes))
-	}
-	if routingKeyInfo.indexes[0] != 1 {
-		t.Errorf("Expected routing key index[0] to be 1 but was %d", routingKeyInfo.indexes[0])
-	}
-	if len(routingKeyInfo.types) != 1 {
-		t.Fatalf("Expected routing key types length to be 1 but was %d", len(routingKeyInfo.types))
-	}
-	if routingKeyInfo.types[0] == nil {
-		t.Fatal("Expected routing key types[0] to be non-nil")
-	}
-	if routingKeyInfo.types[0].Type() != TypeInt {
-		t.Fatalf("Expected routing key types[0] to be %v but was %v", TypeInt, routingKeyInfo.types[0].Type())
-	}
-	cacheSize := session.routingKeyInfoCache.lru.Len()
-	if cacheSize != initCacheSize+1 {
-		t.Errorf("Expected cache size to be %d but was %d", initCacheSize+1, cacheSize)
-	}
-
-	query := session.Query(fmt.Sprintf("SELECT * FROM %s WHERE second_id=? AND first_id=?", singleTable), 1, 2)
-	routingKey, err := query.GetRoutingKey()
-	if err != nil {
-		t.Fatalf("Failed to get routing key due to error: %v", err)
-	}
-	expectedRoutingKey := []byte{0, 0, 0, 2}
-	if !reflect.DeepEqual(expectedRoutingKey, routingKey) {
-		t.Errorf("Expected routing key %v but was %v", expectedRoutingKey, routingKey)
-	}
-
-	routingKeyInfo, err = session.routingKeyInfo(
-		context.Background(),
-		fmt.Sprintf("SELECT * FROM %s WHERE second_id=? AND first_id=?", compositeTable),
-		"", time.Second)
-	if err != nil {
-		t.Fatalf("failed to get routing key info due to error: %v", err)
-	}
-	if routingKeyInfo == nil {
-		t.Fatal("Expected routing key info, but was nil")
-	}
-	if len(routingKeyInfo.indexes) != 2 {
-		t.Fatalf("Expected routing key indexes length to be 2 but was %d", len(routingKeyInfo.indexes))
-	}
-	if routingKeyInfo.indexes[0] != 1 {
-		t.Errorf("Expected routing key index[0] to be 1 but was %d", routingKeyInfo.indexes[0])
-	}
-	if routingKeyInfo.indexes[1] != 0 {
-		t.Errorf("Expected routing key index[1] to be 0 but was %d", routingKeyInfo.indexes[1])
-	}
-	if len(routingKeyInfo.types) != 2 {
-		t.Fatalf("Expected routing key types length to be 1 but was %d", len(routingKeyInfo.types))
-	}
-	if routingKeyInfo.types[0] == nil {
-		t.Fatal("Expected routing key types[0] to be non-nil")
-	}
-	if routingKeyInfo.types[0].Type() != TypeInt {
-		t.Fatalf("Expected routing key types[0] to be %v but was %v", TypeInt, routingKeyInfo.types[0].Type())
-	}
-	if routingKeyInfo.types[1] == nil {
-		t.Fatal("Expected routing key types[1] to be non-nil")
-	}
-	if routingKeyInfo.types[1].Type() != TypeInt {
-		t.Fatalf("Expected routing key types[0] to be %v but was %v", TypeInt, routingKeyInfo.types[1].Type())
-	}
-
-	query = session.Query(fmt.Sprintf("SELECT * FROM %s WHERE second_id=? AND first_id=?", compositeTable), 1, 2)
-	routingKey, err = query.GetRoutingKey()
-	if err != nil {
-		t.Fatalf("Failed to get routing key due to error: %v", err)
-	}
-	expectedRoutingKey = []byte{0, 4, 0, 0, 0, 2, 0, 0, 4, 0, 0, 0, 1, 0}
-	if !reflect.DeepEqual(expectedRoutingKey, routingKey) {
-		t.Errorf("Expected routing key %v but was %v", expectedRoutingKey, routingKey)
-	}
-
-	// verify the cache is working
-	cacheSize = session.routingKeyInfoCache.lru.Len()
-	if cacheSize != initCacheSize+2 {
-		t.Errorf("Expected cache size to be %d but was %d", initCacheSize+2, cacheSize)
+	single, composite := testTableName(t, "single"), testTableName(t, "composite")
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(first_id int,second_id int,PRIMARY KEY(first_id,second_id))", single))
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(first_id int,second_id int,PRIMARY KEY((first_id,second_id)))", composite))
+	runtime := session.typedRuntime()
+	runtime.mu.Lock()
+	initial := len(runtime.prepared)
+	runtime.mu.Unlock()
+	for i, tc := range []struct {
+		table   string
+		indexes []int
+		key     []byte
+	}{{single, []int{1}, []byte{0, 0, 0, 2}}, {composite, []int{1, 0}, []byte{0, 4, 0, 0, 0, 2, 0, 0, 4, 0, 0, 0, 1, 0}}} {
+		statement := Statement[[]Value, DynamicRow]{CQL: fmt.Sprintf("SELECT * FROM %s WHERE second_id=? AND first_id=?", tc.table), Params: DynamicParams, Rows: DynamicRows}
+		prepared := cassandraPrepared(t, session, statement, PrepareOptions{})
+		require.Equal(t, tc.indexes, prepared.Info().PartitionKeyIndexes)
+		for _, index := range tc.indexes {
+			column, ok := prepared.Parameters().At(index)
+			require.True(t, ok)
+			require.Equal(t, TypeInt, column.Type.Kind())
+		}
+		again := cassandraPrepared(t, session, statement, PrepareOptions{})
+		require.Same(t, prepared.state, again.state, "preparing again must hit typed cache")
+		bound := cassandraBound(t, prepared, []Value{IntValue(1), IntValue(2)})
+		require.True(t, bound.Routing().Token.Set)
+		require.Equal(t, murmur.Murmur3H1(tc.key), bound.Routing().Token.Value)
+		runtime.mu.Lock()
+		size := len(runtime.prepared)
+		runtime.mu.Unlock()
+		require.Equal(t, initial+i+1, size)
 	}
 }
 
 // Integration test of the token-aware policy-based connection pool
 func TestTokenAwareConnPool(t *testing.T) {
 	t.Parallel()
-
-	cluster := createCluster()
-	cluster.PoolConfig.HostSelectionPolicy = TokenAwareHostPolicy(RoundRobinHostPolicy())
-
-	// force metadata query to page
-	cluster.PageSize = 1
-
-	session := createSessionFromCluster(cluster, t)
+	session := createV2Session(t, func(c *Config) {
+		c.Pool.ConnectionsPerHost = 1
+		p := c.DefaultProfile.Snapshot()
+		p.PageSize = 1
+		require.NoError(t, c.DefaultProfile.Replace(p))
+	})
 	defer session.Close()
-
-	expectedPoolSize := cluster.NumConns * len(session.hostSource.getHostsList())
-
-	// wait for pool to fill
-	for i := 0; i < 50; i++ {
-		if session.pool.Size() == expectedPoolSize {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
+	conns := waitForHostConns(t, session)
+	require.Len(t, conns, len(session.Metadata().Hosts()))
+	table, other := testTableName(t), testTableName(t, "other")
+	for _, name := range []string{table, other} {
+		cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,data text)", name))
 	}
-
-	if expectedPoolSize != session.pool.Size() {
-		t.Errorf("Expected pool size %d but was %d", expectedPoolSize, session.pool.Size())
-	}
-
-	table := testTableName(t)
-	otherTable := testTableName(t, "other")
-
-	// add another cf so there are two pages when fetching table metadata from our keyspace
-	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int, data text, PRIMARY KEY (id))", otherTable)); err != nil {
-		t.Fatalf("failed to create test_token_aware table with err: %v", err)
-	}
-
-	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int, data text, PRIMARY KEY (id))", table)); err != nil {
-		t.Fatalf("failed to create test_token_aware table with err: %v", err)
-	}
-	query := session.Query(fmt.Sprintf("INSERT INTO %s (id, data) VALUES (?,?)", table), 42, "8 * 6 =")
-	if err := query.Exec(); err != nil {
-		t.Fatalf("failed to insert with err: %v", err)
-	}
-
-	query = session.Query(fmt.Sprintf("SELECT data FROM %s where id = ?", table), 42).Consistency(One)
-	var data string
-	if err := query.Scan(&data); err != nil {
-		t.Error(err)
-	}
-
-	// TODO add verification that the query went to the correct host
+	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(id,data) VALUES(?,?)", table), IntValue(42), TextValue("8 * 6 ="))
+	bound := cassandraDynamicBound(t, session, fmt.Sprintf("SELECT data FROM %s WHERE id=?", table), []Value{IntValue(42)}, PrepareOptions{})
+	require.True(t, bound.Routing().Token.Set)
+	require.Equal(t, "8 * 6 =", cassandraText(t, cassandraReadBound(t, session, bound, Options{Consistency: Option[Consistency]{Value: One, Set: true}}), "data"))
 }
 
 func TestNegativeStream(t *testing.T) {
 	t.Parallel()
 
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
 
 	conn := getRandomConn(t, session)
@@ -3152,392 +1753,201 @@ func TestNegativeStream(t *testing.T) {
 
 func TestManualQueryPaging(t *testing.T) {
 	t.Parallel()
-
-	const rowsToInsert = 5
-
-	session := createSession(t)
+	const count = 5
+	session := createV2Session(t)
 	defer session.Close()
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int, count int, PRIMARY KEY (id))", table)); err != nil {
-		t.Fatal(err)
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,count int)", table))
+	for i := int32(0); i < count; i++ {
+		cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(id,count) VALUES(?,?)", table), IntValue(i), IntValue(i*i))
 	}
-
-	for i := 0; i < rowsToInsert; i++ {
-		err := session.Query(fmt.Sprintf("INSERT INTO %s(id, count) VALUES(?, ?)", table), i, i*i).Exec()
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	// disable auto paging, 1 page per iteration
-	query := session.Query(fmt.Sprintf("SELECT id, count FROM %s", table)).PageState(nil).PageSize(2)
-	var id, count, fetched int
-
-	iter := query.Iter()
-	// NOTE: this isnt very indicative of how it should be used, the idea is that
-	// the page state is returned to some client who will send it back to manually
-	// page through the results.
+	bound := cassandraUnprepared(t, "SELECT id,count FROM "+table, DynamicRows)
+	state := StartPage()
+	fetched := 0
 	for {
-		for iter.Scan(&id, &count) {
-			if count != (id * id) {
-				t.Fatalf("got wrong value from iteration: got %d expected %d", count, id*id)
-			}
-
+		page, err := RunPage(context.Background(), session, bound, state, Options{PageSize: Option[int32]{Value: 2, Set: true}})
+		require.NoError(t, err)
+		defer page.Close()
+		for page.Next() {
+			row := page.Row()
+			id := cassandraInt(t, row, "id")
+			require.Equal(t, id*id, cassandraInt(t, row, "count"))
 			fetched++
 		}
-
-		if !iter.LastPage() {
-			// more pages
-			iter = query.PageState(iter.PageState()).Iter()
-		} else {
+		state = page.State()
+		require.NoError(t, page.Close())
+		if state.Complete() {
 			break
 		}
+		state = RestorePageState(state.Bytes())
 	}
-
-	if err := iter.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	if fetched != rowsToInsert {
-		t.Fatalf("expected to fetch %d rows got %d", rowsToInsert, fetched)
-	}
+	require.Equal(t, count, fetched)
 }
 
 // Issue 475
 func TestSessionBindRoutingKey(t *testing.T) {
 	t.Parallel()
-
-	cluster := createCluster()
-	cluster.PoolConfig.HostSelectionPolicy = TokenAwareHostPolicy(RoundRobinHostPolicy())
-
-	session := createSessionFromCluster(cluster, t)
+	session := createV2Session(t)
 	defer session.Close()
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (
-			key     varchar,
-			value   int,
-			PRIMARY KEY (key)
-		)`, table)); err != nil {
-
-		t.Fatal(err)
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(key varchar PRIMARY KEY,value int)", table))
+	type input struct {
+		Key   string
+		Value int32
 	}
-
-	const (
-		key   = "routing-key"
-		value = 5
-	)
-
-	fn := func(info *QueryInfo) ([]any, error) {
-		return []any{key, value}, nil
-	}
-
-	q := session.Bind(fmt.Sprintf("INSERT INTO %s(key, value) VALUES(?, ?)", table), fn)
-	if err := q.Exec(); err != nil {
-		t.Fatal(err)
-	}
+	params := Params(Param("key", StringEncoder, func(v input) string { return v.Key }), Param("value", Int32, func(v input) int32 { return v.Value }))
+	prepared := cassandraPrepared(t, session, Statement[input, Unit]{CQL: fmt.Sprintf("INSERT INTO %s(key,value) VALUES(?,?)", table), Params: params, Rows: NoRows}, PrepareOptions{})
+	require.Equal(t, []int{0}, prepared.Info().PartitionKeyIndexes)
+	bound := cassandraBound(t, prepared, input{"routing-key", 5})
+	require.True(t, bound.Routing().Token.Set)
+	require.Equal(t, murmur.Murmur3H1([]byte("routing-key")), bound.Routing().Token.Value)
+	_, err := Exec(context.Background(), session, bound, Options{})
+	require.NoError(t, err)
 }
 
 func TestJSONSupport(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
-	if session.cfg.ProtoVersion < protoVersion4 {
+	if session.cfg.ProtoVersion < 4 {
 		t.Skip("skipping JSON support on proto < 4")
 	}
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (
-		    id text PRIMARY KEY,
-		    age int,
-		    state text
-		)`, table)); err != nil {
-
-		t.Fatal(err)
-	}
-
-	err := session.Query(fmt.Sprintf("INSERT INTO %s JSON ?", table), `{"id": "user123", "age": 42, "state": "TX"}`).Exec()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var (
-		id    string
-		age   int
-		state string
-	)
-
-	err = session.Query(fmt.Sprintf("SELECT id, age, state FROM %s WHERE id = ?", table), "user123").Scan(&id, &age, &state)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if id != "user123" {
-		t.Errorf("got id %q expected %q", id, "user123")
-	}
-	if age != 42 {
-		t.Errorf("got age %d expected %d", age, 42)
-	}
-	if state != "TX" {
-		t.Errorf("got state %q expected %q", state, "TX")
-	}
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id text PRIMARY KEY,age int,state text)", table))
+	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s JSON ?", table), TextValue(`{"id": "user123", "age": 42, "state": "TX"}`))
+	row := cassandraRead(t, session, fmt.Sprintf("SELECT id,age,state FROM %s WHERE id=?", table), TextValue("user123"))
+	require.Equal(t, "user123", cassandraText(t, row, "id"))
+	require.Equal(t, int64(42), cassandraInt(t, row, "age"))
+	require.Equal(t, "TX", cassandraText(t, row, "state"))
 }
 
 func TestUnmarshallNestedTypes(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (
-		    id text PRIMARY KEY,
-		    val list<frozen<map<text, text> > >
-		)`, table)); err != nil {
-
-		t.Fatal(err)
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id text PRIMARY KEY,val list<frozen<map<text,text>>>)", table))
+	type nested = []Entry[string, string]
+	want := []nested{{{Key: "key1", Value: "val1"}}, {{Key: "key2", Value: "val2"}}}
+	prepared := cassandraPrepared(t, session, Statement[[]nested, Unit]{CQL: fmt.Sprintf("INSERT INTO %s(id,val) VALUES('key',?)", table), Params: OneParam(ListEncoder(MapEncoder(StringEncoder, StringEncoder))), Rows: NoRows}, PrepareOptions{})
+	_, err := Exec(context.Background(), session, cassandraBound(t, prepared, want), Options{})
+	require.NoError(t, err)
+	row := cassandraReadBound(t, session, cassandraUnprepared(t, fmt.Sprintf("SELECT val FROM %s WHERE id='key'", table), OneColumn(ListDecoder(MapDecoder(TextCodec, TextCodec)))), Options{})
+	iter := row.Iterator()
+	var got []nested
+	for iter.Next() {
+		var entries nested
+		mapIter := iter.Value().Iterator()
+		for mapIter.Next() {
+			entry := mapIter.Value()
+			entries = append(entries, Entry[string, string]{Key: entry.Key.String(), Value: entry.Value.String()})
+		}
+		require.NoError(t, mapIter.Err())
+		got = append(got, entries)
 	}
-
-	m := []map[string]string{
-		{"key1": "val1"},
-		{"key2": "val2"},
-	}
-
-	const id = "key"
-	err := session.Query(fmt.Sprintf("INSERT INTO %s(id, val) VALUES(?, ?)", table), id, m).Exec()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var data []map[string]string
-	if err := session.Query(fmt.Sprintf("SELECT val FROM %s WHERE id = ?", table), id).Scan(&data); err != nil {
-		t.Fatal(err)
-	}
-
-	if !reflect.DeepEqual(data, m) {
-		t.Fatalf("%+#v != %+#v", data, m)
-	}
+	require.NoError(t, iter.Err())
+	require.Equal(t, want, got)
 }
 
 func TestSchemaReset(t *testing.T) {
 	t.Parallel()
-
 	if flagCassVersion.Major == 0 || flagCassVersion.Before(2, 1, 3) {
 		t.Skipf("skipping TestSchemaReset due to CASSANDRA-7910 in Cassandra <2.1.3 version=%v", flagCassVersion)
 	}
-
-	cluster := createCluster()
-	cluster.NumConns = 1
-
-	session := createSessionFromCluster(cluster, t)
+	session := createV2Session(t, func(c *Config) { c.Pool.ConnectionsPerHost = 1 })
 	defer session.Close()
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (
-		id text PRIMARY KEY)`, table)); err != nil {
-
-		t.Fatal(err)
-	}
-
-	const key = "test"
-
-	err := session.Query(fmt.Sprintf("INSERT INTO %s(id) VALUES(?)", table), key).Exec()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var id string
-	err = session.Query(fmt.Sprintf("SELECT * FROM %s WHERE id=?", table), key).Scan(&id)
-	if err != nil {
-		t.Fatal(err)
-	} else if id != key {
-		t.Fatalf("expected to get id=%q got=%q", key, id)
-	}
-
-	if err := createTable(session, fmt.Sprintf(`ALTER TABLE gocql_test.%s ADD val text`, table)); err != nil {
-		t.Fatal(err)
-	}
-
-	const expVal = "test-val"
-	err = session.Query(fmt.Sprintf("INSERT INTO %s(id, val) VALUES(?, ?)", table), key, expVal).Exec()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var val string
-	err = session.Query(fmt.Sprintf("SELECT * FROM %s WHERE id=?", table), key).Scan(&id, &val)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if id != key {
-		t.Errorf("expected to get id=%q got=%q", key, id)
-	}
-	if val != expVal {
-		t.Errorf("expected to get val=%q got=%q", expVal, val)
-	}
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id text PRIMARY KEY)", table))
+	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(id) VALUES(?)", table), TextValue("test"))
+	selectCQL := fmt.Sprintf("SELECT * FROM %s WHERE id=?", table)
+	before := cassandraDynamicBound(t, session, selectCQL, []Value{TextValue("test")}, PrepareOptions{})
+	require.Equal(t, "test", cassandraText(t, cassandraReadBound(t, session, before, Options{}), "id"))
+	cassandraDDL(t, session, fmt.Sprintf("ALTER TABLE %s ADD val text", table))
+	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(id,val) VALUES(?,?)", table), TextValue("test"), TextValue("test-val"))
+	row := cassandraReadBound(t, session, before, Options{})
+	require.Equal(t, "test", cassandraText(t, row, "id"))
+	require.Equal(t, "test-val", cassandraText(t, row, "val"))
 }
 
 func TestCreateSession_DontSwallowError(t *testing.T) {
 	t.Parallel()
-
-	t.Skip("This test is bad, and the resultant error from cassandra changes between versions")
-	cluster := createCluster()
-	cluster.ProtoVersion = 0x100
-	session, err := cluster.CreateSession()
+	config := createV2Cluster()
+	config.Protocol = 0x100
+	session, err := Connect(context.Background(), config)
 	if err == nil {
 		session.Close()
-
-		t.Fatal("expected to get an error for unsupported protocol")
+		t.Fatal("expected unsupported protocol error")
 	}
-
-	if flagCassVersion.Major < 3 {
-		// TODO: we should get a distinct error type here which include the underlying
-		// cassandra error about the protocol version, for now check this here.
-		if !strings.Contains(err.Error(), "Invalid or unsupported protocol version") {
-			t.Fatalf(`expcted to get error "unsupported protocol version" got: %q`, err)
-		}
-	} else {
-		if !strings.Contains(err.Error(), "unsupported response version") {
-			t.Fatalf(`expcted to get error "unsupported response version" got: %q`, err)
-		}
-	}
+	require.Contains(t, err.Error(), "protocol")
 }
 
 func TestControl_DiscoverProtocol(t *testing.T) {
 	t.Parallel()
-
-	cluster := createCluster()
-	cluster.ProtoVersion = 0
-	// Run without compression so the negotiated protocol is the only variable
-	// under test.
-	//
-	// Upstream needs this because there discoverProtocol can settle on v5, which
-	// rejects snappy. In this fork discoverProtocol is pinned to protoVersion4
-	// (see control.go), so v5 is never negotiated and snappy would in fact be
-	// accepted — the override is kept for parity with upstream, not because
-	// snappy would fail here.
-	cluster.Compressor = nil
-
-	session, err := cluster.CreateSession()
-	if err != nil {
-		t.Fatal(err)
-	}
+	config := createV2Cluster()
+	config.Protocol = 0
+	config.Compression = NoCompression
+	session, err := Connect(context.Background(), config)
+	require.NoError(t, err)
 	defer session.Close()
-
-	if session.cfg.ProtoVersion == 0 {
-		t.Fatal("did not discovery protocol")
-	}
+	require.NotZero(t, session.cfg.ProtoVersion)
 }
 
 // TestUnsetCol verify unset column will not replace an existing column
 func TestUnsetCol(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
-	if session.cfg.ProtoVersion < protoVersion4 {
+	if session.cfg.ProtoVersion < 4 {
 		t.Skip("Unset Values are not supported in protocol < 4")
 	}
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int, my_int int, my_text text, PRIMARY KEY (id))", table)); err != nil {
-		t.Fatalf("failed to create table with error '%v'", err)
-	}
-	if err := session.Query(fmt.Sprintf("INSERT INTO %s (id,my_int,my_text) VALUES (?,?,?)", table), 1, 2, "3").Exec(); err != nil {
-		t.Fatalf("failed to insert with err: %v", err)
-	}
-	if err := session.Query(fmt.Sprintf("INSERT INTO %s (id,my_int,my_text) VALUES (?,?,?)", table), 1, UnsetValue, UnsetValue).Exec(); err != nil {
-		t.Fatalf("failed to insert with err: %v", err)
-	}
-
-	var id, mInt int
-	var mText string
-
-	if err := session.Query(fmt.Sprintf("SELECT id, my_int ,my_text FROM %s", table)).Scan(&id, &mInt, &mText); err != nil {
-		t.Fatalf("failed to select with err: %v", err)
-	} else if id != 1 || mInt != 2 || mText != "3" {
-		t.Fatalf("Expected results: 1, 2, \"3\", got %v, %v, %v", id, mInt, mText)
-	}
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,my_int int,my_text text)", table))
+	cql := fmt.Sprintf("INSERT INTO %s(id,my_int,my_text) VALUES(?,?,?)", table)
+	cassandraWrite(t, session, cql, IntValue(1), IntValue(2), TextValue("3"))
+	cassandraWrite(t, session, cql, IntValue(1), UnsetDynamic(IntValue(0).Type()), UnsetDynamic(TextValue("").Type()))
+	row := cassandraRead(t, session, "SELECT id,my_int,my_text FROM "+table)
+	require.Equal(t, int64(1), cassandraInt(t, row, "id"))
+	require.Equal(t, int64(2), cassandraInt(t, row, "my_int"))
+	require.Equal(t, "3", cassandraText(t, row, "my_text"))
 }
 
 // TestUnsetColBatch verify unset column will not replace a column in batch
 func TestUnsetColBatch(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
-	if session.cfg.ProtoVersion < protoVersion4 {
+	if session.cfg.ProtoVersion < 4 {
 		t.Skip("Unset Values are not supported in protocol < 4")
 	}
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int, my_int int, my_text text, PRIMARY KEY (id))", table)); err != nil {
-		t.Fatalf("failed to create table with error '%v'", err)
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,my_int int,my_text text)", table))
+	cql := fmt.Sprintf("INSERT INTO %s(id,my_int,my_text) VALUES(?,?,?)", table)
+	var items []BatchItem
+	for _, values := range [][]Value{{IntValue(1), IntValue(1), UnsetDynamic(TextValue("").Type())}, {IntValue(1), UnsetDynamic(IntValue(0).Type()), TextValue("")}, {IntValue(2), IntValue(2), UnsetDynamic(TextValue("").Type())}} {
+		items = append(items, cassandraItem(t, cassandraWriteBound(t, session, cql, values, PrepareOptions{})))
 	}
-
-	b := session.Batch(LoggedBatch)
-	b.Query(fmt.Sprintf("INSERT INTO gocql_test.%s(id, my_int, my_text) VALUES (?,?,?)", table), 1, 1, UnsetValue)
-	b.Query(fmt.Sprintf("INSERT INTO gocql_test.%s(id, my_int, my_text) VALUES (?,?,?)", table), 1, UnsetValue, "")
-	b.Query(fmt.Sprintf("INSERT INTO gocql_test.%s(id, my_int, my_text) VALUES (?,?,?)", table), 2, 2, UnsetValue)
-
-	if err := session.ExecuteBatch(b); err != nil {
-		t.Fatalf("query failed. %v", err)
-	} else {
-		if b.Attempts() < 1 {
-			t.Fatal("expected at least 1 attempt, but got 0")
-		}
-		if b.Latency() <= 0 {
-			t.Fatalf("expected latency to be greater than 0, but got %v instead.", b.Latency())
-		}
-	}
-	var id, mInt, count int
-	var mText string
-	if err := session.Query(fmt.Sprintf("SELECT count(*) FROM gocql_test.%s;", table)).Scan(&count); err != nil {
-		t.Fatalf("Failed to select with err: %v", err)
-	} else if count != 2 {
-		t.Fatalf("Expected Batch Insert count 2, got %v", count)
-	}
-
-	if err := session.Query(fmt.Sprintf("SELECT id, my_int ,my_text FROM gocql_test.%s where id=1;", table)).Scan(&id, &mInt, &mText); err != nil {
-		t.Fatalf("failed to select with err: %v", err)
-	} else if id != mInt {
-		t.Fatalf("expected id, my_int to be 1, got %v and %v", id, mInt)
-	}
+	info := cassandraBatch(t, session, LoggedBatch, items, Options{})
+	require.Positive(t, info.Attempts)
+	require.Positive(t, info.Latency)
+	require.Equal(t, int64(2), cassandraInt(t, cassandraRead(t, session, "SELECT count(*) FROM "+table), "count"))
+	row := cassandraRead(t, session, "SELECT id,my_int,my_text FROM "+table+" WHERE id=1")
+	require.Equal(t, int64(1), cassandraInt(t, row, "id"))
+	require.Equal(t, int64(1), cassandraInt(t, row, "my_int"))
+	require.Equal(t, "", cassandraText(t, row, "my_text"))
 }
 
 func TestQuery_NamedValues(t *testing.T) {
 	t.Parallel()
-
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
 	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s(id int, value text, PRIMARY KEY (id))", table)); err != nil {
-		t.Fatal(err)
-	}
-
-	err := session.Query(fmt.Sprintf("INSERT INTO gocql_test.%s(id, value) VALUES(:id, :value)", table), NamedValue("id", 1), NamedValue("value", "i am a value")).Exec()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var value string
-	if err := session.Query(fmt.Sprintf("SELECT VALUE from gocql_test.%s WHERE id = :id", table), NamedValue("id", 1)).Scan(&value); err != nil {
-		t.Fatal(err)
-	}
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,value text)", table))
+	prepared := cassandraPrepared(t, session, Statement[[]ValueField, Unit]{CQL: fmt.Sprintf("INSERT INTO %s(id,value) VALUES(:id,:value)", table), Params: NamedDynamicParams, Rows: NoRows}, PrepareOptions{})
+	bound := cassandraBound(t, prepared, []ValueField{{Name: "value", Value: TextValue("i am a value")}, {Name: "id", Value: IntValue(1)}})
+	_, err := Exec(context.Background(), session, bound, Options{})
+	require.NoError(t, err)
+	read := cassandraPrepared(t, session, Statement[[]ValueField, Text]{CQL: fmt.Sprintf("SELECT value FROM %s WHERE id=:id", table), Params: NamedDynamicParams, Rows: OneColumn(TextCodec)}, PrepareOptions{})
+	require.Equal(t, "i am a value", cassandraReadBound(t, session, cassandraBound(t, read, []ValueField{{Name: "id", Value: IntValue(1)}}), Options{}).String())
 }
 
 // TestQuery_SetHostID ensures that queries are sent to the specified host only.
@@ -3546,182 +1956,79 @@ func TestQuery_NamedValues(t *testing.T) {
 //
 //nolint:paralleltest // mutates shared HostInfo state via setState(NodeDown)
 func TestQuery_SetHostID(t *testing.T) {
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
-	hosts := session.GetHosts()
-
-	const iterations = 5
-	for _, expectedHost := range hosts {
-		for i := 0; i < iterations; i++ {
-			var actualHostID string
-			err := session.Query("SELECT host_id FROM system.local").
-				SetHostID(expectedHost.HostID()).
-				Scan(&actualHostID)
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			if expectedHost.HostID() != actualHostID {
-				t.Fatalf("Expected query to be executed on host %s, but it was executed on %s",
-					expectedHost.HostID(),
-					actualHostID,
-				)
-			}
+	waitForHostConns(t, session)
+	bound := cassandraUnprepared(t, "SELECT host_id FROM system.local", OneColumn(UUIDCodec))
+	hosts := session.Metadata().Hosts()
+	for _, host := range hosts {
+		for i := 0; i < 5; i++ {
+			require.Equal(t, host.ID, cassandraReadBound(t, session, bound, Options{HostID: Option[UUID]{Value: host.ID, Set: true}}))
 		}
 	}
-
-	// ensuring properly handled invalid host id
-	err := session.Query("SELECT host_id FROM system.local").
-		SetHostID("[invalid]").
-		Exec()
-	if !errors.Is(err, ErrNoPool) {
-		t.Fatalf("Expected error to be: %v, but got %v", ErrNoPool, err)
-	}
-
-	// ensuring that the driver properly handles the case
-	// when specified host for the query is down
+	_, err := ParseUUID("[invalid]")
+	require.Error(t, err, "invalid host IDs are rejected while constructing typed UUIDs")
+	_, err = Run(context.Background(), session, bound, Options{HostID: Option[UUID]{Value: UUID{}, Set: true}})
+	require.ErrorIs(t, err, ErrNoConnections)
 	host := hosts[0]
-	pool, _ := session.pool.getPoolByHostID(host.HostID())
-	// simulating specified host is down
+	pool, ok := session.pool.getPoolByHostID(host.ID.String())
+	require.True(t, ok)
 	pool.host.setState(NodeDown)
-	err = session.Query("SELECT host_id FROM system.local").
-		SetHostID(host.HostID()).
-		Exec()
-	if !errors.Is(err, ErrHostDown) {
-		t.Fatalf("Expected error to be: %v, but got %v", ErrHostDown, err)
-	}
+	defer pool.host.setState(NodeUp)
+	_, err = Run(context.Background(), session, bound, Options{HostID: Option[UUID]{Value: host.ID, Set: true}})
+	require.ErrorIs(t, err, ErrNoConnections)
 }
 
 func TestQuery_WithNowInSeconds(t *testing.T) {
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
-	if session.cfg.ProtoVersion < protoVersion5 {
+	if session.cfg.ProtoVersion < 5 {
 		t.Skip("Query now in seconds are only available on protocol >= 5")
 	}
-
-	if err := createTable(session, `CREATE TABLE IF NOT EXISTS query_now_in_seconds (id int primary key, val text)`); err != nil {
-		t.Fatal(err)
-	}
-
-	err := session.Query("INSERT INTO query_now_in_seconds (id, val) VALUES (?, ?) USING TTL 20", 1, "val").
-		WithNowInSeconds(int(0)).
-		Exec()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var remainingTTL int
-	err = session.Query(`SELECT TTL(val) FROM query_now_in_seconds WHERE id = ?`, 1).
-		WithNowInSeconds(10).
-		Scan(&remainingTTL)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	require.Equal(t, 10, remainingTTL)
+	table := testTableName(t)
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,val text)", table))
+	write := cassandraWriteBound(t, session, fmt.Sprintf("INSERT INTO %s(id,val) VALUES(?,?) USING TTL 20", table), []Value{IntValue(1), TextValue("val")}, PrepareOptions{})
+	_, err := Exec(context.Background(), session, write, Options{NowInSeconds: Option[int32]{Value: 0, Set: true}})
+	require.NoError(t, err)
+	read := cassandraPrepared(t, session, Statement[int32, int32]{CQL: fmt.Sprintf("SELECT TTL(val) FROM %s WHERE id=?", table), Params: OneParam(Int32), Rows: OneColumn(Int32)}, PrepareOptions{})
+	require.Equal(t, int32(10), cassandraReadBound(t, session, cassandraBound(t, read, int32(1)), Options{NowInSeconds: Option[int32]{Value: 10, Set: true}}))
 }
 
 func TestQuery_SetKeyspace(t *testing.T) {
-	const keyspace = "gocql_query_keyspace_override_test"
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
-	if session.cfg.ProtoVersion < protoVersion5 {
+	if session.cfg.ProtoVersion < 5 {
 		t.Skip("keyspace for QUERY message is not supported in protocol < 5")
 	}
-
-	keyspaceStmt := fmt.Sprintf(`
-		CREATE KEYSPACE IF NOT EXISTS %s
-		WITH replication = {
-			'class': 'SimpleStrategy',
-			'replication_factor': '1'
-		};
-	`, keyspace)
-
-	err := session.Query(keyspaceStmt).Exec()
-	if err != nil {
-		t.Fatal(err)
+	ks := testKeyspaceName(t)
+	table := testTableName(t)
+	cassandraDDL(t, session, fmt.Sprintf("CREATE KEYSPACE %s WITH replication={'class':'SimpleStrategy','replication_factor':'1'}", ks))
+	defer cassandraDDL(t, session, "DROP KEYSPACE "+ks)
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s.%s(id int PRIMARY KEY,value text)", ks, table))
+	write := cassandraWriteBound(t, session, fmt.Sprintf("INSERT INTO %s(id,value) VALUES(?,?)", table), []Value{IntValue(1), TextValue("text")}, PrepareOptions{Keyspace: ks})
+	_, err := Exec(context.Background(), session, write, Options{Keyspace: ks})
+	require.NoError(t, err)
+	prepared := cassandraPrepared(t, session, Statement[Unit, DynamicRow]{CQL: "SELECT * FROM " + table, Params: NoParams, Rows: DynamicRows}, PrepareOptions{Keyspace: ks})
+	for _, bound := range []*Bound[DynamicRow]{cassandraBound(t, prepared, Unit{}), cassandraUnprepared(t, "SELECT * FROM "+table, DynamicRows)} {
+		row := cassandraReadBound(t, session, bound, Options{Keyspace: ks})
+		require.Equal(t, int64(1), cassandraInt(t, row, "id"))
+		require.Equal(t, "text", cassandraText(t, row, "value"))
 	}
-
-	err = createTable(session, fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s.query_keyspace(id int, value text, PRIMARY KEY (id))", keyspace))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	expectedID := 1
-	expectedText := "text"
-
-	// Testing PREPARE message
-	err = session.Query("INSERT INTO query_keyspace (id, value) VALUES (?, ?)", expectedID, expectedText).
-		SetKeyspace(keyspace).Exec()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var (
-		id   int
-		text string
-	)
-
-	q := session.Query("SELECT * FROM query_keyspace").
-		SetKeyspace(keyspace)
-	err = q.Scan(&id, &text)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	require.Equal(t, expectedID, id)
-	require.Equal(t, expectedText, text)
-
-	// Testing QUERY message
-	id = 0
-	text = ""
-
-	q = session.Query("SELECT * FROM query_keyspace").
-		SetKeyspace(keyspace)
-	q.skipPrepare = true
-	err = q.Scan(&id, &text)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	require.Equal(t, expectedID, id)
-	require.Equal(t, expectedText, text)
 }
 
 // TestLargeSizeQuery runs a query bigger than the max allowed size of the payload of a frame,
 // so it should be sent as 2 different frames where each contains a self-contained bit set to zero.
 func TestLargeSizeQuery(t *testing.T) {
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
-	// Segmentation only exists on proto v5. Below that this is just an ordinary
-	// large frame, so without the guard the test passes green while exercising
-	// none of what its doc comment claims.
-	if session.cfg.ProtoVersion < protoVersion5 {
+	if session.cfg.ProtoVersion < 5 {
 		t.Skip("segmented frames are only produced on protocol >= 5")
 	}
-
-	if err := createTable(session, "CREATE TABLE IF NOT EXISTS gocql_test.large_size_query(id int, text_col text, PRIMARY KEY (id))"); err != nil {
-		t.Fatal(err)
-	}
-
-	longString := strings.Repeat("a", 500_000)
-
-	err := session.Query("INSERT INTO gocql_test.large_size_query (id, text_col) VALUES (?, ?)", 1, longString).Exec()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var result string
-	err = session.Query("SELECT text_col FROM gocql_test.large_size_query").Scan(&result)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	require.Equal(t, longString, result)
+	table := testTableName(t)
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,text_col text)", table))
+	text := strings.Repeat("a", 500000)
+	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(id,text_col) VALUES(?,?)", table), IntValue(1), TextValue(text))
+	require.Equal(t, text, cassandraText(t, cassandraRead(t, session, "SELECT text_col FROM "+table), "text_col"))
 }
 
 // TestCompressorNegotiated pins the compressor the suite was asked for to the one the
@@ -3752,7 +2059,7 @@ func TestCompressorNegotiated(t *testing.T) {
 		t.Skip("no compressor requested")
 	}
 
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
 
 	conns := waitForHostConns(t, session)
@@ -3777,72 +2084,25 @@ func TestCompressorNegotiated(t *testing.T) {
 //  2. Uncompressed length is set to zero;
 //  3. Payload is the uncompressed payload.
 func TestQueryCompressionNotWorthIt(t *testing.T) {
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
-
-	// The compressed-segment "not worth it" encoding requires both proto v5 and
-	// an actual segment compressor. Without both, this test round-trips a short
-	// string over an uncompressed frame and proves nothing.
-	if session.cfg.ProtoVersion < protoVersion5 {
+	if session.cfg.ProtoVersion < 5 {
 		t.Skip("compressed segments are only produced on protocol >= 5")
 	}
-	// Check a connection, not session.cfg: startupCoordinator.startup drops the
-	// compressor when the server's SUPPORTED list does not name it, leaving cfg set
-	// while nothing is actually compressed. Skipping on cfg alone would let this test
-	// pass having round-tripped a plain uncompressed segment.
-	//
-	// This is a smoke check on one pooled connection, not a statement about the lane:
-	// the queries below route through the token-aware policy to whichever replica owns
-	// the key, which need not be this one. TestCompressorNegotiated is what checks
-	// every host.
-	if conn := getRandomConn(t, session); conn.compressor == nil {
+	if getRandomConn(t, session).compressor == nil {
 		t.Skip("no compressor negotiated on the connection; the compressed-segment path is unreachable")
 	}
-
-	if err := createTable(session, "CREATE TABLE IF NOT EXISTS gocql_test.compression_now_worth_it(id int, text_col text, PRIMARY KEY (id))"); err != nil {
-		t.Fatal(err)
-	}
-
-	str := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$%^&*()_+"
-	err := session.Query("INSERT INTO gocql_test.compression_now_worth_it (id, text_col) VALUES (?, ?)", 1, str).Exec()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var result string
-	err = session.Query("SELECT text_col FROM gocql_test.compression_now_worth_it WHERE id = ?", 1).Scan(&result)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	require.Equal(t, str, result)
+	table := testTableName(t)
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,text_col text)", table))
+	text := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$%^&*()_+"
+	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(id,text_col) VALUES(?,?)", table), IntValue(1), TextValue(text))
+	require.Equal(t, text, cassandraText(t, cassandraRead(t, session, fmt.Sprintf("SELECT text_col FROM %s WHERE id=?", table), IntValue(1)), "text_col"))
 }
 
-// This test ensures that the whole Metadata_changed flow is handled properly.
-//
-// To trigger the server to return Metadata_changed we should do:
-//  1. Create a table
-//  2. Prepare stmt which uses the created table
-//  3. Change the table schema in order to affect prepared stmt (e.g. add a column)
-//  4. Execute prepared stmt. As a result the server should return RESULT/ROWS
-//     response with Metadata_changed flag, new metadata id and updated metadata
-//     resultset.
-//
-// The driver should handle this by updating its prepared statement inside the cache
-// when it receives RESULT/ROWS with Metadata_changed flag.
-//
-// It runs for both ways the result-metadata-ID exchange can be active on a
-// connection: native protocol v5, where the field is mandatory, and protocol v4
-// with Scylla's SCYLLA_USE_METADATA_ID extension, which backports it. The two share
-// the whole read and cache-update path (framer.parseResultMetadata and the
-// RESULT/Rows case in Conn.executeQueryWithMetrics), so they are driven through one
-// flow rather than two copies of it.
-//
-// Exactly one case runs per invocation, because the protocol version is fixed for
-// the whole suite by the -proto flag. CI covers both: the default lanes run at
-// TEST_CQL_PROTOCOL=4, and the Cassandra 5-LATEST leg runs the suite again at
-// TEST_CQL_PROTOCOL=5, once compressed and once -- scoped to this test and
-// TestLargeSizeQuery -- with no compression.
+// TestPrepareExecuteMetadataChangedFlag covers native v5 result metadata IDs
+// and the negotiated Scylla v4 extension with the same exact-connection flow.
+// The protocol gate selects one path per lane; advertised-but-unnegotiated
+// extension support is a failure, not a capability skip.
 func TestPrepareExecuteMetadataChangedFlag(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -3890,7 +2150,11 @@ func TestPrepareExecuteMetadataChangedFlag(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			session := createSession(t)
+			session := createV2Session(t, func(c *Config) {
+				c.Metadata.SchemaEvents = false
+				c.Metadata.AutomaticAgreement = false
+				c.Metadata.RefreshAfterAgreement = false
+			})
 			defer session.Close()
 
 			// We have to specify conn for all queries to ensure that
@@ -3900,7 +2164,7 @@ func TestPrepareExecuteMetadataChangedFlag(t *testing.T) {
 				t.Skip(reason)
 			}
 
-			runMetadataChangedFlow(t, session, conn, tc.table)
+			runMetadataChangedFlow(t, session, conn, testTableName(t, tc.table))
 		})
 	}
 }
@@ -3910,309 +2174,149 @@ func TestPrepareExecuteMetadataChangedFlag(t *testing.T) {
 // node whose prepared-statement cache entry is being inspected.
 func runMetadataChangedFlow(t *testing.T, session *Session, conn *Conn, table string) {
 	t.Helper()
-
 	qualified := "gocql_test." + table
-
-	// Drop rather than CREATE IF NOT EXISTS: the flow ALTERs the table, so a table
-	// left behind by an earlier run already has new_col and the ALTER below would
-	// fail before anything is exercised.
-	if err := createTable(session, "DROP TABLE IF EXISTS "+qualified); err != nil {
-		t.Fatal(err)
-	}
-	if err := createTable(session, "CREATE TABLE "+qualified+"(id int, PRIMARY KEY (id))"); err != nil {
-		t.Fatal(err)
-	}
-
-	// Bound every query, not only the ones after the schema change: the first
-	// response after it is the one that actually exercises METADATA_CHANGED, so it is
-	// the most likely to hang and the least useful to leave to the package timeout.
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
+	cassandraDDL(t, session, "CREATE TABLE "+qualified+"(id int PRIMARY KEY)")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-
-	pinned := func(stmt string, values ...any) *Query {
-		q := session.Query(stmt, values...).WithContext(ctx)
-		q.conn = conn
-		return q
-	}
-
-	type record struct {
-		id     int
-		newCol int
-	}
-
-	firstRecord := record{
-		id: 1,
-	}
-	if err := pinned("INSERT INTO "+qualified+" (id) VALUES (?)", firstRecord.id).Exec(); err != nil {
-		t.Fatal(err)
-	}
-
-	selectStmt := "SELECT * FROM " + qualified
-	queryBeforeTableAltering := pinned(selectStmt)
-	row := make(map[string]interface{})
-	if err := queryBeforeTableAltering.MapScan(row); err != nil {
-		t.Fatal(err)
-	}
-
-	require.Len(t, row, 1, "Expected to retrieve a single column")
-	require.Equal(t, 1, row["id"])
-
-	stmtCacheKey := session.stmtsLRU.keyFor(conn.host.hostUUID(), conn.getCurrentKeyspace(), queryBeforeTableAltering.stmt)
-	inflight, _ := session.stmtsLRU.get(stmtCacheKey)
-	preparedStatementBeforeTableAltering := inflight.preparedStatment
-
-	// Change the table schema so the server returns RESULT/Rows with METADATA_CHANGED.
-	if err := pinned("ALTER TABLE " + qualified + " ADD new_col int").Exec(); err != nil {
-		t.Fatal(err)
-	}
-
-	secondRecord := record{
-		id:     2,
-		newCol: 10,
-	}
-	if err := pinned("INSERT INTO "+qualified+" (id, new_col) VALUES (?, ?)", secondRecord.id, secondRecord.newCol).Exec(); err != nil {
-		t.Fatal(err)
-	}
-
-	// handleRows scans all rows from the iterator and verifies the values.
-	handleRows := func(iter *Iter) {
+	host := Option[UUID]{Value: conn.host.hostUUID(), Set: true}
+	options := Options{HostID: host, connection: conn}
+	prepareOptions := PrepareOptions{HostID: host, connection: conn}
+	write := cassandraWriteBound(t, session, "INSERT INTO "+qualified+"(id) VALUES(?)", []Value{IntValue(1)}, prepareOptions)
+	_, err := Exec(ctx, session, write, options)
+	require.NoError(t, err)
+	prepared := cassandraPrepared(t, session, Statement[Unit, DynamicRow]{CQL: "SELECT * FROM " + qualified, Params: NoParams, Rows: DynamicRows}, prepareOptions)
+	bound := cassandraBound(t, prepared, Unit{})
+	row := cassandraReadBound(t, session, bound, options)
+	require.Equal(t, 1, row.Columns().Len())
+	require.Equal(t, int64(1), cassandraInt(t, row, "id"))
+	cached := func() hostPrepared {
 		t.Helper()
-
-		var scannedID int
-		var scannedNewCol *int // to capture null values
-
-		// When the driver handles null values during unmarshalling it sets the
-		// destination to its zero value, which is (*int)(nil) for this case.
-		var nilIntPtr *int
-
-		// Collect all rows into a map to avoid order-dependent assertions.
-		rows := map[int]*int{}
-		for iter.Scan(&scannedID, &scannedNewCol) {
-			rows[scannedID] = scannedNewCol
-			scannedNewCol = nil // reset pointer for next iteration
-		}
-
-		require.Len(t, rows, 2)
-		require.Equal(t, nilIntPtr, rows[firstRecord.id])
-		require.NotNil(t, rows[secondRecord.id])
-		require.Equal(t, secondRecord.newCol, *rows[secondRecord.id])
-
-		err := iter.Close()
-		if err != nil {
-			if errors.Is(err, context.DeadlineExceeded) {
-				t.Fatal("It is likely failed due to a deadlock")
-			}
-			t.Fatal(err)
-		}
+		prepared.state.mu.RLock()
+		defer prepared.state.mu.RUnlock()
+		v, ok := prepared.state.hosts[host.Value]
+		require.True(t, ok)
+		v.id = append([]byte(nil), v.id...)
+		v.metadataID = append([]byte(nil), v.metadataID...)
+		return v
 	}
-
-	// The first query after the schema change should trigger METADATA_CHANGED.
-	handleRows(pinned(selectStmt).Iter())
-
-	// The prepared statement cache must have been updated with the new metadata ID.
-	inflight, _ = session.stmtsLRU.get(stmtCacheKey)
-	preparedStatementAfterTableAltering := inflight.preparedStatment
-	require.NotEqual(t, preparedStatementBeforeTableAltering.resultMetadataID, preparedStatementAfterTableAltering.resultMetadataID)
-	require.NotEqual(t, preparedStatementBeforeTableAltering.response, preparedStatementAfterTableAltering.response)
-
-	// Force the driver to send the old (stale) result metadata ID, to verify the
-	// server still signals the change when the driver's id is outdated.
-	// (https://issues.apache.org/jira/browse/CASSANDRA-20028)
-	closedCh := make(chan struct{})
-	close(closedCh)
-	session.stmtsLRU.add(stmtCacheKey, &inflightPrepare{
-		done:             closedCh,
-		err:              nil,
-		preparedStatment: preparedStatementBeforeTableAltering,
-	})
-
-	handleRows(pinned(selectStmt).Iter())
-
-	inflight, _ = session.stmtsLRU.get(stmtCacheKey)
-	preparedStatementAfterTableAltering2 := inflight.preparedStatment
-	require.NotEqual(t, preparedStatementBeforeTableAltering.resultMetadataID, preparedStatementAfterTableAltering2.resultMetadataID)
-	require.NotEqual(t, preparedStatementBeforeTableAltering.response, preparedStatementAfterTableAltering2.response)
-
-	require.Equal(t, preparedStatementAfterTableAltering.resultMetadataID, preparedStatementAfterTableAltering2.resultMetadataID)
-	require.NotEqual(t, preparedStatementAfterTableAltering.response, preparedStatementAfterTableAltering2.response) // METADATA_CHANGED flag
-	require.True(t, preparedStatementAfterTableAltering2.response.flags&frm.FlagMetaDataChanged != 0)
-
-	// A subsequent query carrying the correct (updated) metadata ID must not trigger
-	// METADATA_CHANGED, which means the cache entry must not be replaced at all.
-	// Assert that by pointer identity: comparing the entry's fields would compare it
-	// with itself, so such an assertion could never fail.
-	handleRows(pinned(selectStmt).Iter())
-
-	inflight, _ = session.stmtsLRU.get(stmtCacheKey)
-	require.Same(t, preparedStatementAfterTableAltering2, inflight.preparedStatment,
-		"the cached prepared statement should not have been replaced")
+	before := cached()
+	require.NotEmpty(t, before.metadataID)
+	alter := cassandraUnprepared(t, "ALTER TABLE "+qualified+" ADD new_col int", NoRows)
+	_, err = Exec(ctx, session, alter, options)
+	require.NoError(t, err)
+	require.NoError(t, session.AwaitSchemaAgreement(ctx))
+	write = cassandraWriteBound(t, session, "INSERT INTO "+qualified+"(id,new_col) VALUES(?,?)", []Value{IntValue(2), IntValue(10)}, prepareOptions)
+	_, err = Exec(ctx, session, write, options)
+	require.NoError(t, err)
+	checkRows := func() {
+		t.Helper()
+		rows, err := Run(ctx, session, bound, options)
+		require.NoError(t, err)
+		defer rows.Close()
+		found := map[int64]Value{}
+		for rows.Next() {
+			row := rows.Row()
+			require.Equal(t, 2, row.Columns().Len())
+			found[cassandraInt(t, row, "id")] = cassandraField(t, row, "new_col").Clone()
+		}
+		require.NoError(t, rows.Close())
+		require.Len(t, found, 2)
+		require.Equal(t, Null, found[1].State())
+		value, err := found[2].Signed()
+		require.NoError(t, err)
+		require.Equal(t, int64(10), value)
+	}
+	require.Equal(t, before.generation, session.typedGeneration(), "metadata-ID coverage must not be replaced by generation-triggered reprepare")
+	checkRows()
+	after := cached()
+	require.NotEqual(t, before.metadataID, after.metadataID)
+	require.False(t, before.columns.Equal(after.columns))
+	// Servers may invalidate the statement on ALTER and force an UNPREPARED
+	// repair here. Both paths must update the metadata ID and columns; the
+	// explicit stale-ID execution below must consume METADATA_CHANGED.
+	// Reintroduce exactly the old result ID and column layout. Preserve the
+	// revision ordering so the next change must be observable as a new revision.
+	stale := before
+	stale.revision = after.revision
+	prepared.state.mu.Lock()
+	prepared.state.hosts[host.Value] = stale
+	prepared.state.mu.Unlock()
+	checkRows()
+	healed := cached()
+	require.True(t, healed.metadataChanged)
+	require.NotEqual(t, before.metadataID, healed.metadataID)
+	require.Equal(t, after.metadataID, healed.metadataID)
+	require.True(t, after.columns.Equal(healed.columns))
+	require.Greater(t, healed.revision, after.revision)
+	checkRows()
+	unchanged := cached()
+	require.Equal(t, healed.revision, unchanged.revision, "matching result metadata must not replace cached metadata")
+	require.Equal(t, healed.metadataID, unchanged.metadataID)
 }
 
 func TestStmtCacheUsesOverriddenKeyspace(t *testing.T) {
-	session := createSession(t)
-
-	// Clean up from t.Cleanup rather than at the end of the body: every require
-	// and t.Fatal below aborts the test, and a leftover keyspace (or a leftover
-	// row in the table this test creates inside the shared gocql_test keyspace)
-	// makes the next run read an arbitrary row and fail for the wrong reason.
-	//
-	// session.Close() must happen inside the cleanup, not via defer: deferred
-	// calls run before cleanups, so a deferred Close would close the session the
-	// drops need. t.Errorf rather than t.Fatal so one failed drop does not skip
-	// the rest. The table inside gocql_test_stmt_cache goes with the keyspace.
-	t.Cleanup(func() {
-		defer session.Close()
-		if err := createTable(session, "DROP TABLE IF EXISTS gocql_test.stmt_cache_uses_overridden_ks"); err != nil {
-			t.Errorf("drop table: %v", err)
-		}
-		if err := createTable(session, "DROP KEYSPACE IF EXISTS gocql_test_stmt_cache"); err != nil {
-			t.Errorf("drop keyspace: %v", err)
-		}
-	})
-
-	if session.cfg.ProtoVersion < protoVersion5 {
+	session := createV2Session(t)
+	defer session.Close()
+	if session.cfg.ProtoVersion < 5 {
 		t.Skip("This tests only runs on proto > 4 due SetKeyspace availability")
 	}
-
-	const createKeyspaceStmt = `CREATE KEYSPACE IF NOT EXISTS %s
-	WITH replication = {
-		'class' : 'SimpleStrategy',
-			'replication_factor' : 1
-	}`
-
-	err := createTable(session, fmt.Sprintf(createKeyspaceStmt, "gocql_test_stmt_cache"))
-	if err != nil {
-		t.Fatal(err)
+	ks := testKeyspaceName(t)
+	table := testTableName(t)
+	cassandraDDL(t, session, fmt.Sprintf("CREATE KEYSPACE %s WITH replication={'class':'SimpleStrategy','replication_factor':1}", ks))
+	defer cassandraDDL(t, session, "DROP KEYSPACE "+ks)
+	for _, keyspace := range []string{"gocql_test", ks} {
+		cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s.%s(id int PRIMARY KEY)", keyspace, table))
 	}
-
-	err = createTable(session, "CREATE TABLE IF NOT EXISTS gocql_test.stmt_cache_uses_overridden_ks(id int, PRIMARY KEY (id))")
-	if err != nil {
-		t.Fatal(err)
+	defer cassandraDDL(t, session, "DROP TABLE gocql_test."+table)
+	insert := "INSERT INTO " + table + "(id) VALUES(?)"
+	for i, keyspace := range []string{"gocql_test", ks} {
+		bound := cassandraWriteBound(t, session, insert, []Value{IntValue(int32(i + 1))}, PrepareOptions{Keyspace: keyspace})
+		cassandraBatch(t, session, LoggedBatch, []BatchItem{cassandraItem(t, bound)}, Options{Keyspace: keyspace})
 	}
-
-	err = createTable(session, "CREATE TABLE IF NOT EXISTS gocql_test_stmt_cache.stmt_cache_uses_overridden_ks(id int, PRIMARY KEY (id))")
-	if err != nil {
-		t.Fatal(err)
+	for i, keyspace := range []string{"gocql_test", ks} {
+		prepared := cassandraPrepared(t, session, Statement[Unit, int32]{CQL: "SELECT * FROM " + table, Params: NoParams, Rows: OneColumn(Int32)}, PrepareOptions{Keyspace: keyspace})
+		require.Equal(t, keyspace, prepared.Info().Keyspace)
+		require.Equal(t, int32(i+1), cassandraReadBound(t, session, cassandraBound(t, prepared, Unit{}), Options{Keyspace: keyspace}))
 	}
-
-	const insertQuery = "INSERT INTO stmt_cache_uses_overridden_ks (id) VALUES (?)"
-
-	// Inserting data via Batch to ensure that batches
-	// properly accounts for keyspace overriding
-	b1 := session.NewBatch(LoggedBatch)
-	b1.Query(insertQuery, 1)
-	err = session.ExecuteBatch(b1)
-	require.NoError(t, err)
-
-	b2 := session.NewBatch(LoggedBatch)
-	b2.SetKeyspace("gocql_test_stmt_cache")
-	b2.Query(insertQuery, 2)
-	err = session.ExecuteBatch(b2)
-	require.NoError(t, err)
-
-	var scannedID int
-
-	const selectStmt = "SELECT * FROM stmt_cache_uses_overridden_ks"
-
-	// By default in our test suite session uses gocql_test ks
-	err = session.Query(selectStmt).Scan(&scannedID)
-	require.NoError(t, err)
-	require.Equal(t, 1, scannedID)
-
-	scannedID = 0
-	err = session.Query(selectStmt).SetKeyspace("gocql_test_stmt_cache").Scan(&scannedID)
-	require.NoError(t, err)
-	require.Equal(t, 2, scannedID)
 }
 
 func TestRoutingKeyCacheUsesOverriddenKeyspace(t *testing.T) {
-	session := createSession(t)
-
-	// Cleanup registered before any DDL, for the reasons spelled out in
-	// TestStmtCacheUsesOverriddenKeyspace. This test has an extra way to abort
-	// early: the getRoutingKeyInfo helper below type-asserts on a cache lookup and
-	// panics outright if the entry is missing.
-	t.Cleanup(func() {
-		defer session.Close()
-		if err := createTable(session, "DROP TABLE IF EXISTS gocql_test.routing_key_cache_uses_overridden_ks"); err != nil {
-			t.Errorf("drop table: %v", err)
-		}
-		if err := createTable(session, "DROP KEYSPACE IF EXISTS gocql_test_routing_key_cache"); err != nil {
-			t.Errorf("drop keyspace: %v", err)
-		}
-	})
-
-	if session.cfg.ProtoVersion < protoVersion5 {
+	session := createV2Session(t)
+	defer session.Close()
+	if session.cfg.ProtoVersion < 5 {
 		t.Skip("This tests only runs on proto > 4 due SetKeyspace availability")
 	}
-
-	const createKeyspaceStmt = `CREATE KEYSPACE IF NOT EXISTS %s
-	WITH replication = {
-		'class' : 'SimpleStrategy',
-			'replication_factor' : 1
-	}`
-
-	err := createTable(session, fmt.Sprintf(createKeyspaceStmt, "gocql_test_routing_key_cache"))
-	if err != nil {
-		t.Fatal(err)
+	ks := testKeyspaceName(t)
+	table := testTableName(t)
+	cassandraDDL(t, session, fmt.Sprintf("CREATE KEYSPACE %s WITH replication={'class':'SimpleStrategy','replication_factor':1}", ks))
+	defer cassandraDDL(t, session, "DROP KEYSPACE "+ks)
+	for _, keyspace := range []string{"gocql_test", ks} {
+		cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s.%s(id int PRIMARY KEY)", keyspace, table))
 	}
-
-	err = createTable(session, "CREATE TABLE IF NOT EXISTS gocql_test.routing_key_cache_uses_overridden_ks(id int, PRIMARY KEY (id))")
-	if err != nil {
-		t.Fatal(err)
+	defer cassandraDDL(t, session, "DROP TABLE gocql_test."+table)
+	insert := "INSERT INTO " + table + "(id) VALUES(?)"
+	selectCQL := "SELECT * FROM " + table + " WHERE id=?"
+	for i, keyspace := range []string{"gocql_test", ks} {
+		write := cassandraWriteBound(t, session, insert, []Value{IntValue(int32(i + 1))}, PrepareOptions{Keyspace: keyspace})
+		require.Equal(t, keyspace, write.Routing().Keyspace)
+		require.True(t, write.Routing().Token.Set)
+		item := cassandraItem(t, write)
+		require.Equal(t, keyspace, item.request.routing.Keyspace)
+		runtime := session.typedRuntime()
+		runtime.mu.Lock()
+		found := false
+		for key, state := range runtime.prepared {
+			if key.cql == insert && key.keyspace == keyspace {
+				found = true
+				require.Equal(t, keyspace, state.info.Keyspace)
+			}
+		}
+		runtime.mu.Unlock()
+		require.True(t, found, "cache must include keyspace-specific binding")
+		read := cassandraDynamicBound(t, session, selectCQL, []Value{IntValue(1)}, PrepareOptions{Keyspace: keyspace})
+		require.Equal(t, keyspace, read.Routing().Keyspace)
+		require.True(t, read.Routing().Token.Set)
 	}
-
-	err = createTable(session, "CREATE TABLE IF NOT EXISTS gocql_test_routing_key_cache.routing_key_cache_uses_overridden_ks(id int, PRIMARY KEY (id))")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	getRoutingKeyInfo := func(keyspace, stmt string) *routingKeyInfo {
-		t.Helper()
-		session.routingKeyInfoCache.mu.Lock()
-		value, _ := session.routingKeyInfoCache.lru.Get(routingKeyInfoCacheKey{keyspace: keyspace, stmt: stmt})
-		session.routingKeyInfoCache.mu.Unlock()
-
-		inflight := value.(*inflightCachedEntry)
-		return inflight.value.(*routingKeyInfo)
-	}
-
-	const insertQuery = "INSERT INTO routing_key_cache_uses_overridden_ks (id) VALUES (?)"
-
-	// Running batch in default ks gocql_test
-	b1 := session.NewBatch(LoggedBatch)
-	b1.Query(insertQuery, 1)
-	_, err = b1.GetRoutingKey()
-	require.NoError(t, err)
-
-	// Ensuring that the cache contains the query with default ks
-	routingKeyInfo1 := getRoutingKeyInfo("gocql_test", b1.Entries[0].Stmt)
-	require.Equal(t, "gocql_test", routingKeyInfo1.keyspace)
-
-	// Running batch in gocql_test_routing_key_cache ks
-	b2 := session.NewBatch(LoggedBatch)
-	b2.SetKeyspace("gocql_test_routing_key_cache")
-	b2.Query(insertQuery, 2)
-	_, err = b2.GetRoutingKey()
-	require.NoError(t, err)
-
-	// Ensuring that the cache contains the query with gocql_test_routing_key_cache ks
-	routingKeyInfo2 := getRoutingKeyInfo("gocql_test_routing_key_cache", b2.Entries[0].Stmt)
-	require.Equal(t, "gocql_test_routing_key_cache", routingKeyInfo2.keyspace)
-
-	const selectStmt = "SELECT * FROM routing_key_cache_uses_overridden_ks WHERE id=?"
-
-	// Running query in default ks gocql_test
-	q1 := session.Query(selectStmt, 1)
-	_, err = q1.GetRoutingKey()
-	require.NoError(t, err)
-	require.Equal(t, "gocql_test", q1.routingInfo.keyspace)
-
-	// Running query in gocql_test_routing_key_cache ks
-	q2 := session.Query(selectStmt, 1)
-	_, err = q2.SetKeyspace("gocql_test_routing_key_cache").GetRoutingKey()
-	require.NoError(t, err)
-	require.Equal(t, "gocql_test_routing_key_cache", q2.routingInfo.keyspace)
 }
 
 // TestPrepareExecuteScyllaEmptyMetadataID covers the rolling-upgrade case: a
@@ -4231,74 +2335,42 @@ func TestRoutingKeyCacheUsesOverriddenKeyspace(t *testing.T) {
 // (scylladb/java-driver#758) and python-driver's
 // test_empty_sentinel_id_triggers_metadata_changed (scylladb/python-driver#770).
 func TestPrepareExecuteScyllaEmptyMetadataID(t *testing.T) {
-	session := createSession(t)
+	session := createV2Session(t, func(c *Config) {
+		c.Metadata.SchemaEvents = false
+		c.Metadata.AutomaticAgreement = false
+		c.Metadata.RefreshAfterAgreement = false
+	})
 	defer session.Close()
-
 	conn := getRandomConn(t, session)
 	if conn.version&protoVersionMask != protoVersion4 {
-		t.Skip("SCYLLA_USE_METADATA_ID is negotiated on protocol v4 only — skipping test")
+		t.Skip("SCYLLA_USE_METADATA_ID is negotiated on protocol v4 only")
 	}
 	if !conn.scyllaSupported.IsMetadataIDSupported() {
-		t.Skip("server does not advertise SCYLLA_USE_METADATA_ID — skipping test")
+		t.Skip("server does not advertise SCYLLA_USE_METADATA_ID")
 	}
-	if !conn.usesMetadataID() {
-		t.Fatal("server advertises SCYLLA_USE_METADATA_ID but the driver did not negotiate it")
-	}
-
-	if err := createTable(session, "DROP TABLE IF EXISTS gocql_test.scylla_empty_metadata_id"); err != nil {
-		t.Fatal(err)
-	}
-	if err := createTable(session, "CREATE TABLE gocql_test.scylla_empty_metadata_id(id int, val int, PRIMARY KEY (id))"); err != nil {
-		t.Fatal(err)
-	}
-	if err := session.Query("INSERT INTO gocql_test.scylla_empty_metadata_id (id, val) VALUES (?, ?)", 1, 7).Exec(); err != nil {
-		t.Fatal(err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
-	defer cancel()
-
-	const selectStmt = "SELECT id, val FROM gocql_test.scylla_empty_metadata_id WHERE id = ?"
-
-	// Prepare once so the statement is cached with a real metadata ID.
-	first := session.Query(selectStmt, 1).WithContext(ctx)
-	first.conn = conn
-	row := make(map[string]interface{})
-	require.NoError(t, first.MapScan(row))
-
-	stmtCacheKey := session.stmtsLRU.keyFor(conn.host.hostUUID(), conn.getCurrentKeyspace(), first.stmt)
-	inflight, ok := session.stmtsLRU.get(stmtCacheKey)
-	require.True(t, ok, "statement should be cached after preparing")
-	require.NotEmpty(t, inflight.preparedStatment.resultMetadataID)
-
-	// Replace the cached entry with one whose metadata ID is nil, standing in for a
-	// statement prepared before the extension was negotiated.
-	closedCh := make(chan struct{})
-	close(closedCh)
-	session.stmtsLRU.add(stmtCacheKey, &inflightPrepare{
-		done: closedCh,
-		preparedStatment: &preparedStatment{
-			id:               inflight.preparedStatment.id,
-			resultMetadataID: nil,
-			request:          inflight.preparedStatment.request,
-			response:         inflight.preparedStatment.response,
-		},
-	})
-
-	// Executing it must succeed and decode correctly, which it can only do if the
-	// server sent metadata back.
-	second := session.Query(selectStmt, 1).WithContext(ctx)
-	second.conn = conn
-	var gotID, gotVal int
-	iter := second.Iter()
-	require.True(t, iter.Scan(&gotID, &gotVal), "expected a row")
-	require.NoError(t, iter.Close())
-	require.Equal(t, 1, gotID)
-	require.Equal(t, 7, gotVal)
-
-	// And the statement must have acquired a fresh ID, so later executions can skip.
-	inflight, ok = session.stmtsLRU.get(stmtCacheKey)
-	require.True(t, ok, "statement should still be cached")
-	require.NotEmpty(t, inflight.preparedStatment.resultMetadataID,
-		"a fresh result metadata ID should have been adopted from the METADATA_CHANGED response")
+	require.True(t, conn.usesMetadataID(), "server advertises metadata IDs but driver did not negotiate them")
+	table := testTableName(t)
+	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,val int)", table))
+	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(id,val) VALUES(?,?)", table), IntValue(1), IntValue(7))
+	host := Option[UUID]{Value: conn.host.hostUUID(), Set: true}
+	prepared := cassandraPrepared(t, session, Statement[int32, DynamicRow]{CQL: fmt.Sprintf("SELECT id,val FROM %s WHERE id=?", table), Params: OneParam(Int32), Rows: DynamicRows}, PrepareOptions{HostID: host, connection: conn})
+	bound := cassandraBound(t, prepared, int32(1))
+	cassandraReadBound(t, session, bound, Options{HostID: host, connection: conn})
+	prepared.state.mu.Lock()
+	cached, ok := prepared.state.hosts[host.Value]
+	require.True(t, ok)
+	require.NotEmpty(t, cached.metadataID)
+	cached.metadataID = nil
+	cached.revision++
+	prepared.state.hosts[host.Value] = cached
+	prepared.state.mu.Unlock()
+	row := cassandraReadBound(t, session, bound, Options{HostID: host, connection: conn})
+	require.Equal(t, int64(1), cassandraInt(t, row, "id"))
+	require.Equal(t, int64(7), cassandraInt(t, row, "val"))
+	prepared.state.mu.RLock()
+	healed := prepared.state.hosts[host.Value]
+	prepared.state.mu.RUnlock()
+	require.NotEmpty(t, healed.metadataID, "empty metadata ID must be repaired from response")
+	require.True(t, healed.metadataChanged)
+	require.Greater(t, healed.revision, cached.revision)
 }

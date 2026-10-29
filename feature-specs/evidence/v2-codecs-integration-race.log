@@ -1,0 +1,5 @@
+# github.com/scylladb/gocql/v2 [github.com/scylladb/gocql/v2.test]
+./v2_dynamic.go:239:17: undefined: encodeDynamicAggregate
+./v2_dynamic.go:279:17: undefined: decodeDynamicAggregate
+FAIL	github.com/scylladb/gocql/v2 [build failed]
+FAIL

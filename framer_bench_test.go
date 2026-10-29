@@ -33,7 +33,7 @@ import (
 	"os"
 	"testing"
 
-	frm "github.com/gocql/gocql/internal/frame"
+	frm "github.com/scylladb/gocql/v2/internal/frame"
 )
 
 func readGzipData(path string) ([]byte, error) {

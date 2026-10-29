@@ -1,0 +1,77 @@
+Generating new PKI
++ VALIDITY=36500
++ generatePrivateKey ca
++ base=ca
++ rm -fv ca.key
++ echo 'Generating private key ca.key'
+Generating private key ca.key
++ openssl genrsa -aes256 -out ca.key -passout pass:cassandra 4096
++ echo 'Decrypting ca.key'
+Decrypting ca.key
++ openssl rsa -in ca.key -out ca.key -passin pass:cassandra
+writing RSA key
++ echo 'Generating CA certificate ca.crt'
+Generating CA certificate ca.crt
++ rm -fv ca.crt
++ openssl req -x509 -new -nodes -key ca.key -days 36500 -out ca.crt -config ca.cnf -text
++ echo 'Generating truststore .truststore for Cassandra'
+Generating truststore .truststore for Cassandra
++ rm -fv .truststore
++ keytool -import -keystore .truststore -trustcacerts -file ca.crt -alias ca -storetype JKS -storepass cassandra -noprompt
+Certificate was added to keystore
++ generatePrivateKey gocql
++ base=gocql
++ rm -fv gocql.key
++ echo 'Generating private key gocql.key'
+Generating private key gocql.key
++ openssl genrsa -aes256 -out gocql.key -passout pass:cassandra 4096
++ echo 'Decrypting gocql.key'
+Decrypting gocql.key
++ openssl rsa -in gocql.key -out gocql.key -passin pass:cassandra
+writing RSA key
++ generateCASignedCert gocql
++ base=gocql
++ rm -fv gocql.csr gocql.crt
++ echo 'Generating certificate signing request gocql.csr'
+Generating certificate signing request gocql.csr
++ openssl req -new -key gocql.key -out gocql.csr -config gocql.cnf
++ echo 'Generating certificate gocql.crt'
+Generating certificate gocql.crt
++ openssl x509 -req -in gocql.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out gocql.crt -days 36500 -extensions req_ext -extfile gocql.cnf -text
+Certificate request self-signature ok
+subject=CN=gocql
++ rm -fv gocql.csr
+removed 'gocql.csr'
++ generatePrivateKey cassandra
++ base=cassandra
++ rm -fv cassandra.key
++ echo 'Generating private key cassandra.key'
+Generating private key cassandra.key
++ openssl genrsa -aes256 -out cassandra.key -passout pass:cassandra 4096
++ echo 'Decrypting cassandra.key'
+Decrypting cassandra.key
++ openssl rsa -in cassandra.key -out cassandra.key -passin pass:cassandra
+writing RSA key
++ generateCASignedCert cassandra
++ base=cassandra
++ rm -fv cassandra.csr cassandra.crt
++ echo 'Generating certificate signing request cassandra.csr'
+Generating certificate signing request cassandra.csr
++ openssl req -new -key cassandra.key -out cassandra.csr -config cassandra.cnf
++ echo 'Generating certificate cassandra.crt'
+Generating certificate cassandra.crt
++ openssl x509 -req -in cassandra.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out cassandra.crt -days 36500 -extensions req_ext -extfile cassandra.cnf -text
+Certificate request self-signature ok
+subject=CN=cassandra
++ rm -fv cassandra.csr
+removed 'cassandra.csr'
++ echo 'Generating cassandra.p12 and .keystore for Cassandra'
+Generating cassandra.p12 and .keystore for Cassandra
++ rm -fv cassandra.p12
++ openssl pkcs12 -export -in cassandra.crt -inkey cassandra.key -out cassandra.p12 -name cassandra -CAfile ca.crt -caname ca -password pass:cassandra -noiter -nomaciter
++ rm -fv .keystore
++ keytool -importkeystore -srckeystore cassandra.p12 -srcstoretype PKCS12 -srcstorepass cassandra -srcalias cassandra -destkeystore .keystore -deststoretype JKS -deststorepass cassandra -destalias cassandra
+Importing keystore cassandra.p12 to .keystore...
+
+Warning:
+The JKS keystore uses a proprietary format. It is recommended to migrate to PKCS12 which is an industry standard format using "keytool -importkeystore -srckeystore .keystore -destkeystore .keystore -deststoretype pkcs12".

@@ -31,7 +31,7 @@ import (
 	"net"
 	"testing"
 
-	frm "github.com/gocql/gocql/internal/frame"
+	frm "github.com/scylladb/gocql/v2/internal/frame"
 )
 
 func TestHostInfo_Lookup(t *testing.T) {

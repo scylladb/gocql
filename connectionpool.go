@@ -31,10 +31,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gocql/gocql/internal/debug"
-	"github.com/gocql/gocql/tablets"
+	"github.com/scylladb/gocql/v2/internal/debug"
+	"github.com/scylladb/gocql/v2/tablets"
 
-	"github.com/gocql/gocql/debounce"
+	"github.com/scylladb/gocql/v2/debounce"
 )
 
 // interface to implement to receive the host information

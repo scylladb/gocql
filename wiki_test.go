@@ -28,6 +28,7 @@
 package gocql
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"sort"
@@ -54,7 +55,7 @@ type WikiAttachment []byte
 var wikiTestData = []*WikiPage{
 	{
 		Title:    "Frontpage",
-		RevId:    TimeUUID(),
+		RevId:    NewTimeUUID(),
 		Body:     "Welcome to this wiki page!",
 		Rating:   inf.NewDec(131, 3),
 		Modified: time.Date(2013, time.August, 13, 9, 52, 3, 0, time.UTC),
@@ -66,7 +67,7 @@ var wikiTestData = []*WikiPage{
 	},
 	{
 		Title:    "Foobar",
-		RevId:    TimeUUID(),
+		RevId:    NewTimeUUID(),
 		Body:     "foo::Foo f = new foo::Foo(foo::Foo::INIT);",
 		Modified: time.Date(2013, time.August, 13, 9, 52, 3, 0, time.UTC),
 	},
@@ -80,12 +81,12 @@ type WikiTest struct {
 }
 
 func CreateSchema(session *Session, tb testing.TB, table string) *WikiTest {
-	table = testTableName(tb, table)
-	if err := createTable(session, fmt.Sprintf("DROP TABLE IF EXISTS gocql_test.%s", table)); err != nil {
+	table = serializationTableName(tb, table)
+	if err := v2CreateTable(context.Background(), session, fmt.Sprintf("DROP TABLE IF EXISTS gocql_test.%s", table)); err != nil {
 		tb.Fatal("CreateSchema:", err)
 	}
 
-	err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (
+	err := v2CreateTable(context.Background(), session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (
 			title       varchar,
 			revid       timeuuid,
 			body        varchar,
@@ -123,35 +124,70 @@ func (w *WikiTest) CreatePages(n int) {
 	}
 }
 
+var wikiRevisionCodec = NamedScalar(TimeUUIDCodec, func(v UUID) TimeUUID { return TimeUUID(v) }, func(v TimeUUID) UUID { return UUID(v) })
+var wikiRatingCodec = NamedScalar(NullableCodec(serializationDecimal), func(v *inf.Dec) Nullable[inf.Dec] {
+	if v == nil {
+		return Nullable[inf.Dec]{}
+	}
+	return Nullable[inf.Dec]{Value: *v, Valid: true}
+}, func(v Nullable[inf.Dec]) *inf.Dec {
+	if !v.Valid {
+		return nil
+	}
+	return &v.Value
+})
+var wikiTagsCodec = NamedScalar(NullableCodec(serializationSet(serializationString)), func(v []string) Nullable[[]string] { return Nullable[[]string]{Value: v, Valid: v != nil} }, func(v Nullable[[]string]) []string { return v.Value })
+var wikiAttachmentCodec = NamedScalar(serializationBlob, func(v WikiAttachment) []byte { return []byte(v) }, func(v []byte) WikiAttachment { return WikiAttachment(v) })
+var wikiAttachmentsCodec = NamedScalar(NullableCodec(serializationMap(serializationString, wikiAttachmentCodec)), func(v map[string]WikiAttachment) Nullable[map[string]WikiAttachment] {
+	return Nullable[map[string]WikiAttachment]{Value: v, Valid: v != nil}
+}, func(v Nullable[map[string]WikiAttachment]) map[string]WikiAttachment { return v.Value })
+var wikiParams = Params(
+	Param("title", serializationString, func(v WikiPage) string { return v.Title }),
+	Param("revid", wikiRevisionCodec, func(v WikiPage) UUID { return v.RevId }),
+	Param("body", serializationString, func(v WikiPage) string { return v.Body }),
+	Param("views", Int64, func(v WikiPage) int64 { return v.Views }),
+	Param("protected", Bool, func(v WikiPage) bool { return v.Protected }),
+	Param("modified", serializationTimestamp, func(v WikiPage) time.Time { return v.Modified }),
+	Param("rating", wikiRatingCodec, func(v WikiPage) *inf.Dec { return v.Rating }),
+	Param("tags", wikiTagsCodec, func(v WikiPage) []string { return v.Tags }),
+	Param("attachments", wikiAttachmentsCodec, func(v WikiPage) map[string]WikiAttachment { return v.Attachments }))
+var wikiRows = Row(
+	Column("title", serializationString, func(v *WikiPage) *string { return &v.Title }),
+	Column("revid", wikiRevisionCodec, func(v *WikiPage) *UUID { return &v.RevId }),
+	Column("body", serializationString, func(v *WikiPage) *string { return &v.Body }),
+	Column("views", Int64, func(v *WikiPage) *int64 { return &v.Views }),
+	Column("protected", Bool, func(v *WikiPage) *bool { return &v.Protected }),
+	Column("modified", serializationTimestamp, func(v *WikiPage) *time.Time { return &v.Modified }),
+	Column("rating", wikiRatingCodec, func(v *WikiPage) **inf.Dec { return &v.Rating }),
+	Column("tags", wikiTagsCodec, func(v *WikiPage) *[]string { return &v.Tags }),
+	Column("attachments", wikiAttachmentsCodec, func(v *WikiPage) *map[string]WikiAttachment { return &v.Attachments }))
+
 func (w *WikiTest) InsertPage(page *WikiPage) error {
-	return w.session.Query(fmt.Sprintf(`INSERT INTO %s
-		(title, revid, body, views, protected, modified, rating, tags, attachments)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, w.table),
-		page.Title, page.RevId, page.Body, page.Views, page.Protected,
-		page.Modified, page.Rating, page.Tags, page.Attachments).Exec()
+	return serializationExec(w.session, fmt.Sprintf("INSERT INTO %s (title,revid,body,views,protected,modified,rating,tags,attachments) VALUES(?,?,?,?,?,?,?,?,?)", w.table), wikiParams, *page)
 }
-
 func (w *WikiTest) SelectPage(page *WikiPage, title string, revid UUID) error {
-	return w.session.Query(fmt.Sprintf(`SELECT title, revid, body, views, protected,
-		modified,tags, attachments, rating
-		FROM %s WHERE title = ? AND revid = ? LIMIT 1`, w.table),
-		title, revid).Scan(&page.Title, &page.RevId,
-		&page.Body, &page.Views, &page.Protected, &page.Modified, &page.Tags,
-		&page.Attachments, &page.Rating)
+	revision, err := TimeUUIDValue(TimeUUID(revid))
+	if err != nil {
+		return err
+	}
+	result, err := serializationOne(w.session, fmt.Sprintf("SELECT title,revid,body,views,protected,modified,tags,attachments,rating FROM %s WHERE title=? AND revid=? LIMIT 1", w.table), wikiRows, TextValue(title), revision)
+	if err == nil {
+		*page = result
+	}
+	return err
 }
-
 func (w *WikiTest) GetPageCount() int {
-	var count int
-	if err := w.session.Query(fmt.Sprintf(`SELECT COUNT(*) FROM %s`, w.table)).Scan(&count); err != nil {
+	count, err := serializationOne(w.session, fmt.Sprintf("SELECT COUNT(*) FROM %s", w.table), OneColumn(Int64))
+	if err != nil {
 		w.tb.Error("GetPageCount", err)
 	}
-	return count
+	return int(count)
 }
 
 func TestWikiCreateSchema(t *testing.T) {
 	t.Parallel()
 
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
 
 	CreateSchema(session, t, "create")
@@ -159,7 +195,7 @@ func TestWikiCreateSchema(t *testing.T) {
 
 func BenchmarkWikiCreateSchema(b *testing.B) {
 	b.StopTimer()
-	session := createSession(b)
+	session := createV2Session(b)
 	defer func() {
 		b.StopTimer()
 		session.Close()
@@ -174,7 +210,7 @@ func BenchmarkWikiCreateSchema(b *testing.B) {
 func TestWikiCreatePages(t *testing.T) {
 	t.Parallel()
 
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
 
 	w := CreateSchema(session, t, "create_pages")
@@ -188,7 +224,7 @@ func TestWikiCreatePages(t *testing.T) {
 
 func BenchmarkWikiCreatePages(b *testing.B) {
 	b.StopTimer()
-	session := createSession(b)
+	session := createV2Session(b)
 	defer func() {
 		b.StopTimer()
 		session.Close()
@@ -203,7 +239,7 @@ func BenchmarkWikiCreatePages(b *testing.B) {
 
 func BenchmarkWikiSelectAllPages(b *testing.B) {
 	b.StopTimer()
-	session := createSession(b)
+	session := createV2Session(b)
 	defer func() {
 		b.StopTimer()
 		session.Close()
@@ -213,17 +249,18 @@ func BenchmarkWikiSelectAllPages(b *testing.B) {
 	w.CreatePages(100)
 	b.StartTimer()
 
-	var page WikiPage
 	for i := 0; i < b.N; i++ {
-		iter := session.Query(fmt.Sprintf(`SELECT title, revid, body, views, protected,
-			modified, tags, attachments, rating
-			FROM %s`, w.table)).Iter()
-		for iter.Scan(&page.Title, &page.RevId, &page.Body, &page.Views,
-			&page.Protected, &page.Modified, &page.Tags, &page.Attachments,
-			&page.Rating) {
-			// pass
+		rows, err := serializationRows(w.session, fmt.Sprintf("SELECT title,revid,body,views,protected,modified,tags,attachments,rating FROM %s", w.table), wikiRows)
+		if err != nil {
+			b.Fatal(err)
 		}
-		if err := iter.Close(); err != nil {
+		for rows.Next() {
+			_ = rows.Row()
+		}
+		if err := rows.Err(); err != nil {
+			b.Error(err)
+		}
+		if err := rows.Close(); err != nil {
 			b.Error(err)
 		}
 	}
@@ -231,7 +268,7 @@ func BenchmarkWikiSelectAllPages(b *testing.B) {
 
 func BenchmarkWikiSelectSinglePage(b *testing.B) {
 	b.StopTimer()
-	session := createSession(b)
+	session := createV2Session(b)
 	defer func() {
 		b.StopTimer()
 		session.Close()
@@ -239,15 +276,25 @@ func BenchmarkWikiSelectSinglePage(b *testing.B) {
 	w := CreateSchema(session, b, "bench_select_single")
 	pages := make([]WikiPage, 100)
 	w.CreatePages(len(pages))
-	iter := session.Query(fmt.Sprintf(`SELECT title, revid FROM %s`, w.table)).Iter()
-	for i := 0; i < len(pages); i++ {
-		if !iter.Scan(&pages[i].Title, &pages[i].RevId) {
-			pages = pages[:i]
+	decoder := Row(Column("title", serializationString, func(v *WikiPage) *string { return &v.Title }), Column("revid", wikiRevisionCodec, func(v *WikiPage) *UUID { return &v.RevId }))
+	rows, err := serializationRows(session, fmt.Sprintf("SELECT title,revid FROM %s", w.table), decoder)
+	if err != nil {
+		b.Fatal(err)
+	}
+	n := 0
+	for rows.Next() {
+		if n == len(pages) {
 			break
 		}
+		pages[n] = rows.Row()
+		n++
 	}
-	if err := iter.Close(); err != nil {
-		b.Error(err)
+	pages = pages[:n]
+	if err := rows.Err(); err != nil {
+		b.Fatal(err)
+	}
+	if err := rows.Close(); err != nil {
+		b.Fatal(err)
 	}
 	b.StartTimer()
 
@@ -262,7 +309,7 @@ func BenchmarkWikiSelectSinglePage(b *testing.B) {
 
 func BenchmarkWikiSelectPageCount(b *testing.B) {
 	b.StopTimer()
-	session := createSession(b)
+	session := createV2Session(b)
 	defer func() {
 		b.StopTimer()
 		session.Close()
@@ -282,7 +329,7 @@ func BenchmarkWikiSelectPageCount(b *testing.B) {
 func TestWikiTypicalCRUD(t *testing.T) {
 	t.Parallel()
 
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
 
 	w := CreateSchema(session, t, "crud")

@@ -53,7 +53,7 @@ func testWithAndWithoutTLS(t *testing.T, test func(t *testing.T, makeCluster mak
 	})
 }
 
-func startServerWithShardAwarePort(t testing.TB, useTLS bool) (makeCluster func() *ClusterConfig, stop func()) {
+func startServerWithShardAwarePort(t testing.TB, useTLS bool) (makeCluster makeClusterTestFunc, stop func()) {
 	var shardAwarePort uint32
 
 	shardAwarePortKey := "SCYLLA_SHARD_AWARE_PORT"
@@ -109,7 +109,7 @@ func startServerWithShardAwarePort(t testing.TB, useTLS bool) (makeCluster func(
 	t.Logf("regular port address: %s, shard aware port address: %s",
 		srvRegular.Address, srvShardAware.Address)
 
-	makeCluster = func() *ClusterConfig {
+	makeCluster = func() shardAwareTestCluster {
 		var cluster *ClusterConfig
 		if useTLS {
 			cluster = createTestSslCluster(srvRegular.Address, defaultProto, false)
@@ -120,7 +120,16 @@ func startServerWithShardAwarePort(t testing.TB, useTLS bool) (makeCluster func(
 		} else {
 			cluster = testCluster(defaultProto, srvRegular.Address)
 		}
-		return cluster
+		return shardAwareTestCluster{
+			useTLS: useTLS,
+			port:   shardTestContactPort(cluster.Hosts, uint16(cluster.Port)),
+			connect: func(_ context.Context, dialer Dialer, disableShardAwarePort bool) (*Session, error) {
+				cluster.PoolConfig.HostSelectionPolicy = TokenAwareHostPolicy(RoundRobinHostPolicy())
+				cluster.Dialer = dialer
+				cluster.DisableShardAwarePort = disableShardAwarePort
+				return cluster.CreateSession()
+			},
+		}
 	}
 
 	stop = func() {

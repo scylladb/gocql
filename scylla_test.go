@@ -18,7 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gocql/gocql/internal/streams"
+	"github.com/scylladb/gocql/v2/internal/streams"
 )
 
 func TestScyllaConnPickerPickNilToken(t *testing.T) {

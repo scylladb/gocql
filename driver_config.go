@@ -261,7 +261,7 @@ type retryPolicyDowngradingReport struct {
 type retryPolicyCustomReport struct {
 	// MaxRetries is populated only for a custom policy whose retry limit the
 	// driver can read. That is just the built-in
-	// ExponentialBackoffRetryPolicy: the RetryPolicy interface exposes no
+	// ExponentialBackoffRetryPolicy: the oldRetryPolicy interface exposes no
 	// attempt limit, so a genuinely user-supplied policy has nothing to report
 	// here.
 	MaxRetries *int   `json:"max-retries,omitempty"`
@@ -713,9 +713,9 @@ func consistencyName(c Consistency) string {
 }
 
 func buildQueryRetryReport(cfg *ClusterConfig) queryRetryReport {
-	rp := cfg.RetryPolicy
+	rp := cfg.oldRetryPolicy
 	if rp == nil {
-		// Mirrors query_executor.go's own fallback for an unset RetryPolicy.
+		// Mirrors query_executor.go's own fallback for an unset oldRetryPolicy.
 		rp = defaultRetryPolicy
 	}
 	return queryRetryReport{
@@ -727,7 +727,7 @@ func buildQueryRetryReport(cfg *ClusterConfig) queryRetryReport {
 // nonNegativeRetries clamps a policy's retry count for max-retries, which the
 // schema declares nonNegativeInteger.
 //
-// Nothing validates RetryPolicy -- ClusterConfig.Validate does not look at it
+// Nothing validates oldRetryPolicy -- ClusterConfig.Validate does not look at it
 // at all -- so a negative count reaches the report. Clamping loses nothing:
 // both built-in policies compare the attempt number against this field
 // (Attempts() <= NumRetries, Attempts() > NumRetries), and since the first
@@ -737,7 +737,7 @@ func nonNegativeRetries(numRetries int) int {
 	return max(numRetries, 0)
 }
 
-func buildRetryPolicyReport(rp RetryPolicy) any {
+func buildRetryPolicyReport(rp oldRetryPolicy) any {
 	if isNilPolicy(rp) {
 		// Nothing can be read off it, but its type still names something.
 		return retryPolicyCustomReport{Type: "custom", Name: customPolicyName(rp)}
@@ -749,7 +749,7 @@ func buildRetryPolicyReport(rp RetryPolicy) any {
 		return retryPolicyDowngradingReport{Type: "downgrading-consistency", MaxRetries: len(p.ConsistencyLevelsToTry)}
 	case *ExponentialBackoffRetryPolicy:
 		// Not one of the schema's built-in retry-policy types, so it is reported
-		// as custom like any other RetryPolicy implementation -- but its retry
+		// as custom like any other oldRetryPolicy implementation -- but its retry
 		// limit and its backoff are both readable, and the schema's custom
 		// branch accepts max-retries. The backoff surfaces separately, as a
 		// sibling of the policy: see buildRetryBackoffReport.
@@ -764,7 +764,7 @@ func buildRetryPolicyReport(rp RetryPolicy) any {
 	}
 }
 
-func buildRetryBackoffReport(rp RetryPolicy) any {
+func buildRetryBackoffReport(rp oldRetryPolicy) any {
 	backoff, ok := rp.(*ExponentialBackoffRetryPolicy)
 	if !ok || isNilPolicy(rp) {
 		return nil

@@ -7,7 +7,7 @@ import (
 
 	"github.com/hailocab/go-hostpool"
 
-	"github.com/gocql/gocql"
+	"github.com/scylladb/gocql/v2"
 )
 
 // Tests of the host pool host selection policy implementation

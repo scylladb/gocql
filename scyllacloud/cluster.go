@@ -10,46 +10,50 @@ import (
 
 	"sigs.k8s.io/yaml"
 
-	"github.com/gocql/gocql"
+	"github.com/scylladb/gocql/v2"
 )
 
-func NewCloudCluster(bundlePath string) (*gocql.ClusterConfig, error) {
+// NewCloudCluster reads a cloud bundle into the typed driver configuration.
+// Options are applied before installing the datacenter routing hooks, so a
+// custom Dialer is used by both direct and proxied cloud connections. Changing
+// Config.Dialer after this builder returns does not replace the captured dialer.
+func NewCloudCluster(bundlePath string, options ...func(*gocql.Config)) (gocql.Config, error) {
 	connConf := &ConnectionConfig{}
 
 	bundleFile, err := os.ReadFile(bundlePath)
 	if err != nil {
-		return nil, fmt.Errorf("can't open bundle path: %w", err)
+		return gocql.Config{}, fmt.Errorf("can't open bundle path: %w", err)
 	}
 
 	if err := yaml.Unmarshal(bundleFile, connConf); err != nil {
-		return nil, fmt.Errorf("can't decode bundle file at %q: %w", bundlePath, err)
+		return gocql.Config{}, fmt.Errorf("can't decode bundle file at %q: %w", bundlePath, err)
 	}
 
 	if _, ok := connConf.Contexts[connConf.CurrentContext]; !ok {
-		return nil, fmt.Errorf("current context points to unknown context")
+		return gocql.Config{}, fmt.Errorf("current context points to unknown context")
 	}
 
 	confContext := connConf.Contexts[connConf.CurrentContext]
 
 	if _, ok := connConf.AuthInfos[confContext.AuthInfoName]; !ok {
-		return nil, fmt.Errorf("context %q auth info points to unknown authinfo", connConf.CurrentContext)
+		return gocql.Config{}, fmt.Errorf("context %q auth info points to unknown authinfo", connConf.CurrentContext)
 	}
 
 	if _, ok := connConf.Datacenters[confContext.DatacenterName]; !ok {
-		return nil, fmt.Errorf("context %q datacenter points to unknown datacenter", connConf.CurrentContext)
+		return gocql.Config{}, fmt.Errorf("context %q datacenter points to unknown datacenter", connConf.CurrentContext)
 	}
 
 	authInfo := connConf.AuthInfos[confContext.AuthInfoName]
 
 	caPool, err := connConf.GetRootCAPool()
 	if err != nil {
-		return nil, fmt.Errorf("can't create root CA pool: %w", err)
+		return gocql.Config{}, fmt.Errorf("can't create root CA pool: %w", err)
 	}
 
-	cc := gocql.NewCluster(connConf.GetInitialContactPoints()...)
+	cc := gocql.DefaultConfig(connConf.GetInitialContactPoints()...)
 	cc.Port = 443
 
-	// SslOpts are used only by establishing connection to initial contact points.
+	// Initial contact points trust the configured datacenter certificate authorities.
 	// Skip verifying TLS if any of DC requires it.
 	insecureSkipVerify := false
 	for _, dc := range connConf.Datacenters {
@@ -59,45 +63,55 @@ func NewCloudCluster(bundlePath string) (*gocql.ClusterConfig, error) {
 		}
 	}
 
-	cc.SslOpts = &gocql.SslOptions{
-		// Set to false, always use value from tls.Config.
-		EnableHostVerification: false,
-		Config: &tls.Config{
-			RootCAs: caPool,
-			GetClientCertificate: func(info *tls.CertificateRequestInfo) (*tls.Certificate, error) {
-				return connConf.GetClientCertificate()
-			},
-			InsecureSkipVerify: insecureSkipVerify,
+	cc.TLS = &tls.Config{
+		RootCAs: caPool,
+		GetClientCertificate: func(info *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+			return connConf.GetClientCertificate()
 		},
+		InsecureSkipVerify: insecureSkipVerify,
 	}
-
-	dialer := cc.Dialer
-	if dialer == nil {
-		dialer = &net.Dialer{}
-	}
-
-	cc.HostDialer = NewSniHostDialer(connConf, dialer)
-	cc.Authenticator = gocql.PasswordAuthenticator{Password: authInfo.Password, Username: authInfo.Username}
+	cc.Auth = gocql.PasswordAuth(authInfo.Username, authInfo.Password)
+	// Cloud routes all traffic through SNI rather than source-port sharding.
+	cc.Pool.ShardAwarePort = false
+	cc.Pool.ConnectionsPerHost = 2
+	cc.CoalesceWait = 0
+	profile := cc.DefaultProfile.Snapshot()
+	profile.Consistency = gocql.Quorum
 
 	if connConf.Parameters != nil {
 		if connConf.Parameters.DefaultConsistency != "" {
 			if !validateConsistency(connConf.Parameters.DefaultConsistency, allowedConsistencies) {
-				return nil, fmt.Errorf("invalid value of default consistency %q, values can be one of: %v", connConf.Parameters.DefaultConsistency, allowedConsistencies)
+				return gocql.Config{}, fmt.Errorf("invalid value of default consistency %q, values can be one of: %v", connConf.Parameters.DefaultConsistency, allowedConsistencies)
 			}
-			if err := cc.Consistency.UnmarshalText([]byte(connConf.Parameters.DefaultConsistency)); err != nil {
-				return nil, fmt.Errorf("unmarshal default consistency: %w", err)
+			if err := profile.Consistency.UnmarshalText([]byte(connConf.Parameters.DefaultConsistency)); err != nil {
+				return gocql.Config{}, fmt.Errorf("unmarshal default consistency: %w", err)
 			}
 		}
 		if connConf.Parameters.DefaultSerialConsistency != "" {
 			if !validateConsistency(connConf.Parameters.DefaultSerialConsistency, allowedSerialConsistencies) {
-				return nil, fmt.Errorf("invalid value of default serial consistency %q, values can be one of: %v", connConf.Parameters.DefaultSerialConsistency, allowedSerialConsistencies)
+				return gocql.Config{}, fmt.Errorf("invalid value of default serial consistency %q, values can be one of: %v", connConf.Parameters.DefaultSerialConsistency, allowedSerialConsistencies)
 			}
-			if err := cc.SerialConsistency.UnmarshalText([]byte(connConf.Parameters.DefaultSerialConsistency)); err != nil {
-				return nil, fmt.Errorf("unmarshal default serial consistency: %w", err)
+			var serial gocql.Consistency
+			if err := serial.UnmarshalText([]byte(connConf.Parameters.DefaultSerialConsistency)); err != nil {
+				return gocql.Config{}, fmt.Errorf("unmarshal default serial consistency: %w", err)
 			}
+			profile.SerialConsistency = gocql.Option[gocql.Consistency]{Value: serial, Set: true}
 		}
 	}
 
+	if err := cc.DefaultProfile.Replace(profile); err != nil {
+		return gocql.Config{}, fmt.Errorf("cloud execution profile: %w", err)
+	}
+	for _, option := range options {
+		option(&cc)
+	}
+	dialer := cc.Dialer
+	if dialer == nil {
+		dialer = &net.Dialer{Timeout: cc.ConnectTimeout, KeepAlive: cc.SocketKeepalive}
+	}
+	hostDialer := NewSniHostDialer(connConf, dialer)
+	cc.DialHost = hostDialer.DialHost
+	cc.TLSForHost = hostDialer.TLSForHost
 	return cc, nil
 }
 

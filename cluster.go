@@ -36,7 +36,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gocql/gocql/internal/eventbus"
+	"github.com/scylladb/gocql/v2/internal/eventbus"
 )
 
 const defaultDriverName = "ScyllaDB GoCQL Driver"
@@ -110,7 +110,7 @@ type ClusterConfig struct {
 	PoolConfig PoolConfig
 	// Default retry policy to use for queries.
 	// Default: SimpleRetryPolicy{NumRetries: 3}.
-	RetryPolicy RetryPolicy
+	oldRetryPolicy oldRetryPolicy
 	// ConvictionPolicy decides whether to mark host as down based on the error and host info.
 	// Default: SimpleConvictionPolicy
 	ConvictionPolicy ConvictionPolicy

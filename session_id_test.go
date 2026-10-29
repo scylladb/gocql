@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	frm "github.com/gocql/gocql/internal/frame"
+	frm "github.com/scylladb/gocql/v2/internal/frame"
 )
 
 func TestSessionIDIsUniquePerSession(t *testing.T) {

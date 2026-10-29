@@ -1,0 +1,15 @@
+{
+  "purpose": "short correctness/regression matrix; not a replacement for six repetitions of ten-second performance measurements",
+  "go_race": "PASS; five Go tests including input phase coverage, whole-run reservoir and socket status regression checks",
+  "go_vet": "PASS",
+  "python_unittest": "PASS; eight tests including duplicate/missing/unknown cases, invalid seeds/settings, legacy latency withholding and optimized-Python CLI rejection",
+  "matrix": "PASS; 24 cases x two repetitions; 200 ms warmup and 2 s measured per client",
+  "source_hashes_match": true,
+  "latency_samples_seen": 561673,
+  "socket_status": "unsupported-observed-mismatch",
+  "maintained_socket_affinity_comparisons_emitted": false,
+  "legacy_raw_results_unchanged": true,
+  "legacy_latency_and_ratios_withheld": true,
+  "echo_server_stopped": true,
+  "raw_sha256": "0386e3fa444bc2945d082cbccb706af8c2c2d79fb1e1daaf5b1832e1961a0f95"
+}

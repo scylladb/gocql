@@ -1,0 +1,619 @@
+{
+  "raw_result_sha256": "0386e3fa444bc2945d082cbccb706af8c2c2d79fb1e1daaf5b1832e1961a0f95",
+  "total_runs": 48,
+  "total_operations": 4601289184,
+  "complete": true,
+  "missing_case_repetitions": [],
+  "latency_valid": true,
+  "summaries": [
+    {
+      "label": "cpu-1MiB-update0-A-shared",
+      "runs": 2,
+      "mops_median": 20.206087231718698,
+      "mops_min": 20.090473980573126,
+      "mops_max": 20.321700482864266,
+      "worker_completion_cv_median": 0.03146646142307288,
+      "client_cores_median": 1.8757448114326252,
+      "client_cpu_seconds_per_million_ops_median": 0.09283170609982365,
+      "batch_p99_ms_median": 0.06369,
+      "allocations_per_million_ops_median": 0.11141966703072871,
+      "server_cores_including_setup_warmup_median": 0.0
+    },
+    {
+      "label": "cpu-1MiB-update0-B-shared-pinned",
+      "runs": 2,
+      "mops_median": 30.797579916124427,
+      "mops_min": 30.765583528617007,
+      "mops_max": 30.829576303631843,
+      "worker_completion_cv_median": 0.06263703714501455,
+      "client_cores_median": 1.6371009829155374,
+      "client_cpu_seconds_per_million_ops_median": 0.05315685908975261,
+      "batch_p99_ms_median": 0.07380400000000001,
+      "allocations_per_million_ops_median": 0.13805201080474816,
+      "server_cores_including_setup_warmup_median": 0.0
+    },
+    {
+      "label": "cpu-1MiB-update0-C-sharded",
+      "runs": 2,
+      "mops_median": 201.10562671803444,
+      "mops_min": 199.48555695169196,
+      "mops_max": 202.72569648437695,
+      "worker_completion_cv_median": 0.012669481522267248,
+      "client_cores_median": 3.9990254770744684,
+      "client_cpu_seconds_per_million_ops_median": 0.019886495743416412,
+      "batch_p99_ms_median": 0.001082,
+      "allocations_per_million_ops_median": 0.0012268307612679204,
+      "server_cores_including_setup_warmup_median": 0.0
+    },
+    {
+      "label": "cpu-1MiB-update0-D-sharded-pinned",
+      "runs": 2,
+      "mops_median": 200.39668624913435,
+      "mops_min": 198.95577534626193,
+      "mops_max": 201.83759715200677,
+      "worker_completion_cv_median": 0.014329181209277482,
+      "client_cores_median": 3.9948064094753235,
+      "client_cpu_seconds_per_million_ops_median": 0.019935437701911904,
+      "batch_p99_ms_median": 0.001077,
+      "allocations_per_million_ops_median": 0.0024821435221360306,
+      "server_cores_including_setup_warmup_median": 0.0
+    },
+    {
+      "label": "cpu-1MiB-update1-A-shared",
+      "runs": 2,
+      "mops_median": 20.500699094067407,
+      "mops_min": 20.343900681076875,
+      "mops_max": 20.65749750705794,
+      "worker_completion_cv_median": 0.02273346622713707,
+      "client_cores_median": 1.877356236184655,
+      "client_cpu_seconds_per_million_ops_median": 0.09158160042364008,
+      "batch_p99_ms_median": 0.06535350000000001,
+      "allocations_per_million_ops_median": 0.1219536416904316,
+      "server_cores_including_setup_warmup_median": 0.0
+    },
+    {
+      "label": "cpu-1MiB-update1-B-shared-pinned",
+      "runs": 2,
+      "mops_median": 29.896606683902263,
+      "mops_min": 29.368386299452574,
+      "mops_max": 30.42482706835196,
+      "worker_completion_cv_median": 0.064153535033625,
+      "client_cores_median": 1.6283254434504504,
+      "client_cpu_seconds_per_million_ops_median": 0.05448788272581815,
+      "batch_p99_ms_median": 0.077391,
+      "allocations_per_million_ops_median": 0.20074617839820869,
+      "server_cores_including_setup_warmup_median": 0.0
+    },
+    {
+      "label": "cpu-1MiB-update1-C-sharded",
+      "runs": 2,
+      "mops_median": 201.17820888294415,
+      "mops_min": 201.0750203071611,
+      "mops_max": 201.28139745872716,
+      "worker_completion_cv_median": 0.01308420881082439,
+      "client_cores_median": 3.999207858035038,
+      "client_cpu_seconds_per_million_ops_median": 0.019878936782184557,
+      "batch_p99_ms_median": 0.001072,
+      "allocations_per_million_ops_median": 0.0,
+      "server_cores_including_setup_warmup_median": 0.0
+    },
+    {
+      "label": "cpu-1MiB-update1-D-sharded-pinned",
+      "runs": 2,
+      "mops_median": 196.26126767512451,
+      "mops_min": 191.78437300013644,
+      "mops_max": 200.73816235011262,
+      "worker_completion_cv_median": 0.019434226696455205,
+      "client_cores_median": 3.996182545074883,
+      "client_cpu_seconds_per_million_ops_median": 0.02037188959943347,
+      "batch_p99_ms_median": 0.001092,
+      "allocations_per_million_ops_median": 0.0012959137041733812,
+      "server_cores_including_setup_warmup_median": 0.0
+    },
+    {
+      "label": "cpu-64MiB-update0-A-shared",
+      "runs": 2,
+      "mops_median": 7.045793396359967,
+      "mops_min": 6.3889698125130225,
+      "mops_max": 7.70261698020691,
+      "worker_completion_cv_median": 0.0690492862790189,
+      "client_cores_median": 1.144775811111176,
+      "client_cpu_seconds_per_million_ops_median": 0.16377028641758404,
+      "batch_p99_ms_median": 0.39112250000000004,
+      "allocations_per_million_ops_median": 1.9982936652961096,
+      "server_cores_including_setup_warmup_median": 0.0
+    },
+    {
+      "label": "cpu-64MiB-update0-B-shared-pinned",
+      "runs": 2,
+      "mops_median": 6.804104449909845,
+      "mops_min": 6.7720817530031985,
+      "mops_max": 6.836127146816493,
+      "worker_completion_cv_median": 0.07744862880526018,
+      "client_cores_median": 1.1150966059427612,
+      "client_cpu_seconds_per_million_ops_median": 0.16388322995772503,
+      "batch_p99_ms_median": 0.328024,
+      "allocations_per_million_ops_median": 4.819662143550366,
+      "server_cores_including_setup_warmup_median": 0.0
+    },
+    {
+      "label": "cpu-64MiB-update0-C-sharded",
+      "runs": 2,
+      "mops_median": 43.968002555702554,
+      "mops_min": 43.402961874111156,
+      "mops_max": 44.53304323729395,
+      "worker_completion_cv_median": 0.018125583927791417,
+      "client_cores_median": 3.9994903193353015,
+      "client_cpu_seconds_per_million_ops_median": 0.09097875253709786,
+      "batch_p99_ms_median": 0.0050595,
+      "allocations_per_million_ops_median": 0.011307260288322261,
+      "server_cores_including_setup_warmup_median": 0.0
+    },
+    {
+      "label": "cpu-64MiB-update0-D-sharded-pinned",
+      "runs": 2,
+      "mops_median": 47.62659563408788,
+      "mops_min": 43.05761904210449,
+      "mops_max": 52.19557222607126,
+      "worker_completion_cv_median": 0.023511579464398934,
+      "client_cores_median": 3.9938775717413773,
+      "client_cpu_seconds_per_million_ops_median": 0.08463602277774132,
+      "batch_p99_ms_median": 0.0043785000000000004,
+      "allocations_per_million_ops_median": 0.005766623190941105,
+      "server_cores_including_setup_warmup_median": 0.0
+    },
+    {
+      "label": "cpu-64MiB-update1-A-shared",
+      "runs": 2,
+      "mops_median": 7.193508465748825,
+      "mops_min": 6.5769979093518955,
+      "mops_max": 7.810019022145755,
+      "worker_completion_cv_median": 0.07517928388893283,
+      "client_cores_median": 1.1430759609520382,
+      "client_cpu_seconds_per_million_ops_median": 0.1599024936325295,
+      "batch_p99_ms_median": 0.33674499999999996,
+      "allocations_per_million_ops_median": 1.5264294874635855,
+      "server_cores_including_setup_warmup_median": 0.0
+    },
+    {
+      "label": "cpu-64MiB-update1-B-shared-pinned",
+      "runs": 2,
+      "mops_median": 7.573755393875529,
+      "mops_min": 7.145479184452502,
+      "mops_max": 8.002031603298557,
+      "worker_completion_cv_median": 0.09101942422083355,
+      "client_cores_median": 1.120700216880251,
+      "client_cpu_seconds_per_million_ops_median": 0.14840168887495922,
+      "batch_p99_ms_median": 0.28133549999999996,
+      "allocations_per_million_ops_median": 3.675153884766458,
+      "server_cores_including_setup_warmup_median": 0.0
+    },
+    {
+      "label": "cpu-64MiB-update1-C-sharded",
+      "runs": 2,
+      "mops_median": 47.16909285560248,
+      "mops_min": 42.68394120234104,
+      "mops_max": 51.65424450886392,
+      "worker_completion_cv_median": 0.014054783031668966,
+      "client_cores_median": 3.999557463101727,
+      "client_cpu_seconds_per_million_ops_median": 0.08556592604712407,
+      "batch_p99_ms_median": 0.0045734999999999994,
+      "allocations_per_million_ops_median": 0.0,
+      "server_cores_including_setup_warmup_median": 0.0
+    },
+    {
+      "label": "cpu-64MiB-update1-D-sharded-pinned",
+      "runs": 2,
+      "mops_median": 50.63008998183532,
+      "mops_min": 50.05570010694427,
+      "mops_max": 51.20447985672637,
+      "worker_completion_cv_median": 0.014653004652890822,
+      "client_cores_median": 3.993304657490195,
+      "client_cpu_seconds_per_million_ops_median": 0.07888204214929107,
+      "batch_p99_ms_median": 0.0039475,
+      "allocations_per_million_ops_median": 0.004852118302873417,
+      "server_cores_including_setup_warmup_median": 0.0
+    },
+    {
+      "label": "tcp-64MiB-update1-A-shared",
+      "runs": 2,
+      "mops_median": 4.844696324439689,
+      "mops_min": 4.83452584703899,
+      "mops_max": 4.85486680184039,
+      "worker_completion_cv_median": 0.003005868586697006,
+      "client_cores_median": 1.991010089109313,
+      "client_cpu_seconds_per_million_ops_median": 0.4109532865232618,
+      "batch_p99_ms_median": 0.062473,
+      "allocations_per_million_ops_median": 14.712022358947749,
+      "server_cores_including_setup_warmup_median": 0.9585501197441051
+    },
+    {
+      "label": "tcp-64MiB-update1-B-shared-pinned",
+      "runs": 2,
+      "mops_median": 2.1152140042181764,
+      "mops_min": 2.0777069260154284,
+      "mops_max": 2.1527210824209244,
+      "worker_completion_cv_median": 0.023236758043497955,
+      "client_cores_median": 1.3126452830063071,
+      "client_cpu_seconds_per_million_ops_median": 0.6206809344671673,
+      "batch_p99_ms_median": 0.1253465,
+      "allocations_per_million_ops_median": 45.40689806641282,
+      "server_cores_including_setup_warmup_median": 0.4542168202259651
+    },
+    {
+      "label": "tcp-64MiB-update1-C-sharded",
+      "runs": 2,
+      "mops_median": 5.736622270193417,
+      "mops_min": 5.654717573939157,
+      "mops_max": 5.818526966447677,
+      "worker_completion_cv_median": 0.0017321877364626667,
+      "client_cores_median": 2.1131393183529785,
+      "client_cpu_seconds_per_million_ops_median": 0.36835875823337905,
+      "batch_p99_ms_median": 0.037105,
+      "allocations_per_million_ops_median": 4.184393532148434,
+      "server_cores_including_setup_warmup_median": 1.4218544921046274
+    },
+    {
+      "label": "tcp-64MiB-update1-D-sharded-pinned",
+      "runs": 2,
+      "mops_median": 3.973583013894831,
+      "mops_min": 3.63844055168893,
+      "mops_max": 4.308725476100733,
+      "worker_completion_cv_median": 0.00964135460940501,
+      "client_cores_median": 1.6475305677893992,
+      "client_cpu_seconds_per_million_ops_median": 0.4149854216072384,
+      "batch_p99_ms_median": 0.072121,
+      "allocations_per_million_ops_median": 6.430750048555671,
+      "server_cores_including_setup_warmup_median": 1.0270475931649161
+    },
+    {
+      "label": "tcp-64MiB-update1-E-sharded-pinned-socket-once",
+      "runs": 2,
+      "mops_median": 4.069123458505296,
+      "mops_min": 3.8157298735754788,
+      "mops_max": 4.322517043435114,
+      "worker_completion_cv_median": 0.012937501124257981,
+      "client_cores_median": 1.746988208168271,
+      "client_cpu_seconds_per_million_ops_median": 0.4298464558299542,
+      "batch_p99_ms_median": 0.2072655,
+      "allocations_per_million_ops_median": 493.97051987247244,
+      "server_cores_including_setup_warmup_median": 1.0396176418674736
+    },
+    {
+      "label": "tcp-64MiB-update1-skew-C-sharded",
+      "runs": 2,
+      "mops_median": 2.21383812181828,
+      "mops_min": 2.2007829132539523,
+      "mops_max": 2.2268933303826075,
+      "worker_completion_cv_median": 1.2701718388869756,
+      "client_cores_median": 0.8756498770330141,
+      "client_cpu_seconds_per_million_ops_median": 0.3955596361632692,
+      "batch_p99_ms_median": 1.469191,
+      "allocations_per_million_ops_median": 74.57147115109379,
+      "server_cores_including_setup_warmup_median": 0.6198448156465002
+    },
+    {
+      "label": "tcp-64MiB-update1-skew-D-sharded-pinned",
+      "runs": 2,
+      "mops_median": 1.7850158168731742,
+      "mops_min": 1.6837089295917964,
+      "mops_max": 1.8863227041545518,
+      "worker_completion_cv_median": 1.2702818207941888,
+      "client_cores_median": 0.8675294291106126,
+      "client_cpu_seconds_per_million_ops_median": 0.4876745330133482,
+      "batch_p99_ms_median": 3.5651580000000003,
+      "allocations_per_million_ops_median": 83.10617901287875,
+      "server_cores_including_setup_warmup_median": 0.5091970341800565
+    },
+    {
+      "label": "tcp-64MiB-update1-skew-E-sharded-pinned-socket-once",
+      "runs": 2,
+      "mops_median": 1.8227558836115454,
+      "mops_min": 1.820666977647343,
+      "mops_max": 1.8248447895757476,
+      "worker_completion_cv_median": 1.2701804206104925,
+      "client_cores_median": 0.8989553589485586,
+      "client_cpu_seconds_per_million_ops_median": 0.4931829849555929,
+      "batch_p99_ms_median": 2.459688,
+      "allocations_per_million_ops_median": 580.8244098511205,
+      "server_cores_including_setup_warmup_median": 0.5175487950998743
+    }
+  ],
+  "comparisons": [
+    {
+      "workload": "cpu-1MiB-update0",
+      "comparison": "D-sharded-pinned/C-sharded",
+      "meaning": "pinning after sharding",
+      "paired_runs": 2,
+      "paired_median_gain_percent": -0.3518266129993619,
+      "bootstrap_median_95_percent_interval": [
+        -0.43807931000924283,
+        -0.265573915989481
+      ],
+      "paired_gain_percent": [
+        -0.43807931000924283,
+        -0.265573915989481
+      ],
+      "paired_median_batch_p99_ratio": 0.9956336877650975,
+      "paired_median_worker_cv_change": 0.0016596996870102349
+    },
+    {
+      "workload": "cpu-1MiB-update0",
+      "comparison": "C-sharded/A-shared",
+      "meaning": "sharding plus removing shared lock",
+      "paired_runs": 2,
+      "paired_median_gain_percent": 895.2591936256663,
+      "bootstrap_median_95_percent_interval": [
+        892.9360409544762,
+        897.5823462968567
+      ],
+      "paired_gain_percent": [
+        897.5823462968567,
+        892.9360409544762
+      ],
+      "paired_median_batch_p99_ratio": 0.016993797320603,
+      "paired_median_worker_cv_change": -0.018796979900805637
+    },
+    {
+      "workload": "cpu-1MiB-update0",
+      "comparison": "B-shared-pinned/A-shared",
+      "meaning": "pinning shared cache",
+      "paired_runs": 2,
+      "paired_median_gain_percent": 52.423232285401355,
+      "bootstrap_median_95_percent_interval": [
+        51.39276142052811,
+        53.4537031502746
+      ],
+      "paired_gain_percent": [
+        51.39276142052811,
+        53.4537031502746
+      ],
+      "paired_median_batch_p99_ratio": 1.1623064602748239,
+      "paired_median_worker_cv_change": 0.031170575721941665
+    },
+    {
+      "workload": "cpu-1MiB-update1",
+      "comparison": "D-sharded-pinned/C-sharded",
+      "meaning": "pinning after sharding",
+      "paired_runs": 2,
+      "paired_median_gain_percent": -2.4429053753448615,
+      "bootstrap_median_95_percent_interval": [
+        -4.718282254840811,
+        -0.16752849584892315
+      ],
+      "paired_gain_percent": [
+        -0.16752849584892315,
+        -4.718282254840811
+      ],
+      "paired_median_batch_p99_ratio": 1.0186567164179103,
+      "paired_median_worker_cv_change": 0.0063500178856308155
+    },
+    {
+      "workload": "cpu-1MiB-update1",
+      "comparison": "C-sharded/A-shared",
+      "meaning": "sharding plus removing shared lock",
+      "paired_runs": 2,
+      "paired_median_gain_percent": 881.3772107363245,
+      "bootstrap_median_95_percent_interval": [
+        874.3745455612734,
+        888.3798759113757
+      ],
+      "paired_gain_percent": [
+        888.3798759113757,
+        874.3745455612734
+      ],
+      "paired_median_batch_p99_ratio": 0.016430002217999055,
+      "paired_median_worker_cv_change": -0.00964925741631268
+    },
+    {
+      "workload": "cpu-1MiB-update1",
+      "comparison": "B-shared-pinned/A-shared",
+      "meaning": "pinning shared cache",
+      "paired_runs": 2,
+      "paired_median_gain_percent": 45.820955964886736,
+      "bootstrap_median_95_percent_interval": [
+        44.35966218990606,
+        47.28224973986741
+      ],
+      "paired_gain_percent": [
+        44.35966218990606,
+        47.28224973986741
+      ],
+      "paired_median_batch_p99_ratio": 1.1859491708838852,
+      "paired_median_worker_cv_change": 0.04142006880648792
+    },
+    {
+      "workload": "cpu-64MiB-update0",
+      "comparison": "D-sharded-pinned/C-sharded",
+      "meaning": "pinning after sharding",
+      "paired_runs": 2,
+      "paired_median_gain_percent": 8.205361622027162,
+      "bootstrap_median_95_percent_interval": [
+        -0.7956665100605775,
+        17.206389754114902
+      ],
+      "paired_gain_percent": [
+        -0.7956665100605775,
+        17.206389754114902
+      ],
+      "paired_median_batch_p99_ratio": 0.8617451837461552,
+      "paired_median_worker_cv_change": 0.005385995536607518
+    },
+    {
+      "workload": "cpu-64MiB-update0",
+      "comparison": "C-sharded/A-shared",
+      "meaning": "sharding plus removing shared lock",
+      "paired_runs": 2,
+      "paired_median_gain_percent": 528.7484088408306,
+      "bootstrap_median_95_percent_interval": [
+        478.15471484209365,
+        579.3421028395676
+      ],
+      "paired_gain_percent": [
+        579.3421028395676,
+        478.15471484209365
+      ],
+      "paired_median_batch_p99_ratio": 0.013281026561743632,
+      "paired_median_worker_cv_change": -0.050923702351227486
+    },
+    {
+      "workload": "cpu-64MiB-update0",
+      "comparison": "B-shared-pinned/A-shared",
+      "meaning": "pinning shared cache",
+      "paired_runs": 2,
+      "paired_median_gain_percent": -2.6264163411974017,
+      "bootstrap_median_95_percent_interval": [
+        -11.24929145012662,
+        5.996458767731805
+      ],
+      "paired_gain_percent": [
+        5.996458767731805,
+        -11.24929145012662
+      ],
+      "paired_median_batch_p99_ratio": 0.8450908967873247,
+      "paired_median_worker_cv_change": 0.008399342526241284
+    },
+    {
+      "workload": "cpu-64MiB-update1",
+      "comparison": "D-sharded-pinned/C-sharded",
+      "meaning": "pinning after sharding",
+      "paired_runs": 2,
+      "paired_median_gain_percent": 8.199922994051857,
+      "bootstrap_median_95_percent_interval": [
+        -0.8707215765402787,
+        17.270567564644
+      ],
+      "paired_gain_percent": [
+        -0.8707215765402787,
+        17.270567564644
+      ],
+      "paired_median_batch_p99_ratio": 0.8855296265501057,
+      "paired_median_worker_cv_change": 0.0005982216212218555
+    },
+    {
+      "workload": "cpu-64MiB-update1",
+      "comparison": "C-sharded/A-shared",
+      "meaning": "sharding plus removing shared lock",
+      "paired_runs": 2,
+      "paired_median_gain_percent": 565.9526217097828,
+      "bootstrap_median_95_percent_interval": [
+        446.5280056464432,
+        685.3772377731223
+      ],
+      "paired_gain_percent": [
+        685.3772377731223,
+        446.5280056464432
+      ],
+      "paired_median_batch_p99_ratio": 0.013896221956639422,
+      "paired_median_worker_cv_change": -0.061124500857263855
+    },
+    {
+      "workload": "cpu-64MiB-update1",
+      "comparison": "B-shared-pinned/A-shared",
+      "meaning": "pinning shared cache",
+      "paired_runs": 2,
+      "paired_median_gain_percent": 6.579060210253718,
+      "bootstrap_median_95_percent_interval": [
+        -8.508812024771151,
+        21.666932445278597
+      ],
+      "paired_gain_percent": [
+        21.666932445278597,
+        -8.508812024771151
+      ],
+      "paired_median_batch_p99_ratio": 0.8367384598765419,
+      "paired_median_worker_cv_change": 0.015840140331900728
+    },
+    {
+      "workload": "tcp-64MiB-update1",
+      "comparison": "D-sharded-pinned/C-sharded",
+      "meaning": "pinning after sharding",
+      "paired_runs": 2,
+      "paired_median_gain_percent": -30.80236034040993,
+      "bootstrap_median_95_percent_interval": [
+        -35.65654687234291,
+        -25.948173808476938
+      ],
+      "paired_gain_percent": [
+        -25.948173808476938,
+        -35.65654687234291
+      ],
+      "paired_median_batch_p99_ratio": 1.9375844538642846,
+      "paired_median_worker_cv_change": 0.007909166872942346
+    },
+    {
+      "workload": "tcp-64MiB-update1",
+      "comparison": "C-sharded/A-shared",
+      "meaning": "sharding plus removing shared lock",
+      "paired_runs": 2,
+      "paired_median_gain_percent": 18.41442912392357,
+      "bootstrap_median_95_percent_interval": [
+        16.47523618558513,
+        20.35362206226199
+      ],
+      "paired_gain_percent": [
+        20.35362206226199,
+        16.47523618558513
+      ],
+      "paired_median_batch_p99_ratio": 0.5941040316283372,
+      "paired_median_worker_cv_change": -0.0012736808502343392
+    },
+    {
+      "workload": "tcp-64MiB-update1",
+      "comparison": "B-shared-pinned/A-shared",
+      "meaning": "pinning shared cache",
+      "paired_runs": 2,
+      "paired_median_gain_percent": -56.33777798451397,
+      "bootstrap_median_95_percent_interval": [
+        -57.20362657060316,
+        -55.47192939842478
+      ],
+      "paired_gain_percent": [
+        -55.47192939842478,
+        -57.20362657060316
+      ],
+      "paired_median_batch_p99_ratio": 1.9961198403496763,
+      "paired_median_worker_cv_change": 0.020230889456800946
+    },
+    {
+      "workload": "tcp-64MiB-update1-skew",
+      "comparison": "D-sharded-pinned/C-sharded",
+      "meaning": "pinning after sharding",
+      "paired_runs": 2,
+      "paired_median_gain_percent": -19.39426646671285,
+      "bootstrap_median_95_percent_interval": [
+        -23.49500173543422,
+        -15.293531197991484
+      ],
+      "paired_gain_percent": [
+        -23.49500173543422,
+        -15.293531197991484
+      ],
+      "paired_median_batch_p99_ratio": 2.5068529578255663,
+      "paired_median_worker_cv_change": 0.0001099819072132302
+    }
+  ],
+  "pinned_cpu_samples": 286433,
+  "unpinned_sampled_cpu_changes": 22466,
+  "socket_workers": 16,
+  "socket_workers_incoming_cpu_changed_from_target": 16,
+  "socket_workers_target_missing_at_measurement_start": 16,
+  "socket_affinity_status": "unsupported-observed-mismatch",
+  "socket_observed_cpu_values": [
+    17,
+    18,
+    20,
+    23
+  ],
+  "socket_observed_napi_values": [
+    0
+  ],
+  "notes": [
+    "Synthetic cache/LRU/encoding/loopback experiment; no actual gocql, database, TLS or physical NIC.",
+    "LRU ownership/lock removal is distinct from worker pinning; compare D/C for worker pinning.",
+    "E is a one-time socket-option feasibility probe, not a maintained socket-affinity throughput treatment.",
+    "Latency describes sampled batches of 32 operations, not per-query p99. Skew includes bounded queue time.",
+    "Bootstrap intervals resample up to 2 randomized blocks; exploratory shared-host evidence.",
+    "No hardware cache-miss or full migration counters are collected by this harness."
+  ]
+}

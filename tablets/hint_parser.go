@@ -22,7 +22,7 @@ package tablets
 import (
 	"fmt"
 
-	"github.com/gocql/gocql/internal/cqlproto"
+	"github.com/scylladb/gocql/v2/internal/cqlproto"
 )
 
 // ParseHint is a zero-reflection binary parser for the

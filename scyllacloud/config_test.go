@@ -6,6 +6,8 @@
 package scyllacloud
 
 import (
+	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"reflect"
@@ -13,9 +15,9 @@ import (
 
 	"sigs.k8s.io/yaml"
 
-	"github.com/gocql/gocql/internal/tests"
+	"github.com/scylladb/gocql/v2/internal/tests"
 
-	"github.com/gocql/gocql"
+	"github.com/scylladb/gocql/v2"
 )
 
 func TestCloudCluster(t *testing.T) {
@@ -67,7 +69,7 @@ func TestCloudCluster(t *testing.T) {
 		name                string
 		createConfig        func() (*ConnectionConfig, string)
 		expectedError       error
-		verifyClusterConfig func(*testing.T, *ConnectionConfig, *gocql.ClusterConfig)
+		verifyClusterConfig func(*testing.T, *ConnectionConfig, gocql.Config)
 	}{
 		{
 			name: "current context points to unknown context",
@@ -138,8 +140,8 @@ func TestCloudCluster(t *testing.T) {
 				return writeCloudConnectionConfigToTemp(t, multiDCConfig())
 			},
 			expectedError: nil,
-			verifyClusterConfig: func(t *testing.T, connConfig *ConnectionConfig, config *gocql.ClusterConfig) {
-				if len(connConfig.Datacenters) != len(config.Hosts) {
+			verifyClusterConfig: func(t *testing.T, connConfig *ConnectionConfig, config gocql.Config) {
+				if len(connConfig.Datacenters) != len(config.ContactPoints) {
 					t.Errorf("initial contact points does not use all datacenters")
 				}
 			},
@@ -152,8 +154,8 @@ func TestCloudCluster(t *testing.T) {
 				return writeCloudConnectionConfigToTemp(t, cc)
 			},
 			expectedError: nil,
-			verifyClusterConfig: func(t *testing.T, connConfig *ConnectionConfig, config *gocql.ClusterConfig) {
-				if !config.SslOpts.Config.InsecureSkipVerify {
+			verifyClusterConfig: func(t *testing.T, connConfig *ConnectionConfig, config gocql.Config) {
+				if !config.TLS.InsecureSkipVerify {
 					t.Errorf("expected disabled certificate verification")
 				}
 			},
@@ -164,18 +166,31 @@ func TestCloudCluster(t *testing.T) {
 				return writeCloudConnectionConfigToTemp(t, singleDCConfig())
 			},
 			expectedError: nil,
-			verifyClusterConfig: func(t *testing.T, connConfig *ConnectionConfig, config *gocql.ClusterConfig) {
-				authenticator, ok := config.Authenticator.(gocql.PasswordAuthenticator)
-				if !ok {
-					t.Errorf("expected PasswordAuthenticator, got %T", config.Authenticator)
+			verifyClusterConfig: func(t *testing.T, connConfig *ConnectionConfig, config gocql.Config) {
+				exchange, response, err := config.Auth.Start(context.Background(), gocql.HostSnapshot{}, "org.apache.cassandra.auth.PasswordAuthenticator")
+				if err != nil {
+					t.Fatal(err)
 				}
+				defer exchange.Close()
 				currentContext := connConfig.Contexts[connConfig.CurrentContext]
 				authInfo := connConfig.AuthInfos[currentContext.AuthInfoName]
-				if authInfo.Username != authenticator.Username {
-					t.Errorf("expected %q username, got %q", authInfo.Username, authenticator.Username)
+				want := []byte("\x00" + authInfo.Username + "\x00" + authInfo.Password)
+				if !response.Valid || !bytes.Equal(response.Value, want) {
+					t.Error("password authentication response does not match configured credentials")
 				}
-				if authInfo.Password != authenticator.Password {
-					t.Errorf("expected %q password, got %q", authInfo.Password, authenticator.Password)
+			},
+		},
+		{
+			name: "execution consistency parameters are preserved",
+			createConfig: func() (*ConnectionConfig, string) {
+				cc := singleDCConfig()
+				cc.Parameters = &Parameters{DefaultConsistency: DefaultLocalQuorumConsistency, DefaultSerialConsistency: DefaultSerialConsistency}
+				return writeCloudConnectionConfigToTemp(t, cc)
+			},
+			verifyClusterConfig: func(t *testing.T, _ *ConnectionConfig, config gocql.Config) {
+				profile := config.DefaultProfile.Snapshot()
+				if profile.Consistency != gocql.LocalQuorum || !profile.SerialConsistency.Set || profile.SerialConsistency.Value != gocql.Serial {
+					t.Errorf("cloud consistency parameters were not preserved: %+v", profile)
 				}
 			},
 		},

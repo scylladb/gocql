@@ -1,0 +1,236 @@
+2026/10/29 08:48:19 logger.go:60: warning: skipping result metadata can lead to unpredictable results if columns involved in a prepared query are altered, on connections that exchange no result metadata ID (protocol v4 or lower without the SCYLLA_USE_METADATA_ID extension).
+2026/10/29 08:48:19 logger.go:59: gocql: 127.0.0.1:46563 does not support the requested "snappy" compression, continuing uncompressed (server offers: [lz4])
+2026/10/29 08:48:19 logger.go:59: gocql: 127.0.0.1:46563 does not support the requested "snappy" compression, continuing uncompressed (server offers: [lz4])
+--- FAIL: TestRecvSplitFrameAllocatesExactlyOneFrameBuffer (0.01s)
+    segment_reassembly_test.go:178: reassembling 4 frames of 393222 bytes allocated 3609048 bytes, want at most 2359332
+--- FAIL: TestKeyspaceMetadataQueryError (0.00s)
+    refresh_all_schema_unit_test.go:160: getKeyspaceMetadata error = gocql: no hosts available in the pool, want the query error
+--- FAIL: TestGetKeyspaceMetadataMissingKeyspaceClosesIter (0.00s)
+    metadata_scylla_test.go:28: getKeyspaceMetadata() error = gocql: no hosts available in the pool, want keyspace does not exist
+--- FAIL: TestRefreshAllSchemaReplicationChanged (0.00s)
+    refresh_all_schema_unit_test.go:116: load ks1: gocql: no hosts available in the pool
+--- FAIL: TestRefreshAllSchemaUnchanged (0.00s)
+    refresh_all_schema_unit_test.go:68: load ks1: gocql: no hosts available in the pool
+--- FAIL: TestScyllaIsCdcTableAfterInvalidation (0.00s)
+    session_unit_test.go:361: scyllaIsCdcTable after invalidation failed: gocql: no hosts available in the pool
+--- FAIL: TestTableMetadataAfterInvalidation (0.00s)
+    session_unit_test.go:285: TableMetadata after invalidation failed: gocql: no hosts available in the pool
+--- FAIL: TestTableMetadataAfterKeyspaceInvalidation (0.00s)
+    session_unit_test.go:321: TableMetadata after keyspace invalidation failed: gocql: no hosts available in the pool
+2026/10/29 08:48:20 logger.go:60: gocql: WARNING - DisableStrictCertificateValidation is deprecated and will be removed in a future version. Please ensure your certificate chains are properly configured to work with strict validation.
+2026/10/29 08:48:20 logger.go:59: scylla: connection to shard-aware address 127.0.0.1:36469 resulted in wrong shard being assigned; please check that you are not behind a NAT or AddressTranslater which changes source ports; falling back to non-shard-aware port for 5m0s
+2026/10/29 08:48:20 logger.go:59: scylla: connection to shard-aware address 127.0.0.1:38351 resulted in wrong shard being assigned; please check that you are not behind a NAT or AddressTranslater which changes source ports; falling back to non-shard-aware port for 5m0s
+2026/10/29 08:48:20 logger.go:59: scylla: connection to shard-aware address 127.0.0.1:36469 resulted in wrong shard being assigned; please check that you are not behind a NAT or AddressTranslater which changes source ports; falling back to non-shard-aware port for 5m0s
+--- FAIL: TestRefreshAllSchemaKeyspaceDropped (0.00s)
+    refresh_all_schema_unit_test.go:76: load ks1: gocql: no hosts available in the pool
+--- FAIL: TestRefreshAllSchemaTableChanged (0.00s)
+    refresh_all_schema_unit_test.go:103: load ks1: gocql: no hosts available in the pool
+--- FAIL: TestRefreshAllSchemaError (0.00s)
+    refresh_all_schema_unit_test.go:132: load ks1: gocql: no hosts available in the pool
+--- FAIL: TestGetCreateStatementsDescribeUnsupported (0.00s)
+    refresh_all_schema_unit_test.go:254: getCreateStatements = "", gocql: no hosts available in the pool; want nil, nil
+--- FAIL: TestRefreshAllSchemaErrorUnwraps (0.00s)
+    refresh_all_schema_unit_test.go:170: load ks1: gocql: no hosts available in the pool
+--- FAIL: TestRefreshAllSchemaTableDropped (0.00s)
+    refresh_all_schema_unit_test.go:93: load ks1: gocql: no hosts available in the pool
+2026/10/29 08:48:20 logger.go:59: gocql: unable to dial control conn 127.0.0.1:1: dial tcp 127.0.0.1:1: connect: connection refused
+2026/10/29 08:48:20 logger.go:59: gocql: unable to dial control conn 127.0.0.1:1: dial tcp 127.0.0.1:1: connect: connection refused
+2026/10/29 08:48:20 logger.go:59: gocql: unable to dial control conn 127.0.0.1:1: dial tcp 127.0.0.1:1: connect: connection refused
+2026/10/29 08:48:20 logger.go:59: gocql: unable to dial control conn 127.0.0.1:1: dial tcp 127.0.0.1:1: connect: connection refused
+2026/10/29 08:48:20 logger.go:59: gocql: unable to dial control conn 127.0.0.1:1: dial tcp 127.0.0.1:1: connect: connection refused
+2026/10/29 08:48:20 logger.go:59: gocql: unable to dial control conn 127.0.0.1:1: dial tcp 127.0.0.1:1: connect: connection refused
+--- FAIL: TestConcurrentSchemaRefreshErrorHandling (0.00s)
+    --- FAIL: TestConcurrentSchemaRefreshErrorHandling/GetTable/all_succeed (0.00s)
+        events_unit_test.go:1429: goroutine 0: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1432: goroutine 0: got nil table metadata
+        events_unit_test.go:1429: goroutine 1: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1432: goroutine 1: got nil table metadata
+        events_unit_test.go:1429: goroutine 2: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1432: goroutine 2: got nil table metadata
+        events_unit_test.go:1429: goroutine 3: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1432: goroutine 3: got nil table metadata
+        events_unit_test.go:1429: goroutine 4: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1432: goroutine 4: got nil table metadata
+        events_unit_test.go:1429: goroutine 5: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1432: goroutine 5: got nil table metadata
+        events_unit_test.go:1429: goroutine 6: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1432: goroutine 6: got nil table metadata
+        events_unit_test.go:1429: goroutine 7: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1432: goroutine 7: got nil table metadata
+        events_unit_test.go:1429: goroutine 8: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1432: goroutine 8: got nil table metadata
+        events_unit_test.go:1429: goroutine 9: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1432: goroutine 9: got nil table metadata
+    --- FAIL: TestConcurrentSchemaRefreshErrorHandling/GetTable/fail_then_succeed (0.00s)
+        events_unit_test.go:1502: second attempt should succeed, got: gocql: no hosts available in the pool
+    --- FAIL: TestConcurrentSchemaRefreshErrorHandling/GetKeyspace/fail_then_succeed (0.00s)
+        events_unit_test.go:1370: second attempt should succeed, got: gocql: no hosts available in the pool
+    --- FAIL: TestConcurrentSchemaRefreshErrorHandling/GetKeyspace_and_GetTable/concurrent_mixed (0.00s)
+        events_unit_test.go:1566: GetKeyspace goroutine 0: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1569: GetTable goroutine 0: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1566: GetKeyspace goroutine 1: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1569: GetTable goroutine 1: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1566: GetKeyspace goroutine 2: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1569: GetTable goroutine 2: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1566: GetKeyspace goroutine 3: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1569: GetTable goroutine 3: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1566: GetKeyspace goroutine 4: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1569: GetTable goroutine 4: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1566: GetKeyspace goroutine 5: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1569: GetTable goroutine 5: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1566: GetKeyspace goroutine 6: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1569: GetTable goroutine 6: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1566: GetKeyspace goroutine 7: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1569: GetTable goroutine 7: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1566: GetKeyspace goroutine 8: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1569: GetTable goroutine 8: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1566: GetKeyspace goroutine 9: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1569: GetTable goroutine 9: unexpected error: gocql: no hosts available in the pool
+    --- FAIL: TestConcurrentSchemaRefreshErrorHandling/GetTable/different_tables_concurrent (0.00s)
+        events_unit_test.go:1606: tbl_a goroutine 0: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1609: tbl_b goroutine 0: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1606: tbl_a goroutine 1: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1609: tbl_b goroutine 1: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1606: tbl_a goroutine 2: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1609: tbl_b goroutine 2: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1606: tbl_a goroutine 3: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1609: tbl_b goroutine 3: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1606: tbl_a goroutine 4: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1609: tbl_b goroutine 4: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1606: tbl_a goroutine 5: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1609: tbl_b goroutine 5: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1606: tbl_a goroutine 6: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1609: tbl_b goroutine 6: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1606: tbl_a goroutine 7: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1609: tbl_b goroutine 7: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1606: tbl_a goroutine 8: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1609: tbl_b goroutine 8: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1606: tbl_a goroutine 9: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1609: tbl_b goroutine 9: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1617: GetTable(tbl_a) after refresh: gocql: no hosts available in the pool
+        events_unit_test.go:1617: GetTable(tbl_b) after refresh: gocql: no hosts available in the pool
+    --- FAIL: TestConcurrentSchemaRefreshErrorHandling/GetKeyspace/all_succeed (0.00s)
+        events_unit_test.go:1301: goroutine 0: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1304: goroutine 0: got nil metadata
+        events_unit_test.go:1301: goroutine 1: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1304: goroutine 1: got nil metadata
+        events_unit_test.go:1301: goroutine 2: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1304: goroutine 2: got nil metadata
+        events_unit_test.go:1301: goroutine 3: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1304: goroutine 3: got nil metadata
+        events_unit_test.go:1301: goroutine 4: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1304: goroutine 4: got nil metadata
+        events_unit_test.go:1301: goroutine 5: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1304: goroutine 5: got nil metadata
+        events_unit_test.go:1301: goroutine 6: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1304: goroutine 6: got nil metadata
+        events_unit_test.go:1301: goroutine 7: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1304: goroutine 7: got nil metadata
+        events_unit_test.go:1301: goroutine 8: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1304: goroutine 8: got nil metadata
+        events_unit_test.go:1301: goroutine 9: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1304: goroutine 9: got nil metadata
+    --- FAIL: TestConcurrentSchemaRefreshErrorHandling/GetTable/different_tables_one_fails (0.00s)
+        events_unit_test.go:1656: tbl_a goroutine 0: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1656: tbl_a goroutine 1: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1656: tbl_a goroutine 2: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1656: tbl_a goroutine 3: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1656: tbl_a goroutine 4: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1656: tbl_a goroutine 5: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1656: tbl_a goroutine 6: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1656: tbl_a goroutine 7: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1656: tbl_a goroutine 8: unexpected error: gocql: no hosts available in the pool
+        events_unit_test.go:1656: tbl_a goroutine 9: unexpected error: gocql: no hosts available in the pool
+--- FAIL: TestSchemaRefreshConcurrent (0.00s)
+    --- FAIL: TestSchemaRefreshConcurrent/GetKeyspace/uncached (0.00s)
+        events_unit_test.go:1153: expected 7 queries (single full refresh), got 0
+    --- FAIL: TestSchemaRefreshConcurrent/GetTable/after_table_invalidation (0.00s)
+        events_unit_test.go:1215: expected 4 queries (single table refresh), got 0
+    --- FAIL: TestSchemaRefreshConcurrent/GetTable/stale_snapshot_after_refresh_does_not_refresh_twice (0.00s)
+        events_unit_test.go:1241: deduplicatedRefreshTable returned unexpected error: gocql: no hosts available in the pool
+    --- FAIL: TestSchemaRefreshConcurrent/GetKeyspace/after_invalidation (0.00s)
+        events_unit_test.go:1184: expected 7 queries (single full refresh), got 0
+--- FAIL: TestSchemaQueryErrorsWrap (0.00s)
+    --- FAIL: TestSchemaQueryErrorsWrap/KeyspaceRowUnreadable (0.00s)
+        refresh_all_schema_unit_test.go:231: error = gocql: no hosts available in the pool, want "error querying keyspace schema" wrapping query failed
+    --- FAIL: TestSchemaQueryErrorsWrap/Views (0.00s)
+        refresh_all_schema_unit_test.go:231: error = gocql: no hosts available in the pool, want "error querying view schema" wrapping query failed
+    --- FAIL: TestSchemaQueryErrorsWrap/CreateStatements (0.00s)
+        refresh_all_schema_unit_test.go:231: error = gocql: no hosts available in the pool, want "error querying keyspace schema" wrapping query failed
+    --- FAIL: TestSchemaQueryErrorsWrap/Columns (0.00s)
+        refresh_all_schema_unit_test.go:231: error = gocql: no hosts available in the pool, want "error querying column schema" wrapping query failed
+    --- FAIL: TestSchemaQueryErrorsWrap/Tables (0.00s)
+        refresh_all_schema_unit_test.go:231: error = gocql: no hosts available in the pool, want "error querying table schema" wrapping query failed
+    --- FAIL: TestSchemaQueryErrorsWrap/KeyspaceNoRows (0.00s)
+        refresh_all_schema_unit_test.go:231: error = gocql: no hosts available in the pool, want "error querying keyspace schema" wrapping query failed
+--- FAIL: TestHandleSchemaEvent (0.00s)
+    --- FAIL: TestHandleSchemaEvent/batch/mixed_keyspace_and_table_events (0.00s)
+        events_unit_test.go:1105: GetKeyspace failed: gocql: no hosts available in the pool
+    --- FAIL: TestHandleSchemaEvent/batch/multiple_table_events (0.00s)
+        events_unit_test.go:1046: GetTable(tbl_a) failed: gocql: no hosts available in the pool
+    --- FAIL: TestHandleSchemaEvent/GetTable (0.00s)
+        --- FAIL: TestHandleSchemaEvent/GetTable/after_table_event:_refreshes_only_that_table (0.00s)
+            events_unit_test.go:991: GetTable failed: gocql: no hosts available in the pool
+        --- FAIL: TestHandleSchemaEvent/GetTable/after_type_event:_refreshes_full_keyspace (0.00s)
+            events_unit_test.go:991: GetTable failed: gocql: no hosts available in the pool
+        --- FAIL: TestHandleSchemaEvent/GetTable/after_keyspace_event:_refreshes_full_keyspace (0.00s)
+            events_unit_test.go:991: GetTable failed: gocql: no hosts available in the pool
+    --- FAIL: TestHandleSchemaEvent/GetKeyspace (0.00s)
+        --- FAIL: TestHandleSchemaEvent/GetKeyspace/after_keyspace_event:_refreshes_and_caches (0.00s)
+            events_unit_test.go:874: GetKeyspace failed: gocql: no hosts available in the pool
+        --- FAIL: TestHandleSchemaEvent/GetKeyspace/after_type_event:_refreshes_and_caches (0.00s)
+            events_unit_test.go:874: GetKeyspace failed: gocql: no hosts available in the pool
+        --- FAIL: TestHandleSchemaEvent/GetKeyspace/uncached_keyspace:_refreshes_and_caches (0.00s)
+            events_unit_test.go:874: GetKeyspace failed: gocql: no hosts available in the pool
+2026/10/29 08:48:20 logger.go:59: scylla: connection to shard-aware address 127.0.0.1:42961 resulted in wrong shard being assigned; please check that you are not behind a NAT or AddressTranslater which changes source ports; falling back to non-shard-aware port for 5m0s
+2026/10/29 08:48:21 logger.go:59: scylla: connection to shard-aware address 127.0.0.1:42157 resulted in wrong shard being assigned; please check that you are not behind a NAT or AddressTranslater which changes source ports; falling back to non-shard-aware port for 5m0s
+FAIL
+FAIL	github.com/scylladb/gocql/v2	13.295s
+ok  	github.com/scylladb/gocql/v2/ci/release	1.011s
+ok  	github.com/scylladb/gocql/v2/debounce	34.781s
+ok  	github.com/scylladb/gocql/v2/dialer	1.024s
+ok  	github.com/scylladb/gocql/v2/dialer/recorder	1.088s
+ok  	github.com/scylladb/gocql/v2/dialer/replayer	1.077s
+ok  	github.com/scylladb/gocql/v2/events	1.005s
+ok  	github.com/scylladb/gocql/v2/hostpolicy	1.010s
+ok  	github.com/scylladb/gocql/v2/internal/cqlproto	1.007s
+ok  	github.com/scylladb/gocql/v2/internal/crc	1.009s
+?   	github.com/scylladb/gocql/v2/internal/debug	[no test files]
+ok  	github.com/scylladb/gocql/v2/internal/eventbus	1.415s
+ok  	github.com/scylladb/gocql/v2/internal/frame	1.009s
+ok  	github.com/scylladb/gocql/v2/internal/lru	1.009s
+ok  	github.com/scylladb/gocql/v2/internal/murmur	1.245s
+ok  	github.com/scylladb/gocql/v2/internal/segment	1.039s
+ok  	github.com/scylladb/gocql/v2/internal/streams	1.021s
+ok  	github.com/scylladb/gocql/v2/internal/tests	1.009s
+?   	github.com/scylladb/gocql/v2/internal/tests/mock	[no test files]
+ok  	github.com/scylladb/gocql/v2/internal/tests/serialization	1.008s
+?   	github.com/scylladb/gocql/v2/internal/tests/serialization/mod	[no test files]
+?   	github.com/scylladb/gocql/v2/internal/tests/serialization/valcases	[no test files]
+ok  	github.com/scylladb/gocql/v2/internal/wire	1.086s
+ok  	github.com/scylladb/gocql/v2/internal/wirecompress	4.661s
+ok  	github.com/scylladb/gocql/v2/scyllacloud	1.047s
+?   	github.com/scylladb/gocql/v2/serialization/ascii	[no test files]
+?   	github.com/scylladb/gocql/v2/serialization/bigint	[no test files]
+ok  	github.com/scylladb/gocql/v2/serialization/blob	1.009s
+?   	github.com/scylladb/gocql/v2/serialization/boolean	[no test files]
+?   	github.com/scylladb/gocql/v2/serialization/counter	[no test files]
+?   	github.com/scylladb/gocql/v2/serialization/cqlint	[no test files]
+?   	github.com/scylladb/gocql/v2/serialization/cqltime	[no test files]
+?   	github.com/scylladb/gocql/v2/serialization/date	[no test files]
+?   	github.com/scylladb/gocql/v2/serialization/decimal	[no test files]
+?   	github.com/scylladb/gocql/v2/serialization/double	[no test files]
+ok  	github.com/scylladb/gocql/v2/serialization/duration	1.010s
+?   	github.com/scylladb/gocql/v2/serialization/float	[no test files]
+?   	github.com/scylladb/gocql/v2/serialization/inet	[no test files]
+?   	github.com/scylladb/gocql/v2/serialization/smallint	[no test files]
+?   	github.com/scylladb/gocql/v2/serialization/text	[no test files]
+?   	github.com/scylladb/gocql/v2/serialization/timestamp	[no test files]
+?   	github.com/scylladb/gocql/v2/serialization/timeuuid	[no test files]
+?   	github.com/scylladb/gocql/v2/serialization/tinyint	[no test files]
+?   	github.com/scylladb/gocql/v2/serialization/uuid	[no test files]
+?   	github.com/scylladb/gocql/v2/serialization/varchar	[no test files]
+ok  	github.com/scylladb/gocql/v2/serialization/varint	1.101s
+ok  	github.com/scylladb/gocql/v2/tablets	2.593s
+ok  	github.com/scylladb/gocql/v2/tests/serialization	1.614s
+FAIL

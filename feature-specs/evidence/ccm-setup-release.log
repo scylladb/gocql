@@ -1,0 +1,4 @@
+Extracting /tmp/ccm-kcq20zzm.tar.gz (https://s3.amazonaws.com/downloads.scylladb.com/downloads/scylla/relocatable/scylladb-2026.3/scylla-unified-2026.3.4-0.20261018.daef9dad4a01.x86_64.tar.gz, /tmp/tmpf8_19d3c) as version release/2026.3.4 ...
+Relocatable package format version 3.0 detected.
+Completed to install Scylla in the folder '/extra/scylladb/gocql-api-test-cluster/ccm/scylla-repository/release/2026.3.4'
+Current cluster is now: gocqlv2-validation

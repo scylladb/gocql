@@ -37,9 +37,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gocql/gocql/events"
-	"github.com/gocql/gocql/internal/debug"
-	frm "github.com/gocql/gocql/internal/frame"
+	"github.com/scylladb/gocql/v2/events"
+	"github.com/scylladb/gocql/v2/internal/debug"
+	frm "github.com/scylladb/gocql/v2/internal/frame"
 )
 
 var (
@@ -76,7 +76,7 @@ type controlConnection interface {
 
 type controlConn struct {
 	conn         atomic.Pointer[connHost]
-	retry        RetryPolicy
+	retry        oldRetryPolicy
 	session      *Session
 	quit         chan struct{}
 	state        int32

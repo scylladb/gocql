@@ -40,8 +40,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gocql/gocql/internal/tests"
-	"github.com/gocql/gocql/tablets"
+	"github.com/scylladb/gocql/v2/internal/tests"
+	"github.com/scylladb/gocql/v2/tablets"
 
 	"github.com/google/go-cmp/cmp"
 )
@@ -665,7 +665,7 @@ func TestSimpleRetryPolicy(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		q.metrics = preFilledQueryMetrics(map[UUID]*hostMetrics{TimeUUID(): {Attempts: c.attempts}})
+		q.metrics = preFilledQueryMetrics(map[UUID]*hostMetrics{NewTimeUUID(): {Attempts: c.attempts}})
 		if c.retryType != rt.GetRetryType(c.err) {
 			t.Fatalf("retry type for %v should be %v", c.err, c.retryType)
 		}
@@ -686,7 +686,7 @@ func TestLWTSimpleRetryPolicy(t *testing.T) {
 
 	ebrp := &SimpleRetryPolicy{NumRetries: 2}
 	// Verify that SimpleRetryPolicy implements both interfaces
-	var _ RetryPolicy = ebrp
+	var _ oldRetryPolicy = ebrp
 	var lwt_rt LWTRetryPolicy = ebrp
 	tests.AssertEqual(t, "retry type of LWT policy", lwt_rt.GetRetryTypeLWT(nil), Retry)
 }
@@ -696,7 +696,7 @@ func TestLWTSimpleRetryPolicy(t *testing.T) {
 // singleton instead of allocating a fresh *SimpleRetryPolicy. Kept in the
 // test rather than exported from production code, since it's a two-line
 // fallback that isn't otherwise worth extracting into its own function.
-func resolveRetryPolicy(rt RetryPolicy) RetryPolicy {
+func resolveRetryPolicy(rt oldRetryPolicy) oldRetryPolicy {
 	if rt == nil {
 		rt = defaultRetryPolicy
 	}
@@ -704,9 +704,9 @@ func resolveRetryPolicy(rt RetryPolicy) RetryPolicy {
 }
 
 // TestDefaultRetryPolicy_MatchesDocumentedDefault verifies the query
-// executor's shared default RetryPolicy singleton behaves exactly like the
+// executor's shared default oldRetryPolicy singleton behaves exactly like the
 // per-query &SimpleRetryPolicy{NumRetries: 3} it replaced: same NumRetries
-// as ClusterConfig.RetryPolicy's documented default, and still satisfies
+// as ClusterConfig.oldRetryPolicy's documented default, and still satisfies
 // LWTRetryPolicy so do() picks the LWT-specific Attempt/GetRetryType for
 // LWT queries exactly as before.
 func TestDefaultRetryPolicy_MatchesDocumentedDefault(t *testing.T) {
@@ -717,7 +717,7 @@ func TestDefaultRetryPolicy_MatchesDocumentedDefault(t *testing.T) {
 		t.Fatalf("defaultRetryPolicy has concrete type %T, want *SimpleRetryPolicy", defaultRetryPolicy)
 	}
 	if srp.NumRetries != 3 {
-		t.Fatalf("defaultRetryPolicy.NumRetries = %d, want 3 (the documented ClusterConfig.RetryPolicy default)", srp.NumRetries)
+		t.Fatalf("defaultRetryPolicy.NumRetries = %d, want 3 (the documented ClusterConfig.oldRetryPolicy default)", srp.NumRetries)
 	}
 	if _, ok := defaultRetryPolicy.(LWTRetryPolicy); !ok {
 		t.Fatal("defaultRetryPolicy must implement LWTRetryPolicy")
@@ -725,8 +725,8 @@ func TestDefaultRetryPolicy_MatchesDocumentedDefault(t *testing.T) {
 }
 
 // TestDefaultRetryPolicy_SingletonIdentity verifies that every query which
-// leaves RetryPolicy unset resolves to the exact same instance rather than a
-// fresh allocation, and that an explicitly-configured RetryPolicy is left
+// leaves oldRetryPolicy unset resolves to the exact same instance rather than a
+// fresh allocation, and that an explicitly-configured oldRetryPolicy is left
 // untouched (the singleton must never override a user's choice).
 func TestDefaultRetryPolicy_SingletonIdentity(t *testing.T) {
 	t.Parallel()
@@ -737,7 +737,7 @@ func TestDefaultRetryPolicy_SingletonIdentity(t *testing.T) {
 		t.Fatal("expected a non-nil retry policy")
 	}
 	if a != b {
-		t.Fatal("two unset-RetryPolicy queries must resolve to the identical singleton instance")
+		t.Fatal("two unset-oldRetryPolicy queries must resolve to the identical singleton instance")
 	}
 	if a != defaultRetryPolicy {
 		t.Fatal("the resolved default must be the package-level defaultRetryPolicy singleton")
@@ -745,16 +745,16 @@ func TestDefaultRetryPolicy_SingletonIdentity(t *testing.T) {
 
 	custom := &SimpleRetryPolicy{NumRetries: 99}
 	if got := resolveRetryPolicy(custom); got != custom {
-		t.Fatal("an explicitly-set RetryPolicy must be returned unchanged, not replaced by the default")
+		t.Fatal("an explicitly-set oldRetryPolicy must be returned unchanged, not replaced by the default")
 	}
 }
 
 // TestDefaultRetryPolicy_ZeroAlloc guards the point of the change: resolving
-// an unset RetryPolicy to the shared singleton must not allocate, unlike the
+// an unset oldRetryPolicy to the shared singleton must not allocate, unlike the
 // &SimpleRetryPolicy{NumRetries: 3} literal it replaced in query_executor.go.
 func TestDefaultRetryPolicy_ZeroAlloc(t *testing.T) {
-	var unset RetryPolicy // simulates qry.retryPolicy() returning nil
-	var resolved RetryPolicy
+	var unset oldRetryPolicy // simulates qry.retryPolicy() returning nil
+	var resolved oldRetryPolicy
 	allocs := testing.AllocsPerRun(1000, func() {
 		resolved = resolveRetryPolicy(unset)
 	})
@@ -769,15 +769,15 @@ func TestDefaultRetryPolicy_ZeroAlloc(t *testing.T) {
 // BenchmarkDefaultRetryPolicyResolution compares the current singleton
 // fallback against a fresh &SimpleRetryPolicy{NumRetries: 3} allocated on
 // every call, the exact literal query_executor.go's do() used before this
-// change, for every query that leaves RetryPolicy unset. Run with
+// change, for every query that leaves oldRetryPolicy unset. Run with
 // -benchmem: the singleton path should show 0 allocs/op against the
 // literal's 1.
 func BenchmarkDefaultRetryPolicyResolution(b *testing.B) {
-	var unset RetryPolicy // simulates qry.retryPolicy() returning nil
+	var unset oldRetryPolicy // simulates qry.retryPolicy() returning nil
 
 	b.Run("Singleton_Current", func(b *testing.B) {
 		b.ReportAllocs()
-		var rt RetryPolicy
+		var rt oldRetryPolicy
 		for i := 0; i < b.N; i++ {
 			rt = resolveRetryPolicy(unset)
 		}
@@ -786,7 +786,7 @@ func BenchmarkDefaultRetryPolicyResolution(b *testing.B) {
 
 	b.Run("FreshAlloc_Old", func(b *testing.B) {
 		b.ReportAllocs()
-		var rt RetryPolicy
+		var rt oldRetryPolicy
 		for i := 0; i < b.N; i++ {
 			rt = unset
 			if rt == nil {
@@ -860,7 +860,7 @@ func TestLWTExponentialBackoffPolicy(t *testing.T) {
 
 	ebrp := &ExponentialBackoffRetryPolicy{NumRetries: 2}
 	// Verify that ExponentialBackoffRetryPolicy implements both interfaces
-	var _ RetryPolicy = ebrp
+	var _ oldRetryPolicy = ebrp
 	var lwt_rt LWTRetryPolicy = ebrp
 	tests.AssertEqual(t, "retry type of LWT policy", lwt_rt.GetRetryTypeLWT(nil), Retry)
 }
@@ -912,7 +912,7 @@ func TestDowngradingConsistencyRetryPolicy(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		q.metrics = preFilledQueryMetrics(map[UUID]*hostMetrics{TimeUUID(): {Attempts: c.attempts}})
+		q.metrics = preFilledQueryMetrics(map[UUID]*hostMetrics{NewTimeUUID(): {Attempts: c.attempts}})
 		if c.retryType != rt.GetRetryType(c.err) {
 			t.Fatalf("retry type should be %v", c.retryType)
 		}
@@ -933,7 +933,7 @@ func TestDowngradingConsistencyRetryPolicy_NoDowngradeFromSerial(t *testing.T) {
 
 	for _, serial := range []Consistency{Serial, LocalSerial} {
 		q := &Query{cons: serial, routingInfo: &queryRoutingInfo{}}
-		q.metrics = preFilledQueryMetrics(map[UUID]*hostMetrics{TimeUUID(): {Attempts: 1}})
+		q.metrics = preFilledQueryMetrics(map[UUID]*hostMetrics{NewTimeUUID(): {Attempts: 1}})
 
 		if rt.Attempt(q) {
 			t.Fatalf("DowngradingConsistencyRetryPolicy should not allow downgrade from %v to non-serial", serial)

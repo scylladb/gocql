@@ -1,0 +1,355 @@
+{
+  "purpose": "dedicated, disposable integration test databases",
+  "containers": [
+    {
+      "name": "gocql-api-node1",
+      "id": "3583d48b43a8e22450d4c4058682ba459c0a9b3a9eac03a86f7bc277056f09bf",
+      "image": "docker.io/scylladb/scylla:2026.3",
+      "image_id": "ae6d996ec593faef2a0cbdce559de45f8fbaa397309b23c4f461d73047d40bcf",
+      "command": [
+        "--smp",
+        "2",
+        "--memory",
+        "2G",
+        "--overprovisioned",
+        "1",
+        "--developer-mode",
+        "1",
+        "--listen-address",
+        "127.0.20.1",
+        "--rpc-address",
+        "127.0.20.1",
+        "--api-address",
+        "127.0.20.1",
+        "--prometheus-address",
+        "127.0.20.1",
+        "--seeds",
+        "127.0.20.1"
+      ],
+      "entrypoint": [
+        "/docker-entrypoint.py"
+      ],
+      "mounts": [
+        {
+          "Source": "/home/dkropachev/.local/share/containers/storage/volumes/8e806e8dd4f30dd3a07062be87ea66ad6c2d08d9e5a42f1ec2155534e5f19054/_data",
+          "Destination": "/var/lib/scylla",
+          "RW": true
+        },
+        {
+          "Source": "/extra/scylladb/gocql-api-test-cluster/node1.yaml",
+          "Destination": "/etc/scylla/scylla.yaml",
+          "RW": false
+        },
+        {
+          "Source": "/extra/scylladb/gocql/testdata/pki",
+          "Destination": "/test-pki",
+          "RW": false
+        }
+      ],
+      "network_mode": "host"
+    },
+    {
+      "name": "gocql-api-node2",
+      "id": "5ab9f6327ebac74bd5562a8720e8ef6b67deecd55979c37979abb1a4ed6d3401",
+      "image": "docker.io/scylladb/scylla:2026.3",
+      "image_id": "ae6d996ec593faef2a0cbdce559de45f8fbaa397309b23c4f461d73047d40bcf",
+      "command": [
+        "--options-file",
+        "/etc/scylla/scylla.yaml",
+        "--workdir",
+        "/var/lib/scylla",
+        "--smp",
+        "2",
+        "--memory",
+        "2G",
+        "--overprovisioned",
+        "--developer-mode",
+        "1",
+        "--log-to-syslog",
+        "0"
+      ],
+      "entrypoint": [
+        "/usr/bin/scylla"
+      ],
+      "mounts": [
+        {
+          "Source": "/home/dkropachev/.local/share/containers/storage/volumes/fa85b7d9a42b86247c2edbcfe555dbd5a432d003a98855c5d613b8ba045dc8d0/_data",
+          "Destination": "/var/lib/scylla",
+          "RW": true
+        },
+        {
+          "Source": "/extra/scylladb/gocql-api-test-cluster/node2.yaml",
+          "Destination": "/etc/scylla/scylla.yaml",
+          "RW": false
+        },
+        {
+          "Source": "/extra/scylladb/gocql/testdata/pki",
+          "Destination": "/test-pki",
+          "RW": false
+        }
+      ],
+      "network_mode": "host"
+    },
+    {
+      "name": "gocql-api-node3",
+      "id": "15172657169bf82e329767fc6bfc62afe83d73b1e7b7ae68c639b22696a6b075",
+      "image": "docker.io/scylladb/scylla:2026.3",
+      "image_id": "ae6d996ec593faef2a0cbdce559de45f8fbaa397309b23c4f461d73047d40bcf",
+      "command": [
+        "--options-file",
+        "/etc/scylla/scylla.yaml",
+        "--workdir",
+        "/var/lib/scylla",
+        "--smp",
+        "2",
+        "--memory",
+        "2G",
+        "--overprovisioned",
+        "--developer-mode",
+        "1",
+        "--log-to-syslog",
+        "0"
+      ],
+      "entrypoint": [
+        "/usr/bin/scylla"
+      ],
+      "mounts": [
+        {
+          "Source": "/home/dkropachev/.local/share/containers/storage/volumes/9c20c50c985a5d644c71832815fe84f5faa66389029a710308a620795036c82c/_data",
+          "Destination": "/var/lib/scylla",
+          "RW": true
+        },
+        {
+          "Source": "/extra/scylladb/gocql-api-test-cluster/node3.yaml",
+          "Destination": "/etc/scylla/scylla.yaml",
+          "RW": false
+        },
+        {
+          "Source": "/extra/scylladb/gocql/testdata/pki",
+          "Destination": "/test-pki",
+          "RW": false
+        }
+      ],
+      "network_mode": "host"
+    },
+    {
+      "name": "gocql-api-cassandra1",
+      "id": "1d03fead460ed21de405ebfa0c25a0eda1b38acf53ea07d494c96ca6cbcddbcd",
+      "image": "docker.io/library/cassandra:5.0",
+      "image_id": "fc06f68aeda10243280761b99da9ec3e50cf96feed5395f5174dfabfb582a4dd",
+      "command": [
+        "cassandra",
+        "-f"
+      ],
+      "entrypoint": [
+        "docker-entrypoint.sh"
+      ],
+      "mounts": [
+        {
+          "Source": "/home/dkropachev/.local/share/containers/storage/volumes/5b75ab1607c91c8cdee3b973a18c9125109443649af54446bcb1b8f35221076b/_data",
+          "Destination": "/var/lib/cassandra",
+          "RW": true
+        },
+        {
+          "Source": "/extra/scylladb/gocql/testdata/pki",
+          "Destination": "/test-pki",
+          "RW": false
+        },
+        {
+          "Source": "/extra/scylladb/gocql-api-test-cluster/cassandra-node1",
+          "Destination": "/etc/cassandra",
+          "RW": true
+        }
+      ],
+      "network_mode": "host"
+    },
+    {
+      "name": "gocql-api-cassandra2",
+      "id": "3142aeab32b6ef2821a68119b7257bdcbad3d53849fd71938cf59d9cbde90662",
+      "image": "docker.io/library/cassandra:5.0",
+      "image_id": "fc06f68aeda10243280761b99da9ec3e50cf96feed5395f5174dfabfb582a4dd",
+      "command": [
+        "cassandra",
+        "-f"
+      ],
+      "entrypoint": [
+        "docker-entrypoint.sh"
+      ],
+      "mounts": [
+        {
+          "Source": "/home/dkropachev/.local/share/containers/storage/volumes/56f3d8b9b38264bb11242da6d339210d9d7890337d7b3148f6916597e655e243/_data",
+          "Destination": "/var/lib/cassandra",
+          "RW": true
+        },
+        {
+          "Source": "/extra/scylladb/gocql-api-test-cluster/cassandra-node2",
+          "Destination": "/etc/cassandra",
+          "RW": true
+        },
+        {
+          "Source": "/extra/scylladb/gocql/testdata/pki",
+          "Destination": "/test-pki",
+          "RW": false
+        }
+      ],
+      "network_mode": "host"
+    },
+    {
+      "name": "gocql-api-cassandra3",
+      "id": "f750472d0c3efe7097932a64bebced55aa4252d539789fae8e313c570469017a",
+      "image": "docker.io/library/cassandra:5.0",
+      "image_id": "fc06f68aeda10243280761b99da9ec3e50cf96feed5395f5174dfabfb582a4dd",
+      "command": [
+        "cassandra",
+        "-f"
+      ],
+      "entrypoint": [
+        "docker-entrypoint.sh"
+      ],
+      "mounts": [
+        {
+          "Source": "/home/dkropachev/.local/share/containers/storage/volumes/f716d0eaf2380ee488771f86b29bfa9eda7f5876a19876efd192b2da2498fe0e/_data",
+          "Destination": "/var/lib/cassandra",
+          "RW": true
+        },
+        {
+          "Source": "/extra/scylladb/gocql-api-test-cluster/cassandra-node3",
+          "Destination": "/etc/cassandra",
+          "RW": true
+        },
+        {
+          "Source": "/extra/scylladb/gocql/testdata/pki",
+          "Destination": "/test-pki",
+          "RW": false
+        }
+      ],
+      "network_mode": "host"
+    },
+    {
+      "name": "gocql-api-nightly1",
+      "id": "45cff4683c16f383d8f2bb825e57c78d1036673608d592a644b13d77d1080791",
+      "image": "docker.io/scylladb/scylla-nightly:latest",
+      "image_id": "ba0725b0c7e049636182764760c7b9d5477f59bd8ec117562f3ba927d70264b1",
+      "command": [
+        "--options-file",
+        "/etc/scylla/scylla.yaml",
+        "--workdir",
+        "/var/lib/scylla",
+        "--smp",
+        "2",
+        "--memory",
+        "2G",
+        "--overprovisioned",
+        "--developer-mode",
+        "1",
+        "--log-to-syslog",
+        "0"
+      ],
+      "entrypoint": [
+        "/usr/bin/scylla"
+      ],
+      "mounts": [
+        {
+          "Source": "/home/dkropachev/.local/share/containers/storage/volumes/08628ee28c7710a854e200a0b7089faa736bfdeae7dbfbf346f57c44a3142b18/_data",
+          "Destination": "/var/lib/scylla",
+          "RW": true
+        },
+        {
+          "Source": "/extra/scylladb/gocql-api-test-cluster/nightly-node1.yaml",
+          "Destination": "/etc/scylla/scylla.yaml",
+          "RW": false
+        },
+        {
+          "Source": "/extra/scylladb/gocql/testdata/pki",
+          "Destination": "/test-pki",
+          "RW": false
+        }
+      ],
+      "network_mode": "host"
+    },
+    {
+      "name": "gocql-api-nightly2",
+      "id": "d16fb4324c66a61d5fbf923abee2a9ab73d0fd12b7e65943ab9577cef1369aaf",
+      "image": "docker.io/scylladb/scylla-nightly:latest",
+      "image_id": "ba0725b0c7e049636182764760c7b9d5477f59bd8ec117562f3ba927d70264b1",
+      "command": [
+        "--options-file",
+        "/etc/scylla/scylla.yaml",
+        "--workdir",
+        "/var/lib/scylla",
+        "--smp",
+        "2",
+        "--memory",
+        "2G",
+        "--overprovisioned",
+        "--developer-mode",
+        "1",
+        "--log-to-syslog",
+        "0"
+      ],
+      "entrypoint": [
+        "/usr/bin/scylla"
+      ],
+      "mounts": [
+        {
+          "Source": "/home/dkropachev/.local/share/containers/storage/volumes/f0017e0a7461ab951b24a5c7ea14655fbdef441d56c67471f3df13d17a65232f/_data",
+          "Destination": "/var/lib/scylla",
+          "RW": true
+        },
+        {
+          "Source": "/extra/scylladb/gocql-api-test-cluster/nightly-node2.yaml",
+          "Destination": "/etc/scylla/scylla.yaml",
+          "RW": false
+        },
+        {
+          "Source": "/extra/scylladb/gocql/testdata/pki",
+          "Destination": "/test-pki",
+          "RW": false
+        }
+      ],
+      "network_mode": "host"
+    },
+    {
+      "name": "gocql-api-nightly3",
+      "id": "e8771e21760661330315729b56658f6380873c8b78286e43259526eb51461219",
+      "image": "docker.io/scylladb/scylla-nightly:latest",
+      "image_id": "ba0725b0c7e049636182764760c7b9d5477f59bd8ec117562f3ba927d70264b1",
+      "command": [
+        "--options-file",
+        "/etc/scylla/scylla.yaml",
+        "--workdir",
+        "/var/lib/scylla",
+        "--smp",
+        "2",
+        "--memory",
+        "2G",
+        "--overprovisioned",
+        "--developer-mode",
+        "1",
+        "--log-to-syslog",
+        "0"
+      ],
+      "entrypoint": [
+        "/usr/bin/scylla"
+      ],
+      "mounts": [
+        {
+          "Source": "/home/dkropachev/.local/share/containers/storage/volumes/b036f5240c81bcef0d1e90cdc44d1a63b1071265237594225c75d041682b2c49/_data",
+          "Destination": "/var/lib/scylla",
+          "RW": true
+        },
+        {
+          "Source": "/extra/scylladb/gocql-api-test-cluster/nightly-node3.yaml",
+          "Destination": "/etc/scylla/scylla.yaml",
+          "RW": false
+        },
+        {
+          "Source": "/extra/scylladb/gocql/testdata/pki",
+          "Destination": "/test-pki",
+          "RW": false
+        }
+      ],
+      "network_mode": "host"
+    }
+  ]
+}

@@ -10,7 +10,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/gocql/gocql/tablets"
+	"github.com/scylladb/gocql/v2/tablets"
 )
 
 // setupTabletAwareBench creates a tokenAwareHostPolicy with the given number

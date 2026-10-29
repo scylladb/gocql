@@ -1,0 +1,8 @@
+{"Time":"2026-10-29T01:12:58.60712331-04:00","Action":"start","Package":"github.com/gocql/gocql/internal/ccm"}
+{"Time":"2026-10-29T01:12:58.608265637-04:00","Action":"run","Package":"github.com/gocql/gocql/internal/ccm","Test":"TestCCM"}
+{"Time":"2026-10-29T01:12:58.608318878-04:00","Action":"output","Package":"github.com/gocql/gocql/internal/ccm","Test":"TestCCM","Output":"=== RUN   TestCCM\n"}
+{"Time":"2026-10-29T01:13:02.641479305-04:00","Action":"output","Package":"github.com/gocql/gocql/internal/ccm","Test":"TestCCM","Output":"--- PASS: TestCCM (4.03s)\n"}
+{"Time":"2026-10-29T01:13:02.641511696-04:00","Action":"pass","Package":"github.com/gocql/gocql/internal/ccm","Test":"TestCCM","Elapsed":4.03}
+{"Time":"2026-10-29T01:13:02.641519711-04:00","Action":"output","Package":"github.com/gocql/gocql/internal/ccm","Output":"PASS\n"}
+{"Time":"2026-10-29T01:13:02.641687228-04:00","Action":"output","Package":"github.com/gocql/gocql/internal/ccm","Output":"ok  \tgithub.com/gocql/gocql/internal/ccm\t4.034s\n"}
+{"Time":"2026-10-29T01:13:02.642611894-04:00","Action":"pass","Package":"github.com/gocql/gocql/internal/ccm","Elapsed":4.035}

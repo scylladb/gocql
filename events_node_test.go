@@ -25,8 +25,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gocql/gocql/debounce"
-	frm "github.com/gocql/gocql/internal/frame"
+	"github.com/scylladb/gocql/v2/debounce"
+	frm "github.com/scylladb/gocql/v2/internal/frame"
 )
 
 // Session.handleNodeEvent and Session.handleNodeUp had no unit coverage at all

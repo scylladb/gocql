@@ -38,7 +38,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gocql/gocql/debounce"
+	"github.com/scylladb/gocql/v2/debounce"
 )
 
 func TestSetupTLSConfig(t *testing.T) {

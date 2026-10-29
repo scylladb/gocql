@@ -1,0 +1,20 @@
+{"Time":"2026-10-29T01:02:35.179946043-04:00","Action":"start","Package":"github.com/gocql/gocql"}
+{"Time":"2026-10-29T01:02:35.326502778-04:00","Action":"output","Package":"github.com/gocql/gocql","Output":"2026/10/29 01:02:35 logger.go:59: gocql: unable to dial control conn 127.0.21.2:9042: remote error: tls: internal error\n"}
+{"Time":"2026-10-29T01:02:35.47490017-04:00","Action":"output","Package":"github.com/gocql/gocql","Output":"2026/10/29 01:02:35 logger.go:59: gocql: unable to dial control conn 127.0.21.3:9042: remote error: tls: internal error\n"}
+{"Time":"2026-10-29T01:02:35.613738119-04:00","Action":"output","Package":"github.com/gocql/gocql","Output":"2026/10/29 01:02:35 logger.go:59: gocql: unable to dial control conn 127.0.21.1:9042: remote error: tls: internal error\n"}
+{"Time":"2026-10-29T01:02:35.613764118-04:00","Action":"output","Package":"github.com/gocql/gocql","Output":"2026/10/29 01:02:35 logger.go:60: unable to create control connection: unable to connect to initial hosts: remote error: tls: internal error\n"}
+{"Time":"2026-10-29T01:02:35.613766161-04:00","Action":"output","Package":"github.com/gocql/gocql","Output":"\n"}
+{"Time":"2026-10-29T01:02:35.615850888-04:00","Action":"output","Package":"github.com/gocql/gocql","Output":"panic: failed to create session: gocql: unable to create session: unable to connect to the cluster, last error: unable to create control connection: unable to connect to initial hosts: remote error: tls: internal error\n"}
+{"Time":"2026-10-29T01:02:35.615871467-04:00","Action":"output","Package":"github.com/gocql/gocql","Output":"\t\n"}
+{"Time":"2026-10-29T01:02:35.615873351-04:00","Action":"output","Package":"github.com/gocql/gocql","Output":"\n"}
+{"Time":"2026-10-29T01:02:35.615874663-04:00","Action":"output","Package":"github.com/gocql/gocql","Output":"goroutine 1 [running]:\n"}
+{"Time":"2026-10-29T01:02:35.615877429-04:00","Action":"output","Package":"github.com/gocql/gocql","Output":"github.com/gocql/gocql.probeTabletsSupported()\n"}
+{"Time":"2026-10-29T01:02:35.615879653-04:00","Action":"output","Package":"github.com/gocql/gocql","Output":"\t/extra/scylladb/gocql/common_test.go:137 +0x338\n"}
+{"Time":"2026-10-29T01:02:35.615882218-04:00","Action":"output","Package":"github.com/gocql/gocql","Output":"github.com/gocql/gocql.initTabletProbes()\n"}
+{"Time":"2026-10-29T01:02:35.61588334-04:00","Action":"output","Package":"github.com/gocql/gocql","Output":"\t/extra/scylladb/gocql/common_test.go:207 +0xf\n"}
+{"Time":"2026-10-29T01:02:35.615884412-04:00","Action":"output","Package":"github.com/gocql/gocql","Output":"github.com/gocql/gocql.TestMain(0xc0000e3540)\n"}
+{"Time":"2026-10-29T01:02:35.615885344-04:00","Action":"output","Package":"github.com/gocql/gocql","Output":"\t/extra/scylladb/gocql/common_test.go:73 +0x6d\n"}
+{"Time":"2026-10-29T01:02:35.615886416-04:00","Action":"output","Package":"github.com/gocql/gocql","Output":"main.main()\n"}
+{"Time":"2026-10-29T01:02:35.615887407-04:00","Action":"output","Package":"github.com/gocql/gocql","Output":"\t_testmain.go:429 +0xa5\n"}
+{"Time":"2026-10-29T01:02:35.616422548-04:00","Action":"output","Package":"github.com/gocql/gocql","Output":"FAIL\tgithub.com/gocql/gocql\t0.436s\n"}
+{"Time":"2026-10-29T01:02:35.616436494-04:00","Action":"fail","Package":"github.com/gocql/gocql","Elapsed":0.436}

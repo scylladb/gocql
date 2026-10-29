@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gocql/gocql/events"
-	"github.com/gocql/gocql/internal/debug"
-	"github.com/gocql/gocql/internal/eventbus"
+	"github.com/scylladb/gocql/v2/events"
+	"github.com/scylladb/gocql/v2/internal/debug"
+	"github.com/scylladb/gocql/v2/internal/eventbus"
 )
 
 type ClientRoutesEndpoint struct {

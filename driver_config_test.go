@@ -15,8 +15,8 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	frm "github.com/gocql/gocql/internal/frame"
-	"github.com/gocql/gocql/internal/streams"
+	frm "github.com/scylladb/gocql/v2/internal/frame"
+	"github.com/scylladb/gocql/v2/internal/streams"
 )
 
 // TestControlConnConfigIsMarked pins the wiring that makes the control connection,
@@ -77,7 +77,7 @@ func TestDriverConfigReporterStartupOptions(t *testing.T) {
 		t.Errorf("control-plane.schema.agreement.timeout-ms = %d, want %d",
 			report.ControlPlane.Schema.Agreement.TimeoutMs, cfg.MaxWaitSchemaAgreement.Milliseconds())
 	}
-	// The default RetryPolicy is nil; the effective policy must be the package
+	// The default oldRetryPolicy is nil; the effective policy must be the package
 	// fallback, not an absent/zero policy.
 	policyMap, ok := report.Query.Retry.Policy.(map[string]any)
 	if !ok || policyMap["type"] != "simple" {
@@ -201,14 +201,14 @@ func TestEffectiveInFlightMaxMatchesStreamGenerator(t *testing.T) {
 // Type for a nil interface, which used to panic here, and an unnamed type has
 // an empty Name(), which nonEmptyString rejects.
 func TestCustomPolicyNameIsAlwaysReportable(t *testing.T) {
-	type namedPolicy struct{ RetryPolicy }
+	type namedPolicy struct{ oldRetryPolicy }
 
 	for _, v := range []any{
 		nil,
 		(*SimpleRetryPolicy)(nil),
 		&SimpleRetryPolicy{},
 		&namedPolicy{},
-		struct{ RetryPolicy }{},
+		struct{ oldRetryPolicy }{},
 	} {
 		if got := customPolicyName(v); got == "" {
 			t.Errorf("customPolicyName(%T) is empty, which the schema rejects", v)
@@ -248,7 +248,7 @@ func TestReportBuildersToleratePolicyNils(t *testing.T) {
 		})
 	}
 
-	retry := []RetryPolicy{
+	retry := []oldRetryPolicy{
 		nil,
 		(*SimpleRetryPolicy)(nil),
 		(*DowngradingConsistencyRetryPolicy)(nil),
@@ -383,16 +383,16 @@ func TestBuildReconnectionPolicyReport(t *testing.T) {
 	}
 }
 
-// fakeRetryPolicy wraps a RetryPolicy so its dynamic type name is distinct
+// fakeRetryPolicy wraps a oldRetryPolicy so its dynamic type name is distinct
 // from any built-in policy.
 type fakeRetryPolicy struct {
-	RetryPolicy
+	oldRetryPolicy
 }
 
 func TestBuildRetryPolicyReport(t *testing.T) {
 	tests := []struct {
 		name   string
-		policy RetryPolicy
+		policy oldRetryPolicy
 		want   any
 	}{
 		{
@@ -402,7 +402,7 @@ func TestBuildRetryPolicyReport(t *testing.T) {
 		},
 		{
 			// max-retries is nonNegativeInteger, and nothing validates
-			// RetryPolicy, so a negative count reaches the report. It refuses the
+			// oldRetryPolicy, so a negative count reaches the report. It refuses the
 			// first retry exactly as 0 does, so 0 is what it means.
 			name:   "simple with a negative retry limit clamps to zero",
 			policy: &SimpleRetryPolicy{NumRetries: -1},
@@ -430,7 +430,7 @@ func TestBuildRetryPolicyReport(t *testing.T) {
 		},
 		{
 			name:   "custom",
-			policy: &fakeRetryPolicy{RetryPolicy: &SimpleRetryPolicy{}},
+			policy: &fakeRetryPolicy{oldRetryPolicy: &SimpleRetryPolicy{}},
 			want:   retryPolicyCustomReport{Type: "custom", Name: "fakeRetryPolicy"},
 		},
 	}
@@ -447,7 +447,7 @@ func TestBuildRetryPolicyReport(t *testing.T) {
 func TestBuildRetryBackoffReport(t *testing.T) {
 	tests := []struct {
 		name   string
-		policy RetryPolicy
+		policy oldRetryPolicy
 		want   any
 	}{
 		{

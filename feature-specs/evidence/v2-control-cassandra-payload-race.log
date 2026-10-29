@@ -1,0 +1,9 @@
+=== RUN   TestCustomPayloadMessages
+=== PAUSE TestCustomPayloadMessages
+=== RUN   TestCustomPayloadValues
+=== PAUSE TestCustomPayloadValues
+=== CONT  TestCustomPayloadValues
+=== CONT  TestCustomPayloadMessages
+--- PASS: TestCustomPayloadMessages (1.50s)
+--- PASS: TestCustomPayloadValues (1.51s)
+PASS

@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/gocql/gocql/dialer"
+	"github.com/scylladb/gocql/v2/dialer"
 )
 
 // fixtureRecordings are the recordings checked into tests/bench, which the replay

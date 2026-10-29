@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gocql/gocql/internal/crc"
-	"github.com/gocql/gocql/internal/segment"
-	"github.com/gocql/gocql/internal/tests"
+	"github.com/scylladb/gocql/v2/internal/crc"
+	"github.com/scylladb/gocql/v2/internal/segment"
+	"github.com/scylladb/gocql/v2/internal/tests"
 )
 
 // passthroughCompressor is a no-op compressor that still honours the append

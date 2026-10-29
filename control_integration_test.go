@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"testing"
+	"time"
 )
 
 // unixSocketDialer is a special dialer which connects only to the maintenance_socket.
@@ -28,19 +29,22 @@ func TestUnixSockets(t *testing.T) {
 		t.Skip("this test needs path to socket file provided into -cluster-socket cli option")
 	}
 
-	c := createCluster()
-	c.NumConns = 1
-	c.DisableInitialHostLookup = true
-	c.ProtoVersion = protoVersion3
-	c.ReconnectInterval = 0
-	c.WriteCoalesceWaitTime = 0
+	c := createV2Cluster()
+	// The maintenance socket carries plaintext CQL even when TCP clients use TLS.
+	c.TLS = nil
+	c.TLSForHost = nil
+	c.Pool.ConnectionsPerHost = 1
+	c.Metadata.InitialDiscovery = false
+	c.Protocol = protoVersion3
+	c.Reconnect = unixSocketNoReconnect{}
+	c.CoalesceWait = 0
 
-	c.Events.DisableNodeStatusEvents = true
-	c.Events.DisableTopologyEvents = true
-	c.Events.DisableSchemaEvents = true
+	c.Metadata.StatusEvents = false
+	c.Metadata.TopologyEvents = false
+	c.Metadata.SchemaEvents = false
 
 	d := net.Dialer{
-		Timeout: c.Timeout,
+		Timeout: c.ConnectTimeout,
 	}
 	if c.SocketKeepalive > 0 {
 		d.KeepAlive = c.SocketKeepalive
@@ -51,7 +55,7 @@ func TestUnixSockets(t *testing.T) {
 		socketPath: socketFiles[0],
 	}
 
-	sess, err := c.CreateSession()
+	sess, err := Connect(context.Background(), c)
 	if err != nil {
 		t.Fatalf("unable to create session: %v", err)
 	}
@@ -60,12 +64,12 @@ func TestUnixSockets(t *testing.T) {
 
 	keyspace := testKeyspaceName(t)
 
-	err = createTable(sess, `DROP KEYSPACE IF EXISTS `+keyspace)
+	err = v2CreateTable(context.Background(), sess, `DROP KEYSPACE IF EXISTS `+keyspace)
 	if err != nil {
 		t.Fatal("unable to drop keyspace if exists:", err)
 	}
 
-	err = createTable(sess, fmt.Sprintf(`CREATE KEYSPACE %s
+	err = v2CreateTable(context.Background(), sess, fmt.Sprintf(`CREATE KEYSPACE %s
 	WITH replication = {
 		'class' : 'NetworkTopologyStrategy',
 		'replication_factor' : 1
@@ -74,3 +78,7 @@ func TestUnixSockets(t *testing.T) {
 		t.Fatal("unable to create keyspace:", err)
 	}
 }
+
+type unixSocketNoReconnect struct{}
+
+func (unixSocketNoReconnect) Delay(int) (time.Duration, bool) { return 0, false }

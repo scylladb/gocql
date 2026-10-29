@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	frm "github.com/gocql/gocql/internal/frame"
+	frm "github.com/scylladb/gocql/v2/internal/frame"
 )
 
 // refreshAllSchemaSession returns a session whose schema mock knows ks1 with
@@ -23,7 +23,7 @@ func refreshAllSchemaSession(t *testing.T) (*Session, *schemaDataMock) {
 		"ks2": {{name: "t3", columns: col("id")}},
 	}}
 	s := newSchemaEventTestSessionWithMock(ctrl)
-	t.Cleanup(s.Close)
+	t.Cleanup(func() { _ = s.Close() })
 
 	for _, ks := range []string{"ks1", "ks2"} {
 		if _, err := s.metadataDescriber.GetKeyspace(ks); err != nil {

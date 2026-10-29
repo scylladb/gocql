@@ -27,7 +27,7 @@ package gocql
 import (
 	"fmt"
 
-	frm "github.com/gocql/gocql/internal/frame"
+	frm "github.com/scylladb/gocql/v2/internal/frame"
 )
 
 // See CQL Binary Protocol v5, section 8 for more details.
@@ -116,8 +116,8 @@ const (
 )
 
 type RequestError interface {
-	Code() int
-	Message() string
+	GetCode() int
+	GetMessage() string
 	Error() string
 }
 

@@ -1,0 +1,40 @@
+Traceback (most recent call last):
+  File "/home/dkropachev/.local/bin/ccm", line 6, in <module>
+    sys.exit(main())
+             ~~~~^^
+  File "/extra/scylladb/scylladb/.venv/lib/python3.14/site-packages/ccmlib/bin/__init__.py", line 75, in main
+    cmd.run()
+    ~~~~~~~^^
+  File "/extra/scylladb/scylladb/.venv/lib/python3.14/site-packages/ccmlib/cmds/cluster_cmds.py", line 645, in run
+    if self.cluster.start(no_wait=self.options.no_wait,
+       ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                          wait_other_notice=self.options.wait_other_notice,
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+                          profile_options=profile_options,
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                          quiet_start=self.options.quiet_start) is None:
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/extra/scylladb/scylladb/.venv/lib/python3.14/site-packages/ccmlib/scylla_cluster.py", line 183, in start
+    started = self.start_nodes(**kwargs)
+  File "/extra/scylladb/scylladb/.venv/lib/python3.14/site-packages/ccmlib/scylla_cluster.py", line 148, in start_nodes
+    p = node.start(update_pid=False, jvm_args=jvm_args,
+                   profile_options=profile_options, no_wait=no_wait,
+                   wait_for_binary_proto=wait_for_binary_proto,
+                   wait_other_notice=wait_other_notice,
+                   wait_normal_token_owner=False)
+  File "/extra/scylladb/scylladb/.venv/lib/python3.14/site-packages/ccmlib/scylla_node.py", line 878, in start
+    scylla_process = self._start_scylla(args=args, marks=marks, update_pid=update_pid,
+                                        wait_other_notice=wait_other_notice,
+                                        wait_normal_token_owner=wait_normal_token_owner,
+                                        wait_for_binary_proto=wait_for_binary_proto,
+                                        ext_env=ext_env)
+  File "/extra/scylladb/scylladb/.venv/lib/python3.14/site-packages/ccmlib/scylla_node.py", line 535, in _start_scylla
+    self.wait_for_binary_interface(from_mark=from_mark, process=self._process_scylla, timeout=t)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/extra/scylladb/scylladb/.venv/lib/python3.14/site-packages/ccmlib/node.py", line 557, in wait_for_binary_interface
+    self.watch_log_for("Starting listening for CQL clients", **kwargs)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/extra/scylladb/scylladb/.venv/lib/python3.14/site-packages/ccmlib/node.py", line 523, in watch_log_for
+    raise RuntimeError(f"The process is dead, returncode={process.returncode}")
+RuntimeError: The process is dead, returncode=2

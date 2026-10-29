@@ -158,9 +158,9 @@ func getTimestamp(t time.Time) int64 {
 	return ts
 }
 
-// TimeUUID generates a new time based UUID (version 1) using the current
+// NewTimeUUID generates a new time based UUID (version 1) using the current
 // time as the timestamp.
-func TimeUUID() UUID {
+func NewTimeUUID() UUID {
 	return UUIDFromTime(time.Now())
 }
 

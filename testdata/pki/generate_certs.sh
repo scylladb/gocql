@@ -62,7 +62,7 @@ generatePrivateKey ca
 echo "Generating CA certificate ca.crt"
 rm -fv ca.crt || true
 openssl req -x509 -new -nodes -key ca.key -days $VALIDITY \
-            -out ca.crt -config ca.cnf -text
+            -out ca.crt -config ca.cnf -extensions req_ext -text
 
 # Import CA certificate into JKS truststore so it can be used by Cassandra.
 echo "Generating truststore .truststore for Cassandra"

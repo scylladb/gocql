@@ -1,0 +1,40 @@
+Traceback (most recent call last):
+  File "/home/dkropachev/.local/bin/ccm", line 6, in <module>
+    sys.exit(main())
+             ~~~~^^
+  File "/extra/scylladb/scylladb/.venv/lib/python3.14/site-packages/ccmlib/bin/__init__.py", line 75, in main
+    cmd.run()
+    ~~~~~~~^^
+  File "/extra/scylladb/scylladb/.venv/lib/python3.14/site-packages/ccmlib/cmds/cluster_cmds.py", line 218, in run
+    cluster = ScyllaCluster(self.path, self.name, install_dir=self.options.install_dir,
+                            version=self.options.version, verbose=True, manager=manager_install_dir)
+  File "/extra/scylladb/scylladb/.venv/lib/python3.14/site-packages/ccmlib/scylla_cluster.py", line 55, in __init__
+    super(ScyllaCluster, self).__init__(path, name, partitioner,
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+                                        install_dir, create_directory,
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                        version, verbose,
+                                        ^^^^^^^^^^^^^^^^^
+                                        snitch=SNITCH, cassandra_version=cassandra_version,
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                        docker_image=docker_image)
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/extra/scylladb/scylladb/.venv/lib/python3.14/site-packages/ccmlib/cluster.py", line 73, in __init__
+    dir, v = self.load_from_repository(version, verbose)
+             ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/extra/scylladb/scylladb/.venv/lib/python3.14/site-packages/ccmlib/scylla_cluster.py", line 80, in load_from_repository
+    install_dir, version = scylla_repository.setup(version, verbose)
+                           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/extra/scylladb/scylladb/.venv/lib/python3.14/site-packages/ccmlib/scylla_repository.py", line 392, in setup
+    package_version, packages = download_packages(version_dir=version_dir, packages=packages, s3_url=s3_url,
+                                ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                                  version=version, verbose=verbose)
+                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/extra/scylladb/scylladb/.venv/lib/python3.14/site-packages/ccmlib/scylla_repository.py", line 456, in download_packages
+    package_version = download_version(version=version, verbose=verbose, url=packages.scylla_package,
+                                       target_dir=os.path.join(tmp_download, CORE_PACKAGE_DIR_NAME))
+  File "/extra/scylladb/scylladb/.venv/lib/python3.14/site-packages/ccmlib/scylla_repository.py", line 526, in download_version
+    if os.path.exists(url) and url.endswith('.tar.gz'):
+       ~~~~~~~~~~~~~~^^^^^
+  File "<frozen genericpath>", line 19, in exists
+TypeError: stat: path should be string, bytes, os.PathLike or integer, not NoneType

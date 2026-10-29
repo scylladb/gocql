@@ -5,7 +5,10 @@ in this session: 33 verified findings fixed, with no unresolved findings from
 those cycles. See the [individual design review
 reports](feature-specs/reviews/go-v2-design/). Implementation remains
 stopped pending authorization to resume. Existing edits are preserved; design
-review does not claim the new driver is implemented or verified.
+review does not claim the new driver is implemented or verified. Additional
+hot-path design reviews and fixes are recorded in the [hot-path review
+ledger](feature-specs/reviews/go-v2-hot-path/INDEX.md); these are design contracts,
+not measured performance results.
 
 ## 1. Goal and scope
 
@@ -17,6 +20,12 @@ The driver must provide:
 - Generic, type-checked serialization and deserialization, including custom codecs.
 - Borrowed result views and canonical encoded inputs reused by routing, retries,
   speculative attempts, batches, and paging.
+- Direct decoding into a caller-supplied representation, with variable-size
+  result payloads remaining in leased receive buffers.
+- [Streaming receive decoding into final caller storage](feature-specs/gocql-v2-streaming-receive.md),
+  without complete response/page buffering; bounded protocol, integrity and
+  transform staging remains explicit. API reconciliation and implementation are
+  pending as specified in the feature draft.
 - Token, replica, shard, tablet, and LWT-aware routing; connection pools; topology
   and schema metadata; a control connection; events; retry and execution policies.
 - Cassandra and Scylla native-protocol support, compression, TLS, authentication,
@@ -38,7 +47,7 @@ accidental Rust limitations are not requirements to reproduce.
 | Generic operations | Package-level generic functions; methods only use their receiver's existing type parameters. |
 | Request model | Immutable prepared handles and encoded bindings; per-call options replace mutable query setters. |
 | Codec model | Explicit typed accessors/custom implementations; no reflection or `[]any` on execution paths. |
-| Result model | Typed rows with borrowed text/blob/container views; explicit retention and cloning. |
+| Result model | Typed rows, including caller-supplied destinations via NextInto; borrowed text/blob/container views with explicit retention and cloning. |
 | Routing input | Hash the same encoded spans that are transmitted, without serializing values a second time. |
 | Metadata | Immutable snapshots with generations; stale updates cannot overwrite newer metadata. |
 | Errors | Typed errors compatible with `errors.Is`/`errors.As`; malformed input returns errors rather than panics. |
@@ -133,6 +142,7 @@ func RunUnpaged[R any](context.Context, *Session, *Bound[R], Options) (*Page[R],
 func Exec[R any](context.Context, *Session, *Bound[R], Options) (Result, error)
 
 func (r *Rows[R]) Next() bool
+func (r *Rows[R]) NextInto(dst *R) bool
 func (r *Rows[R]) Row() R
 func (r *Rows[R]) Err() error
 func (r *Rows[R]) Close() error
@@ -155,6 +165,41 @@ and rejects any repeated continuation state, including nonconsecutive cycles.
 Configurable count/byte budgets bound the retained state history; exhaustion
 returns a terminal paging-state-limit error. Manual paging exposes those pages
 and their states without retaining cross-call history or inventing rows.
+
+`Rows.NextInto(dst)` and `Page.NextInto(dst)` advance and decode directly into
+the supplied instance using the same compiled column mappings as `Next`.
+Built-in field plans write into that destination without an intermediate row
+or a decode-then-assign adapter. Text/blob and lazy collection fields reference
+immutable leased receive storage, including segmented values; fixed scalars
+are decoded into Go values. This is required planned functionality, not an
+assertion that the current implementation already exposes it.
+
+```go
+var user UserView // application-defined fields use Text/Bytes/container views
+for rows.NextInto(&user) {
+    consume(user) // borrowed payloads; no String/OwnedBytes/Clone required
+}
+if err := rows.Err(); err != nil {
+    return err
+}
+```
+
+Each call replaces the destination's contents; false clears a non-nil
+destination so a partial or stale row is not exposed. Nil is a terminal
+ValidationError. Borrowed views expire at the next `Next`/`NextInto` or Close
+unless Retain pins their page. Retaining bytes does not preserve a destination
+that is later overwritten: copy its view descriptors to another value first.
+After success, Row and Clone read the current supplied destination; the pager
+may hold its pointer only until the next advance or Close. See the detailed
+API contract for mixed iteration, failure and concurrency rules.
+
+The separate [streaming receive feature draft](feature-specs/gocql-v2-streaming-receive.md)
+proposes decoding as bytes arrive into final caller storage without assembling
+a complete response/page. It requires a streaming codec/transport path, bounded
+integrity/transform staging and explicit connection reservation. Buffered
+NextInto alone does not provide it. Public signatures and implementation-task
+assignments must be reconciled before implementation; the draft does not claim
+inclusion in previously reviewed/completed design gates.
 
 ### Codecs and row composition
 
@@ -182,6 +227,7 @@ type RowDecoder[R any] interface {
 }
 type RowPlan[R any] interface {
     Decode(*RowReader) (R, error)
+    DecodeInto(*RowReader, *R) error
     Clone(R) R
 }
 
@@ -310,7 +356,7 @@ unsupported-setting error; silent no-op options are unacceptable.
 | Borrowed binding | Caller payload remains immutable until Close + successful Wait. |
 | Owned binding | Caller-backed spans are copied explicitly once; already-owned encoding is reused. |
 | Active request | Holds an admission through retry, queued writes, speculative losers, and paging; the same drain covers borrowed per-call custom payloads. |
-| Result row | Borrowed views are valid until next Next or Close unless the page is retained. |
+| Result row | Borrowed views are valid until next Next/NextInto or Close unless the page is retained; filling caller storage does not transfer ownership of payload bytes. |
 | PageLease | Pins physical receive storage independently of the request/session lifetime. |
 | Clone | Explicitly detaches data; it must not retain a hidden pooled-buffer dependency. |
 
@@ -338,7 +384,13 @@ Scalar encoding, compression/decompression, explicit owned conversions, OS I/O,
 and standard Go TLS record processing are necessary transformations or explicit
 ownership operations. Account for them separately. Zero allocations alone is not
 proof of zero payload copies; verify backing-storage identity and copy
-boundaries.
+boundaries. Hot-path work must also satisfy the implementation contract's cost
+bounds: shared range descriptors and linear sequential traversal; recursively
+compiled codecs and reused result plans; lazy first-target routing over private
+indices; hash-indexed paging history; direct warm prepared-state access;
+amortized ownership, observation and scheduling; and structurally shared
+placement feedback updates. Explicit public materialization/inspection APIs
+remain separate from internal execution.
 
 ## 5. Module and package structure
 
@@ -486,6 +538,10 @@ not completion of the feature.
 
 ### Current gaps to address first
 
+- [Streaming receive](feature-specs/gocql-v2-streaming-receive.md) needs public
+  streaming codec/API reconciliation, assignment to the sequential implementation
+  tasks, an exclusive incremental receive path, and its memory, ownership and
+  direct-read acceptance checks. Buffered NextInto does not complete this feature.
 - `TestPagingWithBind` failed in a parallel race run with “missing matching
   metadata”; investigate concurrent schema generation versus retained page metadata.
 - Scylla `ConnectionsPerHost` override is not correctly applied by the picker.
@@ -542,11 +598,19 @@ be scripted. Never drop a keyspace while another test process uses it. Native
 CCM startup/test/shutdown must share the same live exec process in this
 environment.
 
+Each implementation agent runs the focused performance checks for its seam
+before handoff, starting with wire/codec foundations; performance is not deferred
+until M6/agent 15. Agent 15 composes and compares those checks end to end, and
+agent 17 reruns affected performance checks after final fixes on the pinned
+release tree. A newly violated cost bound blocks the responsible handoff.
+
 Performance checks must distinguish setup costs from per-row/per-element work,
 descriptor allocation from payload copying, and explicit owned conversion from
 borrowed execution. Include large fragmented values and all compression/TLS
 modes; a small contiguous scalar benchmark cannot substantiate an all-hot-path
-claim.
+claim. The detailed performance gate requires independent scaling of cells,
+fragments, hosts, page-history length and concurrency, with CPU, allocation,
+contention, write/TLS amplification and retained-memory evidence as applicable.
 
 ## 9. Checkpoint: built versus verified
 
@@ -555,6 +619,8 @@ claim.
 | Rust reference specifications | Six sections; 60 separate-agent review/fix reports; strict verifier passes for 144 source modules and 418 pinned links. |
 | Original baseline | Every one of the 174 original top-level tests has an observed pass across the old-driver/corrected-harness baseline lanes. This is not v2 completion. |
 | Typed foundations | Wire/codec/compression/hash components implemented; focused race, golden, boundary and allocation tests passed. |
+| Caller-supplied result destination | Planned: RowPlan.DecodeInto plus Rows/Page.NextInto; direct writes, segmented backing identity, reuse and lifetime tests, and allocation benchmarks remain pending. |
+| Streaming receive into final caller storage | Feature draft recorded separately; API/task reconciliation, exclusive incremental receive path and bounded-memory/direct-read evidence remain pending. |
 | Typed runtime smoke | Real v4 raw/Snappy/LZ4/TLS and Cassandra v5 LZ4/TLS execution passed, including large blobs and paging/leases. |
 | Main 74 tests | Rewritten; stable Scylla run: 66 pass, 8 protocol/distribution skips. Parallel race failure remains; Cassandra v5 coverage pending. |
 | Serialization 33 tests | Rewritten; all 33 passed on the development Scylla fixture, including binary fixtures and nested/vector cases. |
@@ -576,6 +642,8 @@ depth/function-overload changes remain unverified until rerun.
 - [Sixty-round review ledger](feature-specs/reviews/INDEX.md)
 - [Detailed proposed public API](feature-specs/gocql-v2-api.md)
 - [Detailed implementation contracts](feature-specs/gocql-v2-implementation.md)
+- [Streaming receive feature draft](feature-specs/gocql-v2-streaming-receive.md)
+- [Hot-path design review cycles](feature-specs/reviews/go-v2-hot-path/INDEX.md)
 - [Current hot-path audit](feature-specs/evidence/go-hot-path-audit.md)
 - [Transport audit](feature-specs/evidence/go-transport-audit.md)
 - [All-test API dependency and migration audit](feature-specs/evidence/go-integration-api-audit.md)
@@ -606,8 +674,8 @@ evidence. Each subsequent branch must include the accepted predecessor's work.
 | Order | Branch | Agent task and completion gate |
 | --- | --- | --- |
 | 1 | `v2-01-wire-protocol` | Stabilize wire spans, leases, compression, hashing, segmentation, and protocol validation. Verify limits, malformed input, fragmented frames, copy identity, cancellation, and release behavior. |
-| 2 | `v2-02-codecs` | Complete scalar, collection, tuple/UDT, vector, dynamic-value, and row codecs. Verify type checking, null/unset/empty distinctions, independent cloning, segmented decoding, and owned/borrowed encoding. |
-| 3 | `v2-03-prepared-paging` | Fix prepared-cache generations and the paging "missing matching metadata" failure. Cover host-specific IDs, retained page metadata, reprepare, retries without re-encoding, and continuation-state handling. |
+| 2 | `v2-02-codecs` | Complete scalar, collection, tuple/UDT, vector, dynamic-value, and row codecs, including required RowPlan.DecodeInto for direct caller-destination writes. Verify type checking, null/unset/empty distinctions, independent cloning, segmented decoding, owned/borrowed encoding, destination reuse and focused allocation/backing-identity checks. |
+| 3 | `v2-03-prepared-paging` | Fix prepared-cache generations and the paging "missing matching metadata" failure. Add Rows/Page.NextInto with mixed iteration, destination clearing, errors and page-retention semantics. Cover host-specific IDs, retained page metadata, reprepare, retries without re-encoding, and continuation-state handling. |
 | 4 | `v2-04-transport-pools` | Verify TLS shard dialing; fix connection overrides, multiple connections per shard, source ports, NAT fallback, keepalive, orphan bounds, reconnects, and pool states. |
 | 5 | `v2-05-metadata-control` | Replace legacy topology/control/client-route queries with typed queries. Fix discovery-disabled identities, refresh/drop races, partial refreshes, schema agreement, event overflow, and subscriber isolation. |
 | 6 | `v2-06-tablet-routing` | Complete tablet v1/v2 and leader-aware routing, including hints, unknown ranges, moves, shard replicas, locality, and deterministic LWT routing. Required routing features must actually work. |

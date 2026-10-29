@@ -85,7 +85,7 @@ func newTraceServer(t *testing.T, cfg traceConfig) *traceServer {
 		}.write(resp, stream, writeID)
 		return true
 	})
-	ts.setExecuteHook(func(id uint64, stream int, resp *framer) bool {
+	respond := func(id uint64, stream int, resp *framer) bool {
 		if id < durationID || id > eventsID {
 			return false
 		}
@@ -111,7 +111,21 @@ func newTraceServer(t *testing.T, cfg traceConfig) *traceServer {
 			writeRows(resp, stream, traceSessionDurationCols, [][][]byte{{int32Bytes(d)}})
 		}
 		return true
-	})
+	}
+	ts.setExecuteHook(respond)
+	ts.controlTestServer.queries = func(query string, stream int, resp *framer) bool {
+		switch {
+		case strings.Contains(query, "system_traces.events"):
+			return respond(eventsID, stream, resp)
+		case strings.Contains(query, "system_traces.sessions") && strings.Contains(query, "coordinator"):
+			return respond(coordinatorID, stream, resp)
+		case strings.Contains(query, "system_traces.sessions"):
+			return respond(durationID, stream, resp)
+		default:
+			return false
+		}
+	}
+
 	return ts
 }
 
@@ -121,7 +135,7 @@ func (ts *traceServer) session(t *testing.T) *Session {
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
-	t.Cleanup(s.Close)
+	t.Cleanup(func() { _ = s.Close() })
 	return s
 }
 

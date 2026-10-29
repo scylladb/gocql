@@ -1,0 +1,28 @@
+LOCAL AFFINITY EXPERIMENT
+Runs: 30; complete matrix: True
+Total measured operations: 1,311,712,896
+Throughput: median across repetitions; randomized latency sampling: True.
+
+Case | Mops/s median [min,max] | worker completion CV | batch p99 ms | client CPU cores
+tcp-64MiB-update1-A-shared | 4.826 [4.593,5.030] | 0.001 | 0.064 | 1.97
+tcp-64MiB-update1-B-shared-pinned | 2.115 [2.025,2.189] | 0.033 | 0.105 | 1.29
+tcp-64MiB-update1-C-sharded | 5.681 [5.492,5.726] | 0.001 | 0.041 | 2.10
+tcp-64MiB-update1-D-sharded-pinned | 4.698 [4.167,5.014] | 0.011 | 0.043 | 1.97
+tcp-64MiB-update1-E-sharded-pinned-socket-once | 4.590 [4.284,5.023] | 0.011 | 0.044 | 1.91
+
+PAIRED COMPARISONS: throughput gain; exploratory 95% bootstrap interval
+tcp-64MiB-update1: D-sharded-pinned/C-sharded: -16.6% [-21.7%,-13.8%]; batch p99 ratio 1.09; worker CV change +0.010
+tcp-64MiB-update1: C-sharded/A-shared: +16.9% [+14.2%,+20.3%]; batch p99 ratio 0.63; worker CV change +0.000
+tcp-64MiB-update1: B-shared-pinned/A-shared: -56.7% [-57.0%,-54.7%]; batch p99 ratio 1.62; worker CV change +0.032
+
+Pinned CPU samples: 83,636; unpinned sampled CPU changes: 55,934.
+Socket workers reporting incoming CPU different from target: 24/24.
+Socket target absent before measurement: 24/24; status: unsupported-observed-mismatch.
+Observed incoming CPUs: [17, 18, 20, 23]; NAPI IDs: [0].
+
+Synthetic cache/LRU/encoding/loopback experiment; no actual gocql, database, TLS or physical NIC.
+LRU ownership/lock removal is distinct from worker pinning; compare D/C for worker pinning.
+E is a one-time socket-option feasibility probe, not a maintained socket-affinity throughput treatment.
+Latency describes sampled batches of 32 operations, not per-query p99. Skew includes bounded queue time.
+Bootstrap intervals resample up to 6 randomized blocks; exploratory shared-host evidence.
+No hardware cache-miss or full migration counters are collected by this harness.

@@ -25,14 +25,14 @@
 package gocql
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
 	"strconv"
 	"strings"
 	"sync"
-
-	frm "github.com/gocql/gocql/internal/frame"
+	"time"
 )
 
 var (
@@ -614,21 +614,37 @@ func (h *HostInfo) getTranslatedConnectionInfo() *translatedAddresses {
 
 // Returns true if we are using system_schema.keyspaces instead of system.schema_keyspaces
 func checkSystemSchema(control controlConnection) (bool, error) {
-	iter := control.querySystem("SELECT * FROM system_schema.keyspaces")
-	if iter == nil {
+	if control == nil {
 		return false, errNoControl
 	}
-	defer iter.Close()
-	if err := iter.err; err != nil {
-		if errf, ok := err.(*frm.ErrorFrame); ok {
-			if errf.Code == ErrCodeSyntax {
-				return false, nil
-			}
+	backend, ok := control.(v2SystemQueryer)
+	if !ok {
+		return false, typeValidation("schema discovery", "control connection does not support typed queries")
+	}
+	ctx := context.Background()
+	timeout := 60 * time.Second
+	if session := control.getSession(); session != nil {
+		ctx = v2SchemaContext(session)
+		if session.cfg.MetadataSchemaRequestTimeout > 0 {
+			timeout = session.cfg.MetadataSchemaRequestTimeout
 		}
-
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	page, err := backend.queryV2System(ctx, &attemptRequest{statement: "SELECT * FROM system_schema.keyspaces", consistency: One, pageSize: 1, timeout: timeout})
+	if page != nil && page.owner != nil {
+		defer page.owner.Release()
+	}
+	if err != nil {
+		var server RequestError
+		if errors.As(err, &server) && server.GetCode() == ErrCodeSyntax {
+			return false, nil
+		}
 		return false, err
 	}
-
+	if page == nil {
+		return false, errNoControl
+	}
 	return true, nil
 }
 
@@ -819,6 +835,7 @@ func (s *Session) refreshRing() error {
 		s.removeHost(host)
 	}
 	s.policy.SetPartitioner(partitioner)
+	s.publishV2Metadata()
 
 	return nil
 }

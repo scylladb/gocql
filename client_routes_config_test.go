@@ -25,7 +25,7 @@ package gocql
 import (
 	"testing"
 
-	"github.com/gocql/gocql/internal/tests"
+	"github.com/scylladb/gocql/v2/internal/tests"
 )
 
 func TestNewSessionCommonAppliesClientRoutesShardAwareness(t *testing.T) {
@@ -78,7 +78,7 @@ func TestNewSessionCommonAppliesClientRoutesShardAwareness(t *testing.T) {
 			if err != nil {
 				t.Fatalf("new session: %v", err)
 			}
-			t.Cleanup(session.Close)
+			t.Cleanup(func() { _ = session.Close() })
 
 			tests.AssertEqual(t, "disable shard-aware port", tt.wantDisabled, session.cfg.DisableShardAwarePort)
 		})

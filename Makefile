@@ -351,8 +351,8 @@ test-integration-cassandra: cassandra-start
 		echo "Cassandra version ${CASSANDRA_VERSION} was not resolved"
 		exit 1
 	fi
-	echo "go test -v ${TEST_OPTS} -tags \"${TEST_INTEGRATION_TAGS}\" ${COVER_BUILD_ARGS} -timeout=${TEST_INTEGRATION_TIMEOUT} . -args -distribution cassandra -runauth -gocql.timeout=60s -runssl -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$${CASSANDRA_VERSION_RESOLVED} -cluster=$$(ccm liveset) ${COVER_RUNTIME_ARGS}"
-	go test -v ${TEST_OPTS} -tags "${TEST_INTEGRATION_TAGS}" ${COVER_BUILD_ARGS} -timeout=${TEST_INTEGRATION_TIMEOUT} . -args -distribution cassandra -runauth -gocql.timeout=60s -runssl -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$$(ccm node1 versionfrombuild) -cluster=$$(ccm liveset) ${COVER_RUNTIME_ARGS}
+	echo "go test -v ${TEST_OPTS} -tags \"${TEST_INTEGRATION_TAGS}\" ${COVER_BUILD_ARGS} -timeout=${TEST_INTEGRATION_TIMEOUT} . -args -distribution cassandra -runauth -runcassandrafixtures -gocql.timeout=60s -runssl -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$${CASSANDRA_VERSION_RESOLVED} -cluster=$$(ccm liveset) ${COVER_RUNTIME_ARGS}"
+	go test -v ${TEST_OPTS} -tags "${TEST_INTEGRATION_TAGS}" ${COVER_BUILD_ARGS} -timeout=${TEST_INTEGRATION_TIMEOUT} . -args -distribution cassandra -runauth -runcassandrafixtures -gocql.timeout=60s -runssl -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$$(ccm node1 versionfrombuild) -cluster=$$(ccm liveset) ${COVER_RUNTIME_ARGS}
 
 test-integration-scylla: scylla-start
 	@echo "Run integration tests for proto ${TEST_CQL_PROTOCOL} on scylla ${SCYLLA_VERSION}"

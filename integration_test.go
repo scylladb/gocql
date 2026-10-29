@@ -34,10 +34,11 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/gocql/gocql/internal/tests"
+	"github.com/scylladb/gocql/v2/internal/tests"
 )
 
 func init() {
@@ -54,14 +55,11 @@ func TestAuthentication(t *testing.T) {
 		t.Skip("Authentication is not configured in the target cluster")
 	}
 
-	cluster := createCluster()
+	cluster := createV2Cluster()
 
-	cluster.Authenticator = PasswordAuthenticator{
-		Username: "cassandra",
-		Password: "cassandra",
-	}
+	cluster.Auth = PasswordAuth("cassandra", "cassandra")
 
-	session, err := cluster.CreateSession()
+	session, err := Connect(context.Background(), cluster)
 
 	if err != nil {
 		t.Fatalf("Authentication error: %s", err)
@@ -74,14 +72,25 @@ func TestGetHostsFromSystem(t *testing.T) {
 	t.Parallel()
 
 	clusterHosts := getClusterHosts()
-	cluster := createCluster()
-	session := createSessionFromCluster(cluster, t)
-
-	hosts, partitioner, err := session.hostSource.GetHostsFromSystem()
-
+	cluster := createV2Cluster()
+	session := createV2SessionFromConfig(cluster, t, false)
+	defer session.Close()
+	if err := session.RefreshMetadata(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	hosts := session.Metadata().Hosts()
+	row, err := v2ReadOne(context.Background(), session, "SELECT partitioner FROM system.local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := row.At(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	partitioner, err := value.Text()
 	tests.AssertTrue(t, "err == nil", err == nil)
 	tests.AssertEqual(t, "len(hosts)", len(clusterHosts), len(hosts))
-	tests.AssertTrue(t, "len(partitioner) != 0", len(partitioner) != 0)
+	tests.AssertTrue(t, "len(partitioner) != 0", len(partitioner.String()) != 0)
 }
 
 // TestRingDiscovery makes sure that you can autodiscover other cluster members
@@ -90,10 +99,10 @@ func TestRingDiscovery(t *testing.T) {
 	t.Parallel()
 
 	clusterHosts := getClusterHosts()
-	cluster := createCluster()
-	cluster.Hosts = clusterHosts[:1]
+	cluster := createV2Cluster()
+	cluster.ContactPoints = clusterHosts[:1]
 
-	session := createSessionFromCluster(cluster, t)
+	session := createV2SessionFromConfig(cluster, t, false)
 	defer session.Close()
 
 	if *clusterSize > 1 {
@@ -122,22 +131,37 @@ func TestHostFilterDiscovery(t *testing.T) {
 	if len(clusterHosts) < 2 {
 		t.Skip("skipping because we don't have 2 or more hosts")
 	}
-	cluster := createCluster()
-	rr := RoundRobinHostPolicy().(*roundRobinHostPolicy)
-	cluster.PoolConfig.HostSelectionPolicy = rr
+	cluster := createV2Cluster()
+	rr, err := NewRoutingPolicy(RoutingOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := cluster.DefaultProfile.Snapshot()
+	profile.Routing = rr
+	if err := cluster.DefaultProfile.Replace(profile); err != nil {
+		t.Fatal(err)
+	}
 	// we'll filter out the second host
 	filtered := clusterHosts[1]
-	cluster.Hosts = clusterHosts[:1]
-	cluster.HostFilter = HostFilterFunc(func(host *HostInfo) bool {
-		if host.ConnectAddress().String() == filtered {
-			return false
-		}
-		return true
-	})
-	session := createSessionFromCluster(cluster, t)
+	cluster.ContactPoints = clusterHosts[:1]
+	cluster.HostFilter = func(host HostSnapshot) bool { return host.Address.Addr().String() != filtered }
+	session := createV2SessionFromConfig(cluster, t, false)
 	defer session.Close()
 
-	tests.AssertEqual(t, "len(clusterHosts)-1 != rr.hosts.get().len()", len(clusterHosts)-1, rr.hosts.get().len())
+	plan := rr.Plan(RoutingInfo{}, session.Metadata())
+	targets := make(map[UUID]bool)
+	for target, ok := plan.Next(); ok; target, ok = plan.Next() {
+		targets[target.HostID] = true
+	}
+	tests.AssertEqual(t, "eligible routing hosts", len(clusterHosts)-1, len(targets))
+	for _, host := range session.Metadata().Hosts() {
+		if host.Address.Addr().String() == filtered && (host.Enabled || targets[host.ID]) {
+			t.Fatalf("filtered host remains eligible: %+v", host)
+		}
+	}
+	if ch := session.control.getConn(); ch != nil && ch.host.ConnectAddress().String() == filtered {
+		t.Fatal("control connection selected a filtered host")
+	}
 }
 
 // TestHostFilterInitial ensures that host filtering works for the initial
@@ -149,35 +173,50 @@ func TestHostFilterInitial(t *testing.T) {
 	if len(clusterHosts) < 2 {
 		t.Skip("skipping because we don't have 2 or more hosts")
 	}
-	cluster := createCluster()
-	rr := RoundRobinHostPolicy().(*roundRobinHostPolicy)
-	cluster.PoolConfig.HostSelectionPolicy = rr
+	cluster := createV2Cluster()
+	rr, err := NewRoutingPolicy(RoutingOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := cluster.DefaultProfile.Snapshot()
+	profile.Routing = rr
+	if err := cluster.DefaultProfile.Replace(profile); err != nil {
+		t.Fatal(err)
+	}
 	// we'll filter out the second host
 	filtered := clusterHosts[1]
-	cluster.HostFilter = HostFilterFunc(func(host *HostInfo) bool {
-		if host.ConnectAddress().String() == filtered {
-			return false
-		}
-		return true
-	})
-	session := createSessionFromCluster(cluster, t)
+	cluster.HostFilter = func(host HostSnapshot) bool { return host.Address.Addr().String() != filtered }
+	session := createV2SessionFromConfig(cluster, t, false)
 	defer session.Close()
 
-	tests.AssertEqual(t, "len(clusterHosts)-1 != rr.hosts.get().len()", len(clusterHosts)-1, rr.hosts.get().len())
+	plan := rr.Plan(RoutingInfo{}, session.Metadata())
+	targets := make(map[UUID]bool)
+	for target, ok := plan.Next(); ok; target, ok = plan.Next() {
+		targets[target.HostID] = true
+	}
+	tests.AssertEqual(t, "eligible routing hosts", len(clusterHosts)-1, len(targets))
+	for _, host := range session.Metadata().Hosts() {
+		if host.Address.Addr().String() == filtered && (host.Enabled || targets[host.ID]) {
+			t.Fatalf("filtered host remains eligible: %+v", host)
+		}
+	}
+	if ch := session.control.getConn(); ch != nil && ch.host.ConnectAddress().String() == filtered {
+		t.Fatal("control connection selected a filtered host")
+	}
 }
 
 func TestApplicationInformation(t *testing.T) {
 	t.Parallel()
 
-	cluster := createCluster()
-	s, err := cluster.CreateSession()
+	cluster := createV2Cluster()
+	s, err := Connect(context.Background(), cluster)
 	if err != nil {
 		t.Fatalf("ApplicationInformation error: %s", err)
 	}
+	defer s.Close()
 	var clientsTableName string
 	for _, tableName := range []string{"system_views.clients", "system.clients"} {
-		iter := s.Query("select client_options from " + tableName).Iter()
-		_, err = iter.SliceMap()
+		_, err = readV2ClientOptions(context.Background(), s, "select client_options from "+tableName)
 		if err == nil {
 			clientsTableName = tableName
 			break
@@ -218,18 +257,23 @@ func TestApplicationInformation(t *testing.T) {
 	}
 	for _, tcase := range tcases {
 		t.Run(tcase.testName, func(t *testing.T) {
-			cluster := createCluster()
-			cluster.ApplicationInfo = NewStaticApplicationInfo(tcase.name, tcase.version, tcase.clientID)
-			s, err := cluster.CreateSession()
+			cluster := createV2Cluster()
+			cluster.Identity = IdentityOptions{ApplicationName: tcase.name, ApplicationVersion: tcase.version, ClientID: tcase.clientID}
+			s, err := Connect(context.Background(), cluster)
 			if err != nil {
 				t.Fatalf("failed to connect to the cluster: %s", err)
 			}
 			defer s.Close()
 
-			var row map[string]string
-			iter := s.Query("select client_options from " + clientsTableName).Iter()
+			rows, err := readV2ClientOptions(context.Background(), s, "select client_options from "+clientsTableName)
+			if err != nil {
+				t.Fatalf("failed to execute query: %v", err)
+			}
 			found := false
-			for iter.Scan(&row) {
+			for _, row := range rows {
+				if row[sessionIDStartupKey] != s.ID() {
+					continue
+				}
 				if tcase.name != "" {
 					if row["APPLICATION_NAME"] != tcase.name {
 						continue
@@ -260,9 +304,6 @@ func TestApplicationInformation(t *testing.T) {
 				found = true
 				break
 			}
-			if iter.Close() != nil {
-				t.Fatalf("failed to execute query: %s", iter.Close().Error())
-			}
 			if !found {
 				t.Fatalf("failed to find the application info row")
 			}
@@ -278,8 +319,8 @@ func TestApplicationInformation(t *testing.T) {
 func TestDriverConfigReporting(t *testing.T) {
 	t.Parallel()
 
-	cluster := createCluster()
-	s, err := cluster.CreateSession()
+	cluster := createV2Cluster()
+	s, err := Connect(context.Background(), cluster)
 	if err != nil {
 		t.Fatalf("failed to connect to the cluster: %s", err)
 	}
@@ -295,8 +336,7 @@ func TestDriverConfigReporting(t *testing.T) {
 
 	var clientsTableName string
 	for _, tableName := range []string{"system_views.clients", "system.clients"} {
-		iter := s.Query("select client_options from " + tableName).Iter()
-		if _, err := iter.SliceMap(); err == nil {
+		if _, err := readV2ClientOptions(context.Background(), s, "select client_options from "+tableName); err == nil {
 			clientsTableName = tableName
 			break
 		}
@@ -351,9 +391,11 @@ func TestDriverConfigReporting(t *testing.T) {
 		configs = nil
 		conns := 0
 
-		var row map[string]string
-		iter := s.control.query("select client_options from " + clientsTableName)
-		for iter.Scan(&row) {
+		rows, err := readV2ClientOptions(context.Background(), s, "select client_options from "+clientsTableName)
+		if err != nil {
+			t.Fatalf("failed to execute query: %v", err)
+		}
+		for _, row := range rows {
 			if row[sessionIDStartupKey] != wantSessionID {
 				continue
 			}
@@ -361,9 +403,6 @@ func TestDriverConfigReporting(t *testing.T) {
 			if config, ok := row[driverConfigStartupKey]; ok {
 				configs = append(configs, config)
 			}
-		}
-		if err := iter.Close(); err != nil {
-			t.Fatalf("failed to execute query: %s", err)
 		}
 
 		// More rows than connections is fine: a connection that has already been
@@ -390,6 +429,11 @@ func TestDriverConfigReporting(t *testing.T) {
 	// tests' business, while what only a live server can confirm is that it
 	// round-trips intact and that the ScyllaDB-gated key is decided correctly.
 	for _, config := range configs {
+		// STARTUP retains the versioned driver-report wire schema even though the
+		// application now configures the session with Config.
+		if strings.Contains(strings.ToLower(config), `"password"`) || strings.Contains(strings.ToLower(config), `"username"`) {
+			t.Error("driver configuration exposes authentication credentials")
+		}
 		var report driverConfigReport
 		if err := json.Unmarshal([]byte(config), &report); err != nil {
 			t.Errorf("expected %s to be valid JSON, got %q: %v", driverConfigStartupKey, config, err)
@@ -398,7 +442,7 @@ func TestDriverConfigReporting(t *testing.T) {
 		if report.Version != driverConfigVersion {
 			t.Errorf("expected %s version %d, got %d", driverConfigStartupKey, driverConfigVersion, report.Version)
 		}
-		if got, want := report.ControlPlane.Schema.Agreement.TimeoutMs, cluster.MaxWaitSchemaAgreement.Milliseconds(); got != want {
+		if got, want := report.ControlPlane.Schema.Agreement.TimeoutMs, cluster.Metadata.AgreementTimeout.Milliseconds(); got != want {
 			t.Errorf("expected schema agreement timeout-ms %d, got %d", want, got)
 		}
 		// server-side-ms describes the USING TIMEOUT clause, which only ScyllaDB
@@ -417,24 +461,25 @@ func TestDriverConfigReporting(t *testing.T) {
 func TestWriteFailure(t *testing.T) {
 	t.Parallel()
 
-	t.Skip("skipped due to unknown purpose")
-	cluster := createCluster()
-	createKeyspace(t, cluster, "test", false)
-	cluster.Keyspace = "test"
-	session, err := cluster.CreateSession()
+	requireCassandraFixtures(t)
+	cluster := createV2Cluster()
+	session, err := Connect(context.Background(), cluster)
 	if err != nil {
 		t.Fatal("create session:", err)
 	}
 	defer session.Close()
 
-	table := testTableName(t)
+	if err := v2CreateTable(context.Background(), session, fmt.Sprintf("CREATE KEYSPACE IF NOT EXISTS test WITH replication = {'class': 'NetworkTopologyStrategy', 'replication_factor': %d}", *flagRF)); err != nil {
+		t.Fatal(err)
+	}
+	table := testTableName(t, session.ID())
 
-	if err := createTable(session, fmt.Sprintf("CREATE TABLE test.%s (id int,value int,PRIMARY KEY (id))", table)); err != nil {
+	if err := v2CreateTable(context.Background(), session, fmt.Sprintf("CREATE TABLE test.%s (id int,value int,PRIMARY KEY (id))", table)); err != nil {
 		t.Fatalf("failed to create table with error '%v'", err)
 	}
-	if err := session.Query(fmt.Sprintf(`INSERT INTO test.%s (id, value) VALUES (1, 1)`, table)).Exec(); err != nil {
-		errWrite, ok := err.(*RequestErrWriteFailure)
-		if ok {
+	if _, err := v2Exec(context.Background(), session, fmt.Sprintf(`INSERT INTO test.%s (id, value) VALUES (1, 1)`, table)); err != nil {
+		var errWrite *RequestErrWriteFailure
+		if errors.As(err, &errWrite) {
 			if session.cfg.ProtoVersion >= protoVersion5 {
 				// ErrorMap should be filled with some hosts that should've errored
 				if len(errWrite.ErrorMap) == 0 {
@@ -453,7 +498,7 @@ func TestWriteFailure(t *testing.T) {
 		t.Fatal("a write fail error should have happened when querying test keyspace")
 	}
 
-	if err = session.Query("DROP KEYSPACE test").Exec(); err != nil {
+	if _, err = v2Exec(context.Background(), session, "DROP KEYSPACE test"); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -461,75 +506,136 @@ func TestWriteFailure(t *testing.T) {
 func TestCustomPayloadMessages(t *testing.T) {
 	t.Parallel()
 
-	t.Skip("SKIPPING")
-	cluster := createCluster()
-	session := createSessionFromCluster(cluster, t)
+	requireCassandraFixtures(t)
+	cluster := createV2Cluster()
+	session := createV2SessionFromConfig(cluster, t, false)
 	defer session.Close()
 
-	table := testTableName(t)
+	table := testTableName(t, session.ID())
 
-	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int, value int, PRIMARY KEY (id))", table)); err != nil {
+	if err := v2CreateTable(context.Background(), session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int, value int, PRIMARY KEY (id))", table)); err != nil {
 		t.Fatal(err)
 	}
 
-	// QueryMessage
-	var customPayload = map[string][]byte{"a": []byte{10, 20}, "b": []byte{20, 30}}
-	query := session.Query(fmt.Sprintf("SELECT id FROM %s where id = ?", table), 42).Consistency(One).CustomPayload(customPayload)
-	iter := query.Iter()
-	rCustomPayload := iter.GetCustomPayload()
-	if !reflect.DeepEqual(customPayload, rCustomPayload) {
-		t.Fatal("The received custom payload should match the sent")
-	}
-	iter.Close()
+	customPayload := []PayloadEntry{{Key: "a", Value: Nullable[Bytes]{Valid: true, Value: BorrowBytes([]byte{10, 20})}}, {Key: "b", Value: Nullable[Bytes]{Valid: true, Value: BorrowBytes([]byte{20, 30})}}}
+	options := Options{Consistency: Option[Consistency]{Value: One, Set: true}, CustomPayload: customPayload}
 
-	// Insert query
-	query = session.Query(fmt.Sprintf("INSERT INTO %s(id,value) VALUES(1, 1)", table)).Consistency(One).CustomPayload(customPayload)
-	iter = query.Iter()
-	rCustomPayload = iter.GetCustomPayload()
-	if !reflect.DeepEqual(customPayload, rCustomPayload) {
-		t.Fatal("The received custom payload should match the sent")
+	// Prepared SELECT retains the EXECUTE custom-payload path.
+	selectStatement := Statement[[]Value, DynamicRow]{CQL: fmt.Sprintf("SELECT id FROM %s where id = ?", table), Params: DynamicParams, Rows: DynamicRows}
+	prepared, err := Prepare(context.Background(), session, selectStatement, PrepareOptions{})
+	if err != nil {
+		t.Fatal(err)
 	}
-	iter.Close()
+	bound, err := BindOwned(prepared, []Value{IntValue(42)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer bound.Close()
+	page, err := RunPage(context.Background(), session, bound, StartPage(), options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertV2CustomPayload(t, customPayload, page.Info().CustomPayload)
+	if err := page.Close(); err != nil {
+		t.Fatal(err)
+	}
 
-	// Batch Message
-	b := session.Batch(LoggedBatch)
-	b.CustomPayload = customPayload
-	b.Query(fmt.Sprintf("INSERT INTO %s(id,value) VALUES(1, 1)", table))
-	if err := session.ExecuteBatch(b); err != nil {
-		t.Fatalf("query failed. %v", err)
+	// Unprepared INSERT retains the QUERY custom-payload path.
+	insert, err := BindUnpreparedOwned(Statement[Unit, Unit]{CQL: fmt.Sprintf("INSERT INTO %s(id,value) VALUES(1, 1)", table), Params: NoParams, Rows: NoRows}, NewColumns(), Unit{})
+	if err != nil {
+		t.Fatal(err)
 	}
+	defer insert.Close()
+	result, err := Exec(context.Background(), session, insert, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertV2CustomPayload(t, customPayload, result.CustomPayload)
+
+	// Native BATCH retains its independent custom-payload frame path.
+	item, err := BatchEntry(insert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err = ExecBatch(context.Background(), session, LoggedBatch, []BatchItem{item}, options)
+	if err != nil {
+		t.Fatalf("query failed: %v", err)
+	}
+	assertV2CustomPayload(t, customPayload, result.CustomPayload)
 }
 
 func TestCustomPayloadValues(t *testing.T) {
 	t.Parallel()
-
-	t.Skip("SKIPPING")
-	cluster := createCluster()
-	session := createSessionFromCluster(cluster, t)
+	requireCassandraFixtures(t)
+	session := createV2Session(t)
 	defer session.Close()
-
-	table := testTableName(t)
-
-	if err := createTable(session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int, value int, PRIMARY KEY (id))", table)); err != nil {
+	table := testTableName(t, session.ID())
+	if err := v2CreateTable(context.Background(), session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int, value int, PRIMARY KEY (id))", table)); err != nil {
 		t.Fatal(err)
 	}
 
-	values := []map[string][]byte{map[string][]byte{"a": []byte{10, 20}, "b": []byte{20, 30}}, nil, map[string][]byte{"a": []byte{10, 20}, "b": nil}}
-
+	values := [][]PayloadEntry{
+		{{Key: "a", Value: Nullable[Bytes]{Valid: true, Value: BorrowBytes([]byte{10, 20})}}, {Key: "b", Value: Nullable[Bytes]{Valid: true, Value: BorrowBytes([]byte{20, 30})}}},
+		nil,
+		{{Key: "a", Value: Nullable[Bytes]{Valid: true, Value: BorrowBytes([]byte{10, 20})}}, {Key: "b", Value: Nullable[Bytes]{}}},
+	}
+	statement := Statement[[]Value, DynamicRow]{CQL: fmt.Sprintf("SELECT id FROM %s where id = ?", table), Params: DynamicParams, Rows: DynamicRows}
+	prepared, err := Prepare(context.Background(), session, statement, PrepareOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bound, err := BindOwned(prepared, []Value{IntValue(42)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer bound.Close()
 	for _, customPayload := range values {
-		query := session.Query(fmt.Sprintf("SELECT id FROM %s where id = ?", table), 42).Consistency(One).CustomPayload(customPayload)
-		iter := query.Iter()
-		rCustomPayload := iter.GetCustomPayload()
-		if !reflect.DeepEqual(customPayload, rCustomPayload) {
-			t.Fatal("The received custom payload should match the sent")
+		page, err := RunPage(context.Background(), session, bound, StartPage(), Options{Consistency: Option[Consistency]{Value: One, Set: true}, CustomPayload: customPayload})
+		if err != nil {
+			t.Fatal(err)
 		}
+		assertV2CustomPayload(t, customPayload, page.Info().CustomPayload)
+		if err := page.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func assertV2CustomPayload(t testing.TB, want, got []PayloadEntry) {
+	t.Helper()
+	decode := func(entries []PayloadEntry) map[string][]byte {
+		if entries == nil {
+			return nil
+		}
+		result := make(map[string][]byte, len(entries))
+		for _, entry := range entries {
+			if _, exists := result[entry.Key]; exists {
+				t.Fatalf("duplicate custom-payload key %q", entry.Key)
+			}
+			if entry.Value.Valid {
+				result[entry.Key] = entry.Value.Value.OwnedBytes()
+			} else {
+				result[entry.Key] = nil
+			}
+		}
+		return result
+	}
+	if !reflect.DeepEqual(decode(want), decode(got)) {
+		t.Fatalf("received custom payload differs: want %v, got %v", decode(want), decode(got))
+	}
+}
+
+func requireCassandraFixtures(t *testing.T) {
+	t.Helper()
+	if *flagDistribution != "cassandra" || !*flagCassandraFixtures {
+		t.Skip("requires Cassandra write-failure/custom-payload fixtures and -runcassandrafixtures")
 	}
 }
 
 func TestSessionAwaitSchemaAgreement(t *testing.T) {
 	t.Parallel()
 
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
 
 	if err := session.AwaitSchemaAgreement(context.Background()); err != nil {
@@ -540,11 +646,11 @@ func TestSessionAwaitSchemaAgreement(t *testing.T) {
 func TestSessionAwaitSchemaAgreementSessionClosed(t *testing.T) {
 	t.Parallel()
 
-	session := createSession(t)
+	session := createV2Session(t)
 	session.Close()
 
-	if err := session.AwaitSchemaAgreement(context.Background()); !errors.Is(err, ErrConnectionClosed) {
-		t.Fatalf("expected session.AwaitSchemaAgreement to return ErrConnectionClosed but got '%v'", err)
+	if err := session.AwaitSchemaAgreement(context.Background()); !errors.Is(err, ErrClosed) {
+		t.Fatalf("expected session.AwaitSchemaAgreement to return ErrClosed but got '%v'", err)
 	}
 
 }
@@ -552,7 +658,8 @@ func TestSessionAwaitSchemaAgreementSessionClosed(t *testing.T) {
 func TestSessionAwaitSchemaAgreementContextCanceled(t *testing.T) {
 	t.Parallel()
 
-	session := createSession(t)
+	session := createV2Session(t)
+	defer session.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -606,7 +713,7 @@ func TestNewConnectWithLowTimeout(t *testing.T) {
 		t.Run(lowTimeout.String(), func(t *testing.T) {
 			for _, tcase := range []struct {
 				name                       string
-				getCluster                 func() *ClusterConfig
+				getCluster                 func() Config
 				connect                    TestExpectation
 				regularQuery               TestExpectation
 				controlQuery               TestExpectation
@@ -614,9 +721,13 @@ func TestNewConnectWithLowTimeout(t *testing.T) {
 			}{
 				{
 					name: "Timeout",
-					getCluster: func() *ClusterConfig {
-						cluster := createCluster()
-						cluster.Timeout = lowTimeout
+					getCluster: func() Config {
+						cluster := createV2Cluster()
+						profile := cluster.DefaultProfile.Snapshot()
+						profile.Timeout = lowTimeout
+						if err := cluster.DefaultProfile.Replace(profile); err != nil {
+							t.Fatal(err)
+						}
 						return cluster
 					},
 					connect: Pass,
@@ -628,9 +739,9 @@ func TestNewConnectWithLowTimeout(t *testing.T) {
 				},
 				{
 					name: "MetadataSchemaRequestTimeout",
-					getCluster: func() *ClusterConfig {
-						cluster := createCluster()
-						cluster.MetadataSchemaRequestTimeout = lowTimeout
+					getCluster: func() Config {
+						cluster := createV2Cluster()
+						cluster.Metadata.RequestTimeout = lowTimeout
 						return cluster
 					},
 					connect:                    Pass,
@@ -640,8 +751,8 @@ func TestNewConnectWithLowTimeout(t *testing.T) {
 				},
 				{
 					name: "WriteTimeout",
-					getCluster: func() *ClusterConfig {
-						cluster := createCluster()
+					getCluster: func() Config {
+						cluster := createV2Cluster()
 						cluster.WriteTimeout = lowTimeout
 						return cluster
 					},
@@ -654,8 +765,8 @@ func TestNewConnectWithLowTimeout(t *testing.T) {
 				},
 				{
 					name: "ReadTimeout",
-					getCluster: func() *ClusterConfig {
-						cluster := createCluster()
+					getCluster: func() Config {
+						cluster := createV2Cluster()
 						cluster.ReadTimeout = lowTimeout
 						return cluster
 					},
@@ -671,12 +782,16 @@ func TestNewConnectWithLowTimeout(t *testing.T) {
 				},
 				{
 					name: "AllTimeouts",
-					getCluster: func() *ClusterConfig {
-						cluster := createCluster()
-						cluster.Timeout = lowTimeout
+					getCluster: func() Config {
+						cluster := createV2Cluster()
+						profile := cluster.DefaultProfile.Snapshot()
+						profile.Timeout = lowTimeout
+						if err := cluster.DefaultProfile.Replace(profile); err != nil {
+							t.Fatal(err)
+						}
 						cluster.ReadTimeout = lowTimeout
 						cluster.WriteTimeout = lowTimeout
-						cluster.MetadataSchemaRequestTimeout = lowTimeout
+						cluster.Metadata.RequestTimeout = lowTimeout
 						return cluster
 					},
 					connect:                    Pass,
@@ -692,7 +807,7 @@ func TestNewConnectWithLowTimeout(t *testing.T) {
 					)
 
 					t.Run("Connect", func(t *testing.T) {
-						s, err = tcase.getCluster().CreateSession()
+						s, err = Connect(context.Background(), tcase.getCluster())
 						match(t, tcase.connect, err)
 						if err != nil {
 							t.Fatal("failed to create session", err.Error())
@@ -710,26 +825,21 @@ func TestNewConnectWithLowTimeout(t *testing.T) {
 
 					if tcase.regularQuery != DontRun {
 						t.Run("Regular Query", func(t *testing.T) {
-							err = s.Query("SELECT key FROM system.local WHERE key='local'").Exec()
+							_, err = v2ReadOne(context.Background(), s, "SELECT key FROM system.local WHERE key='local'")
 							match(t, tcase.regularQuery, err)
 						})
 					}
 
 					if tcase.controlQuery != DontRun {
 						t.Run("Query from control connection", func(t *testing.T) {
-							ch := s.control.getConn()
-							if ch == nil {
-								err = errNoControl
-							} else {
-								err = ch.conn.querySystem(context.TODO(), "SELECT key FROM system.local WHERE key='local'").err
-							}
+							err = queryV2ControlKey(context.Background(), s)
 							match(t, tcase.controlQuery, err)
 						})
 					}
 
 					if tcase.controlQueryAfterReconnect != DontRun {
 						t.Run("Query from control connection after reconnect", func(t *testing.T) {
-							s, err = tcase.getCluster().CreateSession()
+							s, err = Connect(context.Background(), tcase.getCluster())
 							if err != nil {
 								t.Fatal("failed to create session", err.Error())
 							}
@@ -738,12 +848,7 @@ func TestNewConnectWithLowTimeout(t *testing.T) {
 							if err != nil {
 								t.Fatalf("failed to reconnect to control connection: %v", err)
 							}
-							ch := s.control.getConn()
-							if ch == nil {
-								err = errNoControl
-							} else {
-								err = ch.conn.querySystem(context.TODO(), "SELECT key FROM system.local WHERE key='local'").err
-							}
+							err = queryV2ControlKey(context.Background(), s)
 							match(t, tcase.controlQueryAfterReconnect, err)
 						})
 					}
@@ -751,4 +856,49 @@ func TestNewConnectWithLowTimeout(t *testing.T) {
 			}
 		})
 	}
+}
+
+// readV2ClientOptions keeps node-local startup reports on the control connection.
+func readV2ClientOptions(ctx context.Context, session *Session, cql string) ([]map[string]string, error) {
+	handle := session.control.getConn()
+	if handle == nil {
+		return nil, errNoControl
+	}
+	conn, ok := handle.conn.(*Conn)
+	if !ok {
+		return nil, fmt.Errorf("control connection does not support typed queries")
+	}
+	statement := Statement[Unit, Mapping[Text, Text]]{CQL: cql, Params: NoParams, Rows: OneColumn(MapDecoder(TextCodec, TextCodec))}
+	rows, err := readV2SystemRows(ctx, conn, statement, NewColumns(), Unit{})
+	if err != nil {
+		return nil, err
+	}
+	result := make([]map[string]string, 0, len(rows))
+	for _, row := range rows {
+		values := make(map[string]string)
+		entries := row.Iterator()
+		for entries.Next() {
+			entry := entries.Value()
+			values[entry.Key.String()] = entry.Value.String()
+		}
+		if err := entries.Err(); err != nil {
+			return nil, err
+		}
+		result = append(result, values)
+	}
+	return result, nil
+}
+
+func queryV2ControlKey(ctx context.Context, session *Session) error {
+	handle := session.control.getConn()
+	if handle == nil {
+		return errNoControl
+	}
+	conn, ok := handle.conn.(*Conn)
+	if !ok {
+		return fmt.Errorf("control connection does not support typed queries")
+	}
+	statement := Statement[Unit, Text]{CQL: "SELECT key FROM system.local WHERE key='local'", Params: NoParams, Rows: OneColumn(TextCodec)}
+	_, err := readV2SystemRows(ctx, conn, statement, NewColumns(), Unit{})
+	return err
 }

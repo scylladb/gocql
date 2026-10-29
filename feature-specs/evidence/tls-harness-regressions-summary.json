@@ -1,0 +1,41 @@
+{
+  "exit_code": 1,
+  "counts_including_subtests": {
+    "fail": 1,
+    "pass": 5
+  },
+  "package_results": [
+    {
+      "Time": "2026-10-29T01:05:46.506690085-04:00",
+      "Action": "fail",
+      "Package": "github.com/gocql/gocql",
+      "Elapsed": 3.39
+    }
+  ],
+  "tests": [
+    {
+      "test": "TestShardAwarePortIntegrationUnreachable",
+      "result": "fail"
+    },
+    {
+      "test": "TestShardAwarePortIntegrationUnusedIfNotEnabled",
+      "result": "pass"
+    },
+    {
+      "test": "TestShardAwarePortIntegrationNoReconnections",
+      "result": "pass"
+    },
+    {
+      "test": "TestCloudConnection",
+      "result": "pass"
+    },
+    {
+      "test": "TestShardAwarePortIntegrationMaliciousNAT",
+      "result": "pass"
+    },
+    {
+      "test": "TestUnixSockets",
+      "result": "pass"
+    }
+  ]
+}

@@ -1,0 +1,1037 @@
+{
+  "revision": "f8b0ee928dc0dcb475247dc82cce4e42804b0621",
+  "roots": [
+    "scylla/src",
+    "scylla-cql/src",
+    "scylla-cql-core/src",
+    "scylla-macros/src"
+  ],
+  "excluded_workspace_packages": {
+    "benchmarks": "performance test harness",
+    "examples": "sample applications; behaviors belong to the six driver sections",
+    "scylla-proxy": "integration fault-injection harness, not runtime driver",
+    "scylla-ccm-bridge": "database cluster test harness",
+    "utils": "development tools"
+  },
+  "modules": [
+    {
+      "path": "scylla/src/authentication/mod.rs",
+      "role": "production",
+      "sections": [
+        "configuration-security-observability"
+      ]
+    },
+    {
+      "path": "scylla/src/book_tests.rs",
+      "role": "test-evidence",
+      "sections": [
+        "configuration-security-observability",
+        "connections",
+        "execution",
+        "metadata-control-events",
+        "routing",
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla/src/client/caching_session.rs",
+      "role": "production",
+      "sections": [
+        "execution"
+      ]
+    },
+    {
+      "path": "scylla/src/client/client_routes.rs",
+      "role": "production",
+      "sections": [
+        "configuration-security-observability"
+      ]
+    },
+    {
+      "path": "scylla/src/client/driver_config.rs",
+      "role": "production",
+      "sections": [
+        "configuration-security-observability"
+      ]
+    },
+    {
+      "path": "scylla/src/client/driver_config_tests.rs",
+      "role": "test-evidence",
+      "sections": [
+        "configuration-security-observability"
+      ]
+    },
+    {
+      "path": "scylla/src/client/execution.rs",
+      "role": "production",
+      "sections": [
+        "execution",
+        "configuration-security-observability"
+      ]
+    },
+    {
+      "path": "scylla/src/client/execution_profile.rs",
+      "role": "production",
+      "sections": [
+        "configuration-security-observability"
+      ]
+    },
+    {
+      "path": "scylla/src/client/mod.rs",
+      "role": "production",
+      "sections": [
+        "configuration-security-observability"
+      ]
+    },
+    {
+      "path": "scylla/src/client/pager.rs",
+      "role": "production",
+      "sections": [
+        "execution"
+      ]
+    },
+    {
+      "path": "scylla/src/client/self_identity.rs",
+      "role": "production",
+      "sections": [
+        "configuration-security-observability"
+      ]
+    },
+    {
+      "path": "scylla/src/client/session.rs",
+      "role": "production",
+      "sections": [
+        "execution",
+        "configuration-security-observability"
+      ]
+    },
+    {
+      "path": "scylla/src/client/session_builder.rs",
+      "role": "production",
+      "sections": [
+        "configuration-security-observability"
+      ]
+    },
+    {
+      "path": "scylla/src/cluster/control_connection.rs",
+      "role": "production",
+      "sections": [
+        "metadata-control-events"
+      ]
+    },
+    {
+      "path": "scylla/src/cluster/metadata/cc_establisher.rs",
+      "role": "production",
+      "sections": [
+        "metadata-control-events"
+      ]
+    },
+    {
+      "path": "scylla/src/cluster/metadata/fetching.rs",
+      "role": "production",
+      "sections": [
+        "metadata-control-events"
+      ]
+    },
+    {
+      "path": "scylla/src/cluster/metadata/merge_channel.rs",
+      "role": "production",
+      "sections": [
+        "metadata-control-events"
+      ]
+    },
+    {
+      "path": "scylla/src/cluster/metadata/mod.rs",
+      "role": "production",
+      "sections": [
+        "metadata-control-events"
+      ]
+    },
+    {
+      "path": "scylla/src/cluster/metadata/update.rs",
+      "role": "production",
+      "sections": [
+        "metadata-control-events"
+      ]
+    },
+    {
+      "path": "scylla/src/cluster/metadata/worker.rs",
+      "role": "production",
+      "sections": [
+        "metadata-control-events"
+      ]
+    },
+    {
+      "path": "scylla/src/cluster/mod.rs",
+      "role": "production",
+      "sections": [
+        "metadata-control-events"
+      ]
+    },
+    {
+      "path": "scylla/src/cluster/node.rs",
+      "role": "production",
+      "sections": [
+        "metadata-control-events"
+      ]
+    },
+    {
+      "path": "scylla/src/cluster/state.rs",
+      "role": "production",
+      "sections": [
+        "metadata-control-events"
+      ]
+    },
+    {
+      "path": "scylla/src/cluster/worker.rs",
+      "role": "production",
+      "sections": [
+        "metadata-control-events"
+      ]
+    },
+    {
+      "path": "scylla/src/errors.rs",
+      "role": "production",
+      "sections": [
+        "execution"
+      ]
+    },
+    {
+      "path": "scylla/src/lib.rs",
+      "role": "production",
+      "sections": [
+        "configuration-security-observability",
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla/src/network/connection.rs",
+      "role": "production",
+      "sections": [
+        "connections",
+        "configuration-security-observability"
+      ]
+    },
+    {
+      "path": "scylla/src/network/connection_pool.rs",
+      "role": "production",
+      "sections": [
+        "connections"
+      ]
+    },
+    {
+      "path": "scylla/src/network/mod.rs",
+      "role": "production",
+      "sections": [
+        "connections"
+      ]
+    },
+    {
+      "path": "scylla/src/network/tls/openssl.rs",
+      "role": "production",
+      "sections": [
+        "configuration-security-observability"
+      ]
+    },
+    {
+      "path": "scylla/src/network/tls.rs",
+      "role": "production",
+      "sections": [
+        "configuration-security-observability"
+      ]
+    },
+    {
+      "path": "scylla/src/observability/driver_tracing.rs",
+      "role": "production",
+      "sections": [
+        "configuration-security-observability"
+      ]
+    },
+    {
+      "path": "scylla/src/observability/history.rs",
+      "role": "production",
+      "sections": [
+        "configuration-security-observability"
+      ]
+    },
+    {
+      "path": "scylla/src/observability/metrics.rs",
+      "role": "production",
+      "sections": [
+        "configuration-security-observability"
+      ]
+    },
+    {
+      "path": "scylla/src/observability/metrics_noop.rs",
+      "role": "production",
+      "sections": [
+        "configuration-security-observability"
+      ]
+    },
+    {
+      "path": "scylla/src/observability/mod.rs",
+      "role": "production",
+      "sections": [
+        "configuration-security-observability"
+      ]
+    },
+    {
+      "path": "scylla/src/observability/tracing.rs",
+      "role": "production",
+      "sections": [
+        "configuration-security-observability"
+      ]
+    },
+    {
+      "path": "scylla/src/policies/address_translator.rs",
+      "role": "production",
+      "sections": [
+        "configuration-security-observability"
+      ]
+    },
+    {
+      "path": "scylla/src/policies/host_filter.rs",
+      "role": "production",
+      "sections": [
+        "configuration-security-observability"
+      ]
+    },
+    {
+      "path": "scylla/src/policies/host_listener.rs",
+      "role": "production",
+      "sections": [
+        "metadata-control-events"
+      ]
+    },
+    {
+      "path": "scylla/src/policies/load_balancing/default.rs",
+      "role": "production",
+      "sections": [
+        "routing"
+      ]
+    },
+    {
+      "path": "scylla/src/policies/load_balancing/mod.rs",
+      "role": "production",
+      "sections": [
+        "routing"
+      ]
+    },
+    {
+      "path": "scylla/src/policies/load_balancing/plan.rs",
+      "role": "production",
+      "sections": [
+        "routing"
+      ]
+    },
+    {
+      "path": "scylla/src/policies/load_balancing/single_target.rs",
+      "role": "production",
+      "sections": [
+        "routing"
+      ]
+    },
+    {
+      "path": "scylla/src/policies/mod.rs",
+      "role": "production",
+      "sections": [
+        "configuration-security-observability"
+      ]
+    },
+    {
+      "path": "scylla/src/policies/reconnect.rs",
+      "role": "production",
+      "sections": [
+        "connections"
+      ]
+    },
+    {
+      "path": "scylla/src/policies/retry/default.rs",
+      "role": "production",
+      "sections": [
+        "execution"
+      ]
+    },
+    {
+      "path": "scylla/src/policies/retry/downgrading_consistency.rs",
+      "role": "production",
+      "sections": [
+        "execution"
+      ]
+    },
+    {
+      "path": "scylla/src/policies/retry/fallthrough.rs",
+      "role": "production",
+      "sections": [
+        "execution"
+      ]
+    },
+    {
+      "path": "scylla/src/policies/retry/mod.rs",
+      "role": "production",
+      "sections": [
+        "execution"
+      ]
+    },
+    {
+      "path": "scylla/src/policies/retry/retry_policy.rs",
+      "role": "production",
+      "sections": [
+        "execution"
+      ]
+    },
+    {
+      "path": "scylla/src/policies/speculative_execution.rs",
+      "role": "production",
+      "sections": [
+        "execution"
+      ]
+    },
+    {
+      "path": "scylla/src/policies/timestamp_generator.rs",
+      "role": "production",
+      "sections": [
+        "execution"
+      ]
+    },
+    {
+      "path": "scylla/src/response/coordinator.rs",
+      "role": "production",
+      "sections": [
+        "execution"
+      ]
+    },
+    {
+      "path": "scylla/src/response/mod.rs",
+      "role": "production",
+      "sections": [
+        "execution"
+      ]
+    },
+    {
+      "path": "scylla/src/response/query_result.rs",
+      "role": "production",
+      "sections": [
+        "execution"
+      ]
+    },
+    {
+      "path": "scylla/src/response/request_response.rs",
+      "role": "production",
+      "sections": [
+        "execution"
+      ]
+    },
+    {
+      "path": "scylla/src/routing/locator/mod.rs",
+      "role": "production",
+      "sections": [
+        "routing"
+      ]
+    },
+    {
+      "path": "scylla/src/routing/locator/precomputed_replicas.rs",
+      "role": "production",
+      "sections": [
+        "routing"
+      ]
+    },
+    {
+      "path": "scylla/src/routing/locator/replicas.rs",
+      "role": "production",
+      "sections": [
+        "routing"
+      ]
+    },
+    {
+      "path": "scylla/src/routing/locator/replication_info.rs",
+      "role": "production",
+      "sections": [
+        "routing"
+      ]
+    },
+    {
+      "path": "scylla/src/routing/locator/tablets.rs",
+      "role": "production",
+      "sections": [
+        "routing"
+      ]
+    },
+    {
+      "path": "scylla/src/routing/locator/test.rs",
+      "role": "test-evidence",
+      "sections": [
+        "routing"
+      ]
+    },
+    {
+      "path": "scylla/src/routing/locator/token_ring.rs",
+      "role": "production",
+      "sections": [
+        "routing"
+      ]
+    },
+    {
+      "path": "scylla/src/routing/mod.rs",
+      "role": "production",
+      "sections": [
+        "routing"
+      ]
+    },
+    {
+      "path": "scylla/src/routing/partitioner.rs",
+      "role": "production",
+      "sections": [
+        "routing"
+      ]
+    },
+    {
+      "path": "scylla/src/routing/sharding.rs",
+      "role": "production",
+      "sections": [
+        "routing"
+      ]
+    },
+    {
+      "path": "scylla/src/serde_tests.rs",
+      "role": "test-evidence",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla/src/statement/batch.rs",
+      "role": "production",
+      "sections": [
+        "execution"
+      ]
+    },
+    {
+      "path": "scylla/src/statement/bound.rs",
+      "role": "production",
+      "sections": [
+        "execution"
+      ]
+    },
+    {
+      "path": "scylla/src/statement/mod.rs",
+      "role": "production",
+      "sections": [
+        "execution"
+      ]
+    },
+    {
+      "path": "scylla/src/statement/prepared.rs",
+      "role": "production",
+      "sections": [
+        "execution"
+      ]
+    },
+    {
+      "path": "scylla/src/statement/unprepared.rs",
+      "role": "production",
+      "sections": [
+        "execution"
+      ]
+    },
+    {
+      "path": "scylla/src/utils/mod.rs",
+      "role": "production",
+      "sections": [
+        "configuration-security-observability",
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla/src/utils/safe_format.rs",
+      "role": "production",
+      "sections": [
+        "configuration-security-observability",
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla/src/utils/test_utils.rs",
+      "role": "test-evidence",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql/src/deserialize/mod.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql/src/deserialize/result.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql/src/frame/mod.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql/src/frame/request/auth_response.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql/src/frame/request/batch.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql/src/frame/request/execute.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql/src/frame/request/mod.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql/src/frame/request/options.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql/src/frame/request/prepare.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql/src/frame/request/query.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql/src/frame/request/register.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql/src/frame/request/startup.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql/src/frame/response/authenticate.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql/src/frame/response/custom_type_parser.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql/src/frame/response/event.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql/src/frame/response/mod.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql/src/frame/response/result.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql/src/frame/response/supported.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql/src/frame/server_event_type.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql/src/frame/types.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql/src/lib.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql/src/serialize/mod.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql/src/serialize/raw_batch.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql/src/utils/mod.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql/src/utils/parse.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql/src/value.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql-core/src/_macro_internal.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql-core/src/deserialize/frame_slice.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql-core/src/deserialize/mod.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql-core/src/deserialize/result.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql-core/src/deserialize/row.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql-core/src/deserialize/row_tests.rs",
+      "role": "test-evidence",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql-core/src/deserialize/value.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql-core/src/deserialize/value_tests.rs",
+      "role": "test-evidence",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql-core/src/frame/frame_errors.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql-core/src/frame/mod.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql-core/src/frame/protocol_features.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql-core/src/frame/request/batch.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql-core/src/frame/request/mod.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql-core/src/frame/request/query.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql-core/src/frame/response/error.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql-core/src/frame/response/mod.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql-core/src/frame/response/result.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql-core/src/frame/types.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql-core/src/lib.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql-core/src/macros_doctests.rs",
+      "role": "test-evidence",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql-core/src/macros_tests.rs",
+      "role": "test-evidence",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql-core/src/pretty.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql-core/src/serialize/batch.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql-core/src/serialize/batch_tests.rs",
+      "role": "test-evidence",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql-core/src/serialize/mod.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql-core/src/serialize/row.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql-core/src/serialize/row_tests.rs",
+      "role": "test-evidence",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql-core/src/serialize/value.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql-core/src/serialize/value_tests.rs",
+      "role": "test-evidence",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql-core/src/serialize/writers.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql-core/src/utils/mod.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql-core/src/utils/parse.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql-core/src/utils/safe_format.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-cql-core/src/value.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-macros/src/deserialize/mod.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-macros/src/deserialize/row.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-macros/src/deserialize/value.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-macros/src/lib.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-macros/src/parser.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-macros/src/serialize/mod.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-macros/src/serialize/row.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    },
+    {
+      "path": "scylla-macros/src/serialize/value.rs",
+      "role": "production",
+      "sections": [
+        "serialization-protocol"
+      ]
+    }
+  ]
+}

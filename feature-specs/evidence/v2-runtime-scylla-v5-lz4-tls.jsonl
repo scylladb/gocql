@@ -1,0 +1,13 @@
+{"Time":"2026-10-29T09:08:55.079568755-04:00","Action":"start","Package":"command-line-arguments"}
+{"Time":"2026-10-29T09:08:55.081829622-04:00","Action":"run","Package":"command-line-arguments","Test":"TestV2RuntimeDatabaseSmoke"}
+{"Time":"2026-10-29T09:08:55.08183949-04:00","Action":"output","Package":"command-line-arguments","Test":"TestV2RuntimeDatabaseSmoke","Output":"=== RUN   TestV2RuntimeDatabaseSmoke\n"}
+{"Time":"2026-10-29T09:08:55.094742885-04:00","Action":"output","Package":"command-line-arguments","Test":"TestV2RuntimeDatabaseSmoke","Output":"2026/10/29 09:08:55 gocql: unable to dial control conn 127.0.20.1:9142: Invalid or unsupported protocol version: 5\n"}
+{"Time":"2026-10-29T09:08:55.105746663-04:00","Action":"output","Package":"command-line-arguments","Test":"TestV2RuntimeDatabaseSmoke","Output":"2026/10/29 09:08:55 gocql: unable to dial control conn 127.0.20.3:9142: Invalid or unsupported protocol version: 5\n"}
+{"Time":"2026-10-29T09:08:55.116541137-04:00","Action":"output","Package":"command-line-arguments","Test":"TestV2RuntimeDatabaseSmoke","Output":"2026/10/29 09:08:55 gocql: unable to dial control conn 127.0.20.2:9142: Invalid or unsupported protocol version: 5\n"}
+{"Time":"2026-10-29T09:08:55.116566535-04:00","Action":"output","Package":"command-line-arguments","Test":"TestV2RuntimeDatabaseSmoke","Output":"    v2_execute_integration_test.go:80: unable to connect to the cluster, last error: unable to create control connection: unable to connect to initial hosts: Invalid or unsupported protocol version: 5\n"}
+{"Time":"2026-10-29T09:08:55.116569942-04:00","Action":"output","Package":"command-line-arguments","Test":"TestV2RuntimeDatabaseSmoke","Output":"        \n"}
+{"Time":"2026-10-29T09:08:55.116575833-04:00","Action":"output","Package":"command-line-arguments","Test":"TestV2RuntimeDatabaseSmoke","Output":"--- FAIL: TestV2RuntimeDatabaseSmoke (0.03s)\n"}
+{"Time":"2026-10-29T09:08:55.1165799-04:00","Action":"fail","Package":"command-line-arguments","Test":"TestV2RuntimeDatabaseSmoke","Elapsed":0.03}
+{"Time":"2026-10-29T09:08:55.116587064-04:00","Action":"output","Package":"command-line-arguments","Output":"FAIL\n"}
+{"Time":"2026-10-29T09:08:55.117018538-04:00","Action":"output","Package":"command-line-arguments","Output":"FAIL\tcommand-line-arguments\t0.037s\n"}
+{"Time":"2026-10-29T09:08:55.117033747-04:00","Action":"fail","Package":"command-line-arguments","Elapsed":0.037}

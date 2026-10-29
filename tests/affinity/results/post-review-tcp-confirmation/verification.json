@@ -1,0 +1,15 @@
+{
+  "purpose": "corrected full-duration five-configuration TCP confirmation",
+  "successful_runs": 30,
+  "cases": 5,
+  "repeats_per_case": 6,
+  "warmup": "2s",
+  "measurement": "10s",
+  "source_hashes_match": true,
+  "unique_matrix_valid": true,
+  "all_payload_and_pinned_placement_checks_passed": true,
+  "socket_affinity_status": "unsupported-observed-mismatch",
+  "socket_workers": 24,
+  "echo_server_stopped": true,
+  "raw_sha256": "2737bc7f92f0ac07c9c62a91a886bfceb5c0d08ca8e471e751fc24006c38fb87"
+}

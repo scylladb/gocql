@@ -14,7 +14,7 @@ import (
 	"sync"
 	"testing"
 
-	frm "github.com/gocql/gocql/internal/frame"
+	frm "github.com/scylladb/gocql/v2/internal/frame"
 )
 
 // encodeRoutingKeyComponent is the composite routing key layout createRoutingKey
@@ -234,7 +234,7 @@ func (srv *routingTestServer) newSession(t *testing.T) *Session {
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	t.Cleanup(s.Close)
+	t.Cleanup(func() { _ = s.Close() })
 	return s
 }
 

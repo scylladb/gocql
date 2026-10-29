@@ -5,7 +5,7 @@ import (
 
 	"github.com/hailocab/go-hostpool"
 
-	"github.com/gocql/gocql"
+	"github.com/scylladb/gocql/v2"
 )
 
 // HostPool is a host policy which uses the bitly/go-hostpool library

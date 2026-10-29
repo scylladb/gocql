@@ -1,0 +1,43 @@
+CONCLUSIONS: LOCAL CACHE / WORKER / SOCKET AFFINITY EXPERIMENT
+
+144 successful measurements: 24 cases, six randomized blocks, 2 s warmup and 10 s measurement per client process.
+Client CPUs: 8,10,12,14, sharing one 32 MiB L3 domain. Echo server CPUs: 17,18,20,23 on separate physical cores and a different L3 domain.
+Go 1.25.0; GOMAXPROCS=4; no cgroup CPU bandwidth quota in the recorded hierarchy.
+
+1. Keep normal Go scheduling as the default for this workload. Worker pinning after cache sharding failed the initial practical criterion of a repeatable approximately 10 percent throughput gain without regressions.
+
+2. Balanced TCP median throughput (million encoded 256-byte records/second, batches of 32, four persistent connections):
+   A-shared: 4.579 Mops/s; worker completion variation (CV) 0.15 percent.
+   B-shared-pinned: 1.958 Mops/s; worker completion variation (CV) 3.42 percent.
+   C-sharded: 5.566 Mops/s; worker completion variation (CV) 0.13 percent.
+   D-sharded-pinned: 4.328 Mops/s; worker completion variation (CV) 2.40 percent.
+   E-sharded-pinned-socket: 4.383 Mops/s; worker completion variation (CV) 2.76 percent.
+
+   tcp-64MiB-update1: paired median pinning throughput change -22.4 percent; exploratory bootstrap interval [-32.5,-12.9] percent; sampled batch p99 ratio 1.12.
+
+   tcp-64MiB-update1-skew: paired median pinning throughput change -21.8 percent; exploratory bootstrap interval [-27.7,-20.3] percent; sampled batch p99 ratio 3.20.
+
+3. In the four CPU-only sharded-cache workloads, paired median pinning changes ranged from -6.1 to +1.4 percent. Exploratory intervals included zero in all four. The small shared-cache CPU microbenchmark did benefit from pinning (about 43-48 percent), but remained much slower than owner-local shards with normal scheduling. Removing the shared lock/LRU is distinct from affinity.
+
+4. SO_INCOMING_CPU was successfully set and immediately read back at setup. After traffic, all 48 socket-option worker observations reported an incoming CPU different from the assigned client CPU. Observed incoming CPUs were the server CPUs; NAPI IDs were zero. This does not establish hard socket receive placement. Its paired throughput differences did not establish a reliable incremental benefit.
+
+5. Pinning did not improve balanced TCP worker completion balance: median completion CV was about 0.1 percent with normal scheduling versus 2.4 percent pinned. This measures completed work per worker, not attributed per-vCPU CPU time. Overall per-CPU utilization includes unrelated host processes.
+
+6. The 80-percent-hot-shard phase retained its expected work imbalance with both scheduling modes. Pinning did not redistribute ownership or enable work stealing. Its sampled batch p99 was about 3.2 times the unpinned value; these latencies include bounded dispatch queueing.
+
+LIMITS / NEXT STEP
+This synthetic mutable LRU + fixed-width encoding + loopback experiment does not call gocql or a database. The very large CPU-only sharding gains include eliminating a deliberately shared mutex and shared LRU, and must not be represented as driver gains. The planned direct immutable prepared-handle path can avoid this cache entirely.
+Six randomized blocks on a shared host provide exploratory local evidence. perf_event_paranoid=4 prevented hardware cache-miss and full migration measurements. No cache-locality mechanism is proven, and no NIC/RSS/RFS, TLS or database throughput claim is made.
+Apply this evidence by retaining normal Go scheduling and minimizing hot shared mutable state. Validate any proposed driver affinity feature separately against the actual driver, representative request concurrency, and a remote database/NIC before changing its default architecture.
+
+An initial 16-run mixed-L3 pilot was deliberately interrupted and is retained in ../2026-10-29-pilot-mixed-llc. It is excluded from every final statistic above.
+
+REPRODUCE / AUDIT
+From repository root:
+GO111MODULE=off GOWORK=off go test -race -count=1 ./tests/affinity
+python3 tests/affinity/run.py --output <fresh-output-directory>
+python3 tests/affinity/summarize.py <output-directory>
+
+Full results: report.txt, summary.json, summary.csv, runs.jsonl, environment.json, verification.json.
+All 144 exits, operation totals, six repetitions per case, pinned CPU observations, source hashes and echo-server shutdown passed the final audit.
+Paired median gains are medians of within-block ratios; they need not equal a ratio of the separately reported median throughputs.

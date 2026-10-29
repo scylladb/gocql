@@ -40,7 +40,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/gocql/gocql/internal/crc"
+	"github.com/scylladb/gocql/v2/internal/crc"
 )
 
 const (

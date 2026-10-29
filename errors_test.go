@@ -28,6 +28,7 @@
 package gocql
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -36,16 +37,16 @@ import (
 func TestErrorsParse(t *testing.T) {
 	t.Parallel()
 
-	session := createSession(t)
+	session := createV2Session(t)
 	defer session.Close()
 
-	table := testTableName(t)
+	table := testTableName(t, session.ID())
 
-	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (id int primary key)`, table)); err != nil {
+	if err := v2CreateTable(context.Background(), session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (id int primary key)`, table)); err != nil {
 		t.Fatal("create:", err)
 	}
 
-	if err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (id int primary key)`, table)); err == nil {
+	if err := v2CreateTable(context.Background(), session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (id int primary key)`, table)); err == nil {
 		t.Fatal("Should have gotten already exists error from cassandra server.")
 	} else {
 		e := &RequestErrAlreadyExists{}

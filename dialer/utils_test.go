@@ -5,8 +5,8 @@ import (
 	"math"
 	"testing"
 
-	frm "github.com/gocql/gocql/internal/frame"
-	"github.com/gocql/gocql/internal/murmur"
+	frm "github.com/scylladb/gocql/v2/internal/frame"
+	"github.com/scylladb/gocql/v2/internal/murmur"
 )
 
 // frameV4 builds a protocol v4 request frame: version, header flags, a 2-byte

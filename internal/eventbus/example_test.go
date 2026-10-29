@@ -23,7 +23,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/gocql/gocql/internal/eventbus"
+	"github.com/scylladb/gocql/v2/internal/eventbus"
 )
 
 // Example demonstrates basic usage of EventBus

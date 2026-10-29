@@ -43,8 +43,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gocql/gocql/internal/lru"
-	"github.com/gocql/gocql/tablets"
+	"github.com/scylladb/gocql/v2/internal/lru"
+	"github.com/scylladb/gocql/v2/tablets"
 )
 
 func TestQueryIterReturnsErrSessionNotReady(t *testing.T) {
@@ -651,7 +651,7 @@ func (*synchronizedRetryPolicy) GetRetryType(error) RetryType {
 
 type executorTestQuery struct {
 	ctx               context.Context
-	rt                RetryPolicy
+	rt                oldRetryPolicy
 	spec              SpeculativeExecutionPolicy
 	idempotent        bool
 	consistency       Consistency
@@ -686,7 +686,7 @@ func (q *executorTestQuery) finishAttempt(token attemptToken, _ string, end time
 	q.attempts.Add(1)
 }
 
-func (q *executorTestQuery) retryPolicy() RetryPolicy {
+func (q *executorTestQuery) retryPolicy() oldRetryPolicy {
 	return q.rt
 }
 
@@ -1075,7 +1075,7 @@ func TestBatchObserverDeprecatedMetricsIncludeManualHostUpdates(t *testing.T) {
 			observedBatch, observed = batch, true
 		}),
 		routingInfo: &queryRoutingInfo{},
-		Entries: []BatchEntry{
+		Entries: []legacyBatchEntry{
 			{Stmt: "INSERT INTO tbl (k, v) VALUES (?, ?)", Args: []any{1, "v"}},
 		},
 	}
@@ -1313,7 +1313,7 @@ func TestBatchObserverAttemptMetricsAndDeprecatedMetrics(t *testing.T) {
 			observedBatch, observed = batch, true
 		}),
 		routingInfo: &queryRoutingInfo{},
-		Entries: []BatchEntry{
+		Entries: []legacyBatchEntry{
 			{Stmt: "INSERT INTO tbl (k, v) VALUES (?, ?)", Args: []any{1, "v"}},
 		},
 	}
@@ -3395,7 +3395,7 @@ func TestSpeculativeExecutionViewCapturesObserverPayload(t *testing.T) {
 		}),
 		metrics:     newQueryMetrics(),
 		routingInfo: &queryRoutingInfo{},
-		Entries: []BatchEntry{
+		Entries: []legacyBatchEntry{
 			{Stmt: "old batch", Args: []any{"old value"}},
 		},
 	}
@@ -3403,7 +3403,7 @@ func TestSpeculativeExecutionViewCapturesObserverPayload(t *testing.T) {
 	batch.observer = unitBatchObserverFunc(func(context.Context, ObservedBatch) {
 		t.Error("new-generation batch observer received old attempt")
 	})
-	batch.Entries[0] = BatchEntry{Stmt: "new batch", Args: []any{"new value"}}
+	batch.Entries[0] = legacyBatchEntry{Stmt: "new batch", Args: []any{"new value"}}
 
 	batchToken := batch.metrics.beginAttempt()
 	batchToken.start = start

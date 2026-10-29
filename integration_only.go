@@ -64,13 +64,12 @@ func (p *nopConnPicker) CloseAllConnections() {
 }
 
 func (pool *hostConnPool) CloseAllConnections() {
-	if !pool.closed {
+	pool.mu.Lock()
+	if pool.closed {
+		pool.mu.Unlock()
 		return
 	}
-	pool.mu.Lock()
-	println("Closing all connections in a pool")
 	pool.connPicker.(ConnPickerIntegration).CloseAllConnections()
-	println("Filling the pool")
 	pool.mu.Unlock()
 	pool.fill()
 }

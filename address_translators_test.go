@@ -32,7 +32,7 @@ import (
 	"net"
 	"testing"
 
-	"github.com/gocql/gocql/internal/tests"
+	"github.com/scylladb/gocql/v2/internal/tests"
 )
 
 func TestIdentityAddressTranslator_NilAddrAndZeroPort(t *testing.T) {

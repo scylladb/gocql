@@ -26,7 +26,7 @@ package gocql
 import (
 	"fmt"
 
-	"github.com/gocql/gocql/internal/segment"
+	"github.com/scylladb/gocql/v2/internal/segment"
 )
 
 // asSegmentCompressor asserts that compressor supports native protocol v5 segment
