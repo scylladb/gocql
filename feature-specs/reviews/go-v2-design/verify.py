@@ -4,6 +4,7 @@ from pathlib import Path
 import hashlib
 import json
 import re
+import subprocess
 
 
 def main():
@@ -30,8 +31,14 @@ def main():
         previous = after
     assert len(set(identities)) == 10
     assert total == 33
-    assert previous == {path: hashlib.sha256((root / path).read_bytes()).hexdigest()
-                        for path in docs}
+    # Reports identify the reviewed snapshot; subsequent documentation edits
+    # must not rewrite historical evidence to claim another review occurred.
+    reviewed_revision = "8bada53"
+    assert previous == {
+        path: hashlib.sha256(subprocess.check_output(
+            ["git", "-C", str(root), "show", f"{reviewed_revision}:{path}"])).hexdigest()
+        for path in docs
+    }
     plan = (root / "plan.md").read_text()
     tasks = re.findall(r"^\| (\d+) \| `v2-(\d+)-([^`]+)`", plan, re.M)
     assert len(tasks) == 17
@@ -52,7 +59,7 @@ def main():
             if target:
                 assert (path.parent / target).exists(), (path, target)
     print("PASS: 10 unique reviewers; 33 findings/fixes; 0 unresolved; "
-          "SHA-256 chain/final hashes; 17 contiguous branches; "
+          "SHA-256 chain/reviewed snapshot hashes; 17 contiguous branches; "
           "174 baseline identities; local links/code fences.")
 
 

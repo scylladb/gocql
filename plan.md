@@ -2,8 +2,8 @@
 
 Status: API and architecture reconciled through ten design review-and-fix cycles
 in this session: 33 verified findings fixed, with no unresolved findings from
-those cycles. See the [design review
-ledger](feature-specs/reviews/go-v2-design/INDEX.md). Implementation remains
+those cycles. See the [individual design review
+reports](feature-specs/reviews/go-v2-design/). Implementation remains
 stopped pending authorization to resume. Existing edits are preserved; design
 review does not claim the new driver is implemented or verified.
 
@@ -476,7 +476,7 @@ not completion of the feature.
 
 | Milestone | Work | Exit criterion |
 | --- | --- | --- |
-| M0: design reviewed in this session | Completed ten sequential review-and-fix cycles, reconciled detailed API/implementation specs, and recorded API-semantic changes and package boundaries. Not a future implementation-agent task. | 33 findings fixed; no unresolved findings from those cycles. Reports and document hashes are retained in the design review ledger. |
+| M0: design reviewed in this session | Completed ten sequential review-and-fix cycles, reconciled detailed API/implementation specs, and recorded API-semantic changes and package boundaries. Not a future implementation-agent task. | 33 findings fixed; no unresolved findings from those cycles. Reports and document hashes are retained in the individual design review reports. |
 | M1: stabilize foundations | Finish codec, wire, compression, hashing, protocol and ownership tests; enforce size/depth/count limits. | Goldens, cross-span cases, fuzz/race tests and copy-identity checks pass. |
 | M2: close runtime gaps | Fix metadata-generation races, TLS shard dialing, pool overrides, config behavior, discovery-disabled identities, and control/client-route typed queries. | Every exposed option works or is explicitly rejected; required features have no silent omissions. |
 | M3: finish API/test migration | Complete all 174 test mappings; migrate examples, helpers, cloud, tracing, topology and client routes. Remove the old public API and unused legacy execution. | Export/call-site audit and all package/build-tag compilations pass. |
@@ -576,7 +576,6 @@ depth/function-overload changes remain unverified until rerun.
 - [Sixty-round review ledger](feature-specs/reviews/INDEX.md)
 - [Detailed proposed public API](feature-specs/gocql-v2-api.md)
 - [Detailed implementation contracts](feature-specs/gocql-v2-implementation.md)
-- [Ten-cycle Go design review ledger](feature-specs/reviews/go-v2-design/INDEX.md)
 - [Current hot-path audit](feature-specs/evidence/go-hot-path-audit.md)
 - [Transport audit](feature-specs/evidence/go-transport-audit.md)
 - [All-test API dependency and migration audit](feature-specs/evidence/go-integration-api-audit.md)
@@ -590,8 +589,8 @@ its acceptance criteria.
 
 Implementation execution remains stopped pending authorization to resume. Design
 reconciliation was completed in this session on `v2-design-reconciliation`
-through ten sequential review-and-fix cycles. The review ledger is [Go v2 design
-review results](feature-specs/reviews/go-v2-design/INDEX.md). These design
+through ten sequential review-and-fix cycles. The [individual review
+reports](feature-specs/reviews/go-v2-design/) record the results. These design
 reviews do not authorize implementation agents, driver tests, or fixtures.
 
 Use **17 separate implementation agents, executed sequentially in the order
@@ -652,9 +651,9 @@ plan.
 
 Ten sequential review-and-fix cycles were completed on
 `v2-design-reconciliation`, using a fresh read-only reviewer each round and a
-separate design-fix owner. The
-[ledger](feature-specs/reviews/go-v2-design/INDEX.md) links all ten reports,
-reviewer identities, findings/dispositions and before/after document hashes.
+separate design-fix owner. The [individual
+reports](feature-specs/reviews/go-v2-design/) retain reviewer identities,
+findings/dispositions and before/after document hashes.
 There were 33 verified findings; all were fixed. No unresolved design blockers
 remain from these cycles. Implementation and live verification remain pending.
 
