@@ -121,17 +121,24 @@ func (c *Cursor) Take(n int64) (Chain, error) {
 	if n == 0 {
 		return Chain{}, nil
 	}
-	// Start from the current descriptor, avoiding a rescan of consumed spans
-	// for each value in a long sequential decode.
-	head := c.chain.span(c.index)
-	head, _ = head.Slice(c.offset, head.Len()-c.offset)
-	suffix := Chain{head: head, tail: c.chain.tail[c.index:], len: c.remaining, lastLen: c.chain.lastLen}
-	view, err := suffix.Slice(0, n)
-	if err != nil {
-		return Chain{}, err
+	// Capture the first descriptor and advance once in wire order. Constructing
+	// a sequential range must not perform the random-access index search per cell.
+	first, offset, base := c.index, c.offset, c.chain.base+c.chain.Len()-c.remaining
+	head := c.chain.span(first)
+	if n <= int64(head.Len()-offset) {
+		head, _ = head.Slice(offset, int(n))
+		c.advance(n)
+		return Chain{head: head, len: n}, nil
 	}
+	head, _ = head.Slice(offset, head.Len()-offset)
 	c.advance(n)
-	return view, nil
+	last, lastLen := c.index, c.offset
+	if lastLen == 0 {
+		last--
+		lastLen = c.chain.span(last).Len()
+	}
+	return Chain{head: head, tail: c.chain.tail[first:last], len: n,
+		lastLen: lastLen, base: base}, nil
 }
 
 func (c *Cursor) Skip(n int64) error {

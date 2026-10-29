@@ -359,30 +359,7 @@ func readHeader(r io.Reader, p []byte) (head frm.FrameHeader, err error) {
 		return frm.FrameHeader{}, err
 	}
 
-	head.Version = frm.ProtoVersion(p[0])
-	version := head.Version.Version()
-
-	if version < protoVersion3 || version > protoVersion5 {
-		return frm.FrameHeader{}, fmt.Errorf("gocql: unsupported protocol response version: %d", version)
-	}
-
-	head.Flags = p[1]
-
-	head.Stream = int(int16(binary.BigEndian.Uint16(p[2:4])))
-	head.Op = frm.Op(p[4])
-	head.Length = int(readInt(p[5:]))
-
-	// The length is a signed 32-bit field on the wire, so any value with the high
-	// bit set arrives negative. Reject it here rather than further down in
-	// readFrame: a header this broken means the stream position is no longer
-	// trustworthy, and only an error out of readHeader closes the connection —
-	// readFrame's error is handed to the waiting caller while serve() reads on.
-	// recvSplitFrame applies the same bound to a reassembled frame.
-	if head.Length < 0 {
-		return frm.FrameHeader{}, fmt.Errorf("gocql: invalid frame body length: %d", head.Length)
-	}
-
-	return head, nil
+	return frm.DecodeHeader(p[:headSize])
 }
 
 // explicitly enables tracing for the framers outgoing requests

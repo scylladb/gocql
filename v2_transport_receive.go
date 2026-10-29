@@ -98,8 +98,8 @@ func (c *Conn) receiveTypedCall(ctx context.Context, call *callReq, src frameSou
 	}
 	var page *responsePage
 	if err == nil {
-		if head.Version.Version() != c.version || head.Version.Request() {
-			err = NewErrProtocol("unexpected response version %d", head.Version)
+		if headerErr := frm.CheckResponseHeader(head, c.version); headerErr != nil {
+			err = headerErr
 		} else {
 			page, err = c.parseTypedResponse(head, body, owner)
 		}

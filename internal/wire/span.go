@@ -69,11 +69,20 @@ func (s Span) Slice(off, n int) (Span, error) {
 // The zero value is empty.
 type Chain struct {
 	head Span
-	tail []Span
+	tail []indexedSpan
 	len  int64
 	// lastLen trims the final tail descriptor without mutating the shared
 	// immutable descriptor array. Zero means its complete span is visible.
 	lastLen int
+	// base is this range's start in the original descriptor coordinate space.
+	base int64
+}
+
+// indexedSpan stores its original end offset alongside its immutable span.
+// All child ranges share this one index; no payload or per-range index is copied.
+type indexedSpan struct {
+	span Span
+	end  int64
 }
 
 func addLength(a int64, n int) (int64, error) {
@@ -102,17 +111,19 @@ func NewChain(spans ...Span) (Chain, error) {
 		return Chain{}, nil
 	}
 	if count > 1 {
-		c.tail = make([]Span, count-1)
+		c.tail = make([]indexedSpan, count-1)
 	}
 	i := 0
+	var end int64
 	for _, s := range spans {
 		if s.Len() == 0 {
 			continue
 		}
+		end += int64(s.Len())
 		if i == 0 {
 			c.head = s
 		} else {
-			c.tail[i-1] = s
+			c.tail[i-1] = indexedSpan{span: s, end: end}
 		}
 		i++
 	}
@@ -132,7 +143,7 @@ func (c Chain) span(i int) Span {
 	if i == 0 {
 		return c.head
 	}
-	span := c.tail[i-1]
+	span := c.tail[i-1].span
 	if i == len(c.tail) && c.lastLen > 0 {
 		span.data = span.data[:c.lastLen:c.lastLen]
 	}
@@ -166,27 +177,46 @@ func (c Chain) Slice(off, n int64) (Chain, error) {
 	if off == 0 && n == c.len {
 		return c, nil
 	}
-	first := 0
-	for off >= int64(c.span(first).Len()) {
-		off -= int64(c.span(first).Len())
-		first++
+	first := c.locate(off)
+	last := c.locate(off + n - 1)
+	start := int64(0)
+	if first == 1 {
+		start = int64(c.head.Len())
+	} else if first > 1 {
+		start = c.tail[first-2].end - c.base
 	}
 	head := c.span(first)
-	available := int64(head.Len()) - off
-	if n <= available {
-		s, _ := head.Slice(int(off), int(n))
+	skip := off - start
+	if first == last {
+		s, _ := head.Slice(int(skip), int(n))
 		return Chain{head: s, len: n}, nil
 	}
-	head, _ = head.Slice(int(off), int(available))
-	remaining := n - available
-	last := first + 1
-	for remaining > int64(c.span(last).Len()) {
-		remaining -= int64(c.span(last).Len())
-		last++
+	head, _ = head.Slice(int(skip), head.Len()-int(skip))
+	lastStart := int64(c.head.Len())
+	if last > 1 {
+		lastStart = c.tail[last-2].end - c.base
 	}
-	// First/last trimming is stored in this small value, so every child range
-	// shares the immutable middle descriptors without per-cell allocations.
-	return Chain{head: head, tail: c.tail[first:last], len: n, lastLen: int(remaining)}, nil
+	return Chain{head: head, tail: c.tail[first:last], len: n,
+		lastLen: int(off + n - lastStart), base: c.base + off}, nil
+}
+
+// locate returns the descriptor containing a known in-range offset. Sequential
+// cursors take the inline fast path; random/nested ranges use the shared index.
+func (c Chain) locate(off int64) int {
+	if off < int64(c.head.Len()) {
+		return 0
+	}
+	target := c.base + off
+	lo, hi := 0, len(c.tail)
+	for lo < hi {
+		mid := lo + (hi-lo)/2
+		if c.tail[mid].end <= target {
+			lo = mid + 1
+		} else {
+			hi = mid
+		}
+	}
+	return lo + 1
 }
 
 // CopyTo explicitly copies the payload into dst. If dst is too short, it copies

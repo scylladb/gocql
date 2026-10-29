@@ -230,9 +230,11 @@ func (b *Builder) Freeze() (Chain, error) {
 		c.head = b.parts[0].span
 		c.len = b.len
 		if len(b.parts) > 1 {
-			c.tail = make([]Span, len(b.parts)-1)
+			c.tail = make([]indexedSpan, len(b.parts)-1)
+			end := int64(c.head.Len())
 			for i := 1; i < len(b.parts); i++ {
-				c.tail[i-1] = b.parts[i].span
+				end += int64(b.parts[i].span.Len())
+				c.tail[i-1] = indexedSpan{span: b.parts[i].span, end: end}
 			}
 		}
 	}

@@ -1,0 +1,4 @@
+Catalog: 144 Rust modules; 6 sections
+Checked: 418 source links; 60/60 review reports
+Baseline: 174 integration/CCM tests in 29 files
+Semantic completeness and runtime verification require separate audits.

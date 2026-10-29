@@ -159,6 +159,29 @@ func HeaderSize(compressed bool) int {
 	return UncompressedHeaderSize
 }
 
+// DecodeHeader validates a complete fixed-size segment header without reading
+// or allocating a payload. Reusable unit readers supply their own scratch.
+func DecodeHeader(p []byte, compressed bool) (Header, error) {
+	size := HeaderSize(compressed)
+	if len(p) < size {
+		return Header{}, io.ErrUnexpectedEOF
+	}
+	fields := size - Crc24Size
+	readCRC := uint32(p[fields]) | uint32(p[fields+1])<<8 | uint32(p[fields+2])<<16
+	if computed := crc.Crc24(p[:fields]); computed != readCRC {
+		return Header{}, fmt.Errorf("gocql: crc24 mismatch in frame header, computed: %d, got: %d", computed, readCRC)
+	}
+	if !compressed {
+		bits := uint32(p[0]) | uint32(p[1])<<8 | uint32(p[2])<<16
+		return Header{PayloadLen: int(bits & PayloadLenMask), IsSelfContained: bits&(1<<17) != 0}, nil
+	}
+	return Header{
+		PayloadLen:      int(uint32(p[0]) | uint32(p[1])<<8 | uint32(p[2]&1)<<16),
+		UncompressedLen: int(uint32(p[2])>>1 | uint32(p[3])<<7 | uint32(p[4]&3)<<15),
+		IsSelfContained: p[4]&4 != 0,
+	}, nil
+}
+
 // ReadHeader reads and validates the fixed-size header of the next segment,
 // consuming only the header bytes.
 //
@@ -190,23 +213,18 @@ func ReadUncompressedHeader(r io.Reader) (Header, error) {
 		return Header{}, fmt.Errorf("gocql: failed to read uncompressed frame, err: %w", err)
 	}
 
-	// Compute and verify the header CRC24
-	computedHeaderCRC24 := crc.Crc24(header[:headerSize])
-	readHeaderCRC24 := uint32(header[3]) | uint32(header[4])<<8 | uint32(header[5])<<16
-	if computedHeaderCRC24 != readHeaderCRC24 {
-		return Header{}, fmt.Errorf("gocql: crc24 mismatch in frame header, computed: %d, got: %d", computedHeaderCRC24, readHeaderCRC24)
-	}
-
-	headerInt := uint32(header[0]) | uint32(header[1])<<8 | uint32(header[2])<<16
-	return Header{
-		PayloadLen:      int(headerInt & PayloadLenMask),
-		IsSelfContained: (headerInt & (1 << 17)) != 0,
-	}, nil
+	return DecodeHeader(header[:], false)
 }
 
 // ReadUncompressedPayload reads the payload of an uncompressed segment and
 // verifies its CRC32. The result aliases scratch.
 func ReadUncompressedPayload(r io.Reader, h Header, scratch *Scratch) ([]byte, error) {
+	if err := validatePayloadHeader(h, false); err != nil {
+		return nil, err
+	}
+	if scratch == nil {
+		return nil, ErrInvalidHeader
+	}
 	payload := scratch.wireBuf(h.PayloadLen)
 	if _, err := io.ReadFull(r, payload); err != nil {
 		return nil, fmt.Errorf("gocql: failed to read uncompressed frame payload, err: %w", err)
@@ -236,34 +254,21 @@ func ReadCompressedHeader(r io.Reader) (Header, error) {
 		return Header{}, fmt.Errorf("gocql: failed to read compressed frame header, err: %w", err)
 	}
 
-	// Reading checksum from frame header
-	readHeaderChecksum := uint32(headerBuf[5]) | uint32(headerBuf[6])<<8 | uint32(headerBuf[7])<<16
-	if computedHeaderChecksum := crc.Crc24(headerBuf[:headerSize]); computedHeaderChecksum != readHeaderChecksum {
-		return Header{}, fmt.Errorf("gocql: crc24 mismatch in frame header, read: %d, computed: %d", readHeaderChecksum, computedHeaderChecksum)
-	}
-
-	// First 17 bits - payload size after compression
-	compressedLen := uint32(headerBuf[0]) | uint32(headerBuf[1])<<8 | uint32(headerBuf[2]&0x1)<<16
-
-	// The next 17 bits - payload size before compression
-	uncompressedLen := (uint32(headerBuf[2]) >> 1) | uint32(headerBuf[3])<<7 | uint32(headerBuf[4]&0b11)<<15
-
-	// Both fields are extracted with a 17-bit mask, so each is inherently bounded
-	// by MaxPayloadSize (0x1FFFF, ~128 KiB). The payload allocations in
-	// ReadCompressedPayload/ReadUncompressedPayload are therefore bounded without
-	// an explicit check, and the int() conversions below are safe on 32-bit
-	// platforms. TestReadCompressedHeaderLengthsBoundedTo17Bits locks this invariant.
-
-	return Header{
-		PayloadLen:      int(compressedLen),
-		UncompressedLen: int(uncompressedLen),
-		IsSelfContained: (headerBuf[4] & 0b100) != 0,
-	}, nil
+	return DecodeHeader(headerBuf[:], true)
 }
 
 // ReadCompressedPayload reads the payload of a compressed segment, verifies its
 // CRC32 and decompresses it. The result aliases scratch.
 func ReadCompressedPayload(r io.Reader, h Header, comp Compressor, scratch *Scratch) ([]byte, error) {
+	if comp == nil && h.UncompressedLen != 0 {
+		return nil, ErrInvalidHeader
+	}
+	if err := validatePayloadHeader(h, true); err != nil {
+		return nil, err
+	}
+	if scratch == nil {
+		return nil, ErrInvalidHeader
+	}
 	compressedPayload := scratch.wireBuf(h.PayloadLen)
 	if _, err := io.ReadFull(r, compressedPayload); err != nil {
 		return nil, fmt.Errorf("gocql: failed to read compressed frame payload, err: %w", err)
@@ -383,7 +388,7 @@ func AppendCompressed(dst, payload []byte, isSelfContained bool, comp Compressor
 	// This is also why compressedLen needs no bound of its own: a compressor that
 	// expanded the payload past MaxPayloadSize lands here, and comes out with
 	// compressedLen == uncompressedLen, which was bounded on entry.
-	if compressedLen == 0 || uncompressedLen < compressedLen {
+	if compressedLen == 0 || uncompressedLen <= compressedLen {
 		// native_protocol_v5.spec
 		// 2.2
 		//  An uncompressed length of 0 signals that the compressed payload

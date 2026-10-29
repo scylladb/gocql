@@ -1,0 +1,12 @@
+goos: linux
+goarch: amd64
+pkg: github.com/scylladb/gocql/v2/internal/segment
+cpu: AMD Ryzen 9 9950X3D 16-Core Processor
+BenchmarkValidatedUnits/compressed=false/32-32           2257267                50.94 ns/op      628.21 MB/s           0 B/op          0 allocs/op
+BenchmarkValidatedUnits/compressed=false/4096-32          461793               269.8 ns/op      15183.82 MB/s          0 B/op          0 allocs/op
+BenchmarkValidatedUnits/compressed=false/131071-32         15338              7788 ns/op        16829.44 MB/s          0 B/op          0 allocs/op
+BenchmarkValidatedUnits/compressed=true/32-32            1492737                83.49 ns/op      383.29 MB/s           0 B/op          0 allocs/op
+BenchmarkValidatedUnits/compressed=true/4096-32            68557              1734 ns/op        2362.31 MB/s           0 B/op          0 allocs/op
+BenchmarkValidatedUnits/compressed=true/131071-32           2305             53266 ns/op        2460.68 MB/s           0 B/op          0 allocs/op
+PASS
+ok      github.com/scylladb/gocql/v2/internal/segment   0.973s

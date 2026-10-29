@@ -248,6 +248,11 @@ func (m *schemaDataMock) querySystem(statement string, values ...any) *Iter {
 		return &Iter{err: queryErr}
 	}
 
+	// Injection callbacks run outside the mutex so they can change fixture
+	// topology. Read that topology under the same lock when building rows.
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if statement == "SELECT keyspace_name, durable_writes, replication FROM system_schema.keyspaces" {
 		meta := resultMetadata{
 			columns:        append([]ColumnInfo{{Name: "keyspace_name", TypeInfo: typeVarchar}}, keyspaceMeta.columns...),

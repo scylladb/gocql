@@ -1,0 +1,6 @@
+fuzz: elapsed: 0s, gathering baseline coverage: 0/13 completed
+fuzz: elapsed: 0s, gathering baseline coverage: 13/13 completed, now fuzzing with 2 workers
+fuzz: elapsed: 3s, execs: 17525 (5839/sec), new interesting: 21 (total: 34)
+fuzz: elapsed: 4s, execs: 17525 (0/sec), new interesting: 21 (total: 34)
+PASS
+ok      github.com/scylladb/gocql/v2/internal/wirecompress      4.023s

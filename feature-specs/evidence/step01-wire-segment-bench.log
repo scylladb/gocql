@@ -1,0 +1,34 @@
+goos: linux
+goarch: amd64
+pkg: github.com/scylladb/gocql/v2/internal/wire
+cpu: AMD Ryzen 9 9950X3D 16-Core Processor
+BenchmarkBuilderBorrowLargePayload-32            9761192                12.31 ns/op     85183541.98 MB/s               0 B/op          0 allocs/op
+BenchmarkCursorCrossSpanScalar-32                3628236                32.45 ns/op      246.52 MB/s           0 B/op          0 allocs/op
+BenchmarkLeaseRetainRelease-32                  14105258                 8.656 ns/op           0 B/op          0 allocs/op
+BenchmarkRangeLookupScaling/1-32                 7936579                15.29 ns/op            0 B/op          0 allocs/op
+BenchmarkRangeLookupScaling/1024-32              1378684                87.03 ns/op            0 B/op          0 allocs/op
+BenchmarkRangeLookupScaling/65536-32              507282               228.4 ns/op             0 B/op          0 allocs/op
+BenchmarkCursorCellsAndFragments/cells=256/fragments=1-32                  80814              1344 ns/op               0 B/op          0 allocs/op
+BenchmarkCursorCellsAndFragments/cells=256/fragments=256-32                82351              1542 ns/op               0 B/op          0 allocs/op
+BenchmarkCursorCellsAndFragments/cells=256/fragments=65536-32               1444             80910 ns/op               0 B/op          0 allocs/op
+BenchmarkCursorCellsAndFragments/cells=8192/fragments=1-32                  2532             44023 ns/op               0 B/op          0 allocs/op
+BenchmarkCursorCellsAndFragments/cells=8192/fragments=256-32                2588             49102 ns/op               0 B/op          0 allocs/op
+BenchmarkCursorCellsAndFragments/cells=8192/fragments=65536-32               922            126779 ns/op               0 B/op          0 allocs/op
+BenchmarkBorrowLargePayload-32                                          10620274                11.27 ns/op     93062865.27 MB/s               0 B/op          0 allocs/op
+BenchmarkStreamFinalRanges/32-32                                         6324434                17.63 ns/op     1815.03 MB/s           0 B/op          0 allocs/op
+BenchmarkStreamFinalRanges/4096-32                                       3314409                36.41 ns/op     112487.17 MB/s         0 B/op          0 allocs/op
+BenchmarkStreamFinalRanges/512000-32                                       64560              1766 ns/op        289994.42 MB/s         0 B/op          0 allocs/op
+PASS
+ok      github.com/scylladb/gocql/v2/internal/wire      2.228s
+goos: linux
+goarch: amd64
+pkg: github.com/scylladb/gocql/v2/internal/segment
+cpu: AMD Ryzen 9 9950X3D 16-Core Processor
+BenchmarkValidatedUnits/compressed=false/32-32           2320419                50.39 ns/op      635.11 MB/s           0 B/op          0 allocs/op
+BenchmarkValidatedUnits/compressed=false/4096-32          430928               265.5 ns/op      15428.20 MB/s          0 B/op          0 allocs/op
+BenchmarkValidatedUnits/compressed=false/131071-32         15458              7720 ns/op        16977.32 MB/s          0 B/op          0 allocs/op
+BenchmarkValidatedUnits/compressed=true/32-32            1530135                79.03 ns/op      404.93 MB/s           0 B/op          0 allocs/op
+BenchmarkValidatedUnits/compressed=true/4096-32            69568              1748 ns/op        2343.68 MB/s           0 B/op          0 allocs/op
+BenchmarkValidatedUnits/compressed=true/131071-32           2313             51874 ns/op        2526.74 MB/s           0 B/op          0 allocs/op
+PASS
+ok      github.com/scylladb/gocql/v2/internal/segment   0.958s

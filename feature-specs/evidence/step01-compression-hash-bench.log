@@ -1,0 +1,42 @@
+goos: linux
+goarch: amd64
+pkg: github.com/scylladb/gocql/v2/internal/wirecompress
+cpu: AMD Ryzen 9 9950X3D 16-Core Processor
+BenchmarkSpanCompression/lz4/1024B/1spans/random=false-32                 280990               418.9 ns/op      2444.47 MB/s           0 B/op          0 allocs/op
+BenchmarkSpanCompression/lz4/1024B/1spans/random=true-32                   42164              2827 ns/op         362.24 MB/s           0 B/op          0 allocs/op
+BenchmarkSpanCompression/lz4/1024B/16spans/random=false-32                159812               745.5 ns/op      1373.57 MB/s         512 B/op          1 allocs/op
+BenchmarkSpanCompression/lz4/1024B/16spans/random=true-32                  26858              3908 ns/op         262.06 MB/s         512 B/op          1 allocs/op
+BenchmarkSpanCompression/lz4/1024B/1024spans/random=false-32                9193             13996 ns/op          73.16 MB/s       32768 B/op          1 allocs/op
+BenchmarkSpanCompression/lz4/1024B/1024spans/random=true-32                 2862             36667 ns/op          27.93 MB/s       32768 B/op          1 allocs/op
+BenchmarkSpanCompression/lz4/1048576B/1spans/random=false-32                1118            107696 ns/op        9736.43 MB/s           0 B/op          0 allocs/op
+BenchmarkSpanCompression/lz4/1048576B/1spans/random=true-32                   19           6345376 ns/op         165.25 MB/s           0 B/op          0 allocs/op
+BenchmarkSpanCompression/lz4/1048576B/16spans/random=false-32               1017            110087 ns/op        9524.98 MB/s         512 B/op          1 allocs/op
+BenchmarkSpanCompression/lz4/1048576B/16spans/random=true-32                  14           7851847 ns/op         133.55 MB/s         512 B/op          1 allocs/op
+BenchmarkSpanCompression/lz4/1048576B/1024spans/random=false-32              891            128169 ns/op        8181.18 MB/s       32768 B/op          1 allocs/op
+BenchmarkSpanCompression/lz4/1048576B/1024spans/random=true-32                 4          31737322 ns/op          33.04 MB/s       32768 B/op          1 allocs/op
+BenchmarkSpanCompression/snappy/1024B/1spans/random=false-32              260202               450.1 ns/op      2275.25 MB/s           0 B/op          0 allocs/op
+BenchmarkSpanCompression/snappy/1024B/1spans/random=true-32                40636              3022 ns/op         338.90 MB/s           0 B/op          0 allocs/op
+BenchmarkSpanCompression/snappy/1024B/16spans/random=false-32             137110               817.7 ns/op      1252.22 MB/s         512 B/op          1 allocs/op
+BenchmarkSpanCompression/snappy/1024B/16spans/random=true-32               26740              4028 ns/op         254.23 MB/s         512 B/op          1 allocs/op
+BenchmarkSpanCompression/snappy/1024B/1024spans/random=false-32             6777             14867 ns/op          68.88 MB/s       32768 B/op          1 allocs/op
+BenchmarkSpanCompression/snappy/1024B/1024spans/random=true-32              3172             37428 ns/op          27.36 MB/s       32768 B/op          1 allocs/op
+BenchmarkSpanCompression/snappy/1048576B/1spans/random=false-32              897            127554 ns/op        8220.67 MB/s           0 B/op          0 allocs/op
+BenchmarkSpanCompression/snappy/1048576B/1spans/random=true-32                18           5826177 ns/op         179.98 MB/s           0 B/op          0 allocs/op
+BenchmarkSpanCompression/snappy/1048576B/16spans/random=false-32             824            135653 ns/op        7729.86 MB/s         512 B/op          1 allocs/op
+BenchmarkSpanCompression/snappy/1048576B/16spans/random=true-32               14           8174828 ns/op         128.27 MB/s         512 B/op          1 allocs/op
+BenchmarkSpanCompression/snappy/1048576B/1024spans/random=false-32                   770            154065 ns/op        6806.05 MB/s       32768 B/op          1 allocs/op
+BenchmarkSpanCompression/snappy/1048576B/1024spans/random=true-32                      3          34638492 ns/op          30.27 MB/s       32768 B/op          1 allocs/op
+PASS
+ok      github.com/scylladb/gocql/v2/internal/wirecompress      3.326s
+goos: linux
+goarch: amd64
+pkg: github.com/scylladb/gocql/v2/internal/murmur
+cpu: AMD Ryzen 9 9950X3D 16-Core Processor
+BenchmarkStreamSegments/bytes=1024/spans=1-32             768493               142.2 ns/op      7201.80 MB/s           0 B/op          0 allocs/op
+BenchmarkStreamSegments/bytes=1024/spans=16-32            721809               171.7 ns/op      5965.43 MB/s           0 B/op          0 allocs/op
+BenchmarkStreamSegments/bytes=1024/spans=1024-32           34830              3301 ns/op         310.21 MB/s           0 B/op          0 allocs/op
+BenchmarkStreamSegments/bytes=1048576/spans=1-32             766            135416 ns/op        7743.39 MB/s           0 B/op          0 allocs/op
+BenchmarkStreamSegments/bytes=1048576/spans=16-32            907            135589 ns/op        7733.49 MB/s           0 B/op          0 allocs/op
+BenchmarkStreamSegments/bytes=1048576/spans=1024-32          736            141242 ns/op        7423.96 MB/s           0 B/op          0 allocs/op
+PASS
+ok      github.com/scylladb/gocql/v2/internal/murmur    0.771s

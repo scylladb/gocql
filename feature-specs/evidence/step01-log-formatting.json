@@ -1,0 +1,116 @@
+[
+  {
+    "retained_log": "feature-specs/evidence/step01-386.log",
+    "raw_copy": "/extra/scylladb/gocql-v2-execution-checkpoints/step01-raw-evidence/step01-386.log",
+    "raw_sha256": "5bb22754abf5fb4b038cda47fec78e4c090c93b4e746eaf18247ab0a7a88778d",
+    "normalization": "expand tabs to 8-column spaces; strip trailing whitespace only"
+  },
+  {
+    "retained_log": "feature-specs/evidence/step01-compression-hash-bench.log",
+    "raw_copy": "/extra/scylladb/gocql-v2-execution-checkpoints/step01-raw-evidence/step01-compression-hash-bench.log",
+    "raw_sha256": "c2f2e52f34b47d4b4db0af637534a4ebe85752e0bb8b5e93af57ea059cfdfc01",
+    "normalization": "expand tabs to 8-column spaces; strip trailing whitespace only"
+  },
+  {
+    "retained_log": "feature-specs/evidence/step01-foundations-race.log",
+    "raw_copy": "/extra/scylladb/gocql-v2-execution-checkpoints/step01-raw-evidence/step01-foundations-race.log",
+    "raw_sha256": "5c2bd021914c533554ceeae29ddbe22188bd7360065678bf8d9c07fe76a845f1",
+    "normalization": "expand tabs to 8-column spaces; strip trailing whitespace only"
+  },
+  {
+    "retained_log": "feature-specs/evidence/step01-fuzz-compression.log",
+    "raw_copy": "/extra/scylladb/gocql-v2-execution-checkpoints/step01-raw-evidence/step01-fuzz-compression.log",
+    "raw_sha256": "f16b99ae6e3ee790b75bf36e64fa1db03f40ebd5b5e2e51af69242acb1bbe6a8",
+    "normalization": "expand tabs to 8-column spaces; strip trailing whitespace only"
+  },
+  {
+    "retained_log": "feature-specs/evidence/step01-fuzz-envelope.log",
+    "raw_copy": "/extra/scylladb/gocql-v2-execution-checkpoints/step01-raw-evidence/step01-fuzz-envelope.log",
+    "raw_sha256": "8da7b6808c03c41364fc6d4ee706529744f54c66ad1f7bde1e8c01267ed7ffeb",
+    "normalization": "expand tabs to 8-column spaces; strip trailing whitespace only"
+  },
+  {
+    "retained_log": "feature-specs/evidence/step01-fuzz-final-envelope.log",
+    "raw_copy": "/extra/scylladb/gocql-v2-execution-checkpoints/step01-raw-evidence/step01-fuzz-final-envelope.log",
+    "raw_sha256": "714d1668b7bfa697aa2d5aacea63dcb6075cd3f1d1c4dd4022fadd6e31368686",
+    "normalization": "expand tabs to 8-column spaces; strip trailing whitespace only"
+  },
+  {
+    "retained_log": "feature-specs/evidence/step01-fuzz-final-segments.log",
+    "raw_copy": "/extra/scylladb/gocql-v2-execution-checkpoints/step01-raw-evidence/step01-fuzz-final-segments.log",
+    "raw_sha256": "56eb25082b164ab1339737db8f3d795c6cbcf8799ff78f3032e16a1a59cc4bac",
+    "normalization": "expand tabs to 8-column spaces; strip trailing whitespace only"
+  },
+  {
+    "retained_log": "feature-specs/evidence/step01-fuzz-final-wire-stream.log",
+    "raw_copy": "/extra/scylladb/gocql-v2-execution-checkpoints/step01-raw-evidence/step01-fuzz-final-wire-stream.log",
+    "raw_sha256": "13508733952306704e7548f49493cd09632c09ca721c5f0e300ca2247d7c4911",
+    "normalization": "expand tabs to 8-column spaces; strip trailing whitespace only"
+  },
+  {
+    "retained_log": "feature-specs/evidence/step01-fuzz-segments.log",
+    "raw_copy": "/extra/scylladb/gocql-v2-execution-checkpoints/step01-raw-evidence/step01-fuzz-segments.log",
+    "raw_sha256": "98a0e3f8532d69827d6e57552a1ed20c65693b8352eb227d574a2a12d1265bd2",
+    "normalization": "expand tabs to 8-column spaces; strip trailing whitespace only"
+  },
+  {
+    "retained_log": "feature-specs/evidence/step01-fuzz-wire-cursor.log",
+    "raw_copy": "/extra/scylladb/gocql-v2-execution-checkpoints/step01-raw-evidence/step01-fuzz-wire-cursor.log",
+    "raw_sha256": "34a2fba4dfb21a5ca60e9c7e52336d95e005bb32449e6027660c90c27aee206a",
+    "normalization": "expand tabs to 8-column spaces; strip trailing whitespace only"
+  },
+  {
+    "retained_log": "feature-specs/evidence/step01-fuzz-wire-stream.log",
+    "raw_copy": "/extra/scylladb/gocql-v2-execution-checkpoints/step01-raw-evidence/step01-fuzz-wire-stream.log",
+    "raw_sha256": "b3ebb84528f19b7bb27f5893c044e2c673e8756a0f8f207ae7239fbbfaee008b",
+    "normalization": "expand tabs to 8-column spaces; strip trailing whitespace only"
+  },
+  {
+    "retained_log": "feature-specs/evidence/step01-integration-build.log",
+    "raw_copy": "/extra/scylladb/gocql-v2-execution-checkpoints/step01-raw-evidence/step01-integration-build.log",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "normalization": "expand tabs to 8-column spaces; strip trailing whitespace only"
+  },
+  {
+    "retained_log": "feature-specs/evidence/step01-spec-verifier.log",
+    "raw_copy": "/extra/scylladb/gocql-v2-execution-checkpoints/step01-raw-evidence/step01-spec-verifier.log",
+    "raw_sha256": "d917fd30d32ac1dcf5211b8f90122e2892ee48305e5b2f53184e255a32b9f1b4",
+    "normalization": "expand tabs to 8-column spaces; strip trailing whitespace only"
+  },
+  {
+    "retained_log": "feature-specs/evidence/step01-unit-race-initial.log",
+    "raw_copy": "/extra/scylladb/gocql-v2-execution-checkpoints/step01-raw-evidence/step01-unit-race-initial.log",
+    "raw_sha256": "469550bf786f0902d668abee51aad5ec6fdf8b595300eb216b114e7cd3ddf033",
+    "normalization": "expand tabs to 8-column spaces; strip trailing whitespace only"
+  },
+  {
+    "retained_log": "feature-specs/evidence/step01-unit-race.log",
+    "raw_copy": "/extra/scylladb/gocql-v2-execution-checkpoints/step01-raw-evidence/step01-unit-race.log",
+    "raw_sha256": "7cf8f02b0599d72cccc6a32ec8d34b069a50ff19a82e9e9318073092630bf5f2",
+    "normalization": "expand tabs to 8-column spaces; strip trailing whitespace only"
+  },
+  {
+    "retained_log": "feature-specs/evidence/step01-validated-units-bench-final.log",
+    "raw_copy": "/extra/scylladb/gocql-v2-execution-checkpoints/step01-raw-evidence/step01-validated-units-bench-final.log",
+    "raw_sha256": "ceba501efbd4ad3bbc4c0bbb08a48560f68608e00447f115aec5db78e04d02b0",
+    "normalization": "expand tabs to 8-column spaces; strip trailing whitespace only"
+  },
+  {
+    "retained_log": "feature-specs/evidence/step01-vet.log",
+    "raw_copy": "/extra/scylladb/gocql-v2-execution-checkpoints/step01-raw-evidence/step01-vet.log",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "normalization": "expand tabs to 8-column spaces; strip trailing whitespace only"
+  },
+  {
+    "retained_log": "feature-specs/evidence/step01-wire-final-race.log",
+    "raw_copy": "/extra/scylladb/gocql-v2-execution-checkpoints/step01-raw-evidence/step01-wire-final-race.log",
+    "raw_sha256": "d632284c28fb5288853669acf09a251fda0bcf0793a4317d38ea03c65ec1eed8",
+    "normalization": "expand tabs to 8-column spaces; strip trailing whitespace only"
+  },
+  {
+    "retained_log": "feature-specs/evidence/step01-wire-segment-bench.log",
+    "raw_copy": "/extra/scylladb/gocql-v2-execution-checkpoints/step01-raw-evidence/step01-wire-segment-bench.log",
+    "raw_sha256": "1a34cab818fc0c9df8d5eee6c156e0defe001e6c2366fc9bd0116aa9a2d1822b",
+    "normalization": "expand tabs to 8-column spaces; strip trailing whitespace only"
+  }
+]

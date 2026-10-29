@@ -2,6 +2,7 @@ package wire
 
 import (
 	"bytes"
+	"fmt"
 	"testing"
 )
 
@@ -78,5 +79,79 @@ func TestSegmentedRangeViewsDoNotAllocate(t *testing.T) {
 	})
 	if allocs != 0 {
 		t.Fatalf("descriptor-only ranges allocate: %v", allocs)
+	}
+}
+
+func TestRangeIndexIsSharedAndOrdered(t *testing.T) {
+	data := make([]byte, 65536)
+	spans := make([]Span, len(data))
+	for i := range spans {
+		spans[i] = Borrow(data[i : i+1])
+	}
+	c, _ := NewChain(spans...)
+	for i, p := range c.tail {
+		if p.end != int64(i+2) {
+			t.Fatal("bad prefix index")
+		}
+	}
+	v, e := c.Slice(32000, 10000)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if &v.tail[0] != &c.tail[32000] {
+		t.Fatal("child copied index")
+	}
+	for _, off := range []int64{0, 1, 1024, 9998, 9999} {
+		part, e := v.Slice(off, 1)
+		if e != nil || &part.head.data[0] != &data[32000+off] {
+			t.Fatal("indexed range changed backing")
+		}
+	}
+}
+func BenchmarkRangeLookupScaling(b *testing.B) {
+	for _, fragments := range []int{1, 1024, 65536} {
+		b.Run(fmt.Sprint(fragments), func(b *testing.B) {
+			data := make([]byte, 65536)
+			spans := make([]Span, fragments)
+			width := len(data) / fragments
+			for i := range spans {
+				spans[i] = Borrow(data[i*width : (i+1)*width])
+			}
+			c, _ := NewChain(spans...)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				off := (i * 7919) % (len(data) - 16)
+				v, e := c.Slice(int64(off), 16)
+				if e != nil || v.Len() != 16 {
+					b.Fatal(e)
+				}
+			}
+		})
+	}
+}
+func BenchmarkCursorCellsAndFragments(b *testing.B) {
+	for _, cells := range []int{256, 8192} {
+		for _, fragments := range []int{1, 256, 65536} {
+			b.Run(fmt.Sprintf("cells=%d/fragments=%d", cells, fragments), func(b *testing.B) {
+				data := make([]byte, 65536)
+				spans := make([]Span, fragments)
+				width := len(data) / fragments
+				for i := range spans {
+					spans[i] = Borrow(data[i*width : (i+1)*width])
+				}
+				c, _ := NewChain(spans...)
+				b.ReportAllocs()
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					cursor := NewCursor(c)
+					for j := 0; j < cells; j++ {
+						if _, e := cursor.Take(int64(len(data) / cells)); e != nil {
+							b.Fatal(e)
+						}
+					}
+				}
+			})
+		}
 	}
 }

@@ -64,8 +64,8 @@ func EncodeSpans(payload wire.Chain, selfContained, compressed bool) (wire.Chain
 // ReadOwnedPayload receives directly into final immutable storage. The returned
 // lease can outlive both the connection and reads of subsequent segments.
 func ReadOwnedPayload(r io.Reader, h Header, comp Compressor) (*wire.Lease, error) {
-	if h.PayloadLen < 0 || h.PayloadLen > MaxPayloadSize || h.UncompressedLen < 0 || h.UncompressedLen > MaxPayloadSize {
-		return nil, fmt.Errorf("gocql: invalid segment lengths")
+	if err := validatePayloadHeader(h, comp != nil); err != nil {
+		return nil, err
 	}
 	payload := make([]byte, h.PayloadLen)
 	if _, err := io.ReadFull(r, payload); err != nil {

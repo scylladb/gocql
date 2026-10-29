@@ -1,0 +1,17 @@
+[
+  {
+    "command": "go test -race -count=1 ./internal/wire ./internal/wirecompress ./internal/murmur ./internal/segment ./internal/frame",
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step01-foundations-race.log"
+  },
+  {
+    "command": "go vet ./internal/wire ./internal/wirecompress ./internal/murmur ./internal/segment ./internal/frame",
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step01-vet.log"
+  },
+  {
+    "command": "GOARCH=386 go test -count=1 ./internal/wire ./internal/wirecompress ./internal/murmur ./internal/segment ./internal/frame",
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step01-386.log"
+  }
+]

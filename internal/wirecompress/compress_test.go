@@ -404,7 +404,7 @@ func TestPreallocatedOutputAllocations(t *testing.T) {
 func BenchmarkSpanCompression(b *testing.B) {
 	for _, codec := range codecs {
 		for _, size := range []int{1 << 10, 1 << 20} {
-			for _, spans := range []int{1, 16} {
+			for _, spans := range []int{1, 16, 1024} {
 				for _, random := range []bool{false, true} {
 					b.Run(fmt.Sprintf("%s/%dB/%dspans/random=%v", codec.name, size, spans, random), func(b *testing.B) {
 						data := bytes.Repeat([]byte{'x'}, size)

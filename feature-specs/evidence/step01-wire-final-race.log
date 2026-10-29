@@ -1,0 +1,2 @@
+ok      github.com/scylladb/gocql/v2/internal/wire      1.109s
+ok      github.com/scylladb/gocql/v2/internal/frame     1.007s

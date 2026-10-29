@@ -1,0 +1,128 @@
+{
+  "agent": "/root/step01_wire_protocol",
+  "branch": "v2-01-wire-protocol",
+  "predecessor": "f2fb206eeedb58ff9fe4964a3543367a7a9fbdb3",
+  "go_version": "go version go1.25.0 linux/amd64",
+  "commands": [
+    {
+      "command": "go test -race -tags unit -count=1 -timeout=5m ./...",
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step01-unit-race.log"
+    },
+    {
+      "command": "go test -race -count=1 ./internal/wire ./internal/frame",
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step01-wire-final-race.log"
+    },
+    {
+      "command": "go test -c -tags \"integration gocql_debug\" -o /tmp/gocql-v2-step01-integration.test .",
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step01-integration-build.log"
+    },
+    {
+      "command": "python3 feature-specs/verify.py",
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step01-spec-verifier.log"
+    },
+    {
+      "command": "go test -run ^$ -bench 'Benchmark(RangeLookupScaling|CursorCellsAndFragments|StreamFinalRanges|ValidatedUnits|BorrowLargePayload|BuilderBorrowLargePayload|CursorCrossSpanScalar|LeaseRetainRelease)$' -benchmem -benchtime=100ms ./internal/wire ./internal/segment",
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step01-wire-segment-bench.log"
+    },
+    {
+      "command": "go test -run ^$ -bench 'Benchmark(SpanCompression|StreamSegments)$' -benchmem -benchtime=100ms ./internal/wirecompress ./internal/murmur",
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step01-compression-hash-bench.log"
+    },
+    {
+      "command": "go test -race -count=1 ./internal/wire ./internal/wirecompress ./internal/murmur ./internal/segment ./internal/frame",
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step01-foundations-race.log"
+    },
+    {
+      "command": "go vet ./internal/wire ./internal/wirecompress ./internal/murmur ./internal/segment ./internal/frame",
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step01-vet.log"
+    },
+    {
+      "command": "GOARCH=386 go test -count=1 ./internal/wire ./internal/wirecompress ./internal/murmur ./internal/segment ./internal/frame",
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step01-386.log"
+    },
+    {
+      "command": "GOMAXPROCS=2 go test ./internal/wire -run=^$ -fuzz=^FuzzCursorTake$ -fuzztime=3s -parallel=2",
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step01-fuzz-wire-cursor.log"
+    },
+    {
+      "command": "GOMAXPROCS=2 go test ./internal/wire -run=^$ -fuzz=^FuzzStreamCells$ -fuzztime=3s -parallel=2",
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step01-fuzz-wire-stream.log"
+    },
+    {
+      "command": "GOMAXPROCS=2 go test ./internal/wirecompress -run=^$ -fuzz=^FuzzSpanCompression$ -fuzztime=3s -parallel=2",
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step01-fuzz-compression.log"
+    },
+    {
+      "command": "GOMAXPROCS=2 go test ./internal/segment -run=^$ -fuzz=^FuzzValidatedUnits$ -fuzztime=3s -parallel=2",
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step01-fuzz-segments.log"
+    },
+    {
+      "command": "GOMAXPROCS=2 go test ./internal/frame -run=^$ -fuzz=^FuzzStreamEnvelope$ -fuzztime=3s -parallel=2",
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step01-fuzz-envelope.log"
+    },
+    {
+      "command": "GOMAXPROCS=2 go test ./internal/wire -run=^$ -fuzz=^FuzzStreamCells$ -fuzztime=3s -parallel=2",
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step01-fuzz-final-wire-stream.log"
+    },
+    {
+      "command": "GOMAXPROCS=2 go test ./internal/segment -run=^$ -fuzz=^FuzzValidatedUnits$ -fuzztime=3s -parallel=2",
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step01-fuzz-final-segments.log"
+    },
+    {
+      "command": "GOMAXPROCS=2 go test ./internal/frame -run=^$ -fuzz=^FuzzStreamEnvelope$ -fuzztime=3s -parallel=2",
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step01-fuzz-final-envelope.log"
+    }
+  ],
+  "source_sha256": {
+    "events_unit_test.go": "c7111023c6222d95e53077997fe88d5c0730c89f12ae458e46c52a3619d48d27",
+    "frame.go": "97412fea653414d56c24f3fce9cc66b1438349f07bf105edd018bbc053f555d4",
+    "frame_test.go": "7d691ce778111dff995920ff4ee388a43fe12cdfed0afcfd19bcded0a0c21001",
+    "internal/frame/frames.go": "fc4a9f69547e5e3c0591d1eb7e722d6a2112ed9aa4bfca1593ccf6e19ed4a914",
+    "internal/frame/frames_test.go": "45fc7805de83af9c20e9619de68dd08ca58f7c63d73fb753ca59b462a6e7eebd",
+    "internal/frame/stream.go": "4a46409f7a0b47f20ba0b588b9c3df96c10265dc49022d998a94f50477f5d3f2",
+    "internal/frame/stream_test.go": "24c551f10749d8787a9516eaf2f18664ffdc1b651fbf260dca1816bd11f0f426",
+    "internal/murmur/murmur.go": "6478a28a47f3b32721666a7855983061477d3423ead8190760ff4d1525b8dd49",
+    "internal/murmur/murmur_appengine.go": "c222b78ee9917a68b22debfec15e797078942953a3e2d18cade920299c3eb597",
+    "internal/murmur/murmur_test.go": "6f84b9c7f77981f0a854edf3e6dd2431cb82154e1639f9921bc8ab7503e904ec",
+    "internal/murmur/murmur_unsafe.go": "4ad6bd3cb0ad5adae147dbc69ea4109c93469559bec02284122dd965fa72cc4f",
+    "internal/murmur/stream.go": "f9ae372c4b6434e647c4ac646d59e51cec30e0af56d7907d88bfce140554987b",
+    "internal/murmur/stream_test.go": "b2fa722ee2c1f85e197d5a650d43f95dd444d75adcb248b12340e07c8435a875",
+    "internal/segment/segment.go": "f7103fe42b45a971ac89a67e7dc768c96c1d4e72fbc79d4b2634cfbf0498d620",
+    "internal/segment/segment_test.go": "2ff372eecade631ed3663b91612bf35b8797d6bb5596d69277f031d306c117d8",
+    "internal/segment/spans.go": "492522efc4f60ae46c338830bf4dd65593fa31680c46d5a13cd3c9d49bef9a68",
+    "internal/segment/spans_test.go": "7f045c9c0b64ff9b13171385aac3c0825ced4e662b00a4ca930ef50531fb7ceb",
+    "internal/segment/units.go": "b75fb6291ecf52b6c82d5357aacd0f03e0194d93bcec178ffa3a3a99763dcfc3",
+    "internal/segment/units_test.go": "2988d0a4e511c5518639698293d58cb3010dba6de56f4ff729e75660e0e8150d",
+    "internal/wire/builder.go": "c392beb2b06fd76e44e08035f2e0e3417d1fc0fdf7ffed89f4a6af431f425a2c",
+    "internal/wire/builder_test.go": "e97a1313f2f48177c2f0b5225e85583034684ded4ed83c0c17f60baef40f3439",
+    "internal/wire/cursor.go": "7437517d09e27c46ec6be69e017e2d7a76b01f7b3af74fc50222afee8870ebab",
+    "internal/wire/cursor_test.go": "7df427dc1f09d14fe4d9c802776056ea36187b9b518207d0fcf7dc4b4d7dc231",
+    "internal/wire/lease.go": "fbe4bd3b1daca8ab4f5c576e1f651c32b1c4d387f08afc538ab4066579062a11",
+    "internal/wire/lease_test.go": "72415de29a6cda7c9f490e40571eb03b12daf3b497f9b58af43d6e65f1249778",
+    "internal/wire/range_test.go": "1e40136fecf2e65262bd07bb5697e1052db4ebf299ded0a580914c168e8122c8",
+    "internal/wire/span.go": "83a47f5dc89001266c34e4a7c9e15e2c049fa293acb85aaefcc5857259c33397",
+    "internal/wire/span_test.go": "138ab085a0cbacf2ed977dcac9fc7c4a04e988b98ed0ad0a373631dd0071b737",
+    "internal/wire/stream.go": "28bfb04cfd8652593e8dfe75ea469993f916ff2ed0b7462246baed9daa65ccbc",
+    "internal/wire/stream_test.go": "98a59c1fa0bcde129919dfc91cc69db79177a7d4aafb949293af9b8d94498475",
+    "internal/wirecompress/compress.go": "335e3e065350e131be9096f4fa7af0396a192bd994cc231d236047699dee4138",
+    "internal/wirecompress/compress_test.go": "221c7b7336729a1d56f0683aca76c9944373bd8f8f59a45a84b0a03a6f76acb0",
+    "v2_transport_receive.go": "a12e7bfee03476a5d998a33cdeb94e7932a6c7ddfe61850e398ec664c36adc20"
+  }
+}

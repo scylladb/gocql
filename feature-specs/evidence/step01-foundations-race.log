@@ -1,0 +1,5 @@
+ok      github.com/scylladb/gocql/v2/internal/wire      1.104s
+ok      github.com/scylladb/gocql/v2/internal/wirecompress      4.843s
+ok      github.com/scylladb/gocql/v2/internal/murmur    1.262s
+ok      github.com/scylladb/gocql/v2/internal/segment   1.060s
+ok      github.com/scylladb/gocql/v2/internal/frame     1.006s

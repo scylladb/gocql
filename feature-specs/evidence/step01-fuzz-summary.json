@@ -1,0 +1,27 @@
+[
+  {
+    "command": "GOMAXPROCS=2 go test ./internal/wire -run=^$ -fuzz=^FuzzCursorTake$ -fuzztime=3s -parallel=2",
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step01-fuzz-wire-cursor.log"
+  },
+  {
+    "command": "GOMAXPROCS=2 go test ./internal/wire -run=^$ -fuzz=^FuzzStreamCells$ -fuzztime=3s -parallel=2",
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step01-fuzz-wire-stream.log"
+  },
+  {
+    "command": "GOMAXPROCS=2 go test ./internal/wirecompress -run=^$ -fuzz=^FuzzSpanCompression$ -fuzztime=3s -parallel=2",
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step01-fuzz-compression.log"
+  },
+  {
+    "command": "GOMAXPROCS=2 go test ./internal/segment -run=^$ -fuzz=^FuzzValidatedUnits$ -fuzztime=3s -parallel=2",
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step01-fuzz-segments.log"
+  },
+  {
+    "command": "GOMAXPROCS=2 go test ./internal/frame -run=^$ -fuzz=^FuzzStreamEnvelope$ -fuzztime=3s -parallel=2",
+    "exit_code": 0,
+    "log": "feature-specs/evidence/step01-fuzz-envelope.log"
+  }
+]

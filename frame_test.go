@@ -40,6 +40,7 @@ import (
 	"strings"
 	"testing"
 
+	lz4mod "github.com/scylladb/gocql/lz4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -1290,6 +1291,21 @@ func Test_readUncompressedFrame(t *testing.T) {
 	}
 }
 
+// compressedReadFixture uses a real, smaller LZ4 block so raw fallback cannot
+// bypass the existing injected decoder-error/length checks.
+type compressedReadFixture struct{ testMockedCompressor }
+
+func (m compressedReadFixture) AppendDecompressed(dst, src []byte, size uint32) ([]byte, error) {
+	if m.expectedError != nil {
+		return nil, m.expectedError
+	}
+	out, err := (lz4mod.LZ4Compressor{}).AppendDecompressed(dst, src, size)
+	if err == nil && m.invalidateDecodedDataLength && len(out) > 0 {
+		out = out[:len(out)-1]
+	}
+	return out, err
+}
+
 func Test_readCompressedFrame(t *testing.T) {
 	tests := []struct {
 		name string
@@ -1370,7 +1386,7 @@ func Test_readCompressedFrame(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			framer := newFramer(nil, protoVersion5)
 			req := writeQueryFrame{
-				statement: "SELECT * FROM system.local",
+				statement: strings.Repeat("SELECT * FROM system.local ", 32),
 				params: queryParams{
 					consistency: Quorum,
 					keyspace:    "gocql_test",
@@ -1380,14 +1396,14 @@ func Test_readCompressedFrame(t *testing.T) {
 			err := req.buildFrame(framer, 128)
 			require.NoError(t, err)
 
-			frame, err := newCompressedSegment(framer.buf, true, testMockedCompressor{})
+			frame, err := newCompressedSegment(framer.buf, true, lz4mod.LZ4Compressor{})
 			require.NoError(t, err)
 
 			if tt.modifyFrameFn != nil {
 				frame = tt.modifyFrameFn(frame)
 			}
 
-			readFrame, selfContained, err := readCompressedSegment(bytes.NewReader(frame), tt.compressor)
+			readFrame, selfContained, err := readCompressedSegment(bytes.NewReader(frame), compressedReadFixture{tt.compressor})
 
 			switch {
 			case tt.expectedErrorMsg != "":

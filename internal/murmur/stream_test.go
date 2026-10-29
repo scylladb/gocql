@@ -1,6 +1,7 @@
 package murmur
 
 import (
+	"fmt"
 	"math/rand"
 	"testing"
 )
@@ -43,14 +44,22 @@ func TestStreamSingleBytesAndLargeSpans(t *testing.T) {
 }
 
 func BenchmarkStreamSegments(b *testing.B) {
-	data := make([]byte, 4096)
-	b.SetBytes(int64(len(data)))
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		var s Stream
-		for j := 0; j < len(data); j += 31 {
-			s.Write(data[j:min(j+31, len(data))])
+	for _, size := range []int{1024, 1 << 20} {
+		for _, spans := range []int{1, 16, 1024} {
+			b.Run(fmt.Sprintf("bytes=%d/spans=%d", size, spans), func(b *testing.B) {
+				data := make([]byte, size)
+				width := size / spans
+				b.SetBytes(int64(size))
+				b.ReportAllocs()
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					var s Stream
+					for j := 0; j < len(data); j += width {
+						s.Write(data[j:min(j+width, len(data))])
+					}
+					_ = s.Sum64()
+				}
+			})
 		}
-		_ = s.Sum64()
 	}
 }
