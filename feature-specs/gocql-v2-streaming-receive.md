@@ -1,10 +1,11 @@
 # Streaming receive decoding into caller storage
 
-Status: draft Go v2 feature proposal. Not implemented or verified. This is a
-new Go design requirement, not a claim about the pinned Rust reference driver.
-The exact public construction and streaming-codec signatures require design
-reconciliation before implementation. Drafting this feature does not resume
-the implementation work paused in [plan.md](../plan.md).
+Status: normative Go v2 implementation design, reconciled during execution
+preparation on 2026-10-29. Not implemented or verified. The user authorized
+sequential implementation in [plan.md](../plan.md). This new design addition was
+not part of the historical ten design review cycles and makes no claim about
+the pinned Rust reference driver. Exact public construction, codec/builder and
+limit signatures are settled in [the API contract](gocql-v2-api.md#streaming-receive-into-final-caller-storage).
 
 ## Summary
 
@@ -39,17 +40,12 @@ never silently fall back to receiving a complete page.
 
 ## User-visible behavior and API shape
 
-Provide an explicit streaming execution entry point and a cursor exposing
-NextInto, Err and Close. The following is an illustrative API shape, not an
-already-available or finalized public signature:
+Provide RunStream[B,R] using an existing Bound[B], a separate typed
+StreamRowDecoder[R] and StreamOptions; RowStream[R] exposes NextInto, Err,
+Close, Columns and Info. The normative interfaces/builders and defaults are in
+the API contract. The following example uses those settled signatures:
 
 ```go
-stream, err := RunStream(ctx, session, bound, streamDecoder, streamOptions)
-if err != nil {
-    return err
-}
-defer stream.Close()
-
 // Application-defined destination. []byte fields are final caller storage;
 // a text mapping validates UTF-8 incrementally without constructing a string.
 type DownloadRow struct {
@@ -57,6 +53,14 @@ type DownloadRow struct {
     Name []byte
     Payload []byte
 }
+streamDecoder := StreamRow(func(*DownloadRow) {},
+    StreamColumn("id", StreamInt32, func(r *DownloadRow) *int32 { return &r.ID }),
+    StreamColumn("name", StreamText, func(r *DownloadRow) *[]byte { return &r.Name }),
+    StreamColumn("payload", StreamBlob, func(r *DownloadRow) *[]byte { return &r.Payload }),
+)
+stream, err := RunStream(ctx, session, bound, streamDecoder, StreamOptions{})
+if err != nil { return err }
+defer stream.Close()
 row := DownloadRow{
     Name: make([]byte, 0, 1024),
     Payload: make([]byte, 0, 1 << 20),
@@ -71,8 +75,8 @@ Streaming admission installs the request's streaming decoder before sending.
 Opening the cursor may read checked headers/metadata and bounded transform
 units, but returns without waiting for the entire page. Row payload decoding
 waits for the destination supplied by NextInto. The example's streamDecoder
-declares the column mappings and text/blob storage rules; its exact typed
-builder/interfaces are a design-reconciliation item below.
+declares the column mappings and text/blob storage rules; its reset callback
+clears application-only fields if present, preserving mapped payload capacity.
 
 Initial payload destinations are writable caller-provided byte slices. Decode
 into their existing capacity and adjust lengths; preserve capacity across
@@ -83,8 +87,9 @@ final value once rather than growing/copying it chunk by chunk.
 
 Scalar fields are overwritten with decoded values. Nullable mappings explicitly
 distinguish null from an empty present value and reuse available payload
-capacity. Result unset remains invalid. Exact reset behavior for custom row
-representations belongs to their streaming decoder contract; do not inherit the
+capacity. Result unset remains invalid. Reset clears logical values while preserving mapped slice/nested capacity;
+StreamRow requires an explicit callback for unmapped application state. Custom
+StreamRowPlan.Reset has the same responsibility; do not inherit the
 buffered NextInto rule that zeroes an entire R and discards its supplied slices.
 
 NextInto returns true only for one complete, validated row. Nil destinations
@@ -279,7 +284,7 @@ Vary page size, row count, largest cell and segment count independently, includi
 large ignored cells and a slow consumer. A pass requires the bounded-memory and
 direct-read evidence above; fewer allocations alone is insufficient.
 
-## Implementation seams and decisions before implementation
+## Implementation seams and settled ownership
 
 Current [v2_transport_receive.go](../v2_transport_receive.go) receives complete
 native frame bodies or retains their segment spans before
@@ -291,19 +296,46 @@ complete frame's segment list is not the streaming path.
 [v2_rows_codec.go](../v2_rows_codec.go) uses readers over retained byte ranges.
 These are implementation seams, not evidence that the proposed behavior exists.
 
-Before implementation, reconcile the following into the public API and owning
-tasks without changing the accepted buffered APIs implicitly:
+Execution preparation settled the public API and task assignments without
+changing the buffered APIs. The API contract defines RunStream[B,R], RowStream,
+StreamRowDecoder/StreamDecoder compiled plans, limited readers, scalar/text/blob,
+nullable/empty, collection/vector, tuple/UDT and explicit encoded-output builders.
+StreamCapacityError reports the path and required/available capacity;
+StreamCapabilityError identifies unsupported protocol/compression/mapping modes.
 
-1. Finalize RunStream/RowStream construction, its relationship to Statement/
-   Prepared/Bound, and an explicit typed streaming row/value codec interface.
-   Specify null/text/blob/nested destination builders and capacity errors.
-2. Define pool reservation/read ownership and cancellation-safe exclusive
-   streaming transport, including event handling and return-to-pool criteria.
-3. Specify the bounded metadata and transform budgets and initial supported
-   protocol/compression combinations, with admission-time capability checks.
-4. Assign codec, transport, execution/paging, documentation and verification
-   changes to the existing sequential implementation tasks in plan.md. Add
-   focused handoff gates before claiming this feature is release-ready.
+Default StreamLimits are 1 MiB simultaneously retained metadata/control bytes, 32 KiB
+read-ahead, 32 KiB discard scratch and 262,158 bytes simultaneous v5 transform
+input/output/framing. Existing protocol and paging limits remain active.
+Positive overrides are explicit upper bounds, validated and snapshotted at
+admission. MaxMetadataBytes includes current-page data and old storage still
+live during replacement. Declared lengths accumulate within each envelope and
+are checked before allocation; accounting resets only after storage release.
+This is not a cumulative cursor-lifetime/page-total budget. Paging tokens and
+history remain covered by their separate ProtocolLimits budgets. v3/v4 raw and v5 raw/LZ4 with optional TLS are required initial modes;
+v3/v4 frame compression is rejected before query submission. Reservation takes
+one configured pool capacity unit, atomically quiesces/hands off shared I/O and
+is held across pull-driven pages. Return requires exact framing and acknowledged
+shared-reader resumption; failure/early close discards the connection.
 
-The contracts above define the requested behavior. Public signature settlement,
-implementation, independent review and all acceptance evidence remain pending.
+| Sequential agent | Streaming responsibility and required handoff |
+| --- | --- |
+| 01 wire/protocol | Checked incremental envelope/cell/child cursors, length/count/depth and total-work limits; split-read and bounded-unit integrity primitives. No full-response gather. |
+| 02 codecs | Complete explicit streaming scalar/text/blob/numeric, nullable/empty, nested/container/vector, tuple/UDT, encoded-output and custom-plan contracts; preserve preseeded backing and fail capacities before bodies. |
+| 03 prepared/paging | Share metadata revision/schema fences and continuation/history primitives with streaming; retained buffered metadata remains correct. End-to-end streaming entry point is agent 07. |
+| 04 transport/pools | Exclusive budgeted reservation and acknowledged read/write handoff, raw direct-final-range reads, v5 validated bounded transforms, event/control handling, cancellation/discard/reuse. |
+| 05 metadata/control | Bounded nonblocking control/event dispatch also works during streaming; schema/publication fences apply to streaming metadata. |
+| 06 routing | Reserved connections honor host/shard/leader/strict routing without unbounded extra capacity. |
+| 07 execution/config | RunStream, options/capability checks, profile snapshot, no prefetch/speculation, on-demand empty-page progress, metadata plan selection, no replay after output, progress info and Close/Wait. |
+| 08 fixtures | Deterministic gated/corrupt/interrupted streams and raw/TLS/v5 fixtures; provision them with ordinary exclusive lane ownership. |
+| 09 migration/integration | Live large/nested/empty/paged streaming, metadata changes, early close and pool recovery across required modes, in addition to all 174 baseline mappings. |
+| 10 legacy removal | Streaming never enters old Query/Iter/reflect or buffered decoder adapters. |
+| 11–12 extraction | Preserve incremental primitives, codec/model and reservation/execution boundaries in target packages without adding gathers or dependency cycles. |
+| 13 module/docs | Publish working streaming examples, seeded nested storage, reset/capacity, unsupported modes, cancellation and pool-occupancy guidance. |
+| 14 matrix | All streaming split/race/fuzz, first-row gates, required live protocols/TLS/compression and failure cases on a pinned tree. |
+| 15 performance | Equivalent Run/Row versus NextInto versus RunStream; peak memory, direct read identities/copy categories, first-row latency, CPU/throughput/syscalls and independent scaling/slow-consumer checks. |
+| 16 review | Independent no-gather/budget/ownership/integrity/replay/reservation review with fixed findings. |
+| 17 release | Rerun affected/full streaming acceptance on the final tree alongside the complete 174-test baseline ledger. |
+
+An unmet streaming gate blocks its owning agent's handoff. Unsupported mandatory
+modes/types cannot be counted complete by rejecting them. Feature implementation,
+independent review and all acceptance evidence remain pending.

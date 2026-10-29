@@ -206,7 +206,7 @@ RowDecoder.
 
 This seam consumes retained page bytes. Incremental socket-to-destination
 decoding without full response/page accumulation is a separate
-[streaming receive feature draft](gocql-v2-streaming-receive.md), with additional
+[streaming receive contract](gocql-v2-streaming-receive.md), with additional
 codec, exclusive transport, integrity and memory-budget requirements.
 
 Add required RowPlan.DecodeInto(*RowReader, *R) error and
@@ -641,6 +641,98 @@ account for that copy. Driver gathers, assembly copies, v5 reassembly copies and
 accidental cell clones are still prohibited on every protocol/TLS/compression
 lane.
 
+## Incremental streaming receive (pending implementation)
+
+The public RunStream, StreamRowDecoder/StreamDecoder, capacity/error and
+StreamLimits signatures in [the API contract](gocql-v2-api.md) are normative.
+The complete feature acceptance rules are in
+[gocql-v2-streaming-receive.md](gocql-v2-streaming-receive.md). They are a new
+execution-preparation design addition, not covered by the historical ten-round
+review result. Buffered Rows/Page.NextInto remains a separate implementation.
+
+Implement checked incremental framing primitives in agent 01, typed streaming
+plans/builders in 02, generation/continuation primitives in 03, exclusive
+transport/pool receive in 04 and end-to-end RunStream/admission/paging in 07.
+Agent 03 supplies reusable fences/state machinery without requiring RunStream
+before its transport exists. This dependency order does not excuse a missing
+streaming requirement at agent 07's handoff. No earlier agent claims complete
+socket-to-destination delivery from codec-only or buffered tests.
+
+The incremental envelope cursor tracks a checked remaining body length; its
+row/cell/child readers cannot consume adjacent values. All scalar and nested
+validation shares the canonical primitives with buffered codecs. A custom
+stream codec compiles once per metadata shape and explicitly implements Reset
+and DecodeInto. No generic buffered-codec adapter, reflect destination discovery,
+complete cell gather, row temporary or responsePage is allowed on this path.
+Byte destinations preserve supplied backing; nested slices check count/capacity
+before bodies and preserve each preseeded child slot. StreamEncoded is explicit
+caller-provided encoded output and still validates incrementally. Large ignored
+values drain through bounded validation/discard scratch. Raw v3/v4 bulk reads
+pass the actual caller ranges to the plaintext connection reader; bounded
+read-ahead prefixes are counted separately.
+
+Reserve a pool slot before submission, either for a quiescent existing
+connection or a replacement created under the same pool connection budget.
+A reservation CAS/state transition excludes all shared admissions, waits for
+pending/in-flight/orphan/control operations to finish, then quiesces the shared
+writer and reader through an explicit acknowledged handoff. Do not race a raw
+read against the shared reader or merely test that the stream map is empty.
+Register cancellation before any blocking I/O. The exclusive receiver owns
+result/control/event envelope parsing until exact completion and an acknowledged
+return to the ordinary reader. Bounded event dispatch remains active without
+requiring destinations for row data. Holding an idle cursor holds one pool
+capacity unit and no unbounded spill. The same reservation is retained across
+on-demand pages and released only on terminal completion/Close; after a page,
+framing must be exact before another request is sent.
+
+Uncompressed v3/v4 requires no response-body lease. v5 verifies one segment
+before exposing it, retaining at most current input/output units within
+MaxTransformBytes. Consume across units without retaining a list or gathering
+rows/cells. A row succeeds only after all units containing its data have passed
+CRC and its own framing/type checks finish. TLS authenticates plaintext through
+crypto/tls; its copies remain separately measured. v3/v4 whole-frame LZ4/Snappy
+has no initial incremental transform and must fail with StreamCapabilityError
+before query submission. v5 raw/LZ4, raw v3/v4 and TLS variants are mandatory
+initial modes; rejecting a mandatory mode does not complete this feature.
+
+Defaults/positive StreamLimits bound metadata/control bytes before allocation,
+connection read-ahead, discard scratch and simultaneous transform storage.
+Existing frame/decompressed byte limits still bound total message work even
+without full-frame allocation; nesting/count and hash-indexed paging budgets
+remain mandatory. Store latest-page warnings/trace/custom payload under the
+metadata budget and aggregate only scalar counters across pages. The budget
+covers simultaneously retained current-page metadata/control plus old storage
+still live during replacement. Accumulate declared lengths within an envelope
+before allocation and reset accounting only after release, not merely on page
+transition; do not charge all pages against a lifetime byte total. Paging tokens
+and history retain their separate ProtocolLimits budgets. Plans and
+metadata allocations are separately bounded by metadata bytes/count/depth.
+No storage grows with response rows, skipped cell size or total payload bytes.
+Application output and explicitly seeded nested storage are accounted separately.
+
+Install the streaming receive target before writing and admit the Bound once.
+Snapshot options/profile once; disable inherited prefetch/speculation and reject
+explicit nonzero prefetch. Reuse canonical input spans for safe pre-output
+retry/reprepare, never invoke encoders again. Set OutputStarted before Reset or
+other destination writes; prohibit transparent replay afterward, including on a
+later page. The first terminal error survives Close and includes progress through
+StreamInfo. Close can race one NextInto, closes incomplete connections to unblock
+I/O, waits for all destination access and input writers, then releases admission
+and reservation exactly once. Context/session cancellation has the same storage
+boundary. Exact completed responses may return to the shared pool only through
+the acknowledged reader handoff; malformed/canceled/partly consumed connections
+are discarded and repaired through normal bounded reconnect policy.
+
+Agent 04's gate proves isolated reservation/read handoff, bounded segment
+validation, cancellation and actual read targets using injected readers. Agent
+07's gate proves complete RunStream flow, empty/nonterminal pages, metadata
+fences, delivered-row accounting, terminal failure, no replay after output and
+Bound.Close/Wait. Agents 08/09 supply deterministic read gates and live-server
+coverage; agents 11/12 preserve streaming boundaries during extraction; agent 13
+publishes examples and capability/lifetime documentation. Agents 14–17 must
+verify all streaming unit/race/fuzz/live/performance requirements alongside the
+174-test baseline, never substitute one for the other.
+
 ## Config and peripheral value shapes
 
 All slices/config objects are copied or validated as immutable descriptors at
@@ -1037,7 +1129,13 @@ Migration translations are mandatory:
    subcase assertions, actual successful exits and skips. Every baseline identity
    needs a real pass in at least one successful applicable final-tree lane; all
    mandatory lanes must run successfully with explicit fixture/version skips.
-7. **Performance gate:** save benchmark commands/environment/results and compare
+7. **Streaming receive gate:** RunStream and every initial supported mode pass
+   the feature contract's split-read, direct-final-range, nested-capacity, bounded
+   memory, integrity, first-row read-gate, exclusive reservation, cancellation,
+   no-replay and live-server tests. Memory/copy/latency evidence compares ordinary
+   Run/Row, buffered NextInto and RunStream with equivalent results. No whole
+   response/page/row/cell gather or hidden buffered fallback is accepted.
+8. **Performance gate:** save benchmark commands/environment/results and compare
    to the pinned pre-v2 baseline. Measure the cases below with allocation counters
    plus backing-identity/copy instrumentation. No passing benchmark excuses an
    observed forbidden copy; lower allocation alone is insufficient. Also verify
@@ -1053,6 +1151,7 @@ Migration translations are mandatory:
 | Scalar encode/decode, owned scalar arena | Zero per-scalar heap allocations; one serialization write; no standalone scalar payload buffers. |
 | Borrowed text/blob 0 B, 32 B, 4 KiB, 500 KiB | Zero payload-copy bytes at bind, uncompressed frame/segment assembly and decode, independent of input size. Descriptor/slab allocations reported separately. |
 | Typed row scalar/text/blob; fragmented cell | Zero per-cell heap allocations, including shared fragmented range descriptors; O(cells + spans) sequential descriptor work, zero flattened payload bytes. Row-owned dynamic indices and explicit iterator objects are reported separately. |
+| RunStream into preseeded byte/nested storage; raw v4, TLS and v5 raw/LZ4 | Direct read-target identity for raw v3/v4; bounded transform/read-ahead/discard/metadata memory independently of page, row, cell and segment counts; output storage reported separately. Record first-row latency, live bytes, copies, reads/syscalls, CPU/throughput and slow-consumer pool behavior. Compare equivalent Run/Row and buffered NextInto. |
 | NextInto into reused narrow/wide application rows; scalar/text/blob/container fields and split cells | Direct destination writes with no driver-owned complete-row temporary, zero variable-payload copy bytes, and identical leased receive backing. Report steady allocations against Next/Row; explicit MapRows callbacks and Clone/materialization costs are separate. |
 | Lazy list/map/tuple/UDT/vector traversal | No per-element payload copies or reflection; scalar iteration no per-element allocations. Explicit Collect/Clone measured separately. |
 | Dynamic Value row/collection access | No reflect/`any` destinations, no eager variable payload materialization; decoder schema plan reused. |

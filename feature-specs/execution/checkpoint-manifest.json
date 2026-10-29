@@ -1,0 +1,10 @@
+{
+  "checkpoint_commit": "661f169bb259308f4b2c8062afcf72e05bad1320",
+  "files": {
+    "plan.md": "d8c83a95ed7f13bd3a2f5c9febf75299f9d7aac81bb2db77da38a0c7c4184cc9",
+    "feature-specs/gocql-v2-api.md": "9ad2784e1d1dcb86702e36d3c5b3682449e7f4a1c532a3d0bd688e770ef1dfc1",
+    "feature-specs/gocql-v2-implementation.md": "095741070059e128d23702713df2f85f5f38eab402b19f4ce4366e3240518da4",
+    "feature-specs/gocql-v2-streaming-receive.md": "42e2068c4a6f30f14bc97ba826126e252a4e6f2c0c32424391987816557a3b9b",
+    "feature-specs/integration-baseline.json": "202f56dcd5009c0016d88a274690388689caa32ba0aa0c98ebaef166fdde2397"
+  }
+}

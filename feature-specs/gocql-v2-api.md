@@ -703,9 +703,9 @@ Session.Close.
 ### Caller-supplied result destinations
 
 This section decodes from received page storage. The separate
-[streaming receive feature draft](gocql-v2-streaming-receive.md) proposes
-incremental receive decoding into final caller storage; its streaming entry
-point and codec signatures are not settled by this NextInto contract.
+[streaming receive contract](gocql-v2-streaming-receive.md) specifies
+incremental receive decoding into final caller storage through the separate
+RunStream API below; this NextInto contract remains the buffered path.
 
 Status: required design addition; NextInto and DecodeInto remain pending
 implementation and verification. Applications define the row representation
@@ -799,6 +799,249 @@ closes all rows and fails if result columns exist; conditional writes use
 CASRows and consume every row, including multi-row conditional batches. CASRows
 handles an applied-only response and checked previous-value metadata; Previous
 is absent only if no previous columns were returned.
+
+## Streaming receive into final caller storage
+
+Status: normative implementation design, settled during execution preparation on
+2026-10-29. Implementation and acceptance evidence remain pending. This addition
+was not part of the preceding ten design review cycles. The detailed framing,
+ownership and acceptance rules are in
+[gocql-v2-streaming-receive.md](gocql-v2-streaming-receive.md).
+
+```go
+// B is the binding's buffered result type; R is the streaming destination type.
+func RunStream[B, R any](context.Context, *Session, *Bound[B], StreamRowDecoder[R], StreamOptions) (*RowStream[R], error)
+type RowStream[R any] struct { /* exclusive pull receiver, automatic paging */ }
+func (s *RowStream[R]) NextInto(*R) bool
+func (s *RowStream[R]) Err() error
+func (s *RowStream[R]) Close() error
+func (s *RowStream[R]) Columns() Columns
+func (s *RowStream[R]) Info() StreamInfo
+
+type StreamOptions struct {
+    Options Options
+    Limits StreamLimits
+}
+type StreamLimits struct {
+    MaxMetadataBytes int64
+    ReadAheadBytes int
+    DiscardBytes int
+    MaxTransformBytes int64
+}
+type StreamInfo struct {
+    Result Result
+    DeliveredRows int64
+    Pages int64
+    OutputStarted bool
+}
+
+type StreamRowDecoder[R any] interface {
+    Compile(Columns) (StreamRowPlan[R], error)
+}
+type StreamRowPlan[R any] interface {
+    Reset(*R)
+    DecodeInto(*StreamRowReader, *R) error
+}
+type StreamDecoder[T any] interface {
+    Compile(DataType) (StreamValuePlan[T], error)
+}
+type StreamValuePlan[T any] interface {
+    Reset(*T)
+    DecodeInto(*StreamValueReader, *T) error
+}
+type StreamOutputField[R any] struct { /* immutable checked field declaration */ }
+func StreamColumn[R, V any](string, StreamDecoder[V], func(*R) *V) StreamOutputField[R]
+func StreamColumnAt[R, V any](int, StreamDecoder[V], func(*R) *V) StreamOutputField[R]
+func StreamRow[R any](reset func(*R), fields ...StreamOutputField[R]) StreamRowDecoder[R]
+func StreamOneColumn[T any](StreamDecoder[T]) StreamRowDecoder[T]
+
+// Readers are scoped mutable limited readers, never retained-byte views.
+type StreamRowReader struct { /* checked count and column cursor */ }
+func ReadStreamColumn[T any](*StreamRowReader, StreamValuePlan[T], *T) error
+func (r *StreamRowReader) Context() context.Context
+func (r *StreamRowReader) SkipColumn() error
+func (r *StreamRowReader) RequireEnd() error
+
+type StreamValueReader struct { /* checked type/state and exact body boundary */ }
+func (r *StreamValueReader) Context() context.Context
+func (r *StreamValueReader) Type() DataType
+func (r *StreamValueReader) State() CellState
+func (r *StreamValueReader) Remaining() int64
+func (r *StreamValueReader) Read([]byte) (int, error)
+func (r *StreamValueReader) Uint8() (uint8, error)
+func (r *StreamValueReader) Uint16() (uint16, error)
+func (r *StreamValueReader) Uint32() (uint32, error)
+func (r *StreamValueReader) Uint64() (uint64, error)
+func (r *StreamValueReader) Child(DataType, func(*StreamValueReader) error) error
+func (r *StreamValueReader) Skip() error
+func (r *StreamValueReader) RequireEnd() error
+
+var StreamBool StreamDecoder[bool]
+var StreamInt8 StreamDecoder[int8]
+var StreamInt16 StreamDecoder[int16]
+var StreamInt32 StreamDecoder[int32]
+var StreamInt64 StreamDecoder[int64]
+var StreamFloat32 StreamDecoder[float32]
+var StreamFloat64 StreamDecoder[float64]
+var StreamCounter StreamDecoder[Counter]
+var StreamDate StreamDecoder[Date]
+var StreamTime StreamDecoder[TimeOfDay]
+var StreamTimestamp StreamDecoder[Timestamp]
+var StreamDuration StreamDecoder[Duration]
+var StreamUUID StreamDecoder[UUID]
+var StreamTimeUUID StreamDecoder[TimeUUID]
+var StreamInet StreamDecoder[netip.Addr]
+var StreamText StreamDecoder[[]byte] // text/varchar; incremental UTF-8 check
+var StreamASCII StreamDecoder[[]byte]
+var StreamBlob StreamDecoder[[]byte]
+var StreamVarint StreamDecoder[[]byte] // exact signed two's-complement bytes
+// Decimal's unscaled bytes have the same caller-capacity rule.
+type StreamDecimalValue struct { Scale int32; Unscaled []byte }
+var StreamDecimal StreamDecoder[StreamDecimalValue]
+func StreamNullable[T any](StreamDecoder[T]) StreamDecoder[Nullable[T]]
+func StreamEmpty[T any](StreamDecoder[T]) StreamDecoder[EmptyValueOf[T]]
+func StreamList[T any](StreamDecoder[T]) StreamDecoder[[]T]
+func StreamSet[T any](StreamDecoder[T]) StreamDecoder[[]T]
+type StreamMapEntry[K, V any] struct { Key K; Value V }
+func StreamMap[K, V any](StreamDecoder[K], StreamDecoder[V]) StreamDecoder[[]StreamMapEntry[K, V]]
+func StreamVector[T any](StreamDecoder[T]) StreamDecoder[[]T]
+func StreamTuple[R any](StreamRowDecoder[R]) StreamDecoder[R]
+func StreamUDT[R any](UDTOptions, StreamRowDecoder[R]) StreamDecoder[R]
+// Explicit final encoded storage for dynamic/custom representations.
+type StreamEncodedValue struct { Type DataType; State CellState; Bytes []byte }
+var StreamEncoded StreamDecoder[StreamEncodedValue]
+
+type StreamCapabilityError struct { Protocol int; Compression Compression; Reason string }
+type StreamCapacityError struct { Path string; Required, Available int64 }
+func (e *StreamCapabilityError) Error() string
+func (e *StreamCapacityError) Error() string
+```
+
+StreamOutputField[R] is opaque, as for OutputField[R]. Unmapped physical columns
+are skipped with recursive structural/type validation; no ignore field is
+needed in StreamRow.
+Compile validates actual metadata recursively, including children of null and
+empty values, and returns immutable plans safe for independent cursors. Plans
+capture neither readers nor destinations. Scalar rules match the buffered
+codecs, including exact widths, UTF-8/ASCII, numeric ranges, null/unset and
+logical Empty. StreamEmpty accepts exactly the types accepted by EmptyCodec.
+No adapter may run an arbitrary buffered Decoder by accumulating its input.
+StreamEncoded explicitly writes the entire encoded body into caller storage,
+then exposes that caller-owned representation; nested framing/type validation
+runs incrementally and does not allocate a complete cell in driver storage.
+
+A streaming execution reuses a prepared or unprepared binding's encoded input,
+routing, host IDs, metadata revisions and Close/Wait admission. B and R may
+differ. The original Statement.Rows remains relevant to ordinary execution and
+Prepare validation, but is never invoked to decode a streaming response. Actual
+streaming response metadata selects this call's StreamRowPlan independently of
+the buffered plan; cache reuse is scoped to this decoder and exact metadata.
+NoRows still cannot be used to describe nonzero physical result columns.
+Applications can use an ordinary typed or DynamicRows decoder at preparation
+and a separate StreamRow decoder for streaming storage.
+
+RunStream installs the stream receiver before sending and returns after checked
+response headers/metadata and bounded integrity staging, without waiting for the
+complete page. It does not consume row payload waiting for an application
+destination. NextInto reads one row into that destination and performs automatic
+paging on demand, including empty-page progress checks. There is no Next, Row,
+Clone or Retain: output already belongs to the caller and no PageLease is needed.
+Columns returns current-page checked metadata. Info counters are cumulative;
+its Result warnings, trace IDs and custom payload describe only the latest
+page/attempt, bounded by MaxMetadataBytes, rather than accumulating per-page
+payloads forever. OutputStarted becomes true before the first decoder operation
+that can modify a destination, including Reset; it never becomes false again.
+DeliveredRows increments only after complete checked rows. Pages counts checked
+response pages, including empty pages. Errors retain this information through
+Info even when RunStream has already returned a cursor. An error before cursor
+construction returns normally through RunStream's error result.
+
+Reset is called on a non-nil destination before each active NextInto attempt;
+terminal/exhausted calls return false without touching it. Built-in value Reset
+clears logical values while preserving byte/element slice capacity and nested
+storage. StreamRow requires a non-nil application reset callback for unmapped
+Go state, then resets mapped fields through child plans. The callback must
+preserve mapped storage. A custom plan has the same explicit responsibility;
+there is no promise to zero an arbitrary R while preserving its unknown storage.
+Unlike buffered NextInto, false does not clear the whole destination. After a
+failed attempt its contents may be partial and are invalid. Nil on an active
+cursor is terminal ValidationError before row consumption. A terminal cursor
+preserves its first error; exhaustion alone has nil Err.
+
+Text/blob output reslices the supplied array without growing it. A declared
+length beyond capacity yields StreamCapacityError before any body bytes of
+that value are written. A null nullable value resets its logical Value and Valid
+while preserving Value's capacity; an empty present value has Valid true and
+zero length. For slices of nested elements, count/dimension must fit cap(dst)
+before element bodies are read; decoding reslices the existing backing and
+resets each element immediately before use, preserving its seeded child storage.
+Map entries similarly preserve key/value storage. The caller must preseed each
+nested destination it wants to reuse, including slots beyond its current length.
+Tuple and UDT builders reuse the checked positional/name/evolution rules and
+write into application fields; no driver-owned complete-row temporary is used.
+Reader Child owns nested length boundaries, and RequireEnd rejects trailing
+bytes. Read has io.Reader semantics bounded by Remaining and may write directly
+to final caller ranges; custom codecs must honor the same no-gather/capacity and
+lifetime rules. Custom callbacks/plans must return promptly on cancellation
+using the reader context and must not start asynchronous destination accesses;
+Close waits for active custom calls rather than returning with a writable
+destination. Skip and SkipColumn validate discarded values with bounded
+scratch, including nested structure, rather than trusting lengths alone.
+
+The mode disables inherited prefetch and speculation regardless of profile
+defaults. Explicit nonzero Options.Prefetch fails validation before submission;
+zero or inherited Prefetch is accepted. Retry and reprepare are permitted only
+before OutputStarted and any delivered row, under the ordinary safe-request
+rules. A row decoder/reset error or later I/O failure is terminal, with no
+transparent replay. Bound.Close/Wait covers the cursor through its final writer
+and connection cleanup; streamed output does not retain the binding.
+
+StreamLimits zero fields select defaults: 1 MiB simultaneously retained
+metadata/control bytes,
+32 KiB connection read-ahead, 32 KiB discard scratch, and 262,158 transform bytes
+(two maximum 131,071-byte v5 units plus 16 bytes of framing). Negative/overflowing
+values fail validation. Positive values are upper bounds, never a reason to
+grow with a response. Limits are copied at admission; lower ProtocolLimits still
+apply to total frame/decompressed work, nesting, counts and paging history.
+MaxMetadataBytes bounds simultaneously retained current-page metadata/control,
+including old data still live while replacement metadata is allocated or
+installed. Declared lengths accumulate within an envelope and are checked before
+allocation; accounting resets only after the corresponding storage is released.
+It is not a lifetime/page-total limit. Paging tokens and retained continuation
+history use their separate ProtocolLimits budgets rather than this counter.
+MaxTransformBytes covers simultaneous compressed input and plaintext output plus
+unit framing; oversized units fail before allocation. No list of consumed units
+is retained. Raw v3/v4 does not allocate transform units. Metadata compilation
+and paging control/history have their own explicit limits; caller output is
+accounted for separately.
+
+Initial supported modes are native v3/v4 without frame compression, with or
+without TLS, and native v5 raw or LZ4 segments, with or without TLS. Validate a
+candidate connection's negotiated mode and the decoder's metadata before request
+submission when known; otherwise select only eligible candidates and validate
+actual response metadata before output. Unsupported protocol/compression or
+custom mapping combinations produce StreamCapabilityError, never buffered
+fallback. v3/v4 Snappy/LZ4 frame compression is rejected before sending the query.
+A pool containing only incompatible connections fails promptly; the driver does
+not silently change negotiated compression or create unlimited connections.
+
+The cursor reserves one connection exclusively from the configured pool budget.
+A connection is eligible only after its shared writer/read loop is quiescent,
+all pending/in-flight/orphan/control operations are absent, and read ownership
+has transferred atomically to the stream receiver. Pool acquisition honors
+context, routing and strict host/shard targets. Idle cursors retain that bounded
+capacity; other work waits or uses other pool connections. Control/event frames
+encountered during streaming use bounded nonblocking dispatch and cannot steal
+result bytes. No background operation writes caller storage between NextInto
+calls. Close is idempotent, may interrupt NextInto, closes an incomplete
+connection to unblock reads, and waits for destination access and input writers
+to stop before returning. Context cancellation provides the same boundary when
+the active NextInto returns. Concurrent NextInto calls are invalid and rejected
+before the second call accesses storage. Exact response completion permits pool
+reuse only after the shared reader resumes at a proven protocol boundary; early
+close, capacity failure, malformed framing, timeout or cancellation discards the
+reserved connection and schedules ordinary bounded pool repair. Session.Close
+also interrupts active streams; already written caller output remains valid.
 
 ## Options, profiles, batches and results
 

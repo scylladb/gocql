@@ -3,9 +3,12 @@
 Status: API and architecture reconciled through ten design review-and-fix cycles
 in this session: 33 verified findings fixed, with no unresolved findings from
 those cycles. See the [individual design review
-reports](feature-specs/reviews/go-v2-design/). Implementation remains
-stopped pending authorization to resume. Existing edits are preserved; design
-review does not claim the new driver is implemented or verified. Additional
+reports](feature-specs/reviews/go-v2-design/). The user authorized implementation
+to resume on 2026-10-29, with preparation followed by fresh agents for each
+sequential task. Existing edits are preserved in checkpoint `661f169`; design
+review does not claim the new driver is implemented or verified. Streaming
+API/task reconciliation below is a new preparation addition, outside the
+historical review cycles. Additional
 hot-path design reviews and fixes are recorded in the [hot-path review
 ledger](feature-specs/reviews/go-v2-hot-path/INDEX.md); these are design contracts,
 not measured performance results.
@@ -24,8 +27,8 @@ The driver must provide:
   result payloads remaining in leased receive buffers.
 - [Streaming receive decoding into final caller storage](feature-specs/gocql-v2-streaming-receive.md),
   without complete response/page buffering; bounded protocol, integrity and
-  transform staging remains explicit. API reconciliation and implementation are
-  pending as specified in the feature draft.
+  transform staging remains explicit. The API and sequential ownership are
+  reconciled; implementation and acceptance evidence remain pending.
 - Token, replica, shard, tablet, and LWT-aware routing; connection pools; topology
   and schema metadata; a control connection; events; retry and execution policies.
 - Cassandra and Scylla native-protocol support, compression, TLS, authentication,
@@ -193,13 +196,27 @@ After success, Row and Clone read the current supplied destination; the pager
 may hold its pointer only until the next advance or Close. See the detailed
 API contract for mixed iteration, failure and concurrency rules.
 
-The separate [streaming receive feature draft](feature-specs/gocql-v2-streaming-receive.md)
-proposes decoding as bytes arrive into final caller storage without assembling
-a complete response/page. It requires a streaming codec/transport path, bounded
-integrity/transform staging and explicit connection reservation. Buffered
-NextInto alone does not provide it. Public signatures and implementation-task
-assignments must be reconciled before implementation; the draft does not claim
-inclusion in previously reviewed/completed design gates.
+The separate [streaming receive contract](feature-specs/gocql-v2-streaming-receive.md)
+requires decoding as bytes arrive into final caller storage without assembling
+a complete response/page. Execution preparation settled the separate public API:
+
+```go
+func RunStream[B, R any](context.Context, *Session, *Bound[B], StreamRowDecoder[R], StreamOptions) (*RowStream[R], error)
+func (s *RowStream[R]) NextInto(*R) bool
+func (s *RowStream[R]) Err() error
+func (s *RowStream[R]) Close() error
+```
+
+StreamRowDecoder compiles an immutable streaming plan with Reset/DecodeInto;
+explicit scalar/text/blob/nested builders target preseeded caller storage and
+return typed capacity errors without implicit growth. Raw v3/v4 and v5 raw/LZ4,
+with optional TLS, are required; v3/v4 frame compression fails before submission.
+The cursor holds one exclusive configured pool capacity unit across pull-driven
+pages. Bounded metadata/read-ahead/discard/transform budgets, cancellation-safe
+read ownership and no replay after output are normative. Buffered NextInto alone
+does not provide it. The detailed API and task gates are settled in the feature
+and API contracts; this addition was outside the historical review cycles and
+remains unimplemented/unverified.
 
 ### Codecs and row composition
 
@@ -538,10 +555,11 @@ not completion of the feature.
 
 ### Current gaps to address first
 
-- [Streaming receive](feature-specs/gocql-v2-streaming-receive.md) needs public
-  streaming codec/API reconciliation, assignment to the sequential implementation
-  tasks, an exclusive incremental receive path, and its memory, ownership and
-  direct-read acceptance checks. Buffered NextInto does not complete this feature.
+- [Streaming receive](feature-specs/gocql-v2-streaming-receive.md) has settled
+  API, budgets and task assignments. Implement its incremental primitives/codecs,
+  exclusive receive and RunStream in agents 01/02/04/07; complete all memory,
+  ownership, direct-read, live-server and performance acceptance checks. Buffered
+  NextInto does not complete this feature.
 - `TestPagingWithBind` failed in a parallel race run with “missing matching
   metadata”; investigate concurrent schema generation versus retained page metadata.
 - Scylla `ConnectionsPerHost` override is not correctly applied by the picker.
@@ -620,7 +638,7 @@ contention, write/TLS amplification and retained-memory evidence as applicable.
 | Original baseline | Every one of the 174 original top-level tests has an observed pass across the old-driver/corrected-harness baseline lanes. This is not v2 completion. |
 | Typed foundations | Wire/codec/compression/hash components implemented; focused race, golden, boundary and allocation tests passed. |
 | Caller-supplied result destination | Planned: RowPlan.DecodeInto plus Rows/Page.NextInto; direct writes, segmented backing identity, reuse and lifetime tests, and allocation benchmarks remain pending. |
-| Streaming receive into final caller storage | Feature draft recorded separately; API/task reconciliation, exclusive incremental receive path and bounded-memory/direct-read evidence remain pending. |
+| Streaming receive into final caller storage | Public API, bounded budgets and sequential assignments settled during execution preparation; implementation, exclusive read ownership and all bounded-memory/direct-read/live/performance evidence remain pending. |
 | Typed runtime smoke | Real v4 raw/Snappy/LZ4/TLS and Cassandra v5 LZ4/TLS execution passed, including large blobs and paging/leases. |
 | Main 74 tests | Rewritten; stable Scylla run: 66 pass, 8 protocol/distribution skips. Parallel race failure remains; Cassandra v5 coverage pending. |
 | Serialization 33 tests | Rewritten; all 33 passed on the development Scylla fixture, including binary fixtures and nested/vector cases. |
@@ -642,7 +660,7 @@ depth/function-overload changes remain unverified until rerun.
 - [Sixty-round review ledger](feature-specs/reviews/INDEX.md)
 - [Detailed proposed public API](feature-specs/gocql-v2-api.md)
 - [Detailed implementation contracts](feature-specs/gocql-v2-implementation.md)
-- [Streaming receive feature draft](feature-specs/gocql-v2-streaming-receive.md)
+- [Streaming receive contract](feature-specs/gocql-v2-streaming-receive.md)
 - [Hot-path design review cycles](feature-specs/reviews/go-v2-hot-path/INDEX.md)
 - [Current hot-path audit](feature-specs/evidence/go-hot-path-audit.md)
 - [Transport audit](feature-specs/evidence/go-transport-audit.md)
@@ -655,11 +673,16 @@ its acceptance criteria.
 
 ## 11. Agent task split and execution order
 
-Implementation execution remains stopped pending authorization to resume. Design
-reconciliation was completed in this session on `v2-design-reconciliation`
-through ten sequential review-and-fix cycles. The [individual review
-reports](feature-specs/reviews/go-v2-design/) record the results. These design
-reviews do not authorize implementation agents, driver tests, or fixtures.
+The user authorized preparation and sequential implementation on 2026-10-29.
+The complete tracked/untracked workspace is preserved in checkpoint `661f169`
+on `v2-execution-checkpoint`, with ignored/generated files additionally retained
+in the preparation archive recorded in the execution ledger. Design
+reconciliation previously completed on `v2-design-reconciliation` through ten
+review-and-fix cycles; the [individual review
+reports](feature-specs/reviews/go-v2-design/) retain those historical results.
+The streaming signatures, budgets and task assignments settled during execution
+preparation are new design additions and require their own implementation and
+independent verification; earlier review results do not cover these additions.
 
 Use **17 separate implementation agents, executed sequentially in the order
 below**. Each agent owns its assigned task and works on its own `v2-...` branch,
@@ -673,23 +696,23 @@ evidence. Each subsequent branch must include the accepted predecessor's work.
 
 | Order | Branch | Agent task and completion gate |
 | --- | --- | --- |
-| 1 | `v2-01-wire-protocol` | Stabilize wire spans, leases, compression, hashing, segmentation, and protocol validation. Verify limits, malformed input, fragmented frames, copy identity, cancellation, and release behavior. |
-| 2 | `v2-02-codecs` | Complete scalar, collection, tuple/UDT, vector, dynamic-value, and row codecs, including required RowPlan.DecodeInto for direct caller-destination writes. Verify type checking, null/unset/empty distinctions, independent cloning, segmented decoding, owned/borrowed encoding, destination reuse and focused allocation/backing-identity checks. |
-| 3 | `v2-03-prepared-paging` | Fix prepared-cache generations and the paging "missing matching metadata" failure. Add Rows/Page.NextInto with mixed iteration, destination clearing, errors and page-retention semantics. Cover host-specific IDs, retained page metadata, reprepare, retries without re-encoding, and continuation-state handling. |
-| 4 | `v2-04-transport-pools` | Verify TLS shard dialing; fix connection overrides, multiple connections per shard, source ports, NAT fallback, keepalive, orphan bounds, reconnects, and pool states. |
-| 5 | `v2-05-metadata-control` | Replace legacy topology/control/client-route queries with typed queries. Fix discovery-disabled identities, refresh/drop races, partial refreshes, schema agreement, event overflow, and subscriber isolation. |
-| 6 | `v2-06-tablet-routing` | Complete tablet v1/v2 and leader-aware routing, including hints, unknown ranges, moves, shard replicas, locality, and deterministic LWT routing. Required routing features must actually work. |
-| 7 | `v2-07-execution-config` | Audit configuration and execution together: snapshots, explicit overrides, profiles, retries, speculation, batch admission, cancellation, close/wait, and observers. Every option must work or fail explicitly; LWT speculation is prohibited. Explicit rejection does not satisfy implementation of a required feature. |
-| 8 | `v2-08-fixture-harness` | Repair the cloud test logger; implement Cassandra Java aggregate and injected-server fixtures. Script provisioning, unique keyspaces, exclusive lane ownership, and CCM startup/test/shutdown in one live process. |
-| 9 | `v2-09-integration-migration` | Finish client-route migration and reconcile all 174 original tests with their translated assertions and fixture requirements. Verify pending session/batch/tracing, schema/routing, network/cloud, and protocol-specific coverage. |
-| 10 | `v2-10-remove-legacy` | Migrate remaining callers, helpers, examples, cloud, tracing, and supporting packages. Remove the old public API and unused legacy execution/serialization paths. Pass export, call-site, and build-tag audits. |
-| 11 | `v2-11-extract-foundations` | Extract shared types, wire/compression primitives, codecs, model contracts, and protocol into the target internal packages. Preserve behavior and enforce dependency rules. |
-| 12 | `v2-12-extract-runtime` | Extract transport, pools, metadata, routing, cluster orchestration, and execution in dependency order. Introduce focused testkit hooks; eliminate import cycles. |
-| 13 | `v2-13-public-module-docs` | Finalize the public facade and scyllacloud, consolidate the benchmark module, and update documentation/examples. Verify module paths and ensure facades introduce no second serializer or payload conversion. |
-| 14 | `v2-14-full-matrix` | Run the complete verification matrix on one pinned tree: Scylla stable/development, Cassandra v4/v5, compression, TLS/cloud, authentication, Unix/CCM, injected failures, race, and fuzz coverage. Record actual outcomes per baseline test. |
-| 15 | `v2-15-performance` | Measure codecs, fragmented containers, routing, transport, and end-to-end execution across compression/TLS modes. Verify backing-storage identity and copy boundaries as well as allocations; fix violations and rerun affected checks. |
-| 16 | `v2-16-independent-review` | Independently review ownership, cancellation, recovery, metadata generations, dependency boundaries, and requirement completeness. Resolve findings and verify fixes. |
-| 17 | `v2-17-release-verification` | Rerun the required matrix on the final tree after performance/review fixes. Complete the requirement audit and 174-test evidence ledger, with explicit skips and outstanding limitations. |
+| 1 | `v2-01-wire-protocol` | Stabilize wire spans, leases, compression, hashing, segmentation, and protocol validation. Verify limits, malformed input, fragmented frames, copy identity, cancellation, and release behavior. Also supply checked incremental envelope/cell/child framing and bounded v5 integrity-unit primitives for streaming; cover split reads and total-work limits without complete-response accumulation. |
+| 2 | `v2-02-codecs` | Complete scalar, collection, tuple/UDT, vector, dynamic-value, and row codecs, including required RowPlan.DecodeInto for direct caller-destination writes. Verify type checking, null/unset/empty distinctions, independent cloning, segmented decoding, owned/borrowed encoding, destination reuse and focused allocation/backing-identity checks. Implement the separate StreamRowDecoder/StreamDecoder plans and scalar/text/blob/numeric/null/empty/nested/vector/tuple/UDT/encoded-output builders; verify seeded capacity/backing reuse, direct writes and explicit custom incremental codecs. |
+| 3 | `v2-03-prepared-paging` | Fix prepared-cache generations and the paging "missing matching metadata" failure. Add Rows/Page.NextInto with mixed iteration, destination clearing, errors and page-retention semantics. Cover host-specific IDs, retained page metadata, reprepare, retries without re-encoding, and continuation-state handling. Share exact metadata/schema revision fences and hash-indexed continuation/history primitives with the future streaming pager; preserve buffered and streaming plan isolation. |
+| 4 | `v2-04-transport-pools` | Verify TLS shard dialing; fix connection overrides, multiple connections per shard, source ports, NAT fallback, keepalive, orphan bounds, reconnects, and pool states. Implement exclusive pool-budgeted streaming reservation with acknowledged shared-reader/writer handoff, raw final-range reads, bounded v5 raw/LZ4 units, events/control, cancellation and safe discard/reuse. No whole-response gather or unsupported mandatory mode. |
+| 5 | `v2-05-metadata-control` | Replace legacy topology/control/client-route queries with typed queries. Fix discovery-disabled identities, refresh/drop races, partial refreshes, schema agreement, event overflow, and subscriber isolation. Include bounded nonblocking streaming control/event dispatch and metadata generation fences. |
+| 6 | `v2-06-tablet-routing` | Complete tablet v1/v2 and leader-aware routing, including hints, unknown ranges, moves, shard replicas, locality, and deterministic LWT routing. Required routing features must actually work. Streaming reservations must preserve strict host/shard/leader targeting within configured capacity. |
+| 7 | `v2-07-execution-config` | Audit configuration and execution together: snapshots, explicit overrides, profiles, retries, speculation, batch admission, cancellation, close/wait, and observers. Every option must work or fail explicitly; LWT speculation is prohibited. Explicit rejection does not satisfy implementation of a required feature. Complete RunStream admission, capability/budget checks, independent streaming metadata plans, on-demand paging, progress info, pre-output safe retries and no replay after output; disable streaming prefetch/speculation and prove destination access stops before Close/cancel returns. |
+| 8 | `v2-08-fixture-harness` | Repair the cloud test logger; implement Cassandra Java aggregate and injected-server fixtures. Script provisioning, unique keyspaces, exclusive lane ownership, and CCM startup/test/shutdown in one live process. Add deterministic first-row gates, split/corrupt/interrupted stream fixtures and raw/TLS/v5 streaming setup. |
+| 9 | `v2-09-integration-migration` | Finish client-route migration and reconcile all 174 original tests with their translated assertions and fixture requirements. Verify pending session/batch/tracing, schema/routing, network/cloud, and protocol-specific coverage. Add real streaming large/nested/empty/paged/metadata-change/early-close coverage in raw v4, TLS and Cassandra v5 raw/LZ4 while preserving all baseline coverage. |
+| 10 | `v2-10-remove-legacy` | Migrate remaining callers, helpers, examples, cloud, tracing, and supporting packages. Remove the old public API and unused legacy execution/serialization paths. Pass export, call-site, and build-tag audits. Audit streaming paths for forbidden buffered-decoder adapters, reflection and gathers. |
+| 11 | `v2-11-extract-foundations` | Extract shared types, wire/compression primitives, codecs, model contracts, and protocol into the target internal packages. Preserve behavior and enforce dependency rules. Extract incremental readers and streaming plans/model contracts without full-cell/row/page storage. |
+| 12 | `v2-12-extract-runtime` | Extract transport, pools, metadata, routing, cluster orchestration, and execution in dependency order. Introduce focused testkit hooks; eliminate import cycles. Preserve exclusive streaming reservation/read ownership, bounded transforms and paging execution across extraction. |
+| 13 | `v2-13-public-module-docs` | Finalize the public facade and scyllacloud, consolidate the benchmark module, and update documentation/examples. Verify module paths and ensure facades introduce no second serializer or payload conversion. Publish working RunStream examples including seeded nested storage, Reset/capacity rules, supported modes and pool/cancellation behavior. |
+| 14 | `v2-14-full-matrix` | Run the complete verification matrix on one pinned tree: Scylla stable/development, Cassandra v4/v5, compression, TLS/cloud, authentication, Unix/CCM, injected failures, race, and fuzz coverage. Record actual outcomes per baseline test. Include every streaming split/race/fuzz, first-row gate, bounded-memory, integrity, required live-mode and interruption acceptance case. |
+| 15 | `v2-15-performance` | Measure codecs, fragmented containers, routing, transport, and end-to-end execution across compression/TLS modes. Verify backing-storage identity and copy boundaries as well as allocations; fix violations and rerun affected checks. Compare equivalent Run/Row, buffered NextInto and RunStream; record direct-read identity, live working memory, copy categories, first-row latency, read/syscall counts, CPU/throughput and independent page/row/cell/segment/slow-consumer scaling. |
+| 16 | `v2-16-independent-review` | Independently review ownership, cancellation, recovery, metadata generations, dependency boundaries, and requirement completeness. Resolve findings and verify fixes. Independently review streaming no-gather/budget/integrity/no-replay and reservation/destination lifetime invariants. |
+| 17 | `v2-17-release-verification` | Rerun the required matrix on the final tree after performance/review fixes. Complete the requirement audit and 174-test evidence ledger, with explicit skips and outstanding limitations. Prove every streaming acceptance criterion again on the final tree alongside all baseline evidence. |
 
 ### Ownership and handoffs
 
@@ -704,6 +727,7 @@ Every handoff must include:
 - Checks run, exact commands, outcomes, and retained evidence locations.
 - The completion-gate assessment and any unresolved findings or limitations.
 
+The streaming ownership table in the feature contract is part of these gates.
 An unmet completion gate blocks the next agent. Fix the current task before
 advancing. If a later agent exposes a regression in earlier work, resolve it and
 rerun affected checks before handing off. Final release verification must cover
