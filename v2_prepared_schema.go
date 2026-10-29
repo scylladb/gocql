@@ -199,6 +199,9 @@ func (s *Session) updatePreparedSchemaSnapshot(old, next *MetadataSnapshot) {
 	}
 	for n := range names {
 		a, b := old.keyspaces[n], next.keyspaces[n]
+		if a == b {
+			continue
+		}
 		if a == nil || b == nil {
 			if a != b {
 				s.invalidatePreparedSchema(Event{Keyspace: n, Target: "KEYSPACE"})

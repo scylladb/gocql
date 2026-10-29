@@ -533,7 +533,8 @@ func (c *Conn) dispatchEventOwned(event frame, release func()) error {
 		c.eventDone = make(chan struct{})
 		done := c.eventDone
 		c.mu.Unlock()
-		go func() {
+		peripheral := c.session.peripheral()
+		if !peripheral.startWorker(func() {
 			defer close(done)
 			defer func() {
 				c.eventMu.Lock()
@@ -552,17 +553,25 @@ func (c *Conn) dispatchEventOwned(event frame, release func()) error {
 			}()
 			for {
 				select {
+				case <-peripheral.done:
+					return
 				case <-c.ctx.Done():
 					return
 				case e := <-c.eventQueue:
-					c.session.handleEvent(e.value)
-					if e.release != nil {
+					retained := c.session.handleEventOwnedContext(c.ctx, e.value, e.release)
+					if !retained && e.release != nil {
 						e.release()
 					}
 				}
 			}
-		}()
+		}) {
+			c.eventsClosed = true
+			close(done)
+		}
 	})
+	if c.eventsClosed {
+		return reject(ErrClosed)
+	}
 	select {
 	case c.eventQueue <- connEvent{event, release}:
 		return nil

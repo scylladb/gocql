@@ -1,0 +1,595 @@
+{
+  "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence",
+  "files": [
+    {
+      "source": "/tmp/step05-handoff-native-runner.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-handoff-native-runner.log",
+      "sha256": "f29b78469813adcb926791061c0d73d4ea0f7e73bb20b3ae846224182a688cfe"
+    },
+    {
+      "source": "/tmp/step05-handoff-checks-runner.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-handoff-checks-runner.log",
+      "sha256": "f420b3c9c5f2a6b9f1e097e64ec1b5e1c440934fd380b83a6d3ae5106bee9478"
+    },
+    {
+      "source": "/tmp/step05-gate-native-runner.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/1793317864932361252-step05-gate-native-runner.log",
+      "sha256": "be4a806f7795e574b8e137b00c63b1a98c243e16f352fca79bb2b9052c72fb16"
+    },
+    {
+      "source": "/tmp/step05-gate-checks-runner.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-gate-checks-runner.log",
+      "sha256": "eca59018be55b19dfdcf2c22561dab3acddb74971107550061251ce0089ba2b8"
+    },
+    {
+      "source": "/tmp/step05-publication-overflow-focused.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-publication-overflow-focused.log",
+      "sha256": "38d99845b7423ce26b61ac92a5469e667aa29c51b0512f4e297911e90a0a3b6a"
+    },
+    {
+      "source": "/tmp/step05-acceptance-native-runner.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-acceptance-native-runner.log",
+      "sha256": "932c775271ce2ca70aaa1558cb6b18be537f250ab227739f9cb67a6d79391405"
+    },
+    {
+      "source": "/tmp/step05-acceptance-checks-runner.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-acceptance-checks-runner.log",
+      "sha256": "5a9671a0d59ad0654e36a1c6db0142ebfcaa75f5818d0d4734ae868e7c52b85e"
+    },
+    {
+      "source": "/tmp/step05-last-gate-focused.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-last-gate-focused.log",
+      "sha256": "0d6808b0db8559b38da5c5783809ddd2f2b9b13a5cd9c14ba057c13305f0770c"
+    },
+    {
+      "source": "/tmp/step05-verification-native-runner.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-verification-native-runner.log",
+      "sha256": "f7145cfa51ca6e28a1ef731bcdf4bc8a652d549997f2549215e21ffd019360f9"
+    },
+    {
+      "source": "/tmp/step05-verification-checks-runner.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-verification-checks-runner.log",
+      "sha256": "803dd5c954f1a1c662a223535787e7a1edee47d4e6afd2445f764192dbb63ade"
+    },
+    {
+      "source": "/tmp/step05-publication-barrier.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-publication-barrier.log",
+      "sha256": "8410586511a991a7ed45249dd512ea40cd0965ea002baf980c43df98b6090b7d"
+    },
+    {
+      "source": "/tmp/step05-route-epoch-final.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-route-epoch-final.log",
+      "sha256": "d213b05d55001c38309962b8dbf61bfb5348297d26fc18399009717b05763bfb"
+    },
+    {
+      "source": "/tmp/step05-final-native-runner.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-final-native-runner.log",
+      "sha256": "78426cb6f42a515f7f7cfcb1d4f01eb0fcff03057500bbda90bd8784711dd7cd"
+    },
+    {
+      "source": "/tmp/step05-final-checks-runner.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-final-checks-runner.log",
+      "sha256": "b1bbbba73c7400fe0d3820ef21c1f92907ef00da2cc3468206c99a1c83481b4f"
+    },
+    {
+      "source": "/tmp/step05-owned-events-final-focused.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-owned-events-final-focused.log",
+      "sha256": "2a4cc2fad9474687e52fbf91eafea58cbecd2ed2b1a1d0a0f15dd345b23bf615"
+    },
+    {
+      "source": "/tmp/step05-owned-events2.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-owned-events2.log",
+      "sha256": "75150a1c0de66936fbde993b424c9012ebb14dfe1043b6ff675ec7ebba676cbe"
+    },
+    {
+      "source": "/tmp/step05-owned-events-initial.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-owned-events-initial.log",
+      "sha256": "aefa17ddf6bfdffd078e925918291d12c9e854746471335424c891051e2d39fb"
+    },
+    {
+      "source": "/tmp/step05-final-audit-focused.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-final-audit-focused.log",
+      "sha256": "6b079d0be2ef8cd9d27c39996ea8cb8d10af31fac102db805b9cac0d1a663a68"
+    },
+    {
+      "source": "/tmp/step05-cassandra-native-runner7.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-cassandra-native-runner7.log",
+      "sha256": "17148bea901f9c79378bda4b3d3af05e9c51ac4ebd6eecb144053be783de03f4"
+    },
+    {
+      "source": "/tmp/step05-cassandra-native-runner6.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-cassandra-native-runner6.log",
+      "sha256": "a2ef2d56ed5679ab5f25ae99af8bbe73cfecfb1ec98b4a216dd0a281de74604f"
+    },
+    {
+      "source": "/tmp/step05-cassandra-native-runner5.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-cassandra-native-runner5.log",
+      "sha256": "8a5db7fab1ee911f7c7b2d852a28168ad028eff77a9b36c0cd6851af3a5f6b15"
+    },
+    {
+      "source": "/tmp/step05-release-checks-runner.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-release-checks-runner.log",
+      "sha256": "2d18bbd2078e667f8802dbf44055122375a1d55f7f0cbf66582b8ee8abf636ac"
+    },
+    {
+      "source": "/tmp/step05-cassandra-native-runner4.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-cassandra-native-runner4.log",
+      "sha256": "53a0f9e003eb439783d5834dbd3b2fbd0c1788f8a5872398b2b0ce11000879c5"
+    },
+    {
+      "source": "/tmp/step05-focused-final-candidate.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-focused-final-candidate.log",
+      "sha256": "510f8b04d261f5e32fdd71a32f9e27c82f18defdd324c9e35da1ab765b1ce67f"
+    },
+    {
+      "source": "/tmp/step05-cassandra-native-runner3.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-cassandra-native-runner3.log",
+      "sha256": "bb43b842ae139a86c147357507e44c93e3c685af3270329b56d6b45a2afc04f4"
+    },
+    {
+      "source": "/tmp/step05-new-tests7.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-new-tests7.log",
+      "sha256": "2a7f214e557c4f831c30dfd124399c4db493621d5447b76549d1a373665b361e"
+    },
+    {
+      "source": "/tmp/step05-new-tests6.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-new-tests6.log",
+      "sha256": "7f1412c302e2224f264a985e656ebefe7bb4d6912b63f2528e276af7522236b4"
+    },
+    {
+      "source": "/tmp/step05-cassandra-native-runner2.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-cassandra-native-runner2.log",
+      "sha256": "1ef009d834cc9ebcb338f37f82d66b85cb3021d91cf35ad3ea59190d49404cf5"
+    },
+    {
+      "source": "/tmp/step05-cassandra-native-runner.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-cassandra-native-runner.log",
+      "sha256": "3355b4bdd9f4704a1cce7b65a25f84e90dd97529242202f00362c07c9f9f9ee8"
+    },
+    {
+      "source": "/tmp/step05-new-tests5.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-new-tests5.log",
+      "sha256": "3b34e508d5f3f62844081d7573d90e28a9faa9da3c899f8e12af11444c5fbc3f"
+    },
+    {
+      "source": "/tmp/step05-unit-race-second.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-unit-race-second.log",
+      "sha256": "135e0ccb36a5cc1111667dcde9491258fad3444bc4bc950e4f11a139e58feffb"
+    },
+    {
+      "source": "/tmp/step05-native-runner3.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-native-runner3.log",
+      "sha256": "4c991540bb2b59df6ca39aba89aa72f8134e3287d81992d1ebcb8437396f9459"
+    },
+    {
+      "source": "/tmp/step05-native-runner2.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-native-runner2.log",
+      "sha256": "66b050803f08d22a4d9dc57e90f95abab76055999e16ef309691b995ab7120f3"
+    },
+    {
+      "source": "/tmp/step05-native-runner.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-native-runner.log",
+      "sha256": "7d628f5bb1b2abfb8ef8fefe50f749f20b8c70ab3a29dea91d974d1a0dfac8ec"
+    },
+    {
+      "source": "/tmp/step05-new-tests4.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-new-tests4.log",
+      "sha256": "4b2d8095e7e328a427024093b7cd587717e5e279cb8f62556e7358db035c67d6"
+    },
+    {
+      "source": "/tmp/step05-new-tests3.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-new-tests3.log",
+      "sha256": "05bb79593e7664bf87f0686c7418a7cf89e595f0cc3a014aaf887f59b685e63c"
+    },
+    {
+      "source": "/tmp/step05-new-tests2.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-new-tests2.log",
+      "sha256": "39d0554b635c8b16429f8a2f469e811088db083a4fd7e5ded1b6284624c20ece"
+    },
+    {
+      "source": "/tmp/step05-new-tests.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-new-tests.log",
+      "sha256": "9275dcfae579e1344f9158703a4d951496ae417c2ed658d0be63dcff32ed2775"
+    },
+    {
+      "source": "/tmp/step05-current-focused.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-current-focused.log",
+      "sha256": "027f728537fd296445d2ebeb30d71643df7863f588acd8a7489d79230d287f95"
+    },
+    {
+      "source": "/tmp/step05-topology-focused.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-topology-focused.log",
+      "sha256": "7847871db04d9ace389316820207de98ae8d8b34bb2e9637da35a1513af40c22"
+    },
+    {
+      "source": "/tmp/step05-unit-race-first.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05-unit-race-first.log",
+      "sha256": "f3497ea11abfa5170f07e426ec6dae0e90543c57de6570fb162b05dd60969d52"
+    },
+    {
+      "source": "/tmp/step05focused6.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05focused6.log",
+      "sha256": "325280da574e71f29a27f03733723c109e63442b6691deffda13649a44e5a580"
+    },
+    {
+      "source": "/tmp/step05focused5.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05focused5.log",
+      "sha256": "325280da574e71f29a27f03733723c109e63442b6691deffda13649a44e5a580"
+    },
+    {
+      "source": "/tmp/step05events-focused3.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05events-focused3.log",
+      "sha256": "c942e12352b671563ebfd1c6a0de96015231a5ae25d2fd3a231967f72a178fe3"
+    },
+    {
+      "source": "/tmp/step05events-focused2.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05events-focused2.log",
+      "sha256": "8a26c90a012f811c0434efcd5edda62bcef699cab6d46870896d96ceebca86bb"
+    },
+    {
+      "source": "/tmp/step05events-focused.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05events-focused.log",
+      "sha256": "ff1cc85f1c0bf0946be50e0fe787d4f1ac08be90204ad0f0a63347ec6a1e731a"
+    },
+    {
+      "source": "/tmp/step05focused4.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05focused4.log",
+      "sha256": "e660990b44c4f523a1b2071f9893e0f7b5d2cd5a4b239a19a7378affb15d3116"
+    },
+    {
+      "source": "/tmp/step05focused3.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05focused3.log",
+      "sha256": "714654c373b14cd9ca4065a9ea050d8bb92f0f0853ebfc5947c3622223fb0cff"
+    },
+    {
+      "source": "/tmp/step05focused2.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05focused2.log",
+      "sha256": "1bc1c10b8f1bb79b3ebfed3a57aeecdcda05bb4a637dce71f9dead56874d934e"
+    },
+    {
+      "source": "/tmp/step05focused.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05focused.log",
+      "sha256": "a8d1c74afb41b608a6ecabbc1d199bb54ca4aecccc70d99ca562a7707dbd563e"
+    },
+    {
+      "source": "/tmp/step05compile.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/step05compile.log",
+      "sha256": "402b3f81edfb1141263b580665647dbab995b2d8657a0a8e01543062c89b3490"
+    },
+    {
+      "source": "/tmp/gocql-step05-manifest.py",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/gocql-step05-manifest.py",
+      "sha256": "598a0967dbb3af42968ed8cd557d1f23075b93ad2fd5d99e4c1baf95d27c4527"
+    },
+    {
+      "source": "/tmp/gocql-step05-handoff-native.py",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/gocql-step05-handoff-native.py",
+      "sha256": "41b26251bd0f6e5546a4b6649eb748ae62f154cdb5706d03d9d375777d380a99"
+    },
+    {
+      "source": "/tmp/gocql-step05-handoff-checks.py",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/gocql-step05-handoff-checks.py",
+      "sha256": "38805c6a5cab980772a57dd0c36fd257f3123f4f90b0b1a19bd4e3b67d7cc071"
+    },
+    {
+      "source": "/tmp/gocql-step05-gate-native.py",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/gocql-step05-gate-native.py",
+      "sha256": "6dc239adee50358961d0292ce0c3f30698264ba8bc482db26dbc4895a12c8efe"
+    },
+    {
+      "source": "/tmp/gocql-step05-gate-checks.py",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/gocql-step05-gate-checks.py",
+      "sha256": "2bf90db4af3cfbdd0e2561e6c6941cfb128fa0d029648fa714a40c4208671738"
+    },
+    {
+      "source": "/tmp/gocql-step05-acceptance-native.py",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/gocql-step05-acceptance-native.py",
+      "sha256": "3a25b7bbf2903c870515baaee69661524b91da544897e2dbdcb0858212738ea1"
+    },
+    {
+      "source": "/tmp/gocql-step05-acceptance-checks.py",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/gocql-step05-acceptance-checks.py",
+      "sha256": "7688534c1105fbda384cd38ba10cb29192d40768a4d0dbc8bc908e78fd29bc95"
+    },
+    {
+      "source": "/tmp/gocql-step05-verification-native.py",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/gocql-step05-verification-native.py",
+      "sha256": "3be03cbc831d8710d4e56e5da0a71a4b30ffd9a616855352cd61d96064d53d60"
+    },
+    {
+      "source": "/tmp/gocql-step05-verification-checks.py",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/gocql-step05-verification-checks.py",
+      "sha256": "a6152b47cbfdb82d31a12354adc5391f4912d814667bf62c309fe4043d2694db"
+    },
+    {
+      "source": "/tmp/gocql-step05-final-checks.py",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/gocql-step05-final-checks.py",
+      "sha256": "7039cbf4a6552c06605cc9e7a4e412908811c3df1275a672be62238f5a4ccf6a"
+    },
+    {
+      "source": "/tmp/gocql-step05-final-native.py",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/gocql-step05-final-native.py",
+      "sha256": "706fce74d9ce7e4d2a3b9ad9d1fd825f67475fc22cae458ec734ed656be9382b"
+    },
+    {
+      "source": "/tmp/gocql-step05-checks.py",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/gocql-step05-checks.py",
+      "sha256": "4220cbd9771b0b9460517cfb12371fa374522d4e0ccccb0a432a2175f408bea4"
+    },
+    {
+      "source": "/tmp/gocql-step05-cassandra-native.py",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/gocql-step05-cassandra-native.py",
+      "sha256": "3c65adb8788d608433109a574e4ceee9df54a3590e0b40571766945147838e17"
+    },
+    {
+      "source": "/tmp/gocql-step05-native.py",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/gocql-step05-native.py",
+      "sha256": "b0881c2083c71deedda2724dec0bf5cb446deed72f9c2fba00fb34c1d73bafbd"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-release-vet.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-release-vet.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-handoff-unit-race.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-handoff-unit-race.log",
+      "sha256": "0781681f200497fd04477eccc119cf970483d69514941c56ff82c0a9630cb32a"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-release-ccm-build.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-release-ccm-build.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-native-cassandra-v5.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-native-cassandra-v5.log",
+      "sha256": "0a565d442df90a1ed4ebff5a82b87057af485edee223a7068730a0b3006b390f"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-final-benchmarks.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-final-benchmarks.log",
+      "sha256": "e0bba7e915122701b5d898705566e33666a13afcbd1e4d8ac41285bef2043183"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-native-scylla-auth-tls-unix.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-native-scylla-auth-tls-unix.log",
+      "sha256": "f1fe00a4eee923eb3146d982b7ad49affbda9b15c71e77bf4aa5a9104c3fb2ce"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-gate-native-scylla-auth.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-gate-native-scylla-auth.log",
+      "sha256": "b67b9cf85d18764af5c0a2fccafc7f4e6c58b82a7689469e0ac108efffb2ed9d"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-final-native-scylla-auth.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-final-native-scylla-auth.log",
+      "sha256": "abf713b9030743b3ebd4dd6da8ea5a04790bcb6c994b34b51164fe4fbf670831"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-gate-unit-race.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-gate-unit-race.log",
+      "sha256": "97c1d02827661441ed4ce907b989b1d2a94e215c7836481627c93f54d92e2f24"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-gate-native-cassandra-v5.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-gate-native-cassandra-v5.log",
+      "sha256": "dc53306ef99b24d10790aeb7960cf21f5b5cc812074c5ad5e295bc3cf2986ae7"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-acceptance-vet.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-acceptance-vet.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-verification-ccm-build.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-verification-ccm-build.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-fixture-lifecycle.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-fixture-lifecycle.log",
+      "sha256": "f29b78469813adcb926791061c0d73d4ea0f7e73bb20b3ae846224182a688cfe"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-verification-native-scylla-auth.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-verification-native-scylla-auth.log",
+      "sha256": "61c29d6bc59fe5028f2a770e7a1539665529b928308f04e1c01cf040f8600e70"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-verification-native-cassandra-v5.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-verification-native-cassandra-v5.log",
+      "sha256": "b7dd7336d2132ddc69de472bbbbfdeb6957ec30a0a283243127afd4557a8f8a4"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-final-ccm-build.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-final-ccm-build.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-acceptance-focused-race.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-acceptance-focused-race.log",
+      "sha256": "92e65c095e97bacdfd8ce4a484a78d8af88556330a37e7dde254fc595b4a96be"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-final-unit-race.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-final-unit-race.log",
+      "sha256": "aa64b17a4f1def2d2007e3c88095e84a2d9bb8d36bde4faa8603dc1357ef19a9"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-handoff-native-scylla-auth-tls-unix.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-handoff-native-scylla-auth-tls-unix.log",
+      "sha256": "d59adbac02cb2f0d3ee1e13a9c7b75a07a7e4e676c8c408b3d110c4bc4d0195d"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-gate-ccm-build.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-gate-ccm-build.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-handoff-benchmarks.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-handoff-benchmarks.log",
+      "sha256": "49ab648d6a51c9dce72705b892bc1c839b76ce054b277f2257ecd5d1c491aff5"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-acceptance-integration-build.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-acceptance-integration-build.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-native-scylla-auth.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-native-scylla-auth.log",
+      "sha256": "dee0b661630ad38f767779b3faa6db30a0f4137331b833e85728b915fd3e7ce3"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-verification-focused-race.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-verification-focused-race.log",
+      "sha256": "9565495c771900dffd8d095f299e540546bc5adf1f0337acccfc7af58fa5b321"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-acceptance-ccm-build.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-acceptance-ccm-build.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-verification-unit-race.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-verification-unit-race.log",
+      "sha256": "df8d0265760b3b7d75a4472e94dbd1de60a3b14cf227568256df3281505f753f"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-handoff-native-scylla-auth.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-handoff-native-scylla-auth.log",
+      "sha256": "8782141cdf49dec8497e1cd2740695d6f07a8f03165ce98b115b668cc172ffce"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-final-integration-build.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-final-integration-build.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-acceptance-benchmarks.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-acceptance-benchmarks.log",
+      "sha256": "0ec6d492b656f8a23e39ceab62e412590b2a510c6daa34aa45e950e4c4167bc8"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-gate-integration-build.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-gate-integration-build.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-verification-native-scylla-auth-tls-unix.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-verification-native-scylla-auth-tls-unix.log",
+      "sha256": "a26cf1965820445b9531c95f44cc575da9e3ae1db9d346e7f920c10de136e7c0"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-verification-benchmarks.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-verification-benchmarks.log",
+      "sha256": "9637592ad758c89f96c269d797614e8246e147d4278cdf5ea8cd5667bb72ec74"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-release-integration-build.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-release-integration-build.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-final-vet.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-final-vet.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-handoff-integration-build.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-handoff-integration-build.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-gate-native-scylla-auth-tls-unix.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-gate-native-scylla-auth-tls-unix.log",
+      "sha256": "cc0966a5d7f8c585021aa4d1b64b1dd8c68d079350202b0b045798cd8ac192ab"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-release-unit-race.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-release-unit-race.log",
+      "sha256": "fa935bc5ca056fdfd0216a8658f0ece3803c08196b0c55fb8d402511eeb239df"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-release-focused-race.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-release-focused-race.log",
+      "sha256": "e33acd28d2f310e6e69c6e52ccabe5363507706581b4c2dd85db9b7c2922b758"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-gate-benchmarks.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-gate-benchmarks.log",
+      "sha256": "342ec653535b56ef4c184bc9b034929ca19152b483316af513845df77a253307"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-acceptance-native-cassandra-v5.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-acceptance-native-cassandra-v5.log",
+      "sha256": "f4675345fec8035ed97ded70b7a39a62179fcda26d037fd163def2af39b0ccbd"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-gate-vet.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-gate-vet.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-acceptance-native-scylla-auth-tls-unix.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-acceptance-native-scylla-auth-tls-unix.log",
+      "sha256": "5f6828e36ca75c59f58c7c27ab74564cb0202d9f25fcedc5183fd28a5680cffa"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-release-benchmarks.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-release-benchmarks.log",
+      "sha256": "0addc2864701c66f71951afe2e14eb78fd1002683d051ffb3430fb4228abbe34"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-verification-vet.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-verification-vet.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-handoff-vet.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-handoff-vet.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-gate-focused-race.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-gate-focused-race.log",
+      "sha256": "59d410f3d1385d8d12e0f29cc1adbc79e882b686ded296717f12ea1ddc9b0b1f"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-final-focused-race.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-final-focused-race.log",
+      "sha256": "5a9c83a615fe9308521c7ee50952a72166bb5f29d3dcd92cd11d2003f4f3c041"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-handoff-ccm-build.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-handoff-ccm-build.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-handoff-focused-race.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-handoff-focused-race.log",
+      "sha256": "3dffd5ae15a20a5ae1ef19b21373a45a737486d1699aed63b644910f1b29ffaf"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-verification-integration-build.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-verification-integration-build.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-acceptance-native-scylla-auth.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-acceptance-native-scylla-auth.log",
+      "sha256": "18884b8c8550aa43047c9984027b47c89fadf2736b714aebaf6d4009dfae2b77"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-handoff-native-cassandra-v5.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-handoff-native-cassandra-v5.log",
+      "sha256": "0cd61393588c88619cba490a4513c17254125ca6be9ca7ad45ab70205997b34a"
+    },
+    {
+      "source": "/extra/scylladb/gocql/feature-specs/evidence/step05-acceptance-unit-race.log",
+      "archive": "/extra/scylladb/gocql-api-test-cluster/step05-raw-evidence/repo-step05-acceptance-unit-race.log",
+      "sha256": "99fed38328d0d594574f889c644ac28f397e257be3f0c5e06d4899a254356a18"
+    }
+  ]
+}

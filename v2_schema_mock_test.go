@@ -157,3 +157,53 @@ func v2SchemaMockEmptyColumns(statement string) (Columns, error) {
 		return Columns{}, fmt.Errorf("schema mock has no result metadata for %q", statement)
 	}
 }
+
+func (c *mockConnection) executeTyped(ctx context.Context, r *attemptRequest) (*responsePage, error) {
+	return v2SchemaMockResponse(r.statement, c.querySystem(ctx, r.statement))
+}
+func (c *trackingRingConnection) executeTyped(ctx context.Context, r *attemptRequest) (*responsePage, error) {
+	return v2SchemaMockResponse(r.statement, c.querySystem(ctx, r.statement))
+}
+func (f *fakeControlConn) queryV2System(ctx context.Context, r *attemptRequest) (*responsePage, error) {
+	f.statement = r.statement
+	f.values = nil
+	cursor := wire.NewCursor(r.values)
+	for i := 0; i < r.valueCount; i++ {
+		size, err := cursor.Uint32()
+		if err != nil {
+			return nil, err
+		}
+		body, err := cursor.Take(int64(size))
+		if err != nil {
+			return nil, err
+		}
+		view := wire.NewCursor(body)
+		n, err := view.Uint32()
+		if err != nil {
+			return nil, err
+		}
+		vs := make([]string, 0, n)
+		for j := uint32(0); j < n; j++ {
+			size, err := view.Uint32()
+			if err != nil {
+				return nil, err
+			}
+			v, err := view.Take(int64(size))
+			if err != nil {
+				return nil, err
+			}
+			var value strings.Builder
+			v.Each(func(span wire.Span) error { value.Write(span.Bytes()); return nil })
+			vs = append(vs, value.String())
+		}
+		f.values = append(f.values, vs)
+	}
+	if f.iter != nil {
+		return v2SchemaMockResponse(r.statement, f.iter)
+	}
+	text, _ := ScalarType(TypeVarchar)
+	integer, _ := ScalarType(TypeInt)
+	cols := NewColumns(ColumnSpec{Name: "connection_id", Type: text}, ColumnSpec{Name: "host_id", Type: text}, ColumnSpec{Name: "address", Type: text}, ColumnSpec{Name: "port", Type: integer}, ColumnSpec{Name: "tls_port", Type: integer})
+	chain, _ := wire.NewChain()
+	return &responsePage{columns: cols, columnCount: 5, rows: chain, owner: wire.NewLease(chain, nil)}, nil
+}

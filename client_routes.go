@@ -1,11 +1,13 @@
 package gocql
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/scylladb/gocql/v2/events"
@@ -135,12 +137,16 @@ func (r *clientRouteCacheEntry) BindCurrent(connectionID string) {
 }
 
 func (r *clientRouteCacheEntry) DeleteByConnectionID(connectionID string) {
+	current := r.CurrentConnectionID()
 	r.allRoutes = slices.DeleteFunc(r.allRoutes, func(route clientRoute) bool {
 		return route.connectionID == connectionID
 	})
+	r.BindCurrent(current)
 }
 
 func (r *clientRouteCacheEntry) Upsert(route clientRoute) {
+	current := r.CurrentConnectionID()
+	defer func() { r.BindCurrent(current) }()
 	if idx := r.routeIndex(route.connectionID); idx >= 0 {
 		r.allRoutes[idx] = route
 	} else {
@@ -276,17 +282,24 @@ func (c *clientRouteCache) ReplaceByConnectionIDs(connectionIDs []string, incomi
 }
 
 type ClientRoutesHandler struct {
-	log           StdLogger
-	c             controlConnection
-	resolver      DNSResolver
-	sub           *eventbus.Subscriber[events.Event]
-	routeCache    clientRouteCache
-	addrOverrides map[string]string // connectionID → user-supplied ConnectionAddr
-	updateTasks   chan updateTask
-	closeChan     chan struct{}
-	cfg           ClientRoutesConfig
-	pickTLSPorts  bool
-	initialized   bool
+	needsResync     atomic.Bool
+	session         *Session
+	workers         sync.WaitGroup
+	stopOnce        sync.Once
+	queueMu         sync.Mutex
+	connectionEpoch map[string]uint64
+	pairEpoch       map[pair]uint64
+	log             StdLogger
+	c               controlConnection
+	resolver        DNSResolver
+	sub             *eventbus.Subscriber[events.Event]
+	routeCache      clientRouteCache
+	addrOverrides   map[string]string // connectionID → user-supplied ConnectionAddr
+	updateTasks     chan updateTask
+	closeChan       chan struct{}
+	cfg             ClientRoutesConfig
+	pickTLSPorts    bool
+	initialized     atomic.Bool
 }
 
 var _ AddressTranslatorV2 = (*ClientRoutesHandler)(nil)
@@ -307,30 +320,18 @@ func (p *ClientRoutesHandler) TranslateHost(host AddressTranslatorHostInfo, addr
 		return addr, nil
 	}
 
-	route, found := p.routeCache.PreferredRoute(hostID)
-
-	if !found {
-		return addr, fmt.Errorf("no address found for host %s", hostID)
+	var causes []error
+	for _, route := range p.orderedRoutes(hostID) {
+		endpoints, err := p.resolveRoute(context.Background(), route)
+		if err != nil {
+			causes = append(causes, err)
+			continue
+		}
+		if p.bindRoute(route) {
+			return endpoints[0], nil
+		}
 	}
-
-	resolveAddr := route.address
-	if override, ok := p.addrOverrides[route.connectionID]; ok {
-		resolveAddr = override
-	}
-
-	if route.port == 0 {
-		return addr, fmt.Errorf("record %s/%s has target port empty", route.hostID, route.connectionID)
-	}
-
-	ips, err := p.resolver.LookupIP(resolveAddr)
-	if err != nil {
-		return addr, fmt.Errorf("failed to resolve address for host %s: %v", hostID, err)
-	}
-	if len(ips) == 0 {
-		return addr, fmt.Errorf("no addresses returned for host %s (address=%s)", hostID, resolveAddr)
-	}
-
-	return AddressPort{Address: ips[0], Port: route.port}, nil
+	return AddressPort{}, fmt.Errorf("no usable route for host %s: %w", hostID, errors.Join(causes...))
 }
 
 type pair struct {
@@ -339,7 +340,8 @@ type pair struct {
 }
 
 type updateTask struct {
-	result chan error
+	result  chan error
+	release func()
 	// Exactly one of pairs or connectionIDs must be set.
 	// pairs: scoped update — delete and re-query specific (connectionID, hostID) pairs.
 	// connectionIDs: full refresh — delete all entries for these connections and re-query.
@@ -350,61 +352,73 @@ type updateTask struct {
 }
 
 func (p *ClientRoutesHandler) Initialize(s *Session) error {
-	if p.initialized {
+	p.queueMu.Lock()
+	if p.initialized.Load() {
+		p.queueMu.Unlock()
 		return errors.New("already initialized")
 	}
-	p.initialized = true
-	connectionIDs := p.cfg.Endpoints.GetAllConnectionIDs()
-	p.c = s.control
-	p.sub = s.eventBus.Subscribe("port-mux", 1024, func(event events.Event) bool {
-		switch event.Type() {
-		case events.SessionEventTypeControlConnectionRecreated, events.ClusterEventTypeClientRoutesChanged:
-			return true
-		default:
-			return false
-		}
-	})
-	p.startUpdateWorker()
-	p.startReadingEvents(connectionIDs)
-	err := p.updateHostPortMappingSync(updateTask{connectionIDs: connectionIDs})
-	if err != nil {
-		p.log.Printf("error updating host ports: %v\n", err)
+	select {
+	case <-p.closeChan:
+		p.queueMu.Unlock()
+		return ErrClosed
+	default:
 	}
-	return nil
+	p.session = s
+	p.c = s.control
+	p.startUpdateWorker()
+	p.initialized.Store(true)
+	p.queueMu.Unlock()
+	err := p.updateHostPortMappingSync(updateTask{connectionIDs: p.cfg.Endpoints.GetAllConnectionIDs()})
+	if err != nil && p.log != nil {
+		p.log.Printf("error updating host ports: %v", err)
+	}
+	return err
 }
 
 func (p *ClientRoutesHandler) Stop() {
-	if p.closeChan != nil {
-		close(p.closeChan)
-	}
-	if p.sub != nil {
-		p.sub.Stop()
-	}
-	// updateTasks is intentionally NOT closed here; the worker goroutine exits
-	// by selecting on closeChan, which avoids the race between close(updateTasks)
-	// and concurrent sends to it.
+	p.stopOnce.Do(func() {
+		p.queueMu.Lock()
+		if p.closeChan != nil {
+			close(p.closeChan)
+		}
+		p.queueMu.Unlock()
+		if p.sub != nil {
+			p.sub.Stop()
+		}
+	})
+	p.workers.Wait()
 }
 
-func (p *ClientRoutesHandler) updateHostPortMappingAsync(task updateTask) {
+func (p *ClientRoutesHandler) updateHostPortMappingAsync(task updateTask) bool {
+	p.invalidateRouteTask(task)
+	p.queueMu.Lock()
+	defer p.queueMu.Unlock()
+	select {
+	case <-p.closeChan:
+		return false
+	default:
+	}
 	select {
 	case p.updateTasks <- task:
-	case <-p.closeChan:
-		// Stop() was called; drop the update safely.
+		return true
+	default:
+		p.needsResync.Store(true)
+		return false
 	}
 }
-
 func (p *ClientRoutesHandler) updateHostPortMappingSync(task updateTask) error {
-	task.result = make(chan error, 1)
 	select {
-	case p.updateTasks <- task:
 	case <-p.closeChan:
-		return errors.New("client routes handler stopped")
+		return ErrClosed
+	default:
 	}
-	return <-task.result
+	return p.updateHostPortMappingContext(v2SchemaContext(p.session), task)
 }
 
 func (p *ClientRoutesHandler) startReadingEvents(connectionIDs []string) {
+	p.workers.Add(1)
 	go func() {
+		defer p.workers.Done()
 		for event := range p.sub.Events() {
 			switch evt := event.(type) {
 			case *events.ClientRoutesChangedEvent:
@@ -426,8 +440,10 @@ func (p *ClientRoutesHandler) startReadingEvents(connectionIDs []string) {
 					continue
 				}
 				pairs := getPairsFromEvent(filteredConnectionIDs, evt.HostIDs)
-				if len(pairs) != 0 {
+				if len(pairs) > 0 {
 					p.updateHostPortMappingAsync(updateTask{pairs: pairs})
+				} else {
+					p.updateHostPortMappingAsync(updateTask{connectionIDs: filteredConnectionIDs})
 				}
 			case *events.ControlConnectionRecreatedEvent:
 				p.updateHostPortMappingAsync(updateTask{connectionIDs: connectionIDs})
@@ -437,7 +453,7 @@ func (p *ClientRoutesHandler) startReadingEvents(connectionIDs []string) {
 }
 
 func getPairsFromEvent(connectionIDs, hostIDs []string) (pairs []pair) {
-	if len(connectionIDs) == 0 || len(hostIDs) == 0 {
+	if len(connectionIDs) == 0 || len(hostIDs) == 0 || len(connectionIDs) > 1024/len(hostIDs) {
 		return nil
 	}
 	pairs = make([]pair, 0, len(connectionIDs)*len(hostIDs))
@@ -452,29 +468,57 @@ func getPairsFromEvent(connectionIDs, hostIDs []string) (pairs []pair) {
 	return pairs
 }
 
-func filterAllowedConnectionIDs(connectionIDs, allowedConnectionIDs []string) []string {
-	filtered := make([]string, 0, len(connectionIDs))
-	for _, connID := range connectionIDs {
-		if connID == "" {
-			continue
-		}
-		if slices.Contains(allowedConnectionIDs, connID) {
-			filtered = append(filtered, connID)
+func filterAllowedConnectionIDs(connectionIDs, allowed []string) []string {
+	canonical := make(map[string]string, len(allowed))
+	for _, id := range allowed {
+		canonical[id] = id
+	}
+	filtered := make([]string, 0, min(len(connectionIDs), len(allowed)))
+	for _, id := range connectionIDs {
+		if id != "" {
+			if configured, ok := canonical[id]; ok {
+				filtered = append(filtered, configured)
+			}
 		}
 	}
 	return filtered
 }
 
 func (p *ClientRoutesHandler) startUpdateWorker() {
+	p.workers.Add(1)
 	go func() {
+		defer p.workers.Done()
+		defer func() {
+			for {
+				select {
+				case task := <-p.updateTasks:
+					if task.release != nil {
+						task.release()
+					}
+					if task.result != nil {
+						task.result <- ErrClosed
+					}
+				default:
+					return
+				}
+			}
+		}()
 		for {
 			select {
 			case task := <-p.updateTasks:
-				err := p.updateHostPortMapping(task)
+				err := func() error {
+					if task.release != nil {
+						defer task.release()
+					}
+					return p.updateHostPortMapping(task)
+				}()
 				if err != nil {
 					if debug.Enabled {
 						p.log.Printf("failed to update host port mapping: %v", err)
 					}
+				}
+				if p.needsResync.Swap(false) {
+					_ = p.refreshContext(v2SchemaContext(p.session))
 				}
 				if task.result != nil {
 					task.result <- err
@@ -488,27 +532,8 @@ func (p *ClientRoutesHandler) startUpdateWorker() {
 }
 
 func (p *ClientRoutesHandler) updateHostPortMapping(task updateTask) error {
-	var incoming []clientRoute
-	var err error
-
-	switch {
-	case task.pairs != nil:
-		incoming, err = getHostPortMappingForPairs(p.c, p.cfg.TableName, task.pairs, p.pickTLSPorts)
-		if err != nil {
-			return err
-		}
-		p.routeCache.ReplaceByPairs(task.pairs, incoming)
-	case task.connectionIDs != nil:
-		incoming, err = getHostPortMappingForConnectionIDs(p.c, p.cfg.TableName, task.connectionIDs, p.pickTLSPorts)
-		if err != nil {
-			return err
-		}
-		p.routeCache.ReplaceByConnectionIDs(task.connectionIDs, incoming)
-	default:
-		return errors.New("updateTask has neither pairs nor connectionIDs")
-	}
-
-	return nil
+	ctx := v2SchemaContext(p.session)
+	return p.updateHostPortMappingContext(ctx, task)
 }
 
 func NewClientRoutesAddressTranslator(
@@ -540,65 +565,9 @@ func NewClientRoutesAddressTranslator(
 
 var _ AddressTranslator = &ClientRoutesHandler{}
 
-func getHostPortMappingForConnectionIDs(c controlConnection, table string, connIDs []string, pickTLSPorts bool) ([]clientRoute, error) {
-	if len(connIDs) == 0 {
-		return nil, errors.New("connIDs cannot be empty")
-	}
-
-	stmt := fmt.Sprintf("select connection_id, host_id, address, port, tls_port from %s where connection_id in ?", table)
-	return readClientRoutesTable(c, table, stmt, []any{connIDs}, pickTLSPorts)
+func getHostPortMappingForConnectionIDs(c controlConnection, table string, ids []string, tls bool) ([]clientRoute, error) {
+	return getV2RoutesConnections(v2SchemaContext(c.getSession()), c, table, ids, tls)
 }
-
-func getHostPortMappingForPairs(c controlConnection, table string, pairs []pair, pickTLSPorts bool) ([]clientRoute, error) {
-	if len(pairs) == 0 {
-		return nil, errors.New("pairs cannot be empty")
-	}
-
-	connIDs := make([]string, len(pairs))
-	hostIDs := make([]string, len(pairs))
-	for i, p := range pairs {
-		connIDs[i] = p.connectionID
-		hostIDs[i] = p.hostID
-	}
-
-	stmt := fmt.Sprintf("select connection_id, host_id, address, port, tls_port from %s where connection_id in ? and host_id in ?", table)
-	routes, err := readClientRoutesTable(c, table, stmt, []any{connIDs, hostIDs}, pickTLSPorts)
-	if err != nil {
-		return nil, err
-	}
-
-	// The IN query returns the cartesian product of the requested connectionIDs
-	// and hostIDs, so keep only the exact pairs the caller asked for.
-	routes = slices.DeleteFunc(routes, func(route clientRoute) bool {
-		return !slices.Contains(pairs, pair{connectionID: route.connectionID, hostID: route.hostID})
-	})
-	return routes, nil
-}
-
-func readClientRoutesTable(c controlConnection, table, stmt string, bounds []any, pickTLSPorts bool) ([]clientRoute, error) {
-	iter := c.query(stmt, bounds...)
-	var (
-		connectionID  string
-		hostID        string
-		address       string
-		cqlPort       uint16
-		secureCQLPort uint16
-	)
-	var res []clientRoute
-	for iter.Scan(&connectionID, &hostID, &address, &cqlPort, &secureCQLPort) {
-		port := cqlPort
-		if pickTLSPorts {
-			port = secureCQLPort
-		}
-		res = append(res, clientRoute{
-			connectionID: connectionID,
-			hostID:       hostID,
-			address:      address,
-			port:         port,
-		})
-	}
-	if err := iter.Close(); err != nil {
-		return nil, fmt.Errorf("error reading %s table: %v", table, err)
-	}
-	return res, nil
+func getHostPortMappingForPairs(c controlConnection, table string, pairs []pair, tls bool) ([]clientRoute, error) {
+	return getV2RoutesPairs(v2SchemaContext(c.getSession()), c, table, pairs, tls)
 }

@@ -3,6 +3,7 @@ package gocql
 import (
 	"net"
 	"net/netip"
+	"slices"
 	"sync"
 	"time"
 
@@ -35,7 +36,7 @@ type EventFilter struct {
 }
 
 // Subscription owns a bounded queue. Overflow discards queued deltas and emits
-// OverflowEvent: callers then resynchronize through Session.Metadata.
+// OverflowEvent, then closes. Subscribe again before reading Session.Metadata.
 type Subscription struct {
 	mu     sync.Mutex
 	events chan Event
@@ -90,16 +91,28 @@ func (s *Subscription) publish(e Event) {
 		return
 	}
 	e.ArgumentTypes = append([]string(nil), e.ArgumentTypes...)
-	select {
-	case s.events <- e:
-		return
-	default:
+	if e.Kind != OverflowEvent {
+		select {
+		case s.events <- e:
+			return
+		default:
+		}
 	}
+	highest := e.Generation
 	for {
 		select {
-		case <-s.events:
+		case discarded := <-s.events:
+			if discarded.Generation > highest {
+				highest = discarded.Generation
+			}
 		default:
-			s.events <- Event{Kind: OverflowEvent, Generation: e.Generation, Change: "RESYNC"}
+			change := "RESYNC"
+			if e.Kind == OverflowEvent && e.Change != "" {
+				change = e.Change
+			}
+			s.events <- Event{Kind: OverflowEvent, Generation: highest, Change: change}
+			s.closed = true
+			close(s.events)
 			return
 		}
 	}
@@ -159,7 +172,10 @@ func eventV2Address(host net.IP, port int) netip.AddrPort {
 	}
 	return netip.AddrPortFrom(ip.Unmap(), uint16(port))
 }
-func (s *Session) publishV2Event(source oldevents.Event) {
+func (s *Session) publishV2Event(source oldevents.Event) { s.publishV2EventMode(source, true, true) }
+func (s *Session) recordV2Event(source oldevents.Event)  { s.publishV2EventMode(source, true, false) }
+func (s *Session) emitV2Event(source oldevents.Event)    { s.publishV2EventMode(source, false, true) }
+func (s *Session) publishV2EventMode(source oldevents.Event, invalidate, deliver bool) {
 	p := s.peripheral()
 	if p == nil {
 		return
@@ -217,9 +233,10 @@ func (s *Session) publishV2Event(source oldevents.Event) {
 	default:
 		return
 	}
-	if e.Kind == SchemaEvent {
+	if e.Kind == SchemaEvent && invalidate {
 		s.invalidatePreparedSchema(e)
 		p.mu.Lock()
+		p.publicationRevision++
 		p.schemaEpoch[e.Keyspace]++
 		p.schemaGeneration.Add(1)
 		if e.Target == "KEYSPACE" {
@@ -234,15 +251,40 @@ func (s *Session) publishV2Event(source oldevents.Event) {
 			md := s.metadataDescriber.metadata
 			if e.Target == "KEYSPACE" {
 				md.keyspaceMetadata.removeKeyspace(e.Keyspace)
-			} else if e.Target == "TABLE" {
-				md.keyspaceMetadata.updateKeyspace(e.Keyspace, func(ks *KeyspaceMetadata) { ks.removeTable(e.Object) })
+			} else {
+				md.keyspaceMetadata.updateKeyspace(e.Keyspace, func(ks *KeyspaceMetadata) {
+					switch e.Target {
+					case "TABLE":
+						ks.removeTable(e.Object)
+					case "TYPE":
+						delete(ks.Types, e.Object)
+					case "FUNCTION":
+						for key, f := range ks.Functions {
+							if f.Name == e.Object && slices.Equal(f.ArgumentTypes, e.ArgumentTypes) {
+								delete(ks.Functions, key)
+							}
+						}
+					case "AGGREGATE":
+						for key, a := range ks.Aggregates {
+							if a.Name == e.Object && slices.Equal(a.ArgumentTypes, e.ArgumentTypes) {
+								delete(ks.Aggregates, key)
+							}
+						}
+					}
+				})
 			}
 		}
 		p.mu.Unlock()
-		if e.Change == "DROPPED" {
-			s.publishV2Metadata()
+		if deliver || e.Change == "DROPPED" {
+			if !s.publishV2Metadata() {
+				s.publishV2LocalEvent(Event{Kind: OverflowEvent, Generation: s.Metadata().Generation(), Change: "PUBLICATION_RESYNC"})
+				return
+			}
 			e.Generation = s.Metadata().Generation()
 		}
+	}
+	if !deliver {
+		return
 	}
 	if e.HostID == (UUID{}) && e.Address.IsValid() {
 		for _, host := range s.Metadata().hosts {
@@ -260,6 +302,14 @@ func (s *Session) publishV2Event(source oldevents.Event) {
 	p.mu.Unlock()
 	for _, sub := range subs {
 		sub.publish(e)
+		sub.mu.Lock()
+		closed := sub.closed
+		sub.mu.Unlock()
+		if closed {
+			p.mu.Lock()
+			delete(p.subscribers, sub)
+			p.mu.Unlock()
+		}
 	}
 }
 
@@ -276,5 +326,13 @@ func (s *Session) publishV2LocalEvent(event Event) {
 	p.mu.Unlock()
 	for _, sub := range subs {
 		sub.publish(event)
+		sub.mu.Lock()
+		closed := sub.closed
+		sub.mu.Unlock()
+		if closed {
+			p.mu.Lock()
+			delete(p.subscribers, sub)
+			p.mu.Unlock()
+		}
 	}
 }

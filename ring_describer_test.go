@@ -223,8 +223,8 @@ func (*mockConnection) querySystem(ctx context.Context, query string, values ...
 	localData := []any{net.IPv4(192, 168, 100, 12), "", "datacenter1", ParseUUIDMust("045859a7-6b9f-4efd-a5e7-acd64a295e13"), net.IPv4(192, 168, 100, 12), "org.apache.cassandra.dht.Murmur3Partitioner", "rack1", "3.0.8", net.IPv4(192, 168, 100, 12), ParseUUIDMust("daf4df2c-b708-11ef-5c25-3004361afd71"), []string{}}
 	// Column order matches the explicit SELECT in qrySystemPeersCassandra:
 	// peer, data_center, host_id, preferred_ip, rack, release_version, rpc_address, schema_version, tokens
-	peerData1 := []any{net.IPv4(192, 168, 100, 13), "datacenter1", ParseUUIDMust("b953309f-6e68-41f2-baf5-0e60da317a9c"), net.IP{}, "rack1", "3.0.8", net.IPv4(192, 168, 100, 13), ParseUUIDMust("b6ed5bde-b318-11ef-8f58-aeba19e31273"), []string{"-1032311531684407545", "-1112089412567859825"}}
-	peerData2 := []any{net.IPv4(192, 168, 100, 14), "datacenter1", ParseUUIDMust("8269e111-ea38-44bd-a73f-9d3d12cfaf78"), net.IP{}, "rack1", "3.0.8", net.IPv4(192, 168, 100, 14), ParseUUIDMust("b6ed5bde-b318-11ef-8f58-aeba19e31273"), []string{}}
+	peerData1 := []any{net.IPv4(192, 168, 100, 13), "datacenter1", ParseUUIDMust("b953309f-6e68-41f2-baf5-0e60da317a9c"), nil, "rack1", "3.0.8", net.IPv4(192, 168, 100, 13), ParseUUIDMust("b6ed5bde-b318-11ef-8f58-aeba19e31273"), []string{"-1032311531684407545", "-1112089412567859825"}}
+	peerData2 := []any{net.IPv4(192, 168, 100, 14), "datacenter1", ParseUUIDMust("8269e111-ea38-44bd-a73f-9d3d12cfaf78"), nil, "rack1", "3.0.8", net.IPv4(192, 168, 100, 14), ParseUUIDMust("b6ed5bde-b318-11ef-8f58-aeba19e31273"), []string{}}
 
 	if query == qrySystemLocal {
 		return &Iter{
@@ -321,16 +321,16 @@ func (*trackingRingConnection) getScyllaSupported() ScyllaConnectionFeatures {
 func TestMockGetHostsFromSystem(t *testing.T) {
 	t.Parallel()
 
-	r := &ringDescriber{control: &mockControlConn{}, cfg: &ClusterConfig{}}
+	r := &ringDescriber{control: &mockControlConn{}, cfg: &ClusterConfig{Port: 9042}}
 
 	hosts, _, err := r.GetHostsFromSystem()
 	if err != nil {
 		t.Fatalf("unable to get hosts: %v", err)
 	}
 
-	// local host and one of the peers are zero token so only one peer should be returned with 2 tokens
-	tests.AssertEqual(t, "hosts length", 1, len(hosts))
-	tests.AssertEqual(t, "host token length", 2, len(hosts[0].tokens))
+	// Zero-token hosts remain in topology and participate in schema agreement.
+	tests.AssertEqual(t, "hosts length", 3, len(hosts))
+	tests.AssertEqual(t, "host token length", 2, len(hosts[1].tokens))
 }
 
 func TestRingDescriberGetClusterPeerInfoClosesIter(t *testing.T) {
@@ -340,7 +340,7 @@ func TestRingDescriberGetClusterPeerInfoClosesIter(t *testing.T) {
 		net.IPv4(192, 168, 100, 13),
 		"datacenter1",
 		ParseUUIDMust("b953309f-6e68-41f2-baf5-0e60da317a9c"),
-		net.IP{},
+		nil,
 		"rack1",
 		"3.0.8",
 		net.IPv4(192, 168, 100, 13),
@@ -350,7 +350,7 @@ func TestRingDescriberGetClusterPeerInfoClosesIter(t *testing.T) {
 	framer := &trackingMockFramer{
 		MockFramer: mock.MockFramer{Data: marshalMetadataMust(systemPeersResultMetadata, row)},
 	}
-	r := &ringDescriber{cfg: &ClusterConfig{}}
+	r := &ringDescriber{cfg: &ClusterConfig{Port: 9042}}
 
 	peers, err := r.getClusterPeerInfo(context.Background(), &trackingRingConnection{
 		iter: &Iter{
@@ -390,7 +390,7 @@ func TestGetClusterPeerInfoQueryRouting(t *testing.T) {
 				schemaV2: tt.schemaV2,
 				scylla:   tt.scylla,
 			}
-			r := &ringDescriber{cfg: &ClusterConfig{}}
+			r := &ringDescriber{cfg: &ClusterConfig{Port: 9042}}
 			// iter is nil so getClusterPeerInfo returns errNoControl, but the query is still recorded
 			_, _ = r.getClusterPeerInfo(context.Background(), conn)
 			if conn.lastQuery != tt.wantQuery {

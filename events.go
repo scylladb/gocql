@@ -25,6 +25,7 @@
 package gocql
 
 import (
+	"context"
 	"net"
 	"sync"
 	"time"
@@ -39,15 +40,21 @@ type eventDebouncer struct {
 	timer    *time.Timer
 	callback func([]frame)
 	quit     chan struct{}
+	done     chan struct{}
+	stopOnce sync.Once
+	stopped  bool
+	overflow bool
+	resync   func()
 	name     string
 	events   []frame
+	releases []func()
 	mu       sync.Mutex
 }
 
 func newEventDebouncer(name string, eventHandler func([]frame), logger StdLogger) *eventDebouncer {
 	e := &eventDebouncer{
-		name:     name,
-		quit:     make(chan struct{}),
+		name: name,
+		quit: make(chan struct{}), done: make(chan struct{}),
 		timer:    time.NewTimer(eventDebounceTime),
 		callback: eventHandler,
 		logger:   logger,
@@ -59,19 +66,52 @@ func newEventDebouncer(name string, eventHandler func([]frame), logger StdLogger
 }
 
 func (e *eventDebouncer) stop() {
-	e.quit <- struct{}{} // sync with flusher
-	close(e.quit)
+	e.stopOnce.Do(func() { e.mu.Lock(); e.stopped = true; e.timer.Stop(); close(e.quit); e.mu.Unlock() })
+	<-e.done
 }
-
 func (e *eventDebouncer) flusher() {
+	defer close(e.done)
+	defer func() {
+		e.mu.Lock()
+		releases := e.releases
+		e.releases = nil
+		e.events = nil
+		e.mu.Unlock()
+		for _, release := range releases {
+			if release != nil {
+				release()
+			}
+		}
+	}()
 	for {
 		select {
-		case <-e.timer.C:
-			e.mu.Lock()
-			e.flush()
-			e.mu.Unlock()
 		case <-e.quit:
 			return
+		case <-e.timer.C:
+			e.mu.Lock()
+			pending := e.events
+			releases := e.releases
+			e.releases = nil
+			overflow := e.overflow
+			e.overflow = false
+			e.events = nil
+			stopped := e.stopped
+			e.mu.Unlock()
+			func() {
+				defer func() {
+					for _, release := range releases {
+						if release != nil {
+							release()
+						}
+					}
+				}()
+				if !stopped && len(pending) > 0 {
+					e.callback(pending)
+				}
+			}()
+			if !stopped && overflow && e.resync != nil {
+				e.resync()
+			}
 		}
 	}
 }
@@ -90,26 +130,54 @@ func (e *eventDebouncer) flush() {
 	// if the flush interval is faster than the callback then we will end up calling
 	// the callback multiple times, probably a bad idea. In this case we could drop
 	// frames?
-	go e.callback(e.events)
-	e.events = make([]frame, 0, eventBufferSize)
+	pending := e.events
+	releases := e.releases
+	e.events = nil
+	e.releases = nil
+	e.mu.Unlock()
+	func() {
+		defer func() {
+			for _, release := range releases {
+				if release != nil {
+					release()
+				}
+			}
+		}()
+		e.callback(pending)
+	}()
+	e.mu.Lock()
 }
 
-func (e *eventDebouncer) debounce(frame frame) {
+func (e *eventDebouncer) debounce(frame frame) { e.debounceOwned(frame, nil) }
+func (e *eventDebouncer) debounceOwned(frame frame, release func()) bool {
+	return e.debounceOwnedContext(context.Background(), frame, release)
+}
+func (e *eventDebouncer) debounceOwnedContext(ctx context.Context, frame frame, release func()) bool {
 	e.mu.Lock()
+	if e.stopped || ctx.Err() != nil {
+		e.mu.Unlock()
+		return false
+	}
 	e.timer.Reset(eventDebounceTime)
 
 	// TODO: probably need a warning to track if this threshold is too low
 	if len(e.events) < eventBufferSize {
 		e.events = append(e.events, frame)
+		e.releases = append(e.releases, release)
+		e.mu.Unlock()
+		return true
 	} else {
-		e.logger.Printf("%s: buffer full, dropping event frame: %s", e.name, frame)
+		e.overflow = true
 	}
-
 	e.mu.Unlock()
+	return false
 }
 
 func (s *Session) publishEvent(event events.Event) {
 	s.publishV2Event(event)
+	if s.clientRoutesHandler != nil && s.clientRoutesHandler.initialized.Load() {
+		s.clientRoutesHandler.handleRouteEvent(event)
+	}
 	if s.eventBus == nil {
 		return
 	}
@@ -119,27 +187,61 @@ func (s *Session) publishEvent(event events.Event) {
 	}
 }
 
-func (s *Session) handleEvent(frame frame) {
+func (s *Session) handleEvent(frame frame) { s.handleEventOwned(frame, nil) }
+func (s *Session) handleEventOwned(frame frame, release func()) bool {
+	return s.handleEventOwnedContext(context.Background(), frame, release)
+}
+func (s *Session) handleEventOwnedContext(ctx context.Context, frame frame, release func()) bool {
+	switch frame.(type) {
+	case *frm.SchemaChangeKeyspace, *frm.SchemaChangeFunction, *frm.SchemaChangeTable, *frm.SchemaChangeAggregate, *frm.SchemaChangeType:
+		if s.cfg.Events.DisableSchemaEvents {
+			return false
+		}
+	case *frm.TopologyChangeEventFrame:
+		if s.cfg.Events.DisableTopologyEvents {
+			return false
+		}
+	case *frm.StatusChangeEventFrame:
+		if s.cfg.Events.DisableNodeStatusEvents {
+			return false
+		}
+	case *frm.ClientRoutesChanged:
+		if s.cfg.disableClientRouteEvents {
+			return false
+		}
+	}
 	if debug.Enabled {
 		s.logger.Printf("gocql: handling frame: %v\n", frame)
 	}
 
-	if event := events.FrameToEvent(frame); event != nil {
-		s.publishEvent(event)
+	source := events.FrameToEvent(frame)
+	if source != nil {
+		s.recordV2Event(source)
 	}
-
+	switch e := source.(type) {
+	case *events.TopologyChangeEvent:
+		s.recordV2Topology(e)
+	case *events.StatusChangeEvent:
+		if e.Change == "DOWN" && !s.cfg.Events.DisableNodeStatusEvents {
+			s.fenceV2Down(e.Host, e.Port)
+		}
+	}
 	switch f := frame.(type) {
 	case *frm.SchemaChangeKeyspace, *frm.SchemaChangeFunction,
 		*frm.SchemaChangeTable, *frm.SchemaChangeAggregate, *frm.SchemaChangeType:
 
-		s.schemaEvents.debounce(frame)
+		return s.schemaEvents.debounceOwnedContext(ctx, frame, release)
 	case *frm.TopologyChangeEventFrame, *frm.StatusChangeEventFrame:
-		s.nodeEvents.debounce(frame)
+		return s.nodeEvents.debounceOwnedContext(ctx, frame, release)
 	case *frm.ClientRoutesChanged:
-		break
+		if s.clientRoutesHandler != nil {
+			return s.clientRoutesHandler.handleRouteEventOwned(source, release)
+		}
 	default:
 		s.logger.Printf("gocql: invalid event frame (%T): %v\n", f, f)
 	}
+	return false
+
 }
 
 func (s *Session) handleSchemaEvent(frames []frame) {
@@ -169,8 +271,45 @@ func (s *Session) handleSchemaEvent(frames []frame) {
 	}
 }
 
+func (s *Session) handleSchemaEventAndPublish(frames []frame) {
+	// Coalesce relevant schema work while keeping each bounded event's publication
+	// behind the resulting visible metadata (including diagnostics on failure).
+	s.handleSchemaEvent(frames)
+	scopes := make(map[string]bool)
+	for _, f := range frames {
+		switch v := f.(type) {
+		case *frm.SchemaChangeKeyspace:
+			scopes[v.Keyspace] = true
+		case *frm.SchemaChangeTable:
+			scopes[v.Keyspace] = true
+		case *frm.SchemaChangeType:
+			scopes[v.Keyspace] = true
+		case *frm.SchemaChangeFunction:
+			scopes[v.Keyspace] = true
+		case *frm.SchemaChangeAggregate:
+			scopes[v.Keyspace] = true
+		}
+	}
+	for scope := range scopes {
+		if err := s.refreshV2Keyspace(v2SchemaContext(s), scope); err != nil {
+			s.scheduleV2SchemaRetry()
+		}
+	}
+	if !s.publishV2Metadata() {
+		s.publishV2LocalEvent(Event{Kind: OverflowEvent, Generation: s.Metadata().Generation(), Change: "PUBLICATION_RESYNC"})
+		return
+	}
+	for _, f := range frames {
+		if event := events.FrameToEvent(f); event != nil {
+			s.emitV2Event(event)
+			if s.eventBus != nil {
+				s.eventBus.PublishEvent(event)
+			}
+		}
+	}
+}
+
 func (s *Session) handleKeyspaceChange(keyspace, change string) {
-	s.control.awaitSchemaAgreement()
 	if change == "DROPPED" || change == "UPDATED" {
 		s.metadataDescriber.RemoveTabletsWithKeyspace(keyspace)
 	}
@@ -211,17 +350,17 @@ func (s *Session) handleNodeEvent(frames []frame) {
 		case *frm.TopologyChangeEventFrame:
 			topologyEventReceived = true
 		case *frm.StatusChangeEventFrame:
-			event, ok := sEvents[f.Host.String()]
+			event, ok := sEvents[eventV2Address(f.Host, f.Port).String()]
 			if !ok {
 				event = &nodeEvent{change: f.Change, host: f.Host, port: f.Port}
-				sEvents[f.Host.String()] = event
+				sEvents[eventV2Address(f.Host, f.Port).String()] = event
 			}
 			event.change = f.Change
 		}
 	}
 
 	if topologyEventReceived && !s.cfg.Events.DisableTopologyEvents {
-		s.debounceRingRefresh()
+		_ = s.refreshRingNow()
 	}
 
 	for _, f := range sEvents {
@@ -242,6 +381,19 @@ func (s *Session) handleNodeEvent(frames []frame) {
 			}
 		}
 	}
+	if !s.publishV2Metadata() {
+		s.publishV2LocalEvent(Event{Kind: OverflowEvent, Generation: s.Metadata().Generation(), Change: "PUBLICATION_RESYNC"})
+		return
+	}
+	for _, f := range frames {
+		if event := events.FrameToEvent(f); event != nil {
+			s.emitV2Event(event)
+			if s.eventBus != nil {
+				s.eventBus.PublishEvent(event)
+			}
+		}
+	}
+
 }
 
 func (s *Session) handleNodeUp(eventIp net.IP, eventPort int) {
@@ -263,12 +415,49 @@ func (s *Session) handleNodeUp(eventIp net.IP, eventPort int) {
 }
 
 func (s *Session) startPoolFill(host *HostInfo) {
-	// we let the pool call handleNodeConnected to change the host state
-	s.pool.addHost(host)
+	if s.Closed() {
+		return
+	}
+	p := s.peripheral()
+	p.hostMu.Lock()
+	if s.hostSource.getHost(host.HostID()) != host {
+		p.hostMu.Unlock()
+		return
+	}
+	pool := s.pool.ensureHost(host)
+	p.hostMu.Unlock()
 	s.policy.AddHost(host)
+	pool.fill_debounce()
 }
 
+func (s *Session) handlePoolConnected(pool *hostConnPool) {
+	if s == nil || s.Closed() || s.pool == nil || s.hostSource == nil {
+		return
+	}
+	p := s.peripheral()
+	p.hostMu.Lock()
+	current, ok := s.pool.getPool(pool.host)
+	known := s.hostSource.getHost(pool.host.HostID())
+	if !ok || current != pool || known != pool.host || pool.Size() == 0 {
+		p.hostMu.Unlock()
+		return
+	}
+	pool.host.setState(NodeUp)
+	p.mu.Lock()
+	p.publicationRevision++
+	p.mu.Unlock()
+	p.hostMu.Unlock()
+	s.publishV2Metadata()
+	s.observeV2Lifecycle(LifecycleEvent{Kind: "host", Stage: "connected", HostID: pool.host.hostUUID(), At: time.Now()})
+	s.synchronizeV2HostPolicy(pool.host)
+}
 func (s *Session) handleNodeConnected(host *HostInfo) {
+	if s.pool != nil {
+		if pool, ok := s.pool.getPool(host); ok {
+			s.handlePoolConnected(pool)
+		}
+		return
+	}
 	defer s.publishV2Metadata()
 	if debug.Enabled {
 		s.logger.Printf("gocql: Session.handleNodeConnected: %s:%d\n", host.ConnectAddress(), host.Port())
@@ -290,13 +479,124 @@ func (s *Session) handleNodeDown(ip net.IP, port int) {
 
 	host, ok := s.hostSource.getHostByIP(ip.String())
 	if ok {
+		filtered := s.cfg.filterHost(host)
+		p := s.peripheral()
+		p.hostMu.Lock()
 		host.setState(NodeDown)
+		p.mu.Lock()
+		p.publicationRevision++
+		p.mu.Unlock()
+		if !filtered && s.pool != nil {
+			s.pool.removeHost(host.hostUUID())
+		}
+		p.hostMu.Unlock()
 		s.observeV2Lifecycle(LifecycleEvent{Kind: "host", Stage: "down", HostID: host.hostUUID(), At: time.Now()})
-		if s.cfg.filterHost(host) {
+		if filtered {
 			return
 		}
+		s.synchronizeV2HostPolicy(host)
+	}
+}
 
-		s.policy.HostDown(host)
+func (s *Session) recordV2Topology(event *events.TopologyChangeEvent) {
+	if s.hostSource == nil || s.cfg.Events.DisableTopologyEvents {
+		return
+	}
+	r := s.hostSource
+	r.mu.Lock()
+	r.eventEpoch++
+	id := r.hostIPToUUID[event.Host.String()]
+	if r.tombstones == nil {
+		r.tombstones = make(map[string]bool)
+	}
+	if r.tombstoneAddresses == nil {
+		r.tombstoneAddresses = make(map[string]string)
+	}
+	var removed *HostInfo
+	if event.Change == "REMOVED_NODE" && id != "" {
+		r.tombstones[id] = true
+		r.tombstoneAddresses[event.Host.String()] = id
+		removed = r.hosts[id]
+		delete(r.hosts, id)
+		delete(r.hostIPToUUID, event.Host.String())
+		r.revision++
+	}
+	if event.Change == "NEW_NODE" {
+		delete(r.tombstones, id)
+		delete(r.tombstones, r.tombstoneAddresses[event.Host.String()])
+		delete(r.tombstoneAddresses, event.Host.String())
+	}
+	r.mu.Unlock()
+	if removed != nil {
+		if s.pool != nil {
+			s.pool.removeHost(removed.hostUUID())
+		}
+		if s.policy != nil {
+			s.policy.RemoveHost(removed)
+		}
+		if s.metadataDescriber != nil {
+			s.metadataDescriber.RemoveTabletsWithHost(removed)
+		}
+	}
+	s.publishV2Metadata()
+}
+func (s *Session) fenceV2Down(ip net.IP, port int) {
+	if s.hostSource == nil || s.pool == nil {
+		return
+	}
+	host, ok := s.hostSource.getHostByIP(ip.String())
+	if !ok {
+		return
+	}
+	filtered := s.cfg.filterHost(host)
+	p := s.peripheral()
+	p.hostMu.Lock()
+	host.setState(NodeDown)
+	p.mu.Lock()
+	p.publicationRevision++
+	p.mu.Unlock()
+	if !filtered {
 		s.pool.removeHost(host.hostUUID())
+	}
+	p.hostMu.Unlock()
+	s.publishV2Metadata()
+}
+
+// A notification may run user code and race a newer DOWN/removal/replacement.
+// Reconcile against the current host/pool after each callback; a stale callback
+// cannot leave the policy containing the superseded emitting host.
+func (s *Session) synchronizeV2HostPolicy(fallback *HostInfo) {
+	type stamp struct {
+		host       *HostInfo
+		pool       *hostConnPool
+		state      nodeState
+		generation uint64
+	}
+	capture := func() stamp {
+		p := s.peripheral()
+		p.hostMu.Lock()
+		defer p.hostMu.Unlock()
+		h := s.hostSource.getHost(fallback.HostID())
+		if h == nil {
+			return stamp{}
+		}
+		pool, _ := s.pool.getPool(h)
+		h.mu.RLock()
+		out := stamp{h, pool, h.state, h.lifecycleGeneration}
+		h.mu.RUnlock()
+		return out
+	}
+	for !s.Closed() {
+		before := capture()
+		if before.host == nil {
+			s.policy.RemoveHost(fallback)
+		} else if before.state == NodeUp && before.pool != nil && before.pool.Size() > 0 && !s.cfg.filterHost(before.host) {
+			s.policy.HostUp(before.host)
+		} else {
+			s.policy.HostDown(before.host)
+		}
+		if before == capture() {
+			return
+		}
 	}
 }

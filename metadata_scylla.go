@@ -725,6 +725,13 @@ func (s *metadataDescriber) refreshKeyspaceSchema(keyspaceName string) error {
 }
 
 func (s *metadataDescriber) refreshTableSchema(keyspaceName, tableName string) error {
+	p := s.session.peripheral()
+	p.mu.Lock()
+	epoch := p.schemaEpoch[keyspaceName]
+	revision := p.schemaRevision[keyspaceName]
+	tableKey := metadataTable{keyspaceName, tableName}
+	tableRevision := p.tableRevision[tableKey]
+	p.mu.Unlock()
 	_, found := s.metadata.keyspaceMetadata.getKeyspace(keyspaceName)
 	if !found {
 		return s.deduplicatedRefreshKeyspace(keyspaceName)
@@ -765,6 +772,12 @@ func (s *metadataDescriber) refreshTableSchema(keyspaceName, tableName string) e
 	}
 	// Atomically clone-and-swap the keyspace metadata to avoid data races
 	// with concurrent readers.
+	p.mu.Lock()
+	if p.schemaEpoch[keyspaceName] != epoch || p.schemaRevision[keyspaceName] != revision || p.tableRevision[tableKey] != tableRevision || p.schemaDropped[keyspaceName] {
+		p.mu.Unlock()
+		s.session.scheduleV2SchemaRetry()
+		return &PartialRefreshError{Generation: s.session.Metadata().Generation(), Keyspaces: map[string]error{keyspaceName: fmt.Errorf("schema changed during table refresh")}}
+	}
 	applied := s.metadata.keyspaceMetadata.updateKeyspace(keyspaceName, func(ks *KeyspaceMetadata) {
 		if len(tables) == 0 {
 			ks.removeTable(tableName)
@@ -775,6 +788,10 @@ func (s *metadataDescriber) refreshTableSchema(keyspaceName, tableName string) e
 			}
 		}
 	})
+	if applied {
+		p.tableRevision[tableKey]++
+	}
+	p.mu.Unlock()
 	if !applied {
 		// Keyspace was removed between the initial check and the update.
 		// Fall back to a full keyspace refresh to recover.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	lz4 "github.com/scylladb/gocql/lz4"
+	"maps"
 	"math"
 	"math/rand/v2"
 	"net"
@@ -98,9 +99,10 @@ const (
 
 type IdentityOptions struct{ DriverName, DriverVersion, ApplicationName, ApplicationVersion, ClientID string }
 type ClientRoutesOptions struct {
-	ConnectionID    string
-	TLS             bool
-	SNIProxyAddress string
+	ConnectionIDs     []string
+	HostnameOverrides map[string]string
+	TLS               bool
+	SNIProxyAddress   string
 }
 
 func DefaultConfig(contactPoints ...string) Config {
@@ -173,8 +175,31 @@ func validateConfig(config Config) error {
 	if config.Metadata.PeriodicRefresh < 0 || config.Metadata.RequestTimeout < 0 || config.Metadata.AgreementTimeout < 0 || config.Metadata.AgreementPoll < 0 || config.Metadata.ServerTimeout.Set && config.Metadata.ServerTimeout.Value < 0 {
 		return typeValidation("metadata timeouts", "must not be negative")
 	}
-	if config.ClientRoutes != nil && config.ClientRoutes.ConnectionID == "" {
-		return typeValidation("client routes", "connection ID is required")
+	if routes := config.ClientRoutes; routes != nil {
+		if len(routes.ConnectionIDs) == 0 {
+			return typeValidation("client routes", "connection IDs are required")
+		}
+		ids := make(map[string]bool, len(routes.ConnectionIDs))
+		for _, id := range routes.ConnectionIDs {
+			if id == "" || ids[id] {
+				return typeValidation("client routes", "empty or duplicate connection ID")
+			}
+			ids[id] = true
+		}
+		for id, host := range routes.HostnameOverrides {
+			if !ids[id] || host == "" {
+				return typeValidation("client routes", "override requires configured connection ID and hostname")
+			}
+		}
+		if config.AddressTranslator != nil || config.Pool.ShardAwarePort {
+			return typeValidation("client routes", "user address translator and source-port shard dialing are incompatible")
+		}
+		if routes.TLS && (config.TLS == nil && config.TLSForHost == nil || config.TLS != nil && config.TLS.InsecureSkipVerify && config.TLS.VerifyConnection == nil && config.TLS.VerifyPeerCertificate == nil) {
+			return typeValidation("client routes TLS", "verified TLS configuration required")
+		}
+		if routes.SNIProxyAddress != "" && !routes.TLS {
+			return typeValidation("client routes proxy", "requires verified TLS")
+		}
 	}
 	keys := make(map[string]bool, len(config.Metadata.Keyspaces))
 	for _, keyspace := range config.Metadata.Keyspaces {
@@ -210,6 +235,8 @@ func snapshotConfig(config Config) Config {
 	}
 	if config.ClientRoutes != nil {
 		routes := *config.ClientRoutes
+		routes.ConnectionIDs = append([]string(nil), routes.ConnectionIDs...)
+		routes.HostnameOverrides = maps.Clone(routes.HostnameOverrides)
 		config.ClientRoutes = &routes
 	}
 	if config.Partitioners != nil {
@@ -264,6 +291,7 @@ func Connect(ctx context.Context, config Config) (*Session, error) {
 	legacy.Events.DisableNodeStatusEvents = !config.Metadata.StatusEvents
 	legacy.Events.DisableTopologyEvents = !config.Metadata.TopologyEvents
 	legacy.Events.DisableSchemaEvents = !config.Metadata.SchemaEvents
+	legacy.disableClientRouteEvents = !config.Metadata.ClientRouteEvents
 	legacy.DisableDriverConfigReporting = !config.ReportConfiguration
 	legacy.AddressTranslator = config.AddressTranslator
 	legacy.Logger = config.Logger
@@ -323,7 +351,11 @@ func Connect(ctx context.Context, config Config) (*Session, error) {
 	resolver.startup.Store(&contextBox{ctx: ctx})
 	legacy.DNSResolver = resolver
 	if config.ClientRoutes != nil {
-		legacy.ClientRoutesConfig = &ClientRoutesConfig{Endpoints: ClientRoutesEndpointList{{ConnectionID: config.ClientRoutes.ConnectionID, ConnectionAddr: config.ClientRoutes.SNIProxyAddress}}}
+		endpoints := make(ClientRoutesEndpointList, 0, len(config.ClientRoutes.ConnectionIDs))
+		for _, id := range config.ClientRoutes.ConnectionIDs {
+			endpoints = append(endpoints, ClientRoutesEndpoint{ConnectionID: id, ConnectionAddr: config.ClientRoutes.HostnameOverrides[id]})
+		}
+		legacy.ClientRoutesConfig = &ClientRoutesConfig{TableName: "system.client_routes", Endpoints: endpoints}
 	}
 	s, err := newSessionCommon(*legacy)
 	if err != nil {
@@ -337,6 +369,9 @@ func Connect(ctx context.Context, config Config) (*Session, error) {
 	s.connCfg.TypedLimits = config.Limits
 	s.connCfg.TypedConfig = &rt.config
 	s.configureV2Peripheral(config)
+	if s.clientRoutesHandler != nil {
+		s.clientRoutesHandler.pickTLSPorts = config.ClientRoutes.TLS
+	}
 	stop := context.AfterFunc(ctx, s.cancel)
 	err = s.init()
 	stopped := stop()
@@ -460,4 +495,8 @@ func (s *Session) reconnectTypedDownedHosts(policy ReconnectPolicy, initial time
 			}
 		}
 	}
+}
+
+func (r *v2DNSResolver) LookupIPContext(ctx context.Context, host string) ([]net.IP, error) {
+	return r.lookupIP(ctx, host)
 }

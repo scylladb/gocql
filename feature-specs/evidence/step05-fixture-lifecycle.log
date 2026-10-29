@@ -1,0 +1,27 @@
+START native-scylla-auth /extra/scylladb/gocql-api-test-cluster/step05-native-1793317771443919007
+HEALTH 127.0.20.1 840000000600000214
+HEALTH 127.0.20.2 840000000600000214
+HEALTH 127.0.20.3 840000000600000214
+{"name": "native-scylla-auth", "command": ["go", "test", "-json", "-race", "-tags", "integration gocql_debug", "-count=1", "-timeout=7m", "-parallel=1", "-run", "^(TestStep05MetadataControlLive|TestSessionAwaitSchemaAgreement|TestSessionAwaitSchemaAgreementSessionClosed|TestSessionAwaitSchemaAgreementContextCanceled|TestSessionEventBusReceivesSchemaChangeEvent|TestSessionEventBusReceivesControlReconnectEvent|TestSchemaQueries|TestGetHostPortMapping|TestInvalidPeerEntry)$", ".", "-args", "-gocql.timeout=60s", "-rf=3", "-clusterSize=3", "-autowait=2000ms", "-cluster=127.0.20.1,127.0.20.2,127.0.20.3", "-distribution=scylla", "-proto=4", "-compressor=no-compression", "-gocql.cversion=2026.3.4", "-runauth"], "exit_code": 0, "elapsed_seconds": 24.362558841705322, "log": "feature-specs/evidence/step05-handoff-native-scylla-auth.log"}
+{"name": "native-scylla-auth-tls-unix", "command": ["go", "test", "-json", "-race", "-tags", "integration gocql_debug", "-count=1", "-timeout=7m", "-parallel=1", "-run", "^(TestStep05MetadataControlLive|TestUnixSockets)$", ".", "-args", "-gocql.timeout=60s", "-rf=3", "-clusterSize=3", "-autowait=2000ms", "-cluster=127.0.20.1,127.0.20.2,127.0.20.3", "-distribution=scylla", "-proto=4", "-compressor=no-compression", "-gocql.cversion=2026.3.4", "-runauth", "-runssl", "-cluster-socket=/extra/scylladb/gocql-api-test-cluster/step05-native-1793317771443919007/scylla/node1/cql.m"], "exit_code": 0, "elapsed_seconds": 3.06076979637146, "log": "feature-specs/evidence/step05-handoff-native-scylla-auth-tls-unix.log"}
+STOP native-scylla-auth
+STOPPED native-scylla-auth
+START native-cassandra-v5 /extra/scylladb/gocql-api-test-cluster/step05-native-1793317771443919007
+[node1 ERROR] WARNING: A terminally deprecated method in java.lang.System has been called
+WARNING: System::setSecurityManager has been called by org.apache.cassandra.security.ThreadAwareSecurityManager (file:/home/dkropachev/.local/share/containers/storage/overlay/635220d55ce81dd8d814691b98f1c557aa51fdc060f1dc05a749455283bd29c4/diff/opt/cassandra/lib/apache-cassandra-5.0.9.jar)
+WARNING: Please consider reporting this to the maintainers of org.apache.cassandra.security.ThreadAwareSecurityManager
+WARNING: System::setSecurityManager will be removed in a future release
+[node2 ERROR] WARNING: A terminally deprecated method in java.lang.System has been called
+WARNING: System::setSecurityManager has been called by org.apache.cassandra.security.ThreadAwareSecurityManager (file:/home/dkropachev/.local/share/containers/storage/overlay/635220d55ce81dd8d814691b98f1c557aa51fdc060f1dc05a749455283bd29c4/diff/opt/cassandra/lib/apache-cassandra-5.0.9.jar)
+WARNING: Please consider reporting this to the maintainers of org.apache.cassandra.security.ThreadAwareSecurityManager
+WARNING: System::setSecurityManager will be removed in a future release
+[node3 ERROR] WARNING: A terminally deprecated method in java.lang.System has been called
+WARNING: System::setSecurityManager has been called by org.apache.cassandra.security.ThreadAwareSecurityManager (file:/home/dkropachev/.local/share/containers/storage/overlay/635220d55ce81dd8d814691b98f1c557aa51fdc060f1dc05a749455283bd29c4/diff/opt/cassandra/lib/apache-cassandra-5.0.9.jar)
+WARNING: Please consider reporting this to the maintainers of org.apache.cassandra.security.ThreadAwareSecurityManager
+WARNING: System::setSecurityManager will be removed in a future release
+HEALTH 127.0.21.1 840000000600000066
+HEALTH 127.0.21.2 840000000600000066
+HEALTH 127.0.21.3 840000000600000066
+{"name": "native-cassandra-v5", "command": ["go", "test", "-json", "-race", "-tags", "integration gocql_debug", "-count=1", "-timeout=7m", "-parallel=1", "-run", "^(TestStep05MetadataControlLive|TestSessionAwaitSchemaAgreement|TestSessionAwaitSchemaAgreementSessionClosed|TestSessionAwaitSchemaAgreementContextCanceled|TestSessionEventBusReceivesSchemaChangeEvent|TestSessionEventBusReceivesControlReconnectEvent|TestSchemaQueries|TestGetHostPortMapping|TestInvalidPeerEntry)$", ".", "-args", "-gocql.timeout=60s", "-rf=3", "-clusterSize=3", "-autowait=2000ms", "-cluster=127.0.21.1,127.0.21.2,127.0.21.3", "-distribution=cassandra", "-proto=5", "-compressor=lz4", "-gocql.cversion=5.0.9"], "exit_code": 0, "elapsed_seconds": 6.520379543304443, "log": "feature-specs/evidence/step05-handoff-native-cassandra-v5.log"}
+STOP native-cassandra-v5
+STOPPED native-cassandra-v5

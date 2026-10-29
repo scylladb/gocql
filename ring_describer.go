@@ -15,10 +15,17 @@ type ringDescriber struct {
 	// key of map is host_id.
 	hosts map[string]*HostInfo
 	// hostIPToUUID maps host native address to host_id.
-	hostIPToUUID    map[string]string
-	prevPartitioner string
-	prevHosts       []*HostInfo
-	mu              sync.RWMutex
+	hostIPToUUID       map[string]string
+	prevPartitioner    string
+	prevHosts          []*HostInfo
+	mu                 sync.RWMutex
+	readMu             sync.Mutex
+	revision           uint64
+	eventEpoch         uint64
+	refreshSequence    uint64
+	tombstones         map[string]bool
+	tombstoneAddresses map[string]string
+	diagnostics        []error
 }
 
 func (r *ringDescriber) setControlConn(c controlConnection) {
@@ -30,42 +37,52 @@ func (r *ringDescriber) setControlConn(c controlConnection) {
 
 // Ask the control node for the local host info
 func (r *ringDescriber) getLocalHostInfo(ctx context.Context, conn ConnInterface) (*HostInfo, error) {
-	iter := conn.querySystem(ctx, qrySystemLocal)
-
-	if iter == nil {
-		return nil, errNoControl
-	}
-
-	host, err := hostInfoFromIter(iter, r.cfg.Port)
+	hosts, err := readV2Topology(ctx, conn, qrySystemLocal, r.cfg.Port)
 	if err != nil {
 		return nil, fmt.Errorf("could not retrieve local host info: %w", err)
 	}
-	return host, nil
+	if len(hosts) != 1 || hosts[0].hostUUID().IsEmpty() || hosts[0].invalidConnectAddr() {
+		return nil, typeValidation("local topology", "expected one valid local identity")
+	}
+	return hosts[0], nil
 }
 
-// Ask the control node for host info on all it's known peers
 func (r *ringDescriber) getClusterPeerInfo(ctx context.Context, c ConnInterface) ([]*HostInfo, error) {
-	var iter *Iter
+	stmt := qrySystemPeersCassandra
 	if c.getIsSchemaV2() {
-		iter = c.querySystem(ctx, qrySystemPeersV2)
+		stmt = qrySystemPeersV2
 	} else if c.isScyllaConn() {
-		iter = c.querySystem(ctx, qrySystemPeers)
-	} else {
-		iter = c.querySystem(ctx, qrySystemPeersCassandra)
+		stmt = qrySystemPeers
 	}
-
-	if iter == nil {
-		return nil, errNoControl
-	}
-	defer iter.Close()
-
-	rows, err := iter.SliceMap()
+	hosts, err := readV2Topology(ctx, c, stmt, r.cfg.Port)
 	if err != nil {
-		// TODO(zariel): make typed error
-		return nil, fmt.Errorf("unable to fetch peer host info: %s", err)
+		return nil, err
 	}
+	valid := hosts[:0]
+	for _, h := range hosts {
+		if isValidPeer(h) {
+			valid = append(valid, h)
+			continue
+		}
+		cause := typeValidation("peer topology", "incomplete peer %s", h.HostID())
+		r.mu.Lock()
+		known := r.hosts[h.HostID()] != nil
+		for _, old := range r.prevHosts {
+			if old.hostUUID() == h.hostUUID() || old.nodeToNodeAddress().Equal(h.nodeToNodeAddress()) {
+				known = true
+				break
+			}
+		}
+		if len(r.diagnostics) < 64 {
+			r.diagnostics = append(r.diagnostics, cause)
+		}
+		r.mu.Unlock()
+		if known {
+			return nil, cause
+		}
 
-	return getPeersFromQuerySystemPeers(rows, r.cfg.Port, r.logger)
+	}
+	return valid, nil
 }
 
 func getPeersFromQuerySystemPeers(querySystemPeerRows []map[string]any, defaultPort int, logger StdLogger) ([]*HostInfo, error) {
@@ -105,14 +122,25 @@ func isZeroToken(host *HostInfo) bool {
 
 // GetHostsFromSystem returns a list of hosts found via queries to system.local and system.peers
 func (r *ringDescriber) GetHostsFromSystem() ([]*HostInfo, string, error) {
+	r.readMu.Lock()
+	defer r.readMu.Unlock()
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.diagnostics = nil
+	r.mu.Unlock()
+	r.mu.RLock()
+	control := r.control
+	epoch := r.eventEpoch
+	previous := r.prevHosts
+	partitionerBefore := r.prevPartitioner
+	r.mu.RUnlock()
 
-	if r.control == nil {
-		return r.prevHosts, r.prevPartitioner, errNoControl
+	if control == nil {
+		return previous, partitionerBefore, errNoControl
 	}
-
-	ch := r.control.getConn()
+	ch := control.getConn()
+	if ch == nil || ch.conn == nil {
+		return previous, partitionerBefore, errNoControl
+	}
 
 	var (
 		localHost *HostInfo
@@ -122,7 +150,7 @@ func (r *ringDescriber) GetHostsFromSystem() ([]*HostInfo, string, error) {
 		firstErr  error
 	)
 
-	ctx, cancel := context.WithCancel(context.TODO())
+	ctx, cancel := context.WithCancel(v2SchemaContext(control.getSession()))
 	defer cancel()
 
 	recordErr := func(err error) {
@@ -153,20 +181,36 @@ func (r *ringDescriber) GetHostsFromSystem() ([]*HostInfo, string, error) {
 	wg.Wait()
 
 	if firstErr != nil {
-		return r.prevHosts, r.prevPartitioner, firstErr
+		return previous, partitionerBefore, firstErr
 	}
 
-	var hosts []*HostInfo
-	if !isZeroToken(localHost) {
-		hosts = []*HostInfo{localHost}
-	}
+	hosts := []*HostInfo{localHost}
 	hosts = append(hosts, peerHosts...)
+	seen := make(map[UUID]bool, len(hosts))
+	for _, h := range hosts {
+		if seen[h.hostUUID()] {
+			return previous, partitionerBefore, typeValidation("topology", "duplicate host identity %s", h.HostID())
+		}
+		seen[h.hostUUID()] = true
+	}
 
 	var partitioner string
 	if len(hosts) > 0 {
 		partitioner = hosts[0].Partitioner()
 	}
 
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.eventEpoch != epoch {
+		return previous, partitionerBefore, typeValidation("topology generation", "topology changed during read")
+	}
+	filtered := hosts[:0]
+	for _, host := range hosts {
+		if !r.tombstones[host.HostID()] {
+			filtered = append(filtered, host)
+		}
+	}
+	hosts = filtered
 	r.prevHosts = hosts
 	r.prevPartitioner = partitioner
 
@@ -231,6 +275,7 @@ func (r *ringDescriber) addHostIfMissing(host *HostInfo) (*HostInfo, bool) {
 
 	existing, ok := r.hosts[hostID]
 	if !ok {
+		r.revision++
 		r.hosts[hostID] = host
 		r.hostIPToUUID[host.nodeToNodeAddress().String()] = hostID
 		existing = host
@@ -253,6 +298,7 @@ func (r *ringDescriber) removeHost(hostID string) bool {
 		delete(r.hostIPToUUID, h.nodeToNodeAddress().String())
 	}
 	delete(r.hosts, hostID)
+	r.revision++
 	r.mu.Unlock()
 	return ok
 }

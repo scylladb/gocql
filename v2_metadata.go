@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"net/netip"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -30,13 +31,14 @@ type TokenRange struct {
 	Replicas   []Target
 }
 type MetadataSnapshot struct {
-	generation  uint64
-	hosts       []HostSnapshot
-	keyspaces   map[string]*KeyspaceMetadata
-	ranges      map[string][]TokenRange
-	tablets     map[metadataTable][]TokenRange
-	partitioner string
-	diagnostics []error
+	generation    uint64
+	hosts         []HostSnapshot
+	keyspaces     map[string]*KeyspaceMetadata
+	schemaSources map[string]*KeyspaceMetadata
+	ranges        map[string][]TokenRange
+	tablets       map[metadataTable][]TokenRange
+	partitioner   string
+	diagnostics   []error
 }
 type metadataTable struct{ keyspace, table string }
 
@@ -159,11 +161,16 @@ type TraceEvent struct {
 type v2PeripheralState struct {
 	snapshot               atomic.Pointer[MetadataSnapshot]
 	publishMu              sync.Mutex
+	workers                sync.WaitGroup
+	hostMu                 sync.Mutex
+	publicationRevision    uint64
 	mu                     sync.Mutex
 	subscribers            map[*Subscription]struct{}
 	closed                 bool
 	config                 Config
 	schemaEpoch            map[string]uint64
+	schemaRevision         map[string]uint64
+	tableRevision          map[metadataTable]uint64
 	schemaDropped          map[string]bool
 	retryScheduled         atomic.Bool
 	schemaRetryNeeded      atomic.Bool
@@ -182,6 +189,8 @@ type v2PeripheralState struct {
 	latencyCount           uint64
 	orphans                atomic.Uint64
 	schemaStale            map[string]bool
+	refreshDiagnostics     []error
+	routeDiagnostic        error
 	feedbackResync         bool
 	knownTabletTables      map[metadataTable]bool
 }
@@ -193,7 +202,7 @@ func (s *Session) peripheral() *v2PeripheralState {
 	if p := s.v2Peripheral.Load(); p != nil {
 		return p
 	}
-	p := &v2PeripheralState{subscribers: make(map[*Subscription]struct{}), schemaEpoch: make(map[string]uint64), schemaDropped: make(map[string]bool), schemaStale: make(map[string]bool), feedback: make(map[v2TabletFeedbackKey]v2PendingTabletFeedback), feedbackWake: make(chan struct{}, 1), knownTabletTables: make(map[metadataTable]bool), done: make(chan struct{})}
+	p := &v2PeripheralState{subscribers: make(map[*Subscription]struct{}), schemaEpoch: make(map[string]uint64), schemaRevision: make(map[string]uint64), tableRevision: make(map[metadataTable]uint64), schemaDropped: make(map[string]bool), schemaStale: make(map[string]bool), feedback: make(map[v2TabletFeedbackKey]v2PendingTabletFeedback), feedbackWake: make(chan struct{}, 1), knownTabletTables: make(map[metadataTable]bool), done: make(chan struct{})}
 	if s.v2Peripheral.CompareAndSwap(nil, p) {
 		return p
 	}
@@ -201,7 +210,9 @@ func (s *Session) peripheral() *v2PeripheralState {
 }
 func (s *Session) initV2Peripheral(config Config) error {
 	s.configureV2Peripheral(config)
-	s.publishV2Metadata()
+	if !s.publishV2Metadata() {
+		return s.v2MetadataPublicationError()
+	}
 	if config.DefaultProfile != nil {
 		if policy := config.DefaultProfile.Snapshot().Routing; policy != nil {
 			if err := policy.Validate(s.Metadata()); err != nil {
@@ -211,7 +222,7 @@ func (s *Session) initV2Peripheral(config Config) error {
 	}
 	s.observeV2Lifecycle(LifecycleEvent{Kind: "session", Stage: "ready", At: time.Now()})
 	if config.Metadata.PeriodicRefresh > 0 {
-		s.peripheral().periodicOnce.Do(func() { go s.runV2PeriodicRefresh(config.Metadata) })
+		s.peripheral().periodicOnce.Do(func() { s.peripheral().startWorker(func() { s.runV2PeriodicRefresh(config.Metadata) }) })
 	}
 	return nil
 }
@@ -229,8 +240,12 @@ func (s *Session) Metadata() *MetadataSnapshot {
 	if snapshot := p.snapshot.Load(); snapshot != nil {
 		return snapshot
 	}
-	s.publishV2Metadata()
-	return p.snapshot.Load()
+	for {
+		s.publishV2Metadata()
+		if snapshot := p.snapshot.Load(); snapshot != nil {
+			return snapshot
+		}
+	}
 }
 func (s *Session) Metrics() MetricsSnapshot {
 	if s == nil {
@@ -252,26 +267,50 @@ func (s *Session) Metrics() MetricsSnapshot {
 	}
 	return result
 }
-func (s *Session) publishV2Metadata() {
+func (s *Session) publishV2Metadata() bool {
+	for attempt := 0; attempt < 8; attempt++ {
+		if s.tryPublishV2Metadata() {
+			return true
+		}
+	}
+	return false
+}
+func (s *Session) tryPublishV2Metadata() bool {
 	p := s.peripheral()
 	if p == nil {
-		return
+		return false
 	}
-	p.publishMu.Lock()
-	defer p.publishMu.Unlock()
 	old := p.snapshot.Load()
 	p.mu.Lock()
+	revision := p.publicationRevision
 	stale := maps.Clone(p.schemaStale)
 	config := p.config
+	diagnostics := append([]error(nil), p.refreshDiagnostics...)
+	if p.routeDiagnostic != nil {
+		diagnostics = append(diagnostics, p.routeDiagnostic)
+	}
 	p.mu.Unlock()
 	m := &MetadataSnapshot{generation: 1, keyspaces: make(map[string]*KeyspaceMetadata), ranges: make(map[string][]TokenRange), tablets: make(map[metadataTable][]TokenRange)}
+	m.diagnostics = diagnostics
 	if old != nil {
 		m.generation = old.generation + 1
 	}
 	var hosts []*HostInfo
+	var topologyRevision uint64
 	if s.hostSource != nil {
-		hosts = s.hostSource.getHostsList()
+		s.hostSource.mu.RLock()
+		topologyRevision = s.hostSource.revision
+		m.diagnostics = append(m.diagnostics, s.hostSource.diagnostics...)
+		for _, h := range s.hostSource.hosts {
+			hosts = append(hosts, h)
+		}
+		s.hostSource.mu.RUnlock()
 	}
+	var schemaSource *map[string]*KeyspaceMetadata
+	if s.metadataDescriber != nil && s.metadataDescriber.metadata != nil {
+		schemaSource = s.metadataDescriber.metadata.keyspaceMetadata.keyspaceMap.Load()
+	}
+
 	replicaHosts := make([]*HostInfo, 0, len(hosts))
 	validTokens := true
 	for _, h := range hosts {
@@ -288,13 +327,20 @@ func (s *Session) publishV2Metadata() {
 	}
 	sort.Slice(m.hosts, func(i, j int) bool { return m.hosts[i].ID.String() < m.hosts[j].ID.String() })
 	if len(hosts) > 0 && len(m.hosts) == 0 && old != nil {
-		return
+		return false
 	}
 	if s.metadataDescriber != nil && s.metadataDescriber.metadata != nil {
 		md := s.metadataDescriber.metadata
-		for name, ks := range md.keyspaceMetadata.get() {
-			if ks != nil {
-				m.keyspaces[name] = cloneV2Keyspace(ks)
+		if schemaSource != nil {
+			m.schemaSources = *schemaSource
+			for name, ks := range *schemaSource {
+				if ks != nil {
+					if old != nil && old.schemaSources[name] == ks && len(ks.tablesInvalidated) == 0 {
+						m.keyspaces[name] = old.keyspaces[name]
+					} else {
+						m.keyspaces[name] = cloneV2Keyspace(ks)
+					}
+				}
 			}
 		}
 		if md.tabletsMetadata != nil {
@@ -406,8 +452,28 @@ func (s *Session) publishV2Metadata() {
 			}
 		}
 	}
+	// All potentially user-provided hooks above run before the publication gate.
+	// A concurrent tombstone/source replacement rejects this entire stale build.
+	p.publishMu.Lock()
+	defer p.publishMu.Unlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.publicationRevision != revision || p.snapshot.Load() != old {
+		return false
+	}
+	if s.hostSource != nil {
+		s.hostSource.mu.RLock()
+		defer s.hostSource.mu.RUnlock()
+		if s.hostSource.revision != topologyRevision {
+			return false
+		}
+	}
+	if s.metadataDescriber != nil && s.metadataDescriber.metadata != nil && s.metadataDescriber.metadata.keyspaceMetadata.keyspaceMap.Load() != schemaSource {
+		return false
+	}
 	s.updatePreparedSchemaSnapshot(old, m)
 	p.snapshot.Store(m)
+	return true
 }
 func snapshotV2Host(s *Session, h *HostInfo) (HostSnapshot, error) {
 	if h == nil {
@@ -431,7 +497,7 @@ func snapshotV2Host(s *Session, h *HostInfo) (HostSnapshot, error) {
 	out.Shards = uint32(h.ScyllaShardCount())
 	if s != nil {
 		if cfg, ok := s.v2PoolConfig(); ok {
-			if path, _ := unixContact(*cfg); path != "" && out.ID.IsEmpty() {
+			if path, _ := unixContact(*cfg); path != "" {
 				out.Address = netip.AddrPort{}
 			}
 		}
@@ -636,6 +702,12 @@ func (s *Session) RefreshMetadata(ctx context.Context) error {
 	if s.ringRefresher == nil {
 		return errNoControl
 	}
+	p := s.peripheral()
+	if !p.admitMetadataWork() {
+		return ErrClosed
+	}
+	defer p.workers.Done()
+	var topologyErr error
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -643,11 +715,17 @@ func (s *Session) RefreshMetadata(ctx context.Context) error {
 		if !ok {
 			return ErrClosed
 		}
-		if err != nil {
-			return err
-		}
+		topologyErr = err
 	}
-	return s.refreshV2AllSchema(ctx)
+	var routeErr error
+	if s.clientRoutesHandler != nil {
+		routeErr = s.clientRoutesHandler.refreshContext(ctx)
+	}
+	schemaErr := s.refreshV2AllSchema(ctx)
+	if topologyErr != nil || routeErr != nil {
+		return errors.Join(&PartialRefreshError{Generation: s.Metadata().Generation(), Topology: topologyErr, ClientRoutes: routeErr}, schemaErr)
+	}
+	return schemaErr
 }
 
 // routingPartitioner chooses the configured server/table partitioner. Unknown
@@ -814,7 +892,7 @@ func readV2SystemRowsVia[P, R any](ctx context.Context, version byte, timeout ti
 	}
 	req := &attemptRequest{statement: statement.CQL, values: values.framed, valueCount: len(values.cells), consistency: One, pageSize: 1000, timeout: timeout}
 	var rows []R
-	seen := make(map[string]struct{})
+	var history pagingHistory
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -855,11 +933,9 @@ func readV2SystemRowsVia[P, R any](ctx context.Context, version byte, timeout ti
 		if !more {
 			return rows, nil
 		}
-		key := string(token)
-		if _, ok := seen[key]; ok {
-			return nil, ErrPagingNoProgress
+		if err := history.add(PageState{token: token, kind: 1}); err != nil {
+			return nil, err
 		}
-		seen[key] = struct{}{}
 		if token == nil {
 			token = []byte{}
 		}
@@ -876,42 +952,26 @@ func (s *Session) awaitV2SchemaAgreement(ctx context.Context) error {
 	if ctx == nil {
 		return typeValidation("schema agreement context", "nil context")
 	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
 	if s == nil || s.Closed() {
 		return ErrClosed
 	}
-	if s.cfg.disableControlConn {
-		return errNoControl
-	}
-	if err := s.Ready(); err != nil {
-		return err
-	}
-	handle := s.control.getConn()
-	if handle == nil || handle.conn == nil {
-		return ErrNoConnections
-	}
-	conn, ok := handle.conn.(*Conn)
-	if !ok {
-		return typeValidation("schema agreement", "control connection does not support typed queries")
-	}
-	return s.awaitV2SchemaAgreementUsing(ctx, conn, handle.host.hostUUID())
+	return s.awaitV2SchemaAgreementUsing(ctx, nil, UUID{})
 }
 func (s *Session) awaitV2SchemaAgreementOn(ctx context.Context, conn *Conn) error {
-	if ctx == nil || conn == nil {
+	if ctx == nil || conn == nil || conn.host == nil {
 		return typeValidation("schema agreement", "nil context or coordinator")
-	}
-	if err := ctx.Err(); err != nil {
-		return err
 	}
 	if s == nil || s.Closed() {
 		return ErrClosed
 	}
 	return s.awaitV2SchemaAgreementUsing(ctx, conn, conn.host.hostUUID())
 }
-func (s *Session) awaitV2SchemaAgreementUsing(ctx context.Context, conn *Conn, localID UUID) error {
+func (s *Session) awaitV2SchemaAgreementUsing(ctx context.Context, coordinator *Conn, required UUID) error {
 	p := s.peripheral()
+	if !p.admitMetadataWork() {
+		return ErrClosed
+	}
+	defer p.workers.Done()
 	p.mu.Lock()
 	options := p.config.Metadata
 	p.mu.Unlock()
@@ -919,71 +979,81 @@ func (s *Session) awaitV2SchemaAgreementUsing(ctx context.Context, conn *Conn, l
 	if timeout == 0 {
 		timeout = s.cfg.MaxWaitSchemaAgreement
 	}
-	if timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, timeout)
-		defer cancel()
+	if timeout <= 0 {
+		timeout = time.Minute
 	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	interval := options.AgreementPoll
 	if interval <= 0 {
 		interval = 200 * time.Millisecond
 	}
-	// Agreement concerns enabled, live peers visible in the admission snapshot.
-	// A disconnected/down remote node cannot prolong this scope indefinitely.
-	scope := make(map[UUID]bool)
-	for _, h := range s.Metadata().hosts {
-		if h.Enabled && h.Up {
-			scope[h.ID] = true
-		}
-	}
-	if len(scope) == 0 {
-		return &NoHostsError{Operation: "schema agreement", Causes: []error{ErrNoConnections}}
-	}
-	peerTable := "system.peers"
-	if conn.getIsSchemaV2() {
-		peerTable = "system.peers_v2"
-	}
-	peerStatement := Statement[Unit, agreementPeer]{CQL: "SELECT host_id, schema_version FROM " + peerTable, Params: NoParams, Rows: Row(Column("host_id", NullableCodec(UUIDCodec), func(r *agreementPeer) *Nullable[UUID] { return &r.id }), Column("schema_version", NullableCodec(UUIDCodec), func(r *agreementPeer) *Nullable[UUID] { return &r.version }))}
-	localStatement := Statement[Unit, agreementPeer]{CQL: "SELECT host_id, schema_version FROM system.local WHERE key = 'local'", Params: NoParams, Rows: Row(Column("host_id", NullableCodec(UUIDCodec), func(r *agreementPeer) *Nullable[UUID] { return &r.id }), Column("schema_version", NullableCodec(UUIDCodec), func(r *agreementPeer) *Nullable[UUID] { return &r.version }))}
 	for {
-		local, err := readV2SystemRows(ctx, conn, localStatement, NewColumns(), Unit{})
-		if err != nil {
+		if err := ctx.Err(); err != nil {
 			return err
 		}
-		peers, err := readV2SystemRows(ctx, conn, peerStatement, NewColumns(), Unit{})
-		if err != nil {
-			return err
+		if s.Closed() {
+			return ErrClosed
 		}
-		versions := make(map[UUID]bool)
-		found := make(map[UUID]bool)
-		if len(local) == 1 && local[0].id.Valid && local[0].version.Valid {
-			actualID := local[0].id.Value
-			// With initial discovery disabled the configured endpoint retains a
-			// synthetic routing identity. Resolve only this established local
-			// endpoint through system.local; do not discover any additional node.
-			if scope[conn.host.hostUUID()] {
-				delete(scope, conn.host.hostUUID())
-				scope[actualID] = true
-			}
-			if scope[localID] {
-				delete(scope, localID)
-				scope[actualID] = true
-			}
-			versions[local[0].version.Value] = true
-			found[actualID] = true
-		}
-		for _, peer := range peers {
-			if peer.id.Valid && scope[peer.id.Value] && peer.version.Valid {
-				versions[peer.version.Value] = true
-				found[peer.id.Value] = true
+		// Retain one immutable scope for this check. A missing/down enabled host
+		// prevents agreement; each retry takes a fresh snapshot.
+		scope := make(map[UUID][]*Conn)
+		for _, h := range s.Metadata().hosts {
+			if h.Enabled {
+				scope[h.ID] = s.v2AgreementConnections(h.ID)
 			}
 		}
+		if coordinator != nil {
+			scope[required] = append([]*Conn{coordinator}, scope[required]...)
+		}
+		if len(scope) == 0 {
+			return &NoHostsError{Operation: "schema agreement", Causes: []error{ErrNoConnections}}
+		}
+		type observation struct {
+			version UUID
+			err     error
+		}
+		results := make(chan observation, len(scope))
+		// Fixed worker count bounds goroutines even with large topologies.
+		jobs := make(chan struct {
+			id    UUID
+			conns []*Conn
+		}, len(scope))
+		for id, conns := range scope {
+			jobs <- struct {
+				id    UUID
+				conns []*Conn
+			}{id, conns}
+		}
+		close(jobs)
+		var workers sync.WaitGroup
+		for i := 0; i < min(16, len(scope)); i++ {
+			workers.Add(1)
+			go func() {
+				defer workers.Done()
+				for job := range jobs {
+					v, err := readV2AgreementHost(ctx, job.id, job.conns)
+					results <- observation{v, err}
+				}
+			}()
+		}
+		workers.Wait()
+		close(results)
 		complete := true
-		for id := range scope {
-			if !found[id] {
+		versions := make(map[UUID]bool)
+		var terminal error
+		for result := range results {
+			if result.err != nil {
 				complete = false
-				break
+				if terminalV2AgreementError(result.err) {
+					terminal = result.err
+				}
+			} else {
+				versions[result.version] = true
 			}
+		}
+		if terminal != nil {
+			return terminal
 		}
 		if complete && len(versions) == 1 {
 			return nil
@@ -997,11 +1067,88 @@ func (s *Session) awaitV2SchemaAgreementUsing(ctx context.Context, conn *Conn, l
 		}
 	}
 }
+func readV2AgreementHost(ctx context.Context, id UUID, conns []*Conn) (UUID, error) {
+	stmt := Statement[Unit, agreementPeer]{CQL: "SELECT host_id, schema_version FROM system.local WHERE key = 'local'", Params: NoParams, Rows: Row(Column("host_id", NullableCodec(UUIDCodec), func(r *agreementPeer) *Nullable[UUID] { return &r.id }), Column("schema_version", NullableCodec(UUIDCodec), func(r *agreementPeer) *Nullable[UUID] { return &r.version }))}
+	var last error = ErrNoConnections
+	for _, conn := range conns {
+		if conn == nil || conn.Closed() {
+			continue
+		}
+		rows, err := readV2SystemRowsVia(ctx, conn.version, 0, conn.executeTyped, stmt, NewColumns(), Unit{})
+		if err != nil {
+			if terminalV2AgreementError(err) {
+				return UUID{}, err
+			}
+			last = err
+			continue
+		}
+		if len(rows) != 1 || !rows[0].id.Valid || !rows[0].version.Valid || rows[0].id.Value != id || rows[0].version.Value.IsEmpty() {
+			return UUID{}, typeValidation("schema agreement", "missing/mismatched host identity or version")
+		}
+		return rows[0].version.Value, nil
+	}
+	return UUID{}, last
+}
+func terminalV2AgreementError(err error) bool {
+	var protocol *ProtocolError
+	var validation *ValidationError
+	if errors.As(err, &protocol) || errors.As(err, &validation) {
+		return true
+	}
+	var server RequestError
+	if errors.As(err, &server) {
+		switch server.GetCode() {
+		case ErrCodeOverloaded, ErrCodeBootstrapping, ErrCodeReadTimeout, ErrCodeWriteTimeout, ErrCodeUnprepared:
+			return false
+		default:
+			return true
+		}
+	}
+	return false
+}
+func (s *Session) v2AgreementConnections(id UUID) []*Conn {
+	if s.pool == nil {
+		return nil
+	}
+	s.pool.mu.RLock()
+	pool := s.pool.hostConnPools[id]
+	s.pool.mu.RUnlock()
+	if pool == nil {
+		return nil
+	}
+	pool.mu.RLock()
+	defer pool.mu.RUnlock()
+	if pool.closed {
+		return nil
+	}
+	var out []*Conn
+	switch picker := pool.connPicker.(type) {
+	case *typedConnPicker:
+		picker.mu.RLock()
+		for _, cs := range picker.conns {
+			out = append(out, cs...)
+		}
+		out = append(out, picker.excess...)
+		picker.mu.RUnlock()
+	case *defaultConnPicker:
+		picker.mu.RLock()
+		out = append(out, picker.conns...)
+		picker.mu.RUnlock()
+	case *scyllaConnPicker:
+		picker.mu.RLock()
+		out = append(out, picker.conns...)
+		out = append(out, picker.excessConns...)
+		picker.mu.RUnlock()
+	}
+	return out
+}
 
 // PartialRefreshError reports keyspaces whose previous valid schema was kept.
 type PartialRefreshError struct {
-	Generation uint64
-	Keyspaces  map[string]error
+	Generation   uint64
+	Keyspaces    map[string]error
+	Topology     error
+	ClientRoutes error
 }
 
 func (e *PartialRefreshError) Error() string {
@@ -1014,7 +1161,13 @@ func (e *PartialRefreshError) Error() string {
 	for _, name := range names {
 		details = append(details, fmt.Sprintf("%s: %v", name, e.Keyspaces[name]))
 	}
-	return fmt.Sprintf("gocql: metadata generation %d preserved %d stale keyspaces (%s)", e.Generation, len(e.Keyspaces), strings.Join(details, "; "))
+	if e.Topology != nil {
+		details = append(details, "topology: "+e.Topology.Error())
+	}
+	if e.ClientRoutes != nil {
+		details = append(details, "client routes: "+e.ClientRoutes.Error())
+	}
+	return fmt.Sprintf("gocql: metadata generation %d retained stale data (%s)", e.Generation, strings.Join(details, "; "))
 }
 func (e *PartialRefreshError) Unwrap() []error {
 	names := make([]string, 0, len(e.Keyspaces))
@@ -1025,6 +1178,12 @@ func (e *PartialRefreshError) Unwrap() []error {
 	out := make([]error, 0, len(names))
 	for _, name := range names {
 		out = append(out, e.Keyspaces[name])
+	}
+	if e.Topology != nil {
+		out = append(out, e.Topology)
+	}
+	if e.ClientRoutes != nil {
+		out = append(out, e.ClientRoutes)
 	}
 	return out
 }
@@ -1327,7 +1486,7 @@ func (c *controlConn) queryV2System(ctx context.Context, request *attemptRequest
 }
 func queryV2SchemaRows[R any](ctx context.Context, s *Session, stmt string, args []string, decoder RowDecoder[R]) ([]R, error) {
 	if !s.useSystemSchema {
-		return nil, nil
+		return nil, &UnsupportedSettingError{Setting: "schema metadata", Reason: "server does not provide system_schema tables"}
 	}
 	if ctx == nil {
 		ctx = context.Background()
@@ -1361,7 +1520,7 @@ func queryV2SchemaRows[R any](ctx context.Context, s *Session, stmt string, args
 }
 
 func v2SchemaContext(s *Session) context.Context {
-	if s.ctx != nil {
+	if s != nil && s.ctx != nil {
 		return s.ctx
 	}
 	return context.Background()
@@ -1589,16 +1748,23 @@ func getV2CreateStatements(ctx context.Context, s *Session, keyspace string) ([]
 }
 
 func (s *Session) refreshV2AllSchema(ctx context.Context) error {
+	p := s.peripheral()
+	if !p.admitMetadataWork() {
+		return ErrClosed
+	}
+	defer p.workers.Done()
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	p := s.peripheral()
 	p.mu.Lock()
 	config := p.config
 	epochs := maps.Clone(p.schemaEpoch)
+	revisions := maps.Clone(p.schemaRevision)
 	p.mu.Unlock()
 	if config.DefaultProfile != nil && config.Metadata.Mode == MetadataDisabled {
-		s.publishV2Metadata()
+		if !s.publishV2Metadata() {
+			return s.v2MetadataPublicationError()
+		}
 		return nil
 	}
 	rows, err := queryV2SchemaRows(ctx, s, `SELECT keyspace_name, durable_writes, replication FROM system_schema.keyspaces`, nil, v2DecodeKeyspace())
@@ -1631,11 +1797,13 @@ func (s *Session) refreshV2AllSchema(ctx context.Context) error {
 			}
 			p.mu.Lock()
 			epoch := p.schemaEpoch[name]
+			revision := p.schemaRevision[name]
+			tables := p.captureTableRevisionsLocked(name)
 			p.mu.Unlock()
 			if attempt > 0 {
 				base, err = getV2KeyspaceMetadata(ctx, s, name)
 				if errors.Is(err, ErrKeyspaceDoesNotExist) {
-					if s.dropV2KeyspaceIfCurrent(name, epoch) {
+					if s.dropV2KeyspaceIfCurrent(name, epoch, revision) {
 						delete(failures, name)
 						break
 					}
@@ -1669,7 +1837,7 @@ func (s *Session) refreshV2AllSchema(ctx context.Context) error {
 				// themselves reveal a keyspace dropped during this fetch.
 				current, checkErr := getV2KeyspaceMetadata(ctx, s, name)
 				if errors.Is(checkErr, ErrKeyspaceDoesNotExist) {
-					if s.dropV2KeyspaceIfCurrent(name, epoch) {
+					if s.dropV2KeyspaceIfCurrent(name, epoch, revision) {
 						delete(failures, name)
 						break
 					}
@@ -1685,7 +1853,7 @@ func (s *Session) refreshV2AllSchema(ctx context.Context) error {
 				}
 			}
 			p.mu.Lock()
-			changed := p.schemaEpoch[name] != epoch
+			changed := p.schemaEpoch[name] != epoch || p.schemaRevision[name] != revision || !p.tableRevisionsCurrentLocked(name, tables)
 			if changed {
 				p.mu.Unlock()
 				failures[name] = fmt.Errorf("schema changed during refresh")
@@ -1699,6 +1867,7 @@ func (s *Session) refreshV2AllSchema(ctx context.Context) error {
 			if s.metadataDescriber != nil {
 				s.invalidateV2ChangedTablets(name, ks)
 				s.metadataDescriber.metadata.keyspaceMetadata.set(name, ks)
+				p.schemaRevision[name]++
 				delete(p.schemaStale, name)
 				delete(p.schemaDropped, name)
 			}
@@ -1717,7 +1886,8 @@ func (s *Session) refreshV2AllSchema(ctx context.Context) error {
 				continue
 			}
 			p.mu.Lock()
-			if p.schemaEpoch[name] == epochs[name] {
+			if p.schemaEpoch[name] == epochs[name] && p.schemaRevision[name] == revisions[name] {
+				p.schemaRevision[name]++
 				s.metadataDescriber.metadata.keyspaceMetadata.removeKeyspace(name)
 				delete(p.schemaStale, name)
 				s.metadataDescriber.RemoveTabletsWithKeyspace(name)
@@ -1725,8 +1895,16 @@ func (s *Session) refreshV2AllSchema(ctx context.Context) error {
 			p.mu.Unlock()
 		}
 	}
+	p.mu.Lock()
+	p.refreshDiagnostics = nil
+	for name, cause := range failures {
+		p.refreshDiagnostics = append(p.refreshDiagnostics, fmt.Errorf("keyspace %s: %w", name, cause))
+	}
+	p.mu.Unlock()
 	p.schemaGeneration.Add(1)
-	s.publishV2Metadata()
+	if !s.publishV2Metadata() {
+		return s.v2MetadataPublicationError()
+	}
 	if len(failures) > 0 {
 		s.scheduleV2SchemaRetry()
 		return &PartialRefreshError{Generation: s.Metadata().Generation(), Keyspaces: failures}
@@ -1734,6 +1912,11 @@ func (s *Session) refreshV2AllSchema(ctx context.Context) error {
 	return nil
 }
 func (s *Session) refreshV2Keyspace(ctx context.Context, name string) error {
+	p := s.peripheral()
+	if !p.admitMetadataWork() {
+		return ErrClosed
+	}
+	defer p.workers.Done()
 	return s.refreshV2KeyspaceAttempt(ctx, name, 0)
 }
 func (s *Session) refreshV2KeyspaceAttempt(ctx context.Context, name string, attempt int) error {
@@ -1744,29 +1927,46 @@ func (s *Session) refreshV2KeyspaceAttempt(ctx context.Context, name string, att
 	p := s.peripheral()
 	p.mu.Lock()
 	epoch := p.schemaEpoch[name]
+	revision := p.schemaRevision[name]
+	tables := p.captureTableRevisionsLocked(name)
+	config := p.config
 	p.mu.Unlock()
+	if config.DefaultProfile != nil && (config.Metadata.Mode == MetadataDisabled || len(config.Metadata.Keyspaces) > 0 && !slices.Contains(config.Metadata.Keyspaces, name)) {
+		if !s.publishV2Metadata() {
+			return s.v2MetadataPublicationError()
+		}
+		return nil
+	}
 	base, err := getV2KeyspaceMetadata(ctx, s, name)
 	if errors.Is(err, ErrKeyspaceDoesNotExist) {
 		p.mu.Lock()
-		if p.schemaEpoch[name] == epoch {
+		if p.schemaEpoch[name] == epoch && p.schemaRevision[name] == revision {
+			p.schemaRevision[name]++
 			s.metadataDescriber.metadata.keyspaceMetadata.removeKeyspace(name)
 			delete(p.schemaStale, name)
 			s.metadataDescriber.RemoveTabletsWithKeyspace(name)
 		}
 		p.mu.Unlock()
-		s.publishV2Metadata()
+		if !s.publishV2Metadata() {
+			return s.v2MetadataPublicationError()
+		}
 		return err
 	}
 	if err != nil {
-		return err
+		return s.v2SchemaRefreshFailure(name, err)
 	}
-	ks, err := fetchV2Keyspace(ctx, s, base)
+	var ks *KeyspaceMetadata
+	if config.DefaultProfile != nil && config.Metadata.Mode == MetadataMinimal {
+		ks = base
+		ks.Tables = make(map[string]*TableMetadata)
+	} else {
+		ks, err = fetchV2Keyspace(ctx, s, base)
+	}
 	if err != nil {
-		s.scheduleV2SchemaRetry()
-		return &PartialRefreshError{Generation: s.Metadata().Generation(), Keyspaces: map[string]error{name: err}}
+		return s.v2SchemaRefreshFailure(name, err)
 	}
 	p.mu.Lock()
-	if p.schemaEpoch[name] != epoch {
+	if p.schemaEpoch[name] != epoch || p.schemaRevision[name] != revision || !p.tableRevisionsCurrentLocked(name, tables) {
 		p.mu.Unlock()
 		if attempt < 7 {
 			return s.refreshV2KeyspaceAttempt(ctx, name, attempt+1)
@@ -1775,11 +1975,14 @@ func (s *Session) refreshV2KeyspaceAttempt(ctx context.Context, name string, att
 	}
 	s.invalidateV2ChangedTablets(name, ks)
 	s.metadataDescriber.metadata.keyspaceMetadata.set(name, ks)
+	p.schemaRevision[name]++
 	delete(p.schemaStale, name)
 	delete(p.schemaDropped, name)
 	p.schemaGeneration.Add(1)
 	p.mu.Unlock()
-	s.publishV2Metadata()
+	if !s.publishV2Metadata() {
+		return s.v2MetadataPublicationError()
+	}
 	return nil
 }
 func (s *Session) scheduleV2SchemaRetry() {
@@ -1791,11 +1994,14 @@ func (s *Session) startV2SchemaRetry() {
 	if !p.retryScheduled.CompareAndSwap(false, true) {
 		return
 	}
-	go func() {
+	if !p.startWorker(func() {
 		ctx := v2SchemaContext(s)
 		timer := time.NewTimer(time.Second)
 		defer timer.Stop()
 		select {
+		case <-p.done:
+			p.retryScheduled.Store(false)
+			return
 		case <-ctx.Done():
 			p.retryScheduled.Store(false)
 			return
@@ -1837,7 +2043,9 @@ func (s *Session) startV2SchemaRetry() {
 		if (pending || p.schemaRetryNeeded.Load()) && !s.Closed() {
 			s.startV2SchemaRetry()
 		}
-	}()
+	}) {
+		p.retryScheduled.Store(false)
+	}
 }
 
 func fetchV2Keyspace(ctx context.Context, s *Session, base *KeyspaceMetadata) (*KeyspaceMetadata, error) {
@@ -2293,7 +2501,7 @@ func (s *Session) applyV2TabletHint(hint tablets.TabletInfo) {
 	}
 	p.feedback[key] = v2PendingTabletFeedback{hint: hint, epoch: epoch}
 	p.feedbackMu.Unlock()
-	p.feedbackOnce.Do(func() { go s.runV2TabletFeedback(p) })
+	p.feedbackOnce.Do(func() { p.startWorker(func() { s.runV2TabletFeedback(p) }) })
 	select {
 	case p.feedbackWake <- struct{}{}:
 	default:
@@ -2436,13 +2644,14 @@ func (s *Session) invalidateV2ChangedTablets(keyspace string, current *KeyspaceM
 	}
 }
 
-func (s *Session) dropV2KeyspaceIfCurrent(name string, epoch uint64) bool {
+func (s *Session) dropV2KeyspaceIfCurrent(name string, epoch uint64, revision ...uint64) bool {
 	p := s.peripheral()
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.schemaEpoch[name] != epoch {
+	if p.schemaEpoch[name] != epoch || len(revision) > 0 && p.schemaRevision[name] != revision[0] {
 		return false
 	}
+	p.schemaRevision[name]++
 	if s.metadataDescriber != nil {
 		s.metadataDescriber.metadata.keyspaceMetadata.removeKeyspace(name)
 		s.metadataDescriber.RemoveTabletsWithKeyspace(name)
@@ -2458,10 +2667,11 @@ func (s *Session) confirmV2DroppedKeyspace(ctx context.Context, name string) (bo
 	p := s.peripheral()
 	p.mu.Lock()
 	epoch := p.schemaEpoch[name]
+	revision := p.schemaRevision[name]
 	p.mu.Unlock()
 	_, err := getV2KeyspaceMetadata(ctx, s, name)
 	if errors.Is(err, ErrKeyspaceDoesNotExist) {
-		return s.dropV2KeyspaceIfCurrent(name, epoch), nil
+		return s.dropV2KeyspaceIfCurrent(name, epoch, revision), nil
 	}
 	return false, err
 }
@@ -2499,4 +2709,61 @@ func (s *Session) v2MetadataDepthLimit() int {
 		return 64
 	}
 	return limit
+}
+
+// startWorker serializes admission with shutdown; Add can never race Wait.
+func (p *v2PeripheralState) startWorker(fn func()) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed {
+		return false
+	}
+	p.workers.Add(1)
+	go func() { defer p.workers.Done(); fn() }()
+	return true
+}
+
+func (p *v2PeripheralState) admitMetadataWork() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed {
+		return false
+	}
+	p.workers.Add(1)
+	return true
+}
+
+func (p *v2PeripheralState) captureTableRevisionsLocked(keyspace string) map[metadataTable]uint64 {
+	out := make(map[metadataTable]uint64)
+	for key, revision := range p.tableRevision {
+		if key.keyspace == keyspace {
+			out[key] = revision
+		}
+	}
+	return out
+}
+func (p *v2PeripheralState) tableRevisionsCurrentLocked(keyspace string, before map[metadataTable]uint64) bool {
+	for key, revision := range p.tableRevision {
+		if key.keyspace == keyspace && before[key] != revision {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Session) v2SchemaRefreshFailure(name string, cause error) error {
+	p := s.peripheral()
+	p.mu.Lock()
+	if !p.schemaDropped[name] {
+		p.schemaStale[name] = true
+	}
+	p.refreshDiagnostics = []error{fmt.Errorf("keyspace %s: %w", name, cause)}
+	p.mu.Unlock()
+	s.publishV2Metadata()
+	s.scheduleV2SchemaRetry()
+	return &PartialRefreshError{Generation: s.Metadata().Generation(), Keyspaces: map[string]error{name: cause}}
+}
+
+func (s *Session) v2MetadataPublicationError() error {
+	return &PartialRefreshError{Generation: s.Metadata().Generation(), Keyspaces: map[string]error{"<publication>": fmt.Errorf("metadata sources changed throughout publication; refresh again")}}
 }

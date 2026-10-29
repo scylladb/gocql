@@ -1,0 +1,69 @@
+2026/10/29 19:39:51 logger.go:59: gocql: received response for stream which has no handler: header=[header version=[version=4 direction=RESP] flags=0x0 stream=0 op=RESULT length=4]
+2026/10/29 19:39:53 logger.go:60: warning: skipping result metadata can lead to unpredictable results if columns involved in a prepared query are altered, on connections that exchange no result metadata ID (protocol v4 or lower without the SCYLLA_USE_METADATA_ID extension).
+2026/10/29 19:39:53 logger.go:59: gocql: 127.0.0.1:38857 does not support the requested "snappy" compression, continuing uncompressed (server offers: [lz4])
+2026/10/29 19:39:53 logger.go:59: gocql: 127.0.0.1:38857 does not support the requested "snappy" compression, continuing uncompressed (server offers: [lz4])
+2026/10/29 19:40:01 logger.go:59: error: failed to connect to "[HostInfo hostname=\"127.0.0.1\" connectAddress=\"127.0.0.1\" peer=\"<nil>\" rpc_address=\"<nil>\" broadcast_address=\"<nil>\" preferred_ip=\"<nil>\" connect_addr=\"127.0.0.1\" connect_addr_source=\"connect_address\" port=40347 data_center=\"\" rack=\"\" host_id=\"f6683926-e197-4671-8545-c2cfa54d86ce\" version=\"v0.0.0\" state=UP num_tokens=0]" due to error: context canceled
+2026/10/29 19:40:01 logger.go:59: scylla: connection to shard-aware address 127.0.0.1:42795 resulted in wrong shard being assigned; please check that you are not behind a NAT or AddressTranslater which changes source ports; falling back to non-shard-aware port for 5m0s
+--- FAIL: TestSingleHostQueryExecutorSkipsUnreachableHost (0.50s)
+    control_setup_unit_test.go:235: NewSingleHostQueryExecutor: setup: gocql: no response to connection startup within timeout
+2026/10/29 19:40:02 logger.go:59: scylla: connection to shard-aware address 127.0.0.1:39697 resulted in wrong shard being assigned; please check that you are not behind a NAT or AddressTranslater which changes source ports; falling back to non-shard-aware port for 5m0s
+2026/10/29 19:40:02 logger.go:60: gocql: WARNING - DisableStrictCertificateValidation is deprecated and will be removed in a future version. Please ensure your certificate chains are properly configured to work with strict validation.
+2026/10/29 19:40:02 logger.go:59: gocql: unable to dial control conn 127.0.0.1:1: dial tcp 127.0.0.1:1: connect: connection refused
+2026/10/29 19:40:02 logger.go:59: gocql: unable to dial control conn 127.0.0.1:1: dial tcp 127.0.0.1:1: connect: connection refused
+2026/10/29 19:40:02 logger.go:59: gocql: unable to dial control conn 127.0.0.1:1: dial tcp 127.0.0.1:1: connect: connection refused
+2026/10/29 19:40:02 logger.go:59: gocql: unable to dial control conn 127.0.0.1:1: dial tcp 127.0.0.1:1: connect: connection refused
+2026/10/29 19:40:02 logger.go:59: gocql: unable to dial control conn 127.0.0.1:1: dial tcp 127.0.0.1:1: connect: connection refused
+2026/10/29 19:40:02 logger.go:59: gocql: unable to dial control conn 127.0.0.1:1: dial tcp 127.0.0.1:1: connect: connection refused
+2026/10/29 19:40:02 logger.go:59: scylla: connection to shard-aware address 127.0.0.1:42847 resulted in wrong shard being assigned; please check that you are not behind a NAT or AddressTranslater which changes source ports; falling back to non-shard-aware port for 5m0s
+2026/10/29 19:40:03 logger.go:59: scylla: connection to shard-aware address 127.0.0.1:45593 resulted in wrong shard being assigned; please check that you are not behind a NAT or AddressTranslater which changes source ports; falling back to non-shard-aware port for 5m0s
+FAIL
+FAIL    github.com/scylladb/gocql/v2    22.422s
+ok      github.com/scylladb/gocql/v2/ci/release 1.011s
+ok      github.com/scylladb/gocql/v2/debounce   33.840s
+ok      github.com/scylladb/gocql/v2/dialer 1.024s
+ok      github.com/scylladb/gocql/v2/dialer/recorder    1.092s
+ok      github.com/scylladb/gocql/v2/dialer/replayer    1.077s
+ok      github.com/scylladb/gocql/v2/events 1.005s
+ok      github.com/scylladb/gocql/v2/hostpolicy 1.010s
+ok      github.com/scylladb/gocql/v2/internal/cqlproto  1.009s
+ok      github.com/scylladb/gocql/v2/internal/crc   1.009s
+?       github.com/scylladb/gocql/v2/internal/debug [no test files]
+ok      github.com/scylladb/gocql/v2/internal/eventbus  1.412s
+ok      github.com/scylladb/gocql/v2/internal/frame 1.009s
+ok      github.com/scylladb/gocql/v2/internal/lru   1.008s
+ok      github.com/scylladb/gocql/v2/internal/murmur    1.247s
+ok      github.com/scylladb/gocql/v2/internal/segment   1.060s
+ok      github.com/scylladb/gocql/v2/internal/streams   1.021s
+ok      github.com/scylladb/gocql/v2/internal/tests 1.008s
+?       github.com/scylladb/gocql/v2/internal/tests/mock    [no test files]
+ok      github.com/scylladb/gocql/v2/internal/tests/serialization   1.008s
+?       github.com/scylladb/gocql/v2/internal/tests/serialization/mod   [no test files]
+?       github.com/scylladb/gocql/v2/internal/tests/serialization/valcases  [no test files]
+ok      github.com/scylladb/gocql/v2/internal/wire  1.101s
+ok      github.com/scylladb/gocql/v2/internal/wirecompress  4.574s
+ok      github.com/scylladb/gocql/v2/scyllacloud    1.062s
+?       github.com/scylladb/gocql/v2/serialization/ascii    [no test files]
+?       github.com/scylladb/gocql/v2/serialization/bigint   [no test files]
+ok      github.com/scylladb/gocql/v2/serialization/blob 1.007s
+?       github.com/scylladb/gocql/v2/serialization/boolean  [no test files]
+?       github.com/scylladb/gocql/v2/serialization/counter  [no test files]
+?       github.com/scylladb/gocql/v2/serialization/cqlint   [no test files]
+?       github.com/scylladb/gocql/v2/serialization/cqltime  [no test files]
+?       github.com/scylladb/gocql/v2/serialization/date [no test files]
+?       github.com/scylladb/gocql/v2/serialization/decimal  [no test files]
+?       github.com/scylladb/gocql/v2/serialization/double   [no test files]
+ok      github.com/scylladb/gocql/v2/serialization/duration 1.009s
+?       github.com/scylladb/gocql/v2/serialization/float    [no test files]
+?       github.com/scylladb/gocql/v2/serialization/inet [no test files]
+?       github.com/scylladb/gocql/v2/serialization/smallint [no test files]
+?       github.com/scylladb/gocql/v2/serialization/text [no test files]
+?       github.com/scylladb/gocql/v2/serialization/timestamp    [no test files]
+?       github.com/scylladb/gocql/v2/serialization/timeuuid [no test files]
+?       github.com/scylladb/gocql/v2/serialization/tinyint  [no test files]
+?       github.com/scylladb/gocql/v2/serialization/uuid [no test files]
+?       github.com/scylladb/gocql/v2/serialization/varchar  [no test files]
+ok      github.com/scylladb/gocql/v2/serialization/varint   1.120s
+ok      github.com/scylladb/gocql/v2/tablets    2.268s
+ok      github.com/scylladb/gocql/v2/tests/affinity 1.155s
+ok      github.com/scylladb/gocql/v2/tests/serialization    1.590s
+FAIL

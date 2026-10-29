@@ -92,6 +92,9 @@ func (d *v2TLSHostDialer) selectedTLS(ctx context.Context, host HostSnapshot) (*
 	if c != nil {
 		c = cloneV2TLSConfig(c)
 	}
+	if d.config.ClientRoutes != nil && d.config.ClientRoutes.TLS && (c == nil || c.InsecureSkipVerify && c.VerifyConnection == nil && c.VerifyPeerCertificate == nil) {
+		return nil, typeValidation("client routes TLS", "usable verified TLS required")
+	}
 	return c, nil
 }
 func (d *v2TLSHostDialer) raw(ctx context.Context, target DialTarget) (net.Conn, error) {
@@ -240,6 +243,22 @@ func (d *v2TLSHostDialer) dial(ctx context.Context, host *HostInfo, shard, shard
 	translated := host.getTranslatedConnectionInfo()
 	if translated != nil && translated.CQL.IsValid() {
 		address = translated.CQL.ToNetAddr()
+	}
+	if routes := d.config.ClientRoutes; routes != nil && routes.SNIProxyAddress != "" {
+		proxy, port, err := net.SplitHostPort(routes.SNIProxyAddress)
+		if err != nil {
+			proxy = routes.SNIProxyAddress
+			_, port, _ = net.SplitHostPort(address)
+		}
+		resolver := &v2DNSResolver{base: d.config.DNSResolver, timeout: d.config.DNSTimeout}
+		ips, err := resolver.LookupIPContext(ctx, proxy)
+		if err != nil {
+			return nil, err
+		}
+		if len(ips) == 0 {
+			return nil, typeValidation("SNI proxy", "no resolved addresses")
+		}
+		address = net.JoinHostPort(ips[0].String(), port)
 	}
 	target := DialTarget{Host: snapshot, Network: "tcp", Address: address}
 	if d.config.LocalAddress.IsValid() {

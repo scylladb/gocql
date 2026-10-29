@@ -450,6 +450,20 @@ func (s *Session) dialShard(ctx context.Context, host *HostInfo, connConfig *Con
 		}
 		ctx = context.WithValue(ctx, connectionLifetimeKey{}, lifetimeCtx)
 	}
+	if s.clientRoutesHandler != nil && connConfig.TypedConfig != nil && !host.hostUUID().IsEmpty() {
+		var observed ObservedConnect
+		if s.connectObserver != nil {
+			observed.Host = host
+			observed.Start = time.Now()
+		}
+		conn, err := s.dialV2Routes(ctx, host, connConfig, errorHandler)
+		if s.connectObserver != nil {
+			observed.End = time.Now()
+			observed.Err = err
+			s.connectObserver.ObserveConnect(observed)
+		}
+		return conn, err
+	}
 	var obs ObservedConnect
 
 	current := host.getTranslatedConnectionInfo()
@@ -3264,92 +3278,10 @@ func (h *schemaAgreementHost) IsValid() bool {
 }
 
 func (c *Conn) awaitSchemaAgreement(ctx context.Context) error {
-	endDeadline := time.Now().Add(c.session.cfg.MaxWaitSchemaAgreement)
-	deadlineCtx, cancelDeadline := context.WithDeadline(ctx, endDeadline)
-	defer cancelDeadline()
-
-	ticker := time.NewTicker(200 * time.Millisecond)
-	defer ticker.Stop()
-
-	var lastErr error
-	for time.Now().Before(endDeadline) {
-		queryCtx, cancel := context.WithCancel(deadlineCtx)
-
-		var (
-			hosts              []schemaAgreementHost
-			localSchemaVersion string
-			wg                 sync.WaitGroup
-			errMu              sync.Mutex
-			firstErr           error
-		)
-
-		recordErr := func(err error) {
-			if err == nil {
-				return
-			}
-			errMu.Lock()
-			defer errMu.Unlock()
-			if firstErr == nil {
-				firstErr = err
-				cancel()
-			}
-		}
-
-		wg.Add(2)
-		go func() {
-			defer wg.Done()
-			var query string
-			if c.getIsSchemaV2() {
-				query = "SELECT host_id, data_center, rack, schema_version, preferred_ip FROM system.peers_v2"
-			} else {
-				query = "SELECT host_id, data_center, rack, schema_version, rpc_address FROM system.peers"
-			}
-			iter := c.querySystem(queryCtx, query)
-			var tmp schemaAgreementHost
-			for iter.Scan(&tmp.HostID, &tmp.DataCenter, &tmp.Rack, &tmp.SchemaVersion, &tmp.RPCAddress) {
-				hosts = append(hosts, tmp)
-			}
-			recordErr(iter.Close())
-		}()
-		go func() {
-			defer wg.Done()
-			iter := c.querySystem(queryCtx, "SELECT schema_version FROM system.local WHERE key='local'")
-			for iter.Scan(&localSchemaVersion) {
-			}
-			recordErr(iter.Close())
-		}()
-		wg.Wait()
-		cancel()
-
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		if firstErr != nil {
-			if deadlineCtx.Err() != nil {
-				// The internal per-round context hit endDeadline rather than a real
-				// query failure; preserve it as lastErr and let the loop condition
-				// above exit naturally instead of surfacing a raw deadline error.
-				lastErr = firstErr
-				break
-			}
-			return firstErr
-		}
-
-		if err := getSchemaAgreement(localSchemaVersion, hosts, c.logger); err == ErrConnectionClosed || err == nil {
-			return err
-		} else {
-			lastErr = err
-		}
-
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-deadlineCtx.Done():
-		case <-ticker.C:
-		}
+	if c == nil || c.session == nil {
+		return errNoControl
 	}
-
-	return lastErr
+	return c.session.awaitV2SchemaAgreementOn(ctx, c)
 }
 
 var (

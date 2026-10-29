@@ -27,9 +27,20 @@ func TestV2SubscriptionsFilterOverflowAndClose(t *testing.T) {
 		t.Fatal(event)
 	}
 	s.publishV2Event(&oldevents.SchemaChangeTableEvent{Change: "DROPPED", Keyspace: "ks", Table: "b"})
-	if event := <-sub.Events(); event.Kind != SchemaEvent || event.Object != "b" {
-		t.Fatal(event)
+	if _, ok := <-sub.Events(); ok {
+		t.Fatal("overflow subscription must close after terminal marker")
 	}
+	fresh, err := s.Subscribe(EventFilter{Kinds: []EventKind{SchemaEvent}, Keyspace: "ks", Capacity: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := s.Metadata()
+	s.publishV2Event(&oldevents.SchemaChangeTableEvent{Change: "CREATED", Keyspace: "ks", Table: "c"})
+	event = <-fresh.Events()
+	if event.Generation <= snapshot.Generation() {
+		t.Fatal("publication event did not follow subscribed snapshot", event)
+	}
+	fresh.Close()
 	sub.Close()
 	sub.Close()
 	if _, ok := <-sub.Events(); ok {

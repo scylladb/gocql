@@ -1,0 +1,102 @@
+[
+  {
+    "name": "unit-race",
+    "command": [
+      "go",
+      "test",
+      "-count=1",
+      "-race",
+      "-tags=unit",
+      "-timeout=5m",
+      "./..."
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 50.0562858581543,
+    "log": "feature-specs/evidence/step05-handoff-unit-race.log",
+    "source_snapshot": "feature-specs/evidence/step05-handoff-source.json"
+  },
+  {
+    "name": "focused-race",
+    "command": [
+      "go",
+      "test",
+      "-count=3",
+      "-race",
+      "-tags=unit",
+      "-run",
+      "^(TestStep05|TestV2Metadata|TestV2Subscription|TestConcurrentSchemaRefreshErrorHandling|TestHandleNode|TestRefreshRing|TestControl|TestEventDebounce)",
+      "-timeout=2m",
+      "."
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 22.77796983718872,
+    "log": "feature-specs/evidence/step05-handoff-focused-race.log",
+    "source_snapshot": "feature-specs/evidence/step05-handoff-source.json"
+  },
+  {
+    "name": "vet",
+    "command": [
+      "go",
+      "vet",
+      "-tags=unit",
+      "./..."
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 5.329872131347656,
+    "log": "feature-specs/evidence/step05-handoff-vet.log",
+    "source_snapshot": "feature-specs/evidence/step05-handoff-source.json"
+  },
+  {
+    "name": "integration-build",
+    "command": [
+      "go",
+      "test",
+      "-c",
+      "-race",
+      "-tags",
+      "integration gocql_debug",
+      "-o",
+      "/tmp/gocql-v2-step05.integration-race.test",
+      "."
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 21.709189653396606,
+    "log": "feature-specs/evidence/step05-handoff-integration-build.log",
+    "source_snapshot": "feature-specs/evidence/step05-handoff-source.json"
+  },
+  {
+    "name": "ccm-build",
+    "command": [
+      "go",
+      "test",
+      "-c",
+      "-tags=ccm",
+      "-o",
+      "/tmp/gocql-v2-step05.ccm.test",
+      "./internal/ccm"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 0.030364274978637695,
+    "log": "feature-specs/evidence/step05-handoff-ccm-build.log",
+    "source_snapshot": "feature-specs/evidence/step05-handoff-source.json"
+  },
+  {
+    "name": "benchmarks",
+    "command": [
+      "go",
+      "test",
+      "-tags=unit",
+      "-run",
+      "^$",
+      "-bench",
+      "^BenchmarkStep05",
+      "-benchmem",
+      "-benchtime=200ms",
+      "."
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 1.7089881896972656,
+    "log": "feature-specs/evidence/step05-handoff-benchmarks.log",
+    "source_snapshot": "feature-specs/evidence/step05-handoff-source.json"
+  }
+]

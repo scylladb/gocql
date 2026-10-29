@@ -1,0 +1,8 @@
+goos: linux
+goarch: amd64
+pkg: github.com/scylladb/gocql/v2
+cpu: AMD Ryzen 9 9950X3D 16-Core Processor
+BenchmarkStep05MetadataRead-32          135440755            1.731 ns/op           0 B/op          0 allocs/op
+BenchmarkStep05EventPublication-32       5536628            42.60 ns/op        0 B/op          0 allocs/op
+PASS
+ok      github.com/scylladb/gocql/v2    0.703s

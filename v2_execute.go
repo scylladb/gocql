@@ -453,12 +453,13 @@ func selectPreparedResponse(state *preparedState, host UUID, prepared *hostPrepa
 }
 
 type logicalExecution struct {
-	id       uint64
-	started  time.Time
-	once     sync.Once
-	observer Observer
-	session  *Session
-	request  *executionRequest
+	ddlCoordinator atomic.Pointer[UUID]
+	id             uint64
+	started        time.Time
+	once           sync.Once
+	observer       Observer
+	session        *Session
+	request        *executionRequest
 }
 
 func (l *logicalExecution) finish(result Result, err error) {
@@ -767,7 +768,14 @@ func (s *Session) executePage(ctx context.Context, request *executionRequest, st
 		select {
 		case <-ctx.Done():
 			aggregate.Attempts = startedCount
-			return nil, &ExecutionError{Err: ctx.Err(), Result: aggregate}
+			failure := ctx.Err()
+			if request.logical != nil {
+				if coordinator := request.logical.ddlCoordinator.Load(); coordinator != nil {
+					aggregate.HostID = *coordinator
+					failure = fmt.Errorf("gocql: DDL succeeded; automatic agreement/refresh failed: %w", failure)
+				}
+			}
+			return nil, &ExecutionError{Err: failure, Result: aggregate}
 		case pending := <-delayed:
 			scheduled--
 			if err := launch(pending.conn, pending.consistency, false); err != nil {
@@ -780,6 +788,10 @@ func (s *Session) executePage(ctx context.Context, request *executionRequest, st
 				arm()
 			}
 		case <-speculate:
+			if request.logical != nil && request.logical.ddlCoordinator.Load() != nil {
+				speculate = nil
+				continue
+			}
 			if err := launch(nil, request.options.profile.Consistency, true); err == nil {
 				arm()
 			} else {
@@ -815,6 +827,11 @@ func (s *Session) executePage(ctx context.Context, request *executionRequest, st
 					response.state = completePageState()
 				}
 				return response, nil
+			}
+			// Automatic post-DDL work cannot cause a successful statement to replay.
+			if response != nil && response.schemaChange {
+				response.owner.Release()
+				return nil, &ExecutionError{Err: fmt.Errorf("gocql: DDL succeeded; automatic agreement/refresh failed: %w", attemptErr), Result: aggregate}
 			}
 			lastErr = attemptErr
 			if response != nil {
@@ -984,13 +1001,17 @@ func (s *Session) executeTypedAttempt(ctx context.Context, conn *Conn, request *
 		}
 
 		if response.schemaChange {
+			if request.logical != nil {
+				coordinator := conn.host.hostUUID()
+				request.logical.ddlCoordinator.Store(&coordinator)
+			}
 			config := s.typedRuntime().config.Metadata
 			if config.AutomaticAgreement {
 				if err := s.awaitV2SchemaAgreementOn(ctx, conn); err != nil {
 					return response, err
 				}
 			}
-			if config.RefreshAfterAgreement {
+			if config.AutomaticAgreement && config.RefreshAfterAgreement {
 				var refreshErr error
 				if response.keyspace != "" {
 					refreshErr = s.refreshV2Keyspace(ctx, response.keyspace)

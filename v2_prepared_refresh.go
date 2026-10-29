@@ -70,6 +70,8 @@ func (s *Session) reconcileV2PreparedScope(ctx context.Context, keyspace string)
 	p := s.peripheral()
 	p.mu.Lock()
 	epoch := p.schemaEpoch[keyspace]
+	revision := p.schemaRevision[keyspace]
+	tables := p.captureTableRevisionsLocked(keyspace)
 	config := p.config
 	p.mu.Unlock()
 	base, err := getV2KeyspaceMetadata(ctx, s, keyspace)
@@ -88,11 +90,12 @@ func (s *Session) reconcileV2PreparedScope(ctx context.Context, keyspace string)
 	}
 	publish := config.Metadata.Mode != MetadataDisabled && (len(config.Metadata.Keyspaces) == 0 || slices.Contains(config.Metadata.Keyspaces, keyspace))
 	p.mu.Lock()
-	if p.schemaEpoch[keyspace] != epoch {
+	if p.schemaEpoch[keyspace] != epoch || p.schemaRevision[keyspace] != revision || !p.tableRevisionsCurrentLocked(keyspace, tables) {
 		p.mu.Unlock()
 		return &PartialRefreshError{Keyspaces: map[string]error{keyspace: errors.New("schema changed during prepared reconciliation")}}
 	}
 	if publish && s.metadataDescriber != nil {
+		p.schemaRevision[keyspace]++
 		if absent {
 			s.metadataDescriber.metadata.keyspaceMetadata.removeKeyspace(keyspace)
 		} else {

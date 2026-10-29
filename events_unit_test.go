@@ -704,9 +704,9 @@ func TestHandleSchemaEvent(t *testing.T) {
 			wantKsChanged       []KeyspaceUpdateEvent
 		}{
 			{
-				name:                "keyspace event calls schema agreement and policy",
+				name:                "keyspace event calls policy without blocking on agreement",
 				event:               &frm.SchemaChangeKeyspace{Change: "UPDATED", Keyspace: "test_ks"},
-				wantSchemaAgreement: 1,
+				wantSchemaAgreement: 0,
 				wantKsChanged:       []KeyspaceUpdateEvent{{Keyspace: "test_ks", Change: "UPDATED"}},
 			},
 			{
@@ -1115,8 +1115,8 @@ func TestHandleSchemaEvent(t *testing.T) {
 			&frm.SchemaChangeKeyspace{Change: "UPDATED", Keyspace: "test_ks"},
 		})
 
-		if got := ctrl.getAwaitSchemaAgreementCalls(); got != 1 {
-			t.Fatalf("awaitSchemaAgreement: got %d, want 1", got)
+		if got := ctrl.getAwaitSchemaAgreementCalls(); got != 0 {
+			t.Fatalf("awaitSchemaAgreement: got %d, want 0 (background events do not impose DDL agreement)", got)
 		}
 		if _, found := s.metadataDescriber.metadata.keyspaceMetadata.getKeyspace("test_ks"); found {
 			t.Fatal("keyspace should have been removed from cache by keyspace event")

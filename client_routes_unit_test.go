@@ -652,7 +652,7 @@ func TestClientRoutesHandlerInitializeIsIdempotent(t *testing.T) {
 	if err := h.Initialize(s); err != nil {
 		t.Fatalf("first Initialize call failed: %v", err)
 	}
-	if !h.initialized {
+	if !h.initialized.Load() {
 		t.Fatal("expected handler to be marked initialized")
 	}
 

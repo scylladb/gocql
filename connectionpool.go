@@ -229,16 +229,18 @@ func (p *policyConnPool) iteratePool(iter func(info HostPoolInfo) bool) {
 
 func (p *policyConnPool) Close() {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	// close the pools
-	for addr, pool := range p.hostConnPools {
-		delete(p.hostConnPools, addr)
+	pools := make([]*hostConnPool, 0, len(p.hostConnPools))
+	for id, pool := range p.hostConnPools {
+		pools = append(pools, pool)
+		delete(p.hostConnPools, id)
+	}
+	p.mu.Unlock()
+	for _, pool := range pools {
 		pool.Close()
 	}
 }
 
-func (p *policyConnPool) addHost(host *HostInfo) {
+func (p *policyConnPool) ensureHost(host *HostInfo) *hostConnPool {
 	hostID := host.hostUUID()
 	p.mu.Lock()
 	pool, ok := p.hostConnPools[hostID]
@@ -254,8 +256,9 @@ func (p *policyConnPool) addHost(host *HostInfo) {
 	}
 	p.mu.Unlock()
 
-	pool.fill_debounce()
+	return pool
 }
+func (p *policyConnPool) addHost(host *HostInfo) { p.ensureHost(host).fill_debounce() }
 
 func (p *policyConnPool) removeHost(hostID UUID) {
 	p.mu.Lock()
@@ -498,7 +501,7 @@ func (pool *hostConnPool) fillNow() {
 			return
 		}
 		// notify the session that this node is connected
-		go pool.session.handleNodeConnected(pool.host)
+		pool.session.peripheral().startWorker(func() { pool.session.handlePoolConnected(pool) })
 
 		// filled one, let's reload it to see if it has changed
 		pool.mu.RLock()
@@ -515,7 +518,7 @@ func (pool *hostConnPool) fillNow() {
 
 		if err == nil && startCount > 0 {
 			// notify the session that this node is connected again
-			go pool.session.handleNodeConnected(pool.host)
+			pool.session.peripheral().startWorker(func() { pool.session.handlePoolConnected(pool) })
 		}
 	}()
 }

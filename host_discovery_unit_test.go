@@ -312,15 +312,27 @@ func TestRefreshRingSkipsPeers(t *testing.T) {
 	rs := newRingTestServer(t, good, noRack, zeroToken, otherDC)
 	s := rs.session(t, func(cfg *ClusterConfig) { cfg.HostFilter = DataCenterHostFilter("dc1") })
 
-	if got, want := ringHosts(s), sortedKeys(localKey(), peerKey(good)); strings.Join(got, " ") != strings.Join(want, " ") {
-		t.Fatalf("ring = %v, want only the local host and the valid dc1 peer %v", got, want)
+	if got, want := ringHosts(s), sortedKeys(localKey(), peerKey(good), peerKey(zeroToken), peerKey(otherDC)); strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("ring = %v, want valid topology including zero-token and disabled peers %v", got, want)
 	}
 	if err := s.refreshRingNow(); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := ringHosts(s), sortedKeys(localKey(), peerKey(good)); strings.Join(got, " ") != strings.Join(want, " ") {
+	if got, want := ringHosts(s), sortedKeys(localKey(), peerKey(good), peerKey(zeroToken), peerKey(otherDC)); strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Fatalf("after refresh ring = %v, want %v", got, want)
 	}
+	for _, host := range s.Metadata().Hosts() {
+		if host.ID == otherDC.hostID && host.Enabled {
+			t.Fatal("filtered host must remain disabled")
+		}
+	}
+	if pool, ok := s.pool.getPoolByHostID(otherDC.hostID.String()); ok && pool.Size() > 0 {
+		t.Fatal("filtered host received connections")
+	}
+	if len(s.Metadata().Diagnostics()) == 0 {
+		t.Fatal("skipped incomplete peer must be observable")
+	}
+
 }
 
 // A failed lookup reports the error and leaves the ring as it was rather

@@ -61,6 +61,7 @@ func (p PoolConfig) buildPool(session *Session) *policyConnPool {
 // behavior to fit the most common use cases. Applications that require a
 // different setup must implement their own cluster.
 type ClusterConfig struct {
+	disableClientRouteEvents bool
 	// BatchObserver will set the provided batch observer on all queries created from this session.
 	// Use it to collect metrics / stats from batch queries by providing an implementation of BatchObserver.
 	BatchObserver BatchObserver

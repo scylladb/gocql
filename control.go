@@ -75,6 +75,10 @@ type controlConnection interface {
 }
 
 type controlConn struct {
+	workerMu     sync.Mutex
+	workers      sync.WaitGroup
+	connections  map[*Conn]struct{}
+	closeOnce    sync.Once
 	conn         atomic.Pointer[connHost]
 	retry        oldRetryPolicy
 	session      *Session
@@ -331,7 +335,7 @@ func (c *controlConn) connect(hosts []*HostInfo) error {
 	// we could fetch the initial ring here and update initial host data. So that
 	// when we return from here we have a ring topology ready to go.
 
-	go c.heartBeat()
+	c.startWorker(c.heartBeat)
 
 	return nil
 }
@@ -347,8 +351,17 @@ func (c *controlConn) setupConn(conn *Conn) error {
 	stopAndJoin := conn.setupCancellation(setupCtx)
 	defer stopAndJoin()
 	// we need up-to-date host info for the filterHost call below
-	iter := conn.querySystem(setupCtx, qrySystemLocal)
-	host, err := hostInfoFromIter(iter, c.session.cfg.Port)
+	hosts, err := readV2Topology(setupCtx, conn, qrySystemLocal, c.session.cfg.Port)
+	var host *HostInfo
+	if err == nil {
+		if len(hosts) == 0 {
+			err = typeValidation("control topology", "query returned 0 rows")
+		} else if len(hosts) != 1 || hosts[0].hostUUID().IsEmpty() {
+			err = typeValidation("control topology", "expected one local identity")
+		} else {
+			host = hosts[0]
+		}
+	}
 	if err != nil {
 		return err
 	}
@@ -368,17 +381,27 @@ func (c *controlConn) setupConn(conn *Conn) error {
 	if err := setupCtx.Err(); err != nil {
 		return err
 	}
-	ch := &connHost{
-		conn: conn,
-		host: host,
+	conn.host.update(host)
+	host = conn.host
+	ch := &connHost{conn: conn, host: host}
+	c.workerMu.Lock()
+	if atomic.LoadInt32(&c.state) == controlConnClosing {
+		c.workerMu.Unlock()
+		return ErrClosed
 	}
+	if c.connections == nil {
+		c.connections = make(map[*Conn]struct{})
+	}
+	c.connections[conn] = struct{}{}
 	old := c.conn.Swap(ch)
+	c.workerMu.Unlock()
 	var oldHost events.HostInfo
 	if old != nil && old.host != nil {
 		oldHost.HostID = old.host.HostID()
 		oldHost.Host = old.host.ConnectAddress()
 		oldHost.Port = old.host.Port()
 	}
+	c.session.publishV2Metadata()
 	c.session.publishEvent(&events.ControlConnectionRecreatedEvent{
 		OldHost: oldHost,
 		NewHost: events.HostInfo{
@@ -394,7 +417,7 @@ func (c *controlConn) setupConn(conn *Conn) error {
 		// with the fill called by Session.init. Session.init needs to wait for its fill to finish and that
 		// would return immediately if we started the fill here.
 		// TODO(martin-sucha): Trigger pool refill for all hosts, like in reconnectDownedHosts?
-		go c.session.startPoolFill(host)
+		c.session.peripheral().startWorker(func() { c.session.startPoolFill(host) })
 	}
 	return nil
 }
@@ -416,7 +439,7 @@ func (c *controlConn) registerEventsContext(ctx context.Context, conn *Conn) err
 	if !c.session.cfg.Events.DisableSchemaEvents {
 		events = append(events, "SCHEMA_CHANGE")
 	}
-	if c.session.cfg.ClientRoutesConfig != nil {
+	if c.session.cfg.ClientRoutesConfig != nil && !c.session.cfg.disableClientRouteEvents {
 		events = append(events, "CLIENT_ROUTES_CHANGE")
 	}
 
@@ -464,6 +487,9 @@ func (c *controlConn) reconnect() error {
 		c.session.logger.Printf("gocql: unable to refresh ring: %v\n", err)
 	}
 
+	if c.session.metadataDescriber == nil {
+		return err
+	}
 	err = c.session.metadataDescriber.refreshAllSchema()
 	if err != nil {
 		c.session.logger.Printf("gocql: unable to refresh the schema: %v\n", err)
@@ -548,7 +574,7 @@ func (c *controlConn) HandleError(conn *Conn, err error, closed bool) {
 		return
 	}
 
-	go c.reconnect()
+	c.startWorker(func() { _ = c.reconnect() })
 }
 
 func (c *controlConn) getConn() *connHost {
@@ -570,7 +596,7 @@ func (c *controlConn) writeFrame(w frameBuilder) (frame, error) {
 		return nil, errNoControl
 	}
 
-	framer, err := ch.conn.exec(context.Background(), w, nil, c.session.cfg.MetadataSchemaRequestTimeout)
+	framer, err := ch.conn.exec(v2SchemaContext(c.session), w, nil, c.session.cfg.MetadataSchemaRequestTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -617,18 +643,43 @@ func (c *controlConn) runQuery(qry *Query) (iter *Iter) {
 }
 
 func (c *controlConn) awaitSchemaAgreement() error {
-	ch := c.getConn()
-	return (&Iter{err: ch.conn.awaitSchemaAgreement(context.TODO())}).err
+	return c.session.awaitV2SchemaAgreement(v2SchemaContext(c.session))
 }
 
-func (c *controlConn) close() {
-	if atomic.CompareAndSwapInt32(&c.state, controlConnStarted, controlConnClosing) {
-		c.quit <- struct{}{}
+func (c *controlConn) startWorker(fn func()) bool {
+	c.workerMu.Lock()
+	defer c.workerMu.Unlock()
+	if atomic.LoadInt32(&c.state) == controlConnClosing {
+		return false
 	}
-
-	ch := c.getConn()
-	if ch != nil {
-		ch.conn.Close()
+	c.workers.Add(1)
+	go func() { defer c.workers.Done(); fn() }()
+	return true
+}
+func (c *controlConn) close() {
+	c.closeOnce.Do(func() {
+		c.workerMu.Lock()
+		atomic.StoreInt32(&c.state, controlConnClosing)
+		if c.quit != nil {
+			close(c.quit)
+		}
+		c.workerMu.Unlock()
+	})
+	if current := c.getConn(); current != nil {
+		current.conn.Close()
+	}
+	c.workers.Wait()
+	c.workerMu.Lock()
+	connections := make([]*Conn, 0, len(c.connections))
+	for conn := range c.connections {
+		connections = append(connections, conn)
+	}
+	c.workerMu.Unlock()
+	for _, conn := range connections {
+		conn.Close()
+	}
+	for _, conn := range connections {
+		conn.waitEventDispatch()
 	}
 }
 

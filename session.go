@@ -102,6 +102,7 @@ type Session struct {
 	sessionStateMu            sync.RWMutex
 	cons                      Consistency
 	isClosing                 bool
+	closeDone                 chan struct{}
 	hasAggregatesAndFunctions bool
 	useSystemSchema           bool
 	tabletsRoutingV1          bool
@@ -189,7 +190,14 @@ func newSessionCommon(cfg ClusterConfig) (*Session, error) {
 	}
 
 	s.nodeEvents = newEventDebouncer("NodeEvents", s.handleNodeEvent, s.logger)
-	s.schemaEvents = newEventDebouncer("SchemaEvents", s.handleSchemaEvent, s.logger)
+	s.schemaEvents = newEventDebouncer("SchemaEvents", s.handleSchemaEventAndPublish, s.logger)
+	resync := func() {
+		s.debounceRingRefresh()
+		s.scheduleV2SchemaRetry()
+		s.publishV2LocalEvent(Event{Kind: OverflowEvent, Generation: s.Metadata().Generation(), Change: "CONTROL_RESYNC"})
+	}
+	s.schemaEvents.resync = resync
+	s.nodeEvents.resync = resync
 
 	s.routingKeyInfoCache.lru = lru.New[routingKeyInfoCacheKey](cfg.MaxRoutingKeyInfo)
 
@@ -415,14 +423,12 @@ func (s *Session) init() error {
 				return err
 			}
 
-			filteredHosts := make([]*HostInfo, 0, len(newHosts))
-			for _, host := range newHosts {
-				if !s.cfg.filterHost(host) {
-					filteredHosts = append(filteredHosts, host)
-				}
+			hosts = newHosts // filtered nodes remain visible without pools
+		} else {
+			hosts, err = s.v2ContactIdentities(v2SchemaContext(s), hosts)
+			if err != nil {
+				return err
 			}
-
-			hosts = filteredHosts
 		}
 
 		newer, _ := checkSystemSchema(s.control)
@@ -669,12 +675,23 @@ func (s *Session) Close() error {
 
 	s.sessionStateMu.Lock()
 	if s.isClosing {
+		done := s.closeDone
 		s.sessionStateMu.Unlock()
+		if done != nil {
+			<-done
+		}
 		return nil
 	}
 	s.isClosing = true
+	s.closeDone = make(chan struct{})
+	done := s.closeDone
 	s.sessionStateMu.Unlock()
+	defer close(done)
 	preparedRuntime := s.stopPreparedWorkers()
+	if s.cancel != nil {
+		s.cancel()
+	}
+	s.closeV2Peripheral()
 
 	if s.pool != nil {
 		s.pool.Close()
@@ -700,10 +717,6 @@ func (s *Session) Close() error {
 		s.ringRefresher.Stop()
 	}
 
-	if s.cancel != nil {
-		s.cancel()
-	}
-
 	if s.clientRoutesHandler != nil {
 		s.clientRoutesHandler.Stop()
 	}
@@ -712,13 +725,13 @@ func (s *Session) Close() error {
 	s.isClosed = true
 	s.sessionStateMu.Unlock()
 
+	s.peripheral().workers.Wait()
 	if s.metadataDescriber != nil && s.metadataDescriber.metadata != nil {
 		s.metadataDescriber.metadata.tabletsMetadata.Close()
 	}
 	if preparedRuntime != nil {
 		preparedRuntime.prepareWorkers.Wait()
 	}
-	s.closeV2Peripheral()
 	return nil
 }
 
