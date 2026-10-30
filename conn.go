@@ -2101,13 +2101,10 @@ func (c *deadlineContextWriter) writeContext(ctx context.Context, p []byte) (int
 		<-c.semaphore
 	}()
 
-	timeout := c.timeout.Load()
-	if timeout > 0 {
-		err := c.w.SetWriteDeadline(time.Now().Add(time.Duration(timeout)))
-		if err != nil {
-			return 0, err
-		}
+	if err := c.w.SetWriteDeadline(effectiveWriteDeadline(c.timeout.Load())); err != nil {
+		return 0, err
 	}
+
 	return c.w.Write(p)
 }
 
@@ -2254,15 +2251,13 @@ func (w *writeCoalescer) flush(resultChans []chan<- writeResult, buffers net.Buf
 }
 
 func (w *writeCoalescer) flushSizes(resultChans []chan<- writeResult, buffers net.Buffers, sizes []int64) {
-	timeout := w.timeout.Load()
-	if timeout > 0 {
-		if err := w.c.SetWriteDeadline(time.Now().Add(time.Duration(timeout))); err != nil {
-			for _, ch := range resultChans {
-				ch <- writeResult{err: err}
-			}
-			return
+	if err := w.c.SetWriteDeadline(effectiveWriteDeadline(w.timeout.Load())); err != nil {
+		for _, ch := range resultChans {
+			ch <- writeResult{err: err}
 		}
+		return
 	}
+
 	scratch := append(net.Buffers(nil), buffers...)
 	n, err := writeSpanBuffers(w.c, scratch)
 	var total int64
@@ -3338,4 +3333,13 @@ func (e *QueryError) Unwrap() error {
 
 func unmarshalTabletHint(hint []byte, _ uint8, keyspace, table string) (tablets.TabletInfo, error) {
 	return tablets.ParseHint(hint, keyspace, table)
+}
+
+// Socket deadlines are absolute. Disabling the operational timeout must clear
+// the startup deadline, which may otherwise expire during a long-lived session.
+func effectiveWriteDeadline(timeout int64) time.Time {
+	if timeout > 0 {
+		return time.Now().Add(time.Duration(timeout))
+	}
+	return time.Time{}
 }

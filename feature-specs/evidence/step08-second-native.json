@@ -1,0 +1,320 @@
+{
+  "run_id": "g254e87070a9e4826",
+  "pid": 2991711,
+  "fixture_root": "/extra/scylladb/gocql-api-test-cluster/step08/g254e87070a9e4826",
+  "runner_sha256": "d5b3e9c0b46d3abf211776178af31bd7f1cea46bd47135177a300d7a0f2e47e3",
+  "configuration": {
+    "lanes": [
+      {
+        "name": "stable20",
+        "kind": "scylla",
+        "install": "/extra/scylladb/gocql-api-test-cluster/ccm/scylla-repository/release/2026.3.4",
+        "binary": "libexec/scylla",
+        "sha256": "fe5c0f66ba2e52032e41822a9b54e63ec6e636cec9b1fc3561a3829bd60b1bb5",
+        "version": "2026.3.4",
+        "ccm_version": "release:2026.3.4",
+        "addresses": [
+          "127.0.20.1",
+          "127.0.20.2",
+          "127.0.20.3"
+        ],
+        "modes": [
+          {
+            "name": "v3",
+            "args": [
+              "-proto=3"
+            ],
+            "tests": "^(TestAuthentication|TestStep07RunStreamLive|TestUnixSockets)$"
+          },
+          {
+            "name": "v4-tls",
+            "args": [
+              "-proto=4",
+              "-runssl"
+            ],
+            "tests": "^(TestAuthentication|TestStep07RunStreamLive|TestUnixSockets|TestCloudConnection|TestTLSTicketResumption|TestRecreateSchema)$"
+          }
+        ]
+      },
+      {
+        "name": "cassandra21",
+        "kind": "cassandra",
+        "install": "/home/dkropachev/.local/share/containers/storage/overlay/635220d55ce81dd8d814691b98f1c557aa51fdc060f1dc05a749455283bd29c4/diff/opt/cassandra",
+        "config": "/extra/scylladb/gocql-api-test-cluster/cassandra-base",
+        "binary": "lib/apache-cassandra-5.0.9.jar",
+        "sha256": "6a80e6fddde88817deec4839ae431e3a9c4eeb728560336890094c6f870fef5e",
+        "version": "5.0.9",
+        "java_home": "/usr/lib/jvm/java-17-openjdk-amd64",
+        "addresses": [
+          "127.0.21.1",
+          "127.0.21.2",
+          "127.0.21.3"
+        ],
+        "modes": [
+          {
+            "name": "v4-no-compression",
+            "args": [
+              "-proto=4",
+              "-compressor=no-compression"
+            ],
+            "tests": "^(TestRecreateSchema|TestCustomPayloadMessages|TestCustomPayloadValues|TestWriteFailure|TestInvalidPeerEntry|TestStep07RunStreamLive)$"
+          },
+          {
+            "name": "v5-no-compression",
+            "args": [
+              "-proto=5",
+              "-compressor=no-compression"
+            ],
+            "tests": "^(TestRecreateSchema|TestCustomPayloadMessages|TestCustomPayloadValues|TestWriteFailure|TestInvalidPeerEntry|TestStep07RunStreamLive)$"
+          },
+          {
+            "name": "v5-lz4",
+            "args": [
+              "-proto=5",
+              "-compressor=lz4"
+            ],
+            "tests": "^(TestRecreateSchema|TestCustomPayloadMessages|TestCustomPayloadValues|TestWriteFailure|TestInvalidPeerEntry|TestStep07RunStreamLive)$"
+          },
+          {
+            "name": "v5-lz4-tls",
+            "args": [
+              "-proto=5",
+              "-compressor=lz4",
+              "-runssl"
+            ],
+            "tests": "^(TestRecreateSchema|TestCustomPayloadMessages|TestCustomPayloadValues|TestWriteFailure|TestInvalidPeerEntry|TestStep07RunStreamLive)$"
+          }
+        ]
+      },
+      {
+        "name": "development22",
+        "kind": "scylla",
+        "install": "/home/dkropachev/.local/share/containers/storage/overlay/d39a09124e8174c019e18dbd72a02e6b2d64e28942d52a87a8da30e912dd42b4/diff/opt/scylladb",
+        "layout": "scylla-container",
+        "config": "/home/dkropachev/.local/share/containers/storage/overlay/d39a09124e8174c019e18dbd72a02e6b2d64e28942d52a87a8da30e912dd42b4/diff/etc/scylla/scylla.yaml",
+        "binary": "libexec/scylla",
+        "sha256": "8d830cff9c748ae34512f060bc807ab77f274218a4c815c07e8be2faa5db0905",
+        "version": "2027.1.0",
+        "ccm_version": "2027.1.0",
+        "image_digest": "sha256:f254ffaca9977cab0d344f30eea71106d2b217135bd188543577d8bf2290be22",
+        "addresses": [
+          "127.0.22.1",
+          "127.0.22.2",
+          "127.0.22.3"
+        ],
+        "modes": [
+          {
+            "name": "v4",
+            "args": [
+              "-proto=4"
+            ],
+            "tests": "^(TestSelectWithoutFromLiteral|TestStep07RunStreamLive)$"
+          }
+        ]
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "name": "stable20",
+      "addresses": [
+        "127.0.20.1",
+        "127.0.20.2",
+        "127.0.20.3"
+      ],
+      "namespace": "g254e87070a9e4826",
+      "tests": [
+        {
+          "mode": "v3",
+          "exit_code": 0
+        },
+        {
+          "mode": "v4-tls",
+          "exit_code": 1
+        }
+      ],
+      "configs": {
+        "/extra/scylladb/gocql-api-test-cluster/step08/g254e87070a9e4826/stable20/node3/conf/housekeeping.cfg": "6a05e6f3e63109dc704475593d0971742a9d9a5a6d75a7efb2cdfc9c3ca30cfe",
+        "/extra/scylladb/gocql-api-test-cluster/step08/g254e87070a9e4826/stable20/node3/conf/cassandra-rackdc.properties": "a0e6e009a4889a9bd865ed04ce79c0cd91303b9bdf508d0cb113aaea1545007b",
+        "/extra/scylladb/gocql-api-test-cluster/step08/g254e87070a9e4826/stable20/node3/conf/cassandra.yaml": "af24d85e9a78245ab033a5ff9e3e639d8602813969e397399c195b7f1a360437",
+        "/extra/scylladb/gocql-api-test-cluster/step08/g254e87070a9e4826/stable20/node3/conf/scylla.yaml": "7ba85b501724797c8459d9b02ddf5fc111828c4c6bab2f9ff7fa14afee68676b",
+        "/extra/scylladb/gocql-api-test-cluster/step08/g254e87070a9e4826/stable20/node1/conf/housekeeping.cfg": "6a05e6f3e63109dc704475593d0971742a9d9a5a6d75a7efb2cdfc9c3ca30cfe",
+        "/extra/scylladb/gocql-api-test-cluster/step08/g254e87070a9e4826/stable20/node1/conf/cassandra-rackdc.properties": "a0e6e009a4889a9bd865ed04ce79c0cd91303b9bdf508d0cb113aaea1545007b",
+        "/extra/scylladb/gocql-api-test-cluster/step08/g254e87070a9e4826/stable20/node1/conf/cassandra.yaml": "cc3ac28f9138bc1dd407d501079e1c98f2cac313ff612ff5a90055e9b04a233a",
+        "/extra/scylladb/gocql-api-test-cluster/step08/g254e87070a9e4826/stable20/node1/conf/scylla.yaml": "84c2547202b68254ab0eec79435c7c894c212ecc28190de860fcfdcb8a3060b2",
+        "/extra/scylladb/gocql-api-test-cluster/step08/g254e87070a9e4826/stable20/node2/conf/housekeeping.cfg": "6a05e6f3e63109dc704475593d0971742a9d9a5a6d75a7efb2cdfc9c3ca30cfe",
+        "/extra/scylladb/gocql-api-test-cluster/step08/g254e87070a9e4826/stable20/node2/conf/cassandra-rackdc.properties": "a0e6e009a4889a9bd865ed04ce79c0cd91303b9bdf508d0cb113aaea1545007b",
+        "/extra/scylladb/gocql-api-test-cluster/step08/g254e87070a9e4826/stable20/node2/conf/cassandra.yaml": "233e8e5406a0a122c8d6d20e87a0a7c78d36e666a96d72ff62721f0d21b0c21d",
+        "/extra/scylladb/gocql-api-test-cluster/step08/g254e87070a9e4826/stable20/node2/conf/scylla.yaml": "991903a977887268b94d4239539cf525e932c5e2cbc946793e40e56fe2d00a25"
+      },
+      "health": [
+        {
+          "address": "127.0.20.1",
+          "port": 9042,
+          "header": "840000000600000214",
+          "body_sha256": "e3ac60e8f02fa93053b446b0739c3436ad4ddee91384ac47575caa692366f0a1"
+        },
+        {
+          "address": "127.0.20.2",
+          "port": 9042,
+          "header": "840000000600000214",
+          "body_sha256": "1b9a4b0335ec628938b7e9b4f5ad61b0fd506d7dd49b07bc040f09b5a27d22a0"
+        },
+        {
+          "address": "127.0.20.3",
+          "port": 9042,
+          "header": "840000000600000214",
+          "body_sha256": "541410702b1d3c0a9010633f279649d4a38749b9f222b8adf7fc995e901a1bba"
+        }
+      ],
+      "node_restart_stopped": true,
+      "node_restart_health": {
+        "address": "127.0.20.3",
+        "port": 9042,
+        "header": "840000000600000214",
+        "body_sha256": "541410702b1d3c0a9010633f279649d4a38749b9f222b8adf7fc995e901a1bba"
+      },
+      "joined": {
+        "node1": true,
+        "node2": true,
+        "node3": true
+      },
+      "endpoints_refused": true
+    }
+  ],
+  "config_sha256": "821846b80f7218a138d91cd2775c9769c2925a1583765943dbcb6bd86821e399",
+  "commands": [
+    {
+      "name": "stable20-v3",
+      "command": [
+        "go",
+        "test",
+        "-json",
+        "-race",
+        "-tags",
+        "integration gocql_debug",
+        "-count=1",
+        "-timeout=8m",
+        "-parallel=1",
+        "-run",
+        "^(TestAuthentication|TestStep07RunStreamLive|TestUnixSockets)$",
+        ".",
+        "-args",
+        "-gocql.timeout=60s",
+        "-rf=3",
+        "-clusterSize=3",
+        "-autowait=2s",
+        "-cluster=127.0.20.1,127.0.20.2,127.0.20.3",
+        "-distribution=scylla",
+        "-gocql.cversion=2026.3.4",
+        "-runauth",
+        "-cluster-socket=/extra/scylladb/gocql-api-test-cluster/step08/g254e87070a9e4826/stable20/node1/cql.m",
+        "-proto=3"
+      ],
+      "exit_code": 0,
+      "seconds": 25.069,
+      "log": "/extra/scylladb/gocql/feature-specs/evidence/step08-second-native-stable20-v3.log",
+      "sha256": "83ad1cc754a767609ef40f960f0838e607ea740e8e1b9ab42f284c2bf9645b0e"
+    },
+    {
+      "name": "stable20-v3-cleanup",
+      "command": [
+        "go",
+        "test",
+        "-json",
+        "-race",
+        "-tags",
+        "integration gocql_debug",
+        "-count=1",
+        "-timeout=8m",
+        "-parallel=1",
+        "-run",
+        "^TestStep08Cleanup$",
+        ".",
+        "-args",
+        "-gocql.timeout=60s",
+        "-rf=3",
+        "-clusterSize=3",
+        "-autowait=2s",
+        "-cluster=127.0.20.1,127.0.20.2,127.0.20.3",
+        "-distribution=scylla",
+        "-gocql.cversion=2026.3.4",
+        "-runauth",
+        "-cluster-socket=/extra/scylladb/gocql-api-test-cluster/step08/g254e87070a9e4826/stable20/node1/cql.m",
+        "-proto=3"
+      ],
+      "exit_code": 0,
+      "seconds": 1.648,
+      "log": "/extra/scylladb/gocql/feature-specs/evidence/step08-second-native-stable20-v3-cleanup.log",
+      "sha256": "1420e6c8f504e1b81b8b859bc020391da77cac9dbe1441559960ca2add5c0152"
+    },
+    {
+      "name": "stable20-v4-tls",
+      "command": [
+        "go",
+        "test",
+        "-json",
+        "-race",
+        "-tags",
+        "integration gocql_debug",
+        "-count=1",
+        "-timeout=8m",
+        "-parallel=1",
+        "-run",
+        "^(TestAuthentication|TestStep07RunStreamLive|TestUnixSockets|TestCloudConnection|TestTLSTicketResumption|TestRecreateSchema)$",
+        ".",
+        "-args",
+        "-gocql.timeout=60s",
+        "-rf=3",
+        "-clusterSize=3",
+        "-autowait=2s",
+        "-cluster=127.0.20.1,127.0.20.2,127.0.20.3",
+        "-distribution=scylla",
+        "-gocql.cversion=2026.3.4",
+        "-runauth",
+        "-cluster-socket=/extra/scylladb/gocql-api-test-cluster/step08/g254e87070a9e4826/stable20/node1/cql.m",
+        "-proto=4",
+        "-runssl"
+      ],
+      "exit_code": 1,
+      "seconds": 57.316,
+      "log": "/extra/scylladb/gocql/feature-specs/evidence/step08-second-native-stable20-v4-tls.log",
+      "sha256": "adebd333fbd42e51afa1e1d526110d36d68842fb6b264cfcfc2494dfafe8b607"
+    },
+    {
+      "name": "stable20-v4-tls-cleanup",
+      "command": [
+        "go",
+        "test",
+        "-json",
+        "-race",
+        "-tags",
+        "integration gocql_debug",
+        "-count=1",
+        "-timeout=8m",
+        "-parallel=1",
+        "-run",
+        "^TestStep08Cleanup$",
+        ".",
+        "-args",
+        "-gocql.timeout=60s",
+        "-rf=3",
+        "-clusterSize=3",
+        "-autowait=2s",
+        "-cluster=127.0.20.1,127.0.20.2,127.0.20.3",
+        "-distribution=scylla",
+        "-gocql.cversion=2026.3.4",
+        "-runauth",
+        "-cluster-socket=/extra/scylladb/gocql-api-test-cluster/step08/g254e87070a9e4826/stable20/node1/cql.m",
+        "-proto=4",
+        "-runssl"
+      ],
+      "exit_code": 0,
+      "seconds": 25.027,
+      "log": "/extra/scylladb/gocql/feature-specs/evidence/step08-second-native-stable20-v4-tls-cleanup.log",
+      "sha256": "af5faaa8d59035447d94edf67713177f55e0864a79fd6cdf1883edd2d65e10f0"
+    }
+  ],
+  "status": "failed",
+  "error": "RuntimeError('test lane failed: stable20/v4-tls')"
+}

@@ -1,0 +1,18 @@
+RESERVED lifecycle20 ['127.0.20.1'] gf39f47b7064e4d2f
+{"name": "lifecycle20-server-version", "command": ["/extra/scylladb/gocql-api-test-cluster/ccm/scylla-repository/release/2026.3.4/bin/scylla", "--version"], "exit_code": 0, "seconds": 0.011, "log": "/extra/scylladb/gocql/feature-specs/evidence/step08-lifecycle-fail-lifecycle20-server-version.log", "sha256": "ff85619451f0dce6ec4fca4f5d06bb2e26a546c48f94b4028f82ed139adff048", "pid": 3060705, "cancelled": false}
+START lifecycle20
+{"name": "lifecycle20-fail", "command": ["go", "test", "-json", "-race", "-tags", "integration gocql_debug", "-count=1", "-timeout=8m", "-parallel=1", "-run", "^TestStep08HarnessLifecycle$", ".", "-args", "-gocql.timeout=60s", "-rf=1", "-clusterSize=1", "-autowait=2s", "-cluster=127.0.20.1", "-distribution=scylla", "-gocql.cversion=2026.3.4", "-runauth", "-cluster-socket=/extra/scylladb/gocql-api-test-cluster/step08/gf39f47b7064e4d2f/lifecycle20/node1/cql.m", "-proto=4"], "exit_code": 1, "seconds": 23.131, "log": "/extra/scylladb/gocql/feature-specs/evidence/step08-lifecycle-fail-lifecycle20-fail.log", "sha256": "e98bdc3abfd86502a207b35d2ad4eef55e36ad8acc234d6ef19bbb8dd16c011c", "pid": 3060714, "cancelled": false}
+{"name": "lifecycle20-fail-cleanup", "command": ["go", "test", "-json", "-race", "-tags", "integration gocql_debug", "-count=1", "-timeout=8m", "-parallel=1", "-run", "^TestStep08Cleanup$", ".", "-args", "-gocql.timeout=60s", "-rf=1", "-clusterSize=1", "-autowait=2s", "-cluster=127.0.20.1", "-distribution=scylla", "-gocql.cversion=2026.3.4", "-runauth", "-cluster-socket=/extra/scylladb/gocql-api-test-cluster/step08/gf39f47b7064e4d2f/lifecycle20/node1/cql.m", "-proto=4"], "exit_code": 0, "seconds": 1.704, "log": "/extra/scylladb/gocql/feature-specs/evidence/step08-lifecycle-fail-lifecycle20-fail-cleanup.log", "sha256": "e41c0060deff873e3b6cbd899a6be2284d439f686b482f4a8780059968d3bc3b", "pid": 3061739, "cancelled": false}
+STOP lifecycle20
+STOPPED lifecycle20 {'node1': True}
+Traceback (most recent call last):
+  File "/extra/scylladb/gocql/tests/fixtures/native.py", line 328, in <module>
+    main()
+    ~~~~^^
+  File "/extra/scylladb/gocql/tests/fixtures/native.py", line 317, in main
+    runner.lane(lane)
+    ~~~~~~~~~~~^^^^^^
+  File "/extra/scylladb/gocql/tests/fixtures/native.py", line 280, in lane
+    if status: raise RuntimeError("test lane failed: " + name + "/" + mode["name"])
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: test lane failed: lifecycle20/fail

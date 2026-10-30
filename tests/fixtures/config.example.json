@@ -1,0 +1,136 @@
+{
+  "lanes": [
+    {
+      "name": "stable20",
+      "kind": "scylla",
+      "install": "${SCYLLA_INSTALL}",
+      "binary": "libexec/scylla",
+      "sha256": "fe5c0f66ba2e52032e41822a9b54e63ec6e636cec9b1fc3561a3829bd60b1bb5",
+      "version": "2026.3.4",
+      "ccm_version": "release:2026.3.4",
+      "addresses": [
+        "127.0.20.1",
+        "127.0.20.2",
+        "127.0.20.3"
+      ],
+      "modes": [
+        {
+          "name": "v3",
+          "args": [
+            "-proto=3"
+          ],
+          "tests": "^(TestStep08FixtureIdentity|TestAuthentication|TestStep07RunStreamLive|TestUnixSockets)$"
+        },
+        {
+          "name": "v4-raw",
+          "args": [
+            "-proto=4"
+          ],
+          "tests": "^(TestStep08FixtureIdentity|TestAuthentication|TestStep07RunStreamLive)$"
+        },
+        {
+          "name": "v4-tls",
+          "args": [
+            "-proto=4",
+            "-runssl"
+          ],
+          "tests": "^(TestStep08FixtureIdentity|TestStep08ClientCertificateEnforced|TestStep08SNIProxyCancellationJoins|TestAuthentication|TestStep07RunStreamLive|TestUnixSockets|TestCloudConnection|TestTLSTicketResumption|TestRecreateSchema)$"
+        }
+      ]
+    },
+    {
+      "name": "cassandra21",
+      "kind": "cassandra",
+      "install": "${CASSANDRA_INSTALL}",
+      "config": "${CASSANDRA_CONFIG}",
+      "binary": "lib/apache-cassandra-5.0.9.jar",
+      "sha256": "6a80e6fddde88817deec4839ae431e3a9c4eeb728560336890094c6f870fef5e",
+      "version": "5.0.9",
+      "java_home": "${FIXTURE_JAVA_HOME}",
+      "addresses": [
+        "127.0.21.1",
+        "127.0.21.2",
+        "127.0.21.3"
+      ],
+      "modes": [
+        {
+          "name": "v4-no-compression",
+          "args": [
+            "-proto=4",
+            "-compressor=no-compression"
+          ],
+          "tests": "^(TestStep08FixtureIdentity|TestRecreateSchema|TestCustomPayloadMessages|TestCustomPayloadValues|TestWriteFailure|TestInvalidPeerEntry|TestStep07RunStreamLive)$"
+        },
+        {
+          "name": "v4-tls",
+          "args": [
+            "-proto=4",
+            "-runssl",
+            "-compressor=no-compression"
+          ],
+          "tests": "^(TestStep08FixtureIdentity|TestRecreateSchema|TestCustomPayloadMessages|TestCustomPayloadValues|TestWriteFailure|TestInvalidPeerEntry|TestStep07RunStreamLive)$"
+        },
+        {
+          "name": "v5-no-compression",
+          "args": [
+            "-proto=5",
+            "-compressor=no-compression"
+          ],
+          "tests": "^(TestStep08FixtureIdentity|TestRecreateSchema|TestCustomPayloadMessages|TestCustomPayloadValues|TestWriteFailure|TestInvalidPeerEntry|TestStep07RunStreamLive)$"
+        },
+        {
+          "name": "v5-lz4",
+          "args": [
+            "-proto=5",
+            "-compressor=lz4"
+          ],
+          "tests": "^(TestStep08FixtureIdentity|TestRecreateSchema|TestCustomPayloadMessages|TestCustomPayloadValues|TestWriteFailure|TestInvalidPeerEntry|TestStep07RunStreamLive)$"
+        },
+        {
+          "name": "v5-raw-tls",
+          "args": [
+            "-proto=5",
+            "-runssl",
+            "-compressor=no-compression"
+          ],
+          "tests": "^(TestStep08FixtureIdentity|TestRecreateSchema|TestCustomPayloadMessages|TestCustomPayloadValues|TestWriteFailure|TestInvalidPeerEntry|TestStep07RunStreamLive)$"
+        },
+        {
+          "name": "v5-lz4-tls",
+          "args": [
+            "-proto=5",
+            "-compressor=lz4",
+            "-runssl"
+          ],
+          "tests": "^(TestStep08FixtureIdentity|TestRecreateSchema|TestCustomPayloadMessages|TestCustomPayloadValues|TestWriteFailure|TestInvalidPeerEntry|TestStep07RunStreamLive)$"
+        }
+      ]
+    },
+    {
+      "name": "development22",
+      "kind": "scylla",
+      "install": "${SCYLLA_DEVELOPMENT_INSTALL}",
+      "layout": "scylla-container",
+      "config": "${SCYLLA_DEVELOPMENT_CONFIG}",
+      "binary": "libexec/scylla",
+      "sha256": "8d830cff9c748ae34512f060bc807ab77f274218a4c815c07e8be2faa5db0905",
+      "version": "2027.1.0",
+      "ccm_version": "2027.1.0",
+      "image_digest": "sha256:f254ffaca9977cab0d344f30eea71106d2b217135bd188543577d8bf2290be22",
+      "addresses": [
+        "127.0.22.1",
+        "127.0.22.2",
+        "127.0.22.3"
+      ],
+      "modes": [
+        {
+          "name": "v4",
+          "args": [
+            "-proto=4"
+          ],
+          "tests": "^(TestStep08FixtureIdentity|TestSelectWithoutFromLiteral|TestStep07RunStreamLive)$"
+        }
+      ]
+    }
+  ]
+}

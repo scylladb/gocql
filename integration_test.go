@@ -66,6 +66,16 @@ func TestAuthentication(t *testing.T) {
 	}
 
 	session.Close()
+	cluster.Auth = PasswordAuth("cassandra", "step08-invalid-password")
+	rejected, err := Connect(context.Background(), cluster)
+	if err == nil {
+		rejected.Close()
+		t.Fatal("server accepted rejected credentials")
+	}
+	var authErr RequestError
+	if !errors.As(err, &authErr) || authErr.GetCode() != ErrCodeCredentials {
+		t.Fatalf("expected authentication rejection, got %T: %v", err, err)
+	}
 }
 
 func TestGetHostsFromSystem(t *testing.T) {
@@ -469,15 +479,15 @@ func TestWriteFailure(t *testing.T) {
 	}
 	defer session.Close()
 
-	if err := v2CreateTable(context.Background(), session, fmt.Sprintf("CREATE KEYSPACE IF NOT EXISTS test WITH replication = {'class': 'NetworkTopologyStrategy', 'replication_factor': %d}", *flagRF)); err != nil {
+	if err := v2CreateTable(context.Background(), session, fmt.Sprintf("CREATE KEYSPACE IF NOT EXISTS %s WITH replication = {'class': 'NetworkTopologyStrategy', 'replication_factor': %d}", fixtureKeyspace("_fail"), *flagRF)); err != nil {
 		t.Fatal(err)
 	}
 	table := testTableName(t, session.ID())
 
-	if err := v2CreateTable(context.Background(), session, fmt.Sprintf("CREATE TABLE test.%s (id int,value int,PRIMARY KEY (id))", table)); err != nil {
+	if err := v2CreateTable(context.Background(), session, fmt.Sprintf("CREATE TABLE %s.%s (id int,value int,PRIMARY KEY (id))", fixtureKeyspace("_fail"), table)); err != nil {
 		t.Fatalf("failed to create table with error '%v'", err)
 	}
-	if _, err := v2Exec(context.Background(), session, fmt.Sprintf(`INSERT INTO test.%s (id, value) VALUES (1, 1)`, table)); err != nil {
+	if _, err := v2Exec(context.Background(), session, fmt.Sprintf(`INSERT INTO %s.%s (id, value) VALUES (1, 1)`, fixtureKeyspace("_fail"), table)); err != nil {
 		var errWrite *RequestErrWriteFailure
 		if errors.As(err, &errWrite) {
 			if session.cfg.ProtoVersion >= protoVersion5 {
@@ -498,7 +508,7 @@ func TestWriteFailure(t *testing.T) {
 		t.Fatal("a write fail error should have happened when querying test keyspace")
 	}
 
-	if _, err = v2Exec(context.Background(), session, "DROP KEYSPACE test"); err != nil {
+	if _, err = v2Exec(context.Background(), session, "DROP KEYSPACE "+fixtureKeyspace("_fail")); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -513,7 +523,7 @@ func TestCustomPayloadMessages(t *testing.T) {
 
 	table := testTableName(t, session.ID())
 
-	if err := v2CreateTable(context.Background(), session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int, value int, PRIMARY KEY (id))", table)); err != nil {
+	if err := v2CreateTable(context.Background(), session, fmt.Sprintf("CREATE TABLE %s.%s (id int, value int, PRIMARY KEY (id))", session.cfg.Keyspace, table)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -570,7 +580,7 @@ func TestCustomPayloadValues(t *testing.T) {
 	session := createV2Session(t)
 	defer session.Close()
 	table := testTableName(t, session.ID())
-	if err := v2CreateTable(context.Background(), session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int, value int, PRIMARY KEY (id))", table)); err != nil {
+	if err := v2CreateTable(context.Background(), session, fmt.Sprintf("CREATE TABLE %s.%s (id int, value int, PRIMARY KEY (id))", session.cfg.Keyspace, table)); err != nil {
 		t.Fatal(err)
 	}
 

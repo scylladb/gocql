@@ -1,0 +1,30 @@
+{
+  "lanes": [
+    {
+      "name": "lifecycle20",
+      "kind": "scylla",
+      "install": "/extra/scylladb/gocql-api-test-cluster/ccm/scylla-repository/release/2026.3.4",
+      "binary": "libexec/scylla",
+      "sha256": "fe5c0f66ba2e52032e41822a9b54e63ec6e636cec9b1fc3561a3829bd60b1bb5",
+      "version": "2026.3.4",
+      "ccm_version": "release:2026.3.4",
+      "addresses": [
+        "127.0.20.1"
+      ],
+      "modes": [
+        {
+          "name": "fail",
+          "args": [
+            "-proto=4"
+          ],
+          "tests": "^TestStep08HarnessLifecycle$",
+          "environment": {
+            "GOCQL_FIXTURE_ACTION": "fail",
+            "GOCQL_FIXTURE_MARKER": "/extra/scylladb/gocql-api-test-cluster/step08/fail.marker"
+          }
+        }
+      ],
+      "restart": false
+    }
+  ]
+}

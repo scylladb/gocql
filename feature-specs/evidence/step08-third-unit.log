@@ -1,0 +1,6 @@
+--- FAIL: TestStep08IndependentRawDirectRead (5.01s)
+    --- FAIL: TestStep08IndependentRawDirectRead/v4tls (5.01s)
+        v2_fixture_stream_test.go:410: unexpected raw payload staging 409600 7415281
+FAIL
+FAIL	github.com/scylladb/gocql/v2	35.730s
+FAIL

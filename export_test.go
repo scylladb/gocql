@@ -13,3 +13,6 @@ var WaitUntilPoolsStopFilling = waitUntilPoolsStopFilling
 func GetRingAllHosts(sess *Session) []*HostInfo {
 	return sess.hostSource.getHostsList()
 }
+
+// NewTestLogger isolates each fixture capture and supports concurrent writes.
+func NewTestLogger() *testLogger { return &testLogger{} }

@@ -83,7 +83,7 @@ func TestCloudConnection(t *testing.T) {
 
 	session.Close()
 
-	logger := gocql.TestLogger
+	logger := gocql.NewTestLogger()
 	defer func() {
 		if t.Failed() {
 			os.Stdout.WriteString(logger.String())
@@ -114,8 +114,8 @@ func TestCloudConnection(t *testing.T) {
 		},
 		AuthInfos: map[string]*scyllacloud.AuthInfo{
 			"ai-1": {
-				Username:              "username",
-				Password:              "password",
+				Username:              "cassandra",
+				Password:              "cassandra",
 				ClientKeyPath:         "testdata/pki/gocql.key",
 				ClientCertificatePath: "testdata/pki/gocql.crt",
 			},
@@ -257,9 +257,15 @@ type sniProxy struct {
 	defaultBackend string
 	logger         gocql.StdLogger
 
-	listener net.Listener
-	events   []string
-	mu       sync.Mutex
+	listener  net.Listener
+	wg        sync.WaitGroup
+	conns     map[net.Conn]struct{}
+	closed    bool
+	closeOnce sync.Once
+	closeErr  error
+	ctx       context.Context
+	events    []string
+	mu        sync.Mutex
 }
 
 func (p *sniProxy) Run(ctx context.Context) (string, error) {
@@ -269,8 +275,12 @@ func (p *sniProxy) Run(ctx context.Context) (string, error) {
 	}
 
 	p.listener = listener
+	p.ctx = ctx
+	p.conns = make(map[net.Conn]struct{})
+	p.wg.Add(1)
 
 	go func() {
+		defer p.wg.Done()
 		for {
 			conn, err := p.listener.Accept()
 			if err != nil {
@@ -278,16 +288,31 @@ func (p *sniProxy) Run(ctx context.Context) (string, error) {
 				return
 			}
 
-			go p.handleConnection(conn)
+			p.mu.Lock()
+			if p.closed {
+				p.mu.Unlock()
+				conn.Close()
+				return
+			}
+			p.conns[conn] = struct{}{}
+			p.wg.Add(1)
+			p.mu.Unlock()
+			go func() {
+				defer p.wg.Done()
+				defer func() { p.mu.Lock(); delete(p.conns, conn); p.mu.Unlock() }()
+				p.handleConnection(conn)
+			}()
 		}
 
 	}()
 
+	context.AfterFunc(ctx, func() { _ = p.Close() })
 	return listener.Addr().String(), nil
 }
 
 func (p *sniProxy) handleConnection(conn net.Conn) {
 	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(30 * time.Second))
 
 	var hello *tls.ClientHelloInfo
 
@@ -317,23 +342,35 @@ func (p *sniProxy) handleConnection(conn net.Conn) {
 	}
 
 	p.logger.Println("Dialing backend", backend, "SNI", hello.ServerName)
-	backendConn, err := net.Dial("tcp", backend)
+	backendConn, err := (&net.Dialer{Timeout: 10 * time.Second}).DialContext(p.ctx, "tcp", backend)
 	if err != nil {
 		p.logger.Println("failed to dial backend", backend, err)
 		return
 	}
 	defer backendConn.Close()
+	p.mu.Lock()
+	if p.closed {
+		p.mu.Unlock()
+		return
+	}
+	p.conns[backendConn] = struct{}{}
+	p.mu.Unlock()
+	defer func() { p.mu.Lock(); delete(p.conns, backendConn); p.mu.Unlock() }()
 
 	var wg sync.WaitGroup
 	wg.Add(2)
 
 	go func() {
 		_, _ = io.Copy(conn, backendConn)
+		conn.Close()
+		backendConn.Close()
 		wg.Done()
 	}()
 	go func() {
 		_, _ = io.Copy(backendConn, peekedBytes)
 		_, _ = io.Copy(backendConn, conn)
+		conn.Close()
+		backendConn.Close()
 		wg.Done()
 	}()
 
@@ -341,7 +378,17 @@ func (p *sniProxy) handleConnection(conn net.Conn) {
 }
 
 func (p *sniProxy) Close() error {
-	return p.listener.Close()
+	p.closeOnce.Do(func() {
+		p.mu.Lock()
+		p.closed = true
+		p.closeErr = p.listener.Close()
+		for conn := range p.conns {
+			conn.Close()
+		}
+		p.mu.Unlock()
+		p.wg.Wait()
+	})
+	return p.closeErr
 }
 
 func (p *sniProxy) GetEvents() []string {
@@ -368,3 +415,36 @@ func (conn readOnlyConn) RemoteAddr() net.Addr               { return nil }
 func (conn readOnlyConn) SetDeadline(t time.Time) error      { return nil }
 func (conn readOnlyConn) SetReadDeadline(t time.Time) error  { return nil }
 func (conn readOnlyConn) SetWriteDeadline(t time.Time) error { return nil }
+
+func TestStep08SNIProxyCancellationJoins(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	proxy := &sniProxy{hosts: map[string]string{}, logger: gocql.NewTestLogger()}
+	address, err := proxy.Run(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := net.Dial("tcp", address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err = conn.Write([]byte{0x16}); err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	if err := proxy.Close(); err != nil {
+		t.Fatal(err)
+	}
+	proxy.mu.Lock()
+	remaining := len(proxy.conns)
+	proxy.mu.Unlock()
+	if remaining != 0 {
+		t.Fatal("proxy close returned before joining connections", remaining)
+	}
+	if err := proxy.Close(); err != nil {
+		t.Fatal("repeat proxy close", err)
+	}
+	if _, err := net.DialTimeout("tcp", address, time.Second); err == nil {
+		t.Fatal("proxy listener survived close")
+	}
+}

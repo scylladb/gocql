@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"net"
-	"time"
 
 	"github.com/scylladb/gocql/v2/internal/wire"
 )
@@ -56,11 +55,10 @@ func (w *deadlineContextWriter) writeSpans(ctx context.Context, chain wire.Chain
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
-	if timeout := w.timeout.Load(); timeout > 0 {
-		if err := w.w.SetWriteDeadline(time.Now().Add(time.Duration(timeout))); err != nil {
-			return 0, err
-		}
+	if err := w.w.SetWriteDeadline(effectiveWriteDeadline(w.timeout.Load())); err != nil {
+		return 0, err
 	}
+
 	var spans net.Buffers
 	_ = chain.Each(func(s wire.Span) error { spans = append(spans, s.Bytes()); return nil })
 	n, err := writeSpanBuffers(w.w, spans)

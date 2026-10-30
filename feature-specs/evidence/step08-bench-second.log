@@ -1,0 +1,9 @@
+goos: linux
+goarch: amd64
+pkg: github.com/scylladb/gocql/v2
+cpu: AMD Ryzen 9 9950X3D 16-Core Processor
+BenchmarkStep08IndependentStreamOracle/v4tls/rows=1/cell=1024-32         	       2	     51327 ns/op	  19.95 MB/s	   25548 B/op	     122 allocs/op
+BenchmarkStep08IndependentStreamOracle/v5raw/rows=1/cell=1024-32         	       2	     66726 ns/op	  15.35 MB/s	  151384 B/op	     130 allocs/op
+BenchmarkStep08IndependentStreamOracle/v5lz4/rows=1/cell=1024-32         	       2	     95906 ns/op	  10.68 MB/s	  282584 B/op	     133 allocs/op
+PASS
+ok  	github.com/scylladb/gocql/v2	0.011s

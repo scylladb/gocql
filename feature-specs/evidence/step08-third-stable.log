@@ -1,0 +1,19 @@
+RESERVED stable20 ['127.0.20.1', '127.0.20.2', '127.0.20.3'] g574c72a370ed4c9b
+START stable20
+{"name": "stable20-v3", "command": ["go", "test", "-json", "-race", "-tags", "integration gocql_debug", "-count=1", "-timeout=8m", "-parallel=1", "-run", "^(TestAuthentication|TestStep07RunStreamLive|TestUnixSockets)$", ".", "-args", "-gocql.timeout=60s", "-rf=3", "-clusterSize=3", "-autowait=2s", "-cluster=127.0.20.1,127.0.20.2,127.0.20.3", "-distribution=scylla", "-gocql.cversion=2026.3.4", "-runauth", "-cluster-socket=/extra/scylladb/gocql-api-test-cluster/step08/g574c72a370ed4c9b/stable20/node1/cql.m", "-proto=3"], "exit_code": 0, "seconds": 2.87, "log": "/extra/scylladb/gocql/feature-specs/evidence/step08-third-stable-stable20-v3.log", "sha256": "7c1c36666f3aa90f8de121847d4d1d596df92ac80e12a9939d9d8fa373ab7236"}
+{"name": "stable20-v3-cleanup", "command": ["go", "test", "-json", "-race", "-tags", "integration gocql_debug", "-count=1", "-timeout=8m", "-parallel=1", "-run", "^TestStep08Cleanup$", ".", "-args", "-gocql.timeout=60s", "-rf=3", "-clusterSize=3", "-autowait=2s", "-cluster=127.0.20.1,127.0.20.2,127.0.20.3", "-distribution=scylla", "-gocql.cversion=2026.3.4", "-runauth", "-cluster-socket=/extra/scylladb/gocql-api-test-cluster/step08/g574c72a370ed4c9b/stable20/node1/cql.m", "-proto=3"], "exit_code": 0, "seconds": 1.739, "log": "/extra/scylladb/gocql/feature-specs/evidence/step08-third-stable-stable20-v3-cleanup.log", "sha256": "4fab64d7587720cbf967c87d04bc9a0b243877f23a48e275b1ecf5a1651146aa"}
+{"name": "stable20-v4-tls", "command": ["go", "test", "-json", "-race", "-tags", "integration gocql_debug", "-count=1", "-timeout=8m", "-parallel=1", "-run", "^(TestAuthentication|TestStep07RunStreamLive|TestUnixSockets|TestCloudConnection|TestTLSTicketResumption|TestRecreateSchema)$", ".", "-args", "-gocql.timeout=60s", "-rf=3", "-clusterSize=3", "-autowait=2s", "-cluster=127.0.20.1,127.0.20.2,127.0.20.3", "-distribution=scylla", "-gocql.cversion=2026.3.4", "-runauth", "-cluster-socket=/extra/scylladb/gocql-api-test-cluster/step08/g574c72a370ed4c9b/stable20/node1/cql.m", "-proto=4", "-runssl"], "exit_code": 1, "seconds": 6.639, "log": "/extra/scylladb/gocql/feature-specs/evidence/step08-third-stable-stable20-v4-tls.log", "sha256": "70d2ec43ec1d4e4eb56a4b758d665b271ce9fd7607328a49b2f082330d47e57b"}
+{"name": "stable20-v4-tls-cleanup", "command": ["go", "test", "-json", "-race", "-tags", "integration gocql_debug", "-count=1", "-timeout=8m", "-parallel=1", "-run", "^TestStep08Cleanup$", ".", "-args", "-gocql.timeout=60s", "-rf=3", "-clusterSize=3", "-autowait=2s", "-cluster=127.0.20.1,127.0.20.2,127.0.20.3", "-distribution=scylla", "-gocql.cversion=2026.3.4", "-runauth", "-cluster-socket=/extra/scylladb/gocql-api-test-cluster/step08/g574c72a370ed4c9b/stable20/node1/cql.m", "-proto=4", "-runssl"], "exit_code": 0, "seconds": 1.805, "log": "/extra/scylladb/gocql/feature-specs/evidence/step08-third-stable-stable20-v4-tls-cleanup.log", "sha256": "63200d62f096bb2dbb47aefd87ce6bd49fd459b2e80043086cb4f4e2240d6bc0"}
+STOP stable20
+STOPPED stable20 {'node1': True, 'node2': True, 'node3': True}
+Traceback (most recent call last):
+  File "/extra/scylladb/gocql/tests/fixtures/native.py", line 288, in <module>
+    main()
+    ~~~~^^
+  File "/extra/scylladb/gocql/tests/fixtures/native.py", line 277, in main
+    runner.lane(lane)
+    ~~~~~~~~~~~^^^^^^
+  File "/extra/scylladb/gocql/tests/fixtures/native.py", line 245, in lane
+    if status: raise RuntimeError("test lane failed: " + name + "/" + mode["name"])
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: test lane failed: stable20/v4-tls

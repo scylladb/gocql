@@ -1,0 +1,317 @@
+[
+  {
+    "address": "127.0.20.1",
+    "port": 9042,
+    "refused": true
+  },
+  {
+    "address": "127.0.20.1",
+    "port": 9142,
+    "refused": true
+  },
+  {
+    "address": "127.0.20.1",
+    "port": 19042,
+    "refused": true
+  },
+  {
+    "address": "127.0.20.1",
+    "port": 19142,
+    "refused": true
+  },
+  {
+    "address": "127.0.20.1",
+    "port": 7000,
+    "refused": true
+  },
+  {
+    "address": "127.0.20.1",
+    "port": 7001,
+    "refused": true
+  },
+  {
+    "address": "127.0.20.1",
+    "port": 10000,
+    "refused": true
+  },
+  {
+    "address": "127.0.20.2",
+    "port": 9042,
+    "refused": true
+  },
+  {
+    "address": "127.0.20.2",
+    "port": 9142,
+    "refused": true
+  },
+  {
+    "address": "127.0.20.2",
+    "port": 19042,
+    "refused": true
+  },
+  {
+    "address": "127.0.20.2",
+    "port": 19142,
+    "refused": true
+  },
+  {
+    "address": "127.0.20.2",
+    "port": 7000,
+    "refused": true
+  },
+  {
+    "address": "127.0.20.2",
+    "port": 7001,
+    "refused": true
+  },
+  {
+    "address": "127.0.20.2",
+    "port": 10000,
+    "refused": true
+  },
+  {
+    "address": "127.0.20.3",
+    "port": 9042,
+    "refused": true
+  },
+  {
+    "address": "127.0.20.3",
+    "port": 9142,
+    "refused": true
+  },
+  {
+    "address": "127.0.20.3",
+    "port": 19042,
+    "refused": true
+  },
+  {
+    "address": "127.0.20.3",
+    "port": 19142,
+    "refused": true
+  },
+  {
+    "address": "127.0.20.3",
+    "port": 7000,
+    "refused": true
+  },
+  {
+    "address": "127.0.20.3",
+    "port": 7001,
+    "refused": true
+  },
+  {
+    "address": "127.0.20.3",
+    "port": 10000,
+    "refused": true
+  },
+  {
+    "address": "127.0.21.1",
+    "port": 9042,
+    "refused": true
+  },
+  {
+    "address": "127.0.21.1",
+    "port": 9142,
+    "refused": true
+  },
+  {
+    "address": "127.0.21.1",
+    "port": 19042,
+    "refused": true
+  },
+  {
+    "address": "127.0.21.1",
+    "port": 19142,
+    "refused": true
+  },
+  {
+    "address": "127.0.21.1",
+    "port": 7000,
+    "refused": true
+  },
+  {
+    "address": "127.0.21.1",
+    "port": 7001,
+    "refused": true
+  },
+  {
+    "address": "127.0.21.1",
+    "port": 10000,
+    "refused": true
+  },
+  {
+    "address": "127.0.21.2",
+    "port": 9042,
+    "refused": true
+  },
+  {
+    "address": "127.0.21.2",
+    "port": 9142,
+    "refused": true
+  },
+  {
+    "address": "127.0.21.2",
+    "port": 19042,
+    "refused": true
+  },
+  {
+    "address": "127.0.21.2",
+    "port": 19142,
+    "refused": true
+  },
+  {
+    "address": "127.0.21.2",
+    "port": 7000,
+    "refused": true
+  },
+  {
+    "address": "127.0.21.2",
+    "port": 7001,
+    "refused": true
+  },
+  {
+    "address": "127.0.21.2",
+    "port": 10000,
+    "refused": true
+  },
+  {
+    "address": "127.0.21.3",
+    "port": 9042,
+    "refused": true
+  },
+  {
+    "address": "127.0.21.3",
+    "port": 9142,
+    "refused": true
+  },
+  {
+    "address": "127.0.21.3",
+    "port": 19042,
+    "refused": true
+  },
+  {
+    "address": "127.0.21.3",
+    "port": 19142,
+    "refused": true
+  },
+  {
+    "address": "127.0.21.3",
+    "port": 7000,
+    "refused": true
+  },
+  {
+    "address": "127.0.21.3",
+    "port": 7001,
+    "refused": true
+  },
+  {
+    "address": "127.0.21.3",
+    "port": 10000,
+    "refused": true
+  },
+  {
+    "address": "127.0.22.1",
+    "port": 9042,
+    "refused": true
+  },
+  {
+    "address": "127.0.22.1",
+    "port": 9142,
+    "refused": true
+  },
+  {
+    "address": "127.0.22.1",
+    "port": 19042,
+    "refused": true
+  },
+  {
+    "address": "127.0.22.1",
+    "port": 19142,
+    "refused": true
+  },
+  {
+    "address": "127.0.22.1",
+    "port": 7000,
+    "refused": true
+  },
+  {
+    "address": "127.0.22.1",
+    "port": 7001,
+    "refused": true
+  },
+  {
+    "address": "127.0.22.1",
+    "port": 10000,
+    "refused": true
+  },
+  {
+    "address": "127.0.22.2",
+    "port": 9042,
+    "refused": true
+  },
+  {
+    "address": "127.0.22.2",
+    "port": 9142,
+    "refused": true
+  },
+  {
+    "address": "127.0.22.2",
+    "port": 19042,
+    "refused": true
+  },
+  {
+    "address": "127.0.22.2",
+    "port": 19142,
+    "refused": true
+  },
+  {
+    "address": "127.0.22.2",
+    "port": 7000,
+    "refused": true
+  },
+  {
+    "address": "127.0.22.2",
+    "port": 7001,
+    "refused": true
+  },
+  {
+    "address": "127.0.22.2",
+    "port": 10000,
+    "refused": true
+  },
+  {
+    "address": "127.0.22.3",
+    "port": 9042,
+    "refused": true
+  },
+  {
+    "address": "127.0.22.3",
+    "port": 9142,
+    "refused": true
+  },
+  {
+    "address": "127.0.22.3",
+    "port": 19042,
+    "refused": true
+  },
+  {
+    "address": "127.0.22.3",
+    "port": 19142,
+    "refused": true
+  },
+  {
+    "address": "127.0.22.3",
+    "port": 7000,
+    "refused": true
+  },
+  {
+    "address": "127.0.22.3",
+    "port": 7001,
+    "refused": true
+  },
+  {
+    "address": "127.0.22.3",
+    "port": 10000,
+    "refused": true
+  }
+]

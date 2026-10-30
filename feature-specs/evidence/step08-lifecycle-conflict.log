@@ -1,0 +1,11 @@
+Traceback (most recent call last):
+  File "/extra/scylladb/gocql/tests/fixtures/native.py", line 328, in <module>
+    main()
+    ~~~~^^
+  File "/extra/scylladb/gocql/tests/fixtures/native.py", line 317, in main
+    runner.lane(lane)
+    ~~~~~~~~~~~^^^^^^
+  File "/extra/scylladb/gocql/tests/fixtures/native.py", line 199, in lane
+    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+BlockingIOError: [Errno 11] Resource temporarily unavailable

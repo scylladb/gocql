@@ -16,8 +16,11 @@ func (p *policyConnPool) MissingConnections() (int, error) {
 
 	// close the pools
 	for _, pool := range p.hostConnPools {
-		missing := pool.GetShardCount() - pool.GetConnectionCount()
-		if pool.IsClosed() {
+		pool.mu.RLock()
+		_, missing := pool.connPicker.Size()
+		closed := pool.closed
+		pool.mu.RUnlock()
+		if closed {
 			return 0, fmt.Errorf("pool for %s is closed", pool.host.HostID())
 		}
 		total += missing
@@ -63,23 +66,46 @@ func (p *defaultConnPicker) CloseAllConnections() {
 func (p *nopConnPicker) CloseAllConnections() {
 }
 
+// Snapshot under the same locks used by admission, then close outside them.
+// Conn.Close synchronously calls the pool error handler and may schedule repair.
 func (pool *hostConnPool) CloseAllConnections() {
 	pool.mu.Lock()
 	if pool.closed {
 		pool.mu.Unlock()
 		return
 	}
-	pool.connPicker.(ConnPickerIntegration).CloseAllConnections()
+	var conns []*Conn
+	switch picker := pool.connPicker.(type) {
+	case *typedConnPicker:
+		picker.mu.RLock()
+		for _, shard := range picker.conns {
+			conns = append(conns, shard...)
+		}
+		conns = append(conns, picker.excess...)
+		picker.mu.RUnlock()
+	case *scyllaConnPicker:
+		conns = append(conns, picker.conns...)
+	case *defaultConnPicker:
+		conns = append(conns, picker.conns...)
+	}
+	for _, conn := range conns {
+		pool.connPicker.Remove(conn)
+	}
+	pool.state = poolBroken
+	pool.signalReservationLocked()
 	pool.mu.Unlock()
+	closeConns(conns...)
 	pool.fill()
 }
 
 func (p *policyConnPool) CloseAllConnections() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	// close the pools
+	p.mu.RLock()
+	pools := make([]*hostConnPool, 0, len(p.hostConnPools))
 	for _, pool := range p.hostConnPools {
+		pools = append(pools, pool)
+	}
+	p.mu.RUnlock()
+	for _, pool := range pools {
 		pool.CloseAllConnections()
 	}
 }

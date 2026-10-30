@@ -1,0 +1,29 @@
+RESERVED cassandra21 ['127.0.21.1', '127.0.21.2', '127.0.21.3'] g6213a580e69b4d4a
+{"name": "cassandra21-javac", "command": ["/usr/lib/jvm/java-17-openjdk-amd64/bin/javac", "-cp", "/extra/scylladb/gocql-api-test-cluster/step08/g6213a580e69b4d4a/cassandra21-install/lib/*", "-d", "/extra/scylladb/gocql-api-test-cluster/step08/g6213a580e69b4d4a/cassandra21-install/classes", "/extra/scylladb/gocql/tests/fixtures/FixtureQueryHandler.java"], "exit_code": 0, "seconds": 0.496, "log": "/extra/scylladb/gocql/feature-specs/evidence/step08-first-cassandra-cassandra21-javac.log", "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}
+{"name": "cassandra21-jar", "command": ["/usr/lib/jvm/java-17-openjdk-amd64/bin/jar", "cf", "/extra/scylladb/gocql-api-test-cluster/step08/g6213a580e69b4d4a/cassandra21-install/lib/gocql-fixture.jar", "-C", "/extra/scylladb/gocql-api-test-cluster/step08/g6213a580e69b4d4a/cassandra21-install/classes", "."], "exit_code": 0, "seconds": 0.051, "log": "/extra/scylladb/gocql/feature-specs/evidence/step08-first-cassandra-cassandra21-jar.log", "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}
+START cassandra21
+[node1 ERROR] WARNING: A terminally deprecated method in java.lang.System has been called
+WARNING: System::setSecurityManager has been called by org.apache.cassandra.security.ThreadAwareSecurityManager (file:/home/dkropachev/.local/share/containers/storage/overlay/635220d55ce81dd8d814691b98f1c557aa51fdc060f1dc05a749455283bd29c4/diff/opt/cassandra/lib/apache-cassandra-5.0.9.jar)
+WARNING: Please consider reporting this to the maintainers of org.apache.cassandra.security.ThreadAwareSecurityManager
+WARNING: System::setSecurityManager will be removed in a future release
+[node2 ERROR] WARNING: A terminally deprecated method in java.lang.System has been called
+WARNING: System::setSecurityManager has been called by org.apache.cassandra.security.ThreadAwareSecurityManager (file:/home/dkropachev/.local/share/containers/storage/overlay/635220d55ce81dd8d814691b98f1c557aa51fdc060f1dc05a749455283bd29c4/diff/opt/cassandra/lib/apache-cassandra-5.0.9.jar)
+WARNING: Please consider reporting this to the maintainers of org.apache.cassandra.security.ThreadAwareSecurityManager
+WARNING: System::setSecurityManager will be removed in a future release
+[node3 ERROR] WARNING: A terminally deprecated method in java.lang.System has been called
+WARNING: System::setSecurityManager has been called by org.apache.cassandra.security.ThreadAwareSecurityManager (file:/home/dkropachev/.local/share/containers/storage/overlay/635220d55ce81dd8d814691b98f1c557aa51fdc060f1dc05a749455283bd29c4/diff/opt/cassandra/lib/apache-cassandra-5.0.9.jar)
+WARNING: Please consider reporting this to the maintainers of org.apache.cassandra.security.ThreadAwareSecurityManager
+WARNING: System::setSecurityManager will be removed in a future release
+{"name": "cassandra21-v4-no-compression", "command": ["go", "test", "-json", "-race", "-tags", "integration gocql_debug", "-count=1", "-timeout=8m", "-parallel=1", "-run", "^(TestRecreateSchema|TestCustomPayloadMessages|TestCustomPayloadValues|TestWriteFailure|TestInvalidPeerEntry|TestStep07RunStreamLive)$", ".", "-args", "-gocql.timeout=60s", "-rf=3", "-clusterSize=3", "-autowait=2s", "-cluster=127.0.21.1,127.0.21.2,127.0.21.3", "-distribution=cassandra", "-gocql.cversion=5.0.9", "-runcassandrafixtures", "-proto=4", "-compressor=no-compression"], "exit_code": 1, "seconds": 31.186, "log": "/extra/scylladb/gocql/feature-specs/evidence/step08-first-cassandra-cassandra21-v4-no-compression.log", "sha256": "0881b9e5c403f5c4b49d70c2def4b8dafe1fe47fe86e7249e6143ee7b621f288"}
+{"name": "cassandra21-v4-no-compression-cleanup", "command": ["go", "test", "-json", "-race", "-tags", "integration gocql_debug", "-count=1", "-timeout=8m", "-parallel=1", "-run", "^TestStep08Cleanup$", ".", "-args", "-gocql.timeout=60s", "-rf=3", "-clusterSize=3", "-autowait=2s", "-cluster=127.0.21.1,127.0.21.2,127.0.21.3", "-distribution=cassandra", "-gocql.cversion=5.0.9", "-runcassandrafixtures", "-proto=4", "-compressor=no-compression"], "exit_code": 0, "seconds": 26.246, "log": "/extra/scylladb/gocql/feature-specs/evidence/step08-first-cassandra-cassandra21-v4-no-compression-cleanup.log", "sha256": "221ac6d263042f911d83d820db405ee3977ab0788f5d55985ebd6990f4d9d3db"}
+STOP cassandra21
+STOPPED cassandra21 {'node1': True, 'node2': True, 'node3': True}
+Traceback (most recent call last):
+  File "/extra/scylladb/gocql/tests/fixtures/native.py", line 288, in <module>
+  File "/extra/scylladb/gocql/tests/fixtures/native.py", line 277, in main
+    for lane in config["lanes"]:
+            ^^^^^^^^^^^^^^^^^
+  File "/extra/scylladb/gocql/tests/fixtures/native.py", line 245, in lane
+    cleanup = base + ["-run", "^TestStep08Cleanup$", ".", "-args"] + flags + extra
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: test lane failed: cassandra21/v4-no-compression

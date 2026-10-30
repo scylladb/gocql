@@ -1,0 +1,63 @@
+goos: linux
+goarch: amd64
+pkg: github.com/scylladb/gocql/v2
+cpu: AMD Ryzen 9 9950X3D 16-Core Processor
+BenchmarkStep07ExecutionStorage/row/rows=1/cell=1024-32         	      20	     22249 ns/op	  46.02 MB/s	      1024 caller-capacity-B	      1024 retained-page-payload-B/op	   11892 B/op	      65 allocs/op
+BenchmarkStep07ExecutionStorage/into/rows=1/cell=1024-32        	      20	     16518 ns/op	  61.99 MB/s	      1024 caller-capacity-B	      1024 retained-page-payload-B/op	   11066 B/op	      65 allocs/op
+BenchmarkStep07ExecutionStorage/stream/rows=1/cell=1024-32      	      20	     33976 ns/op	  30.14 MB/s	      1024 caller-capacity-B	         0 driver-payload-gather-B/op	   11414 B/op	      91 allocs/op
+BenchmarkStep07ExecutionStorage/row/rows=100/cell=1024-32       	      20	     77905 ns/op	1314.42 MB/s	      1024 caller-capacity-B	    102400 retained-page-payload-B/op	  118939 B/op	      65 allocs/op
+BenchmarkStep07ExecutionStorage/into/rows=100/cell=1024-32      	      20	     60243 ns/op	1699.79 MB/s	      1024 caller-capacity-B	    102400 retained-page-payload-B/op	  117736 B/op	      65 allocs/op
+BenchmarkStep07ExecutionStorage/stream/rows=100/cell=1024-32    	      20	    197680 ns/op	 518.01 MB/s	      1024 caller-capacity-B	         0 driver-payload-gather-B/op	   10956 B/op	      90 allocs/op
+BenchmarkStep07ExecutionStorage/row/rows=1000/cell=1024-32      	      20	    366194 ns/op	2796.33 MB/s	      1024 caller-capacity-B	   1024000 retained-page-payload-B/op	 1045635 B/op	      68 allocs/op
+BenchmarkStep07ExecutionStorage/into/rows=1000/cell=1024-32     	      20	    311063 ns/op	3291.94 MB/s	      1024 caller-capacity-B	   1024000 retained-page-payload-B/op	 1046515 B/op	      68 allocs/op
+BenchmarkStep07ExecutionStorage/stream/rows=1000/cell=1024-32   	      20	   1528721 ns/op	 669.84 MB/s	      1024 caller-capacity-B	         0 driver-payload-gather-B/op	   11820 B/op	      91 allocs/op
+BenchmarkStep07ExecutionStorage/row/rows=1/cell=409600-32       	      20	    122883 ns/op	3333.26 MB/s	    409600 caller-capacity-B	    409600 retained-page-payload-B/op	  431258 B/op	      66 allocs/op
+BenchmarkStep07ExecutionStorage/into/rows=1/cell=409600-32      	      20	    106836 ns/op	3833.91 MB/s	    409600 caller-capacity-B	    409600 retained-page-payload-B/op	  430112 B/op	      67 allocs/op
+BenchmarkStep07ExecutionStorage/stream/rows=1/cell=409600-32    	      20	     44609 ns/op	9181.93 MB/s	    409600 caller-capacity-B	         0 driver-payload-gather-B/op	   10956 B/op	      90 allocs/op
+BenchmarkStep07ExecutionStorage/row/rows=1/cell=8388608-32      	      20	    895252 ns/op	9370.10 MB/s	   8388608 caller-capacity-B	   8388608 retained-page-payload-B/op	 8412057 B/op	      68 allocs/op
+BenchmarkStep07ExecutionStorage/into/rows=1/cell=8388608-32     	      20	    883798 ns/op	9491.55 MB/s	   8388608 caller-capacity-B	   8388608 retained-page-payload-B/op	 8411939 B/op	      66 allocs/op
+BenchmarkStep07ExecutionStorage/stream/rows=1/cell=8388608-32   	      20	    398352 ns/op	21058.27 MB/s	   8388608 caller-capacity-B	         0 driver-payload-gather-B/op	   10510 B/op	      89 allocs/op
+BenchmarkStep08IndependentStreamOracle/v3/rows=1/cell=1024-32   	      20	     27550 ns/op	  37.17 MB/s	   11363 B/op	      88 allocs/op
+BenchmarkStep08IndependentStreamOracle/v3/rows=32/cell=1024-32  	      20	     62275 ns/op	 526.18 MB/s	   10494 B/op	      87 allocs/op
+BenchmarkStep08IndependentStreamOracle/v3/rows=256/cell=1024-32 	      20	    416439 ns/op	 629.49 MB/s	   11373 B/op	      88 allocs/op
+BenchmarkStep08IndependentStreamOracle/v3/rows=1/cell=409600-32 	      20	     30496 ns/op	13431.20 MB/s	   11368 B/op	      88 allocs/op
+BenchmarkStep08IndependentStreamOracle/v3/rows=1/cell=8388608-32         	      20	    225696 ns/op	37167.77 MB/s	   10517 B/op	      87 allocs/op
+BenchmarkStep08IndependentStreamOracle/v4/rows=1/cell=1024-32            	      20	     29390 ns/op	  34.84 MB/s	   10940 B/op	      88 allocs/op
+BenchmarkStep08IndependentStreamOracle/v4/rows=32/cell=1024-32           	      20	     75610 ns/op	 433.38 MB/s	   11372 B/op	      88 allocs/op
+BenchmarkStep08IndependentStreamOracle/v4/rows=256/cell=1024-32          	      20	    389405 ns/op	 673.19 MB/s	   11364 B/op	      88 allocs/op
+BenchmarkStep08IndependentStreamOracle/v4/rows=1/cell=409600-32          	      20	     33042 ns/op	12396.16 MB/s	   11362 B/op	      88 allocs/op
+BenchmarkStep08IndependentStreamOracle/v4/rows=1/cell=8388608-32         	      20	    310989 ns/op	26974.01 MB/s	   10935 B/op	      88 allocs/op
+BenchmarkStep08IndependentStreamOracle/v4tls/rows=1/cell=1024-32         	      20	     19685 ns/op	  52.02 MB/s	   11104 B/op	      94 allocs/op
+BenchmarkStep08IndependentStreamOracle/v4tls/rows=32/cell=1024-32        	      20	     43704 ns/op	 749.78 MB/s	   19898 B/op	      98 allocs/op
+BenchmarkStep08IndependentStreamOracle/v4tls/rows=256/cell=1024-32       	      20	    212095 ns/op	1235.97 MB/s	   24073 B/op	     113 allocs/op
+BenchmarkStep08IndependentStreamOracle/v4tls/rows=1/cell=409600-32       	      20	    170472 ns/op	2402.74 MB/s	   16648 B/op	     120 allocs/op
+BenchmarkStep08IndependentStreamOracle/v4tls/rows=1/cell=8388608-32      	      20	   3449324 ns/op	2431.96 MB/s	   33740 B/op	     609 allocs/op
+BenchmarkStep08IndependentStreamOracle/v5raw/rows=1/cell=1024-32         	      20	     58093 ns/op	  17.63 MB/s	  142871 B/op	     109 allocs/op
+BenchmarkStep08IndependentStreamOracle/v5raw/rows=32/cell=1024-32        	      20	     51105 ns/op	 641.19 MB/s	  142883 B/op	     109 allocs/op
+BenchmarkStep08IndependentStreamOracle/v5raw/rows=256/cell=1024-32       	      20	    148296 ns/op	1767.71 MB/s	  142896 B/op	     109 allocs/op
+BenchmarkStep08IndependentStreamOracle/v5raw/rows=1/cell=409600-32       	      20	     92675 ns/op	4419.76 MB/s	  142868 B/op	     108 allocs/op
+BenchmarkStep08IndependentStreamOracle/v5raw/rows=1/cell=8388608-32      	      20	    924325 ns/op	9075.38 MB/s	  142656 B/op	     109 allocs/op
+BenchmarkStep08IndependentStreamOracle/v5lz4/rows=1/cell=1024-32         	      20	     85412 ns/op	  11.99 MB/s	  274405 B/op	     113 allocs/op
+BenchmarkStep08IndependentStreamOracle/v5lz4/rows=32/cell=1024-32        	      20	    100950 ns/op	 324.60 MB/s	  274472 B/op	     114 allocs/op
+BenchmarkStep08IndependentStreamOracle/v5lz4/rows=256/cell=1024-32       	      20	    135579 ns/op	1933.52 MB/s	  274403 B/op	     113 allocs/op
+BenchmarkStep08IndependentStreamOracle/v5lz4/rows=1/cell=409600-32       	      20	    131231 ns/op	3121.21 MB/s	  274429 B/op	     113 allocs/op
+BenchmarkStep08IndependentStreamOracle/v5lz4/rows=1/cell=8388608-32      	      20	   1001509 ns/op	8375.97 MB/s	  273887 B/op	     113 allocs/op
+BenchmarkV2ExclusiveTransport/raw4/1024-32                               	      20	      2932 ns/op	 349.24 MB/s	        14.00 reads/op	    5096 B/op	      42 allocs/op
+BenchmarkV2ExclusiveTransport/raw4/409600-32                             	      20	      8024 ns/op	51049.09 MB/s	        14.00 reads/op	    5096 B/op	      42 allocs/op
+BenchmarkV2ExclusiveTransport/raw4/8388608-32                            	      20	    315865 ns/op	26557.59 MB/s	        14.00 reads/op	    5098 B/op	      42 allocs/op
+BenchmarkV2ExclusiveTransport/raw5/1024-32                               	      20	      4046 ns/op	 253.08 MB/s	         3.000 reads/op	    131087 transform-B	      1071 unit-copy-B/op	    6320 B/op	      55 allocs/op
+BenchmarkV2ExclusiveTransport/raw5/409600-32                             	      20	     34016 ns/op	12041.27 MB/s	        12.00 reads/op	    131087 transform-B	    409647 unit-copy-B/op	    6320 B/op	      55 allocs/op
+BenchmarkV2ExclusiveTransport/raw5/8388608-32                            	      20	    686967 ns/op	12211.08 MB/s	       195.0 reads/op	    131087 transform-B	   8388655 unit-copy-B/op	    6320 B/op	      55 allocs/op
+BenchmarkV2ExclusiveTransport/lz4v5/1024-32                              	      20	      4057 ns/op	 252.43 MB/s	         3.000 reads/op	    262158 transform-B	      1071 unit-copy-B/op	    6448 B/op	      59 allocs/op
+BenchmarkV2ExclusiveTransport/lz4v5/409600-32                            	      20	    138272 ns/op	2962.28 MB/s	        12.00 reads/op	    262158 transform-B	    409647 unit-copy-B/op	    6448 B/op	      59 allocs/op
+BenchmarkV2ExclusiveTransport/lz4v5/8388608-32                           	      20	   2248670 ns/op	3730.48 MB/s	       195.0 reads/op	    262158 transform-B	   8388655 unit-copy-B/op	    6448 B/op	      59 allocs/op
+BenchmarkV2TLSWriteAmplification/bytes=65536/fragments=1-32              	      20	     26360 ns/op	2486.16 MB/s	         0 driver-gather-B/op	         1.000 plaintext-spans/op	     65625 tls-wire-B/op	         4.050 tls-writes/op	    4621 B/op	       6 allocs/op
+BenchmarkV2TLSWriteAmplification/bytes=65536/fragments=16-32             	      20	     34867 ns/op	1879.58 MB/s	         0 driver-gather-B/op	        16.00 plaintext-spans/op	     65888 tls-wire-B/op	        16.00 tls-writes/op	    1402 B/op	      22 allocs/op
+BenchmarkV2TLSWriteAmplification/bytes=65536/fragments=1024-32           	      20	   1015582 ns/op	  64.53 MB/s	         0 driver-gather-B/op	      1024 plaintext-spans/op	     88064 tls-wire-B/op	      1024 tls-writes/op	   84454 B/op	    1036 allocs/op
+BenchmarkV2TLSWriteAmplification/bytes=409600/fragments=1-32             	      20	    149124 ns/op	2746.72 MB/s	         0 driver-gather-B/op	         1.000 plaintext-spans/op	    410150 tls-wire-B/op	        25.00 tls-writes/op	    1577 B/op	      27 allocs/op
+BenchmarkV2TLSWriteAmplification/bytes=409600/fragments=16-32            	      20	    153070 ns/op	2675.90 MB/s	         0 driver-gather-B/op	        16.00 plaintext-spans/op	    410304 tls-wire-B/op	        32.00 tls-writes/op	    1543 B/op	      38 allocs/op
+BenchmarkV2TLSWriteAmplification/bytes=409600/fragments=1024-32          	      20	   1148827 ns/op	 356.54 MB/s	         0 driver-gather-B/op	      1024 plaintext-spans/op	    432128 tls-wire-B/op	      1024 tls-writes/op	   84468 B/op	    1036 allocs/op
+BenchmarkV2TLSReceiveAmplification/4096-32                               	      20	      9022 ns/op	 454.00 MB/s	         0 driver-gather-B/op	         1.050 net-reads/op	        14.00 plaintext-reads/op	      4096 tls-output-handoff-B/op	      4165 tls-wire-read-B/op	    5903 B/op	      48 allocs/op
+BenchmarkV2TLSReceiveAmplification/409600-32                             	      20	    175196 ns/op	2337.95 MB/s	         0 driver-gather-B/op	        26.00 net-reads/op	        39.00 plaintext-reads/op	    409600 tls-output-handoff-B/op	    410219 tls-wire-read-B/op	    8534 B/op	      73 allocs/op
+PASS
+ok  	github.com/scylladb/gocql/v2	0.648s

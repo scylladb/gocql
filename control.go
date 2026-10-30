@@ -329,7 +329,7 @@ func (c *controlConn) connect(hosts []*HostInfo) error {
 		conn = nil
 	}
 	if conn == nil {
-		return fmt.Errorf("unable to connect to initial hosts: %v", err)
+		return fmt.Errorf("unable to connect to initial hosts: %w", err)
 	}
 
 	// we could fetch the initial ring here and update initial host data. So that

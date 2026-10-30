@@ -28,6 +28,7 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"sync"
 )
 
 type StdLogger interface {
@@ -45,13 +46,22 @@ func (n nopLogger) Printf(_ string, _ ...any) {}
 func (n nopLogger) Println(_ ...any) {}
 
 type testLogger struct {
+	mu      sync.Mutex
 	capture bytes.Buffer
 }
 
-func (l *testLogger) Print(v ...any)                 { fmt.Fprint(&l.capture, v...) }
-func (l *testLogger) Printf(format string, v ...any) { fmt.Fprintf(&l.capture, format, v...) }
-func (l *testLogger) Println(v ...any)               { fmt.Fprintln(&l.capture, v...) }
-func (l *testLogger) String() string                 { return l.capture.String() }
+func (l *testLogger) Print(v ...any) { l.mu.Lock(); defer l.mu.Unlock(); fmt.Fprint(&l.capture, v...) }
+func (l *testLogger) Printf(format string, v ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	fmt.Fprintf(&l.capture, format, v...)
+}
+func (l *testLogger) Println(v ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	fmt.Fprintln(&l.capture, v...)
+}
+func (l *testLogger) String() string { l.mu.Lock(); defer l.mu.Unlock(); return l.capture.String() }
 
 type defaultLogger struct{}
 

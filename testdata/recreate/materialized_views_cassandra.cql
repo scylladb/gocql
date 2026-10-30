@@ -13,10 +13,10 @@ CREATE TABLE gocqlx_mv.mv_buildings (
 
 CREATE MATERIALIZED VIEW gocqlx_mv.mv_building_by_city AS
     SELECT * FROM mv_buildings
-    WHERE city IS NOT NULL
+    WHERE city IS NOT NULL AND name IS NOT NULL
     PRIMARY KEY(city, name);
 
 CREATE MATERIALIZED VIEW gocqlx_mv.mv_building_by_city2 AS
-    SELECT meters FROM mv_buildings
+    SELECT city, name, meters FROM mv_buildings
     WHERE city IS NOT NULL AND name IS NOT NULL
     PRIMARY KEY(city, name);

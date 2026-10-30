@@ -1,0 +1,18 @@
+RESERVED stable20 ['127.0.20.1', '127.0.20.2', '127.0.20.3'] g472061b077244d05
+{"name": "stable20-server-version", "command": ["/extra/scylladb/gocql-api-test-cluster/ccm/scylla-repository/release/2026.3.4/bin/scylla", "--version"], "exit_code": 0, "seconds": 0.011, "log": "/extra/scylladb/gocql/feature-specs/evidence/step08-actual-lock-conflict-stable20-server-version.log", "sha256": "ff85619451f0dce6ec4fca4f5d06bb2e26a546c48f94b4028f82ed139adff048", "pid": 3057678, "cancelled": false}
+START stable20
+{"name": "stable20-v3", "command": ["go", "test", "-json", "-race", "-tags", "integration gocql_debug", "-count=1", "-timeout=8m", "-parallel=1", "-run", "^(TestStep08FixtureIdentity|TestAuthentication|TestStep07RunStreamLive|TestUnixSockets)$", ".", "-args", "-gocql.timeout=60s", "-rf=3", "-clusterSize=3", "-autowait=2s", "-cluster=127.0.20.1,127.0.20.2,127.0.20.3", "-distribution=scylla", "-gocql.cversion=2026.3.4", "-runauth", "-cluster-socket=/extra/scylladb/gocql-api-test-cluster/step08/g472061b077244d05/stable20/node1/cql.m", "-proto=3"], "exit_code": 1, "seconds": 2.372, "log": "/extra/scylladb/gocql/feature-specs/evidence/step08-actual-lock-conflict-stable20-v3.log", "sha256": "f5c2a1f0eb6a6e2e65586f31d2e869264d9cb0b2fb5d964fee86b41ef10fad92", "pid": 3058627, "cancelled": false}
+{"name": "stable20-v3-cleanup", "command": ["go", "test", "-json", "-race", "-tags", "integration gocql_debug", "-count=1", "-timeout=8m", "-parallel=1", "-run", "^TestStep08Cleanup$", ".", "-args", "-gocql.timeout=60s", "-rf=3", "-clusterSize=3", "-autowait=2s", "-cluster=127.0.20.1,127.0.20.2,127.0.20.3", "-distribution=scylla", "-gocql.cversion=2026.3.4", "-runauth", "-cluster-socket=/extra/scylladb/gocql-api-test-cluster/step08/g472061b077244d05/stable20/node1/cql.m", "-proto=3"], "exit_code": 0, "seconds": 1.95, "log": "/extra/scylladb/gocql/feature-specs/evidence/step08-actual-lock-conflict-stable20-v3-cleanup.log", "sha256": "4a7f46491f58b1c58d7cb947a2b5132605490d07c70f5f27915037ba7c25b7b0", "pid": 3059052, "cancelled": false}
+STOP stable20
+STOPPED stable20 {'node1': True, 'node2': True, 'node3': True}
+Traceback (most recent call last):
+  File "/extra/scylladb/gocql/tests/fixtures/native.py", line 328, in <module>
+    main()
+    ~~~~^^
+  File "/extra/scylladb/gocql/tests/fixtures/native.py", line 317, in main
+    runner.lane(lane)
+    ~~~~~~~~~~~^^^^^^
+  File "/extra/scylladb/gocql/tests/fixtures/native.py", line 280, in lane
+    if status: raise RuntimeError("test lane failed: " + name + "/" + mode["name"])
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: test lane failed: stable20/v3

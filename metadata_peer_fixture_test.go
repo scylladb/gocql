@@ -14,6 +14,7 @@ import (
 	"time"
 
 	frm "github.com/scylladb/gocql/v2/internal/frame"
+	"github.com/scylladb/gocql/v2/internal/testkit"
 )
 
 // incompletePeerDialer appends an incomplete peer to real database responses.
@@ -119,50 +120,31 @@ func (c *incompletePeerConn) Read(p []byte) (int, error) {
 		delete(c.requests, stream)
 		c.mu.Unlock()
 		if tracked && frm.Op(header[4]) == frm.OpResult {
-			reader := newFramer(nil, protoVersion4)
-			reader.buf = body
-			reader.header = &frm.FrameHeader{
-				Version: frm.ProtoVersion(header[0]), Flags: header[1],
-				Op: frm.OpResult, Stream: int(stream), Length: length,
+			if header[1] != 0 || len(body) < 4 {
+				return 0, fmt.Errorf("peer fixture requires ordinary v4 result envelope")
 			}
-			response, err := reader.parseFrame()
-			if err != nil {
-				return 0, fmt.Errorf("peer fixture: decode response: %w", err)
-			}
-			switch response := response.(type) {
-			case *resultPreparedFrame:
-				c.mu.Lock()
-				c.prepared[string(response.preparedID)] = request.query
-				c.mu.Unlock()
-			case *resultRowsFrame:
-				if response.meta.noMetaData() || len(response.meta.columns) == 0 {
-					return 0, fmt.Errorf("peer fixture requires result metadata")
+			switch binary.BigEndian.Uint32(body[:4]) {
+			case 4: // RESULT/PREPARED: short prepared ID precedes all metadata.
+				if len(body) < 6 {
+					return 0, io.ErrUnexpectedEOF
 				}
-				countOffset := len(body) - len(reader.buf) - 4
-				binary.BigEndian.PutUint32(body[countOffset:countOffset+4], uint32(response.numRows+1))
-				peerID, err := ParseUUID("35c0ec48-5109-40fd-9281-9e9d4add2f1e")
+				n := int(binary.BigEndian.Uint16(body[4:6]))
+				if n > len(body)-6 {
+					return 0, io.ErrUnexpectedEOF
+				}
+				c.mu.Lock()
+				c.prepared[string(body[6:6+n])] = request.query
+				c.mu.Unlock()
+			case 2:
+				var err error
+				body, err = testkit.AppendIncompletePeer(body)
 				if err != nil {
 					return 0, err
-				}
-				for _, column := range response.meta.columns {
-					var value any
-					switch column.Name {
-					case "peer", "rpc_address", "native_address":
-						value = net.IPv4(127, 0, 21, 254)
-					case "host_id":
-						value = peerID
-					case "data_center":
-						value = "datacenter1"
-					}
-					encoded, err := Marshal(column.TypeInfo, value)
-					if err != nil {
-						return 0, fmt.Errorf("peer fixture column %s: %w", column.Name, err)
-					}
-					body = appendBytes(body, encoded)
 				}
 				c.injected.Add(1)
 			}
 		}
+
 		binary.BigEndian.PutUint32(header[5:9], uint32(len(body)))
 		c.pending = append(header[:], body...)
 	}

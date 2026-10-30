@@ -1,0 +1,36 @@
+[
+  {
+    "action": "fail",
+    "command": [
+      "/extra/scylladb/scylladb/.venv/bin/python",
+      "tests/fixtures/native.py",
+      "--state",
+      "/extra/scylladb/gocql-api-test-cluster/step08",
+      "--config",
+      "/extra/scylladb/gocql/feature-specs/evidence/step08-fail-config.json",
+      "--output",
+      "/extra/scylladb/gocql/feature-specs/evidence/step08-lifecycle-fail.json"
+    ],
+    "exit_code": 1,
+    "namespace": "gf39f47b7064e4d2f",
+    "cleanup_verified": true,
+    "receipt": "/extra/scylladb/gocql/feature-specs/evidence/step08-lifecycle-fail.json"
+  },
+  {
+    "action": "cancel",
+    "command": [
+      "/extra/scylladb/scylladb/.venv/bin/python",
+      "tests/fixtures/native.py",
+      "--state",
+      "/extra/scylladb/gocql-api-test-cluster/step08",
+      "--config",
+      "/extra/scylladb/gocql/feature-specs/evidence/step08-cancel-config.json",
+      "--output",
+      "/extra/scylladb/gocql/feature-specs/evidence/step08-lifecycle-cancel.json"
+    ],
+    "exit_code": -2,
+    "namespace": "g32c6483babb84f77",
+    "cleanup_verified": true,
+    "receipt": "/extra/scylladb/gocql/feature-specs/evidence/step08-lifecycle-cancel.json"
+  }
+]

@@ -1,0 +1,17 @@
+RESERVED stable20 ['127.0.20.1', '127.0.20.2', '127.0.20.3'] g793de36f22d84247
+START stable20
+{"name": "stable20-v3", "command": ["go", "test", "-json", "-race", "-tags", "integration gocql_debug", "-count=1", "-timeout=8m", "-parallel=1", "-run", "^(TestAuthentication|TestStep07RunStreamLive|TestUnixSockets)$", ".", "-args", "-gocql.timeout=60s", "-rf=3", "-clusterSize=3", "-autowait=2s", "-cluster=127.0.20.1,127.0.20.2,127.0.20.3", "-distribution=scylla", "-gocql.cversion=2026.3.4", "-runauth", "-cluster-socket=/extra/scylladb/gocql-api-test-cluster/step08/g793de36f22d84247/stable20/node1/cql.m", "-proto=3"], "exit_code": 1, "seconds": 26.435, "log": "/extra/scylladb/gocql/feature-specs/evidence/step08-initial-native-stable20-v3.log", "sha256": "678e086630f5ef566c0ea9b39091f830c5275b5c1009765594398a8e445d276c"}
+{"name": "stable20-v3-cleanup", "command": ["go", "test", "-json", "-race", "-tags", "integration gocql_debug", "-count=1", "-timeout=8m", "-parallel=1", "-run", "^TestStep08Cleanup$", ".", "-args", "-gocql.timeout=60s", "-rf=3", "-clusterSize=3", "-autowait=2s", "-cluster=127.0.20.1,127.0.20.2,127.0.20.3", "-distribution=scylla", "-gocql.cversion=2026.3.4", "-runauth", "-cluster-socket=/extra/scylladb/gocql-api-test-cluster/step08/g793de36f22d84247/stable20/node1/cql.m", "-proto=3"], "exit_code": 0, "seconds": 1.742, "log": "/extra/scylladb/gocql/feature-specs/evidence/step08-initial-native-stable20-v3-cleanup.log", "sha256": "fae44da2908062b9e5be941412a0a0a7d46429bc0e67399dbbb5c69fdf46cc7d"}
+STOP stable20
+STOPPED stable20 {'node1': True, 'node2': True, 'node3': True}
+Traceback (most recent call last):
+  File "/extra/scylladb/gocql/tests/fixtures/native.py", line 285, in <module>
+    main()
+    ~~~~^^
+  File "/extra/scylladb/gocql/tests/fixtures/native.py", line 274, in main
+    runner.lane(lane)
+    ~~~~~~~~~~~^^^^^^
+  File "/extra/scylladb/gocql/tests/fixtures/native.py", line 242, in lane
+    if status: raise RuntimeError("test lane failed: " + name + "/" + mode["name"])
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: test lane failed: stable20/v3

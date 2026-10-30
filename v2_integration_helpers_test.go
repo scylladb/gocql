@@ -129,9 +129,9 @@ func createV2Session(t testing.TB, opts ...func(*Config)) *Session {
 
 func createV2SessionFromConfig(config Config, t testing.TB, tabletsDisabled bool) *Session {
 	t.Helper()
-	keyspace := "gocql_test"
+	keyspace := fixtureKeyspace("")
 	if tabletsDisabled {
-		keyspace = "gocql_test_tablets_disabled"
+		keyspace = fixtureKeyspace("_td")
 	}
 	// Use a separate once key while both fixture implementations coexist. Creating
 	// an existing keyspace is harmless; dropping it would race other test sessions.

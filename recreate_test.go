@@ -58,10 +58,11 @@ func TestRecreateSchema(t *testing.T) {
 			Golden:        "testdata/recreate/keyspace_golden.cql",
 		},
 		{
-			Name:          "Table",
-			FixedKeyspace: "gocqlx_table",
-			Input:         "testdata/recreate/table.cql",
-			Golden:        "testdata/recreate/table_golden.cql",
+			Name:           "Table",
+			FixedKeyspace:  "gocqlx_table",
+			Input:          "testdata/recreate/table.cql",
+			CassandraInput: "testdata/recreate/table_cassandra.cql",
+			Golden:         "testdata/recreate/table_golden.cql",
 		},
 		{
 			Name:            "Materialized Views",
@@ -100,10 +101,12 @@ func TestRecreateSchema(t *testing.T) {
 			Golden:        "testdata/recreate/udt_golden.cql",
 		},
 		{
-			Name:          "Aggregates",
-			FixedKeyspace: "gocqlx_aggregates",
-			Input:         "testdata/recreate/aggregates.cql",
-			Golden:        "testdata/recreate/aggregates_golden.cql",
+			Name:            "Aggregates",
+			CassandraInput:  "testdata/recreate/aggregates_cassandra.cql",
+			CassandraGolden: "testdata/recreate/aggregates_cassandra_golden.cql",
+			FixedKeyspace:   "gocqlx_aggregates",
+			Input:           "testdata/recreate/aggregates.cql",
+			Golden:          "testdata/recreate/aggregates_golden.cql",
 		},
 	}
 
@@ -116,8 +119,9 @@ func TestRecreateSchema(t *testing.T) {
 
 			// Generate a unique keyspace name to avoid collisions under parallel execution.
 			// Replace the fixed keyspace name in CQL input/golden files with the unique name.
-			ks := v2SchemaRoutingName(t)
+			ks := fixtureKeyspace("_agg_") + strings.ReplaceAll(MustRandomUUID().String(), "-", "")[:12]
 			cleanup(t, session, ks)
+			t.Cleanup(func() { cleanup(t, session, ks) })
 
 			input := cassandraOverride(test.Input, test.CassandraInput)
 			in, err := os.ReadFile(input)
@@ -128,7 +132,7 @@ func TestRecreateSchema(t *testing.T) {
 			// Substitute the fixed keyspace name in the CQL input with the unique name.
 			inStr := strings.ReplaceAll(string(in), test.FixedKeyspace, ks)
 
-			queries := trimQueries(strings.Split(inStr, ";"))
+			queries := trimQueries(splitFixtureCQL(inStr))
 			for _, q := range queries {
 				_, err = v2Exec(context.Background(), session, q)
 				if err != nil {
@@ -191,8 +195,8 @@ func TestRecreateSchema(t *testing.T) {
 				golden = []byte(trimSchema(string(golden)))
 			}
 
-			goldenQueries := trimQueries(sortQueries(strings.Split(string(golden), ";")))
-			dumpQueries := trimQueries(sortQueries(strings.Split(dump, ";")))
+			goldenQueries := trimQueries(sortQueries(splitFixtureCQL(string(golden))))
+			dumpQueries := trimQueries(sortQueries(splitFixtureCQL(dump)))
 
 			if len(goldenQueries) != len(dumpQueries) {
 				t.Fatalf("Expected len(dumpQueries) to be %d, got %d", len(goldenQueries), len(dumpQueries))
@@ -206,14 +210,22 @@ func TestRecreateSchema(t *testing.T) {
 				}
 			}
 
+			if test.Name == "Aggregates" {
+				step08CheckAggregate(t, session, ks)
+			}
+
 			// Exec dumped queries to check if they are CQL-correct.
 			// Substitute the fixed keyspace name back to the unique name for execution.
 			cleanup(t, session, ks)
 
-			for _, q := range trimQueries(strings.Split(strings.ReplaceAll(dump, test.FixedKeyspace, ks), ";")) {
+			for _, q := range trimQueries(splitFixtureCQL(strings.ReplaceAll(dump, test.FixedKeyspace, ks))) {
 				if _, err := v2Exec(context.Background(), session, q); err != nil {
 					t.Fatal("invalid dump query", q, err)
 				}
+			}
+
+			if test.Name == "Aggregates" {
+				step08CheckAggregate(t, session, ks)
 			}
 
 			// Check if new dump is the same as previous
@@ -238,7 +250,7 @@ func TestRecreateSchema(t *testing.T) {
 			// Normalize the second dump back to fixed keyspace name for comparison.
 			secondDump = strings.ReplaceAll(secondDump, ks, test.FixedKeyspace)
 
-			secondDumpQueries := trimQueries(sortQueries(strings.Split(secondDump, ";")))
+			secondDumpQueries := trimQueries(sortQueries(splitFixtureCQL(secondDump)))
 
 			if !cmp.Equal(secondDumpQueries, dumpQueries) {
 				t.Errorf("first dump and second one differs: %s", cmp.Diff(secondDumpQueries, dumpQueries))

@@ -1,0 +1,11 @@
+--- FAIL: TestStep08StreamIndependentEverySplitAndTruncation (0.36s)
+    --- FAIL: TestStep08StreamIndependentEverySplitAndTruncation/v4tls (0.20s)
+        --- FAIL: TestStep08StreamIndependentEverySplitAndTruncation/v4tls/truncate=false (0.00s)
+            v2_fixture_stream_test.go:116: split 0: gocql: request: gocql: streaming protocol 4/compression 0: streaming execution requires ROWS or VOID result
+--- FAIL: TestStep08StreamIndependentEverySplitAndTruncation (0.38s)
+    --- FAIL: TestStep08StreamIndependentEverySplitAndTruncation/v4tls (0.22s)
+        --- FAIL: TestStep08StreamIndependentEverySplitAndTruncation/v4tls/truncate=false (0.00s)
+            v2_fixture_stream_test.go:116: split 0: gocql: request: gocql: streaming protocol 4/compression 0: streaming execution requires ROWS or VOID result
+FAIL
+FAIL	github.com/scylladb/gocql/v2	0.865s
+FAIL

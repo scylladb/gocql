@@ -176,22 +176,22 @@ func probeTabletsAutoEnabled() {
 	}
 	defer s.Close()
 
-	err = s.Query("DROP KEYSPACE IF EXISTS gocql_check_tablets_enabled").Exec()
+	err = s.Query("DROP KEYSPACE IF EXISTS " + fixtureKeyspace("_probe")).Exec()
 	if err != nil {
 		panic(fmt.Errorf("failed to delete keyspace: %v", err))
 	}
-	err = s.Query("CREATE KEYSPACE gocql_check_tablets_enabled WITH replication = {'class': 'NetworkTopologyStrategy', 'replication_factor': '1'}").Exec()
+	err = s.Query("CREATE KEYSPACE " + fixtureKeyspace("_probe") + " WITH replication = {'class': 'NetworkTopologyStrategy', 'replication_factor': '1'}").Exec()
 	if err != nil {
 		panic(fmt.Errorf("failed to create keyspace: %v", err))
 	}
 
 	res := make(map[string]any)
-	err = s.Query("describe keyspace gocql_check_tablets_enabled").MapScan(res)
+	err = s.Query("describe keyspace " + fixtureKeyspace("_probe")).MapScan(res)
 	if err != nil {
 		panic(fmt.Errorf("failed to describe keyspace: %v", err))
 	}
 
-	err = s.Query("DROP KEYSPACE IF EXISTS gocql_check_tablets_enabled").Exec()
+	err = s.Query("DROP KEYSPACE IF EXISTS " + fixtureKeyspace("_probe")).Exec()
 	if err != nil {
 		panic(fmt.Errorf("failed to drop probe keyspace: %v", err))
 	}
@@ -391,9 +391,9 @@ type testKeyspaceOpts struct {
 
 func (o *testKeyspaceOpts) KeyspaceName() string {
 	if o.tabletsDisabled {
-		return "gocql_test_tablets_disabled"
+		return fixtureKeyspace("_td")
 	}
-	return "gocql_test"
+	return fixtureKeyspace("")
 }
 
 func createSessionFromClusterHelper(cluster *ClusterConfig, tb testing.TB, opts testKeyspaceOpts) *Session {
@@ -582,6 +582,11 @@ func testTypeName(t testing.TB, parts ...string) string {
 // testKeyspaceName builds a CQL-safe keyspace name from t.Name() and optional parts.
 // Analogous to testTableName but intended for CREATE/DROP KEYSPACE statements.
 func testKeyspaceName(t testing.TB, parts ...string) string {
+	if os.Getenv("GOCQL_TEST_RUN") != "" {
+		h := fnv.New64a()
+		h.Write([]byte(testTableName(t, parts...)))
+		return fmt.Sprintf("%s_%016x", fixtureKeyspace(""), h.Sum64())
+	}
 	return testTableName(t, parts...)
 }
 

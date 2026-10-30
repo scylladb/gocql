@@ -1,0 +1,6 @@
+...{"name": "intentional", "command": ["/usr/bin/python3", "-c", "print('retained fault'); raise SystemExit(7)"], "exit_code": 7, "seconds": 0.007, "log": "/tmp/tmpu9fi48rb/receipt-intentional.log", "sha256": "83bced89c9cc734f6226bfd036dc5000d8b222d029e460736858ff007a26d861", "pid": 3048335, "cancelled": false}
+..
+----------------------------------------------------------------------
+Ran 5 tests in 0.127s
+
+OK

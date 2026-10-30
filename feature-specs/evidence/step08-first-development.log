@@ -1,0 +1,42 @@
+RESERVED development22 ['127.0.22.1', '127.0.22.2', '127.0.22.3'] gbc3d4a4368ab41f7
+Traceback (most recent call last):
+  File "/extra/scylladb/gocql/tests/fixtures/native.py", line 288, in <module>
+    main()
+    ~~~~^^
+  File "/extra/scylladb/gocql/tests/fixtures/native.py", line 277, in main
+    runner.lane(lane)
+    ~~~~~~~~~~~^^^^^^
+  File "/extra/scylladb/gocql/tests/fixtures/native.py", line 180, in lane
+    cluster = ScyllaCluster(str(self.fixture), name, install_dir=str(install))
+  File "/extra/scylladb/scylladb/.venv/lib/python3.14/site-packages/ccmlib/scylla_cluster.py", line 55, in __init__
+    super(ScyllaCluster, self).__init__(path, name, partitioner,
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+                                        install_dir, create_directory,
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                        version, verbose,
+                                        ^^^^^^^^^^^^^^^^^
+                                        snitch=SNITCH, cassandra_version=cassandra_version,
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                        docker_image=docker_image)
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/extra/scylladb/scylladb/.venv/lib/python3.14/site-packages/ccmlib/cluster.py", line 71, in __init__
+    self.__version = self.__get_version_from_build()
+                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/extra/scylladb/scylladb/.venv/lib/python3.14/site-packages/ccmlib/cluster.py", line 690, in __get_version_from_build
+    return common.get_version_from_build(self.get_install_dir())
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/extra/scylladb/scylladb/.venv/lib/python3.14/site-packages/ccmlib/common.py", line 917, in get_version_from_build
+    return _get_scylla_version(install_dir)
+  File "/extra/scylladb/scylladb/.venv/lib/python3.14/site-packages/ccmlib/common.py", line 991, in _get_scylla_version
+    raise CCMError(
+    ...<4 lines>...
+    )
+ccmlib.common.CCMError: Could not find SCYLLA-VERSION-FILE in the Scylla installation directory.
+Searched in: /extra/scylladb/gocql-api-test-cluster/step08/gbc3d4a4368ab41f7/development22-install
+Expected locations:
+  - /extra/scylladb/gocql-api-test-cluster/step08/gbc3d4a4368ab41f7/development22-install/SCYLLA-VERSION-FILE
+  - /extra/scylladb/gocql-api-test-cluster/step08/gbc3d4a4368ab41f7/development22-install/build/SCYLLA-VERSION-FILE
+  - /extra/scylladb/gocql-api-test-cluster/step08/gbc3d4a4368ab41f7/development22-install/../../build/SCYLLA-VERSION-FILE
+  - /extra/scylladb/gocql-api-test-cluster/step08/gbc3d4a4368ab41f7/development22-install/scylla-core-package/SCYLLA-VERSION-FILE
+  - /extra/scylladb/gocql-api-test-cluster/step08/gbc3d4a4368ab41f7/development22-install/scylla-core-package/scylla/SCYLLA-VERSION-FILE
+Please ensure you have built Scylla completely or use a relocatable package.

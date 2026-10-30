@@ -40,7 +40,7 @@ func TestStep07RunStreamLive(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	keyspace := fmt.Sprintf("step07_%x", time.Now().UnixNano())
+	keyspace := testKeyspaceName(t, fmt.Sprintf("%x", time.Now().UnixNano()))
 	exec := func(cql string) {
 		t.Helper()
 		b := codecTestMust(BindUnpreparedOwned(Statement[Unit, Unit]{CQL: cql, Kind: OrdinaryStatement, Params: NoParams, Rows: NoRows}, NewColumns(), Unit{}))

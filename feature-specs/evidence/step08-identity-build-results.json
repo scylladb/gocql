@@ -1,0 +1,38 @@
+[
+  {
+    "name": "integration-build",
+    "command": [
+      "go",
+      "test",
+      "-c",
+      "-race",
+      "-tags",
+      "integration gocql_debug",
+      "-o",
+      "/tmp/step08-final-integration-build.test",
+      "."
+    ],
+    "exit_code": 0,
+    "seconds": 0.95,
+    "log": "feature-specs/evidence/step08-identity-integration-build.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "ccm-build",
+    "command": [
+      "go",
+      "test",
+      "-c",
+      "-race",
+      "-tags",
+      "ccm integration gocql_debug",
+      "-o",
+      "/tmp/step08-final-ccm-build.test",
+      "."
+    ],
+    "exit_code": 0,
+    "seconds": 0.949,
+    "log": "feature-specs/evidence/step08-identity-ccm-build.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+]

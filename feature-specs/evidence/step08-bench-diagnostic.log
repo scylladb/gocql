@@ -1,0 +1,12 @@
+goos: linux
+goarch: amd64
+pkg: github.com/scylladb/gocql/v2
+cpu: AMD Ryzen 9 9950X3D 16-Core Processor
+BenchmarkStep08IndependentStreamOracle/v5raw/rows=1/cell=1024-32         	--- FAIL: BenchmarkStep08IndependentStreamOracle/v5raw/rows=1/cell=1024-32
+    v2_fixture_stream_bench_test.go:36: expected reserved stream zero, got 64
+    v2_fixture_stream_bench_test.go:54: gocql: request: context deadline exceeded
+--- FAIL: BenchmarkStep08IndependentStreamOracle
+FAIL
+exit status 1
+FAIL	github.com/scylladb/gocql/v2	30.035s
+FAIL

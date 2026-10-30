@@ -1,0 +1,17 @@
+{
+  "step08-bench-diagnostic.log": {
+    "raw_path": "/extra/scylladb/gocql-api-test-cluster/step08/raw-evidence/step08-bench-diagnostic.log",
+    "raw_sha256": "9ac7dc6755029636fdb46196af15311fa15da46861b040bf8d05517acc4c2f90",
+    "sha256": "836ca45f88daf2a6cfe657dffabfc7874fb8ca1fecc3f5001b61313d236a7817"
+  },
+  "step08-final-benchmarks.log": {
+    "raw_path": "/extra/scylladb/gocql-api-test-cluster/step08/raw-evidence/step08-final-benchmarks.log",
+    "raw_sha256": "9cb20a304795d903265d8c6159614598ec201fd97bef7cd1443377eb4b2ddadd",
+    "sha256": "79de364009ac36edf260e03fd709984020c851da217a0188f3cafed5955749cd"
+  },
+  "step08-bench-second.log": {
+    "raw_path": "/extra/scylladb/gocql-api-test-cluster/step08/raw-evidence/step08-bench-second.log",
+    "raw_sha256": "54ed311bd7cc7ee39bb7c2131e37a35a0584421703bbe7daa9c4875cdf9123bc",
+    "sha256": "c727e7afeabfef37f930cb8e262e3d849ce84d76040355796d8075f7d9cb7ead"
+  }
+}
