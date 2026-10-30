@@ -340,7 +340,7 @@ func (r *exclusiveConn) exchange(ctx context.Context, request *attemptRequest) (
 				r.units.beginFrame()
 			}
 			limits := r.conn.typedProtocolLimits()
-			header, body, err := frm.ReadStreamEnvelope(ctx, r.receiveSource(), r.conn.version, wire.StreamLimits{MaxBytes: min(limits.MaxFrameBytes, limits.MaxDecompressedBytes), MaxDepth: limits.MaxMetadataDepth + 2, DiscardBytes: r.limits.DiscardBytes})
+			header, body, err := frm.ReadStreamEnvelope(ctx, r.receiveSource(), r.conn.version, wire.StreamLimits{MaxBytes: min(limits.MaxFrameBytes, limits.MaxDecompressedBytes), MaxDepth: limits.MaxMetadataDepth + 2, DiscardBytes: r.limits.DiscardBytes}, r.conn.typedResponseExtensionFlags())
 			if err != nil {
 				return err
 			}
@@ -494,6 +494,7 @@ func decodeStreamRow[R any](response *streamResponse, plan StreamRowPlan[R], dst
 			if err := response.reservation.finishResponse(); err != nil {
 				return err
 			}
+			response.terminal = true
 		}
 		return nil
 	})
@@ -675,7 +676,7 @@ func (r *exclusiveConn) drainVerifiedControl() error {
 		}
 		r.units.beginFrame()
 		limits := r.conn.typedProtocolLimits()
-		h, body, err := frm.ReadStreamEnvelope(r.ctx, r.units, r.conn.version, wire.StreamLimits{MaxBytes: min(limits.MaxFrameBytes, limits.MaxDecompressedBytes), MaxDepth: limits.MaxMetadataDepth + 2, DiscardBytes: r.limits.DiscardBytes})
+		h, body, err := frm.ReadStreamEnvelope(r.ctx, r.units, r.conn.version, wire.StreamLimits{MaxBytes: min(limits.MaxFrameBytes, limits.MaxDecompressedBytes), MaxDepth: limits.MaxMetadataDepth + 2, DiscardBytes: r.limits.DiscardBytes}, r.conn.typedResponseExtensionFlags())
 		if err != nil {
 			return err
 		}

@@ -123,8 +123,23 @@ func resolveOptions(s *Session, options Options) (resolvedOptions, error) {
 	if options.Retry != nil {
 		p.Retry = options.Retry
 	}
-	if err := validateProfile(p); err != nil {
-		return resolvedOptions{}, err
+	if options.Consistency.Set && !validConsistency(p.Consistency) {
+		return resolvedOptions{}, typeValidation("consistency", "invalid consistency")
+	}
+	if options.SerialConsistency.Set && p.SerialConsistency.Set && p.SerialConsistency.Value != Serial && p.SerialConsistency.Value != LocalSerial {
+		return resolvedOptions{}, typeValidation("serial consistency", "must be SERIAL or LOCAL_SERIAL")
+	}
+	if options.Timeout.Set && p.Timeout < 0 || options.PageTimeout.Set && p.PageTimeout < 0 {
+		return resolvedOptions{}, typeValidation("timeout", "must not be negative")
+	}
+	if options.PageSize.Set && p.PageSize <= 0 {
+		return resolvedOptions{}, typeValidation("page size", "must be positive")
+	}
+	if options.Prefetch.Set && (p.Prefetch < 0 || p.Prefetch > 1) {
+		return resolvedOptions{}, typeValidation("prefetch", "must be zero or one")
+	}
+	if options.HostID.Set && options.HostID.Value.IsEmpty() {
+		return resolvedOptions{}, typeValidation("host ID", "empty UUID")
 	}
 	if options.ShardID.Set && !options.HostID.Set {
 		return resolvedOptions{}, typeValidation("shard", "requires a host ID")
@@ -148,6 +163,7 @@ func resolveOptions(s *Session, options Options) (resolvedOptions, error) {
 type RoutingInfo struct {
 	Keyspace, Table string
 	Token           Option[int64]
+	Kind            StatementKind
 	Conditional     bool
 	Consistency     Consistency
 	HostID          Option[UUID]
@@ -235,6 +251,10 @@ func (p SafeRetryPolicy) Decide(a AttemptError) RetryDecision {
 		return RetryDecision{Action: RetrySame}
 	}
 	if !a.Idempotent {
+		var query *QueryError
+		if !a.BytesWritten && errors.As(a.Err, &query) && !query.PotentiallyExecuted() {
+			return RetryDecision{Action: RetryNext}
+		}
 		return RetryDecision{}
 	}
 	var server RequestError

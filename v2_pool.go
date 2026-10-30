@@ -349,6 +349,9 @@ func (pool *hostConnPool) signalReservation() {
 	pool.mu.Unlock()
 }
 func (pool *hostConnPool) reserveStream(ctx context.Context, target Target, routing RoutingInfo) (*exclusiveConn, error) {
+	return pool.reserveStreamWithLimits(ctx, target, routing, StreamLimits{})
+}
+func (pool *hostConnPool) reserveStreamWithLimits(ctx context.Context, target Target, routing RoutingInfo, limits StreamLimits) (*exclusiveConn, error) {
 	if ctx == nil {
 		return nil, typeValidation("stream context", "nil context")
 	}
@@ -431,7 +434,7 @@ func (pool *hostConnPool) reserveStream(ctx context.Context, target Target, rout
 				if pass == 0 && !idle || pass == 1 && idle {
 					continue
 				}
-				r, err := c.reserveExclusive(ctx)
+				r, err := c.reserveExclusiveWithLimits(ctx, limits)
 				if err == nil {
 					return r, nil
 				}

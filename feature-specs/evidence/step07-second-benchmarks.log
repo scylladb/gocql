@@ -1,0 +1,36 @@
+goos: linux
+goarch: amd64
+pkg: github.com/scylladb/gocql/v2
+cpu: AMD Ryzen 9 9950X3D 16-Core Processor
+BenchmarkStep07ExecutionStorage/row/rows=1/cell=1024-32         	     100	     16362 ns/op	  62.58 MB/s	      1024 caller-capacity-B	      1024 retained-page-payload-B/op	   10122 B/op	      62 allocs/op
+BenchmarkStep07ExecutionStorage/into/rows=1/cell=1024-32        	     100	     14099 ns/op	  72.63 MB/s	      1024 caller-capacity-B	      1024 retained-page-payload-B/op	   10003 B/op	      62 allocs/op
+BenchmarkStep07ExecutionStorage/stream/rows=1/cell=1024-32      	     100	     19775 ns/op	  51.78 MB/s	      1024 caller-capacity-B	         0 driver-payload-gather-B/op	    9227 B/op	      86 allocs/op
+BenchmarkStep07ExecutionStorage/row/rows=100/cell=1024-32       	     100	     52713 ns/op	1942.61 MB/s	      1024 caller-capacity-B	    102400 retained-page-payload-B/op	  116387 B/op	      63 allocs/op
+BenchmarkStep07ExecutionStorage/into/rows=100/cell=1024-32      	     100	     48928 ns/op	2092.89 MB/s	      1024 caller-capacity-B	    102400 retained-page-payload-B/op	  116135 B/op	      63 allocs/op
+BenchmarkStep07ExecutionStorage/stream/rows=100/cell=1024-32    	     100	    151766 ns/op	 674.72 MB/s	      1024 caller-capacity-B	         0 driver-payload-gather-B/op	    9225 B/op	      86 allocs/op
+BenchmarkStep07ExecutionStorage/row/rows=1000/cell=1024-32      	     100	    331318 ns/op	3090.68 MB/s	      1024 caller-capacity-B	   1024000 retained-page-payload-B/op	 1044255 B/op	      65 allocs/op
+BenchmarkStep07ExecutionStorage/into/rows=1000/cell=1024-32     	     100	    291178 ns/op	3516.75 MB/s	      1024 caller-capacity-B	   1024000 retained-page-payload-B/op	 1044329 B/op	      65 allocs/op
+BenchmarkStep07ExecutionStorage/stream/rows=1000/cell=1024-32   	     100	   1322777 ns/op	 774.13 MB/s	      1024 caller-capacity-B	         0 driver-payload-gather-B/op	    9231 B/op	      86 allocs/op
+BenchmarkStep07ExecutionStorage/row/rows=1/cell=409600-32       	     100	     78556 ns/op	5214.10 MB/s	    409600 caller-capacity-B	    409600 retained-page-payload-B/op	  429867 B/op	      64 allocs/op
+BenchmarkStep07ExecutionStorage/into/rows=1/cell=409600-32      	     100	     77999 ns/op	5251.33 MB/s	    409600 caller-capacity-B	    409600 retained-page-payload-B/op	  429589 B/op	      64 allocs/op
+BenchmarkStep07ExecutionStorage/stream/rows=1/cell=409600-32    	     100	     29551 ns/op	13860.59 MB/s	    409600 caller-capacity-B	         0 driver-payload-gather-B/op	    9418 B/op	      86 allocs/op
+BenchmarkStep07ExecutionStorage/row/rows=1/cell=8388608-32      	     100	    563485 ns/op	14887.02 MB/s	   8388608 caller-capacity-B	   8388608 retained-page-payload-B/op	 8409681 B/op	      64 allocs/op
+BenchmarkStep07ExecutionStorage/into/rows=1/cell=8388608-32     	     100	    550046 ns/op	15250.73 MB/s	   8388608 caller-capacity-B	   8388608 retained-page-payload-B/op	 8409233 B/op	      65 allocs/op
+BenchmarkStep07ExecutionStorage/stream/rows=1/cell=8388608-32   	     100	    306077 ns/op	27406.85 MB/s	   8388608 caller-capacity-B	         0 driver-payload-gather-B/op	    9219 B/op	      87 allocs/op
+BenchmarkStep07SharedAdmission/1-32                             	     100	      1063 ns/op	    1537 B/op	      10 allocs/op
+BenchmarkStep07SharedAdmission/4-32                             	     100	       903.3 ns/op	    1542 B/op	      10 allocs/op
+BenchmarkStep07SharedAdmission/16-32                            	     100	       810.1 ns/op	    1682 B/op	      10 allocs/op
+BenchmarkV2ExclusiveTransport/raw4/1024-32                      	     100	      2435 ns/op	 420.60 MB/s	        14.00 reads/op	    5096 B/op	      42 allocs/op
+BenchmarkV2ExclusiveTransport/raw4/409600-32                    	     100	      8298 ns/op	49362.60 MB/s	        14.00 reads/op	    5096 B/op	      42 allocs/op
+BenchmarkV2ExclusiveTransport/raw4/8388608-32                   	     100	    283213 ns/op	29619.40 MB/s	        14.00 reads/op	    5096 B/op	      42 allocs/op
+BenchmarkV2ExclusiveTransport/raw5/1024-32                      	     100	      3178 ns/op	 322.26 MB/s	         3.000 reads/op	    131087 transform-B	      1071 unit-copy-B/op	    6320 B/op	      55 allocs/op
+BenchmarkV2ExclusiveTransport/raw5/409600-32                    	     100	     30424 ns/op	13463.16 MB/s	        12.00 reads/op	    131087 transform-B	    409647 unit-copy-B/op	    6320 B/op	      55 allocs/op
+BenchmarkV2ExclusiveTransport/raw5/8388608-32                   	     100	    624491 ns/op	13432.70 MB/s	       195.0 reads/op	    131087 transform-B	   8388655 unit-copy-B/op	    6320 B/op	      55 allocs/op
+BenchmarkV2ExclusiveTransport/lz4v5/1024-32                     	     100	      4171 ns/op	 245.52 MB/s	         3.000 reads/op	    262158 transform-B	      1071 unit-copy-B/op	    6448 B/op	      59 allocs/op
+BenchmarkV2ExclusiveTransport/lz4v5/409600-32                   	     100	     96850 ns/op	4229.21 MB/s	        12.00 reads/op	    262158 transform-B	    409647 unit-copy-B/op	    6448 B/op	      59 allocs/op
+BenchmarkV2ExclusiveTransport/lz4v5/8388608-32                  	     100	   1971501 ns/op	4254.94 MB/s	       195.0 reads/op	    262158 transform-B	   8388655 unit-copy-B/op	    6448 B/op	      59 allocs/op
+BenchmarkV2ExclusiveRowsScaling/1-32                            	     100	      2502 ns/op	    5272 B/op	      45 allocs/op
+BenchmarkV2ExclusiveRowsScaling/32-32                           	     100	      6565 ns/op	    5272 B/op	      45 allocs/op
+BenchmarkV2ExclusiveRowsScaling/1024-32                         	     100	    138816 ns/op	    5272 B/op	      45 allocs/op
+PASS
+ok  	github.com/scylladb/gocql/v2	0.805s

@@ -98,7 +98,7 @@ func (c *Conn) receiveTypedCall(ctx context.Context, call *callReq, src frameSou
 	}
 	var page *responsePage
 	if err == nil {
-		if headerErr := frm.CheckResponseHeader(head, c.version); headerErr != nil {
+		if headerErr := frm.CheckResponseHeader(head, c.version, c.typedResponseExtensionFlags()); headerErr != nil {
 			err = headerErr
 		} else {
 			page, err = c.parseTypedResponse(head, body, owner)
@@ -249,4 +249,13 @@ func (c *Conn) readTypedSegmentPayload(hdr segment.Header) (*wire.Lease, error) 
 		return nil, ErrFrameTooBig
 	}
 	return segment.ReadOwnedPayload(c.r, hdr, c.segCompressor)
+}
+
+// Scylla negotiates tablet feedback even on native v3. Permit its custom payload
+// envelope only for that advertised extension; ordinary v3 remains strict.
+func (c *Conn) typedResponseExtensionFlags() byte {
+	if c.version == 3 && (c.framers.defaults.tabletsRoutingV1 || c.framers.defaults.tabletsRoutingV2) {
+		return frm.FlagCustomPayload
+	}
+	return 0
 }

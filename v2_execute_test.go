@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func runtimeTestSession(t *testing.T, n int) (*Session, []*Conn, []net.Conn) {
+func runtimeTestSession(t testing.TB, n int) (*Session, []*Conn, []net.Conn) {
 	t.Helper()
 	s := &Session{logger: nopLogger{}}
 	s.hostSource = &ringDescriber{hosts: map[string]*HostInfo{}}
@@ -57,9 +57,9 @@ func runtimeRowsBody(token []byte, values ...string) []byte {
 	}
 	return b
 }
-func runtimeQuery(t *testing.T) *Bound[Bytes] {
+func runtimeQuery(t testing.TB) *Bound[Bytes] {
 	t.Helper()
-	b, err := BindUnpreparedBorrowed(Statement[Unit, Bytes]{CQL: "SELECT value FROM ks.tbl", Params: NoParams, Rows: OneColumn(BlobCodec)}, NewColumns(), Unit{})
+	b, err := BindUnpreparedBorrowed(Statement[Unit, Bytes]{Kind: OrdinaryStatement, CQL: "SELECT value FROM ks.tbl", Params: NoParams, Rows: OneColumn(BlobCodec)}, NewColumns(), Unit{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +173,7 @@ func TestV2RuntimeSpeculativeLoserWriterKeepsInput(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	bound := runtimeQuery(t)
-	page, err := RunPage(ctx, s, bound, StartPage(), Options{Profile: handle, Idempotent: true})
+	page, err := RunPage(ctx, s, bound, StartPage(), Options{Profile: handle, Idempotent: true, CustomPayload: []PayloadEntry{{Key: "borrowed", Value: Nullable[Bytes]{Valid: true, Value: BorrowBytes([]byte("per-call-payload"))}}}})
 	if err != nil {
 		t.Fatal(err)
 	}

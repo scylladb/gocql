@@ -1,0 +1,183 @@
+[
+  {
+    "name": "unit-race",
+    "command": [
+      "go",
+      "test",
+      "-race",
+      "-tags",
+      "unit",
+      "./...",
+      "-count=1",
+      "-timeout=6m"
+    ],
+    "env": {},
+    "exit_code": 0,
+    "elapsed_seconds": 51.698,
+    "log": "feature-specs/evidence/step07-final-unit-race.log",
+    "sha256": "0c52e262882dfc4be6e76fbe9055da6a9ab8eb2e3860e1223e158751ff495782"
+  },
+  {
+    "name": "focused-race",
+    "command": [
+      "go",
+      "test",
+      "-race",
+      "-tags",
+      "unit",
+      "-run",
+      "^TestStep07|TestV2(Runtime|Prepared|Metadata|Routing|Result|Paging|Metrics)|TestStep06",
+      "-count=2",
+      "-timeout=3m",
+      "."
+    ],
+    "env": {},
+    "exit_code": 0,
+    "elapsed_seconds": 22.254,
+    "log": "feature-specs/evidence/step07-final-focused-race.log",
+    "sha256": "74d72da84bb512dd1d1cd51ec1d411462cd28ac7cfa3dc611ff51b290df3d656"
+  },
+  {
+    "name": "vet",
+    "command": [
+      "go",
+      "vet",
+      "-tags",
+      "unit",
+      "./..."
+    ],
+    "env": {},
+    "exit_code": 0,
+    "elapsed_seconds": 5.642,
+    "log": "feature-specs/evidence/step07-final-vet.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "integration-build",
+    "command": [
+      "go",
+      "test",
+      "-c",
+      "-race",
+      "-tags",
+      "integration gocql_debug",
+      "-o",
+      "/tmp/step07-final-integration.test",
+      "."
+    ],
+    "env": {},
+    "exit_code": 0,
+    "elapsed_seconds": 0.959,
+    "log": "feature-specs/evidence/step07-final-integration-build.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "ccm-build",
+    "command": [
+      "go",
+      "test",
+      "-c",
+      "-race",
+      "-tags",
+      "ccm integration gocql_debug",
+      "-o",
+      "/tmp/step07-final-ccm.test",
+      "."
+    ],
+    "env": {},
+    "exit_code": 0,
+    "elapsed_seconds": 0.927,
+    "log": "feature-specs/evidence/step07-final-ccm-build.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "fuzz-execution",
+    "command": [
+      "go",
+      "test",
+      "-tags",
+      "unit",
+      "-run",
+      "^$",
+      "-fuzz",
+      "^FuzzStep07StreamExecutionBoundary$",
+      "-fuzztime=5s",
+      "-parallel=2",
+      "."
+    ],
+    "env": {
+      "GOMAXPROCS": "2"
+    },
+    "exit_code": 0,
+    "elapsed_seconds": 19.969,
+    "log": "feature-specs/evidence/step07-final-fuzz-execution.log",
+    "sha256": "ef4d73ebda8cba4070b0e370d2680c411cf851dfd878997b10ffb69dabc1780a"
+  },
+  {
+    "name": "fuzz-codecs",
+    "command": [
+      "go",
+      "test",
+      "-tags",
+      "unit",
+      "-run",
+      "^$",
+      "-fuzz",
+      "^FuzzV2StreamingValues$",
+      "-fuzztime=5s",
+      "-parallel=2",
+      "."
+    ],
+    "env": {
+      "GOMAXPROCS": "2"
+    },
+    "exit_code": 0,
+    "elapsed_seconds": 5.627,
+    "log": "feature-specs/evidence/step07-final-fuzz-codecs.log",
+    "sha256": "33eaaa364793d62de6cba0d17b70a479439d3a73e4a21f2e9909fe6123b3ca0b"
+  },
+  {
+    "name": "fuzz-framing",
+    "command": [
+      "go",
+      "test",
+      "-tags",
+      "unit",
+      "-run",
+      "^$",
+      "-fuzz",
+      "^FuzzV2ExclusiveIncrementalFraming$",
+      "-fuzztime=5s",
+      "-parallel=2",
+      "."
+    ],
+    "env": {
+      "GOMAXPROCS": "2"
+    },
+    "exit_code": 0,
+    "elapsed_seconds": 5.661,
+    "log": "feature-specs/evidence/step07-final-fuzz-framing.log",
+    "sha256": "6de6aee11fa71c5ed6a2bd2800bc37fe8b1c3241f3fae8e7376e6cfa5a64839c"
+  },
+  {
+    "name": "benchmarks",
+    "command": [
+      "go",
+      "test",
+      "-tags",
+      "unit",
+      "-run",
+      "^$",
+      "-bench",
+      "^BenchmarkStep07|^BenchmarkV2Exclusive(RowsScaling|Transport)$",
+      "-benchtime=100x",
+      "-count=1",
+      "."
+    ],
+    "env": {},
+    "exit_code": 0,
+    "elapsed_seconds": 1.319,
+    "log": "feature-specs/evidence/step07-final-benchmarks.log",
+    "sha256": "d71a09b5eadb1ab82ed9170748b59c019745d6724b3f6f1c0fc8d058c0fc8e1b"
+  }
+]

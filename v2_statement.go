@@ -10,7 +10,17 @@ import (
 	"github.com/scylladb/gocql/v2/internal/wire"
 )
 
+// StatementKind is an explicit classification; the driver never parses CQL to infer it.
+type StatementKind uint8
+
+const (
+	UnknownStatement StatementKind = iota
+	OrdinaryStatement
+	ConditionalStatement
+)
+
 type Statement[P, R any] struct {
+	Kind   StatementKind
 	CQL    string
 	Params ParamEncoder[P]
 	Rows   RowDecoder[R]
@@ -24,6 +34,7 @@ type PrepareOptions struct {
 type PreparedInfo struct {
 	Keyspace, Table     string
 	PartitionKeyIndexes []int
+	Kind                StatementKind
 	Conditional         bool
 	Generation          uint64
 }
@@ -65,6 +76,7 @@ type hostPrepareFlight struct {
 	err      error
 }
 type Prepared[P, R any] struct {
+	kind   StatementKind
 	state  *preparedState
 	params ParamPlan[P]
 	rows   RowDecoder[R]
@@ -82,6 +94,15 @@ func Prepare[P, R any](ctx context.Context, s *Session, statement Statement[P, R
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	if s.Closed() {
+		return nil, ErrClosed
+	}
+	if options.HostID.Set && options.HostID.Value.IsEmpty() {
+		return nil, typeValidation("prepare host", "empty UUID")
+	}
+	if options.connection != nil && options.connection.session != s {
+		return nil, typeValidation("prepare connection", "connection belongs to another session")
 	}
 	if err := validateStatement(statement); err != nil {
 		return nil, err
@@ -105,9 +126,16 @@ func Prepare[P, R any](ctx context.Context, s *Session, statement Statement[P, R
 	if err != nil {
 		return nil, err
 	}
-	return &Prepared[P, R]{state: state, params: plan, rows: statement.Rows, plans: &resultPlanCache[R]{columns: columns, plan: rows}}, nil
+	kind := statement.Kind
+	if state.info.Kind == ConditionalStatement || kind == UnknownStatement {
+		kind = state.info.Kind
+	}
+	return &Prepared[P, R]{kind: kind, state: state, params: plan, rows: statement.Rows, plans: &resultPlanCache[R]{columns: columns, plan: rows}}, nil
 }
 func validateStatement[P, R any](s Statement[P, R]) error {
+	if s.Kind > ConditionalStatement {
+		return typeValidation("statement kind", "unknown classification")
+	}
 	if strings.TrimSpace(s.CQL) == "" {
 		return typeValidation("statement", "empty CQL")
 	}
@@ -142,6 +170,8 @@ func (p *Prepared[P, R]) Info() PreparedInfo {
 	p.state.mu.RLock()
 	defer p.state.mu.RUnlock()
 	v := p.state.info
+	v.Kind = p.kind
+	v.Conditional = p.kind == ConditionalStatement
 	v.PartitionKeyIndexes = append([]int(nil), v.PartitionKeyIndexes...)
 	return v
 }
@@ -169,7 +199,7 @@ func bindPrepared[P, R any](p *Prepared[P, R], value P, owned bool) (*Bound[R], 
 	if err != nil {
 		return nil, err
 	}
-	return &Bound[R]{request: executionRequest{statement: statement, keyspace: keyspace, prepared: p.state, values: values, owner: newInputOwner(), routing: RoutingInfo{Keyspace: info.Keyspace, Table: info.Table, Token: token, Conditional: info.Conditional}}, rows: p.rows, plans: p.plans}, nil
+	return &Bound[R]{request: executionRequest{statement: statement, keyspace: keyspace, prepared: p.state, values: values, owner: newInputOwner(), routing: RoutingInfo{Keyspace: info.Keyspace, Table: info.Table, Token: token, Kind: p.kind, Conditional: p.kind != OrdinaryStatement}}, rows: p.rows, plans: p.plans}, nil
 }
 func BindUnpreparedBorrowed[P, R any](s Statement[P, R], columns Columns, value P) (*Bound[R], error) {
 	return bindUnprepared(s, columns, value, false)
@@ -189,7 +219,7 @@ func bindUnprepared[P, R any](s Statement[P, R], columns Columns, value P, owned
 	if err != nil {
 		return nil, err
 	}
-	return &Bound[R]{request: executionRequest{statement: s.CQL, values: values, owner: newInputOwner(), routing: RoutingInfo{Conditional: conditionalCQL(s.CQL)}}, rows: s.Rows, plans: &resultPlanCache[R]{}}, nil
+	return &Bound[R]{request: executionRequest{statement: s.CQL, values: values, owner: newInputOwner(), routing: RoutingInfo{Kind: s.Kind, Conditional: s.Kind != OrdinaryStatement}}, rows: s.Rows, plans: &resultPlanCache[R]{}}, nil
 }
 func encodeParameters[P any](plan ParamPlan[P], columns Columns, value P, owned, allowUnset bool) (encodedValues, error) {
 	if columns.Len() > 65535 {

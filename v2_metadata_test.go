@@ -100,6 +100,8 @@ func TestV2MetricsPercentilesAndSchemaGeneration(t *testing.T) {
 		s.recordV2Latency(time.Duration(i) * time.Millisecond)
 	}
 	s.recordV2Orphan()
+	// Production publishes the bounded percentile summary once per second.
+	s.peripheral().publishLatencySummary()
 	m := s.Metrics()
 	if m.LatencyP50 != 50*time.Millisecond || m.LatencyP95 != 95*time.Millisecond || m.LatencyP99 != 99*time.Millisecond || m.Orphans != 1 {
 		t.Fatal(m)

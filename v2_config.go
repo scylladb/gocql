@@ -109,7 +109,7 @@ func DefaultConfig(contactPoints ...string) Config {
 	profile := defaultProfile()
 	profile.Routing, _ = NewRoutingPolicy(RoutingOptions{TokenAware: true, ShuffleReplicas: true})
 	handle, _ := NewProfile(profile)
-	return Config{ContactPoints: append([]string(nil), contactPoints...), Port: 9042, CQLVersion: "3.0.0", ConnectTimeout: 5 * time.Second, DNSTimeout: 5 * time.Second, KeepaliveInterval: 30 * time.Second, KeepaliveTimeout: 30 * time.Second, NoDelay: true, Pool: PoolOptions{ConnectionsPerShard: 1, MaxExcessPerShard: 2, MaxRequestsPerConnection: 32768, MaxOrphanedStreams: 1024, ShardAwarePort: true, SourcePortStart: 49152, SourcePortEnd: 65535}, Metadata: MetadataOptions{Mode: MetadataFull, InitialDiscovery: true, RequestTimeout: 60 * time.Second, AgreementTimeout: 60 * time.Second, AgreementPoll: 200 * time.Millisecond, AutomaticAgreement: true, RefreshAfterAgreement: true, TopologyEvents: true, StatusEvents: true, SchemaEvents: true, ClientRouteEvents: true}, Limits: ProtocolLimits{MaxFrameBytes: 256 << 20, MaxDecompressedBytes: 256 << 20, MaxMetadataDepth: 64, MaxPagingStates: 65536, MaxPagingStateBytes: 16 << 20}, PreparedCacheSize: 1000, Partitioners: map[string]TokenPartitioner{"org.apache.cassandra.dht.Murmur3Partitioner": Murmur3TokenPartitioner, "Murmur3Partitioner": Murmur3TokenPartitioner, "com.scylladb.dht.CDCPartitioner": CDCTokenPartitioner, "CDCPartitioner": CDCTokenPartitioner}, DefaultProfile: handle, Reconnect: defaultReconnectPolicy{}, ReportConfiguration: true, TimestampGenerator: newTimestampGenerator()}
+	return Config{ContactPoints: append([]string(nil), contactPoints...), Port: 9042, CQLVersion: "3.0.0", ConnectTimeout: 5 * time.Second, DNSTimeout: 5 * time.Second, KeepaliveInterval: 30 * time.Second, KeepaliveTimeout: 30 * time.Second, NoDelay: true, Pool: PoolOptions{ConnectionsPerShard: 1, MaxExcessPerShard: 2, MaxRequestsPerConnection: 32768, MaxOrphanedStreams: 1024, ShardAwarePort: true, SourcePortStart: 49152, SourcePortEnd: 65535}, Metadata: MetadataOptions{Mode: MetadataFull, InitialDiscovery: true, PeriodicRefresh: 60 * time.Second, RequestTimeout: 31 * time.Second, AgreementTimeout: 60 * time.Second, AgreementPoll: 200 * time.Millisecond, AutomaticAgreement: true, RefreshAfterAgreement: true, TopologyEvents: true, StatusEvents: true, SchemaEvents: true, ClientRouteEvents: true}, Limits: ProtocolLimits{MaxFrameBytes: 256 << 20, MaxDecompressedBytes: 256 << 20, MaxMetadataDepth: 64, MaxPagingStates: 65536, MaxPagingStateBytes: 16 << 20}, PreparedCacheSize: 1000, Partitioners: map[string]TokenPartitioner{"org.apache.cassandra.dht.Murmur3Partitioner": Murmur3TokenPartitioner, "Murmur3Partitioner": Murmur3TokenPartitioner, "com.scylladb.dht.CDCPartitioner": CDCTokenPartitioner, "CDCPartitioner": CDCTokenPartitioner}, DefaultProfile: handle, Identity: IdentityOptions{DriverName: defaultDriverName, DriverVersion: defaultDriverVersion}, Reconnect: defaultReconnectPolicy{}, ReportConfiguration: true, TimestampGenerator: newTimestampGenerator()}
 }
 func newTimestampGenerator() func() int64 {
 	var last atomic.Int64
@@ -168,6 +168,12 @@ func validateConfig(config Config) error {
 	}
 	if config.ReceiveBuffer.Set && config.ReceiveBuffer.Value < 0 || config.SendBuffer.Set && config.SendBuffer.Value < 0 {
 		return typeValidation("socket buffers", "must not be negative")
+	}
+	if config.Metadata.AgreementTimeout <= 0 || config.Metadata.AgreementPoll <= 0 {
+		return typeValidation("schema agreement", "timeout and poll must be positive")
+	}
+	if config.Metadata.ServerTimeout.Set && config.Metadata.ServerTimeout.Value > 0 && config.Metadata.ServerTimeout.Value%time.Millisecond != 0 {
+		return typeValidation("metadata server timeout", "must use whole milliseconds")
 	}
 	if config.Metadata.Mode > MetadataFull {
 		return typeValidation("metadata mode", "unknown mode")
@@ -259,6 +265,9 @@ func Connect(ctx context.Context, config Config) (*Session, error) {
 		return nil, err
 	}
 	config = snapshotConfig(config)
+	if config.Logger != nil {
+		config.Logger = v2SafeLogger{config.Logger}
+	}
 	contacts := config.ContactPoints
 	if path, _ := unixContact(config); path != "" {
 		contacts = []string{"127.0.0.1"}

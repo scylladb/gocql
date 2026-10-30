@@ -293,6 +293,7 @@ type lazyRoutingPlan struct {
 }
 
 func (p *routingPolicy) Plan(info RoutingInfo, m *MetadataSnapshot) QueryPlan {
+	info.Conditional = info.Conditional || info.Kind != OrdinaryStatement
 	if m == nil {
 		return &targetPlan{}
 	}
@@ -558,6 +559,9 @@ func SingleTargetRouting(t Target, strictShard bool) RoutingPolicy {
 	return &singleTargetRouting{target: t, strict: strictShard}
 }
 func (p *singleTargetRouting) Validate(m *MetadataSnapshot) error {
+	if (p.strict || p.target.StrictShard) && !p.target.ShardID.Set {
+		return typeValidation("routing shard", "strict target requires a shard ID")
+	}
 	if m != nil {
 		if i, ok := m.routingIndex().byID[p.target.HostID]; ok {
 			h := m.hosts[i]

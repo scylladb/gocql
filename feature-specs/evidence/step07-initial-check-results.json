@@ -1,0 +1,55 @@
+[
+  {
+    "name": "unit-race",
+    "command": [
+      "go",
+      "test",
+      "-race",
+      "-tags",
+      "unit",
+      "./...",
+      "-count=1",
+      "-timeout=6m"
+    ],
+    "env": {},
+    "exit_code": 0,
+    "elapsed_seconds": 52.766,
+    "log": "feature-specs/evidence/step07-final-unit-race.log",
+    "sha256": "88bf7f3c55f2698f32e09d6853a951b455f5cf5cd1563d861def84a5abd8c5cd"
+  },
+  {
+    "name": "focused-race",
+    "command": [
+      "go",
+      "test",
+      "-race",
+      "-tags",
+      "unit",
+      "-run",
+      "^TestStep07|TestV2(Runtime|Prepared|Metadata|Routing|Result|Paging|Metrics)|TestStep06",
+      "-count=2",
+      "-timeout=3m",
+      "."
+    ],
+    "env": {},
+    "exit_code": 0,
+    "elapsed_seconds": 739.345,
+    "log": "feature-specs/evidence/step07-final-focused-race.log",
+    "sha256": "3d8b2341333b6731c21e6b21e92be0d477ce48b3f57c1bb4a4dc1ed3cd62479f"
+  },
+  {
+    "name": "vet",
+    "command": [
+      "go",
+      "vet",
+      "-tags",
+      "unit",
+      "./..."
+    ],
+    "env": {},
+    "exit_code": 0,
+    "elapsed_seconds": 6.13,
+    "log": "feature-specs/evidence/step07-final-vet.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+]

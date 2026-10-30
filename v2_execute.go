@@ -20,6 +20,7 @@ type prepareFlight struct {
 	err   error
 }
 type sessionRuntime struct {
+	executions                                                   map[*logicalExecution]struct{}
 	schema                                                       *preparedSchemaTracker
 	prepareWorkersMu                                             sync.Mutex
 	prepareWorkers                                               sync.WaitGroup
@@ -60,6 +61,9 @@ func (s *Session) selectTypedConn(ctx context.Context, routing RoutingInfo, plan
 		return nil, ErrNoConnections
 	}
 	pickTarget := func(target Target) *Conn {
+		if routing.HostID.Set && target.HostID != routing.HostID.Value {
+			return nil
+		}
 		s.pool.mu.RLock()
 		pool := s.pool.hostConnPools[target.HostID]
 		s.pool.mu.RUnlock()
@@ -74,8 +78,14 @@ func (s *Session) selectTypedConn(ctx context.Context, routing RoutingInfo, plan
 			if !ok {
 				return nil, ErrNoConnections
 			}
+			if target.StrictShard && !target.ShardID.Set {
+				return nil, typeValidation("routing shard", "strict target requires a shard ID")
+			}
 			if conn := pickTarget(target); conn != nil {
 				return conn, nil
+			}
+			if target.StrictShard {
+				return nil, typeValidation("routing shard", "strict target is unavailable")
 			}
 		}
 	}
@@ -147,7 +157,7 @@ func (s *Session) prepareTyped(ctx context.Context, statement, keyspace string, 
 	}
 	wireKeyspace := keyspace
 	if conn.version < 5 {
-		if keyspace != s.cfg.Keyspace {
+		if keyspace != s.cfg.Keyspace && !qualifiedForKeyspace(statement, keyspace) {
 			return nil, typeValidation("prepare keyspace", "protocol v3/v4 requires the session keyspace")
 		}
 		wireKeyspace = ""
@@ -240,10 +250,7 @@ func (s *Session) prepareOnConnExpected(ctx context.Context, conn *Conn, state *
 		go func() {
 			defer rt.prepareWorkers.Done()
 			timeout := s.typedRuntime().config.Metadata.RequestTimeout
-			if timeout <= 0 {
-				timeout = 60 * time.Second
-			}
-			sharedCtx, cancel := context.WithTimeout(conn.ctx, timeout)
+			sharedCtx, cancel := executionContext(conn.ctx, timeout)
 			defer cancel()
 			result, err := s.prepareHost(sharedCtx, conn, state, parameters, flight)
 			state.mu.Lock()
@@ -295,7 +302,7 @@ func (s *Session) prepareHost(ctx context.Context, conn *Conn, state *preparedSt
 	if err != nil {
 		return nil, err
 	}
-	if !slices.Equal(info.PartitionKeyIndexes, state.info.PartitionKeyIndexes) || info.Keyspace != state.info.Keyspace || info.Table != state.info.Table || info.Conditional != state.info.Conditional || s.preparedPartitionerName(info.Keyspace, info.Table) != state.partitioner {
+	if !slices.Equal(info.PartitionKeyIndexes, state.info.PartitionKeyIndexes) || info.Keyspace != state.info.Keyspace || info.Table != state.info.Table || info.Kind != state.info.Kind || info.Conditional != state.info.Conditional || s.preparedPartitionerName(info.Keyspace, info.Table) != state.partitioner {
 		return nil, &SchemaChangedError{Statement: state.statement, Previous: state.parameters, Current: page.bindColumns}
 	}
 	revision := uint64(1)
@@ -334,7 +341,13 @@ func (s *Session) prepareHost(ctx context.Context, conn *Conn, state *preparedSt
 	return candidate, nil
 }
 func (s *Session) hostPreparedInfo(conn *Conn, page *responsePage, state *preparedState) (PreparedInfo, error) {
-	info := PreparedInfo{Keyspace: state.keyspace, PartitionKeyIndexes: page.pkIndexes, Conditional: page.lwt || conditionalCQL(state.statement)}
+	info := PreparedInfo{Keyspace: state.keyspace, PartitionKeyIndexes: page.pkIndexes, Conditional: page.lwt}
+	if conn.framers.defaults.flagLWT != 0 {
+		info.Kind = OrdinaryStatement
+	}
+	if page.lwt {
+		info.Kind = ConditionalStatement
+	}
 	for _, columns := range []Columns{page.bindColumns, page.columns} {
 		if col, ok := columns.At(0); ok && info.Table == "" {
 			if col.Keyspace != "" {
@@ -373,7 +386,23 @@ func (s *Session) hostPreparedInfo(conn *Conn, page *responsePage, state *prepar
 
 // selectPreparedResponse resolves a response using only the attempt's retained
 // immutable entry. Later schema events do not invalidate bytes already received.
-func selectPreparedResponse(state *preparedState, host UUID, prepared *hostPrepared, sentID []byte, tracksID bool, response *responsePage, observed ...uint64) (err error) {
+type resultMetadataObservation struct {
+	columns                     Columns
+	columnCount                 int
+	kind                        int
+	noMetadata, metadataChanged bool
+	metadataID                  []byte
+	metadata                    *typedResultMetadata
+}
+
+func selectPreparedResponse(state *preparedState, host UUID, prepared *hostPrepared, sentID []byte, tracksID bool, response *responsePage, observed ...uint64) error {
+	v := resultMetadataObservation{columns: response.columns, columnCount: response.columnCount, kind: response.kind, noMetadata: response.noMetadata, metadataChanged: response.metadataChanged, metadataID: response.metadataID, metadata: response.metadata}
+	err := selectPreparedMetadata(state, host, prepared, sentID, tracksID, &v, observed...)
+	response.columns = v.columns
+	response.metadata = v.metadata
+	return err
+}
+func selectPreparedMetadata(state *preparedState, host UUID, prepared *hostPrepared, sentID []byte, tracksID bool, response *resultMetadataObservation, observed ...uint64) (err error) {
 	if response.noMetadata {
 		if prepared == nil || prepared.result == nil || prepared.columns.Len() != response.columnCount || !bytes.Equal(prepared.metadataID, sentID) || len(response.metadataID) > 0 && !bytes.Equal(response.metadataID, prepared.metadataID) || tracksID && len(prepared.metadataID) == 0 {
 			return &ProtocolError{Stage: "result metadata", Err: fmt.Errorf("missing matching metadata")}
@@ -442,6 +471,7 @@ func selectPreparedResponse(state *preparedState, host UUID, prepared *hostPrepa
 }
 
 type logicalExecution struct {
+	lifetime       executionLifetime
 	ddlCoordinator atomic.Pointer[UUID]
 	id             uint64
 	started        time.Time
@@ -482,7 +512,7 @@ func (l *logicalExecution) finish(result Result, err error) {
 func (s *Session) observeSafely(fn func()) {
 	defer func() {
 		if v := recover(); v != nil && s.logger != nil {
-			s.logger.Printf("gocql: observer panic: %v", v)
+			func() { defer func() { _ = recover() }(); s.logger.Printf("gocql: observer panic: %v", v) }()
 		}
 	}()
 	fn()
@@ -531,21 +561,25 @@ func admitExecution[R any](ctx context.Context, s *Session, b *Bound[R], options
 	request.routing.Consistency = resolved.profile.Consistency
 	request.routing.HostID = options.HostID
 	request.routing.ShardID = options.ShardID
-	request.routing.Conditional = request.routing.Conditional || resolved.profile.Consistency == Serial || resolved.profile.Consistency == LocalSerial
+	if resolved.profile.Consistency == Serial || resolved.profile.Consistency == LocalSerial {
+		request.routing.Kind = ConditionalStatement
+	}
+	request.routing.Conditional = request.routing.Kind != OrdinaryStatement
 	if err := request.owner.admit(); err != nil {
 		return nil, nil, nil, err
 	}
-	runctx, cancel := context.WithCancel(ctx)
-	if resolved.profile.Timeout > 0 {
-		cancel()
-		runctx, cancel = context.WithTimeout(ctx, resolved.profile.Timeout)
-	}
+	runctx, cancel := executionContext(ctx, resolved.profile.Timeout)
 	rt := s.typedRuntime()
 	observer := options.Observer
 	if observer == nil {
 		observer = rt.config.Observer
 	}
-	request.logical = &logicalExecution{id: rt.requestID.Add(1), started: time.Now(), observer: observer, session: s, request: &request}
+	request.logical = &logicalExecution{lifetime: executionLifetime{cancel: cancel, done: make(chan struct{})}, id: rt.requestID.Add(1), started: time.Now(), observer: observer, session: s, request: &request}
+	if err := s.registerExecution(request.logical, request.owner); err != nil {
+		cancel()
+		request.logical.releaseInput()
+		return nil, nil, nil, err
+	}
 	rt.requests.Add(1)
 	rt.inflight.Add(1)
 	if !request.routing.Conditional && !requestHasCounter(request) && !request.options.options.Timestamp.Set && rt.config.TimestampGenerator != nil {
@@ -561,8 +595,8 @@ func Run[R any](ctx context.Context, s *Session, b *Bound[R], options Options) (
 	response, err := s.executePage(runctx, request, StartPage())
 	if err != nil {
 		cancel()
-		request.owner.release()
 		request.logical.finish(executionErrorResult(err), err)
+		request.logical.releaseInput()
 		return nil, err
 	}
 	plans := b.plans
@@ -572,13 +606,23 @@ func Run[R any](ctx context.Context, s *Session, b *Bound[R], options Options) (
 	page, err := newPageWithPlans(response, b.rows, plans, nil)
 	if err != nil {
 		cancel()
-		request.owner.release()
 		request.logical.finish(response.result, err)
+		request.logical.releaseInput()
 		return nil, err
 	}
 	rows := &Rows[R]{ctx: runctx, cancel: cancel, session: s, request: request, decoder: b.rows, page: page, info: response.result, plans: plans, history: pagingHistory{maxCount: s.typedRuntime().config.Limits.MaxPagingStates, maxBytes: s.typedRuntime().config.Limits.MaxPagingStateBytes}}
 	rows.startPrefetch()
-	rows.release = func() { request.owner.release(); request.logical.finish(rows.info, rows.err) }
+	rows.release = func() { request.logical.finish(rows.info, rows.err); request.logical.releaseInput() }
+	request.logical.installStop(func() {
+		rows.mu.Lock()
+		if rows.future != nil {
+			rows.future.close()
+			rows.future = nil
+		}
+		rows.mu.Unlock()
+		request.logical.finish(rows.Info(), ErrClosed)
+		request.logical.releaseInput()
+	})
 	return rows, nil
 }
 func RunPage[R any](ctx context.Context, s *Session, b *Bound[R], state PageState, options Options) (*Page[R], error) {
@@ -591,6 +635,12 @@ func runSinglePage[R any](ctx context.Context, s *Session, b *Bound[R], state Pa
 	if state.Complete() {
 		return nil, ErrPagingComplete
 	}
+	if options.Prefetch.Set && options.Prefetch.Value != 0 {
+		return nil, &UnsupportedSettingError{Setting: "prefetch", Reason: "single-page execution has no automatic pager"}
+	}
+	if unpaged && options.PageSize.Set {
+		return nil, &UnsupportedSettingError{Setting: "page size", Reason: "unpaged execution has no page size"}
+	}
 	runctx, cancel, request, err := admitExecution(ctx, s, b, options)
 	if err != nil {
 		return nil, err
@@ -601,16 +651,16 @@ func runSinglePage[R any](ctx context.Context, s *Session, b *Bound[R], state Pa
 	response, err := s.executePage(runctx, request, state)
 	if err != nil {
 		cancel()
-		request.owner.release()
 		request.logical.finish(executionErrorResult(err), err)
+		request.logical.releaseInput()
 		return nil, err
 	}
 	if unpaged && response.state.More() {
 		response.owner.Release()
 		err = typeValidation("unpaged response", "server returned continuation")
 		cancel()
-		request.owner.release()
 		request.logical.finish(response.result, err)
+		request.logical.releaseInput()
 		return nil, err
 	}
 	plans := b.plans
@@ -620,14 +670,15 @@ func runSinglePage[R any](ctx context.Context, s *Session, b *Bound[R], state Pa
 	page, err := newPageWithPlans(response, b.rows, plans, nil)
 	if err != nil {
 		cancel()
-		request.owner.release()
 		request.logical.finish(response.result, err)
+		request.logical.releaseInput()
 		return nil, err
 	}
 	page.ctx = runctx
 	page.cancel = cancel
 	page.session = s
-	page.release = func() { cancel(); request.owner.release(); request.logical.finish(response.result, page.err) }
+	page.release = func() { cancel(); request.logical.finish(response.result, page.err); request.logical.releaseInput() }
+	request.logical.installStop(func() { request.logical.finish(response.result, ErrClosed); request.logical.releaseInput() })
 	return page, nil
 }
 func Exec[R any](ctx context.Context, s *Session, b *Bound[R], options Options) (Result, error) {
@@ -740,7 +791,7 @@ func (s *Session) executePage(ctx context.Context, request *executionRequest, st
 			timer = nil
 		}
 		speculate = nil
-		if !request.options.options.Idempotent || request.routing.Conditional || request.options.profile.Speculation == nil {
+		if !request.options.options.Idempotent || request.routing.Kind != OrdinaryStatement || request.options.profile.Speculation == nil {
 			return
 		}
 		delay, ok := request.options.profile.Speculation.Delay(startedCount, s.Metrics())
@@ -894,7 +945,7 @@ func (s *Session) executePage(ctx context.Context, request *executionRequest, st
 }
 func (s *Session) executeTypedAttempt(ctx context.Context, conn *Conn, request *executionRequest, state PageState, consistency Consistency) (*responsePage, error) {
 	opts := request.options.options
-	if conn.version < 5 && request.keyspace != "" && request.keyspace != s.cfg.Keyspace {
+	if conn.version < 5 && request.keyspace != "" && request.keyspace != s.cfg.Keyspace && !requestQualifiedForKeyspace(request, request.keyspace) {
 		return nil, typeValidation("keyspace", "protocol v3/v4 requires the session keyspace")
 	}
 	if conn.version < 4 {
@@ -1118,7 +1169,7 @@ func attemptBytesWritten(err error) bool {
 	if errors.As(err, &query) {
 		return query.PotentiallyExecuted()
 	}
-	return false
+	return true
 }
 
 func (s *Session) applyTypedFeedbackStamped(response *responsePage, routing RoutingInfo, stamp tabletFeedbackStamp, features framerConfig) {

@@ -1,0 +1,5 @@
+--- FAIL: TestStep07StreamReprepareCanonicalInputAndNoRepairAfterOutput (0.00s)
+    v2_row_stream_test.go:671: terminal attempt metadata missing {{00000000-0000-0000-0000-000000000001 3 353.414µs 1 [] [] [] LOCAL_QUORUM} 1 1 true}
+FAIL
+FAIL	github.com/scylladb/gocql/v2	0.018s
+FAIL

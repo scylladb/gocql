@@ -1,0 +1,80 @@
+{
+  "reason": "Native v3/v4 raw pass; TLS early Close revealed own-cancellation race. Every second check passed, but source changed for close-generation correction, so these are superseded.",
+  "files": [
+    {
+      "original": "feature-specs/evidence/step07-final-benchmarks.log",
+      "retained": "feature-specs/evidence/step07-second-benchmarks.log",
+      "sha256": "3d6647909e67a2fab43b04f828f759d575f4d45e33688d7183ef96de6b45844c"
+    },
+    {
+      "original": "feature-specs/evidence/step07-final-ccm-build.log",
+      "retained": "feature-specs/evidence/step07-second-ccm-build.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "original": "feature-specs/evidence/step07-final-check-results.json",
+      "retained": "feature-specs/evidence/step07-second-check-results.json",
+      "sha256": "2ad1e8131318bceb4492c48092b5d49682906b20f40733063e8fde5fc95da2f5"
+    },
+    {
+      "original": "feature-specs/evidence/step07-final-focused-race.log",
+      "retained": "feature-specs/evidence/step07-second-focused-race.log",
+      "sha256": "7c5514b1fb3e899e957719a4b2c6030b4b88a1cb7948cb3e865e16eab1f73b05"
+    },
+    {
+      "original": "feature-specs/evidence/step07-final-fuzz-codecs.log",
+      "retained": "feature-specs/evidence/step07-second-fuzz-codecs.log",
+      "sha256": "a82de85d1b693668799f9f116926f6c98466239c032540cae4dd089dd3dfd071"
+    },
+    {
+      "original": "feature-specs/evidence/step07-final-fuzz-execution.log",
+      "retained": "feature-specs/evidence/step07-second-fuzz-execution.log",
+      "sha256": "bcaf4a2c6679f7fefdbc195b2cc484f0d994ec21f59c1d3d1b94f885845e4532"
+    },
+    {
+      "original": "feature-specs/evidence/step07-final-fuzz-framing.log",
+      "retained": "feature-specs/evidence/step07-second-fuzz-framing.log",
+      "sha256": "eeaf53dd7b6f8d7e5616e066e144fc4a94c42506cf37e6df1be72db48bd0ca0a"
+    },
+    {
+      "original": "feature-specs/evidence/step07-final-integration-build.log",
+      "retained": "feature-specs/evidence/step07-second-integration-build.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "original": "feature-specs/evidence/step07-final-native-results.json",
+      "retained": "feature-specs/evidence/step07-second-native-results.json",
+      "sha256": "e19d97dadc5a2fb4343fd7b09c1fba838fc7af34daf0fbdcf62bff382aa1fd76"
+    },
+    {
+      "original": "feature-specs/evidence/step07-final-scylla-v3-raw.log",
+      "retained": "feature-specs/evidence/step07-second-scylla-v3-raw.log",
+      "sha256": "215a605ac7288f864b18556dc5a42f2cecb33fd97ce533e40ad221eaca669e8c"
+    },
+    {
+      "original": "feature-specs/evidence/step07-final-scylla-v4-raw.log",
+      "retained": "feature-specs/evidence/step07-second-scylla-v4-raw.log",
+      "sha256": "c4241e0bf7b4976764d96b032e76241cddd57f11b1b7ed120490802fbbf4b113"
+    },
+    {
+      "original": "feature-specs/evidence/step07-final-scylla-v4-tls.log",
+      "retained": "feature-specs/evidence/step07-second-scylla-v4-tls.log",
+      "sha256": "d9c6ad7329bd6fc6bc0e21f5e52fe91c5749acb9621f33d91b821e5e2935c90a"
+    },
+    {
+      "original": "feature-specs/evidence/step07-final-source.json",
+      "retained": "feature-specs/evidence/step07-second-source.json",
+      "sha256": "8c1a63e62f55d1891c07bc70e579eff5e38ee12337f196e738a3789499a9e179"
+    },
+    {
+      "original": "feature-specs/evidence/step07-final-unit-race.log",
+      "retained": "feature-specs/evidence/step07-second-unit-race.log",
+      "sha256": "ecbaee318ea6ae9ce3d6bfa42a08b373c77a714306c6202b84b4dd120de3b342"
+    },
+    {
+      "original": "feature-specs/evidence/step07-final-vet.log",
+      "retained": "feature-specs/evidence/step07-second-vet.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ]
+}

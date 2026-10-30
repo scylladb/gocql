@@ -1,0 +1,14 @@
+{
+  "127.0.20.1:9042": "refused after stop/join",
+  "127.0.20.1:9142": "refused after stop/join",
+  "127.0.20.2:9042": "refused after stop/join",
+  "127.0.20.2:9142": "refused after stop/join",
+  "127.0.20.3:9042": "refused after stop/join",
+  "127.0.20.3:9142": "refused after stop/join",
+  "127.0.21.1:9042": "refused after stop/join",
+  "127.0.21.2:9042": "refused after stop/join",
+  "127.0.21.3:9042": "refused after stop/join",
+  "127.0.22.1:9042": "refused after stop/join",
+  "127.0.22.2:9042": "refused after stop/join",
+  "127.0.22.3:9042": "refused after stop/join"
+}

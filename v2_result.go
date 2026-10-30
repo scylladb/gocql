@@ -296,7 +296,13 @@ func (p *Page[R]) Info() Result {
 	return cloneResult(p.response.result)
 }
 
+type prefetchJob struct {
+	state  PageState
+	future *pageFuture
+}
+
 type Rows[R any] struct {
+	prefetchJobs   chan prefetchJob
 	pendingRelease func()
 	mu             sync.Mutex
 	plans          *resultPlanCache[R]
@@ -771,12 +777,24 @@ func (r *Rows[R]) startPrefetch() {
 	}
 	future := &pageFuture{done: make(chan struct{})}
 	r.future = future
-	r.request.owner.retain()
-	go func() {
-		defer r.request.owner.release()
-		response, err := r.session.executePage(r.ctx, r.request, state)
-		future.complete(response, err)
-	}()
+	if r.prefetchJobs == nil {
+		jobs := make(chan prefetchJob, 1)
+		r.prefetchJobs = jobs
+		r.request.owner.retain()
+		go func() {
+			defer r.request.owner.release()
+			for {
+				select {
+				case <-r.ctx.Done():
+					return
+				case job := <-jobs:
+					response, err := r.session.executePage(r.ctx, r.request, job.state)
+					job.future.complete(response, err)
+				}
+			}
+		}()
+	}
+	r.prefetchJobs <- prefetchJob{state: state, future: future}
 }
 
 func (c casRows[R]) Clone(value CASResult[R]) CASResult[R] {

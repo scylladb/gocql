@@ -159,7 +159,10 @@ type TraceEvent struct {
 	Thread   string
 }
 
+type v2LatencySummary struct{ p50, p95, p99 time.Duration }
+
 type v2PeripheralState struct {
+	metricsOnce            sync.Once
 	snapshot               atomic.Pointer[MetadataSnapshot]
 	publishMu              sync.Mutex
 	workers                sync.WaitGroup
@@ -186,9 +189,9 @@ type v2PeripheralState struct {
 	feedback               map[v2TabletFeedbackKey]v2PendingTabletFeedback
 	feedbackWake           chan struct{}
 	done                   chan struct{}
-	latencyMu              sync.Mutex
-	latency                [1024]time.Duration
-	latencyCount           uint64
+	latency                [1024]atomic.Int64
+	latencyCount           atomic.Uint64
+	latencySummary         atomic.Pointer[v2LatencySummary]
 	orphans                atomic.Uint64
 	schemaStale            map[string]bool
 	refreshDiagnostics     []error
@@ -214,6 +217,20 @@ func (s *Session) initV2Peripheral(config Config) error {
 	s.configureV2Peripheral(config)
 	p := s.peripheral()
 	p.feedbackOnce.Do(func() { p.startWorker(func() { s.runV2TabletFeedback(p) }) })
+	p.metricsOnce.Do(func() {
+		p.startWorker(func() {
+			ticker := time.NewTicker(time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-p.done:
+					return
+				case <-ticker.C:
+					p.publishLatencySummary()
+				}
+			}
+		})
+	})
 	if !s.publishV2Metadata() {
 		return s.v2MetadataPublicationError()
 	}
@@ -258,16 +275,10 @@ func (s *Session) Metrics() MetricsSnapshot {
 	result := s.typedRuntime().metricsSnapshot()
 	p := s.peripheral()
 	result.Orphans = p.orphans.Load()
-	p.latencyMu.Lock()
-	count := min(p.latencyCount, uint64(len(p.latency)))
-	latencies := append([]time.Duration(nil), p.latency[:int(count)]...)
-	p.latencyMu.Unlock()
-	if len(latencies) > 0 {
-		sort.Slice(latencies, func(i, j int) bool { return latencies[i] < latencies[j] })
-		percentile := func(percent int) time.Duration { index := (len(latencies)*percent+99)/100 - 1; return latencies[index] }
-		result.LatencyP50 = percentile(50)
-		result.LatencyP95 = percentile(95)
-		result.LatencyP99 = percentile(99)
+	if summary := p.latencySummary.Load(); summary != nil {
+		result.LatencyP50 = summary.p50
+		result.LatencyP95 = summary.p95
+		result.LatencyP99 = summary.p99
 	}
 	return result
 }
@@ -525,12 +536,7 @@ func (s *Session) observeV2Lifecycle(event LifecycleEvent) {
 	if observer == nil {
 		return
 	}
-	defer func() {
-		if recovered := recover(); recovered != nil && s.logger != nil {
-			s.logger.Printf("gocql: lifecycle observer panicked: %v", recovered)
-		}
-	}()
-	observer.ObserveLifecycle(event)
+	s.observeSafely(func() { observer.ObserveLifecycle(event) })
 }
 
 func cloneV2Any(v any) any {
@@ -858,16 +864,11 @@ func readV2SystemRows[P, R any](ctx context.Context, conn *Conn, statement State
 	if conn == nil {
 		return nil, typeValidation("system query", "nil connection")
 	}
-	return readV2SystemRowsVia(ctx, conn.version, conn.getSystemRequestState().timeout, conn.executeTyped, statement, columns, value)
+	return readV2SystemRowsVia(ctx, conn.version, conn.getSystemRequestState().timeout, conn.executeV2System, statement, columns, value)
 }
 func readV2SystemRowsVia[P, R any](ctx context.Context, version byte, timeout time.Duration, execute func(context.Context, *attemptRequest) (*responsePage, error), statement Statement[P, R], columns Columns, value P) ([]R, error) {
 	if ctx == nil || execute == nil {
 		return nil, typeValidation("system query", "nil context or connection")
-	}
-	if timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, timeout)
-		defer cancel()
 	}
 	if err := validateStatement(statement); err != nil {
 		return nil, err
@@ -887,28 +888,35 @@ func readV2SystemRowsVia[P, R any](ctx context.Context, version byte, timeout ti
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		response, err := execute(ctx, req)
+		pageCtx, pageCancel := executionContext(ctx, timeout)
+		response, err := execute(pageCtx, req)
 		if err != nil {
+			pageCancel()
 			if response != nil && response.owner != nil {
 				response.owner.Release()
 			}
 			return nil, err
 		}
 		if response == nil {
+			pageCancel()
 			return nil, &ProtocolError{Stage: "system query", Err: fmt.Errorf("missing response")}
 		}
 		if response.noMetadata {
+			pageCancel()
 			response.owner.Release()
 			return nil, &ProtocolError{Stage: "system query", Err: fmt.Errorf("unexpected omitted metadata")}
 		}
 		page, err := newPage(response, statement.Rows, nil)
 		if err != nil {
+			pageCancel()
 			return nil, err
 		}
+		page.ctx = pageCtx
 		for page.Next() {
 			row, err := page.Clone()
 			if err != nil {
 				_ = page.Close()
+				pageCancel()
 				return nil, err
 			}
 			rows = append(rows, row)
@@ -917,6 +925,7 @@ func readV2SystemRowsVia[P, R any](ctx context.Context, version byte, timeout ti
 		token := append([]byte(nil), response.pagingState...)
 		more := response.pagingState != nil
 		_ = page.Close()
+		pageCancel()
 		if err != nil {
 			return nil, err
 		}
@@ -1064,7 +1073,11 @@ func readV2AgreementHost(ctx context.Context, id UUID, conns []*Conn) (UUID, err
 		if conn == nil || conn.Closed() {
 			continue
 		}
-		rows, err := readV2SystemRowsVia(ctx, conn.version, 0, conn.executeTyped, stmt, NewColumns(), Unit{})
+		timeout := time.Duration(0)
+		if conn.cfg != nil && conn.cfg.TypedConfig != nil {
+			timeout = conn.cfg.TypedConfig.Metadata.RequestTimeout
+		}
+		rows, err := readV2SystemRowsVia(ctx, conn.version, timeout, conn.executeV2System, stmt, NewColumns(), Unit{})
 		if err != nil {
 			if terminalV2AgreementError(err) {
 				return UUID{}, err
@@ -1461,18 +1474,7 @@ func (c *controlConn) queryV2System(ctx context.Context, request *attemptRequest
 	if !ok {
 		return nil, typeValidation("system query", "connection does not support typed requests")
 	}
-	if c.session != nil && conn.isScyllaConn() {
-		p := c.session.peripheral()
-		p.mu.Lock()
-		serverTimeout := p.config.Metadata.ServerTimeout
-		p.mu.Unlock()
-		if serverTimeout.Set && serverTimeout.Value > 0 && strings.HasPrefix(strings.ToUpper(strings.TrimSpace(request.statement)), "SELECT") {
-			copyRequest := *request
-			copyRequest.statement = strings.TrimSuffix(strings.TrimSpace(request.statement), ";") + " USING TIMEOUT " + strconv.FormatInt(serverTimeout.Value.Milliseconds(), 10) + "ms"
-			request = &copyRequest
-		}
-	}
-	return conn.executeTyped(ctx, request)
+	return conn.executeV2System(ctx, request)
 }
 func queryV2SchemaRows[R any](ctx context.Context, s *Session, stmt string, args []string, decoder RowDecoder[R]) ([]R, error) {
 	if !s.useSystemSchema {
@@ -2015,10 +2017,7 @@ func (s *Session) startV2SchemaRetry() {
 			p.retryScheduled.Store(false)
 			return
 		}
-		if timeout <= 0 {
-			timeout = time.Minute
-		}
-		ctx, cancel := context.WithTimeout(ctx, timeout)
+		ctx, cancel := executionContext(ctx, timeout)
 		if p.schemaRetryNeeded.Swap(false) {
 			if err := s.refreshV2AllSchema(ctx); err != nil {
 				p.schemaRetryNeeded.Store(true)
@@ -2470,11 +2469,24 @@ func (s *Session) recordV2Latency(latency time.Duration) {
 		return
 	}
 	p := s.peripheral()
-	p.latencyMu.Lock()
-	p.latency[p.latencyCount%uint64(len(p.latency))] = latency
-	p.latencyCount++
-	p.latencyMu.Unlock()
+	index := p.latencyCount.Add(1) - 1
+	p.latency[index%uint64(len(p.latency))].Store(int64(latency))
+
 }
+func (p *v2PeripheralState) publishLatencySummary() {
+	count := min(p.latencyCount.Load(), uint64(len(p.latency)))
+	if count == 0 {
+		return
+	}
+	samples := make([]time.Duration, int(count))
+	for i := range samples {
+		samples[i] = time.Duration(p.latency[i].Load())
+	}
+	sort.Slice(samples, func(i, j int) bool { return samples[i] < samples[j] })
+	percentile := func(percent int) time.Duration { return samples[(len(samples)*percent+99)/100-1] }
+	p.latencySummary.Store(&v2LatencySummary{p50: percentile(50), p95: percentile(95), p99: percentile(99)})
+}
+
 func (s *Session) recordV2Orphan() {
 	if s != nil {
 		s.peripheral().orphans.Add(1)
@@ -2586,10 +2598,7 @@ func (s *Session) runV2PeriodicRefresh(options MetadataOptions) {
 		}
 		ctx := v2SchemaContext(s)
 		timeout := options.RequestTimeout
-		if timeout <= 0 {
-			timeout = time.Minute
-		}
-		ctx, cancel := context.WithTimeout(ctx, timeout)
+		ctx, cancel := executionContext(ctx, timeout)
 		err := s.RefreshMetadata(ctx)
 		cancel()
 		if err != nil && s.logger != nil {

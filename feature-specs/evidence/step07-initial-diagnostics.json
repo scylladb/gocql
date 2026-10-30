@@ -1,0 +1,45 @@
+{
+  "reason": "Native v3 negotiated tablet-payload envelope validation failure; source corrected and refrozen. Successful initial unit race is pre-fix only.",
+  "files": [
+    {
+      "original": "feature-specs/evidence/step07-final-check-results.json",
+      "retained": "feature-specs/evidence/step07-initial-check-results.json",
+      "sha256": "c5ee4801202e75c0fde65b51f9d79b364feda49e39b6f3b466c068940e16fbd6"
+    },
+    {
+      "original": "feature-specs/evidence/step07-final-focused-race.log",
+      "retained": "feature-specs/evidence/step07-initial-focused-race.log",
+      "sha256": "3d8b2341333b6731c21e6b21e92be0d477ce48b3f57c1bb4a4dc1ed3cd62479f"
+    },
+    {
+      "original": "feature-specs/evidence/step07-final-integration-build.log",
+      "retained": "feature-specs/evidence/step07-initial-integration-build.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "original": "feature-specs/evidence/step07-final-native-results.json",
+      "retained": "feature-specs/evidence/step07-initial-native-results.json",
+      "sha256": "8ffca652024063defa3c9d4c5f1f85dc124d1b9c4e490246a916d5d178d6f4f6"
+    },
+    {
+      "original": "feature-specs/evidence/step07-final-scylla-v3-raw.log",
+      "retained": "feature-specs/evidence/step07-initial-scylla-v3-raw.log",
+      "sha256": "e097d0b446d737c9a5aabc92b2404cb2f4e4ccf9bdfba1994e1b2ea65256110d"
+    },
+    {
+      "original": "feature-specs/evidence/step07-final-source.json",
+      "retained": "feature-specs/evidence/step07-initial-source.json",
+      "sha256": "e7d42d6d11e654351c09c782c6792c61985701875e855fd71f182585a1bba1f0"
+    },
+    {
+      "original": "feature-specs/evidence/step07-final-unit-race.log",
+      "retained": "feature-specs/evidence/step07-initial-unit-race.log",
+      "sha256": "88bf7f3c55f2698f32e09d6853a951b455f5cf5cd1563d861def84a5abd8c5cd"
+    },
+    {
+      "original": "feature-specs/evidence/step07-final-vet.log",
+      "retained": "feature-specs/evidence/step07-initial-vet.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ]
+}

@@ -46,7 +46,7 @@ func typedTestBytes(t *testing.T, c wire.Chain) []byte {
 	}
 	return p
 }
-func typedTestConn(t *testing.T, proto byte, compressor Compressor) (*Conn, net.Conn) {
+func typedTestConn(t testing.TB, proto byte, compressor Compressor) (*Conn, net.Conn) {
 	t.Helper()
 	server, client := net.Pipe()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -59,7 +59,7 @@ func typedTestConn(t *testing.T, proto byte, compressor Compressor) (*Conn, net.
 	t.Cleanup(func() { c.Close(); server.Close() })
 	return c, server
 }
-func typedTestResponse(t *testing.T, proto byte, stream int, body []byte) []byte {
+func typedTestResponse(t testing.TB, proto byte, stream int, body []byte) []byte {
 	t.Helper()
 	out := []byte{proto | 0x80, 0, byte(stream >> 8), byte(stream), byte(frm.OpResult)}
 	out = binary.BigEndian.AppendUint32(out, uint32(len(body)))
@@ -78,7 +78,7 @@ func typedTestRowsBody(value []byte) []byte {
 	out = binary.BigEndian.AppendUint32(out, uint32(len(value)))
 	return append(out, value...)
 }
-func typedTestReadRequest(t *testing.T, c *Conn, server net.Conn) int {
+func typedTestReadRequest(t testing.TB, c *Conn, server net.Conn) int {
 	t.Helper()
 	if c.version == 5 {
 		h, err := segment.ReadHeader(server, c.segCompressor != nil)

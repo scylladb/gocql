@@ -1,0 +1,666 @@
+{
+  "agent": "/root/step07_execution_config",
+  "branch": "v2-07-execution-config",
+  "predecessor": "07a3e0ed5b48f1785c7a98006b2a7e6eae7c9af3",
+  "gate": "Assigned step07 execution/config/public streaming gate complete; later08-17 gates remain.",
+  "source_snapshot": "feature-specs/evidence/step07-final-source.json",
+  "source_sha256": "52595f947c5cc4d3e2e62590fc04d418d08cc9ca5aa72c800ac9a065911e61a9",
+  "native_source_snapshot": "feature-specs/evidence/step07-native-source.json",
+  "native_source_sha256": "1cc186a6a22c51c943784e3f975484a5efdcea49cb182a6ec12bb57f69ce795a",
+  "final_sources_unchanged": true,
+  "native_to_final_delta": [
+    "v2_row_stream.go",
+    "v2_row_stream_test.go"
+  ],
+  "delta_reason": "Only latest terminal/retry attempt StreamInfo extensions and their budgeted metadata owner plus deterministic tests changed after native completion. Request framing, connection/destination/input lifetime, routing, codecs and successful paging wire behavior are unchanged. Native success/capability lanes therefore remain unaffected; all affected final unit/race/build/execution fuzz/API performance commands reran.",
+  "required_checks": [
+    {
+      "name": "unit-race",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-tags",
+        "unit",
+        "./...",
+        "-count=1",
+        "-timeout=6m"
+      ],
+      "env": {},
+      "exit_code": 0,
+      "elapsed_seconds": 52.316,
+      "log": "feature-specs/evidence/step07-affected-unit-race.log",
+      "sha256": "a0273fc3dfa77085ff892533f0725b5db4221bfdc0ad20f672fe838e7bc77454"
+    },
+    {
+      "name": "focused-race",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-tags",
+        "unit",
+        "-run",
+        "^TestStep07|TestV2(Runtime|Prepared|Metadata|Routing|Result|Paging|Metrics)|TestStep06",
+        "-count=2",
+        "-timeout=3m",
+        "."
+      ],
+      "env": {},
+      "exit_code": 0,
+      "elapsed_seconds": 12.058,
+      "log": "feature-specs/evidence/step07-affected-focused-race.log",
+      "sha256": "87472c14851af99df12181a69045977b55f805f0671b5883f6e4adde1298d587"
+    },
+    {
+      "name": "vet",
+      "command": [
+        "go",
+        "vet",
+        "-tags",
+        "unit",
+        "./..."
+      ],
+      "env": {},
+      "exit_code": 0,
+      "elapsed_seconds": 5.63,
+      "log": "feature-specs/evidence/step07-affected-vet.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "integration-build",
+      "command": [
+        "go",
+        "test",
+        "-c",
+        "-race",
+        "-tags",
+        "integration gocql_debug",
+        "-o",
+        "/tmp/step07-final-integration.test",
+        "."
+      ],
+      "env": {},
+      "exit_code": 0,
+      "elapsed_seconds": 24.569,
+      "log": "feature-specs/evidence/step07-affected-integration-build.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "ccm-build",
+      "command": [
+        "go",
+        "test",
+        "-c",
+        "-race",
+        "-tags",
+        "ccm integration gocql_debug",
+        "-o",
+        "/tmp/step07-final-ccm.test",
+        "."
+      ],
+      "env": {},
+      "exit_code": 0,
+      "elapsed_seconds": 0.989,
+      "log": "feature-specs/evidence/step07-affected-ccm-build.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "fuzz-execution",
+      "command": [
+        "go",
+        "test",
+        "-tags",
+        "unit",
+        "-run",
+        "^$",
+        "-fuzz",
+        "^FuzzStep07StreamExecutionBoundary$",
+        "-fuzztime=5s",
+        "-parallel=2",
+        "."
+      ],
+      "env": {
+        "GOMAXPROCS": "2"
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 20.074,
+      "log": "feature-specs/evidence/step07-affected-fuzz-execution.log",
+      "sha256": "a21c43bbeb93057b89eec946a5a6d812135df05a51a61f08b4fe846f6e29f2e3"
+    },
+    {
+      "name": "benchmarks",
+      "command": [
+        "go",
+        "test",
+        "-tags",
+        "unit",
+        "-run",
+        "^$",
+        "-bench",
+        "^BenchmarkStep07",
+        "-benchtime=100x",
+        "-count=1",
+        "."
+      ],
+      "env": {},
+      "exit_code": 0,
+      "elapsed_seconds": 1.051,
+      "log": "feature-specs/evidence/step07-affected-benchmarks.log",
+      "sha256": "a467094255c26e77132aaed54209a9b961ba5df8da19123ca6c825522f4c1ebe",
+      "raw_sha256": "4d3927a6d62337d7a55d8759e37c92f7a7db6d19378937a0b4214b1aefc90e6d",
+      "raw_path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/repo-step07-affected-benchmarks.log"
+    },
+    {
+      "name": "fuzz-codecs",
+      "command": [
+        "go",
+        "test",
+        "-tags",
+        "unit",
+        "-run",
+        "^$",
+        "-fuzz",
+        "^FuzzV2StreamingValues$",
+        "-fuzztime=5s",
+        "-parallel=2",
+        "."
+      ],
+      "env": {
+        "GOMAXPROCS": "2"
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 5.627,
+      "log": "feature-specs/evidence/step07-final-fuzz-codecs.log",
+      "sha256": "33eaaa364793d62de6cba0d17b70a479439d3a73e4a21f2e9909fe6123b3ca0b"
+    },
+    {
+      "name": "fuzz-framing",
+      "command": [
+        "go",
+        "test",
+        "-tags",
+        "unit",
+        "-run",
+        "^$",
+        "-fuzz",
+        "^FuzzV2ExclusiveIncrementalFraming$",
+        "-fuzztime=5s",
+        "-parallel=2",
+        "."
+      ],
+      "env": {
+        "GOMAXPROCS": "2"
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 5.661,
+      "log": "feature-specs/evidence/step07-final-fuzz-framing.log",
+      "sha256": "6de6aee11fa71c5ed6a2bd2800bc37fe8b1c3241f3fae8e7376e6cfa5a64839c"
+    },
+    {
+      "name": "page-history-scaling",
+      "command": [
+        "go",
+        "test",
+        "-tags",
+        "unit",
+        "-run",
+        "^$",
+        "-bench",
+        "^BenchmarkV2PagingHistoryLookup$",
+        "-benchtime=1000x",
+        "-count=1",
+        "."
+      ],
+      "exit_code": 0,
+      "log": "feature-specs/evidence/step07-final-page-history-scaling.log",
+      "sha256": "93f2a514274193477a0f2bff66c20a5eead7bec4a39c995edf9d6cac08d7256a",
+      "raw_sha256": "0ebb283aa2bdc851c3335112b2e136375f3aa1de85cbbbccaa2af402d3a76a0a",
+      "raw_path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/repo-step07-final-page-history-scaling.log"
+    }
+  ],
+  "native": {
+    "fixture_root": "/extra/scylladb/gocql-api-test-cluster/step07-native-1793322650227016852",
+    "results": [
+      {
+        "name": "scylla-v3-raw",
+        "command": [
+          "go",
+          "test",
+          "-json",
+          "-race",
+          "-tags",
+          "integration gocql_debug",
+          "-count=1",
+          "-timeout=7m",
+          "-parallel=1",
+          "-run",
+          "^(TestStep07RunStreamLive|TestV2RuntimeDatabaseSmoke)$",
+          ".",
+          "-args",
+          "-gocql.timeout=60s",
+          "-rf=3",
+          "-clusterSize=3",
+          "-autowait=2000ms",
+          "-cluster=127.0.20.1,127.0.20.2,127.0.20.3",
+          "-distribution=scylla",
+          "-gocql.cversion=2026.3.4",
+          "-runauth",
+          "-proto=3",
+          "-compressor=no-compression"
+        ],
+        "exit_code": 0,
+        "elapsed_seconds": 24.751064777374268,
+        "log": "feature-specs/evidence/step07-final-scylla-v3-raw.log",
+        "sha256": "99f5662151a89b504cd04ba7be3a796777506a0bf2ec89ddcef20a1a4999034b"
+      },
+      {
+        "name": "scylla-v4-raw",
+        "command": [
+          "go",
+          "test",
+          "-json",
+          "-race",
+          "-tags",
+          "integration gocql_debug",
+          "-count=1",
+          "-timeout=7m",
+          "-parallel=1",
+          "-run",
+          "^(TestStep07RunStreamLive|TestV2RuntimeDatabaseSmoke)$",
+          ".",
+          "-args",
+          "-gocql.timeout=60s",
+          "-rf=3",
+          "-clusterSize=3",
+          "-autowait=2000ms",
+          "-cluster=127.0.20.1,127.0.20.2,127.0.20.3",
+          "-distribution=scylla",
+          "-gocql.cversion=2026.3.4",
+          "-runauth",
+          "-proto=4",
+          "-compressor=no-compression"
+        ],
+        "exit_code": 0,
+        "elapsed_seconds": 3.136166572570801,
+        "log": "feature-specs/evidence/step07-final-scylla-v4-raw.log",
+        "sha256": "922e31cfba6bf96f0efbfee23bbd491e9d6bd94fe77d7e5f2ad91d2b545f91ff"
+      },
+      {
+        "name": "scylla-v4-tls",
+        "command": [
+          "go",
+          "test",
+          "-json",
+          "-race",
+          "-tags",
+          "integration gocql_debug",
+          "-count=1",
+          "-timeout=7m",
+          "-parallel=1",
+          "-run",
+          "^(TestStep07RunStreamLive|TestV2RuntimeDatabaseSmoke)$",
+          ".",
+          "-args",
+          "-gocql.timeout=60s",
+          "-rf=3",
+          "-clusterSize=3",
+          "-autowait=2000ms",
+          "-cluster=127.0.20.1,127.0.20.2,127.0.20.3",
+          "-distribution=scylla",
+          "-gocql.cversion=2026.3.4",
+          "-runauth",
+          "-proto=4",
+          "-compressor=no-compression",
+          "-runssl"
+        ],
+        "exit_code": 0,
+        "elapsed_seconds": 3.0651023387908936,
+        "log": "feature-specs/evidence/step07-final-scylla-v4-tls.log",
+        "sha256": "e0363f21124faed8d521ac1fff2ce20c33bba33387a7b9454d491b594cf9367e"
+      },
+      {
+        "name": "scylla-v4-snappy-capability",
+        "command": [
+          "go",
+          "test",
+          "-json",
+          "-race",
+          "-tags",
+          "integration gocql_debug",
+          "-count=1",
+          "-timeout=7m",
+          "-parallel=1",
+          "-run",
+          "^(TestStep07RunStreamLive|TestV2RuntimeDatabaseSmoke)$",
+          ".",
+          "-args",
+          "-gocql.timeout=60s",
+          "-rf=3",
+          "-clusterSize=3",
+          "-autowait=2000ms",
+          "-cluster=127.0.20.1,127.0.20.2,127.0.20.3",
+          "-distribution=scylla",
+          "-gocql.cversion=2026.3.4",
+          "-runauth",
+          "-proto=4",
+          "-compressor=snappy"
+        ],
+        "exit_code": 0,
+        "elapsed_seconds": 2.8483126163482666,
+        "log": "feature-specs/evidence/step07-final-scylla-v4-snappy-capability.log",
+        "sha256": "554ce6590f7b970ab8bd05addc32b05b7ebf6b75a0a13252bfce700b2ddafa4d"
+      },
+      {
+        "name": "cassandra-v5-raw",
+        "command": [
+          "go",
+          "test",
+          "-json",
+          "-race",
+          "-tags",
+          "integration gocql_debug",
+          "-count=1",
+          "-timeout=7m",
+          "-parallel=1",
+          "-run",
+          "^(TestStep07RunStreamLive|TestV2RuntimeDatabaseSmoke)$",
+          ".",
+          "-args",
+          "-gocql.timeout=60s",
+          "-rf=3",
+          "-clusterSize=3",
+          "-autowait=2000ms",
+          "-cluster=127.0.21.1,127.0.21.2,127.0.21.3",
+          "-distribution=cassandra",
+          "-proto=5",
+          "-gocql.cversion=5.0.9",
+          "-compressor=no-compression"
+        ],
+        "exit_code": 0,
+        "elapsed_seconds": 5.199041843414307,
+        "log": "feature-specs/evidence/step07-final-cassandra-v5-raw.log",
+        "sha256": "173dd36fe5f546ccff71496cbef80ea234cc8250ad49b7c39dc024562f7d69f4"
+      },
+      {
+        "name": "cassandra-v5-lz4",
+        "command": [
+          "go",
+          "test",
+          "-json",
+          "-race",
+          "-tags",
+          "integration gocql_debug",
+          "-count=1",
+          "-timeout=7m",
+          "-parallel=1",
+          "-run",
+          "^(TestStep07RunStreamLive|TestV2RuntimeDatabaseSmoke)$",
+          ".",
+          "-args",
+          "-gocql.timeout=60s",
+          "-rf=3",
+          "-clusterSize=3",
+          "-autowait=2000ms",
+          "-cluster=127.0.21.1,127.0.21.2,127.0.21.3",
+          "-distribution=cassandra",
+          "-proto=5",
+          "-gocql.cversion=5.0.9",
+          "-compressor=lz4"
+        ],
+        "exit_code": 0,
+        "elapsed_seconds": 5.362292051315308,
+        "log": "feature-specs/evidence/step07-final-cassandra-v5-lz4.log",
+        "sha256": "dd37a88cb519bcff35b404b114be888de0467c0f546c43fc97f92ed51f737b12"
+      },
+      {
+        "name": "cassandra-v5-raw-tls",
+        "command": [
+          "go",
+          "test",
+          "-json",
+          "-race",
+          "-tags",
+          "integration gocql_debug",
+          "-count=1",
+          "-timeout=7m",
+          "-parallel=1",
+          "-run",
+          "^(TestStep07RunStreamLive|TestV2RuntimeDatabaseSmoke)$",
+          ".",
+          "-args",
+          "-gocql.timeout=60s",
+          "-rf=3",
+          "-clusterSize=3",
+          "-autowait=2000ms",
+          "-cluster=127.0.21.1,127.0.21.2,127.0.21.3",
+          "-distribution=cassandra",
+          "-proto=5",
+          "-gocql.cversion=5.0.9",
+          "-compressor=no-compression",
+          "-runssl"
+        ],
+        "exit_code": 0,
+        "elapsed_seconds": 5.04875111579895,
+        "log": "feature-specs/evidence/step07-final-cassandra-v5-raw-tls.log",
+        "sha256": "cc6673623695b5823e11a6b6b07c68cbf5dff9b682466ff94e0180ad79d5c358"
+      },
+      {
+        "name": "cassandra-v5-lz4-tls",
+        "command": [
+          "go",
+          "test",
+          "-json",
+          "-race",
+          "-tags",
+          "integration gocql_debug",
+          "-count=1",
+          "-timeout=7m",
+          "-parallel=1",
+          "-run",
+          "^(TestStep07RunStreamLive|TestV2RuntimeDatabaseSmoke)$",
+          ".",
+          "-args",
+          "-gocql.timeout=60s",
+          "-rf=3",
+          "-clusterSize=3",
+          "-autowait=2000ms",
+          "-cluster=127.0.21.1,127.0.21.2,127.0.21.3",
+          "-distribution=cassandra",
+          "-proto=5",
+          "-gocql.cversion=5.0.9",
+          "-compressor=lz4",
+          "-runssl"
+        ],
+        "exit_code": 0,
+        "elapsed_seconds": 4.879971981048584,
+        "log": "feature-specs/evidence/step07-final-cassandra-v5-lz4-tls.log",
+        "sha256": "c6ae7bbedd50548728edbf91f27f7a423dd08cd41875dc3340fac232469134c1"
+      }
+    ]
+  },
+  "fixture_cleanup": {
+    "runner_pid": 2683061,
+    "runner_alive": false,
+    "health": "feature-specs/evidence/step07-post-stop-health.json",
+    "experimental_lane": "not modified; refused post-stop probe",
+    "configuration_sha256": {
+      "/extra/scylladb/gocql-api-test-cluster/step07-native-1793322650227016852/scylla/node3/conf/cassandra.yaml": "1c65161a2644d9dc128dc6af0c750d7b50e18dc59042690ed89eea7fddde8c39",
+      "/extra/scylladb/gocql-api-test-cluster/step07-native-1793322650227016852/scylla/node3/conf/scylla.yaml": "6ae2573b71d9cb03313229f19b13301f1373ddb59383aa6c16a78517dcc7e6a9",
+      "/extra/scylladb/gocql-api-test-cluster/step07-native-1793322650227016852/scylla/node1/conf/cassandra.yaml": "8faf8490d935ead51f0bf12783f2f6ced5da795183e5c8e781cc5b93e9304f0d",
+      "/extra/scylladb/gocql-api-test-cluster/step07-native-1793322650227016852/scylla/node1/conf/scylla.yaml": "a53205aecc5557fc686bd842df75a2ebdd74595abade97160108881f3d29e186",
+      "/extra/scylladb/gocql-api-test-cluster/step07-native-1793322650227016852/scylla/node2/conf/cassandra.yaml": "b0ff7635aacaf774db671cb8799759b3a9b445619222ac158c51e6d923e3c969",
+      "/extra/scylladb/gocql-api-test-cluster/step07-native-1793322650227016852/scylla/node2/conf/scylla.yaml": "d9307de20aea09579aa2e963ba2ce45197d5925e77c25f5cf028a2c43db61855",
+      "/extra/scylladb/gocql-api-test-cluster/step07-native-1793322650227016852/cassandra/node3/conf/cassandra.yaml": "f1b00fca92e1dd684a5d4b75663a796c72f683fb7f690afdb32e5359ae6a5d85",
+      "/extra/scylladb/gocql-api-test-cluster/step07-native-1793322650227016852/cassandra/node3/conf/cassandra_latest.yaml": "488e667a9722c950a19e0c87c01fba97961bcc08f1ae0d8f093badab322e3a45",
+      "/extra/scylladb/gocql-api-test-cluster/step07-native-1793322650227016852/cassandra/node1/conf/cassandra.yaml": "dc735f580e95edde0cca7f55c731f94085187783347c6d097d957edf7b6a48cc",
+      "/extra/scylladb/gocql-api-test-cluster/step07-native-1793322650227016852/cassandra/node1/conf/cassandra_latest.yaml": "488e667a9722c950a19e0c87c01fba97961bcc08f1ae0d8f093badab322e3a45",
+      "/extra/scylladb/gocql-api-test-cluster/step07-native-1793322650227016852/cassandra/node2/conf/cassandra.yaml": "c9211a0ad0a99dc95421dba1a05640b4df2f7836db66a55279350158a40d8fe8",
+      "/extra/scylladb/gocql-api-test-cluster/step07-native-1793322650227016852/cassandra/node2/conf/cassandra_latest.yaml": "488e667a9722c950a19e0c87c01fba97961bcc08f1ae0d8f093badab322e3a45"
+    }
+  },
+  "runners": {
+    "step07-native-runner.py": "2a10fa23150ba5a98f0f3ee0e821e3e7dd3b93510a83a47740e174f7804579d6",
+    "step07-check-runner.py": "3cb72614f915534be32b4f41fd13f994b71e0cb9229f5752c1bf3104a8e30703",
+    "step07-affected-check-runner.py": "112704fca015a90bf67e9a7c98d0df9a267edb23824985a0c6d8b86f2a054770"
+  },
+  "field_audit": "feature-specs/execution/07-config-field-audit.md",
+  "diagnostics": {
+    "initial": "feature-specs/evidence/step07-initial-diagnostics.json",
+    "second": "feature-specs/evidence/step07-second-diagnostics.json",
+    "terminal_info_failure": "feature-specs/evidence/step07-terminal-info-audit.log",
+    "terminal_info_budget_pass": "feature-specs/evidence/step07-terminal-info-budget.log",
+    "raw_logs": [
+      {
+        "path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/step07-affected-check-runner.log",
+        "sha256": "3b35e17958e2129fb3ac7ea601bc3af86e41d99762bff945c21185db2d94ee2a"
+      },
+      {
+        "path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/step07-affected-final-check-runner.log",
+        "sha256": "75a3d6aa84824fc69f5688be5012abd1914a75f87ceddc936028bbc1a852852c"
+      },
+      {
+        "path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/step07-audit-final-candidate.log",
+        "sha256": "5005423c779fc9f6108384b3b3f1acd66ad0e2630db8d9b81dd290b179347703"
+      },
+      {
+        "path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/step07-bench-candidate.log",
+        "sha256": "9de75ce76d2ae44acf1a18420eecdf1134a6f2c1c4d7f5bcddafcc6d07349228"
+      },
+      {
+        "path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/step07-bench-diagnostic.log",
+        "sha256": "b5d287680a2ecf314d13f955f33a2680bafcc0a0a13c41f17b5a80480ce800fa"
+      },
+      {
+        "path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/step07-broad-focused.log",
+        "sha256": "21116d6818019a9933b5734e810bffbb7eb95f91dd24762d7720cccec07f1500"
+      },
+      {
+        "path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/step07-close-generation-deterministic.log",
+        "sha256": "9ec1b855d891e94f062a1325e802625ffc214c6b70a965d9d90d005bdfbb497c"
+      },
+      {
+        "path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/step07-close-generation-regression.log",
+        "sha256": "22f3f669f3bca6fc5d89b61152ec38c9dafa204616cabfb300981690aa91ecf2"
+      },
+      {
+        "path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/step07-current-focused.log",
+        "sha256": "7962883394d87a70b7068266b2edf678bb5509d53d2514aca215f5000dddb2a4"
+      },
+      {
+        "path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/step07-expanded.log",
+        "sha256": "be6a53b17e81a75d30f051036b368dcda7f456905a7f6f115ea5853a487cb7ee"
+      },
+      {
+        "path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/step07-final-check-runner.log",
+        "sha256": "5d40363a94045158882276f49df701890882181502e035d26067a8731f7b9705"
+      },
+      {
+        "path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/step07-final-check-runner2.log",
+        "sha256": "82940231390a0475b05cd6de7e1cffc8da04523e49d60984c5df268cd36e4125"
+      },
+      {
+        "path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/step07-final-check-runner3.log",
+        "sha256": "fa73b81acad19b966d355c658a73a3b3eeb7cd825f650a62ac617727c3a60ccb"
+      },
+      {
+        "path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/step07-final-native-runner.log",
+        "sha256": "f581b159516b899cd48c24a1faaa319d1c209d1205c22d5e4c74c2d9eea084bf"
+      },
+      {
+        "path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/step07-final-native-runner2.log",
+        "sha256": "d8cd25821f75e4cf958df540bdd4ebb29bbcc7c7553f069be6d8168ec7b0e8eb"
+      },
+      {
+        "path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/step07-final-native-runner3.log",
+        "sha256": "dfbbe6047352b2b2318636fbe66d833c9ef5a9b7adb7a549ca67707d723333dd"
+      },
+      {
+        "path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/step07-first.log",
+        "sha256": "ecb41b5e1b7d3b5aa6839db3fa7c2d233c28b016628689fa0654bdda3388f7d1"
+      },
+      {
+        "path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/step07-focused-current2.log",
+        "sha256": "d7b60b785b3aa268d27cf2289539329230c856e44e28c1dce4a13427107a7528"
+      },
+      {
+        "path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/step07-focused-race.log",
+        "sha256": "b72f65ced664ed42c7aeca873a4913b504bfe7ab9c22593f0bed175fba7d3b42"
+      },
+      {
+        "path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/step07-freeze-candidate-focused.log",
+        "sha256": "afe3e9eff2b4eb75138eafd719c03e107b8ebea38c402847711c2de07819cbb3"
+      },
+      {
+        "path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/step07-freeze-candidate-focused2.log",
+        "sha256": "fbb185f0de50fc7aa5d08312d2e3d7875b649236b7d6e993a55da7cfc91f936d"
+      },
+      {
+        "path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/step07-integration-build-audit.log",
+        "sha256": "8d86d08f3252895adf18bf5a36a1b57effdc9c8662d6abc4408ceca6675b5e42"
+      },
+      {
+        "path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/step07-integration-build2.log",
+        "sha256": "cd88511ceb1ffb60bd75ad39f8116845cca2cee705cfbb4c2fad7113c0570ae2"
+      },
+      {
+        "path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/step07-integration-compile.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/step07-last-audit-focused.log",
+        "sha256": "b6e13c91d994ee0d8c7910043680cf425bf4ca9222b91675e96dd69c1cbfac11"
+      },
+      {
+        "path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/step07-metadata-audit.log",
+        "sha256": "5815e6bdf372e2c5fc4524f045fe1694bbb433408920235fd4bcf97f0c3131d9"
+      },
+      {
+        "path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/step07-namespace-audit.log",
+        "sha256": "691910c96df8cea852586c4bbcd9b5782cc1bdeb8fdc0fc09288930f2ff42e97"
+      },
+      {
+        "path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/step07-pre-freeze-focused.log",
+        "sha256": "fbb185f0de50fc7aa5d08312d2e3d7875b649236b7d6e993a55da7cfc91f936d"
+      },
+      {
+        "path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/step07-second.log",
+        "sha256": "2969b17d6dc92a60361ebc0aaecdbec909f1380d221eeaad5b954a04e22cf150"
+      },
+      {
+        "path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/step07-stream-first.log",
+        "sha256": "b847df2c04c9231ed2a97a6b16bfb61d5c009b5c7b0dc863b8f97be8b3510efa"
+      },
+      {
+        "path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/step07-stream-race.log",
+        "sha256": "e5a0d8853d89d14326e9db464efc8e6fa7994be3f52805e63300540538e0d871"
+      },
+      {
+        "path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/step07-stream-race2.log",
+        "sha256": "07250b2cac781503f92bcd53fc213afa6f26031eb0031145897f8f239428d79f"
+      },
+      {
+        "path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/step07-stream-second.log",
+        "sha256": "1196efd419dda4bd8cb8da45a6854f52909162a8aec509d02fef25354dd488e4"
+      },
+      {
+        "path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/step07-terminal-info-audit.log",
+        "sha256": "6dad37187874da3c7410ba94054f16c330cc391279b9806784159a7a5804e87c"
+      },
+      {
+        "path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/step07-terminal-info-budget.log",
+        "sha256": "de20ab86f265a95885a9fe4cd0baee97b9e570e534b800d51cf7945e831ff5b1"
+      },
+      {
+        "path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/step07-unit-audit.log",
+        "sha256": "c8b1ed9b4ed808ba3823d2c4a4c1f754a746e57b8bfdbe34c6ae4ecb5d90c9bb"
+      },
+      {
+        "path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/step07-v3-extension-regression.log",
+        "sha256": "6d83f36fedfd52a41293599cc3f092cf7bf48df5fb520c10337fe3cf243c2d22"
+      }
+    ]
+  },
+  "later_scope": "Fixtures08; complete174 migration09; legacy removal10; extraction11-12; module/docs13; full matrix14; comprehensive equivalent native performance15; independent review16; release17. Focused07 evidence does not substitute for them.",
+  "log_formatting": "feature-specs/evidence/step07-log-formatting.json"
+}

@@ -688,6 +688,7 @@ func (s *Session) Close() error {
 	s.sessionStateMu.Unlock()
 	defer close(done)
 	preparedRuntime := s.stopPreparedWorkers()
+	executions := s.stopExecutions()
 	if s.cancel != nil {
 		s.cancel()
 	}
@@ -731,6 +732,9 @@ func (s *Session) Close() error {
 	}
 	if preparedRuntime != nil {
 		preparedRuntime.prepareWorkers.Wait()
+	}
+	for _, execution := range executions {
+		<-execution.lifetime.done
 	}
 	return nil
 }

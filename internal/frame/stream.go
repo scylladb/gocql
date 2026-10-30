@@ -54,11 +54,14 @@ func DecodeHeader(p []byte) (FrameHeader, error) {
 
 // CheckResponseHeader validates the common response direction, version, flags,
 // opcode and event-stream rules before any body-specific parser runs.
-func CheckResponseHeader(h FrameHeader, version byte) error {
+func CheckResponseHeader(h FrameHeader, version byte, extensionFlags ...byte) error {
 	if version < 3 || version > 5 || h.Version.Request() || h.Version.Version() != version {
 		return fmt.Errorf("gocql: unexpected response version %d", h.Version)
 	}
 	allowed := byte(FlagCompress | FlagTracing)
+	for _, flags := range extensionFlags {
+		allowed |= flags & FlagCustomPayload
+	}
 	if version >= 4 {
 		allowed |= FlagCustomPayload | FlagWarning
 	}
@@ -84,7 +87,7 @@ func CheckResponseHeader(h FrameHeader, version byte) error {
 // incremental limited body. A v5 source must already expose verified units,
 // rather than raw segmented bytes. The transport must interrupt blocking I/O
 // on cancellation; this helper never launches a background reader.
-func ReadStreamEnvelope(ctx context.Context, source io.Reader, version byte, limits wire.StreamLimits) (FrameHeader, *wire.Stream, error) {
+func ReadStreamEnvelope(ctx context.Context, source io.Reader, version byte, limits wire.StreamLimits, extensionFlags ...byte) (FrameHeader, *wire.Stream, error) {
 	if ctx == nil || source == nil {
 		return FrameHeader{}, nil, wire.ErrStreamScope
 	}
@@ -109,7 +112,7 @@ func ReadStreamEnvelope(ctx context.Context, source io.Reader, version byte, lim
 	if err != nil {
 		return FrameHeader{}, nil, err
 	}
-	if err := CheckResponseHeader(h, version); err != nil {
+	if err := CheckResponseHeader(h, version, extensionFlags...); err != nil {
 		return FrameHeader{}, nil, err
 	}
 	if h.Flags&FlagCompress != 0 {

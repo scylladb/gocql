@@ -492,7 +492,7 @@ func TestStep06AllDisconnectedAndMissingFollowers(t *testing.T) {
 		m.hosts[i].Connected = false
 	}
 	policy := codecTestMust(NewRoutingPolicy(RoutingOptions{TokenAware: true, Datacenter: "a"}))
-	if ids := v2PlanIDs(policy.Plan(RoutingInfo{}, m)); !bytes.Equal(ids, []byte{2, 4, 1}) {
+	if ids := v2PlanIDs(policy.Plan(RoutingInfo{Kind: OrdinaryStatement}, m)); !bytes.Equal(ids, []byte{2, 4, 1}) {
 		t.Fatal("enabled disconnected fallback", ids)
 	}
 	m = v2TestMetadata()

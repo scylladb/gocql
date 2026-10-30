@@ -1,0 +1,32 @@
+{
+  "feature-specs/evidence/step07-affected-benchmarks.log": {
+    "raw_path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/repo-step07-affected-benchmarks.log",
+    "raw_sha256": "4d3927a6d62337d7a55d8759e37c92f7a7db6d19378937a0b4214b1aefc90e6d",
+    "sha256": "a467094255c26e77132aaed54209a9b961ba5df8da19123ca6c825522f4c1ebe",
+    "operation": "Strip trailing spaces/tabs only; preserve exact raw bytes externally."
+  },
+  "feature-specs/evidence/step07-final-benchmarks.log": {
+    "raw_path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/repo-step07-final-benchmarks.log",
+    "raw_sha256": "d71a09b5eadb1ab82ed9170748b59c019745d6724b3f6f1c0fc8d058c0fc8e1b",
+    "sha256": "f87e6c0da62f45970376bf410816ce84355571b159131c5a8d6d018889f753ed",
+    "operation": "Strip trailing spaces/tabs only; preserve exact raw bytes externally."
+  },
+  "feature-specs/evidence/step07-final-page-history-scaling.log": {
+    "raw_path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/repo-step07-final-page-history-scaling.log",
+    "raw_sha256": "0ebb283aa2bdc851c3335112b2e136375f3aa1de85cbbbccaa2af402d3a76a0a",
+    "sha256": "93f2a514274193477a0f2bff66c20a5eead7bec4a39c995edf9d6cac08d7256a",
+    "operation": "Strip trailing spaces/tabs only; preserve exact raw bytes externally."
+  },
+  "feature-specs/evidence/step07-info-only-benchmarks.log": {
+    "raw_path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/repo-step07-info-only-benchmarks.log",
+    "raw_sha256": "812275974d7d7cc8dd81795a143cd32c2ffbc917b2934ddb9815e3bbbde3c485",
+    "sha256": "67abe277c8c20f6985b65c8565918bf17120e7be4c4884cc888b2f92491b59aa",
+    "operation": "Strip trailing spaces/tabs only; preserve exact raw bytes externally."
+  },
+  "feature-specs/evidence/step07-second-benchmarks.log": {
+    "raw_path": "/extra/scylladb/gocql-api-test-cluster/step07-raw-evidence/repo-step07-second-benchmarks.log",
+    "raw_sha256": "3d6647909e67a2fab43b04f828f759d575f4d45e33688d7183ef96de6b45844c",
+    "sha256": "3fac05edee574c8302c3800261f056e4bae9716958071efe38d00ef3bda5d5ab",
+    "operation": "Strip trailing spaces/tabs only; preserve exact raw bytes externally."
+  }
+}

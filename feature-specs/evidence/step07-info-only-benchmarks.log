@@ -1,0 +1,24 @@
+goos: linux
+goarch: amd64
+pkg: github.com/scylladb/gocql/v2
+cpu: AMD Ryzen 9 9950X3D 16-Core Processor
+BenchmarkStep07ExecutionStorage/row/rows=1/cell=1024-32         	     100	     15144 ns/op	  67.62 MB/s	      1024 caller-capacity-B	      1024 retained-page-payload-B/op	   10046 B/op	      62 allocs/op
+BenchmarkStep07ExecutionStorage/into/rows=1/cell=1024-32        	     100	     14381 ns/op	  71.21 MB/s	      1024 caller-capacity-B	      1024 retained-page-payload-B/op	    9935 B/op	      62 allocs/op
+BenchmarkStep07ExecutionStorage/stream/rows=1/cell=1024-32      	     100	     23716 ns/op	  43.18 MB/s	      1024 caller-capacity-B	         0 driver-payload-gather-B/op	    9367 B/op	      87 allocs/op
+BenchmarkStep07ExecutionStorage/row/rows=100/cell=1024-32       	     100	     55818 ns/op	1834.54 MB/s	      1024 caller-capacity-B	    102400 retained-page-payload-B/op	  116068 B/op	      63 allocs/op
+BenchmarkStep07ExecutionStorage/into/rows=100/cell=1024-32      	     100	     50734 ns/op	2018.37 MB/s	      1024 caller-capacity-B	    102400 retained-page-payload-B/op	  116201 B/op	      63 allocs/op
+BenchmarkStep07ExecutionStorage/stream/rows=100/cell=1024-32    	     100	    161808 ns/op	 632.85 MB/s	      1024 caller-capacity-B	         0 driver-payload-gather-B/op	    9282 B/op	      87 allocs/op
+BenchmarkStep07ExecutionStorage/row/rows=1000/cell=1024-32      	     100	    333958 ns/op	3066.26 MB/s	      1024 caller-capacity-B	   1024000 retained-page-payload-B/op	 1044523 B/op	      65 allocs/op
+BenchmarkStep07ExecutionStorage/into/rows=1000/cell=1024-32     	     100	    277187 ns/op	3694.26 MB/s	      1024 caller-capacity-B	   1024000 retained-page-payload-B/op	 1044408 B/op	      65 allocs/op
+BenchmarkStep07ExecutionStorage/stream/rows=1000/cell=1024-32   	     100	   1389485 ns/op	 736.96 MB/s	      1024 caller-capacity-B	         0 driver-payload-gather-B/op	    9378 B/op	      87 allocs/op
+BenchmarkStep07ExecutionStorage/row/rows=1/cell=409600-32       	     100	     81929 ns/op	4999.42 MB/s	    409600 caller-capacity-B	    409600 retained-page-payload-B/op	  429277 B/op	      64 allocs/op
+BenchmarkStep07ExecutionStorage/into/rows=1/cell=409600-32      	     100	     67770 ns/op	6043.93 MB/s	    409600 caller-capacity-B	    409600 retained-page-payload-B/op	  428996 B/op	      64 allocs/op
+BenchmarkStep07ExecutionStorage/stream/rows=1/cell=409600-32    	     100	     33856 ns/op	12098.27 MB/s	    409600 caller-capacity-B	         0 driver-payload-gather-B/op	    9735 B/op	      88 allocs/op
+BenchmarkStep07ExecutionStorage/row/rows=1/cell=8388608-32      	     100	    683616 ns/op	12270.93 MB/s	   8388608 caller-capacity-B	   8388608 retained-page-payload-B/op	 8409671 B/op	      65 allocs/op
+BenchmarkStep07ExecutionStorage/into/rows=1/cell=8388608-32     	     100	    697211 ns/op	12031.67 MB/s	   8388608 caller-capacity-B	   8388608 retained-page-payload-B/op	 8409477 B/op	      64 allocs/op
+BenchmarkStep07ExecutionStorage/stream/rows=1/cell=8388608-32   	     100	    331090 ns/op	25336.36 MB/s	   8388608 caller-capacity-B	         0 driver-payload-gather-B/op	    9379 B/op	      87 allocs/op
+BenchmarkStep07SharedAdmission/1-32                             	     100	      1002 ns/op	    1537 B/op	      10 allocs/op
+BenchmarkStep07SharedAdmission/4-32                             	     100	      1010 ns/op	    1540 B/op	      10 allocs/op
+BenchmarkStep07SharedAdmission/16-32                            	     100	       831.5 ns/op	    1704 B/op	      10 allocs/op
+PASS
+ok  	github.com/scylladb/gocql/v2	0.473s

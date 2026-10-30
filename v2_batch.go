@@ -23,6 +23,12 @@ func BatchEntry[R any](bound *Bound[R]) (BatchItem, error) {
 	return BatchItem{request: &bound.request}, nil
 }
 func RunBatch[R any](ctx context.Context, s *Session, kind BatchKind, items []BatchItem, decoder RowDecoder[R], options Options) (*Page[R], error) {
+	if options.PageSize.Set {
+		return nil, &UnsupportedSettingError{Setting: "batch page size", Reason: "native BATCH responses do not support paging"}
+	}
+	if options.Prefetch.Set && options.Prefetch.Value != 0 {
+		return nil, &UnsupportedSettingError{Setting: "batch prefetch", Reason: "native BATCH responses do not support paging"}
+	}
 	if len(items) == 0 || len(items) > 65535 {
 		return nil, typeValidation("batch", "requires 1 to 65535 entries")
 	}
@@ -33,9 +39,12 @@ func RunBatch[R any](ctx context.Context, s *Session, kind BatchKind, items []Ba
 		return nil, typeValidation("batch rows", "nil decoder")
 	}
 	state := &batchState{kind: kind, items: make([]executionRequest, len(items))}
-	routing := RoutingInfo{}
+	routing := RoutingInfo{Kind: OrdinaryStatement}
 	admitted := make([]*inputOwner, 0, len(items))
 	for i, item := range items {
+		if item.request != nil && item.request.prepared != nil && item.request.prepared.session != s {
+			return nil, typeValidation("batch session", "prepared statement belongs to another session")
+		}
 		if item.request == nil {
 			return nil, typeValidation("batch item", "nil descriptor")
 		}
@@ -54,7 +63,12 @@ func RunBatch[R any](ctx context.Context, s *Session, kind BatchKind, items []Ba
 			routing.Token = item.request.routing.Token
 			routing.Table = item.request.routing.Table
 		}
-		routing.Conditional = routing.Conditional || item.request.routing.Conditional
+		if item.request.routing.Kind == ConditionalStatement {
+			routing.Kind = ConditionalStatement
+		} else if routing.Kind == OrdinaryStatement && item.request.routing.Kind == UnknownStatement {
+			routing.Kind = UnknownStatement
+		}
+		routing.Conditional = routing.Kind != OrdinaryStatement
 	}
 	for _, item := range state.items {
 		if err := item.owner.admit(); err != nil {
@@ -79,7 +93,7 @@ func RunBatch[R any](ctx context.Context, s *Session, kind BatchKind, items []Ba
 func ExecBatch(ctx context.Context, s *Session, kind BatchKind, items []BatchItem, options Options) (Result, error) {
 	page, err := RunBatch(ctx, s, kind, items, execRowsDecoder{}, options)
 	if err != nil {
-		return Result{}, err
+		return executionErrorResult(err), err
 	}
 	defer page.Close()
 	for page.Next() {
@@ -119,7 +133,7 @@ func (s *Session) repairBatch(ctx context.Context, conn *Conn, batch *batchState
 		item.prepared.mu.RLock()
 		cached := item.prepared.hosts[conn.host.hostUUID()]
 		item.prepared.mu.RUnlock()
-		if bytes.Equal(cached.id, id) {
+		if cached != nil && bytes.Equal(cached.id, id) {
 			_, err := s.prepareOnConn(ctx, conn, item.prepared, item.values, true)
 			return err
 		}

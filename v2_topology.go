@@ -76,19 +76,11 @@ func readV2Topology(ctx context.Context, conn ConnInterface, stmt string, port i
 		return nil, typeValidation("topology query", "connection does not support typed requests")
 	}
 	timeout := timeForTopology(conn)
-	// Scylla's timeout extension is selected by the established connection, without
-	// sending internal requests through user execution profiles.
+	execute := backend.executeTyped
 	if c, ok := conn.(*Conn); ok {
-		if c.cfg != nil && c.cfg.TypedConfig != nil {
-			server := c.cfg.TypedConfig.Metadata.ServerTimeout
-			if c.isScyllaConn() && server.Set && server.Value > 0 {
-				stmt += " USING TIMEOUT " + strconv.FormatInt(server.Value.Milliseconds(), 10) + "ms"
-			}
-		} else {
-			stmt, _ = c.systemRequestStatement(stmt)
-		}
+		execute = c.executeV2System
 	}
-	rows, err := readV2SystemRowsVia(ctx, 4, timeout, backend.executeTyped, Statement[Unit, v2TopologyRow]{CQL: stmt, Params: NoParams, Rows: v2DecodeTopology()}, NewColumns(), Unit{})
+	rows, err := readV2SystemRowsVia(ctx, 4, timeout, execute, Statement[Unit, v2TopologyRow]{CQL: stmt, Params: NoParams, Rows: v2DecodeTopology()}, NewColumns(), Unit{})
 	if err != nil {
 		return nil, err
 	}
