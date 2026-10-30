@@ -34,7 +34,8 @@ func TestTypedPoolSnapshotCapturedBeforePublication(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer s.Close()
-			if captured == nil || s.privateStorage.InternalConnCfg.TypedConfig != captured || s.privateStorage.InternalPool.InternalServices.Config != captured {
+			physical := s.privateStorage.InternalConnCfg.TypedConfig
+			if captured == nil || physical == nil || s.privateStorage.InternalPool.InternalServices.Config != physical || physical.Pool != captured.Pool {
 				t.Fatal("transport/pool did not capture the initialized snapshot")
 			}
 			// Mutating the supplied configuration cannot change the captured counts.

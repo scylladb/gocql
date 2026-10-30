@@ -6,6 +6,7 @@ package settings
 import (
 	"context"
 	"crypto/tls"
+	connectivity "github.com/scylladb/gocql/v2/internal/connectivity"
 	implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
 	"maps"
 	"math"
@@ -59,23 +60,9 @@ type Config struct {
 	Logger                                            logging.StdLogger
 }
 
-type PoolOptions struct {
-	ConnectionsPerHost, ConnectionsPerShard int
-	MaxExcessPerShard                       int
-	MaxRequestsPerConnection                int
-	MaxOrphanedStreams                      int
-	ShardAwarePort                          bool
-	SourcePortStart, SourcePortEnd          uint16
-}
-type ReconnectPolicy interface {
-	Delay(attempt int) (time.Duration, bool)
-}
-type ProtocolLimits struct {
-	MaxFrameBytes, MaxDecompressedBytes int64
-	MaxMetadataDepth                    int
-	MaxPagingStates                     int
-	MaxPagingStateBytes                 int64
-}
+type PoolOptions = connectivity.PoolOptions
+type ReconnectPolicy = connectivity.ReconnectPolicy
+type ProtocolLimits = connectivity.ProtocolLimits
 type MetadataOptions struct {
 	Mode                                                          MetadataMode
 	Keyspaces                                                     []string
@@ -96,12 +83,7 @@ const (
 )
 
 type IdentityOptions struct{ DriverName, DriverVersion, ApplicationName, ApplicationVersion, ClientID string }
-type ClientRoutesOptions struct {
-	ConnectionIDs     []string
-	HostnameOverrides map[string]string
-	TLS               bool
-	SNIProxyAddress   string
-}
+type ClientRoutesOptions = connectivity.ClientRoutesOptions
 
 func DefaultConfig(contactPoints ...string) Config {
 	profile := InternalDefaultProfile()

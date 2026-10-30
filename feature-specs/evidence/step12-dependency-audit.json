@@ -1,5 +1,127 @@
 {
+  "command": [
+    "go",
+    "list",
+    "-json",
+    "-tags",
+    "integration,gocql_debug",
+    "./..."
+  ],
+  "rule": "No prohibited runtime owner may be reachable by any production import path, including settings indirection.",
+  "prohibited": {
+    "connectivity": [
+      "cluster",
+      "execution",
+      "metadata",
+      "pool",
+      "public root",
+      "routing",
+      "settings",
+      "transport"
+    ],
+    "transport": [
+      "cluster",
+      "execution",
+      "metadata",
+      "pool",
+      "public root",
+      "routing",
+      "settings"
+    ],
+    "pool": [
+      "cluster",
+      "execution",
+      "metadata",
+      "public root",
+      "routing",
+      "settings"
+    ],
+    "protocol": [
+      "cluster",
+      "execution",
+      "metadata",
+      "pool",
+      "public root",
+      "routing",
+      "settings",
+      "transport"
+    ]
+  },
   "findings": [],
+  "reachability": {
+    "connectivity": [
+      "github.com/scylladb/gocql/v2/internal/cqltype",
+      "github.com/scylladb/gocql/v2/internal/crc",
+      "github.com/scylladb/gocql/v2/internal/debug",
+      "github.com/scylladb/gocql/v2/internal/endpoint",
+      "github.com/scylladb/gocql/v2/internal/frame",
+      "github.com/scylladb/gocql/v2/internal/logging",
+      "github.com/scylladb/gocql/v2/internal/model",
+      "github.com/scylladb/gocql/v2/internal/murmur",
+      "github.com/scylladb/gocql/v2/internal/protocol",
+      "github.com/scylladb/gocql/v2/internal/runtimeerrors",
+      "github.com/scylladb/gocql/v2/internal/schemafence",
+      "github.com/scylladb/gocql/v2/internal/segment",
+      "github.com/scylladb/gocql/v2/internal/wire",
+      "github.com/scylladb/gocql/v2/internal/wirecompress"
+    ],
+    "transport": [
+      "github.com/scylladb/gocql/v2/internal/codec",
+      "github.com/scylladb/gocql/v2/internal/connectivity",
+      "github.com/scylladb/gocql/v2/internal/cqlproto",
+      "github.com/scylladb/gocql/v2/internal/cqltype",
+      "github.com/scylladb/gocql/v2/internal/crc",
+      "github.com/scylladb/gocql/v2/internal/debug",
+      "github.com/scylladb/gocql/v2/internal/endpoint",
+      "github.com/scylladb/gocql/v2/internal/frame",
+      "github.com/scylladb/gocql/v2/internal/logging",
+      "github.com/scylladb/gocql/v2/internal/model",
+      "github.com/scylladb/gocql/v2/internal/murmur",
+      "github.com/scylladb/gocql/v2/internal/protocol",
+      "github.com/scylladb/gocql/v2/internal/runtimeerrors",
+      "github.com/scylladb/gocql/v2/internal/schemafence",
+      "github.com/scylladb/gocql/v2/internal/segment",
+      "github.com/scylladb/gocql/v2/internal/streams",
+      "github.com/scylladb/gocql/v2/internal/tests",
+      "github.com/scylladb/gocql/v2/internal/wire",
+      "github.com/scylladb/gocql/v2/internal/wirecompress",
+      "github.com/scylladb/gocql/v2/tablets"
+    ],
+    "pool": [
+      "github.com/scylladb/gocql/v2/debounce",
+      "github.com/scylladb/gocql/v2/internal/codec",
+      "github.com/scylladb/gocql/v2/internal/connectivity",
+      "github.com/scylladb/gocql/v2/internal/cqlproto",
+      "github.com/scylladb/gocql/v2/internal/cqltype",
+      "github.com/scylladb/gocql/v2/internal/crc",
+      "github.com/scylladb/gocql/v2/internal/debug",
+      "github.com/scylladb/gocql/v2/internal/endpoint",
+      "github.com/scylladb/gocql/v2/internal/frame",
+      "github.com/scylladb/gocql/v2/internal/logging",
+      "github.com/scylladb/gocql/v2/internal/model",
+      "github.com/scylladb/gocql/v2/internal/murmur",
+      "github.com/scylladb/gocql/v2/internal/protocol",
+      "github.com/scylladb/gocql/v2/internal/runtimeerrors",
+      "github.com/scylladb/gocql/v2/internal/schemafence",
+      "github.com/scylladb/gocql/v2/internal/segment",
+      "github.com/scylladb/gocql/v2/internal/streams",
+      "github.com/scylladb/gocql/v2/internal/tests",
+      "github.com/scylladb/gocql/v2/internal/transport",
+      "github.com/scylladb/gocql/v2/internal/wire",
+      "github.com/scylladb/gocql/v2/internal/wirecompress",
+      "github.com/scylladb/gocql/v2/tablets"
+    ],
+    "protocol": [
+      "github.com/scylladb/gocql/v2/internal/cqltype",
+      "github.com/scylladb/gocql/v2/internal/crc",
+      "github.com/scylladb/gocql/v2/internal/frame",
+      "github.com/scylladb/gocql/v2/internal/model",
+      "github.com/scylladb/gocql/v2/internal/schemafence",
+      "github.com/scylladb/gocql/v2/internal/segment",
+      "github.com/scylladb/gocql/v2/internal/wire",
+      "github.com/scylladb/gocql/v2/internal/wirecompress"
+    ]
+  },
   "graph": [
     {
       "package": "github.com/scylladb/gocql/v2",
@@ -224,6 +346,7 @@
         "github.com/scylladb/gocql/v2/events",
         "github.com/scylladb/gocql/v2/internal/binding",
         "github.com/scylladb/gocql/v2/internal/codec",
+        "github.com/scylladb/gocql/v2/internal/connectivity",
         "github.com/scylladb/gocql/v2/internal/cqltype",
         "github.com/scylladb/gocql/v2/internal/debug",
         "github.com/scylladb/gocql/v2/internal/endpoint",
@@ -352,6 +475,28 @@
         "type.go",
         "value_api.go",
         "value_io.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/internal/connectivity",
+      "imports": [
+        "context",
+        "crypto/tls",
+        "crypto/x509",
+        "github.com/scylladb/gocql/v2/internal/cqltype",
+        "github.com/scylladb/gocql/v2/internal/endpoint",
+        "github.com/scylladb/gocql/v2/internal/model",
+        "github.com/scylladb/gocql/v2/internal/runtimeerrors",
+        "net",
+        "net/netip",
+        "path/filepath",
+        "slices",
+        "strings",
+        "time"
+      ],
+      "sources": [
+        "dial.go",
+        "settings.go"
       ]
     },
     {
@@ -695,13 +840,13 @@
         "fmt",
         "github.com/scylladb/gocql/v2/debounce",
         "github.com/scylladb/gocql/v2/internal/codec",
+        "github.com/scylladb/gocql/v2/internal/connectivity",
         "github.com/scylladb/gocql/v2/internal/cqltype",
         "github.com/scylladb/gocql/v2/internal/debug",
         "github.com/scylladb/gocql/v2/internal/endpoint",
         "github.com/scylladb/gocql/v2/internal/logging",
         "github.com/scylladb/gocql/v2/internal/model",
         "github.com/scylladb/gocql/v2/internal/runtimeerrors",
-        "github.com/scylladb/gocql/v2/internal/settings",
         "github.com/scylladb/gocql/v2/internal/transport",
         "github.com/scylladb/gocql/v2/tablets",
         "math",
@@ -848,8 +993,8 @@
       "imports": [
         "context",
         "crypto/tls",
-        "crypto/x509",
         "errors",
+        "github.com/scylladb/gocql/v2/internal/connectivity",
         "github.com/scylladb/gocql/v2/internal/cqltype",
         "github.com/scylladb/gocql/v2/internal/endpoint",
         "github.com/scylladb/gocql/v2/internal/logging",
@@ -861,9 +1006,7 @@
         "math/rand/v2",
         "net",
         "net/netip",
-        "path/filepath",
         "runtime/debug",
-        "slices",
         "strings",
         "sync/atomic",
         "time"
@@ -873,6 +1016,7 @@
         "aliases_v2_protocol_facade.go",
         "aliases_v2_routing_facade.go",
         "cluster.go",
+        "connectivity.go",
         "opaque_ProfileHandle.go",
         "policies.go",
         "v2_auth.go",
@@ -984,6 +1128,7 @@
         "errors",
         "fmt",
         "github.com/scylladb/gocql/v2/internal/codec",
+        "github.com/scylladb/gocql/v2/internal/connectivity",
         "github.com/scylladb/gocql/v2/internal/cqltype",
         "github.com/scylladb/gocql/v2/internal/debug",
         "github.com/scylladb/gocql/v2/internal/endpoint",
@@ -993,7 +1138,6 @@
         "github.com/scylladb/gocql/v2/internal/protocol",
         "github.com/scylladb/gocql/v2/internal/runtimeerrors",
         "github.com/scylladb/gocql/v2/internal/segment",
-        "github.com/scylladb/gocql/v2/internal/settings",
         "github.com/scylladb/gocql/v2/internal/streams",
         "github.com/scylladb/gocql/v2/internal/wire",
         "github.com/scylladb/gocql/v2/tablets",

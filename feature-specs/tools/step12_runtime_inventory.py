@@ -20,7 +20,7 @@ def canon(s,values):
 lift=set('prepareTyped prepareOnConn prepareOnConnExpected prepareHost hostPreparedInfo executePage executeTypedAttempt registerExecution stopExecutions prepareBatchAttempt repairBatch'.split())
 free={}
 for path in ['private-method-relocations.json','private-legacy-method-relocations.json']:
- for x in json.load(open((AUDIT/'')+path)):
+ for x in json.load(open((AUDIT/path))):
   owner=canon(x['owner'],types);name=canon(x['method'],methodsets[owner]);free[(x['package'].replace(BASE,''),x['function'])]=(owner,name)
 index=collections.defaultdict(list)
 for x in cur:
@@ -33,6 +33,8 @@ for x in cur:
  if x['Name']=='InternalRuntimeFor' and x['File'].startswith('internal/execution/'):owner,name='Session','typedRuntime'
  index[(x['Kind'],owner,name)].append(x)
 explicit={
+ ('func','','cloneV2TLSConfig'):('internal/connectivity/dial.go','CloneTLSConfig','The unchanged trust/certificate snapshot implementation belongs below transport; settings and root retain thin delegating facades.'),
+ ('func','','unixContact'):('internal/connectivity/dial.go','UnixContact','The unchanged physical Unix endpoint validation consumes only lower settings; higher settings projects its validated descriptors.'),
  ('func','','newSessionCommon'):('internal/cluster/session.go','newSessionCommonWithRuntime','The shared constructor captures typed configuration and attaches execution before publishing workers/pool services; the legacy facade passes unset configuration.'),
  ('func','Session','streamIDGenerator'):('internal/transport/dial.go','newStreamIDs','Captured stream cap is passed to the same limited stream generator during transport opening.'),
  ('func','Conn','awaitSchemaAgreement'):('internal/cluster/v2_metadata.go','InternalSessionAwaitV2SchemaAgreementOn','Agreement is coordinator-owned; the sole direct deadline assertion now invokes this existing operation.'),
@@ -43,7 +45,7 @@ explicit={
  ('func','Session','stopPreparedWorkers'):('internal/execution/v2_runtime_attachment.go','StopPrepared','Execution lifecycle attachment owns the same prepare admission close and worker WaitGroup drain.'),
  ('type','','typedResultMetadata'):('internal/model/result_metadata.go','ResultSchemaIdentity','Move unchanged columns/fence/tracker identity to a lower nongeneric response contract.'),
 }
-prefer={'StdLogger':'internal/logging/logger.go','UnsupportedSettingError':'internal/runtimeerrors/settings.go','HostSnapshot':'internal/model/host.go','Target':'internal/model/target.go','StreamLimits':'internal/transport/v2_stream_transport.go','executionContext':'internal/cluster/context.go'}
+prefer={**{name:'internal/connectivity/settings.go' for name in ['PoolOptions','ReconnectPolicy','ProtocolLimits','ClientRoutesOptions','AuthProvider','AuthExchange','ConvictionPolicy']},'Config':'internal/settings/v2_config.go','StdLogger':'internal/logging/logger.go','UnsupportedSettingError':'internal/runtimeerrors/settings.go','HostSnapshot':'internal/model/host.go','Target':'internal/model/target.go','StreamLimits':'internal/transport/v2_stream_transport.go','executionContext':'internal/cluster/context.go'}
 records=[];missing=[];ambiguous=[]
 for x in original:
  key=(x['Kind'],x['Receiver'],x['Name']);matches=index[key];reason=None

@@ -90,7 +90,7 @@ preservation claim.
 
 ## Verification and diagnosed boundaries
 
-The final frozen source contains 618 inputs, SHA-256
+The initial step12 frozen source contains 618 inputs, SHA-256
 `73a8a58156c1b4a825c786ea60dad88486680ebb76c19782fa19057ac7f1b097`.
 Full unit race, vet, actual 386 execution, combined build-tag compilation,
 arm64 compilation, nested lz4 tests, benchmark-module compilation and focused
@@ -110,7 +110,7 @@ bootstrap assignment. Those failed source-bound receipts are retained separately
 all six nodes were cleaned/stopped/joined. The common constructor now captures
 the typed snapshot and attaches execution before metadata/event workers, pool
 services or policy publication. It does not replace published configuration.
-The subsequent final runners pass:
+The subsequent runners on that source pass:
 
 | Lane | Top-level pass / skip |
 | --- | --- |
@@ -126,7 +126,7 @@ start/tests/namespace cleanup/stop/join. Both exit 0, all six nodes join and all
 reserved endpoints refuse connections. Development and unrelated workloads are
 untouched. Raw receipts/logs remain under
 `/extra/scylladb/gocql-api-test-cluster/step12`, with successful final runs in
-`retry/`. No behavioral edit follows their source freeze. One final empty line was removed from
+`retry/`. Their source bindings remain historical after the lower-settings gate fix below. One final empty line was removed from
 a declaration/import/directive-free package alias file; the exact
 [format proof](../evidence/step12-format-equivalence.json) retains both byte streams
 and identical package tokens. The final source manifest is
@@ -142,3 +142,51 @@ equivalent select/insert workload/assertions while consolidating benchmark
 modules. The prior operational replay mismatch remains failed evidence, and
 compilation is not a replay benchmark pass. Comprehensive performance remains
 step 15. Root-owned STATUS.md and RESUME.md are excluded from this commit.
+
+
+## Transitive dependency gate fix
+
+Parent review found a real transitive edge missed by the original direct-only
+report: transport/pool imported full settings, which imported routing and then
+metadata. `internal/connectivity` now owns only physical dial/socket/pool/
+heartbeat settings, metadata I/O budgets, and pure authentication/conviction/
+reconnect contracts. Full Config, profiles, routing and metadata policy remain
+above it. Settings projects its validated immutable descriptors once, before any
+workers, pool services or connections publish; transport and pool share that
+same lower snapshot. Typed auth and protocol limits remain separately captured.
+There are no request/result payload fields in the projection and no extra
+connection, serializer, response conversion or gathering path.
+
+The actual TLS snapshot and Unix endpoint validation bodies moved unchanged into
+connectivity. Seven pure contract declarations retain identical tokens. The
+[bounded preservation proof](../evidence/step12-lower-settings-preservation.json)
+retains those bodies/declarations, the two formerly missed dependency paths,
+and 16 fixture rewrites whose complete source differs only by explicit settings
+projection calls. The actual constructor test still exercises default, host and
+shard picker targets after caller mutation, and the unset configuration still
+selects the existing default picker. Regeneration also corrects one stale hash
+in the 957 declaration inventory; that test source itself is unchanged.
+
+The checked-in dependency auditor now follows every transitive production import
+path, including optional integration/debug files. It checks connectivity,
+transport, pool and protocol against prohibited owners, including public root
+and full settings. The actual graph has zero findings; the prior graph is a
+negative control which exposes both routing/metadata paths. Public API opacity,
+all 174 baseline body proofs and all 49 collision proofs still pass. The
+assertion-source inventory, baseline-body proof and collision-body proof are
+byte-identical to the prior verified artifacts.
+
+The gate-fix source freeze contains 622 inputs, SHA-256
+`6582f9297904ea596a4319816e3f49ec708667ea495a76db0afcd9b37f40e4ef`,
+recorded in [step12-lower-settings-source.json](../evidence/step12-lower-settings-source.json).
+Full unit race (32 packages), actual 386 execution, vet, all-tag compilation,
+arm64 compilation, benchmark-module compilation and runtime allocation/copy
+smokes pass. The unchanged nested lz4 module and routing smoke retain their
+previous source-bound results. Fresh native receipts/logs are retained under
+`/extra/scylladb/gocql-api-test-cluster/step12/lower-settings/`; the verification
+manifest records exact commands, source/log hashes and complete runner cleanup.
+The same six native modes pass with the counts in the table above, plus CCM;
+158 original identities have fresh effective passes on this gate-fix source.
+Both runners exit 0, all six owned nodes join, and an independent check confirms
+all 42 reserved endpoints refuse connections. No source delta follows this freeze.
+Step 12 remains pending the parent gate review; no later step is advanced here.

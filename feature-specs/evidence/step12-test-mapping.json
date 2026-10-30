@@ -1,6 +1,6 @@
 {
   "accepted_predecessor": "c3505d578d530ad89e043a539d1be43bb85ff295",
-  "source_sha256": "73a8a58156c1b4a825c786ea60dad88486680ebb76c19782fa19057ac7f1b097",
+  "source_sha256": "6582f9297904ea596a4319816e3f49ec708667ea495a76db0afcd9b37f40e4ef",
   "identities": 174,
   "fresh_effective_passes": 158,
   "previous_mapping": {
@@ -2694,6 +2694,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -2714,6 +2715,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -2732,6 +2734,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "skip",
         "stable20-runtime-v4-tls": "skip",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -2750,6 +2753,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "skip",
         "stable20-runtime-v4-tls": "skip",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -2770,6 +2774,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -2790,6 +2795,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -2810,6 +2816,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -2828,6 +2835,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "skip",
         "stable20-runtime-v4-tls": "skip",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -2848,6 +2856,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -2868,6 +2877,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -2888,6 +2898,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -2908,6 +2919,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -2928,6 +2940,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -2948,6 +2961,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -2968,6 +2982,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -2988,6 +3003,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3008,6 +3024,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3028,6 +3045,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3046,6 +3064,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "skip",
         "stable20-runtime-v4-tls": "skip",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3066,6 +3085,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3086,6 +3106,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3106,6 +3127,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3126,6 +3148,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3146,6 +3169,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3166,6 +3190,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3186,6 +3211,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3206,6 +3232,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3226,6 +3253,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3246,6 +3274,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3266,6 +3295,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3286,6 +3316,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3306,6 +3337,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3326,6 +3358,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3346,6 +3379,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3366,6 +3400,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3386,6 +3421,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3406,6 +3442,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3426,6 +3463,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3446,6 +3484,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3466,6 +3505,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3486,6 +3526,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3506,6 +3547,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3526,6 +3568,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3546,6 +3589,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3566,6 +3610,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3586,6 +3631,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3606,6 +3652,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3626,6 +3673,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3646,6 +3694,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3666,6 +3715,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3686,6 +3736,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3706,6 +3757,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3726,6 +3778,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3746,6 +3799,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3766,6 +3820,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3786,6 +3841,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3806,6 +3862,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3826,6 +3883,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3846,6 +3904,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3866,6 +3925,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3886,6 +3946,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3906,6 +3967,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3926,6 +3988,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3946,6 +4009,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3966,6 +4030,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -3986,6 +4051,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4006,6 +4072,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4026,6 +4093,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4046,6 +4114,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4066,6 +4135,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4086,6 +4156,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4104,6 +4175,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "skip",
         "stable20-runtime-v4-tls": "skip",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4122,6 +4194,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "skip",
         "stable20-runtime-v4-tls": "skip",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4140,6 +4213,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "skip",
         "stable20-runtime-v4-tls": "skip",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4158,6 +4232,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "skip",
         "stable20-runtime-v4-tls": "skip",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4176,6 +4251,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "skip",
         "stable20-runtime-v4-tls": "skip",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4196,6 +4272,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4214,6 +4291,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "skip",
         "stable20-runtime-v4-tls": "skip",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4232,6 +4310,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "skip",
         "stable20-runtime-v4-tls": "skip",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4250,6 +4329,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "skip",
         "cassandra21-runtime-v5-lz4-tls": "skip"
@@ -4270,6 +4350,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4287,6 +4368,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "skip",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "skip",
         "cassandra21-runtime-v5-lz4-tls": "skip"
@@ -4305,6 +4387,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "skip",
         "cassandra21-runtime-v5-lz4-tls": "skip"
@@ -4325,6 +4408,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4345,6 +4429,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4365,6 +4450,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4385,6 +4471,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4405,6 +4492,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4425,6 +4513,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4445,6 +4534,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4465,6 +4555,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4485,6 +4576,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4505,6 +4597,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4523,6 +4616,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "skip",
         "cassandra21-runtime-v5-lz4-tls": "skip"
@@ -4543,6 +4637,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4563,6 +4658,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4583,6 +4679,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4603,6 +4700,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4623,6 +4721,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4643,6 +4742,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4661,6 +4761,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "skip",
         "stable20-runtime-v4-tls": "skip",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4679,6 +4780,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "skip",
         "stable20-runtime-v4-tls": "skip",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4697,6 +4799,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "skip",
         "stable20-runtime-v4-tls": "skip",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4717,6 +4820,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4737,6 +4841,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4757,6 +4862,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4777,6 +4883,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4788,16 +4895,16 @@
       "file": "internal/ccm/ccm_test.go",
       "test": "TestCCM",
       "current_effective_passes": [
-        "stable20-owned-ccm"
+        "stable20-ccm"
       ],
       "current_selected_outcomes": {
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "not selected",
         "stable20-runtime-v4-tls": "not selected",
+        "stable20-ccm": "pass",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "not selected",
-        "cassandra21-runtime-v5-lz4-tls": "not selected",
-        "stable20-owned-ccm": "pass"
+        "cassandra21-runtime-v5-lz4-tls": "not selected"
       },
       "historical_source": "feature-specs/evidence/step11-test-mapping.json"
     },
@@ -4815,6 +4922,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4835,6 +4943,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4855,6 +4964,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4875,6 +4985,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4895,6 +5006,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4915,6 +5027,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4935,6 +5048,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4955,6 +5069,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4975,6 +5090,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -4995,6 +5111,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -5015,6 +5132,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -5035,6 +5153,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -5050,6 +5169,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "skip",
         "stable20-runtime-v4-tls": "skip",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "skip",
         "cassandra21-runtime-v5-lz4-tls": "skip"
@@ -5065,6 +5185,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "skip",
         "stable20-runtime-v4-tls": "skip",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "skip",
         "cassandra21-runtime-v5-lz4-tls": "skip"
@@ -5080,6 +5201,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "skip",
         "stable20-runtime-v4-tls": "skip",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "skip",
         "cassandra21-runtime-v5-lz4-tls": "skip"
@@ -5095,6 +5217,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "skip",
         "stable20-runtime-v4-tls": "skip",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "skip",
         "cassandra21-runtime-v5-lz4-tls": "skip"
@@ -5110,6 +5233,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "skip",
         "stable20-runtime-v4-tls": "skip",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "skip",
         "cassandra21-runtime-v5-lz4-tls": "skip"
@@ -5125,6 +5249,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "skip",
         "stable20-runtime-v4-tls": "skip",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "skip",
         "cassandra21-runtime-v5-lz4-tls": "skip"
@@ -5140,6 +5265,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "skip",
         "stable20-runtime-v4-tls": "skip",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "skip",
         "cassandra21-runtime-v5-lz4-tls": "skip"
@@ -5155,6 +5281,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "skip",
         "stable20-runtime-v4-tls": "skip",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "skip",
         "cassandra21-runtime-v5-lz4-tls": "skip"
@@ -5170,6 +5297,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "skip",
         "stable20-runtime-v4-tls": "skip",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "skip",
         "cassandra21-runtime-v5-lz4-tls": "skip"
@@ -5185,6 +5313,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "skip",
         "stable20-runtime-v4-tls": "skip",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "skip",
         "cassandra21-runtime-v5-lz4-tls": "skip"
@@ -5200,6 +5329,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "skip",
         "stable20-runtime-v4-tls": "skip",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "skip",
         "cassandra21-runtime-v5-lz4-tls": "skip"
@@ -5215,6 +5345,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "skip",
         "stable20-runtime-v4-tls": "skip",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "skip",
         "cassandra21-runtime-v5-lz4-tls": "skip"
@@ -5230,6 +5361,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "skip",
         "stable20-runtime-v4-tls": "skip",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "skip",
         "cassandra21-runtime-v5-lz4-tls": "skip"
@@ -5245,6 +5377,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "skip",
         "stable20-runtime-v4-tls": "skip",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "skip",
         "cassandra21-runtime-v5-lz4-tls": "skip"
@@ -5260,6 +5393,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "skip",
         "stable20-runtime-v4-tls": "skip",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "skip",
         "cassandra21-runtime-v5-lz4-tls": "skip"
@@ -5275,6 +5409,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "skip",
         "stable20-runtime-v4-tls": "skip",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "skip",
         "cassandra21-runtime-v5-lz4-tls": "skip"
@@ -5295,6 +5430,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -5315,6 +5451,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -5335,6 +5472,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -5355,6 +5493,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -5375,6 +5514,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -5395,6 +5535,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -5415,6 +5556,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -5435,6 +5577,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -5455,6 +5598,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -5472,6 +5616,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "skip",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "skip",
         "cassandra21-runtime-v5-lz4-tls": "skip"
@@ -5490,6 +5635,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "skip",
         "cassandra21-runtime-v5-lz4-tls": "skip"
@@ -5510,6 +5656,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -5530,6 +5677,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -5550,6 +5698,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -5570,6 +5719,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -5590,6 +5740,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -5610,6 +5761,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -5630,6 +5782,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -5650,6 +5803,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -5670,6 +5824,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -5690,6 +5845,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -5710,6 +5866,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -5730,6 +5887,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -5750,6 +5908,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -5770,6 +5929,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -5790,6 +5950,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -5810,6 +5971,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -5830,6 +5992,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -5850,6 +6013,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -5870,6 +6034,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -5890,6 +6055,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -5910,6 +6076,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -5930,6 +6097,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -5950,6 +6118,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -5970,6 +6139,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -5990,6 +6160,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -6010,6 +6181,7 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
@@ -6030,11 +6202,15 @@
         "stable20-constructor-order-and-stream": "not selected",
         "stable20-runtime-v4": "pass",
         "stable20-runtime-v4-tls": "pass",
+        "stable20-ccm": "not selected",
         "cassandra21-constructor-order-and-stream": "not selected",
         "cassandra21-runtime-v5-lz4": "pass",
         "cassandra21-runtime-v5-lz4-tls": "pass"
       },
       "historical_source": "feature-specs/evidence/step11-test-mapping.json"
     }
-  ]
+  ],
+  "prior_step12_source_sha256": "73a8a58156c1b4a825c786ea60dad88486680ebb76c19782fa19057ac7f1b097",
+  "current_native_evidence": "feature-specs/evidence/step12-lower-settings-native-outcomes.json",
+  "historical_step12_native_evidence": "feature-specs/evidence/step12-native-outcomes.json"
 }

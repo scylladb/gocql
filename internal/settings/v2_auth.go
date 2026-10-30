@@ -7,17 +7,13 @@ import (
 	"context"
 	"errors"
 	"strings"
+
+	connectivity "github.com/scylladb/gocql/v2/internal/connectivity"
 )
 
 // AuthProvider creates independent exchanges and must be concurrency safe.
-type AuthProvider interface {
-	Start(context.Context, HostSnapshot, string) (AuthExchange, Nullable[[]byte], error)
-}
-type AuthExchange interface {
-	Challenge(context.Context, Nullable[Bytes]) (Nullable[[]byte], error)
-	Success(context.Context, Nullable[Bytes]) error
-	Close()
-}
+type AuthProvider = connectivity.AuthProvider
+type AuthExchange = connectivity.AuthExchange
 type InternalPasswordAuth struct{ username, password string }
 
 func PasswordAuth(username, password string) AuthProvider {

@@ -4,6 +4,7 @@
 package cluster
 
 import (
+	connectivity "github.com/scylladb/gocql/v2/internal/connectivity"
 	implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
 	implMetadata "github.com/scylladb/gocql/v2/internal/metadata"
 	routing "github.com/scylladb/gocql/v2/internal/routing"
@@ -391,7 +392,7 @@ func InternalSnapshotV2Host(s *Session, h *HostInfo) (HostSnapshot, error) {
 	}
 	if s != nil {
 		if cfg, ok := s.v2PoolConfig(); ok {
-			if path, _ := unixContact(*cfg); path != "" {
+			if path, _ := connectivity.UnixContact(*cfg); path != "" {
 				out.Address = netip.AddrPort{}
 			}
 		}

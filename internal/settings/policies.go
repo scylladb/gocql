@@ -25,17 +25,13 @@
 package settings
 
 import (
+	connectivity "github.com/scylladb/gocql/v2/internal/connectivity"
 	implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
 )
 
 // ConvictionPolicy interface is used by gocql to determine if a host should be
 // marked as DOWN based on the error and host info
-type ConvictionPolicy interface {
-	// Implementations should return `true` if the host should be convicted, `false` otherwise.
-	AddFailure(error error, host *implEndpoint.HostInfo) bool
-	// Implementations should clear out any convictions or state regarding the host.
-	Reset(host *implEndpoint.HostInfo)
-}
+type ConvictionPolicy = connectivity.ConvictionPolicy
 
 // SimpleConvictionPolicy implements a ConvictionPolicy which convicts all hosts
 // regardless of error

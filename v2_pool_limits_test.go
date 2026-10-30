@@ -170,7 +170,7 @@ func TestV2HugePoolTargetUsesBoundedDialWorkers(t *testing.T) {
 		opaqueStorageValuexxxxxx := new(Session)
 		implCluster.SessionData(opaqueStorageValuexxxxxx).InternalCtx = ctx
 		implCluster.SessionData(opaqueStorageValuexxxxxx).InternalLogger = nopLogger{}
-		implCluster.SessionData(opaqueStorageValuexxxxxx).InternalConnCfg = &driverConnConfig{TypedConfig: &config, ProtoVersion: 4, HostDialer: dialer, Logger: nopLogger{}}
+		implCluster.SessionData(opaqueStorageValuexxxxxx).InternalConnCfg = &driverConnConfig{TypedConfig: connectivityConfigPointer(config), ProtoVersion: 4, HostDialer: dialer, Logger: nopLogger{}}
 		return opaqueStorageValuexxxxxx
 	}()
 	implCluster.SessionData(s).InternalCfg.ReconnectionPolicy = &NoReconnectionPolicy{}

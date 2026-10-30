@@ -32,6 +32,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	implSettings "github.com/scylladb/gocql/v2/internal/settings"
 
 	mrand "math/rand/v2"
 
@@ -114,7 +115,7 @@ func newSessionCommonWithRuntime(cfg InternalClusterSettings, typedConfig *Confi
 	}
 	s.privateStorage.InternalConnCfg = connCfg
 	if runtimeConfig != nil {
-		connCfg.TypedConfig = runtimeConfig
+		connCfg.TypedConfig = implSettings.InternalConnectivityConfigPointer(*runtimeConfig)
 		connCfg.TypedAuth = runtimeConfig.Auth
 		connCfg.TypedLimits = runtimeConfig.Limits
 		InternalSessionConfigureV2Peripheral(s, *runtimeConfig)

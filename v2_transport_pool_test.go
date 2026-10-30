@@ -270,7 +270,7 @@ func TestV2OrphanBudgetUsesExactCapacity(t *testing.T) {
 		c, server := typedTestConn(t, 4, nil)
 		cfg := DefaultConfig("localhost")
 		cfg.Pool.MaxOrphanedStreams = 1024
-		c.InternalCfg = &driverConnConfig{TypedConfig: &cfg}
+		c.InternalCfg = &driverConnConfig{TypedConfig: connectivityConfigPointer(cfg)}
 		c.InternalStreams = streams.NewLimited(capacity)
 		go c.InternalServe(c.InternalCtx)
 		received := make(chan struct{})
@@ -1005,7 +1005,7 @@ func TestV2UnsupportedCompressionRejectedBeforeStartupOrQuery(t *testing.T) {
 				}
 				done <- nil
 			}()
-			cfg := &driverConnConfig{TypedConfig: &config, ProtoVersion: 4, CQLVersion: "3.0.0", ConnectTimeout: time.Second, HostDialer: step04FixedHostDialer{client}, Compressor: compressor, Logger: nopLogger{}}
+			cfg := &driverConnConfig{TypedConfig: connectivityConfigPointer(config), ProtoVersion: 4, CQLVersion: "3.0.0", ConnectTimeout: time.Second, HostDialer: step04FixedHostDialer{client}, Compressor: compressor, Logger: nopLogger{}}
 			conn, err := implCluster.InternalSessionDialWithoutObserver(session, ctx, host, cfg, connErrorHandlerFn(func(*driverConn, error, bool) {}), 0, 0)
 			var unsupported *UnsupportedSettingError
 			if conn != nil || !errors.As(err, &unsupported) {

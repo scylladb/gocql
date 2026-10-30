@@ -3756,7 +3756,7 @@
       "declaration": "TestV2RuntimeDNSContextAndDialHost",
       "step11_file": "v2_config_test.go",
       "current_file": "v2_config_test.go",
-      "sha256": "b6fce80305dd82c6616e98a271fef5d89db655d057138152ca405240d29483de"
+      "sha256": "a90167bb57a31a5c6617288975a94c7532990bc5ba3a391a0c288a6c7f7f915a"
     },
     {
       "declaration": "TestV2RuntimeConnectCancelledBeforeSetup",
@@ -4284,7 +4284,7 @@
       "declaration": "TestV2HugePoolTargetUsesBoundedDialWorkers",
       "step11_file": "v2_pool_limits_test.go",
       "current_file": "v2_pool_limits_test.go",
-      "sha256": "c7597b52b72e08a68f1dbbe9082de5cb357785594af64d68e8504c9ea5d842d3"
+      "sha256": "ca04077543fef5d1c07a4c23d509f4973f95413c43ed5b8dc158cd99590ec365"
     },
     {
       "declaration": "TestV2ShardingZeroMSBMapsEntireTokenRange",
@@ -4686,7 +4686,7 @@
       "declaration": "TestStep06StrictStreamingReservationUsesExistingCapacity",
       "step11_file": "v2_routing_step06_test.go",
       "current_file": "v2_routing_step06_test.go",
-      "sha256": "60e690a761f73f720b4e319997f13330f642cd14b0bee590a81bd07cd5720cda"
+      "sha256": "9d3630e967d52b08198e97b84e198aa8d1058a9ed079e53e7aacdaa33b85dd0f"
     },
     {
       "declaration": "TestStep06LatencyThresholdExpiryAndSamples",
@@ -5214,7 +5214,7 @@
       "declaration": "TestV2OrphanBudgetUsesExactCapacity",
       "step11_file": "v2_transport_pool_test.go",
       "current_file": "v2_transport_pool_test.go",
-      "sha256": "95e6e6f48f4356a25176664ce1cbee005849f45dedfecd737d361fc72144486d"
+      "sha256": "1972cbea9d4aef22e55478c9b5b1fb7fec2cad31f23d7d8e779837981ed9e60c"
     },
     {
       "declaration": "TestV2PoolSizingModesAndPendingShards",
@@ -5298,7 +5298,7 @@
       "declaration": "TestV2UnsupportedCompressionRejectedBeforeStartupOrQuery",
       "step11_file": "v2_transport_pool_test.go",
       "current_file": "v2_transport_pool_test.go",
-      "sha256": "56879162917abb3b7591e4aa9a764e5b29b4cd1cf959d827156cfef4cbe37334"
+      "sha256": "4bdb537156b848a15fba6873478e9a5300dff4db67c644eb92c99470d8142374"
     },
     {
       "declaration": "TestStep04LateTableRefreshEntrant",
@@ -5316,19 +5316,19 @@
       "declaration": "TestV2TLSConfigurationDetachAndHookContext",
       "step11_file": "v2_transport_settings_test.go",
       "current_file": "v2_transport_settings_test.go",
-      "sha256": "0ac17cc0386e25e78dd3573b814bb0b707750d07e2779641b74340874d520920"
+      "sha256": "3954d440149551828e281a5051f5da6d40517819ba2b59989f44677ed4a80d86"
     },
     {
       "declaration": "TestV2TLSShardDialUsesSelectedSourceAndHook",
       "step11_file": "v2_transport_settings_test.go",
       "current_file": "v2_transport_settings_test.go",
-      "sha256": "b683d2463dade6bcb5d2e0382574820784caa32760d8f88403873550cea03d4d"
+      "sha256": "fed155918a254b9b128a7cd52d384349dbe6225d3659ab98cca41335d4476ebb"
     },
     {
       "declaration": "TestV2SourcePortExhaustionAndNATFallback",
       "step11_file": "v2_transport_settings_test.go",
       "current_file": "v2_transport_settings_test.go",
-      "sha256": "31134e627f374a07c4c851ba9243a35a13c14ccf6cf770d0981d389230653da6"
+      "sha256": "7b584833a52836c5c8627868fc9fec74b3e518e3eaa8c4b11d5f4b8b2beb3397"
     },
     {
       "declaration": "TestV2PoolExcessAndLateSharderFence",
@@ -5340,13 +5340,13 @@
       "declaration": "TestV2UnixTargetAndUnsupportedSettings",
       "step11_file": "v2_transport_settings_test.go",
       "current_file": "v2_transport_settings_test.go",
-      "sha256": "cbb41bc49c1e728b6d474ad36ee03927fecb4759654dce9c8e1498a6d3a85bd3"
+      "sha256": "414600e062321af69d3ad4860852dc29effc2314d505dfbf61aebac50eaa7046"
     },
     {
       "declaration": "TestV2TypedKeepaliveDisabledAndBlockedWriteTimeout",
       "step11_file": "v2_transport_settings_test.go",
       "current_file": "v2_transport_settings_test.go",
-      "sha256": "18cb4ab62fc9304bffd11caa5a6e8ea555704ebbcedd3c593d0dfd78a568e0b4"
+      "sha256": "9b32dc82cee4f075cd8d0b4831afc8d4a496b3cfc1eda738377d84592a1b69d5"
     },
     {
       "declaration": "TestV2EventMetadataBudgetAndTerminalAdmission",
@@ -5358,7 +5358,7 @@
       "declaration": "TestV2ConnectionSetupDeadlineIncludesDNSAndTranslation",
       "step11_file": "v2_transport_settings_test.go",
       "current_file": "v2_transport_settings_test.go",
-      "sha256": "65c6a50a06bb259c7c1f5637e4981523e40cc5e9bd52f27f97cd5d5f74142473"
+      "sha256": "970b7d9a1e8c7565d369fcffb323878707f53aab001d7061ec7d98c5f90990ee"
     },
     {
       "declaration": "TestV2OpeningValidationKeepsOriginalDeadlineAndZeroMeaning",
@@ -5376,7 +5376,7 @@
       "declaration": "TestV2PoolRepairPolicyAndClosedState",
       "step11_file": "v2_transport_settings_test.go",
       "current_file": "v2_transport_settings_test.go",
-      "sha256": "2d78eb9ee25a9a391b1a07b6a174bd8e01dec917a17e066077260c37b5955f74"
+      "sha256": "1bad4f46fd5c71d0a17edda230e38bf56b2da752a8e20e863f140dfec70bd36d"
     },
     {
       "declaration": "TestV2ResolvedContactsOwnIndependentSetupDeadlines",
@@ -5388,19 +5388,19 @@
       "declaration": "TestV2TypedRepairTriggersHonorPolicyDelayAndStop",
       "step11_file": "v2_transport_settings_test.go",
       "current_file": "v2_transport_settings_test.go",
-      "sha256": "f2010b4457a318dcb4c63ad9bda39a8c210d4251498bbc2b6064068b09a32df0"
+      "sha256": "fe1428ff9168e65fd276517ae1d6c15d84b900752548532662dd4a6962b09d98"
     },
     {
       "declaration": "TestV2TypedSelectionWaitsForReservedCapacity",
       "step11_file": "v2_transport_settings_test.go",
       "current_file": "v2_transport_settings_test.go",
-      "sha256": "a4f7010707d541eaa3d5cb70c25aa26ba5ce24d0fb1c3eb829e688595a2b4fb8"
+      "sha256": "84d6be4a1dc4961d67bfebd991072fc13ca30a51863b912715a018f9956be6ca"
     },
     {
       "declaration": "TestV2OpeningEndpointGenerationAndClosedPoolFence",
       "step11_file": "v2_transport_settings_test.go",
       "current_file": "v2_transport_settings_test.go",
-      "sha256": "d343f2da69a7c7bc5609a40e9420da25a11f7ba41db8a94406d82684c0e1755e"
+      "sha256": "e757a42e2da9d02d9d376eafde9157e7573c9a29d7e9b255ab6d52d6f9948523"
     },
     {
       "declaration": "TestV2ReservedPreferredShardUsesAllowedFreeAlternative",
@@ -5412,7 +5412,7 @@
       "declaration": "TestV2TLSIdentityUsesLogicalHostAcrossTranslatedEndpoint",
       "step11_file": "v2_transport_settings_test.go",
       "current_file": "v2_transport_settings_test.go",
-      "sha256": "021ae8caeefd4544459dc302f7613e28751eb7875f11c3b69b3fac2f703d5a10"
+      "sha256": "55b1ac8ff06aa9177d123d255e440188b22e98714ca6f0e851c67b93619d90f6"
     },
     {
       "declaration": "TestTypedRequestMatchesLegacyWireAndKeepsPayload",
@@ -5466,7 +5466,7 @@
       "declaration": "TestTypedFatalCloseInterruptsBlockedWriter",
       "step11_file": "v2_transport_test.go",
       "current_file": "v2_transport_test.go",
-      "sha256": "52be99c2fd876d2585c0f3a5fd9eb5304d4c6a6a3caead2b397286ad60285266"
+      "sha256": "8f5ce650f235b191c2860459439b7cba8cda34b8cf22b670856cdc523aea4f13"
     },
     {
       "declaration": "TestTypedServerErrorKeepsMetadataAndUnwraps",

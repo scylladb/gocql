@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
 	pool "github.com/scylladb/gocql/v2/internal/pool"
+	implSettings "github.com/scylladb/gocql/v2/internal/settings"
 	implTransport "github.com/scylladb/gocql/v2/internal/transport"
 	"net"
 	"time"
@@ -31,7 +32,7 @@ func WrapTLS(a0 context.Context, a1 net.Conn, a2 string, a3 *tls.Config) (*Diale
 	return implTransport.WrapTLS(a0, a1, a2, a3)
 }
 func applyV2SocketOptions(a0 net.Conn, a1 Config, a2 string) error {
-	return implTransport.InternalApplyV2SocketOptions(a0, a1, a2)
+	return implTransport.InternalApplyV2SocketOptions(a0, implSettings.InternalConnectivityConfig(a1), a2)
 }
 func cloneV2DialTarget(a0 DialTarget) DialTarget { return implTransport.InternalCloneV2DialTarget(a0) }
 func cloneV2HostSnapshot(a0 HostSnapshot) HostSnapshot {

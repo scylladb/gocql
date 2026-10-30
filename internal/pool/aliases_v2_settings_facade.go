@@ -4,9 +4,9 @@
 package pool
 
 import (
+	implSettings "github.com/scylladb/gocql/v2/internal/connectivity"
 	implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
 	logging "github.com/scylladb/gocql/v2/internal/logging"
-	implSettings "github.com/scylladb/gocql/v2/internal/settings"
 )
 
 type Config = implSettings.Config

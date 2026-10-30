@@ -7,6 +7,7 @@ import implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
 
 import (
 	"context"
+	implSettings "github.com/scylladb/gocql/v2/internal/settings"
 
 	lz4 "github.com/scylladb/gocql/lz4"
 
@@ -97,7 +98,7 @@ func InternalConnectCluster(ctx context.Context, config Config, initialize func(
 			return err == nil && config.HostFilter(snapshot)
 		})
 	}
-	hostDialer := &v2TLSHostDialer{InternalConfig: config}
+	hostDialer := &v2TLSHostDialer{InternalConfig: implSettings.InternalConnectivityConfig(config)}
 	legacy.HostDialer = hostDialer
 	var typedSession *Session
 	if path, _ := unixContact(config); path != "" {

@@ -1,0 +1,244 @@
+{
+  "prior_commit": "657debe12ebb211394b6b60ec1819eb9f466709a",
+  "current_source": "step12-lower-settings-source.json",
+  "preservation": [
+    {
+      "old_file": "internal/settings/v2_dial.go",
+      "old_name": "InternalCloneV2TLSConfig",
+      "new_file": "internal/connectivity/dial.go",
+      "new_name": "CloneTLSConfig",
+      "same_exact_function_body": true,
+      "body_sha256": "4f821e007f775b0acded35e112f5f402e64a2482e8920db4750056ba0b0f78f8",
+      "body": "{\n\tif source == nil {\n\t\treturn nil\n\t}\n\tc := source.Clone()\n\tif source.RootCAs != nil {\n\t\tc.RootCAs = source.RootCAs.Clone()\n\t}\n\tif source.ClientCAs != nil {\n\t\tc.ClientCAs = source.ClientCAs.Clone()\n\t}\n\tc.NextProtos = slices.Clone(source.NextProtos)\n\tc.CipherSuites = slices.Clone(source.CipherSuites)\n\tc.CurvePreferences = slices.Clone(source.CurvePreferences)\n\tcloneCert := func(v tls.Certificate) tls.Certificate {\n\t\tv.Certificate = slices.Clone(v.Certificate)\n\t\tfor i, b := range v.Certificate {\n\t\t\tv.Certificate[i] = slices.Clone(b)\n\t\t}\n\t\tv.OCSPStaple = slices.Clone(v.OCSPStaple)\n\t\tv.SignedCertificateTimestamps = slices.Clone(v.SignedCertificateTimestamps)\n\t\tfor i, b := range v.SignedCertificateTimestamps {\n\t\t\tv.SignedCertificateTimestamps[i] = slices.Clone(b)\n\t\t}\n\t\tv.SupportedSignatureAlgorithms = slices.Clone(v.SupportedSignatureAlgorithms)\n\t\tif v.Leaf != nil && len(v.Leaf.Raw) > 0 {\n\t\t\tif leaf, err := x509.ParseCertificate(slices.Clone(v.Leaf.Raw)); err == nil {\n\t\t\t\tv.Leaf = leaf\n\t\t\t}\n\t\t}\n\t\treturn v\n\t}\n\tc.Certificates = slices.Clone(source.Certificates)\n\tfor i, v := range c.Certificates {\n\t\tc.Certificates[i] = cloneCert(v)\n\t}\n\tif source.NameToCertificate != nil {\n\t\tc.NameToCertificate = make(map[string]*tls.Certificate, len(source.NameToCertificate))\n\t\tfor n, v := range source.NameToCertificate {\n\t\t\tif v != nil {\n\t\t\t\tcopy := cloneCert(*v)\n\t\t\t\tc.NameToCertificate[n] = &copy\n\t\t\t}\n\t\t}\n\t}\n\treturn c\n}"
+    },
+    {
+      "old_file": "internal/settings/v2_dial.go",
+      "old_name": "InternalUnixContact",
+      "new_file": "internal/connectivity/dial.go",
+      "new_name": "UnixContact",
+      "same_exact_function_body": true,
+      "body_sha256": "9eb91e15e6ca300b13a41f62097b66ac0d00fdac6b03f1742344bcc4013f4e80",
+      "body": "{\n\tpath := \"\"\n\tfor _, point := range config.ContactPoints {\n\t\tif strings.HasPrefix(point, \"unix:\") || filepath.IsAbs(point) {\n\t\t\tif len(config.ContactPoints) != 1 {\n\t\t\t\treturn \"\", typeValidation(\"contact points\", \"Unix and TCP contacts cannot be mixed\")\n\t\t\t}\n\t\t\tpath = strings.TrimPrefix(point, \"unix:\")\n\t\t\tif !filepath.IsAbs(path) {\n\t\t\t\treturn \"\", typeValidation(\"Unix contact point\", \"socket path must be absolute\")\n\t\t\t}\n\t\t}\n\t}\n\tif path != \"\" {\n\t\tif config.Metadata.InitialDiscovery {\n\t\t\treturn \"\", &UnsupportedSettingError{Setting: \"Unix discovery\", Reason: \"one local socket requires InitialDiscovery=false\"}\n\t\t}\n\t\tif config.Protocol != 3 {\n\t\t\treturn \"\", &UnsupportedSettingError{Setting: \"Unix protocol\", Reason: \"explicit native protocol 3 is required\"}\n\t\t}\n\t\tif config.TLS != nil || config.TLSForHost != nil {\n\t\t\treturn \"\", &UnsupportedSettingError{Setting: \"Unix TLS\", Reason: \"maintenance sockets carry plaintext native protocol\"}\n\t\t}\n\t\tif config.LocalAddress.IsValid() {\n\t\t\treturn \"\", &UnsupportedSettingError{Setting: \"Unix local address\", Reason: \"source address/port selection requires TCP\"}\n\t\t}\n\t}\n\treturn path, nil\n}"
+    },
+    {
+      "old_file": "internal/settings/v2_config.go",
+      "old_name": "PoolOptions",
+      "new_file": "internal/connectivity/settings.go",
+      "new_name": "PoolOptions",
+      "same_declaration_tokens": true,
+      "token_sha256": "00a7f037cafe53ffd2e72521d8309d62b28b2ca000e8f8f5f65abbcae4cba11b",
+      "old_source": "type PoolOptions struct {\n\tConnectionsPerHost, ConnectionsPerShard int\n\tMaxExcessPerShard                       int\n\tMaxRequestsPerConnection                int\n\tMaxOrphanedStreams                      int\n\tShardAwarePort                          bool\n\tSourcePortStart, SourcePortEnd          uint16\n}",
+      "new_source": "type PoolOptions struct {\n\tConnectionsPerHost, ConnectionsPerShard int\n\tMaxExcessPerShard                       int\n\tMaxRequestsPerConnection                int\n\tMaxOrphanedStreams                      int\n\tShardAwarePort                          bool\n\tSourcePortStart, SourcePortEnd          uint16\n}"
+    },
+    {
+      "old_file": "internal/settings/v2_config.go",
+      "old_name": "ReconnectPolicy",
+      "new_file": "internal/connectivity/settings.go",
+      "new_name": "ReconnectPolicy",
+      "same_declaration_tokens": true,
+      "token_sha256": "92f4e18285045b9e73d9d08995260d15b3684ad034ee21bddf9588d6a6cc3945",
+      "old_source": "type ReconnectPolicy interface {\n\tDelay(attempt int) (time.Duration, bool)\n}",
+      "new_source": "type ReconnectPolicy interface {\n\tDelay(attempt int) (time.Duration, bool)\n}"
+    },
+    {
+      "old_file": "internal/settings/v2_config.go",
+      "old_name": "ProtocolLimits",
+      "new_file": "internal/connectivity/settings.go",
+      "new_name": "ProtocolLimits",
+      "same_declaration_tokens": true,
+      "token_sha256": "1e92693f82a10416e8f6eeb0f5fd717d80e44d5e8639c69dc82389604b09f9de",
+      "old_source": "type ProtocolLimits struct {\n\tMaxFrameBytes, MaxDecompressedBytes int64\n\tMaxMetadataDepth                    int\n\tMaxPagingStates                     int\n\tMaxPagingStateBytes                 int64\n}",
+      "new_source": "type ProtocolLimits struct {\n\tMaxFrameBytes, MaxDecompressedBytes int64\n\tMaxMetadataDepth                    int\n\tMaxPagingStates                     int\n\tMaxPagingStateBytes                 int64\n}"
+    },
+    {
+      "old_file": "internal/settings/v2_config.go",
+      "old_name": "ClientRoutesOptions",
+      "new_file": "internal/connectivity/settings.go",
+      "new_name": "ClientRoutesOptions",
+      "same_declaration_tokens": true,
+      "token_sha256": "ee3c4d82a456e42d05315abfb36e68f9b676745b17650e8dd0a0dcc6261cfbd0",
+      "old_source": "type ClientRoutesOptions struct {\n\tConnectionIDs     []string\n\tHostnameOverrides map[string]string\n\tTLS               bool\n\tSNIProxyAddress   string\n}",
+      "new_source": "type ClientRoutesOptions struct {\n\tConnectionIDs     []string\n\tHostnameOverrides map[string]string\n\tTLS               bool\n\tSNIProxyAddress   string\n}"
+    },
+    {
+      "old_file": "internal/settings/v2_auth.go",
+      "old_name": "AuthProvider",
+      "new_file": "internal/connectivity/settings.go",
+      "new_name": "AuthProvider",
+      "same_declaration_tokens": true,
+      "token_sha256": "274e2475af5b1eaa357407a362bb89bf5aa165069cbecb2ae308e9c22205a6e6",
+      "old_source": "type AuthProvider interface {\n\tStart(context.Context, HostSnapshot, string) (AuthExchange, Nullable[[]byte], error)\n}",
+      "new_source": "type AuthProvider interface {\n\tStart(context.Context, HostSnapshot, string) (AuthExchange, Nullable[[]byte], error)\n}"
+    },
+    {
+      "old_file": "internal/settings/v2_auth.go",
+      "old_name": "AuthExchange",
+      "new_file": "internal/connectivity/settings.go",
+      "new_name": "AuthExchange",
+      "same_declaration_tokens": true,
+      "token_sha256": "ea79d826d9265ae89532ed57fc23893486bac3ad9584c18c78bdf1a3957816b4",
+      "old_source": "type AuthExchange interface {\n\tChallenge(context.Context, Nullable[Bytes]) (Nullable[[]byte], error)\n\tSuccess(context.Context, Nullable[Bytes]) error\n\tClose()\n}",
+      "new_source": "type AuthExchange interface {\n\tChallenge(context.Context, Nullable[Bytes]) (Nullable[[]byte], error)\n\tSuccess(context.Context, Nullable[Bytes]) error\n\tClose()\n}"
+    },
+    {
+      "old_file": "internal/settings/policies.go",
+      "old_name": "ConvictionPolicy",
+      "new_file": "internal/connectivity/settings.go",
+      "new_name": "ConvictionPolicy",
+      "same_declaration_tokens": true,
+      "token_sha256": "ce3cae55a16640c0b352382e0f3d0d661248263899d115531ed19252021d98a4",
+      "old_source": "type ConvictionPolicy interface {\n\t// Implementations should return `true` if the host should be convicted, `false` otherwise.\n\tAddFailure(error error, host *implEndpoint.HostInfo) bool\n\t// Implementations should clear out any convictions or state regarding the host.\n\tReset(host *implEndpoint.HostInfo)\n}",
+      "new_source": "type ConvictionPolicy interface {\n\t// Implementations should return `true` if the host should be convicted, `false` otherwise.\n\tAddFailure(error error, host *implEndpoint.HostInfo) bool\n\t// Implementations should clear out any convictions or state regarding the host.\n\tReset(host *implEndpoint.HostInfo)\n}"
+    }
+  ],
+  "unchanged_full_settings_declaration_tokens": [
+    "Config",
+    "MetadataOptions",
+    "MetadataMode"
+  ],
+  "audit_negative_control": {
+    "prior_direct_audit_findings": [],
+    "actual_prohibited_transitive_paths": [
+      [
+        "github.com/scylladb/gocql/v2/internal/transport",
+        "github.com/scylladb/gocql/v2/internal/settings",
+        "github.com/scylladb/gocql/v2/internal/routing",
+        "github.com/scylladb/gocql/v2/internal/metadata"
+      ],
+      [
+        "github.com/scylladb/gocql/v2/internal/pool",
+        "github.com/scylladb/gocql/v2/internal/settings",
+        "github.com/scylladb/gocql/v2/internal/routing",
+        "github.com/scylladb/gocql/v2/internal/metadata"
+      ]
+    ],
+    "current_transitive_findings": []
+  },
+  "projection": "Before any workers/pools publish, settings projects validated immutable physical settings into one lower snapshot shared by transport and pool. No request/result payload fields or conversion are present. Full profile/routing/metadata policy remains above connectivity.",
+  "regressions": "TestTypedPoolSnapshotCapturedBeforePublication still checks default, host and shard picker targets after caller scalar mutation; TestUnsetTypedConfigurationPreservesLegacyPicker still checks unset behavior.",
+  "test_fixture_preservation": {
+    "count": 16,
+    "rewrite": "Only explicit physical settings projections at private transport fixture assignments; all other source bytes/assertions are identical. The constructor test separately preserves actual picker targets/default/unset behavior while checking one shared lower snapshot.",
+    "tests": [
+      {
+        "file": "v2_config_test.go",
+        "name": "TestV2RuntimeDNSContextAndDialHost",
+        "prior_sha256": "b6fce80305dd82c6616e98a271fef5d89db655d057138152ca405240d29483de",
+        "current_sha256": "a90167bb57a31a5c6617288975a94c7532990bc5ba3a391a0c288a6c7f7f915a",
+        "same_exact_source_after_removing_settings_projection": true
+      },
+      {
+        "file": "v2_pool_limits_test.go",
+        "name": "TestV2HugePoolTargetUsesBoundedDialWorkers",
+        "prior_sha256": "c7597b52b72e08a68f1dbbe9082de5cb357785594af64d68e8504c9ea5d842d3",
+        "current_sha256": "ca04077543fef5d1c07a4c23d509f4973f95413c43ed5b8dc158cd99590ec365",
+        "same_exact_source_after_removing_settings_projection": true
+      },
+      {
+        "file": "v2_routing_step06_test.go",
+        "name": "TestStep06StrictStreamingReservationUsesExistingCapacity",
+        "prior_sha256": "60e690a761f73f720b4e319997f13330f642cd14b0bee590a81bd07cd5720cda",
+        "current_sha256": "9d3630e967d52b08198e97b84e198aa8d1058a9ed079e53e7aacdaa33b85dd0f",
+        "same_exact_source_after_removing_settings_projection": true
+      },
+      {
+        "file": "v2_transport_pool_test.go",
+        "name": "TestV2OrphanBudgetUsesExactCapacity",
+        "prior_sha256": "95e6e6f48f4356a25176664ce1cbee005849f45dedfecd737d361fc72144486d",
+        "current_sha256": "1972cbea9d4aef22e55478c9b5b1fb7fec2cad31f23d7d8e779837981ed9e60c",
+        "same_exact_source_after_removing_settings_projection": true
+      },
+      {
+        "file": "v2_transport_pool_test.go",
+        "name": "TestV2UnsupportedCompressionRejectedBeforeStartupOrQuery",
+        "prior_sha256": "56879162917abb3b7591e4aa9a764e5b29b4cd1cf959d827156cfef4cbe37334",
+        "current_sha256": "4bdb537156b848a15fba6873478e9a5300dff4db67c644eb92c99470d8142374",
+        "same_exact_source_after_removing_settings_projection": true
+      },
+      {
+        "file": "v2_transport_settings_test.go",
+        "name": "TestV2TLSConfigurationDetachAndHookContext",
+        "prior_sha256": "0ac17cc0386e25e78dd3573b814bb0b707750d07e2779641b74340874d520920",
+        "current_sha256": "3954d440149551828e281a5051f5da6d40517819ba2b59989f44677ed4a80d86",
+        "same_exact_source_after_removing_settings_projection": true
+      },
+      {
+        "file": "v2_transport_settings_test.go",
+        "name": "TestV2TLSShardDialUsesSelectedSourceAndHook",
+        "prior_sha256": "b683d2463dade6bcb5d2e0382574820784caa32760d8f88403873550cea03d4d",
+        "current_sha256": "fed155918a254b9b128a7cd52d384349dbe6225d3659ab98cca41335d4476ebb",
+        "same_exact_source_after_removing_settings_projection": true
+      },
+      {
+        "file": "v2_transport_settings_test.go",
+        "name": "TestV2SourcePortExhaustionAndNATFallback",
+        "prior_sha256": "31134e627f374a07c4c851ba9243a35a13c14ccf6cf770d0981d389230653da6",
+        "current_sha256": "7b584833a52836c5c8627868fc9fec74b3e518e3eaa8c4b11d5f4b8b2beb3397",
+        "same_exact_source_after_removing_settings_projection": true
+      },
+      {
+        "file": "v2_transport_settings_test.go",
+        "name": "TestV2UnixTargetAndUnsupportedSettings",
+        "prior_sha256": "cbb41bc49c1e728b6d474ad36ee03927fecb4759654dce9c8e1498a6d3a85bd3",
+        "current_sha256": "414600e062321af69d3ad4860852dc29effc2314d505dfbf61aebac50eaa7046",
+        "same_exact_source_after_removing_settings_projection": true
+      },
+      {
+        "file": "v2_transport_settings_test.go",
+        "name": "TestV2TypedKeepaliveDisabledAndBlockedWriteTimeout",
+        "prior_sha256": "18cb4ab62fc9304bffd11caa5a6e8ea555704ebbcedd3c593d0dfd78a568e0b4",
+        "current_sha256": "9b32dc82cee4f075cd8d0b4831afc8d4a496b3cfc1eda738377d84592a1b69d5",
+        "same_exact_source_after_removing_settings_projection": true
+      },
+      {
+        "file": "v2_transport_settings_test.go",
+        "name": "TestV2ConnectionSetupDeadlineIncludesDNSAndTranslation",
+        "prior_sha256": "65c6a50a06bb259c7c1f5637e4981523e40cc5e9bd52f27f97cd5d5f74142473",
+        "current_sha256": "970b7d9a1e8c7565d369fcffb323878707f53aab001d7061ec7d98c5f90990ee",
+        "same_exact_source_after_removing_settings_projection": true
+      },
+      {
+        "file": "v2_transport_settings_test.go",
+        "name": "TestV2PoolRepairPolicyAndClosedState",
+        "prior_sha256": "2d78eb9ee25a9a391b1a07b6a174bd8e01dec917a17e066077260c37b5955f74",
+        "current_sha256": "1bad4f46fd5c71d0a17edda230e38bf56b2da752a8e20e863f140dfec70bd36d",
+        "same_exact_source_after_removing_settings_projection": true
+      },
+      {
+        "file": "v2_transport_settings_test.go",
+        "name": "TestV2TypedRepairTriggersHonorPolicyDelayAndStop",
+        "prior_sha256": "f2010b4457a318dcb4c63ad9bda39a8c210d4251498bbc2b6064068b09a32df0",
+        "current_sha256": "fe1428ff9168e65fd276517ae1d6c15d84b900752548532662dd4a6962b09d98",
+        "same_exact_source_after_removing_settings_projection": true
+      },
+      {
+        "file": "v2_transport_settings_test.go",
+        "name": "TestV2TypedSelectionWaitsForReservedCapacity",
+        "prior_sha256": "a4f7010707d541eaa3d5cb70c25aa26ba5ce24d0fb1c3eb829e688595a2b4fb8",
+        "current_sha256": "84d6be4a1dc4961d67bfebd991072fc13ca30a51863b912715a018f9956be6ca",
+        "same_exact_source_after_removing_settings_projection": true
+      },
+      {
+        "file": "v2_transport_settings_test.go",
+        "name": "TestV2OpeningEndpointGenerationAndClosedPoolFence",
+        "prior_sha256": "d343f2da69a7c7bc5609a40e9420da25a11f7ba41db8a94406d82684c0e1755e",
+        "current_sha256": "e757a42e2da9d02d9d376eafde9157e7573c9a29d7e9b255ab6d52d6f9948523",
+        "same_exact_source_after_removing_settings_projection": true
+      },
+      {
+        "file": "v2_transport_settings_test.go",
+        "name": "TestV2TLSIdentityUsesLogicalHostAcrossTranslatedEndpoint",
+        "prior_sha256": "021ae8caeefd4544459dc302f7613e28751eb7875f11c3b69b3fac2f703d5a10",
+        "current_sha256": "55b1ac8ff06aa9177d123d255e440188b22e98714ca6f0e851c67b93619d90f6",
+        "same_exact_source_after_removing_settings_projection": true
+      }
+    ]
+  },
+  "test_disposition_hash_refresh": {
+    "name": "TestTypedFatalCloseInterruptsBlockedWriter",
+    "old_inventory_sha256": "52be99c2fd876d2585c0f3a5fd9eb5304d4c6a6a3caead2b397286ad60285266",
+    "prior_and_current_actual_sha256": "8f5ce650f235b191c2860459439b7cba8cda34b8cf22b670856cdc523aea4f13",
+    "runtime_source_unchanged": true,
+    "reason": "Refresh a stale inventory-only hash while regenerating all957 current hashes; the unchanged actual prior/current declaration is retained by both source manifests."
+  }
+}

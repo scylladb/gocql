@@ -109,14 +109,14 @@ func TestV2TLSConfigurationDetachAndHookContext(t *testing.T) {
 		}
 		return nil, nil
 	}
-	d := v2TLSHostDialer{InternalConfig: config}
+	d := v2TLSHostDialer{InternalConfig: connectivityConfig(config)}
 	snapshot := HostSnapshot{Tokens: []int64{7}}
 	inherited, err := d.InternalSelectedTLS(context.Background(), snapshot)
 	if err != nil || inherited.ServerName != "transport.test" || snapshot.Tokens[0] != 7 {
 		t.Fatal("inheritance/host isolation", err)
 	}
 	config.TLS = nil
-	d.InternalConfig = config
+	d.InternalConfig = connectivityConfig(config)
 	if _, err = d.InternalSelectedTLS(context.Background(), snapshot); err == nil {
 		t.Fatal("TLS hook silently disabled TLS")
 	}
@@ -169,7 +169,7 @@ func TestV2TLSShardDialUsesSelectedSourceAndHook(t *testing.T) {
 		selected = target
 		return (DefaultDialer{}).DialContext(ctx, target)
 	}
-	d := v2TLSHostDialer{InternalConfig: config}
+	d := v2TLSHostDialer{InternalConfig: connectivityConfig(config)}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	conn, err := d.DialShard(ctx, host, 1, 2)
@@ -212,7 +212,7 @@ func TestV2SourcePortExhaustionAndNATFallback(t *testing.T) {
 		b.Close()
 		return a, nil
 	}
-	result, err := (&v2TLSHostDialer{InternalConfig: config}).DialShard(context.Background(), host, 1, 2)
+	result, err := (&v2TLSHostDialer{InternalConfig: connectivityConfig(config)}).DialShard(context.Background(), host, 1, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,7 +295,7 @@ func TestV2UnixTargetAndUnsupportedSettings(t *testing.T) {
 		implEndpoint.HostInfoData(opaqueStorageValuexxxxxx).InternalPort = 9042
 		return opaqueStorageValuexxxxxx
 	}()
-	c, err := (&v2TLSHostDialer{InternalConfig: config}).DialHost(context.Background(), h)
+	c, err := (&v2TLSHostDialer{InternalConfig: connectivityConfig(config)}).DialHost(context.Background(), h)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -316,7 +316,7 @@ func TestV2TypedKeepaliveDisabledAndBlockedWriteTimeout(t *testing.T) {
 	c, server := typedTestConn(t, 4, nil)
 	config := DefaultConfig("localhost")
 	config.KeepaliveInterval = 0
-	c.InternalCfg = &driverConnConfig{TypedConfig: &config}
+	c.InternalCfg = &driverConnConfig{TypedConfig: connectivityConfigPointer(config)}
 	done := make(chan struct{})
 	go func() { c.InternalHeartBeat(c.InternalCtx); close(done) }()
 	select {
@@ -328,7 +328,7 @@ func TestV2TypedKeepaliveDisabledAndBlockedWriteTimeout(t *testing.T) {
 	c, _ = typedTestConn(t, 4, nil)
 	config.KeepaliveInterval = time.Millisecond
 	config.KeepaliveTimeout = 10 * time.Millisecond
-	c.InternalCfg = &driverConnConfig{TypedConfig: &config}
+	c.InternalCfg = &driverConnConfig{TypedConfig: connectivityConfigPointer(config)}
 	done = make(chan struct{})
 	go func() { c.InternalHeartBeat(c.InternalCtx); close(done) }()
 	select {
@@ -439,7 +439,7 @@ func TestV2ConnectionSetupDeadlineIncludesDNSAndTranslation(t *testing.T) {
 		return opaqueStorageValuexxxxxxxx
 	}()
 	implCluster.SessionData(session).InternalCfg.DNSResolver = resolver
-	cfg := &driverConnConfig{ProtoVersion: 4, ConnectTimeout: config.ConnectTimeout, HostDialer: &v2TLSHostDialer{InternalConfig: config}, TypedConfig: &config}
+	cfg := &driverConnConfig{ProtoVersion: 4, ConnectTimeout: config.ConnectTimeout, HostDialer: &v2TLSHostDialer{InternalConfig: connectivityConfig(config)}, TypedConfig: connectivityConfigPointer(config)}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
@@ -542,7 +542,7 @@ func TestV2PoolRepairPolicyAndClosedState(t *testing.T) {
 		opaqueStorageValuexxxxxxxxx := new(Session)
 		implCluster.SessionData(opaqueStorageValuexxxxxxxxx).InternalCtx = ctx
 		implCluster.SessionData(opaqueStorageValuexxxxxxxxx).InternalLogger = nopLogger{}
-		implCluster.SessionData(opaqueStorageValuexxxxxxxxx).InternalConnCfg = &driverConnConfig{TypedConfig: &config}
+		implCluster.SessionData(opaqueStorageValuexxxxxxxxx).InternalConnCfg = &driverConnConfig{TypedConfig: connectivityConfigPointer(config)}
 		return opaqueStorageValuexxxxxxxxx
 	}()
 	pool := newHostConnPool(s, func() *HostInfo {
@@ -643,7 +643,7 @@ func TestV2TypedRepairTriggersHonorPolicyDelayAndStop(t *testing.T) {
 				opaqueStorageValuexxxxxxxxxxx := new(Session)
 				implCluster.SessionData(opaqueStorageValuexxxxxxxxxxx).InternalCtx = ctx
 				implCluster.SessionData(opaqueStorageValuexxxxxxxxxxx).InternalLogger = nopLogger{}
-				implCluster.SessionData(opaqueStorageValuexxxxxxxxxxx).InternalConnCfg = &driverConnConfig{TypedConfig: &config, HostDialer: step04CountingHostDialer{&dials}}
+				implCluster.SessionData(opaqueStorageValuexxxxxxxxxxx).InternalConnCfg = &driverConnConfig{TypedConfig: connectivityConfigPointer(config), HostDialer: step04CountingHostDialer{&dials}}
 				return opaqueStorageValuexxxxxxxxxxx
 			}()
 			implCluster.SessionData(s).InternalCfg.ReconnectionPolicy = &NoReconnectionPolicy{}
@@ -693,8 +693,8 @@ func TestV2TypedSelectionWaitsForReservedCapacity(t *testing.T) {
 	pool := implCluster.SessionData(s).InternalPool.InternalHostConnPools[implEndpoint.InternalHostInfoHostUUID(c.InternalHost)]
 	config := DefaultConfig("localhost")
 	config.Pool.ConnectionsPerHost = 1
-	implCluster.SessionData(s).InternalConnCfg = &driverConnConfig{TypedConfig: &config}
-	c.InternalCfg = &driverConnConfig{TypedConfig: &config}
+	implCluster.SessionData(s).InternalConnCfg = &driverConnConfig{TypedConfig: connectivityConfigPointer(config)}
+	c.InternalCfg = &driverConnConfig{TypedConfig: connectivityConfigPointer(config)}
 	pool.InternalServices = newPoolServices(s)
 	pool.InternalRepairCtx, pool.InternalRepairCancel = context.WithCancel(c.InternalCtx)
 	defer pool.InternalRepairCancel()
@@ -784,7 +784,7 @@ func TestV2OpeningEndpointGenerationAndClosedPoolFence(t *testing.T) {
 				return opaqueStorageValuexxxxxxxxxxxxxx
 			}()
 			implCluster.SessionData(s).InternalCfg.ReconnectionPolicy = &NoReconnectionPolicy{}
-			implCluster.SessionData(s).InternalConnCfg = &driverConnConfig{TypedConfig: &config, ProtoVersion: 4, CQLVersion: "3.0.0", ConnectTimeout: time.Second, HostDialer: &v2TLSHostDialer{InternalConfig: config}, Logger: nopLogger{}}
+			implCluster.SessionData(s).InternalConnCfg = &driverConnConfig{TypedConfig: connectivityConfigPointer(config), ProtoVersion: 4, CQLVersion: "3.0.0", ConnectTimeout: time.Second, HostDialer: &v2TLSHostDialer{InternalConfig: connectivityConfig(config)}, Logger: nopLogger{}}
 			pool := newHostConnPool(s, host, 1, "")
 			defer pool.Close()
 			serverDone := make(chan struct{})
@@ -892,7 +892,7 @@ func TestV2TLSIdentityUsesLogicalHostAcrossTranslatedEndpoint(t *testing.T) {
 	config.TLS = configTLS
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	conn, err := (&v2TLSHostDialer{InternalConfig: config}).DialHost(ctx, host)
+	conn, err := (&v2TLSHostDialer{InternalConfig: connectivityConfig(config)}).DialHost(ctx, host)
 	if err != nil {
 		t.Fatal(err)
 	}

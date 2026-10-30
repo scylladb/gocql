@@ -12566,7 +12566,7 @@
       "disposition": "Actual implementation declaration relocated once",
       "matches": [
         {
-          "file": "internal/settings/policies.go",
+          "file": "internal/connectivity/settings.go",
           "name": "ConvictionPolicy",
           "receiver": "",
           "sha256": "18a98ca1de1dfcdaf0b158f2ec2fff653ff427c17436801f4d1b1d2f7b0abfa1"
@@ -15401,7 +15401,7 @@
           "file": "internal/cluster/session.go",
           "name": "newSessionCommonWithRuntime",
           "receiver": "",
-          "sha256": "4fe87892545d4eec97f9a4b3136f30ee3cc87f21decb7ef7fc9214974d976d37"
+          "sha256": "ffb6510bdbfbba2e2066005e094df80b391e5dae2e3487c01941d2e166882c09"
         }
       ]
     },
@@ -17254,7 +17254,7 @@
       "disposition": "Actual implementation declaration relocated once",
       "matches": [
         {
-          "file": "internal/settings/v2_auth.go",
+          "file": "internal/connectivity/settings.go",
           "name": "AuthProvider",
           "receiver": "",
           "sha256": "2230b1cbc1eac887b85fce793e0220373608811206e1cd759eb37731d61058ac"
@@ -17270,7 +17270,7 @@
       "disposition": "Actual implementation declaration relocated once",
       "matches": [
         {
-          "file": "internal/settings/v2_auth.go",
+          "file": "internal/connectivity/settings.go",
           "name": "AuthExchange",
           "receiver": "",
           "sha256": "a499fed45b2eb916815d8b6b6a55c74e89059486da595478b8a30d523adba3d9"
@@ -18086,7 +18086,7 @@
       "disposition": "Actual implementation declaration relocated once",
       "matches": [
         {
-          "file": "internal/settings/v2_config.go",
+          "file": "internal/connectivity/settings.go",
           "name": "PoolOptions",
           "receiver": "",
           "sha256": "73020811f248b0b97510ab0f5e34b1a43112922d16850b0bb583034cffe3b3a4"
@@ -18102,7 +18102,7 @@
       "disposition": "Actual implementation declaration relocated once",
       "matches": [
         {
-          "file": "internal/settings/v2_config.go",
+          "file": "internal/connectivity/settings.go",
           "name": "ReconnectPolicy",
           "receiver": "",
           "sha256": "b5f2eeb6b734cd510b76e684af3c802fed6959e617e06998cf9e1a8e37b7b6ad"
@@ -18118,7 +18118,7 @@
       "disposition": "Actual implementation declaration relocated once",
       "matches": [
         {
-          "file": "internal/settings/v2_config.go",
+          "file": "internal/connectivity/settings.go",
           "name": "ProtocolLimits",
           "receiver": "",
           "sha256": "c066dad9189875eabd7e69d11c916d6bc27ab39c2a4d607a7c85f15cedebebf5"
@@ -18230,7 +18230,7 @@
       "disposition": "Actual implementation declaration relocated once",
       "matches": [
         {
-          "file": "internal/settings/v2_config.go",
+          "file": "internal/connectivity/settings.go",
           "name": "ClientRoutesOptions",
           "receiver": "",
           "sha256": "a8a29f014d7a2948561f50437664f29702913c0a78c0b27f5f62b64d60a72e2e"
@@ -19091,13 +19091,13 @@
       "original_receiver": "",
       "kind": "func",
       "original_sha256": "78632d529f57408dddcbdf9025583b7f1c35fa8a14cfa38b1dd53db51bdd8709",
-      "disposition": "Actual implementation declaration relocated once",
+      "disposition": "The unchanged trust/certificate snapshot implementation belongs below transport; settings and root retain thin delegating facades.",
       "matches": [
         {
-          "file": "internal/settings/v2_dial.go",
-          "name": "InternalCloneV2TLSConfig",
+          "file": "internal/connectivity/dial.go",
+          "name": "CloneTLSConfig",
           "receiver": "",
-          "sha256": "1a6efbdec44a49a593eadd45e63e481ef2e3a051662f99be32ccd68eebb9ebc7"
+          "sha256": "1c630e0286e2899afbced3d628dd1e0bc7c876257dedd2187bd7194f9fe59e5e"
         }
       ]
     },
@@ -19139,13 +19139,13 @@
       "original_receiver": "",
       "kind": "func",
       "original_sha256": "68ce4d48d88ad2a0199aa8ca025ebb23db63327235e18838af88c289e9a06c0e",
-      "disposition": "Actual implementation declaration relocated once",
+      "disposition": "The unchanged physical Unix endpoint validation consumes only lower settings; higher settings projects its validated descriptors.",
       "matches": [
         {
-          "file": "internal/settings/v2_dial.go",
-          "name": "InternalUnixContact",
+          "file": "internal/connectivity/dial.go",
+          "name": "UnixContact",
           "receiver": "",
-          "sha256": "306a5f2769c2405ef43e0cf9fe6b760cb9a4d0d3f0336ebf2b84169f56d4cbc2"
+          "sha256": "a3f24601add15a9260b44b0c61ded8ad30060e7a5be263eb6467921848aa7822"
         }
       ]
     },
@@ -20745,7 +20745,7 @@
           "file": "internal/cluster/v2_metadata.go",
           "name": "InternalSnapshotV2Host",
           "receiver": "",
-          "sha256": "d209af6035606964347af3c774f2321fcc7ee1093cbe982d1ca80859f677ade2"
+          "sha256": "8c78f73b069e31ef52cd0c11c4cfc123292803e7698f979512a1458745e6f918"
         }
       ]
     },
@@ -24089,7 +24089,7 @@
           "file": "internal/cluster/v2_pool.go",
           "name": "v2PoolConfig",
           "receiver": "Session",
-          "sha256": "52dfa0c42585c6a0b61346e80057dac3f13028832d07ddd8cda45fbce6ee9c78"
+          "sha256": "9bad74028d8472b02e4925b61017e5f7c9e4ba6a27b5b9e4c65ded77cafcc33f"
         }
       ]
     },

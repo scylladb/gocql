@@ -5,7 +5,7 @@ package transport
 
 import implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
 import logging "github.com/scylladb/gocql/v2/internal/logging"
-import implSettings "github.com/scylladb/gocql/v2/internal/settings"
+import implSettings "github.com/scylladb/gocql/v2/internal/connectivity"
 
 import "crypto/tls"
 import "net"
@@ -71,11 +71,11 @@ type translatedAddresses = implEndpoint.InternalTranslatedAddresses
 type DefaultDialer = implEndpoint.DefaultDialer
 type DialTarget = implEndpoint.DialTarget
 
-func cloneV2TLSConfig(a0 *tls.Config) *tls.Config { return implSettings.InternalCloneV2TLSConfig(a0) }
+func cloneV2TLSConfig(a0 *tls.Config) *tls.Config { return implSettings.CloneTLSConfig(a0) }
 
 type scyllaSourcePortCtx = implEndpoint.InternalScyllaSourcePortCtx
 
-func unixContact(a0 Config) (string, error) { return implSettings.InternalUnixContact(a0) }
+func unixContact(a0 Config) (string, error) { return implSettings.UnixContact(a0) }
 
 type v2DNSResolver = implEndpoint.InternalV2DNSResolver
 

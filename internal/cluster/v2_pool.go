@@ -19,7 +19,9 @@
 
 package cluster
 
-func (s *Session) v2PoolConfig() (*Config, bool) {
+import "github.com/scylladb/gocql/v2/internal/connectivity"
+
+func (s *Session) v2PoolConfig() (*connectivity.Config, bool) {
 	if s == nil || s.privateStorage.InternalConnCfg == nil || s.privateStorage.InternalConnCfg.TypedConfig == nil {
 		return nil, false
 	}

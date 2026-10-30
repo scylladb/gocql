@@ -81,7 +81,7 @@ func TestV2RuntimeDNSContextAndDialHost(t *testing.T) {
 		implEndpoint.HostInfoData(opaqueStorageValue).InternalDataCenter = "dc"
 		return opaqueStorageValue
 	}()
-	dialer := v2TLSHostDialer{InternalConfig: config}
+	dialer := v2TLSHostDialer{InternalConfig: connectivityConfig(config)}
 	connection, err := dialer.DialHost(context.Background(), host)
 	if err != nil {
 		t.Fatal(err)

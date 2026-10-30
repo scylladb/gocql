@@ -571,7 +571,7 @@ func TestStep06StrictStreamingReservationUsesExistingCapacity(t *testing.T) {
 	pool := implCluster.SessionData(s).InternalPool.InternalHostConnPools[implEndpoint.InternalHostInfoHostUUID(c.InternalHost)]
 	config := DefaultConfig("localhost")
 	config.Pool.ConnectionsPerHost = 1
-	implCluster.SessionData(s).InternalConnCfg = &driverConnConfig{TypedConfig: &config}
+	implCluster.SessionData(s).InternalConnCfg = &driverConnConfig{TypedConfig: connectivityConfigPointer(config)}
 	c.InternalCfg = implCluster.SessionData(s).InternalConnCfg
 	pool.InternalServices = newPoolServices(s)
 	pool.InternalRepairCtx, pool.InternalRepairCancel = context.WithCancel(c.InternalCtx)
