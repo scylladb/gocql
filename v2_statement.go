@@ -1,22 +1,16 @@
 package gocql
 
 import (
+	cqltype "github.com/scylladb/gocql/v2/internal/cqltype"
+
 	"context"
 	"fmt"
+	"github.com/scylladb/gocql/v2/internal/codec"
 	"strings"
 	"sync"
 	"sync/atomic"
 
 	"github.com/scylladb/gocql/v2/internal/wire"
-)
-
-// StatementKind is an explicit classification; the driver never parses CQL to infer it.
-type StatementKind uint8
-
-const (
-	UnknownStatement StatementKind = iota
-	OrdinaryStatement
-	ConditionalStatement
 )
 
 type Statement[P, R any] struct {
@@ -203,7 +197,7 @@ func bindPrepared[P, R any](p *Prepared[P, R], value P, owned bool) (*Bound[R], 
 	if err != nil {
 		return nil, err
 	}
-	token, err := computeRoutingToken(values.cells, info.PartitionKeyIndexes, p.state.session.capturedRoutingPartitioner(p.state.partitioner))
+	token, err := computeRoutingToken(values.Cells, info.PartitionKeyIndexes, p.state.session.capturedRoutingPartitioner(p.state.partitioner))
 	if err != nil {
 		return nil, err
 	}
@@ -235,7 +229,7 @@ func encodeParameters[P any](plan ParamPlan[P], columns Columns, value P, owned,
 	}
 	b := wire.NewBuilder(4096)
 	writer := newParamWriter(b, columns, allowUnset)
-	writer.ownBorrowed = owned
+	codec.SetParamOwnership(writer, owned)
 	if err := plan.Encode(writer, value); err != nil {
 		return encodedValues{}, err
 	}
@@ -254,12 +248,12 @@ func encodeParameters[P any](plan ParamPlan[P], columns Columns, value P, owned,
 		if err != nil {
 			return encodedValues{}, err
 		}
-		cells[i] = encodedCell{typ: column.Type, state: v.State(), body: v.Bytes().chain}
+		cells[i] = encodedCell{Typ: column.Type, State: v.State(), Body: cqltype.BytesChain(v.Bytes())}
 	}
 	if err := cursor.RequireEnd(); err != nil {
 		return encodedValues{}, fmt.Errorf("gocql: parameter framing: %w", err)
 	}
-	return encodedValues{columns: columns, cells: cells, framed: framed}, nil
+	return encodedValues{Columns: columns, Cells: cells, Framed: framed}, nil
 }
 func (b *Bound[R]) Close() {
 	if b != nil && b.request.owner != nil {

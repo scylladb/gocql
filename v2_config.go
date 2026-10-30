@@ -53,13 +53,6 @@ type Config struct {
 	LifecycleObserver                                 LifecycleObserver
 	Logger                                            StdLogger
 }
-type Compression uint8
-
-const (
-	NoCompression Compression = iota
-	LZ4Compression
-	SnappyCompression
-)
 
 type PoolOptions struct {
 	ConnectionsPerHost, ConnectionsPerShard int

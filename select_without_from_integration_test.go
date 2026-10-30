@@ -612,14 +612,14 @@ func TestSelectWithoutFromRejected(t *testing.T) {
 	}
 	for _, tc := range []struct{ name, cql string }{{"star", "SELECT *"}, {"column reference", "SELECT some_column"}, {"distinct", "SELECT DISTINCT 1"}} {
 		t.Run(tc.name, func(t *testing.T) {
-			page, err := conn.executeTyped(context.Background(), &attemptRequest{statement: tc.cql, consistency: One})
+			page, err := conn.executeTyped(context.Background(), &attemptRequest{Statement: tc.cql, Consistency: One})
 			if page != nil {
-				page.owner.Release()
+				page.Owner.Release()
 			}
 			if !isRejectedByServer(err) {
 				t.Fatalf("%q rejection=%v", tc.cql, err)
 			}
-			page, err = conn.executeTyped(context.Background(), &attemptRequest{statement: "SELECT 1", consistency: One})
+			page, err = conn.executeTyped(context.Background(), &attemptRequest{Statement: "SELECT 1", Consistency: One})
 			if err != nil {
 				t.Fatalf("same connection unusable after rejection: %v", err)
 			}

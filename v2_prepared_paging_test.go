@@ -17,6 +17,9 @@
 package gocql
 
 import (
+	cqltype "github.com/scylladb/gocql/v2/internal/cqltype"
+	model "github.com/scylladb/gocql/v2/internal/model"
+
 	"bytes"
 	"context"
 	"encoding/binary"
@@ -44,7 +47,7 @@ func step03Page(t *testing.T, values ...string) *Page[Bytes] {
 		body = append(body, v...)
 	}
 	chain := typedTestChain(t, body)
-	return codecTestMust(newPage(&responsePage{columns: columns, rows: chain, rowCount: int32(len(values)), owner: wire.NewLease(chain, nil), state: completePageState()}, OneColumn(BlobCodec), nil))
+	return codecTestMust(newPage(&responsePage{responseData: responseData{Columns: columns, Rows: chain, RowCount: int32(len(values)), Owner: wire.NewLease(chain, nil), State: completePageState()}}, OneColumn(BlobCodec), nil))
 }
 func TestV2PageNextIntoMixedCurrentAndRetention(t *testing.T) {
 	p := step03Page(t, "one", "two", "three")
@@ -105,8 +108,8 @@ func TestV2PageNextIntoTerminalClearing(t *testing.T) {
 			case "closed":
 				p.Close()
 			case "malformed":
-				p.response.rows = typedTestChain(t, []byte{0, 0, 0, 5, 1})
-				p.cursor = wire.NewCursor(p.response.rows)
+				p.response.Rows = typedTestChain(t, []byte{0, 0, 0, 5, 1})
+				p.cursor = wire.NewCursor(p.response.Rows)
 			case "cancelled":
 				ctx, cancel := context.WithCancel(context.Background())
 				cancel()
@@ -133,7 +136,7 @@ func TestV2PageNextIntoPartialErrorClears(t *testing.T) {
 	cols := NewColumns(ColumnSpec{Name: "n", Type: integer}, ColumnSpec{Name: "v", Type: blob})
 	body := typedTestChain(t, []byte{0, 0, 0, 4, 0, 0, 0, 7, 0, 0, 0, 5, 1})
 	decoder := Row(Column("n", Int32, func(r *row) *int32 { return &r.Number }), Column("v", BlobCodec, func(r *row) *Bytes { return &r.Value }))
-	p := codecTestMust(newPage(&responsePage{columns: cols, rows: body, rowCount: 1, owner: wire.NewLease(body, nil)}, decoder, nil))
+	p := codecTestMust(newPage(&responsePage{responseData: responseData{Columns: cols, Rows: body, RowCount: 1, Owner: wire.NewLease(body, nil)}}, decoder, nil))
 	defer p.Close()
 	dst := row{Unused: 8}
 	if p.NextInto(&dst) || dst.Number != 0 || dst.Unused != 0 || p.Err() == nil {
@@ -225,8 +228,8 @@ func TestV2PagingHistoryCyclesLimitsAndTokenIdentity(t *testing.T) {
 	entry := h.entries
 	found := false
 	for _, v := range entry {
-		if bytes.Equal(v.state.token, a.token) {
-			found = &v.state.token[0] == &a.token[0]
+		if bytes.Equal(model.PageToken(v.state), model.PageToken(a)) {
+			found = &model.PageToken(v.state)[0] == &model.PageToken(a)[0]
 		}
 	}
 	if !found {
@@ -325,22 +328,22 @@ func TestV2ResultPlanCacheScopedReuseAndNoCompileLock(t *testing.T) {
 	var calls atomic.Int32
 	d := step03CountingDecoder{calls: &calls}
 	for i := 0; i < 100; i++ {
-		if _, err := cache.selectPlan(&responsePage{columns: cols, metadata: entry}, d); err != nil {
+		if _, err := cache.selectPlan(&responsePage{metadata: entry, responseData: responseData{Columns: cols}}, d); err != nil {
 			t.Fatal(err)
 		}
 	}
 	if calls.Load() != 1 {
 		t.Fatal("recompiled exact entry", calls.Load())
 	}
-	equivalent := NewColumns(cols.columns...)
-	if _, err := cache.selectPlan(&responsePage{columns: equivalent}, d); err != nil {
+	equivalent := NewColumns(cqltype.ColumnSlice(cols)...)
+	if _, err := cache.selectPlan(&responsePage{responseData: responseData{Columns: equivalent}}, d); err != nil {
 		t.Fatal(err)
 	}
 	if calls.Load() != 1 {
 		t.Fatal("recompiled equal shape")
 	}
 	another := &resultPlanCache[Bytes]{}
-	_, _ = another.selectPlan(&responsePage{columns: cols, metadata: entry}, d)
+	_, _ = another.selectPlan(&responsePage{metadata: entry, responseData: responseData{Columns: cols}}, d)
 	if calls.Load() != 2 {
 		t.Fatal("shared different decoder cache")
 	}
@@ -348,7 +351,10 @@ func TestV2ResultPlanCacheScopedReuseAndNoCompileLock(t *testing.T) {
 	entered, done := make(chan struct{}), make(chan struct{})
 	d.hook = func() { close(entered); <-done }
 	completed := make(chan error)
-	go func() { _, err := cold.selectPlan(&responsePage{columns: cols, metadata: entry}, d); completed <- err }()
+	go func() {
+		_, err := cold.selectPlan(&responsePage{metadata: entry, responseData: responseData{Columns: cols}}, d)
+		completed <- err
+	}()
 	<-entered
 	cold.mu.Lock()
 	cold.mu.Unlock()
@@ -383,11 +389,11 @@ func TestV2PreparedResponseRetainsMetadataAcrossSchemaChange(t *testing.T) {
 	if hp.epoch.current() {
 		t.Fatal("related table not invalidated")
 	}
-	response := &responsePage{noMetadata: true, columnCount: 1}
-	if err := selectPreparedResponse(state, UUID{15: 1}, hp, hp.metadataID, true, response); err != nil || response.metadata != hp.result || !response.columns.Equal(columns) {
+	response := &responsePage{responseData: responseData{NoMetadata: true, ColumnCount: 1}}
+	if err := selectPreparedResponse(state, UUID{15: 1}, hp, hp.metadataID, true, response); err != nil || response.metadata != hp.result || !response.Columns.Equal(columns) {
 		t.Fatal("retained response rejected", err)
 	}
-	for _, bad := range []*responsePage{{noMetadata: true, columnCount: 2}, {noMetadata: true, columnCount: 1, metadataID: []byte("bad")}} {
+	for _, bad := range []*responsePage{{responseData: responseData{NoMetadata: true, ColumnCount: 2}}, {responseData: responseData{NoMetadata: true, ColumnCount: 1, MetadataID: []byte("bad")}}} {
 		if selectPreparedResponse(state, UUID{15: 1}, hp, hp.metadataID, true, bad) == nil {
 			t.Fatal("mismatched metadata accepted")
 		}
@@ -403,14 +409,14 @@ func TestV2PreparedPublicationExactEntryEpochAndOpaqueIDs(t *testing.T) {
 	newer.revision++
 	newer.metadataID = []byte("a")
 	state.hosts[id] = &newer
-	response := &responsePage{kind: 2, columns: columns, metadataID: []byte("z")}
+	response := &responsePage{responseData: responseData{Kind: 2, Columns: columns, MetadataID: []byte("z")}}
 	if err := selectPreparedResponse(state, id, old, old.metadataID, true, response); err != nil {
 		t.Fatal(err)
 	}
 	if state.hosts[id] != &newer {
 		t.Fatal("stale response replaced newer entry")
 	}
-	response = &responsePage{kind: 2, columns: columns, metadataID: []byte("0")}
+	response = &responsePage{responseData: responseData{Kind: 2, Columns: columns, MetadataID: []byte("0")}}
 	if err := selectPreparedResponse(state, id, &newer, newer.metadataID, true, response); err != nil {
 		t.Fatal(err)
 	}
@@ -419,7 +425,7 @@ func TestV2PreparedPublicationExactEntryEpochAndOpaqueIDs(t *testing.T) {
 	}
 	current := state.hosts[id]
 	s.invalidatePreparedSchema(Event{Keyspace: "ks", Object: "tbl", Target: "TABLE"})
-	response = &responsePage{kind: 2, columns: columns, metadataID: []byte("later")}
+	response = &responsePage{responseData: responseData{Kind: 2, Columns: columns, MetadataID: []byte("later")}}
 	_ = selectPreparedResponse(state, id, current, current.metadataID, true, response)
 	if state.hosts[id] != current {
 		t.Fatal("stale schema publication")
@@ -473,7 +479,7 @@ func step03PreparedBody(id []byte, parameters, columns Columns, pk ...int) []byt
 				b = binary.BigEndian.AppendUint16(b, uint16(i))
 			}
 		}
-		for _, col := range c.columns {
+		for _, col := range cqltype.ColumnSlice(c) {
 			for _, text := range []string{col.Keyspace, col.Table, col.Name} {
 				b = binary.BigEndian.AppendUint16(b, uint16(len(text)))
 				b = append(b, text...)
@@ -523,13 +529,13 @@ func TestV2PrepareHostFlightsCancellationAndSchemaCompatibility(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			done := make(chan error)
 			go func() {
-				_, e := s.prepareOnConnExpected(ctx, conn, state, encodedValues{columns: NewColumns()}, true, old)
+				_, e := s.prepareOnConnExpected(ctx, conn, state, encodedValues{Columns: NewColumns()}, true, old)
 				done <- e
 			}()
 			<-entered
 			second := make(chan error)
 			go func() {
-				_, e := s.prepareOnConnExpected(context.Background(), conn, state, encodedValues{columns: NewColumns()}, true, old)
+				_, e := s.prepareOnConnExpected(context.Background(), conn, state, encodedValues{Columns: NewColumns()}, true, old)
 				second <- e
 			}()
 			deadline := time.Now().Add(time.Second)
@@ -606,7 +612,7 @@ func TestV2PreparedMetadataIntroducesUDTDependency(t *testing.T) {
 	state, old := step03PreparedState(t, s, columns)
 	udt := codecTestMust(UDTType("ks", "introduced", ColumnSpec{Name: "n", Type: codecTestMust(ScalarType(TypeInt))}))
 	changed := NewColumns(ColumnSpec{Keyspace: "ks", Table: "tbl", Name: "value", Type: udt})
-	response := &responsePage{kind: 2, columns: changed, metadataID: []byte("next")}
+	response := &responsePage{responseData: responseData{Kind: 2, Columns: changed, MetadataID: []byte("next")}}
 	if err := selectPreparedResponse(state, UUID{15: 1}, old, old.metadataID, true, response, state.dependencies.tracker.start()); err != nil {
 		t.Fatal(err)
 	}
@@ -627,14 +633,14 @@ func TestV2PreparedNewDependencyEventDuringAttemptFencesPublication(t *testing.T
 	s.invalidatePreparedSchema(Event{Keyspace: "ks", Target: "TYPE", Object: "introduced"})
 	udt := codecTestMust(UDTType("ks", "introduced", ColumnSpec{Name: "n", Type: codecTestMust(ScalarType(TypeInt))}))
 	changed := NewColumns(ColumnSpec{Keyspace: "ks", Table: "tbl", Name: "value", Type: udt})
-	response := &responsePage{kind: 2, columns: changed, metadataID: []byte("stale")}
+	response := &responsePage{responseData: responseData{Kind: 2, Columns: changed, MetadataID: []byte("stale")}}
 	if err := selectPreparedResponse(state, UUID{15: 1}, old, old.metadataID, true, response, started); err != nil {
 		t.Fatal(err)
 	}
 	if state.hosts[UUID{15: 1}] != old {
 		t.Fatal("new dependency event lost")
 	}
-	if !response.columns.Equal(changed) {
+	if !response.Columns.Equal(changed) {
 		t.Fatal("losing response lost supplied metadata")
 	}
 }
@@ -743,7 +749,7 @@ func TestV2PreparedHostRoutingChangesFailBeforeResend(t *testing.T) {
 			s, conns, peers := runtimeTestSession(t, 1)
 			typ := codecTestMust(ScalarType(TypeBlob))
 			parameters := NewColumns(ColumnSpec{Keyspace: "ks", Table: "tbl", Name: "a", Type: typ}, ColumnSpec{Keyspace: "ks", Table: "tbl", Name: "b", Type: typ})
-			columns := NewColumns(parameters.columns[0])
+			columns := NewColumns(cqltype.ColumnSlice(parameters)[0])
 			state, old := step03PreparedState(t, s, columns)
 			state.parameters = parameters
 			state.info.PartitionKeyIndexes = []int{0, 1}
@@ -752,11 +758,11 @@ func TestV2PreparedHostRoutingChangesFailBeforeResend(t *testing.T) {
 			case "partition-key-order":
 				pk = []int{1, 0}
 			case "table":
-				changed := append([]ColumnSpec(nil), parameters.columns...)
+				changed := append([]ColumnSpec(nil), cqltype.ColumnSlice(parameters)...)
 				changed[0].Table = "other"
 				current = NewColumns(changed...)
 			case "type":
-				changed := append([]ColumnSpec(nil), parameters.columns...)
+				changed := append([]ColumnSpec(nil), cqltype.ColumnSlice(parameters)...)
 				changed[1].Type = codecTestMust(ScalarType(TypeInt))
 				current = NewColumns(changed...)
 			case "partitioner":
@@ -774,7 +780,7 @@ func TestV2PreparedHostRoutingChangesFailBeforeResend(t *testing.T) {
 			}()
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
-			_, err := s.prepareOnConnExpected(ctx, conns[0], state, encodedValues{columns: parameters}, true, old)
+			_, err := s.prepareOnConnExpected(ctx, conns[0], state, encodedValues{Columns: parameters}, true, old)
 			var changed *SchemaChangedError
 			if !errors.As(err, &changed) {
 				t.Fatal(mode, err)
@@ -797,7 +803,7 @@ func TestV2PreparedWorkerShutdownJoinsWithoutInput(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		_, err := s.prepareOnConnExpected(ctx, conns[0], state, encodedValues{columns: NewColumns()}, true, old)
+		_, err := s.prepareOnConnExpected(ctx, conns[0], state, encodedValues{Columns: NewColumns()}, true, old)
 		done <- err
 	}()
 	<-requested
@@ -847,13 +853,13 @@ func TestV2PreparedColdHostsDoNotSerialize(t *testing.T) {
 	}()
 	first := make(chan error, 1)
 	go func() {
-		_, err := s.prepareOnConnExpected(context.Background(), conns[0], state, encodedValues{columns: NewColumns()}, true, old)
+		_, err := s.prepareOnConnExpected(context.Background(), conns[0], state, encodedValues{Columns: NewColumns()}, true, old)
 		first <- err
 	}()
 	<-firstRead
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	entry, err := s.prepareOnConn(ctx, conns[1], state, encodedValues{columns: NewColumns()}, false)
+	entry, err := s.prepareOnConn(ctx, conns[1], state, encodedValues{Columns: NewColumns()}, false)
 	if err != nil || !bytes.Equal(entry.id, []byte("second")) {
 		t.Fatal("unrelated host serialized", err)
 	}
@@ -887,7 +893,7 @@ func TestV2PreparedPrepareResultDoesNotOverwriteReplacement(t *testing.T) {
 			result := make(chan *hostPrepared, 1)
 			failure := make(chan error, 1)
 			go func() {
-				entry, err := s.prepareOnConnExpected(context.Background(), conns[0], state, encodedValues{columns: NewColumns()}, true, old)
+				entry, err := s.prepareOnConnExpected(context.Background(), conns[0], state, encodedValues{Columns: NewColumns()}, true, old)
 				result <- entry
 				failure <- err
 			}()
@@ -928,7 +934,7 @@ func TestV2PagingHistoryHashCollisionComparesFullBytes(t *testing.T) {
 	a, b := RestorePageState([]byte("a")), RestorePageState([]byte("b"))
 	h := pagingHistory{maxCount: 4, maxBytes: 8}
 	_ = h.add(b)
-	hash := maphash.Bytes(h.seed, b.token)
+	hash := maphash.Bytes(h.seed, model.PageToken(b))
 	h.entries[hash] = pagingHistoryEntry{state: a}
 	h.count = 1
 	h.bytes = 1
@@ -944,7 +950,7 @@ func TestV2PagingHistoryHashCollisionComparesFullBytes(t *testing.T) {
 }
 func TestV2ManualPageEmptyContinuationSurvivesClose(t *testing.T) {
 	p := step03Page(t)
-	p.response.state = RestorePageState(nil)
+	p.response.State = RestorePageState(nil)
 	state := p.State()
 	p.Close()
 	if !state.More() || state.Complete() || state.Bytes() == nil || len(state.Bytes()) != 0 {
@@ -960,12 +966,12 @@ func TestV2PreparedOldPageKeepsMatchingPlan(t *testing.T) {
 	state, old := step03PreparedState(t, s, columns)
 	host := UUID{15: 1}
 	changed := NewColumns(ColumnSpec{Keyspace: "ks", Table: "tbl", Name: "value", Type: codecTestMust(ScalarType(TypeInt))})
-	replacement := &responsePage{kind: 2, columns: changed, metadataID: []byte("new")}
+	replacement := &responsePage{responseData: responseData{Kind: 2, Columns: changed, MetadataID: []byte("new")}}
 	if err := selectPreparedResponse(state, host, old, old.metadataID, true, replacement); err != nil {
 		t.Fatal(err)
 	}
 	chain := typedTestChain(t, []byte{0, 0, 0, 3, 'o', 'l', 'd'})
-	response := &responsePage{noMetadata: true, columnCount: 1, rowCount: 1, rows: chain, owner: wire.NewLease(chain, nil)}
+	response := &responsePage{responseData: responseData{NoMetadata: true, ColumnCount: 1, RowCount: 1, Rows: chain, Owner: wire.NewLease(chain, nil)}}
 	if err := selectPreparedResponse(state, host, old, old.metadataID, true, response); err != nil {
 		t.Fatal(err)
 	}
@@ -984,7 +990,7 @@ func TestV2ResultPlanCompileSchemaFenceKeepsRetainedPage(t *testing.T) {
 	var calls atomic.Int32
 	decoder := step03CountingDecoder{calls: &calls, hook: func() { s.invalidatePreparedSchema(Event{Keyspace: "ks", Target: "TABLE", Object: "tbl"}) }}
 	cache := &resultPlanCache[Bytes]{}
-	response := &responsePage{columns: columns, metadata: hp.result}
+	response := &responsePage{metadata: hp.result, responseData: responseData{Columns: columns}}
 	if _, err := cache.selectPlan(response, decoder); err != nil {
 		t.Fatal(err)
 	}
@@ -1097,11 +1103,11 @@ func TestV2PreparedConflictingHostsRetainResponseAndCoalesce(t *testing.T) {
 	state.hosts[host] = &second
 	changed := NewColumns(ColumnSpec{Keyspace: "ks", Table: "tbl", Name: "value", Type: codecTestMust(ScalarType(TypeInt))})
 	for i := 0; i < 100; i++ {
-		response := &responsePage{kind: 2, columns: changed, metadataID: []byte("conflict")}
+		response := &responsePage{responseData: responseData{Kind: 2, Columns: changed, MetadataID: []byte("conflict")}}
 		if err := selectPreparedResponse(state, host, &second, second.metadataID, true, response); err != nil {
 			t.Fatal(err)
 		}
-		if !response.columns.Equal(changed) {
+		if !response.Columns.Equal(changed) {
 			t.Fatal("matching response metadata lost")
 		}
 	}
@@ -1138,7 +1144,7 @@ func TestV2ResultPlanPublicationSharesEpochGate(t *testing.T) {
 	cache := &resultPlanCache[Bytes]{}
 	done := make(chan error, 1)
 	go func() {
-		_, err := cache.selectPlan(&responsePage{columns: columns, metadata: hp.result}, decoder)
+		_, err := cache.selectPlan(&responsePage{metadata: hp.result, responseData: responseData{Columns: columns}}, decoder)
 		done <- err
 	}()
 	<-entered

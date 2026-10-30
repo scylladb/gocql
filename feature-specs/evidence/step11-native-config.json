@@ -1,0 +1,72 @@
+{
+  "lanes": [
+    {
+      "name": "stable20",
+      "kind": "scylla",
+      "install": "/extra/scylladb/gocql-api-test-cluster/ccm/scylla-repository/release/2026.3.4",
+      "binary": "libexec/scylla",
+      "sha256": "fe5c0f66ba2e52032e41822a9b54e63ec6e636cec9b1fc3561a3829bd60b1bb5",
+      "version": "2026.3.4",
+      "ccm_version": "release:2026.3.4",
+      "addresses": [
+        "127.0.20.1",
+        "127.0.20.2",
+        "127.0.20.3"
+      ],
+      "modes": [
+        {
+          "name": "foundation-v4",
+          "args": [
+            "-proto=4"
+          ],
+          "tests": "^(TestStep07RunStreamLive|TestStep08FixtureIdentity|TestAuthentication|TestErrorsParse|TestCustomPayloadMessages|TestCustomPayloadValues|TestUseStatementError|TestBatch|TestUnpreparedBatch|TestCAS|TestPaging|TestPrepareExecuteMetadataChangedFlag|TestSerializationSimpleTypesCassandra|TestSliceMapMapScanTypes|TestSliceMapMapScanCounterTypes|TestSliceMapMapScanTupleTypes|TestSliceMapMapScanVectorTypes|TestSliceMapMapScanCollectionTypes|TestTuple_NestedCollection|TestTuple_NullableNestedCollection|TestUDT_MissingField|TestVector_SubTypeParsing|TestVector_MarshalerUDT|TestDurationType|TestVarint|TestRecreateSchema|TestTracingNewAPI|TestCloudConnection)$"
+        },
+        {
+          "name": "foundation-v4-tls",
+          "args": [
+            "-proto=4",
+            "-runssl"
+          ],
+          "tests": "^(TestStep07RunStreamLive|TestStep08FixtureIdentity|TestAuthentication|TestErrorsParse|TestCustomPayloadMessages|TestCustomPayloadValues|TestUseStatementError|TestBatch|TestUnpreparedBatch|TestCAS|TestPaging|TestPrepareExecuteMetadataChangedFlag|TestSerializationSimpleTypesCassandra|TestSliceMapMapScanTypes|TestSliceMapMapScanCounterTypes|TestSliceMapMapScanTupleTypes|TestSliceMapMapScanVectorTypes|TestSliceMapMapScanCollectionTypes|TestTuple_NestedCollection|TestTuple_NullableNestedCollection|TestUDT_MissingField|TestVector_SubTypeParsing|TestVector_MarshalerUDT|TestDurationType|TestVarint|TestRecreateSchema|TestTracingNewAPI|TestCloudConnection)$"
+        }
+      ],
+      "ccm": false,
+      "smp": 2
+    },
+    {
+      "name": "cassandra21",
+      "kind": "cassandra",
+      "install": "/home/dkropachev/.local/share/containers/storage/overlay/635220d55ce81dd8d814691b98f1c557aa51fdc060f1dc05a749455283bd29c4/diff/opt/cassandra",
+      "config": "/extra/scylladb/gocql-api-test-cluster/cassandra-base",
+      "binary": "lib/apache-cassandra-5.0.9.jar",
+      "sha256": "6a80e6fddde88817deec4839ae431e3a9c4eeb728560336890094c6f870fef5e",
+      "version": "5.0.9",
+      "java_home": "/usr/lib/jvm/java-17-openjdk-amd64",
+      "addresses": [
+        "127.0.21.1",
+        "127.0.21.2",
+        "127.0.21.3"
+      ],
+      "modes": [
+        {
+          "name": "foundation-v5-lz4",
+          "args": [
+            "-proto=5",
+            "-compressor=lz4"
+          ],
+          "tests": "^(TestStep07RunStreamLive|TestStep08FixtureIdentity|TestAuthentication|TestErrorsParse|TestCustomPayloadMessages|TestCustomPayloadValues|TestUseStatementError|TestBatch|TestUnpreparedBatch|TestCAS|TestPaging|TestPrepareExecuteMetadataChangedFlag|TestSerializationSimpleTypesCassandra|TestSliceMapMapScanTypes|TestSliceMapMapScanCounterTypes|TestSliceMapMapScanTupleTypes|TestSliceMapMapScanVectorTypes|TestSliceMapMapScanCollectionTypes|TestTuple_NestedCollection|TestTuple_NullableNestedCollection|TestUDT_MissingField|TestVector_SubTypeParsing|TestVector_MarshalerUDT|TestDurationType|TestVarint|TestRecreateSchema|TestTracingNewAPI|TestCloudConnection)$"
+        },
+        {
+          "name": "foundation-v5-lz4-tls",
+          "args": [
+            "-proto=5",
+            "-compressor=lz4",
+            "-runssl"
+          ],
+          "tests": "^(TestStep07RunStreamLive|TestStep08FixtureIdentity|TestAuthentication|TestErrorsParse|TestCustomPayloadMessages|TestCustomPayloadValues|TestUseStatementError|TestBatch|TestUnpreparedBatch|TestCAS|TestPaging|TestPrepareExecuteMetadataChangedFlag|TestSerializationSimpleTypesCassandra|TestSliceMapMapScanTypes|TestSliceMapMapScanCounterTypes|TestSliceMapMapScanTupleTypes|TestSliceMapMapScanVectorTypes|TestSliceMapMapScanCollectionTypes|TestTuple_NestedCollection|TestTuple_NullableNestedCollection|TestUDT_MissingField|TestVector_SubTypeParsing|TestVector_MarshalerUDT|TestDurationType|TestVarint|TestRecreateSchema|TestTracingNewAPI|TestCloudConnection)$"
+        }
+      ],
+      "ccm": false
+    }
+  ]
+}

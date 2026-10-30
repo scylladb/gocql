@@ -94,7 +94,7 @@ func TestV2ExclusiveStreamingModesAndSafeReuse(t *testing.T) {
 				stream := typedTestReadRequest(t, c, server)
 				step04WriteResponse(t, c, server, stream, typedTestRowsBody(payload))
 			}()
-			response, err := r.exchange(context.Background(), &attemptRequest{statement: "SELECT value FROM ks.tbl", consistency: One})
+			response, err := r.exchange(context.Background(), &attemptRequest{Statement: "SELECT value FROM ks.tbl", Consistency: One})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -125,11 +125,11 @@ func TestV2ExclusiveStreamingModesAndSafeReuse(t *testing.T) {
 				stream := typedTestReadRequest(t, c, server)
 				step04WriteResponse(t, c, server, stream, typedTestRowsBody([]byte("shared")))
 			}()
-			page, err := c.executeTyped(context.Background(), &attemptRequest{statement: "SELECT value", consistency: One})
+			page, err := c.executeTyped(context.Background(), &attemptRequest{Statement: "SELECT value", Consistency: One})
 			if err != nil {
 				t.Fatal(err)
 			}
-			page.owner.Release()
+			page.Owner.Release()
 		})
 	}
 }
@@ -157,7 +157,7 @@ func TestV2ExclusiveRawFirstRowBeforeRemainingResponse(t *testing.T) {
 			t.Error(err)
 		}
 	}()
-	response, err := r.exchange(context.Background(), &attemptRequest{statement: "SELECT value", consistency: One})
+	response, err := r.exchange(context.Background(), &attemptRequest{Statement: "SELECT value", Consistency: One})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +190,7 @@ func TestV2ExclusiveWaitsForOrphanAndAcquisitionCancellation(t *testing.T) {
 	}()
 	done := make(chan error)
 	go func() {
-		_, err := c.executeTyped(requestCtx, &attemptRequest{statement: "SELECT value", consistency: One})
+		_, err := c.executeTyped(requestCtx, &attemptRequest{Statement: "SELECT value", Consistency: One})
 		done <- err
 	}()
 	<-requested
@@ -235,7 +235,7 @@ func TestV2ExclusiveCloseStopsBlockedCallerStorage(t *testing.T) {
 		server.Write(frame[:len(frame)-7])
 		close(entered)
 	}()
-	response, err := r.exchange(context.Background(), &attemptRequest{statement: "SELECT value", consistency: One})
+	response, err := r.exchange(context.Background(), &attemptRequest{Statement: "SELECT value", Consistency: One})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -278,7 +278,7 @@ func TestV2OrphanBudgetUsesExactCapacity(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			done := make(chan error)
 			go func() {
-				_, err := c.executeTyped(ctx, &attemptRequest{statement: "SELECT", consistency: One})
+				_, err := c.executeTyped(ctx, &attemptRequest{Statement: "SELECT", Consistency: One})
 				done <- err
 			}()
 			select {
@@ -343,18 +343,18 @@ var _ io.Reader = (*verifiedStreamUnits)(nil)
 func step04EventPacket(t *testing.T, proto byte, kind string) []byte {
 	t.Helper()
 	e := newTypedEnvelope()
-	e.str(kind, false)
+	e.Str(kind, false)
 	if kind == "CLIENT_ROUTES_CHANGE" {
-		e.str("UPDATED", false)
-		e.u16(0)
-		e.u16(0)
+		e.Str("UPDATED", false)
+		e.U16(0)
+		e.U16(0)
 	} else {
-		e.str("DOWN", false)
-		e.u8(4)
-		e.chain(typedTestChain(t, []byte{127, 0, 0, 2}))
-		e.u32(9042)
+		e.Str("DOWN", false)
+		e.U8(4)
+		e.Chain(typedTestChain(t, []byte{127, 0, 0, 2}))
+		e.U32(9042)
 	}
-	body := typedTestBytes(t, codecTestMust(e.freeze()))
+	body := typedTestBytes(t, codecTestMust(e.Freeze()))
 	out := []byte{proto | 0x80, 0, 0xff, 0xff, byte(frm.OpEvent)}
 	out = binary.BigEndian.AppendUint32(out, uint32(len(body)))
 	return append(out, body...)
@@ -388,7 +388,7 @@ func TestV2ExclusiveTLSStreaming(t *testing.T) {
 				stream := typedTestReadRequest(t, c, server)
 				step04WriteResponse(t, c, server, stream, typedTestRowsBody(payload))
 			}()
-			response, err := r.exchange(context.Background(), &attemptRequest{statement: "SELECT value", consistency: One})
+			response, err := r.exchange(context.Background(), &attemptRequest{Statement: "SELECT value", Consistency: One})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -422,7 +422,7 @@ func TestV2ExclusiveV5TrailingControlReuse(t *testing.T) {
 				packet := codecTestMust(segment.EncodeSpans(typedTestChain(t, result, control), true, false))
 				server.Write(typedTestBytes(t, packet))
 			}()
-			response, err := r.exchange(context.Background(), &attemptRequest{statement: "SELECT value", consistency: One})
+			response, err := r.exchange(context.Background(), &attemptRequest{Statement: "SELECT value", Consistency: One})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -473,7 +473,7 @@ func TestV2ExclusiveControlOverflowPoisonsAndReleases(t *testing.T) {
 					}
 				}
 			}()
-			_, err = r.exchange(context.Background(), &attemptRequest{statement: "SELECT value", consistency: One})
+			_, err = r.exchange(context.Background(), &attemptRequest{Statement: "SELECT value", Consistency: One})
 			if err == nil || !c.Closed() {
 				consumer.mu.Unlock()
 				t.Fatal("control overflow remained reusable", err)
@@ -481,8 +481,8 @@ func TestV2ExclusiveControlOverflowPoisonsAndReleases(t *testing.T) {
 			consumer.mu.Unlock()
 			c.waitEventDispatch()
 			<-serverDone
-			if r.metadataBudget.bytes() != 0 {
-				t.Fatal("overflow leaked retained control charges", r.metadataBudget.bytes())
+			if r.metadataBudget.Bytes() != 0 {
+				t.Fatal("overflow leaked retained control charges", r.metadataBudget.Bytes())
 			}
 		})
 	}
@@ -491,25 +491,25 @@ func TestV2EventEnqueueCloseRaceReleasesEveryCharge(t *testing.T) {
 	for iteration := 0; iteration < 20; iteration++ {
 		c, _ := typedTestConn(t, 4, nil)
 		c.session = &Session{ctx: c.ctx, logger: nopLogger{}}
-		budget := &streamMetadataBudget{limit: 1 << 20}
+		budget := &streamMetadataBudget{Limit: 1 << 20}
 		var wg sync.WaitGroup
 		wg.Add(4)
 		for worker := 0; worker < 4; worker++ {
 			go func() {
 				defer wg.Done()
 				for i := 0; i < 50; i++ {
-					if err := budget.reserve(16); err != nil {
+					if err := budget.Reserve(16); err != nil {
 						t.Error(err)
 						return
 					}
-					c.dispatchEventOwned(&frm.ClientRoutesChanged{}, func() { budget.release(16) })
+					c.dispatchEventOwned(&frm.ClientRoutesChanged{}, func() { budget.Release(16) })
 				}
 			}()
 		}
 		c.cancel()
 		wg.Wait()
 		c.waitEventDispatch()
-		if n := budget.bytes(); n != 0 {
+		if n := budget.Bytes(); n != 0 {
 			t.Fatal("terminal queue retained charges", iteration, n)
 		}
 	}
@@ -627,7 +627,7 @@ func TestV2ExclusiveAcquisitionDrainsAcceptedWriterOwnership(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		_, err := c.executeTyped(ctx, &attemptRequest{statement: "INSERT INTO ks.tbl(value) VALUES(?)", values: values, valueCount: 1, consistency: One, lease: owner})
+		_, err := c.executeTyped(ctx, &attemptRequest{Statement: "INSERT INTO ks.tbl(value) VALUES(?)", Values: values, ValueCount: 1, Consistency: One, Lease: owner})
 		done <- err
 	}()
 	<-entered
@@ -665,7 +665,7 @@ func TestV2ExclusiveClosedResponseDropsValidatedArena(t *testing.T) {
 		stream := typedTestReadRequest(t, c, server)
 		step04WriteResponse(t, c, server, stream, typedTestRowsBody(bytes.Repeat([]byte("value"), 30000)))
 	}()
-	response, err := r.exchange(context.Background(), &attemptRequest{statement: "SELECT value", consistency: One})
+	response, err := r.exchange(context.Background(), &attemptRequest{Statement: "SELECT value", Consistency: One})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -726,7 +726,7 @@ func TestV2PageCancellationGenerationDoesNotReachLaterPageOrSharedUse(t *testing
 		}
 	}()
 	pageCtx, cancelPage := context.WithCancel(r.ctx)
-	first, err := r.exchange(pageCtx, &attemptRequest{statement: "SELECT value", consistency: One})
+	first, err := r.exchange(pageCtx, &attemptRequest{Statement: "SELECT value", Consistency: One})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -743,7 +743,7 @@ func TestV2PageCancellationGenerationDoesNotReachLaterPageOrSharedUse(t *testing
 	cancelPage()
 	secondCtx, cancelSecond := context.WithCancel(r.ctx)
 	defer cancelSecond()
-	second, err := r.exchange(secondCtx, &attemptRequest{statement: "SELECT value", consistency: One})
+	second, err := r.exchange(secondCtx, &attemptRequest{Statement: "SELECT value", Consistency: One})
 	if err != nil {
 		t.Fatal("old page context canceled new page", err)
 	}
@@ -762,11 +762,11 @@ func TestV2PageCancellationGenerationDoesNotReachLaterPageOrSharedUse(t *testing
 		t.Fatal(err)
 	}
 	r.cancelIOGeneration(oldGeneration, context.Canceled)
-	page, err := c.executeTyped(context.Background(), &attemptRequest{statement: "SELECT value", consistency: One})
+	page, err := c.executeTyped(context.Background(), &attemptRequest{Statement: "SELECT value", Consistency: One})
 	if err != nil {
 		t.Fatal("delayed callback reached shared reuse", err)
 	}
-	page.owner.Release()
+	page.Owner.Release()
 	<-serverDone
 }
 func TestV2PageContextCancellationWinsAndJoinsRead(t *testing.T) {
@@ -785,7 +785,7 @@ func TestV2PageContextCancellationWinsAndJoinsRead(t *testing.T) {
 		server.Read(b[:])
 	}()
 	pageCtx, cancelPage := context.WithCancel(r.ctx)
-	response, err := r.exchange(pageCtx, &attemptRequest{statement: "SELECT value", consistency: One})
+	response, err := r.exchange(pageCtx, &attemptRequest{Statement: "SELECT value", Consistency: One})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -885,9 +885,9 @@ func TestV2TypedTLSCoalescingBorrowedOrderPartialWriteAndDrain(t *testing.T) {
 			owner := wire.NewLease(values, func() { released.Store(true) })
 			result := make(chan error, 1)
 			go func() {
-				page, err := c.executeTyped(context.Background(), &attemptRequest{statement: "INSERT INTO ks.tbl(value) VALUES(?)", values: values, valueCount: 1, consistency: One, lease: owner})
+				page, err := c.executeTyped(context.Background(), &attemptRequest{Statement: "INSERT INTO ks.tbl(value) VALUES(?)", Values: values, ValueCount: 1, Consistency: One, Lease: owner})
 				if page != nil {
-					page.owner.Release()
+					page.Owner.Release()
 				}
 				result <- err
 			}()

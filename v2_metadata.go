@@ -1,6 +1,8 @@
 package gocql
 
 import (
+	model "github.com/scylladb/gocql/v2/internal/model"
+
 	"context"
 	"errors"
 	"fmt"
@@ -881,7 +883,7 @@ func readV2SystemRowsVia[P, R any](ctx context.Context, version byte, timeout ti
 	if err != nil {
 		return nil, err
 	}
-	req := &attemptRequest{statement: statement.CQL, values: values.framed, valueCount: len(values.cells), consistency: One, pageSize: 1000, timeout: timeout}
+	req := &attemptRequest{Statement: statement.CQL, Values: values.Framed, ValueCount: len(values.Cells), Consistency: One, PageSize: 1000, Timeout: timeout}
 	var rows []R
 	var history pagingHistory
 	for {
@@ -892,8 +894,8 @@ func readV2SystemRowsVia[P, R any](ctx context.Context, version byte, timeout ti
 		response, err := execute(pageCtx, req)
 		if err != nil {
 			pageCancel()
-			if response != nil && response.owner != nil {
-				response.owner.Release()
+			if response != nil && response.Owner != nil {
+				response.Owner.Release()
 			}
 			return nil, err
 		}
@@ -901,9 +903,9 @@ func readV2SystemRowsVia[P, R any](ctx context.Context, version byte, timeout ti
 			pageCancel()
 			return nil, &ProtocolError{Stage: "system query", Err: fmt.Errorf("missing response")}
 		}
-		if response.noMetadata {
+		if response.NoMetadata {
 			pageCancel()
-			response.owner.Release()
+			response.Owner.Release()
 			return nil, &ProtocolError{Stage: "system query", Err: fmt.Errorf("unexpected omitted metadata")}
 		}
 		page, err := newPage(response, statement.Rows, nil)
@@ -922,8 +924,8 @@ func readV2SystemRowsVia[P, R any](ctx context.Context, version byte, timeout ti
 			rows = append(rows, row)
 		}
 		err = page.Err()
-		token := append([]byte(nil), response.pagingState...)
-		more := response.pagingState != nil
+		token := append([]byte(nil), response.PagingState...)
+		more := response.PagingState != nil
 		_ = page.Close()
 		pageCancel()
 		if err != nil {
@@ -932,13 +934,13 @@ func readV2SystemRowsVia[P, R any](ctx context.Context, version byte, timeout ti
 		if !more {
 			return rows, nil
 		}
-		if err := history.add(PageState{token: token, kind: 1}); err != nil {
+		if err := history.add(model.PageStateOwned(token, 1)); err != nil {
 			return nil, err
 		}
 		if token == nil {
 			token = []byte{}
 		}
-		req.pagingState = token
+		req.PagingState = token
 	}
 }
 

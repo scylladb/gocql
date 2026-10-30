@@ -1,0 +1,185 @@
+{
+  "accepted_predecessor": "61ae08b0184f54b49274bb11ef14d5129fb62b82",
+  "agent": "/root/step11_extract_foundations",
+  "artifacts": {
+    "step11-assertion-source.json": {
+      "path": "feature-specs/evidence/step11-assertion-source.json",
+      "sha256": "76e3f2674a9b21d3f403b897252741d36527b334c842a4e51331b02514d387be"
+    },
+    "step11-baseline-preservation.json": {
+      "path": "feature-specs/evidence/step11-baseline-preservation.json",
+      "sha256": "06183d190645a1912936c79d100a5f8fdfd49d1bd674d0acdc3162d21e0af2d8"
+    },
+    "step11-checks.json": {
+      "path": "feature-specs/evidence/step11-checks.json",
+      "sha256": "194aaf7d10205190fbc28b6a7306897c7caa5786bd35d889c941ccc918dfc249"
+    },
+    "step11-dependency-audit.json": {
+      "path": "feature-specs/evidence/step11-dependency-audit.json",
+      "sha256": "468813c380d72f34d050bdd9ad62ce548fb86fb46cdf248116f2638ca5747b22"
+    },
+    "step11-doc-preservation.json": {
+      "path": "feature-specs/evidence/step11-doc-preservation.json",
+      "sha256": "65697a80f66adfb8865c1926065f4e5153966471a3d9e257a229bfba14120759"
+    },
+    "step11-final-source.json": {
+      "path": "feature-specs/evidence/step11-final-source.json",
+      "sha256": "bbf18b3fb46282cb10eca28e75b5885662783cd7d61f5759009e73f097e6502f"
+    },
+    "step11-format-proof.json": {
+      "path": "feature-specs/evidence/step11-format-proof.json",
+      "sha256": "a26f49e5e25e190873ea6bce2cce867d6ae132b9acbd8e434e0c78740d910a46"
+    },
+    "step11-method-rename-proof.json": {
+      "path": "feature-specs/evidence/step11-method-rename-proof.json",
+      "sha256": "157087bf3b1ec68e84f316df3faa53a16adb7f54293cd941b8159f7ecb429a85"
+    },
+    "step11-method-source.json": {
+      "path": "feature-specs/evidence/step11-method-source.json",
+      "sha256": "f0484e02ba60da2091103bafb70090cf45bdbe514ca1121780260f2771f58210"
+    },
+    "step11-native-cassandra.json": {
+      "path": "feature-specs/evidence/step11-native-cassandra.json",
+      "sha256": "b02cad5995edd0ad82ae233c716ca5e87e94cb6ea156481ff6d74304c31fcbd0"
+    },
+    "step11-native-config.json": {
+      "path": "feature-specs/evidence/step11-native-config.json",
+      "sha256": "bd8bed4a22acb39d6ec6288d90190e66103085c6be9363015ac0754f2237418f"
+    },
+    "step11-native-outcomes.json": {
+      "path": "feature-specs/evidence/step11-native-outcomes.json",
+      "sha256": "59759f260e7c86f6c28516a1e7a81b6b5a1d6146acac166be8a3516ec2563ec3"
+    },
+    "step11-native-stable.json": {
+      "path": "feature-specs/evidence/step11-native-stable.json",
+      "sha256": "be8fcdc7e2ab5df5a649e34e7c76cac9b4c87b2d58524cb621380cba1198381b"
+    },
+    "step11-source.json": {
+      "path": "feature-specs/evidence/step11-source.json",
+      "sha256": "3368c1e1ab2c1151f7aaa40104269ccbefdee66a031b680165e3dffcfcd79b90"
+    },
+    "step11-test-disposition.json": {
+      "path": "feature-specs/evidence/step11-test-disposition.json",
+      "sha256": "ed5b295a5b84ecb7fea994b96e07681e8ba811f82a3d02a32ebdc66993b84e8a"
+    },
+    "step11-test-mapping.json": {
+      "path": "feature-specs/evidence/step11-test-mapping.json",
+      "sha256": "95a7a5f2f87ec34ae04458b4f33385cc2a47c5ab0225df2012cd983989ecfd28"
+    },
+    "step11_evidence.py": {
+      "path": "feature-specs/tools/step11_evidence.py",
+      "sha256": "323ba1c0926c29cfd6c45f91f84880ea25ca79a4d62b14bc1d81358117d450d2"
+    },
+    "step11_foundation_audit.go": {
+      "path": "feature-specs/tools/step11_foundation_audit.go",
+      "sha256": "9e7d8c4b9666b00a1af27fc3dee110776abc1bad8b3846c8e3cf1459a0399484"
+    }
+  },
+  "baseline": {
+    "current_focused_effective_behavioral_passes": 26,
+    "explicit_extraction_rewrites": 4,
+    "identities": 174,
+    "original_hashes_preserved": 174,
+    "previous_root_named_declarations_retained": 957,
+    "prior_current158_step10_and_all174_step09_preserve_separate_source_bindings": true,
+    "translated_token_identical_to_step10": 170
+  },
+  "branch": "v2-11-extract-foundations",
+  "checks": {
+    "details": "step11-checks.json",
+    "diagnostic": "Initial full vet caught 3 newly exported internal framer names with nonstandard standard-library signatures; bounded rename fixes them. Final vet passes.",
+    "retained_diagnostics": 1,
+    "successful_commands": 15
+  },
+  "gate": "complete",
+  "limitations": [
+    "Focused native verification covers26 original identities; the full final-tree174 matrix and development lane remain14/17. No historical pass or skip is relabeled fresh.",
+    "Native and full-unit outcomes bind to the original454 snapshot; final method renames/formatting bind through exact method/format/documentation source proofs and focused final race/compile/vet checks.",
+    "Arm64 is compilation only, using /bin/true as execution substitute.",
+    "Five-iteration allocation/copy smokes are not native throughput, peak-memory or universal performance claims; comprehensive performance remains15.",
+    "Accepted historical typed-control replay mismatch remains13; nested benchmark-module compilation is not an operational replay pass.",
+    "Runtime extraction12 and final public facade/module/docs13 remain later."
+  ],
+  "native": {
+    "all_namespace_cleanups_passed": true,
+    "all_reserved_endpoints_refused": true,
+    "all_six_owned_nodes_joined": true,
+    "development_and_unrelated_workloads_untouched": true,
+    "lane_totals": [
+      {
+        "command": "stable20-foundation-v4",
+        "pass": 24,
+        "skip": 4
+      },
+      {
+        "command": "stable20-foundation-v4-tls",
+        "pass": 25,
+        "skip": 3
+      },
+      {
+        "command": "cassandra21-foundation-v5-lz4",
+        "pass": 26,
+        "skip": 2
+      },
+      {
+        "command": "cassandra21-foundation-v5-lz4-tls",
+        "pass": 26,
+        "skip": 2
+      }
+    ],
+    "passed_packages": 4,
+    "runners_exited": {
+      "cassandra": 0,
+      "stable": 0
+    }
+  },
+  "package_stats": {
+    "codec": {
+      "go_lines": 10847,
+      "production_files": 17,
+      "test_files": 16
+    },
+    "cqltype": {
+      "go_lines": 2395,
+      "production_files": 16,
+      "test_files": 2
+    },
+    "model": {
+      "go_lines": 204,
+      "production_files": 5,
+      "test_files": 1
+    },
+    "protocol": {
+      "go_lines": 6088,
+      "production_files": 10,
+      "test_files": 9
+    }
+  },
+  "reproduction": [
+    "go run feature-specs/tools/integration_migration_audit.go > feature-specs/evidence/step11-assertion-source.json",
+    "go run feature-specs/tools/step11_foundation_audit.go > feature-specs/evidence/step11-baseline-preservation.json",
+    "python3 feature-specs/tools/step11_evidence.py"
+  ],
+  "root_owned_files_excluded": [
+    "feature-specs/execution/STATUS.md",
+    "feature-specs/execution/RESUME.md"
+  ],
+  "source": {
+    "final": {
+      "count": 455,
+      "path": "feature-specs/evidence/step11-final-source.json",
+      "sha256": "bbf18b3fb46282cb10eca28e75b5885662783cd7d61f5759009e73f097e6502f"
+    },
+    "method_renamed": {
+      "count": 454,
+      "path": "feature-specs/evidence/step11-method-source.json",
+      "sha256": "f0484e02ba60da2091103bafb70090cf45bdbe514ca1121780260f2771f58210"
+    },
+    "native": {
+      "count": 454,
+      "path": "feature-specs/evidence/step11-source.json",
+      "sha256": "3368c1e1ab2c1151f7aaa40104269ccbefdee66a031b680165e3dffcfcd79b90"
+    },
+    "post_native_delta": "go/types-bound 3 declaration +36 selector edits in6 files for nonstandard io-like internal method names, token-identical gofmt in2 files, and original declaration/import/directive-free package documentation restored byte-for-byte from accepted predecessor. Complete source, offsets and hashes are retained."
+  }
+}

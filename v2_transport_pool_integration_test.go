@@ -177,7 +177,7 @@ func TestV2ExclusiveTransportLive(t *testing.T) {
 	}
 	defer r.close(false)
 	decoder := StreamRow(func(*Pair[int32, []byte]) {}, StreamColumn("id", StreamInt32, func(r *Pair[int32, []byte]) *int32 { return &r.First }), StreamColumn("value", StreamBlob, func(r *Pair[int32, []byte]) *[]byte { return &r.Second }))
-	request := &attemptRequest{statement: "SELECT id,value FROM " + qualified, consistency: Quorum, pageSize: 2}
+	request := &attemptRequest{Statement: "SELECT id,value FROM " + qualified, Consistency: Quorum, PageSize: 2}
 	seen := map[int32]bool{}
 	pages := 0
 	for {
@@ -204,12 +204,12 @@ func TestV2ExclusiveTransportLive(t *testing.T) {
 			}
 			seen[dst.First] = true
 		}
-		next := response.metadata.pagingState
+		next := response.metadata.PagingState
 		response.releaseMetadata()
 		if next == nil {
 			break
 		}
-		request.pagingState = next
+		request.PagingState = next
 	}
 	if len(seen) != 4 || pages < 2 {
 		t.Fatal("live paging incomplete", len(seen), pages)

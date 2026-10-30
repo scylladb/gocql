@@ -16,7 +16,7 @@ func TestV2RuntimePageLeaseAndClone(t *testing.T) {
 	chain, _ := wire.NewChain(wire.Borrow(body))
 	released := false
 	owner := wire.NewLease(chain, func() { released = true })
-	response := &responsePage{columns: columns, rows: chain, rowCount: 1, owner: owner, state: RestorePageState([]byte{1})}
+	response := &responsePage{responseData: responseData{Columns: columns, Rows: chain, RowCount: 1, Owner: owner, State: RestorePageState([]byte{1})}}
 	page, err := newPage(response, OneColumn(BlobCodec), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -80,7 +80,7 @@ func TestV2RuntimeCASMetadataAndEmptyPageValidation(t *testing.T) {
 		t.Fatal(result, err)
 	}
 	bad, _ := ScalarType(TypeBlob)
-	response := &responsePage{columns: NewColumns(ColumnSpec{Name: "bad", Type: bad}), owner: wire.NewLease(wire.Chain{}, nil)}
+	response := &responsePage{responseData: responseData{Columns: NewColumns(ColumnSpec{Name: "bad", Type: bad}), Owner: wire.NewLease(wire.Chain{}, nil)}}
 	if _, err := newPage(response, OneColumn(Int32), nil); err == nil {
 		t.Fatal("empty page skipped metadata validation")
 	}
@@ -89,7 +89,7 @@ func TestV2RuntimeFutureCloseRetiresLatePage(t *testing.T) {
 	future := &pageFuture{done: make(chan struct{})}
 	future.close()
 	released := false
-	future.complete(&responsePage{owner: wire.NewLease(wire.Chain{}, func() { released = true })}, nil)
+	future.complete(&responsePage{responseData: responseData{Owner: wire.NewLease(wire.Chain{}, func() { released = true })}}, nil)
 	if !released {
 		t.Fatal("late page leaked")
 	}

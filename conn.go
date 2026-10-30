@@ -722,7 +722,7 @@ func (s *startupCoordinator) write(ctx context.Context, frame frameBuilder, star
 	}
 	defer framer.Release()
 
-	return framer.parseFrame()
+	return framer.ParseFrame()
 }
 
 func (s *startupCoordinator) options(ctx context.Context, startupCompleted *atomic.Bool) error {
@@ -866,7 +866,7 @@ func (s *startupCoordinator) startup(ctx context.Context, startupCompleted *atom
 		}
 	}
 
-	frame, err := s.write(ctx, &writeStartupFrame{opts: m}, startupCompleted)
+	frame, err := s.write(ctx, &writeStartupFrame{Opts: m}, startupCompleted)
 	if err != nil {
 		return err
 	}
@@ -904,7 +904,7 @@ func (s *startupCoordinator) authenticateHandshake(ctx context.Context, authFram
 		return err
 	}
 
-	req := &writeAuthResponseFrame{data: resp}
+	req := &writeAuthResponseFrame{Data: resp}
 	for {
 		frame, err := s.write(ctx, req, startupCompleted)
 		if err != nil {
@@ -931,7 +931,7 @@ func (s *startupCoordinator) authenticateHandshake(ctx context.Context, authFram
 			}
 
 			req = &writeAuthResponseFrame{
-				data: resp,
+				Data: resp,
 			}
 		default:
 			return fmt.Errorf("unknown frame response during authentication: %v", v)
@@ -1161,7 +1161,7 @@ func (c *Conn) heartBeat(ctx context.Context) {
 			continue
 		}
 
-		resp, err := framer.parseFrame()
+		resp, err := framer.ParseFrame()
 		framer.Release()
 		if err != nil {
 			// invalid frame
@@ -1248,12 +1248,12 @@ type frameSource struct {
 // from s.r or by adopting the buffer s already holds.
 func (s frameSource) readBody(f *framer, head *frm.FrameHeader) error {
 	if s.owner != nil {
-		return f.readFrame(newChainReader(s.chain), head)
+		return f.ReadFrame(newChainReader(s.chain), head)
 	}
 	if s.body != nil {
-		return f.adoptFrameBody(s.body, head)
+		return f.AdoptFrameBody(s.body, head)
 	}
-	return f.readFrame(s.r, head)
+	return f.ReadFrame(s.r, head)
 }
 
 func (c *Conn) processFrame(ctx context.Context, r io.Reader) error {
@@ -1344,7 +1344,7 @@ func (c *Conn) processFrameSource(ctx context.Context, src frameSource) error {
 			return err
 		}
 
-		frame, err := framer.parseFrame()
+		frame, err := framer.ParseFrame()
 		// NOTE: Safe to release the framer here because all error frame types
 		// (from parseErrorFrame) contain only strings, scalars, and defensively-
 		// copied []byte fields. None retain sub-slices of the framer's read buffer.
@@ -2367,7 +2367,7 @@ func (c *Conn) execAdmitted(ctx context.Context, req frameBuilder, tracer Tracer
 	}()
 
 	if tracer != nil {
-		framer.trace()
+		framer.Trace()
 	}
 
 	if call.streamObserverContext != nil {
@@ -2376,7 +2376,7 @@ func (c *Conn) execAdmitted(ctx context.Context, req frameBuilder, tracer Tracer
 		})
 	}
 
-	err := req.buildFrame(framer, stream)
+	err := req.BuildFrame(framer, stream)
 	if err != nil {
 		c.releaseWriteFramer(framer)
 		// closeWithError waits for exec() to stop touching the callReq, so the
@@ -2393,10 +2393,10 @@ func (c *Conn) execAdmitted(ctx context.Context, req frameBuilder, tracer Tracer
 	}
 
 	if c.version > protoVersion4 && startupCompleted {
-		if err = framer.prepareModernLayout(); err != nil {
+		if err = framer.PrepareModernLayout(); err != nil {
 			c.releaseWriteFramer(framer)
 			// prepareModernLayout failed before any bytes were written, so this
-			// is equivalent to a buildFrame failure: the connection is untouched
+			// is equivalent to a BuildFrame failure: the connection is untouched
 			// and the request was never sent. Signal completion via the deferred
 			// epilogue and let exec() own the stream/call cleanup.
 			stopWaiting = true
@@ -2408,7 +2408,7 @@ func (c *Conn) execAdmitted(ctx context.Context, req frameBuilder, tracer Tracer
 		}
 	}
 
-	n, err := c.w.writeContext(ctx, framer.buf)
+	n, err := c.w.writeContext(ctx, framer.Buf)
 	c.releaseWriteFramer(framer)
 	if err != nil {
 		// closeWithError waits for exec() to stop touching the callReq, so defer
@@ -2476,7 +2476,7 @@ func (c *Conn) execAdmitted(ctx context.Context, req frameBuilder, tracer Tracer
 		releaseStream = true
 		recycleCall = true
 
-		if v := resp.framer.header.Version.Version(); v != c.version {
+		if v := resp.framer.Header.Version.Version(); v != c.version {
 			c.releaseReadFramer(resp.framer)
 			return nil, &QueryError{err: NewErrProtocol("unexpected protocol version in response: got %d expected %d", v, c.version), potentiallyExecuted: true}
 		}
@@ -2576,7 +2576,7 @@ func useKeyspaceStmt(keyspace string) string {
 
 func (c *Conn) UseKeyspace(keyspace string) error { return c.useKeyspaceContext(c.ctx, keyspace) }
 func (c *Conn) useKeyspaceContext(ctx context.Context, keyspace string) error {
-	q := &useKeyspaceFrame{statement: useKeyspaceStmt(keyspace)}
+	q := &useKeyspaceFrame{Statement: useKeyspaceStmt(keyspace)}
 
 	framer, err := c.exec(ctx, q, nil, c.cfg.ConnectTimeout)
 	if err != nil {
@@ -2584,7 +2584,7 @@ func (c *Conn) useKeyspaceContext(ctx context.Context, keyspace string) error {
 	}
 	defer framer.Release()
 
-	resp, err := framer.parseFrame()
+	resp, err := framer.ParseFrame()
 	if err != nil {
 		return err
 	}

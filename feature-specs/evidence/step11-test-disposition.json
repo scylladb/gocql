@@ -1,0 +1,4792 @@
+{
+  "all_have_one_current_declaration": true,
+  "mapping": [
+    {
+      "current_file": "address_translators_test.go",
+      "declaration": "TestIdentityAddressTranslator_NilAddrAndZeroPort",
+      "previous_file": "address_translators_test.go"
+    },
+    {
+      "current_file": "address_translators_test.go",
+      "declaration": "TestIdentityAddressTranslator_HostProvided",
+      "previous_file": "address_translators_test.go"
+    },
+    {
+      "current_file": "address_translators_test.go",
+      "declaration": "TestTranslateHostAddresses_NoScyllaPorts",
+      "previous_file": "address_translators_test.go"
+    },
+    {
+      "current_file": "address_translators_test.go",
+      "declaration": "TestTranslateHostAddresses_InvalidPort",
+      "previous_file": "address_translators_test.go"
+    },
+    {
+      "current_file": "address_translators_test.go",
+      "declaration": "TestTranslateAddressPort_InvalidTranslatedPort",
+      "previous_file": "address_translators_test.go"
+    },
+    {
+      "current_file": "address_translators_test.go",
+      "declaration": "TestTranslateHostAddresses_WithScyllaPorts",
+      "previous_file": "address_translators_test.go"
+    },
+    {
+      "current_file": "internal/protocol/auth_frame_unit_test.go",
+      "declaration": "TestParseAuthFrames",
+      "previous_file": "auth_frame_unit_test.go"
+    },
+    {
+      "current_file": "internal/protocol/auth_frame_unit_test.go",
+      "declaration": "TestParseAuthFrameDataIsCopied",
+      "previous_file": "auth_frame_unit_test.go"
+    },
+    {
+      "current_file": "auth_handshake_unit_test.go",
+      "declaration": "TestAuthHandshakePassword",
+      "previous_file": "auth_handshake_unit_test.go"
+    },
+    {
+      "current_file": "auth_handshake_unit_test.go",
+      "declaration": "TestAuthHandshakeFailures",
+      "previous_file": "auth_handshake_unit_test.go"
+    },
+    {
+      "current_file": "auth_handshake_unit_test.go",
+      "declaration": "TestAuthHandshakeMultiStep",
+      "previous_file": "auth_handshake_unit_test.go"
+    },
+    {
+      "current_file": "auth_handshake_unit_test.go",
+      "declaration": "TestAuthHandshakeAuthenticatorErrors",
+      "previous_file": "auth_handshake_unit_test.go"
+    },
+    {
+      "current_file": "auth_handshake_unit_test.go",
+      "declaration": "TestAuthHandshakeAuthProvider",
+      "previous_file": "auth_handshake_unit_test.go"
+    },
+    {
+      "current_file": "auth_handshake_unit_test.go",
+      "declaration": "TestAuthHandshakeChallengeWithoutChallenger",
+      "previous_file": "auth_handshake_unit_test.go"
+    },
+    {
+      "current_file": "batch_test.go",
+      "declaration": "TestBatch_Errors",
+      "previous_file": "batch_test.go"
+    },
+    {
+      "current_file": "batch_test.go",
+      "declaration": "TestBatch_WithTimestamp",
+      "previous_file": "batch_test.go"
+    },
+    {
+      "current_file": "batch_test.go",
+      "declaration": "TestBatch_WithNowInSeconds",
+      "previous_file": "batch_test.go"
+    },
+    {
+      "current_file": "batch_test.go",
+      "declaration": "TestBatch_SetKeyspace",
+      "previous_file": "batch_test.go"
+    },
+    {
+      "current_file": "bench_recordings_test.go",
+      "declaration": "TestBenchHistoricalControlCapture",
+      "previous_file": "bench_recordings_test.go"
+    },
+    {
+      "current_file": "cass1batch_test.go",
+      "declaration": "TestProto1BatchInsert",
+      "previous_file": "cass1batch_test.go"
+    },
+    {
+      "current_file": "cass1batch_test.go",
+      "declaration": "TestShouldPrepareFunction",
+      "previous_file": "cass1batch_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestEmptyHosts",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestInvalidPeerEntry",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestUseStatementError",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestInvalidKeyspace",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestTracing",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestObserve",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestObserve_Pagination",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestPaging",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestPagingWithAllowFiltering",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestPagingWithBind",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestCAS",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestConsistencySerial",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestDurationType",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestMapScanCAS",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestBatch",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestUnpreparedBatch",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestBatchLimit",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestWhereIn",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestTooManyQueryArgs",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestNotEnoughQueryArgs",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestCreateSessionTimeout",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestReconnection",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestMapScanWithRefMap",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestMapScan",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestSliceMap",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "Test_RetryPolicyIdempotence",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestSmallInt",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestScanWithNilArguments",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestScanCASWithNilArguments",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestRebindQueryInfo",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestStaticQueryInfo",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestBoundQueryInfo",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestBatchQueryInfo",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestPrepare_MissingSchemaPrepare",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestPrepare_ReprepareStatement",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestPrepare_ReprepareBatch",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestQueryInfo",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestPrepare_PreparedCacheEviction",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestPrepare_PreparedCacheKey",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestMarshalFloat64Ptr",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestMarshalInet",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestVarint",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestQueryStats",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestIterHost",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestBatchStats",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestBatchObserve",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestNilInQuery",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestEmptyTimestamp",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestGetKeyspaceMetadata",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestSessionMetadataAPIs",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestGetKeyspaceMetadataFails",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestRoutingKey",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestTokenAwareConnPool",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestNegativeStream",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestManualQueryPaging",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestSessionBindRoutingKey",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestJSONSupport",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestUnmarshallNestedTypes",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestSchemaReset",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestCreateSession_DontSwallowError",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestControl_DiscoverProtocol",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestUnsetCol",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestUnsetColBatch",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestQuery_NamedValues",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestQuery_SetHostID",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestQuery_WithNowInSeconds",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestQuery_SetKeyspace",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestLargeSizeQuery",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestCompressorNegotiated",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestQueryCompressionNotWorthIt",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestPrepareExecuteMetadataChangedFlag",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestStmtCacheUsesOverriddenKeyspace",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestRoutingKeyCacheUsesOverriddenKeyspace",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "cassandra_test.go",
+      "declaration": "TestPrepareExecuteScyllaEmptyMetadataID",
+      "previous_file": "cassandra_test.go"
+    },
+    {
+      "current_file": "client_routes_config_test.go",
+      "declaration": "TestNewSessionCommonAppliesClientRoutesShardAwareness",
+      "previous_file": "client_routes_config_test.go"
+    },
+    {
+      "current_file": "client_routes_config_test.go",
+      "declaration": "TestWithShardAwareness",
+      "previous_file": "client_routes_config_test.go"
+    },
+    {
+      "current_file": "client_routes_test.go",
+      "declaration": "TestGetHostPortMapping",
+      "previous_file": "client_routes_test.go"
+    },
+    {
+      "current_file": "client_routes_unit_test.go",
+      "declaration": "TestClientRoutesHandlerTranslateHost",
+      "previous_file": "client_routes_unit_test.go"
+    },
+    {
+      "current_file": "client_routes_unit_test.go",
+      "declaration": "TestClientRoutesHandlerTranslateHost_CurrentRoute",
+      "previous_file": "client_routes_unit_test.go"
+    },
+    {
+      "current_file": "client_routes_unit_test.go",
+      "declaration": "TestClientRoutesHandlerTranslateHost_PreservesCurrentAcrossRefresh",
+      "previous_file": "client_routes_unit_test.go"
+    },
+    {
+      "current_file": "client_routes_unit_test.go",
+      "declaration": "TestClientRoutesHandlerTranslateHost_PrunesMissingHostAcrossRefresh",
+      "previous_file": "client_routes_unit_test.go"
+    },
+    {
+      "current_file": "client_routes_unit_test.go",
+      "declaration": "TestGetHostPortMappingForConnectionIDsQuery",
+      "previous_file": "client_routes_unit_test.go"
+    },
+    {
+      "current_file": "client_routes_unit_test.go",
+      "declaration": "TestGetHostPortMappingForPairsQuery",
+      "previous_file": "client_routes_unit_test.go"
+    },
+    {
+      "current_file": "client_routes_unit_test.go",
+      "declaration": "TestGetHostPortMappingForPairsFiltersCrossProductRows",
+      "previous_file": "client_routes_unit_test.go"
+    },
+    {
+      "current_file": "client_routes_unit_test.go",
+      "declaration": "TestTranslateHost_ConnectionAddrOverride",
+      "previous_file": "client_routes_unit_test.go"
+    },
+    {
+      "current_file": "client_routes_unit_test.go",
+      "declaration": "TestStop_DoesNotPanicWithConcurrentAsyncSends",
+      "previous_file": "client_routes_unit_test.go"
+    },
+    {
+      "current_file": "client_routes_unit_test.go",
+      "declaration": "TestUpdateHostPortMappingSyncCompletes",
+      "previous_file": "client_routes_unit_test.go"
+    },
+    {
+      "current_file": "client_routes_unit_test.go",
+      "declaration": "TestStartReadingEventsConnectionIDsOnlySchedulesRefresh",
+      "previous_file": "client_routes_unit_test.go"
+    },
+    {
+      "current_file": "client_routes_unit_test.go",
+      "declaration": "TestStartReadingEventsUsesCartesianPairs",
+      "previous_file": "client_routes_unit_test.go"
+    },
+    {
+      "current_file": "client_routes_unit_test.go",
+      "declaration": "TestClientRoutesHandlerInitializeIsIdempotent",
+      "previous_file": "client_routes_unit_test.go"
+    },
+    {
+      "current_file": "client_routes_unit_test.go",
+      "declaration": "TestClientRoutesHandlerTranslateHost_RetainsCurrentRouteAfterQueryError",
+      "previous_file": "client_routes_unit_test.go"
+    },
+    {
+      "current_file": "cloud_cluster_test.go",
+      "declaration": "TestCloudConnection",
+      "previous_file": "cloud_cluster_test.go"
+    },
+    {
+      "current_file": "cloud_cluster_test.go",
+      "declaration": "TestStep08SNIProxyCancellationJoins",
+      "previous_file": "cloud_cluster_test.go"
+    },
+    {
+      "current_file": "cluster_test.go",
+      "declaration": "TestNewCluster_Defaults",
+      "previous_file": "cluster_test.go"
+    },
+    {
+      "current_file": "cluster_test.go",
+      "declaration": "TestNewCluster_WithHosts",
+      "previous_file": "cluster_test.go"
+    },
+    {
+      "current_file": "cluster_test.go",
+      "declaration": "TestValidate_ProtoVersionRange",
+      "previous_file": "cluster_test.go"
+    },
+    {
+      "current_file": "cluster_test.go",
+      "declaration": "TestValidateAndInitSSLDoesNotShareTLSConfigBetweenConfigCopies",
+      "previous_file": "cluster_test.go"
+    },
+    {
+      "current_file": "cluster_test.go",
+      "declaration": "TestValidate_ProtoV5CompressorCapability",
+      "previous_file": "cluster_test.go"
+    },
+    {
+      "current_file": "cluster_test.go",
+      "declaration": "TestValidate_ReadTimeout",
+      "previous_file": "cluster_test.go"
+    },
+    {
+      "current_file": "cluster_test.go",
+      "declaration": "TestValidate_HostPortNormalization",
+      "previous_file": "cluster_test.go"
+    },
+    {
+      "current_file": "cluster_test.go",
+      "declaration": "TestClusterConfig_translateAddressAndPort_NilTranslator",
+      "previous_file": "cluster_test.go"
+    },
+    {
+      "current_file": "cluster_test.go",
+      "declaration": "TestClusterConfig_translateAddressAndPort_EmptyAddr",
+      "previous_file": "cluster_test.go"
+    },
+    {
+      "current_file": "cluster_test.go",
+      "declaration": "TestClusterConfig_translateAddressAndPort_Success",
+      "previous_file": "cluster_test.go"
+    },
+    {
+      "current_file": "cluster_tls_test.go",
+      "declaration": "TestStrictVerifyPeerCertificate",
+      "previous_file": "cluster_tls_test.go"
+    },
+    {
+      "current_file": "cluster_tls_test.go",
+      "declaration": "TestSetupTLSConfigStrictValidation",
+      "previous_file": "cluster_tls_test.go"
+    },
+    {
+      "current_file": "cluster_validate_unit_test.go",
+      "declaration": "TestValidateRejects",
+      "previous_file": "cluster_validate_unit_test.go"
+    },
+    {
+      "current_file": "cluster_validate_unit_test.go",
+      "declaration": "TestValidateAcceptsBoundaryValues",
+      "previous_file": "cluster_validate_unit_test.go"
+    },
+    {
+      "current_file": "cluster_validate_unit_test.go",
+      "declaration": "TestValidateDefaultsPort",
+      "previous_file": "cluster_validate_unit_test.go"
+    },
+    {
+      "current_file": "common_test.go",
+      "declaration": "TestMain",
+      "previous_file": "common_test.go"
+    },
+    {
+      "current_file": "compressor_test.go",
+      "declaration": "TestSnappyCompressor",
+      "previous_file": "compressor_test.go"
+    },
+    {
+      "current_file": "compressor_test.go",
+      "declaration": "TestCompressorBackwardCompatibility",
+      "previous_file": "compressor_test.go"
+    },
+    {
+      "current_file": "compressor_test.go",
+      "declaration": "BenchmarkSnappyCompressor",
+      "previous_file": "compressor_test.go"
+    },
+    {
+      "current_file": "compressor_test.go",
+      "declaration": "TestSnappyCompressorDecodeRejectsHugeLength",
+      "previous_file": "compressor_test.go"
+    },
+    {
+      "current_file": "conn_api_test.go",
+      "declaration": "TestConnIsReadWriter",
+      "previous_file": "conn_api_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestApprove",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestSimple",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestSSLSimple",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestSSLSimpleNoClientCert",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestClosed",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestDNSLookupConnected",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestDNSLookupError",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestStartupTimeout",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestTimeout",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestPolicyConnPoolSSL",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestQueryTimeout",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "BenchmarkSingleConn",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestQueryTimeoutReuseStream",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestQueryTimeoutClose",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestStream0",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestContext_Timeout",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestInitialRetryPolicy",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestContext_CanceledBeforeExec",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestHeartBeatSurvivesUnexpectedOptionsResponse",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestControlHeartBeatSurvivesUnexpectedOptionsResponse",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestHeartBeatClosesAConnectionThatKeepsFailing",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestCallReqReuseDoesNotInvalidateOutstandingTimeout",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestExecCloseWithError",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestWriteCoalescing",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestWriteCoalescing_WriteAfterClose",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestSkipMetadata",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestPrepareBatchMetadataMultipleKeyspaceTables",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestFrameHeaderObserver",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestGetSchemaAgreement",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestAwaitSchemaAgreementBoundedByMaxWaitSchemaAgreement",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestUseKeyspaceQuoteEscaping",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestInitFramerCacheScyllaUseMetadataID",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestInitFramerCacheWithoutScyllaUseMetadataID",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestInitFramerCacheProtoV3IgnoresScyllaUseMetadataID",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestConnTracksResultMetadataID",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestConnTracksResultMetadataIDMasksDirectionBit",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestReleaseFramer",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestConnProcessAllFramesInSingleSegment",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestConnProcessReservedStreamFrameInSegment",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestRecvSegmentDisarmsReadDeadlineOnIdleConn",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestConnReaderReadClearsDeadlineWhenTimeoutDisabled",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestConnReaderReadWithNilConnAndPositiveTimeoutDoesNotPanic",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestConnReaderReadReturnsDeadlineError",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestConnReaderReadRetriesWhileMakingProgress",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestConnReadDelegatesToConnReader",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestHeaderReadTimeoutIsBenignOnlyWhenNothingWasConsumed",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestProcessFrameDesyncedBodyIsFatalAndWakesCaller",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestProcessFrameStreamIDMismatchIsAnError",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestExecStreamIDMismatchFailsTheConnection",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestProcessFrameHandsOffOwnershipWhenTheConnectionCloses",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestProcessFrameFailedDeadlineArmIsFatal",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestReadFirstSegmentHeaderDisarmsAndRearms",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestHeaderReadDisarmIsBoundedToTheFirstByte",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestRecvSegmentReassemblesFrameWithSplitHeader",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestRecvSegmentPayloadReadIsBounded",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestStartupOptionsKeepDriverKeys",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestSystemRequestTimeoutRaceWithFinalizeConnection",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestSystemRequestStateClauseFollowsTimeout",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestStartupCompressorNotSupported",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "conn_test.go",
+      "declaration": "TestStartupCompressionIsDriverOwned",
+      "previous_file": "conn_test.go"
+    },
+    {
+      "current_file": "connectionpool_test.go",
+      "declaration": "TestSetupTLSConfig",
+      "previous_file": "connectionpool_test.go"
+    },
+    {
+      "current_file": "connectionpool_test.go",
+      "declaration": "TestHostConnPoolCloseDeadlock",
+      "previous_file": "connectionpool_test.go"
+    },
+    {
+      "current_file": "connectionpool_test.go",
+      "declaration": "TestHostConnPoolConnectClosedPoolDoesNotDeadlock",
+      "previous_file": "connectionpool_test.go"
+    },
+    {
+      "current_file": "connectionpool_test.go",
+      "declaration": "TestPolicyConnPoolIteratePool",
+      "previous_file": "connectionpool_test.go"
+    },
+    {
+      "current_file": "connectionpool_test.go",
+      "declaration": "TestSessionRemoveHost",
+      "previous_file": "connectionpool_test.go"
+    },
+    {
+      "current_file": "connectionpool_test.go",
+      "declaration": "TestGetHostPoolByIDAbsent",
+      "previous_file": "connectionpool_test.go"
+    },
+    {
+      "current_file": "connectionpool_test.go",
+      "declaration": "TestHostConnPoolConnectNoAttempts",
+      "previous_file": "connectionpool_test.go"
+    },
+    {
+      "current_file": "consistency_unit_test.go",
+      "declaration": "TestConsistencyTextRoundTrip",
+      "previous_file": "consistency_unit_test.go"
+    },
+    {
+      "current_file": "consistency_unit_test.go",
+      "declaration": "TestConsistencyStringUnknown",
+      "previous_file": "consistency_unit_test.go"
+    },
+    {
+      "current_file": "consistency_unit_test.go",
+      "declaration": "TestConsistencyUnmarshalTextRejects",
+      "previous_file": "consistency_unit_test.go"
+    },
+    {
+      "current_file": "consistency_unit_test.go",
+      "declaration": "TestParseConsistency",
+      "previous_file": "consistency_unit_test.go"
+    },
+    {
+      "current_file": "consistency_unit_test.go",
+      "declaration": "TestParseConsistencyInvalid",
+      "previous_file": "consistency_unit_test.go"
+    },
+    {
+      "current_file": "control_integration_test.go",
+      "declaration": "TestUnixSockets",
+      "previous_file": "control_integration_test.go"
+    },
+    {
+      "current_file": "control_test.go",
+      "declaration": "TestHostInfo_Lookup",
+      "previous_file": "control_test.go"
+    },
+    {
+      "current_file": "control_test.go",
+      "declaration": "TestParseProtocol",
+      "previous_file": "control_test.go"
+    },
+    {
+      "current_file": "dns_test.go",
+      "declaration": "TestDNS",
+      "previous_file": "dns_test.go"
+    },
+    {
+      "current_file": "driver_config_schema_test.go",
+      "declaration": "TestSchemaPermitsAnAbsentOrphanBound",
+      "previous_file": "driver_config_schema_test.go"
+    },
+    {
+      "current_file": "driver_config_schema_test.go",
+      "declaration": "TestDriverConfigReportConformsToSchema",
+      "previous_file": "driver_config_schema_test.go"
+    },
+    {
+      "current_file": "driver_config_schema_test.go",
+      "declaration": "TestDriverConfigReportUnrepresentableConsistency",
+      "previous_file": "driver_config_schema_test.go"
+    },
+    {
+      "current_file": "driver_config_test.go",
+      "declaration": "TestControlConnConfigIsMarked",
+      "previous_file": "driver_config_test.go"
+    },
+    {
+      "current_file": "driver_config_test.go",
+      "declaration": "TestBuildRequestsReport_InFlightMax",
+      "previous_file": "driver_config_test.go"
+    },
+    {
+      "current_file": "driver_config_test.go",
+      "declaration": "TestEffectiveInFlightMaxMatchesStreamGenerator",
+      "previous_file": "driver_config_test.go"
+    },
+    {
+      "current_file": "driver_config_test.go",
+      "declaration": "TestBuildLoadBalancingPolicyReport_NilPolicy",
+      "previous_file": "driver_config_test.go"
+    },
+    {
+      "current_file": "driver_config_test.go",
+      "declaration": "TestBuildSocketReport",
+      "previous_file": "driver_config_test.go"
+    },
+    {
+      "current_file": "driver_config_test.go",
+      "declaration": "TestBuildReconnectionPolicyReport",
+      "previous_file": "driver_config_test.go"
+    },
+    {
+      "current_file": "driver_config_test.go",
+      "declaration": "TestBuildLoadBalancingPolicyReport",
+      "previous_file": "driver_config_test.go"
+    },
+    {
+      "current_file": "driver_config_test.go",
+      "declaration": "TestBuildNodeLocationPreferenceReport",
+      "previous_file": "driver_config_test.go"
+    },
+    {
+      "current_file": "driver_config_test.go",
+      "declaration": "TestBuildLoadBalancingReport_UnwrapsWrappers",
+      "previous_file": "driver_config_test.go"
+    },
+    {
+      "current_file": "driver_config_test.go",
+      "declaration": "TestBuildControlPlaneReport",
+      "previous_file": "driver_config_test.go"
+    },
+    {
+      "current_file": "driver_config_test.go",
+      "declaration": "TestPositiveMillis",
+      "previous_file": "driver_config_test.go"
+    },
+    {
+      "current_file": "driver_config_test.go",
+      "declaration": "TestBuildConnectionReport_ReadWriteTLS",
+      "previous_file": "driver_config_test.go"
+    },
+    {
+      "current_file": "driver_config_test.go",
+      "declaration": "TestBuildTLSReport_ReportsEffectiveHostnameVerification",
+      "previous_file": "driver_config_test.go"
+    },
+    {
+      "current_file": "driver_config_test.go",
+      "declaration": "TestBuildConnectionNodePreferenceReport",
+      "previous_file": "driver_config_test.go"
+    },
+    {
+      "current_file": "driver_config_test.go",
+      "declaration": "TestDataCenterHostFilterStillFilters",
+      "previous_file": "driver_config_test.go"
+    },
+    {
+      "current_file": "driver_config_test.go",
+      "declaration": "TestBuildConnectionReport_ShardAware",
+      "previous_file": "driver_config_test.go"
+    },
+    {
+      "current_file": "driver_config_test.go",
+      "declaration": "TestShardAwareEnabledMatchesDialPath",
+      "previous_file": "driver_config_test.go"
+    },
+    {
+      "current_file": "driver_config_test.go",
+      "declaration": "TestConsistencyName",
+      "previous_file": "driver_config_test.go"
+    },
+    {
+      "current_file": "driver_config_test.go",
+      "declaration": "TestBuildQueryDefaultsReport_SerialConsistencyIsSerialOnly",
+      "previous_file": "driver_config_test.go"
+    },
+    {
+      "current_file": "driver_config_test.go",
+      "declaration": "TestBuildQueryDefaultsReport",
+      "previous_file": "driver_config_test.go"
+    },
+    {
+      "current_file": "driver_config_test.go",
+      "declaration": "TestDriverConfigReportingStartupFrame",
+      "previous_file": "driver_config_test.go"
+    },
+    {
+      "current_file": "driver_config_test.go",
+      "declaration": "TestDriverConfigReportingDisabled",
+      "previous_file": "driver_config_test.go"
+    },
+    {
+      "current_file": "driver_config_test.go",
+      "declaration": "TestDriverConfigReporterStartupOptions_ScyllaConnGatesServerSideMs",
+      "previous_file": "driver_config_test.go"
+    },
+    {
+      "current_file": "driver_config_test.go",
+      "declaration": "TestDriverConfigReportingDial",
+      "previous_file": "driver_config_test.go"
+    },
+    {
+      "current_file": "driver_config_test.go",
+      "declaration": "TestCustomPolicyNameIsAlwaysReportable",
+      "previous_file": "driver_config_test.go"
+    },
+    {
+      "current_file": "driver_config_test.go",
+      "declaration": "TestDriverConfigReporterStartupOptions",
+      "previous_file": "driver_config_test.go"
+    },
+    {
+      "current_file": "error_frame_unit_test.go",
+      "declaration": "TestParseErrorFrame",
+      "previous_file": "error_frame_unit_test.go"
+    },
+    {
+      "current_file": "error_frame_unit_test.go",
+      "declaration": "TestParseErrorFrameTruncated",
+      "previous_file": "error_frame_unit_test.go"
+    },
+    {
+      "current_file": "error_frame_unit_test.go",
+      "declaration": "TestReadErrorMapRejectsBadAddress",
+      "previous_file": "error_frame_unit_test.go"
+    },
+    {
+      "current_file": "error_frame_unit_test.go",
+      "declaration": "TestReadErrorMapNegativeCount",
+      "previous_file": "error_frame_unit_test.go"
+    },
+    {
+      "current_file": "errors_test.go",
+      "declaration": "TestErrorsParse",
+      "previous_file": "errors_test.go"
+    },
+    {
+      "current_file": "events_node_test.go",
+      "declaration": "TestHandleNodeEventCoalescesStatusChanges",
+      "previous_file": "events_node_test.go"
+    },
+    {
+      "current_file": "events_node_test.go",
+      "declaration": "TestHandleNodeEventTopologyChange",
+      "previous_file": "events_node_test.go"
+    },
+    {
+      "current_file": "events_node_test.go",
+      "declaration": "TestHandleNodeEventDisableNodeStatusEvents",
+      "previous_file": "events_node_test.go"
+    },
+    {
+      "current_file": "events_node_test.go",
+      "declaration": "TestHandleNodeUp",
+      "previous_file": "events_node_test.go"
+    },
+    {
+      "current_file": "events_node_test.go",
+      "declaration": "TestHandleNodeEventTopologySurvivesStatusForSameHost",
+      "previous_file": "events_node_test.go"
+    },
+    {
+      "current_file": "events_node_test.go",
+      "declaration": "TestHandleNodeDown",
+      "previous_file": "events_node_test.go"
+    },
+    {
+      "current_file": "events_node_test.go",
+      "declaration": "TestHandleNodeConnected",
+      "previous_file": "events_node_test.go"
+    },
+    {
+      "current_file": "events_test.go",
+      "declaration": "TestEventDebounce",
+      "previous_file": "events_test.go"
+    },
+    {
+      "current_file": "events_test.go",
+      "declaration": "TestEventDebounceMultipleFlushes",
+      "previous_file": "events_test.go"
+    },
+    {
+      "current_file": "events_unit_test.go",
+      "declaration": "TestHandleSchemaEvent",
+      "previous_file": "events_unit_test.go"
+    },
+    {
+      "current_file": "events_unit_test.go",
+      "declaration": "TestSchemaRefreshConcurrent",
+      "previous_file": "events_unit_test.go"
+    },
+    {
+      "current_file": "events_unit_test.go",
+      "declaration": "TestConcurrentSchemaRefreshErrorHandling",
+      "previous_file": "events_unit_test.go"
+    },
+    {
+      "current_file": "example_batch_test.go",
+      "declaration": "ExampleExecBatch",
+      "previous_file": "example_batch_test.go"
+    },
+    {
+      "current_file": "example_dynamic_columns_test.go",
+      "declaration": "Example_dynamicColumns",
+      "previous_file": "example_dynamic_columns_test.go"
+    },
+    {
+      "current_file": "example_lwt_batch_test.go",
+      "declaration": "ExampleRunBatch_conditional",
+      "previous_file": "example_lwt_batch_test.go"
+    },
+    {
+      "current_file": "example_marshaler_test.go",
+      "declaration": "Example_customCodec",
+      "previous_file": "example_marshaler_test.go"
+    },
+    {
+      "current_file": "example_nulls_test.go",
+      "declaration": "Example_nulls",
+      "previous_file": "example_nulls_test.go"
+    },
+    {
+      "current_file": "example_paging_test.go",
+      "declaration": "Example_paging",
+      "previous_file": "example_paging_test.go"
+    },
+    {
+      "current_file": "example_set_test.go",
+      "declaration": "Example_set",
+      "previous_file": "example_set_test.go"
+    },
+    {
+      "current_file": "example_test.go",
+      "declaration": "Example",
+      "previous_file": "example_test.go"
+    },
+    {
+      "current_file": "example_udt_struct_test.go",
+      "declaration": "Example_userDefinedTypes",
+      "previous_file": "example_udt_struct_test.go"
+    },
+    {
+      "current_file": "exec_test.go",
+      "declaration": "TestSingleHostQueryExecutor",
+      "previous_file": "exec_test.go"
+    },
+    {
+      "current_file": "filters_test.go",
+      "declaration": "TestFilter_WhiteList",
+      "previous_file": "filters_test.go"
+    },
+    {
+      "current_file": "filters_test.go",
+      "declaration": "TestFilter_AllowAll",
+      "previous_file": "filters_test.go"
+    },
+    {
+      "current_file": "filters_test.go",
+      "declaration": "TestFilter_DenyAll",
+      "previous_file": "filters_test.go"
+    },
+    {
+      "current_file": "filters_test.go",
+      "declaration": "TestFilter_WhiteList_MatchesRPCAddress",
+      "previous_file": "filters_test.go"
+    },
+    {
+      "current_file": "filters_test.go",
+      "declaration": "TestFilter_WhiteList_MatchesBroadcastAddress",
+      "previous_file": "filters_test.go"
+    },
+    {
+      "current_file": "filters_test.go",
+      "declaration": "TestFilter_WhiteList_MatchesListenAddress",
+      "previous_file": "filters_test.go"
+    },
+    {
+      "current_file": "filters_test.go",
+      "declaration": "TestFilter_WhiteList_MatchesPeer",
+      "previous_file": "filters_test.go"
+    },
+    {
+      "current_file": "filters_test.go",
+      "declaration": "TestFilter_WhiteList_MatchesPreferredIP",
+      "previous_file": "filters_test.go"
+    },
+    {
+      "current_file": "filters_test.go",
+      "declaration": "TestFilter_WhiteList_MatchesTranslatedAddress",
+      "previous_file": "filters_test.go"
+    },
+    {
+      "current_file": "filters_test.go",
+      "declaration": "TestFilter_WhiteList_NoMatchWhenNoAddressMatches",
+      "previous_file": "filters_test.go"
+    },
+    {
+      "current_file": "filters_test.go",
+      "declaration": "TestFilter_WhiteList_EmptyHost",
+      "previous_file": "filters_test.go"
+    },
+    {
+      "current_file": "filters_test.go",
+      "declaration": "TestFilter_DataCenter",
+      "previous_file": "filters_test.go"
+    },
+    {
+      "current_file": "fixture_cql_test.go",
+      "declaration": "TestStep08FixtureCQL",
+      "previous_file": "fixture_cql_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "TestFuzzBugs",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "TestFrameWriteTooLong",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "TestFrameReadTooLong",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "TestReadFrameBodyErrorKeepsNetError",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "TestReadFrameDiscardErrorKeepsNetError",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "TestReadHeaderRejectsNegativeLength",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "TestParseResultMetadata_PagingStateBeforeNewMetadataID",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "TestParseResultMetadata_NewMetadataIDIgnoredBelowV5",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "TestParseResultMetadata_PerColumnSpec",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "TestParsePreparedMetadataRejectsInvalidPkeyCount",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "TestParsePreparedMetadataAcceptsValidPkeyCount",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "TestReadLongStringRejectsNegativeLength",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "TestMalformedFrameErrorWraps",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "TestRecoverMalformedFrameRePanicsADriverBug",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "TestRecoverMalformedFrameIgnoresANormalReturn",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "TestParseResultPreparedTruncatedResultMetadataID",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "Test_framer_writeExecuteFrame",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "Test_framer_writeBatchFrame",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "Test_framer_writeBatchFrame_unnamedValues",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "Test_framer_shortBytesWriters_rejectOverlongValues",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "Test_framer_queryParamsWriters_rejectUnsupportedOptionsOnV4",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "Test_framer_validateV5Options_acceptsSupportedOptions",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "Test_framer_writeBatchFrame_rejectsUnsupportedOptionsOnV4",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "Test_framer_writePrepareFrame_rejectsKeyspaceOnV4",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "Test_defaultFramerFlags",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "frame_test.go",
+      "declaration": "Test_framerFlags_neverBetaProtocol",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "Test_newFramer_compressFlag",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "Test_readUncompressedFrame",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "Test_readCompressedFrame",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "TestParseEventFrame_ClientRoutesChanged",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "TestPrepareModernLayoutLeavesBufIntactOnError",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "TestPrepareModernLayoutRejectsPreV5ProtocolWithError",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "TestPrepareModernLayoutSuccessUnchanged",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "TestPrepareModernLayoutReusesBuffers",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "TestParseResultRowsRejectsMalformedVectorType",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "Test_framer_v4SnappyRoundTrip",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "Test_framer_v4CompressedFrameNeedsACompressor",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "Test_framer_v4NoCompressorLeavesTheBodyAlone",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_test.go",
+      "declaration": "Test_framer_v4CompressionMayNotOverflowTheFrameLimit",
+      "previous_file": "frame_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_type_info_unit_test.go",
+      "declaration": "TestReadTypeInfo",
+      "previous_file": "frame_type_info_unit_test.go"
+    },
+    {
+      "current_file": "internal/protocol/frame_type_info_unit_test.go",
+      "declaration": "TestTypeStringUnknown",
+      "previous_file": "frame_type_info_unit_test.go"
+    },
+    {
+      "current_file": "framer_bench_test.go",
+      "declaration": "BenchmarkParseRowsFrame",
+      "previous_file": "framer_bench_test.go"
+    },
+    {
+      "current_file": "helpers_test.go",
+      "declaration": "TestGetCassandraLongTypeRejectsShortSplits",
+      "previous_file": "helpers_test.go"
+    },
+    {
+      "current_file": "helpers_test.go",
+      "declaration": "TestGetCassandraLongTypeRejectsNonPositiveDimensions",
+      "previous_file": "helpers_test.go"
+    },
+    {
+      "current_file": "helpers_test.go",
+      "declaration": "TestAsVectorTypeRejectsNonPositiveDimensions",
+      "previous_file": "helpers_test.go"
+    },
+    {
+      "current_file": "helpers_test.go",
+      "declaration": "TestGetCassandraLongTypeLogsWhyADimensionWasRejected",
+      "previous_file": "helpers_test.go"
+    },
+    {
+      "current_file": "host_discovery_unit_test.go",
+      "declaration": "TestHostInfoFromMap",
+      "previous_file": "host_discovery_unit_test.go"
+    },
+    {
+      "current_file": "host_discovery_unit_test.go",
+      "declaration": "TestHostInfoFromMapPeersV2",
+      "previous_file": "host_discovery_unit_test.go"
+    },
+    {
+      "current_file": "host_discovery_unit_test.go",
+      "declaration": "TestHostInfoFromMapWrongType",
+      "previous_file": "host_discovery_unit_test.go"
+    },
+    {
+      "current_file": "host_discovery_unit_test.go",
+      "declaration": "TestHostInfoUpdateFillsOnlyMissing",
+      "previous_file": "host_discovery_unit_test.go"
+    },
+    {
+      "current_file": "host_discovery_unit_test.go",
+      "declaration": "TestRefreshRing",
+      "previous_file": "host_discovery_unit_test.go"
+    },
+    {
+      "current_file": "host_discovery_unit_test.go",
+      "declaration": "TestRefreshRingSkipsPeers",
+      "previous_file": "host_discovery_unit_test.go"
+    },
+    {
+      "current_file": "host_discovery_unit_test.go",
+      "declaration": "TestRefreshRingKeepsRingOnError",
+      "previous_file": "host_discovery_unit_test.go"
+    },
+    {
+      "current_file": "host_source_test.go",
+      "declaration": "TestUnmarshalCassVersion",
+      "previous_file": "host_source_test.go"
+    },
+    {
+      "current_file": "host_source_test.go",
+      "declaration": "TestCassVersionBefore",
+      "previous_file": "host_source_test.go"
+    },
+    {
+      "current_file": "host_source_test.go",
+      "declaration": "TestIsValidPeer",
+      "previous_file": "host_source_test.go"
+    },
+    {
+      "current_file": "host_source_test.go",
+      "declaration": "TestIsZeroToken",
+      "previous_file": "host_source_test.go"
+    },
+    {
+      "current_file": "host_source_test.go",
+      "declaration": "TestCheckSystemSchemaClosesIter",
+      "previous_file": "host_source_test.go"
+    },
+    {
+      "current_file": "host_source_test.go",
+      "declaration": "TestHostInfoFromIterClosesIter",
+      "previous_file": "host_source_test.go"
+    },
+    {
+      "current_file": "host_source_test.go",
+      "declaration": "TestHostInfo_ConnectAddress",
+      "previous_file": "host_source_test.go"
+    },
+    {
+      "current_file": "host_source_test.go",
+      "declaration": "TestAddressPort",
+      "previous_file": "host_source_test.go"
+    },
+    {
+      "current_file": "host_source_test.go",
+      "declaration": "TestHostInfoBuilder",
+      "previous_file": "host_source_test.go"
+    },
+    {
+      "current_file": "integration_serialization_scylla_test.go",
+      "declaration": "TestRetryOnTopologyBusy",
+      "previous_file": "integration_serialization_scylla_test.go"
+    },
+    {
+      "current_file": "integration_serialization_scylla_test.go",
+      "declaration": "TestSerializationSimpleTypesCassandra",
+      "previous_file": "integration_serialization_scylla_test.go"
+    },
+    {
+      "current_file": "integration_serialization_scylla_test.go",
+      "declaration": "TestSliceMapMapScanTypes",
+      "previous_file": "integration_serialization_scylla_test.go"
+    },
+    {
+      "current_file": "integration_serialization_scylla_test.go",
+      "declaration": "TestSliceMapMapScanCounterTypes",
+      "previous_file": "integration_serialization_scylla_test.go"
+    },
+    {
+      "current_file": "integration_serialization_scylla_test.go",
+      "declaration": "TestSliceMapMapScanTupleTypes",
+      "previous_file": "integration_serialization_scylla_test.go"
+    },
+    {
+      "current_file": "integration_serialization_scylla_test.go",
+      "declaration": "TestSliceMapMapScanVectorTypes",
+      "previous_file": "integration_serialization_scylla_test.go"
+    },
+    {
+      "current_file": "integration_serialization_scylla_test.go",
+      "declaration": "TestSliceMapMapScanCollectionTypes",
+      "previous_file": "integration_serialization_scylla_test.go"
+    },
+    {
+      "current_file": "integration_test.go",
+      "declaration": "TestAuthentication",
+      "previous_file": "integration_test.go"
+    },
+    {
+      "current_file": "integration_test.go",
+      "declaration": "TestGetHostsFromSystem",
+      "previous_file": "integration_test.go"
+    },
+    {
+      "current_file": "integration_test.go",
+      "declaration": "TestRingDiscovery",
+      "previous_file": "integration_test.go"
+    },
+    {
+      "current_file": "integration_test.go",
+      "declaration": "TestHostFilterDiscovery",
+      "previous_file": "integration_test.go"
+    },
+    {
+      "current_file": "integration_test.go",
+      "declaration": "TestHostFilterInitial",
+      "previous_file": "integration_test.go"
+    },
+    {
+      "current_file": "integration_test.go",
+      "declaration": "TestApplicationInformation",
+      "previous_file": "integration_test.go"
+    },
+    {
+      "current_file": "integration_test.go",
+      "declaration": "TestDriverConfigReporting",
+      "previous_file": "integration_test.go"
+    },
+    {
+      "current_file": "integration_test.go",
+      "declaration": "TestWriteFailure",
+      "previous_file": "integration_test.go"
+    },
+    {
+      "current_file": "integration_test.go",
+      "declaration": "TestCustomPayloadMessages",
+      "previous_file": "integration_test.go"
+    },
+    {
+      "current_file": "integration_test.go",
+      "declaration": "TestCustomPayloadValues",
+      "previous_file": "integration_test.go"
+    },
+    {
+      "current_file": "integration_test.go",
+      "declaration": "TestSessionAwaitSchemaAgreement",
+      "previous_file": "integration_test.go"
+    },
+    {
+      "current_file": "integration_test.go",
+      "declaration": "TestSessionAwaitSchemaAgreementSessionClosed",
+      "previous_file": "integration_test.go"
+    },
+    {
+      "current_file": "integration_test.go",
+      "declaration": "TestSessionAwaitSchemaAgreementContextCanceled",
+      "previous_file": "integration_test.go"
+    },
+    {
+      "current_file": "integration_test.go",
+      "declaration": "TestNewConnectWithLowTimeout",
+      "previous_file": "integration_test.go"
+    },
+    {
+      "current_file": "keyspace_table_test.go",
+      "declaration": "TestKeyspaceTable",
+      "previous_file": "keyspace_table_test.go"
+    },
+    {
+      "current_file": "metadata_scylla_equals_test.go",
+      "declaration": "TestTableMetadataOptionsEqualsComparesEveryField",
+      "previous_file": "metadata_scylla_equals_test.go"
+    },
+    {
+      "current_file": "metadata_scylla_equals_test.go",
+      "declaration": "TestTableMetadataOptionsEqualsMapKeys",
+      "previous_file": "metadata_scylla_equals_test.go"
+    },
+    {
+      "current_file": "metadata_scylla_equals_test.go",
+      "declaration": "TestColumnMetadataEqualsComparesEveryField",
+      "previous_file": "metadata_scylla_equals_test.go"
+    },
+    {
+      "current_file": "metadata_scylla_equals_test.go",
+      "declaration": "TestColumnMetadataEqualsIncludesIndex",
+      "previous_file": "metadata_scylla_equals_test.go"
+    },
+    {
+      "current_file": "metadata_scylla_equals_test.go",
+      "declaration": "TestColumnIndexMetadataEqualsComparesEveryField",
+      "previous_file": "metadata_scylla_equals_test.go"
+    },
+    {
+      "current_file": "metadata_scylla_equals_test.go",
+      "declaration": "TestColumnIndexMetadataEquals",
+      "previous_file": "metadata_scylla_equals_test.go"
+    },
+    {
+      "current_file": "metadata_scylla_equals_test.go",
+      "declaration": "TestCompareInterfaceMapsDirectly",
+      "previous_file": "metadata_scylla_equals_test.go"
+    },
+    {
+      "current_file": "metadata_scylla_equals_test.go",
+      "declaration": "TestTableMetadataEqualsComparesEveryField",
+      "previous_file": "metadata_scylla_equals_test.go"
+    },
+    {
+      "current_file": "metadata_scylla_equals_test.go",
+      "declaration": "TestTableMetadataEquals",
+      "previous_file": "metadata_scylla_equals_test.go"
+    },
+    {
+      "current_file": "metadata_scylla_equals_test.go",
+      "declaration": "TestTableMetadataEqualsLengthMismatch",
+      "previous_file": "metadata_scylla_equals_test.go"
+    },
+    {
+      "current_file": "metadata_scylla_equals_test.go",
+      "declaration": "TestMetadataEqualsNilHandling",
+      "previous_file": "metadata_scylla_equals_test.go"
+    },
+    {
+      "current_file": "metadata_scylla_equals_test.go",
+      "declaration": "TestTableMetadataEqualsEmptyAndZero",
+      "previous_file": "metadata_scylla_equals_test.go"
+    },
+    {
+      "current_file": "metadata_scylla_test.go",
+      "declaration": "TestCompileMetadata",
+      "previous_file": "metadata_scylla_test.go"
+    },
+    {
+      "current_file": "policies_bench_test.go",
+      "declaration": "BenchmarkHostIdComparison",
+      "previous_file": "policies_bench_test.go"
+    },
+    {
+      "current_file": "policies_integration_test.go",
+      "declaration": "TestDCValidationTokenAware",
+      "previous_file": "policies_integration_test.go"
+    },
+    {
+      "current_file": "policies_integration_test.go",
+      "declaration": "TestDCValidationDCAware",
+      "previous_file": "policies_integration_test.go"
+    },
+    {
+      "current_file": "policies_integration_test.go",
+      "declaration": "TestDCValidationRackAware",
+      "previous_file": "policies_integration_test.go"
+    },
+    {
+      "current_file": "policies_integration_test.go",
+      "declaration": "TestTokenAwareHostPolicy",
+      "previous_file": "policies_integration_test.go"
+    },
+    {
+      "current_file": "policies_integration_test.go",
+      "declaration": "TestNoHangAllHostsDown",
+      "previous_file": "policies_integration_test.go"
+    },
+    {
+      "current_file": "policies_partition_healthy_test.go",
+      "declaration": "TestPartitionHealthyOrder",
+      "previous_file": "policies_partition_healthy_test.go"
+    },
+    {
+      "current_file": "policies_partition_healthy_test.go",
+      "declaration": "TestPartitionHealthyAcrossBufferBoundary",
+      "previous_file": "policies_partition_healthy_test.go"
+    },
+    {
+      "current_file": "policies_partition_healthy_test.go",
+      "declaration": "TestPartitionHealthyBusyThreshold",
+      "previous_file": "policies_partition_healthy_test.go"
+    },
+    {
+      "current_file": "policies_partition_healthy_test.go",
+      "declaration": "TestPartitionHealthyUsesBusySnapshot",
+      "previous_file": "policies_partition_healthy_test.go"
+    },
+    {
+      "current_file": "policies_partition_healthy_test.go",
+      "declaration": "TestPartitionHealthyPreservesSet",
+      "previous_file": "policies_partition_healthy_test.go"
+    },
+    {
+      "current_file": "policies_partition_healthy_test.go",
+      "declaration": "TestPartitionHealthyEmptyPool",
+      "previous_file": "policies_partition_healthy_test.go"
+    },
+    {
+      "current_file": "policies_test.go",
+      "declaration": "TestCOWList_Add",
+      "previous_file": "policies_test.go"
+    },
+    {
+      "current_file": "policies_test.go",
+      "declaration": "TestHostInfoList_HostByID",
+      "previous_file": "policies_test.go"
+    },
+    {
+      "current_file": "policies_test.go",
+      "declaration": "TestHostInfoList_AllHostsClipsCapacity",
+      "previous_file": "policies_test.go"
+    },
+    {
+      "current_file": "policies_test.go",
+      "declaration": "TestCOWList_AddAll",
+      "previous_file": "policies_test.go"
+    },
+    {
+      "current_file": "policies_test.go",
+      "declaration": "TestTokenAwarePolicyReset",
+      "previous_file": "policies_test.go"
+    },
+    {
+      "current_file": "policies_test.go",
+      "declaration": "TestSelectedHostTokenInt64",
+      "previous_file": "policies_test.go"
+    },
+    {
+      "current_file": "policies_test.go",
+      "declaration": "TestHostSetInline",
+      "previous_file": "policies_test.go"
+    },
+    {
+      "current_file": "policies_test.go",
+      "declaration": "TestHostSetOverflow",
+      "previous_file": "policies_test.go"
+    },
+    {
+      "current_file": "policies_test.go",
+      "declaration": "TestHostSetOverflowPreservesInlineEntries",
+      "previous_file": "policies_test.go"
+    },
+    {
+      "current_file": "query_error_test.go",
+      "declaration": "TestQueryError_PotentiallyExecuted",
+      "previous_file": "query_error_test.go"
+    },
+    {
+      "current_file": "query_error_test.go",
+      "declaration": "TestQueryError_IsIdempotent",
+      "previous_file": "query_error_test.go"
+    },
+    {
+      "current_file": "query_error_test.go",
+      "declaration": "TestQueryError_Error",
+      "previous_file": "query_error_test.go"
+    },
+    {
+      "current_file": "recreate_test.go",
+      "declaration": "TestRecreateSchema",
+      "previous_file": "recreate_test.go"
+    },
+    {
+      "current_file": "recreate_unit_test.go",
+      "declaration": "TestToCQLUsesServerStatementsWhenPresent",
+      "previous_file": "recreate_unit_test.go"
+    },
+    {
+      "current_file": "recreate_unit_test.go",
+      "declaration": "TestKeyspaceToCQL",
+      "previous_file": "recreate_unit_test.go"
+    },
+    {
+      "current_file": "recreate_unit_test.go",
+      "declaration": "TestTypesSortedTopologically",
+      "previous_file": "recreate_unit_test.go"
+    },
+    {
+      "current_file": "recreate_unit_test.go",
+      "declaration": "TestKeyspaceToCQLRejectsUnrenderableOption",
+      "previous_file": "recreate_unit_test.go"
+    },
+    {
+      "current_file": "recreate_unit_test.go",
+      "declaration": "TestIdent",
+      "previous_file": "recreate_unit_test.go"
+    },
+    {
+      "current_file": "recreate_unit_test.go",
+      "declaration": "TestToCQLQuotesIdentifiers",
+      "previous_file": "recreate_unit_test.go"
+    },
+    {
+      "current_file": "recreate_unit_test.go",
+      "declaration": "TestKeyspaceToCQLRejectsRawBytes",
+      "previous_file": "recreate_unit_test.go"
+    },
+    {
+      "current_file": "recreate_unit_test.go",
+      "declaration": "TestTableColumnToCQL",
+      "previous_file": "recreate_unit_test.go"
+    },
+    {
+      "current_file": "recreate_unit_test.go",
+      "declaration": "TestTablePropertiesToCQL",
+      "previous_file": "recreate_unit_test.go"
+    },
+    {
+      "current_file": "recreate_unit_test.go",
+      "declaration": "TestToCQLHelpers",
+      "previous_file": "recreate_unit_test.go"
+    },
+    {
+      "current_file": "recreate_unit_test.go",
+      "declaration": "TestToCQLGeneratesWholeKeyspace",
+      "previous_file": "recreate_unit_test.go"
+    },
+    {
+      "current_file": "recreate_unit_test.go",
+      "declaration": "TestTableExtensionsToCQL",
+      "previous_file": "recreate_unit_test.go"
+    },
+    {
+      "current_file": "recreate_unit_test.go",
+      "declaration": "TestTableOptionsToCQLScyllaExtras",
+      "previous_file": "recreate_unit_test.go"
+    },
+    {
+      "current_file": "recreate_unit_test.go",
+      "declaration": "TestTableOptionsToCQLEscaping",
+      "previous_file": "recreate_unit_test.go"
+    },
+    {
+      "current_file": "recreate_unit_test.go",
+      "declaration": "TestIndexToCQL",
+      "previous_file": "recreate_unit_test.go"
+    },
+    {
+      "current_file": "recreate_unit_test.go",
+      "declaration": "TestViewToCQL",
+      "previous_file": "recreate_unit_test.go"
+    },
+    {
+      "current_file": "recreate_unit_test.go",
+      "declaration": "TestFunctionAndAggregateToCQL",
+      "previous_file": "recreate_unit_test.go"
+    },
+    {
+      "current_file": "recreate_unit_test.go",
+      "declaration": "TestTableExtensionsToCQLRejectsNonBlob",
+      "previous_file": "recreate_unit_test.go"
+    },
+    {
+      "current_file": "recreate_unit_test.go",
+      "declaration": "TestScyllaEncryptionOptionsUnmarshalBinaryRejectsShortBlobs",
+      "previous_file": "recreate_unit_test.go"
+    },
+    {
+      "current_file": "recreate_unit_test.go",
+      "declaration": "TestScyllaEncryptionOptionsUnmarshalBinaryAcceptsWellFormed",
+      "previous_file": "recreate_unit_test.go"
+    },
+    {
+      "current_file": "recreate_unit_test.go",
+      "declaration": "TestCQLTypeIdentifiers",
+      "previous_file": "recreate_unit_test.go"
+    },
+    {
+      "current_file": "recreate_unit_test.go",
+      "declaration": "TestCQLTypeRefNamesUserType",
+      "previous_file": "recreate_unit_test.go"
+    },
+    {
+      "current_file": "recreate_unit_test.go",
+      "declaration": "TestCQLTypeIdentifiersClassifiesParsedTypes",
+      "previous_file": "recreate_unit_test.go"
+    },
+    {
+      "current_file": "recreate_unit_test.go",
+      "declaration": "TestToCQLIsDeterministic",
+      "previous_file": "recreate_unit_test.go"
+    },
+    {
+      "current_file": "recreate_unit_test.go",
+      "declaration": "TestBodyLiteral",
+      "previous_file": "recreate_unit_test.go"
+    },
+    {
+      "current_file": "recreate_unit_test.go",
+      "declaration": "TestKeyspaceToCQLTabletsNotModeled",
+      "previous_file": "recreate_unit_test.go"
+    },
+    {
+      "current_file": "recreate_unit_test.go",
+      "declaration": "TestScyllaEncryptionOptionsUnmarshalBinary",
+      "previous_file": "recreate_unit_test.go"
+    },
+    {
+      "current_file": "refresh_all_schema_unit_test.go",
+      "declaration": "TestRefreshAllSchemaUnchanged",
+      "previous_file": "refresh_all_schema_unit_test.go"
+    },
+    {
+      "current_file": "refresh_all_schema_unit_test.go",
+      "declaration": "TestRefreshAllSchemaKeyspaceDropped",
+      "previous_file": "refresh_all_schema_unit_test.go"
+    },
+    {
+      "current_file": "refresh_all_schema_unit_test.go",
+      "declaration": "TestRefreshAllSchemaTableDropped",
+      "previous_file": "refresh_all_schema_unit_test.go"
+    },
+    {
+      "current_file": "refresh_all_schema_unit_test.go",
+      "declaration": "TestRefreshAllSchemaTableChanged",
+      "previous_file": "refresh_all_schema_unit_test.go"
+    },
+    {
+      "current_file": "refresh_all_schema_unit_test.go",
+      "declaration": "TestRefreshAllSchemaReplicationChanged",
+      "previous_file": "refresh_all_schema_unit_test.go"
+    },
+    {
+      "current_file": "refresh_all_schema_unit_test.go",
+      "declaration": "TestRefreshAllSchemaError",
+      "previous_file": "refresh_all_schema_unit_test.go"
+    },
+    {
+      "current_file": "refresh_all_schema_unit_test.go",
+      "declaration": "TestKeyspaceMetadataQueryError",
+      "previous_file": "refresh_all_schema_unit_test.go"
+    },
+    {
+      "current_file": "refresh_all_schema_unit_test.go",
+      "declaration": "TestRefreshAllSchemaErrorUnwraps",
+      "previous_file": "refresh_all_schema_unit_test.go"
+    },
+    {
+      "current_file": "ring_describer_test.go",
+      "declaration": "TestGetClusterPeerInfoZeroToken",
+      "previous_file": "ring_describer_test.go"
+    },
+    {
+      "current_file": "ring_describer_test.go",
+      "declaration": "TestMockGetHostsFromSystem",
+      "previous_file": "ring_describer_test.go"
+    },
+    {
+      "current_file": "ring_describer_test.go",
+      "declaration": "TestRingDescriberGetClusterPeerInfoClosesIter",
+      "previous_file": "ring_describer_test.go"
+    },
+    {
+      "current_file": "ring_describer_test.go",
+      "declaration": "TestGetClusterPeerInfoQueryRouting",
+      "previous_file": "ring_describer_test.go"
+    },
+    {
+      "current_file": "ring_describer_test.go",
+      "declaration": "TestRing_AddHostIfMissing_Missing",
+      "previous_file": "ring_describer_test.go"
+    },
+    {
+      "current_file": "ring_describer_test.go",
+      "declaration": "TestRing_AddHostIfMissing_Existing",
+      "previous_file": "ring_describer_test.go"
+    },
+    {
+      "current_file": "schema_queries_test.go",
+      "declaration": "TestSchemaQueries",
+      "previous_file": "schema_queries_test.go"
+    },
+    {
+      "current_file": "scylla_cdc_test.go",
+      "declaration": "TestScyllaCDCPartitioner_HashInt64MatchesHash",
+      "previous_file": "scylla_cdc_test.go"
+    },
+    {
+      "current_file": "scylla_cdc_test.go",
+      "declaration": "TestScyllaCDCPartitioner_HashInt64_ShortKeyReturnsMinToken",
+      "previous_file": "scylla_cdc_test.go"
+    },
+    {
+      "current_file": "scylla_cdc_test.go",
+      "declaration": "TestScyllaCDCPartitioner_HashInt64_ZeroAlloc",
+      "previous_file": "scylla_cdc_test.go"
+    },
+    {
+      "current_file": "scylla_shard_aware_port_integration_test.go",
+      "declaration": "TestShardAwarePortIntegrationNoReconnections",
+      "previous_file": "scylla_shard_aware_port_integration_test.go"
+    },
+    {
+      "current_file": "scylla_shard_aware_port_integration_test.go",
+      "declaration": "TestShardAwarePortIntegrationMaliciousNAT",
+      "previous_file": "scylla_shard_aware_port_integration_test.go"
+    },
+    {
+      "current_file": "scylla_shard_aware_port_integration_test.go",
+      "declaration": "TestShardAwarePortIntegrationUnreachable",
+      "previous_file": "scylla_shard_aware_port_integration_test.go"
+    },
+    {
+      "current_file": "scylla_shard_aware_port_integration_test.go",
+      "declaration": "TestShardAwarePortIntegrationUnusedIfNotEnabled",
+      "previous_file": "scylla_shard_aware_port_integration_test.go"
+    },
+    {
+      "current_file": "scylla_shard_aware_port_mocked_test.go",
+      "declaration": "TestShardAwarePortMockedNoReconnections",
+      "previous_file": "scylla_shard_aware_port_mocked_test.go"
+    },
+    {
+      "current_file": "scylla_shard_aware_port_mocked_test.go",
+      "declaration": "TestShardAwarePortMockedMaliciousNAT",
+      "previous_file": "scylla_shard_aware_port_mocked_test.go"
+    },
+    {
+      "current_file": "scylla_shard_aware_port_mocked_test.go",
+      "declaration": "TestShardAwarePortMockedUnreachable",
+      "previous_file": "scylla_shard_aware_port_mocked_test.go"
+    },
+    {
+      "current_file": "scylla_shard_aware_port_mocked_test.go",
+      "declaration": "TestShardAwarePortMockedUnusedIfNotEnabled",
+      "previous_file": "scylla_shard_aware_port_mocked_test.go"
+    },
+    {
+      "current_file": "scylla_test.go",
+      "declaration": "TestScyllaConnPickerPickNilToken",
+      "previous_file": "scylla_test.go"
+    },
+    {
+      "current_file": "scylla_test.go",
+      "declaration": "TestScyllaConnPickerPickInt64MatchesPick",
+      "previous_file": "scylla_test.go"
+    },
+    {
+      "current_file": "scylla_test.go",
+      "declaration": "TestHostConnPoolPickConnRoutesInt64TokenToShardAwarePicker",
+      "previous_file": "scylla_test.go"
+    },
+    {
+      "current_file": "scylla_test.go",
+      "declaration": "TestScyllaConnPickerHammerPickNilToken",
+      "previous_file": "scylla_test.go"
+    },
+    {
+      "current_file": "scylla_test.go",
+      "declaration": "TestScyllaConnPickerRemove",
+      "previous_file": "scylla_test.go"
+    },
+    {
+      "current_file": "scylla_test.go",
+      "declaration": "TestScyllaConnPickerShardOf",
+      "previous_file": "scylla_test.go"
+    },
+    {
+      "current_file": "scylla_test.go",
+      "declaration": "TestScyllaRandomConnPicker",
+      "previous_file": "scylla_test.go"
+    },
+    {
+      "current_file": "scylla_test.go",
+      "declaration": "TestScyllaRateLimitingExtParsing",
+      "previous_file": "scylla_test.go"
+    },
+    {
+      "current_file": "scylla_test.go",
+      "declaration": "TestScyllaLWTExtParsing",
+      "previous_file": "scylla_test.go"
+    },
+    {
+      "current_file": "scylla_test.go",
+      "declaration": "TestScyllaUseMetadataIDExtParsing",
+      "previous_file": "scylla_test.go"
+    },
+    {
+      "current_file": "scylla_test.go",
+      "declaration": "TestParseSupported",
+      "previous_file": "scylla_test.go"
+    },
+    {
+      "current_file": "scylla_test.go",
+      "declaration": "TestIsScyllaConn",
+      "previous_file": "scylla_test.go"
+    },
+    {
+      "current_file": "scylla_test.go",
+      "declaration": "TestInitConnPickerNonShardAwareScylla",
+      "previous_file": "scylla_test.go"
+    },
+    {
+      "current_file": "scylla_test.go",
+      "declaration": "TestScyllaPortIterator",
+      "previous_file": "scylla_test.go"
+    },
+    {
+      "current_file": "scylla_test.go",
+      "declaration": "TestScyllaConnPickerHandleShardCountChange",
+      "previous_file": "scylla_test.go"
+    },
+    {
+      "current_file": "segment_reassembly_test.go",
+      "declaration": "TestReadContinuationSegmentReturnsPayload",
+      "previous_file": "segment_reassembly_test.go"
+    },
+    {
+      "current_file": "segment_reassembly_test.go",
+      "declaration": "TestReadContinuationSegmentRejectsSelfContained",
+      "previous_file": "segment_reassembly_test.go"
+    },
+    {
+      "current_file": "segment_reassembly_test.go",
+      "declaration": "TestReadContinuationSegmentRejectsEmptyPayload",
+      "previous_file": "segment_reassembly_test.go"
+    },
+    {
+      "current_file": "segment_reassembly_test.go",
+      "declaration": "TestRecvSplitFrameRejectsOverlongStream",
+      "previous_file": "segment_reassembly_test.go"
+    },
+    {
+      "current_file": "segment_reassembly_test.go",
+      "declaration": "TestRecvSplitFrameAllocatesExactlyOneFrameBuffer",
+      "previous_file": "segment_reassembly_test.go"
+    },
+    {
+      "current_file": "segment_reassembly_test.go",
+      "declaration": "TestRecvSplitFrameRejectsOversizedLength",
+      "previous_file": "segment_reassembly_test.go"
+    },
+    {
+      "current_file": "segment_reassembly_test.go",
+      "declaration": "TestRecvSplitFrameRejectsTruncatedHeaderStream",
+      "previous_file": "segment_reassembly_test.go"
+    },
+    {
+      "current_file": "segment_reassembly_test.go",
+      "declaration": "TestProcessAllFramesInSegmentBoundsFrameLength",
+      "previous_file": "segment_reassembly_test.go"
+    },
+    {
+      "current_file": "segment_reassembly_test.go",
+      "declaration": "TestRecvSegmentObservesHeaderOverTheNetworkRead",
+      "previous_file": "segment_reassembly_test.go"
+    },
+    {
+      "current_file": "segment_reassembly_test.go",
+      "declaration": "TestRecvSegmentReadsACompressedSegment",
+      "previous_file": "segment_reassembly_test.go"
+    },
+    {
+      "current_file": "segment_test.go",
+      "declaration": "TestAsSegmentCompressor",
+      "previous_file": "segment_test.go"
+    },
+    {
+      "current_file": "segment_test.go",
+      "declaration": "TestResolveSegmentCompressor",
+      "previous_file": "segment_test.go"
+    },
+    {
+      "current_file": "select_without_from_integration_test.go",
+      "declaration": "TestSelectWithoutFromLiteral",
+      "previous_file": "select_without_from_integration_test.go"
+    },
+    {
+      "current_file": "select_without_from_integration_test.go",
+      "declaration": "TestSelectWithoutFromFilteredOut",
+      "previous_file": "select_without_from_integration_test.go"
+    },
+    {
+      "current_file": "select_without_from_integration_test.go",
+      "declaration": "TestSelectWithoutFromNow",
+      "previous_file": "select_without_from_integration_test.go"
+    },
+    {
+      "current_file": "select_without_from_integration_test.go",
+      "declaration": "TestSelectWithoutFromFunctionCast",
+      "previous_file": "select_without_from_integration_test.go"
+    },
+    {
+      "current_file": "select_without_from_integration_test.go",
+      "declaration": "TestSelectWithoutFromMultipleSelectors",
+      "previous_file": "select_without_from_integration_test.go"
+    },
+    {
+      "current_file": "select_without_from_integration_test.go",
+      "declaration": "TestSelectWithoutFromAlias",
+      "previous_file": "select_without_from_integration_test.go"
+    },
+    {
+      "current_file": "select_without_from_integration_test.go",
+      "declaration": "TestSelectWithoutFromExecutionModes",
+      "previous_file": "select_without_from_integration_test.go"
+    },
+    {
+      "current_file": "select_without_from_integration_test.go",
+      "declaration": "TestSelectWithoutFromBindMarker",
+      "previous_file": "select_without_from_integration_test.go"
+    },
+    {
+      "current_file": "select_without_from_integration_test.go",
+      "declaration": "TestSelectWithoutFromRoutingKey",
+      "previous_file": "select_without_from_integration_test.go"
+    },
+    {
+      "current_file": "select_without_from_integration_test.go",
+      "declaration": "TestSelectWithoutFromTokenAware",
+      "previous_file": "select_without_from_integration_test.go"
+    },
+    {
+      "current_file": "select_without_from_integration_test.go",
+      "declaration": "TestSelectWithoutFromMapScan",
+      "previous_file": "select_without_from_integration_test.go"
+    },
+    {
+      "current_file": "select_without_from_integration_test.go",
+      "declaration": "TestSelectWithoutFromAggregate",
+      "previous_file": "select_without_from_integration_test.go"
+    },
+    {
+      "current_file": "select_without_from_integration_test.go",
+      "declaration": "TestSelectWithoutFromJSON",
+      "previous_file": "select_without_from_integration_test.go"
+    },
+    {
+      "current_file": "select_without_from_integration_test.go",
+      "declaration": "TestSelectWithoutFromWithKeyspace",
+      "previous_file": "select_without_from_integration_test.go"
+    },
+    {
+      "current_file": "select_without_from_integration_test.go",
+      "declaration": "TestSelectWithoutFromUnqualifiedUDF",
+      "previous_file": "select_without_from_integration_test.go"
+    },
+    {
+      "current_file": "select_without_from_integration_test.go",
+      "declaration": "TestSelectWithoutFromRejected",
+      "previous_file": "select_without_from_integration_test.go"
+    },
+    {
+      "current_file": "session_event_bus_integration_test.go",
+      "declaration": "TestSessionEventBusReceivesSchemaChangeEvent",
+      "previous_file": "session_event_bus_integration_test.go"
+    },
+    {
+      "current_file": "session_event_bus_integration_test.go",
+      "declaration": "TestSessionEventBusReceivesControlReconnectEvent",
+      "previous_file": "session_event_bus_integration_test.go"
+    },
+    {
+      "current_file": "session_event_bus_test.go",
+      "declaration": "TestSessionEventBusPublishesEvents",
+      "previous_file": "session_event_bus_test.go"
+    },
+    {
+      "current_file": "session_id_test.go",
+      "declaration": "TestSessionIDIsUniquePerSession",
+      "previous_file": "session_id_test.go"
+    },
+    {
+      "current_file": "session_id_test.go",
+      "declaration": "TestPseudoRandomUUID",
+      "previous_file": "session_id_test.go"
+    },
+    {
+      "current_file": "session_id_test.go",
+      "declaration": "TestSessionIDReportingStartupFrame",
+      "previous_file": "session_id_test.go"
+    },
+    {
+      "current_file": "session_test.go",
+      "declaration": "TestSessionAPI",
+      "previous_file": "session_test.go"
+    },
+    {
+      "current_file": "session_test.go",
+      "declaration": "TestQueryBasicAPI",
+      "previous_file": "session_test.go"
+    },
+    {
+      "current_file": "session_test.go",
+      "declaration": "TestQueryShouldPrepare",
+      "previous_file": "session_test.go"
+    },
+    {
+      "current_file": "session_test.go",
+      "declaration": "TestBatchBasicAPI",
+      "previous_file": "session_test.go"
+    },
+    {
+      "current_file": "session_test.go",
+      "declaration": "TestConsistencyNames",
+      "previous_file": "session_test.go"
+    },
+    {
+      "current_file": "session_test.go",
+      "declaration": "TestIsUseStatement",
+      "previous_file": "session_test.go"
+    },
+    {
+      "current_file": "session_test.go",
+      "declaration": "TestRetryType_IgnoreRethrow",
+      "previous_file": "session_test.go"
+    },
+    {
+      "current_file": "session_test.go",
+      "declaration": "TestTLSTicketResumption",
+      "previous_file": "session_test.go"
+    },
+    {
+      "current_file": "session_unit_test.go",
+      "declaration": "TestExtractKeyspaceTableFromDDL",
+      "previous_file": "session_unit_test.go"
+    },
+    {
+      "current_file": "session_unit_test.go",
+      "declaration": "TestTableMetadataAfterInvalidation",
+      "previous_file": "session_unit_test.go"
+    },
+    {
+      "current_file": "session_unit_test.go",
+      "declaration": "TestTableMetadataAfterKeyspaceInvalidation",
+      "previous_file": "session_unit_test.go"
+    },
+    {
+      "current_file": "session_unit_test.go",
+      "declaration": "TestScyllaIsCdcTableAfterInvalidation",
+      "previous_file": "session_unit_test.go"
+    },
+    {
+      "current_file": "session_unit_test.go",
+      "declaration": "TestScyllaIsCdcTableNotCdcSuffix",
+      "previous_file": "session_unit_test.go"
+    },
+    {
+      "current_file": "session_unit_test.go",
+      "declaration": "TestTestTableName",
+      "previous_file": "session_unit_test.go"
+    },
+    {
+      "current_file": "session_unit_test.go",
+      "declaration": "TestTestTableNameSanitizesSpecialChars",
+      "previous_file": "session_unit_test.go"
+    },
+    {
+      "current_file": "session_unit_test.go",
+      "declaration": "TestTestTableNameTruncation",
+      "previous_file": "session_unit_test.go"
+    },
+    {
+      "current_file": "session_unit_test.go",
+      "declaration": "TestTestTableNameUniqueness",
+      "previous_file": "session_unit_test.go"
+    },
+    {
+      "current_file": "session_unit_test.go",
+      "declaration": "TestTableTabletsMetadata",
+      "previous_file": "session_unit_test.go"
+    },
+    {
+      "current_file": "session_unit_test.go",
+      "declaration": "TestForEachTablet",
+      "previous_file": "session_unit_test.go"
+    },
+    {
+      "current_file": "session_unit_test.go",
+      "declaration": "TestTableMetadataValidation",
+      "previous_file": "session_unit_test.go"
+    },
+    {
+      "current_file": "session_unit_test.go",
+      "declaration": "TestNewSessionInitialPolicyNoAttempts",
+      "previous_file": "session_unit_test.go"
+    },
+    {
+      "current_file": "step08_bootstrap_test.go",
+      "declaration": "TestStep08BootstrapPreservesCause",
+      "previous_file": "step08_bootstrap_test.go"
+    },
+    {
+      "current_file": "step08_fixture_integration_test.go",
+      "declaration": "TestStep08Cleanup",
+      "previous_file": "step08_fixture_integration_test.go"
+    },
+    {
+      "current_file": "step08_fixture_integration_test.go",
+      "declaration": "TestStep08HarnessLifecycle",
+      "previous_file": "step08_fixture_integration_test.go"
+    },
+    {
+      "current_file": "step08_fixture_integration_test.go",
+      "declaration": "TestStep08FixtureIdentity",
+      "previous_file": "step08_fixture_integration_test.go"
+    },
+    {
+      "current_file": "step08_fixture_integration_test.go",
+      "declaration": "TestStep08ClientCertificateEnforced",
+      "previous_file": "step08_fixture_integration_test.go"
+    },
+    {
+      "current_file": "step08_writer_test.go",
+      "declaration": "TestStep08DisabledWriteTimeoutClearsStartupDeadline",
+      "previous_file": "step08_writer_test.go"
+    },
+    {
+      "current_file": "step08_writer_test.go",
+      "declaration": "TestStep08ZeroWriteDeadlineSettingError",
+      "previous_file": "step08_writer_test.go"
+    },
+    {
+      "current_file": "step09_prepare_test.go",
+      "declaration": "TestStep09ConditionalPrepareAbsentResultMetadata",
+      "previous_file": "step09_prepare_test.go"
+    },
+    {
+      "current_file": "step09_prepare_test.go",
+      "declaration": "TestStep09ReprepareResultOnlyShapeWithoutRoutingHasher",
+      "previous_file": "step09_prepare_test.go"
+    },
+    {
+      "current_file": "step09_prepare_test.go",
+      "declaration": "TestStep09StreamSchemaReconcileBeforeContinuationDoesNotReplay",
+      "previous_file": "step09_prepare_test.go"
+    },
+    {
+      "current_file": "step10_migration_unit_test.go",
+      "declaration": "TestStep10RetryConfigurationReport",
+      "previous_file": "step10_migration_unit_test.go"
+    },
+    {
+      "current_file": "step10_migration_unit_test.go",
+      "declaration": "TestStep10IncrementalScalarValidationParity",
+      "previous_file": "step10_migration_unit_test.go"
+    },
+    {
+      "current_file": "step10_migration_unit_test.go",
+      "declaration": "BenchmarkStep10DurationDecode",
+      "previous_file": "step10_migration_unit_test.go"
+    },
+    {
+      "current_file": "step10_migration_unit_test.go",
+      "declaration": "TestStep10ReportUsesCurrentTypedProfile",
+      "previous_file": "step10_migration_unit_test.go"
+    },
+    {
+      "current_file": "stress_test.go",
+      "declaration": "BenchmarkConnStress",
+      "previous_file": "stress_test.go"
+    },
+    {
+      "current_file": "stress_test.go",
+      "declaration": "BenchmarkConnRoutingKey",
+      "previous_file": "stress_test.go"
+    },
+    {
+      "current_file": "tablet_integration_test.go",
+      "declaration": "TestTablets",
+      "previous_file": "tablet_integration_test.go"
+    },
+    {
+      "current_file": "token_test.go",
+      "declaration": "TestMurmur3Partitioner",
+      "previous_file": "token_test.go"
+    },
+    {
+      "current_file": "token_test.go",
+      "declaration": "TestMurmur3Partitioner_HashInt64MatchesHash",
+      "previous_file": "token_test.go"
+    },
+    {
+      "current_file": "token_test.go",
+      "declaration": "TestMurmur3Partitioner_HashInt64_ZeroAlloc",
+      "previous_file": "token_test.go"
+    },
+    {
+      "current_file": "token_test.go",
+      "declaration": "TestInt64Token",
+      "previous_file": "token_test.go"
+    },
+    {
+      "current_file": "token_test.go",
+      "declaration": "TestOrderedPartitioner",
+      "previous_file": "token_test.go"
+    },
+    {
+      "current_file": "token_test.go",
+      "declaration": "TestOrderedToken",
+      "previous_file": "token_test.go"
+    },
+    {
+      "current_file": "token_test.go",
+      "declaration": "TestRandomPartitioner",
+      "previous_file": "token_test.go"
+    },
+    {
+      "current_file": "token_test.go",
+      "declaration": "TestRandomPartitionerMatchesReference",
+      "previous_file": "token_test.go"
+    },
+    {
+      "current_file": "token_test.go",
+      "declaration": "TestRandomToken",
+      "previous_file": "token_test.go"
+    },
+    {
+      "current_file": "token_test.go",
+      "declaration": "TestTokenRing_Int",
+      "previous_file": "token_test.go"
+    },
+    {
+      "current_file": "token_test.go",
+      "declaration": "TestTokenRing_Nil",
+      "previous_file": "token_test.go"
+    },
+    {
+      "current_file": "token_test.go",
+      "declaration": "TestTokenRing_UnknownPartition",
+      "previous_file": "token_test.go"
+    },
+    {
+      "current_file": "token_test.go",
+      "declaration": "TestTokenRing_Murmur3",
+      "previous_file": "token_test.go"
+    },
+    {
+      "current_file": "token_test.go",
+      "declaration": "TestTokenRing_Ordered",
+      "previous_file": "token_test.go"
+    },
+    {
+      "current_file": "token_test.go",
+      "declaration": "TestTokenRing_Random",
+      "previous_file": "token_test.go"
+    },
+    {
+      "current_file": "topology_test.go",
+      "declaration": "TestPlacementStrategy_SimpleStrategy",
+      "previous_file": "topology_test.go"
+    },
+    {
+      "current_file": "topology_test.go",
+      "declaration": "TestPlacementStrategy_NetworkStrategy",
+      "previous_file": "topology_test.go"
+    },
+    {
+      "current_file": "topology_test.go",
+      "declaration": "TestTokenRingReplicas_ReplicasForInt64MatchesReplicasFor",
+      "previous_file": "topology_test.go"
+    },
+    {
+      "current_file": "topology_test.go",
+      "declaration": "TestTokenRingReplicas_ReplicasForInt64_EmptyRing",
+      "previous_file": "topology_test.go"
+    },
+    {
+      "current_file": "topology_test.go",
+      "declaration": "TestTokenRingReplicas_ReplicasForInt64_MismatchedTokenTypePanicsLikeReplicasFor",
+      "previous_file": "topology_test.go"
+    },
+    {
+      "current_file": "tracer_test.go",
+      "declaration": "TestTracingNewAPI",
+      "previous_file": "tracer_test.go"
+    },
+    {
+      "current_file": "tracer_unit_test.go",
+      "declaration": "TestTracerEnhanced",
+      "previous_file": "tracer_unit_test.go"
+    },
+    {
+      "current_file": "tracer_unit_test.go",
+      "declaration": "TestTracerEnhancedNotReady",
+      "previous_file": "tracer_unit_test.go"
+    },
+    {
+      "current_file": "tracer_unit_test.go",
+      "declaration": "TestTracerEnhancedErrors",
+      "previous_file": "tracer_unit_test.go"
+    },
+    {
+      "current_file": "tracer_unit_test.go",
+      "declaration": "TestTraceWriter",
+      "previous_file": "tracer_unit_test.go"
+    },
+    {
+      "current_file": "tracer_unit_test.go",
+      "declaration": "TestTraceWriterIncomplete",
+      "previous_file": "tracer_unit_test.go"
+    },
+    {
+      "current_file": "tracer_unit_test.go",
+      "declaration": "TestTraceWriterAttemptFloor",
+      "previous_file": "tracer_unit_test.go"
+    },
+    {
+      "current_file": "tracer_unit_test.go",
+      "declaration": "TestTraceWriterError",
+      "previous_file": "tracer_unit_test.go"
+    },
+    {
+      "current_file": "tuple_test.go",
+      "declaration": "TestTupleSimple",
+      "previous_file": "tuple_test.go"
+    },
+    {
+      "current_file": "tuple_test.go",
+      "declaration": "TestTuple_NullTuple",
+      "previous_file": "tuple_test.go"
+    },
+    {
+      "current_file": "tuple_test.go",
+      "declaration": "TestTuple_TupleNotSet",
+      "previous_file": "tuple_test.go"
+    },
+    {
+      "current_file": "tuple_test.go",
+      "declaration": "TestTupleMapScan",
+      "previous_file": "tuple_test.go"
+    },
+    {
+      "current_file": "tuple_test.go",
+      "declaration": "TestTupleMapScanNil",
+      "previous_file": "tuple_test.go"
+    },
+    {
+      "current_file": "tuple_test.go",
+      "declaration": "TestTupleMapScanNotSet",
+      "previous_file": "tuple_test.go"
+    },
+    {
+      "current_file": "tuple_test.go",
+      "declaration": "TestTupleLastFieldEmpty",
+      "previous_file": "tuple_test.go"
+    },
+    {
+      "current_file": "tuple_test.go",
+      "declaration": "TestTuple_NestedCollection",
+      "previous_file": "tuple_test.go"
+    },
+    {
+      "current_file": "tuple_test.go",
+      "declaration": "TestTuple_NullableNestedCollection",
+      "previous_file": "tuple_test.go"
+    },
+    {
+      "current_file": "type_name_unit_test.go",
+      "declaration": "TestLookupCassType",
+      "previous_file": "type_name_unit_test.go"
+    },
+    {
+      "current_file": "udt_test.go",
+      "declaration": "TestUDT_Marshaler",
+      "previous_file": "udt_test.go"
+    },
+    {
+      "current_file": "udt_test.go",
+      "declaration": "TestUDT_Reflect",
+      "previous_file": "udt_test.go"
+    },
+    {
+      "current_file": "udt_test.go",
+      "declaration": "TestUDT_NullObject",
+      "previous_file": "udt_test.go"
+    },
+    {
+      "current_file": "udt_test.go",
+      "declaration": "TestMapScanUDT",
+      "previous_file": "udt_test.go"
+    },
+    {
+      "current_file": "udt_test.go",
+      "declaration": "TestUDT_MissingField",
+      "previous_file": "udt_test.go"
+    },
+    {
+      "current_file": "udt_test.go",
+      "declaration": "TestUDT_EmptyCollections",
+      "previous_file": "udt_test.go"
+    },
+    {
+      "current_file": "udt_test.go",
+      "declaration": "TestUDT_UpdateField",
+      "previous_file": "udt_test.go"
+    },
+    {
+      "current_file": "udt_test.go",
+      "declaration": "TestUDT_ScanNullUDT",
+      "previous_file": "udt_test.go"
+    },
+    {
+      "current_file": "internal/cqltype/uuid_test.go",
+      "declaration": "TestUUIDNil",
+      "previous_file": "uuid_test.go"
+    },
+    {
+      "current_file": "internal/cqltype/uuid_test.go",
+      "declaration": "TestPredefinedUUID",
+      "previous_file": "uuid_test.go"
+    },
+    {
+      "current_file": "internal/cqltype/uuid_test.go",
+      "declaration": "TestInvalidUUIDCharacter",
+      "previous_file": "uuid_test.go"
+    },
+    {
+      "current_file": "internal/cqltype/uuid_test.go",
+      "declaration": "TestInvalidUUIDLength",
+      "previous_file": "uuid_test.go"
+    },
+    {
+      "current_file": "internal/cqltype/uuid_test.go",
+      "declaration": "TestRandomUUID",
+      "previous_file": "uuid_test.go"
+    },
+    {
+      "current_file": "internal/cqltype/uuid_test.go",
+      "declaration": "TestRandomUUIDInvalidAPICalls",
+      "previous_file": "uuid_test.go"
+    },
+    {
+      "current_file": "internal/cqltype/uuid_test.go",
+      "declaration": "TestUUIDFromTime",
+      "previous_file": "uuid_test.go"
+    },
+    {
+      "current_file": "internal/cqltype/uuid_test.go",
+      "declaration": "TestTimeUUIDWith",
+      "previous_file": "uuid_test.go"
+    },
+    {
+      "current_file": "internal/cqltype/uuid_test.go",
+      "declaration": "TestParseUUID",
+      "previous_file": "uuid_test.go"
+    },
+    {
+      "current_file": "internal/cqltype/uuid_test.go",
+      "declaration": "TestTimeUUID",
+      "previous_file": "uuid_test.go"
+    },
+    {
+      "current_file": "internal/cqltype/uuid_test.go",
+      "declaration": "TestUnmarshalJSON",
+      "previous_file": "uuid_test.go"
+    },
+    {
+      "current_file": "internal/cqltype/uuid_test.go",
+      "declaration": "TestMarshalText",
+      "previous_file": "uuid_test.go"
+    },
+    {
+      "current_file": "internal/cqltype/uuid_test.go",
+      "declaration": "TestMinTimeUUID",
+      "previous_file": "uuid_test.go"
+    },
+    {
+      "current_file": "internal/cqltype/uuid_test.go",
+      "declaration": "TestMaxTimeUUID",
+      "previous_file": "uuid_test.go"
+    },
+    {
+      "current_file": "v2_auth_test.go",
+      "declaration": "TestV2AuthExchangeIsolationAndNull",
+      "previous_file": "v2_auth_test.go"
+    },
+    {
+      "current_file": "v2_auth_test.go",
+      "declaration": "TestV2PasswordAuthAndCancellation",
+      "previous_file": "v2_auth_test.go"
+    },
+    {
+      "current_file": "internal/codec/codec_allocations_test.go",
+      "declaration": "TestV2TupleValueIterationAllocationsDoNotScale",
+      "previous_file": "v2_codec_allocations_test.go"
+    },
+    {
+      "current_file": "internal/codec/codec_direct_test.go",
+      "declaration": "TestV2RowDecodeIntoUsesCallerFieldsAndResets",
+      "previous_file": "v2_codec_direct_test.go"
+    },
+    {
+      "current_file": "internal/codec/codec_direct_test.go",
+      "declaration": "TestV2RowDecodeIntoCompositionPropagatesDestinations",
+      "previous_file": "v2_codec_direct_test.go"
+    },
+    {
+      "current_file": "internal/codec/codec_direct_test.go",
+      "declaration": "TestV2CollectDetachesEveryNestedFamily",
+      "previous_file": "v2_codec_direct_test.go"
+    },
+    {
+      "current_file": "internal/codec/codec_direct_test.go",
+      "declaration": "TestV2UDTIdentityCheckedBeforeNullEncoding",
+      "previous_file": "v2_codec_direct_test.go"
+    },
+    {
+      "current_file": "internal/codec/collections_bench_test.go",
+      "declaration": "BenchmarkV2ContainerIteration",
+      "previous_file": "v2_collections_bench_test.go"
+    },
+    {
+      "current_file": "internal/codec/collections_bench_test.go",
+      "declaration": "BenchmarkV2ContainerSegmentedIteration",
+      "previous_file": "v2_collections_bench_test.go"
+    },
+    {
+      "current_file": "internal/codec/collections_bench_test.go",
+      "declaration": "BenchmarkV2ContainerCompiledDecode",
+      "previous_file": "v2_collections_bench_test.go"
+    },
+    {
+      "current_file": "internal/codec/collections_bench_test.go",
+      "declaration": "BenchmarkV2ContainerTupleIteration",
+      "previous_file": "v2_collections_bench_test.go"
+    },
+    {
+      "current_file": "internal/codec/collections_bench_test.go",
+      "declaration": "TestV2ContainerIterationAllocationsDoNotScale",
+      "previous_file": "v2_collections_bench_test.go"
+    },
+    {
+      "current_file": "internal/codec/collections_bench_test.go",
+      "declaration": "TestV2ContainerSegmentedIterationAllocationsDoNotScale",
+      "previous_file": "v2_collections_bench_test.go"
+    },
+    {
+      "current_file": "internal/codec/collections_test.go",
+      "declaration": "TestV2ContainerNativeGoldens",
+      "previous_file": "v2_collections_test.go"
+    },
+    {
+      "current_file": "internal/codec/collections_test.go",
+      "declaration": "TestV2ContainerStrictEnclosingFraming",
+      "previous_file": "v2_collections_test.go"
+    },
+    {
+      "current_file": "internal/codec/collections_test.go",
+      "declaration": "TestV2ContainerLazySemanticFailureIsPermanent",
+      "previous_file": "v2_collections_test.go"
+    },
+    {
+      "current_file": "internal/codec/collections_test.go",
+      "declaration": "TestV2VectorStrictDimensionsAndLengths",
+      "previous_file": "v2_collections_test.go"
+    },
+    {
+      "current_file": "internal/codec/collections_test.go",
+      "declaration": "TestV2ContainerFragmentAliasingAndCloneLease",
+      "previous_file": "v2_collections_test.go"
+    },
+    {
+      "current_file": "internal/codec/collections_test.go",
+      "declaration": "TestV2ContainerEmptyIteratorDetectsRelease",
+      "previous_file": "v2_collections_test.go"
+    },
+    {
+      "current_file": "internal/codec/collections_test.go",
+      "declaration": "TestV2VectorVariablePayloadBorrowingAndOwnedDetach",
+      "previous_file": "v2_collections_test.go"
+    },
+    {
+      "current_file": "internal/codec/collections_test.go",
+      "declaration": "TestV2ContainerCompiledPlanChecksOnceConcurrent",
+      "previous_file": "v2_collections_test.go"
+    },
+    {
+      "current_file": "v2_config_test.go",
+      "declaration": "TestV2RuntimeConfigSnapshotAndValidation",
+      "previous_file": "v2_config_test.go"
+    },
+    {
+      "current_file": "v2_config_test.go",
+      "declaration": "TestV2RuntimeTimestampGeneratorConcurrent",
+      "previous_file": "v2_config_test.go"
+    },
+    {
+      "current_file": "v2_config_test.go",
+      "declaration": "TestV2RuntimeDNSContextAndDialHost",
+      "previous_file": "v2_config_test.go"
+    },
+    {
+      "current_file": "v2_config_test.go",
+      "declaration": "TestV2RuntimeConnectCancelledBeforeSetup",
+      "previous_file": "v2_config_test.go"
+    },
+    {
+      "current_file": "internal/codec/dynamic_test.go",
+      "declaration": "TestV2DynamicScalarWireAndAccessors",
+      "previous_file": "v2_dynamic_test.go"
+    },
+    {
+      "current_file": "internal/codec/dynamic_test.go",
+      "declaration": "TestV2DynamicAggregateWireAndMetadata",
+      "previous_file": "v2_dynamic_test.go"
+    },
+    {
+      "current_file": "internal/codec/dynamic_test.go",
+      "declaration": "TestV2DynamicStatesAndTrailingFields",
+      "previous_file": "v2_dynamic_test.go"
+    },
+    {
+      "current_file": "internal/codec/dynamic_test.go",
+      "declaration": "TestV2DynamicMalformedBodiesAreCheckedLazily",
+      "previous_file": "v2_dynamic_test.go"
+    },
+    {
+      "current_file": "internal/codec/dynamic_test.go",
+      "declaration": "TestV2DynamicParameterNamesCountsAndRollback",
+      "previous_file": "v2_dynamic_test.go"
+    },
+    {
+      "current_file": "internal/codec/dynamic_test.go",
+      "declaration": "TestV2DynamicRowsPhysicalSchemaLazyAccessAndClone",
+      "previous_file": "v2_dynamic_test.go"
+    },
+    {
+      "current_file": "internal/codec/dynamic_test.go",
+      "declaration": "TestV2DynamicBorrowingAndOwnedAggregateClone",
+      "previous_file": "v2_dynamic_test.go"
+    },
+    {
+      "current_file": "internal/codec/dynamic_test.go",
+      "declaration": "TestV2DynamicConcurrentPlansAndRowReaders",
+      "previous_file": "v2_dynamic_test.go"
+    },
+    {
+      "current_file": "internal/codec/dynamic_test.go",
+      "declaration": "TestV2DynamicRowsComposeWithTypedRecords",
+      "previous_file": "v2_dynamic_test.go"
+    },
+    {
+      "current_file": "internal/codec/dynamic_test.go",
+      "declaration": "TestV2DynamicChecksTypesEvenWithoutPayload",
+      "previous_file": "v2_dynamic_test.go"
+    },
+    {
+      "current_file": "v2_events_test.go",
+      "declaration": "TestV2SubscriptionsFilterOverflowAndClose",
+      "previous_file": "v2_events_test.go"
+    },
+    {
+      "current_file": "v2_events_test.go",
+      "declaration": "TestV2SubscriptionClosePublishRace",
+      "previous_file": "v2_events_test.go"
+    },
+    {
+      "current_file": "v2_execute_integration_test.go",
+      "declaration": "TestV2RuntimeDatabaseSmoke",
+      "previous_file": "v2_execute_integration_test.go"
+    },
+    {
+      "current_file": "v2_execute_test.go",
+      "declaration": "TestV2RuntimePagerEmptyContinuationAndProfileSnapshot",
+      "previous_file": "v2_execute_test.go"
+    },
+    {
+      "current_file": "v2_execute_test.go",
+      "declaration": "TestV2RuntimeRepeatedPagingState",
+      "previous_file": "v2_execute_test.go"
+    },
+    {
+      "current_file": "v2_execute_test.go",
+      "declaration": "TestV2RuntimeSpeculativeLoserWriterKeepsInput",
+      "previous_file": "v2_execute_test.go"
+    },
+    {
+      "current_file": "v2_execution_step07_bench_test.go",
+      "declaration": "BenchmarkStep07ExecutionStorage",
+      "previous_file": "v2_execution_step07_bench_test.go"
+    },
+    {
+      "current_file": "v2_execution_step07_bench_test.go",
+      "declaration": "BenchmarkStep07SharedAdmission",
+      "previous_file": "v2_execution_step07_bench_test.go"
+    },
+    {
+      "current_file": "v2_execution_step07_fuzz_test.go",
+      "declaration": "FuzzStep07StreamExecutionBoundary",
+      "previous_file": "v2_execution_step07_fuzz_test.go"
+    },
+    {
+      "current_file": "v2_execution_step07_test.go",
+      "declaration": "TestStep07KindDeclarationAndServerRefinement",
+      "previous_file": "v2_execution_step07_test.go"
+    },
+    {
+      "current_file": "v2_execution_step07_test.go",
+      "declaration": "TestStep07UnknownConditionalNeverSpeculateAndProfileStable",
+      "previous_file": "v2_execution_step07_test.go"
+    },
+    {
+      "current_file": "v2_execution_step07_test.go",
+      "declaration": "TestStep07SessionClosePreservesDeliveredPageAndDrains",
+      "previous_file": "v2_execution_step07_test.go"
+    },
+    {
+      "current_file": "v2_execution_step07_test.go",
+      "declaration": "TestStep07BatchAdmissionRollbackAndClassification",
+      "previous_file": "v2_execution_step07_test.go"
+    },
+    {
+      "current_file": "v2_execution_step07_test.go",
+      "declaration": "TestStep07ObserverAndLoggerPanicsContained",
+      "previous_file": "v2_execution_step07_test.go"
+    },
+    {
+      "current_file": "v2_execution_step07_test.go",
+      "declaration": "TestStep07ConfigurationDefaultsAndZeroSemantics",
+      "previous_file": "v2_execution_step07_test.go"
+    },
+    {
+      "current_file": "v2_execution_step07_test.go",
+      "declaration": "TestStep07QualifiedLegacyProtocolKeyspace",
+      "previous_file": "v2_execution_step07_test.go"
+    },
+    {
+      "current_file": "v2_execution_step07_test.go",
+      "declaration": "TestStep07HostPinSurvivesCustomPolicy",
+      "previous_file": "v2_execution_step07_test.go"
+    },
+    {
+      "current_file": "v2_execution_step07_test.go",
+      "declaration": "TestStep07SafeRetryBytesWritten",
+      "previous_file": "v2_execution_step07_test.go"
+    },
+    {
+      "current_file": "v2_execution_step07_test.go",
+      "declaration": "TestStep07ManualAndBatchPagingSettingsAreExplicit",
+      "previous_file": "v2_execution_step07_test.go"
+    },
+    {
+      "current_file": "v2_fixture_stream_bench_test.go",
+      "declaration": "BenchmarkStep08IndependentStreamOracle",
+      "previous_file": "v2_fixture_stream_bench_test.go"
+    },
+    {
+      "current_file": "v2_fixture_stream_test.go",
+      "declaration": "TestStep08StreamIndependentEverySplitAndTruncation",
+      "previous_file": "v2_fixture_stream_test.go"
+    },
+    {
+      "current_file": "v2_fixture_stream_test.go",
+      "declaration": "TestStep08StreamIndependentFirstRowGate",
+      "previous_file": "v2_fixture_stream_test.go"
+    },
+    {
+      "current_file": "v2_fixture_stream_test.go",
+      "declaration": "TestStep08StreamIndependentCorruptChecksums",
+      "previous_file": "v2_fixture_stream_test.go"
+    },
+    {
+      "current_file": "v2_fixture_stream_test.go",
+      "declaration": "TestStep08StreamCloseDuringFinalCallerAccess",
+      "previous_file": "v2_fixture_stream_test.go"
+    },
+    {
+      "current_file": "v2_fixture_stream_test.go",
+      "declaration": "TestStep08LoggerConcurrentCapture",
+      "previous_file": "v2_fixture_stream_test.go"
+    },
+    {
+      "current_file": "v2_fixture_stream_test.go",
+      "declaration": "TestStep08StreamInterruptedRequestWrite",
+      "previous_file": "v2_fixture_stream_test.go"
+    },
+    {
+      "current_file": "v2_fixture_stream_test.go",
+      "declaration": "TestStep08IndependentRawDirectRead",
+      "previous_file": "v2_fixture_stream_test.go"
+    },
+    {
+      "current_file": "v2_integration_helpers_unit_test.go",
+      "declaration": "TestV2IntegrationHelpers",
+      "previous_file": "v2_integration_helpers_unit_test.go"
+    },
+    {
+      "current_file": "v2_metadata_control_integration_test.go",
+      "declaration": "TestStep05MetadataControlLive",
+      "previous_file": "v2_metadata_control_integration_test.go"
+    },
+    {
+      "current_file": "v2_metadata_control_test.go",
+      "declaration": "TestStep05ExplicitContactsHaveActualDistinctIdentities",
+      "previous_file": "v2_metadata_control_test.go"
+    },
+    {
+      "current_file": "v2_metadata_control_test.go",
+      "declaration": "TestStep05IncompleteKnownPeerRetainsCompleteTopology",
+      "previous_file": "v2_metadata_control_test.go"
+    },
+    {
+      "current_file": "v2_metadata_control_test.go",
+      "declaration": "TestStep05TopologyRemovalTombstoneAndRecreate",
+      "previous_file": "v2_metadata_control_test.go"
+    },
+    {
+      "current_file": "v2_metadata_control_test.go",
+      "declaration": "TestStep05SnapshotPublicationCannotCrossDrop",
+      "previous_file": "v2_metadata_control_test.go"
+    },
+    {
+      "current_file": "v2_metadata_control_test.go",
+      "declaration": "TestStep05TableRefreshCannotCrossDropAndFailure",
+      "previous_file": "v2_metadata_control_test.go"
+    },
+    {
+      "current_file": "v2_metadata_control_test.go",
+      "declaration": "TestStep05SchemaCapabilityAndMetadataScope",
+      "previous_file": "v2_metadata_control_test.go"
+    },
+    {
+      "current_file": "v2_metadata_control_test.go",
+      "declaration": "TestStep05OverflowHighestGenerationAndIsolation",
+      "previous_file": "v2_metadata_control_test.go"
+    },
+    {
+      "current_file": "v2_metadata_control_test.go",
+      "declaration": "TestStep05ShutdownJoinsWorkersAndRepeatedClosers",
+      "previous_file": "v2_metadata_control_test.go"
+    },
+    {
+      "current_file": "v2_metadata_control_test.go",
+      "declaration": "TestStep05DebouncerSerialBoundedAndJoined",
+      "previous_file": "v2_metadata_control_test.go"
+    },
+    {
+      "current_file": "v2_metadata_control_test.go",
+      "declaration": "TestStep05AgreementChecksEnabledDownAndZeroSuccess",
+      "previous_file": "v2_metadata_control_test.go"
+    },
+    {
+      "current_file": "v2_metadata_control_test.go",
+      "declaration": "TestStep05AgreementRetainsExcludedCoordinatorAndFilters",
+      "previous_file": "v2_metadata_control_test.go"
+    },
+    {
+      "current_file": "v2_metadata_control_test.go",
+      "declaration": "TestStep05AgreementTerminalAuthorization",
+      "previous_file": "v2_metadata_control_test.go"
+    },
+    {
+      "current_file": "v2_metadata_control_test.go",
+      "declaration": "TestStep05ClientRouteConfigSnapshotsAndValidation",
+      "previous_file": "v2_metadata_control_test.go"
+    },
+    {
+      "current_file": "v2_metadata_control_test.go",
+      "declaration": "TestStep05ClientRoutesFencePerPairAndPreserveDisjointUpdates",
+      "previous_file": "v2_metadata_control_test.go"
+    },
+    {
+      "current_file": "v2_metadata_control_test.go",
+      "declaration": "TestStep05LatePoolConnectedCannotUndoDownOrRemoval",
+      "previous_file": "v2_metadata_control_test.go"
+    },
+    {
+      "current_file": "v2_metadata_control_test.go",
+      "declaration": "BenchmarkStep05MetadataRead",
+      "previous_file": "v2_metadata_control_test.go"
+    },
+    {
+      "current_file": "v2_metadata_control_test.go",
+      "declaration": "BenchmarkStep05EventPublication",
+      "previous_file": "v2_metadata_control_test.go"
+    },
+    {
+      "current_file": "v2_metadata_control_test.go",
+      "declaration": "TestStep05ClientRouteDNSAndConnectFallbackShareDeadline",
+      "previous_file": "v2_metadata_control_test.go"
+    },
+    {
+      "current_file": "v2_metadata_control_test.go",
+      "declaration": "TestStep05SuccessfulDDLErrorNeverRetriesStatement",
+      "previous_file": "v2_metadata_control_test.go"
+    },
+    {
+      "current_file": "v2_metadata_control_test.go",
+      "declaration": "TestStep05ConnectedCallbackPausedAcrossNewerDown",
+      "previous_file": "v2_metadata_control_test.go"
+    },
+    {
+      "current_file": "v2_metadata_control_test.go",
+      "declaration": "TestStep05TypedTopologyRejectsMalformedTokensAndPorts",
+      "previous_file": "v2_metadata_control_test.go"
+    },
+    {
+      "current_file": "v2_metadata_control_test.go",
+      "declaration": "TestStep05DisabledEventsDoNotMutateMetadata",
+      "previous_file": "v2_metadata_control_test.go"
+    },
+    {
+      "current_file": "v2_metadata_control_test.go",
+      "declaration": "TestStep05PartialBaseReadFailureRetainsLatestSnapshot",
+      "previous_file": "v2_metadata_control_test.go"
+    },
+    {
+      "current_file": "v2_metadata_control_test.go",
+      "declaration": "TestStep05EventChargeTransfersUntilDownstreamConsumptionAndDrain",
+      "previous_file": "v2_metadata_control_test.go"
+    },
+    {
+      "current_file": "v2_metadata_control_test.go",
+      "declaration": "TestStep05RouteEventExpansionFallsBackToFullRefresh",
+      "previous_file": "v2_metadata_control_test.go"
+    },
+    {
+      "current_file": "v2_metadata_control_test.go",
+      "declaration": "BenchmarkStep05SchemaSnapshotPublication",
+      "previous_file": "v2_metadata_control_test.go"
+    },
+    {
+      "current_file": "v2_metadata_control_test.go",
+      "declaration": "TestStep05RouteDeletionAdvancesTransportInsertionEpoch",
+      "previous_file": "v2_metadata_control_test.go"
+    },
+    {
+      "current_file": "v2_metadata_control_test.go",
+      "declaration": "TestStep05EmptyRouteFullReadDetectsNewerPair",
+      "previous_file": "v2_metadata_control_test.go"
+    },
+    {
+      "current_file": "v2_metadata_control_test.go",
+      "declaration": "TestStep05DDLSucceededStatusSurvivesAgreementCancellation",
+      "previous_file": "v2_metadata_control_test.go"
+    },
+    {
+      "current_file": "v2_metadata_control_test.go",
+      "declaration": "TestStep05PublicationContentionEmitsTerminalResync",
+      "previous_file": "v2_metadata_control_test.go"
+    },
+    {
+      "current_file": "v2_metadata_control_test.go",
+      "declaration": "TestStep05SchemaRetryRejectedAfterShutdownClearsRegistration",
+      "previous_file": "v2_metadata_control_test.go"
+    },
+    {
+      "current_file": "v2_metadata_refresh_test.go",
+      "declaration": "TestV2MetadataDropDuringFetchIsConfirmed",
+      "previous_file": "v2_metadata_refresh_test.go"
+    },
+    {
+      "current_file": "v2_metadata_refresh_test.go",
+      "declaration": "TestV2MetadataPartialRefreshRetainsPriorSnapshot",
+      "previous_file": "v2_metadata_refresh_test.go"
+    },
+    {
+      "current_file": "v2_metadata_test.go",
+      "declaration": "TestV2MetadataSnapshotsDetachNestedSchema",
+      "previous_file": "v2_metadata_test.go"
+    },
+    {
+      "current_file": "v2_metadata_test.go",
+      "declaration": "TestV2MetadataRetainedAcrossPublicationAndClose",
+      "previous_file": "v2_metadata_test.go"
+    },
+    {
+      "current_file": "v2_metadata_test.go",
+      "declaration": "TestV2LifecyclePanicContained",
+      "previous_file": "v2_metadata_test.go"
+    },
+    {
+      "current_file": "v2_metadata_test.go",
+      "declaration": "TestV2SchemaValidationRejectsBrokenIdentityAndOrdering",
+      "previous_file": "v2_metadata_test.go"
+    },
+    {
+      "current_file": "v2_metadata_test.go",
+      "declaration": "TestV2SchemaTypeSyntax",
+      "previous_file": "v2_metadata_test.go"
+    },
+    {
+      "current_file": "v2_metadata_test.go",
+      "declaration": "TestV2MetricsPercentilesAndSchemaGeneration",
+      "previous_file": "v2_metadata_test.go"
+    },
+    {
+      "current_file": "v2_metadata_test.go",
+      "declaration": "TestV2TabletFeedbackOverflowResyncAndEpoch",
+      "previous_file": "v2_metadata_test.go"
+    },
+    {
+      "current_file": "v2_policy_test.go",
+      "declaration": "TestV2StreamingPartitioners",
+      "previous_file": "v2_policy_test.go"
+    },
+    {
+      "current_file": "v2_policy_test.go",
+      "declaration": "TestV2PartitionKeyCanonicalStream",
+      "previous_file": "v2_policy_test.go"
+    },
+    {
+      "current_file": "v2_policy_test.go",
+      "declaration": "TestV2RoutingOrderAndIndependentPlans",
+      "previous_file": "v2_policy_test.go"
+    },
+    {
+      "current_file": "v2_policy_test.go",
+      "declaration": "TestV2RoutingTabletMissAndStrictShard",
+      "previous_file": "v2_policy_test.go"
+    },
+    {
+      "current_file": "v2_policy_test.go",
+      "declaration": "TestV2LatencyRoutingDeprioritizesAndRetries",
+      "previous_file": "v2_policy_test.go"
+    },
+    {
+      "current_file": "v2_pool_limits_test.go",
+      "declaration": "TestV2SupportedShardingValidationBeforeAllocation",
+      "previous_file": "v2_pool_limits_test.go"
+    },
+    {
+      "current_file": "v2_pool_limits_test.go",
+      "declaration": "TestV2PoolTargetArithmeticAndMaximumValidShardCount",
+      "previous_file": "v2_pool_limits_test.go"
+    },
+    {
+      "current_file": "v2_pool_limits_test.go",
+      "declaration": "TestV2HugePoolTargetUsesBoundedDialWorkers",
+      "previous_file": "v2_pool_limits_test.go"
+    },
+    {
+      "current_file": "v2_pool_limits_test.go",
+      "declaration": "TestV2ShardingZeroMSBMapsEntireTokenRange",
+      "previous_file": "v2_pool_limits_test.go"
+    },
+    {
+      "current_file": "v2_pool_limits_test.go",
+      "declaration": "TestV2LogicalTLSNamesHandleIPv6AndZones",
+      "previous_file": "v2_pool_limits_test.go"
+    },
+    {
+      "current_file": "v2_pool_limits_test.go",
+      "declaration": "TestV2TCPWrapperSocketControlsApplyOrFailExplicitly",
+      "previous_file": "v2_pool_limits_test.go"
+    },
+    {
+      "current_file": "v2_pool_limits_test.go",
+      "declaration": "TestV2ConnectionPickerPositionWrapIsBounded",
+      "previous_file": "v2_pool_limits_test.go"
+    },
+    {
+      "current_file": "v2_prepared_conflict_unit_test.go",
+      "declaration": "TestV2PreparedConflictRunsOnlyRelevantTypedRefresh",
+      "previous_file": "v2_prepared_conflict_unit_test.go"
+    },
+    {
+      "current_file": "v2_prepared_conflict_unit_test.go",
+      "declaration": "TestV2PreparedConflictRefreshRetriesDirtyScope",
+      "previous_file": "v2_prepared_conflict_unit_test.go"
+    },
+    {
+      "current_file": "v2_prepared_conflict_unit_test.go",
+      "declaration": "TestV2PreparedConflictOverflowPropagatesAndRetries",
+      "previous_file": "v2_prepared_conflict_unit_test.go"
+    },
+    {
+      "current_file": "v2_prepared_conflict_unit_test.go",
+      "declaration": "TestV2PreparedConflictCanRescheduleAfterReconciliation",
+      "previous_file": "v2_prepared_conflict_unit_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_bench_test.go",
+      "declaration": "BenchmarkV2PagingHistoryLookup",
+      "previous_file": "v2_prepared_paging_bench_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_bench_test.go",
+      "declaration": "BenchmarkV2WarmPreparedSelection",
+      "previous_file": "v2_prepared_paging_bench_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_bench_test.go",
+      "declaration": "BenchmarkV2PageCallerDestination",
+      "previous_file": "v2_prepared_paging_bench_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_bench_test.go",
+      "declaration": "BenchmarkV2ResultPlanExactEntry",
+      "previous_file": "v2_prepared_paging_bench_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_fuzz_test.go",
+      "declaration": "FuzzV2PageDestinationFraming",
+      "previous_file": "v2_prepared_paging_fuzz_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_fuzz_test.go",
+      "declaration": "FuzzV2PagingHistoryBudgets",
+      "previous_file": "v2_prepared_paging_fuzz_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_integration_test.go",
+      "declaration": "TestV2PreparedPagingConcurrentSchemaAndDestinations",
+      "previous_file": "v2_prepared_paging_integration_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_test.go",
+      "declaration": "TestV2PageNextIntoMixedCurrentAndRetention",
+      "previous_file": "v2_prepared_paging_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_test.go",
+      "declaration": "TestV2PageNextIntoTerminalClearing",
+      "previous_file": "v2_prepared_paging_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_test.go",
+      "declaration": "TestV2PageNextIntoPartialErrorClears",
+      "previous_file": "v2_prepared_paging_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_test.go",
+      "declaration": "TestV2RowsNextIntoPagingAndCloseInterrupt",
+      "previous_file": "v2_prepared_paging_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_test.go",
+      "declaration": "TestV2RowsActiveNilDoesNotPage",
+      "previous_file": "v2_prepared_paging_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_test.go",
+      "declaration": "TestV2PagingHistoryCyclesLimitsAndTokenIdentity",
+      "previous_file": "v2_prepared_paging_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_test.go",
+      "declaration": "TestV2PagingLimitsConfigurationAndCompleteState",
+      "previous_file": "v2_prepared_paging_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_test.go",
+      "declaration": "TestV2RowsCycleAndBudgetBeforePrefetch",
+      "previous_file": "v2_prepared_paging_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_test.go",
+      "declaration": "TestV2ResultPlanCacheScopedReuseAndNoCompileLock",
+      "previous_file": "v2_prepared_paging_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_test.go",
+      "declaration": "TestV2PreparedResponseRetainsMetadataAcrossSchemaChange",
+      "previous_file": "v2_prepared_paging_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_test.go",
+      "declaration": "TestV2PreparedPublicationExactEntryEpochAndOpaqueIDs",
+      "previous_file": "v2_prepared_paging_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_test.go",
+      "declaration": "TestV2PreparedDependencyTypesAndSnapshotChanges",
+      "previous_file": "v2_prepared_paging_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_test.go",
+      "declaration": "TestV2PrepareHostFlightsCancellationAndSchemaCompatibility",
+      "previous_file": "v2_prepared_paging_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_test.go",
+      "declaration": "TestV2WarmPreparedHandleSurvivesDiscoveryCacheLock",
+      "previous_file": "v2_prepared_paging_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_test.go",
+      "declaration": "TestV2PreparedMetadataIntroducesUDTDependency",
+      "previous_file": "v2_prepared_paging_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_test.go",
+      "declaration": "TestV2PreparedNewDependencyEventDuringAttemptFencesPublication",
+      "previous_file": "v2_prepared_paging_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_test.go",
+      "declaration": "TestV2PreparedRetryRepreparePagingNeverReencodes",
+      "previous_file": "v2_prepared_paging_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_test.go",
+      "declaration": "TestV2PreparedHostRoutingChangesFailBeforeResend",
+      "previous_file": "v2_prepared_paging_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_test.go",
+      "declaration": "TestV2PreparedWorkerShutdownJoinsWithoutInput",
+      "previous_file": "v2_prepared_paging_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_test.go",
+      "declaration": "TestV2PreparedColdHostsDoNotSerialize",
+      "previous_file": "v2_prepared_paging_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_test.go",
+      "declaration": "TestV2PreparedPrepareResultDoesNotOverwriteReplacement",
+      "previous_file": "v2_prepared_paging_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_test.go",
+      "declaration": "TestV2PagingHistoryHashCollisionComparesFullBytes",
+      "previous_file": "v2_prepared_paging_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_test.go",
+      "declaration": "TestV2ManualPageEmptyContinuationSurvivesClose",
+      "previous_file": "v2_prepared_paging_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_test.go",
+      "declaration": "TestV2PreparedOldPageKeepsMatchingPlan",
+      "previous_file": "v2_prepared_paging_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_test.go",
+      "declaration": "TestV2ResultPlanCompileSchemaFenceKeepsRetainedPage",
+      "previous_file": "v2_prepared_paging_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_test.go",
+      "declaration": "TestV2PagerCompletionCanInspectIterator",
+      "previous_file": "v2_prepared_paging_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_test.go",
+      "declaration": "TestV2PagerConcurrentCloseReleasesExactlyOnce",
+      "previous_file": "v2_prepared_paging_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_test.go",
+      "declaration": "TestV2DeliveredPageSurvivesSessionCloseUntilAdvance",
+      "previous_file": "v2_prepared_paging_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_test.go",
+      "declaration": "TestV2PreparedConflictingHostsRetainResponseAndCoalesce",
+      "previous_file": "v2_prepared_paging_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_test.go",
+      "declaration": "TestV2ResultPlanPublicationSharesEpochGate",
+      "previous_file": "v2_prepared_paging_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_test.go",
+      "declaration": "TestV2InitialPrepareDoesNotCacheChangedEpoch",
+      "previous_file": "v2_prepared_paging_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_test.go",
+      "declaration": "TestV2StalePrepareFailurePreservesDiscoveryBound",
+      "previous_file": "v2_prepared_paging_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_test.go",
+      "declaration": "TestV2DiscoveryOrderRemovesAllDuplicates",
+      "previous_file": "v2_prepared_paging_test.go"
+    },
+    {
+      "current_file": "v2_prepared_paging_test.go",
+      "declaration": "TestV2DiscoveryCapacityZeroAndConcurrentMisses",
+      "previous_file": "v2_prepared_paging_test.go"
+    },
+    {
+      "current_file": "v2_profiles_test.go",
+      "declaration": "TestV2RuntimeSafeRetryPreservesServerErrors",
+      "previous_file": "v2_profiles_test.go"
+    },
+    {
+      "current_file": "v2_profiles_test.go",
+      "declaration": "TestV2RuntimeStatementKeywords",
+      "previous_file": "v2_profiles_test.go"
+    },
+    {
+      "current_file": "v2_result_test.go",
+      "declaration": "TestV2RuntimePageLeaseAndClone",
+      "previous_file": "v2_result_test.go"
+    },
+    {
+      "current_file": "v2_result_test.go",
+      "declaration": "TestV2RuntimeCASMetadataAndEmptyPageValidation",
+      "previous_file": "v2_result_test.go"
+    },
+    {
+      "current_file": "v2_result_test.go",
+      "declaration": "TestV2RuntimeFutureCloseRetiresLatePage",
+      "previous_file": "v2_result_test.go"
+    },
+    {
+      "current_file": "v2_routing_step06_bench_test.go",
+      "declaration": "BenchmarkStep06FirstTarget",
+      "previous_file": "v2_routing_step06_bench_test.go"
+    },
+    {
+      "current_file": "v2_routing_step06_bench_test.go",
+      "declaration": "BenchmarkStep06PlacementUpdate",
+      "previous_file": "v2_routing_step06_bench_test.go"
+    },
+    {
+      "current_file": "v2_routing_step06_bench_test.go",
+      "declaration": "BenchmarkStep06FeedbackQueue",
+      "previous_file": "v2_routing_step06_bench_test.go"
+    },
+    {
+      "current_file": "v2_routing_step06_test.go",
+      "declaration": "TestStep06TabletPayloadAndWire",
+      "previous_file": "v2_routing_step06_test.go"
+    },
+    {
+      "current_file": "v2_routing_step06_test.go",
+      "declaration": "TestStep06PlacementFencesSharingAndOverflow",
+      "previous_file": "v2_routing_step06_test.go"
+    },
+    {
+      "current_file": "v2_routing_step06_test.go",
+      "declaration": "TestStep06LeaderLocalityLWTAndFallback",
+      "previous_file": "v2_routing_step06_test.go"
+    },
+    {
+      "current_file": "v2_routing_step06_test.go",
+      "declaration": "TestStep06ConcurrentPlansAndFeedback",
+      "previous_file": "v2_routing_step06_test.go"
+    },
+    {
+      "current_file": "v2_routing_step06_test.go",
+      "declaration": "TestStep06PickerStrictAndAdvisory",
+      "previous_file": "v2_routing_step06_test.go"
+    },
+    {
+      "current_file": "v2_routing_step06_test.go",
+      "declaration": "FuzzStep06TabletPayload",
+      "previous_file": "v2_routing_step06_test.go"
+    },
+    {
+      "current_file": "v2_routing_step06_test.go",
+      "declaration": "TestStep06NegotiationVersionAndFailedExecuteFeedback",
+      "previous_file": "v2_routing_step06_test.go"
+    },
+    {
+      "current_file": "v2_routing_step06_test.go",
+      "declaration": "TestStep06VnodeDistinctNodesAndRackBudget",
+      "previous_file": "v2_routing_step06_test.go"
+    },
+    {
+      "current_file": "v2_routing_step06_test.go",
+      "declaration": "TestStep06AllDisconnectedAndMissingFollowers",
+      "previous_file": "v2_routing_step06_test.go"
+    },
+    {
+      "current_file": "v2_routing_step06_test.go",
+      "declaration": "TestStep06StrictStreamingReservationUsesExistingCapacity",
+      "previous_file": "v2_routing_step06_test.go"
+    },
+    {
+      "current_file": "v2_routing_step06_test.go",
+      "declaration": "TestStep06LatencyThresholdExpiryAndSamples",
+      "previous_file": "v2_routing_step06_test.go"
+    },
+    {
+      "current_file": "v2_routing_step06_test.go",
+      "declaration": "TestStep06BindingCapturesPartitionerAndBorrowedSpans",
+      "previous_file": "v2_routing_step06_test.go"
+    },
+    {
+      "current_file": "v2_routing_step06_test.go",
+      "declaration": "TestStep06FeedbackEnqueueDoesNotWaitForPublication",
+      "previous_file": "v2_routing_step06_test.go"
+    },
+    {
+      "current_file": "v2_routing_token_test.go",
+      "declaration": "TestV2RoutingHashUsesSegmentedCanonicalBytes",
+      "previous_file": "v2_routing_token_test.go"
+    },
+    {
+      "current_file": "v2_routing_token_test.go",
+      "declaration": "TestV2RoutingRejectsInvalidMetadataEvenWithNullKey",
+      "previous_file": "v2_routing_token_test.go"
+    },
+    {
+      "current_file": "v2_routing_token_test.go",
+      "declaration": "BenchmarkV2RoutingCompositeSpans",
+      "previous_file": "v2_routing_token_test.go"
+    },
+    {
+      "current_file": "v2_row_stream_integration_test.go",
+      "declaration": "TestStep07RunStreamLive",
+      "previous_file": "v2_row_stream_integration_test.go"
+    },
+    {
+      "current_file": "v2_row_stream_test.go",
+      "declaration": "TestStep07StreamPagingModes",
+      "previous_file": "v2_row_stream_test.go"
+    },
+    {
+      "current_file": "v2_row_stream_test.go",
+      "declaration": "TestStep07StreamFirstRowBeforePageAndNoReplay",
+      "previous_file": "v2_row_stream_test.go"
+    },
+    {
+      "current_file": "v2_row_stream_test.go",
+      "declaration": "TestStep07StreamCapacityAndNilNoResetReplay",
+      "previous_file": "v2_row_stream_test.go"
+    },
+    {
+      "current_file": "v2_row_stream_test.go",
+      "declaration": "TestStep07StreamCloseJoinsDestinationAndConcurrentRejection",
+      "previous_file": "v2_row_stream_test.go"
+    },
+    {
+      "current_file": "v2_row_stream_test.go",
+      "declaration": "TestStep07StreamIdleSessionDrainAndPoolExhaustion",
+      "previous_file": "v2_row_stream_test.go"
+    },
+    {
+      "current_file": "v2_row_stream_test.go",
+      "declaration": "TestStep07StreamPagingCycleAndLimits",
+      "previous_file": "v2_row_stream_test.go"
+    },
+    {
+      "current_file": "v2_row_stream_test.go",
+      "declaration": "TestStep07StreamCapabilityBeforeQuery",
+      "previous_file": "v2_row_stream_test.go"
+    },
+    {
+      "current_file": "v2_row_stream_test.go",
+      "declaration": "TestStep07StreamRawReadCallerBacking",
+      "previous_file": "v2_row_stream_test.go"
+    },
+    {
+      "current_file": "v2_row_stream_test.go",
+      "declaration": "TestStep07StreamPreparedMetadataFencesAndPlanIsolation",
+      "previous_file": "v2_row_stream_test.go"
+    },
+    {
+      "current_file": "v2_row_stream_test.go",
+      "declaration": "TestStep07StreamBadV5IntegrityCannotDeliver",
+      "previous_file": "v2_row_stream_test.go"
+    },
+    {
+      "current_file": "v2_row_stream_test.go",
+      "declaration": "TestStep07StreamPageDeadlineEndsAtExactBoundary",
+      "previous_file": "v2_row_stream_test.go"
+    },
+    {
+      "current_file": "v2_row_stream_test.go",
+      "declaration": "TestStep07StreamPartialFirstRowNeverReplays",
+      "previous_file": "v2_row_stream_test.go"
+    },
+    {
+      "current_file": "v2_row_stream_test.go",
+      "declaration": "TestStep07StreamReprepareCanonicalInputAndNoRepairAfterOutput",
+      "previous_file": "v2_row_stream_test.go"
+    },
+    {
+      "current_file": "v2_row_stream_test.go",
+      "declaration": "TestStep07V3NegotiatedTabletPayloadEnvelope",
+      "previous_file": "v2_row_stream_test.go"
+    },
+    {
+      "current_file": "v2_row_stream_test.go",
+      "declaration": "TestStep07CloseGenerationRejectsLateCancellation",
+      "previous_file": "v2_row_stream_test.go"
+    },
+    {
+      "current_file": "v2_row_stream_test.go",
+      "declaration": "TestStep07LatestAttemptMetadataRemainsBudgetedDuringRetry",
+      "previous_file": "v2_row_stream_test.go"
+    },
+    {
+      "current_file": "internal/codec/rows_codec_test.go",
+      "declaration": "TestV2RowsTypedMappingAndDetachedClone",
+      "previous_file": "v2_rows_codec_test.go"
+    },
+    {
+      "current_file": "internal/codec/rows_codec_test.go",
+      "declaration": "TestV2RowsRepeatedMarkersAndAmbiguousAliases",
+      "previous_file": "v2_rows_codec_test.go"
+    },
+    {
+      "current_file": "internal/codec/rows_codec_test.go",
+      "declaration": "TestV2ParamsEncodingFailureRollsBackWholePlan",
+      "previous_file": "v2_rows_codec_test.go"
+    },
+    {
+      "current_file": "internal/codec/rows_codec_test.go",
+      "declaration": "TestV2RowTruncatedIgnoredCellIsError",
+      "previous_file": "v2_rows_codec_test.go"
+    },
+    {
+      "current_file": "internal/codec/rows_codec_test.go",
+      "declaration": "TestV2RowCompiledPlanConcurrentAndMetadataSpecific",
+      "previous_file": "v2_rows_codec_test.go"
+    },
+    {
+      "current_file": "internal/codec/rows_codec_test.go",
+      "declaration": "TestV2OwnedParametersDetachOnlyBorrowedPayload",
+      "previous_file": "v2_rows_codec_test.go"
+    },
+    {
+      "current_file": "internal/codec/rows_codec_test.go",
+      "declaration": "BenchmarkV2RowScalarPlan",
+      "previous_file": "v2_rows_codec_test.go"
+    },
+    {
+      "current_file": "v2_runtime_types_test.go",
+      "declaration": "TestV2RuntimeInputAdmissionAndWriterRetirement",
+      "previous_file": "v2_runtime_types_test.go"
+    },
+    {
+      "current_file": "v2_runtime_types_test.go",
+      "declaration": "TestV2RuntimeCloseAdmissionRace",
+      "previous_file": "v2_runtime_types_test.go"
+    },
+    {
+      "current_file": "internal/model/page_state_test.go",
+      "declaration": "TestV2RuntimePageStates",
+      "previous_file": "v2_runtime_types_test.go"
+    },
+    {
+      "current_file": "internal/codec/scalar_bench_test.go",
+      "declaration": "BenchmarkV2ScalarInt64Decode",
+      "previous_file": "v2_scalar_bench_test.go"
+    },
+    {
+      "current_file": "internal/codec/scalar_bench_test.go",
+      "declaration": "BenchmarkV2ScalarBlobDecode",
+      "previous_file": "v2_scalar_bench_test.go"
+    },
+    {
+      "current_file": "internal/codec/scalar_bench_test.go",
+      "declaration": "BenchmarkV2ScalarTextDecode",
+      "previous_file": "v2_scalar_bench_test.go"
+    },
+    {
+      "current_file": "internal/codec/scalar_bench_test.go",
+      "declaration": "BenchmarkV2ScalarVarintDecode",
+      "previous_file": "v2_scalar_bench_test.go"
+    },
+    {
+      "current_file": "internal/codec/scalar_bench_test.go",
+      "declaration": "BenchmarkV2ScalarBlobEncodeBorrowed",
+      "previous_file": "v2_scalar_bench_test.go"
+    },
+    {
+      "current_file": "internal/codec/scalar_test.go",
+      "declaration": "TestV2ScalarGolden",
+      "previous_file": "v2_scalar_test.go"
+    },
+    {
+      "current_file": "internal/codec/scalar_test.go",
+      "declaration": "TestV2ScalarMalformed",
+      "previous_file": "v2_scalar_test.go"
+    },
+    {
+      "current_file": "internal/codec/scalar_test.go",
+      "declaration": "FuzzV2ScalarUTF8",
+      "previous_file": "v2_scalar_test.go"
+    },
+    {
+      "current_file": "internal/codec/scalar_test.go",
+      "declaration": "TestV2ScalarTextValidationAndBorrowing",
+      "previous_file": "v2_scalar_test.go"
+    },
+    {
+      "current_file": "internal/codec/scalar_test.go",
+      "declaration": "TestV2ScalarBlobStatesAndWrappers",
+      "previous_file": "v2_scalar_test.go"
+    },
+    {
+      "current_file": "internal/codec/scalar_test.go",
+      "declaration": "TestV2ScalarBigNumbers",
+      "previous_file": "v2_scalar_test.go"
+    },
+    {
+      "current_file": "internal/codec/scalar_test.go",
+      "declaration": "TestV2ScalarCalendarBoundaries",
+      "previous_file": "v2_scalar_test.go"
+    },
+    {
+      "current_file": "internal/codec/scalar_test.go",
+      "declaration": "TestV2ScalarFloatBits",
+      "previous_file": "v2_scalar_test.go"
+    },
+    {
+      "current_file": "internal/codec/scalar_test.go",
+      "declaration": "TestV2ScalarPublicValueOwnership",
+      "previous_file": "v2_scalar_test.go"
+    },
+    {
+      "current_file": "internal/codec/scalar_test.go",
+      "declaration": "TestV2ScalarLeaseAndLargeBorrowing",
+      "previous_file": "v2_scalar_test.go"
+    },
+    {
+      "current_file": "v2_server_error_test.go",
+      "declaration": "TestV2ServerErrorsExposeTheirCodeThroughWrappers",
+      "previous_file": "v2_server_error_test.go"
+    },
+    {
+      "current_file": "v2_statement_test.go",
+      "declaration": "TestV2RuntimeBindCanonicalOwnership",
+      "previous_file": "v2_statement_test.go"
+    },
+    {
+      "current_file": "internal/codec/stream_codec_bench_test.go",
+      "declaration": "BenchmarkV2StreamFinalStorage",
+      "previous_file": "v2_stream_codec_bench_test.go"
+    },
+    {
+      "current_file": "internal/codec/stream_codec_bench_test.go",
+      "declaration": "BenchmarkV2StreamingNestedElements",
+      "previous_file": "v2_stream_codec_bench_test.go"
+    },
+    {
+      "current_file": "internal/codec/stream_codec_bench_test.go",
+      "declaration": "BenchmarkV2RowDestinationFragments",
+      "previous_file": "v2_stream_codec_bench_test.go"
+    },
+    {
+      "current_file": "internal/codec/stream_codec_test.go",
+      "declaration": "TestV2StreamingScalarDomains",
+      "previous_file": "v2_stream_codec_test.go"
+    },
+    {
+      "current_file": "internal/codec/stream_codec_test.go",
+      "declaration": "TestV2StreamingBytesCapacityNullAndText",
+      "previous_file": "v2_stream_codec_test.go"
+    },
+    {
+      "current_file": "internal/codec/stream_codec_test.go",
+      "declaration": "TestV2StreamingDirectReadTargets",
+      "previous_file": "v2_stream_codec_test.go"
+    },
+    {
+      "current_file": "internal/codec/stream_codec_test.go",
+      "declaration": "TestV2StreamingNumericPayloadStorage",
+      "previous_file": "v2_stream_codec_test.go"
+    },
+    {
+      "current_file": "internal/codec/stream_codec_test.go",
+      "declaration": "TestV2StreamingNestedCollectionCapacityAndBacking",
+      "previous_file": "v2_stream_codec_test.go"
+    },
+    {
+      "current_file": "internal/codec/stream_codec_test.go",
+      "declaration": "TestV2StreamingVectors",
+      "previous_file": "v2_stream_codec_test.go"
+    },
+    {
+      "current_file": "internal/codec/stream_codec_test.go",
+      "declaration": "TestV2StreamingRecordsAndEncodedOutput",
+      "previous_file": "v2_stream_codec_test.go"
+    },
+    {
+      "current_file": "internal/codec/stream_codec_test.go",
+      "declaration": "TestV2StreamingSkippedValuesAreBoundedAndChecked",
+      "previous_file": "v2_stream_codec_test.go"
+    },
+    {
+      "current_file": "internal/codec/stream_codec_test.go",
+      "declaration": "TestV2StreamingPlanConcurrencyAndNilDestinations",
+      "previous_file": "v2_stream_codec_test.go"
+    },
+    {
+      "current_file": "internal/codec/stream_codec_test.go",
+      "declaration": "TestV2StreamingEncodedNestedFinalReadIdentity",
+      "previous_file": "v2_stream_codec_test.go"
+    },
+    {
+      "current_file": "internal/codec/stream_codec_test.go",
+      "declaration": "TestV2StreamingRowsDuplicateNamesAndMissingUDTFields",
+      "previous_file": "v2_stream_codec_test.go"
+    },
+    {
+      "current_file": "internal/codec/stream_custom_test.go",
+      "declaration": "TestV2StreamingCustomPlansReuseCompiledChildren",
+      "previous_file": "v2_stream_custom_test.go"
+    },
+    {
+      "current_file": "internal/codec/stream_custom_test.go",
+      "declaration": "TestV2CodecNilCompiledPlansAreValidationErrors",
+      "previous_file": "v2_stream_custom_test.go"
+    },
+    {
+      "current_file": "internal/codec/stream_custom_test.go",
+      "declaration": "TestV2StreamingReaderContextAndTerminalErrors",
+      "previous_file": "v2_stream_custom_test.go"
+    },
+    {
+      "current_file": "internal/codec/stream_custom_test.go",
+      "declaration": "TestV2SharedTypeDAGCompilationAndEquality",
+      "previous_file": "v2_stream_custom_test.go"
+    },
+    {
+      "current_file": "internal/codec/stream_custom_test.go",
+      "declaration": "TestV2StreamingMissingPayloadResetPreservesSeeds",
+      "previous_file": "v2_stream_custom_test.go"
+    },
+    {
+      "current_file": "internal/codec/stream_custom_test.go",
+      "declaration": "TestV2StreamingAbsentCustomDescendantResetCapability",
+      "previous_file": "v2_stream_custom_test.go"
+    },
+    {
+      "current_file": "internal/codec/stream_custom_test.go",
+      "declaration": "TestV2StreamingAbsentCustomResetterSucceeds",
+      "previous_file": "v2_stream_custom_test.go"
+    },
+    {
+      "current_file": "internal/codec/stream_fuzz_test.go",
+      "declaration": "FuzzV2StreamingValues",
+      "previous_file": "v2_stream_fuzz_test.go"
+    },
+    {
+      "current_file": "v2_stream_transport_bench_test.go",
+      "declaration": "TestV2StreamingTransportReadTargetsAndWorkingMemory",
+      "previous_file": "v2_stream_transport_bench_test.go"
+    },
+    {
+      "current_file": "v2_stream_transport_bench_test.go",
+      "declaration": "BenchmarkV2ExclusiveTransport",
+      "previous_file": "v2_stream_transport_bench_test.go"
+    },
+    {
+      "current_file": "v2_stream_transport_bench_test.go",
+      "declaration": "FuzzV2ExclusiveIncrementalFraming",
+      "previous_file": "v2_stream_transport_bench_test.go"
+    },
+    {
+      "current_file": "v2_stream_transport_bench_test.go",
+      "declaration": "BenchmarkV2ExclusiveRowsScaling",
+      "previous_file": "v2_stream_transport_bench_test.go"
+    },
+    {
+      "current_file": "v2_stream_transport_bench_test.go",
+      "declaration": "BenchmarkV2TLSWriteAmplification",
+      "previous_file": "v2_stream_transport_bench_test.go"
+    },
+    {
+      "current_file": "v2_stream_transport_bench_test.go",
+      "declaration": "BenchmarkV2TLSReceiveAmplification",
+      "previous_file": "v2_stream_transport_bench_test.go"
+    },
+    {
+      "current_file": "v2_tablet_routing_integration_test.go",
+      "declaration": "TestStep06TabletRoutingLive",
+      "previous_file": "v2_tablet_routing_integration_test.go"
+    },
+    {
+      "current_file": "v2_tablet_routing_integration_test.go",
+      "declaration": "TestStep06LeaderRoutingLive",
+      "previous_file": "v2_tablet_routing_integration_test.go"
+    },
+    {
+      "current_file": "v2_transport_bench_test.go",
+      "declaration": "BenchmarkTypedBuildRequest",
+      "previous_file": "v2_transport_bench_test.go"
+    },
+    {
+      "current_file": "v2_transport_pool_integration_test.go",
+      "declaration": "TestV2TransportPoolSizingLive",
+      "previous_file": "v2_transport_pool_integration_test.go"
+    },
+    {
+      "current_file": "v2_transport_pool_integration_test.go",
+      "declaration": "TestV2ExclusiveTransportLive",
+      "previous_file": "v2_transport_pool_integration_test.go"
+    },
+    {
+      "current_file": "v2_transport_pool_test.go",
+      "declaration": "TestV2ExclusiveStreamingModesAndSafeReuse",
+      "previous_file": "v2_transport_pool_test.go"
+    },
+    {
+      "current_file": "v2_transport_pool_test.go",
+      "declaration": "TestV2ExclusiveRawFirstRowBeforeRemainingResponse",
+      "previous_file": "v2_transport_pool_test.go"
+    },
+    {
+      "current_file": "v2_transport_pool_test.go",
+      "declaration": "TestV2ExclusiveWaitsForOrphanAndAcquisitionCancellation",
+      "previous_file": "v2_transport_pool_test.go"
+    },
+    {
+      "current_file": "v2_transport_pool_test.go",
+      "declaration": "TestV2ExclusiveCloseStopsBlockedCallerStorage",
+      "previous_file": "v2_transport_pool_test.go"
+    },
+    {
+      "current_file": "v2_transport_pool_test.go",
+      "declaration": "TestV2OrphanBudgetUsesExactCapacity",
+      "previous_file": "v2_transport_pool_test.go"
+    },
+    {
+      "current_file": "v2_transport_pool_test.go",
+      "declaration": "TestV2PoolSizingModesAndPendingShards",
+      "previous_file": "v2_transport_pool_test.go"
+    },
+    {
+      "current_file": "v2_transport_pool_test.go",
+      "declaration": "TestV2ExclusiveTLSStreaming",
+      "previous_file": "v2_transport_pool_test.go"
+    },
+    {
+      "current_file": "v2_transport_pool_test.go",
+      "declaration": "TestV2ExclusiveV5TrailingControlReuse",
+      "previous_file": "v2_transport_pool_test.go"
+    },
+    {
+      "current_file": "v2_transport_pool_test.go",
+      "declaration": "TestV2ExclusiveControlOverflowPoisonsAndReleases",
+      "previous_file": "v2_transport_pool_test.go"
+    },
+    {
+      "current_file": "v2_transport_pool_test.go",
+      "declaration": "TestV2EventEnqueueCloseRaceReleasesEveryCharge",
+      "previous_file": "v2_transport_pool_test.go"
+    },
+    {
+      "current_file": "v2_transport_pool_test.go",
+      "declaration": "TestV2ExclusiveHandoffWaitsForWholeV5Segment",
+      "previous_file": "v2_transport_pool_test.go"
+    },
+    {
+      "current_file": "v2_transport_pool_test.go",
+      "declaration": "TestV2ExclusiveHandoffFinishesPartialHeader",
+      "previous_file": "v2_transport_pool_test.go"
+    },
+    {
+      "current_file": "v2_transport_pool_test.go",
+      "declaration": "TestV2ExclusiveAcquisitionDrainsAcceptedWriterOwnership",
+      "previous_file": "v2_transport_pool_test.go"
+    },
+    {
+      "current_file": "v2_transport_pool_test.go",
+      "declaration": "TestV2ExclusiveClosedResponseDropsValidatedArena",
+      "previous_file": "v2_transport_pool_test.go"
+    },
+    {
+      "current_file": "v2_transport_pool_test.go",
+      "declaration": "TestV2InitialOpeningCannotReplaceInstalledSharder",
+      "previous_file": "v2_transport_pool_test.go"
+    },
+    {
+      "current_file": "v2_transport_pool_test.go",
+      "declaration": "TestV2PageCancellationGenerationDoesNotReachLaterPageOrSharedUse",
+      "previous_file": "v2_transport_pool_test.go"
+    },
+    {
+      "current_file": "v2_transport_pool_test.go",
+      "declaration": "TestV2PageContextCancellationWinsAndJoinsRead",
+      "previous_file": "v2_transport_pool_test.go"
+    },
+    {
+      "current_file": "v2_transport_pool_test.go",
+      "declaration": "TestV2TypedTLSCoalescingBorrowedOrderPartialWriteAndDrain",
+      "previous_file": "v2_transport_pool_test.go"
+    },
+    {
+      "current_file": "v2_transport_pool_test.go",
+      "declaration": "TestV2UnsupportedCompressionRejectedBeforeStartupOrQuery",
+      "previous_file": "v2_transport_pool_test.go"
+    },
+    {
+      "current_file": "v2_transport_schema_regression_unit_test.go",
+      "declaration": "TestStep04LateTableRefreshEntrant",
+      "previous_file": "v2_transport_schema_regression_unit_test.go"
+    },
+    {
+      "current_file": "v2_transport_settings_test.go",
+      "declaration": "TestV2TransportDefaultsAndValidation",
+      "previous_file": "v2_transport_settings_test.go"
+    },
+    {
+      "current_file": "v2_transport_settings_test.go",
+      "declaration": "TestV2TLSConfigurationDetachAndHookContext",
+      "previous_file": "v2_transport_settings_test.go"
+    },
+    {
+      "current_file": "v2_transport_settings_test.go",
+      "declaration": "TestV2TLSShardDialUsesSelectedSourceAndHook",
+      "previous_file": "v2_transport_settings_test.go"
+    },
+    {
+      "current_file": "v2_transport_settings_test.go",
+      "declaration": "TestV2SourcePortExhaustionAndNATFallback",
+      "previous_file": "v2_transport_settings_test.go"
+    },
+    {
+      "current_file": "v2_transport_settings_test.go",
+      "declaration": "TestV2PoolExcessAndLateSharderFence",
+      "previous_file": "v2_transport_settings_test.go"
+    },
+    {
+      "current_file": "v2_transport_settings_test.go",
+      "declaration": "TestV2UnixTargetAndUnsupportedSettings",
+      "previous_file": "v2_transport_settings_test.go"
+    },
+    {
+      "current_file": "v2_transport_settings_test.go",
+      "declaration": "TestV2TypedKeepaliveDisabledAndBlockedWriteTimeout",
+      "previous_file": "v2_transport_settings_test.go"
+    },
+    {
+      "current_file": "v2_transport_settings_test.go",
+      "declaration": "TestV2EventMetadataBudgetAndTerminalAdmission",
+      "previous_file": "v2_transport_settings_test.go"
+    },
+    {
+      "current_file": "v2_transport_settings_test.go",
+      "declaration": "TestV2ConnectionSetupDeadlineIncludesDNSAndTranslation",
+      "previous_file": "v2_transport_settings_test.go"
+    },
+    {
+      "current_file": "v2_transport_settings_test.go",
+      "declaration": "TestV2OpeningValidationKeepsOriginalDeadlineAndZeroMeaning",
+      "previous_file": "v2_transport_settings_test.go"
+    },
+    {
+      "current_file": "v2_transport_settings_test.go",
+      "declaration": "TestV2UnsupportedSocketSettingsKeepTypedError",
+      "previous_file": "v2_transport_settings_test.go"
+    },
+    {
+      "current_file": "v2_transport_settings_test.go",
+      "declaration": "TestV2PoolRepairPolicyAndClosedState",
+      "previous_file": "v2_transport_settings_test.go"
+    },
+    {
+      "current_file": "v2_transport_settings_test.go",
+      "declaration": "TestV2ResolvedContactsOwnIndependentSetupDeadlines",
+      "previous_file": "v2_transport_settings_test.go"
+    },
+    {
+      "current_file": "v2_transport_settings_test.go",
+      "declaration": "TestV2TypedRepairTriggersHonorPolicyDelayAndStop",
+      "previous_file": "v2_transport_settings_test.go"
+    },
+    {
+      "current_file": "v2_transport_settings_test.go",
+      "declaration": "TestV2TypedSelectionWaitsForReservedCapacity",
+      "previous_file": "v2_transport_settings_test.go"
+    },
+    {
+      "current_file": "v2_transport_settings_test.go",
+      "declaration": "TestV2OpeningEndpointGenerationAndClosedPoolFence",
+      "previous_file": "v2_transport_settings_test.go"
+    },
+    {
+      "current_file": "v2_transport_settings_test.go",
+      "declaration": "TestV2ReservedPreferredShardUsesAllowedFreeAlternative",
+      "previous_file": "v2_transport_settings_test.go"
+    },
+    {
+      "current_file": "v2_transport_settings_test.go",
+      "declaration": "TestV2TLSIdentityUsesLogicalHostAcrossTranslatedEndpoint",
+      "previous_file": "v2_transport_settings_test.go"
+    },
+    {
+      "current_file": "v2_transport_test.go",
+      "declaration": "TestTypedRequestMatchesLegacyWireAndKeepsPayload",
+      "previous_file": "v2_transport_test.go"
+    },
+    {
+      "current_file": "internal/protocol/native_test.go",
+      "declaration": "TestTypedMetadataAtEverySpanSplit",
+      "previous_file": "v2_transport_test.go"
+    },
+    {
+      "current_file": "v2_transport_test.go",
+      "declaration": "TestTypedReceiveLargeFragmentedRows",
+      "previous_file": "v2_transport_test.go"
+    },
+    {
+      "current_file": "v2_transport_test.go",
+      "declaration": "TestTypedWritersPartialCompletion",
+      "previous_file": "v2_transport_test.go"
+    },
+    {
+      "current_file": "v2_transport_test.go",
+      "declaration": "TestTypedCancelKeepsStreamUntilOrphanArrives",
+      "previous_file": "v2_transport_test.go"
+    },
+    {
+      "current_file": "v2_transport_test.go",
+      "declaration": "TestTypedSharedSegmentPagesHaveIndependentOwnership",
+      "previous_file": "v2_transport_test.go"
+    },
+    {
+      "current_file": "v2_transport_test.go",
+      "declaration": "TestTypedWriterCancellationJoinsAcceptedSpans",
+      "previous_file": "v2_transport_test.go"
+    },
+    {
+      "current_file": "v2_transport_test.go",
+      "declaration": "TestTypedCoalescerShutdownCompletesAcceptedRequest",
+      "previous_file": "v2_transport_test.go"
+    },
+    {
+      "current_file": "v2_transport_test.go",
+      "declaration": "TestTypedFatalCloseInterruptsBlockedWriter",
+      "previous_file": "v2_transport_test.go"
+    },
+    {
+      "current_file": "v2_transport_test.go",
+      "declaration": "TestTypedServerErrorKeepsMetadataAndUnwraps",
+      "previous_file": "v2_transport_test.go"
+    },
+    {
+      "current_file": "v2_transport_test.go",
+      "declaration": "TestTypedCompressedRequestsIndependentDecode",
+      "previous_file": "v2_transport_test.go"
+    },
+    {
+      "current_file": "internal/protocol/native_test.go",
+      "declaration": "TestTypedMetadataIDsAndPagingOrder",
+      "previous_file": "v2_transport_test.go"
+    },
+    {
+      "current_file": "v2_transport_test.go",
+      "declaration": "TestTypedWritevBeyondPlatformVectorLimit",
+      "previous_file": "v2_transport_test.go"
+    },
+    {
+      "current_file": "v2_transport_test.go",
+      "declaration": "TestTypedExecutePrepareBatchWireOracle",
+      "previous_file": "v2_transport_test.go"
+    },
+    {
+      "current_file": "v2_transport_test.go",
+      "declaration": "TestTypedTabletHintAcrossEveryByte",
+      "previous_file": "v2_transport_test.go"
+    },
+    {
+      "current_file": "v2_transport_test.go",
+      "declaration": "TestTypedTLSReceivesOriginalPlaintextSpans",
+      "previous_file": "v2_transport_test.go"
+    },
+    {
+      "current_file": "internal/protocol/native_test.go",
+      "declaration": "TestTypedEmptyContinuationIsPresent",
+      "previous_file": "v2_transport_test.go"
+    },
+    {
+      "current_file": "internal/protocol/native_test.go",
+      "declaration": "TestTypedRejectsChangedMetadataWithoutColumns",
+      "previous_file": "v2_transport_test.go"
+    },
+    {
+      "current_file": "v2_transport_test.go",
+      "declaration": "TestTypedProtocolLimits",
+      "previous_file": "v2_transport_test.go"
+    },
+    {
+      "current_file": "internal/codec/tuple_udt_test.go",
+      "declaration": "TestV2TuplePhysicalFramingAndNullableSuffix",
+      "previous_file": "v2_tuple_udt_test.go"
+    },
+    {
+      "current_file": "internal/codec/tuple_udt_test.go",
+      "declaration": "TestV2UDTNamedEvolutionOptions",
+      "previous_file": "v2_tuple_udt_test.go"
+    },
+    {
+      "current_file": "internal/codec/tuple_udt_test.go",
+      "declaration": "TestV2UDTMissingMetadataDiffersFromNull",
+      "previous_file": "v2_tuple_udt_test.go"
+    },
+    {
+      "current_file": "internal/codec/tuple_udt_test.go",
+      "declaration": "TestV2UDTIgnoredSuffixStillValidatesFraming",
+      "previous_file": "v2_tuple_udt_test.go"
+    },
+    {
+      "current_file": "internal/codec/tuple_udt_test.go",
+      "declaration": "TestV2UDTOptionsPropagateThroughComposition",
+      "previous_file": "v2_tuple_udt_test.go"
+    },
+    {
+      "current_file": "internal/codec/tuple_udt_test.go",
+      "declaration": "TestV2RecordCloneDetachesNestedBorrowing",
+      "previous_file": "v2_tuple_udt_test.go"
+    },
+    {
+      "current_file": "internal/codec/tuple_udt_test.go",
+      "declaration": "TestV2TupleConcurrentCompiledPlansCheckOnce",
+      "previous_file": "v2_tuple_udt_test.go"
+    },
+    {
+      "current_file": "internal/cqltype/v2_type_test.go",
+      "declaration": "TestV2FoundationDescriptorImmutability",
+      "previous_file": "v2_type_test.go"
+    },
+    {
+      "current_file": "internal/cqltype/v2_type_test.go",
+      "declaration": "TestV2FoundationDescriptorValidation",
+      "previous_file": "v2_type_test.go"
+    },
+    {
+      "current_file": "internal/cqltype/v2_type_test.go",
+      "declaration": "TestV2FoundationProtocolTypeConversion",
+      "previous_file": "v2_type_test.go"
+    },
+    {
+      "current_file": "internal/codec/value_api_test.go",
+      "declaration": "TestV2FoundationPublicCodecChecks",
+      "previous_file": "v2_value_api_test.go"
+    },
+    {
+      "current_file": "internal/codec/value_api_test.go",
+      "declaration": "TestV2FoundationOwnedAndBorrowedEncoding",
+      "previous_file": "v2_value_api_test.go"
+    },
+    {
+      "current_file": "internal/codec/value_api_test.go",
+      "declaration": "TestV2FoundationEncodedValueStatesAndLifetime",
+      "previous_file": "v2_value_api_test.go"
+    },
+    {
+      "current_file": "internal/codec/value_api_test.go",
+      "declaration": "TestV2FoundationOversizedValues",
+      "previous_file": "v2_value_api_test.go"
+    },
+    {
+      "current_file": "v2_value_io_test.go",
+      "declaration": "TestV2FoundationFramingTransactions",
+      "previous_file": "v2_value_io_test.go"
+    },
+    {
+      "current_file": "v2_value_io_test.go",
+      "declaration": "TestV2FoundationCellStates",
+      "previous_file": "v2_value_io_test.go"
+    },
+    {
+      "current_file": "v2_value_io_test.go",
+      "declaration": "TestV2FoundationSegmentedCursor",
+      "previous_file": "v2_value_io_test.go"
+    },
+    {
+      "current_file": "v2_value_io_test.go",
+      "declaration": "TestV2FoundationMalformedFraming",
+      "previous_file": "v2_value_io_test.go"
+    },
+    {
+      "current_file": "internal/codec/view_test.go",
+      "declaration": "TestV2FoundationBorrowedViews",
+      "previous_file": "v2_view_test.go"
+    },
+    {
+      "current_file": "internal/codec/view_test.go",
+      "declaration": "TestV2FoundationTextChunks",
+      "previous_file": "v2_view_test.go"
+    },
+    {
+      "current_file": "internal/codec/view_test.go",
+      "declaration": "TestV2FoundationBorrowTextValidation",
+      "previous_file": "v2_view_test.go"
+    },
+    {
+      "current_file": "internal/codec/view_test.go",
+      "declaration": "TestV2FoundationConcurrentRetainedViews",
+      "previous_file": "v2_view_test.go"
+    },
+    {
+      "current_file": "vector_test.go",
+      "declaration": "TestVector_Marshaler",
+      "previous_file": "vector_test.go"
+    },
+    {
+      "current_file": "vector_test.go",
+      "declaration": "TestVector_Types",
+      "previous_file": "vector_test.go"
+    },
+    {
+      "current_file": "vector_test.go",
+      "declaration": "TestVector_MarshalerUDT",
+      "previous_file": "vector_test.go"
+    },
+    {
+      "current_file": "vector_test.go",
+      "declaration": "TestVector_Empty",
+      "previous_file": "vector_test.go"
+    },
+    {
+      "current_file": "vector_test.go",
+      "declaration": "TestVector_MissingDimension",
+      "previous_file": "vector_test.go"
+    },
+    {
+      "current_file": "vector_test.go",
+      "declaration": "TestVector_SubTypeParsing",
+      "previous_file": "vector_test.go"
+    },
+    {
+      "current_file": "wiki_test.go",
+      "declaration": "TestWikiCreateSchema",
+      "previous_file": "wiki_test.go"
+    },
+    {
+      "current_file": "wiki_test.go",
+      "declaration": "BenchmarkWikiCreateSchema",
+      "previous_file": "wiki_test.go"
+    },
+    {
+      "current_file": "wiki_test.go",
+      "declaration": "TestWikiCreatePages",
+      "previous_file": "wiki_test.go"
+    },
+    {
+      "current_file": "wiki_test.go",
+      "declaration": "BenchmarkWikiCreatePages",
+      "previous_file": "wiki_test.go"
+    },
+    {
+      "current_file": "wiki_test.go",
+      "declaration": "BenchmarkWikiSelectAllPages",
+      "previous_file": "wiki_test.go"
+    },
+    {
+      "current_file": "wiki_test.go",
+      "declaration": "BenchmarkWikiSelectSinglePage",
+      "previous_file": "wiki_test.go"
+    },
+    {
+      "current_file": "wiki_test.go",
+      "declaration": "BenchmarkWikiSelectPageCount",
+      "previous_file": "wiki_test.go"
+    },
+    {
+      "current_file": "wiki_test.go",
+      "declaration": "TestWikiTypicalCRUD",
+      "previous_file": "wiki_test.go"
+    }
+  ],
+  "previous_root_named_test_example_benchmark_declarations": 957,
+  "scope": "Declaration identity inventory, not a numerical assertion-equivalence claim. Baseline bodies/helpers and explicit semantic-source proof are retained separately."
+}

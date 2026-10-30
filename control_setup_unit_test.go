@@ -23,20 +23,20 @@ type rowsCol struct {
 
 // writeRows writes a RESULT/Rows reply whose columns may have any type option.
 func writeRows(resp *framer, stream int, cols []rowsCol, rows [][][]byte) {
-	resp.writeHeader(0, frm.OpResult, stream)
-	resp.writeInt(frm.ResultKindRows)
-	resp.writeInt(int32(frm.FlagGlobalTableSpec))
-	resp.writeInt(int32(len(cols)))
-	resp.writeString("system")
-	resp.writeString("local")
+	resp.WriteHeader(0, frm.OpResult, stream)
+	resp.WriteInt(frm.ResultKindRows)
+	resp.WriteInt(int32(frm.FlagGlobalTableSpec))
+	resp.WriteInt(int32(len(cols)))
+	resp.WriteString("system")
+	resp.WriteString("local")
 	for _, c := range cols {
-		resp.writeString(c.name)
+		resp.WriteString(c.name)
 		c.typ(resp)
 	}
-	resp.writeInt(int32(len(rows)))
+	resp.WriteInt(int32(len(rows)))
 	for _, row := range rows {
 		for _, v := range row {
-			resp.writeBytes(v)
+			resp.WriteBytes(v)
 		}
 	}
 }
@@ -131,7 +131,7 @@ func newControlTestServer(t *testing.T, configure func(srv *controlTestServer)) 
 			srv.registerReply(stream, resp)
 			return
 		}
-		resp.writeHeader(0, frm.OpReady, stream)
+		resp.WriteHeader(0, frm.OpReady, stream)
 	})
 	return srv
 }

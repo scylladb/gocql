@@ -16,12 +16,12 @@ import (
 // code adds.
 func errBody(proto byte, code int, msg string, rest func(f *framer)) []byte {
 	f := newFramer(nil, proto)
-	f.writeInt(int32(code))
-	f.writeString(msg)
+	f.WriteInt(int32(code))
+	f.WriteString(msg)
 	if rest != nil {
 		rest(f)
 	}
-	return f.buf
+	return f.Buf
 }
 
 // writeInetOnly writes an [inetaddr]: a one-byte length and the address.
@@ -29,8 +29,8 @@ func writeInetOnly(f *framer, ip net.IP) {
 	if v4 := ip.To4(); v4 != nil {
 		ip = v4
 	}
-	f.writeByte(byte(len(ip)))
-	f.buf = append(f.buf, ip...)
+	f.WriteByteValue(byte(len(ip)))
+	f.Buf = append(f.Buf, ip...)
 }
 
 type errMapEntry struct {
@@ -39,19 +39,19 @@ type errMapEntry struct {
 }
 
 func writeErrMap(f *framer, entries ...errMapEntry) {
-	f.writeInt(int32(len(entries)))
+	f.WriteInt(int32(len(entries)))
 	for _, e := range entries {
 		writeInetOnly(f, net.ParseIP(e.ip))
-		f.writeShort(e.code)
+		f.WriteShort(e.code)
 	}
 }
 
 func parseErrorBody(proto byte, body []byte, rateLimitCode int) (frame, error) {
 	f := newFramer(nil, proto)
-	f.rateLimitingErrorCode = rateLimitCode
-	f.header = &frm.FrameHeader{Version: frm.ProtoVersion(proto) | protoDirectionMask, Op: frm.OpError, Stream: 7}
-	f.buf = body
-	return f.parseFrame()
+	f.RateLimitingErrorCode = rateLimitCode
+	f.Header = &frm.FrameHeader{Version: frm.ProtoVersion(proto) | protoDirectionMask, Op: frm.OpError, Stream: 7}
+	f.Buf = body
+	return f.ParseFrame()
 }
 
 const scyllaRateLimitCode = 0xF000
@@ -95,9 +95,9 @@ func errorFrameCases() []errorFrameCase {
 		errorFrameCase{
 			name: "Unavailable", proto: protoVersion4,
 			body: errBody(protoVersion4, ErrCodeUnavailable, "unavail", func(f *framer) {
-				f.writeConsistency(LocalQuorum)
-				f.writeInt(3)
-				f.writeInt(1)
+				f.WriteConsistency(LocalQuorum)
+				f.WriteInt(3)
+				f.WriteInt(1)
 			}),
 			want: &RequestErrUnavailable{ErrorFrame: base(protoVersion4, ErrCodeUnavailable, "unavail"),
 				Consistency: LocalQuorum, Required: 3, Alive: 1},
@@ -105,10 +105,10 @@ func errorFrameCases() []errorFrameCase {
 		errorFrameCase{
 			name: "WriteTimeout", proto: protoVersion4,
 			body: errBody(protoVersion4, ErrCodeWriteTimeout, "wt", func(f *framer) {
-				f.writeConsistency(Quorum)
-				f.writeInt(1)
-				f.writeInt(2)
-				f.writeString("BATCH_LOG")
+				f.WriteConsistency(Quorum)
+				f.WriteInt(1)
+				f.WriteInt(2)
+				f.WriteString("BATCH_LOG")
 			}),
 			want: &RequestErrWriteTimeout{ErrorFrame: base(protoVersion4, ErrCodeWriteTimeout, "wt"),
 				Consistency: Quorum, Received: 1, BlockFor: 2, WriteType: "BATCH_LOG"},
@@ -116,10 +116,10 @@ func errorFrameCases() []errorFrameCase {
 		errorFrameCase{
 			name: "ReadTimeout", proto: protoVersion4,
 			body: errBody(protoVersion4, ErrCodeReadTimeout, "rt", func(f *framer) {
-				f.writeConsistency(One)
-				f.writeInt(0)
-				f.writeInt(1)
-				f.writeByte(1)
+				f.WriteConsistency(One)
+				f.WriteInt(0)
+				f.WriteInt(1)
+				f.WriteByteValue(1)
 			}),
 			want: &RequestErrReadTimeout{ErrorFrame: base(protoVersion4, ErrCodeReadTimeout, "rt"),
 				Consistency: One, Received: 0, BlockFor: 1, DataPresent: 1},
@@ -127,8 +127,8 @@ func errorFrameCases() []errorFrameCase {
 		errorFrameCase{
 			name: "AlreadyExists", proto: protoVersion4,
 			body: errBody(protoVersion4, ErrCodeAlreadyExists, "exists", func(f *framer) {
-				f.writeString("ks")
-				f.writeString("tbl")
+				f.WriteString("ks")
+				f.WriteString("tbl")
 			}),
 			want: &RequestErrAlreadyExists{ErrorFrame: base(protoVersion4, ErrCodeAlreadyExists, "exists"),
 				Keyspace: "ks", Table: "tbl"},
@@ -136,7 +136,7 @@ func errorFrameCases() []errorFrameCase {
 		errorFrameCase{
 			name: "Unprepared", proto: protoVersion4,
 			body: errBody(protoVersion4, ErrCodeUnprepared, "unprep", func(f *framer) {
-				f.writeShortBytes([]byte{0xca, 0xfe})
+				f.WriteShortBytes([]byte{0xca, 0xfe})
 			}),
 			want: &RequestErrUnprepared{ErrorFrame: base(protoVersion4, ErrCodeUnprepared, "unprep"),
 				StatementId: []byte{0xca, 0xfe}},
@@ -146,11 +146,11 @@ func errorFrameCases() []errorFrameCase {
 		errorFrameCase{
 			name: "ReadFailureV4", proto: protoVersion4,
 			body: errBody(protoVersion4, ErrCodeReadFailure, "rf", func(f *framer) {
-				f.writeConsistency(All)
-				f.writeInt(1)
-				f.writeInt(3)
-				f.writeInt(2)
-				f.writeByte(0)
+				f.WriteConsistency(All)
+				f.WriteInt(1)
+				f.WriteInt(3)
+				f.WriteInt(2)
+				f.WriteByteValue(0)
 			}),
 			want: &RequestErrReadFailure{ErrorFrame: base(protoVersion4, ErrCodeReadFailure, "rf"),
 				Consistency: All, Received: 1, BlockFor: 3, NumFailures: 2, DataPresent: false},
@@ -158,11 +158,11 @@ func errorFrameCases() []errorFrameCase {
 		errorFrameCase{
 			name: "ReadFailureV5", proto: protoVersion5,
 			body: errBody(protoVersion5, ErrCodeReadFailure, "rf", func(f *framer) {
-				f.writeConsistency(All)
-				f.writeInt(1)
-				f.writeInt(3)
+				f.WriteConsistency(All)
+				f.WriteInt(1)
+				f.WriteInt(3)
 				writeErrMap(f, errMapEntry{"10.0.0.1", 1}, errMapEntry{"2001:db8::1", 2})
-				f.writeByte(1)
+				f.WriteByteValue(1)
 			}),
 			want: &RequestErrReadFailure{ErrorFrame: base(protoVersion5, ErrCodeReadFailure, "rf"),
 				Consistency: All, Received: 1, BlockFor: 3, NumFailures: 2, DataPresent: true,
@@ -171,11 +171,11 @@ func errorFrameCases() []errorFrameCase {
 		errorFrameCase{
 			name: "WriteFailureV4", proto: protoVersion4,
 			body: errBody(protoVersion4, ErrCodeWriteFailure, "wf", func(f *framer) {
-				f.writeConsistency(Two)
-				f.writeInt(0)
-				f.writeInt(2)
-				f.writeInt(1)
-				f.writeString("SIMPLE")
+				f.WriteConsistency(Two)
+				f.WriteInt(0)
+				f.WriteInt(2)
+				f.WriteInt(1)
+				f.WriteString("SIMPLE")
 			}),
 			want: &RequestErrWriteFailure{ErrorFrame: base(protoVersion4, ErrCodeWriteFailure, "wf"),
 				Consistency: Two, Received: 0, BlockFor: 2, NumFailures: 1, WriteType: "SIMPLE"},
@@ -183,11 +183,11 @@ func errorFrameCases() []errorFrameCase {
 		errorFrameCase{
 			name: "WriteFailureV5", proto: protoVersion5,
 			body: errBody(protoVersion5, ErrCodeWriteFailure, "wf", func(f *framer) {
-				f.writeConsistency(Two)
-				f.writeInt(0)
-				f.writeInt(2)
+				f.WriteConsistency(Two)
+				f.WriteInt(0)
+				f.WriteInt(2)
 				writeErrMap(f, errMapEntry{"10.0.0.2", 3})
-				f.writeString("SIMPLE")
+				f.WriteString("SIMPLE")
 			}),
 			want: &RequestErrWriteFailure{ErrorFrame: base(protoVersion5, ErrCodeWriteFailure, "wf"),
 				Consistency: Two, Received: 0, BlockFor: 2, NumFailures: 1, WriteType: "SIMPLE",
@@ -196,11 +196,11 @@ func errorFrameCases() []errorFrameCase {
 		errorFrameCase{
 			name: "WriteFailureV5EmptyMap", proto: protoVersion5,
 			body: errBody(protoVersion5, ErrCodeWriteFailure, "wf", func(f *framer) {
-				f.writeConsistency(Two)
-				f.writeInt(0)
-				f.writeInt(2)
+				f.WriteConsistency(Two)
+				f.WriteInt(0)
+				f.WriteInt(2)
 				writeErrMap(f)
-				f.writeString("SIMPLE")
+				f.WriteString("SIMPLE")
 			}),
 			want: &RequestErrWriteFailure{ErrorFrame: base(protoVersion5, ErrCodeWriteFailure, "wf"),
 				Consistency: Two, BlockFor: 2, WriteType: "SIMPLE", ErrorMap: ErrorMap{}},
@@ -208,9 +208,9 @@ func errorFrameCases() []errorFrameCase {
 		errorFrameCase{
 			name: "FunctionFailure", proto: protoVersion4,
 			body: errBody(protoVersion4, ErrCodeFunctionFailure, "ff", func(f *framer) {
-				f.writeString("ks")
-				f.writeString("fn")
-				f.writeStringList([]string{"int", "text"})
+				f.WriteString("ks")
+				f.WriteString("fn")
+				f.WriteStringList([]string{"int", "text"})
 			}),
 			want: &RequestErrFunctionFailure{ErrorFrame: base(protoVersion4, ErrCodeFunctionFailure, "ff"),
 				Keyspace: "ks", Function: "fn", ArgTypes: []string{"int", "text"}},
@@ -223,9 +223,9 @@ func errorFrameCases() []errorFrameCase {
 		errorFrameCase{
 			name: "CASWriteUnknown", proto: protoVersion4,
 			body: errBody(protoVersion4, ErrCodeCASWriteUnknown, "cas", func(f *framer) {
-				f.writeConsistency(Serial)
-				f.writeInt(1)
-				f.writeInt(2)
+				f.WriteConsistency(Serial)
+				f.WriteInt(1)
+				f.WriteInt(2)
 			}),
 			want: &RequestErrCASWriteUnknown{ErrorFrame: base(protoVersion4, ErrCodeCASWriteUnknown, "cas"),
 				Consistency: Serial, Received: 1, BlockFor: 2},
@@ -233,8 +233,8 @@ func errorFrameCases() []errorFrameCase {
 		errorFrameCase{
 			name: "RateLimitReached", proto: protoVersion4, rateLimitCode: scyllaRateLimitCode,
 			body: errBody(protoVersion4, scyllaRateLimitCode, "slow down", func(f *framer) {
-				f.writeByte(byte(OpTypeWrite))
-				f.writeByte(1)
+				f.WriteByteValue(byte(OpTypeWrite))
+				f.WriteByteValue(1)
 			}),
 			want: &RequestErrRateLimitReached{ErrorFrame: base(protoVersion4, scyllaRateLimitCode, "slow down"),
 				OpType: OpTypeWrite, RejectedByCoordinator: true},
@@ -244,8 +244,8 @@ func errorFrameCases() []errorFrameCase {
 		errorFrameCase{
 			name: "RateLimitCodeWithoutExtension", proto: protoVersion4, unread: 2,
 			body: errBody(protoVersion4, scyllaRateLimitCode, "slow down", func(f *framer) {
-				f.writeByte(byte(OpTypeWrite))
-				f.writeByte(1)
+				f.WriteByteValue(byte(OpTypeWrite))
+				f.WriteByteValue(1)
 			}),
 			want: &UnknownServerError{ErrorFrame: base(protoVersion4, scyllaRateLimitCode, "slow down")},
 		},
@@ -340,25 +340,25 @@ func TestReadErrorMapRejectsBadAddress(t *testing.T) {
 		wantErr string
 	}{
 		{"InvalidSize", func(f *framer) {
-			f.writeInt(1)
-			f.writeByte(5)
-			f.buf = append(f.buf, 1, 2, 3, 4, 5)
-			f.writeShort(1)
+			f.WriteInt(1)
+			f.WriteByteValue(5)
+			f.Buf = append(f.Buf, 1, 2, 3, 4, 5)
+			f.WriteShort(1)
 		}, "invalid IP size: 5"},
 		{"ZeroSize", func(f *framer) {
-			f.writeInt(1)
-			f.writeByte(0)
-			f.writeShort(1)
+			f.WriteInt(1)
+			f.WriteByteValue(0)
+			f.WriteShort(1)
 		}, "invalid IP size: 0"},
 		{"ShortAddress", func(f *framer) {
-			f.writeInt(1)
-			f.writeByte(16)
-			f.buf = append(f.buf, 1, 2, 3, 4)
+			f.WriteInt(1)
+			f.WriteByteValue(16)
+			f.Buf = append(f.Buf, 1, 2, 3, 4)
 		}, "not enough bytes in buffer to read inet"},
 		{"MoreEntriesThanData", func(f *framer) {
-			f.writeInt(3)
+			f.WriteInt(3)
 			writeInetOnly(f, net.ParseIP("10.0.0.1"))
-			f.writeShort(1)
+			f.WriteShort(1)
 			// what follows is read as the next address and rejected
 		}, "invalid IP size"},
 	}
@@ -367,11 +367,11 @@ func TestReadErrorMapRejectsBadAddress(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			body := errBody(protoVersion5, ErrCodeReadFailure, "rf", func(f *framer) {
-				f.writeConsistency(One)
-				f.writeInt(0)
-				f.writeInt(1)
+				f.WriteConsistency(One)
+				f.WriteInt(0)
+				f.WriteInt(1)
 				tc.write(f)
-				f.writeByte(0)
+				f.WriteByteValue(0)
 			})
 			_, err := parseErrorBody(protoVersion5, body, 0)
 			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
@@ -386,11 +386,11 @@ func TestReadErrorMapNegativeCount(t *testing.T) {
 	t.Parallel()
 
 	body := errBody(protoVersion5, ErrCodeReadFailure, "rf", func(f *framer) {
-		f.writeConsistency(One)
-		f.writeInt(0)
-		f.writeInt(1)
-		f.writeInt(-1)
-		f.writeByte(0)
+		f.WriteConsistency(One)
+		f.WriteInt(0)
+		f.WriteInt(1)
+		f.WriteInt(-1)
+		f.WriteByteValue(0)
 	})
 	got, err := parseErrorBody(protoVersion5, body, 0)
 	if err != nil {

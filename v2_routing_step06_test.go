@@ -4,6 +4,8 @@
 package gocql
 
 import (
+	cqltype "github.com/scylladb/gocql/v2/internal/cqltype"
+
 	"bytes"
 	"context"
 	"encoding/binary"
@@ -58,7 +60,7 @@ func TestStep06TabletPayloadAndWire(t *testing.T) {
 		raw := step06Payload(h)
 		for split := 0; split <= len(raw); split++ {
 			chain := typedTestChain(t, raw[:split], raw[split:])
-			parsed, err := parseTypedTabletPayload(Bytes{chain: chain}, "ks", "table", v2)
+			parsed, err := parseTypedTabletPayload(cqltype.BytesView(chain, nil), "ks", "table", v2)
 			if err != nil || !sameTabletObservation(&tabletRange{span: TokenRange{Start: h.FirstToken(), End: h.LastToken(), Replicas: []Target{target}}, version: Option[uint64]{Value: 0xfedcba9876543210, Set: v2}}, parsed) {
 				t.Fatalf("v2=%t split=%d: %v", v2, split, err)
 			}
@@ -85,15 +87,15 @@ func TestStep06TabletPayloadAndWire(t *testing.T) {
 		for _, kind := range []string{"query", "execute", "batch", "prepare"} {
 			c := &Conn{version: proto}
 			c.initFramerCache()
-			r := &attemptRequest{statement: "SELECT * FROM ks.table", consistency: One, tabletVersionBlock: 0xa7}
+			r := &attemptRequest{Statement: "SELECT * FROM ks.table", Consistency: One, TabletVersionBlock: 0xa7}
 			switch kind {
 			case "execute":
-				r.preparedID = []byte{1}
-				r.resultMetadataID = []byte{2}
+				r.PreparedID = []byte{1}
+				r.ResultMetadataID = []byte{2}
 			case "prepare":
-				r.prepare = true
+				r.Prepare = true
 			case "batch":
-				r.batch = &typedBatchRequest{kind: LoggedBatch}
+				r.Batch = &typedBatchRequest{Kind: LoggedBatch}
 			}
 			flatten := func(chain wire.Chain) []byte {
 				raw := typedTestBytes(t, chain)
@@ -430,7 +432,7 @@ func TestStep06NegotiationVersionAndFailedExecuteFeedback(t *testing.T) {
 	stamp := s.captureTabletFeedback(info, s.Metadata())
 	// applyTypedFeedbackStamped is deliberately before execute-error/UNPREPARED
 	// interpretation; a response page can carry payload independently of rows.
-	page := &responsePage{payload: []PayloadEntry{{Key: "tablets-routing-v2", Value: Nullable[Bytes]{Valid: true, Value: BorrowBytes(step06Payload(h))}}}}
+	page := &responsePage{responseData: responseData{Payload: []PayloadEntry{{Key: "tablets-routing-v2", Value: Nullable[Bytes]{Valid: true, Value: BorrowBytes(step06Payload(h))}}}}}
 	s.applyTypedFeedbackStamped(page, info, stamp, framerConfig{tabletsRoutingV1: true, tabletsRoutingV2: true})
 	step06Drain(s)
 	m := s.Metadata()
@@ -445,8 +447,8 @@ func TestStep06NegotiationVersionAndFailedExecuteFeedback(t *testing.T) {
 		t.Fatal("absent identity/token hint is not zero")
 	}
 	// A malformed V2 body never falls back to the simultaneously supplied V1.
-	page.payload = append([]PayloadEntry{{Key: "tablets-routing-v1", Value: Nullable[Bytes]{Valid: true, Value: BorrowBytes(step06Payload(step06Hint(t, 100, 200, Option[uint64]{}, hTarget(2, 0))))}}}, page.payload...)
-	page.payload[1].Value.Value = BorrowBytes([]byte{0})
+	page.Payload = append([]PayloadEntry{{Key: "tablets-routing-v1", Value: Nullable[Bytes]{Valid: true, Value: BorrowBytes(step06Payload(step06Hint(t, 100, 200, Option[uint64]{}, hTarget(2, 0))))}}}, page.Payload...)
+	page.Payload[1].Value.Value = BorrowBytes([]byte{0})
 	s.applyTypedFeedbackStamped(page, info, s.captureTabletFeedback(info, m), framerConfig{tabletsRoutingV1: true, tabletsRoutingV2: true})
 	step06Drain(s)
 	if s.Metadata() != m {
@@ -605,7 +607,7 @@ type step06CapturedPartitioner struct {
 func (p *step06CapturedPartitioner) Token(key PartitionKey) (int64, error) {
 	p.calls++
 	err := key.ForEach(func(b Bytes) error {
-		return b.each(func(s wire.Span) error {
+		return cqltype.EachBytes(b, func(s wire.Span) error {
 			if len(s.Bytes()) != len(p.expected) || len(p.expected) > 0 && &s.Bytes()[0] != &p.expected[0] {
 				return typeValidation("partitioner", "payload was reencoded or copied")
 			}

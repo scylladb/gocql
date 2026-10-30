@@ -1,6 +1,8 @@
 package gocql
 
 import (
+	cqltype "github.com/scylladb/gocql/v2/internal/cqltype"
+
 	"encoding/binary"
 	"fmt"
 
@@ -15,67 +17,67 @@ func parseTypedTabletHint(value Bytes, keyspace, table string) (tablets.TabletIn
 }
 
 func parseTypedTabletPayload(value Bytes, keyspace, table string, v2 bool) (tablets.TabletInfo, error) {
-	if err := value.checkAlive(); err != nil {
+	if err := cqltype.CheckBytesAlive(value); err != nil {
 		return tablets.TabletInfo{}, err
 	}
-	p := &typedParser{cursor: wire.NewCursor(value.chain)}
+	p := &typedParser{Cursor: wire.NewCursor(cqltype.BytesChain(value))}
 	field := func(p *typedParser) *typedParser {
-		length := p.i32()
+		length := p.I32()
 		if length < 0 {
-			p.check(fmt.Errorf("gocql: tablet hint contains null or unset field"))
-			return &typedParser{cursor: wire.NewCursor(wire.Chain{}), err: p.err}
+			p.Check(fmt.Errorf("gocql: tablet hint contains null or unset field"))
+			return &typedParser{Cursor: wire.NewCursor(wire.Chain{}), Err: p.Err}
 		}
-		chain := p.take(int64(length))
-		return &typedParser{cursor: wire.NewCursor(chain), err: p.err}
+		chain := p.Take(int64(length))
+		return &typedParser{Cursor: wire.NewCursor(chain), Err: p.Err}
 	}
 	bigint := func(p *typedParser) int64 {
 		child := field(p)
-		n, err := child.cursor.Uint64()
-		child.check(err)
-		child.check(child.cursor.RequireEnd())
-		p.check(child.err)
+		n, err := child.Cursor.Uint64()
+		child.Check(err)
+		child.Check(child.Cursor.RequireEnd())
+		p.Check(child.Err)
 		return int64(n)
 	}
 	first, last := bigint(p), bigint(p)
 	list := field(p)
-	count := list.count(4)
+	count := list.Count(4)
 	if count > 1000 {
-		list.check(fmt.Errorf("gocql: unreasonable tablet replica count %d", count))
+		list.Check(fmt.Errorf("gocql: unreasonable tablet replica count %d", count))
 		count = 0
 	}
 	replicas := make([]tablets.ReplicaInfo, count)
 	for i := range replicas {
 		tuple := field(list)
 		id := field(tuple)
-		hi, err := id.cursor.Uint64()
-		id.check(err)
-		lo, err := id.cursor.Uint64()
-		id.check(err)
-		id.check(id.cursor.RequireEnd())
-		tuple.check(id.err)
+		hi, err := id.Cursor.Uint64()
+		id.Check(err)
+		lo, err := id.Cursor.Uint64()
+		id.Check(err)
+		id.Check(id.Cursor.RequireEnd())
+		tuple.Check(id.Err)
 		var uuid [16]byte
 		binary.BigEndian.PutUint64(uuid[:8], hi)
 		binary.BigEndian.PutUint64(uuid[8:], lo)
 		shard := field(tuple)
-		shardID := shard.i32()
-		shard.check(shard.cursor.RequireEnd())
-		tuple.check(shard.err)
+		shardID := shard.I32()
+		shard.Check(shard.Cursor.RequireEnd())
+		tuple.Check(shard.Err)
 		if shardID < 0 {
-			tuple.check(fmt.Errorf("gocql: negative tablet shard %d", shardID))
+			tuple.Check(fmt.Errorf("gocql: negative tablet shard %d", shardID))
 		}
-		tuple.check(tuple.cursor.RequireEnd())
-		list.check(tuple.err)
+		tuple.Check(tuple.Cursor.RequireEnd())
+		list.Check(tuple.Err)
 		replicas[i] = tablets.NewReplicaInfo(tablets.HostUUID(uuid), shardID)
 	}
-	list.check(list.cursor.RequireEnd())
-	p.check(list.err)
+	list.Check(list.Cursor.RequireEnd())
+	p.Check(list.Err)
 	var version uint64
 	if v2 {
 		version = uint64(bigint(p))
 	}
-	p.check(p.cursor.RequireEnd())
-	if p.err != nil {
-		return tablets.TabletInfo{}, p.err
+	p.Check(p.Cursor.RequireEnd())
+	if p.Err != nil {
+		return tablets.TabletInfo{}, p.Err
 	}
 	hint, err := tablets.NewTabletInfo(keyspace, table, first, last, replicas)
 	if v2 {

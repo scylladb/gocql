@@ -17,6 +17,8 @@
 package gocql
 
 import (
+	cqltype "github.com/scylladb/gocql/v2/internal/cqltype"
+
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -112,23 +114,23 @@ func (t *preparedSchemaTracker) dependencies(keyspace string, parameters, column
 	visited := make(map[*dataTypeDescriptor]bool)
 	var typ func(DataType)
 	typ = func(v DataType) {
-		d := v.descriptor
+		d := cqltype.DescriptorOf(v)
 		if d == nil || visited[d] {
 			return
 		}
 		visited[d] = true
-		if d.kind == TypeUDT {
-			add(preparedDependencyKey{'k', d.keyspace, ""})
-			add(preparedDependencyKey{'t', d.keyspace, d.name})
+		if d.Kind == TypeUDT {
+			add(preparedDependencyKey{'k', d.Keyspace, ""})
+			add(preparedDependencyKey{'t', d.Keyspace, d.Name})
 		}
-		typ(d.key)
-		typ(d.element)
-		for _, f := range d.fields.columns {
+		typ(d.Key)
+		typ(d.Element)
+		for _, f := range cqltype.ColumnSlice(d.Fields) {
 			typ(f.Type)
 		}
 	}
 	for _, set := range []Columns{parameters, columns} {
-		for _, c := range set.columns {
+		for _, c := range cqltype.ColumnSlice(set) {
 			ks := c.Keyspace
 			if ks == "" {
 				ks = keyspace

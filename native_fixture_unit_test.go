@@ -138,9 +138,9 @@ func hostInfoFromFixture(f *nativeResultFixture, port int) (*HostInfo, error) {
 }
 
 func writeErrorResult(resp *framer, stream int, code int, msg string) {
-	resp.writeHeader(0, frm.OpError, stream)
-	resp.writeInt(int32(code))
-	resp.writeString(msg)
+	resp.WriteHeader(0, frm.OpError, stream)
+	resp.WriteInt(int32(code))
+	resp.WriteString(msg)
 }
 
 type testPreparedCol struct {
@@ -159,9 +159,9 @@ type testPrepared struct {
 }
 
 func (p testPrepared) write(resp *framer, stream int, writeResultMetadataID func(uint64)) {
-	resp.writeHeader(0, frm.OpResult, stream)
-	resp.writeInt(frm.ResultKindPrepared)
-	resp.writeShortBytes(binary.BigEndian.AppendUint64(nil, p.id))
+	resp.WriteHeader(0, frm.OpResult, stream)
+	resp.WriteInt(frm.ResultKindPrepared)
+	resp.WriteShortBytes(binary.BigEndian.AppendUint64(nil, p.id))
 	writeResultMetadataID(p.id)
 
 	global := p.keyspace != ""
@@ -169,30 +169,30 @@ func (p testPrepared) write(resp *framer, stream int, writeResultMetadataID func
 	if global {
 		flags |= frm.FlagGlobalTableSpec
 	}
-	resp.writeInt(int32(flags))
-	resp.writeInt(int32(len(p.cols)))
-	if resp.proto >= protoVersion4 {
-		resp.writeInt(int32(len(p.pkIndexes)))
+	resp.WriteInt(int32(flags))
+	resp.WriteInt(int32(len(p.cols)))
+	if resp.Proto >= protoVersion4 {
+		resp.WriteInt(int32(len(p.pkIndexes)))
 		for _, idx := range p.pkIndexes {
-			resp.writeShort(idx)
+			resp.WriteShort(idx)
 		}
 	}
 	if global {
-		resp.writeString(p.keyspace)
-		resp.writeString(p.table)
+		resp.WriteString(p.keyspace)
+		resp.WriteString(p.table)
 	}
 	for _, c := range p.cols {
 		if !global {
-			resp.writeString(c.keyspace)
-			resp.writeString(c.table)
+			resp.WriteString(c.keyspace)
+			resp.WriteString(c.table)
 		}
-		resp.writeString(c.name)
-		resp.writeShort(uint16(c.typ))
+		resp.WriteString(c.name)
+		resp.WriteShort(uint16(c.typ))
 	}
 
 	// <result_metadata>
-	resp.writeInt(int32(frm.FlagNoMetaData))
-	resp.writeInt(0)
+	resp.WriteInt(int32(frm.FlagNoMetaData))
+	resp.WriteInt(0)
 }
 
 // routingTestServer is a TestServer answering PREPARE from a fixed table of

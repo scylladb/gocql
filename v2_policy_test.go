@@ -51,7 +51,7 @@ func TestV2PartitionKeyCanonicalStream(t *testing.T) {
 	second := []byte{3}
 	a, _ := wire.NewChain(wire.Borrow(first))
 	b, _ := wire.NewChain(wire.Borrow(second))
-	cells := []encodedCell{{state: Present, body: a}, {state: Present, body: b}}
+	cells := []encodedCell{{State: Present, Body: a}, {State: Present, Body: b}}
 	key, complete, err := newPartitionKey(cells, []int{1, 0})
 	if err != nil || !complete {
 		t.Fatal(complete, err)
@@ -71,7 +71,7 @@ func TestV2PartitionKeyCanonicalStream(t *testing.T) {
 	if output.Bytes()[6] != 9 {
 		t.Fatal("partition payload copied")
 	}
-	cells[0].state = Null
+	cells[0].State = Null
 	if _, ok, err := newPartitionKey(cells, []int{0, 1}); err != nil || ok {
 		t.Fatal("null key must disable token routing")
 	}
@@ -79,7 +79,7 @@ func TestV2PartitionKeyCanonicalStream(t *testing.T) {
 		t.Fatal("invalid key index accepted")
 	}
 	large, _ := wire.NewChain(wire.Borrow(make([]byte, 65536)))
-	cells[0] = encodedCell{state: Present, body: large}
+	cells[0] = encodedCell{State: Present, Body: large}
 	if _, _, err := newPartitionKey(cells, []int{0, 1}); err == nil {
 		t.Fatal("oversized composite accepted")
 	}

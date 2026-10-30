@@ -510,13 +510,13 @@ func TestStream0(t *testing.T) {
 
 	var buf bytes.Buffer
 	f := newFramer(nil, protoVersion4)
-	f.writeHeader(0, frm.OpResult, 0)
-	f.writeInt(frm.ResultKindVoid)
-	f.buf[0] |= 0x80
-	if err := f.finish(); err != nil {
+	f.WriteHeader(0, frm.OpResult, 0)
+	f.WriteInt(frm.ResultKindVoid)
+	f.Buf[0] |= 0x80
+	if err := f.Finish(); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.writeTo(&buf); err != nil {
+	if err := f.WriteFrameTo(&buf); err != nil {
 		t.Fatal(err)
 	}
 
@@ -650,7 +650,7 @@ func TestContext_CanceledBeforeExec(t *testing.T) {
 		addr:     "127.0.0.1:0",
 		protocol: defaultProto,
 		recvHook: func(f *framer) {
-			if f.header.Op == frm.OpStartup || f.header.Op == frm.OpOptions {
+			if f.Header.Op == frm.OpStartup || f.Header.Op == frm.OpOptions {
 				// ignore statup and heartbeat messages
 				return
 			}
@@ -1071,7 +1071,7 @@ func TestExecCloseWithError(t *testing.T) {
 		errCh := make(chan error, 1)
 		go func() {
 			_, err := c.exec(ctx, frameWriterFunc(func(f *framer, streamID int) error {
-				f.buf = append(f.buf[:0], 'x')
+				f.Buf = append(f.Buf[:0], 'x')
 				return nil
 			}), nil, 0)
 			errCh <- err
@@ -1107,7 +1107,7 @@ func TestExecCloseWithError(t *testing.T) {
 		errCh := make(chan error, 1)
 		go func() {
 			_, err := c.exec(context.Background(), frameWriterFunc(func(f *framer, streamID int) error {
-				f.buf = append(f.buf[:0], 'x')
+				f.Buf = append(f.Buf[:0], 'x')
 				return nil
 			}), nil, 0)
 			errCh <- err
@@ -1143,7 +1143,7 @@ func TestExecCloseWithError(t *testing.T) {
 		errCh := make(chan error, 1)
 		go func() {
 			_, err := c.exec(context.Background(), frameWriterFunc(func(f *framer, streamID int) error {
-				f.buf = append(f.buf[:0], 'x')
+				f.Buf = append(f.Buf[:0], 'x')
 				return nil
 			}), nil, 0)
 			errCh <- err
@@ -1181,7 +1181,7 @@ func TestExecCloseWithError(t *testing.T) {
 		errCh := make(chan error, 1)
 		go func() {
 			_, err := c.exec(context.Background(), frameWriterFunc(func(f *framer, streamID int) error {
-				f.buf = append(f.buf[:0], 'x')
+				f.Buf = append(f.Buf[:0], 'x')
 				return nil
 			}), nil, 0)
 			errCh <- err
@@ -1210,7 +1210,7 @@ func TestExecCloseWithError(t *testing.T) {
 		errCh := make(chan error, 1)
 		go func() {
 			_, err := c.exec(context.Background(), frameWriterFunc(func(f *framer, streamID int) error {
-				f.buf = append(f.buf[:0], 'x')
+				f.Buf = append(f.Buf[:0], 'x')
 				return nil
 			}), nil, time.Millisecond)
 			errCh <- err
@@ -1252,7 +1252,7 @@ func TestExecCloseWithError(t *testing.T) {
 		errCh := make(chan error, 1)
 		go func() {
 			_, err := c.exec(ctx, frameWriterFunc(func(f *framer, streamID int) error {
-				f.buf = append(f.buf[:0], 'x')
+				f.Buf = append(f.Buf[:0], 'x')
 				return nil
 			}), nil, 0)
 			errCh <- err
@@ -1304,7 +1304,7 @@ func TestExecCloseWithError(t *testing.T) {
 		errCh := make(chan error, 1)
 		go func() {
 			_, err := c.exec(context.Background(), frameWriterFunc(func(f *framer, streamID int) error {
-				f.buf = append(f.buf[:0], 'x')
+				f.Buf = append(f.Buf[:0], 'x')
 				return nil
 			}), nil, 0)
 			errCh <- err
@@ -1564,30 +1564,30 @@ func TestPrepareBatchMetadataMultipleKeyspaceTables(t *testing.T) {
 	}
 
 	stmt := "BEGIN BATCH INSERT INTO ks1.tbl1 (col1) VALUES (?) INSERT INTO ks2.tbl2 (col2) VALUES (?) APPLY BATCH"
-	info, err := conn.executeTyped(ctx, &attemptRequest{statement: stmt, prepare: true, timeout: time.Second})
-	if info != nil && info.owner != nil {
-		defer info.owner.Release()
+	info, err := conn.executeTyped(ctx, &attemptRequest{Statement: stmt, Prepare: true, Timeout: time.Second})
+	if info != nil && info.Owner != nil {
+		defer info.Owner.Release()
 	}
 	if err != nil {
 		t.Fatalf("prepareStatement failed: %v", err)
 	}
 
-	if got := info.bindColumns.Len(); got != 2 {
+	if got := info.BindColumns.Len(); got != 2 {
 		t.Fatalf("expected 2 request columns, got %d", got)
 	}
 
-	col0, _ := info.bindColumns.At(0)
+	col0, _ := info.BindColumns.At(0)
 	if col0.Keyspace != "ks1" || col0.Table != "tbl1" || col0.Name != "col1" {
 		t.Fatalf("unexpected column 0: %+v", col0)
 	}
 
-	col1, _ := info.bindColumns.At(1)
+	col1, _ := info.BindColumns.At(1)
 	if col1.Keyspace != "ks2" || col1.Table != "tbl2" || col1.Name != "col2" {
 		t.Fatalf("unexpected column 1: %+v", col1)
 	}
 
-	if info.keyspace != "" || "" != "" {
-		t.Fatalf("expected empty prepared keyspace/table for mixed batch, got %q/%q", info.keyspace, "")
+	if info.Keyspace != "" || "" != "" {
+		t.Fatalf("expected empty prepared keyspace/table for mixed batch, got %q/%q", info.Keyspace, "")
 	}
 }
 
@@ -1952,12 +1952,12 @@ func (srv *TestServer) countOptions(conn net.Conn) int32 {
 }
 
 func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string][]string) {
-	head := reqFrame.header
+	head := reqFrame.Header
 	if head == nil {
 		srv.errorLocked("process frame with a nil header")
 		return
 	}
-	respFrame := newFramer(nil, reqFrame.proto)
+	respFrame := newFramer(nil, reqFrame.Proto)
 
 	// SCYLLA_USE_METADATA_ID puts a result metadata id after the prepared id in both
 	// RESULT/Prepared and EXECUTE. The driver opts in whenever the server advertised
@@ -1970,7 +1970,7 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 	// producing exactly the frames they did before.
 	writeResultMetadataID := func(preparedID uint64) {
 		if useMetadataID {
-			respFrame.writeShortBytes(binary.BigEndian.AppendUint64(nil, preparedID+testMetadataIDOffset))
+			respFrame.WriteShortBytes(binary.BigEndian.AppendUint64(nil, preparedID+testMetadataIDOffset))
 		}
 	}
 
@@ -1991,38 +1991,38 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 			hook(reqFrame, head.Stream, respFrame)
 			break
 		}
-		respFrame.writeHeader(0, frm.OpReady, head.Stream)
+		respFrame.WriteHeader(0, frm.OpReady, head.Stream)
 	case frm.OpRegister:
 		srv.mu.Lock()
 		hook := srv.registerHook
 		srv.mu.Unlock()
 		if hook == nil {
-			respFrame.writeHeader(0, frm.OpError, head.Stream)
-			respFrame.writeInt(0)
-			respFrame.writeString("not supported")
+			respFrame.WriteHeader(0, frm.OpError, head.Stream)
+			respFrame.WriteInt(0)
+			respFrame.WriteString("not supported")
 			break
 		}
-		hook(reqFrame.readStringList(), head.Stream, respFrame)
+		hook(reqFrame.ReadStringList(), head.Stream, respFrame)
 	case frm.OpAuthResponse:
 		srv.mu.Lock()
 		hook := srv.authHook
 		srv.mu.Unlock()
 		if hook == nil {
-			respFrame.writeHeader(0, frm.OpError, head.Stream)
-			respFrame.writeInt(0)
-			respFrame.writeString("not supported")
+			respFrame.WriteHeader(0, frm.OpError, head.Stream)
+			respFrame.WriteInt(0)
+			respFrame.WriteString("not supported")
 			break
 		}
 		hook(reqFrame, head.Stream, respFrame)
 	case frm.OpOptions:
 		if atomic.LoadInt32(&srv.readyOnOptions) != 0 && srv.countOptions(conn) > 1 {
-			respFrame.writeHeader(0, frm.OpReady, head.Stream)
+			respFrame.WriteHeader(0, frm.OpReady, head.Stream)
 			break
 		}
-		respFrame.writeHeader(0, frm.OpSupported, head.Stream)
-		respFrame.writeStringMultiMap(exts)
+		respFrame.WriteHeader(0, frm.OpSupported, head.Stream)
+		respFrame.WriteStringMultiMap(exts)
 	case frm.OpQuery:
-		query := reqFrame.readLongString()
+		query := reqFrame.ReadLongString()
 		first := query
 		if n := strings.Index(query, " "); n > 0 {
 			first = first[:n]
@@ -2041,65 +2041,65 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 		switch strings.ToLower(first) {
 		case "kill":
 			srv.nKillReq.Add(1)
-			respFrame.writeHeader(0, frm.OpError, head.Stream)
-			respFrame.writeInt(0x1001)
-			respFrame.writeString("query killed")
+			respFrame.WriteHeader(0, frm.OpError, head.Stream)
+			respFrame.WriteInt(0x1001)
+			respFrame.WriteString("query killed")
 		case "use":
-			respFrame.writeInt(frm.ResultKindKeyspace)
-			respFrame.writeString(strings.TrimSpace(query[3:]))
+			respFrame.WriteInt(frm.ResultKindKeyspace)
+			respFrame.WriteString(strings.TrimSpace(query[3:]))
 		case "void":
-			respFrame.writeHeader(0, frm.OpResult, head.Stream)
-			respFrame.writeInt(frm.ResultKindVoid)
+			respFrame.WriteHeader(0, frm.OpResult, head.Stream)
+			respFrame.WriteInt(frm.ResultKindVoid)
 		case "timeout":
 			<-srv.ctx.Done()
 			return
 		case "slow":
 			go func() {
-				respFrame.writeHeader(0, frm.OpResult, head.Stream)
-				respFrame.writeInt(frm.ResultKindVoid)
-				respFrame.buf[0] = srv.protocol | 0x80
+				respFrame.WriteHeader(0, frm.OpResult, head.Stream)
+				respFrame.WriteInt(frm.ResultKindVoid)
+				respFrame.Buf[0] = srv.protocol | 0x80
 				select {
 				case <-srv.ctx.Done():
 					return
 				case <-time.After(50 * time.Millisecond):
-					respFrame.finish()
-					respFrame.writeTo(conn)
+					respFrame.Finish()
+					respFrame.WriteFrameTo(conn)
 				}
 			}()
 			return
 		case "speculative":
 			srv.nKillReq.Add(1)
 			if srv.nKillReq.Load() > 3 {
-				respFrame.writeHeader(0, frm.OpResult, head.Stream)
-				respFrame.writeInt(frm.ResultKindVoid)
-				respFrame.writeString("speculative query success on the node " + srv.Address)
+				respFrame.WriteHeader(0, frm.OpResult, head.Stream)
+				respFrame.WriteInt(frm.ResultKindVoid)
+				respFrame.WriteString("speculative query success on the node " + srv.Address)
 			} else {
-				respFrame.writeHeader(0, frm.OpError, head.Stream)
-				respFrame.writeInt(0x1001)
-				respFrame.writeString("speculative error")
+				respFrame.WriteHeader(0, frm.OpError, head.Stream)
+				respFrame.WriteInt(0x1001)
+				respFrame.WriteString("speculative error")
 				rand.Seed(time.Now().UnixNano())
 				<-time.After(time.Millisecond * 120)
 			}
 		default:
-			respFrame.writeHeader(0, frm.OpResult, head.Stream)
-			respFrame.writeInt(frm.ResultKindVoid)
+			respFrame.WriteHeader(0, frm.OpResult, head.Stream)
+			respFrame.WriteInt(frm.ResultKindVoid)
 		}
 	case frm.OpBatch:
 		srv.mu.Lock()
 		hook := srv.batchHook
 		srv.mu.Unlock()
 		if hook == nil {
-			respFrame.writeHeader(0, frm.OpError, head.Stream)
-			respFrame.writeInt(0)
-			respFrame.writeString("not supported")
+			respFrame.WriteHeader(0, frm.OpError, head.Stream)
+			respFrame.WriteInt(0)
+			respFrame.WriteString("not supported")
 			break
 		}
 		hook(reqFrame, head.Stream, respFrame)
 	case frm.OpError:
-		respFrame.writeHeader(0, frm.OpError, head.Stream)
-		respFrame.buf = append(respFrame.buf, reqFrame.buf...)
+		respFrame.WriteHeader(0, frm.OpError, head.Stream)
+		respFrame.Buf = append(respFrame.Buf, reqFrame.Buf...)
 	case frm.OpPrepare:
-		query := strings.TrimSpace(reqFrame.readLongString())
+		query := strings.TrimSpace(reqFrame.ReadLongString())
 		srv.mu.Lock()
 		hook := srv.prepareHook
 		srv.mu.Unlock()
@@ -2120,97 +2120,97 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 		}
 		switch name {
 		case "nometadata":
-			respFrame.writeHeader(0, frm.OpResult, head.Stream)
-			respFrame.writeInt(frm.ResultKindPrepared)
+			respFrame.WriteHeader(0, frm.OpResult, head.Stream)
+			respFrame.WriteInt(frm.ResultKindPrepared)
 			// <id>
-			respFrame.writeShortBytes(binary.BigEndian.AppendUint64(nil, 1))
+			respFrame.WriteShortBytes(binary.BigEndian.AppendUint64(nil, 1))
 			writeResultMetadataID(1)
 			// <metadata>
-			respFrame.writeInt(0) // <flags>
-			respFrame.writeInt(0) // <columns_count>
+			respFrame.WriteInt(0) // <flags>
+			respFrame.WriteInt(0) // <columns_count>
 			if srv.protocol >= protoVersion4 {
-				respFrame.writeInt(0) // <pk_count>
+				respFrame.WriteInt(0) // <pk_count>
 			}
 			// <result_metadata>
-			respFrame.writeInt(int32(frm.FlagNoMetaData)) // <flags>
-			respFrame.writeInt(0)
+			respFrame.WriteInt(int32(frm.FlagNoMetaData)) // <flags>
+			respFrame.WriteInt(0)
 		case "metadata":
-			respFrame.writeHeader(0, frm.OpResult, head.Stream)
-			respFrame.writeInt(frm.ResultKindPrepared)
+			respFrame.WriteHeader(0, frm.OpResult, head.Stream)
+			respFrame.WriteInt(frm.ResultKindPrepared)
 			// <id>
-			respFrame.writeShortBytes(binary.BigEndian.AppendUint64(nil, 2))
+			respFrame.WriteShortBytes(binary.BigEndian.AppendUint64(nil, 2))
 			writeResultMetadataID(2)
 			// <metadata>
-			respFrame.writeInt(0) // <flags>
-			respFrame.writeInt(0) // <columns_count>
+			respFrame.WriteInt(0) // <flags>
+			respFrame.WriteInt(0) // <columns_count>
 			if srv.protocol >= protoVersion4 {
-				respFrame.writeInt(0) // <pk_count>
+				respFrame.WriteInt(0) // <pk_count>
 			}
 			// <result_metadata>
-			respFrame.writeInt(int32(frm.FlagGlobalTableSpec)) // <flags>
-			respFrame.writeInt(1)                              // <columns_count>
+			respFrame.WriteInt(int32(frm.FlagGlobalTableSpec)) // <flags>
+			respFrame.WriteInt(1)                              // <columns_count>
 			// <global_table_spec>
-			respFrame.writeString("keyspace")
-			respFrame.writeString("table")
+			respFrame.WriteString("keyspace")
+			respFrame.WriteString("table")
 			// <col_spec_0>
-			respFrame.writeString("col0")             // <name>
-			respFrame.writeShort(uint16(TypeBoolean)) // <type>
+			respFrame.WriteString("col0")             // <name>
+			respFrame.WriteShort(uint16(TypeBoolean)) // <type>
 		case "batchmetadata":
-			respFrame.writeHeader(0, frm.OpResult, head.Stream)
-			respFrame.writeInt(frm.ResultKindPrepared)
+			respFrame.WriteHeader(0, frm.OpResult, head.Stream)
+			respFrame.WriteInt(frm.ResultKindPrepared)
 			// <id>
-			respFrame.writeShortBytes(binary.BigEndian.AppendUint64(nil, 3))
+			respFrame.WriteShortBytes(binary.BigEndian.AppendUint64(nil, 3))
 			writeResultMetadataID(3)
 			// <metadata>
-			respFrame.writeInt(0) // <flags>
-			respFrame.writeInt(2) // <columns_count>
+			respFrame.WriteInt(0) // <flags>
+			respFrame.WriteInt(2) // <columns_count>
 			if srv.protocol >= protoVersion4 {
-				respFrame.writeInt(0) // <pk_count>
+				respFrame.WriteInt(0) // <pk_count>
 			}
 			// <col_spec_0>
-			respFrame.writeString("ks1")
-			respFrame.writeString("tbl1")
-			respFrame.writeString("col1")
-			respFrame.writeShort(uint16(TypeInt))
+			respFrame.WriteString("ks1")
+			respFrame.WriteString("tbl1")
+			respFrame.WriteString("col1")
+			respFrame.WriteShort(uint16(TypeInt))
 			// <col_spec_1>
-			respFrame.writeString("ks2")
-			respFrame.writeString("tbl2")
-			respFrame.writeString("col2")
-			respFrame.writeShort(uint16(TypeInt))
+			respFrame.WriteString("ks2")
+			respFrame.WriteString("tbl2")
+			respFrame.WriteString("col2")
+			respFrame.WriteShort(uint16(TypeInt))
 			// <result_metadata>
-			respFrame.writeInt(int32(frm.FlagNoMetaData))
-			respFrame.writeInt(0)
+			respFrame.WriteInt(int32(frm.FlagNoMetaData))
+			respFrame.WriteInt(0)
 		case "metadatachangednocolumns":
 			// Prepared with real result metadata and (under the extension) a metadata
 			// id, so the driver caches columns and asks the server to skip metadata on
 			// execute. Its EXECUTE reply, id 4 below, is then deliberately malformed.
-			respFrame.writeHeader(0, frm.OpResult, head.Stream)
-			respFrame.writeInt(frm.ResultKindPrepared)
+			respFrame.WriteHeader(0, frm.OpResult, head.Stream)
+			respFrame.WriteInt(frm.ResultKindPrepared)
 			// <id>
-			respFrame.writeShortBytes(binary.BigEndian.AppendUint64(nil, 4))
+			respFrame.WriteShortBytes(binary.BigEndian.AppendUint64(nil, 4))
 			writeResultMetadataID(4)
 			// <metadata>
-			respFrame.writeInt(0) // <flags>
-			respFrame.writeInt(0) // <columns_count>
+			respFrame.WriteInt(0) // <flags>
+			respFrame.WriteInt(0) // <columns_count>
 			if srv.protocol >= protoVersion4 {
-				respFrame.writeInt(0) // <pk_count>
+				respFrame.WriteInt(0) // <pk_count>
 			}
 			// <result_metadata>
-			respFrame.writeInt(int32(frm.FlagGlobalTableSpec)) // <flags>
-			respFrame.writeInt(1)                              // <columns_count>
+			respFrame.WriteInt(int32(frm.FlagGlobalTableSpec)) // <flags>
+			respFrame.WriteInt(1)                              // <columns_count>
 			// <global_table_spec>
-			respFrame.writeString("keyspace")
-			respFrame.writeString("table")
+			respFrame.WriteString("keyspace")
+			respFrame.WriteString("table")
 			// <col_spec_0>
-			respFrame.writeString("col0")             // <name>
-			respFrame.writeShort(uint16(TypeBoolean)) // <type>
+			respFrame.WriteString("col0")             // <name>
+			respFrame.WriteShort(uint16(TypeBoolean)) // <type>
 		default:
-			respFrame.writeHeader(0, frm.OpError, head.Stream)
-			respFrame.writeInt(0)
-			respFrame.writeString("unsupported query: " + name)
+			respFrame.WriteHeader(0, frm.OpError, head.Stream)
+			respFrame.WriteInt(0)
+			respFrame.WriteString("unsupported query: " + name)
 		}
 	case frm.OpExecute:
-		b := reqFrame.readShortBytesCopy()
+		b := reqFrame.ReadShortBytesCopy()
 		id := binary.BigEndian.Uint64(b)
 		srv.mu.Lock()
 		executeHook := srv.executeHook
@@ -2222,45 +2222,45 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 			// The driver writes the result metadata id between the prepared id and the
 			// query parameters once the extension is negotiated. Consume it, or every
 			// read below lands two bytes plus the id's length too early.
-			reqFrame.readShortBytesCopy()
+			reqFrame.ReadShortBytesCopy()
 		}
 		// <query_parameters>
-		reqFrame.readConsistency() // <consistency>
+		reqFrame.ReadConsistency() // <consistency>
 		var flags uint32
 		if srv.protocol > protoVersion4 {
-			ui := reqFrame.readInt()
+			ui := reqFrame.ReadInt()
 			flags = uint32(ui)
 		} else {
-			flags = uint32(reqFrame.readByte())
+			flags = uint32(reqFrame.ReadByteValue())
 		}
 		switch id {
 		case 1:
 			if flags&frm.FlagSkipMetaData != 0 {
-				respFrame.writeHeader(0, frm.OpError, head.Stream)
-				respFrame.writeInt(0)
-				respFrame.writeString("skip metadata unexpected")
+				respFrame.WriteHeader(0, frm.OpError, head.Stream)
+				respFrame.WriteInt(0)
+				respFrame.WriteString("skip metadata unexpected")
 			} else {
-				respFrame.writeHeader(0, frm.OpResult, head.Stream)
-				respFrame.writeInt(frm.ResultKindRows)
+				respFrame.WriteHeader(0, frm.OpResult, head.Stream)
+				respFrame.WriteInt(frm.ResultKindRows)
 				// <metadata>
-				respFrame.writeInt(0) // <flags>
-				respFrame.writeInt(0) // <columns_count>
+				respFrame.WriteInt(0) // <flags>
+				respFrame.WriteInt(0) // <columns_count>
 				// <rows_count>
-				respFrame.writeInt(0)
+				respFrame.WriteInt(0)
 			}
 		case 2:
 			if flags&frm.FlagSkipMetaData != 0 {
-				respFrame.writeHeader(0, frm.OpResult, head.Stream)
-				respFrame.writeInt(frm.ResultKindRows)
+				respFrame.WriteHeader(0, frm.OpResult, head.Stream)
+				respFrame.WriteInt(frm.ResultKindRows)
 				// <metadata>
-				respFrame.writeInt(0) // <flags>
-				respFrame.writeInt(0) // <columns_count>
+				respFrame.WriteInt(0) // <flags>
+				respFrame.WriteInt(0) // <columns_count>
 				// <rows_count>
-				respFrame.writeInt(0)
+				respFrame.WriteInt(0)
 			} else {
-				respFrame.writeHeader(0, frm.OpError, head.Stream)
-				respFrame.writeInt(0)
-				respFrame.writeString("skip metadata expected")
+				respFrame.WriteHeader(0, frm.OpError, head.Stream)
+				respFrame.WriteInt(0)
+				respFrame.WriteString("skip metadata expected")
 			}
 		case 4:
 			// The driver is expected to have asked to skip metadata here: the extension
@@ -2268,43 +2268,43 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 			// response carried columns. Refusing otherwise keeps that part of the
 			// skip-metadata decision pinned on a live connection.
 			if flags&frm.FlagSkipMetaData == 0 {
-				respFrame.writeHeader(0, frm.OpError, head.Stream)
-				respFrame.writeInt(0)
-				respFrame.writeString("skip metadata expected")
+				respFrame.WriteHeader(0, frm.OpError, head.Stream)
+				respFrame.WriteInt(0)
+				respFrame.WriteString("skip metadata expected")
 			} else {
 				// METADATA_CHANGED promises new result metadata; NO_METADATA says none
 				// was sent. A driver that adopted the new id would stop being sent
 				// metadata altogether, and one that decoded these rows against its
 				// cached columns would be decoding against the very columns the server
 				// just declared stale. Neither is acceptable, so it must reject this.
-				respFrame.writeHeader(0, frm.OpResult, head.Stream)
-				respFrame.writeInt(frm.ResultKindRows)
+				respFrame.WriteHeader(0, frm.OpResult, head.Stream)
+				respFrame.WriteInt(frm.ResultKindRows)
 				// <metadata>
-				respFrame.writeInt(int32(frm.FlagMetaDataChanged | frm.FlagNoMetaData)) // <flags>
-				respFrame.writeInt(0)                                                   // <columns_count>
-				respFrame.writeShortBytes(binary.BigEndian.AppendUint64(nil, 0xBEEF))   // <new_metadata_id>
+				respFrame.WriteInt(int32(frm.FlagMetaDataChanged | frm.FlagNoMetaData)) // <flags>
+				respFrame.WriteInt(0)                                                   // <columns_count>
+				respFrame.WriteShortBytes(binary.BigEndian.AppendUint64(nil, 0xBEEF))   // <new_metadata_id>
 				// <rows_count>
-				respFrame.writeInt(0)
+				respFrame.WriteInt(0)
 			}
 		default:
-			respFrame.writeHeader(0, frm.OpError, head.Stream)
-			respFrame.writeInt(ErrCodeUnprepared)
-			respFrame.writeString("unprepared")
-			respFrame.writeShortBytes(binary.BigEndian.AppendUint64(nil, id))
+			respFrame.WriteHeader(0, frm.OpError, head.Stream)
+			respFrame.WriteInt(ErrCodeUnprepared)
+			respFrame.WriteString("unprepared")
+			respFrame.WriteShortBytes(binary.BigEndian.AppendUint64(nil, id))
 		}
 	default:
-		respFrame.writeHeader(0, frm.OpError, head.Stream)
-		respFrame.writeInt(0)
-		respFrame.writeString("not supported")
+		respFrame.WriteHeader(0, frm.OpError, head.Stream)
+		respFrame.WriteInt(0)
+		respFrame.WriteString("not supported")
 	}
 
-	respFrame.buf[0] = srv.protocol | 0x80
+	respFrame.Buf[0] = srv.protocol | 0x80
 
-	if err := respFrame.finish(); err != nil {
+	if err := respFrame.Finish(); err != nil {
 		srv.errorLocked(err)
 	}
 
-	if err := respFrame.writeTo(conn); err != nil {
+	if err := respFrame.WriteFrameTo(conn); err != nil {
 		if !errors.Is(err, net.ErrClosed) && !errors.Is(err, syscall.ECONNRESET) && !errors.Is(err, syscall.EPIPE) {
 			srv.errorLocked(err)
 		}
@@ -2319,7 +2319,7 @@ func (srv *TestServer) readFrame(conn net.Conn) (*framer, error) {
 	}
 	framer := newFramer(nil, srv.protocol)
 
-	err = framer.readFrame(conn, &head)
+	err = framer.ReadFrame(conn, &head)
 	if err != nil {
 		return nil, err
 	}
@@ -2537,12 +2537,12 @@ func TestInitFramerCacheScyllaUseMetadataID(t *testing.T) {
 	}
 
 	wf := c.getWriteFramer()
-	if !wf.scyllaUseMetadataID {
+	if !wf.ScyllaUseMetadataID {
 		t.Error("write framer obtained from pool should have scyllaUseMetadataID set")
 	}
 
 	rf := c.getReadFramer()
-	if !rf.scyllaUseMetadataID {
+	if !rf.ScyllaUseMetadataID {
 		t.Error("read framer obtained from pool should have scyllaUseMetadataID set")
 	}
 }
@@ -2559,7 +2559,7 @@ func TestInitFramerCacheWithoutScyllaUseMetadataID(t *testing.T) {
 	if c.usesMetadataID() {
 		t.Error("Conn.usesMetadataID() should be false when the extension was not negotiated")
 	}
-	if c.getWriteFramer().scyllaUseMetadataID {
+	if c.getWriteFramer().ScyllaUseMetadataID {
 		t.Error("write framer should not have scyllaUseMetadataID set")
 	}
 }
@@ -2589,7 +2589,7 @@ func TestInitFramerCacheProtoV3IgnoresScyllaUseMetadataID(t *testing.T) {
 	if c.tracksResultMetadataID() {
 		t.Error("Conn.tracksResultMetadataID() should be false on a protocol v3 connection")
 	}
-	if c.getWriteFramer().scyllaUseMetadataID {
+	if c.getWriteFramer().ScyllaUseMetadataID {
 		t.Error("write framer should not have scyllaUseMetadataID set on a protocol v3 connection")
 	}
 }
@@ -2672,11 +2672,11 @@ func TestConnTracksResultMetadataIDMasksDirectionBit(t *testing.T) {
 func buildTestFrame(t *testing.T, f *framer, req frameBuilder, streamID int) ([]byte, frm.FrameHeader) {
 	t.Helper()
 
-	if err := req.buildFrame(f, streamID); err != nil {
-		t.Fatalf("buildFrame failed: %v", err)
+	if err := req.BuildFrame(f, streamID); err != nil {
+		t.Fatalf("BuildFrame failed: %v", err)
 	}
 
-	buf := append([]byte(nil), f.buf...)
+	buf := append([]byte(nil), f.Buf...)
 	header, err := readHeader(bytes.NewReader(buf), make([]byte, headSize))
 	if err != nil {
 		t.Fatalf("readHeader failed: %v", err)
@@ -2708,7 +2708,7 @@ func TestReleaseFramer(t *testing.T) {
 		c := newTestConnWithFramerPool()
 
 		f := c.getReadFramer()
-		f.readBuffer = make([]byte, 4096)
+		f.ReadBuffer = make([]byte, 4096)
 
 		f.Release()
 
@@ -2731,7 +2731,7 @@ func TestReleaseFramer(t *testing.T) {
 		const targetSize = 4096
 		for i := 0; i < 100; i++ {
 			f := c.getReadFramer()
-			f.readBuffer = make([]byte, targetSize)
+			f.ReadBuffer = make([]byte, targetSize)
 			c.releaseReadFramer(f)
 		}
 
@@ -2749,7 +2749,7 @@ func TestReleaseFramer(t *testing.T) {
 		// First, push EWMA up.
 		for i := 0; i < 100; i++ {
 			f := c.getReadFramer()
-			f.readBuffer = make([]byte, 4096)
+			f.ReadBuffer = make([]byte, 4096)
 			c.releaseReadFramer(f)
 		}
 
@@ -2758,7 +2758,7 @@ func TestReleaseFramer(t *testing.T) {
 		const smallSize = 256
 		for i := 0; i < 200; i++ {
 			f := c.getReadFramer()
-			f.readBuffer = make([]byte, smallSize)
+			f.ReadBuffer = make([]byte, smallSize)
 			c.releaseReadFramer(f)
 		}
 
@@ -2777,20 +2777,20 @@ func TestReleaseFramer(t *testing.T) {
 
 		// EWMA starts at defaultBufSize (128). Release a very large framer.
 		f := c.getReadFramer()
-		f.readBuffer = make([]byte, 100000)
-		origBuf := f.readBuffer
+		f.ReadBuffer = make([]byte, 100000)
+		origBuf := f.ReadBuffer
 		c.releaseReadFramer(f)
 
 		// Get the framer back from the pool and check that its buffer was shrunk.
 		f2 := c.getReadFramer()
-		if cap(f2.readBuffer) >= cap(origBuf) {
+		if cap(f2.ReadBuffer) >= cap(origBuf) {
 			t.Errorf("oversized buffer should have been shrunk: original cap=%d, new cap=%d",
-				cap(origBuf), cap(f2.readBuffer))
+				cap(origBuf), cap(f2.ReadBuffer))
 		}
 		// Shrink target should be at least defaultBufSize.
-		if cap(f2.readBuffer) < defaultBufSize {
+		if cap(f2.ReadBuffer) < defaultBufSize {
 			t.Errorf("shrunk buffer should be at least defaultBufSize=%d, got cap=%d",
-				defaultBufSize, cap(f2.readBuffer))
+				defaultBufSize, cap(f2.ReadBuffer))
 		}
 		c.releaseReadFramer(f2)
 	})
@@ -2801,12 +2801,12 @@ func TestReleaseFramer(t *testing.T) {
 		// Release a few framers with identical buffers; none should be shrunk.
 		for i := 0; i < 10; i++ {
 			f := c.getReadFramer()
-			origCap := cap(f.readBuffer)
+			origCap := cap(f.ReadBuffer)
 			c.releaseReadFramer(f)
 			f2 := c.getReadFramer()
-			if cap(f2.readBuffer) != origCap {
+			if cap(f2.ReadBuffer) != origCap {
 				t.Errorf("iteration %d: normal-sized buffer should not be shrunk: orig cap=%d, new cap=%d",
-					i, origCap, cap(f2.readBuffer))
+					i, origCap, cap(f2.ReadBuffer))
 			}
 			c.releaseReadFramer(f2)
 		}
@@ -2819,19 +2819,19 @@ func TestReleaseFramer(t *testing.T) {
 		// The shrink target should never go below defaultBufSize.
 		for i := 0; i < 100; i++ {
 			f := c.getReadFramer()
-			f.readBuffer = make([]byte, 1) // Tiny buffer
+			f.ReadBuffer = make([]byte, 1) // Tiny buffer
 			c.releaseReadFramer(f)
 		}
 
 		// Now release a moderately large buffer that triggers shrink.
 		f := c.getReadFramer()
-		f.readBuffer = make([]byte, 10000)
+		f.ReadBuffer = make([]byte, 10000)
 		c.releaseReadFramer(f)
 
 		f2 := c.getReadFramer()
-		if cap(f2.readBuffer) < defaultBufSize {
+		if cap(f2.ReadBuffer) < defaultBufSize {
 			t.Errorf("shrink target should respect defaultBufSize floor: got cap=%d, want >= %d",
-				cap(f2.readBuffer), defaultBufSize)
+				cap(f2.ReadBuffer), defaultBufSize)
 		}
 		c.releaseReadFramer(f2)
 	})
@@ -2853,11 +2853,11 @@ func TestReleaseFramer(t *testing.T) {
 		c := newTestConnWithFramerPool()
 
 		readFramer := c.getReadFramer()
-		readFramer.readBuffer = make([]byte, 100000)
+		readFramer.ReadBuffer = make([]byte, 100000)
 		c.releaseReadFramer(readFramer)
 
 		writeFramer := c.getWriteFramer()
-		writeFramer.buf = make([]byte, 0, 8192)
+		writeFramer.Buf = make([]byte, 0, 8192)
 		c.releaseWriteFramer(writeFramer)
 
 		if writeAvg := c.framers.writePool.bufAvgSize.Load(); writeAvg <= defaultBufSize {
@@ -2865,8 +2865,8 @@ func TestReleaseFramer(t *testing.T) {
 		}
 
 		writeFramer = c.getWriteFramer()
-		if cap(writeFramer.buf) >= cap(readFramer.readBuffer) {
-			t.Fatalf("writer framer should not inherit oversized reader buffer state, got writer cap=%d reader cap=%d", cap(writeFramer.buf), cap(readFramer.readBuffer))
+		if cap(writeFramer.Buf) >= cap(readFramer.ReadBuffer) {
+			t.Fatalf("writer framer should not inherit oversized reader buffer state, got writer cap=%d reader cap=%d", cap(writeFramer.Buf), cap(readFramer.ReadBuffer))
 		}
 		c.releaseWriteFramer(writeFramer)
 	})
@@ -2888,7 +2888,7 @@ func TestReleaseFramer(t *testing.T) {
 		}
 
 		c.releaseWriteFramer(f)
-		if got, want := f.flags, c.framers.defaults.flags; got != want {
+		if got, want := f.Flags, c.framers.defaults.flags; got != want {
 			t.Fatalf("releaseWriteFramer should restore default flags: got %08b want %08b", got, want)
 		}
 
@@ -2916,7 +2916,7 @@ func TestReleaseFramer(t *testing.T) {
 		const streamID = 9
 
 		f := c.getWriteFramer()
-		f.trace()
+		f.Trace()
 		tracedReq := &fixtureQueryFrame{statement: "SELECT now() FROM system.local"}
 		_, tracedHeader := buildTestFrame(t, f, tracedReq, streamID)
 		if tracedHeader.Flags&frm.FlagTracing == 0 {
@@ -2924,7 +2924,7 @@ func TestReleaseFramer(t *testing.T) {
 		}
 
 		c.releaseWriteFramer(f)
-		if got, want := f.flags, c.framers.defaults.flags; got != want {
+		if got, want := f.Flags, c.framers.defaults.flags; got != want {
 			t.Fatalf("releaseWriteFramer should restore default flags: got %08b want %08b", got, want)
 		}
 
@@ -3010,19 +3010,19 @@ func TestConnProcessAllFramesInSingleSegment(t *testing.T) {
 	}
 
 	framer1 := newFramer(nil, protoVersion5)
-	err = req.buildFrame(framer1, 1)
+	err = req.BuildFrame(framer1, 1)
 	require.NoError(t, err)
 
 	framer2 := newFramer(nil, protoVersion5)
-	err = req.buildFrame(framer2, 2)
+	err = req.BuildFrame(framer2, 2)
 	require.NoError(t, err)
 
 	// Write from the test goroutine: this is a real loopback socket, and the two
 	// frames plus the segment header and CRC are ~124 bytes, so the write completes
 	// into the socket buffer without a reader.
 	var buf []byte
-	buf = append(buf, framer1.buf...)
-	buf = append(buf, framer2.buf...)
+	buf = append(buf, framer1.Buf...)
+	buf = append(buf, framer2.Buf...)
 
 	uncompressedSegment, err := newUncompressedSegment(buf, true)
 	require.NoError(t, err)
@@ -3045,10 +3045,10 @@ func TestConnProcessAllFramesInSingleSegment(t *testing.T) {
 	// The header is skipped because resp.framer has already parsed it; framer.buf
 	// holds the body only.
 	resp1 := recvCallResp(t, call1)
-	require.Equal(t, framer1.buf[9:], resp1.framer.buf)
+	require.Equal(t, framer1.Buf[9:], resp1.framer.Buf)
 
 	resp2 := recvCallResp(t, call2)
-	require.Equal(t, framer2.buf[9:], resp2.framer.buf)
+	require.Equal(t, framer2.Buf[9:], resp2.framer.Buf)
 
 	select {
 	case err := <-errCh:
@@ -3107,14 +3107,14 @@ func TestConnProcessReservedStreamFrameInSegment(t *testing.T) {
 	// stream -1 that error is tolerated (logged) — all we need here is for its
 	// body to be consumed from the segment reader.
 	reservedFramer := newFramer(nil, protoVersion5)
-	require.NoError(t, req.buildFrame(reservedFramer, -1))
+	require.NoError(t, req.BuildFrame(reservedFramer, -1))
 	framer2 := newFramer(nil, protoVersion5)
-	require.NoError(t, req.buildFrame(framer2, 2))
+	require.NoError(t, req.BuildFrame(framer2, 2))
 
 	// Written from the test goroutine; see TestConnProcessAllFramesInSingleSegment.
 	var buf []byte
-	buf = append(buf, reservedFramer.buf...)
-	buf = append(buf, framer2.buf...)
+	buf = append(buf, reservedFramer.Buf...)
+	buf = append(buf, framer2.Buf...)
 
 	seg, err := newUncompressedSegment(buf, true)
 	require.NoError(t, err)
@@ -3131,7 +3131,7 @@ func TestConnProcessReservedStreamFrameInSegment(t *testing.T) {
 	// been read from the socket instead of the segment payload, the segment reader
 	// would be misaligned and this response would never arrive (or arrive corrupt).
 	resp2 := recvCallResp(t, call2)
-	require.Equal(t, framer2.buf[9:], resp2.framer.buf)
+	require.Equal(t, framer2.Buf[9:], resp2.framer.Buf)
 
 	select {
 	case err := <-errCh:
@@ -3809,7 +3809,7 @@ func TestExecStreamIDMismatchFailsTheConnection(t *testing.T) {
 		errCh := make(chan error, 1)
 		go func() {
 			_, err := c.exec(context.Background(), frameWriterFunc(func(f *framer, streamID int) error {
-				f.buf = append(f.buf[:0], 'x')
+				f.Buf = append(f.Buf[:0], 'x')
 				return nil
 			}), nil, 0)
 			errCh <- err
@@ -3844,7 +3844,7 @@ func TestExecStreamIDMismatchFailsTheConnection(t *testing.T) {
 		errCh := make(chan error, 1)
 		go func() {
 			_, err := c.exec(context.Background(), frameWriterFunc(func(f *framer, streamID int) error {
-				f.buf = append(f.buf[:0], 'x')
+				f.Buf = append(f.Buf[:0], 'x')
 				return nil
 			}), nil, 0)
 			errCh <- err
@@ -4048,7 +4048,7 @@ func TestProcessFrameHandsOffOwnershipWhenTheConnectionCloses(t *testing.T) {
 	errCh := make(chan error, 1)
 	go func() {
 		_, err := c.exec(context.Background(), frameWriterFunc(func(f *framer, streamID int) error {
-			f.buf = append(f.buf[:0], 'x')
+			f.Buf = append(f.Buf[:0], 'x')
 			return nil
 		}), nil, 0)
 		errCh <- err
@@ -4311,8 +4311,8 @@ func TestRecvSegmentReassemblesFrameWithSplitHeader(t *testing.T) {
 		params:    fixtureQueryParams{consistency: Quorum, keyspace: "gocql_test"},
 	}
 	framer := newFramer(nil, protoVersion5)
-	require.NoError(t, req.buildFrame(framer, 1))
-	full := append([]byte(nil), framer.buf...)
+	require.NoError(t, req.BuildFrame(framer, 1))
+	full := append([]byte(nil), framer.Buf...)
 
 	// Split the frame into two non-self-contained segments. The first carries
 	// only 4 bytes, fewer than the 9-byte CQL frame header, so the header is
@@ -4350,7 +4350,7 @@ func TestRecvSegmentReassemblesFrameWithSplitHeader(t *testing.T) {
 		resp := <-call1.resp
 		close(call1.timeout)
 		// resp.framer.buf holds the frame body (the header is already parsed).
-		respBuf <- resp.framer.buf
+		respBuf <- resp.framer.Buf
 	}()
 
 	select {
@@ -4800,12 +4800,12 @@ func TestStartupCompressionIsDriverOwned(t *testing.T) {
 					return map[string][]string{"COMPRESSION": {"lz4"}}
 				},
 				recvHook: func(f *framer) {
-					if f.header.Op != frm.OpStartup {
+					if f.Header.Op != frm.OpStartup {
 						return
 					}
 					mu.Lock()
 					defer mu.Unlock()
-					startups = append(startups, parseStartupOptions(t, append([]byte(nil), f.buf...)))
+					startups = append(startups, parseStartupOptions(t, append([]byte(nil), f.Buf...)))
 				},
 			}.newServer(t, ctx)
 			defer srv.Stop()

@@ -1,0 +1,11 @@
+{
+  "compiler_or_build_directives": 0,
+  "declarations": 0,
+  "file": "doc.go",
+  "identical_to_accepted_predecessor": true,
+  "imports": 0,
+  "package": "gocql",
+  "restored_after_native_snapshot": true,
+  "sha256": "0a92bf2f758eb57e315bb8e06402117a4bfb5956f968e5d3a7ffecc5381a4e11",
+  "source": "/*\n * Licensed to the Apache Software Foundation (ASF) under one\n * or more contributor license agreements.  See the NOTICE file\n * distributed with this work for additional information\n * regarding copyright ownership.  The ASF licenses this file\n * to you under the Apache License, Version 2.0 (the\n * \"License\"); you may not use this file except in compliance\n * with the License.  You may obtain a copy of the License at\n *\n *     http://www.apache.org/licenses/LICENSE-2.0\n *\n * Unless required by applicable law or agreed to in writing, software\n * distributed under the License is distributed on an \"AS IS\" BASIS,\n * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n * See the License for the specific language governing permissions and\n * limitations under the License.\n */\n/*\n * Content before git sha 34fdeebefcbf183ed7f916f931aa0586fdaa1b40\n * Copyright (c) 2016, The Gocql authors,\n * provided under the BSD-3-Clause License.\n * See the NOTICE file distributed with this work for additional information.\n */\n\n// Package gocql implements the typed Cassandra and ScyllaDB native protocol API.\n// Connect opens a validated Config. Statements declare parameter encoders and row\n// decoders; Prepare and BindOwned or BindBorrowed produce reusable bindings.\n// Run provides typed borrowed rows, RunPage provides explicit paging, and Exec\n// executes statements without result columns. RunStream decodes incrementally\n// into seeded caller storage through a separate streaming codec plan.\n//\n// Borrowed bindings remain immutable until Close and a successful Wait. Result\n// views expire on advancement or Close unless a PageLease retains their page.\n// Clone explicitly detaches borrowed result data.\npackage gocql\n"
+}

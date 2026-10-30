@@ -37,9 +37,9 @@ func (c *Conn) executeV2System(ctx context.Context, request *attemptRequest) (*r
 		if !c.isScyllaConn() {
 			return nil, &UnsupportedSettingError{Setting: "metadata server timeout", Reason: "server does not support USING TIMEOUT"}
 		}
-		if strings.HasPrefix(strings.ToUpper(strings.TrimSpace(request.statement)), "SELECT") {
+		if strings.HasPrefix(strings.ToUpper(strings.TrimSpace(request.Statement)), "SELECT") {
 			copyRequest := *request
-			copyRequest.statement = strings.TrimSuffix(strings.TrimSpace(request.statement), ";") + " USING TIMEOUT " + strconv.FormatInt(server.Value.Milliseconds(), 10) + "ms"
+			copyRequest.Statement = strings.TrimSuffix(strings.TrimSpace(request.Statement), ";") + " USING TIMEOUT " + strconv.FormatInt(server.Value.Milliseconds(), 10) + "ms"
 			request = &copyRequest
 		}
 	}

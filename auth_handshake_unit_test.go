@@ -37,12 +37,12 @@ func newAuthTestServer(t *testing.T, reply func(token []byte) authReply) *authTe
 	srv := &authTestServer{TestServer: NewTestServer(t, protoVersion4, context.Background())}
 	t.Cleanup(srv.Stop)
 	srv.setAuthHook(func(req *framer, stream int, resp *framer) {
-		if req.header.Op == frm.OpStartup {
-			resp.writeHeader(0, frm.OpAuthenticate, stream)
-			resp.writeString(testAuthClass)
+		if req.Header.Op == frm.OpStartup {
+			resp.WriteHeader(0, frm.OpAuthenticate, stream)
+			resp.WriteString(testAuthClass)
 			return
 		}
-		token := req.readBytesCopy()
+		token := req.ReadBytesCopy()
 		srv.mu.Lock()
 		srv.tokens = append(srv.tokens, string(token))
 		srv.mu.Unlock()
@@ -50,14 +50,14 @@ func newAuthTestServer(t *testing.T, reply func(token []byte) authReply) *authTe
 		r := reply(token)
 		switch r.op {
 		case frm.OpError:
-			resp.writeHeader(0, frm.OpError, stream)
-			resp.writeInt(int32(r.errCode))
-			resp.writeString(r.errMsg)
+			resp.WriteHeader(0, frm.OpError, stream)
+			resp.WriteInt(int32(r.errCode))
+			resp.WriteString(r.errMsg)
 		case frm.OpAuthChallenge, frm.OpAuthSuccess:
-			resp.writeHeader(0, r.op, stream)
-			resp.writeBytes(r.data)
+			resp.WriteHeader(0, r.op, stream)
+			resp.WriteBytes(r.data)
 		default:
-			resp.writeHeader(0, r.op, stream)
+			resp.WriteHeader(0, r.op, stream)
 		}
 	})
 	return srv

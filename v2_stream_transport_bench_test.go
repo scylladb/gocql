@@ -130,7 +130,7 @@ func TestV2StreamingTransportReadTargetsAndWorkingMemory(t *testing.T) {
 			dst := make([]byte, 0, size)
 			source.start = uintptr(unsafe.Pointer(&dst[:cap(dst)][0]))
 			source.end = source.start + uintptr(size)
-			response, err := r.exchange(context.Background(), &attemptRequest{statement: "SELECT value", consistency: One})
+			response, err := r.exchange(context.Background(), &attemptRequest{Statement: "SELECT value", Consistency: One})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -152,8 +152,8 @@ func TestV2StreamingTransportReadTargetsAndWorkingMemory(t *testing.T) {
 				}
 				storage = now
 			}
-			if response.budget.used >= 16<<10 {
-				t.Fatal("metadata allocations grew with cell", response.budget.used)
+			if response.budget.Used >= 16<<10 {
+				t.Fatal("metadata allocations grew with cell", response.budget.Used)
 			}
 			response.releaseMetadata()
 			r.close(true)
@@ -174,7 +174,7 @@ func BenchmarkV2ExclusiveTransport(b *testing.B) {
 				r := step04MemoryReservation(mode.version, mode.compressor, source)
 				defer r.close(true)
 				dst := make([]byte, 0, size)
-				request := &attemptRequest{statement: "SELECT value", consistency: One}
+				request := &attemptRequest{Statement: "SELECT value", Consistency: One}
 				var plan StreamRowPlan[[]byte]
 				run := func() {
 					source.source.Reset(encoded)
@@ -237,8 +237,8 @@ func FuzzV2ExclusiveIncrementalFraming(f *testing.F) {
 		r := step04MemoryReservation(version, nil, source)
 		defer r.close(false)
 		r.limits.MaxMetadataBytes = 2048
-		r.metadataBudget.setLimit(2048)
-		response, err := r.exchange(context.Background(), &attemptRequest{statement: "SELECT", consistency: One})
+		r.metadataBudget.SetLimit(2048)
+		response, err := r.exchange(context.Background(), &attemptRequest{Statement: "SELECT", Consistency: One})
 		if err != nil {
 			if response != nil {
 				response.releaseMetadata()
@@ -284,7 +284,7 @@ func BenchmarkV2ExclusiveRowsScaling(b *testing.B) {
 			dst := make([]byte, 0, 1)
 			run := func() {
 				source.source.Reset(encoded)
-				response, err := r.exchange(ctx, &attemptRequest{statement: "SELECT value", consistency: One})
+				response, err := r.exchange(ctx, &attemptRequest{Statement: "SELECT value", Consistency: One})
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -494,7 +494,7 @@ func BenchmarkV2TLSReceiveAmplification(b *testing.B) {
 			plain.end = plain.start + uintptr(size)
 			var plan StreamRowPlan[[]byte]
 			run := func() {
-				response, err := r.exchange(ctx, &attemptRequest{statement: "SELECT value", consistency: One})
+				response, err := r.exchange(ctx, &attemptRequest{Statement: "SELECT value", Consistency: One})
 				if err != nil {
 					b.Fatal(err)
 				}

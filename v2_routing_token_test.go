@@ -16,7 +16,7 @@ func TestV2RoutingHashUsesSegmentedCanonicalBytes(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		cells[i] = encodedCell{state: Present, body: c}
+		cells[i] = encodedCell{State: Present, Body: c}
 	}
 	for _, indexes := range [][]int{{0}, {2}, {2, 0, 1}, {1, 2}} {
 		var materialized []byte
@@ -37,7 +37,7 @@ func TestV2RoutingHashUsesSegmentedCanonicalBytes(t *testing.T) {
 }
 
 func TestV2RoutingRejectsInvalidMetadataEvenWithNullKey(t *testing.T) {
-	cells := []encodedCell{{state: Null}, {state: Present}}
+	cells := []encodedCell{{State: Null}, {State: Present}}
 	if _, err := routingToken(cells, []int{0, 9}); err == nil {
 		t.Fatal("null key hid invalid partition index")
 	}
@@ -46,7 +46,7 @@ func TestV2RoutingRejectsInvalidMetadataEvenWithNullKey(t *testing.T) {
 		t.Fatalf("nullable key token=%+v err=%v", got, err)
 	}
 	big, _ := wire.NewChain(wire.Borrow(make([]byte, 65536)))
-	cells[0] = encodedCell{state: Present, body: big}
+	cells[0] = encodedCell{State: Present, Body: big}
 	if _, err := routingToken(cells, []int{0, 1}); err == nil {
 		t.Fatal("oversized composite component accepted")
 	}
@@ -58,7 +58,7 @@ func TestV2RoutingRejectsInvalidMetadataEvenWithNullKey(t *testing.T) {
 func BenchmarkV2RoutingCompositeSpans(b *testing.B) {
 	data := make([]byte, 4096)
 	chain, _ := wire.NewChain(wire.Borrow(data[:15]), wire.Borrow(data[15:]))
-	cells := []encodedCell{{state: Present, body: chain}, {state: Present, body: chain}}
+	cells := []encodedCell{{State: Present, Body: chain}, {State: Present, Body: chain}}
 	indexes := []int{0, 1}
 	b.ReportAllocs()
 	b.SetBytes(8192)

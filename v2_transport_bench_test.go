@@ -30,7 +30,7 @@ func BenchmarkTypedBuildRequest(b *testing.B) {
 						}
 					}
 					c.initFramerCache()
-					req := &attemptRequest{statement: "INSERT INTO tbl (v) VALUES (?)", values: values, valueCount: 1, consistency: One}
+					req := &attemptRequest{Statement: "INSERT INTO tbl (v) VALUES (?)", Values: values, ValueCount: 1, Consistency: One}
 					b.SetBytes(int64(size))
 					b.ReportAllocs()
 					b.ResetTimer()

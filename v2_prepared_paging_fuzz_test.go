@@ -17,6 +17,8 @@
 package gocql
 
 import (
+	model "github.com/scylladb/gocql/v2/internal/model"
+
 	"errors"
 	"github.com/scylladb/gocql/v2/internal/wire"
 	"testing"
@@ -32,7 +34,7 @@ func FuzzV2PageDestinationFraming(f *testing.F) {
 		cols := NewColumns(ColumnSpec{Name: "value", Type: codecTestMust(ScalarType(TypeInt))})
 		chain := codecTestMust(wire.NewChain(wire.Borrow(data)))
 		owner := wire.NewLease(chain, nil)
-		p := codecTestMust(newPage(&responsePage{columns: cols, rows: chain, rowCount: int32(count % 8), owner: owner}, OneColumn(Int32), nil))
+		p := codecTestMust(newPage(&responsePage{responseData: responseData{Columns: cols, Rows: chain, RowCount: int32(count % 8), Owner: owner}}, OneColumn(Int32), nil))
 		defer p.Close()
 		dst := int32(99)
 		for i := 0; i < 9; i++ {
@@ -67,7 +69,7 @@ func FuzzV2PagingHistoryBudgets(f *testing.F) {
 			}
 			token := append([]byte{}, data[:n]...)
 			data = data[n:]
-			state := PageState{token: token, kind: 1}
+			state := model.PageStateOwned(token, 1)
 			err := h.add(state)
 			if seen[string(token)] {
 				if !errors.Is(err, ErrPagingNoProgress) {

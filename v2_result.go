@@ -1,62 +1,17 @@
 package gocql
 
 import (
+	model "github.com/scylladb/gocql/v2/internal/model"
+
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/scylladb/gocql/v2/internal/codec"
 	"hash/maphash"
 	"sync"
-	"time"
 
 	"github.com/scylladb/gocql/v2/internal/wire"
 )
-
-type Result struct {
-	HostID              UUID
-	Attempts            int
-	Latency             time.Duration
-	Rows                int64
-	Warnings            []string
-	TraceIDs            []UUID
-	CustomPayload       []PayloadEntry
-	AchievedConsistency Consistency
-}
-
-func cloneResult(result Result) Result {
-	result.Warnings = append([]string(nil), result.Warnings...)
-	result.TraceIDs = append([]UUID(nil), result.TraceIDs...)
-	result.CustomPayload = append([]PayloadEntry(nil), result.CustomPayload...)
-	return result
-}
-func mergeResult(dst *Result, src Result) {
-	dst.HostID = src.HostID
-	dst.Attempts += src.Attempts
-	dst.Latency += src.Latency
-	dst.Rows += src.Rows
-	dst.Warnings = append(dst.Warnings, src.Warnings...)
-	dst.TraceIDs = append(dst.TraceIDs, src.TraceIDs...)
-	dst.CustomPayload = append(dst.CustomPayload, src.CustomPayload...)
-	dst.AchievedConsistency = src.AchievedConsistency
-}
-
-type PageState struct {
-	token []byte
-	kind  uint8
-}
-
-func StartPage() PageState { return PageState{} }
-func RestorePageState(token []byte) PageState {
-	return PageState{token: append([]byte{}, token...), kind: 1}
-}
-func (p PageState) More() bool     { return p.kind == 1 }
-func (p PageState) Complete() bool { return p.kind == 2 }
-func (p PageState) Bytes() []byte {
-	if p.kind != 1 {
-		return nil
-	}
-	return append([]byte{}, p.token...)
-}
-func completePageState() PageState { return PageState{kind: 2} }
 
 type PageLease struct {
 	once  sync.Once
@@ -97,25 +52,25 @@ func newPageWithPlans[R any](response *responsePage, decoder RowDecoder[R], plan
 		return nil, typeValidation("response", "nil response")
 	}
 	if decoder == nil {
-		response.owner.Release()
+		response.Owner.Release()
 		return nil, typeValidation("rows", "nil row decoder")
 	}
 	var plan RowPlan[R]
 	var err error
 	if plans == nil {
-		plan, err = compileRowPlan(decoder, response.columns)
+		plan, err = compileRowPlan(decoder, response.Columns)
 	} else {
 		plan, err = plans.selectPlan(response, decoder)
 	}
 	if err != nil {
-		response.owner.Release()
+		response.Owner.Release()
 		return nil, err
 	}
-	if response.rowCount < 0 {
-		response.owner.Release()
+	if response.RowCount < 0 {
+		response.Owner.Release()
 		return nil, &ProtocolError{Stage: "rows", Err: fmt.Errorf("negative row count")}
 	}
-	return &Page[R]{response: response, plan: plan, cursor: wire.NewCursor(response.rows), release: release}, nil
+	return &Page[R]{response: response, plan: plan, cursor: wire.NewCursor(response.Rows), release: release}, nil
 }
 func (p *Page[R]) Next() bool {
 	if p == nil {
@@ -164,7 +119,7 @@ func (p *Page[R]) advance(dst *R, into bool) bool {
 		p.closeLocked()
 		return false
 	}
-	if p.index >= p.response.rowCount {
+	if p.index >= p.response.RowCount {
 		p.exhausted = true
 		p.reader = RowReader{}
 		clearDestination(&p.current)
@@ -173,7 +128,7 @@ func (p *Page[R]) advance(dst *R, into bool) bool {
 		}
 		return false
 	}
-	p.reader = RowReader{columns: p.response.columns, cursor: p.cursor, lease: p.response.owner}
+	p.reader = codec.RowReaderFromCursor(p.response.Columns, p.cursor, p.response.Owner)
 	var err error
 	if into {
 		// The plan receives the actual application destination, never a row temporary.
@@ -250,7 +205,7 @@ func (p *Page[R]) closeLocked() {
 	p.destination = nil
 	clearDestination(&p.current)
 	p.reader = RowReader{}
-	p.response.owner.Release()
+	p.response.Owner.Release()
 	if p.release != nil {
 		p.pendingRelease = p.release
 		p.release = nil
@@ -265,10 +220,10 @@ func (p *Page[R]) Retain() (*PageLease, error) {
 	if !p.valid || p.closed {
 		return nil, ErrNoRows
 	}
-	if !p.response.owner.Retain() {
+	if !p.response.Owner.Retain() {
 		return nil, ErrReleased
 	}
-	return &PageLease{owner: p.response.owner}, nil
+	return &PageLease{owner: p.response.Owner}, nil
 }
 func (p *Page[R]) Clone() (R, error) {
 	if p == nil {
@@ -287,13 +242,13 @@ func (p *Page[R]) State() PageState {
 	if p == nil {
 		return completePageState()
 	}
-	return p.response.state
+	return p.response.State
 }
 func (p *Page[R]) Info() Result {
 	if p == nil {
 		return Result{}
 	}
-	return cloneResult(p.response.result)
+	return cloneResult(p.response.Result)
 }
 
 type prefetchJob struct {
@@ -430,7 +385,7 @@ func (r *Rows[R]) advance(dst *R, into bool) bool {
 			r.closeLocked()
 			return false
 		}
-		mergeResult(&r.info, response.result)
+		mergeResult(&r.info, response.Result)
 		r.page, err = newPageWithPlans(response, r.decoder, r.plans, nil)
 		if err != nil {
 			r.err = err
@@ -552,14 +507,14 @@ func (h *pagingHistory) add(state PageState) error {
 		h.seed = maphash.MakeSeed()
 		h.entries = make(map[uint64]pagingHistoryEntry)
 	}
-	hash := maphash.Bytes(h.seed, state.token)
+	hash := maphash.Bytes(h.seed, model.PageToken(state))
 	entry, exists := h.entries[hash]
 	if exists {
-		if bytes.Equal(entry.state.token, state.token) {
+		if bytes.Equal(model.PageToken(entry.state), model.PageToken(state)) {
 			return ErrPagingNoProgress
 		}
 		for p := entry.next; p != nil; p = p.next {
-			if bytes.Equal(p.state.token, state.token) {
+			if bytes.Equal(model.PageToken(p.state), model.PageToken(state)) {
 				return ErrPagingNoProgress
 			}
 		}
@@ -571,7 +526,7 @@ func (h *pagingHistory) add(state PageState) error {
 	if maxBytes == 0 {
 		maxBytes = 16 << 20
 	}
-	if h.count >= maxCount || int64(len(state.token)) > maxBytes-h.bytes {
+	if h.count >= maxCount || int64(len(model.PageToken(state))) > maxBytes-h.bytes {
 		return ErrPagingStateLimit
 	}
 	candidate := pagingHistoryEntry{state: state}
@@ -581,7 +536,7 @@ func (h *pagingHistory) add(state PageState) error {
 	}
 	h.entries[hash] = candidate
 	h.count++
-	h.bytes += int64(len(state.token))
+	h.bytes += int64(len(model.PageToken(state)))
 	return nil
 }
 func (h *pagingHistory) clear() { h.entries = nil; h.count = 0; h.bytes = 0 }
@@ -604,7 +559,7 @@ type resultPlanCache[R any] struct {
 func (c *resultPlanCache[R]) selectPlan(response *responsePage, decoder RowDecoder[R]) (RowPlan[R], error) {
 	entry := response.metadata
 	if entry == nil {
-		entry = &typedResultMetadata{columns: response.columns}
+		entry = &typedResultMetadata{columns: response.Columns}
 		response.metadata = entry
 	}
 	c.mu.Lock()
@@ -619,10 +574,10 @@ func (c *resultPlanCache[R]) selectPlan(response *responsePage, decoder RowDecod
 	c.mu.Unlock()
 	var plan RowPlan[R]
 	var err error
-	if previous != nil && columns.Equal(response.columns) {
+	if previous != nil && columns.Equal(response.Columns) {
 		plan = previous
 	} else {
-		plan, err = compileRowPlan(decoder, response.columns)
+		plan, err = compileRowPlan(decoder, response.Columns)
 	}
 	if err != nil {
 		return nil, err
@@ -634,88 +589,11 @@ func (c *resultPlanCache[R]) selectPlan(response *responsePage, decoder RowDecod
 	c.mu.Lock()
 	if c.revision == revision && entry.epoch.current() {
 		c.entry = entry
-		c.columns = response.columns
+		c.columns = response.Columns
 		c.plan = plan
 	}
 	c.mu.Unlock()
 	return plan, nil
-}
-
-type CASResult[R any] struct {
-	Applied  bool
-	Previous Option[R]
-}
-type casRows[R any] struct{ decoder RowDecoder[R] }
-type casRowPlan[R any] struct {
-	previous RowPlan[R]
-	columns  Columns
-}
-
-func CASRows[R any](decoder RowDecoder[R]) RowDecoder[CASResult[R]] {
-	return casRows[R]{decoder: decoder}
-}
-func (c casRows[R]) Compile(columns Columns) (RowPlan[CASResult[R]], error) {
-	first, ok := columns.At(0)
-	if !ok || first.Name != "[applied]" {
-		return nil, typeValidation("CAS result", "first column must be [applied]")
-	}
-	if err := Bool.CheckType(first.Type); err != nil {
-		return nil, err
-	}
-	_, previous, err := splitColumns(columns, 1)
-	if err != nil {
-		return nil, err
-	}
-	p := casRowPlan[R]{columns: previous}
-	if previous.Len() > 0 {
-		if c.decoder == nil {
-			return nil, typeValidation("CAS result", "nil previous-value decoder")
-		}
-		p.previous, err = compileRowPlan(c.decoder, previous)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return p, nil
-}
-func (p casRowPlan[R]) Decode(reader *RowReader) (CASResult[R], error) {
-	var result CASResult[R]
-	err := p.DecodeInto(reader, &result)
-	if err != nil {
-		return CASResult[R]{}, err
-	}
-	return result, nil
-}
-func (p casRowPlan[R]) DecodeInto(reader *RowReader, dst *CASResult[R]) error {
-	if dst == nil {
-		return typeValidation("destination", "nil CAS destination")
-	}
-	*dst = CASResult[R]{}
-	if err := readColumnInto(reader, Bool, &dst.Applied); err != nil {
-		return err
-	}
-	if p.previous == nil {
-		return nil
-	}
-	columns, index := reader.columns, reader.index
-	reader.columns, reader.index = p.columns, 0
-	err := p.previous.DecodeInto(reader, &dst.Previous.Value)
-	if err == nil {
-		err = finishRowReader(reader)
-	}
-	reader.columns, reader.index = columns, index
-	if err != nil {
-		return err
-	}
-	reader.index += p.columns.Len()
-	dst.Previous.Set = true
-	return nil
-}
-func (p casRowPlan[R]) Clone(value CASResult[R]) CASResult[R] {
-	if value.Previous.Set {
-		value.Previous.Value = p.previous.Clone(value.Previous.Value)
-	}
-	return value
 }
 
 // pageFuture transfers one prefetched response without making Close wait for I/O.
@@ -733,7 +611,7 @@ func (f *pageFuture) complete(response *responsePage, err error) {
 	defer f.mu.Unlock()
 	if f.closed {
 		if response != nil {
-			response.owner.Release()
+			response.Owner.Release()
 		}
 	} else {
 		f.response = response
@@ -759,7 +637,7 @@ func (f *pageFuture) close() {
 	defer f.mu.Unlock()
 	f.closed = true
 	if f.response != nil {
-		f.response.owner.Release()
+		f.response.Owner.Release()
 		f.response = nil
 	}
 }
@@ -797,19 +675,12 @@ func (r *Rows[R]) startPrefetch() {
 	r.prefetchJobs <- prefetchJob{state: state, future: future}
 }
 
-func (c casRows[R]) Clone(value CASResult[R]) CASResult[R] {
-	if value.Previous.Set {
-		value.Previous.Value = c.decoder.Clone(value.Previous.Value)
-	}
-	return value
-}
-
 // Columns returns the actual physical result metadata, including for empty pages.
 func (p *Page[R]) Columns() Columns {
 	if p == nil || p.response == nil {
 		return Columns{}
 	}
-	return p.response.columns
+	return p.response.Columns
 }
 
 // Columns returns the current page's actual physical result metadata.

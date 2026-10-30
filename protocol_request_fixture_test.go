@@ -49,14 +49,14 @@ func (q fixtureQueryParams) String() string {
 		q.consistency, q.skipMeta, q.pageSize, q.pagingState, q.serialConsistency, q.defaultTimestamp, q.values, q.keyspace, q.nowInSeconds)
 }
 
-func (f *framer) writeFixtureQueryParams(opts *fixtureQueryParams) error {
-	// Validated again here, not only in the callers' buildFrame: this function is
+func fixtureWriteQueryParams(f *framer, opts *fixtureQueryParams) error {
+	// Validated again here, not only in the callers' BuildFrame: this function is
 	// package-internal and nothing else would enforce the precondition.
-	if err := f.validateV5Options(opts.keyspace, opts.nowInSeconds); err != nil {
+	if err := f.ValidateV5Options(opts.keyspace, opts.nowInSeconds); err != nil {
 		return err
 	}
 
-	f.writeConsistency(opts.consistency)
+	f.WriteConsistency(opts.consistency)
 
 	var flags uint32
 	names := false
@@ -95,37 +95,37 @@ func (f *framer) writeFixtureQueryParams(opts *fixtureQueryParams) error {
 		flags |= frm.FlagWithNowInSeconds
 	}
 
-	if f.proto > protoVersion4 {
-		f.writeUint(flags)
+	if f.Proto > protoVersion4 {
+		f.WriteUint(flags)
 	} else {
-		f.writeByte(byte(flags))
+		f.WriteByteValue(byte(flags))
 	}
 
 	if n := len(opts.values); n > 0 {
-		f.writeShort(uint16(n))
+		f.WriteShort(uint16(n))
 
 		for i := 0; i < n; i++ {
 			if names {
-				f.writeString(opts.values[i].name)
+				f.WriteString(opts.values[i].name)
 			}
 			if opts.values[i].isUnset {
-				f.writeUnset()
+				f.WriteUnset()
 			} else {
-				f.writeBytes(opts.values[i].value)
+				f.WriteBytes(opts.values[i].value)
 			}
 		}
 	}
 
 	if opts.pageSize > 0 {
-		f.writeInt(int32(opts.pageSize))
+		f.WriteInt(int32(opts.pageSize))
 	}
 
 	if len(opts.pagingState) > 0 {
-		f.writeBytes(opts.pagingState)
+		f.WriteBytes(opts.pagingState)
 	}
 
 	if opts.serialConsistency > 0 {
-		f.writeConsistency(opts.serialConsistency)
+		f.WriteConsistency(opts.serialConsistency)
 	}
 
 	if opts.defaultTimestamp {
@@ -136,16 +136,16 @@ func (f *framer) writeFixtureQueryParams(opts *fixtureQueryParams) error {
 		} else {
 			ts = time.Now().UnixNano() / 1000
 		}
-		f.writeLong(ts)
+		f.WriteLong(ts)
 	}
 
 	if opts.keyspace != "" {
-		f.writeString(opts.keyspace)
+		f.WriteString(opts.keyspace)
 	}
 
 	if opts.nowInSeconds != nil {
 		// Bounds already validated at the top of this function.
-		f.writeInt(int32(*opts.nowInSeconds))
+		f.WriteInt(int32(*opts.nowInSeconds))
 	}
 	return nil
 }
@@ -160,31 +160,31 @@ func (w *fixtureQueryFrame) String() string {
 	return fmt.Sprintf("[query statement=%q params=%v]", w.statement, w.params)
 }
 
-func (w *fixtureQueryFrame) buildFrame(framer *framer, streamID int) error {
-	return framer.fixtureQueryFrame(streamID, w.statement, &w.params, w.customPayload)
+func (w *fixtureQueryFrame) BuildFrame(framer *framer, streamID int) error {
+	return fixtureWriteQuery(framer, streamID, w.statement, &w.params, w.customPayload)
 }
 
-func (f *framer) fixtureQueryFrame(streamID int, statement string, params *fixtureQueryParams, customPayload map[string][]byte) error {
+func fixtureWriteQuery(f *framer, streamID int, statement string, params *fixtureQueryParams, customPayload map[string][]byte) error {
 	// Validate before writing anything into f.buf, as the PREPARE and BATCH
 	// builders do. writeFixtureQueryParams performs the same check, but by the time it
 	// runs the header, the custom payload and the statement have already been
 	// written, so its own "nothing was written yet" guarantee would not hold for
 	// this path.
-	if err := f.validateV5Options(params.keyspace, params.nowInSeconds); err != nil {
+	if err := f.ValidateV5Options(params.keyspace, params.nowInSeconds); err != nil {
 		return err
 	}
 
 	if len(customPayload) > 0 {
-		f.payload()
+		f.Payload()
 	}
-	f.writeHeader(f.flags, frm.OpQuery, streamID)
-	f.writeCustomPayload(&customPayload)
-	f.writeLongString(statement)
-	if err := f.writeFixtureQueryParams(params); err != nil {
+	f.WriteHeader(f.Flags, frm.OpQuery, streamID)
+	f.WriteCustomPayload(&customPayload)
+	f.WriteLongString(statement)
+	if err := fixtureWriteQueryParams(f, params); err != nil {
 		return err
 	}
 
-	return f.finish()
+	return f.Finish()
 }
 
 type fixtureExecuteFrame struct {
@@ -198,17 +198,17 @@ func (e *fixtureExecuteFrame) String() string {
 	return fmt.Sprintf("[execute id=% X params=%v]", e.preparedID, &e.params)
 }
 
-func (e *fixtureExecuteFrame) buildFrame(fr *framer, streamID int) error {
-	return fr.fixtureExecuteFrame(streamID, e.preparedID, e.resultMetadataID, &e.params, &e.customPayload)
+func (e *fixtureExecuteFrame) BuildFrame(fr *framer, streamID int) error {
+	return fixtureWriteExecute(fr, streamID, e.preparedID, e.resultMetadataID, &e.params, &e.customPayload)
 }
 
-func (f *framer) fixtureExecuteFrame(streamID int, preparedID, resultMetadataID []byte, params *fixtureQueryParams, customPayload *map[string][]byte) error {
+func fixtureWriteExecute(f *framer, streamID int, preparedID, resultMetadataID []byte, params *fixtureQueryParams, customPayload *map[string][]byte) error {
 	// Validate first, as in fixtureQueryFrame: the prepared id (and, on v5, the
 	// result metadata id) are written before writeFixtureQueryParams runs.
-	if err := f.validateV5Options(params.keyspace, params.nowInSeconds); err != nil {
+	if err := f.ValidateV5Options(params.keyspace, params.nowInSeconds); err != nil {
 		return err
 	}
-	writeResultMetadataID := f.proto > protoVersion4 || f.scyllaUseMetadataID
+	writeResultMetadataID := f.Proto > protoVersion4 || f.ScyllaUseMetadataID
 	if err := validateShortBytes("prepared id", preparedID); err != nil {
 		return err
 	}
@@ -219,25 +219,25 @@ func (f *framer) fixtureExecuteFrame(streamID int, preparedID, resultMetadataID 
 	}
 
 	if len(*customPayload) > 0 {
-		f.payload()
+		f.Payload()
 	}
-	f.writeHeader(f.flags, frm.OpExecute, streamID)
-	f.writeCustomPayload(customPayload)
-	if err := f.writeShortBytes(preparedID); err != nil {
+	f.WriteHeader(f.Flags, frm.OpExecute, streamID)
+	f.WriteCustomPayload(customPayload)
+	if err := f.WriteShortBytes(preparedID); err != nil {
 		return err
 	}
 
 	if writeResultMetadataID {
-		if err := f.writeShortBytes(resultMetadataID); err != nil {
+		if err := f.WriteShortBytes(resultMetadataID); err != nil {
 			return err
 		}
 	}
 
-	if err := f.writeFixtureQueryParams(params); err != nil {
+	if err := fixtureWriteQueryParams(f, params); err != nil {
 		return err
 	}
 
-	return f.finish()
+	return f.Finish()
 }
 
 // TODO: can we replace BatchStatemt with batchStatement? As they prety much
@@ -260,14 +260,14 @@ type fixtureBatchFrame struct {
 	defaultTimestamp      bool
 }
 
-func (w *fixtureBatchFrame) buildFrame(framer *framer, streamID int) error {
-	return framer.fixtureBatchFrame(streamID, w, w.customPayload)
+func (w *fixtureBatchFrame) BuildFrame(framer *framer, streamID int) error {
+	return fixtureWriteBatch(framer, streamID, w, w.customPayload)
 }
 
-func (f *framer) fixtureBatchFrame(streamID int, w *fixtureBatchFrame, customPayload map[string][]byte) error {
+func fixtureWriteBatch(f *framer, streamID int, w *fixtureBatchFrame, customPayload map[string][]byte) error {
 	// Validate everything that can fail BEFORE writing anything into f.buf, so
 	// an error never leaves a partial frame in the reusable framer buffer.
-	if err := f.validateV5Options(w.keyspace, w.nowInSeconds); err != nil {
+	if err := f.ValidateV5Options(w.keyspace, w.nowInSeconds); err != nil {
 		return err
 	}
 
@@ -286,43 +286,43 @@ func (f *framer) fixtureBatchFrame(streamID int, w *fixtureBatchFrame, customPay
 	}
 
 	if len(customPayload) > 0 {
-		f.payload()
+		f.Payload()
 	}
-	f.writeHeader(f.flags, frm.OpBatch, streamID)
-	f.writeCustomPayload(&customPayload)
-	f.writeByte(byte(w.typ))
+	f.WriteHeader(f.Flags, frm.OpBatch, streamID)
+	f.WriteCustomPayload(&customPayload)
+	f.WriteByteValue(byte(w.typ))
 
 	n := len(w.statements)
-	f.writeShort(uint16(n))
+	f.WriteShort(uint16(n))
 
 	var flags uint32
 
 	for i := 0; i < n; i++ {
 		b := &w.statements[i]
 		if len(b.preparedID) == 0 {
-			f.writeByte(0)
-			f.writeLongString(b.statement)
+			f.WriteByteValue(0)
+			f.WriteLongString(b.statement)
 		} else {
-			f.writeByte(1)
-			if err := f.writeShortBytes(b.preparedID); err != nil {
+			f.WriteByteValue(1)
+			if err := f.WriteShortBytes(b.preparedID); err != nil {
 				return err
 			}
 		}
 
-		f.writeShort(uint16(len(b.values)))
+		f.WriteShort(uint16(len(b.values)))
 		for j := range b.values {
 			col := b.values[j]
 			if col.isUnset {
-				f.writeUnset()
+				f.WriteUnset()
 			} else {
-				f.writeBytes(col.value)
+				f.WriteBytes(col.value)
 			}
 		}
 	}
 
-	f.writeConsistency(w.consistency)
+	f.WriteConsistency(w.consistency)
 
-	if f.proto > protoVersion2 {
+	if f.Proto > protoVersion2 {
 		if w.serialConsistency > 0 {
 			flags |= frm.FlagWithSerialConsistency
 		}
@@ -339,10 +339,10 @@ func (f *framer) fixtureBatchFrame(streamID int, w *fixtureBatchFrame, customPay
 		flags |= frm.FlagWithNowInSeconds
 	}
 
-	if f.proto > protoVersion4 {
-		f.writeUint(flags)
+	if f.Proto > protoVersion4 {
+		f.WriteUint(flags)
 	} else {
-		f.writeByte(byte(flags))
+		f.WriteByteValue(byte(flags))
 	}
 
 	// serialConsistency and defaultTimestamp are only signalled by flags on
@@ -350,9 +350,9 @@ func (f *framer) fixtureBatchFrame(streamID int, w *fixtureBatchFrame, customPay
 	// otherwise the bytes would not be described by any flag and would corrupt
 	// the frame. (In practice proto < v3 is unreachable: readHeader rejects
 	// response versions below protoVersion3.)
-	if f.proto > protoVersion2 {
+	if f.Proto > protoVersion2 {
 		if w.serialConsistency > 0 {
-			f.writeConsistency(w.serialConsistency)
+			f.WriteConsistency(w.serialConsistency)
 		}
 
 		if w.defaultTimestamp {
@@ -362,18 +362,52 @@ func (f *framer) fixtureBatchFrame(streamID int, w *fixtureBatchFrame, customPay
 			} else {
 				ts = time.Now().UnixNano() / 1000
 			}
-			f.writeLong(ts)
+			f.WriteLong(ts)
 		}
 	}
 
 	if w.keyspace != "" {
-		f.writeString(w.keyspace)
+		f.WriteString(w.keyspace)
 	}
 
 	if w.nowInSeconds != nil {
 		// Bounds already validated at the top of this function.
-		f.writeInt(int32(*w.nowInSeconds))
+		f.WriteInt(int32(*w.nowInSeconds))
 	}
 
-	return f.finish()
+	return f.Finish()
+}
+
+type writePrepareFrame struct {
+	customPayload map[string][]byte
+	Statement     string
+	Keyspace      string
+}
+
+func (w *writePrepareFrame) BuildFrame(f *framer, streamID int) error {
+	// Validate before writing anything into f.buf so an error never leaves a
+	// partial frame in the reusable framer buffer.
+	if err := f.ValidateV5Options(w.Keyspace, nil); err != nil {
+		return err
+	}
+
+	if len(w.customPayload) > 0 {
+		f.Payload()
+	}
+	f.WriteHeader(f.Flags, frm.OpPrepare, streamID)
+	f.WriteCustomPayload(&w.customPayload)
+	f.WriteLongString(w.Statement)
+
+	var flags uint32 = 0
+	if w.Keyspace != "" {
+		flags |= frm.FlagWithPreparedKeyspace
+	}
+	if f.Proto > protoVersion4 {
+		f.WriteUint(flags)
+	}
+	if w.Keyspace != "" {
+		f.WriteString(w.Keyspace)
+	}
+
+	return f.Finish()
 }

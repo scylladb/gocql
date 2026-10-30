@@ -1,6 +1,8 @@
 package gocql
 
 import (
+	cqltype "github.com/scylladb/gocql/v2/internal/cqltype"
+
 	"bytes"
 	"context"
 	"encoding/binary"
@@ -128,7 +130,7 @@ func TestStep09ReprepareResultOnlyShapeWithoutRoutingHasher(t *testing.T) {
 	oldColumns := NewColumns(ColumnSpec{Keyspace: "ks", Table: "tbl", Name: "value", Type: typ})
 	state, old := step03PreparedState(t, s, oldColumns)
 	state.partitioner = "known-before-schema-invalidation"
-	newColumns := NewColumns(oldColumns.columns[0], ColumnSpec{Keyspace: "ks", Table: "tbl", Name: "added", Type: typ})
+	newColumns := NewColumns(cqltype.ColumnSlice(oldColumns)[0], ColumnSpec{Keyspace: "ks", Table: "tbl", Name: "added", Type: typ})
 	done := make(chan error, 1)
 	go func() {
 		_, stream, _, err := step03ReadRequest(peers[0])
@@ -139,7 +141,7 @@ func TestStep09ReprepareResultOnlyShapeWithoutRoutingHasher(t *testing.T) {
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	updated, err := s.prepareOnConnExpected(ctx, conns[0], state, encodedValues{columns: NewColumns()}, true, old)
+	updated, err := s.prepareOnConnExpected(ctx, conns[0], state, encodedValues{Columns: NewColumns()}, true, old)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,8 +166,8 @@ func step09StreamReconcile(t *testing.T, failContinuation bool) {
 	blob := codecTestMust(ScalarType(TypeBlob))
 	columns := NewColumns(ColumnSpec{Keyspace: "ks", Table: "tbl", Name: "value", Type: blob})
 	state, _ := step03PreparedState(t, s, columns)
-	changed := NewColumns(columns.columns[0], ColumnSpec{Keyspace: "ks", Table: "tbl", Name: "added", Type: blob})
-	bound := &Bound[Bytes]{request: executionRequest{statement: state.statement, prepared: state, values: encodedValues{columns: NewColumns()}, owner: newInputOwner(), routing: RoutingInfo{Kind: OrdinaryStatement}}, rows: OneColumn(BlobCodec)}
+	changed := NewColumns(cqltype.ColumnSlice(columns)[0], ColumnSpec{Keyspace: "ks", Table: "tbl", Name: "added", Type: blob})
+	bound := &Bound[Bytes]{request: executionRequest{statement: state.statement, prepared: state, values: encodedValues{Columns: NewColumns()}, owner: newInputOwner(), routing: RoutingInfo{Kind: OrdinaryStatement}}, rows: OneColumn(BlobCodec)}
 	defer bound.Close()
 	done := make(chan error, 1)
 	go func() {

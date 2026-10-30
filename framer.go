@@ -129,7 +129,7 @@ func (c *Conn) getReadFramer() *framer {
 
 func (cf *connFramers) getRead(c *Conn) *framer {
 	f := cf.readPool.get(c)
-	f.released.Store(false)
+	f.Released.Store(false)
 	return f
 }
 
@@ -140,12 +140,12 @@ func (c *Conn) getWriteFramer() *framer {
 
 func (cf *connFramers) getWrite(c *Conn) *framer {
 	f := cf.writePool.get(c)
-	f.released.Store(false)
+	f.Released.Store(false)
 	// Before initCache runs, cf.defaults is still zero, so handshake framers get
 	// no flags at all. That is what the handshake needs: the compressor is not yet
 	// negotiated (so FlagCompress must not be set on OPTIONS/STARTUP), and no
 	// version-derived flag exists to seed — see defaultFramerFlags.
-	f.flags = cf.defaults.flags
+	f.Flags = cf.defaults.flags
 	return f
 }
 
@@ -158,17 +158,17 @@ func (cf *connFramers) releaseRead(c *Conn, f *framer) {
 	if f == nil {
 		return
 	}
-	if f.released.Swap(true) {
+	if f.Released.Swap(true) {
 		return // already released
 	}
-	f.header = nil
-	f.traceID = nil
-	f.customPayload = nil
+	f.Header = nil
+	f.TraceID = nil
+	f.CustomPayload = nil
 	if !cf.readPool.enabled.Load() {
 		return
 	}
 
-	bufCap := int64(cap(f.readBuffer))
+	bufCap := int64(cap(f.ReadBuffer))
 	newAvg, success := cf.readPool.updateAvg(c.logger, bufCap)
 	if !success {
 		cf.readPool.resetAndPut(f, false, 0)
@@ -186,17 +186,17 @@ func (cf *connFramers) releaseWrite(f *framer) {
 	if f == nil {
 		return
 	}
-	if f.released.Swap(true) {
+	if f.Released.Swap(true) {
 		return
 	}
-	f.header = nil
-	f.traceID = nil
-	f.customPayload = nil
-	f.flags = cf.defaults.flags
+	f.Header = nil
+	f.TraceID = nil
+	f.CustomPayload = nil
+	f.Flags = cf.defaults.flags
 	if !cf.writePool.enabled.Load() {
 		return
 	}
-	bufCap := int64(cap(f.buf))
+	bufCap := int64(cap(f.Buf))
 	newAvg, success := cf.writePool.updateAvg(nil, bufCap)
 	if !success {
 		cf.writePool.resetAndPut(f, false, 0)
@@ -217,17 +217,17 @@ func (fp *framerPool) init(defaults framerConfig, release func(*framer)) {
 		New: func() any {
 			buf := make([]byte, defaultBufSize)
 			f := &framer{
-				buf:                   buf[:0],
-				readBuffer:            buf,
-				compressor:            defaults.compressor,
-				proto:                 defaults.proto,
-				flags:                 defaults.flags,
-				flagLWT:               defaults.flagLWT,
-				rateLimitingErrorCode: defaults.rateLimitingErrorCode,
-				tabletsRoutingV1:      defaults.tabletsRoutingV1,
-				scyllaUseMetadataID:   defaults.scyllaUseMetadataID,
+				Buf:                   buf[:0],
+				ReadBuffer:            buf,
+				Compressor:            defaults.compressor,
+				Proto:                 defaults.proto,
+				Flags:                 defaults.flags,
+				FlagLWT:               defaults.flagLWT,
+				RateLimitingErrorCode: defaults.rateLimitingErrorCode,
+				TabletsRoutingV1:      defaults.tabletsRoutingV1,
+				ScyllaUseMetadataID:   defaults.scyllaUseMetadataID,
 			}
-			f.release = func() { release(f) }
+			f.ReleaseHook = func() { release(f) }
 			return f
 		},
 	}
@@ -297,19 +297,19 @@ func fpShrinkSize(bufCap, newAvg int64) int64 {
 func (fp *framerPool) resetAndPut(f *framer, alignBufWithReadBuffer bool, shrinkSize int64) {
 	if shrinkSize > 0 {
 		buf := make([]byte, shrinkSize)
-		f.readBuffer = buf
-		f.buf = buf[:0]
+		f.ReadBuffer = buf
+		f.Buf = buf[:0]
 		// The v5 wire buffer (prepareModernLayout) is sized after the frame it
 		// segmented, so it has to be dropped along with an oversized f.buf,
 		// otherwise a single large request keeps bloating this pooled framer.
-		f.wireBuf = nil
+		f.WireBuf = nil
 		fp.put(f)
 		return
 	}
 	if alignBufWithReadBuffer {
-		f.buf = f.readBuffer[:0]
+		f.Buf = f.ReadBuffer[:0]
 	} else {
-		f.buf = f.buf[:0]
+		f.Buf = f.Buf[:0]
 	}
 	fp.put(f)
 }

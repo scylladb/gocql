@@ -112,14 +112,14 @@ func (c *Conn) receiveTypedCall(ctx context.Context, call *callReq, src frameSou
 	case call.resp <- callResp{page: page, err: err, removedFromCalls: true}:
 	case <-call.timeout:
 		if page != nil {
-			page.owner.Release()
+			page.Owner.Release()
 		}
 		c.releaseStream(call)
 		call.waitExecDone("receiveTypedCall")
 		putCallReq(call)
 	case <-ctx.Done():
 		if page != nil {
-			page.owner.Release()
+			page.Owner.Release()
 		}
 		c.releaseStream(call)
 		call.waitExecDone("receiveTypedCall")
@@ -258,4 +258,13 @@ func (c *Conn) typedResponseExtensionFlags() byte {
 		return frm.FlagCustomPayload
 	}
 	return 0
+}
+
+func (c *Conn) parseTypedResponse(head frm.FrameHeader, body wire.Chain, owner *wire.Lease) (*responsePage, error) {
+	page := new(responsePage)
+	data, err := c.nativeProtocol().ParseTypedResponseInto(head, body, owner, &page.responseData)
+	if data == nil {
+		return nil, err
+	}
+	return page, err
 }

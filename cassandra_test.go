@@ -1700,7 +1700,7 @@ func TestRoutingKey(t *testing.T) {
 		again := cassandraPrepared(t, session, statement, PrepareOptions{})
 		require.Same(t, prepared.state, again.state, "preparing again must hit typed cache")
 		bound := cassandraBound(t, prepared, []Value{IntValue(1), IntValue(2)})
-		key, present, err := newPartitionKey(bound.request.values.cells, prepared.Info().PartitionKeyIndexes)
+		key, present, err := newPartitionKey(bound.request.values.Cells, prepared.Info().PartitionKeyIndexes)
 		require.NoError(t, err)
 		require.True(t, present)
 		var keyBytes []byte
@@ -1747,8 +1747,8 @@ func TestNegativeStream(t *testing.T) {
 
 	const stream = -50
 	writer := frameWriterFunc(func(f *framer, streamID int) error {
-		f.writeHeader(0, frm.OpOptions, stream)
-		return f.finish()
+		f.WriteHeader(0, frm.OpOptions, stream)
+		return f.Finish()
 	})
 
 	frame, err := conn.exec(context.Background(), writer, nil, time.Second)

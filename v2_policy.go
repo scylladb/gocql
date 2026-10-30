@@ -1,6 +1,8 @@
 package gocql
 
 import (
+	cqltype "github.com/scylladb/gocql/v2/internal/cqltype"
+
 	"context"
 	"errors"
 	"io"
@@ -29,7 +31,7 @@ func (k PartitionKey) ForEach(fn func(Bytes) error) error {
 		if e != nil {
 			return e
 		}
-		return fn(Bytes{chain: c})
+		return fn(cqltype.BytesView(c, nil))
 	})
 }
 
@@ -50,12 +52,12 @@ func newPartitionKey(cells []encodedCell, indexes []int) (PartitionKey, bool, er
 			return PartitionKey{}, false, typeValidation("partition key", "invalid column index")
 		}
 		c := cells[idx]
-		if c.state == Null || c.state == Unset {
+		if c.State == Null || c.State == Unset {
 			missing = true
-		} else if c.state != Present {
+		} else if c.State != Present {
 			return PartitionKey{}, false, typeValidation("partition key", "invalid cell state")
 		}
-		if len(indexes) > 1 && c.body.Len() > 65535 {
+		if len(indexes) > 1 && c.Body.Len() > 65535 {
 			return PartitionKey{}, false, typeValidation("partition key", "composite component exceeds 65535 bytes")
 		}
 	}
@@ -68,21 +70,21 @@ func newPartitionKey(cells []encodedCell, indexes []int) (PartitionKey, bool, er
 			return PartitionKey{}, false, typeValidation("partition key", "invalid column index")
 		}
 		c := cells[idx]
-		if c.state == Null || c.state == Unset {
+		if c.State == Null || c.State == Unset {
 			return PartitionKey{}, false, nil
 		}
-		if c.state != Present {
+		if c.State != Present {
 			return PartitionKey{}, false, typeValidation("partition key", "invalid cell state")
 		}
 		if len(indexes) > 1 {
-			if c.body.Len() > 65535 {
+			if c.Body.Len() > 65535 {
 				return PartitionKey{}, false, typeValidation("partition key", "composite component exceeds 65535 bytes")
 			}
-			if e := b.Uint16(uint16(c.body.Len())); e != nil {
+			if e := b.Uint16(uint16(c.Body.Len())); e != nil {
 				return PartitionKey{}, false, e
 			}
 		}
-		if e := c.body.Each(b.Borrow); e != nil {
+		if e := c.Body.Each(b.Borrow); e != nil {
 			return PartitionKey{}, false, e
 		}
 		if len(indexes) > 1 {
@@ -97,7 +99,7 @@ func newPartitionKey(cells []encodedCell, indexes []int) (PartitionKey, bool, er
 func computeRoutingToken(cells []encodedCell, indexes []int, p TokenPartitioner) (Option[int64], error) {
 	if _, builtin := p.(murmur3StreamingPartitioner); builtin {
 		for _, index := range indexes {
-			if index >= 0 && index < len(cells) && cells[index].state != Present && cells[index].state != Null && cells[index].state != Unset {
+			if index >= 0 && index < len(cells) && cells[index].State != Present && cells[index].State != Null && cells[index].State != Unset {
 				return Option[int64]{}, typeValidation("partition key", "invalid cell state")
 			}
 		}

@@ -424,15 +424,15 @@ func TestGetHostPortMappingForPairsQuery(t *testing.T) {
 
 func TestGetHostPortMappingForPairsFiltersCrossProductRows(t *testing.T) {
 	meta := resultMetadata{
-		columns: []ColumnInfo{
+		Columns: []ColumnInfo{
 			{Name: "connection_id", TypeInfo: typeVarchar},
 			{Name: "host_id", TypeInfo: typeVarchar},
 			{Name: "address", TypeInfo: typeVarchar},
 			{Name: "port", TypeInfo: typeInt},
 			{Name: "tls_port", TypeInfo: typeInt},
 		},
-		actualColCount: 5,
-		colCount:       5,
+		ActualColCount: 5,
+		ColCount:       5,
 	}
 
 	ctrl := &fakeControlConn{

@@ -3,9 +3,7 @@
 
 package gocql
 
-import (
-	"testing"
-)
+import "testing"
 
 // BenchmarkHostIdComparison is a micro-benchmark for isolated host-ID
 // comparisons: string==string (current) baseline.

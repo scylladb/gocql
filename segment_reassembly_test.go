@@ -158,11 +158,11 @@ func TestRecvSplitFrameAllocatesExactlyOneFrameBuffer(t *testing.T) {
 			t.Fatal(response.err)
 		}
 		page := response.page
-		if page == nil || page.rowCount != 1 {
+		if page == nil || page.RowCount != 1 {
 			t.Fatal("typed response was not delivered")
 		}
 		count := 0
-		err := page.rows.Each(func(span wire.Span) error {
+		err := page.Rows.Each(func(span wire.Span) error {
 			data := span.Bytes()
 			matched := false
 			// Match the actual socket Read destination, not a buffer constructed by
@@ -190,7 +190,7 @@ func TestRecvSplitFrameAllocatesExactlyOneFrameBuffer(t *testing.T) {
 		if count < 3 {
 			t.Fatal("split response was flattened into a frame buffer")
 		}
-		page.owner.Release()
+		page.Owner.Release()
 	}
 	runtime.ReadMemStats(&after)
 	allocated := after.TotalAlloc - before.TotalAlloc

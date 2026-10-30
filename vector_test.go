@@ -27,6 +27,8 @@
 
 package gocql
 
+import cqltype "github.com/scylladb/gocql/v2/internal/cqltype"
+
 import (
 	"fmt"
 	"github.com/scylladb/gocql/v2/internal/tests"
@@ -266,19 +268,19 @@ func TestVector_SubTypeParsing(t *testing.T) {
 		custom   string
 		expected TypeInfo
 	}{
-		{name: "text", custom: prefix + "UTF8Type", expected: NativeType{typ: TypeVarchar}},
-		{name: "set_int", custom: prefix + "SetType(" + prefix + "Int32Type)", expected: CollectionType{NativeType: NativeType{typ: TypeSet}, Key: nil, Elem: NativeType{typ: TypeInt}}},
+		{name: "text", custom: prefix + "UTF8Type", expected: cqltype.NewCustomType(0, TypeVarchar, "")},
+		{name: "set_int", custom: prefix + "SetType(" + prefix + "Int32Type)", expected: CollectionType{NativeType: cqltype.NewCustomType(0, TypeSet, ""), Key: nil, Elem: cqltype.NewCustomType(0, TypeInt, "")}},
 		{
 			name:   "udt",
 			custom: prefix + ("UserType(" + fixtureKeyspace("") + ",706572736f6e,66697273745f6e616d65:") + prefix + "UTF8Type,6c6173745f6e616d65:" + prefix + "UTF8Type,616765:" + prefix + "Int32Type)",
 			expected: UDTTypeInfo{
-				NativeType: NativeType{typ: TypeUDT},
+				NativeType: cqltype.NewCustomType(0, TypeUDT, ""),
 				KeySpace:   fixtureKeyspace(""),
 				Name:       "person",
 				Elements: []UDTField{
-					UDTField{Name: "first_name", Type: NativeType{typ: TypeVarchar}},
-					UDTField{Name: "last_name", Type: NativeType{typ: TypeVarchar}},
-					UDTField{Name: "age", Type: NativeType{typ: TypeInt}},
+					UDTField{Name: "first_name", Type: cqltype.NewCustomType(0, TypeVarchar, "")},
+					UDTField{Name: "last_name", Type: cqltype.NewCustomType(0, TypeVarchar, "")},
+					UDTField{Name: "age", Type: cqltype.NewCustomType(0, TypeInt, "")},
 				},
 			},
 		},
@@ -286,22 +288,18 @@ func TestVector_SubTypeParsing(t *testing.T) {
 			name:   "tuple",
 			custom: prefix + "TupleType(" + prefix + "UTF8Type," + prefix + "Int32Type," + prefix + "UTF8Type)",
 			expected: TupleTypeInfo{
-				NativeType: NativeType{typ: TypeTuple},
-				Elems: []TypeInfo{
-					NativeType{typ: TypeVarchar},
-					NativeType{typ: TypeInt},
-					NativeType{typ: TypeVarchar},
-				},
+				NativeType: cqltype.NewCustomType(0, TypeTuple, ""),
+				Elems:      []TypeInfo{cqltype.NewCustomType(0, TypeVarchar, ""), cqltype.NewCustomType(0, TypeInt, ""), cqltype.NewCustomType(0, TypeVarchar, "")},
 			},
 		},
 		{
 			name:   "vector_vector_inet",
 			custom: prefix + "VectorType(" + prefix + "VectorType(" + prefix + "InetAddressType, 2), 3)",
 			expected: VectorType{
-				NativeType: NativeType{typ: TypeCustom, custom: vectorTypePrefix},
+				NativeType: cqltype.NewCustomType(0, TypeCustom, vectorTypePrefix),
 				SubType: VectorType{
-					NativeType: NativeType{typ: TypeCustom, custom: vectorTypePrefix},
-					SubType:    NativeType{typ: TypeInet},
+					NativeType: cqltype.NewCustomType(0, TypeCustom, vectorTypePrefix),
+					SubType:    cqltype.NewCustomType(0, TypeInet, ""),
 					Dimensions: 2,
 				},
 				Dimensions: 3,
@@ -311,11 +309,11 @@ func TestVector_SubTypeParsing(t *testing.T) {
 			name:   "map_int_vector_text",
 			custom: prefix + "MapType(" + prefix + "Int32Type," + prefix + "VectorType(" + prefix + "UTF8Type, 10))",
 			expected: CollectionType{
-				NativeType: NativeType{typ: TypeMap},
-				Key:        NativeType{typ: TypeInt},
+				NativeType: cqltype.NewCustomType(0, TypeMap, ""),
+				Key:        cqltype.NewCustomType(0, TypeInt, ""),
 				Elem: VectorType{
-					NativeType: NativeType{typ: TypeCustom, custom: vectorTypePrefix},
-					SubType:    NativeType{typ: TypeVarchar},
+					NativeType: cqltype.NewCustomType(0, TypeCustom, vectorTypePrefix),
+					SubType:    cqltype.NewCustomType(0, TypeVarchar, ""),
 					Dimensions: 10,
 				},
 			},
@@ -324,16 +322,16 @@ func TestVector_SubTypeParsing(t *testing.T) {
 			name:   "set_map_vector_text_text",
 			custom: prefix + "SetType(" + prefix + "MapType(" + prefix + "VectorType(" + prefix + "Int32Type, 10)," + prefix + "UTF8Type))",
 			expected: CollectionType{
-				NativeType: NativeType{typ: TypeSet},
+				NativeType: cqltype.NewCustomType(0, TypeSet, ""),
 				Key:        nil,
 				Elem: CollectionType{
-					NativeType: NativeType{typ: TypeMap},
+					NativeType: cqltype.NewCustomType(0, TypeMap, ""),
 					Key: VectorType{
-						NativeType: NativeType{typ: TypeCustom, custom: vectorTypePrefix},
-						SubType:    NativeType{typ: TypeInt},
+						NativeType: cqltype.NewCustomType(0, TypeCustom, vectorTypePrefix),
+						SubType:    cqltype.NewCustomType(0, TypeInt, ""),
 						Dimensions: 10,
 					},
-					Elem: NativeType{typ: TypeVarchar},
+					Elem: cqltype.NewCustomType(0, TypeVarchar, ""),
 				},
 			},
 		},
@@ -342,9 +340,9 @@ func TestVector_SubTypeParsing(t *testing.T) {
 	for _, test := range testCases {
 		t.Run(test.name, func(t *testing.T) {
 			f := newFramer(nil, 0)
-			f.writeShort(0)
-			f.writeString(fmt.Sprintf("%sVectorType(%s, 2)", prefix, test.custom))
-			parsedType := f.readTypeInfo()
+			f.WriteShort(0)
+			f.WriteString(fmt.Sprintf("%sVectorType(%s, 2)", prefix, test.custom))
+			parsedType := f.ReadTypeInfo()
 			descriptor, err := dataTypeFromInfo(parsedType)
 			require.NoError(t, err)
 			dimension, ok := descriptor.Dimension()

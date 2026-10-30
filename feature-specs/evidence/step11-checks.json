@@ -1,0 +1,154 @@
+{
+  "checks": [
+    {
+      "command": "go test -json -race -tags unit -count=1 -timeout=5m ./...",
+      "cwd": "/extra/scylladb/gocql",
+      "exit_code": 0,
+      "log": "/extra/scylladb/gocql-api-test-cluster/step11/checks/unit-race.jsonl",
+      "log_sha256": "e2bd5d62336af7324344debb80cd92c12cd314e3f717008107dff73f879b01a9",
+      "scope": "passed",
+      "source": "native"
+    },
+    {
+      "command": "GOARCH=386 go test -json -tags unit -count=1 -timeout=5m ./...",
+      "cwd": "/extra/scylladb/gocql",
+      "exit_code": 0,
+      "log": "/extra/scylladb/gocql-api-test-cluster/step11/checks/unit-386.jsonl",
+      "log_sha256": "cf352d67d5eba47c6c463bc5cbc33e93537d5a2252d65018a6607ded6ef20878",
+      "scope": "passed",
+      "source": "native"
+    },
+    {
+      "command": "go vet -tags unit ./...",
+      "cwd": "/extra/scylladb/gocql",
+      "exit_code": 1,
+      "log": "/extra/scylladb/gocql-api-test-cluster/step11/checks/vet.log",
+      "log_sha256": "24b6d7d6c4d324b31dd9142b04d2df94091ae40362300476551ce7214c2fba3f",
+      "scope": "known vet naming diagnostic, corrected and rechecked",
+      "source": "native"
+    },
+    {
+      "command": "go vet -tags unit ./...",
+      "cwd": "/extra/scylladb/gocql",
+      "exit_code": 0,
+      "log": "/extra/scylladb/gocql-api-test-cluster/step11/checks/final-vet.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope": "passed",
+      "source": "method-renamed"
+    },
+    {
+      "command": "go test -json -race -tags unit -count=1 -timeout=5m ./internal/cqltype ./internal/codec ./internal/model ./internal/protocol",
+      "cwd": "/extra/scylladb/gocql",
+      "exit_code": 0,
+      "log": "/extra/scylladb/gocql-api-test-cluster/step11/checks/final-foundation-race.jsonl",
+      "log_sha256": "cab73b2dc05612a9614d5d5f9037a67e3e048fe4509eb2e43c6d50db86f60618",
+      "scope": "passed",
+      "source": "method-renamed"
+    },
+    {
+      "command": "go test -json -race -tags unit -count=1 -timeout=5m -run '^(TestTyped|TestV2Transport|TestV2Streaming|TestStep07|TestStep08|Test_framerFlags)' .",
+      "cwd": "/extra/scylladb/gocql",
+      "exit_code": 0,
+      "log": "/extra/scylladb/gocql-api-test-cluster/step11/checks/final-transport-race.jsonl",
+      "log_sha256": "39643d7267e71a42d6200f0e615d29692c81ec238b18cae544ed62ab5b3d9dfc",
+      "scope": "passed",
+      "source": "method-renamed"
+    },
+    {
+      "command": "go test -run '^$' -tags 'all unit integration ccm gocql_debug bench' ./...",
+      "cwd": "/extra/scylladb/gocql",
+      "exit_code": 0,
+      "log": "/extra/scylladb/gocql-api-test-cluster/step11/checks/final-alltags.log",
+      "log_sha256": "e0916b21ef357ca1357198e2841ac7604b4ca1ce1bedff0011e20e4ba7d28dfb",
+      "scope": "passed",
+      "source": "method-renamed"
+    },
+    {
+      "command": "GOOS=linux GOARCH=arm64 go test -exec /bin/true -tags unit ./...",
+      "cwd": "/extra/scylladb/gocql",
+      "exit_code": 0,
+      "log": "/extra/scylladb/gocql-api-test-cluster/step11/checks/final-arm64-compile.log",
+      "log_sha256": "fb548510291ae2f399fcc41051d9290f17e2cd9145f401c6765a5c18404f602a",
+      "scope": "compile only; /bin/true execution substitute",
+      "source": "method-renamed"
+    },
+    {
+      "command": "go test -tags unit -run '^$' -bench 'BenchmarkV2(Scalar|Container|StreamFinalStorage|StreamingNestedElements|RowDestinationFragments)' -benchtime=5x -benchmem ./internal/codec",
+      "cwd": "/extra/scylladb/gocql",
+      "exit_code": 0,
+      "log": "/extra/scylladb/gocql-api-test-cluster/step11/checks/final-codec-smoke.log",
+      "log_sha256": "fd7ce42fff23e3c90a4a61248656822f393746694c5e61c485028ffada9f066f",
+      "scope": "passed",
+      "source": "method-renamed"
+    },
+    {
+      "command": "go test -tags unit -run '^$' -bench 'Benchmark(V2RoutingCompositeSpans|Step08IndependentStreamOracle)' -benchtime=5x -benchmem .",
+      "cwd": "/extra/scylladb/gocql",
+      "exit_code": 0,
+      "log": "/extra/scylladb/gocql-api-test-cluster/step11/checks/final-copy-smoke.log",
+      "log_sha256": "0115e6f00e37b0946bb335267d2c85516f1de310002eca61f6391638eec6a2ae",
+      "scope": "passed",
+      "source": "method-renamed"
+    },
+    {
+      "command": "go test ./...",
+      "cwd": "/extra/scylladb/gocql/lz4",
+      "exit_code": 0,
+      "log": "/extra/scylladb/gocql-api-test-cluster/step11/checks/final-lz4.log",
+      "log_sha256": "4d5b9b85df923236344dbb50259619499535604948fe933459db156c18e9aa8d",
+      "scope": "passed",
+      "source": "method-renamed"
+    },
+    {
+      "command": "go test -run '^$' ./...",
+      "cwd": "/extra/scylladb/gocql/tests/bench",
+      "exit_code": 0,
+      "log": "/extra/scylladb/gocql-api-test-cluster/step11/checks/final-bench-module.log",
+      "log_sha256": "706d9de3397a75bb5174ebf49ddb3da72cc0077866408e497d4f49bad0cf7153",
+      "scope": "passed",
+      "source": "method-renamed"
+    },
+    {
+      "command": "go vet -tags unit ./...",
+      "cwd": "/extra/scylladb/gocql",
+      "exit_code": 0,
+      "log": "/extra/scylladb/gocql-api-test-cluster/step11/checks/final-format-vet.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope": "passed",
+      "source": "final"
+    },
+    {
+      "command": "go test -run '^$' -tags 'all unit integration ccm gocql_debug bench' ./...",
+      "cwd": "/extra/scylladb/gocql",
+      "exit_code": 0,
+      "log": "/extra/scylladb/gocql-api-test-cluster/step11/checks/final-format-alltags.log",
+      "log_sha256": "0238199049c41ae07cbf03763f8da0b025da5916c6575cd13e38d9f22db7f173",
+      "scope": "passed",
+      "source": "final"
+    },
+    {
+      "command": "git diff --check",
+      "cwd": "/extra/scylladb/gocql",
+      "exit_code": 0,
+      "log": "/extra/scylladb/gocql-api-test-cluster/step11/checks/diff-check.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope": "passed",
+      "source": "final"
+    },
+    {
+      "command": "go test -run '^$' -tags unit .",
+      "cwd": "/extra/scylladb/gocql",
+      "exit_code": 0,
+      "log": "/extra/scylladb/gocql-api-test-cluster/step11/checks/final-doc-compile.log",
+      "log_sha256": "0054a93f257b86b85f6fc986280c323d819da7cf61a5bf9d89a6b3d9b931975a",
+      "scope": "compile-only after restoring predecessor declaration-free package documentation",
+      "source": "final"
+    }
+  ],
+  "historical_replay": "Not rerun. Accepted step10 historical typed-control replay mismatch remains step13; compilation is not an operational replay pass.",
+  "source_bindings": {
+    "final": "step11-final-source.json",
+    "method-renamed": "step11-method-source.json",
+    "native": "step11-source.json"
+  }
+}

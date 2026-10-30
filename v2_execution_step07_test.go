@@ -47,7 +47,7 @@ func TestStep07KindDeclarationAndServerRefinement(t *testing.T) {
 		if test.negotiated {
 			cs[0].framers.defaults.flagLWT = 1 << 30
 		}
-		info, err := s.hostPreparedInfo(cs[0], &responsePage{lwt: test.lwt}, &preparedState{statement: "INSERT x IF y"})
+		info, err := s.hostPreparedInfo(cs[0], &responsePage{responseData: responseData{Lwt: test.lwt}}, &preparedState{statement: "INSERT x IF y"})
 		if err != nil || info.Kind != test.want {
 			t.Fatal(info, err)
 		}

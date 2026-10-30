@@ -88,7 +88,7 @@ func BenchmarkV2PageCallerDestination(b *testing.B) {
 				chain := codecTestMust(wire.NewChain(spans...))
 				owner := wire.NewLease(chain, nil)
 				defer owner.Release()
-				p := &Page[row]{response: &responsePage{columns: columns, rows: chain, rowCount: 1, owner: owner}, plan: codecTestMust(decoder.Compile(columns)), cursor: wire.NewCursor(chain)}
+				p := &Page[row]{response: &responsePage{responseData: responseData{Columns: columns, Rows: chain, RowCount: 1, Owner: owner}}, plan: codecTestMust(decoder.Compile(columns)), cursor: wire.NewCursor(chain)}
 				cursor := *p.cursor
 				var dst row
 				b.ReportAllocs()
@@ -112,7 +112,7 @@ func BenchmarkV2PageCallerDestination(b *testing.B) {
 func BenchmarkV2ResultPlanExactEntry(b *testing.B) {
 	columns := NewColumns(ColumnSpec{Name: "value", Type: codecTestMust(ScalarType(TypeBlob))})
 	entry := &typedResultMetadata{columns: columns}
-	response := &responsePage{columns: columns, metadata: entry}
+	response := &responsePage{metadata: entry, responseData: responseData{Columns: columns}}
 	cache := &resultPlanCache[Bytes]{}
 	decoder := OneColumn(BlobCodec)
 	if _, err := cache.selectPlan(response, decoder); err != nil {

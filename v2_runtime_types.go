@@ -4,86 +4,13 @@ import (
 	"context"
 	"errors"
 	"sync"
-	"time"
 
 	"github.com/scylladb/gocql/v2/internal/wire"
 )
 
-// Option distinguishes an explicit zero value from an inherited setting.
-type Option[T any] struct {
-	Value T
-	Set   bool
-}
-
-type PayloadEntry struct {
-	Key   string
-	Value Nullable[Bytes]
-}
-
-type encodedCell struct {
-	typ   DataType
-	state CellState
-	body  wire.Chain
-}
-type encodedValues struct {
-	columns Columns
-	cells   []encodedCell
-	framed  wire.Chain
-}
-
-// attemptRequest contains only immutable protocol inputs. The transport retains
-// lease until every accepted writer has stopped accessing its spans.
-type attemptRequest struct {
-	tabletVersionBlock             byte
-	statement                      string
-	preparedID, resultMetadataID   []byte
-	values                         wire.Chain
-	valueCount                     int
-	lease                          *wire.Lease
-	consistency, serialConsistency Consistency
-	pageSize                       int
-	pagingState                    []byte
-	timestamp                      int64
-	defaultTimestamp, skipMetadata bool
-	keyspace                       string
-	nowInSeconds                   *int32
-	trace                          bool
-	timeout                        time.Duration
-	prepare                        bool
-	batch                          *typedBatchRequest
-	payload                        []PayloadEntry
-}
-type typedBatchRequest struct {
-	kind  BatchKind
-	items []typedBatchItem
-}
-type typedBatchItem struct {
-	statement  string
-	preparedID []byte
-	values     wire.Chain
-	valueCount int
-}
 type responsePage struct {
-	metadata                            *typedResultMetadata
-	metadataChanged                     bool
-	owner                               *wire.Lease
-	rows                                wire.Chain
-	columns                             Columns
-	rowCount                            int32
-	columnCount                         int
-	lwt                                 bool
-	keyspace                            string
-	schemaChange                        bool
-	pagingState, metadataID, preparedID []byte
-	noMetadata                          bool
-	bindColumns                         Columns
-	pkIndexes                           []int
-	kind                                int
-	traceID                             []byte
-	payload                             []PayloadEntry
-	warnings                            []string
-	state                               PageState
-	result                              Result
+	responseData
+	metadata *typedResultMetadata
 }
 
 type executionRequest struct {

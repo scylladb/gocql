@@ -82,7 +82,7 @@ func TestSessionIDReportingStartupFrame(t *testing.T) {
 				addr:     "127.0.0.1:0",
 				protocol: defaultProto,
 				recvHook: func(f *framer) {
-					if f.header.Op != frm.OpStartup {
+					if f.Header.Op != frm.OpStartup {
 						return
 					}
 					// Consuming the frame body here is only safe because the fake

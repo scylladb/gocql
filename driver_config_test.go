@@ -812,7 +812,7 @@ func TestDriverConfigReportingStartupFrame(t *testing.T) {
 		addr:     "127.0.0.1:0",
 		protocol: defaultProto,
 		recvHook: func(f *framer) {
-			if f.header.Op != frm.OpStartup {
+			if f.Header.Op != frm.OpStartup {
 				return
 			}
 			// Consuming the frame body here is only safe because the fake
@@ -882,7 +882,7 @@ func TestDriverConfigReportingDisabled(t *testing.T) {
 		addr:     "127.0.0.1:0",
 		protocol: defaultProto,
 		recvHook: func(f *framer) {
-			if f.header.Op != frm.OpStartup {
+			if f.Header.Op != frm.OpStartup {
 				return
 			}
 			// Consuming the frame body here is only safe because the fake
@@ -963,9 +963,9 @@ func readStartupOptions(t *testing.T, f *framer) (opts map[string]string) {
 	}()
 
 	opts = make(map[string]string)
-	for n := f.readShort(); n > 0; n-- {
-		key := f.readString()
-		opts[key] = f.readString()
+	for n := f.ReadShort(); n > 0; n-- {
+		key := f.ReadString()
+		opts[key] = f.ReadString()
 	}
 	return opts
 }
@@ -1031,7 +1031,7 @@ func TestDriverConfigReportingDial(t *testing.T) {
 				addr:     "127.0.0.1:0",
 				protocol: defaultProto,
 				recvHook: func(f *framer) {
-					if f.header.Op != frm.OpStartup {
+					if f.Header.Op != frm.OpStartup {
 						return
 					}
 					// Consuming the frame body here is only safe because the

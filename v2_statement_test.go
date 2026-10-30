@@ -31,8 +31,8 @@ func TestV2RuntimeBindCanonicalOwnership(t *testing.T) {
 		t.Fatalf("encoder calls %d", calls)
 	}
 	input[0] = 'X'
-	borrowedCell := borrowed.request.values.cells[0].body
-	ownedCell := owned.request.values.cells[0].body
+	borrowedCell := borrowed.request.values.Cells[0].Body
+	ownedCell := owned.request.values.Cells[0].Body
 	a := make([]byte, borrowedCell.Len())
 	b := make([]byte, ownedCell.Len())
 	borrowedCell.CopyTo(a)

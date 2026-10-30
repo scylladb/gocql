@@ -61,15 +61,15 @@ func BenchmarkParseRowsFrame(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		framer := &framer{
-			header: &frm.FrameHeader{
+			Header: &frm.FrameHeader{
 				Version: protoVersion4 | protoDirectionMask,
 				Op:      frm.OpResult,
 				Length:  len(data),
 			},
-			buf: data,
+			Buf: data,
 		}
 
-		_, err = framer.parseFrame()
+		_, err = framer.ParseFrame()
 		if err != nil {
 			b.Fatal(err)
 		}

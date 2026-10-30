@@ -780,23 +780,6 @@ func translateAddressPort(addressTranslator AddressTranslator, host *HostInfo, a
 	return newAddr, nil
 }
 
-const (
-	LoggedBatch   BatchKind = 0
-	UnloggedBatch BatchKind = 1
-	CounterBatch  BatchKind = 2
-)
-
-type ColumnInfo struct {
-	TypeInfo TypeInfo
-	Keyspace string
-	Table    string
-	Name     string
-}
-
-func (c ColumnInfo) String() string {
-	return fmt.Sprintf("[column keyspace=%s table=%s name=%s type=%v]", c.Keyspace, c.Table, c.Name, c.TypeInfo)
-}
-
 // routing key indexes LRU cache
 // routingKeyInfoCacheKey avoids concatenating keyspace+stmt into a string on
 // every cache lookup; lru.Cache already takes a comparable key type for
@@ -902,12 +885,6 @@ var (
 	ErrTabletsNotUsed       = errors.New("tablets not used")
 	ErrSessionNotReady      = errors.New("session is not ready yet")
 )
-
-type ErrProtocol struct{ error }
-
-func NewErrProtocol(format string, args ...any) error {
-	return ErrProtocol{error: fmt.Errorf(format, args...)}
-}
 
 // BatchSizeMaximum is the maximum number of statements a batch operation can have.
 // This limit is set by cassandra and could change in the future.

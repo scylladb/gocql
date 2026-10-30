@@ -23,36 +23,6 @@
 
 package gocql
 
-import (
-	"fmt"
-
-	"github.com/scylladb/gocql/v2/internal/segment"
-)
-
-// asSegmentCompressor asserts that compressor supports native protocol v5 segment
-// (de)compression, narrowing it to the interface the segment codec takes.
-//
-// The clusterSettings validation already rejects a non-segment compressor on v5, so
-// this is a defensive check whose error should never surface in practice. It stays
-// in this package because it is the only part of the segment path that needs
-// Compressor.Name, and naming the offending compressor is the whole value of the
-// message; internal/segment deliberately requires only the two Append methods, so
-// that the lz4 compressor — a separate module, which cannot import internal
-// packages — keeps satisfying it structurally.
-//
-// A nil compressor is not a failure: it is the uncompressed layout, and yields a nil
-// segment.Compressor, which is exactly how internal/segment spells that.
-func asSegmentCompressor(compressor Compressor) (segment.Compressor, error) {
-	if compressor == nil {
-		return nil, nil
-	}
-	segComp, ok := compressor.(SegmentCompressor)
-	if !ok {
-		return nil, fmt.Errorf("gocql: compressor %q does not support protocol v5 segment compression", compressor.Name())
-	}
-	return segComp, nil
-}
-
 // resolveSegmentCompressor narrows the negotiated compressor once, into
 // c.segCompressor, so the receive path does not repeat the assertion for every
 // segment it reads.

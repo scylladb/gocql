@@ -308,44 +308,44 @@ func TestV2EventMetadataBudgetAndTerminalAdmission(t *testing.T) {
 	consumer.mu.Lock()
 	session := &Session{ctx: c.ctx, logger: nopLogger{}, nodeEvents: consumer}
 	c.session = session
-	budget := &streamMetadataBudget{limit: 800}
-	if err := budget.reserve(400); err != nil {
+	budget := &streamMetadataBudget{Limit: 800}
+	if err := budget.Reserve(400); err != nil {
 		t.Fatal(err)
 	}
 	e := newTypedEnvelope()
-	e.str("STATUS_CHANGE", false)
-	e.str("DOWN", false)
-	e.u8(4)
-	e.chain(typedTestChain(t, []byte{127, 0, 0, 2}))
-	e.u32(9042)
-	body := typedTestBytes(t, codecTestMust(e.freeze()))
+	e.Str("STATUS_CHANGE", false)
+	e.Str("DOWN", false)
+	e.U8(4)
+	e.Chain(typedTestChain(t, []byte{127, 0, 0, 2}))
+	e.U32(9042)
+	body := typedTestBytes(t, codecTestMust(e.Freeze()))
 	queued := 0
 	for i := 0; i < 20; i++ {
 		scope := codecTestMust(wire.NewStream(context.Background(), bytes.NewReader(body), int64(len(body)), wire.StreamLimits{}))
-		cursor := &streamMetadataCursor{scope: scope, budget: budget}
-		p := &typedParser{cursor: cursor, proto: 4}
-		event := p.streamEvent(frm.FrameHeader{Version: 0x84, Stream: -1, Op: frm.OpEvent})
-		if p.err != nil {
-			cursor.release()
+		cursor := &streamMetadataCursor{Scope: scope, Budget: budget}
+		p := &typedParser{Cursor: cursor, Proto: 4}
+		event := p.StreamEvent(frm.FrameHeader{Version: 0x84, Stream: -1, Op: frm.OpEvent})
+		if p.Err != nil {
+			cursor.Release()
 			break
 		}
 		if err := scope.RequireEnd(); err != nil {
 			t.Fatal(err)
 		}
-		if err := c.dispatchEventOwned(event, cursor.release); err != nil {
+		if err := c.dispatchEventOwned(event, cursor.Release); err != nil {
 			t.Fatal(err)
 		}
 		queued++
 	}
-	if queued == 0 || queued > 3 || budget.bytes() > 800 {
-		t.Fatal("queued events escaped simultaneous budget", queued, budget.bytes())
+	if queued == 0 || queued > 3 || budget.Bytes() > 800 {
+		t.Fatal("queued events escaped simultaneous budget", queued, budget.Bytes())
 	}
 	c.cancel()
 	consumer.mu.Unlock()
 	c.waitEventDispatch()
-	budget.release(400)
-	if budget.bytes() != 0 {
-		t.Fatal("close did not release queued charges", budget.bytes())
+	budget.Release(400)
+	if budget.Bytes() != 0 {
+		t.Fatal("close did not release queued charges", budget.Bytes())
 	}
 	var released atomic.Int32
 	if err := c.dispatchEventOwned(&frm.ClientRoutesChanged{}, func() { released.Add(1) }); !errors.Is(err, ErrClosed) || released.Load() != 1 {
@@ -354,13 +354,13 @@ func TestV2EventMetadataBudgetAndTerminalAdmission(t *testing.T) {
 	// Event semantic consumption rejects bytes after a fully parsed event.
 	trailing := append(append([]byte(nil), body...), 99)
 	scope := codecTestMust(wire.NewStream(context.Background(), bytes.NewReader(trailing), int64(len(trailing)), wire.StreamLimits{}))
-	cursor := &streamMetadataCursor{scope: scope, budget: &streamMetadataBudget{limit: 4096}}
-	p := &typedParser{cursor: cursor, proto: 4}
-	p.streamEvent(frm.FrameHeader{})
-	if p.err != nil || scope.RequireEnd() == nil {
-		t.Fatal("trailing event bytes accepted", p.err)
+	cursor := &streamMetadataCursor{Scope: scope, Budget: &streamMetadataBudget{Limit: 4096}}
+	p := &typedParser{Cursor: cursor, Proto: 4}
+	p.StreamEvent(frm.FrameHeader{})
+	if p.Err != nil || scope.RequireEnd() == nil {
+		t.Fatal("trailing event bytes accepted", p.Err)
 	}
-	cursor.release()
+	cursor.Release()
 }
 
 type step04DNS func(string) ([]net.IP, error)

@@ -7,9 +7,7 @@
 
 package gocql
 
-import (
-	"testing"
-)
+import "testing"
 
 func TestCompileMetadata(t *testing.T) {
 	t.Parallel()

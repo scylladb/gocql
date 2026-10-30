@@ -17,12 +17,13 @@
 package gocql
 
 import (
+	cqltype "github.com/scylladb/gocql/v2/internal/cqltype"
+
 	"context"
 	"errors"
 	"fmt"
+	"github.com/scylladb/gocql/v2/internal/codec"
 	"io"
-	"net"
-	"sync"
 
 	frm "github.com/scylladb/gocql/v2/internal/frame"
 	"github.com/scylladb/gocql/v2/internal/segment"
@@ -56,76 +57,6 @@ func checkedStreamLimits(l StreamLimits) (StreamLimits, error) {
 	}
 	return l, nil
 }
-
-// The budget is shared by all live metadata/control objects of a reserved
-// connection. Replacing an object does not reset accounting before release.
-type streamMetadataBudget struct {
-	mu          sync.Mutex
-	limit, live int64
-}
-
-func (b *streamMetadataBudget) reserve(n int64) error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if n < 0 || n > b.limit-b.live {
-		return &ProtocolError{Stage: "stream metadata budget", Err: wire.ErrLimit}
-	}
-	b.live += n
-	return nil
-}
-
-type streamMetadataCursor struct {
-	scope    *wire.Stream
-	budget   *streamMetadataBudget
-	used     int64
-	released sync.Once
-}
-
-func (b *streamMetadataBudget) release(n int64) { b.mu.Lock(); b.live -= n; b.mu.Unlock() }
-func (b *streamMetadataBudget) bytes() int64    { b.mu.Lock(); defer b.mu.Unlock(); return b.live }
-func (b *streamMetadataBudget) setLimit(limit int64) error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.live > limit {
-		return wire.ErrLimit
-	}
-	b.limit = limit
-	return nil
-}
-func (c *streamMetadataCursor) release() { c.released.Do(func() { c.budget.release(c.used) }) }
-func (c *streamMetadataCursor) reserve(n int64) error {
-	if err := c.budget.reserve(n); err != nil {
-		return err
-	}
-	c.used += n
-	return nil
-}
-func (c *streamMetadataCursor) copy(n int64) ([]byte, error) {
-	if n < 0 || n > c.scope.Remaining() {
-		return nil, io.ErrUnexpectedEOF
-	}
-	if err := c.reserve(n); err != nil {
-		return nil, err
-	}
-	b := make([]byte, int(n))
-	if err := c.scope.ReadFull(b); err != nil {
-		return nil, err
-	}
-	return b, nil
-}
-func (c *streamMetadataCursor) Take(n int64) (wire.Chain, error) {
-	b, err := c.copy(n)
-	if err != nil {
-		return wire.Chain{}, err
-	}
-	return wire.NewChain(wire.Borrow(b))
-}
-func (c *streamMetadataCursor) Uint8() (uint8, error)   { return c.scope.Uint8() }
-func (c *streamMetadataCursor) Uint16() (uint16, error) { return c.scope.Uint16() }
-func (c *streamMetadataCursor) Uint32() (uint32, error) { return c.scope.Uint32() }
-func (c *streamMetadataCursor) Uint64() (uint64, error) { return c.scope.Uint64() }
-func (c *streamMetadataCursor) Remaining() int64        { return c.scope.Remaining() }
-func (c *streamMetadataCursor) RequireEnd() error       { return c.scope.RequireEnd() }
 
 // verifiedStreamUnits exposes only one validated v5 unit. Native headers/cells
 // may cross non-self-contained units; self-contained units never split a frame.
@@ -195,7 +126,7 @@ func (r *streamResponse) releaseMetadata() {
 		return
 	}
 	if r.budget != nil {
-		r.budget.release()
+		r.budget.Release()
 		r.budget = nil
 	}
 	r.body = nil
@@ -213,11 +144,11 @@ func (r *exclusiveConn) initStream(limits StreamLimits) error {
 	r.limits = l
 	r.conn.mu.Lock()
 	if r.conn.streamBudget == nil {
-		r.conn.streamBudget = &streamMetadataBudget{limit: l.MaxMetadataBytes}
+		r.conn.streamBudget = &streamMetadataBudget{Limit: l.MaxMetadataBytes}
 	}
 	r.metadataBudget = r.conn.streamBudget
 	r.conn.mu.Unlock()
-	if err := r.metadataBudget.setLimit(l.MaxMetadataBytes); err != nil {
+	if err := r.metadataBudget.SetLimit(l.MaxMetadataBytes); err != nil {
 		return err
 	}
 	if r.conn.version == 5 {
@@ -285,7 +216,7 @@ func (r *exclusiveConn) exchange(ctx context.Context, request *attemptRequest) (
 		var pending *streamMetadataCursor
 		defer func() {
 			if pending != nil {
-				pending.release()
+				pending.Release()
 			}
 		}()
 		if request == nil {
@@ -299,24 +230,24 @@ func (r *exclusiveConn) exchange(ctx context.Context, request *attemptRequest) (
 				return err
 			}
 		}
-		if request.lease != nil {
-			if !request.lease.Retain() {
+		if request.Lease != nil {
+			if !request.Lease.Retain() {
 				return ErrReleased
 			}
-			defer request.lease.Release()
+			defer request.Lease.Release()
 		}
-		owners := make([]*wire.Lease, 0, len(request.payload))
+		owners := make([]*wire.Lease, 0, len(request.Payload))
 		defer func() {
 			for _, o := range owners {
 				o.Release()
 			}
 		}()
-		for _, e := range request.payload {
-			if e.Value.Valid && e.Value.Value.lease != nil {
-				if !e.Value.Value.lease.Retain() {
+		for _, e := range request.Payload {
+			if e.Value.Valid && cqltype.BytesLease(e.Value.Value) != nil {
+				if !cqltype.BytesLease(e.Value.Value).Retain() {
 					return ErrReleased
 				}
-				owners = append(owners, e.Value.Value.lease)
+				owners = append(owners, cqltype.BytesLease(e.Value.Value))
 			}
 		}
 		packet, err := r.conn.buildTypedRequest(request, r.stream)
@@ -344,17 +275,17 @@ func (r *exclusiveConn) exchange(ctx context.Context, request *attemptRequest) (
 			if err != nil {
 				return err
 			}
-			cursor := &streamMetadataCursor{scope: body, budget: r.metadataBudget}
+			cursor := &streamMetadataCursor{Scope: body, Budget: r.metadataBudget}
 			pending = cursor
-			p := &typedParser{cursor: cursor, proto: r.conn.version, metadataID: r.conn.tracksResultMetadataID(), maxDepth: limits.MaxMetadataDepth}
-			info := p.streamExtensions(header)
-			if p.err != nil {
-				return p.err
+			p := &typedParser{Cursor: cursor, Proto: r.conn.version, MetadataID: r.conn.tracksResultMetadataID(), MaxDepth: limits.MaxMetadataDepth}
+			info := p.StreamExtensions(header)
+			if p.Err != nil {
+				return p.Err
 			}
 			if header.Op == frm.OpEvent {
-				event := p.streamEvent(header)
-				if p.err != nil {
-					return p.err
+				event := p.StreamEvent(header)
+				if p.Err != nil {
+					return p.Err
 				}
 				if err := body.RequireEnd(); err != nil {
 					return err
@@ -367,7 +298,7 @@ func (r *exclusiveConn) exchange(ctx context.Context, request *attemptRequest) (
 				r.complete = true
 				pending = nil
 				r.complete = false
-				if err := r.conn.dispatchEventOwned(event, cursor.release); err != nil {
+				if err := r.conn.dispatchEventOwned(event, cursor.Release); err != nil {
 					return err
 				}
 				r.complete = false
@@ -377,9 +308,9 @@ func (r *exclusiveConn) exchange(ctx context.Context, request *attemptRequest) (
 				return &ProtocolError{Stage: "stream response", Err: fmt.Errorf("unexpected stream %d", header.Stream)}
 			}
 			if header.Op == frm.OpError {
-				serverErr := p.serverError(header, r.conn.framers.defaults.rateLimitingErrorCode)
-				if p.err != nil {
-					return p.err
+				serverErr := p.ServerError(header, r.conn.framers.defaults.rateLimitingErrorCode)
+				if p.Err != nil {
+					return p.Err
 				}
 				if err := body.RequireEnd(); err != nil {
 					return err
@@ -394,11 +325,11 @@ func (r *exclusiveConn) exchange(ctx context.Context, request *attemptRequest) (
 			if header.Op != frm.OpResult {
 				return &ProtocolError{Stage: "stream response", Err: fmt.Errorf("unexpected opcode %d", header.Op)}
 			}
-			result := &streamResponse{ctx: ctx, reservation: r, body: body, budget: cursor, info: info, kind: p.i32()}
+			result := &streamResponse{ctx: ctx, reservation: r, body: body, budget: cursor, info: info, kind: p.I32()}
 			switch result.kind {
 			case frm.ResultKindRows:
-				result.columns, result.columnCount = p.metadataFields(&result.metadata, false, 0)
-				result.rowCount = int32(p.i32())
+				result.columns, result.columnCount = p.MetadataFields(&result.metadata, false, 0)
+				result.rowCount = int32(p.I32())
 				if result.rowCount < 0 {
 					return &ProtocolError{Stage: "stream rows", Err: wire.ErrLength}
 				}
@@ -416,8 +347,8 @@ func (r *exclusiveConn) exchange(ctx context.Context, request *attemptRequest) (
 			default:
 				return &StreamCapabilityError{Protocol: int(r.conn.version), Reason: "streaming execution requires ROWS or VOID result"}
 			}
-			if p.err != nil {
-				return p.err
+			if p.Err != nil {
+				return p.Err
 			}
 			response = result
 			pending = nil
@@ -476,7 +407,7 @@ func decodeStreamRow[R any](response *streamResponse, plan StreamRowPlan[R], dst
 			response.terminal = true
 			return nil
 		}
-		response.reader.index = 0
+		codec.BeginStreamRow(response.reader)
 		plan.Reset(dst)
 		if err := plan.DecodeInto(response.reader, dst); err != nil {
 			return err
@@ -580,49 +511,6 @@ func (c *Conn) dispatchEventOwned(event frame, release func()) error {
 		return reject(&ProtocolError{Stage: "event queue", Err: errors.New("bounded event dispatch overflow")})
 	}
 }
-func (p *typedParser) streamEvent(h frm.FrameHeader) frame {
-	p.reserveAllocation(128)
-	switch kind := p.str(); kind {
-	case "TOPOLOGY_CHANGE", "STATUS_CHANGE":
-		change := p.str()
-		n := int(p.u8())
-		if n != 4 && n != 16 {
-			p.check(errors.New("invalid event address width"))
-			return nil
-		}
-		address := net.IP(p.copy(n))
-		port := p.i32()
-		if port < 0 || port > 65535 {
-			p.check(errors.New("invalid event port"))
-			return nil
-		}
-		if kind == "TOPOLOGY_CHANGE" {
-			return &frm.TopologyChangeEventFrame{FrameHeader: h, Change: change, Host: address, Port: port}
-		}
-		return &frm.StatusChangeEventFrame{FrameHeader: h, Change: change, Host: address, Port: port}
-	case "CLIENT_ROUTES_CHANGE":
-		return &frm.ClientRoutesChanged{FrameHeader: h, ChangeType: p.str(), ConnectionIDs: p.strings(), HostIDs: p.strings()}
-	case "SCHEMA_CHANGE":
-		change, target, keyspace := p.str(), p.str(), p.str()
-		switch target {
-		case "KEYSPACE":
-			return &frm.SchemaChangeKeyspace{FrameHeader: h, Change: change, Keyspace: keyspace}
-		case "TABLE":
-			return &frm.SchemaChangeTable{FrameHeader: h, Change: change, Keyspace: keyspace, Object: p.str()}
-		case "TYPE":
-			return &frm.SchemaChangeType{FrameHeader: h, Change: change, Keyspace: keyspace, Object: p.str()}
-		case "FUNCTION":
-			return &frm.SchemaChangeFunction{FrameHeader: h, Change: change, Keyspace: keyspace, Name: p.str(), Args: p.strings()}
-		case "AGGREGATE":
-			return &frm.SchemaChangeAggregate{FrameHeader: h, Change: change, Keyspace: keyspace, Name: p.str(), Args: p.strings()}
-		default:
-			p.check(fmt.Errorf("gocql: unsupported event target %q", target))
-		}
-	default:
-		p.check(fmt.Errorf("gocql: unsupported event kind %q", kind))
-	}
-	return nil
-}
 
 // Higher-level shutdown joins this worker after canceling its context and
 // releasing any event consumer locks. It must not be called by that worker.
@@ -633,38 +521,6 @@ func (c *Conn) waitEventDispatch() {
 	if done != nil {
 		<-done
 	}
-}
-
-func (p *typedParser) streamExtensions(h frm.FrameHeader) Result {
-	info := Result{}
-	if h.Flags&frm.FlagTracing != 0 {
-		b := p.copy(16)
-		if p.err == nil {
-			p.reserveAllocation(16)
-			var id UUID
-			copy(id[:], b)
-			info.TraceIDs = []UUID{id}
-		}
-	}
-	if h.Flags&frm.FlagWarning != 0 {
-		info.Warnings = p.strings()
-	}
-	if h.Flags&frm.FlagCustomPayload != 0 {
-		count := int(p.u16())
-		p.reserveAllocation(int64(count) * 80)
-		if p.err == nil {
-			info.CustomPayload = make([]PayloadEntry, count)
-			for i := range info.CustomPayload {
-				e := &info.CustomPayload[i]
-				e.Key = p.str()
-				b := p.bytes()
-				if b != nil {
-					e.Value = Nullable[Bytes]{Valid: true, Value: BorrowBytes(b)}
-				}
-			}
-		}
-	}
-	return info
 }
 
 // Drain only control envelopes already present in the validated final unit.
@@ -680,27 +536,27 @@ func (r *exclusiveConn) drainVerifiedControl() error {
 		if err != nil {
 			return err
 		}
-		cursor := &streamMetadataCursor{scope: body, budget: r.metadataBudget}
-		p := &typedParser{cursor: cursor, proto: r.conn.version, maxDepth: limits.MaxMetadataDepth}
-		p.streamExtensions(h)
+		cursor := &streamMetadataCursor{Scope: body, Budget: r.metadataBudget}
+		p := &typedParser{Cursor: cursor, Proto: r.conn.version, MaxDepth: limits.MaxMetadataDepth}
+		p.StreamExtensions(h)
 		if h.Op != frm.OpEvent || h.Stream != -1 {
-			cursor.release()
+			cursor.Release()
 			return &ProtocolError{Stage: "stream trailing frame", Err: fmt.Errorf("unexpected opcode %d/stream %d", h.Op, h.Stream)}
 		}
-		event := p.streamEvent(h)
-		if p.err != nil {
-			cursor.release()
-			return p.err
+		event := p.StreamEvent(h)
+		if p.Err != nil {
+			cursor.Release()
+			return p.Err
 		}
 		if err := body.RequireEnd(); err != nil {
-			cursor.release()
+			cursor.Release()
 			return err
 		}
 		if err := r.units.endFrame(); err != nil {
-			cursor.release()
+			cursor.Release()
 			return err
 		}
-		if err := r.conn.dispatchEventOwned(event, cursor.release); err != nil {
+		if err := r.conn.dispatchEventOwned(event, cursor.Release); err != nil {
 			return err
 		}
 	}

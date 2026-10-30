@@ -1,6 +1,8 @@
 package gocql
 
 import (
+	cqltype "github.com/scylladb/gocql/v2/internal/cqltype"
+
 	"context"
 	"errors"
 	"sync/atomic"
@@ -151,7 +153,7 @@ func resolveOptions(s *Session, options Options) (resolvedOptions, error) {
 		}
 		keys[entry.Key] = true
 		if entry.Value.Valid {
-			if err := entry.Value.Value.checkAlive(); err != nil {
+			if err := cqltype.CheckBytesAlive(entry.Value.Value); err != nil {
 				return resolvedOptions{}, err
 			}
 		}
@@ -160,15 +162,6 @@ func resolveOptions(s *Session, options Options) (resolvedOptions, error) {
 	return resolvedOptions{profile: p, options: options}, nil
 }
 
-type RoutingInfo struct {
-	Keyspace, Table string
-	Token           Option[int64]
-	Kind            StatementKind
-	Conditional     bool
-	Consistency     Consistency
-	HostID          Option[UUID]
-	ShardID         Option[uint32]
-}
 type Target struct {
 	StrictShard bool
 	HostID      UUID

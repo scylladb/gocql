@@ -1,6 +1,8 @@
 package gocql
 
 import (
+	cqltype "github.com/scylladb/gocql/v2/internal/cqltype"
+
 	"bytes"
 	"context"
 	"crypto/ecdsa"
@@ -115,27 +117,27 @@ func TestTypedRequestMatchesLegacyWireAndKeepsPayload(t *testing.T) {
 	for _, proto := range []byte{3, 4, 5} {
 		c := &Conn{version: proto}
 		c.initFramerCache()
-		request := &attemptRequest{statement: "INSERT INTO ks.tbl (value) VALUES (?)", values: values, valueCount: 1, consistency: Quorum, serialConsistency: LocalSerial, pageSize: 83, pagingState: []byte{1, 2, 3}, timestamp: 78321, defaultTimestamp: true, trace: true}
+		request := &attemptRequest{Statement: "INSERT INTO ks.tbl (value) VALUES (?)", Values: values, ValueCount: 1, Consistency: Quorum, SerialConsistency: LocalSerial, PageSize: 83, PagingState: []byte{1, 2, 3}, Timestamp: 78321, DefaultTimestamp: true, Trace: true}
 		if proto == 5 {
-			request.keyspace = "ks"
+			request.Keyspace = "ks"
 			now := int32(321)
-			request.nowInSeconds = &now
+			request.NowInSeconds = &now
 		}
 		got, err := c.buildTypedRequest(request, 7)
 		if err != nil {
 			t.Fatal(err)
 		}
 		f := c.getWriteFramer()
-		f.trace()
-		params := fixtureQueryParams{values: []fixtureQueryValue{{value: payload}}, consistency: Quorum, serialConsistency: LocalSerial, pageSize: 83, pagingState: request.pagingState, defaultTimestamp: true, defaultTimestampValue: 78321, keyspace: request.keyspace}
-		if request.nowInSeconds != nil {
-			now := int(*request.nowInSeconds)
+		f.Trace()
+		params := fixtureQueryParams{values: []fixtureQueryValue{{value: payload}}, consistency: Quorum, serialConsistency: LocalSerial, pageSize: 83, pagingState: request.PagingState, defaultTimestamp: true, defaultTimestampValue: 78321, keyspace: request.Keyspace}
+		if request.NowInSeconds != nil {
+			now := int(*request.NowInSeconds)
 			params.nowInSeconds = &now
 		}
-		if err := f.fixtureQueryFrame(7, request.statement, &params, nil); err != nil {
+		if err := fixtureWriteQuery(f, 7, request.Statement, &params, nil); err != nil {
 			t.Fatal(err)
 		}
-		expected := append([]byte(nil), f.buf...)
+		expected := append([]byte(nil), f.Buf...)
 		if proto == 5 {
 			var decoded []byte
 			r := bytes.NewReader(typedTestBytes(t, got))
@@ -183,51 +185,6 @@ func TestTypedRequestMatchesLegacyWireAndKeepsPayload(t *testing.T) {
 			t.Fatalf("only %d/%d original bytes retained", retained, len(payload))
 		}
 		c.releaseWriteFramer(f)
-	}
-}
-
-func TestTypedMetadataAtEverySpanSplit(t *testing.T) {
-	value := []byte("fragmented row bytes")
-	body := typedTestRowsBody(value)
-	for split := 0; split <= len(body); split++ {
-		chain := typedTestChain(t, body[:split], body[split:])
-		owner := wire.NewLease(chain, nil)
-		c := &Conn{version: 5}
-		page, err := c.parseTypedResponse(frm.FrameHeader{Version: 0x85, Op: frm.OpResult}, chain, owner)
-		if err != nil {
-			t.Fatalf("split %d: %v", split, err)
-		}
-		if page.rowCount != 1 || page.columns.Len() != 1 {
-			t.Fatalf("split %d: wrong metadata", split)
-		}
-		cursor := wire.NewCursor(page.rows)
-		n, _ := cursor.Uint32()
-		cell, err := cursor.Take(int64(n))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !bytes.Equal(typedTestBytes(t, cell), value) {
-			t.Fatal("row changed")
-		}
-		offset := len(body) - len(value)
-		_ = cell.Each(func(s wire.Span) error {
-			b := s.Bytes()
-			if &b[0] != &body[offset] {
-				t.Fatal("parser copied a cell")
-			}
-			offset += len(b)
-			return nil
-		})
-		owner.Release()
-	}
-	for n := 0; n < len(body)-len(value); n++ {
-		chain := typedTestChain(t, body[:n])
-		owner := wire.NewLease(chain, nil)
-		_, err := (&Conn{version: 5}).parseTypedResponse(frm.FrameHeader{Version: 0x85, Op: frm.OpResult}, chain, owner)
-		owner.Release()
-		if err == nil {
-			t.Fatalf("accepted truncated metadata at %d", n)
-		}
 	}
 }
 
@@ -289,13 +246,13 @@ func TestTypedReceiveLargeFragmentedRows(t *testing.T) {
 							offset += n
 						}
 					}()
-					page, err := c.executeTyped(context.Background(), &attemptRequest{statement: "SELECT value FROM ks.tbl", consistency: One, timeout: 5 * time.Second})
+					page, err := c.executeTyped(context.Background(), &attemptRequest{Statement: "SELECT value FROM ks.tbl", Consistency: One, Timeout: 5 * time.Second})
 					if err != nil {
 						t.Fatal(err)
 					}
 					<-peerDone
 					c.Close() // Delivered owners survive connection shutdown.
-					cursor := wire.NewCursor(page.rows)
+					cursor := wire.NewCursor(page.Rows)
 					n, err := cursor.Uint32()
 					if err != nil {
 						t.Fatal(err)
@@ -314,7 +271,7 @@ func TestTypedReceiveLargeFragmentedRows(t *testing.T) {
 							t.Fatal("split row was reassembled")
 						}
 					}
-					page.owner.Release()
+					page.Owner.Release()
 				})
 			}
 		}
@@ -361,7 +318,7 @@ func TestTypedCancelKeepsStreamUntilOrphanArrives(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	out := make(chan error, 1)
 	go func() {
-		_, err := c.executeTyped(ctx, &attemptRequest{statement: "SELECT value FROM ks.tbl", consistency: One})
+		_, err := c.executeTyped(ctx, &attemptRequest{Statement: "SELECT value FROM ks.tbl", Consistency: One})
 		out <- err
 	}()
 	stream := typedTestReadRequest(t, c, server)
@@ -395,7 +352,7 @@ func TestTypedSharedSegmentPagesHaveIndependentOwnership(t *testing.T) {
 	out := make(chan result, 2)
 	for i := 0; i < 2; i++ {
 		go func() {
-			page, err := c.executeTyped(context.Background(), &attemptRequest{statement: "SELECT value FROM ks.tbl", consistency: One, timeout: time.Second})
+			page, err := c.executeTyped(context.Background(), &attemptRequest{Statement: "SELECT value FROM ks.tbl", Consistency: One, Timeout: time.Second})
 			out <- result{page, err}
 		}()
 	}
@@ -419,18 +376,18 @@ func TestTypedSharedSegmentPagesHaveIndependentOwnership(t *testing.T) {
 	if x.err != nil || y.err != nil {
 		t.Fatalf("errors %v %v", x.err, y.err)
 	}
-	if x.page.owner != y.page.owner {
+	if x.page.Owner != y.page.Owner {
 		t.Fatal("self-contained frames did not share segment lease")
 	}
-	x.page.owner.Release()
-	if !y.page.owner.Alive() {
+	x.page.Owner.Release()
+	if !y.page.Owner.Alive() {
 		t.Fatal("releasing first page invalidated second")
 	}
-	if len(typedTestBytes(t, y.page.rows)) == 0 {
+	if len(typedTestBytes(t, y.page.Rows)) == 0 {
 		t.Fatal("second page lost bytes")
 	}
-	y.page.owner.Release()
-	if y.page.owner.Alive() {
+	y.page.Owner.Release()
+	if y.page.Owner.Alive() {
 		t.Fatal("receive loop retained completed segment")
 	}
 }
@@ -503,7 +460,7 @@ func TestTypedFatalCloseInterruptsBlockedWriter(t *testing.T) {
 	released := make(chan struct{})
 	owner := wire.NewLease(values, func() { close(released) })
 	go func() {
-		_, err := c.executeTyped(context.Background(), &attemptRequest{statement: "INSERT INTO ks.tbl (value) VALUES (?)", values: values, valueCount: 1, lease: owner, consistency: One})
+		_, err := c.executeTyped(context.Background(), &attemptRequest{Statement: "INSERT INTO ks.tbl (value) VALUES (?)", Values: values, ValueCount: 1, Lease: owner, Consistency: One})
 		out <- err
 	}()
 	deadline := time.Now().Add(time.Second)
@@ -559,19 +516,19 @@ func TestTypedServerErrorKeepsMetadataAndUnwraps(t *testing.T) {
 			t.Error(err)
 		}
 	}()
-	page, err := c.executeTyped(context.Background(), &attemptRequest{statement: "SELECT value FROM ks.tbl", consistency: One, timeout: time.Second})
+	page, err := c.executeTyped(context.Background(), &attemptRequest{Statement: "SELECT value FROM ks.tbl", Consistency: One, Timeout: time.Second})
 	var unprepared *RequestErrUnprepared
 	if !errors.As(err, &unprepared) || !bytes.Equal(unprepared.StatementId, []byte{1, 2}) {
 		t.Fatalf("wrong error %v", err)
 	}
-	if page == nil || len(page.warnings) != 1 || len(page.traceID) != 16 || len(page.payload) != 1 {
+	if page == nil || len(page.Warnings) != 1 || len(page.TraceID) != 16 || len(page.Payload) != 1 {
 		t.Fatal("error metadata lost")
 	}
-	if got := string(page.payload[0].Value.Value.OwnedBytes()); got != "val" {
+	if got := string(page.Payload[0].Value.Value.OwnedBytes()); got != "val" {
 		t.Fatalf("wrong payload %q", got)
 	}
-	page.owner.Release()
-	if _, err := page.payload[0].Value.Value.At(0); !errors.Is(err, ErrReleased) {
+	page.Owner.Release()
+	if _, err := page.Payload[0].Value.Value.At(0); !errors.Is(err, ErrReleased) {
 		t.Fatal("error payload owner did not expire")
 	}
 }
@@ -589,7 +546,7 @@ func TestTypedCompressedRequestsIndependentDecode(t *testing.T) {
 	for _, compressor := range []Compressor{lz4.LZ4Compressor{}, SnappyCompressor{}} {
 		c := &Conn{version: 4, compressor: compressor}
 		c.initFramerCache()
-		request := &attemptRequest{statement: "INSERT INTO tbl (v) VALUES (?)", values: values, valueCount: 1, consistency: One}
+		request := &attemptRequest{Statement: "INSERT INTO tbl (v) VALUES (?)", Values: values, ValueCount: 1, Consistency: One}
 		packet, err := c.buildTypedRequest(request, 8)
 		if err != nil {
 			t.Fatal(err)
@@ -614,44 +571,6 @@ func TestTypedCompressedRequestsIndependentDecode(t *testing.T) {
 		if !bytes.Equal(decoded, typedTestBytes(t, oracle)[9:]) {
 			t.Fatal("independent decompressor observed wrong request bytes")
 		}
-	}
-}
-
-func TestTypedMetadataIDsAndPagingOrder(t *testing.T) {
-	e := newTypedEnvelope()
-	e.u32(frm.ResultKindRows)
-	e.u32(uint32(frm.FlagGlobalTableSpec | frm.FlagHasMorePages | frm.FlagMetaDataChanged))
-	e.u32(1)
-	e.bytes([]byte("page-state"), false)
-	e.bytes([]byte("new-metadata-id"), true)
-	e.str("ks", false)
-	e.str("tbl", false)
-	e.str("v", false)
-	e.u16(uint16(TypeInt))
-	e.u32(1)
-	e.u32(4)
-	e.u32(19)
-	body, err := e.freeze()
-	if err != nil {
-		t.Fatal(err)
-	}
-	bytesBody := typedTestBytes(t, body)
-	var parts [][]byte
-	for i := range bytesBody {
-		parts = append(parts, bytesBody[i:i+1])
-	}
-	body = typedTestChain(t, parts...)
-	owner := wire.NewLease(body, nil)
-	defer owner.Release()
-	page, err := (&Conn{version: 5}).parseTypedResponse(frm.FrameHeader{Version: 0x85, Op: frm.OpResult}, body, owner)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(page.pagingState) != "page-state" || string(page.metadataID) != "new-metadata-id" {
-		t.Fatal("paging state and metadata ID were swapped")
-	}
-	if page.columnCount != 1 || page.noMetadata {
-		t.Fatal("wrong metadata flags")
 	}
 }
 
@@ -713,36 +632,36 @@ func TestTypedExecutePrepareBatchWireOracle(t *testing.T) {
 			t.Run(string(rune('0'+proto))+kind, func(t *testing.T) {
 				c := &Conn{version: proto}
 				c.initFramerCache()
-				r := &attemptRequest{statement: "INSERT INTO ks.tbl (v) VALUES (?)", consistency: Quorum, serialConsistency: LocalSerial, timestamp: 123456, defaultTimestamp: true}
+				r := &attemptRequest{Statement: "INSERT INTO ks.tbl (v) VALUES (?)", Consistency: Quorum, SerialConsistency: LocalSerial, Timestamp: 123456, DefaultTimestamp: true}
 				if proto >= 5 {
-					r.keyspace = "ks"
+					r.Keyspace = "ks"
 					now := int32(123)
-					r.nowInSeconds = &now
+					r.NowInSeconds = &now
 				}
 				f := c.getWriteFramer()
 				defer c.releaseWriteFramer(f)
-				params := fixtureQueryParams{consistency: Quorum, serialConsistency: LocalSerial, defaultTimestamp: true, defaultTimestampValue: 123456, keyspace: r.keyspace}
-				if r.nowInSeconds != nil {
-					now := int(*r.nowInSeconds)
+				params := fixtureQueryParams{consistency: Quorum, serialConsistency: LocalSerial, defaultTimestamp: true, defaultTimestampValue: 123456, keyspace: r.Keyspace}
+				if r.NowInSeconds != nil {
+					now := int(*r.NowInSeconds)
 					params.nowInSeconds = &now
 				}
 				var err error
 				switch kind {
 				case "prepare":
-					r.prepare = true
-					r.nowInSeconds = nil
-					err = (&writePrepareFrame{statement: r.statement, keyspace: r.keyspace}).buildFrame(f, 23)
+					r.Prepare = true
+					r.NowInSeconds = nil
+					err = (&writePrepareFrame{Statement: r.Statement, Keyspace: r.Keyspace}).BuildFrame(f, 23)
 				case "execute":
-					r.preparedID = []byte{1, 2, 3}
-					r.resultMetadataID = []byte{4, 5, 6}
-					r.values = values
-					r.valueCount = 1
+					r.PreparedID = []byte{1, 2, 3}
+					r.ResultMetadataID = []byte{4, 5, 6}
+					r.Values = values
+					r.ValueCount = 1
 					params.values = []fixtureQueryValue{{value: payload}}
 					empty := map[string][]byte(nil)
-					err = f.fixtureExecuteFrame(23, r.preparedID, r.resultMetadataID, &params, &empty)
+					err = fixtureWriteExecute(f, 23, r.PreparedID, r.ResultMetadataID, &params, &empty)
 				case "batch":
-					r.batch = &typedBatchRequest{kind: LoggedBatch, items: []typedBatchItem{{statement: r.statement, values: values, valueCount: 1}, {preparedID: []byte{1, 2}, values: values, valueCount: 1}}}
-					err = (&fixtureBatchFrame{typ: LoggedBatch, statements: []fixtureBatchStatement{{statement: r.statement, values: []fixtureQueryValue{{value: payload}}}, {preparedID: []byte{1, 2}, values: []fixtureQueryValue{{value: payload}}}}, consistency: Quorum, serialConsistency: LocalSerial, defaultTimestamp: true, defaultTimestampValue: 123456, keyspace: r.keyspace, nowInSeconds: params.nowInSeconds}).buildFrame(f, 23)
+					r.Batch = &typedBatchRequest{Kind: LoggedBatch, Items: []typedBatchItem{{Statement: r.Statement, Values: values, ValueCount: 1}, {PreparedID: []byte{1, 2}, Values: values, ValueCount: 1}}}
+					err = (&fixtureBatchFrame{typ: LoggedBatch, statements: []fixtureBatchStatement{{statement: r.Statement, values: []fixtureQueryValue{{value: payload}}}, {preparedID: []byte{1, 2}, values: []fixtureQueryValue{{value: payload}}}}, consistency: Quorum, serialConsistency: LocalSerial, defaultTimestamp: true, defaultTimestampValue: 123456, keyspace: r.Keyspace, nowInSeconds: params.nowInSeconds}).BuildFrame(f, 23)
 				}
 				if err != nil {
 					t.Fatal(err)
@@ -765,8 +684,8 @@ func TestTypedExecutePrepareBatchWireOracle(t *testing.T) {
 					encoded = typedTestBytes(t, owner.Chain())
 					owner.Release()
 				}
-				if !bytes.Equal(encoded, f.buf) {
-					t.Fatalf("%s differs from legacy wire oracle\ngot %x\nwant %x", kind, encoded, f.buf)
+				if !bytes.Equal(encoded, f.Buf) {
+					t.Fatalf("%s differs from legacy wire oracle\ngot %x\nwant %x", kind, encoded, f.Buf)
 				}
 			})
 		}
@@ -775,19 +694,19 @@ func TestTypedExecutePrepareBatchWireOracle(t *testing.T) {
 
 func TestTypedTabletHintAcrossEveryByte(t *testing.T) {
 	e := newTypedEnvelope()
-	e.u32(8)
-	e.u64(11)
-	e.u32(8)
-	e.u64(22)
-	e.u32(36)
-	e.u32(1)
-	e.u32(28)
-	e.u32(16)
-	e.u64(2)
-	e.u64(3)
-	e.u32(4)
-	e.u32(5)
-	chain, err := e.freeze()
+	e.U32(8)
+	e.U64(11)
+	e.U32(8)
+	e.U64(22)
+	e.U32(36)
+	e.U32(1)
+	e.U32(28)
+	e.U32(16)
+	e.U64(2)
+	e.U64(3)
+	e.U32(4)
+	e.U32(5)
+	chain, err := e.Freeze()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -795,7 +714,7 @@ func TestTypedTabletHintAcrossEveryByte(t *testing.T) {
 	for split := 0; split <= len(body); split++ {
 		chain := typedTestChain(t, body[:split], body[split:])
 		owner := wire.NewLease(chain, nil)
-		_, err := parseTypedTabletHint(Bytes{chain: chain, lease: owner}, "ks", "tbl")
+		_, err := parseTypedTabletHint(cqltype.BytesView(chain, owner), "ks", "tbl")
 		owner.Release()
 		if err != nil {
 			t.Fatalf("split %d: %v", split, err)
@@ -870,70 +789,26 @@ func TestTypedTLSReceivesOriginalPlaintextSpans(t *testing.T) {
 	}
 }
 
-func TestTypedEmptyContinuationIsPresent(t *testing.T) {
-	c := &Conn{version: 4}
-	c.initFramerCache()
-	frame, err := c.buildTypedRequest(&attemptRequest{statement: "q", consistency: One, pagingState: []byte{}}, 2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	packet := typedTestBytes(t, frame)
-	if packet[16]&byte(frm.FlagWithPagingState) == 0 || len(packet) != 21 {
-		t.Fatalf("empty continuation omitted: %x", packet)
-	}
-	e := newTypedEnvelope()
-	e.u32(frm.ResultKindRows)
-	e.u32(uint32(frm.FlagHasMorePages))
-	e.u32(0)
-	e.u32(0)
-	e.u32(0)
-	body, _ := e.freeze()
-	owner := wire.NewLease(body, nil)
-	defer owner.Release()
-	page, err := c.parseTypedResponse(frm.FrameHeader{Version: 0x84, Op: frm.OpResult}, body, owner)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if page.pagingState == nil || len(page.pagingState) != 0 {
-		t.Fatal("present empty continuation collapsed into completion")
-	}
-}
-
-func TestTypedRejectsChangedMetadataWithoutColumns(t *testing.T) {
-	e := newTypedEnvelope()
-	e.u32(frm.ResultKindRows)
-	e.u32(uint32(frm.FlagNoMetaData | frm.FlagMetaDataChanged))
-	e.u32(1)
-	e.bytes(nil, true)
-	e.u32(0)
-	body, _ := e.freeze()
-	owner := wire.NewLease(body, nil)
-	defer owner.Release()
-	if _, err := (&Conn{version: 5}).parseTypedResponse(frm.FrameHeader{Version: 0x85, Op: frm.OpResult}, body, owner); err == nil {
-		t.Fatal("accepted changed metadata without column specifications")
-	}
-}
-
 func TestTypedProtocolLimits(t *testing.T) {
 	t.Run("request", func(t *testing.T) {
 		c := &Conn{version: 4, cfg: &ConnConfig{TypedLimits: ProtocolLimits{MaxFrameBytes: 8}}}
-		if _, err := c.buildTypedRequest(&attemptRequest{statement: "SELECT value FROM table", consistency: One}, 1); !errors.Is(err, ErrFrameTooBig) {
+		if _, err := c.buildTypedRequest(&attemptRequest{Statement: "SELECT value FROM table", Consistency: One}, 1); !errors.Is(err, ErrFrameTooBig) {
 			t.Fatalf("got %v", err)
 		}
 	})
 	t.Run("metadata depth", func(t *testing.T) {
 		e := newTypedEnvelope()
-		e.u32(frm.ResultKindRows)
-		e.u32(uint32(frm.FlagGlobalTableSpec))
-		e.u32(1)
-		e.str("ks", false)
-		e.str("tbl", false)
-		e.str("v", false)
-		e.u16(uint16(TypeList))
-		e.u16(uint16(TypeList))
-		e.u16(uint16(TypeInt))
-		e.u32(0)
-		body, _ := e.freeze()
+		e.U32(frm.ResultKindRows)
+		e.U32(uint32(frm.FlagGlobalTableSpec))
+		e.U32(1)
+		e.Str("ks", false)
+		e.Str("tbl", false)
+		e.Str("v", false)
+		e.U16(uint16(TypeList))
+		e.U16(uint16(TypeList))
+		e.U16(uint16(TypeInt))
+		e.U32(0)
+		body, _ := e.Freeze()
 		owner := wire.NewLease(body, nil)
 		defer owner.Release()
 		c := &Conn{version: 4, cfg: &ConnConfig{TypedLimits: ProtocolLimits{MaxMetadataDepth: 1}}}
@@ -955,9 +830,9 @@ func TestTypedProtocolLimits(t *testing.T) {
 			response[1] = frm.FlagCompress
 			server.Write(response)
 		}()
-		page, err := c.executeTyped(context.Background(), &attemptRequest{statement: "q", consistency: One, timeout: time.Second})
+		page, err := c.executeTyped(context.Background(), &attemptRequest{Statement: "q", Consistency: One, Timeout: time.Second})
 		if page != nil {
-			page.owner.Release()
+			page.Owner.Release()
 		}
 		if !errors.Is(err, ErrFrameTooBig) {
 			t.Fatalf("got %v", err)

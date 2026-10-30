@@ -6,9 +6,6 @@ import (
 	"fmt"
 )
 
-// BatchKind selects native protocol batch semantics.
-type BatchKind byte
-
 // BatchItem retains an immutable binding descriptor without admitting execution.
 type BatchItem struct{ request *executionRequest }
 type batchState struct {
@@ -48,7 +45,7 @@ func RunBatch[R any](ctx context.Context, s *Session, kind BatchKind, items []Ba
 		if item.request == nil {
 			return nil, typeValidation("batch item", "nil descriptor")
 		}
-		if len(item.request.values.cells) > 65535 {
+		if len(item.request.values.Cells) > 65535 {
 			return nil, typeValidation("batch values", "maximum count is 65535")
 		}
 		state.items[i] = *item.request
@@ -104,24 +101,24 @@ func ExecBatch(ctx context.Context, s *Session, kind BatchKind, items []BatchIte
 	return page.Info(), page.Err()
 }
 func (s *Session) prepareBatchAttempt(ctx context.Context, conn *Conn, batch *batchState) (*typedBatchRequest, error) {
-	request := &typedBatchRequest{kind: batch.kind, items: make([]typedBatchItem, len(batch.items))}
+	request := &typedBatchRequest{Kind: batch.kind, Items: make([]typedBatchItem, len(batch.items))}
 	for i, item := range batch.items {
-		entry := typedBatchItem{statement: item.statement, values: item.values.framed, valueCount: len(item.values.cells)}
+		entry := typedBatchItem{Statement: item.statement, Values: item.values.Framed, ValueCount: len(item.values.Cells)}
 		if item.prepared != nil {
 			prepared, err := s.prepareOnConn(ctx, conn, item.prepared, item.values, false)
 			if err != nil {
 				return nil, err
 			}
-			entry.preparedID = prepared.id
+			entry.PreparedID = prepared.id
 		}
 		if conn.version < 4 {
-			for _, cell := range item.values.cells {
-				if cell.state == Unset {
+			for _, cell := range item.values.Cells {
+				if cell.State == Unset {
 					return nil, typeValidation("unset", "requires protocol v4")
 				}
 			}
 		}
-		request.items[i] = entry
+		request.Items[i] = entry
 	}
 	return request, nil
 }

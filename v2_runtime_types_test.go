@@ -59,22 +59,3 @@ func TestV2RuntimeCloseAdmissionRace(t *testing.T) {
 		}
 	}
 }
-func TestV2RuntimePageStates(t *testing.T) {
-	start := StartPage()
-	empty := RestorePageState(nil)
-	complete := completePageState()
-	if start.More() || start.Complete() || !empty.More() || empty.Complete() || !complete.Complete() {
-		t.Fatal("page state distinctions lost")
-	}
-	if empty.Bytes() == nil {
-		t.Fatal("empty continuation became absent")
-	}
-	token := []byte{1}
-	state := RestorePageState(token)
-	token[0] = 2
-	copy := state.Bytes()
-	copy[0] = 3
-	if state.Bytes()[0] != 1 {
-		t.Fatal("state token aliased")
-	}
-}

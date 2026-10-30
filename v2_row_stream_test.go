@@ -484,7 +484,7 @@ func TestStep07StreamPreparedMetadataFencesAndPlanIsolation(t *testing.T) {
 			s.cfg.Keyspace = "ks"
 			columns := NewColumns(ColumnSpec{Keyspace: "ks", Table: "tbl", Name: "value", Type: codecTestMust(ScalarType(TypeBlob))})
 			state, _ := step03PreparedState(t, s, columns)
-			bound := &Bound[Bytes]{request: executionRequest{statement: state.statement, prepared: state, values: encodedValues{columns: NewColumns()}, owner: newInputOwner(), routing: RoutingInfo{Kind: OrdinaryStatement}}, rows: OneColumn(BlobCodec)}
+			bound := &Bound[Bytes]{request: executionRequest{statement: state.statement, prepared: state, values: encodedValues{Columns: NewColumns()}, owner: newInputOwner(), routing: RoutingInfo{Kind: OrdinaryStatement}}, rows: OneColumn(BlobCodec)}
 			decoder := &step07CountStreamDecoder{}
 			done := make(chan struct{})
 			go func() {
@@ -851,7 +851,7 @@ func TestStep07LatestAttemptMetadataRemainsBudgetedDuringRetry(t *testing.T) {
 		t.Fatal(cursor.Err())
 	}
 	cursor.Close()
-	if budget := c.streamBudget.bytes(); budget != 0 {
+	if budget := c.streamBudget.Bytes(); budget != 0 {
 		t.Fatal("metadata owner leaked", budget)
 	}
 	<-done

@@ -1,6 +1,9 @@
 package gocql
 
 import (
+	cqltype "github.com/scylladb/gocql/v2/internal/cqltype"
+	model "github.com/scylladb/gocql/v2/internal/model"
+
 	"bytes"
 	"context"
 	"errors"
@@ -162,9 +165,9 @@ func (s *Session) prepareTyped(ctx context.Context, statement, keyspace string, 
 		}
 		wireKeyspace = ""
 	}
-	page, err := conn.executeTyped(ctx, &attemptRequest{statement: statement, keyspace: wireKeyspace, prepare: true, trace: options.Trace})
+	page, err := conn.executeTyped(ctx, &attemptRequest{Statement: statement, Keyspace: wireKeyspace, Prepare: true, Trace: options.Trace})
 	if page != nil {
-		defer page.owner.Release()
+		defer page.Owner.Release()
 	}
 	if err != nil {
 		return nil, err
@@ -177,10 +180,10 @@ func (s *Session) prepareTyped(ctx context.Context, statement, keyspace string, 
 		return nil, err
 	}
 	info.Generation = generation
-	dependencies := tracker.dependencies(info.Keyspace, page.bindColumns, page.columns)
+	dependencies := tracker.dependencies(info.Keyspace, page.BindColumns, page.Columns)
 	epoch := dependencies.since(started)
-	result := &typedResultMetadata{columns: page.columns, epoch: epoch, tracker: dependencies.tracker}
-	state = &preparedState{session: s, protocol: conn.version, statement: statement, keyspace: keyspace, parameters: page.bindColumns, columns: page.columns, info: info, dependencies: dependencies, initialEpoch: epoch, result: result, resultHost: conn.host.hostUUID(), partitioner: s.preparedPartitionerName(info.Keyspace, info.Table), hosts: map[UUID]*hostPrepared{conn.host.hostUUID(): {id: page.preparedID, metadataID: page.metadataID, columns: page.columns, generation: generation, revision: 1, epoch: epoch, result: result}}}
+	result := &typedResultMetadata{columns: page.Columns, epoch: epoch, tracker: dependencies.tracker}
+	state = &preparedState{session: s, protocol: conn.version, statement: statement, keyspace: keyspace, parameters: page.BindColumns, columns: page.Columns, info: info, dependencies: dependencies, initialEpoch: epoch, result: result, resultHost: conn.host.hostUUID(), partitioner: s.preparedPartitionerName(info.Keyspace, info.Table), hosts: map[UUID]*hostPrepared{conn.host.hostUUID(): {id: page.PreparedID, metadataID: page.MetadataID, columns: page.Columns, generation: generation, revision: 1, epoch: epoch, result: result}}}
 
 	tracker.mu.RLock()
 	defer tracker.mu.RUnlock()
@@ -246,7 +249,7 @@ func (s *Session) prepareOnConnExpected(ctx context.Context, conn *Conn, state *
 			return nil, ErrClosed
 		}
 		state.preparing[id] = flight
-		parameters := values.columns
+		parameters := values.Columns
 		go func() {
 			defer rt.prepareWorkers.Done()
 			timeout := s.typedRuntime().config.Metadata.RequestTimeout
@@ -285,9 +288,9 @@ func (s *Session) prepareHost(ctx context.Context, conn *Conn, state *preparedSt
 	if conn.version < 5 {
 		wireKeyspace = ""
 	}
-	page, err := conn.executeTyped(ctx, &attemptRequest{statement: state.statement, keyspace: wireKeyspace, prepare: true})
+	page, err := conn.executeTyped(ctx, &attemptRequest{Statement: state.statement, Keyspace: wireKeyspace, Prepare: true})
 	if page != nil {
-		defer page.owner.Release()
+		defer page.Owner.Release()
 	}
 	if err != nil {
 		return nil, err
@@ -295,32 +298,32 @@ func (s *Session) prepareHost(ctx context.Context, conn *Conn, state *preparedSt
 	if page == nil {
 		return nil, &ProtocolError{Stage: "prepare", Err: fmt.Errorf("missing response")}
 	}
-	if !state.parameters.Equal(page.bindColumns) || !parameters.Equal(page.bindColumns) {
-		return nil, &SchemaChangedError{Statement: state.statement, Previous: parameters, Current: page.bindColumns}
+	if !state.parameters.Equal(page.BindColumns) || !parameters.Equal(page.BindColumns) {
+		return nil, &SchemaChangedError{Statement: state.statement, Previous: parameters, Current: page.BindColumns}
 	}
 	info, err := s.hostPreparedInfo(conn, page, state)
 	if err != nil {
 		return nil, err
 	}
 	if !slices.Equal(info.PartitionKeyIndexes, state.info.PartitionKeyIndexes) || info.Keyspace != state.info.Keyspace || info.Table != state.info.Table || info.Kind != state.info.Kind || info.Conditional != state.info.Conditional || len(state.info.PartitionKeyIndexes) > 0 && s.preparedPartitionerName(info.Keyspace, info.Table) != state.partitioner {
-		return nil, &SchemaChangedError{Statement: state.statement, Previous: state.parameters, Current: page.bindColumns}
+		return nil, &SchemaChangedError{Statement: state.statement, Previous: state.parameters, Current: page.BindColumns}
 	}
 	revision := uint64(1)
 	if flight.previous != nil {
 		revision = flight.previous.revision + 1
 	}
-	state.dependencies.extend(state.info.Keyspace, state.parameters, page.columns)
+	state.dependencies.extend(state.info.Keyspace, state.parameters, page.Columns)
 	epoch := state.dependencies.since(flight.started)
-	result := &typedResultMetadata{columns: page.columns, epoch: epoch, tracker: state.dependencies.tracker}
+	result := &typedResultMetadata{columns: page.Columns, epoch: epoch, tracker: state.dependencies.tracker}
 	state.mu.RLock()
-	if state.result != nil && state.result.columns.Equal(page.columns) {
+	if state.result != nil && state.result.columns.Equal(page.Columns) {
 		result.columns = state.result.columns
 		if state.result.epoch.equal(epoch) {
 			result = state.result
 		}
 	}
 	state.mu.RUnlock()
-	candidate := &hostPrepared{id: page.preparedID, metadataID: page.metadataID, columns: result.columns, generation: s.typedGeneration(), revision: revision, epoch: epoch, result: result}
+	candidate := &hostPrepared{id: page.PreparedID, metadataID: page.MetadataID, columns: result.columns, generation: s.typedGeneration(), revision: revision, epoch: epoch, result: result}
 
 	// Exact-entry/epoch CAS. A losing response keeps its own immutable candidate;
 	// it is never republished against a newly loaded host revision.
@@ -341,14 +344,14 @@ func (s *Session) prepareHost(ctx context.Context, conn *Conn, state *preparedSt
 	return candidate, nil
 }
 func (s *Session) hostPreparedInfo(conn *Conn, page *responsePage, state *preparedState) (PreparedInfo, error) {
-	info := PreparedInfo{Keyspace: state.keyspace, PartitionKeyIndexes: page.pkIndexes, Conditional: page.lwt}
+	info := PreparedInfo{Keyspace: state.keyspace, PartitionKeyIndexes: page.PkIndexes, Conditional: page.Lwt}
 	if conn.framers.defaults.flagLWT != 0 {
 		info.Kind = OrdinaryStatement
 	}
-	if page.lwt {
+	if page.Lwt {
 		info.Kind = ConditionalStatement
 	}
-	for _, columns := range []Columns{page.bindColumns, page.columns} {
+	for _, columns := range []Columns{page.BindColumns, page.Columns} {
 		if col, ok := columns.At(0); ok && info.Table == "" {
 			if col.Keyspace != "" {
 				info.Keyspace = col.Keyspace
@@ -361,7 +364,7 @@ func (s *Session) hostPreparedInfo(conn *Conn, page *responsePage, state *prepar
 			if table := ks.Tables[info.Table]; table != nil {
 				for _, key := range table.PartitionKey {
 					index := -1
-					for i, c := range page.bindColumns.columns {
+					for i, c := range cqltype.ColumnSlice(page.BindColumns) {
 						if c.Name == key.Name && c.Table == info.Table && c.Keyspace == info.Keyspace {
 							index = i
 							break
@@ -377,7 +380,7 @@ func (s *Session) hostPreparedInfo(conn *Conn, page *responsePage, state *prepar
 		}
 	}
 	for _, index := range info.PartitionKeyIndexes {
-		if index < 0 || index >= page.bindColumns.Len() {
+		if index < 0 || index >= page.BindColumns.Len() {
 			return PreparedInfo{}, &ProtocolError{Stage: "prepare", Err: fmt.Errorf("invalid partition key index %d", index)}
 		}
 	}
@@ -396,9 +399,9 @@ type resultMetadataObservation struct {
 }
 
 func selectPreparedResponse(state *preparedState, host UUID, prepared *hostPrepared, sentID []byte, tracksID bool, response *responsePage, observed ...uint64) error {
-	v := resultMetadataObservation{columns: response.columns, columnCount: response.columnCount, kind: response.kind, noMetadata: response.noMetadata, metadataChanged: response.metadataChanged, metadataID: response.metadataID, metadata: response.metadata}
+	v := resultMetadataObservation{columns: response.Columns, columnCount: response.ColumnCount, kind: response.Kind, noMetadata: response.NoMetadata, metadataChanged: response.MetadataChanged, metadataID: response.MetadataID, metadata: response.metadata}
 	err := selectPreparedMetadata(state, host, prepared, sentID, tracksID, &v, observed...)
-	response.columns = v.columns
+	response.Columns = v.columns
 	response.metadata = v.metadata
 	return err
 }
@@ -496,7 +499,7 @@ func (l *logicalExecution) finish(result Result, err error) {
 			rt.cancelled.Add(1)
 		}
 		if l.observer != nil {
-			event := RequestEvent{ID: l.id, Statement: l.request.statement, Parameters: l.request.values.columns, Routing: l.request.routing, Result: cloneResult(result), Err: err}
+			event := RequestEvent{ID: l.id, Statement: l.request.statement, Parameters: l.request.values.Columns, Routing: l.request.routing, Result: cloneResult(result), Err: err}
 			if l.request.prepared != nil {
 				event.Parameters = l.request.prepared.parameters
 			}
@@ -606,11 +609,11 @@ func Run[R any](ctx context.Context, s *Session, b *Bound[R], options Options) (
 	page, err := newPageWithPlans(response, b.rows, plans, nil)
 	if err != nil {
 		cancel()
-		request.logical.finish(response.result, err)
+		request.logical.finish(response.Result, err)
 		request.logical.releaseInput()
 		return nil, err
 	}
-	rows := &Rows[R]{ctx: runctx, cancel: cancel, session: s, request: request, decoder: b.rows, page: page, info: response.result, plans: plans, history: pagingHistory{maxCount: s.typedRuntime().config.Limits.MaxPagingStates, maxBytes: s.typedRuntime().config.Limits.MaxPagingStateBytes}}
+	rows := &Rows[R]{ctx: runctx, cancel: cancel, session: s, request: request, decoder: b.rows, page: page, info: response.Result, plans: plans, history: pagingHistory{maxCount: s.typedRuntime().config.Limits.MaxPagingStates, maxBytes: s.typedRuntime().config.Limits.MaxPagingStateBytes}}
 	rows.startPrefetch()
 	rows.release = func() { request.logical.finish(rows.info, rows.err); request.logical.releaseInput() }
 	request.logical.installStop(func() {
@@ -655,11 +658,11 @@ func runSinglePage[R any](ctx context.Context, s *Session, b *Bound[R], state Pa
 		request.logical.releaseInput()
 		return nil, err
 	}
-	if unpaged && response.state.More() {
-		response.owner.Release()
+	if unpaged && response.State.More() {
+		response.Owner.Release()
 		err = typeValidation("unpaged response", "server returned continuation")
 		cancel()
-		request.logical.finish(response.result, err)
+		request.logical.finish(response.Result, err)
 		request.logical.releaseInput()
 		return nil, err
 	}
@@ -670,15 +673,19 @@ func runSinglePage[R any](ctx context.Context, s *Session, b *Bound[R], state Pa
 	page, err := newPageWithPlans(response, b.rows, plans, nil)
 	if err != nil {
 		cancel()
-		request.logical.finish(response.result, err)
+		request.logical.finish(response.Result, err)
 		request.logical.releaseInput()
 		return nil, err
 	}
 	page.ctx = runctx
 	page.cancel = cancel
 	page.session = s
-	page.release = func() { cancel(); request.logical.finish(response.result, page.err); request.logical.releaseInput() }
-	request.logical.installStop(func() { request.logical.finish(response.result, ErrClosed); request.logical.releaseInput() })
+	page.release = func() {
+		cancel()
+		request.logical.finish(response.Result, page.err)
+		request.logical.releaseInput()
+	}
+	request.logical.installStop(func() { request.logical.finish(response.Result, ErrClosed); request.logical.releaseInput() })
 	return page, nil
 }
 func Exec[R any](ctx context.Context, s *Session, b *Bound[R], options Options) (Result, error) {
@@ -774,7 +781,7 @@ func (s *Session) executePage(ctx context.Context, request *executionRequest, st
 			case outcomes <- typedAttemptOutcome{response: response, err: err, conn: conn, event: event, consistency: consistency}:
 			case <-ctx.Done():
 				if response != nil {
-					response.owner.Release()
+					response.Owner.Release()
 				}
 			}
 		}()
@@ -849,13 +856,13 @@ func (s *Session) executePage(ctx context.Context, request *executionRequest, st
 			aggregate.HostID = outcome.event.Target.HostID
 			aggregate.AchievedConsistency = outcome.consistency
 			if response != nil {
-				aggregate.Warnings = append(aggregate.Warnings, response.warnings...)
-				if len(response.traceID) == 16 {
+				aggregate.Warnings = append(aggregate.Warnings, response.Warnings...)
+				if len(response.TraceID) == 16 {
 					var id UUID
-					copy(id[:], response.traceID)
+					copy(id[:], response.TraceID)
 					aggregate.TraceIDs = append(aggregate.TraceIDs, id)
 				}
-				for _, entry := range response.payload {
+				for _, entry := range response.Payload {
 					if entry.Value.Valid {
 						entry.Value.Value = entry.Value.Value.Clone()
 					}
@@ -863,30 +870,30 @@ func (s *Session) executePage(ctx context.Context, request *executionRequest, st
 				}
 			}
 			if attemptErr == nil {
-				response.result = aggregate
-				response.result.Rows = int64(response.rowCount)
-				if response.pagingState != nil {
-					response.state = PageState{token: response.pagingState, kind: 1}
+				response.Result = aggregate
+				response.Result.Rows = int64(response.RowCount)
+				if response.PagingState != nil {
+					response.State = model.PageStateOwned(response.PagingState, 1)
 				} else {
-					response.state = completePageState()
+					response.State = completePageState()
 				}
 				return response, nil
 			}
 			// Automatic post-DDL work cannot cause a successful statement to replay.
-			if response != nil && response.schemaChange {
-				response.owner.Release()
+			if response != nil && response.SchemaChange {
+				response.Owner.Release()
 				return nil, &ExecutionError{Err: fmt.Errorf("gocql: DDL succeeded; automatic agreement/refresh failed: %w", attemptErr), Result: aggregate}
 			}
 			lastErr = attemptErr
 			if response != nil {
-				response.owner.Release()
+				response.Owner.Release()
 			}
 			decision := RetryDecision{}
 			if retry := request.options.profile.Retry; retry != nil {
 				decision = retry.Decide(AttemptError{Err: attemptErr, Attempt: outcome.event.Attempt, Idempotent: request.options.options.Idempotent, Consistency: outcome.consistency, Conditional: request.routing.Conditional, BytesWritten: attemptBytesWritten(attemptErr)})
 			}
 			if decision.Action == IgnoreWriteError {
-				return &responsePage{state: completePageState(), result: aggregate}, nil
+				return &responsePage{responseData: responseData{State: completePageState(), Result: aggregate}}, nil
 			}
 			if decision.Action == StopRetry {
 				if active == 0 && scheduled == 0 {
@@ -952,8 +959,8 @@ func (s *Session) executeTypedAttempt(ctx context.Context, conn *Conn, request *
 		if len(opts.CustomPayload) > 0 {
 			return nil, typeValidation("payload", "requires protocol v4")
 		}
-		for _, cell := range request.values.cells {
-			if cell.state == Unset {
+		for _, cell := range request.values.Cells {
+			if cell.State == Unset {
 				return nil, typeValidation("unset", "requires protocol v4")
 			}
 		}
@@ -961,23 +968,23 @@ func (s *Session) executeTypedAttempt(ctx context.Context, conn *Conn, request *
 	if opts.NowInSeconds.Set && conn.version < 5 {
 		return nil, typeValidation("now in seconds", "requires protocol v5")
 	}
-	wireRequest := &attemptRequest{tabletVersionBlock: request.tabletVersionBlock, statement: request.statement, values: request.values.framed, valueCount: len(request.values.cells), consistency: consistency, pageSize: int(request.options.profile.PageSize), keyspace: request.keyspace, trace: opts.Trace, payload: opts.CustomPayload}
+	wireRequest := &attemptRequest{TabletVersionBlock: request.tabletVersionBlock, Statement: request.statement, Values: request.values.Framed, ValueCount: len(request.values.Cells), Consistency: consistency, PageSize: int(request.options.profile.PageSize), Keyspace: request.keyspace, Trace: opts.Trace, Payload: opts.CustomPayload}
 	if conn.version < 5 {
-		wireRequest.keyspace = ""
+		wireRequest.Keyspace = ""
 	}
 	if state.More() {
-		wireRequest.pagingState = state.token
+		wireRequest.PagingState = model.PageToken(state)
 	}
 	if request.options.profile.SerialConsistency.Set {
-		wireRequest.serialConsistency = request.options.profile.SerialConsistency.Value
+		wireRequest.SerialConsistency = request.options.profile.SerialConsistency.Value
 	}
 	if opts.Timestamp.Set {
-		wireRequest.timestamp = opts.Timestamp.Value
-		wireRequest.defaultTimestamp = true
+		wireRequest.Timestamp = opts.Timestamp.Value
+		wireRequest.DefaultTimestamp = true
 	}
 	if opts.NowInSeconds.Set {
 		now := opts.NowInSeconds.Value
-		wireRequest.nowInSeconds = &now
+		wireRequest.NowInSeconds = &now
 	}
 	var prepared *hostPrepared
 	var err error
@@ -986,48 +993,48 @@ func (s *Session) executeTypedAttempt(ctx context.Context, conn *Conn, request *
 		if err != nil {
 			return nil, err
 		}
-		wireRequest.preparedID = prepared.id
-		wireRequest.resultMetadataID = prepared.metadataID
-		wireRequest.skipMetadata = !opts.IncludeMetadata && metadataIDTracked(conn.tracksResultMetadataID(), prepared.metadataID)
+		wireRequest.PreparedID = prepared.id
+		wireRequest.ResultMetadataID = prepared.metadataID
+		wireRequest.SkipMetadata = !opts.IncludeMetadata && metadataIDTracked(conn.tracksResultMetadataID(), prepared.metadataID)
 	}
 	if request.batch != nil {
-		wireRequest.batch, err = s.prepareBatchAttempt(ctx, conn, request.batch)
+		wireRequest.Batch, err = s.prepareBatchAttempt(ctx, conn, request.batch)
 		if err != nil {
 			return nil, err
 		}
 	}
-	lease := request.owner.writerLease(request.values.framed)
+	lease := request.owner.writerLease(request.values.Framed)
 	defer lease.Release()
-	wireRequest.lease = lease
+	wireRequest.Lease = lease
 	for repair := 0; repair < 2; repair++ {
 		observed := uint64(0)
 		if request.prepared != nil {
 			observed = request.prepared.dependencies.tracker.start()
 		}
 		response, executeErr := conn.executeTyped(ctx, wireRequest)
-		if len(wireRequest.preparedID) > 0 && wireRequest.batch == nil {
+		if len(wireRequest.PreparedID) > 0 && wireRequest.Batch == nil {
 			s.applyTypedFeedbackStamped(response, request.routing, request.tabletFeedback, conn.framers.defaults)
 		}
 		var unprepared *RequestErrUnprepared
 		if executeErr != nil && errors.As(executeErr, &unprepared) && repair == 0 {
 			if response != nil {
-				response.owner.Release()
+				response.Owner.Release()
 			}
-			if request.prepared != nil && bytes.Equal(unprepared.StatementId, wireRequest.preparedID) {
+			if request.prepared != nil && bytes.Equal(unprepared.StatementId, wireRequest.PreparedID) {
 				prepared, err = s.prepareOnConnExpected(ctx, conn, request.prepared, request.values, true, prepared)
 				if err != nil {
 					return nil, err
 				}
-				wireRequest.preparedID = prepared.id
-				wireRequest.resultMetadataID = prepared.metadataID
-				wireRequest.skipMetadata = !opts.IncludeMetadata && metadataIDTracked(conn.tracksResultMetadataID(), prepared.metadataID)
+				wireRequest.PreparedID = prepared.id
+				wireRequest.ResultMetadataID = prepared.metadataID
+				wireRequest.SkipMetadata = !opts.IncludeMetadata && metadataIDTracked(conn.tracksResultMetadataID(), prepared.metadataID)
 				continue
 			}
 			if request.batch != nil {
 				if err = s.repairBatch(ctx, conn, request.batch, unprepared.StatementId); err != nil {
 					return nil, err
 				}
-				wireRequest.batch, err = s.prepareBatchAttempt(ctx, conn, request.batch)
+				wireRequest.Batch, err = s.prepareBatchAttempt(ctx, conn, request.batch)
 				if err != nil {
 					return nil, err
 				}
@@ -1041,12 +1048,12 @@ func (s *Session) executeTypedAttempt(ctx context.Context, conn *Conn, request *
 		if response == nil {
 			return nil, &ProtocolError{Stage: "execute", Err: fmt.Errorf("missing response")}
 		}
-		if err := selectPreparedResponse(request.prepared, conn.host.hostUUID(), prepared, wireRequest.resultMetadataID, conn.tracksResultMetadataID(), response, observed); err != nil {
-			response.owner.Release()
+		if err := selectPreparedResponse(request.prepared, conn.host.hostUUID(), prepared, wireRequest.ResultMetadataID, conn.tracksResultMetadataID(), response, observed); err != nil {
+			response.Owner.Release()
 			return nil, err
 		}
 
-		if response.schemaChange {
+		if response.SchemaChange {
 			if request.logical != nil {
 				coordinator := conn.host.hostUUID()
 				request.logical.ddlCoordinator.Store(&coordinator)
@@ -1059,8 +1066,8 @@ func (s *Session) executeTypedAttempt(ctx context.Context, conn *Conn, request *
 			}
 			if config.AutomaticAgreement && config.RefreshAfterAgreement {
 				var refreshErr error
-				if response.keyspace != "" {
-					refreshErr = s.refreshV2Keyspace(ctx, response.keyspace)
+				if response.Keyspace != "" {
+					refreshErr = s.refreshV2Keyspace(ctx, response.Keyspace)
 				} else {
 					refreshErr = s.RefreshMetadata(ctx)
 				}
@@ -1182,7 +1189,7 @@ func (s *Session) applyTypedFeedbackStamped(response *responsePage, routing Rout
 	} else if !features.tabletsRoutingV1 {
 		return
 	}
-	for _, entry := range response.payload {
+	for _, entry := range response.Payload {
 		if entry.Key != key || !entry.Value.Valid {
 			continue
 		}
@@ -1202,8 +1209,8 @@ func requestHasCounter(request executionRequest) bool {
 	if request.batch != nil && request.batch.kind == CounterBatch {
 		return true
 	}
-	for _, cell := range request.values.cells {
-		if cell.typ.Kind() == TypeCounter {
+	for _, cell := range request.values.Cells {
+		if cell.Typ.Kind() == TypeCounter {
 			return true
 		}
 	}

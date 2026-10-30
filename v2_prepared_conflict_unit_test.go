@@ -43,11 +43,11 @@ func (b *step03ScopedSchemaBackend) queryV2System(ctx context.Context, r *attemp
 	if err != nil {
 		return nil, err
 	}
-	scopedDescribe := len(args) == 0 && r.statement == `DESCRIBE KEYSPACE "`+b.keyspace+`" WITH INTERNALS`
+	scopedDescribe := len(args) == 0 && r.Statement == `DESCRIBE KEYSPACE "`+b.keyspace+`" WITH INTERNALS`
 	if !scopedDescribe && (len(args) != 1 || args[0] != b.keyspace) {
-		return nil, fmt.Errorf("unrelated or unscoped required schema query: %s %v", r.statement, args)
+		return nil, fmt.Errorf("unrelated or unscoped required schema query: %s %v", r.Statement, args)
 	}
-	if strings.Contains(r.statement, "FROM system_schema.keyspaces") {
+	if strings.Contains(r.Statement, "FROM system_schema.keyspaces") {
 		b.calls.Add(1)
 		b.once.Do(func() { close(b.queried) })
 		if b.fail.CompareAndSwap(true, false) {
@@ -168,7 +168,7 @@ func TestV2PreparedConflictOverflowPropagatesAndRetries(t *testing.T) {
 	}
 	p.mu.Unlock()
 	changed := NewColumns(ColumnSpec{Keyspace: "ks", Table: "tbl", Name: "value", Type: codecTestMust(ScalarType(TypeInt))})
-	response := &responsePage{kind: 2, columns: changed, metadataID: []byte("conflict")}
+	response := &responsePage{responseData: responseData{Kind: 2, Columns: changed, MetadataID: []byte("conflict")}}
 	err := selectPreparedResponse(state, host, &other, other.metadataID, true, response)
 	var protocol *ProtocolError
 	if !errors.As(err, &protocol) || protocol.Stage != "prepared schema reconciliation" {

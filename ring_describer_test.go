@@ -4,6 +4,8 @@
 package gocql
 
 import (
+	cqltype "github.com/scylladb/gocql/v2/internal/cqltype"
+
 	"context"
 	"fmt"
 	"net"
@@ -94,121 +96,121 @@ func (*mockConnection) exec(ctx context.Context, req frameBuilder, tracer Tracer
 func (*mockConnection) awaitSchemaAgreement(ctx context.Context) error { return nil }
 
 var systemLocalResultMetadata = resultMetadata{
-	flags:          0,
-	pagingState:    []byte{},
-	actualColCount: 11,
-	columns: []ColumnInfo{{
+	Flags:          0,
+	PagingState:    []byte{},
+	ActualColCount: 11,
+	Columns: []ColumnInfo{{
 		Keyspace: "system",
 		Table:    "local",
 		Name:     "broadcast_address",
-		TypeInfo: NativeType{proto: protoVersion4, typ: TypeInet},
+		TypeInfo: cqltype.NewCustomType(protoVersion4, TypeInet, ""),
 	}, {
 		Keyspace: "system",
 		Table:    "local",
 		Name:     "cluster_name",
-		TypeInfo: NativeType{proto: protoVersion4, typ: TypeVarchar},
+		TypeInfo: cqltype.NewCustomType(protoVersion4, TypeVarchar, ""),
 	}, {
 		Keyspace: "system",
 		Table:    "local",
 		Name:     "data_center",
-		TypeInfo: NativeType{proto: protoVersion4, typ: TypeVarchar},
+		TypeInfo: cqltype.NewCustomType(protoVersion4, TypeVarchar, ""),
 	}, {
 		Keyspace: "system",
 		Table:    "local",
 		Name:     "host_id",
-		TypeInfo: NativeType{proto: protoVersion4, typ: TypeUUID},
+		TypeInfo: cqltype.NewCustomType(protoVersion4, TypeUUID, ""),
 	}, {
 		Keyspace: "system",
 		Table:    "local",
 		Name:     "listen_address",
-		TypeInfo: NativeType{proto: protoVersion4, typ: TypeInet},
+		TypeInfo: cqltype.NewCustomType(protoVersion4, TypeInet, ""),
 	}, {
 		Keyspace: "system",
 		Table:    "local",
 		Name:     "partitioner",
-		TypeInfo: NativeType{proto: protoVersion4, typ: TypeVarchar},
+		TypeInfo: cqltype.NewCustomType(protoVersion4, TypeVarchar, ""),
 	}, {
 		Keyspace: "system",
 		Table:    "local",
 		Name:     "rack",
-		TypeInfo: NativeType{proto: protoVersion4, typ: TypeVarchar},
+		TypeInfo: cqltype.NewCustomType(protoVersion4, TypeVarchar, ""),
 	}, {
 		Keyspace: "system",
 		Table:    "local",
 		Name:     "release_version",
-		TypeInfo: NativeType{proto: protoVersion4, typ: TypeVarchar},
+		TypeInfo: cqltype.NewCustomType(protoVersion4, TypeVarchar, ""),
 	}, {
 		Keyspace: "system",
 		Table:    "local",
 		Name:     "rpc_address",
-		TypeInfo: NativeType{proto: protoVersion4, typ: TypeInet},
+		TypeInfo: cqltype.NewCustomType(protoVersion4, TypeInet, ""),
 	}, {
 		Keyspace: "system",
 		Table:    "local",
 		Name:     "schema_version",
-		TypeInfo: NativeType{proto: protoVersion4, typ: TypeUUID},
+		TypeInfo: cqltype.NewCustomType(protoVersion4, TypeUUID, ""),
 	}, {
 		Keyspace: "system",
 		Table:    "local",
 		Name:     "tokens",
 		TypeInfo: CollectionType{
-			NativeType: NativeType{proto: protoVersion4, typ: TypeSet},
-			Elem:       NativeType{proto: protoVersion4, typ: TypeVarchar},
+			NativeType: cqltype.NewCustomType(protoVersion4, TypeSet, ""),
+			Elem:       cqltype.NewCustomType(protoVersion4, TypeVarchar, ""),
 		},
 	}},
 }
 
 var systemPeersResultMetadata = resultMetadata{
-	flags:          0,
-	pagingState:    []byte{},
-	actualColCount: 9,
-	columns: []ColumnInfo{{
+	Flags:          0,
+	PagingState:    []byte{},
+	ActualColCount: 9,
+	Columns: []ColumnInfo{{
 		Keyspace: "system",
 		Table:    "peers",
 		Name:     "peer",
-		TypeInfo: NativeType{proto: protoVersion4, typ: TypeInet},
+		TypeInfo: cqltype.NewCustomType(protoVersion4, TypeInet, ""),
 	}, {
 		Keyspace: "system",
 		Table:    "peers",
 		Name:     "data_center",
-		TypeInfo: NativeType{proto: protoVersion4, typ: TypeVarchar},
+		TypeInfo: cqltype.NewCustomType(protoVersion4, TypeVarchar, ""),
 	}, {
 		Keyspace: "system",
 		Table:    "peers",
 		Name:     "host_id",
-		TypeInfo: NativeType{proto: protoVersion4, typ: TypeUUID},
+		TypeInfo: cqltype.NewCustomType(protoVersion4, TypeUUID, ""),
 	}, {
 		Keyspace: "system",
 		Table:    "peers",
 		Name:     "preferred_ip",
-		TypeInfo: NativeType{proto: protoVersion4, typ: TypeInet},
+		TypeInfo: cqltype.NewCustomType(protoVersion4, TypeInet, ""),
 	}, {
 		Keyspace: "system",
 		Table:    "peers",
 		Name:     "rack",
-		TypeInfo: NativeType{proto: protoVersion4, typ: TypeVarchar},
+		TypeInfo: cqltype.NewCustomType(protoVersion4, TypeVarchar, ""),
 	}, {
 		Keyspace: "system",
 		Table:    "peers",
 		Name:     "release_version",
-		TypeInfo: NativeType{proto: protoVersion4, typ: TypeVarchar},
+		TypeInfo: cqltype.NewCustomType(protoVersion4, TypeVarchar, ""),
 	}, {
 		Keyspace: "system",
 		Table:    "peers",
 		Name:     "rpc_address",
-		TypeInfo: NativeType{proto: protoVersion4, typ: TypeInet},
+		TypeInfo: cqltype.NewCustomType(protoVersion4, TypeInet, ""),
 	}, {
 		Keyspace: "system",
 		Table:    "peers",
 		Name:     "schema_version",
-		TypeInfo: NativeType{proto: protoVersion4, typ: TypeUUID},
+		TypeInfo: cqltype.NewCustomType(protoVersion4, TypeUUID, ""),
 	}, {
 		Keyspace: "system",
 		Table:    "peers",
 		Name:     "tokens",
 		TypeInfo: CollectionType{
-			NativeType: NativeType{proto: protoVersion4, typ: TypeSet},
-			Elem:       NativeType{proto: protoVersion4, typ: TypeVarchar},
+			NativeType: cqltype.NewCustomType(protoVersion4, TypeSet, ""),
+			Elem:       cqltype.NewCustomType(protoVersion4, TypeVarchar, ""),
 		},
 	}},
 }
@@ -272,11 +274,11 @@ func (m *mockControlConn) close()                                          {}
 func (m *mockControlConn) getSession() *Session                            { return nil }
 
 func marshalMetadataMust(metadata resultMetadata, data []any) [][]byte {
-	if len(metadata.columns) != len(data) {
+	if len(metadata.Columns) != len(data) {
 		panic("metadata length mismatch")
 	}
-	res := make([][]byte, len(metadata.columns))
-	for id, col := range metadata.columns {
+	res := make([][]byte, len(metadata.Columns))
+	for id, col := range metadata.Columns {
 		var err error
 		value := data[id]
 		res[id], err = encodeFixtureCell(col.TypeInfo, value)

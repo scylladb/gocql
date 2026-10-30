@@ -673,9 +673,9 @@ func checkSystemSchema(control controlConnection) (bool, error) {
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	page, err := backend.queryV2System(ctx, &attemptRequest{statement: "SELECT * FROM system_schema.keyspaces", consistency: One, pageSize: 1, timeout: timeout})
-	if page != nil && page.owner != nil {
-		defer page.owner.Release()
+	page, err := backend.queryV2System(ctx, &attemptRequest{Statement: "SELECT * FROM system_schema.keyspaces", Consistency: One, PageSize: 1, Timeout: timeout})
+	if page != nil && page.Owner != nil {
+		defer page.Owner.Release()
 	}
 	if err != nil {
 		var server RequestError

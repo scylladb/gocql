@@ -22,6 +22,8 @@
 package gocql
 
 import (
+	cqltype "github.com/scylladb/gocql/v2/internal/cqltype"
+
 	"crypto/sha256"
 	"fmt"
 	"log"
@@ -39,37 +41,37 @@ import (
 )
 
 var (
-	typeVarchar = NativeType{proto: 4, typ: TypeVarchar}
-	typeBoolean = NativeType{proto: 4, typ: TypeBoolean}
-	typeDouble  = NativeType{proto: 4, typ: TypeDouble}
-	typeInt     = NativeType{proto: 4, typ: TypeInt}
+	typeVarchar = cqltype.NewCustomType(4, TypeVarchar, "")
+	typeBoolean = cqltype.NewCustomType(4, TypeBoolean, "")
+	typeDouble  = cqltype.NewCustomType(4, TypeDouble, "")
+	typeInt     = cqltype.NewCustomType(4, TypeInt, "")
 	typeMapSS   = CollectionType{
-		NativeType: NativeType{proto: 4, typ: TypeMap},
-		Key:        NativeType{proto: 4, typ: TypeVarchar},
-		Elem:       NativeType{proto: 4, typ: TypeVarchar},
+		NativeType: cqltype.NewCustomType(4, TypeMap, ""),
+		Key:        cqltype.NewCustomType(4, TypeVarchar, ""),
+		Elem:       cqltype.NewCustomType(4, TypeVarchar, ""),
 	}
 	typeMapSB = CollectionType{
-		NativeType: NativeType{proto: 4, typ: TypeMap},
-		Key:        NativeType{proto: 4, typ: TypeVarchar},
-		Elem:       NativeType{proto: 4, typ: TypeBlob},
+		NativeType: cqltype.NewCustomType(4, TypeMap, ""),
+		Key:        cqltype.NewCustomType(4, TypeVarchar, ""),
+		Elem:       cqltype.NewCustomType(4, TypeBlob, ""),
 	}
 	typeSetS = CollectionType{
-		NativeType: NativeType{proto: 4, typ: TypeSet},
-		Elem:       NativeType{proto: 4, typ: TypeVarchar},
+		NativeType: cqltype.NewCustomType(4, TypeSet, ""),
+		Elem:       cqltype.NewCustomType(4, TypeVarchar, ""),
 	}
 )
 
 var keyspaceMeta = resultMetadata{
-	columns: []ColumnInfo{
+	Columns: []ColumnInfo{
 		{Name: "durable_writes", TypeInfo: typeBoolean},
 		{Name: "replication", TypeInfo: typeMapSS},
 	},
-	actualColCount: 2,
-	colCount:       2,
+	ActualColCount: 2,
+	ColCount:       2,
 }
 
 var tableMeta = resultMetadata{
-	columns: []ColumnInfo{
+	Columns: []ColumnInfo{
 		{Name: "table_name", TypeInfo: typeVarchar},
 		{Name: "bloom_filter_fp_chance", TypeInfo: typeDouble},
 		{Name: "caching", TypeInfo: typeMapSS},
@@ -85,14 +87,14 @@ var tableMeta = resultMetadata{
 		{Name: "speculative_retry", TypeInfo: typeVarchar},
 		{Name: "flags", TypeInfo: typeSetS},
 		{Name: "extensions", TypeInfo: typeMapSB},
-		{Name: "id", TypeInfo: NativeType{proto: 4, typ: TypeUUID}},
+		{Name: "id", TypeInfo: cqltype.NewCustomType(4, TypeUUID, "")},
 	},
-	actualColCount: 16,
-	colCount:       16,
+	ActualColCount: 16,
+	ColCount:       16,
 }
 
 var columnMeta = resultMetadata{
-	columns: []ColumnInfo{
+	Columns: []ColumnInfo{
 		{Name: "table_name", TypeInfo: typeVarchar},
 		{Name: "column_name", TypeInfo: typeVarchar},
 		{Name: "clustering_order", TypeInfo: typeVarchar},
@@ -100,8 +102,8 @@ var columnMeta = resultMetadata{
 		{Name: "kind", TypeInfo: typeVarchar},
 		{Name: "position", TypeInfo: typeInt},
 	},
-	actualColCount: 6,
-	colCount:       6,
+	ActualColCount: 6,
+	ColCount:       6,
 }
 
 func mustMarshal(info TypeInfo, value any) []byte {
@@ -113,11 +115,11 @@ func mustMarshal(info TypeInfo, value any) []byte {
 }
 
 func marshalRow(meta resultMetadata, values []any) [][]byte {
-	if len(meta.columns) != len(values) {
-		panic(fmt.Sprintf("marshalRow: column count %d != value count %d", len(meta.columns), len(values)))
+	if len(meta.Columns) != len(values) {
+		panic(fmt.Sprintf("marshalRow: column count %d != value count %d", len(meta.Columns), len(values)))
 	}
 	row := make([][]byte, len(values))
-	for i, col := range meta.columns {
+	for i, col := range meta.Columns {
 		row[i] = mustMarshal(col.TypeInfo, values[i])
 	}
 	return row
@@ -263,9 +265,9 @@ func (m *schemaDataMock) querySystem(statement string, values ...any) *nativeRes
 
 	if statement == "SELECT keyspace_name, durable_writes, replication FROM system_schema.keyspaces" {
 		meta := resultMetadata{
-			columns:        append([]ColumnInfo{{Name: "keyspace_name", TypeInfo: typeVarchar}}, keyspaceMeta.columns...),
-			actualColCount: 3,
-			colCount:       3,
+			Columns:        append([]ColumnInfo{{Name: "keyspace_name", TypeInfo: typeVarchar}}, keyspaceMeta.Columns...),
+			ActualColCount: 3,
+			ColCount:       3,
 		}
 		names := make([]string, 0, len(m.knownKeyspaces))
 		for name := range m.knownKeyspaces {

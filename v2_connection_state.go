@@ -370,7 +370,7 @@ func (c *Conn) typedHeartbeat(ctx context.Context) {
 		c.endShared()
 		if err == nil {
 			var result frame
-			result, err = f.parseFrame()
+			result, err = f.ParseFrame()
 			f.Release()
 			if err == nil {
 				if _, ok := result.(*frm.SupportedFrame); !ok {

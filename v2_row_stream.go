@@ -17,6 +17,8 @@
 package gocql
 
 import (
+	model "github.com/scylladb/gocql/v2/internal/model"
+
 	"bytes"
 	"context"
 	"errors"
@@ -301,8 +303,8 @@ func (s *RowStream[R]) NextInto(dst *R) bool {
 			}
 		}
 		next := completePageState()
-		if s.response.metadata.pagingState != nil {
-			next = RestorePageState(s.response.metadata.pagingState)
+		if s.response.metadata.PagingState != nil {
+			next = RestorePageState(s.response.metadata.PagingState)
 		}
 		if !next.More() {
 			s.mu.Lock()
@@ -424,33 +426,33 @@ func (s *RowStream[R]) wireRequest(consistency Consistency) (*attemptRequest, er
 	if opts.NowInSeconds.Set && conn.version < 5 {
 		return nil, typeValidation("now in seconds", "requires protocol v5")
 	}
-	for _, cell := range r.values.cells {
-		if conn.version < 4 && cell.state == Unset {
+	for _, cell := range r.values.Cells {
+		if conn.version < 4 && cell.State == Unset {
 			return nil, typeValidation("unset", "requires protocol v4")
 		}
 	}
-	w := &attemptRequest{statement: r.statement, values: r.values.framed, valueCount: len(r.values.cells), consistency: consistency, pageSize: int(r.options.profile.PageSize), keyspace: r.keyspace, trace: opts.Trace, payload: opts.CustomPayload, tabletVersionBlock: r.tabletVersionBlock}
+	w := &attemptRequest{Statement: r.statement, Values: r.values.Framed, ValueCount: len(r.values.Cells), Consistency: consistency, PageSize: int(r.options.profile.PageSize), Keyspace: r.keyspace, Trace: opts.Trace, Payload: opts.CustomPayload, TabletVersionBlock: r.tabletVersionBlock}
 	if conn.version < 5 {
-		w.keyspace = ""
+		w.Keyspace = ""
 	}
 	if s.state.More() {
-		w.pagingState = s.state.token
+		w.PagingState = model.PageToken(s.state)
 	}
 	if r.options.profile.SerialConsistency.Set {
-		w.serialConsistency = r.options.profile.SerialConsistency.Value
+		w.SerialConsistency = r.options.profile.SerialConsistency.Value
 	}
 	if opts.Timestamp.Set {
-		w.timestamp = opts.Timestamp.Value
-		w.defaultTimestamp = true
+		w.Timestamp = opts.Timestamp.Value
+		w.DefaultTimestamp = true
 	}
 	if opts.NowInSeconds.Set {
 		v := opts.NowInSeconds.Value
-		w.nowInSeconds = &v
+		w.NowInSeconds = &v
 	}
 	if s.prepared != nil {
-		w.preparedID = s.prepared.id
-		w.resultMetadataID = s.prepared.metadataID
-		w.skipMetadata = !opts.IncludeMetadata && metadataIDTracked(conn.tracksResultMetadataID(), s.prepared.metadataID)
+		w.PreparedID = s.prepared.id
+		w.ResultMetadataID = s.prepared.metadataID
+		w.SkipMetadata = !opts.IncludeMetadata && metadataIDTracked(conn.tracksResultMetadataID(), s.prepared.metadataID)
 	}
 	return w, nil
 }
@@ -486,7 +488,7 @@ func (s *RowStream[R]) loadPage() error {
 			// and validates the same canonical input, then sends the next page
 			// state; it never replays a page that has exposed caller output.
 			if s.Info().OutputStarted && !s.state.More() {
-				return &SchemaChangedError{Statement: request.statement, Previous: request.values.columns, Current: request.prepared.parameters}
+				return &SchemaChangedError{Statement: request.statement, Previous: request.values.Columns, Current: request.prepared.parameters}
 			}
 			conn := s.reservation.conn
 			if err := s.reservation.close(true); err != nil {
@@ -507,14 +509,14 @@ func (s *RowStream[R]) loadPage() error {
 		if err != nil {
 			return err
 		}
-		wireRequest.lease = request.owner.writerLease(request.values.framed)
+		wireRequest.Lease = request.owner.writerLease(request.values.Framed)
 		observed := uint64(0)
 		if request.prepared != nil {
 			observed = request.prepared.dependencies.tracker.start()
 		}
 		started := time.Now()
 		response, err := s.reservation.exchange(pagectx, wireRequest)
-		wireRequest.lease.Release()
+		wireRequest.Lease.Release()
 		conn := s.reservation.conn
 		event := AttemptEvent{RequestID: request.logical.id, Attempt: attempt, Target: Target{HostID: conn.host.hostUUID()}, Started: started, Latency: time.Since(started), Err: err, Cancelled: errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)}
 		if conn.scyllaSupported.nrShards > 0 {
@@ -551,8 +553,8 @@ func (s *RowStream[R]) loadPage() error {
 			s.attemptMetadata = nil
 		}
 		if err == nil {
-			page := &resultMetadataObservation{kind: response.kind, columns: response.columns, columnCount: response.columnCount, noMetadata: response.metadata.noMetadata, metadataChanged: response.metadata.metadataChanged, metadataID: response.metadata.metadataID}
-			err = selectPreparedMetadata(request.prepared, conn.host.hostUUID(), s.prepared, wireRequest.resultMetadataID, conn.tracksResultMetadataID(), page, observed)
+			page := &resultMetadataObservation{kind: response.kind, columns: response.columns, columnCount: response.columnCount, noMetadata: response.metadata.NoMetadata, metadataChanged: response.metadata.MetadataChanged, metadataID: response.metadata.MetadataID}
+			err = selectPreparedMetadata(request.prepared, conn.host.hostUUID(), s.prepared, wireRequest.ResultMetadataID, conn.tracksResultMetadataID(), page, observed)
 			if err == nil {
 				if s.plan == nil || !s.columns.Equal(page.columns) {
 					s.plan, err = s.decoder.Compile(page.columns)
@@ -586,7 +588,7 @@ func (s *RowStream[R]) loadPage() error {
 			return err
 		}
 		var unprepared *RequestErrUnprepared
-		if attempt == 1 && request.prepared != nil && errors.As(err, &unprepared) && bytes.Equal(unprepared.StatementId, wireRequest.preparedID) {
+		if attempt == 1 && request.prepared != nil && errors.As(err, &unprepared) && bytes.Equal(unprepared.StatementId, wireRequest.PreparedID) {
 			if closeErr := s.reservation.close(true); closeErr != nil {
 				return closeErr
 			}

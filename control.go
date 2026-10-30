@@ -445,14 +445,14 @@ func (c *controlConn) registerEventsContext(ctx context.Context, conn *Conn) err
 
 	framer, err := conn.exec(ctx,
 		&writeRegisterFrame{
-			events: events,
+			Events: events,
 		}, nil, conn.cfg.ConnectTimeout)
 	if err != nil {
 		return err
 	}
 	defer framer.Release()
 
-	frame, err := framer.parseFrame()
+	frame, err := framer.ParseFrame()
 	if err != nil {
 		return err
 	} else if _, ok := frame.(*frm.ReadyFrame); !ok {
@@ -598,7 +598,7 @@ func (c *controlConn) writeFrame(w frameBuilder) (frame, error) {
 	}
 	defer framer.Release()
 
-	return framer.parseFrame()
+	return framer.ParseFrame()
 }
 
 func (c *controlConn) awaitSchemaAgreement() error {

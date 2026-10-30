@@ -21,10 +21,10 @@ func routingToken(cells []encodedCell, indexes []int) (Option[int64], error) {
 			return Option[int64]{}, fmt.Errorf("gocql: partition key index %d outside %d bound values", index, len(cells))
 		}
 		cell := cells[index]
-		if cell.state == Null || cell.state == Unset {
+		if cell.State == Null || cell.State == Unset {
 			missing = true
 		}
-		if len(indexes) > 1 && cell.body.Len() > math.MaxUint16 {
+		if len(indexes) > 1 && cell.Body.Len() > math.MaxUint16 {
 			return Option[int64]{}, fmt.Errorf("gocql: composite partition component %d exceeds 65535 bytes", index)
 		}
 	}
@@ -37,10 +37,10 @@ func routingToken(cells []encodedCell, indexes []int) (Option[int64], error) {
 	for _, index := range indexes {
 		cell := cells[index]
 		if len(indexes) > 1 {
-			binary.BigEndian.PutUint16(prefix[:], uint16(cell.body.Len()))
+			binary.BigEndian.PutUint16(prefix[:], uint16(cell.Body.Len()))
 			hash.Write(prefix[:])
 		}
-		if err := cell.body.Each(func(span wire.Span) error { _, err := hash.Write(span.Bytes()); return err }); err != nil {
+		if err := cell.Body.Each(func(span wire.Span) error { _, err := hash.Write(span.Bytes()); return err }); err != nil {
 			return Option[int64]{}, err
 		}
 		if len(indexes) > 1 {

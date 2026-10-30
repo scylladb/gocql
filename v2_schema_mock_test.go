@@ -22,22 +22,22 @@ func (m *schemaDataMock) queryV2System(ctx context.Context, request *attemptRequ
 	if err != nil {
 		return nil, err
 	}
-	return v2SchemaMockResponse(request.statement, m.querySystem(request.statement, values...))
+	return v2SchemaMockResponse(request.Statement, m.querySystem(request.Statement, values...))
 }
 
 func (c *systemSchemaTestControl) queryV2System(ctx context.Context, request *attemptRequest) (*responsePage, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return v2SchemaMockResponse(request.statement, c.iter)
+	return v2SchemaMockResponse(request.Statement, c.iter)
 }
 
 // Schema predicates are text values. Decode their wire framing explicitly; the
 // []any is used only to call the pre-existing test fixture factory, never a
 // production execution or serialization API.
 func v2SchemaMockArguments(request *attemptRequest) ([]any, error) {
-	cursor := wire.NewCursor(request.values)
-	values := make([]any, request.valueCount)
+	cursor := wire.NewCursor(request.Values)
+	values := make([]any, request.ValueCount)
 	for i := range values {
 		size, err := cursor.Uint32()
 		if err != nil {
@@ -75,7 +75,7 @@ func v2SchemaMockResponse(statement string, fixture *nativeResultFixture) (*resp
 		release()
 		return nil, fixture.err
 	}
-	columns, err := columnsFromInfo(fixture.meta.columns)
+	columns, err := columnsFromInfo(fixture.meta.Columns)
 	if err != nil {
 		release()
 		return nil, err
@@ -114,14 +114,13 @@ func v2SchemaMockResponse(statement string, fixture *nativeResultFixture) (*resp
 		release()
 		return nil, err
 	}
-	return &responsePage{
-		kind:        2,
-		columns:     columns,
-		columnCount: columns.Len(),
-		rows:        chain,
-		rowCount:    int32(fixture.numRows),
-		owner:       wire.NewLease(chain, release),
-		state:       completePageState(),
+	return &responsePage{responseData: responseData{Kind: 2,
+		Columns:     columns,
+		ColumnCount: columns.Len(),
+		Rows:        chain,
+		RowCount:    int32(fixture.numRows),
+		Owner:       wire.NewLease(chain, release),
+		State:       completePageState()},
 	}, nil
 }
 
@@ -136,9 +135,9 @@ func v2SchemaMockEmptyColumns(statement string) (Columns, error) {
 	case strings.Contains(statement, "FROM system_schema.keyspaces"):
 		return NewColumns(textColumn("keyspace_name"), ColumnSpec{Name: "durable_writes", Type: boolType}, ColumnSpec{Name: "replication", Type: mapText}), nil
 	case strings.Contains(statement, "FROM system_schema.tables"):
-		return columnsFromInfo(tableMeta.columns)
+		return columnsFromInfo(tableMeta.Columns)
 	case strings.Contains(statement, "FROM system_schema.columns"):
-		return columnsFromInfo(columnMeta.columns)
+		return columnsFromInfo(columnMeta.Columns)
 	case strings.Contains(statement, "FROM system_schema.scylla_tables"):
 		return NewColumns(textColumn("table_name")), nil
 	case strings.Contains(statement, "FROM system_schema.types"):
@@ -159,16 +158,16 @@ func v2SchemaMockEmptyColumns(statement string) (Columns, error) {
 }
 
 func (c *mockConnection) executeTyped(ctx context.Context, r *attemptRequest) (*responsePage, error) {
-	return v2SchemaMockResponse(r.statement, c.querySystem(ctx, r.statement))
+	return v2SchemaMockResponse(r.Statement, c.querySystem(ctx, r.Statement))
 }
 func (c *trackingRingConnection) executeTyped(ctx context.Context, r *attemptRequest) (*responsePage, error) {
-	return v2SchemaMockResponse(r.statement, c.querySystem(ctx, r.statement))
+	return v2SchemaMockResponse(r.Statement, c.querySystem(ctx, r.Statement))
 }
 func (f *fakeControlConn) queryV2System(ctx context.Context, r *attemptRequest) (*responsePage, error) {
-	f.statement = r.statement
+	f.statement = r.Statement
 	f.values = nil
-	cursor := wire.NewCursor(r.values)
-	for i := 0; i < r.valueCount; i++ {
+	cursor := wire.NewCursor(r.Values)
+	for i := 0; i < r.ValueCount; i++ {
 		size, err := cursor.Uint32()
 		if err != nil {
 			return nil, err
@@ -199,11 +198,11 @@ func (f *fakeControlConn) queryV2System(ctx context.Context, r *attemptRequest) 
 		f.values = append(f.values, vs)
 	}
 	if f.iter != nil {
-		return v2SchemaMockResponse(r.statement, f.iter)
+		return v2SchemaMockResponse(r.Statement, f.iter)
 	}
 	text, _ := ScalarType(TypeVarchar)
 	integer, _ := ScalarType(TypeInt)
 	cols := NewColumns(ColumnSpec{Name: "connection_id", Type: text}, ColumnSpec{Name: "host_id", Type: text}, ColumnSpec{Name: "address", Type: text}, ColumnSpec{Name: "port", Type: integer}, ColumnSpec{Name: "tls_port", Type: integer})
 	chain, _ := wire.NewChain()
-	return &responsePage{columns: cols, columnCount: 5, rows: chain, owner: wire.NewLease(chain, nil)}, nil
+	return &responsePage{responseData: responseData{Columns: cols, ColumnCount: 5, Rows: chain, Owner: wire.NewLease(chain, nil)}}, nil
 }
