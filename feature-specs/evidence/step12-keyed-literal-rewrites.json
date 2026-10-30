@@ -1,0 +1,412 @@
+[
+  {
+    "file": "cassandra_test.go",
+    "line": 715,
+    "type": "github.com/scylladb/gocql/v2/internal/codec.ValueField"
+  },
+  {
+    "file": "cassandra_test.go",
+    "line": 715,
+    "type": "github.com/scylladb/gocql/v2/internal/codec.ValueField"
+  },
+  {
+    "file": "cassandra_test.go",
+    "line": 715,
+    "type": "github.com/scylladb/gocql/v2/internal/codec.ValueField"
+  },
+  {
+    "file": "cassandra_test.go",
+    "line": 715,
+    "type": "github.com/scylladb/gocql/v2/internal/codec.ValueField"
+  },
+  {
+    "file": "cassandra_test.go",
+    "line": 715,
+    "type": "github.com/scylladb/gocql/v2/internal/codec.ValueField"
+  },
+  {
+    "file": "cassandra_test.go",
+    "line": 715,
+    "type": "github.com/scylladb/gocql/v2/internal/codec.ValueField"
+  },
+  {
+    "file": "cassandra_test.go",
+    "line": 715,
+    "type": "github.com/scylladb/gocql/v2/internal/codec.ValueField"
+  },
+  {
+    "file": "cassandra_test.go",
+    "line": 715,
+    "type": "github.com/scylladb/gocql/v2/internal/codec.ValueField"
+  },
+  {
+    "file": "cassandra_test.go",
+    "line": 715,
+    "type": "github.com/scylladb/gocql/v2/internal/codec.ValueField"
+  },
+  {
+    "file": "cassandra_test.go",
+    "line": 715,
+    "type": "github.com/scylladb/gocql/v2/internal/codec.ValueField"
+  },
+  {
+    "file": "cassandra_test.go",
+    "line": 715,
+    "type": "github.com/scylladb/gocql/v2/internal/codec.ValueField"
+  },
+  {
+    "file": "cassandra_test.go",
+    "line": 715,
+    "type": "github.com/scylladb/gocql/v2/internal/codec.ValueField"
+  },
+  {
+    "file": "cassandra_test.go",
+    "line": 715,
+    "type": "github.com/scylladb/gocql/v2/internal/codec.ValueField"
+  },
+  {
+    "file": "cassandra_test.go",
+    "line": 715,
+    "type": "github.com/scylladb/gocql/v2/internal/codec.ValueEntry"
+  },
+  {
+    "file": "cassandra_test.go",
+    "line": 715,
+    "type": "github.com/scylladb/gocql/v2/internal/codec.ValueEntry"
+  },
+  {
+    "file": "cassandra_test.go",
+    "line": 715,
+    "type": "github.com/scylladb/gocql/v2/internal/codec.ValueEntry"
+  },
+  {
+    "file": "cassandra_test.go",
+    "line": 715,
+    "type": "github.com/scylladb/gocql/v2/internal/codec.ValueField"
+  },
+  {
+    "file": "cassandra_test.go",
+    "line": 715,
+    "type": "github.com/scylladb/gocql/v2/internal/codec.ValueField"
+  },
+  {
+    "file": "step09_prepare_test.go",
+    "line": 260,
+    "type": "github.com/scylladb/gocql/v2/internal/schemafence.InternalPreparedDependencyKey"
+  },
+  {
+    "file": "v2_routing_step06_test.go",
+    "line": 162,
+    "type": "github.com/scylladb/gocql/v2/internal/model.TableKey"
+  },
+  {
+    "file": "v2_routing_step06_test.go",
+    "line": 193,
+    "type": "github.com/scylladb/gocql/v2/internal/model.TableKey"
+  },
+  {
+    "file": "v2_routing_step06_test.go",
+    "line": 212,
+    "type": "github.com/scylladb/gocql/v2/internal/model.TableKey"
+  },
+  {
+    "file": "v2_routing_step06_test.go",
+    "line": 223,
+    "type": "github.com/scylladb/gocql/v2/internal/model.TableKey"
+  },
+  {
+    "file": "v2_routing_step06_test.go",
+    "line": 231,
+    "type": "github.com/scylladb/gocql/v2/internal/model.TableKey"
+  },
+  {
+    "file": "v2_routing_step06_test.go",
+    "line": 240,
+    "type": "github.com/scylladb/gocql/v2/internal/model.TableKey"
+  },
+  {
+    "file": "v2_routing_step06_test.go",
+    "line": 307,
+    "type": "github.com/scylladb/gocql/v2/internal/model.TableKey"
+  },
+  {
+    "file": "v2_routing_step06_test.go",
+    "line": 560,
+    "type": "github.com/scylladb/gocql/v2/internal/model.TableKey"
+  },
+  {
+    "file": "v2_execution_step07_test.go",
+    "line": 224,
+    "type": "github.com/scylladb/gocql/v2/internal/logging.InternalV2SafeLogger"
+  },
+  {
+    "file": "v2_transport_pool_integration_test.go",
+    "line": 174,
+    "type": "github.com/scylladb/gocql/v2/internal/codec.Pair"
+  },
+  {
+    "file": "v2_routing_step06_bench_test.go",
+    "line": 33,
+    "type": "github.com/scylladb/gocql/v2/internal/model.TableKey"
+  },
+  {
+    "file": "v2_routing_step06_bench_test.go",
+    "line": 81,
+    "type": "github.com/scylladb/gocql/v2/internal/model.TableKey"
+  },
+  {
+    "file": "v2_routing_step06_bench_test.go",
+    "line": 84,
+    "type": "github.com/scylladb/gocql/v2/internal/model.TableKey"
+  },
+  {
+    "file": "v2_routing_step06_bench_test.go",
+    "line": 100,
+    "type": "github.com/scylladb/gocql/v2/internal/cluster.InternalV2TabletFeedbackKey"
+  },
+  {
+    "file": "v2_prepared_paging_test.go",
+    "line": 1231,
+    "type": "github.com/scylladb/gocql/v2/internal/schemafence.InternalPreparedDependencyKey"
+  },
+  {
+    "file": "token_test.go",
+    "line": 272,
+    "type": "github.com/scylladb/gocql/v2/internal/endpoint.InternalHostToken"
+  },
+  {
+    "file": "token_test.go",
+    "line": 273,
+    "type": "github.com/scylladb/gocql/v2/internal/endpoint.InternalHostToken"
+  },
+  {
+    "file": "token_test.go",
+    "line": 274,
+    "type": "github.com/scylladb/gocql/v2/internal/endpoint.InternalHostToken"
+  },
+  {
+    "file": "token_test.go",
+    "line": 275,
+    "type": "github.com/scylladb/gocql/v2/internal/endpoint.InternalHostToken"
+  },
+  {
+    "file": "v2_metadata_test.go",
+    "line": 178,
+    "type": "github.com/scylladb/gocql/v2/internal/model.TableKey"
+  },
+  {
+    "file": "v2_policy_test.go",
+    "line": 144,
+    "type": "github.com/scylladb/gocql/v2/internal/model.TableKey"
+  },
+  {
+    "file": "vector_test.go",
+    "line": 95,
+    "type": "github.com/scylladb/gocql/v2/internal/cqltype.Decimal"
+  },
+  {
+    "file": "vector_test.go",
+    "line": 177,
+    "type": "github.com/scylladb/gocql/v2/internal/cqltype.Duration"
+  },
+  {
+    "file": "vector_test.go",
+    "line": 177,
+    "type": "github.com/scylladb/gocql/v2/internal/cqltype.Duration"
+  },
+  {
+    "file": "vector_test.go",
+    "line": 177,
+    "type": "github.com/scylladb/gocql/v2/internal/cqltype.Duration"
+  },
+  {
+    "file": "v2_metadata_control_test.go",
+    "line": 491,
+    "type": "github.com/scylladb/gocql/v2/internal/cluster.InternalClientRoute"
+  },
+  {
+    "file": "v2_metadata_control_test.go",
+    "line": 492,
+    "type": "github.com/scylladb/gocql/v2/internal/cluster.InternalClientRoute"
+  },
+  {
+    "file": "v2_metadata_control_test.go",
+    "line": 498,
+    "type": "github.com/scylladb/gocql/v2/internal/cluster.InternalPair"
+  },
+  {
+    "file": "v2_metadata_control_test.go",
+    "line": 503,
+    "type": "github.com/scylladb/gocql/v2/internal/cluster.InternalPair"
+  },
+  {
+    "file": "v2_metadata_control_test.go",
+    "line": 504,
+    "type": "github.com/scylladb/gocql/v2/internal/cluster.InternalPair"
+  },
+  {
+    "file": "v2_metadata_control_test.go",
+    "line": 901,
+    "type": "github.com/scylladb/gocql/v2/internal/cluster.InternalClientRoute"
+  },
+  {
+    "file": "v2_metadata_control_test.go",
+    "line": 904,
+    "type": "github.com/scylladb/gocql/v2/internal/cluster.InternalPair"
+  },
+  {
+    "file": "v2_metadata_control_test.go",
+    "line": 912,
+    "type": "github.com/scylladb/gocql/v2/internal/cluster.InternalPair"
+  },
+  {
+    "file": "topology_test.go",
+    "line": 64,
+    "type": "github.com/scylladb/gocql/v2/internal/endpoint.InternalHostToken"
+  },
+  {
+    "file": "topology_test.go",
+    "line": 65,
+    "type": "github.com/scylladb/gocql/v2/internal/endpoint.InternalHostToken"
+  },
+  {
+    "file": "topology_test.go",
+    "line": 66,
+    "type": "github.com/scylladb/gocql/v2/internal/endpoint.InternalHostToken"
+  },
+  {
+    "file": "topology_test.go",
+    "line": 67,
+    "type": "github.com/scylladb/gocql/v2/internal/endpoint.InternalHostToken"
+  },
+  {
+    "file": "v2_serialization_fixture_test.go",
+    "line": 190,
+    "type": "github.com/scylladb/gocql/v2/internal/codec.Pair"
+  },
+  {
+    "file": "v2_serialization_fixture_test.go",
+    "line": 214,
+    "type": "github.com/scylladb/gocql/v2/internal/codec.Entry"
+  },
+  {
+    "file": "v2_serialization_fixture_test.go",
+    "line": 594,
+    "type": "github.com/scylladb/gocql/v2/internal/cqltype.Decimal"
+  },
+  {
+    "file": "internal/cluster/metadata_scylla.go",
+    "line": 234,
+    "type": "github.com/scylladb/gocql/v2/internal/model.TableKey"
+  },
+  {
+    "file": "internal/cluster/v2_config.go",
+    "line": 26,
+    "type": "github.com/scylladb/gocql/v2/internal/logging.InternalV2SafeLogger"
+  },
+  {
+    "file": "internal/cluster/v2_metadata.go",
+    "line": 262,
+    "type": "github.com/scylladb/gocql/v2/internal/model.TableKey"
+  },
+  {
+    "file": "internal/cluster/conn.go",
+    "line": 110,
+    "type": "github.com/scylladb/gocql/v2/internal/transport.InternalStartupIdentity"
+  },
+  {
+    "file": "internal/cluster/conn.go",
+    "line": 110,
+    "type": "github.com/scylladb/gocql/v2/internal/transport.InternalConnectionPoolPolicy"
+  },
+  {
+    "file": "internal/cluster/v2_placement.go",
+    "line": 20,
+    "type": "github.com/scylladb/gocql/v2/internal/model.TableKey"
+  },
+  {
+    "file": "internal/cluster/v2_placement.go",
+    "line": 45,
+    "type": "github.com/scylladb/gocql/v2/internal/model.TableKey"
+  },
+  {
+    "file": "internal/cluster/v2_placement.go",
+    "line": 133,
+    "type": "github.com/scylladb/gocql/v2/internal/model.TableKey"
+  },
+  {
+    "file": "internal/cluster/v2_prepared_schema.go",
+    "line": 29,
+    "type": "github.com/scylladb/gocql/v2/internal/schemafence.InternalPreparedDependencyKey"
+  },
+  {
+    "file": "internal/cluster/v2_prepared_schema.go",
+    "line": 29,
+    "type": "github.com/scylladb/gocql/v2/internal/schemafence.InternalPreparedDependencyKey"
+  },
+  {
+    "file": "internal/cluster/v2_prepared_schema.go",
+    "line": 32,
+    "type": "github.com/scylladb/gocql/v2/internal/schemafence.InternalPreparedDependencyKey"
+  },
+  {
+    "file": "internal/cluster/v2_prepared_schema.go",
+    "line": 34,
+    "type": "github.com/scylladb/gocql/v2/internal/schemafence.InternalPreparedDependencyKey"
+  },
+  {
+    "file": "internal/cluster/v2_prepared_schema.go",
+    "line": 36,
+    "type": "github.com/scylladb/gocql/v2/internal/schemafence.InternalPreparedDependencyKey"
+  },
+  {
+    "file": "internal/cluster/v2_prepared_schema.go",
+    "line": 38,
+    "type": "github.com/scylladb/gocql/v2/internal/schemafence.InternalPreparedDependencyKey"
+  },
+  {
+    "file": "internal/cluster/v2_client_routes.go",
+    "line": 194,
+    "type": "github.com/scylladb/gocql/v2/internal/endpoint.AddressPort"
+  },
+  {
+    "file": "internal/metadata/v2_metadata.go",
+    "line": 769,
+    "type": "github.com/scylladb/gocql/v2/internal/model.TableKey"
+  },
+  {
+    "file": "internal/routing/v2_metadata.go",
+    "line": 57,
+    "type": "github.com/scylladb/gocql/v2/internal/model.TableKey"
+  },
+  {
+    "file": "internal/routing/v2_metadata.go",
+    "line": 93,
+    "type": "github.com/scylladb/gocql/v2/internal/model.TableKey"
+  },
+  {
+    "file": "internal/routing/v2_placement.go",
+    "line": 240,
+    "type": "github.com/scylladb/gocql/v2/internal/model.TableKey"
+  },
+  {
+    "file": "internal/routing/v2_placement.go",
+    "line": 257,
+    "type": "github.com/scylladb/gocql/v2/internal/model.TableKey"
+  },
+  {
+    "file": "internal/routing/v2_placement.go",
+    "line": 363,
+    "type": "github.com/scylladb/gocql/v2/internal/model.TableKey"
+  },
+  {
+    "file": "internal/routing/v2_placement.go",
+    "line": 369,
+    "type": "github.com/scylladb/gocql/v2/internal/model.TableKey"
+  },
+  {
+    "file": "internal/transport/v2_dial.go",
+    "line": 72,
+    "type": "github.com/scylladb/gocql/v2/internal/endpoint.DefaultDialer"
+  }
+]

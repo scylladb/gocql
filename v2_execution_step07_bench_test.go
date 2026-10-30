@@ -124,7 +124,11 @@ func BenchmarkStep07ExecutionStorage(b *testing.B) {
 func BenchmarkStep07SharedAdmission(b *testing.B) {
 	for _, parallelism := range []int{1, 4, 16} {
 		b.Run(fmt.Sprint(parallelism), func(b *testing.B) {
-			s := &Session{}
+			s := func() *Session {
+				opaqueStorageValue := new(Session)
+				return opaqueStorageValue
+			}()
+
 			bound := runtimeQuery(b)
 			b.ReportAllocs()
 			old := runtime.GOMAXPROCS(parallelism)
@@ -138,9 +142,9 @@ func BenchmarkStep07SharedAdmission(b *testing.B) {
 						return
 					}
 					_ = ctx
-					request.logical.finish(Result{}, nil)
+					request.InternalLogical.InternalFinish(Result{}, nil)
 					cancel()
-					request.logical.releaseInput()
+					request.InternalLogical.InternalReleaseInput()
 				}
 			})
 			b.StopTimer()

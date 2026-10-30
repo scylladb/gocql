@@ -2,6 +2,8 @@
 
 package gocql
 
+import implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+
 import (
 	"context"
 	"fmt"
@@ -121,7 +123,7 @@ func TestStep08HarnessLifecycle(t *testing.T) {
 	s := createV2Session(t)
 	defer s.Close()
 	if marker := os.Getenv("GOCQL_FIXTURE_MARKER"); marker != "" {
-		if err := os.WriteFile(marker, []byte(s.cfg.Keyspace), 0600); err != nil {
+		if err := os.WriteFile(marker, []byte(implCluster.SessionData(s).InternalCfg.Keyspace), 0600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -157,7 +159,7 @@ func TestStep08FixtureIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Log("ACTUAL_SERVER_VERSION", version.String(), "PROTOCOL", s.cfg.ProtoVersion)
+	t.Log("ACTUAL_SERVER_VERSION", version.String(), "PROTOCOL", implCluster.SessionData(s).InternalCfg.ProtoVersion)
 	if !strings.HasPrefix(version.String(), strings.TrimPrefix(flagCassVersion.String(), "v")) {
 		t.Fatalf("unexpected server version %q", version.String())
 	}

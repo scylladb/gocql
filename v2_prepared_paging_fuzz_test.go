@@ -34,7 +34,7 @@ func FuzzV2PageDestinationFraming(f *testing.F) {
 		cols := NewColumns(ColumnSpec{Name: "value", Type: codecTestMust(ScalarType(TypeInt))})
 		chain := codecTestMust(wire.NewChain(wire.Borrow(data)))
 		owner := wire.NewLease(chain, nil)
-		p := codecTestMust(newPage(&responsePage{responseData: responseData{Columns: cols, Rows: chain, RowCount: int32(count % 8), Owner: owner}}, OneColumn(Int32), nil))
+		p := codecTestMust(newPage(&responsePage{InternalResponseData: responseData{Columns: cols, Rows: chain, RowCount: int32(count % 8), Owner: owner}}, OneColumn(Int32), nil))
 		defer p.Close()
 		dst := int32(99)
 		for i := 0; i < 9; i++ {
@@ -58,7 +58,7 @@ func FuzzV2PagingHistoryBudgets(f *testing.F) {
 		if len(data) > 4096 {
 			return
 		}
-		h := pagingHistory{maxCount: 16, maxBytes: 128}
+		h := pagingHistory{InternalMaxCount: 16, InternalMaxBytes: 128}
 		seen := make(map[string]bool)
 		bytesUsed := 0
 		for len(data) > 0 {
@@ -70,7 +70,7 @@ func FuzzV2PagingHistoryBudgets(f *testing.F) {
 			token := append([]byte{}, data[:n]...)
 			data = data[n:]
 			state := model.PageStateOwned(token, 1)
-			err := h.add(state)
+			err := h.InternalAdd(state)
 			if seen[string(token)] {
 				if !errors.Is(err, ErrPagingNoProgress) {
 					t.Fatal("duplicate", err)
@@ -88,7 +88,7 @@ func FuzzV2PagingHistoryBudgets(f *testing.F) {
 			}
 			seen[string(token)] = true
 			bytesUsed += len(token)
-			if h.count != len(seen) || h.bytes != int64(bytesUsed) {
+			if h.InternalCount != len(seen) || h.InternalBytes != int64(bytesUsed) {
 				t.Fatal("history accounting")
 			}
 		}

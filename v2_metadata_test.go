@@ -1,6 +1,10 @@
 package gocql
 
+import implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+
 import (
+	routing "github.com/scylladb/gocql/v2/internal/routing"
+
 	"github.com/scylladb/gocql/v2/tablets"
 	"testing"
 	"time"
@@ -9,7 +13,7 @@ import (
 func TestV2MetadataSnapshotsDetachNestedSchema(t *testing.T) {
 	column := &ColumnMetadata{Name: "id", Type: "int", Index: ColumnIndexMetadata{Options: map[string]any{"nested": map[string]any{"bytes": []byte{1}}}}}
 	ks := &KeyspaceMetadata{Name: "ks", StrategyOptions: map[string]any{"replication_factor": "1"}, Tables: map[string]*TableMetadata{"t": {Columns: map[string]*ColumnMetadata{"id": column}, PartitionKey: []*ColumnMetadata{column}, Extensions: map[string]any{"bytes": []byte{2}}, Options: TableMetadataOptions{CDC: map[string]string{"enabled": "true"}}}}, Types: map[string]*TypeMetadata{"u": {FieldNames: []string{"a"}, FieldTypes: []string{"int"}}}, Functions: map[string]*FunctionMetadata{"f": {ArgumentNames: []string{"a"}, ArgumentTypes: []string{"int"}}}}
-	m := &MetadataSnapshot{generation: 8, keyspaces: map[string]*KeyspaceMetadata{"ks": cloneV2Keyspace(ks)}, hosts: []HostSnapshot{{Tokens: []int64{1}}}}
+	m := routing.NewMetadataSnapshot(routing.SnapshotState{InternalGeneration: 8, InternalKeyspaces: map[string]*KeyspaceMetadata{"ks": cloneV2Keyspace(ks)}, InternalHosts: []HostSnapshot{{Tokens: []int64{1}}}})
 	ks.Tables["t"].Columns["id"].Name = "mutated"
 	ks.Tables["t"].Extensions["bytes"].([]byte)[0] = 9
 	first, _ := m.Keyspace("ks")
@@ -30,14 +34,18 @@ func TestV2MetadataSnapshotsDetachNestedSchema(t *testing.T) {
 	}
 }
 func TestV2MetadataRetainedAcrossPublicationAndClose(t *testing.T) {
-	s := &Session{}
+	s := func() *Session {
+		opaqueStorageValue := new(Session)
+		return opaqueStorageValue
+	}()
+
 	first := s.Metadata()
-	s.publishV2Metadata()
+	implCluster.InternalSessionPublishV2Metadata(s)
 	second := s.Metadata()
 	if first == second || second.Generation() <= first.Generation() {
 		t.Fatal("publication did not advance")
 	}
-	s.closeV2Peripheral()
+	implCluster.InternalSessionCloseV2Peripheral(s)
 	if first.Generation() == 0 {
 		t.Fatal("retained snapshot invalidated")
 	}
@@ -47,11 +55,15 @@ type panicLifecycle struct{}
 
 func (panicLifecycle) ObserveLifecycle(LifecycleEvent) { panic("observer failure") }
 func TestV2LifecyclePanicContained(t *testing.T) {
-	s := &Session{}
-	p := s.peripheral()
-	p.config.LifecycleObserver = panicLifecycle{}
-	s.observeV2Lifecycle(LifecycleEvent{Kind: "test", At: time.Now()})
-	s.closeV2Peripheral()
+	s := func() *Session {
+		opaqueStorageValuex := new(Session)
+		return opaqueStorageValuex
+	}()
+
+	p := implCluster.InternalSessionPeripheral(s)
+	p.InternalConfig.LifecycleObserver = panicLifecycle{}
+	implCluster.InternalSessionObserveV2Lifecycle(s, LifecycleEvent{Kind: "test", At: time.Now()})
+	implCluster.InternalSessionCloseV2Peripheral(s)
 }
 
 func TestV2SchemaValidationRejectsBrokenIdentityAndOrdering(t *testing.T) {
@@ -95,32 +107,40 @@ func TestV2SchemaTypeSyntax(t *testing.T) {
 	}
 }
 func TestV2MetricsPercentilesAndSchemaGeneration(t *testing.T) {
-	s := &Session{}
+	s := func() *Session {
+		opaqueStorageValuexx := new(Session)
+		return opaqueStorageValuexx
+	}()
+
 	for i := 1; i <= 100; i++ {
-		s.recordV2Latency(time.Duration(i) * time.Millisecond)
+		implCluster.InternalSessionRecordV2Latency(s, time.Duration(i)*time.Millisecond)
 	}
-	s.recordV2Orphan()
-	// Production publishes the bounded percentile summary once per second.
-	s.peripheral().publishLatencySummary()
+	implCluster.InternalSessionRecordV2Orphan(s)
+	implCluster.
+		// Production publishes the bounded percentile summary once per second.
+		InternalSessionPeripheral(s).InternalPublishLatencySummary()
 	m := s.Metrics()
 	if m.LatencyP50 != 50*time.Millisecond || m.LatencyP95 != 95*time.Millisecond || m.LatencyP99 != 99*time.Millisecond || m.Orphans != 1 {
 		t.Fatal(m)
 	}
-	generation := s.typedSchemaGeneration()
-	s.publishV2Metadata()
-	if s.typedSchemaGeneration() != generation {
+	generation := implCluster.InternalSessionTypedSchemaGeneration(s)
+	implCluster.InternalSessionPublishV2Metadata(s)
+	if implCluster.InternalSessionTypedSchemaGeneration(s) != generation {
 		t.Fatal("topology invalidated prepared schema")
 	}
 }
 
 func TestV2TabletFeedbackOverflowResyncAndEpoch(t *testing.T) {
-	s := &Session{}
-	s.metadataDescriber = newMetadataDescriber(s)
-	defer s.metadataDescriber.metadata.tabletsMetadata.Close()
-	defer s.closeV2Peripheral()
-	s.metadataDescriber.metadata.keyspaceMetadata.set("ks", &KeyspaceMetadata{Name: "ks", Tables: map[string]*TableMetadata{"t": {Name: "t"}}})
-	p := s.peripheral()
-	p.feedbackOnce.Do(func() {}) // Hold the consumer while filling the bounded queue.
+	s := func() *Session {
+		opaqueStorageValuexxx := new(Session)
+		return opaqueStorageValuexxx
+	}()
+	implCluster.SessionData(s).InternalMetadataDescriber = newMetadataDescriber(s)
+	defer implCluster.MetadataData(implCluster.SessionData(s).InternalMetadataDescriber.InternalMetadata).InternalTabletsMetadata.Close()
+	defer implCluster.InternalSessionCloseV2Peripheral(s)
+	implCluster.MetadataData(implCluster.SessionData(s).InternalMetadataDescriber.InternalMetadata).InternalKeyspaceMetadata.InternalSet("ks", &KeyspaceMetadata{Name: "ks", Tables: map[string]*TableMetadata{"t": {Name: "t"}}})
+	p := implCluster.InternalSessionPeripheral(s)
+	p.InternalFeedbackOnce.Do(func() {}) // Hold the consumer while filling the bounded queue.
 	sub, err := s.Subscribe(EventFilter{Kinds: []EventKind{OverflowEvent}, Capacity: 1})
 	if err != nil {
 		t.Fatal(err)
@@ -131,18 +151,18 @@ func TestV2TabletFeedbackOverflowResyncAndEpoch(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		s.applyV2TabletHint(hint)
+		implCluster.InternalSessionApplyV2TabletHint(s, hint)
 	}
-	p.feedbackMu.Lock()
-	if len(p.feedback) > 1024 || !p.feedbackResync {
+	p.InternalFeedbackMu.Lock()
+	if len(p.InternalFeedback) > 1024 || !p.InternalFeedbackResync {
 		t.Fatal("feedback did not bound and mark overflow")
 	}
-	p.feedbackMu.Unlock()
+	p.InternalFeedbackMu.Unlock()
 	// A newer schema event must win over every already queued hint.
-	p.mu.Lock()
-	p.schemaEpoch["ks"]++
-	p.mu.Unlock()
-	go s.runV2TabletFeedback(p)
+	p.InternalMu.Lock()
+	p.InternalSchemaEpoch["ks"]++
+	p.InternalMu.Unlock()
+	go implCluster.InternalSessionRunV2TabletFeedback(s, p)
 	select {
 	case event := <-sub.Events():
 		if event.Kind != OverflowEvent || event.Change != "TABLET_RESYNC" {
@@ -151,11 +171,11 @@ func TestV2TabletFeedbackOverflowResyncAndEpoch(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("feedback resync was not published")
 	}
-	if got := s.metadataDescriber.metadata.tabletsMetadata.GetTableTablets("ks", "t"); len(got) != 0 {
+	if got := implCluster.MetadataData(implCluster.SessionData(s).InternalMetadataDescriber.InternalMetadata).InternalTabletsMetadata.GetTableTablets("ks", "t"); len(got) != 0 {
 		t.Fatal("stale hint restored tablet", got)
 	}
 	snapshot := s.Metadata()
-	if _, known := snapshot.tabletRoot(metadataTable{"ks", "t"}); !known {
+	if _, known := routing.InternalMetadataSnapshotTabletRoot(snapshot, metadataTable{InternalKeyspace: "ks", InternalTable: "t"}); !known {
 		t.Fatal("resync lost tablet cache-miss marker")
 	}
 	if replicas, err := snapshot.Replicas("ks", "t", 4); err != nil || len(replicas) != 0 {

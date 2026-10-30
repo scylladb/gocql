@@ -1,0 +1,124 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+/*
+ * Content before git sha 34fdeebefcbf183ed7f916f931aa0586fdaa1b40
+ * Copyright (c) 2016, The Gocql authors,
+ * provided under the BSD-3-Clause License.
+ * See the NOTICE file distributed with this work for additional information.
+ */
+
+package cluster
+
+import implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
+
+import "fmt"
+
+// HostFilter interface is used when a host is discovered via server sent events.
+type HostFilter interface {
+	// Called when a new host is discovered, returning true will cause the host
+	// to be added to the pools.
+	Accept(host *HostInfo) bool
+}
+
+// HostFilterFunc converts a func(host HostInfo) bool into a HostFilter
+type HostFilterFunc func(host *HostInfo) bool
+
+func (fn HostFilterFunc) Accept(host *HostInfo) bool {
+	return fn(host)
+}
+
+// AcceptAllFilter will accept all hosts
+func AcceptAllFilter() HostFilter {
+	return HostFilterFunc(func(host *HostInfo) bool {
+		return true
+	})
+}
+
+func DenyAllFilter() HostFilter {
+	return HostFilterFunc(func(host *HostInfo) bool {
+		return false
+	})
+}
+
+// dataCenterHostFilter accepts hosts in one datacenter.
+//
+// It is a named type rather than a HostFilterFunc closure so that the
+// datacenter it selects can be read back: a closure captures it where nothing
+// can reach it, and every filter built from one is indistinguishable as a
+// HostFilterFunc. driver_config.go reports this filter as the part of the
+// cluster the driver holds connections to.
+type InternalDataCenterHostFilter struct {
+	dataCenter string
+}
+
+func (f InternalDataCenterHostFilter) Accept(host *HostInfo) bool {
+	return host.DataCenter() == f.dataCenter
+}
+
+// DataCenterHostFilter filters all hosts such that they are in the same data center
+// as the supplied data center.
+func DataCenterHostFilter(dataCenter string) HostFilter {
+	return InternalDataCenterHostFilter{dataCenter: dataCenter}
+}
+
+// Deprecated: Use DataCenterHostFilter instead.
+// DataCentreHostFilter is an alias that doesn't use the preferred spelling.
+func DataCentreHostFilter(dataCenter string) HostFilter {
+	return DataCenterHostFilter(dataCenter)
+}
+
+// WhiteListHostFilter filters incoming hosts by checking that their address is
+// in the initial hosts whitelist. It probes all known addresses of a host
+// (connect, rpc, broadcast, listen, peer, preferred, translated CQL) for a match.
+func WhiteListHostFilter(hosts ...string) HostFilter {
+	hostInfos, err := resolveInitialEndpoints(defaultDnsResolver, hosts, 9042, nopLogger{})
+	if err != nil {
+		// dont want to panic here, but rather not break the API
+		panic(fmt.Errorf("unable to lookup host info from address: %v", err))
+	}
+
+	m := make(map[string]bool, len(hostInfos))
+	for _, host := range hostInfos {
+		m[host.ConnectAddress().String()] = true
+	}
+
+	return HostFilterFunc(func(host *HostInfo) bool {
+		implEndpoint.HostInfoData(host).InternalMu.RLock()
+		defer implEndpoint.HostInfoData(host).InternalMu.RUnlock()
+
+		if validIpAddr(implEndpoint.HostInfoData(host).InternalRpcAddress) && m[implEndpoint.HostInfoData(host).InternalRpcAddress.String()] {
+			return true
+		}
+		if validIpAddr(implEndpoint.HostInfoData(host).InternalBroadcastAddress) && m[implEndpoint.HostInfoData(host).InternalBroadcastAddress.String()] {
+			return true
+		}
+		if validIpAddr(implEndpoint.HostInfoData(host).InternalListenAddress) && m[implEndpoint.HostInfoData(host).InternalListenAddress.String()] {
+			return true
+		}
+		if validIpAddr(implEndpoint.HostInfoData(host).InternalPeer) && m[implEndpoint.HostInfoData(host).InternalPeer.String()] {
+			return true
+		}
+		if validIpAddr(implEndpoint.HostInfoData(host).InternalPreferredIP) && m[implEndpoint.HostInfoData(host).InternalPreferredIP.String()] {
+			return true
+		}
+		if implEndpoint.HostInfoData(host).InternalTranslatedAddresses != nil && implEndpoint.HostInfoData(host).InternalTranslatedAddresses.CQL.IsValid() && m[implEndpoint.HostInfoData(host).InternalTranslatedAddresses.CQL.Address.String()] {
+			return true
+		}
+		return false
+	})
+}

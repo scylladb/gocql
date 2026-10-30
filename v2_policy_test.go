@@ -1,6 +1,8 @@
 package gocql
 
 import (
+	routing "github.com/scylladb/gocql/v2/internal/routing"
+
 	"bytes"
 	"math"
 	"testing"
@@ -25,7 +27,7 @@ func TestV2StreamingPartitioners(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got, err := Murmur3TokenPartitioner.Token(PartitionKey{chain: chain})
+			got, err := Murmur3TokenPartitioner.Token(*routing.NewPartitionKey(routing.PartitionKeyState{InternalChain: chain}))
 			if err != nil || got != expected {
 				t.Fatalf("length=%d split=%d: got %d,%v want %d", length, split, got, err, expected)
 			}
@@ -40,7 +42,7 @@ func TestV2StreamingPartitioners(t *testing.T) {
 			spans = append(spans, wire.Borrow(test.input[i:i+1]))
 		}
 		chain, _ := wire.NewChain(spans...)
-		got, err := CDCTokenPartitioner.Token(PartitionKey{chain: chain})
+		got, err := CDCTokenPartitioner.Token(*routing.NewPartitionKey(routing.PartitionKeyState{InternalChain: chain}))
 		if err != nil || got != test.expected {
 			t.Fatalf("CDC=%d,%v want %d", got, err, test.expected)
 		}
@@ -91,7 +93,7 @@ func v2TestHost(id byte, dc, rack string) HostSnapshot {
 }
 func v2TestMetadata() *MetadataSnapshot {
 	hosts := []HostSnapshot{v2TestHost(1, "a", "r1"), v2TestHost(2, "a", "r2"), v2TestHost(3, "b", "r3"), v2TestHost(4, "a", "r1")}
-	return &MetadataSnapshot{hostIndex: buildRoutingHostIndex(hosts), hosts: hosts, keyspaces: map[string]*KeyspaceMetadata{"ks": {Tables: map[string]*TableMetadata{"table": {Name: "table"}}}}, ranges: map[string][]TokenRange{"ks": {{Start: 0, End: 0, Replicas: []Target{{HostID: hosts[2].ID}, {HostID: hosts[1].ID}, {HostID: hosts[0].ID}}}}}, tablets: map[metadataTable][]TokenRange{}}
+	return routing.NewMetadataSnapshot(routing.SnapshotState{InternalHostIndex: buildRoutingHostIndex(hosts), InternalHosts: hosts, InternalKeyspaces: map[string]*KeyspaceMetadata{"ks": {Tables: map[string]*TableMetadata{"table": {Name: "table"}}}}, InternalRanges: map[string][]TokenRange{"ks": {{Start: 0, End: 0, Replicas: []Target{{HostID: hosts[2].ID}, {HostID: hosts[1].ID}, {HostID: hosts[0].ID}}}}}, InternalTablets: map[metadataTable][]TokenRange{}})
 }
 func v2PlanIDs(p QueryPlan) []byte {
 	var result []byte
@@ -128,7 +130,7 @@ func TestV2RoutingOrderAndIndependentPlans(t *testing.T) {
 			t.Fatal("SERIAL order changed", got)
 		}
 	}
-	m.hosts[0].Enabled = false
+	routing.SnapshotData(m).InternalHosts[0].Enabled = false
 	if got := v2PlanIDs(policy.Plan(info, m)); bytes.Contains(got, []byte{1}) {
 		t.Fatal("disabled host in plan")
 	}
@@ -139,18 +141,18 @@ func TestV2RoutingOrderAndIndependentPlans(t *testing.T) {
 }
 func TestV2RoutingTabletMissAndStrictShard(t *testing.T) {
 	m := v2TestMetadata()
-	m.tablets[metadataTable{"ks", "table"}] = []TokenRange{{Start: 10, End: 20, Replicas: []Target{{HostID: m.hosts[1].ID, ShardID: Option[uint32]{Value: 2, Set: true}}}}}
+	routing.SnapshotData(m).InternalTablets[metadataTable{InternalKeyspace: "ks", InternalTable: "table"}] = []TokenRange{{Start: 10, End: 20, Replicas: []Target{{HostID: routing.SnapshotData(m).InternalHosts[1].ID, ShardID: Option[uint32]{Value: 2, Set: true}}}}}
 	if got, err := m.Replicas("ks", "table", 30); err != nil || len(got) != 0 {
 		t.Fatal("tablet miss fell back to vnode", got, err)
 	}
-	single := SingleTargetRouting(Target{HostID: m.hosts[0].ID, ShardID: Option[uint32]{Value: 9, Set: true}}, true)
+	single := SingleTargetRouting(Target{HostID: routing.SnapshotData(m).InternalHosts[0].ID, ShardID: Option[uint32]{Value: 9, Set: true}}, true)
 	if err := single.Validate(m); err == nil {
 		t.Fatal("invalid strict shard accepted")
 	}
 	if _, ok := single.Plan(RoutingInfo{}, m).Next(); ok {
 		t.Fatal("strict shard fell back")
 	}
-	single = SingleTargetRouting(Target{HostID: m.hosts[0].ID, ShardID: Option[uint32]{Value: 9, Set: true}}, false)
+	single = SingleTargetRouting(Target{HostID: routing.SnapshotData(m).InternalHosts[0].ID, ShardID: Option[uint32]{Value: 9, Set: true}}, false)
 	target, ok := single.Plan(RoutingInfo{}, m).Next()
 	if !ok || target.ShardID.Set {
 		t.Fatal("hint fallback failed", target, ok)
@@ -160,7 +162,7 @@ func TestV2LatencyRoutingDeprioritizesAndRetries(t *testing.T) {
 	policy, _ := NewRoutingPolicy(RoutingOptions{Latency: LatencyOptions{Enabled: true, MinimumSamples: 1, RetryPeriod: time.Hour}})
 	p := policy.(*routingPolicy)
 	m := v2TestMetadata()
-	for i, h := range m.hosts {
+	for i, h := range routing.SnapshotData(m).InternalHosts {
 		latency := time.Millisecond
 		if i == 0 {
 			latency = time.Second

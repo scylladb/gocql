@@ -2,6 +2,8 @@
 
 package gocql
 
+import implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
+
 import (
 	"bytes"
 	"encoding/json"
@@ -41,12 +43,16 @@ var benchRecordings = []string{
 // moves after finalizeConnection, this guard keeps passing and the recordings go stale.
 func benchControlQuery() string {
 	// setSystemRequestTimeout only stores into an atomic and reads isScyllaConn, so
-	// nothing else of a Conn has to be real here.
-	c := &Conn{scyllaSupported: ScyllaConnectionFeatures{
-		ScyllaHostFeatures: ScyllaHostFeatures{isScylla: true},
+	// nothing else of a driverConn has to be real here.
+	c := &driverConn{InternalScyllaSupported: ScyllaConnectionFeatures{
+		ScyllaHostFeatures: *func() *ScyllaHostFeatures {
+			opaqueStorageValue := new(ScyllaHostFeatures)
+			implEndpoint.ScyllaHostFeaturesData(opaqueStorageValue).InternalIsScylla = true
+			return opaqueStorageValue
+		}(),
 	}}
-	c.setSystemRequestTimeout(newClusterSettings().ConnectTimeout)
-	stmt, _ := c.systemRequestStatement(qrySystemLocal)
+	c.InternalSetSystemRequestTimeout(newClusterSettings().ConnectTimeout)
+	stmt, _ := c.InternalSystemRequestStatement(qrySystemLocal)
 	return stmt
 }
 

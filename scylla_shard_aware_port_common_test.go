@@ -4,6 +4,13 @@
 package gocql
 
 import (
+	implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+	implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
+	// Each fixture supplies its own construction path; integration fixtures use
+	// Config/Connect while unit servers can disable their unsupported control path.
+)
+
+import (
 	"context"
 	"fmt"
 	"net"
@@ -13,8 +20,6 @@ import (
 	"time"
 )
 
-// Each fixture supplies its own construction path; integration fixtures use
-// Config/Connect while unit servers can disable their unsupported control path.
 type shardAwareTestCluster struct {
 	connect func(context.Context, legacyDialer, bool) (*Session, error)
 	useTLS  bool
@@ -68,12 +73,12 @@ func testShardAwarePortNoReconnections(t *testing.T, makeCluster makeClusterTest
 				return
 			}
 
-			hosts := sess.hostSource.getHostsList()
+			hosts := implCluster.SessionData(sess).InternalHostSource.InternalGetHostsList()
 			for _, host := range hosts {
-				t.Logf("checking host %s:%d hostID: %q", host.ConnectAddress(), host.Port(), host.hostId)
-				hostPool, ok := sess.pool.getPool(host)
+				t.Logf("checking host %s:%d hostID: %q", host.ConnectAddress(), host.Port(), implEndpoint.HostInfoData(host).InternalHostId)
+				hostPool, ok := implCluster.SessionData(sess).InternalPool.InternalGetPool(host)
 				if !ok {
-					pushErr(fmt.Errorf("host %q hostID not found", host.hostname))
+					pushErr(fmt.Errorf("host %q hostID not found", implEndpoint.HostInfoData(host).InternalHostname))
 					return
 				}
 
@@ -204,10 +209,10 @@ func testShardAwarePortUnusedIfNotEnabled(t *testing.T, makeCluster makeClusterT
 		t.Fatal(err)
 	}
 
-	hosts := sess.hostSource.getHostsList()
+	hosts := implCluster.SessionData(sess).InternalHostSource.InternalGetHostsList()
 	for _, host := range hosts {
-		t.Logf("checking host %s", host.hostname)
-		hostPool, _ := sess.pool.getPool(host)
+		t.Logf("checking host %s", implEndpoint.HostInfoData(host).InternalHostname)
+		hostPool, _ := implCluster.SessionData(sess).InternalPool.InternalGetPool(host)
 
 		shardAwarePort := getShardAwarePort(hostPool, useTLS)
 		if shardAwarePort == 0 {
@@ -234,10 +239,10 @@ func getShardAwarePort(pool *hostConnPool, useTLS bool) uint16 {
 }
 
 func triggerPoolsRefill(sess *Session) {
-	hosts := sess.hostSource.getHostsList()
+	hosts := implCluster.SessionData(sess).InternalHostSource.InternalGetHostsList()
 	for _, host := range hosts {
-		hostPool, _ := sess.pool.getPool(host)
-		go hostPool.fill_debounce()
+		hostPool, _ := implCluster.SessionData(sess).InternalPool.InternalGetPool(host)
+		go hostPool.InternalFill_debounce()
 	}
 }
 
@@ -260,13 +265,13 @@ func waitUntilPoolsStopFilling(ctx context.Context, sess *Session, timeout time.
 }
 
 func checkIfPoolsStoppedFilling(sess *Session) bool {
-	hosts := sess.hostSource.getHostsList()
+	hosts := implCluster.SessionData(sess).InternalHostSource.InternalGetHostsList()
 	for _, host := range hosts {
-		hostPool, _ := sess.pool.getPool(host)
+		hostPool, _ := implCluster.SessionData(sess).InternalPool.InternalGetPool(host)
 
-		hostPool.mu.Lock()
-		isFilling := hostPool.filling || hostPool.repairScheduled
-		hostPool.mu.Unlock()
+		hostPool.InternalMu.Lock()
+		isFilling := hostPool.InternalFilling || hostPool.InternalRepairScheduled
+		hostPool.InternalMu.Unlock()
 
 		if isFilling {
 			return false
@@ -277,13 +282,13 @@ func checkIfPoolsStoppedFilling(sess *Session) bool {
 }
 
 func checkIfPoolsAreFull(sess *Session) bool {
-	hosts := sess.hostSource.getHostsList()
+	hosts := implCluster.SessionData(sess).InternalHostSource.InternalGetHostsList()
 	for _, host := range hosts {
-		hostPool, _ := sess.pool.getPool(host)
+		hostPool, _ := implCluster.SessionData(sess).InternalPool.InternalGetPool(host)
 
-		hostPool.mu.Lock()
-		_, remaining := hostPool.connPicker.Size()
-		hostPool.mu.Unlock()
+		hostPool.InternalMu.Lock()
+		_, remaining := hostPool.InternalConnPicker.Size()
+		hostPool.InternalMu.Unlock()
 
 		if remaining > 0 {
 			return false

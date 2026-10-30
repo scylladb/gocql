@@ -3,6 +3,8 @@
 
 package gocql
 
+import implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
+
 import (
 	"bufio"
 	"context"
@@ -25,42 +27,42 @@ func TestScyllaConnPickerPickNilToken(t *testing.T) {
 	t.Parallel()
 
 	s := scyllaConnPicker{
-		nrShards:  4,
-		msbIgnore: 12,
+		InternalNrShards:  4,
+		InternalMsbIgnore: 12,
 	}
 
 	t.Run("no conns", func(t *testing.T) {
-		s.conns = []*Conn{{
-			streams: streams.New(),
+		s.InternalConns = []*driverConn{{
+			InternalStreams: streams.New(),
 		}}
-		if s.Pick(Token(nil)) != s.conns[0] {
+		if s.Pick(Token(nil)) != s.InternalConns[0] {
 			t.Fatal("expected connection")
 		}
 	})
 
 	t.Run("one shard", func(t *testing.T) {
-		s.conns = []*Conn{{
-			streams: streams.New(),
+		s.InternalConns = []*driverConn{{
+			InternalStreams: streams.New(),
 		}}
-		if s.Pick(Token(nil)) != s.conns[0] {
+		if s.Pick(Token(nil)) != s.InternalConns[0] {
 			t.Fatal("expected connection")
 		}
 	})
 
 	t.Run("multiple shards", func(t *testing.T) {
-		s.conns = []*Conn{nil, {
-			streams: streams.New(),
+		s.InternalConns = []*driverConn{nil, {
+			InternalStreams: streams.New(),
 		}}
-		if s.Pick(Token(nil)) != s.conns[1] {
+		if s.Pick(Token(nil)) != s.InternalConns[1] {
 			t.Fatal("expected connection")
 		}
-		if s.Pick(Token(nil)) != s.conns[1] {
+		if s.Pick(Token(nil)) != s.InternalConns[1] {
 			t.Fatal("expected connection")
 		}
 	})
 
 	t.Run("multiple shards no conns", func(t *testing.T) {
-		s.conns = []*Conn{nil, nil}
+		s.InternalConns = []*driverConn{nil, nil}
 		if s.Pick(Token(nil)) != nil {
 			t.Fatal("expected nil")
 		}
@@ -85,10 +87,10 @@ func TestScyllaConnPickerPickInt64MatchesPick(t *testing.T) {
 		{"eight-shards", 8, 0, []int64{-100000, 42, 999999999999}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			s := scyllaConnPicker{nrShards: tc.nrShards, msbIgnore: tc.msbIgnore}
-			s.conns = make([]*Conn, tc.nrShards)
-			for i := range s.conns {
-				s.conns[i] = &Conn{streams: streams.New()}
+			s := scyllaConnPicker{InternalNrShards: tc.nrShards, InternalMsbIgnore: tc.msbIgnore}
+			s.InternalConns = make([]*driverConn, tc.nrShards)
+			for i := range s.InternalConns {
+				s.InternalConns[i] = &driverConn{InternalStreams: streams.New()}
 			}
 
 			for _, tok := range tc.tokens {
@@ -98,8 +100,8 @@ func TestScyllaConnPickerPickInt64MatchesPick(t *testing.T) {
 				if got != want {
 					t.Fatalf("token %d: PickInt64=%p, want %p (Pick)", tok, got, want)
 				}
-				if shard := s.shardOf(tt); got != s.conns[shard] {
-					t.Fatalf("token %d: shard %d conn %p, got %p", tok, shard, s.conns[shard], got)
+				if shard := s.InternalShardOf(tt); got != s.InternalConns[shard] {
+					t.Fatalf("token %d: shard %d conn %p, got %p", tok, shard, s.InternalConns[shard], got)
 				}
 			}
 		})
@@ -113,18 +115,21 @@ func TestScyllaConnPickerPickInt64MatchesPick(t *testing.T) {
 func TestHostConnPoolPickConnRoutesInt64TokenToShardAwarePicker(t *testing.T) {
 	t.Parallel()
 
-	picker := scyllaConnPicker{nrShards: 4, msbIgnore: 12, nrConns: 4}
-	picker.conns = make([]*Conn, 4)
-	for i := range picker.conns {
-		picker.conns[i] = &Conn{streams: streams.New()}
+	picker := scyllaConnPicker{InternalNrShards: 4, InternalMsbIgnore: 12, InternalNrConns: 4}
+	picker.InternalConns = make([]*driverConn, 4)
+	for i := range picker.InternalConns {
+		picker.InternalConns[i] = &driverConn{InternalStreams: streams.New()}
 	}
 
 	tok := int64Token(math.MinInt64)
-	shard := picker.shardOf(tok)
-	want := picker.conns[shard]
+	shard := picker.InternalShardOf(tok)
+	want := picker.InternalConns[shard]
 
-	pool := &hostConnPool{connPicker: &picker}
-	host := int64SelectedHost{info: &HostInfo{}, tokenCasted: tok}
+	pool := &hostConnPool{InternalConnPicker: &picker}
+	host := int64SelectedHost{InternalInfo: func() *HostInfo {
+		opaqueStorageValue := new(HostInfo)
+		return opaqueStorageValue
+	}(), InternalTokenCasted: tok}
 
 	got := pool.PickConn(host)
 	if got != want {
@@ -147,16 +152,16 @@ func TestScyllaConnPickerHammerPickNilToken(t *testing.T) {
 	t.Parallel()
 
 	s := scyllaConnPicker{
-		nrShards:  4,
-		msbIgnore: 12,
+		InternalNrShards:  4,
+		InternalMsbIgnore: 12,
 	}
-	s.conns = make([]*Conn, 100)
-	for i := range s.conns {
+	s.InternalConns = make([]*driverConn, 100)
+	for i := range s.InternalConns {
 		if i%7 == 0 {
 			continue
 		}
-		s.conns[i] = &Conn{
-			streams: streams.New(),
+		s.InternalConns[i] = &driverConn{
+			InternalStreams: streams.New(),
 		}
 	}
 
@@ -175,24 +180,24 @@ func TestScyllaConnPickerRemove(t *testing.T) {
 	t.Parallel()
 
 	s := scyllaConnPicker{
-		nrShards:  4,
-		msbIgnore: 12,
+		InternalNrShards:  4,
+		InternalMsbIgnore: 12,
 	}
 
 	conn := mockConn(0)
 	s.Put(conn)
 	s.Put(mockConn(1))
 
-	if s.nrConns != 2 {
+	if s.InternalNrConns != 2 {
 		t.Error("added 2 connections, expected connection count to be 2")
 	}
 
 	s.Remove(conn)
-	if s.nrConns != 1 {
-		t.Errorf("removed 1 connection, expected connection count to be 1 but was %d", s.nrConns)
+	if s.InternalNrConns != 1 {
+		t.Errorf("removed 1 connection, expected connection count to be 1 but was %d", s.InternalNrConns)
 	}
 
-	if s.conns[0] != nil {
+	if s.InternalConns[0] != nil {
 		t.Errorf("Expected %v to be removed from it's position", conn)
 	}
 }
@@ -201,11 +206,11 @@ func TestScyllaConnPickerShardOf(t *testing.T) {
 	t.Parallel()
 
 	s := scyllaConnPicker{
-		nrShards:  4,
-		msbIgnore: 12,
+		InternalNrShards:  4,
+		InternalMsbIgnore: 12,
 	}
 	for _, test := range scyllaShardOfTests {
-		if shard := s.shardOf(int64Token(test.token)); shard != test.shard {
+		if shard := s.InternalShardOf(int64Token(test.token)); shard != test.shard {
 			t.Errorf("wrong scylla shard calculated for token %d, expected %d, got %d", test.token, test.shard, shard)
 		}
 	}
@@ -216,10 +221,10 @@ func TestScyllaRandomConnPicker(t *testing.T) {
 
 	t.Run("max iterations", func(t *testing.T) {
 		s := &scyllaConnPicker{
-			nrShards:  4,
-			msbIgnore: 12,
-			pos:       math.MaxUint64,
-			conns:     []*Conn{nil, mockConn(1)},
+			InternalNrShards:  4,
+			InternalMsbIgnore: 12,
+			InternalPos:       math.MaxUint64,
+			InternalConns:     []*driverConn{nil, mockConn(1)},
 		}
 
 		if s.Pick(Token(nil)) == nil {
@@ -232,14 +237,14 @@ func TestScyllaRandomConnPicker(t *testing.T) {
 		defer cancel()
 
 		s := &scyllaConnPicker{
-			nrShards:  4,
-			msbIgnore: 12,
-			pos:       math.MaxUint64,
-			conns:     []*Conn{nil, mockConn(1)},
+			InternalNrShards:  4,
+			InternalMsbIgnore: 12,
+			InternalPos:       math.MaxUint64,
+			InternalConns:     []*driverConn{nil, mockConn(1)},
 		}
 
 		var wg sync.WaitGroup
-		connCh := make(chan *Conn, 9)
+		connCh := make(chan *driverConn, 9)
 		for i := 0; i < 3; i++ {
 			wg.Add(1)
 			go func() {
@@ -255,8 +260,8 @@ func TestScyllaRandomConnPicker(t *testing.T) {
 		wg.Wait()
 		close(connCh)
 
-		if s.pos != 8 {
-			t.Fatalf("expected position to be 8 | actual %d", s.pos)
+		if s.InternalPos != 8 {
+			t.Fatalf("expected position to be 8 | actual %d", s.InternalPos)
 		}
 		if len(connCh) != 9 {
 			t.Fatalf("expected 9 connection picks, got %d", len(connCh))
@@ -287,7 +292,7 @@ func TestScyllaRateLimitingExtParsing(t *testing.T) {
 		// ensure that framer recognizes this extension and adjusts appropriately
 		framerWithRateLimitExt := framerForExts([]cqlProtocolExtension{
 			&rateLimitExt{
-				rateLimitErrorCode: mockCode,
+				InternalRateLimitErrorCode: mockCode,
 			},
 		})
 		if framerWithRateLimitExt.RateLimitingErrorCode != mockCode {
@@ -313,7 +318,7 @@ func TestScyllaLWTExtParsing(t *testing.T) {
 		// ensure that framer recognizes this extension and adjusts appropriately
 		framerWithLwtExt := framerForExts([]cqlProtocolExtension{
 			&lwtAddMetadataMarkExt{
-				lwtOptMetaBitMask: 1,
+				InternalLwtOptMetaBitMask: 1,
 			},
 		})
 		if framerWithLwtExt.FlagLWT == 0 {
@@ -322,17 +327,17 @@ func TestScyllaLWTExtParsing(t *testing.T) {
 	})
 }
 
-// framerForExts returns a pooled write framer from a mock Conn that negotiated
+// framerForExts returns a pooled write framer from a mock driverConn that negotiated
 // exts, i.e. through the same connFramers.initCache path production uses. There is
-// no standalone framer-with-extensions constructor to test against: the per-Conn
+// no standalone framer-with-extensions constructor to test against: the per-driverConn
 // pool is the only place the negotiated extension list is turned into framer state.
 func framerForExts(exts []cqlProtocolExtension) *framer {
 	conn := mockConn(0)
-	conn.version = protoVersion4
-	conn.logger = &testLogger{}
-	conn.cqlProtoExts = exts
-	conn.initFramerCache()
-	return conn.getWriteFramer()
+	conn.InternalVersion = protoVersion4
+	conn.InternalLogger = &testLogger{}
+	conn.InternalCqlProtoExts = exts
+	conn.InternalInitFramerCache()
+	return conn.InternalGetWriteFramer()
 }
 
 func TestScyllaUseMetadataIDExtParsing(t *testing.T) {
@@ -367,10 +372,10 @@ func TestScyllaUseMetadataIDExtParsing(t *testing.T) {
 
 	t.Run("name and serialize", func(t *testing.T) {
 		ext := &scyllaUseMetadataIDExt{}
-		if ext.name() != scyllaUseMetadataID {
-			t.Errorf("name() = %q, want %q", ext.name(), scyllaUseMetadataID)
+		if ext.InternalName() != scyllaUseMetadataID {
+			t.Errorf("name() = %q, want %q", ext.InternalName(), scyllaUseMetadataID)
 		}
-		ser := ext.serialize()
+		ser := ext.InternalSerialize()
 		if v, ok := ser[scyllaUseMetadataID]; !ok || len(ser) != 1 || v != "" {
 			t.Errorf("serialize() = %v, want a single %q key mapping to \"\"", ser, scyllaUseMetadataID)
 		}
@@ -406,7 +411,7 @@ func TestScyllaUseMetadataIDExtParsing(t *testing.T) {
 	// The framer side of the extension is covered by conn_test.go's
 	// TestInitFramerCacheScyllaUseMetadataID and its negative counterpart, which go
 	// through the same connFramers.initCache path and additionally pin
-	// Conn.usesMetadataID against it.
+	// driverConn.usesMetadataID against it.
 }
 
 func TestParseSupported(t *testing.T) {
@@ -509,15 +514,15 @@ func TestParseSupported(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			got := parseSupported(tt.supported, &testLogger{})
-			assert.Equal(t, tt.nrShards, got.nrShards, "nrShards")
-			assert.Equal(t, tt.msbIgnore, got.msbIgnore, "msbIgnore")
-			assert.Equal(t, tt.shardingAlgorithm, got.shardingAlgorithm, "shardingAlgorithm")
-			assert.Equal(t, tt.partitioner, got.partitioner, "partitioner")
-			assert.Equal(t, tt.lwtFlagMask, got.lwtFlagMask, "lwtFlagMask")
-			assert.Equal(t, tt.rateLimitErrorCode, got.rateLimitErrorCode, "rateLimitErrorCode")
-			assert.Equal(t, tt.shardAwarePort, got.shardAwarePort, "shardAwarePort")
-			assert.Equal(t, tt.isMetadataIDSupported, got.isMetadataIDSupported, "isMetadataIDSupported")
-			assert.Equal(t, tt.isScylla, got.isScylla, "isScylla")
+			assert.Equal(t, tt.nrShards, implEndpoint.ScyllaHostFeaturesData(&got.ScyllaHostFeatures).InternalNrShards, "nrShards")
+			assert.Equal(t, tt.msbIgnore, implEndpoint.ScyllaHostFeaturesData(&got.ScyllaHostFeatures).InternalMsbIgnore, "msbIgnore")
+			assert.Equal(t, tt.shardingAlgorithm, implEndpoint.ScyllaHostFeaturesData(&got.ScyllaHostFeatures).InternalShardingAlgorithm, "shardingAlgorithm")
+			assert.Equal(t, tt.partitioner, implEndpoint.ScyllaHostFeaturesData(&got.ScyllaHostFeatures).InternalPartitioner, "partitioner")
+			assert.Equal(t, tt.lwtFlagMask, implEndpoint.ScyllaHostFeaturesData(&got.ScyllaHostFeatures).InternalLwtFlagMask, "lwtFlagMask")
+			assert.Equal(t, tt.rateLimitErrorCode, implEndpoint.ScyllaHostFeaturesData(&got.ScyllaHostFeatures).InternalRateLimitErrorCode, "rateLimitErrorCode")
+			assert.Equal(t, tt.shardAwarePort, implEndpoint.ScyllaHostFeaturesData(&got.ScyllaHostFeatures).InternalShardAwarePort, "shardAwarePort")
+			assert.Equal(t, tt.isMetadataIDSupported, implEndpoint.ScyllaHostFeaturesData(&got.ScyllaHostFeatures).InternalIsMetadataIDSupported, "isMetadataIDSupported")
+			assert.Equal(t, tt.isScylla, implEndpoint.ScyllaHostFeaturesData(&got.ScyllaHostFeatures).InternalIsScylla, "isScylla")
 		})
 	}
 }
@@ -525,10 +530,10 @@ func TestParseSupported(t *testing.T) {
 func TestIsScyllaConn(t *testing.T) {
 	t.Parallel()
 
-	makeConn := func(supported map[string][]string) *Conn {
+	makeConn := func(supported map[string][]string) *driverConn {
 		conn := mockConn(0)
-		conn.supported = supported
-		conn.scyllaSupported = parseSupported(supported, &testLogger{})
+		conn.InternalSupported = supported
+		conn.InternalScyllaSupported = parseSupported(supported, &testLogger{})
 		return conn
 	}
 
@@ -541,7 +546,7 @@ func TestIsScyllaConn(t *testing.T) {
 			"SCYLLA_SHARDING_IGNORE_MSB": {"12"},
 			lwtAddMetadataMarkKey:        {"LWT_OPTIMIZATION_META_BIT_MASK=8"},
 		})
-		assert.True(t, conn.isScyllaConn())
+		assert.True(t, conn.InternalIsScyllaConn())
 	})
 
 	t.Run("Scylla without sharding (allow_shard_aware_drivers: false)", func(t *testing.T) {
@@ -550,13 +555,13 @@ func TestIsScyllaConn(t *testing.T) {
 			lwtAddMetadataMarkKey: {"LWT_OPTIMIZATION_META_BIT_MASK=8"},
 			rateLimitError:        {"ERROR_CODE=42"},
 		})
-		assert.True(t, conn.isScyllaConn())
+		assert.True(t, conn.InternalIsScyllaConn())
 	})
 
 	t.Run("pure Cassandra", func(t *testing.T) {
 		t.Parallel()
 		conn := makeConn(map[string][]string{"CQL_VERSION": {"3.0.0"}})
-		assert.False(t, conn.isScyllaConn())
+		assert.False(t, conn.InternalIsScyllaConn())
 	})
 }
 
@@ -564,20 +569,20 @@ func TestInitConnPickerNonShardAwareScylla(t *testing.T) {
 	t.Parallel()
 
 	conn := mockConn(0)
-	conn.scyllaSupported = parseSupported(map[string][]string{
+	conn.InternalScyllaSupported = parseSupported(map[string][]string{
 		lwtAddMetadataMarkKey: {"LWT_OPTIMIZATION_META_BIT_MASK=8"},
 	}, &testLogger{})
-	require.True(t, conn.isScyllaConn())
-	require.Zero(t, conn.getScyllaSupported().nrShards)
+	require.True(t, conn.InternalIsScyllaConn())
+	require.Zero(t, implEndpoint.ScyllaHostFeaturesValueData(conn.InternalGetScyllaSupported().ScyllaHostFeatures).InternalNrShards)
 
 	pool := &hostConnPool{
-		size:       1,
-		connPicker: nopConnPicker{},
-		logger:     &testLogger{},
+		InternalSize:       1,
+		InternalConnPicker: nopConnPicker{},
+		InternalLogger:     &testLogger{},
 	}
-	pool.initConnPicker(conn)
+	pool.InternalInitConnPicker(conn)
 
-	_, isScyllaPicker := pool.connPicker.(*scyllaConnPicker)
+	_, isScyllaPicker := pool.InternalConnPicker.(*scyllaConnPicker)
 	assert.False(t, isScyllaPicker, "must not build scyllaConnPicker without shards")
 }
 
@@ -687,22 +692,22 @@ func TestScyllaConnPickerHandleShardCountChange(t *testing.T) {
 
 			logger := &testLogger{}
 			picker := &scyllaConnPicker{
-				logger:                     logger,
-				disableShardAwarePortUntil: new(atomic.Pointer[time.Time]),
-				hostId:                     tUUID(99),
-				address:                    "192.168.1.1:9042", // Regular port
-				conns:                      make([]*Conn, tt.initialShards),
-				excessConns:                make([]*Conn, 0),
-				nrShards:                   tt.initialShards,
-				msbIgnore:                  12,
-				nrConns:                    0,
-				pos:                        0,
-				lastAttemptedShard:         0,
-				shardAwarePortDisabled:     false,
-				excessConnsLimitRate:       0.1,
+				InternalLogger:                     logger,
+				InternalDisableShardAwarePortUntil: new(atomic.Pointer[time.Time]),
+				InternalHostId:                     tUUID(99),
+				InternalAddress:                    "192.168.1.1:9042", // Regular port
+				InternalConns:                      make([]*driverConn, tt.initialShards),
+				InternalExcessConns:                make([]*driverConn, 0),
+				InternalNrShards:                   tt.initialShards,
+				InternalMsbIgnore:                  12,
+				InternalNrConns:                    0,
+				InternalPos:                        0,
+				InternalLastAttemptedShard:         0,
+				InternalShardAwarePortDisabled:     false,
+				InternalExcessConnsLimitRate:       0.1,
 			}
 
-			var connectionsToCheck []*Conn
+			var connectionsToCheck []*driverConn
 
 			// Add initial connections
 			for _, shardID := range tt.initialConns {
@@ -716,8 +721,8 @@ func TestScyllaConnPickerHandleShardCountChange(t *testing.T) {
 			}
 
 			// Verify initial state
-			assert.Equal(t, tt.initialShards, picker.nrShards)
-			assert.Equal(t, len(tt.initialConns), picker.nrConns)
+			assert.Equal(t, tt.initialShards, picker.InternalNrShards)
+			assert.Equal(t, len(tt.initialConns), picker.InternalNrConns)
 
 			// Execute topology change
 			newConn := mockConnForPicker(0, tt.newShards)
@@ -728,12 +733,12 @@ func TestScyllaConnPickerHandleShardCountChange(t *testing.T) {
 			time.Sleep(50 * time.Millisecond)
 
 			// Verify new topology
-			assert.Equal(t, tt.newShards, picker.nrShards)
-			assert.Equal(t, len(picker.conns), tt.newShards)
+			assert.Equal(t, tt.newShards, picker.InternalNrShards)
+			assert.Equal(t, len(picker.InternalConns), tt.newShards)
 
 			// Count migrated connections
 			migratedCount := 0
-			for _, conn := range picker.conns {
+			for _, conn := range picker.InternalConns {
 				if conn != nil {
 					migratedCount++
 				}
@@ -756,43 +761,52 @@ func TestScyllaConnPickerHandleShardCountChange(t *testing.T) {
 	}
 }
 
-func mockConn(shard int) *Conn {
-	return &Conn{
-		streams: streams.New(),
-		scyllaSupported: ScyllaConnectionFeatures{
-			shard: shard,
-			ScyllaHostFeatures: ScyllaHostFeatures{
-				nrShards:          4,
-				msbIgnore:         12,
-				partitioner:       "org.apache.cassandra.dht.Murmur3Partitioner",
-				shardingAlgorithm: "biased-token-round-robin",
-			},
-		},
+func mockConn(shard int) *driverConn {
+	return &driverConn{
+		InternalStreams: streams.New(),
+		InternalScyllaSupported: *func() *ScyllaConnectionFeatures {
+			opaqueStorageValuexx := new(ScyllaConnectionFeatures)
+			implEndpoint.ScyllaConnectionFeaturesData(opaqueStorageValuexx).InternalShard = shard
+			opaqueStorageValuexx.ScyllaHostFeatures = *func() *ScyllaHostFeatures {
+				opaqueStorageValuex := new(ScyllaHostFeatures)
+				implEndpoint.ScyllaHostFeaturesData(opaqueStorageValuex).InternalNrShards = 4
+				implEndpoint.ScyllaHostFeaturesData(opaqueStorageValuex).InternalMsbIgnore = 12
+				implEndpoint.ScyllaHostFeaturesData(opaqueStorageValuex).InternalPartitioner = "org.apache.cassandra.dht.Murmur3Partitioner"
+				implEndpoint.ScyllaHostFeaturesData(opaqueStorageValuex).InternalShardingAlgorithm = "biased-token-round-robin"
+				return opaqueStorageValuex
+			}()
+			return opaqueStorageValuexx
+		}(),
 	}
 }
 
-func mockConnForPicker(shard, nrShards int) *Conn {
+func mockConnForPicker(shard, nrShards int) *driverConn {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	conn1, conn2 := net.Pipe()
 	_ = conn2.Close()
 
-	return &Conn{
-		scyllaSupported: ScyllaConnectionFeatures{
-			shard: shard,
-			ScyllaHostFeatures: ScyllaHostFeatures{
-				nrShards:  nrShards,
-				msbIgnore: 12,
-			},
-		},
-		r:       &connReader{conn: conn1, r: bufio.NewReader(conn1)},
-		addr:    fmt.Sprintf("192.168.1.%d:9042", shard+1),
-		closed:  false,
-		mu:      sync.Mutex{},
-		logger:  &testLogger{},
-		ctx:     ctx,
-		cancel:  cancel,
-		calls:   make(map[int]*callReq),
-		streams: streams.New(),
+	return &driverConn{
+		InternalScyllaSupported: *func() *ScyllaConnectionFeatures {
+			opaqueStorageValuexxxx := new(ScyllaConnectionFeatures)
+			implEndpoint.ScyllaConnectionFeaturesData(opaqueStorageValuexxxx).InternalShard = shard
+			opaqueStorageValuexxxx.ScyllaHostFeatures = *func() *ScyllaHostFeatures {
+				opaqueStorageValuexxx := new(ScyllaHostFeatures)
+				implEndpoint.ScyllaHostFeaturesData(opaqueStorageValuexxx).InternalNrShards = nrShards
+				implEndpoint.ScyllaHostFeaturesData(opaqueStorageValuexxx).InternalMsbIgnore = 12
+				return opaqueStorageValuexxx
+			}()
+			return opaqueStorageValuexxxx
+		}(),
+
+		InternalR:       &connReader{InternalConn: conn1, InternalR: bufio.NewReader(conn1)},
+		InternalAddr:    fmt.Sprintf("192.168.1.%d:9042", shard+1),
+		InternalClosed:  false,
+		InternalMu:      sync.Mutex{},
+		InternalLogger:  &testLogger{},
+		InternalCtx:     ctx,
+		InternalCancel:  cancel,
+		InternalCalls:   make(map[int]*callReq),
+		InternalStreams: streams.New(),
 	}
 }

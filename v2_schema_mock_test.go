@@ -14,7 +14,7 @@ import (
 // These adapters retain the existing schema fixture factories and their failure
 // injection/counting hooks. Production metadata code receives only canonical
 // typed request values and owned response pages through v2SystemQueryer.
-func (m *schemaDataMock) queryV2System(ctx context.Context, request *attemptRequest) (*responsePage, error) {
+func (m *schemaDataMock) InternalQueryV2System(ctx context.Context, request *attemptRequest) (*responsePage, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -25,7 +25,7 @@ func (m *schemaDataMock) queryV2System(ctx context.Context, request *attemptRequ
 	return v2SchemaMockResponse(request.Statement, m.querySystem(request.Statement, values...))
 }
 
-func (c *systemSchemaTestControl) queryV2System(ctx context.Context, request *attemptRequest) (*responsePage, error) {
+func (c *systemSchemaTestControl) InternalQueryV2System(ctx context.Context, request *attemptRequest) (*responsePage, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -114,7 +114,7 @@ func v2SchemaMockResponse(statement string, fixture *nativeResultFixture) (*resp
 		release()
 		return nil, err
 	}
-	return &responsePage{responseData: responseData{Kind: 2,
+	return &responsePage{InternalResponseData: responseData{Kind: 2,
 		Columns:     columns,
 		ColumnCount: columns.Len(),
 		Rows:        chain,
@@ -157,13 +157,13 @@ func v2SchemaMockEmptyColumns(statement string) (Columns, error) {
 	}
 }
 
-func (c *mockConnection) executeTyped(ctx context.Context, r *attemptRequest) (*responsePage, error) {
+func (c *mockConnection) InternalExecuteTyped(ctx context.Context, r *attemptRequest) (*responsePage, error) {
 	return v2SchemaMockResponse(r.Statement, c.querySystem(ctx, r.Statement))
 }
-func (c *trackingRingConnection) executeTyped(ctx context.Context, r *attemptRequest) (*responsePage, error) {
+func (c *trackingRingConnection) InternalExecuteTyped(ctx context.Context, r *attemptRequest) (*responsePage, error) {
 	return v2SchemaMockResponse(r.Statement, c.querySystem(ctx, r.Statement))
 }
-func (f *fakeControlConn) queryV2System(ctx context.Context, r *attemptRequest) (*responsePage, error) {
+func (f *fakeControlConn) InternalQueryV2System(ctx context.Context, r *attemptRequest) (*responsePage, error) {
 	f.statement = r.Statement
 	f.values = nil
 	cursor := wire.NewCursor(r.Values)
@@ -204,5 +204,5 @@ func (f *fakeControlConn) queryV2System(ctx context.Context, r *attemptRequest) 
 	integer, _ := ScalarType(TypeInt)
 	cols := NewColumns(ColumnSpec{Name: "connection_id", Type: text}, ColumnSpec{Name: "host_id", Type: text}, ColumnSpec{Name: "address", Type: text}, ColumnSpec{Name: "port", Type: integer}, ColumnSpec{Name: "tls_port", Type: integer})
 	chain, _ := wire.NewChain()
-	return &responsePage{responseData: responseData{Columns: cols, ColumnCount: 5, Rows: chain, Owner: wire.NewLease(chain, nil)}}, nil
+	return &responsePage{InternalResponseData: responseData{Columns: cols, ColumnCount: 5, Rows: chain, Owner: wire.NewLease(chain, nil)}}, nil
 }

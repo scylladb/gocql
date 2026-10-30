@@ -24,9 +24,7 @@
 
 package gocql
 
-import (
-	"github.com/scylladb/gocql/v2/internal/wirecompress"
-)
+import "github.com/scylladb/gocql/v2/internal/wirecompress"
 
 // SnappyCompressor implements the Compressor interface and can be used to
 // compress incoming and outgoing frames. It uses the S2 compression algorithm,

@@ -31,7 +31,7 @@ import (
 func TestScyllaCDCPartitioner_HashInt64MatchesHash(t *testing.T) {
 	t.Parallel()
 
-	p := scyllaCDCPartitioner{logger: &defaultLogger{}}
+	p := scyllaCDCPartitioner{InternalLogger: &defaultLogger{}}
 	var _ int64Hasher = p
 
 	mk16 := func(upper uint64, version uint64) []byte {
@@ -60,7 +60,7 @@ func TestScyllaCDCPartitioner_HashInt64MatchesHash(t *testing.T) {
 		if !ok {
 			t.Fatalf("Hash(%v) returned %T, want int64Token", k, want)
 		}
-		got := int64Token(p.hashInt64(k))
+		got := int64Token(p.InternalHashInt64(k))
 		if got != wantInt64 {
 			t.Errorf("hashInt64(%v) = %d, want %d (from Hash)", k, got, wantInt64)
 		}
@@ -70,22 +70,22 @@ func TestScyllaCDCPartitioner_HashInt64MatchesHash(t *testing.T) {
 func TestScyllaCDCPartitioner_HashInt64_ShortKeyReturnsMinToken(t *testing.T) {
 	t.Parallel()
 
-	p := scyllaCDCPartitioner{logger: &defaultLogger{}}
-	got := p.hashInt64([]byte{1, 2, 3})
+	p := scyllaCDCPartitioner{InternalLogger: &defaultLogger{}}
+	got := p.InternalHashInt64([]byte{1, 2, 3})
 	if got != int64(scyllaCDCMinToken) {
 		t.Fatalf("hashInt64(short key) = %d, want %d (scyllaCDCMinToken)", got, int64(scyllaCDCMinToken))
 	}
 }
 
 func TestScyllaCDCPartitioner_HashInt64_ZeroAlloc(t *testing.T) {
-	p := scyllaCDCPartitioner{logger: &defaultLogger{}}
+	p := scyllaCDCPartitioner{InternalLogger: &defaultLogger{}}
 	pk := make([]byte, 16)
 	binary.BigEndian.PutUint64(pk[0:], 12345)
 	binary.BigEndian.PutUint64(pk[8:], 1)
 
 	var sink int64
 	allocs := testing.AllocsPerRun(1000, func() {
-		sink = p.hashInt64(pk)
+		sink = p.InternalHashInt64(pk)
 	})
 	if allocs != 0 {
 		t.Errorf("hashInt64 allocated %.2f allocs/op, want 0", allocs)

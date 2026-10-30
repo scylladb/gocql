@@ -3,6 +3,8 @@
 
 package gocql
 
+import implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
+
 import (
 	cqltype "github.com/scylladb/gocql/v2/internal/cqltype"
 
@@ -90,10 +92,10 @@ func TestGetClusterPeerInfoZeroToken(t *testing.T) {
 type mockConnection struct{}
 
 func (*mockConnection) Close() {}
-func (*mockConnection) exec(ctx context.Context, req frameBuilder, tracer Tracer, requestTimeout time.Duration) (*framer, error) {
+func (*mockConnection) InternalExec(ctx context.Context, req frameBuilder, tracer Tracer, requestTimeout time.Duration) (*framer, error) {
 	return nil, nil
 }
-func (*mockConnection) awaitSchemaAgreement(ctx context.Context) error { return nil }
+func (*mockConnection) InternalAwaitSchemaAgreement(ctx context.Context) error { return nil }
 
 var systemLocalResultMetadata = resultMetadata{
 	Flags:          0,
@@ -240,10 +242,10 @@ func (*mockConnection) querySystem(ctx context.Context, query string, values ...
 	return nil
 }
 
-func (*mockConnection) getIsSchemaV2() bool { return false }
-func (*mockConnection) setSchemaV2(s bool)  {}
-func (*mockConnection) isScyllaConn() bool  { return false }
-func (*mockConnection) getScyllaSupported() ScyllaConnectionFeatures {
+func (*mockConnection) InternalGetIsSchemaV2() bool { return false }
+func (*mockConnection) InternalSetSchemaV2(s bool)  {}
+func (*mockConnection) InternalIsScyllaConn() bool  { return false }
+func (*mockConnection) InternalGetScyllaSupported() ScyllaConnectionFeatures {
 	return ScyllaConnectionFeatures{}
 }
 
@@ -253,25 +255,28 @@ func (m *mockControlConn) querySystem(statement string, values ...any) (iter *na
 	return nil
 }
 
-func (m *mockControlConn) reconnect() error {
+func (m *mockControlConn) InternalReconnect() error {
 	return nil
 }
 
-func (m *mockControlConn) getConn() *connHost {
+func (m *mockControlConn) InternalGetConn() *connHost {
 	return &connHost{
-		conn: &mockConnection{},
-		host: &HostInfo{},
+		InternalConn: &mockConnection{},
+		InternalHost: func() *HostInfo {
+			opaqueStorageValue := new(HostInfo)
+			return opaqueStorageValue
+		}(),
 	}
 }
 
-func (m *mockControlConn) awaitSchemaAgreement() error { return nil }
+func (m *mockControlConn) InternalAwaitSchemaAgreement() error { return nil }
 func (m *mockControlConn) query(statement string, values ...any) (iter *nativeResultFixture) {
 	return nil
 }
-func (m *mockControlConn) discoverProtocol(hosts []*HostInfo) (int, error) { return 0, nil }
-func (m *mockControlConn) connect(hosts []*HostInfo) error                 { return nil }
-func (m *mockControlConn) close()                                          {}
-func (m *mockControlConn) getSession() *Session                            { return nil }
+func (m *mockControlConn) InternalDiscoverProtocol(hosts []*HostInfo) (int, error) { return 0, nil }
+func (m *mockControlConn) InternalConnect(hosts []*HostInfo) error                 { return nil }
+func (m *mockControlConn) InternalClose()                                          {}
+func (m *mockControlConn) InternalGetSession() *Session                            { return nil }
 
 func marshalMetadataMust(metadata resultMetadata, data []any) [][]byte {
 	if len(metadata.Columns) != len(data) {
@@ -297,26 +302,26 @@ type trackingRingConnection struct {
 }
 
 func (*trackingRingConnection) Close() {}
-func (*trackingRingConnection) exec(context.Context, frameBuilder, Tracer, time.Duration) (*framer, error) {
+func (*trackingRingConnection) InternalExec(context.Context, frameBuilder, Tracer, time.Duration) (*framer, error) {
 	return nil, nil
 }
-func (*trackingRingConnection) awaitSchemaAgreement(context.Context) error { return nil }
+func (*trackingRingConnection) InternalAwaitSchemaAgreement(context.Context) error { return nil }
 
 func (c *trackingRingConnection) querySystem(_ context.Context, q string, _ ...any) *nativeResultFixture {
 	c.lastQuery = q
 	return c.iter
 }
-func (c *trackingRingConnection) getIsSchemaV2() bool { return c.schemaV2 }
-func (*trackingRingConnection) setSchemaV2(bool)      {}
-func (c *trackingRingConnection) isScyllaConn() bool  { return c.scylla }
-func (*trackingRingConnection) getScyllaSupported() ScyllaConnectionFeatures {
+func (c *trackingRingConnection) InternalGetIsSchemaV2() bool { return c.schemaV2 }
+func (*trackingRingConnection) InternalSetSchemaV2(bool)      {}
+func (c *trackingRingConnection) InternalIsScyllaConn() bool  { return c.scylla }
+func (*trackingRingConnection) InternalGetScyllaSupported() ScyllaConnectionFeatures {
 	return ScyllaConnectionFeatures{}
 }
 
 func TestMockGetHostsFromSystem(t *testing.T) {
 	t.Parallel()
 
-	r := &ringDescriber{control: &mockControlConn{}, cfg: &clusterSettings{Port: 9042}}
+	r := &ringDescriber{InternalControl: &mockControlConn{}, InternalCfg: &clusterSettings{Port: 9042}}
 
 	hosts, _, err := r.GetHostsFromSystem()
 	if err != nil {
@@ -325,7 +330,7 @@ func TestMockGetHostsFromSystem(t *testing.T) {
 
 	// Zero-token hosts remain in topology and participate in schema agreement.
 	tests.AssertEqual(t, "hosts length", 3, len(hosts))
-	tests.AssertEqual(t, "host token length", 2, len(hosts[1].tokens))
+	tests.AssertEqual(t, "host token length", 2, len(implEndpoint.HostInfoData(hosts[1]).InternalTokens))
 }
 
 func TestRingDescriberGetClusterPeerInfoClosesIter(t *testing.T) {
@@ -345,9 +350,9 @@ func TestRingDescriberGetClusterPeerInfoClosesIter(t *testing.T) {
 	framer := &trackingMockFramer{
 		MockFramer: mock.MockFramer{Data: marshalMetadataMust(systemPeersResultMetadata, row)},
 	}
-	r := &ringDescriber{cfg: &clusterSettings{Port: 9042}}
+	r := &ringDescriber{InternalCfg: &clusterSettings{Port: 9042}}
 
-	peers, err := r.getClusterPeerInfo(context.Background(), &trackingRingConnection{
+	peers, err := r.InternalGetClusterPeerInfo(context.Background(), &trackingRingConnection{
 		iter: &nativeResultFixture{
 			meta:    systemPeersResultMetadata,
 			framer:  framer,
@@ -385,9 +390,9 @@ func TestGetClusterPeerInfoQueryRouting(t *testing.T) {
 				schemaV2: tt.schemaV2,
 				scylla:   tt.scylla,
 			}
-			r := &ringDescriber{cfg: &clusterSettings{Port: 9042}}
+			r := &ringDescriber{InternalCfg: &clusterSettings{Port: 9042}}
 			// iter is nil so getClusterPeerInfo returns errNoControl, but the query is still recorded
-			_, _ = r.getClusterPeerInfo(context.Background(), conn)
+			_, _ = r.InternalGetClusterPeerInfo(context.Background(), conn)
 			if conn.lastQuery != tt.wantQuery {
 				t.Errorf("got query %q, want %q", conn.lastQuery, tt.wantQuery)
 			}
@@ -400,8 +405,13 @@ func TestRing_AddHostIfMissing_Missing(t *testing.T) {
 
 	ring := &ringDescriber{}
 
-	host := &HostInfo{hostId: MustRandomUUID(), connectAddress: net.IPv4(1, 1, 1, 1)}
-	h1, ok := ring.addHostIfMissing(host)
+	host := func() *HostInfo {
+		opaqueStorageValuex := new(HostInfo)
+		implEndpoint.HostInfoData(opaqueStorageValuex).InternalHostId = MustRandomUUID()
+		implEndpoint.HostInfoData(opaqueStorageValuex).InternalConnectAddress = net.IPv4(1, 1, 1, 1)
+		return opaqueStorageValuex
+	}()
+	h1, ok := ring.InternalAddHostIfMissing(host)
 	if ok {
 		t.Fatal("host was reported as already existing")
 	} else if !h1.Equal(host) {
@@ -416,12 +426,22 @@ func TestRing_AddHostIfMissing_Existing(t *testing.T) {
 
 	ring := &ringDescriber{}
 
-	host := &HostInfo{hostId: MustRandomUUID(), connectAddress: net.IPv4(1, 1, 1, 1)}
-	ring.addHostIfMissing(host)
+	host := func() *HostInfo {
+		opaqueStorageValuexx := new(HostInfo)
+		implEndpoint.HostInfoData(opaqueStorageValuexx).InternalHostId = MustRandomUUID()
+		implEndpoint.HostInfoData(opaqueStorageValuexx).InternalConnectAddress = net.IPv4(1, 1, 1, 1)
+		return opaqueStorageValuexx
+	}()
+	ring.InternalAddHostIfMissing(host)
 
-	h2 := &HostInfo{hostId: host.hostId, connectAddress: net.IPv4(2, 2, 2, 2)}
+	h2 := func() *HostInfo {
+		opaqueStorageValuexxx := new(HostInfo)
+		implEndpoint.HostInfoData(opaqueStorageValuexxx).InternalHostId = implEndpoint.HostInfoData(host).InternalHostId
+		implEndpoint.HostInfoData(opaqueStorageValuexxx).InternalConnectAddress = net.IPv4(2, 2, 2, 2)
+		return opaqueStorageValuexxx
+	}()
 
-	h1, ok := ring.addHostIfMissing(h2)
+	h1, ok := ring.InternalAddHostIfMissing(h2)
 	if !ok {
 		t.Fatal("host was not reported as already existing")
 	} else if !h1.Equal(host) {

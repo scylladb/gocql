@@ -3,6 +3,8 @@
 
 package gocql
 
+import implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+
 import (
 	"context"
 	"fmt"
@@ -73,7 +75,7 @@ func TestSessionEventBusReceivesControlReconnectEvent(t *testing.T) {
 	}
 	defer sub.Close()
 
-	if err := sess.control.reconnect(); err != nil {
+	if err := implCluster.SessionData(sess).InternalControl.InternalReconnect(); err != nil {
 		t.Fatalf("control reconnect: %v", err)
 	}
 

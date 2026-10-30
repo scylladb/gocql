@@ -27,6 +27,8 @@
 
 package gocql
 
+import implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
+
 import (
 	"net"
 	"testing"
@@ -48,17 +50,17 @@ type systemSchemaTestControl struct {
 	iter *nativeResultFixture
 }
 
-func (*systemSchemaTestControl) getConn() *connHost                               { return nil }
-func (*systemSchemaTestControl) awaitSchemaAgreement() error                      { return nil }
+func (*systemSchemaTestControl) InternalGetConn() *connHost                       { return nil }
+func (*systemSchemaTestControl) InternalAwaitSchemaAgreement() error              { return nil }
 func (*systemSchemaTestControl) query(string, ...any) (iter *nativeResultFixture) { return nil }
 func (c *systemSchemaTestControl) querySystem(string, ...any) (iter *nativeResultFixture) {
 	return c.iter
 }
-func (*systemSchemaTestControl) discoverProtocol([]*HostInfo) (int, error) { return 0, nil }
-func (*systemSchemaTestControl) connect([]*HostInfo) error                 { return nil }
-func (*systemSchemaTestControl) close()                                    {}
-func (*systemSchemaTestControl) getSession() *Session                      { return nil }
-func (*systemSchemaTestControl) reconnect() error                          { return nil }
+func (*systemSchemaTestControl) InternalDiscoverProtocol([]*HostInfo) (int, error) { return 0, nil }
+func (*systemSchemaTestControl) InternalConnect([]*HostInfo) error                 { return nil }
+func (*systemSchemaTestControl) InternalClose()                                    {}
+func (*systemSchemaTestControl) InternalGetSession() *Session                      { return nil }
+func (*systemSchemaTestControl) InternalReconnect() error                          { return nil }
 
 func TestUnmarshalCassVersion(t *testing.T) {
 	t.Parallel()
@@ -116,19 +118,20 @@ func TestCassVersionBefore(t *testing.T) {
 func TestIsValidPeer(t *testing.T) {
 	t.Parallel()
 
-	host := &HostInfo{
-		rpcAddress: net.ParseIP("0.0.0.0"),
-		rack:       "myRack",
-		hostId:     tUUID(1),
-		dataCenter: "datacenter",
-		tokens:     []string{"0", "1"},
-	}
+	host := func() *HostInfo {
+		opaqueStorageValue := new(HostInfo)
+		implEndpoint.HostInfoData(opaqueStorageValue).InternalRpcAddress = net.ParseIP("0.0.0.0")
+		implEndpoint.HostInfoData(opaqueStorageValue).InternalRack = "myRack"
+		implEndpoint.HostInfoData(opaqueStorageValue).InternalHostId = tUUID(1)
+		implEndpoint.HostInfoData(opaqueStorageValue).InternalDataCenter = "datacenter"
+		implEndpoint.HostInfoData(opaqueStorageValue).InternalTokens = []string{"0", "1"}
+		return opaqueStorageValue
+	}()
 
 	if !isValidPeer(host) {
 		t.Errorf("expected %+v to be a valid peer", host)
 	}
-
-	host.rack = ""
+	implEndpoint.HostInfoData(host).InternalRack = ""
 	if isValidPeer(host) {
 		t.Errorf("expected %+v to NOT be a valid peer", host)
 	}
@@ -137,19 +140,20 @@ func TestIsValidPeer(t *testing.T) {
 func TestIsZeroToken(t *testing.T) {
 	t.Parallel()
 
-	host := &HostInfo{
-		rpcAddress: net.ParseIP("0.0.0.0"),
-		rack:       "myRack",
-		hostId:     tUUID(1),
-		dataCenter: "datacenter",
-		tokens:     []string{"0", "1"},
-	}
+	host := func() *HostInfo {
+		opaqueStorageValuex := new(HostInfo)
+		implEndpoint.HostInfoData(opaqueStorageValuex).InternalRpcAddress = net.ParseIP("0.0.0.0")
+		implEndpoint.HostInfoData(opaqueStorageValuex).InternalRack = "myRack"
+		implEndpoint.HostInfoData(opaqueStorageValuex).InternalHostId = tUUID(1)
+		implEndpoint.HostInfoData(opaqueStorageValuex).InternalDataCenter = "datacenter"
+		implEndpoint.HostInfoData(opaqueStorageValuex).InternalTokens = []string{"0", "1"}
+		return opaqueStorageValuex
+	}()
 
 	if isZeroToken(host) {
 		t.Errorf("expected %+v to NOT be a zero-token host", host)
 	}
-
-	host.tokens = []string{}
+	implEndpoint.HostInfoData(host).InternalTokens = []string{}
 	if !isZeroToken(host) {
 		t.Errorf("expected %+v to be a zero-token host", host)
 	}
@@ -261,12 +265,14 @@ func TestHostInfo_ConnectAddress(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			host := &HostInfo{
-				connectAddress:   test.connectAddr,
-				rpcAddress:       test.rpcAddr,
-				broadcastAddress: test.broadcastAddr,
-				peer:             test.peer,
-			}
+			host := func() *HostInfo {
+				opaqueStorageValuexx := new(HostInfo)
+				implEndpoint.HostInfoData(opaqueStorageValuexx).InternalConnectAddress = test.connectAddr
+				implEndpoint.HostInfoData(opaqueStorageValuexx).InternalRpcAddress = test.rpcAddr
+				implEndpoint.HostInfoData(opaqueStorageValuexx).InternalBroadcastAddress = test.broadcastAddr
+				implEndpoint.HostInfoData(opaqueStorageValuexx).InternalPeer = test.peer
+				return opaqueStorageValuexx
+			}()
 
 			if addr := host.ConnectAddress(); !addr.Equal(localhost) {
 				t.Fatalf("expected ConnectAddress to be %s got %s", localhost, addr)
@@ -612,7 +618,7 @@ func TestHostInfoBuilder(t *testing.T) {
 			}
 
 			// Verify translated addresses are set
-			retrievedAddrs := host.getTranslatedConnectionInfo()
+			retrievedAddrs := implEndpoint.InternalHostInfoGetTranslatedConnectionInfo(&host)
 			if retrievedAddrs == nil {
 				t.Fatal("getTranslatedConnectionInfo() returned nil")
 			}

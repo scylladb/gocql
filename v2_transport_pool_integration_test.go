@@ -18,6 +18,13 @@
 
 package gocql
 
+import implExecution "github.com/scylladb/gocql/v2/internal/execution"
+
+import (
+	implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+	implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
+)
+
 import (
 	"bytes"
 	"context"
@@ -53,21 +60,21 @@ func TestV2TransportPoolSizingLive(t *testing.T) {
 			defer s.Close()
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
-			for _, host := range s.hostSource.getHostsList() {
-				pool, ok := s.pool.getPool(host)
+			for _, host := range implCluster.SessionData(s).InternalHostSource.InternalGetHostsList() {
+				pool, ok := implCluster.SessionData(s).InternalPool.InternalGetPool(host)
 				if !ok {
 					t.Fatal("missing host pool")
 				}
-				p, ok := pool.connPicker.(*typedConnPicker)
+				p, ok := pool.InternalConnPicker.(*typedConnPicker)
 				if !ok {
-					t.Fatalf("v2 pool used legacy picker %T", pool.connPicker)
+					t.Fatalf("v2 pool used legacy picker %T", pool.InternalConnPicker)
 				}
 				for {
-					p.mu.RLock()
-					count, missing := p.count(), max(0, p.target()-p.count())
-					p.mu.RUnlock()
+					p.InternalMu.RLock()
+					count, missing := p.InternalCount(), max(0, p.InternalTarget()-p.InternalCount())
+					p.InternalMu.RUnlock()
 					if missing == 0 {
-						t.Logf("mode=%s host=%s total=%d shards=%d", mode, host.hostUUID(), count, p.GetShardCount())
+						t.Logf("mode=%s host=%s total=%d shards=%d", mode, implEndpoint.InternalHostInfoHostUUID(host), count, p.GetShardCount())
 						break
 					}
 					select {
@@ -76,37 +83,37 @@ func TestV2TransportPoolSizingLive(t *testing.T) {
 					case <-time.After(time.Millisecond):
 					}
 				}
-				p.mu.RLock()
+				p.InternalMu.RLock()
 				targeted := 0
-				for shard, connections := range p.conns {
+				for shard, connections := range p.InternalConns {
 					if mode == "shard" && len(connections) != 2 {
-						p.mu.RUnlock()
+						p.InternalMu.RUnlock()
 						t.Fatalf("shard%d has%d connections", shard, len(connections))
 					}
 					for _, conn := range connections {
-						if conn.requestedShard.Set {
+						if conn.InternalRequestedShard.Set {
 							targeted++
-							if int(conn.requestedShard.Value) != conn.scyllaSupported.shard {
-								p.mu.RUnlock()
+							if int(conn.InternalRequestedShard.Value) != implEndpoint.ScyllaConnectionFeaturesData(&conn.InternalScyllaSupported).InternalShard {
+								p.InternalMu.RUnlock()
 								t.Fatal("wrong requested shard")
 							}
 						}
 						if *flagRunSslTest {
-							if _, ok := conn.r.(*connReader).conn.(*tls.Conn); !ok {
-								p.mu.RUnlock()
+							if _, ok := conn.InternalR.(*connReader).InternalConn.(*tls.Conn); !ok {
+								p.InternalMu.RUnlock()
 								t.Fatal("TLS host path became plaintext")
 							}
 						}
 					}
 				}
-				p.mu.RUnlock()
+				p.InternalMu.RUnlock()
 				if mode == "host" && targeted != 0 {
 					t.Fatal("per-host override performed targeted fills")
 				}
-				if mode == "shard" && p.nrShards > 1 && config.Pool.ShardAwarePort && targeted == 0 {
+				if mode == "shard" && p.InternalNrShards > 1 && config.Pool.ShardAwarePort && targeted == 0 {
 					t.Fatal("shard mode never used source-port routing")
 				}
-				if pool.transportState() != poolReady {
+				if pool.InternalTransportState() != poolReady {
 					t.Fatal("full pool not ready")
 				}
 			}
@@ -130,16 +137,20 @@ func TestV2ExclusiveTransportLive(t *testing.T) {
 	defer s.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	conn := codecTestMust(s.selectTypedConn(ctx, RoutingInfo{}, nil))
+	conn := codecTestMust(implCluster.InternalSessionSelectTypedConn(s, ctx, RoutingInfo{}, nil))
 	table := fmt.Sprintf("step04_stream_%x", time.Now().UnixNano())
 	qualified := (fixtureKeyspace("") + ".") + table
 	ddl := func(cql string) {
 		b := codecTestMust(BindUnpreparedOwned(Statement[Unit, Unit]{CQL: cql, Params: NoParams, Rows: NoRows}, NewColumns(), Unit{}))
 		defer b.Close()
-		if _, err := Exec(ctx, s, b, Options{connection: conn}); err != nil {
+		if _, err := Exec(ctx, s, b, *func() *Options {
+			opaqueStorageValue := new(Options)
+			implExecution.OptionsData(opaqueStorageValue).InternalConnection = conn
+			return opaqueStorageValue
+		}()); err != nil {
 			t.Fatal(err)
 		}
-		if err := s.awaitV2SchemaAgreementOn(ctx, conn); err != nil {
+		if err := implCluster.InternalSessionAwaitV2SchemaAgreementOn(s, ctx, conn); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -160,36 +171,36 @@ func TestV2ExclusiveTransportLive(t *testing.T) {
 	size := 400 << 10
 	for i := 0; i < 4; i++ {
 		payload := bytes.Repeat([]byte{byte(i + 1)}, size)
-		bound := codecTestMust(BindOwned(insert, Pair[int32, []byte]{int32(i), payload}))
+		bound := codecTestMust(BindOwned(insert, Pair[int32, []byte]{First: int32(i), Second: payload}))
 		_, err := Exec(ctx, s, bound, Options{})
 		bound.Close()
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
-	pool, ok := s.pool.getPool(conn.host)
+	pool, ok := implCluster.SessionData(s).InternalPool.InternalGetPool(conn.InternalHost)
 	if !ok {
 		t.Fatal("pool missing")
 	}
-	r, err := pool.reserveStream(ctx, Target{HostID: conn.host.hostUUID()}, RoutingInfo{})
+	r, err := pool.InternalReserveStream(ctx, Target{HostID: implEndpoint.InternalHostInfoHostUUID(conn.InternalHost)}, RoutingInfo{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer r.close(false)
+	defer r.InternalClose(false)
 	decoder := StreamRow(func(*Pair[int32, []byte]) {}, StreamColumn("id", StreamInt32, func(r *Pair[int32, []byte]) *int32 { return &r.First }), StreamColumn("value", StreamBlob, func(r *Pair[int32, []byte]) *[]byte { return &r.Second }))
 	request := &attemptRequest{Statement: "SELECT id,value FROM " + qualified, Consistency: Quorum, PageSize: 2}
 	seen := map[int32]bool{}
 	pages := 0
 	for {
-		response, err := r.exchange(ctx, request)
+		response, err := r.InternalExchange(ctx, request)
 		if err != nil {
 			t.Fatal(err)
 		}
 		pages++
-		if err = response.installColumns(response.columns); err != nil {
+		if err = response.InternalInstallColumns(response.InternalColumns); err != nil {
 			t.Fatal(err)
 		}
-		plan := codecTestMust(decoder.Compile(response.columns))
+		plan := codecTestMust(decoder.Compile(response.InternalColumns))
 		dst := Pair[int32, []byte]{Second: make([]byte, 0, size)}
 		for {
 			ok, err := decodeStreamRow(response, plan, &dst)
@@ -204,8 +215,8 @@ func TestV2ExclusiveTransportLive(t *testing.T) {
 			}
 			seen[dst.First] = true
 		}
-		next := response.metadata.PagingState
-		response.releaseMetadata()
+		next := response.InternalMetadata.PagingState
+		response.InternalReleaseMetadata()
 		if next == nil {
 			break
 		}
@@ -214,34 +225,34 @@ func TestV2ExclusiveTransportLive(t *testing.T) {
 	if len(seen) != 4 || pages < 2 {
 		t.Fatal("live paging incomplete", len(seen), pages)
 	}
-	if r.units != nil {
-		t.Logf("bounded validated-unit storage=%d bytes copies=%d", r.units.units.StorageBytes(), r.units.copies)
-		if r.units.units.StorageBytes() > r.limits.MaxTransformBytes {
+	if r.InternalUnits != nil {
+		t.Logf("bounded validated-unit storage=%d bytes copies=%d", r.InternalUnits.InternalUnits.StorageBytes(), r.InternalUnits.InternalCopies)
+		if r.InternalUnits.InternalUnits.StorageBytes() > r.InternalLimits.MaxTransformBytes {
 			t.Fatal("unit budget exceeded")
 		}
 	}
-	if err = r.close(true); err != nil {
+	if err = r.InternalClose(true); err != nil {
 		t.Fatal(err)
 	}
 	// Early abandonment discards the reserved slot, and ordinary bounded pool
 	// repair restores healthy shared execution without growing its target.
-	r, err = pool.reserveStream(ctx, Target{HostID: conn.host.hostUUID()}, RoutingInfo{})
+	r, err = pool.InternalReserveStream(ctx, Target{HostID: implEndpoint.InternalHostInfoHostUUID(conn.InternalHost)}, RoutingInfo{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	response, err := r.exchange(ctx, request)
+	response, err := r.InternalExchange(ctx, request)
 	if err != nil {
 		t.Fatal(err)
 	}
-	response.releaseMetadata()
-	if err = r.close(false); err != nil {
+	response.InternalReleaseMetadata()
+	if err = r.InternalClose(false); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.After(15 * time.Second)
 	for {
-		pool.mu.RLock()
-		count, missing := pool.connPicker.Size()
-		pool.mu.RUnlock()
+		pool.InternalMu.RLock()
+		count, missing := pool.InternalConnPicker.Size()
+		pool.InternalMu.RUnlock()
 		if count == 1 && missing == 0 {
 			break
 		}

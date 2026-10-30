@@ -3,7 +3,11 @@
 
 package gocql
 
+import implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+
 import (
+	routing "github.com/scylladb/gocql/v2/internal/routing"
+
 	"encoding/binary"
 	"fmt"
 	"testing"
@@ -17,33 +21,33 @@ func BenchmarkStep06FirstTarget(b *testing.B) {
 		for _, kind := range []string{"ordinary", "lwt", "leader", "latency", "pinned"} {
 			b.Run(fmt.Sprintf("hosts%d/%s", count, kind), func(b *testing.B) {
 				m := v2TestMetadata()
-				m.hosts = make([]HostSnapshot, count)
-				for i := range m.hosts {
+				routing.SnapshotData(m).InternalHosts = make([]HostSnapshot, count)
+				for i := range routing.SnapshotData(m).InternalHosts {
 					h := v2TestHost(0, "a", "r1")
 					binary.BigEndian.PutUint64(h.ID[8:], uint64(i+1))
-					m.hosts[i] = h
+					routing.SnapshotData(m).InternalHosts[i] = h
 				}
-				m.hostIndex = buildRoutingHostIndex(m.hosts)
+				routing.SnapshotData(m).InternalHostIndex = buildRoutingHostIndex(routing.SnapshotData(m).InternalHosts)
 				h := step06Hint(b, 0, 100, Option[uint64]{Value: 7, Set: true}, hTarget(1, 0), hTarget(2, 0), hTarget(3, 0))
 				root, _ := updateTabletRange(nil, h)
-				m.placements = placementPut(m.placements, metadataTable{"ks", "table"}, tabletPlacement{ranges: root}, comparePlacementTable)
+				routing.SnapshotData(m).InternalPlacements = placementPut(routing.SnapshotData(m).InternalPlacements, metadataTable{InternalKeyspace: "ks", InternalTable: "table"}, tabletPlacement{InternalRanges: root}, comparePlacementTable)
 				info := RoutingInfo{Keyspace: "ks", Table: "table", Token: Option[int64]{Value: 1, Set: true}, Consistency: Quorum}
 				options := RoutingOptions{TokenAware: true, Datacenter: "a", Rack: "r1", ShuffleReplicas: true, LeaderAware: kind == "leader"}
 				if kind == "lwt" {
 					info.Conditional = true
 				}
 				if kind == "leader" {
-					m.keyspaces["ks"].ConsistencyMode = "global"
+					routing.SnapshotData(m).InternalKeyspaces["ks"].ConsistencyMode = "global"
 				}
 				if kind == "latency" {
 					options.Latency.Enabled = true
 				}
 				if kind == "pinned" {
-					info.HostID = Option[UUID]{Value: m.hosts[0].ID, Set: true}
+					info.HostID = Option[UUID]{Value: routing.SnapshotData(m).InternalHosts[0].ID, Set: true}
 				}
 				p := codecTestMust(NewRoutingPolicy(options))
 				if kind == "latency" {
-					p.(*routingPolicy).decisions.Store(&routingDecisions{slow: map[UUID]time.Time{m.hosts[2].ID: time.Now().Add(time.Hour)}})
+					p.(*routingPolicy).InternalDecisions.Store(&routingDecisions{InternalSlow: map[UUID]time.Time{routing.SnapshotData(m).InternalHosts[2].ID: time.Now().Add(time.Hour)}})
 				}
 				b.ReportAllocs()
 				b.ResetTimer()
@@ -68,17 +72,17 @@ func BenchmarkStep06PlacementUpdate(b *testing.B) {
 			for _, duplicate := range []bool{false, true} {
 				b.Run(fmt.Sprintf("tables%d/ranges%d/duplicate%t", tables, ranges, duplicate), func(b *testing.B) {
 					s := step06Session(b)
-					p := s.peripheral()
+					p := implCluster.InternalSessionPeripheral(s)
 					m := s.Metadata()
 					var root *tabletRangeTree
 					for i := 0; i < ranges; i++ {
 						root, _ = updateTabletRange(root, step06Hint(b, int64(i*2), int64(i*2+1), Option[uint64]{Value: uint64(i), Set: true}, hTarget(1, 0)))
 					}
-					k := metadataTable{"ks", "table"}
-					m.placements = placementPut(m.placements, k, tabletPlacement{identity: "identity-1", ranges: root}, comparePlacementTable)
+					k := metadataTable{InternalKeyspace: "ks", InternalTable: "table"}
+					routing.SnapshotData(m).InternalPlacements = placementPut(routing.SnapshotData(m).InternalPlacements, k, tabletPlacement{InternalIdentity: "identity-1", InternalRanges: root}, comparePlacementTable)
 					for i := 1; i < tables; i++ {
-						other := metadataTable{"ks", fmt.Sprintf("other%d", i)}
-						m.placements = placementPut(m.placements, other, tabletPlacement{ranges: root}, comparePlacementTable)
+						other := metadataTable{InternalKeyspace: "ks", InternalTable: fmt.Sprintf("other%d", i)}
+						routing.SnapshotData(m).InternalPlacements = placementPut(routing.SnapshotData(m).InternalPlacements, other, tabletPlacement{InternalRanges: root}, comparePlacementTable)
 					}
 					info := RoutingInfo{Keyspace: "ks", Table: "table"}
 					h := step06Hint(b, 0, 1, Option[uint64]{Value: 0, Set: true}, hTarget(1, 0))
@@ -86,15 +90,15 @@ func BenchmarkStep06PlacementUpdate(b *testing.B) {
 					b.ReportAllocs()
 					b.ResetTimer()
 					for i := 0; i < b.N; i++ {
-						current := p.snapshot.Load()
-						stamp := s.captureTabletFeedback(info, current)
-						r, _ := current.tabletRoot(k)
-						stamp.snapshot = nil
+						current := p.InternalSnapshot.Load()
+						stamp := implCluster.InternalSessionCaptureTabletFeedback(s, info, current)
+						r, _ := routing.InternalMetadataSnapshotTabletRoot(current, k)
+						stamp.InternalSnapshot = nil
 						if !duplicate {
 							h = h.WithVersion(uint64(i + 1))
 						}
-						updates[v2TabletFeedbackKey{"ks", "table", 1}] = v2PendingTabletFeedback{hint: h, stamp: stamp, observation: observeTabletRanges(r, 0, 1)}
-						s.publishTabletFeedback(p, updates, false)
+						updates[v2TabletFeedbackKey{InternalKeyspace: "ks", InternalTable: "table", InternalEnd: 1}] = v2PendingTabletFeedback{InternalHint: h, InternalStamp: stamp, InternalObservation: observeTabletRanges(r, 0, 1)}
+						implCluster.InternalSessionPublishTabletFeedback(s, p, updates, false)
 					}
 				})
 			}
@@ -106,15 +110,15 @@ func BenchmarkStep06FeedbackQueue(b *testing.B) {
 		b.Run(fmt.Sprintf("hints%d", ranges), func(b *testing.B) {
 			s := step06Session(b)
 			info := RoutingInfo{Keyspace: "ks", Table: "table"}
-			stamp := s.captureTabletFeedback(info, s.Metadata())
+			stamp := implCluster.InternalSessionCaptureTabletFeedback(s, info, s.Metadata())
 			hints := make([]v2PendingTabletFeedback, ranges)
 			for i := range hints {
-				hints[i].hint = step06Hint(b, int64(i*2), int64(i*2+1), Option[uint64]{}, hTarget(1, 0))
+				hints[i].InternalHint = step06Hint(b, int64(i*2), int64(i*2+1), Option[uint64]{}, hTarget(1, 0))
 			}
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				s.queueTabletFeedback(hints[i%ranges].hint, stamp)
+				implCluster.InternalSessionQueueTabletFeedback(s, hints[i%ranges].InternalHint, stamp)
 			}
 		})
 	}

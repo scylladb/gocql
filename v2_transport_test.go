@@ -2,6 +2,7 @@ package gocql
 
 import (
 	cqltype "github.com/scylladb/gocql/v2/internal/cqltype"
+	transporttestkit "github.com/scylladb/gocql/v2/internal/testkit/transport"
 
 	"bytes"
 	"context"
@@ -24,7 +25,7 @@ import (
 	"github.com/scylladb/gocql/lz4"
 	frm "github.com/scylladb/gocql/v2/internal/frame"
 	"github.com/scylladb/gocql/v2/internal/segment"
-	"github.com/scylladb/gocql/v2/internal/streams"
+
 	"github.com/scylladb/gocql/v2/internal/wire"
 )
 
@@ -48,19 +49,11 @@ func typedTestBytes(t *testing.T, c wire.Chain) []byte {
 	}
 	return p
 }
-func typedTestConn(t testing.TB, proto byte, compressor Compressor) (*Conn, net.Conn) {
+func typedTestConn(t testing.TB, proto byte, compressor Compressor) (*driverConn, net.Conn) {
 	t.Helper()
-	server, client := net.Pipe()
-	ctx, cancel := context.WithCancel(context.Background())
-	c := &Conn{version: proto, ctx: ctx, cancel: cancel, r: &connReader{conn: client}, calls: make(map[int]*callReq), streams: streams.New(), logger: nopLogger{}, compressor: compressor, errorHandler: connErrorHandlerFn(func(*Conn, error, bool) {})}
-	c.w = &deadlineContextWriter{w: client, semaphore: make(chan struct{}, 1), quit: make(chan struct{})}
-	if proto == 5 && compressor != nil {
-		c.segCompressor = compressor.(segment.Compressor)
-	}
-	c.initFramerCache()
-	t.Cleanup(func() { c.Close(); server.Close() })
-	return c, server
+	return transporttestkit.NewPair(t, proto, compressor)
 }
+
 func typedTestResponse(t testing.TB, proto byte, stream int, body []byte) []byte {
 	t.Helper()
 	out := []byte{proto | 0x80, 0, byte(stream >> 8), byte(stream), byte(frm.OpResult)}
@@ -80,15 +73,15 @@ func typedTestRowsBody(value []byte) []byte {
 	out = binary.BigEndian.AppendUint32(out, uint32(len(value)))
 	return append(out, value...)
 }
-func typedTestReadRequest(t testing.TB, c *Conn, server net.Conn) int {
+func typedTestReadRequest(t testing.TB, c *driverConn, server net.Conn) int {
 	t.Helper()
-	if c.version == 5 {
-		h, err := segment.ReadHeader(server, c.segCompressor != nil)
+	if c.InternalVersion == 5 {
+		h, err := segment.ReadHeader(server, c.InternalSegCompressor != nil)
 		if err != nil {
 			t.Error(err)
 			return 0
 		}
-		owner, err := segment.ReadOwnedPayload(server, h, c.segCompressor)
+		owner, err := segment.ReadOwnedPayload(server, h, c.InternalSegCompressor)
 		if err != nil {
 			t.Error(err)
 			return 0
@@ -115,19 +108,19 @@ func TestTypedRequestMatchesLegacyWireAndKeepsPayload(t *testing.T) {
 	length := binary.BigEndian.AppendUint32(nil, uint32(len(payload)))
 	values := typedTestChain(t, length, payload)
 	for _, proto := range []byte{3, 4, 5} {
-		c := &Conn{version: proto}
-		c.initFramerCache()
+		c := &driverConn{InternalVersion: proto}
+		c.InternalInitFramerCache()
 		request := &attemptRequest{Statement: "INSERT INTO ks.tbl (value) VALUES (?)", Values: values, ValueCount: 1, Consistency: Quorum, SerialConsistency: LocalSerial, PageSize: 83, PagingState: []byte{1, 2, 3}, Timestamp: 78321, DefaultTimestamp: true, Trace: true}
 		if proto == 5 {
 			request.Keyspace = "ks"
 			now := int32(321)
 			request.NowInSeconds = &now
 		}
-		got, err := c.buildTypedRequest(request, 7)
+		got, err := c.InternalBuildTypedRequest(request, 7)
 		if err != nil {
 			t.Fatal(err)
 		}
-		f := c.getWriteFramer()
+		f := c.InternalGetWriteFramer()
 		f.Trace()
 		params := fixtureQueryParams{values: []fixtureQueryValue{{value: payload}}, consistency: Quorum, serialConsistency: LocalSerial, pageSize: 83, pagingState: request.PagingState, defaultTimestamp: true, defaultTimestampValue: 78321, keyspace: request.Keyspace}
 		if request.NowInSeconds != nil {
@@ -184,7 +177,7 @@ func TestTypedRequestMatchesLegacyWireAndKeepsPayload(t *testing.T) {
 		if retained != len(payload) {
 			t.Fatalf("only %d/%d original bytes retained", retained, len(payload))
 		}
-		c.releaseWriteFramer(f)
+		c.InternalReleaseWriteFramer(f)
 	}
 }
 
@@ -204,7 +197,7 @@ func TestTypedReceiveLargeFragmentedRows(t *testing.T) {
 						comp = lz4.LZ4Compressor{}
 					}
 					c, server := typedTestConn(t, proto, comp)
-					go c.serve(c.ctx)
+					go c.InternalServe(c.InternalCtx)
 					peerDone := make(chan struct{})
 					go func() {
 						defer close(peerDone)
@@ -246,7 +239,7 @@ func TestTypedReceiveLargeFragmentedRows(t *testing.T) {
 							offset += n
 						}
 					}()
-					page, err := c.executeTyped(context.Background(), &attemptRequest{Statement: "SELECT value FROM ks.tbl", Consistency: One, Timeout: 5 * time.Second})
+					page, err := c.InternalExecuteTyped(context.Background(), &attemptRequest{Statement: "SELECT value FROM ks.tbl", Consistency: One, Timeout: 5 * time.Second})
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -296,17 +289,17 @@ func (w *typedShortWriter) Write(p []byte) (int, error) {
 func TestTypedWritersPartialCompletion(t *testing.T) {
 	for _, limit := range []int{0, 3, 6, 8, 10} {
 		sink := &typedShortWriter{limit: limit}
-		coalescer := &writeCoalescer{c: sink}
+		coalescer := &writeCoalescer{InternalC: sink}
 		a, b := make(chan writeResult, 1), make(chan writeResult, 1)
-		coalescer.flushSizes([]chan<- writeResult{a, b}, net.Buffers{[]byte("abc"), []byte("def"), []byte("ghi"), []byte("j")}, []int64{6, 4})
+		coalescer.InternalFlushSizes([]chan<- writeResult{a, b}, net.Buffers{[]byte("abc"), []byte("def"), []byte("ghi"), []byte("j")}, []int64{6, 4})
 		ar, br := <-a, <-b
-		if ar.n != min(limit, 6) || br.n != max(0, limit-6) {
+		if ar.InternalN != min(limit, 6) || br.InternalN != max(0, limit-6) {
 			t.Fatalf("limit %d wrong completion: %v %v", limit, ar, br)
 		}
-		if limit < 6 && !errors.Is(ar.err, io.ErrShortWrite) {
+		if limit < 6 && !errors.Is(ar.InternalErr, io.ErrShortWrite) {
 			t.Fatal("missing first short write")
 		}
-		if limit < 10 && !errors.Is(br.err, io.ErrShortWrite) {
+		if limit < 10 && !errors.Is(br.InternalErr, io.ErrShortWrite) {
 			t.Fatal("missing second short write")
 		}
 	}
@@ -314,11 +307,11 @@ func TestTypedWritersPartialCompletion(t *testing.T) {
 
 func TestTypedCancelKeepsStreamUntilOrphanArrives(t *testing.T) {
 	c, server := typedTestConn(t, 4, nil)
-	go c.serve(c.ctx)
+	go c.InternalServe(c.InternalCtx)
 	ctx, cancel := context.WithCancel(context.Background())
 	out := make(chan error, 1)
 	go func() {
-		_, err := c.executeTyped(ctx, &attemptRequest{Statement: "SELECT value FROM ks.tbl", Consistency: One})
+		_, err := c.InternalExecuteTyped(ctx, &attemptRequest{Statement: "SELECT value FROM ks.tbl", Consistency: One})
 		out <- err
 	}()
 	stream := typedTestReadRequest(t, c, server)
@@ -326,17 +319,17 @@ func TestTypedCancelKeepsStreamUntilOrphanArrives(t *testing.T) {
 	if err := <-out; !errors.Is(err, context.Canceled) {
 		t.Fatalf("got %v", err)
 	}
-	if c.streams.InUse() != 1 {
+	if c.InternalStreams.InUse() != 1 {
 		t.Fatal("cancel reused stream before orphan arrived")
 	}
 	if _, err := server.Write(typedTestResponse(t, 4, stream, typedTestRowsBody([]byte("orphan")))); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(time.Second)
-	for c.streams.InUse() != 0 && time.Now().Before(deadline) {
+	for c.InternalStreams.InUse() != 0 && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
-	if c.streams.InUse() != 0 {
+	if c.InternalStreams.InUse() != 0 {
 		t.Fatal("orphan did not release stream")
 	}
 }
@@ -344,7 +337,7 @@ func TestTypedCancelKeepsStreamUntilOrphanArrives(t *testing.T) {
 func TestTypedSharedSegmentPagesHaveIndependentOwnership(t *testing.T) {
 	c, server := typedTestConn(t, 5, nil)
 	received := make(chan error, 1)
-	go func() { received <- c.recvLeasedSegment(c.ctx) }()
+	go func() { received <- c.InternalRecvLeasedSegment(c.InternalCtx) }()
 	type result struct {
 		page *responsePage
 		err  error
@@ -352,7 +345,7 @@ func TestTypedSharedSegmentPagesHaveIndependentOwnership(t *testing.T) {
 	out := make(chan result, 2)
 	for i := 0; i < 2; i++ {
 		go func() {
-			page, err := c.executeTyped(context.Background(), &attemptRequest{Statement: "SELECT value FROM ks.tbl", Consistency: One, Timeout: time.Second})
+			page, err := c.InternalExecuteTyped(context.Background(), &attemptRequest{Statement: "SELECT value FROM ks.tbl", Consistency: One, Timeout: time.Second})
 			out <- result{page, err}
 		}()
 	}
@@ -407,12 +400,12 @@ func (w *typedBlockedWriter) Write(p []byte) (int, error) {
 }
 func TestTypedWriterCancellationJoinsAcceptedSpans(t *testing.T) {
 	sink := &typedBlockedWriter{entered: make(chan struct{}), release: make(chan struct{})}
-	w := &deadlineContextWriter{w: sink, semaphore: make(chan struct{}, 1), quit: make(chan struct{})}
+	w := &deadlineContextWriter{InternalW: sink, InternalSemaphore: make(chan struct{}, 1), InternalQuit: make(chan struct{})}
 	a, b := []byte("first"), []byte("second")
 	input := typedTestChain(t, a, b)
 	ctx, cancel := context.WithCancel(context.Background())
 	out := make(chan error, 1)
-	go func() { _, err := w.writeSpans(ctx, input); out <- err }()
+	go func() { _, err := w.InternalWriteSpans(ctx, input); out <- err }()
 	<-sink.entered
 	cancel()
 	select {
@@ -434,10 +427,10 @@ func TestTypedCoalescerShutdownCompletesAcceptedRequest(t *testing.T) {
 	sink := &typedShortWriter{limit: 100}
 	w := newWriteCoalescer(sink, 0, time.Hour, quit)
 	admitted := make(chan struct{})
-	w.testEnqueuedHook = func() { close(admitted) }
+	w.InternalTestEnqueuedHook = func() { close(admitted) }
 	out := make(chan error, 1)
 	go func() {
-		_, err := w.writeSpans(context.Background(), typedTestChain(t, []byte("one"), []byte("two")))
+		_, err := w.InternalWriteSpans(context.Background(), typedTestChain(t, []byte("one"), []byte("two")))
 		out <- err
 	}()
 	<-admitted
@@ -460,15 +453,15 @@ func TestTypedFatalCloseInterruptsBlockedWriter(t *testing.T) {
 	released := make(chan struct{})
 	owner := wire.NewLease(values, func() { close(released) })
 	go func() {
-		_, err := c.executeTyped(context.Background(), &attemptRequest{Statement: "INSERT INTO ks.tbl (value) VALUES (?)", Values: values, ValueCount: 1, Lease: owner, Consistency: One})
+		_, err := c.InternalExecuteTyped(context.Background(), &attemptRequest{Statement: "INSERT INTO ks.tbl (value) VALUES (?)", Values: values, ValueCount: 1, Lease: owner, Consistency: One})
 		out <- err
 	}()
 	deadline := time.Now().Add(time.Second)
-	for c.streams.InUse() == 0 && time.Now().Before(deadline) {
+	for c.InternalStreams.InUse() == 0 && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
 	closed := make(chan struct{})
-	go func() { c.closeWithError(io.ErrUnexpectedEOF); close(closed) }()
+	go func() { transporttestkit.Fail(c, io.ErrUnexpectedEOF); close(closed) }()
 	select {
 	case err := <-out:
 		if err == nil {
@@ -492,7 +485,7 @@ func TestTypedFatalCloseInterruptsBlockedWriter(t *testing.T) {
 
 func TestTypedServerErrorKeepsMetadataAndUnwraps(t *testing.T) {
 	c, server := typedTestConn(t, 4, nil)
-	go c.serve(c.ctx)
+	go c.InternalServe(c.InternalCtx)
 	go func() {
 		stream := typedTestReadRequest(t, c, server)
 		body := bytes.Repeat([]byte{9}, 16)
@@ -516,7 +509,7 @@ func TestTypedServerErrorKeepsMetadataAndUnwraps(t *testing.T) {
 			t.Error(err)
 		}
 	}()
-	page, err := c.executeTyped(context.Background(), &attemptRequest{Statement: "SELECT value FROM ks.tbl", Consistency: One, Timeout: time.Second})
+	page, err := c.InternalExecuteTyped(context.Background(), &attemptRequest{Statement: "SELECT value FROM ks.tbl", Consistency: One, Timeout: time.Second})
 	var unprepared *RequestErrUnprepared
 	if !errors.As(err, &unprepared) || !bytes.Equal(unprepared.StatementId, []byte{1, 2}) {
 		t.Fatalf("wrong error %v", err)
@@ -544,10 +537,10 @@ func TestTypedCompressedRequestsIndependentDecode(t *testing.T) {
 	}
 	values := typedTestChain(t, pieces...)
 	for _, compressor := range []Compressor{lz4.LZ4Compressor{}, SnappyCompressor{}} {
-		c := &Conn{version: 4, compressor: compressor}
-		c.initFramerCache()
+		c := &driverConn{InternalVersion: 4, InternalCompressor: compressor}
+		c.InternalInitFramerCache()
 		request := &attemptRequest{Statement: "INSERT INTO tbl (v) VALUES (?)", Values: values, ValueCount: 1, Consistency: One}
-		packet, err := c.buildTypedRequest(request, 8)
+		packet, err := c.InternalBuildTypedRequest(request, 8)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -562,9 +555,9 @@ func TestTypedCompressedRequestsIndependentDecode(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		plain := &Conn{version: 4}
-		plain.initFramerCache()
-		oracle, err := plain.buildTypedRequest(request, 8)
+		plain := &driverConn{InternalVersion: 4}
+		plain.InternalInitFramerCache()
+		oracle, err := plain.InternalBuildTypedRequest(request, 8)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -603,10 +596,10 @@ func TestTypedWritevBeyondPlatformVectorLimit(t *testing.T) {
 		expected = append(expected, part...)
 	}
 	chain, _ := wire.NewChain(spans...)
-	writer := &deadlineContextWriter{w: client, semaphore: make(chan struct{}, 1), quit: make(chan struct{})}
+	writer := &deadlineContextWriter{InternalW: client, InternalSemaphore: make(chan struct{}, 1), InternalQuit: make(chan struct{})}
 	done := make(chan error, 1)
 	go func() {
-		n, err := writer.writeSpans(context.Background(), chain)
+		n, err := writer.InternalWriteSpans(context.Background(), chain)
 		if err == nil && n != chain.Len() {
 			err = io.ErrShortWrite
 		}
@@ -630,16 +623,16 @@ func TestTypedExecutePrepareBatchWireOracle(t *testing.T) {
 		values := typedTestChain(t, binary.BigEndian.AppendUint32(nil, uint32(len(payload))), payload)
 		for _, kind := range []string{"prepare", "execute", "batch"} {
 			t.Run(string(rune('0'+proto))+kind, func(t *testing.T) {
-				c := &Conn{version: proto}
-				c.initFramerCache()
+				c := &driverConn{InternalVersion: proto}
+				c.InternalInitFramerCache()
 				r := &attemptRequest{Statement: "INSERT INTO ks.tbl (v) VALUES (?)", Consistency: Quorum, SerialConsistency: LocalSerial, Timestamp: 123456, DefaultTimestamp: true}
 				if proto >= 5 {
 					r.Keyspace = "ks"
 					now := int32(123)
 					r.NowInSeconds = &now
 				}
-				f := c.getWriteFramer()
-				defer c.releaseWriteFramer(f)
+				f := c.InternalGetWriteFramer()
+				defer c.InternalReleaseWriteFramer(f)
 				params := fixtureQueryParams{consistency: Quorum, serialConsistency: LocalSerial, defaultTimestamp: true, defaultTimestampValue: 123456, keyspace: r.Keyspace}
 				if r.NowInSeconds != nil {
 					now := int(*r.NowInSeconds)
@@ -666,7 +659,7 @@ func TestTypedExecutePrepareBatchWireOracle(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				actual, err := c.buildTypedRequest(r, 23)
+				actual, err := c.InternalBuildTypedRequest(r, 23)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -776,9 +769,9 @@ func TestTypedTLSReceivesOriginalPlaintextSpans(t *testing.T) {
 		readResult <- err
 	}()
 	recorder := &typedTLSRecorder{conn: client, expected: parts}
-	writer := &deadlineContextWriter{w: recorder, semaphore: make(chan struct{}, 1), quit: make(chan struct{})}
-	writer.setWriteTimeout(5 * time.Second)
-	if _, err := writer.writeSpans(context.Background(), typedTestChain(t, parts...)); err != nil {
+	writer := &deadlineContextWriter{InternalW: recorder, InternalSemaphore: make(chan struct{}, 1), InternalQuit: make(chan struct{})}
+	writer.InternalSetWriteTimeout(5 * time.Second)
+	if _, err := writer.InternalWriteSpans(context.Background(), typedTestChain(t, parts...)); err != nil {
 		t.Fatal(err)
 	}
 	if err := <-readResult; err != nil {
@@ -791,8 +784,8 @@ func TestTypedTLSReceivesOriginalPlaintextSpans(t *testing.T) {
 
 func TestTypedProtocolLimits(t *testing.T) {
 	t.Run("request", func(t *testing.T) {
-		c := &Conn{version: 4, cfg: &ConnConfig{TypedLimits: ProtocolLimits{MaxFrameBytes: 8}}}
-		if _, err := c.buildTypedRequest(&attemptRequest{Statement: "SELECT value FROM table", Consistency: One}, 1); !errors.Is(err, ErrFrameTooBig) {
+		c := &driverConn{InternalVersion: 4, InternalCfg: &driverConnConfig{TypedLimits: ProtocolLimits{MaxFrameBytes: 8}}}
+		if _, err := c.InternalBuildTypedRequest(&attemptRequest{Statement: "SELECT value FROM table", Consistency: One}, 1); !errors.Is(err, ErrFrameTooBig) {
 			t.Fatalf("got %v", err)
 		}
 	})
@@ -811,26 +804,26 @@ func TestTypedProtocolLimits(t *testing.T) {
 		body, _ := e.Freeze()
 		owner := wire.NewLease(body, nil)
 		defer owner.Release()
-		c := &Conn{version: 4, cfg: &ConnConfig{TypedLimits: ProtocolLimits{MaxMetadataDepth: 1}}}
-		if _, err := c.parseTypedResponse(frm.FrameHeader{Version: 0x84, Op: frm.OpResult}, body, owner); err == nil {
+		c := &driverConn{InternalVersion: 4, InternalCfg: &driverConnConfig{TypedLimits: ProtocolLimits{MaxMetadataDepth: 1}}}
+		if _, err := c.InternalParseTypedResponse(frm.FrameHeader{Version: 0x84, Op: frm.OpResult}, body, owner); err == nil {
 			t.Fatal("metadata depth budget ignored")
 		}
-		c.cfg.TypedLimits.MaxMetadataDepth = 2
-		if _, err := c.parseTypedResponse(frm.FrameHeader{Version: 0x84, Op: frm.OpResult}, body, owner); err != nil {
+		c.InternalCfg.TypedLimits.MaxMetadataDepth = 2
+		if _, err := c.InternalParseTypedResponse(frm.FrameHeader{Version: 0x84, Op: frm.OpResult}, body, owner); err != nil {
 			t.Fatal(err)
 		}
 	})
 	t.Run("v4 expansion before allocation", func(t *testing.T) {
 		c, server := typedTestConn(t, 4, lz4.LZ4Compressor{})
-		c.cfg = &ConnConfig{TypedLimits: ProtocolLimits{MaxDecompressedBytes: 64}}
-		go c.serve(c.ctx)
+		c.InternalCfg = &driverConnConfig{TypedLimits: ProtocolLimits{MaxDecompressedBytes: 64}}
+		go c.InternalServe(c.InternalCtx)
 		go func() {
 			stream := typedTestReadRequest(t, c, server)
 			response := typedTestResponse(t, 4, stream, binary.BigEndian.AppendUint32(nil, 1000))
 			response[1] = frm.FlagCompress
 			server.Write(response)
 		}()
-		page, err := c.executeTyped(context.Background(), &attemptRequest{Statement: "q", Consistency: One, Timeout: time.Second})
+		page, err := c.InternalExecuteTyped(context.Background(), &attemptRequest{Statement: "q", Consistency: One, Timeout: time.Second})
 		if page != nil {
 			page.Owner.Release()
 		}
@@ -839,8 +832,8 @@ func TestTypedProtocolLimits(t *testing.T) {
 		}
 	})
 	t.Run("v5 expansion before payload read", func(t *testing.T) {
-		c := &Conn{cfg: &ConnConfig{TypedLimits: ProtocolLimits{MaxDecompressedBytes: 64}}}
-		if _, err := c.readTypedSegmentPayload(segment.Header{PayloadLen: 1, UncompressedLen: 65}); !errors.Is(err, ErrFrameTooBig) {
+		c := &driverConn{InternalCfg: &driverConnConfig{TypedLimits: ProtocolLimits{MaxDecompressedBytes: 64}}}
+		if _, err := c.InternalReadTypedSegmentPayload(segment.Header{PayloadLen: 1, UncompressedLen: 65}); !errors.Is(err, ErrFrameTooBig) {
 			t.Fatalf("got %v", err)
 		}
 	})

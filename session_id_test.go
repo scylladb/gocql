@@ -3,6 +3,8 @@
 
 package gocql
 
+import implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+
 import (
 	"context"
 	"sync"
@@ -103,7 +105,7 @@ func TestSessionIDReportingStartupFrame(t *testing.T) {
 			for i := 0; i < tt.sessionCount; i++ {
 				cluster := testCluster(defaultProto, srv.Address)
 				cluster.NumConns = connsPerSession
-				session, err := cluster.open()
+				session, err := implCluster.InternalClusterSettingsOpen(cluster)
 				if err != nil {
 					t.Fatal(err)
 				}

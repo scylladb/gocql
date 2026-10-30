@@ -27,6 +27,8 @@
 
 package gocql
 
+import implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+
 import (
 	"errors"
 
@@ -164,7 +166,7 @@ func TestTableMetadataAfterInvalidation(t *testing.T) {
 	}
 	s := newSchemaEventTestSessionWithMock(ctrl)
 	defer s.Close()
-	s.isInitialized = true
+	implCluster.SessionData(s).InternalIsInitialized = true
 	populateKeyspace(s, "test_ks", "tbl_a")
 
 	tbl, err := s.TableMetadata("test_ks", "tbl_a")
@@ -174,8 +176,7 @@ func TestTableMetadataAfterInvalidation(t *testing.T) {
 	if tbl.Name != "tbl_a" {
 		t.Fatalf("expected table name tbl_a, got %s", tbl.Name)
 	}
-
-	s.metadataDescriber.invalidateTableSchema("test_ks", "tbl_a")
+	implCluster.SessionData(s).InternalMetadataDescriber.InternalInvalidateTableSchema("test_ks", "tbl_a")
 
 	ctrl.resetQueries()
 
@@ -203,15 +204,14 @@ func TestTableMetadataAfterKeyspaceInvalidation(t *testing.T) {
 	}
 	s := newSchemaEventTestSessionWithMock(ctrl)
 	defer s.Close()
-	s.isInitialized = true
+	implCluster.SessionData(s).InternalIsInitialized = true
 	populateKeyspace(s, "test_ks", "tbl_a")
 
 	_, err := s.TableMetadata("test_ks", "tbl_a")
 	if err != nil {
 		t.Fatalf("initial TableMetadata failed: %v", err)
 	}
-
-	s.metadataDescriber.invalidateKeyspaceSchema("test_ks")
+	implCluster.SessionData(s).InternalMetadataDescriber.InternalInvalidateKeyspaceSchema("test_ks")
 
 	ctrl.resetQueries()
 
@@ -229,7 +229,7 @@ func TestTableMetadataAfterKeyspaceInvalidation(t *testing.T) {
 
 func newTestSessionForTableMetadata(ctrl *schemaDataMock) *Session {
 	s := newSchemaEventTestSessionWithMock(ctrl)
-	s.isInitialized = true
+	implCluster.SessionData(s).InternalIsInitialized = true
 	return s
 }
 
@@ -251,8 +251,7 @@ func TestScyllaIsCdcTableAfterInvalidation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("initial scyllaIsCdcTable failed: %v", err)
 	}
-
-	s.metadataDescriber.invalidateTableSchema("test_ks", "tbl_scylla_cdc_log")
+	implCluster.SessionData(s).InternalMetadataDescriber.InternalInvalidateTableSchema("test_ks", "tbl_scylla_cdc_log")
 	ctrl.resetQueries()
 
 	_, err = scyllaIsCdcTable(s, "test_ks", "tbl_scylla_cdc_log")
@@ -391,14 +390,14 @@ func (f *testWarningFramer) GetHeaderWarnings() []string { return f.warnings }
 func (f *testWarningFramer) Release()                    { f.released = true }
 
 type staticConnPicker struct {
-	conn *Conn
+	conn *driverConn
 }
 
-func (p staticConnPicker) Put(*Conn) error  { return nil }
-func (p staticConnPicker) Remove(*Conn)     {}
-func (p staticConnPicker) InFlight() int    { return 0 }
-func (p staticConnPicker) Size() (int, int) { return 1, 0 }
-func (p staticConnPicker) Close()           {}
+func (p staticConnPicker) Put(*driverConn) error { return nil }
+func (p staticConnPicker) Remove(*driverConn)    {}
+func (p staticConnPicker) InFlight() int         { return 0 }
+func (p staticConnPicker) Size() (int, int)      { return 1, 0 }
+func (p staticConnPicker) Close()                {}
 func (p staticConnPicker) NextShard() (shardID, nrShards int) {
 	return 0, 0
 }
@@ -433,8 +432,8 @@ func TestTableTabletsMetadata(t *testing.T) {
 		ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{}}
 		s := newSchemaEventTestSessionWithMock(ctrl)
 		defer s.Close()
-		s.isInitialized = true
-		s.tabletsRoutingV1 = true
+		implCluster.SessionData(s).InternalIsInitialized = true
+		implCluster.SessionData(s).InternalTabletsRoutingV1 = true
 
 		addTestTablets(t, s, "test_ks", "tbl_a")
 
@@ -453,9 +452,9 @@ func TestTableTabletsMetadata(t *testing.T) {
 		ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{}}
 		s := newSchemaEventTestSessionWithMock(ctrl)
 		defer s.Close()
-		s.isInitialized = true
-		s.tabletsRoutingV1 = true
-		s.isClosed = true
+		implCluster.SessionData(s).InternalIsInitialized = true
+		implCluster.SessionData(s).InternalTabletsRoutingV1 = true
+		implCluster.SessionData(s).InternalIsClosed = true
 
 		_, err := s.TableTabletsMetadata("ks", "tb")
 		if !errors.Is(err, ErrSessionClosed) {
@@ -469,7 +468,7 @@ func TestTableTabletsMetadata(t *testing.T) {
 		ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{}}
 		s := newSchemaEventTestSessionWithMock(ctrl)
 		defer s.Close()
-		s.tabletsRoutingV1 = true
+		implCluster.SessionData(s).InternalTabletsRoutingV1 = true
 
 		_, err := s.TableTabletsMetadata("ks", "tb")
 		if !errors.Is(err, ErrSessionNotReady) {
@@ -483,7 +482,7 @@ func TestTableTabletsMetadata(t *testing.T) {
 		ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{}}
 		s := newSchemaEventTestSessionWithMock(ctrl)
 		defer s.Close()
-		s.isInitialized = true
+		implCluster.SessionData(s).InternalIsInitialized = true
 
 		_, err := s.TableTabletsMetadata("ks", "tb")
 		if !errors.Is(err, ErrTabletsNotUsed) {
@@ -497,8 +496,8 @@ func TestTableTabletsMetadata(t *testing.T) {
 		ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{}}
 		s := newSchemaEventTestSessionWithMock(ctrl)
 		defer s.Close()
-		s.isInitialized = true
-		s.tabletsRoutingV1 = true
+		implCluster.SessionData(s).InternalIsInitialized = true
+		implCluster.SessionData(s).InternalTabletsRoutingV1 = true
 
 		_, err := s.TableTabletsMetadata("", "tb")
 		if !errors.Is(err, ErrNoKeyspace) {
@@ -512,8 +511,8 @@ func TestTableTabletsMetadata(t *testing.T) {
 		ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{}}
 		s := newSchemaEventTestSessionWithMock(ctrl)
 		defer s.Close()
-		s.isInitialized = true
-		s.tabletsRoutingV1 = true
+		implCluster.SessionData(s).InternalIsInitialized = true
+		implCluster.SessionData(s).InternalTabletsRoutingV1 = true
 
 		_, err := s.TableTabletsMetadata("ks", "")
 		if !errors.Is(err, ErrNoTable) {
@@ -527,8 +526,8 @@ func TestTableTabletsMetadata(t *testing.T) {
 		ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{}}
 		s := newSchemaEventTestSessionWithMock(ctrl)
 		defer s.Close()
-		s.isInitialized = true
-		s.tabletsRoutingV1 = true
+		implCluster.SessionData(s).InternalIsInitialized = true
+		implCluster.SessionData(s).InternalTabletsRoutingV1 = true
 
 		entries, err := s.TableTabletsMetadata("ks", "nonexistent")
 		if err != nil {
@@ -549,8 +548,8 @@ func TestForEachTablet(t *testing.T) {
 		ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{}}
 		s := newSchemaEventTestSessionWithMock(ctrl)
 		defer s.Close()
-		s.isInitialized = true
-		s.tabletsRoutingV1 = true
+		implCluster.SessionData(s).InternalIsInitialized = true
+		implCluster.SessionData(s).InternalTabletsRoutingV1 = true
 
 		addTestTablets(t, s, "ks1", "tbl_a")
 		addTestTablets(t, s, "ks2", "tbl_b")
@@ -580,8 +579,8 @@ func TestForEachTablet(t *testing.T) {
 		ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{}}
 		s := newSchemaEventTestSessionWithMock(ctrl)
 		defer s.Close()
-		s.isInitialized = true
-		s.tabletsRoutingV1 = true
+		implCluster.SessionData(s).InternalIsInitialized = true
+		implCluster.SessionData(s).InternalTabletsRoutingV1 = true
 
 		addTestTablets(t, s, "ks1", "tbl_a")
 		addTestTablets(t, s, "ks2", "tbl_b")
@@ -605,9 +604,9 @@ func TestForEachTablet(t *testing.T) {
 		ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{}}
 		s := newSchemaEventTestSessionWithMock(ctrl)
 		defer s.Close()
-		s.isInitialized = true
-		s.tabletsRoutingV1 = true
-		s.isClosed = true
+		implCluster.SessionData(s).InternalIsInitialized = true
+		implCluster.SessionData(s).InternalTabletsRoutingV1 = true
+		implCluster.SessionData(s).InternalIsClosed = true
 
 		err := s.ForEachTablet(func(keyspace, table string, entries tablets.TabletEntryList) bool {
 			t.Fatal("callback should not be called on closed session")
@@ -624,7 +623,7 @@ func TestForEachTablet(t *testing.T) {
 		ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{}}
 		s := newSchemaEventTestSessionWithMock(ctrl)
 		defer s.Close()
-		s.isInitialized = true
+		implCluster.SessionData(s).InternalIsInitialized = true
 
 		err := s.ForEachTablet(func(keyspace, table string, entries tablets.TabletEntryList) bool {
 			t.Fatal("callback should not be called when tablets not enabled")
@@ -641,8 +640,8 @@ func TestForEachTablet(t *testing.T) {
 		ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{}}
 		s := newSchemaEventTestSessionWithMock(ctrl)
 		defer s.Close()
-		s.isInitialized = true
-		s.tabletsRoutingV1 = true
+		implCluster.SessionData(s).InternalIsInitialized = true
+		implCluster.SessionData(s).InternalTabletsRoutingV1 = true
 
 		addTestTablets(t, s, "ks", "tb")
 
@@ -662,7 +661,7 @@ func TestTableMetadataValidation(t *testing.T) {
 		ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{}}
 		s := newSchemaEventTestSessionWithMock(ctrl)
 		defer s.Close()
-		s.isInitialized = true
+		implCluster.SessionData(s).InternalIsInitialized = true
 
 		_, err := s.TableMetadata("ks", "")
 		if !errors.Is(err, ErrNoTable) {

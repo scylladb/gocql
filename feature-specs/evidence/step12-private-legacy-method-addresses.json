@@ -1,0 +1,87 @@
+[
+  {
+    "file": "cluster_test.go",
+    "function": "github.com/scylladb/gocql/v2/internal/cluster.InternalClusterSettingsGetActualTLSConfig",
+    "line": 100
+  },
+  {
+    "file": "cluster_test.go",
+    "function": "github.com/scylladb/gocql/v2/internal/cluster.InternalClusterSettingsGetActualTLSConfig",
+    "line": 112
+  },
+  {
+    "file": "driver_config_test.go",
+    "function": "github.com/scylladb/gocql/v2/internal/cluster.InternalClusterSettingsGetActualTLSConfig",
+    "line": 570
+  },
+  {
+    "file": "internal/cluster/control.go",
+    "function": "github.com/scylladb/gocql/v2/internal/cluster.InternalClusterSettingsFilterHost",
+    "line": 306
+  },
+  {
+    "file": "internal/cluster/events.go",
+    "function": "github.com/scylladb/gocql/v2/internal/cluster.InternalClusterSettingsFilterHost",
+    "line": 418
+  },
+  {
+    "file": "internal/cluster/events.go",
+    "function": "github.com/scylladb/gocql/v2/internal/cluster.InternalClusterSettingsFilterHost",
+    "line": 476
+  },
+  {
+    "file": "internal/cluster/events.go",
+    "function": "github.com/scylladb/gocql/v2/internal/cluster.InternalClusterSettingsFilterHost",
+    "line": 489
+  },
+  {
+    "file": "internal/cluster/events.go",
+    "function": "github.com/scylladb/gocql/v2/internal/cluster.InternalClusterSettingsFilterHost",
+    "line": 558
+  },
+  {
+    "file": "internal/cluster/events.go",
+    "function": "github.com/scylladb/gocql/v2/internal/cluster.InternalClusterSettingsFilterHost",
+    "line": 600
+  },
+  {
+    "file": "internal/cluster/host_source.go",
+    "function": "github.com/scylladb/gocql/v2/internal/cluster.InternalClusterSettingsFilterHost",
+    "line": 221
+  },
+  {
+    "file": "internal/cluster/policies.go",
+    "function": "github.com/scylladb/gocql/v2/internal/cluster.InternalClusterSettingsFilterHost",
+    "line": 784
+  },
+  {
+    "file": "internal/cluster/policies.go",
+    "function": "github.com/scylladb/gocql/v2/internal/cluster.InternalClusterSettingsFilterHost",
+    "line": 894
+  },
+  {
+    "file": "internal/cluster/session.go",
+    "function": "github.com/scylladb/gocql/v2/internal/cluster.InternalClusterSettingsFilterHost",
+    "line": 360
+  },
+  {
+    "file": "internal/cluster/v2_execute.go",
+    "function": "github.com/scylladb/gocql/v2/internal/cluster.InternalClusterSettingsFilterHost",
+    "line": 30
+  },
+  {
+    "file": "internal/cluster/v2_metadata.go",
+    "function": "github.com/scylladb/gocql/v2/internal/cluster.InternalClusterSettingsFilterHost",
+    "line": 397
+  },
+  {
+    "file": "internal/execution/v2_row_stream.go",
+    "function": "github.com/scylladb/gocql/v2/internal/cluster.InternalClusterSettingsFilterHost",
+    "line": 346
+  },
+  {
+    "file": "internal/execution/v2_row_stream.go",
+    "function": "github.com/scylladb/gocql/v2/internal/cluster.InternalClusterSettingsFilterHost",
+    "line": 358
+  }
+]

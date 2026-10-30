@@ -1,0 +1,16 @@
+{
+  "file": "internal/logging/aliases_v2_settings_facade.go",
+  "before_sha256": "f2c48e2b438686c227555627d2c342c3fe55532ab0b064b059855ef60060cc69",
+  "after_sha256": "e3cd1a172423c13afac4c35c5913d0c345ab978afefb6b4accc44f11a2105c62",
+  "before_source": "package logging\n\n",
+  "after_source": "package logging\n",
+  "exact_delta": "Remove one empty line after package declaration",
+  "declarations": 0,
+  "imports": 0,
+  "build_directives": 0,
+  "same_noncomment_tokens": [
+    "package",
+    "logging"
+  ],
+  "runtime_delta": false
+}

@@ -18,6 +18,10 @@
 
 package gocql
 
+import implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+
+import implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
+
 import (
 	"bytes"
 	"context"
@@ -154,15 +158,15 @@ func TestStep07RunStreamLive(t *testing.T) {
 	deadline := time.Now().Add(20 * time.Second)
 	for {
 		ready := true
-		for _, host := range s.hostSource.getHostsList() {
-			pool, ok := s.pool.getPool(host)
+		for _, host := range implCluster.SessionData(s).InternalHostSource.InternalGetHostsList() {
+			pool, ok := implCluster.SessionData(s).InternalPool.InternalGetPool(host)
 			if !ok {
 				ready = false
 				break
 			}
-			pool.mu.RLock()
-			count, missing := pool.connPicker.Size()
-			pool.mu.RUnlock()
+			pool.InternalMu.RLock()
+			count, missing := pool.InternalConnPicker.Size()
+			pool.InternalMu.RUnlock()
 			if count != 1 || missing != 0 {
 				ready = false
 				break
@@ -249,9 +253,9 @@ func TestStep07RunStreamLive(t *testing.T) {
 		t.Fatal("owned node control required for live interruption coverage")
 	}
 	var target UUID
-	for _, host := range s.hostSource.getHostsList() {
+	for _, host := range implCluster.SessionData(s).InternalHostSource.InternalGetHostsList() {
 		if host.ConnectAddress().String() == os.Getenv("GOCQL_FIXTURE_NODE") {
-			target = host.hostUUID()
+			target = implEndpoint.InternalHostInfoHostUUID(host)
 		}
 	}
 	if target.IsEmpty() {

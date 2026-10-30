@@ -31,7 +31,7 @@ func TestValidateRejects(t *testing.T) {
 			c.InitialReconnectionPolicy = &ConstantReconnectionPolicy{MaxRetries: 0}
 		}, "InitialReconnectionPolicy.GetMaxRetries"},
 		{"NilReconnectionPolicy", func(c *clusterSettings) { c.ReconnectionPolicy = nil }, "ReconnectionPolicy is nil"},
-		// hostConnPool.connect makes GetMaxRetries attempts; with none every pool
+		// hostConnPool.InternalConnect makes GetMaxRetries attempts; with none every pool
 		// fill fails.
 		{"ReconnectionPolicyNoRetries", func(c *clusterSettings) {
 			c.ReconnectionPolicy = &ConstantReconnectionPolicy{MaxRetries: 0}

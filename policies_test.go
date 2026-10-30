@@ -31,6 +31,10 @@
 
 package gocql
 
+import implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+
+import implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
+
 import (
 	"errors"
 	"fmt"
@@ -60,13 +64,12 @@ func tID(n int) string {
 func createPolicy(keyspace string, shuffle bool) HostSelectionPolicy {
 	policy := TokenAwareHostPolicy(RoundRobinHostPolicy())
 	policyInternal := policy.(*tokenAwareHostPolicy)
-	policyInternal.getKeyspaceName = func() string { return keyspace }
-	policyInternal.getKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {
+	implCluster.InternalTokenAwareHostPolicyData(policyInternal).InternalGetKeyspaceName = func() string { return keyspace }
+	implCluster.InternalTokenAwareHostPolicyData(policyInternal).InternalGetKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {
 		return nil, errors.New("not initalized")
 	}
 	policy.SetPartitioner("OrderedPartitioner")
-
-	policyInternal.getKeyspaceMetadata = func(keyspaceName string) (*KeyspaceMetadata, error) {
+	implCluster.InternalTokenAwareHostPolicyData(policyInternal).InternalGetKeyspaceMetadata = func(keyspaceName string) (*KeyspaceMetadata, error) {
 		if keyspaceName != keyspace {
 			return nil, fmt.Errorf("unknown keyspace: %s", keyspaceName)
 		}
@@ -79,7 +82,7 @@ func createPolicy(keyspace string, shuffle bool) HostSelectionPolicy {
 			},
 		}, nil
 	}
-	policyInternal.shuffleReplicas = shuffle
+	implCluster.InternalTokenAwareHostPolicyData(policyInternal).InternalShuffleReplicas = shuffle
 	policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: keyspace})
 	return policy
 }
@@ -92,12 +95,16 @@ func TestCOWList_Add(t *testing.T) {
 	toAdd := [...]net.IP{net.IPv4(10, 0, 0, 1), net.IPv4(10, 0, 0, 2), net.IPv4(10, 0, 0, 3)}
 
 	for _, addr := range toAdd {
-		if !cow.add(&HostInfo{connectAddress: addr}) {
+		if !cow.InternalAdd(func() *HostInfo {
+			opaqueStorageValue := new(HostInfo)
+			implEndpoint.HostInfoData(opaqueStorageValue).InternalConnectAddress = addr
+			return opaqueStorageValue
+		}()) {
 			t.Fatal("did not add peer which was not in the set")
 		}
 	}
 
-	hosts := cow.get().allHosts()
+	hosts := cow.InternalGet().InternalAllHosts()
 	if len(hosts) != len(toAdd) {
 		t.Fatalf("expected to have %d hosts got %d", len(toAdd), len(hosts))
 	}
@@ -139,27 +146,27 @@ func TestHostInfoList_HostByID(t *testing.T) {
 			t.Parallel()
 
 			hosts := newHostInfoList(tt.hosts)
-			if (hosts.hostsByID != nil) != tt.wantMap {
-				t.Fatalf("hostsByID presence = %v, want %v", hosts.hostsByID != nil, tt.wantMap)
+			if (hosts.InternalHostsByID != nil) != tt.wantMap {
+				t.Fatalf("hostsByID presence = %v, want %v", hosts.InternalHostsByID != nil, tt.wantMap)
 			}
 			if tt.wantMap {
-				if hosts.hostIDs != nil {
-					t.Fatalf("hostIDs = %v, want nil when hostsByID is used", hosts.hostIDs)
+				if hosts.InternalHostIDs != nil {
+					t.Fatalf("hostIDs = %v, want nil when hostsByID is used", hosts.InternalHostIDs)
 				}
-			} else if len(hosts.hostIDs) != len(tt.hosts) {
-				t.Fatalf("len(hostIDs) = %d, want %d", len(hosts.hostIDs), len(tt.hosts))
+			} else if len(hosts.InternalHostIDs) != len(tt.hosts) {
+				t.Fatalf("len(hostIDs) = %d, want %d", len(hosts.InternalHostIDs), len(tt.hosts))
 			}
 
 			for _, host := range tt.hosts {
-				if got := hosts.hostByID(host.hostUUID()); got != host {
+				if got := hosts.InternalHostByID(implEndpoint.InternalHostInfoHostUUID(host)); got != host {
 					t.Fatalf("hostByID(%s) = %v, want %v", host.HostID(), got, host)
 				}
 			}
 
-			if got := hosts.hostByID(tUUID(9999)); got != nil {
+			if got := hosts.InternalHostByID(tUUID(9999)); got != nil {
 				t.Fatalf("hostByID(missing) = %v, want nil", got)
 			}
-			if got := hosts.hostByID(UUID{}); got != nil {
+			if got := hosts.InternalHostByID(UUID{}); got != nil {
 				t.Fatalf("hostByID(zero) = %v, want nil", got)
 			}
 		})
@@ -174,8 +181,12 @@ func TestHostInfoList_AllHostsClipsCapacity(t *testing.T) {
 	copy(withSpareCapacity, original)
 
 	hosts := newHostInfoList(withSpareCapacity)
-	snapshot := hosts.allHosts()
-	appended := append(snapshot, &HostInfo{hostId: tUUID(100)})
+	snapshot := hosts.InternalAllHosts()
+	appended := append(snapshot, func() *HostInfo {
+		opaqueStorageValuex := new(HostInfo)
+		implEndpoint.HostInfoData(opaqueStorageValuex).InternalHostId = tUUID(100)
+		return opaqueStorageValuex
+	}())
 
 	if len(snapshot) != len(original) {
 		t.Fatalf("len(allHosts()) = %d, want %d", len(snapshot), len(original))
@@ -194,21 +205,21 @@ func TestCOWList_AddAll(t *testing.T) {
 	var cow cowHostList
 	hosts := makeHostInfoListTestHosts(hostInfoListMapThreshold)
 
-	if !cow.addAll(hosts) {
+	if !cow.InternalAddAll(hosts) {
 		t.Fatal("did not add hosts which were not in the set")
 	}
-	if got := cow.get().len(); got != len(hosts) {
+	if got := cow.InternalGet().InternalLen(); got != len(hosts) {
 		t.Fatalf("len() = %d, want %d", got, len(hosts))
 	}
-	if cow.get().hostsByID == nil {
+	if cow.InternalGet().InternalHostsByID == nil {
 		t.Fatal("expected host ID map at threshold")
 	}
 	for _, host := range hosts {
-		if got := cow.get().hostByID(host.hostUUID()); got != host {
+		if got := cow.InternalGet().InternalHostByID(implEndpoint.InternalHostInfoHostUUID(host)); got != host {
 			t.Fatalf("hostByID(%s) = %v, want %v", host.HostID(), got, host)
 		}
 	}
-	if cow.addAll(hosts) {
+	if cow.InternalAddAll(hosts) {
 		t.Fatal("added duplicate hosts")
 	}
 }
@@ -216,16 +227,21 @@ func TestCOWList_AddAll(t *testing.T) {
 func makeHostInfoListTestHosts(n int) []*HostInfo {
 	hosts := make([]*HostInfo, n)
 	for i := range hosts {
-		hosts[i] = &HostInfo{
-			hostId:         tUUID(i + 1),
-			connectAddress: net.IPv4(10, 0, byte(i>>8), byte(i)),
-			port:           9042,
-		}
+		hosts[i] = func() *HostInfo {
+			opaqueStorageValuexx := new(HostInfo)
+			implEndpoint.HostInfoData(opaqueStorageValuexx).InternalHostId = tUUID(i + 1)
+			implEndpoint.HostInfoData(opaqueStorageValuexx).InternalConnectAddress = net.IPv4(10, 0, byte(i>>8), byte(i))
+			implEndpoint.HostInfoData(opaqueStorageValuexx).InternalPort = 9042
+			return opaqueStorageValuexx
+		}(
+
+		// expectHosts makes sure that the next len(hostIDs) returned from iter is a permutation of hostIDs.
+		)
+
 	}
 	return hosts
 }
 
-// expectHosts makes sure that the next len(hostIDs) returned from iter is a permutation of hostIDs.
 func expectHosts(t *testing.T, msg string, iter NextHost, hostIDs ...string) {
 	t.Helper()
 
@@ -280,40 +296,44 @@ func TestTokenAwarePolicyReset(t *testing.T) {
 	)
 	policyInternal := policy.(*tokenAwareHostPolicy)
 
-	if policyInternal.fallback == nil {
+	if implCluster.InternalTokenAwareHostPolicyData(policyInternal).InternalFallback == nil {
 		t.Fatal("fallback is nil")
 	}
-	if !policyInternal.nonLocalReplicasFallback {
+	if !implCluster.InternalTokenAwareHostPolicyData(policyInternal).InternalNonLocalReplicasFallback {
 		t.Fatal("nonLocalReplicasFallback is false")
 	}
 
-	policy.Init(&Session{logger: &defaultLogger{}})
-	if policyInternal.getKeyspaceMetadata == nil {
+	policy.Init(func() *Session {
+		opaqueStorageValuexxx := new(Session)
+		implCluster.SessionData(opaqueStorageValuexxx).InternalLogger = &defaultLogger{}
+		return opaqueStorageValuexxx
+	}())
+	if implCluster.InternalTokenAwareHostPolicyData(policyInternal).InternalGetKeyspaceMetadata == nil {
 		t.Fatal("keyspace metatadata fn is nil")
 	}
-	if policyInternal.getKeyspaceName == nil {
+	if implCluster.InternalTokenAwareHostPolicyData(policyInternal).InternalGetKeyspaceName == nil {
 		t.Fatal("keyspace name fn is nil")
 	}
-	if policyInternal.logger == nil {
+	if implCluster.InternalTokenAwareHostPolicyData(policyInternal).InternalLogger == nil {
 		t.Fatal("logger is nil")
 	}
 
 	// Reset - should reset fields that were set in Init
 	policy.Reset()
 
-	if policyInternal.fallback == nil { // we don't touch fallback
+	if implCluster.InternalTokenAwareHostPolicyData(policyInternal).InternalFallback == nil { // we don't touch fallback
 		t.Fatal("fallback is nil")
 	}
-	if !policyInternal.nonLocalReplicasFallback { // we don't touch nonLocalReplicasFallback
+	if !implCluster.InternalTokenAwareHostPolicyData(policyInternal).InternalNonLocalReplicasFallback { // we don't touch nonLocalReplicasFallback
 		t.Fatal("nonLocalReplicasFallback is false")
 	}
-	if policyInternal.getKeyspaceMetadata != nil {
+	if implCluster.InternalTokenAwareHostPolicyData(policyInternal).InternalGetKeyspaceMetadata != nil {
 		t.Fatal("keyspace metatadata fn is not nil")
 	}
-	if policyInternal.getKeyspaceName != nil {
+	if implCluster.InternalTokenAwareHostPolicyData(policyInternal).InternalGetKeyspaceName != nil {
 		t.Fatal("keyspace name fn is not nil")
 	}
-	if policyInternal.logger != nil {
+	if implCluster.InternalTokenAwareHostPolicyData(policyInternal).InternalLogger != nil {
 		t.Fatal("logger is nil")
 	}
 }
@@ -325,7 +345,10 @@ func TestTokenAwarePolicyReset(t *testing.T) {
 func TestSelectedHostTokenInt64(t *testing.T) {
 	t.Parallel()
 
-	sh := int64SelectedHost{info: &HostInfo{}, tokenCasted: int64Token(42)}
+	sh := int64SelectedHost{InternalInfo: func() *HostInfo {
+		opaqueStorageValuexxxx := new(HostInfo)
+		return opaqueStorageValuexxxx
+	}(), InternalTokenCasted: int64Token(42)}
 	tok, ok := sh.TokenInt64()
 	if !ok || tok != int64Token(42) {
 		t.Fatalf("TokenInt64() = %d, %v; want 42, true", tok, ok)
@@ -337,7 +360,10 @@ func TestSelectedHostTokenInt64(t *testing.T) {
 		t.Fatalf("Token() (again) = %v; want boxed int64Token(42)", got)
 	}
 
-	shBoxed := selectedHost{info: &HostInfo{}, token: int64Token(7)}
+	shBoxed := selectedHost{InternalInfo: func() *HostInfo {
+		opaqueStorageValuexxxxx := new(HostInfo)
+		return opaqueStorageValuexxxxx
+	}(), InternalToken: int64Token(7)}
 	if tok, ok := shBoxed.TokenInt64(); ok || tok != 0 {
 		t.Fatalf("TokenInt64() = %d, %v; want 0, false for a boxed-only host", tok, ok)
 	}
@@ -356,20 +382,28 @@ func TestHostSetInline(t *testing.T) {
 	var s hostSet
 	hosts := make([]*HostInfo, 9)
 	for i := range hosts {
-		hosts[i] = &HostInfo{}
-		s.add(hosts[i])
+		hosts[i] = func() *HostInfo {
+			opaqueStorageValuexxxxxx := new(HostInfo)
+			return opaqueStorageValuexxxxxx
+		}()
+
+		s.InternalAdd(hosts[i])
 	}
 	// All 9 should be tracked inline (no overflow map).
-	if s.overflow != nil {
+	if s.InternalOverflow != nil {
 		t.Fatal("expected inline-only storage for 9 hosts")
 	}
 	for i, h := range hosts {
-		if !s.contains(h) {
+		if !s.InternalContains(h) {
 			t.Fatalf("host %d not found in inline set", i)
 		}
 	}
 	// Unknown host should not be found.
-	if s.contains(&HostInfo{}) {
+	if s.InternalContains(func() *HostInfo {
+		opaqueStorageValuexxxxxxx := new(HostInfo)
+		return opaqueStorageValuexxxxxxx
+	}(),
+	) {
 		t.Fatal("unexpected contains=true for unknown host")
 	}
 }
@@ -378,21 +412,29 @@ func TestHostSetOverflow(t *testing.T) {
 	var s hostSet
 	hosts := make([]*HostInfo, 15) // exceeds inline capacity of 9
 	for i := range hosts {
-		hosts[i] = &HostInfo{}
-		s.add(hosts[i])
+		hosts[i] = func() *HostInfo {
+			opaqueStorageValuexxxxxxxx := new(HostInfo)
+			return opaqueStorageValuexxxxxxxx
+		}()
+
+		s.InternalAdd(hosts[i])
 	}
 	// Should have spilled to map.
-	if s.overflow == nil {
+	if s.InternalOverflow == nil {
 		t.Fatal("expected overflow map for 15 hosts")
 	}
 	// Every host must be found, including those added before and after spill.
 	for i, h := range hosts {
-		if !s.contains(h) {
+		if !s.InternalContains(h) {
 			t.Fatalf("host %d not found after overflow", i)
 		}
 	}
 	// Unknown host should not be found.
-	if s.contains(&HostInfo{}) {
+	if s.InternalContains(func() *HostInfo {
+		opaqueStorageValuexxxxxxxxx := new(HostInfo)
+		return opaqueStorageValuexxxxxxxxx
+	}(),
+	) {
 		t.Fatal("unexpected contains=true for unknown host in overflow mode")
 	}
 }
@@ -402,23 +444,31 @@ func TestHostSetOverflowPreservesInlineEntries(t *testing.T) {
 	// Fill inline storage exactly.
 	inline := make([]*HostInfo, 9)
 	for i := range inline {
-		inline[i] = &HostInfo{}
-		s.add(inline[i])
+		inline[i] = func() *HostInfo {
+			opaqueStorageValuexxxxxxxxxx := new(HostInfo)
+			return opaqueStorageValuexxxxxxxxxx
+		}()
+
+		s.InternalAdd(inline[i])
 	}
 	// Add one more to trigger spill.
-	extra := &HostInfo{}
-	s.add(extra)
+	extra := func() *HostInfo {
+		opaqueStorageValuexxxxxxxxxxx := new(HostInfo)
+		return opaqueStorageValuexxxxxxxxxxx
+	}()
 
-	if s.overflow == nil {
+	s.InternalAdd(extra)
+
+	if s.InternalOverflow == nil {
 		t.Fatal("expected overflow map after 10th add")
 	}
 	// Inline entries must be findable via the map path.
 	for i, h := range inline {
-		if !s.contains(h) {
+		if !s.InternalContains(h) {
 			t.Fatalf("inline host %d lost after spill", i)
 		}
 	}
-	if !s.contains(extra) {
+	if !s.InternalContains(extra) {
 		t.Fatal("extra host not found after spill")
 	}
 }

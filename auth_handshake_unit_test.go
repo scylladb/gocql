@@ -3,6 +3,8 @@
 
 package gocql
 
+import implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+
 import (
 	"context"
 	"errors"
@@ -112,7 +114,7 @@ func (srv *authTestServer) cluster(auth Authenticator) (*clusterSettings, *syncL
 // logged a cause containing want.
 func requireHandshakeError(t *testing.T, cfg *clusterSettings, log *syncLogger, want string) {
 	t.Helper()
-	s, err := cfg.open()
+	s, err := implCluster.InternalClusterSettingsOpen(cfg)
 	if err == nil {
 		s.Close()
 		t.Fatal("open succeeded, want an authentication error")
@@ -138,7 +140,7 @@ func TestAuthHandshakePassword(t *testing.T) {
 	})
 
 	cfg, _ := srv.cluster(PasswordAuthenticator{Username: "cassandra", Password: "secret"})
-	s, err := cfg.open()
+	s, err := implCluster.InternalClusterSettingsOpen(cfg)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -260,7 +262,7 @@ func TestAuthHandshakeMultiStep(t *testing.T) {
 	srv := newAuthTestServer(t, multiStepReply)
 	log := &authLog{}
 	cfg, _ := srv.cluster(stepAuthenticator{log: log})
-	s, err := cfg.open()
+	s, err := implCluster.InternalClusterSettingsOpen(cfg)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -327,7 +329,7 @@ func TestAuthHandshakeAuthProvider(t *testing.T) {
 		mu.Unlock()
 		return PasswordAuthenticator{Username: "per-host", Password: "pw"}, nil
 	}
-	s, err := cfg.open()
+	s, err := implCluster.InternalClusterSettingsOpen(cfg)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}

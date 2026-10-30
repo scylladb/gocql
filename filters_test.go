@@ -27,6 +27,8 @@
 
 package gocql
 
+import implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
+
 import (
 	"net"
 	"testing"
@@ -46,7 +48,11 @@ func TestFilter_WhiteList(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		if f.Accept(&HostInfo{rpcAddress: test.addr}) {
+		if f.Accept(func() *HostInfo {
+			opaqueStorageValue := new(HostInfo)
+			implEndpoint.HostInfoData(opaqueStorageValue).InternalRpcAddress = test.addr
+			return opaqueStorageValue
+		}()) {
 			if !test.accept {
 				t.Errorf("%d: should not have been accepted but was", i)
 			}
@@ -70,7 +76,11 @@ func TestFilter_AllowAll(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		if f.Accept(&HostInfo{connectAddress: test.addr}) {
+		if f.Accept(func() *HostInfo {
+			opaqueStorageValuex := new(HostInfo)
+			implEndpoint.HostInfoData(opaqueStorageValuex).InternalConnectAddress = test.addr
+			return opaqueStorageValuex
+		}()) {
 			if !test.accept {
 				t.Errorf("%d: should not have been accepted but was", i)
 			}
@@ -94,7 +104,11 @@ func TestFilter_DenyAll(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		if f.Accept(&HostInfo{connectAddress: test.addr}) {
+		if f.Accept(func() *HostInfo {
+			opaqueStorageValuexx := new(HostInfo)
+			implEndpoint.HostInfoData(opaqueStorageValuexx).InternalConnectAddress = test.addr
+			return opaqueStorageValuexx
+		}()) {
 			if !test.accept {
 				t.Errorf("%d: should not have been accepted but was", i)
 			}
@@ -109,10 +123,13 @@ func TestFilter_WhiteList_MatchesRPCAddress(t *testing.T) {
 
 	f := WhiteListHostFilter("127.0.0.1")
 
-	host := &HostInfo{
-		connectAddress: net.ParseIP("10.0.0.1"),
-		rpcAddress:     net.ParseIP("127.0.0.1"),
-	}
+	host := func() *HostInfo {
+		opaqueStorageValuexxx := new(HostInfo)
+		implEndpoint.HostInfoData(opaqueStorageValuexxx).InternalConnectAddress = net.ParseIP("10.0.0.1")
+		implEndpoint.HostInfoData(opaqueStorageValuexxx).InternalRpcAddress = net.ParseIP("127.0.0.1")
+		return opaqueStorageValuexxx
+	}()
+
 	if !f.Accept(host) {
 		t.Error("should have been accepted via rpcAddress but wasn't")
 	}
@@ -123,10 +140,13 @@ func TestFilter_WhiteList_MatchesBroadcastAddress(t *testing.T) {
 
 	f := WhiteListHostFilter("127.0.0.1")
 
-	host := &HostInfo{
-		connectAddress:   net.ParseIP("10.0.0.1"),
-		broadcastAddress: net.ParseIP("127.0.0.1"),
-	}
+	host := func() *HostInfo {
+		opaqueStorageValuexxxx := new(HostInfo)
+		implEndpoint.HostInfoData(opaqueStorageValuexxxx).InternalConnectAddress = net.ParseIP("10.0.0.1")
+		implEndpoint.HostInfoData(opaqueStorageValuexxxx).InternalBroadcastAddress = net.ParseIP("127.0.0.1")
+		return opaqueStorageValuexxxx
+	}()
+
 	if !f.Accept(host) {
 		t.Error("should have been accepted via broadcastAddress but wasn't")
 	}
@@ -137,10 +157,13 @@ func TestFilter_WhiteList_MatchesListenAddress(t *testing.T) {
 
 	f := WhiteListHostFilter("127.0.0.1")
 
-	host := &HostInfo{
-		connectAddress: net.ParseIP("10.0.0.1"),
-		listenAddress:  net.ParseIP("127.0.0.1"),
-	}
+	host := func() *HostInfo {
+		opaqueStorageValuexxxxx := new(HostInfo)
+		implEndpoint.HostInfoData(opaqueStorageValuexxxxx).InternalConnectAddress = net.ParseIP("10.0.0.1")
+		implEndpoint.HostInfoData(opaqueStorageValuexxxxx).InternalListenAddress = net.ParseIP("127.0.0.1")
+		return opaqueStorageValuexxxxx
+	}()
+
 	if !f.Accept(host) {
 		t.Error("should have been accepted via listenAddress but wasn't")
 	}
@@ -151,10 +174,13 @@ func TestFilter_WhiteList_MatchesPeer(t *testing.T) {
 
 	f := WhiteListHostFilter("127.0.0.1")
 
-	host := &HostInfo{
-		connectAddress: net.ParseIP("10.0.0.1"),
-		peer:           net.ParseIP("127.0.0.1"),
-	}
+	host := func() *HostInfo {
+		opaqueStorageValuexxxxxx := new(HostInfo)
+		implEndpoint.HostInfoData(opaqueStorageValuexxxxxx).InternalConnectAddress = net.ParseIP("10.0.0.1")
+		implEndpoint.HostInfoData(opaqueStorageValuexxxxxx).InternalPeer = net.ParseIP("127.0.0.1")
+		return opaqueStorageValuexxxxxx
+	}()
+
 	if !f.Accept(host) {
 		t.Error("should have been accepted via peer but wasn't")
 	}
@@ -165,10 +191,13 @@ func TestFilter_WhiteList_MatchesPreferredIP(t *testing.T) {
 
 	f := WhiteListHostFilter("127.0.0.1")
 
-	host := &HostInfo{
-		connectAddress: net.ParseIP("10.0.0.1"),
-		preferredIP:    net.ParseIP("127.0.0.1"),
-	}
+	host := func() *HostInfo {
+		opaqueStorageValuexxxxxxx := new(HostInfo)
+		implEndpoint.HostInfoData(opaqueStorageValuexxxxxxx).InternalConnectAddress = net.ParseIP("10.0.0.1")
+		implEndpoint.HostInfoData(opaqueStorageValuexxxxxxx).InternalPreferredIP = net.ParseIP("127.0.0.1")
+		return opaqueStorageValuexxxxxxx
+	}()
+
 	if !f.Accept(host) {
 		t.Error("should have been accepted via preferredIP but wasn't")
 	}
@@ -179,12 +208,15 @@ func TestFilter_WhiteList_MatchesTranslatedAddress(t *testing.T) {
 
 	f := WhiteListHostFilter("127.0.0.1")
 
-	host := &HostInfo{
-		connectAddress: net.ParseIP("10.0.0.1"),
-		translatedAddresses: &translatedAddresses{
+	host := func() *HostInfo {
+		opaqueStorageValuexxxxxxxx := new(HostInfo)
+		implEndpoint.HostInfoData(opaqueStorageValuexxxxxxxx).InternalConnectAddress = net.ParseIP("10.0.0.1")
+		implEndpoint.HostInfoData(opaqueStorageValuexxxxxxxx).InternalTranslatedAddresses = &translatedAddresses{
 			CQL: AddressPort{Address: net.ParseIP("127.0.0.1"), Port: 9042},
-		},
-	}
+		}
+		return opaqueStorageValuexxxxxxxx
+	}()
+
 	if !f.Accept(host) {
 		t.Error("should have been accepted via translatedAddresses but wasn't")
 	}
@@ -195,14 +227,17 @@ func TestFilter_WhiteList_NoMatchWhenNoAddressMatches(t *testing.T) {
 
 	f := WhiteListHostFilter("127.0.0.1")
 
-	host := &HostInfo{
-		connectAddress:   net.ParseIP("10.0.0.1"),
-		rpcAddress:       net.ParseIP("10.0.0.2"),
-		broadcastAddress: net.ParseIP("10.0.0.3"),
-		listenAddress:    net.ParseIP("10.0.0.4"),
-		peer:             net.ParseIP("10.0.0.5"),
-		preferredIP:      net.ParseIP("10.0.0.6"),
-	}
+	host := func() *HostInfo {
+		opaqueStorageValuexxxxxxxxx := new(HostInfo)
+		implEndpoint.HostInfoData(opaqueStorageValuexxxxxxxxx).InternalConnectAddress = net.ParseIP("10.0.0.1")
+		implEndpoint.HostInfoData(opaqueStorageValuexxxxxxxxx).InternalRpcAddress = net.ParseIP("10.0.0.2")
+		implEndpoint.HostInfoData(opaqueStorageValuexxxxxxxxx).InternalBroadcastAddress = net.ParseIP("10.0.0.3")
+		implEndpoint.HostInfoData(opaqueStorageValuexxxxxxxxx).InternalListenAddress = net.ParseIP("10.0.0.4")
+		implEndpoint.HostInfoData(opaqueStorageValuexxxxxxxxx).InternalPeer = net.ParseIP("10.0.0.5")
+		implEndpoint.HostInfoData(opaqueStorageValuexxxxxxxxx).InternalPreferredIP = net.ParseIP("10.0.0.6")
+		return opaqueStorageValuexxxxxxxxx
+	}()
+
 	if f.Accept(host) {
 		t.Error("should not have been accepted but was")
 	}
@@ -213,7 +248,11 @@ func TestFilter_WhiteList_EmptyHost(t *testing.T) {
 
 	f := WhiteListHostFilter("127.0.0.1")
 
-	host := &HostInfo{}
+	host := func() *HostInfo {
+		opaqueStorageValuexxxxxxxxxx := new(HostInfo)
+		return opaqueStorageValuexxxxxxxxxx
+	}()
+
 	if f.Accept(host) {
 		t.Error("empty host should not have been accepted")
 	}
@@ -234,7 +273,11 @@ func TestFilter_DataCenter(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		if f.Accept(&HostInfo{dataCenter: test.dc}) {
+		if f.Accept(func() *HostInfo {
+			opaqueStorageValuexxxxxxxxxxx := new(HostInfo)
+			implEndpoint.HostInfoData(opaqueStorageValuexxxxxxxxxxx).InternalDataCenter = test.dc
+			return opaqueStorageValuexxxxxxxxxxx
+		}()) {
 			if !test.accept {
 				t.Errorf("%d: should not have been accepted but was", i)
 			}
@@ -242,7 +285,15 @@ func TestFilter_DataCenter(t *testing.T) {
 			t.Errorf("%d: should have been accepted but wasn't", i)
 		}
 
-		if f.Accept(&HostInfo{dataCenter: test.dc}) != fDeprecated.Accept(&HostInfo{dataCenter: test.dc}) {
+		if f.Accept(func() *HostInfo {
+			opaqueStorageValuexxxxxxxxxxxx := new(HostInfo)
+			implEndpoint.HostInfoData(opaqueStorageValuexxxxxxxxxxxx).InternalDataCenter = test.dc
+			return opaqueStorageValuexxxxxxxxxxxx
+		}()) != fDeprecated.Accept(func() *HostInfo {
+			opaqueStorageValuexxxxxxxxxxxxx := new(HostInfo)
+			implEndpoint.HostInfoData(opaqueStorageValuexxxxxxxxxxxxx).InternalDataCenter = test.dc
+			return opaqueStorageValuexxxxxxxxxxxxx
+		}()) {
 			t.Errorf("%d: DataCenterHostFilter and DataCentreHostFilter should be the same", i)
 		}
 	}

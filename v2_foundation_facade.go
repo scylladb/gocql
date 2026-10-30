@@ -264,8 +264,6 @@ func ReadStreamColumn[T any](a0 *StreamRowReader, a1 StreamValuePlan[T], a2 *T) 
 	return codec.ReadStreamColumn[T](a0, a1, a2)
 }
 
-type RoutingInfo = model.RoutingInfo
-
 func Row[R any](a0 ...OutputField[R]) RowDecoder[R] { return codec.Row[R](a0...) }
 
 type RowDecoder[R any] = codec.RowDecoder[R]

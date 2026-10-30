@@ -3,6 +3,8 @@
 
 package gocql
 
+import implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+
 var FlagRunSslTest = flagRunSslTest
 var FlagDistribution = flagDistribution
 
@@ -11,7 +13,7 @@ var TestLogger = &testLogger{}
 var WaitUntilPoolsStopFilling = waitUntilPoolsStopFilling
 
 func GetRingAllHosts(sess *Session) []*HostInfo {
-	return sess.hostSource.getHostsList()
+	return implCluster.SessionData(sess).InternalHostSource.InternalGetHostsList()
 }
 
 // NewTestLogger isolates each fixture capture and supports concurrent writes.

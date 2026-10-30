@@ -82,9 +82,9 @@ func Test_framerFlags_neverBetaProtocol(t *testing.T) {
 	}
 
 	// initCache is what the connection actually uses once the handshake completed.
-	c := &Conn{version: protoVersion5, compressor: comp, logger: &defaultLogger{}}
-	c.initFramerCache()
-	if c.framers.defaults.flags&frm.FlagBetaProtocol != 0 {
+	c := &driverConn{InternalVersion: protoVersion5, InternalCompressor: comp, InternalLogger: &defaultLogger{}}
+	c.InternalInitFramerCache()
+	if c.InternalFramers.InternalDefaults.InternalFlags&frm.FlagBetaProtocol != 0 {
 		t.Error("initFramerCache(v5) seeded FlagBetaProtocol")
 	}
 }

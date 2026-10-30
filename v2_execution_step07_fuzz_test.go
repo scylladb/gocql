@@ -16,6 +16,10 @@
 
 package gocql
 
+import implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
+
+import implExecution "github.com/scylladb/gocql/v2/internal/execution"
+
 import (
 	"bytes"
 	"context"
@@ -36,25 +40,44 @@ func FuzzStep07StreamExecutionBoundary(f *testing.F) {
 		frame = append(frame, body...)
 		memory := &step04MemoryConn{source: bytes.NewReader(frame)}
 		reservation := step04MemoryReservation(4, nil, memory)
-		s := &Session{}
-		reservation.conn.host = &HostInfo{hostId: UUID{15: 1}, state: NodeUp}
-		reservation.conn.session = s
+		s := func() *Session {
+			opaqueStorageValue := new(Session)
+			return opaqueStorageValue
+		}()
+
+		reservation.InternalConn.InternalHost = func() *HostInfo {
+			opaqueStorageValuex := new(HostInfo)
+			implEndpoint.HostInfoData(opaqueStorageValuex).InternalHostId = UUID{15: 1}
+			implEndpoint.HostInfoData(opaqueStorageValuex).InternalState = NodeUp
+			return opaqueStorageValuex
+		}()
+		reservation.InternalConn.InternalHooks = newConnectionHooks(s)
 		bound := runtimeQuery(t)
 		defer bound.Close()
 		ctx, cancel, request, err := admitExecution(context.Background(), s, bound, Options{})
 		if err != nil {
 			t.Fatal(err)
 		}
-		request.options.profile.Speculation = nil
-		cursor := &RowStream[[]byte]{ctx: ctx, cancel: cancel, session: s, request: request, decoder: StreamOneColumn(StreamBlob), reservation: reservation, history: pagingHistory{maxCount: 4, maxBytes: 64}}
-		cursor.active.Lock()
-		err = cursor.loadPage()
-		cursor.active.Unlock()
+		request.InternalOptions.InternalProfile.Speculation = nil
+		cursor := func() *RowStream[[]byte] {
+			opaqueStorageValuexx := new(RowStream[[]byte])
+			implExecution.RowStreamData(opaqueStorageValuexx).InternalCtx = ctx
+			implExecution.RowStreamData(opaqueStorageValuexx).InternalCancel = cancel
+			implExecution.RowStreamData(opaqueStorageValuexx).InternalSession = s
+			implExecution.RowStreamData(opaqueStorageValuexx).InternalRequest = request
+			implExecution.RowStreamData(opaqueStorageValuexx).InternalDecoder = StreamOneColumn(StreamBlob)
+			implExecution.RowStreamData(opaqueStorageValuexx).InternalReservation = reservation
+			implExecution.RowStreamData(opaqueStorageValuexx).InternalHistory = pagingHistory{InternalMaxCount: 4, InternalMaxBytes: 64}
+			return opaqueStorageValuexx
+		}()
+		implExecution.RowStreamData(cursor).InternalActive.Lock()
+		err = implExecution.InternalRowStreamLoadPage(cursor)
+		implExecution.RowStreamData(cursor).InternalActive.Unlock()
 		if err != nil {
-			cursor.fail(err)
-			cursor.active.Lock()
-			cursor.cleanup(false)
-			cursor.active.Unlock()
+			implExecution.InternalRowStreamFail(cursor, err)
+			implExecution.RowStreamData(cursor).InternalActive.Lock()
+			implExecution.InternalRowStreamCleanup(cursor, false)
+			implExecution.RowStreamData(cursor).InternalActive.Unlock()
 		} else {
 			dst := make([]byte, 0, int(capacity))
 			for i := 0; i < 4 && cursor.NextInto(&dst); i++ {

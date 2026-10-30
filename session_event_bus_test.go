@@ -3,6 +3,8 @@
 
 package gocql
 
+import implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+
 import (
 	"net"
 	"testing"
@@ -13,17 +15,19 @@ import (
 )
 
 func TestSessionEventBusPublishesEvents(t *testing.T) {
-	s := &Session{
-		eventBus: eventbus.New[events.Event](eventbus.EventBusConfig{
+	s := func() *Session {
+		opaqueStorageValue := new(Session)
+		implCluster.SessionData(opaqueStorageValue).InternalEventBus = eventbus.New[events.Event](eventbus.EventBusConfig{
 			InputEventsQueueSize: 1,
-		}, nil),
-		logger: &nopLogger{},
-	}
+		}, nil)
+		implCluster.SessionData(opaqueStorageValue).InternalLogger = &nopLogger{}
+		return opaqueStorageValue
+	}()
 
-	if err := s.eventBus.Start(); err != nil {
+	if err := implCluster.SessionData(s).InternalEventBus.Start(); err != nil {
 		t.Fatalf("starting event bus: %v", err)
 	}
-	defer s.eventBus.Stop()
+	defer implCluster.SessionData(s).InternalEventBus.Stop()
 
 	sub := s.SubscribeToEvents("test", 1, nil)
 	defer sub.Stop()
@@ -33,8 +37,7 @@ func TestSessionEventBusPublishesEvents(t *testing.T) {
 		Host:   net.ParseIP("127.0.0.1"),
 		Port:   9042,
 	}
-
-	s.publishEvent(ev)
+	implCluster.InternalSessionPublishEvent(s, ev)
 
 	select {
 	case received := <-sub.Events():

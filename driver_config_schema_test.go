@@ -3,6 +3,8 @@
 
 package gocql
 
+import implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+
 import (
 	"crypto/tls"
 	"encoding/json"
@@ -176,7 +178,9 @@ func driverConfigCases() []struct {
 		},
 		{
 			name: "typed-nil custom retry policy",
-			cfg:  func(c *clusterSettings) { c.defaultProfile.Retry = (*step10CustomRetry)(nil) },
+			cfg: func(c *clusterSettings) {
+				implCluster.InternalClusterSettingsData(c).InternalDefaultProfile.Retry = (*step10CustomRetry)(nil)
+			},
 		},
 		{
 			name:   "typed-nil load balancing fallback",
@@ -201,32 +205,38 @@ func driverConfigCases() []struct {
 		{
 			name: "safe retry three attempts",
 			cfg: func(c *clusterSettings) {
-				c.defaultProfile.Retry = SafeRetryPolicy{MaxAttempts: 3}
+				implCluster.InternalClusterSettingsData(c).InternalDefaultProfile.Retry = SafeRetryPolicy{MaxAttempts: 3}
 			},
 		},
 		{
 			name: "safe retry one attempt",
 			cfg: func(c *clusterSettings) {
-				c.defaultProfile.Retry = SafeRetryPolicy{MaxAttempts: 1}
+				implCluster.InternalClusterSettingsData(c).InternalDefaultProfile.Retry = SafeRetryPolicy{MaxAttempts: 1}
 			},
 		},
 		{
 			name: "safe retry default limit",
 			cfg: func(c *clusterSettings) {
-				c.defaultProfile.Retry = SafeRetryPolicy{MaxAttempts: 0}
+				implCluster.InternalClusterSettingsData(c).InternalDefaultProfile.Retry = SafeRetryPolicy{MaxAttempts: 0}
 			},
 		},
 		{
 			name: "custom retry policy",
-			cfg:  func(c *clusterSettings) { c.defaultProfile.Retry = &step10CustomRetry{} },
+			cfg: func(c *clusterSettings) {
+				implCluster.InternalClusterSettingsData(c).InternalDefaultProfile.Retry = &step10CustomRetry{}
+			},
 		},
 		{
 			name: "safe retry negative limit",
-			cfg:  func(c *clusterSettings) { c.defaultProfile.Retry = SafeRetryPolicy{MaxAttempts: -1} },
+			cfg: func(c *clusterSettings) {
+				implCluster.InternalClusterSettingsData(c).InternalDefaultProfile.Retry = SafeRetryPolicy{MaxAttempts: -1}
+			},
 		},
 		{
 			name: "safe retry zero limit",
-			cfg:  func(c *clusterSettings) { c.defaultProfile.Retry = SafeRetryPolicy{MaxAttempts: 0} },
+			cfg: func(c *clusterSettings) {
+				implCluster.InternalClusterSettingsData(c).InternalDefaultProfile.Retry = SafeRetryPolicy{MaxAttempts: 0}
+			},
 		},
 		{
 			name: "tls without hostname verification",
@@ -296,7 +306,7 @@ func buildCaseReport(t *testing.T, cfgFn func(*clusterSettings), policy HostSele
 		t.Fatalf("unable to initialize ssl config: %v", err)
 	}
 
-	raw, err := newDriverConfigReporter(newTestReportSession(cfg, policy)).buildReport(isScyllaConn)
+	raw, err := newDriverConfigReporter(newTestReportSession(cfg, policy)).InternalBuildReport(isScyllaConn)
 	if err != nil {
 		t.Fatalf("unable to build the report: %v", err)
 	}

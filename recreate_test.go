@@ -175,7 +175,7 @@ func TestRecreateSchema(t *testing.T) {
 
 			var golden []byte
 			if getStmtFromCluster {
-				golden, err = getV2CreateStatements(context.Background(), session, ks)
+				golden, err = getV2CreateStatements(context.Background(), newSchemaSource(session), ks)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -326,7 +326,7 @@ func v2SchemaRoutingTabletsAutoEnabled(t *testing.T, session *Session) bool {
 	keyspace := v2SchemaRoutingName(t)
 	v2CreateRoutingKeyspace(t, session, keyspace, 1)
 	defer cleanup(t, session, keyspace)
-	statements, err := getV2CreateStatements(context.Background(), session, keyspace)
+	statements, err := getV2CreateStatements(context.Background(), newSchemaSource(session), keyspace)
 	if err != nil {
 		t.Fatal(err)
 	}

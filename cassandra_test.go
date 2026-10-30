@@ -27,6 +27,13 @@
 
 package gocql
 
+import implExecution "github.com/scylladb/gocql/v2/internal/execution"
+
+import (
+	implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+	implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
+)
+
 import (
 	"context"
 	"fmt"
@@ -411,7 +418,12 @@ func TestCAS(t *testing.T) {
 			}
 			require.Error(t, e)
 		} else {
-			bad := &Bound[CASResult[bool]]{request: bound.request, rows: badDecoder}
+			bad := func() *Bound[CASResult[bool]] {
+				opaqueStorageValue := new(Bound[CASResult[bool]])
+				implExecution.BoundData(opaqueStorageValue).InternalRequest = implExecution.BoundData(bound).InternalRequest
+				implExecution.BoundData(opaqueStorageValue).InternalRows = badDecoder
+				return opaqueStorageValue
+			}()
 			rows, e := Run(context.Background(), session, bad, Options{})
 			if rows != nil {
 				rows.Close()
@@ -449,7 +461,7 @@ func TestDurationType(t *testing.T) {
 	t.Parallel()
 	session := createV2Session(t)
 	defer session.Close()
-	if session.cfg.ProtoVersion < 5 {
+	if implCluster.SessionData(session).InternalCfg.ProtoVersion < 5 {
 		t.Skip("skipped below protocol 5 by this test's own guard, not by a limit of the duration type")
 	}
 	table := testTableName(t)
@@ -607,9 +619,9 @@ func TestReconnection(t *testing.T) {
 	config := createV2Cluster(func(c *Config) { c.Reconnect = cassandraReconnect{} })
 	session := createV2SessionFromConfig(config, t, false)
 	defer session.Close()
-	host := session.hostSource.getHostsList()[0]
-	session.handleNodeDown(host.ConnectAddress(), host.Port())
-	defer host.setState(NodeUp)
+	host := implCluster.SessionData(session).InternalHostSource.InternalGetHostsList()[0]
+	implCluster.InternalSessionHandleNodeDown(session, host.ConnectAddress(), host.Port())
+	defer implEndpoint.InternalHostInfoSetState(host, NodeUp)
 	require.Equal(t, NodeDown, host.State())
 	require.True(t, pollUntil(31*time.Second, func() bool { return host.State() == NodeUp }), "host did not reconnect")
 }
@@ -700,7 +712,7 @@ func TestSliceMap(t *testing.T) {
 	require.NoError(t, err)
 	bigInt, ok := new(big.Int).SetString("830169365738487321165427203929228", 10)
 	require.True(t, ok)
-	expected := []ValueField{{"testuuid", cassandraValue(TimeUUIDValue(TimeUUID(NewTimeUUID())))}, {"testtimestamp", TimestampValue(Timestamp(time.Now().UnixMilli()))}, {"testvarchar", codecTestMust(TextValue("Test VarChar"))}, {"testbigint", BigIntValue(time.Now().Unix())}, {"testblob", BlobValue([]byte("test blob"))}, {"testbool", BoolValue(true)}, {"testfloat", FloatValue(4.564)}, {"testdouble", DoubleValue(4.815162342)}, {"testint", IntValue(2343)}, {"testdecimal", DecimalValue(Decimal{Unscaled: VarintFromBigInt(big.NewInt(100))})}, {"testlist", cassandraValue(ListValue(listType, []Value{codecTestMust(TextValue("quux")), codecTestMust(TextValue("foo")), codecTestMust(TextValue("bar")), codecTestMust(TextValue("baz")), codecTestMust(TextValue("quux"))}))}, {"testset", cassandraValue(SetValue(setType, []Value{IntValue(1), IntValue(2), IntValue(3), IntValue(4), IntValue(5), IntValue(6), IntValue(7), IntValue(8), IntValue(9)}))}, {"testmap", cassandraValue(MapValue(mapType, []ValueEntry{{codecTestMust(TextValue("field1")), codecTestMust(TextValue("val1"))}, {codecTestMust(TextValue("field2")), codecTestMust(TextValue("val2"))}, {codecTestMust(TextValue("field3")), codecTestMust(TextValue("val3"))}}))}, {"testvarint", VarintValue(VarintFromBigInt(bigInt))}, {"testinet", cassandraValue(InetValue(netip.MustParseAddr("213.212.2.19")))}}
+	expected := []ValueField{{Name: "testuuid", Value: cassandraValue(TimeUUIDValue(TimeUUID(NewTimeUUID())))}, {Name: "testtimestamp", Value: TimestampValue(Timestamp(time.Now().UnixMilli()))}, {Name: "testvarchar", Value: codecTestMust(TextValue("Test VarChar"))}, {Name: "testbigint", Value: BigIntValue(time.Now().Unix())}, {Name: "testblob", Value: BlobValue([]byte("test blob"))}, {Name: "testbool", Value: BoolValue(true)}, {Name: "testfloat", Value: FloatValue(4.564)}, {Name: "testdouble", Value: DoubleValue(4.815162342)}, {Name: "testint", Value: IntValue(2343)}, {Name: "testdecimal", Value: DecimalValue(Decimal{Unscaled: VarintFromBigInt(big.NewInt(100))})}, {Name: "testlist", Value: cassandraValue(ListValue(listType, []Value{codecTestMust(TextValue("quux")), codecTestMust(TextValue("foo")), codecTestMust(TextValue("bar")), codecTestMust(TextValue("baz")), codecTestMust(TextValue("quux"))}))}, {Name: "testset", Value: cassandraValue(SetValue(setType, []Value{IntValue(1), IntValue(2), IntValue(3), IntValue(4), IntValue(5), IntValue(6), IntValue(7), IntValue(8), IntValue(9)}))}, {Name: "testmap", Value: cassandraValue(MapValue(mapType, []ValueEntry{{Key: codecTestMust(TextValue("field1")), Value: codecTestMust(TextValue("val1"))}, {Key: codecTestMust(TextValue("field2")), Value: codecTestMust(TextValue("val2"))}, {Key: codecTestMust(TextValue("field3")), Value: codecTestMust(TextValue("val3"))}}))}, {Name: "testvarint", Value: VarintValue(VarintFromBigInt(bigInt))}, {Name: "testinet", Value: cassandraValue(InetValue(netip.MustParseAddr("213.212.2.19")))}}
 	var values []Value
 	for _, field := range expected {
 		values = append(values, field.Value)
@@ -921,10 +933,10 @@ func pollUntil(timeout time.Duration, cond func() bool) bool {
 //
 // The host list is re-read on every attempt, so a host marked up while this waits is
 // included and one marked down stops being required.
-func waitForHostConns(t *testing.T, session *Session) map[string]*Conn {
+func waitForHostConns(t *testing.T, session *Session) map[string]*driverConn {
 	t.Helper()
 
-	conns := make(map[string]*Conn)
+	conns := make(map[string]*driverConn)
 	var pending, down []string
 
 	ok := pollUntil(hostConnWaitTimeout, func() bool {
@@ -932,7 +944,7 @@ func waitForHostConns(t *testing.T, session *Session) map[string]*Conn {
 		pending = pending[:0]
 		down = down[:0]
 
-		for _, host := range session.hostSource.getHostsList() {
+		for _, host := range implCluster.SessionData(session).InternalHostSource.InternalGetHostsList() {
 			// Collected rather than merely skipped: a host that stays down keeps the
 			// count below *clusterSize while contributing nothing to pending, so the
 			// failure below would otherwise report "2 of 3 connected, 0 still without
@@ -943,7 +955,7 @@ func waitForHostConns(t *testing.T, session *Session) map[string]*Conn {
 			}
 
 			addr := host.ConnectAddressAndPort()
-			pool, found := session.pool.getPool(host)
+			pool, found := implCluster.SessionData(session).InternalPool.InternalGetPool(host)
 			if !found {
 				pending = append(pending, addr)
 				continue
@@ -978,12 +990,12 @@ func waitForHostConns(t *testing.T, session *Session) map[string]*Conn {
 // getRandomConn returns a pooled connection, waiting for one rather than failing the
 // moment none is pickable. See waitForHostConns: an empty pool straight after
 // createV2Session is a pool still filling, not an anomaly.
-func getRandomConn(t *testing.T, session *Session) *Conn {
+func getRandomConn(t *testing.T, session *Session) *driverConn {
 	t.Helper()
 
-	var conn *Conn
+	var conn *driverConn
 	if !pollUntil(hostConnWaitTimeout, func() bool {
-		conn = session.getConn()
+		conn = implCluster.InternalSessionGetConn(session)
 		return conn != nil
 	}) {
 		t.Fatal("unable to get a connection")
@@ -991,16 +1003,21 @@ func getRandomConn(t *testing.T, session *Session) *Conn {
 	return conn
 }
 
-func injectInvalidPreparedStatement(t *testing.T, session *Session, table string) (*Bound[Unit], *Conn) {
+func injectInvalidPreparedStatement(t *testing.T, session *Session, table string) (*Bound[Unit], *driverConn) {
 	t.Helper()
 	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(foo varchar,bar int,PRIMARY KEY(foo,bar))", table))
 	conn := getRandomConn(t, session)
-	prepared := cassandraPrepared(t, session, Statement[string, Unit]{CQL: fmt.Sprintf("INSERT INTO %s(foo,bar) VALUES(?,7)", table), Params: OneParam(StringEncoder), Rows: NoRows}, PrepareOptions{HostID: Option[UUID]{Value: conn.host.hostUUID(), Set: true}, connection: conn})
-	prepared.state.mu.Lock()
-	host := prepared.state.hosts[conn.host.hostUUID()]
-	host.id = []byte("foobar")
-	prepared.state.hosts[conn.host.hostUUID()] = host
-	prepared.state.mu.Unlock()
+	prepared := cassandraPrepared(t, session, Statement[string, Unit]{CQL: fmt.Sprintf("INSERT INTO %s(foo,bar) VALUES(?,7)", table), Params: OneParam(StringEncoder), Rows: NoRows}, *func() *PrepareOptions {
+		opaqueStorageValuex := new(PrepareOptions)
+		opaqueStorageValuex.HostID = Option[UUID]{Value: implEndpoint.InternalHostInfoHostUUID(conn.InternalHost), Set: true}
+		implExecution.PrepareOptionsData(opaqueStorageValuex).InternalConnection = conn
+		return opaqueStorageValuex
+	}())
+	implExecution.PreparedData(prepared).InternalState.InternalMu.Lock()
+	host := implExecution.PreparedData(prepared).InternalState.InternalHosts[implEndpoint.InternalHostInfoHostUUID(conn.InternalHost)]
+	host.InternalId = []byte("foobar")
+	implExecution.PreparedData(prepared).InternalState.InternalHosts[implEndpoint.InternalHostInfoHostUUID(conn.InternalHost)] = host
+	implExecution.PreparedData(prepared).InternalState.InternalMu.Unlock()
 	return cassandraBound(t, prepared, "bar"), conn
 }
 
@@ -1011,7 +1028,7 @@ func TestPrepare_MissingSchemaPrepare(t *testing.T) {
 	table := testTableName(t)
 	conn := getRandomConn(t, session)
 	statement := Statement[int32, Unit]{CQL: fmt.Sprintf("INSERT INTO %s(val) VALUES(?)", table), Params: OneParam(Int32), Rows: NoRows}
-	options := PrepareOptions{HostID: Option[UUID]{Value: conn.host.hostUUID(), Set: true}}
+	options := PrepareOptions{HostID: Option[UUID]{Value: implEndpoint.InternalHostInfoHostUUID(conn.InternalHost), Set: true}}
 	_, err := Prepare(context.Background(), session, statement, options)
 	require.Error(t, err)
 	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(val int PRIMARY KEY)", table))
@@ -1026,11 +1043,16 @@ func TestPrepare_ReprepareStatement(t *testing.T) {
 	defer session.Close()
 	table := testTableName(t)
 	bound, conn := injectInvalidPreparedStatement(t, session, table)
-	_, err := Exec(context.Background(), session, bound, Options{HostID: Option[UUID]{Value: conn.host.hostUUID(), Set: true}, connection: conn})
+	_, err := Exec(context.Background(), session, bound, *func() *Options {
+		opaqueStorageValuexx := new(Options)
+		opaqueStorageValuexx.HostID = Option[UUID]{Value: implEndpoint.InternalHostInfoHostUUID(conn.InternalHost), Set: true}
+		implExecution.OptionsData(opaqueStorageValuexx).InternalConnection = conn
+		return opaqueStorageValuexx
+	}())
 	require.NoError(t, err)
-	bound.request.prepared.mu.RLock()
-	id := append([]byte(nil), bound.request.prepared.hosts[conn.host.hostUUID()].id...)
-	bound.request.prepared.mu.RUnlock()
+	implExecution.BoundData(bound).InternalRequest.InternalPrepared.InternalMu.RLock()
+	id := append([]byte(nil), implExecution.BoundData(bound).InternalRequest.InternalPrepared.InternalHosts[implEndpoint.InternalHostInfoHostUUID(conn.InternalHost)].InternalId...)
+	implExecution.BoundData(bound).InternalRequest.InternalPrepared.InternalMu.RUnlock()
 	require.NotEqual(t, []byte("foobar"), id)
 	require.Equal(t, int64(7), cassandraInt(t, cassandraRead(t, session, "SELECT bar FROM "+table+" WHERE foo=?", codecTestMust(TextValue("bar"))), "bar"))
 }
@@ -1041,10 +1063,15 @@ func TestPrepare_ReprepareBatch(t *testing.T) {
 	defer session.Close()
 	table := testTableName(t)
 	bound, conn := injectInvalidPreparedStatement(t, session, table)
-	cassandraBatch(t, session, UnloggedBatch, []BatchItem{cassandraItem(t, bound)}, Options{HostID: Option[UUID]{Value: conn.host.hostUUID(), Set: true}, connection: conn})
-	bound.request.prepared.mu.RLock()
-	id := append([]byte(nil), bound.request.prepared.hosts[conn.host.hostUUID()].id...)
-	bound.request.prepared.mu.RUnlock()
+	cassandraBatch(t, session, UnloggedBatch, []BatchItem{cassandraItem(t, bound)}, *func() *Options {
+		opaqueStorageValuexxx := new(Options)
+		opaqueStorageValuexxx.HostID = Option[UUID]{Value: implEndpoint.InternalHostInfoHostUUID(conn.InternalHost), Set: true}
+		implExecution.OptionsData(opaqueStorageValuexxx).InternalConnection = conn
+		return opaqueStorageValuexxx
+	}())
+	implExecution.BoundData(bound).InternalRequest.InternalPrepared.InternalMu.RLock()
+	id := append([]byte(nil), implExecution.BoundData(bound).InternalRequest.InternalPrepared.InternalHosts[implEndpoint.InternalHostInfoHostUUID(conn.InternalHost)].InternalId...)
+	implExecution.BoundData(bound).InternalRequest.InternalPrepared.InternalMu.RUnlock()
 	require.NotEqual(t, []byte("foobar"), id)
 	require.Equal(t, int64(7), cassandraInt(t, cassandraRead(t, session, "SELECT bar FROM "+table+" WHERE foo=?", codecTestMust(TextValue("bar"))), "bar"))
 }
@@ -1066,11 +1093,11 @@ func TestPrepare_PreparedCacheEviction(t *testing.T) {
 	defer session.Close()
 	table := testTableName(t)
 	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,mod int)", table))
-	runtime := session.typedRuntime()
-	runtime.mu.Lock()
-	clear(runtime.prepared)
-	runtime.prepareOrder = nil
-	runtime.mu.Unlock()
+	runtime := runtimeFor(session)
+	runtime.InternalMu.Lock()
+	clear(runtime.InternalPrepared)
+	runtime.InternalPrepareOrder = nil
+	runtime.InternalMu.Unlock()
 	insert := fmt.Sprintf("INSERT INTO %s(id,mod) VALUES(?,?)", table)
 	for i := int32(0); i < 2; i++ {
 		cassandraWrite(t, session, insert, IntValue(i), IntValue(10000%(i+1)))
@@ -1085,12 +1112,12 @@ func TestPrepare_PreparedCacheEviction(t *testing.T) {
 	del := fmt.Sprintf("DELETE FROM %s WHERE id=?", table)
 	cassandraWrite(t, session, del, IntValue(1))
 	cassandraWrite(t, session, insert, IntValue(3), IntValue(11))
-	runtime.mu.Lock()
-	defer runtime.mu.Unlock()
-	require.Len(t, runtime.prepared, maxPrepared)
+	runtime.InternalMu.Lock()
+	defer runtime.InternalMu.Unlock()
+	require.Len(t, runtime.InternalPrepared, maxPrepared)
 	cached := map[string]bool{}
-	for key := range runtime.prepared {
-		cached[key.cql] = true
+	for key := range runtime.InternalPrepared {
+		cached[key.InternalCql] = true
 	}
 	require.False(t, cached[selects[0]])
 	for _, cql := range []string{selects[1], insert, update, del} {
@@ -1680,10 +1707,10 @@ func TestRoutingKey(t *testing.T) {
 	single, composite := testTableName(t, "single"), testTableName(t, "composite")
 	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(first_id int,second_id int,PRIMARY KEY(first_id,second_id))", single))
 	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(first_id int,second_id int,PRIMARY KEY((first_id,second_id)))", composite))
-	runtime := session.typedRuntime()
-	runtime.mu.Lock()
-	initial := len(runtime.prepared)
-	runtime.mu.Unlock()
+	runtime := runtimeFor(session)
+	runtime.InternalMu.Lock()
+	initial := len(runtime.InternalPrepared)
+	runtime.InternalMu.Unlock()
 	for i, tc := range []struct {
 		table   string
 		indexes []int
@@ -1698,9 +1725,9 @@ func TestRoutingKey(t *testing.T) {
 			require.Equal(t, TypeInt, column.Type.Kind())
 		}
 		again := cassandraPrepared(t, session, statement, PrepareOptions{})
-		require.Same(t, prepared.state, again.state, "preparing again must hit typed cache")
+		require.Same(t, implExecution.PreparedData(prepared).InternalState, implExecution.PreparedData(again).InternalState, "preparing again must hit typed cache")
 		bound := cassandraBound(t, prepared, []Value{IntValue(1), IntValue(2)})
-		key, present, err := newPartitionKey(bound.request.values.Cells, prepared.Info().PartitionKeyIndexes)
+		key, present, err := newPartitionKey(implExecution.BoundData(bound).InternalRequest.InternalValues.Cells, prepared.Info().PartitionKeyIndexes)
 		require.NoError(t, err)
 		require.True(t, present)
 		var keyBytes []byte
@@ -1708,9 +1735,9 @@ func TestRoutingKey(t *testing.T) {
 		require.Equal(t, tc.key, keyBytes, "canonical single/composite partition-key bytes")
 		require.True(t, bound.Routing().Token.Set)
 		require.Equal(t, murmur.Murmur3H1(tc.key), bound.Routing().Token.Value)
-		runtime.mu.Lock()
-		size := len(runtime.prepared)
-		runtime.mu.Unlock()
+		runtime.InternalMu.Lock()
+		size := len(runtime.InternalPrepared)
+		runtime.InternalMu.Unlock()
 		require.Equal(t, initial+i+1, size)
 	}
 }
@@ -1751,7 +1778,7 @@ func TestNegativeStream(t *testing.T) {
 		return f.Finish()
 	})
 
-	frame, err := conn.exec(context.Background(), writer, nil, time.Second)
+	frame, err := conn.InternalExec(context.Background(), writer, nil, time.Second)
 	if err == nil {
 		t.Fatalf("expected to get an error on stream %d", stream)
 	} else if frame != nil {
@@ -1817,7 +1844,7 @@ func TestJSONSupport(t *testing.T) {
 	t.Parallel()
 	session := createV2Session(t)
 	defer session.Close()
-	if session.cfg.ProtoVersion < 4 {
+	if implCluster.SessionData(session).InternalCfg.ProtoVersion < 4 {
 		t.Skip("skipping JSON support on proto < 4")
 	}
 	table := testTableName(t)
@@ -1897,7 +1924,7 @@ func TestControl_DiscoverProtocol(t *testing.T) {
 	session, err := Connect(context.Background(), config)
 	require.NoError(t, err)
 	defer session.Close()
-	require.NotZero(t, session.cfg.ProtoVersion)
+	require.NotZero(t, implCluster.SessionData(session).InternalCfg.ProtoVersion)
 }
 
 // TestUnsetCol verify unset column will not replace an existing column
@@ -1905,7 +1932,7 @@ func TestUnsetCol(t *testing.T) {
 	t.Parallel()
 	session := createV2Session(t)
 	defer session.Close()
-	if session.cfg.ProtoVersion < 4 {
+	if implCluster.SessionData(session).InternalCfg.ProtoVersion < 4 {
 		t.Skip("Unset Values are not supported in protocol < 4")
 	}
 	table := testTableName(t)
@@ -1924,7 +1951,7 @@ func TestUnsetColBatch(t *testing.T) {
 	t.Parallel()
 	session := createV2Session(t)
 	defer session.Close()
-	if session.cfg.ProtoVersion < 4 {
+	if implCluster.SessionData(session).InternalCfg.ProtoVersion < 4 {
 		t.Skip("Unset Values are not supported in protocol < 4")
 	}
 	table := testTableName(t)
@@ -1982,10 +2009,10 @@ func TestQuery_SetHostID(t *testing.T) {
 	_, err = Run(context.Background(), session, bound, Options{HostID: Option[UUID]{Value: codecTestMust(RandomUUID()), Set: true}})
 	require.ErrorIs(t, err, ErrNoConnections)
 	host := hosts[0]
-	pool, ok := session.pool.getPoolByHostID(host.ID.String())
+	pool, ok := implCluster.SessionData(session).InternalPool.InternalGetPoolByHostID(host.ID.String())
 	require.True(t, ok)
-	pool.host.setState(NodeDown)
-	defer pool.host.setState(NodeUp)
+	implEndpoint.InternalHostInfoSetState(pool.InternalHost, NodeDown)
+	defer implEndpoint.InternalHostInfoSetState(pool.InternalHost, NodeUp)
 	_, err = Run(context.Background(), session, bound, Options{HostID: Option[UUID]{Value: host.ID, Set: true}})
 	require.ErrorIs(t, err, ErrNoConnections)
 }
@@ -1993,7 +2020,7 @@ func TestQuery_SetHostID(t *testing.T) {
 func TestQuery_WithNowInSeconds(t *testing.T) {
 	session := createV2Session(t)
 	defer session.Close()
-	if session.cfg.ProtoVersion < 5 {
+	if implCluster.SessionData(session).InternalCfg.ProtoVersion < 5 {
 		t.Skip("Query now in seconds are only available on protocol >= 5")
 	}
 	table := testTableName(t)
@@ -2008,7 +2035,7 @@ func TestQuery_WithNowInSeconds(t *testing.T) {
 func TestQuery_SetKeyspace(t *testing.T) {
 	session := createV2Session(t)
 	defer session.Close()
-	if session.cfg.ProtoVersion < 5 {
+	if implCluster.SessionData(session).InternalCfg.ProtoVersion < 5 {
 		t.Skip("keyspace for QUERY message is not supported in protocol < 5")
 	}
 	ks := testKeyspaceName(t)
@@ -2032,7 +2059,7 @@ func TestQuery_SetKeyspace(t *testing.T) {
 func TestLargeSizeQuery(t *testing.T) {
 	session := createV2Session(t)
 	defer session.Close()
-	if session.cfg.ProtoVersion < 5 {
+	if implCluster.SessionData(session).InternalCfg.ProtoVersion < 5 {
 		t.Skip("segmented frames are only produced on protocol >= 5")
 	}
 	table := testTableName(t)
@@ -2045,14 +2072,14 @@ func TestLargeSizeQuery(t *testing.T) {
 // TestCompressorNegotiated pins the compressor the suite was asked for to the one the
 // connections actually ended up with.
 //
-// startupCoordinator.startup silently clears Conn.compressor when the server's SUPPORTED
+// startupCoordinator.startup silently clears driverConn.compressor when the server's SUPPORTED
 // response does not list Compressor.Name(), so a lane configured with -compressor=lz4
 // against a server that does not offer lz4 would run entirely uncompressed while
 // session.cfg.Compressor stayed non-nil. Every compression-dependent test guards on the
 // connection and would simply skip, leaving the lane green and empty. Fail here instead,
 // with the mismatch named.
 //
-// Every host is checked, not just the one session.getConn happens to pick: the compressor
+// Every host is checked, not just the one session.InternalGetConn happens to pick: the compressor
 // is negotiated per connection from that node's own SUPPORTED response, so on a cluster
 // where one node does not advertise the compressor a single-connection check passes while
 // queries routed to that node run uncompressed. One connection per host is the right
@@ -2078,12 +2105,12 @@ func TestCompressorNegotiated(t *testing.T) {
 
 	for addr, conn := range conns {
 		switch {
-		case conn.compressor == nil:
+		case conn.InternalCompressor == nil:
 			t.Errorf("%s: requested -compressor=%s but the connection negotiated none; the server's SUPPORTED response did not offer it",
 				addr, *flagCompressTest)
-		case conn.compressor.Name() != *flagCompressTest:
+		case conn.InternalCompressor.Name() != *flagCompressTest:
 			t.Errorf("%s: requested -compressor=%s but the connection negotiated %q",
-				addr, *flagCompressTest, conn.compressor.Name())
+				addr, *flagCompressTest, conn.InternalCompressor.Name())
 		}
 	}
 }
@@ -2097,10 +2124,10 @@ func TestCompressorNegotiated(t *testing.T) {
 func TestQueryCompressionNotWorthIt(t *testing.T) {
 	session := createV2Session(t)
 	defer session.Close()
-	if session.cfg.ProtoVersion < 5 {
+	if implCluster.SessionData(session).InternalCfg.ProtoVersion < 5 {
 		t.Skip("compressed segments are only produced on protocol >= 5")
 	}
-	if getRandomConn(t, session).compressor == nil {
+	if getRandomConn(t, session).InternalCompressor == nil {
 		t.Skip("no compressor negotiated on the connection; the compressed-segment path is unreachable")
 	}
 	table := testTableName(t)
@@ -2120,13 +2147,13 @@ func TestPrepareExecuteMetadataChangedFlag(t *testing.T) {
 		table string
 		// gate returns a reason to skip, or "" to run. It may also fail outright, for
 		// a state that must not be allowed to pass as a skip.
-		gate func(t *testing.T, session *Session, conn *Conn) string
+		gate func(t *testing.T, session *Session, conn *driverConn) string
 	}{
 		{
 			name:  "native protocol v5",
 			table: "metadata_changed",
-			gate: func(t *testing.T, session *Session, conn *Conn) string {
-				if session.cfg.ProtoVersion < protoVersion5 {
+			gate: func(t *testing.T, session *Session, conn *driverConn) string {
+				if implCluster.SessionData(session).InternalCfg.ProtoVersion < protoVersion5 {
 					return "Metadata_changed mechanism is only available in proto > 4"
 				}
 				if *flagDistribution == "scylla" && flagCassVersion.Before(2025, 3, 0) {
@@ -2138,11 +2165,11 @@ func TestPrepareExecuteMetadataChangedFlag(t *testing.T) {
 		{
 			name:  "protocol v4 with SCYLLA_USE_METADATA_ID",
 			table: "scylla_metadata_changed",
-			gate: func(t *testing.T, session *Session, conn *Conn) string {
+			gate: func(t *testing.T, session *Session, conn *driverConn) string {
 				// The extension backports the v5 result metadata id to v4 and is
 				// negotiated there only, so a run pinned to another protocol version
 				// says nothing about it either way.
-				if conn.version&protoVersionMask != protoVersion4 {
+				if conn.InternalVersion&protoVersionMask != protoVersion4 {
 					return "SCYLLA_USE_METADATA_ID is negotiated on protocol v4 only"
 				}
 				// Skip only for a server that cannot do this at all. If the server
@@ -2150,10 +2177,10 @@ func TestPrepareExecuteMetadataChangedFlag(t *testing.T) {
 				// negotiate it, that is a regression — and since this is the only
 				// end-to-end coverage of the extension, skipping would turn that
 				// regression green. Fail instead.
-				if !conn.scyllaSupported.IsMetadataIDSupported() {
+				if !conn.InternalScyllaSupported.IsMetadataIDSupported() {
 					return "server does not advertise SCYLLA_USE_METADATA_ID"
 				}
-				if !conn.usesMetadataID() {
+				if !conn.InternalUsesMetadataID() {
 					t.Fatal("server advertises SCYLLA_USE_METADATA_ID but the driver did not negotiate it")
 				}
 				return ""
@@ -2183,18 +2210,28 @@ func TestPrepareExecuteMetadataChangedFlag(t *testing.T) {
 // runMetadataChangedFlow drives the METADATA_CHANGED flow against
 // gocql_test.<table>, with every statement pinned to conn so they all land on the
 // node whose prepared-statement cache entry is being inspected.
-func runMetadataChangedFlow(t *testing.T, session *Session, conn *Conn, table string) {
+func runMetadataChangedFlow(t *testing.T, session *Session, conn *driverConn, table string) {
 	t.Helper()
 	qualified := (fixtureKeyspace("") + ".") + table
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	host := Option[UUID]{Value: conn.host.hostUUID(), Set: true}
-	options := Options{HostID: host, connection: conn}
-	prepareOptions := PrepareOptions{HostID: host, connection: conn}
+	host := Option[UUID]{Value: implEndpoint.InternalHostInfoHostUUID(conn.InternalHost), Set: true}
+	options := *func() *Options {
+		opaqueStorageValuexxxx := new(Options)
+		opaqueStorageValuexxxx.HostID = host
+		implExecution.OptionsData(opaqueStorageValuexxxx).InternalConnection = conn
+		return opaqueStorageValuexxxx
+	}()
+	prepareOptions := *func() *PrepareOptions {
+		opaqueStorageValuexxxxx := new(PrepareOptions)
+		opaqueStorageValuexxxxx.HostID = host
+		implExecution.PrepareOptionsData(opaqueStorageValuexxxxx).InternalConnection = conn
+		return opaqueStorageValuexxxxx
+	}()
 	create := cassandraUnprepared(t, "CREATE TABLE "+qualified+"(id int PRIMARY KEY)", NoRows)
 	_, err := Exec(ctx, session, create, options)
 	require.NoError(t, err)
-	require.NoError(t, session.awaitV2SchemaAgreementOn(ctx, conn))
+	require.NoError(t, implCluster.InternalSessionAwaitV2SchemaAgreementOn(session, ctx, conn))
 	write := cassandraWriteBound(t, session, "INSERT INTO "+qualified+"(id) VALUES(?)", []Value{IntValue(1)}, prepareOptions)
 	_, err = Exec(ctx, session, write, options)
 	require.NoError(t, err)
@@ -2205,23 +2242,23 @@ func runMetadataChangedFlow(t *testing.T, session *Session, conn *Conn, table st
 	require.Equal(t, int64(1), cassandraInt(t, row, "id"))
 	cached := func() hostPrepared {
 		t.Helper()
-		prepared.state.mu.RLock()
-		defer prepared.state.mu.RUnlock()
-		entry, ok := prepared.state.hosts[host.Value]
+		implExecution.PreparedData(prepared).InternalState.InternalMu.RLock()
+		defer implExecution.PreparedData(prepared).InternalState.InternalMu.RUnlock()
+		entry, ok := implExecution.PreparedData(prepared).InternalState.InternalHosts[host.Value]
 		require.True(t, ok)
 		v := *entry
-		v.id = append([]byte(nil), v.id...)
-		v.metadataID = append([]byte(nil), v.metadataID...)
+		v.InternalId = append([]byte(nil), v.InternalId...)
+		v.InternalMetadataID = append([]byte(nil), v.InternalMetadataID...)
 		return v
 	}
 	before := cached()
-	require.NotEmpty(t, before.metadataID)
+	require.NotEmpty(t, before.InternalMetadataID)
 	alter := cassandraUnprepared(t, "ALTER TABLE "+qualified+" ADD new_col int", NoRows)
 	_, err = Exec(ctx, session, alter, options)
 	require.NoError(t, err)
 	// Include the exact host that applied ALTER; checking another host can
 	// falsely agree on the old version before schema propagation starts.
-	require.NoError(t, session.awaitV2SchemaAgreementOn(ctx, conn))
+	require.NoError(t, implCluster.InternalSessionAwaitV2SchemaAgreementOn(session, ctx, conn))
 	write = cassandraWriteBound(t, session, "INSERT INTO "+qualified+"(id,new_col) VALUES(?,?)", []Value{IntValue(2), IntValue(10)}, prepareOptions)
 	_, err = Exec(ctx, session, write, options)
 	require.NoError(t, err)
@@ -2243,38 +2280,38 @@ func runMetadataChangedFlow(t *testing.T, session *Session, conn *Conn, table st
 		require.NoError(t, err)
 		require.Equal(t, int64(10), value)
 	}
-	require.Equal(t, before.generation, session.typedGeneration(), "metadata-ID coverage must not be replaced by generation-triggered reprepare")
+	require.Equal(t, before.InternalGeneration, implCluster.InternalSessionTypedGeneration(session), "metadata-ID coverage must not be replaced by generation-triggered reprepare")
 	checkRows()
 	after := cached()
-	require.NotEqual(t, before.metadataID, after.metadataID)
-	require.False(t, before.columns.Equal(after.columns))
+	require.NotEqual(t, before.InternalMetadataID, after.InternalMetadataID)
+	require.False(t, before.InternalColumns.Equal(after.InternalColumns))
 	// Servers may invalidate the statement on ALTER and force an UNPREPARED
 	// repair here. Both paths must update the metadata ID and columns; the
 	// explicit stale-ID execution below must consume METADATA_CHANGED.
 	// Reintroduce exactly the old result ID and column layout. Preserve the
 	// revision ordering so the next change must be observable as a new revision.
 	stale := before
-	stale.revision = after.revision
-	prepared.state.mu.Lock()
-	prepared.state.hosts[host.Value] = &stale
-	prepared.state.mu.Unlock()
+	stale.InternalRevision = after.InternalRevision
+	implExecution.PreparedData(prepared).InternalState.InternalMu.Lock()
+	implExecution.PreparedData(prepared).InternalState.InternalHosts[host.Value] = &stale
+	implExecution.PreparedData(prepared).InternalState.InternalMu.Unlock()
 	checkRows()
 	healed := cached()
-	require.True(t, healed.metadataChanged)
-	require.NotEqual(t, before.metadataID, healed.metadataID)
-	require.Equal(t, after.metadataID, healed.metadataID)
-	require.True(t, after.columns.Equal(healed.columns))
-	require.Greater(t, healed.revision, after.revision)
+	require.True(t, healed.InternalMetadataChanged)
+	require.NotEqual(t, before.InternalMetadataID, healed.InternalMetadataID)
+	require.Equal(t, after.InternalMetadataID, healed.InternalMetadataID)
+	require.True(t, after.InternalColumns.Equal(healed.InternalColumns))
+	require.Greater(t, healed.InternalRevision, after.InternalRevision)
 	checkRows()
 	unchanged := cached()
-	require.Equal(t, healed.revision, unchanged.revision, "matching result metadata must not replace cached metadata")
-	require.Equal(t, healed.metadataID, unchanged.metadataID)
+	require.Equal(t, healed.InternalRevision, unchanged.InternalRevision, "matching result metadata must not replace cached metadata")
+	require.Equal(t, healed.InternalMetadataID, unchanged.InternalMetadataID)
 }
 
 func TestStmtCacheUsesOverriddenKeyspace(t *testing.T) {
 	session := createV2Session(t)
 	defer session.Close()
-	if session.cfg.ProtoVersion < 5 {
+	if implCluster.SessionData(session).InternalCfg.ProtoVersion < 5 {
 		t.Skip("This tests only runs on proto > 4 due SetKeyspace availability")
 	}
 	ks := testKeyspaceName(t)
@@ -2300,7 +2337,7 @@ func TestStmtCacheUsesOverriddenKeyspace(t *testing.T) {
 func TestRoutingKeyCacheUsesOverriddenKeyspace(t *testing.T) {
 	session := createV2Session(t)
 	defer session.Close()
-	if session.cfg.ProtoVersion < 5 {
+	if implCluster.SessionData(session).InternalCfg.ProtoVersion < 5 {
 		t.Skip("This tests only runs on proto > 4 due SetKeyspace availability")
 	}
 	ks := testKeyspaceName(t)
@@ -2318,17 +2355,17 @@ func TestRoutingKeyCacheUsesOverriddenKeyspace(t *testing.T) {
 		require.Equal(t, keyspace, write.Routing().Keyspace)
 		require.True(t, write.Routing().Token.Set)
 		item := cassandraItem(t, write)
-		require.Equal(t, keyspace, item.request.routing.Keyspace)
-		runtime := session.typedRuntime()
-		runtime.mu.Lock()
+		require.Equal(t, keyspace, implExecution.BatchItemData(&item).InternalRequest.InternalRouting.Keyspace)
+		runtime := runtimeFor(session)
+		runtime.InternalMu.Lock()
 		found := false
-		for key, state := range runtime.prepared {
-			if key.cql == insert && key.keyspace == keyspace {
+		for key, state := range runtime.InternalPrepared {
+			if key.InternalCql == insert && key.InternalKeyspace == keyspace {
 				found = true
-				require.Equal(t, keyspace, state.info.Keyspace)
+				require.Equal(t, keyspace, state.InternalInfo.Keyspace)
 			}
 		}
-		runtime.mu.Unlock()
+		runtime.InternalMu.Unlock()
 		require.True(t, found, "cache must include keyspace-specific binding")
 		read := cassandraDynamicBound(t, session, selectCQL, []Value{IntValue(1)}, PrepareOptions{Keyspace: keyspace})
 		require.Equal(t, keyspace, read.Routing().Keyspace)
@@ -2359,36 +2396,51 @@ func TestPrepareExecuteScyllaEmptyMetadataID(t *testing.T) {
 	})
 	defer session.Close()
 	conn := getRandomConn(t, session)
-	if conn.version&protoVersionMask != protoVersion4 {
+	if conn.InternalVersion&protoVersionMask != protoVersion4 {
 		t.Skip("SCYLLA_USE_METADATA_ID is negotiated on protocol v4 only")
 	}
-	if !conn.scyllaSupported.IsMetadataIDSupported() {
+	if !conn.InternalScyllaSupported.IsMetadataIDSupported() {
 		t.Skip("server does not advertise SCYLLA_USE_METADATA_ID")
 	}
-	require.True(t, conn.usesMetadataID(), "server advertises metadata IDs but driver did not negotiate them")
+	require.True(t, conn.InternalUsesMetadataID(), "server advertises metadata IDs but driver did not negotiate them")
 	table := testTableName(t)
 	cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s(id int PRIMARY KEY,val int)", table))
 	cassandraWrite(t, session, fmt.Sprintf("INSERT INTO %s(id,val) VALUES(?,?)", table), IntValue(1), IntValue(7))
-	host := Option[UUID]{Value: conn.host.hostUUID(), Set: true}
-	prepared := cassandraPrepared(t, session, Statement[int32, DynamicRow]{CQL: fmt.Sprintf("SELECT id,val FROM %s WHERE id=?", table), Params: OneParam(Int32), Rows: DynamicRows}, PrepareOptions{HostID: host, connection: conn})
+	host := Option[UUID]{Value: implEndpoint.InternalHostInfoHostUUID(conn.InternalHost), Set: true}
+	prepared := cassandraPrepared(t, session, Statement[int32, DynamicRow]{CQL: fmt.Sprintf("SELECT id,val FROM %s WHERE id=?", table), Params: OneParam(Int32), Rows: DynamicRows}, *func() *PrepareOptions {
+		opaqueStorageValuexxxxxx := new(PrepareOptions)
+		opaqueStorageValuexxxxxx.HostID = host
+		implExecution.PrepareOptionsData(opaqueStorageValuexxxxxx).InternalConnection = conn
+		return opaqueStorageValuexxxxxx
+	}())
 	bound := cassandraBound(t, prepared, int32(1))
-	cassandraReadBound(t, session, bound, Options{HostID: host, connection: conn})
-	prepared.state.mu.Lock()
-	entry, ok := prepared.state.hosts[host.Value]
+	cassandraReadBound(t, session, bound, *func() *Options {
+		opaqueStorageValuexxxxxxx := new(Options)
+		opaqueStorageValuexxxxxxx.HostID = host
+		implExecution.OptionsData(opaqueStorageValuexxxxxxx).InternalConnection = conn
+		return opaqueStorageValuexxxxxxx
+	}())
+	implExecution.PreparedData(prepared).InternalState.InternalMu.Lock()
+	entry, ok := implExecution.PreparedData(prepared).InternalState.InternalHosts[host.Value]
 	require.True(t, ok)
 	cached := *entry
-	require.NotEmpty(t, cached.metadataID)
-	cached.metadataID = nil
-	cached.revision++
-	prepared.state.hosts[host.Value] = &cached
-	prepared.state.mu.Unlock()
-	row := cassandraReadBound(t, session, bound, Options{HostID: host, connection: conn})
+	require.NotEmpty(t, cached.InternalMetadataID)
+	cached.InternalMetadataID = nil
+	cached.InternalRevision++
+	implExecution.PreparedData(prepared).InternalState.InternalHosts[host.Value] = &cached
+	implExecution.PreparedData(prepared).InternalState.InternalMu.Unlock()
+	row := cassandraReadBound(t, session, bound, *func() *Options {
+		opaqueStorageValuexxxxxxxx := new(Options)
+		opaqueStorageValuexxxxxxxx.HostID = host
+		implExecution.OptionsData(opaqueStorageValuexxxxxxxx).InternalConnection = conn
+		return opaqueStorageValuexxxxxxxx
+	}())
 	require.Equal(t, int64(1), cassandraInt(t, row, "id"))
 	require.Equal(t, int64(7), cassandraInt(t, row, "val"))
-	prepared.state.mu.RLock()
-	healed := prepared.state.hosts[host.Value]
-	prepared.state.mu.RUnlock()
-	require.NotEmpty(t, healed.metadataID, "empty metadata ID must be repaired from response")
-	require.True(t, healed.metadataChanged)
-	require.Greater(t, healed.revision, cached.revision)
+	implExecution.PreparedData(prepared).InternalState.InternalMu.RLock()
+	healed := implExecution.PreparedData(prepared).InternalState.InternalHosts[host.Value]
+	implExecution.PreparedData(prepared).InternalState.InternalMu.RUnlock()
+	require.NotEmpty(t, healed.InternalMetadataID, "empty metadata ID must be repaired from response")
+	require.True(t, healed.InternalMetadataChanged)
+	require.Greater(t, healed.InternalRevision, cached.InternalRevision)
 }

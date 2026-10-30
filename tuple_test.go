@@ -207,7 +207,9 @@ func TestTuple_NestedCollection(t *testing.T) {
 		n, _ := v[0].Signed()
 		x, _ := v[1].Text()
 		return serializationMixedTuple{int32(n), x.String()}
-	}, func(v serializationMixedTuple) [2]Value { return [2]Value{IntValue(v.A), codecTestMust(TextValue(v.B))} })
+	}, func(v serializationMixedTuple) [2]Value {
+		return [2]Value{IntValue(v.A), codecTestMust(TextValue(v.B))}
+	})
 	t.Run("slice", func(t *testing.T) {
 		input := [][]Value{{IntValue(1), codecTestMust(TextValue("2"))}, {IntValue(3), codecTestMust(TextValue("4"))}}
 		got := serializationRoundTrip(t, s, table, "val", 0, serializationList(sliceCodec), input)

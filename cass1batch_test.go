@@ -27,6 +27,8 @@
 
 package gocql
 
+import implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+
 import (
 	"context"
 	"errors"
@@ -89,7 +91,11 @@ func TestShouldPrepareFunction(t *testing.T) {
 	// Automatic keyword-based preparation was removed: every original CQL
 	// case can now be bound explicitly as QUERY, and Prepare explicitly asks
 	// the server for metadata, including DDL previously classified false.
-	session := &Session{logger: nopLogger{}}
+	session := func() *Session {
+		opaqueStorageValue := new(Session)
+		implCluster.SessionData(opaqueStorageValue).InternalLogger = nopLogger{}
+		return opaqueStorageValue
+	}()
 	defer session.Close()
 	for _, test := range shouldPrepareTests {
 		t.Run(fmt.Sprintf("formerly_prepared_%t_%s", test.Result, firstCQLWord(test.Stmt)), func(t *testing.T) {

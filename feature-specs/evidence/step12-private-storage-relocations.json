@@ -1,0 +1,450 @@
+[
+  {
+    "file": "scylla_test.go",
+    "kind": "value accessor",
+    "line": 571,
+    "owner": "ScyllaHostFeatures"
+  },
+  {
+    "file": "internal/pool/connectionpool.go",
+    "kind": "value accessor",
+    "line": 733,
+    "owner": "ScyllaHostFeatures"
+  },
+  {
+    "all_fields": true,
+    "fields": {
+      "hostLookupPreferV4": true
+    },
+    "file": "internal/endpoint/opaque_SimpleDNSResolver.go",
+    "kind": "storage",
+    "member": "privateStorage",
+    "owner": "SimpleDNSResolver",
+    "package": "github.com/scylladb/gocql/v2/internal/endpoint"
+  },
+  {
+    "all_fields": true,
+    "fields": {
+      "InternalBroadcastAddress": true,
+      "InternalClusterName": true,
+      "InternalConnectAddress": true,
+      "InternalDataCenter": true,
+      "InternalDseVersion": true,
+      "InternalHostId": true,
+      "InternalHostname": true,
+      "InternalInitialSetupDeadline": true,
+      "InternalLifecycleGeneration": true,
+      "InternalListenAddress": true,
+      "InternalMu": true,
+      "InternalPartitioner": true,
+      "InternalPeer": true,
+      "InternalPort": true,
+      "InternalPreferredIP": true,
+      "InternalRack": true,
+      "InternalRpcAddress": true,
+      "InternalSchemaVersion": true,
+      "InternalScyllaFeatures": true,
+      "InternalSharderGeneration": true,
+      "InternalState": true,
+      "InternalTokens": true,
+      "InternalTranslatedAddresses": true,
+      "InternalTransportGeneration": true,
+      "InternalVersion": true,
+      "InternalWorkload": true,
+      "graph": true
+    },
+    "file": "internal/endpoint/opaque_HostInfo.go",
+    "kind": "storage",
+    "member": "privateStorage",
+    "owner": "HostInfo",
+    "package": "github.com/scylladb/gocql/v2/internal/endpoint"
+  },
+  {
+    "all_fields": true,
+    "fields": {
+      "InternalAddressTranslator": true,
+      "InternalCancel": true,
+      "InternalCfg": true,
+      "InternalClientRoutesHandler": true,
+      "InternalConnCfg": true,
+      "InternalControl": true,
+      "InternalCtx": true,
+      "InternalDriverConfigReporter": true,
+      "InternalEventBus": true,
+      "InternalHasAggregatesAndFunctions": true,
+      "InternalHostSource": true,
+      "InternalIsClosed": true,
+      "InternalIsClosing": true,
+      "InternalIsInitialized": true,
+      "InternalLogger": true,
+      "InternalMetadataDescriber": true,
+      "InternalNodeEvents": true,
+      "InternalPolicy": true,
+      "InternalPool": true,
+      "InternalRingRefresher": true,
+      "InternalSchemaEvents": true,
+      "InternalSessionStateMu": true,
+      "InternalTabletsRoutingV1": true,
+      "InternalTypedMu": true,
+      "InternalTypedState": true,
+      "InternalUseSystemSchema": true,
+      "closeDone": true,
+      "connectObserver": true,
+      "frameObserver": true,
+      "id": true,
+      "initErr": true,
+      "mu": true,
+      "nextTypedHost": true,
+      "readyCh": true,
+      "schema": true,
+      "schemaMu": true,
+      "streamObserver": true,
+      "v2Peripheral": true
+    },
+    "file": "internal/cluster/opaque_Session.go",
+    "kind": "storage",
+    "member": "privateStorage",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "all_fields": true,
+    "fields": {
+      "InternalKeyspaceMetadata": true,
+      "InternalTabletsMetadata": true
+    },
+    "file": "internal/cluster/opaque_Metadata.go",
+    "kind": "storage",
+    "member": "privateStorage",
+    "owner": "Metadata",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "all_fields": true,
+    "fields": {
+      "InternalCtx": true,
+      "InternalCursor": true,
+      "InternalExhausted": true,
+      "InternalIndex": true,
+      "InternalPlan": true,
+      "InternalRelease": true,
+      "InternalResponse": true,
+      "cancel": true,
+      "closed": true,
+      "current": true,
+      "destination": true,
+      "err": true,
+      "mu": true,
+      "pendingRelease": true,
+      "reader": true,
+      "session": true,
+      "valid": true
+    },
+    "file": "internal/execution/opaque_Page.go",
+    "kind": "storage",
+    "member": "privateStorage",
+    "owner": "Page",
+    "package": "github.com/scylladb/gocql/v2/internal/execution"
+  },
+  {
+    "all_fields": true,
+    "fields": {
+      "InternalIsMetadataIDSupported": true,
+      "InternalIsScylla": true,
+      "InternalLwtFlagMask": true,
+      "InternalMsbIgnore": true,
+      "InternalNrShards": true,
+      "InternalPartitioner": true,
+      "InternalRateLimitErrorCode": true,
+      "InternalShardAwarePort": true,
+      "InternalShardAwarePortTLS": true,
+      "InternalShardingAlgorithm": true
+    },
+    "file": "internal/endpoint/opaque_ScyllaHostFeatures.go",
+    "kind": "storage",
+    "member": "privateStorage",
+    "owner": "ScyllaHostFeatures",
+    "package": "github.com/scylladb/gocql/v2/internal/endpoint"
+  },
+  {
+    "all_fields": false,
+    "fields": {
+      "InternalFinalFunc": true,
+      "InternalStateFunc": true
+    },
+    "file": "internal/metadata/opaque_AggregateMetadata.go",
+    "kind": "storage",
+    "member": "privateStorage",
+    "owner": "AggregateMetadata",
+    "package": "github.com/scylladb/gocql/v2/internal/metadata"
+  },
+  {
+    "all_fields": true,
+    "fields": {
+      "current": true
+    },
+    "file": "internal/settings/opaque_ProfileHandle.go",
+    "kind": "storage",
+    "member": "privateStorage",
+    "owner": "ProfileHandle",
+    "package": "github.com/scylladb/gocql/v2/internal/settings"
+  },
+  {
+    "all_fields": true,
+    "fields": {
+      "schemas": true
+    },
+    "file": "internal/transport/opaque_ErrSchemaMismatch.go",
+    "kind": "storage",
+    "member": "privateStorage",
+    "owner": "ErrSchemaMismatch",
+    "package": "github.com/scylladb/gocql/v2/internal/transport"
+  },
+  {
+    "all_fields": true,
+    "fields": {
+      "InternalRequest": true
+    },
+    "file": "internal/execution/opaque_BatchItem.go",
+    "kind": "storage",
+    "member": "privateStorage",
+    "owner": "BatchItem",
+    "package": "github.com/scylladb/gocql/v2/internal/execution"
+  },
+  {
+    "all_fields": false,
+    "fields": {
+      "InternalConnection": true
+    },
+    "file": "internal/execution/opaque_PrepareOptions.go",
+    "kind": "storage",
+    "member": "privateStorage",
+    "owner": "PrepareOptions",
+    "package": "github.com/scylladb/gocql/v2/internal/execution"
+  },
+  {
+    "all_fields": true,
+    "fields": {
+      "InternalRequest": true,
+      "InternalRows": true,
+      "plans": true
+    },
+    "file": "internal/execution/opaque_Bound.go",
+    "kind": "storage",
+    "member": "privateStorage",
+    "owner": "Bound",
+    "package": "github.com/scylladb/gocql/v2/internal/execution"
+  },
+  {
+    "all_fields": true,
+    "fields": {
+      "applicationName": true,
+      "applicationVersion": true,
+      "clientID": true
+    },
+    "file": "internal/endpoint/opaque_StaticApplicationInfo.go",
+    "kind": "storage",
+    "member": "privateStorage",
+    "owner": "StaticApplicationInfo",
+    "package": "github.com/scylladb/gocql/v2/internal/endpoint"
+  },
+  {
+    "all_fields": false,
+    "fields": {
+      "InternalShardTarget": true,
+      "InternalSharderEpoch": true,
+      "InternalTargetEpoch": true,
+      "InternalValidateTarget": true
+    },
+    "file": "internal/endpoint/opaque_DialedHost.go",
+    "kind": "storage",
+    "member": "privateStorage",
+    "owner": "DialedHost",
+    "package": "github.com/scylladb/gocql/v2/internal/endpoint"
+  },
+  {
+    "all_fields": false,
+    "fields": {
+      "InternalShard": true
+    },
+    "file": "internal/endpoint/opaque_ScyllaConnectionFeatures.go",
+    "kind": "storage",
+    "member": "privateStorage",
+    "owner": "ScyllaConnectionFeatures",
+    "package": "github.com/scylladb/gocql/v2/internal/endpoint"
+  },
+  {
+    "all_fields": true,
+    "fields": {
+      "mu": true,
+      "session": true,
+      "traceIDs": true
+    },
+    "file": "internal/cluster/opaque_TracerEnhanced.go",
+    "kind": "storage",
+    "member": "privateStorage",
+    "owner": "TracerEnhanced",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "all_fields": false,
+    "fields": {
+      "InternalConnection": true
+    },
+    "file": "internal/execution/opaque_Options.go",
+    "kind": "storage",
+    "member": "privateStorage",
+    "owner": "Options",
+    "package": "github.com/scylladb/gocql/v2/internal/execution"
+  },
+  {
+    "all_fields": true,
+    "fields": {
+      "once": true,
+      "owner": true
+    },
+    "file": "internal/execution/opaque_PageLease.go",
+    "kind": "storage",
+    "member": "privateStorage",
+    "owner": "PageLease",
+    "package": "github.com/scylladb/gocql/v2/internal/execution"
+  },
+  {
+    "all_fields": true,
+    "fields": {
+      "InternalAddrOverrides": true,
+      "InternalC": true,
+      "InternalCfg": true,
+      "InternalCloseChan": true,
+      "InternalInitialized": true,
+      "InternalLog": true,
+      "InternalPickTLSPorts": true,
+      "InternalResolver": true,
+      "InternalRouteCache": true,
+      "InternalSession": true,
+      "InternalSub": true,
+      "InternalUpdateTasks": true,
+      "InternalWorkers": true,
+      "connectionEpoch": true,
+      "needsResync": true,
+      "pairEpoch": true,
+      "queueMu": true,
+      "stopOnce": true
+    },
+    "file": "internal/cluster/opaque_ClientRoutesHandler.go",
+    "kind": "storage",
+    "member": "privateStorage",
+    "owner": "ClientRoutesHandler",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "all_fields": true,
+    "fields": {
+      "closed": true,
+      "events": true,
+      "filter": true,
+      "mu": true,
+      "parent": true
+    },
+    "file": "internal/cluster/opaque_Subscription.go",
+    "kind": "storage",
+    "member": "privateStorage",
+    "owner": "Subscription",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "all_fields": true,
+    "fields": {
+      "maxAttempts": true,
+      "mu": true,
+      "session": true,
+      "sleepInterval": true,
+      "w": true
+    },
+    "file": "internal/cluster/opaque_TraceWriter.go",
+    "kind": "storage",
+    "member": "privateStorage",
+    "owner": "TraceWriter",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "all_fields": false,
+    "fields": {
+      "InternalActive": true,
+      "InternalCancel": true,
+      "InternalClosing": true,
+      "InternalCtx": true,
+      "InternalDecoder": true,
+      "InternalHistory": true,
+      "InternalRequest": true,
+      "InternalReservation": true,
+      "InternalSession": true,
+      "advancing": true,
+      "attemptMetadata": true,
+      "cleaned": true,
+      "closeDone": true,
+      "columns": true,
+      "err": true,
+      "info": true,
+      "limits": true,
+      "mu": true,
+      "pageCancel": true,
+      "plan": true,
+      "prepared": true,
+      "response": true,
+      "retryTarget": true,
+      "stop": true,
+      "terminal": true
+    },
+    "file": "internal/execution/opaque_RowStream.go",
+    "kind": "storage",
+    "member": "privateStorage",
+    "owner": "RowStream",
+    "package": "github.com/scylladb/gocql/v2/internal/execution"
+  },
+  {
+    "all_fields": true,
+    "fields": {
+      "InternalKind": true,
+      "InternalParams": true,
+      "InternalPlans": true,
+      "InternalRows": true,
+      "InternalState": true
+    },
+    "file": "internal/execution/opaque_Prepared.go",
+    "kind": "storage",
+    "member": "privateStorage",
+    "owner": "Prepared",
+    "package": "github.com/scylladb/gocql/v2/internal/execution"
+  },
+  {
+    "all_fields": true,
+    "fields": {
+      "InternalCtx": true,
+      "InternalHistory": true,
+      "InternalPage": true,
+      "InternalRelease": true,
+      "InternalRequest": true,
+      "cancel": true,
+      "closed": true,
+      "decoder": true,
+      "err": true,
+      "future": true,
+      "info": true,
+      "mu": true,
+      "nextErr": true,
+      "pendingRelease": true,
+      "plans": true,
+      "prefetchJobs": true,
+      "rejectColumns": true,
+      "session": true,
+      "terminalErr": true,
+      "valid": true
+    },
+    "file": "internal/execution/opaque_Rows.go",
+    "kind": "storage",
+    "member": "privateStorage",
+    "owner": "Rows",
+    "package": "github.com/scylladb/gocql/v2/internal/execution"
+  }
+]

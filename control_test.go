@@ -70,7 +70,7 @@ func TestParseProtocol(t *testing.T) {
 	}{
 		{
 			err: &protocolError{
-				frame: frm.ErrorFrame{
+				InternalFrame: frm.ErrorFrame{
 					Code:    0x10,
 					Message: "Invalid or unsupported protocol version (5); the lowest supported version is 3 and the greatest is 4",
 				},
@@ -79,7 +79,7 @@ func TestParseProtocol(t *testing.T) {
 		},
 		{
 			err: &protocolError{
-				frame: frm.ErrorFrame{
+				InternalFrame: frm.ErrorFrame{
 					FrameHeader: frm.FrameHeader{
 						Version: 0x83,
 					},

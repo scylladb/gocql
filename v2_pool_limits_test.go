@@ -17,6 +17,11 @@
 package gocql
 
 import (
+	implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+	implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
+)
+
+import (
 	"context"
 	"crypto/tls"
 	"errors"
@@ -53,7 +58,7 @@ func TestV2SupportedShardingValidationBeforeAllocation(t *testing.T) {
 		}
 	}
 	values := step04ValidSupported()
-	if got := parseSupported(values, nopLogger{}); got.nrShards != 12 || got.msbIgnore != 0 {
+	if got := parseSupported(values, nopLogger{}); implEndpoint.ScyllaHostFeaturesData(&got.ScyllaHostFeatures).InternalNrShards != 12 || implEndpoint.ScyllaHostFeaturesData(&got.ScyllaHostFeatures).InternalMsbIgnore != 0 {
 		t.Fatal("explicit zero MSB disabled valid sharding", got)
 	}
 	values["SCYLLA_NR_SHARDS"] = []string{"65535"}
@@ -63,14 +68,36 @@ func TestV2SupportedShardingValidationBeforeAllocation(t *testing.T) {
 		t.Fatal("valid16-bit maximum rejected", err)
 	}
 	maximum := parseSupported(values, nopLogger{})
-	if maximum.nrShards != 65535 || maximum.shard != 65534 || maximum.msbIgnore != 63 {
+	if implEndpoint.ScyllaHostFeaturesData(&maximum.ScyllaHostFeatures).InternalNrShards != 65535 || implEndpoint.ScyllaConnectionFeaturesData(&maximum).InternalShard != 65534 || implEndpoint.ScyllaHostFeaturesData(&maximum.ScyllaHostFeatures).InternalMsbIgnore != 63 {
 		t.Fatal(maximum)
 	}
 }
 func TestV2PoolTargetArithmeticAndMaximumValidShardCount(t *testing.T) {
 	options := DefaultConfig("localhost").Pool
-	for _, bad := range []ScyllaConnectionFeatures{{ScyllaHostFeatures: ScyllaHostFeatures{nrShards: 65536}}, {ScyllaHostFeatures: ScyllaHostFeatures{nrShards: -1}}, {ScyllaHostFeatures: ScyllaHostFeatures{nrShards: 2, msbIgnore: 64}}, {ScyllaHostFeatures: ScyllaHostFeatures{nrShards: 2}, shard: 2}} {
-		if _, err := newTypedConnPicker(&Conn{scyllaSupported: bad}, options); err == nil {
+	for _, bad := range []ScyllaConnectionFeatures{{ScyllaHostFeatures: *func() *ScyllaHostFeatures {
+		opaqueStorageValue := new(ScyllaHostFeatures)
+		implEndpoint.ScyllaHostFeaturesData(opaqueStorageValue).InternalNrShards = 65536
+		return opaqueStorageValue
+	}()}, {ScyllaHostFeatures: *func() *ScyllaHostFeatures {
+		opaqueStorageValuex := new(ScyllaHostFeatures)
+		implEndpoint.ScyllaHostFeaturesData(opaqueStorageValuex).InternalNrShards = -1
+		return opaqueStorageValuex
+	}()}, {ScyllaHostFeatures: *func() *ScyllaHostFeatures {
+		opaqueStorageValuexx := new(ScyllaHostFeatures)
+		implEndpoint.ScyllaHostFeaturesData(opaqueStorageValuexx).InternalNrShards = 2
+		implEndpoint.ScyllaHostFeaturesData(opaqueStorageValuexx).InternalMsbIgnore = 64
+		return opaqueStorageValuexx
+	}()}, *func() *ScyllaConnectionFeatures {
+		opaqueStorageValuexxxx := new(ScyllaConnectionFeatures)
+		opaqueStorageValuexxxx.ScyllaHostFeatures = *func() *ScyllaHostFeatures {
+			opaqueStorageValuexxx := new(ScyllaHostFeatures)
+			implEndpoint.ScyllaHostFeaturesData(opaqueStorageValuexxx).InternalNrShards = 2
+			return opaqueStorageValuexxx
+		}()
+		implEndpoint.ScyllaConnectionFeaturesData(opaqueStorageValuexxxx).InternalShard = 2
+		return opaqueStorageValuexxxx
+	}()} {
+		if _, err := newTypedConnPicker(&driverConn{InternalScyllaSupported: bad}, options); err == nil {
 			t.Fatal("invalid sharder reached allocation", bad)
 		}
 	}
@@ -98,9 +125,13 @@ func TestV2PoolTargetArithmeticAndMaximumValidShardCount(t *testing.T) {
 	}
 	options = DefaultConfig("localhost").Pool
 	options.MaxExcessPerShard = 0
-	c := &Conn{scyllaSupported: ScyllaConnectionFeatures{ScyllaHostFeatures: ScyllaHostFeatures{nrShards: 65535}}}
+	c := &driverConn{InternalScyllaSupported: ScyllaConnectionFeatures{ScyllaHostFeatures: *func() *ScyllaHostFeatures {
+		opaqueStorageValuexxxxx := new(ScyllaHostFeatures)
+		implEndpoint.ScyllaHostFeaturesData(opaqueStorageValuexxxxx).InternalNrShards = 65535
+		return opaqueStorageValuexxxxx
+	}()}}
 	p, err := newTypedConnPicker(c, options)
-	if err != nil || len(p.conns) != 65535 || p.target() != 65535 {
+	if err != nil || len(p.InternalConns) != 65535 || p.InternalTarget() != 65535 {
 		t.Fatal("valid largest sharder rejected", err)
 	}
 }
@@ -135,12 +166,23 @@ func TestV2HugePoolTargetUsesBoundedDialWorkers(t *testing.T) {
 	config := DefaultConfig("localhost")
 	config.Pool.ConnectionsPerHost = math.MaxInt
 	dialer := &step04BoundedOpeningDialer{entered: make(chan struct{}, 64), release: make(chan struct{})}
-	s := &Session{ctx: ctx, logger: nopLogger{}, connCfg: &ConnConfig{TypedConfig: &config, ProtoVersion: 4, HostDialer: dialer, Logger: nopLogger{}}}
-	s.cfg.ReconnectionPolicy = &NoReconnectionPolicy{}
-	pool := newHostConnPool(s, &HostInfo{connectAddress: net.ParseIP("127.0.0.1"), port: 9042}, math.MaxInt, "")
+	s := func() *Session {
+		opaqueStorageValuexxxxxx := new(Session)
+		implCluster.SessionData(opaqueStorageValuexxxxxx).InternalCtx = ctx
+		implCluster.SessionData(opaqueStorageValuexxxxxx).InternalLogger = nopLogger{}
+		implCluster.SessionData(opaqueStorageValuexxxxxx).InternalConnCfg = &driverConnConfig{TypedConfig: &config, ProtoVersion: 4, HostDialer: dialer, Logger: nopLogger{}}
+		return opaqueStorageValuexxxxxx
+	}()
+	implCluster.SessionData(s).InternalCfg.ReconnectionPolicy = &NoReconnectionPolicy{}
+	pool := newHostConnPool(s, func() *HostInfo {
+		opaqueStorageValuexxxxxxx := new(HostInfo)
+		implEndpoint.HostInfoData(opaqueStorageValuexxxxxxx).InternalConnectAddress = net.ParseIP("127.0.0.1")
+		implEndpoint.HostInfoData(opaqueStorageValuexxxxxxx).InternalPort = 9042
+		return opaqueStorageValuexxxxxxx
+	}(), math.MaxInt, "")
 	defer pool.Close()
 	done := make(chan error, 1)
-	go func() { done <- pool.connectMany(math.MaxInt) }()
+	go func() { done <- pool.InternalConnectMany(math.MaxInt) }()
 	for i := 0; i < 32; i++ {
 		select {
 		case <-dialer.entered:
@@ -165,8 +207,8 @@ func TestV2HugePoolTargetUsesBoundedDialWorkers(t *testing.T) {
 func TestV2ShardingZeroMSBMapsEntireTokenRange(t *testing.T) {
 	features := parseSupported(step04ValidSupported(), nopLogger{})
 	options := DefaultConfig("localhost").Pool
-	p := codecTestMust(newTypedConnPicker(&Conn{scyllaSupported: features}, options))
-	if p.shardOf(math.MinInt64) != 0 || p.shardOf(math.MaxInt64) != 11 {
+	p := codecTestMust(newTypedConnPicker(&driverConn{InternalScyllaSupported: features}, options))
+	if p.InternalShardOf(math.MinInt64) != 0 || p.InternalShardOf(math.MaxInt64) != 11 {
 		t.Fatal("zero MSB semantics incorrect")
 	}
 	// The full32-bit LWT mask remains a wire bitset on both native architectures.
@@ -176,7 +218,7 @@ func TestV2ShardingZeroMSBMapsEntireTokenRange(t *testing.T) {
 		t.Fatal(err)
 	}
 	ext := newLwtAddMetaMarkExt(values, nopLogger{})
-	if ext == nil || ext.serialize()[lwtAddMetadataMarkKey] != "LWT_OPTIMIZATION_META_BIT_MASK="+strconv.FormatUint(1<<31, 10) {
+	if ext == nil || ext.InternalSerialize()[lwtAddMetadataMarkKey] != "LWT_OPTIMIZATION_META_BIT_MASK="+strconv.FormatUint(1<<31, 10) {
 		t.Fatal("high LWT bit did not roundtrip")
 	}
 }
@@ -246,11 +288,11 @@ func TestV2TCPWrapperSocketControlsApplyOrFailExplicitly(t *testing.T) {
 func TestV2ConnectionPickerPositionWrapIsBounded(t *testing.T) {
 	options := DefaultConfig("localhost").Pool
 	options.ConnectionsPerShard = 3
-	c := &Conn{}
+	c := &driverConn{}
 	p := codecTestMust(newTypedConnPicker(c, options))
-	p.conns[0] = []*Conn{{streams: streams.New()}, {streams: streams.New()}, {streams: streams.New()}}
-	p.pos.Store(math.MaxInt64)
-	if p.pickTarget(Target{}, RoutingInfo{}) == nil {
+	p.InternalConns[0] = []*driverConn{{InternalStreams: streams.New()}, {InternalStreams: streams.New()}, {InternalStreams: streams.New()}}
+	p.InternalPos.Store(math.MaxInt64)
+	if p.InternalPickTarget(Target{}, RoutingInfo{}) == nil {
 		t.Fatal("wrapped position lost eligible connection")
 	}
 }

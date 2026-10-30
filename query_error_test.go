@@ -4,6 +4,8 @@
 package gocql
 
 import (
+	runtimeerrors "github.com/scylladb/gocql/v2/internal/runtimeerrors"
+
 	"errors"
 	"testing"
 	"time"
@@ -31,10 +33,10 @@ func TestQueryError_PotentiallyExecuted(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			qErr := &QueryError{
-				err:                 errors.New("test error"),
-				potentiallyExecuted: tt.potentiallyExecuted,
-			}
+			qErr := runtimeerrors.NewQueryError(runtimeerrors.QueryErrorState{
+				InternalErr:                 errors.New("test error"),
+				InternalPotentiallyExecuted: tt.potentiallyExecuted,
+			})
 
 			got := qErr.PotentiallyExecuted()
 			if got != tt.expected {
@@ -66,10 +68,10 @@ func TestQueryError_IsIdempotent(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			qErr := &QueryError{
-				err:          errors.New("test error"),
-				isIdempotent: tt.isIdempotent,
-			}
+			qErr := runtimeerrors.NewQueryError(runtimeerrors.QueryErrorState{
+				InternalErr:          errors.New("test error"),
+				InternalIsIdempotent: tt.isIdempotent,
+			})
 
 			got := qErr.IsIdempotent()
 			if got != tt.expected {
@@ -121,12 +123,12 @@ func TestQueryError_Error(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			qErr := &QueryError{
-				err:                 tt.err,
-				potentiallyExecuted: tt.potentiallyExecuted,
-				timeout:             tt.timeout,
-				inFlight:            tt.inFlight,
-			}
+			qErr := runtimeerrors.NewQueryError(runtimeerrors.QueryErrorState{
+				InternalErr:                 tt.err,
+				InternalPotentiallyExecuted: tt.potentiallyExecuted,
+				InternalTimeout:             tt.timeout,
+				InternalInFlight:            tt.inFlight,
+			})
 
 			got := qErr.Error()
 			if got != tt.expected {

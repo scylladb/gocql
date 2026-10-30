@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	gocql "github.com/scylladb/gocql/v2"
 	"io"
 	"net"
 	"net/netip"
@@ -19,7 +20,6 @@ import (
 
 	"sigs.k8s.io/yaml"
 
-	"github.com/scylladb/gocql/v2"
 	"github.com/scylladb/gocql/v2/scyllacloud"
 )
 

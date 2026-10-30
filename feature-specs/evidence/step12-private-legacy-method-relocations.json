@@ -1,0 +1,23 @@
+[
+  {
+    "file": "internal/cluster/cluster.go",
+    "function": "InternalClusterSettingsOpen",
+    "method": "InternalOpen",
+    "owner": "InternalClusterSettings",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/cluster.go",
+    "function": "InternalClusterSettingsFilterHost",
+    "method": "InternalFilterHost",
+    "owner": "InternalClusterSettings",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/cluster.go",
+    "function": "InternalClusterSettingsGetActualTLSConfig",
+    "method": "InternalGetActualTLSConfig",
+    "owner": "InternalClusterSettings",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  }
+]

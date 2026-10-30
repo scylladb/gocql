@@ -2,7 +2,16 @@
 
 package gocql
 
+import implExecution "github.com/scylladb/gocql/v2/internal/execution"
+
 import (
+	implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+	implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
+)
+
+import (
+	routing "github.com/scylladb/gocql/v2/internal/routing"
+
 	"context"
 	"crypto/tls"
 	"encoding/binary"
@@ -80,7 +89,7 @@ func TestStep05IncompleteKnownPeerRetainsCompleteTopology(t *testing.T) {
 	incomplete.rack = ""
 	srv.setPeers(incomplete)
 	var partial *PartialRefreshError
-	if err := s.refreshRingNow(); !errors.As(err, &partial) || partial.Topology == nil {
+	if err := implCluster.InternalSessionRefreshRingNow(s); !errors.As(err, &partial) || partial.Topology == nil {
 		t.Fatal("incomplete read was not a visible partial failure", err)
 	}
 	if got := ringHosts(s); !reflect.DeepEqual(got, before) {
@@ -92,22 +101,22 @@ func TestStep05TopologyRemovalTombstoneAndRecreate(t *testing.T) {
 	peer := newTestPeer("127.0.0.2")
 	srv := newRingTestServer(t, peer)
 	s := srv.session(t, nil)
-	s.recordV2Topology(&oldevents.TopologyChangeEvent{Change: "REMOVED_NODE", Host: peer.ip, Port: 9042})
-	if s.hostSource.getHost(peer.hostID.String()) != nil {
+	implCluster.InternalSessionRecordV2Topology(s, &oldevents.TopologyChangeEvent{Change: "REMOVED_NODE", Host: peer.ip, Port: 9042})
+	if implCluster.SessionData(s).InternalHostSource.InternalGetHost(peer.hostID.String()) != nil {
 		t.Fatal("removed host still visible")
 	}
 	// Gossip still advertises its old row. A post-event fetch cannot resurrect it.
-	if err := s.refreshRingNow(); err != nil {
+	if err := implCluster.InternalSessionRefreshRingNow(s); err != nil {
 		t.Fatal(err)
 	}
-	if s.hostSource.getHost(peer.hostID.String()) != nil {
+	if implCluster.SessionData(s).InternalHostSource.InternalGetHost(peer.hostID.String()) != nil {
 		t.Fatal("stale gossip resurrected removed host")
 	}
-	s.recordV2Topology(&oldevents.TopologyChangeEvent{Change: "NEW_NODE", Host: peer.ip, Port: 9042})
-	if err := s.refreshRingNow(); err != nil {
+	implCluster.InternalSessionRecordV2Topology(s, &oldevents.TopologyChangeEvent{Change: "NEW_NODE", Host: peer.ip, Port: 9042})
+	if err := implCluster.InternalSessionRefreshRingNow(s); err != nil {
 		t.Fatal(err)
 	}
-	if s.hostSource.getHost(peer.hostID.String()) == nil {
+	if implCluster.SessionData(s).InternalHostSource.InternalGetHost(peer.hostID.String()) == nil {
 		t.Fatal("new identity epoch did not allow rediscovery")
 	}
 }
@@ -135,12 +144,12 @@ func TestStep05SnapshotPublicationCannotCrossDrop(t *testing.T) {
 	if err := base.DefaultProfile.Replace(profile); err != nil {
 		t.Fatal(err)
 	}
-	s.configureV2Peripheral(base)
+	implCluster.InternalSessionConfigureV2Peripheral(s, base)
 	policy.block.Store(true)
 	done := make(chan struct{})
-	go func() { defer close(done); s.publishV2Metadata() }()
+	go func() { defer close(done); implCluster.InternalSessionPublishV2Metadata(s) }()
 	<-policy.entered
-	s.publishV2Event(&oldevents.SchemaChangeTableEvent{Change: "DROPPED", Keyspace: "ks1", Table: "t1"})
+	implCluster.InternalSessionPublishV2Event(s, &oldevents.SchemaChangeTableEvent{Change: "DROPPED", Keyspace: "ks1", Table: "t1"})
 	after := s.Metadata()
 	close(policy.release)
 	<-done
@@ -167,9 +176,11 @@ func TestStep05TableRefreshCannotCrossDropAndFailure(t *testing.T) {
 		return nil
 	}
 	done := make(chan error, 1)
-	go func() { done <- s.metadataDescriber.refreshTableSchema("ks1", "t1") }()
+	go func() {
+		done <- implCluster.SessionData(s).InternalMetadataDescriber.InternalRefreshTableSchema("ks1", "t1")
+	}()
 	<-entered
-	s.publishV2Event(&oldevents.SchemaChangeTableEvent{Change: "DROPPED", Keyspace: "ks1", Table: "t1"})
+	implCluster.InternalSessionPublishV2Event(s, &oldevents.SchemaChangeTableEvent{Change: "DROPPED", Keyspace: "ks1", Table: "t1"})
 	close(release)
 	var partial *PartialRefreshError
 	if err := <-done; !errors.As(err, &partial) {
@@ -183,7 +194,7 @@ func TestStep05TableRefreshCannotCrossDropAndFailure(t *testing.T) {
 	mock.mu.Lock()
 	mock.queryError = errors.New("temporary failure")
 	mock.mu.Unlock()
-	_ = s.refreshV2Keyspace(context.Background(), "ks1")
+	_ = implCluster.InternalSessionRefreshV2Keyspace(s, context.Background(), "ks1")
 	if ks, _ := s.Metadata().Keyspace("ks1"); ks.Tables["t1"] != nil {
 		t.Fatal("failure fallback resurrected table")
 	}
@@ -191,8 +202,8 @@ func TestStep05TableRefreshCannotCrossDropAndFailure(t *testing.T) {
 
 func TestStep05SchemaCapabilityAndMetadataScope(t *testing.T) {
 	s, mock := refreshAllSchemaSession(t)
-	s.useSystemSchema = false
-	if err := s.refreshV2AllSchema(context.Background()); err == nil {
+	implCluster.SessionData(s).InternalUseSystemSchema = false
+	if err := implCluster.InternalSessionRefreshV2AllSchema(s, context.Background()); err == nil {
 		t.Fatal("unsupported schema silently succeeded")
 	} else {
 		var unsupported *UnsupportedSettingError
@@ -200,16 +211,16 @@ func TestStep05SchemaCapabilityAndMetadataScope(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	s.useSystemSchema = true
+	implCluster.SessionData(s).InternalUseSystemSchema = true
 	for _, mode := range []MetadataMode{MetadataDisabled, MetadataMinimal, MetadataFull} {
 		config := DefaultConfig("localhost")
 		config.Metadata.Mode = mode
 		config.Metadata.Keyspaces = []string{"ks1"}
-		s.configureV2Peripheral(config)
+		implCluster.InternalSessionConfigureV2Peripheral(s, config)
 		mock.mu.Lock()
 		mock.queries = nil
 		mock.mu.Unlock()
-		if err := s.refreshV2AllSchema(context.Background()); err != nil {
+		if err := implCluster.InternalSessionRefreshV2AllSchema(s, context.Background()); err != nil {
 			t.Fatal(mode, err)
 		}
 		mock.mu.Lock()
@@ -233,13 +244,17 @@ func TestStep05SchemaCapabilityAndMetadataScope(t *testing.T) {
 }
 
 func TestStep05OverflowHighestGenerationAndIsolation(t *testing.T) {
-	s := &Session{}
+	s := func() *Session {
+		opaqueStorageValue := new(Session)
+		return opaqueStorageValue
+	}()
+
 	defer s.Close()
 	slow, _ := s.Subscribe(EventFilter{Capacity: 2})
 	fast, _ := s.Subscribe(EventFilter{Capacity: 8})
 	defer fast.Close()
 	for _, generation := range []uint64{40, 99, 41} {
-		s.publishV2LocalEvent(Event{Kind: StatusEvent, Generation: generation})
+		implCluster.InternalSessionPublishV2LocalEvent(s, Event{Kind: StatusEvent, Generation: generation})
 	}
 	marker, ok := <-slow.Events()
 	if !ok || marker.Kind != OverflowEvent || marker.Generation != 99 {
@@ -253,16 +268,20 @@ func TestStep05OverflowHighestGenerationAndIsolation(t *testing.T) {
 			t.Fatal("one slow subscriber affected another", e)
 		}
 	}
-	if len(s.peripheral().subscribers) != 1 {
+	if len(implCluster.InternalSessionPeripheral(s).InternalSubscribers) != 1 {
 		t.Fatal("terminal subscriber leaked in registry")
 	}
 }
 
 func TestStep05ShutdownJoinsWorkersAndRepeatedClosers(t *testing.T) {
-	s := &Session{}
-	p := s.peripheral()
+	s := func() *Session {
+		opaqueStorageValuex := new(Session)
+		return opaqueStorageValuex
+	}()
+
+	p := implCluster.InternalSessionPeripheral(s)
 	canceled, release := make(chan struct{}), make(chan struct{})
-	p.startWorker(func() { <-p.done; close(canceled); <-release })
+	p.InternalStartWorker(func() { <-p.InternalDone; close(canceled); <-release })
 	first, second := make(chan struct{}), make(chan struct{})
 	go func() { s.Close(); close(first) }()
 	<-canceled
@@ -280,7 +299,7 @@ func TestStep05ShutdownJoinsWorkersAndRepeatedClosers(t *testing.T) {
 	close(release)
 	<-first
 	<-second
-	if p.startWorker(func() { t.Error("worker admitted after close") }) {
+	if p.InternalStartWorker(func() { t.Error("worker admitted after close") }) {
 		t.Fatal("worker admitted after close")
 	}
 }
@@ -295,19 +314,19 @@ func TestStep05DebouncerSerialBoundedAndJoined(t *testing.T) {
 			<-release
 		}
 	}, nopLogger{})
-	d.resync = func() { resync.Add(1) }
+	d.InternalResync = func() { resync.Add(1) }
 	for i := 0; i < eventBufferSize+1; i++ {
-		d.debounce(&frm.StatusChangeEventFrame{})
+		d.InternalDebounce(&frm.StatusChangeEventFrame{})
 	}
-	d.mu.Lock()
-	if len(d.events) != eventBufferSize || !d.overflow {
+	d.InternalMu.Lock()
+	if len(d.InternalEvents) != eventBufferSize || !d.InternalOverflow {
 		t.Fatal("unbounded queue or lost overflow")
 	}
-	d.timer.Reset(0)
-	d.mu.Unlock()
+	d.InternalTimer.Reset(0)
+	d.InternalMu.Unlock()
 	<-entered
 	stopped := make(chan struct{})
-	go func() { d.stop(); close(stopped) }()
+	go func() { d.InternalStop(); close(stopped) }()
 	select {
 	case <-stopped:
 		t.Fatal("stop did not join callback")
@@ -318,7 +337,7 @@ func TestStep05DebouncerSerialBoundedAndJoined(t *testing.T) {
 	if callbacks.Load() != 1 {
 		t.Fatal("callbacks overlapped")
 	}
-	d.stop()
+	d.InternalStop()
 }
 
 func step05UUIDRows(id, version UUID) []byte {
@@ -339,12 +358,18 @@ func step05UUIDRows(id, version UUID) []byte {
 	}
 	return body
 }
-func step05AgreementConn(t *testing.T, s *Session, id, version UUID, code int) (*Conn, *atomic.Int32) {
+func step05AgreementConn(t *testing.T, s *Session, id, version UUID, code int) (*driverConn, *atomic.Int32) {
 	t.Helper()
 	c, server := typedTestConn(t, 4, nil)
-	c.host = &HostInfo{hostId: id, connectAddress: net.IPv4(127, 0, 0, 1), port: 9042}
-	c.session = s
-	go c.serve(c.ctx)
+	c.InternalHost = func() *HostInfo {
+		opaqueStorageValuexx := new(HostInfo)
+		implEndpoint.HostInfoData(opaqueStorageValuexx).InternalHostId = id
+		implEndpoint.HostInfoData(opaqueStorageValuexx).InternalConnectAddress = net.IPv4(127, 0, 0, 1)
+		implEndpoint.HostInfoData(opaqueStorageValuexx).InternalPort = 9042
+		return opaqueStorageValuexx
+	}()
+	c.InternalHooks = newConnectionHooks(s)
+	go c.InternalServe(c.InternalCtx)
 	count := &atomic.Int32{}
 	done := make(chan struct{})
 	go func() {
@@ -369,22 +394,26 @@ func step05AgreementConn(t *testing.T, s *Session, id, version UUID, code int) (
 			}
 		}
 	}()
-	t.Cleanup(func() { c.Close(); server.Close(); <-done; c.waitEventDispatch() })
+	t.Cleanup(func() { c.Close(); server.Close(); <-done; c.InternalWaitEventDispatch() })
 	return c, count
 }
 func step05AgreementSession(t *testing.T) (*Session, UUID, UUID) {
 	t.Helper()
-	s := &Session{logger: nopLogger{}}
+	s := func() *Session {
+		opaqueStorageValuexxx := new(Session)
+		implCluster.SessionData(opaqueStorageValuexxx).InternalLogger = nopLogger{}
+		return opaqueStorageValuexxx
+	}()
 	config := DefaultConfig("localhost")
 	config.Metadata.AgreementTimeout = 35 * time.Millisecond
 	config.Metadata.AgreementPoll = time.Millisecond
-	s.configureV2Peripheral(config)
-	s.pool = &policyConnPool{hostConnPools: make(map[UUID]*hostConnPool)}
+	implCluster.InternalSessionConfigureV2Peripheral(s, config)
+	implCluster.SessionData(s).InternalPool = &policyConnPool{InternalHostConnPools: make(map[UUID]*hostConnPool)}
 	t.Cleanup(func() { s.Close() })
 	return s, MustRandomUUID(), MustRandomUUID()
 }
-func step05AgreementPool(s *Session, c *Conn) {
-	s.pool.hostConnPools[c.host.hostUUID()] = &hostConnPool{host: c.host, connPicker: &defaultConnPicker{conns: []*Conn{c}}}
+func step05AgreementPool(s *Session, c *driverConn) {
+	implCluster.SessionData(s).InternalPool.InternalHostConnPools[implEndpoint.InternalHostInfoHostUUID(c.InternalHost)] = &hostConnPool{InternalHost: c.InternalHost, InternalConnPicker: &defaultConnPicker{InternalConns: []*driverConn{c}}}
 }
 func TestStep05AgreementChecksEnabledDownAndZeroSuccess(t *testing.T) {
 	for _, success := range []bool{false, true} {
@@ -396,7 +425,7 @@ func TestStep05AgreementChecksEnabledDownAndZeroSuccess(t *testing.T) {
 				step05AgreementPool(s, c)
 				hosts = append(hosts, HostSnapshot{ID: id, Enabled: true, Up: true})
 			}
-			s.peripheral().snapshot.Store(&MetadataSnapshot{hosts: hosts})
+			implCluster.InternalSessionPeripheral(s).InternalSnapshot.Store(routing.NewMetadataSnapshot(routing.SnapshotState{InternalHosts: hosts}))
 			if err := s.AwaitSchemaAgreement(context.Background()); !errors.Is(err, context.DeadlineExceeded) {
 				t.Fatal("missing enabled host/zero successes counted as agreement", err)
 			}
@@ -409,15 +438,15 @@ func TestStep05AgreementRetainsExcludedCoordinatorAndFilters(t *testing.T) {
 	c, _ := step05AgreementConn(t, s, id, version, 0)
 	step05AgreementPool(s, c)
 	coordinator, count := step05AgreementConn(t, s, coordinatorID, version, 0)
-	s.peripheral().snapshot.Store(&MetadataSnapshot{hosts: []HostSnapshot{{ID: id, Enabled: true}, {ID: MustRandomUUID(), Enabled: false}}})
-	if err := s.awaitV2SchemaAgreementOn(context.Background(), coordinator); err != nil {
+	implCluster.InternalSessionPeripheral(s).InternalSnapshot.Store(routing.NewMetadataSnapshot(routing.SnapshotState{InternalHosts: []HostSnapshot{{ID: id, Enabled: true}, {ID: MustRandomUUID(), Enabled: false}}}))
+	if err := implCluster.InternalSessionAwaitV2SchemaAgreementOn(s, context.Background(), coordinator); err != nil {
 		t.Fatal(err)
 	}
 	if count.Load() != 1 {
 		t.Fatal("excluded exact coordinator not queried", count.Load())
 	}
 	different, _ := step05AgreementConn(t, s, coordinatorID, MustRandomUUID(), 0)
-	if err := s.awaitV2SchemaAgreementOn(context.Background(), different); !errors.Is(err, context.DeadlineExceeded) {
+	if err := implCluster.InternalSessionAwaitV2SchemaAgreementOn(s, context.Background(), different); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatal("older topology agreement ignored coordinator schema", err)
 	}
 }
@@ -425,7 +454,7 @@ func TestStep05AgreementTerminalAuthorization(t *testing.T) {
 	s, id, _ := step05AgreementSession(t)
 	c, count := step05AgreementConn(t, s, id, MustRandomUUID(), ErrCodeUnauthorized)
 	step05AgreementPool(s, c)
-	s.peripheral().snapshot.Store(&MetadataSnapshot{hosts: []HostSnapshot{{ID: id, Enabled: true}}})
+	implCluster.InternalSessionPeripheral(s).InternalSnapshot.Store(routing.NewMetadataSnapshot(routing.SnapshotState{InternalHosts: []HostSnapshot{{ID: id, Enabled: true}}}))
 	var request RequestError
 	if err := s.AwaitSchemaAgreement(context.Background()); !errors.As(err, &request) || request.GetCode() != ErrCodeUnauthorized {
 		t.Fatal(err)
@@ -459,50 +488,54 @@ func TestStep05ClientRouteConfigSnapshotsAndValidation(t *testing.T) {
 }
 func TestStep05ClientRoutesFencePerPairAndPreserveDisjointUpdates(t *testing.T) {
 	p := NewClientRoutesAddressTranslator(ClientRoutesConfig{Endpoints: ClientRoutesEndpointList{{ConnectionID: "a"}, {ConnectionID: "b"}}}, nil, false, nopLogger{})
-	a := clientRoute{"a", "host", "old", 9042}
-	b := clientRoute{"b", "host", "b", 9042}
-	p.routeCache.ReplaceByConnectionIDs([]string{"a", "b"}, []clientRoute{b, a})
-	if route := p.orderedRoutes("host")[0]; route.connectionID != "a" {
+	a := clientRoute{InternalConnectionID: "a", InternalHostID: "host", InternalAddress: "old", InternalPort: 9042}
+	b := clientRoute{InternalConnectionID: "b", InternalHostID: "host", InternalAddress: "b", InternalPort: 9042}
+	implCluster.ClientRoutesHandlerData(p).InternalRouteCache.ReplaceByConnectionIDs([]string{"a", "b"}, []clientRoute{b, a})
+	if route := implCluster.InternalClientRoutesHandlerOrderedRoutes(p, "host")[0]; route.InternalConnectionID != "a" {
 		t.Fatal("server row order overrode config order", route)
 	}
-	old := p.captureRouteEpochs()
-	changed := updateTask{pairs: []pair{{"a", "host"}}}
-	p.invalidateRouteTask(changed)
-	p.applyRouteRead(changed, p.captureRouteEpochs(), nil)
+	old := implCluster.InternalClientRoutesHandlerCaptureRouteEpochs(p)
+	changed := updateTask{InternalPairs: []pair{{InternalConnectionID: "a", InternalHostID: "host"}}}
+	implCluster.InternalClientRoutesHandlerInvalidateRouteTask(p, changed)
+	implCluster.InternalClientRoutesHandlerApplyRouteRead(p, changed, implCluster.InternalClientRoutesHandlerCaptureRouteEpochs(p), nil)
 	newer := b
-	newer.address = "new-b"
-	p.invalidateRouteTask(updateTask{pairs: []pair{{"b", "host"}}})
-	p.applyRouteRead(updateTask{pairs: []pair{{"b", "host"}}}, p.captureRouteEpochs(), []clientRoute{newer})
-	if p.applyRouteRead(updateTask{connectionIDs: []string{"a", "b"}}, old, []clientRoute{a, b}) {
+	newer.InternalAddress = "new-b"
+	implCluster.InternalClientRoutesHandlerInvalidateRouteTask(p, updateTask{InternalPairs: []pair{{InternalConnectionID: "b", InternalHostID: "host"}}})
+	implCluster.InternalClientRoutesHandlerApplyRouteRead(p, updateTask{InternalPairs: []pair{{InternalConnectionID: "b", InternalHostID: "host"}}}, implCluster.InternalClientRoutesHandlerCaptureRouteEpochs(p), []clientRoute{newer})
+	if implCluster.InternalClientRoutesHandlerApplyRouteRead(p, updateTask{InternalConnectionIDs: []string{"a", "b"}}, old, []clientRoute{a, b}) {
 		t.Fatal("late full read accepted changed pairs")
 	}
-	routes := p.orderedRoutes("host")
+	routes := implCluster.InternalClientRoutesHandlerOrderedRoutes(p, "host")
 	if len(routes) != 1 || routes[0] != newer {
 		t.Fatal("stale full read restored deletion or erased disjoint new route", routes)
 	}
-	p.bindRoute(newer)
-	if route := p.orderedRoutes("host")[0]; route != newer {
+	implCluster.InternalClientRoutesHandlerBindRoute(p, newer)
+	if route := implCluster.InternalClientRoutesHandlerOrderedRoutes(p, "host")[0]; route != newer {
 		t.Fatal("sticky route lost")
 	}
 }
 func TestStep05LatePoolConnectedCannotUndoDownOrRemoval(t *testing.T) {
 	f := newNodeEventFixture(t)
 	h := f.addHost(t, "127.0.10.1")
-	old, _ := f.session.pool.getPool(h)
-	f.session.handleNodeDown(h.ConnectAddress(), h.Port())
-	f.session.handlePoolConnected(old)
+	old, _ := implCluster.SessionData(f.session).InternalPool.InternalGetPool(h)
+	implCluster.InternalSessionHandleNodeDown(f.session, h.ConnectAddress(), h.Port())
+	implCluster.InternalSessionHandlePoolConnected(f.session, old)
 	if h.IsUp() {
 		t.Fatal("delayed fill callback undid down")
 	}
-	f.session.hostSource.removeHost(h.HostID())
-	f.session.handlePoolConnected(old)
+	implCluster.SessionData(f.session).InternalHostSource.InternalRemoveHost(h.HostID())
+	implCluster.InternalSessionHandlePoolConnected(f.session, old)
 	if h.IsUp() {
 		t.Fatal("delayed callback resurrected removed host")
 	}
 }
 
 func BenchmarkStep05MetadataRead(b *testing.B) {
-	s := &Session{}
+	s := func() *Session {
+		opaqueStorageValuexxxx := new(Session)
+		return opaqueStorageValuexxxx
+	}()
+
 	s.Metadata()
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -511,12 +544,16 @@ func BenchmarkStep05MetadataRead(b *testing.B) {
 	}
 }
 func BenchmarkStep05EventPublication(b *testing.B) {
-	s := &Session{}
+	s := func() *Session {
+		opaqueStorageValuexxxxx := new(Session)
+		return opaqueStorageValuexxxxx
+	}()
+
 	sub, _ := s.Subscribe(EventFilter{Capacity: 1})
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		sub.publish(Event{Kind: StatusEvent})
+		implCluster.InternalSubscriptionPublish(sub, Event{Kind: StatusEvent})
 		<-sub.Events()
 	}
 }
@@ -577,8 +614,8 @@ func TestStep05ClientRouteDNSAndConnectFallbackShareDeadline(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	route, ok := s.clientRoutesHandler.routeCache.PreferredRoute(testLocalHostID.String())
-	if !ok || route.connectionID != ids[2].String() {
+	route, ok := implCluster.ClientRoutesHandlerData(implCluster.SessionData(s).InternalClientRoutesHandler).InternalRouteCache.PreferredRoute(testLocalHostID.String())
+	if !ok || route.InternalConnectionID != ids[2].String() {
 		t.Fatal("did not bind successful configured alternative", route)
 	}
 	mu.Lock()
@@ -591,17 +628,17 @@ func TestStep05ClientRouteDNSAndConnectFallbackShareDeadline(t *testing.T) {
 func TestStep05SuccessfulDDLErrorNeverRetriesStatement(t *testing.T) {
 	s, conns, peers := runtimeTestSession(t, 1)
 	conn := conns[0]
-	config := s.typedRuntime().config
+	config := runtimeFor(s).InternalConfig
 	config.Metadata.AutomaticAgreement = true
 	config.Metadata.RefreshAfterAgreement = false
 	config.Metadata.AgreementTimeout = 100 * time.Millisecond
-	s.typedRuntime().config = config
-	s.configureV2Peripheral(config)
+	runtimeFor(s).InternalConfig = config
+	implCluster.InternalSessionConfigureV2Peripheral(s, config)
 	metadata := s.Metadata()
 	metadataCopy := *metadata
-	metadataCopy.hosts = append([]HostSnapshot(nil), metadata.hosts...)
-	metadataCopy.hosts = append(metadataCopy.hosts, HostSnapshot{ID: MustRandomUUID(), Enabled: true})
-	s.peripheral().snapshot.Store(&metadataCopy)
+	routing.SnapshotData(&metadataCopy).InternalHosts = append([]HostSnapshot(nil), routing.SnapshotData(metadata).InternalHosts...)
+	routing.SnapshotData(&metadataCopy).InternalHosts = append(routing.SnapshotData(&metadataCopy).InternalHosts, HostSnapshot{ID: MustRandomUUID(), Enabled: true})
+	implCluster.InternalSessionPeripheral(s).InternalSnapshot.Store(&metadataCopy)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	var ddl atomic.Int32
@@ -645,7 +682,13 @@ func TestStep05SuccessfulDDLErrorNeverRetriesStatement(t *testing.T) {
 	}()
 	b := codecTestMust(BindUnpreparedOwned(Statement[Unit, Unit]{CQL: "CREATE KEYSPACE step05", Params: NoParams, Rows: NoRows}, NewColumns(), Unit{}))
 	defer b.Close()
-	_, err := Exec(ctx, s, b, Options{connection: conn, Idempotent: true, Retry: step03RetryOnce{}})
+	_, err := Exec(ctx, s, b, *func() *Options {
+		opaqueStorageValuexxxxxx := new(Options)
+		implExecution.OptionsData(opaqueStorageValuexxxxxx).InternalConnection = conn
+		opaqueStorageValuexxxxxx.Idempotent = true
+		opaqueStorageValuexxxxxx.Retry = step03RetryOnce{}
+		return opaqueStorageValuexxxxxx
+	}())
 	if err == nil || !strings.Contains(err.Error(), "DDL succeeded") {
 		t.Fatal("successful DDL failure not distinguished", err)
 	}
@@ -664,22 +707,22 @@ func TestStep05ConnectedCallbackPausedAcrossNewerDown(t *testing.T) {
 	f := newNodeEventFixture(t)
 	host := f.addHost(t, "127.0.10.1")
 	conn, _ := typedTestConn(t, 4, nil)
-	conn.host = host
-	pool := &hostConnPool{host: host, session: f.session, connPicker: &defaultConnPicker{conns: []*Conn{conn}}}
-	f.session.pool.mu.Lock()
-	f.session.pool.hostConnPools[host.hostUUID()] = pool
-	f.session.pool.mu.Unlock()
+	conn.InternalHost = host
+	pool := &hostConnPool{InternalHost: host, InternalServices: newPoolServices(f.session), InternalConnPicker: &defaultConnPicker{InternalConns: []*driverConn{conn}}}
+	implCluster.SessionData(f.session).InternalPool.InternalMu.Lock()
+	implCluster.SessionData(f.session).InternalPool.InternalHostConnPools[implEndpoint.InternalHostInfoHostUUID(host)] = pool
+	implCluster.SessionData(f.session).InternalPool.InternalMu.Unlock()
 	entered, release, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
-	p := f.session.peripheral()
-	p.config.LifecycleObserver = step05LifecycleFunc(func(e LifecycleEvent) {
+	p := implCluster.InternalSessionPeripheral(f.session)
+	p.InternalConfig.LifecycleObserver = step05LifecycleFunc(func(e LifecycleEvent) {
 		if e.Stage == "connected" {
 			close(entered)
 			<-release
 		}
 	})
-	go func() { defer close(done); f.session.handlePoolConnected(pool) }()
+	go func() { defer close(done); implCluster.InternalSessionHandlePoolConnected(f.session, pool) }()
 	<-entered
-	f.session.handleNodeDown(host.ConnectAddress(), host.Port())
+	implCluster.InternalSessionHandleNodeDown(f.session, host.ConnectAddress(), host.Port())
 	close(release)
 	<-done
 	if host.IsUp() || len(f.policy.hostUpCalls()) != 0 {
@@ -687,23 +730,27 @@ func TestStep05ConnectedCallbackPausedAcrossNewerDown(t *testing.T) {
 	}
 }
 func TestStep05TypedTopologyRejectsMalformedTokensAndPorts(t *testing.T) {
-	for _, row := range []v2TopologyRow{{port: -1}, {port: 65536}, {port: 9042, tokens: []string{"not-a-token"}}} {
-		if _, err := row.host(9042); err == nil {
+	for _, row := range []v2TopologyRow{{InternalPort: -1}, {InternalPort: 65536}, {InternalPort: 9042, InternalTokens: []string{"not-a-token"}}} {
+		if _, err := row.InternalHost(9042); err == nil {
 			t.Fatal("malformed topology accepted", row)
 		}
 	}
 }
 
 func TestStep05DisabledEventsDoNotMutateMetadata(t *testing.T) {
-	s := &Session{}
+	s := func() *Session {
+		opaqueStorageValuexxxxxxx := new(Session)
+		return opaqueStorageValuexxxxxxx
+	}()
+
 	defer s.Close()
-	s.cfg.Events.DisableSchemaEvents = true
-	s.cfg.Events.DisableTopologyEvents = true
-	s.cfg.Events.DisableNodeStatusEvents = true
-	s.cfg.disableClientRouteEvents = true
+	implCluster.SessionData(s).InternalCfg.Events.DisableSchemaEvents = true
+	implCluster.SessionData(s).InternalCfg.Events.DisableTopologyEvents = true
+	implCluster.SessionData(s).InternalCfg.Events.DisableNodeStatusEvents = true
+	implCluster.InternalClusterSettingsData(&implCluster.SessionData(s).InternalCfg).InternalDisableClientRouteEvents = true
 	before := s.Metadata()
 	for _, event := range []frame{&frm.SchemaChangeTable{Change: "DROPPED", Keyspace: "ks", Object: "t"}, &frm.TopologyChangeEventFrame{}, &frm.StatusChangeEventFrame{}, &frm.ClientRoutesChanged{}} {
-		s.handleEvent(event)
+		implCluster.InternalSessionHandleEvent(s, event)
 	}
 	if s.Metadata() != before {
 		t.Fatal("disabled unsolicited event changed snapshot")
@@ -715,7 +762,7 @@ func TestStep05PartialBaseReadFailureRetainsLatestSnapshot(t *testing.T) {
 	mock.queryError = errors.New("base schema denied temporarily")
 	mock.mu.Unlock()
 	var partial *PartialRefreshError
-	if err := s.refreshV2Keyspace(context.Background(), "ks1"); !errors.As(err, &partial) {
+	if err := implCluster.InternalSessionRefreshV2Keyspace(s, context.Background(), "ks1"); !errors.As(err, &partial) {
 		t.Fatal("retained stale base schema lacks partial error", err)
 	}
 	if ks, _ := s.Metadata().Keyspace("ks1"); ks == nil || ks.Tables["t1"] == nil {
@@ -731,16 +778,21 @@ func TestStep05EventChargeTransfersUntilDownstreamConsumptionAndDrain(t *testing
 	var freed atomic.Int32
 	downstream := newEventDebouncer("owned", func([]frame) { close(entered); <-release }, nopLogger{})
 	conn, _ := typedTestConn(t, 4, nil)
-	s := &Session{logger: nopLogger{}, schemaEvents: downstream}
-	conn.session = s
-	if err := conn.dispatchEventOwned(&frm.SchemaChangeTable{Change: "CREATED", Keyspace: "ks", Object: "t"}, func() { freed.Add(1) }); err != nil {
+	s := func() *Session {
+		opaqueStorageValuexxxxxxxx := new(Session)
+		implCluster.SessionData(opaqueStorageValuexxxxxxxx).InternalLogger = nopLogger{}
+		implCluster.SessionData(opaqueStorageValuexxxxxxxx).InternalSchemaEvents = downstream
+		return opaqueStorageValuexxxxxxxx
+	}()
+	conn.InternalHooks = newConnectionHooks(s)
+	if err := conn.InternalDispatchEventOwned(&frm.SchemaChangeTable{Change: "CREATED", Keyspace: "ks", Object: "t"}, func() { freed.Add(1) }); err != nil {
 		t.Fatal(err)
 	}
 	<-entered
 	if freed.Load() != 0 {
 		t.Fatal("connection dispatcher released retained downstream event")
 	}
-	if !downstream.debounceOwned(&frm.SchemaChangeTable{}, func() { freed.Add(1) }) {
+	if !downstream.InternalDebounceOwned(&frm.SchemaChangeTable{}, func() { freed.Add(1) }) {
 		t.Fatal("second owned event rejected")
 	}
 	closed := make(chan struct{})
@@ -752,7 +804,7 @@ func TestStep05EventChargeTransfersUntilDownstreamConsumptionAndDrain(t *testing
 	}
 	close(release)
 	<-closed
-	conn.waitEventDispatch()
+	conn.InternalWaitEventDispatch()
 	if freed.Load() != 2 {
 		t.Fatal("downstream consumption/terminal drain did not release exactly once", freed.Load())
 	}
@@ -770,29 +822,29 @@ func TestStep05RouteEventExpansionFallsBackToFullRefresh(t *testing.T) {
 		hosts[i] = fmt.Sprint(i)
 	}
 	var freed atomic.Int32
-	if !p.handleRouteEventOwned(&oldevents.ClientRoutesChangedEvent{ChangeType: "UPDATED", ConnectionIDs: []string{"allowed"}, HostIDs: hosts}, func() { freed.Add(1) }) {
+	if !implCluster.InternalClientRoutesHandlerHandleRouteEventOwned(p, &oldevents.ClientRoutesChangedEvent{ChangeType: "UPDATED", ConnectionIDs: []string{"allowed"}, HostIDs: hosts}, func() { freed.Add(1) }) {
 		t.Fatal("full-refresh fallback not admitted")
 	}
-	task := <-p.updateTasks
-	if task.pairs != nil || !reflect.DeepEqual(task.connectionIDs, []string{"allowed"}) {
+	task := <-implCluster.ClientRoutesHandlerData(p).InternalUpdateTasks
+	if task.InternalPairs != nil || !reflect.DeepEqual(task.InternalConnectionIDs, []string{"allowed"}) {
 		t.Fatal("oversized event was not coalesced into full refresh")
 	}
 	if freed.Load() != 0 {
 		t.Fatal("route event released before downstream consumption")
 	}
-	task.release()
+	task.InternalRelease()
 	if freed.Load() != 1 {
 		t.Fatal("route ownership lost")
 	}
 	// Queue drain owns every accepted event release during terminal shutdown.
 	for i := 0; i < 3; i++ {
-		if !p.updateHostPortMappingAsync(updateTask{connectionIDs: []string{"allowed"}, release: func() { freed.Add(1) }}) {
+		if !implCluster.InternalClientRoutesHandlerUpdateHostPortMappingAsync(p, updateTask{InternalConnectionIDs: []string{"allowed"}, InternalRelease: func() { freed.Add(1) }}) {
 			t.Fatal("owned task rejected")
 		}
 	}
-	close(p.closeChan)
-	p.startUpdateWorker()
-	p.workers.Wait()
+	close(implCluster.ClientRoutesHandlerData(p).InternalCloseChan)
+	implCluster.InternalClientRoutesHandlerStartUpdateWorker(p)
+	implCluster.ClientRoutesHandlerData(p).InternalWorkers.Wait()
 	if freed.Load() != 4 {
 		t.Fatal("route worker terminal drain lost/duplicated ownership", freed.Load())
 	}
@@ -806,17 +858,25 @@ func BenchmarkStep05SchemaSnapshotPublication(b *testing.B) {
 				name := fmt.Sprint(i)
 				ks.Tables[name] = &TableMetadata{Name: name, Columns: map[string]*ColumnMetadata{"id": {Name: "id", Type: "int"}}}
 			}
-			s := &Session{metadataDescriber: &metadataDescriber{metadata: &Metadata{}}}
-			s.metadataDescriber.metadata.keyspaceMetadata.set("ks", ks)
-			s.publishV2Metadata()
-			prior := s.Metadata().keyspaces["ks"]
+			s := func() *Session {
+				opaqueStorageValuexxxxxxxxxx := new(Session)
+				implCluster.SessionData(opaqueStorageValuexxxxxxxxxx).InternalMetadataDescriber = &metadataDescriber{InternalMetadata: func() *Metadata {
+					opaqueStorageValuexxxxxxxxx := new(Metadata)
+					return opaqueStorageValuexxxxxxxxx
+				}(),
+				}
+				return opaqueStorageValuexxxxxxxxxx
+			}()
+			implCluster.MetadataData(implCluster.SessionData(s).InternalMetadataDescriber.InternalMetadata).InternalKeyspaceMetadata.InternalSet("ks", ks)
+			implCluster.InternalSessionPublishV2Metadata(s)
+			prior := routing.SnapshotData(s.Metadata()).InternalKeyspaces["ks"]
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				s.publishV2Metadata()
+				implCluster.InternalSessionPublishV2Metadata(s)
 			}
 			b.StopTimer()
-			if s.Metadata().keyspaces["ks"] != prior {
+			if routing.SnapshotData(s.Metadata()).InternalKeyspaces["ks"] != prior {
 				b.Fatal("unchanged schema was cloned")
 			}
 		})
@@ -825,22 +885,32 @@ func BenchmarkStep05SchemaSnapshotPublication(b *testing.B) {
 
 func TestStep05RouteDeletionAdvancesTransportInsertionEpoch(t *testing.T) {
 	p := NewClientRoutesAddressTranslator(ClientRoutesConfig{}, nil, false, nopLogger{})
-	host := &HostInfo{hostId: MustRandomUUID(), connectAddress: net.IPv4(127, 0, 0, 1), port: 9042}
-	s := &Session{hostSource: &ringDescriber{hosts: map[string]*HostInfo{host.HostID(): host}}}
-	p.session = s
-	route := clientRoute{"connection", host.HostID(), "proxy", 9042}
-	p.routeCache.ReplaceByConnectionIDs([]string{"connection"}, []clientRoute{route})
-	before := host.transportEpoch()
-	p.invalidateRouteTask(updateTask{pairs: []pair{{"connection", host.HostID()}}})
-	if host.transportEpoch() == before {
+	host := func() *HostInfo {
+		opaqueStorageValuexxxxxxxxxxx := new(HostInfo)
+		implEndpoint.HostInfoData(opaqueStorageValuexxxxxxxxxxx).InternalHostId = MustRandomUUID()
+		implEndpoint.HostInfoData(opaqueStorageValuexxxxxxxxxxx).InternalConnectAddress = net.IPv4(127, 0, 0, 1)
+		implEndpoint.HostInfoData(opaqueStorageValuexxxxxxxxxxx).InternalPort = 9042
+		return opaqueStorageValuexxxxxxxxxxx
+	}()
+	s := func() *Session {
+		opaqueStorageValuexxxxxxxxxxxx := new(Session)
+		implCluster.SessionData(opaqueStorageValuexxxxxxxxxxxx).InternalHostSource = &ringDescriber{InternalHosts: map[string]*HostInfo{host.HostID(): host}}
+		return opaqueStorageValuexxxxxxxxxxxx
+	}()
+	implCluster.ClientRoutesHandlerData(p).InternalSession = s
+	route := clientRoute{InternalConnectionID: "connection", InternalHostID: host.HostID(), InternalAddress: "proxy", InternalPort: 9042}
+	implCluster.ClientRoutesHandlerData(p).InternalRouteCache.ReplaceByConnectionIDs([]string{"connection"}, []clientRoute{route})
+	before := implEndpoint.InternalHostInfoTransportEpoch(host)
+	implCluster.InternalClientRoutesHandlerInvalidateRouteTask(p, updateTask{InternalPairs: []pair{{InternalConnectionID: "connection", InternalHostID: host.HostID()}}})
+	if implEndpoint.InternalHostInfoTransportEpoch(host) == before {
 		t.Fatal("deletion left late validated transport insertion eligible")
 	}
 }
 func TestStep05EmptyRouteFullReadDetectsNewerPair(t *testing.T) {
 	p := NewClientRoutesAddressTranslator(ClientRoutesConfig{}, nil, false, nopLogger{})
-	before := p.captureRouteEpochs()
-	p.invalidateRouteTask(updateTask{pairs: []pair{{"connection", "new-host"}}})
-	if p.applyRouteRead(updateTask{connectionIDs: []string{"connection"}}, before, nil) {
+	before := implCluster.InternalClientRoutesHandlerCaptureRouteEpochs(p)
+	implCluster.InternalClientRoutesHandlerInvalidateRouteTask(p, updateTask{InternalPairs: []pair{{InternalConnectionID: "connection", InternalHostID: "new-host"}}})
+	if implCluster.InternalClientRoutesHandlerApplyRouteRead(p, updateTask{InternalConnectionIDs: []string{"connection"}}, before, nil) {
 		t.Fatal("empty stale full read falsely reported accepted publication")
 	}
 }
@@ -848,11 +918,11 @@ func TestStep05EmptyRouteFullReadDetectsNewerPair(t *testing.T) {
 func TestStep05DDLSucceededStatusSurvivesAgreementCancellation(t *testing.T) {
 	s, conns, peers := runtimeTestSession(t, 1)
 	conn := conns[0]
-	config := s.typedRuntime().config
+	config := runtimeFor(s).InternalConfig
 	config.Metadata.AutomaticAgreement = true
 	config.Metadata.RefreshAfterAgreement = false
-	s.typedRuntime().config = config
-	s.configureV2Peripheral(config)
+	runtimeFor(s).InternalConfig = config
+	implCluster.InternalSessionConfigureV2Peripheral(s, config)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	entered, serverDone := make(chan struct{}), make(chan struct{})
@@ -874,7 +944,14 @@ func TestStep05DDLSucceededStatusSurvivesAgreementCancellation(t *testing.T) {
 	bound := codecTestMust(BindUnpreparedOwned(Statement[Unit, Unit]{CQL: "CREATE KEYSPACE step05", Params: NoParams, Rows: NoRows}, NewColumns(), Unit{}))
 	defer bound.Close()
 	result := make(chan error, 1)
-	go func() { _, err := Exec(ctx, s, bound, Options{connection: conn}); result <- err }()
+	go func() {
+		_, err := Exec(ctx, s, bound, *func() *Options {
+			opaqueStorageValuexxxxxxxxxxxxx := new(Options)
+			implExecution.OptionsData(opaqueStorageValuexxxxxxxxxxxxx).InternalConnection = conn
+			return opaqueStorageValuexxxxxxxxxxxxx
+		}())
+		result <- err
+	}()
 	<-entered
 	cancel()
 	err := <-result
@@ -892,14 +969,19 @@ type step05UnstablePolicy struct {
 }
 
 func (p step05UnstablePolicy) Validate(*MetadataSnapshot) error {
-	state := p.session.peripheral()
-	state.mu.Lock()
-	state.publicationRevision++
-	state.mu.Unlock()
+	state := implCluster.InternalSessionPeripheral(p.session)
+	state.InternalMu.Lock()
+	state.InternalPublicationRevision++
+	state.InternalMu.Unlock()
 	return nil
 }
 func TestStep05PublicationContentionEmitsTerminalResync(t *testing.T) {
-	s := &Session{hostSource: &ringDescriber{}, logger: nopLogger{}}
+	s := func() *Session {
+		opaqueStorageValuexxxxxxxxxxxxxx := new(Session)
+		implCluster.SessionData(opaqueStorageValuexxxxxxxxxxxxxx).InternalHostSource = &ringDescriber{}
+		implCluster.SessionData(opaqueStorageValuexxxxxxxxxxxxxx).InternalLogger = nopLogger{}
+		return opaqueStorageValuexxxxxxxxxxxxxx
+	}()
 	defer s.Close()
 	s.Metadata()
 	config := DefaultConfig("localhost")
@@ -908,9 +990,9 @@ func TestStep05PublicationContentionEmitsTerminalResync(t *testing.T) {
 	if err := config.DefaultProfile.Replace(profile); err != nil {
 		t.Fatal(err)
 	}
-	s.configureV2Peripheral(config)
+	implCluster.InternalSessionConfigureV2Peripheral(s, config)
 	sub, _ := s.Subscribe(EventFilter{Capacity: 4})
-	s.handleNodeEvent([]frame{&frm.StatusChangeEventFrame{Change: "DOWN", Host: net.IPv4(127, 0, 0, 1), Port: 9042}})
+	implCluster.InternalSessionHandleNodeEvent(s, []frame{&frm.StatusChangeEventFrame{Change: "DOWN", Host: net.IPv4(127, 0, 0, 1), Port: 9042}})
 	event := <-sub.Events()
 	if event.Kind != OverflowEvent || event.Change != "PUBLICATION_RESYNC" {
 		t.Fatal("unpublished delta escaped", event)
@@ -921,10 +1003,14 @@ func TestStep05PublicationContentionEmitsTerminalResync(t *testing.T) {
 }
 
 func TestStep05SchemaRetryRejectedAfterShutdownClearsRegistration(t *testing.T) {
-	s := &Session{}
-	s.closeV2Peripheral()
-	s.startV2SchemaRetry()
-	if s.peripheral().retryScheduled.Load() {
+	s := func() *Session {
+		opaqueStorageValuexxxxxxxxxxxxxxx := new(Session)
+		return opaqueStorageValuexxxxxxxxxxxxxxx
+	}()
+
+	implCluster.InternalSessionCloseV2Peripheral(s)
+	implCluster.InternalSessionStartV2SchemaRetry(s)
+	if implCluster.InternalSessionPeripheral(s).InternalRetryScheduled.Load() {
 		t.Fatal("denied worker retained a retry registration")
 	}
 	s.Close()

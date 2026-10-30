@@ -1,5 +1,7 @@
 package gocql
 
+import implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
+
 import (
 	"context"
 	"crypto/tls"
@@ -52,14 +54,14 @@ func TestV2RuntimeTimestampGeneratorConcurrent(t *testing.T) {
 	}
 }
 func TestV2RuntimeDNSContextAndDialHost(t *testing.T) {
-	resolver := &v2DNSResolver{base: runtimeBlockingDNS{done: make(chan struct{})}}
+	resolver := &v2DNSResolver{InternalBase: runtimeBlockingDNS{done: make(chan struct{})}}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	resolver.startup.Store(&contextBox{ctx: ctx})
+	resolver.InternalStartup.Store(&contextBox{InternalCtx: ctx})
 	if _, err := resolver.LookupIP("ignored"); !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
 	}
-	close(resolver.base.(runtimeBlockingDNS).done)
+	close(resolver.InternalBase.(runtimeBlockingDNS).done)
 	config := DefaultConfig("localhost")
 	var calls atomic.Int32
 	client, server := net.Pipe()
@@ -72,8 +74,14 @@ func TestV2RuntimeDNSContextAndDialHost(t *testing.T) {
 		}
 		return client, nil
 	}
-	host := &HostInfo{connectAddress: net.IPv4(127, 0, 0, 1), port: 9042, dataCenter: "dc"}
-	dialer := v2TLSHostDialer{config: config}
+	host := func() *HostInfo {
+		opaqueStorageValue := new(HostInfo)
+		implEndpoint.HostInfoData(opaqueStorageValue).InternalConnectAddress = net.IPv4(127, 0, 0, 1)
+		implEndpoint.HostInfoData(opaqueStorageValue).InternalPort = 9042
+		implEndpoint.HostInfoData(opaqueStorageValue).InternalDataCenter = "dc"
+		return opaqueStorageValue
+	}()
+	dialer := v2TLSHostDialer{InternalConfig: config}
 	connection, err := dialer.DialHost(context.Background(), host)
 	if err != nil {
 		t.Fatal(err)

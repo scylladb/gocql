@@ -17,6 +17,11 @@
 package gocql
 
 import (
+	implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+	implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
+)
+
+import (
 	"bytes"
 	"context"
 	"crypto/ecdsa"
@@ -104,20 +109,20 @@ func TestV2TLSConfigurationDetachAndHookContext(t *testing.T) {
 		}
 		return nil, nil
 	}
-	d := v2TLSHostDialer{config: config}
+	d := v2TLSHostDialer{InternalConfig: config}
 	snapshot := HostSnapshot{Tokens: []int64{7}}
-	inherited, err := d.selectedTLS(context.Background(), snapshot)
+	inherited, err := d.InternalSelectedTLS(context.Background(), snapshot)
 	if err != nil || inherited.ServerName != "transport.test" || snapshot.Tokens[0] != 7 {
 		t.Fatal("inheritance/host isolation", err)
 	}
 	config.TLS = nil
-	d.config = config
-	if _, err = d.selectedTLS(context.Background(), snapshot); err == nil {
+	d.InternalConfig = config
+	if _, err = d.InternalSelectedTLS(context.Background(), snapshot); err == nil {
 		t.Fatal("TLS hook silently disabled TLS")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err = d.selectedTLS(ctx, snapshot); !errors.Is(err, context.Canceled) {
+	if _, err = d.InternalSelectedTLS(ctx, snapshot); !errors.Is(err, context.Canceled) {
 		t.Fatal("hook context", err)
 	}
 }
@@ -126,8 +131,14 @@ func step04Host(t *testing.T, address net.Addr) *HostInfo {
 	host, port := codecTestMust2(net.SplitHostPort(address.String()))
 	_ = port
 	addr := address.(*net.TCPAddr)
-	h := &HostInfo{connectAddress: net.ParseIP(host), port: addr.Port, hostId: UUID{15: 1}}
-	h.setTranslatedConnectionInfo(translatedAddresses{CQL: AddressPort{Address: net.ParseIP(host), Port: uint16(addr.Port)}, ShardAware: AddressPort{Address: net.ParseIP(host), Port: uint16(addr.Port)}, ShardAwareTLS: AddressPort{Address: net.ParseIP(host), Port: uint16(addr.Port)}})
+	h := func() *HostInfo {
+		opaqueStorageValue := new(HostInfo)
+		implEndpoint.HostInfoData(opaqueStorageValue).InternalConnectAddress = net.ParseIP(host)
+		implEndpoint.HostInfoData(opaqueStorageValue).InternalPort = addr.Port
+		implEndpoint.HostInfoData(opaqueStorageValue).InternalHostId = UUID{15: 1}
+		return opaqueStorageValue
+	}()
+	implEndpoint.InternalHostInfoSetTranslatedConnectionInfo(h, translatedAddresses{CQL: AddressPort{Address: net.ParseIP(host), Port: uint16(addr.Port)}, ShardAware: AddressPort{Address: net.ParseIP(host), Port: uint16(addr.Port)}, ShardAwareTLS: AddressPort{Address: net.ParseIP(host), Port: uint16(addr.Port)}})
 	return h
 }
 func codecTestMust2(a, b string, err error) (string, string) {
@@ -158,7 +169,7 @@ func TestV2TLSShardDialUsesSelectedSourceAndHook(t *testing.T) {
 		selected = target
 		return (DefaultDialer{}).DialContext(ctx, target)
 	}
-	d := v2TLSHostDialer{config: config}
+	d := v2TLSHostDialer{InternalConfig: config}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	conn, err := d.DialShard(ctx, host, 1, 2)
@@ -169,18 +180,24 @@ func TestV2TLSShardDialUsesSelectedSourceAndHook(t *testing.T) {
 	if err = <-accepted; err != nil {
 		t.Fatal(err)
 	}
-	if !selected.ShardID.Set || selected.ShardID.Value != 1 || !selected.LocalAddress.IsValid() || selected.LocalAddress.Port()%2 != 1 || selected.LocalAddress.Port() < config.Pool.SourcePortStart || !conn.shardTarget.Set {
+	if !selected.ShardID.Set || selected.ShardID.Value != 1 || !selected.LocalAddress.IsValid() || selected.LocalAddress.Port()%2 != 1 || selected.LocalAddress.Port() < config.Pool.SourcePortStart || !implEndpoint.DialedHostData(conn).InternalShardTarget.Set {
 		t.Fatal("shard target/source lost", selected)
 	}
 	// A changed TLS target is detected before publication, without holding locks.
 	tlsConfig.ServerName = "changed.test"
-	if err = conn.validateTarget(ctx); err == nil {
+	if err = implEndpoint.DialedHostData(conn).InternalValidateTarget(ctx); err == nil {
 		t.Fatal("late TLS target accepted")
 	}
 }
 func TestV2SourcePortExhaustionAndNATFallback(t *testing.T) {
-	host := &HostInfo{connectAddress: net.ParseIP("127.0.0.1"), port: 9042, hostId: UUID{15: 1}}
-	host.setTranslatedConnectionInfo(translatedAddresses{CQL: AddressPort{Address: net.ParseIP("127.0.0.1"), Port: 9042}, ShardAware: AddressPort{Address: net.ParseIP("127.0.0.1"), Port: 19042}})
+	host := func() *HostInfo {
+		opaqueStorageValuex := new(HostInfo)
+		implEndpoint.HostInfoData(opaqueStorageValuex).InternalConnectAddress = net.ParseIP("127.0.0.1")
+		implEndpoint.HostInfoData(opaqueStorageValuex).InternalPort = 9042
+		implEndpoint.HostInfoData(opaqueStorageValuex).InternalHostId = UUID{15: 1}
+		return opaqueStorageValuex
+	}()
+	implEndpoint.InternalHostInfoSetTranslatedConnectionInfo(host, translatedAddresses{CQL: AddressPort{Address: net.ParseIP("127.0.0.1"), Port: 9042}, ShardAware: AddressPort{Address: net.ParseIP("127.0.0.1"), Port: 19042}})
 	config := DefaultConfig("localhost")
 	config.Pool.SourcePortStart = 49152
 	config.Pool.SourcePortEnd = 49155
@@ -195,15 +212,24 @@ func TestV2SourcePortExhaustionAndNATFallback(t *testing.T) {
 		b.Close()
 		return a, nil
 	}
-	result, err := (&v2TLSHostDialer{config: config}).DialShard(context.Background(), host, 1, 2)
+	result, err := (&v2TLSHostDialer{InternalConfig: config}).DialShard(context.Background(), host, 1, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
 	result.Conn.Close()
-	if targeted != 2 || ordinary != 1 || result.shardTarget.Set {
+	if targeted != 2 || ordinary != 1 || implEndpoint.DialedHostData(result).InternalShardTarget.Set {
 		t.Fatal("range exhaustion fallback", targeted, ordinary)
 	}
-	c := &Conn{scyllaSupported: ScyllaConnectionFeatures{ScyllaHostFeatures: ScyllaHostFeatures{nrShards: 2}, shard: 0}, requestedShard: Option[uint32]{Value: 1, Set: true}, streams: streams.New()}
+	c := &driverConn{InternalScyllaSupported: *func() *ScyllaConnectionFeatures {
+		opaqueStorageValuexxx := new(ScyllaConnectionFeatures)
+		opaqueStorageValuexxx.ScyllaHostFeatures = *func() *ScyllaHostFeatures {
+			opaqueStorageValuexx := new(ScyllaHostFeatures)
+			implEndpoint.ScyllaHostFeaturesData(opaqueStorageValuexx).InternalNrShards = 2
+			return opaqueStorageValuexx
+		}()
+		implEndpoint.ScyllaConnectionFeaturesData(opaqueStorageValuexxx).InternalShard = 0
+		return opaqueStorageValuexxx
+	}(), InternalRequestedShard: Option[uint32]{Value: 1, Set: true}, InternalStreams: streams.New()}
 	p := codecTestMust(newTypedConnPicker(c, config.Pool))
 	if p.Put(c) == nil {
 		t.Fatal("NAT wrong shard accepted")
@@ -213,8 +239,17 @@ func TestV2SourcePortExhaustionAndNATFallback(t *testing.T) {
 	}
 }
 func TestV2PoolExcessAndLateSharderFence(t *testing.T) {
-	makeConn := func(shard, shards int) *Conn {
-		return &Conn{scyllaSupported: ScyllaConnectionFeatures{ScyllaHostFeatures: ScyllaHostFeatures{nrShards: shards}, shard: shard}, streams: streams.New()}
+	makeConn := func(shard, shards int) *driverConn {
+		return &driverConn{InternalScyllaSupported: *func() *ScyllaConnectionFeatures {
+			opaqueStorageValuexxxxx := new(ScyllaConnectionFeatures)
+			opaqueStorageValuexxxxx.ScyllaHostFeatures = *func() *ScyllaHostFeatures {
+				opaqueStorageValuexxxx := new(ScyllaHostFeatures)
+				implEndpoint.ScyllaHostFeaturesData(opaqueStorageValuexxxx).InternalNrShards = shards
+				return opaqueStorageValuexxxx
+			}()
+			implEndpoint.ScyllaConnectionFeaturesData(opaqueStorageValuexxxxx).InternalShard = shard
+			return opaqueStorageValuexxxxx
+		}(), InternalStreams: streams.New()}
 	}
 	opts := DefaultConfig("localhost").Pool
 	opts.MaxExcessPerShard = 1
@@ -232,11 +267,11 @@ func TestV2PoolExcessAndLateSharderFence(t *testing.T) {
 	if p.Put(makeConn(0, 3)) == nil || p.GetExcessConnectionCount() != 0 {
 		t.Fatal("zero excess ignored")
 	}
-	generation := p.openingGeneration()
-	if err := p.put(makeConn(0, 2), generation, true); err != nil {
+	generation := p.InternalOpeningGeneration()
+	if err := p.InternalPut(makeConn(0, 2), generation, true); err != nil {
 		t.Fatal(err)
 	}
-	if err := p.put(makeConn(1, 3), generation, true); err == nil || p.GetShardCount() != 2 {
+	if err := p.InternalPut(makeConn(1, 3), generation, true); err == nil || p.GetShardCount() != 2 {
 		t.Fatal("late old sharder reinstalled")
 	}
 }
@@ -254,8 +289,13 @@ func TestV2UnixTargetAndUnsupportedSettings(t *testing.T) {
 		b.Close()
 		return a, nil
 	})
-	h := &HostInfo{connectAddress: net.ParseIP("127.0.0.1"), port: 9042}
-	c, err := (&v2TLSHostDialer{config: config}).DialHost(context.Background(), h)
+	h := func() *HostInfo {
+		opaqueStorageValuexxxxxx := new(HostInfo)
+		implEndpoint.HostInfoData(opaqueStorageValuexxxxxx).InternalConnectAddress = net.ParseIP("127.0.0.1")
+		implEndpoint.HostInfoData(opaqueStorageValuexxxxxx).InternalPort = 9042
+		return opaqueStorageValuexxxxxx
+	}()
+	c, err := (&v2TLSHostDialer{InternalConfig: config}).DialHost(context.Background(), h)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -276,9 +316,9 @@ func TestV2TypedKeepaliveDisabledAndBlockedWriteTimeout(t *testing.T) {
 	c, server := typedTestConn(t, 4, nil)
 	config := DefaultConfig("localhost")
 	config.KeepaliveInterval = 0
-	c.cfg = &ConnConfig{TypedConfig: &config}
+	c.InternalCfg = &driverConnConfig{TypedConfig: &config}
 	done := make(chan struct{})
-	go func() { c.heartBeat(c.ctx); close(done) }()
+	go func() { c.InternalHeartBeat(c.InternalCtx); close(done) }()
 	select {
 	case <-done:
 	case <-time.After(time.Second):
@@ -288,9 +328,9 @@ func TestV2TypedKeepaliveDisabledAndBlockedWriteTimeout(t *testing.T) {
 	c, _ = typedTestConn(t, 4, nil)
 	config.KeepaliveInterval = time.Millisecond
 	config.KeepaliveTimeout = 10 * time.Millisecond
-	c.cfg = &ConnConfig{TypedConfig: &config}
+	c.InternalCfg = &driverConnConfig{TypedConfig: &config}
 	done = make(chan struct{})
-	go func() { c.heartBeat(c.ctx); close(done) }()
+	go func() { c.InternalHeartBeat(c.InternalCtx); close(done) }()
 	select {
 	case <-done:
 	case <-time.After(time.Second):
@@ -304,10 +344,16 @@ func TestV2EventMetadataBudgetAndTerminalAdmission(t *testing.T) {
 	c, _ := typedTestConn(t, 4, nil)
 	timer := time.NewTimer(time.Hour)
 	defer timer.Stop()
-	consumer := &eventDebouncer{timer: timer, logger: nopLogger{}}
-	consumer.mu.Lock()
-	session := &Session{ctx: c.ctx, logger: nopLogger{}, nodeEvents: consumer}
-	c.session = session
+	consumer := &eventDebouncer{InternalTimer: timer, InternalLogger: nopLogger{}}
+	consumer.InternalMu.Lock()
+	session := func() *Session {
+		opaqueStorageValuexxxxxxx := new(Session)
+		implCluster.SessionData(opaqueStorageValuexxxxxxx).InternalCtx = c.InternalCtx
+		implCluster.SessionData(opaqueStorageValuexxxxxxx).InternalLogger = nopLogger{}
+		implCluster.SessionData(opaqueStorageValuexxxxxxx).InternalNodeEvents = consumer
+		return opaqueStorageValuexxxxxxx
+	}()
+	c.InternalHooks = newConnectionHooks(session)
 	budget := &streamMetadataBudget{Limit: 800}
 	if err := budget.Reserve(400); err != nil {
 		t.Fatal(err)
@@ -332,7 +378,7 @@ func TestV2EventMetadataBudgetAndTerminalAdmission(t *testing.T) {
 		if err := scope.RequireEnd(); err != nil {
 			t.Fatal(err)
 		}
-		if err := c.dispatchEventOwned(event, cursor.Release); err != nil {
+		if err := c.InternalDispatchEventOwned(event, cursor.Release); err != nil {
 			t.Fatal(err)
 		}
 		queued++
@@ -340,15 +386,15 @@ func TestV2EventMetadataBudgetAndTerminalAdmission(t *testing.T) {
 	if queued == 0 || queued > 3 || budget.Bytes() > 800 {
 		t.Fatal("queued events escaped simultaneous budget", queued, budget.Bytes())
 	}
-	c.cancel()
-	consumer.mu.Unlock()
-	c.waitEventDispatch()
+	c.InternalCancel()
+	consumer.InternalMu.Unlock()
+	c.InternalWaitEventDispatch()
 	budget.Release(400)
 	if budget.Bytes() != 0 {
 		t.Fatal("close did not release queued charges", budget.Bytes())
 	}
 	var released atomic.Int32
-	if err := c.dispatchEventOwned(&frm.ClientRoutesChanged{}, func() { released.Add(1) }); !errors.Is(err, ErrClosed) || released.Load() != 1 {
+	if err := c.InternalDispatchEventOwned(&frm.ClientRoutesChanged{}, func() { released.Add(1) }); !errors.Is(err, ErrClosed) || released.Load() != 1 {
 		t.Fatal("terminal enqueue retained ownership", err, released.Load())
 	}
 	// Event semantic consumption rejects bytes after a fully parsed event.
@@ -370,14 +416,14 @@ func TestV2ConnectionSetupDeadlineIncludesDNSAndTranslation(t *testing.T) {
 	config := DefaultConfig("setup.test")
 	config.ConnectTimeout = 10 * time.Second
 	config.DNSTimeout = 20 * time.Second
-	resolver := &v2DNSResolver{base: step04DNS(func(string) ([]net.IP, error) {
+	resolver := &v2DNSResolver{InternalBase: step04DNS(func(string) ([]net.IP, error) {
 		return []net.IP{net.ParseIP("127.0.0.1")}, nil
-	}), timeout: config.DNSTimeout, setupTimeout: config.ConnectTimeout}
-	resolver.startup.Store(&contextBox{ctx: context.Background()})
-	defer resolver.clearStartup()
+	}), InternalTimeout: config.DNSTimeout, InternalSetupTimeout: config.ConnectTimeout}
+	resolver.InternalStartup.Store(&contextBox{InternalCtx: context.Background()})
+	defer resolver.InternalClearStartup()
 	hosts := codecTestMust(resolveInitialEndpoint(resolver, "setup.test:9042", 9042))
 	host := hosts[0]
-	expected := host.initialSetupDeadline
+	expected := implEndpoint.HostInfoData(host).InternalInitialSetupDeadline
 	var observed time.Time
 	entered := make(chan struct{})
 	config.DialHost = func(ctx context.Context, target DialTarget) (net.Conn, error) {
@@ -386,14 +432,19 @@ func TestV2ConnectionSetupDeadlineIncludesDNSAndTranslation(t *testing.T) {
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}
-	session := &Session{logger: nopLogger{}, addressTranslator: AddressTranslatorFunc(func(ip net.IP, port int) (net.IP, int) { time.Sleep(20 * time.Millisecond); return ip, port })}
-	session.cfg.DNSResolver = resolver
-	cfg := &ConnConfig{ProtoVersion: 4, ConnectTimeout: config.ConnectTimeout, HostDialer: &v2TLSHostDialer{config: config}, TypedConfig: &config}
+	session := func() *Session {
+		opaqueStorageValuexxxxxxxx := new(Session)
+		implCluster.SessionData(opaqueStorageValuexxxxxxxx).InternalLogger = nopLogger{}
+		implCluster.SessionData(opaqueStorageValuexxxxxxxx).InternalAddressTranslator = AddressTranslatorFunc(func(ip net.IP, port int) (net.IP, int) { time.Sleep(20 * time.Millisecond); return ip, port })
+		return opaqueStorageValuexxxxxxxx
+	}()
+	implCluster.SessionData(session).InternalCfg.DNSResolver = resolver
+	cfg := &driverConnConfig{ProtoVersion: 4, ConnectTimeout: config.ConnectTimeout, HostDialer: &v2TLSHostDialer{InternalConfig: config}, TypedConfig: &config}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		_, err := session.dialShard(ctx, host, cfg, connErrorHandlerFn(func(*Conn, error, bool) {}), 0, 0)
+		_, err := implCluster.InternalSessionDialShard(session, ctx, host, cfg, connErrorHandlerFn(func(*driverConn, error, bool) {}), 0, 0)
 		done <- err
 	}()
 	select {
@@ -409,7 +460,7 @@ func TestV2ConnectionSetupDeadlineIncludesDNSAndTranslation(t *testing.T) {
 		t.Fatal("setup deadline restarted after DNS/translation", observed, expected, err)
 	}
 
-	if !host.claimSetupDeadline().IsZero() {
+	if !implEndpoint.InternalHostInfoClaimSetupDeadline(host).IsZero() {
 		t.Fatal("warm connection inherited consumed setup deadline")
 	}
 
@@ -418,7 +469,7 @@ func TestV2OpeningValidationKeepsOriginalDeadlineAndZeroMeaning(t *testing.T) {
 	expected := time.Now().Add(10 * time.Second)
 	entered := make(chan struct{})
 	var observed time.Time
-	c := &Conn{openingDeadline: expected, validateTarget: func(ctx context.Context) error {
+	c := &driverConn{InternalOpeningDeadline: expected, InternalValidateTarget: func(ctx context.Context) error {
 		observed, _ = ctx.Deadline()
 		close(entered)
 		<-ctx.Done()
@@ -426,20 +477,20 @@ func TestV2OpeningValidationKeepsOriginalDeadlineAndZeroMeaning(t *testing.T) {
 	}}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- c.validateOpeningTarget(ctx) }()
+	go func() { done <- c.InternalValidateOpeningTarget(ctx) }()
 	<-entered
 	cancel()
 	if err := <-done; !errors.Is(err, context.Canceled) || !observed.Equal(expected) {
 		t.Fatal("validation got new setup budget", observed, expected, err)
 	}
-	c.openingDeadline = time.Now().Add(-time.Second)
-	c.validateTarget = func(context.Context) error { t.Fatal("expired setup reached publication hook"); return nil }
-	if err := c.validateOpeningTarget(context.Background()); !errors.Is(err, context.DeadlineExceeded) {
+	c.InternalOpeningDeadline = time.Now().Add(-time.Second)
+	c.InternalValidateTarget = func(context.Context) error { t.Fatal("expired setup reached publication hook"); return nil }
+	if err := c.InternalValidateOpeningTarget(context.Background()); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatal("expired original deadline ignored", err)
 	}
 	entered = make(chan struct{})
-	c.openingDeadline = time.Time{}
-	c.validateTarget = func(ctx context.Context) error {
+	c.InternalOpeningDeadline = time.Time{}
+	c.InternalValidateTarget = func(ctx context.Context) error {
 		if _, ok := ctx.Deadline(); ok {
 			t.Error("zero local timeout added deadline")
 		}
@@ -448,7 +499,7 @@ func TestV2OpeningValidationKeepsOriginalDeadlineAndZeroMeaning(t *testing.T) {
 		return ctx.Err()
 	}
 	ctx, cancel = context.WithCancel(context.Background())
-	go func() { done <- c.validateOpeningTarget(ctx) }()
+	go func() { done <- c.InternalValidateOpeningTarget(ctx) }()
 	<-entered
 	cancel()
 	if err := <-done; !errors.Is(err, context.Canceled) {
@@ -476,7 +527,7 @@ type step04Reconnect struct {
 
 func (p *step04Reconnect) Delay(attempt int) (time.Duration, bool) {
 	if p.pool != nil {
-		p.pool.transportState()
+		p.pool.InternalTransportState()
 	}
 	p.calls <- attempt
 	return 5 * time.Millisecond, p.again
@@ -487,21 +538,30 @@ func TestV2PoolRepairPolicyAndClosedState(t *testing.T) {
 	config := DefaultConfig("localhost")
 	policy := &step04Reconnect{calls: make(chan int, 4), again: true}
 	config.Reconnect = policy
-	s := &Session{ctx: ctx, logger: nopLogger{}, connCfg: &ConnConfig{TypedConfig: &config}}
-	pool := newHostConnPool(s, &HostInfo{}, 1, "")
+	s := func() *Session {
+		opaqueStorageValuexxxxxxxxx := new(Session)
+		implCluster.SessionData(opaqueStorageValuexxxxxxxxx).InternalCtx = ctx
+		implCluster.SessionData(opaqueStorageValuexxxxxxxxx).InternalLogger = nopLogger{}
+		implCluster.SessionData(opaqueStorageValuexxxxxxxxx).InternalConnCfg = &driverConnConfig{TypedConfig: &config}
+		return opaqueStorageValuexxxxxxxxx
+	}()
+	pool := newHostConnPool(s, func() *HostInfo {
+		opaqueStorageValuexxxxxxxxxx := new(HostInfo)
+		return opaqueStorageValuexxxxxxxxxx
+	}(), 1, "")
 	policy.pool = pool
 	// A full empty test picker avoids network work but leaves the actual repair
 	// scheduling/backoff state machine active.
-	pool.connPicker = &defaultConnPicker{size: 0}
-	pool.scheduleTypedRepair()
+	pool.InternalConnPicker = &defaultConnPicker{InternalSize: 0}
+	pool.InternalScheduleTypedRepair()
 	if attempt := <-policy.calls; attempt != 0 {
 		t.Fatal(attempt)
 	}
 	deadline := time.After(time.Second)
 	for {
-		pool.mu.RLock()
-		pending := pool.repairScheduled
-		pool.mu.RUnlock()
+		pool.InternalMu.RLock()
+		pending := pool.InternalRepairScheduled
+		pool.InternalMu.RUnlock()
 		if !pending {
 			break
 		}
@@ -513,15 +573,15 @@ func TestV2PoolRepairPolicyAndClosedState(t *testing.T) {
 		}
 	}
 	policy.again = false
-	pool.scheduleTypedRepair()
+	pool.InternalScheduleTypedRepair()
 	if attempt := <-policy.calls; attempt != 1 {
 		t.Fatal("repair attempt not advanced", attempt)
 	}
 	pool.Close()
-	if pool.transportState() != poolClosed {
+	if pool.InternalTransportState() != poolClosed {
 		t.Fatal("pool not terminal")
 	}
-	pool.scheduleTypedRepair()
+	pool.InternalScheduleTypedRepair()
 	select {
 	case <-policy.calls:
 		t.Fatal("closed pool scheduled repair")
@@ -530,23 +590,24 @@ func TestV2PoolRepairPolicyAndClosedState(t *testing.T) {
 }
 
 func TestV2ResolvedContactsOwnIndependentSetupDeadlines(t *testing.T) {
-	resolver := &v2DNSResolver{base: step04DNS(func(string) ([]net.IP, error) { return []net.IP{net.ParseIP("127.0.0.1")}, nil }), setupTimeout: time.Minute}
+	resolver := &v2DNSResolver{InternalBase: step04DNS(func(string) ([]net.IP, error) { return []net.IP{net.ParseIP("127.0.0.1")}, nil }), InternalSetupTimeout: time.Minute}
 	first := codecTestMust(resolveInitialEndpoint(resolver, "first.test:9042", 9042))[0]
 	second := codecTestMust(resolveInitialEndpoint(resolver, "second.test:9142", 9042))[0]
-	// Distinct sentinel deadlines make identity isolation deterministic even when
-	// both lookups complete in one clock tick and resolve to the same IP.
-	first.initialSetupDeadline = time.Unix(100, 1)
-	second.initialSetupDeadline = time.Unix(200, 2)
-	if d := first.claimSetupDeadline(); !d.Equal(time.Unix(100, 1)) {
+	implEndpoint.
+		// Distinct sentinel deadlines make identity isolation deterministic even when
+		// both lookups complete in one clock tick and resolve to the same IP.
+		HostInfoData(first).InternalInitialSetupDeadline = time.Unix(100, 1)
+	implEndpoint.HostInfoData(second).InternalInitialSetupDeadline = time.Unix(200, 2)
+	if d := implEndpoint.InternalHostInfoClaimSetupDeadline(first); !d.Equal(time.Unix(100, 1)) {
 		t.Fatal("first opening stole second deadline", d)
 	}
-	if d := first.claimSetupDeadline(); !d.IsZero() {
+	if d := implEndpoint.InternalHostInfoClaimSetupDeadline(first); !d.IsZero() {
 		t.Fatal("opening reused spent deadline", d)
 	}
-	if d := second.claimSetupDeadline(); !d.Equal(time.Unix(200, 2)) {
+	if d := implEndpoint.InternalHostInfoClaimSetupDeadline(second); !d.Equal(time.Unix(200, 2)) {
 		t.Fatal("second contact deadline lost", d)
 	}
-	if first.hostname == second.hostname || first.Port() == second.Port() {
+	if implEndpoint.HostInfoData(first).InternalHostname == implEndpoint.HostInfoData(second).InternalHostname || first.Port() == second.Port() {
 		t.Fatal("contact identity merged prematurely")
 	}
 }
@@ -578,29 +639,40 @@ func TestV2TypedRepairTriggersHonorPolicyDelayAndStop(t *testing.T) {
 			policy := &step04LongRepairPolicy{again: again}
 			config.Reconnect = policy
 			var dials atomic.Int32
-			s := &Session{ctx: ctx, logger: nopLogger{}, connCfg: &ConnConfig{TypedConfig: &config, HostDialer: step04CountingHostDialer{&dials}}}
-			s.cfg.ReconnectionPolicy = &NoReconnectionPolicy{}
-			h := &HostInfo{hostId: UUID{15: 1}, state: NodeUp}
-			c.host = h
-			c.session = s
+			s := func() *Session {
+				opaqueStorageValuexxxxxxxxxxx := new(Session)
+				implCluster.SessionData(opaqueStorageValuexxxxxxxxxxx).InternalCtx = ctx
+				implCluster.SessionData(opaqueStorageValuexxxxxxxxxxx).InternalLogger = nopLogger{}
+				implCluster.SessionData(opaqueStorageValuexxxxxxxxxxx).InternalConnCfg = &driverConnConfig{TypedConfig: &config, HostDialer: step04CountingHostDialer{&dials}}
+				return opaqueStorageValuexxxxxxxxxxx
+			}()
+			implCluster.SessionData(s).InternalCfg.ReconnectionPolicy = &NoReconnectionPolicy{}
+			h := func() *HostInfo {
+				opaqueStorageValuexxxxxxxxxxxx := new(HostInfo)
+				implEndpoint.HostInfoData(opaqueStorageValuexxxxxxxxxxxx).InternalHostId = UUID{15: 1}
+				implEndpoint.HostInfoData(opaqueStorageValuexxxxxxxxxxxx).InternalState = NodeUp
+				return opaqueStorageValuexxxxxxxxxxxx
+			}()
+			c.InternalHost = h
+			c.InternalHooks = newConnectionHooks(s)
 			pool := newHostConnPool(s, h, 1, "")
 			defer pool.Close()
-			pool.started = true
-			pool.state = poolReady
-			pool.connPicker = codecTestMust(newTypedConnPicker(c, config.Pool))
-			pool.connPicker.Put(c)
-			s.hostSource = &ringDescriber{hosts: map[string]*HostInfo{h.HostID(): h}}
-			s.pool = &policyConnPool{hostConnPools: map[UUID]*hostConnPool{h.hostUUID(): pool}}
+			pool.InternalStarted = true
+			pool.InternalState = poolReady
+			pool.InternalConnPicker = codecTestMust(newTypedConnPicker(c, config.Pool))
+			pool.InternalConnPicker.Put(c)
+			implCluster.SessionData(s).InternalHostSource = &ringDescriber{InternalHosts: map[string]*HostInfo{h.HostID(): h}}
+			implCluster.SessionData(s).InternalPool = &policyConnPool{InternalHostConnPools: map[UUID]*hostConnPool{implEndpoint.InternalHostInfoHostUUID(h): pool}}
 			pool.HandleError(c, io.EOF, true)
 			for i := 0; i < 10; i++ {
 				pool.Pick(nil)
-				s.pickTypedPool(pool, Target{}, RoutingInfo{})
-				pool.fill()
+				implCluster.InternalSessionPickTypedPool(s, pool, Target{}, RoutingInfo{})
+				pool.InternalFill()
 			}
 			wait, cancelWait := context.WithTimeout(context.Background(), 10*time.Millisecond)
 			defer cancelWait()
-			if r, err := pool.reserveStream(wait, Target{HostID: h.hostUUID()}, RoutingInfo{}); err == nil {
-				r.close(false)
+			if r, err := pool.InternalReserveStream(wait, Target{HostID: implEndpoint.InternalHostInfoHostUUID(h)}, RoutingInfo{}); err == nil {
+				r.InternalClose(false)
 				t.Fatal("broken pool manufactured reservation")
 			}
 			if dials.Load() != 0 || policy.calls.Load() != 1 {
@@ -608,7 +680,7 @@ func TestV2TypedRepairTriggersHonorPolicyDelayAndStop(t *testing.T) {
 			}
 			pool.Close()
 			pool.HandleError(c, io.EOF, true)
-			pool.fill()
+			pool.InternalFill()
 			if dials.Load() != 0 || policy.calls.Load() != 1 {
 				t.Fatal("closed pool restarted repair")
 			}
@@ -618,27 +690,27 @@ func TestV2TypedRepairTriggersHonorPolicyDelayAndStop(t *testing.T) {
 func TestV2TypedSelectionWaitsForReservedCapacity(t *testing.T) {
 	s, conns, peers := runtimeTestSession(t, 1)
 	c := conns[0]
-	pool := s.pool.hostConnPools[c.host.hostUUID()]
+	pool := implCluster.SessionData(s).InternalPool.InternalHostConnPools[implEndpoint.InternalHostInfoHostUUID(c.InternalHost)]
 	config := DefaultConfig("localhost")
 	config.Pool.ConnectionsPerHost = 1
-	s.connCfg = &ConnConfig{TypedConfig: &config}
-	c.cfg = &ConnConfig{TypedConfig: &config}
-	pool.session = s
-	pool.repairCtx, pool.repairCancel = context.WithCancel(c.ctx)
-	defer pool.repairCancel()
-	pool.started = true
-	pool.state = poolReady
-	pool.connPicker = codecTestMust(newTypedConnPicker(c, config.Pool))
-	pool.connPicker.Put(c)
-	c.errorHandler = pool
+	implCluster.SessionData(s).InternalConnCfg = &driverConnConfig{TypedConfig: &config}
+	c.InternalCfg = &driverConnConfig{TypedConfig: &config}
+	pool.InternalServices = newPoolServices(s)
+	pool.InternalRepairCtx, pool.InternalRepairCancel = context.WithCancel(c.InternalCtx)
+	defer pool.InternalRepairCancel()
+	pool.InternalStarted = true
+	pool.InternalState = poolReady
+	pool.InternalConnPicker = codecTestMust(newTypedConnPicker(c, config.Pool))
+	pool.InternalConnPicker.Put(c)
+	c.InternalErrorHandler = pool
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	r := codecTestMust(pool.reserveStream(ctx, Target{HostID: c.host.hostUUID()}, RoutingInfo{}))
+	r := codecTestMust(pool.InternalReserveStream(ctx, Target{HostID: implEndpoint.InternalHostInfoHostUUID(c.InternalHost)}, RoutingInfo{}))
 	bound := runtimeQuery(t)
 	defer bound.Close()
 	done := make(chan error, 1)
 	go func() {
-		rows, err := Run(ctx, s, bound, Options{HostID: Option[UUID]{Value: c.host.hostUUID(), Set: true}})
+		rows, err := Run(ctx, s, bound, Options{HostID: Option[UUID]{Value: implEndpoint.InternalHostInfoHostUUID(c.InternalHost), Set: true}})
 		if rows != nil {
 			rows.Close()
 		}
@@ -656,7 +728,7 @@ func TestV2TypedSelectionWaitsForReservedCapacity(t *testing.T) {
 		stream := typedTestReadRequest(t, c, peers[0])
 		step04WriteResponse(t, c, peers[0], stream, typedTestRowsBody([]byte("resumed")))
 	}()
-	if err := r.close(true); err != nil {
+	if err := r.InternalClose(true); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -667,11 +739,11 @@ func TestV2TypedSelectionWaitsForReservedCapacity(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("waiter did not resume")
 	}
-	r = codecTestMust(pool.reserveStream(ctx, Target{HostID: c.host.hostUUID()}, RoutingInfo{}))
-	defer r.close(true)
+	r = codecTestMust(pool.InternalReserveStream(ctx, Target{HostID: implEndpoint.InternalHostInfoHostUUID(c.InternalHost)}, RoutingInfo{}))
+	defer r.InternalClose(true)
 	wait, cancelWait := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancelWait()
-	_, err := Run(wait, s, bound, Options{HostID: Option[UUID]{Value: c.host.hostUUID(), Set: true}})
+	_, err := Run(wait, s, bound, Options{HostID: Option[UUID]{Value: implEndpoint.InternalHostInfoHostUUID(c.InternalHost), Set: true}})
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatal("waiting ignored caller cancellation", err)
 	}
@@ -698,10 +770,21 @@ func TestV2OpeningEndpointGenerationAndClosedPoolFence(t *testing.T) {
 					return nil, ctx.Err()
 				}
 			}
-			host := &HostInfo{connectAddress: net.ParseIP("127.0.0.1"), port: 9042, hostId: UUID{15: 1}}
-			s := &Session{ctx: ctx, logger: nopLogger{}}
-			s.cfg.ReconnectionPolicy = &NoReconnectionPolicy{}
-			s.connCfg = &ConnConfig{TypedConfig: &config, ProtoVersion: 4, CQLVersion: "3.0.0", ConnectTimeout: time.Second, HostDialer: &v2TLSHostDialer{config: config}, Logger: nopLogger{}}
+			host := func() *HostInfo {
+				opaqueStorageValuexxxxxxxxxxxxx := new(HostInfo)
+				implEndpoint.HostInfoData(opaqueStorageValuexxxxxxxxxxxxx).InternalConnectAddress = net.ParseIP("127.0.0.1")
+				implEndpoint.HostInfoData(opaqueStorageValuexxxxxxxxxxxxx).InternalPort = 9042
+				implEndpoint.HostInfoData(opaqueStorageValuexxxxxxxxxxxxx).InternalHostId = UUID{15: 1}
+				return opaqueStorageValuexxxxxxxxxxxxx
+			}()
+			s := func() *Session {
+				opaqueStorageValuexxxxxxxxxxxxxx := new(Session)
+				implCluster.SessionData(opaqueStorageValuexxxxxxxxxxxxxx).InternalCtx = ctx
+				implCluster.SessionData(opaqueStorageValuexxxxxxxxxxxxxx).InternalLogger = nopLogger{}
+				return opaqueStorageValuexxxxxxxxxxxxxx
+			}()
+			implCluster.SessionData(s).InternalCfg.ReconnectionPolicy = &NoReconnectionPolicy{}
+			implCluster.SessionData(s).InternalConnCfg = &driverConnConfig{TypedConfig: &config, ProtoVersion: 4, CQLVersion: "3.0.0", ConnectTimeout: time.Second, HostDialer: &v2TLSHostDialer{InternalConfig: config}, Logger: nopLogger{}}
 			pool := newHostConnPool(s, host, 1, "")
 			defer pool.Close()
 			serverDone := make(chan struct{})
@@ -730,10 +813,10 @@ func TestV2OpeningEndpointGenerationAndClosedPoolFence(t *testing.T) {
 				}
 			}()
 			done := make(chan error, 1)
-			go func() { done <- pool.connect() }()
+			go func() { done <- pool.InternalConnect() }()
 			<-selected
 			if mode == "endpoint" {
-				host.setTranslatedConnectionInfo(translatedAddresses{CQL: AddressPort{Address: net.ParseIP("127.0.0.2"), Port: 9042}})
+				implEndpoint.InternalHostInfoSetTranslatedConnectionInfo(host, translatedAddresses{CQL: AddressPort{Address: net.ParseIP("127.0.0.2"), Port: 9042}})
 				close(release)
 			} else {
 				pool.Close()
@@ -749,7 +832,7 @@ func TestV2OpeningEndpointGenerationAndClosedPoolFence(t *testing.T) {
 			if pool.Size() != 0 {
 				t.Fatal("late opening entered pool")
 			}
-			if mode == "closed" && pool.transportState() != poolClosed {
+			if mode == "closed" && pool.InternalTransportState() != poolClosed {
 				t.Fatal("closed pool resurrected")
 			}
 			client.Close()
@@ -759,19 +842,28 @@ func TestV2OpeningEndpointGenerationAndClosedPoolFence(t *testing.T) {
 }
 
 func TestV2ReservedPreferredShardUsesAllowedFreeAlternative(t *testing.T) {
-	makeConn := func(shard int) *Conn {
-		return &Conn{scyllaSupported: ScyllaConnectionFeatures{ScyllaHostFeatures: ScyllaHostFeatures{nrShards: 2}, shard: shard}, streams: streams.New()}
+	makeConn := func(shard int) *driverConn {
+		return &driverConn{InternalScyllaSupported: *func() *ScyllaConnectionFeatures {
+			opaqueStorageValuexxxxxxxxxxxxxxxx := new(ScyllaConnectionFeatures)
+			opaqueStorageValuexxxxxxxxxxxxxxxx.ScyllaHostFeatures = *func() *ScyllaHostFeatures {
+				opaqueStorageValuexxxxxxxxxxxxxxx := new(ScyllaHostFeatures)
+				implEndpoint.ScyllaHostFeaturesData(opaqueStorageValuexxxxxxxxxxxxxxx).InternalNrShards = 2
+				return opaqueStorageValuexxxxxxxxxxxxxxx
+			}()
+			implEndpoint.ScyllaConnectionFeaturesData(opaqueStorageValuexxxxxxxxxxxxxxxx).InternalShard = shard
+			return opaqueStorageValuexxxxxxxxxxxxxxxx
+		}(), InternalStreams: streams.New()}
 	}
 	first, second := makeConn(0), makeConn(1)
 	p := codecTestMust(newTypedConnPicker(first, DefaultConfig("localhost").Pool))
 	p.Put(first)
 	p.Put(second)
-	first.exclusiveFlag.Store(true)
+	first.InternalExclusiveFlag.Store(true)
 	routing := RoutingInfo{Token: Option[int64]{Value: math.MinInt64, Set: true}}
-	if got := p.pickTarget(Target{}, routing); got != second {
+	if got := p.InternalPickTarget(Target{}, routing); got != second {
 		t.Fatal("non-strict selection waited despite idle eligible connection")
 	}
-	if got := p.pickTarget(Target{StrictShard: true, ShardID: Option[uint32]{Value: 0, Set: true}}, routing); got != first {
+	if got := p.InternalPickTarget(Target{StrictShard: true, ShardID: Option[uint32]{Value: 0, Set: true}}, routing); got != first {
 		t.Fatal("strict shard was not preserved")
 	}
 }
@@ -784,8 +876,8 @@ func TestV2TLSIdentityUsesLogicalHostAcrossTranslatedEndpoint(t *testing.T) {
 	listener := codecTestMust(net.Listen("tcp", "127.0.0.1:0"))
 	defer listener.Close()
 	host := step04Host(t, listener.Addr())
-	host.hostname = "transport.test"
-	host.connectAddress = net.ParseIP("192.0.2.12")
+	implEndpoint.HostInfoData(host).InternalHostname = "transport.test"
+	implEndpoint.HostInfoData(host).InternalConnectAddress = net.ParseIP("192.0.2.12")
 	done := make(chan error, 1)
 	go func() {
 		raw, err := listener.Accept()
@@ -800,7 +892,7 @@ func TestV2TLSIdentityUsesLogicalHostAcrossTranslatedEndpoint(t *testing.T) {
 	config.TLS = configTLS
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	conn, err := (&v2TLSHostDialer{config: config}).DialHost(ctx, host)
+	conn, err := (&v2TLSHostDialer{InternalConfig: config}).DialHost(ctx, host)
 	if err != nil {
 		t.Fatal(err)
 	}

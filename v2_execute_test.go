@@ -1,6 +1,13 @@
 package gocql
 
 import (
+	implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+	implExecution "github.com/scylladb/gocql/v2/internal/execution"
+)
+
+import implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
+
+import (
 	"context"
 	"encoding/binary"
 	"errors"
@@ -10,26 +17,35 @@ import (
 	"time"
 )
 
-func runtimeTestSession(t testing.TB, n int) (*Session, []*Conn, []net.Conn) {
+func runtimeTestSession(t testing.TB, n int) (*Session, []*driverConn, []net.Conn) {
 	t.Helper()
-	s := &Session{logger: nopLogger{}}
-	s.hostSource = &ringDescriber{hosts: map[string]*HostInfo{}}
-	s.pool = &policyConnPool{hostConnPools: map[UUID]*hostConnPool{}}
-	var conns []*Conn
+	s := func() *Session {
+		opaqueStorageValue := new(Session)
+		implCluster.SessionData(opaqueStorageValue).InternalLogger = nopLogger{}
+		return opaqueStorageValue
+	}()
+	implCluster.SessionData(s).InternalHostSource = &ringDescriber{InternalHosts: map[string]*HostInfo{}}
+	implCluster.SessionData(s).InternalPool = &policyConnPool{InternalHostConnPools: map[UUID]*hostConnPool{}}
+	var conns []*driverConn
 	var peers []net.Conn
 	for i := 0; i < n; i++ {
 		conn, peer := typedTestConn(t, 4, nil)
 		id := UUID{15: byte(i + 1)}
-		host := &HostInfo{hostId: id, state: NodeUp}
-		conn.host = host
-		conn.session = s
-		s.hostSource.hosts[id.String()] = host
+		host := func() *HostInfo {
+			opaqueStorageValuex := new(HostInfo)
+			implEndpoint.HostInfoData(opaqueStorageValuex).InternalHostId = id
+			implEndpoint.HostInfoData(opaqueStorageValuex).InternalState = NodeUp
+			return opaqueStorageValuex
+		}()
+		conn.InternalHost = host
+		conn.InternalHooks = newConnectionHooks(s)
+		implCluster.SessionData(s).InternalHostSource.InternalHosts[id.String()] = host
 		picker := newDefaultConnPicker(1)
 		picker.Put(conn)
-		s.pool.hostConnPools[id] = &hostConnPool{host: host, connPicker: picker}
+		implCluster.SessionData(s).InternalPool.InternalHostConnPools[id] = &hostConnPool{InternalHost: host, InternalConnPicker: picker}
 		conns = append(conns, conn)
 		peers = append(peers, peer)
-		go conn.serve(conn.ctx)
+		go conn.InternalServe(conn.InternalCtx)
 	}
 	return s, conns, peers
 }
@@ -90,7 +106,7 @@ func TestV2RuntimePagerEmptyContinuationAndProfileSnapshot(t *testing.T) {
 	}
 	p.PageSize = 11
 	profile.Replace(p)
-	if rows.request.options.profile.PageSize != 7 {
+	if implExecution.RowsData(rows).InternalRequest.InternalOptions.InternalProfile.PageSize != 7 {
 		t.Fatal("profile changed after admission")
 	}
 	bound.Close()
@@ -150,7 +166,7 @@ type runtimePolicy struct {
 
 func (p *runtimePolicy) Validate(*MetadataSnapshot) error { return nil }
 func (p *runtimePolicy) Plan(RoutingInfo, *MetadataSnapshot) QueryPlan {
-	return &targetPlan{targets: append([]Target(nil), p.targets...)}
+	return &targetPlan{InternalTargets: append([]Target(nil), p.targets...)}
 }
 func (p *runtimePolicy) Observe(AttemptEvent) { p.events.Add(1) }
 
@@ -161,7 +177,7 @@ func (runtimeSpeculation) Delay(attempt int, _ MetricsSnapshot) (time.Duration, 
 }
 func TestV2RuntimeSpeculativeLoserWriterKeepsInput(t *testing.T) {
 	s, conns, peers := runtimeTestSession(t, 2)
-	policy := &runtimePolicy{targets: []Target{{HostID: conns[0].host.hostUUID()}, {HostID: conns[1].host.hostUUID()}}}
+	policy := &runtimePolicy{targets: []Target{{HostID: implEndpoint.InternalHostInfoHostUUID(conns[0].InternalHost)}, {HostID: implEndpoint.InternalHostInfoHostUUID(conns[1].InternalHost)}}}
 	profile := defaultProfile()
 	profile.Routing = policy
 	profile.Speculation = runtimeSpeculation{}

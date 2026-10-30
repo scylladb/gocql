@@ -18,6 +18,8 @@
 
 package gocql
 
+import implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+
 import (
 	"reflect"
 	"testing"
@@ -106,7 +108,12 @@ func TestStep10ReportUsesCurrentTypedProfile(t *testing.T) {
 	if err := config.DefaultProfile.Replace(profile); err != nil {
 		t.Fatal(err)
 	}
-	s := &Session{cfg: *newClusterSettings(), typedState: &sessionRuntime{profile: config.DefaultProfile, config: config}}
+	s := func() *Session {
+		opaqueStorageValue := new(Session)
+		implCluster.SessionData(opaqueStorageValue).InternalCfg = *newClusterSettings()
+		implCluster.SessionData(opaqueStorageValue).InternalTypedState = &sessionRuntime{InternalProfile: config.DefaultProfile, InternalConfig: config}
+		return opaqueStorageValue
+	}()
 	report := buildQueryReport(s)
 	if report.Defaults.Page.Size != 23 || report.Retry.Policy.(retryPolicySimpleReport).MaxRetries != 6 {
 		t.Fatalf("typed defaults: %+v", report)

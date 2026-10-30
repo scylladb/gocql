@@ -22,20 +22,20 @@ func BenchmarkTypedBuildRequest(b *testing.B) {
 				b.Run(fmt.Sprintf("v%d/%d/compressed=%t", proto, size, compressed), func(b *testing.B) {
 					payload := bytes.Repeat([]byte{'v'}, size)
 					values, _ := wire.NewChain(wire.Borrow(binary.BigEndian.AppendUint32(nil, uint32(size))), wire.Borrow(payload))
-					c := &Conn{version: proto}
+					c := &driverConn{InternalVersion: proto}
 					if compressed {
-						c.compressor = lz4.LZ4Compressor{}
+						c.InternalCompressor = lz4.LZ4Compressor{}
 						if proto == 5 {
-							c.segCompressor = lz4.LZ4Compressor{}
+							c.InternalSegCompressor = lz4.LZ4Compressor{}
 						}
 					}
-					c.initFramerCache()
+					c.InternalInitFramerCache()
 					req := &attemptRequest{Statement: "INSERT INTO tbl (v) VALUES (?)", Values: values, ValueCount: 1, Consistency: One}
 					b.SetBytes(int64(size))
 					b.ReportAllocs()
 					b.ResetTimer()
 					for i := 0; i < b.N; i++ {
-						out, err := c.buildTypedRequest(req, 3)
+						out, err := c.InternalBuildTypedRequest(req, 3)
 						if err != nil {
 							b.Fatal(err)
 						}

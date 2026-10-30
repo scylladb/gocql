@@ -4,6 +4,11 @@
 package gocql
 
 import (
+	implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+	implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
+)
+
+import (
 	"net"
 	"sort"
 	"strings"
@@ -53,7 +58,7 @@ func TestHostInfoFromMap(t *testing.T) {
 		{"RPCAddress", h.RPCAddress().String(), "10.0.0.8"},
 		{"ListenAddress", h.ListenAddress().String(), "10.0.0.9"},
 		{"Tokens", strings.Join(h.Tokens(), ","), "1,2"},
-		{"SchemaVersion", h.schemaVersion, schema.String()},
+		{"SchemaVersion", implEndpoint.HostInfoData(h).InternalSchemaVersion, schema.String()},
 		// no native_port: the caller's default applies
 		{"Port", h.Port(), 9042},
 		// rpc_address is the driver-facing address when it is set
@@ -105,36 +110,57 @@ func TestHostInfoFromMapWrongType(t *testing.T) {
 func TestHostInfoUpdateFillsOnlyMissing(t *testing.T) {
 	t.Parallel()
 
-	from := &HostInfo{
-		dataCenter: "dc-new", rack: "r-new", hostId: MustRandomUUID(), port: 19042,
-		rpcAddress: net.ParseIP("10.0.0.2"), tokens: []string{"9"}, partitioner: "p-new",
-		clusterName: "c-new", workload: "w-new", dseVersion: "d-new",
-	}
-	from.version.Set("6.0.0")
+	from := func() *HostInfo {
+		opaqueStorageValue := new(HostInfo)
+		implEndpoint.HostInfoData(opaqueStorageValue).InternalDataCenter = "dc-new"
+		implEndpoint.HostInfoData(opaqueStorageValue).InternalRack = "r-new"
+		implEndpoint.HostInfoData(opaqueStorageValue).InternalHostId = MustRandomUUID()
+		implEndpoint.HostInfoData(opaqueStorageValue).InternalPort = 19042
+		implEndpoint.HostInfoData(opaqueStorageValue).InternalRpcAddress = net.ParseIP("10.0.0.2")
+		implEndpoint.HostInfoData(opaqueStorageValue).InternalTokens = []string{"9"}
+		implEndpoint.HostInfoData(opaqueStorageValue).InternalPartitioner = "p-new"
+		implEndpoint.HostInfoData(opaqueStorageValue).InternalClusterName = "c-new"
+		implEndpoint.HostInfoData(opaqueStorageValue).InternalWorkload = "w-new"
+		implEndpoint.HostInfoData(opaqueStorageValue).InternalDseVersion = "d-new"
+		return opaqueStorageValue
+	}()
+	implEndpoint.HostInfoData(from).InternalVersion.Set("6.0.0")
 
-	empty := &HostInfo{}
-	empty.update(from)
+	empty := func() *HostInfo {
+		opaqueStorageValuex := new(HostInfo)
+		return opaqueStorageValuex
+	}()
+
+	implEndpoint.InternalHostInfoUpdate(empty, from)
 	if empty.DataCenter() != "dc-new" || empty.Rack() != "r-new" || empty.HostID() != from.HostID() ||
-		empty.Port() != 19042 || !empty.RPCAddress().Equal(from.rpcAddress) || empty.Version().String() != "v6.0.0" ||
+		empty.Port() != 19042 || !empty.RPCAddress().Equal(implEndpoint.HostInfoData(from).InternalRpcAddress) || empty.Version().String() != "v6.0.0" ||
 		strings.Join(empty.Tokens(), ",") != "9" || empty.Partitioner() != "p-new" || empty.ClusterName() != "c-new" {
 		t.Fatalf("update into an empty host = %s, want every field copied", empty)
 	}
 
-	known := &HostInfo{
-		dataCenter: "dc-old", rack: "r-old", hostId: MustRandomUUID(), port: 9042,
-		rpcAddress: net.ParseIP("10.0.0.1"), tokens: []string{"1"}, partitioner: "p-old",
-	}
-	known.version.Set("5.0.0")
+	known := func() *HostInfo {
+		opaqueStorageValuexx := new(HostInfo)
+		implEndpoint.HostInfoData(opaqueStorageValuexx).InternalDataCenter = "dc-old"
+		implEndpoint.HostInfoData(opaqueStorageValuexx).InternalRack = "r-old"
+		implEndpoint.HostInfoData(opaqueStorageValuexx).InternalHostId = MustRandomUUID()
+		implEndpoint.HostInfoData(opaqueStorageValuexx).InternalPort = 9042
+		implEndpoint.HostInfoData(opaqueStorageValuexx).InternalRpcAddress = net.ParseIP("10.0.0.1")
+		implEndpoint.HostInfoData(opaqueStorageValuexx).InternalTokens = []string{"1"}
+		implEndpoint.HostInfoData(opaqueStorageValuexx).InternalPartitioner = "p-old"
+		return opaqueStorageValuexx
+	}()
+	implEndpoint.HostInfoData(known).InternalVersion.Set("5.0.0")
 	knownID := known.HostID()
-	known.update(from)
+	implEndpoint.InternalHostInfoUpdate(known, from)
 	if known.DataCenter() != "dc-old" || known.Rack() != "r-old" || known.HostID() != knownID ||
 		known.Port() != 9042 || known.RPCAddress().String() != "10.0.0.1" || known.Version().String() != "v5.0.0" ||
 		strings.Join(known.Tokens(), ",") != "1" || known.Partitioner() != "p-old" {
 		t.Fatalf("update over known values = %s, want them kept", known)
 	}
+	implEndpoint.
 
-	// updating from itself must not deadlock on its own lock
-	known.update(known)
+		// updating from itself must not deadlock on its own lock
+		InternalHostInfoUpdate(known, known)
 }
 
 type testPeer struct {
@@ -220,7 +246,7 @@ func (rs *ringTestServer) session(t *testing.T, configure func(cfg *clusterSetti
 	if configure != nil {
 		configure(cfg)
 	}
-	s, err := cfg.open()
+	s, err := implCluster.InternalClusterSettingsOpen(cfg)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -232,7 +258,7 @@ func (rs *ringTestServer) session(t *testing.T, configure func(cfg *clusterSetti
 // can compare the whole ring at once.
 func ringHosts(s *Session) []string {
 	var out []string
-	for _, h := range s.hostSource.getHostsList() {
+	for _, h := range implCluster.SessionData(s).InternalHostSource.InternalGetHostsList() {
 		out = append(out, h.HostID()+"@"+h.ConnectAddress().String())
 	}
 	sort.Strings(out)
@@ -266,13 +292,13 @@ func TestRefreshRing(t *testing.T) {
 
 	// A new peer joins.
 	rs.setPeers(p2, p3)
-	if err := s.refreshRingNow(); err != nil {
+	if err := implCluster.InternalSessionRefreshRingNow(s); err != nil {
 		t.Fatal(err)
 	}
 	if got, want := ringHosts(s), sortedKeys(localKey(), peerKey(p2), peerKey(p3)); strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Fatalf("after join ring = %v, want %v", got, want)
 	}
-	if h := s.hostSource.getHost(p3.hostID.String()); h == nil || h.DataCenter() != "dc1" || h.Rack() != "rack1" {
+	if h := implCluster.SessionData(s).InternalHostSource.InternalGetHost(p3.hostID.String()); h == nil || h.DataCenter() != "dc1" || h.Rack() != "rack1" {
 		t.Fatalf("joined host = %v, want dc1/rack1", h)
 	}
 
@@ -280,7 +306,7 @@ func TestRefreshRing(t *testing.T) {
 	moved := p2
 	moved.ip = net.ParseIP("127.0.0.4")
 	rs.setPeers(moved, p3)
-	if err := s.refreshRingNow(); err != nil {
+	if err := implCluster.InternalSessionRefreshRingNow(s); err != nil {
 		t.Fatal(err)
 	}
 	if got, want := ringHosts(s), sortedKeys(localKey(), peerKey(moved), peerKey(p3)); strings.Join(got, " ") != strings.Join(want, " ") {
@@ -289,7 +315,7 @@ func TestRefreshRing(t *testing.T) {
 
 	// p3 leaves.
 	rs.setPeers(moved)
-	if err := s.refreshRingNow(); err != nil {
+	if err := implCluster.InternalSessionRefreshRingNow(s); err != nil {
 		t.Fatal(err)
 	}
 	if got, want := ringHosts(s), sortedKeys(localKey(), peerKey(moved)); strings.Join(got, " ") != strings.Join(want, " ") {
@@ -315,7 +341,7 @@ func TestRefreshRingSkipsPeers(t *testing.T) {
 	if got, want := ringHosts(s), sortedKeys(localKey(), peerKey(good), peerKey(zeroToken), peerKey(otherDC)); strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Fatalf("ring = %v, want valid topology including zero-token and disabled peers %v", got, want)
 	}
-	if err := s.refreshRingNow(); err != nil {
+	if err := implCluster.InternalSessionRefreshRingNow(s); err != nil {
 		t.Fatal(err)
 	}
 	if got, want := ringHosts(s), sortedKeys(localKey(), peerKey(good), peerKey(zeroToken), peerKey(otherDC)); strings.Join(got, " ") != strings.Join(want, " ") {
@@ -326,7 +352,7 @@ func TestRefreshRingSkipsPeers(t *testing.T) {
 			t.Fatal("filtered host must remain disabled")
 		}
 	}
-	if pool, ok := s.pool.getPoolByHostID(otherDC.hostID.String()); ok && pool.Size() > 0 {
+	if pool, ok := implCluster.SessionData(s).InternalPool.InternalGetPoolByHostID(otherDC.hostID.String()); ok && pool.Size() > 0 {
 		t.Fatal("filtered host received connections")
 	}
 	if len(s.Metadata().Diagnostics()) == 0 {
@@ -346,7 +372,7 @@ func TestRefreshRingKeepsRingOnError(t *testing.T) {
 	before := ringHosts(s)
 
 	rs.failPeers("peers unavailable")
-	err := s.refreshRingNow()
+	err := implCluster.InternalSessionRefreshRingNow(s)
 	if err == nil || !strings.Contains(err.Error(), "peers unavailable") {
 		t.Fatalf("refreshRingNow error = %v, want the peers error", err)
 	}

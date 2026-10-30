@@ -44,7 +44,7 @@ type segmentReader struct {
 	r *bytes.Reader
 	// disarmed records the current disarm state. There is no deadline to disarm on
 	// an in-memory stream, but implementing it is what keeps this reader usable as
-	// Conn.r — a reader that could not be disarmed would silently exercise the
+	// driverConn.r — a reader that could not be disarmed would silently exercise the
 	// receive path with the idle-wait handling switched off.
 	disarmed bool
 }
@@ -60,7 +60,7 @@ func (s *segmentReader) Close() error               { return nil }
 func (s *segmentReader) RemoteAddr() net.Addr       { return nil }
 func (s *segmentReader) SetTimeout(_ time.Duration) {}
 func (s *segmentReader) GetTimeout() time.Duration  { return 0 }
-func (s *segmentReader) setDisarm(v bool)           { s.disarmed = v }
+func (s *segmentReader) InternalSetDisarm(v bool)   { s.disarmed = v }
 
 // mustUncompressedSegment builds a single uncompressed transport segment
 // carrying payload, failing the test on error.
@@ -75,9 +75,9 @@ func mustUncompressedSegment(t *testing.T, payload []byte, selfContained bool) [
 
 func TestReadContinuationSegmentReturnsPayload(t *testing.T) {
 	seg := mustUncompressedSegment(t, []byte("hello"), false)
-	c := &Conn{r: newSegmentReader(seg)}
+	c := &driverConn{InternalR: newSegmentReader(seg)}
 
-	payload, err := c.readContinuationSegment()
+	payload, err := c.InternalReadContinuationSegment()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -88,9 +88,9 @@ func TestReadContinuationSegmentReturnsPayload(t *testing.T) {
 
 func TestReadContinuationSegmentRejectsSelfContained(t *testing.T) {
 	seg := mustUncompressedSegment(t, []byte("hello"), true)
-	c := &Conn{r: newSegmentReader(seg)}
+	c := &driverConn{InternalR: newSegmentReader(seg)}
 
-	_, err := c.readContinuationSegment()
+	_, err := c.InternalReadContinuationSegment()
 	if err == nil || !strings.Contains(err.Error(), "expected a continuation") {
 		t.Fatalf("expected self-contained rejection, got %v", err)
 	}
@@ -98,9 +98,9 @@ func TestReadContinuationSegmentRejectsSelfContained(t *testing.T) {
 
 func TestReadContinuationSegmentRejectsEmptyPayload(t *testing.T) {
 	seg := mustUncompressedSegment(t, nil, false)
-	c := &Conn{r: newSegmentReader(seg)}
+	c := &driverConn{InternalR: newSegmentReader(seg)}
 
-	_, err := c.readContinuationSegment()
+	_, err := c.InternalReadContinuationSegment()
 	if err == nil || !strings.Contains(err.Error(), "no progress") {
 		t.Fatalf("expected no-progress rejection, got %v", err)
 	}
@@ -117,9 +117,9 @@ func TestRecvSplitFrameRejectsOverlongStream(t *testing.T) {
 	header[8] = 4
 
 	seg := mustUncompressedSegment(t, []byte("01234567"), false)
-	c := &Conn{r: newSegmentReader(seg)}
+	c := &driverConn{InternalR: newSegmentReader(seg)}
 
-	err := c.recvSplitFrame(context.Background(), header, time.Time{}, time.Time{})
+	err := c.InternalRecvSplitFrame(context.Background(), header, time.Time{}, time.Time{})
 	if err == nil || !strings.Contains(err.Error(), "exceeds its declared length") {
 		t.Fatalf("expected over-long rejection, got %v", err)
 	}
@@ -140,24 +140,24 @@ func TestRecvSplitFrameAllocatesExactlyOneFrameBuffer(t *testing.T) {
 		src = src[n:]
 	}
 	reader := &typedSegmentAllocationReader{segmentReader: newSegmentReader(bytes.Repeat(stream, runs))}
-	c := &Conn{version: protoVersion5, r: reader, streams: streams.New(), calls: make(map[int]*callReq), logger: &defaultLogger{}}
-	c.initFramerCache()
+	c := &driverConn{InternalVersion: protoVersion5, InternalR: reader, InternalStreams: streams.New(), InternalCalls: make(map[int]*callReq), InternalLogger: &defaultLogger{}}
+	c.InternalInitFramerCache()
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
 	for i := 0; i < runs; i++ {
 		// A buffered receiver replaces the execution goroutine so process-wide
 		// allocation accounting measures the receive path without scheduling noise.
-		call := &callReq{typed: true, streamID: 1, resp: make(chan callResp, 1), timeout: make(chan struct{})}
-		c.calls[1] = call
+		call := &callReq{InternalTyped: true, InternalStreamID: 1, InternalResp: make(chan callResp, 1), InternalTimeout: make(chan struct{})}
+		c.InternalCalls[1] = call
 		reader.payloads = nil
-		if err := c.recvSegment(context.Background()); err != nil {
+		if err := c.InternalRecvSegment(context.Background()); err != nil {
 			t.Fatalf("run %d: %v", i, err)
 		}
-		response := <-call.resp
-		if response.err != nil {
-			t.Fatal(response.err)
+		response := <-call.InternalResp
+		if response.InternalErr != nil {
+			t.Fatal(response.InternalErr)
 		}
-		page := response.page
+		page := response.InternalPage
 		if page == nil || page.RowCount != 1 {
 			t.Fatal("typed response was not delivered")
 		}
@@ -228,9 +228,9 @@ func TestRecvSplitFrameRejectsOversizedLength(t *testing.T) {
 	header[8] = byte(oversized)
 
 	seg := mustUncompressedSegment(t, header, false)
-	c := &Conn{r: newSegmentReader(seg)}
+	c := &driverConn{InternalR: newSegmentReader(seg)}
 
-	err := c.recvSplitFrame(context.Background(), nil, time.Time{}, time.Time{})
+	err := c.InternalRecvSplitFrame(context.Background(), nil, time.Time{}, time.Time{})
 	if err == nil || !strings.Contains(err.Error(), "invalid frame body length") {
 		t.Fatalf("expected oversized-length rejection, got %v", err)
 	}
@@ -243,9 +243,9 @@ func TestRecvSplitFrameRejectsTruncatedHeaderStream(t *testing.T) {
 	// A single 4-byte continuation segment, then EOF: fewer than the 9 header
 	// bytes recvSplitFrame needs.
 	seg := mustUncompressedSegment(t, []byte("abcd"), false)
-	c := &Conn{r: newSegmentReader(seg)}
+	c := &driverConn{InternalR: newSegmentReader(seg)}
 
-	err := c.recvSplitFrame(context.Background(), nil, time.Time{}, time.Time{})
+	err := c.InternalRecvSplitFrame(context.Background(), nil, time.Time{}, time.Time{})
 	if err == nil {
 		t.Fatalf("expected error on truncated header stream, got nil")
 	}
@@ -278,13 +278,13 @@ func v5ReadyFrame(bodyLen int, body []byte) []byte {
 // connection up for the peer to do it again. A ~20-byte segment would buy a
 // frm.MaxFrameSize allocation, repeatable.
 func TestProcessAllFramesInSegmentBoundsFrameLength(t *testing.T) {
-	newConn := func(stream []byte) *Conn {
-		c := &Conn{
-			r:       newSegmentReader(stream),
-			streams: streams.New(),
-			logger:  &defaultLogger{},
+	newConn := func(stream []byte) *driverConn {
+		c := &driverConn{
+			InternalR:       newSegmentReader(stream),
+			InternalStreams: streams.New(),
+			InternalLogger:  &defaultLogger{},
 		}
-		c.initFramerCache()
+		c.InternalInitFramerCache()
 		return c
 	}
 
@@ -298,7 +298,7 @@ func TestProcessAllFramesInSegmentBoundsFrameLength(t *testing.T) {
 
 		var before, after runtime.MemStats
 		runtime.ReadMemStats(&before)
-		err := c.recvSegment(context.Background())
+		err := c.InternalRecvSegment(context.Background())
 		runtime.ReadMemStats(&after)
 
 		if err == nil || !strings.Contains(err.Error(), "remain in the self-contained segment") {
@@ -318,7 +318,7 @@ func TestProcessAllFramesInSegmentBoundsFrameLength(t *testing.T) {
 		payload = append(payload, v5ReadyFrame(declared, nil)...)
 		c := newConn(mustUncompressedSegment(t, payload, true))
 
-		err := c.recvSegment(context.Background())
+		err := c.InternalRecvSegment(context.Background())
 		if err == nil || !strings.Contains(err.Error(), "remain in the self-contained segment") {
 			t.Fatalf("expected the second frame to be bounded by the remaining bytes, got %v", err)
 		}
@@ -328,7 +328,7 @@ func TestProcessAllFramesInSegmentBoundsFrameLength(t *testing.T) {
 		body := bytes.Repeat([]byte{0x5A}, 64)
 		c := newConn(mustUncompressedSegment(t, v5ReadyFrame(len(body), body), true))
 
-		if err := c.recvSegment(context.Background()); err != nil {
+		if err := c.InternalRecvSegment(context.Background()); err != nil {
 			t.Fatalf("a frame whose body ends exactly at the segment boundary must be accepted, got %v", err)
 		}
 	})
@@ -365,14 +365,14 @@ func TestRecvSegmentObservesHeaderOverTheNetworkRead(t *testing.T) {
 	// not to slow the suite. Only ever asserted as a lower bound.
 	const stall = 30 * time.Millisecond
 
-	newConn := func(r connReadSource, observer *recordingFrameHeaderObserver) *Conn {
-		c := &Conn{
-			r:             r,
-			streams:       streams.New(),
-			logger:        &defaultLogger{},
-			frameObserver: observer,
+	newConn := func(r connReadSource, observer *recordingFrameHeaderObserver) *driverConn {
+		c := &driverConn{
+			InternalR:             r,
+			InternalStreams:       streams.New(),
+			InternalLogger:        &defaultLogger{},
+			InternalFrameObserver: observer,
 		}
-		c.initFramerCache()
+		c.InternalInitFramerCache()
 		return c
 	}
 
@@ -383,7 +383,7 @@ func TestRecvSegmentObservesHeaderOverTheNetworkRead(t *testing.T) {
 		// window the observer should report.
 		c := newConn(&slowSegmentReader{segmentReader: newSegmentReader(seg), delay: stall}, observer)
 
-		if err := c.recvSegment(context.Background()); err != nil {
+		if err := c.InternalRecvSegment(context.Background()); err != nil {
 			t.Fatalf("recvSegment: %v", err)
 		}
 
@@ -413,7 +413,7 @@ func TestRecvSegmentObservesHeaderOverTheNetworkRead(t *testing.T) {
 			delay:         stall,
 		}, observer)
 
-		if err := c.recvSegment(context.Background()); err != nil {
+		if err := c.InternalRecvSegment(context.Background()); err != nil {
 			t.Fatalf("recvSegment: %v", err)
 		}
 
@@ -474,16 +474,16 @@ func TestRecvSegmentReadsACompressedSegment(t *testing.T) {
 		t.Fatalf("newCompressedSegment: %v", err)
 	}
 
-	c := &Conn{
-		r:          newSegmentReader(seg),
-		version:    protoVersion5,
-		compressor: invertingCompressor{},
+	c := &driverConn{
+		InternalR:          newSegmentReader(seg),
+		InternalVersion:    protoVersion5,
+		InternalCompressor: invertingCompressor{},
 	}
-	if err := c.resolveSegmentCompressor(); err != nil {
+	if err := c.InternalResolveSegmentCompressor(); err != nil {
 		t.Fatalf("resolveSegmentCompressor: %v", err)
 	}
 
-	hdr, err := c.readFirstSegmentHeader()
+	hdr, err := c.InternalReadFirstSegmentHeader()
 	if err != nil {
 		t.Fatalf("readFirstSegmentHeader: %v", err)
 	}
@@ -491,7 +491,7 @@ func TestRecvSegmentReadsACompressedSegment(t *testing.T) {
 		t.Error("a self-contained segment was read as a continuation")
 	}
 
-	got, err := c.readSegmentPayload(hdr)
+	got, err := c.InternalReadSegmentPayload(hdr)
 	if err != nil {
 		t.Fatalf("readSegmentPayload: %v", err)
 	}

@@ -32,7 +32,7 @@ import (
 //
 // The codec and its own tests live in internal/segment. What is left here is the
 // bridge: these take this package's Compressor, so a test can pass the same
-// compressor it configured a Conn or framer with, and narrow it the way the
+// compressor it configured a driverConn or framer with, and narrow it the way the
 // production callers do.
 //
 // Each builds or reads one whole segment in a single call, with buffers of its own.
@@ -166,36 +166,36 @@ func TestAsSegmentCompressor(t *testing.T) {
 // here would fail every one of those handshakes.
 func TestResolveSegmentCompressor(t *testing.T) {
 	t.Run("v5 narrows the compressor once", func(t *testing.T) {
-		c := &Conn{version: protoVersion5, compressor: testSegmentCompressor{}}
-		if err := c.resolveSegmentCompressor(); err != nil {
+		c := &driverConn{InternalVersion: protoVersion5, InternalCompressor: testSegmentCompressor{}}
+		if err := c.InternalResolveSegmentCompressor(); err != nil {
 			t.Fatalf("resolveSegmentCompressor: %v", err)
 		}
-		if _, ok := c.segCompressor.(testSegmentCompressor); !ok {
-			t.Errorf("segCompressor = %#v, want the compressor the connection was given", c.segCompressor)
+		if _, ok := c.InternalSegCompressor.(testSegmentCompressor); !ok {
+			t.Errorf("segCompressor = %#v, want the compressor the connection was given", c.InternalSegCompressor)
 		}
 	})
 
 	t.Run("v4 leaves a frame-only compressor alone", func(t *testing.T) {
-		c := &Conn{version: protoVersion4, compressor: SnappyCompressor{}}
-		if err := c.resolveSegmentCompressor(); err != nil {
+		c := &driverConn{InternalVersion: protoVersion4, InternalCompressor: SnappyCompressor{}}
+		if err := c.InternalResolveSegmentCompressor(); err != nil {
 			t.Fatalf("a protocol v4 connection with a frame compressor was refused: %v", err)
 		}
-		if c.segCompressor != nil {
-			t.Errorf("segCompressor = %#v, want nil: v4 never reaches the segment codec", c.segCompressor)
+		if c.InternalSegCompressor != nil {
+			t.Errorf("segCompressor = %#v, want nil: v4 never reaches the segment codec", c.InternalSegCompressor)
 		}
 	})
 
 	t.Run("v5 refuses a frame-only compressor by name", func(t *testing.T) {
-		c := &Conn{version: protoVersion5, compressor: SnappyCompressor{}}
-		err := c.resolveSegmentCompressor()
+		c := &driverConn{InternalVersion: protoVersion5, InternalCompressor: SnappyCompressor{}}
+		err := c.InternalResolveSegmentCompressor()
 		if err == nil {
 			t.Fatal("a v5 connection with a frame-only compressor was accepted")
 		}
 		if !strings.Contains(err.Error(), "snappy") {
 			t.Errorf("error %q does not name the compressor it rejected", err)
 		}
-		if c.segCompressor != nil {
-			t.Errorf("segCompressor = %#v alongside the error, want nil", c.segCompressor)
+		if c.InternalSegCompressor != nil {
+			t.Errorf("segCompressor = %#v alongside the error, want nil", c.InternalSegCompressor)
 		}
 	})
 }

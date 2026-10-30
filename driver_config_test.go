@@ -3,6 +3,10 @@
 
 package gocql
 
+import implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
+
+import implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+
 import (
 	"context"
 	"crypto/tls"
@@ -25,16 +29,20 @@ import (
 // Session.controlConnConfig. discoverProtocol's throwaway probe connections are a
 // deliberate exception, documented on controlConnConfig itself.
 func TestControlConnConfigIsMarked(t *testing.T) {
-	s := &Session{connCfg: &ConnConfig{}}
+	s := func() *Session {
+		opaqueStorageValue := new(Session)
+		implCluster.SessionData(opaqueStorageValue).InternalConnCfg = &driverConnConfig{}
+		return opaqueStorageValue
+	}()
 
-	cfg := s.controlConnConfig()
-	if !cfg.isControlConn {
+	cfg := implCluster.InternalSessionControlConnConfig(s)
+	if !cfg.InternalIsControlConn {
 		t.Error("expected the control connection config to be marked as such")
 	}
-	if !cfg.disableCoalesce {
+	if !cfg.InternalDisableCoalesce {
 		t.Error("expected the control connection config to disable write coalescing")
 	}
-	if s.connCfg.isControlConn || s.connCfg.disableCoalesce {
+	if implCluster.SessionData(s).InternalConnCfg.InternalIsControlConn || implCluster.SessionData(s).InternalConnCfg.InternalDisableCoalesce {
 		t.Error("expected the session-wide connection config to be left untouched")
 	}
 }
@@ -43,7 +51,13 @@ func TestControlConnConfigIsMarked(t *testing.T) {
 // builders directly, without dialing anything. Only the fields the builders
 // read (cfg, policy, logger) are populated.
 func newTestReportSession(cfg clusterSettings, policy HostSelectionPolicy) *Session {
-	return &Session{cfg: cfg, policy: policy, logger: &defaultLogger{}}
+	return func() *Session {
+		opaqueStorageValuex := new(Session)
+		implCluster.SessionData(opaqueStorageValuex).InternalCfg = cfg
+		implCluster.SessionData(opaqueStorageValuex).InternalPolicy = policy
+		implCluster.SessionData(opaqueStorageValuex).InternalLogger = &defaultLogger{}
+		return opaqueStorageValuex
+	}()
 }
 
 func TestBuildRequestsReport_InFlightMax(t *testing.T) {
@@ -156,7 +170,7 @@ func TestBuildReconnectionPolicyReport(t *testing.T) {
 			},
 		},
 		{
-			// hostConnPool.connect loops `for i := 0; i < GetMaxRetries(); i++`,
+			// hostConnPool.InternalConnect loops `for i := 0; i < GetMaxRetries(); i++`,
 			// so a non-positive limit attempts nothing at all. Reporting a policy
 			// with max-attempts omitted would claim unlimited attempts.
 			name:   "constant with no attempts reports as no reconnection",
@@ -425,7 +439,7 @@ func TestBuildControlPlaneReport(t *testing.T) {
 			},
 		},
 		{
-			// Conn.setSystemRequestTimeout truncates when it builds the
+			// driverConn.setSystemRequestTimeout truncates when it builds the
 			// USING TIMEOUT clause, so this connection really is sent
 			// "USING TIMEOUT 0ms". The schema cannot carry that, so the key is
 			// omitted rather than rounded up to a clause never sent.
@@ -553,7 +567,7 @@ func TestBuildTLSReport_ReportsEffectiveHostnameVerification(t *testing.T) {
 			}
 			// The tls.Config the driver will actually hand to the dialer is the
 			// only authority on whether hostnames get verified.
-			actual := cfg.getActualTLSConfig()
+			actual := implCluster.InternalClusterSettingsGetActualTLSConfig(&cfg)
 			if actual == nil {
 				t.Fatal("expected ValidateAndInitSSL to produce a tls.Config")
 			}
@@ -655,7 +669,11 @@ func TestDataCenterHostFilterStillFilters(t *testing.T) {
 		dc   string
 		want bool
 	}{{"dc1", true}, {"dc2", false}, {"", false}} {
-		if got := filter.Accept(&HostInfo{dataCenter: tt.dc}); got != tt.want {
+		if got := filter.Accept(func() *HostInfo {
+			opaqueStorageValuexx := new(HostInfo)
+			implEndpoint.HostInfoData(opaqueStorageValuexx).InternalDataCenter = tt.dc
+			return opaqueStorageValuexx
+		}()); got != tt.want {
 			t.Errorf("Accept(dataCenter=%q) = %v, want %v", tt.dc, got, tt.want)
 		}
 	}
@@ -831,7 +849,7 @@ func TestDriverConfigReportingStartupFrame(t *testing.T) {
 
 	cluster := testCluster(defaultProto, srv.Address)
 	cluster.NumConns = connsPerSession
-	session, err := cluster.open()
+	session, err := implCluster.InternalClusterSettingsOpen(cluster)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -899,13 +917,13 @@ func TestDriverConfigReportingDisabled(t *testing.T) {
 	cluster := testCluster(defaultProto, srv.Address)
 	cluster.NumConns = 1
 	cluster.DisableDriverConfigReporting = true
-	session, err := cluster.open()
+	session, err := implCluster.InternalClusterSettingsOpen(cluster)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer session.Close()
 
-	if session.driverConfigReporter != nil {
+	if implCluster.SessionData(session).InternalDriverConfigReporter != nil {
 		t.Error("expected a session with reporting disabled to hold no reporter")
 	}
 
@@ -921,13 +939,13 @@ func TestDriverConfigReportingDisabled(t *testing.T) {
 	// Dial with the config that reports when the option is left at its
 	// default, so that the option is the only reason DRIVER_CONFIG is absent
 	// below rather than the connection simply not being a control connection.
-	conn, err := session.dial(session.ctx, hosts[0], session.controlConnConfig(), connErrorHandlerFn(func(*Conn, error, bool) {}))
+	conn, err := implCluster.InternalSessionDial(session, implCluster.SessionData(session).InternalCtx, hosts[0], implCluster.InternalSessionControlConnConfig(session), connErrorHandlerFn(func(*driverConn, error, bool) {}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	// This connection only exists to observe what reaches the wire, so it is
 	// discarded right away without calling conn.finalizeConnection, the same
-	// way controlConn.discoverProtocol does for its throwaway connections.
+	// way controlConn.InternalDiscoverProtocol does for its throwaway connections.
 	conn.Close()
 
 	mu.Lock()
@@ -977,7 +995,7 @@ func TestDriverConfigReporterStartupOptions_ScyllaConnGatesServerSideMs(t *testi
 
 	for _, isScylla := range []bool{false, true} {
 		opts := map[string]string{}
-		reporter.updateStartupOptions(opts, isScylla)
+		reporter.InternalUpdateStartupOptions(opts, isScylla)
 
 		var report driverConfigReport
 		if err := json.Unmarshal([]byte(opts[driverConfigStartupKey]), &report); err != nil {
@@ -998,20 +1016,20 @@ func TestDriverConfigReporterStartupOptions_ScyllaConnGatesServerSideMs(t *testi
 func TestDriverConfigReportingDial(t *testing.T) {
 	tests := []struct {
 		name string
-		// connConfig picks the ConnConfig to dial with: the one every path
+		// connConfig picks the driverConnConfig to dial with: the one every path
 		// (re)establishing the control connection goes through, or the
 		// session-wide one every pool connection is dialed with.
-		connConfig    func(*Session) *ConnConfig
+		connConfig    func(*Session) *driverConnConfig
 		wantReporting bool
 	}{
 		{
 			name:          "control connection",
-			connConfig:    (*Session).controlConnConfig,
+			connConfig:    implCluster.InternalSessionControlConnConfig,
 			wantReporting: true,
 		},
 		{
 			name:          "regular connection",
-			connConfig:    func(s *Session) *ConnConfig { return s.connCfg },
+			connConfig:    func(s *Session) *driverConnConfig { return implCluster.SessionData(s).InternalConnCfg },
 			wantReporting: false,
 		},
 	}
@@ -1056,7 +1074,7 @@ func TestDriverConfigReportingDial(t *testing.T) {
 			// asynchronously and could land a frame mid-test.
 			cluster := testCluster(defaultProto, srv.Address)
 			cluster.NumConns = 1
-			session, err := cluster.open()
+			session, err := implCluster.InternalClusterSettingsOpen(cluster)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1075,14 +1093,14 @@ func TestDriverConfigReportingDial(t *testing.T) {
 			startupsBeforeDial := startups
 			mu.Unlock()
 
-			conn, err := session.dial(session.ctx, hosts[0], tt.connConfig(session), connErrorHandlerFn(func(*Conn, error, bool) {}))
+			conn, err := implCluster.InternalSessionDial(session, implCluster.SessionData(session).InternalCtx, hosts[0], tt.connConfig(session), connErrorHandlerFn(func(*driverConn, error, bool) {}))
 			if err != nil {
 				t.Fatal(err)
 			}
 			// This connection only exists to observe what reaches the wire, so
 			// it is discarded right away without calling
 			// conn.finalizeConnection, the same way
-			// controlConn.discoverProtocol does for its throwaway connections.
+			// controlConn.InternalDiscoverProtocol does for its throwaway connections.
 			conn.Close()
 
 			mu.Lock()
@@ -1137,7 +1155,7 @@ func TestDriverConfigReporterStartupOptions(t *testing.T) {
 	reporter := newDriverConfigReporter(s)
 
 	opts := map[string]string{}
-	reporter.updateStartupOptions(opts, false)
+	reporter.InternalUpdateStartupOptions(opts, false)
 
 	raw, ok := opts[driverConfigStartupKey]
 	if !ok {

@@ -27,6 +27,8 @@
 
 package gocql
 
+import implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+
 import (
 	"context"
 	"fmt"
@@ -87,7 +89,7 @@ func TestBatch_WithNowInSeconds(t *testing.T) {
 	ctx := context.Background()
 	session := createV2Session(t)
 	defer session.Close()
-	if session.cfg.ProtoVersion < protoVersion5 {
+	if implCluster.SessionData(session).InternalCfg.ProtoVersion < protoVersion5 {
 		t.Skip("Batch now in seconds are only available on protocol >= 5")
 	}
 	table := testTableName(t)
@@ -115,7 +117,7 @@ func TestBatch_SetKeyspace(t *testing.T) {
 	ctx := context.Background()
 	session := createV2Session(t)
 	defer session.Close()
-	if session.cfg.ProtoVersion < protoVersion5 {
+	if implCluster.SessionData(session).InternalCfg.ProtoVersion < protoVersion5 {
 		t.Skip("keyspace for BATCH message is not supported in protocol < 5")
 	}
 	const keyspace = "gocql_keyspace_override_test"

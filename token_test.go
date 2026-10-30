@@ -31,6 +31,8 @@
 
 package gocql
 
+import implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
+
 import (
 	"bytes"
 	"fmt"
@@ -89,7 +91,7 @@ func TestMurmur3Partitioner_HashInt64MatchesHash(t *testing.T) {
 		if !ok {
 			t.Fatalf("Hash(%v) returned %T, want int64Token", k, want)
 		}
-		got := int64Token(p.hashInt64(k))
+		got := int64Token(p.InternalHashInt64(k))
 		if got != wantInt64 {
 			t.Errorf("hashInt64(%v) = %d, want %d (from Hash)", k, got, wantInt64)
 		}
@@ -102,7 +104,7 @@ func TestMurmur3Partitioner_HashInt64_ZeroAlloc(t *testing.T) {
 
 	var sink int64
 	allocs := testing.AllocsPerRun(1000, func() {
-		sink = p.hashInt64(pk)
+		sink = p.InternalHashInt64(pk)
 	})
 	if allocs != 0 {
 		t.Errorf("hashInt64 allocated %.2f allocs/op, want 0", allocs)
@@ -243,18 +245,34 @@ func (i intToken) Less(token Token) bool { return i < token.(intToken) }
 func TestTokenRing_Int(t *testing.T) {
 	t.Parallel()
 
-	host0 := &HostInfo{}
-	host25 := &HostInfo{}
-	host50 := &HostInfo{}
-	host75 := &HostInfo{}
+	host0 := func() *HostInfo {
+		opaqueStorageValue := new(HostInfo)
+		return opaqueStorageValue
+	}()
+
+	host25 := func() *HostInfo {
+		opaqueStorageValuex := new(HostInfo)
+		return opaqueStorageValuex
+	}()
+
+	host50 := func() *HostInfo {
+		opaqueStorageValuexx := new(HostInfo)
+		return opaqueStorageValuexx
+	}()
+
+	host75 := func() *HostInfo {
+		opaqueStorageValuexxx := new(HostInfo)
+		return opaqueStorageValuexxx
+	}()
+
 	ring := &tokenRing{
-		partitioner: nil,
+		InternalPartitioner: nil,
 		// these tokens and hosts are out of order to test sorting
-		tokens: []hostToken{
-			{intToken(0), host0},
-			{intToken(50), host50},
-			{intToken(75), host75},
-			{intToken(25), host25},
+		InternalTokens: []hostToken{
+			{InternalToken: intToken(0), InternalHost: host0},
+			{InternalToken: intToken(50), InternalHost: host50},
+			{InternalToken: intToken(75), InternalHost: host75},
+			{InternalToken: intToken(25), InternalHost: host25},
 		},
 	}
 
@@ -328,10 +346,12 @@ func TestTokenRing_UnknownPartition(t *testing.T) {
 func hostsForTests(n int) []*HostInfo {
 	hosts := make([]*HostInfo, n)
 	for i := 0; i < n; i++ {
-		host := &HostInfo{
-			connectAddress: net.IPv4(1, 1, 1, byte(n)),
-			tokens:         []string{fmt.Sprintf("%d", n)},
-		}
+		host := func() *HostInfo {
+			opaqueStorageValuexxxx := new(HostInfo)
+			implEndpoint.HostInfoData(opaqueStorageValuexxxx).InternalConnectAddress = net.IPv4(1, 1, 1, byte(n))
+			implEndpoint.HostInfoData(opaqueStorageValuexxxx).InternalTokens = []string{fmt.Sprintf("%d", n)}
+			return opaqueStorageValuexxxx
+		}()
 
 		hosts[i] = host
 	}
@@ -352,10 +372,9 @@ func TestTokenRing_Murmur3(t *testing.T) {
 	p := murmur3Partitioner{}
 
 	for _, host := range hosts {
-		actual, _ := ring.GetHostForToken(p.ParseString(host.tokens[0]))
+		actual, _ := ring.GetHostForToken(p.ParseString(implEndpoint.HostInfoData(host).InternalTokens[0]))
 		if !actual.ConnectAddress().Equal(host.ConnectAddress()) {
-			t.Errorf("Expected address %v for token %q, but was %v", host.ConnectAddress(),
-				host.tokens[0], actual.ConnectAddress())
+			t.Errorf("Expected address %v for token %q, but was %v", host.ConnectAddress(), implEndpoint.HostInfoData(host).InternalTokens[0], actual.ConnectAddress())
 		}
 	}
 
@@ -386,15 +405,14 @@ func TestTokenRing_Ordered(t *testing.T) {
 
 	var actual *HostInfo
 	for _, host := range hosts {
-		actual, _ := ring.GetHostForToken(p.ParseString(host.tokens[0]))
+		actual, _ := ring.GetHostForToken(p.ParseString(implEndpoint.HostInfoData(host).InternalTokens[0]))
 		if !actual.ConnectAddress().Equal(host.ConnectAddress()) {
-			t.Errorf("Expected address %v for token %q, but was %v", host.ConnectAddress(),
-				host.tokens[0], actual.ConnectAddress())
+			t.Errorf("Expected address %v for token %q, but was %v", host.ConnectAddress(), implEndpoint.HostInfoData(host).InternalTokens[0], actual.ConnectAddress())
 		}
 	}
 
 	actual, _ = ring.GetHostForToken(p.ParseString("12"))
-	if !actual.peer.Equal(hosts[1].peer) {
+	if !implEndpoint.HostInfoData(actual).InternalPeer.Equal(implEndpoint.HostInfoData(hosts[1]).InternalPeer) {
 		t.Errorf("Expected address 1 for token \"12\", but was %s", actual.ConnectAddress())
 	}
 
@@ -419,15 +437,14 @@ func TestTokenRing_Random(t *testing.T) {
 
 	var actual *HostInfo
 	for _, host := range hosts {
-		actual, _ := ring.GetHostForToken(p.ParseString(host.tokens[0]))
+		actual, _ := ring.GetHostForToken(p.ParseString(implEndpoint.HostInfoData(host).InternalTokens[0]))
 		if !actual.ConnectAddress().Equal(host.ConnectAddress()) {
-			t.Errorf("Expected address %v for token %q, but was %v", host.ConnectAddress(),
-				host.tokens[0], actual.ConnectAddress())
+			t.Errorf("Expected address %v for token %q, but was %v", host.ConnectAddress(), implEndpoint.HostInfoData(host).InternalTokens[0], actual.ConnectAddress())
 		}
 	}
 
 	actual, _ = ring.GetHostForToken(p.ParseString("12"))
-	if !actual.peer.Equal(hosts[1].peer) {
+	if !implEndpoint.HostInfoData(actual).InternalPeer.Equal(implEndpoint.HostInfoData(hosts[1]).InternalPeer) {
 		t.Errorf("Expected address 1 for token \"12\", but was %s", actual.ConnectAddress())
 	}
 

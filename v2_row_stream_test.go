@@ -16,6 +16,13 @@
 
 package gocql
 
+import implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+
+import (
+	implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
+	implExecution "github.com/scylladb/gocql/v2/internal/execution"
+)
+
 import (
 	"bytes"
 	"context"
@@ -36,28 +43,33 @@ import (
 	"github.com/scylladb/gocql/v2/internal/wire"
 )
 
-func step07StreamSession(t *testing.T, proto byte, compressor Compressor) (*Session, *Conn, net.Conn) {
+func step07StreamSession(t *testing.T, proto byte, compressor Compressor) (*Session, *driverConn, net.Conn) {
 	t.Helper()
 	s, cs, ps := runtimeTestSession(t, 0)
 	c, peer := typedTestConn(t, proto, compressor)
-	c.host = &HostInfo{hostId: UUID{15: 1}, state: NodeUp}
-	c.session = s
-	s.hostSource.hosts[c.host.HostID()] = c.host
+	c.InternalHost = func() *HostInfo {
+		opaqueStorageValue := new(HostInfo)
+		implEndpoint.HostInfoData(opaqueStorageValue).InternalHostId = UUID{15: 1}
+		implEndpoint.HostInfoData(opaqueStorageValue).InternalState = NodeUp
+		return opaqueStorageValue
+	}()
+	c.InternalHooks = newConnectionHooks(s)
+	implCluster.SessionData(s).InternalHostSource.InternalHosts[c.InternalHost.HostID()] = c.InternalHost
 	picker := newDefaultConnPicker(1)
 	picker.Put(c)
-	pool := &hostConnPool{host: c.host, connPicker: picker, repairCtx: c.ctx}
-	s.pool.hostConnPools[c.host.hostUUID()] = pool
+	pool := &hostConnPool{InternalHost: c.InternalHost, InternalConnPicker: picker, InternalRepairCtx: c.InternalCtx}
+	implCluster.SessionData(s).InternalPool.InternalHostConnPools[implEndpoint.InternalHostInfoHostUUID(c.InternalHost)] = pool
 	_ = cs
 	_ = ps
-	reader := c.r.(*connReader)
-	reader.conn = &step07ReadTargets{Conn: reader.conn}
-	go c.serve(c.ctx)
+	reader := c.InternalR.(*connReader)
+	reader.InternalConn = &step07ReadTargets{Conn: reader.InternalConn}
+	go c.InternalServe(c.InternalCtx)
 	return s, c, peer
 }
-func step07Response(t *testing.T, c *Conn, stream int, body []byte) []byte {
+func step07Response(t *testing.T, c *driverConn, stream int, body []byte) []byte {
 	t.Helper()
-	data := typedTestResponse(t, c.version, stream, body)
-	if c.version != 5 {
+	data := typedTestResponse(t, c.InternalVersion, stream, body)
+	if c.InternalVersion != 5 {
 		return data
 	}
 	var out bytes.Buffer
@@ -67,7 +79,7 @@ func step07Response(t *testing.T, c *Conn, stream int, body []byte) []byte {
 		if err != nil {
 			t.Fatal(err)
 		}
-		encoded, err := segment.EncodeSpans(chain, len(data) <= segment.MaxPayloadSize, c.segCompressor != nil)
+		encoded, err := segment.EncodeSpans(chain, len(data) <= segment.MaxPayloadSize, c.InternalSegCompressor != nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -351,7 +363,7 @@ func TestStep07StreamIdleSessionDrainAndPoolExhaustion(t *testing.T) {
 	if cursor.NextInto(nil) || !errors.Is(cursor.Err(), ErrClosed) {
 		t.Fatal(cursor.Err())
 	}
-	if len(s.typedRuntime().executions) != 0 {
+	if len(runtimeFor(s).InternalExecutions) != 0 {
 		t.Fatal("idle operation leaked")
 	}
 }
@@ -363,7 +375,7 @@ func TestStep07StreamPagingCycleAndLimits(t *testing.T) {
 			if limit {
 				config.Limits.MaxPagingStates = 1
 			}
-			s.typedRuntime().config = config
+			runtimeFor(s).InternalConfig = config
 			done := make(chan struct{})
 			go func() {
 				defer close(done)
@@ -412,7 +424,7 @@ func TestStep07StreamCapabilityBeforeQuery(t *testing.T) {
 	if !errors.As(err, &capability) {
 		t.Fatal(err)
 	}
-	if c.streams.InUse() != 0 {
+	if c.InternalStreams.InUse() != 0 {
 		t.Fatal("capability leaked stream")
 	}
 	_, err = RunStream(ctx, s, b, StreamOneColumn(StreamBlob), StreamOptions{Options: Options{Prefetch: Option[int]{Set: true, Value: 1}}})
@@ -437,8 +449,8 @@ func (c *step07ReadTargets) Read(p []byte) (int, error) {
 }
 func TestStep07StreamRawReadCallerBacking(t *testing.T) {
 	s, c, peer := step07StreamSession(t, 4, nil)
-	reader := c.r.(*connReader)
-	spy := reader.conn.(*step07ReadTargets)
+	reader := c.InternalR.(*connReader)
+	spy := reader.InternalConn.(*step07ReadTargets)
 	payload := bytes.Repeat([]byte{7}, 128<<10)
 	go func() {
 		stream := typedTestReadRequest(t, c, peer)
@@ -481,10 +493,15 @@ func TestStep07StreamPreparedMetadataFencesAndPlanIsolation(t *testing.T) {
 	for _, mismatch := range []bool{false, true} {
 		t.Run(map[bool]string{false: "matching", true: "count-mismatch"}[mismatch], func(t *testing.T) {
 			s, c, peer := step07StreamSession(t, 4, nil)
-			s.cfg.Keyspace = "ks"
+			implCluster.SessionData(s).InternalCfg.Keyspace = "ks"
 			columns := NewColumns(ColumnSpec{Keyspace: "ks", Table: "tbl", Name: "value", Type: codecTestMust(ScalarType(TypeBlob))})
 			state, _ := step03PreparedState(t, s, columns)
-			bound := &Bound[Bytes]{request: executionRequest{statement: state.statement, prepared: state, values: encodedValues{Columns: NewColumns()}, owner: newInputOwner(), routing: RoutingInfo{Kind: OrdinaryStatement}}, rows: OneColumn(BlobCodec)}
+			bound := func() *Bound[Bytes] {
+				opaqueStorageValuex := new(Bound[Bytes])
+				implExecution.BoundData(opaqueStorageValuex).InternalRequest = executionRequest{InternalStatement: state.InternalStatement, InternalPrepared: state, InternalValues: encodedValues{Columns: NewColumns()}, InternalOwner: newInputOwner(), InternalRouting: RoutingInfo{Kind: OrdinaryStatement}}
+				implExecution.BoundData(opaqueStorageValuex).InternalRows = OneColumn(BlobCodec)
+				return opaqueStorageValuex
+			}()
 			decoder := &step07CountStreamDecoder{}
 			done := make(chan struct{})
 			go func() {
@@ -600,15 +617,24 @@ func TestStep07StreamPartialFirstRowNeverReplays(t *testing.T) {
 
 func TestStep07StreamReprepareCanonicalInputAndNoRepairAfterOutput(t *testing.T) {
 	s, _, peer := step07StreamSession(t, 4, nil)
-	s.cfg.Keyspace = "ks"
+	implCluster.SessionData(s).InternalCfg.Keyspace = "ks"
 	typ := codecTestMust(ScalarType(TypeBlob))
 	columns := NewColumns(ColumnSpec{Keyspace: "ks", Table: "tbl", Name: "value", Type: typ})
 	state, old := step03PreparedState(t, s, columns)
-	state.parameters = columns
-	state.info.PartitionKeyIndexes = []int{0}
+	state.InternalParameters = columns
+	state.InternalInfo.PartitionKeyIndexes = []int{0}
 	count := 0
 	params := codecTestMust(OneParam[[]byte](countingBlobEncoder{calls: &count}).Compile(columns))
-	prepared := &Prepared[[]byte, Bytes]{state: state, kind: OrdinaryStatement, params: params, rows: OneColumn(BlobCodec)}
+	prepared := func() *Prepared[[]byte,
+		Bytes] {
+		opaqueStorageValuexx := new(Prepared[[]byte,
+			Bytes])
+		implExecution.PreparedData(opaqueStorageValuexx).InternalState = state
+		implExecution.PreparedData(opaqueStorageValuexx).InternalKind = OrdinaryStatement
+		implExecution.PreparedData(opaqueStorageValuexx).InternalParams = params
+		implExecution.PreparedData(opaqueStorageValuexx).InternalRows = OneColumn(BlobCodec)
+		return opaqueStorageValuexx
+	}()
 	input := []byte("canonical-input")
 	bound := codecTestMust(BindBorrowed(prepared, input))
 	done := make(chan error, 1)
@@ -632,7 +658,7 @@ func TestStep07StreamReprepareCanonicalInputAndNoRepairAfterOutput(t *testing.T)
 				}
 				switch step {
 				case 0:
-					_, err = peer.Write(step03ErrorResponse(t, id, ErrCodeUnprepared, old.id))
+					_, err = peer.Write(step03ErrorResponse(t, id, ErrCodeUnprepared, old.InternalId))
 				case 2:
 					_, err = peer.Write(typedTestResponse(t, 4, id, runtimeRowsBody([]byte("next"), "first")))
 				case 3:
@@ -685,7 +711,7 @@ func TestStep07V3NegotiatedTabletPayloadEnvelope(t *testing.T) {
 		for _, negotiated := range []bool{false, true} {
 			t.Run(fmt.Sprintf("stream=%t/negotiated=%t", streaming, negotiated), func(t *testing.T) {
 				s, c, peer := step07StreamSession(t, 3, nil)
-				c.framers.defaults.tabletsRoutingV1 = negotiated
+				c.InternalFramers.InternalDefaults.InternalTabletsRoutingV1 = negotiated
 				done := make(chan struct{})
 				go func() {
 					defer close(done)
@@ -751,7 +777,7 @@ func TestStep07CloseGenerationRejectsLateCancellation(t *testing.T) {
 	<-decoder.entered
 	first := make(chan error, 1)
 	go func() { first <- cursor.Close() }()
-	for !cursor.closing.Load() {
+	for !implExecution.RowStreamData(cursor).InternalClosing.Load() {
 		select {
 		case <-ctx.Done():
 			t.Fatal("close did not begin")
@@ -760,7 +786,7 @@ func TestStep07CloseGenerationRejectsLateCancellation(t *testing.T) {
 		}
 	}
 	late := make(chan error, 1)
-	go func() { late <- cursor.closeWithError(context.Canceled) }()
+	go func() { late <- implExecution.InternalRowStreamCloseWithError(cursor, context.Canceled) }()
 	select {
 	case err := <-late:
 		t.Fatal("duplicate close did not join", err)
@@ -851,7 +877,7 @@ func TestStep07LatestAttemptMetadataRemainsBudgetedDuringRetry(t *testing.T) {
 		t.Fatal(cursor.Err())
 	}
 	cursor.Close()
-	if budget := c.streamBudget.Bytes(); budget != 0 {
+	if budget := c.InternalStreamBudget.Bytes(); budget != 0 {
 		t.Fatal("metadata owner leaked", budget)
 	}
 	<-done

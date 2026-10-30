@@ -20,6 +20,11 @@
 package gocql
 
 import (
+	implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+	implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
+)
+
+import (
 	"net"
 	"sync"
 	"testing"
@@ -134,24 +139,26 @@ func newNodeEventFixture(t *testing.T, opts ...func(*clusterSettings)) *nodeEven
 	policy := &nodeEventPolicy{}
 	refreshes := make(chan struct{}, 16)
 
-	s := &Session{
-		policy: policy,
-		logger: &testLogger{},
-	}
-	s.cfg.ConvictionPolicy = &SimpleConvictionPolicy{}
+	s := func() *Session {
+		opaqueStorageValue := new(Session)
+		implCluster.SessionData(opaqueStorageValue).InternalPolicy = policy
+		implCluster.SessionData(opaqueStorageValue).InternalLogger = &testLogger{}
+		return opaqueStorageValue
+	}()
+	implCluster.SessionData(s).InternalCfg.ConvictionPolicy = &SimpleConvictionPolicy{}
 	for _, opt := range opts {
-		opt(&s.cfg)
+		opt(&implCluster.SessionData(s).InternalCfg)
 	}
-	s.pool = &policyConnPool{session: s, hostConnPools: map[UUID]*hostConnPool{}}
-	s.hostSource = &ringDescriber{cfg: &s.cfg, logger: s.logger}
-	s.ringRefresher = debounce.NewRefreshDebouncer(nodeEventRefreshInterval, func() error {
+	implCluster.SessionData(s).InternalPool = &policyConnPool{InternalServices: newPoolServices(s), InternalHostConnPools: map[UUID]*hostConnPool{}}
+	implCluster.SessionData(s).InternalHostSource = &ringDescriber{InternalCfg: &implCluster.SessionData(s).InternalCfg, InternalLogger: implCluster.SessionData(s).InternalLogger}
+	implCluster.SessionData(s).InternalRingRefresher = debounce.NewRefreshDebouncer(nodeEventRefreshInterval, func() error {
 		select {
 		case refreshes <- struct{}{}:
 		default:
 		}
 		return nil
 	})
-	t.Cleanup(s.ringRefresher.Stop)
+	t.Cleanup(implCluster.SessionData(s).InternalRingRefresher.Stop)
 
 	return &nodeEventFixture{session: s, policy: policy, refreshes: refreshes}
 }
@@ -170,13 +177,15 @@ func (f *nodeEventFixture) addHost(t *testing.T, ip string) *HostInfo {
 	if addr == nil {
 		t.Fatalf("addHost: %q is not an IP", ip)
 	}
-	host := &HostInfo{
-		hostId:           MustRandomUUID(),
-		connectAddress:   addr,
-		broadcastAddress: addr,
-		port:             9042,
-	}
-	f.session.hostSource.addOrUpdate(host)
+	host := func() *HostInfo {
+		opaqueStorageValuex := new(HostInfo)
+		implEndpoint.HostInfoData(opaqueStorageValuex).InternalHostId = MustRandomUUID()
+		implEndpoint.HostInfoData(opaqueStorageValuex).InternalConnectAddress = addr
+		implEndpoint.HostInfoData(opaqueStorageValuex).InternalBroadcastAddress = addr
+		implEndpoint.HostInfoData(opaqueStorageValuex).InternalPort = 9042
+		return opaqueStorageValuex
+	}()
+	implCluster.SessionData(f.session).InternalHostSource.InternalAddOrUpdate(host)
 
 	// Give the host a pool that reports itself already full. The tests below
 	// are written to keep UP events away from startPoolFill, but nothing
@@ -187,8 +196,8 @@ func (f *nodeEventFixture) addHost(t *testing.T, ip string) *HostInfo {
 	// hostConnPool.fill returns before connecting when the picker asks for no
 	// more connections, so this makes a stray startPoolFill a no-op instead.
 	pool := newHostConnPool(f.session, host, 1, "")
-	pool.connPicker = satedConnPicker{}
-	f.session.pool.hostConnPools[host.hostUUID()] = pool
+	pool.InternalConnPicker = satedConnPicker{}
+	implCluster.SessionData(f.session).InternalPool.InternalHostConnPools[implEndpoint.InternalHostInfoHostUUID(host)] = pool
 
 	return host
 }
@@ -254,8 +263,7 @@ func TestHandleNodeEventCoalescesStatusChanges(t *testing.T) {
 
 		f := newNodeEventFixture(t)
 		f.addHost(t, "127.0.10.1")
-
-		f.session.handleNodeEvent([]frame{
+		implCluster.InternalSessionHandleNodeEvent(f.session, []frame{
 			statusChange("DOWN", "127.0.10.1"),
 			statusChange("DOWN", "127.0.10.1"),
 			statusChange("DOWN", "127.0.10.1"),
@@ -270,8 +278,7 @@ func TestHandleNodeEventCoalescesStatusChanges(t *testing.T) {
 		f := newNodeEventFixture(t)
 		f.addHost(t, "127.0.10.1")
 		f.addHost(t, "127.0.10.2")
-
-		f.session.handleNodeEvent([]frame{
+		implCluster.InternalSessionHandleNodeEvent(f.session, []frame{
 			statusChange("DOWN", "127.0.10.1"),
 			statusChange("DOWN", "127.0.10.2"),
 		})
@@ -293,8 +300,7 @@ func TestHandleNodeEventCoalescesStatusChanges(t *testing.T) {
 
 		f := newNodeEventFixture(t)
 		host := f.addHost(t, "127.0.10.1")
-
-		f.session.handleNodeEvent([]frame{
+		implCluster.InternalSessionHandleNodeEvent(f.session, []frame{
 			statusChange("UP", "127.0.10.1"),
 			statusChange("DOWN", "127.0.10.1"),
 		})
@@ -322,12 +328,12 @@ func TestHandleNodeEventCoalescesStatusChanges(t *testing.T) {
 			cfg.HostFilter = HostFilterFunc(func(*HostInfo) bool { return false })
 		})
 		host := f.addHost(t, "127.0.10.1")
-		host.setState(NodeUp) // explicit: NodeUp is also the zero value
-
-		f.session.handleNodeEvent([]frame{
-			statusChange("DOWN", "127.0.10.1"),
-			statusChange("UP", "127.0.10.1"),
-		})
+		implEndpoint.InternalHostInfoSetState(host, NodeUp)
+		implCluster. // explicit: NodeUp is also the zero value
+				InternalSessionHandleNodeEvent(f.session, []frame{
+				statusChange("DOWN", "127.0.10.1"),
+				statusChange("UP", "127.0.10.1"),
+			})
 
 		if state := host.State(); state != NodeUp {
 			t.Errorf("host state: got %v, want %v -- the superseded DOWN was dispatched", state, NodeUp)
@@ -346,7 +352,7 @@ func TestHandleNodeEventTopologyChange(t *testing.T) {
 		t.Parallel()
 
 		f := newNodeEventFixture(t)
-		f.session.handleNodeEvent([]frame{topologyChange("NEW_NODE", "127.0.10.1")})
+		implCluster.InternalSessionHandleNodeEvent(f.session, []frame{topologyChange("NEW_NODE", "127.0.10.1")})
 		f.awaitRefresh(t)
 	})
 
@@ -356,7 +362,7 @@ func TestHandleNodeEventTopologyChange(t *testing.T) {
 		f := newNodeEventFixture(t, func(cfg *clusterSettings) {
 			cfg.Events.DisableTopologyEvents = true
 		})
-		f.session.handleNodeEvent([]frame{topologyChange("NEW_NODE", "127.0.10.1")})
+		implCluster.InternalSessionHandleNodeEvent(f.session, []frame{topologyChange("NEW_NODE", "127.0.10.1")})
 		f.assertNoRefresh(t)
 	})
 
@@ -369,8 +375,7 @@ func TestHandleNodeEventTopologyChange(t *testing.T) {
 			cfg.Events.DisableTopologyEvents = true
 		})
 		f.addHost(t, "127.0.10.1")
-
-		f.session.handleNodeEvent([]frame{
+		implCluster.InternalSessionHandleNodeEvent(f.session, []frame{
 			topologyChange("NEW_NODE", "127.0.10.1"),
 			statusChange("DOWN", "127.0.10.1"),
 		})
@@ -390,7 +395,7 @@ func TestHandleNodeEventDisableNodeStatusEvents(t *testing.T) {
 
 		f := newNodeEventFixture(t)
 		f.addHost(t, "127.0.10.1")
-		f.session.handleNodeEvent([]frame{statusChange("DOWN", "127.0.10.1")})
+		implCluster.InternalSessionHandleNodeEvent(f.session, []frame{statusChange("DOWN", "127.0.10.1")})
 
 		assertStrings(t, "HostDown", f.policy.hostDownCalls(), []string{"127.0.10.1"})
 	})
@@ -402,7 +407,7 @@ func TestHandleNodeEventDisableNodeStatusEvents(t *testing.T) {
 			cfg.Events.DisableNodeStatusEvents = true
 		})
 		host := f.addHost(t, "127.0.10.1")
-		f.session.handleNodeEvent([]frame{statusChange("DOWN", "127.0.10.1")})
+		implCluster.InternalSessionHandleNodeEvent(f.session, []frame{statusChange("DOWN", "127.0.10.1")})
 
 		assertStrings(t, "HostDown", f.policy.hostDownCalls(), nil)
 		if state := host.State(); state == NodeDown {
@@ -418,7 +423,7 @@ func TestHandleNodeEventDisableNodeStatusEvents(t *testing.T) {
 		f := newNodeEventFixture(t, func(cfg *clusterSettings) {
 			cfg.Events.DisableNodeStatusEvents = true
 		})
-		f.session.handleNodeEvent([]frame{statusChange("UP", "127.0.10.9")})
+		implCluster.InternalSessionHandleNodeEvent(f.session, []frame{statusChange("UP", "127.0.10.9")})
 
 		f.assertNoRefresh(t)
 	})
@@ -436,7 +441,7 @@ func TestHandleNodeUp(t *testing.T) {
 		// An UP for a host the driver has never seen means the ring is stale,
 		// so the driver re-reads it rather than guessing.
 		f := newNodeEventFixture(t)
-		f.session.handleNodeUp(net.ParseIP("127.0.10.9"), 9042)
+		implCluster.InternalSessionHandleNodeUp(f.session, net.ParseIP("127.0.10.9"), 9042)
 
 		f.awaitRefresh(t)
 		assertStrings(t, "AddHost", f.policy.addHostCalls(), nil)
@@ -449,8 +454,7 @@ func TestHandleNodeUp(t *testing.T) {
 			cfg.HostFilter = HostFilterFunc(func(*HostInfo) bool { return false })
 		})
 		f.addHost(t, "127.0.10.1")
-
-		f.session.handleNodeUp(net.ParseIP("127.0.10.1"), 9042)
+		implCluster.InternalSessionHandleNodeUp(f.session, net.ParseIP("127.0.10.1"), 9042)
 
 		// The host is known, so this is not the unknown-host path: a filtered
 		// host must be dropped outright, with no refresh and no pool fill.
@@ -486,8 +490,7 @@ func TestHandleNodeEventTopologySurvivesStatusForSameHost(t *testing.T) {
 	f := newNodeEventFixture(t, func(cfg *clusterSettings) {
 		cfg.Events.DisableNodeStatusEvents = true
 	})
-
-	f.session.handleNodeEvent([]frame{
+	implCluster.InternalSessionHandleNodeEvent(f.session, []frame{
 		topologyChange("NEW_NODE", "127.0.10.9"),
 		statusChange("UP", "127.0.10.9"),
 	})
@@ -512,23 +515,21 @@ func TestHandleNodeDown(t *testing.T) {
 
 		f := newNodeEventFixture(t)
 		host := f.addHost(t, "127.0.10.1")
+		implCluster.
 
-		// The fixture's pool is empty, and policyConnPool.removeHost
-		// short-circuits on a missing host, so without an entry here the
-		// s.pool.removeHost leg is unobservable -- dropping it from
-		// handleNodeDown entirely would still pass. Same reasoning as
-		// TestSessionRemoveHost in connectionpool_test.go.
-		f.session.pool.hostConnPools = map[UUID]*hostConnPool{
-			host.hostUUID(): newHostConnPool(f.session, host, 1, ""),
-		}
-
-		f.session.handleNodeDown(net.ParseIP("127.0.10.1"), 9042)
+			// The fixture's pool is empty, and policyConnPool.removeHost
+			// short-circuits on a missing host, so without an entry here the
+			// s.pool.removeHost leg is unobservable -- dropping it from
+			// handleNodeDown entirely would still pass. Same reasoning as
+			// TestSessionRemoveHost in connectionpool_test.go.
+			SessionData(f.session).InternalPool.InternalHostConnPools = map[UUID]*hostConnPool{implEndpoint.InternalHostInfoHostUUID(host): newHostConnPool(f.session, host, 1, "")}
+		implCluster.InternalSessionHandleNodeDown(f.session, net.ParseIP("127.0.10.1"), 9042)
 
 		if state := host.State(); state != NodeDown {
 			t.Errorf("host state: got %v, want %v", state, NodeDown)
 		}
 		assertStrings(t, "HostDown", f.policy.hostDownCalls(), []string{"127.0.10.1"})
-		if _, ok := f.session.pool.getPoolByHostID(host.HostID()); ok {
+		if _, ok := implCluster.SessionData(f.session).InternalPool.InternalGetPoolByHostID(host.HostID()); ok {
 			t.Error("host that went down still has a connection pool")
 		}
 	})
@@ -540,11 +541,8 @@ func TestHandleNodeDown(t *testing.T) {
 			cfg.HostFilter = HostFilterFunc(func(*HostInfo) bool { return false })
 		})
 		host := f.addHost(t, "127.0.10.1")
-		f.session.pool.hostConnPools = map[UUID]*hostConnPool{
-			host.hostUUID(): newHostConnPool(f.session, host, 1, ""),
-		}
-
-		f.session.handleNodeDown(net.ParseIP("127.0.10.1"), 9042)
+		implCluster.SessionData(f.session).InternalPool.InternalHostConnPools = map[UUID]*hostConnPool{implEndpoint.InternalHostInfoHostUUID(host): newHostConnPool(f.session, host, 1, "")}
+		implCluster.InternalSessionHandleNodeDown(f.session, net.ParseIP("127.0.10.1"), 9042)
 
 		// setState happens before the filter check, so it still lands.
 		if state := host.State(); state != NodeDown {
@@ -554,7 +552,7 @@ func TestHandleNodeDown(t *testing.T) {
 		// The filter returns before both policy.HostDown and pool.removeHost,
 		// so the pool survives -- the other half of the asymmetry this test
 		// exists to pin.
-		if _, ok := f.session.pool.getPoolByHostID(host.HostID()); !ok {
+		if _, ok := implCluster.SessionData(f.session).InternalPool.InternalGetPoolByHostID(host.HostID()); !ok {
 			t.Error("filtered host lost its connection pool")
 		}
 	})
@@ -566,8 +564,7 @@ func TestHandleNodeDown(t *testing.T) {
 		// dropped outright -- there is nothing to mark down and no reason to
 		// re-read the ring for a node that just left.
 		f := newNodeEventFixture(t)
-
-		f.session.handleNodeDown(net.ParseIP("127.0.10.9"), 9042)
+		implCluster.InternalSessionHandleNodeDown(f.session, net.ParseIP("127.0.10.9"), 9042)
 
 		assertStrings(t, "HostDown", f.policy.hostDownCalls(), nil)
 		f.assertNoRefresh(t)
@@ -586,13 +583,13 @@ func TestHandleNodeConnected(t *testing.T) {
 
 		f := newNodeEventFixture(t)
 		host := f.addHost(t, "127.0.10.1")
-		// nodeState's zero value IS NodeUp, so a freshly built HostInfo already
-		// reads as up and the assertion below would hold even if
-		// handleNodeConnected never called setState. Start from NodeDown so the
-		// transition is what is being observed.
-		host.setState(NodeDown)
-
-		f.session.handleNodeConnected(host)
+		implEndpoint.
+			// nodeState's zero value IS NodeUp, so a freshly built HostInfo already
+			// reads as up and the assertion below would hold even if
+			// handleNodeConnected never called setState. Start from NodeDown so the
+			// transition is what is being observed.
+			InternalHostInfoSetState(host, NodeDown)
+		implCluster.InternalSessionHandleNodeConnected(f.session, host)
 
 		if state := host.State(); state != NodeUp {
 			t.Errorf("host state: got %v, want %v", state, NodeUp)
@@ -607,9 +604,9 @@ func TestHandleNodeConnected(t *testing.T) {
 			cfg.HostFilter = HostFilterFunc(func(*HostInfo) bool { return false })
 		})
 		host := f.addHost(t, "127.0.10.1")
-		host.setState(NodeDown) // see the note in the unfiltered case
-
-		f.session.handleNodeConnected(host)
+		implEndpoint.InternalHostInfoSetState(host, NodeDown)
+		implCluster. // see the note in the unfiltered case
+				InternalSessionHandleNodeConnected(f.session, host)
 
 		if state := host.State(); state != NodeUp {
 			t.Errorf("host state: got %v, want %v", state, NodeUp)

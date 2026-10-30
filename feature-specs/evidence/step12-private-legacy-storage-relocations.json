@@ -1,0 +1,38 @@
+[
+  {
+    "all_fields": true,
+    "fields": {
+      "InternalFallback": true,
+      "InternalGetKeyspaceMetadata": true,
+      "InternalGetKeyspaceName": true,
+      "InternalLogger": true,
+      "InternalNonLocalReplicasFallback": true,
+      "InternalShuffleReplicas": true,
+      "avoidSlowReplicas": true,
+      "hosts": true,
+      "metadata": true,
+      "mu": true,
+      "partitioner": true
+    },
+    "file": "internal/cluster/opaque_InternalTokenAwareHostPolicy.go",
+    "kind": "storage",
+    "member": "privateStorage",
+    "owner": "InternalTokenAwareHostPolicy",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "all_fields": false,
+    "fields": {
+      "InternalDefaultProfile": true,
+      "InternalDisableClientRouteEvents": true,
+      "InternalDisableControlConn": true,
+      "actualSslOpts": true,
+      "disableInit": true
+    },
+    "file": "internal/cluster/opaque_InternalClusterSettings.go",
+    "kind": "storage",
+    "member": "privateStorage",
+    "owner": "InternalClusterSettings",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  }
+]

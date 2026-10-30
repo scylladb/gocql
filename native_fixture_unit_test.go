@@ -18,6 +18,8 @@
 
 package gocql
 
+import implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+
 import (
 	"context"
 	"encoding/binary"
@@ -117,7 +119,7 @@ func execTestStatement(ctx context.Context, s *Session, cql string, opts Options
 	}
 	defer bound.Close()
 	if !opts.Timeout.Set {
-		opts.Timeout = Option[time.Duration]{Set: true, Value: s.cfg.Timeout}
+		opts.Timeout = Option[time.Duration]{Set: true, Value: implCluster.SessionData(s).InternalCfg.Timeout}
 	}
 	_, err = Exec(ctx, s, bound, opts)
 	return err
@@ -134,7 +136,7 @@ func hostInfoFromFixture(f *nativeResultFixture, port int) (*HostInfo, error) {
 	if len(rows) == 0 {
 		return nil, fmt.Errorf("query returned 0 rows")
 	}
-	return rows[0].host(port)
+	return rows[0].InternalHost(port)
 }
 
 func writeErrorResult(resp *framer, stream int, code int, msg string) {

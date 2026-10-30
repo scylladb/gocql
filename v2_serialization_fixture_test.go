@@ -7,8 +7,8 @@ import (
 	"context"
 	"fmt"
 	fixtureDuration "github.com/scylladb/gocql/v2/internal/tests/valuecases"
+	inf "gopkg.in/inf.v0"
 
-	"gopkg.in/inf.v0"
 	"math"
 	"math/big"
 	"net"
@@ -187,7 +187,7 @@ func serializationUDT[T any](p ParamEncoder[T], r RowDecoder[T], opts UDTOptions
 func serializationRoundTrip[T any](t testing.TB, s *Session, table, column string, id int32, codec Codec[T], input T) T {
 	t.Helper()
 	params := PairParams(1, OneParam(Int32), OneParam(codec))
-	if err := serializationExec(s, fmt.Sprintf("INSERT INTO %s (id,%s) VALUES (?,?)", table, column), params, Pair[int32, T]{id, input}); err != nil {
+	if err := serializationExec(s, fmt.Sprintf("INSERT INTO %s (id,%s) VALUES (?,?)", table, column), params, Pair[int32, T]{First: id, Second: input}); err != nil {
 		t.Fatal(err)
 	}
 	output, err := serializationOne(s, fmt.Sprintf("SELECT %s FROM %s WHERE id=?", column, table), OneColumn(codec), IntValue(id))
@@ -211,7 +211,7 @@ func (c serializationMapCodec[K, V]) CheckType(t DataType) error {
 func (c serializationMapCodec[K, V]) Encode(w *ValueWriter, v map[K]V) error {
 	entries := make([]Entry[K, V], 0, len(v))
 	for k, x := range v {
-		entries = append(entries, Entry[K, V]{k, x})
+		entries = append(entries, Entry[K, V]{Key: k, Value: x})
 	}
 	return MapEncoder(c.key, c.value).Encode(w, entries)
 }
@@ -591,7 +591,7 @@ func serializationFixtureValue(kind Type, input any) (Value, error) {
 			if !ok {
 				break
 			}
-			return DecimalValue(Decimal{int32(scale), VarintFromBigInt(n)}), nil
+			return DecimalValue(Decimal{Scale: int32(scale), Unscaled: VarintFromBigInt(n)}), nil
 		case TypeUUID, TypeTimeUUID:
 			u, e := ParseUUID(v)
 			if e != nil {

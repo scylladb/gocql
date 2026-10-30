@@ -19,6 +19,10 @@
 
 package gocql
 
+import implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+
+import implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
+
 import (
 	"fmt"
 	"testing"
@@ -33,10 +37,10 @@ type stubConnPicker struct {
 
 func (s *stubConnPicker) InFlight() int { return s.inFlight }
 
-func (s *stubConnPicker) Put(*Conn) error  { panic("stubConnPicker.Put: not expected") }
-func (s *stubConnPicker) Remove(*Conn)     { panic("stubConnPicker.Remove: not expected") }
-func (s *stubConnPicker) Size() (int, int) { panic("stubConnPicker.Size: not expected") }
-func (s *stubConnPicker) Close()           { panic("stubConnPicker.Close: not expected") }
+func (s *stubConnPicker) Put(*driverConn) error { panic("stubConnPicker.Put: not expected") }
+func (s *stubConnPicker) Remove(*driverConn)    { panic("stubConnPicker.Remove: not expected") }
+func (s *stubConnPicker) Size() (int, int)      { panic("stubConnPicker.Size: not expected") }
+func (s *stubConnPicker) Close()                { panic("stubConnPicker.Close: not expected") }
 func (s *stubConnPicker) NextShard() (int, int) {
 	panic("stubConnPicker.NextShard: not expected")
 }
@@ -113,7 +117,7 @@ func requireUsableThreshold(t *testing.T) {
 // hostsWithPickers builds replicas backed by the given pickers, the session
 // those lookups resolve against, and labels naming each host by its input
 // position.
-func hostsWithPickers(t *testing.T, pickers []ConnPicker) ([]*HostInfo, *Session, hostLabels) {
+func hostsWithPickers(t *testing.T, pickers []driverConnPicker) ([]*HostInfo, *Session, hostLabels) {
 	t.Helper()
 	requireUsableThreshold(t)
 
@@ -128,21 +132,26 @@ func hostsWithPickers(t *testing.T, pickers []ConnPicker) ([]*HostInfo, *Session
 		replicas[i] = &host
 		labels[&host] = fmt.Sprintf("h%d", i)
 
-		pools[host.hostUUID()] = &hostConnPool{
-			host:       &host,
-			connPicker: picker,
+		pools[implEndpoint.InternalHostInfoHostUUID(&host)] = &hostConnPool{
+			InternalHost:       &host,
+			InternalConnPicker: picker,
 		}
 	}
 
-	return replicas, &Session{pool: &policyConnPool{hostConnPools: pools}}, labels
+	return replicas, func() *Session {
+		opaqueStorageValue := new(Session)
+		implCluster.SessionData(opaqueStorageValue).InternalPool = &policyConnPool{InternalHostConnPools: pools}
+		return opaqueStorageValue
+
+		// hostsWithInFlight builds replicas whose pools report the given, constant
+		// in-flight counts.
+	}(), labels
 }
 
-// hostsWithInFlight builds replicas whose pools report the given, constant
-// in-flight counts.
 func hostsWithInFlight(t *testing.T, inFlight []int) ([]*HostInfo, *Session, hostLabels) {
 	t.Helper()
 
-	pickers := make([]ConnPicker, len(inFlight))
+	pickers := make([]driverConnPicker, len(inFlight))
 	for i, n := range inFlight {
 		pickers[i] = &stubConnPicker{inFlight: n}
 	}
@@ -374,7 +383,7 @@ func TestPartitionHealthyUsesBusySnapshot(t *testing.T) {
 	t.Parallel()
 
 	flip := &sequenceConnPicker{counts: []int{0, MAX_IN_FLIGHT_THRESHOLD}}
-	replicas, session, labels := hostsWithPickers(t, []ConnPicker{
+	replicas, session, labels := hostsWithPickers(t, []driverConnPicker{
 		&stubConnPicker{inFlight: MAX_IN_FLIGHT_THRESHOLD * 10}, // h0, busy throughout
 		flip,                         // h1, healthy when counted, busy when placed
 		&stubConnPicker{inFlight: 0}, // h2, healthy throughout
@@ -442,7 +451,11 @@ func TestPartitionHealthyEmptyPool(t *testing.T) {
 	t.Parallel()
 
 	replicas, _, labels := busyHosts(t, []bool{false, false, false, false})
-	session := &Session{pool: &policyConnPool{hostConnPools: map[UUID]*hostConnPool{}}}
+	session := func() *Session {
+		opaqueStorageValuex := new(Session)
+		implCluster.SessionData(opaqueStorageValuex).InternalPool = &policyConnPool{InternalHostConnPools: map[UUID]*hostConnPool{}}
+		return opaqueStorageValuex
+	}()
 
 	partitionHealthy(replicas, session)
 
@@ -452,4 +465,4 @@ func TestPartitionHealthyEmptyPool(t *testing.T) {
 	}
 }
 
-func (s *stubConnPicker) Pick(Token) *Conn { panic("stubConnPicker.Pick: not expected") }
+func (s *stubConnPicker) Pick(Token) *driverConn { panic("stubConnPicker.Pick: not expected") }

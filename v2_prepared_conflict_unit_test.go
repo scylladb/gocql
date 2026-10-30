@@ -18,7 +18,11 @@
 
 package gocql
 
+import implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+
 import (
+	routing "github.com/scylladb/gocql/v2/internal/routing"
+
 	"context"
 	"errors"
 	"fmt"
@@ -38,7 +42,7 @@ type step03ScopedSchemaBackend struct {
 	calls    atomic.Int32
 }
 
-func (b *step03ScopedSchemaBackend) queryV2System(ctx context.Context, r *attemptRequest) (*responsePage, error) {
+func (b *step03ScopedSchemaBackend) InternalQueryV2System(ctx context.Context, r *attemptRequest) (*responsePage, error) {
 	args, err := v2SchemaMockArguments(r)
 	if err != nil {
 		return nil, err
@@ -54,16 +58,16 @@ func (b *step03ScopedSchemaBackend) queryV2System(ctx context.Context, r *attemp
 			return nil, errors.New("injected temporary required refresh failure")
 		}
 	}
-	return b.schemaDataMock.queryV2System(ctx, r)
+	return b.schemaDataMock.InternalQueryV2System(ctx, r)
 }
 func waitStep03Reconciliation(t *testing.T, p *v2PeripheralState) {
 	t.Helper()
 	deadline := time.Now().Add(4 * time.Second)
 	for {
-		p.mu.Lock()
-		pending := len(p.preparedRefreshScopes)
-		p.mu.Unlock()
-		if pending == 0 && !p.retryScheduled.Load() {
+		p.InternalMu.Lock()
+		pending := len(p.InternalPreparedRefreshScopes)
+		p.InternalMu.Unlock()
+		if pending == 0 && !p.InternalRetryScheduled.Load() {
 			return
 		}
 		if time.Now().After(deadline) {
@@ -76,26 +80,26 @@ func TestV2PreparedConflictRunsOnlyRelevantTypedRefresh(t *testing.T) {
 	for _, mode := range []string{"disabled", "excluded", "minimal"} {
 		t.Run(mode, func(t *testing.T) {
 			s, mock := refreshAllSchemaSession(t)
-			p := s.peripheral()
-			p.mu.Lock()
-			p.config = DefaultConfig("localhost")
+			p := implCluster.InternalSessionPeripheral(s)
+			p.InternalMu.Lock()
+			p.InternalConfig = DefaultConfig("localhost")
 			if mode == "disabled" {
-				p.config.Metadata.Mode = MetadataDisabled
+				p.InternalConfig.Metadata.Mode = MetadataDisabled
 			} else if mode == "excluded" {
-				p.config.Metadata.Keyspaces = []string{"ks2"}
+				p.InternalConfig.Metadata.Keyspaces = []string{"ks2"}
 			} else {
-				p.config.Metadata.Mode = MetadataMinimal
+				p.InternalConfig.Metadata.Mode = MetadataMinimal
 			}
-			p.mu.Unlock()
+			p.InternalMu.Unlock()
 			before := s.Metadata()
 			backend := &step03ScopedSchemaBackend{schemaDataMock: mock, keyspace: "ks1", queried: make(chan struct{})}
-			s.control = backend
+			implCluster.SessionData(s).InternalControl = backend
 			mock.mu.Lock()
 			mock.knownKeyspaces["ks1"] = append(mock.knownKeyspaces["ks1"], tableInfo{name: "from_conflict", columns: []columnInfo{{name: "id", kind: "partition_key"}}})
 			mock.mu.Unlock()
-			state := &preparedState{session: s, info: PreparedInfo{Keyspace: "ks1", Table: "t1"}}
+			state := &preparedState{InternalSession: s, InternalInfo: PreparedInfo{Keyspace: "ks1", Table: "t1"}}
 			for i := 0; i < 1000; i++ {
-				if err := state.noteMetadataConflict(); err != nil {
+				if err := state.InternalNoteMetadataConflict(); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -108,10 +112,10 @@ func TestV2PreparedConflictRunsOnlyRelevantTypedRefresh(t *testing.T) {
 			if backend.calls.Load() != 1 {
 				t.Fatal("required refresh not coalesced", backend.calls.Load())
 			}
-			if after := s.Metadata(); after.keyspaces["ks1"].Tables["from_conflict"] != nil || mode != "minimal" && after != before || mode == "minimal" && len(after.keyspaces["ks1"].Tables) != 0 {
+			if after := s.Metadata(); routing.SnapshotData(after).InternalKeyspaces["ks1"].Tables["from_conflict"] != nil || mode != "minimal" && after != before || mode == "minimal" && len(routing.SnapshotData(after).InternalKeyspaces["ks1"].Tables) != 0 {
 				t.Fatal("required refresh broadened public metadata")
 			}
-			if err := state.reconcilePendingConflict(); err != nil || state.conflictDirty.Load() {
+			if err := state.InternalReconcilePendingConflict(); err != nil || state.InternalConflictDirty.Load() {
 				t.Fatal("successful reconciliation left conflict dirty", err)
 			}
 		})
@@ -121,20 +125,20 @@ func TestV2PreparedConflictRefreshRetriesDirtyScope(t *testing.T) {
 	s, mock := refreshAllSchemaSession(t)
 	backend := &step03ScopedSchemaBackend{schemaDataMock: mock, keyspace: "ks1", queried: make(chan struct{})}
 	backend.fail.Store(true)
-	s.control = backend
-	p := s.peripheral()
-	p.mu.Lock()
-	p.config = DefaultConfig("localhost")
-	p.config.Metadata.Mode = MetadataDisabled
-	p.mu.Unlock()
-	state := &preparedState{session: s, info: PreparedInfo{Keyspace: "ks1", Table: "t1"}}
-	if err := state.noteMetadataConflict(); err != nil {
+	implCluster.SessionData(s).InternalControl = backend
+	p := implCluster.InternalSessionPeripheral(s)
+	p.InternalMu.Lock()
+	p.InternalConfig = DefaultConfig("localhost")
+	p.InternalConfig.Metadata.Mode = MetadataDisabled
+	p.InternalMu.Unlock()
+	state := &preparedState{InternalSession: s, InternalInfo: PreparedInfo{Keyspace: "ks1", Table: "t1"}}
+	if err := state.InternalNoteMetadataConflict(); err != nil {
 		t.Fatal(err)
 	}
 	<-backend.queried
-	p.mu.Lock()
-	_, dirty := p.preparedRefreshScopes["ks1"]
-	p.mu.Unlock()
+	p.InternalMu.Lock()
+	_, dirty := p.InternalPreparedRefreshScopes["ks1"]
+	p.InternalMu.Unlock()
 	if !dirty {
 		t.Fatal("failed scope was dropped")
 	}
@@ -144,14 +148,18 @@ func TestV2PreparedConflictRefreshRetriesDirtyScope(t *testing.T) {
 	}
 }
 func TestV2PreparedConflictOverflowPropagatesAndRetries(t *testing.T) {
-	s := &Session{logger: nopLogger{}}
-	s.ctx, s.cancel = context.WithCancel(context.Background())
+	s := func() *Session {
+		opaqueStorageValue := new(Session)
+		implCluster.SessionData(opaqueStorageValue).InternalLogger = nopLogger{}
+		return opaqueStorageValue
+	}()
+	implCluster.SessionData(s).InternalCtx, implCluster.SessionData(s).InternalCancel = context.WithCancel(context.Background())
 	defer s.Close()
 	cols := NewColumns(ColumnSpec{Keyspace: "ks", Table: "tbl", Name: "value", Type: codecTestMust(ScalarType(TypeBlob))})
 	state, old := step03PreparedState(t, s, cols)
 	host := UUID{15: 2}
 	other := *old
-	state.hosts[host] = &other
+	state.InternalHosts[host] = &other
 	page := step03Page(t, "retained")
 	defer page.Close()
 	if !page.Next() {
@@ -160,65 +168,69 @@ func TestV2PreparedConflictOverflowPropagatesAndRetries(t *testing.T) {
 	retained := codecTestMust(page.Retain())
 	defer retained.Close()
 	view := page.Row()
-	p := s.peripheral()
-	p.mu.Lock()
-	p.preparedRefreshScopes = make(map[string]uint64)
+	p := implCluster.InternalSessionPeripheral(s)
+	p.InternalMu.Lock()
+	p.InternalPreparedRefreshScopes = make(map[string]uint64)
 	for i := 0; i < maxPreparedRefreshScopes; i++ {
-		p.preparedRefreshScopes[fmt.Sprint(i)] = 1
+		p.InternalPreparedRefreshScopes[fmt.Sprint(i)] = 1
 	}
-	p.mu.Unlock()
+	p.InternalMu.Unlock()
 	changed := NewColumns(ColumnSpec{Keyspace: "ks", Table: "tbl", Name: "value", Type: codecTestMust(ScalarType(TypeInt))})
-	response := &responsePage{responseData: responseData{Kind: 2, Columns: changed, MetadataID: []byte("conflict")}}
-	err := selectPreparedResponse(state, host, &other, other.metadataID, true, response)
+	response := &responsePage{InternalResponseData: responseData{Kind: 2, Columns: changed, MetadataID: []byte("conflict")}}
+	err := selectPreparedResponse(state, host, &other, other.InternalMetadataID, true, response)
 	var protocol *ProtocolError
 	if !errors.As(err, &protocol) || protocol.Stage != "prepared schema reconciliation" {
 		t.Fatal("overflow disappeared from logical result", err)
 	}
-	if !state.conflictDirty.Load() || state.conflictEpoch.Load() != 0 {
+	if !state.InternalConflictDirty.Load() || state.InternalConflictEpoch.Load() != 0 {
 		t.Fatal("unscheduled conflict not left dirty")
 	}
 	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := s.prepareOnConnExpected(cancelled, nil, state, encodedValues{}, false, nil); !errors.Is(err, context.Canceled) {
+	if _, err := runtimeFor(s).InternalPrepareOnConnExpected(cancelled, nil, state, encodedValues{}, false, nil); !errors.Is(err, context.Canceled) {
 		t.Fatal("canceled waiter performed reconciliation work", err)
 	}
-	if err := state.reconcilePendingConflict(); !errors.As(err, &protocol) {
+	if err := state.InternalReconcilePendingConflict(); !errors.As(err, &protocol) {
 		t.Fatal("future operation silently bypassed unresolved conflict", err)
 	}
 	if string(view.OwnedBytes()) != "retained" {
 		t.Fatal("earlier delivered page invalidated")
 	}
-	p.mu.Lock()
-	delete(p.preparedRefreshScopes, "0")
-	p.mu.Unlock()
-	if err := state.reconcilePendingConflict(); err != nil {
+	p.InternalMu.Lock()
+	delete(p.InternalPreparedRefreshScopes, "0")
+	p.InternalMu.Unlock()
+	if err := state.InternalReconcilePendingConflict(); err != nil {
 		t.Fatal("available scope did not retry", err)
 	}
-	p.mu.Lock()
-	_, queued := p.preparedRefreshScopes["ks"]
-	p.mu.Unlock()
-	if !queued || state.conflictEpoch.Load() == 0 {
+	p.InternalMu.Lock()
+	_, queued := p.InternalPreparedRefreshScopes["ks"]
+	p.InternalMu.Unlock()
+	if !queued || state.InternalConflictEpoch.Load() == 0 {
 		t.Fatal("retry was not registered")
 	}
 }
 func TestV2PreparedConflictCanRescheduleAfterReconciliation(t *testing.T) {
-	s := &Session{logger: nopLogger{}}
-	s.ctx, s.cancel = context.WithCancel(context.Background())
+	s := func() *Session {
+		opaqueStorageValuex := new(Session)
+		implCluster.SessionData(opaqueStorageValuex).InternalLogger = nopLogger{}
+		return opaqueStorageValuex
+	}()
+	implCluster.SessionData(s).InternalCtx, implCluster.SessionData(s).InternalCancel = context.WithCancel(context.Background())
 	defer s.Close()
-	state := &preparedState{session: s, info: PreparedInfo{Keyspace: "ks", Table: "tbl"}}
-	if err := state.noteMetadataConflict(); err != nil {
+	state := &preparedState{InternalSession: s, InternalInfo: PreparedInfo{Keyspace: "ks", Table: "tbl"}}
+	if err := state.InternalNoteMetadataConflict(); err != nil {
 		t.Fatal(err)
 	}
-	first := state.conflictEpoch.Load()
-	if err := state.noteMetadataConflict(); err != nil || state.conflictEpoch.Load() != first {
+	first := state.InternalConflictEpoch.Load()
+	if err := state.InternalNoteMetadataConflict(); err != nil || state.InternalConflictEpoch.Load() != first {
 		t.Fatal("same conflict not coalesced")
 	}
-	p := s.peripheral()
-	p.mu.Lock()
-	delete(p.preparedRefreshScopes, "ks")
-	p.schemaReconciled.Add(1)
-	p.mu.Unlock()
-	if err := state.noteMetadataConflict(); err != nil || state.conflictEpoch.Load() == first {
+	p := implCluster.InternalSessionPeripheral(s)
+	p.InternalMu.Lock()
+	delete(p.InternalPreparedRefreshScopes, "ks")
+	p.InternalSchemaReconciled.Add(1)
+	p.InternalMu.Unlock()
+	if err := state.InternalNoteMetadataConflict(); err != nil || state.InternalConflictEpoch.Load() == first {
 		t.Fatal("future conflicts permanently suppressed", err)
 	}
 }

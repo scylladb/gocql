@@ -27,11 +27,14 @@
 
 package gocql
 
+import implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+
 import (
 	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
+	clustertestkit "github.com/scylladb/gocql/v2/internal/testkit/cluster"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -83,15 +86,19 @@ func TestSessionAPI(t *testing.T) {
 	require.NoError(t, config.DefaultProfile.Replace(profile))
 	// Session setters are replaced by atomic profile snapshots. Fractional
 	// prefetch became a bounded count of zero or one physical page.
-	session := &Session{logger: nopLogger{}}
-	session.typedRuntime().profile = config.DefaultProfile
+	session := func() *Session {
+		opaqueStorageValue := new(Session)
+		implCluster.SessionData(opaqueStorageValue).InternalLogger = nopLogger{}
+		return opaqueStorageValue
+	}()
+	runtimeFor(session).InternalProfile = config.DefaultProfile
 	defer session.Close()
 	resolved, err := resolveOptions(session, Options{Trace: true})
 	require.NoError(t, err)
-	require.Equal(t, All, resolved.profile.Consistency)
-	require.Equal(t, int32(100), resolved.profile.PageSize)
-	require.Equal(t, 1, resolved.profile.Prefetch)
-	require.True(t, resolved.options.Trace)
+	require.Equal(t, All, resolved.InternalProfile.Consistency)
+	require.Equal(t, int32(100), resolved.InternalProfile.PageSize)
+	require.Equal(t, 1, resolved.InternalProfile.Prefetch)
+	require.True(t, resolved.InternalOptions.Trace)
 
 	intType, err := ScalarType(TypeInt)
 	require.NoError(t, err)
@@ -179,16 +186,16 @@ func TestQueryBasicAPI(t *testing.T) {
 	options := Options{Consistency: Option[Consistency]{Value: All, Set: true}, SerialConsistency: Option[Option[Consistency]]{Value: Option[Consistency]{Value: LocalSerial, Set: true}, Set: true}, PageSize: Option[int32]{Value: 10, Set: true}, Prefetch: Option[int]{Value: 1, Set: true}, Retry: retry, Trace: true, Observer: observer}
 	resolved, err := resolveOptions(session, options)
 	require.NoError(t, err)
-	require.Equal(t, All, resolved.profile.Consistency)
-	require.Equal(t, LocalSerial, resolved.profile.SerialConsistency.Value)
-	require.Equal(t, int32(10), resolved.profile.PageSize)
-	require.Equal(t, 1, resolved.profile.Prefetch)
-	require.Equal(t, retry, resolved.profile.Retry)
+	require.Equal(t, All, resolved.InternalProfile.Consistency)
+	require.Equal(t, LocalSerial, resolved.InternalProfile.SerialConsistency.Value)
+	require.Equal(t, int32(10), resolved.InternalProfile.PageSize)
+	require.Equal(t, 1, resolved.InternalProfile.Prefetch)
+	require.Equal(t, retry, resolved.InternalProfile.Retry)
 	serialRead := options
 	serialRead.Consistency.Value = LocalSerial
 	resolvedSerial, err := resolveOptions(session, serialRead)
 	require.NoError(t, err)
-	require.Equal(t, LocalSerial, resolvedSerial.profile.Consistency)
+	require.Equal(t, LocalSerial, resolvedSerial.InternalProfile.Consistency)
 
 	for _, bound := range []*Bound[Unit]{original, rebound, original} {
 		result, err := Exec(ctx, session, bound, options)
@@ -212,7 +219,7 @@ func TestQueryBasicAPI(t *testing.T) {
 	}
 	// Freeze a profile at admission, then replace it while the request remains
 	// admitted. This directly covers the setter-to-snapshot migration boundary.
-	profile := session.typedRuntime().profile.Snapshot()
+	profile := runtimeFor(session).InternalProfile.Snapshot()
 	profile.PageSize = 10
 	handle, err := NewProfile(profile)
 	require.NoError(t, err)
@@ -220,10 +227,10 @@ func TestQueryBasicAPI(t *testing.T) {
 	require.NoError(t, err)
 	profile.PageSize = 100
 	require.NoError(t, handle.Replace(profile))
-	require.Equal(t, int32(10), admitted.options.profile.PageSize)
+	require.Equal(t, int32(10), admitted.InternalOptions.InternalProfile.PageSize)
 	require.Equal(t, int32(100), handle.Snapshot().PageSize)
-	admitted.logical.finish(Result{}, nil)
-	admitted.owner.release()
+	admitted.InternalLogical.InternalFinish(Result{}, nil)
+	admitted.InternalOwner.InternalRelease()
 	cancel()
 	original.Close()
 	require.NoError(t, original.Wait(ctx))
@@ -238,7 +245,11 @@ func TestQueryShouldPrepare(t *testing.T) {
 	// Preparation is explicit in v2. Preserve every old classification input:
 	// non-USE statements bind without keyword guessing, and explicit Prepare
 	// reaches connection selection even for formerly unprepared DDL.
-	session := &Session{logger: nopLogger{}}
+	session := func() *Session {
+		opaqueStorageValuex := new(Session)
+		implCluster.SessionData(opaqueStorageValuex).InternalLogger = nopLogger{}
+		return opaqueStorageValuex
+	}()
 	defer session.Close()
 	for _, cql := range append(toPrepare, cantPrepare...) {
 		t.Run(cql, func(t *testing.T) {
@@ -278,15 +289,15 @@ func TestBatchBasicAPI(t *testing.T) {
 	require.Len(t, items, 2)
 	inherited, err := resolveOptions(session, Options{})
 	require.NoError(t, err)
-	require.Equal(t, retry, inherited.profile.Retry)
+	require.Equal(t, retry, inherited.InternalProfile.Retry)
 	override := sessionTestRetry{action: RetryNext, maxAttempts: 4}
 	observer := new(sessionTestObserver)
 	options := Options{Consistency: Option[Consistency]{Value: One, Set: true}, Retry: override, Trace: true, Observer: observer}
 	resolved, err := resolveOptions(session, options)
 	require.NoError(t, err)
-	require.Equal(t, override, resolved.profile.Retry)
-	require.Equal(t, One, resolved.profile.Consistency)
-	require.True(t, resolved.options.Trace)
+	require.Equal(t, override, resolved.InternalProfile.Retry)
+	require.Equal(t, One, resolved.InternalProfile.Consistency)
+	require.True(t, resolved.InternalOptions.Trace)
 	// Native batch kind remains explicit; entries are immutable bound plans.
 	// Per-request Result/Observer replace attempts/latency on a mutable batch.
 	require.Zero(t, (Result{}).Attempts)
@@ -492,7 +503,7 @@ func TestTLSTicketResumption(t *testing.T) {
 			if time.Now().UTC().After(endtime) {
 				return fmt.Errorf("timed out waiting for all connections opened")
 			}
-			missing, err := session.MissingConnections()
+			missing, err := clustertestkit.MissingConnections(session)
 			if err != nil {
 				return fmt.Errorf("failed to get missing connections count: %w", err)
 			}
@@ -513,7 +524,7 @@ func TestTLSTicketResumption(t *testing.T) {
 
 	for round := 0; round < 2; round++ {
 		previousHandshakes, previousResumed := handshakes.Load(), resumed.Load()
-		session.CloseAllConnections()
+		clustertestkit.CloseAllConnections(session)
 		if err := waitAllConnectionsOpened(); err != nil {
 			t.Fatal(err)
 		}

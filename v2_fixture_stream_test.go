@@ -1,5 +1,9 @@
 package gocql
 
+import implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+
+import implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
+
 import (
 	"bytes"
 	"context"
@@ -26,13 +30,13 @@ type step08Mode struct {
 
 var step08Modes = []step08Mode{{"v3", 3, nil, false}, {"v4", 4, nil, false}, {"v4tls", 4, nil, true}, {"v5raw", 5, nil, false}, {"v5lz4", 5, lz4.LZ4Compressor{}, false}}
 
-func step08StreamSession(t testing.TB, mode step08Mode, spy ...bool) (*Session, *Conn, net.Conn) {
+func step08StreamSession(t testing.TB, mode step08Mode, spy ...bool) (*Session, *driverConn, net.Conn) {
 	t.Helper()
 	s, _, _ := runtimeTestSession(t, 0)
 	c, peer := typedTestConn(t, mode.version, mode.compression)
 	if mode.tls {
 		cert, config := step04TLS(t)
-		rawClient := c.r.(*connReader).conn
+		rawClient := c.InternalR.(*connReader).InternalConn
 		client := tls.Client(rawClient, config)
 		server := tls.Server(peer, &tls.Config{Certificates: []tls.Certificate{cert}})
 		done := make(chan error, 1)
@@ -44,21 +48,26 @@ func step08StreamSession(t testing.TB, mode step08Mode, spy ...bool) (*Session, 
 			t.Fatal(err)
 		}
 		clientConn := &step08TLSConn{Conn: client, raw: rawClient}
-		c.r.(*connReader).conn = clientConn
-		c.w = &deadlineContextWriter{w: clientConn, semaphore: make(chan struct{}, 1), quit: make(chan struct{})}
+		c.InternalR.(*connReader).InternalConn = clientConn
+		c.InternalW = &deadlineContextWriter{InternalW: clientConn, InternalSemaphore: make(chan struct{}, 1), InternalQuit: make(chan struct{})}
 		peer = &step08TLSConn{Conn: server, raw: peer}
 	}
 	if len(spy) > 0 && spy[0] {
-		c.r.(*connReader).conn = &step08ReadTargets{Conn: c.r.(*connReader).conn}
+		c.InternalR.(*connReader).InternalConn = &step08ReadTargets{Conn: c.InternalR.(*connReader).InternalConn}
 	}
-	c.host = &HostInfo{hostId: UUID{15: 1}, state: NodeUp}
-	c.session = s
-	s.hostSource.hosts[c.host.HostID()] = c.host
+	c.InternalHost = func() *HostInfo {
+		opaqueStorageValue := new(HostInfo)
+		implEndpoint.HostInfoData(opaqueStorageValue).InternalHostId = UUID{15: 1}
+		implEndpoint.HostInfoData(opaqueStorageValue).InternalState = NodeUp
+		return opaqueStorageValue
+	}()
+	c.InternalHooks = newConnectionHooks(s)
+	implCluster.SessionData(s).InternalHostSource.InternalHosts[c.InternalHost.HostID()] = c.InternalHost
 	picker := newDefaultConnPicker(1)
 	picker.Put(c)
-	s.pool.hostConnPools[c.host.hostUUID()] = &hostConnPool{host: c.host, connPicker: picker, repairCtx: c.ctx}
+	implCluster.SessionData(s).InternalPool.InternalHostConnPools[implEndpoint.InternalHostInfoHostUUID(c.InternalHost)] = &hostConnPool{InternalHost: c.InternalHost, InternalConnPicker: picker, InternalRepairCtx: c.InternalCtx}
 	t.Cleanup(func() { peer.Close(); s.Close() })
-	go c.serve(c.ctx)
+	go c.InternalServe(c.InternalCtx)
 	return s, c, peer
 }
 
@@ -366,8 +375,8 @@ func TestStep08StreamInterruptedRequestWrite(t *testing.T) {
 			t.Run(mode.name+fmt.Sprint(accepted), func(t *testing.T) {
 				s, c, peer := step08StreamSession(t, mode)
 				defer peer.Close()
-				writer := &step08InterruptedWriter{Conn: c.r.(*connReader).conn, accepted: accepted}
-				c.w.(*deadlineContextWriter).w = writer
+				writer := &step08InterruptedWriter{Conn: c.InternalR.(*connReader).InternalConn, accepted: accepted}
+				c.InternalW.(*deadlineContextWriter).InternalW = writer
 				b := runtimeQuery(t)
 				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 				defer cancel()
@@ -412,7 +421,7 @@ func TestStep08IndependentRawDirectRead(t *testing.T) {
 			if !cursor.NextInto(&dst) || !bytes.Equal(dst, payload) || &dst[0] != backing {
 				t.Fatal("lost final storage", cursor.Err())
 			}
-			spy := c.r.(*connReader).conn.(*step08ReadTargets)
+			spy := c.InternalR.(*connReader).InternalConn.(*step08ReadTargets)
 			spy.mu.Lock()
 			direct := 0
 			otherBulk := 0

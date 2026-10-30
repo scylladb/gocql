@@ -9,8 +9,8 @@ import (
 	"errors"
 	"fmt"
 	valcases "github.com/scylladb/gocql/v2/internal/tests/valuecases"
+	inf "gopkg.in/inf.v0"
 
-	"gopkg.in/inf.v0"
 	"math/big"
 	"net/netip"
 	"strings"

@@ -3,6 +3,8 @@
 
 package gocql
 
+import implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+
 import (
 	"errors"
 	"strings"
@@ -24,7 +26,7 @@ func refreshAllSchemaSession(t *testing.T) (*Session, *schemaDataMock) {
 	t.Cleanup(func() { _ = s.Close() })
 
 	for _, ks := range []string{"ks1", "ks2"} {
-		if _, err := s.metadataDescriber.GetKeyspace(ks); err != nil {
+		if _, err := implCluster.SessionData(s).InternalMetadataDescriber.GetKeyspace(ks); err != nil {
 			t.Fatalf("load %s: %v", ks, err)
 		}
 	}
@@ -36,14 +38,14 @@ func refreshAllSchemaSession(t *testing.T) (*Session, *schemaDataMock) {
 
 func refreshAllSchemaNow(t *testing.T, s *Session) {
 	t.Helper()
-	if err := s.metadataDescriber.refreshAllSchema(); err != nil {
+	if err := implCluster.SessionData(s).InternalMetadataDescriber.InternalRefreshAllSchema(); err != nil {
 		t.Fatalf("refreshAllSchema: %v", err)
 	}
-	s.metadataDescriber.metadata.tabletsMetadata.Flush()
+	implCluster.MetadataData(implCluster.SessionData(s).InternalMetadataDescriber.InternalMetadata).InternalTabletsMetadata.Flush()
 }
 
 func hasTablets(s *Session, keyspace, table string) bool {
-	return len(s.metadataDescriber.metadata.tabletsMetadata.GetTableTablets(keyspace, table)) > 0
+	return len(implCluster.MetadataData(implCluster.SessionData(s).InternalMetadataDescriber.InternalMetadata).InternalTabletsMetadata.GetTableTablets(keyspace, table)) > 0
 }
 
 // requireTablets checks which of the three tables still have tablets.
@@ -73,10 +75,10 @@ func TestRefreshAllSchemaKeyspaceDropped(t *testing.T) {
 
 	refreshAllSchemaNow(t, s)
 
-	if _, found := s.metadataDescriber.metadata.keyspaceMetadata.getKeyspace("ks2"); found {
+	if _, found := implCluster.MetadataData(implCluster.SessionData(s).InternalMetadataDescriber.InternalMetadata).InternalKeyspaceMetadata.InternalGetKeyspace("ks2"); found {
 		t.Error("dropped keyspace ks2 is still cached")
 	}
-	if _, found := s.metadataDescriber.metadata.keyspaceMetadata.getKeyspace("ks1"); !found {
+	if _, found := implCluster.MetadataData(implCluster.SessionData(s).InternalMetadataDescriber.InternalMetadata).InternalKeyspaceMetadata.InternalGetKeyspace("ks1"); !found {
 		t.Error("keyspace ks1 was dropped from the cache")
 	}
 	requireTablets(t, s, map[string]bool{"ks1.t1": true, "ks1.t2": true, "ks2.t3": false})
@@ -107,10 +109,10 @@ func TestRefreshAllSchemaReplicationChanged(t *testing.T) {
 	t.Parallel()
 
 	s, _ := refreshAllSchemaSession(t)
-	cached, _ := s.metadataDescriber.metadata.keyspaceMetadata.getKeyspace("ks1")
+	cached, _ := implCluster.MetadataData(implCluster.SessionData(s).InternalMetadataDescriber.InternalMetadata).InternalKeyspaceMetadata.InternalGetKeyspace("ks1")
 	stale := cached.Clone()
 	stale.StrategyOptions = map[string]any{"replication_factor": "3"}
-	s.metadataDescriber.metadata.keyspaceMetadata.set("ks1", stale)
+	implCluster.MetadataData(implCluster.SessionData(s).InternalMetadataDescriber.InternalMetadata).InternalKeyspaceMetadata.InternalSet("ks1", stale)
 
 	refreshAllSchemaNow(t, s)
 	requireTablets(t, s, map[string]bool{"ks1.t1": false, "ks1.t2": false, "ks2.t3": true})
@@ -122,13 +124,13 @@ func TestRefreshAllSchemaError(t *testing.T) {
 	s, ctrl := refreshAllSchemaSession(t)
 	ctrl.setQueryError(errors.New("schema unavailable"))
 
-	err := s.metadataDescriber.refreshAllSchema()
+	err := implCluster.SessionData(s).InternalMetadataDescriber.InternalRefreshAllSchema()
 	if err == nil || !strings.Contains(err.Error(), "schema unavailable") {
 		t.Fatalf("refreshAllSchema error = %v, want the query error", err)
 	}
-	s.metadataDescriber.metadata.tabletsMetadata.Flush()
+	implCluster.MetadataData(implCluster.SessionData(s).InternalMetadataDescriber.InternalMetadata).InternalTabletsMetadata.Flush()
 	for _, ks := range []string{"ks1", "ks2"} {
-		if _, found := s.metadataDescriber.metadata.keyspaceMetadata.getKeyspace(ks); !found {
+		if _, found := implCluster.MetadataData(implCluster.SessionData(s).InternalMetadataDescriber.InternalMetadata).InternalKeyspaceMetadata.InternalGetKeyspace(ks); !found {
 			t.Errorf("keyspace %s was dropped after a failed refresh", ks)
 		}
 	}
@@ -157,7 +159,7 @@ func TestRefreshAllSchemaErrorUnwraps(t *testing.T) {
 		errSchema := errors.New("schema unavailable")
 		ctrl.setQueryError(errSchema)
 
-		if err := s.metadataDescriber.refreshAllSchema(); !errors.Is(err, errSchema) {
+		if err := implCluster.SessionData(s).InternalMetadataDescriber.InternalRefreshAllSchema(); !errors.Is(err, errSchema) {
 			t.Fatalf("run %d: refreshAllSchema error = %v, which does not wrap the query error", i, err)
 		}
 	}

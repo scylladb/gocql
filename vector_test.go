@@ -27,13 +27,14 @@
 
 package gocql
 
-import cqltype "github.com/scylladb/gocql/v2/internal/cqltype"
-
 import (
+	cqltype "github.com/scylladb/gocql/v2/internal/cqltype"
+	inf "gopkg.in/inf.v0"
+
 	"fmt"
 	"github.com/scylladb/gocql/v2/internal/tests"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/inf.v0"
+
 	"math/big"
 	"net/netip"
 	"reflect"
@@ -91,7 +92,9 @@ var serializationDate = NamedScalar(DateCodec, func(v time.Time) Date {
 	}
 	return n.UTC()
 })
-var serializationDecimal = NamedScalar(DecimalCodec, func(v inf.Dec) Decimal { return Decimal{int32(v.Scale()), VarintFromBigInt(v.UnscaledBig())} }, func(v Decimal) inf.Dec { return *inf.NewDecBig(v.Unscaled.BigInt(), inf.Scale(v.Scale)) })
+var serializationDecimal = NamedScalar(DecimalCodec, func(v inf.Dec) Decimal {
+	return Decimal{Scale: int32(v.Scale()), Unscaled: VarintFromBigInt(v.UnscaledBig())}
+}, func(v Decimal) inf.Dec { return *inf.NewDecBig(v.Unscaled.BigInt(), inf.Scale(v.Scale)) })
 
 func TestVector_Marshaler(t *testing.T) {
 	t.Parallel()
@@ -173,7 +176,7 @@ func TestVector_Types(t *testing.T) {
 		vectorCase("time", "timestamp", serializationTimestamp, times, nil),
 		vectorCase("smallint", "smallint", Int16, []int16{127, 256, -1234}, nil),
 		vectorCase("tinyint", "tinyint", Int8, []int8{127, 9, -123}, nil),
-		vectorCase("duration", "duration", DurationCodec, []Duration{{0, 1, 1920000000000}, {1, 1, 1920000000000}, {31, 0, 60000000000}}, nil),
+		vectorCase("duration", "duration", DurationCodec, []Duration{{Months: 0, Days: 1, Nanoseconds: 1920000000000}, {Months: 1, Days: 1, Nanoseconds: 1920000000000}, {Months: 31, Days: 0, Nanoseconds: 60000000000}}, nil),
 		vectorCase("vector_vector_float", "vector<float,5>", serializationVector(Float32), [][]float32{{0.1, -1.2, 3, 5, 5}, {10.1, -122222.0002, 35, 1, 1}, {0, 0, 0, 0, 0}}, nil),
 		vectorCase("vector_vector_set_float", "vector<set<float>,5>", serializationVector(serializationSet(Float32)), [][][]float32{{{1, 2}, {2, -1}, {3}, {0}, {-1.3}}, {{2, 3}, {2, -1}, {3}, {0}, {-1.3}}, {{1, 1000}, {0}, {}, {12, 14, 15, 16}, {-1.3}}}, func(t *testing.T, want, got [][][]float32) {
 			require.Len(t, got, len(want))

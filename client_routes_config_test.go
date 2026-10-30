@@ -22,6 +22,8 @@
 
 package gocql
 
+import implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+
 import (
 	"testing"
 
@@ -80,7 +82,7 @@ func TestNewSessionCommonAppliesClientRoutesShardAwareness(t *testing.T) {
 			}
 			t.Cleanup(func() { _ = session.Close() })
 
-			tests.AssertEqual(t, "disable shard-aware port", tt.wantDisabled, session.cfg.DisableShardAwarePort)
+			tests.AssertEqual(t, "disable shard-aware port", tt.wantDisabled, implCluster.SessionData(session).InternalCfg.DisableShardAwarePort)
 		})
 	}
 }

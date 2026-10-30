@@ -2,6 +2,8 @@
 
 package gocql
 
+import implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+
 import (
 	"context"
 	"errors"
@@ -25,7 +27,7 @@ func TestV2MetadataDropDuringFetchIsConfirmed(t *testing.T) {
 	// The injected failure may target either fetched keyspace. The keyspace that
 	// still exists must retain and report its failure; the confirmed absent one
 	// must never be restored from the older enumerated rows.
-	err := s.refreshV2AllSchema(context.Background())
+	err := implCluster.InternalSessionRefreshV2AllSchema(s, context.Background())
 	if err != nil {
 		var partial *PartialRefreshError
 		if !errors.As(err, &partial) {
@@ -35,7 +37,7 @@ func TestV2MetadataDropDuringFetchIsConfirmed(t *testing.T) {
 			t.Fatal("confirmed drop reported as stale", err)
 		}
 	}
-	if _, exists := s.metadataDescriber.metadata.keyspaceMetadata.getKeyspace("ks2"); exists {
+	if _, exists := implCluster.MetadataData(implCluster.SessionData(s).InternalMetadataDescriber.InternalMetadata).InternalKeyspaceMetadata.InternalGetKeyspace("ks2"); exists {
 		t.Fatal("confirmed dropped keyspace was restored")
 	}
 }
@@ -50,7 +52,7 @@ func TestV2MetadataPartialRefreshRetainsPriorSnapshot(t *testing.T) {
 		}
 		return nil
 	}
-	err := s.refreshV2AllSchema(context.Background())
+	err := implCluster.InternalSessionRefreshV2AllSchema(s, context.Background())
 	var partial *PartialRefreshError
 	if !errors.As(err, &partial) || !errors.Is(err, cause) {
 		t.Fatal("partial error lost cause", err)

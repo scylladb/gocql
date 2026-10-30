@@ -27,6 +27,8 @@
 
 package gocql
 
+import implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+
 import (
 	"crypto/tls"
 	"fmt"
@@ -95,10 +97,10 @@ func TestValidateAndInitSSLDoesNotShareTLSConfigBetweenConfigCopies(t *testing.T
 	if err := tlsCfg.ValidateAndInitSSL(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if tlsCfg.getActualTLSConfig() == nil {
+	if implCluster.InternalClusterSettingsGetActualTLSConfig(&tlsCfg) == nil {
 		t.Fatal("expected copied TLS config to initialize TLS")
 	}
-	if cfg.getActualTLSConfig() != nil {
+	if implCluster.InternalClusterSettingsGetActualTLSConfig(cfg) != nil {
 		t.Fatal("expected original config not to retain copied TLS state")
 	}
 
@@ -107,7 +109,7 @@ func TestValidateAndInitSSLDoesNotShareTLSConfigBetweenConfigCopies(t *testing.T
 	if err := noTLSCfg.ValidateAndInitSSL(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if noTLSCfg.getActualTLSConfig() != nil {
+	if implCluster.InternalClusterSettingsGetActualTLSConfig(&noTLSCfg) != nil {
 		t.Fatal("expected copied config with nil SslOpts not to use TLS")
 	}
 }

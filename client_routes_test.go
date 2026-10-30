@@ -3,6 +3,8 @@
 
 package gocql
 
+import implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+
 import (
 	"context"
 	"fmt"
@@ -82,16 +84,16 @@ func TestGetHostPortMapping(t *testing.T) {
 				t.Fatalf("unable to insert connection metadata: %s", err.Error())
 			}
 			expected = append(expected, clientRoute{
-				connectionID: connectionID,
-				hostID:       hostID,
-				address:      ip.String(),
-				port:         9042,
+				InternalConnectionID: connectionID,
+				InternalHostID:       hostID,
+				InternalAddress:      ip.String(),
+				InternalPort:         9042,
 			})
 			expectedTLS = append(expectedTLS, clientRoute{
-				connectionID: connectionID,
-				hostID:       hostID,
-				address:      ip.String(),
-				port:         9142,
+				InternalConnectionID: connectionID,
+				InternalHostID:       hostID,
+				InternalAddress:      ip.String(),
+				InternalPort:         9142,
 			})
 		}
 	}
@@ -108,28 +110,28 @@ func TestGetHostPortMapping(t *testing.T) {
 		{
 			name: "get-for-connection-ids",
 			method: func(controlConnection) ([]clientRoute, error) {
-				return getHostPortMappingForConnectionIDs(session.control, qualifiedTable, connectionIDs, false)
+				return getHostPortMappingForConnectionIDs(implCluster.SessionData(session).InternalControl, qualifiedTable, connectionIDs, false)
 			},
 			expected: expected,
 		},
 		{
 			name: "get-for-pairs",
 			method: func(controlConnection) ([]clientRoute, error) {
-				return getHostPortMappingForPairs(session.control, qualifiedTable, makeClientRoutePairs(connectionIDs, hostIDs), false)
+				return getHostPortMappingForPairs(implCluster.SessionData(session).InternalControl, qualifiedTable, makeClientRoutePairs(connectionIDs, hostIDs), false)
 			},
 			expected: expected,
 		},
 		{
 			name: "get-for-single-host-pairs",
 			method: func(controlConnection) ([]clientRoute, error) {
-				return getHostPortMappingForPairs(session.control, qualifiedTable, makeClientRoutePairs(connectionIDs, hostIDs[:1]), false)
+				return getHostPortMappingForPairs(implCluster.SessionData(session).InternalControl, qualifiedTable, makeClientRoutePairs(connectionIDs, hostIDs[:1]), false)
 			},
 			expected: expectedFirstHost,
 		},
 		{
 			name: "get-for-connection-ids-tls",
 			method: func(controlConnection) ([]clientRoute, error) {
-				return getHostPortMappingForConnectionIDs(session.control, qualifiedTable, connectionIDs, true)
+				return getHostPortMappingForConnectionIDs(implCluster.SessionData(session).InternalControl, qualifiedTable, connectionIDs, true)
 			},
 			expected: expectedTLS,
 		},
@@ -137,7 +139,7 @@ func TestGetHostPortMapping(t *testing.T) {
 
 	for _, tc := range tcases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := tc.method(session.control)
+			got, err := tc.method(implCluster.SessionData(session).InternalControl)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -155,7 +157,7 @@ func makeClientRoutePairs(connectionIDs, hostIDs []string) []pair {
 	pairs := make([]pair, 0, len(connectionIDs)*len(hostIDs))
 	for _, connectionID := range connectionIDs {
 		for _, hostID := range hostIDs {
-			pairs = append(pairs, pair{connectionID: connectionID, hostID: hostID})
+			pairs = append(pairs, pair{InternalConnectionID: connectionID, InternalHostID: hostID})
 		}
 	}
 	return pairs
@@ -164,7 +166,7 @@ func makeClientRoutePairs(connectionIDs, hostIDs []string) []pair {
 func filterClientRoutesByHostID(routes []clientRoute, hostID string) []clientRoute {
 	var filtered []clientRoute
 	for _, route := range routes {
-		if route.hostID == hostID {
+		if route.InternalHostID == hostID {
 			filtered = append(filtered, route)
 		}
 	}
@@ -175,9 +177,9 @@ func sortClientRoutes(xs []clientRoute) {
 	sort.Slice(xs, func(i, j int) bool {
 		a, b := xs[i], xs[j]
 
-		if a.connectionID != b.connectionID {
-			return a.connectionID < b.connectionID // or bytes.Compare if raw [16]byte
+		if a.InternalConnectionID != b.InternalConnectionID {
+			return a.InternalConnectionID < b.InternalConnectionID // or bytes.Compare if raw [16]byte
 		}
-		return a.hostID < b.hostID
+		return a.InternalHostID < b.InternalHostID
 	})
 }

@@ -77,19 +77,19 @@ func (c *step04MemoryConn) SetReadDeadline(time.Time) error  { return nil }
 func (c *step04MemoryConn) SetWriteDeadline(time.Time) error { return nil }
 func step04MemoryReservation(version byte, compressor Compressor, source *step04MemoryConn) *exclusiveConn {
 	ctx, cancel := context.WithCancel(context.Background())
-	c := &Conn{version: version, ctx: ctx, cancel: cancel, r: &connReader{conn: source}, streams: streams.New(), logger: nopLogger{}, errorHandler: connErrorHandlerFn(func(*Conn, error, bool) {}), compressor: compressor}
-	c.w = &deadlineContextWriter{w: source, semaphore: make(chan struct{}, 1), quit: make(chan struct{})}
+	c := &driverConn{InternalVersion: version, InternalCtx: ctx, InternalCancel: cancel, InternalR: &connReader{InternalConn: source}, InternalStreams: streams.New(), InternalLogger: nopLogger{}, InternalErrorHandler: connErrorHandlerFn(func(*driverConn, error, bool) {}), InternalCompressor: compressor}
+	c.InternalW = &deadlineContextWriter{InternalW: source, InternalSemaphore: make(chan struct{}, 1), InternalQuit: make(chan struct{})}
 	if version == 5 && compressor != nil {
-		c.segCompressor = compressor.(segment.Compressor)
+		c.InternalSegCompressor = compressor.(segment.Compressor)
 	}
-	c.initFramerCache()
-	stream, ok := c.streams.GetStream()
+	c.InternalInitFramerCache()
+	stream, ok := c.InternalStreams.GetStream()
 	if !ok || stream != 0 {
 		panic("synthetic stream allocation failed")
 	}
-	c.exclusiveFlag.Store(true)
-	r := &exclusiveConn{conn: c, ctx: ctx, complete: true, stream: stream, done: make(chan struct{})}
-	r.initStream(StreamLimits{})
+	c.InternalExclusiveFlag.Store(true)
+	r := &exclusiveConn{InternalConn: c, InternalCtx: ctx, InternalComplete: true, InternalStream: stream, InternalDone: make(chan struct{})}
+	r.InternalInitStream(StreamLimits{})
 	return r
 }
 func step04EncodedResponse(version byte, compressed bool, payload []byte) []byte {
@@ -130,14 +130,14 @@ func TestV2StreamingTransportReadTargetsAndWorkingMemory(t *testing.T) {
 			dst := make([]byte, 0, size)
 			source.start = uintptr(unsafe.Pointer(&dst[:cap(dst)][0]))
 			source.end = source.start + uintptr(size)
-			response, err := r.exchange(context.Background(), &attemptRequest{Statement: "SELECT value", Consistency: One})
+			response, err := r.InternalExchange(context.Background(), &attemptRequest{Statement: "SELECT value", Consistency: One})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err = response.installColumns(response.columns); err != nil {
+			if err = response.InternalInstallColumns(response.InternalColumns); err != nil {
 				t.Fatal(err)
 			}
-			plan := codecTestMust(StreamOneColumn(StreamBlob).Compile(response.columns))
+			plan := codecTestMust(StreamOneColumn(StreamBlob).Compile(response.InternalColumns))
 			if ok, err := decodeStreamRow(response, plan, &dst); !ok || err != nil || !bytes.Equal(dst, payload) {
 				t.Fatal(ok, err)
 			}
@@ -146,17 +146,17 @@ func TestV2StreamingTransportReadTargetsAndWorkingMemory(t *testing.T) {
 					t.Fatal("raw payload did not target final ranges", source.directBytes, source.otherBulk)
 				}
 			} else {
-				now := r.units.units.StorageBytes()
-				if now > r.limits.MaxTransformBytes || storage != 0 && now != storage {
+				now := r.InternalUnits.InternalUnits.StorageBytes()
+				if now > r.InternalLimits.MaxTransformBytes || storage != 0 && now != storage {
 					t.Fatal("working memory grew with response bytes", storage, now)
 				}
 				storage = now
 			}
-			if response.budget.Used >= 16<<10 {
-				t.Fatal("metadata allocations grew with cell", response.budget.Used)
+			if response.InternalBudget.Used >= 16<<10 {
+				t.Fatal("metadata allocations grew with cell", response.InternalBudget.Used)
 			}
-			response.releaseMetadata()
-			r.close(true)
+			response.InternalReleaseMetadata()
+			r.InternalClose(true)
 		}
 	}
 }
@@ -172,7 +172,7 @@ func BenchmarkV2ExclusiveTransport(b *testing.B) {
 				encoded := step04EncodedResponse(mode.version, mode.compressor != nil, payload)
 				source := &step04MemoryConn{source: bytes.NewReader(encoded)}
 				r := step04MemoryReservation(mode.version, mode.compressor, source)
-				defer r.close(true)
+				defer r.InternalClose(true)
 				dst := make([]byte, 0, size)
 				request := &attemptRequest{Statement: "SELECT value", Consistency: One}
 				var plan StreamRowPlan[[]byte]
@@ -182,22 +182,22 @@ func BenchmarkV2ExclusiveTransport(b *testing.B) {
 					source.readCalls = 0
 					source.directBytes = 0
 					source.otherBulk = 0
-					if r.units != nil {
-						r.units.data = nil
-						r.units.offset = 0
-						r.units.frameActive = false
-						r.units.started = false
-						r.units.copies = 0
+					if r.InternalUnits != nil {
+						r.InternalUnits.InternalData = nil
+						r.InternalUnits.InternalOffset = 0
+						r.InternalUnits.InternalFrameActive = false
+						r.InternalUnits.InternalStarted = false
+						r.InternalUnits.InternalCopies = 0
 					}
-					response, err := r.exchange(context.Background(), request)
+					response, err := r.InternalExchange(context.Background(), request)
 					if err != nil {
 						b.Fatal(err)
 					}
-					if err = response.installColumns(response.columns); err != nil {
+					if err = response.InternalInstallColumns(response.InternalColumns); err != nil {
 						b.Fatal(err)
 					}
 					if plan == nil {
-						plan, err = StreamOneColumn(StreamBlob).Compile(response.columns)
+						plan, err = StreamOneColumn(StreamBlob).Compile(response.InternalColumns)
 						if err != nil {
 							b.Fatal(err)
 						}
@@ -205,7 +205,7 @@ func BenchmarkV2ExclusiveTransport(b *testing.B) {
 					if ok, err := decodeStreamRow(response, plan, &dst); !ok || err != nil {
 						b.Fatal(ok, err)
 					}
-					response.releaseMetadata()
+					response.InternalReleaseMetadata()
 				}
 				run()
 				b.SetBytes(int64(size))
@@ -216,9 +216,9 @@ func BenchmarkV2ExclusiveTransport(b *testing.B) {
 				}
 				b.StopTimer()
 				b.ReportMetric(float64(source.readCalls), "reads/op")
-				if r.units != nil {
-					b.ReportMetric(float64(r.units.units.StorageBytes()), "transform-B")
-					b.ReportMetric(float64(r.units.copies), "unit-copy-B/op")
+				if r.InternalUnits != nil {
+					b.ReportMetric(float64(r.InternalUnits.InternalUnits.StorageBytes()), "transform-B")
+					b.ReportMetric(float64(r.InternalUnits.InternalCopies), "unit-copy-B/op")
 				}
 			})
 		}
@@ -235,21 +235,21 @@ func FuzzV2ExclusiveIncrementalFraming(f *testing.F) {
 		version = 3 + version%3
 		source := &step04MemoryConn{source: bytes.NewReader(input)}
 		r := step04MemoryReservation(version, nil, source)
-		defer r.close(false)
-		r.limits.MaxMetadataBytes = 2048
-		r.metadataBudget.SetLimit(2048)
-		response, err := r.exchange(context.Background(), &attemptRequest{Statement: "SELECT", Consistency: One})
+		defer r.InternalClose(false)
+		r.InternalLimits.MaxMetadataBytes = 2048
+		r.InternalMetadataBudget.SetLimit(2048)
+		response, err := r.InternalExchange(context.Background(), &attemptRequest{Statement: "SELECT", Consistency: One})
 		if err != nil {
 			if response != nil {
-				response.releaseMetadata()
+				response.InternalReleaseMetadata()
 			}
 			return
 		}
-		defer response.releaseMetadata()
-		if err = response.installColumns(response.columns); err != nil {
+		defer response.InternalReleaseMetadata()
+		if err = response.InternalInstallColumns(response.InternalColumns); err != nil {
 			return
 		}
-		plan, err := StreamRow(func(*Unit) {}).Compile(response.columns)
+		plan, err := StreamRow(func(*Unit) {}).Compile(response.InternalColumns)
 		if err != nil {
 			return
 		}
@@ -277,22 +277,22 @@ func BenchmarkV2ExclusiveRowsScaling(b *testing.B) {
 			encoded = append(encoded, body...)
 			source := &step04MemoryConn{source: bytes.NewReader(encoded)}
 			r := step04MemoryReservation(4, nil, source)
-			defer r.close(true)
+			defer r.InternalClose(true)
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			var plan StreamRowPlan[[]byte]
 			dst := make([]byte, 0, 1)
 			run := func() {
 				source.source.Reset(encoded)
-				response, err := r.exchange(ctx, &attemptRequest{Statement: "SELECT value", Consistency: One})
+				response, err := r.InternalExchange(ctx, &attemptRequest{Statement: "SELECT value", Consistency: One})
 				if err != nil {
 					b.Fatal(err)
 				}
-				if err = response.installColumns(response.columns); err != nil {
+				if err = response.InternalInstallColumns(response.InternalColumns); err != nil {
 					b.Fatal(err)
 				}
 				if plan == nil {
-					plan, err = StreamOneColumn(StreamBlob).Compile(response.columns)
+					plan, err = StreamOneColumn(StreamBlob).Compile(response.InternalColumns)
 					if err != nil {
 						b.Fatal(err)
 					}
@@ -311,7 +311,7 @@ func BenchmarkV2ExclusiveRowsScaling(b *testing.B) {
 				if n != count {
 					b.Fatal(n, count)
 				}
-				response.releaseMetadata()
+				response.InternalReleaseMetadata()
 			}
 			run()
 			b.ReportAllocs()
@@ -385,7 +385,7 @@ func BenchmarkV2TLSWriteAmplification(b *testing.B) {
 					b.Fatal(err)
 				}
 				recorder := &typedTLSRecorder{conn: client, expected: parts}
-				writer := &deadlineContextWriter{w: recorder, semaphore: make(chan struct{}, 1), quit: make(chan struct{})}
+				writer := &deadlineContextWriter{InternalW: recorder, InternalSemaphore: make(chan struct{}, 1), InternalQuit: make(chan struct{})}
 				warm := make(chan struct{})
 				done := make(chan error, 1)
 				go func() {
@@ -401,7 +401,7 @@ func BenchmarkV2TLSWriteAmplification(b *testing.B) {
 				}()
 				run := func() {
 					recorder.next = 0
-					if _, err := writer.writeSpans(context.Background(), chain); err != nil {
+					if _, err := writer.InternalWriteSpans(context.Background(), chain); err != nil {
 						b.Fatal(err)
 					}
 					if recorder.next != len(parts) {
@@ -458,14 +458,14 @@ func BenchmarkV2TLSReceiveAmplification(b *testing.B) {
 			plain := &step04PlaintextCounter{Conn: client}
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			c := &Conn{version: 4, ctx: ctx, cancel: cancel, r: &connReader{conn: plain}, streams: streams.New(), logger: nopLogger{}, errorHandler: connErrorHandlerFn(func(*Conn, error, bool) {})}
-			c.w = &deadlineContextWriter{w: client, semaphore: make(chan struct{}, 1), quit: make(chan struct{})}
-			c.initFramerCache()
-			stream, _ := c.streams.GetStream()
-			c.exclusiveFlag.Store(true)
-			r := &exclusiveConn{conn: c, ctx: ctx, stream: stream, complete: true, done: make(chan struct{})}
-			r.initStream(StreamLimits{})
-			defer r.close(true)
+			c := &driverConn{InternalVersion: 4, InternalCtx: ctx, InternalCancel: cancel, InternalR: &connReader{InternalConn: plain}, InternalStreams: streams.New(), InternalLogger: nopLogger{}, InternalErrorHandler: connErrorHandlerFn(func(*driverConn, error, bool) {})}
+			c.InternalW = &deadlineContextWriter{InternalW: client, InternalSemaphore: make(chan struct{}, 1), InternalQuit: make(chan struct{})}
+			c.InternalInitFramerCache()
+			stream, _ := c.InternalStreams.GetStream()
+			c.InternalExclusiveFlag.Store(true)
+			r := &exclusiveConn{InternalConn: c, InternalCtx: ctx, InternalStream: stream, InternalComplete: true, InternalDone: make(chan struct{})}
+			r.InternalInitStream(StreamLimits{})
+			defer r.InternalClose(true)
 			warm := make(chan struct{})
 			done := make(chan error, 1)
 			go func() {
@@ -494,15 +494,15 @@ func BenchmarkV2TLSReceiveAmplification(b *testing.B) {
 			plain.end = plain.start + uintptr(size)
 			var plan StreamRowPlan[[]byte]
 			run := func() {
-				response, err := r.exchange(ctx, &attemptRequest{Statement: "SELECT value", Consistency: One})
+				response, err := r.InternalExchange(ctx, &attemptRequest{Statement: "SELECT value", Consistency: One})
 				if err != nil {
 					b.Fatal(err)
 				}
-				if err = response.installColumns(response.columns); err != nil {
+				if err = response.InternalInstallColumns(response.InternalColumns); err != nil {
 					b.Fatal(err)
 				}
 				if plan == nil {
-					plan, err = StreamOneColumn(StreamBlob).Compile(response.columns)
+					plan, err = StreamOneColumn(StreamBlob).Compile(response.InternalColumns)
 					if err != nil {
 						b.Fatal(err)
 					}
@@ -510,7 +510,7 @@ func BenchmarkV2TLSReceiveAmplification(b *testing.B) {
 				if ok, err := decodeStreamRow(response, plan, &dst); !ok || err != nil {
 					b.Fatal(ok, err)
 				}
-				response.releaseMetadata()
+				response.InternalReleaseMetadata()
 			}
 			run()
 			<-warm

@@ -1,0 +1,22 @@
+[
+  {
+    "file": "address_translators_test.go",
+    "function": "github.com/scylladb/gocql/v2/internal/endpoint.InternalHostInfoSetScyllaFeatures",
+    "line": 138
+  },
+  {
+    "file": "host_source_test.go",
+    "function": "github.com/scylladb/gocql/v2/internal/endpoint.InternalHostInfoGetTranslatedConnectionInfo",
+    "line": 617
+  },
+  {
+    "file": "policies_partition_healthy_test.go",
+    "function": "github.com/scylladb/gocql/v2/internal/endpoint.InternalHostInfoHostUUID",
+    "line": 133
+  },
+  {
+    "file": "internal/cluster/host_source.go",
+    "function": "github.com/scylladb/gocql/v2/internal/endpoint.InternalHostInfoGetDriverFacingIpAddressLocked",
+    "line": 178
+  }
+]

@@ -1,6 +1,11 @@
 package gocql
 
 import (
+	implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+	implExecution "github.com/scylladb/gocql/v2/internal/execution"
+)
+
+import (
 	cqltype "github.com/scylladb/gocql/v2/internal/cqltype"
 
 	"bytes"
@@ -90,7 +95,7 @@ func TestStep09ConditionalPrepareAbsentResultMetadata(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if prepared.plans.plan != nil {
+				if implExecution.PreparedData(prepared).InternalPlans.InternalPlan != nil {
 					t.Fatal("absent shape compiled eagerly")
 				}
 				bound := codecTestMust(BindOwned(prepared, Unit{}))
@@ -129,7 +134,7 @@ func TestStep09ReprepareResultOnlyShapeWithoutRoutingHasher(t *testing.T) {
 	typ := codecTestMust(ScalarType(TypeBlob))
 	oldColumns := NewColumns(ColumnSpec{Keyspace: "ks", Table: "tbl", Name: "value", Type: typ})
 	state, old := step03PreparedState(t, s, oldColumns)
-	state.partitioner = "known-before-schema-invalidation"
+	state.InternalPartitioner = "known-before-schema-invalidation"
 	newColumns := NewColumns(cqltype.ColumnSlice(oldColumns)[0], ColumnSpec{Keyspace: "ks", Table: "tbl", Name: "added", Type: typ})
 	done := make(chan error, 1)
 	go func() {
@@ -141,11 +146,11 @@ func TestStep09ReprepareResultOnlyShapeWithoutRoutingHasher(t *testing.T) {
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	updated, err := s.prepareOnConnExpected(ctx, conns[0], state, encodedValues{Columns: NewColumns()}, true, old)
+	updated, err := runtimeFor(s).InternalPrepareOnConnExpected(ctx, conns[0], state, encodedValues{Columns: NewColumns()}, true, old)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !updated.columns.Equal(newColumns) || state.parameters.Len() != 0 || len(state.info.PartitionKeyIndexes) != 0 {
+	if !updated.InternalColumns.Equal(newColumns) || state.InternalParameters.Len() != 0 || len(state.InternalInfo.PartitionKeyIndexes) != 0 {
 		t.Fatal("result-only reprepare changed canonical inputs")
 	}
 	if err := <-done; err != nil {
@@ -162,12 +167,17 @@ func step09StreamReconcile(t *testing.T, failContinuation bool) {
 	s, c, peer := step07StreamSession(t, 4, nil)
 	defer peer.Close()
 	defer s.Close()
-	s.cfg.Keyspace = "ks"
+	implCluster.SessionData(s).InternalCfg.Keyspace = "ks"
 	blob := codecTestMust(ScalarType(TypeBlob))
 	columns := NewColumns(ColumnSpec{Keyspace: "ks", Table: "tbl", Name: "value", Type: blob})
 	state, _ := step03PreparedState(t, s, columns)
 	changed := NewColumns(cqltype.ColumnSlice(columns)[0], ColumnSpec{Keyspace: "ks", Table: "tbl", Name: "added", Type: blob})
-	bound := &Bound[Bytes]{request: executionRequest{statement: state.statement, prepared: state, values: encodedValues{Columns: NewColumns()}, owner: newInputOwner(), routing: RoutingInfo{Kind: OrdinaryStatement}}, rows: OneColumn(BlobCodec)}
+	bound := func() *Bound[Bytes] {
+		opaqueStorageValue := new(Bound[Bytes])
+		implExecution.BoundData(opaqueStorageValue).InternalRequest = executionRequest{InternalStatement: state.InternalStatement, InternalPrepared: state, InternalValues: encodedValues{Columns: NewColumns()}, InternalOwner: newInputOwner(), InternalRouting: RoutingInfo{Kind: OrdinaryStatement}}
+		implExecution.BoundData(opaqueStorageValue).InternalRows = OneColumn(BlobCodec)
+		return opaqueStorageValue
+	}()
 	defer bound.Close()
 	done := make(chan error, 1)
 	go func() {
@@ -247,7 +257,7 @@ func step09StreamReconcile(t *testing.T, failContinuation bool) {
 	if !cursor.NextInto(&dst) || string(dst) != "first" {
 		t.Fatal(cursor.Err())
 	}
-	state.dependencies.tracker.bump(preparedDependencyKey{'b', "ks", "tbl"})
+	state.InternalDependencies.InternalTracker.InternalBump(preparedDependencyKey{InternalKind: 'b', InternalKeyspace: "ks", InternalName: "tbl"})
 	if resets != 1 || string(dst) != "first" {
 		t.Fatal("schema event accessed caller destination")
 	}

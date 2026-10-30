@@ -3,6 +3,8 @@
 
 package gocql
 
+import implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+
 import (
 	"context"
 	"math/rand"
@@ -127,7 +129,7 @@ func startServerWithShardAwarePort(t testing.TB, useTLS bool) (makeCluster makeC
 				cluster.PoolConfig.HostSelectionPolicy = TokenAwareHostPolicy(RoundRobinHostPolicy())
 				cluster.Dialer = dialer
 				cluster.DisableShardAwarePort = disableShardAwarePort
-				return cluster.open()
+				return implCluster.InternalClusterSettingsOpen(cluster)
 			},
 		}
 	}

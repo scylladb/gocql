@@ -24,17 +24,7 @@
 
 package gocql
 
-import (
-	"context"
-
-	"fmt"
-
-	"strings"
-
-	"time"
-
-	frm "github.com/scylladb/gocql/v2/internal/frame"
-)
+import "strings"
 
 // DEPRECATED use Consistency type, SerialConsistency is now an alias for backwards compatibility.
 type SerialConsistency = Consistency
@@ -52,39 +42,4 @@ func ParseConsistency(s string) Consistency {
 func ParseConsistencyWrapper(s string) (consistency Consistency, err error) {
 	err = consistency.UnmarshalText([]byte(strings.ToUpper(s)))
 	return
-}
-
-type ObservedFrameHeader struct {
-	// StartHeader is the time we started reading the frame header off the network connection.
-	//
-	// On protocol v5 the header arrives inside a transport segment, so this is
-	// when the read of that segment began. Frames packed into one self-contained
-	// segment therefore share a window: they did all arrive in the same read.
-	Start time.Time
-	// EndHeader is the time we finished reading the frame header off the network connection.
-	//
-	// On protocol v5 this is when the segment carrying the header had been read —
-	// or, for a frame whose header is itself split across segments, when the last
-	// segment needed to complete the 9 header bytes arrived. It is not extended to
-	// cover the rest of a frame spanning further segments.
-	End time.Time
-	// Host is Host of the connection the frame header was read from.
-	Host    *HostInfo
-	Length  int32
-	Stream  int16
-	Version frm.ProtoVersion
-	Flags   byte
-	Opcode  frm.Op
-}
-
-func (f ObservedFrameHeader) String() string {
-	return fmt.Sprintf("[observed header version=%s flags=0x%x stream=%d op=%s length=%d]", f.Version, f.Flags, f.Stream, f.Opcode, f.Length)
-}
-
-// FrameHeaderObserver is the interface implemented by frame observers / stat collectors.
-//
-// Experimental, this interface and use may change
-type FrameHeaderObserver interface {
-	// ObserveFrameHeader gets called on every received frame header.
-	ObserveFrameHeader(context.Context, ObservedFrameHeader)
 }

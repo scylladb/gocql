@@ -26,7 +26,8 @@ package gocql_test
 
 import (
 	"fmt"
-	"github.com/scylladb/gocql/v2"
+	gocql "github.com/scylladb/gocql/v2"
+
 	"log"
 )
 

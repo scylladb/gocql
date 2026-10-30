@@ -27,7 +27,8 @@
 
 package gocql
 
-// This file groups integration tests where Cassandra has to be set up with some special integration variables
+import implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+
 import (
 	"context"
 	"encoding/json"
@@ -113,14 +114,13 @@ func TestRingDiscovery(t *testing.T) {
 		// wait for autodiscovery to update the pool with the list of known hosts
 		time.Sleep(*flagAutoWait)
 	}
-
-	session.pool.mu.RLock()
-	defer session.pool.mu.RUnlock()
-	size := len(session.pool.hostConnPools)
+	implCluster.SessionData(session).InternalPool.InternalMu.RLock()
+	defer implCluster.SessionData(session).InternalPool.InternalMu.RUnlock()
+	size := len(implCluster.SessionData(session).InternalPool.InternalHostConnPools)
 
 	if *clusterSize != size {
-		for p, pool := range session.pool.hostConnPools {
-			t.Logf("p=%q host=%v ips=%s", p, pool.host, pool.host.ConnectAddress().String())
+		for p, pool := range implCluster.SessionData(session).InternalPool.InternalHostConnPools {
+			t.Logf("p=%q host=%v ips=%s", p, pool.InternalHost, pool.InternalHost.ConnectAddress().String())
 
 		}
 		t.Errorf("Expected a cluster size of %d, but actual size was %d", *clusterSize, size)
@@ -163,7 +163,7 @@ func TestHostFilterDiscovery(t *testing.T) {
 			t.Fatalf("filtered host remains eligible: %+v", host)
 		}
 	}
-	if ch := session.control.getConn(); ch != nil && ch.host.ConnectAddress().String() == filtered {
+	if ch := implCluster.SessionData(session).InternalControl.InternalGetConn(); ch != nil && ch.InternalHost.ConnectAddress().String() == filtered {
 		t.Fatal("control connection selected a filtered host")
 	}
 }
@@ -204,7 +204,7 @@ func TestHostFilterInitial(t *testing.T) {
 			t.Fatalf("filtered host remains eligible: %+v", host)
 		}
 	}
-	if ch := session.control.getConn(); ch != nil && ch.host.ConnectAddress().String() == filtered {
+	if ch := implCluster.SessionData(session).InternalControl.InternalGetConn(); ch != nil && ch.InternalHost.ConnectAddress().String() == filtered {
 		t.Fatal("control connection selected a filtered host")
 	}
 }
@@ -378,17 +378,17 @@ func TestDriverConfigReporting(t *testing.T) {
 		// against has to belong to the same node. Re-reading the pool size also
 		// means that should a pool start filling again, the bar rises with it
 		// instead of leaving the loop free to exit on a stale count.
-		ch := s.control.getConn()
+		ch := implCluster.SessionData(s).InternalControl.InternalGetConn()
 		if ch == nil {
 			t.Fatal("expected the session to have a control connection")
 		}
-		controlHost := ch.host
+		controlHost := ch.InternalHost
 
 		// Connections this session has to the control connection's node: its
 		// pool for that host, plus the control connection itself, which is
 		// dialed outside the pool.
 		wantConns := 1
-		if hostPool, ok := s.pool.getPool(controlHost); ok {
+		if hostPool, ok := implCluster.SessionData(s).InternalPool.InternalGetPool(controlHost); ok {
 			wantConns += hostPool.Size()
 		}
 
@@ -453,8 +453,8 @@ func TestDriverConfigReporting(t *testing.T) {
 		// understands. The fake server the unit tests run against cannot
 		// exercise either side of that gate.
 		wantServerSide := false
-		if ch := s.control.getConn(); ch != nil {
-			wantServerSide = ch.conn.isScyllaConn()
+		if ch := implCluster.SessionData(s).InternalControl.InternalGetConn(); ch != nil {
+			wantServerSide = ch.InternalConn.InternalIsScyllaConn()
 		}
 		if got := report.ControlPlane.Queries.System.Timeout.ServerSideMs != nil; got != wantServerSide {
 			t.Errorf("expected server-side-ms present=%v against this server, got %v", wantServerSide, got)
@@ -484,7 +484,7 @@ func TestWriteFailure(t *testing.T) {
 	if _, err := v2Exec(context.Background(), session, fmt.Sprintf(`INSERT INTO %s.%s (id, value) VALUES (1, 1)`, fixtureKeyspace("_fail"), table)); err != nil {
 		var errWrite *RequestErrWriteFailure
 		if errors.As(err, &errWrite) {
-			if session.cfg.ProtoVersion >= protoVersion5 {
+			if implCluster.SessionData(session).InternalCfg.ProtoVersion >= protoVersion5 {
 				// ErrorMap should be filled with some hosts that should've errored
 				if len(errWrite.ErrorMap) == 0 {
 					t.Fatal("errWrite.ErrorMap should have some failed hosts but it didn't have any")
@@ -517,7 +517,7 @@ func TestCustomPayloadMessages(t *testing.T) {
 
 	table := testTableName(t, session.ID())
 
-	if err := v2CreateTable(context.Background(), session, fmt.Sprintf("CREATE TABLE %s.%s (id int, value int, PRIMARY KEY (id))", session.cfg.Keyspace, table)); err != nil {
+	if err := v2CreateTable(context.Background(), session, fmt.Sprintf("CREATE TABLE %s.%s (id int, value int, PRIMARY KEY (id))", implCluster.SessionData(session).InternalCfg.Keyspace, table)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -574,7 +574,7 @@ func TestCustomPayloadValues(t *testing.T) {
 	session := createV2Session(t)
 	defer session.Close()
 	table := testTableName(t, session.ID())
-	if err := v2CreateTable(context.Background(), session, fmt.Sprintf("CREATE TABLE %s.%s (id int, value int, PRIMARY KEY (id))", session.cfg.Keyspace, table)); err != nil {
+	if err := v2CreateTable(context.Background(), session, fmt.Sprintf("CREATE TABLE %s.%s (id int, value int, PRIMARY KEY (id))", implCluster.SessionData(session).InternalCfg.Keyspace, table)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -848,7 +848,7 @@ func TestNewConnectWithLowTimeout(t *testing.T) {
 								t.Fatal("failed to create session", err.Error())
 							}
 							defer s.Close()
-							err = s.control.reconnect()
+							err = implCluster.SessionData(s).InternalControl.InternalReconnect()
 							if err != nil {
 								t.Fatalf("failed to reconnect to control connection: %v", err)
 							}
@@ -864,11 +864,11 @@ func TestNewConnectWithLowTimeout(t *testing.T) {
 
 // readV2ClientOptions keeps node-local startup reports on the control connection.
 func readV2ClientOptions(ctx context.Context, session *Session, cql string) ([]map[string]string, error) {
-	handle := session.control.getConn()
+	handle := implCluster.SessionData(session).InternalControl.InternalGetConn()
 	if handle == nil {
 		return nil, errNoControl
 	}
-	conn, ok := handle.conn.(*Conn)
+	conn, ok := handle.InternalConn.(*driverConn)
 	if !ok {
 		return nil, fmt.Errorf("control connection does not support typed queries")
 	}
@@ -894,11 +894,11 @@ func readV2ClientOptions(ctx context.Context, session *Session, cql string) ([]m
 }
 
 func queryV2ControlKey(ctx context.Context, session *Session) error {
-	handle := session.control.getConn()
+	handle := implCluster.SessionData(session).InternalControl.InternalGetConn()
 	if handle == nil {
 		return errNoControl
 	}
-	conn, ok := handle.conn.(*Conn)
+	conn, ok := handle.InternalConn.(*driverConn)
 	if !ok {
 		return fmt.Errorf("control connection does not support typed queries")
 	}

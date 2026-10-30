@@ -30,12 +30,11 @@ package gocql
 import (
 	"context"
 	"fmt"
+	inf "gopkg.in/inf.v0"
 	"reflect"
 	"sort"
 	"testing"
 	"time"
-
-	"gopkg.in/inf.v0"
 )
 
 type WikiPage struct {

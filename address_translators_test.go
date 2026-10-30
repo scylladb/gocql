@@ -27,6 +27,8 @@
 
 package gocql
 
+import implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
+
 import (
 	"fmt"
 	"net"
@@ -133,10 +135,13 @@ func TestTranslateHostAddresses_WithScyllaPorts(t *testing.T) {
 		Port:           9042,
 		HostId:         "a0000000-0000-0000-0000-000000000001",
 	}.Build()
-	host.setScyllaFeatures(ScyllaHostFeatures{
-		shardAwarePort:    19042,
-		shardAwarePortTLS: 19043,
-	})
+	implEndpoint.InternalHostInfoSetScyllaFeatures(&host, *func() *ScyllaHostFeatures {
+		opaqueStorageValue := new(ScyllaHostFeatures)
+		implEndpoint.ScyllaHostFeaturesData(opaqueStorageValue).InternalShardAwarePort = 19042
+		implEndpoint.ScyllaHostFeaturesData(opaqueStorageValue).InternalShardAwarePortTLS = 19043
+		return opaqueStorageValue
+	}(),
+	)
 
 	translated, err := translateHostAddresses(translator, &host, nil)
 

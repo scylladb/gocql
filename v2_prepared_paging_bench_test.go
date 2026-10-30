@@ -17,6 +17,12 @@
 package gocql
 
 import (
+	implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+	implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
+	implExecution "github.com/scylladb/gocql/v2/internal/execution"
+)
+
+import (
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -28,18 +34,18 @@ import (
 func BenchmarkV2PagingHistoryLookup(b *testing.B) {
 	for _, count := range []int{1, 1024, 65536} {
 		b.Run(fmt.Sprint(count), func(b *testing.B) {
-			h := pagingHistory{maxCount: count, maxBytes: 16 << 20}
+			h := pagingHistory{InternalMaxCount: count, InternalMaxBytes: 16 << 20}
 			var state PageState
 			for i := 0; i < count; i++ {
 				state = RestorePageState(binary.LittleEndian.AppendUint64(nil, uint64(i)))
-				if err := h.add(state); err != nil {
+				if err := h.InternalAdd(state); err != nil {
 					b.Fatal(err)
 				}
 			}
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				if h.add(state) != ErrPagingNoProgress {
+				if h.InternalAdd(state) != ErrPagingNoProgress {
 					b.Fatal("history lost state")
 				}
 			}
@@ -47,21 +53,29 @@ func BenchmarkV2PagingHistoryLookup(b *testing.B) {
 	}
 }
 func BenchmarkV2WarmPreparedSelection(b *testing.B) {
-	s := &Session{logger: nopLogger{}}
+	s := func() *Session {
+		opaqueStorageValue := new(Session)
+		implCluster.SessionData(opaqueStorageValue).InternalLogger = nopLogger{}
+		return opaqueStorageValue
+	}()
 	columns := NewColumns(ColumnSpec{Keyspace: "ks", Table: "tbl", Name: "value", Type: codecTestMust(ScalarType(TypeBlob))})
-	tracker := s.typedRuntime().schemaTracker()
-	deps := tracker.dependencies("ks", NewColumns(), columns)
-	hp := &hostPrepared{epoch: deps.snapshot()}
+	tracker := runtimeFor(s).InternalSchemaTracker()
+	deps := tracker.InternalDependencies("ks", NewColumns(), columns)
+	hp := &hostPrepared{InternalEpoch: deps.InternalSnapshot()}
 	id := UUID{15: 1}
-	state := &preparedState{hosts: map[UUID]*hostPrepared{id: hp}, dependencies: deps}
-	conn := &Conn{host: &HostInfo{hostId: id}}
-	rt := s.typedRuntime()
-	rt.mu.Lock()
-	defer rt.mu.Unlock()
+	state := &preparedState{InternalHosts: map[UUID]*hostPrepared{id: hp}, InternalDependencies: deps}
+	conn := &driverConn{InternalHost: func() *HostInfo {
+		opaqueStorageValuex := new(HostInfo)
+		implEndpoint.HostInfoData(opaqueStorageValuex).InternalHostId = id
+		return opaqueStorageValuex
+	}()}
+	rt := runtimeFor(s)
+	rt.InternalMu.Lock()
+	defer rt.InternalMu.Unlock()
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		got, err := s.prepareOnConn(context.Background(), conn, state, encodedValues{}, false)
+		got, err := runtimeFor(s).InternalPrepareOnConn(context.Background(), conn, state, encodedValues{}, false)
 		if err != nil || got != hp {
 			b.Fatal(err)
 		}
@@ -88,15 +102,21 @@ func BenchmarkV2PageCallerDestination(b *testing.B) {
 				chain := codecTestMust(wire.NewChain(spans...))
 				owner := wire.NewLease(chain, nil)
 				defer owner.Release()
-				p := &Page[row]{response: &responsePage{responseData: responseData{Columns: columns, Rows: chain, RowCount: 1, Owner: owner}}, plan: codecTestMust(decoder.Compile(columns)), cursor: wire.NewCursor(chain)}
-				cursor := *p.cursor
+				p := func() *Page[row] {
+					opaqueStorageValuexx := new(Page[row])
+					implExecution.PageData(opaqueStorageValuexx).InternalResponse = &responsePage{InternalResponseData: responseData{Columns: columns, Rows: chain, RowCount: 1, Owner: owner}}
+					implExecution.PageData(opaqueStorageValuexx).InternalPlan = codecTestMust(decoder.Compile(columns))
+					implExecution.PageData(opaqueStorageValuexx).InternalCursor = wire.NewCursor(chain)
+					return opaqueStorageValuexx
+				}()
+				cursor := *implExecution.PageData(p).InternalCursor
 				var dst row
 				b.ReportAllocs()
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
-					*p.cursor = cursor
-					p.index = 0
-					p.exhausted = false
+					*implExecution.PageData(p).InternalCursor = cursor
+					implExecution.PageData(p).InternalIndex = 0
+					implExecution.PageData(p).InternalExhausted = false
 					if into {
 						if !p.NextInto(&dst) {
 							b.Fatal(p.Err())
@@ -111,17 +131,17 @@ func BenchmarkV2PageCallerDestination(b *testing.B) {
 }
 func BenchmarkV2ResultPlanExactEntry(b *testing.B) {
 	columns := NewColumns(ColumnSpec{Name: "value", Type: codecTestMust(ScalarType(TypeBlob))})
-	entry := &typedResultMetadata{columns: columns}
-	response := &responsePage{metadata: entry, responseData: responseData{Columns: columns}}
+	entry := &typedResultMetadata{InternalColumns: columns}
+	response := &responsePage{InternalMetadata: entry, InternalResponseData: responseData{Columns: columns}}
 	cache := &resultPlanCache[Bytes]{}
 	decoder := OneColumn(BlobCodec)
-	if _, err := cache.selectPlan(response, decoder); err != nil {
+	if _, err := cache.InternalSelectPlan(response, decoder); err != nil {
 		b.Fatal(err)
 	}
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := cache.selectPlan(response, decoder); err != nil {
+		if _, err := cache.InternalSelectPlan(response, decoder); err != nil {
 			b.Fatal(err)
 		}
 	}

@@ -1,0 +1,611 @@
+[
+  {
+    "file": "internal/cluster/v2_placement.go",
+    "function": "InternalSessionCaptureTabletFeedback",
+    "method": "InternalCaptureTabletFeedback",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/v2_placement.go",
+    "function": "InternalSessionApplyV2TabletHint",
+    "method": "InternalApplyV2TabletHint",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/v2_placement.go",
+    "function": "InternalSessionQueueTabletFeedback",
+    "method": "InternalQueueTabletFeedback",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/v2_placement.go",
+    "function": "InternalSessionPublishTabletFeedback",
+    "method": "InternalPublishTabletFeedback",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/v2_placement.go",
+    "function": "InternalSessionRunV2TabletFeedback",
+    "method": "InternalRunV2TabletFeedback",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/v2_placement.go",
+    "function": "InternalSessionCapturedRoutingPartitioner",
+    "method": "InternalCapturedRoutingPartitioner",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/v2_client_routes.go",
+    "function": "InternalClientRoutesHandlerOrderedRoutes",
+    "method": "InternalOrderedRoutes",
+    "owner": "ClientRoutesHandler",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/v2_client_routes.go",
+    "function": "InternalClientRoutesHandlerBindRoute",
+    "method": "InternalBindRoute",
+    "owner": "ClientRoutesHandler",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/v2_client_routes.go",
+    "function": "InternalClientRoutesHandlerCaptureRouteEpochs",
+    "method": "InternalCaptureRouteEpochs",
+    "owner": "ClientRoutesHandler",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/v2_client_routes.go",
+    "function": "InternalClientRoutesHandlerInvalidateRouteTask",
+    "method": "InternalInvalidateRouteTask",
+    "owner": "ClientRoutesHandler",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/v2_client_routes.go",
+    "function": "InternalClientRoutesHandlerApplyRouteRead",
+    "method": "InternalApplyRouteRead",
+    "owner": "ClientRoutesHandler",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/v2_client_routes.go",
+    "function": "InternalClientRoutesHandlerHandleRouteEventOwned",
+    "method": "InternalHandleRouteEventOwned",
+    "owner": "ClientRoutesHandler",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/v2_execute.go",
+    "function": "InternalSessionTypedGeneration",
+    "method": "InternalTypedGeneration",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/v2_execute.go",
+    "function": "InternalSessionSelectTypedConn",
+    "method": "InternalSelectTypedConn",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/v2_execute.go",
+    "function": "InternalSessionObserveSafely",
+    "method": "InternalObserveSafely",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/v2_execute.go",
+    "function": "InternalSessionPickTypedPool",
+    "method": "InternalPickTypedPool",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/v2_execute.go",
+    "function": "InternalSessionApplyTypedFeedbackStamped",
+    "method": "InternalApplyTypedFeedbackStamped",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/events.go",
+    "function": "InternalSessionPublishEvent",
+    "method": "InternalPublishEvent",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/events.go",
+    "function": "InternalSessionHandleEvent",
+    "method": "InternalHandleEvent",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/events.go",
+    "function": "InternalSessionHandleSchemaEvent",
+    "method": "InternalHandleSchemaEvent",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/events.go",
+    "function": "InternalSessionHandleNodeEvent",
+    "method": "InternalHandleNodeEvent",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/events.go",
+    "function": "InternalSessionHandleNodeUp",
+    "method": "InternalHandleNodeUp",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/events.go",
+    "function": "InternalSessionHandlePoolConnected",
+    "method": "InternalHandlePoolConnected",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/events.go",
+    "function": "InternalSessionHandleNodeConnected",
+    "method": "InternalHandleNodeConnected",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/events.go",
+    "function": "InternalSessionHandleNodeDown",
+    "method": "InternalHandleNodeDown",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/events.go",
+    "function": "InternalSessionRecordV2Topology",
+    "method": "InternalRecordV2Topology",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/conn.go",
+    "function": "InternalSessionDial",
+    "method": "InternalDial",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/conn.go",
+    "function": "InternalSessionDialShard",
+    "method": "InternalDialShard",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/conn.go",
+    "function": "InternalSessionDialWithoutObserver",
+    "method": "InternalDialWithoutObserver",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/control.go",
+    "function": "InternalSessionControlConnConfig",
+    "method": "InternalControlConnConfig",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/v2_prepared_refresh.go",
+    "function": "InternalSessionScheduleV2PreparedRefresh",
+    "method": "InternalScheduleV2PreparedRefresh",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/client_routes.go",
+    "function": "InternalClientRoutesHandlerUpdateHostPortMappingAsync",
+    "method": "InternalUpdateHostPortMappingAsync",
+    "owner": "ClientRoutesHandler",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/client_routes.go",
+    "function": "InternalClientRoutesHandlerUpdateHostPortMappingSync",
+    "method": "InternalUpdateHostPortMappingSync",
+    "owner": "ClientRoutesHandler",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/client_routes.go",
+    "function": "InternalClientRoutesHandlerStartReadingEvents",
+    "method": "InternalStartReadingEvents",
+    "owner": "ClientRoutesHandler",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/client_routes.go",
+    "function": "InternalClientRoutesHandlerStartUpdateWorker",
+    "method": "InternalStartUpdateWorker",
+    "owner": "ClientRoutesHandler",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/v2_metadata.go",
+    "function": "InternalSessionPeripheral",
+    "method": "InternalPeripheral",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/v2_metadata.go",
+    "function": "InternalSessionConfigureV2Peripheral",
+    "method": "InternalConfigureV2Peripheral",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/v2_metadata.go",
+    "function": "InternalSessionPublishV2Metadata",
+    "method": "InternalPublishV2Metadata",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/v2_metadata.go",
+    "function": "InternalSessionObserveV2Lifecycle",
+    "method": "InternalObserveV2Lifecycle",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/v2_metadata.go",
+    "function": "InternalSessionAwaitV2SchemaAgreementOn",
+    "method": "InternalAwaitV2SchemaAgreementOn",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/v2_metadata.go",
+    "function": "InternalSessionRefreshV2AllSchema",
+    "method": "InternalRefreshV2AllSchema",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/v2_metadata.go",
+    "function": "InternalSessionRefreshV2Keyspace",
+    "method": "InternalRefreshV2Keyspace",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/v2_metadata.go",
+    "function": "InternalSessionStartV2SchemaRetry",
+    "method": "InternalStartV2SchemaRetry",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/v2_metadata.go",
+    "function": "InternalSessionTypedSchemaGeneration",
+    "method": "InternalTypedSchemaGeneration",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/v2_metadata.go",
+    "function": "InternalSessionRecordV2Latency",
+    "method": "InternalRecordV2Latency",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/v2_metadata.go",
+    "function": "InternalSessionRecordV2Orphan",
+    "method": "InternalRecordV2Orphan",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/v2_metadata.go",
+    "function": "InternalSessionMarkV2SchemaStale",
+    "method": "InternalMarkV2SchemaStale",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/v2_prepared_schema.go",
+    "function": "InternalSessionInvalidatePreparedSchema",
+    "method": "InternalInvalidatePreparedSchema",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/v2_prepared_schema.go",
+    "function": "InternalSessionUpdatePreparedSchemaSnapshot",
+    "method": "InternalUpdatePreparedSchemaSnapshot",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/v2_prepared_schema.go",
+    "function": "InternalSessionPreparedPartitionerName",
+    "method": "InternalPreparedPartitionerName",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/host_source.go",
+    "function": "InternalSessionRefreshRingNow",
+    "method": "InternalRefreshRingNow",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/v2_events.go",
+    "function": "InternalSubscriptionPublish",
+    "method": "InternalPublish",
+    "owner": "Subscription",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/v2_events.go",
+    "function": "InternalSessionCloseV2Peripheral",
+    "method": "InternalCloseV2Peripheral",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/v2_events.go",
+    "function": "InternalSessionPublishV2Event",
+    "method": "InternalPublishV2Event",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/v2_events.go",
+    "function": "InternalSessionPublishV2LocalEvent",
+    "method": "InternalPublishV2LocalEvent",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/v2_runtime_attachment.go",
+    "function": "InternalSessionSchemaTracker",
+    "method": "InternalSchemaTracker",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/session.go",
+    "function": "InternalSessionRemoveHost",
+    "method": "InternalRemoveHost",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/cluster/session.go",
+    "function": "InternalSessionGetConn",
+    "method": "InternalGetConn",
+    "owner": "Session",
+    "package": "github.com/scylladb/gocql/v2/internal/cluster"
+  },
+  {
+    "file": "internal/execution/v2_row_stream.go",
+    "function": "InternalRowStreamFail",
+    "method": "InternalFail",
+    "owner": "RowStream",
+    "package": "github.com/scylladb/gocql/v2/internal/execution"
+  },
+  {
+    "file": "internal/execution/v2_row_stream.go",
+    "function": "InternalRowStreamCloseWithError",
+    "method": "InternalCloseWithError",
+    "owner": "RowStream",
+    "package": "github.com/scylladb/gocql/v2/internal/execution"
+  },
+  {
+    "file": "internal/execution/v2_row_stream.go",
+    "function": "InternalRowStreamCleanup",
+    "method": "InternalCleanup",
+    "owner": "RowStream",
+    "package": "github.com/scylladb/gocql/v2/internal/execution"
+  },
+  {
+    "file": "internal/execution/v2_row_stream.go",
+    "function": "InternalRowStreamLoadPage",
+    "method": "InternalLoadPage",
+    "owner": "RowStream",
+    "package": "github.com/scylladb/gocql/v2/internal/execution"
+  },
+  {
+    "file": "internal/endpoint/host_source.go",
+    "function": "InternalHostInfoInvalidConnectAddr",
+    "method": "InternalInvalidConnectAddr",
+    "owner": "HostInfo",
+    "package": "github.com/scylladb/gocql/v2/internal/endpoint"
+  },
+  {
+    "file": "internal/endpoint/host_source.go",
+    "function": "InternalHostInfoConnectAddressLocked",
+    "method": "InternalConnectAddressLocked",
+    "owner": "HostInfo",
+    "package": "github.com/scylladb/gocql/v2/internal/endpoint"
+  },
+  {
+    "file": "internal/endpoint/host_source.go",
+    "function": "InternalHostInfoGetDriverFacingIpAddressLocked",
+    "method": "InternalGetDriverFacingIpAddressLocked",
+    "owner": "HostInfo",
+    "package": "github.com/scylladb/gocql/v2/internal/endpoint"
+  },
+  {
+    "file": "internal/endpoint/host_source.go",
+    "function": "InternalHostInfoNodeToNodeAddress",
+    "method": "InternalNodeToNodeAddress",
+    "owner": "HostInfo",
+    "package": "github.com/scylladb/gocql/v2/internal/endpoint"
+  },
+  {
+    "file": "internal/endpoint/host_source.go",
+    "function": "InternalHostInfoHostUUID",
+    "method": "InternalHostUUID",
+    "owner": "HostInfo",
+    "package": "github.com/scylladb/gocql/v2/internal/endpoint"
+  },
+  {
+    "file": "internal/endpoint/host_source.go",
+    "function": "InternalHostInfoSetState",
+    "method": "InternalSetState",
+    "owner": "HostInfo",
+    "package": "github.com/scylladb/gocql/v2/internal/endpoint"
+  },
+  {
+    "file": "internal/endpoint/host_source.go",
+    "function": "InternalHostInfoUpdate",
+    "method": "InternalUpdate",
+    "owner": "HostInfo",
+    "package": "github.com/scylladb/gocql/v2/internal/endpoint"
+  },
+  {
+    "file": "internal/endpoint/host_source.go",
+    "function": "InternalHostInfoSetScyllaFeatures",
+    "method": "InternalSetScyllaFeatures",
+    "owner": "HostInfo",
+    "package": "github.com/scylladb/gocql/v2/internal/endpoint"
+  },
+  {
+    "file": "internal/endpoint/host_source.go",
+    "function": "InternalHostInfoSetScyllaFeaturesLocked",
+    "method": "InternalSetScyllaFeaturesLocked",
+    "owner": "HostInfo",
+    "package": "github.com/scylladb/gocql/v2/internal/endpoint"
+  },
+  {
+    "file": "internal/endpoint/host_source.go",
+    "function": "InternalHostInfoSetTranslatedConnectionInfo",
+    "method": "InternalSetTranslatedConnectionInfo",
+    "owner": "HostInfo",
+    "package": "github.com/scylladb/gocql/v2/internal/endpoint"
+  },
+  {
+    "file": "internal/endpoint/host_source.go",
+    "function": "InternalHostInfoGetTranslatedConnectionInfo",
+    "method": "InternalGetTranslatedConnectionInfo",
+    "owner": "HostInfo",
+    "package": "github.com/scylladb/gocql/v2/internal/endpoint"
+  },
+  {
+    "file": "internal/endpoint/host_source.go",
+    "function": "InternalHostInfoTransportEpoch",
+    "method": "InternalTransportEpoch",
+    "owner": "HostInfo",
+    "package": "github.com/scylladb/gocql/v2/internal/endpoint"
+  },
+  {
+    "file": "internal/endpoint/host_source.go",
+    "function": "InternalHostInfoClaimSetupDeadline",
+    "method": "InternalClaimSetupDeadline",
+    "owner": "HostInfo",
+    "package": "github.com/scylladb/gocql/v2/internal/endpoint"
+  },
+  {
+    "file": "internal/endpoint/host_source.go",
+    "function": "InternalHostInfoSharderEpoch",
+    "method": "InternalSharderEpoch",
+    "owner": "HostInfo",
+    "package": "github.com/scylladb/gocql/v2/internal/endpoint"
+  },
+  {
+    "file": "internal/metadata/metadata_scylla.go",
+    "function": "InternalKeyspaceMetadataRemoveTable",
+    "method": "InternalRemoveTable",
+    "owner": "KeyspaceMetadata",
+    "package": "github.com/scylladb/gocql/v2/internal/metadata"
+  },
+  {
+    "file": "internal/metadata/recreate.go",
+    "function": "InternalKeyspaceMetadataTypesSortedTopologically",
+    "method": "InternalTypesSortedTopologically",
+    "owner": "KeyspaceMetadata",
+    "package": "github.com/scylladb/gocql/v2/internal/metadata"
+  },
+  {
+    "file": "internal/metadata/recreate.go",
+    "function": "InternalKeyspaceMetadataFunctionToCQL",
+    "method": "InternalFunctionToCQL",
+    "owner": "KeyspaceMetadata",
+    "package": "github.com/scylladb/gocql/v2/internal/metadata"
+  },
+  {
+    "file": "internal/metadata/recreate.go",
+    "function": "InternalKeyspaceMetadataViewToCQL",
+    "method": "InternalViewToCQL",
+    "owner": "KeyspaceMetadata",
+    "package": "github.com/scylladb/gocql/v2/internal/metadata"
+  },
+  {
+    "file": "internal/metadata/recreate.go",
+    "function": "InternalKeyspaceMetadataAggregateToCQL",
+    "method": "InternalAggregateToCQL",
+    "owner": "KeyspaceMetadata",
+    "package": "github.com/scylladb/gocql/v2/internal/metadata"
+  },
+  {
+    "file": "internal/metadata/recreate.go",
+    "function": "InternalKeyspaceMetadataIndexToCQL",
+    "method": "InternalIndexToCQL",
+    "owner": "KeyspaceMetadata",
+    "package": "github.com/scylladb/gocql/v2/internal/metadata"
+  },
+  {
+    "file": "internal/metadata/recreate.go",
+    "function": "InternalKeyspaceMetadataKeyspaceToCQL",
+    "method": "InternalKeyspaceToCQL",
+    "owner": "KeyspaceMetadata",
+    "package": "github.com/scylladb/gocql/v2/internal/metadata"
+  },
+  {
+    "file": "internal/routing/v2_metadata.go",
+    "function": "InternalMetadataSnapshotLookupRanges",
+    "method": "InternalLookupRanges",
+    "owner": "MetadataSnapshot",
+    "package": "github.com/scylladb/gocql/v2/internal/routing"
+  },
+  {
+    "file": "internal/routing/v2_placement.go",
+    "function": "InternalMetadataSnapshotTableIdentity",
+    "method": "InternalTableIdentity",
+    "owner": "MetadataSnapshot",
+    "package": "github.com/scylladb/gocql/v2/internal/routing"
+  },
+  {
+    "file": "internal/routing/v2_placement.go",
+    "function": "InternalMetadataSnapshotTabletRoot",
+    "method": "InternalTabletRoot",
+    "owner": "MetadataSnapshot",
+    "package": "github.com/scylladb/gocql/v2/internal/routing"
+  },
+  {
+    "file": "internal/routing/v2_placement.go",
+    "function": "InternalMetadataSnapshotTabletVersionBlock",
+    "method": "InternalTabletVersionBlock",
+    "owner": "MetadataSnapshot",
+    "package": "github.com/scylladb/gocql/v2/internal/routing"
+  }
+]

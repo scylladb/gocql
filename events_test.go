@@ -51,10 +51,10 @@ func TestEventDebounce(t *testing.T) {
 			}
 		}
 	}, &defaultLogger{})
-	defer debouncer.stop()
+	defer debouncer.InternalStop()
 
 	for i := 0; i < eventCount; i++ {
-		debouncer.debounce(&frm.StatusChangeEventFrame{
+		debouncer.InternalDebounce(&frm.StatusChangeEventFrame{
 			Change: "UP",
 			Host:   net.IPv4(127, 0, 0, 1),
 			Port:   9042,
@@ -99,12 +99,12 @@ func TestEventDebounceMultipleFlushes(t *testing.T) {
 			}
 		}
 	}, &defaultLogger{})
-	defer debouncer.stop()
+	defer debouncer.InternalStop()
 
 	// Send events in two batches separated by more than eventDebounceTime
 	// to force at least two separate flush cycles.
 	for i := 0; i < eventCount/2; i++ {
-		debouncer.debounce(&frm.StatusChangeEventFrame{
+		debouncer.InternalDebounce(&frm.StatusChangeEventFrame{
 			Change: "UP",
 			Host:   net.IPv4(127, 0, 0, 1),
 			Port:   9042,
@@ -118,7 +118,7 @@ func TestEventDebounceMultipleFlushes(t *testing.T) {
 	}
 
 	for i := 0; i < eventCount/2; i++ {
-		debouncer.debounce(&frm.StatusChangeEventFrame{
+		debouncer.InternalDebounce(&frm.StatusChangeEventFrame{
 			Change: "UP",
 			Host:   net.IPv4(127, 0, 0, 1),
 			Port:   9042,

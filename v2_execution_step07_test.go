@@ -16,7 +16,16 @@
 
 package gocql
 
+import implExecution "github.com/scylladb/gocql/v2/internal/execution"
+
 import (
+	implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+	implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
+)
+
+import (
+	runtimeerrors "github.com/scylladb/gocql/v2/internal/runtimeerrors"
+
 	"context"
 	"errors"
 	"sync"
@@ -43,11 +52,11 @@ func TestStep07KindDeclarationAndServerRefinement(t *testing.T) {
 		negotiated, lwt bool
 		want            StatementKind
 	}{{false, false, UnknownStatement}, {true, false, OrdinaryStatement}, {true, true, ConditionalStatement}, {false, true, ConditionalStatement}} {
-		cs[0].framers.defaults.flagLWT = 0
+		cs[0].InternalFramers.InternalDefaults.InternalFlagLWT = 0
 		if test.negotiated {
-			cs[0].framers.defaults.flagLWT = 1 << 30
+			cs[0].InternalFramers.InternalDefaults.InternalFlagLWT = 1 << 30
 		}
-		info, err := s.hostPreparedInfo(cs[0], &responsePage{responseData: responseData{Lwt: test.lwt}}, &preparedState{statement: "INSERT x IF y"})
+		info, err := runtimeFor(s).InternalHostPreparedInfo(cs[0], &responsePage{InternalResponseData: responseData{Lwt: test.lwt}}, &preparedState{InternalStatement: "INSERT x IF y"})
 		if err != nil || info.Kind != test.want {
 			t.Fatal(info, err)
 		}
@@ -80,8 +89,8 @@ func TestStep07UnknownConditionalNeverSpeculateAndProfileStable(t *testing.T) {
 				_, _ = ps[0].Write(typedTestResponse(t, 4, stream, runtimeRowsBody(nil, "result")))
 			}()
 			b := runtimeQuery(t)
-			b.request.routing.Kind = kind
-			b.request.routing.Conditional = kind != OrdinaryStatement
+			implExecution.BoundData(b).InternalRequest.InternalRouting.Kind = kind
+			implExecution.BoundData(b).InternalRequest.InternalRouting.Conditional = kind != OrdinaryStatement
 			result := make(chan error, 1)
 			go func() {
 				page, err := RunPage(context.Background(), s, b, StartPage(), Options{Profile: handle, Idempotent: true})
@@ -114,7 +123,7 @@ func TestStep07SessionClosePreservesDeliveredPageAndDrains(t *testing.T) {
 	for _, automatic := range []bool{false, true} {
 		t.Run(map[bool]string{false: "page", true: "rows"}[automatic], func(t *testing.T) {
 			s, cs, ps := runtimeTestSession(t, 1)
-			s.ctx, s.cancel = context.WithCancel(context.Background())
+			implCluster.SessionData(s).InternalCtx, implCluster.SessionData(s).InternalCancel = context.WithCancel(context.Background())
 			go func() {
 				stream := typedTestReadRequest(t, cs[0], ps[0])
 				_, _ = ps[0].Write(typedTestResponse(t, 4, stream, runtimeRowsBody(nil, "retained")))
@@ -212,12 +221,12 @@ func (step07PanicLogger) Print(...any)          { panic("logger") }
 func (step07PanicLogger) Printf(string, ...any) { panic("logger") }
 func (step07PanicLogger) Println(...any)        { panic("logger") }
 func TestStep07ObserverAndLoggerPanicsContained(t *testing.T) {
-	logger := v2SafeLogger{step07PanicLogger{}}
+	logger := v2SafeLogger{InternalLogger: step07PanicLogger{}}
 	logger.Print("x")
 	logger.Printf("%s", "x")
 	logger.Println("x")
 	s, cs, ps := runtimeTestSession(t, 1)
-	s.logger = step07PanicLogger{}
+	implCluster.SessionData(s).InternalLogger = step07PanicLogger{}
 	go func() {
 		stream := typedTestReadRequest(t, cs[0], ps[0])
 		_, _ = ps[0].Write(typedTestResponse(t, 4, stream, runtimeRowsBody(nil, "row")))
@@ -257,14 +266,18 @@ func TestStep07ConfigurationDefaultsAndZeroSemantics(t *testing.T) {
 	if err := validateConfig(c); err != nil {
 		t.Fatal(err)
 	}
-	s := &Session{}
-	s.typedRuntime().profile = c.DefaultProfile
+	s := func() *Session {
+		opaqueStorageValue := new(Session)
+		return opaqueStorageValue
+	}()
+
+	runtimeFor(s).InternalProfile = c.DefaultProfile
 	options := Options{Timeout: Option[time.Duration]{Set: true}, PageTimeout: Option[time.Duration]{Set: true}, SerialConsistency: Option[Option[Consistency]]{Set: true}, Prefetch: Option[int]{Set: true}, Timestamp: Option[int64]{Set: true}, NowInSeconds: Option[int32]{Set: true}}
 	resolved, err := resolveOptions(s, options)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resolved.profile.Timeout != 0 || resolved.profile.PageTimeout != 0 || resolved.profile.Prefetch != 0 || resolved.profile.SerialConsistency.Set || !resolved.options.Timestamp.Set || !resolved.options.NowInSeconds.Set {
+	if resolved.InternalProfile.Timeout != 0 || resolved.InternalProfile.PageTimeout != 0 || resolved.InternalProfile.Prefetch != 0 || resolved.InternalProfile.SerialConsistency.Set || !resolved.InternalOptions.Timestamp.Set || !resolved.InternalOptions.NowInSeconds.Set {
 		t.Fatal(resolved)
 	}
 }
@@ -284,19 +297,19 @@ func TestStep07QualifiedLegacyProtocolKeyspace(t *testing.T) {
 
 func TestStep07HostPinSurvivesCustomPolicy(t *testing.T) {
 	s, cs, _ := runtimeTestSession(t, 2)
-	pinned := cs[0].host.hostUUID()
-	other := cs[1].host.hostUUID()
-	plan := &targetPlan{targets: []Target{{HostID: other}}}
-	if conn, err := s.selectTypedConn(context.Background(), RoutingInfo{HostID: Option[UUID]{Set: true, Value: pinned}}, plan); conn != nil || !errors.Is(err, ErrNoConnections) {
+	pinned := implEndpoint.InternalHostInfoHostUUID(cs[0].InternalHost)
+	other := implEndpoint.InternalHostInfoHostUUID(cs[1].InternalHost)
+	plan := &targetPlan{InternalTargets: []Target{{HostID: other}}}
+	if conn, err := implCluster.InternalSessionSelectTypedConn(s, context.Background(), RoutingInfo{HostID: Option[UUID]{Set: true, Value: pinned}}, plan); conn != nil || !errors.Is(err, ErrNoConnections) {
 		t.Fatal("host pin escaped", conn, err)
 	}
-	if _, err := s.selectTypedConn(context.Background(), RoutingInfo{}, &targetPlan{targets: []Target{{HostID: pinned, StrictShard: true}}}); err == nil {
+	if _, err := implCluster.InternalSessionSelectTypedConn(s, context.Background(), RoutingInfo{}, &targetPlan{InternalTargets: []Target{{HostID: pinned, StrictShard: true}}}); err == nil {
 		t.Fatal("strict target without shard accepted")
 	}
 }
 func TestStep07SafeRetryBytesWritten(t *testing.T) {
 	for _, written := range []bool{false, true} {
-		err := &QueryError{err: errors.New("write"), potentiallyExecuted: written}
+		err := runtimeerrors.NewQueryError(runtimeerrors.QueryErrorState{InternalErr: errors.New("write"), InternalPotentiallyExecuted: written})
 		decision := (SafeRetryPolicy{}).Decide(AttemptError{Err: err, Attempt: 1, BytesWritten: attemptBytesWritten(err)})
 		if (decision.Action == RetryNext) == written {
 			t.Fatal(written, decision)

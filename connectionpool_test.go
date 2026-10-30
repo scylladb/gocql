@@ -28,6 +28,11 @@
 package gocql
 
 import (
+	implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+	implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
+)
+
+import (
 	"context"
 	"crypto/tls"
 	"errors"
@@ -130,7 +135,7 @@ func TestSetupTLSConfig(t *testing.T) {
 }
 
 // errorConn is a mock net.Conn whose Close returns an error,
-// triggering HandleError via Conn.closeWithError.
+// triggering HandleError via driverConn.closeWithError.
 type errorConn struct {
 	net.Conn
 }
@@ -142,9 +147,9 @@ func (e errorConn) Close() error {
 func (e errorConn) SetTimeout(_ time.Duration) {}
 func (e errorConn) GetTimeout() time.Duration  { return 0 }
 
-// setDisarm is required of any reader installed as Conn.r (connReadSource). This
+// InternalSetDisarm is required of any reader installed as driverConn.r (connReadSource). This
 // mock is never read from, so there is nothing to disarm.
-func (e errorConn) setDisarm(_ bool) {}
+func (e errorConn) InternalSetDisarm(_ bool) {}
 
 // TestHostConnPoolCloseDeadlock verifies that hostConnPool.Close() does not
 // self-deadlock when defaultConnPicker closes connections that trigger
@@ -156,39 +161,46 @@ func (e errorConn) setDisarm(_ bool) {}
 func TestHostConnPoolCloseDeadlock(t *testing.T) {
 	t.Parallel()
 
-	host := &HostInfo{connectAddress: net.ParseIP("127.0.0.1"), port: 9042}
-	session := &Session{
-		cfg: clusterSettings{
+	host := func() *HostInfo {
+		opaqueStorageValue := new(HostInfo)
+		implEndpoint.HostInfoData(opaqueStorageValue).InternalConnectAddress = net.ParseIP("127.0.0.1")
+		implEndpoint.HostInfoData(opaqueStorageValue).InternalPort = 9042
+		return opaqueStorageValue
+	}()
+	session := func() *Session {
+		opaqueStorageValuex := new(Session)
+		implCluster.SessionData(opaqueStorageValuex).InternalCfg = clusterSettings{
 			NumConns:         2,
 			ConvictionPolicy: &SimpleConvictionPolicy{},
-		},
-		logger: nopLogger{},
-	}
+		}
+		implCluster.SessionData(opaqueStorageValuex).InternalLogger = nopLogger{}
+		return opaqueStorageValuex
+	}()
 
 	pool := &hostConnPool{
-		session:    session,
-		host:       host,
-		size:       2,
-		keyspace:   "test",
-		connPicker: nopConnPicker{},
-		logger:     nopLogger{},
-		debouncer:  debounce.NewSimpleDebouncer(),
+		InternalServices:   newPoolServices(session),
+		InternalHost:       host,
+		InternalSize:       2,
+		InternalKeyspace:   "test",
+		InternalConnPicker: nopConnPicker{},
+		InternalLogger:     nopLogger{},
+		InternalDebouncer:  debounce.NewSimpleDebouncer(),
 	}
 
 	// Build a defaultConnPicker with Conns that trigger HandleError on Close.
 	picker := newDefaultConnPicker(2)
 	for i := 0; i < 2; i++ {
 		ctx, cancel := context.WithCancel(context.Background())
-		conn := &Conn{
-			r:            errorConn{},
-			errorHandler: pool,
-			cancel:       cancel,
-			ctx:          ctx,
-			logger:       nopLogger{},
+		conn := &driverConn{
+			InternalR:            errorConn{},
+			InternalErrorHandler: pool,
+			InternalCancel:       cancel,
+			InternalCtx:          ctx,
+			InternalLogger:       nopLogger{},
 		}
 		_ = picker.Put(conn)
 	}
-	pool.connPicker = picker
+	pool.InternalConnPicker = picker
 
 	// Close must return before timeout; otherwise the pool is deadlocked.
 	done := make(chan struct{})
@@ -210,40 +222,47 @@ func TestHostConnPoolCloseDeadlock(t *testing.T) {
 func TestHostConnPoolConnectClosedPoolDoesNotDeadlock(t *testing.T) {
 	t.Parallel()
 
-	host := &HostInfo{connectAddress: net.ParseIP("127.0.0.1"), port: 9042}
-	session := &Session{
-		cfg: clusterSettings{
+	host := func() *HostInfo {
+		opaqueStorageValuexx := new(HostInfo)
+		implEndpoint.HostInfoData(opaqueStorageValuexx).InternalConnectAddress = net.ParseIP("127.0.0.1")
+		implEndpoint.HostInfoData(opaqueStorageValuexx).InternalPort = 9042
+		return opaqueStorageValuexx
+	}()
+	session := func() *Session {
+		opaqueStorageValuexxx := new(Session)
+		implCluster.SessionData(opaqueStorageValuexxx).InternalCfg = clusterSettings{
 			NumConns:         1,
 			ConvictionPolicy: &SimpleConvictionPolicy{},
-		},
-		logger: nopLogger{},
-	}
+		}
+		implCluster.SessionData(opaqueStorageValuexxx).InternalLogger = nopLogger{}
+		return opaqueStorageValuexxx
+	}()
 
 	pool := &hostConnPool{
-		session:    session,
-		host:       host,
-		size:       1,
-		keyspace:   "test",
-		connPicker: nopConnPicker{},
-		logger:     nopLogger{},
-		debouncer:  debounce.NewSimpleDebouncer(),
-		closed:     true,
+		InternalServices:   newPoolServices(session),
+		InternalHost:       host,
+		InternalSize:       1,
+		InternalKeyspace:   "test",
+		InternalConnPicker: nopConnPicker{},
+		InternalLogger:     nopLogger{},
+		InternalDebouncer:  debounce.NewSimpleDebouncer(),
+		InternalClosed:     true,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	conn := &Conn{
-		r:            errorConn{},
-		errorHandler: pool,
-		cancel:       cancel,
-		ctx:          ctx,
-		logger:       nopLogger{},
+	conn := &driverConn{
+		InternalR:            errorConn{},
+		InternalErrorHandler: pool,
+		InternalCancel:       cancel,
+		InternalCtx:          ctx,
+		InternalLogger:       nopLogger{},
 	}
 
 	done := make(chan struct{})
 	go func() {
-		pool.mu.Lock()
-		if pool.closed {
-			pool.mu.Unlock()
+		pool.InternalMu.Lock()
+		if pool.InternalClosed {
+			pool.InternalMu.Unlock()
 			conn.Close()
 		}
 		close(done)
@@ -267,12 +286,15 @@ func newUndialedHostPool(t *testing.T, session *Session, ip string) *hostConnPoo
 	if addr == nil {
 		t.Fatalf("newUndialedHostPool: %q is not an IP", ip)
 	}
-	host := &HostInfo{
-		hostId:           MustRandomUUID(),
-		connectAddress:   addr,
-		broadcastAddress: addr,
-		port:             9042,
-	}
+	host := func() *HostInfo {
+		opaqueStorageValuexxxx := new(HostInfo)
+		implEndpoint.HostInfoData(opaqueStorageValuexxxx).InternalHostId = MustRandomUUID()
+		implEndpoint.HostInfoData(opaqueStorageValuexxxx).InternalConnectAddress = addr
+		implEndpoint.HostInfoData(opaqueStorageValuexxxx).InternalBroadcastAddress = addr
+		implEndpoint.HostInfoData(opaqueStorageValuexxxx).InternalPort = 9042
+		return opaqueStorageValuexxxx
+	}()
+
 	return newHostConnPool(session, host, 1, "")
 }
 
@@ -289,11 +311,15 @@ func TestPolicyConnPoolIteratePool(t *testing.T) {
 
 	newPool := func(t *testing.T, ips ...string) *policyConnPool {
 		t.Helper()
-		session := &Session{logger: &testLogger{}}
-		p := &policyConnPool{hostConnPools: map[UUID]*hostConnPool{}}
+		session := func() *Session {
+			opaqueStorageValuexxxxx := new(Session)
+			implCluster.SessionData(opaqueStorageValuexxxxx).InternalLogger = &testLogger{}
+			return opaqueStorageValuexxxxx
+		}()
+		p := &policyConnPool{InternalHostConnPools: map[UUID]*hostConnPool{}}
 		for _, ip := range ips {
 			hp := newUndialedHostPool(t, session, ip)
-			p.hostConnPools[hp.host.hostUUID()] = hp
+			p.InternalHostConnPools[implEndpoint.InternalHostInfoHostUUID(hp.InternalHost)] = hp
 		}
 		return p
 	}
@@ -304,7 +330,7 @@ func TestPolicyConnPoolIteratePool(t *testing.T) {
 		p := newPool(t, "127.0.20.1", "127.0.20.2", "127.0.20.3")
 
 		seen := map[string]bool{}
-		p.iteratePool(func(info HostPoolInfo) bool {
+		p.InternalIteratePool(func(info HostPoolInfo) bool {
 			seen[info.Host().ConnectAddress().String()] = true
 			return true
 		})
@@ -322,7 +348,7 @@ func TestPolicyConnPoolIteratePool(t *testing.T) {
 		p := newPool(t, "127.0.20.1", "127.0.20.2", "127.0.20.3")
 
 		visits := 0
-		p.iteratePool(func(HostPoolInfo) bool {
+		p.InternalIteratePool(func(HostPoolInfo) bool {
 			visits++
 			return false
 		})
@@ -337,7 +363,7 @@ func TestPolicyConnPoolIteratePool(t *testing.T) {
 
 		p := newPool(t)
 
-		p.iteratePool(func(HostPoolInfo) bool {
+		p.InternalIteratePool(func(HostPoolInfo) bool {
 			t.Error("callback ran for a pool with no hosts")
 			return true
 		})
@@ -356,13 +382,13 @@ func TestPolicyConnPoolIteratePool(t *testing.T) {
 
 		func() {
 			defer func() { _ = recover() }()
-			p.iteratePool(func(HostPoolInfo) bool { panic("boom from the callback") })
+			p.InternalIteratePool(func(HostPoolInfo) bool { panic("boom from the callback") })
 		}()
 
 		locked := make(chan struct{})
 		go func() {
-			p.mu.Lock()
-			p.mu.Unlock()
+			p.InternalMu.Lock()
+			p.InternalMu.Unlock()
 			close(locked)
 		}()
 
@@ -374,7 +400,7 @@ func TestPolicyConnPoolIteratePool(t *testing.T) {
 	})
 }
 
-// closeSignalPicker is a ConnPicker that reports when it has been closed.
+// closeSignalPicker is a driverConnPicker that reports when it has been closed.
 //
 // Closing a retired pool is the half of policyConnPool.removeHost that dropping
 // the map entry does not prove: hostConnPool.Close is what reaches
@@ -406,7 +432,7 @@ func (p *closeSignalPicker) Close() {
 func newSignallingHostPool(session *Session, host *HostInfo) (*hostConnPool, *closeSignalPicker) {
 	pool := newHostConnPool(session, host, 1, "")
 	picker := newCloseSignalPicker()
-	pool.connPicker = picker
+	pool.InternalConnPicker = picker
 	return pool, picker
 }
 
@@ -453,19 +479,15 @@ func TestSessionRemoveHost(t *testing.T) {
 	// newHostConnPool is a pure constructor, so neither pool dials.
 	hostPool, hostPicker := newSignallingHostPool(f.session, host)
 	otherPool, otherPicker := newSignallingHostPool(f.session, other)
-	f.session.pool.hostConnPools = map[UUID]*hostConnPool{
-		host.hostUUID():  hostPool,
-		other.hostUUID(): otherPool,
-	}
+	implCluster.SessionData(f.session).InternalPool.InternalHostConnPools = map[UUID]*hostConnPool{implEndpoint.InternalHostInfoHostUUID(host): hostPool, implEndpoint.InternalHostInfoHostUUID(other): otherPool}
 
-	if _, ok := f.session.hostSource.getHostByIP("127.0.20.1"); !ok {
+	if _, ok := implCluster.SessionData(f.session).InternalHostSource.InternalGetHostByIP("127.0.20.1"); !ok {
 		t.Fatal("precondition: host is not in the host source")
 	}
-	if _, ok := f.session.pool.getPoolByHostID(host.HostID()); !ok {
+	if _, ok := implCluster.SessionData(f.session).InternalPool.InternalGetPoolByHostID(host.HostID()); !ok {
 		t.Fatal("precondition: host has no connection pool")
 	}
-
-	f.session.removeHost(host)
+	implCluster.InternalSessionRemoveHost(f.session, host)
 
 	assertStrings(t, "RemoveHost", f.policy.removeHostCalls(), []string{"127.0.20.1"})
 
@@ -474,12 +496,12 @@ func TestSessionRemoveHost(t *testing.T) {
 	// host's connections open -- a leak on every topology change, and a
 	// regression the entry check alone cannot see, since reducing removeHost to
 	// a bare delete() still satisfies it.
-	if _, ok := f.session.pool.getPoolByHostID(host.HostID()); ok {
+	if _, ok := implCluster.SessionData(f.session).InternalPool.InternalGetPoolByHostID(host.HostID()); ok {
 		t.Error("removed host still has a connection pool")
 	}
 	awaitPoolClosed(t, hostPicker, "removed host")
 
-	if _, ok := f.session.pool.getPoolByHostID(other.HostID()); !ok {
+	if _, ok := implCluster.SessionData(f.session).InternalPool.InternalGetPoolByHostID(other.HostID()); !ok {
 		t.Error("removeHost also dropped an unrelated host's connection pool")
 	}
 	// Safe as a non-blocking check: the wait above already established that the
@@ -487,7 +509,7 @@ func TestSessionRemoveHost(t *testing.T) {
 	// have closed anything.
 	assertPoolNotClosed(t, otherPicker, "unrelated host")
 
-	if _, ok := f.session.hostSource.getHostByIP("127.0.20.1"); ok {
+	if _, ok := implCluster.SessionData(f.session).InternalHostSource.InternalGetHostByIP("127.0.20.1"); ok {
 		t.Error("removed host is still resolvable in the host source")
 	}
 	// ringDescriber keeps two indexes, and getHostByIP only proves one of them.
@@ -495,14 +517,14 @@ func TestSessionRemoveHost(t *testing.T) {
 	// map is invisible to the check above -- and hosts is what getHostsList
 	// reads, which is what controlConn.attemptReconnect dials. Assert the ID
 	// index separately.
-	if got := f.session.hostSource.getHost(host.HostID()); got != nil {
+	if got := implCluster.SessionData(f.session).InternalHostSource.InternalGetHost(host.HostID()); got != nil {
 		t.Error("removed host is still in the host source by ID")
 	}
 
-	if _, ok := f.session.hostSource.getHostByIP("127.0.20.2"); !ok {
+	if _, ok := implCluster.SessionData(f.session).InternalHostSource.InternalGetHostByIP("127.0.20.2"); !ok {
 		t.Error("removeHost also dropped an unrelated host")
 	}
-	if got := f.session.hostSource.getHost(other.HostID()); got == nil {
+	if got := implCluster.SessionData(f.session).InternalHostSource.InternalGetHost(other.HostID()); got == nil {
 		t.Error("unrelated host disappeared from the host source by ID")
 	}
 }
@@ -518,11 +540,20 @@ func TestSessionRemoveHost(t *testing.T) {
 func TestGetHostPoolByIDAbsent(t *testing.T) {
 	t.Parallel()
 
-	session := &Session{logger: &testLogger{}}
-	session.pool = &policyConnPool{session: session, hostConnPools: map[UUID]*hostConnPool{}}
+	session := func() *Session {
+		opaqueStorageValuexxxxxx := new(Session)
+		implCluster.SessionData(opaqueStorageValuexxxxxx).InternalLogger = &testLogger{}
+		return opaqueStorageValuexxxxxx
+	}()
+	implCluster.SessionData(session).InternalPool = &policyConnPool{InternalServices: newPoolServices(session), InternalHostConnPools: map[UUID]*hostConnPool{}}
 
-	present := &HostInfo{hostId: MustRandomUUID(), connectAddress: net.ParseIP("127.0.40.1")}
-	session.pool.hostConnPools[present.hostUUID()] = newHostConnPool(session, present, 1, "")
+	present := func() *HostInfo {
+		opaqueStorageValuexxxxxxx := new(HostInfo)
+		implEndpoint.HostInfoData(opaqueStorageValuexxxxxxx).InternalHostId = MustRandomUUID()
+		implEndpoint.HostInfoData(opaqueStorageValuexxxxxxx).InternalConnectAddress = net.ParseIP("127.0.40.1")
+		return opaqueStorageValuexxxxxxx
+	}()
+	implCluster.SessionData(session).InternalPool.InternalHostConnPools[implEndpoint.InternalHostInfoHostUUID(present)] = newHostConnPool(session, present, 1, "")
 
 	t.Run("present id returns the pool", func(t *testing.T) {
 		info := session.GetHostPoolByID(present.HostID())
@@ -562,13 +593,16 @@ func TestHostConnPoolConnectNoAttempts(t *testing.T) {
 
 	for _, retries := range []int{0, -1} {
 		t.Run(strconv.Itoa(retries), func(t *testing.T) {
-			session := &Session{
-				cfg:    clusterSettings{ReconnectionPolicy: &ConstantReconnectionPolicy{MaxRetries: retries}},
-				logger: nopLogger{},
-			}
+			session := func() *Session {
+				opaqueStorageValuexxxxxxxx := new(Session)
+				implCluster.SessionData(opaqueStorageValuexxxxxxxx).InternalCfg = clusterSettings{ReconnectionPolicy: &ConstantReconnectionPolicy{MaxRetries: retries}}
+				implCluster.SessionData(opaqueStorageValuexxxxxxxx).InternalLogger = nopLogger{}
+				return opaqueStorageValuexxxxxxxx
+			}()
+
 			pool := newUndialedHostPool(t, session, "127.0.0.1")
 
-			err := pool.connect()
+			err := pool.InternalConnect()
 			if err == nil || !strings.Contains(err.Error(), "no connection attempted") {
 				t.Fatalf("connect() = %v, want the no-attempts error", err)
 			}

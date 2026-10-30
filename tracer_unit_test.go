@@ -3,6 +3,8 @@
 
 package gocql
 
+import implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+
 import (
 	"bytes"
 	"net"
@@ -131,7 +133,7 @@ func newTraceServer(t *testing.T, cfg traceConfig) *traceServer {
 
 func (ts *traceServer) session(t *testing.T) *Session {
 	t.Helper()
-	s, err := ts.cluster().open()
+	s, err := implCluster.InternalClusterSettingsOpen(ts.cluster())
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}

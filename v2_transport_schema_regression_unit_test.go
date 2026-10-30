@@ -18,6 +18,8 @@
 
 package gocql
 
+import implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+
 import "testing"
 
 func TestStep04LateTableRefreshEntrant(t *testing.T) {
@@ -25,30 +27,31 @@ func TestStep04LateTableRefreshEntrant(t *testing.T) {
 	s := newSchemaEventTestSessionWithMock(ctrl)
 	defer s.Close()
 	populateKeyspace(s, "test_ks", "tbl_a")
-	s.metadataDescriber.invalidateTableSchema("test_ks", "tbl_a")
-	snapshot, reloaded, err := s.metadataDescriber.getKeyspaceInternal("test_ks")
+	implCluster.SessionData(s).InternalMetadataDescriber.InternalInvalidateTableSchema("test_ks", "tbl_a")
+	snapshot, reloaded, err := implCluster.SessionData(s).InternalMetadataDescriber.InternalGetKeyspaceInternal("test_ks")
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, needed, err := s.metadataDescriber.getTableFromSnapshot("test_ks", "tbl_a", snapshot, reloaded)
+	_, needed, err := implCluster.SessionData(s).InternalMetadataDescriber.InternalGetTableFromSnapshot("test_ks", "tbl_a", snapshot, reloaded)
 	if err != nil || !needed {
 		t.Fatal(needed, err)
 	}
 	// Caller A is now paused after deciding refreshNeeded. Caller B completes
 	// its entire flight before A can enter the singleflight group.
-	if err := s.metadataDescriber.deduplicatedRefreshTable("test_ks", "tbl_a"); err != nil {
+	if err := implCluster.SessionData(s).InternalMetadataDescriber.InternalDeduplicatedRefreshTable("test_ks", "tbl_a"); err != nil {
 		t.Fatal(err)
 	}
 	ctrl.resetQueries()
-	if err := s.metadataDescriber.deduplicatedRefreshTable("test_ks", "tbl_a"); err != nil {
+	if err := implCluster.SessionData(s).InternalMetadataDescriber.InternalDeduplicatedRefreshTable("test_ks", "tbl_a"); err != nil {
 		t.Fatal(err)
 	}
 	if got := ctrl.getQueryCount(); got != 0 {
 		t.Fatalf("stale entrant after completed flight reissued %d schema queries", got)
 	}
-	// A newer invalidation still requires and obtains a fresh schema fetch.
-	s.metadataDescriber.invalidateTableSchema("test_ks", "tbl_a")
-	if err := s.metadataDescriber.deduplicatedRefreshTable("test_ks", "tbl_a"); err != nil {
+	implCluster.
+		// A newer invalidation still requires and obtains a fresh schema fetch.
+		SessionData(s).InternalMetadataDescriber.InternalInvalidateTableSchema("test_ks", "tbl_a")
+	if err := implCluster.SessionData(s).InternalMetadataDescriber.InternalDeduplicatedRefreshTable("test_ks", "tbl_a"); err != nil {
 		t.Fatal(err)
 	}
 	if got := ctrl.getQueryCount(); got != 4 {

@@ -5,7 +5,11 @@
 
 package gocql
 
+import implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+
 import (
+	routing "github.com/scylladb/gocql/v2/internal/routing"
+
 	"context"
 	"fmt"
 	"math"
@@ -108,7 +112,7 @@ func TestStep06TabletRoutingLive(t *testing.T) {
 			authoritative[i].Start = authoritative[i-1].End
 		}
 	}
-	v2 := s.getConn().framers.defaults.tabletsRoutingV2
+	v2 := implCluster.InternalSessionGetConn(s).InternalFramers.InternalDefaults.InternalTabletsRoutingV2
 	t.Logf("tablet v2 negotiated=%t, server table ID=%s, authoritative ranges=%d", v2, id, len(authoritative))
 	for key := int32(0); key < 8; key++ {
 		b := codecTestMust(BindBorrowed(read, key))
@@ -130,7 +134,7 @@ func TestStep06TabletRoutingLive(t *testing.T) {
 		for attempt := 0; attempt < 96; attempt++ {
 			opts := Options{}
 			if attempt < 3 {
-				opts.HostID = Option[UUID]{Value: s.Metadata().hosts[attempt%len(s.Metadata().hosts)].ID, Set: true}
+				opts.HostID = Option[UUID]{Value: routing.SnapshotData(s.Metadata()).InternalHosts[attempt%len(routing.SnapshotData(s.Metadata()).InternalHosts)].ID, Set: true}
 			}
 			rows, err := Run(ctx, s, b, opts)
 			if err != nil {
@@ -218,7 +222,7 @@ func TestStep06LeaderRoutingLive(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if !s.getConn().framers.defaults.tabletsRoutingV2 {
+	if !implCluster.InternalSessionGetConn(s).InternalFramers.InternalDefaults.InternalTabletsRoutingV2 {
 		t.Skip("server did not advertise TABLETS_ROUTING_V2_EXPERIMENTAL; source-accurate wire fixtures cover V2 separately")
 	}
 	ks := fmt.Sprintf("step06_leader_%x", time.Now().UnixNano())

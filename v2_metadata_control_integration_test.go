@@ -2,6 +2,10 @@
 
 package gocql
 
+import implExecution "github.com/scylladb/gocql/v2/internal/execution"
+
+import implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+
 import (
 	"context"
 	"fmt"
@@ -42,7 +46,7 @@ func TestStep05MetadataControlLive(t *testing.T) {
 	}
 	defer sub.Close()
 	before := s.Metadata() // subscribe-before-snapshot, then discard <= generation
-	conn, err := s.selectTypedConn(ctx, RoutingInfo{}, nil)
+	conn, err := implCluster.InternalSessionSelectTypedConn(s, ctx, RoutingInfo{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +57,11 @@ func TestStep05MetadataControlLive(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer b.Close()
-		if _, err := Exec(ctx, s, b, Options{connection: conn}); err != nil {
+		if _, err := Exec(ctx, s, b, *func() *Options {
+			opaqueStorageValue := new(Options)
+			implExecution.OptionsData(opaqueStorageValue).InternalConnection = conn
+			return opaqueStorageValue
+		}()); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -64,7 +72,11 @@ func TestStep05MetadataControlLive(t *testing.T) {
 		b, err := BindUnpreparedOwned(Statement[Unit, Unit]{CQL: "DROP KEYSPACE IF EXISTS " + keyspace, Params: NoParams, Rows: NoRows}, NewColumns(), Unit{})
 		if err == nil {
 			defer b.Close()
-			_, err = Exec(cleanup, s, b, Options{connection: conn})
+			_, err = Exec(cleanup, s, b, *func() *Options {
+				opaqueStorageValuex := new(Options)
+				implExecution.OptionsData(opaqueStorageValuex).InternalConnection = conn
+				return opaqueStorageValuex
+			}())
 		}
 		if err != nil {
 			t.Error("cleanup unique keyspace", err)

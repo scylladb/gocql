@@ -3,7 +3,13 @@
 
 package gocql
 
+import implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+
+import implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
+
 import (
+	routing "github.com/scylladb/gocql/v2/internal/routing"
+
 	"context"
 	"errors"
 	"fmt"
@@ -197,13 +203,14 @@ type v2UnavailableHostsRouting struct {
 
 func (p v2UnavailableHostsRouting) Plan(info RoutingInfo, metadata *MetadataSnapshot) QueryPlan {
 	snapshot := *metadata
-	snapshot.hostIndex = nil // rebuild indices after test-only membership changes
-	snapshot.hosts = metadata.Hosts()
-	for i := range snapshot.hosts {
-		snapshot.hosts[i].Up = false
+	routing.SnapshotData(&snapshot).InternalHostIndex = nil
+	routing. // rebuild indices after test-only membership changes
+			SnapshotData(&snapshot).InternalHosts = metadata.Hosts()
+	for i := range routing.SnapshotData(&snapshot).InternalHosts {
+		routing.SnapshotData(&snapshot).InternalHosts[i].Up = false
 	}
-	if p.oneHost && len(snapshot.hosts) > 1 {
-		snapshot.hosts = snapshot.hosts[:1]
+	if p.oneHost && len(routing.SnapshotData(&snapshot).InternalHosts) > 1 {
+		routing.SnapshotData(&snapshot).InternalHosts = routing.SnapshotData(&snapshot).InternalHosts[:1]
 	}
 	return p.RoutingPolicy.Plan(info, &snapshot)
 }
@@ -220,9 +227,9 @@ func TestNoHangAllHostsDown(t *testing.T) {
 	}
 	// Match the original fault injection at the actual connection picker too:
 	// routing intentionally includes disconnected fallback candidates.
-	for _, host := range session.hostSource.getHostsList() {
-		host.setState(NodeDown)
-		defer host.setState(NodeUp)
+	for _, host := range implCluster.SessionData(session).InternalHostSource.InternalGetHostsList() {
+		implEndpoint.InternalHostInfoSetState(host, NodeDown)
+		defer implEndpoint.InternalHostInfoSetState(host, NodeUp)
 	}
 	dc, rack := hosts[0].Datacenter, hosts[0].Rack
 	policies := []RoutingOptions{
