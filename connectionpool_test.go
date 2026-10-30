@@ -556,7 +556,7 @@ func TestGetHostPoolByIDAbsent(t *testing.T) {
 	implCluster.SessionData(session).InternalPool.InternalHostConnPools[implEndpoint.InternalHostInfoHostUUID(present)] = newHostConnPool(session, present, 1, "")
 
 	t.Run("present id returns the pool", func(t *testing.T) {
-		info := session.GetHostPoolByID(present.HostID())
+		info := sessionTestGetHostPoolByID(session, present.HostID())
 		if info == nil {
 			t.Fatal("pool for a known host was not returned")
 		}
@@ -574,7 +574,7 @@ func TestGetHostPoolByIDAbsent(t *testing.T) {
 		{"empty id", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			info := session.GetHostPoolByID(tc.hostID)
+			info := sessionTestGetHostPoolByID(session, tc.hostID)
 			if info != nil {
 				// Not t.Fatal: calling through the interface is the point, and
 				// it is what would panic before the fix.

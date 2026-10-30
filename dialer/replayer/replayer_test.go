@@ -1,3 +1,6 @@
+// Copyright 2026 The Gocql Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license.
+
 package replayer
 
 import (
@@ -936,5 +939,35 @@ func TestConnectionReplayerCloseRacesPipelinedReplay(t *testing.T) {
 		case <-time.After(5 * time.Second):
 			t.Fatalf("iteration %d: Read did not return within 5s of Close", iter)
 		}
+	}
+}
+
+// Current typed control startup repeats an identical query. Deduplication must
+// preserve the collision guard and reject ambiguous capture results.
+func TestLoadRepeatedRequestsRequireIdenticalFrames(t *testing.T) {
+	for _, mode := range []string{"identical", "request collision", "different response"} {
+		t.Run(mode, func(t *testing.T) {
+			a, b := requestFrame(1, 1), requestFrame(1, 2)
+			first, second := optionsFrame(0x84), optionsFrame(0x84)
+			first[3] = 1
+			second[3] = 2
+			if mode == "request collision" {
+				b = append(b, 0)
+				b[8] = 1
+			}
+			if mode == "different response" {
+				second[4] = 2
+			}
+			writes := writeRecords(t, "Writes", dialer.Record{Data: a, StreamID: 1, Proto: 4}, dialer.Record{Data: b, StreamID: 2, Proto: 4})
+			reads := writeRecords(t, "Reads", dialer.Record{Data: first, StreamID: 1, Proto: 4}, dialer.Record{Data: second, StreamID: 2, Proto: 4})
+			frames, _, err := loadResponseFramesFromFiles(reads, writes)
+			if mode == "identical" {
+				if err != nil || len(frames) != 1 {
+					t.Fatalf("deduplicated frames=%d err=%v", len(frames), err)
+				}
+			} else if err == nil {
+				t.Fatal("ambiguous/colliding capture was accepted")
+			}
+		})
 	}
 }

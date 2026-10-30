@@ -1,3 +1,6 @@
+// Copyright 2026 The Gocql Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license.
+
 package gocql
 
 import (
@@ -10,21 +13,21 @@ import (
 	"github.com/scylladb/gocql/v2/tablets"
 )
 
-type Authenticator = implTransport.Authenticator
+type retiredAuthenticator = implTransport.Authenticator
 type driverConn = implTransport.Conn
 type driverConnConfig = implTransport.ConnConfig
 type driverConnErrorHandler = implTransport.ConnErrorHandler
 type driverConnInterface = implTransport.ConnInterface
 type ErrSchemaMismatch = implTransport.ErrSchemaMismatch
-type FrameHeaderObserver = implTransport.FrameHeaderObserver
-type ObservedFrameHeader = implTransport.ObservedFrameHeader
-type ObservedStream = implTransport.ObservedStream
-type PasswordAuthenticator = implTransport.PasswordAuthenticator
-type SslOptions = implTransport.SslOptions
+type retiredFrameHeaderObserver = implTransport.FrameHeaderObserver
+type retiredObservedFrameHeader = implTransport.ObservedFrameHeader
+type retiredObservedStream = implTransport.ObservedStream
+type retiredPasswordAuthenticator = implTransport.PasswordAuthenticator
+type retiredSslOptions = implTransport.SslOptions
 type StreamLimits = implTransport.StreamLimits
-type StreamObserver = implTransport.StreamObserver
-type StreamObserverContext = implTransport.StreamObserverContext
-type Tracer = implTransport.Tracer
+type retiredStreamObserver = implTransport.StreamObserver
+type retiredStreamObserverContext = implTransport.StreamObserverContext
+type retiredTracer = implTransport.Tracer
 
 func approve(a0 string, a1 []string) bool { return implTransport.InternalApprove(a0, a1) }
 func bodyReadDesyncedConn(a0 error) bool  { return implTransport.InternalBodyReadDesyncedConn(a0) }
@@ -113,7 +116,7 @@ const sessionIDStartupKey = implTransport.InternalSessionIDStartupKey
 type startupCoordinator = implTransport.InternalStartupCoordinator
 type startupIdentity = implTransport.InternalStartupIdentity
 
-func startupOptions(a0 string, a1 string, a2 string, a3 ApplicationInfo, a4 startupReporter, a5 string, a6 bool) map[string]string {
+func startupOptions(a0 string, a1 string, a2 string, a3 retiredApplicationInfo, a4 startupReporter, a5 string, a6 bool) map[string]string {
 	return implTransport.InternalStartupOptions(a0, a1, a2, a3, a4, a5, a6)
 }
 
@@ -122,10 +125,10 @@ type streamResponse = implTransport.InternalStreamResponse
 type systemRequestState = implTransport.InternalSystemRequestState
 type tabletsRoutingV2Ext = implEndpoint.InternalTabletsRoutingV2Ext
 
-func translateAddressPort(a0 AddressTranslator, a1 *HostInfo, a2 AddressPort, a3 StdLogger) (AddressPort, error) {
+func translateAddressPort(a0 AddressTranslator, a1 *retiredHostInfo, a2 AddressPort, a3 StdLogger) (AddressPort, error) {
 	return implEndpoint.InternalTranslateAddressPort(a0, a1, a2, a3)
 }
-func translateHostAddresses(a0 AddressTranslator, a1 *HostInfo, a2 StdLogger) (translatedAddresses, error) {
+func translateHostAddresses(a0 AddressTranslator, a1 *retiredHostInfo, a2 StdLogger) (translatedAddresses, error) {
 	return implTransport.InternalTranslateHostAddresses(a0, a1, a2)
 }
 
@@ -141,7 +144,7 @@ func useKeyspaceStmt(a0 string) string { return implTransport.InternalUseKeyspac
 
 type v2Authenticator = implTransport.InternalV2Authenticator
 
-func validateV2ConnectionSharding(a0 ScyllaConnectionFeatures) error {
+func validateV2ConnectionSharding(a0 retiredScyllaConnectionFeatures) error {
 	return implTransport.InternalValidateV2ConnectionSharding(a0)
 }
 func validateV2Supported(a0 map[string][]string, a1 PoolOptions) error {

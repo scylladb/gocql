@@ -62,7 +62,7 @@ COVER_BUILD_ARGS ?=
 COVER_RUNTIME_ARGS ?=
 COVERAGE_DIR ?= $(MAKEFILE_PATH)/.coverage/data
 # Normalize to an absolute path even when overridden on the command line
-# (e.g. COVERAGE_DIR=.cov): go test's subpackages (and lz4, run via -C) each
+# (e.g. COVERAGE_DIR=.cov): go test's subpackages each
 # execute with their own directory as the working directory, so a relative
 # -test.gocoverdir resolves differently -- and usually inaccessibly -- per
 # package instead of to one shared directory at the repo root. `override` is
@@ -372,30 +372,22 @@ test-integration-scylla: scylla-start
 	echo "go test -v ${TEST_OPTS} -tags \"${TEST_INTEGRATION_TAGS}\" ${COVER_BUILD_ARGS} -timeout=${TEST_INTEGRATION_TIMEOUT} . -args -distribution scylla $${CLUSTER_SOCKET} -gocql.timeout=60s -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$${SCYLLA_SERVER_VERSION} -cluster=$$(ccm liveset) ${COVER_RUNTIME_ARGS}"
 	go test -v ${TEST_OPTS} -tags "${TEST_INTEGRATION_TAGS}" ${COVER_BUILD_ARGS} -timeout=${TEST_INTEGRATION_TIMEOUT} . -args -distribution scylla $${CLUSTER_SOCKET} -gocql.timeout=60s -proto=${TEST_CQL_PROTOCOL} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${TEST_COMPRESSOR} -gocql.cversion=$${SCYLLA_SERVER_VERSION} -cluster=$$(ccm liveset) ${COVER_RUNTIME_ARGS}
 
-# The lz4 compressor lives in a nested module (lz4/go.mod), so the root "./..."
-# pattern does not reach it — it has to be invoked explicitly with `go test -C`,
-# the same way check-go-mod-drift lists every module. Without that, the lz4
-# tests and benchmarks are green or red independently of CI.
+# One module includes compressor and replay workload tests.
 test-unit: .prepare-pki
 	@echo "Run unit tests"
 	bash ci/resolve-scylla-ccm-version_test.sh
 	go clean -testcache
-	go clean -C lz4 -testcache
 ifeq ($(shell if [[ -n "$${GITHUB_STEP_SUMMARY}" ]]; then echo "running-in-workflow"; else echo "running-in-shell"; fi), running-in-workflow)
 	echo "### Unit Test Results" >>$${GITHUB_STEP_SUMMARY}
 	echo '```' >>$${GITHUB_STEP_SUMMARY}
 	echo go test -tags unit -timeout=5m -race ./... ${COVER_ARGS}
 	TEST_STATUS=0
 	go test -tags unit -timeout=5m -race ./... ${COVER_ARGS} | tee -a "$${GITHUB_STEP_SUMMARY}" || TEST_STATUS=$${PIPESTATUS[0]}
-	echo go test -C lz4 -tags unit -timeout=5m -race ./... ${COVER_ARGS}
-	LZ4_TEST_STATUS=0
-	go test -C lz4 -tags unit -timeout=5m -race ./... ${COVER_ARGS} | tee -a "$${GITHUB_STEP_SUMMARY}" || LZ4_TEST_STATUS=$${PIPESTATUS[0]}
 	echo '```' >>"$${GITHUB_STEP_SUMMARY}"
 	if (( TEST_STATUS != 0 )); then exit "$${TEST_STATUS}"; fi
-	exit "$${LZ4_TEST_STATUS}"
+	exit "$${TEST_STATUS}"
 else
 	go test -v -tags unit -timeout=5m -race ./... ${COVER_ARGS}
-	go test -C lz4 -v -tags unit -timeout=5m -race ./... ${COVER_ARGS}
 endif
 
 .prepare-coverage-dir:
@@ -443,35 +435,15 @@ ccm-test:
 ccm-test-coverage: .prepare-coverage-dir
 	@go test -tags "ccm gocql_debug" -timeout=5m -v -cover -covermode=atomic -coverpkg=./... ./internal/ccm/... -args -test.gocoverdir="${COVERAGE_DIR}"
 
-# lz4 is a separate Go module (see its go.mod), so a single `go tool covdata`
-# invocation can't render both it and the root module together -- `go tool
-# cover` resolves source files against the module rooted at the current
-# directory, and a merged profile spanning two modules fails with "no
-# required module provides package ...". Filter per module with `-pkg` and
-# run `go tool cover` from within each module's own directory instead.
+# All packages share the canonical v2 module and one coverage profile.
 coverage-report:
-	@echo "Generate coverage report"
-	go tool covdata textfmt -i="${COVERAGE_DIR}" -pkg="github.com/gocql/gocql/..." -o="${MAKEFILE_PATH}/coverage-root.out"
-	go tool covdata textfmt -i="${COVERAGE_DIR}" -pkg="github.com/scylladb/gocql/lz4/..." -o="${MAKEFILE_PATH}/coverage-lz4.out"
-ifeq ($(shell if [[ -n "$${GITHUB_STEP_SUMMARY}" ]]; then echo "running-in-workflow"; else echo "running-in-shell"; fi), running-in-workflow)
-	echo "### Coverage Report" >>$${GITHUB_STEP_SUMMARY}
-	echo '```' >>$${GITHUB_STEP_SUMMARY}
-	go tool covdata percent -i="${COVERAGE_DIR}" -pkg="github.com/gocql/gocql/..." | tee -a "$${GITHUB_STEP_SUMMARY}"
-	go tool cover -func="${MAKEFILE_PATH}/coverage-root.out" | tail -1 | sed 's/^total:/root module total:/' | tee -a "$${GITHUB_STEP_SUMMARY}"
-	go tool covdata percent -i="${COVERAGE_DIR}" -pkg="github.com/scylladb/gocql/lz4/..." | tee -a "$${GITHUB_STEP_SUMMARY}"
-	(cd lz4 && go tool cover -func="${MAKEFILE_PATH}/coverage-lz4.out") | tail -1 | sed 's/^total:/lz4 module total:/' | tee -a "$${GITHUB_STEP_SUMMARY}"
-	echo '```' >>"$${GITHUB_STEP_SUMMARY}"
-else
-	go tool covdata percent -i="${COVERAGE_DIR}" -pkg="github.com/gocql/gocql/..."
-	go tool cover -func="${MAKEFILE_PATH}/coverage-root.out" | tail -1 | sed 's/^total:/root module total:/'
-	go tool covdata percent -i="${COVERAGE_DIR}" -pkg="github.com/scylladb/gocql/lz4/..."
-	(cd lz4 && go tool cover -func="${MAKEFILE_PATH}/coverage-lz4.out") | tail -1 | sed 's/^total:/lz4 module total:/'
-endif
+	go tool covdata textfmt -i="${COVERAGE_DIR}" -o="${MAKEFILE_PATH}/coverage-root.out"
+	go tool covdata percent -i="${COVERAGE_DIR}"
+	go tool cover -func="${MAKEFILE_PATH}/coverage-root.out"
 	go tool cover -html="${MAKEFILE_PATH}/coverage-root.out" -o="${MAKEFILE_PATH}/coverage-root.html"
-	(cd lz4 && go tool cover -html="${MAKEFILE_PATH}/coverage-lz4.out" -o="${MAKEFILE_PATH}/coverage-lz4.html")
 
 clean-coverage:
-	rm -rf "${COVERAGE_DIR}" "${MAKEFILE_PATH}"/coverage-root.* "${MAKEFILE_PATH}"/coverage-lz4.*
+	rm -rf "${COVERAGE_DIR}" "${MAKEFILE_PATH}"/coverage-root.*
 
 # The benchmarks are behind the `bench` build tag (and, in the root module, some
 # behind `unit`), so the tags have to be passed or `go test -bench` compiles and
@@ -479,53 +451,11 @@ clean-coverage:
 # themselves belong to test-unit.
 BENCH_OPTS = -tags "bench unit" -run '^$$' -bench=. -benchmem
 
-# Each module's status is captured rather than left to abort the recipe, on both branches.
-# .SHELLFLAGS is -eo pipefail, so a bare failing command takes the whole target down where
-# it stands -- skipping the modules after it, and in the workflow branch the closing fence
-# with them. The tests/bench run is last and is the one that matters most: it is the only
-# end-to-end check that the frame hashing still matches a recording, and a root-module
-# regression must not be what stops it from running. The bench workflow is label-gated, so
-# on most changes the shell branch below is the only one that ever runs this at all.
-# test-unit's workflow branch does the same dance for the same reason; its shell branch
-# does not, so a root-module failure there still skips lz4.
 test-bench:
-	@echo "Run benchmark tests"
-ifeq ($(shell if [[ -n "$${GITHUB_STEP_SUMMARY}" ]]; then echo "running-in-workflow"; else echo "running-in-shell"; fi), running-in-workflow)
-	echo "### Benchmark Results" >>$${GITHUB_STEP_SUMMARY}
-	echo '```' >>"$${GITHUB_STEP_SUMMARY}"
-	echo go test ${BENCH_OPTS} ./...
-	BENCH_STATUS=0
-	go test ${BENCH_OPTS} ./... | tee -a "$${GITHUB_STEP_SUMMARY}" || BENCH_STATUS=$${PIPESTATUS[0]}
-	echo go test -C lz4 ${BENCH_OPTS} ./...
-	LZ4_BENCH_STATUS=0
-	go test -C lz4 ${BENCH_OPTS} ./... | tee -a "$${GITHUB_STEP_SUMMARY}" || LZ4_BENCH_STATUS=$${PIPESTATUS[0]}
-	echo go test -C tests/bench ${BENCH_OPTS} ./...
-	REPLAY_BENCH_STATUS=0
-	go test -C tests/bench ${BENCH_OPTS} ./... | tee -a "$${GITHUB_STEP_SUMMARY}" || REPLAY_BENCH_STATUS=$${PIPESTATUS[0]}
-	echo '```' >>"$${GITHUB_STEP_SUMMARY}"
-	if (( BENCH_STATUS != 0 )); then exit "$${BENCH_STATUS}"; fi
-	if (( LZ4_BENCH_STATUS != 0 )); then exit "$${LZ4_BENCH_STATUS}"; fi
-	exit "$${REPLAY_BENCH_STATUS}"
-else
-	echo go test ${BENCH_OPTS} ./...
-	BENCH_STATUS=0
-	go test ${BENCH_OPTS} ./... || BENCH_STATUS=$$?
-	echo go test -C lz4 ${BENCH_OPTS} ./...
-	LZ4_BENCH_STATUS=0
-	go test -C lz4 ${BENCH_OPTS} ./... || LZ4_BENCH_STATUS=$$?
-	echo go test -C tests/bench ${BENCH_OPTS} ./...
-	REPLAY_BENCH_STATUS=0
-	go test -C tests/bench ${BENCH_OPTS} ./... || REPLAY_BENCH_STATUS=$$?
-	if (( BENCH_STATUS != 0 )); then exit "$${BENCH_STATUS}"; fi
-	if (( LZ4_BENCH_STATUS != 0 )); then exit "$${LZ4_BENCH_STATUS}"; fi
-	exit "$${REPLAY_BENCH_STATUS}"
-endif
+	go test ${BENCH_OPTS} ./...
 
 check-go-mod-drift:
-	@echo "Check Go module drift"
 	go mod tidy -diff
-	go mod tidy -C lz4 -diff
-	go mod tidy -C tests/bench -diff
 
 # The architecture-dependent part of check. It is not redundant with test-unit:
 # `go test` compiles no non-test file the `all` tag guards -- integration_only.go,
@@ -534,80 +464,13 @@ build:
 	@echo "Build"
 	go build -tags all .
 
-# go.mod's require on github.com/scylladb/gocql/lz4 is inert here -- the `replace`
-# beside it wins for every local build -- and Renovate skips it, so nothing notices
-# when it drifts from the module's release tags. Consumers see the require and not
-# the replace, so it still has to resolve for them. See go.mod and README.md 5.4.
-check-lz4-pin:
-	@echo "Check the lz4 pin against the newest lz4/v* tag"
-	PINNED=$$(go list -m -f '{{.Version}}' github.com/scylladb/gocql/lz4) || {
-		echo "::error::go.mod has no require for github.com/scylladb/gocql/lz4."
-		exit 1
-	}
-	# Checked first: drop a replace and `go mod tidy` resolves the published release and
-	# rewrites go.sum to match, so every check below stays green against code that is no
-	# longer under test. tests/bench needs its own; its go.mod records why.
-	for module in ".:./lz4" "tests/bench:../../lz4"; do
-		DIR="$${module%%:*}"
-		TARGET="$${module##*:}"
-		REPLACED=$$(go -C "$${DIR}" list -m -f '{{with .Replace}}{{.Path}}{{end}}' github.com/scylladb/gocql/lz4 || true)
-		if [[ "$${REPLACED}" != "$${TARGET}" ]]; then
-			echo "::error::$${DIR}/go.mod no longer replaces github.com/scylladb/gocql/lz4 with $${TARGET}."
-			echo "Without it the module resolves from the proxy and this repository tests the last release."
-			exit 1
-		fi
-	done
-	ALLTAGS=$$(git tag -l 'lz4/v*' 2>/dev/null || true)
-	if [[ -z "$${ALLTAGS}" ]]; then
-		if [[ -n "$${GITHUB_ACTIONS}" ]]; then
-			echo "::error::no lz4/v* tags found at all, so this check verified nothing."
-			echo "The workflow's checkout has stopped fetching tags."
-			exit 1
-		fi
-		echo "No lz4/v* tags present (clone without tags); skipping"
-		exit 0
-	fi
-	# An existence question, not an ordering one: an untagged pin can sit between two
-	# tags, and so compare as older than the newest, while resolving for nobody.
-	if ! git rev-parse -q --verify "refs/tags/lz4/$${PINNED}" >/dev/null; then
-		echo "::error::go.mod requires lz4 $${PINNED} but no lz4/$${PINNED} tag exists."
-		echo "Consumers cannot resolve the module. Tag it, or lower the require."
-		exit 1
-	fi
-	# Pre-releases are dropped because `sort -V` orders v1.20.0-rc1 after v1.20.0.
-	LATEST=$$(printf '%s\n' "$${ALLTAGS}" | sed 's|^lz4/||' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$$' | sort -V | tail -1 || true)
-	if [[ -z "$${LATEST}" ]]; then
-		echo "Only pre-release lz4 tags present; the pin resolves, nothing to compare it against"
-	elif [[ "$${PINNED}" != "$${LATEST}" ]]; then
-		# A warning, not an error: a require is a lower bound so the pin still resolves,
-		# and the tag and the bump commit cannot land atomically.
-		echo "::warning::lz4 pin $${PINNED} lags tag lz4/$${LATEST}; bump go.mod and the versions README.md section 5.4 documents."
-		echo "- lz4 pin $${PINNED} lags tag lz4/$${LATEST}" >> "$${GITHUB_STEP_SUMMARY:-/dev/null}"
-	fi
-	# Every lz4 version README.md documents must be the pinned one, compared exactly. A
-	# substring test lets v1.19.0 be satisfied by v1.19.0-rc1, and asking only whether the
-	# pin appears somewhere stays green while another mention is stale. `sort -u` collapses
-	# to one line only when they all agree, so a single comparison covers both.
-	DOCUMENTED=$$(grep -oE '(github\.com/scylladb/gocql/lz4[ @]|(^|[^A-Za-z0-9./])lz4/)v[0-9]+\.[0-9]+\.[0-9]+[A-Za-z0-9.-]*' README.md | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+[A-Za-z0-9.-]*' | sort -u || true)
-	if [[ -z "$${DOCUMENTED}" ]]; then
-		echo "README.md documents no lz4 version; section 5.4 should name $${PINNED}."
-		exit 1
-	fi
-	if [[ "$${DOCUMENTED}" != "$${PINNED}" ]]; then
-		echo "README.md documents lz4 $$(echo $${DOCUMENTED}); go.mod pins $${PINNED}."
-		echo "Section 5.4 documents the lz4 version too; bump it alongside go.mod."
-		exit 1
-	fi
-
-check: build .prepare-golangci check-go-mod-drift check-lz4-pin
+check: build .prepare-golangci check-go-mod-drift
 	echo "Check linting"
 	${BIN_DIR}/golangci-lint run
 
 fix-go-mod-drift:
 	@echo "Fix Go module drift"
 	go mod tidy
-	go mod tidy -C lz4
-	go mod tidy -C tests/bench
 
 fix: .prepare-golangci fix-go-mod-drift
 	@echo "Fix linting"

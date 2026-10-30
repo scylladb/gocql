@@ -25,37 +25,13 @@ codecov:
   # and require_ci_to_pass would turn each of those into a stuck report.
   require_ci_to_pass: false
 
-# `go tool covdata textfmt` records import paths, not repository paths: the root
-# module's files come out as `github.com/gocql/gocql/conn.go` (module path, not
-# repo slug -- this fork keeps the upstream module path) and lz4's as
-# `github.com/scylladb/gocql/lz4/lz4.go`. Strip both module prefixes so what
-# Codecov gets lines up with the paths actually in the tree; without this every
-# file in both profiles is unmatched and the report comes out empty.
+# Coverage paths use the single canonical module prefix.
 fixes:
-  - "github.com/gocql/gocql/::"
-  - "github.com/scylladb/gocql/::"
+  - "github.com/scylladb/gocql/v2/::"
 
-# One flag per Go module, mirroring the two profiles `make coverage-report`
-# emits and the "root module total"/"lz4 module total" split it already prints.
-#
-# carryforward covers exactly one case: a commit that uploaded some flags but
-# not all of them, where the missing ones would otherwise read as a total loss
-# of coverage rather than as absent. In practice that is the root upload
-# landing and the lz4 one failing, since both steps share a condition.
-#
-# It does NOT cover a commit with no upload at all. Codecov builds no head
-# report for such a commit, and carryforward needs a report to fill in, so
-# there is nothing for it to run against. That is the shape of every skipped
-# coverage run here -- a docs-only push filtered out by paths-ignore, a pull
-# request labelled disable-coverage-tests -- and it needs no covering: with no
-# report, comparisons walk back to the nearest ancestor that has one, which is
-# the right baseline, and a run deliberately skipped has no business
-# manufacturing a status out of a blank upload.
 flag_management:
   individual_flags:
     - name: root
-      carryforward: true
-    - name: lz4
       carryforward: true
 
 coverage:

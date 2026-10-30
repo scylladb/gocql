@@ -1,0 +1,189 @@
+{
+  "capture_generation_command": {
+    "cancelled": false,
+    "command": [
+      "go",
+      "test",
+      "-json",
+      "-race",
+      "-tags",
+      "integration gocql_debug",
+      "-count=1",
+      "-timeout=8m",
+      "-parallel=1",
+      "-run",
+      "^(TestStep13RegenerateReplay|TestStep13PublicExample|TestStep07RunStreamLive|TestV2RuntimeDatabaseSmoke|TestCloudConnection)$",
+      ".",
+      "-args",
+      "-gocql.timeout=60s",
+      "-rf=3",
+      "-clusterSize=3",
+      "-autowait=2s",
+      "-cluster=127.0.20.1,127.0.20.2,127.0.20.3",
+      "-distribution=scylla",
+      "-gocql.cversion=2026.3.4",
+      "-runauth",
+      "-cluster-socket=/extra/scylladb/gocql-api-test-cluster/step08/gd4aae9895a6d47f1/stable20/node1/cql.m",
+      "-proto=4"
+    ],
+    "exit_code": 0,
+    "log": "/extra/scylladb/gocql-api-test-cluster/step13/verified/stable-stable20-record-and-v4raw.log",
+    "name": "stable20-record-and-v4raw",
+    "pid": 551540,
+    "seconds": 26.685,
+    "sha256": "496226a9e6e95291996bc17d71a16e2ac6226fac97e197154a2e66bbd36968b9"
+  },
+  "capture_generation_receipt": "step13-native-stable.json",
+  "connection_ownership": "One ordinal control connection plus one data connection. Session.Close joins I/O; each recorder Close result and exact connection count are checked.",
+  "corpus": [
+    {
+      "path": "tests/bench/rec_insert/connection-0Reads",
+      "protocol_stamps": [
+        4
+      ],
+      "records": 7,
+      "sha256": "cfab0e449b2e4f6461cd89f1481d2a5f1e9fb1e9e8bce9532334478e10681b0e"
+    },
+    {
+      "path": "tests/bench/rec_insert/connection-0Writes",
+      "protocol_stamps": [
+        4
+      ],
+      "records": 7,
+      "sha256": "c5ac5bf1c5021d780c6b12e663e0a6a92062d1fa20f0554cceb67c2cc2a39b2d"
+    },
+    {
+      "path": "tests/bench/rec_insert/connection-1Reads",
+      "protocol_stamps": [
+        4
+      ],
+      "records": 14,
+      "sha256": "44d90e2f967919df32ec756e186d652cf7860e01ffc0885cd42d9cdcbc906b71"
+    },
+    {
+      "path": "tests/bench/rec_insert/connection-1Writes",
+      "protocol_stamps": [
+        4
+      ],
+      "records": 14,
+      "sha256": "a1175cd5328f15693aa52efd6da583b59f33667d91953e071594fbd5e703476f"
+    },
+    {
+      "path": "tests/bench/rec_select/connection-0Reads",
+      "protocol_stamps": [
+        4
+      ],
+      "records": 7,
+      "sha256": "e02cd73015b23f99d715f3a551932d1850647290f22e32a28234e47c507258f0"
+    },
+    {
+      "path": "tests/bench/rec_select/connection-0Writes",
+      "protocol_stamps": [
+        4
+      ],
+      "records": 7,
+      "sha256": "36e9683184c7791110353e19d39c9093b75abfb6564e36e589ea86e5aa0077e2"
+    },
+    {
+      "path": "tests/bench/rec_select/connection-1Reads",
+      "protocol_stamps": [
+        4
+      ],
+      "records": 14,
+      "sha256": "817795f19cdeb49e607c521681adbdde2e6b499e11c659c3778327e2cadeeac7"
+    },
+    {
+      "path": "tests/bench/rec_select/connection-1Writes",
+      "protocol_stamps": [
+        4
+      ],
+      "records": 14,
+      "sha256": "5d8d7299a4d33cf5e07705b01f1f334268153fe0d919a441bea1ca6887205c85"
+    }
+  ],
+  "effective_case_passes": 60,
+  "historical_failure": "step13-replay-history.json; step10/12 mismatch remains failed evidence, not a performance pass.",
+  "insert_workload": "INSERT (pk,ck,v)=(i,i%5,Name_i), i=0..9; every execution must succeed.",
+  "operational_command": [
+    "go",
+    "test",
+    "-json",
+    "-race",
+    "-count=3",
+    "-run",
+    "^TestSingleConnectionReplay$",
+    "./tests/bench"
+  ],
+  "operational_log": "/extra/scylladb/gocql-api-test-cluster/step13/verified/checks/replay-operations.log",
+  "operational_log_sha256": "4ce46bd2b1da54e4bf5a6021204f706905656147c6e5a75cac4343e5c4c836a1",
+  "repeated_frames": "Only byte-identical request+response pairs apart from stream IDs are collapsed. Different requests with the same hash and conflicting repeated responses are errors. Original bytes stay in captures.",
+  "select_assertions": "Exactly one row with exact Name_i for each key i=0..9.",
+  "server": {
+    "addresses": [
+      "127.0.20.1",
+      "127.0.20.2",
+      "127.0.20.3"
+    ],
+    "binary": "libexec/scylla",
+    "ccm": false,
+    "ccm_version": "release:2026.3.4",
+    "install": "/extra/scylladb/gocql-api-test-cluster/ccm/scylla-repository/release/2026.3.4",
+    "kind": "scylla",
+    "modes": [
+      {
+        "args": [
+          "-proto=4"
+        ],
+        "environment": {
+          "GOCQL_REGENERATE_BENCH": "1"
+        },
+        "name": "record-and-v4raw",
+        "tests": "^(TestStep13RegenerateReplay|TestStep13PublicExample|TestStep07RunStreamLive|TestV2RuntimeDatabaseSmoke|TestCloudConnection)$"
+      },
+      {
+        "args": [
+          "-proto=4",
+          "-runssl"
+        ],
+        "name": "v4tls",
+        "tests": "^(TestStep13PublicExample|TestStep07RunStreamLive|TestV2RuntimeDatabaseSmoke|TestCloudConnection)$"
+      },
+      {
+        "args": [
+          "-proto=4",
+          "-compressor=lz4"
+        ],
+        "name": "v4lz4",
+        "tests": "^(TestStep13PublicExample|TestStep07RunStreamLive|TestV2RuntimeDatabaseSmoke|TestCloudConnection)$"
+      }
+    ],
+    "name": "stable20",
+    "sha256": "fe5c0f66ba2e52032e41822a9b54e63ec6e636cec9b1fc3561a3829bd60b1bb5",
+    "smp": 2,
+    "version": "2026.3.4"
+  },
+  "source_sha256": "fc38c0172edc87124a8291303e1bd9208ef70fd7230b487228c6b7f60d646305",
+  "unique_cases": [
+    "TestSingleConnectionReplay/insert/Case0",
+    "TestSingleConnectionReplay/insert/Case1",
+    "TestSingleConnectionReplay/insert/Case2",
+    "TestSingleConnectionReplay/insert/Case3",
+    "TestSingleConnectionReplay/insert/Case4",
+    "TestSingleConnectionReplay/insert/Case5",
+    "TestSingleConnectionReplay/insert/Case6",
+    "TestSingleConnectionReplay/insert/Case7",
+    "TestSingleConnectionReplay/insert/Case8",
+    "TestSingleConnectionReplay/insert/Case9",
+    "TestSingleConnectionReplay/select/Case0",
+    "TestSingleConnectionReplay/select/Case1",
+    "TestSingleConnectionReplay/select/Case2",
+    "TestSingleConnectionReplay/select/Case3",
+    "TestSingleConnectionReplay/select/Case4",
+    "TestSingleConnectionReplay/select/Case5",
+    "TestSingleConnectionReplay/select/Case6",
+    "TestSingleConnectionReplay/select/Case7",
+    "TestSingleConnectionReplay/select/Case8",
+    "TestSingleConnectionReplay/select/Case9"
+  ],
+  "unmatched_request_behavior": "Existing unmatched-request panic retained; no CQL/hash rewrite or fallback."
+}

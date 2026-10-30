@@ -1,3 +1,6 @@
+// Copyright 2026 The Gocql Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license.
+
 package gocql
 
 import implCluster "github.com/scylladb/gocql/v2/internal/cluster"
@@ -17,8 +20,8 @@ import (
 	"time"
 	"unsafe"
 
-	lz4 "github.com/scylladb/gocql/lz4"
 	"github.com/scylladb/gocql/v2/internal/testkit"
+	lz4 "github.com/scylladb/gocql/v2/internal/wirecompress"
 )
 
 type step08Mode struct {

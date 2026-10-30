@@ -1,0 +1,1757 @@
+{
+  "current_effective_passes": 1,
+  "identities": 174,
+  "scope": "Affected facade/compression/streaming lanes only. Prior 158 step12 and all174 step09 passes retain their own source bindings. Full same-tree174 and streaming acceptance matrices remain steps14/17; skips never count as passes.",
+  "source_sha256": "fc38c0172edc87124a8291303e1bd9208ef70fd7230b487228c6b7f60d646305",
+  "tests": [
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#batch_test.go::TestBatch_Errors",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#batch_test.go::TestBatch_Errors",
+      "identity": "batch_test.go::TestBatch_Errors",
+      "original_sha256": "c691afec199979ffc391d34067b4bd660054554eb3e157e618f6ddd4f4225df2",
+      "translated_sha256": "265e898cd42acf74a22b4ac8d60c9053ed87831854dd67a9c4a0c868c794ec77",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#batch_test.go::TestBatch_WithTimestamp",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#batch_test.go::TestBatch_WithTimestamp",
+      "identity": "batch_test.go::TestBatch_WithTimestamp",
+      "original_sha256": "4b0c3d3f0dcbadd9e19a5589a6b666b166356191f3ece12b655d7cd93954daa4",
+      "translated_sha256": "0fe3759966f7a6267d213155f4f1aea063445340b1deed9daa9d0a599675489e",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#batch_test.go::TestBatch_WithNowInSeconds",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#batch_test.go::TestBatch_WithNowInSeconds",
+      "identity": "batch_test.go::TestBatch_WithNowInSeconds",
+      "original_sha256": "c7cb5a17fde5a04c4f47a4d99584ed48f1f3fce9dcd58f10625b25f573bd25bf",
+      "translated_sha256": "008b9ac99ea9795cd12f26b4fafb5a79f74cb5ae6d6b9f4eff3c013226809a33",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#batch_test.go::TestBatch_SetKeyspace",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#batch_test.go::TestBatch_SetKeyspace",
+      "identity": "batch_test.go::TestBatch_SetKeyspace",
+      "original_sha256": "d7023b115e92852e6d4f26591d6fdb780a9fe6a083861159a80f8ec7f7a853e2",
+      "translated_sha256": "0b974cb9effdba2810685d82439cc7aa3bc988a920c4d1e524016bae21e5f8f5",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cass1batch_test.go::TestProto1BatchInsert",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cass1batch_test.go::TestProto1BatchInsert",
+      "identity": "cass1batch_test.go::TestProto1BatchInsert",
+      "original_sha256": "5da4ad4a019818cf219c38b0c79d05654866d493655e91fd7365d2d7270be02c",
+      "translated_sha256": "ec3f6ead20439308ee78c83548a418a7fc040f2d2c98bc344645da9fef40d251",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cass1batch_test.go::TestShouldPrepareFunction",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cass1batch_test.go::TestShouldPrepareFunction",
+      "identity": "cass1batch_test.go::TestShouldPrepareFunction",
+      "original_sha256": "cf5cf9aa03830ea2d9033a6d55e2cad42e1864f17e9a69d6cabcbcfe2d43450e",
+      "translated_sha256": "4077eb17bf2b2489b1329995980c1b8fa726db606096709fb698fc3553f968e1",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestEmptyHosts",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestEmptyHosts",
+      "identity": "cassandra_test.go::TestEmptyHosts",
+      "original_sha256": "1262b2abbfbae32ba2285ae55c9ee80c05aefe5e21508739cb2f0e66f475add4",
+      "translated_sha256": "cbb889d057bbc2d9e5ff7a6f94b5a78de06189a9b1af70660ab402bfd0065532",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestInvalidPeerEntry",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestInvalidPeerEntry",
+      "identity": "cassandra_test.go::TestInvalidPeerEntry",
+      "original_sha256": "a30c133bf6cc9b9491eabc54a51e2e49f98690738b438c7c7dc120b7fca54bcc",
+      "translated_sha256": "a42c40ea0f0f7607feb9927a91337c54ef48201422317914aff4bf9e8488f31a",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestUseStatementError",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestUseStatementError",
+      "identity": "cassandra_test.go::TestUseStatementError",
+      "original_sha256": "d1acfae02fe1704b56270c115f795900216264702daa956381255e08f5ed413d",
+      "translated_sha256": "87b23a2f7167f288eea580568477b1800039736c50728cb6d2dddadeedd07015",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestInvalidKeyspace",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestInvalidKeyspace",
+      "identity": "cassandra_test.go::TestInvalidKeyspace",
+      "original_sha256": "b1e4a0756575b9b1f9be8461048f9320a310a857c9c0a4337ec6575d0bda074d",
+      "translated_sha256": "195709a6d46517585a309e04e53487bdc1ba70c7d97b6ec9ab009408c81fc81d",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestTracing",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestTracing",
+      "identity": "cassandra_test.go::TestTracing",
+      "original_sha256": "d55372eb0fc000a008c62d0b2773c5f817f4bde3bab7c57b86a7857362dcabea",
+      "translated_sha256": "724a1f2177eb9f7d6429383287c7f553a26d86bb72dda87e33ee09a1d0b35c27",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestObserve",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestObserve",
+      "identity": "cassandra_test.go::TestObserve",
+      "original_sha256": "6a2a9bea03a931def95b7d3f2934ee8ddd498012c275b07e03a50a2db990428a",
+      "translated_sha256": "bfece1f797985ea344979b67e364855489144181d42bf30dd46c3394b02cb83b",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestObserve_Pagination",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestObserve_Pagination",
+      "identity": "cassandra_test.go::TestObserve_Pagination",
+      "original_sha256": "9fa061e5e35adb9498645f42c67ff47e062a78ab07f869c4a9732a976a95f54e",
+      "translated_sha256": "db86cc5bc439d94ac0684dcbd02fc879ae6492255ee7ef211d30fddef7ae4f68",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestPaging",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestPaging",
+      "identity": "cassandra_test.go::TestPaging",
+      "original_sha256": "6f2973148179e695e69c8c351c2dd8960c5ac34723fbbbb3c505780068cffc1f",
+      "translated_sha256": "bef28896010ebef5e253f3716c01811b6192a2b79bd695d38b423fc7a7958d9e",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestPagingWithAllowFiltering",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestPagingWithAllowFiltering",
+      "identity": "cassandra_test.go::TestPagingWithAllowFiltering",
+      "original_sha256": "dfbdfffcfbdd1275b3aa3660ffe2dc998ee02672fd0f002e77aa1ea57729f0ac",
+      "translated_sha256": "481c9ce5b07e875bb09e3010ee9c7d4bc6885e0e1f98e3022765bd35fb5e1de3",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestPagingWithBind",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestPagingWithBind",
+      "identity": "cassandra_test.go::TestPagingWithBind",
+      "original_sha256": "d9f67c0904b03a1df72f15495e167d808e5fc8352e807844a46e6d7f944677ef",
+      "translated_sha256": "bef50a86d99f17768661589dff1d61a34309ad169702332aac271ed9377b575b",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestCAS",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestCAS",
+      "identity": "cassandra_test.go::TestCAS",
+      "original_sha256": "51bd5c4dfe5dfe3a73991def429d4fd9a5e701ec25ba392e1c9a59056f53a28b",
+      "translated_sha256": "348af2f5a3312b6c960bdea21d9830185bbf0dfaeb41e2196833a1fc0a906993",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestConsistencySerial",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestConsistencySerial",
+      "identity": "cassandra_test.go::TestConsistencySerial",
+      "original_sha256": "57815b96baa9cdc305dd047cd9dc24f268798d7ac6013efd773c015329525ebc",
+      "translated_sha256": "ec003997000fd7ba8222032a2cbaf79685b0da4f02e48978d43266d474e8a300",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestDurationType",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestDurationType",
+      "identity": "cassandra_test.go::TestDurationType",
+      "original_sha256": "ffa5b4de88ca4dc2b8b1159d5f11e392b007d9e0adfecab9c6b74f1174a0b052",
+      "translated_sha256": "96b7baf03e280b8abd100847d4cd8f52808678dd555f62fbdd9b019dbcfdebb7",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestMapScanCAS",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestMapScanCAS",
+      "identity": "cassandra_test.go::TestMapScanCAS",
+      "original_sha256": "98a2127ef4d3054de10383991cf8ab0fa01e050eb1f89e545ef3f21116a4f536",
+      "translated_sha256": "a3f8443f60afc487a56521fef1ae6d8449c8dc9022735825a724713f94989bcc",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestBatch",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestBatch",
+      "identity": "cassandra_test.go::TestBatch",
+      "original_sha256": "bc1d56637a1e674157f8ae3d8923622d9cbb76464ab033e242e28afaacba2fce",
+      "translated_sha256": "45e3143852d6913cec43b5ec8238a584912644d0bbf54621be9b4bdcde431e27",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestUnpreparedBatch",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestUnpreparedBatch",
+      "identity": "cassandra_test.go::TestUnpreparedBatch",
+      "original_sha256": "d41d760f60d5913dad580b170090dbf2cef24db8089b2ac2851cbe151c5d225c",
+      "translated_sha256": "7009673f3fe6db86fc7a33288b1d4ffc2d9f1b4f5d6c257c8e48daadbc923b6e",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestBatchLimit",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestBatchLimit",
+      "identity": "cassandra_test.go::TestBatchLimit",
+      "original_sha256": "fe0dc773d92c01dec2b3d4788751bec929f798a6192af3b6593843c04a285032",
+      "translated_sha256": "5c406ef3a22ca1c5fc3ba621280bdd416bee6124aad8e721cf6ae6028d565041",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestWhereIn",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestWhereIn",
+      "identity": "cassandra_test.go::TestWhereIn",
+      "original_sha256": "fa42568cf47ecabaf1633e1b1f41dc110a3a8e665313b2646b9dbb45699fc835",
+      "translated_sha256": "35ca55a031e0f5630e46b166ca95598955e59d06acd7a1ca94eb373801b50a4a",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestTooManyQueryArgs",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestTooManyQueryArgs",
+      "identity": "cassandra_test.go::TestTooManyQueryArgs",
+      "original_sha256": "010b3be9cb344ac4e422c2ff5e32407b6f703fb0d2650aa0bc048f88198ad151",
+      "translated_sha256": "deac2231dcc4f8da2b5bd1120590c2675908b3bbc6bcaafc99671518ce961c4f",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestNotEnoughQueryArgs",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestNotEnoughQueryArgs",
+      "identity": "cassandra_test.go::TestNotEnoughQueryArgs",
+      "original_sha256": "b2571617fc49ff7334ad1d658692f702e5d2698d6f704daadeae14dc0cba7c13",
+      "translated_sha256": "1a37e86fa16f3aa00e83f1a15f01fdce04fc7b68c779cfcea0875fde4e75cf5e",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestCreateSessionTimeout",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestCreateSessionTimeout",
+      "identity": "cassandra_test.go::TestCreateSessionTimeout",
+      "original_sha256": "06a937153aa5b381a9a60ca56ad8e1d56fb74198aaf27debfd5d125cf5fee6a4",
+      "translated_sha256": "ac48dc1cda408e2a1eb2a8375eff0005687cac3c313c27f36ce37341cab2a375",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestReconnection",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestReconnection",
+      "identity": "cassandra_test.go::TestReconnection",
+      "original_sha256": "c52535fcb5f6d2b57d3863784e21ae4176ebbca0b8af148ffe453d1bc3c1ab72",
+      "translated_sha256": "5e1c33422819ede515449c3ce4a2f5c04d5e78107400d5c0bd1f84dd20435cf4",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestMapScanWithRefMap",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestMapScanWithRefMap",
+      "identity": "cassandra_test.go::TestMapScanWithRefMap",
+      "original_sha256": "621fa4d06f4d2247acf1582df883ada17558e77fef295ed58a10abc4e275327d",
+      "translated_sha256": "b55758ebc9b7e7270f6f8b8a6a8602bf054fd54f53fc4e14f12fa5b32cb7bef5",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestMapScan",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestMapScan",
+      "identity": "cassandra_test.go::TestMapScan",
+      "original_sha256": "fae9039dcd075abffe9be9c6ebf7430ed564c590a4f731250139309484722a3f",
+      "translated_sha256": "0ddf89c44e8a22be3707733b62ba9afd64e9ad5a6ed951b977c438ab6f8bacaf",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestSliceMap",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestSliceMap",
+      "identity": "cassandra_test.go::TestSliceMap",
+      "original_sha256": "742e8576dc3807acdca6627427bf1b3e2c1c44cb557cac2546ebd333dc54c3d5",
+      "translated_sha256": "2799c7dd9b92bb444e3b551839b7198e376c65f5b8b6084d687cc5f8077e0158",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::Test_RetryPolicyIdempotence",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::Test_RetryPolicyIdempotence",
+      "identity": "cassandra_test.go::Test_RetryPolicyIdempotence",
+      "original_sha256": "64884d915d50d5fe06b54d64163f11af8438274a59f4f90f0c2c176fc380895d",
+      "translated_sha256": "8343a91030432b04bc3498dc3783c786adfd804a422fb3115cf6740bb7483cd0",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestSmallInt",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestSmallInt",
+      "identity": "cassandra_test.go::TestSmallInt",
+      "original_sha256": "d4353df6ff1a0f455e26f46fee259c9278f1fde3d183ed9bf632fd57d641590d",
+      "translated_sha256": "38e767daeec5ddc39169cd7a55bd6ed83fc794290d3dc43471dc0c4bb039837e",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestScanWithNilArguments",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestScanWithNilArguments",
+      "identity": "cassandra_test.go::TestScanWithNilArguments",
+      "original_sha256": "c38104059ae5f8b20c9ebe4488a6d57b136ba051c6e1c3f1d8f43f2ac8c266c2",
+      "translated_sha256": "945490b851160cf4b4302d73f486a9a7f5a6b0c7c0541e844286f4f6fb6acd66",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestScanCASWithNilArguments",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestScanCASWithNilArguments",
+      "identity": "cassandra_test.go::TestScanCASWithNilArguments",
+      "original_sha256": "b662f3e6865800797b29810c44e80acb62c88b6cf90334fdfb02f9ea03c730f2",
+      "translated_sha256": "918f4fabb4bdbc89cc3135a7d35d32ed660448a424e182aca8922d473027f9be",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestRebindQueryInfo",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestRebindQueryInfo",
+      "identity": "cassandra_test.go::TestRebindQueryInfo",
+      "original_sha256": "aa92eeae975c95cd53f70bdcd469038c60cc6abe97956cd8bb75d99938038712",
+      "translated_sha256": "7255b5064b14950792fbb3197f09982b7aadd8a9bc8aa9733f3d115397872b63",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestStaticQueryInfo",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestStaticQueryInfo",
+      "identity": "cassandra_test.go::TestStaticQueryInfo",
+      "original_sha256": "e34f0e8f3afab2c5a6b53fa92ca1504feab6862fc22f4a7c2924f9426ba757db",
+      "translated_sha256": "36f0fa81122cf831a7bd61e870176f9131df5889b58a19bc83197b8cba710462",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestBoundQueryInfo",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestBoundQueryInfo",
+      "identity": "cassandra_test.go::TestBoundQueryInfo",
+      "original_sha256": "dc367593cfcabe8520a13db507efa3eb56650e03e8d5479fc1ce9fdd8c6d110b",
+      "translated_sha256": "811ce818f4018ccd0fc13a002982cfdfeeaeb42e3f4df40ec4d43b8019bfd497",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestBatchQueryInfo",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestBatchQueryInfo",
+      "identity": "cassandra_test.go::TestBatchQueryInfo",
+      "original_sha256": "7327f8e1af7fc192eb4acc778d67e068107879ec75b1015552dfbcef4d1c2726",
+      "translated_sha256": "b0ff18d1534ec8f80c043ba30117442e95007120fe9010a0e72f9267336b55cd",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestPrepare_MissingSchemaPrepare",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestPrepare_MissingSchemaPrepare",
+      "identity": "cassandra_test.go::TestPrepare_MissingSchemaPrepare",
+      "original_sha256": "3ff3c02fd2e45018685248a539cbbe1047cf4d44520d4609565e96ce54cacbf5",
+      "translated_sha256": "d779d750d2bfeb2f7134c086cb34bc8040b3982bf5d14c6c8587eeb18fb73160",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestPrepare_ReprepareStatement",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestPrepare_ReprepareStatement",
+      "identity": "cassandra_test.go::TestPrepare_ReprepareStatement",
+      "original_sha256": "02f023736cbee444d3c4b0ca13dfb069f2c4f655536abfa89c4bb2450a055ba2",
+      "translated_sha256": "0ba1663af8b5fbb57eed489f5f73ddb2fbc6a69588923e4430f1a5a8dee210d9",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestPrepare_ReprepareBatch",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestPrepare_ReprepareBatch",
+      "identity": "cassandra_test.go::TestPrepare_ReprepareBatch",
+      "original_sha256": "156ba684397e679c4c35a90ba1488ab6fcf8ca85e44e43e760b8cd918c48030d",
+      "translated_sha256": "8eecafe1812119dcab494f31c3674efa6884f73b329ac43e54ebd9b0ea462f8e",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestQueryInfo",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestQueryInfo",
+      "identity": "cassandra_test.go::TestQueryInfo",
+      "original_sha256": "fde24aefb49196bcdaea93d56be351b88851e788b0c47e1dfab0e080ec27d655",
+      "translated_sha256": "e5b8daa25765570217c708d033b952ffa55c59ae75a684167944f7b9a9565274",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestPrepare_PreparedCacheEviction",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestPrepare_PreparedCacheEviction",
+      "identity": "cassandra_test.go::TestPrepare_PreparedCacheEviction",
+      "original_sha256": "e86718a450359dcc005c9ba8ae89bc586f29d897c6dc7938cf31392216d8e2de",
+      "translated_sha256": "33a8d5715b19fd2d85c3e9fb348685c3ce92503bc6d8ef3f8bad74b695aba4cc",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestPrepare_PreparedCacheKey",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestPrepare_PreparedCacheKey",
+      "identity": "cassandra_test.go::TestPrepare_PreparedCacheKey",
+      "original_sha256": "c0b7603a7d190d013e18ce0240221853913d2acab58205c51c036d3136a13920",
+      "translated_sha256": "655338da897d200ad73a6632accf5c0f1ed75e75858ff9a38b6f148673f966a1",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestMarshalFloat64Ptr",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestMarshalFloat64Ptr",
+      "identity": "cassandra_test.go::TestMarshalFloat64Ptr",
+      "original_sha256": "9872fce92641e63df1ffbc7405c04c7dcdcdad60d0a33725469af94070f55f71",
+      "translated_sha256": "aefc2f7124aa2ab28c431485e5cbd03ad7cc7c4f7865055d7193166070eb7cd0",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestMarshalInet",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestMarshalInet",
+      "identity": "cassandra_test.go::TestMarshalInet",
+      "original_sha256": "3ed52313e2a46511ce636204611d1401e9221d7ce3fdc3078d048077cc340643",
+      "translated_sha256": "de63c228db1f6e772d032fe05176a697d7bf0c2a02c4986fcfb54e76b853b2a6",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestVarint",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestVarint",
+      "identity": "cassandra_test.go::TestVarint",
+      "original_sha256": "6e16948284234a61b1acf4c58371be7dc97fbfd4e8819ca8badd2f41d38a60df",
+      "translated_sha256": "91b1613850ddc66ce73044ee8d28566d4d072d907c0511fa65fe4982902bee0d",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestQueryStats",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestQueryStats",
+      "identity": "cassandra_test.go::TestQueryStats",
+      "original_sha256": "585f65bfaa79fea63d9e85aa23c0fba5ebb28fb6121fe1eb74043d32dc9c4227",
+      "translated_sha256": "25b369bacc6fe59e20c4f6d8c2181272e2410f03b3339213b7f8966bc2c659a1",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestIterHost",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestIterHost",
+      "identity": "cassandra_test.go::TestIterHost",
+      "original_sha256": "1557e813d58422bb1d59ca2836739d1e1ded4ee41cf26fb2565972af7733fe6b",
+      "translated_sha256": "60bce529693c1921e38928d4e2af66be231f164ab8f86df5498a76ecbae565af",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestBatchStats",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestBatchStats",
+      "identity": "cassandra_test.go::TestBatchStats",
+      "original_sha256": "d73a8711580cbbfe0bf02a8d2325c1fa1f4e62e9a439600acb3207e4411b9f3a",
+      "translated_sha256": "bf9f1a6d638de40ca6cb785a2e97c39828cd4bc58f4f2d68968de3963416618e",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestBatchObserve",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestBatchObserve",
+      "identity": "cassandra_test.go::TestBatchObserve",
+      "original_sha256": "1295ba61ed9230b50f7ec5fd2ef65e2b57282276a28fbb47692f7be9bb9663e0",
+      "translated_sha256": "c321379d7affa3ffd43574bda015e891076528ca5148e738f0c5633fe844def7",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestNilInQuery",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestNilInQuery",
+      "identity": "cassandra_test.go::TestNilInQuery",
+      "original_sha256": "5fcfd392e3c7b57190b6a9290aabc2c13f564aa95b913a5b1a6cea03691a5db7",
+      "translated_sha256": "cb4941cdb85f0241578a0baa8c177844d248ef85627fbc22da7b7057c0a86127",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestEmptyTimestamp",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestEmptyTimestamp",
+      "identity": "cassandra_test.go::TestEmptyTimestamp",
+      "original_sha256": "2500179bd261356a1d1b816f367717a57451b3bdac8b3fc3829149f566ae3e11",
+      "translated_sha256": "9ea9721fb2cb9961177074380e47877072d13f04810b62ed12901ce92ea7044d",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestGetKeyspaceMetadata",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestGetKeyspaceMetadata",
+      "identity": "cassandra_test.go::TestGetKeyspaceMetadata",
+      "original_sha256": "8ba6987d99c64ff9bc6633b746e5b4f8c9eb9934bdb68a2b207d91a643518f22",
+      "translated_sha256": "f3846fb7de8afb35be9384ecbddb51e9c96e4a444bfd9a31ec02fb3535345702",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestSessionMetadataAPIs",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestSessionMetadataAPIs",
+      "identity": "cassandra_test.go::TestSessionMetadataAPIs",
+      "original_sha256": "3fbe63eee16f0ae4fe6cde543155a2b036a343f7ba3041297f122e767f8bdf41",
+      "translated_sha256": "5cb49a5b7dc3c1963e9f9b2fbf881e1e571d1cfeb3fdd77db57cee71c5b87995",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestGetKeyspaceMetadataFails",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestGetKeyspaceMetadataFails",
+      "identity": "cassandra_test.go::TestGetKeyspaceMetadataFails",
+      "original_sha256": "d67147a3c93078ba8645cf6cd675167a25123682561185074811d9b0766643a7",
+      "translated_sha256": "ec1cc06c2f813dd9aaa2f6ceaa190c06d0e33fb7c95341abc155825ab96a16e9",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestRoutingKey",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestRoutingKey",
+      "identity": "cassandra_test.go::TestRoutingKey",
+      "original_sha256": "45e2485df2dacfdaa1e836ce1d4743005c374ac6ab662c085bd121c5d3d611bc",
+      "translated_sha256": "9c8547a3af95d2cd01280229971a35a6430e862c6bb501cf594033ccd76b4713",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestTokenAwareConnPool",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestTokenAwareConnPool",
+      "identity": "cassandra_test.go::TestTokenAwareConnPool",
+      "original_sha256": "5654751619b7f8fc247c4e44f5ecc6338b801cd0c7b56011ad72047bea426cfd",
+      "translated_sha256": "af0d9be8ed57fac92096acc413cfac6e6be2fcb1864630f15f7795493099335a",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestNegativeStream",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestNegativeStream",
+      "identity": "cassandra_test.go::TestNegativeStream",
+      "original_sha256": "0e40c8798112d5459c08db587927cd8dbaf88a82dcad0dee170ba672e8e3d700",
+      "translated_sha256": "8eafe1d93ba52780e12c35bddeb4810cd5fb9dcf2abef899bc3eafc69c0361d0",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestManualQueryPaging",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestManualQueryPaging",
+      "identity": "cassandra_test.go::TestManualQueryPaging",
+      "original_sha256": "e9fe170e3fb655a1e0a0d7aa4af1996aa8b14b1167fdf6eee589c78d0d46d0da",
+      "translated_sha256": "cc88237840be6f7b2a0ed9ebbeb246a691b4e446530dceb06d823c1fd7270504",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestSessionBindRoutingKey",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestSessionBindRoutingKey",
+      "identity": "cassandra_test.go::TestSessionBindRoutingKey",
+      "original_sha256": "ddd212a21a727666d494fb7017138c8efdd38dc7cd93fc1b2850eb84c4163207",
+      "translated_sha256": "22045bddfa2afb41b76b0aee6af20c0b234b6283a8bc402b62681b8ec8050cc5",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestJSONSupport",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestJSONSupport",
+      "identity": "cassandra_test.go::TestJSONSupport",
+      "original_sha256": "a25a971b23775b4439f76677e2dd6a5a6c2226e922481cf4776936093463b085",
+      "translated_sha256": "40db790b61af17b62d5fe2ab91351a19fd0e201d58847b33f9a53a182c40e70e",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestUnmarshallNestedTypes",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestUnmarshallNestedTypes",
+      "identity": "cassandra_test.go::TestUnmarshallNestedTypes",
+      "original_sha256": "eafe8795911de524c4d13099f94851b938e79371fb2e4e4b91bc60698d852215",
+      "translated_sha256": "8a855fcf261aa77b1930e110f1cb17ba4a4f38f5e44d4ed64a4ef2bc80db9354",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestSchemaReset",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestSchemaReset",
+      "identity": "cassandra_test.go::TestSchemaReset",
+      "original_sha256": "137b285b0f01457af7c3f940aa1ffd9a08e1db5b5e794ccbe3e3cf838fd97d35",
+      "translated_sha256": "942416ffaffdd1c33898c298aaedbd94c0ad80776d6fe6d91774f30a9407b08b",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestCreateSession_DontSwallowError",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestCreateSession_DontSwallowError",
+      "identity": "cassandra_test.go::TestCreateSession_DontSwallowError",
+      "original_sha256": "54726354b57936f8a26db96a198c07f4e4350718f355a62b8a9b74eb7da6cf6e",
+      "translated_sha256": "6435d878e9cfcf2efe4c21d21324dba2a4152772256d1d9de34e04aeece1f577",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestControl_DiscoverProtocol",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestControl_DiscoverProtocol",
+      "identity": "cassandra_test.go::TestControl_DiscoverProtocol",
+      "original_sha256": "12fba580b79fe9111cf7a77a1da64ea85aa54f24e163db98ac5124db52962b7b",
+      "translated_sha256": "cc500c56d5fb45d9c5dcda88c1b40f605b9e43cbce368fd0aa9b9fc2cb32b3df",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestUnsetCol",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestUnsetCol",
+      "identity": "cassandra_test.go::TestUnsetCol",
+      "original_sha256": "9aaed59ae4efb94a197b53c1d30d885649c1acc4cdf10084be5f655e865ad012",
+      "translated_sha256": "f3f6eeeb2ff6f85e9be7b78987dde8b790dca9a2e7563b2f960810ff2bb830c2",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestUnsetColBatch",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestUnsetColBatch",
+      "identity": "cassandra_test.go::TestUnsetColBatch",
+      "original_sha256": "e181b4b4d0495e9530c97590e10b4f1ae9ca093e9a907a92f9a3329b95250094",
+      "translated_sha256": "e46f9de6b5fa307e0d9a5d9247ee0a84f757e7074ee71e38a261e30dacad3615",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestQuery_NamedValues",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestQuery_NamedValues",
+      "identity": "cassandra_test.go::TestQuery_NamedValues",
+      "original_sha256": "225841eee99c720d3a4245db742e3f509aa065b577a756000d01714fde694827",
+      "translated_sha256": "3e13ac1671b66a622486ff9482527e9bc462661eb6c87f67ab1167610802cd82",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestQuery_SetHostID",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestQuery_SetHostID",
+      "identity": "cassandra_test.go::TestQuery_SetHostID",
+      "original_sha256": "b1bcddbc91b4efcab5393784ac89cae31da871c3d8e58d1213d1b7df0c83bbc7",
+      "translated_sha256": "4c00d935dc5743fae234e777e6fc2e9c3b822514b883c6a14c133a0866ef4c20",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestQuery_WithNowInSeconds",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestQuery_WithNowInSeconds",
+      "identity": "cassandra_test.go::TestQuery_WithNowInSeconds",
+      "original_sha256": "733b9928175e7e01676a1fe676a53cd0d34dbeb110d7312704e3e05fcea0681a",
+      "translated_sha256": "0e8821a8e6ddd26c78bde275f6e8c2f81dad9ea55ac0be75c1ab3bc9aadfad61",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestQuery_SetKeyspace",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestQuery_SetKeyspace",
+      "identity": "cassandra_test.go::TestQuery_SetKeyspace",
+      "original_sha256": "cbd90b8febd5539b3dd122161b017f18ff9b93d09c8aa1ae04d807896fe20fc7",
+      "translated_sha256": "c6e0962799e00873b76680059ff5d8ab9a1e1f40756f9884a18d16ce8053c919",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestLargeSizeQuery",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestLargeSizeQuery",
+      "identity": "cassandra_test.go::TestLargeSizeQuery",
+      "original_sha256": "4338eae48a52092cf03e9218d87f3251bccbb852522ee0a53047c80e6b638b63",
+      "translated_sha256": "34b623d828d0f8414d88fcb72c919cbe36200d709bc5172911a6e1407b950cbd",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestCompressorNegotiated",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestCompressorNegotiated",
+      "identity": "cassandra_test.go::TestCompressorNegotiated",
+      "original_sha256": "c5eac15af8019bed5566859671d2d15b50281a38142297bef71f3dea935f6003",
+      "translated_sha256": "d94e8be6e9e8cdf2a671b157b265259ca651213de7d789fd250aceadbb5fb027",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestQueryCompressionNotWorthIt",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestQueryCompressionNotWorthIt",
+      "identity": "cassandra_test.go::TestQueryCompressionNotWorthIt",
+      "original_sha256": "a0ea90b135f76c136860e8090ac73d9e3369792aaf9b3d53ca1774cd5a62bcb4",
+      "translated_sha256": "bc070671b05cb6bed797dced5da9e9088de894b279d32f50a902f2833c8d7723",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestPrepareExecuteMetadataChangedFlag",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestPrepareExecuteMetadataChangedFlag",
+      "identity": "cassandra_test.go::TestPrepareExecuteMetadataChangedFlag",
+      "original_sha256": "0da7164e16277b0b94f5897a746818b9885b836cddb460852e575ef385d29ce7",
+      "translated_sha256": "9b1daf4fb13c66b04535611d97a2e060fd10dce1576524aeb201316269ff0a9e",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestStmtCacheUsesOverriddenKeyspace",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestStmtCacheUsesOverriddenKeyspace",
+      "identity": "cassandra_test.go::TestStmtCacheUsesOverriddenKeyspace",
+      "original_sha256": "b86a4e7d472369acd4b0df42e42acdf76d302a41398782ef2160316b880af175",
+      "translated_sha256": "4b5e65a1ff859d01a7ec1e3e4ee04b588518c6478a07532cccea8d53aa3ecad7",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestRoutingKeyCacheUsesOverriddenKeyspace",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestRoutingKeyCacheUsesOverriddenKeyspace",
+      "identity": "cassandra_test.go::TestRoutingKeyCacheUsesOverriddenKeyspace",
+      "original_sha256": "745b714ade0561687e87974d74210ca6b9470912ea728a55d26923373b211c17",
+      "translated_sha256": "ee0668a7e0e1dc1f75c5a016dcd6e3ed5d3125ea428ba397891318aac117ec2b",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cassandra_test.go::TestPrepareExecuteScyllaEmptyMetadataID",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#cassandra_test.go::TestPrepareExecuteScyllaEmptyMetadataID",
+      "identity": "cassandra_test.go::TestPrepareExecuteScyllaEmptyMetadataID",
+      "original_sha256": "55e8809a64e7e455e8ee72db5176f02d63eb2a0698eebc2efd8fcfab5cb44282",
+      "translated_sha256": "947557c97560a4150fe78b977e685fb90dc63fb4b1fbda748c01e6e8879b8f55",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#client_routes_test.go::TestGetHostPortMapping",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#client_routes_test.go::TestGetHostPortMapping",
+      "identity": "client_routes_test.go::TestGetHostPortMapping",
+      "original_sha256": "43983ae2154bdf93cda63817b7d48bd9a57f25180a95de432a9e4cfe781a6c45",
+      "translated_sha256": "79fd1edc31cfb221b3a0301e8f1fc06a5fa1a77e342f84bfbf8ceaf27d396a5c",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#cloud_cluster_test.go::TestCloudConnection",
+      "current_effective_passes": [
+        "stable20-v4tls"
+      ],
+      "current_selected_outcomes": {
+        "cassandra21-v5lz4": "skip",
+        "cassandra21-v5raw": "skip",
+        "cassandra21-v5tlsslz4": "skip",
+        "stable20-record-and-v4raw": "skip",
+        "stable20-v4lz4": "skip",
+        "stable20-v4tls": "pass"
+      },
+      "historical_all174_mapping": "step09-test-mapping.json#cloud_cluster_test.go::TestCloudConnection",
+      "identity": "cloud_cluster_test.go::TestCloudConnection",
+      "original_sha256": "42aba5574962373072f1c50a89af035f2da9ad2e1a01ed62e379b1e469c06e71",
+      "translated_sha256": "16cfb48566b167c51d527b1dc40ca129e54e2cc435fe00ce365054a92a6d630b",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#control_integration_test.go::TestUnixSockets",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#control_integration_test.go::TestUnixSockets",
+      "identity": "control_integration_test.go::TestUnixSockets",
+      "original_sha256": "f22539fab12e43f4f75b22b7e70471d94aefbea9594b741acb2dd39b57b6cfda",
+      "translated_sha256": "f097cd01f74a1cedadf245840cdf9ce3e825144f7b510d250cae5d30cc5c1bb0",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#dns_test.go::TestDNS",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#dns_test.go::TestDNS",
+      "identity": "dns_test.go::TestDNS",
+      "original_sha256": "2f7d0e96803c9ed78e7ead76ff8374337d5e5984da119b28ea697d4e6b70e19d",
+      "translated_sha256": "d337eb9abffa6b0d80b251f0a318894a3ca6ae4f7670dd9c5f5ee7eafbaf7b82",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#errors_test.go::TestErrorsParse",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#errors_test.go::TestErrorsParse",
+      "identity": "errors_test.go::TestErrorsParse",
+      "original_sha256": "aa00cd4f5b4c0d4f7808fe2753055edc3f4169691e4222ab11fb88bed9a1fb6d",
+      "translated_sha256": "8dbff0423a8bba8de4be4dd14c6d8fba922270e4119f215306cdd3331f2af635",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#exec_test.go::TestSingleHostQueryExecutor",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#exec_test.go::TestSingleHostQueryExecutor",
+      "identity": "exec_test.go::TestSingleHostQueryExecutor",
+      "original_sha256": "adb934b9b3a9ff4c1adce6417cecadd0308a52143a5fcbfb8373e402c470b820",
+      "translated_sha256": "f834f87a2b93c8d02f553d51666165c59aecc850858027142f701168781867d6",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#integration_serialization_scylla_test.go::TestRetryOnTopologyBusy",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#integration_serialization_scylla_test.go::TestRetryOnTopologyBusy",
+      "identity": "integration_serialization_scylla_test.go::TestRetryOnTopologyBusy",
+      "original_sha256": "2d43f4974e1b9263f54b1cd7916c64522901e703d4a87c859955fd09c55855d2",
+      "translated_sha256": "2d43f4974e1b9263f54b1cd7916c64522901e703d4a87c859955fd09c55855d2",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#integration_serialization_scylla_test.go::TestSerializationSimpleTypesCassandra",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#integration_serialization_scylla_test.go::TestSerializationSimpleTypesCassandra",
+      "identity": "integration_serialization_scylla_test.go::TestSerializationSimpleTypesCassandra",
+      "original_sha256": "cb3859eed419d0a300cca072069f6263bfd88fd7249a6640c2418118c624f7ad",
+      "translated_sha256": "44922239e16546ce952cf0515cd69a58dd636980b1bf9616c2d76df12d7da96b",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#integration_serialization_scylla_test.go::TestSliceMapMapScanTypes",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#integration_serialization_scylla_test.go::TestSliceMapMapScanTypes",
+      "identity": "integration_serialization_scylla_test.go::TestSliceMapMapScanTypes",
+      "original_sha256": "f1d904ca85e5d060a6b670f7eecd4084551761c4848baab924918bd30d79c3cb",
+      "translated_sha256": "194c118025386899f95ff82ec414c3974447ee167585186c27f6b0438c45c2cf",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#integration_serialization_scylla_test.go::TestSliceMapMapScanCounterTypes",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#integration_serialization_scylla_test.go::TestSliceMapMapScanCounterTypes",
+      "identity": "integration_serialization_scylla_test.go::TestSliceMapMapScanCounterTypes",
+      "original_sha256": "8040443299154f3030fa25e88e3ce83e5e4f7a1354b8e0b6dfc1e5d38f7bdb2a",
+      "translated_sha256": "0a51e3f522bb76fe5e7f2f8251f9e49fa9fce8f0d05a2751f82003db53752184",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#integration_serialization_scylla_test.go::TestSliceMapMapScanTupleTypes",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#integration_serialization_scylla_test.go::TestSliceMapMapScanTupleTypes",
+      "identity": "integration_serialization_scylla_test.go::TestSliceMapMapScanTupleTypes",
+      "original_sha256": "26d65180287402100c26c1d692ab0761009917f795ec30f9368a747be63e4e47",
+      "translated_sha256": "942930b42540b30602c05eb4d7e9672c145845564b6d78f030e059970e88200e",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#integration_serialization_scylla_test.go::TestSliceMapMapScanVectorTypes",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#integration_serialization_scylla_test.go::TestSliceMapMapScanVectorTypes",
+      "identity": "integration_serialization_scylla_test.go::TestSliceMapMapScanVectorTypes",
+      "original_sha256": "bf3ba86f8cd4a0148da575733ffe2d54fe51a8d202b638c3f91b0b0b9b2f3697",
+      "translated_sha256": "c2273fec5664528b4da6edee30540b248dcf96184daa1d7e00e0b8c28383cb65",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#integration_serialization_scylla_test.go::TestSliceMapMapScanCollectionTypes",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#integration_serialization_scylla_test.go::TestSliceMapMapScanCollectionTypes",
+      "identity": "integration_serialization_scylla_test.go::TestSliceMapMapScanCollectionTypes",
+      "original_sha256": "fd504251dc37105aaa31727123fbc031d90683282c1d1c0a825586a460a44b3b",
+      "translated_sha256": "d830d15c86bc83b46f9fc33a4d5d3ac56fd57027f9e84758546aa8cb927d9c3b",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#integration_test.go::TestAuthentication",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#integration_test.go::TestAuthentication",
+      "identity": "integration_test.go::TestAuthentication",
+      "original_sha256": "89e856125852bc610554647ac121dbe10489f38ea976bdf3064b118cbbca2a16",
+      "translated_sha256": "026c072c7c845a3ed9df5a3841d3305c96a0e9039f9780c3b61560ef6cb9d088",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#integration_test.go::TestGetHostsFromSystem",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#integration_test.go::TestGetHostsFromSystem",
+      "identity": "integration_test.go::TestGetHostsFromSystem",
+      "original_sha256": "7659e0a32cd67ffd4edd4e792ab058575a1854581ba1ea3311090346e080652e",
+      "translated_sha256": "611a25744885e7494eb3e24e975fcc6a21e4ea019a08e00a7dc163feea5ec8cc",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#integration_test.go::TestRingDiscovery",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#integration_test.go::TestRingDiscovery",
+      "identity": "integration_test.go::TestRingDiscovery",
+      "original_sha256": "65e1c4f18ce9e249a57f22d95e1e61f4eefaac87caff034fc737cd96cde558cb",
+      "translated_sha256": "61a124999329ef07e4279702cffc840e1a3f6080a497b78ec7eb03aefb05db80",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#integration_test.go::TestHostFilterDiscovery",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#integration_test.go::TestHostFilterDiscovery",
+      "identity": "integration_test.go::TestHostFilterDiscovery",
+      "original_sha256": "f0e755cc0884e19fa07253464ea80395393ac28a84acbcbe40d7c649428b3b2e",
+      "translated_sha256": "31776bf368d8075456e6cf5e4b623ca20552229f99db172edcee4599ae77dee0",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#integration_test.go::TestHostFilterInitial",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#integration_test.go::TestHostFilterInitial",
+      "identity": "integration_test.go::TestHostFilterInitial",
+      "original_sha256": "cee72d68dcf5371bf4eb521e02f0ecb86a10169474a69863e941294fcfcfed1e",
+      "translated_sha256": "b61362a4f1667b63bb0a824bced824ecfecce8335763547ef5603bf45c07a8de",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#integration_test.go::TestApplicationInformation",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#integration_test.go::TestApplicationInformation",
+      "identity": "integration_test.go::TestApplicationInformation",
+      "original_sha256": "e0e65d8b430055e88e0d462ca88d5ad8e2a11c6b36c229b017a282c737802253",
+      "translated_sha256": "0022d91595ffd3b3f3e3cdf0dc0dc965fc8b6bb02f332d1cee07ae975ac9783c",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#integration_test.go::TestDriverConfigReporting",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#integration_test.go::TestDriverConfigReporting",
+      "identity": "integration_test.go::TestDriverConfigReporting",
+      "original_sha256": "c5d91864c5324525730711bf2652564882a238a77c4d2b575195326bcf022b85",
+      "translated_sha256": "8dfa521f576a1796cb6a121bc463519ed431e677cefd6c627a2684d0b8d44630",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#integration_test.go::TestWriteFailure",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#integration_test.go::TestWriteFailure",
+      "identity": "integration_test.go::TestWriteFailure",
+      "original_sha256": "7d0c4183a5d6ac1b60072d74f6698e114cc87dcc685fb5eb83eb599b98aaf1a5",
+      "translated_sha256": "3a53ba714782f7157980fa638272de94c89e39f32654c228ec9fc7f24d1ca2d9",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#integration_test.go::TestCustomPayloadMessages",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#integration_test.go::TestCustomPayloadMessages",
+      "identity": "integration_test.go::TestCustomPayloadMessages",
+      "original_sha256": "365f8d80d17e5a08d853cd7fe017c6a83fedecbe08189c6f73cbc9690608245b",
+      "translated_sha256": "f4c921a6e1e2955b4383cf981a7ac53737c92dfd9a5eff323bd92a76a565515d",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#integration_test.go::TestCustomPayloadValues",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#integration_test.go::TestCustomPayloadValues",
+      "identity": "integration_test.go::TestCustomPayloadValues",
+      "original_sha256": "955367639ddee696ad82e084f8809e3fe1657340c5f49065ff49db3bfe146e52",
+      "translated_sha256": "5c7a05f4f3fe2216c0722e514ecb09df8ee7cc603cfb63db1d2871b3dd69770c",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#integration_test.go::TestSessionAwaitSchemaAgreement",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#integration_test.go::TestSessionAwaitSchemaAgreement",
+      "identity": "integration_test.go::TestSessionAwaitSchemaAgreement",
+      "original_sha256": "f16e6531b35e7ecea698d85792bc8c3998cb112f1f072e45ce8d506b0f441262",
+      "translated_sha256": "bd0304c9924c7631a3863230d0ccd46b5bdfd94babb302a803b34a03523e4e4c",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#integration_test.go::TestSessionAwaitSchemaAgreementSessionClosed",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#integration_test.go::TestSessionAwaitSchemaAgreementSessionClosed",
+      "identity": "integration_test.go::TestSessionAwaitSchemaAgreementSessionClosed",
+      "original_sha256": "a2e9d3e8a406f28e2c37b02065a81dfc9a760094ce90a4752f8542febd512f2a",
+      "translated_sha256": "9a1420123237e3f37059fd4d7e623094ff90578b4f1454077927da2ad4fc2d39",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#integration_test.go::TestSessionAwaitSchemaAgreementContextCanceled",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#integration_test.go::TestSessionAwaitSchemaAgreementContextCanceled",
+      "identity": "integration_test.go::TestSessionAwaitSchemaAgreementContextCanceled",
+      "original_sha256": "f1c7d92ac0988bb6f36be97988ec24c5f90ea7d1c4928d7688aa7f58bc2be2f5",
+      "translated_sha256": "e855a2442cbe45a5111c3906a18393c9ddeac47d7617a5732392b3af586f0a50",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#integration_test.go::TestNewConnectWithLowTimeout",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#integration_test.go::TestNewConnectWithLowTimeout",
+      "identity": "integration_test.go::TestNewConnectWithLowTimeout",
+      "original_sha256": "84cb2600f9b397d7f0039173329d31e80628dea77e75d4373a65ad041ef9dbb0",
+      "translated_sha256": "0ccd8c0aa52bfb315614142fccd089ed46f414d581eb23eeb2df27e90d2b5bfe",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#internal/ccm/ccm_test.go::TestCCM",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#internal/ccm/ccm_test.go::TestCCM",
+      "identity": "internal/ccm/ccm_test.go::TestCCM",
+      "original_sha256": "d30ff9ced7d5b78daf713d2cbecacaeed5580db77a42db549b55550a8ec90a84",
+      "translated_sha256": "d30ff9ced7d5b78daf713d2cbecacaeed5580db77a42db549b55550a8ec90a84",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#keyspace_table_test.go::TestKeyspaceTable",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#keyspace_table_test.go::TestKeyspaceTable",
+      "identity": "keyspace_table_test.go::TestKeyspaceTable",
+      "original_sha256": "06cba115eebdde4141b16667800698c63ba4ed6d3c4b8ec141097236cc5d0498",
+      "translated_sha256": "1cdd5b5ff73ae2f94f24eb963148f928339483a12f479f22ab372569a0790170",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#policies_integration_test.go::TestDCValidationTokenAware",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#policies_integration_test.go::TestDCValidationTokenAware",
+      "identity": "policies_integration_test.go::TestDCValidationTokenAware",
+      "original_sha256": "69f63ecbc9cbf501c53a5464a4a5f6b00a36f05f4945ee94375b6eca4936a151",
+      "translated_sha256": "2decb3ccd7c910dd886d63c7203f2c9fd4e91e010fb333425f32c51109772e04",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#policies_integration_test.go::TestDCValidationDCAware",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#policies_integration_test.go::TestDCValidationDCAware",
+      "identity": "policies_integration_test.go::TestDCValidationDCAware",
+      "original_sha256": "e0b2d88af134a7f36da1701a6e213565916ed94187bd6e3b5dd5f5de9220e17c",
+      "translated_sha256": "9373cc19c710db111c9d85d87cdc3cfed82a71cba8be6ac25761ec8b09ed426d",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#policies_integration_test.go::TestDCValidationRackAware",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#policies_integration_test.go::TestDCValidationRackAware",
+      "identity": "policies_integration_test.go::TestDCValidationRackAware",
+      "original_sha256": "5aaee3d02702c81283ec8e46e729eab9de31b34349ac50bbc357baab0398cbab",
+      "translated_sha256": "72c28cd1ffc2452d33a1b2048ca233df7ead5e760e771f87484def3e376d7e27",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#policies_integration_test.go::TestTokenAwareHostPolicy",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#policies_integration_test.go::TestTokenAwareHostPolicy",
+      "identity": "policies_integration_test.go::TestTokenAwareHostPolicy",
+      "original_sha256": "d874dbe738f72d5fecd81637f9fe17b8eb37467dd5f8bb10c24489c831fe09c6",
+      "translated_sha256": "1250837c654ccfcf3f1d2b066664448dd6b38549ef04058e206f09ed22a620b0",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#policies_integration_test.go::TestNoHangAllHostsDown",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#policies_integration_test.go::TestNoHangAllHostsDown",
+      "identity": "policies_integration_test.go::TestNoHangAllHostsDown",
+      "original_sha256": "b4bd66a1fbe3613453b9a631afe8865d4a5654380e760ad91dee2e6da7bbbca8",
+      "translated_sha256": "ad03b879762f563ebc29f31f6390cf9cb901019e81e56fc020d12acac0b86e26",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#recreate_test.go::TestRecreateSchema",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#recreate_test.go::TestRecreateSchema",
+      "identity": "recreate_test.go::TestRecreateSchema",
+      "original_sha256": "2bc5c073601d95b82e760ac2c2fc49642d12b218e8b072324e9772987c3b3588",
+      "translated_sha256": "b50d4acec9f974452de8fdf7c64f481fafb9953c36d14aea0c7654cfab8d482b",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#schema_queries_test.go::TestSchemaQueries",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#schema_queries_test.go::TestSchemaQueries",
+      "identity": "schema_queries_test.go::TestSchemaQueries",
+      "original_sha256": "0ef9a737bc5ff574c4902d916d4a1063913dbf29896c5fabe84b62c99579ba26",
+      "translated_sha256": "5dd16f263294c900370c62d3da11f92064c1ad3ac37fc2fe0c8eaa59b163d47c",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#scylla_shard_aware_port_integration_test.go::TestShardAwarePortIntegrationNoReconnections",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#scylla_shard_aware_port_integration_test.go::TestShardAwarePortIntegrationNoReconnections",
+      "identity": "scylla_shard_aware_port_integration_test.go::TestShardAwarePortIntegrationNoReconnections",
+      "original_sha256": "d6218056a5c00b2aa488d4d0897a6828a09769738621305e9d8cd374ddc4946c",
+      "translated_sha256": "18945d13619ae431e57465ee19fd03fcdac494da671f2eb9b993241b4e05d3da",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#scylla_shard_aware_port_integration_test.go::TestShardAwarePortIntegrationMaliciousNAT",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#scylla_shard_aware_port_integration_test.go::TestShardAwarePortIntegrationMaliciousNAT",
+      "identity": "scylla_shard_aware_port_integration_test.go::TestShardAwarePortIntegrationMaliciousNAT",
+      "original_sha256": "c44ce27640da2e5312ee1d474eca4d5870449c9802f8f39eb6875cbd154cfb46",
+      "translated_sha256": "aba4928fabad442407de9be30de71faacc3c56c9410b89df56b2b194e9b237e7",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#scylla_shard_aware_port_integration_test.go::TestShardAwarePortIntegrationUnreachable",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#scylla_shard_aware_port_integration_test.go::TestShardAwarePortIntegrationUnreachable",
+      "identity": "scylla_shard_aware_port_integration_test.go::TestShardAwarePortIntegrationUnreachable",
+      "original_sha256": "32dad8680c83aca05d04929d6ad729b26dc9cd6c8fda083bde9a13c91061c6ac",
+      "translated_sha256": "f69b06ef0e7ca2c406be578121bb9af14d6c62816495da1fabd197dcc3eac9cb",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#scylla_shard_aware_port_integration_test.go::TestShardAwarePortIntegrationUnusedIfNotEnabled",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#scylla_shard_aware_port_integration_test.go::TestShardAwarePortIntegrationUnusedIfNotEnabled",
+      "identity": "scylla_shard_aware_port_integration_test.go::TestShardAwarePortIntegrationUnusedIfNotEnabled",
+      "original_sha256": "6bde9c7b0cee341463f126105cbd5d0b9c4e20e1ffac43c50e4a91419ef7a429",
+      "translated_sha256": "980a38c3baab206e8d1a86511b39bbfb1f251ebb4e07586ef80538da012ff1a6",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#select_without_from_integration_test.go::TestSelectWithoutFromLiteral",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#select_without_from_integration_test.go::TestSelectWithoutFromLiteral",
+      "identity": "select_without_from_integration_test.go::TestSelectWithoutFromLiteral",
+      "original_sha256": "4d4fc84a9da9e7b1f1f9f993bc7635be3859bb0c86ec7eb7db5b0d8d6da75f1f",
+      "translated_sha256": "1eb6acca67368598c2cd760c9cc553697388de1305d3d7af656d3bb314772d81",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#select_without_from_integration_test.go::TestSelectWithoutFromFilteredOut",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#select_without_from_integration_test.go::TestSelectWithoutFromFilteredOut",
+      "identity": "select_without_from_integration_test.go::TestSelectWithoutFromFilteredOut",
+      "original_sha256": "f9fe738d1664cd8697851bee74d4712e9b892f259bd2351e432a9aa0d8d7e680",
+      "translated_sha256": "7e209706d3bb91fed7da38ee19ca8c142496750c2d7742255f2e919f97d14d94",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#select_without_from_integration_test.go::TestSelectWithoutFromNow",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#select_without_from_integration_test.go::TestSelectWithoutFromNow",
+      "identity": "select_without_from_integration_test.go::TestSelectWithoutFromNow",
+      "original_sha256": "8db86cfca8b811d4228018d77e4551ea08f5228232b33cd3546c5539589361a2",
+      "translated_sha256": "7cc3a49646f3db2f0d3ce2392118ae1b9c6d8bad8a864cc2b6230e3b157e2055",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#select_without_from_integration_test.go::TestSelectWithoutFromFunctionCast",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#select_without_from_integration_test.go::TestSelectWithoutFromFunctionCast",
+      "identity": "select_without_from_integration_test.go::TestSelectWithoutFromFunctionCast",
+      "original_sha256": "b2d58dfb9d1a574ca2b82849d40820c18588ed2acc52663f23e25a116f6ebc78",
+      "translated_sha256": "bec49c76ed3720acfb5ff0df05059f2224ddea6641ff60fdeabc1f26d9186019",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#select_without_from_integration_test.go::TestSelectWithoutFromMultipleSelectors",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#select_without_from_integration_test.go::TestSelectWithoutFromMultipleSelectors",
+      "identity": "select_without_from_integration_test.go::TestSelectWithoutFromMultipleSelectors",
+      "original_sha256": "dfdd48d4cd064689b719155bd613356d2d5ccdecdee5fe0398c41d87238ea5c9",
+      "translated_sha256": "0dc8eb9a0a2be435b2b9e3341ddf101a219c296d2506f37e619ae3ede64f216c",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#select_without_from_integration_test.go::TestSelectWithoutFromAlias",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#select_without_from_integration_test.go::TestSelectWithoutFromAlias",
+      "identity": "select_without_from_integration_test.go::TestSelectWithoutFromAlias",
+      "original_sha256": "26c39014a1c01195e77b8cc2f691962584a906eb90095a603436d38619f651a1",
+      "translated_sha256": "70540ceb038ba2d4c3b41ed217bdc38b8fdc5cc5a1682c6fa42155a42e0915ef",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#select_without_from_integration_test.go::TestSelectWithoutFromExecutionModes",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#select_without_from_integration_test.go::TestSelectWithoutFromExecutionModes",
+      "identity": "select_without_from_integration_test.go::TestSelectWithoutFromExecutionModes",
+      "original_sha256": "b3630d7a3a7213017c8b970d54bf956aecab78412e6498e742bb53c53da5f9f2",
+      "translated_sha256": "2caff3756212ac40a68dbc2816736c3227fb568730f4a709696ff07235f4f4e8",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#select_without_from_integration_test.go::TestSelectWithoutFromBindMarker",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#select_without_from_integration_test.go::TestSelectWithoutFromBindMarker",
+      "identity": "select_without_from_integration_test.go::TestSelectWithoutFromBindMarker",
+      "original_sha256": "bb03850d1ff4e5d6a1cb11dc087561a11b3dd351927c4297b19d5c463cb6cc67",
+      "translated_sha256": "4e2baa01ddd1b2106784a17ea0dbe62c9af0c401f29f444f2fb105864e4f4b92",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#select_without_from_integration_test.go::TestSelectWithoutFromRoutingKey",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#select_without_from_integration_test.go::TestSelectWithoutFromRoutingKey",
+      "identity": "select_without_from_integration_test.go::TestSelectWithoutFromRoutingKey",
+      "original_sha256": "8b5b8afa40b70b1bf96c851d6197fec4d3fb446e8650a2db4ba5a254f8bbf443",
+      "translated_sha256": "cabc11b5facac131834df01e19307d868a9e958f42928fbdb899359a9aa5f2e5",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#select_without_from_integration_test.go::TestSelectWithoutFromTokenAware",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#select_without_from_integration_test.go::TestSelectWithoutFromTokenAware",
+      "identity": "select_without_from_integration_test.go::TestSelectWithoutFromTokenAware",
+      "original_sha256": "b8ae47a294d56e8b1ff8f9d762302d771c0d9abac390c8a7afc1830c013ed46c",
+      "translated_sha256": "9ef5e0e39b54f6934b66391426770b651468f99b77a56da91f645e1c7100656c",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#select_without_from_integration_test.go::TestSelectWithoutFromMapScan",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#select_without_from_integration_test.go::TestSelectWithoutFromMapScan",
+      "identity": "select_without_from_integration_test.go::TestSelectWithoutFromMapScan",
+      "original_sha256": "0630ace510fe506ee7f2a51c49caf9cab0db1cd53eaca1a297533aa111454548",
+      "translated_sha256": "f77fb081638d6097cf6b1adbfe57a886b09c7d48221044b5f5f227dcfdf96b93",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#select_without_from_integration_test.go::TestSelectWithoutFromAggregate",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#select_without_from_integration_test.go::TestSelectWithoutFromAggregate",
+      "identity": "select_without_from_integration_test.go::TestSelectWithoutFromAggregate",
+      "original_sha256": "e9b0802411f87c897786ddbdb162a84cd3ef418bbe3bf84a56ca8a8e4204e906",
+      "translated_sha256": "d149d5414a1c1d111da1328760e327143b493abe92129b41acb24060053c7f5e",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#select_without_from_integration_test.go::TestSelectWithoutFromJSON",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#select_without_from_integration_test.go::TestSelectWithoutFromJSON",
+      "identity": "select_without_from_integration_test.go::TestSelectWithoutFromJSON",
+      "original_sha256": "2e1062255ea12fd954866a03aece83aa07ff5ebe97cecd9abfd0754c71b5309f",
+      "translated_sha256": "a05f9b9605ccaacb17e938d76a35be4f94507cfb05812db7c69a74ffba05411f",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#select_without_from_integration_test.go::TestSelectWithoutFromWithKeyspace",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#select_without_from_integration_test.go::TestSelectWithoutFromWithKeyspace",
+      "identity": "select_without_from_integration_test.go::TestSelectWithoutFromWithKeyspace",
+      "original_sha256": "3c4546bb6a8158413c2c36642ef883caef0807a4b12fe1c9cd294e6a3a4f0361",
+      "translated_sha256": "de86bc7fe07eae8f6dc82f61bf8f5cc733814fd83652171d301a45d36207171c",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#select_without_from_integration_test.go::TestSelectWithoutFromUnqualifiedUDF",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#select_without_from_integration_test.go::TestSelectWithoutFromUnqualifiedUDF",
+      "identity": "select_without_from_integration_test.go::TestSelectWithoutFromUnqualifiedUDF",
+      "original_sha256": "3b22a4fb60742c5b46a494c2a53d586e7b71a5d803ca2c4257e20b82b2ebfc7c",
+      "translated_sha256": "5e4897f8264dcc862f57b48527c15f4b631f2642629d6dbc314249654de88c9f",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#select_without_from_integration_test.go::TestSelectWithoutFromRejected",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#select_without_from_integration_test.go::TestSelectWithoutFromRejected",
+      "identity": "select_without_from_integration_test.go::TestSelectWithoutFromRejected",
+      "original_sha256": "9db820281eb85ef71928814893d35979c854b893e8a95e195c9d81b937ab9df3",
+      "translated_sha256": "6a13c97cadbfda0f229d083d39b8866ab73b32e7a76d00401e533b0cd358a4c0",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#session_event_bus_integration_test.go::TestSessionEventBusReceivesSchemaChangeEvent",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#session_event_bus_integration_test.go::TestSessionEventBusReceivesSchemaChangeEvent",
+      "identity": "session_event_bus_integration_test.go::TestSessionEventBusReceivesSchemaChangeEvent",
+      "original_sha256": "583f3d1d3f1a294bd530688858230ef8fca4fffd24edd984eff3fbde60199fc4",
+      "translated_sha256": "2784031c1a89053db7cecfc6c02cdaad3fb67bbff403f4c3dee802381a0e50f3",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#session_event_bus_integration_test.go::TestSessionEventBusReceivesControlReconnectEvent",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#session_event_bus_integration_test.go::TestSessionEventBusReceivesControlReconnectEvent",
+      "identity": "session_event_bus_integration_test.go::TestSessionEventBusReceivesControlReconnectEvent",
+      "original_sha256": "db8a08fd0238b335d357872e3577f954be8b65d4042b9addda10363100ca0050",
+      "translated_sha256": "19e922308aa96eb6aa33d19da31adfcb56232401b4d26285987ead793c53c9b8",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#session_test.go::TestSessionAPI",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#session_test.go::TestSessionAPI",
+      "identity": "session_test.go::TestSessionAPI",
+      "original_sha256": "8041d4abf6bab03454cc851d3f46e39b96197abb3c1abbe61187b2d31acdfb87",
+      "translated_sha256": "59e5bfd3454f1b10e5491c82b9c6b3c29a1a824b41395ec274e7653bfcddc307",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#session_test.go::TestQueryBasicAPI",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#session_test.go::TestQueryBasicAPI",
+      "identity": "session_test.go::TestQueryBasicAPI",
+      "original_sha256": "ac68785f049a10e06e5775b55f55a58dd7b4596b28aa855051b98e35dc5568b4",
+      "translated_sha256": "04cb2fe3adfe81f45177428234aa5f8230dd55b1969adb8e45d03801614e1af3",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#session_test.go::TestQueryShouldPrepare",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#session_test.go::TestQueryShouldPrepare",
+      "identity": "session_test.go::TestQueryShouldPrepare",
+      "original_sha256": "9d4c8082015c58317b9e5287426195457dbe740c72f206c16987e422059a413d",
+      "translated_sha256": "613c51b53a2efaa3f9ab8c00651d0ee9bd1e8a226284468e18b1af4b29a961c1",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#session_test.go::TestBatchBasicAPI",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#session_test.go::TestBatchBasicAPI",
+      "identity": "session_test.go::TestBatchBasicAPI",
+      "original_sha256": "994bb723aad30f2e94a33322ad727435c08cb45faae240349924b69e2ab86f90",
+      "translated_sha256": "147a356c85a5f21cd6dcdaaa07ac0401295f2bdbef31c67f2f6427b403f37379",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#session_test.go::TestConsistencyNames",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#session_test.go::TestConsistencyNames",
+      "identity": "session_test.go::TestConsistencyNames",
+      "original_sha256": "ce8f0eaa2bd3b32baeb8098e898d0329f594b9a17571356dab89e8ed163d5d60",
+      "translated_sha256": "ce8f0eaa2bd3b32baeb8098e898d0329f594b9a17571356dab89e8ed163d5d60",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#session_test.go::TestIsUseStatement",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#session_test.go::TestIsUseStatement",
+      "identity": "session_test.go::TestIsUseStatement",
+      "original_sha256": "6110b52919164172ecf51f599f4e2f4e6c7de0e86d356fdd9553a345cc612afc",
+      "translated_sha256": "a7f642c2a374016df3318cc565e19016ec044a6e6955d3125d41b31427b54a03",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#session_test.go::TestRetryType_IgnoreRethrow",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#session_test.go::TestRetryType_IgnoreRethrow",
+      "identity": "session_test.go::TestRetryType_IgnoreRethrow",
+      "original_sha256": "26ff6c1429b73975e46a6ba199ca2667d571c17e7248a93bafa8586af505499c",
+      "translated_sha256": "eafaa4845f2d38d50601750a7e821d43286dc072ee2b463c8a91746879eca40f",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#session_test.go::TestTLSTicketResumption",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#session_test.go::TestTLSTicketResumption",
+      "identity": "session_test.go::TestTLSTicketResumption",
+      "original_sha256": "9ae9d29d77e0c1aa9da077042450c11d563a57651bd1297e469e907a61928957",
+      "translated_sha256": "57029be51cc81467f0b74897d06c62db216d452bc971922a053263e6e2b8cfba",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#tablet_integration_test.go::TestTablets",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#tablet_integration_test.go::TestTablets",
+      "identity": "tablet_integration_test.go::TestTablets",
+      "original_sha256": "03cd09c3d3c7e95ed94c61c7b548efa5941f29c7ae1941182e2e248ef1719a8e",
+      "translated_sha256": "17f2dc119c3d96e70edfa7f59d5a0476c159630c9093da198cac17e03ff8d570",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#tracer_test.go::TestTracingNewAPI",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#tracer_test.go::TestTracingNewAPI",
+      "identity": "tracer_test.go::TestTracingNewAPI",
+      "original_sha256": "e958087b016fc55591625a395ec2b66929ba3f1fa0fb6c3cc1a054cbee8c1066",
+      "translated_sha256": "8f4a69472ebba04e8ea2bd8fbb976f237e77ea180dbd5517f67a43f6752e5193",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#tuple_test.go::TestTupleSimple",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#tuple_test.go::TestTupleSimple",
+      "identity": "tuple_test.go::TestTupleSimple",
+      "original_sha256": "c6aa62ae4822a62aab492ab4d9bd93a2408185977c23562f39f20a080c4112ef",
+      "translated_sha256": "31bc46366b0614d0879b8fdd206fda86e3f346043978aacbde530a8cf98de9fc",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#tuple_test.go::TestTuple_NullTuple",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#tuple_test.go::TestTuple_NullTuple",
+      "identity": "tuple_test.go::TestTuple_NullTuple",
+      "original_sha256": "a7d97ee91f318fdba3acf0a2ea46fc16780660d3a0dce3a9822877d827e63e81",
+      "translated_sha256": "ec1b0533b5cc7da6e7711f2188303500d7ecebb8a7120aad3a3ec12f8856eb92",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#tuple_test.go::TestTuple_TupleNotSet",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#tuple_test.go::TestTuple_TupleNotSet",
+      "identity": "tuple_test.go::TestTuple_TupleNotSet",
+      "original_sha256": "44025cfe77fbec579f7efa60be17a420927c528b62096cfb01c7835681c6bd59",
+      "translated_sha256": "6d87a4162eccdd40de4f82578aef98d7dbcda6a51eb725e038fe4091c51dfb92",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#tuple_test.go::TestTupleMapScan",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#tuple_test.go::TestTupleMapScan",
+      "identity": "tuple_test.go::TestTupleMapScan",
+      "original_sha256": "96c5fe7e9b767c40454b83cf0ed9ef68ccc34205542e6cf2eea14c356dfa9cf8",
+      "translated_sha256": "d47c16e9fe1abc414e3ed27175e3c21197d598391a5a875e501addfda51e41c6",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#tuple_test.go::TestTupleMapScanNil",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#tuple_test.go::TestTupleMapScanNil",
+      "identity": "tuple_test.go::TestTupleMapScanNil",
+      "original_sha256": "b6febdaa27f30a2ade09f61e3e6a10a6143fe123a6596979f2dec2bb2539aca9",
+      "translated_sha256": "e9b6ada1a5d86cc23fbef8ed882fa2f7c2dada36e66b90b7c83170896cf5fbc7",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#tuple_test.go::TestTupleMapScanNotSet",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#tuple_test.go::TestTupleMapScanNotSet",
+      "identity": "tuple_test.go::TestTupleMapScanNotSet",
+      "original_sha256": "dea8fad1c74949c4211e63fd7f7f85da53e034a3e6a13bb1da4e60f2543329ca",
+      "translated_sha256": "31a17aa98377a9514b7275bb81e71c68dfbe8f6cf346e463e8f90eb1df3a5cce",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#tuple_test.go::TestTupleLastFieldEmpty",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#tuple_test.go::TestTupleLastFieldEmpty",
+      "identity": "tuple_test.go::TestTupleLastFieldEmpty",
+      "original_sha256": "14070b6f9321b9aa4f9073b5bc67f52aece55682b966c125b3c266647d5c4a0d",
+      "translated_sha256": "ed6cc0aaa9e363a90078826cd758831274e0f6755cf92cdb12da879926312548",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#tuple_test.go::TestTuple_NestedCollection",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#tuple_test.go::TestTuple_NestedCollection",
+      "identity": "tuple_test.go::TestTuple_NestedCollection",
+      "original_sha256": "78256a75c1e175f1abb233bd9d048d77c59f6a9e211fcd1d2411c15eb735f5f5",
+      "translated_sha256": "ba6a5d3d24fb5fbbb7530c7704fdd9ebe65ca8de5c6f541394b4c113df0976ca",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#tuple_test.go::TestTuple_NullableNestedCollection",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#tuple_test.go::TestTuple_NullableNestedCollection",
+      "identity": "tuple_test.go::TestTuple_NullableNestedCollection",
+      "original_sha256": "a2cb486636fc6e8e3d03e22f62ccbc0c6d449163d14659e1dce56faee9a8fd7a",
+      "translated_sha256": "f8adb7dc64b7e64642fb73340cf95ef5e733ff219807373c9a58ebcfe82c2422",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#udt_test.go::TestUDT_Marshaler",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#udt_test.go::TestUDT_Marshaler",
+      "identity": "udt_test.go::TestUDT_Marshaler",
+      "original_sha256": "835409296d0a28248f535d7d5ed215119fb88172650527612d478df626ac8381",
+      "translated_sha256": "20cc36c3d49b03852035379460ff203c7e2c3832e0fadae7cc7edd4263c0a365",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#udt_test.go::TestUDT_Reflect",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#udt_test.go::TestUDT_Reflect",
+      "identity": "udt_test.go::TestUDT_Reflect",
+      "original_sha256": "5af3c51b1e0866cf66453fa5014773b14a4ae856a5168bde0df991e1d3699674",
+      "translated_sha256": "b04c1a15053076579022de237a310410f0ddb17d52289c8c21935f2df4ed9c7f",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#udt_test.go::TestUDT_NullObject",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#udt_test.go::TestUDT_NullObject",
+      "identity": "udt_test.go::TestUDT_NullObject",
+      "original_sha256": "6652fc882c306e9390f32dee0349fd567db59646d97fc4e27d18a036097e5340",
+      "translated_sha256": "0ff2c707749ee5b39b6bcf529817d753f5150ecbfb3cf2e093962538142becac",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#udt_test.go::TestMapScanUDT",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#udt_test.go::TestMapScanUDT",
+      "identity": "udt_test.go::TestMapScanUDT",
+      "original_sha256": "539403eadb4292cb5d56d788c025569fd5fede3d2070a7defd2be65cad3d917f",
+      "translated_sha256": "c6de0f03728027d3ebdae35410d7b8121ad8805c4cb8f3275322ac5522876eab",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#udt_test.go::TestUDT_MissingField",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#udt_test.go::TestUDT_MissingField",
+      "identity": "udt_test.go::TestUDT_MissingField",
+      "original_sha256": "0264cd9118b97290a30c5c3bb2f9b3779e1a0bf6667b17a4c8b9b06df0af46f2",
+      "translated_sha256": "555296cafc342312440857d3f1dc4135ee7218b5863e99531f7afe1d201c483b",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#udt_test.go::TestUDT_EmptyCollections",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#udt_test.go::TestUDT_EmptyCollections",
+      "identity": "udt_test.go::TestUDT_EmptyCollections",
+      "original_sha256": "f9b9a9ad032224345ae461eff967331dcaeb8ee20a073c807ff292d033c3b5e4",
+      "translated_sha256": "0cbc4f8209844775a0c4ef7fc829b9031b18f4606145e4940d640590782c13fe",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#udt_test.go::TestUDT_UpdateField",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#udt_test.go::TestUDT_UpdateField",
+      "identity": "udt_test.go::TestUDT_UpdateField",
+      "original_sha256": "ccce2e3e32ee04dbb8db5b737dc482c99ca3fe88dc4979a289869695febab1ce",
+      "translated_sha256": "c0524220dec39a21f8d052210a97cf22b1b189966bcb0a8f4d52de5fc9ecee55",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#udt_test.go::TestUDT_ScanNullUDT",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#udt_test.go::TestUDT_ScanNullUDT",
+      "identity": "udt_test.go::TestUDT_ScanNullUDT",
+      "original_sha256": "c95056467da5d8c23ebfae3ef9f1971fe73d63165aab3732c81dd647003ea463",
+      "translated_sha256": "d1d4c2b874c14306a9a696f3f30d1f497681fc2e5644fc39025eff935cab6488",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#vector_test.go::TestVector_Marshaler",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#vector_test.go::TestVector_Marshaler",
+      "identity": "vector_test.go::TestVector_Marshaler",
+      "original_sha256": "71213b0981972ad3c979c37c0dfdb082808a0dd494199499a5b81972d7e51e05",
+      "translated_sha256": "b580e6861e88d8bc92f597e82a5d8431039cdd15690ba9180749ae731b30b306",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#vector_test.go::TestVector_Types",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#vector_test.go::TestVector_Types",
+      "identity": "vector_test.go::TestVector_Types",
+      "original_sha256": "7cbe3a156ba41c2ba45797dc0cc587356ef3a6229bc570e8b1a195cbc66bf6a1",
+      "translated_sha256": "2d33861e1ee7b56c2ea02f2d671392ff98be240015b7458962e13994546c62aa",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#vector_test.go::TestVector_MarshalerUDT",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#vector_test.go::TestVector_MarshalerUDT",
+      "identity": "vector_test.go::TestVector_MarshalerUDT",
+      "original_sha256": "753a8733d288cd92641503dccc22050bd0ce136188f575336f946bba55cf6f8c",
+      "translated_sha256": "6129c343a81ee9fbfc76a1c78496bd5a1399dfa8f19803d85ba24fb0f6f683b9",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#vector_test.go::TestVector_Empty",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#vector_test.go::TestVector_Empty",
+      "identity": "vector_test.go::TestVector_Empty",
+      "original_sha256": "52ed31aef8fe28f688dc0aafa47aabacd9b3b9e86b154a37f8e88cd189dba8a5",
+      "translated_sha256": "e14ae1bbff69ae98dcc8eedc31fd72f5207ccbeb8a876167f939d6f6257174a8",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#vector_test.go::TestVector_MissingDimension",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#vector_test.go::TestVector_MissingDimension",
+      "identity": "vector_test.go::TestVector_MissingDimension",
+      "original_sha256": "ab8faf1ce3923caddf0d1657f64266615f3b8f43c6545cb1bd5e9e580e3bfdfa",
+      "translated_sha256": "1d3a8b059a32cfa245e332ba5ed518ef97e982887d3ca830e314b78d2d2f326a",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#vector_test.go::TestVector_SubTypeParsing",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#vector_test.go::TestVector_SubTypeParsing",
+      "identity": "vector_test.go::TestVector_SubTypeParsing",
+      "original_sha256": "3e7283c2452eafe3554a9b8ab436af8ba247d3817d1410d29cd374c49e8c8ed9",
+      "translated_sha256": "30b5aff03ef2cbb0fdcbb9f03cabab82678c0bef25936dd77108cff3030b2d15",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#wiki_test.go::TestWikiCreateSchema",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#wiki_test.go::TestWikiCreateSchema",
+      "identity": "wiki_test.go::TestWikiCreateSchema",
+      "original_sha256": "f2382c64a33ca4afb0cf0727f3def930fadfa9d8e925d03370f78497a254c424",
+      "translated_sha256": "5fda40a871f426a8e886043866841f1d8c826c9d4404d9e2c5f83e25e667acfd",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#wiki_test.go::TestWikiCreatePages",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#wiki_test.go::TestWikiCreatePages",
+      "identity": "wiki_test.go::TestWikiCreatePages",
+      "original_sha256": "88820da266e7443756d339014dfe6ad9c6c96ba65975571ed49e739f40d0ec70",
+      "translated_sha256": "838abd19efeaedc5bbe831592399bb5e00ef099809bd03ad44fb81663cc6239b",
+      "unchanged_complete_source": true
+    },
+    {
+      "accepted_predecessor_mapping": "step12-test-mapping.json#wiki_test.go::TestWikiTypicalCRUD",
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
+      "historical_all174_mapping": "step09-test-mapping.json#wiki_test.go::TestWikiTypicalCRUD",
+      "identity": "wiki_test.go::TestWikiTypicalCRUD",
+      "original_sha256": "0b87cc870cecd93c606bff728db4720934f8cd9b4dc7d360e57ce6bcf2d908b1",
+      "translated_sha256": "65f27bee8c09ae3f5e41ef7069e55c5cff44dc27e0c9b94ac0a5e5d29ec6f53f",
+      "unchanged_complete_source": true
+    }
+  ]
+}

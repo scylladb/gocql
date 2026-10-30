@@ -36,4 +36,4 @@ import "github.com/scylladb/gocql/v2/internal/wirecompress"
 // is rejected up front by the cluster config validation. v5 is also not
 // auto-negotiated (discoverProtocol caps at v4), so this only affects users who
 // explicitly set ProtoVersion: 5.
-type SnappyCompressor = wirecompress.SnappyCompressor
+type retiredSnappyCompressor = wirecompress.SnappyCompressor

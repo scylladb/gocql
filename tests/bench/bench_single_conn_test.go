@@ -18,19 +18,34 @@ package bench_test
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"github.com/scylladb/gocql/v2"
 	"github.com/scylladb/gocql/v2/dialer/recorder"
 	"github.com/scylladb/gocql/v2/dialer/replayer"
+	"net"
 	"os"
+	"path/filepath"
 	"strconv"
-	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func benchConfig(d gocql.Dialer) gocql.Config {
-	c := gocql.DefaultConfig("192.168.100.11")
+	address := os.Getenv("GOCQL_BENCH_ADDRESS")
+	if address == "" {
+		address = "127.0.20.1:9042"
+	}
+	c := gocql.DefaultConfig(address)
+	c.Protocol = 4
+	c.Auth = gocql.PasswordAuth("cassandra", "cassandra")
+	c.SocketKeepalive = 0
+	c.KeepaliveInterval = 0
+	c.Metadata.PeriodicRefresh = 0
+	c.ReportConfiguration = false
 	c.Pool.ConnectionsPerHost = 1
 	c.Metadata.InitialDiscovery = false
 	c.Dialer = d
@@ -73,12 +88,20 @@ func benchRead(s *gocql.Session, id int32) error {
 		return e
 	}
 	defer rows.Close()
+	count := 0
 	for rows.Next() {
-		if !strings.HasPrefix(rows.Row().String(), "Name") {
-			return fmt.Errorf("wrong recorded name")
+		count++
+		if got, want := rows.Row().String(), fmt.Sprintf("Name_%d", id); got != want {
+			return fmt.Errorf("recorded name %q, want %q", got, want)
 		}
 	}
-	return rows.Err()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if count != 1 {
+		return fmt.Errorf("recorded row count %d, want 1", count)
+	}
+	return nil
 }
 
 type benchInsert struct {
@@ -100,7 +123,8 @@ func benchWrite(s *gocql.Session, id int32) error {
 	return e
 }
 func RecordSelectTraffic(size int, dir string) error {
-	s, e := gocql.Connect(context.Background(), benchConfig(recorder.NewRecordDialer(dir)))
+	d := newCaptureDialer(dir, false)
+	s, e := gocql.Connect(context.Background(), benchConfig(d))
 	if e != nil {
 		return e
 	}
@@ -110,10 +134,11 @@ func RecordSelectTraffic(size int, dir string) error {
 			return e
 		}
 	}
-	return nil
+	return finishCapture(s, d)
 }
 func RecordInsertTraffic(size int, dir string) error {
-	s, e := gocql.Connect(context.Background(), benchConfig(recorder.NewRecordDialer(dir)))
+	d := newCaptureDialer(dir, false)
+	s, e := gocql.Connect(context.Background(), benchConfig(d))
 	if e != nil {
 		return e
 	}
@@ -123,14 +148,19 @@ func RecordInsertTraffic(size int, dir string) error {
 			return e
 		}
 	}
-	return nil
+	return finishCapture(s, d)
 }
 func BenchmarkSingleConnectionSelect(b *testing.B) {
-	s, e := gocql.Connect(context.Background(), benchConfig(replayer.NewReplayDialer("rec_select")))
+	d := newCaptureDialer("rec_select", true)
+	s, e := gocql.Connect(context.Background(), benchConfig(d))
 	if e != nil {
 		b.Fatal(e)
 	}
-	defer s.Close()
+	defer func() {
+		if err := finishCapture(s, d); err != nil {
+			b.Fatal(err)
+		}
+	}()
 	for i := 0; i < 10; i++ {
 		b.Run("Case"+strconv.Itoa(i), func(b *testing.B) {
 			for n := 0; n < b.N; n++ {
@@ -142,11 +172,16 @@ func BenchmarkSingleConnectionSelect(b *testing.B) {
 	}
 }
 func BenchmarkSingleConnectionInsert(b *testing.B) {
-	s, e := gocql.Connect(context.Background(), benchConfig(replayer.NewReplayDialer("rec_insert")))
+	d := newCaptureDialer("rec_insert", true)
+	s, e := gocql.Connect(context.Background(), benchConfig(d))
 	if e != nil {
 		b.Fatal(e)
 	}
-	defer s.Close()
+	defer func() {
+		if err := finishCapture(s, d); err != nil {
+			b.Fatal(err)
+		}
+	}()
 	for i := 0; i < 10; i++ {
 		b.Run("Case"+strconv.Itoa(i), func(b *testing.B) {
 			for n := 0; n < b.N; n++ {
@@ -158,36 +193,20 @@ func BenchmarkSingleConnectionInsert(b *testing.B) {
 	}
 }
 
-// TestMain records the golden files the benchmarks above replay, under
-// -update-golden. It needs a real node, and one reachable at the address the recording
-// file names embed -- the replayer looks a recording up by the address the driver
-// dialed, so 192.168.100.11 is not decoration.
-//
-// Nothing in CI can produce these files. A container on a bridge network of that subnet
-// is the cheapest way to get one:
-//
-//	docker network create --subnet 192.168.100.0/24 --gateway 192.168.100.1 gocql-bench
-//	docker run -d --name gocql-bench-scylla --network gocql-bench --ip 192.168.100.11 \
-//	  scylladb/scylla:2026.2.4 --smp 1 --memory 1G --developer-mode 1 --overprovisioned 1
-//	# wait for CQL, then from the repository root:
-//	rm -f tests/bench/rec_select/* tests/bench/rec_insert/*
-//	go test -C tests/bench -run '^$' -update-golden .
-//	docker rm -f gocql-bench-scylla && docker network rm gocql-bench
-//
-// Clearing the directories first is not optional. ConnectionRecorder opens its files
-// with O_APPEND, so a second run stacks another connection's frames on top of the
-// first; the loader keys records by stream id and keeps whichever it read last, which
-// makes the extra sessions invisible rather than harmless. The recordings were 23
-// stacked sessions of the same 15 frames before this was written down.
-//
-// Regenerate whenever the driver changes what it puts on the wire during control
-// connection setup -- a new control query, a different one, another handshake frame.
-// TestBenchRecordingsMatchTheControlQuery in the root package guards the case that has
-// already happened once.
+// TestMain regenerates captures only with -update-golden against an explicitly
+// owned native fixture. See README.md in this directory for the complete recipe.
 func TestMain(m *testing.M) {
 	update := flag.Bool("update-golden", false, "Update golden files")
 	flag.Parse()
 	if *update {
+		for _, dir := range []string{"rec_insert", "rec_select"} {
+			if err := os.RemoveAll(dir); err != nil {
+				panic(err)
+			}
+			if err := os.Mkdir(dir, 0700); err != nil {
+				panic(err)
+			}
+		}
 		err := InitializeCluster()
 		if err != nil {
 			fmt.Printf("failed to initialize cluster: %v\n", err)
@@ -206,3 +225,112 @@ func TestMain(m *testing.M) {
 	}
 	os.Exit(m.Run())
 }
+
+// Each connection gets its own frame pair. Control is dialed before the one
+// configured data connection; reconnects must fail rather than merge captures.
+// Atomic ordinal selection occurs only at connection setup, outside measurements.
+type captureDialer struct {
+	dir         string
+	replay      bool
+	ordinal     atomic.Int32
+	mu          sync.Mutex
+	connections []net.Conn
+}
+
+func newCaptureDialer(dir string, replay bool) *captureDialer {
+	return &captureDialer{dir: dir, replay: replay}
+}
+func (d *captureDialer) DialContext(ctx context.Context, target gocql.DialTarget) (net.Conn, error) {
+	n := d.ordinal.Add(1) - 1
+	base := filepath.Join(d.dir, fmt.Sprintf("connection-%d", n))
+	if d.replay {
+		conn, err := replayer.NewConnectionReplayer(base, nil)
+		if err == nil {
+			d.track(conn)
+		}
+		return conn, err
+	}
+	conn, err := (gocql.DefaultDialer{}).DialContext(ctx, target)
+	if err != nil {
+		return nil, err
+	}
+	recorded, err := recorder.NewConnectionRecorder(base, conn, nil)
+	if err != nil {
+		conn.Close()
+	}
+	if err == nil {
+		d.track(recorded)
+	}
+	if err != nil {
+		return nil, err
+	}
+	tcp, ok := conn.(*net.TCPConn)
+	if !ok {
+		recorded.Close()
+		return nil, fmt.Errorf("recording requires TCP, got %T", conn)
+	}
+	return &captureTCP{Conn: recorded, socket: tcp}, nil
+}
+
+func TestSingleConnectionReplay(t *testing.T) {
+	for _, workload := range []struct {
+		name, dir string
+		operation func(*gocql.Session, int32) error
+	}{
+		{"select", "rec_select", benchRead}, {"insert", "rec_insert", benchWrite},
+	} {
+		t.Run(workload.name, func(t *testing.T) {
+			d := newCaptureDialer(workload.dir, true)
+			s, err := gocql.Connect(context.Background(), benchConfig(d))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() {
+				if err := finishCapture(s, d); err != nil {
+					t.Fatal(err)
+				}
+			}()
+			for i := int32(0); i < 10; i++ {
+				t.Run(fmt.Sprintf("Case%d", i), func(t *testing.T) {
+					if err := workload.operation(s, i); err != nil {
+						t.Fatal(err)
+					}
+				})
+			}
+		})
+	}
+}
+
+func (d *captureDialer) track(conn net.Conn) {
+	d.mu.Lock()
+	d.connections = append(d.connections, conn)
+	d.mu.Unlock()
+}
+func finishCapture(s *gocql.Session, d *captureDialer) error {
+	// Session.Close joins all driver I/O before checking every recorder's cached
+	// Close result, including descriptor flush/close errors hidden by net.Conn I/O.
+	err := s.Close()
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, conn := range d.connections {
+		err = errors.Join(err, conn.Close())
+	}
+	if len(d.connections) != 2 {
+		err = errors.Join(err, fmt.Errorf("capture used %d connections, want control plus one data connection", len(d.connections)))
+	}
+	return err
+}
+
+// The recording wrapper forwards requested socket controls to its actual socket.
+// Replay exposes a synthetic address and has no physical TCP settings.
+type captureTCP struct {
+	net.Conn
+	socket *net.TCPConn
+}
+
+func (c *captureTCP) SetNoDelay(v bool) error                  { return c.socket.SetNoDelay(v) }
+func (c *captureTCP) SetKeepAlive(v bool) error                { return c.socket.SetKeepAlive(v) }
+func (c *captureTCP) SetKeepAlivePeriod(v time.Duration) error { return c.socket.SetKeepAlivePeriod(v) }
+func (c *captureTCP) SetReadBuffer(v int) error                { return c.socket.SetReadBuffer(v) }
+func (c *captureTCP) SetWriteBuffer(v int) error               { return c.socket.SetWriteBuffer(v) }
+func (c *captureTCP) SetLinger(v int) error                    { return c.socket.SetLinger(v) }

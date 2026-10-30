@@ -1,7 +1,11 @@
+// Copyright 2026 The Gocql Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license.
+
 package replayer
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -24,11 +28,8 @@ type Option func(*ReplayDialer)
 // WithSegmentCompressor supplies the compressor a protocol v5 connection's transport
 // segments are compressed with.
 //
-// It has to be supplied rather than derived: the only implementation, lz4, lives in a
-// separate Go module, so neither the driver nor this package can construct one. Pass
-// the same compressor the ClusterConfig being replayed against uses -- the layout
-// follows what the replaying driver negotiates, not what was recorded, because
-// recordings hold bare frames.
+// Supply a compressor implementing the framing adapter's append methods. The
+// configuration used for recording/replay must negotiate the same algorithm.
 //
 // Its name is checked against the algorithm the STARTUP names, when it reports one, and
 // a compressed connection below protocol v5 is refused outright: there compression
@@ -589,11 +590,29 @@ func loadResponseFramesFromFiles(read_file, write_file string) ([]*FrameRecorded
 		}
 	}
 
+	seen := make(map[int64]int, len(paired))
+	requests := make([][]byte, 0, len(paired))
 	for _, streamID := range paired {
 		request := write_records[streamID]
+		hash := dialer.GetFrameHash(request.Data, request.UseMetadataID)
+		response := read_records[streamID].Data
+		if previous, ok := seen[hash]; ok {
+			// Current typed startup reads system.local twice. Preserve raw captures,
+			// but store one replay entry only when both whole frames are identical
+			// apart from stream IDs. Distinct requests or conflicting results fail.
+			if !sameRecordedFrame(requests[previous], request.Data) {
+				return nil, 0, fmt.Errorf("gocql/dialer: request hash collision in %s at stream %d", write_file, streamID)
+			}
+			if !sameRecordedFrame(frames[previous].Response, response) {
+				return nil, 0, fmt.Errorf("gocql/dialer: ambiguous repeated request in %s at stream %d", read_file, streamID)
+			}
+			continue
+		}
+		seen[hash] = len(frames)
+		requests = append(requests, request.Data)
 		frames = append(frames, &FrameRecorded{
 			Response: read_records[streamID].Data,
-			Hash:     dialer.GetFrameHash(request.Data, request.UseMetadataID),
+			Hash:     hash,
 		})
 	}
 	return frames, proto, nil
@@ -605,3 +624,12 @@ type FrameRecorded struct {
 }
 
 var _ gocql.Dialer = (*ReplayDialer)(nil)
+
+// sameRecordedFrame ignores only the native stream ID. It does not normalize
+// payloads, timestamps, metadata IDs, flags or any other protocol bytes.
+func sameRecordedFrame(a, b []byte) bool {
+	if len(a) < 4 || len(b) < 4 {
+		return bytes.Equal(a, b)
+	}
+	return bytes.Equal(a[:2], b[:2]) && bytes.Equal(a[4:], b[4:])
+}

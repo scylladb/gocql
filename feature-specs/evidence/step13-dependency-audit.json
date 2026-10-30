@@ -1,0 +1,1324 @@
+{
+  "command": [
+    "go",
+    "list",
+    "-json",
+    "-tags",
+    "integration,gocql_debug",
+    "./..."
+  ],
+  "rule": "No prohibited runtime owner may be reachable by any production import path, including settings indirection.",
+  "prohibited": {
+    "connectivity": [
+      "cluster",
+      "execution",
+      "metadata",
+      "pool",
+      "public root",
+      "routing",
+      "settings",
+      "transport"
+    ],
+    "transport": [
+      "cluster",
+      "execution",
+      "metadata",
+      "pool",
+      "public root",
+      "routing",
+      "settings"
+    ],
+    "pool": [
+      "cluster",
+      "execution",
+      "metadata",
+      "public root",
+      "routing",
+      "settings"
+    ],
+    "protocol": [
+      "cluster",
+      "execution",
+      "metadata",
+      "pool",
+      "public root",
+      "routing",
+      "settings",
+      "transport"
+    ]
+  },
+  "findings": [],
+  "reachability": {
+    "connectivity": [
+      "github.com/scylladb/gocql/v2/internal/cqltype",
+      "github.com/scylladb/gocql/v2/internal/crc",
+      "github.com/scylladb/gocql/v2/internal/debug",
+      "github.com/scylladb/gocql/v2/internal/endpoint",
+      "github.com/scylladb/gocql/v2/internal/frame",
+      "github.com/scylladb/gocql/v2/internal/logging",
+      "github.com/scylladb/gocql/v2/internal/model",
+      "github.com/scylladb/gocql/v2/internal/murmur",
+      "github.com/scylladb/gocql/v2/internal/protocol",
+      "github.com/scylladb/gocql/v2/internal/runtimeerrors",
+      "github.com/scylladb/gocql/v2/internal/schemafence",
+      "github.com/scylladb/gocql/v2/internal/segment",
+      "github.com/scylladb/gocql/v2/internal/wire",
+      "github.com/scylladb/gocql/v2/internal/wirecompress"
+    ],
+    "transport": [
+      "github.com/scylladb/gocql/v2/internal/codec",
+      "github.com/scylladb/gocql/v2/internal/connectivity",
+      "github.com/scylladb/gocql/v2/internal/cqlproto",
+      "github.com/scylladb/gocql/v2/internal/cqltype",
+      "github.com/scylladb/gocql/v2/internal/crc",
+      "github.com/scylladb/gocql/v2/internal/debug",
+      "github.com/scylladb/gocql/v2/internal/endpoint",
+      "github.com/scylladb/gocql/v2/internal/frame",
+      "github.com/scylladb/gocql/v2/internal/logging",
+      "github.com/scylladb/gocql/v2/internal/model",
+      "github.com/scylladb/gocql/v2/internal/murmur",
+      "github.com/scylladb/gocql/v2/internal/protocol",
+      "github.com/scylladb/gocql/v2/internal/runtimeerrors",
+      "github.com/scylladb/gocql/v2/internal/schemafence",
+      "github.com/scylladb/gocql/v2/internal/segment",
+      "github.com/scylladb/gocql/v2/internal/streams",
+      "github.com/scylladb/gocql/v2/internal/tests",
+      "github.com/scylladb/gocql/v2/internal/wire",
+      "github.com/scylladb/gocql/v2/internal/wirecompress",
+      "github.com/scylladb/gocql/v2/tablets"
+    ],
+    "pool": [
+      "github.com/scylladb/gocql/v2/debounce",
+      "github.com/scylladb/gocql/v2/internal/codec",
+      "github.com/scylladb/gocql/v2/internal/connectivity",
+      "github.com/scylladb/gocql/v2/internal/cqlproto",
+      "github.com/scylladb/gocql/v2/internal/cqltype",
+      "github.com/scylladb/gocql/v2/internal/crc",
+      "github.com/scylladb/gocql/v2/internal/debug",
+      "github.com/scylladb/gocql/v2/internal/endpoint",
+      "github.com/scylladb/gocql/v2/internal/frame",
+      "github.com/scylladb/gocql/v2/internal/logging",
+      "github.com/scylladb/gocql/v2/internal/model",
+      "github.com/scylladb/gocql/v2/internal/murmur",
+      "github.com/scylladb/gocql/v2/internal/protocol",
+      "github.com/scylladb/gocql/v2/internal/runtimeerrors",
+      "github.com/scylladb/gocql/v2/internal/schemafence",
+      "github.com/scylladb/gocql/v2/internal/segment",
+      "github.com/scylladb/gocql/v2/internal/streams",
+      "github.com/scylladb/gocql/v2/internal/tests",
+      "github.com/scylladb/gocql/v2/internal/transport",
+      "github.com/scylladb/gocql/v2/internal/wire",
+      "github.com/scylladb/gocql/v2/internal/wirecompress",
+      "github.com/scylladb/gocql/v2/tablets"
+    ],
+    "protocol": [
+      "github.com/scylladb/gocql/v2/internal/cqltype",
+      "github.com/scylladb/gocql/v2/internal/crc",
+      "github.com/scylladb/gocql/v2/internal/frame",
+      "github.com/scylladb/gocql/v2/internal/model",
+      "github.com/scylladb/gocql/v2/internal/schemafence",
+      "github.com/scylladb/gocql/v2/internal/segment",
+      "github.com/scylladb/gocql/v2/internal/wire",
+      "github.com/scylladb/gocql/v2/internal/wirecompress"
+    ]
+  },
+  "graph": [
+    {
+      "package": "github.com/scylladb/gocql/v2",
+      "imports": [
+        "context",
+        "crypto/tls",
+        "crypto/x509",
+        "github.com/scylladb/gocql/v2/internal/binding",
+        "github.com/scylladb/gocql/v2/internal/cluster",
+        "github.com/scylladb/gocql/v2/internal/codec",
+        "github.com/scylladb/gocql/v2/internal/cqltype",
+        "github.com/scylladb/gocql/v2/internal/endpoint",
+        "github.com/scylladb/gocql/v2/internal/execution",
+        "github.com/scylladb/gocql/v2/internal/frame",
+        "github.com/scylladb/gocql/v2/internal/logging",
+        "github.com/scylladb/gocql/v2/internal/metadata",
+        "github.com/scylladb/gocql/v2/internal/model",
+        "github.com/scylladb/gocql/v2/internal/paging",
+        "github.com/scylladb/gocql/v2/internal/pool",
+        "github.com/scylladb/gocql/v2/internal/protocol",
+        "github.com/scylladb/gocql/v2/internal/routing",
+        "github.com/scylladb/gocql/v2/internal/runtimeerrors",
+        "github.com/scylladb/gocql/v2/internal/schemafence",
+        "github.com/scylladb/gocql/v2/internal/segment",
+        "github.com/scylladb/gocql/v2/internal/settings",
+        "github.com/scylladb/gocql/v2/internal/transport",
+        "github.com/scylladb/gocql/v2/internal/wire",
+        "github.com/scylladb/gocql/v2/internal/wirecompress",
+        "github.com/scylladb/gocql/v2/tablets",
+        "io",
+        "math/big",
+        "net",
+        "net/netip",
+        "strings",
+        "time"
+      ],
+      "sources": [
+        "compressor.go",
+        "connection.go",
+        "doc.go",
+        "frame.go",
+        "v2_binding_facade.go",
+        "v2_foundation_facade.go",
+        "v2_framer_facade.go",
+        "v2_io_facade.go",
+        "v2_metadata_cursor_facade.go",
+        "v2_paging_facade.go",
+        "v2_pool_facade.go",
+        "v2_protocol_facade.go",
+        "v2_routing_facade.go",
+        "v2_runtime_facade.go",
+        "v2_schema_facade.go",
+        "v2_settings_facade.go",
+        "v2_statement_contract_facade.go",
+        "v2_transport_facade.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/ci/release",
+      "imports": [
+        "bufio",
+        "bytes",
+        "context",
+        "embed",
+        "encoding/json",
+        "errors",
+        "fmt",
+        "io",
+        "net/http",
+        "net/mail",
+        "net/url",
+        "os",
+        "os/exec",
+        "path/filepath",
+        "regexp",
+        "sort",
+        "strconv",
+        "strings",
+        "time"
+      ],
+      "sources": [
+        "candidate.go",
+        "git.go",
+        "github.go",
+        "main.go",
+        "signing_key.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/debounce",
+      "imports": [
+        "sync",
+        "sync/atomic",
+        "time"
+      ],
+      "sources": [
+        "refresh_deboucer.go",
+        "simple_debouncer.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/dialer",
+      "imports": [
+        "bytes",
+        "errors",
+        "fmt",
+        "github.com/scylladb/gocql/v2/internal/frame",
+        "github.com/scylladb/gocql/v2/internal/murmur",
+        "github.com/scylladb/gocql/v2/internal/segment",
+        "reflect",
+        "slices",
+        "sort",
+        "strings",
+        "sync/atomic"
+      ],
+      "sources": [
+        "framesplitter.go",
+        "framing.go",
+        "segment.go",
+        "utils.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/dialer/recorder",
+      "imports": [
+        "context",
+        "encoding/json",
+        "errors",
+        "fmt",
+        "github.com/scylladb/gocql/v2",
+        "github.com/scylladb/gocql/v2/dialer",
+        "net",
+        "os",
+        "path",
+        "sync",
+        "sync/atomic",
+        "syscall",
+        "time"
+      ],
+      "sources": [
+        "open_flags_unix.go",
+        "recorder.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/dialer/replayer",
+      "imports": [
+        "bufio",
+        "bytes",
+        "context",
+        "encoding/json",
+        "errors",
+        "fmt",
+        "github.com/scylladb/gocql/v2",
+        "github.com/scylladb/gocql/v2/dialer",
+        "io",
+        "net",
+        "os",
+        "path",
+        "slices",
+        "sync",
+        "time"
+      ],
+      "sources": [
+        "replayer.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/events",
+      "imports": [
+        "fmt",
+        "github.com/scylladb/gocql/v2/internal/frame",
+        "net"
+      ],
+      "sources": [
+        "event_converter.go",
+        "events.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/examples/streaming",
+      "imports": [
+        "bytes",
+        "context",
+        "crypto/tls",
+        "crypto/x509",
+        "errors",
+        "flag",
+        "fmt",
+        "github.com/scylladb/gocql/v2",
+        "log",
+        "net",
+        "os",
+        "strconv",
+        "strings",
+        "time"
+      ],
+      "sources": [
+        "main.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/hostpolicy",
+      "imports": [
+        "fmt",
+        "github.com/hailocab/go-hostpool",
+        "github.com/scylladb/gocql/v2",
+        "sync"
+      ],
+      "sources": [
+        "hostpool.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/internal/binding",
+      "imports": [
+        "fmt",
+        "github.com/scylladb/gocql/v2/internal/codec",
+        "github.com/scylladb/gocql/v2/internal/cqltype",
+        "github.com/scylladb/gocql/v2/internal/model",
+        "github.com/scylladb/gocql/v2/internal/runtimeerrors",
+        "github.com/scylladb/gocql/v2/internal/wire",
+        "strings"
+      ],
+      "sources": [
+        "aliases_v2_foundation_facade.go",
+        "aliases_v2_routing_facade.go",
+        "v2_statement.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/internal/cluster",
+      "imports": [
+        "bytes",
+        "context",
+        "crypto/rand",
+        "crypto/tls",
+        "crypto/x509",
+        "encoding/binary",
+        "encoding/json",
+        "errors",
+        "fmt",
+        "github.com/scylladb/gocql/v2/debounce",
+        "github.com/scylladb/gocql/v2/events",
+        "github.com/scylladb/gocql/v2/internal/binding",
+        "github.com/scylladb/gocql/v2/internal/codec",
+        "github.com/scylladb/gocql/v2/internal/connectivity",
+        "github.com/scylladb/gocql/v2/internal/cqltype",
+        "github.com/scylladb/gocql/v2/internal/debug",
+        "github.com/scylladb/gocql/v2/internal/endpoint",
+        "github.com/scylladb/gocql/v2/internal/eventbus",
+        "github.com/scylladb/gocql/v2/internal/frame",
+        "github.com/scylladb/gocql/v2/internal/logging",
+        "github.com/scylladb/gocql/v2/internal/metadata",
+        "github.com/scylladb/gocql/v2/internal/model",
+        "github.com/scylladb/gocql/v2/internal/pool",
+        "github.com/scylladb/gocql/v2/internal/protocol",
+        "github.com/scylladb/gocql/v2/internal/routing",
+        "github.com/scylladb/gocql/v2/internal/runtimeerrors",
+        "github.com/scylladb/gocql/v2/internal/schemafence",
+        "github.com/scylladb/gocql/v2/internal/settings",
+        "github.com/scylladb/gocql/v2/internal/transport",
+        "github.com/scylladb/gocql/v2/internal/wirecompress",
+        "github.com/scylladb/gocql/v2/tablets",
+        "golang.org/x/sync/singleflight",
+        "io",
+        "maps",
+        "math",
+        "math/rand",
+        "math/rand/v2",
+        "net",
+        "net/netip",
+        "os",
+        "reflect",
+        "regexp",
+        "slices",
+        "sort",
+        "strconv",
+        "strings",
+        "sync",
+        "sync/atomic",
+        "time"
+      ],
+      "sources": [
+        "aliases_compressor.go",
+        "aliases_v2_foundation_facade.go",
+        "aliases_v2_framer_facade.go",
+        "aliases_v2_pool_facade.go",
+        "aliases_v2_protocol_facade.go",
+        "aliases_v2_routing_facade.go",
+        "aliases_v2_schema_facade.go",
+        "aliases_v2_settings_facade.go",
+        "aliases_v2_statement_contract_facade.go",
+        "aliases_v2_transport_facade.go",
+        "client_routes.go",
+        "cluster.go",
+        "conn.go",
+        "connectionpool.go",
+        "context.go",
+        "control.go",
+        "driver_config.go",
+        "events.go",
+        "filters.go",
+        "helpers.go",
+        "host_source.go",
+        "metadata_scylla.go",
+        "opaque_ClientRoutesHandler.go",
+        "opaque_InternalClusterSettings.go",
+        "opaque_InternalTokenAwareHostPolicy.go",
+        "opaque_Metadata.go",
+        "opaque_Session.go",
+        "opaque_Subscription.go",
+        "opaque_TraceWriter.go",
+        "opaque_TracerEnhanced.go",
+        "policies.go",
+        "prepared_cache.go",
+        "ring_describer.go",
+        "scylla.go",
+        "scylla_cdc.go",
+        "session.go",
+        "topology.go",
+        "tracer.go",
+        "v2_client_routes.go",
+        "v2_config.go",
+        "v2_connection_hooks.go",
+        "v2_events.go",
+        "v2_execute.go",
+        "v2_metadata.go",
+        "v2_metadata_source.go",
+        "v2_placement.go",
+        "v2_pool.go",
+        "v2_pool_services.go",
+        "v2_prepared_refresh.go",
+        "v2_prepared_schema.go",
+        "v2_runtime_attachment.go",
+        "v2_topology.go",
+        "v2_vnode.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/internal/codec",
+      "imports": [
+        "context",
+        "encoding/binary",
+        "errors",
+        "fmt",
+        "github.com/scylladb/gocql/v2/internal/cqltype",
+        "github.com/scylladb/gocql/v2/internal/wire",
+        "io",
+        "math",
+        "math/big",
+        "math/bits",
+        "net/netip",
+        "sync",
+        "time",
+        "unicode/utf8"
+      ],
+      "sources": [
+        "collections.go",
+        "dynamic.go",
+        "result.go",
+        "rows_codec.go",
+        "runtime.go",
+        "scalar.go",
+        "scalar_numeric.go",
+        "scalar_time.go",
+        "stream_collections.go",
+        "stream_reader.go",
+        "stream_rows.go",
+        "stream_scalar.go",
+        "stream_validate.go",
+        "tuple_udt.go",
+        "type.go",
+        "value_api.go",
+        "value_io.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/internal/connectivity",
+      "imports": [
+        "context",
+        "crypto/tls",
+        "crypto/x509",
+        "github.com/scylladb/gocql/v2/internal/cqltype",
+        "github.com/scylladb/gocql/v2/internal/endpoint",
+        "github.com/scylladb/gocql/v2/internal/model",
+        "github.com/scylladb/gocql/v2/internal/runtimeerrors",
+        "net",
+        "net/netip",
+        "path/filepath",
+        "slices",
+        "strings",
+        "time"
+      ],
+      "sources": [
+        "dial.go",
+        "settings.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/internal/cqlproto",
+      "imports": [
+        "encoding/binary",
+        "errors",
+        "fmt"
+      ],
+      "sources": [
+        "reader.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/internal/cqltype",
+      "imports": [
+        "bytes",
+        "crypto/rand",
+        "encoding/binary",
+        "encoding/hex",
+        "errors",
+        "fmt",
+        "github.com/scylladb/gocql/v2/internal/wire",
+        "io",
+        "math",
+        "math/big",
+        "net",
+        "strconv",
+        "strings",
+        "sync/atomic",
+        "time",
+        "unicode/utf8"
+      ],
+      "sources": [
+        "access.go",
+        "batch_kind.go",
+        "columns.go",
+        "compression.go",
+        "consistency.go",
+        "duration.go",
+        "errors.go",
+        "metadata.go",
+        "numeric.go",
+        "option.go",
+        "statement_kind.go",
+        "time.go",
+        "type.go",
+        "type_names.go",
+        "uuid.go",
+        "view.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/internal/crc",
+      "imports": [
+        "hash/crc32"
+      ],
+      "sources": [
+        "crc.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/internal/debug",
+      "imports": [],
+      "sources": [
+        "debug_on.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/internal/endpoint",
+      "imports": [
+        "bytes",
+        "context",
+        "crypto/md5",
+        "encoding/binary",
+        "errors",
+        "fmt",
+        "github.com/scylladb/gocql/v2/internal/cqltype",
+        "github.com/scylladb/gocql/v2/internal/debug",
+        "github.com/scylladb/gocql/v2/internal/logging",
+        "github.com/scylladb/gocql/v2/internal/model",
+        "github.com/scylladb/gocql/v2/internal/murmur",
+        "github.com/scylladb/gocql/v2/internal/protocol",
+        "math",
+        "math/big",
+        "net",
+        "net/netip",
+        "os",
+        "sort",
+        "strconv",
+        "strings",
+        "sync",
+        "sync/atomic",
+        "time"
+      ],
+      "sources": [
+        "address_translators.go",
+        "aliases_v2_foundation_facade.go",
+        "aliases_v2_framer_facade.go",
+        "aliases_v2_routing_facade.go",
+        "aliases_v2_settings_facade.go",
+        "cluster.go",
+        "control.go",
+        "dial.go",
+        "host_source.go",
+        "host_source_scylla.go",
+        "opaque_DialedHost.go",
+        "opaque_HostInfo.go",
+        "opaque_ScyllaConnectionFeatures.go",
+        "opaque_ScyllaHostFeatures.go",
+        "opaque_SimpleDNSResolver.go",
+        "opaque_StaticApplicationInfo.go",
+        "policies.go",
+        "scylla.go",
+        "scylla_cdc.go",
+        "session.go",
+        "snapshot.go",
+        "token.go",
+        "v2_config.go",
+        "v2_dial.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/internal/eventbus",
+      "imports": [
+        "context",
+        "errors",
+        "fmt",
+        "sync"
+      ],
+      "sources": [
+        "eventbus.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/internal/execution",
+      "imports": [
+        "bytes",
+        "context",
+        "errors",
+        "fmt",
+        "github.com/scylladb/gocql/v2/internal/binding",
+        "github.com/scylladb/gocql/v2/internal/cluster",
+        "github.com/scylladb/gocql/v2/internal/codec",
+        "github.com/scylladb/gocql/v2/internal/cqltype",
+        "github.com/scylladb/gocql/v2/internal/endpoint",
+        "github.com/scylladb/gocql/v2/internal/model",
+        "github.com/scylladb/gocql/v2/internal/paging",
+        "github.com/scylladb/gocql/v2/internal/protocol",
+        "github.com/scylladb/gocql/v2/internal/routing",
+        "github.com/scylladb/gocql/v2/internal/runtimeerrors",
+        "github.com/scylladb/gocql/v2/internal/schemafence",
+        "github.com/scylladb/gocql/v2/internal/settings",
+        "github.com/scylladb/gocql/v2/internal/transport",
+        "github.com/scylladb/gocql/v2/internal/wire",
+        "net/netip",
+        "slices",
+        "strings",
+        "sync",
+        "sync/atomic",
+        "time"
+      ],
+      "sources": [
+        "aliases_v2_binding_facade.go",
+        "aliases_v2_foundation_facade.go",
+        "aliases_v2_paging_facade.go",
+        "aliases_v2_protocol_facade.go",
+        "aliases_v2_routing_facade.go",
+        "aliases_v2_settings_facade.go",
+        "aliases_v2_statement_contract_facade.go",
+        "aliases_v2_transport_facade.go",
+        "opaque_BatchItem.go",
+        "opaque_Bound.go",
+        "opaque_Options.go",
+        "opaque_Page.go",
+        "opaque_PageLease.go",
+        "opaque_PrepareOptions.go",
+        "opaque_Prepared.go",
+        "opaque_RowStream.go",
+        "opaque_Rows.go",
+        "v2_batch.go",
+        "v2_config.go",
+        "v2_execute.go",
+        "v2_execution_lifetime.go",
+        "v2_keyspace.go",
+        "v2_metadata.go",
+        "v2_prepared_schema.go",
+        "v2_profiles.go",
+        "v2_result.go",
+        "v2_row_stream.go",
+        "v2_runtime_attachment.go",
+        "v2_runtime_types.go",
+        "v2_statement.go",
+        "v2_trace_execution.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/internal/frame",
+      "imports": [
+        "context",
+        "encoding/binary",
+        "errors",
+        "fmt",
+        "github.com/scylladb/gocql/v2/internal/wire",
+        "io",
+        "net"
+      ],
+      "sources": [
+        "frames.go",
+        "stream.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/internal/logging",
+      "imports": [
+        "bytes",
+        "fmt",
+        "log",
+        "sync"
+      ],
+      "sources": [
+        "aliases_v2_settings_facade.go",
+        "logger.go",
+        "v2_logger.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/internal/lru",
+      "imports": [
+        "container/list"
+      ],
+      "sources": [
+        "lru.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/internal/metadata",
+      "imports": [
+        "context",
+        "encoding/binary",
+        "encoding/json",
+        "errors",
+        "fmt",
+        "github.com/scylladb/gocql/v2/internal/binding",
+        "github.com/scylladb/gocql/v2/internal/codec",
+        "github.com/scylladb/gocql/v2/internal/cqltype",
+        "github.com/scylladb/gocql/v2/internal/endpoint",
+        "github.com/scylladb/gocql/v2/internal/model",
+        "github.com/scylladb/gocql/v2/internal/paging",
+        "github.com/scylladb/gocql/v2/internal/protocol",
+        "github.com/scylladb/gocql/v2/internal/runtimeerrors",
+        "github.com/scylladb/gocql/v2/internal/wire",
+        "golang.org/x/sync/errgroup",
+        "io",
+        "maps",
+        "math",
+        "math/big",
+        "net",
+        "net/netip",
+        "reflect",
+        "slices",
+        "sort",
+        "strconv",
+        "strings",
+        "sync",
+        "sync/atomic",
+        "text/template",
+        "time",
+        "unicode"
+      ],
+      "sources": [
+        "aliases_v2_foundation_facade.go",
+        "aliases_v2_protocol_facade.go",
+        "aliases_v2_routing_facade.go",
+        "aliases_v2_settings_facade.go",
+        "control.go",
+        "metadata_scylla.go",
+        "opaque_AggregateMetadata.go",
+        "opaque_KeyspaceMetadata.go",
+        "query.go",
+        "recreate.go",
+        "scalars.go",
+        "v2_metadata.go",
+        "v2_tablet_metadata.go",
+        "v2_topology.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/internal/model",
+      "imports": [
+        "github.com/scylladb/gocql/v2/internal/cqltype",
+        "github.com/scylladb/gocql/v2/internal/schemafence",
+        "github.com/scylladb/gocql/v2/internal/wire",
+        "net/netip",
+        "time"
+      ],
+      "sources": [
+        "access.go",
+        "host.go",
+        "page.go",
+        "request.go",
+        "result.go",
+        "result_metadata.go",
+        "routing.go",
+        "table.go",
+        "target.go",
+        "trace.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/internal/murmur",
+      "imports": [
+        "encoding/binary",
+        "unsafe"
+      ],
+      "sources": [
+        "murmur.go",
+        "murmur_unsafe.go",
+        "stream.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/internal/paging",
+      "imports": [
+        "bytes",
+        "github.com/scylladb/gocql/v2/internal/model",
+        "github.com/scylladb/gocql/v2/internal/runtimeerrors",
+        "hash/maphash"
+      ],
+      "sources": [
+        "aliases_v2_protocol_facade.go",
+        "aliases_v2_routing_facade.go",
+        "v2_result.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/internal/pool",
+      "imports": [
+        "context",
+        "errors",
+        "fmt",
+        "github.com/scylladb/gocql/v2/debounce",
+        "github.com/scylladb/gocql/v2/internal/codec",
+        "github.com/scylladb/gocql/v2/internal/connectivity",
+        "github.com/scylladb/gocql/v2/internal/cqltype",
+        "github.com/scylladb/gocql/v2/internal/debug",
+        "github.com/scylladb/gocql/v2/internal/endpoint",
+        "github.com/scylladb/gocql/v2/internal/logging",
+        "github.com/scylladb/gocql/v2/internal/model",
+        "github.com/scylladb/gocql/v2/internal/runtimeerrors",
+        "github.com/scylladb/gocql/v2/internal/transport",
+        "github.com/scylladb/gocql/v2/tablets",
+        "math",
+        "math/rand",
+        "net",
+        "sync",
+        "sync/atomic",
+        "time"
+      ],
+      "sources": [
+        "aliases_v2_foundation_facade.go",
+        "aliases_v2_routing_facade.go",
+        "aliases_v2_settings_facade.go",
+        "aliases_v2_transport_facade.go",
+        "connectionpool.go",
+        "connpicker.go",
+        "integration_only.go",
+        "policies.go",
+        "scylla.go",
+        "session.go",
+        "v2_connection_hooks.go",
+        "v2_pool.go",
+        "v2_pool_services.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/internal/protocol",
+      "imports": [
+        "encoding/binary",
+        "errors",
+        "fmt",
+        "github.com/scylladb/gocql/v2/internal/cqltype",
+        "github.com/scylladb/gocql/v2/internal/frame",
+        "github.com/scylladb/gocql/v2/internal/model",
+        "github.com/scylladb/gocql/v2/internal/segment",
+        "github.com/scylladb/gocql/v2/internal/wire",
+        "github.com/scylladb/gocql/v2/internal/wirecompress",
+        "io",
+        "math",
+        "net",
+        "strconv",
+        "strings",
+        "sync",
+        "sync/atomic"
+      ],
+      "sources": [
+        "compression.go",
+        "errors.go",
+        "events.go",
+        "framer.go",
+        "limits.go",
+        "metadata_cursor.go",
+        "protocol_error.go",
+        "request.go",
+        "response.go",
+        "segment_compressor.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/internal/routing",
+      "imports": [
+        "context",
+        "encoding/binary",
+        "errors",
+        "fmt",
+        "github.com/scylladb/gocql/v2/internal/cqltype",
+        "github.com/scylladb/gocql/v2/internal/metadata",
+        "github.com/scylladb/gocql/v2/internal/model",
+        "github.com/scylladb/gocql/v2/internal/murmur",
+        "github.com/scylladb/gocql/v2/internal/protocol",
+        "github.com/scylladb/gocql/v2/internal/runtimeerrors",
+        "github.com/scylladb/gocql/v2/internal/wire",
+        "github.com/scylladb/gocql/v2/tablets",
+        "io",
+        "math",
+        "math/rand/v2",
+        "net",
+        "sync",
+        "sync/atomic",
+        "time"
+      ],
+      "sources": [
+        "aliases_v2_foundation_facade.go",
+        "aliases_v2_protocol_facade.go",
+        "opaque_MetadataSnapshot.go",
+        "opaque_PartitionKey.go",
+        "v2_metadata.go",
+        "v2_placement.go",
+        "v2_policy.go",
+        "v2_profiles.go",
+        "v2_routing_token.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/internal/runtimeerrors",
+      "imports": [
+        "errors",
+        "fmt",
+        "github.com/scylladb/gocql/v2/internal/cqltype",
+        "time"
+      ],
+      "sources": [
+        "aliases_v2_foundation_facade.go",
+        "conn.go",
+        "control.go",
+        "opaque_QueryError.go",
+        "session.go",
+        "settings.go",
+        "v2_runtime_types.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/internal/schemafence",
+      "imports": [
+        "github.com/scylladb/gocql/v2/internal/cqltype",
+        "sync",
+        "sync/atomic"
+      ],
+      "sources": [
+        "schema.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/internal/segment",
+      "imports": [
+        "context",
+        "encoding/binary",
+        "errors",
+        "fmt",
+        "github.com/scylladb/gocql/v2/internal/crc",
+        "github.com/scylladb/gocql/v2/internal/wire",
+        "github.com/scylladb/gocql/v2/internal/wirecompress",
+        "hash/crc32",
+        "io"
+      ],
+      "sources": [
+        "segment.go",
+        "spans.go",
+        "units.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/internal/settings",
+      "imports": [
+        "context",
+        "crypto/tls",
+        "errors",
+        "github.com/scylladb/gocql/v2/internal/connectivity",
+        "github.com/scylladb/gocql/v2/internal/cqltype",
+        "github.com/scylladb/gocql/v2/internal/endpoint",
+        "github.com/scylladb/gocql/v2/internal/logging",
+        "github.com/scylladb/gocql/v2/internal/model",
+        "github.com/scylladb/gocql/v2/internal/routing",
+        "github.com/scylladb/gocql/v2/internal/runtimeerrors",
+        "maps",
+        "math",
+        "math/rand/v2",
+        "net",
+        "net/netip",
+        "runtime/debug",
+        "strings",
+        "sync/atomic",
+        "time"
+      ],
+      "sources": [
+        "aliases_v2_foundation_facade.go",
+        "aliases_v2_protocol_facade.go",
+        "aliases_v2_routing_facade.go",
+        "cluster.go",
+        "connectivity.go",
+        "opaque_ProfileHandle.go",
+        "policies.go",
+        "v2_auth.go",
+        "v2_config.go",
+        "v2_dial.go",
+        "v2_metadata.go",
+        "v2_profiles.go",
+        "version.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/internal/streams",
+      "imports": [
+        "math",
+        "strconv",
+        "sync/atomic"
+      ],
+      "sources": [
+        "streams.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/internal/testkit",
+      "imports": [
+        "encoding/binary",
+        "fmt",
+        "hash/crc32"
+      ],
+      "sources": [
+        "native.go",
+        "peers.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/internal/testkit/cluster",
+      "imports": [
+        "fmt",
+        "github.com/scylladb/gocql/v2/internal/cluster"
+      ],
+      "sources": [
+        "doc.go",
+        "pool_integration.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/internal/testkit/transport",
+      "imports": [
+        "context",
+        "github.com/scylladb/gocql/v2/internal/logging",
+        "github.com/scylladb/gocql/v2/internal/protocol",
+        "github.com/scylladb/gocql/v2/internal/segment",
+        "github.com/scylladb/gocql/v2/internal/streams",
+        "github.com/scylladb/gocql/v2/internal/transport",
+        "net",
+        "testing"
+      ],
+      "sources": [
+        "peer.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/internal/tests",
+      "imports": [
+        "fmt",
+        "github.com/google/uuid",
+        "math/rand",
+        "reflect",
+        "strconv",
+        "sync",
+        "testing",
+        "time"
+      ],
+      "sources": [
+        "allocs.go",
+        "common.go",
+        "err_equal.go",
+        "rand.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/internal/tests/mock",
+      "imports": [],
+      "sources": [
+        "mock_framer.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/internal/tests/valuecases",
+      "imports": [
+        "gopkg.in/inf.v0",
+        "math",
+        "math/big",
+        "net",
+        "time"
+      ],
+      "sources": [
+        "get.go",
+        "simple.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/internal/transport",
+      "imports": [
+        "bufio",
+        "bytes",
+        "context",
+        "crypto/tls",
+        "encoding/binary",
+        "errors",
+        "fmt",
+        "github.com/scylladb/gocql/v2/internal/codec",
+        "github.com/scylladb/gocql/v2/internal/connectivity",
+        "github.com/scylladb/gocql/v2/internal/cqltype",
+        "github.com/scylladb/gocql/v2/internal/debug",
+        "github.com/scylladb/gocql/v2/internal/endpoint",
+        "github.com/scylladb/gocql/v2/internal/frame",
+        "github.com/scylladb/gocql/v2/internal/logging",
+        "github.com/scylladb/gocql/v2/internal/model",
+        "github.com/scylladb/gocql/v2/internal/protocol",
+        "github.com/scylladb/gocql/v2/internal/runtimeerrors",
+        "github.com/scylladb/gocql/v2/internal/segment",
+        "github.com/scylladb/gocql/v2/internal/streams",
+        "github.com/scylladb/gocql/v2/internal/wire",
+        "github.com/scylladb/gocql/v2/tablets",
+        "io",
+        "math",
+        "net",
+        "net/netip",
+        "slices",
+        "strconv",
+        "strings",
+        "sync",
+        "sync/atomic",
+        "syscall",
+        "time"
+      ],
+      "sources": [
+        "aliases_v2_foundation_facade.go",
+        "aliases_v2_framer_facade.go",
+        "aliases_v2_io_facade.go",
+        "aliases_v2_metadata_cursor_facade.go",
+        "aliases_v2_protocol_facade.go",
+        "aliases_v2_routing_facade.go",
+        "aliases_v2_settings_facade.go",
+        "callreq_wait.go",
+        "conn.go",
+        "dial.go",
+        "frame.go",
+        "framer.go",
+        "opaque_ErrSchemaMismatch.go",
+        "scylla.go",
+        "segment.go",
+        "session.go",
+        "tracer.go",
+        "v2_auth.go",
+        "v2_connection_state.go",
+        "v2_dial.go",
+        "v2_metadata_execution.go",
+        "v2_pool_limits.go",
+        "v2_runtime_types.go",
+        "v2_stream_transport.go",
+        "v2_transport.go",
+        "v2_transport_receive.go",
+        "v2_transport_tablet.go",
+        "v2_transport_writer.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/internal/wire",
+      "imports": [
+        "context",
+        "encoding/binary",
+        "errors",
+        "io",
+        "math",
+        "sync/atomic",
+        "unsafe"
+      ],
+      "sources": [
+        "builder.go",
+        "cursor.go",
+        "lease.go",
+        "span.go",
+        "stream.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/internal/wirecompress",
+      "imports": [
+        "encoding/binary",
+        "errors",
+        "fmt",
+        "github.com/klauspost/compress/s2",
+        "github.com/pierrec/lz4/v4",
+        "github.com/scylladb/gocql/v2/internal/frame",
+        "github.com/scylladb/gocql/v2/internal/wire",
+        "math",
+        "math/bits",
+        "sync"
+      ],
+      "sources": [
+        "compress.go",
+        "lz4.go",
+        "snappy_frame.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/scyllacloud",
+      "imports": [
+        "context",
+        "crypto/tls",
+        "crypto/x509",
+        "fmt",
+        "github.com/scylladb/gocql/v2",
+        "golang.org/x/net/proxy",
+        "net",
+        "net/url",
+        "os",
+        "sigs.k8s.io/yaml",
+        "sync",
+        "time"
+      ],
+      "sources": [
+        "cluster.go",
+        "config.go",
+        "hostdialer.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/tablets",
+      "imports": [
+        "encoding/binary",
+        "encoding/hex",
+        "fmt",
+        "github.com/scylladb/gocql/v2/internal/cqlproto",
+        "github.com/scylladb/gocql/v2/internal/tests",
+        "math",
+        "math/rand",
+        "slices",
+        "sort",
+        "sync",
+        "sync/atomic"
+      ],
+      "sources": [
+        "hint_parser.go",
+        "tablet_utils.go",
+        "tablets.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/tests/affinity",
+      "imports": [
+        "bytes",
+        "encoding/binary",
+        "encoding/json",
+        "flag",
+        "fmt",
+        "io",
+        "math",
+        "net",
+        "os",
+        "runtime",
+        "sort",
+        "strconv",
+        "strings",
+        "sync",
+        "sync/atomic",
+        "syscall",
+        "time",
+        "unsafe"
+      ],
+      "sources": [
+        "main_linux_amd64.go"
+      ]
+    },
+    {
+      "package": "github.com/scylladb/gocql/v2/tests/bench",
+      "imports": [],
+      "sources": []
+    }
+  ],
+  "root_responsibilities": "aliases, typed thin function facades, consistency parsing and private-core connection I/O facade"
+}

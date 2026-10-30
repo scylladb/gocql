@@ -1,42 +1,21 @@
-# Load balancing
+# Routing
 
-Use a token-aware policy so requests go to replicas that own the queried
-partition. In a multi-datacenter cluster, wrap a data-center-aware fallback
-policy and use local consistency:
+Set `Profile.Routing` to a typed `RoutingPolicy`; update a ProfileHandle with its
+validated Replace method. `NewRoutingPolicy(RoutingOptions{...})` configures
+token awareness, datacenter/rack preference, remote fallback, replica shuffling,
+leader-aware routing and latency ordering. Missing required locality is an
+explicit validation error. `SingleTargetRouting` pins a typed host/shard target.
 
-```go
-cluster := gocql.NewCluster(hosts...)
+A custom RoutingPolicy implements Validate, Plan and Observe against immutable
+MetadataSnapshot and RoutingInfo values. QueryPlan.Next lazily returns Target
+values; it must not perform I/O or mutate inputs. Built-in routing keeps private
+immutable indices and does not copy all hosts to choose its first target.
 
-fallback := gocql.RoundRobinHostPolicy()
-if localDC != "" {
-	fallback = gocql.DCAwareRoundRobinPolicy(localDC)
-	cluster.Consistency = gocql.LocalQuorum
-}
+Config.Partitioners maps server names to TokenPartitioner implementations.
+PartitionKey.ForEach streams canonical encoded components without gathering;
+consume borrowed spans synchronously. Unknown partitioners disable token routing
+with a diagnostic. Tablet placement and opaque version identities survive in
+immutable snapshots; retained snapshots remain valid after refresh.
 
-cluster.PoolConfig.HostSelectionPolicy = gocql.TokenAwareHostPolicy(fallback)
-```
-
-Token-aware routing needs metadata for every partition-key component. Bind all
-partition-key values instead of embedding them in the CQL string:
-
-```go
-// Routable: both partition-key components are bound values.
-session.Query(
-	"SELECT value FROM events WHERE account_id = ? AND bucket = ?",
-	accountID,
-	bucket,
-)
-```
-
-`DCAwareRoundRobinPolicy` prioritizes the configured local data center.
-`RackAwareRoundRobinPolicy` adds a local-rack preference inside that data
-center. Both can be used as the fallback for `TokenAwareHostPolicy`.
-
-When ScyllaDB advertises a supported, nonzero shard configuration, the driver
-routes connections to shards and opens one connection per shard;
-`ClusterConfig.NumConns` has no effect. If server-side shard-aware drivers are
-disabled or valid sharding metadata is unavailable, the driver uses its normal
-connection pool and honors `NumConns`.
-
-See [Connecting to the cluster](connecting/index.md) for shard-aware port and
-network requirements.
+The optional hostpolicy subpackage adapts go-hostpool to the typed RoutingPolicy
+and attempt observation seams.

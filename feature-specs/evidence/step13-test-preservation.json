@@ -1,0 +1,2425 @@
+{
+  "accepted_predecessor": "cdba62aaf867b8e1877aa18dc56b555665bc17d6",
+  "call_form_equivalence": {
+    "connectionpool_test.go::.TestGetHostPoolByIDAbsent": true,
+    "driver_config_test.go::.TestDriverConfigReportingDial": true,
+    "driver_config_test.go::.TestDriverConfigReportingDisabled": true,
+    "session_event_bus_test.go::.TestSessionEventBusPublishesEvents": true,
+    "session_unit_test.go::.TestForEachTablet": true,
+    "session_unit_test.go::.TestTableMetadataAfterInvalidation": true,
+    "session_unit_test.go::.TestTableMetadataAfterKeyspaceInvalidation": true,
+    "session_unit_test.go::.TestTableMetadataValidation": true,
+    "session_unit_test.go::.TestTableTabletsMetadata": true
+  },
+  "changed_declarations": [
+    {
+      "accepted_sha256": "e3d59e4e454b9af6237a38166404670ce031703a335c5e04198706aaf1c9c209",
+      "current_identity": "bench_recordings_test.go::benchControlQuery",
+      "current_sha256": "2c6397e345784117723555e97dd8c003ccd84bd2cb280e40f0856e9b15978f62",
+      "disposition": "Fixture guard now checks current typed control/canonical encoded parameters; missing nested-module fixture skip removed.",
+      "identity": "bench_recordings_test.go::.benchControlQuery"
+    },
+    {
+      "accepted_sha256": "1c9f96a25e39059095ad9c2f7e6b2ea27f42ab5e24411c344c5d0e2b43b34a2f",
+      "current_identity": "bench_recordings_test.go::benchControlParams",
+      "current_sha256": "03c46d75b2d110b0a440b82523919df4ef1baee350d2e1acc971af52fe351078",
+      "disposition": "Fixture guard now checks current typed control/canonical encoded parameters; missing nested-module fixture skip removed.",
+      "identity": "bench_recordings_test.go::.benchControlParams"
+    },
+    {
+      "accepted_sha256": "66d7969fe7a22a494309d47f3119794fccd9c96e28151f01e8e38a3e8346c5de",
+      "current_identity": "bench_recordings_test.go::readRecording",
+      "current_sha256": "4c95e5de6682ce1c1bd3cc33164e1fe3000299fcecf8c077777810398856f34d",
+      "disposition": "Fixture guard now checks current typed control/canonical encoded parameters; missing nested-module fixture skip removed.",
+      "identity": "bench_recordings_test.go::.readRecording"
+    },
+    {
+      "accepted_sha256": "117d36aa8a9aee234d49cbabe34358c58d9dafa32b79d0fb76f8c4e738dbcccb",
+      "current_identity": "bench_recordings_test.go::TestBenchCurrentControlCapture",
+      "current_sha256": "439ac6531e220b47a8d996bc7eac25b13fb8e2d7ae107981d5f82ef4b8a6b102",
+      "disposition": "Fixture guard now checks current typed control/canonical encoded parameters; missing nested-module fixture skip removed.",
+      "identity": "bench_recordings_test.go::.TestBenchHistoricalControlCapture"
+    },
+    {
+      "accepted_sha256": "cb4da1f28e8cc4a6d1e2d0889cd5edc6dbf012da4a4c48f247901eb037469fb6",
+      "current_identity": "ci/release/release_test.go::TestVersions",
+      "current_sha256": "2b1a1db811fd6744e0df259beb44550b1c8af9102ce91fa7e4025fb8b71f0ad9",
+      "disposition": "Single v2 root module/version/prerelease policy replaces dual v1 root/LZ4 policy; assertions retained for the new policy.",
+      "identity": "ci/release/release_test.go::.TestVersions"
+    },
+    {
+      "accepted_sha256": "096d9e5e773f083ef3db06d8e66c7b1381f77561fa8ed65a8de27debd4132c38",
+      "current_identity": "ci/release/release_test.go::TestModuleMappings",
+      "current_sha256": "f378aa7815eacf5abba8b84cfe91d3bad2b2b78efd36c14d5a2ca14955942d6f",
+      "disposition": "Single v2 root module/version/prerelease policy replaces dual v1 root/LZ4 policy; assertions retained for the new policy.",
+      "identity": "ci/release/release_test.go::.TestModuleMappings"
+    },
+    {
+      "accepted_sha256": "5a89041e8379392cb9e8da1ac32f029de89ff035306456f354dffc93e9988d09",
+      "current_identity": "ci/release/release_test.go::TestReleaseCandidates",
+      "current_sha256": "2ed596917383e372b76aabf917b74fdc6ae78ba58a82a32ab3ae5e5c9f87990c",
+      "disposition": "Single v2 root module/version/prerelease policy replaces dual v1 root/LZ4 policy; assertions retained for the new policy.",
+      "identity": "ci/release/release_test.go::.TestReleaseCandidates"
+    },
+    {
+      "accepted_sha256": "5b2639f74996ee6e9b52ee61b5acd45c23fec75a6ebd32ddec9f853d3ccb01a4",
+      "current_identity": "ci/release/release_test.go::TestCompareVersions",
+      "current_sha256": "6ebb63259a8ef8c44f2a73f17f740d53199dd401ec95148d946d9f62cd15c0c6",
+      "disposition": "Single v2 root module/version/prerelease policy replaces dual v1 root/LZ4 policy; assertions retained for the new policy.",
+      "identity": "ci/release/release_test.go::.TestCompareVersions"
+    },
+    {
+      "accepted_sha256": "15e2fc30cf1d0399465a15e3d8f41f128034aa51079a722a83a048f99e3d9980",
+      "current_identity": "ci/release/release_test.go::TestReleaseStates",
+      "current_sha256": "16637bdce98c7ea5f30612ef8084b8ae2f8cb0ef2d7954c4a31303025ee74e5e",
+      "disposition": "Single v2 root module/version/prerelease policy replaces dual v1 root/LZ4 policy; assertions retained for the new policy.",
+      "identity": "ci/release/release_test.go::.TestReleaseStates"
+    },
+    {
+      "accepted_sha256": "24c13c42c7949446c0cb2a53c7c32843270e063cfd8c75e15e873625c6933b21",
+      "current_identity": "ci/release/release_test.go::TestPrereleaseNeverLatest",
+      "current_sha256": "c5652f67828ff022af66faa41aed33c265d2fc3a443c85887b55df2ebc82b487",
+      "disposition": "Single v2 root module/version/prerelease policy replaces dual v1 root/LZ4 policy; assertions retained for the new policy.",
+      "identity": "ci/release/release_test.go::.TestLZ4ReleaseNeverLatest"
+    },
+    {
+      "accepted_sha256": "3dc69d7b2e8b521d3f93e86372643c1a7bdaa9aabd0059796b0888410ec4bcdf",
+      "current_identity": "ci/release/release_test.go::TestLatestPolicies",
+      "current_sha256": "65b3590522f400119e6bae3349ae95e2f009b08cc4048dc13b2ced7aca06fdf3",
+      "disposition": "Single v2 root module/version/prerelease policy replaces dual v1 root/LZ4 policy; assertions retained for the new policy.",
+      "identity": "ci/release/release_test.go::.TestLatestPolicies"
+    },
+    {
+      "accepted_sha256": "c564ecb959ee1c9fce16429fd437a7b1d7d12e087e6b9f13a3fe87e34ae5a601",
+      "current_identity": "ci/release/release_test.go::TestHigherStableRootTag",
+      "current_sha256": "140aa924aa3ae3ae1e25caa15feb5bbcaa811dc1281a399ee8314533470b8a38",
+      "disposition": "Single v2 root module/version/prerelease policy replaces dual v1 root/LZ4 policy; assertions retained for the new policy.",
+      "identity": "ci/release/release_test.go::.TestHigherStableRootTag"
+    },
+    {
+      "accepted_sha256": "3fd1870a40c0df907999bd15f431d1515f4a9622167ad43beaf382fa1bffc22b",
+      "current_identity": "connectionpool_test.go::TestGetHostPoolByIDAbsent",
+      "current_sha256": "c2c41695cb8ecff16683022f36cb58512c4ce413bd24cecc833e9b39ae0413b5",
+      "disposition": "Identical parsed body after reversing only test helper call f(receiver,args) to receiver.method(args).",
+      "identity": "connectionpool_test.go::.TestGetHostPoolByIDAbsent"
+    },
+    {
+      "accepted_sha256": "86f72cf8fa7e66bf5046dabf848f985479ef6b4cbd4e5d272fe34ad62803782c",
+      "current_identity": "dialer/replayer/fixtures_test.go::benchRecordingBase",
+      "current_sha256": "c262a96e43b6b2e614fe616a212091878794562924ef293fdb8e75658c01ea8a",
+      "disposition": "Fixture guard now checks current typed control/canonical encoded parameters; missing nested-module fixture skip removed.",
+      "identity": "dialer/replayer/fixtures_test.go::.benchRecordingBase"
+    },
+    {
+      "accepted_sha256": "7c2a9ec06466922fc71028822cab8ad6184bbcae79d2a391289a91b70f8a0f27",
+      "current_identity": "driver_config_test.go::TestDriverConfigReportingDisabled",
+      "current_sha256": "cde33e28bb8118077538975f6a2822d29257375729bfde29406ab0c135b84541",
+      "disposition": "Identical parsed body after reversing only test helper call f(receiver,args) to receiver.method(args).",
+      "identity": "driver_config_test.go::.TestDriverConfigReportingDisabled"
+    },
+    {
+      "accepted_sha256": "517175313eddcb314c2c428541c7a98e23c3c7a7f91452fd7e5d3d809c4368c3",
+      "current_identity": "driver_config_test.go::TestDriverConfigReportingDial",
+      "current_sha256": "e655a2837670f5bf18853d27ba30b97756ad8f15675deb1fd5e7f6d688825506",
+      "disposition": "Identical parsed body after reversing only test helper call f(receiver,args) to receiver.method(args).",
+      "identity": "driver_config_test.go::.TestDriverConfigReportingDial"
+    },
+    {
+      "accepted_sha256": "f7b61a8f1a5fc6046515a3179aecba85eb7f1e9fbfae1071586b4ba63e07c22d",
+      "current_identity": "example_test.go::Example",
+      "current_sha256": "9fad0a355d5c0db692ca990871f747a7cf28fa39080c1af371852bfb3c5ecdb0",
+      "disposition": "Only the schema assumption comment now declares the composite primary key required by the existing query.",
+      "identity": "example_test.go::.Example"
+    },
+    {
+      "accepted_sha256": "dc9de0432ee4e02df28c2bf2c659a243fb79ca8a6540110a85f39188c7a49d91",
+      "current_identity": "session_event_bus_test.go::TestSessionEventBusPublishesEvents",
+      "current_sha256": "104b37a481028a69ffc072ddc713da9e62cafebab5fae991e3aaa93c05da6225",
+      "disposition": "Identical parsed body after reversing only test helper call f(receiver,args) to receiver.method(args).",
+      "identity": "session_event_bus_test.go::.TestSessionEventBusPublishesEvents"
+    },
+    {
+      "accepted_sha256": "ade66a729d573f5dd9547ddd7bff353541fc2e992c3852d1175528b9cbbf65a0",
+      "current_identity": "session_unit_test.go::TestTableMetadataAfterInvalidation",
+      "current_sha256": "c14cee7a94d72e05b0155a609f0afac9cd5a51b6640072531a6cc808be2c62a4",
+      "disposition": "Identical parsed body after reversing only test helper call f(receiver,args) to receiver.method(args).",
+      "identity": "session_unit_test.go::.TestTableMetadataAfterInvalidation"
+    },
+    {
+      "accepted_sha256": "94b69abe6e48476f6dd8c70b043c7cfc99db07fea0c583c5018aed59eb28897d",
+      "current_identity": "session_unit_test.go::TestTableMetadataAfterKeyspaceInvalidation",
+      "current_sha256": "206f7206f2ebb1ca594cf4cefb6a4bb0ff342c252cfd90a118b7709a7711515e",
+      "disposition": "Identical parsed body after reversing only test helper call f(receiver,args) to receiver.method(args).",
+      "identity": "session_unit_test.go::.TestTableMetadataAfterKeyspaceInvalidation"
+    },
+    {
+      "accepted_sha256": "f8b83ff7f2bcafd3d024dbfe5ce2f1bc884e87891d5f879cc4eb18b44c30517c",
+      "current_identity": "session_unit_test.go::TestTableTabletsMetadata",
+      "current_sha256": "8499453f9eb362d1cec6e207fba814c616e0f09ef9d727ffef310a1c9220407c",
+      "disposition": "Identical parsed body after reversing only test helper call f(receiver,args) to receiver.method(args).",
+      "identity": "session_unit_test.go::.TestTableTabletsMetadata"
+    },
+    {
+      "accepted_sha256": "98084da58662ca79b598d030814e7ccc5cf95a667cf4ded63b60f2a1206f652a",
+      "current_identity": "session_unit_test.go::TestForEachTablet",
+      "current_sha256": "812edb8bc347798e9cc40cbb4553958b6cbfec01ded6f5608429130c98bcadc2",
+      "disposition": "Identical parsed body after reversing only test helper call f(receiver,args) to receiver.method(args).",
+      "identity": "session_unit_test.go::.TestForEachTablet"
+    },
+    {
+      "accepted_sha256": "0426a3b69d7b419e85a577ed8858d9d97a6afa5425e5a0729c0d88d151e9990e",
+      "current_identity": "session_unit_test.go::TestTableMetadataValidation",
+      "current_sha256": "4c76876ada30072b942e0ef2dd042cca489b59820bbeaca8439f8e2442943d94",
+      "disposition": "Identical parsed body after reversing only test helper call f(receiver,args) to receiver.method(args).",
+      "identity": "session_unit_test.go::.TestTableMetadataValidation"
+    },
+    {
+      "accepted_sha256": "86a773d74e444c1130f9cf9751977f8b357e0bef62a266e03d70163819e9d39a",
+      "current_identity": "tests/bench/bench_single_conn_test.go::benchConfig",
+      "current_sha256": "6bf07756b23f7eac336c43991059f3fe9fb398a33828be1d8ce9629ff20b2d11",
+      "disposition": "Functioning typed-control captures, checked Close, same ten SELECT/INSERT cases; SELECT requires exact name and one row.",
+      "identity": "tests/bench/bench_single_conn_test.go::.benchConfig"
+    },
+    {
+      "accepted_sha256": "5a0a97887fd012c89e98b63b3e403a8e7d7f158f09c8d2db6515bcd09b1aaea9",
+      "current_identity": "tests/bench/bench_single_conn_test.go::benchRead",
+      "current_sha256": "59ceea1a80dd6e764400797eb58460c6792c59b310375ec5df03eb1fc591ecfb",
+      "disposition": "Functioning typed-control captures, checked Close, same ten SELECT/INSERT cases; SELECT requires exact name and one row.",
+      "identity": "tests/bench/bench_single_conn_test.go::.benchRead"
+    },
+    {
+      "accepted_sha256": "cde21147e2e309c9428d8e7386bed1dbf1e548815058ab558e0ee4786ba84d6a",
+      "current_identity": "tests/bench/bench_single_conn_test.go::RecordSelectTraffic",
+      "current_sha256": "2e4bf328b4da30eda067974430bc9b5803fc574c15231a38aebdc13f827f86c4",
+      "disposition": "Functioning typed-control captures, checked Close, same ten SELECT/INSERT cases; SELECT requires exact name and one row.",
+      "identity": "tests/bench/bench_single_conn_test.go::.RecordSelectTraffic"
+    },
+    {
+      "accepted_sha256": "7c909831c9b6fc10044b58f84be1a0ecc37b2012c394b1d8e5fcafe82ee46381",
+      "current_identity": "tests/bench/bench_single_conn_test.go::RecordInsertTraffic",
+      "current_sha256": "e21e755c36eb79a35d17d9489d38c5b21ef2df235954b6dda317d8b0ef85cd8e",
+      "disposition": "Functioning typed-control captures, checked Close, same ten SELECT/INSERT cases; SELECT requires exact name and one row.",
+      "identity": "tests/bench/bench_single_conn_test.go::.RecordInsertTraffic"
+    },
+    {
+      "accepted_sha256": "2961d4760183fefc23e1715db4cf05590cf4f84ef1c3fd4b686101757a43551e",
+      "current_identity": "tests/bench/bench_single_conn_test.go::BenchmarkSingleConnectionSelect",
+      "current_sha256": "c6d487221f959b7d826bf11ca455731cd1e77920f0f031116e8bde559a5114d0",
+      "disposition": "Functioning typed-control captures, checked Close, same ten SELECT/INSERT cases; SELECT requires exact name and one row.",
+      "identity": "tests/bench/bench_single_conn_test.go::.BenchmarkSingleConnectionSelect"
+    },
+    {
+      "accepted_sha256": "76473988c824d77c66699432345fd148c6ca489ce35dfb4cb267d1e336a5abfb",
+      "current_identity": "tests/bench/bench_single_conn_test.go::BenchmarkSingleConnectionInsert",
+      "current_sha256": "d936c25d051a6549658b75ce102c7d4d7042402794758604e3bec83c45784044",
+      "disposition": "Functioning typed-control captures, checked Close, same ten SELECT/INSERT cases; SELECT requires exact name and one row.",
+      "identity": "tests/bench/bench_single_conn_test.go::.BenchmarkSingleConnectionInsert"
+    },
+    {
+      "accepted_sha256": "0b8378a81fc58af10bd22b880e1576f8c939db212aa76defa9b5c897ba3e2d3e",
+      "current_identity": "tests/bench/bench_single_conn_test.go::TestMain",
+      "current_sha256": "05eb561a678cb2846c0cad36d1d471dd5bdbf044ff4d2b8447d330c0a93c412a",
+      "disposition": "Functioning typed-control captures, checked Close, same ten SELECT/INSERT cases; SELECT requires exact name and one row.",
+      "identity": "tests/bench/bench_single_conn_test.go::.TestMain"
+    }
+  ],
+  "helpers": [
+    {
+      "identity": "cassandra_test.go::columnNames",
+      "same_complete_source": true,
+      "sha256": "4497a54bba2060f162b96c67b5d2c740cbeb21cfac4ad11b47d0b5a70a721917"
+    },
+    {
+      "identity": "cassandra_test.go::getRandomConn",
+      "same_complete_source": true,
+      "sha256": "c4932711daccda0fb204abb51029b8cba77a296af0f3ed38b01df14126410226"
+    },
+    {
+      "identity": "cassandra_test.go::injectInvalidPreparedStatement",
+      "same_complete_source": true,
+      "sha256": "cb22d35e623b95a2fe07bbcb7715296dcbb461865a4db2f288898fc0980d9d02"
+    },
+    {
+      "identity": "cassandra_test.go::pollUntil",
+      "same_complete_source": true,
+      "sha256": "ac5029d9f47299ac7c469adf71b839247ff286281022c5477255a7fa9bd05008"
+    },
+    {
+      "identity": "cassandra_test.go::runMetadataChangedFlow",
+      "same_complete_source": true,
+      "sha256": "622cca25710218b18fc2f4fb311064f268fc9331b655d13def4766ef89f69973"
+    },
+    {
+      "identity": "cassandra_test.go::tableNames",
+      "same_complete_source": true,
+      "sha256": "da306e013dbeae19907a1a9040215366ebcd49df3253a78750bfea2fc070afef"
+    },
+    {
+      "identity": "cassandra_test.go::waitForHostConns",
+      "same_complete_source": true,
+      "sha256": "7244bf65029d1dd27ebd0c656828672c54c9e36726a14ef3d0f53ae96354b65c"
+    },
+    {
+      "identity": "cassandra_v2_helpers_test.go::cassandraBatch",
+      "same_complete_source": true,
+      "sha256": "ff807851fb19facd42122c1750684c4655a5b84a5121727c05ed50bcc45cfb48"
+    },
+    {
+      "identity": "cassandra_v2_helpers_test.go::cassandraBool",
+      "same_complete_source": true,
+      "sha256": "dcbeae2d032d4334032784388f18cc79eab8e194974c0e9a5cebb1e5d749dc88"
+    },
+    {
+      "identity": "cassandra_v2_helpers_test.go::cassandraBound",
+      "same_complete_source": true,
+      "sha256": "68624508de3a64ad02d7142d1d506663a880a9636c0e0015cacee5bfe7cebea0"
+    },
+    {
+      "identity": "cassandra_v2_helpers_test.go::cassandraCASBound",
+      "same_complete_source": true,
+      "sha256": "58f3d5e052ef6c2068f1a476d5c347e9f5cabe657eff7dc3ce3b1b94e573c87c"
+    },
+    {
+      "identity": "cassandra_v2_helpers_test.go::cassandraDDL",
+      "same_complete_source": true,
+      "sha256": "432f2254aa04cbf0e0a034cd8d053e5ce645a70d63e93d6482e36772d3c4cd3d"
+    },
+    {
+      "identity": "cassandra_v2_helpers_test.go::cassandraDynamicBound",
+      "same_complete_source": true,
+      "sha256": "77dde63ff4c10594aa890f6241d826318832e3ad4f618f8fbfb90c45b69661d0"
+    },
+    {
+      "identity": "cassandra_v2_helpers_test.go::cassandraField",
+      "same_complete_source": true,
+      "sha256": "311d65c0e57936f9c924e4b84ca0f03d3eebcfb948da38841d0fa362e909d06f"
+    },
+    {
+      "identity": "cassandra_v2_helpers_test.go::cassandraInt",
+      "same_complete_source": true,
+      "sha256": "20671f312d2932b00d572d6026eac03680038a6985d37e71cbb4d56bd97d5ade"
+    },
+    {
+      "identity": "cassandra_v2_helpers_test.go::cassandraItem",
+      "same_complete_source": true,
+      "sha256": "b5ac159cfa489db9ffbc79e2b068850815fa3ef586ce5a2d560716e041186d51"
+    },
+    {
+      "identity": "cassandra_v2_helpers_test.go::cassandraKeyspace",
+      "same_complete_source": true,
+      "sha256": "4068e3307ed61a40f3e7d5c22c41df774eb27ed811a5178fecdfdcee055a832b"
+    },
+    {
+      "identity": "cassandra_v2_helpers_test.go::cassandraOtherSession",
+      "same_complete_source": true,
+      "sha256": "71b1ea86c86d100261367ffba3a1b33f31aab4d127bdf0d8141898b50b411709"
+    },
+    {
+      "identity": "cassandra_v2_helpers_test.go::cassandraPrepared",
+      "same_complete_source": true,
+      "sha256": "1abda6daab67f76e8dccce48d2e6b0b08b24402d0f8cd779a8c9c04f3e3fa857"
+    },
+    {
+      "identity": "cassandra_v2_helpers_test.go::cassandraRead",
+      "same_complete_source": true,
+      "sha256": "1b447a33daefe5c56dea36ebe7827b5ce43563a6eac789456a64a0610143fa1f"
+    },
+    {
+      "identity": "cassandra_v2_helpers_test.go::cassandraReadBound",
+      "same_complete_source": true,
+      "sha256": "cbb88e239116340cb30a3f6e63e191326f5f1bc8761cc3a11a5784b9ac200909"
+    },
+    {
+      "identity": "cassandra_v2_helpers_test.go::cassandraRows",
+      "same_complete_source": true,
+      "sha256": "f451f9921f361937973e3f4e59ad2447059487183de3bf54a9d6cabf4cc5ff60"
+    },
+    {
+      "identity": "cassandra_v2_helpers_test.go::cassandraTable",
+      "same_complete_source": true,
+      "sha256": "bd993cda3b104e818d98cc738d255378d1b22d47fb6007ac3d5c22b75527324d"
+    },
+    {
+      "identity": "cassandra_v2_helpers_test.go::cassandraText",
+      "same_complete_source": true,
+      "sha256": "8e4065c1f27919d36fd7db393ea29681aa439b293903543c81af5a992135aadd"
+    },
+    {
+      "identity": "cassandra_v2_helpers_test.go::cassandraUUID",
+      "same_complete_source": true,
+      "sha256": "e7a824e7567434afa33d7a1d13d2de71151988b77016abe2849a1974b6a1205a"
+    },
+    {
+      "identity": "cassandra_v2_helpers_test.go::cassandraUnprepared",
+      "same_complete_source": true,
+      "sha256": "58ccadf4cd253334ddada15300b7847789281a48e3fd667f8bfda38474ebd499"
+    },
+    {
+      "identity": "cassandra_v2_helpers_test.go::cassandraValue",
+      "same_complete_source": true,
+      "sha256": "17dada2e7bbff184b3035d61265c14bbf4fbe038b2374e81d3c264fb4b917461"
+    },
+    {
+      "identity": "cassandra_v2_helpers_test.go::cassandraWrite",
+      "same_complete_source": true,
+      "sha256": "a58cf84fe26e0d7093b0bf43964116ac887e4c91472becfc84a8ace48c46df7d"
+    },
+    {
+      "identity": "cassandra_v2_helpers_test.go::cassandraWriteBound",
+      "same_complete_source": true,
+      "sha256": "4465d117391dec23cc2bc07669577bf8f90ad40e3130554f0f7971643dd9125a"
+    },
+    {
+      "identity": "client_routes_test.go::filterClientRoutesByHostID",
+      "same_complete_source": true,
+      "sha256": "f7c1b4acd39d3969a43313378f8afe2ff32d5c4c10f0d268ca0e656fc2d3bd54"
+    },
+    {
+      "identity": "client_routes_test.go::makeClientRoutePairs",
+      "same_complete_source": true,
+      "sha256": "1dcae7b858321d521e09a6d232afc40a67308bd4b0c838c66f28cfb4b36b5efe"
+    },
+    {
+      "identity": "client_routes_test.go::sortClientRoutes",
+      "same_complete_source": true,
+      "sha256": "ddce95164a43de1dfbb5bb90bfc5c2951e8033d1e95096af79f53ac210f9452b"
+    },
+    {
+      "identity": "cloud_cluster_test.go::cloudHostRows",
+      "same_complete_source": true,
+      "sha256": "733740557b50dd79b7d4c17c09efedb03da76887d6b15d64a651c008f33fb1fd"
+    },
+    {
+      "identity": "cloud_cluster_test.go::writeYamlToTempFile",
+      "same_complete_source": true,
+      "sha256": "67c0ce217a08cd687e1a572bcac5310e54e6415cb1d3d9d16d0f29c4170689f2"
+    },
+    {
+      "identity": "common_test.go::getClusterHosts",
+      "same_complete_source": true,
+      "sha256": "ffd789b223de6d38b79121d0d53b1c7973cc2238cd105b9328cab8a28ca71534"
+    },
+    {
+      "identity": "common_test.go::getClusterSocketFile",
+      "same_complete_source": true,
+      "sha256": "a33a8e5c97f2d38af6c85b5a910665eb5d85b240650171fcbddb6bcc892e581c"
+    },
+    {
+      "identity": "common_test.go::testKeyspaceName",
+      "same_complete_source": true,
+      "sha256": "39a9894536eee9a5c7406a9d96edab319c76341d7536091cbe9356b6d6e09efd"
+    },
+    {
+      "identity": "common_test.go::testTableName",
+      "same_complete_source": true,
+      "sha256": "f48a9dc6f9386eddcc5d900b0ce682139f8068fc89800604ef9ce5eaceeb1b96"
+    },
+    {
+      "identity": "dns_test.go::MustIP",
+      "same_complete_source": true,
+      "sha256": "1326c0e98f1b1e79a555cc370da69059a04238e8f9de54aea53e0ef95f3268a6"
+    },
+    {
+      "identity": "dns_test.go::newMockDNSResolver",
+      "same_complete_source": true,
+      "sha256": "db84db76e7a3f45049e2a0632a8b812aee73b10a8cc69f567b6d32449a08c852"
+    },
+    {
+      "identity": "fixture_cql_test.go::fixtureKeyspace",
+      "same_complete_source": true,
+      "sha256": "d96049296a0f6ec7b8c51939b93064915d7d814336d91191e4cf679d1ea71c5b"
+    },
+    {
+      "identity": "fixture_cql_test.go::splitFixtureCQL",
+      "same_complete_source": true,
+      "sha256": "a78184fb5365024dacf2f5b03a826e56f3f6e658f2ccd20a39666114760b9f3a"
+    },
+    {
+      "identity": "integration_serialization_scylla_test.go::checkDynamicSerializationCases",
+      "same_complete_source": true,
+      "sha256": "8ef1442191ba42c18f8d0971fbcbb2525a1166b5af0ccbfc9246498256cf7a24"
+    },
+    {
+      "identity": "integration_serialization_scylla_test.go::dynamicSerializationResult",
+      "same_complete_source": true,
+      "sha256": "71c59fadcb8e33af533033d84b7717f0ab76aea397e18cc89573e025e54eef91"
+    },
+    {
+      "identity": "integration_serialization_scylla_test.go::isTopologyBusyErr",
+      "same_complete_source": true,
+      "sha256": "fe0375a9a677e3bffe86bbe686e27d1c17c3bff62e3d9e7d8444050e2a661164"
+    },
+    {
+      "identity": "integration_serialization_scylla_test.go::mustCreateDuration",
+      "same_complete_source": true,
+      "sha256": "a7368b2a3e3df4b483d566ef206bea47d4f95208b6347ae3136326fd4054cb74"
+    },
+    {
+      "identity": "integration_serialization_scylla_test.go::mustParseBigInt",
+      "same_complete_source": true,
+      "sha256": "f788195ea4ca737755d8f3de1d2779578d136a42ba73c8dbf4860bf79fd685ee"
+    },
+    {
+      "identity": "integration_serialization_scylla_test.go::mustParseUUID",
+      "same_complete_source": true,
+      "sha256": "83d038845c74abeabefebba61c7a3104fd807516ad0671e3b1b65e335843be2a"
+    },
+    {
+      "identity": "integration_serialization_scylla_test.go::retryOnTopologyBusy",
+      "same_complete_source": true,
+      "sha256": "5ffa4f285379f8eb102ee18e6779c2c9e7d601dd058f5804f97ae0fac29a3466"
+    },
+    {
+      "identity": "integration_serialization_scylla_test.go::retryOnTopologyBusyWithSleep",
+      "same_complete_source": true,
+      "sha256": "b26c6d1dbaa4c8191e8368004122f2dba32cf4c8ca1f41473ecd4d4f8e1d3aca"
+    },
+    {
+      "identity": "integration_serialization_scylla_test.go::serializationMustType",
+      "same_complete_source": true,
+      "sha256": "f8aad3941c28e3a0679c0106e1521bb3e9723c2989a44f53a67584e4da384d30"
+    },
+    {
+      "identity": "integration_serialization_scylla_test.go::serializationMustValue",
+      "same_complete_source": true,
+      "sha256": "a792d256780329b747e39ae6be7f21874cc4ad8d342c81a179cc0ec01f40a768"
+    },
+    {
+      "identity": "integration_serialization_scylla_test.go::truncateTable",
+      "same_complete_source": true,
+      "sha256": "ec9e27cdba2b47d27374def9055a28015ad7509766bb1bf5a14838bdbc364566"
+    },
+    {
+      "identity": "integration_test.go::assertV2CustomPayload",
+      "same_complete_source": true,
+      "sha256": "9c780f13ad8f2386e504e05eeceb60bac74df553645a3f43e7c55ecca7bf5cb7"
+    },
+    {
+      "identity": "integration_test.go::queryV2ControlKey",
+      "same_complete_source": true,
+      "sha256": "c141a2963a6dba6e6e7ac9d5b454dfa46c0b392dc944a6409ac14e5d36ff33d8"
+    },
+    {
+      "identity": "integration_test.go::readV2ClientOptions",
+      "same_complete_source": true,
+      "sha256": "ea9e042d9b9cb821d23d3bd4a85f602a66d686ae755e0a905a64b542035a98fb"
+    },
+    {
+      "identity": "integration_test.go::requireCassandraFixtures",
+      "same_complete_source": true,
+      "sha256": "b9c350d2b42d2448a5f268ef6ee8b1512da84ff97e97748f468dfbc06c7b13ad"
+    },
+    {
+      "identity": "policies_integration_test.go::testIfPolicyInitializedProperly",
+      "same_complete_source": true,
+      "sha256": "d3101c822bec356212cd4c19b3cdb51fb58b721550252566e287facbb1bc28aa"
+    },
+    {
+      "identity": "policies_integration_test.go::testV2InvalidDatacenter",
+      "same_complete_source": true,
+      "sha256": "714e6b9b6f0746079fd5c78b36a00454c3c8693af27b439c64feb15b9404985e"
+    },
+    {
+      "identity": "recreate_test.go::cassandraOverride",
+      "same_complete_source": true,
+      "sha256": "e7e938eff56aa26f4df5b875b3e5afebfebf7d8f3e2ce842f43b89b4a05b6158"
+    },
+    {
+      "identity": "recreate_test.go::cleanup",
+      "same_complete_source": true,
+      "sha256": "02b60035b75f0c9fe2863e611f8a50c65f3943629f8c12ab54b3fc01ccee8ade"
+    },
+    {
+      "identity": "recreate_test.go::isDescribeKeyspaceSupported",
+      "same_complete_source": true,
+      "sha256": "45697f7e6ba536a80d2ac5f004479ab1b88d62ab524e5cff6b59e215227bbe6b"
+    },
+    {
+      "identity": "recreate_test.go::sortQueries",
+      "same_complete_source": true,
+      "sha256": "69e8288aea804916883a9cec7dc806ac03e9734ac169f8faf93ad8e7616b007e"
+    },
+    {
+      "identity": "recreate_test.go::step09RecreateExec",
+      "same_complete_source": true,
+      "sha256": "e61e19fcd10487857a2fc89051d52332932bd55fab7418288b79073086fdd363"
+    },
+    {
+      "identity": "recreate_test.go::trimQueries",
+      "same_complete_source": true,
+      "sha256": "7eaa00decb7f92e1b7462746aa74b25d8f5167210841c623040f48360040d9a0"
+    },
+    {
+      "identity": "recreate_test.go::trimSchema",
+      "same_complete_source": true,
+      "sha256": "a8fc31eb1445f98f5da5978d8a8cbeba5d371f5e2adb1acf9cc6886f4a714ab5"
+    },
+    {
+      "identity": "recreate_test.go::v2SchemaRoutingTabletsAutoEnabled",
+      "same_complete_source": true,
+      "sha256": "79cd95bfc8edc0ca3f2fd21af38f271964d9219d20e8f8803f009987e0b603e5"
+    },
+    {
+      "identity": "scylla_shard_aware_port_common_test.go::checkIfPoolsAreFull",
+      "same_complete_source": true,
+      "sha256": "1c1ce30cbb378e69d8a9cd03503ced5e4876e3df15fec653fa6b469ca69f661a"
+    },
+    {
+      "identity": "scylla_shard_aware_port_common_test.go::checkIfPoolsStoppedFilling",
+      "same_complete_source": true,
+      "sha256": "c08b0a28fbf7a77d7315d34834836e579395c4e3e4b193cab5ebbd0476e5994f"
+    },
+    {
+      "identity": "scylla_shard_aware_port_common_test.go::getShardAwarePort",
+      "same_complete_source": true,
+      "sha256": "bc8287672f9daeefa9787d74584e62be51c7861678b66859da2f532844eb9a5a"
+    },
+    {
+      "identity": "scylla_shard_aware_port_common_test.go::newLoggingTestDialer",
+      "same_complete_source": true,
+      "sha256": "08e9cb12ba7caba1ca03a1dd364e24ce5e2b3583629760467980872e67049ceb"
+    },
+    {
+      "identity": "scylla_shard_aware_port_common_test.go::testShardAwarePortMaliciousNAT",
+      "same_complete_source": true,
+      "sha256": "2fc80a4e7a7243d11f260d9fe57aa92678488a4de594b53c04a5f2edb59fc724"
+    },
+    {
+      "identity": "scylla_shard_aware_port_common_test.go::testShardAwarePortNoReconnections",
+      "same_complete_source": true,
+      "sha256": "759cb6721093c87500ef046157089f17aaf7eb612cfd8a7db5b11f1e8c8428ef"
+    },
+    {
+      "identity": "scylla_shard_aware_port_common_test.go::testShardAwarePortUnreachable",
+      "same_complete_source": true,
+      "sha256": "0e4dc644c9d85245ab2799351301f88c78a5814dc65a4ff84dee207765b181e5"
+    },
+    {
+      "identity": "scylla_shard_aware_port_common_test.go::testShardAwarePortUnusedIfNotEnabled",
+      "same_complete_source": true,
+      "sha256": "38a024064832f5ed8b8ded6fb92020ae640896d12a635b4fab71b51257eb2cad"
+    },
+    {
+      "identity": "scylla_shard_aware_port_common_test.go::triggerPoolsRefill",
+      "same_complete_source": true,
+      "sha256": "6edf956986ab8293b2813246d4bf0a8b43a04603cea9270537671a916fd32bca"
+    },
+    {
+      "identity": "scylla_shard_aware_port_common_test.go::waitUntilPoolsStopFilling",
+      "same_complete_source": true,
+      "sha256": "faf6b7f95227e563301fe0a21bd7410085e699b8d20188c958a7cbfbc17824c9"
+    },
+    {
+      "identity": "select_without_from_integration_test.go::createSessionWithoutKeyspace",
+      "same_complete_source": true,
+      "sha256": "cf4719d5caa3a1dc7223b69d46c0bc017758d3dd01f164e8acb5825223fff961"
+    },
+    {
+      "identity": "select_without_from_integration_test.go::isRejectedByServer",
+      "same_complete_source": true,
+      "sha256": "d5045e04761097f8bf88ad3ecd009e331243df49f6e1deb5ab22cbaf803d9253"
+    },
+    {
+      "identity": "select_without_from_integration_test.go::logColumns",
+      "same_complete_source": true,
+      "sha256": "9e5dbb08a47940d52ee52d125c89d366ffef6db4b8c2d4b635fd1b4b221923bd"
+    },
+    {
+      "identity": "select_without_from_integration_test.go::noFromColumn",
+      "same_complete_source": true,
+      "sha256": "b7e64b67d924cb73772debc7398fa6db66cc6e1497d01daaf3860975727ef4fa"
+    },
+    {
+      "identity": "select_without_from_integration_test.go::noFromInt",
+      "same_complete_source": true,
+      "sha256": "3b6c8ccbb37daba90be2ba5cc3576f91732171fb0122ccf904a5937ef7e47f13"
+    },
+    {
+      "identity": "select_without_from_integration_test.go::noFromOne",
+      "same_complete_source": true,
+      "sha256": "3ce1e8f649970d412497970beeab995e06bc561e35eea18cf1dc5be033cb9f9c"
+    },
+    {
+      "identity": "select_without_from_integration_test.go::noFromRows",
+      "same_complete_source": true,
+      "sha256": "424bf53b6a97bfc6cf44605be33e6f139285c95f2daec53ee79f0f9af36de557"
+    },
+    {
+      "identity": "select_without_from_integration_test.go::noFromText",
+      "same_complete_source": true,
+      "sha256": "1af084b9698433c0f3b588bf04ac356ed371c0f826354357461c3af65c729694"
+    },
+    {
+      "identity": "select_without_from_integration_test.go::noFromValue",
+      "same_complete_source": true,
+      "sha256": "40c08ca3df2a8f8ee62115f314a16cd9368861f79f4c4773fc070d45128fbf46"
+    },
+    {
+      "identity": "select_without_from_integration_test.go::serverErrorCode",
+      "same_complete_source": true,
+      "sha256": "bdb81c2337c0a325e0499cba13ae512d594e56aafdcf24a7b2d88772205ded11"
+    },
+    {
+      "identity": "select_without_from_integration_test.go::skipUnlessSelectWithoutFrom",
+      "same_complete_source": true,
+      "sha256": "9fb4f445a795967c8e60d3b8f743ab4e16ef7a37303e7bffcf19bdcf3baacea7"
+    },
+    {
+      "identity": "session_test.go::newSessionCache",
+      "same_complete_source": true,
+      "sha256": "953a89cddae7baae791fad47bca63178ca666f7f5bac7de058b43ad06b908bd3"
+    },
+    {
+      "identity": "session_test.go::sessionTestBind",
+      "same_complete_source": true,
+      "sha256": "e1c9cfa03c21cb532e53c27499bc521c4655fce0816c66f288bb18943e285839"
+    },
+    {
+      "identity": "session_test.go::sessionTestInt",
+      "same_complete_source": true,
+      "sha256": "f3bd498ac3b62adb25d0ea9f6be3d6d50953f179c2240711b8e9cdd0a9ebb2fd"
+    },
+    {
+      "identity": "session_test.go::sessionTestItem",
+      "same_complete_source": true,
+      "sha256": "5a5b57cac44ac9bab6dd0de212232677ade2bae85541bcfc9dcfcab477e47d27"
+    },
+    {
+      "identity": "session_test.go::withSessionCache",
+      "same_complete_source": true,
+      "sha256": "3cee633d63e93ba2d039f96c2a6396d7d14fc2e1d18ad53943893b1bb8dd76ca"
+    },
+    {
+      "identity": "step08_fixture_integration_test.go::step08CheckAggregate",
+      "same_complete_source": true,
+      "sha256": "377fce964024fb9b22bd17bc84c10fb58bc022a18d9e4dd2f7505424b4ee2ce6"
+    },
+    {
+      "identity": "tuple_test.go::checkDynamicTuple",
+      "same_complete_source": true,
+      "sha256": "6db9b992d4e30a69ee47d85e82493b0a09cf2f5ef32bec9b8bc4735ce0e403f8"
+    },
+    {
+      "identity": "tuple_test.go::tupleTable",
+      "same_complete_source": true,
+      "sha256": "56ae38a283a259526a9c206d527917fbfea51e01687de15fae86fcef7d740d01"
+    },
+    {
+      "identity": "udt_test.go::positionFields",
+      "same_complete_source": true,
+      "sha256": "f27fea5254fc087875d6cbf7c8afa61ec82e043f47869b394c4cc150c7a7d31d"
+    },
+    {
+      "identity": "udt_test.go::serializationHorseCodec",
+      "same_complete_source": true,
+      "sha256": "ccfeab8eab2ca909108b208f05e32a6f3232dd5e29546b3ecfbd403fd672aba1"
+    },
+    {
+      "identity": "udt_test.go::udtTable",
+      "same_complete_source": true,
+      "sha256": "95240593d787278f42ffa49ee98b621a7ebe3a75d8db777cbd78a8407969c2ca"
+    },
+    {
+      "identity": "v2_foundation_helpers_test.go::codecTestMust",
+      "same_complete_source": true,
+      "sha256": "4c0eb5c9a891bf184ef7d75b85353c4634a12fa18be4eb7e32946bd6a5edd0cb"
+    },
+    {
+      "identity": "v2_integration_helpers_test.go::createV2Cluster",
+      "same_complete_source": true,
+      "sha256": "37d2f794f6fa5fa19852d01a733bc401a541b36f9fb2b90a09b5a7efb41021fc"
+    },
+    {
+      "identity": "v2_integration_helpers_test.go::createV2Session",
+      "same_complete_source": true,
+      "sha256": "d4c9d49d9929f4e90e0df0f2c89071d42a4b435458a3ada096c13e6b508998f0"
+    },
+    {
+      "identity": "v2_integration_helpers_test.go::createV2SessionFromConfig",
+      "same_complete_source": true,
+      "sha256": "7934416e9047dc2bc814da187e87c0150edba29b3b9b09787dd830730400a776"
+    },
+    {
+      "identity": "v2_integration_helpers_test.go::v2CreateTable",
+      "same_complete_source": true,
+      "sha256": "aff8e98156aa07fa045bf1f33ff1d82ad85907144ca3eb81987ba038ea03fe2a"
+    },
+    {
+      "identity": "v2_integration_helpers_test.go::v2Exec",
+      "same_complete_source": true,
+      "sha256": "e5b6ef26b0c6b8af20a0f1dec68b47677a4e2a10e5eff4503d8f460d36b67a86"
+    },
+    {
+      "identity": "v2_integration_helpers_test.go::v2Query",
+      "same_complete_source": true,
+      "sha256": "74860a616ff05883259246474ae016d0e8a9c2a43ff3d81b5f4d46c8a75fc1c7"
+    },
+    {
+      "identity": "v2_integration_helpers_test.go::v2ReadOne",
+      "same_complete_source": true,
+      "sha256": "7de750eb611584465940af976a654a10d44da278458e7c060adc7bd8cb86ee85"
+    },
+    {
+      "identity": "v2_integration_helpers_test.go::v2TabletsSupported",
+      "same_complete_source": true,
+      "sha256": "a58cf3472a5d1ec96b4ce214e27b85dd6a40764899bb57708861aace5aef6b5b"
+    },
+    {
+      "identity": "v2_schema_routing_fixture_test.go::v2ConfigureRouting",
+      "same_complete_source": true,
+      "sha256": "be5e64a72d755355a8b7d0a284109c9d8c443e8818bf4274646f5224a5a5d72c"
+    },
+    {
+      "identity": "v2_schema_routing_fixture_test.go::v2CreateRoutingKeyspace",
+      "same_complete_source": true,
+      "sha256": "d336e81eb740a27b366139f2730d5a8219747159f319126d41890560c57f97c2"
+    },
+    {
+      "identity": "v2_schema_routing_fixture_test.go::v2SchemaRoutingExec",
+      "same_complete_source": true,
+      "sha256": "416b37b1963c79852ccf80234049b5e0551f972ad10e32421ccb9eb0f47f9a7b"
+    },
+    {
+      "identity": "v2_schema_routing_fixture_test.go::v2SchemaRoutingInt",
+      "same_complete_source": true,
+      "sha256": "41a7a760d18510adc0cfbc2ed4f47a1d43eb53e38d8b9613a02cf537a5f6ec1a"
+    },
+    {
+      "identity": "v2_schema_routing_fixture_test.go::v2SchemaRoutingName",
+      "same_complete_source": true,
+      "sha256": "d5dd508522cfa903e9f7fed8c284499acc9b9c64fa80fdc7205c667d374c6ad3"
+    },
+    {
+      "identity": "v2_serialization_fixture_test.go::assertSerializationValue",
+      "same_complete_source": true,
+      "sha256": "906d8981f8bc032933a17cda6c981f81dd13d1c298113ca16fe2e02bb88a005f"
+    },
+    {
+      "identity": "v2_serialization_fixture_test.go::serializationColumn",
+      "same_complete_source": true,
+      "sha256": "1b2be53ffa9808cb942a5793637d8b8ca3c4afd313ab73fd5b61e9c5b6d27314"
+    },
+    {
+      "identity": "v2_serialization_fixture_test.go::serializationDDL",
+      "same_complete_source": true,
+      "sha256": "76329a7b8daa1e0ff9c6438075437b07fd843e800909b38d376b23966dae21aa"
+    },
+    {
+      "identity": "v2_serialization_fixture_test.go::serializationDurationLiteral",
+      "same_complete_source": true,
+      "sha256": "dc7cff947fc8ce8122f648c2c7989b1474a6ce6f402af56ae3fc3eb8075e8343"
+    },
+    {
+      "identity": "v2_serialization_fixture_test.go::serializationExec",
+      "same_complete_source": true,
+      "sha256": "ead34ad171698589614993e9f1ad3d9706ca5e8993ab3736a03317076a3e03ba"
+    },
+    {
+      "identity": "v2_serialization_fixture_test.go::serializationFixtureValue",
+      "same_complete_source": true,
+      "sha256": "6d8028e13b6d0afc9394cfca1b120a280a9beddf5d7fc3d2668142874304f445"
+    },
+    {
+      "identity": "v2_serialization_fixture_test.go::serializationList",
+      "same_complete_source": true,
+      "sha256": "971bdd3936eb7e084ca67106306f1384c36e5408fd718aba8840719c8091785f"
+    },
+    {
+      "identity": "v2_serialization_fixture_test.go::serializationMap",
+      "same_complete_source": true,
+      "sha256": "48066f095269c2eb555fb0e618942cfd97c503bf190660ef34c4835e1f97d8e5"
+    },
+    {
+      "identity": "v2_serialization_fixture_test.go::serializationOne",
+      "same_complete_source": true,
+      "sha256": "37c64ae3b3198a23a785c3c79984830f383f352ae39f27b37def0ec9c1b2ef4d"
+    },
+    {
+      "identity": "v2_serialization_fixture_test.go::serializationRoundTrip",
+      "same_complete_source": true,
+      "sha256": "a8e1d7a2dec05cf278808554428c2f8ec6e94e7b5086168fb965dc9f03d8e4a4"
+    },
+    {
+      "identity": "v2_serialization_fixture_test.go::serializationRows",
+      "same_complete_source": true,
+      "sha256": "1dbb7141bd854e08f06653ac69b0e868ef34e28d81d336a9ec1e5961a9bc3914"
+    },
+    {
+      "identity": "v2_serialization_fixture_test.go::serializationSet",
+      "same_complete_source": true,
+      "sha256": "9d0d056e1f720d9e53375f219248040ef7744f4b6f43aadac96b77b9b4cee2b9"
+    },
+    {
+      "identity": "v2_serialization_fixture_test.go::serializationTableName",
+      "same_complete_source": true,
+      "sha256": "b2a5f7c56ad8dc2678bede62c11e29a0d0ab88dd204367a07d795b43a94ae741"
+    },
+    {
+      "identity": "v2_serialization_fixture_test.go::serializationTuple",
+      "same_complete_source": true,
+      "sha256": "e6788320623a6a60fbdde2ac971a30180fec4adb1576100ba33149761dda308e"
+    },
+    {
+      "identity": "v2_serialization_fixture_test.go::serializationTypeName",
+      "same_complete_source": true,
+      "sha256": "caab39ac62965d9b23839e7a4c899905c27803635ef2cdd61b36a4a94cc072a5"
+    },
+    {
+      "identity": "v2_serialization_fixture_test.go::serializationUDT",
+      "same_complete_source": true,
+      "sha256": "c2f44c85837ec50c1908b609fb7b4da514b32bfd4c6e28339e6308ddc000ced8"
+    },
+    {
+      "identity": "v2_serialization_fixture_test.go::serializationUDTOptions",
+      "same_complete_source": true,
+      "sha256": "ab20d52a89cb1119c6c45c02bb2c3c5a21f2b235808df3348feda95b1619f879"
+    },
+    {
+      "identity": "v2_serialization_fixture_test.go::serializationVector",
+      "same_complete_source": true,
+      "sha256": "1bba9aa5b18b3ef390a0a837bbe6d0a2a2a03f6608155f7e117ab04752cd947c"
+    },
+    {
+      "identity": "v2_serialization_fixture_test.go::serializationWrite",
+      "same_complete_source": true,
+      "sha256": "1fb1cb97ab1e52c0fd9d6425d87b4e190a645e4e6a578dd805bd385ceaabe1ff"
+    },
+    {
+      "identity": "vector_test.go::serializationVectorGate",
+      "same_complete_source": true,
+      "sha256": "e866971cc445e3dc42cf64eee8245eabc6487e88809a2b3b0f7bab188cb4fed7"
+    },
+    {
+      "identity": "vector_test.go::vectorCase",
+      "same_complete_source": true,
+      "sha256": "9810d82305af85c24fca05d2a8f75a662b03ca62fe40a3c4e1503ece7dd1d63d"
+    },
+    {
+      "identity": "wiki_test.go::CreateSchema",
+      "same_complete_source": true,
+      "sha256": "5c317b1025624de12af2f590f4727179d2688bcab4a5fa949478c00a9c2267dd"
+    }
+  ],
+  "missing_declarations": [],
+  "moved_lz4_tests": "step13-compressor-preservation.json",
+  "original_test_and_helper_declarations": 2382,
+  "source_sha256": "fc38c0172edc87124a8291303e1bd9208ef70fd7230b487228c6b7f60d646305",
+  "supporting_methods": [
+    {
+      "identity": "cassandra_v2_helpers_test.go::cassandraObserver.ObserveAttempt",
+      "same_complete_source": true,
+      "sha256": "e47e02349154e1ee6855e572b466dd67e3c8c2a7b5d9a4a07eff64401c3bf979"
+    },
+    {
+      "identity": "cassandra_v2_helpers_test.go::cassandraObserver.ObserveRequest",
+      "same_complete_source": true,
+      "sha256": "f975d362c62024ce7cd8013df90d9571a85dea511bc7e5ba41c785215c81ecac"
+    },
+    {
+      "identity": "cassandra_v2_helpers_test.go::cassandraObserver.reset",
+      "same_complete_source": true,
+      "sha256": "40b93e32ccf54963291f037c9c8c3167aa5b5d37750202106b76419e4b2f0f89"
+    },
+    {
+      "identity": "cassandra_v2_helpers_test.go::cassandraObserver.snapshot",
+      "same_complete_source": true,
+      "sha256": "947e4023c068f71a2615ebfce5d783a347718fc5057dea343a8466ac4535deab"
+    },
+    {
+      "identity": "cassandra_v2_helpers_test.go::cassandraReconnect.Delay",
+      "same_complete_source": true,
+      "sha256": "5a113fc8862fe60d8178117b41cbc04966b1e7cf7344a3d61c960823512a5722"
+    },
+    {
+      "identity": "cassandra_v2_helpers_test.go::cassandraRetry.Decide",
+      "same_complete_source": true,
+      "sha256": "da4c38338af4b309d4986b453f82ffb110b993cd38e517846b24fc309b93579a"
+    },
+    {
+      "identity": "cassandra_v2_helpers_test.go::cassandraVarintInt64.CheckType",
+      "same_complete_source": true,
+      "sha256": "e58e6db7a6cdd3c620c45c693e0b8fc48dfbb510252db20e5f2b77f02916f302"
+    },
+    {
+      "identity": "cassandra_v2_helpers_test.go::cassandraVarintInt64.Clone",
+      "same_complete_source": true,
+      "sha256": "bf26d5a3a5026f3288445389a328e497c366c4fe82c24b560260a8c6eaa4e32a"
+    },
+    {
+      "identity": "cassandra_v2_helpers_test.go::cassandraVarintInt64.Decode",
+      "same_complete_source": true,
+      "sha256": "2ca8093c92d2767b7bbbdd158f3ae70f929c4848e32db8789d2e0587b2c4fa51"
+    },
+    {
+      "identity": "cassandra_v2_helpers_test.go::fullNameCodec.CheckType",
+      "same_complete_source": true,
+      "sha256": "632a60ac3ca2c76c287e32f81dceed65c0bd4c8136a3ae127009d58631906a97"
+    },
+    {
+      "identity": "cassandra_v2_helpers_test.go::fullNameCodec.Clone",
+      "same_complete_source": true,
+      "sha256": "7a4c4d58728e7725a1f58db35f5899b5881ef81f356784deefd44b374754025d"
+    },
+    {
+      "identity": "cassandra_v2_helpers_test.go::fullNameCodec.Decode",
+      "same_complete_source": true,
+      "sha256": "49b5b2aa8dcb98f116457b579e67c4b203db9f1c362e024eef0b74be19d136f5"
+    },
+    {
+      "identity": "cassandra_v2_helpers_test.go::fullNameCodec.Encode",
+      "same_complete_source": true,
+      "sha256": "b946f71a072d6484f8a5917074c235c907a6a199c18e8cf48b2d81b0238f4608"
+    },
+    {
+      "identity": "cloud_cluster_test.go::dialerContextFunc.DialContext",
+      "same_complete_source": true,
+      "sha256": "09110816802282c558484bc0f4948fd58602523635c66b25e81d679b553ba1ed"
+    },
+    {
+      "identity": "cloud_cluster_test.go::readOnlyConn.Close",
+      "same_complete_source": true,
+      "sha256": "e732340402ab43031775f3326de2efa7108fa26fe816bcc40b0284a7ce389bbf"
+    },
+    {
+      "identity": "cloud_cluster_test.go::readOnlyConn.LocalAddr",
+      "same_complete_source": true,
+      "sha256": "553eb8284e6fc1b3d5f79b5ef253edada471b13bda8e5bc8bbfb7068db754328"
+    },
+    {
+      "identity": "cloud_cluster_test.go::readOnlyConn.Read",
+      "same_complete_source": true,
+      "sha256": "50919888c6c63064a196d751821f0b7dfde5345639821b8b31850189e184a5e2"
+    },
+    {
+      "identity": "cloud_cluster_test.go::readOnlyConn.RemoteAddr",
+      "same_complete_source": true,
+      "sha256": "df32773fab465cf5605b75df24bcca0f0c318100360838ba7f9f373b158e44a4"
+    },
+    {
+      "identity": "cloud_cluster_test.go::readOnlyConn.SetDeadline",
+      "same_complete_source": true,
+      "sha256": "a5a86e881604d51af6346bfd808b7f490db805d6adfbc694ab15da056480e264"
+    },
+    {
+      "identity": "cloud_cluster_test.go::readOnlyConn.SetReadDeadline",
+      "same_complete_source": true,
+      "sha256": "12706b3f1f7a41227f96ac3a5ef76b7384c25d67a17bc73985c0380f8c5aa6a5"
+    },
+    {
+      "identity": "cloud_cluster_test.go::readOnlyConn.SetWriteDeadline",
+      "same_complete_source": true,
+      "sha256": "75d84d86bd0ad44f29c0634809ab20cb00d080f280a954aebdf35a850d8a5caa"
+    },
+    {
+      "identity": "cloud_cluster_test.go::readOnlyConn.Write",
+      "same_complete_source": true,
+      "sha256": "4d6cf7fba9026f526b2ccdfe02952d71441b0590cea5c5f61916b1821cec4e5d"
+    },
+    {
+      "identity": "cloud_cluster_test.go::sniProxy.Close",
+      "same_complete_source": true,
+      "sha256": "2cf5e7be5d274f78fe3c2e8d3e7cb72dc997645c954268a20c6c8cc6d922f5d3"
+    },
+    {
+      "identity": "cloud_cluster_test.go::sniProxy.GetEvents",
+      "same_complete_source": true,
+      "sha256": "ec6068c9950db5907d2ca42d5429423cbb7674291fb89641e9a7995c0fd00cf5"
+    },
+    {
+      "identity": "cloud_cluster_test.go::sniProxy.Run",
+      "same_complete_source": true,
+      "sha256": "9e0995f2630276d8faddc4490b3dac63af1f39864fa5f89fae07d35cd8d0910e"
+    },
+    {
+      "identity": "cloud_cluster_test.go::sniProxy.handleConnection",
+      "same_complete_source": true,
+      "sha256": "b864d221c9e14ddfa597e9f0a7cc6932cecf7f88a6febb9869ad3398b6308ddf"
+    },
+    {
+      "identity": "control_integration_test.go::unixSocketDialer.DialContext",
+      "same_complete_source": true,
+      "sha256": "bb6146645c71f6003a73b7b8e0e395d805d92e22996945828bff6cbf1a18fa11"
+    },
+    {
+      "identity": "control_integration_test.go::unixSocketNoReconnect.Delay",
+      "same_complete_source": true,
+      "sha256": "c45e9adb67e663c5f4d68bb3fd4023af2083045acb44df318adfb65e4f141a33"
+    },
+    {
+      "identity": "dns_test.go::mockDNSResolver.Delete",
+      "same_complete_source": true,
+      "sha256": "4f91543916085d2f9a93388db10d9eefe5525ebb1cd0efc08f03fb8095153ab0"
+    },
+    {
+      "identity": "dns_test.go::mockDNSResolver.LookupIP",
+      "same_complete_source": true,
+      "sha256": "4b80efb789fee089457f7f89614cef74097383c9b9517deed55a6350230d7da6"
+    },
+    {
+      "identity": "dns_test.go::mockDNSResolver.Update",
+      "same_complete_source": true,
+      "sha256": "76345e8eb8a414a795adfd1c2892e8db346bf34186a8353fc5f2fcbac661416b"
+    },
+    {
+      "identity": "metadata_peer_fixture_test.go::incompletePeerConn.Read",
+      "same_complete_source": true,
+      "sha256": "7b8ab5acad5122a5841004b177f9416f07fc2bc30a469f4d034c785a06630079"
+    },
+    {
+      "identity": "metadata_peer_fixture_test.go::incompletePeerConn.SetKeepAlive",
+      "same_complete_source": true,
+      "sha256": "a6b27b5b867b10392df5be9e763315c5571b983d97e2bd8d0949360a79e20158"
+    },
+    {
+      "identity": "metadata_peer_fixture_test.go::incompletePeerConn.SetKeepAlivePeriod",
+      "same_complete_source": true,
+      "sha256": "6a805a2f485ead3c4b300f3c9c7f1c9446ef94d346d4dcefc41303bebbd27a41"
+    },
+    {
+      "identity": "metadata_peer_fixture_test.go::incompletePeerConn.SetLinger",
+      "same_complete_source": true,
+      "sha256": "a49ce93c52d0d785274f21e54b3659a040d40a501c5f9f236efe4be535b547dc"
+    },
+    {
+      "identity": "metadata_peer_fixture_test.go::incompletePeerConn.SetNoDelay",
+      "same_complete_source": true,
+      "sha256": "eaad886bd44ace4ff6c8009af878bb6bda8011a675f78ae582c2943528c2253c"
+    },
+    {
+      "identity": "metadata_peer_fixture_test.go::incompletePeerConn.SetReadBuffer",
+      "same_complete_source": true,
+      "sha256": "f4a83b5b68b7049bd2da9965c8139a9f385c47ea5f8522c9d4a8eccfc417e0ae"
+    },
+    {
+      "identity": "metadata_peer_fixture_test.go::incompletePeerConn.SetWriteBuffer",
+      "same_complete_source": true,
+      "sha256": "584300ee07cf06de550575903a641db4896ca3aee54b83a1e7977fd339af1e5b"
+    },
+    {
+      "identity": "metadata_peer_fixture_test.go::incompletePeerConn.Write",
+      "same_complete_source": true,
+      "sha256": "bb5a945c637ccb78d98ee8e1febbfc3310e9ed4a9de98972ad70dba0f7d345a5"
+    },
+    {
+      "identity": "metadata_peer_fixture_test.go::incompletePeerDialer.DialContext",
+      "same_complete_source": true,
+      "sha256": "9c44fb9ae35854b2260248d937b12a3e221f44ff75285913eea3e5752243c236"
+    },
+    {
+      "identity": "native_fixture_unit_test.go::testPrepared.write",
+      "same_complete_source": true,
+      "sha256": "96d94c702169e5163ed7f6fc30700a1ed8edfeaba689ad15a27d4cc5ea610d50"
+    },
+    {
+      "identity": "policies_integration_test.go::v2UnavailableHostsRouting.Plan",
+      "same_complete_source": true,
+      "sha256": "1b3251b4ba4e82974900e78cdfda9b8f341621d2157a864c18a25863da11bc98"
+    },
+    {
+      "identity": "protocol_request_fixture_test.go::fixtureBatchFrame.BuildFrame",
+      "same_complete_source": true,
+      "sha256": "9bc4ccd5747f53504ff0338143142ca440664a5715271424fdd05355a0b8a579"
+    },
+    {
+      "identity": "protocol_request_fixture_test.go::fixtureExecuteFrame.BuildFrame",
+      "same_complete_source": true,
+      "sha256": "5e3143dcbdd813362146d489c22b8a88037bc7376931e995052ffd221ddbf180"
+    },
+    {
+      "identity": "protocol_request_fixture_test.go::fixtureExecuteFrame.String",
+      "same_complete_source": true,
+      "sha256": "ba08d2af0a4fd0b4f74a0f9851c2dbe146232150c6437b06e9b9431d0a0656bc"
+    },
+    {
+      "identity": "protocol_request_fixture_test.go::fixtureQueryFrame.BuildFrame",
+      "same_complete_source": true,
+      "sha256": "e3ebfd24192e8578da6f903ef18ec57ab7a1251584d71793523c8527d47b4afe"
+    },
+    {
+      "identity": "protocol_request_fixture_test.go::fixtureQueryFrame.String",
+      "same_complete_source": true,
+      "sha256": "9563bf45d592aca12cc4ad20bb3836f439f31233fd535c03d33d78638ada0946"
+    },
+    {
+      "identity": "protocol_request_fixture_test.go::fixtureQueryParams.String",
+      "same_complete_source": true,
+      "sha256": "beb97d8218eb937b22fe7a2ee5ee82f6a697a66bb4e41c752a67278cb7ac1072"
+    },
+    {
+      "identity": "protocol_request_fixture_test.go::writePrepareFrame.BuildFrame",
+      "same_complete_source": true,
+      "sha256": "975384beb6213600f72d8e057bc4bf1492d4d90635d2c42374063b959420b885"
+    },
+    {
+      "identity": "scylla_shard_aware_port_common_test.go::allowOnlyNonShardAwarePortDialer.DialContext",
+      "same_complete_source": true,
+      "sha256": "960389b9506654866208ea72120820c46abf1045e0d9599c18534df4b3e4facf"
+    },
+    {
+      "identity": "scylla_shard_aware_port_common_test.go::loggingTestDialer.DialContext",
+      "same_complete_source": true,
+      "sha256": "f43a707e394e10d888cec1feb51f68b3e0f7801c279abb5278e742bc34c0e14b"
+    },
+    {
+      "identity": "scylla_shard_aware_port_common_test.go::loggingTestDialer.connectionEvents",
+      "same_complete_source": true,
+      "sha256": "2c2ec6712cab79da4d918aa149242a119b6c1c4d5ee9b91227cc032c7fbba18c"
+    },
+    {
+      "identity": "scylla_shard_aware_port_common_test.go::sourcePortOffByOneTestDialer.DialContext",
+      "same_complete_source": true,
+      "sha256": "38fa158f5ab398e64c5ff3608b5008eacb2b12282e513aee4218abb79501c66e"
+    },
+    {
+      "identity": "session_test.go::sessionCache.Get",
+      "same_complete_source": true,
+      "sha256": "d10817bd72c97fdacbbf5f8769326ae7a1ad50a36a58d9a143318a17b72015a2"
+    },
+    {
+      "identity": "session_test.go::sessionCache.NumberOfTickets",
+      "same_complete_source": true,
+      "sha256": "e3fb0b49debea4b05b2459ee2cb6fdd50f76136fa27c463f0ed1ec62ab8cc01c"
+    },
+    {
+      "identity": "session_test.go::sessionCache.Put",
+      "same_complete_source": true,
+      "sha256": "afca005b3b5effcee8dc713c8af26f44002ba1d9d64d13c9006c4c98ee2dc913"
+    },
+    {
+      "identity": "session_test.go::sessionTestObserver.ObserveAttempt",
+      "same_complete_source": true,
+      "sha256": "5bcb22378b9aadefed0b7d500f03a6138524da498e066b07eaa0eab05581265c"
+    },
+    {
+      "identity": "session_test.go::sessionTestObserver.ObserveRequest",
+      "same_complete_source": true,
+      "sha256": "55cb08245e5d61c8a7cefb30a5730cd2f301fc20406beee4c4583eefaae438c8"
+    },
+    {
+      "identity": "session_test.go::sessionTestObserver.snapshot",
+      "same_complete_source": true,
+      "sha256": "89d6268178886325e6d1579a05398f826de6020b5bb0dda5d391f606655ec5cd"
+    },
+    {
+      "identity": "session_test.go::sessionTestRetry.Decide",
+      "same_complete_source": true,
+      "sha256": "f23f27e2c0263e9673697d04ff843e75e54410539db068cb1106fb843c2b5358"
+    },
+    {
+      "identity": "tablet_integration_test.go::v2TabletAttemptObserver.ObserveAttempt",
+      "same_complete_source": true,
+      "sha256": "928100448de97e58b2bcee2d78104e5569b68cc51d57ef8fd0df3304f3874c7e"
+    },
+    {
+      "identity": "tablet_integration_test.go::v2TabletAttemptObserver.ObserveRequest",
+      "same_complete_source": true,
+      "sha256": "2b0d33a286212ac4c5d3207c7cad072ef6c21a76ff03cb3ab627061bbfb8d717"
+    },
+    {
+      "identity": "tablet_integration_test.go::v2TabletAttemptObserver.snapshot",
+      "same_complete_source": true,
+      "sha256": "7de8b0f94dbcad779ae653715f8b7368f32421fc17620ebd97cc4171a4a0ee45"
+    },
+    {
+      "identity": "udt_test.go::positionCodec.CheckType",
+      "same_complete_source": true,
+      "sha256": "376c68194a634771b1cafcba512c1c17ada8c2464354769cc03562d80bb65d8d"
+    },
+    {
+      "identity": "udt_test.go::positionCodec.Clone",
+      "same_complete_source": true,
+      "sha256": "11b6b637ad423d66412672462724f3eca1b05952d54866b7cd654d75ec4f71dd"
+    },
+    {
+      "identity": "udt_test.go::positionCodec.Decode",
+      "same_complete_source": true,
+      "sha256": "e7e961293d5e266e1840ce9c667550908909b844805bc99631483fae95bfeaaf"
+    },
+    {
+      "identity": "udt_test.go::positionCodec.Encode",
+      "same_complete_source": true,
+      "sha256": "7d145038d593208bde51d09305ebcc0f477c2eb63a1586a43b35cb22453cb05a"
+    },
+    {
+      "identity": "v2_fixture_stream_test.go::step08FinalAccess.Compile",
+      "same_complete_source": true,
+      "sha256": "85d60e15dc0d418d3374f5755995e6f42b06097164bf9039e0b3a860746a5ad4"
+    },
+    {
+      "identity": "v2_fixture_stream_test.go::step08FinalAccess.DecodeInto",
+      "same_complete_source": true,
+      "sha256": "0e6c76af91dcd4242ff7bef16072e45d0d12fd7fc5520a79f665bd6bbd4f3acc"
+    },
+    {
+      "identity": "v2_fixture_stream_test.go::step08FinalAccess.Reset",
+      "same_complete_source": true,
+      "sha256": "58b2905a5fba42d9e4bae558013477391341de4ed58f0134af31a6fcc1554a78"
+    },
+    {
+      "identity": "v2_fixture_stream_test.go::step08InterruptedWriter.Write",
+      "same_complete_source": true,
+      "sha256": "41b274f8f34dfbf1d5f82adb770ef5fa69f24458a1f0ff009fc72aac5d345769"
+    },
+    {
+      "identity": "v2_fixture_stream_test.go::step08ReadTargets.Read",
+      "same_complete_source": true,
+      "sha256": "8529d5395f8c0c017d72daa0cf5cef85970f6a4629ffd4b69b061c600296c5f6"
+    },
+    {
+      "identity": "v2_fixture_stream_test.go::step08TLSConn.Close",
+      "same_complete_source": true,
+      "sha256": "b5709605c4a176799205c6a6a7482dc92a54e6988deb230ffe32a6b948f6171c"
+    },
+    {
+      "identity": "v2_serialization_fixture_test.go::serializationCodec[T].CheckType",
+      "same_complete_source": true,
+      "sha256": "a403e3df6adb6c24f6fbb535b335d3dc9bf5a68aa4687ab7e1f9cc181fc155bf"
+    },
+    {
+      "identity": "v2_serialization_fixture_test.go::serializationMapCodec[K, V].CheckType",
+      "same_complete_source": true,
+      "sha256": "6ebb9cb1ff6992f5bdf97f6f49cfdc2ea96dc6c120064062e79d9a2aa8be0773"
+    },
+    {
+      "identity": "v2_serialization_fixture_test.go::serializationMapCodec[K, V].Clone",
+      "same_complete_source": true,
+      "sha256": "e3b8b3f7427fe0aa3dc70d8e43a4e78c7adafcd6c0a2e32661f2f677bb7dc821"
+    },
+    {
+      "identity": "v2_serialization_fixture_test.go::serializationMapCodec[K, V].Decode",
+      "same_complete_source": true,
+      "sha256": "41dcd45f338384c5a61332c41f5c4143f349fd5bd2f1f5db8430182b0eade953"
+    },
+    {
+      "identity": "v2_serialization_fixture_test.go::serializationMapCodec[K, V].Encode",
+      "same_complete_source": true,
+      "sha256": "7ac1cfa43cfd000502399b6590579cb7d4a1719c5822e9cc872f2eed0f651bc1"
+    },
+    {
+      "identity": "v2_serialization_fixture_test.go::serializationRawDecoder.CheckType",
+      "same_complete_source": true,
+      "sha256": "29acd302808d8a6f27eaf77bb3a2c43fa68d09aa91d2352a299fda7dcbde51a6"
+    },
+    {
+      "identity": "v2_serialization_fixture_test.go::serializationRawDecoder.Clone",
+      "same_complete_source": true,
+      "sha256": "bcf68c994cf4d7c67b381d0c5d16969c0a385972ceae6276d4e2ac5673443ee2"
+    },
+    {
+      "identity": "v2_serialization_fixture_test.go::serializationRawDecoder.Decode",
+      "same_complete_source": true,
+      "sha256": "1a7cb222a02212b949c9023811b4b952ce60ef25da35958c1cfe3e7edaf689dc"
+    },
+    {
+      "identity": "v2_serialization_fixture_test.go::serializationSliceCodec[T].CheckType",
+      "same_complete_source": true,
+      "sha256": "967c1cf69aa7ab52be6605794bcf1aa2dd5e8ddff86703544a4df80153bf06fc"
+    },
+    {
+      "identity": "v2_serialization_fixture_test.go::serializationSliceCodec[T].Clone",
+      "same_complete_source": true,
+      "sha256": "2f0bbf1c0fdb361637e8e0a9353e395e1423cd7053a52b69b6d6a3bb0130a1b7"
+    },
+    {
+      "identity": "v2_serialization_fixture_test.go::serializationSliceCodec[T].Decode",
+      "same_complete_source": true,
+      "sha256": "a153d9e22b01877221a3e33433b7c0e2d3ee06fd9c3a02d79ac95816358a568b"
+    },
+    {
+      "identity": "v2_serialization_fixture_test.go::serializationSliceCodec[T].Encode",
+      "same_complete_source": true,
+      "sha256": "1fb37510d9ad9c3e7028e8ebc69fbf18bc3274de7ddb774b141b98e4b9cbca1a"
+    },
+    {
+      "identity": "v2_serialization_fixture_test.go::serializationStringCodec.CheckType",
+      "same_complete_source": true,
+      "sha256": "446f67cbbc13a07620ab1e6ae365cb420bf7bbb3aacd3f8a761d191b2c6de3af"
+    },
+    {
+      "identity": "v2_serialization_fixture_test.go::serializationStringCodec.Clone",
+      "same_complete_source": true,
+      "sha256": "237e4895545b2ed04177366ab161dd94c52f2b0671a27fbef0119a4ea0466b8a"
+    },
+    {
+      "identity": "v2_serialization_fixture_test.go::serializationStringCodec.Decode",
+      "same_complete_source": true,
+      "sha256": "5e9dde67a3e3e981e46677eb9f48475e00d1f01b8e5312b916104de72b173293"
+    },
+    {
+      "identity": "v2_serialization_fixture_test.go::serializationStringCodec.Encode",
+      "same_complete_source": true,
+      "sha256": "6f270d14daba9e0525e0e87ba3ad4eadb1bed806aaedd1ac5b741cd8bd749cff"
+    },
+    {
+      "identity": "vector_test.go::person.String",
+      "same_complete_source": true,
+      "sha256": "f71340d29257d4bf540a728db2c66d97a585f818f2895b6670d35b4d1f8e5277"
+    },
+    {
+      "identity": "wiki_test.go::WikiTest.CreatePages",
+      "same_complete_source": true,
+      "sha256": "896ac8594751524e06870963e58f9c4a88545dfbac41d5c5856aa4857a041aa4"
+    },
+    {
+      "identity": "wiki_test.go::WikiTest.GetPageCount",
+      "same_complete_source": true,
+      "sha256": "a31ec8512b2f2db697606ee51e478235ea4965e91e3793f2dfd138162c59d284"
+    },
+    {
+      "identity": "wiki_test.go::WikiTest.InsertPage",
+      "same_complete_source": true,
+      "sha256": "ef0fd01edc2a73cb4400d8d3b6911df5e471223caee50d429107f8833b5f26e1"
+    },
+    {
+      "identity": "wiki_test.go::WikiTest.SelectPage",
+      "same_complete_source": true,
+      "sha256": "139325f3aac1a44c52ec08ee992419879a6ee8a96485ba07b352acd441a8f4ab"
+    }
+  ],
+  "tests": [
+    {
+      "accepted_sha256": "265e898cd42acf74a22b4ac8d60c9053ed87831854dd67a9c4a0c868c794ec77",
+      "current_sha256": "265e898cd42acf74a22b4ac8d60c9053ed87831854dd67a9c4a0c868c794ec77",
+      "identity": "batch_test.go::TestBatch_Errors",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "0fe3759966f7a6267d213155f4f1aea063445340b1deed9daa9d0a599675489e",
+      "current_sha256": "0fe3759966f7a6267d213155f4f1aea063445340b1deed9daa9d0a599675489e",
+      "identity": "batch_test.go::TestBatch_WithTimestamp",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "008b9ac99ea9795cd12f26b4fafb5a79f74cb5ae6d6b9f4eff3c013226809a33",
+      "current_sha256": "008b9ac99ea9795cd12f26b4fafb5a79f74cb5ae6d6b9f4eff3c013226809a33",
+      "identity": "batch_test.go::TestBatch_WithNowInSeconds",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "0b974cb9effdba2810685d82439cc7aa3bc988a920c4d1e524016bae21e5f8f5",
+      "current_sha256": "0b974cb9effdba2810685d82439cc7aa3bc988a920c4d1e524016bae21e5f8f5",
+      "identity": "batch_test.go::TestBatch_SetKeyspace",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "ec3f6ead20439308ee78c83548a418a7fc040f2d2c98bc344645da9fef40d251",
+      "current_sha256": "ec3f6ead20439308ee78c83548a418a7fc040f2d2c98bc344645da9fef40d251",
+      "identity": "cass1batch_test.go::TestProto1BatchInsert",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "4077eb17bf2b2489b1329995980c1b8fa726db606096709fb698fc3553f968e1",
+      "current_sha256": "4077eb17bf2b2489b1329995980c1b8fa726db606096709fb698fc3553f968e1",
+      "identity": "cass1batch_test.go::TestShouldPrepareFunction",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "cbb889d057bbc2d9e5ff7a6f94b5a78de06189a9b1af70660ab402bfd0065532",
+      "current_sha256": "cbb889d057bbc2d9e5ff7a6f94b5a78de06189a9b1af70660ab402bfd0065532",
+      "identity": "cassandra_test.go::TestEmptyHosts",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "a42c40ea0f0f7607feb9927a91337c54ef48201422317914aff4bf9e8488f31a",
+      "current_sha256": "a42c40ea0f0f7607feb9927a91337c54ef48201422317914aff4bf9e8488f31a",
+      "identity": "cassandra_test.go::TestInvalidPeerEntry",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "87b23a2f7167f288eea580568477b1800039736c50728cb6d2dddadeedd07015",
+      "current_sha256": "87b23a2f7167f288eea580568477b1800039736c50728cb6d2dddadeedd07015",
+      "identity": "cassandra_test.go::TestUseStatementError",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "195709a6d46517585a309e04e53487bdc1ba70c7d97b6ec9ab009408c81fc81d",
+      "current_sha256": "195709a6d46517585a309e04e53487bdc1ba70c7d97b6ec9ab009408c81fc81d",
+      "identity": "cassandra_test.go::TestInvalidKeyspace",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "724a1f2177eb9f7d6429383287c7f553a26d86bb72dda87e33ee09a1d0b35c27",
+      "current_sha256": "724a1f2177eb9f7d6429383287c7f553a26d86bb72dda87e33ee09a1d0b35c27",
+      "identity": "cassandra_test.go::TestTracing",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "bfece1f797985ea344979b67e364855489144181d42bf30dd46c3394b02cb83b",
+      "current_sha256": "bfece1f797985ea344979b67e364855489144181d42bf30dd46c3394b02cb83b",
+      "identity": "cassandra_test.go::TestObserve",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "db86cc5bc439d94ac0684dcbd02fc879ae6492255ee7ef211d30fddef7ae4f68",
+      "current_sha256": "db86cc5bc439d94ac0684dcbd02fc879ae6492255ee7ef211d30fddef7ae4f68",
+      "identity": "cassandra_test.go::TestObserve_Pagination",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "bef28896010ebef5e253f3716c01811b6192a2b79bd695d38b423fc7a7958d9e",
+      "current_sha256": "bef28896010ebef5e253f3716c01811b6192a2b79bd695d38b423fc7a7958d9e",
+      "identity": "cassandra_test.go::TestPaging",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "481c9ce5b07e875bb09e3010ee9c7d4bc6885e0e1f98e3022765bd35fb5e1de3",
+      "current_sha256": "481c9ce5b07e875bb09e3010ee9c7d4bc6885e0e1f98e3022765bd35fb5e1de3",
+      "identity": "cassandra_test.go::TestPagingWithAllowFiltering",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "bef50a86d99f17768661589dff1d61a34309ad169702332aac271ed9377b575b",
+      "current_sha256": "bef50a86d99f17768661589dff1d61a34309ad169702332aac271ed9377b575b",
+      "identity": "cassandra_test.go::TestPagingWithBind",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "348af2f5a3312b6c960bdea21d9830185bbf0dfaeb41e2196833a1fc0a906993",
+      "current_sha256": "348af2f5a3312b6c960bdea21d9830185bbf0dfaeb41e2196833a1fc0a906993",
+      "identity": "cassandra_test.go::TestCAS",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "ec003997000fd7ba8222032a2cbaf79685b0da4f02e48978d43266d474e8a300",
+      "current_sha256": "ec003997000fd7ba8222032a2cbaf79685b0da4f02e48978d43266d474e8a300",
+      "identity": "cassandra_test.go::TestConsistencySerial",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "96b7baf03e280b8abd100847d4cd8f52808678dd555f62fbdd9b019dbcfdebb7",
+      "current_sha256": "96b7baf03e280b8abd100847d4cd8f52808678dd555f62fbdd9b019dbcfdebb7",
+      "identity": "cassandra_test.go::TestDurationType",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "a3f8443f60afc487a56521fef1ae6d8449c8dc9022735825a724713f94989bcc",
+      "current_sha256": "a3f8443f60afc487a56521fef1ae6d8449c8dc9022735825a724713f94989bcc",
+      "identity": "cassandra_test.go::TestMapScanCAS",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "45e3143852d6913cec43b5ec8238a584912644d0bbf54621be9b4bdcde431e27",
+      "current_sha256": "45e3143852d6913cec43b5ec8238a584912644d0bbf54621be9b4bdcde431e27",
+      "identity": "cassandra_test.go::TestBatch",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "7009673f3fe6db86fc7a33288b1d4ffc2d9f1b4f5d6c257c8e48daadbc923b6e",
+      "current_sha256": "7009673f3fe6db86fc7a33288b1d4ffc2d9f1b4f5d6c257c8e48daadbc923b6e",
+      "identity": "cassandra_test.go::TestUnpreparedBatch",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "5c406ef3a22ca1c5fc3ba621280bdd416bee6124aad8e721cf6ae6028d565041",
+      "current_sha256": "5c406ef3a22ca1c5fc3ba621280bdd416bee6124aad8e721cf6ae6028d565041",
+      "identity": "cassandra_test.go::TestBatchLimit",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "35ca55a031e0f5630e46b166ca95598955e59d06acd7a1ca94eb373801b50a4a",
+      "current_sha256": "35ca55a031e0f5630e46b166ca95598955e59d06acd7a1ca94eb373801b50a4a",
+      "identity": "cassandra_test.go::TestWhereIn",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "deac2231dcc4f8da2b5bd1120590c2675908b3bbc6bcaafc99671518ce961c4f",
+      "current_sha256": "deac2231dcc4f8da2b5bd1120590c2675908b3bbc6bcaafc99671518ce961c4f",
+      "identity": "cassandra_test.go::TestTooManyQueryArgs",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "1a37e86fa16f3aa00e83f1a15f01fdce04fc7b68c779cfcea0875fde4e75cf5e",
+      "current_sha256": "1a37e86fa16f3aa00e83f1a15f01fdce04fc7b68c779cfcea0875fde4e75cf5e",
+      "identity": "cassandra_test.go::TestNotEnoughQueryArgs",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "ac48dc1cda408e2a1eb2a8375eff0005687cac3c313c27f36ce37341cab2a375",
+      "current_sha256": "ac48dc1cda408e2a1eb2a8375eff0005687cac3c313c27f36ce37341cab2a375",
+      "identity": "cassandra_test.go::TestCreateSessionTimeout",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "5e1c33422819ede515449c3ce4a2f5c04d5e78107400d5c0bd1f84dd20435cf4",
+      "current_sha256": "5e1c33422819ede515449c3ce4a2f5c04d5e78107400d5c0bd1f84dd20435cf4",
+      "identity": "cassandra_test.go::TestReconnection",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "b55758ebc9b7e7270f6f8b8a6a8602bf054fd54f53fc4e14f12fa5b32cb7bef5",
+      "current_sha256": "b55758ebc9b7e7270f6f8b8a6a8602bf054fd54f53fc4e14f12fa5b32cb7bef5",
+      "identity": "cassandra_test.go::TestMapScanWithRefMap",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "0ddf89c44e8a22be3707733b62ba9afd64e9ad5a6ed951b977c438ab6f8bacaf",
+      "current_sha256": "0ddf89c44e8a22be3707733b62ba9afd64e9ad5a6ed951b977c438ab6f8bacaf",
+      "identity": "cassandra_test.go::TestMapScan",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "2799c7dd9b92bb444e3b551839b7198e376c65f5b8b6084d687cc5f8077e0158",
+      "current_sha256": "2799c7dd9b92bb444e3b551839b7198e376c65f5b8b6084d687cc5f8077e0158",
+      "identity": "cassandra_test.go::TestSliceMap",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "8343a91030432b04bc3498dc3783c786adfd804a422fb3115cf6740bb7483cd0",
+      "current_sha256": "8343a91030432b04bc3498dc3783c786adfd804a422fb3115cf6740bb7483cd0",
+      "identity": "cassandra_test.go::Test_RetryPolicyIdempotence",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "38e767daeec5ddc39169cd7a55bd6ed83fc794290d3dc43471dc0c4bb039837e",
+      "current_sha256": "38e767daeec5ddc39169cd7a55bd6ed83fc794290d3dc43471dc0c4bb039837e",
+      "identity": "cassandra_test.go::TestSmallInt",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "945490b851160cf4b4302d73f486a9a7f5a6b0c7c0541e844286f4f6fb6acd66",
+      "current_sha256": "945490b851160cf4b4302d73f486a9a7f5a6b0c7c0541e844286f4f6fb6acd66",
+      "identity": "cassandra_test.go::TestScanWithNilArguments",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "918f4fabb4bdbc89cc3135a7d35d32ed660448a424e182aca8922d473027f9be",
+      "current_sha256": "918f4fabb4bdbc89cc3135a7d35d32ed660448a424e182aca8922d473027f9be",
+      "identity": "cassandra_test.go::TestScanCASWithNilArguments",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "7255b5064b14950792fbb3197f09982b7aadd8a9bc8aa9733f3d115397872b63",
+      "current_sha256": "7255b5064b14950792fbb3197f09982b7aadd8a9bc8aa9733f3d115397872b63",
+      "identity": "cassandra_test.go::TestRebindQueryInfo",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "36f0fa81122cf831a7bd61e870176f9131df5889b58a19bc83197b8cba710462",
+      "current_sha256": "36f0fa81122cf831a7bd61e870176f9131df5889b58a19bc83197b8cba710462",
+      "identity": "cassandra_test.go::TestStaticQueryInfo",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "811ce818f4018ccd0fc13a002982cfdfeeaeb42e3f4df40ec4d43b8019bfd497",
+      "current_sha256": "811ce818f4018ccd0fc13a002982cfdfeeaeb42e3f4df40ec4d43b8019bfd497",
+      "identity": "cassandra_test.go::TestBoundQueryInfo",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "b0ff18d1534ec8f80c043ba30117442e95007120fe9010a0e72f9267336b55cd",
+      "current_sha256": "b0ff18d1534ec8f80c043ba30117442e95007120fe9010a0e72f9267336b55cd",
+      "identity": "cassandra_test.go::TestBatchQueryInfo",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "d779d750d2bfeb2f7134c086cb34bc8040b3982bf5d14c6c8587eeb18fb73160",
+      "current_sha256": "d779d750d2bfeb2f7134c086cb34bc8040b3982bf5d14c6c8587eeb18fb73160",
+      "identity": "cassandra_test.go::TestPrepare_MissingSchemaPrepare",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "0ba1663af8b5fbb57eed489f5f73ddb2fbc6a69588923e4430f1a5a8dee210d9",
+      "current_sha256": "0ba1663af8b5fbb57eed489f5f73ddb2fbc6a69588923e4430f1a5a8dee210d9",
+      "identity": "cassandra_test.go::TestPrepare_ReprepareStatement",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "8eecafe1812119dcab494f31c3674efa6884f73b329ac43e54ebd9b0ea462f8e",
+      "current_sha256": "8eecafe1812119dcab494f31c3674efa6884f73b329ac43e54ebd9b0ea462f8e",
+      "identity": "cassandra_test.go::TestPrepare_ReprepareBatch",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "e5b8daa25765570217c708d033b952ffa55c59ae75a684167944f7b9a9565274",
+      "current_sha256": "e5b8daa25765570217c708d033b952ffa55c59ae75a684167944f7b9a9565274",
+      "identity": "cassandra_test.go::TestQueryInfo",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "33a8d5715b19fd2d85c3e9fb348685c3ce92503bc6d8ef3f8bad74b695aba4cc",
+      "current_sha256": "33a8d5715b19fd2d85c3e9fb348685c3ce92503bc6d8ef3f8bad74b695aba4cc",
+      "identity": "cassandra_test.go::TestPrepare_PreparedCacheEviction",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "655338da897d200ad73a6632accf5c0f1ed75e75858ff9a38b6f148673f966a1",
+      "current_sha256": "655338da897d200ad73a6632accf5c0f1ed75e75858ff9a38b6f148673f966a1",
+      "identity": "cassandra_test.go::TestPrepare_PreparedCacheKey",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "aefc2f7124aa2ab28c431485e5cbd03ad7cc7c4f7865055d7193166070eb7cd0",
+      "current_sha256": "aefc2f7124aa2ab28c431485e5cbd03ad7cc7c4f7865055d7193166070eb7cd0",
+      "identity": "cassandra_test.go::TestMarshalFloat64Ptr",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "de63c228db1f6e772d032fe05176a697d7bf0c2a02c4986fcfb54e76b853b2a6",
+      "current_sha256": "de63c228db1f6e772d032fe05176a697d7bf0c2a02c4986fcfb54e76b853b2a6",
+      "identity": "cassandra_test.go::TestMarshalInet",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "91b1613850ddc66ce73044ee8d28566d4d072d907c0511fa65fe4982902bee0d",
+      "current_sha256": "91b1613850ddc66ce73044ee8d28566d4d072d907c0511fa65fe4982902bee0d",
+      "identity": "cassandra_test.go::TestVarint",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "25b369bacc6fe59e20c4f6d8c2181272e2410f03b3339213b7f8966bc2c659a1",
+      "current_sha256": "25b369bacc6fe59e20c4f6d8c2181272e2410f03b3339213b7f8966bc2c659a1",
+      "identity": "cassandra_test.go::TestQueryStats",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "60bce529693c1921e38928d4e2af66be231f164ab8f86df5498a76ecbae565af",
+      "current_sha256": "60bce529693c1921e38928d4e2af66be231f164ab8f86df5498a76ecbae565af",
+      "identity": "cassandra_test.go::TestIterHost",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "bf9f1a6d638de40ca6cb785a2e97c39828cd4bc58f4f2d68968de3963416618e",
+      "current_sha256": "bf9f1a6d638de40ca6cb785a2e97c39828cd4bc58f4f2d68968de3963416618e",
+      "identity": "cassandra_test.go::TestBatchStats",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "c321379d7affa3ffd43574bda015e891076528ca5148e738f0c5633fe844def7",
+      "current_sha256": "c321379d7affa3ffd43574bda015e891076528ca5148e738f0c5633fe844def7",
+      "identity": "cassandra_test.go::TestBatchObserve",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "cb4941cdb85f0241578a0baa8c177844d248ef85627fbc22da7b7057c0a86127",
+      "current_sha256": "cb4941cdb85f0241578a0baa8c177844d248ef85627fbc22da7b7057c0a86127",
+      "identity": "cassandra_test.go::TestNilInQuery",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "9ea9721fb2cb9961177074380e47877072d13f04810b62ed12901ce92ea7044d",
+      "current_sha256": "9ea9721fb2cb9961177074380e47877072d13f04810b62ed12901ce92ea7044d",
+      "identity": "cassandra_test.go::TestEmptyTimestamp",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "f3846fb7de8afb35be9384ecbddb51e9c96e4a444bfd9a31ec02fb3535345702",
+      "current_sha256": "f3846fb7de8afb35be9384ecbddb51e9c96e4a444bfd9a31ec02fb3535345702",
+      "identity": "cassandra_test.go::TestGetKeyspaceMetadata",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "5cb49a5b7dc3c1963e9f9b2fbf881e1e571d1cfeb3fdd77db57cee71c5b87995",
+      "current_sha256": "5cb49a5b7dc3c1963e9f9b2fbf881e1e571d1cfeb3fdd77db57cee71c5b87995",
+      "identity": "cassandra_test.go::TestSessionMetadataAPIs",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "ec1cc06c2f813dd9aaa2f6ceaa190c06d0e33fb7c95341abc155825ab96a16e9",
+      "current_sha256": "ec1cc06c2f813dd9aaa2f6ceaa190c06d0e33fb7c95341abc155825ab96a16e9",
+      "identity": "cassandra_test.go::TestGetKeyspaceMetadataFails",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "9c8547a3af95d2cd01280229971a35a6430e862c6bb501cf594033ccd76b4713",
+      "current_sha256": "9c8547a3af95d2cd01280229971a35a6430e862c6bb501cf594033ccd76b4713",
+      "identity": "cassandra_test.go::TestRoutingKey",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "af0d9be8ed57fac92096acc413cfac6e6be2fcb1864630f15f7795493099335a",
+      "current_sha256": "af0d9be8ed57fac92096acc413cfac6e6be2fcb1864630f15f7795493099335a",
+      "identity": "cassandra_test.go::TestTokenAwareConnPool",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "8eafe1d93ba52780e12c35bddeb4810cd5fb9dcf2abef899bc3eafc69c0361d0",
+      "current_sha256": "8eafe1d93ba52780e12c35bddeb4810cd5fb9dcf2abef899bc3eafc69c0361d0",
+      "identity": "cassandra_test.go::TestNegativeStream",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "cc88237840be6f7b2a0ed9ebbeb246a691b4e446530dceb06d823c1fd7270504",
+      "current_sha256": "cc88237840be6f7b2a0ed9ebbeb246a691b4e446530dceb06d823c1fd7270504",
+      "identity": "cassandra_test.go::TestManualQueryPaging",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "22045bddfa2afb41b76b0aee6af20c0b234b6283a8bc402b62681b8ec8050cc5",
+      "current_sha256": "22045bddfa2afb41b76b0aee6af20c0b234b6283a8bc402b62681b8ec8050cc5",
+      "identity": "cassandra_test.go::TestSessionBindRoutingKey",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "40db790b61af17b62d5fe2ab91351a19fd0e201d58847b33f9a53a182c40e70e",
+      "current_sha256": "40db790b61af17b62d5fe2ab91351a19fd0e201d58847b33f9a53a182c40e70e",
+      "identity": "cassandra_test.go::TestJSONSupport",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "8a855fcf261aa77b1930e110f1cb17ba4a4f38f5e44d4ed64a4ef2bc80db9354",
+      "current_sha256": "8a855fcf261aa77b1930e110f1cb17ba4a4f38f5e44d4ed64a4ef2bc80db9354",
+      "identity": "cassandra_test.go::TestUnmarshallNestedTypes",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "942416ffaffdd1c33898c298aaedbd94c0ad80776d6fe6d91774f30a9407b08b",
+      "current_sha256": "942416ffaffdd1c33898c298aaedbd94c0ad80776d6fe6d91774f30a9407b08b",
+      "identity": "cassandra_test.go::TestSchemaReset",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "6435d878e9cfcf2efe4c21d21324dba2a4152772256d1d9de34e04aeece1f577",
+      "current_sha256": "6435d878e9cfcf2efe4c21d21324dba2a4152772256d1d9de34e04aeece1f577",
+      "identity": "cassandra_test.go::TestCreateSession_DontSwallowError",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "cc500c56d5fb45d9c5dcda88c1b40f605b9e43cbce368fd0aa9b9fc2cb32b3df",
+      "current_sha256": "cc500c56d5fb45d9c5dcda88c1b40f605b9e43cbce368fd0aa9b9fc2cb32b3df",
+      "identity": "cassandra_test.go::TestControl_DiscoverProtocol",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "f3f6eeeb2ff6f85e9be7b78987dde8b790dca9a2e7563b2f960810ff2bb830c2",
+      "current_sha256": "f3f6eeeb2ff6f85e9be7b78987dde8b790dca9a2e7563b2f960810ff2bb830c2",
+      "identity": "cassandra_test.go::TestUnsetCol",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "e46f9de6b5fa307e0d9a5d9247ee0a84f757e7074ee71e38a261e30dacad3615",
+      "current_sha256": "e46f9de6b5fa307e0d9a5d9247ee0a84f757e7074ee71e38a261e30dacad3615",
+      "identity": "cassandra_test.go::TestUnsetColBatch",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "3e13ac1671b66a622486ff9482527e9bc462661eb6c87f67ab1167610802cd82",
+      "current_sha256": "3e13ac1671b66a622486ff9482527e9bc462661eb6c87f67ab1167610802cd82",
+      "identity": "cassandra_test.go::TestQuery_NamedValues",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "4c00d935dc5743fae234e777e6fc2e9c3b822514b883c6a14c133a0866ef4c20",
+      "current_sha256": "4c00d935dc5743fae234e777e6fc2e9c3b822514b883c6a14c133a0866ef4c20",
+      "identity": "cassandra_test.go::TestQuery_SetHostID",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "0e8821a8e6ddd26c78bde275f6e8c2f81dad9ea55ac0be75c1ab3bc9aadfad61",
+      "current_sha256": "0e8821a8e6ddd26c78bde275f6e8c2f81dad9ea55ac0be75c1ab3bc9aadfad61",
+      "identity": "cassandra_test.go::TestQuery_WithNowInSeconds",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "c6e0962799e00873b76680059ff5d8ab9a1e1f40756f9884a18d16ce8053c919",
+      "current_sha256": "c6e0962799e00873b76680059ff5d8ab9a1e1f40756f9884a18d16ce8053c919",
+      "identity": "cassandra_test.go::TestQuery_SetKeyspace",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "34b623d828d0f8414d88fcb72c919cbe36200d709bc5172911a6e1407b950cbd",
+      "current_sha256": "34b623d828d0f8414d88fcb72c919cbe36200d709bc5172911a6e1407b950cbd",
+      "identity": "cassandra_test.go::TestLargeSizeQuery",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "d94e8be6e9e8cdf2a671b157b265259ca651213de7d789fd250aceadbb5fb027",
+      "current_sha256": "d94e8be6e9e8cdf2a671b157b265259ca651213de7d789fd250aceadbb5fb027",
+      "identity": "cassandra_test.go::TestCompressorNegotiated",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "bc070671b05cb6bed797dced5da9e9088de894b279d32f50a902f2833c8d7723",
+      "current_sha256": "bc070671b05cb6bed797dced5da9e9088de894b279d32f50a902f2833c8d7723",
+      "identity": "cassandra_test.go::TestQueryCompressionNotWorthIt",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "9b1daf4fb13c66b04535611d97a2e060fd10dce1576524aeb201316269ff0a9e",
+      "current_sha256": "9b1daf4fb13c66b04535611d97a2e060fd10dce1576524aeb201316269ff0a9e",
+      "identity": "cassandra_test.go::TestPrepareExecuteMetadataChangedFlag",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "4b5e65a1ff859d01a7ec1e3e4ee04b588518c6478a07532cccea8d53aa3ecad7",
+      "current_sha256": "4b5e65a1ff859d01a7ec1e3e4ee04b588518c6478a07532cccea8d53aa3ecad7",
+      "identity": "cassandra_test.go::TestStmtCacheUsesOverriddenKeyspace",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "ee0668a7e0e1dc1f75c5a016dcd6e3ed5d3125ea428ba397891318aac117ec2b",
+      "current_sha256": "ee0668a7e0e1dc1f75c5a016dcd6e3ed5d3125ea428ba397891318aac117ec2b",
+      "identity": "cassandra_test.go::TestRoutingKeyCacheUsesOverriddenKeyspace",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "947557c97560a4150fe78b977e685fb90dc63fb4b1fbda748c01e6e8879b8f55",
+      "current_sha256": "947557c97560a4150fe78b977e685fb90dc63fb4b1fbda748c01e6e8879b8f55",
+      "identity": "cassandra_test.go::TestPrepareExecuteScyllaEmptyMetadataID",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "79fd1edc31cfb221b3a0301e8f1fc06a5fa1a77e342f84bfbf8ceaf27d396a5c",
+      "current_sha256": "79fd1edc31cfb221b3a0301e8f1fc06a5fa1a77e342f84bfbf8ceaf27d396a5c",
+      "identity": "client_routes_test.go::TestGetHostPortMapping",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "16cfb48566b167c51d527b1dc40ca129e54e2cc435fe00ce365054a92a6d630b",
+      "current_sha256": "16cfb48566b167c51d527b1dc40ca129e54e2cc435fe00ce365054a92a6d630b",
+      "identity": "cloud_cluster_test.go::TestCloudConnection",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "f097cd01f74a1cedadf245840cdf9ce3e825144f7b510d250cae5d30cc5c1bb0",
+      "current_sha256": "f097cd01f74a1cedadf245840cdf9ce3e825144f7b510d250cae5d30cc5c1bb0",
+      "identity": "control_integration_test.go::TestUnixSockets",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "d337eb9abffa6b0d80b251f0a318894a3ca6ae4f7670dd9c5f5ee7eafbaf7b82",
+      "current_sha256": "d337eb9abffa6b0d80b251f0a318894a3ca6ae4f7670dd9c5f5ee7eafbaf7b82",
+      "identity": "dns_test.go::TestDNS",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "8dbff0423a8bba8de4be4dd14c6d8fba922270e4119f215306cdd3331f2af635",
+      "current_sha256": "8dbff0423a8bba8de4be4dd14c6d8fba922270e4119f215306cdd3331f2af635",
+      "identity": "errors_test.go::TestErrorsParse",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "f834f87a2b93c8d02f553d51666165c59aecc850858027142f701168781867d6",
+      "current_sha256": "f834f87a2b93c8d02f553d51666165c59aecc850858027142f701168781867d6",
+      "identity": "exec_test.go::TestSingleHostQueryExecutor",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "2d43f4974e1b9263f54b1cd7916c64522901e703d4a87c859955fd09c55855d2",
+      "current_sha256": "2d43f4974e1b9263f54b1cd7916c64522901e703d4a87c859955fd09c55855d2",
+      "identity": "integration_serialization_scylla_test.go::TestRetryOnTopologyBusy",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "44922239e16546ce952cf0515cd69a58dd636980b1bf9616c2d76df12d7da96b",
+      "current_sha256": "44922239e16546ce952cf0515cd69a58dd636980b1bf9616c2d76df12d7da96b",
+      "identity": "integration_serialization_scylla_test.go::TestSerializationSimpleTypesCassandra",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "194c118025386899f95ff82ec414c3974447ee167585186c27f6b0438c45c2cf",
+      "current_sha256": "194c118025386899f95ff82ec414c3974447ee167585186c27f6b0438c45c2cf",
+      "identity": "integration_serialization_scylla_test.go::TestSliceMapMapScanTypes",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "0a51e3f522bb76fe5e7f2f8251f9e49fa9fce8f0d05a2751f82003db53752184",
+      "current_sha256": "0a51e3f522bb76fe5e7f2f8251f9e49fa9fce8f0d05a2751f82003db53752184",
+      "identity": "integration_serialization_scylla_test.go::TestSliceMapMapScanCounterTypes",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "942930b42540b30602c05eb4d7e9672c145845564b6d78f030e059970e88200e",
+      "current_sha256": "942930b42540b30602c05eb4d7e9672c145845564b6d78f030e059970e88200e",
+      "identity": "integration_serialization_scylla_test.go::TestSliceMapMapScanTupleTypes",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "c2273fec5664528b4da6edee30540b248dcf96184daa1d7e00e0b8c28383cb65",
+      "current_sha256": "c2273fec5664528b4da6edee30540b248dcf96184daa1d7e00e0b8c28383cb65",
+      "identity": "integration_serialization_scylla_test.go::TestSliceMapMapScanVectorTypes",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "d830d15c86bc83b46f9fc33a4d5d3ac56fd57027f9e84758546aa8cb927d9c3b",
+      "current_sha256": "d830d15c86bc83b46f9fc33a4d5d3ac56fd57027f9e84758546aa8cb927d9c3b",
+      "identity": "integration_serialization_scylla_test.go::TestSliceMapMapScanCollectionTypes",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "026c072c7c845a3ed9df5a3841d3305c96a0e9039f9780c3b61560ef6cb9d088",
+      "current_sha256": "026c072c7c845a3ed9df5a3841d3305c96a0e9039f9780c3b61560ef6cb9d088",
+      "identity": "integration_test.go::TestAuthentication",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "611a25744885e7494eb3e24e975fcc6a21e4ea019a08e00a7dc163feea5ec8cc",
+      "current_sha256": "611a25744885e7494eb3e24e975fcc6a21e4ea019a08e00a7dc163feea5ec8cc",
+      "identity": "integration_test.go::TestGetHostsFromSystem",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "61a124999329ef07e4279702cffc840e1a3f6080a497b78ec7eb03aefb05db80",
+      "current_sha256": "61a124999329ef07e4279702cffc840e1a3f6080a497b78ec7eb03aefb05db80",
+      "identity": "integration_test.go::TestRingDiscovery",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "31776bf368d8075456e6cf5e4b623ca20552229f99db172edcee4599ae77dee0",
+      "current_sha256": "31776bf368d8075456e6cf5e4b623ca20552229f99db172edcee4599ae77dee0",
+      "identity": "integration_test.go::TestHostFilterDiscovery",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "b61362a4f1667b63bb0a824bced824ecfecce8335763547ef5603bf45c07a8de",
+      "current_sha256": "b61362a4f1667b63bb0a824bced824ecfecce8335763547ef5603bf45c07a8de",
+      "identity": "integration_test.go::TestHostFilterInitial",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "0022d91595ffd3b3f3e3cdf0dc0dc965fc8b6bb02f332d1cee07ae975ac9783c",
+      "current_sha256": "0022d91595ffd3b3f3e3cdf0dc0dc965fc8b6bb02f332d1cee07ae975ac9783c",
+      "identity": "integration_test.go::TestApplicationInformation",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "8dfa521f576a1796cb6a121bc463519ed431e677cefd6c627a2684d0b8d44630",
+      "current_sha256": "8dfa521f576a1796cb6a121bc463519ed431e677cefd6c627a2684d0b8d44630",
+      "identity": "integration_test.go::TestDriverConfigReporting",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "3a53ba714782f7157980fa638272de94c89e39f32654c228ec9fc7f24d1ca2d9",
+      "current_sha256": "3a53ba714782f7157980fa638272de94c89e39f32654c228ec9fc7f24d1ca2d9",
+      "identity": "integration_test.go::TestWriteFailure",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "f4c921a6e1e2955b4383cf981a7ac53737c92dfd9a5eff323bd92a76a565515d",
+      "current_sha256": "f4c921a6e1e2955b4383cf981a7ac53737c92dfd9a5eff323bd92a76a565515d",
+      "identity": "integration_test.go::TestCustomPayloadMessages",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "5c7a05f4f3fe2216c0722e514ecb09df8ee7cc603cfb63db1d2871b3dd69770c",
+      "current_sha256": "5c7a05f4f3fe2216c0722e514ecb09df8ee7cc603cfb63db1d2871b3dd69770c",
+      "identity": "integration_test.go::TestCustomPayloadValues",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "bd0304c9924c7631a3863230d0ccd46b5bdfd94babb302a803b34a03523e4e4c",
+      "current_sha256": "bd0304c9924c7631a3863230d0ccd46b5bdfd94babb302a803b34a03523e4e4c",
+      "identity": "integration_test.go::TestSessionAwaitSchemaAgreement",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "9a1420123237e3f37059fd4d7e623094ff90578b4f1454077927da2ad4fc2d39",
+      "current_sha256": "9a1420123237e3f37059fd4d7e623094ff90578b4f1454077927da2ad4fc2d39",
+      "identity": "integration_test.go::TestSessionAwaitSchemaAgreementSessionClosed",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "e855a2442cbe45a5111c3906a18393c9ddeac47d7617a5732392b3af586f0a50",
+      "current_sha256": "e855a2442cbe45a5111c3906a18393c9ddeac47d7617a5732392b3af586f0a50",
+      "identity": "integration_test.go::TestSessionAwaitSchemaAgreementContextCanceled",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "0ccd8c0aa52bfb315614142fccd089ed46f414d581eb23eeb2df27e90d2b5bfe",
+      "current_sha256": "0ccd8c0aa52bfb315614142fccd089ed46f414d581eb23eeb2df27e90d2b5bfe",
+      "identity": "integration_test.go::TestNewConnectWithLowTimeout",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "d30ff9ced7d5b78daf713d2cbecacaeed5580db77a42db549b55550a8ec90a84",
+      "current_sha256": "d30ff9ced7d5b78daf713d2cbecacaeed5580db77a42db549b55550a8ec90a84",
+      "identity": "internal/ccm/ccm_test.go::TestCCM",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "1cdd5b5ff73ae2f94f24eb963148f928339483a12f479f22ab372569a0790170",
+      "current_sha256": "1cdd5b5ff73ae2f94f24eb963148f928339483a12f479f22ab372569a0790170",
+      "identity": "keyspace_table_test.go::TestKeyspaceTable",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "2decb3ccd7c910dd886d63c7203f2c9fd4e91e010fb333425f32c51109772e04",
+      "current_sha256": "2decb3ccd7c910dd886d63c7203f2c9fd4e91e010fb333425f32c51109772e04",
+      "identity": "policies_integration_test.go::TestDCValidationTokenAware",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "9373cc19c710db111c9d85d87cdc3cfed82a71cba8be6ac25761ec8b09ed426d",
+      "current_sha256": "9373cc19c710db111c9d85d87cdc3cfed82a71cba8be6ac25761ec8b09ed426d",
+      "identity": "policies_integration_test.go::TestDCValidationDCAware",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "72c28cd1ffc2452d33a1b2048ca233df7ead5e760e771f87484def3e376d7e27",
+      "current_sha256": "72c28cd1ffc2452d33a1b2048ca233df7ead5e760e771f87484def3e376d7e27",
+      "identity": "policies_integration_test.go::TestDCValidationRackAware",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "1250837c654ccfcf3f1d2b066664448dd6b38549ef04058e206f09ed22a620b0",
+      "current_sha256": "1250837c654ccfcf3f1d2b066664448dd6b38549ef04058e206f09ed22a620b0",
+      "identity": "policies_integration_test.go::TestTokenAwareHostPolicy",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "ad03b879762f563ebc29f31f6390cf9cb901019e81e56fc020d12acac0b86e26",
+      "current_sha256": "ad03b879762f563ebc29f31f6390cf9cb901019e81e56fc020d12acac0b86e26",
+      "identity": "policies_integration_test.go::TestNoHangAllHostsDown",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "b50d4acec9f974452de8fdf7c64f481fafb9953c36d14aea0c7654cfab8d482b",
+      "current_sha256": "b50d4acec9f974452de8fdf7c64f481fafb9953c36d14aea0c7654cfab8d482b",
+      "identity": "recreate_test.go::TestRecreateSchema",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "5dd16f263294c900370c62d3da11f92064c1ad3ac37fc2fe0c8eaa59b163d47c",
+      "current_sha256": "5dd16f263294c900370c62d3da11f92064c1ad3ac37fc2fe0c8eaa59b163d47c",
+      "identity": "schema_queries_test.go::TestSchemaQueries",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "18945d13619ae431e57465ee19fd03fcdac494da671f2eb9b993241b4e05d3da",
+      "current_sha256": "18945d13619ae431e57465ee19fd03fcdac494da671f2eb9b993241b4e05d3da",
+      "identity": "scylla_shard_aware_port_integration_test.go::TestShardAwarePortIntegrationNoReconnections",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "aba4928fabad442407de9be30de71faacc3c56c9410b89df56b2b194e9b237e7",
+      "current_sha256": "aba4928fabad442407de9be30de71faacc3c56c9410b89df56b2b194e9b237e7",
+      "identity": "scylla_shard_aware_port_integration_test.go::TestShardAwarePortIntegrationMaliciousNAT",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "f69b06ef0e7ca2c406be578121bb9af14d6c62816495da1fabd197dcc3eac9cb",
+      "current_sha256": "f69b06ef0e7ca2c406be578121bb9af14d6c62816495da1fabd197dcc3eac9cb",
+      "identity": "scylla_shard_aware_port_integration_test.go::TestShardAwarePortIntegrationUnreachable",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "980a38c3baab206e8d1a86511b39bbfb1f251ebb4e07586ef80538da012ff1a6",
+      "current_sha256": "980a38c3baab206e8d1a86511b39bbfb1f251ebb4e07586ef80538da012ff1a6",
+      "identity": "scylla_shard_aware_port_integration_test.go::TestShardAwarePortIntegrationUnusedIfNotEnabled",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "1eb6acca67368598c2cd760c9cc553697388de1305d3d7af656d3bb314772d81",
+      "current_sha256": "1eb6acca67368598c2cd760c9cc553697388de1305d3d7af656d3bb314772d81",
+      "identity": "select_without_from_integration_test.go::TestSelectWithoutFromLiteral",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "7e209706d3bb91fed7da38ee19ca8c142496750c2d7742255f2e919f97d14d94",
+      "current_sha256": "7e209706d3bb91fed7da38ee19ca8c142496750c2d7742255f2e919f97d14d94",
+      "identity": "select_without_from_integration_test.go::TestSelectWithoutFromFilteredOut",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "7cc3a49646f3db2f0d3ce2392118ae1b9c6d8bad8a864cc2b6230e3b157e2055",
+      "current_sha256": "7cc3a49646f3db2f0d3ce2392118ae1b9c6d8bad8a864cc2b6230e3b157e2055",
+      "identity": "select_without_from_integration_test.go::TestSelectWithoutFromNow",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "bec49c76ed3720acfb5ff0df05059f2224ddea6641ff60fdeabc1f26d9186019",
+      "current_sha256": "bec49c76ed3720acfb5ff0df05059f2224ddea6641ff60fdeabc1f26d9186019",
+      "identity": "select_without_from_integration_test.go::TestSelectWithoutFromFunctionCast",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "0dc8eb9a0a2be435b2b9e3341ddf101a219c296d2506f37e619ae3ede64f216c",
+      "current_sha256": "0dc8eb9a0a2be435b2b9e3341ddf101a219c296d2506f37e619ae3ede64f216c",
+      "identity": "select_without_from_integration_test.go::TestSelectWithoutFromMultipleSelectors",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "70540ceb038ba2d4c3b41ed217bdc38b8fdc5cc5a1682c6fa42155a42e0915ef",
+      "current_sha256": "70540ceb038ba2d4c3b41ed217bdc38b8fdc5cc5a1682c6fa42155a42e0915ef",
+      "identity": "select_without_from_integration_test.go::TestSelectWithoutFromAlias",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "2caff3756212ac40a68dbc2816736c3227fb568730f4a709696ff07235f4f4e8",
+      "current_sha256": "2caff3756212ac40a68dbc2816736c3227fb568730f4a709696ff07235f4f4e8",
+      "identity": "select_without_from_integration_test.go::TestSelectWithoutFromExecutionModes",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "4e2baa01ddd1b2106784a17ea0dbe62c9af0c401f29f444f2fb105864e4f4b92",
+      "current_sha256": "4e2baa01ddd1b2106784a17ea0dbe62c9af0c401f29f444f2fb105864e4f4b92",
+      "identity": "select_without_from_integration_test.go::TestSelectWithoutFromBindMarker",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "cabc11b5facac131834df01e19307d868a9e958f42928fbdb899359a9aa5f2e5",
+      "current_sha256": "cabc11b5facac131834df01e19307d868a9e958f42928fbdb899359a9aa5f2e5",
+      "identity": "select_without_from_integration_test.go::TestSelectWithoutFromRoutingKey",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "9ef5e0e39b54f6934b66391426770b651468f99b77a56da91f645e1c7100656c",
+      "current_sha256": "9ef5e0e39b54f6934b66391426770b651468f99b77a56da91f645e1c7100656c",
+      "identity": "select_without_from_integration_test.go::TestSelectWithoutFromTokenAware",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "f77fb081638d6097cf6b1adbfe57a886b09c7d48221044b5f5f227dcfdf96b93",
+      "current_sha256": "f77fb081638d6097cf6b1adbfe57a886b09c7d48221044b5f5f227dcfdf96b93",
+      "identity": "select_without_from_integration_test.go::TestSelectWithoutFromMapScan",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "d149d5414a1c1d111da1328760e327143b493abe92129b41acb24060053c7f5e",
+      "current_sha256": "d149d5414a1c1d111da1328760e327143b493abe92129b41acb24060053c7f5e",
+      "identity": "select_without_from_integration_test.go::TestSelectWithoutFromAggregate",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "a05f9b9605ccaacb17e938d76a35be4f94507cfb05812db7c69a74ffba05411f",
+      "current_sha256": "a05f9b9605ccaacb17e938d76a35be4f94507cfb05812db7c69a74ffba05411f",
+      "identity": "select_without_from_integration_test.go::TestSelectWithoutFromJSON",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "de86bc7fe07eae8f6dc82f61bf8f5cc733814fd83652171d301a45d36207171c",
+      "current_sha256": "de86bc7fe07eae8f6dc82f61bf8f5cc733814fd83652171d301a45d36207171c",
+      "identity": "select_without_from_integration_test.go::TestSelectWithoutFromWithKeyspace",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "5e4897f8264dcc862f57b48527c15f4b631f2642629d6dbc314249654de88c9f",
+      "current_sha256": "5e4897f8264dcc862f57b48527c15f4b631f2642629d6dbc314249654de88c9f",
+      "identity": "select_without_from_integration_test.go::TestSelectWithoutFromUnqualifiedUDF",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "6a13c97cadbfda0f229d083d39b8866ab73b32e7a76d00401e533b0cd358a4c0",
+      "current_sha256": "6a13c97cadbfda0f229d083d39b8866ab73b32e7a76d00401e533b0cd358a4c0",
+      "identity": "select_without_from_integration_test.go::TestSelectWithoutFromRejected",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "2784031c1a89053db7cecfc6c02cdaad3fb67bbff403f4c3dee802381a0e50f3",
+      "current_sha256": "2784031c1a89053db7cecfc6c02cdaad3fb67bbff403f4c3dee802381a0e50f3",
+      "identity": "session_event_bus_integration_test.go::TestSessionEventBusReceivesSchemaChangeEvent",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "19e922308aa96eb6aa33d19da31adfcb56232401b4d26285987ead793c53c9b8",
+      "current_sha256": "19e922308aa96eb6aa33d19da31adfcb56232401b4d26285987ead793c53c9b8",
+      "identity": "session_event_bus_integration_test.go::TestSessionEventBusReceivesControlReconnectEvent",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "59e5bfd3454f1b10e5491c82b9c6b3c29a1a824b41395ec274e7653bfcddc307",
+      "current_sha256": "59e5bfd3454f1b10e5491c82b9c6b3c29a1a824b41395ec274e7653bfcddc307",
+      "identity": "session_test.go::TestSessionAPI",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "04cb2fe3adfe81f45177428234aa5f8230dd55b1969adb8e45d03801614e1af3",
+      "current_sha256": "04cb2fe3adfe81f45177428234aa5f8230dd55b1969adb8e45d03801614e1af3",
+      "identity": "session_test.go::TestQueryBasicAPI",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "613c51b53a2efaa3f9ab8c00651d0ee9bd1e8a226284468e18b1af4b29a961c1",
+      "current_sha256": "613c51b53a2efaa3f9ab8c00651d0ee9bd1e8a226284468e18b1af4b29a961c1",
+      "identity": "session_test.go::TestQueryShouldPrepare",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "147a356c85a5f21cd6dcdaaa07ac0401295f2bdbef31c67f2f6427b403f37379",
+      "current_sha256": "147a356c85a5f21cd6dcdaaa07ac0401295f2bdbef31c67f2f6427b403f37379",
+      "identity": "session_test.go::TestBatchBasicAPI",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "ce8f0eaa2bd3b32baeb8098e898d0329f594b9a17571356dab89e8ed163d5d60",
+      "current_sha256": "ce8f0eaa2bd3b32baeb8098e898d0329f594b9a17571356dab89e8ed163d5d60",
+      "identity": "session_test.go::TestConsistencyNames",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "a7f642c2a374016df3318cc565e19016ec044a6e6955d3125d41b31427b54a03",
+      "current_sha256": "a7f642c2a374016df3318cc565e19016ec044a6e6955d3125d41b31427b54a03",
+      "identity": "session_test.go::TestIsUseStatement",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "eafaa4845f2d38d50601750a7e821d43286dc072ee2b463c8a91746879eca40f",
+      "current_sha256": "eafaa4845f2d38d50601750a7e821d43286dc072ee2b463c8a91746879eca40f",
+      "identity": "session_test.go::TestRetryType_IgnoreRethrow",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "57029be51cc81467f0b74897d06c62db216d452bc971922a053263e6e2b8cfba",
+      "current_sha256": "57029be51cc81467f0b74897d06c62db216d452bc971922a053263e6e2b8cfba",
+      "identity": "session_test.go::TestTLSTicketResumption",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "17f2dc119c3d96e70edfa7f59d5a0476c159630c9093da198cac17e03ff8d570",
+      "current_sha256": "17f2dc119c3d96e70edfa7f59d5a0476c159630c9093da198cac17e03ff8d570",
+      "identity": "tablet_integration_test.go::TestTablets",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "8f4a69472ebba04e8ea2bd8fbb976f237e77ea180dbd5517f67a43f6752e5193",
+      "current_sha256": "8f4a69472ebba04e8ea2bd8fbb976f237e77ea180dbd5517f67a43f6752e5193",
+      "identity": "tracer_test.go::TestTracingNewAPI",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "31bc46366b0614d0879b8fdd206fda86e3f346043978aacbde530a8cf98de9fc",
+      "current_sha256": "31bc46366b0614d0879b8fdd206fda86e3f346043978aacbde530a8cf98de9fc",
+      "identity": "tuple_test.go::TestTupleSimple",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "ec1b0533b5cc7da6e7711f2188303500d7ecebb8a7120aad3a3ec12f8856eb92",
+      "current_sha256": "ec1b0533b5cc7da6e7711f2188303500d7ecebb8a7120aad3a3ec12f8856eb92",
+      "identity": "tuple_test.go::TestTuple_NullTuple",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "6d87a4162eccdd40de4f82578aef98d7dbcda6a51eb725e038fe4091c51dfb92",
+      "current_sha256": "6d87a4162eccdd40de4f82578aef98d7dbcda6a51eb725e038fe4091c51dfb92",
+      "identity": "tuple_test.go::TestTuple_TupleNotSet",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "d47c16e9fe1abc414e3ed27175e3c21197d598391a5a875e501addfda51e41c6",
+      "current_sha256": "d47c16e9fe1abc414e3ed27175e3c21197d598391a5a875e501addfda51e41c6",
+      "identity": "tuple_test.go::TestTupleMapScan",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "e9b6ada1a5d86cc23fbef8ed882fa2f7c2dada36e66b90b7c83170896cf5fbc7",
+      "current_sha256": "e9b6ada1a5d86cc23fbef8ed882fa2f7c2dada36e66b90b7c83170896cf5fbc7",
+      "identity": "tuple_test.go::TestTupleMapScanNil",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "31a17aa98377a9514b7275bb81e71c68dfbe8f6cf346e463e8f90eb1df3a5cce",
+      "current_sha256": "31a17aa98377a9514b7275bb81e71c68dfbe8f6cf346e463e8f90eb1df3a5cce",
+      "identity": "tuple_test.go::TestTupleMapScanNotSet",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "ed6cc0aaa9e363a90078826cd758831274e0f6755cf92cdb12da879926312548",
+      "current_sha256": "ed6cc0aaa9e363a90078826cd758831274e0f6755cf92cdb12da879926312548",
+      "identity": "tuple_test.go::TestTupleLastFieldEmpty",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "ba6a5d3d24fb5fbbb7530c7704fdd9ebe65ca8de5c6f541394b4c113df0976ca",
+      "current_sha256": "ba6a5d3d24fb5fbbb7530c7704fdd9ebe65ca8de5c6f541394b4c113df0976ca",
+      "identity": "tuple_test.go::TestTuple_NestedCollection",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "f8adb7dc64b7e64642fb73340cf95ef5e733ff219807373c9a58ebcfe82c2422",
+      "current_sha256": "f8adb7dc64b7e64642fb73340cf95ef5e733ff219807373c9a58ebcfe82c2422",
+      "identity": "tuple_test.go::TestTuple_NullableNestedCollection",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "20cc36c3d49b03852035379460ff203c7e2c3832e0fadae7cc7edd4263c0a365",
+      "current_sha256": "20cc36c3d49b03852035379460ff203c7e2c3832e0fadae7cc7edd4263c0a365",
+      "identity": "udt_test.go::TestUDT_Marshaler",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "b04c1a15053076579022de237a310410f0ddb17d52289c8c21935f2df4ed9c7f",
+      "current_sha256": "b04c1a15053076579022de237a310410f0ddb17d52289c8c21935f2df4ed9c7f",
+      "identity": "udt_test.go::TestUDT_Reflect",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "0ff2c707749ee5b39b6bcf529817d753f5150ecbfb3cf2e093962538142becac",
+      "current_sha256": "0ff2c707749ee5b39b6bcf529817d753f5150ecbfb3cf2e093962538142becac",
+      "identity": "udt_test.go::TestUDT_NullObject",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "c6de0f03728027d3ebdae35410d7b8121ad8805c4cb8f3275322ac5522876eab",
+      "current_sha256": "c6de0f03728027d3ebdae35410d7b8121ad8805c4cb8f3275322ac5522876eab",
+      "identity": "udt_test.go::TestMapScanUDT",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "555296cafc342312440857d3f1dc4135ee7218b5863e99531f7afe1d201c483b",
+      "current_sha256": "555296cafc342312440857d3f1dc4135ee7218b5863e99531f7afe1d201c483b",
+      "identity": "udt_test.go::TestUDT_MissingField",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "0cbc4f8209844775a0c4ef7fc829b9031b18f4606145e4940d640590782c13fe",
+      "current_sha256": "0cbc4f8209844775a0c4ef7fc829b9031b18f4606145e4940d640590782c13fe",
+      "identity": "udt_test.go::TestUDT_EmptyCollections",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "c0524220dec39a21f8d052210a97cf22b1b189966bcb0a8f4d52de5fc9ecee55",
+      "current_sha256": "c0524220dec39a21f8d052210a97cf22b1b189966bcb0a8f4d52de5fc9ecee55",
+      "identity": "udt_test.go::TestUDT_UpdateField",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "d1d4c2b874c14306a9a696f3f30d1f497681fc2e5644fc39025eff935cab6488",
+      "current_sha256": "d1d4c2b874c14306a9a696f3f30d1f497681fc2e5644fc39025eff935cab6488",
+      "identity": "udt_test.go::TestUDT_ScanNullUDT",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "b580e6861e88d8bc92f597e82a5d8431039cdd15690ba9180749ae731b30b306",
+      "current_sha256": "b580e6861e88d8bc92f597e82a5d8431039cdd15690ba9180749ae731b30b306",
+      "identity": "vector_test.go::TestVector_Marshaler",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "2d33861e1ee7b56c2ea02f2d671392ff98be240015b7458962e13994546c62aa",
+      "current_sha256": "2d33861e1ee7b56c2ea02f2d671392ff98be240015b7458962e13994546c62aa",
+      "identity": "vector_test.go::TestVector_Types",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "6129c343a81ee9fbfc76a1c78496bd5a1399dfa8f19803d85ba24fb0f6f683b9",
+      "current_sha256": "6129c343a81ee9fbfc76a1c78496bd5a1399dfa8f19803d85ba24fb0f6f683b9",
+      "identity": "vector_test.go::TestVector_MarshalerUDT",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "e14ae1bbff69ae98dcc8eedc31fd72f5207ccbeb8a876167f939d6f6257174a8",
+      "current_sha256": "e14ae1bbff69ae98dcc8eedc31fd72f5207ccbeb8a876167f939d6f6257174a8",
+      "identity": "vector_test.go::TestVector_Empty",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "1d3a8b059a32cfa245e332ba5ed518ef97e982887d3ca830e314b78d2d2f326a",
+      "current_sha256": "1d3a8b059a32cfa245e332ba5ed518ef97e982887d3ca830e314b78d2d2f326a",
+      "identity": "vector_test.go::TestVector_MissingDimension",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "30b5aff03ef2cbb0fdcbb9f03cabab82678c0bef25936dd77108cff3030b2d15",
+      "current_sha256": "30b5aff03ef2cbb0fdcbb9f03cabab82678c0bef25936dd77108cff3030b2d15",
+      "identity": "vector_test.go::TestVector_SubTypeParsing",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "5fda40a871f426a8e886043866841f1d8c826c9d4404d9e2c5f83e25e667acfd",
+      "current_sha256": "5fda40a871f426a8e886043866841f1d8c826c9d4404d9e2c5f83e25e667acfd",
+      "identity": "wiki_test.go::TestWikiCreateSchema",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "838abd19efeaedc5bbe831592399bb5e00ef099809bd03ad44fb81663cc6239b",
+      "current_sha256": "838abd19efeaedc5bbe831592399bb5e00ef099809bd03ad44fb81663cc6239b",
+      "identity": "wiki_test.go::TestWikiCreatePages",
+      "same_complete_source": true
+    },
+    {
+      "accepted_sha256": "65f27bee8c09ae3f5e41ef7069e55c5cff44dc27e0c9b94ac0a5e5d29ec6f53f",
+      "current_sha256": "65f27bee8c09ae3f5e41ef7069e55c5cff44dc27e0c9b94ac0a5e5d29ec6f53f",
+      "identity": "wiki_test.go::TestWikiTypicalCRUD",
+      "same_complete_source": true
+    }
+  ]
+}

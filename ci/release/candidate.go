@@ -14,13 +14,12 @@ import (
 
 const (
 	rootModulePath = "github.com/scylladb/gocql/v2"
-	lz4ModulePath  = "github.com/scylladb/gocql/lz4"
 )
 
 var (
-	hexSHA            = regexp.MustCompile(`^[0-9a-fA-F]{40}$`)
-	identifier        = regexp.MustCompile(`^[0-9A-Za-z-]+$`)
-	rootReplacementRE = regexp.MustCompile(`^\s*replace\s+github\.com/gocql/gocql\s+=>\s+github\.com/scylladb/gocql\s+(v[^\s]+)\s*$`)
+	hexSHA        = regexp.MustCompile(`^[0-9a-fA-F]{40}$`)
+	identifier    = regexp.MustCompile(`^[0-9A-Za-z-]+$`)
+	rootInstallRE = regexp.MustCompile(`^\s*go get github\.com/scylladb/gocql/v2@(v[^\s]+)\s*$`)
 )
 
 type semVersion struct {
@@ -44,10 +43,8 @@ func newCandidate(module, version string) (candidate, error) {
 	switch module {
 	case "root":
 		c.modulePath, c.directory, c.tag, c.title = rootModulePath, ".", "v"+version, "v"+version
-	case "lz4":
-		c.modulePath, c.directory, c.tag, c.title = lz4ModulePath, "lz4", "lz4/v"+version, "lz4 v"+version
 	default:
-		return candidate{}, fmt.Errorf("module must be root or lz4, got %q", module)
+		return candidate{}, fmt.Errorf("module must be root, got %q", module)
 	}
 	return c, nil
 }
@@ -78,8 +75,8 @@ func parseVersion(value string) (semVersion, error) {
 		}
 		numbers[i] = n
 	}
-	if numbers[0] != 1 {
-		return semVersion{}, fmt.Errorf("only v1 modules can be released, got %q", value)
+	if numbers[0] != 2 {
+		return semVersion{}, fmt.Errorf("only the v2 module can be released, got %q", value)
 	}
 	parsed := semVersion{major: numbers[0], minor: numbers[1], patch: numbers[2]}
 	if !hasPre {
@@ -200,16 +197,16 @@ func validateRootREADME(c candidate) error {
 	want := "v" + c.version
 	var documented []string
 	for _, line := range strings.Split(string(data), "\n") {
-		if match := rootReplacementRE.FindStringSubmatch(line); len(match) == 2 {
+		if match := rootInstallRE.FindStringSubmatch(line); len(match) == 2 {
 			documented = append(documented, match[1])
 		}
 	}
 	if len(documented) == 0 {
-		return fmt.Errorf("README.md has no concrete root replacement version; want %s", want)
+		return fmt.Errorf("README.md has no concrete v2 installation version; want %s", want)
 	}
 	for _, got := range documented {
 		if got != want {
-			return fmt.Errorf("README.md documents root replacement %s, want %s", got, want)
+			return fmt.Errorf("README.md documents v2 installation %s, want %s", got, want)
 		}
 	}
 	return nil

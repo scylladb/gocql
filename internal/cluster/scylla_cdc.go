@@ -16,7 +16,7 @@ func InternalScyllaIsCdcTable(session *Session, keyspaceName, tableName string) 
 	}
 
 	// Check if the table has the CDC partitioner set.
-	tableMeta, err := session.TableMetadata(keyspaceName, tableName)
+	tableMeta, err := InternalSessionTableMetadata(session, keyspaceName, tableName)
 	if err != nil {
 		return false, err
 	}

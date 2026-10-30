@@ -38,9 +38,9 @@ import (
 	"testing"
 	"time"
 
-	lz4 "github.com/scylladb/gocql/lz4"
 	"github.com/scylladb/gocql/v2/internal/segment"
 	"github.com/scylladb/gocql/v2/internal/wire"
+	lz4 "github.com/scylladb/gocql/v2/internal/wirecompress"
 )
 
 func step07StreamSession(t *testing.T, proto byte, compressor Compressor) (*Session, *driverConn, net.Conn) {

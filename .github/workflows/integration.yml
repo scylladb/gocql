@@ -87,8 +87,8 @@ jobs:
       # internal/lz4block/decode_arm64.s, so run it against that code rather than
       # against the snappy default: LZ4Compressor.Decode and AppendDecompressed are
       # the entry points into that assembly, and nothing else here reaches it end to
-      # end. Possible only now that the root harness can build the nested lz4 module
-      # -- createCluster's `case "lz4"` is what this selects. snappy keeps its
+      # end. The root harness selects the canonical internal compressor through
+      # Config.Compression; snappy keeps its
       # coverage on the amd64 lanes.
       #
       # Both arms of the expression are non-empty strings on purpose: TEST_COMPRESSOR
@@ -125,8 +125,6 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: |
-            lz4/go.sum
-            tests/bench/go.sum
             go.sum
 
       - name: Get scylla version
@@ -208,8 +206,6 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: |
-            lz4/go.sum
-            tests/bench/go.sum
             go.sum
 
       - name: Get cassandra version

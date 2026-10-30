@@ -1,3 +1,6 @@
+// Copyright 2026 The Gocql Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license.
+
 package gocql
 
 import (
@@ -185,20 +188,22 @@ func NamedScalar[A any, B any](a0 Codec[B], a1 func(A) B, a2 func(B) A) Codec[A]
 
 type NativeType = cqltype.NativeType
 
-func NewCollectionType(a0 NativeType, a1 TypeInfo, a2 TypeInfo) CollectionType {
+func retiredNewCollectionType(a0 NativeType, a1 TypeInfo, a2 TypeInfo) CollectionType {
 	return cqltype.NewCollectionType(a0, a1, a2)
 }
-func NewColumns(a0 ...ColumnSpec) Columns                  { return cqltype.NewColumns(a0...) }
-func NewCustomType(a0 byte, a1 Type, a2 string) NativeType { return cqltype.NewCustomType(a0, a1, a2) }
+func NewColumns(a0 ...ColumnSpec) Columns { return cqltype.NewColumns(a0...) }
+func retiredNewCustomType(a0 byte, a1 Type, a2 string) NativeType {
+	return cqltype.NewCustomType(a0, a1, a2)
+}
 func NewEncodedValue(a0 DataType, a1 CellState, a2 Bytes) (EncodedValue, error) {
 	return codec.NewEncodedValue(a0, a1, a2)
 }
-func NewNativeType(a0 byte, a1 Type) NativeType { return cqltype.NewNativeType(a0, a1) }
-func NewTimeUUID() UUID                         { return cqltype.NewTimeUUID() }
-func NewTupleType(a0 NativeType, a1 ...TypeInfo) TupleTypeInfo {
+func retiredNewNativeType(a0 byte, a1 Type) NativeType { return cqltype.NewNativeType(a0, a1) }
+func NewTimeUUID() UUID                                { return cqltype.NewTimeUUID() }
+func retiredNewTupleType(a0 NativeType, a1 ...TypeInfo) TupleTypeInfo {
 	return cqltype.NewTupleType(a0, a1...)
 }
-func NewUDTType(a0 byte, a1 string, a2 string, a3 ...UDTField) UDTTypeInfo {
+func retiredNewUDTType(a0 byte, a1 string, a2 string, a3 ...UDTField) UDTTypeInfo {
 	return cqltype.NewUDTType(a0, a1, a2, a3...)
 }
 

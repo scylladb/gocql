@@ -1,0 +1,11 @@
+{
+  "predecessor": "cdba62aaf867b8e1877aa18dc56b555665bc17d6",
+  "old_capture_sha256": {
+    "tests/bench/rec_select/192.168.100.11:9042-0Reads": "a11ad09bf215387a8af966153f9c3fc8029c68d6bfc67432f64ffc9c5c65a682",
+    "tests/bench/rec_select/192.168.100.11:9042-0Writes": "756880fc6a1ab76bfc400e6a9a47dd55768cc043ed0354384d2351380a4ad6ec",
+    "tests/bench/rec_insert/192.168.100.11:9042-0Reads": "6ea127356535a17c15e861cf05c8b19e6fb74281a2395ea85ba35367e9a192bf",
+    "tests/bench/rec_insert/192.168.100.11:9042-0Writes": "b6296fefeb11b49c8abcb5e07b97c648147e2b87addf194e796e8c84f344699f"
+  },
+  "status": "Historical old-control captures; operational replay failed in step10 and remained deferred through step12. Not a replay or benchmark pass.",
+  "failure_evidence": "feature-specs/evidence/step10-verification.json"
+}

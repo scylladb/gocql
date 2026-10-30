@@ -1,44 +1,14 @@
-# Batch statements
+# Batches
 
-Use batches for related DML statements. Prefer single-partition batches;
-multi-partition batches add coordinator work and network hops. Updates within
-one partition are atomic. Across partitions, a failed unlogged batch may be
-partly applied.
+Convert each typed binding with `BatchEntry`, then call
+`ExecBatch(ctx, session, kind, items, options)`. `LoggedBatch`, `UnloggedBatch`
+and `CounterBatch` select native batch kind. A counter batch contains only
+counter updates. Prepared metadata and parameter schemas remain typed.
 
-```go
-batch := session.Batch(gocql.UnloggedBatch).WithContext(ctx)
-batch.Query(
-	"INSERT INTO events (account_id, event_id, payload) VALUES (?, ?, ?)",
-	accountID,
-	firstEventID,
-	firstPayload,
-)
-batch.Query(
-	"INSERT INTO events (account_id, event_id, payload) VALUES (?, ?, ?)",
-	accountID,
-	secondEventID,
-	secondPayload,
-)
+Bindings remain borrowed until their own Close and successful Wait after every
+admitted batch has drained. Batches preserve per-statement routing metadata,
+custom payload and observation. Explicitly idempotent ordinary statements may
+retry according to policy; batches do not speculate.
 
-if err := session.ExecuteBatch(batch); err != nil {
-	return err
-}
-```
-
-Multi-partition logged batches use the batch log to ensure all mutations
-eventually complete or none do. They do not provide cross-partition isolation:
-concurrent readers may observe mutations to different partitions separately.
-Recovery completes outstanding mutations rather than rolling back applied
-ones. An error does not always prove that no mutation occurred. After a timeout
-or post-send transport error, a `gocql.QueryError` with
-`PotentiallyExecuted() == true` means the final outcome is unknown. Reconcile
-application state before retrying a non-idempotent batch.
-
-Use logged batches when all-or-none completion across partitions is required,
-not as a general throughput optimization. Counter updates require
-`gocql.CounterBatch`.
-
-For variable-length batches that repeatedly use the same statement,
-`Session.ExecuteBatch` prepares and caches individual statements more
-efficiently than sending a complete `BEGIN BATCH ... APPLY BATCH` string
-through `Query.Exec`.
+Conditional batch results use `RunBatch` with an explicit row decoder. See
+[lightweight transactions](lightweight-transactions.md).

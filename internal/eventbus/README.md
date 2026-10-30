@@ -15,7 +15,7 @@ A generic, thread-safe event processing package for Go based on channels. EventB
 ## Installation
 
 ```bash
-go get github.com/gocql/gocql/eventbus
+go test ./internal/eventbus
 ```
 
 ## Quick Start
@@ -25,7 +25,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/gocql/gocql/internal/eventbus"
+	"github.com/scylladb/gocql/v2/internal/eventbus"
 )
 
 func main() {

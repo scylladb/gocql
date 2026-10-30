@@ -36,7 +36,7 @@ import (
 	"testing"
 
 	"github.com/klauspost/compress/s2"
-	lz4mod "github.com/scylladb/gocql/lz4"
+	lz4mod "github.com/scylladb/gocql/v2/internal/wirecompress"
 	"github.com/stretchr/testify/require"
 
 	frm "github.com/scylladb/gocql/v2/internal/frame"

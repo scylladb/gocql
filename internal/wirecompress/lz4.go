@@ -22,7 +22,7 @@
  * See the NOTICE file distributed with this work for additional information.
  */
 
-package lz4
+package wirecompress
 
 import (
 	"encoding/binary"

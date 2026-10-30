@@ -56,12 +56,6 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.target_commit }}
-          # make check's check-lz4-pin compares go.mod's lz4 require against the
-          # newest lz4/v* tag, so the tags have to be present. fetch-depth: 0 rather
-          # than fetch-tags on top of the default depth-1 fetch: it makes the tag set
-          # unconditional instead of dependent on which tags a shallow fetch chose to
-          # bring along. check-lz4-pin no longer skips when it finds none, so getting
-          # this wrong is now a failure rather than a silent pass.
           fetch-depth: 0
 
       # runner.arch keeps cached binaries and relocatables separate across
@@ -83,8 +77,6 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: |
-            lz4/go.sum
-            tests/bench/go.sum
             go.sum
 
       - name: Run linters

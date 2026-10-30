@@ -1,3 +1,6 @@
+// Copyright 2026 The Gocql Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license.
+
 package gocql
 
 import (
@@ -22,9 +25,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/scylladb/gocql/lz4"
 	frm "github.com/scylladb/gocql/v2/internal/frame"
 	"github.com/scylladb/gocql/v2/internal/segment"
+	lz4 "github.com/scylladb/gocql/v2/internal/wirecompress"
 
 	"github.com/scylladb/gocql/v2/internal/wire"
 )

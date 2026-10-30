@@ -1,0 +1,107 @@
+{
+  "Internal_API_escapes": [],
+  "accepted_predecessor": "cdba62aaf867b8e1877aa18dc56b555665bc17d6",
+  "artifacts": [
+    {
+      "path": "feature-specs/evidence/step13-api-opacity.json",
+      "sha256": "cf61f460bc9783bfa02c65e6c056dd4a31159467b1b7d0b5a28970f583a72ce3"
+    },
+    {
+      "path": "feature-specs/evidence/step13-assertion-source.json",
+      "sha256": "7e6bf79dd528c523b81047b25d0dc2d47cf79621d4f31c5b00708505fca20149"
+    },
+    {
+      "path": "feature-specs/evidence/step13-checks.json",
+      "sha256": "919ccf49d20c584bdea1f8c0c31b2f32d40578007a3daf1f939ecf7b6d35bd0a"
+    },
+    {
+      "path": "feature-specs/evidence/step13-cleanup.json",
+      "sha256": "5c27c24c25a989277c0471b46dd7f0e0b3bf0cfeb2e8eafdf1e11cc1c011a56b"
+    },
+    {
+      "path": "feature-specs/evidence/step13-collision-preservation.json",
+      "sha256": "f0687568012875d76ed52a611fb6762ae5198394b37419e0a0bfed263eb51f68"
+    },
+    {
+      "path": "feature-specs/evidence/step13-compressor-preservation.json",
+      "sha256": "c0ddc57dc9b5f416b2d7b9f06ed0564c2771493aff0cbc77d3fc0dcdf78c9d08"
+    },
+    {
+      "path": "feature-specs/evidence/step13-consumer-examples.json",
+      "sha256": "0e3a0440b14fa044c1c94978e07bbf2004c6a11184f52a6d43045acb4dfd23d5"
+    },
+    {
+      "path": "feature-specs/evidence/step13-dependency-audit.json",
+      "sha256": "4cad4b1d15dd0ba97c33122a44dacd5aab6a63fe5e24ad5e716c787e049f8afb"
+    },
+    {
+      "path": "feature-specs/evidence/step13-module-audit.json",
+      "sha256": "b3238d1605b6862859c792ea7d88cd0c6a835fbffe49e06a7bbadc895781958e"
+    },
+    {
+      "path": "feature-specs/evidence/step13-native-cassandra.json",
+      "sha256": "ec611074d72873ea262ba9cbf4b6fed7d2df1090bd7d586b678a5d2c1aa09128"
+    },
+    {
+      "path": "feature-specs/evidence/step13-native-stable.json",
+      "sha256": "0539b8b83173de40fc59af0568b4d4841005f71a3aafbea8e198cc919060148b"
+    },
+    {
+      "path": "feature-specs/evidence/step13-public-api.json",
+      "sha256": "5e01f4b426f78087bb58371504934e7844a66dbde65b049b1fbb9281b7b7bf7d"
+    },
+    {
+      "path": "feature-specs/evidence/step13-replay-history.json",
+      "sha256": "2ca7a8b1f300604346f7010765626faded3e5cffa8c2c2b3aa96723656f27ee3"
+    },
+    {
+      "path": "feature-specs/evidence/step13-replay.json",
+      "sha256": "3ee1e21e7104ebbd4653f4266e7ac715beb07a84f2524a0d96e226625bb150da"
+    },
+    {
+      "path": "feature-specs/evidence/step13-runtime-preservation.json",
+      "sha256": "2f4ed7cef25777f211985632e54043d28abacddb68d507332ba83ef285a09c7f"
+    },
+    {
+      "path": "feature-specs/evidence/step13-source.json",
+      "sha256": "fc38c0172edc87124a8291303e1bd9208ef70fd7230b487228c6b7f60d646305"
+    },
+    {
+      "path": "feature-specs/evidence/step13-test-mapping.json",
+      "sha256": "3cf90910cae3123dde5e3217f150284b88bae89e8c30df7b09f3a4e6f1e9d627"
+    },
+    {
+      "path": "feature-specs/evidence/step13-test-preservation.json",
+      "sha256": "fc061f9c4c28eb46c2dcdad9b4b22f3af1be2f29b9643bb48da3943095c68940"
+    }
+  ],
+  "branch": "v2-13-public-module-docs",
+  "compatibility_exports_remaining": [],
+  "gate": "pass; pending parent review",
+  "limitations": [
+    "Full final-tree all174 and streaming acceptance matrices remain14/17.",
+    "Comprehensive end-to-end/native performance remains15; independent review remains16.",
+    "Initial new-example/recording setup failures and prior successful intermediate source receipts are retained under step13/ and step13/final with separate source hashes.",
+    "No remote publication, deployment or release dispatch occurred."
+  ],
+  "missing_required_typed_exports": [],
+  "module_count": 1,
+  "native_modes": [
+    "stable20-record-and-v4raw",
+    "stable20-v4tls",
+    "stable20-v4lz4",
+    "cassandra21-v5raw",
+    "cassandra21-v5lz4",
+    "cassandra21-v5tlsslz4"
+  ],
+  "original_helpers_preserved": 135,
+  "original_identities_preserved": 174,
+  "original_supporting_methods_preserved": 94,
+  "public_exports": 507,
+  "replay_actual_case_passes": 60,
+  "source_inputs": 621,
+  "source_sha256": "fc38c0172edc87124a8291303e1bd9208ef70fd7230b487228c6b7f60d646305",
+  "step": 13,
+  "test_helper_declarations_preserved": 2382,
+  "transitive_dependency_findings": []
+}

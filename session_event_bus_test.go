@@ -1,6 +1,9 @@
 //go:build unit
 // +build unit
 
+// Copyright 2026 The Gocql Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license.
+
 package gocql
 
 import implCluster "github.com/scylladb/gocql/v2/internal/cluster"
@@ -29,7 +32,7 @@ func TestSessionEventBusPublishesEvents(t *testing.T) {
 	}
 	defer implCluster.SessionData(s).InternalEventBus.Stop()
 
-	sub := s.SubscribeToEvents("test", 1, nil)
+	sub := sessionTestSubscribeToEvents(s, "test", 1, nil)
 	defer sub.Stop()
 
 	ev := &events.StatusChangeEvent{

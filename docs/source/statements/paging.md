@@ -1,40 +1,15 @@
-# Paging
+# Paging and borrowed results
 
-Automatic paging uses `ClusterConfig.PageSize`, or the value set by
-`Query.PageSize`. Very small pages increase round trips; the default is 5000.
+`Run` advances pages through `Rows.Next`/`NextInto`; `Row()` returns the current
+typed value. `NextInto` writes fields into a caller struct after the page has
+arrived. Payload fields still borrow the receive page. Their lifetime ends on
+the next advancement or Close unless a retained `PageLease` pins that page.
+Clone explicitly detaches a value. A retained page survives Session.Close and
+does not extend a borrowed input binding's drain.
 
-For manual paging, keep the returned page state opaque and pass it only to the
-same query and protocol version:
+For explicit paging use `RunPage(ctx, session, bound, StartPage(), options)` and
+carry the returned page state to the next call. `RunUnpaged` explicitly requests
+one unpaged response. Check iteration errors and close all delivered pages.
+Cyclic/nonprogressing state and retained paging-history limits report errors.
 
-```go
-var pageState []byte
-var eventID gocql.UUID
-var payload string
-
-for {
-	iter := session.Query(
-		"SELECT event_id, payload FROM events WHERE account_id = ?",
-		accountID,
-	).PageSize(100).PageState(pageState).Iter()
-
-	nextPageState := iter.PageState()
-	for iter.Scan(&eventID, &payload) {
-		// Process the row.
-	}
-	if err := iter.Close(); err != nil {
-		return err
-	}
-	if len(nextPageState) == 0 {
-		break
-	}
-	pageState = nextPageState
-}
-```
-
-A server can return an empty intermediate page for range or `ALLOW FILTERING`
-queries. Use `Iter.Scan`, `Iter.LastPage`, or the returned page state instead
-of treating an empty page as completion.
-
-Page state contains primary-key data. Protect it with authenticated encryption
-before exposing it in a URL or another untrusted location. Never modify it or
-reuse it with a different statement or protocol version.
+See [streaming](streaming.md) to decode before a complete page arrives.

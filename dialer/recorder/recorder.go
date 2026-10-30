@@ -1,3 +1,6 @@
+// Copyright 2026 The Gocql Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license.
+
 package recorder
 
 import (
@@ -22,12 +25,8 @@ type Option func(*RecordDialer)
 // WithSegmentCompressor supplies the compressor a protocol v5 connection's transport
 // segments are compressed with.
 //
-// It has to be supplied rather than derived: the only implementation, lz4, lives in a
-// separate Go module, so neither the driver nor this package can construct one. Pass
-// the same compressor the ClusterConfig uses. Recording or replaying a v5 connection
-// that negotiated compression without one fails with
-// dialer.ErrSegmentCompressorRequired rather than decoding the stream with the wrong
-// segment header size.
+// Supply a compressor implementing the framing adapter's append methods. The
+// configuration used for recording/replay must negotiate the same algorithm.
 //
 // It is ignored on a connection that did not negotiate compression. Compression below
 // protocol v5 is not ignored but refused: there it compresses frame bodies rather than

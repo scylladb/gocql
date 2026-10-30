@@ -34,7 +34,7 @@ import (
 
 	"testing"
 
-	lz4mod "github.com/scylladb/gocql/lz4"
+	lz4mod "github.com/scylladb/gocql/v2/internal/wirecompress"
 
 	"github.com/stretchr/testify/require"
 

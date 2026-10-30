@@ -1,3 +1,6 @@
+// Copyright 2026 The Gocql Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license.
+
 package gocql
 
 import (
@@ -12,23 +15,23 @@ import (
 )
 
 type driverConnPicker = pool.ConnPicker
-type ConstantReconnectionPolicy = pool.ConstantReconnectionPolicy
+type retiredConstantReconnectionPolicy = pool.ConstantReconnectionPolicy
 
 var ErrScyllaSourcePortAlreadyInUse = implTransport.ErrScyllaSourcePortAlreadyInUse
 
-type ExponentialReconnectionPolicy = pool.ExponentialReconnectionPolicy
-type HostInformation = implEndpoint.HostInformation
-type HostPoolInfo = pool.HostPoolInfo
-type NoReconnectionPolicy = pool.NoReconnectionPolicy
-type Partitioner = implEndpoint.Partitioner
-type ReconnectionPolicy = pool.ReconnectionPolicy
-type SelectedHost = implEndpoint.SelectedHost
-type SetHosts = pool.SetHosts
-type SetPartitioner = pool.SetPartitioner
-type SetTablets = pool.SetTablets
-type Token = implEndpoint.Token
+type retiredExponentialReconnectionPolicy = pool.ExponentialReconnectionPolicy
+type retiredHostInformation = implEndpoint.HostInformation
+type retiredHostPoolInfo = pool.HostPoolInfo
+type retiredNoReconnectionPolicy = pool.NoReconnectionPolicy
+type retiredPartitioner = implEndpoint.Partitioner
+type retiredReconnectionPolicy = pool.ReconnectionPolicy
+type retiredSelectedHost = implEndpoint.SelectedHost
+type retiredSetHosts = pool.SetHosts
+type retiredSetPartitioner = pool.SetPartitioner
+type retiredSetTablets = pool.SetTablets
+type retiredToken = implEndpoint.Token
 
-func WrapTLS(a0 context.Context, a1 net.Conn, a2 string, a3 *tls.Config) (*DialedHost, error) {
+func retiredWrapTLS(a0 context.Context, a1 net.Conn, a2 string, a3 *tls.Config) (*retiredDialedHost, error) {
 	return implTransport.WrapTLS(a0, a1, a2, a3)
 }
 func applyV2SocketOptions(a0 net.Conn, a1 Config, a2 string) error {
@@ -57,16 +60,18 @@ type int64Hasher = implEndpoint.InternalInt64Hasher
 type int64Token = implEndpoint.InternalInt64Token
 type int64TokenSelectedHost = implEndpoint.InternalInt64TokenSelectedHost
 
-func isHeavyLoaded(a0 *driverConn) bool       { return pool.InternalIsHeavyLoaded(a0) }
-func isLocalAddrInUseErr(a0 error) bool       { return implTransport.InternalIsLocalAddrInUseErr(a0) }
-func logicalV2TLSAddress(a0 *HostInfo) string { return implTransport.InternalLogicalV2TLSAddress(a0) }
+func isHeavyLoaded(a0 *driverConn) bool { return pool.InternalIsHeavyLoaded(a0) }
+func isLocalAddrInUseErr(a0 error) bool { return implTransport.InternalIsLocalAddrInUseErr(a0) }
+func logicalV2TLSAddress(a0 *retiredHostInfo) string {
+	return implTransport.InternalLogicalV2TLSAddress(a0)
+}
 
 var maxHashInt = implEndpoint.InternalMaxHashInt
 
 type murmur3Partitioner = implEndpoint.InternalMurmur3Partitioner
 
 func newDefaultConnPicker(a0 int) *defaultConnPicker { return pool.InternalNewDefaultConnPicker(a0) }
-func newHostPool(a0 poolServices, a1 *HostInfo, a2 int, a3 string) *hostConnPool {
+func newHostPool(a0 poolServices, a1 *retiredHostInfo, a2 int, a3 string) *hostConnPool {
 	return pool.InternalNewHostPool(a0, a1, a2, a3)
 }
 func newScyllaConnPicker(a0 *driverConn, a1 StdLogger) *scyllaConnPicker {
@@ -75,7 +80,7 @@ func newScyllaConnPicker(a0 *driverConn, a1 StdLogger) *scyllaConnPicker {
 func newScyllaPortIterator(a0 int, a1 int) *scyllaPortIterator {
 	return implTransport.InternalNewScyllaPortIterator(a0, a1)
 }
-func newTokenRing(a0 string, a1 []*HostInfo) (*tokenRing, error) {
+func newTokenRing(a0 string, a1 []*retiredHostInfo) (*tokenRing, error) {
 	return implEndpoint.InternalNewTokenRing(a0, a1)
 }
 func newTypedConnPicker(a0 *driverConn, a1 PoolOptions) (*typedConnPicker, error) {

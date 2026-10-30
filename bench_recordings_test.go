@@ -1,94 +1,67 @@
 //go:build unit
 
-package gocql
+// Copyright 2026 The Gocql Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license.
 
-import implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
+package gocql
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
+	metadata "github.com/scylladb/gocql/v2/internal/metadata"
+	model "github.com/scylladb/gocql/v2/internal/model"
+	protocol "github.com/scylladb/gocql/v2/internal/protocol"
 	"testing"
 
 	"github.com/scylladb/gocql/v2/dialer"
 	frm "github.com/scylladb/gocql/v2/internal/frame"
 
-	"errors"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
 var benchRecordings = []string{
-	"rec_insert/192.168.100.11:9042-0Writes",
-	"rec_select/192.168.100.11:9042-0Writes",
+	"rec_insert/connection-0Writes",
+	"rec_select/connection-0Writes",
 }
 
-// benchControlQuery is the statement the control connection sends on a recorded
-// connection: qrySystemLocal with the ScyllaDB-only USING TIMEOUT clause appended. The
-// bench module records with a bare gocql.newClusterSettings() against a ScyllaDB node, so the
-// clause comes from newClusterSettings's default ConnectTimeout -- and it is rendered here by
-// the production code rather than restated, so a change to that default, or to the
-// rendering, fails this test instead of slipping past a pattern.
-//
-// The timeout sits inside the query text, and therefore inside the frame hash the
-// replayer matches on. A guard accepting any number would let a changed default leave the
-// recordings stale exactly the way b6a9682 did, and leave it to the label-gated replay
-// lane to notice -- which is the gap this test exists to close.
-//
-// ConnectTimeout is the right source because of an ordering: controlConn.setupConn is
-// what issues qrySystemLocal, and its callers reach finalizeConnection only afterwards --
-// which republishes the clause from MetadataSchemaRequestTimeout (conn.go:347). Both
-// default to 60s, so a recording cannot tell the two apart; if the control query ever
-// moves after finalizeConnection, this guard keeps passing and the recordings go stale.
-func benchControlQuery() string {
-	// setSystemRequestTimeout only stores into an atomic and reads isScyllaConn, so
-	// nothing else of a driverConn has to be real here.
-	c := &driverConn{InternalScyllaSupported: ScyllaConnectionFeatures{
-		ScyllaHostFeatures: *func() *ScyllaHostFeatures {
-			opaqueStorageValue := new(ScyllaHostFeatures)
-			implEndpoint.ScyllaHostFeaturesData(opaqueStorageValue).InternalIsScylla = true
-			return opaqueStorageValue
-		}(),
-	}}
-	c.InternalSetSystemRequestTimeout(newClusterSettings().ConnectTimeout)
-	stmt, _ := c.InternalSystemRequestStatement(qrySystemLocal)
-	return stmt
-}
+// benchControlQuery and benchControlParams pin typed control startup exactly.
+// The original pre-migration captures and their failed operational replay remain
+// source-bound historical evidence in step10; these fixtures run current code.
+// The capture's negotiated Scylla metadata timeout is 30s. Unlike legacy
+// querySystem it is independent of connect and client metadata timeout budgets.
+// The always-run operational replay additionally guards the complete startup.
+func benchControlQuery() string { return qrySystemLocal + " USING TIMEOUT 30000ms" }
 
-// benchControlParams is the <query_parameters> block the control connection's QUERY
-// carries, up to but not including the default timestamp.
-//
-// The statement is not the whole of what the recordings turn on. The hash the replayer
-// matches a request by covers the parameters behind the text too -- the range stops only
-// at the default timestamp, which is time.Now() at send -- so a changed page size or a
-// default timestamp switched off re-stales the recordings exactly the way b6a9682 did,
-// and comparing statements alone would not notice.
-//
-// Rendered from the driver's own values, for the same reason benchControlQuery is: a
-// restated 0x24 would go on matching the recording after the flags it stands for stopped
-// being sent, which is the failure this guard exists to make loud.
-//
-// querySystem sends Consistency(One) and sets disableSkipMetadata, and leaves the cluster
-// defaults otherwise -- so the flags are the page size and the default timestamp, and the
-// absent skip-metadata bit is itself part of what is pinned here.
-func benchControlParams() []byte {
-	cluster := newClusterSettings()
-
-	var flags uint32
-	if cluster.PageSize > 0 {
-		flags |= frm.FlagPageSize
+func benchControlParams(t *testing.T) []byte {
+	t.Helper()
+	sentinel := errors.New("capture encoded control request")
+	var request *model.AttemptRequest
+	_, err := metadata.ReadRows(context.Background(), 4, DefaultConfig().Metadata.RequestTimeout,
+		func(_ context.Context, r *model.AttemptRequest) (*model.ResponseData, error) {
+			request = r
+			return nil, sentinel
+		},
+		metadata.Query[Unit, Unit]{CQL: benchControlQuery(), Params: NoParams, Rows: NoRows}, NewColumns(), Unit{})
+	if !errors.Is(err, sentinel) || request == nil {
+		t.Fatalf("capture canonical metadata request: %v", err)
 	}
-	if cluster.DefaultTimestamp {
-		flags |= frm.FlagDefaultTimestamp
+	frame, err := (protocol.Settings{Protocol: 4, MaxFrameBytes: DefaultConfig().Limits.MaxFrameBytes, MaxDecompressedBytes: DefaultConfig().Limits.MaxDecompressedBytes}).BuildTypedRequest(request, 0)
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	params := []byte{byte(One >> 8), byte(One), byte(flags)}
-	if cluster.PageSize > 0 {
-		params = append(params, byte(cluster.PageSize>>24), byte(cluster.PageSize>>16),
-			byte(cluster.PageSize>>8), byte(cluster.PageSize))
+	raw := make([]byte, frame.Len())
+	if _, err := frame.CopyTo(raw); err != nil {
+		t.Fatal(err)
 	}
-	return params
+	_, tail, ok := recordedQueryText(t, 0, raw)
+	if !ok {
+		t.Fatal("canonical metadata request is not QUERY")
+	}
+	return tail
 }
 
 const opcodeOffset = 4
@@ -155,9 +128,6 @@ func readRecording(t *testing.T, name string) []dialer.Record {
 	t.Helper()
 
 	dir := filepath.Join("tests", "bench")
-	if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
-		t.Skipf("%s is a nested module and is not present in this tree", dir)
-	}
 
 	path := filepath.Join(dir, name)
 	raw, err := os.ReadFile(path)
@@ -181,13 +151,12 @@ func readRecording(t *testing.T, name string) []dialer.Record {
 	return records
 }
 
-// Historical capture integrity only: these captures require regeneration for
-// typed control traffic in step13. Canonical runtime coverage uses live peers.
-func TestBenchHistoricalControlCapture(t *testing.T) {
+// Current typed-control captures also run through TestSingleConnectionReplay.
+func TestBenchCurrentControlCapture(t *testing.T) {
 	const regenerate = "\nRegenerate the recordings: see the recipe above TestMain in tests/bench/bench_single_conn_test.go."
 
 	want := benchControlQuery()
-	wantParams := benchControlParams()
+	wantParams := benchControlParams(t)
 
 	for _, name := range benchRecordings {
 		t.Run(name, func(t *testing.T) {
@@ -227,22 +196,9 @@ func TestBenchHistoricalControlCapture(t *testing.T) {
 
 			// The statement matches. The parameters behind it are inside the hash as
 			// well, so the recording is only current if they match too.
-			const timestampLen = 8
-			if len(params) != len(wantParams)+timestampLen {
-				t.Fatalf("the recorded control query carries %d parameter bytes, want %d: %d up to the default timestamp, then the timestamp's %d"+regenerate,
-					len(params), len(wantParams)+timestampLen, len(wantParams), timestampLen)
-			}
-			if got := params[:len(wantParams)]; !bytes.Equal(got, wantParams) {
-				t.Errorf("the recorded control query's parameters are not the ones the driver now sends\n\twant % x\n\tgot  % x\n(the consistency, the query-flags byte, then the page size)"+regenerate, wantParams, got)
+			if !bytes.Equal(params, wantParams) {
+				t.Fatalf("recorded control query parameters differ from current typed metadata execution\nwant % x\ngot  % x%s", wantParams, params, regenerate)
 			}
 		})
 	}
 }
-
-// readRecording returns every record in a checked-in recording. A record is one JSON
-// object per line, the shape dialer.Record marshals.
-//
-// tests/bench is a nested Go module, so the parent module's published zip omits the
-// directory entirely and it is simply absent when these tests run from the module cache
-// rather than a checkout. That is not a stale recording, so skip. A file missing from a
-// directory that does exist is a real problem and still fails.

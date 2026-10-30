@@ -33,7 +33,7 @@ import (
 )
 
 func Example() {
-	// Assumes example.tweet(id uuid PRIMARY KEY, timeline text, text text).
+	// Assumes example.tweet(timeline text, id uuid, text text, PRIMARY KEY(timeline,id)).
 	ctx := context.Background()
 	config := gocql.DefaultConfig("localhost:9042")
 	config.Keyspace = "example"

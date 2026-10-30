@@ -1,32 +1,14 @@
 # Compression
 
-Set `ClusterConfig.Compressor` before creating a session to enable Snappy or
-LZ4 compression:
+Set `config.Compression` to `NoCompression`, `LZ4Compression` or
+`SnappyCompression`. Implementations belong to the single v2 module; no
+standalone compressor module or `replace` directive is needed. Native protocol
+5 supports LZ4 segment compression. The outbound data path compresses encoded
+spans directly and sends original spans when a v5 segment is incompressible.
 
-```go
-cluster.Compressor = &gocql.SnappyCompressor{}
-```
+`RunStream` supports no compression on raw/TLS transports and protocol 5 LZ4
+segments. Protocol 3/4 frame compression with LZ4 or Snappy produces an explicit
+`StreamCapabilityError` before streaming submission. There is no buffered
+fallback. Normal buffered execution supports protocol 3/4 frame compression.
 
-LZ4 is a separate module imported from the ScyllaDB fork:
-
-```go
-import "github.com/scylladb/gocql/lz4"
-
-cluster.Compressor = &lz4.LZ4Compressor{}
-```
-
-When native protocol v5 is explicitly enabled, use LZ4 or no compression.
-Snappy does not support v5 transport segments. Protocol v5 is not selected by
-automatic protocol discovery and must currently be configured explicitly.
-
-The LZ4 module is tagged alongside the parent module. The parent module can
-still require an older published LZ4 version until its post-release pin update.
-Repository tags have an `lz4/` prefix, while `go.mod` uses the unprefixed
-version. For the version currently pinned by the parent module:
-
-```text
-require github.com/scylladb/gocql/lz4 v1.19.0
-```
-
-Do not replace `github.com/gocql/gocql/lz4`; upstream folded that package into
-its main module. Import `github.com/scylladb/gocql/lz4` directly instead.
+See [streaming](../statements/streaming.md) for transform staging and lifetime.

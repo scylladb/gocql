@@ -30,10 +30,10 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/scylladb/gocql/lz4"
 	"github.com/scylladb/gocql/v2/internal/segment"
 	"github.com/scylladb/gocql/v2/internal/streams"
 	"github.com/scylladb/gocql/v2/internal/wire"
+	lz4 "github.com/scylladb/gocql/v2/internal/wirecompress"
 )
 
 type step04MemoryConn struct {

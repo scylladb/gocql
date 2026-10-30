@@ -18,8 +18,8 @@ import (
 	"time"
 )
 
-func AcceptAllFilter() HostFilter { return implCluster.AcceptAllFilter() }
-func AvoidSlowReplicas(a0 int) func(policy *tokenAwareHostPolicy) {
+func retiredAcceptAllFilter() retiredHostFilter { return implCluster.AcceptAllFilter() }
+func retiredAvoidSlowReplicas(a0 int) func(policy *tokenAwareHostPolicy) {
 	return implCluster.AvoidSlowReplicas(a0)
 }
 func BatchEntry[R any](a0 *Bound[R]) (BatchItem, error) { return implExecution.BatchEntry[R](a0) }
@@ -45,26 +45,32 @@ type Bound[R any] = implExecution.Bound[R]
 
 const ClientRouteEvent = implCluster.ClientRouteEvent
 
-type ClientRoutesConfig = implCluster.ClientRoutesConfig
-type ClientRoutesEndpoint = implCluster.ClientRoutesEndpoint
-type ClientRoutesEndpointList = implCluster.ClientRoutesEndpointList
-type ClientRoutesHandler = implCluster.ClientRoutesHandler
-type ClientRoutesOption = implCluster.ClientRoutesOption
-type ClusterOption = implCluster.ClusterOption
+type retiredClientRoutesConfig = implCluster.ClientRoutesConfig
+type retiredClientRoutesEndpoint = implCluster.ClientRoutesEndpoint
+type retiredClientRoutesEndpointList = implCluster.ClientRoutesEndpointList
+type retiredClientRoutesHandler = implCluster.ClientRoutesHandler
+type retiredClientRoutesOption = implCluster.ClientRoutesOption
+type retiredClusterOption = implCluster.ClusterOption
 
 func Connect(a0 context.Context, a1 Config) (*Session, error) { return implExecution.Connect(a0, a1) }
 
-type ConnectObserver = implCluster.ConnectObserver
+type retiredConnectObserver = implCluster.ConnectObserver
 
 const ControlEvent = implCluster.ControlEvent
 
-func DCAwareRoundRobinPolicy(a0 string, a1 ...dcAwarePolicyOption) HostSelectionPolicy {
+func retiredDCAwareRoundRobinPolicy(a0 string, a1 ...dcAwarePolicyOption) retiredHostSelectionPolicy {
 	return implCluster.DCAwareRoundRobinPolicy(a0, a1...)
 }
-func DataCenterHostFilter(a0 string) HostFilter        { return implCluster.DataCenterHostFilter(a0) }
-func DataCentreHostFilter(a0 string) HostFilter        { return implCluster.DataCentreHostFilter(a0) }
-func DenyAllFilter() HostFilter                        { return implCluster.DenyAllFilter() }
-func DontShuffleReplicas() func(*tokenAwareHostPolicy) { return implCluster.DontShuffleReplicas() }
+func retiredDataCenterHostFilter(a0 string) retiredHostFilter {
+	return implCluster.DataCenterHostFilter(a0)
+}
+func retiredDataCentreHostFilter(a0 string) retiredHostFilter {
+	return implCluster.DataCentreHostFilter(a0)
+}
+func retiredDenyAllFilter() retiredHostFilter { return implCluster.DenyAllFilter() }
+func retiredDontShuffleReplicas() func(*tokenAwareHostPolicy) {
+	return implCluster.DontShuffleReplicas()
+}
 
 var ErrHostQueryFailed = implCluster.ErrHostQueryFailed
 var ErrNoConnectionsStarted = implCluster.ErrNoConnectionsStarted
@@ -83,37 +89,37 @@ func ExecBatch(a0 context.Context, a1 *Session, a2 BatchKind, a3 []BatchItem, a4
 }
 
 type ExecutionError = implExecution.ExecutionError
-type HostFilter = implCluster.HostFilter
-type HostFilterFunc = implCluster.HostFilterFunc
+type retiredHostFilter = implCluster.HostFilter
+type retiredHostFilterFunc = implCluster.HostFilterFunc
 
-func HostPolicyOptionDisableDCFailover(a0 dcFailoverDisabledPolicy) {
+func retiredHostPolicyOptionDisableDCFailover(a0 dcFailoverDisabledPolicy) {
 	implCluster.HostPolicyOptionDisableDCFailover(a0)
 }
 
-type HostSelectionPolicy = implCluster.HostSelectionPolicy
-type HostStateNotifier = implCluster.HostStateNotifier
-type HostTierer = implCluster.HostTierer
-type KeyspaceUpdateEvent = implCluster.KeyspaceUpdateEvent
+type retiredHostSelectionPolicy = implCluster.HostSelectionPolicy
+type retiredHostStateNotifier = implCluster.HostStateNotifier
+type retiredHostTierer = implCluster.HostTierer
+type retiredKeyspaceUpdateEvent = implCluster.KeyspaceUpdateEvent
 
-var MAX_IN_FLIGHT_THRESHOLD = implCluster.MAX_IN_FLIGHT_THRESHOLD
+var retiredMAX_IN_FLIGHT_THRESHOLD = implCluster.MAX_IN_FLIGHT_THRESHOLD
 
-type Metadata = implCluster.Metadata
+type retiredMetadata = implCluster.Metadata
 
-func NewClientRoutesAddressTranslator(a0 ClientRoutesConfig, a1 DNSResolver, a2 bool, a3 StdLogger) *ClientRoutesHandler {
+func retiredNewClientRoutesAddressTranslator(a0 retiredClientRoutesConfig, a1 DNSResolver, a2 bool, a3 StdLogger) *retiredClientRoutesHandler {
 	return implCluster.NewClientRoutesAddressTranslator(a0, a1, a2, a3)
 }
-func NewTraceWriter(a0 *Session, a1 io.Writer) *TraceWriter {
+func retiredNewTraceWriter(a0 *Session, a1 io.Writer) *retiredTraceWriter {
 	return implCluster.NewTraceWriter(a0, a1)
 }
-func NewTracer(a0 *Session) *TracerEnhanced { return implCluster.NewTracer(a0) }
+func retiredNewTracer(a0 *Session) *retiredTracerEnhanced { return implCluster.NewTracer(a0) }
 
-type NextHost = implCluster.NextHost
+type retiredNextHost = implCluster.NextHost
 
-func NonLocalReplicasFallback() func(policy *tokenAwareHostPolicy) {
+func retiredNonLocalReplicasFallback() func(policy *tokenAwareHostPolicy) {
 	return implCluster.NonLocalReplicasFallback()
 }
 
-type ObservedConnect = implCluster.ObservedConnect
+type retiredObservedConnect = implCluster.ObservedConnect
 
 func OpenSingleHost(a0 context.Context, a1 Config, a2 UUID) (*Session, error) {
 	return implExecution.OpenSingleHost(a0, a1, a2)
@@ -125,7 +131,7 @@ const OverflowEvent = implCluster.OverflowEvent
 
 type Page[R any] = implExecution.Page[R]
 type PageLease = implExecution.PageLease
-type PoolConfig = implCluster.PoolConfig
+type retiredPoolConfig = implCluster.PoolConfig
 
 func Prepare[P any, R any](a0 context.Context, a1 *Session, a2 Statement[P, R], a3 PrepareOptions) (*Prepared[P, R], error) {
 	return implExecution.Prepare[P, R](a0, a1, a2, a3)
@@ -135,13 +141,15 @@ type PrepareOptions = implExecution.PrepareOptions
 type Prepared[P any, R any] = implExecution.Prepared[P, R]
 type PreparedInfo = implExecution.PreparedInfo
 
-func RackAwareRoundRobinPolicy(a0 string, a1 string, a2 ...dcAwarePolicyOption) HostSelectionPolicy {
+func retiredRackAwareRoundRobinPolicy(a0 string, a1 string, a2 ...dcAwarePolicyOption) retiredHostSelectionPolicy {
 	return implCluster.RackAwareRoundRobinPolicy(a0, a1, a2...)
 }
 
-type ReadyPolicy = implCluster.ReadyPolicy
+type retiredReadyPolicy = implCluster.ReadyPolicy
 
-func RoundRobinHostPolicy() HostSelectionPolicy { return implCluster.RoundRobinHostPolicy() }
+func retiredRoundRobinHostPolicy() retiredHostSelectionPolicy {
+	return implCluster.RoundRobinHostPolicy()
+}
 
 type RowStream[R any] = implExecution.RowStream[R]
 type Rows[R any] = implExecution.Rows[R]
@@ -166,8 +174,8 @@ const SchemaEvent = implCluster.SchemaEvent
 
 type Session = implCluster.Session
 
-func ShuffleReplicas() func(*tokenAwareHostPolicy) { return implCluster.ShuffleReplicas() }
-func SingleHostReadyPolicy(a0 HostSelectionPolicy) *singleHostReadyPolicy {
+func retiredShuffleReplicas() func(*tokenAwareHostPolicy) { return implCluster.ShuffleReplicas() }
+func retiredSingleHostReadyPolicy(a0 retiredHostSelectionPolicy) *singleHostReadyPolicy {
 	return implCluster.SingleHostReadyPolicy(a0)
 }
 
@@ -177,7 +185,7 @@ type StreamInfo = implExecution.StreamInfo
 type StreamOptions = implExecution.StreamOptions
 type Subscription = implCluster.Subscription
 
-func TokenAwareHostPolicy(a0 HostSelectionPolicy, a1 ...func(*tokenAwareHostPolicy)) HostSelectionPolicy {
+func retiredTokenAwareHostPolicy(a0 retiredHostSelectionPolicy, a1 ...func(*tokenAwareHostPolicy)) retiredHostSelectionPolicy {
 	return implCluster.TokenAwareHostPolicy(a0, a1...)
 }
 
@@ -186,24 +194,28 @@ const TopologyEvent = implCluster.TopologyEvent
 type TraceEntry = implCluster.TraceEntry
 type TraceEvent = implCluster.TraceEvent
 type TraceInfo = implCluster.TraceInfo
-type TraceWriter = implCluster.TraceWriter
-type TracerEnhanced = implCluster.TracerEnhanced
+type retiredTraceWriter = implCluster.TraceWriter
+type retiredTracerEnhanced = implCluster.TracerEnhanced
 
-func WhiteListHostFilter(a0 ...string) HostFilter { return implCluster.WhiteListHostFilter(a0...) }
-func WithClientRoutes(a0 ...ClientRoutesOption) func(*clusterSettings) {
+func retiredWhiteListHostFilter(a0 ...string) retiredHostFilter {
+	return implCluster.WhiteListHostFilter(a0...)
+}
+func retiredWithClientRoutes(a0 ...retiredClientRoutesOption) func(*clusterSettings) {
 	return implCluster.WithClientRoutes(a0...)
 }
-func WithEndpoints(a0 ...ClientRoutesEndpoint) func(*ClientRoutesConfig) {
+func retiredWithEndpoints(a0 ...retiredClientRoutesEndpoint) func(*retiredClientRoutesConfig) {
 	return implCluster.WithEndpoints(a0...)
 }
-func WithMaxResolverConcurrency(a0 int) func(*ClientRoutesConfig) {
+func retiredWithMaxResolverConcurrency(a0 int) func(*retiredClientRoutesConfig) {
 	return implCluster.WithMaxResolverConcurrency(a0)
 }
-func WithResolveHealthyEndpointPeriod(a0 time.Duration) func(*ClientRoutesConfig) {
+func retiredWithResolveHealthyEndpointPeriod(a0 time.Duration) func(*retiredClientRoutesConfig) {
 	return implCluster.WithResolveHealthyEndpointPeriod(a0)
 }
-func WithShardAwareness(a0 bool) func(*ClientRoutesConfig) { return implCluster.WithShardAwareness(a0) }
-func WithTable(a0 string) func(*ClientRoutesConfig)        { return implCluster.WithTable(a0) }
+func retiredWithShardAwareness(a0 bool) func(*retiredClientRoutesConfig) {
+	return implCluster.WithShardAwareness(a0)
+}
+func retiredWithTable(a0 string) func(*retiredClientRoutesConfig) { return implCluster.WithTable(a0) }
 
 type activeExecutionDrain = implExecution.InternalActiveExecutionDrain
 type adaptiveOrderingReport = implCluster.InternalAdaptiveOrderingReport
@@ -235,13 +247,13 @@ func buildConnectionReport(a0 *clusterSettings) connectionReport {
 func buildControlPlaneReport(a0 *clusterSettings, a1 bool) controlPlaneReport {
 	return implCluster.InternalBuildControlPlaneReport(a0, a1)
 }
-func buildLoadBalancingPolicyReport(a0 HostSelectionPolicy) any {
+func buildLoadBalancingPolicyReport(a0 retiredHostSelectionPolicy) any {
 	return implCluster.InternalBuildLoadBalancingPolicyReport(a0)
 }
-func buildLoadBalancingReport(a0 HostSelectionPolicy) queryLoadBalancingReport {
+func buildLoadBalancingReport(a0 retiredHostSelectionPolicy) queryLoadBalancingReport {
 	return implCluster.InternalBuildLoadBalancingReport(a0)
 }
-func buildNodeLocationPreferenceReport(a0 HostSelectionPolicy) any {
+func buildNodeLocationPreferenceReport(a0 retiredHostSelectionPolicy) any {
 	return implCluster.InternalBuildNodeLocationPreferenceReport(a0)
 }
 func buildQueryDefaultsReport(a0 *clusterSettings) queryDefaultsReport {
@@ -251,7 +263,7 @@ func buildQueryReport(a0 *Session) queryReport { return implCluster.InternalBuil
 func buildQueryRetryReport(a0 *clusterSettings) queryRetryReport {
 	return implCluster.InternalBuildQueryRetryReport(a0)
 }
-func buildReconnectionPolicyReport(a0 ReconnectionPolicy) any {
+func buildReconnectionPolicyReport(a0 retiredReconnectionPolicy) any {
 	return implCluster.InternalBuildReconnectionPolicyReport(a0)
 }
 func buildRequestsReport(a0 *clusterSettings) requestsReport {
@@ -425,7 +437,7 @@ func getKeyspaceMetadata(a0 *Session, a1 string) (*KeyspaceMetadata, error) {
 func getPairsFromEvent(a0 []string, a1 []string) []pair {
 	return implCluster.InternalGetPairsFromEvent(a0, a1)
 }
-func getPeersFromQuerySystemPeers(a0 []map[string]any, a1 int, a2 StdLogger) ([]*HostInfo, error) {
+func getPeersFromQuerySystemPeers(a0 []map[string]any, a1 int, a2 StdLogger) ([]*retiredHostInfo, error) {
 	return implCluster.InternalGetPeersFromQuerySystemPeers(a0, a1, a2)
 }
 func getReplicationFactorFromOpts(a0 any) (int, error) {
@@ -455,8 +467,8 @@ func getViewMetadata(a0 *Session, a1 string) ([]ViewMetadata, error) {
 func getViewMetadataByTable(a0 *Session, a1 string, a2 string) ([]ViewMetadata, error) {
 	return implCluster.InternalGetViewMetadataByTable(a0, a1, a2)
 }
-func hostBusy(a0 *Session, a1 *HostInfo) bool { return implCluster.InternalHostBusy(a0, a1) }
-func hostInfoFromMap(a0 map[string]any, a1 int) (*HostInfo, error) {
+func hostBusy(a0 *Session, a1 *retiredHostInfo) bool { return implCluster.InternalHostBusy(a0, a1) }
+func hostInfoFromMap(a0 map[string]any, a1 int) (*retiredHostInfo, error) {
 	return implCluster.InternalHostInfoFromMap(a0, a1)
 }
 
@@ -472,8 +484,8 @@ type inFlightReport = implCluster.InternalInFlightReport
 type int64SelectedHost = implCluster.InternalInt64SelectedHost
 
 func isNilPolicy(a0 any) bool                     { return implCluster.InternalIsNilPolicy(a0) }
-func isValidPeer(a0 *HostInfo) bool               { return implCluster.InternalIsValidPeer(a0) }
-func isZeroToken(a0 *HostInfo) bool               { return implCluster.InternalIsZeroToken(a0) }
+func isValidPeer(a0 *retiredHostInfo) bool        { return implCluster.InternalIsValidPeer(a0) }
+func isZeroToken(a0 *retiredHostInfo) bool        { return implCluster.InternalIsZeroToken(a0) }
 func learnPortFromHosts(a0 []string) (int, error) { return implCluster.InternalLearnPortFromHosts(a0) }
 
 type loadBalancingCustomReport = implCluster.InternalLoadBalancingCustomReport
@@ -504,10 +516,12 @@ func newDriverConfigReporter(a0 *Session) *driverConfigReporter {
 func newEventDebouncer(a0 string, a1 func([]frame), a2 StdLogger) *eventDebouncer {
 	return implCluster.InternalNewEventDebouncer(a0, a1, a2)
 }
-func newHostConnPool(a0 *Session, a1 *HostInfo, a2 int, a3 string) *hostConnPool {
+func newHostConnPool(a0 *Session, a1 *retiredHostInfo, a2 int, a3 string) *hostConnPool {
 	return implCluster.InternalNewHostConnPool(a0, a1, a2, a3)
 }
-func newHostInfoList(a0 []*HostInfo) *hostInfoList { return implCluster.InternalNewHostInfoList(a0) }
+func newHostInfoList(a0 []*retiredHostInfo) *hostInfoList {
+	return implCluster.InternalNewHostInfoList(a0)
+}
 func newMetadataDescriber(a0 *Session) *metadataDescriber {
 	return implCluster.InternalNewMetadataDescriber(a0)
 }
@@ -524,7 +538,7 @@ func newSessionCommon(a0 clusterSettings) (*Session, error) {
 	return implCluster.InternalNewSessionCommon(a0)
 }
 func newSessionID(a0 StdLogger) string { return implCluster.InternalNewSessionID(a0) }
-func newSingleHost(a0 *HostInfo, a1 byte, a2 time.Duration) *singleHost {
+func newSingleHost(a0 *retiredHostInfo, a1 byte, a2 time.Duration) *singleHost {
 	return implCluster.InternalNewSingleHost(a0, a1, a2)
 }
 
@@ -537,8 +551,10 @@ type pageFuture = implExecution.InternalPageFuture
 type pageReport = implCluster.InternalPageReport
 type pair = implCluster.InternalPair
 
-func parseProtocolFromError(a0 error) int          { return implCluster.InternalParseProtocolFromError(a0) }
-func partitionHealthy(a0 []*HostInfo, a1 *Session) { implCluster.InternalPartitionHealthy(a0, a1) }
+func parseProtocolFromError(a0 error) int { return implCluster.InternalParseProtocolFromError(a0) }
+func partitionHealthy(a0 []*retiredHostInfo, a1 *Session) {
+	implCluster.InternalPartitionHealthy(a0, a1)
+}
 
 type placementStrategy = implCluster.InternalPlacementStrategy
 
@@ -576,7 +592,7 @@ func readV2SystemRows[P any, R any](a0 context.Context, a1 *driverConn, a2 State
 func readV2SystemRowsVia[P any, R any](a0 context.Context, a1 byte, a2 time.Duration, a3 func(context.Context, *attemptRequest) (*responsePage, error), a4 Statement[P, R], a5 Columns, a6 P) ([]R, error) {
 	return implCluster.InternalReadV2SystemRowsVia[P, R](a0, a1, a2, a3, a4, a5, a6)
 }
-func readV2Topology(a0 context.Context, a1 driverConnInterface, a2 string, a3 int) ([]*HostInfo, error) {
+func readV2Topology(a0 context.Context, a1 driverConnInterface, a2 string, a3 int) ([]*retiredHostInfo, error) {
 	return implCluster.InternalReadV2Topology(a0, a1, a2, a3)
 }
 func readV2TraceRows[R any](a0 *Session, a1 []byte, a2 string, a3 RowDecoder[R]) ([]R, error) {
@@ -610,7 +626,7 @@ type retryPolicyDowngradingReport = implCluster.InternalRetryPolicyDowngradingRe
 type retryPolicySimpleReport = implCluster.InternalRetryPolicySimpleReport
 type ringDescriber = implCluster.InternalRingDescriber
 
-func roundRobbin(a0 int, a1 ...[]*HostInfo) NextHost {
+func roundRobbin(a0 int, a1 ...[]*retiredHostInfo) retiredNextHost {
 	return implCluster.InternalRoundRobbin(a0, a1...)
 }
 
@@ -624,7 +640,7 @@ func runtimeFor(a0 *Session) *sessionRuntime { return implExecution.InternalRunt
 type schemaAgreementReport = implCluster.InternalSchemaAgreementReport
 type schemaSource = implCluster.InternalSchemaSource
 
-func scyllaGetTablePartitioner(a0 *Session, a1 string, a2 string) (Partitioner, error) {
+func scyllaGetTablePartitioner(a0 *Session, a1 string, a2 string) (retiredPartitioner, error) {
 	return implCluster.InternalScyllaGetTablePartitioner(a0, a1, a2)
 }
 func scyllaIsCdcTable(a0 *Session, a1 string, a2 string) (bool, error) {
@@ -641,21 +657,23 @@ type selectedHost = implCluster.InternalSelectedHost
 type sessionConnectionHooks = implCluster.InternalSessionConnectionHooks
 type sessionRuntime = implExecution.InternalSessionRuntime
 
-func setupTLSConfig(a0 *SslOptions, a1 StdLogger) (*tls.Config, error) {
+func setupTLSConfig(a0 *retiredSslOptions, a1 StdLogger) (*tls.Config, error) {
 	return implCluster.InternalSetupTLSConfig(a0, a1)
 }
 func shardAwareEnabled(a0 *clusterSettings) bool { return implCluster.InternalShardAwareEnabled(a0) }
 
 type shardAwareReport = implCluster.InternalShardAwareReport
 
-func shuffleHosts(a0 []*HostInfo) []*HostInfo { return implCluster.InternalShuffleHosts(a0) }
-func shuffleHostsInPlace(a0 []*HostInfo)      { implCluster.InternalShuffleHostsInPlace(a0) }
+func shuffleHosts(a0 []*retiredHostInfo) []*retiredHostInfo {
+	return implCluster.InternalShuffleHosts(a0)
+}
+func shuffleHostsInPlace(a0 []*retiredHostInfo) { implCluster.InternalShuffleHostsInPlace(a0) }
 
 type simpleStrategy = implCluster.InternalSimpleStrategy
 type singleHost = implCluster.InternalSingleHost
 type singleHostReadyPolicy = implCluster.InternalSingleHostReadyPolicy
 
-func snapshotV2Host(a0 *Session, a1 *HostInfo) (HostSnapshot, error) {
+func snapshotV2Host(a0 *Session, a1 *retiredHostInfo) (HostSnapshot, error) {
 	return implCluster.InternalSnapshotV2Host(a0, a1)
 }
 
@@ -688,7 +706,7 @@ type typedAttemptOutcome = implExecution.InternalTypedAttemptOutcome
 
 var unwrapCompositeTypeDefinition = implCluster.InternalUnwrapCompositeTypeDefinition
 
-func unwrapHostSelectionPolicy(a0 HostSelectionPolicy) HostSelectionPolicy {
+func unwrapHostSelectionPolicy(a0 retiredHostSelectionPolicy) retiredHostSelectionPolicy {
 	return implCluster.InternalUnwrapHostSelectionPolicy(a0)
 }
 

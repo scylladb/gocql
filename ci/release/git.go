@@ -1,3 +1,6 @@
+// Copyright 2026 The Gocql Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license.
+
 package main
 
 import (
@@ -256,9 +259,6 @@ func (k *trustedKey) importPrivate(ctx context.Context, private []byte) error {
 
 func previousTag(ctx context.Context, repo gitRepository, c candidate, target string) (string, error) {
 	pattern := "v*"
-	if c.module == "lz4" {
-		pattern = "lz4/v*"
-	}
 	output, err := repo.git(ctx, "tag", "--list", pattern, "--merged", target)
 	if err != nil {
 		return "", err
@@ -269,7 +269,7 @@ func previousTag(ctx context.Context, repo gitRepository, c candidate, target st
 	}
 	var candidates []versionTag
 	for _, tag := range strings.Fields(output) {
-		bare := strings.TrimPrefix(tag, "lz4/")
+		bare := tag
 		if !strings.HasPrefix(bare, "v") {
 			continue
 		}

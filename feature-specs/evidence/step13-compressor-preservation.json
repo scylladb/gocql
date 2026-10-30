@@ -1,0 +1,27 @@
+{
+  "files": [
+    {
+      "original": "lz4/lz4.go",
+      "current": "internal/wirecompress/lz4.go",
+      "original_sha256": "9edf8eded2d8ff353aa9af09ff8ae9e310f2b564cfe94f2c601c10f6f64110d5",
+      "current_sha256": "8b70b51dd2ba3884d6b70bb7f1f05957eb5fb9910a02ef55f467f63a81639093",
+      "identical_after_package_rename": true
+    },
+    {
+      "original": "lz4/lz4_test.go",
+      "current": "internal/wirecompress/lz4_test.go",
+      "original_sha256": "e692aee7dc473a38c73ac6159e79712313f60945609d926979ec14a4907c2907",
+      "current_sha256": "d458821be1db7c554a405d07c1fc747934230589aa67e8b484e9b227172cc687",
+      "identical_after_package_rename": true
+    },
+    {
+      "original": "lz4/lz4_bench_test.go",
+      "current": "internal/wirecompress/lz4_bench_test.go",
+      "original_sha256": "a1caf84770e6f4207799f6b8d41039f55e9950d4339ca9ce5aba8958939c05c2",
+      "current_sha256": "f5579989f8195cc172ba968e5a7447799ac60ccc718a7d66c6f2705d72c1b435",
+      "identical_after_package_rename": true
+    }
+  ],
+  "old_module_dependency": false,
+  "new_runtime_selection": "internal/cluster/v2_config.go selects internal/wirecompress.LZ4Compressor; span compression stays in internal/wirecompress.AppendLZ4. No implementation was copied into a facade."
+}

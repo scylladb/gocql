@@ -37,11 +37,11 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/scylladb/gocql/lz4"
 	frm "github.com/scylladb/gocql/v2/internal/frame"
 	"github.com/scylladb/gocql/v2/internal/segment"
 	"github.com/scylladb/gocql/v2/internal/streams"
 	"github.com/scylladb/gocql/v2/internal/wire"
+	lz4 "github.com/scylladb/gocql/v2/internal/wirecompress"
 )
 
 func step04Reserve(t *testing.T, c *driverConn) *exclusiveConn {

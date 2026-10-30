@@ -26,9 +26,6 @@ package gocql
 
 import "strings"
 
-// DEPRECATED use Consistency type, SerialConsistency is now an alias for backwards compatibility.
-type SerialConsistency = Consistency
-
 func ParseConsistency(s string) Consistency {
 	var c Consistency
 	if err := c.UnmarshalText([]byte(strings.ToUpper(s))); err != nil {

@@ -1,3 +1,6 @@
+// Copyright 2026 The Gocql Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license.
+
 package gocql
 
 import (
@@ -15,7 +18,7 @@ type AddressTranslatorFunc = implEndpoint.AddressTranslatorFunc
 type AddressTranslatorFuncV2 = implEndpoint.AddressTranslatorFuncV2
 type AddressTranslatorHostInfo = implEndpoint.AddressTranslatorHostInfo
 type AddressTranslatorV2 = implEndpoint.AddressTranslatorV2
-type ApplicationInfo = implEndpoint.ApplicationInfo
+type retiredApplicationInfo = implEndpoint.ApplicationInfo
 type AuthExchange = implSettings.AuthExchange
 type AuthProvider = implSettings.AuthProvider
 type ClientRoutesOptions = implSettings.ClientRoutesOptions
@@ -27,16 +30,16 @@ func DefaultConfig(a0 ...string) Config { return implSettings.DefaultConfig(a0..
 
 type DefaultDialer = implEndpoint.DefaultDialer
 type DialTarget = implEndpoint.DialTarget
-type DialedHost = implEndpoint.DialedHost
+type retiredDialedHost = implEndpoint.DialedHost
 type Dialer = implEndpoint.Dialer
 type DialerFunc = implEndpoint.DialerFunc
 
 var ErrCannotFindHost = implEndpoint.ErrCannotFindHost
 var ErrHostAlreadyExists = implEndpoint.ErrHostAlreadyExists
 
-type HostDialer = implEndpoint.HostDialer
-type HostInfo = implEndpoint.HostInfo
-type HostInfoBuilder = implEndpoint.HostInfoBuilder
+type retiredHostDialer = implEndpoint.HostDialer
+type retiredHostInfo = implEndpoint.HostInfo
+type retiredHostInfoBuilder = implEndpoint.HostInfoBuilder
 type IdentityOptions = implSettings.IdentityOptions
 
 func IdentityTranslator() AddressTranslator { return implEndpoint.IdentityTranslator() }
@@ -53,12 +56,12 @@ type MetadataOptions = implSettings.MetadataOptions
 
 func NewProfile(a0 Profile) (*ProfileHandle, error)   { return implSettings.NewProfile(a0) }
 func NewSimpleDNSResolver(a0 bool) *SimpleDNSResolver { return implEndpoint.NewSimpleDNSResolver(a0) }
-func NewStaticApplicationInfo(a0 string, a1 string, a2 string) *StaticApplicationInfo {
+func retiredNewStaticApplicationInfo(a0 string, a1 string, a2 string) *retiredStaticApplicationInfo {
 	return implEndpoint.NewStaticApplicationInfo(a0, a1, a2)
 }
 
-const NodeDown = implEndpoint.NodeDown
-const NodeUp = implEndpoint.NodeUp
+const retiredNodeDown = implEndpoint.NodeDown
+const retiredNodeUp = implEndpoint.NodeUp
 
 type Observer = implSettings.Observer
 
@@ -71,17 +74,19 @@ type ProtocolLimits = implSettings.ProtocolLimits
 type ReconnectPolicy = implSettings.ReconnectPolicy
 type RequestEvent = implSettings.RequestEvent
 type RetryPolicy = implSettings.RetryPolicy
-type ScyllaConnectionFeatures = implEndpoint.ScyllaConnectionFeatures
+type retiredScyllaConnectionFeatures = implEndpoint.ScyllaConnectionFeatures
 
-func ScyllaGetSourcePort(a0 context.Context) uint16 { return implEndpoint.ScyllaGetSourcePort(a0) }
+func retiredScyllaGetSourcePort(a0 context.Context) uint16 {
+	return implEndpoint.ScyllaGetSourcePort(a0)
+}
 
-type ScyllaHostFeatures = implEndpoint.ScyllaHostFeatures
-type ScyllaShardAwareDialer = implEndpoint.ScyllaShardAwareDialer
-type ShardDialer = implEndpoint.ShardDialer
+type retiredScyllaHostFeatures = implEndpoint.ScyllaHostFeatures
+type retiredScyllaShardAwareDialer = implEndpoint.ScyllaShardAwareDialer
+type retiredShardDialer = implEndpoint.ShardDialer
 type SimpleConvictionPolicy = implSettings.SimpleConvictionPolicy
 type SimpleDNSResolver = implEndpoint.SimpleDNSResolver
 type SpeculationPolicy = implSettings.SpeculationPolicy
-type StaticApplicationInfo = implEndpoint.StaticApplicationInfo
+type retiredStaticApplicationInfo = implEndpoint.StaticApplicationInfo
 type StdLogger = logging.StdLogger
 type UnsupportedSettingError = implSettings.UnsupportedSettingError
 type cassVersion = implEndpoint.InternalCassVersion
@@ -133,7 +138,7 @@ type nopLogger = logging.InternalNopLogger
 func parseCQLProtocolExtensions(a0 map[string][]string, a1 byte, a2 StdLogger) []cqlProtocolExtension {
 	return implEndpoint.InternalParseCQLProtocolExtensions(a0, a1, a2)
 }
-func parseSupported(a0 map[string][]string, a1 StdLogger) ScyllaConnectionFeatures {
+func parseSupported(a0 map[string][]string, a1 StdLogger) retiredScyllaConnectionFeatures {
 	return implEndpoint.InternalParseSupported(a0, a1)
 }
 
@@ -144,10 +149,10 @@ const rateLimitError = implEndpoint.InternalRateLimitError
 
 type rateLimitExt = implEndpoint.InternalRateLimitExt
 
-func resolveInitialEndpoint(a0 DNSResolver, a1 string, a2 int) ([]*HostInfo, error) {
+func resolveInitialEndpoint(a0 DNSResolver, a1 string, a2 int) ([]*retiredHostInfo, error) {
 	return implEndpoint.InternalResolveInitialEndpoint(a0, a1, a2)
 }
-func resolveInitialEndpoints(a0 DNSResolver, a1 []string, a2 int, a3 StdLogger) ([]*HostInfo, error) {
+func resolveInitialEndpoints(a0 DNSResolver, a1 []string, a2 int, a3 StdLogger) ([]*retiredHostInfo, error) {
 	return implEndpoint.InternalResolveInitialEndpoints(a0, a1, a2, a3)
 }
 

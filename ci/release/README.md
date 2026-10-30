@@ -1,6 +1,6 @@
 # Release controller
 
-The release controller implements the validation and publication policy used by the manually dispatched [Release workflow](../../.github/workflows/release.yml). One dispatch publishes the root `github.com/gocql/gocql` module and the nested `github.com/scylladb/gocql/lz4` module with the same version from the same commit.
+The release controller implements the validation and publication policy used by the manually dispatched [Release workflow](../../.github/workflows/release.yml). One dispatch publishes the single `github.com/scylladb/gocql/v2` module from a pinned commit.
 
 This program is internal release tooling. It is not included in the gocql library or installed as a service. The workflow builds one binary from its revision on `master`, stores it as a short-lived workflow artifact, and uses that same binary for every release-control job. The candidate commit therefore supplies the code being released, but not the policy used to approve or publish it.
 
@@ -26,18 +26,18 @@ The controller exposes three commands. The workflow supplies their environment a
 
 1. `preflight`
    - Requires dispatch from `master` and mode `validate` or `publish`.
-   - Parses canonical v1 SemVer and constructs both module candidates.
+   - Parses canonical v2 SemVer and constructs the root module candidate.
    - Fails if an open issue has the `release-blocker` label.
    - Fetches `origin/master`, resolves `master` or an exact 40-character commit SHA, requires that commit to be reachable from `master`, and checks it out detached.
-   - Validates both module paths, root README version, `go mod tidy -diff`, and `go mod verify` for both modules.
+   - Validates the module path, root README version, `go mod tidy -diff`, and `go mod verify` for the module.
    - Loads the committed public signing key and verifies its committed fingerprint.
-   - Inspects both tags and GitHub Releases and chooses recovery actions.
-   - Emits the immutable commit SHA and both tags for later jobs.
+   - Inspects the tag and GitHub Release and chooses recovery actions.
+   - Emits the immutable commit SHA and the tag for later jobs.
 
 2. `gate`
    - Runs after the full Build and driver matrices and the candidate docs build at the resolved SHA.
    - Requires the resolved target to remain a full commit SHA.
-   - Rechecks release blockers, the trusted public key, and both remote tag/Release states.
+   - Rechecks release blockers, the trusted public key, and the remote tag/Release state.
    - Performs no mutation.
 
 3. `publish`
@@ -46,7 +46,7 @@ The controller exposes three commands. The workflow supplies their environment a
    - Publishes LZ4 first, then root. Each step rechecks blockers and remote state and succeeds without mutation if that release is already complete.
    - When no tag exists, imports the private key, creates a signed annotated tag at the exact resolved SHA, verifies it locally against the committed fingerprint, and pushes it.
    - Creates the GitHub Release with generated notes starting at the highest preceding version tag reachable from the target.
-   - Polls and verifies each final tag, Release metadata, signature, target, and Latest state before moving to the next module.
+   - Polls and verifies each final tag, Release metadata, signature, target, and Latest state before reporting success.
 
 `validate` mode runs `preflight`, the full Build and driver matrices, the candidate docs build, and `gate`. It never runs `publish`, enters the `release` environment, or receives publication credentials. The same reusable docs workflow runs with `publish: false` before the gate and `publish: true` after the releases are verified. The Pages build takes its version menu from published root releases.
 
@@ -54,10 +54,9 @@ The controller exposes three commands. The workflow supplies their environment a
 
 | Module | Required module path | Directory | Tag | Release title |
 | --- | --- | --- | --- | --- |
-| `root` | `github.com/gocql/gocql` | repository root | `v<version>` | `v<version>` |
-| `lz4` | `github.com/scylladb/gocql/lz4` | `lz4` | `lz4/v<version>` | `lz4 v<version>` |
+| `root` | `github.com/scylladb/gocql/v2` | repository root | `v<version>` | `v<version>` |
 
-One input supplies both versions. It must be bare canonical v1 SemVer, such as `1.20.0` or `1.20.0-rc.1`. A leading `v`, build metadata, missing components, leading zeroes, and major versions other than 1 are rejected.
+One input supplies the version. It must be bare canonical v2 SemVer, such as `2.0.0` or `2.0.0-rc.1`. A leading `v`, build metadata, missing components, leading zeroes, and major versions other than 2 are rejected.
 
 Stable root releases are created as Latest. Root prereleases and all LZ4 releases are created with `latest=false`.
 
@@ -77,7 +76,7 @@ An existing tag is valid only when it is annotated, GitHub reports a verified si
 
 For retrying an older stable root release, it may no longer be Latest if a higher stable root release has superseded it. A newly created stable root release must become Latest before publication succeeds.
 
-This state machine applies to each module and makes identical retries safe, including a run that finished LZ4 but failed before root publication:
+This state machine makes identical retries safe for the single root module:
 
 - Failure before tag push: retry creates tag and Release.
 - Failure after tag push: retry verifies the tag and creates only the Release.
@@ -112,7 +111,7 @@ Run from repository root:
 ```sh
 go test -race ./ci/release
 go test ./...
-go test -C lz4 ./...
+go test ./internal/wirecompress
 make check
 ```
 

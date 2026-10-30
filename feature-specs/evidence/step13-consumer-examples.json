@@ -1,0 +1,51 @@
+{
+  "directory": "/tmp/gocql-step13-examples-rimz5jzo",
+  "command": [
+    "go",
+    "build",
+    "-mod=mod",
+    "./..."
+  ],
+  "exit_code": 0,
+  "log": "/extra/scylladb/gocql-api-test-cluster/step13/verified/checks/consumer-examples.log",
+  "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "example_files": [
+    {
+      "source": "example_batch_test.go",
+      "sha256": "fceb712d53a602028cb1df8f2c877d8448ec1c87d933a01fd2c3287058b5a8f6"
+    },
+    {
+      "source": "example_dynamic_columns_test.go",
+      "sha256": "45ea7cd553b7918322f74a63ec57e34352fdf4f97bb2a2ffeab853832190c5db"
+    },
+    {
+      "source": "example_lwt_batch_test.go",
+      "sha256": "eb44e05115ed9c2b4133240763979b7fc85576bff153e4f16149375b3942b12d"
+    },
+    {
+      "source": "example_marshaler_test.go",
+      "sha256": "b25925866d007d7d289836cd43b788f062fd595e0ece507598c35e647c6b3c6e"
+    },
+    {
+      "source": "example_nulls_test.go",
+      "sha256": "e44bd41ebc1b34c2854a02a8aaa2dbea63d50b7413e09409e05f0126b1aeedc8"
+    },
+    {
+      "source": "example_paging_test.go",
+      "sha256": "9b9cfc109d6e9f6873041bfab8db81b940a021270dc60edaca64b893581139e7"
+    },
+    {
+      "source": "example_set_test.go",
+      "sha256": "4469fa82fed7a1899f372a6f8ca52e10a6554af511da42e5c869e2fb3fd7e284"
+    },
+    {
+      "source": "example_test.go",
+      "sha256": "0e0256eef77241e7796bd29a06e357e0c739c8de1d966759b1ca58f07a30baed"
+    },
+    {
+      "source": "example_udt_struct_test.go",
+      "sha256": "16321f73120e47e21a1996c35562a80e967a5f5003095b5ae8aa24bcf1830d99"
+    }
+  ],
+  "root_test_aliases_available": false
+}

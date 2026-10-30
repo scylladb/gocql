@@ -169,7 +169,7 @@ func TestTableMetadataAfterInvalidation(t *testing.T) {
 	implCluster.SessionData(s).InternalIsInitialized = true
 	populateKeyspace(s, "test_ks", "tbl_a")
 
-	tbl, err := s.TableMetadata("test_ks", "tbl_a")
+	tbl, err := sessionTestTableMetadata(s, "test_ks", "tbl_a")
 	if err != nil {
 		t.Fatalf("initial TableMetadata failed: %v", err)
 	}
@@ -180,7 +180,7 @@ func TestTableMetadataAfterInvalidation(t *testing.T) {
 
 	ctrl.resetQueries()
 
-	tbl, err = s.TableMetadata("test_ks", "tbl_a")
+	tbl, err = sessionTestTableMetadata(s, "test_ks", "tbl_a")
 	if err != nil {
 		t.Fatalf("TableMetadata after invalidation failed: %v", err)
 	}
@@ -207,7 +207,7 @@ func TestTableMetadataAfterKeyspaceInvalidation(t *testing.T) {
 	implCluster.SessionData(s).InternalIsInitialized = true
 	populateKeyspace(s, "test_ks", "tbl_a")
 
-	_, err := s.TableMetadata("test_ks", "tbl_a")
+	_, err := sessionTestTableMetadata(s, "test_ks", "tbl_a")
 	if err != nil {
 		t.Fatalf("initial TableMetadata failed: %v", err)
 	}
@@ -215,7 +215,7 @@ func TestTableMetadataAfterKeyspaceInvalidation(t *testing.T) {
 
 	ctrl.resetQueries()
 
-	tbl, err := s.TableMetadata("test_ks", "tbl_a")
+	tbl, err := sessionTestTableMetadata(s, "test_ks", "tbl_a")
 	if err != nil {
 		t.Fatalf("TableMetadata after keyspace invalidation failed: %v", err)
 	}
@@ -437,7 +437,7 @@ func TestTableTabletsMetadata(t *testing.T) {
 
 		addTestTablets(t, s, "test_ks", "tbl_a")
 
-		entries, err := s.TableTabletsMetadata("test_ks", "tbl_a")
+		entries, err := sessionTestTableTabletsMetadata(s, "test_ks", "tbl_a")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -456,7 +456,7 @@ func TestTableTabletsMetadata(t *testing.T) {
 		implCluster.SessionData(s).InternalTabletsRoutingV1 = true
 		implCluster.SessionData(s).InternalIsClosed = true
 
-		_, err := s.TableTabletsMetadata("ks", "tb")
+		_, err := sessionTestTableTabletsMetadata(s, "ks", "tb")
 		if !errors.Is(err, ErrSessionClosed) {
 			t.Fatalf("expected ErrSessionClosed, got %v", err)
 		}
@@ -470,7 +470,7 @@ func TestTableTabletsMetadata(t *testing.T) {
 		defer s.Close()
 		implCluster.SessionData(s).InternalTabletsRoutingV1 = true
 
-		_, err := s.TableTabletsMetadata("ks", "tb")
+		_, err := sessionTestTableTabletsMetadata(s, "ks", "tb")
 		if !errors.Is(err, ErrSessionNotReady) {
 			t.Fatalf("expected ErrSessionNotReady, got %v", err)
 		}
@@ -484,7 +484,7 @@ func TestTableTabletsMetadata(t *testing.T) {
 		defer s.Close()
 		implCluster.SessionData(s).InternalIsInitialized = true
 
-		_, err := s.TableTabletsMetadata("ks", "tb")
+		_, err := sessionTestTableTabletsMetadata(s, "ks", "tb")
 		if !errors.Is(err, ErrTabletsNotUsed) {
 			t.Fatalf("expected ErrTabletsNotUsed, got %v", err)
 		}
@@ -499,7 +499,7 @@ func TestTableTabletsMetadata(t *testing.T) {
 		implCluster.SessionData(s).InternalIsInitialized = true
 		implCluster.SessionData(s).InternalTabletsRoutingV1 = true
 
-		_, err := s.TableTabletsMetadata("", "tb")
+		_, err := sessionTestTableTabletsMetadata(s, "", "tb")
 		if !errors.Is(err, ErrNoKeyspace) {
 			t.Fatalf("expected ErrNoKeyspace, got %v", err)
 		}
@@ -514,7 +514,7 @@ func TestTableTabletsMetadata(t *testing.T) {
 		implCluster.SessionData(s).InternalIsInitialized = true
 		implCluster.SessionData(s).InternalTabletsRoutingV1 = true
 
-		_, err := s.TableTabletsMetadata("ks", "")
+		_, err := sessionTestTableTabletsMetadata(s, "ks", "")
 		if !errors.Is(err, ErrNoTable) {
 			t.Fatalf("expected ErrNoTable, got %v", err)
 		}
@@ -529,7 +529,7 @@ func TestTableTabletsMetadata(t *testing.T) {
 		implCluster.SessionData(s).InternalIsInitialized = true
 		implCluster.SessionData(s).InternalTabletsRoutingV1 = true
 
-		entries, err := s.TableTabletsMetadata("ks", "nonexistent")
+		entries, err := sessionTestTableTabletsMetadata(s, "ks", "nonexistent")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -555,7 +555,7 @@ func TestForEachTablet(t *testing.T) {
 		addTestTablets(t, s, "ks2", "tbl_b")
 
 		visited := make(map[string]int)
-		err := s.ForEachTablet(func(keyspace, table string, entries tablets.TabletEntryList) bool {
+		err := sessionTestForEachTablet(s, func(keyspace, table string, entries tablets.TabletEntryList) bool {
 			visited[keyspace+"."+table] = len(entries)
 			return true
 		})
@@ -586,7 +586,7 @@ func TestForEachTablet(t *testing.T) {
 		addTestTablets(t, s, "ks2", "tbl_b")
 
 		count := 0
-		err := s.ForEachTablet(func(keyspace, table string, entries tablets.TabletEntryList) bool {
+		err := sessionTestForEachTablet(s, func(keyspace, table string, entries tablets.TabletEntryList) bool {
 			count++
 			return false
 		})
@@ -608,7 +608,7 @@ func TestForEachTablet(t *testing.T) {
 		implCluster.SessionData(s).InternalTabletsRoutingV1 = true
 		implCluster.SessionData(s).InternalIsClosed = true
 
-		err := s.ForEachTablet(func(keyspace, table string, entries tablets.TabletEntryList) bool {
+		err := sessionTestForEachTablet(s, func(keyspace, table string, entries tablets.TabletEntryList) bool {
 			t.Fatal("callback should not be called on closed session")
 			return true
 		})
@@ -625,7 +625,7 @@ func TestForEachTablet(t *testing.T) {
 		defer s.Close()
 		implCluster.SessionData(s).InternalIsInitialized = true
 
-		err := s.ForEachTablet(func(keyspace, table string, entries tablets.TabletEntryList) bool {
+		err := sessionTestForEachTablet(s, func(keyspace, table string, entries tablets.TabletEntryList) bool {
 			t.Fatal("callback should not be called when tablets not enabled")
 			return true
 		})
@@ -645,7 +645,7 @@ func TestForEachTablet(t *testing.T) {
 
 		addTestTablets(t, s, "ks", "tb")
 
-		err := s.ForEachTablet(nil)
+		err := sessionTestForEachTablet(s, nil)
 		if err != nil {
 			t.Fatalf("expected nil error for nil callback, got %v", err)
 		}
@@ -663,7 +663,7 @@ func TestTableMetadataValidation(t *testing.T) {
 		defer s.Close()
 		implCluster.SessionData(s).InternalIsInitialized = true
 
-		_, err := s.TableMetadata("ks", "")
+		_, err := sessionTestTableMetadata(s, "ks", "")
 		if !errors.Is(err, ErrNoTable) {
 			t.Fatalf("TableMetadata: expected ErrNoTable, got %v", err)
 		}

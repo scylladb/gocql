@@ -1,3 +1,6 @@
+// Copyright 2026 The Gocql Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license.
+
 package main
 
 import (
@@ -57,8 +60,8 @@ func run(ctx context.Context, args []string, runner commandRunner) error {
 }
 
 func releaseCandidates(version string) ([]candidate, error) {
-	result := make([]candidate, 0, 2)
-	for _, module := range []string{"lz4", "root"} {
+	result := make([]candidate, 0, 1)
+	for _, module := range []string{"root"} {
 		c, err := newCandidate(module, version)
 		if err != nil {
 			return nil, err
@@ -120,7 +123,7 @@ func preflight(ctx context.Context, runner commandRunner, env environment, candi
 		}
 		fmt.Printf("preflight passed for %s at %s (%s)\n", c.tag, resolved, action)
 	}
-	return appendOutputs(env.output, map[string]string{"resolved_sha": resolved, "lz4_tag": candidates[0].tag, "root_tag": candidates[1].tag})
+	return appendOutputs(env.output, map[string]string{"resolved_sha": resolved, "root_tag": candidates[0].tag})
 }
 
 func validateReleaseMode(mode string) error {

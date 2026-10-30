@@ -1,7 +1,7 @@
 //go:build bench
 // +build bench
 
-package lz4
+package wirecompress
 
 import (
 	"testing"

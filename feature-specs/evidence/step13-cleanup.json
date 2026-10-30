@@ -1,0 +1,236 @@
+{
+  "endpoints": [
+    {
+      "address": "127.0.20.1",
+      "port": 9042,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.1",
+      "port": 9142,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.1",
+      "port": 19042,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.1",
+      "port": 19142,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.1",
+      "port": 7000,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.1",
+      "port": 7001,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.1",
+      "port": 10000,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.2",
+      "port": 9042,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.2",
+      "port": 9142,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.2",
+      "port": 19042,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.2",
+      "port": 19142,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.2",
+      "port": 7000,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.2",
+      "port": 7001,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.2",
+      "port": 10000,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.3",
+      "port": 9042,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.3",
+      "port": 9142,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.3",
+      "port": 19042,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.3",
+      "port": 19142,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.3",
+      "port": 7000,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.3",
+      "port": 7001,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.3",
+      "port": 10000,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.1",
+      "port": 9042,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.1",
+      "port": 9142,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.1",
+      "port": 19042,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.1",
+      "port": 19142,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.1",
+      "port": 7000,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.1",
+      "port": 7001,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.1",
+      "port": 10000,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.2",
+      "port": 9042,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.2",
+      "port": 9142,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.2",
+      "port": 19042,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.2",
+      "port": 19142,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.2",
+      "port": 7000,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.2",
+      "port": 7001,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.2",
+      "port": 10000,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.3",
+      "port": 9042,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.3",
+      "port": 9142,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.3",
+      "port": 19042,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.3",
+      "port": 19142,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.3",
+      "port": 7000,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.3",
+      "port": 7001,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.3",
+      "port": 10000,
+      "refused": true
+    }
+  ],
+  "runners": [
+    {
+      "gone": true,
+      "joined": {
+        "node1": true,
+        "node2": true,
+        "node3": true
+      },
+      "lane": "stable",
+      "pid": 550144
+    },
+    {
+      "gone": true,
+      "joined": {
+        "node1": true,
+        "node2": true,
+        "node3": true
+      },
+      "lane": "cassandra",
+      "pid": 550145
+    }
+  ]
+}

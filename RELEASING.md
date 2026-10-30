@@ -20,13 +20,13 @@ Committed trusted fingerprint: `71A6 D227 11CD B7C2 446D 21CF BF4B F97A 8D4D F1A
 1. Complete content-readiness checklist [#1068](https://github.com/scylladb/gocql/issues/1068). Workflow does not replace it.
 2. Resolve every open `release-blocker`. Workflow checks before CI and immediately before publication. API/parsing errors stop release.
 3. Merge release changes to `master`.
-4. Update concrete root replacement in README.md to candidate `v1.x.y`; workflow requires match. The same version is released for root and LZ4.
-5. If the tip commit changes `.github/workflows/`, merge a release-preparation commit that changes only non-workflow files before tagging. GitHub rejected the `v1.20.0` tag push when its target was a workflow-changing commit, even with `contents: write`; Java Driver's release tags point to a release commit without workflow changes.
+4. Update the concrete v2 installation version in README.md to the candidate; the workflow requires an exact match.
+5. If the tip commit changes `.github/workflows/`, merge a release-preparation commit that changes only non-workflow files before tagging. GitHub rejected the `v2.0.0` tag push when its target was a workflow-changing commit, even with `contents: write`; Java Driver's release tags point to a release commit without workflow changes.
 6. Choose target `master` or a full 40-character SHA reachable from `master`. `master` is fetched and resolved once during preflight; every later job uses that immutable SHA. Other branches, abbreviated SHAs, and non-ancestors are rejected.
 
 Release-control code and trusted public-key material come from the workflow revision on `master`, not from the candidate commit. The controller is built once and passed to later jobs as a short-lived workflow artifact. This permits releasing an older reachable commit without trusting or requiring release scripts in that commit.
 
-Version input: bare canonical v1 SemVer, e.g. `1.20.0` or `1.20.0-rc.1`. No leading `v`. v2+, build metadata, leading zeroes, unsafe tag characters rejected. Both modules remain v1 paths without `/v2`; major release needs separate path/workflow change.
+Version input: bare canonical v2 SemVer, e.g. `2.0.0` or `2.0.0-rc.1`. No leading `v`. Other major versions, build metadata, leading zeroes and unsafe tag characters are rejected. The module path is `github.com/scylladb/gocql/v2`.
 
 Published Go versions and source commits are immutable. Proxies/checksum databases cache tags immediately. Never move, replace, delete published tag. Correct with new version; add `retract` later if needed.
 
@@ -34,16 +34,15 @@ Published Go versions and source commits are immutable. Proxies/checksum databas
 
 Open **Actions → Release → Run workflow**, select `master`, enter:
 
-- `version`: bare candidate for both modules
+- `version`: bare candidate for the v2 module
 - `target`: `master` or a full SHA
 - `mode`: `validate`
 
-Validation performs target, both module, README, blocker, recovery-state, full Build, and candidate documentation build gates (all configured ScyllaDB and Cassandra integration combinations run on both amd64 and arm64). It also runs the [GoCQL driver matrix](https://github.com/scylladb/gocql-driver-matrix) against upstream gocql on Scylla `LATEST` and the candidate commit on Scylla `LATEST`, `PRIOR`, `LTS-LATEST`, and `LTS-PRIOR`. The candidate version selects the matrix's patches and ignore rules; add version-specific files there when the previous version's files do not apply. Validation never enters `release` environment, receives no signing credentials, or creates a tag/Release. Run summary shows requested target, resolved SHA, both tags, release types, Latest behavior, and recovery actions. Confirm resolved SHA appears in every checkout.
+Validation performs target, module, README, blocker, recovery-state, full Build, and candidate documentation build gates (all configured ScyllaDB and Cassandra integration combinations run on both amd64 and arm64). It also runs the [GoCQL driver matrix](https://github.com/scylladb/gocql-driver-matrix) against upstream gocql on Scylla `LATEST` and the candidate commit on Scylla `LATEST`, `PRIOR`, `LTS-LATEST`, and `LTS-PRIOR`. The candidate version selects the matrix's patches and ignore rules; add version-specific files there when the previous version's files do not apply. Validation never enters `release` environment, receives no signing credentials, or creates a tag/Release. Run summary shows requested target, resolved SHA, the tag, release types, Latest behavior, and recovery actions. Confirm resolved SHA appears in every checkout.
 
 Mappings:
 
-- `root`: module `github.com/gocql/gocql`, tag/title `v<version>`.
-- `lz4`: module `github.com/scylladb/gocql/lz4`, tag `lz4/v<version>`, title `lz4 v<version>`.
+- `root`: module `github.com/scylladb/gocql/v2`, tag/title `v<version>`.
 
 Gate test: temporary open `release-blocker` issue must stop validation. Remove label/close issue afterward; never bypass.
 
@@ -51,7 +50,7 @@ Gate test: temporary open `release-blocker` issue must stop validation. Remove l
 
 Dispatch again from `master` with the same version and set `mode: publish`. To reproduce a validated candidate after `master` moves, copy resolved SHA from validation summary into `target`; do not enter `master`. Serialized workflow reruns every check, the full Build matrix, the candidate docs build, and the GoCQL driver matrix before entering `release` environment.
 
-Actions run names include mode, shared version, and requested target, making validation and publication runs distinguishable in history.
+Actions run names include mode, version, and requested target, making validation and publication runs distinguishable in history.
 
 The publish command uses GitHub's generated notes, which read `.github/release.yml` and omit PRs labeled `omit-from-release-notes`. The merge workflow adds that label when every changed file is documentation, tests, CI, or workflow configuration. Mixed PRs remain in the notes. To recheck an older merged PR, manually run **Label support-only release changes** with its PR number.
 
@@ -59,41 +58,41 @@ Equivalent CLI dispatches reduce form-entry mistakes:
 
 ```sh
 gh workflow run release.yml --ref master \
-  -f version=1.20.0 -f target=master \
+  -f version=2.0.0 -f target=master \
   -f mode=validate
 
 # Copy resolved SHA from validation summary.
 TARGET_SHA=0123456789abcdef0123456789abcdef01234567
 gh workflow run release.yml --ref master \
-  -f version=1.20.0 -f target="$TARGET_SHA" \
+  -f version=2.0.0 -f target="$TARGET_SHA" \
   -f mode=publish
 ```
 
-Production uses its built-in `GITHUB_TOKEN`, imports promoter key, checks primary fingerprint, then publishes and verifies LZ4 before root. Both signed annotated tags point to the validated SHA. Each GitHub Release uses generated notes from its module's preceding tag and `--verify-tag`. Stable root releases become Latest. Root prereleases and all LZ4 releases use `latest=false`.
+Production uses its built-in `GITHUB_TOKEN`, imports promoter key, checks primary fingerprint, then publishes and verifies the root module. The signed annotated tag points to the validated SHA. Each GitHub Release uses generated notes from the preceding v2 tag and `--verify-tag`. Stable root releases become Latest. Root prereleases use `latest=false`.
 
 Verify:
 
 ```sh
 git fetch --tags origin
-git cat-file -t v1.20.0
-git rev-list -n 1 v1.20.0
-git tag --verify v1.20.0
+git cat-file -t v2.0.0
+git rev-list -n 1 v2.0.0
+git tag --verify v2.0.0
 ```
 
-Repeat for `lz4/v1.20.0`. Object type must be `tag`; resolved commit must match requested SHA; signature must identify committed fingerprint.
+Object type must be `tag`; resolved commit must match requested SHA; signature must identify committed fingerprint.
 
-After both GitHub Releases are published and verified, the shared docs workflow
+After the GitHub Release is published and verified, the shared docs workflow
 builds and deploys the new version to GitHub Pages. Its `publish: false` call
 checks the candidate before publication; its `publish: true` call runs afterward.
 The Pages build selects published root releases for the version menu and points `/stable` at the highest stable
 version. The pre-publication docs gate builds the candidate source; the Pages
 build runs only after the release tag and GitHub Release exist. A failed Pages
 deployment can be retried by rerunning the same release inputs without moving
-or recreating either tag.
+or recreating the tag.
 
 ## Retries and partial publication
 
-Rerun identical inputs after transient failure. Each module independently resumes from its verified state; LZ4 completes before root starts:
+Rerun identical inputs after transient failure. The single root module resumes from its verified state:
 
 - No tag/Release: create signed tag, push, create Release.
 - Correct signed tag at exact SHA, no Release: create Release only.
@@ -102,10 +101,6 @@ Rerun identical inputs after transient failure. Each module independently resume
 Workflow fails closed for Release without tag, wrong target, lightweight/untrusted/unverified tag, conflicting title/prerelease metadata, a new release with wrong Latest behavior, or Git/GitHub/parsing failure. A historical stable root release remains valid after a newer stable release supersedes it as Latest. Never repair by moving/deleting tag. Investigate; if public state may exist, issue new version.
 
 Release-control jobs time out after 20 minutes, build jobs after 45 minutes, docs build jobs after 60 minutes, driver integration jobs after 180 minutes, and local integration jobs after 120 minutes. A stuck run therefore cannot hold the globally serialized release queue indefinitely.
-
-## LZ4 pin follow-up
-
-The root release keeps its existing, resolvable LZ4 requirement. Its local `replace` makes the Build matrix test the LZ4 source being released, but consumers still resolve the version pinned in the root `go.mod`. Check compatibility with that pinned version before publication. After both releases succeed, open a PR updating root `go.mod` and every LZ4 README version, then run `make fix-go-mod-drift` and `make check`. The new tag must exist before the pin changes; consumers cannot resolve an untagged version. The next root release will carry the updated pin.
 
 ## Break glass
 

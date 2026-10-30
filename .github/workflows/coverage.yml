@@ -57,8 +57,6 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: |
-            lz4/go.sum
-            tests/bench/go.sum
             go.sum
 
       - name: Run unit tests with coverage
@@ -107,16 +105,8 @@ jobs:
           path: |
             coverage-root.html
             coverage-root.out
-            coverage-lz4.html
-            coverage-lz4.out
 
-      # Codecov ingests the same textfmt profiles the step above archives. One
-      # upload per Go module: flags are a property of the upload rather than of
-      # the individual file, so a single combined upload could not keep the
-      # root/lz4 split that `make coverage-report` already reports. Path fixing
-      # (the profiles carry import paths, not repository paths) and everything
-      # about how the report is presented live in codecov.yml at the repo root.
-      #
+      # One coverage upload covers the single v2 module.
       # fail_ci_if_error is on only when CODECOV_TOKEN is actually available.
       # Without it -- pull requests from forks, and Dependabot pull requests,
       # which get Dependabot secrets rather than Actions secrets even from a
@@ -157,18 +147,6 @@ jobs:
           # letting the action sweep the tree for anything else report-shaped,
           # nor from the CLI's language plugins (gcov, Xcode, pycoverage): this
           # is a Go repository and none of them have anything to contribute.
-          disable_search: true
-          plugins: noop
-          fail_ci_if_error: ${{ secrets.CODECOV_TOKEN != '' }}
-
-      - name: Upload lz4 module coverage to Codecov
-        if: success() && steps.scylla-version.outputs.value != 'NOT-FOUND'
-        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: coverage-lz4.out
-          flags: lz4
-          name: lz4 module
           disable_search: true
           plugins: noop
           fail_ci_if_error: ${{ secrets.CODECOV_TOKEN != '' }}

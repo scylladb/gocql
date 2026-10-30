@@ -9,7 +9,7 @@ import (
 	"context"
 	implSettings "github.com/scylladb/gocql/v2/internal/settings"
 
-	lz4 "github.com/scylladb/gocql/lz4"
+	"github.com/scylladb/gocql/v2/internal/wirecompress"
 
 	logging "github.com/scylladb/gocql/v2/internal/logging"
 	"time"
@@ -88,7 +88,7 @@ func InternalConnectCluster(ctx context.Context, config Config, initialize func(
 	}
 	switch config.Compression {
 	case LZ4Compression:
-		legacy.Compressor = lz4.LZ4Compressor{}
+		legacy.Compressor = wirecompress.LZ4Compressor{}
 	case SnappyCompression:
 		legacy.Compressor = SnappyCompressor{}
 	}

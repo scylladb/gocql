@@ -11,24 +11,26 @@ import (
 	"io"
 )
 
-type Compressor = protocol.Compressor
+type retiredCompressor = protocol.Compressor
 type ErrProtocol = protocol.ErrProtocol
 
 var ErrReadHeaderTimeout = protocol.ErrReadHeaderTimeout
 
 func NewErrProtocol(a0 string, a1 ...any) error { return protocol.NewErrProtocol(a0, a1...) }
 
-type SegmentCompressor = protocol.SegmentCompressor
+type retiredSegmentCompressor = protocol.SegmentCompressor
 
 const apacheCassandraTypePrefix = cqltype.ApacheCassandraTypePrefix
 
-func asSegmentCompressor(a0 Compressor) (segment.Compressor, error) {
+func asSegmentCompressor(a0 retiredCompressor) (segment.Compressor, error) {
 	return protocol.AsSegmentCompressor(a0)
 }
 
 const defaultBufSize = protocol.DefaultBufSize
 
-func defaultFramerFlags(a0 Compressor, a1 byte) byte { return protocol.DefaultFramerFlags(a0, a1) }
+func defaultFramerFlags(a0 retiredCompressor, a1 byte) byte {
+	return protocol.DefaultFramerFlags(a0, a1)
+}
 
 type frame = protocol.Frame
 type frameBuilder = protocol.FrameBuilder
@@ -43,7 +45,7 @@ type malformedFrameError = protocol.MalformedFrameError
 func malformedFramef(a0 string, a1 ...any) malformedFrameError {
 	return protocol.MalformedFramef(a0, a1...)
 }
-func newFramer(a0 Compressor, a1 byte) *framer { return protocol.NewFramer(a0, a1) }
+func newFramer(a0 retiredCompressor, a1 byte) *framer { return protocol.NewFramer(a0, a1) }
 
 type preparedMetadata = protocol.PreparedMetadata
 

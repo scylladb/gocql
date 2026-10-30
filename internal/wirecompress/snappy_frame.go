@@ -55,7 +55,7 @@ func (s SnappyCompressor) Decode(data []byte) ([]byte, error) {
 	// Refusing those gives up a case nobody has reported -- a response compressing
 	// to under 256 MiB and expanding past it -- in exchange for bounding an
 	// allocation whose size the peer controls. LZ4Compressor makes the same trade
-	// with maxDecompressedSize in the lz4 module.
+	// with maxDecompressedSize in this package.
 	//
 	// s2.DecodedLen reads the same varint without allocating, so this costs a few
 	// bytes of parsing rather than a second pass.

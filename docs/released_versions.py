@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 
-ROOT_VERSION = re.compile(r"v1\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?\Z")
+ROOT_VERSION = re.compile(r"v2\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?\Z")
 
 
 def select_versions(releases, required_tag=None):

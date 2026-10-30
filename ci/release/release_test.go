@@ -1,3 +1,6 @@
+// Copyright 2026 The Gocql Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license.
+
 package main
 
 import (
@@ -11,7 +14,7 @@ import (
 
 func TestVersions(t *testing.T) {
 	t.Parallel()
-	for _, version := range []string{"1.0.0", "1.20.0", "1.20.0-rc.1", "1.20.0-alpha-beta.2", "1.20.0-999999999999999999999999999"} {
+	for _, version := range []string{"2.0.0", "2.0.0", "2.0.0-rc.1", "2.0.0-alpha-beta.2", "2.0.0-999999999999999999999999999"} {
 		version := version
 		t.Run("valid/"+version, func(t *testing.T) {
 			t.Parallel()
@@ -20,7 +23,7 @@ func TestVersions(t *testing.T) {
 			}
 		})
 	}
-	for _, version := range []string{"", "v1.20.0", "2.0.0", "0.20.0", "1.2", "1.2.3.4", "1.02.3", "1.2.03", "1.2.3+build.1", "1.2.3-rc.01", "1.2.3-", "1.2.3-rc/1", "1.2.3;touch-pwned", "1.2.3-$(id)", "1.2.3-rc\nnext=value"} {
+	for _, version := range []string{"", "v2.0.0", "1.20.0", "0.20.0", "1.2", "1.2.3.4", "1.02.3", "1.2.03", "1.2.3+build.1", "1.2.3-rc.01", "1.2.3-", "1.2.3-rc/1", "1.2.3;touch-pwned", "1.2.3-$(id)", "1.2.3-rc\nnext=value"} {
 		version := version
 		t.Run("invalid/"+strings.ReplaceAll(version, "/", "_"), func(t *testing.T) {
 			t.Parallel()
@@ -34,41 +37,40 @@ func TestVersions(t *testing.T) {
 func TestModuleMappings(t *testing.T) {
 	t.Parallel()
 	tests := []struct{ module, path, dir, tag, title string }{
-		{"root", rootModulePath, ".", "v1.20.0", "v1.20.0"},
-		{"lz4", lz4ModulePath, "lz4", "lz4/v1.20.0", "lz4 v1.20.0"},
+		{"root", rootModulePath, ".", "v2.0.0", "v2.0.0"},
 	}
 	for _, tt := range tests {
-		got, err := newCandidate(tt.module, "1.20.0")
+		got, err := newCandidate(tt.module, "2.0.0")
 		if err != nil || got.modulePath != tt.path || got.directory != tt.dir || got.tag != tt.tag || got.title != tt.title {
 			t.Fatalf("mapping %#v, %v", got, err)
 		}
 	}
-	if _, err := newCandidate("root; echo pwned", "1.20.0"); err == nil {
+	if _, err := newCandidate("root; echo pwned", "2.0.0"); err == nil {
 		t.Fatal("shell-shaped module accepted")
 	}
 }
 
 func TestReleaseCandidates(t *testing.T) {
 	t.Parallel()
-	candidates, err := releaseCandidates("1.20.0")
+	candidates, err := releaseCandidates("2.0.0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(candidates) != 2 || candidates[0].tag != "lz4/v1.20.0" || candidates[1].tag != "v1.20.0" {
-		t.Fatalf("release order = %#v, want lz4 then root", candidates)
+	if len(candidates) != 1 || candidates[0].tag != "v2.0.0" {
+		t.Fatalf("release order = %#v, want only root", candidates)
 	}
 	for _, c := range candidates {
-		if c.version != "1.20.0" {
+		if c.version != "2.0.0" {
 			t.Fatalf("%s has version %q", c.module, c.version)
 		}
 	}
-	if _, err := releaseCandidates("v1.20.0"); err == nil {
+	if _, err := releaseCandidates("v2.0.0"); err == nil {
 		t.Fatal("invalid shared version accepted")
 	}
 }
 
 func TestCompareVersions(t *testing.T) {
-	ordered := []string{"1.0.0-alpha", "1.0.0-alpha.1", "1.0.0-alpha.beta", "1.0.0-beta", "1.0.0-beta.2", "1.0.0-beta.11", "1.0.0-rc.1", "1.0.0", "1.1.0"}
+	ordered := []string{"2.0.0-alpha", "2.0.0-alpha.1", "2.0.0-alpha.beta", "2.0.0-beta", "2.0.0-beta.2", "2.0.0-beta.11", "2.0.0-rc.1", "2.0.0", "2.1.0"}
 	for i := 1; i < len(ordered); i++ {
 		a, _ := parseVersion(ordered[i-1])
 		b, _ := parseVersion(ordered[i])
@@ -189,7 +191,7 @@ type fakeVerifier struct{ err error }
 func (f fakeVerifier) verifyRemoteTag(string) error { return f.err }
 
 func TestReleaseStates(t *testing.T) {
-	c, _ := newCandidate("root", "1.20.0")
+	c, _ := newCandidate("root", "2.0.0")
 	sha := strings.Repeat("a", 40)
 	goodTag := tagInfo{Target: sha, Annotated: true, Verified: true}
 	goodRelease := releaseInfo{ID: 20, TagName: c.tag, Name: c.title}
@@ -209,7 +211,7 @@ func TestReleaseStates(t *testing.T) {
 		{"wrong target", fakeAPI{tagInfo: tagInfo{Target: strings.Repeat("b", 40), Annotated: true, Verified: true}, tagExists: true}, nil, "", "want " + sha},
 		{"wrong signer", fakeAPI{tagInfo: goodTag, tagExists: true}, errors.New("wrong fingerprint"), "", "wrong fingerprint"},
 		{"metadata", fakeAPI{tagInfo: goodTag, tagExists: true, releaseInfo: releaseInfo{TagName: c.tag, Name: "wrong"}, releaseExists: true}, nil, "", "conflicting metadata"},
-		{"historical stable superseded", fakeAPI{tagInfo: goodTag, tagExists: true, releaseInfo: goodRelease, releaseExists: true, latestInfo: releaseInfo{ID: 21, TagName: "v1.21.0"}, latestExists: true}, nil, actionComplete, ""},
+		{"historical stable superseded", fakeAPI{tagInfo: goodTag, tagExists: true, releaseInfo: goodRelease, releaseExists: true, latestInfo: releaseInfo{ID: 21, TagName: "v2.1.0"}, latestExists: true}, nil, actionComplete, ""},
 		{"stable unexpectedly not latest", fakeAPI{tagInfo: goodTag, tagExists: true, releaseInfo: goodRelease, releaseExists: true}, nil, "", "not Latest"},
 		{"tag API", fakeAPI{tagErr: errors.New("tag API down")}, nil, "", "tag API down"},
 		{"release API", fakeAPI{tagInfo: goodTag, tagExists: true, releaseErr: errors.New("release API down")}, nil, "", "release API down"},
@@ -231,8 +233,8 @@ func TestReleaseStates(t *testing.T) {
 	}
 }
 
-func TestLZ4ReleaseNeverLatest(t *testing.T) {
-	c, _ := newCandidate("lz4", "1.20.0-rc.1")
+func TestPrereleaseNeverLatest(t *testing.T) {
+	c, _ := newCandidate("root", "2.0.0-rc.1")
 	sha := strings.Repeat("a", 40)
 	release := releaseInfo{ID: 20, TagName: c.tag, Name: c.title, Prerelease: true}
 	api := fakeAPI{tagInfo: tagInfo{Target: sha, Annotated: true, Verified: true}, tagExists: true, releaseInfo: release, releaseExists: true, latestInfo: releaseInfo{ID: 19}, latestExists: true}
@@ -243,12 +245,12 @@ func TestLZ4ReleaseNeverLatest(t *testing.T) {
 
 func TestLatestPolicies(t *testing.T) {
 	t.Parallel()
-	root, _ := newCandidate("root", "1.20.0")
-	lz4, _ := newCandidate("lz4", "1.20.0")
+	root, _ := newCandidate("root", "2.0.0")
+	prerelease, _ := newCandidate("root", "2.0.0-rc.1")
 	sha := strings.Repeat("a", 40)
 	tag := tagInfo{Target: sha, Annotated: true, Verified: true}
 	rootRelease := releaseInfo{ID: 20, TagName: root.tag, Name: root.title}
-	lz4Release := releaseInfo{ID: 21, TagName: lz4.tag, Name: lz4.title}
+	preRelease := releaseInfo{ID: 21, TagName: prerelease.tag, Name: prerelease.title, Prerelease: true}
 
 	if err := verifyNewReleaseLatest(context.Background(), fakeAPI{releaseInfo: rootRelease, releaseExists: true, latestInfo: rootRelease, latestExists: true}, root); err != nil {
 		t.Fatalf("new stable root latest check: %v", err)
@@ -259,27 +261,27 @@ func TestLatestPolicies(t *testing.T) {
 	if err := verifyNewReleaseLatest(context.Background(), fakeAPI{releaseInfo: rootRelease, releaseExists: true, latestErr: errors.New("latest API down")}, root); err == nil || !strings.Contains(err.Error(), "latest API down") {
 		t.Fatalf("Latest API error = %v", err)
 	}
-	if got, err := inspectReleaseState(context.Background(), fakeAPI{tagInfo: tag, tagExists: true, releaseInfo: lz4Release, releaseExists: true, latestInfo: lz4Release, latestExists: true}, fakeVerifier{}, lz4, sha); err == nil || got != "" || !strings.Contains(err.Error(), "must not be") {
-		t.Fatalf("LZ4 Latest state = %q, %v", got, err)
+	if got, err := inspectReleaseState(context.Background(), fakeAPI{tagInfo: tag, tagExists: true, releaseInfo: preRelease, releaseExists: true, latestInfo: preRelease, latestExists: true}, fakeVerifier{}, prerelease, sha); err == nil || got != "" || !strings.Contains(err.Error(), "must not be") {
+		t.Fatalf("prerelease Latest state = %q, %v", got, err)
 	}
-	if _, err := inspectReleaseState(context.Background(), fakeAPI{tagInfo: tag, tagExists: true, releaseInfo: lz4Release, releaseExists: true, latestErr: errors.New("latest API down")}, fakeVerifier{}, lz4, sha); err == nil || !strings.Contains(err.Error(), "latest API down") {
-		t.Fatalf("LZ4 Latest API error = %v", err)
+	if _, err := inspectReleaseState(context.Background(), fakeAPI{tagInfo: tag, tagExists: true, releaseInfo: preRelease, releaseExists: true, latestErr: errors.New("latest API down")}, fakeVerifier{}, prerelease, sha); err == nil || !strings.Contains(err.Error(), "latest API down") {
+		t.Fatalf("prerelease Latest API error = %v", err)
 	}
 }
 
 func TestHigherStableRootTag(t *testing.T) {
 	t.Parallel()
-	c, _ := newCandidate("root", "1.20.0")
+	c, _ := newCandidate("root", "2.0.0")
 	tests := []struct {
 		tag  string
 		want bool
 	}{
-		{"v1.21.0", true},
-		{"v1.20.1", true},
-		{"v1.20.0", false},
+		{"v2.1.0", true},
+		{"v2.0.1", true},
+		{"v2.0.0", false},
 		{"v1.19.9", false},
-		{"v1.21.0-rc.1", false},
-		{"lz4/v1.21.0", false},
+		{"v2.1.0-rc.1", false},
+		{"lz4/v2.1.0", false},
 		{"v2.0.0", false},
 		{"not-a-version", false},
 	}

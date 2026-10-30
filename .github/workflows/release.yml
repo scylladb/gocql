@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Bare canonical v1 SemVer for both modules (for example, 1.20.0 or 1.20.0-rc.1)
+        description: Bare canonical v2 SemVer (for example, 2.0.0 or 2.0.0-rc.1)
         required: true
         type: string
       target:
@@ -36,7 +36,6 @@ jobs:
     outputs:
       resolved_sha: ${{ steps.validate.outputs.resolved_sha }}
       root_tag: ${{ steps.validate.outputs.root_tag }}
-      lz4_tag: ${{ steps.validate.outputs.lz4_tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -136,13 +135,12 @@ jobs:
         env:
           RELEASE_ACTION: ${{ steps.gate.outputs.release_action }}
           ROOT_TAG: ${{ needs.preflight.outputs.root_tag }}
-          LZ4_TAG: ${{ needs.preflight.outputs.lz4_tag }}
           TARGET_COMMIT: ${{ needs.preflight.outputs.resolved_sha }}
         run: |
           {
             echo "## Release validation passed"
             echo
-            echo "- Tags: \`$LZ4_TAG\`, \`$ROOT_TAG\`"
+            echo "- Tag: \`$ROOT_TAG\`"
             echo "- Target: \`$TARGET_COMMIT\`"
             echo "- Recovery actions: \`$RELEASE_ACTION\`"
             echo "- No credentials were loaded and no remote state was created."

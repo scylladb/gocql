@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: all, master, or a published root release tag such as v1.20.0.
+        description: all, master, or a published root release tag such as v2.0.0.
         required: true
         type: string
         default: all

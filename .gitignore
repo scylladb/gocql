@@ -42,3 +42,6 @@ claude.log
 claude_history.json
 claude_config.json
 CLAUDE.md
+
+# Python documentation and evidence tooling caches.
+__pycache__/

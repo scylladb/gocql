@@ -1,3 +1,6 @@
+// Copyright 2026 The Gocql Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license.
+
 package gocql
 
 import (
@@ -6,8 +9,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/scylladb/gocql/lz4"
 	"github.com/scylladb/gocql/v2/internal/wire"
+	lz4 "github.com/scylladb/gocql/v2/internal/wirecompress"
 )
 
 var typedTransportBenchmarkSink wire.Chain

@@ -256,7 +256,7 @@ func InternalConnectSettingsAsync(cfg InternalClusterSettings) (*Session, error)
 // filter: optional filter function (can be nil to receive all events)
 //
 // Returns a Subscriber instance that provides access to events and a Stop method.
-func (s *Session) SubscribeToEvents(name string, queueSize int, filter eventbus.FilterFunc[events.Event]) *eventbus.Subscriber[events.Event] {
+func InternalSessionSubscribeToEvents(s *Session, name string, queueSize int, filter eventbus.FilterFunc[events.Event]) *eventbus.Subscriber[events.Event] {
 	return s.privateStorage.InternalEventBus.Subscribe(name, queueSize, filter)
 }
 
@@ -593,7 +593,7 @@ func (s *Session) initialized() bool {
 	return initialized
 }
 
-func (s *Session) Ready() error {
+func InternalSessionReady(s *Session) error {
 	s.privateStorage.InternalSessionStateMu.RLock()
 	err := ErrSessionNotReady
 	if s.privateStorage.InternalIsInitialized || s.privateStorage.initErr != nil {
@@ -603,7 +603,7 @@ func (s *Session) Ready() error {
 	return err
 }
 
-func (s *Session) WaitUntilReady() error {
+func InternalSessionWaitUntilReady(s *Session) error {
 	<-s.privateStorage.readyCh
 	return s.privateStorage.initErr
 }
@@ -615,10 +615,10 @@ func InternalSessionRemoveHost(s *Session, h *HostInfo) {
 }
 
 // KeyspaceMetadata returns the schema metadata for the keyspace specified. Returns an error if the keyspace does not exist.
-func (s *Session) KeyspaceMetadata(keyspace string) (*KeyspaceMetadata, error) {
+func InternalSessionKeyspaceMetadata(s *Session, keyspace string) (*KeyspaceMetadata, error) {
 	if s.Closed() {
 		return nil, ErrSessionClosed
-	} else if err := s.Ready(); err != nil {
+	} else if err := InternalSessionReady(s); err != nil {
 		return nil, err
 	} else if keyspace == "" {
 		return nil, ErrNoKeyspace
@@ -628,10 +628,10 @@ func (s *Session) KeyspaceMetadata(keyspace string) (*KeyspaceMetadata, error) {
 }
 
 // TableMetadata returns the schema metadata for the specified table. Returns an error if the keyspace or table does not exist.
-func (s *Session) TableMetadata(keyspace, table string) (*TableMetadata, error) {
+func InternalSessionTableMetadata(s *Session, keyspace, table string) (*TableMetadata, error) {
 	if s.Closed() {
 		return nil, ErrSessionClosed
-	} else if err := s.Ready(); err != nil {
+	} else if err := InternalSessionReady(s); err != nil {
 		return nil, err
 	} else if keyspace == "" {
 		return nil, ErrNoKeyspace
@@ -646,10 +646,10 @@ func (s *Session) TableMetadata(keyspace, table string) (*TableMetadata, error) 
 //
 // Deprecated: Use [Session.TableTabletsMetadata] for per-table lookups or
 // [Session.ForEachTablet] to iterate without aggregating into a flat list.
-func (s *Session) TabletsMetadata() (tablets.TabletInfoList, error) {
+func InternalSessionTabletsMetadata(s *Session) (tablets.TabletInfoList, error) {
 	if s.Closed() {
 		return nil, ErrSessionClosed
-	} else if err := s.Ready(); err != nil {
+	} else if err := InternalSessionReady(s); err != nil {
 		return nil, err
 	} else if !s.privateStorage.InternalTabletsRoutingV1 {
 		return nil, ErrTabletsNotUsed
@@ -660,11 +660,11 @@ func (s *Session) TabletsMetadata() (tablets.TabletInfoList, error) {
 
 // TableTabletsMetadata returns the tablet metadata for the specified keyspace and table.
 // Returns (nil, nil) when no tablets exist for the given keyspace/table.
-func (s *Session) TableTabletsMetadata(keyspace, table string) (tablets.TabletEntryList, error) {
+func InternalSessionTableTabletsMetadata(s *Session, keyspace, table string) (tablets.TabletEntryList, error) {
 	// fail fast
 	if s.Closed() {
 		return nil, ErrSessionClosed
-	} else if err := s.Ready(); err != nil {
+	} else if err := InternalSessionReady(s); err != nil {
 		return nil, err
 	} else if !s.privateStorage.InternalTabletsRoutingV1 {
 		return nil, ErrTabletsNotUsed
@@ -680,11 +680,11 @@ func (s *Session) TableTabletsMetadata(keyspace, table string) (tablets.TabletEn
 // ForEachTablet iterates over all keyspace/table pairs and their tablet entries,
 // calling fn for each one. If fn returns false, iteration stops early.
 // The entries slice is a shallow copy; do not mutate individual entries.
-func (s *Session) ForEachTablet(fn func(keyspace, table string, entries tablets.TabletEntryList) bool) error {
+func InternalSessionForEachTablet(s *Session, fn func(keyspace, table string, entries tablets.TabletEntryList) bool) error {
 	// fail fast
 	if s.Closed() {
 		return ErrSessionClosed
-	} else if err := s.Ready(); err != nil {
+	} else if err := InternalSessionReady(s); err != nil {
 		return err
 	} else if !s.privateStorage.InternalTabletsRoutingV1 {
 		return ErrTabletsNotUsed
@@ -718,7 +718,7 @@ func InternalSessionGetConn(s *Session) *Conn {
 // routingKeyInfoCacheKey avoids concatenating keyspace+stmt into a string on
 // every cache lookup; lru.Cache already takes a comparable key type for
 // exactly this reason.
-func (s *Session) GetHosts() []*HostInfo {
+func InternalSessionGetHosts(s *Session) []*HostInfo {
 	return s.privateStorage.InternalHostSource.InternalGetHostsList()
 }
 
@@ -728,7 +728,7 @@ func (s *Session) GetHosts() []*HostInfo {
 // The explicit nil matters: returning the *hostConnPool unconditionally would
 // box a nil pointer into a non-nil HostPoolInfo, so a caller's `if pool != nil`
 // would pass and the first method call would panic.
-func (s *Session) GetHostPoolByID(hostID string) HostPoolInfo {
+func InternalSessionGetHostPoolByID(s *Session, hostID string) HostPoolInfo {
 	hostPool, ok := s.privateStorage.InternalPool.InternalGetPoolByHostID(hostID)
 	if !ok {
 		return nil
@@ -742,7 +742,7 @@ func (s *Session) GetHostPoolByID(hostID string) HostPoolInfo {
 // iter runs while an internal lock on the pool is held, so it must not call
 // back into the Session -- anything that adds or removes a host, or closes the
 // session, will deadlock -- and it should not block.
-func (s *Session) IterateHostPools(iter func(info HostPoolInfo) bool) {
+func InternalSessionIterateHostPools(s *Session, iter func(info HostPoolInfo) bool) {
 	s.privateStorage.InternalPool.InternalIteratePool(iter)
 }
 

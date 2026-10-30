@@ -1,6 +1,9 @@
 //go:build unit
 // +build unit
 
+// Copyright 2026 The Gocql Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license.
+
 package gocql
 
 import implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
@@ -931,7 +934,7 @@ func TestDriverConfigReportingDisabled(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	hosts := session.GetHosts()
+	hosts := sessionTestGetHosts(session)
 	if len(hosts) == 0 {
 		t.Fatal("expected at least one host in the session")
 	}
@@ -1084,7 +1087,7 @@ func TestDriverConfigReportingDial(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			hosts := session.GetHosts()
+			hosts := sessionTestGetHosts(session)
 			if len(hosts) == 0 {
 				t.Fatal("expected at least one host in the session")
 			}

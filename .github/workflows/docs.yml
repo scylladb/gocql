@@ -30,7 +30,7 @@ jobs:
         run: |
           case "$TARGET" in
             all|master) checkout_ref="$DEFAULT_BRANCH" ;;
-            v1.*)
+            v2.*)
               if [ "$PUBLISH" = true ]; then
                 checkout_ref="$DEFAULT_BRANCH"
               else
@@ -81,7 +81,7 @@ jobs:
         run: |
           gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$RUNNER_TEMP/docs-releases.json"
           case "$TARGET" in
-            v1.*) python3 docs/released_versions.py "$RUNNER_TEMP/docs-releases.json" "$TARGET" >> "$GITHUB_ENV" ;;
+            v2.*) python3 docs/released_versions.py "$RUNNER_TEMP/docs-releases.json" "$TARGET" >> "$GITHUB_ENV" ;;
             *) python3 docs/released_versions.py "$RUNNER_TEMP/docs-releases.json" >> "$GITHUB_ENV" ;;
           esac
 
