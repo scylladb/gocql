@@ -19,6 +19,8 @@ import (
 
 // schema metadata for a keyspace
 type KeyspaceMetadata struct {
+	TabletBased       bool
+	ConsistencyMode   string
 	StrategyOptions   map[string]any
 	Tables            map[string]*TableMetadata
 	Functions         map[string]*FunctionMetadata
@@ -38,6 +40,7 @@ type KeyspaceMetadata struct {
 // do not race with concurrent readers of the original.
 func (ks *KeyspaceMetadata) Clone() *KeyspaceMetadata {
 	cloned := &KeyspaceMetadata{
+		TabletBased: ks.TabletBased, ConsistencyMode: ks.ConsistencyMode,
 		Name:            ks.Name,
 		DurableWrites:   ks.DurableWrites,
 		StrategyClass:   ks.StrategyClass,
@@ -89,6 +92,7 @@ func (ks *KeyspaceMetadata) removeTable(tableName string) {
 
 // schema metadata for a table (a.k.a. column family)
 type TableMetadata struct {
+	ID                string
 	Columns           map[string]*ColumnMetadata
 	Extensions        map[string]any
 	Keyspace          string
@@ -250,7 +254,7 @@ func (t *TableMetadata) Equals(other *TableMetadata) bool {
 		return t == other
 	}
 
-	if t.Keyspace != other.Keyspace || t.Name != other.Name {
+	if t.ID != other.ID || t.Keyspace != other.Keyspace || t.Name != other.Name {
 		return false
 	}
 

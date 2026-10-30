@@ -1,0 +1,167 @@
+{
+  "branch": "v2-06-tablet-routing",
+  "predecessor": "0ca4fd253c59f4196ba466e41b66ae8d29210bca",
+  "source_snapshot": "feature-specs/evidence/step06-final-source.json",
+  "source_snapshot_sha256": "d4d61c562e1538be5cec58c17914909ccdd38da99d54ef166ee9c914362001e7",
+  "source_unchanged": true,
+  "results": [
+    {
+      "name": "unit-race",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-tags",
+        "unit",
+        "./...",
+        "-count=1",
+        "-timeout=6m"
+      ],
+      "env": {},
+      "exit_code": 0,
+      "elapsed_seconds": 35.02,
+      "log": "feature-specs/evidence/step06-unit-race.log",
+      "sha256": "132f6c8769bf5375ca3c2e644fbf72aeda71f992532c73d52d332a14bce9a7ab"
+    },
+    {
+      "name": "focused-race",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-tags",
+        "unit",
+        ".",
+        "./tablets",
+        "-run",
+        "^TestStep06|^TestV2Routing|^TestV2Latency|^TestV2Tablet|^TestTypedTablet|^TestV2StreamingPartition|^TestV2ReservedPreferred",
+        "-count=2",
+        "-timeout=3m"
+      ],
+      "env": {},
+      "exit_code": 0,
+      "elapsed_seconds": 2.05,
+      "log": "feature-specs/evidence/step06-focused-race.log",
+      "sha256": "4e0d64014bd51bb1adb7892e3d20d97953f7b0374501b6413b490d21fe0dee4c"
+    },
+    {
+      "name": "vet",
+      "command": [
+        "go",
+        "vet",
+        "-tags",
+        "unit",
+        "./..."
+      ],
+      "env": {},
+      "exit_code": 0,
+      "elapsed_seconds": 0.807,
+      "log": "feature-specs/evidence/step06-vet.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "integration-build",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-tags",
+        "integration gocql_debug",
+        "-c",
+        "-o",
+        "/tmp/step06-integration.test",
+        "."
+      ],
+      "env": {},
+      "exit_code": 0,
+      "elapsed_seconds": 22.673,
+      "log": "feature-specs/evidence/step06-integration-build.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "ccm-build",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-tags",
+        "ccm integration gocql_debug",
+        "-c",
+        "-o",
+        "/tmp/step06-ccm.test",
+        "."
+      ],
+      "env": {},
+      "exit_code": 0,
+      "elapsed_seconds": 21.911,
+      "log": "feature-specs/evidence/step06-ccm-build.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "fuzz",
+      "command": [
+        "go",
+        "test",
+        "-tags",
+        "unit",
+        ".",
+        "-run",
+        "^$",
+        "-fuzz",
+        "^FuzzStep06TabletPayload$",
+        "-fuzztime=5s",
+        "-parallel=2"
+      ],
+      "env": {},
+      "exit_code": 0,
+      "elapsed_seconds": 5.604,
+      "log": "feature-specs/evidence/step06-fuzz.log",
+      "sha256": "f843a829a84fd948e7086b536245e843fc032406267d5b0de1db5fba23ef6f9e"
+    },
+    {
+      "name": "benchmarks",
+      "command": [
+        "go",
+        "test",
+        "-tags",
+        "unit",
+        ".",
+        "-run",
+        "^$",
+        "-bench",
+        "^BenchmarkStep06",
+        "-benchmem",
+        "-benchtime=100ms",
+        "-count=1"
+      ],
+      "env": {},
+      "exit_code": 0,
+      "elapsed_seconds": 4.628,
+      "log": "feature-specs/evidence/step06-benchmarks.log",
+      "sha256": "afc18b5663d30803fdad87f96d5703249736236d8028a7959b95d303e8dffed7",
+      "raw_log": "/extra/scylladb/gocql-api-test-cluster/step06-native-1793319680700328977/raw-evidence/step06-benchmarks.log",
+      "raw_sha256": "0357aa48e9d127d90b9d5f1b05aeccbb0835fea8d306b76663742af1a0133e50"
+    },
+    {
+      "name": "shard-386",
+      "command": [
+        "go",
+        "test",
+        "-tags",
+        "unit",
+        ".",
+        "-run",
+        "^TestStep06PickerStrictAndAdvisory$",
+        "-count=1"
+      ],
+      "env": {
+        "GOARCH": "386",
+        "CGO_ENABLED": "0"
+      },
+      "exit_code": 1,
+      "elapsed_seconds": 0.073,
+      "log": "feature-specs/evidence/step06-shard-386.log",
+      "sha256": "74a800bf39c06f12a453303acc32573ec5661bcb413889fb650c115fe568bd1a"
+    }
+  ]
+}

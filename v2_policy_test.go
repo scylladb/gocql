@@ -91,7 +91,7 @@ func v2TestHost(id byte, dc, rack string) HostSnapshot {
 }
 func v2TestMetadata() *MetadataSnapshot {
 	hosts := []HostSnapshot{v2TestHost(1, "a", "r1"), v2TestHost(2, "a", "r2"), v2TestHost(3, "b", "r3"), v2TestHost(4, "a", "r1")}
-	return &MetadataSnapshot{hosts: hosts, keyspaces: map[string]*KeyspaceMetadata{"ks": {Tables: map[string]*TableMetadata{"table": {Name: "table"}}}}, ranges: map[string][]TokenRange{"ks": {{Start: 0, End: 0, Replicas: []Target{{HostID: hosts[2].ID}, {HostID: hosts[1].ID}, {HostID: hosts[0].ID}}}}}, tablets: map[metadataTable][]TokenRange{}}
+	return &MetadataSnapshot{hostIndex: buildRoutingHostIndex(hosts), hosts: hosts, keyspaces: map[string]*KeyspaceMetadata{"ks": {Tables: map[string]*TableMetadata{"table": {Name: "table"}}}}, ranges: map[string][]TokenRange{"ks": {{Start: 0, End: 0, Replicas: []Target{{HostID: hosts[2].ID}, {HostID: hosts[1].ID}, {HostID: hosts[0].ID}}}}}, tablets: map[metadataTable][]TokenRange{}}
 }
 func v2PlanIDs(p QueryPlan) []byte {
 	var result []byte
@@ -114,7 +114,7 @@ func TestV2RoutingOrderAndIndependentPlans(t *testing.T) {
 	}
 	info := RoutingInfo{Keyspace: "ks", Table: "table", Token: Option[int64]{Set: true, Value: 1}, Conditional: true}
 	a, b := policy.Plan(info, m), policy.Plan(info, m)
-	want := []byte{1, 2, 4, 3}
+	want := []byte{1, 2, 3, 4}
 	if got := v2PlanIDs(a); !bytes.Equal(got, want) {
 		t.Fatalf("plan=%v want %v", got, want)
 	}

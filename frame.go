@@ -279,6 +279,7 @@ type framer struct {
 	flags                 byte
 	proto                 byte
 	tabletsRoutingV1      bool
+	tabletsRoutingV2      bool
 	scyllaUseMetadataID   bool
 	released              atomic.Bool
 }
@@ -319,6 +320,7 @@ func newFramer(compressor Compressor, version byte) *framer {
 	f.traceID = nil
 
 	f.tabletsRoutingV1 = false
+	f.tabletsRoutingV2 = false
 	f.scyllaUseMetadataID = false
 
 	return f

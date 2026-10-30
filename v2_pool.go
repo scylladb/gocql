@@ -274,10 +274,16 @@ func (p *typedConnPicker) pickTarget(target Target, routing RoutingInfo) *Conn {
 		return nil
 	}
 	shard := -1
-	if target.ShardID.Set {
-		shard = int(target.ShardID.Value)
-	} else if routing.ShardID.Set {
-		shard = int(routing.ShardID.Value)
+	requested := target.ShardID
+	if routing.ShardID.Set {
+		requested = routing.ShardID
+	}
+	if requested.Set {
+		if uint64(requested.Value) < uint64(len(p.conns)) {
+			shard = int(requested.Value)
+		} else if target.StrictShard || routing.ShardID.Set || routing.Conditional {
+			return nil
+		}
 	} else if routing.Token.Set {
 		shard = p.shardOf(routing.Token.Value)
 	}
@@ -308,7 +314,7 @@ func (p *typedConnPicker) pickTarget(target Target, routing RoutingInfo) *Conn {
 			return preferred
 		}
 	}
-	if target.ShardID.Set || routing.ShardID.Set || routing.Conditional && shard >= 0 {
+	if (target.StrictShard || routing.ShardID.Set || routing.Conditional) && shard >= 0 {
 		return preferred
 	}
 
@@ -359,21 +365,51 @@ func (pool *hostConnPool) reserveStream(ctx context.Context, target Target, rout
 		if p, ok := pool.connPicker.(*typedConnPicker); ok {
 			p.mu.RLock()
 			shard := -1
-			if target.ShardID.Set {
-				shard = int(target.ShardID.Value)
-			} else if routing.ShardID.Set {
-				shard = int(routing.ShardID.Value)
+			strict := target.StrictShard || routing.ShardID.Set || routing.Conditional
+			requested := target.ShardID
+			if routing.ShardID.Set {
+				requested = routing.ShardID
+			}
+			if requested.Set {
+				if uint64(requested.Value) < uint64(len(p.conns)) {
+					shard = int(requested.Value)
+				} else if strict {
+					p.mu.RUnlock()
+					pool.mu.RUnlock()
+					return nil, ErrNoConnections
+				}
+			} else if routing.Token.Set {
+				shard = p.shardOf(routing.Token.Value)
+			}
+			if strict && shard >= len(p.conns) {
+				p.mu.RUnlock()
+				pool.mu.RUnlock()
+				return nil, ErrNoConnections
 			}
 			for i, cs := range p.conns {
-				if shard >= 0 && i != shard {
+				if strict && shard >= 0 && i != shard {
 					continue
 				}
-				candidates = append(candidates, cs...)
+				if i == shard {
+					candidates = append(append([]*Conn(nil), cs...), candidates...)
+				} else {
+					candidates = append(candidates, cs...)
+				}
 			}
 			p.mu.RUnlock()
 		} else if p, ok := pool.connPicker.(*defaultConnPicker); ok {
 			p.mu.RLock()
-			candidates = append(candidates, p.conns...)
+			shard := target.ShardID
+			if routing.ShardID.Set {
+				shard = routing.ShardID
+			}
+			strict := target.StrictShard || routing.ShardID.Set
+			for _, c := range p.conns {
+				if shard.Set && strict && uint32(c.scyllaSupported.shard) != shard.Value {
+					continue
+				}
+				candidates = append(candidates, c)
+			}
 			p.mu.RUnlock()
 		}
 		_, missing := pool.connPicker.Size()

@@ -1,0 +1,65 @@
+{
+  "fixture_root": "/extra/scylladb/gocql-api-test-cluster/step06-native-1793319680700328977",
+  "results": [
+    {
+      "name": "stable",
+      "command": [
+        "go",
+        "test",
+        "-json",
+        "-race",
+        "-tags",
+        "integration gocql_debug",
+        "-count=1",
+        "-timeout=8m",
+        "-parallel=1",
+        "-run",
+        "^(TestStep06TabletRoutingLive|TestStep06LeaderRoutingLive|TestTablets)$",
+        ".",
+        "-args",
+        "-gocql.timeout=60s",
+        "-rf=3",
+        "-clusterSize=3",
+        "-autowait=2000ms",
+        "-cluster=127.0.20.1,127.0.20.2,127.0.20.3",
+        "-distribution=scylla",
+        "-proto=4",
+        "-compressor=no-compression",
+        "-gocql.cversion=2026.3.4"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 23.314833641052246,
+      "log": "feature-specs/evidence/step06-handoff-stable.log"
+    },
+    {
+      "name": "experimental",
+      "command": [
+        "go",
+        "test",
+        "-json",
+        "-race",
+        "-tags",
+        "integration gocql_debug",
+        "-count=1",
+        "-timeout=8m",
+        "-parallel=1",
+        "-run",
+        "^(TestStep06TabletRoutingLive|TestStep06LeaderRoutingLive|TestTablets)$",
+        ".",
+        "-args",
+        "-gocql.timeout=60s",
+        "-rf=3",
+        "-clusterSize=3",
+        "-autowait=2000ms",
+        "-cluster=127.0.22.1,127.0.22.2,127.0.22.3",
+        "-distribution=scylla",
+        "-proto=4",
+        "-compressor=no-compression",
+        "-gocql.cversion=2026.3.4"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 2.4000391960144043,
+      "log": "feature-specs/evidence/step06-handoff-experimental.log"
+    }
+  ]
+}

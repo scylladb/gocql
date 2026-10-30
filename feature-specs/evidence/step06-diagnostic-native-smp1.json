@@ -1,0 +1,35 @@
+{
+  "fixture_root": "/extra/scylladb/gocql-api-test-cluster/step06-native-1793318837800902599",
+  "results": [
+    {
+      "name": "stable",
+      "command": [
+        "go",
+        "test",
+        "-json",
+        "-race",
+        "-tags",
+        "integration gocql_debug",
+        "-count=1",
+        "-timeout=8m",
+        "-parallel=1",
+        "-run",
+        "^(TestStep06TabletRoutingLive|TestStep06LeaderRoutingLive|TestTablets)$",
+        ".",
+        "-args",
+        "-gocql.timeout=60s",
+        "-rf=3",
+        "-clusterSize=3",
+        "-autowait=2000ms",
+        "-cluster=127.0.20.1,127.0.20.2,127.0.20.3",
+        "-distribution=scylla",
+        "-proto=4",
+        "-compressor=no-compression",
+        "-gocql.cversion=2026.3.4"
+      ],
+      "exit_code": 1,
+      "elapsed_seconds": 21.49055504798889,
+      "log": "feature-specs/evidence/step06-handoff-stable.log"
+    }
+  ]
+}

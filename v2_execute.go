@@ -59,16 +59,11 @@ func (s *Session) selectTypedConn(ctx context.Context, routing RoutingInfo, plan
 	if s.pool == nil || s.hostSource == nil {
 		return nil, ErrNoConnections
 	}
-	hosts := s.hostSource.getHostsList()
-	if len(hosts) == 0 {
-		return nil, ErrNoConnections
-	}
-	pick := func(host *HostInfo, target Target) *Conn {
-		if host == nil || !host.IsUp() || s.cfg.filterHost(host) {
-			return nil
-		}
-		pool, ok := s.pool.getPool(host)
-		if !ok {
+	pickTarget := func(target Target) *Conn {
+		s.pool.mu.RLock()
+		pool := s.pool.hostConnPools[target.HostID]
+		s.pool.mu.RUnlock()
+		if pool == nil || pool.host == nil || !pool.host.IsUp() || s.cfg.filterHost(pool.host) {
 			return nil
 		}
 		return s.pickTypedPool(pool, target, routing)
@@ -77,30 +72,24 @@ func (s *Session) selectTypedConn(ctx context.Context, routing RoutingInfo, plan
 		for {
 			target, ok := plan.Next()
 			if !ok {
-				break
+				return nil, ErrNoConnections
 			}
-			for _, host := range hosts {
-				if host.hostUUID() == target.HostID {
-					if conn := pick(host, target); conn != nil {
-						return conn, nil
-					}
-					break
-				}
+			if conn := pickTarget(target); conn != nil {
+				return conn, nil
 			}
 		}
-		return nil, ErrNoConnections
 	}
 	if routing.HostID.Set {
-		for _, host := range hosts {
-			if host.hostUUID() == routing.HostID.Value {
-				if conn := pick(host, Target{HostID: routing.HostID.Value, ShardID: routing.ShardID}); conn != nil {
-					return conn, nil
-				}
-				break
-			}
+		if conn := pickTarget(Target{HostID: routing.HostID.Value, ShardID: routing.ShardID, StrictShard: routing.ShardID.Set}); conn != nil {
+			return conn, nil
 		}
 		return nil, ErrNoConnections
 	}
+	hosts := s.hostSource.getHostsList()
+	if len(hosts) == 0 {
+		return nil, ErrNoConnections
+	}
+	pick := func(host *HostInfo, _ Target) *Conn { return pickTarget(Target{HostID: host.hostUUID()}) }
 	start := int(s.typedRuntime().nextHost.Add(1) % uint64(len(hosts)))
 	for i := 0; i < len(hosts); i++ {
 		if conn := pick(hosts[(start+i)%len(hosts)], Target{}); conn != nil {
@@ -666,6 +655,8 @@ type typedAttemptOutcome struct {
 }
 
 func (s *Session) executePage(ctx context.Context, request *executionRequest, state PageState) (*responsePage, error) {
+	pageRequest := *request
+	request = &pageRequest // outstanding branches retain this page's immutable routing capture.
 	if request.options.profile.PageTimeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, request.options.profile.PageTimeout)
@@ -673,9 +664,11 @@ func (s *Session) executePage(ctx context.Context, request *executionRequest, st
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	metadata := s.Metadata()
+	request.tabletFeedback = s.captureTabletFeedback(request.routing, metadata)
+	request.tabletVersionBlock = metadata.tabletVersionBlock(request.routing)
 	var plan QueryPlan
 	if policy := request.options.profile.Routing; policy != nil {
-		metadata := s.Metadata()
 		if err := policy.Validate(metadata); err != nil {
 			return nil, err
 		}
@@ -917,7 +910,7 @@ func (s *Session) executeTypedAttempt(ctx context.Context, conn *Conn, request *
 	if opts.NowInSeconds.Set && conn.version < 5 {
 		return nil, typeValidation("now in seconds", "requires protocol v5")
 	}
-	wireRequest := &attemptRequest{statement: request.statement, values: request.values.framed, valueCount: len(request.values.cells), consistency: consistency, pageSize: int(request.options.profile.PageSize), keyspace: request.keyspace, trace: opts.Trace, payload: opts.CustomPayload}
+	wireRequest := &attemptRequest{tabletVersionBlock: request.tabletVersionBlock, statement: request.statement, values: request.values.framed, valueCount: len(request.values.cells), consistency: consistency, pageSize: int(request.options.profile.PageSize), keyspace: request.keyspace, trace: opts.Trace, payload: opts.CustomPayload}
 	if conn.version < 5 {
 		wireRequest.keyspace = ""
 	}
@@ -961,7 +954,9 @@ func (s *Session) executeTypedAttempt(ctx context.Context, conn *Conn, request *
 			observed = request.prepared.dependencies.tracker.start()
 		}
 		response, executeErr := conn.executeTyped(ctx, wireRequest)
-		s.applyTypedFeedback(response, request.routing)
+		if len(wireRequest.preparedID) > 0 && wireRequest.batch == nil {
+			s.applyTypedFeedbackStamped(response, request.routing, request.tabletFeedback, conn.framers.defaults)
+		}
 		var unprepared *RequestErrUnprepared
 		if executeErr != nil && errors.As(executeErr, &unprepared) && repair == 0 {
 			if response != nil {
@@ -1042,12 +1037,20 @@ func (s *Session) pickTypedPool(pool *hostConnPool, target Target, routing Routi
 	}
 	picker, ok := pool.connPicker.(*scyllaConnPicker)
 	if !ok {
-		if routing.Token.Set {
+		if routing.Token.Set && !target.ShardID.Set && !routing.ShardID.Set {
 			if p, ok := pool.connPicker.(int64ConnPicker); ok {
 				return p.PickInt64(routing.Token.Value, nil)
 			}
 		}
-		return pool.connPicker.Pick(nil, nil)
+		conn := pool.connPicker.Pick(nil, nil)
+		shard := target.ShardID
+		if routing.ShardID.Set {
+			shard = routing.ShardID
+		}
+		if conn != nil && shard.Set && (target.StrictShard || routing.ShardID.Set) && uint32(conn.scyllaSupported.shard) != shard.Value {
+			return nil
+		}
+		return conn
 	}
 	shard := target.ShardID
 	if !shard.Set && routing.Token.Set && routing.Keyspace != "" && routing.Table != "" {
@@ -1067,7 +1070,11 @@ func (s *Session) pickTypedPool(pool *hostConnPool, target Target, routing Routi
 	}
 	index := -1
 	if shard.Set {
-		index = int(shard.Value)
+		if uint64(shard.Value) < uint64(len(picker.conns)) {
+			index = int(shard.Value)
+		} else if target.StrictShard || routing.ShardID.Set || routing.Conditional {
+			return nil
+		}
 	} else if routing.Token.Set {
 		index = picker.shardOf(int64Token(routing.Token.Value))
 	}
@@ -1077,6 +1084,9 @@ func (s *Session) pickTypedPool(pool *hostConnPool, target Target, routing Routi
 			return conn
 		}
 		return picker.maybeReplaceWithLessBusyConnection(conn)
+	}
+	if index >= 0 && (target.StrictShard || routing.ShardID.Set || routing.Conditional) {
+		return nil
 	}
 	return picker.leastBusyConn()
 }
@@ -1111,22 +1121,29 @@ func attemptBytesWritten(err error) bool {
 	return false
 }
 
-func (s *Session) applyTypedFeedback(response *responsePage, routing RoutingInfo) {
+func (s *Session) applyTypedFeedbackStamped(response *responsePage, routing RoutingInfo, stamp tabletFeedbackStamp, features framerConfig) {
 	if response == nil || routing.Keyspace == "" || routing.Table == "" || s.metadataDescriber == nil {
 		return
 	}
+	key := "tablets-routing-v1"
+	if features.tabletsRoutingV2 {
+		key = "tablets-routing-v2"
+	} else if !features.tabletsRoutingV1 {
+		return
+	}
 	for _, entry := range response.payload {
-		if entry.Key != "tablets-routing-v1" || !entry.Value.Valid {
+		if entry.Key != key || !entry.Value.Valid {
 			continue
 		}
-		hint, err := parseTypedTabletHint(entry.Value.Value, routing.Keyspace, routing.Table)
+		hint, err := parseTypedTabletPayload(entry.Value.Value, routing.Keyspace, routing.Table, features.tabletsRoutingV2)
 		if err != nil {
 			if s.logger != nil {
 				s.logger.Printf("gocql: tablet hint rejected: %v", err)
 			}
-			continue
+			return
 		}
-		s.applyV2TabletHint(hint)
+		s.queueTabletFeedback(hint, stamp)
+		return
 	}
 }
 

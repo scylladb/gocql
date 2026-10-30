@@ -34,6 +34,7 @@ type encodedValues struct {
 // attemptRequest contains only immutable protocol inputs. The transport retains
 // lease until every accepted writer has stopped accessing its spans.
 type attemptRequest struct {
+	tabletVersionBlock             byte
 	statement                      string
 	preparedID, resultMetadataID   []byte
 	values                         wire.Chain
@@ -86,16 +87,18 @@ type responsePage struct {
 }
 
 type executionRequest struct {
-	connection *Conn
-	statement  string
-	keyspace   string
-	prepared   *preparedState
-	values     encodedValues
-	owner      *inputOwner
-	routing    RoutingInfo
-	options    resolvedOptions
-	batch      *batchState
-	logical    *logicalExecution
+	tabletFeedback     tabletFeedbackStamp
+	tabletVersionBlock byte
+	connection         *Conn
+	statement          string
+	keyspace           string
+	prepared           *preparedState
+	values             encodedValues
+	owner              *inputOwner
+	routing            RoutingInfo
+	options            resolvedOptions
+	batch              *batchState
+	logical            *logicalExecution
 }
 
 var (

@@ -11,6 +11,10 @@ import (
 // parseTypedTabletHint consumes the tuple<bigint,bigint,list<tuple<uuid,int>>>
 // custom payload without materializing a potentially fragmented payload.
 func parseTypedTabletHint(value Bytes, keyspace, table string) (tablets.TabletInfo, error) {
+	return parseTypedTabletPayload(value, keyspace, table, false)
+}
+
+func parseTypedTabletPayload(value Bytes, keyspace, table string, v2 bool) (tablets.TabletInfo, error) {
 	if err := value.checkAlive(); err != nil {
 		return tablets.TabletInfo{}, err
 	}
@@ -65,9 +69,17 @@ func parseTypedTabletHint(value Bytes, keyspace, table string) (tablets.TabletIn
 	}
 	list.check(list.cursor.RequireEnd())
 	p.check(list.err)
+	var version uint64
+	if v2 {
+		version = uint64(bigint(p))
+	}
 	p.check(p.cursor.RequireEnd())
 	if p.err != nil {
 		return tablets.TabletInfo{}, p.err
 	}
-	return tablets.NewTabletInfo(keyspace, table, first, last, replicas)
+	hint, err := tablets.NewTabletInfo(keyspace, table, first, last, replicas)
+	if v2 {
+		hint = hint.WithVersion(version)
+	}
+	return hint, err
 }

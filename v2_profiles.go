@@ -154,8 +154,9 @@ type RoutingInfo struct {
 	ShardID         Option[uint32]
 }
 type Target struct {
-	HostID  UUID
-	ShardID Option[uint32]
+	StrictShard bool
+	HostID      UUID
+	ShardID     Option[uint32]
 }
 type QueryPlan interface{ Next() (Target, bool) }
 type RoutingPolicy interface {

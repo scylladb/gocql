@@ -113,7 +113,7 @@ type uuidProvider interface {
 }
 
 func (b TabletInfoBuilder) Build() (TabletInfo, error) {
-	if b.FirstToken > b.LastToken {
+	if b.FirstToken >= b.LastToken {
 		return TabletInfo{}, fmt.Errorf("invalid token range: firstToken (%d) > lastToken (%d)",
 			b.FirstToken, b.LastToken)
 	}
@@ -126,6 +126,9 @@ func (b TabletInfoBuilder) Build() (TabletInfo, error) {
 		shardId, ok := replica[1].(int)
 		if !ok {
 			return TabletInfo{}, fmt.Errorf("second element (shard) of replica is not int: %v", replica)
+		}
+		if shardId < 0 {
+			return TabletInfo{}, fmt.Errorf("negative tablet shard %d", shardId)
 		}
 		var hostUUID HostUUID
 		switch v := replica[0].(type) {
@@ -165,9 +168,14 @@ func (b TabletInfoBuilder) Build() (TabletInfo, error) {
 // NewTabletInfo creates a TabletInfo directly from pre-parsed fields,
 // bypassing the builder's type-assertion and string-parsing logic.
 func NewTabletInfo(keyspace, table string, firstToken, lastToken int64, replicas []ReplicaInfo) (TabletInfo, error) {
-	if firstToken > lastToken {
+	if firstToken >= lastToken {
 		return TabletInfo{}, fmt.Errorf("invalid token range: firstToken (%d) > lastToken (%d)",
 			firstToken, lastToken)
+	}
+	for _, r := range replicas {
+		if r.shardId < 0 {
+			return TabletInfo{}, fmt.Errorf("negative tablet shard %d", r.shardId)
+		}
 	}
 	return TabletInfo{
 		keyspaceName: keyspace,
@@ -180,6 +188,8 @@ func NewTabletInfo(keyspace, table string, firstToken, lastToken int64, replicas
 
 // TabletInfo represents a tablet with its token range and replica set.
 type TabletInfo struct {
+	version      uint64
+	versionSet   bool
 	keyspaceName string
 	tableName    string
 	replicas     []ReplicaInfo
@@ -218,6 +228,8 @@ type TabletInfoList []TabletInfo
 
 // TabletEntry is the per-table representation of a tablet, without keyspace/table names.
 type TabletEntry struct {
+	version    uint64
+	versionSet bool
 	replicas   []ReplicaInfo
 	firstToken int64
 	lastToken  int64
@@ -254,47 +266,10 @@ func (t TabletEntryList) findOverlapRange(firstToken, lastToken int64) (start, t
 		return 0, 0
 	}
 
-	l := 0
-	r := len(t)
-
-	l1, r1 := l, r
-	l2, r2 := l1, r1
-
-	for l1 < r1 {
-		mid := l1 + (r1-l1)/2
-		if t[mid].firstToken < firstToken {
-			l1 = mid + 1
-		} else {
-			r1 = mid
-		}
-	}
-	start = l1
-
-	// Adjust start backward if the previous entry overlaps.
-	if start > l && t[start-1].lastToken > firstToken {
-		start = start - 1
-	}
-
-	for l2 < r2 {
-		mid := l2 + (r2-l2)/2
-		if t[mid].lastToken < lastToken {
-			l2 = mid + 1
-		} else {
-			r2 = mid
-		}
-	}
-	end := l2
-	if end < len(t) && t[end].firstToken > lastToken {
-		end = end - 1
-	}
-	if end >= len(t) {
-		end = len(t) - 1
-	}
-
-	if start <= end && end >= 0 {
-		tailStart = end + 1
-	} else {
-		tailStart = start
+	start = sort.Search(len(t), func(i int) bool { return t[i].lastToken > firstToken })
+	tailStart = start
+	for tailStart < len(t) && t[tailStart].firstToken < lastToken {
+		tailStart++
 	}
 	return start, tailStart
 }
@@ -381,7 +356,7 @@ func (t TabletEntryList) findEntryForToken(token int64, l int, r int) (TabletEnt
 	if l >= len(t) {
 		return TabletEntry{}, false
 	}
-	if t[l].firstToken > token {
+	if t[l].firstToken >= token {
 		return TabletEntry{}, false
 	}
 	return t[l], true
@@ -424,7 +399,8 @@ func (t TabletEntryList) removeEntriesWithHost(hostID HostUUID) TabletEntryList 
 // toEntry converts a TabletInfo to a TabletEntry.
 func (t TabletInfo) toEntry() TabletEntry {
 	return TabletEntry{
-		replicas:   slices.Clone(t.replicas),
+		replicas: slices.Clone(t.replicas),
+		version:  t.version, versionSet: t.versionSet,
 		firstToken: t.firstToken,
 		lastToken:  t.lastToken,
 	}
@@ -436,8 +412,9 @@ func (e TabletEntry) toTabletInfo(keyspace, table string) TabletInfo {
 		keyspaceName: keyspace,
 		tableName:    table,
 		replicas:     slices.Clone(e.replicas),
-		firstToken:   e.firstToken,
-		lastToken:    e.lastToken,
+		version:      e.version, versionSet: e.versionSet,
+		firstToken: e.firstToken,
+		lastToken:  e.lastToken,
 	}
 }
 
@@ -954,3 +931,8 @@ func (c *CowTabletList) RemoveTabletsWithKeyspace(keyspace string) {
 func (c *CowTabletList) RemoveTabletsWithTable(keyspace string, table string) {
 	c.sendOp(opRemoveTable{keyspace: keyspace, table: table})
 }
+
+// WithVersion retains the opaque v2 server version. It has equality semantics only.
+func (t TabletInfo) WithVersion(v uint64) TabletInfo { t.version = v; t.versionSet = true; return t }
+func (t TabletInfo) Version() (uint64, bool)         { return t.version, t.versionSet }
+func (t TabletEntry) Version() (uint64, bool)        { return t.version, t.versionSet }

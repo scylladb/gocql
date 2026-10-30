@@ -1,0 +1,18 @@
+START stable /extra/scylladb/gocql-api-test-cluster/step06-native-1793318990076182028
+HEALTH 127.0.20.1 840000000600000214
+HEALTH 127.0.20.2 840000000600000214
+HEALTH 127.0.20.3 840000000600000214
+{"name": "stable", "command": ["go", "test", "-json", "-race", "-tags", "integration gocql_debug", "-count=1", "-timeout=8m", "-parallel=1", "-run", "^(TestStep06TabletRoutingLive|TestStep06LeaderRoutingLive|TestTablets)$", ".", "-args", "-gocql.timeout=60s", "-rf=3", "-clusterSize=3", "-autowait=2000ms", "-cluster=127.0.20.1,127.0.20.2,127.0.20.3", "-distribution=scylla", "-proto=4", "-compressor=no-compression", "-gocql.cversion=2026.3.4"], "exit_code": 1, "elapsed_seconds": 21.03918170928955, "log": "feature-specs/evidence/step06-handoff-stable.log"}
+STOP stable
+STOPPED stable
+Traceback (most recent call last):
+  File "/tmp/gocql-step06-native.py", line 46, in <module>
+    lane(label,scylla,addrs,['-distribution=scylla','-proto=4','-compressor=no-compression','-gocql.cversion=2026.3.4'])
+    ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/gocql-step06-native.py", line 27, in lane
+    run(name,base+args)
+    ~~~^^^^^^^^^^^^^^^^
+  File "/tmp/gocql-step06-native.py", line 14, in run
+    if r.returncode:raise RuntimeError(name+' failed')
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: stable failed

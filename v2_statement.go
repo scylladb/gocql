@@ -165,7 +165,7 @@ func bindPrepared[P, R any](p *Prepared[P, R], value P, owned bool) (*Bound[R], 
 	if err != nil {
 		return nil, err
 	}
-	token, err := computeRoutingToken(values.cells, info.PartitionKeyIndexes, p.state.session.routingPartitioner(info.Keyspace, info.Table))
+	token, err := computeRoutingToken(values.cells, info.PartitionKeyIndexes, p.state.session.capturedRoutingPartitioner(p.state.partitioner))
 	if err != nil {
 		return nil, err
 	}

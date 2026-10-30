@@ -71,7 +71,19 @@ func TestTablets(t *testing.T) {
 		success := false
 		for attempt := 1; time.Since(startTime) < timeout; attempt++ {
 			observer := new(v2TabletAttemptObserver)
-			rows, err := Run(ctx, session, bound, Options{Consistency: Option[Consistency]{Value: One, Set: true}, Observer: observer})
+			options := Options{Consistency: Option[Consistency]{Value: One, Set: true}, Observer: observer}
+			// Warm the cache by visiting existing shard slots. With RF equal to the
+			// cluster size and token-aligned tablet shards, every ordinary V1 request
+			// can already reach an owner and legitimately receive no feedback.
+			cached, _ := session.Metadata().Replicas(bound.Routing().Keyspace, table, bound.Routing().Token.Value)
+			if len(cached) == 0 {
+				hosts := session.Metadata().Hosts()
+				if len(hosts) > 0 && hosts[0].Shards > 1 {
+					options.HostID = Option[UUID]{Value: hosts[0].ID, Set: true}
+					options.ShardID = Option[uint32]{Value: uint32(attempt) % hosts[0].Shards, Set: true}
+				}
+			}
+			rows, err := Run(ctx, session, bound, options)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -87,11 +99,11 @@ func TestTablets(t *testing.T) {
 			info := rows.Info()
 			hinted := false
 			for _, entry := range info.CustomPayload {
-				if entry.Key != "tablets-routing-v1" || !entry.Value.Valid {
+				if (entry.Key != "tablets-routing-v1" && entry.Key != "tablets-routing-v2") || !entry.Value.Valid {
 					continue
 				}
 				hinted = true
-				tablet, err := parseTypedTabletHint(entry.Value.Value, bound.Routing().Keyspace, table)
+				tablet, err := parseTypedTabletPayload(entry.Value.Value, bound.Routing().Keyspace, table, entry.Key == "tablets-routing-v2")
 				if err != nil {
 					rows.Close()
 					t.Fatalf("failed to extract tablet information: %v", err)
@@ -110,6 +122,15 @@ func TestTablets(t *testing.T) {
 				replicas, err := snapshot.Replicas(bound.Routing().Keyspace, table, bound.Routing().Token.Value)
 				if err != nil {
 					t.Fatal(err)
+				}
+				// V1 sends no hint when a cold request happens to hit an owning
+				// shard. A cache miss is still warm-up, even without feedback.
+				if len(replicas) == 0 {
+					remaining := timeout - time.Since(startTime)
+					if remaining > 0 {
+						time.Sleep(min(backoffDelay, remaining))
+					}
+					continue
 				}
 				targets := observer.snapshot()
 				if len(targets) == 0 {

@@ -1535,9 +1535,12 @@ func TestCowTabletListEdgeCases(t *testing.T) {
 		})
 		cl.Flush()
 
-		ti, ok := cl.FindTabletForToken("ks", "tb", math.MinInt64)
+		if _, ok := cl.FindTabletForToken("ks", "tb", math.MinInt64); ok {
+			t.Fatal("left-open range includes reserved minimum boundary")
+		}
+		ti, ok := cl.FindTabletForToken("ks", "tb", math.MinInt64+1)
 		if !ok {
-			t.Fatal("expected tablet for math.MinInt64")
+			t.Fatal("first representable token missing")
 		}
 		tests.AssertEqual(t, "MinInt64 shard", 0, ti.Replicas()[0].ShardID())
 

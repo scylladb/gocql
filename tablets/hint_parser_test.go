@@ -68,7 +68,7 @@ func TestParseHint(t *testing.T) {
 func TestParseHintNoReplicas(t *testing.T) {
 	t.Parallel()
 
-	tablet, err := ParseHint(hintPayload(1, 1), "ks", "tbl")
+	tablet, err := ParseHint(hintPayload(1, 2), "ks", "tbl")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -45,6 +45,7 @@ type framerConfig struct {
 	proto                 byte
 	flags                 byte
 	tabletsRoutingV1      bool
+	tabletsRoutingV2      bool
 	scyllaUseMetadataID   bool
 }
 
@@ -109,8 +110,9 @@ func (cf *connFramers) initCache(c *Conn) {
 			c.logger.Printf("gocql: failed to cast CQL protocol extension %s to %T", scyllaUseMetadataID, scyllaUseMetadataIDExt{})
 		}
 	}
+	cfg.tabletsRoutingV2 = findCQLProtoExtByName(c.cqlProtoExts, tabletsRoutingV2) != nil
 	cf.defaults = cfg
-	c.setTabletSupported(cfg.tabletsRoutingV1)
+	c.setTabletSupported(cfg.tabletsRoutingV1 || cfg.tabletsRoutingV2)
 	cf.initPool(c)
 }
 

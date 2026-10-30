@@ -1,0 +1,35 @@
+goos: linux
+goarch: amd64
+pkg: github.com/scylladb/gocql/v2
+cpu: AMD Ryzen 9 9950X3D 16-Core Processor
+BenchmarkStep06FirstTarget/hosts3/ordinary-32         	  461758	       247.8 ns/op	     768 B/op	       1 allocs/op
+BenchmarkStep06FirstTarget/hosts3/lwt-32              	  480820	       215.0 ns/op	     768 B/op	       1 allocs/op
+BenchmarkStep06FirstTarget/hosts3/leader-32           	  487209	       236.6 ns/op	     768 B/op	       1 allocs/op
+BenchmarkStep06FirstTarget/hosts3/latency-32          	  482276	       244.5 ns/op	     768 B/op	       1 allocs/op
+BenchmarkStep06FirstTarget/hosts3/pinned-32           	  718789	       209.8 ns/op	     768 B/op	       1 allocs/op
+BenchmarkStep06FirstTarget/hosts30/ordinary-32        	  394057	       263.3 ns/op	     768 B/op	       1 allocs/op
+BenchmarkStep06FirstTarget/hosts30/lwt-32             	  478174	       245.8 ns/op	     768 B/op	       1 allocs/op
+BenchmarkStep06FirstTarget/hosts30/leader-32          	  427922	       257.3 ns/op	     768 B/op	       1 allocs/op
+BenchmarkStep06FirstTarget/hosts30/latency-32         	  415417	       270.9 ns/op	     768 B/op	       1 allocs/op
+BenchmarkStep06FirstTarget/hosts30/pinned-32          	  526876	       218.1 ns/op	     768 B/op	       1 allocs/op
+BenchmarkStep06FirstTarget/hosts300/ordinary-32       	  442658	       257.1 ns/op	     768 B/op	       1 allocs/op
+BenchmarkStep06FirstTarget/hosts300/lwt-32            	  470670	       234.6 ns/op	     768 B/op	       1 allocs/op
+BenchmarkStep06FirstTarget/hosts300/leader-32         	  400326	       262.5 ns/op	     768 B/op	       1 allocs/op
+BenchmarkStep06FirstTarget/hosts300/latency-32        	  410188	       285.6 ns/op	     768 B/op	       1 allocs/op
+BenchmarkStep06FirstTarget/hosts300/pinned-32         	  453392	       284.7 ns/op	     768 B/op	       1 allocs/op
+BenchmarkStep06PlacementUpdate/tables1/ranges1/duplicatefalse-32         	  381117	       329.1 ns/op	     368 B/op	       5 allocs/op
+BenchmarkStep06PlacementUpdate/tables1/ranges1/duplicatetrue-32          	  753002	       160.1 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStep06PlacementUpdate/tables1/ranges1024/duplicatefalse-32      	  132847	       820.0 ns/op	    1232 B/op	      23 allocs/op
+BenchmarkStep06PlacementUpdate/tables1/ranges1024/duplicatetrue-32       	  667954	       177.6 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStep06PlacementUpdate/tables1/ranges16384/duplicatefalse-32     	   86893	      1285 ns/op	    1616 B/op	      31 allocs/op
+BenchmarkStep06PlacementUpdate/tables1/ranges16384/duplicatetrue-32      	  595240	       192.1 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStep06PlacementUpdate/tables1024/ranges1/duplicatefalse-32      	  137044	       807.8 ns/op	    1168 B/op	      15 allocs/op
+BenchmarkStep06PlacementUpdate/tables1024/ranges1/duplicatetrue-32       	  447391	       261.4 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStep06PlacementUpdate/tables1024/ranges1024/duplicatefalse-32   	   86851	      1215 ns/op	    2032 B/op	      33 allocs/op
+BenchmarkStep06PlacementUpdate/tables1024/ranges1024/duplicatetrue-32    	  428979	       280.5 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStep06PlacementUpdate/tables1024/ranges16384/duplicatefalse-32  	   65798	      1962 ns/op	    2416 B/op	      41 allocs/op
+BenchmarkStep06PlacementUpdate/tables1024/ranges16384/duplicatetrue-32   	  427738	       374.0 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStep06FeedbackQueue/hints1-32                                   	 1686328	        72.39 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStep06FeedbackQueue/hints1024-32                                	 1326847	        88.64 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/scylladb/gocql/v2	4.133s

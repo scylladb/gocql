@@ -122,6 +122,7 @@ const (
 	lwtAddMetadataMarkKey = "SCYLLA_LWT_ADD_METADATA_MARK"
 	rateLimitError        = "SCYLLA_RATE_LIMIT_ERROR"
 	tabletsRoutingV1      = "TABLETS_ROUTING_V1"
+	tabletsRoutingV2      = "TABLETS_ROUTING_V2_EXPERIMENTAL"
 	scyllaUseMetadataID   = "SCYLLA_USE_METADATA_ID"
 )
 
@@ -1111,4 +1112,25 @@ func scyllaGetTablePartitioner(session *Session, keyspaceName, tableName string)
 	}
 
 	return nil, nil
+}
+
+// V2's version block follows the pinned extension, independent of protocol v3/4/5.
+type tabletsRoutingV2Ext struct{}
+
+func (tabletsRoutingV2Ext) name() string { return tabletsRoutingV2 }
+func (tabletsRoutingV2Ext) serialize() map[string]string {
+	return map[string]string{tabletsRoutingV2: ""}
+}
+
+func typedTabletExtensions(exts []cqlProtocolExtension, supported map[string][]string) []cqlProtocolExtension {
+	if _, ok := supported[tabletsRoutingV2]; !ok {
+		return exts
+	}
+	filtered := exts[:0]
+	for _, ext := range exts {
+		if ext.name() != tabletsRoutingV1 {
+			filtered = append(filtered, ext)
+		}
+	}
+	return append(filtered, tabletsRoutingV2Ext{})
 }

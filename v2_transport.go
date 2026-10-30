@@ -338,6 +338,9 @@ func (c *Conn) buildTypedRequest(req *attemptRequest, stream int) (wire.Chain, e
 			e.str(req.statement, true)
 		}
 		c.writeTypedParams(e, req, false)
+		if op == frm.OpExecute && c.framers.defaults.tabletsRoutingV2 {
+			e.u8(req.tabletVersionBlock)
+		}
 	}
 	body, err := e.freeze()
 	if err != nil {

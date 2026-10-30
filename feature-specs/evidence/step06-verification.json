@@ -1,0 +1,353 @@
+{
+  "agent": "/root/step06_tablet_routing",
+  "branch": "v2-06-tablet-routing",
+  "predecessor": "0ca4fd253c59f4196ba466e41b66ae8d29210bca",
+  "gate": "Assigned step06 required gate complete; exploratory 386 lane unsupported and excluded explicitly. Later 07-17 plan gates remain.",
+  "source_snapshot": "feature-specs/evidence/step06-final-source.json",
+  "source_snapshot_sha256": "d4d61c562e1538be5cec58c17914909ccdd38da99d54ef166ee9c914362001e7",
+  "final_sources_unchanged": true,
+  "required_checks": [
+    {
+      "name": "unit-race",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-tags",
+        "unit",
+        "./...",
+        "-count=1",
+        "-timeout=6m"
+      ],
+      "env": {},
+      "exit_code": 0,
+      "elapsed_seconds": 35.02,
+      "log": "feature-specs/evidence/step06-unit-race.log",
+      "sha256": "132f6c8769bf5375ca3c2e644fbf72aeda71f992532c73d52d332a14bce9a7ab"
+    },
+    {
+      "name": "focused-race",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-tags",
+        "unit",
+        ".",
+        "./tablets",
+        "-run",
+        "^TestStep06|^TestV2Routing|^TestV2Latency|^TestV2Tablet|^TestTypedTablet|^TestV2StreamingPartition|^TestV2ReservedPreferred",
+        "-count=2",
+        "-timeout=3m"
+      ],
+      "env": {},
+      "exit_code": 0,
+      "elapsed_seconds": 2.05,
+      "log": "feature-specs/evidence/step06-focused-race.log",
+      "sha256": "4e0d64014bd51bb1adb7892e3d20d97953f7b0374501b6413b490d21fe0dee4c"
+    },
+    {
+      "name": "vet",
+      "command": [
+        "go",
+        "vet",
+        "-tags",
+        "unit",
+        "./..."
+      ],
+      "env": {},
+      "exit_code": 0,
+      "elapsed_seconds": 0.807,
+      "log": "feature-specs/evidence/step06-vet.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "integration-build",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-tags",
+        "integration gocql_debug",
+        "-c",
+        "-o",
+        "/tmp/step06-integration.test",
+        "."
+      ],
+      "env": {},
+      "exit_code": 0,
+      "elapsed_seconds": 22.673,
+      "log": "feature-specs/evidence/step06-integration-build.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "ccm-build",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-tags",
+        "ccm integration gocql_debug",
+        "-c",
+        "-o",
+        "/tmp/step06-ccm.test",
+        "."
+      ],
+      "env": {},
+      "exit_code": 0,
+      "elapsed_seconds": 21.911,
+      "log": "feature-specs/evidence/step06-ccm-build.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "fuzz",
+      "command": [
+        "go",
+        "test",
+        "-tags",
+        "unit",
+        ".",
+        "-run",
+        "^$",
+        "-fuzz",
+        "^FuzzStep06TabletPayload$",
+        "-fuzztime=5s",
+        "-parallel=2"
+      ],
+      "env": {},
+      "exit_code": 0,
+      "elapsed_seconds": 5.604,
+      "log": "feature-specs/evidence/step06-fuzz.log",
+      "sha256": "f843a829a84fd948e7086b536245e843fc032406267d5b0de1db5fba23ef6f9e"
+    },
+    {
+      "name": "benchmarks",
+      "command": [
+        "go",
+        "test",
+        "-tags",
+        "unit",
+        ".",
+        "-run",
+        "^$",
+        "-bench",
+        "^BenchmarkStep06",
+        "-benchmem",
+        "-benchtime=100ms",
+        "-count=1"
+      ],
+      "env": {},
+      "exit_code": 0,
+      "elapsed_seconds": 4.628,
+      "log": "feature-specs/evidence/step06-benchmarks.log",
+      "sha256": "afc18b5663d30803fdad87f96d5703249736236d8028a7959b95d303e8dffed7",
+      "raw_log": "/extra/scylladb/gocql-api-test-cluster/step06-native-1793319680700328977/raw-evidence/step06-benchmarks.log",
+      "raw_sha256": "0357aa48e9d127d90b9d5f1b05aeccbb0835fea8d306b76663742af1a0133e50"
+    }
+  ],
+  "unsupported_exploratory_checks": [
+    {
+      "name": "shard-386",
+      "command": [
+        "go",
+        "test",
+        "-tags",
+        "unit",
+        ".",
+        "-run",
+        "^TestStep06PickerStrictAndAdvisory$",
+        "-count=1"
+      ],
+      "env": {
+        "GOARCH": "386",
+        "CGO_ENABLED": "0"
+      },
+      "exit_code": 1,
+      "elapsed_seconds": 0.073,
+      "log": "feature-specs/evidence/step06-shard-386.log",
+      "sha256": "74a800bf39c06f12a453303acc32573ec5661bcb413889fb650c115fe568bd1a",
+      "assessment": "Unsupported exploratory root build. Compilation stops in unchanged legacy cqlint/varint constants before routing test; no portability pass claimed."
+    }
+  ],
+  "unsupported_source_files_unchanged_from_predecessor": [
+    "serialization/cqlint/unmarshal_utils.go",
+    "serialization/varint/unmarshal_ints.go",
+    "serialization/varint/marshal_ints.go"
+  ],
+  "check_runner_aggregate_exit_code": 1,
+  "check_runner_aggregate_reason": "The runner includes exploratory 386 build; every required command passed independently. No partial failed database lane counted.",
+  "native": {
+    "fixture_root": "/extra/scylladb/gocql-api-test-cluster/step06-native-1793319680700328977",
+    "results": [
+      {
+        "name": "stable",
+        "command": [
+          "go",
+          "test",
+          "-json",
+          "-race",
+          "-tags",
+          "integration gocql_debug",
+          "-count=1",
+          "-timeout=8m",
+          "-parallel=1",
+          "-run",
+          "^(TestStep06TabletRoutingLive|TestStep06LeaderRoutingLive|TestTablets)$",
+          ".",
+          "-args",
+          "-gocql.timeout=60s",
+          "-rf=3",
+          "-clusterSize=3",
+          "-autowait=2000ms",
+          "-cluster=127.0.20.1,127.0.20.2,127.0.20.3",
+          "-distribution=scylla",
+          "-proto=4",
+          "-compressor=no-compression",
+          "-gocql.cversion=2026.3.4"
+        ],
+        "exit_code": 0,
+        "elapsed_seconds": 23.314833641052246,
+        "log": "feature-specs/evidence/step06-handoff-stable.log",
+        "sha256": "06c685228b8eceac0394bced8023147dfd0da4e0cf0b268df385c5ffa4f14926",
+        "tests": [
+          {
+            "test": "TestStep06TabletRoutingLive",
+            "action": "pass",
+            "elapsed": 0.36
+          },
+          {
+            "test": "TestStep06LeaderRoutingLive",
+            "action": "skip",
+            "elapsed": 0
+          },
+          {
+            "test": "TestTablets",
+            "action": "pass",
+            "elapsed": 0.82
+          }
+        ],
+        "observations": [
+          "v2_tablet_routing_integration_test.go:112: tablet v2 negotiated=false, server table ID=e4befa20-d3f7-11f1-934d-8ce68f833a81, authoritative ranges=32",
+          "v2_tablet_routing_integration_test.go:208: accepted live feedback responses=12"
+        ]
+      },
+      {
+        "name": "experimental",
+        "command": [
+          "go",
+          "test",
+          "-json",
+          "-race",
+          "-tags",
+          "integration gocql_debug",
+          "-count=1",
+          "-timeout=8m",
+          "-parallel=1",
+          "-run",
+          "^(TestStep06TabletRoutingLive|TestStep06LeaderRoutingLive|TestTablets)$",
+          ".",
+          "-args",
+          "-gocql.timeout=60s",
+          "-rf=3",
+          "-clusterSize=3",
+          "-autowait=2000ms",
+          "-cluster=127.0.22.1,127.0.22.2,127.0.22.3",
+          "-distribution=scylla",
+          "-proto=4",
+          "-compressor=no-compression",
+          "-gocql.cversion=2026.3.4"
+        ],
+        "exit_code": 0,
+        "elapsed_seconds": 2.4000391960144043,
+        "log": "feature-specs/evidence/step06-handoff-experimental.log",
+        "sha256": "8375495c61aa9b5ad3da833a28f087f9bffbea0b8b0c6d54f5b57b8a3398aa8a",
+        "tests": [
+          {
+            "test": "TestStep06TabletRoutingLive",
+            "action": "pass",
+            "elapsed": 0.34
+          },
+          {
+            "test": "TestStep06LeaderRoutingLive",
+            "action": "pass",
+            "elapsed": 0.33
+          },
+          {
+            "test": "TestTablets",
+            "action": "pass",
+            "elapsed": 0.12
+          }
+        ],
+        "observations": [
+          "v2_tablet_routing_integration_test.go:112: tablet v2 negotiated=true, server table ID=eb765660-d3f7-11f1-adf4-46cd62f8e5ea, authoritative ranges=32",
+          "v2_tablet_routing_integration_test.go:208: accepted live feedback responses=8",
+          "v2_tablet_routing_integration_test.go:299: independently decoded leader=b559f1d2-7e91-45a5-a5c2-baa5f05bdc59, feedback=1, stable LOCAL_QUORUM reads=16"
+        ]
+      }
+    ],
+    "post_stop_probes": {
+      "127.0.20.1": "refused after runner stop/join",
+      "127.0.20.2": "refused after runner stop/join",
+      "127.0.20.3": "refused after runner stop/join",
+      "127.0.22.1": "refused after runner stop/join",
+      "127.0.22.2": "refused after runner stop/join",
+      "127.0.22.3": "refused after runner stop/join"
+    },
+    "matching_scylla_processes": [],
+    "config_sha256": {
+      "/extra/scylladb/gocql-api-test-cluster/step06-native-1793319680700328977/experimental/node3/conf/scylla.yaml": "56f9912b83c23e79ccdaadb22bae5c22bb897e9aefc451bb5a370028ee7c77aa",
+      "/extra/scylladb/gocql-api-test-cluster/step06-native-1793319680700328977/experimental/node1/conf/scylla.yaml": "8225454e67d9ad9de95ee33c2c17c64d8f9d63f87db0d89b538160601190e325",
+      "/extra/scylladb/gocql-api-test-cluster/step06-native-1793319680700328977/experimental/node2/conf/scylla.yaml": "b5988431d960986cb26665ae0c828d032960b4540c170e6116912571b6058cf8",
+      "/extra/scylladb/gocql-api-test-cluster/step06-native-1793319680700328977/stable/node3/conf/scylla.yaml": "fc601fa9f5f6f6800836598f89b1fcf317d917a9c2e9f3395a727fdc0cb4c345",
+      "/extra/scylladb/gocql-api-test-cluster/step06-native-1793319680700328977/stable/node1/conf/scylla.yaml": "654baf76546b5e40abf36db4300541685a52f5b0abde287359cd062e129531f3",
+      "/extra/scylladb/gocql-api-test-cluster/step06-native-1793319680700328977/stable/node2/conf/scylla.yaml": "cad49f3c9b6df1785360ee88357bc0470f7b11c91c9b155fe42cf417931cfc0c"
+    }
+  },
+  "protocol_reference": {
+    "repository_revision": "f8b0ee928dc0dcb475247dc82cce4e42804b0621",
+    "sha256": {
+      "/extra/scylladb/gocql-rust-reference-f8b0ee9/scylla-cql-core/src/frame/protocol_features.rs": "ed5df5e202b5ca8743c7e1c8e80218d16ac95ee268b88af8b5e17edac5341a08",
+      "/extra/scylladb/gocql-rust-reference-f8b0ee9/scylla-cql/src/frame/request/execute.rs": "94b8c042fdad434ffe96130c7597d1da25663c5f83993b4816fb4153b2689a68",
+      "/extra/scylladb/gocql-rust-reference-f8b0ee9/scylla/src/routing/locator/tablets.rs": "1f043036c8efb2db3bd98c10b90423041ffbcdce45c5a01294e6f9bfd6df0966",
+      "/extra/scylladb/gocql-rust-reference-f8b0ee9/scylla/src/policies/load_balancing/default.rs": "e0dcaa2d080bf903baff265b25740f682af15f719e8333c6b7144b1662bcd9e6",
+      "/extra/scylladb/gocql-rust-reference-f8b0ee9/scylla/src/cluster/metadata/fetching.rs": "ac88e8b786ce728d0ddbcb999683567465485d5fb7d5d780595310faae0db427"
+    },
+    "contract_sha256": {
+      "feature-specs/routing.md": "9cd27ab9bd963c8090a4562b0a5bcced129a69afe5626b724d62d9d4bdaffaad",
+      "feature-specs/gocql-v2-api.md": "47fe099a5402f858690161046aebad5ec88f93027dd551cc248a72da5c87c812",
+      "feature-specs/gocql-v2-implementation.md": "89547184c5c3e07929acfc2b6f7050a34ffb7b83fd45b67ee3acbc054ad2bd4b",
+      "plan.md": "076254a720b638f0e36e5d700280c9a336e46a56d5752018c5e098e58c1c15f2"
+    }
+  },
+  "runners": {
+    "feature-specs/evidence/step06-native-runner.py": "e28cdf3bbe38652b1a5e0e6bfcbab0a393954f4105742d5da218bf38f27b1fb0",
+    "feature-specs/evidence/step06-check-runner.py": "abbdb00f7b40dd58723df340feb13cba02e2a613f152b566e7b782b2fd038cda"
+  },
+  "diagnostics": {
+    "feature-specs/evidence/step06-diagnostic-native-warm-count.log": "e7f7ceda6b045dd4a5f7f9a49e3e02f3a6fe27af1a1aa66d22038aa96672fc4e",
+    "feature-specs/evidence/step06-diagnostic-native-warm-target.log": "6039d1e8ccf5ac3cb69461058658cdfd4f2a8b011f422ef0003725bfdb23e556",
+    "feature-specs/evidence/step06-diagnostic-native-smp2.log": "f51aed2e7a5e8cc88c34ea6d7b31b9ea5d0d97a47a062f94491f4987a5c09508",
+    "feature-specs/evidence/step06-diagnostic-native-warm-count.json": "90c9980c7867e30e12991c355f397a7ccc15b152c13f5a1607f058f7d3b00762",
+    "feature-specs/evidence/step06-diagnostic-stable-smp1.log": "741dd664141396042f45687a0eb35664d906bf91bb093468530b82ebe30891fe",
+    "feature-specs/evidence/step06-diagnostic-native-smp2.json": "4bdb607baaf33748386166e0afce8b1f696db2d219af99e462bbecb867b279c1",
+    "feature-specs/evidence/step06-diagnostic-experimental-warm-count.log": "5a912d2b0ab37d4377fd5ff203b8a9c80451b7816fe1b5920407d47d87c176c7",
+    "feature-specs/evidence/step06-diagnostic-native-smp1.log": "39d2a7786f124445df60acf280b71eca76047bd4a99f7ee344410f3e083f3fe9",
+    "feature-specs/evidence/step06-diagnostic-unit-boundaries.log": "01f2fa3d0882822dbe74b62c1664ace90614f6c9c137d36699f5b2cd24bb6eb5",
+    "feature-specs/evidence/step06-diagnostic-stable-smp2.log": "01f366b2c69df24c1de71404e2ded743ea5ba10b1aefd2d032515a88d654cd9d",
+    "feature-specs/evidence/step06-diagnostic-native-smp1.json": "877fbd998a5f9414b21f744cf7be8f069b8f2be13cbbe849d2a1c6074fc5c632",
+    "feature-specs/evidence/step06-diagnostic-stable-warm-target.log": "d835936129b88436783da343f93776f8e4a2cc2cca501eb3b2af7d78e62394c6"
+  },
+  "limitations": [
+    "Fuzz is a five-second/two-worker malformed-control smoke, not exhaustive fuzzing.",
+    "First target measures one bounded plan allocation, not allocation-free end-to-end requests.",
+    "Live scope is native Scylla2026.3.4 v4 raw, ordinary and experimental strongly-consistent-tables; the full supported protocol/compression/database matrix remains later plan work.",
+    "This step does not implement public RunStream, execution tri-state classification/speculation, extraction, full174 migration, final performance or release audits."
+  ],
+  "log_formatting": {
+    "file": "feature-specs/evidence/step06-benchmarks.log",
+    "raw_file": "/extra/scylladb/gocql-api-test-cluster/step06-native-1793319680700328977/raw-evidence/step06-benchmarks.log",
+    "raw_sha256": "0357aa48e9d127d90b9d5f1b05aeccbb0835fea8d306b76663742af1a0133e50",
+    "committed_sha256": "afc18b5663d30803fdad87f96d5703249736236d8028a7959b95d303e8dffed7",
+    "transformation": "Strip trailing whitespace only; commands, values and outcomes are unchanged."
+  }
+}

@@ -30,13 +30,14 @@ func TestFindEntryForToken(t *testing.T) {
 			{firstToken: -100, lastToken: 0},
 			{firstToken: 0, lastToken: 100},
 		}
-		entry, ok := entries.findEntryForToken(-100, 0, len(entries))
-		if !ok {
-			t.Fatal("expected entry for token at exact firstToken boundary")
+		if _, ok := entries.findEntryForToken(-100, 0, len(entries)); ok {
+			t.Fatal("left-open tablet includes firstToken")
 		}
-		if entry.firstToken != -100 {
-			t.Fatalf("expected firstToken=-100, got %d", entry.firstToken)
+		entry, ok := entries.findEntryForToken(-99, 0, len(entries))
+		if !ok || entry.firstToken != -100 {
+			t.Fatal("first contained token missing")
 		}
+
 	})
 
 	t.Run("BeyondAll", func(t *testing.T) {
@@ -91,8 +92,8 @@ func TestFindEntryForToken(t *testing.T) {
 		}
 
 		_, ok = entries.findEntryForToken(-50, 0, len(entries))
-		if !ok {
-			t.Fatal("expected entry for token at firstToken of single entry")
+		if ok {
+			t.Fatal("left-open single entry includes firstToken")
 		}
 
 		_, ok = entries.findEntryForToken(50, 0, len(entries))
@@ -140,7 +141,7 @@ func TestFindEntryForToken(t *testing.T) {
 	t.Run("SingleTokenTablet", func(t *testing.T) {
 		entries := TabletEntryList{
 			{firstToken: -100, lastToken: -50},
-			{firstToken: 42, lastToken: 42},
+			{firstToken: 41, lastToken: 42},
 			{firstToken: 100, lastToken: 200},
 		}
 
@@ -148,8 +149,8 @@ func TestFindEntryForToken(t *testing.T) {
 		if !ok {
 			t.Fatal("expected entry for single-token tablet")
 		}
-		if entry.firstToken != 42 || entry.lastToken != 42 {
-			t.Fatalf("expected [42,42], got [%d,%d]", entry.firstToken, entry.lastToken)
+		if entry.firstToken != 41 || entry.lastToken != 42 {
+			t.Fatalf("expected (41,42], got [%d,%d]", entry.firstToken, entry.lastToken)
 		}
 
 		_, ok = entries.findEntryForToken(41, 0, len(entries))
@@ -178,8 +179,8 @@ func TestFindOverlapRange(t *testing.T) {
 		if start != 1 {
 			t.Errorf("expected start=1 for contiguous boundary, got %d", start)
 		}
-		if tailStart != 2 {
-			t.Errorf("expected tailStart=2 for contiguous boundary, got %d", tailStart)
+		if tailStart != 1 {
+			t.Errorf("expected tailStart=1 for contiguous boundary, got %d", tailStart)
 		}
 	})
 
@@ -280,21 +281,21 @@ func TestAddEntry(t *testing.T) {
 
 	t.Run("SingleTokenTablet", func(t *testing.T) {
 		tl := TabletEntryList{}
-		tl = tl.addEntry(TabletEntry{firstToken: 42, lastToken: 42})
-		if len(tl) != 1 || tl[0].firstToken != 42 || tl[0].lastToken != 42 {
-			t.Fatalf("expected single [42,42] entry, got %v", tl)
+		tl = tl.addEntry(TabletEntry{firstToken: 41, lastToken: 42})
+		if len(tl) != 1 || tl[0].firstToken != 41 || tl[0].lastToken != 42 {
+			t.Fatalf("expected single (41,42] entry, got %v", tl)
 		}
 
 		tl = TabletEntryList{
 			{firstToken: -100, lastToken: -50},
 			{firstToken: 100, lastToken: 200},
 		}
-		tl = tl.addEntry(TabletEntry{firstToken: 42, lastToken: 42})
+		tl = tl.addEntry(TabletEntry{firstToken: 41, lastToken: 42})
 		if len(tl) != 3 {
 			t.Fatalf("expected 3 entries, got %d", len(tl))
 		}
-		if tl[1].firstToken != 42 || tl[1].lastToken != 42 {
-			t.Fatalf("expected middle entry [42,42], got [%d,%d]", tl[1].firstToken, tl[1].lastToken)
+		if tl[1].firstToken != 41 || tl[1].lastToken != 42 {
+			t.Fatalf("expected middle entry (41,42], got [%d,%d]", tl[1].firstToken, tl[1].lastToken)
 		}
 	})
 }

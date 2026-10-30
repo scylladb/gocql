@@ -153,7 +153,7 @@ func TestV2TabletFeedbackOverflowResyncAndEpoch(t *testing.T) {
 		t.Fatal("stale hint restored tablet", got)
 	}
 	snapshot := s.Metadata()
-	if _, known := snapshot.tablets[metadataTable{"ks", "t"}]; !known {
+	if _, known := snapshot.tabletRoot(metadataTable{"ks", "t"}); !known {
 		t.Fatal("resync lost tablet cache-miss marker")
 	}
 	if replicas, err := snapshot.Replicas("ks", "t", 4); err != nil || len(replicas) != 0 {

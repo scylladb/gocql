@@ -1,9 +1,12 @@
 package gocql
 
 import (
+	"context"
+	"errors"
+	"io"
 	"math"
 	"math/rand/v2"
-	"sort"
+	"net"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -162,23 +165,23 @@ type LatencyOptions struct {
 	Scale, RetryPeriod, UpdateInterval time.Duration
 }
 type routingLatency struct {
-	value              float64
-	samples            int
-	updated, lastProbe time.Time
+	mu      sync.Mutex
+	value   float64
+	samples int
+	updated time.Time
 }
+type routingDecisions struct{ slow map[UUID]time.Time }
 type routingPolicy struct {
-	options   RoutingOptions
-	round     atomic.Uint64
-	mu        sync.Mutex
-	latencies map[UUID]routingLatency
-	minimum   float64
-	minimumAt time.Time
+	options     RoutingOptions
+	seed        uint64
+	round       atomic.Uint64
+	latencies   sync.Map
+	decisions   atomic.Pointer[routingDecisions]
+	updateAfter atomic.Int64
+	minimumBits atomic.Uint64
 }
 
 func NewRoutingPolicy(o RoutingOptions) (RoutingPolicy, error) {
-	if o.LeaderAware {
-		return nil, typeValidation("leader-aware routing", "requires tablet v2 leader metadata, which is not implemented")
-	}
 	if o.Rack != "" && o.Datacenter == "" {
 		return nil, typeValidation("routing rack", "requires a datacenter")
 	}
@@ -202,7 +205,7 @@ func NewRoutingPolicy(o RoutingOptions) (RoutingPolicy, error) {
 			return nil, typeValidation("latency routing", "invalid configuration")
 		}
 	}
-	return &routingPolicy{options: o, latencies: make(map[UUID]routingLatency)}, nil
+	return &routingPolicy{options: o, seed: rand.Uint64()}, nil
 }
 func (p *routingPolicy) Validate(m *MetadataSnapshot) error {
 	if m == nil {
@@ -211,18 +214,9 @@ func (p *routingPolicy) Validate(m *MetadataSnapshot) error {
 	if p.options.Datacenter == "" {
 		return nil
 	}
-	dc, rack := false, false
-	for _, h := range m.hosts {
-		if !h.Enabled {
-			continue
-		}
-		if h.Datacenter == p.options.Datacenter {
-			dc = true
-			if h.Rack == p.options.Rack {
-				rack = true
-			}
-		}
-	}
+	idx := m.routingIndex()
+	dc := idx.enabledDC[p.options.Datacenter] > 0
+	rack := idx.enabledRack[routingLocality{p.options.Datacenter, p.options.Rack}] > 0
 	if !dc {
 		return typeValidation("routing datacenter", "%q has no eligible hosts", p.options.Datacenter)
 	}
@@ -245,151 +239,314 @@ func (p *targetPlan) Next() (Target, bool) {
 	p.next++
 	return t, true
 }
+
+// Host indices and locality slices are built once on topology publication.
+type routingLocality struct{ dc, rack string }
+type routingHostIndex struct {
+	enabledDC   map[string]int
+	enabledRack map[routingLocality]int
+	byID        map[UUID]int
+	all         []int
+	dc          map[string][]int
+	rack        map[routingLocality][]int
+}
+
+func buildRoutingHostIndex(hosts []HostSnapshot) *routingHostIndex {
+	x := &routingHostIndex{enabledDC: make(map[string]int), enabledRack: make(map[routingLocality]int), byID: make(map[UUID]int, len(hosts)), dc: make(map[string][]int), rack: make(map[routingLocality][]int)}
+	for i, h := range hosts {
+		x.byID[h.ID] = i
+		x.all = append(x.all, i)
+		x.dc[h.Datacenter] = append(x.dc[h.Datacenter], i)
+		k := routingLocality{h.Datacenter, h.Rack}
+		if h.Enabled {
+			x.enabledDC[h.Datacenter]++
+			x.enabledRack[k]++
+		}
+		x.rack[k] = append(x.rack[k], i)
+	}
+	return x
+}
+func (m *MetadataSnapshot) routingIndex() *routingHostIndex {
+	if m.hostIndex != nil {
+		return m.hostIndex
+	}
+	return buildRoutingHostIndex(m.hosts)
+}
+
+type lazyRoutingPlan struct {
+	policy                     *routingPolicy
+	metadata                   *MetadataSnapshot
+	index                      *routingHostIndex
+	info                       RoutingInfo
+	replicas                   []Target
+	leader                     Option[Target]
+	permutation                []int
+	smallPermutation           [16]int
+	emitted                    []Target
+	smallEmitted               [8]Target
+	groups                     [3][]int
+	stage, cursor, latencyPass int
+	rotation                   int
+	slow                       *routingDecisions
+	now                        time.Time
+	pinned                     bool
+}
+
 func (p *routingPolicy) Plan(info RoutingInfo, m *MetadataSnapshot) QueryPlan {
-	plan := &targetPlan{}
 	if m == nil {
-		return plan
+		return &targetPlan{}
 	}
-	eligible := make(map[UUID]HostSnapshot, len(m.hosts))
-	for _, h := range m.hosts {
-		if h.Enabled && h.Up {
-			eligible[h.ID] = h
-		}
-	}
+	plan := &lazyRoutingPlan{policy: p, metadata: m, index: m.routingIndex(), info: info, now: time.Now(), slow: p.decisions.Load()}
+	plan.emitted = plan.smallEmitted[:0]
 	if info.HostID.Set {
-		if h, ok := eligible[info.HostID.Value]; ok {
-			shard := info.ShardID
-			if shard.Set && h.Shards > 0 && shard.Value >= h.Shards {
-				shard = Option[uint32]{}
-			}
-			plan.targets = []Target{{HostID: h.ID, ShardID: shard}}
-		}
+		plan.pinned = true
 		return plan
+	}
+	o := p.options
+	if o.TokenAware && info.Token.Set && info.Keyspace != "" && info.Table != "" {
+		plan.replicas, _ = m.placementReplicas(info.Keyspace, info.Table, info.Token.Value)
 	}
 	conditional := info.Conditional || info.Consistency == Serial || info.Consistency == LocalSerial
-	var replicas []Target
-	if p.options.TokenAware && info.Token.Set {
-		replicas, _ = m.Replicas(info.Keyspace, info.Table, info.Token.Value)
+	plan.permutation = plan.smallPermutation[:0]
+	if len(plan.replicas) > len(plan.smallPermutation) {
+		plan.permutation = make([]int, 0, len(plan.replicas))
 	}
-	if !conditional && p.options.ShuffleReplicas {
-		rand.Shuffle(len(replicas), func(i, j int) { replicas[i], replicas[j] = replicas[j], replicas[i] })
+	for i := range plan.replicas {
+		plan.permutation = append(plan.permutation, i)
 	}
-	seen := make(map[UUID]bool)
-	groups := [6][]Target{}
-	tier := func(h HostSnapshot, replica bool) int {
-		local := p.options.Datacenter == "" || h.Datacenter == p.options.Datacenter
-		if !local && !p.options.AllowRemote {
-			return -1
+	if !conditional && len(plan.permutation) > 1 {
+		seed := p.seed
+		if o.ShuffleReplicas {
+			seed = rand.Uint64()
 		}
-		if !local {
-			if replica {
-				return 4
+		rng := rand.NewPCG(seed, seed^0x9e3779b97f4a7c15)
+		for i := len(plan.permutation) - 1; i > 0; i-- {
+			bound := uint64(i + 1)
+			threshold := -bound % bound
+			n := rng.Uint64()
+			for n < threshold {
+				n = rng.Uint64()
 			}
-			return 5
+			j := int(n % bound)
+			plan.permutation[i], plan.permutation[j] = plan.permutation[j], plan.permutation[i]
 		}
-		if p.options.Rack != "" && h.Rack != p.options.Rack {
-			if replica {
-				return 1
+	}
+	if o.LeaderAware && o.TokenAware && info.Token.Set && info.Consistency != One && info.Consistency != LocalOne {
+		if ks := m.keyspaces[info.Keyspace]; ks != nil && ks.ConsistencyMode == "global" {
+			_, r := m.placementReplicas(info.Keyspace, info.Table, info.Token.Value)
+			if r != nil && r.value.version.Set && len(r.value.span.Replicas) > 0 {
+				plan.leader = Option[Target]{Value: r.value.span.Replicas[0], Set: true}
 			}
-			return 3
-		}
-		if replica {
-			return 0
-		}
-		return 2
-	}
-	for _, t := range replicas {
-		h, ok := eligible[t.HostID]
-		if !ok || seen[t.HostID] {
-			continue
-		}
-		n := tier(h, true)
-		if n < 0 {
-			continue
-		}
-		groups[n] = append(groups[n], t)
-		seen[t.HostID] = true
-	}
-	var fallback []HostSnapshot
-	for _, h := range m.hosts {
-		if _, ok := eligible[h.ID]; ok && !seen[h.ID] {
-			fallback = append(fallback, h)
 		}
 	}
-	if len(fallback) > 0 && !conditional {
-		n := int(p.round.Add(1)-1) % len(fallback)
-		fallback = append(fallback[n:], fallback[:n]...)
-	}
-	for _, h := range fallback {
-		n := tier(h, false)
-		if n >= 0 {
-			groups[n] = append(groups[n], Target{HostID: h.ID})
+	if o.Datacenter == "" {
+		plan.groups[1] = plan.index.all
+	} else {
+		plan.groups[1] = plan.index.dc[o.Datacenter]
+		if o.Rack != "" {
+			plan.groups[0] = plan.index.rack[routingLocality{o.Datacenter, o.Rack}]
+		}
+		if o.AllowRemote {
+			plan.groups[2] = plan.index.all
 		}
 	}
-	for _, g := range groups {
-		plan.targets = append(plan.targets, g...)
-	}
-	if p.options.Latency.Enabled && !conditional {
-		plan.targets = p.orderByLatency(plan.targets)
+	if !conditional {
+		plan.rotation = int(p.round.Add(1) & uint64(^uint(0)>>1))
 	}
 	return plan
 }
+func (p *lazyRoutingPlan) host(t Target) (HostSnapshot, bool) {
+	i, ok := p.index.byID[t.HostID]
+	if !ok {
+		return HostSnapshot{}, false
+	}
+	return p.metadata.hosts[i], true
+}
+func (p *lazyRoutingPlan) eligible(h HostSnapshot) bool {
+	return h.Enabled && (p.policy.options.Datacenter == "" || h.Datacenter == p.policy.options.Datacenter || p.policy.options.AllowRemote)
+}
+func (p *lazyRoutingPlan) penalty(t Target) bool {
+	if p.slow == nil {
+		return false
+	}
+	until, ok := p.slow.slow[t.HostID]
+	return ok && p.now.Before(until)
+}
+func targetsDuplicate(a, b Target) bool {
+	return a.HostID == b.HostID && (!a.ShardID.Set || !b.ShardID.Set || a.ShardID.Value == b.ShardID.Value)
+}
+func (p *lazyRoutingPlan) accept(t Target) (Target, bool) {
+	if p.penalty(t) != (p.latencyPass == 1) {
+		return Target{}, false
+	}
+	for _, e := range p.emitted {
+		if targetsDuplicate(t, e) {
+			return Target{}, false
+		}
+	}
+	p.emitted = append(p.emitted, t)
+	return t, true
+}
+func (p *lazyRoutingPlan) Next() (Target, bool) {
+	if !p.pinned && p.metadata != nil && p.metadata.placementSignal != nil && p.metadata.placementEpoch != p.metadata.placementSignal.Load() {
+		p.replicas = nil
+		p.permutation = nil
+		p.leader = Option[Target]{}
+		if p.stage <= 3 {
+			p.stage = 4
+			p.cursor = 0
+		}
+	}
+	if p.pinned {
+		if p.stage > 0 {
+			return Target{}, false
+		}
+		p.stage++
+		t := Target{HostID: p.info.HostID.Value, ShardID: p.info.ShardID, StrictShard: p.info.ShardID.Set}
+		if h, ok := p.host(t); ok && h.Enabled {
+			return t, true
+		}
+		return Target{}, false
+	}
+	for {
+		if p.stage == 0 {
+			p.stage++
+			if p.leader.Set {
+				t := p.leader.Value
+				if h, ok := p.host(t); ok && p.eligible(h) && h.Connected && h.Up && (!t.ShardID.Set || h.Shards > 0 && t.ShardID.Value < h.Shards) {
+					t.StrictShard = t.ShardID.Set
+					if t, ok := p.accept(t); ok {
+						return t, true
+					}
+				}
+			}
+		}
+		// Connected replicas: rack, DC, then permitted remote replicas. Remote
+		// replicas precede local nonreplicas.
+		for p.stage >= 1 && p.stage <= 3 {
+			for p.cursor < len(p.permutation) {
+				t := p.replicas[p.permutation[p.cursor]]
+				p.cursor++
+				h, ok := p.host(t)
+				if !ok || !p.eligible(h) || !h.Connected || !h.Up {
+					continue
+				}
+				o := p.policy.options
+				local := o.Datacenter == "" || h.Datacenter == o.Datacenter
+				tier := 3
+				if local {
+					tier = 2
+					if o.Rack != "" && h.Rack == o.Rack {
+						tier = 1
+					}
+				}
+				if tier != p.stage {
+					continue
+				}
+				if t, ok := p.accept(t); ok {
+					return t, true
+				}
+			}
+			p.cursor = 0
+			p.stage++
+		}
+		// Shared immutable fallback indices are traversed only on demand.
+		for p.stage >= 4 && p.stage <= 8 {
+			group := p.stage - 4
+			connected := true
+			if p.stage >= 7 {
+				group = p.stage - 6
+				connected = false
+			}
+			ids := p.groups[group]
+			for p.cursor < len(ids) {
+				i := (p.cursor + p.rotation) % len(ids)
+				p.cursor++
+				h := p.metadata.hosts[ids[i]]
+				if !p.eligible(h) || connected && (!h.Connected || !h.Up) {
+					continue
+				}
+				if group == 2 && p.policy.options.Datacenter != "" && h.Datacenter == p.policy.options.Datacenter {
+					continue
+				}
+				if t, ok := p.accept(Target{HostID: h.ID}); ok {
+					return t, true
+				}
+			}
+			p.cursor = 0
+			p.stage++
+		}
+		if p.latencyPass == 0 && p.slow != nil {
+			p.latencyPass = 1
+			p.stage = 0
+			p.cursor = 0
+			continue
+		}
+		return Target{}, false
+	}
+}
 func (p *routingPolicy) Observe(e AttemptEvent) {
-	if !p.options.Latency.Enabled || e.Cancelled || e.Err != nil || e.Latency < 0 {
+	if !p.options.Latency.Enabled || e.Cancelled || !routingLatencySample(e.Err) || e.Latency <= 0 {
 		return
 	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	v := p.latencies[e.Target.HostID]
+	actual, found := p.latencies.Load(e.Target.HostID)
+	if !found {
+		actual, _ = p.latencies.LoadOrStore(e.Target.HostID, &routingLatency{})
+	}
+	v := actual.(*routingLatency)
 	now := e.Started.Add(e.Latency)
-	if now.IsZero() {
+	if e.Started.IsZero() {
 		now = time.Now()
 	}
+	v.mu.Lock()
 	weight := 1.0
 	if v.samples > 0 {
-		elapsed := now.Sub(v.updated)
-		if elapsed < 0 {
-			elapsed = 0
-		}
+		elapsed := max(now.Sub(v.updated), 0)
 		weight = 1 - math.Exp(-float64(elapsed)/float64(p.options.Latency.Scale))
 	}
 	v.value += weight * (float64(e.Latency) - v.value)
 	v.samples++
 	v.updated = now
-	p.latencies[e.Target.HostID] = v
-}
-func (p *routingPolicy) orderByLatency(targets []Target) []Target {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	now := time.Now()
-	minimum := p.minimum
-	if p.minimumAt.IsZero() || now.Sub(p.minimumAt) >= p.options.Latency.UpdateInterval {
-		minimum = math.Inf(1)
-		for _, t := range targets {
-			v := p.latencies[t.HostID]
-			if v.samples >= p.options.Latency.MinimumSamples && v.value < minimum {
-				minimum = v.value
+	value, samples := v.value, v.samples
+	v.mu.Unlock()
+	if samples >= p.options.Latency.MinimumSamples {
+		for {
+			bits := p.minimumBits.Load()
+			if bits != 0 && value >= math.Float64frombits(bits) {
+				break
+			}
+			if p.minimumBits.CompareAndSwap(bits, math.Float64bits(value)) {
+				p.updateAfter.Store(0)
+				break
 			}
 		}
-		p.minimum, p.minimumAt = minimum, now
 	}
-	if math.IsInf(minimum, 1) {
-		return targets
+	due := p.updateAfter.Load()
+	clock := time.Now()
+	if clock.UnixNano() < due || !p.updateAfter.CompareAndSwap(due, clock.Add(p.options.Latency.UpdateInterval).UnixNano()) {
+		return
 	}
-	slow := make(map[UUID]bool)
-	for _, t := range targets {
-		v := p.latencies[t.HostID]
+	minimum := math.Inf(1)
+	p.latencies.Range(func(_, value any) bool {
+		v := value.(*routingLatency)
+		v.mu.Lock()
+		if v.samples >= p.options.Latency.MinimumSamples && v.value > 0 {
+			minimum = min(minimum, v.value)
+		}
+		v.mu.Unlock()
+		return true
+	})
+	decisions := &routingDecisions{slow: make(map[UUID]time.Time)}
+	p.latencies.Range(func(key, value any) bool {
+		v := value.(*routingLatency)
+		v.mu.Lock()
 		if v.samples >= p.options.Latency.MinimumSamples && v.value > minimum*p.options.Latency.ExclusionThreshold {
-			if now.Sub(v.lastProbe) >= p.options.Latency.RetryPeriod {
-				v.lastProbe = now
-				p.latencies[t.HostID] = v
-			} else {
-				slow[t.HostID] = true
-			}
+			decisions.slow[key.(UUID)] = v.updated.Add(p.options.Latency.RetryPeriod)
 		}
-	}
-	sort.SliceStable(targets, func(i, j int) bool { return !slow[targets[i].HostID] && slow[targets[j].HostID] })
-	return targets
+		v.mu.Unlock()
+		return true
+	})
+	p.decisions.Store(decisions)
 }
 
 type singleTargetRouting struct {
@@ -402,9 +559,10 @@ func SingleTargetRouting(t Target, strictShard bool) RoutingPolicy {
 }
 func (p *singleTargetRouting) Validate(m *MetadataSnapshot) error {
 	if m != nil {
-		for _, h := range m.hosts {
-			if h.ID == p.target.HostID && h.Enabled {
-				if p.strict && p.target.ShardID.Set && (h.Shards == 0 || p.target.ShardID.Value >= h.Shards) {
+		if i, ok := m.routingIndex().byID[p.target.HostID]; ok {
+			h := m.hosts[i]
+			if h.Enabled {
+				if (p.strict || p.target.StrictShard) && p.target.ShardID.Set && (h.Shards == 0 || p.target.ShardID.Value >= h.Shards) {
 					return typeValidation("routing shard", "unavailable shard")
 				}
 				return nil
@@ -414,23 +572,48 @@ func (p *singleTargetRouting) Validate(m *MetadataSnapshot) error {
 	return typeValidation("routing host", "host is not eligible")
 }
 func (p *singleTargetRouting) Plan(_ RoutingInfo, m *MetadataSnapshot) QueryPlan {
-	plan := &targetPlan{}
-	if m == nil {
-		return plan
-	}
-	for _, h := range m.hosts {
-		if h.ID == p.target.HostID && h.Enabled && h.Up {
-			t := p.target
-			if t.ShardID.Set && (h.Shards == 0 || t.ShardID.Value >= h.Shards) {
-				if p.strict {
-					return plan
+	if m != nil {
+		if i, ok := m.routingIndex().byID[p.target.HostID]; ok {
+			h := m.hosts[i]
+			if h.Enabled {
+				t := p.target
+				t.StrictShard = p.strict || t.StrictShard
+				if t.ShardID.Set && (h.Shards == 0 || t.ShardID.Value >= h.Shards) {
+					if t.StrictShard {
+						return &targetPlan{}
+					}
+					t.ShardID = Option[uint32]{}
 				}
-				t.ShardID = Option[uint32]{}
+				return &targetPlan{targets: []Target{t}}
 			}
-			plan.targets = []Target{t}
-			break
 		}
 	}
-	return plan
+	return &targetPlan{}
 }
 func (*singleTargetRouting) Observe(AttemptEvent) {}
+
+func routingLatencySample(err error) bool {
+	if err == nil {
+		return true
+	}
+	var server RequestError
+	if errors.As(err, &server) {
+		switch server.GetCode() {
+		case ErrCodeUnavailable, ErrCodeOverloaded, ErrCodeBootstrapping, ErrCodeUnprepared:
+			return false
+		}
+		var rate *RequestErrRateLimitReached
+		return !errors.As(err, &rate)
+	}
+	// Local validation/serialization and broken transport are not response latency.
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, ErrNoConnections) || errors.Is(err, ErrConnectionClosed) {
+		return false
+	}
+	var validation *ValidationError
+	var network net.Error
+	var marshal MarshalError
+	if errors.As(err, &validation) || errors.As(err, &network) || errors.As(err, &marshal) {
+		return false
+	}
+	return true
+}

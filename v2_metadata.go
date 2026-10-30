@@ -31,14 +31,18 @@ type TokenRange struct {
 	Replicas   []Target
 }
 type MetadataSnapshot struct {
-	generation    uint64
-	hosts         []HostSnapshot
-	keyspaces     map[string]*KeyspaceMetadata
-	schemaSources map[string]*KeyspaceMetadata
-	ranges        map[string][]TokenRange
-	tablets       map[metadataTable][]TokenRange
-	partitioner   string
-	diagnostics   []error
+	hostIndex       *routingHostIndex
+	placements      *tabletPlacementTree
+	placementEpoch  uint64
+	placementSignal *atomic.Uint64
+	generation      uint64
+	hosts           []HostSnapshot
+	keyspaces       map[string]*KeyspaceMetadata
+	schemaSources   map[string]*KeyspaceMetadata
+	ranges          map[string][]TokenRange
+	tablets         map[metadataTable][]TokenRange
+	partitioner     string
+	diagnostics     []error
 }
 type metadataTable struct{ keyspace, table string }
 
@@ -69,28 +73,25 @@ func (m *MetadataSnapshot) Keyspace(name string) (*KeyspaceMetadata, bool) {
 	return cloneV2Keyspace(ks), true
 }
 func (m *MetadataSnapshot) Replicas(keyspace, table string, token int64) ([]Target, error) {
-	ranges, tablet, err := m.lookupRanges(keyspace, table)
-	if err != nil {
+	if _, _, err := m.lookupRanges(keyspace, table); err != nil {
 		return nil, err
 	}
-	if len(ranges) == 0 {
-		return nil, nil
-	}
-	if tablet {
-		for _, r := range ranges {
-			if token > r.Start && token <= r.End || r.Start >= r.End && (token > r.Start || token <= r.End) {
-				return append([]Target(nil), r.Replicas...), nil
-			}
-		}
-		return nil, nil
-	}
-	i := sort.Search(len(ranges), func(i int) bool { return ranges[i].End >= token })
-	if i == len(ranges) {
-		i = 0
-	}
-	return append([]Target(nil), ranges[i].Replicas...), nil
+	r, _ := m.placementReplicas(keyspace, table, token)
+	return append([]Target(nil), r...), nil
 }
 func (m *MetadataSnapshot) TokenRanges(keyspace, table string) ([]TokenRange, error) {
+	if root, ok := m.tabletRoot(metadataTable{keyspace, table}); ok {
+		if _, _, err := m.lookupRanges(keyspace, table); err != nil {
+			return nil, err
+		}
+		var out []TokenRange
+		placementEach(root, func(_ int64, r *tabletRange) {
+			v := r.span
+			v.Replicas = append([]Target(nil), v.Replicas...)
+			out = append(out, v)
+		})
+		return out, nil
+	}
 	r, _, e := m.lookupRanges(keyspace, table)
 	if e != nil {
 		return nil, e
@@ -179,6 +180,7 @@ type v2PeripheralState struct {
 	schemaReconciled       atomic.Uint64
 	periodicOnce           sync.Once
 	schemaGeneration       atomic.Uint64
+	placementEpoch         atomic.Uint64
 	feedbackOnce           sync.Once
 	feedbackMu             sync.Mutex
 	feedback               map[v2TabletFeedbackKey]v2PendingTabletFeedback
@@ -210,6 +212,8 @@ func (s *Session) peripheral() *v2PeripheralState {
 }
 func (s *Session) initV2Peripheral(config Config) error {
 	s.configureV2Peripheral(config)
+	p := s.peripheral()
+	p.feedbackOnce.Do(func() { p.startWorker(func() { s.runV2TabletFeedback(p) }) })
 	if !s.publishV2Metadata() {
 		return s.v2MetadataPublicationError()
 	}
@@ -343,7 +347,7 @@ func (s *Session) tryPublishV2Metadata() bool {
 				}
 			}
 		}
-		if md.tabletsMetadata != nil {
+		if md.tabletsMetadata != nil && (old == nil || old.placements == nil) {
 			md.tabletsMetadata.ForEach(func(ks, table string, entries tablets.TabletEntryList) bool {
 				r := make([]TokenRange, len(entries))
 				for i, e := range entries {
@@ -393,6 +397,10 @@ func (s *Session) tryPublishV2Metadata() bool {
 	}
 	p.feedbackMu.Lock()
 	for table := range p.knownTabletTables {
+		if _, _, err := m.lookupRanges(table.keyspace, table.table); err != nil {
+			delete(p.knownTabletTables, table)
+			continue
+		}
 		if ks := m.keyspaces[table.keyspace]; ks != nil {
 			if _, exists := ks.Tables[table.table]; exists {
 				if _, known := m.tablets[table]; !known {
@@ -414,30 +422,10 @@ func (s *Session) tryPublishV2Metadata() bool {
 			m.diagnostics = append(m.diagnostics, err)
 		} else if _, ok := ring.partitioner.(murmur3Partitioner); ok {
 			for ks, meta := range m.keyspaces {
-				var strategy placementStrategy
-				if strings.HasSuffix(meta.StrategyClass, "EverywhereStrategy") {
-					strategy = &simpleStrategy{rf: len(replicaHosts)}
-				} else {
-					strategy = getStrategy(meta, &defaultLogger{})
-				}
-				if strategy == nil {
+				ranges, err := buildV2VnodeRanges(ring, meta)
+				if err != nil {
+					m.diagnostics = append(m.diagnostics, err)
 					continue
-				}
-				replicas := strategy.replicaMap(ring)
-				ranges := make([]TokenRange, len(replicas))
-				for i, r := range replicas {
-					end, ok := r.token.(int64Token)
-					if !ok {
-						continue
-					}
-					ranges[i].End = int64(end)
-					for _, h := range r.hosts {
-						ranges[i].Replicas = append(ranges[i].Replicas, Target{HostID: h.hostUUID()})
-					}
-				}
-				for i := range ranges {
-					prev := (i + len(ranges) - 1) % len(ranges)
-					ranges[i].Start = ranges[prev].End
 				}
 				m.ranges[ks] = ranges
 			}
@@ -445,6 +433,21 @@ func (s *Session) tryPublishV2Metadata() bool {
 			m.diagnostics = append(m.diagnostics, typeValidation("partitioner", "no configured int64 partitioner for %q", m.partitioner))
 		}
 	}
+	m.placementEpoch = p.placementEpoch.Load()
+	m.placementSignal = &p.placementEpoch
+	m.placements = reconcileTabletPlacement(old, m)
+	m.hostIndex = buildRoutingHostIndex(m.hosts)
+	if config.Metadata.Mode != MetadataFull {
+		m.diagnostics = append(m.diagnostics, typeValidation("partitioner", "table partitioners outside loaded metadata disable token routing"))
+	}
+	for keyspace, ks := range m.keyspaces {
+		for table, t := range ks.Tables {
+			if t != nil && t.Options.Partitioner != "" && config.Partitioners[t.Options.Partitioner] == nil {
+				m.diagnostics = append(m.diagnostics, typeValidation("partitioner", "unknown partitioner %q for %s.%s; token routing disabled", t.Options.Partitioner, keyspace, table))
+			}
+		}
+	}
+
 	if config.DefaultProfile != nil {
 		if policy := config.DefaultProfile.Snapshot().Routing; policy != nil {
 			if err := policy.Validate(m); err != nil {
@@ -732,20 +735,7 @@ func (s *Session) RefreshMetadata(ctx context.Context) error {
 // names deliberately leave routing tokenless; hashing with a guessed algorithm
 // would send requests to the wrong replicas.
 func (s *Session) routingPartitioner(keyspace, table string) TokenPartitioner {
-	m := s.Metadata()
-	name := m.partitioner
-	if ks := m.keyspaces[keyspace]; ks != nil {
-		if t := ks.Tables[table]; t != nil && t.Options.Partitioner != "" {
-			name = t.Options.Partitioner
-		}
-	}
-	p := s.peripheral()
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if name == "" {
-		return nil
-	}
-	return p.config.Partitioners[name]
+	return s.capturedRoutingPartitioner(s.preparedPartitionerName(keyspace, table))
 }
 
 type traceSessionRow struct {
@@ -1528,6 +1518,7 @@ func v2SchemaContext(s *Session) context.Context {
 
 func v2DecodeTableMetadata(keyspace string) RowDecoder[TableMetadata] {
 	return v2SchemaRows[TableMetadata]{initialize: func() *TableMetadata { return &TableMetadata{Keyspace: keyspace} }, fields: []v2SchemaField[TableMetadata]{
+		v2RequiredSchemaColumn("id", v2MetadataUUIDString{}, func(r *TableMetadata) *string { return &r.ID }),
 		v2RequiredSchemaColumn("table_name", v2MetadataText{}, func(r *TableMetadata) *string { return &r.Name }),
 		v2SchemaColumn("flags", v2MetadataStrings{}, func(r *TableMetadata) *[]string { return &r.Flags }),
 		v2SchemaColumn("extensions", v2MetadataExtensions{}, func(r *TableMetadata) *map[string]any { return &r.Extensions }),
@@ -1668,7 +1659,11 @@ func getV2KeyspaceMetadata(ctx context.Context, s *Session, name string) (*Keysp
 	if len(rows) != 1 {
 		return nil, typeValidation("keyspace schema", "duplicate identity %q", name)
 	}
-	return v2KeyspaceFromRow(name, rows[0]), nil
+	ks := v2KeyspaceFromRow(name, rows[0])
+	if err := readV2ScyllaKeyspaces(ctx, s, map[string]*KeyspaceMetadata{name: ks}, name); err != nil {
+		return nil, err
+	}
+	return ks, nil
 }
 func getV2TableMetadata(ctx context.Context, s *Session, keyspace, table string) ([]TableMetadata, error) {
 	where := ` WHERE keyspace_name = ?`
@@ -1788,6 +1783,10 @@ func (s *Session) refreshV2AllSchema(ctx context.Context) error {
 		}
 		keyspaces[row.name] = v2KeyspaceFromRow(row.name, row)
 	}
+	if err := readV2ScyllaKeyspaces(ctx, s, keyspaces, ""); err != nil {
+		return err
+	}
+
 	failures := make(map[string]error)
 
 	for name, base := range keyspaces {
@@ -2464,107 +2463,6 @@ func (s *Session) typedSchemaGeneration() uint64 {
 		return 0
 	}
 	return p.schemaGeneration.Load() + 1
-}
-
-type v2TabletFeedbackKey struct {
-	keyspace, table string
-	end             int64
-}
-
-// applyV2TabletHint queues bounded, coalesced cache feedback. Congestion never
-// delays a successful user response. Duplicate range hints supersede older ones.
-type v2PendingTabletFeedback struct {
-	hint  tablets.TabletInfo
-	epoch uint64
-}
-
-func (s *Session) applyV2TabletHint(hint tablets.TabletInfo) {
-	p := s.peripheral()
-	if p == nil || s.metadataDescriber == nil {
-		return
-	}
-	p.mu.Lock()
-	closed := p.closed
-	epoch := p.schemaEpoch[hint.KeyspaceName()]
-	p.mu.Unlock()
-	if closed {
-		return
-	}
-	p.feedbackMu.Lock()
-	key := v2TabletFeedbackKey{hint.KeyspaceName(), hint.TableName(), hint.LastToken()}
-	p.knownTabletTables[metadataTable{key.keyspace, key.table}] = true
-	if len(p.feedback) >= 1024 {
-		if _, exists := p.feedback[key]; !exists {
-			p.feedback = make(map[v2TabletFeedbackKey]v2PendingTabletFeedback)
-			p.feedbackResync = true
-		}
-	}
-	p.feedback[key] = v2PendingTabletFeedback{hint: hint, epoch: epoch}
-	p.feedbackMu.Unlock()
-	p.feedbackOnce.Do(func() { p.startWorker(func() { s.runV2TabletFeedback(p) }) })
-	select {
-	case p.feedbackWake <- struct{}{}:
-	default:
-	}
-}
-func (s *Session) runV2TabletFeedback(p *v2PeripheralState) {
-	for {
-		select {
-		case <-p.done:
-			return
-		case <-p.feedbackWake:
-		}
-		p.feedbackMu.Lock()
-		pending := p.feedback
-		p.feedback = make(map[v2TabletFeedbackKey]v2PendingTabletFeedback)
-		resync := p.feedbackResync
-		p.feedbackResync = false
-		var known []metadataTable
-		if resync {
-			for table := range p.knownTabletTables {
-				known = append(known, table)
-			}
-		}
-		p.feedbackMu.Unlock()
-		if s.metadataDescriber == nil || s.metadataDescriber.metadata == nil {
-			return
-		}
-		cache := s.metadataDescriber.metadata.tabletsMetadata
-		if resync {
-			for _, table := range known {
-				cache.RemoveTabletsWithTable(table.keyspace, table.table)
-			}
-		}
-		for _, update := range pending {
-			select {
-			case <-p.done:
-				return
-			default:
-			}
-			p.mu.Lock()
-			valid := p.schemaEpoch[update.hint.KeyspaceName()] == update.epoch && !p.schemaDropped[update.hint.KeyspaceName()]
-			p.mu.Unlock()
-			if valid {
-				cache.AddTablet(update.hint)
-			}
-		}
-		cache.Flush()
-		// A schema event can race the queue insertion. Recheck after the serialized
-		// cache flush so an old hint cannot resurrect a dropped/recreated table.
-		for _, update := range pending {
-			p.mu.Lock()
-			stale := p.schemaEpoch[update.hint.KeyspaceName()] != update.epoch || p.schemaDropped[update.hint.KeyspaceName()]
-			p.mu.Unlock()
-			if stale {
-				cache.RemoveTabletsWithTable(update.hint.KeyspaceName(), update.hint.TableName())
-			}
-		}
-		cache.Flush()
-		s.publishV2Metadata()
-		if resync {
-			s.publishV2LocalEvent(Event{Kind: OverflowEvent, Generation: s.Metadata().Generation(), Change: "TABLET_RESYNC"})
-		}
-	}
 }
 
 func (s *Session) recordV2Latency(latency time.Duration) {

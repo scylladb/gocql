@@ -22,6 +22,7 @@
 package gocql
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"log"
 	"runtime"
@@ -84,9 +85,10 @@ var tableMeta = resultMetadata{
 		{Name: "speculative_retry", TypeInfo: typeVarchar},
 		{Name: "flags", TypeInfo: typeSetS},
 		{Name: "extensions", TypeInfo: typeMapSB},
+		{Name: "id", TypeInfo: NativeType{proto: 4, typ: TypeUUID}},
 	},
-	actualColCount: 15,
-	colCount:       15,
+	actualColCount: 16,
+	colCount:       16,
 }
 
 var columnMeta = resultMetadata{
@@ -130,6 +132,11 @@ func makeKeyspaceRow(durableWrites bool) [][]byte {
 }
 
 func makeTableRow(tableName string) [][]byte {
+	digest := sha256.Sum256([]byte(tableName))
+	var id UUID
+	copy(id[:], digest[:16])
+	id[6] = id[6]&15 | 64
+	id[8] = id[8]&63 | 128
 	return marshalRow(tableMeta, []any{
 		tableName,              // table_name
 		float64(0.01),          // bloom_filter_fp_chance
@@ -146,6 +153,7 @@ func makeTableRow(tableName string) [][]byte {
 		"",                     // speculative_retry
 		[]string(nil),          // flags
 		map[string][]byte(nil), // extensions
+		id,                     // stable fixture table UUID
 	})
 }
 

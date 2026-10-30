@@ -771,7 +771,7 @@ func TestV2ReservedPreferredShardUsesAllowedFreeAlternative(t *testing.T) {
 	if got := p.pickTarget(Target{}, routing); got != second {
 		t.Fatal("non-strict selection waited despite idle eligible connection")
 	}
-	if got := p.pickTarget(Target{ShardID: Option[uint32]{Value: 0, Set: true}}, routing); got != first {
+	if got := p.pickTarget(Target{StrictShard: true, ShardID: Option[uint32]{Value: 0, Set: true}}, routing); got != first {
 		t.Fatal("strict shard was not preserved")
 	}
 }

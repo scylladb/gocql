@@ -282,13 +282,28 @@ func equalPreparedAggregates(a, b map[string]*AggregateMetadata) bool {
 }
 func (s *Session) preparedPartitionerName(keyspace, table string) string {
 	m := s.Metadata()
+	if table == "" {
+		return ""
+	}
+	ks := m.keyspaces[keyspace]
+	if ks == nil {
+		return ""
+	}
 	name := m.partitioner
-	if ks := m.keyspaces[keyspace]; ks != nil {
-		if t := ks.Tables[table]; t != nil && t.Options.Partitioner != "" {
+	if t := ks.Tables[table]; t != nil {
+		if t.Options.Partitioner != "" {
 			name = t.Options.Partitioner
 		}
+		return name
 	}
-	return name
+	if v := ks.Views[table]; v != nil {
+		if v.Options.Partitioner != "" {
+			name = v.Options.Partitioner
+		}
+		return name
+	}
+	// Metadata-disabled/filtered/minimal scopes cannot attest a table's hasher.
+	return ""
 }
 
 // extend registers newly observed result UDTs without invalidating prior pages.

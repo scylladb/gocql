@@ -1,0 +1,7 @@
+{
+  "file": "feature-specs/evidence/step06-benchmarks.log",
+  "raw_file": "/extra/scylladb/gocql-api-test-cluster/step06-native-1793319680700328977/raw-evidence/step06-benchmarks.log",
+  "raw_sha256": "0357aa48e9d127d90b9d5f1b05aeccbb0835fea8d306b76663742af1a0133e50",
+  "committed_sha256": "afc18b5663d30803fdad87f96d5703249736236d8028a7959b95d303e8dffed7",
+  "transformation": "Strip trailing whitespace only; commands, values and outcomes are unchanged."
+}

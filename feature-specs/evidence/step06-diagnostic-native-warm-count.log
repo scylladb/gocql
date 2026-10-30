@@ -1,0 +1,19 @@
+START stable /extra/scylladb/gocql-api-test-cluster/step06-native-1793319569935454803
+HEALTH 127.0.20.1 840000000600000214
+HEALTH 127.0.20.2 840000000600000214
+HEALTH 127.0.20.3 840000000600000214
+{"name": "stable", "command": ["go", "test", "-json", "-race", "-tags", "integration gocql_debug", "-count=1", "-timeout=8m", "-parallel=1", "-run", "^(TestStep06TabletRoutingLive|TestStep06LeaderRoutingLive|TestTablets)$", ".", "-args", "-gocql.timeout=60s", "-rf=3", "-clusterSize=3", "-autowait=2000ms", "-cluster=127.0.20.1,127.0.20.2,127.0.20.3", "-distribution=scylla", "-proto=4", "-compressor=no-compression", "-gocql.cversion=2026.3.4"], "exit_code": 0, "elapsed_seconds": 23.958860158920288, "log": "feature-specs/evidence/step06-handoff-stable.log"}
+STOP stable
+STOPPED stable
+START experimental /extra/scylladb/gocql-api-test-cluster/step06-native-1793319569935454803
+HEALTH 127.0.22.1 840000000600000239
+HEALTH 127.0.22.2 840000000600000239
+HEALTH 127.0.22.3 840000000600000239
+{"name": "experimental", "command": ["go", "test", "-json", "-race", "-tags", "integration gocql_debug", "-count=1", "-timeout=8m", "-parallel=1", "-run", "^(TestStep06TabletRoutingLive|TestStep06LeaderRoutingLive|TestTablets)$", ".", "-args", "-gocql.timeout=60s", "-rf=3", "-clusterSize=3", "-autowait=2000ms", "-cluster=127.0.22.1,127.0.22.2,127.0.22.3", "-distribution=scylla", "-proto=4", "-compressor=no-compression", "-gocql.cversion=2026.3.4"], "exit_code": 1, "elapsed_seconds": 1.8243203163146973, "log": "feature-specs/evidence/step06-handoff-experimental.log"}
+STOP experimental
+STOPPED experimental
+Traceback (most recent call last):
+  File "/tmp/gocql-step06-native.py", line 47, in <module>
+    if any(r['exit_code'] for r in results):raise RuntimeError('one or more complete native lanes failed')
+                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: one or more complete native lanes failed

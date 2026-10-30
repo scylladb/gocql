@@ -760,6 +760,10 @@ func (s *startupCoordinator) options(ctx context.Context, startupCompleted *atom
 		}
 	}
 	s.conn.cqlProtoExts = parseCQLProtocolExtensions(s.conn.supported, s.conn.version, s.conn.logger)
+	// V2 changes every EXECUTE body, so opt in only on the canonical typed path.
+	if s.conn.cfg.TypedConfig != nil {
+		s.conn.cqlProtoExts = typedTabletExtensions(s.conn.cqlProtoExts, s.conn.supported)
+	}
 
 	// initFramerCache must be called after startup(), because startup() may
 	// nil out c.compressor if the server does not support the requested
