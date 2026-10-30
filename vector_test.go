@@ -270,10 +270,10 @@ func TestVector_SubTypeParsing(t *testing.T) {
 		{name: "set_int", custom: prefix + "SetType(" + prefix + "Int32Type)", expected: CollectionType{NativeType: NativeType{typ: TypeSet}, Key: nil, Elem: NativeType{typ: TypeInt}}},
 		{
 			name:   "udt",
-			custom: prefix + "UserType(gocql_test,706572736f6e,66697273745f6e616d65:" + prefix + "UTF8Type,6c6173745f6e616d65:" + prefix + "UTF8Type,616765:" + prefix + "Int32Type)",
+			custom: prefix + ("UserType(" + fixtureKeyspace("") + ",706572736f6e,66697273745f6e616d65:") + prefix + "UTF8Type,6c6173745f6e616d65:" + prefix + "UTF8Type,616765:" + prefix + "Int32Type)",
 			expected: UDTTypeInfo{
 				NativeType: NativeType{typ: TypeUDT},
-				KeySpace:   "gocql_test",
+				KeySpace:   fixtureKeyspace(""),
 				Name:       "person",
 				Elements: []UDTField{
 					UDTField{Name: "first_name", Type: NativeType{typ: TypeVarchar}},

@@ -19,7 +19,7 @@ func TestTracingNewAPI(t *testing.T) {
 	session := createV2Session(t)
 	defer session.Close()
 	table := testTableName(t)
-	require.NoError(t, v2CreateTable(ctx, session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (id int primary key)`, table)))
+	require.NoError(t, v2CreateTable(ctx, session, fmt.Sprintf((`CREATE TABLE `+fixtureKeyspace("")+`.%s (id int primary key)`), table)))
 	write := sessionTestBind(t, session, fmt.Sprintf(`INSERT INTO %s (id) VALUES (?)`, table), IntValue(42))
 	defer write.Close()
 	inserted, err := Exec(ctx, session, write, Options{Trace: true})

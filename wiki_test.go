@@ -82,11 +82,11 @@ type WikiTest struct {
 
 func CreateSchema(session *Session, tb testing.TB, table string) *WikiTest {
 	table = serializationTableName(tb, table)
-	if err := v2CreateTable(context.Background(), session, fmt.Sprintf("DROP TABLE IF EXISTS gocql_test.%s", table)); err != nil {
+	if err := v2CreateTable(context.Background(), session, fmt.Sprintf(("DROP TABLE IF EXISTS "+fixtureKeyspace("")+".%s"), table)); err != nil {
 		tb.Fatal("CreateSchema:", err)
 	}
 
-	err := v2CreateTable(context.Background(), session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (
+	err := v2CreateTable(context.Background(), session, fmt.Sprintf((`CREATE TABLE `+fixtureKeyspace("")+`.%s (
 			title       varchar,
 			revid       timeuuid,
 			body        varchar,
@@ -97,7 +97,7 @@ func CreateSchema(session *Session, tb testing.TB, table string) *WikiTest {
 			tags        set<varchar>,
 			attachments map<varchar, blob>,
 			PRIMARY KEY (title, revid)
-		)`, table))
+		)`), table))
 
 	if err != nil {
 		tb.Fatal("CreateSchema:", err)

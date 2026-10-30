@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 )
@@ -134,7 +135,7 @@ func TestRecreateSchema(t *testing.T) {
 
 			queries := trimQueries(splitFixtureCQL(inStr))
 			for _, q := range queries {
-				_, err = v2Exec(context.Background(), session, q)
+				_, err = step09RecreateExec(t, session, q)
 				if err != nil {
 					break
 				}
@@ -219,7 +220,7 @@ func TestRecreateSchema(t *testing.T) {
 			cleanup(t, session, ks)
 
 			for _, q := range trimQueries(splitFixtureCQL(strings.ReplaceAll(dump, test.FixedKeyspace, ks))) {
-				if _, err := v2Exec(context.Background(), session, q); err != nil {
+				if _, err := step09RecreateExec(t, session, q); err != nil {
 					t.Fatal("invalid dump query", q, err)
 				}
 			}
@@ -330,4 +331,23 @@ func v2SchemaRoutingTabletsAutoEnabled(t *testing.T, session *Session) bool {
 		t.Fatal(err)
 	}
 	return strings.Contains(strings.ToLower(string(statements)), "and tablets")
+}
+
+// Development group-0 schema transactions can explicitly abort on a concurrent
+// topology/schema change. Retry only this server-declared aborted transaction;
+// keep all input/dump/golden assertions and propagate every other failure.
+func step09RecreateExec(t testing.TB, s *Session, cql string) (Result, error) {
+	t.Helper()
+	var result Result
+	var err error
+	for attempt := 1; attempt <= 4; attempt++ {
+		result, err = v2Exec(context.Background(), s, cql)
+		var server RequestError
+		if err == nil || !errors.As(err, &server) || server.GetMessage() != "Failed to apply group 0 change due to concurrent modification" || attempt == 4 {
+			return result, err
+		}
+		t.Logf("retry explicitly aborted group-0 fixture transaction, attempt %d", attempt)
+		time.Sleep(time.Duration(attempt) * 100 * time.Millisecond)
+	}
+	return result, err
 }

@@ -98,6 +98,12 @@ func testIfPolicyInitializedProperly(t *testing.T, cluster Config, keyspace stri
 	if err != nil || partitioner.String() == "" {
 		t.Fatalf("missing partitioner: %v", err)
 	}
+	// The no-keyspace bootstrap validates its original ring assertions above.
+	// Explicit refresh loads schema for the additional qualified-query checks.
+	if err := session.RefreshMetadata(ctx); err != nil {
+		t.Fatal(err)
+	}
+	metadata = session.Metadata()
 	ranges, err := metadata.TokenRanges(keyspace, "")
 	if err != nil || len(ranges) == 0 {
 		t.Fatalf("token-aware metadata has no keyspace ranges: %v", err)
@@ -191,6 +197,7 @@ type v2UnavailableHostsRouting struct {
 
 func (p v2UnavailableHostsRouting) Plan(info RoutingInfo, metadata *MetadataSnapshot) QueryPlan {
 	snapshot := *metadata
+	snapshot.hostIndex = nil // rebuild indices after test-only membership changes
 	snapshot.hosts = metadata.Hosts()
 	for i := range snapshot.hosts {
 		snapshot.hosts[i].Up = false
@@ -210,6 +217,12 @@ func TestNoHangAllHostsDown(t *testing.T) {
 	hosts := session.Metadata().Hosts()
 	if len(hosts) == 0 {
 		t.Fatal("no hosts")
+	}
+	// Match the original fault injection at the actual connection picker too:
+	// routing intentionally includes disconnected fallback candidates.
+	for _, host := range session.hostSource.getHostsList() {
+		host.setState(NodeDown)
+		defer host.setState(NodeUp)
 	}
 	dc, rack := hosts[0].Datacenter, hosts[0].Rack
 	policies := []RoutingOptions{

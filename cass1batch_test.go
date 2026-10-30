@@ -43,7 +43,7 @@ func TestProto1BatchInsert(t *testing.T) {
 
 	table := testTableName(t)
 
-	if err := v2CreateTable(context.Background(), session, fmt.Sprintf("CREATE TABLE gocql_test.%s (id int primary key)", table)); err != nil {
+	if err := v2CreateTable(context.Background(), session, fmt.Sprintf(("CREATE TABLE "+fixtureKeyspace("")+".%s (id int primary key)"), table)); err != nil {
 		t.Fatal(err)
 	}
 

@@ -42,14 +42,14 @@ func TestBatch_Errors(t *testing.T) {
 	session := createV2Session(t)
 	defer session.Close()
 	table := testTableName(t)
-	require.NoError(t, v2CreateTable(ctx, session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (id int primary key, val inet)`, table)))
+	require.NoError(t, v2CreateTable(ctx, session, fmt.Sprintf((`CREATE TABLE `+fixtureKeyspace("")+`.%s (id int primary key, val inet)`), table)))
 
 	// Keep the invalid SELECT inside the native BATCH, so the server rejects
 	// the batch itself rather than a preceding PREPARE operation.
 	inet, err := ScalarType(TypeInet)
 	require.NoError(t, err)
 	bound, err := BindUnpreparedOwned(Statement[[]Value, Unit]{
-		CQL:    fmt.Sprintf("SELECT * FROM gocql_test.%s WHERE id=2 AND val=?", table),
+		CQL:    fmt.Sprintf(("SELECT * FROM " + fixtureKeyspace("") + ".%s WHERE id=2 AND val=?"), table),
 		Params: DynamicParams, Rows: NoRows,
 	}, NewColumns(ColumnSpec{Name: "val", Type: inet}), []Value{NullValue(inet)})
 	require.NoError(t, err)
@@ -68,16 +68,16 @@ func TestBatch_WithTimestamp(t *testing.T) {
 	session := createV2Session(t)
 	defer session.Close()
 	table := testTableName(t)
-	require.NoError(t, v2CreateTable(ctx, session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (id int primary key, val text)`, table)))
+	require.NoError(t, v2CreateTable(ctx, session, fmt.Sprintf((`CREATE TABLE `+fixtureKeyspace("")+`.%s (id int primary key, val text)`), table)))
 	micros := time.Now().UnixMicro() - 1000
-	first := sessionTestBind(t, session, fmt.Sprintf("INSERT INTO gocql_test.%s (id, val) VALUES (?, ?)", table), IntValue(1), codecTestMust(TextValue("val")))
+	first := sessionTestBind(t, session, fmt.Sprintf(("INSERT INTO "+fixtureKeyspace("")+".%s (id, val) VALUES (?, ?)"), table), IntValue(1), codecTestMust(TextValue("val")))
 	defer first.Close()
-	second := sessionTestBind(t, session, fmt.Sprintf("INSERT INTO gocql_test.%s (id, val) VALUES (?, ?)", table), IntValue(2), codecTestMust(TextValue("val")))
+	second := sessionTestBind(t, session, fmt.Sprintf(("INSERT INTO "+fixtureKeyspace("")+".%s (id, val) VALUES (?, ?)"), table), IntValue(2), codecTestMust(TextValue("val")))
 	defer second.Close()
 	_, err := ExecBatch(ctx, session, LoggedBatch, []BatchItem{sessionTestItem(t, first), sessionTestItem(t, second)}, Options{Timestamp: Option[int64]{Value: micros, Set: true}})
 	require.NoError(t, err)
 	for _, id := range []int32{1, 2} {
-		row, err := v2ReadOne(ctx, session, fmt.Sprintf(`SELECT writetime(val) AS written FROM gocql_test.%s WHERE id = ?`, table), IntValue(id))
+		row, err := v2ReadOne(ctx, session, fmt.Sprintf((`SELECT writetime(val) AS written FROM `+fixtureKeyspace("")+`.%s WHERE id = ?`), table), IntValue(id))
 		require.NoError(t, err)
 		require.Equal(t, micros, sessionTestInt(t, row, "written"))
 	}

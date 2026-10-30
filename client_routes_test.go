@@ -4,6 +4,7 @@
 package gocql
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"sort"
@@ -15,21 +16,15 @@ import (
 func TestGetHostPortMapping(t *testing.T) {
 	t.Parallel()
 
-	keyspace := testKeyspaceName(t)
-	cluster := createCluster()
-	createKeyspace(t, cluster, keyspace, true)
-
-	cluster.Keyspace = keyspace
-	session, err := cluster.CreateSession()
-	if err != nil {
-		t.Fatalf("failed to create session: %v", err)
-	}
+	ctx := context.Background()
+	session := createV2Session(t)
 	defer session.Close()
+	keyspace := fixtureKeyspace("")
 
 	table := testTableName(t)
 	qualifiedTable := keyspace + "." + table
 
-	if err := createTable(session, fmt.Sprintf(`CREATE TABLE %s.%s (
+	if err := v2CreateTable(ctx, session, fmt.Sprintf(`CREATE TABLE %s.%s (
     connection_id uuid,
     host_id uuid,
     Address text,
@@ -64,12 +59,25 @@ func TestGetHostPortMapping(t *testing.T) {
 		rack := racks[id]
 		ip := net.ParseIP(fmt.Sprintf("127.0.0.%d", id+1))
 		for _, connectionID := range connectionIDs {
-			err := session.Query(
-				fmt.Sprintf(`INSERT INTO %s (
-                                            connection_id, host_id, Address, port, tls_port, alternator_port, alternator_https_port, Datacenter, Rack)
-						VALUES (?, ?, ?, 9042, 9142, 0, 0, 'dc1', ?);`, qualifiedTable),
-				connectionID, hostID, ip.String(), rack,
-			).Consistency(All).Exec()
+			prepared, err := Prepare(ctx, session, Statement[[]Value, Unit]{
+				CQL: fmt.Sprintf(`INSERT INTO %s (
+                    connection_id, host_id, Address, port, tls_port, alternator_port, alternator_https_port, Datacenter, Rack)
+                    VALUES (?, ?, ?, 9042, 9142, 0, 0, 'dc1', ?)`, qualifiedTable),
+				Kind: OrdinaryStatement, Params: DynamicParams, Rows: NoRows,
+			}, PrepareOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			bound, err := BindOwned(prepared, []Value{UUIDValue(codecTestMust(ParseUUID(connectionID))), UUIDValue(codecTestMust(ParseUUID(hostID))), codecTestMust(TextValue(ip.String())), codecTestMust(TextValue(rack))})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = Exec(ctx, session, bound, Options{Consistency: Option[Consistency]{Set: true, Value: All}})
+			bound.Close()
+			if waitErr := bound.Wait(ctx); waitErr != nil {
+				t.Fatal(waitErr)
+			}
+
 			if err != nil {
 				t.Fatalf("unable to insert connection metadata: %s", err.Error())
 			}

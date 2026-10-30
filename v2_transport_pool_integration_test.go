@@ -132,7 +132,7 @@ func TestV2ExclusiveTransportLive(t *testing.T) {
 	defer cancel()
 	conn := codecTestMust(s.selectTypedConn(ctx, RoutingInfo{}, nil))
 	table := fmt.Sprintf("step04_stream_%x", time.Now().UnixNano())
-	qualified := "gocql_test." + table
+	qualified := (fixtureKeyspace("") + ".") + table
 	ddl := func(cql string) {
 		b := codecTestMust(BindUnpreparedOwned(Statement[Unit, Unit]{CQL: cql, Params: NoParams, Rows: NoRows}, NewColumns(), Unit{}))
 		defer b.Close()

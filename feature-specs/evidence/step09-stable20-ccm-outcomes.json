@@ -1,0 +1,11 @@
+[
+  {
+    "assertion_output": "",
+    "command_id": "stable-attempt5/stable20-ccm",
+    "effective_behavior_pass": true,
+    "outcome": "pass",
+    "seconds": 4.39,
+    "subtests": [],
+    "test": "TestCCM"
+  }
+]

@@ -709,5 +709,5 @@ func serializationTypeName(t testing.TB, parts ...string) string {
 }
 
 func serializationUDTOptions(name string) UDTOptions {
-	return UDTOptions{Keyspace: "gocql_test", Name: name}
+	return UDTOptions{Keyspace: fixtureKeyspace(""), Name: name}
 }

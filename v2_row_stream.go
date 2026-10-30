@@ -482,7 +482,10 @@ func (s *RowStream[R]) loadPage() error {
 			}
 		}
 		if s.prepared != nil && !s.prepared.epoch.current() {
-			if s.Info().OutputStarted {
+			// Reconcile before submitting a continuation page. This prepares
+			// and validates the same canonical input, then sends the next page
+			// state; it never replays a page that has exposed caller output.
+			if s.Info().OutputStarted && !s.state.More() {
 				return &SchemaChangedError{Statement: request.statement, Previous: request.values.columns, Current: request.prepared.parameters}
 			}
 			conn := s.reservation.conn

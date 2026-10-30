@@ -384,7 +384,7 @@ func TestRetryType_IgnoreRethrow(t *testing.T) {
 	session := createV2Session(t)
 	defer session.Close()
 	ctx := context.Background()
-	bound, err := BindUnpreparedOwned(Statement[Unit, Unit]{CQL: "INSERT INTO gocql_test.invalid_table(value) VALUES(1)", Params: NoParams, Rows: NoRows}, NewColumns(), Unit{})
+	bound, err := BindUnpreparedOwned(Statement[Unit, Unit]{CQL: ("INSERT INTO " + fixtureKeyspace("") + ".invalid_table(value) VALUES(1)"), Params: NoParams, Rows: NoRows}, NewColumns(), Unit{})
 	require.NoError(t, err)
 	defer bound.Close()
 	for _, mode := range []string{"Ignore", "Rethrow"} {

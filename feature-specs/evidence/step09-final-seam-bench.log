@@ -1,0 +1,32 @@
+goos: linux
+goarch: amd64
+pkg: github.com/scylladb/gocql/v2
+cpu: AMD Ryzen 9 9950X3D 16-Core Processor
+BenchmarkStep08IndependentStreamOracle/v3/rows=1/cell=1024-32         	       5	     42162 ns/op	  24.29 MB/s	   15504 B/op	      96 allocs/op
+BenchmarkStep08IndependentStreamOracle/v3/rows=32/cell=1024-32        	       5	     92737 ns/op	 353.34 MB/s	   13713 B/op	      94 allocs/op
+BenchmarkStep08IndependentStreamOracle/v3/rows=256/cell=1024-32       	       5	    396643 ns/op	 660.91 MB/s	   17124 B/op	      97 allocs/op
+BenchmarkStep08IndependentStreamOracle/v3/rows=1/cell=409600-32       	       5	     30257 ns/op	13537.36 MB/s	   13713 B/op	      94 allocs/op
+BenchmarkStep08IndependentStreamOracle/v3/rows=1/cell=8388608-32      	       5	    427575 ns/op	19619.02 MB/s	   17224 B/op	      98 allocs/op
+BenchmarkStep08IndependentStreamOracle/v4/rows=1/cell=1024-32         	       5	     38154 ns/op	  26.84 MB/s	   15497 B/op	      96 allocs/op
+BenchmarkStep08IndependentStreamOracle/v4/rows=32/cell=1024-32        	       5	     84492 ns/op	 387.83 MB/s	   15427 B/op	      96 allocs/op
+BenchmarkStep08IndependentStreamOracle/v4/rows=256/cell=1024-32       	       5	    424185 ns/op	 617.99 MB/s	   18918 B/op	      99 allocs/op
+BenchmarkStep08IndependentStreamOracle/v4/rows=1/cell=409600-32       	       5	     54463 ns/op	7520.70 MB/s	   17252 B/op	      98 allocs/op
+BenchmarkStep08IndependentStreamOracle/v4/rows=1/cell=8388608-32      	       5	    394102 ns/op	21285.36 MB/s	   15414 B/op	      95 allocs/op
+BenchmarkStep08IndependentStreamOracle/v4tls/rows=1/cell=1024-32      	       5	     27095 ns/op	  37.79 MB/s	   15872 B/op	     103 allocs/op
+BenchmarkStep08IndependentStreamOracle/v4tls/rows=32/cell=1024-32     	       5	     94240 ns/op	 347.71 MB/s	   44537 B/op	     113 allocs/op
+BenchmarkStep08IndependentStreamOracle/v4tls/rows=256/cell=1024-32    	       5	    246862 ns/op	1061.90 MB/s	   32060 B/op	     121 allocs/op
+BenchmarkStep08IndependentStreamOracle/v4tls/rows=1/cell=409600-32    	       5	    309066 ns/op	1325.28 MB/s	   59137 B/op	     138 allocs/op
+BenchmarkStep08IndependentStreamOracle/v4tls/rows=1/cell=8388608-32   	       5	   3554462 ns/op	2360.02 MB/s	   67214 B/op	     625 allocs/op
+BenchmarkStep08IndependentStreamOracle/v5raw/rows=1/cell=1024-32      	       5	     38070 ns/op	  26.90 MB/s	  145560 B/op	     116 allocs/op
+BenchmarkStep08IndependentStreamOracle/v5raw/rows=32/cell=1024-32     	       5	     56785 ns/op	 577.05 MB/s	  145560 B/op	     116 allocs/op
+BenchmarkStep08IndependentStreamOracle/v5raw/rows=256/cell=1024-32    	       5	    134636 ns/op	1947.05 MB/s	  145576 B/op	     116 allocs/op
+BenchmarkStep08IndependentStreamOracle/v5raw/rows=1/cell=409600-32    	       5	    108791 ns/op	3765.00 MB/s	  145752 B/op	     118 allocs/op
+BenchmarkStep08IndependentStreamOracle/v5raw/rows=1/cell=8388608-32   	       5	    960426 ns/op	8734.26 MB/s	  145902 B/op	     119 allocs/op
+BenchmarkStep08IndependentStreamOracle/v5lz4/rows=1/cell=1024-32      	       5	     31473 ns/op	  32.54 MB/s	  276894 B/op	     121 allocs/op
+BenchmarkStep08IndependentStreamOracle/v5lz4/rows=32/cell=1024-32     	       5	     53749 ns/op	 609.64 MB/s	  276894 B/op	     121 allocs/op
+BenchmarkStep08IndependentStreamOracle/v5lz4/rows=256/cell=1024-32    	       5	    259265 ns/op	1011.10 MB/s	  277798 B/op	     120 allocs/op
+BenchmarkStep08IndependentStreamOracle/v5lz4/rows=1/cell=409600-32    	       5	    214385 ns/op	1910.58 MB/s	  278057 B/op	     123 allocs/op
+BenchmarkStep08IndependentStreamOracle/v5lz4/rows=1/cell=8388608-32   	       5	   1495672 ns/op	5608.59 MB/s	  276894 B/op	     121 allocs/op
+BenchmarkV2RoutingCompositeSpans-32                                   	       5	      2968 ns/op	2760.48 MB/s	     825 B/op	       0 allocs/op
+PASS
+ok  	github.com/scylladb/gocql/v2	0.193s

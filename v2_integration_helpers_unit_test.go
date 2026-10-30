@@ -21,7 +21,7 @@ func TestV2IntegrationHelpers(t *testing.T) {
 	})
 	defer session.Close()
 	ctx := context.Background()
-	table := "gocql_test." + testTableName(t, "ownership")
+	table := (fixtureKeyspace("") + ".") + testTableName(t, "ownership")
 	if err := v2CreateTable(ctx, session, "CREATE TABLE IF NOT EXISTS "+table+" (bucket int, id int, payload blob, PRIMARY KEY (bucket, id))"); err != nil {
 		t.Fatal(err)
 	}

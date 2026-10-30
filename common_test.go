@@ -440,12 +440,12 @@ func createSession(tb testing.TB, opts ...func(config *ClusterConfig)) *Session 
 }
 
 func createViews(t *testing.T, session *Session) {
-	if err := session.Query(`
-		CREATE TYPE IF NOT EXISTS gocql_test.basicView (
+	if err := session.Query((`
+		CREATE TYPE IF NOT EXISTS ` + fixtureKeyspace("") + `.basicView (
 		birthday timestamp,
 		nationality text,
 		weight text,
-		height text);	`).Exec(); err != nil {
+		height text);	`)).Exec(); err != nil {
 		t.Fatalf("failed to create view with err: %v", err)
 	}
 }
@@ -458,32 +458,32 @@ func createMaterializedViews(t *testing.T, session *Session) {
 	table2 := testTableName(t, "2")
 	view1 := testTableName(t, "view1")
 	view2 := testTableName(t, "view2")
-	if err := session.Query(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS gocql_test.%s (
+	if err := session.Query(fmt.Sprintf((`CREATE TABLE IF NOT EXISTS ` + fixtureKeyspace("") + `.%s (
 		    userid text,
 		    year int,
 		    month int,
-    		    PRIMARY KEY (userid));`, table1)).Exec(); err != nil {
+    		    PRIMARY KEY (userid));`), table1)).Exec(); err != nil {
 		t.Fatalf("failed to create materialized view with err: %v", err)
 	}
-	if err := session.Query(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS gocql_test.%s (
+	if err := session.Query(fmt.Sprintf((`CREATE TABLE IF NOT EXISTS ` + fixtureKeyspace("") + `.%s (
 		    userid text,
 		    year int,
 		    month int,
-    		    PRIMARY KEY (userid));`, table2)).Exec(); err != nil {
+    		    PRIMARY KEY (userid));`), table2)).Exec(); err != nil {
 		t.Fatalf("failed to create materialized view with err: %v", err)
 	}
-	if err := session.Query(fmt.Sprintf(`CREATE MATERIALIZED VIEW IF NOT EXISTS gocql_test.%s AS
+	if err := session.Query(fmt.Sprintf((`CREATE MATERIALIZED VIEW IF NOT EXISTS ` + fixtureKeyspace("") + `.%s AS
 		   SELECT year, month, userid
-		   FROM gocql_test.%s
+		   FROM ` + fixtureKeyspace("") + `.%s
 		   WHERE year IS NOT NULL AND month IS NOT NULL AND userid IS NOT NULL
-		   PRIMARY KEY (userid, year);`, view1, table1)).Exec(); err != nil {
+		   PRIMARY KEY (userid, year);`), view1, table1)).Exec(); err != nil {
 		t.Fatalf("failed to create materialized view with err: %v", err)
 	}
-	if err := session.Query(fmt.Sprintf(`CREATE MATERIALIZED VIEW IF NOT EXISTS gocql_test.%s AS
+	if err := session.Query(fmt.Sprintf((`CREATE MATERIALIZED VIEW IF NOT EXISTS ` + fixtureKeyspace("") + `.%s AS
 		   SELECT year, month, userid
-		   FROM gocql_test.%s
+		   FROM ` + fixtureKeyspace("") + `.%s
 		   WHERE year IS NOT NULL AND month IS NOT NULL AND userid IS NOT NULL
-		   PRIMARY KEY (userid, year);`, view2, table2)).Exec(); err != nil {
+		   PRIMARY KEY (userid, year);`), view2, table2)).Exec(); err != nil {
 		t.Fatalf("failed to create materialized view with err: %v", err)
 	}
 }
@@ -491,21 +491,21 @@ func createMaterializedViews(t *testing.T, session *Session) {
 func createFunctions(t *testing.T, session *Session) {
 	fnState := testTableName(t, "avgstate")
 	fnFinal := testTableName(t, "avgfinal")
-	if err := session.Query(fmt.Sprintf(`
-		CREATE OR REPLACE FUNCTION gocql_test.%s ( state tuple<int,bigint>, val int )
+	if err := session.Query(fmt.Sprintf((`
+		CREATE OR REPLACE FUNCTION ` + fixtureKeyspace("") + `.%s ( state tuple<int,bigint>, val int )
 		CALLED ON NULL INPUT
 		RETURNS tuple<int,bigint>
 		LANGUAGE java AS
-		$$if (val !=null) {state.setInt(0, state.getInt(0)+1); state.setLong(1, state.getLong(1)+val.intValue());}return state;$$;	`, fnState)).Exec(); err != nil {
+		$$if (val !=null) {state.setInt(0, state.getInt(0)+1); state.setLong(1, state.getLong(1)+val.intValue());}return state;$$;	`), fnState)).Exec(); err != nil {
 		t.Fatalf("failed to create function with err: %v", err)
 	}
-	if err := session.Query(fmt.Sprintf(`
-		CREATE OR REPLACE FUNCTION gocql_test.%s ( state tuple<int,bigint> )
+	if err := session.Query(fmt.Sprintf((`
+		CREATE OR REPLACE FUNCTION ` + fixtureKeyspace("") + `.%s ( state tuple<int,bigint> )
 		CALLED ON NULL INPUT
 		RETURNS double
 		LANGUAGE java AS
 		$$double r = 0; if (state.getInt(0) == 0) return null; r = state.getLong(1); r/= state.getInt(0); return Double.valueOf(r);$$
-	`, fnFinal)).Exec(); err != nil {
+	`), fnFinal)).Exec(); err != nil {
 		t.Fatalf("failed to create function with err: %v", err)
 	}
 }
@@ -516,22 +516,22 @@ func createAggregate(t *testing.T, session *Session) {
 	aggName := testTableName(t, "average")
 	aggName2 := testTableName(t, "average2")
 	createFunctions(t, session)
-	if err := session.Query(fmt.Sprintf(`
-		CREATE OR REPLACE AGGREGATE gocql_test.%s(int)
+	if err := session.Query(fmt.Sprintf((`
+		CREATE OR REPLACE AGGREGATE ` + fixtureKeyspace("") + `.%s(int)
 		SFUNC %s
 		STYPE tuple<int,bigint>
 		FINALFUNC %s
 		INITCOND (0,0);
-	`, aggName, fnState, fnFinal)).Exec(); err != nil {
+	`), aggName, fnState, fnFinal)).Exec(); err != nil {
 		t.Fatalf("failed to create aggregate with err: %v", err)
 	}
-	if err := session.Query(fmt.Sprintf(`
-		CREATE OR REPLACE AGGREGATE gocql_test.%s(int)
+	if err := session.Query(fmt.Sprintf((`
+		CREATE OR REPLACE AGGREGATE ` + fixtureKeyspace("") + `.%s(int)
 		SFUNC %s
 		STYPE tuple<int,bigint>
 		FINALFUNC %s
 		INITCOND (0,0);
-	`, aggName2, fnState, fnFinal)).Exec(); err != nil {
+	`), aggName2, fnState, fnFinal)).Exec(); err != nil {
 		t.Fatalf("failed to create aggregate with err: %v", err)
 	}
 }

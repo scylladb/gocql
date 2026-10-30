@@ -209,7 +209,7 @@ func TestUDT_MissingField(t *testing.T) {
 	if err := serializationExec(s, fmt.Sprintf("INSERT INTO %s(id,udt_col) VALUES(1,?)", table), OneParam(strict), col{"test"}); err == nil {
 		t.Fatal("strict UDT accepted an unaccounted database field")
 	}
-	codec := serializationUDT(p, r, UDTOptions{Keyspace: "gocql_test", Name: typ, AllowExtraDatabaseFields: true})
+	codec := serializationUDT(p, r, UDTOptions{Keyspace: fixtureKeyspace(""), Name: typ, AllowExtraDatabaseFields: true})
 	want := col{"test"}
 	got := serializationRoundTrip(t, s, table, "udt_col", 1, codec, want)
 	if got != want {
@@ -252,7 +252,7 @@ func TestUDT_UpdateField(t *testing.T) {
 	if err := serializationExec(s, fmt.Sprintf("INSERT INTO %s(id,udt_col) VALUES(1,?)", table), OneParam(UDTEncoder(p, serializationUDTOptions(typ))), want); err == nil {
 		t.Fatal("unknown application field accepted without AllowMissingFields")
 	}
-	if err := serializationExec(s, fmt.Sprintf("INSERT INTO %s(id,udt_col) VALUES(1,?)", table), OneParam(UDTEncoder(p, UDTOptions{Keyspace: "gocql_test", Name: typ, AllowMissingFields: true})), want); err != nil {
+	if err := serializationExec(s, fmt.Sprintf("INSERT INTO %s(id,udt_col) VALUES(1,?)", table), OneParam(UDTEncoder(p, UDTOptions{Keyspace: fixtureKeyspace(""), Name: typ, AllowMissingFields: true})), want); err != nil {
 		t.Fatal(err)
 	}
 	serializationDDL(t, s, fmt.Sprintf("ALTER TYPE %s ADD data text", typ))

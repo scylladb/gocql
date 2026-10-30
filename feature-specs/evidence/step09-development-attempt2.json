@@ -1,0 +1,463 @@
+{
+  "run_id": "g614cd617061648e7",
+  "pid": 3477818,
+  "fixture_root": "/extra/scylladb/gocql-api-test-cluster/step08/g614cd617061648e7",
+  "runner_sha256": "9cdbf3508b40c1a4c6e7d3c74f6e0bdcf2bfd3f6b0bf41badc19142a046d8785",
+  "python_executable": "/extra/scylladb/scylladb/.venv/bin/python",
+  "configuration": {
+    "lanes": [
+      {
+        "name": "stable20",
+        "kind": "scylla",
+        "install": "/extra/scylladb/gocql-api-test-cluster/ccm/scylla-repository/release/2026.3.4",
+        "binary": "libexec/scylla",
+        "sha256": "fe5c0f66ba2e52032e41822a9b54e63ec6e636cec9b1fc3561a3829bd60b1bb5",
+        "version": "2026.3.4",
+        "ccm_version": "release:2026.3.4",
+        "addresses": [
+          "127.0.20.1",
+          "127.0.20.2",
+          "127.0.20.3"
+        ],
+        "modes": [
+          {
+            "name": "focused-v4",
+            "args": [
+              "-proto=4"
+            ],
+            "tests": "^(TestStep07RunStreamLive|TestStep08FixtureIdentity)$"
+          },
+          {
+            "name": "v4-raw",
+            "args": [
+              "-proto=4"
+            ],
+            "tests": "^(TestBatch_Errors|TestBatch_WithTimestamp|TestBatch_WithNowInSeconds|TestBatch_SetKeyspace|TestProto1BatchInsert|TestShouldPrepareFunction|TestEmptyHosts|TestInvalidPeerEntry|TestUseStatementError|TestInvalidKeyspace|TestTracing|TestObserve|TestObserve_Pagination|TestPaging|TestPagingWithAllowFiltering|TestPagingWithBind|TestCAS|TestConsistencySerial|TestDurationType|TestMapScanCAS|TestBatch|TestUnpreparedBatch|TestBatchLimit|TestWhereIn|TestTooManyQueryArgs|TestNotEnoughQueryArgs|TestCreateSessionTimeout|TestReconnection|TestMapScanWithRefMap|TestMapScan|TestSliceMap|Test_RetryPolicyIdempotence|TestSmallInt|TestScanWithNilArguments|TestScanCASWithNilArguments|TestRebindQueryInfo|TestStaticQueryInfo|TestBoundQueryInfo|TestBatchQueryInfo|TestPrepare_MissingSchemaPrepare|TestPrepare_ReprepareStatement|TestPrepare_ReprepareBatch|TestQueryInfo|TestPrepare_PreparedCacheEviction|TestPrepare_PreparedCacheKey|TestMarshalFloat64Ptr|TestMarshalInet|TestVarint|TestQueryStats|TestIterHost|TestBatchStats|TestBatchObserve|TestNilInQuery|TestEmptyTimestamp|TestGetKeyspaceMetadata|TestSessionMetadataAPIs|TestGetKeyspaceMetadataFails|TestRoutingKey|TestTokenAwareConnPool|TestNegativeStream|TestManualQueryPaging|TestSessionBindRoutingKey|TestJSONSupport|TestUnmarshallNestedTypes|TestSchemaReset|TestCreateSession_DontSwallowError|TestControl_DiscoverProtocol|TestUnsetCol|TestUnsetColBatch|TestQuery_NamedValues|TestQuery_SetHostID|TestQuery_WithNowInSeconds|TestQuery_SetKeyspace|TestLargeSizeQuery|TestCompressorNegotiated|TestQueryCompressionNotWorthIt|TestPrepareExecuteMetadataChangedFlag|TestStmtCacheUsesOverriddenKeyspace|TestRoutingKeyCacheUsesOverriddenKeyspace|TestPrepareExecuteScyllaEmptyMetadataID|TestGetHostPortMapping|TestCloudConnection|TestUnixSockets|TestDNS|TestErrorsParse|TestSingleHostQueryExecutor|TestRetryOnTopologyBusy|TestSerializationSimpleTypesCassandra|TestSliceMapMapScanTypes|TestSliceMapMapScanCounterTypes|TestSliceMapMapScanTupleTypes|TestSliceMapMapScanVectorTypes|TestSliceMapMapScanCollectionTypes|TestAuthentication|TestGetHostsFromSystem|TestRingDiscovery|TestHostFilterDiscovery|TestHostFilterInitial|TestApplicationInformation|TestDriverConfigReporting|TestWriteFailure|TestCustomPayloadMessages|TestCustomPayloadValues|TestSessionAwaitSchemaAgreement|TestSessionAwaitSchemaAgreementSessionClosed|TestSessionAwaitSchemaAgreementContextCanceled|TestNewConnectWithLowTimeout|TestKeyspaceTable|TestDCValidationTokenAware|TestDCValidationDCAware|TestDCValidationRackAware|TestTokenAwareHostPolicy|TestNoHangAllHostsDown|TestRecreateSchema|TestSchemaQueries|TestShardAwarePortIntegrationNoReconnections|TestShardAwarePortIntegrationMaliciousNAT|TestShardAwarePortIntegrationUnreachable|TestShardAwarePortIntegrationUnusedIfNotEnabled|TestSelectWithoutFromLiteral|TestSelectWithoutFromFilteredOut|TestSelectWithoutFromNow|TestSelectWithoutFromFunctionCast|TestSelectWithoutFromMultipleSelectors|TestSelectWithoutFromAlias|TestSelectWithoutFromExecutionModes|TestSelectWithoutFromBindMarker|TestSelectWithoutFromRoutingKey|TestSelectWithoutFromTokenAware|TestSelectWithoutFromMapScan|TestSelectWithoutFromAggregate|TestSelectWithoutFromJSON|TestSelectWithoutFromWithKeyspace|TestSelectWithoutFromUnqualifiedUDF|TestSelectWithoutFromRejected|TestSessionEventBusReceivesSchemaChangeEvent|TestSessionEventBusReceivesControlReconnectEvent|TestSessionAPI|TestQueryBasicAPI|TestQueryShouldPrepare|TestBatchBasicAPI|TestConsistencyNames|TestIsUseStatement|TestRetryType_IgnoreRethrow|TestTLSTicketResumption|TestTablets|TestTracingNewAPI|TestTupleSimple|TestTuple_NullTuple|TestTuple_TupleNotSet|TestTupleMapScan|TestTupleMapScanNil|TestTupleMapScanNotSet|TestTupleLastFieldEmpty|TestTuple_NestedCollection|TestTuple_NullableNestedCollection|TestUDT_Marshaler|TestUDT_Reflect|TestUDT_NullObject|TestMapScanUDT|TestUDT_MissingField|TestUDT_EmptyCollections|TestUDT_UpdateField|TestUDT_ScanNullUDT|TestVector_Marshaler|TestVector_Types|TestVector_MarshalerUDT|TestVector_Empty|TestVector_MissingDimension|TestVector_SubTypeParsing|TestWikiCreateSchema|TestWikiCreatePages|TestWikiTypicalCRUD|TestStep07RunStreamLive|TestStep08FixtureIdentity)$"
+          },
+          {
+            "name": "v4-tls",
+            "args": [
+              "-proto=4",
+              "-runssl"
+            ],
+            "tests": "^(TestBatch_Errors|TestBatch_WithTimestamp|TestBatch_WithNowInSeconds|TestBatch_SetKeyspace|TestProto1BatchInsert|TestShouldPrepareFunction|TestEmptyHosts|TestInvalidPeerEntry|TestUseStatementError|TestInvalidKeyspace|TestTracing|TestObserve|TestObserve_Pagination|TestPaging|TestPagingWithAllowFiltering|TestPagingWithBind|TestCAS|TestConsistencySerial|TestDurationType|TestMapScanCAS|TestBatch|TestUnpreparedBatch|TestBatchLimit|TestWhereIn|TestTooManyQueryArgs|TestNotEnoughQueryArgs|TestCreateSessionTimeout|TestReconnection|TestMapScanWithRefMap|TestMapScan|TestSliceMap|Test_RetryPolicyIdempotence|TestSmallInt|TestScanWithNilArguments|TestScanCASWithNilArguments|TestRebindQueryInfo|TestStaticQueryInfo|TestBoundQueryInfo|TestBatchQueryInfo|TestPrepare_MissingSchemaPrepare|TestPrepare_ReprepareStatement|TestPrepare_ReprepareBatch|TestQueryInfo|TestPrepare_PreparedCacheEviction|TestPrepare_PreparedCacheKey|TestMarshalFloat64Ptr|TestMarshalInet|TestVarint|TestQueryStats|TestIterHost|TestBatchStats|TestBatchObserve|TestNilInQuery|TestEmptyTimestamp|TestGetKeyspaceMetadata|TestSessionMetadataAPIs|TestGetKeyspaceMetadataFails|TestRoutingKey|TestTokenAwareConnPool|TestNegativeStream|TestManualQueryPaging|TestSessionBindRoutingKey|TestJSONSupport|TestUnmarshallNestedTypes|TestSchemaReset|TestCreateSession_DontSwallowError|TestControl_DiscoverProtocol|TestUnsetCol|TestUnsetColBatch|TestQuery_NamedValues|TestQuery_SetHostID|TestQuery_WithNowInSeconds|TestQuery_SetKeyspace|TestLargeSizeQuery|TestCompressorNegotiated|TestQueryCompressionNotWorthIt|TestPrepareExecuteMetadataChangedFlag|TestStmtCacheUsesOverriddenKeyspace|TestRoutingKeyCacheUsesOverriddenKeyspace|TestPrepareExecuteScyllaEmptyMetadataID|TestGetHostPortMapping|TestCloudConnection|TestUnixSockets|TestDNS|TestErrorsParse|TestSingleHostQueryExecutor|TestRetryOnTopologyBusy|TestSerializationSimpleTypesCassandra|TestSliceMapMapScanTypes|TestSliceMapMapScanCounterTypes|TestSliceMapMapScanTupleTypes|TestSliceMapMapScanVectorTypes|TestSliceMapMapScanCollectionTypes|TestAuthentication|TestGetHostsFromSystem|TestRingDiscovery|TestHostFilterDiscovery|TestHostFilterInitial|TestApplicationInformation|TestDriverConfigReporting|TestWriteFailure|TestCustomPayloadMessages|TestCustomPayloadValues|TestSessionAwaitSchemaAgreement|TestSessionAwaitSchemaAgreementSessionClosed|TestSessionAwaitSchemaAgreementContextCanceled|TestNewConnectWithLowTimeout|TestKeyspaceTable|TestDCValidationTokenAware|TestDCValidationDCAware|TestDCValidationRackAware|TestTokenAwareHostPolicy|TestNoHangAllHostsDown|TestRecreateSchema|TestSchemaQueries|TestShardAwarePortIntegrationNoReconnections|TestShardAwarePortIntegrationMaliciousNAT|TestShardAwarePortIntegrationUnreachable|TestShardAwarePortIntegrationUnusedIfNotEnabled|TestSelectWithoutFromLiteral|TestSelectWithoutFromFilteredOut|TestSelectWithoutFromNow|TestSelectWithoutFromFunctionCast|TestSelectWithoutFromMultipleSelectors|TestSelectWithoutFromAlias|TestSelectWithoutFromExecutionModes|TestSelectWithoutFromBindMarker|TestSelectWithoutFromRoutingKey|TestSelectWithoutFromTokenAware|TestSelectWithoutFromMapScan|TestSelectWithoutFromAggregate|TestSelectWithoutFromJSON|TestSelectWithoutFromWithKeyspace|TestSelectWithoutFromUnqualifiedUDF|TestSelectWithoutFromRejected|TestSessionEventBusReceivesSchemaChangeEvent|TestSessionEventBusReceivesControlReconnectEvent|TestSessionAPI|TestQueryBasicAPI|TestQueryShouldPrepare|TestBatchBasicAPI|TestConsistencyNames|TestIsUseStatement|TestRetryType_IgnoreRethrow|TestTLSTicketResumption|TestTablets|TestTracingNewAPI|TestTupleSimple|TestTuple_NullTuple|TestTuple_TupleNotSet|TestTupleMapScan|TestTupleMapScanNil|TestTupleMapScanNotSet|TestTupleLastFieldEmpty|TestTuple_NestedCollection|TestTuple_NullableNestedCollection|TestUDT_Marshaler|TestUDT_Reflect|TestUDT_NullObject|TestMapScanUDT|TestUDT_MissingField|TestUDT_EmptyCollections|TestUDT_UpdateField|TestUDT_ScanNullUDT|TestVector_Marshaler|TestVector_Types|TestVector_MarshalerUDT|TestVector_Empty|TestVector_MissingDimension|TestVector_SubTypeParsing|TestWikiCreateSchema|TestWikiCreatePages|TestWikiTypicalCRUD|TestStep07RunStreamLive|TestStep08FixtureIdentity)$"
+          }
+        ],
+        "ccm": true,
+        "smp": 2
+      },
+      {
+        "name": "cassandra21",
+        "kind": "cassandra",
+        "install": "/home/dkropachev/.local/share/containers/storage/overlay/635220d55ce81dd8d814691b98f1c557aa51fdc060f1dc05a749455283bd29c4/diff/opt/cassandra",
+        "config": "/extra/scylladb/gocql-api-test-cluster/cassandra-base",
+        "binary": "lib/apache-cassandra-5.0.9.jar",
+        "sha256": "6a80e6fddde88817deec4839ae431e3a9c4eeb728560336890094c6f870fef5e",
+        "version": "5.0.9",
+        "java_home": "/usr/lib/jvm/java-17-openjdk-amd64",
+        "addresses": [
+          "127.0.21.1",
+          "127.0.21.2",
+          "127.0.21.3"
+        ],
+        "modes": [
+          {
+            "name": "focused-v4",
+            "args": [
+              "-proto=4"
+            ],
+            "tests": "^(TestStep07RunStreamLive|TestStep08FixtureIdentity)$"
+          },
+          {
+            "name": "v4-raw",
+            "args": [
+              "-proto=4"
+            ],
+            "tests": "^(TestBatch_Errors|TestBatch_WithTimestamp|TestBatch_WithNowInSeconds|TestBatch_SetKeyspace|TestProto1BatchInsert|TestShouldPrepareFunction|TestEmptyHosts|TestInvalidPeerEntry|TestUseStatementError|TestInvalidKeyspace|TestTracing|TestObserve|TestObserve_Pagination|TestPaging|TestPagingWithAllowFiltering|TestPagingWithBind|TestCAS|TestConsistencySerial|TestDurationType|TestMapScanCAS|TestBatch|TestUnpreparedBatch|TestBatchLimit|TestWhereIn|TestTooManyQueryArgs|TestNotEnoughQueryArgs|TestCreateSessionTimeout|TestReconnection|TestMapScanWithRefMap|TestMapScan|TestSliceMap|Test_RetryPolicyIdempotence|TestSmallInt|TestScanWithNilArguments|TestScanCASWithNilArguments|TestRebindQueryInfo|TestStaticQueryInfo|TestBoundQueryInfo|TestBatchQueryInfo|TestPrepare_MissingSchemaPrepare|TestPrepare_ReprepareStatement|TestPrepare_ReprepareBatch|TestQueryInfo|TestPrepare_PreparedCacheEviction|TestPrepare_PreparedCacheKey|TestMarshalFloat64Ptr|TestMarshalInet|TestVarint|TestQueryStats|TestIterHost|TestBatchStats|TestBatchObserve|TestNilInQuery|TestEmptyTimestamp|TestGetKeyspaceMetadata|TestSessionMetadataAPIs|TestGetKeyspaceMetadataFails|TestRoutingKey|TestTokenAwareConnPool|TestNegativeStream|TestManualQueryPaging|TestSessionBindRoutingKey|TestJSONSupport|TestUnmarshallNestedTypes|TestSchemaReset|TestCreateSession_DontSwallowError|TestControl_DiscoverProtocol|TestUnsetCol|TestUnsetColBatch|TestQuery_NamedValues|TestQuery_SetHostID|TestQuery_WithNowInSeconds|TestQuery_SetKeyspace|TestLargeSizeQuery|TestCompressorNegotiated|TestQueryCompressionNotWorthIt|TestPrepareExecuteMetadataChangedFlag|TestStmtCacheUsesOverriddenKeyspace|TestRoutingKeyCacheUsesOverriddenKeyspace|TestPrepareExecuteScyllaEmptyMetadataID|TestGetHostPortMapping|TestCloudConnection|TestUnixSockets|TestDNS|TestErrorsParse|TestSingleHostQueryExecutor|TestRetryOnTopologyBusy|TestSerializationSimpleTypesCassandra|TestSliceMapMapScanTypes|TestSliceMapMapScanCounterTypes|TestSliceMapMapScanTupleTypes|TestSliceMapMapScanVectorTypes|TestSliceMapMapScanCollectionTypes|TestAuthentication|TestGetHostsFromSystem|TestRingDiscovery|TestHostFilterDiscovery|TestHostFilterInitial|TestApplicationInformation|TestDriverConfigReporting|TestWriteFailure|TestCustomPayloadMessages|TestCustomPayloadValues|TestSessionAwaitSchemaAgreement|TestSessionAwaitSchemaAgreementSessionClosed|TestSessionAwaitSchemaAgreementContextCanceled|TestNewConnectWithLowTimeout|TestKeyspaceTable|TestDCValidationTokenAware|TestDCValidationDCAware|TestDCValidationRackAware|TestTokenAwareHostPolicy|TestNoHangAllHostsDown|TestRecreateSchema|TestSchemaQueries|TestShardAwarePortIntegrationNoReconnections|TestShardAwarePortIntegrationMaliciousNAT|TestShardAwarePortIntegrationUnreachable|TestShardAwarePortIntegrationUnusedIfNotEnabled|TestSelectWithoutFromLiteral|TestSelectWithoutFromFilteredOut|TestSelectWithoutFromNow|TestSelectWithoutFromFunctionCast|TestSelectWithoutFromMultipleSelectors|TestSelectWithoutFromAlias|TestSelectWithoutFromExecutionModes|TestSelectWithoutFromBindMarker|TestSelectWithoutFromRoutingKey|TestSelectWithoutFromTokenAware|TestSelectWithoutFromMapScan|TestSelectWithoutFromAggregate|TestSelectWithoutFromJSON|TestSelectWithoutFromWithKeyspace|TestSelectWithoutFromUnqualifiedUDF|TestSelectWithoutFromRejected|TestSessionEventBusReceivesSchemaChangeEvent|TestSessionEventBusReceivesControlReconnectEvent|TestSessionAPI|TestQueryBasicAPI|TestQueryShouldPrepare|TestBatchBasicAPI|TestConsistencyNames|TestIsUseStatement|TestRetryType_IgnoreRethrow|TestTLSTicketResumption|TestTablets|TestTracingNewAPI|TestTupleSimple|TestTuple_NullTuple|TestTuple_TupleNotSet|TestTupleMapScan|TestTupleMapScanNil|TestTupleMapScanNotSet|TestTupleLastFieldEmpty|TestTuple_NestedCollection|TestTuple_NullableNestedCollection|TestUDT_Marshaler|TestUDT_Reflect|TestUDT_NullObject|TestMapScanUDT|TestUDT_MissingField|TestUDT_EmptyCollections|TestUDT_UpdateField|TestUDT_ScanNullUDT|TestVector_Marshaler|TestVector_Types|TestVector_MarshalerUDT|TestVector_Empty|TestVector_MissingDimension|TestVector_SubTypeParsing|TestWikiCreateSchema|TestWikiCreatePages|TestWikiTypicalCRUD|TestStep07RunStreamLive|TestStep08FixtureIdentity)$"
+          },
+          {
+            "name": "v5-raw",
+            "args": [
+              "-proto=5"
+            ],
+            "tests": "^(TestBatch_Errors|TestBatch_WithTimestamp|TestBatch_WithNowInSeconds|TestBatch_SetKeyspace|TestProto1BatchInsert|TestShouldPrepareFunction|TestEmptyHosts|TestInvalidPeerEntry|TestUseStatementError|TestInvalidKeyspace|TestTracing|TestObserve|TestObserve_Pagination|TestPaging|TestPagingWithAllowFiltering|TestPagingWithBind|TestCAS|TestConsistencySerial|TestDurationType|TestMapScanCAS|TestBatch|TestUnpreparedBatch|TestBatchLimit|TestWhereIn|TestTooManyQueryArgs|TestNotEnoughQueryArgs|TestCreateSessionTimeout|TestReconnection|TestMapScanWithRefMap|TestMapScan|TestSliceMap|Test_RetryPolicyIdempotence|TestSmallInt|TestScanWithNilArguments|TestScanCASWithNilArguments|TestRebindQueryInfo|TestStaticQueryInfo|TestBoundQueryInfo|TestBatchQueryInfo|TestPrepare_MissingSchemaPrepare|TestPrepare_ReprepareStatement|TestPrepare_ReprepareBatch|TestQueryInfo|TestPrepare_PreparedCacheEviction|TestPrepare_PreparedCacheKey|TestMarshalFloat64Ptr|TestMarshalInet|TestVarint|TestQueryStats|TestIterHost|TestBatchStats|TestBatchObserve|TestNilInQuery|TestEmptyTimestamp|TestGetKeyspaceMetadata|TestSessionMetadataAPIs|TestGetKeyspaceMetadataFails|TestRoutingKey|TestTokenAwareConnPool|TestNegativeStream|TestManualQueryPaging|TestSessionBindRoutingKey|TestJSONSupport|TestUnmarshallNestedTypes|TestSchemaReset|TestCreateSession_DontSwallowError|TestControl_DiscoverProtocol|TestUnsetCol|TestUnsetColBatch|TestQuery_NamedValues|TestQuery_SetHostID|TestQuery_WithNowInSeconds|TestQuery_SetKeyspace|TestLargeSizeQuery|TestCompressorNegotiated|TestQueryCompressionNotWorthIt|TestPrepareExecuteMetadataChangedFlag|TestStmtCacheUsesOverriddenKeyspace|TestRoutingKeyCacheUsesOverriddenKeyspace|TestPrepareExecuteScyllaEmptyMetadataID|TestGetHostPortMapping|TestCloudConnection|TestUnixSockets|TestDNS|TestErrorsParse|TestSingleHostQueryExecutor|TestRetryOnTopologyBusy|TestSerializationSimpleTypesCassandra|TestSliceMapMapScanTypes|TestSliceMapMapScanCounterTypes|TestSliceMapMapScanTupleTypes|TestSliceMapMapScanVectorTypes|TestSliceMapMapScanCollectionTypes|TestAuthentication|TestGetHostsFromSystem|TestRingDiscovery|TestHostFilterDiscovery|TestHostFilterInitial|TestApplicationInformation|TestDriverConfigReporting|TestWriteFailure|TestCustomPayloadMessages|TestCustomPayloadValues|TestSessionAwaitSchemaAgreement|TestSessionAwaitSchemaAgreementSessionClosed|TestSessionAwaitSchemaAgreementContextCanceled|TestNewConnectWithLowTimeout|TestKeyspaceTable|TestDCValidationTokenAware|TestDCValidationDCAware|TestDCValidationRackAware|TestTokenAwareHostPolicy|TestNoHangAllHostsDown|TestRecreateSchema|TestSchemaQueries|TestShardAwarePortIntegrationNoReconnections|TestShardAwarePortIntegrationMaliciousNAT|TestShardAwarePortIntegrationUnreachable|TestShardAwarePortIntegrationUnusedIfNotEnabled|TestSelectWithoutFromLiteral|TestSelectWithoutFromFilteredOut|TestSelectWithoutFromNow|TestSelectWithoutFromFunctionCast|TestSelectWithoutFromMultipleSelectors|TestSelectWithoutFromAlias|TestSelectWithoutFromExecutionModes|TestSelectWithoutFromBindMarker|TestSelectWithoutFromRoutingKey|TestSelectWithoutFromTokenAware|TestSelectWithoutFromMapScan|TestSelectWithoutFromAggregate|TestSelectWithoutFromJSON|TestSelectWithoutFromWithKeyspace|TestSelectWithoutFromUnqualifiedUDF|TestSelectWithoutFromRejected|TestSessionEventBusReceivesSchemaChangeEvent|TestSessionEventBusReceivesControlReconnectEvent|TestSessionAPI|TestQueryBasicAPI|TestQueryShouldPrepare|TestBatchBasicAPI|TestConsistencyNames|TestIsUseStatement|TestRetryType_IgnoreRethrow|TestTLSTicketResumption|TestTablets|TestTracingNewAPI|TestTupleSimple|TestTuple_NullTuple|TestTuple_TupleNotSet|TestTupleMapScan|TestTupleMapScanNil|TestTupleMapScanNotSet|TestTupleLastFieldEmpty|TestTuple_NestedCollection|TestTuple_NullableNestedCollection|TestUDT_Marshaler|TestUDT_Reflect|TestUDT_NullObject|TestMapScanUDT|TestUDT_MissingField|TestUDT_EmptyCollections|TestUDT_UpdateField|TestUDT_ScanNullUDT|TestVector_Marshaler|TestVector_Types|TestVector_MarshalerUDT|TestVector_Empty|TestVector_MissingDimension|TestVector_SubTypeParsing|TestWikiCreateSchema|TestWikiCreatePages|TestWikiTypicalCRUD|TestStep07RunStreamLive|TestStep08FixtureIdentity)$"
+          },
+          {
+            "name": "v5-lz4",
+            "args": [
+              "-proto=5",
+              "-compressor=lz4"
+            ],
+            "tests": "^(TestBatch_Errors|TestBatch_WithTimestamp|TestBatch_WithNowInSeconds|TestBatch_SetKeyspace|TestProto1BatchInsert|TestShouldPrepareFunction|TestEmptyHosts|TestInvalidPeerEntry|TestUseStatementError|TestInvalidKeyspace|TestTracing|TestObserve|TestObserve_Pagination|TestPaging|TestPagingWithAllowFiltering|TestPagingWithBind|TestCAS|TestConsistencySerial|TestDurationType|TestMapScanCAS|TestBatch|TestUnpreparedBatch|TestBatchLimit|TestWhereIn|TestTooManyQueryArgs|TestNotEnoughQueryArgs|TestCreateSessionTimeout|TestReconnection|TestMapScanWithRefMap|TestMapScan|TestSliceMap|Test_RetryPolicyIdempotence|TestSmallInt|TestScanWithNilArguments|TestScanCASWithNilArguments|TestRebindQueryInfo|TestStaticQueryInfo|TestBoundQueryInfo|TestBatchQueryInfo|TestPrepare_MissingSchemaPrepare|TestPrepare_ReprepareStatement|TestPrepare_ReprepareBatch|TestQueryInfo|TestPrepare_PreparedCacheEviction|TestPrepare_PreparedCacheKey|TestMarshalFloat64Ptr|TestMarshalInet|TestVarint|TestQueryStats|TestIterHost|TestBatchStats|TestBatchObserve|TestNilInQuery|TestEmptyTimestamp|TestGetKeyspaceMetadata|TestSessionMetadataAPIs|TestGetKeyspaceMetadataFails|TestRoutingKey|TestTokenAwareConnPool|TestNegativeStream|TestManualQueryPaging|TestSessionBindRoutingKey|TestJSONSupport|TestUnmarshallNestedTypes|TestSchemaReset|TestCreateSession_DontSwallowError|TestControl_DiscoverProtocol|TestUnsetCol|TestUnsetColBatch|TestQuery_NamedValues|TestQuery_SetHostID|TestQuery_WithNowInSeconds|TestQuery_SetKeyspace|TestLargeSizeQuery|TestCompressorNegotiated|TestQueryCompressionNotWorthIt|TestPrepareExecuteMetadataChangedFlag|TestStmtCacheUsesOverriddenKeyspace|TestRoutingKeyCacheUsesOverriddenKeyspace|TestPrepareExecuteScyllaEmptyMetadataID|TestGetHostPortMapping|TestCloudConnection|TestUnixSockets|TestDNS|TestErrorsParse|TestSingleHostQueryExecutor|TestRetryOnTopologyBusy|TestSerializationSimpleTypesCassandra|TestSliceMapMapScanTypes|TestSliceMapMapScanCounterTypes|TestSliceMapMapScanTupleTypes|TestSliceMapMapScanVectorTypes|TestSliceMapMapScanCollectionTypes|TestAuthentication|TestGetHostsFromSystem|TestRingDiscovery|TestHostFilterDiscovery|TestHostFilterInitial|TestApplicationInformation|TestDriverConfigReporting|TestWriteFailure|TestCustomPayloadMessages|TestCustomPayloadValues|TestSessionAwaitSchemaAgreement|TestSessionAwaitSchemaAgreementSessionClosed|TestSessionAwaitSchemaAgreementContextCanceled|TestNewConnectWithLowTimeout|TestKeyspaceTable|TestDCValidationTokenAware|TestDCValidationDCAware|TestDCValidationRackAware|TestTokenAwareHostPolicy|TestNoHangAllHostsDown|TestRecreateSchema|TestSchemaQueries|TestShardAwarePortIntegrationNoReconnections|TestShardAwarePortIntegrationMaliciousNAT|TestShardAwarePortIntegrationUnreachable|TestShardAwarePortIntegrationUnusedIfNotEnabled|TestSelectWithoutFromLiteral|TestSelectWithoutFromFilteredOut|TestSelectWithoutFromNow|TestSelectWithoutFromFunctionCast|TestSelectWithoutFromMultipleSelectors|TestSelectWithoutFromAlias|TestSelectWithoutFromExecutionModes|TestSelectWithoutFromBindMarker|TestSelectWithoutFromRoutingKey|TestSelectWithoutFromTokenAware|TestSelectWithoutFromMapScan|TestSelectWithoutFromAggregate|TestSelectWithoutFromJSON|TestSelectWithoutFromWithKeyspace|TestSelectWithoutFromUnqualifiedUDF|TestSelectWithoutFromRejected|TestSessionEventBusReceivesSchemaChangeEvent|TestSessionEventBusReceivesControlReconnectEvent|TestSessionAPI|TestQueryBasicAPI|TestQueryShouldPrepare|TestBatchBasicAPI|TestConsistencyNames|TestIsUseStatement|TestRetryType_IgnoreRethrow|TestTLSTicketResumption|TestTablets|TestTracingNewAPI|TestTupleSimple|TestTuple_NullTuple|TestTuple_TupleNotSet|TestTupleMapScan|TestTupleMapScanNil|TestTupleMapScanNotSet|TestTupleLastFieldEmpty|TestTuple_NestedCollection|TestTuple_NullableNestedCollection|TestUDT_Marshaler|TestUDT_Reflect|TestUDT_NullObject|TestMapScanUDT|TestUDT_MissingField|TestUDT_EmptyCollections|TestUDT_UpdateField|TestUDT_ScanNullUDT|TestVector_Marshaler|TestVector_Types|TestVector_MarshalerUDT|TestVector_Empty|TestVector_MissingDimension|TestVector_SubTypeParsing|TestWikiCreateSchema|TestWikiCreatePages|TestWikiTypicalCRUD|TestStep07RunStreamLive|TestStep08FixtureIdentity)$"
+          },
+          {
+            "name": "v5-raw-tls",
+            "args": [
+              "-proto=5",
+              "-runssl"
+            ],
+            "tests": "^(TestStep07RunStreamLive|TestStep08FixtureIdentity)$"
+          },
+          {
+            "name": "v5-lz4-tls",
+            "args": [
+              "-proto=5",
+              "-runssl",
+              "-compressor=lz4"
+            ],
+            "tests": "^(TestStep07RunStreamLive|TestStep08FixtureIdentity)$"
+          }
+        ]
+      },
+      {
+        "name": "development22",
+        "kind": "scylla",
+        "install": "/home/dkropachev/.local/share/containers/storage/overlay/d39a09124e8174c019e18dbd72a02e6b2d64e28942d52a87a8da30e912dd42b4/diff/opt/scylladb",
+        "layout": "scylla-container",
+        "config": "/home/dkropachev/.local/share/containers/storage/overlay/d39a09124e8174c019e18dbd72a02e6b2d64e28942d52a87a8da30e912dd42b4/diff/etc/scylla/scylla.yaml",
+        "binary": "libexec/scylla",
+        "sha256": "8d830cff9c748ae34512f060bc807ab77f274218a4c815c07e8be2faa5db0905",
+        "version": "2027.1.0",
+        "ccm_version": "2027.1.0",
+        "image_digest": "sha256:f254ffaca9977cab0d344f30eea71106d2b217135bd188543577d8bf2290be22",
+        "addresses": [
+          "127.0.22.1",
+          "127.0.22.2",
+          "127.0.22.3"
+        ],
+        "modes": [
+          {
+            "name": "focused-v4",
+            "args": [
+              "-proto=4"
+            ],
+            "tests": "^(TestStep07RunStreamLive|TestStep08FixtureIdentity|TestRecreateSchema)$"
+          },
+          {
+            "name": "v4-development",
+            "args": [
+              "-proto=4"
+            ],
+            "tests": "^(TestBatch_Errors|TestBatch_WithTimestamp|TestBatch_WithNowInSeconds|TestBatch_SetKeyspace|TestProto1BatchInsert|TestShouldPrepareFunction|TestEmptyHosts|TestInvalidPeerEntry|TestUseStatementError|TestInvalidKeyspace|TestTracing|TestObserve|TestObserve_Pagination|TestPaging|TestPagingWithAllowFiltering|TestPagingWithBind|TestCAS|TestConsistencySerial|TestDurationType|TestMapScanCAS|TestBatch|TestUnpreparedBatch|TestBatchLimit|TestWhereIn|TestTooManyQueryArgs|TestNotEnoughQueryArgs|TestCreateSessionTimeout|TestReconnection|TestMapScanWithRefMap|TestMapScan|TestSliceMap|Test_RetryPolicyIdempotence|TestSmallInt|TestScanWithNilArguments|TestScanCASWithNilArguments|TestRebindQueryInfo|TestStaticQueryInfo|TestBoundQueryInfo|TestBatchQueryInfo|TestPrepare_MissingSchemaPrepare|TestPrepare_ReprepareStatement|TestPrepare_ReprepareBatch|TestQueryInfo|TestPrepare_PreparedCacheEviction|TestPrepare_PreparedCacheKey|TestMarshalFloat64Ptr|TestMarshalInet|TestVarint|TestQueryStats|TestIterHost|TestBatchStats|TestBatchObserve|TestNilInQuery|TestEmptyTimestamp|TestGetKeyspaceMetadata|TestSessionMetadataAPIs|TestGetKeyspaceMetadataFails|TestRoutingKey|TestTokenAwareConnPool|TestNegativeStream|TestManualQueryPaging|TestSessionBindRoutingKey|TestJSONSupport|TestUnmarshallNestedTypes|TestSchemaReset|TestCreateSession_DontSwallowError|TestControl_DiscoverProtocol|TestUnsetCol|TestUnsetColBatch|TestQuery_NamedValues|TestQuery_SetHostID|TestQuery_WithNowInSeconds|TestQuery_SetKeyspace|TestLargeSizeQuery|TestCompressorNegotiated|TestQueryCompressionNotWorthIt|TestPrepareExecuteMetadataChangedFlag|TestStmtCacheUsesOverriddenKeyspace|TestRoutingKeyCacheUsesOverriddenKeyspace|TestPrepareExecuteScyllaEmptyMetadataID|TestGetHostPortMapping|TestCloudConnection|TestUnixSockets|TestDNS|TestErrorsParse|TestSingleHostQueryExecutor|TestRetryOnTopologyBusy|TestSerializationSimpleTypesCassandra|TestSliceMapMapScanTypes|TestSliceMapMapScanCounterTypes|TestSliceMapMapScanTupleTypes|TestSliceMapMapScanVectorTypes|TestSliceMapMapScanCollectionTypes|TestAuthentication|TestGetHostsFromSystem|TestRingDiscovery|TestHostFilterDiscovery|TestHostFilterInitial|TestApplicationInformation|TestDriverConfigReporting|TestWriteFailure|TestCustomPayloadMessages|TestCustomPayloadValues|TestSessionAwaitSchemaAgreement|TestSessionAwaitSchemaAgreementSessionClosed|TestSessionAwaitSchemaAgreementContextCanceled|TestNewConnectWithLowTimeout|TestKeyspaceTable|TestDCValidationTokenAware|TestDCValidationDCAware|TestDCValidationRackAware|TestTokenAwareHostPolicy|TestNoHangAllHostsDown|TestRecreateSchema|TestSchemaQueries|TestShardAwarePortIntegrationNoReconnections|TestShardAwarePortIntegrationMaliciousNAT|TestShardAwarePortIntegrationUnreachable|TestShardAwarePortIntegrationUnusedIfNotEnabled|TestSelectWithoutFromLiteral|TestSelectWithoutFromFilteredOut|TestSelectWithoutFromNow|TestSelectWithoutFromFunctionCast|TestSelectWithoutFromMultipleSelectors|TestSelectWithoutFromAlias|TestSelectWithoutFromExecutionModes|TestSelectWithoutFromBindMarker|TestSelectWithoutFromRoutingKey|TestSelectWithoutFromTokenAware|TestSelectWithoutFromMapScan|TestSelectWithoutFromAggregate|TestSelectWithoutFromJSON|TestSelectWithoutFromWithKeyspace|TestSelectWithoutFromUnqualifiedUDF|TestSelectWithoutFromRejected|TestSessionEventBusReceivesSchemaChangeEvent|TestSessionEventBusReceivesControlReconnectEvent|TestSessionAPI|TestQueryBasicAPI|TestQueryShouldPrepare|TestBatchBasicAPI|TestConsistencyNames|TestIsUseStatement|TestRetryType_IgnoreRethrow|TestTLSTicketResumption|TestTablets|TestTracingNewAPI|TestTupleSimple|TestTuple_NullTuple|TestTuple_TupleNotSet|TestTupleMapScan|TestTupleMapScanNil|TestTupleMapScanNotSet|TestTupleLastFieldEmpty|TestTuple_NestedCollection|TestTuple_NullableNestedCollection|TestUDT_Marshaler|TestUDT_Reflect|TestUDT_NullObject|TestMapScanUDT|TestUDT_MissingField|TestUDT_EmptyCollections|TestUDT_UpdateField|TestUDT_ScanNullUDT|TestVector_Marshaler|TestVector_Types|TestVector_MarshalerUDT|TestVector_Empty|TestVector_MissingDimension|TestVector_SubTypeParsing|TestWikiCreateSchema|TestWikiCreatePages|TestWikiTypicalCRUD|TestStep07RunStreamLive|TestStep08FixtureIdentity)$"
+          }
+        ],
+        "smp": 2
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "name": "development22",
+      "addresses": [
+        "127.0.22.1",
+        "127.0.22.2",
+        "127.0.22.3"
+      ],
+      "namespace": "g614cd617061648e7",
+      "tests": [
+        {
+          "mode": "focused-v4",
+          "exit_code": 0
+        },
+        {
+          "mode": "v4-development",
+          "exit_code": 0
+        }
+      ],
+      "configs": {
+        "/extra/scylladb/gocql-api-test-cluster/step08/g614cd617061648e7/development22/node3/conf/cassandra.yaml": "abbbb5577d2ba4f3cf68e419025f1a9ce33cd0466c19f0e91a84194239e0dfe7",
+        "/extra/scylladb/gocql-api-test-cluster/step08/g614cd617061648e7/development22/node3/conf/scylla.yaml": "e0dfb4f1e6396ac1249336f01fe519dadb66b9cca893f8960745504738abaffc",
+        "/extra/scylladb/gocql-api-test-cluster/step08/g614cd617061648e7/development22/node1/conf/cassandra.yaml": "c585d420d918535207d42b466711ab7ff12b777571f105f74f1017d9ba384ab0",
+        "/extra/scylladb/gocql-api-test-cluster/step08/g614cd617061648e7/development22/node1/conf/scylla.yaml": "4017ba4b412a0108dd49fb8bc9a9766680a242ac47569171ba8bd3aa7a1a95f8",
+        "/extra/scylladb/gocql-api-test-cluster/step08/g614cd617061648e7/development22/node2/conf/cassandra.yaml": "aac27acafcfdf808ef7d1968221a895696505eebd70feaa1c5738b796a60219b",
+        "/extra/scylladb/gocql-api-test-cluster/step08/g614cd617061648e7/development22/node2/conf/scylla.yaml": "74bfca167219993e729ad52ca79fb7bd70331a9c687c7b11991bb608d813fc52"
+      },
+      "health": [
+        {
+          "address": "127.0.22.1",
+          "port": 9042,
+          "header": "8400000006000002ed",
+          "body_sha256": "3259c94501b69054e0e9c389b0975c8625380bd9d698efd8ebaa6af054fb02e1"
+        },
+        {
+          "address": "127.0.22.2",
+          "port": 9042,
+          "header": "8400000006000002ed",
+          "body_sha256": "d573097481f3cfcc241730687379b9c5b465e1d98b9dc1b76890b18463af0dad"
+        },
+        {
+          "address": "127.0.22.3",
+          "port": 9042,
+          "header": "8400000006000002ed",
+          "body_sha256": "b7f28cee81cce02b93d4310d4d51499562f0740dd850887f33b086eff0c69869"
+        }
+      ],
+      "node_restart_stopped": true,
+      "node_restart_health": {
+        "address": "127.0.22.3",
+        "port": 9042,
+        "header": "8400000006000002ed",
+        "body_sha256": "b7f28cee81cce02b93d4310d4d51499562f0740dd850887f33b086eff0c69869"
+      },
+      "node_control": [
+        {
+          "started": 1793330566.883004,
+          "command": [
+            "node1",
+            "stop"
+          ],
+          "node_path": "/extra/scylladb/gocql-api-test-cluster/step08/g614cd617061648e7/development22/node1",
+          "address": "127.0.22.1",
+          "pid_before": 3477858,
+          "joined": true,
+          "pid_after": null,
+          "finished": 1793330569.884146
+        },
+        {
+          "started": 1793330569.8845367,
+          "command": [
+            "node1",
+            "start",
+            "--wait-for-binary-proto"
+          ],
+          "node_path": "/extra/scylladb/gocql-api-test-cluster/step08/g614cd617061648e7/development22/node1",
+          "address": "127.0.22.1",
+          "pid_before": null,
+          "health": {
+            "address": "127.0.22.1",
+            "port": 9042,
+            "header": "8400000006000002ed",
+            "body_sha256": "3259c94501b69054e0e9c389b0975c8625380bd9d698efd8ebaa6af054fb02e1"
+          },
+          "pid_after": 3481012,
+          "finished": 1793330571.0710824
+        },
+        {
+          "started": 1793330584.0292833,
+          "command": [
+            "node1",
+            "stop"
+          ],
+          "node_path": "/extra/scylladb/gocql-api-test-cluster/step08/g614cd617061648e7/development22/node1",
+          "address": "127.0.22.1",
+          "pid_before": 3481012,
+          "joined": true,
+          "pid_after": null,
+          "finished": 1793330587.030577
+        },
+        {
+          "started": 1793330587.031033,
+          "command": [
+            "node1",
+            "start",
+            "--wait-for-binary-proto"
+          ],
+          "node_path": "/extra/scylladb/gocql-api-test-cluster/step08/g614cd617061648e7/development22/node1",
+          "address": "127.0.22.1",
+          "pid_before": null,
+          "health": {
+            "address": "127.0.22.1",
+            "port": 9042,
+            "header": "8400000006000002ed",
+            "body_sha256": "3259c94501b69054e0e9c389b0975c8625380bd9d698efd8ebaa6af054fb02e1"
+          },
+          "pid_after": 3482351,
+          "finished": 1793330588.1020646
+        }
+      ],
+      "status": "passed",
+      "joined": {
+        "node1": true,
+        "node2": true,
+        "node3": true
+      },
+      "endpoints_refused": true
+    }
+  ],
+  "source_snapshot": "/extra/scylladb/gocql-api-test-cluster/step08/g614cd617061648e7/source.json",
+  "source_sha256": "b085831b327cf11d42dd8725dd438fe9ff67a8e3f4782bd5f722d3d2a87ce065",
+  "config_sha256": "26c692ed5861f1e5b468501f931369dde47e283ac574826bef9c79cd3d4156c4",
+  "ccm": {
+    "version": "2.0.5",
+    "source_sha256": {
+      "test_common.py": "765c1d358924f746a05730cd739a36b761b04f828dcf0eb3fd5f664e75ac55d8",
+      "repository.py": "0433c5c75f7c1773f6d5d7cb442c881152de5f7fda052410d7634a7457599dff",
+      "common.py": "c8e87d09e41f94a672e227dbaea61ebf57da0d56438b0020c9b4844359a22c57",
+      "__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scylla_repository.py": "0c8cccbcbff6c3afa95208cc5996b89ce858165825cd2db7ef0090fd21fb6d1e",
+      "cluster_factory.py": "453675122fe9ca605daa35558f31a66a5758632c6536dc05d57819ed7c202d5f",
+      "node.py": "cb73e63c4608aeb34d031d049a97458d5068b04a6c7d1bcfe8e4a0ae138a709d",
+      "cli_session.py": "8bae3b889ee7fbe4fe26bfd02b2ac1fe30853f917f4c5a7f398c252ecf6591f2",
+      "dse_node.py": "f4b7919096d2e903187cc42d6650151be4dbc9e46ae8cad4166124fa65fb4025",
+      "scylla_node.py": "16b0a9221ad8e09851cef9fbf50827c7d22eb2931dfe5abb839bd52c750a8603",
+      "cluster.py": "dac9ef7be02ad11eb6b7301e8a779527b6f48867c7c73bd21db0565a009fc0af",
+      "scylla_docker_cluster.py": "110a82d2381c24e7d376a9f2573daf5b52c7b3828585592c84a1da4aed45887c",
+      "dse_cluster.py": "759608706b59365bc7d21857b45029c09ea43c1d16e3343aab7bce875523984d",
+      "scylla_cluster.py": "5f0f4b5a7b5f8b472fa1c8ff97f4cde706a7e452dcd47a0671da2f44228e5df4",
+      "cmds/command.py": "ed47f429a075e6adba904182a6e4d8dc6f61e5508640506f92beea75b58604d2",
+      "cmds/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "cmds/cluster_cmds.py": "e3c5067c1c91c9cc21178b4e018ff60258c8f2eea67320a7a26e9e7df6bc4fcb",
+      "cmds/node_cmds.py": "1c170267801a223012cf138591b457a6290998563aaafb7be708fad3d4c13cd7",
+      "bin/__init__.py": "fd5031dfbe4b6fd205b2d68a8232df38e538406e13bcde8e95119481104ee0b3",
+      "utils/version.py": "f22a80e077982ef8cb040793029a9cf927a37b24f07ff3b61d84584a25e40b00",
+      "utils/download.py": "4ca5226f0959e52f06707b24492e9a19a98017951b3e1a7f173805c91a82e16d",
+      "utils/__init__.py": "ef9165c23fbca4dfc3381430290a142fe49551d9a1e29a4d189d173e0d9a5102",
+      "utils/inotify.py": "a4e840d69380d8d08ea270322732e3bb236d8da2dbfa8a22a58ca5ca6d0a6962",
+      "utils/debug.py": "59baedcbf9fadc26939bdbd237e4693fdea59efacb4d8866ed15913c5f805511",
+      "utils/ssl_utils.py": "209fd543491759c6cd8b0ccda6e3b9c78cfb1d76e6573d7d27464d49f4f5e217"
+    },
+    "distribution": "{\"archive_info\": {\"hash\": \"sha256=991348ec07346cd8c8f89e1714e18a010355e085e8dff669e792de02ae0d8f96\", \"hashes\": {\"sha256\": \"991348ec07346cd8c8f89e1714e18a010355e085e8dff669e792de02ae0d8f96\"}}, \"url\": \"https://github.com/scylladb/scylla-ccm/archive/master.zip\"}"
+  },
+  "commands": [
+    {
+      "name": "development22-server-version",
+      "command": [
+        "/extra/scylladb/gocql-api-test-cluster/step08/g614cd617061648e7/development22-install/bin/scylla",
+        "--version"
+      ],
+      "exit_code": 0,
+      "seconds": 0.011,
+      "log": "/extra/scylladb/gocql-api-test-cluster/step09/development-attempt2-development22-server-version.log",
+      "sha256": "f046fea96c9f39da69a811765ec90a344468f7d955d838cd000bd1ae7135c786",
+      "pid": 3477854,
+      "cancelled": false
+    },
+    {
+      "name": "development22-focused-v4",
+      "command": [
+        "go",
+        "test",
+        "-json",
+        "-race",
+        "-tags",
+        "integration gocql_debug",
+        "-count=1",
+        "-timeout=8m",
+        "-parallel=1",
+        "-run",
+        "^(TestStep07RunStreamLive|TestStep08FixtureIdentity|TestRecreateSchema)$",
+        ".",
+        "-args",
+        "-gocql.timeout=60s",
+        "-rf=3",
+        "-clusterSize=3",
+        "-autowait=2s",
+        "-cluster=127.0.22.1,127.0.22.2,127.0.22.3",
+        "-distribution=scylla",
+        "-gocql.cversion=2027.1.0",
+        "-runauth",
+        "-cluster-socket=/extra/scylladb/gocql-api-test-cluster/step08/g614cd617061648e7/development22/node1/cql.m",
+        "-proto=4"
+      ],
+      "exit_code": 0,
+      "seconds": 33.579,
+      "log": "/extra/scylladb/gocql-api-test-cluster/step09/development-attempt2-development22-focused-v4.log",
+      "sha256": "934fdecc838c01aad5a6431420bf432e2627ec0e3950a47f713046f1d6fb4b9e",
+      "pid": 3479065,
+      "cancelled": false
+    },
+    {
+      "name": "development22-focused-v4-cleanup",
+      "command": [
+        "go",
+        "test",
+        "-json",
+        "-race",
+        "-tags",
+        "integration gocql_debug",
+        "-count=1",
+        "-timeout=8m",
+        "-parallel=1",
+        "-run",
+        "^TestStep08Cleanup$",
+        ".",
+        "-args",
+        "-gocql.timeout=60s",
+        "-rf=3",
+        "-clusterSize=3",
+        "-autowait=2s",
+        "-cluster=127.0.22.1,127.0.22.2,127.0.22.3",
+        "-distribution=scylla",
+        "-gocql.cversion=2027.1.0",
+        "-runauth",
+        "-cluster-socket=/extra/scylladb/gocql-api-test-cluster/step08/g614cd617061648e7/development22/node1/cql.m",
+        "-proto=4"
+      ],
+      "exit_code": 0,
+      "seconds": 1.649,
+      "log": "/extra/scylladb/gocql-api-test-cluster/step09/development-attempt2-development22-focused-v4-cleanup.log",
+      "sha256": "e12c0b54fce9b4c222c6694a532675d9f9170ea11068f66356859cfd154b2a08",
+      "pid": 3481731,
+      "cancelled": false
+    },
+    {
+      "name": "development22-v4-development",
+      "command": [
+        "go",
+        "test",
+        "-json",
+        "-race",
+        "-tags",
+        "integration gocql_debug",
+        "-count=1",
+        "-timeout=8m",
+        "-parallel=1",
+        "-run",
+        "^(TestBatch_Errors|TestBatch_WithTimestamp|TestBatch_WithNowInSeconds|TestBatch_SetKeyspace|TestProto1BatchInsert|TestShouldPrepareFunction|TestEmptyHosts|TestInvalidPeerEntry|TestUseStatementError|TestInvalidKeyspace|TestTracing|TestObserve|TestObserve_Pagination|TestPaging|TestPagingWithAllowFiltering|TestPagingWithBind|TestCAS|TestConsistencySerial|TestDurationType|TestMapScanCAS|TestBatch|TestUnpreparedBatch|TestBatchLimit|TestWhereIn|TestTooManyQueryArgs|TestNotEnoughQueryArgs|TestCreateSessionTimeout|TestReconnection|TestMapScanWithRefMap|TestMapScan|TestSliceMap|Test_RetryPolicyIdempotence|TestSmallInt|TestScanWithNilArguments|TestScanCASWithNilArguments|TestRebindQueryInfo|TestStaticQueryInfo|TestBoundQueryInfo|TestBatchQueryInfo|TestPrepare_MissingSchemaPrepare|TestPrepare_ReprepareStatement|TestPrepare_ReprepareBatch|TestQueryInfo|TestPrepare_PreparedCacheEviction|TestPrepare_PreparedCacheKey|TestMarshalFloat64Ptr|TestMarshalInet|TestVarint|TestQueryStats|TestIterHost|TestBatchStats|TestBatchObserve|TestNilInQuery|TestEmptyTimestamp|TestGetKeyspaceMetadata|TestSessionMetadataAPIs|TestGetKeyspaceMetadataFails|TestRoutingKey|TestTokenAwareConnPool|TestNegativeStream|TestManualQueryPaging|TestSessionBindRoutingKey|TestJSONSupport|TestUnmarshallNestedTypes|TestSchemaReset|TestCreateSession_DontSwallowError|TestControl_DiscoverProtocol|TestUnsetCol|TestUnsetColBatch|TestQuery_NamedValues|TestQuery_SetHostID|TestQuery_WithNowInSeconds|TestQuery_SetKeyspace|TestLargeSizeQuery|TestCompressorNegotiated|TestQueryCompressionNotWorthIt|TestPrepareExecuteMetadataChangedFlag|TestStmtCacheUsesOverriddenKeyspace|TestRoutingKeyCacheUsesOverriddenKeyspace|TestPrepareExecuteScyllaEmptyMetadataID|TestGetHostPortMapping|TestCloudConnection|TestUnixSockets|TestDNS|TestErrorsParse|TestSingleHostQueryExecutor|TestRetryOnTopologyBusy|TestSerializationSimpleTypesCassandra|TestSliceMapMapScanTypes|TestSliceMapMapScanCounterTypes|TestSliceMapMapScanTupleTypes|TestSliceMapMapScanVectorTypes|TestSliceMapMapScanCollectionTypes|TestAuthentication|TestGetHostsFromSystem|TestRingDiscovery|TestHostFilterDiscovery|TestHostFilterInitial|TestApplicationInformation|TestDriverConfigReporting|TestWriteFailure|TestCustomPayloadMessages|TestCustomPayloadValues|TestSessionAwaitSchemaAgreement|TestSessionAwaitSchemaAgreementSessionClosed|TestSessionAwaitSchemaAgreementContextCanceled|TestNewConnectWithLowTimeout|TestKeyspaceTable|TestDCValidationTokenAware|TestDCValidationDCAware|TestDCValidationRackAware|TestTokenAwareHostPolicy|TestNoHangAllHostsDown|TestRecreateSchema|TestSchemaQueries|TestShardAwarePortIntegrationNoReconnections|TestShardAwarePortIntegrationMaliciousNAT|TestShardAwarePortIntegrationUnreachable|TestShardAwarePortIntegrationUnusedIfNotEnabled|TestSelectWithoutFromLiteral|TestSelectWithoutFromFilteredOut|TestSelectWithoutFromNow|TestSelectWithoutFromFunctionCast|TestSelectWithoutFromMultipleSelectors|TestSelectWithoutFromAlias|TestSelectWithoutFromExecutionModes|TestSelectWithoutFromBindMarker|TestSelectWithoutFromRoutingKey|TestSelectWithoutFromTokenAware|TestSelectWithoutFromMapScan|TestSelectWithoutFromAggregate|TestSelectWithoutFromJSON|TestSelectWithoutFromWithKeyspace|TestSelectWithoutFromUnqualifiedUDF|TestSelectWithoutFromRejected|TestSessionEventBusReceivesSchemaChangeEvent|TestSessionEventBusReceivesControlReconnectEvent|TestSessionAPI|TestQueryBasicAPI|TestQueryShouldPrepare|TestBatchBasicAPI|TestConsistencyNames|TestIsUseStatement|TestRetryType_IgnoreRethrow|TestTLSTicketResumption|TestTablets|TestTracingNewAPI|TestTupleSimple|TestTuple_NullTuple|TestTuple_TupleNotSet|TestTupleMapScan|TestTupleMapScanNil|TestTupleMapScanNotSet|TestTupleLastFieldEmpty|TestTuple_NestedCollection|TestTuple_NullableNestedCollection|TestUDT_Marshaler|TestUDT_Reflect|TestUDT_NullObject|TestMapScanUDT|TestUDT_MissingField|TestUDT_EmptyCollections|TestUDT_UpdateField|TestUDT_ScanNullUDT|TestVector_Marshaler|TestVector_Types|TestVector_MarshalerUDT|TestVector_Empty|TestVector_MissingDimension|TestVector_SubTypeParsing|TestWikiCreateSchema|TestWikiCreatePages|TestWikiTypicalCRUD|TestStep07RunStreamLive|TestStep08FixtureIdentity)$",
+        ".",
+        "-args",
+        "-gocql.timeout=60s",
+        "-rf=3",
+        "-clusterSize=3",
+        "-autowait=2s",
+        "-cluster=127.0.22.1,127.0.22.2,127.0.22.3",
+        "-distribution=scylla",
+        "-gocql.cversion=2027.1.0",
+        "-runauth",
+        "-cluster-socket=/extra/scylladb/gocql-api-test-cluster/step08/g614cd617061648e7/development22/node1/cql.m",
+        "-proto=4"
+      ],
+      "exit_code": 0,
+      "seconds": 49.624,
+      "log": "/extra/scylladb/gocql-api-test-cluster/step09/development-attempt2-development22-v4-development.log",
+      "sha256": "7e8a15488814d0c2eafdea74cee3a3aa274d640051bea3bdba38ac8ce8687dbe",
+      "pid": 3481944,
+      "cancelled": false
+    },
+    {
+      "name": "development22-v4-development-cleanup",
+      "command": [
+        "go",
+        "test",
+        "-json",
+        "-race",
+        "-tags",
+        "integration gocql_debug",
+        "-count=1",
+        "-timeout=8m",
+        "-parallel=1",
+        "-run",
+        "^TestStep08Cleanup$",
+        ".",
+        "-args",
+        "-gocql.timeout=60s",
+        "-rf=3",
+        "-clusterSize=3",
+        "-autowait=2s",
+        "-cluster=127.0.22.1,127.0.22.2,127.0.22.3",
+        "-distribution=scylla",
+        "-gocql.cversion=2027.1.0",
+        "-runauth",
+        "-cluster-socket=/extra/scylladb/gocql-api-test-cluster/step08/g614cd617061648e7/development22/node1/cql.m",
+        "-proto=4"
+      ],
+      "exit_code": 0,
+      "seconds": 2.141,
+      "log": "/extra/scylladb/gocql-api-test-cluster/step09/development-attempt2-development22-v4-development-cleanup.log",
+      "sha256": "f14ad007e916779d6965bdcc2fd6e42ef63b7f30d5171964eb4134fe04fae3b8",
+      "pid": 3488547,
+      "cancelled": false
+    }
+  ],
+  "status": "passed"
+}

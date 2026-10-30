@@ -19,9 +19,9 @@ func TestSchemaQueries(t *testing.T) {
 	session := createV2SessionFromConfig(cluster, t, false)
 	defer session.Close()
 
-	keyspaceMetadata, ok := session.Metadata().Keyspace("gocql_test")
+	keyspaceMetadata, ok := session.Metadata().Keyspace(fixtureKeyspace(""))
 	if !ok {
 		t.Fatal("keyspace missing from typed metadata snapshot")
 	}
-	tests.AssertTrue(t, "keyspace present in metadata snapshot", keyspaceMetadata.Name == "gocql_test")
+	tests.AssertTrue(t, "keyspace present in metadata snapshot", keyspaceMetadata.Name == fixtureKeyspace(""))
 }

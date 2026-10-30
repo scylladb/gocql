@@ -11,7 +11,7 @@ import (
 
 func v2SchemaRoutingName(t testing.TB) string {
 	t.Helper()
-	return testTableName(t, strings.ReplaceAll(MustRandomUUID().String(), "-", ""))
+	return testKeyspaceName(t, strings.ReplaceAll(MustRandomUUID().String(), "-", ""))
 }
 
 func v2ConfigureRouting(t testing.TB, config *Config, options RoutingOptions) RoutingPolicy {
@@ -32,6 +32,13 @@ func v2CreateRoutingKeyspace(t testing.TB, session *Session, keyspace string, re
 	t.Helper()
 	ctx := context.Background()
 	cql := fmt.Sprintf("CREATE KEYSPACE %s WITH replication = {'class': 'NetworkTopologyStrategy', 'replication_factor': '%d'}", keyspace, replicas)
+	supported, err := v2TabletsSupported(ctx, session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if supported {
+		cql += " AND tablets = {'enabled': false}"
+	}
 	if err := v2CreateTable(ctx, session, cql); err != nil {
 		t.Fatal(err)
 	}

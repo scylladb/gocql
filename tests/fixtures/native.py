@@ -25,6 +25,8 @@ import time
 import types
 import uuid
 
+from control import node_control
+
 
 def sha(path):
     with open(path, "rb") as source:
@@ -72,7 +74,7 @@ class Runner:
         self.fixture.mkdir(parents=True)
         self.child = None
         self.receipt = {"run_id": self.run_id, "pid": os.getpid(), "fixture_root": str(self.fixture),
-                        "runner_sha256": sha(Path(__file__)), "configuration": config, "lanes": []}
+                        "runner_sha256": sha(Path(__file__)), "python_executable": sys.executable, "configuration": config, "lanes": []}
         # Record exact source inputs before any provisioning or command starts.
         paths = subprocess.check_output(["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"], cwd=Path(__file__).resolve().parents[2]).decode().split("\0")
         source = {}
@@ -214,7 +216,7 @@ class Runner:
                         "auth_superuser_name": "cassandra",
                         "auth_superuser_salted_password": "$6$gocqlv2$IhWMM2QWL7/C5OMPO7nPWx2ySV64yv7Rc.TA.Eb9vMLbqSHqlWy96JB93Asx8Mau0FRUjZ9BE7.70nmMJxzex0",
                         "enable_user_defined_functions": True, "experimental_features": ["udf"],
-                        "native_transport_port_ssl": 9142,
+                        "native_transport_port_ssl": 9142, "native_shard_aware_transport_port_ssl": 19142,
                         "client_encryption_options": {"enabled": True, "certificate": str(pki / "cassandra.crt"),
                             "keyfile": str(pki / "cassandra.key"), "truststore": str(pki / "ca.crt"), "require_client_auth": True}})
                 else:
@@ -231,7 +233,7 @@ class Runner:
                 cluster.populate(len(addresses), ipprefix=addresses[0].rsplit(".", 1)[0] + ".")
                 for node in cluster.nodelist():
                     if lane["kind"] == "scylla":
-                        node.set_smp(1)
+                        node.set_smp(lane.get("smp", 1))
                         node.set_configuration_options({"maintenance_socket": str(Path(node.get_path()) / "cql.m")})
                     else:
                         def node_env(node):
@@ -264,20 +266,35 @@ class Runner:
                     flags += ["-runauth", "-cluster-socket=" + str(Path(cluster.nodelist()[0].get_path()) / "cql.m")]
                 else:
                     flags += ["-runcassandrafixtures"]
-                for mode in lane["modes"]:
-                    extra = mode["args"]
-                    env = os.environ.copy()
-                    env["GOCQL_TEST_RUN"] = self.run_id
-                    env.update(mode.get("environment", {}))
-                    command = base + ["-run", mode["tests"], ".", "-args"] + flags + extra
-                    try:
-                        status = self.command(name + "-" + mode["name"], command, env, check=False)
-                        record["tests"].append({"mode": mode["name"], "exit_code": status})
-                    finally:
-                        # Cleanup after success, test failure, SIGINT or SIGTERM.
-                        cleanup = base + ["-run", "^TestStep08Cleanup$", ".", "-args"] + flags + extra
-                        self.command(name + "-" + mode["name"] + "-cleanup", cleanup, env)
-                    if status: raise RuntimeError("test lane failed: " + name + "/" + mode["name"])
+                with node_control(cluster, record, health) as control_path:
+                    for mode in lane["modes"]:
+                        extra = mode["args"]
+                        env = os.environ.copy()
+                        env["GOCQL_TEST_RUN"] = self.run_id
+                        env["GOCQL_FIXTURE_CONTROL"] = control_path
+                        env["GOCQL_FIXTURE_NODE"] = addresses[0]
+                        env.update(mode.get("environment", {}))
+                        command = base + ["-run", mode["tests"], ".", "-args"] + flags + extra
+                        try:
+                            status = self.command(name + "-" + mode["name"], command, env, check=False)
+                            record["tests"].append({"mode": mode["name"], "exit_code": status})
+                        finally:
+                            # Cleanup after success, test failure, SIGINT or SIGTERM.
+                            cleanup = base + ["-run", "^TestStep08Cleanup$", ".", "-args"] + flags + extra
+                            self.command(name + "-" + mode["name"] + "-cleanup", cleanup, env)
+                        if status: raise RuntimeError("test lane failed: " + name + "/" + mode["name"])
+                    if lane.get("ccm", False):
+                        cli = self.fixture / "ccm-bin"
+                        cli.mkdir(exist_ok=True)
+                        wrapper = cli / "ccm"
+                        wrapper.write_text("#!" + sys.executable + "\n" +
+                            "import json,os,socket,sys\ns=socket.socket(socket.AF_UNIX)\ns.connect(os.environ['GOCQL_FIXTURE_CONTROL'])\n" +
+                            "s.sendall((json.dumps({'command':sys.argv[1:]})+'\\n').encode())\nr=json.loads(s.makefile().readline())\n" +
+                            "sys.stdout.write(r.get('output',''))\nsys.stderr.write(r.get('error',''))\nsys.exit(1 if 'error' in r else 0)\n")
+                        wrapper.chmod(0o700)
+                        env = os.environ.copy()
+                        env.update(GOCQL_FIXTURE_CONTROL=control_path, PATH=str(cli) + os.pathsep + env["PATH"])
+                        self.command(name + "-ccm", ["go", "test", "-json", "-race", "-tags", "ccm", "-count=1", "-timeout=5m", "./internal/ccm"], env)
                 record["status"] = "passed"
             finally:
                 if cluster is not None:

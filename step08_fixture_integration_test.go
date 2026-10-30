@@ -17,7 +17,14 @@ func TestStep08Cleanup(t *testing.T) {
 	if prefix == "" {
 		t.Skip("requires an owned fixture run")
 	}
-	s, err := Connect(context.Background(), createV2Cluster())
+	config := createV2Cluster(func(c *Config) {
+		c.Metadata.SchemaEvents = false
+		c.Metadata.TopologyEvents = false
+		c.Metadata.StatusEvents = false
+		c.Metadata.AutomaticAgreement = false
+		c.Metadata.RefreshAfterAgreement = false
+	})
+	s, err := Connect(context.Background(), config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,6 +56,31 @@ func TestStep08Cleanup(t *testing.T) {
 		}
 		t.Log("DROPPED", name)
 	}
+	if err := s.AwaitSchemaAgreement(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	remaining, err := v2Query(context.Background(), s, "SELECT keyspace_name FROM system_schema.keyspaces")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer remaining.Close()
+	for remaining.Next() {
+		value, err := remaining.Row().At(0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		name, err := value.Text()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.HasPrefix(name.String(), prefix) {
+			t.Errorf("owned namespace survived cleanup: %s", name.String())
+		}
+	}
+	if err := remaining.Close(); err != nil {
+		t.Fatal(err)
+	}
+
 }
 
 func step08CheckAggregate(t *testing.T, s *Session, keyspace string) {

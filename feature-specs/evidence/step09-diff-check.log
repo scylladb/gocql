@@ -1,0 +1,4 @@
+common_test.go:465: space before tab in indent.
++    		    PRIMARY KEY (userid));`), table1)).Exec(); err != nil {
+common_test.go:472: space before tab in indent.
++    		    PRIMARY KEY (userid));`), table2)).Exec(); err != nil {

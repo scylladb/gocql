@@ -57,10 +57,25 @@ logs and data beneath the task root for diagnosis. SIGKILL/power loss cannot run
 cleanup; recover only the exact retained owned root and PIDs after inspecting the
 receipt. Other lanes and historical data must remain untouched.
 
-The common helper and the selected fixture tests are parameterized. Remaining
-hardcoded `gocql_test` callers belong to the explicit 174-test migration in step
-09; this runner's setup does not silently rewrite CQL at a driver boundary.
-Those callers must migrate before running the full final matrix with run prefixes.
+Integration CQL call sites and codec identities use the run namespace explicitly;
+there is no CQL rewrite at a driver boundary. The complete original identity and
+assertion mapping is retained in `feature-specs/evidence/step09-test-mapping.json`.
+Two-shard lanes set `smp: 2`; plaintext and TLS shard endpoints are explicitly
+19042 and 19142, respectively, alongside native 9042 and 9142.
+
+During tests the same live runner holds a mode-0600 Unix control socket inside a
+private temporary directory. `GOCQL_FIXTURE_CONTROL` and `GOCQL_FIXTURE_NODE`
+identify it and the first owned node. It accepts only status, stop/join and
+start/health for exact nodes from that locked cluster. Streaming stops the actual
+coordinator after its first delivered row, verifies terminal failure without
+replay, restarts it and probes pool recovery. A separate real client performs
+ALTER between pull-driven pages, because the stream owns its configured pool
+capacity across those pages. Setting `ccm: true` additionally runs the original
+TestCCM through a finite CLI facade targeting this socket, without CCM CURRENT.
+The control worker joins before final cluster stop; command/PID/address/path and
+health evidence are retained in the native receipt. Cleanup disables event
+subscriptions, drops only enumerated owned namespaces, waits for agreement and
+queries the schema again to prove none survived.
 
 The checked-in `testdata/pki` material is dedicated test PKI, with a trusted
 server URI identity and client certificates. Its exact hashes are included in

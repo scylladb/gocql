@@ -117,18 +117,26 @@ func Prepare[P, R any](ctx context.Context, s *Session, statement Statement[P, R
 	}
 	state.mu.RLock()
 	parameters, columns := state.parameters, state.columns
+	confirmedKind := state.info.Kind
 	state.mu.RUnlock()
 	plan, err := compileParamPlan(statement.Params, parameters)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := compileRowPlan(statement.Rows, columns)
-	if err != nil {
-		return nil, err
-	}
 	kind := statement.Kind
-	if state.info.Kind == ConditionalStatement || kind == UnknownStatement {
-		kind = state.info.Kind
+	if confirmedKind == ConditionalStatement || kind == UnknownStatement {
+		kind = confirmedKind
+	}
+	var rows RowPlan[R]
+	// Cassandra omits conditional result metadata from PREPARE. Unknown and
+	// conditional statements therefore defer absent result shapes until EXECUTE;
+	// actual metadata still selects and validates the plan before any row output.
+	// A confirmed ordinary statement keeps eager zero-column validation.
+	if columns.Len() != 0 || kind == OrdinaryStatement {
+		rows, err = compileRowPlan(statement.Rows, columns)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return &Prepared[P, R]{kind: kind, state: state, params: plan, rows: statement.Rows, plans: &resultPlanCache[R]{columns: columns, plan: rows}}, nil
 }

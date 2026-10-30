@@ -81,7 +81,7 @@ func TestUseStatementError(t *testing.T) {
 	t.Parallel()
 	session := createV2Session(t)
 	defer session.Close()
-	_, err := v2Exec(context.Background(), session, "USE gocql_test")
+	_, err := v2Exec(context.Background(), session, ("USE " + fixtureKeyspace("")))
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrUseStmt)
 }
@@ -149,7 +149,7 @@ func TestObserve(t *testing.T) {
 		require.Len(t, events, 1)
 		require.NotEmpty(t, attempts)
 		require.Equal(t, stmt, events[0].Statement)
-		require.Equal(t, "gocql_test", events[0].Routing.Keyspace)
+		require.Equal(t, fixtureKeyspace(""), events[0].Routing.Keyspace)
 		require.Equal(t, wantErr, events[0].Err != nil)
 	}
 	selectCQL := fmt.Sprintf("SELECT id FROM %s WHERE id = ?", table)
@@ -745,7 +745,7 @@ func Test_RetryPolicyIdempotence(t *testing.T) {
 	}{{"with retry", true, 6}, {"without retry", false, 1}} {
 		t.Run(tc.name, func(t *testing.T) {
 			observer := &cassandraObserver{}
-			bound := cassandraUnprepared(t, "INSERT INTO gocql_test.not_existing_table(event_id,time,args) VALUES(4,now(),'test')", NoRows)
+			bound := cassandraUnprepared(t, ("INSERT INTO " + fixtureKeyspace("") + ".not_existing_table(event_id,time,args) VALUES(4,now(),'test')"), NoRows)
 			_, err := Exec(context.Background(), session, bound, Options{Idempotent: tc.idempotent, Retry: cassandraRetry{}, Consistency: Option[Consistency]{Value: All, Set: true}, Observer: observer})
 			require.Error(t, err)
 			events, attempts := observer.snapshot()
@@ -1254,7 +1254,7 @@ func TestBatchObserve(t *testing.T) {
 	events, _ := observer.snapshot()
 	require.Len(t, events, 1)
 	require.NoError(t, events[0].Err)
-	require.Equal(t, "gocql_test", events[0].Routing.Keyspace)
+	require.Equal(t, fixtureKeyspace(""), events[0].Routing.Keyspace)
 	require.Equal(t, cqls, events[0].BatchStatements)
 	// Observations expose typed parameter descriptors, never retained input
 	// payloads. Verify each bound value by reading the resulting rows.
@@ -1300,14 +1300,14 @@ func TestGetKeyspaceMetadata(t *testing.T) {
 	session := createV2Session(t)
 	defer session.Close()
 
-	keyspaceMetadata, err := cassandraKeyspace(session, "gocql_test")
+	keyspaceMetadata, err := cassandraKeyspace(session, fixtureKeyspace(""))
 	if err != nil {
 		t.Fatalf("failed to query the keyspace metadata with err: %v", err)
 	}
 	if keyspaceMetadata == nil {
 		t.Fatal("failed to query the keyspace metadata, nil returned")
 	}
-	if keyspaceMetadata.Name != "gocql_test" {
+	if keyspaceMetadata.Name != fixtureKeyspace("") {
 		t.Errorf("Expected keyspace name to be 'gocql' but was '%s'", keyspaceMetadata.Name)
 	}
 	if keyspaceMetadata.StrategyClass != "org.apache.cassandra.locator.NetworkTopologyStrategy" {
@@ -1335,7 +1335,7 @@ func TestSessionMetadataAPIs(t *testing.T) {
 	session := createV2Session(t)
 	defer session.Close()
 
-	const ks = "gocql_test"
+	ks := fixtureKeyspace("")
 
 	if _, err := cassandraKeyspace(session, ks); err != nil {
 		t.Fatalf("failed to get initial keyspace metadata: %v", err)
@@ -1698,6 +1698,12 @@ func TestRoutingKey(t *testing.T) {
 		again := cassandraPrepared(t, session, statement, PrepareOptions{})
 		require.Same(t, prepared.state, again.state, "preparing again must hit typed cache")
 		bound := cassandraBound(t, prepared, []Value{IntValue(1), IntValue(2)})
+		key, present, err := newPartitionKey(bound.request.values.cells, prepared.Info().PartitionKeyIndexes)
+		require.NoError(t, err)
+		require.True(t, present)
+		var keyBytes []byte
+		require.NoError(t, key.ForEach(func(span Bytes) error { keyBytes = append(keyBytes, span.OwnedBytes()...); return nil }))
+		require.Equal(t, tc.key, keyBytes, "canonical single/composite partition-key bytes")
 		require.True(t, bound.Routing().Token.Set)
 		require.Equal(t, murmur.Murmur3H1(tc.key), bound.Routing().Token.Value)
 		runtime.mu.Lock()
@@ -1969,6 +1975,9 @@ func TestQuery_SetHostID(t *testing.T) {
 	_, err := ParseUUID("[invalid]")
 	require.Error(t, err, "invalid host IDs are rejected while constructing typed UUIDs")
 	_, err = Run(context.Background(), session, bound, Options{HostID: Option[UUID]{Value: UUID{}, Set: true}})
+	var invalidHost *ValidationError
+	require.ErrorAs(t, err, &invalidHost)
+	_, err = Run(context.Background(), session, bound, Options{HostID: Option[UUID]{Value: codecTestMust(RandomUUID()), Set: true}})
 	require.ErrorIs(t, err, ErrNoConnections)
 	host := hosts[0]
 	pool, ok := session.pool.getPoolByHostID(host.ID.String())
@@ -2174,7 +2183,7 @@ func TestPrepareExecuteMetadataChangedFlag(t *testing.T) {
 // node whose prepared-statement cache entry is being inspected.
 func runMetadataChangedFlow(t *testing.T, session *Session, conn *Conn, table string) {
 	t.Helper()
-	qualified := "gocql_test." + table
+	qualified := (fixtureKeyspace("") + ".") + table
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	host := Option[UUID]{Value: conn.host.hostUUID(), Set: true}
@@ -2270,16 +2279,16 @@ func TestStmtCacheUsesOverriddenKeyspace(t *testing.T) {
 	table := testTableName(t)
 	cassandraDDL(t, session, fmt.Sprintf("CREATE KEYSPACE %s WITH replication={'class':'SimpleStrategy','replication_factor':1}", ks))
 	defer cassandraDDL(t, session, "DROP KEYSPACE "+ks)
-	for _, keyspace := range []string{"gocql_test", ks} {
+	for _, keyspace := range []string{fixtureKeyspace(""), ks} {
 		cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s.%s(id int PRIMARY KEY)", keyspace, table))
 	}
-	defer cassandraDDL(t, session, "DROP TABLE gocql_test."+table)
+	defer cassandraDDL(t, session, ("DROP TABLE "+fixtureKeyspace("")+".")+table)
 	insert := "INSERT INTO " + table + "(id) VALUES(?)"
-	for i, keyspace := range []string{"gocql_test", ks} {
+	for i, keyspace := range []string{fixtureKeyspace(""), ks} {
 		bound := cassandraWriteBound(t, session, insert, []Value{IntValue(int32(i + 1))}, PrepareOptions{Keyspace: keyspace})
 		cassandraBatch(t, session, LoggedBatch, []BatchItem{cassandraItem(t, bound)}, Options{Keyspace: keyspace})
 	}
-	for i, keyspace := range []string{"gocql_test", ks} {
+	for i, keyspace := range []string{fixtureKeyspace(""), ks} {
 		prepared := cassandraPrepared(t, session, Statement[Unit, int32]{CQL: "SELECT * FROM " + table, Params: NoParams, Rows: OneColumn(Int32)}, PrepareOptions{Keyspace: keyspace})
 		require.Equal(t, keyspace, prepared.Info().Keyspace)
 		require.Equal(t, int32(i+1), cassandraReadBound(t, session, cassandraBound(t, prepared, Unit{}), Options{Keyspace: keyspace}))
@@ -2296,13 +2305,13 @@ func TestRoutingKeyCacheUsesOverriddenKeyspace(t *testing.T) {
 	table := testTableName(t)
 	cassandraDDL(t, session, fmt.Sprintf("CREATE KEYSPACE %s WITH replication={'class':'SimpleStrategy','replication_factor':1}", ks))
 	defer cassandraDDL(t, session, "DROP KEYSPACE "+ks)
-	for _, keyspace := range []string{"gocql_test", ks} {
+	for _, keyspace := range []string{fixtureKeyspace(""), ks} {
 		cassandraDDL(t, session, fmt.Sprintf("CREATE TABLE %s.%s(id int PRIMARY KEY)", keyspace, table))
 	}
-	defer cassandraDDL(t, session, "DROP TABLE gocql_test."+table)
+	defer cassandraDDL(t, session, ("DROP TABLE "+fixtureKeyspace("")+".")+table)
 	insert := "INSERT INTO " + table + "(id) VALUES(?)"
 	selectCQL := "SELECT * FROM " + table + " WHERE id=?"
-	for i, keyspace := range []string{"gocql_test", ks} {
+	for i, keyspace := range []string{fixtureKeyspace(""), ks} {
 		write := cassandraWriteBound(t, session, insert, []Value{IntValue(int32(i + 1))}, PrepareOptions{Keyspace: keyspace})
 		require.Equal(t, keyspace, write.Routing().Keyspace)
 		require.True(t, write.Routing().Token.Set)

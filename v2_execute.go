@@ -302,7 +302,7 @@ func (s *Session) prepareHost(ctx context.Context, conn *Conn, state *preparedSt
 	if err != nil {
 		return nil, err
 	}
-	if !slices.Equal(info.PartitionKeyIndexes, state.info.PartitionKeyIndexes) || info.Keyspace != state.info.Keyspace || info.Table != state.info.Table || info.Kind != state.info.Kind || info.Conditional != state.info.Conditional || s.preparedPartitionerName(info.Keyspace, info.Table) != state.partitioner {
+	if !slices.Equal(info.PartitionKeyIndexes, state.info.PartitionKeyIndexes) || info.Keyspace != state.info.Keyspace || info.Table != state.info.Table || info.Kind != state.info.Kind || info.Conditional != state.info.Conditional || len(state.info.PartitionKeyIndexes) > 0 && s.preparedPartitionerName(info.Keyspace, info.Table) != state.partitioner {
 		return nil, &SchemaChangedError{Statement: state.statement, Previous: state.parameters, Current: page.bindColumns}
 	}
 	revision := uint64(1)
