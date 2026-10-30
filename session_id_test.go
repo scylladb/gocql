@@ -103,7 +103,7 @@ func TestSessionIDReportingStartupFrame(t *testing.T) {
 			for i := 0; i < tt.sessionCount; i++ {
 				cluster := testCluster(defaultProto, srv.Address)
 				cluster.NumConns = connsPerSession
-				session, err := cluster.CreateSession()
+				session, err := cluster.open()
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -111,7 +111,7 @@ func TestSessionIDReportingStartupFrame(t *testing.T) {
 				sessions = append(sessions, session)
 			}
 
-			// CreateSession only guarantees one connection per host: the rest of
+			// open only guarantees one connection per host: the rest of
 			// the pool is filled asynchronously when NumConns > 1, so without
 			// this wait the snapshot below would capture an arbitrary prefix of
 			// the STARTUP frames. Waiting on the pool is what makes the counts

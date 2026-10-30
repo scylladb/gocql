@@ -615,8 +615,7 @@ func routingLatencySample(err error) bool {
 	}
 	var validation *ValidationError
 	var network net.Error
-	var marshal MarshalError
-	if errors.As(err, &validation) || errors.As(err, &network) || errors.As(err, &marshal) {
+	if errors.As(err, &validation) || errors.As(err, &network) {
 		return false
 	}
 	return true

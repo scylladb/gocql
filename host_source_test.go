@@ -45,13 +45,15 @@ func (f *trackingMockFramer) Release() {
 }
 
 type systemSchemaTestControl struct {
-	iter *Iter
+	iter *nativeResultFixture
 }
 
-func (*systemSchemaTestControl) getConn() *connHost                        { return nil }
-func (*systemSchemaTestControl) awaitSchemaAgreement() error               { return nil }
-func (*systemSchemaTestControl) query(string, ...any) (iter *Iter)         { return nil }
-func (c *systemSchemaTestControl) querySystem(string, ...any) (iter *Iter) { return c.iter }
+func (*systemSchemaTestControl) getConn() *connHost                               { return nil }
+func (*systemSchemaTestControl) awaitSchemaAgreement() error                      { return nil }
+func (*systemSchemaTestControl) query(string, ...any) (iter *nativeResultFixture) { return nil }
+func (c *systemSchemaTestControl) querySystem(string, ...any) (iter *nativeResultFixture) {
+	return c.iter
+}
 func (*systemSchemaTestControl) discoverProtocol([]*HostInfo) (int, error) { return 0, nil }
 func (*systemSchemaTestControl) connect([]*HostInfo) error                 { return nil }
 func (*systemSchemaTestControl) close()                                    {}
@@ -76,7 +78,7 @@ func TestUnmarshalCassVersion(t *testing.T) {
 
 	for i, test := range tests {
 		v := &cassVersion{}
-		if err := v.UnmarshalCQL(nil, []byte(test.data)); err != nil {
+		if err := v.Set(test.data); err != nil {
 			t.Errorf("%d: %v", i, err)
 		} else if *v != test.version {
 			t.Errorf("%d: expected %#+v got %#+v", i, test.version, *v)
@@ -169,7 +171,7 @@ func TestCheckSystemSchemaClosesIter(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		framer := &trackingMockFramer{}
 		ok, err := checkSystemSchema(&systemSchemaTestControl{
-			iter: &Iter{framer: framer},
+			iter: &nativeResultFixture{framer: framer},
 		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -185,7 +187,7 @@ func TestCheckSystemSchemaClosesIter(t *testing.T) {
 	t.Run("SyntaxError", func(t *testing.T) {
 		framer := &trackingMockFramer{}
 		ok, err := checkSystemSchema(&systemSchemaTestControl{
-			iter: &Iter{
+			iter: &nativeResultFixture{
 				err:    &frm.ErrorFrame{Code: ErrCodeSyntax},
 				framer: framer,
 			},
@@ -224,7 +226,7 @@ func TestHostInfoFromIterClosesIter(t *testing.T) {
 		MockFramer: mock.MockFramer{Data: marshalMetadataMust(systemLocalResultMetadata, row)},
 	}
 
-	host, err := hostInfoFromIter(&Iter{
+	host, err := hostInfoFromFixture(&nativeResultFixture{
 		meta:    systemLocalResultMetadata,
 		framer:  framer,
 		numRows: 1,

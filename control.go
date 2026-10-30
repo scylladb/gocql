@@ -38,7 +38,7 @@ import (
 	"time"
 
 	"github.com/scylladb/gocql/v2/events"
-	"github.com/scylladb/gocql/v2/internal/debug"
+
 	frm "github.com/scylladb/gocql/v2/internal/frame"
 )
 
@@ -65,8 +65,6 @@ const (
 type controlConnection interface {
 	getConn() *connHost
 	awaitSchemaAgreement() error
-	query(statement string, values ...any) (iter *Iter)
-	querySystem(statement string, values ...any) (iter *Iter)
 	discoverProtocol(hosts []*HostInfo) (int, error)
 	connect(hosts []*HostInfo) error
 	close()
@@ -80,7 +78,6 @@ type controlConn struct {
 	connections  map[*Conn]struct{}
 	closeOnce    sync.Once
 	conn         atomic.Pointer[connHost]
-	retry        oldRetryPolicy
 	session      *Session
 	quit         chan struct{}
 	state        int32
@@ -96,7 +93,6 @@ func createControlConn(session *Session) *controlConn {
 	control := &controlConn{
 		session: session,
 		quit:    make(chan struct{}),
-		retry:   &SimpleRetryPolicy{NumRetries: 3},
 	}
 
 	return control
@@ -603,43 +599,6 @@ func (c *controlConn) writeFrame(w frameBuilder) (frame, error) {
 	defer framer.Release()
 
 	return framer.parseFrame()
-}
-
-// query will return nil if the connection is closed or nil
-func (c *controlConn) querySystem(statement string, values ...any) (iter *Iter) {
-	conn := c.getConn().conn.(*Conn)
-	stmt, timeout := conn.systemRequestStatement(statement)
-	return c.runQuery(c.session.Query(stmt, values...).
-		Consistency(One).
-		SetRequestTimeout(timeout).
-		RoutingKey([]byte{}).
-		Trace(nil))
-}
-
-// query will return nil if the connection is closed or nil
-func (c *controlConn) query(statement string, values ...any) (iter *Iter) {
-	return c.runQuery(c.session.Query(statement, values...).Consistency(One).RoutingKey([]byte{}).Trace(nil))
-}
-
-// query will return nil if the connection is closed or nil
-func (c *controlConn) runQuery(qry *Query) (iter *Iter) {
-	for {
-		ch := c.getConn()
-		qry.conn = ch.conn
-		iter = ch.conn.executeQuery(context.TODO(), qry)
-
-		if debug.Enabled && iter.err != nil {
-			c.session.logger.Printf("control: error executing %q: %v\n", qry.stmt, iter.err)
-		}
-
-		qry.AddAttempts(1, ch.host)
-		if iter.err == nil || !c.retry.Attempt(qry) {
-			break
-		}
-		iter.finalize(true)
-	}
-
-	return
 }
 
 func (c *controlConn) awaitSchemaAgreement() error {

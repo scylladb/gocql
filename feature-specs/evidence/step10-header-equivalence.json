@@ -1,0 +1,222 @@
+{
+  "all_token_streams_equal_ignoring_comments": true,
+  "changes": [
+    {
+      "after_sha256": "b4297b805c99f4ae50bd64bd9cacdac6218e02411bf2f50c4a0597ea5a105a1e",
+      "before_sha256": "0c5e857d07b4a7e1c385b3fa821fb18ed31af52b8d87d7e13de2a86a737e90b6",
+      "constraints_unchanged": true,
+      "diff": "--- example_test.go@native\n+++ example_test.go@commit\n@@ -1,3 +1,27 @@\n+/*\n+ * Licensed to the Apache Software Foundation (ASF) under one\n+ * or more contributor license agreements.  See the NOTICE file\n+ * distributed with this work for additional information\n+ * regarding copyright ownership.  The ASF licenses this file\n+ * to you under the Apache License, Version 2.0 (the\n+ * \"License\"); you may not use this file except in compliance\n+ * with the License.  You may obtain a copy of the License at\n+ *\n+ *     http://www.apache.org/licenses/LICENSE-2.0\n+ *\n+ * Unless required by applicable law or agreed to in writing, software\n+ * distributed under the License is distributed on an \"AS IS\" BASIS,\n+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n+ * See the License for the specific language governing permissions and\n+ * limitations under the License.\n+ */\n+/*\n+ * Content before git sha 34fdeebefcbf183ed7f916f931aa0586fdaa1b40\n+ * Copyright (c) 2016, The Gocql authors,\n+ * provided under the BSD-3-Clause License.\n+ * See the NOTICE file distributed with this work for additional information.\n+ */\n+\n package gocql_test\n \n import (\n",
+      "file": "example_test.go",
+      "final_tokens_sha256": "382f7178c0b725f58434f25026434bf0fdc59daafc842b24c7f4b40f35dd6df8",
+      "native_tokens_sha256": "382f7178c0b725f58434f25026434bf0fdc59daafc842b24c7f4b40f35dd6df8"
+    },
+    {
+      "after_sha256": "4c67e6a0f033a849344dee661a51999d6c18de6c3c351ace2ab4b496eaea7247",
+      "before_sha256": "fc97c34bed2a56098a8e41f3f3651fd7c6356d374184ceaee37aded099619aa5",
+      "constraints_unchanged": true,
+      "diff": "--- example_dynamic_columns_test.go@native\n+++ example_dynamic_columns_test.go@commit\n@@ -1,3 +1,27 @@\n+/*\n+ * Licensed to the Apache Software Foundation (ASF) under one\n+ * or more contributor license agreements.  See the NOTICE file\n+ * distributed with this work for additional information\n+ * regarding copyright ownership.  The ASF licenses this file\n+ * to you under the Apache License, Version 2.0 (the\n+ * \"License\"); you may not use this file except in compliance\n+ * with the License.  You may obtain a copy of the License at\n+ *\n+ *     http://www.apache.org/licenses/LICENSE-2.0\n+ *\n+ * Unless required by applicable law or agreed to in writing, software\n+ * distributed under the License is distributed on an \"AS IS\" BASIS,\n+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n+ * See the License for the specific language governing permissions and\n+ * limitations under the License.\n+ */\n+/*\n+ * Content before git sha 34fdeebefcbf183ed7f916f931aa0586fdaa1b40\n+ * Copyright (c) 2016, The Gocql authors,\n+ * provided under the BSD-3-Clause License.\n+ * See the NOTICE file distributed with this work for additional information.\n+ */\n+\n package gocql_test\n \n import (\n",
+      "file": "example_dynamic_columns_test.go",
+      "final_tokens_sha256": "ee9d49959a9e13d0d742d6125ac47edf2c9ec83cc73d84cdf7e62cd2135f37a2",
+      "native_tokens_sha256": "ee9d49959a9e13d0d742d6125ac47edf2c9ec83cc73d84cdf7e62cd2135f37a2"
+    },
+    {
+      "after_sha256": "5bcefb060b3cab8979061ce2b9e7218ac34c46da1c882d71e3ba687543566fe5",
+      "before_sha256": "87d807061055b414247a139b0afb300dd85d8fa0b7d5e2fdf705913c75cbb2b4",
+      "constraints_unchanged": true,
+      "diff": "--- example_marshaler_test.go@native\n+++ example_marshaler_test.go@commit\n@@ -1,3 +1,27 @@\n+/*\n+ * Licensed to the Apache Software Foundation (ASF) under one\n+ * or more contributor license agreements.  See the NOTICE file\n+ * distributed with this work for additional information\n+ * regarding copyright ownership.  The ASF licenses this file\n+ * to you under the Apache License, Version 2.0 (the\n+ * \"License\"); you may not use this file except in compliance\n+ * with the License.  You may obtain a copy of the License at\n+ *\n+ *     http://www.apache.org/licenses/LICENSE-2.0\n+ *\n+ * Unless required by applicable law or agreed to in writing, software\n+ * distributed under the License is distributed on an \"AS IS\" BASIS,\n+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n+ * See the License for the specific language governing permissions and\n+ * limitations under the License.\n+ */\n+/*\n+ * Content before git sha 34fdeebefcbf183ed7f916f931aa0586fdaa1b40\n+ * Copyright (c) 2016, The Gocql authors,\n+ * provided under the BSD-3-Clause License.\n+ * See the NOTICE file distributed with this work for additional information.\n+ */\n+\n package gocql_test\n \n import (\n",
+      "file": "example_marshaler_test.go",
+      "final_tokens_sha256": "e2a62f8753d0ba7a34dcfb48b6070ff5acf3d5d3da40b805756347071fa4bb7e",
+      "native_tokens_sha256": "e2a62f8753d0ba7a34dcfb48b6070ff5acf3d5d3da40b805756347071fa4bb7e"
+    },
+    {
+      "after_sha256": "e3e1b069cb27730796de543ca012cd0f0b589741a17ea11a9465419bd1c8fca2",
+      "before_sha256": "403ff3db0ae969baa4f3bee566683fedd778ee76b98a10522752d1d1f0ce5c83",
+      "constraints_unchanged": true,
+      "diff": "--- example_nulls_test.go@native\n+++ example_nulls_test.go@commit\n@@ -1,3 +1,27 @@\n+/*\n+ * Licensed to the Apache Software Foundation (ASF) under one\n+ * or more contributor license agreements.  See the NOTICE file\n+ * distributed with this work for additional information\n+ * regarding copyright ownership.  The ASF licenses this file\n+ * to you under the Apache License, Version 2.0 (the\n+ * \"License\"); you may not use this file except in compliance\n+ * with the License.  You may obtain a copy of the License at\n+ *\n+ *     http://www.apache.org/licenses/LICENSE-2.0\n+ *\n+ * Unless required by applicable law or agreed to in writing, software\n+ * distributed under the License is distributed on an \"AS IS\" BASIS,\n+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n+ * See the License for the specific language governing permissions and\n+ * limitations under the License.\n+ */\n+/*\n+ * Content before git sha 34fdeebefcbf183ed7f916f931aa0586fdaa1b40\n+ * Copyright (c) 2016, The Gocql authors,\n+ * provided under the BSD-3-Clause License.\n+ * See the NOTICE file distributed with this work for additional information.\n+ */\n+\n package gocql_test\n \n import (\n",
+      "file": "example_nulls_test.go",
+      "final_tokens_sha256": "d0e5f20230bfbf081c7521449560f7a61c484a6b7dfd27234395315f82fa2e4e",
+      "native_tokens_sha256": "d0e5f20230bfbf081c7521449560f7a61c484a6b7dfd27234395315f82fa2e4e"
+    },
+    {
+      "after_sha256": "1d28d0cdc00258fc5c2411c737882807d69c51c08ed8b06e1fb4160868570220",
+      "before_sha256": "4afae4ac6591a18d2a0fff42adba2b00ed834d4675a12b4ab26faa91f64a1f3d",
+      "constraints_unchanged": true,
+      "diff": "--- example_paging_test.go@native\n+++ example_paging_test.go@commit\n@@ -1,3 +1,27 @@\n+/*\n+ * Licensed to the Apache Software Foundation (ASF) under one\n+ * or more contributor license agreements.  See the NOTICE file\n+ * distributed with this work for additional information\n+ * regarding copyright ownership.  The ASF licenses this file\n+ * to you under the Apache License, Version 2.0 (the\n+ * \"License\"); you may not use this file except in compliance\n+ * with the License.  You may obtain a copy of the License at\n+ *\n+ *     http://www.apache.org/licenses/LICENSE-2.0\n+ *\n+ * Unless required by applicable law or agreed to in writing, software\n+ * distributed under the License is distributed on an \"AS IS\" BASIS,\n+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n+ * See the License for the specific language governing permissions and\n+ * limitations under the License.\n+ */\n+/*\n+ * Content before git sha 34fdeebefcbf183ed7f916f931aa0586fdaa1b40\n+ * Copyright (c) 2016, The Gocql authors,\n+ * provided under the BSD-3-Clause License.\n+ * See the NOTICE file distributed with this work for additional information.\n+ */\n+\n package gocql_test\n \n import (\n",
+      "file": "example_paging_test.go",
+      "final_tokens_sha256": "8fabeb428f616d4af1eb697882b3e51b3e6c252bad067f5b2dba41723312e3b2",
+      "native_tokens_sha256": "8fabeb428f616d4af1eb697882b3e51b3e6c252bad067f5b2dba41723312e3b2"
+    },
+    {
+      "after_sha256": "da0dbb60df59d77744cf922f4ca3d755a0fb13a6c9cb09cc83fc92e41060c15b",
+      "before_sha256": "1b41d2bb68ad274fb1a40737fbf34cc19d2e496b96d31488f776891c8aaa90e3",
+      "constraints_unchanged": true,
+      "diff": "--- example_set_test.go@native\n+++ example_set_test.go@commit\n@@ -1,3 +1,27 @@\n+/*\n+ * Licensed to the Apache Software Foundation (ASF) under one\n+ * or more contributor license agreements.  See the NOTICE file\n+ * distributed with this work for additional information\n+ * regarding copyright ownership.  The ASF licenses this file\n+ * to you under the Apache License, Version 2.0 (the\n+ * \"License\"); you may not use this file except in compliance\n+ * with the License.  You may obtain a copy of the License at\n+ *\n+ *     http://www.apache.org/licenses/LICENSE-2.0\n+ *\n+ * Unless required by applicable law or agreed to in writing, software\n+ * distributed under the License is distributed on an \"AS IS\" BASIS,\n+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n+ * See the License for the specific language governing permissions and\n+ * limitations under the License.\n+ */\n+/*\n+ * Content before git sha 34fdeebefcbf183ed7f916f931aa0586fdaa1b40\n+ * Copyright (c) 2016, The Gocql authors,\n+ * provided under the BSD-3-Clause License.\n+ * See the NOTICE file distributed with this work for additional information.\n+ */\n+\n package gocql_test\n \n import (\n",
+      "file": "example_set_test.go",
+      "final_tokens_sha256": "b8d4ee84facee7f8d86ed583d3df6e756d5b56017f7ce63fcd7375abbf0745f2",
+      "native_tokens_sha256": "b8d4ee84facee7f8d86ed583d3df6e756d5b56017f7ce63fcd7375abbf0745f2"
+    },
+    {
+      "after_sha256": "849bf11755f11ac1e9c046f8d04ed32044a3e030d02f7884bb290bde1a3b007b",
+      "before_sha256": "e7537259ba6be7da1db885575be35ecd3156c48c208d043233cb16886c7dd4b3",
+      "constraints_unchanged": true,
+      "diff": "--- example_udt_struct_test.go@native\n+++ example_udt_struct_test.go@commit\n@@ -1,3 +1,27 @@\n+/*\n+ * Licensed to the Apache Software Foundation (ASF) under one\n+ * or more contributor license agreements.  See the NOTICE file\n+ * distributed with this work for additional information\n+ * regarding copyright ownership.  The ASF licenses this file\n+ * to you under the Apache License, Version 2.0 (the\n+ * \"License\"); you may not use this file except in compliance\n+ * with the License.  You may obtain a copy of the License at\n+ *\n+ *     http://www.apache.org/licenses/LICENSE-2.0\n+ *\n+ * Unless required by applicable law or agreed to in writing, software\n+ * distributed under the License is distributed on an \"AS IS\" BASIS,\n+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n+ * See the License for the specific language governing permissions and\n+ * limitations under the License.\n+ */\n+/*\n+ * Content before git sha 34fdeebefcbf183ed7f916f931aa0586fdaa1b40\n+ * Copyright (c) 2016, The Gocql authors,\n+ * provided under the BSD-3-Clause License.\n+ * See the NOTICE file distributed with this work for additional information.\n+ */\n+\n package gocql_test\n \n import (\n",
+      "file": "example_udt_struct_test.go",
+      "final_tokens_sha256": "6424bbfbd165d0146b412b45936791d15d0e93348a43005b5d6ae3c882c6ef62",
+      "native_tokens_sha256": "6424bbfbd165d0146b412b45936791d15d0e93348a43005b5d6ae3c882c6ef62"
+    },
+    {
+      "after_sha256": "e5b44a956fb3719502e8a72600a96e2b8af38870b4324e96cdd56c51b7d00c9c",
+      "before_sha256": "6d0d24458e6c0b9abbeb127597b89757b9aff61f5a604fd5e767a60b6461f337",
+      "constraints_unchanged": true,
+      "diff": "--- prepared_cache.go@native\n+++ prepared_cache.go@commit\n@@ -1,3 +1,27 @@\n+/*\n+ * Licensed to the Apache Software Foundation (ASF) under one\n+ * or more contributor license agreements.  See the NOTICE file\n+ * distributed with this work for additional information\n+ * regarding copyright ownership.  The ASF licenses this file\n+ * to you under the Apache License, Version 2.0 (the\n+ * \"License\"); you may not use this file except in compliance\n+ * with the License.  You may obtain a copy of the License at\n+ *\n+ *     http://www.apache.org/licenses/LICENSE-2.0\n+ *\n+ * Unless required by applicable law or agreed to in writing, software\n+ * distributed under the License is distributed on an \"AS IS\" BASIS,\n+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n+ * See the License for the specific language governing permissions and\n+ * limitations under the License.\n+ */\n+/*\n+ * Content before git sha 34fdeebefcbf183ed7f916f931aa0586fdaa1b40\n+ * Copyright (c) 2016, The Gocql authors,\n+ * provided under the BSD-3-Clause License.\n+ * See the NOTICE file distributed with this work for additional information.\n+ */\n+\n package gocql\n \n const defaultMaxPreparedStmts = 1000\n",
+      "file": "prepared_cache.go",
+      "final_tokens_sha256": "ad8322bf52bc33b6c772b7bf5cb8b9cd21349a07c5509bfd3caf13798b43b224",
+      "native_tokens_sha256": "ad8322bf52bc33b6c772b7bf5cb8b9cd21349a07c5509bfd3caf13798b43b224"
+    },
+    {
+      "after_sha256": "86484238c92ce0050b24e474d4760822989964281663880c485e57d802fc857e",
+      "before_sha256": "c391e99237563c7367cd3aedeaac557048f1a08a6bf916ca107d3fa0113ace3f",
+      "constraints_unchanged": true,
+      "diff": "--- protocol_types.go@native\n+++ protocol_types.go@commit\n@@ -1,3 +1,27 @@\n+/*\n+ * Licensed to the Apache Software Foundation (ASF) under one\n+ * or more contributor license agreements.  See the NOTICE file\n+ * distributed with this work for additional information\n+ * regarding copyright ownership.  The ASF licenses this file\n+ * to you under the Apache License, Version 2.0 (the\n+ * \"License\"); you may not use this file except in compliance\n+ * with the License.  You may obtain a copy of the License at\n+ *\n+ *     http://www.apache.org/licenses/LICENSE-2.0\n+ *\n+ * Unless required by applicable law or agreed to in writing, software\n+ * distributed under the License is distributed on an \"AS IS\" BASIS,\n+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n+ * See the License for the specific language governing permissions and\n+ * limitations under the License.\n+ */\n+/*\n+ * Content before git sha 34fdeebefcbf183ed7f916f931aa0586fdaa1b40\n+ * Copyright (c) 2012, The Gocql authors,\n+ * provided under the BSD-3-Clause License.\n+ * See the NOTICE file distributed with this work for additional information.\n+ */\n+\n package gocql\n \n import (\n",
+      "file": "protocol_types.go",
+      "final_tokens_sha256": "9d07af6aa482b8277b08cba18f992ac34159ca513ecf583690b522268e12c9a1",
+      "native_tokens_sha256": "9d07af6aa482b8277b08cba18f992ac34159ca513ecf583690b522268e12c9a1"
+    },
+    {
+      "after_sha256": "0a92bf2f758eb57e315bb8e06402117a4bfb5956f968e5d3a7ffecc5381a4e11",
+      "before_sha256": "7bc92c58182423787b160bed442becedf70af0236210e1821e092c7b64b83b54",
+      "constraints_unchanged": true,
+      "diff": "--- doc.go@native\n+++ doc.go@commit\n@@ -1,3 +1,27 @@\n+/*\n+ * Licensed to the Apache Software Foundation (ASF) under one\n+ * or more contributor license agreements.  See the NOTICE file\n+ * distributed with this work for additional information\n+ * regarding copyright ownership.  The ASF licenses this file\n+ * to you under the Apache License, Version 2.0 (the\n+ * \"License\"); you may not use this file except in compliance\n+ * with the License.  You may obtain a copy of the License at\n+ *\n+ *     http://www.apache.org/licenses/LICENSE-2.0\n+ *\n+ * Unless required by applicable law or agreed to in writing, software\n+ * distributed under the License is distributed on an \"AS IS\" BASIS,\n+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n+ * See the License for the specific language governing permissions and\n+ * limitations under the License.\n+ */\n+/*\n+ * Content before git sha 34fdeebefcbf183ed7f916f931aa0586fdaa1b40\n+ * Copyright (c) 2016, The Gocql authors,\n+ * provided under the BSD-3-Clause License.\n+ * See the NOTICE file distributed with this work for additional information.\n+ */\n+\n // Package gocql implements the typed Cassandra and ScyllaDB native protocol API.\n // Connect opens a validated Config. Statements declare parameter encoders and row\n // decoders; Prepare and BindOwned or BindBorrowed produce reusable bindings.\n",
+      "file": "doc.go",
+      "final_tokens_sha256": "4e26638994552f852742645badf78d2b4e18a456fb37cbe5e81ee1d824cb385e",
+      "native_tokens_sha256": "4e26638994552f852742645badf78d2b4e18a456fb37cbe5e81ee1d824cb385e"
+    },
+    {
+      "after_sha256": "a79449314e6b3b594c7891286a52b182e39bd7e0a96ba9ee90bcd0ef74b0209e",
+      "before_sha256": "95b94aa85b90995b0ecb03761a50d947b7713c299a81e18cb4f3920aeabe4401",
+      "constraints_unchanged": true,
+      "diff": "--- native_fixture_unit_test.go@native\n+++ native_fixture_unit_test.go@commit\n@@ -1,4 +1,20 @@\n //go:build unit\n+\n+/*\n+ * Copyright (C) 2026 ScyllaDB\n+ *\n+ * Licensed under the Apache License, Version 2.0 (the \"License\");\n+ * you may not use this file except in compliance with the License.\n+ * You may obtain a copy of the License at\n+ *\n+ * http://www.apache.org/licenses/LICENSE-2.0\n+ *\n+ * Unless required by applicable law or agreed to in writing, software\n+ * distributed under the License is distributed on an \"AS IS\" BASIS,\n+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n+ * See the License for the specific language governing permissions and\n+ * limitations under the License.\n+ */\n \n package gocql\n \n",
+      "file": "native_fixture_unit_test.go",
+      "final_tokens_sha256": "652987153981f50064eca3a62d7321dfe833fb827f9908f3e0b721c711d4e9ae",
+      "native_tokens_sha256": "652987153981f50064eca3a62d7321dfe833fb827f9908f3e0b721c711d4e9ae"
+    },
+    {
+      "after_sha256": "8d02f59c8ef5c667afe28446aa71dd36e0600f0a03b02f2d9975d648d8915ec9",
+      "before_sha256": "26c423e4453f66140f4573808991fbb692d0493e3c55cd0eac09d20cf9236385",
+      "constraints_unchanged": true,
+      "diff": "--- protocol_request_fixture_test.go@native\n+++ protocol_request_fixture_test.go@commit\n@@ -1,3 +1,19 @@\n+/*\n+ * Copyright (C) 2026 ScyllaDB\n+ *\n+ * Licensed under the Apache License, Version 2.0 (the \"License\");\n+ * you may not use this file except in compliance with the License.\n+ * You may obtain a copy of the License at\n+ *\n+ * http://www.apache.org/licenses/LICENSE-2.0\n+ *\n+ * Unless required by applicable law or agreed to in writing, software\n+ * distributed under the License is distributed on an \"AS IS\" BASIS,\n+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n+ * See the License for the specific language governing permissions and\n+ * limitations under the License.\n+ */\n+\n package gocql\n \n import (\n",
+      "file": "protocol_request_fixture_test.go",
+      "final_tokens_sha256": "bb530229199a7c7285bb8c0b7415453a3fc8cb14c4e5b537c1e73aae8ade0f71",
+      "native_tokens_sha256": "bb530229199a7c7285bb8c0b7415453a3fc8cb14c4e5b537c1e73aae8ade0f71"
+    },
+    {
+      "after_sha256": "f4a41d099ff7620a0a0903c5de24176fc99aee8e9ef322a975c1e69d7ccffdf1",
+      "before_sha256": "a1124efa8340169eb60076edf8ce73425b95e38aabd06fa84643fbb3a0c7dc84",
+      "constraints_unchanged": true,
+      "diff": "--- step10_migration_unit_test.go@native\n+++ step10_migration_unit_test.go@commit\n@@ -1,4 +1,20 @@\n //go:build unit\n+\n+/*\n+ * Copyright (C) 2026 ScyllaDB\n+ *\n+ * Licensed under the Apache License, Version 2.0 (the \"License\");\n+ * you may not use this file except in compliance with the License.\n+ * You may obtain a copy of the License at\n+ *\n+ * http://www.apache.org/licenses/LICENSE-2.0\n+ *\n+ * Unless required by applicable law or agreed to in writing, software\n+ * distributed under the License is distributed on an \"AS IS\" BASIS,\n+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n+ * See the License for the specific language governing permissions and\n+ * limitations under the License.\n+ */\n \n package gocql\n \n",
+      "file": "step10_migration_unit_test.go",
+      "final_tokens_sha256": "354c5d7586448e968482a9906813f3cfd5620be47e93f22125aa67a276e1da8b",
+      "native_tokens_sha256": "354c5d7586448e968482a9906813f3cfd5620be47e93f22125aa67a276e1da8b"
+    },
+    {
+      "after_sha256": "3bbf29909a2a0bd60c578ed20f8c57b6496f31eb97871f1e15e54cc39066d781",
+      "before_sha256": "8a92ae47fa9efd5ed2ba62d780f9e29d61130b12b56a494648ce61ea36438192",
+      "constraints_unchanged": true,
+      "diff": "--- type_name_unit_test.go@native\n+++ type_name_unit_test.go@commit\n@@ -1,4 +1,20 @@\n //go:build unit\n+\n+/*\n+ * Copyright (C) 2026 ScyllaDB\n+ *\n+ * Licensed under the Apache License, Version 2.0 (the \"License\");\n+ * you may not use this file except in compliance with the License.\n+ * You may obtain a copy of the License at\n+ *\n+ * http://www.apache.org/licenses/LICENSE-2.0\n+ *\n+ * Unless required by applicable law or agreed to in writing, software\n+ * distributed under the License is distributed on an \"AS IS\" BASIS,\n+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n+ * See the License for the specific language governing permissions and\n+ * limitations under the License.\n+ */\n \n package gocql\n \n",
+      "file": "type_name_unit_test.go",
+      "final_tokens_sha256": "722526bf0431c43a693e9728295b58622d564f1363f08db98c3dfe2a86d6bced",
+      "native_tokens_sha256": "722526bf0431c43a693e9728295b58622d564f1363f08db98c3dfe2a86d6bced"
+    },
+    {
+      "after_sha256": "35fa3ee55ac2c205ca64fd49122d508f20acffce0ef2caa7ff77bbcdfd6db1bb",
+      "before_sha256": "80e8e8e34b5c3ce9d4a1609f10cea23e6c7b8f1930947336289ef571c75b4793",
+      "constraints_unchanged": true,
+      "diff": "--- internal/tests/valuecases/simple.go@native\n+++ internal/tests/valuecases/simple.go@commit\n@@ -1,3 +1,19 @@\n+/*\n+ * Copyright (C) 2026 ScyllaDB\n+ *\n+ * Licensed under the Apache License, Version 2.0 (the \"License\");\n+ * you may not use this file except in compliance with the License.\n+ * You may obtain a copy of the License at\n+ *\n+ * http://www.apache.org/licenses/LICENSE-2.0\n+ *\n+ * Unless required by applicable law or agreed to in writing, software\n+ * distributed under the License is distributed on an \"AS IS\" BASIS,\n+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n+ * See the License for the specific language governing permissions and\n+ * limitations under the License.\n+ */\n+\n package valuecases\n \n import (\n",
+      "file": "internal/tests/valuecases/simple.go",
+      "final_tokens_sha256": "75463d91d6b1ac1d69f0293cf54fea065117a2164880c3b6a0f6d5bf26d091bb",
+      "native_tokens_sha256": "75463d91d6b1ac1d69f0293cf54fea065117a2164880c3b6a0f6d5bf26d091bb"
+    },
+    {
+      "after_sha256": "106b1194d7ab4c7b428d2a3e9a1f7af7d545398ed970bb4760a6e0236453c29d",
+      "before_sha256": "e866d5b4922357cf656d613163a387a883308bbff179ba1bfd9141a7a03155c1",
+      "constraints_unchanged": true,
+      "diff": "--- internal/tests/valuecases/get.go@native\n+++ internal/tests/valuecases/get.go@commit\n@@ -1,3 +1,19 @@\n+/*\n+ * Copyright (C) 2026 ScyllaDB\n+ *\n+ * Licensed under the Apache License, Version 2.0 (the \"License\");\n+ * you may not use this file except in compliance with the License.\n+ * You may obtain a copy of the License at\n+ *\n+ * http://www.apache.org/licenses/LICENSE-2.0\n+ *\n+ * Unless required by applicable law or agreed to in writing, software\n+ * distributed under the License is distributed on an \"AS IS\" BASIS,\n+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n+ * See the License for the specific language governing permissions and\n+ * limitations under the License.\n+ */\n+\n package valuecases\n \n type SimpleTypes []SimpleTypeCases\n",
+      "file": "internal/tests/valuecases/get.go",
+      "final_tokens_sha256": "e757fd2675254b4e0972885fd6c84ad33496b81947144c86eb60917756fdec26",
+      "native_tokens_sha256": "e757fd2675254b4e0972885fd6c84ad33496b81947144c86eb60917756fdec26"
+    },
+    {
+      "after_sha256": "d5820f43ff98c6461810d3c9d27028e9788a32beafafed0d667c9a793885a961",
+      "before_sha256": "07a13d2e6dee313661db109d46283cf36d1f4f576a91787feedb0ee3ce618406",
+      "constraints_unchanged": true,
+      "diff": "--- hostpolicy/hostpool.go@native\n+++ hostpolicy/hostpool.go@commit\n@@ -1,3 +1,19 @@\n+/*\n+ * Copyright (C) 2026 ScyllaDB\n+ *\n+ * Licensed under the Apache License, Version 2.0 (the \"License\");\n+ * you may not use this file except in compliance with the License.\n+ * You may obtain a copy of the License at\n+ *\n+ * http://www.apache.org/licenses/LICENSE-2.0\n+ *\n+ * Unless required by applicable law or agreed to in writing, software\n+ * distributed under the License is distributed on an \"AS IS\" BASIS,\n+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n+ * See the License for the specific language governing permissions and\n+ * limitations under the License.\n+ */\n+\n // Package hostpolicy provides an optional health-weighted routing policy.\n package hostpolicy\n \n",
+      "file": "hostpolicy/hostpool.go",
+      "final_tokens_sha256": "0f2eff36ea309d5d7cfd1a1e7db50779977c6fb097aa65226a65281e3c1469f2",
+      "native_tokens_sha256": "0f2eff36ea309d5d7cfd1a1e7db50779977c6fb097aa65226a65281e3c1469f2"
+    },
+    {
+      "after_sha256": "05335e93e6b6fbe564b2adddfec722e89994d7853822b145fbbdbad567a90db1",
+      "before_sha256": "d5b2ae31c4c509a7866a909aab2884eec7dc9608b64ec38d67646aafa72dff4d",
+      "constraints_unchanged": true,
+      "diff": "--- hostpolicy/hostpool_test.go@native\n+++ hostpolicy/hostpool_test.go@commit\n@@ -1,3 +1,19 @@\n+/*\n+ * Copyright (C) 2026 ScyllaDB\n+ *\n+ * Licensed under the Apache License, Version 2.0 (the \"License\");\n+ * you may not use this file except in compliance with the License.\n+ * You may obtain a copy of the License at\n+ *\n+ * http://www.apache.org/licenses/LICENSE-2.0\n+ *\n+ * Unless required by applicable law or agreed to in writing, software\n+ * distributed under the License is distributed on an \"AS IS\" BASIS,\n+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n+ * See the License for the specific language governing permissions and\n+ * limitations under the License.\n+ */\n+\n package hostpolicy\n \n import (\n",
+      "file": "hostpolicy/hostpool_test.go",
+      "final_tokens_sha256": "9312f770251ae386442904afef6f9f6ff27998143661650749bc78000d10c58a",
+      "native_tokens_sha256": "9312f770251ae386442904afef6f9f6ff27998143661650749bc78000d10c58a"
+    },
+    {
+      "after_sha256": "cf4333f6296e7ece672bf2b7c68ee45cccf3ee94fefeb678de10279b95a62cf8",
+      "before_sha256": "1f4f887c1c4c0c7298eb3aa7e77bf119353430cd7bcab121ddd21572148e6ace",
+      "constraints_unchanged": true,
+      "diff": "--- tests/bench/bench_marshal_test.go@native\n+++ tests/bench/bench_marshal_test.go@commit\n@@ -1,3 +1,19 @@\n+/*\n+ * Copyright (C) 2026 ScyllaDB\n+ *\n+ * Licensed under the Apache License, Version 2.0 (the \"License\");\n+ * you may not use this file except in compliance with the License.\n+ * You may obtain a copy of the License at\n+ *\n+ * http://www.apache.org/licenses/LICENSE-2.0\n+ *\n+ * Unless required by applicable law or agreed to in writing, software\n+ * distributed under the License is distributed on an \"AS IS\" BASIS,\n+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n+ * See the License for the specific language governing permissions and\n+ * limitations under the License.\n+ */\n+\n package bench_test\n \n import (\n",
+      "file": "tests/bench/bench_marshal_test.go",
+      "final_tokens_sha256": "6f5edfe383a9ec0148602f2b1bf7665ee166f05d7668ea185f8fb0bc6e499986",
+      "native_tokens_sha256": "6f5edfe383a9ec0148602f2b1bf7665ee166f05d7668ea185f8fb0bc6e499986"
+    },
+    {
+      "after_sha256": "f185326d40618ad0ec56e421056d1cb288a6b54cee2c7c2d843d63992d6f5757",
+      "before_sha256": "146febc88b70e4cbfbfca304e484e3e8cff4d94e88109126e3b9a56774e1fc03",
+      "constraints_unchanged": true,
+      "diff": "--- tests/bench/bench_vector_public_test.go@native\n+++ tests/bench/bench_vector_public_test.go@commit\n@@ -1,3 +1,19 @@\n+/*\n+ * Copyright (C) 2026 ScyllaDB\n+ *\n+ * Licensed under the Apache License, Version 2.0 (the \"License\");\n+ * you may not use this file except in compliance with the License.\n+ * You may obtain a copy of the License at\n+ *\n+ * http://www.apache.org/licenses/LICENSE-2.0\n+ *\n+ * Unless required by applicable law or agreed to in writing, software\n+ * distributed under the License is distributed on an \"AS IS\" BASIS,\n+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n+ * See the License for the specific language governing permissions and\n+ * limitations under the License.\n+ */\n+\n package bench_test\n \n import (\n",
+      "file": "tests/bench/bench_vector_public_test.go",
+      "final_tokens_sha256": "e664195e8b3b4b9b530905335c6ac7030e3734a10fa70e4be71a0d982980e84a",
+      "native_tokens_sha256": "e664195e8b3b4b9b530905335c6ac7030e3734a10fa70e4be71a0d982980e84a"
+    },
+    {
+      "after_sha256": "d8c7ad3f50f6601ae761fcc515a6981cc41f739c396550c473734bb98c07d1ea",
+      "before_sha256": "55172b251d26881a4bcf0fc4f1e8806e164776e68e26c7dadc293d0de49a0ffb",
+      "constraints_unchanged": true,
+      "diff": "--- tests/bench/bench_single_conn_test.go@native\n+++ tests/bench/bench_single_conn_test.go@commit\n@@ -1,3 +1,19 @@\n+/*\n+ * Copyright (C) 2026 ScyllaDB\n+ *\n+ * Licensed under the Apache License, Version 2.0 (the \"License\");\n+ * you may not use this file except in compliance with the License.\n+ * You may obtain a copy of the License at\n+ *\n+ * http://www.apache.org/licenses/LICENSE-2.0\n+ *\n+ * Unless required by applicable law or agreed to in writing, software\n+ * distributed under the License is distributed on an \"AS IS\" BASIS,\n+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n+ * See the License for the specific language governing permissions and\n+ * limitations under the License.\n+ */\n+\n package bench_test\n \n import (\n",
+      "file": "tests/bench/bench_single_conn_test.go",
+      "final_tokens_sha256": "93a79f58a2cf3614347231ccac859b1d72d3817c57c8f72fbf7c5ad7efeace36",
+      "native_tokens_sha256": "93a79f58a2cf3614347231ccac859b1d72d3817c57c8f72fbf7c5ad7efeace36"
+    },
+    {
+      "after_sha256": "464d37b4cd74d0807d3416940445b690f719ac9cd07fece1f4a8d7eb305dce43",
+      "before_sha256": "4f0129b23b951318dd8832752fa6272863d464b8dde9a32ebd9ebb6fb117d37f",
+      "constraints_unchanged": true,
+      "diff": "--- feature-specs/tools/legacy_removal_audit.go@native\n+++ feature-specs/tools/legacy_removal_audit.go@commit\n@@ -1,4 +1,20 @@\n //go:build ignore\n+\n+/*\n+ * Copyright (C) 2026 ScyllaDB\n+ *\n+ * Licensed under the Apache License, Version 2.0 (the \"License\");\n+ * you may not use this file except in compliance with the License.\n+ * You may obtain a copy of the License at\n+ *\n+ * http://www.apache.org/licenses/LICENSE-2.0\n+ *\n+ * Unless required by applicable law or agreed to in writing, software\n+ * distributed under the License is distributed on an \"AS IS\" BASIS,\n+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n+ * See the License for the specific language governing permissions and\n+ * limitations under the License.\n+ */\n \n // Audit the step10 public API removal and dedicated streaming source boundary.\n package main\n",
+      "file": "feature-specs/tools/legacy_removal_audit.go",
+      "final_tokens_sha256": "617557d2be3f67e05abfac1687a6d57462f45bddbdc7feda7240c12debc5491b",
+      "native_tokens_sha256": "617557d2be3f67e05abfac1687a6d57462f45bddbdc7feda7240c12debc5491b"
+    },
+    {
+      "after_sha256": "f86f661d5516187960160b7f4b2820a95ec9fec3f1131a1c03ff039365e9abf7",
+      "before_sha256": "bc1ebad15551560fe480013f8bc6c446f05845b5226c6ecba62dd0f7a620890d",
+      "constraints_unchanged": true,
+      "diff": "--- feature-specs/tools/step10_source_compare.go@native\n+++ feature-specs/tools/step10_source_compare.go@commit\n@@ -1,4 +1,20 @@\n //go:build ignore\n+\n+/*\n+ * Copyright (C) 2026 ScyllaDB\n+ *\n+ * Licensed under the Apache License, Version 2.0 (the \"License\");\n+ * you may not use this file except in compliance with the License.\n+ * You may obtain a copy of the License at\n+ *\n+ * http://www.apache.org/licenses/LICENSE-2.0\n+ *\n+ * Unless required by applicable law or agreed to in writing, software\n+ * distributed under the License is distributed on an \"AS IS\" BASIS,\n+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n+ * See the License for the specific language governing permissions and\n+ * limitations under the License.\n+ */\n \n // Compare every baseline identity with accepted step09 source evidence.\n package main\n",
+      "file": "feature-specs/tools/step10_source_compare.go",
+      "final_tokens_sha256": "fc96360bddafc3d67bb0206640f6bc33d3fa5d7618f860745bf494d130817d07",
+      "native_tokens_sha256": "fc96360bddafc3d67bb0206640f6bc33d3fa5d7618f860745bf494d130817d07"
+    },
+    {
+      "after_sha256": "82240116bb098cd94d6e75e0b7310b71ed7412fdf4883871182612d8b97401cc",
+      "before_sha256": "a764f761ea67a03370ef3e68b06b881e9699d14ac12debc91292d3fd33e15828",
+      "constraints_unchanged": true,
+      "diff": "--- feature-specs/tools/step10_test_disposition.go@native\n+++ feature-specs/tools/step10_test_disposition.go@commit\n@@ -1,4 +1,20 @@\n //go:build ignore\n+\n+/*\n+ * Copyright (C) 2026 ScyllaDB\n+ *\n+ * Licensed under the Apache License, Version 2.0 (the \"License\");\n+ * you may not use this file except in compliance with the License.\n+ * You may obtain a copy of the License at\n+ *\n+ * http://www.apache.org/licenses/LICENSE-2.0\n+ *\n+ * Unless required by applicable law or agreed to in writing, software\n+ * distributed under the License is distributed on an \"AS IS\" BASIS,\n+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n+ * See the License for the specific language governing permissions and\n+ * limitations under the License.\n+ */\n \n // Inventory removed test declarations against accepted step09, separately from\n // the immutable174 original integration identities.\n",
+      "file": "feature-specs/tools/step10_test_disposition.go",
+      "final_tokens_sha256": "bec347b56121346249120e1aade0107f74bb8f2cdf02305815245648be06c98b",
+      "native_tokens_sha256": "bec347b56121346249120e1aade0107f74bb8f2cdf02305815245648be06c98b"
+    }
+  ],
+  "go_parser_valid": true
+}

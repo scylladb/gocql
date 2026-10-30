@@ -32,7 +32,7 @@ import (
 // asSegmentCompressor asserts that compressor supports native protocol v5 segment
 // (de)compression, narrowing it to the interface the segment codec takes.
 //
-// The ClusterConfig validation already rejects a non-segment compressor on v5, so
+// The clusterSettings validation already rejects a non-segment compressor on v5, so
 // this is a defensive check whose error should never surface in practice. It stays
 // in this package because it is the only part of the segment path that needs
 // Compressor.Name, and naming the offending compressor is the whole value of the
@@ -70,7 +70,7 @@ func asSegmentCompressor(compressor Compressor) (segment.Compressor, error) {
 // without segment support — SnappyCompressor — is a valid configuration that must not
 // be refused here.
 //
-// The error cannot fire on a connection that got this far: ClusterConfig.Validate
+// The error cannot fire on a connection that got this far: clusterSettings.Validate
 // rejects a compressor without segment support on v5 before anything is dialed. It is
 // reported rather than ignored because the alternative is a connection that silently
 // reads the wrong segment layout, and failing the handshake is where a misconfigured

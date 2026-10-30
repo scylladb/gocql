@@ -62,7 +62,7 @@ func v2SchemaMockArguments(request *attemptRequest) ([]any, error) {
 	return values, cursor.RequireEnd()
 }
 
-func v2SchemaMockResponse(statement string, fixture *Iter) (*responsePage, error) {
+func v2SchemaMockResponse(statement string, fixture *nativeResultFixture) (*responsePage, error) {
 	if fixture == nil {
 		return nil, errNoControl
 	}

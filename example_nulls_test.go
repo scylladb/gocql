@@ -26,52 +26,35 @@ package gocql_test
 
 import (
 	"fmt"
+	"github.com/scylladb/gocql/v2"
 	"log"
-
-	gocql "github.com/scylladb/gocql/v2"
 )
 
-// Example_nulls demonstrates how to distinguish between null and zero value when needed.
-//
-// Null values are unmarshalled as zero value of the type. If you need to distinguish for example between text
-// column being null and empty string, you can unmarshal into *string field.
 func Example_nulls() {
-	/* The example assumes the following CQL was used to setup the keyspace:
-	create keyspace example with replication = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };
-	create table example.stringvals(id int, value text, PRIMARY KEY(id));
-	insert into example.stringvals (id, value) values (1, null);
-	insert into example.stringvals (id, value) values (2, '');
-	insert into example.stringvals (id, value) values (3, 'hello');
-	*/
-	cluster := gocql.NewCluster("localhost:9042")
-	cluster.Keyspace = "example"
-	session, err := cluster.CreateSession()
+	typ, err := gocql.ScalarType(gocql.TypeVarchar)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer session.Close()
-	scanner := session.Query(`SELECT id, value FROM stringvals`).Iter().Scanner()
-	for scanner.Next() {
-		var (
-			id  int32
-			val *string
-		)
-		err := scanner.Scan(&id, &val)
-		if err != nil {
-			log.Fatal(err)
-		}
-		if val != nil {
-			fmt.Printf("Row %d is %q\n", id, *val)
-		} else {
-			fmt.Printf("Row %d is null\n", id)
-		}
-
-	}
-	err = scanner.Err()
+	codec := gocql.NullableCodec(gocql.TextCodec)
+	null, err := gocql.NewEncodedValue(typ, gocql.Null, gocql.BorrowBytes(nil))
 	if err != nil {
 		log.Fatal(err)
 	}
-	// Row 1 is null
-	// Row 2 is ""
-	// Row 3 is "hello"
+	value, err := gocql.DecodeValue(codec, null)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(value.Valid)
+	empty, err := gocql.NewEncodedValue(typ, gocql.Present, gocql.BorrowBytes([]byte{}))
+	if err != nil {
+		log.Fatal(err)
+	}
+	value, err = gocql.DecodeValue(codec, empty)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(value.Valid, value.Value.String() == "")
+	// Output:
+	// false
+	// true true
 }

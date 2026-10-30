@@ -8,7 +8,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/scylladb/gocql/v2/internal/tests/serialization/valcases"
+	valcases "github.com/scylladb/gocql/v2/internal/tests/valuecases"
+
 	"gopkg.in/inf.v0"
 	"math/big"
 	"net/netip"

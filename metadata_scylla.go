@@ -490,20 +490,6 @@ func (c ColumnKind) String() string {
 	}
 }
 
-func (c *ColumnKind) UnmarshalCQL(typ TypeInfo, p []byte) error {
-	if typ.Type() != TypeVarchar {
-		return unmarshalErrorf("unable to marshall %s into ColumnKind, expected Varchar", typ)
-	}
-
-	kind, err := columnKindFromSchema(string(p))
-	if err != nil {
-		return err
-	}
-	*c = kind
-
-	return nil
-}
-
 func columnKindFromSchema(kind string) (ColumnKind, error) {
 	switch kind {
 	case "partition_key":

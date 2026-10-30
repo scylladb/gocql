@@ -30,16 +30,17 @@ package gocql_test
 import (
 	"bytes"
 	"encoding/binary"
+	gocql "github.com/scylladb/gocql/v2"
 	"math"
-	"os"
+
 	"testing"
 
 	"github.com/klauspost/compress/s2"
 	lz4mod "github.com/scylladb/gocql/lz4"
 	"github.com/stretchr/testify/require"
 
-	"github.com/scylladb/gocql/v2"
 	frm "github.com/scylladb/gocql/v2/internal/frame"
+	"os"
 )
 
 type frameExample struct {
@@ -181,14 +182,6 @@ func (legacyCompressor) Decode(data []byte) ([]byte, error) { return data, nil }
 
 var _ gocql.Compressor = legacyCompressor{}
 
-// LZ4Compressor's conformance to SegmentCompressor was previously only claimed in its
-// doc comment: the lz4 module cannot assert it, since importing gocql to do so would
-// make the dependency circular. The root module importing lz4 for the v5 integration
-// lane makes the assertion possible in the direction that does not cycle.
-//
-// This is the positive half of what TestCompressorBackwardCompatibility below asserts
-// negatively for SnappyCompressor, so the two live together: a change to the interface
-// surface has one place to update, not two.
 var (
 	_ gocql.Compressor        = lz4mod.LZ4Compressor{}
 	_ gocql.SegmentCompressor = lz4mod.LZ4Compressor{}
@@ -235,22 +228,6 @@ func BenchmarkSnappyCompressor(b *testing.B) {
 	})
 }
 
-func init() {
-	var err error
-	for id, def := range frameExamples.Requests {
-		frameExamples.Requests[id].Frame, err = os.ReadFile(def.FilePath)
-		if err != nil {
-			panic("can't read file " + def.FilePath)
-		}
-	}
-	for id, def := range frameExamples.Responses {
-		frameExamples.Responses[id].Frame, err = os.ReadFile(def.FilePath)
-		if err != nil {
-			panic("can't read file " + def.FilePath)
-		}
-	}
-}
-
 // TestSnappyCompressorDecodeRejectsHugeLength is the snappy counterpart of
 // TestLZ4Compressor_DecodeRejectsHugeLength in the lz4 module.
 //
@@ -290,5 +267,21 @@ func TestSnappyCompressorDecodeRejectsHugeLength(t *testing.T) {
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "exceeds maximum")
 		})
+	}
+}
+
+func init() {
+	var err error
+	for id, def := range frameExamples.Requests {
+		frameExamples.Requests[id].Frame, err = os.ReadFile(def.FilePath)
+		if err != nil {
+			panic("can't read file " + def.FilePath)
+		}
+	}
+	for id, def := range frameExamples.Responses {
+		frameExamples.Responses[id].Frame, err = os.ReadFile(def.FilePath)
+		if err != nil {
+			panic("can't read file " + def.FilePath)
+		}
 	}
 }

@@ -62,7 +62,7 @@ type policyConnPool struct {
 	mu            sync.RWMutex
 }
 
-func connConfig(cfg *ClusterConfig) (*ConnConfig, error) {
+func connConfig(cfg *clusterSettings) (*ConnConfig, error) {
 	hostDialer := cfg.HostDialer
 
 	if hostDialer == nil {
@@ -330,7 +330,7 @@ func newHostConnPool(session *Session, host *HostInfo, size int, keyspace string
 }
 
 // Pick a connection from this connection pool for the given query.
-func (pool *hostConnPool) Pick(token Token, qry ExecutableQuery) *Conn {
+func (pool *hostConnPool) Pick(token Token) *Conn {
 	defer pool.requestTypedRepair()
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
@@ -339,13 +339,13 @@ func (pool *hostConnPool) Pick(token Token, qry ExecutableQuery) *Conn {
 		return nil
 	}
 
-	return pool.connPicker.Pick(token, qry)
+	return pool.connPicker.Pick(token)
 }
 
 // PickInt64 picks a connection for the given raw int64 routing token, avoiding
 // the Token interface boxing. Picks fall back to the boxed path when the
 // connPicker does not support raw-int64 picking.
-func (pool *hostConnPool) PickInt64(token int64, qry ExecutableQuery) *Conn {
+func (pool *hostConnPool) PickInt64(token int64) *Conn {
 	defer pool.requestTypedRepair()
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
@@ -355,20 +355,20 @@ func (pool *hostConnPool) PickInt64(token int64, qry ExecutableQuery) *Conn {
 	}
 
 	if p, ok := pool.connPicker.(int64ConnPicker); ok {
-		return p.PickInt64(token, qry)
+		return p.PickInt64(token)
 	}
-	return pool.connPicker.Pick(int64Token(token), qry)
+	return pool.connPicker.Pick(int64Token(token))
 }
 
 // PickConn routes a picked host to the raw-int64 fast path when it exposes one,
 // and to the boxed Token path otherwise.
-func (pool *hostConnPool) PickConn(host SelectedHost, qry ExecutableQuery) *Conn {
+func (pool *hostConnPool) PickConn(host SelectedHost) *Conn {
 	if th, ok := host.(int64TokenSelectedHost); ok {
 		if token, has := th.TokenInt64(); has {
-			return pool.PickInt64(int64(token), qry)
+			return pool.PickInt64(int64(token))
 		}
 	}
-	return pool.Pick(host.Token(), qry)
+	return pool.Pick(host.Token())
 }
 
 // pickable reports whether the pool is open and has (or is filling) connections.

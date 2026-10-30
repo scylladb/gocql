@@ -7,7 +7,7 @@ import (
 )
 
 type ConnPicker interface {
-	Pick(Token, ExecutableQuery) *Conn
+	Pick(Token) *Conn
 	Put(*Conn) error
 	Remove(conn *Conn)
 	InFlight() int
@@ -28,7 +28,7 @@ type ConnPicker interface {
 // selection from a raw int64 routing token, avoiding the Token interface
 // boxing. hostConnPool uses it when the routing token is an int64Token.
 type int64ConnPicker interface {
-	PickInt64(int64, ExecutableQuery) *Conn
+	PickInt64(int64) *Conn
 }
 
 type defaultConnPicker struct {
@@ -102,13 +102,13 @@ func (p *defaultConnPicker) Size() (int, int) {
 	return size, p.size - size
 }
 
-func (p *defaultConnPicker) Pick(Token, ExecutableQuery) *Conn {
+func (p *defaultConnPicker) Pick(Token) *Conn {
 	return p.pickLeastBusy()
 }
 
 // PickInt64 is the raw-int64 variant of Pick; the token is unused, the least
 // busy connection is picked either way.
-func (p *defaultConnPicker) PickInt64(int64, ExecutableQuery) *Conn {
+func (p *defaultConnPicker) PickInt64(int64) *Conn {
 	return p.pickLeastBusy()
 }
 
@@ -167,11 +167,11 @@ func (p nopConnPicker) GetShardCount() int {
 	return 0
 }
 
-func (nopConnPicker) Pick(Token, ExecutableQuery) *Conn {
+func (nopConnPicker) Pick(Token) *Conn {
 	return nil
 }
 
-func (nopConnPicker) PickInt64(int64, ExecutableQuery) *Conn {
+func (nopConnPicker) PickInt64(int64) *Conn {
 	return nil
 }
 

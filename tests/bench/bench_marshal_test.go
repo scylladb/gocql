@@ -1,487 +1,125 @@
+/*
+ * Copyright (C) 2026 ScyllaDB
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package bench_test
 
 import (
-	"encoding/json"
-	"io"
-	"math/rand"
-	"testing"
-	"time"
-
-	"github.com/brianvoe/gofakeit/v6"
+	"bytes"
+	"fmt"
 	"github.com/scylladb/gocql/v2"
+	"testing"
 )
 
-func generateRandomBinaryData(size int) []byte {
-	rnd := rand.New(rand.NewSource(100))
-	randomBuffer := make([]byte, size)
-	io.ReadAtLeast(rnd, randomBuffer, size)
-	return randomBuffer
-}
-
-type RandomData struct {
-	ID        string `json:"id"`
-	FirstName string `json:"first_name"`
-	LastName  string `json:"last_name"`
-	Email     string `json:"email"`
-	City      string `json:"city"`
-	State     string `json:"state"`
-	Zip       string `json:"zip"`
-	Phone     string `json:"phone"`
-}
-
-func generateRandomJSON(size int) string {
-	gofakeit.Seed(100)
-	var jsonData []byte
-	var randomData []RandomData
-	currentLength := 0
-
-	for currentLength < size {
-		data := RandomData{
-			ID:        gofakeit.UUID(),
-			FirstName: gofakeit.FirstName(),
-			LastName:  gofakeit.LastName(),
-			Email:     gofakeit.Email(),
-			City:      gofakeit.City(),
-			State:     gofakeit.State(),
-			Zip:       gofakeit.Zip(),
-			Phone:     gofakeit.Phone(),
-		}
-		randomData = append(randomData, data)
-
-		tempData, _ := json.Marshal(randomData)
-		currentLength = len(tempData)
-		jsonData = tempData
+// benchmarkValue measures explicit borrowed encoding and borrowed decoding.
+// Owned conversions have separate names so their copy costs remain visible.
+func benchmarkValue[P, R any](b *testing.B, typ gocql.DataType, enc gocql.Encoder[P], dec gocql.Decoder[R], value P) {
+	encoded, err := gocql.EncodeValueBorrowed(typ, enc, value)
+	if err != nil {
+		b.Fatal(err)
 	}
-
-	return string(jsonData)
+	b.Run("EncodeBorrowed", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			if _, err := gocql.EncodeValueBorrowed(typ, enc, value); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+	b.Run("EncodeOwned", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			if _, err := gocql.EncodeValueOwned(typ, enc, value); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+	b.Run("DecodeBorrowed", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			if _, err := gocql.DecodeValue(dec, encoded); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 }
-
+func scalar(kind gocql.Type) gocql.DataType {
+	t, err := gocql.ScalarType(kind)
+	if err != nil {
+		panic(err)
+	}
+	return t
+}
 func BenchmarkSerialization(b *testing.B) {
-	b.Run("SimpleTypes", func(b *testing.B) {
-		b.Run("Int", func(b *testing.B) {
-			tType := gocql.NewNativeType(4, gocql.TypeInt)
-			var val int = 42
-			b.Run("Marshal", func(b *testing.B) {
-				for i := 0; i < b.N; i++ {
-					_, err := gocql.Marshal(tType, val)
-					if err != nil {
-						b.Fatal(err)
-					}
-				}
-			})
-			marshaled, err := gocql.Marshal(tType, val)
-			if err != nil {
-				b.Fatal(err)
-			}
-			b.Run("Unmarshal", func(b *testing.B) {
-				for i := 0; i < b.N; i++ {
-					var unmarshaled int
-					err = gocql.Unmarshal(tType, marshaled, &unmarshaled)
-					if err != nil {
-						b.Fatal(err)
-					}
-				}
-			})
+	b.Run("Int", func(b *testing.B) { benchmarkValue(b, scalar(gocql.TypeInt), gocql.Int32, gocql.Int32, int32(42)) })
+	for _, size := range []int{100, 1024, 1024 * 1024} {
+		body := bytes.Repeat([]byte("x"), size)
+		b.Run(fmt.Sprintf("Blob/%d", size), func(b *testing.B) {
+			benchmarkValue(b, scalar(gocql.TypeBlob), gocql.BlobCodec, gocql.BlobCodec, gocql.BorrowBytes(body))
 		})
-
-		cases := []struct {
-			name string
-			size int
-		}{
-			{"Small-100b", 100},
-			{"Medium-1kb", 1024},
-			{"Big-1M", 1024 * 1024},
-		}
-
-		for _, c := range cases {
-			b.Run("Blob"+c.name, func(b *testing.B) {
-				tType := gocql.NewNativeType(4, gocql.TypeBlob)
-				val := generateRandomBinaryData(c.size)
-				b.Run("Marshal", func(b *testing.B) {
-					for i := 0; i < b.N; i++ {
-						_, err := gocql.Marshal(tType, val)
-						if err != nil {
-							b.Fatal(err)
-						}
-					}
-				})
-				marshaled, err := gocql.Marshal(tType, val)
-				if err != nil {
-					b.Fatal(err)
-				}
-				b.Run("Unmarshal", func(b *testing.B) {
-					for i := 0; i < b.N; i++ {
-						var unmarshaled []byte
-						err = gocql.Unmarshal(tType, marshaled, &unmarshaled)
-						if err != nil {
-							b.Fatal(err)
-						}
-					}
-				})
-			})
-		}
-
-		for _, c := range cases {
-			b.Run("Text"+c.name, func(b *testing.B) {
-				tType := gocql.NewNativeType(4, gocql.TypeText)
-				val := generateRandomJSON(c.size)
-				b.Run("Marshal", func(b *testing.B) {
-					for i := 0; i < b.N; i++ {
-						_, err := gocql.Marshal(tType, val)
-						if err != nil {
-							b.Fatal(err)
-						}
-					}
-				})
-				marshaled, err := gocql.Marshal(tType, val)
-				if err != nil {
-					b.Fatal(err)
-				}
-				b.Run("Unmarshal", func(b *testing.B) {
-					for i := 0; i < b.N; i++ {
-						var unmarshaled string
-						err = gocql.Unmarshal(tType, marshaled, &unmarshaled)
-						if err != nil {
-							b.Fatal(err)
-						}
-					}
-				})
-			})
-		}
-
-		b.Run("UUID", func(b *testing.B) {
-			tType := gocql.NewNativeType(4, gocql.TypeUUID)
-			val := gocql.UUID{}
-			b.Run("Marshal", func(b *testing.B) {
-				for i := 0; i < b.N; i++ {
-					_, err := gocql.Marshal(tType, val)
-					if err != nil {
-						b.Fatal(err)
-					}
-				}
-			})
-			marshaled, err := gocql.Marshal(tType, val)
-			if err != nil {
-				b.Fatal(err)
-			}
-			b.Run("Unmarshal", func(b *testing.B) {
-				for i := 0; i < b.N; i++ {
-					var unmarshaled gocql.UUID
-					err = gocql.Unmarshal(tType, marshaled, &unmarshaled)
-					if err != nil {
-						b.Fatal(err)
-					}
-				}
-			})
+		b.Run(fmt.Sprintf("Text/%d", size), func(b *testing.B) {
+			benchmarkValue(b, scalar(gocql.TypeText), gocql.StringEncoder, gocql.TextCodec, string(body))
 		})
-
-		b.Run("Duration", func(b *testing.B) {
-			tType := gocql.NewNativeType(4, gocql.TypeDuration)
-			val := gocql.Duration{Nanoseconds: 300000000000}
-			b.Run("Marshal", func(b *testing.B) {
-				for i := 0; i < b.N; i++ {
-					_, err := gocql.Marshal(tType, val)
-					if err != nil {
-						b.Fatal(err)
-					}
-				}
-			})
-			marshaled, err := gocql.Marshal(tType, val)
-			if err != nil {
-				b.Fatal(err)
-			}
-			b.Run("Unmarshal", func(b *testing.B) {
-				for i := 0; i < b.N; i++ {
-					var unmarshaled gocql.Duration
-					err = gocql.Unmarshal(tType, marshaled, &unmarshaled)
-					if err != nil {
-						b.Fatal(err)
-					}
-				}
-			})
-		})
-
-		b.Run("Timestamp", func(b *testing.B) {
-			tType := gocql.NewNativeType(4, gocql.TypeTimestamp)
-			val := time.Now()
-			b.Run("Marshal", func(b *testing.B) {
-				for i := 0; i < b.N; i++ {
-					_, err := gocql.Marshal(tType, val)
-					if err != nil {
-						b.Fatal(err)
-					}
-				}
-			})
-			marshaled, err := gocql.Marshal(tType, val)
-			if err != nil {
-				b.Fatal(err)
-			}
-			b.Run("Unmarshal", func(b *testing.B) {
-				for i := 0; i < b.N; i++ {
-					var unmarshaled time.Time
-					err = gocql.Unmarshal(tType, marshaled, &unmarshaled)
-					if err != nil {
-						b.Fatal(err)
-					}
-				}
-			})
-		})
+	}
+	b.Run("UUID", func(b *testing.B) {
+		benchmarkValue(b, scalar(gocql.TypeUUID), gocql.UUIDCodec, gocql.UUIDCodec, gocql.UUID{})
 	})
-
-	b.Run("ComplexTypes", func(b *testing.B) {
-		b.Run("List", func(b *testing.B) {
-			tType := gocql.CollectionType{
-				NativeType: gocql.NewNativeType(4, gocql.TypeList),
-				Elem:       gocql.NewNativeType(4, gocql.TypeText),
-			}
-			val := []string{"foo", "bar", "baz"}
-			b.Run("Marshal", func(b *testing.B) {
-				for i := 0; i < b.N; i++ {
-					_, err := gocql.Marshal(tType, val)
-					if err != nil {
-						b.Fatal(err)
-					}
-				}
-			})
-			marshaled, err := gocql.Marshal(tType, val)
-			if err != nil {
-				b.Fatal(err)
-			}
-			b.Run("Unmarshal", func(b *testing.B) {
-				for i := 0; i < b.N; i++ {
-					var unmarshaled []string
-					err = gocql.Unmarshal(tType, marshaled, &unmarshaled)
-					if err != nil {
-						b.Fatal(err)
-					}
-				}
-			})
-		})
-
-		b.Run("Map", func(b *testing.B) {
-			tType := gocql.CollectionType{
-				NativeType: gocql.NewNativeType(4, gocql.TypeMap),
-				Key:        gocql.NewNativeType(4, gocql.TypeVarchar),
-				Elem:       gocql.NewNativeType(4, gocql.TypeInt),
-			}
-			val := map[string]int{"a": 1, "b": 2}
-			b.Run("Marshal", func(b *testing.B) {
-				for i := 0; i < b.N; i++ {
-					_, err := gocql.Marshal(tType, val)
-					if err != nil {
-						b.Fatal(err)
-					}
-				}
-			})
-			marshaled, err := gocql.Marshal(tType, val)
-			if err != nil {
-				b.Fatal(err)
-			}
-			b.Run("Unmarshal", func(b *testing.B) {
-				for i := 0; i < b.N; i++ {
-					var unmarshaled map[string]int
-					err = gocql.Unmarshal(tType, marshaled, &unmarshaled)
-					if err != nil {
-						b.Fatal(err)
-					}
-				}
-			})
-		})
-
-		b.Run("Set", func(b *testing.B) {
-			tType := gocql.CollectionType{
-				NativeType: gocql.NewNativeType(4, gocql.TypeSet),
-				Elem:       gocql.NewNativeType(4, gocql.TypeInt),
-			}
-			val := map[int]struct{}{1: {}, 2: {}}
-			b.Run("Marshal", func(b *testing.B) {
-				for i := 0; i < b.N; i++ {
-					_, err := gocql.Marshal(tType, val)
-					if err != nil {
-						b.Fatal(err)
-					}
-				}
-			})
-			marshaled, err := gocql.Marshal(tType, val)
-			if err != nil {
-				b.Fatal(err)
-			}
-			b.Run("Unmarshal", func(b *testing.B) {
-				for i := 0; i < b.N; i++ {
-					var unmarshaled []int
-					err = gocql.Unmarshal(tType, marshaled, &unmarshaled)
-					if err != nil {
-						b.Fatal(err)
-					}
-				}
-			})
-		})
-
-		b.Run("UDT", func(b *testing.B) {
-			type MyUDT struct {
-				ID    gocql.UUID
-				Name  string
-				Value int
-			}
-
-			val := MyUDT{
-				ID:    gocql.UUID{},
-				Name:  "test udt",
-				Value: 123,
-			}
-
-			tType := gocql.UDTTypeInfo{
-				NativeType: gocql.NewNativeType(4, gocql.TypeUDT),
-				Name:       "myudt",
-				KeySpace:   "myks",
-				Elements: []gocql.UDTField{
-					{
-						Name: "id",
-						Type: gocql.NewNativeType(4, gocql.TypeUUID),
-					},
-					{
-						Name: "name",
-						Type: gocql.NewNativeType(4, gocql.TypeText),
-					},
-					{
-						Name: "value",
-						Type: gocql.NewNativeType(4, gocql.TypeInt),
-					},
-				},
-			}
-
-			b.Run("Marshal", func(b *testing.B) {
-				for i := 0; i < b.N; i++ {
-					_, err := gocql.Marshal(tType, val)
-					if err != nil {
-						b.Fatal(err)
-					}
-				}
-			})
-			marshaled, err := gocql.Marshal(tType, val)
-			if err != nil {
-				b.Fatal(err)
-			}
-			b.Run("Unmarshal", func(b *testing.B) {
-				for i := 0; i < b.N; i++ {
-					var unmarshaled MyUDT
-					err = gocql.Unmarshal(tType, marshaled, &unmarshaled)
-					if err != nil {
-						b.Fatal(err)
-					}
-				}
-			})
-		})
-
-		b.Run("Tuple", func(b *testing.B) {
-			val := struct {
-				Field1 int
-				Field2 string
-			}{
-				Field1: 1,
-				Field2: "test tuple",
-			}
-
-			tType := gocql.TupleTypeInfo{
-				NativeType: gocql.NewNativeType(4, gocql.TypeTuple),
-				Elems: []gocql.TypeInfo{
-					gocql.NewNativeType(4, gocql.TypeInt),
-					gocql.NewNativeType(4, gocql.TypeText),
-				},
-			}
-			b.Run("Marshal", func(b *testing.B) {
-				for i := 0; i < b.N; i++ {
-					_, err := gocql.Marshal(tType, val)
-					if err != nil {
-						b.Fatal(err)
-					}
-				}
-			})
-			marshaled, err := gocql.Marshal(tType, val)
-			if err != nil {
-				b.Fatal(err)
-			}
-			b.Run("Unmarshal", func(b *testing.B) {
-				for i := 0; i < b.N; i++ {
-					var unmarshaled struct {
-						Field1 int
-						Field2 string
-					}
-					err = gocql.Unmarshal(tType, marshaled, &unmarshaled)
-					if err != nil {
-						b.Fatal(err)
-					}
-				}
-			})
-		})
+	b.Run("Duration", func(b *testing.B) {
+		benchmarkValue(b, scalar(gocql.TypeDuration), gocql.DurationCodec, gocql.DurationCodec, gocql.Duration{Nanoseconds: 300000000000})
 	})
-
-	b.Run("NestedTypes", func(b *testing.B) {
-		b.Run("3-lvl", func(b *testing.B) {
-			type MyUDT struct {
-				ID    gocql.UUID
-				Name  string
-				Value int
-			}
-
-			val := []map[string]MyUDT{
-				{
-					"key1": {ID: gocql.UUID{}, Name: "name1", Value: 123},
-					"key2": {ID: gocql.UUID{}, Name: "name2", Value: 456},
-				},
-				{
-					"key3": {ID: gocql.UUID{}, Name: "name3", Value: 789},
-				},
-			}
-
-			tType := gocql.CollectionType{
-				NativeType: gocql.NewNativeType(4, gocql.TypeList),
-				Elem: gocql.CollectionType{
-					NativeType: gocql.NewNativeType(4, gocql.TypeMap),
-					Key:        gocql.NewNativeType(4, gocql.TypeText),
-					Elem: gocql.UDTTypeInfo{
-						NativeType: gocql.NewNativeType(4, gocql.TypeUDT),
-						Name:       "myudt",
-						KeySpace:   "myks",
-						Elements: []gocql.UDTField{
-							{
-								Name: "id",
-								Type: gocql.NewNativeType(4, gocql.TypeUUID),
-							},
-							{
-								Name: "name",
-								Type: gocql.NewNativeType(4, gocql.TypeText),
-							},
-							{
-								Name: "value",
-								Type: gocql.NewNativeType(4, gocql.TypeInt),
-							},
-						},
-					},
-				},
-			}
-
-			b.Run("Marshal", func(b *testing.B) {
-				for i := 0; i < b.N; i++ {
-					_, err := gocql.Marshal(tType, val)
-					if err != nil {
-						b.Fatal(err)
-					}
-				}
-			})
-			marshaled, err := gocql.Marshal(tType, val)
-			if err != nil {
-				b.Fatal(err)
-			}
-			b.Run("Unmarshal", func(b *testing.B) {
-				for i := 0; i < b.N; i++ {
-					var unmarshaled []map[string]MyUDT
-					err = gocql.Unmarshal(tType, marshaled, &unmarshaled)
-					if err != nil {
-						b.Fatal(err)
-					}
-				}
-			})
-		})
+	b.Run("Timestamp", func(b *testing.B) {
+		benchmarkValue(b, scalar(gocql.TypeTimestamp), gocql.TimestampCodec, gocql.TimestampCodec, gocql.Timestamp(1700000000000))
+	})
+	text, integer := scalar(gocql.TypeText), scalar(gocql.TypeInt)
+	list, _ := gocql.ListType(text)
+	set, _ := gocql.SetType(text)
+	mapping, _ := gocql.MapType(text, integer)
+	b.Run("List", func(b *testing.B) {
+		benchmarkValue(b, list, gocql.ListEncoder(gocql.StringEncoder), gocql.ListDecoder(gocql.TextCodec), []string{"foo", "bar", "baz"})
+	})
+	b.Run("Set", func(b *testing.B) {
+		benchmarkValue(b, set, gocql.SetEncoder(gocql.StringEncoder), gocql.SetDecoder(gocql.TextCodec), []string{"foo", "bar", "baz"})
+	})
+	b.Run("Map", func(b *testing.B) {
+		benchmarkValue(b, mapping, gocql.MapEncoder(gocql.StringEncoder, gocql.Int32), gocql.MapDecoder(gocql.TextCodec, gocql.Int32), []gocql.Entry[string, int32]{{Key: "a", Value: 1}, {Key: "b", Value: 2}})
+	})
+	type record struct {
+		ID    gocql.UUID
+		Name  string
+		Value int32
+	}
+	type view struct {
+		ID    gocql.UUID
+		Name  gocql.Text
+		Value int32
+	}
+	params := gocql.Params(gocql.ParamAt(0, gocql.UUIDCodec, func(v record) gocql.UUID { return v.ID }), gocql.ParamAt(1, gocql.StringEncoder, func(v record) string { return v.Name }), gocql.ParamAt(2, gocql.Int32, func(v record) int32 { return v.Value }))
+	rows := gocql.Row(gocql.ColumnAt(0, gocql.UUIDCodec, func(v *view) *gocql.UUID { return &v.ID }), gocql.ColumnAt(1, gocql.TextCodec, func(v *view) *gocql.Text { return &v.Name }), gocql.ColumnAt(2, gocql.Int32, func(v *view) *int32 { return &v.Value }))
+	tuple, _ := gocql.TupleType(scalar(gocql.TypeUUID), text, integer)
+	b.Run("Tuple", func(b *testing.B) {
+		benchmarkValue(b, tuple, gocql.TupleEncoder(params), gocql.TupleDecoder(rows), record{Name: "test tuple", Value: 123})
+	})
+	udt, _ := gocql.UDTType("myks", "myudt", gocql.ColumnSpec{Name: "id", Type: scalar(gocql.TypeUUID)}, gocql.ColumnSpec{Name: "name", Type: text}, gocql.ColumnSpec{Name: "value", Type: integer})
+	opts := gocql.UDTOptions{Keyspace: "myks", Name: "myudt"}
+	udtEnc := gocql.UDTEncoder(params, opts)
+	udtDec := gocql.UDTDecoder(rows, opts)
+	b.Run("UDT", func(b *testing.B) { benchmarkValue(b, udt, udtEnc, udtDec, record{Name: "test udt", Value: 123}) })
+	nestedMap, _ := gocql.MapType(text, udt)
+	nested, _ := gocql.ListType(nestedMap)
+	nestedValue := [][]gocql.Entry[string, record]{{{Key: "key1", Value: record{Name: "name1", Value: 123}}, {Key: "key2", Value: record{Name: "name2", Value: 456}}}, {{Key: "key3", Value: record{Name: "name3", Value: 789}}}}
+	b.Run("Nested/3-lvl", func(b *testing.B) {
+		benchmarkValue(b, nested, gocql.ListEncoder(gocql.MapEncoder(gocql.StringEncoder, udtEnc)), gocql.ListDecoder(gocql.MapDecoder(gocql.TextCodec, udtDec)), nestedValue)
 	})
 }

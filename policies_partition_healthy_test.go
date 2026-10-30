@@ -33,9 +33,6 @@ type stubConnPicker struct {
 
 func (s *stubConnPicker) InFlight() int { return s.inFlight }
 
-func (s *stubConnPicker) Pick(Token, ExecutableQuery) *Conn {
-	panic("stubConnPicker.Pick: not expected")
-}
 func (s *stubConnPicker) Put(*Conn) error  { panic("stubConnPicker.Put: not expected") }
 func (s *stubConnPicker) Remove(*Conn)     { panic("stubConnPicker.Remove: not expected") }
 func (s *stubConnPicker) Size() (int, int) { panic("stubConnPicker.Size: not expected") }
@@ -454,3 +451,5 @@ func TestPartitionHealthyEmptyPool(t *testing.T) {
 		t.Errorf("partitionHealthy() with empty pool order = %v, want %v", got, want)
 	}
 }
+
+func (s *stubConnPicker) Pick(Token) *Conn { panic("stubConnPicker.Pick: not expected") }

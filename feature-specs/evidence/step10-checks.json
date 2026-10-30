@@ -1,0 +1,324 @@
+[
+  {
+    "command": [
+      "go",
+      "test",
+      "-tags",
+      "unit",
+      "-run",
+      "^$",
+      "./..."
+    ],
+    "environment": {},
+    "evidence_kind": "passed_check",
+    "exit_code": 0,
+    "log": "/extra/scylladb/gocql-api-test-cluster/step10/checks/build-unit.log",
+    "name": "build-unit",
+    "seconds": 6.58,
+    "sha256": "5187c5a1055cd5d798c6a3f5579f0582734a955d49887c861dcccae4b39b28db",
+    "source_snapshot": "step10-native-source.json"
+  },
+  {
+    "command": [
+      "go",
+      "test",
+      "-tags",
+      "integration gocql_debug",
+      "-run",
+      "^$",
+      "./..."
+    ],
+    "environment": {},
+    "evidence_kind": "passed_check",
+    "exit_code": 0,
+    "log": "/extra/scylladb/gocql-api-test-cluster/step10/checks/build-integration.log",
+    "name": "build-integration",
+    "seconds": 11.059,
+    "sha256": "662ddfd39b7383dcbde8dc70b56ca3583feb13f57fc44005b7dfb7032f7de59e",
+    "source_snapshot": "step10-native-source.json"
+  },
+  {
+    "command": [
+      "go",
+      "test",
+      "-race",
+      "-tags",
+      "unit",
+      "-count=1",
+      "-timeout=5m",
+      "./..."
+    ],
+    "environment": {},
+    "evidence_kind": "passed_check",
+    "exit_code": 0,
+    "log": "/extra/scylladb/gocql-api-test-cluster/step10/checks/final-race.log",
+    "name": "final-race",
+    "seconds": 49.421,
+    "sha256": "1dfa93ef50717ae8d8e3cc26efb19ae0aa60f3980e353b0caffc2932af9ae1d8",
+    "source_snapshot": "step10-native-source.json"
+  },
+  {
+    "command": [
+      "go",
+      "test",
+      "-tags",
+      "unit",
+      "-count=1",
+      "-timeout=5m",
+      "./..."
+    ],
+    "environment": {
+      "GOARCH": "386"
+    },
+    "evidence_kind": "passed_check",
+    "exit_code": 0,
+    "log": "/extra/scylladb/gocql-api-test-cluster/step10/checks/final-386.log",
+    "name": "final-386",
+    "seconds": 29.555,
+    "sha256": "b301a8901918cb5ee38f3bc4035092e21b8073f3d5c257c941a48003207e2245",
+    "source_snapshot": "step10-native-source.json"
+  },
+  {
+    "command": [
+      "go",
+      "vet",
+      "-tags",
+      "unit",
+      "./..."
+    ],
+    "environment": {},
+    "evidence_kind": "passed_check",
+    "exit_code": 0,
+    "log": "/extra/scylladb/gocql-api-test-cluster/step10/checks/final-vet.log",
+    "name": "final-vet",
+    "seconds": 4.84,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "source_snapshot": "step10-native-source.json"
+  },
+  {
+    "command": [
+      "go",
+      "test",
+      "-tags",
+      "all integration unit ccm gocql_debug",
+      "-run",
+      "^$",
+      "./..."
+    ],
+    "environment": {},
+    "evidence_kind": "passed_check",
+    "exit_code": 0,
+    "log": "/extra/scylladb/gocql-api-test-cluster/step10/checks/final-alltags.log",
+    "name": "final-alltags",
+    "seconds": 12.592,
+    "sha256": "8110e3b1ee1ef138232506c8fff631029650b28a7ba58f4a7873126c7856cb01",
+    "source_snapshot": "step10-native-source.json"
+  },
+  {
+    "command": [
+      "go",
+      "test",
+      "-tags",
+      "unit",
+      "-run",
+      "^$",
+      "-exec",
+      "/bin/true",
+      "./..."
+    ],
+    "environment": {
+      "GOARCH": "arm64",
+      "GOOS": "linux"
+    },
+    "evidence_kind": "passed_check",
+    "exit_code": 0,
+    "limitation": "Cross compilation only: /bin/true substitutes execution; no arm64 runtime pass is claimed.",
+    "log": "/extra/scylladb/gocql-api-test-cluster/step10/checks/final-arm64-compile.log",
+    "name": "final-arm64-compile",
+    "seconds": 10.56,
+    "sha256": "d96ce4f7920c41c124a5ad3948dd3304df6a1ff08b7b0dec67a891104a76bac2",
+    "source_snapshot": "step10-native-source.json"
+  },
+  {
+    "command": [
+      "go",
+      "test",
+      "-C",
+      "lz4",
+      "-tags",
+      "unit",
+      "-count=1",
+      "./..."
+    ],
+    "environment": {},
+    "evidence_kind": "passed_check",
+    "exit_code": 0,
+    "log": "/extra/scylladb/gocql-api-test-cluster/step10/checks/final-lz4.log",
+    "name": "final-lz4",
+    "seconds": 0.282,
+    "sha256": "17f43cb3a98e90e8189698694123dae7fd0c231364fcbdb75ca95c4760fff3ef",
+    "source_snapshot": "step10-native-source.json"
+  },
+  {
+    "command": [
+      "go",
+      "test",
+      "-C",
+      "tests/bench",
+      "-run",
+      "^$",
+      "./..."
+    ],
+    "environment": {},
+    "evidence_kind": "passed_check",
+    "exit_code": 0,
+    "log": "/extra/scylladb/gocql-api-test-cluster/step10/checks/final-bench-compile.log",
+    "name": "final-bench-compile",
+    "seconds": 0.672,
+    "sha256": "706d9de3397a75bb5174ebf49ddb3da72cc0077866408e497d4f49bad0cf7153",
+    "source_snapshot": "step10-native-source.json"
+  },
+  {
+    "command": [
+      "go",
+      "test",
+      "-tags",
+      "unit",
+      "-run",
+      "^$",
+      "-bench",
+      "Benchmark(Step08IndependentStreamOracle|V2RoutingCompositeSpans|Step10DurationDecode)$",
+      "-benchtime=5x",
+      "-count=1",
+      "."
+    ],
+    "environment": {},
+    "evidence_kind": "passed_check",
+    "exit_code": 0,
+    "log": "/extra/scylladb/gocql-api-test-cluster/step10/checks/final-copy-smoke.log",
+    "name": "final-copy-smoke",
+    "seconds": 0.797,
+    "sha256": "acf6811825234c3b6702892c1bce0cbfc758de8b2880d9a9ae82e48f494547df",
+    "source_snapshot": "step10-native-source.json"
+  },
+  {
+    "command": [
+      "go",
+      "test",
+      "-C",
+      "tests/bench",
+      "-run",
+      "^$",
+      "-bench",
+      "^Benchmark(Serialization|VectorPublic)$",
+      "-benchtime=1x",
+      "-count=1",
+      "."
+    ],
+    "environment": {},
+    "evidence_kind": "passed_check",
+    "exit_code": 0,
+    "log": "/extra/scylladb/gocql-api-test-cluster/step10/checks/final-bench-codecs.log",
+    "name": "final-bench-codecs",
+    "seconds": 0.189,
+    "sha256": "fa42784a92fe4c7dd210c4f8e6952ed8deefaed572e0c6f1d9492573935105b4",
+    "source_snapshot": "step10-native-source.json"
+  },
+  {
+    "command": [
+      "go",
+      "test",
+      "-tags",
+      "all integration unit ccm gocql_debug",
+      "-run",
+      "^$",
+      "./..."
+    ],
+    "environment": {},
+    "evidence_kind": "passed_check",
+    "exit_code": 0,
+    "log": "/extra/scylladb/gocql-api-test-cluster/step10/checks/post-header-build.log",
+    "name": "post-header-build",
+    "seconds": 11.846,
+    "sha256": "d3b262ecab8496e382faadd52cee0e6a4841fb6bf31fc3879ce362f1973440c5",
+    "source_snapshot": "step10-final-source.json"
+  },
+  {
+    "command": [
+      "go",
+      "test",
+      "-C",
+      "tests/bench",
+      "-run",
+      "^$",
+      "./..."
+    ],
+    "environment": {},
+    "evidence_kind": "passed_check",
+    "exit_code": 0,
+    "log": "/extra/scylladb/gocql-api-test-cluster/step10/checks/post-header-bench-build.log",
+    "name": "post-header-bench-build",
+    "seconds": 2.073,
+    "sha256": "706d9de3397a75bb5174ebf49ddb3da72cc0077866408e497d4f49bad0cf7153",
+    "source_snapshot": "step10-final-source.json"
+  },
+  {
+    "command": [
+      "go",
+      "test",
+      "-tags",
+      "all integration unit ccm gocql_debug",
+      "-run",
+      "^$",
+      "./..."
+    ],
+    "environment": {
+      "GOARCH": "386"
+    },
+    "evidence_kind": "passed_check",
+    "exit_code": 0,
+    "log": "/extra/scylladb/gocql-api-test-cluster/step10/checks/post-header-386-build.log",
+    "name": "post-header-386-build",
+    "seconds": 11.784,
+    "sha256": "7f2fa16876214f112ee56c8addc654b20b9cf132ae2d41aba92b3999a1ef3b1c",
+    "source_snapshot": "step10-final-source.json"
+  },
+  {
+    "command": [
+      "git",
+      "diff",
+      "--check"
+    ],
+    "environment": {},
+    "evidence_kind": "passed_check",
+    "exit_code": 0,
+    "log": "/extra/scylladb/gocql-api-test-cluster/step10/checks/post-header-diff-check.log",
+    "name": "post-header-diff-check",
+    "seconds": 0.018,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "source_snapshot": "step10-final-source.json"
+  },
+  {
+    "command": [
+      "go",
+      "test",
+      "-C",
+      "tests/bench",
+      "-run",
+      "^$",
+      "-bench",
+      "^BenchmarkSingleConnectionSelect/Case0$",
+      "-benchtime=1x",
+      "-timeout=15s",
+      "."
+    ],
+    "environment": {},
+    "evidence_kind": "expected_failure_pending_step13",
+    "exit_code": 1,
+    "log": "/extra/scylladb/gocql-api-test-cluster/step10/checks/final-historical-replay.log",
+    "name": "final-historical-replay",
+    "seconds": 0.175,
+    "sha256": "f210c9e9c3b72279655b7db9ef072803d4083b7da73ca8587ab1bf20d98ee766",
+    "source_snapshot": "step10-native-source.json"
+  }
+]

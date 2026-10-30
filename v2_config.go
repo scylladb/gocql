@@ -272,8 +272,9 @@ func Connect(ctx context.Context, config Config) (*Session, error) {
 	if path, _ := unixContact(config); path != "" {
 		contacts = []string{"127.0.0.1"}
 	}
-	legacy := NewCluster(contacts...)
+	legacy := newClusterSettings(contacts...)
 	profile := config.DefaultProfile.Snapshot()
+	legacy.defaultProfile = profile
 	legacy.Port = int(config.Port)
 	legacy.ProtoVersion = config.Protocol
 	legacy.Keyspace = config.Keyspace

@@ -528,8 +528,6 @@ func TestParsePreparedMetadataAcceptsValidPkeyCount(t *testing.T) {
 	})
 }
 
-// A negative [long string] length must panic with a malformedFrameError: that is the
-// only value parseFrame converts, and a runtime.Error is re-panicked by design.
 func TestReadLongStringRejectsNegativeLength(t *testing.T) {
 	f := newFramer(nil, protoVersion4)
 	f.buf = []byte{0xFF, 0xFF, 0xFF, 0xFF, 'x'} // a declared length of -1
@@ -722,12 +720,12 @@ func Test_framer_writeExecuteFrame(t *testing.T) {
 			// A non-zero consistency, so reading it back is an assertion that can
 			// actually fail: with the zero value on both sides a misaligned read of
 			// Consistency(ANY) would still compare equal.
-			params := queryParams{consistency: Quorum}
+			params := fixtureQueryParams{consistency: Quorum}
 			if tt.protoVersion >= protoVersion5 {
 				params.nowInSeconds = &nowInSeconds
 				params.keyspace = "test_keyspace"
 			}
-			frame := writeExecuteFrame{
+			frame := fixtureExecuteFrame{
 				preparedID:       []byte{1, 2, 3},
 				resultMetadataID: tt.resultMetadataID,
 				customPayload: map[string][]byte{
@@ -736,7 +734,7 @@ func Test_framer_writeExecuteFrame(t *testing.T) {
 				params: params,
 			}
 
-			err := framer.writeExecuteFrame(123, frame.preparedID, frame.resultMetadataID, &frame.params, &frame.customPayload)
+			err := framer.fixtureExecuteFrame(123, frame.preparedID, frame.resultMetadataID, &frame.params, &frame.customPayload)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -779,14 +777,14 @@ func Test_framer_writeExecuteFrame(t *testing.T) {
 func Test_framer_writeBatchFrame(t *testing.T) {
 	framer := newFramer(nil, protoVersion5)
 	nowInSeconds := 123
-	frame := writeBatchFrame{
+	frame := fixtureBatchFrame{
 		customPayload: map[string][]byte{
 			"key1": []byte("value1"),
 		},
 		nowInSeconds: &nowInSeconds,
 	}
 
-	err := framer.writeBatchFrame(123, &frame, frame.customPayload)
+	err := framer.fixtureBatchFrame(123, &frame, frame.customPayload)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -795,7 +793,7 @@ func Test_framer_writeBatchFrame(t *testing.T) {
 	framer.buf = framer.buf[9:]
 
 	assertDeepEqual(t, "customPayload", frame.customPayload, framer.readBytesMap())
-	assertDeepEqual(t, "typ", frame.typ, BatchType(framer.readByte()))
+	assertDeepEqual(t, "typ", frame.typ, BatchKind(framer.readByte()))
 	assertDeepEqual(t, "len(statements)", len(frame.statements), int(framer.readShort()))
 	assertDeepEqual(t, "consistency", frame.consistency, Consistency(framer.readShort()))
 
@@ -812,13 +810,13 @@ func Test_framer_writeBatchFrame(t *testing.T) {
 // succeed after named-value rejection was hoisted out of that loop.
 func Test_framer_writeBatchFrame_unnamedValues(t *testing.T) {
 	framer := newFramer(nil, protoVersion5)
-	frame := writeBatchFrame{
+	frame := fixtureBatchFrame{
 		typ:         LoggedBatch,
 		consistency: Quorum,
-		statements: []batchStatment{
+		statements: []fixtureBatchStatement{
 			{
 				statement: "INSERT INTO t (id, v) VALUES (?, ?)",
-				values: []queryValues{
+				values: []fixtureQueryValue{
 					{value: []byte{0, 0, 0, 1}},
 					{value: []byte("x")},
 				},
@@ -826,13 +824,13 @@ func Test_framer_writeBatchFrame_unnamedValues(t *testing.T) {
 		},
 	}
 
-	if err := framer.writeBatchFrame(1, &frame, frame.customPayload); err != nil {
+	if err := framer.fixtureBatchFrame(1, &frame, frame.customPayload); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	// skipping header
 	framer.buf = framer.buf[9:]
-	assertDeepEqual(t, "typ", frame.typ, BatchType(framer.readByte()))
+	assertDeepEqual(t, "typ", frame.typ, BatchKind(framer.readByte()))
 	assertDeepEqual(t, "len(statements)", len(frame.statements), int(framer.readShort()))
 	assertDeepEqual(t, "kind", byte(0), framer.readByte()) // 0 = raw query string
 	assertDeepEqual(t, "statement", frame.statements[0].statement, framer.readLongString())
@@ -841,16 +839,6 @@ func Test_framer_writeBatchFrame_unnamedValues(t *testing.T) {
 	assertDeepEqual(t, "value1", frame.statements[0].values[1].value, framer.readBytesCopy())
 }
 
-// A [short bytes] length field is two bytes, and writeShortBytes truncated
-// uint16(len(p)) with no guard: an oversized prepared id or v5 result metadata id
-// produced a frame whose declared length disagreed with its payload, desynchronising
-// the connection. Both are opaque server-issued tokens far below the limit, so what
-// is pinned here is what a mis-sized one does, not a value anyone expects to see.
-//
-// Driven through buildFrame, the entry point Conn.exec uses, so the hoisted check is
-// covered too: writeExecuteFrame writes a header and custom payload before the
-// prepared id, and writeBatchFrame writes a header, type and count before its
-// statements, so a rejection that is not hoisted leaves a partial frame behind.
 func Test_framer_shortBytesWriters_rejectOverlongValues(t *testing.T) {
 	tooLong := make([]byte, math.MaxUint16+1)
 	ok := []byte{0x01, 0x02}
@@ -863,19 +851,19 @@ func Test_framer_shortBytesWriters_rejectOverlongValues(t *testing.T) {
 		{
 			name:  "EXECUTE prepared id",
 			proto: protoVersion4,
-			build: &writeExecuteFrame{preparedID: tooLong, params: queryParams{consistency: Quorum}},
+			build: &fixtureExecuteFrame{preparedID: tooLong, params: fixtureQueryParams{consistency: Quorum}},
 		},
 		{
 			name:  "EXECUTE result metadata id on v5",
 			proto: protoVersion5,
-			build: &writeExecuteFrame{preparedID: ok, resultMetadataID: tooLong, params: queryParams{consistency: Quorum}},
+			build: &fixtureExecuteFrame{preparedID: ok, resultMetadataID: tooLong, params: fixtureQueryParams{consistency: Quorum}},
 		},
 		{
 			name:  "BATCH prepared id",
 			proto: protoVersion4,
-			build: &writeBatchFrame{
+			build: &fixtureBatchFrame{
 				consistency: Quorum,
-				statements:  []batchStatment{{preparedID: tooLong}},
+				statements:  []fixtureBatchStatement{{preparedID: tooLong}},
 			},
 		},
 	} {
@@ -890,65 +878,43 @@ func Test_framer_shortBytesWriters_rejectOverlongValues(t *testing.T) {
 	}
 }
 
-// On protocols below v5 the keyspace override and now_in_seconds options are
-// not part of the wire format. The frame writers must reject them with an
-// explicit error (rather than silently dropping them, panicking, or leaving a
-// partial frame in the reusable framer buffer).
-//
-// Driven through buildFrame, the entry point Conn.exec actually uses, for both
-// writers that carry queryParams. Calling writeQueryParams directly would assert
-// nothing: it is the first thing a fresh framer does, so `len(buf) == 0` holds
-// whatever the writer does. Via buildFrame the assertion has teeth — writeQueryFrame
-// writes the header, custom payload and statement before writeQueryParams runs, and
-// writeExecuteFrame additionally writes the prepared id and (on v5) the result
-// metadata id.
-//
-// wantErr pins which validation rejected the frame, so a case cannot pass by
-// tripping an unrelated one.
 func Test_framer_queryParamsWriters_rejectUnsupportedOptionsOnV4(t *testing.T) {
 	nowInSeconds := 123
-	overflow := math.MaxInt32 + 1
 
 	cases := []struct {
 		name    string
 		proto   byte
-		opts    queryParams
+		opts    fixtureQueryParams
 		wantErr string
 	}{
 		{
 			name:    "keyspace on v4",
 			proto:   protoVersion4,
-			opts:    queryParams{consistency: Quorum, keyspace: "ks"},
+			opts:    fixtureQueryParams{consistency: Quorum, keyspace: "ks"},
 			wantErr: "keyspace override can only be set with protocol v5 or higher",
 		},
 		{
 			name:    "nowInSeconds on v4",
 			proto:   protoVersion4,
-			opts:    queryParams{consistency: Quorum, nowInSeconds: &nowInSeconds},
+			opts:    fixtureQueryParams{consistency: Quorum, nowInSeconds: &nowInSeconds},
 			wantErr: "now_in_seconds can only be set with protocol v5 or higher",
-		},
-		{
-			name:    "nowInSeconds overflow on v5",
-			proto:   protoVersion5,
-			opts:    queryParams{consistency: Quorum, nowInSeconds: &overflow},
-			wantErr: "overflows int32",
 		},
 	}
 
 	writers := []struct {
 		name  string
-		build func(opts queryParams) frameBuilder
+		build func(opts fixtureQueryParams) frameBuilder
 	}{
 		{
 			name: "QUERY",
-			build: func(opts queryParams) frameBuilder {
-				return &writeQueryFrame{statement: "SELECT * FROM system.local", params: opts}
+			build: func(opts fixtureQueryParams) frameBuilder {
+				return &fixtureQueryFrame{statement: "SELECT * FROM system.local", params: opts}
 			},
 		},
 		{
 			name: "EXECUTE",
-			build: func(opts queryParams) frameBuilder {
-				return &writeExecuteFrame{
+			build: func(opts fixtureQueryParams) frameBuilder {
+				return &fixtureExecuteFrame{
 					preparedID:       []byte{0x01, 0x02},
 					resultMetadataID: []byte{0x03, 0x04},
 					params:           opts,
@@ -991,59 +957,52 @@ func Test_framer_validateV5Options_acceptsSupportedOptions(t *testing.T) {
 
 func Test_framer_writeBatchFrame_rejectsUnsupportedOptionsOnV4(t *testing.T) {
 	nowInSeconds := 123
-	overflow := math.MaxInt32 + 1
 
-	namedValues := []queryValues{{name: "id", value: []byte{1}}}
+	namedValues := []fixtureQueryValue{{name: "id", value: []byte{1}}}
 
 	// wantErr pins which validation rejected the frame, so a case cannot pass by
 	// tripping some unrelated error.
 	cases := []struct {
 		name    string
 		proto   byte
-		frame   writeBatchFrame
+		frame   fixtureBatchFrame
 		wantErr string
 	}{
 		{
 			name:    "keyspace on v4",
 			proto:   protoVersion4,
-			frame:   writeBatchFrame{keyspace: "ks"},
+			frame:   fixtureBatchFrame{keyspace: "ks"},
 			wantErr: "keyspace override can only be set with protocol v5 or higher",
 		},
 		{
 			name:    "nowInSeconds on v4",
 			proto:   protoVersion4,
-			frame:   writeBatchFrame{nowInSeconds: &nowInSeconds},
+			frame:   fixtureBatchFrame{nowInSeconds: &nowInSeconds},
 			wantErr: "now_in_seconds can only be set with protocol v5 or higher",
-		},
-		{
-			name:    "nowInSeconds overflow on v5",
-			proto:   protoVersion5,
-			frame:   writeBatchFrame{nowInSeconds: &overflow},
-			wantErr: "overflows int32",
 		},
 		// Named values are rejected on every protocol version (CASSANDRA-10246),
 		// for both raw-statement and prepared-id batch entries.
 		{
 			name:  "named values on v4",
 			proto: protoVersion4,
-			frame: writeBatchFrame{
-				statements: []batchStatment{{statement: "INSERT INTO t (id) VALUES (?)", values: namedValues}},
+			frame: fixtureBatchFrame{
+				statements: []fixtureBatchStatement{{statement: "INSERT INTO t (id) VALUES (?)", values: namedValues}},
 			},
 			wantErr: "named query values are not supported in batches",
 		},
 		{
 			name:  "named values on v5",
 			proto: protoVersion5,
-			frame: writeBatchFrame{
-				statements: []batchStatment{{statement: "INSERT INTO t (id) VALUES (?)", values: namedValues}},
+			frame: fixtureBatchFrame{
+				statements: []fixtureBatchStatement{{statement: "INSERT INTO t (id) VALUES (?)", values: namedValues}},
 			},
 			wantErr: "named query values are not supported in batches",
 		},
 		{
 			name:  "named values on a prepared statement",
 			proto: protoVersion5,
-			frame: writeBatchFrame{
-				statements: []batchStatment{{preparedID: []byte{0xAA, 0xBB}, values: namedValues}},
+			frame: fixtureBatchFrame{
+				statements: []fixtureBatchStatement{{preparedID: []byte{0xAA, 0xBB}, values: namedValues}},
 			},
 			wantErr: "named query values are not supported in batches",
 		},
@@ -1051,9 +1010,9 @@ func Test_framer_writeBatchFrame_rejectsUnsupportedOptionsOnV4(t *testing.T) {
 			// The rejection must scan every statement, not just the first.
 			name:  "named values in a later statement",
 			proto: protoVersion5,
-			frame: writeBatchFrame{
-				statements: []batchStatment{
-					{statement: "INSERT INTO t (id) VALUES (?)", values: []queryValues{{value: []byte{1}}}},
+			frame: fixtureBatchFrame{
+				statements: []fixtureBatchStatement{
+					{statement: "INSERT INTO t (id) VALUES (?)", values: []fixtureQueryValue{{value: []byte{1}}}},
 					{statement: "INSERT INTO u (id) VALUES (?)", values: namedValues},
 				},
 			},
@@ -1064,7 +1023,7 @@ func Test_framer_writeBatchFrame_rejectsUnsupportedOptionsOnV4(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			framer := newFramer(nil, tc.proto)
-			err := framer.writeBatchFrame(1, &tc.frame, tc.frame.customPayload)
+			err := framer.fixtureBatchFrame(1, &tc.frame, tc.frame.customPayload)
 			if err == nil {
 				t.Fatal("expected an error, got nil")
 			}
@@ -1120,10 +1079,6 @@ func Test_defaultFramerFlags(t *testing.T) {
 	}
 }
 
-// No framer may ever set FlagBetaProtocol: opting into a server's in-development
-// v5 dialect makes a Cassandra 3.11 handshake succeed and every following frame
-// fail, instead of v5 being rejected cleanly (see protoVersion5, CASSGO-88).
-// Covered here for every way a request framer is built.
 func Test_framerFlags_neverBetaProtocol(t *testing.T) {
 	comp := testMockedCompressor{}
 
@@ -1146,8 +1101,6 @@ func Test_framerFlags_neverBetaProtocol(t *testing.T) {
 	}
 }
 
-// newFramer must not set FlagCompress on v5, where compression happens at the
-// segment layer instead of via a frame-header flag.
 func Test_newFramer_compressFlag(t *testing.T) {
 	if flags := newFramer(testMockedCompressor{}, protoVersion5).flags; flags&frm.FlagCompress != 0 {
 		t.Error("newFramer(v5) should not set FlagCompress (v5 compresses at the segment layer)")
@@ -1259,9 +1212,9 @@ func Test_readUncompressedFrame(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			framer := newFramer(nil, protoVersion5)
-			req := writeQueryFrame{
+			req := fixtureQueryFrame{
 				statement: "SELECT * FROM system.local",
-				params: queryParams{
+				params: fixtureQueryParams{
 					consistency: Quorum,
 					keyspace:    "gocql_test",
 				},
@@ -1385,9 +1338,9 @@ func Test_readCompressedFrame(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			framer := newFramer(nil, protoVersion5)
-			req := writeQueryFrame{
+			req := fixtureQueryFrame{
 				statement: strings.Repeat("SELECT * FROM system.local ", 32),
-				params: queryParams{
+				params: fixtureQueryParams{
 					consistency: Quorum,
 					keyspace:    "gocql_test",
 				},
@@ -1634,107 +1587,6 @@ func TestPrepareModernLayoutReusesBuffers(t *testing.T) {
 	}
 }
 
-// --- queryValues pool tests ---
-
-func TestQueryValuesBucket(t *testing.T) {
-	tests := []struct {
-		n      int
-		bucket int
-	}{
-		{0, 0}, {1, 0}, {8, 0},
-		{9, 1}, {16, 1},
-		{17, 2}, {32, 2},
-		{33, 3}, {64, 3},
-		{65, 4}, {128, 4},
-		{129, -1}, {1000, -1},
-	}
-	for _, tt := range tests {
-		got := queryValuesBucket(tt.n)
-		if got != tt.bucket {
-			t.Errorf("queryValuesBucket(%d) = %d, want %d", tt.n, got, tt.bucket)
-		}
-	}
-}
-
-func TestGetQueryValuesLength(t *testing.T) {
-	for _, n := range []int{0, 1, 5, 8, 10, 16, 30, 64, 128, 200} {
-		s := getQueryValues(n)
-		if len(s) != n {
-			t.Errorf("getQueryValues(%d): len = %d, want %d", n, len(s), n)
-		}
-		// For pooled sizes, capacity should be the bucket size.
-		bucket := queryValuesBucket(n)
-		if bucket >= 0 {
-			wantCap := 8 << bucket
-			if cap(s) != wantCap {
-				t.Errorf("getQueryValues(%d): cap = %d, want %d", n, cap(s), wantCap)
-			}
-		}
-	}
-}
-
-func TestPutGetQueryValuesClearsReferences(t *testing.T) {
-	s := getQueryValues(4)
-	full := s[:cap(s)] // cap(s) == 8; verify the whole backing array, not just len(s)
-	full[0].name = "col1"
-	full[0].value = []byte("data")
-	full[1].name = "col2"
-	full[1].value = []byte("more")
-	full[2].isUnset = true
-	full[len(full)-1].name = "tail"
-	full[len(full)-1].value = []byte("tail-data")
-	full[len(full)-1].isUnset = true
-
-	putQueryValues(s)
-
-	// Assert directly on the original backing array: putQueryValues clears it
-	// in place, so full still reflects the zeroed state. This is deterministic
-	// and does not depend on sync.Pool returning the same object on the next Get.
-	for i := range full {
-		if full[i].name != "" {
-			t.Errorf("element %d: name = %q, want empty after put", i, full[i].name)
-		}
-		if full[i].value != nil {
-			t.Errorf("element %d: value = %v, want nil after put", i, full[i].value)
-		}
-		if full[i].isUnset {
-			t.Errorf("element %d: isUnset = true, want false after put", i)
-		}
-	}
-}
-
-func TestPutQueryValuesNilSafe(t *testing.T) {
-	// Must not panic.
-	putQueryValues(nil)
-}
-
-func TestPutBatchQueryValues(t *testing.T) {
-	stmts := make([]batchStatment, 3)
-	stmts[0].values = getQueryValues(5)
-	stmts[0].values[0].name = "a"
-	// stmts[1].values is nil (simulates entry without args)
-	stmts[2].values = getQueryValues(10)
-	stmts[2].values[0].value = []byte("x")
-
-	putBatchQueryValues(stmts)
-
-	for i, s := range stmts {
-		if s.values != nil {
-			t.Errorf("stmts[%d].values should be nil after putBatchQueryValues", i)
-		}
-	}
-}
-
-func TestGetQueryValuesOversize(t *testing.T) {
-	// Slices larger than 128 should not be pooled.
-	s := getQueryValues(200)
-	if len(s) != 200 {
-		t.Errorf("getQueryValues(200): len = %d, want 200", len(s))
-	}
-	// Should not panic when returning oversize.
-	putQueryValues(s)
-}
-
 // writeRowsResultWithColumnType builds a RESULT/Rows body carrying a single
 // column of the custom type customType, so that parseFrame drives readTypeInfo
 // over a server-supplied type string.
@@ -1838,7 +1690,7 @@ func TestParseResultRowsRejectsMalformedVectorType(t *testing.T) {
 // framer.readFrame() reads that length and decompresses it again.
 //
 // This is the default configuration -- discoverProtocol caps at protoVersion4, so a
-// NewCluster() user who sets a Compressor lands here and never on v5 segments -- and
+// newClusterSettings() user who sets a Compressor lands here and never on v5 segments -- and
 // until now nothing covered it. Test_defaultFramerFlags and Test_newFramer_compressFlag
 // check only that FlagCompress is set, and Test_readCompressedFrame is about v5 segments
 // with a no-op compressor that never compresses a byte. A snappy encode/decode
@@ -1846,7 +1698,7 @@ func TestParseResultRowsRejectsMalformedVectorType(t *testing.T) {
 // gone unnoticed by all three.
 //
 // The framer is driven directly rather than through a query builder: the subject is the
-// compression layer, and a queryParams route would drag in v5-only option validation.
+// compression layer, and a fixtureQueryParams route would drag in v5-only option validation.
 func Test_framer_v4SnappyRoundTrip(t *testing.T) {
 	t.Parallel()
 

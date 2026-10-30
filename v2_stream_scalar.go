@@ -17,35 +17,37 @@
 package gocql
 
 import (
+	"encoding/binary"
 	"fmt"
 	"io"
+	"math"
 	"net/netip"
-
-	"github.com/scylladb/gocql/v2/internal/wire"
 )
 
-// Only built-in fixed-domain scalar codecs use this bounded scratch seam. It
-// cannot adapt arbitrary buffered codecs or variable-size cells to streaming.
+// Streaming scalars use bounded native conversion callbacks. They never create
+// a ValueReader or call a buffered decoder; variable-size values read directly
+// into final caller storage. The largest fixed scalar scratch is 16 bytes.
 type streamScalarCodec[T any] struct {
-	base             Codec[T]
+	kind             Type
+	decode           func(*StreamValueReader) (T, error)
 	minimum, maximum int64
 }
 type streamScalarPlan[T any] struct {
-	base             Codec[T]
+	decode           func(*StreamValueReader) (T, error)
 	typ              DataType
 	minimum, maximum int64
 }
 
 func (c streamScalarCodec[T]) Compile(t DataType) (StreamValuePlan[T], error) {
-	if err := c.base.CheckType(t); err != nil {
+	if err := checkScalarType(t, c.kind, 0); err != nil {
 		return nil, err
 	}
-	return streamScalarPlan[T]{base: c.base, typ: t, minimum: c.minimum, maximum: c.maximum}, nil
+	return streamScalarPlan[T]{decode: c.decode, typ: t, minimum: c.minimum, maximum: c.maximum}, nil
 }
 func (p streamScalarPlan[T]) Reset(dst *T) {
 	if dst != nil {
-		var z T
-		*dst = z
+		var zero T
+		*dst = zero
 	}
 }
 func (p streamScalarPlan[T]) DecodeInto(r *StreamValueReader, dst *T) error {
@@ -62,42 +64,121 @@ func (p streamScalarPlan[T]) DecodeInto(r *StreamValueReader, dst *T) error {
 	if n < p.minimum || n > p.maximum {
 		return r.fail(typeValidation("length", "%s requires %d..%d bytes, got %d", r.typ, p.minimum, p.maximum, n))
 	}
-	b := r.shared.scalar[:int(n)]
-	if err := r.readFull(b); err != nil {
-		return err
-	}
-	chain, _ := wire.NewChain(wire.Borrow(b))
-	value, err := p.base.Decode(newValueReader(p.typ, Present, chain, nil))
+	value, err := p.decode(r)
 	if err != nil {
 		return r.fail(err)
+	}
+	if err := r.RequireEnd(); err != nil {
+		return err
 	}
 	*dst = value
 	return nil
 }
-func streamFixed[T any](codec Codec[T], size int64) StreamDecoder[T] {
-	return streamScalarCodec[T]{base: codec, minimum: size, maximum: size}
+func streamFixed[T any](kind Type, size int64, convert func([]byte) (T, error)) StreamDecoder[T] {
+	return streamScalarCodec[T]{kind: kind, minimum: size, maximum: size, decode: func(r *StreamValueReader) (T, error) {
+		bytes := r.shared.scalar[:int(size)]
+		if err := r.readFull(bytes); err != nil {
+			var zero T
+			return zero, err
+		}
+		return convert(bytes)
+	}}
+}
+func streamInteger[T ~int8 | ~int16 | ~int32 | ~int64](kind Type, size int64) StreamDecoder[T] {
+	return streamFixed(kind, size, func(b []byte) (T, error) {
+		switch len(b) {
+		case 1:
+			return T(int8(b[0])), nil
+		case 2:
+			return T(int16(binary.BigEndian.Uint16(b))), nil
+		case 4:
+			return T(int32(binary.BigEndian.Uint32(b))), nil
+		default:
+			return T(int64(binary.BigEndian.Uint64(b))), nil
+		}
+	})
+}
+func streamReadSignedVInt(r *StreamValueReader) (int64, error) {
+	first, err := r.Uint8()
+	if err != nil {
+		return 0, err
+	}
+	v := newScalarVInt(first)
+	for v.remaining > 0 {
+		next, err := r.Uint8()
+		if err != nil {
+			return 0, err
+		}
+		v.add(next)
+	}
+	return v.signed(), nil
+}
+func streamReadDuration(r *StreamValueReader) (Duration, error) {
+
+	months, err := streamReadSignedVInt(r)
+	if err != nil {
+		return Duration{}, err
+	}
+	days, err := streamReadSignedVInt(r)
+	if err != nil {
+		return Duration{}, err
+	}
+	nanos, err := streamReadSignedVInt(r)
+	if err != nil {
+		return Duration{}, err
+	}
+	return durationFromComponents(months, days, nanos)
 }
 
 var (
-	StreamBool      StreamDecoder[bool]       = streamFixed(Bool, 1)
-	StreamInt8      StreamDecoder[int8]       = streamFixed(Int8, 1)
-	StreamInt16     StreamDecoder[int16]      = streamFixed(Int16, 2)
-	StreamInt32     StreamDecoder[int32]      = streamFixed(Int32, 4)
-	StreamInt64     StreamDecoder[int64]      = streamFixed(Int64, 8)
-	StreamFloat32   StreamDecoder[float32]    = streamFixed(Float32, 4)
-	StreamFloat64   StreamDecoder[float64]    = streamFixed(Float64, 8)
-	StreamCounter   StreamDecoder[Counter]    = streamFixed(CounterCodec, 8)
-	StreamDate      StreamDecoder[Date]       = streamFixed(DateCodec, 4)
-	StreamTime      StreamDecoder[TimeOfDay]  = streamFixed(TimeCodec, 8)
-	StreamTimestamp StreamDecoder[Timestamp]  = streamFixed(TimestampCodec, 8)
-	StreamDuration  StreamDecoder[Duration]   = streamScalarCodec[Duration]{base: DurationCodec, minimum: 3, maximum: 27}
-	StreamUUID      StreamDecoder[UUID]       = streamFixed(UUIDCodec, 16)
-	StreamTimeUUID  StreamDecoder[TimeUUID]   = streamFixed(TimeUUIDCodec, 16)
-	StreamInet      StreamDecoder[netip.Addr] = streamScalarCodec[netip.Addr]{base: InetCodec, minimum: 4, maximum: 16}
-	StreamText      StreamDecoder[[]byte]     = streamBytesCodec{kind: TypeText}
-	StreamASCII     StreamDecoder[[]byte]     = streamBytesCodec{kind: TypeAscii}
-	StreamBlob      StreamDecoder[[]byte]     = streamBytesCodec{kind: TypeBlob}
-	StreamVarint    StreamDecoder[[]byte]     = streamBytesCodec{kind: TypeVarint}
+	StreamBool StreamDecoder[bool] = streamFixed(TypeBoolean, 1, func(b []byte) (bool, error) {
+		if b[0] > 1 {
+			return false, typeValidation("boolean", "must be 0 or 1")
+		}
+		return b[0] == 1, nil
+	})
+	StreamInt8      = streamInteger[int8](TypeTinyInt, 1)
+	StreamInt16     = streamInteger[int16](TypeSmallInt, 2)
+	StreamInt32     = streamInteger[int32](TypeInt, 4)
+	StreamInt64     = streamInteger[int64](TypeBigInt, 8)
+	StreamCounter   = streamInteger[Counter](TypeCounter, 8)
+	StreamTimestamp = streamInteger[Timestamp](TypeTimestamp, 8)
+	StreamFloat32   = streamFixed(TypeFloat, 4, func(b []byte) (float32, error) { return math.Float32frombits(binary.BigEndian.Uint32(b)), nil })
+	StreamFloat64   = streamFixed(TypeDouble, 8, func(b []byte) (float64, error) { return math.Float64frombits(binary.BigEndian.Uint64(b)), nil })
+	StreamDate      = streamFixed(TypeDate, 4, func(b []byte) (Date, error) { return Date(int64(binary.BigEndian.Uint32(b)) - (1 << 31)), nil })
+	StreamTime      = streamFixed(TypeTime, 8, func(b []byte) (TimeOfDay, error) {
+		v := binary.BigEndian.Uint64(b)
+		if v >= uint64(nanosecondsPerDay) {
+			return 0, typeValidation("time", "outside one day")
+		}
+		return TimeOfDay(v), nil
+	})
+	StreamDuration StreamDecoder[Duration] = streamScalarCodec[Duration]{kind: TypeDuration, minimum: 3, maximum: 27, decode: streamReadDuration}
+	StreamUUID                             = streamFixed(TypeUUID, 16, func(b []byte) (UUID, error) { var v UUID; copy(v[:], b); return v, nil })
+	StreamTimeUUID                         = streamFixed(TypeTimeUUID, 16, func(b []byte) (TimeUUID, error) {
+		var v TimeUUID
+		copy(v[:], b)
+		if UUID(v).Version() != 1 {
+			return TimeUUID{}, typeValidation("timeuuid", "must have version 1")
+		}
+		return v, nil
+	})
+	StreamInet StreamDecoder[netip.Addr] = streamScalarCodec[netip.Addr]{kind: TypeInet, minimum: 4, maximum: 16, decode: func(r *StreamValueReader) (netip.Addr, error) {
+		n := r.Remaining()
+		if n != 4 && n != 16 {
+			return netip.Addr{}, typeValidation("inet", "requires 4 or 16 bytes")
+		}
+		b := r.shared.scalar[:int(n)]
+		if err := r.readFull(b); err != nil {
+			return netip.Addr{}, err
+		}
+		v, _ := netip.AddrFromSlice(b)
+		return v, nil
+	}}
+	StreamText   StreamDecoder[[]byte] = streamBytesCodec{kind: TypeText}
+	StreamASCII  StreamDecoder[[]byte] = streamBytesCodec{kind: TypeAscii}
+	StreamBlob   StreamDecoder[[]byte] = streamBytesCodec{kind: TypeBlob}
+	StreamVarint StreamDecoder[[]byte] = streamBytesCodec{kind: TypeVarint}
 )
 
 type streamBytesCodec struct{ kind Type }

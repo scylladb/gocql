@@ -25,21 +25,21 @@ func (f dnsResolverFunc) LookupIP(host string) ([]net.IP, error) {
 type fakeControlConn struct {
 	statement string
 	values    []any
-	iter      *Iter
+	iter      *nativeResultFixture
 }
 
 func (f *fakeControlConn) getConn() *connHost          { return nil }
 func (f *fakeControlConn) awaitSchemaAgreement() error { return nil }
-func (f *fakeControlConn) query(statement string, values ...any) *Iter {
+func (f *fakeControlConn) query(statement string, values ...any) *nativeResultFixture {
 	f.statement = statement
 	f.values = values
 	if f.iter != nil {
 		return f.iter
 	}
-	return &Iter{}
+	return &nativeResultFixture{}
 }
-func (f *fakeControlConn) querySystem(statement string, values ...any) *Iter {
-	return &Iter{}
+func (f *fakeControlConn) querySystem(statement string, values ...any) *nativeResultFixture {
+	return &nativeResultFixture{}
 }
 func (f *fakeControlConn) discoverProtocol(hosts []*HostInfo) (int, error) { return 0, nil }
 func (f *fakeControlConn) connect(hosts []*HostInfo) error                 { return nil }
@@ -668,7 +668,7 @@ func TestClientRoutesHandlerTranslateHost_RetainsCurrentRouteAfterQueryError(t *
 	}
 	h := &ClientRoutesHandler{
 		log:         &defaultLogger{},
-		c:           &fakeControlConn{iter: &Iter{err: errors.New("query failed")}},
+		c:           &fakeControlConn{iter: &nativeResultFixture{err: errors.New("query failed")}},
 		closeChan:   make(chan struct{}),
 		updateTasks: make(chan updateTask, 1024),
 		resolver: dnsResolverFunc(func(host string) ([]net.IP, error) {

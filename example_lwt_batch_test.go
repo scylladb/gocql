@@ -27,9 +27,8 @@ package gocql_test
 import (
 	"context"
 	"fmt"
+	gocql "github.com/scylladb/gocql/v2"
 	"log"
-
-	"github.com/scylladb/gocql/v2"
 )
 
 // ExampleRunBatch_conditional consumes every typed row returned by a conditional batch.

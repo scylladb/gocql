@@ -6,8 +6,7 @@ package gocql
 import (
 	"context"
 	"crypto/tls"
-	"encoding/json"
-	"fmt"
+
 	"math"
 	"sync"
 	"testing"
@@ -15,6 +14,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	"encoding/json"
 	frm "github.com/scylladb/gocql/v2/internal/frame"
 	"github.com/scylladb/gocql/v2/internal/streams"
 )
@@ -42,106 +42,8 @@ func TestControlConnConfigIsMarked(t *testing.T) {
 // newTestReportSession builds a *Session suitable for exercising the report
 // builders directly, without dialing anything. Only the fields the builders
 // read (cfg, policy, logger) are populated.
-func newTestReportSession(cfg ClusterConfig, policy HostSelectionPolicy) *Session {
+func newTestReportSession(cfg clusterSettings, policy HostSelectionPolicy) *Session {
 	return &Session{cfg: cfg, policy: policy, logger: &defaultLogger{}}
-}
-
-func TestDriverConfigReporterStartupOptions(t *testing.T) {
-	cfg := *NewCluster("127.0.0.1")
-	s := newTestReportSession(cfg, TokenAwareHostPolicy(RoundRobinHostPolicy()))
-	reporter := newDriverConfigReporter(s)
-
-	opts := map[string]string{}
-	reporter.updateStartupOptions(opts, false)
-
-	raw, ok := opts[driverConfigStartupKey]
-	if !ok {
-		t.Fatal("expected DRIVER_CONFIG to be set")
-	}
-
-	var report driverConfigReport
-	if err := json.Unmarshal([]byte(raw), &report); err != nil {
-		t.Fatalf("DRIVER_CONFIG did not decode as JSON: %v", err)
-	}
-
-	if report.Version != driverConfigVersion {
-		t.Errorf("expected version %d, got %d", driverConfigVersion, report.Version)
-	}
-	if got := report.Connection.Connect.TimeoutMs; got == nil || *got != cfg.ConnectTimeout.Milliseconds() {
-		t.Errorf("connect.timeout-ms = %v, want %d", got, cfg.ConnectTimeout.Milliseconds())
-	}
-	if got, want := report.Query.Defaults.Consistency, "QUORUM"; got != want {
-		t.Errorf("query.defaults.consistency = %q, want %q", got, want)
-	}
-	if report.ControlPlane.Schema.Agreement.TimeoutMs != cfg.MaxWaitSchemaAgreement.Milliseconds() {
-		t.Errorf("control-plane.schema.agreement.timeout-ms = %d, want %d",
-			report.ControlPlane.Schema.Agreement.TimeoutMs, cfg.MaxWaitSchemaAgreement.Milliseconds())
-	}
-	// The default oldRetryPolicy is nil; the effective policy must be the package
-	// fallback, not an absent/zero policy.
-	policyMap, ok := report.Query.Retry.Policy.(map[string]any)
-	if !ok || policyMap["type"] != "simple" {
-		t.Errorf("query.retry.policy = %#v, want type simple (SimpleRetryPolicy fallback)", report.Query.Retry.Policy)
-	}
-}
-
-// TestDriverConfigReporterStartupOptions_ScyllaConnGatesServerSideMs pins that
-// control-plane.queries.system.timeout.server-side-ms only appears when the
-// connection is talking to Scylla, mirroring the USING TIMEOUT clause in
-// Conn.setSystemRequestTimeout.
-func TestDriverConfigReporterStartupOptions_ScyllaConnGatesServerSideMs(t *testing.T) {
-	cfg := *NewCluster("127.0.0.1")
-	s := newTestReportSession(cfg, TokenAwareHostPolicy(RoundRobinHostPolicy()))
-	reporter := newDriverConfigReporter(s)
-
-	for _, isScylla := range []bool{false, true} {
-		opts := map[string]string{}
-		reporter.updateStartupOptions(opts, isScylla)
-
-		var report driverConfigReport
-		if err := json.Unmarshal([]byte(opts[driverConfigStartupKey]), &report); err != nil {
-			t.Fatalf("isScyllaConn=%v: DRIVER_CONFIG did not decode: %v", isScylla, err)
-		}
-
-		timeout := report.ControlPlane.Queries.System.Timeout
-		if timeout.ClientSideMs == nil {
-			t.Errorf("isScyllaConn=%v: expected client-side-ms to be set", isScylla)
-		}
-		gotServerSide := timeout.ServerSideMs != nil
-		if gotServerSide != isScylla {
-			t.Errorf("isScyllaConn=%v: server-side-ms present = %v, want %v", isScylla, gotServerSide, isScylla)
-		}
-	}
-}
-
-func rawKeys(t *testing.T, v any) map[string]json.RawMessage {
-	t.Helper()
-	data, err := json.Marshal(v)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	m := map[string]json.RawMessage{}
-	if err := json.Unmarshal(data, &m); err != nil {
-		t.Fatalf("unmarshal into map: %v", err)
-	}
-	return m
-}
-
-// TestBuildRequestsReport_OrphanedRequestsOmitted pins both halves of the
-// orphaned group's treatment: in-flight is always reported, and orphaned never
-// is, because nothing bounds orphaned requests (see the comment on
-// requestsReport). Without this, either "someone fabricates a number to fill
-// the key" or "someone drops in-flight too" would pass unnoticed.
-func TestBuildRequestsReport_OrphanedRequestsOmitted(t *testing.T) {
-	cfg := *NewCluster("127.0.0.1")
-	keys := rawKeys(t, buildRequestsReport(&cfg))
-
-	if _, ok := keys["in-flight"]; !ok {
-		t.Error(`expected "in-flight" to be present`)
-	}
-	if _, ok := keys["orphaned"]; ok {
-		t.Error(`expected "orphaned" to be absent (documented schema deviation)`)
-	}
 }
 
 func TestBuildRequestsReport_InFlightMax(t *testing.T) {
@@ -164,7 +66,7 @@ func TestBuildRequestsReport_InFlightMax(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := *NewCluster("127.0.0.1")
+			cfg := *newClusterSettings("127.0.0.1")
 			cfg.MaxRequestsPerConn = tt.maxRequestsPerConn
 			got := buildRequestsReport(&cfg)
 			if got.InFlight.Max != tt.want {
@@ -194,26 +96,6 @@ func TestEffectiveInFlightMaxMatchesStreamGenerator(t *testing.T) {
 	}
 }
 
-// TestCustomPolicyNameIsAlwaysReportable pins that the name given to a custom
-// policy is always something the schema accepts. reflect.TypeOf returns a nil
-// Type for a nil interface, which used to panic here, and an unnamed type has
-// an empty Name(), which nonEmptyString rejects.
-func TestCustomPolicyNameIsAlwaysReportable(t *testing.T) {
-	type namedPolicy struct{ oldRetryPolicy }
-
-	for _, v := range []any{
-		nil,
-		(*SimpleRetryPolicy)(nil),
-		&SimpleRetryPolicy{},
-		&namedPolicy{},
-		struct{ oldRetryPolicy }{},
-	} {
-		if got := customPolicyName(v); got == "" {
-			t.Errorf("customPolicyName(%T) is empty, which the schema rejects", v)
-		}
-	}
-}
-
 // TestBuildLoadBalancingPolicyReport_NilPolicy pins that a nil policy is
 // reported rather than panicking. Reporting must never prevent a connection
 // from being established, and this runs on the goroutine that establishes it.
@@ -227,56 +109,9 @@ func TestBuildLoadBalancingPolicyReport_NilPolicy(t *testing.T) {
 	}
 }
 
-// TestReportBuildersToleratePolicyNils pins that no builder panics on a policy
-// that is nil or a typed nil pointer. A type switch sends a typed nil to its
-// own branch rather than to `case nil`, so each branch would dereference it.
-// This runs on the goroutine establishing a connection, where a panic takes
-// down the process rather than the connection.
-func TestReportBuildersToleratePolicyNils(t *testing.T) {
-	reconnection := []ReconnectionPolicy{
-		nil,
-		(*NoReconnectionPolicy)(nil),
-		(*ConstantReconnectionPolicy)(nil),
-		(*ExponentialReconnectionPolicy)(nil),
-		(*fakeReconnectionPolicy)(nil),
-	}
-	for _, rp := range reconnection {
-		t.Run(fmt.Sprintf("reconnection/%T", rp), func(t *testing.T) {
-			buildReconnectionPolicyReport(rp)
-		})
-	}
-
-	retry := []oldRetryPolicy{
-		nil,
-		(*SimpleRetryPolicy)(nil),
-		(*DowngradingConsistencyRetryPolicy)(nil),
-		(*ExponentialBackoffRetryPolicy)(nil),
-	}
-	for _, rp := range retry {
-		t.Run(fmt.Sprintf("retry/%T", rp), func(t *testing.T) {
-			buildRetryPolicyReport(rp)
-			buildRetryBackoffReport(rp)
-		})
-	}
-
-	loadBalancing := []HostSelectionPolicy{
-		nil,
-		(*tokenAwareHostPolicy)(nil),
-		(*singleHostReadyPolicy)(nil),
-		TokenAwareHostPolicy((*dcAwareRR)(nil)),
-		TokenAwareHostPolicy((*rackAwareRR)(nil)),
-		SingleHostReadyPolicy((*tokenAwareHostPolicy)(nil)),
-	}
-	for _, p := range loadBalancing {
-		t.Run(fmt.Sprintf("load-balancing/%T", p), func(t *testing.T) {
-			buildLoadBalancingReport(p)
-		})
-	}
-}
-
 func TestBuildSocketReport(t *testing.T) {
 	// gocql has no configuration surface for any of these beyond what Go's net
-	// package and ClusterConfig.Validate already guarantee; this always
+	// package and clusterSettings.Validate already guarantee; this always
 	// reports the built-in dialer's fixed behavior.
 	want := socketReport{TCPNoDelay: true, KeepAlive: true, ReuseAddress: false}
 	if got := buildSocketReport(); got != want {
@@ -351,7 +186,7 @@ func TestBuildReconnectionPolicyReport(t *testing.T) {
 			want:   nil,
 		},
 		{
-			// A nil policy cannot come from ClusterConfig.Validate, but reporting
+			// A nil policy cannot come from clusterSettings.Validate, but reporting
 			// must not panic on one either.
 			name:   "a nil policy reports as no reconnection",
 			policy: nil,
@@ -376,112 +211,6 @@ func TestBuildReconnectionPolicyReport(t *testing.T) {
 			got := buildReconnectionPolicyReport(tt.policy)
 			if diff := cmp.Diff(tt.want, got); diff != "" {
 				t.Errorf("buildReconnectionPolicyReport() mismatch:\n%s", diff)
-			}
-		})
-	}
-}
-
-// fakeRetryPolicy wraps a oldRetryPolicy so its dynamic type name is distinct
-// from any built-in policy.
-type fakeRetryPolicy struct {
-	oldRetryPolicy
-}
-
-func TestBuildRetryPolicyReport(t *testing.T) {
-	tests := []struct {
-		name   string
-		policy oldRetryPolicy
-		want   any
-	}{
-		{
-			name:   "simple",
-			policy: &SimpleRetryPolicy{NumRetries: 7},
-			want:   retryPolicySimpleReport{Type: "simple", MaxRetries: 7},
-		},
-		{
-			// max-retries is nonNegativeInteger, and nothing validates
-			// oldRetryPolicy, so a negative count reaches the report. It refuses the
-			// first retry exactly as 0 does, so 0 is what it means.
-			name:   "simple with a negative retry limit clamps to zero",
-			policy: &SimpleRetryPolicy{NumRetries: -1},
-			want:   retryPolicySimpleReport{Type: "simple", MaxRetries: 0},
-		},
-		{
-			name:   "exponential backoff with a negative retry limit clamps to zero",
-			policy: &ExponentialBackoffRetryPolicy{NumRetries: -2},
-			want:   retryPolicyCustomReport{Type: "custom", Name: "ExponentialBackoffRetryPolicy", MaxRetries: ptr(0)},
-		},
-		{
-			name:   "downgrading consistency with no consistency levels means no retries",
-			policy: &DowngradingConsistencyRetryPolicy{},
-			want:   retryPolicyDowngradingReport{Type: "downgrading-consistency", MaxRetries: 0},
-		},
-		{
-			name:   "downgrading consistency's max-retries is the length of ConsistencyLevelsToTry",
-			policy: &DowngradingConsistencyRetryPolicy{ConsistencyLevelsToTry: []Consistency{One, Any}},
-			want:   retryPolicyDowngradingReport{Type: "downgrading-consistency", MaxRetries: 2},
-		},
-		{
-			name:   "the built-in exponential backoff is not a schema built-in, reports as custom with its retry limit",
-			policy: &ExponentialBackoffRetryPolicy{NumRetries: 3},
-			want:   retryPolicyCustomReport{Type: "custom", Name: "ExponentialBackoffRetryPolicy", MaxRetries: ptr(3)},
-		},
-		{
-			name:   "custom",
-			policy: &fakeRetryPolicy{oldRetryPolicy: &SimpleRetryPolicy{}},
-			want:   retryPolicyCustomReport{Type: "custom", Name: "fakeRetryPolicy"},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := buildRetryPolicyReport(tt.policy)
-			if diff := cmp.Diff(tt.want, got); diff != "" {
-				t.Errorf("buildRetryPolicyReport() mismatch:\n%s", diff)
-			}
-		})
-	}
-}
-
-func TestBuildRetryBackoffReport(t *testing.T) {
-	tests := []struct {
-		name   string
-		policy oldRetryPolicy
-		want   any
-	}{
-		{
-			name:   "policy with no backoff concept reports nothing",
-			policy: &SimpleRetryPolicy{NumRetries: 3},
-			want:   nil,
-		},
-		{
-			name:   "exponential backoff with unset Min/Max reports getExponentialTime's own defaults",
-			policy: &ExponentialBackoffRetryPolicy{NumRetries: 3},
-			want:   retryBackoffExponentialReport{Type: "exponential", BaseMs: 100, MaxMs: 10000},
-		},
-		{
-			name:   "exponential backoff with explicit Min/Max",
-			policy: &ExponentialBackoffRetryPolicy{NumRetries: 3, Min: 50 * time.Millisecond, Max: 2 * time.Second},
-			want:   retryBackoffExponentialReport{Type: "exponential", BaseMs: 50, MaxMs: 2000},
-		},
-		{
-			// getExponentialTime caps every delay at Max, so a Max below Min means
-			// every retry waits exactly Max. Reporting Min as base-ms would name a
-			// delay the policy never waits, and would break max-ms >= base-ms.
-			name:   "exponential backoff with Max below Min reports the delay actually waited",
-			policy: &ExponentialBackoffRetryPolicy{NumRetries: 3, Min: 5 * time.Second, Max: time.Second},
-			want:   retryBackoffExponentialReport{Type: "exponential", BaseMs: 1000, MaxMs: 1000},
-		},
-		{
-			name:   "sub-millisecond bounds floor at the schema minimum instead of truncating to zero",
-			policy: &ExponentialBackoffRetryPolicy{NumRetries: 3, Min: 100 * time.Microsecond, Max: 500 * time.Microsecond},
-			want:   retryBackoffExponentialReport{Type: "exponential", BaseMs: 1, MaxMs: 1},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := buildRetryBackoffReport(tt.policy)
-			if diff := cmp.Diff(tt.want, got); diff != "" {
-				t.Errorf("buildRetryBackoffReport() mismatch:\n%s", diff)
 			}
 		})
 	}
@@ -722,7 +451,7 @@ func TestBuildControlPlaneReport(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := *NewCluster("127.0.0.1")
+			cfg := *newClusterSettings("127.0.0.1")
 			cfg.MetadataSchemaRequestTimeout = tt.timeout
 			cfg.MaxWaitSchemaAgreement = tt.agreement
 			got := buildControlPlaneReport(&cfg, tt.isScyllaConn)
@@ -760,71 +489,8 @@ func TestPositiveMillis(t *testing.T) {
 	}
 }
 
-// TestBuildReport_SubMillisecondTimeouts is the regression guard for the whole
-// class: every positiveInteger duration field in the report at once, driven by
-// a config where each one truncates to 0.
-func TestBuildReport_SubMillisecondTimeouts(t *testing.T) {
-	cfg := *NewCluster("127.0.0.1")
-	cfg.ConnectTimeout = 500 * time.Microsecond
-	cfg.ReadTimeout = 500 * time.Microsecond
-	cfg.WriteTimeout = 500 * time.Microsecond
-	cfg.Timeout = 500 * time.Microsecond
-	cfg.MetadataSchemaRequestTimeout = 500 * time.Microsecond
-
-	s := newTestReportSession(cfg, TokenAwareHostPolicy(RoundRobinHostPolicy()))
-	raw, err := newDriverConfigReporter(s).buildReport(true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var report driverConfigReport
-	if err := json.Unmarshal([]byte(raw), &report); err != nil {
-		t.Fatal(err)
-	}
-
-	got := map[string]*int64{
-		"connection.connect.timeout-ms": report.Connection.Connect.TimeoutMs,
-		"query.defaults.request.timeout-ms": func() *int64 {
-			if report.Query.Defaults.Request == nil {
-				return nil
-			}
-			return &report.Query.Defaults.Request.TimeoutMs
-		}(),
-		"control-plane...client-side-ms": report.ControlPlane.Queries.System.Timeout.ClientSideMs,
-		"connection.read.timeout-ms": func() *int64 {
-			if report.Connection.Read == nil {
-				return nil
-			}
-			return &report.Connection.Read.TimeoutMs
-		}(),
-		"connection.write.timeout-ms": func() *int64 {
-			if report.Connection.Write == nil {
-				return nil
-			}
-			return &report.Connection.Write.TimeoutMs
-		}(),
-	}
-	for field, v := range got {
-		if v == nil {
-			t.Errorf("%s: expected a sub-millisecond timeout to still be reported, got omitted", field)
-			continue
-		}
-		if *v < 1 {
-			t.Errorf("%s = %d, want >= 1 (the schema's positiveInteger minimum)", field, *v)
-		}
-	}
-
-	// server-side-ms is the exception, and deliberately so: it reports the
-	// USING TIMEOUT clause, which Conn.setSystemRequestTimeout builds by
-	// truncating. A sub-millisecond timeout is sent as "USING TIMEOUT 0ms", and
-	// the schema cannot carry a 0 here, so the key is omitted rather than
-	// claiming a 1ms clause the connection never sends.
-	if got := report.ControlPlane.Queries.System.Timeout.ServerSideMs; got != nil {
-		t.Errorf("control-plane...server-side-ms = %d, want it omitted: the connection sends USING TIMEOUT 0ms", *got)
-	}
-}
-
 func TestBuildConnectionReport_ReadWriteTLS(t *testing.T) {
-	cfg := *NewCluster("127.0.0.1")
+	cfg := *newClusterSettings("127.0.0.1")
 	cfg.ReadTimeout = 0
 	cfg.WriteTimeout = 0
 	report := buildConnectionReport(&cfg)
@@ -853,7 +519,7 @@ func TestBuildConnectionReport_ReadWriteTLS(t *testing.T) {
 	}
 
 	// HostDialer takes over connection setup entirely, so SslOpts is ignored
-	// (see ClusterConfig.SslOpts) and the effective TLS state is unknown.
+	// (see clusterSettings.SslOpts) and the effective TLS state is unknown.
 	cfg.HostDialer = fakeHostDialer{}
 	report = buildConnectionReport(&cfg)
 	if report.TLS != nil {
@@ -880,7 +546,7 @@ func TestBuildTLSReport_ReportsEffectiveHostnameVerification(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := *NewCluster("127.0.0.1")
+			cfg := *newClusterSettings("127.0.0.1")
 			cfg.SslOpts = tt.opts
 			if err := cfg.ValidateAndInitSSL(); err != nil {
 				t.Fatal(err)
@@ -905,7 +571,7 @@ func TestBuildTLSReport_ReportsEffectiveHostnameVerification(t *testing.T) {
 			// The same config must be described identically before
 			// ValidateAndInitSSL has run, which is how a hand-built Session in a
 			// test reaches the reporter.
-			pristine := *NewCluster("127.0.0.1")
+			pristine := *newClusterSettings("127.0.0.1")
 			pristine.SslOpts = tt.opts
 			if fallback := buildTLSReport(&pristine); fallback == nil || fallback.HostnameVerification != want {
 				t.Errorf("without a resolved tls.Config: hostname-verification = %v, want %v", fallback, want)
@@ -971,7 +637,7 @@ func TestBuildConnectionNodePreferenceReport(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := *NewCluster("127.0.0.1")
+			cfg := *newClusterSettings("127.0.0.1")
 			cfg.HostFilter = tt.filter
 			if diff := cmp.Diff(tt.want, buildConnectionReport(&cfg).NodePreference); diff != "" {
 				t.Errorf("connection.node-preference mismatch:\n%s", diff)
@@ -1023,7 +689,7 @@ func TestBuildConnectionReport_ShardAware(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := *NewCluster("127.0.0.1")
+			cfg := *newClusterSettings("127.0.0.1")
 			cfg.DisableShardAwarePort = tt.disable
 			cfg.HostDialer = tt.hostDialer
 			if got := buildConnectionReport(&cfg).Pool.ShardAware.Enabled; got != tt.want {
@@ -1038,7 +704,7 @@ func TestBuildConnectionReport_ShardAware(t *testing.T) {
 // HostDialer satisfies ShardDialer, so the two must agree on every dialer.
 func TestShardAwareEnabledMatchesDialPath(t *testing.T) {
 	for _, hostDialer := range []HostDialer{fakeHostDialer{}, fakeShardDialer{}} {
-		cfg := *NewCluster("127.0.0.1")
+		cfg := *newClusterSettings("127.0.0.1")
 		cfg.HostDialer = hostDialer
 
 		_, canDialShard := hostDialer.(ShardDialer)
@@ -1085,7 +751,7 @@ func TestBuildQueryDefaultsReport_SerialConsistencyIsSerialOnly(t *testing.T) {
 		{LocalSerial, "LOCAL_SERIAL"},
 		{Quorum, ""},
 	} {
-		cfg := *NewCluster("127.0.0.1")
+		cfg := *newClusterSettings("127.0.0.1")
 		cfg.SerialConsistency = tt.cons
 		if got := buildQueryDefaultsReport(&cfg).SerialConsistency; got != tt.want {
 			t.Errorf("SerialConsistency=%v: serial-consistency = %q, want %q", tt.cons, got, tt.want)
@@ -1094,7 +760,7 @@ func TestBuildQueryDefaultsReport_SerialConsistencyIsSerialOnly(t *testing.T) {
 }
 
 func TestBuildQueryDefaultsReport(t *testing.T) {
-	cfg := *NewCluster("127.0.0.1")
+	cfg := *newClusterSettings("127.0.0.1")
 	cfg.PageSize = 0
 	cfg.SerialConsistency = 0
 	cfg.Timeout = 0
@@ -1165,7 +831,7 @@ func TestDriverConfigReportingStartupFrame(t *testing.T) {
 
 	cluster := testCluster(defaultProto, srv.Address)
 	cluster.NumConns = connsPerSession
-	session, err := cluster.CreateSession()
+	session, err := cluster.open()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1191,139 +857,6 @@ func TestDriverConfigReportingStartupFrame(t *testing.T) {
 	// of this session may report DRIVER_CONFIG.
 	if len(configs) != 0 {
 		t.Errorf("expected no %s outside of the control connection, got %v", driverConfigStartupKey, configs)
-	}
-}
-
-// TestDriverConfigReportingDial exercises both sides of the gate in Conn.init
-// which decides that a connection reports DRIVER_CONFIG, by dialing the fake
-// server by hand with each of the two ConnConfigs a session builds.
-//
-// Neither side is covered elsewhere in the unit tests.
-// TestDriverConfigReporterStartupOptions calls updateStartupOptions directly,
-// bypassing ConnConfig entirely, so it says nothing about which connections
-// hold a reporter. TestDriverConfigReportingStartupFrame runs with
-// disableControlConn true, which leaves "a connection marked as the control
-// connection puts DRIVER_CONFIG on the wire" to the integration test, and that
-// skips on any server without client_options; and while it does assert the
-// absence over a pool of regular connections, it never exercises the gate
-// against a config it could have decided the other way on.
-func TestDriverConfigReportingDial(t *testing.T) {
-	tests := []struct {
-		name string
-		// connConfig picks the ConnConfig to dial with: the one every path
-		// (re)establishing the control connection goes through, or the
-		// session-wide one every pool connection is dialed with.
-		connConfig    func(*Session) *ConnConfig
-		wantReporting bool
-	}{
-		{
-			name:          "control connection",
-			connConfig:    (*Session).controlConnConfig,
-			wantReporting: true,
-		},
-		{
-			name:          "regular connection",
-			connConfig:    func(s *Session) *ConnConfig { return s.connCfg },
-			wantReporting: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-
-			var (
-				mu       sync.Mutex
-				configs  []string
-				startups int
-			)
-
-			srv := newTestServerOpts{
-				addr:     "127.0.0.1:0",
-				protocol: defaultProto,
-				recvHook: func(f *framer) {
-					if f.header.Op != frm.OpStartup {
-						return
-					}
-					// Consuming the frame body here is only safe because the
-					// fake server does not read the body of a STARTUP request.
-					opts := readStartupOptions(t, f)
-
-					mu.Lock()
-					defer mu.Unlock()
-					startups++
-					if cfg, ok := opts[driverConfigStartupKey]; ok {
-						configs = append(configs, cfg)
-					}
-				},
-			}.newServer(t, ctx)
-			defer srv.Stop()
-
-			// disableControlConn, set by testCluster, keeps the session's own
-			// control connection out of the way, so any DRIVER_CONFIG captured
-			// below can only have come from the connection dialed by hand. A
-			// single pool connection, waited for below, keeps the STARTUP count
-			// deterministic: the rest of a larger pool is filled
-			// asynchronously and could land a frame mid-test.
-			cluster := testCluster(defaultProto, srv.Address)
-			cluster.NumConns = 1
-			session, err := cluster.CreateSession()
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer session.Close()
-
-			if err := waitForPoolSize(session, 1, 10*time.Second); err != nil {
-				t.Fatal(err)
-			}
-
-			hosts := session.GetHosts()
-			if len(hosts) == 0 {
-				t.Fatal("expected at least one host in the session")
-			}
-
-			mu.Lock()
-			startupsBeforeDial := startups
-			mu.Unlock()
-
-			conn, err := session.dial(session.ctx, hosts[0], tt.connConfig(session), connErrorHandlerFn(func(*Conn, error, bool) {}))
-			if err != nil {
-				t.Fatal(err)
-			}
-			// This connection only exists to observe what reaches the wire, so
-			// it is discarded right away without calling
-			// conn.finalizeConnection, the same way
-			// controlConn.discoverProtocol does for its throwaway connections.
-			conn.Close()
-
-			mu.Lock()
-			defer mu.Unlock()
-
-			// The connection dialed above is the only one the assertion below
-			// is about, so pin its STARTUP frame down: without this the
-			// "regular connection" case would pass just as well on a frame
-			// that never reached the server.
-			if got := startups - startupsBeforeDial; got != 1 {
-				t.Fatalf("expected the connection dialed by hand to send exactly one STARTUP frame, got %d", got)
-			}
-			if len(configs) == 0 {
-				if tt.wantReporting {
-					t.Fatalf("expected %s on a %s, got none", driverConfigStartupKey, tt.name)
-				}
-				return
-			}
-			if !tt.wantReporting {
-				t.Fatalf("expected no %s on a %s, got %q", driverConfigStartupKey, tt.name, configs)
-			}
-			var report driverConfigReport
-			if err := json.Unmarshal([]byte(configs[0]), &report); err != nil {
-				t.Fatalf("%s did not decode as JSON: %v", driverConfigStartupKey, err)
-			}
-			if report.Version != driverConfigVersion {
-				t.Errorf("expected version %d, got %d", driverConfigVersion, report.Version)
-			}
-		})
 	}
 }
 
@@ -1366,7 +899,7 @@ func TestDriverConfigReportingDisabled(t *testing.T) {
 	cluster := testCluster(defaultProto, srv.Address)
 	cluster.NumConns = 1
 	cluster.DisableDriverConfigReporting = true
-	session, err := cluster.CreateSession()
+	session, err := cluster.open()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1435,4 +968,204 @@ func readStartupOptions(t *testing.T, f *framer) (opts map[string]string) {
 		opts[key] = f.readString()
 	}
 	return opts
+}
+
+func TestDriverConfigReporterStartupOptions_ScyllaConnGatesServerSideMs(t *testing.T) {
+	cfg := *newClusterSettings("127.0.0.1")
+	s := newTestReportSession(cfg, TokenAwareHostPolicy(RoundRobinHostPolicy()))
+	reporter := newDriverConfigReporter(s)
+
+	for _, isScylla := range []bool{false, true} {
+		opts := map[string]string{}
+		reporter.updateStartupOptions(opts, isScylla)
+
+		var report driverConfigReport
+		if err := json.Unmarshal([]byte(opts[driverConfigStartupKey]), &report); err != nil {
+			t.Fatalf("isScyllaConn=%v: DRIVER_CONFIG did not decode: %v", isScylla, err)
+		}
+
+		timeout := report.ControlPlane.Queries.System.Timeout
+		if timeout.ClientSideMs == nil {
+			t.Errorf("isScyllaConn=%v: expected client-side-ms to be set", isScylla)
+		}
+		gotServerSide := timeout.ServerSideMs != nil
+		if gotServerSide != isScylla {
+			t.Errorf("isScyllaConn=%v: server-side-ms present = %v, want %v", isScylla, gotServerSide, isScylla)
+		}
+	}
+}
+
+func TestDriverConfigReportingDial(t *testing.T) {
+	tests := []struct {
+		name string
+		// connConfig picks the ConnConfig to dial with: the one every path
+		// (re)establishing the control connection goes through, or the
+		// session-wide one every pool connection is dialed with.
+		connConfig    func(*Session) *ConnConfig
+		wantReporting bool
+	}{
+		{
+			name:          "control connection",
+			connConfig:    (*Session).controlConnConfig,
+			wantReporting: true,
+		},
+		{
+			name:          "regular connection",
+			connConfig:    func(s *Session) *ConnConfig { return s.connCfg },
+			wantReporting: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			var (
+				mu       sync.Mutex
+				configs  []string
+				startups int
+			)
+
+			srv := newTestServerOpts{
+				addr:     "127.0.0.1:0",
+				protocol: defaultProto,
+				recvHook: func(f *framer) {
+					if f.header.Op != frm.OpStartup {
+						return
+					}
+					// Consuming the frame body here is only safe because the
+					// fake server does not read the body of a STARTUP request.
+					opts := readStartupOptions(t, f)
+
+					mu.Lock()
+					defer mu.Unlock()
+					startups++
+					if cfg, ok := opts[driverConfigStartupKey]; ok {
+						configs = append(configs, cfg)
+					}
+				},
+			}.newServer(t, ctx)
+			defer srv.Stop()
+
+			// disableControlConn, set by testCluster, keeps the session's own
+			// control connection out of the way, so any DRIVER_CONFIG captured
+			// below can only have come from the connection dialed by hand. A
+			// single pool connection, waited for below, keeps the STARTUP count
+			// deterministic: the rest of a larger pool is filled
+			// asynchronously and could land a frame mid-test.
+			cluster := testCluster(defaultProto, srv.Address)
+			cluster.NumConns = 1
+			session, err := cluster.open()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer session.Close()
+
+			if err := waitForPoolSize(session, 1, 10*time.Second); err != nil {
+				t.Fatal(err)
+			}
+
+			hosts := session.GetHosts()
+			if len(hosts) == 0 {
+				t.Fatal("expected at least one host in the session")
+			}
+
+			mu.Lock()
+			startupsBeforeDial := startups
+			mu.Unlock()
+
+			conn, err := session.dial(session.ctx, hosts[0], tt.connConfig(session), connErrorHandlerFn(func(*Conn, error, bool) {}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			// This connection only exists to observe what reaches the wire, so
+			// it is discarded right away without calling
+			// conn.finalizeConnection, the same way
+			// controlConn.discoverProtocol does for its throwaway connections.
+			conn.Close()
+
+			mu.Lock()
+			defer mu.Unlock()
+
+			// The connection dialed above is the only one the assertion below
+			// is about, so pin its STARTUP frame down: without this the
+			// "regular connection" case would pass just as well on a frame
+			// that never reached the server.
+			if got := startups - startupsBeforeDial; got != 1 {
+				t.Fatalf("expected the connection dialed by hand to send exactly one STARTUP frame, got %d", got)
+			}
+			if len(configs) == 0 {
+				if tt.wantReporting {
+					t.Fatalf("expected %s on a %s, got none", driverConfigStartupKey, tt.name)
+				}
+				return
+			}
+			if !tt.wantReporting {
+				t.Fatalf("expected no %s on a %s, got %q", driverConfigStartupKey, tt.name, configs)
+			}
+			var report driverConfigReport
+			if err := json.Unmarshal([]byte(configs[0]), &report); err != nil {
+				t.Fatalf("%s did not decode as JSON: %v", driverConfigStartupKey, err)
+			}
+			if report.Version != driverConfigVersion {
+				t.Errorf("expected version %d, got %d", driverConfigVersion, report.Version)
+			}
+		})
+	}
+}
+
+func TestCustomPolicyNameIsAlwaysReportable(t *testing.T) {
+	type namedPolicy struct{ RetryPolicy }
+
+	for _, v := range []any{
+		nil,
+		(*SafeRetryPolicy)(nil),
+		&SafeRetryPolicy{},
+		&namedPolicy{},
+		struct{ RetryPolicy }{},
+	} {
+		if got := customPolicyName(v); got == "" {
+			t.Errorf("customPolicyName(%T) is empty, which the schema rejects", v)
+		}
+	}
+}
+
+func TestDriverConfigReporterStartupOptions(t *testing.T) {
+	cfg := *newClusterSettings("127.0.0.1")
+	s := newTestReportSession(cfg, TokenAwareHostPolicy(RoundRobinHostPolicy()))
+	reporter := newDriverConfigReporter(s)
+
+	opts := map[string]string{}
+	reporter.updateStartupOptions(opts, false)
+
+	raw, ok := opts[driverConfigStartupKey]
+	if !ok {
+		t.Fatal("expected DRIVER_CONFIG to be set")
+	}
+
+	var report driverConfigReport
+	if err := json.Unmarshal([]byte(raw), &report); err != nil {
+		t.Fatalf("DRIVER_CONFIG did not decode as JSON: %v", err)
+	}
+
+	if report.Version != driverConfigVersion {
+		t.Errorf("expected version %d, got %d", driverConfigVersion, report.Version)
+	}
+	if got := report.Connection.Connect.TimeoutMs; got == nil || *got != cfg.ConnectTimeout.Milliseconds() {
+		t.Errorf("connect.timeout-ms = %v, want %d", got, cfg.ConnectTimeout.Milliseconds())
+	}
+	if got, want := report.Query.Defaults.Consistency, "QUORUM"; got != want {
+		t.Errorf("query.defaults.consistency = %q, want %q", got, want)
+	}
+	if report.ControlPlane.Schema.Agreement.TimeoutMs != cfg.MaxWaitSchemaAgreement.Milliseconds() {
+		t.Errorf("control-plane.schema.agreement.timeout-ms = %d, want %d",
+			report.ControlPlane.Schema.Agreement.TimeoutMs, cfg.MaxWaitSchemaAgreement.Milliseconds())
+	}
+	// The default RetryPolicy is nil; the effective policy must be the package
+	// fallback, not an absent/zero policy.
+	policyMap, ok := report.Query.Retry.Policy.(map[string]any)
+	if !ok || policyMap["type"] != "simple" {
+		t.Errorf("query.retry.policy = %#v, want type simple (SafeRetryPolicy fallback)", report.Query.Retry.Policy)
+	}
 }

@@ -131,9 +131,9 @@ func newTraceServer(t *testing.T, cfg traceConfig) *traceServer {
 
 func (ts *traceServer) session(t *testing.T) *Session {
 	t.Helper()
-	s, err := ts.cluster().CreateSession()
+	s, err := ts.cluster().open()
 	if err != nil {
-		t.Fatalf("CreateSession: %v", err)
+		t.Fatalf("open: %v", err)
 	}
 	t.Cleanup(func() { _ = s.Close() })
 	return s

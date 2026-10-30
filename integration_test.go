@@ -41,12 +41,6 @@ import (
 	"github.com/scylladb/gocql/v2/internal/tests"
 )
 
-func init() {
-	// Register integration-only setup that runs before any test (called from TestMain).
-	// This eagerly probes tablet support so parallel tests don't race on lazy init.
-	integrationTestSetup = initTabletProbes
-}
-
 // TestAuthentication verifies that gocql will work with a host configured to only accept authenticated connections
 func TestAuthentication(t *testing.T) {
 	t.Parallel()

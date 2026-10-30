@@ -1,0 +1,60 @@
+{
+  "checks": [
+    "step10-api-audit.json",
+    "step10-checks.json",
+    "step10-native-outcomes.json"
+  ],
+  "current_paths": [
+    {
+      "behavior": "Native compiled scalar callbacks decode bounded fixed scalars through at most16 bytes of scratch. No ValueReader, RowPlan, buffered decoder or dynamic-value adapter exists on this path.",
+      "files": [
+        "v2_stream_scalar.go"
+      ],
+      "scope": "scalar destinations"
+    },
+    {
+      "behavior": "Both reader families feed the same scalarVInt prefix/accumulation state and durationFromComponents range/sign validation. Streaming reads incrementally, with no complete duration body staging. The buffered cursor stays concrete to preserve0B/0allocation decoding.",
+      "files": [
+        "v2_scalar_time.go",
+        "v2_stream_scalar.go"
+      ],
+      "scope": "duration"
+    },
+    {
+      "behavior": "Shape compilation selects the same native scalar plans. Encoded output checks capacity and captures directly into final seeded caller bytes; ignored payloads use bounded checked discard. Neither adapts a buffered codec.",
+      "files": [
+        "v2_stream_validate.go"
+      ],
+      "scope": "ignored and encoded scalar output"
+    },
+    {
+      "behavior": "Final caller ranges, seeded child capacity, explicit Reset, incremental child framing and the exclusive connection reservation remain. No complete cell/row/page/response gathering or legacy Query/Iter route is introduced.",
+      "files": [
+        "v2_stream_reader.go",
+        "v2_stream_collections.go",
+        "v2_stream_rows.go",
+        "v2_stream_transport.go",
+        "v2_row_stream.go"
+      ],
+      "scope": "variable data, nested cells and pull-driven pages"
+    },
+    {
+      "behavior": "Configured metadata/read-ahead/discard limits, fixed scalar/framing bytes, v5 integrity/transform units and standard TLS record processing remain explicit bounded transformations. Metadata allocations are separate from variable result payloads.",
+      "files": [
+        "v2_stream_transport.go",
+        "v2_transport_parse.go"
+      ],
+      "scope": "permitted staging"
+    }
+  ],
+  "forbidden_streaming_adapters_removed": [
+    "streamScalarPlan.DecodeInto -> Codec.Decode(newValueReader(...))",
+    "streamValidationPlan.skip -> decodeDynamicChecked(newValueReader(...))"
+  ],
+  "performance_limit": "Five-iteration independent source/cell/row/mode and scalar/routing smokes prove their asserted identity/bounds, not native throughput, peak memory, universal allocation stability or a speedup. Comprehensive performance remains15.",
+  "production_protocol_legacy_disposition": {
+    "deleted": "Old Session/Conn query/batch execution, query executor, prepared/routing caches, scan/map/row-data adapters, reflection marshal packages and query-value pools are absent.",
+    "oracle_helpers": "protocol_request_fixture_test.go contains explicitly test-owned already-encoded byte oracles. QUERY/EXECUTE/BATCH application serialization in product uses v2_transport.go and v2_transport_writer.go. Oracle-only tests are not credited as product coverage.",
+    "parameter_free_USE": "conn.go useKeyspaceContext constructs only useKeyspaceFrame, with CQL, ONE and zero flags; no values, reflection or old execution objects."
+  }
+}

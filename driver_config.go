@@ -67,7 +67,7 @@ type connectionReport struct {
 	Write *readWriteTimeoutReport `json:"write,omitempty"`
 	// TLS is omitted when TLS is not configured, or when a HostDialer is set:
 	// HostDialer takes over the entire connection setup and SslOpts is ignored
-	// (see ClusterConfig.SslOpts), so the effective TLS state is unknown.
+	// (see clusterSettings.SslOpts), so the effective TLS state is unknown.
 	TLS          *tlsReport              `json:"tls,omitempty"`
 	Reconnection reconnectionGroupReport `json:"reconnection"`
 	Connect      connectReport           `json:"connect"`
@@ -213,7 +213,7 @@ type queryDefaultsReport struct {
 	// consistencyName.
 	Consistency string `json:"consistency,omitempty"`
 	// SerialConsistency is omitted when 0, mirroring the ">0" check
-	// ClusterConfig.Validate itself uses to treat the field as unset.
+	// clusterSettings.Validate itself uses to treat the field as unset.
 	SerialConsistency string `json:"serial-consistency,omitempty"`
 	Idempotence       bool   `json:"idempotence"`
 	// ClientTimestamps reports DefaultTimestamp as configured, not additionally
@@ -385,7 +385,7 @@ func (r *driverConfigReporter) buildReport(isScyllaConn bool) (string, error) {
 	return string(data), err
 }
 
-func buildConnectionReport(cfg *ClusterConfig) connectionReport {
+func buildConnectionReport(cfg *clusterSettings) connectionReport {
 	report := connectionReport{
 		Connect:      connectReport{TimeoutMs: positiveMillis(cfg.ConnectTimeout)},
 		Requests:     buildRequestsReport(cfg),
@@ -417,7 +417,7 @@ func buildConnectionReport(cfg *ClusterConfig) connectionReport {
 // AcceptAllFilter and DenyAllFilter state no location; and a caller-supplied
 // HostFilterFunc is a closure this cannot see into. All of those report no
 // preference.
-func buildConnectionNodePreferenceReport(cfg *ClusterConfig) any {
+func buildConnectionNodePreferenceReport(cfg *clusterSettings) any {
 	filter, ok := cfg.HostFilter.(dataCenterHostFilter)
 	if !ok || filter.dataCenter == "" {
 		return nil
@@ -428,7 +428,7 @@ func buildConnectionNodePreferenceReport(cfg *ClusterConfig) any {
 // buildTLSReport describes the TLS transport, or returns nil when there is
 // nothing trustworthy to say: TLS is not configured, or a HostDialer has taken
 // over connection setup entirely and SslOpts is ignored (see
-// ClusterConfig.SslOpts).
+// clusterSettings.SslOpts).
 //
 // hostname-verification is the effective setting rather than
 // SslOpts.EnableHostVerification, which is only one of its two inputs.
@@ -438,7 +438,7 @@ func buildConnectionNodePreferenceReport(cfg *ClusterConfig) any {
 // tls.Config with InsecureSkipVerify left false verifies the hostname even
 // though EnableHostVerification is false, and reporting that flag alone
 // inverts the truth for the most ordinary way of configuring TLS.
-func buildTLSReport(cfg *ClusterConfig) *tlsReport {
+func buildTLSReport(cfg *clusterSettings) *tlsReport {
 	if cfg.SslOpts == nil || cfg.HostDialer != nil {
 		return nil
 	}
@@ -504,7 +504,7 @@ func nonNegativeMillis(d time.Duration) int64 {
 	return max(d.Milliseconds(), 0)
 }
 
-func buildRequestsReport(cfg *ClusterConfig) requestsReport {
+func buildRequestsReport(cfg *clusterSettings) requestsReport {
 	return requestsReport{InFlight: inFlightReport{Max: effectiveInFlightMax(cfg.MaxRequestsPerConn)}}
 }
 
@@ -538,7 +538,7 @@ func effectiveInFlightMax(configured int) int {
 // DialShard can never reach the shard-aware port however the flag is set.
 // A nil HostDialer is capable: connConfig substitutes a *scyllaDialer, which
 // implements ShardDialer.
-func shardAwareEnabled(cfg *ClusterConfig) bool {
+func shardAwareEnabled(cfg *clusterSettings) bool {
 	if cfg.DisableShardAwarePort {
 		return false
 	}
@@ -560,7 +560,7 @@ func buildSocketReport() socketReport {
 		// TCP connection it creates (net.newTCPConn calls setNoDelay(fd, true));
 		// gocql never overrides that.
 		TCPNoDelay: true,
-		// cfg.SocketKeepalive can't be negative (see ClusterConfig.Validate), and
+		// cfg.SocketKeepalive can't be negative (see clusterSettings.Validate), and
 		// net.Dialer.KeepAlive == 0 still means "enabled, OS default period" --
 		// there is currently no way to disable keep-alive through gocql's
 		// configuration.
@@ -620,7 +620,7 @@ func buildReconnectionPolicyReport(rp ReconnectionPolicy) any {
 	}
 }
 
-func buildControlPlaneReport(cfg *ClusterConfig, isScyllaConn bool) controlPlaneReport {
+func buildControlPlaneReport(cfg *clusterSettings, isScyllaConn bool) controlPlaneReport {
 	var timeout systemQueriesTimeoutReport
 	if clientMs := positiveMillis(cfg.MetadataSchemaRequestTimeout); clientMs != nil {
 		timeout.ClientSideMs = clientMs
@@ -653,15 +653,58 @@ func buildControlPlaneReport(cfg *ClusterConfig, isScyllaConn bool) controlPlane
 }
 
 func buildQueryReport(s *Session) queryReport {
-	cfg := &s.cfg
-	return queryReport{
-		Defaults:      buildQueryDefaultsReport(cfg),
-		Retry:         buildQueryRetryReport(cfg),
-		LoadBalancing: buildLoadBalancingReport(s.policy),
+	cfg := s.cfg
+	loadBalancing := buildLoadBalancingReport(s.policy)
+	s.typedMu.Lock()
+	runtime := s.typedState
+	s.typedMu.Unlock()
+	if runtime != nil && runtime.profile != nil {
+		profile := runtime.profile.Snapshot()
+		cfg.defaultProfile = profile
+		cfg.Consistency = profile.Consistency
+		cfg.Timeout = profile.Timeout
+		cfg.PageSize = int(profile.PageSize)
+		cfg.SerialConsistency = 0
+		if profile.SerialConsistency.Set {
+			cfg.SerialConsistency = profile.SerialConsistency.Value
+		}
+		cfg.DefaultIdempotence = false
+		cfg.DefaultTimestamp = runtime.config.TimestampGenerator != nil
+		loadBalancing = buildTypedLoadBalancingReport(profile.Routing)
 	}
+	return queryReport{Defaults: buildQueryDefaultsReport(&cfg), Retry: buildQueryRetryReport(&cfg), LoadBalancing: loadBalancing}
+}
+func buildTypedLoadBalancingReport(policy RoutingPolicy) queryLoadBalancingReport {
+	builtin, ok := policy.(*routingPolicy)
+	if !ok || builtin == nil {
+		return queryLoadBalancingReport{Policy: loadBalancingCustomReport{Type: "custom", Name: customPolicyName(policy)}}
+	}
+	options := builtin.options
+	result := queryLoadBalancingReport{}
+	if options.Datacenter != "" {
+		if options.Rack != "" {
+			result.NodePreference = nodeLocationRackReport{Type: "rack", LocalDC: options.Datacenter, LocalRack: options.Rack}
+		} else {
+			result.NodePreference = nodeLocationDCReport{Type: "dc", LocalDC: options.Datacenter}
+		}
+	}
+	if !options.TokenAware {
+		result.Policy = loadBalancingCustomReport{Type: "custom", Name: "routingPolicy"}
+		return result
+	}
+	distribution := "replica-set"
+	if options.ShuffleReplicas {
+		distribution = "shuffle"
+	}
+	report := loadBalancingTokenAwareReport{Type: "token-aware", LoadDistribution: distribution, FallbackToNonPreferredNodes: options.AllowRemote}
+	if options.Latency.Enabled {
+		report.AdaptiveOrdering = &adaptiveOrderingReport{Signals: []string{"latency"}}
+	}
+	result.Policy = report
+	return result
 }
 
-func buildQueryDefaultsReport(cfg *ClusterConfig) queryDefaultsReport {
+func buildQueryDefaultsReport(cfg *clusterSettings) queryDefaultsReport {
 	report := queryDefaultsReport{
 		Consistency:      consistencyName(cfg.Consistency),
 		Idempotence:      cfg.DefaultIdempotence,
@@ -685,7 +728,7 @@ func buildQueryDefaultsReport(cfg *ClusterConfig) queryDefaultsReport {
 // The enum covers every level Consistency defines, serial ones included, so
 // only an unrecognized numeric value is unreportable -- Consistency.String()
 // renders those as "UNKNOWN_CONS_0x..", which no consumer can interpret.
-// Nothing rejects such a value today; the fix belongs in ClusterConfig.Validate
+// Nothing rejects such a value today; the fix belongs in clusterSettings.Validate
 // and is left to a follow-up.
 func consistencyName(c Consistency) string {
 	switch c {
@@ -696,65 +739,24 @@ func consistencyName(c Consistency) string {
 	}
 }
 
-func buildQueryRetryReport(cfg *ClusterConfig) queryRetryReport {
-	rp := cfg.oldRetryPolicy
-	if rp == nil {
-		// Mirrors query_executor.go's own fallback for an unset oldRetryPolicy.
-		rp = defaultRetryPolicy
+func buildQueryRetryReport(cfg *clusterSettings) queryRetryReport {
+	policy := cfg.defaultProfile.Retry
+	if policy == nil {
+		policy = defaultProfile().Retry
 	}
-	return queryRetryReport{
-		Policy:  buildRetryPolicyReport(rp),
-		Backoff: buildRetryBackoffReport(rp),
-	}
+	return queryRetryReport{Policy: buildRetryPolicyReport(policy)}
 }
-
-// nonNegativeRetries clamps a policy's retry count for max-retries, which the
-// schema declares nonNegativeInteger.
-//
-// Nothing validates oldRetryPolicy -- ClusterConfig.Validate does not look at it
-// at all -- so a negative count reaches the report. Clamping loses nothing:
-// both built-in policies compare the attempt number against this field
-// (Attempts() <= NumRetries, Attempts() > NumRetries), and since the first
-// attempt is 1, every negative count refuses the first retry exactly as 0
-// does.
-func nonNegativeRetries(numRetries int) int {
-	return max(numRetries, 0)
-}
-
-func buildRetryPolicyReport(rp oldRetryPolicy) any {
-	if isNilPolicy(rp) {
-		// Nothing can be read off it, but its type still names something.
-		return retryPolicyCustomReport{Type: "custom", Name: customPolicyName(rp)}
-	}
-	switch p := rp.(type) {
-	case *SimpleRetryPolicy:
-		return retryPolicySimpleReport{Type: "simple", MaxRetries: nonNegativeRetries(p.NumRetries)}
-	case *DowngradingConsistencyRetryPolicy:
-		return retryPolicyDowngradingReport{Type: "downgrading-consistency", MaxRetries: len(p.ConsistencyLevelsToTry)}
-	case *ExponentialBackoffRetryPolicy:
-		// Not one of the schema's built-in retry-policy types, so it is reported
-		// as custom like any other oldRetryPolicy implementation -- but its retry
-		// limit and its backoff are both readable, and the schema's custom
-		// branch accepts max-retries. The backoff surfaces separately, as a
-		// sibling of the policy: see buildRetryBackoffReport.
-		maxRetries := nonNegativeRetries(p.NumRetries)
-		return retryPolicyCustomReport{
-			Type:       "custom",
-			Name:       customPolicyName(rp),
-			MaxRetries: &maxRetries,
+func buildRetryPolicyReport(policy RetryPolicy) any {
+	switch p := policy.(type) {
+	case SafeRetryPolicy:
+		attempts := p.MaxAttempts
+		if attempts <= 0 {
+			attempts = 3
 		}
+		return retryPolicySimpleReport{Type: "simple", MaxRetries: attempts - 1}
 	default:
-		return retryPolicyCustomReport{Type: "custom", Name: customPolicyName(rp)}
+		return retryPolicyCustomReport{Type: "custom", Name: customPolicyName(policy)}
 	}
-}
-
-func buildRetryBackoffReport(rp oldRetryPolicy) any {
-	backoff, ok := rp.(*ExponentialBackoffRetryPolicy)
-	if !ok || isNilPolicy(rp) {
-		return nil
-	}
-	base, maxDelay := exponentialDelayWindow(backoff.Min, backoff.Max)
-	return retryBackoffExponentialReport{Type: "exponential", BaseMs: base, MaxMs: maxDelay}
 }
 
 // exponentialDelayWindow reports the delay window getExponentialTime

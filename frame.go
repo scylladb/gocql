@@ -34,37 +34,13 @@ import (
 	"net"
 	"strconv"
 	"strings"
-	"sync"
+
 	"sync/atomic"
 	"time"
 
 	frm "github.com/scylladb/gocql/v2/internal/frame"
 	"github.com/scylladb/gocql/v2/internal/segment"
 )
-
-type unsetColumn struct{}
-
-// UnsetValue represents a value used in a query binding that will be ignored by Cassandra.
-//
-// By setting a field to the unset value Cassandra will ignore the write completely.
-// The main advantage is the ability to keep the same prepared statement even when you don't
-// want to update some fields, where before you needed to make another prepared statement.
-//
-// UnsetValue is only available when using the version 4 of the protocol.
-var UnsetValue = unsetColumn{}
-
-type namedValue struct {
-	value any
-	name  string
-}
-
-// NamedValue produce a value which will bind to the named parameter in a query
-func NamedValue(name string, value any) any {
-	return &namedValue{
-		name:  name,
-		value: value,
-	}
-}
 
 const (
 	protoDirectionMask = 0x80
@@ -1391,94 +1367,6 @@ func (f *framer) writeAuthResponseFrame(streamID int, data []byte) error {
 	return f.finish()
 }
 
-type queryValues struct {
-	name    string
-	value   []byte
-	isUnset bool
-}
-
-// queryValuesPools is a set of size-bucketed sync.Pools for []queryValues slices.
-// Buckets: 0→cap 8, 1→cap 16, 2→cap 32, 3→cap 64, 4→cap 128.
-// Slices larger than 128 are not pooled.
-var queryValuesPools [5]sync.Pool
-
-// queryValuesBucket returns the pool bucket index for a given count.
-// Returns -1 if the count exceeds the maximum pooled size.
-func queryValuesBucket(n int) int {
-	switch {
-	case n <= 8:
-		return 0
-	case n <= 16:
-		return 1
-	case n <= 32:
-		return 2
-	case n <= 64:
-		return 3
-	case n <= 128:
-		return 4
-	default:
-		return -1
-	}
-}
-
-// getQueryValues returns a []queryValues of length n from the pool.
-// The returned slice elements are zeroed.
-func getQueryValues(n int) []queryValues {
-	bucket := queryValuesBucket(n)
-	if bucket < 0 {
-		return make([]queryValues, n)
-	}
-	if v := queryValuesPools[bucket].Get(); v != nil {
-		s := v.([]queryValues)
-		return s[:n]
-	}
-	// Allocate with the bucket's capacity so future returns fit.
-	return make([]queryValues, n, 8<<bucket)
-}
-
-// putQueryValues returns a []queryValues slice to the pool.
-// It clears all elements to release references to marshaled byte slices.
-// Only slices originally obtained from getQueryValues are pooled;
-// slices with non-standard capacities are silently discarded.
-func putQueryValues(s []queryValues) {
-	if s == nil {
-		return
-	}
-	bucket := queryValuesBucket(cap(s))
-	if bucket < 0 || cap(s) != 8<<bucket {
-		return
-	}
-	// Clear to release references (name strings, value []byte).
-	clear(s[:cap(s)])
-	queryValuesPools[bucket].Put(s[:cap(s)])
-}
-
-// putBatchQueryValues returns all pooled []queryValues slices from batch statements.
-func putBatchQueryValues(stmts []batchStatment) {
-	for i := range stmts {
-		putQueryValues(stmts[i].values)
-		stmts[i].values = nil
-	}
-}
-
-type queryParams struct {
-	nowInSeconds          *int
-	keyspace              string
-	values                []queryValues
-	pagingState           []byte
-	pageSize              int
-	defaultTimestampValue int64
-	consistency           Consistency
-	serialConsistency     Consistency
-	skipMeta              bool
-	defaultTimestamp      bool
-}
-
-func (q queryParams) String() string {
-	return fmt.Sprintf("[query_params consistency=%v skip_meta=%v page_size=%d paging_state=%q serial_consistency=%v default_timestamp=%v values=%v keyspace=%s now_in_seconds=%v]",
-		q.consistency, q.skipMeta, q.pageSize, q.pagingState, q.serialConsistency, q.defaultTimestamp, q.values, q.keyspace, q.nowInSeconds)
-}
-
 // validateV5Options rejects the request options that only exist from protocol v5
 // onwards, and the one v5 option whose value has to fit the wire type. Callers
 // pass nil for nowInSeconds when their frame has no such field.
@@ -1519,144 +1407,6 @@ func validateShortBytes(field string, p []byte) error {
 	return nil
 }
 
-func (f *framer) writeQueryParams(opts *queryParams) error {
-	// Validated again here, not only in the callers' buildFrame: this function is
-	// package-internal and nothing else would enforce the precondition.
-	if err := f.validateV5Options(opts.keyspace, opts.nowInSeconds); err != nil {
-		return err
-	}
-
-	f.writeConsistency(opts.consistency)
-
-	var flags uint32
-	names := false
-
-	if len(opts.values) > 0 {
-		flags |= frm.FlagValues
-	}
-	if opts.skipMeta {
-		flags |= frm.FlagSkipMetaData
-	}
-	if opts.pageSize > 0 {
-		flags |= frm.FlagPageSize
-	}
-	if len(opts.pagingState) > 0 {
-		flags |= frm.FlagWithPagingState
-	}
-	if opts.serialConsistency > 0 {
-		flags |= frm.FlagWithSerialConsistency
-	}
-
-	// protoV3 specific things
-	if opts.defaultTimestamp {
-		flags |= frm.FlagDefaultTimestamp
-	}
-
-	if len(opts.values) > 0 && opts.values[0].name != "" {
-		flags |= frm.FlagWithNameValues
-		names = true
-	}
-
-	if opts.keyspace != "" {
-		flags |= frm.FlagWithKeyspace
-	}
-
-	if opts.nowInSeconds != nil {
-		flags |= frm.FlagWithNowInSeconds
-	}
-
-	if f.proto > protoVersion4 {
-		f.writeUint(flags)
-	} else {
-		f.writeByte(byte(flags))
-	}
-
-	if n := len(opts.values); n > 0 {
-		f.writeShort(uint16(n))
-
-		for i := 0; i < n; i++ {
-			if names {
-				f.writeString(opts.values[i].name)
-			}
-			if opts.values[i].isUnset {
-				f.writeUnset()
-			} else {
-				f.writeBytes(opts.values[i].value)
-			}
-		}
-	}
-
-	if opts.pageSize > 0 {
-		f.writeInt(int32(opts.pageSize))
-	}
-
-	if len(opts.pagingState) > 0 {
-		f.writeBytes(opts.pagingState)
-	}
-
-	if opts.serialConsistency > 0 {
-		f.writeConsistency(opts.serialConsistency)
-	}
-
-	if opts.defaultTimestamp {
-		// timestamp in microseconds
-		var ts int64
-		if opts.defaultTimestampValue != 0 {
-			ts = opts.defaultTimestampValue
-		} else {
-			ts = time.Now().UnixNano() / 1000
-		}
-		f.writeLong(ts)
-	}
-
-	if opts.keyspace != "" {
-		f.writeString(opts.keyspace)
-	}
-
-	if opts.nowInSeconds != nil {
-		// Bounds already validated at the top of this function.
-		f.writeInt(int32(*opts.nowInSeconds))
-	}
-	return nil
-}
-
-type writeQueryFrame struct {
-	customPayload map[string][]byte
-	statement     string
-	params        queryParams
-}
-
-func (w *writeQueryFrame) String() string {
-	return fmt.Sprintf("[query statement=%q params=%v]", w.statement, w.params)
-}
-
-func (w *writeQueryFrame) buildFrame(framer *framer, streamID int) error {
-	return framer.writeQueryFrame(streamID, w.statement, &w.params, w.customPayload)
-}
-
-func (f *framer) writeQueryFrame(streamID int, statement string, params *queryParams, customPayload map[string][]byte) error {
-	// Validate before writing anything into f.buf, as the PREPARE and BATCH
-	// builders do. writeQueryParams performs the same check, but by the time it
-	// runs the header, the custom payload and the statement have already been
-	// written, so its own "nothing was written yet" guarantee would not hold for
-	// this path.
-	if err := f.validateV5Options(params.keyspace, params.nowInSeconds); err != nil {
-		return err
-	}
-
-	if len(customPayload) > 0 {
-		f.payload()
-	}
-	f.writeHeader(f.flags, frm.OpQuery, streamID)
-	f.writeCustomPayload(&customPayload)
-	f.writeLongString(statement)
-	if err := f.writeQueryParams(params); err != nil {
-		return err
-	}
-
-	return f.finish()
-}
-
 type frameBuilder interface {
 	buildFrame(framer *framer, streamID int) error
 }
@@ -1665,197 +1415,6 @@ type frameWriterFunc func(framer *framer, streamID int) error
 
 func (f frameWriterFunc) buildFrame(framer *framer, streamID int) error {
 	return f(framer, streamID)
-}
-
-type writeExecuteFrame struct {
-	customPayload    map[string][]byte
-	preparedID       []byte
-	resultMetadataID []byte
-	params           queryParams
-}
-
-func (e *writeExecuteFrame) String() string {
-	return fmt.Sprintf("[execute id=% X params=%v]", e.preparedID, &e.params)
-}
-
-func (e *writeExecuteFrame) buildFrame(fr *framer, streamID int) error {
-	return fr.writeExecuteFrame(streamID, e.preparedID, e.resultMetadataID, &e.params, &e.customPayload)
-}
-
-func (f *framer) writeExecuteFrame(streamID int, preparedID, resultMetadataID []byte, params *queryParams, customPayload *map[string][]byte) error {
-	// Validate first, as in writeQueryFrame: the prepared id (and, on v5, the
-	// result metadata id) are written before writeQueryParams runs.
-	if err := f.validateV5Options(params.keyspace, params.nowInSeconds); err != nil {
-		return err
-	}
-	writeResultMetadataID := f.proto > protoVersion4 || f.scyllaUseMetadataID
-	if err := validateShortBytes("prepared id", preparedID); err != nil {
-		return err
-	}
-	if writeResultMetadataID {
-		if err := validateShortBytes("result metadata id", resultMetadataID); err != nil {
-			return err
-		}
-	}
-
-	if len(*customPayload) > 0 {
-		f.payload()
-	}
-	f.writeHeader(f.flags, frm.OpExecute, streamID)
-	f.writeCustomPayload(customPayload)
-	if err := f.writeShortBytes(preparedID); err != nil {
-		return err
-	}
-
-	if writeResultMetadataID {
-		if err := f.writeShortBytes(resultMetadataID); err != nil {
-			return err
-		}
-	}
-
-	if err := f.writeQueryParams(params); err != nil {
-		return err
-	}
-
-	return f.finish()
-}
-
-// TODO: can we replace BatchStatemt with batchStatement? As they prety much
-// duplicate each other
-type batchStatment struct {
-	preparedID []byte
-	statement  string
-	values     []queryValues
-}
-
-type writeBatchFrame struct {
-	customPayload         map[string][]byte
-	nowInSeconds          *int
-	keyspace              string
-	statements            []batchStatment
-	defaultTimestampValue int64
-	consistency           Consistency
-	serialConsistency     Consistency
-	typ                   BatchType
-	defaultTimestamp      bool
-}
-
-func (w *writeBatchFrame) buildFrame(framer *framer, streamID int) error {
-	return framer.writeBatchFrame(streamID, w, w.customPayload)
-}
-
-func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload map[string][]byte) error {
-	// Validate everything that can fail BEFORE writing anything into f.buf, so
-	// an error never leaves a partial frame in the reusable framer buffer.
-	if err := f.validateV5Options(w.keyspace, w.nowInSeconds); err != nil {
-		return err
-	}
-
-	// Named values are not supported in batches on any protocol version
-	// (CASSANDRA-10246). Reject them up front, before any bytes are written,
-	// so a rejected batch never leaves a partial frame in the reusable buffer.
-	for i := range w.statements {
-		for j := range w.statements[i].values {
-			if w.statements[i].values[j].name != "" {
-				return fmt.Errorf("gocql: named query values are not supported in batches, please see https://issues.apache.org/jira/browse/CASSANDRA-10246")
-			}
-		}
-		if err := validateShortBytes("prepared id", w.statements[i].preparedID); err != nil {
-			return err
-		}
-	}
-
-	if len(customPayload) > 0 {
-		f.payload()
-	}
-	f.writeHeader(f.flags, frm.OpBatch, streamID)
-	f.writeCustomPayload(&customPayload)
-	f.writeByte(byte(w.typ))
-
-	n := len(w.statements)
-	f.writeShort(uint16(n))
-
-	var flags uint32
-
-	for i := 0; i < n; i++ {
-		b := &w.statements[i]
-		if len(b.preparedID) == 0 {
-			f.writeByte(0)
-			f.writeLongString(b.statement)
-		} else {
-			f.writeByte(1)
-			if err := f.writeShortBytes(b.preparedID); err != nil {
-				return err
-			}
-		}
-
-		f.writeShort(uint16(len(b.values)))
-		for j := range b.values {
-			col := b.values[j]
-			if col.isUnset {
-				f.writeUnset()
-			} else {
-				f.writeBytes(col.value)
-			}
-		}
-	}
-
-	f.writeConsistency(w.consistency)
-
-	if f.proto > protoVersion2 {
-		if w.serialConsistency > 0 {
-			flags |= frm.FlagWithSerialConsistency
-		}
-		if w.defaultTimestamp {
-			flags |= frm.FlagDefaultTimestamp
-		}
-	}
-
-	if w.keyspace != "" {
-		flags |= frm.FlagWithKeyspace
-	}
-
-	if w.nowInSeconds != nil {
-		flags |= frm.FlagWithNowInSeconds
-	}
-
-	if f.proto > protoVersion4 {
-		f.writeUint(flags)
-	} else {
-		f.writeByte(byte(flags))
-	}
-
-	// serialConsistency and defaultTimestamp are only signalled by flags on
-	// proto > v2, so their fields must only be written on proto > v2 as well;
-	// otherwise the bytes would not be described by any flag and would corrupt
-	// the frame. (In practice proto < v3 is unreachable: readHeader rejects
-	// response versions below protoVersion3.)
-	if f.proto > protoVersion2 {
-		if w.serialConsistency > 0 {
-			f.writeConsistency(w.serialConsistency)
-		}
-
-		if w.defaultTimestamp {
-			var ts int64
-			if w.defaultTimestampValue != 0 {
-				ts = w.defaultTimestampValue
-			} else {
-				ts = time.Now().UnixNano() / 1000
-			}
-			f.writeLong(ts)
-		}
-	}
-
-	if w.keyspace != "" {
-		f.writeString(w.keyspace)
-	}
-
-	if w.nowInSeconds != nil {
-		// Bounds already validated at the top of this function.
-		f.writeInt(int32(*w.nowInSeconds))
-	}
-
-	return f.finish()
 }
 
 type writeOptionsFrame struct{}
@@ -2262,7 +1821,7 @@ func (f *framer) prepareModernLayout() error {
 	// segments takes the same layout from the same compressor, which is fixed for the
 	// life of the framer.
 	//
-	// The narrowing is defensive — ClusterConfig.Validate rejects a compressor without
+	// The narrowing is defensive — clusterSettings.Validate rejects a compressor without
 	// segment support on v5 before a connection is dialed, and
 	// Conn.resolveSegmentCompressor re-checks it at the handshake — and is reported
 	// rather than ignored, because falling back to the uncompressed layout would
@@ -2309,4 +1868,20 @@ func (f *framer) growWireBuf(n int) []byte {
 		f.wireBuf = make([]byte, 0, n)
 	}
 	return f.wireBuf[:0]
+}
+
+// useKeyspaceFrame is the parameter-free QUERY needed while opening a pooled
+// connection on protocols3/4. Application requests use the canonical span writer.
+type useKeyspaceFrame struct{ statement string }
+
+func (w *useKeyspaceFrame) buildFrame(f *framer, streamID int) error {
+	f.writeHeader(f.flags, frm.OpQuery, streamID)
+	f.writeLongString(w.statement)
+	f.writeConsistency(One)
+	if f.proto >= protoVersion5 {
+		f.writeUint(0)
+	} else {
+		f.writeByte(0)
+	}
+	return f.finish()
 }

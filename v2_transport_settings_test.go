@@ -593,7 +593,7 @@ func TestV2TypedRepairTriggersHonorPolicyDelayAndStop(t *testing.T) {
 			s.pool = &policyConnPool{hostConnPools: map[UUID]*hostConnPool{h.hostUUID(): pool}}
 			pool.HandleError(c, io.EOF, true)
 			for i := 0; i < 10; i++ {
-				pool.Pick(nil, nil)
+				pool.Pick(nil)
 				s.pickTypedPool(pool, Target{}, RoutingInfo{})
 				pool.fill()
 			}

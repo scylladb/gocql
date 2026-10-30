@@ -128,7 +128,7 @@ type nodeEventFixture struct {
 	refreshes chan struct{}
 }
 
-func newNodeEventFixture(t *testing.T, opts ...func(*ClusterConfig)) *nodeEventFixture {
+func newNodeEventFixture(t *testing.T, opts ...func(*clusterSettings)) *nodeEventFixture {
 	t.Helper()
 
 	policy := &nodeEventPolicy{}
@@ -318,7 +318,7 @@ func TestHandleNodeEventCoalescesStatusChanges(t *testing.T) {
 		// An unknown host does not work here. A DOWN for one is already a
 		// no-op, so dispatching both events looks identical to dispatching only
 		// the UP, and the assertion would hold with coalescing broken entirely.
-		f := newNodeEventFixture(t, func(cfg *ClusterConfig) {
+		f := newNodeEventFixture(t, func(cfg *clusterSettings) {
 			cfg.HostFilter = HostFilterFunc(func(*HostInfo) bool { return false })
 		})
 		host := f.addHost(t, "127.0.10.1")
@@ -353,7 +353,7 @@ func TestHandleNodeEventTopologyChange(t *testing.T) {
 	t.Run("DisableTopologyEvents suppresses the refresh", func(t *testing.T) {
 		t.Parallel()
 
-		f := newNodeEventFixture(t, func(cfg *ClusterConfig) {
+		f := newNodeEventFixture(t, func(cfg *clusterSettings) {
 			cfg.Events.DisableTopologyEvents = true
 		})
 		f.session.handleNodeEvent([]frame{topologyChange("NEW_NODE", "127.0.10.1")})
@@ -365,7 +365,7 @@ func TestHandleNodeEventTopologyChange(t *testing.T) {
 
 		// The two switches are independent; turning topology events off must not
 		// take status dispatch with it.
-		f := newNodeEventFixture(t, func(cfg *ClusterConfig) {
+		f := newNodeEventFixture(t, func(cfg *clusterSettings) {
 			cfg.Events.DisableTopologyEvents = true
 		})
 		f.addHost(t, "127.0.10.1")
@@ -398,7 +398,7 @@ func TestHandleNodeEventDisableNodeStatusEvents(t *testing.T) {
 	t.Run("disabled drops DOWN", func(t *testing.T) {
 		t.Parallel()
 
-		f := newNodeEventFixture(t, func(cfg *ClusterConfig) {
+		f := newNodeEventFixture(t, func(cfg *clusterSettings) {
 			cfg.Events.DisableNodeStatusEvents = true
 		})
 		host := f.addHost(t, "127.0.10.1")
@@ -415,7 +415,7 @@ func TestHandleNodeEventDisableNodeStatusEvents(t *testing.T) {
 
 		// Unknown IP: were the UP dispatched, handleNodeUp would request a ring
 		// refresh, so silence here means the event really was dropped.
-		f := newNodeEventFixture(t, func(cfg *ClusterConfig) {
+		f := newNodeEventFixture(t, func(cfg *clusterSettings) {
 			cfg.Events.DisableNodeStatusEvents = true
 		})
 		f.session.handleNodeEvent([]frame{statusChange("UP", "127.0.10.9")})
@@ -445,7 +445,7 @@ func TestHandleNodeUp(t *testing.T) {
 	t.Run("filtered host is ignored", func(t *testing.T) {
 		t.Parallel()
 
-		f := newNodeEventFixture(t, func(cfg *ClusterConfig) {
+		f := newNodeEventFixture(t, func(cfg *clusterSettings) {
 			cfg.HostFilter = HostFilterFunc(func(*HostInfo) bool { return false })
 		})
 		f.addHost(t, "127.0.10.1")
@@ -483,7 +483,7 @@ func TestHandleNodeUp(t *testing.T) {
 func TestHandleNodeEventTopologySurvivesStatusForSameHost(t *testing.T) {
 	t.Parallel()
 
-	f := newNodeEventFixture(t, func(cfg *ClusterConfig) {
+	f := newNodeEventFixture(t, func(cfg *clusterSettings) {
 		cfg.Events.DisableNodeStatusEvents = true
 	})
 
@@ -536,7 +536,7 @@ func TestHandleNodeDown(t *testing.T) {
 	t.Run("filtered host is marked down but not dispatched", func(t *testing.T) {
 		t.Parallel()
 
-		f := newNodeEventFixture(t, func(cfg *ClusterConfig) {
+		f := newNodeEventFixture(t, func(cfg *clusterSettings) {
 			cfg.HostFilter = HostFilterFunc(func(*HostInfo) bool { return false })
 		})
 		host := f.addHost(t, "127.0.10.1")
@@ -603,7 +603,7 @@ func TestHandleNodeConnected(t *testing.T) {
 	t.Run("filtered host is marked up but not announced", func(t *testing.T) {
 		t.Parallel()
 
-		f := newNodeEventFixture(t, func(cfg *ClusterConfig) {
+		f := newNodeEventFixture(t, func(cfg *clusterSettings) {
 			cfg.HostFilter = HostFilterFunc(func(*HostInfo) bool { return false })
 		})
 		host := f.addHost(t, "127.0.10.1")

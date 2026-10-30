@@ -74,7 +74,7 @@ type ClientRoutesConfig struct {
 	//
 	// Set this to true only when the client-route endpoint forwards to Scylla's
 	// Proxy Protocol v2 shard-aware CQL listener and the proxy supplies the original
-	// client source port in the Proxy Protocol v2 header. ClusterConfig's
+	// client source port in the Proxy Protocol v2 header. clusterSettings's
 	// DisableShardAwarePort setting takes precedence.
 	EnableShardAwareness bool
 }

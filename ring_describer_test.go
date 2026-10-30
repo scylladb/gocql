@@ -91,11 +91,7 @@ func (*mockConnection) Close() {}
 func (*mockConnection) exec(ctx context.Context, req frameBuilder, tracer Tracer, requestTimeout time.Duration) (*framer, error) {
 	return nil, nil
 }
-func (*mockConnection) awaitSchemaAgreement(ctx context.Context) error     { return nil }
-func (*mockConnection) executeQuery(ctx context.Context, qry *Query) *Iter { return nil }
-func (*mockConnection) executeQueryWithMetrics(context.Context, *Query, *queryMetrics) *Iter {
-	return nil
-}
+func (*mockConnection) awaitSchemaAgreement(ctx context.Context) error { return nil }
 
 var systemLocalResultMetadata = resultMetadata{
 	flags:          0,
@@ -217,7 +213,7 @@ var systemPeersResultMetadata = resultMetadata{
 	}},
 }
 
-func (*mockConnection) querySystem(ctx context.Context, query string, values ...any) *Iter {
+func (*mockConnection) querySystem(ctx context.Context, query string, values ...any) *nativeResultFixture {
 	// Column order matches the explicit SELECT in qrySystemLocal:
 	// broadcast_address, cluster_name, data_center, host_id, listen_address, partitioner, rack, release_version, rpc_address, schema_version, tokens
 	localData := []any{net.IPv4(192, 168, 100, 12), "", "datacenter1", ParseUUIDMust("045859a7-6b9f-4efd-a5e7-acd64a295e13"), net.IPv4(192, 168, 100, 12), "org.apache.cassandra.dht.Murmur3Partitioner", "rack1", "3.0.8", net.IPv4(192, 168, 100, 12), ParseUUIDMust("daf4df2c-b708-11ef-5c25-3004361afd71"), []string{}}
@@ -227,18 +223,16 @@ func (*mockConnection) querySystem(ctx context.Context, query string, values ...
 	peerData2 := []any{net.IPv4(192, 168, 100, 14), "datacenter1", ParseUUIDMust("8269e111-ea38-44bd-a73f-9d3d12cfaf78"), nil, "rack1", "3.0.8", net.IPv4(192, 168, 100, 14), ParseUUIDMust("b6ed5bde-b318-11ef-8f58-aeba19e31273"), []string{}}
 
 	if query == qrySystemLocal {
-		return &Iter{
+		return &nativeResultFixture{
 			meta:    systemLocalResultMetadata,
 			framer:  &mock.MockFramer{Data: marshalMetadataMust(systemLocalResultMetadata, localData)},
 			numRows: 1,
-			next:    nil,
 		}
 	} else if query == qrySystemPeersCassandra {
-		return &Iter{
+		return &nativeResultFixture{
 			meta:    systemPeersResultMetadata,
 			framer:  &mock.MockFramer{Data: append(marshalMetadataMust(systemPeersResultMetadata, peerData1), marshalMetadataMust(systemPeersResultMetadata, peerData2)...)},
 			numRows: 2,
-			next:    nil,
 		}
 	}
 	return nil
@@ -253,7 +247,7 @@ func (*mockConnection) getScyllaSupported() ScyllaConnectionFeatures {
 
 type mockControlConn struct{}
 
-func (m *mockControlConn) querySystem(statement string, values ...any) (iter *Iter) {
+func (m *mockControlConn) querySystem(statement string, values ...any) (iter *nativeResultFixture) {
 	return nil
 }
 
@@ -268,12 +262,14 @@ func (m *mockControlConn) getConn() *connHost {
 	}
 }
 
-func (m *mockControlConn) awaitSchemaAgreement() error                        { return nil }
-func (m *mockControlConn) query(statement string, values ...any) (iter *Iter) { return nil }
-func (m *mockControlConn) discoverProtocol(hosts []*HostInfo) (int, error)    { return 0, nil }
-func (m *mockControlConn) connect(hosts []*HostInfo) error                    { return nil }
-func (m *mockControlConn) close()                                             {}
-func (m *mockControlConn) getSession() *Session                               { return nil }
+func (m *mockControlConn) awaitSchemaAgreement() error { return nil }
+func (m *mockControlConn) query(statement string, values ...any) (iter *nativeResultFixture) {
+	return nil
+}
+func (m *mockControlConn) discoverProtocol(hosts []*HostInfo) (int, error) { return 0, nil }
+func (m *mockControlConn) connect(hosts []*HostInfo) error                 { return nil }
+func (m *mockControlConn) close()                                          {}
+func (m *mockControlConn) getSession() *Session                            { return nil }
 
 func marshalMetadataMust(metadata resultMetadata, data []any) [][]byte {
 	if len(metadata.columns) != len(data) {
@@ -283,7 +279,7 @@ func marshalMetadataMust(metadata resultMetadata, data []any) [][]byte {
 	for id, col := range metadata.columns {
 		var err error
 		value := data[id]
-		res[id], err = Marshal(col.TypeInfo, value)
+		res[id], err = encodeFixtureCell(col.TypeInfo, value)
 		if err != nil {
 			panic(fmt.Sprintf("unable to marshal column %d: %v", id, err))
 		}
@@ -292,7 +288,7 @@ func marshalMetadataMust(metadata resultMetadata, data []any) [][]byte {
 }
 
 type trackingRingConnection struct {
-	iter      *Iter
+	iter      *nativeResultFixture
 	schemaV2  bool
 	scylla    bool
 	lastQuery string
@@ -303,11 +299,8 @@ func (*trackingRingConnection) exec(context.Context, frameBuilder, Tracer, time.
 	return nil, nil
 }
 func (*trackingRingConnection) awaitSchemaAgreement(context.Context) error { return nil }
-func (*trackingRingConnection) executeQuery(context.Context, *Query) *Iter { return nil }
-func (*trackingRingConnection) executeQueryWithMetrics(context.Context, *Query, *queryMetrics) *Iter {
-	return nil
-}
-func (c *trackingRingConnection) querySystem(_ context.Context, q string, _ ...any) *Iter {
+
+func (c *trackingRingConnection) querySystem(_ context.Context, q string, _ ...any) *nativeResultFixture {
 	c.lastQuery = q
 	return c.iter
 }
@@ -321,7 +314,7 @@ func (*trackingRingConnection) getScyllaSupported() ScyllaConnectionFeatures {
 func TestMockGetHostsFromSystem(t *testing.T) {
 	t.Parallel()
 
-	r := &ringDescriber{control: &mockControlConn{}, cfg: &ClusterConfig{Port: 9042}}
+	r := &ringDescriber{control: &mockControlConn{}, cfg: &clusterSettings{Port: 9042}}
 
 	hosts, _, err := r.GetHostsFromSystem()
 	if err != nil {
@@ -350,10 +343,10 @@ func TestRingDescriberGetClusterPeerInfoClosesIter(t *testing.T) {
 	framer := &trackingMockFramer{
 		MockFramer: mock.MockFramer{Data: marshalMetadataMust(systemPeersResultMetadata, row)},
 	}
-	r := &ringDescriber{cfg: &ClusterConfig{Port: 9042}}
+	r := &ringDescriber{cfg: &clusterSettings{Port: 9042}}
 
 	peers, err := r.getClusterPeerInfo(context.Background(), &trackingRingConnection{
-		iter: &Iter{
+		iter: &nativeResultFixture{
 			meta:    systemPeersResultMetadata,
 			framer:  framer,
 			numRows: 1,
@@ -390,7 +383,7 @@ func TestGetClusterPeerInfoQueryRouting(t *testing.T) {
 				schemaV2: tt.schemaV2,
 				scylla:   tt.scylla,
 			}
-			r := &ringDescriber{cfg: &ClusterConfig{Port: 9042}}
+			r := &ringDescriber{cfg: &clusterSettings{Port: 9042}}
 			// iter is nil so getClusterPeerInfo returns errNoControl, but the query is still recorded
 			_, _ = r.getClusterPeerInfo(context.Background(), conn)
 			if conn.lastQuery != tt.wantQuery {

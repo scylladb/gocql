@@ -7,7 +7,7 @@ import (
 )
 
 // BatchKind selects native protocol batch semantics.
-type BatchKind = BatchType
+type BatchKind byte
 
 // BatchItem retains an immutable binding descriptor without admitting execution.
 type BatchItem struct{ request *executionRequest }

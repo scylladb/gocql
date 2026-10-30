@@ -27,64 +27,72 @@ package gocql_test
 import (
 	"context"
 	"fmt"
+	"github.com/scylladb/gocql/v2"
 	"log"
-
-	gocql "github.com/scylladb/gocql/v2"
 )
 
 func Example() {
-	/* The example assumes the following CQL was used to setup the keyspace:
-	create keyspace example with replication = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };
-	create table example.tweet(timeline text, id UUID, text text, PRIMARY KEY(id));
-	create index on example.tweet(timeline);
-	*/
-	cluster := gocql.NewCluster("localhost:9042")
-	cluster.Keyspace = "example"
-	cluster.Consistency = gocql.Quorum
-	// connect to the cluster
-	session, err := cluster.CreateSession()
+	// Assumes example.tweet(id uuid PRIMARY KEY, timeline text, text text).
+	ctx := context.Background()
+	config := gocql.DefaultConfig("localhost:9042")
+	config.Keyspace = "example"
+	session, err := gocql.Connect(ctx, config)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer session.Close()
-
-	ctx := context.Background()
-
-	// insert a tweet
-	if err := session.Query(`INSERT INTO tweet (timeline, id, text) VALUES (?, ?, ?)`,
-		"me", gocql.NewTimeUUID(), "hello world").WithContext(ctx).Exec(); err != nil {
+	type tweet struct {
+		ID             gocql.UUID
+		Timeline, Text string
+	}
+	insert, err := gocql.Prepare(ctx, session, gocql.Statement[tweet, gocql.Unit]{
+		CQL:    "INSERT INTO tweet (id,timeline,text) VALUES (?,?,?)",
+		Params: gocql.Params(gocql.Param("id", gocql.UUIDCodec, func(v tweet) gocql.UUID { return v.ID }), gocql.Param("timeline", gocql.StringEncoder, func(v tweet) string { return v.Timeline }), gocql.Param("text", gocql.StringEncoder, func(v tweet) string { return v.Text })), Rows: gocql.NoRows,
+	}, gocql.PrepareOptions{})
+	if err != nil {
 		log.Fatal(err)
 	}
-
-	var id gocql.UUID
-	var text string
-
-	/* Search for a specific set of records whose 'timeline' column matches
-	 * the value 'me'. The secondary index that we created earlier will be
-	 * used for optimizing the search */
-	if err := session.Query(`SELECT id, text FROM tweet WHERE timeline = ? LIMIT 1`,
-		"me").WithContext(ctx).Consistency(gocql.One).Scan(&id, &text); err != nil {
+	bound, err := gocql.BindOwned(insert, tweet{gocql.NewTimeUUID(), "me", "hello world"})
+	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println("Tweet:", id, text)
-	fmt.Println()
-
-	// list all tweets
-	scanner := session.Query(`SELECT id, text FROM tweet WHERE timeline = ?`,
-		"me").WithContext(ctx).Iter().Scanner()
-	for scanner.Next() {
-		err = scanner.Scan(&id, &text)
-		if err != nil {
-			log.Fatal(err)
+	defer func() {
+		bound.Close()
+		if err := bound.Wait(ctx); err != nil {
+			log.Print(err)
 		}
-		fmt.Println("Tweet:", id, text)
-	}
-	// scanner.Err() closes the iterator, so scanner nor iter should be used afterwards.
-	if err := scanner.Err(); err != nil {
+	}()
+	if _, err := gocql.Exec(ctx, session, bound, gocql.Options{}); err != nil {
 		log.Fatal(err)
 	}
-	// Tweet: cad53821-3731-11eb-971c-708bcdaada84 hello world
-	//
-	// Tweet: cad53821-3731-11eb-971c-708bcdaada84 hello world
-	// Tweet: d577ab85-3731-11eb-81eb-708bcdaada84 hello world
+	type result struct {
+		ID   gocql.UUID
+		Text gocql.Text
+	}
+	query, err := gocql.Prepare(ctx, session, gocql.Statement[string, result]{CQL: "SELECT id,text FROM tweet WHERE timeline = ?", Params: gocql.OneParam(gocql.StringEncoder), Rows: gocql.Row(gocql.Column("id", gocql.UUIDCodec, func(v *result) *gocql.UUID { return &v.ID }), gocql.Column("text", gocql.TextCodec, func(v *result) *gocql.Text { return &v.Text }))}, gocql.PrepareOptions{})
+	if err != nil {
+		log.Fatal(err)
+	}
+	selectBound, err := gocql.BindOwned(query, "me")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer func() {
+		selectBound.Close()
+		if err := selectBound.Wait(ctx); err != nil {
+			log.Print(err)
+		}
+	}()
+	rows, err := gocql.Run(ctx, session, selectBound, gocql.Options{})
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows.Close()
+	var row result
+	for rows.NextInto(&row) {
+		fmt.Println(row.ID, row.Text.String())
+	}
+	if err := rows.Err(); err != nil {
+		log.Fatal(err)
+	}
 }

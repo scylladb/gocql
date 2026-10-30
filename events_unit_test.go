@@ -105,7 +105,7 @@ var columnMeta = resultMetadata{
 }
 
 func mustMarshal(info TypeInfo, value any) []byte {
-	b, err := Marshal(info, value)
+	b, err := encodeFixtureCell(info, value)
 	if err != nil {
 		panic(fmt.Sprintf("mustMarshal(%v, %v): %v", info, value, err))
 	}
@@ -168,15 +168,15 @@ func makeColumnRow(tableName, colName, kind string, position int) [][]byte {
 	})
 }
 
-func makeIter(meta resultMetadata, rows ...[][]byte) *Iter {
+func makeIter(meta resultMetadata, rows ...[][]byte) *nativeResultFixture {
 	if len(rows) == 0 {
-		return &Iter{}
+		return &nativeResultFixture{}
 	}
 	var allData [][]byte
 	for _, row := range rows {
 		allData = append(allData, row...)
 	}
-	return &Iter{
+	return &nativeResultFixture{
 		meta:    meta,
 		framer:  &mock.MockFramer{Data: allData},
 		numRows: len(rows),
@@ -203,10 +203,10 @@ type schemaDataMock struct {
 
 	knownKeyspaces map[string][]tableInfo
 	queryDelay     time.Duration
-	queryError     error // if set, querySystem returns an Iter with this error
+	queryError     error // if set, querySystem returns an nativeResultFixture with this error
 	// iterFor, if set, is consulted first by query and querySystem; a non-nil
-	// result is returned as the statement's Iter.
-	iterFor func(statement string) *Iter
+	// result is returned as the statement's nativeResultFixture.
+	iterFor func(statement string) *nativeResultFixture
 }
 
 func (m *schemaDataMock) awaitSchemaAgreement() error {
@@ -216,7 +216,7 @@ func (m *schemaDataMock) awaitSchemaAgreement() error {
 	return nil
 }
 
-func (m *schemaDataMock) query(statement string, values ...any) *Iter {
+func (m *schemaDataMock) query(statement string, values ...any) *nativeResultFixture {
 	m.mu.Lock()
 	m.queries = append(m.queries, queryRecord{method: "query", stmt: statement})
 	delay := m.queryDelay
@@ -232,10 +232,10 @@ func (m *schemaDataMock) query(statement string, values ...any) *Iter {
 		}
 	}
 
-	return &Iter{}
+	return &nativeResultFixture{}
 }
 
-func (m *schemaDataMock) querySystem(statement string, values ...any) *Iter {
+func (m *schemaDataMock) querySystem(statement string, values ...any) *nativeResultFixture {
 	m.mu.Lock()
 	m.queries = append(m.queries, queryRecord{method: "querySystem", stmt: statement})
 	delay := m.queryDelay
@@ -253,7 +253,7 @@ func (m *schemaDataMock) querySystem(statement string, values ...any) *Iter {
 	}
 
 	if queryErr != nil {
-		return &Iter{err: queryErr}
+		return &nativeResultFixture{err: queryErr}
 	}
 
 	// Injection callbacks run outside the mutex so they can change fixture
@@ -284,7 +284,7 @@ func (m *schemaDataMock) querySystem(statement string, values ...any) *Iter {
 		if _, ok := m.knownKeyspaces[ksName]; ok {
 			return makeIter(keyspaceMeta, makeKeyspaceRow(true))
 		}
-		return &Iter{}
+		return &nativeResultFixture{}
 	}
 
 	if strings.HasPrefix(statement, "SELECT * FROM system_schema.tables WHERE keyspace_name = ?") &&
@@ -292,13 +292,13 @@ func (m *schemaDataMock) querySystem(statement string, values ...any) *Iter {
 		ksName, _ := values[0].(string)
 		tables, ok := m.knownKeyspaces[ksName]
 		if !ok || len(tables) == 0 {
-			return &Iter{}
+			return &nativeResultFixture{}
 		}
 		var rows [][]byte
 		for _, t := range tables {
 			rows = append(rows, makeTableRow(t.name)...)
 		}
-		return &Iter{
+		return &nativeResultFixture{
 			meta:    tableMeta,
 			framer:  &mock.MockFramer{Data: rows},
 			numRows: len(tables),
@@ -316,7 +316,7 @@ func (m *schemaDataMock) querySystem(statement string, values ...any) *Iter {
 				}
 			}
 		}
-		return &Iter{}
+		return &nativeResultFixture{}
 	}
 
 	if strings.HasPrefix(statement, "SELECT "+columnMetadataColumns+" FROM system_schema.columns WHERE keyspace_name = ?") &&
@@ -324,7 +324,7 @@ func (m *schemaDataMock) querySystem(statement string, values ...any) *Iter {
 		ksName, _ := values[0].(string)
 		tables, ok := m.knownKeyspaces[ksName]
 		if !ok {
-			return &Iter{}
+			return &nativeResultFixture{}
 		}
 		var rows [][]byte
 		count := 0
@@ -335,9 +335,9 @@ func (m *schemaDataMock) querySystem(statement string, values ...any) *Iter {
 			}
 		}
 		if count == 0 {
-			return &Iter{}
+			return &nativeResultFixture{}
 		}
-		return &Iter{
+		return &nativeResultFixture{
 			meta:    columnMeta,
 			framer:  &mock.MockFramer{Data: rows},
 			numRows: count,
@@ -349,7 +349,7 @@ func (m *schemaDataMock) querySystem(statement string, values ...any) *Iter {
 		tblName, _ := values[1].(string)
 		tables, ok := m.knownKeyspaces[ksName]
 		if !ok {
-			return &Iter{}
+			return &nativeResultFixture{}
 		}
 		var rows [][]byte
 		count := 0
@@ -363,16 +363,16 @@ func (m *schemaDataMock) querySystem(statement string, values ...any) *Iter {
 			}
 		}
 		if count == 0 {
-			return &Iter{}
+			return &nativeResultFixture{}
 		}
-		return &Iter{
+		return &nativeResultFixture{
 			meta:    columnMeta,
 			framer:  &mock.MockFramer{Data: rows},
 			numRows: count,
 		}
 	}
 
-	return &Iter{}
+	return &nativeResultFixture{}
 }
 
 func (m *schemaDataMock) setQueryError(err error) {
@@ -414,7 +414,7 @@ func newSchemaEventTestSession(control controlConnection, policy HostSelectionPo
 		control: control,
 		policy:  policy,
 		logger:  log.Default(),
-		cfg:     ClusterConfig{Keyspace: keyspace},
+		cfg:     clusterSettings{Keyspace: keyspace},
 	}
 	s.hostSource = &ringDescriber{cfg: &s.cfg, logger: s.logger}
 	s.metadataDescriber = &metadataDescriber{

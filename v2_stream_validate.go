@@ -25,6 +25,7 @@ import (
 // explicit encoded output share these exact incremental validation operations.
 type streamValidationPlan struct {
 	typ          DataType
+	scalar       func(*StreamValueReader) error
 	element, key *streamValidationPlan
 	fields       []*streamValidationPlan
 	width        int64
@@ -87,6 +88,9 @@ func compileStreamValidationMemo(t DataType, depth int, memo map[*dataTypeDescri
 		}
 	default:
 		_, err = ScalarType(t.Kind())
+		if err == nil {
+			p.scalar, err = compileStreamScalarValidation(t)
+		}
 	}
 	if err != nil {
 		return nil, err
@@ -197,18 +201,13 @@ func (p *streamValidationPlan) skip(r *StreamValueReader, allowNull bool) error 
 			}
 		}
 	default:
-		n := r.Remaining()
-		if n > 27 {
-			return r.fail(typeValidation("length", "invalid scalar length %d", n))
+		if p.scalar == nil {
+			return r.fail(typeValidation("type", "missing scalar validation plan"))
 		}
-		b := r.shared.scalar[:int(n)]
-		if err := r.readFull(b); err != nil {
+		if err := p.scalar(r); err != nil {
 			return err
 		}
-		chain, _ := wire.NewChain(wire.Borrow(b))
-		if _, err := decodeDynamicChecked(newValueReader(r.typ, Present, chain, nil)); err != nil {
-			return r.fail(err)
-		}
+
 	}
 	return r.RequireEnd()
 }
@@ -276,5 +275,56 @@ func (streamEncodedCodec) Reset(dst *StreamEncodedValue) {
 		dst.Type = DataType{}
 		dst.State = Present
 		dst.Bytes = dst.Bytes[:0]
+	}
+}
+
+func streamScalarValidation[T any](typ DataType, codec StreamDecoder[T]) (func(*StreamValueReader) error, error) {
+	plan, err := codec.Compile(typ)
+	if err != nil {
+		return nil, err
+	}
+	native, ok := plan.(streamScalarPlan[T])
+	if !ok {
+		return nil, typeValidation("stream scalar", "requires native scalar validation")
+	}
+	return func(r *StreamValueReader) error { var value T; return native.DecodeInto(r, &value) }, nil
+}
+func compileStreamScalarValidation(t DataType) (func(*StreamValueReader) error, error) {
+	switch t.Kind() {
+	case TypeBoolean:
+		return streamScalarValidation(t, StreamBool)
+	case TypeTinyInt:
+		return streamScalarValidation(t, StreamInt8)
+	case TypeSmallInt:
+		return streamScalarValidation(t, StreamInt16)
+	case TypeInt:
+		return streamScalarValidation(t, StreamInt32)
+	case TypeBigInt:
+		return streamScalarValidation(t, StreamInt64)
+	case TypeFloat:
+		return streamScalarValidation(t, StreamFloat32)
+	case TypeDouble:
+		return streamScalarValidation(t, StreamFloat64)
+	case TypeCounter:
+		return streamScalarValidation(t, StreamCounter)
+	case TypeDate:
+		return streamScalarValidation(t, StreamDate)
+	case TypeTime:
+		return streamScalarValidation(t, StreamTime)
+	case TypeTimestamp:
+		return streamScalarValidation(t, StreamTimestamp)
+	case TypeDuration:
+		return streamScalarValidation(t, StreamDuration)
+	case TypeUUID:
+		return streamScalarValidation(t, StreamUUID)
+	case TypeTimeUUID:
+		return streamScalarValidation(t, StreamTimeUUID)
+	case TypeInet:
+		return streamScalarValidation(t, StreamInet)
+	// Variable-byte types have specialized incremental validation in skip.
+	case TypeBlob, TypeVarint, TypeDecimal, TypeText, TypeVarchar, TypeAscii:
+		return nil, nil
+	default:
+		return nil, typeValidation("type", "unsupported scalar validation %s", t)
 	}
 }

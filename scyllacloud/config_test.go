@@ -13,11 +13,9 @@ import (
 	"reflect"
 	"testing"
 
-	"sigs.k8s.io/yaml"
-
-	"github.com/scylladb/gocql/v2/internal/tests"
-
 	"github.com/scylladb/gocql/v2"
+	"github.com/scylladb/gocql/v2/internal/tests"
+	"sigs.k8s.io/yaml"
 )
 
 func TestCloudCluster(t *testing.T) {

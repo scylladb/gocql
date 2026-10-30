@@ -21,7 +21,7 @@ package gocql
 
 import (
 	"encoding/binary"
-	"encoding/json"
+
 	"fmt"
 	"math"
 	"os"
@@ -29,16 +29,9 @@ import (
 	"strings"
 	"testing"
 
+	"encoding/json"
 	"github.com/google/go-cmp/cmp"
 )
-
-// KeyspaceMetadata.ToCQL and everything it calls had no coverage in either
-// lane. TestRecreateSchema appears to cover them, but it does not: ToCQL
-// short-circuits on a non-empty CreateStmts, which any server supporting
-// DESCRIBE KEYSPACE ... WITH INTERNALS populates, so on a modern cluster the
-// generator never runs. These tests drive it directly from hand-built
-// metadata, which also means no cluster and no dependence on how a particular
-// server reports its schema.
 
 func col(name, typ string, kind ColumnKind) *ColumnMetadata {
 	return &ColumnMetadata{Name: name, Type: typ, Kind: kind}
@@ -1337,38 +1330,6 @@ func TestFunctionAndAggregateToCQL(t *testing.T) {
 	})
 }
 
-// TestScyllaEncryptionOptionsUnmarshalBinary exercises the blob decoder that
-// tableExtensionsToCQL depends on. It was TestScyllaEncryptionOptionsUnmarshaller
-// in recreate_test.go, which is integration-tagged, so the decoder had no
-// coverage in the lane that runs on every PR -- even though it only reads two
-// files and unmarshals, and needs no cluster. Moved here rather than copied, so
-// there is no counterpart to keep in sync.
-func TestScyllaEncryptionOptionsUnmarshalBinary(t *testing.T) {
-	t.Parallel()
-
-	blob, err := os.ReadFile("testdata/recreate/scylla_encryption_options.bin")
-	if err != nil {
-		t.Fatal(err)
-	}
-	goldenBuf, err := os.ReadFile("testdata/recreate/scylla_encryption_options_golden.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	want := &scyllaEncryptionOptions{}
-	if err := json.Unmarshal(goldenBuf, want); err != nil {
-		t.Fatal(err)
-	}
-
-	got := &scyllaEncryptionOptions{}
-	if err := got.UnmarshalBinary(blob); err != nil {
-		t.Fatalf("UnmarshalBinary: %v", err)
-	}
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("decoded blob differs from the golden (-want +got):\n%s", diff)
-	}
-}
-
 // TestTableExtensionsToCQLRejectsNonBlob covers the one value in the exported
 // Extensions map that ToCQL decodes. It used to be type-asserted, so a caller
 // who put anything but a []byte there panicked the render.
@@ -1742,8 +1703,6 @@ func TestBodyLiteral(t *testing.T) {
 	}
 }
 
-// KeyspaceMetadata has no field for Scylla's tablets setting, so keyspaceToCQL
-// cannot render it (scylladb/gocql#1055); flip this once it is modeled.
 func TestKeyspaceToCQLTabletsNotModeled(t *testing.T) {
 	ks := &KeyspaceMetadata{
 		Name:            "ks1",
@@ -1757,5 +1716,31 @@ func TestKeyspaceToCQLTabletsNotModeled(t *testing.T) {
 	}
 	if strings.Contains(sb.String(), "tablets") {
 		t.Fatal("keyspaceToCQL now renders a tablets clause: update this test, see scylladb/gocql#1055")
+	}
+}
+
+func TestScyllaEncryptionOptionsUnmarshalBinary(t *testing.T) {
+	t.Parallel()
+
+	blob, err := os.ReadFile("testdata/recreate/scylla_encryption_options.bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	goldenBuf, err := os.ReadFile("testdata/recreate/scylla_encryption_options_golden.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := &scyllaEncryptionOptions{}
+	if err := json.Unmarshal(goldenBuf, want); err != nil {
+		t.Fatal(err)
+	}
+
+	got := &scyllaEncryptionOptions{}
+	if err := got.UnmarshalBinary(blob); err != nil {
+		t.Fatalf("UnmarshalBinary: %v", err)
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("decoded blob differs from the golden (-want +got):\n%s", diff)
 	}
 }

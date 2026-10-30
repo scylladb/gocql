@@ -280,7 +280,7 @@ var _ cqlProtocolExtension = &scyllaUseMetadataIDExt{}
 // carries a [short bytes] result metadata id and RESULT/Prepared answers with one
 // (see writeExecuteFrame and parseResultPrepared) — so on v3, where that field is not
 // defined, the opt-in would desynchronise a connection the driver otherwise supports
-// (newFramer accepts v3, and a non-zero ClusterConfig.ProtoVersion skips
+// (newFramer accepts v3, and a non-zero clusterSettings.ProtoVersion skips
 // discoverProtocol). On v5 the field is already mandatory and Conn.tracksResultMetadataID
 // is true without the extension, so asking for it again would be redundant.
 func newScyllaUseMetadataIDExt(supported map[string][]string, version byte) *scyllaUseMetadataIDExt {
@@ -497,7 +497,7 @@ func newScyllaConnPicker(conn *Conn, logger StdLogger) *scyllaConnPicker {
 	}
 }
 
-func (p *scyllaConnPicker) Pick(t Token, qry ExecutableQuery) *Conn {
+func (p *scyllaConnPicker) Pick(t Token) *Conn {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
@@ -515,13 +515,13 @@ func (p *scyllaConnPicker) Pick(t Token, qry ExecutableQuery) *Conn {
 		return nil
 	}
 
-	return p.pickInt64Locked(mmt, qry)
+	return p.pickInt64Locked(mmt)
 }
 
 // PickInt64 is the raw-int64 fast-path variant of Pick, avoiding the Token
 // interface boxing. It must only be called with int64-based routing tokens
 // (Murmur3/ScyllaCDC), which is guaranteed by int64TokenSelectedHost.
-func (p *scyllaConnPicker) PickInt64(token int64, qry ExecutableQuery) *Conn {
+func (p *scyllaConnPicker) PickInt64(token int64) *Conn {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
@@ -529,31 +529,13 @@ func (p *scyllaConnPicker) PickInt64(token int64, qry ExecutableQuery) *Conn {
 		return nil
 	}
 
-	return p.pickInt64Locked(int64Token(token), qry)
+	return p.pickInt64Locked(int64Token(token))
 }
 
 // pickInt64Locked selects the shard-aware connection for the given raw token.
 // Must be called with p.mu held.
-func (p *scyllaConnPicker) pickInt64Locked(mmt int64Token, qry ExecutableQuery) *Conn {
+func (p *scyllaConnPicker) pickInt64Locked(mmt int64Token) *Conn {
 	idx := -1
-
-outer:
-	for _, conn := range p.conns {
-		if conn == nil {
-			continue
-		}
-
-		if qry != nil && conn.isTabletSupported() {
-			for _, replica := range conn.session.findTabletReplicasUnsafeForToken(qry.Keyspace(), qry.Table(), int64(mmt)) {
-				if UUID(replica.HostUUIDValue()) == p.hostId {
-					idx = replica.ShardID()
-					break outer
-				}
-			}
-		}
-
-		break
-	}
 
 	if idx == -1 {
 		idx = p.shardOf(mmt)
@@ -563,9 +545,6 @@ outer:
 		// We have this shard's connection
 		// so let's give it to the caller.
 		// But only if it's not loaded too much and load is well distributed.
-		if qry != nil && qry.IsLWT() {
-			return c
-		}
 		return p.maybeReplaceWithLessBusyConnection(c)
 	}
 	return p.leastBusyConn()
@@ -896,7 +875,7 @@ type scyllaDialer struct {
 	dialer    legacyDialer
 	logger    StdLogger
 	tlsConfig *tls.Config
-	cfg       *ClusterConfig
+	cfg       *clusterSettings
 }
 
 const scyllaShardAwarePortFallbackDuration time.Duration = 5 * time.Minute
@@ -1013,7 +992,7 @@ func isLocalAddrInUseErr(err error) bool {
 //
 // Unlike in the case standard native transport ports, gocql can choose which shard will handle
 // a new connection by connecting from a specific source port. If you are using your own net.Dialer
-// in ClusterConfig, you can use ScyllaShardAwareDialer to "upgrade" it so that it connects
+// in clusterSettings, you can use ScyllaShardAwareDialer to "upgrade" it so that it connects
 // from the source port chosen by gocql.
 //
 // Please note that ScyllaShardAwareDialer overwrites the LocalAddr field in order to choose

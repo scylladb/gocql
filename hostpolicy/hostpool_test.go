@@ -1,60 +1,59 @@
+/*
+ * Copyright (C) 2026 ScyllaDB
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package hostpolicy
 
 import (
 	"fmt"
-	"net"
-	"testing"
-
 	"github.com/hailocab/go-hostpool"
-
 	"github.com/scylladb/gocql/v2"
+	"net/netip"
+	"testing"
 )
 
-// Tests of the host pool host selection policy implementation
 func TestHostPolicy_HostPool(t *testing.T) {
-	policy := HostPool(hostpool.New(nil))
-
-	//hosts := []*gocql.HostInfo{
-	//	{hostId: "0", connectAddress: net.IPv4(10, 0, 0, 0)},
-	//	{hostId: "1", connectAddress: net.IPv4(10, 0, 0, 1)},
-	//}
-	firstHost := gocql.HostInfoBuilder{
-		HostId:         "a0000000-0000-0000-0000-000000000000",
-		ConnectAddress: net.IPv4(10, 0, 0, 0),
-	}.Build()
-	secHost := gocql.HostInfoBuilder{
-		HostId:         "a0000000-0000-0000-0000-000000000001",
-		ConnectAddress: net.IPv4(10, 0, 0, 1),
-	}.Build()
-	hosts := []*gocql.HostInfo{&firstHost, &secHost}
-	// Using set host to control the ordering of the hosts as calling "AddHost" iterates the map
-	// which will result in an unpredictable ordering
-	policy.(*hostPoolHostPolicy).SetHosts(hosts)
-
-	// the first host selected is actually at [1], but this is ok for RR
-	// interleaved iteration should always increment the host
-	iter := policy.Pick(nil)
-	actualA := iter()
-	if actualA.Info().HostID() != "a0000000-0000-0000-0000-000000000000" {
-		t.Errorf("Expected hosts[0] but was hosts[%s]", actualA.Info().HostID())
+	p := HostPool(hostpool.New(nil)).(*hostPoolHostPolicy)
+	ids := []gocql.UUID{gocql.ParseUUIDMust("a0000000-0000-0000-0000-000000000000"), gocql.ParseUUIDMust("a0000000-0000-0000-0000-000000000001")}
+	hosts := []gocql.HostSnapshot{{ID: ids[0], Address: netip.MustParseAddrPort("10.0.0.1:9042"), Enabled: true, Up: true}, {ID: ids[1], Address: netip.MustParseAddrPort("10.0.0.2:9042"), Enabled: true, Up: true}}
+	p.setHosts(hosts)
+	plan := p.Plan(gocql.RoutingInfo{}, nil)
+	a, ok := plan.Next()
+	if !ok || a.HostID != ids[0] {
+		t.Fatalf("first host: %+v %t", a, ok)
 	}
-	actualA.Mark(nil)
-
-	actualB := iter()
-	if actualB.Info().HostID() != "a0000000-0000-0000-0000-000000000001" {
-		t.Errorf("Expected hosts[1] but was hosts[%s]", actualB.Info().HostID())
+	p.Observe(gocql.AttemptEvent{Target: a})
+	b, ok := plan.Next()
+	if !ok || b.HostID != ids[1] {
+		t.Fatalf("second host: %+v %t", b, ok)
 	}
-	actualB.Mark(fmt.Errorf("error"))
-
-	actualC := iter()
-	if actualC.Info().HostID() != "a0000000-0000-0000-0000-000000000000" {
-		t.Errorf("Expected hosts[0] but was hosts[%s]", actualC.Info().HostID())
+	p.Observe(gocql.AttemptEvent{Target: b, Err: fmt.Errorf("error")})
+	if _, ok := plan.Next(); ok {
+		t.Fatal("routing plan repeated a host")
 	}
-	actualC.Mark(nil)
-
-	actualD := iter()
-	if actualD.Info().HostID() != "a0000000-0000-0000-0000-000000000000" {
-		t.Errorf("Expected hosts[0] but was hosts[%s]", actualD.Info().HostID())
+	next := p.Plan(gocql.RoutingInfo{}, nil)
+	a, ok = next.Next()
+	if !ok || a.HostID != ids[0] {
+		t.Fatalf("healthy host: %+v %t", a, ok)
 	}
-	actualD.Mark(nil)
+	pinned := p.Plan(gocql.RoutingInfo{HostID: gocql.Option[gocql.UUID]{Set: true, Value: ids[1]}, ShardID: gocql.Option[uint32]{Set: true, Value: 2}}, nil)
+	target, ok := pinned.Next()
+	if !ok || target.HostID != ids[1] || !target.StrictShard || target.ShardID.Value != 2 {
+		t.Fatalf("strict target: %+v %t", target, ok)
+	}
+	if _, ok := pinned.Next(); ok {
+		t.Fatal("pinned plan repeated host")
+	}
 }

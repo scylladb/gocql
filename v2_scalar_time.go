@@ -139,28 +139,38 @@ func scalarWriteUnsignedVInt(w *ValueWriter, v uint64) error {
 	}
 	return nil
 }
+
+// scalarVInt owns the native scalar conversion shared by buffered and streaming
+// readers. I/O-specific loops feed bytes without allocating cursor adapters.
+type scalarVInt struct {
+	remaining int
+	value     uint64
+}
+
+func newScalarVInt(first byte) scalarVInt {
+	extra := bits.LeadingZeros8(^first)
+	return scalarVInt{remaining: extra, value: uint64(first & byte(0xff>>uint(extra)))}
+}
+func (v *scalarVInt) add(b byte)   { v.value = v.value<<8 | uint64(b); v.remaining-- }
+func (v scalarVInt) signed() int64 { return int64(v.value>>1) ^ -int64(v.value&1) }
 func scalarReadUnsignedVInt(c *ValueCursor) (uint64, error) {
 	first, err := c.Uint8()
 	if err != nil {
 		return 0, err
 	}
-	extra := bits.LeadingZeros8(^first)
-	if extra == 0 {
-		return uint64(first), nil
-	}
-	v := uint64(first & byte(0xff>>uint(extra)))
-	for i := 0; i < extra; i++ {
-		b, err := c.Uint8()
+	v := newScalarVInt(first)
+	for v.remaining > 0 {
+		next, err := c.Uint8()
 		if err != nil {
 			return 0, err
 		}
-		v = v<<8 | uint64(b)
+		v.add(next)
 	}
-	return v, nil
+	return v.value, nil
 }
 func readSignedVInt(c *ValueCursor) (int64, error) {
-	v, e := scalarReadUnsignedVInt(c)
-	return int64(v>>1) ^ -int64(v&1), e
+	value, err := scalarReadUnsignedVInt(c)
+	return int64(value>>1) ^ -int64(value&1), err
 }
 func decodeDuration(r ValueReader) (Duration, error) {
 	c := r.cursorValue()
@@ -179,6 +189,11 @@ func decodeDuration(r ValueReader) (Duration, error) {
 	if e := c.RequireEnd(); e != nil {
 		return Duration{}, e
 	}
+	return durationFromComponents(months, days, nanos)
+}
+
+// durationFromComponents is shared by buffered and incremental decoding.
+func durationFromComponents(months, days, nanos int64) (Duration, error) {
 	if months < math.MinInt32 || months > math.MaxInt32 || days < math.MinInt32 || days > math.MaxInt32 {
 		return Duration{}, errors.New("gocql: duration months or days overflow int32")
 	}

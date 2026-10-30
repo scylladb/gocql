@@ -71,7 +71,7 @@ func TestNewSessionCommonAppliesClientRoutesShardAwareness(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			cfg := NewCluster("127.0.0.1")
+			cfg := newClusterSettings("127.0.0.1")
 			cfg.ClientRoutesConfig = tt.clientRoutes
 			cfg.DisableShardAwarePort = tt.disableShardAwarePort
 			session, err := newSessionCommon(*cfg)
@@ -88,7 +88,7 @@ func TestNewSessionCommonAppliesClientRoutesShardAwareness(t *testing.T) {
 func TestWithShardAwareness(t *testing.T) {
 	t.Parallel()
 
-	cfg := NewCluster("127.0.0.1")
+	cfg := newClusterSettings("127.0.0.1")
 	cfg.WithOptions(
 		WithClientRoutes(
 			WithEndpoints(ClientRoutesEndpoint{ConnectionID: "connection-id"}),

@@ -127,12 +127,12 @@ func TestTypedRequestMatchesLegacyWireAndKeepsPayload(t *testing.T) {
 		}
 		f := c.getWriteFramer()
 		f.trace()
-		params := queryParams{values: []queryValues{{value: payload}}, consistency: Quorum, serialConsistency: LocalSerial, pageSize: 83, pagingState: request.pagingState, defaultTimestamp: true, defaultTimestampValue: 78321, keyspace: request.keyspace}
+		params := fixtureQueryParams{values: []fixtureQueryValue{{value: payload}}, consistency: Quorum, serialConsistency: LocalSerial, pageSize: 83, pagingState: request.pagingState, defaultTimestamp: true, defaultTimestampValue: 78321, keyspace: request.keyspace}
 		if request.nowInSeconds != nil {
 			now := int(*request.nowInSeconds)
 			params.nowInSeconds = &now
 		}
-		if err := f.writeQueryFrame(7, request.statement, &params, nil); err != nil {
+		if err := f.fixtureQueryFrame(7, request.statement, &params, nil); err != nil {
 			t.Fatal(err)
 		}
 		expected := append([]byte(nil), f.buf...)
@@ -386,7 +386,8 @@ func TestTypedCancelKeepsStreamUntilOrphanArrives(t *testing.T) {
 
 func TestTypedSharedSegmentPagesHaveIndependentOwnership(t *testing.T) {
 	c, server := typedTestConn(t, 5, nil)
-	go c.serve(c.ctx)
+	received := make(chan error, 1)
+	go func() { received <- c.recvLeasedSegment(c.ctx) }()
 	type result struct {
 		page *responsePage
 		err  error
@@ -410,6 +411,11 @@ func TestTypedSharedSegmentPagesHaveIndependentOwnership(t *testing.T) {
 		t.Fatal(err)
 	}
 	x, y := <-out, <-out
+	// Both request callbacks can run before the segment dispatch returns. Join
+	// that dispatch before testing that the receive loop released its share.
+	if err := <-received; err != nil {
+		t.Fatal(err)
+	}
 	if x.err != nil || y.err != nil {
 		t.Fatalf("errors %v %v", x.err, y.err)
 	}
@@ -715,7 +721,7 @@ func TestTypedExecutePrepareBatchWireOracle(t *testing.T) {
 				}
 				f := c.getWriteFramer()
 				defer c.releaseWriteFramer(f)
-				params := queryParams{consistency: Quorum, serialConsistency: LocalSerial, defaultTimestamp: true, defaultTimestampValue: 123456, keyspace: r.keyspace}
+				params := fixtureQueryParams{consistency: Quorum, serialConsistency: LocalSerial, defaultTimestamp: true, defaultTimestampValue: 123456, keyspace: r.keyspace}
 				if r.nowInSeconds != nil {
 					now := int(*r.nowInSeconds)
 					params.nowInSeconds = &now
@@ -731,12 +737,12 @@ func TestTypedExecutePrepareBatchWireOracle(t *testing.T) {
 					r.resultMetadataID = []byte{4, 5, 6}
 					r.values = values
 					r.valueCount = 1
-					params.values = []queryValues{{value: payload}}
+					params.values = []fixtureQueryValue{{value: payload}}
 					empty := map[string][]byte(nil)
-					err = f.writeExecuteFrame(23, r.preparedID, r.resultMetadataID, &params, &empty)
+					err = f.fixtureExecuteFrame(23, r.preparedID, r.resultMetadataID, &params, &empty)
 				case "batch":
 					r.batch = &typedBatchRequest{kind: LoggedBatch, items: []typedBatchItem{{statement: r.statement, values: values, valueCount: 1}, {preparedID: []byte{1, 2}, values: values, valueCount: 1}}}
-					err = (&writeBatchFrame{typ: LoggedBatch, statements: []batchStatment{{statement: r.statement, values: []queryValues{{value: payload}}}, {preparedID: []byte{1, 2}, values: []queryValues{{value: payload}}}}, consistency: Quorum, serialConsistency: LocalSerial, defaultTimestamp: true, defaultTimestampValue: 123456, keyspace: r.keyspace, nowInSeconds: params.nowInSeconds}).buildFrame(f, 23)
+					err = (&fixtureBatchFrame{typ: LoggedBatch, statements: []fixtureBatchStatement{{statement: r.statement, values: []fixtureQueryValue{{value: payload}}}, {preparedID: []byte{1, 2}, values: []fixtureQueryValue{{value: payload}}}}, consistency: Quorum, serialConsistency: LocalSerial, defaultTimestamp: true, defaultTimestampValue: 123456, keyspace: r.keyspace, nowInSeconds: params.nowInSeconds}).buildFrame(f, 23)
 				}
 				if err != nil {
 					t.Fatal(err)

@@ -214,15 +214,15 @@ func (rs *ringTestServer) failPeers(msg string) {
 	rs.peersErr = msg
 }
 
-func (rs *ringTestServer) session(t *testing.T, configure func(cfg *ClusterConfig)) *Session {
+func (rs *ringTestServer) session(t *testing.T, configure func(cfg *clusterSettings)) *Session {
 	t.Helper()
 	cfg := rs.cluster()
 	if configure != nil {
 		configure(cfg)
 	}
-	s, err := cfg.CreateSession()
+	s, err := cfg.open()
 	if err != nil {
-		t.Fatalf("CreateSession: %v", err)
+		t.Fatalf("open: %v", err)
 	}
 	t.Cleanup(func() { _ = s.Close() })
 	return s
@@ -310,7 +310,7 @@ func TestRefreshRingSkipsPeers(t *testing.T) {
 	otherDC.dc = "dc2"
 
 	rs := newRingTestServer(t, good, noRack, zeroToken, otherDC)
-	s := rs.session(t, func(cfg *ClusterConfig) { cfg.HostFilter = DataCenterHostFilter("dc1") })
+	s := rs.session(t, func(cfg *clusterSettings) { cfg.HostFilter = DataCenterHostFilter("dc1") })
 
 	if got, want := ringHosts(s), sortedKeys(localKey(), peerKey(good), peerKey(zeroToken), peerKey(otherDC)); strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Fatalf("ring = %v, want valid topology including zero-token and disabled peers %v", got, want)

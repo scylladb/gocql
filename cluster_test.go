@@ -42,7 +42,7 @@ import (
 func TestNewCluster_Defaults(t *testing.T) {
 	t.Parallel()
 
-	cfg := NewCluster()
+	cfg := newClusterSettings()
 	tests.AssertEqual(t, "cluster config cql version", "3.0.0", cfg.CQLVersion)
 	tests.AssertEqual(t, "cluster config timeout", 11*time.Second, cfg.Timeout)
 	tests.AssertEqual(t, "cluster config port", 0, cfg.Port)
@@ -63,7 +63,7 @@ func TestNewCluster_Defaults(t *testing.T) {
 func TestNewCluster_WithHosts(t *testing.T) {
 	t.Parallel()
 
-	cfg := NewCluster("addr1", "addr2")
+	cfg := newClusterSettings("addr1", "addr2")
 	tests.AssertEqual(t, "cluster config hosts length", 2, len(cfg.Hosts))
 	tests.AssertEqual(t, "cluster config host 0", "addr1", cfg.Hosts[0])
 	tests.AssertEqual(t, "cluster config host 1", "addr2", cfg.Hosts[1])
@@ -72,7 +72,7 @@ func TestNewCluster_WithHosts(t *testing.T) {
 func TestValidate_ProtoVersionRange(t *testing.T) {
 	for _, version := range []int{-1, 128, 256} {
 		t.Run(fmt.Sprint(version), func(t *testing.T) {
-			cfg := NewCluster("127.0.0.1")
+			cfg := newClusterSettings("127.0.0.1")
 			cfg.ProtoVersion = version
 			if err := cfg.Validate(); err == nil {
 				t.Fatalf("expected protocol version %d to be rejected", version)
@@ -84,7 +84,7 @@ func TestValidate_ProtoVersionRange(t *testing.T) {
 func TestValidateAndInitSSLDoesNotShareTLSConfigBetweenConfigCopies(t *testing.T) {
 	t.Parallel()
 
-	cfg := NewCluster("127.0.0.1")
+	cfg := newClusterSettings("127.0.0.1")
 	cfg.SslOpts = &SslOptions{
 		Config: &tls.Config{
 			InsecureSkipVerify: true,
@@ -134,8 +134,8 @@ func (segmentCapableCompressor) AppendDecompressed(dst, src []byte, _ uint32) ([
 func TestValidate_ProtoV5CompressorCapability(t *testing.T) {
 	t.Parallel()
 
-	newCfg := func(proto int, comp Compressor) *ClusterConfig {
-		cfg := NewCluster("10.0.0.1:9042")
+	newCfg := func(proto int, comp Compressor) *clusterSettings {
+		cfg := newClusterSettings("10.0.0.1:9042")
 		cfg.ProtoVersion = proto
 		cfg.Compressor = comp
 		return cfg
@@ -179,8 +179,8 @@ func TestValidate_ProtoV5CompressorCapability(t *testing.T) {
 func TestValidate_ReadTimeout(t *testing.T) {
 	t.Parallel()
 
-	newCfg := func(d time.Duration) *ClusterConfig {
-		cfg := NewCluster("10.0.0.1:9042")
+	newCfg := func(d time.Duration) *clusterSettings {
+		cfg := newClusterSettings("10.0.0.1:9042")
 		cfg.ReadTimeout = d
 		return cfg
 	}
@@ -213,8 +213,8 @@ func TestValidate_ReadTimeout(t *testing.T) {
 func TestValidate_HostPortNormalization(t *testing.T) {
 	t.Parallel()
 
-	makeValid := func(hosts ...string) *ClusterConfig {
-		cfg := NewCluster(hosts...)
+	makeValid := func(hosts ...string) *clusterSettings {
+		cfg := newClusterSettings(hosts...)
 		return cfg
 	}
 

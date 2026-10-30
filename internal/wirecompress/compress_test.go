@@ -28,6 +28,7 @@ import (
 	"testing"
 
 	"github.com/klauspost/compress/snappy"
+
 	"github.com/pierrec/lz4/v4"
 	"github.com/scylladb/gocql/v2/internal/wire"
 )

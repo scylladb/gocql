@@ -22,68 +22,10 @@
 package gocql
 
 import (
-	"bytes"
 	"reflect"
 	"strings"
 	"testing"
 )
-
-func TestRowMapBytesFastPath(t *testing.T) {
-	src := []byte{1, 2, 3, 4}
-	var nilBlob []byte
-	emptyBlob := []byte{}
-	other := []any{"other"}
-	rd := &RowData{
-		Columns: []string{"blob_col", "nil_blob_col", "empty_blob_col", "other_col"},
-		Values:  []any{&src, &nilBlob, &emptyBlob, &other},
-	}
-
-	m := make(map[string]any, len(rd.Columns))
-	rd.rowMap(m)
-
-	got, ok := m["blob_col"].([]byte)
-	if !ok {
-		t.Fatalf("blob_col: expected []byte, got %T", m["blob_col"])
-	}
-	if !bytes.Equal(got, src) {
-		t.Fatalf("blob_col: content mismatch, got %v want %v", got, src)
-	}
-	if len(got) > 0 && &got[0] == &src[0] {
-		t.Fatal("blob_col: expected a defensive copy, but backing array is shared with source")
-	}
-	// Mutating the copy must not affect the original source slice.
-	got[0] = 99
-	if src[0] == 99 {
-		t.Fatal("blob_col: mutating the returned copy mutated the source slice")
-	}
-
-	// A nil []byte column comes back as a typed-nil []byte inside the
-	// interface (matching the pre-existing reflect-path behavior for nil
-	// slices), not an untyped nil.
-	nilGot, ok := m["nil_blob_col"].([]byte)
-	if !ok || nilGot != nil {
-		t.Fatalf("nil_blob_col: expected a nil []byte, got %#v", m["nil_blob_col"])
-	}
-
-	// A non-nil, empty []byte column must come back as a distinct non-nil
-	// empty slice (not aliased to the source, not collapsed to nil) --
-	// exercising the b != nil branch with a zero-length slice.
-	emptyGot, ok := m["empty_blob_col"].([]byte)
-	if !ok || emptyGot == nil || len(emptyGot) != 0 {
-		t.Fatalf("empty_blob_col: expected a non-nil, empty []byte, got %#v", m["empty_blob_col"])
-	}
-
-	gotOther, ok := m["other_col"].([]any)
-	if !ok || len(gotOther) != 1 || gotOther[0] != "other" {
-		t.Fatalf("other_col: unexpected value %#v", m["other_col"])
-	}
-	// The generic reflect path must also return a defensive copy: mutating
-	// it must not affect the original source slice.
-	gotOther[0] = "mutated"
-	if other[0] != "other" {
-		t.Fatal("other_col: mutating the returned copy mutated the source slice")
-	}
-}
 
 // assertResolvedType compares got against want, except for a VectorType's
 // NativeType: that one carries the bare VectorType prefix instead of the column's

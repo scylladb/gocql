@@ -94,10 +94,10 @@ func (l *syncLogger) String() string {
 }
 
 // cluster returns a config for one connection to srv that gives up after a
-// single attempt. testCluster has no control connection, so CreateSession
+// single attempt. testCluster has no control connection, so open
 // reports a failed handshake only as ErrNoConnectionsStarted; the cause is in
 // the pool's log, which lands in the returned logger.
-func (srv *authTestServer) cluster(auth Authenticator) (*ClusterConfig, *syncLogger) {
+func (srv *authTestServer) cluster(auth Authenticator) (*clusterSettings, *syncLogger) {
 	cfg := testCluster(protoVersion4, srv.Address)
 	cfg.NumConns = 1
 	cfg.Authenticator = auth
@@ -108,17 +108,17 @@ func (srv *authTestServer) cluster(auth Authenticator) (*ClusterConfig, *syncLog
 	return cfg, log
 }
 
-// requireHandshakeError fails t unless CreateSession failed and the pool
+// requireHandshakeError fails t unless open failed and the pool
 // logged a cause containing want.
-func requireHandshakeError(t *testing.T, cfg *ClusterConfig, log *syncLogger, want string) {
+func requireHandshakeError(t *testing.T, cfg *clusterSettings, log *syncLogger, want string) {
 	t.Helper()
-	s, err := cfg.CreateSession()
+	s, err := cfg.open()
 	if err == nil {
 		s.Close()
-		t.Fatal("CreateSession succeeded, want an authentication error")
+		t.Fatal("open succeeded, want an authentication error")
 	}
 	if !strings.Contains(err.Error(), want) && !strings.Contains(log.String(), want) {
-		t.Fatalf("CreateSession error = %v, log = %q; want the cause %q", err, log.String(), want)
+		t.Fatalf("open error = %v, log = %q; want the cause %q", err, log.String(), want)
 	}
 }
 
@@ -138,12 +138,12 @@ func TestAuthHandshakePassword(t *testing.T) {
 	})
 
 	cfg, _ := srv.cluster(PasswordAuthenticator{Username: "cassandra", Password: "secret"})
-	s, err := cfg.CreateSession()
+	s, err := cfg.open()
 	if err != nil {
-		t.Fatalf("CreateSession: %v", err)
+		t.Fatalf("open: %v", err)
 	}
 	defer s.Close()
-	if err := s.Query("void").Exec(); err != nil {
+	if err := execTestStatement(context.Background(), s, "void", Options{}); err != nil {
 		t.Fatalf("query after authenticating: %v", err)
 	}
 	if got := srv.received(); len(got) == 0 || got[0] != want {
@@ -260,9 +260,9 @@ func TestAuthHandshakeMultiStep(t *testing.T) {
 	srv := newAuthTestServer(t, multiStepReply)
 	log := &authLog{}
 	cfg, _ := srv.cluster(stepAuthenticator{log: log})
-	s, err := cfg.CreateSession()
+	s, err := cfg.open()
 	if err != nil {
-		t.Fatalf("CreateSession: %v", err)
+		t.Fatalf("open: %v", err)
 	}
 	defer s.Close()
 
@@ -327,9 +327,9 @@ func TestAuthHandshakeAuthProvider(t *testing.T) {
 		mu.Unlock()
 		return PasswordAuthenticator{Username: "per-host", Password: "pw"}, nil
 	}
-	s, err := cfg.CreateSession()
+	s, err := cfg.open()
 	if err != nil {
-		t.Fatalf("CreateSession: %v", err)
+		t.Fatalf("open: %v", err)
 	}
 	s.Close()
 

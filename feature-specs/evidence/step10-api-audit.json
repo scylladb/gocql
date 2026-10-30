@@ -1,0 +1,2145 @@
+{
+  "findings": [],
+  "forbidden_api": {
+    "Batch": true,
+    "ClusterConfig": true,
+    "ExecutableQuery": true,
+    "Iter": true,
+    "MapScan": true,
+    "Marshal": true,
+    "Marshaler": true,
+    "NamedValue": true,
+    "NewCluster": true,
+    "NewSession": true,
+    "NewSessionNonBlocking": true,
+    "NewSingleHostQueryExecutor": true,
+    "Query": true,
+    "QueryInfo": true,
+    "RetryableQuery": true,
+    "RowData": true,
+    "Scan": true,
+    "SingleHostQueryExecutor": true,
+    "SliceMap": true,
+    "UDTMarshaler": true,
+    "UDTUnmarshaler": true,
+    "Unmarshal": true,
+    "Unmarshaler": true,
+    "UnsetValue": true,
+    "oldRetryPolicy": true
+  },
+  "scope": "AST declarations and dedicated streaming identifiers/imports; compiler and manual bounded-allocation/copy review supplement this static audit",
+  "source_count": 147,
+  "sources": [
+    {
+      "path": "address_translators.go",
+      "sha256": "3e1d39b7b9d73e9df97570ece0d0b12e0d381d70a20f4d856a1baa037927ab1c",
+      "exports": [
+        "AddressTranslator",
+        "AddressTranslatorFunc",
+        "AddressTranslatorFuncV2",
+        "AddressTranslatorHostInfo",
+        "AddressTranslatorV2",
+        "IdentityTranslator",
+        "Translate",
+        "Translate",
+        "TranslateHost"
+      ]
+    },
+    {
+      "path": "callreq_wait.go",
+      "sha256": "3fe397c1e057fdb338aa176d81349d47b39d7667e87df31f7f3f581612793641"
+    },
+    {
+      "path": "callreq_wait_race.go",
+      "sha256": "1ef2d7d0529fd48a5940f7e108e652d6e48dce5b62e847679f563e453ca5bc24"
+    },
+    {
+      "path": "ci/release/candidate.go",
+      "sha256": "84dd6b414b23f8d49f6a87241c63ae6b547e2f7e2c929fe2754bebb88a9314f5"
+    },
+    {
+      "path": "ci/release/git.go",
+      "sha256": "4404686c8451290c644e2290926da2afc732b4ca883bc8885da8f4c5933fece8"
+    },
+    {
+      "path": "ci/release/github.go",
+      "sha256": "35ff8459a59e868b2ae5be5a3998b79a5f1f9a5ec092aaa3685673668a64b2e7"
+    },
+    {
+      "path": "ci/release/main.go",
+      "sha256": "cd4305646b0b4623565bd6ac88ea180d214606c62a8490bc31d016d073d339c5"
+    },
+    {
+      "path": "ci/release/signing_key.go",
+      "sha256": "83fe7fe3fbb582578ae6fa64c8c48bdbc80ee3862d775b541aecffdcbb56edd5"
+    },
+    {
+      "path": "client_routes.go",
+      "sha256": "845d39626bd887097bfbea433c3af8177bcf4626dbd3fb6ea9b2a833651ebeef",
+      "exports": [
+        "BindCurrent",
+        "ClientRoutesConfig",
+        "ClientRoutesEndpoint",
+        "ClientRoutesEndpointList",
+        "ClientRoutesHandler",
+        "CurrentConnectionID",
+        "DeleteByConnectionID",
+        "GetAllConnectionIDs",
+        "Initialize",
+        "NewClientRoutesAddressTranslator",
+        "PreferredRoute",
+        "ReplaceByConnectionIDs",
+        "ReplaceByPairs",
+        "Stop",
+        "String",
+        "Translate",
+        "TranslateHost",
+        "Upsert",
+        "Validate",
+        "Validate",
+        "Validate"
+      ]
+    },
+    {
+      "path": "cluster.go",
+      "sha256": "e2c04c02d82885a7da9818f6eaebfcaa3c76e71509b2bc67d8654e8eb150fdb9",
+      "exports": [
+        "ApplicationInfo",
+        "ClientRoutesOption",
+        "ClusterOption",
+        "DNSResolver",
+        "LookupIP",
+        "NewSimpleDNSResolver",
+        "NewStaticApplicationInfo",
+        "PoolConfig",
+        "SimpleDNSResolver",
+        "StaticApplicationInfo",
+        "UpdateStartupOptions",
+        "Validate",
+        "ValidateAndInitSSL",
+        "WithClientRoutes",
+        "WithEndpoints",
+        "WithMaxResolverConcurrency",
+        "WithOptions",
+        "WithResolveHealthyEndpointPeriod",
+        "WithShardAwareness",
+        "WithTable"
+      ]
+    },
+    {
+      "path": "compressor.go",
+      "sha256": "d4f30c712b92bef689939b4916cce5cabda12f0f68dbee15d420d3c78d3a6c5b",
+      "exports": [
+        "Compressor",
+        "Decode",
+        "Encode",
+        "Name",
+        "SegmentCompressor",
+        "SnappyCompressor"
+      ]
+    },
+    {
+      "path": "conn.go",
+      "sha256": "d0e307d0c9d8ec191bd4266b006dd15e55cfd5a79127bb2c241f51d466a1e14a",
+      "exports": [
+        "Address",
+        "Authenticator",
+        "AvailableStreams",
+        "Challenge",
+        "Close",
+        "Close",
+        "Closed",
+        "Conn",
+        "ConnConfig",
+        "ConnErrorHandler",
+        "ConnInterface",
+        "ErrSchemaMismatch",
+        "Error",
+        "Error",
+        "Error",
+        "GetTimeout",
+        "HandleError",
+        "IsIdempotent",
+        "IsValid",
+        "ObservedStream",
+        "PasswordAuthenticator",
+        "PotentiallyExecuted",
+        "QueryError",
+        "Read",
+        "Read",
+        "Read",
+        "RemoteAddr",
+        "SetTimeout",
+        "SslOptions",
+        "StreamObserver",
+        "StreamObserverContext",
+        "Success",
+        "Unwrap",
+        "UseKeyspace",
+        "Write"
+      ]
+    },
+    {
+      "path": "connectionpool.go",
+      "sha256": "10bca675554a6824407fd01fdfd5339c5f28e4eedeb0a3e46042a36329f5612f",
+      "exports": [
+        "Close",
+        "Close",
+        "GetConnectionCount",
+        "GetExcessConnectionCount",
+        "GetShardCount",
+        "HandleError",
+        "Host",
+        "InFlight",
+        "InFlight",
+        "IsClosed",
+        "Pick",
+        "PickConn",
+        "PickInt64",
+        "SetHosts",
+        "SetHosts",
+        "SetPartitioner",
+        "SetTablets",
+        "Size",
+        "Size",
+        "String"
+      ]
+    },
+    {
+      "path": "connpicker.go",
+      "sha256": "7019c27bb78bf92cb5d06d6a5184e8104bbe75576479254c2e8a40de1a085269",
+      "exports": [
+        "Close",
+        "Close",
+        "ConnPicker",
+        "GetConnectionCount",
+        "GetConnectionCount",
+        "GetExcessConnectionCount",
+        "GetExcessConnectionCount",
+        "GetShardCount",
+        "GetShardCount",
+        "InFlight",
+        "InFlight",
+        "NextShard",
+        "NextShard",
+        "Pick",
+        "Pick",
+        "PickInt64",
+        "PickInt64",
+        "Put",
+        "Put",
+        "Remove",
+        "Remove",
+        "Size",
+        "Size"
+      ]
+    },
+    {
+      "path": "control.go",
+      "sha256": "397d5c407c4a1cf676eea41edbba8ad6e0938d38320629653058edd6b0c9fd4f",
+      "exports": [
+        "HandleError"
+      ]
+    },
+    {
+      "path": "cqltypes.go",
+      "sha256": "df898f4b798e27feab68b688ceaf234ecdd6d350a9c1381d7a5cb3e84570f78d",
+      "exports": [
+        "Duration"
+      ]
+    },
+    {
+      "path": "debounce/refresh_deboucer.go",
+      "sha256": "b8822b89c1988ecfabf8e8ecd9b8c6cbf33e18d689b13ea0f261cdb83775f67d"
+    },
+    {
+      "path": "debounce/simple_debouncer.go",
+      "sha256": "8c531fad446e77f887a8b71c497f1c96fce4d0073698c562d91966fe11964c72"
+    },
+    {
+      "path": "dial.go",
+      "sha256": "1568a4a52cf4b3101fc8c3e742bc84294619405570f8ee819e0041d7dbed11f0",
+      "exports": [
+        "DialHost",
+        "DialedHost",
+        "HostDialer",
+        "WrapTLS"
+      ]
+    },
+    {
+      "path": "dialer/framesplitter.go",
+      "sha256": "6511146335320874f0dc3655302d03a610f4ee6527d31a6790c6d6f7593b2184"
+    },
+    {
+      "path": "dialer/framing.go",
+      "sha256": "0b352bae1b43d626c11a94724cec25adb6ddd5283164a769b2ab76fc78dc4875"
+    },
+    {
+      "path": "dialer/recorder/open_flags_other.go",
+      "sha256": "f3aabec7d0f7ab78237801e3bb84900167cbbbd796cdf43301c73b9f2871dff1"
+    },
+    {
+      "path": "dialer/recorder/open_flags_unix.go",
+      "sha256": "2240e86ee280995dfb8131616189134167193691bc4845d7046c169bac56e33d"
+    },
+    {
+      "path": "dialer/recorder/recorder.go",
+      "sha256": "4f814b88def2f64648f2f0b8de454fdfc1614f46d6dedbe9b906590e0ec5f254"
+    },
+    {
+      "path": "dialer/replayer/replayer.go",
+      "sha256": "a008bc354c6f75efcabc5fc5108fb9920eb071ccc8ab19b1ab6e9ef824086acd"
+    },
+    {
+      "path": "dialer/segment.go",
+      "sha256": "d13960b231d4bdd8313e40f3dc6ce931a9bb5846005def11822b0341349a530e"
+    },
+    {
+      "path": "dialer/utils.go",
+      "sha256": "25ddc05469988428b1780fd399164d13af16286ecf402c9e0c7846c3f83765c2"
+    },
+    {
+      "path": "doc.go",
+      "sha256": "0a92bf2f758eb57e315bb8e06402117a4bfb5956f968e5d3a7ffecc5381a4e11"
+    },
+    {
+      "path": "driver_config.go",
+      "sha256": "5eb8b5d8318acbadad34e5f9443899523347168ab63a88c2d4c312de35c57e2c"
+    },
+    {
+      "path": "errors.go",
+      "sha256": "0742b8da0e21d5ed57600b23b94b3bc7602568012040e6104adea4faee1312d9",
+      "exports": [
+        "ErrorMap",
+        "OpType",
+        "RequestErrAlreadyExists",
+        "RequestErrCASWriteUnknown",
+        "RequestErrCDCWriteFailure",
+        "RequestErrFunctionFailure",
+        "RequestErrRateLimitReached",
+        "RequestErrReadFailure",
+        "RequestErrReadTimeout",
+        "RequestErrUnavailable",
+        "RequestErrUnprepared",
+        "RequestErrWriteFailure",
+        "RequestErrWriteTimeout",
+        "RequestError",
+        "String",
+        "String",
+        "UnknownServerError"
+      ]
+    },
+    {
+      "path": "events.go",
+      "sha256": "9c015df2de268b280d9b5f1791851115df553d6efa597cc339b244f5ada3f7d4"
+    },
+    {
+      "path": "events/event_converter.go",
+      "sha256": "fc4e91250c5f4bd956857a6c63e2b8d4ac127727959c89eb4ef023aa712583df"
+    },
+    {
+      "path": "events/events.go",
+      "sha256": "c1bae8d43f438f2f441113f182d486b3d2914424cf4f9c24db3c319ad01fcb3b"
+    },
+    {
+      "path": "filters.go",
+      "sha256": "43157b869136deb9876a5f3e89032b090f21c81f60522b410fa007e64621d31f",
+      "exports": [
+        "Accept",
+        "Accept",
+        "AcceptAllFilter",
+        "DataCenterHostFilter",
+        "DataCentreHostFilter",
+        "DenyAllFilter",
+        "HostFilter",
+        "HostFilterFunc",
+        "WhiteListHostFilter"
+      ]
+    },
+    {
+      "path": "frame.go",
+      "sha256": "6e47a3909ae8b71659c72e71df8470fdd6dfd18015048673ebbbf86c6bcb6c41",
+      "exports": [
+        "Consistency",
+        "Error",
+        "FrameHeaderObserver",
+        "GetCustomPayload",
+        "GetHeaderWarnings",
+        "IsSerial",
+        "MarshalText",
+        "ObservedFrameHeader",
+        "ParseConsistency",
+        "ParseConsistencyWrapper",
+        "ReadBytesInternal",
+        "Release",
+        "SerialConsistency",
+        "String",
+        "String",
+        "String",
+        "String",
+        "String",
+        "String",
+        "String",
+        "String",
+        "String",
+        "UnmarshalText",
+        "Unwrap"
+      ]
+    },
+    {
+      "path": "framer.go",
+      "sha256": "35196decd32e5f666c964848e08c8ce29e0f7e06b96286a4bc9029431273f30c"
+    },
+    {
+      "path": "helpers.go",
+      "sha256": "4000877628d23bc19f6417e5685aa82ba386d32a73be04c8e33a49cbfb190057"
+    },
+    {
+      "path": "host_source.go",
+      "sha256": "ca59f4b5dd37a77f854f71dae469e1fd29d2d1624e073cb9d7982497abee5242",
+      "exports": [
+        "AddressPort",
+        "AtLeast",
+        "Before",
+        "BroadcastAddress",
+        "Build",
+        "ClusterName",
+        "ConnectAddress",
+        "ConnectAddressAndPort",
+        "DSEVersion",
+        "DataCenter",
+        "Equal",
+        "Equal",
+        "Equal",
+        "Graph",
+        "HostID",
+        "HostInfo",
+        "HostInfoBuilder",
+        "IsBusy",
+        "IsUp",
+        "IsValid",
+        "ListenAddress",
+        "Partitioner",
+        "Peer",
+        "Port",
+        "PreferredIP",
+        "RPCAddress",
+        "Rack",
+        "ScyllaFeatures",
+        "ScyllaShardAwarePort",
+        "ScyllaShardAwarePortTLS",
+        "ScyllaShardCount",
+        "Set",
+        "State",
+        "String",
+        "String",
+        "String",
+        "String",
+        "ToNetAddr",
+        "Tokens",
+        "UntranslatedConnectAddress",
+        "Version",
+        "WorkLoad"
+      ]
+    },
+    {
+      "path": "host_source_scylla.go",
+      "sha256": "371c309ccaa325c4e512437d696e827de63520641bf51d0d6670368ad828e278",
+      "exports": [
+        "SetDatacenter"
+      ]
+    },
+    {
+      "path": "hostpolicy/hostpool.go",
+      "sha256": "d5820f43ff98c6461810d3c9d27028e9788a32beafafed0d667c9a793885a961"
+    },
+    {
+      "path": "integration_only.go",
+      "sha256": "c5d14e8dc9e0f9a8c25497949affcb97febee3af427a57c3342ed2cc4e56fec4",
+      "exports": [
+        "CloseAllConnections",
+        "CloseAllConnections",
+        "CloseAllConnections",
+        "CloseAllConnections",
+        "CloseAllConnections",
+        "CloseAllConnections",
+        "ConnPickerIntegration",
+        "MissingConnections",
+        "MissingConnections"
+      ]
+    },
+    {
+      "path": "internal/ccm/ccm.go",
+      "sha256": "558a5786b00228593780c94b4b803023abcacceeb59066502a634a06c1cbc12d"
+    },
+    {
+      "path": "internal/cqlproto/reader.go",
+      "sha256": "935c17bd1f106b7b46a7c2897c24f2ee9cb80b4a6ab0741e9ba574c891bc314b"
+    },
+    {
+      "path": "internal/crc/crc.go",
+      "sha256": "7f4be6b6324b146e017ab66290746f391a66498db101f527021c1e9a042ab10a"
+    },
+    {
+      "path": "internal/debug/debug_off.go",
+      "sha256": "4936774e0d88174b3a9706f7cd99651e85958d8b4e2d276c530eddfe4c59de82"
+    },
+    {
+      "path": "internal/debug/debug_on.go",
+      "sha256": "5c4f55a83c1bfabc66d0d4f39fdaf4f0e2955dd6bcd66a82d59a0a606e2b099a"
+    },
+    {
+      "path": "internal/eventbus/eventbus.go",
+      "sha256": "655826277fa41b7b67877555102ddf8882ca144ddba719b42e9f6d34e3e33d38"
+    },
+    {
+      "path": "internal/frame/frames.go",
+      "sha256": "fc4a9f69547e5e3c0591d1eb7e722d6a2112ed9aa4bfca1593ccf6e19ed4a914"
+    },
+    {
+      "path": "internal/frame/stream.go",
+      "sha256": "ca5834f2aa054f5d092527f0c1ee0b216d8dbddcc595f5e93ce8d2a768eb849d"
+    },
+    {
+      "path": "internal/lru/lru.go",
+      "sha256": "c355d81835dfe01e8463d00fe6e990e29c30dc34cba7ddfa004bea6378c58d52"
+    },
+    {
+      "path": "internal/murmur/murmur.go",
+      "sha256": "6478a28a47f3b32721666a7855983061477d3423ead8190760ff4d1525b8dd49"
+    },
+    {
+      "path": "internal/murmur/murmur_appengine.go",
+      "sha256": "c222b78ee9917a68b22debfec15e797078942953a3e2d18cade920299c3eb597"
+    },
+    {
+      "path": "internal/murmur/murmur_unsafe.go",
+      "sha256": "4ad6bd3cb0ad5adae147dbc69ea4109c93469559bec02284122dd965fa72cc4f"
+    },
+    {
+      "path": "internal/murmur/stream.go",
+      "sha256": "f9ae372c4b6434e647c4ac646d59e51cec30e0af56d7907d88bfce140554987b"
+    },
+    {
+      "path": "internal/segment/segment.go",
+      "sha256": "f7103fe42b45a971ac89a67e7dc768c96c1d4e72fbc79d4b2634cfbf0498d620"
+    },
+    {
+      "path": "internal/segment/spans.go",
+      "sha256": "492522efc4f60ae46c338830bf4dd65593fa31680c46d5a13cd3c9d49bef9a68"
+    },
+    {
+      "path": "internal/segment/units.go",
+      "sha256": "b75fb6291ecf52b6c82d5357aacd0f03e0194d93bcec178ffa3a3a99763dcfc3"
+    },
+    {
+      "path": "internal/streams/streams.go",
+      "sha256": "728211180c7774e09ccfba0aa8413c02da1a9f0cd833b673276b367a3f712899"
+    },
+    {
+      "path": "internal/testkit/native.go",
+      "sha256": "0e551db484f55b3666e6d5773ecc1dbc22892de98da58cdb9289f96120887445"
+    },
+    {
+      "path": "internal/testkit/peers.go",
+      "sha256": "9355654c6b88bfb25aea2378506891984471e8794ca9eb8a2f1c541692839b94"
+    },
+    {
+      "path": "internal/tests/allocs.go",
+      "sha256": "7bc751b206862fc904650823a6ccacb55be7817d24a5fab78149beecf6b8100f"
+    },
+    {
+      "path": "internal/tests/common.go",
+      "sha256": "1e73d01bb096d2d5959ea0670ff7030b11ae42c4b73370cffe444ce2be1e30a2"
+    },
+    {
+      "path": "internal/tests/err_equal.go",
+      "sha256": "e2b39695c6c6d109dc38c2197db99c012c74ccf0434b1162944ce0017fb76492"
+    },
+    {
+      "path": "internal/tests/mock/mock_framer.go",
+      "sha256": "281d8eb42a9b4a93b276db38b22bf1182071c996e6882342b2fbf1770398261b"
+    },
+    {
+      "path": "internal/tests/rand.go",
+      "sha256": "9cf77181302ee06e0bb9cf460bcf923a31c359ed0ded89ba9acc670ad76cca62"
+    },
+    {
+      "path": "internal/tests/valuecases/get.go",
+      "sha256": "106b1194d7ab4c7b428d2a3e9a1f7af7d545398ed970bb4760a6e0236453c29d"
+    },
+    {
+      "path": "internal/tests/valuecases/simple.go",
+      "sha256": "35fa3ee55ac2c205ca64fd49122d508f20acffce0ef2caa7ff77bbcdfd6db1bb"
+    },
+    {
+      "path": "internal/wire/builder.go",
+      "sha256": "c392beb2b06fd76e44e08035f2e0e3417d1fc0fdf7ffed89f4a6af431f425a2c"
+    },
+    {
+      "path": "internal/wire/cursor.go",
+      "sha256": "7437517d09e27c46ec6be69e017e2d7a76b01f7b3af74fc50222afee8870ebab"
+    },
+    {
+      "path": "internal/wire/lease.go",
+      "sha256": "fbe4bd3b1daca8ab4f5c576e1f651c32b1c4d387f08afc538ab4066579062a11"
+    },
+    {
+      "path": "internal/wire/span.go",
+      "sha256": "83a47f5dc89001266c34e4a7c9e15e2c049fa293acb85aaefcc5857259c33397"
+    },
+    {
+      "path": "internal/wire/stream.go",
+      "sha256": "95ee0ca9ffe9090f9e8631b926877020160162b808a240897390fc86756c3b0a"
+    },
+    {
+      "path": "internal/wirecompress/compress.go",
+      "sha256": "335e3e065350e131be9096f4fa7af0396a192bd994cc231d236047699dee4138"
+    },
+    {
+      "path": "logger.go",
+      "sha256": "e6bd8b0a0aac2e7373e969a4febbdec577c3ef24386b32d62925a39b8ab69a92",
+      "exports": [
+        "Print",
+        "Print",
+        "Print",
+        "Printf",
+        "Printf",
+        "Printf",
+        "Println",
+        "Println",
+        "Println",
+        "StdLogger",
+        "String"
+      ]
+    },
+    {
+      "path": "lz4/lz4.go",
+      "sha256": "9edf8eded2d8ff353aa9af09ff8ae9e310f2b564cfe94f2c601c10f6f64110d5"
+    },
+    {
+      "path": "metadata_scylla.go",
+      "sha256": "bbb80541ddb0ea2456f06b89e0fb826f59443bd256a3a50cded09af49622d5fa",
+      "exports": [
+        "AddTablet",
+        "AggregateMetadata",
+        "Clone",
+        "ColumnIndexMetadata",
+        "ColumnKind",
+        "ColumnMetadata",
+        "ColumnOrder",
+        "Equals",
+        "Equals",
+        "Equals",
+        "Equals",
+        "FunctionMetadata",
+        "GetKeyspace",
+        "GetTable",
+        "IndexMetadata",
+        "KeyspaceMetadata",
+        "Metadata",
+        "RemoveTabletsWithHost",
+        "RemoveTabletsWithKeyspace",
+        "RemoveTabletsWithTable",
+        "String",
+        "TableMetadata",
+        "TableMetadataOptions",
+        "TypeMetadata",
+        "ViewMetadata"
+      ]
+    },
+    {
+      "path": "policies.go",
+      "sha256": "498ef2f7cd905a5adf568fb54886363a117cdc91f4a53ac32e758cb4f6ccd0b1",
+      "exports": [
+        "AddFailure",
+        "AddHost",
+        "AddHost",
+        "AddHost",
+        "AddHost",
+        "AddHosts",
+        "AvoidSlowReplicas",
+        "ConstantReconnectionPolicy",
+        "ConvictionPolicy",
+        "DCAwareRoundRobinPolicy",
+        "DontShuffleReplicas",
+        "ExponentialReconnectionPolicy",
+        "GetInterval",
+        "GetInterval",
+        "GetInterval",
+        "GetMaxRetries",
+        "GetMaxRetries",
+        "GetMaxRetries",
+        "HostDown",
+        "HostDown",
+        "HostDown",
+        "HostDown",
+        "HostPolicyOptionDisableDCFailover",
+        "HostSelectionPolicy",
+        "HostStateNotifier",
+        "HostTier",
+        "HostTierer",
+        "HostUp",
+        "HostUp",
+        "HostUp",
+        "HostUp",
+        "HostUp",
+        "Info",
+        "Info",
+        "Info",
+        "Init",
+        "Init",
+        "Init",
+        "Init",
+        "IsLocal",
+        "IsLocal",
+        "IsLocal",
+        "IsLocal",
+        "IsOperational",
+        "IsOperational",
+        "IsOperational",
+        "IsOperational",
+        "KeyspaceChanged",
+        "KeyspaceChanged",
+        "KeyspaceChanged",
+        "KeyspaceChanged",
+        "KeyspaceUpdateEvent",
+        "Mark",
+        "Mark",
+        "Mark",
+        "MaxHostTier",
+        "NextHost",
+        "NoReconnectionPolicy",
+        "NonLocalReplicasFallback",
+        "RackAwareRoundRobinPolicy",
+        "Ready",
+        "ReadyPolicy",
+        "ReconnectionPolicy",
+        "RemoveHost",
+        "RemoveHost",
+        "RemoveHost",
+        "RemoveHost",
+        "Reset",
+        "Reset",
+        "Reset",
+        "Reset",
+        "Reset",
+        "RoundRobinHostPolicy",
+        "SelectedHost",
+        "SetPartitioner",
+        "SetPartitioner",
+        "SetPartitioner",
+        "SetPartitioner",
+        "ShuffleReplicas",
+        "SimpleConvictionPolicy",
+        "SingleHostReadyPolicy",
+        "String",
+        "Token",
+        "Token",
+        "Token",
+        "TokenAwareHostPolicy",
+        "TokenInt64",
+        "TokenInt64"
+      ]
+    },
+    {
+      "path": "prepared_cache.go",
+      "sha256": "e5b44a956fb3719502e8a72600a96e2b8af38870b4324e96cdd56c51b7d00c9c"
+    },
+    {
+      "path": "protocol_types.go",
+      "sha256": "86484238c92ce0050b24e474d4760822989964281663880c485e57d802fc857e",
+      "exports": [
+        "CollectionType",
+        "Custom",
+        "NativeType",
+        "NewCollectionType",
+        "NewCustomType",
+        "NewNativeType",
+        "NewTupleType",
+        "NewUDTType",
+        "String",
+        "String",
+        "String",
+        "String",
+        "String",
+        "TupleTypeInfo",
+        "Type",
+        "Type",
+        "TypeInfo",
+        "UDTField",
+        "UDTTypeInfo",
+        "VectorType",
+        "Version"
+      ]
+    },
+    {
+      "path": "recreate.go",
+      "sha256": "cd64f2f6491b70d8c0b8d2377d32667bd8e23a45f6b2b317cba4d9a6529ba47c",
+      "exports": [
+        "ToCQL",
+        "UnmarshalBinary"
+      ]
+    },
+    {
+      "path": "ring_describer.go",
+      "sha256": "828e277554dabf38885d2186256936bb18c58fd0759a882095c089658621bd7e",
+      "exports": [
+        "GetHostsFromSystem"
+      ]
+    },
+    {
+      "path": "scylla.go",
+      "sha256": "d6c1fd0d81265461b73626dd825e68d106c6540c8fb1a59f0d061d474ef53b5c",
+      "exports": [
+        "Close",
+        "DialContext",
+        "DialHost",
+        "DialShard",
+        "GetConnectionCount",
+        "GetExcessConnectionCount",
+        "GetShardCount",
+        "InFlight",
+        "IsMetadataIDSupported",
+        "IsPresent",
+        "LWTFlagMask",
+        "MSBIgnore",
+        "Next",
+        "NextShard",
+        "Partitioner",
+        "Pick",
+        "PickInt64",
+        "Put",
+        "RateLimitErrorCode",
+        "Remove",
+        "ScyllaConnectionFeatures",
+        "ScyllaGetSourcePort",
+        "ScyllaHostFeatures",
+        "ScyllaShardAwareDialer",
+        "Shard",
+        "ShardAwarePort",
+        "ShardAwarePortTLS",
+        "ShardDialer",
+        "ShardingAlgorithm",
+        "ShardsCount",
+        "Size"
+      ]
+    },
+    {
+      "path": "scylla_cdc.go",
+      "sha256": "ae1d3e2a3ea4879811bf43b38da19378c87acc82855d2ff2262a36b762d73c0c",
+      "exports": [
+        "Hash",
+        "Name",
+        "ParseString"
+      ]
+    },
+    {
+      "path": "scyllacloud/cluster.go",
+      "sha256": "3854015dea67860a7243a8f9352fedeb8e5e663bf4756314bc744595380145f0"
+    },
+    {
+      "path": "scyllacloud/config.go",
+      "sha256": "25dcee5246804d8d6a9d9ac6af839aec4e7e5b89168b7ddd0a5ad5695ab745bc"
+    },
+    {
+      "path": "scyllacloud/hostdialer.go",
+      "sha256": "26ac3c845884e1cf8c7cc93acb909ccebbe3e2790f32b129c673add84130cf01"
+    },
+    {
+      "path": "segment.go",
+      "sha256": "3be4a2e2f57468eff75e288536a3170831ddc4e2bad2d5e433d612a7dc51e912"
+    },
+    {
+      "path": "session.go",
+      "sha256": "c7562a9941b47482e37fcfd8b27da5de41e5b82c6b20fd4a0c89c7ebae16890e",
+      "exports": [
+        "AwaitSchemaAgreement",
+        "Close",
+        "Closed",
+        "ColumnInfo",
+        "ConnectObserver",
+        "ErrProtocol",
+        "Error",
+        "Error",
+        "ForEachTablet",
+        "GetHostPoolByID",
+        "GetHosts",
+        "HostInformation",
+        "HostPoolInfo",
+        "ID",
+        "IterateHostPools",
+        "KeyspaceMetadata",
+        "NewErrProtocol",
+        "ObservedConnect",
+        "Ready",
+        "Session",
+        "String",
+        "SubscribeToEvents",
+        "TableMetadata",
+        "TableTabletsMetadata",
+        "TabletsMetadata",
+        "WaitUntilReady"
+      ]
+    },
+    {
+      "path": "tablets/hint_parser.go",
+      "sha256": "2d3fe0089852147625087871a0fadf26574687f5b4d6903f7b5c65ed268cdc85"
+    },
+    {
+      "path": "tablets/tablet_utils.go",
+      "sha256": "8aaff07aef7f0d4d11379fe445d7303b565940616dc03a051d087c9d4cf66132"
+    },
+    {
+      "path": "tablets/tablets.go",
+      "sha256": "a7580a25aec0162e39934804291afac219f849130d8f5c4975634642c7eb71cc"
+    },
+    {
+      "path": "tests/affinity/main_linux_amd64.go",
+      "sha256": "969554f4b295eccf40faec856cc1cb11e007439e5310dcf2508834d4b34bb0e5"
+    },
+    {
+      "path": "token.go",
+      "sha256": "c904c6db2d81293d90e61294471d77ca302242ce26cbb945e2a4665a50474b75",
+      "exports": [
+        "GetHostForPartitionKey",
+        "GetHostForToken",
+        "Hash",
+        "Hash",
+        "Hash",
+        "Len",
+        "Less",
+        "Less",
+        "Less",
+        "Less",
+        "Name",
+        "Name",
+        "Name",
+        "ParseString",
+        "ParseString",
+        "ParseString",
+        "Partitioner",
+        "String",
+        "String",
+        "String",
+        "String",
+        "String",
+        "Swap",
+        "Token"
+      ]
+    },
+    {
+      "path": "topology.go",
+      "sha256": "0aee6c3323ef32cee3bfe955c2e8f57bdcb67b2fed2d4acfdde926760357b092",
+      "exports": [
+        "Len",
+        "Less",
+        "Swap"
+      ]
+    },
+    {
+      "path": "tracer.go",
+      "sha256": "dc9903046c0c3a58c262bc348f69e07a7a0bc63ccfd356d02ace037fd91edf68",
+      "exports": [
+        "AllTraceIDs",
+        "GetActivities",
+        "GetCoordinatorTime",
+        "IsReady",
+        "NewTraceWriter",
+        "NewTracer",
+        "SetMaxAttempts",
+        "SetSleepInterval",
+        "Trace",
+        "Trace",
+        "TraceEntry",
+        "TraceWriter",
+        "Tracer",
+        "TracerEnhanced"
+      ]
+    },
+    {
+      "path": "uuid.go",
+      "sha256": "5b6f43fee8c245536b8ddf9054f6676f8e3a33b85874fb5723ff41fb35dc74c3",
+      "exports": [
+        "Bytes",
+        "Clock",
+        "IsEmpty",
+        "MarshalJSON",
+        "MarshalText",
+        "MaxTimeUUID",
+        "MinTimeUUID",
+        "MustRandomUUID",
+        "NewTimeUUID",
+        "Node",
+        "ParseUUID",
+        "ParseUUIDMust",
+        "RandomUUID",
+        "String",
+        "Time",
+        "TimeUUIDWith",
+        "Timestamp",
+        "UUID",
+        "UUIDFromBytes",
+        "UUIDFromTime",
+        "UnmarshalJSON",
+        "UnmarshalText",
+        "Variant",
+        "Version"
+      ]
+    },
+    {
+      "path": "v2_auth.go",
+      "sha256": "c4ac5662c0f3c152a1f8002ea951628ba5c4df8049d2d1a2e186850f0bea9dbc",
+      "exports": [
+        "AuthExchange",
+        "AuthProvider",
+        "Challenge",
+        "Challenge",
+        "Close",
+        "Close",
+        "PasswordAuth",
+        "Start",
+        "Success",
+        "Success"
+      ]
+    },
+    {
+      "path": "v2_batch.go",
+      "sha256": "5debac4b1389d91fcc899bbda745dfa9867d181933394441ec17ad91ba924ffd",
+      "exports": [
+        "BatchEntry",
+        "BatchItem",
+        "BatchKind",
+        "ExecBatch",
+        "RunBatch"
+      ]
+    },
+    {
+      "path": "v2_client_routes.go",
+      "sha256": "73bd27a36a1f775d45369c490d55f3e53fbff5741b41929228375cd0884b25c4",
+      "exports": [
+        "CheckType",
+        "Clone",
+        "Compile",
+        "Decode",
+        "Encode"
+      ]
+    },
+    {
+      "path": "v2_collections.go",
+      "sha256": "bbae2234a986ee72051702d358e5fc84a7df9085331fbbe337b2125bf2a6b3a1",
+      "exports": [
+        "CheckType",
+        "CheckType",
+        "CheckType",
+        "CheckType",
+        "Clone",
+        "Clone",
+        "Clone",
+        "Clone",
+        "Collect",
+        "Decode",
+        "Decode",
+        "Encode",
+        "Encode",
+        "Entry",
+        "Err",
+        "Iterator",
+        "Iterator",
+        "Len",
+        "Len",
+        "ListDecoder",
+        "ListEncoder",
+        "MapDecoder",
+        "MapEncoder",
+        "Mapping",
+        "Next",
+        "Sequence",
+        "SetDecoder",
+        "SetEncoder",
+        "Value",
+        "ValueIterator",
+        "VectorDecoder",
+        "VectorEncoder"
+      ]
+    },
+    {
+      "path": "v2_config.go",
+      "sha256": "73b305306a7563a1820a5f57598bfce05198eb97391f55cef1b875475dd4694c",
+      "exports": [
+        "ClientRoutesOptions",
+        "Compression",
+        "Config",
+        "Connect",
+        "DefaultConfig",
+        "Delay",
+        "IdentityOptions",
+        "LookupIP",
+        "LookupIPContext",
+        "MetadataMode",
+        "MetadataOptions",
+        "OpenSingleHost",
+        "PoolOptions",
+        "ProtocolLimits",
+        "ReconnectPolicy"
+      ]
+    },
+    {
+      "path": "v2_connection_state.go",
+      "sha256": "ed26e1cc1edc65befc1681435a66dd33f199403e531d7d643898e628c2e04c3b"
+    },
+    {
+      "path": "v2_dial.go",
+      "sha256": "34c86b4233e92708880b5267ae4aafca8df614ae0f2112247fddae9937c70f4f",
+      "exports": [
+        "DefaultDialer",
+        "DialContext",
+        "DialContext",
+        "DialHost",
+        "DialShard",
+        "DialTarget",
+        "Dialer",
+        "DialerFunc",
+        "Error",
+        "UnsupportedSettingError"
+      ]
+    },
+    {
+      "path": "v2_dynamic.go",
+      "sha256": "4c756579143c91710f51d5653e1b509336afd06757027ad9698247d9dbb95602",
+      "exports": [
+        "ASCIIValue",
+        "At",
+        "BigIntValue",
+        "BlobValue",
+        "Bool",
+        "BoolValue",
+        "Bytes",
+        "CheckType",
+        "CheckType",
+        "CheckType",
+        "Clone",
+        "Clone",
+        "Clone",
+        "Clone",
+        "Clone",
+        "Clone",
+        "Columns",
+        "Compile",
+        "Compile",
+        "Compile",
+        "CounterValue",
+        "DateValue",
+        "Decimal",
+        "DecimalValue",
+        "Decode",
+        "Decode",
+        "Decode",
+        "DecodeInto",
+        "DoubleValue",
+        "Duration",
+        "DurationValue",
+        "DynamicRow",
+        "Elements",
+        "EmptyValue",
+        "Encode",
+        "Encode",
+        "Encode",
+        "Encode",
+        "Entries",
+        "Fields",
+        "Float",
+        "FloatValue",
+        "Get",
+        "Inet",
+        "InetValue",
+        "IntValue",
+        "ListValue",
+        "MapValue",
+        "NullValue",
+        "SetValue",
+        "Signed",
+        "SmallIntValue",
+        "State",
+        "Text",
+        "TextValue",
+        "TimeUUIDValue",
+        "TimeValue",
+        "TimestampValue",
+        "TinyIntValue",
+        "TupleValue",
+        "Type",
+        "UDTValue",
+        "UUID",
+        "UUIDValue",
+        "UnsetDynamic",
+        "Value",
+        "ValueEntry",
+        "ValueField",
+        "Varint",
+        "VarintValue",
+        "VectorValue"
+      ]
+    },
+    {
+      "path": "v2_events.go",
+      "sha256": "6900b92056be118b61e27afbd0ff1f65efed09475382a774765d700f9e527649",
+      "exports": [
+        "Close",
+        "Event",
+        "EventFilter",
+        "EventKind",
+        "Events",
+        "Subscribe",
+        "Subscription"
+      ]
+    },
+    {
+      "path": "v2_execute.go",
+      "sha256": "0d6aea28f73edb55d8a7bac2056cc1e678a6532adea17c73f39ec1bc1bf5809b",
+      "exports": [
+        "Exec",
+        "Run",
+        "RunPage",
+        "RunUnpaged"
+      ]
+    },
+    {
+      "path": "v2_execution_lifetime.go",
+      "sha256": "e4ece1432588902867a9b5349731ae7b8c372d4f2164dc71ba5ae86a9a672f55"
+    },
+    {
+      "path": "v2_keyspace.go",
+      "sha256": "fddb97760af7cda98ab00b3794d6d9e968b757077771d72186c2d832eced9647"
+    },
+    {
+      "path": "v2_logger.go",
+      "sha256": "d155fe98a1636b88be3ce3e479f8c1720f095343f321b6473128cbcb5680a15f",
+      "exports": [
+        "Print",
+        "Printf",
+        "Println"
+      ]
+    },
+    {
+      "path": "v2_metadata.go",
+      "sha256": "d890715445e03d18920f669f8649ccbdfaad23f080a26da4b95c767fff81f6f1",
+      "exports": [
+        "CheckType",
+        "CheckType",
+        "CheckType",
+        "CheckType",
+        "CheckType",
+        "CheckType",
+        "CheckType",
+        "Clone",
+        "Clone",
+        "Clone",
+        "Clone",
+        "Clone",
+        "Clone",
+        "Clone",
+        "Clone",
+        "Clone",
+        "Compile",
+        "Compile",
+        "Decode",
+        "Decode",
+        "Decode",
+        "Decode",
+        "Decode",
+        "Decode",
+        "Decode",
+        "Decode",
+        "DecodeInto",
+        "Diagnostics",
+        "Encode",
+        "Error",
+        "Error",
+        "Generation",
+        "HostSnapshot",
+        "Hosts",
+        "Keyspace",
+        "LifecycleEvent",
+        "LifecycleObserver",
+        "Metadata",
+        "MetadataSnapshot",
+        "Metrics",
+        "MetricsSnapshot",
+        "NoHostsError",
+        "PartialRefreshError",
+        "RefreshMetadata",
+        "Replicas",
+        "TokenRange",
+        "TokenRanges",
+        "Trace",
+        "TraceEvent",
+        "TraceInfo",
+        "Unwrap",
+        "Unwrap"
+      ]
+    },
+    {
+      "path": "v2_metadata_execution.go",
+      "sha256": "5234cae0d648ce7bab2cc997f64b90de5892dc4a3d79bd069c0e3ef417212e45"
+    },
+    {
+      "path": "v2_placement.go",
+      "sha256": "84e9213c59b9eaa3f3445af167cd68d7647d870559b28ff69c991e64305fe19d"
+    },
+    {
+      "path": "v2_policy.go",
+      "sha256": "26d2e54cb7c11252915d2fa3eecb41f79c98ac8cb75b7e68a717d0de647d6d44",
+      "exports": [
+        "ForEach",
+        "LatencyOptions",
+        "Len",
+        "NewRoutingPolicy",
+        "Next",
+        "Next",
+        "Observe",
+        "Observe",
+        "PartitionKey",
+        "Plan",
+        "Plan",
+        "RoutingOptions",
+        "SingleTargetRouting",
+        "Token",
+        "Token",
+        "TokenPartitioner",
+        "Validate",
+        "Validate"
+      ]
+    },
+    {
+      "path": "v2_pool.go",
+      "sha256": "cd009f1e163d55672eb25e300f57a2a5c2f94bfe45e44d526b0a5df73a90c54d",
+      "exports": [
+        "Close",
+        "GetConnectionCount",
+        "GetExcessConnectionCount",
+        "GetShardCount",
+        "InFlight",
+        "NextShard",
+        "Pick",
+        "PickInt64",
+        "Put",
+        "Remove",
+        "Size"
+      ]
+    },
+    {
+      "path": "v2_pool_limits.go",
+      "sha256": "84a9a05dfdb3a58d24a7bfc9fe8b932c9d82d722b2f622928f8be41bac05c771"
+    },
+    {
+      "path": "v2_prepared_refresh.go",
+      "sha256": "9e0f7891e877a21a24c7c72659d647076ab5dd4fca606946d67e27af5872c1ac"
+    },
+    {
+      "path": "v2_prepared_schema.go",
+      "sha256": "faa7b8eaf2bf5d8aa53b8c243b254770898e3d8b537859412e986e818e2db6bc"
+    },
+    {
+      "path": "v2_profiles.go",
+      "sha256": "0a3b91c62b2e5a0ef43ef2effb4e493104ad088f6baa30e665a97caa12a8ed2b",
+      "exports": [
+        "AttemptError",
+        "AttemptEvent",
+        "Decide",
+        "NewProfile",
+        "Observer",
+        "Options",
+        "Profile",
+        "ProfileHandle",
+        "QueryPlan",
+        "Replace",
+        "RequestEvent",
+        "RetryAction",
+        "RetryDecision",
+        "RetryPolicy",
+        "RoutingInfo",
+        "RoutingPolicy",
+        "SafeRetryPolicy",
+        "Snapshot",
+        "SpeculationPolicy",
+        "Target"
+      ]
+    },
+    {
+      "path": "v2_result.go",
+      "sha256": "576e2633b6b16b521cf332b43d4dbf2919eabd7431dbd2b706e7568a2225c9cc",
+      "exports": [
+        "Bytes",
+        "CASResult",
+        "CASRows",
+        "Clone",
+        "Clone",
+        "Clone",
+        "Clone",
+        "Clone",
+        "Clone",
+        "Close",
+        "Close",
+        "Close",
+        "Columns",
+        "Columns",
+        "Compile",
+        "Compile",
+        "Complete",
+        "Decode",
+        "Decode",
+        "DecodeInto",
+        "DecodeInto",
+        "Err",
+        "Err",
+        "Info",
+        "Info",
+        "More",
+        "Next",
+        "Next",
+        "NextInto",
+        "NextInto",
+        "Page",
+        "PageLease",
+        "PageState",
+        "RestorePageState",
+        "Result",
+        "Retain",
+        "Retain",
+        "Row",
+        "Row",
+        "Rows",
+        "StartPage",
+        "State"
+      ]
+    },
+    {
+      "path": "v2_routing_token.go",
+      "sha256": "c0d045e8da4afa0b99ef8595bb2ffd9e5361691d55f39e2ee33d97b2e9fea5fb"
+    },
+    {
+      "path": "v2_row_stream.go",
+      "sha256": "54c1c687cd6acf383209d368d4377fb5f3950c86c82799c9ad14d03e11abb242",
+      "exports": [
+        "Close",
+        "Columns",
+        "Err",
+        "Info",
+        "NextInto",
+        "RowStream",
+        "RunStream",
+        "StreamInfo",
+        "StreamOptions"
+      ]
+    },
+    {
+      "path": "v2_rows_codec.go",
+      "sha256": "b2d511fdb3d2aca2c1e8104bc0cab7bb09c90e7a365603ecd099a7785dc27b06",
+      "exports": [
+        "Clone",
+        "Clone",
+        "Clone",
+        "Clone",
+        "Clone",
+        "Clone",
+        "Clone",
+        "Clone",
+        "Column",
+        "ColumnAt",
+        "Compile",
+        "Compile",
+        "Compile",
+        "Compile",
+        "Compile",
+        "Compile",
+        "Compile",
+        "Decode",
+        "Decode",
+        "Decode",
+        "Decode",
+        "DecodeInto",
+        "DecodeInto",
+        "DecodeInto",
+        "DecodeInto",
+        "Encode",
+        "Encode",
+        "Encode",
+        "IgnoreColumn",
+        "InputField",
+        "MapParams",
+        "MapRows",
+        "OneColumn",
+        "OneParam",
+        "OutputField",
+        "Pair",
+        "PairParams",
+        "PairRows",
+        "Param",
+        "ParamAt",
+        "ParamEncoder",
+        "ParamPlan",
+        "ParamWriter",
+        "Params",
+        "ReadColumn",
+        "Row",
+        "RowDecoder",
+        "RowPlan",
+        "RowReader",
+        "SkipColumn",
+        "Unit",
+        "WriteParam"
+      ]
+    },
+    {
+      "path": "v2_runtime_types.go",
+      "sha256": "99e7ed4529ed9d34d62e3a923b41ab0ed8d963e3e847323817d1480f07f4c71f",
+      "exports": [
+        "Error",
+        "Error",
+        "ExecutionError",
+        "Option",
+        "PayloadEntry",
+        "SchemaChangedError",
+        "Unwrap"
+      ]
+    },
+    {
+      "path": "v2_scalar.go",
+      "sha256": "b611d9ca289b2a8652ddd9acdd25318197301de577f012b23dab5f5f4f7772df",
+      "exports": [
+        "BindEncoder",
+        "CheckType",
+        "CheckType",
+        "CheckType",
+        "CheckType",
+        "CheckType",
+        "CheckType",
+        "CheckType",
+        "CheckType",
+        "CheckType",
+        "CheckType",
+        "Clone",
+        "Clone",
+        "Clone",
+        "Clone",
+        "Clone",
+        "Counter",
+        "Decode",
+        "Decode",
+        "Decode",
+        "Decode",
+        "Decode",
+        "DecodeInto",
+        "DecodeInto",
+        "EmptyCodec",
+        "Encode",
+        "Encode",
+        "Encode",
+        "Encode",
+        "Encode",
+        "Encode",
+        "Encode",
+        "Encode",
+        "NamedScalar",
+        "NullableCodec",
+        "NullableDecoder",
+        "NullableEncoder",
+        "TimeUUID"
+      ]
+    },
+    {
+      "path": "v2_scalar_numeric.go",
+      "sha256": "2855155a39c673700e65cec0180b9b39ff1049b583e9761c3f3ac8f3148171e6",
+      "exports": [
+        "BigInt",
+        "Decimal",
+        "Varint",
+        "VarintFromBigInt",
+        "VarintFromBytes"
+      ]
+    },
+    {
+      "path": "v2_scalar_time.go",
+      "sha256": "cf6226f1fad97f08e8ca8341a67ba6a13eb44d94457c9e6c2fd69d502abc354b",
+      "exports": [
+        "Date",
+        "DateFromTime",
+        "Time",
+        "Time",
+        "TimeOfDay",
+        "Timestamp",
+        "TimestampFromTime"
+      ]
+    },
+    {
+      "path": "v2_statement.go",
+      "sha256": "8b11a465da9d1b58248d69a9442c01311688a454d76c2e59cf21676a2685e86c",
+      "exports": [
+        "BindBorrowed",
+        "BindOwned",
+        "BindUnpreparedBorrowed",
+        "BindUnpreparedOwned",
+        "Bound",
+        "Close",
+        "Columns",
+        "Info",
+        "Parameters",
+        "Prepare",
+        "PrepareOptions",
+        "Prepared",
+        "PreparedInfo",
+        "Routing",
+        "Statement",
+        "StatementKind",
+        "Wait"
+      ]
+    },
+    {
+      "path": "v2_stream_collections.go",
+      "sha256": "e980e79d64ed7122dc6c1f141084775039e8a6aa96eac8d98e4f8777904266b7",
+      "exports": [
+        "Compile",
+        "Compile",
+        "DecodeInto",
+        "DecodeInto",
+        "Reset",
+        "Reset",
+        "Reset",
+        "Reset",
+        "StreamList",
+        "StreamMap",
+        "StreamMapEntry",
+        "StreamSet",
+        "StreamVector"
+      ]
+    },
+    {
+      "path": "v2_stream_reader.go",
+      "sha256": "25986a62655803c11a532369acbac4b42ca4fdb6677bb0b482d0661a7d6e9079",
+      "exports": [
+        "Child",
+        "Context",
+        "Context",
+        "Error",
+        "Error",
+        "Read",
+        "ReadStreamColumn",
+        "Remaining",
+        "RequireEnd",
+        "RequireEnd",
+        "Skip",
+        "SkipColumn",
+        "State",
+        "StreamCapabilityError",
+        "StreamCapacityError",
+        "StreamDecoder",
+        "StreamResetter",
+        "StreamRowDecoder",
+        "StreamRowPlan",
+        "StreamRowReader",
+        "StreamValuePlan",
+        "StreamValueReader",
+        "Type",
+        "Uint16",
+        "Uint32",
+        "Uint64",
+        "Uint8"
+      ]
+    },
+    {
+      "path": "v2_stream_rows.go",
+      "sha256": "1e3c7ab79f29b38d2c0d93b8499f5252090946b6ee1341bf6f28a5743c90caf1",
+      "exports": [
+        "Compile",
+        "Compile",
+        "Compile",
+        "DecodeInto",
+        "DecodeInto",
+        "DecodeInto",
+        "Reset",
+        "Reset",
+        "Reset",
+        "Reset",
+        "Reset",
+        "Reset",
+        "StreamColumn",
+        "StreamColumnAt",
+        "StreamOneColumn",
+        "StreamOutputField",
+        "StreamRow",
+        "StreamTuple",
+        "StreamUDT"
+      ]
+    },
+    {
+      "path": "v2_stream_scalar.go",
+      "sha256": "1ed4fddc63f04d2e4088fc15a1be3399b1017053e5fdf4ef285cc9659289f49b",
+      "exports": [
+        "Compile",
+        "Compile",
+        "Compile",
+        "Compile",
+        "Compile",
+        "DecodeInto",
+        "DecodeInto",
+        "DecodeInto",
+        "DecodeInto",
+        "DecodeInto",
+        "Reset",
+        "Reset",
+        "Reset",
+        "Reset",
+        "Reset",
+        "Reset",
+        "Reset",
+        "Reset",
+        "Reset",
+        "Reset",
+        "StreamDecimalValue",
+        "StreamEmpty",
+        "StreamNullable"
+      ]
+    },
+    {
+      "path": "v2_stream_transport.go",
+      "sha256": "26b4cc95e00ea048cb6eef1b707fad81043605796411a7a18726b082c0efb21d",
+      "exports": [
+        "Read",
+        "Remaining",
+        "RequireEnd",
+        "StreamLimits",
+        "Take",
+        "Uint16",
+        "Uint32",
+        "Uint64",
+        "Uint8"
+      ]
+    },
+    {
+      "path": "v2_stream_validate.go",
+      "sha256": "6dffe35143a2dbe6c509886066f1bd8f997d3e64cd4ba557efdbee8b082bd81d",
+      "exports": [
+        "Compile",
+        "DecodeInto",
+        "Reset",
+        "Reset",
+        "StreamEncodedValue"
+      ]
+    },
+    {
+      "path": "v2_tablet_metadata.go",
+      "sha256": "6013f97e7c248a8b3af41ace5a06c9afbf7f2cae761417102ed975b524f2ab96"
+    },
+    {
+      "path": "v2_topology.go",
+      "sha256": "4db8944c37ee28efc2fe8d230b81fa7c80a7996d0fb66b60f363ac5b51146bf5"
+    },
+    {
+      "path": "v2_transport.go",
+      "sha256": "60f38da01b1db985c2722df6c06840302988ea201c0dff2dbd83fcdead8629c1"
+    },
+    {
+      "path": "v2_transport_parse.go",
+      "sha256": "617dff263c4bb3ee699eb3a20995896881fb3465c8d60b1461794a92490b9294"
+    },
+    {
+      "path": "v2_transport_receive.go",
+      "sha256": "16516d3b856ca0f28cb45ffd1f489c15199f763ee6c6e5ce013b05f4dde7f89f",
+      "exports": [
+        "Read"
+      ]
+    },
+    {
+      "path": "v2_transport_tablet.go",
+      "sha256": "7452b942769b5a74c3a8baf1ac19012cfa44e3b8898757f4615b3cf616933f08"
+    },
+    {
+      "path": "v2_transport_writer.go",
+      "sha256": "2877b7acc5539781b24ef9cc5512339ae1a362eacc8d13b9b802a0d838b62b87"
+    },
+    {
+      "path": "v2_tuple_udt.go",
+      "sha256": "8d4f2e72f3774c4f5e319ff48c20911809aaecb59a5a4dc8e5626c39545cc359",
+      "exports": [
+        "CheckType",
+        "CheckType",
+        "Clone",
+        "Decode",
+        "DecodeInto",
+        "Encode",
+        "TupleDecoder",
+        "TupleEncoder",
+        "UDTDecoder",
+        "UDTEncoder",
+        "UDTOptions"
+      ]
+    },
+    {
+      "path": "v2_type.go",
+      "sha256": "43e2c126937db71c2336466d945e5ec8660f80419dcc2210c798fe98478efc15",
+      "exports": [
+        "At",
+        "BindValue",
+        "CellState",
+        "Codec",
+        "ColumnSpec",
+        "Columns",
+        "DataType",
+        "Decoder",
+        "Dimension",
+        "Element",
+        "EmptyValueOf",
+        "Encoder",
+        "Equal",
+        "Equal",
+        "Fields",
+        "Frozen",
+        "FrozenKnown",
+        "KeyValue",
+        "Kind",
+        "Len",
+        "ListType",
+        "MapType",
+        "NewColumns",
+        "Nullable",
+        "ScalarType",
+        "SetType",
+        "String",
+        "TupleType",
+        "UDTName",
+        "UDTType",
+        "VectorDataType",
+        "WithFrozen"
+      ]
+    },
+    {
+      "path": "v2_value_api.go",
+      "sha256": "d68b495dd11e41c1103ab6a959b4438f87f4a296f586ae1f6f8f824e82278922",
+      "exports": [
+        "Bytes",
+        "Clone",
+        "DecodeValue",
+        "EncodeValueBorrowed",
+        "EncodeValueOwned",
+        "EncodedValue",
+        "NewEncodedValue",
+        "State",
+        "Type"
+      ]
+    },
+    {
+      "path": "v2_value_io.go",
+      "sha256": "869099d8ee36b63b9ef851d6e29cb3a49e08e1dd1dca81f6a5559bd78a1cbc52",
+      "exports": [
+        "BorrowBytes",
+        "BorrowString",
+        "Bytes",
+        "Child",
+        "Child",
+        "CodecError",
+        "Cursor",
+        "Empty",
+        "Error",
+        "Error",
+        "Error",
+        "Null",
+        "ProtocolError",
+        "Remaining",
+        "RequireEnd",
+        "State",
+        "Take",
+        "Type",
+        "Type",
+        "Uint16",
+        "Uint16",
+        "Uint32",
+        "Uint32",
+        "Uint64",
+        "Uint64",
+        "Uint8",
+        "Uint8",
+        "Unset",
+        "Unwrap",
+        "Unwrap",
+        "Unwrap",
+        "ValidationError",
+        "ValueCursor",
+        "ValueReader",
+        "ValueWriter"
+      ]
+    },
+    {
+      "path": "v2_view.go",
+      "sha256": "6b2f125211fd05612e15011066d559bde7c871301a6ec6e36e798c45153d1a88",
+      "exports": [
+        "At",
+        "BorrowBytes",
+        "BorrowText",
+        "Bytes",
+        "Bytes",
+        "Clone",
+        "Clone",
+        "CopyTo",
+        "Len",
+        "OwnedBytes",
+        "Slice",
+        "String",
+        "Text",
+        "WriteTo"
+      ]
+    },
+    {
+      "path": "v2_vnode.go",
+      "sha256": "e5a00d858795af895b5039f1e0f905a198e6be1d569b107488884a5ba962c62e"
+    },
+    {
+      "path": "version.go",
+      "sha256": "40e21de9561e08d7a28df4a4553ac2642251d764b3f43e8bfe5c4b05b9568b77"
+    }
+  ],
+  "streaming_calls": {
+    "Add": 3,
+    "AddrFromSlice": 1,
+    "AfterFunc": 1,
+    "As": 1,
+    "At": 1,
+    "Background": 2,
+    "Borrow": 1,
+    "BorrowBytes": 1,
+    "CheckProduct": 1,
+    "CheckType": 1,
+    "Child": 2,
+    "Closed": 3,
+    "CompareAndSwap": 1,
+    "Compile": 5,
+    "Context": 4,
+    "Date": 1,
+    "Decide": 1,
+    "DecodeInto": 9,
+    "Do": 2,
+    "Done": 2,
+    "Equal": 6,
+    "Err": 14,
+    "Errorf": 16,
+    "Float32frombits": 1,
+    "Float64frombits": 1,
+    "IP": 1,
+    "Info": 4,
+    "Is": 4,
+    "IsEmpty": 1,
+    "IsUp": 2,
+    "Join": 1,
+    "KeyValue": 1,
+    "Kind": 18,
+    "LeadingZeros8": 1,
+    "Len": 16,
+    "Limits": 2,
+    "Load": 7,
+    "Lock": 29,
+    "Metadata": 1,
+    "More": 3,
+    "New": 4,
+    "NewChain": 1,
+    "NewTimer": 1,
+    "NewUnitReader": 1,
+    "Next": 2,
+    "Now": 1,
+    "Observe": 1,
+    "ObserveAttempt": 1,
+    "Plan": 1,
+    "RLock": 2,
+    "RUnlock": 2,
+    "Read": 5,
+    "ReadFull": 2,
+    "ReadStreamColumn": 2,
+    "ReadStreamEnvelope": 2,
+    "Release": 3,
+    "Remaining": 26,
+    "RequireEnd": 23,
+    "Reset": 13,
+    "RestorePageState": 1,
+    "Retain": 2,
+    "ScalarType": 1,
+    "Since": 1,
+    "Skip": 1,
+    "SkipColumn": 1,
+    "Sprintf": 2,
+    "StartPage": 1,
+    "Stop": 1,
+    "Store": 2,
+    "StreamColumnAt": 1,
+    "T": 4,
+    "TimeOfDay": 1,
+    "UUID": 1,
+    "Uint16": 3,
+    "Uint32": 10,
+    "Uint64": 5,
+    "Uint8": 5,
+    "Unlock": 30,
+    "Validate": 1,
+    "Version": 1,
+    "WithTimeout": 1,
+    "acquire": 2,
+    "add": 2,
+    "admitExecution": 1,
+    "append": 4,
+    "attemptBytesWritten": 1,
+    "beginFrame": 2,
+    "buildTypedRequest": 1,
+    "byte": 1,
+    "bytes": 1,
+    "canResetMissing": 2,
+    "cancel": 3,
+    "cancellationCause": 1,
+    "cap": 5,
+    "capacity": 5,
+    "captureTabletFeedback": 1,
+    "check": 19,
+    "checkDynamicColumns": 1,
+    "checkScalarType": 1,
+    "checkTextType": 1,
+    "checkUDTIdentity": 1,
+    "checkedStreamLimits": 2,
+    "child": 11,
+    "childBody": 3,
+    "childValidation": 1,
+    "cleanup": 9,
+    "clear": 2,
+    "cloneResult": 1,
+    "close": 10,
+    "closeWithError": 3,
+    "column": 2,
+    "compile": 4,
+    "compileStreamRowPlan": 1,
+    "compileStreamScalarValidation": 1,
+    "compileStreamValidation": 7,
+    "compileStreamValidationMemo": 2,
+    "compileStreamValuePlan": 7,
+    "completePageState": 1,
+    "convert": 1,
+    "copy": 8,
+    "count": 3,
+    "current": 2,
+    "decode": 2,
+    "decodeStreamRow": 1,
+    "dispatchEventOwned": 3,
+    "durationFromComponents": 1,
+    "emptySupported": 3,
+    "endFrame": 3,
+    "exchange": 1,
+    "fail": 75,
+    "failIf": 1,
+    "field": 3,
+    "filterHost": 2,
+    "finish": 3,
+    "finishResponse": 5,
+    "fn": 3,
+    "framingUint32": 1,
+    "getHostsList": 1,
+    "handleEventOwnedContext": 1,
+    "hostUUID": 8,
+    "i32": 3,
+    "initStream": 1,
+    "installColumns": 1,
+    "installStop": 1,
+    "int": 17,
+    "int16": 1,
+    "int32": 6,
+    "int64": 26,
+    "int8": 1,
+    "len": 28,
+    "loadPage": 2,
+    "make": 20,
+    "makeStreamColumn": 2,
+    "matches": 12,
+    "max": 1,
+    "metadataFields": 1,
+    "metadataIDTracked": 1,
+    "min": 6,
+    "new": 2,
+    "newScalarVInt": 1,
+    "newStreamRowReader": 1,
+    "newTextValidation": 2,
+    "observeSafely": 2,
+    "pageCancel": 2,
+    "peripheral": 1,
+    "prepareOnConn": 2,
+    "prepareOnConnExpected": 1,
+    "present": 8,
+    "qualifiedForKeyspace": 1,
+    "rawSkip": 2,
+    "readFull": 5,
+    "receiveSource": 1,
+    "recordColumns": 1,
+    "reject": 4,
+    "release": 10,
+    "releaseInput": 1,
+    "releaseMetadata": 4,
+    "reserve": 2,
+    "reserveAllocation": 3,
+    "reserveExclusiveWithLimits": 1,
+    "reserveStreamWithLimits": 1,
+    "reset": 3,
+    "resetMissing": 1,
+    "resetStreamDeclaration": 7,
+    "row": 1,
+    "scalar": 1,
+    "selectPreparedMetadata": 1,
+    "sequenceElement": 1,
+    "serverError": 1,
+    "setError": 1,
+    "setLimit": 1,
+    "signed": 1,
+    "skip": 6,
+    "start": 1,
+    "startWorker": 1,
+    "stop": 1,
+    "stopIOContext": 1,
+    "str": 11,
+    "streamCanReset": 2,
+    "streamDeclarationCanReset": 7,
+    "streamEvent": 2,
+    "streamExtensions": 2,
+    "streamFailure": 2,
+    "streamFieldMapping": 1,
+    "streamFixed": 8,
+    "streamReadSignedVInt": 3,
+    "streamScalarValidation": 15,
+    "strings": 5,
+    "tabletVersionBlock": 1,
+    "tracksResultMetadataID": 3,
+    "typeValidation": 104,
+    "typedProtocolLimits": 3,
+    "typedResponseExtensionFlags": 2,
+    "typedRuntime": 3,
+    "u16": 1,
+    "u8": 1,
+    "uint": 6,
+    "uint16": 1,
+    "uint32": 5,
+    "uint64": 8,
+    "uint8": 1,
+    "validConsistency": 1,
+    "validate": 2,
+    "validateDataType": 3,
+    "value": 2,
+    "vectorFixedWidth": 1,
+    "vectorLength": 2,
+    "watchIOContext": 1,
+    "wireRequest": 1,
+    "withIO": 3,
+    "write": 1,
+    "writeSpans": 1,
+    "writerLease": 1
+  },
+  "streaming_sources": [
+    "v2_row_stream.go",
+    "v2_stream_collections.go",
+    "v2_stream_reader.go",
+    "v2_stream_rows.go",
+    "v2_stream_scalar.go",
+    "v2_stream_transport.go",
+    "v2_stream_validate.go"
+  ]
+}

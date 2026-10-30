@@ -15,11 +15,11 @@ const randSeed = 100
 // where each combination contains `rf` elements. The generator cycles through all possible combinations
 // infinitely in a thread-safe manner using an atomic counter.
 type ReplicaSetGenerator struct {
-	hosts   []HostUUID // List of available hosts
-	rf      int        // Replication factor (number of hosts per combination)
-	len     int        // Total number of hosts
-	counter uint64     // Current position in the sequence of combinations
-	total   uint64     // Total number of possible combinations (n choose rf)
+	hosts   []HostUUID    // List of available hosts
+	rf      int           // Replication factor (number of hosts per combination)
+	len     int           // Total number of hosts
+	counter atomic.Uint64 // Current position in the sequence of combinations
+	total   uint64        // Total number of possible combinations (n choose rf)
 }
 
 // NewReplicaSetGenerator creates and returns a new ReplicaSetGenerator for the given set of hosts
@@ -46,7 +46,7 @@ func NewReplicaSetGenerator(hosts []HostUUID, rf int) *ReplicaSetGenerator {
 // This method is safe for concurrent use.
 func (it *ReplicaSetGenerator) Next() []ReplicaInfo {
 	// Advance and wrap around
-	counter := atomic.AddUint64(&it.counter, 1) % it.total
+	counter := it.counter.Add(1) % it.total
 	// Map current counter to combination
 	return unrankCombination(it.len, it.rf, int(counter), it.hosts)
 }

@@ -25,55 +25,37 @@
 package gocql_test
 
 import (
-	"context"
 	"fmt"
+	"github.com/scylladb/gocql/v2"
 	"log"
-
-	gocql "github.com/scylladb/gocql/v2"
 )
 
-type MyUDT struct {
-	FieldA string `cql:"field_a"`
-	FieldB int32  `cql:"field_b"`
-}
-
-// Example_userDefinedTypesStruct demonstrates how to work with user-defined types as structs.
-// See also examples for UDTMarshaler and UDTUnmarshaler if you need more control/better performance.
-func Example_userDefinedTypesStruct() {
-	/* The example assumes the following CQL was used to setup the keyspace:
-	create keyspace example with replication = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };
-	create type example.my_udt (field_a text, field_b int);
-	create table example.my_udt_table(pk int, value frozen<my_udt>, PRIMARY KEY(pk));
-	*/
-	cluster := gocql.NewCluster("localhost:9042")
-	cluster.Keyspace = "example"
-	cluster.ProtoVersion = 4
-	session, err := cluster.CreateSession()
+func Example_userDefinedTypes() {
+	type address struct {
+		Street string
+		Number int32
+	}
+	text, _ := gocql.ScalarType(gocql.TypeText)
+	integer, _ := gocql.ScalarType(gocql.TypeInt)
+	typ, err := gocql.UDTType("example", "address", gocql.ColumnSpec{Name: "street", Type: text}, gocql.ColumnSpec{Name: "number", Type: integer})
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer session.Close()
-
-	ctx := context.Background()
-
-	value := MyUDT{
-		FieldA: "a value",
-		FieldB: 42,
-	}
-	err = session.Query("INSERT INTO example.my_udt_table (pk, value) VALUES (?, ?)",
-		1, value).WithContext(ctx).Exec()
+	opts := gocql.UDTOptions{Keyspace: "example", Name: "address"}
+	encoder := gocql.UDTEncoder(gocql.Params(gocql.Param("street", gocql.StringEncoder, func(v address) string { return v.Street }), gocql.Param("number", gocql.Int32, func(v address) int32 { return v.Number })), opts)
+	encoded, err := gocql.EncodeValueOwned(typ, encoder, address{"Main Street", 42})
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	var readValue MyUDT
-
-	err = session.Query("SELECT value FROM example.my_udt_table WHERE pk = 1").WithContext(ctx).Scan(&readValue)
+	type view struct {
+		Street gocql.Text
+		Number int32
+	}
+	decoder := gocql.UDTDecoder(gocql.Row(gocql.Column("street", gocql.TextCodec, func(v *view) *gocql.Text { return &v.Street }), gocql.Column("number", gocql.Int32, func(v *view) *int32 { return &v.Number })), opts)
+	value, err := gocql.DecodeValue(decoder, encoded)
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println(readValue.FieldA)
-	fmt.Println(readValue.FieldB)
-	// a value
-	// 42
+	fmt.Println(value.Street.String(), value.Number)
+	// Output: Main Street 42
 }

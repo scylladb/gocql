@@ -10,7 +10,7 @@ import (
 type ringDescriber struct {
 	control controlConnection
 	logger  StdLogger
-	cfg     *ClusterConfig
+	cfg     *clusterSettings
 	// hosts are the set of all hosts in the cassandra ring that we know of.
 	// key of map is host_id.
 	hosts map[string]*HostInfo

@@ -2,16 +2,14 @@ module github.com/scylladb/gocql/v2/bench_test
 
 go 1.25.0
 
-require (
-	github.com/brianvoe/gofakeit/v6 v6.28.0
-	github.com/scylladb/gocql/v2 v2.0.0
-)
+require github.com/scylladb/gocql/v2 v2.0.0
 
 require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/klauspost/compress v1.20.0 // indirect
+	github.com/pierrec/lz4/v4 v4.1.29 // indirect
+	github.com/scylladb/gocql/lz4 v1.19.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
-	gopkg.in/inf.v0 v0.9.1 // indirect
 )
 
 replace github.com/scylladb/gocql/v2 => ../..

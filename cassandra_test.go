@@ -949,7 +949,7 @@ func waitForHostConns(t *testing.T, session *Session) map[string]*Conn {
 				continue
 			}
 
-			if conn := pool.Pick(nil, nil); conn != nil {
+			if conn := pool.Pick(nil); conn != nil {
 				conns[addr] = conn
 			} else {
 				pending = append(pending, addr)
@@ -1336,6 +1336,8 @@ func TestSessionMetadataAPIs(t *testing.T) {
 	defer session.Close()
 
 	ks := fixtureKeyspace("")
+	tabletsSupported, err := v2TabletsSupported(context.Background(), session)
+	require.NoError(t, err)
 
 	if _, err := cassandraKeyspace(session, ks); err != nil {
 		t.Fatalf("failed to get initial keyspace metadata: %v", err)
@@ -1405,7 +1407,7 @@ func TestSessionMetadataAPIs(t *testing.T) {
 		})
 
 		t.Run("with_secondary_index", func(t *testing.T) {
-			if isTabletsSupported() {
+			if tabletsSupported {
 				t.Skip("secondary indexes are not supported on tables with tablets")
 			}
 
@@ -1438,7 +1440,7 @@ func TestSessionMetadataAPIs(t *testing.T) {
 			if flagCassVersion.Before(3, 0, 0) {
 				t.Skip("materialized views require Cassandra 3.0+")
 			}
-			if isTabletsSupported() {
+			if tabletsSupported {
 				t.Skip("materialized views are not supported on tables with tablets")
 			}
 

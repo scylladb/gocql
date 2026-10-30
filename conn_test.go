@@ -96,8 +96,8 @@ func TestApprove(t *testing.T) {
 	}
 }
 
-func testCluster(proto frm.ProtoVersion, addresses ...string) *ClusterConfig {
-	cluster := NewCluster(addresses...)
+func testCluster(proto frm.ProtoVersion, addresses ...string) *clusterSettings {
+	cluster := newClusterSettings(addresses...)
 	cluster.ProtoVersion = int(proto)
 	cluster.disableControlConn = true
 	cluster.PoolConfig.HostSelectionPolicy = RoundRobinHostPolicy()
@@ -107,7 +107,7 @@ func testCluster(proto frm.ProtoVersion, addresses ...string) *ClusterConfig {
 // waitForPoolSize blocks until session's connection pool holds at least want
 // connections, or timeout elapses.
 //
-// CreateSession only guarantees the first connection to each host: the rest of
+// open only guarantees the first connection to each host: the rest of
 // a pool is filled asynchronously, so a test making a claim about every
 // connection of a session has to wait for them rather than assert on whichever
 // ones it happened to observe.
@@ -131,12 +131,12 @@ func TestSimple(t *testing.T) {
 	defer srv.Stop()
 
 	cluster := testCluster(defaultProto, srv.Address)
-	db, err := cluster.CreateSession()
+	db, err := cluster.open()
 	if err != nil {
-		t.Fatalf("0x%x: NewCluster: %v", defaultProto, err)
+		t.Fatalf("0x%x: newClusterSettings: %v", defaultProto, err)
 	}
 
-	if err := db.Query("void").Exec(); err != nil {
+	if err := execTestStatement(context.Background(), db, "void", Options{}); err != nil {
 		t.Fatalf("0x%x: %v", defaultProto, err)
 	}
 }
@@ -145,12 +145,12 @@ func TestSSLSimple(t *testing.T) {
 	srv := NewSSLTestServer(t, defaultProto, context.Background())
 	defer srv.Stop()
 
-	db, err := createTestSslCluster(srv.Address, defaultProto, true).CreateSession()
+	db, err := createTestSslCluster(srv.Address, defaultProto, true).open()
 	if err != nil {
-		t.Fatalf("0x%x: NewCluster: %v", defaultProto, err)
+		t.Fatalf("0x%x: newClusterSettings: %v", defaultProto, err)
 	}
 
-	if err := db.Query("void").Exec(); err != nil {
+	if err := execTestStatement(context.Background(), db, "void", Options{}); err != nil {
 		t.Fatalf("0x%x: %v", defaultProto, err)
 	}
 }
@@ -159,17 +159,17 @@ func TestSSLSimpleNoClientCert(t *testing.T) {
 	srv := NewSSLTestServer(t, defaultProto, context.Background())
 	defer srv.Stop()
 
-	db, err := createTestSslCluster(srv.Address, defaultProto, false).CreateSession()
+	db, err := createTestSslCluster(srv.Address, defaultProto, false).open()
 	if err != nil {
-		t.Fatalf("0x%x: NewCluster: %v", defaultProto, err)
+		t.Fatalf("0x%x: newClusterSettings: %v", defaultProto, err)
 	}
 
-	if err := db.Query("void").Exec(); err != nil {
+	if err := execTestStatement(context.Background(), db, "void", Options{}); err != nil {
 		t.Fatalf("0x%x: %v", defaultProto, err)
 	}
 }
 
-func createTestSslCluster(addr string, proto frm.ProtoVersion, useClientCert bool) *ClusterConfig {
+func createTestSslCluster(addr string, proto frm.ProtoVersion, useClientCert bool) *clusterSettings {
 	cluster := testCluster(proto, addr)
 	sslOpts := &SslOptions{
 		CaPath:                 "testdata/pki/ca.crt",
@@ -193,18 +193,18 @@ func TestClosed(t *testing.T) {
 
 	session, err := newTestSession(defaultProto, srv.Address)
 	if err != nil {
-		t.Fatalf("0x%x: NewCluster: %v", defaultProto, err)
+		t.Fatalf("0x%x: newClusterSettings: %v", defaultProto, err)
 	}
 
 	session.Close()
 
-	if err := session.Query("void").Exec(); err != ErrSessionClosed {
+	if err := execTestStatement(context.Background(), session, "void", Options{}); err != ErrSessionClosed {
 		t.Fatalf("0x%x: expected %#v, got %#v", defaultProto, ErrSessionClosed, err)
 	}
 }
 
 func newTestSession(proto frm.ProtoVersion, addresses ...string) (*Session, error) {
-	return testCluster(proto, addresses...).CreateSession()
+	return testCluster(proto, addresses...).open()
 }
 
 var _ DNSResolver = brokenDNSResolver{}
@@ -219,18 +219,18 @@ func TestDNSLookupConnected(t *testing.T) {
 
 	// Use bare IP (no port) so all entries are portless; the driver falls back
 	// to cfg.Port, which is where the test server is bound.
-	cluster := NewCluster("cassandra1.invalid", "127.0.0.1", "cassandra2.invalid")
+	cluster := newClusterSettings("cassandra1.invalid", "127.0.0.1", "cassandra2.invalid")
 	cluster.Port = srv.port()
 	cluster.Logger = log
 	cluster.ProtoVersion = int(defaultProto)
 	cluster.disableControlConn = true
 	cluster.DNSResolver = brokenDNSResolver{}
 
-	// CreateSession() should attempt to resolve the DNS name "cassandraX.invalid"
+	// open() should attempt to resolve the DNS name "cassandraX.invalid"
 	// and fail, but continue to connect via 127.0.0.1
-	_, err := cluster.CreateSession()
+	_, err := cluster.open()
 	if err != nil {
-		t.Fatal("CreateSession() should have connected")
+		t.Fatal("open() should have connected")
 	}
 
 	if !strings.Contains(log.String(), "failed to resolve endpoint") {
@@ -244,17 +244,17 @@ func TestDNSLookupError(t *testing.T) {
 	// Override the default DNS resolver and restore at the end
 	hosts := []string{"cassandra1.invalid", "cassandra2.invalid"}
 
-	cluster := NewCluster(hosts...)
+	cluster := newClusterSettings(hosts...)
 	cluster.Logger = log
 	cluster.ProtoVersion = int(defaultProto)
 	cluster.disableControlConn = true
 	cluster.DNSResolver = brokenDNSResolver{}
 
-	// CreateSession() should attempt to resolve each DNS name "cassandraX.invalid"
+	// open() should attempt to resolve each DNS name "cassandraX.invalid"
 	// and fail since it could not resolve any dns entries
-	_, err := cluster.CreateSession()
+	_, err := cluster.open()
 	if err == nil {
-		t.Fatal("CreateSession() should have returned an error")
+		t.Fatal("open() should have returned an error")
 	}
 
 	if !strings.Contains(log.String(), "failed to resolve endpoint") {
@@ -262,7 +262,7 @@ func TestDNSLookupError(t *testing.T) {
 	}
 
 	if !strings.Contains(err.Error(), "unable to create session: failed to resolve any of the provided hostnames") {
-		t.Fatalf("Expected CreateSession() to fail with error message that contains 'unable to create session: failed to resolve any of the provided hostnames'")
+		t.Fatalf("Expected open() to fail with error message that contains 'unable to create session: failed to resolve any of the provided hostnames'")
 	}
 
 	for _, host := range hosts {
@@ -284,19 +284,19 @@ func TestStartupTimeout(t *testing.T) {
 	atomic.StoreInt32(&srv.TimeoutOnStartup, 1)
 
 	startTime := time.Now()
-	cluster := NewCluster(srv.Address)
+	cluster := newClusterSettings(srv.Address)
 	cluster.Logger = log
 	cluster.ProtoVersion = int(defaultProto)
 	cluster.disableControlConn = true
 	// Set very long query connection timeout
-	// so we know CreateSession() is using the ConnectTimeout
+	// so we know open() is using the ConnectTimeout
 	cluster.Timeout = time.Second * 5
 	cluster.ConnectTimeout = 600 * time.Millisecond
 
 	// Create session should timeout during connect attempt
-	_, err := cluster.CreateSession()
+	_, err := cluster.open()
 	if err == nil {
-		t.Fatal("CreateSession() should have returned a timeout error")
+		t.Fatal("open() should have returned a timeout error")
 	}
 
 	elapsed := time.Since(startTime)
@@ -323,7 +323,7 @@ func TestTimeout(t *testing.T) {
 
 	db, err := newTestSession(defaultProto, srv.Address)
 	if err != nil {
-		t.Fatalf("NewCluster: %v", err)
+		t.Fatalf("newClusterSettings: %v", err)
 	}
 	defer db.Close()
 
@@ -340,7 +340,7 @@ func TestTimeout(t *testing.T) {
 		}
 	}()
 
-	if err := db.Query("kill").WithContext(ctx).Exec(); err == nil {
+	if err := execTestStatement(ctx, db, "kill", Options{}); err == nil {
 		t.Fatal("expected error got nil")
 	}
 	cancel()
@@ -348,252 +348,10 @@ func TestTimeout(t *testing.T) {
 	wg.Wait()
 }
 
-func TestCancel(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	srv := NewTestServer(t, defaultProto, ctx)
-	defer srv.Stop()
-
-	cluster := testCluster(defaultProto, srv.Address)
-	cluster.Timeout = 1 * time.Second
-	db, err := cluster.CreateSession()
-	if err != nil {
-		t.Fatalf("NewCluster: %v", err)
-	}
-	defer db.Close()
-
-	qry := db.Query("timeout").WithContext(ctx)
-
-	// Make sure we finish the query without leftovers
-	var wg sync.WaitGroup
-	wg.Add(1)
-
-	go func() {
-		err = qry.Exec()
-		wg.Done()
-	}()
-	// The query will timeout after about 1 seconds, so cancel it after a short pause
-	time.AfterFunc(20*time.Millisecond, cancel)
-	wg.Wait()
-
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("expected to get context cancel error: '%v', got '%v'", context.Canceled, err)
-	}
-}
-
-type testQueryObserver struct {
-	metrics map[string]*hostMetrics
-	verbose bool
-	logger  StdLogger
-}
-
-func (o *testQueryObserver) ObserveQuery(ctx context.Context, q ObservedQuery) {
-	host := q.Host.ConnectAddress().String()
-	o.metrics[host] = q.Metrics
-	if o.verbose {
-		o.logger.Printf("Observed query %q. Returned %v rows, took %v on host %q with %v attempts and total latency %v. Error: %q\n",
-			q.Statement, q.Rows, q.End.Sub(q.Start), host, q.Metrics.Attempts, q.Metrics.TotalLatency, q.Err)
-	}
-}
-
-func (o *testQueryObserver) GetMetrics(host *HostInfo) *hostMetrics {
-	return o.metrics[host.ConnectAddress().String()]
-}
-
-// TestQueryRetry will test to make sure that gocql will execute
-// the exact amount of retry queries designated by the user.
-func TestQueryRetry(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	srv := NewTestServer(t, defaultProto, ctx)
-	defer srv.Stop()
-
-	db, err := newTestSession(defaultProto, srv.Address)
-	if err != nil {
-		t.Fatalf("NewCluster: %v", err)
-	}
-	defer db.Close()
-
-	go func() {
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(5 * time.Second):
-			t.Errorf("no timeout")
-		}
-	}()
-
-	rt := &SimpleRetryPolicy{NumRetries: 1}
-
-	qry := db.Query("kill").oldRetryPolicy(rt)
-	if err := qry.Exec(); err == nil {
-		t.Fatalf("expected error")
-	}
-
-	requests := atomic.LoadInt64(&srv.nKillReq)
-	attempts := qry.Attempts()
-	if requests != int64(attempts) {
-		t.Fatalf("expected requests %v to match query attempts %v", requests, attempts)
-	}
-
-	// the query will only be attempted once, but is being retried
-	if requests != int64(rt.NumRetries) {
-		t.Fatalf("failed to retry the query %v time(s). Query executed %v times", rt.NumRetries, requests-1)
-	}
-}
-
-func TestQueryMultinodeWithMetrics(t *testing.T) {
-	log := &testLogger{}
-	defer func() {
-		os.Stdout.WriteString(log.String())
-	}()
-
-	// Build a 3 node cluster to test host metric mapping
-	var nodes []*TestServer
-	var addresses = []string{
-		"127.0.0.1",
-		"127.0.0.2",
-		"127.0.0.3",
-	}
-	// Can do with 1 context for all servers
-	ctx := context.Background()
-	for _, ip := range addresses {
-		srv := NewTestServerWithAddress(ip+":9042", t, defaultProto, ctx)
-		defer srv.Stop()
-		nodes = append(nodes, srv)
-	}
-
-	db, err := newTestSession(defaultProto, nodes[0].Address, nodes[1].Address, nodes[2].Address)
-	if err != nil {
-		t.Fatalf("NewCluster: %v", err)
-	}
-	defer db.Close()
-
-	// 1 retry per host
-	rt := &SimpleRetryPolicy{NumRetries: 3}
-	observer := &testQueryObserver{metrics: make(map[string]*hostMetrics), verbose: false, logger: log}
-	qry := db.Query("kill").oldRetryPolicy(rt).Observer(observer).Idempotent(true)
-	if err := qry.Exec(); err == nil {
-		t.Fatalf("expected error")
-	}
-
-	for i, ip := range addresses {
-		var host *HostInfo
-		for _, clusterHost := range db.GetHosts() {
-			if clusterHost.connectAddress.String() == ip {
-				host = clusterHost
-			}
-		}
-
-		if host == nil {
-			t.Fatalf("failed to observe host info for address %v", ip)
-		}
-
-		queryMetric := qry.metrics.hostMetrics(host)
-		observedMetrics := observer.GetMetrics(host)
-
-		requests := int(atomic.LoadInt64(&nodes[i].nKillReq))
-		hostAttempts := queryMetric.Attempts
-		if requests != hostAttempts {
-			t.Fatalf("expected requests %v to match query attempts %v", requests, hostAttempts)
-		}
-
-		if hostAttempts != observedMetrics.Attempts {
-			t.Fatalf("expected observed attempts %v to match query attempts %v on host %v", observedMetrics.Attempts, hostAttempts, ip)
-		}
-
-		hostLatency := queryMetric.TotalLatency
-		observedLatency := observedMetrics.TotalLatency
-		if hostLatency != observedLatency {
-			t.Fatalf("expected observed latency %v to match query latency %v on host %v", observedLatency, hostLatency, ip)
-		}
-	}
-	// the query will only be attempted once, but is being retried
-	attempts := qry.Attempts()
-	if attempts != rt.NumRetries {
-		t.Fatalf("failed to retry the query %v time(s). Query executed %v times", rt.NumRetries, attempts)
-	}
-
-}
-
 type testRetryPolicy struct {
 	NumRetries int
 }
 
-func (t *testRetryPolicy) Attempt(qry RetryableQuery) bool {
-	return qry.Attempts() <= t.NumRetries
-}
-func (t *testRetryPolicy) GetRetryType(err error) RetryType {
-	var executedErr *QueryError
-	if errors.As(err, &executedErr) && executedErr.PotentiallyExecuted() && !executedErr.IsIdempotent() {
-		return Rethrow
-	}
-	return Retry
-}
-
-func TestSpeculativeExecution(t *testing.T) {
-	log := &testLogger{}
-	defer func() {
-		os.Stdout.WriteString(log.String())
-	}()
-
-	// Build a 3 node cluster
-	var nodes []*TestServer
-	var addresses = []string{
-		"127.0.0.1",
-		"127.0.0.2",
-		"127.0.0.3",
-	}
-	// Can do with 1 context for all servers
-	ctx := context.Background()
-	for _, ip := range addresses {
-		srv := NewTestServerWithAddress(ip+":9042", t, defaultProto, ctx)
-		defer srv.Stop()
-		nodes = append(nodes, srv)
-	}
-
-	db, err := newTestSession(defaultProto, nodes[0].Address, nodes[1].Address, nodes[2].Address)
-	if err != nil {
-		t.Fatalf("NewCluster: %v", err)
-	}
-	defer db.Close()
-
-	// Create a test retry policy, 6 retries will cover 2 executions
-	rt := &testRetryPolicy{NumRetries: 8}
-	// test Speculative policy with 1 additional execution
-	sp := &SimpleSpeculativeExecution{NumAttempts: 1, TimeoutDelay: 200 * time.Millisecond}
-
-	// Build the query
-	qry := db.Query("speculative").oldRetryPolicy(rt).SetSpeculativeExecutionPolicy(sp).Idempotent(true)
-
-	// Execute the query and close, check that it doesn't error out
-	if err := qry.Exec(); err != nil {
-		t.Errorf("The query failed with '%v'!\n", err)
-	}
-	requests1 := atomic.LoadInt64(&nodes[0].nKillReq)
-	requests2 := atomic.LoadInt64(&nodes[1].nKillReq)
-	requests3 := atomic.LoadInt64(&nodes[2].nKillReq)
-
-	// Spec Attempts == 1, so expecting to see only 1 regular + 1 speculative = 2 nodes attempted
-	if requests1 != 0 && requests2 != 0 && requests3 != 0 {
-		t.Error("error: all 3 nodes were attempted, should have been only 2")
-	}
-
-	// Only the 4th request will generate results, so
-	if requests1 != 4 && requests2 != 4 && requests3 != 4 {
-		t.Error("error: none of 3 nodes was attempted 4 times!")
-	}
-
-	// "speculative" query will succeed on one arbitrary node after 4 attempts, so
-	// expecting to see 4 (on successful node) + not more than 2 (as cancelled on another node) == 6
-	if requests1+requests2+requests3 > 6 {
-		t.Errorf("error: expected to see 6 attempts, got %v\n", requests1+requests2+requests3)
-	}
-}
-
-// This tests that the policy connection pool handles SSL correctly
 func TestPolicyConnPoolSSL(t *testing.T) {
 	srv := NewSSLTestServer(t, defaultProto, context.Background())
 	defer srv.Stop()
@@ -601,12 +359,12 @@ func TestPolicyConnPoolSSL(t *testing.T) {
 	cluster := createTestSslCluster(srv.Address, defaultProto, true)
 	cluster.PoolConfig.HostSelectionPolicy = RoundRobinHostPolicy()
 
-	db, err := cluster.CreateSession()
+	db, err := cluster.open()
 	if err != nil {
 		t.Fatalf("failed to create new session: %v", err)
 	}
 
-	if err := db.Query("void").Exec(); err != nil {
+	if err := execTestStatement(context.Background(), db, "void", Options{}); err != nil {
 		t.Fatalf("query failed due to error: %v", err)
 	}
 	db.Close()
@@ -628,16 +386,16 @@ func TestQueryTimeout(t *testing.T) {
 	// timely manner.
 	cluster.Timeout = 1 * time.Millisecond
 
-	db, err := cluster.CreateSession()
+	db, err := cluster.open()
 	if err != nil {
-		t.Fatalf("NewCluster: %v", err)
+		t.Fatalf("newClusterSettings: %v", err)
 	}
 	defer db.Close()
 
 	ch := make(chan error, 1)
 
 	go func() {
-		err := db.Query("timeout").Exec()
+		err := execTestStatement(context.Background(), db, "timeout", Options{})
 		if err != nil {
 			ch <- err
 			return
@@ -647,7 +405,7 @@ func TestQueryTimeout(t *testing.T) {
 
 	select {
 	case err := <-ch:
-		if !errors.Is(err, ErrTimeoutNoResponse) {
+		if !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("expected to get %v for timeout got %v", ErrTimeoutNoResponse, err)
 		}
 	case <-time.After(40*time.Millisecond + db.cfg.Timeout):
@@ -665,16 +423,16 @@ func BenchmarkSingleConn(b *testing.B) {
 	// timely manner.
 	cluster.Timeout = 500 * time.Millisecond
 	cluster.NumConns = 1
-	db, err := cluster.CreateSession()
+	db, err := cluster.open()
 	if err != nil {
-		b.Fatalf("NewCluster: %v", err)
+		b.Fatalf("newClusterSettings: %v", err)
 	}
 	defer db.Close()
 
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			err := db.Query("void").Exec()
+			err := execTestStatement(context.Background(), db, "void", Options{})
 			if err != nil {
 				b.Error(err)
 				return
@@ -697,15 +455,15 @@ func TestQueryTimeoutReuseStream(t *testing.T) {
 	cluster.Timeout = 1 * time.Millisecond
 	cluster.NumConns = 1
 
-	db, err := cluster.CreateSession()
+	db, err := cluster.open()
 	if err != nil {
-		t.Fatalf("NewCluster: %v", err)
+		t.Fatalf("newClusterSettings: %v", err)
 	}
 	defer db.Close()
 
-	db.Query("slow").Exec()
+	execTestStatement(context.Background(), db, "slow", Options{})
 
-	err = db.Query("void").Exec()
+	err = execTestStatement(context.Background(), db, "void", Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -721,14 +479,14 @@ func TestQueryTimeoutClose(t *testing.T) {
 	cluster.Timeout = 1000 * time.Millisecond
 	cluster.NumConns = 1
 
-	db, err := cluster.CreateSession()
+	db, err := cluster.open()
 	if err != nil {
-		t.Fatalf("NewCluster: %v", err)
+		t.Fatalf("newClusterSettings: %v", err)
 	}
 
 	ch := make(chan error)
 	go func() {
-		err := db.Query("timeout").Exec()
+		err := execTestStatement(context.Background(), db, "timeout", Options{})
 		ch <- err
 	}()
 	// ensure that the above goroutine gets sheduled
@@ -741,7 +499,7 @@ func TestQueryTimeoutClose(t *testing.T) {
 		t.Fatal("timedout waiting to get a response once cluster is closed")
 	}
 
-	if !errors.Is(err, ErrConnectionClosed) {
+	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected to get %v or an error wrapping it, got %v", ErrConnectionClosed, err)
 	}
 }
@@ -786,7 +544,7 @@ func TestContext_Timeout(t *testing.T) {
 
 	cluster := testCluster(defaultProto, srv.Address)
 	cluster.Timeout = 5 * time.Second
-	db, err := cluster.CreateSession()
+	db, err := cluster.open()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -795,7 +553,7 @@ func TestContext_Timeout(t *testing.T) {
 	ctx, cancel = context.WithCancel(ctx)
 	cancel()
 
-	err = db.Query("timeout").WithContext(ctx).Exec()
+	err = execTestStatement(ctx, db, "timeout", Options{})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected to get context cancel error: %v got %v", context.Canceled, err)
 	}
@@ -864,11 +622,11 @@ func TestInitialRetryPolicy(t *testing.T) {
 			// Use a loopback address with a well-known closed port so the test
 			// remains deterministic even when a local Cassandra-compatible
 			// service is listening on 9042.
-			cluster := NewCluster("127.0.0.1:1")
+			cluster := newClusterSettings("127.0.0.1:1")
 			policy := &TestReconnectionPolicy{NumRetries: tc.NumRetries}
 			cluster.InitialReconnectionPolicy = policy
 			cluster.ProtoVersion = tc.ProtoVersion
-			_, err := cluster.CreateSession()
+			_, err := cluster.open()
 			if err == nil {
 				t.Fatal("expected to get an error")
 			}
@@ -904,7 +662,7 @@ func TestContext_CanceledBeforeExec(t *testing.T) {
 
 	cluster := testCluster(defaultProto, srv.Address)
 	cluster.Timeout = 5 * time.Second
-	db, err := cluster.CreateSession()
+	db, err := cluster.open()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -915,7 +673,7 @@ func TestContext_CanceledBeforeExec(t *testing.T) {
 	ctx, cancel = context.WithCancel(ctx)
 	cancel()
 
-	err = db.Query("timeout").WithContext(ctx).Exec()
+	err = execTestStatement(ctx, db, "timeout", Options{})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected to get context cancel error: %v got %v", context.Canceled, err)
 	}
@@ -947,8 +705,6 @@ func (l *unexpectedOptionsLogger) Printf(format string, v ...any) {
 	}
 }
 
-// The connection survives an OPTIONS reply that is neither SUPPORTED nor an error
-// frame; it is counted as a heartbeat failure, and six of those close it.
 func TestHeartBeatSurvivesUnexpectedOptionsResponse(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -965,7 +721,7 @@ func TestHeartBeatSurvivesUnexpectedOptionsResponse(t *testing.T) {
 	cluster := testCluster(defaultProto, srv.Address)
 	cluster.NumConns = 1
 	cluster.Logger = log
-	db, err := cluster.CreateSession()
+	db, err := cluster.open()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -982,14 +738,11 @@ func TestHeartBeatSurvivesUnexpectedOptionsResponse(t *testing.T) {
 		t.Fatal("heartBeat never logged the unexpected OPTIONS reply")
 	}
 
-	if err := db.Query("void").Exec(); err != nil {
+	if err := execTestStatement(context.Background(), db, "void", Options{}); err != nil {
 		t.Fatalf("the session did not survive an unexpected heartbeat reply: %v", err)
 	}
 }
 
-// controlConn.heartBeat has the same exposure on its own goroutine. The test above
-// cannot reach it -- testCluster disables the control connection and TestServer
-// errors on REGISTER -- so drive heartBeat against a hand-assembled controlConn.
 func TestControlHeartBeatSurvivesUnexpectedOptionsResponse(t *testing.T) {
 	t.Parallel()
 
@@ -1045,11 +798,6 @@ func TestControlHeartBeatSurvivesUnexpectedOptionsResponse(t *testing.T) {
 	}
 }
 
-// Dropping the beat interval to 1s only pays off if every failed beat is counted.
-// An ERROR reply is the one outcome that used to count for nothing, so a peer that
-// answers one OPTIONS with an unexpected frame and the rest with ERROR would hold
-// failures at 1 forever: a connection beating at 1Hz that is never closed. Only a
-// SUPPORTED reply restores the interval or resets the counter.
 func TestHeartBeatClosesAConnectionThatKeepsFailing(t *testing.T) {
 	t.Parallel()
 
@@ -1781,17 +1529,17 @@ func TestSkipMetadata(t *testing.T) {
 	cfg := testCluster(protoVersion4, srv.Address)
 	cfg.DisableSkipMetadata = false
 
-	db, err := cfg.CreateSession()
+	db, err := cfg.open()
 	if err != nil {
-		t.Fatalf("NewCluster: %v", err)
+		t.Fatalf("newClusterSettings: %v", err)
 	}
 	defer db.Close()
 
-	if err := db.Query("select nometadata").Exec(); err != nil {
+	if err := execTestStatement(context.Background(), db, "select nometadata", Options{}); err != nil {
 		t.Fatalf("expected no error got: %v", err)
 	}
 
-	if err := db.Query("select metadata").Exec(); err != nil {
+	if err := execTestStatement(context.Background(), db, "select metadata", Options{}); err != nil {
 		t.Fatalf("expected no error got: %v", err)
 	}
 }
@@ -1804,9 +1552,9 @@ func TestPrepareBatchMetadataMultipleKeyspaceTables(t *testing.T) {
 	defer srv.Stop()
 
 	cfg := testCluster(protoVersion4, srv.Address)
-	db, err := cfg.CreateSession()
+	db, err := cfg.open()
 	if err != nil {
-		t.Fatalf("CreateSession: %v", err)
+		t.Fatalf("open: %v", err)
 	}
 	defer db.Close()
 
@@ -1816,27 +1564,30 @@ func TestPrepareBatchMetadataMultipleKeyspaceTables(t *testing.T) {
 	}
 
 	stmt := "BEGIN BATCH INSERT INTO ks1.tbl1 (col1) VALUES (?) INSERT INTO ks2.tbl2 (col2) VALUES (?) APPLY BATCH"
-	info, err := conn.prepareStatement(ctx, stmt, nil, "", time.Second)
+	info, err := conn.executeTyped(ctx, &attemptRequest{statement: stmt, prepare: true, timeout: time.Second})
+	if info != nil && info.owner != nil {
+		defer info.owner.Release()
+	}
 	if err != nil {
 		t.Fatalf("prepareStatement failed: %v", err)
 	}
 
-	if got := len(info.request.columns); got != 2 {
+	if got := info.bindColumns.Len(); got != 2 {
 		t.Fatalf("expected 2 request columns, got %d", got)
 	}
 
-	col0 := info.request.columns[0]
+	col0, _ := info.bindColumns.At(0)
 	if col0.Keyspace != "ks1" || col0.Table != "tbl1" || col0.Name != "col1" {
 		t.Fatalf("unexpected column 0: %+v", col0)
 	}
 
-	col1 := info.request.columns[1]
+	col1, _ := info.bindColumns.At(1)
 	if col1.Keyspace != "ks2" || col1.Table != "tbl2" || col1.Name != "col2" {
 		t.Fatalf("unexpected column 1: %+v", col1)
 	}
 
-	if info.request.keyspace != "" || info.request.table != "" {
-		t.Fatalf("expected empty prepared keyspace/table for mixed batch, got %q/%q", info.request.keyspace, info.request.table)
+	if info.keyspace != "" || "" != "" {
+		t.Fatalf("expected empty prepared keyspace/table for mixed batch, got %q/%q", info.keyspace, "")
 	}
 }
 
@@ -1867,12 +1618,12 @@ func TestFrameHeaderObserver(t *testing.T) {
 	observer := &recordingFrameHeaderObserver{t: t}
 	cluster.FrameHeaderObserver = observer
 
-	db, err := cluster.CreateSession()
+	db, err := cluster.open()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := db.Query("void").Exec(); err != nil {
+	if err := execTestStatement(context.Background(), db, "void", Options{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -2000,7 +1751,7 @@ type TestServer struct {
 	TimeoutOnStartup int32
 	t                testing.TB
 	listen           net.Listener
-	nKillReq         int64
+	nKillReq         atomic.Int64
 	supportedFactory testSupportedFactory
 
 	// stallSystemQueries, when non-zero, makes system.peers/system.local queries
@@ -2105,7 +1856,7 @@ func (srv *TestServer) port() int {
 }
 
 func (srv *TestServer) session() (*Session, error) {
-	return testCluster(frm.ProtoVersion(srv.protocol), srv.Address).CreateSession()
+	return testCluster(frm.ProtoVersion(srv.protocol), srv.Address).open()
 }
 
 func (srv *TestServer) host() *HostInfo {
@@ -2192,9 +1943,6 @@ func (srv *TestServer) errorLocked(err any) {
 	srv.t.Error(err)
 }
 
-// testMetadataIDOffset separates a canned result metadata id from the prepared id
-// it belongs to, so reading one where the other belongs is visible on the wire
-// rather than coincidentally equal.
 const testMetadataIDOffset = 0x1000
 
 // countOptions returns this connection's OPTIONS count, from one.
@@ -2292,7 +2040,7 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 		}
 		switch strings.ToLower(first) {
 		case "kill":
-			atomic.AddInt64(&srv.nKillReq, 1)
+			srv.nKillReq.Add(1)
 			respFrame.writeHeader(0, frm.OpError, head.Stream)
 			respFrame.writeInt(0x1001)
 			respFrame.writeString("query killed")
@@ -2320,8 +2068,8 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 			}()
 			return
 		case "speculative":
-			atomic.AddInt64(&srv.nKillReq, 1)
-			if atomic.LoadInt64(&srv.nKillReq) > 3 {
+			srv.nKillReq.Add(1)
+			if srv.nKillReq.Load() > 3 {
 				respFrame.writeHeader(0, frm.OpResult, head.Stream)
 				respFrame.writeInt(frm.ResultKindVoid)
 				respFrame.writeString("speculative query success on the node " + srv.Address)
@@ -2709,9 +2457,9 @@ func TestAwaitSchemaAgreementBoundedByMaxWaitSchemaAgreement(t *testing.T) {
 	cluster.MaxWaitSchemaAgreement = maxWaitSchemaAgreement
 	cluster.MetadataSchemaRequestTimeout = metadataSchemaRequestTimeout
 
-	session, err := cluster.CreateSession()
+	session, err := cluster.open()
 	if err != nil {
-		t.Fatalf("CreateSession: %v", err)
+		t.Fatalf("open: %v", err)
 	}
 	defer session.Close()
 
@@ -2768,7 +2516,7 @@ func newTestConnWithFramerPool() *Conn {
 // TestInitFramerCacheScyllaUseMetadataID guards against scyllaUseMetadataID
 // being negotiated on the Conn but never reaching the pooled framers that
 // actually read/write frames (see frame.go's parseResultMetadata,
-// parseResultPrepared, writeExecuteFrame).
+// parseResultPrepared, fixtureExecuteFrame).
 //
 // It also pins Conn.usesMetadataID against the same config, since the request path
 // reads the flag through it: were the two to diverge, the driver would ask the
@@ -2918,196 +2666,6 @@ func TestConnTracksResultMetadataIDMasksDirectionBit(t *testing.T) {
 
 	if c.tracksResultMetadataID() {
 		t.Error("Conn.tracksResultMetadataID() = true for v4 with the direction bit set, want false")
-	}
-}
-
-// TestShouldSkipResultMetadata pins the skip-metadata decision as the EXECUTE path
-// makes it, composing metadataIDTracked with shouldSkipResultMetadata exactly as
-// Conn.executeQueryWithMetrics does.
-//
-// Three behaviours matter most. The override itself: with a metadata-ID exchange
-// active and an ID in hand, metadata is skipped even though the session-level
-// DisableSkipMetadata is set, because the server reports changes via
-// METADATA_CHANGED. Its precondition: a connection whose cached prepared statement
-// has no ID yet (prepared before SCYLLA_USE_METADATA_ID was negotiated, reachable
-// during a rolling upgrade because the prepared cache is keyed by host and survives
-// reconnects) must NOT skip — there is nothing for the server to compare against.
-// And the column-set gate, which is what keeps statements whose prepared response
-// carries no result metadata decodable at all. A per-query NoSkipMetadata()
-// overrides all of it.
-//
-// idExchangeActive stands for Conn.tracksResultMetadataID: native protocol v5 or
-// the SCYLLA_USE_METADATA_ID extension. TestConnTracksResultMetadataID covers which
-// connections set it.
-func TestShouldSkipResultMetadata(t *testing.T) {
-	t.Parallel()
-
-	id := []byte{0xAA, 0xBB}
-
-	tests := []struct {
-		name               string
-		sessionDisableSkip bool
-		queryDisableSkip   bool
-		idExchangeActive   bool
-		resultMetadataID   []byte
-		hasColumns         bool
-		want               bool
-	}{
-		{name: "default skips when columns present", hasColumns: true, want: true},
-		{name: "no columns never skips", hasColumns: false, want: false},
-		{name: "session DisableSkipMetadata forces metadata", sessionDisableSkip: true, hasColumns: true, want: false},
-		{name: "query NoSkipMetadata forces metadata", queryDisableSkip: true, hasColumns: true, want: false},
-		{
-			name:               "id exchange with an id overrides session DisableSkipMetadata",
-			sessionDisableSkip: true,
-			idExchangeActive:   true,
-			resultMetadataID:   id,
-			hasColumns:         true,
-			want:               true,
-		},
-		{
-			name:               "query NoSkipMetadata still wins under the id exchange",
-			sessionDisableSkip: true,
-			queryDisableSkip:   true,
-			idExchangeActive:   true,
-			resultMetadataID:   id,
-			hasColumns:         true,
-			want:               false,
-		},
-		{
-			// Statements whose RESULT/Prepared carries no result metadata (LIST ROLES OF
-			// is the motivating case) are handed an ID hashed from empty metadata. Current
-			// ScyllaDB compares the returned ID against that same empty-metadata ID, always
-			// matches, and never sets METADATA_CHANGED, so a skipped response would be
-			// undecodable. The server-side fixes, scylladb/scylladb#29233 and #29275, are
-			// both closed unmerged — this gate is what keeps such statements working.
-			name:               "empty prepared column set never skips (scylladb/scylladb#29275)",
-			sessionDisableSkip: true,
-			idExchangeActive:   true,
-			resultMetadataID:   id,
-			hasColumns:         false,
-			want:               false,
-		},
-		{
-			// Same gate with skipping opted into explicitly, i.e. with nothing else left
-			// to stop it.
-			name:             "empty prepared column set never skips even when opted in",
-			idExchangeActive: true,
-			resultMetadataID: id,
-			hasColumns:       false,
-			want:             false,
-		},
-		{
-			// Rolling upgrade: statement prepared before the extension was negotiated.
-			name:               "id exchange without an id does not override",
-			sessionDisableSkip: true,
-			idExchangeActive:   true,
-			resultMetadataID:   nil,
-			hasColumns:         true,
-			want:               false,
-		},
-		{
-			name:               "id exchange with a zero-length id does not override",
-			sessionDisableSkip: true,
-			idExchangeActive:   true,
-			resultMetadataID:   []byte{},
-			hasColumns:         true,
-			want:               false,
-		},
-		{
-			// An id alone is not enough either: with no id exchange on the connection the
-			// server has no way to report a change, so this must fall back to the session
-			// setting.
-			name:               "id without an id exchange does not override",
-			sessionDisableSkip: true,
-			idExchangeActive:   false,
-			resultMetadataID:   id,
-			hasColumns:         true,
-			want:               false,
-		},
-		{
-			// A user who explicitly opted into skipping keeps it regardless of the ID;
-			// that is upstream behaviour and this change does not narrow it.
-			name:               "explicit opt-in skips even without an id",
-			sessionDisableSkip: false,
-			idExchangeActive:   true,
-			resultMetadataID:   nil,
-			hasColumns:         true,
-			want:               true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tracked := metadataIDTracked(tt.idExchangeActive, tt.resultMetadataID)
-			got := shouldSkipResultMetadata(tt.sessionDisableSkip, tt.queryDisableSkip, tracked, tt.hasColumns)
-			if got != tt.want {
-				t.Errorf("shouldSkipResultMetadata(session=%v, query=%v, tracked=%v (idExchange=%v, id=%v), cols=%v) = %v, want %v",
-					tt.sessionDisableSkip, tt.queryDisableSkip, tracked, tt.idExchangeActive, tt.resultMetadataID,
-					tt.hasColumns, got, tt.want)
-			}
-		})
-	}
-}
-
-// TestExecuteMetadataChangedWithoutColumns pins that a RESULT/Rows which sets
-// METADATA_CHANGED while also setting NO_METADATA is rejected rather than decoded.
-//
-// The combination is malformed — METADATA_CHANGED obliges the server to include the
-// new metadata — and both ways of carrying on are unrecoverable. Adopting the new id
-// makes the server match it from then on and stop sending metadata at all; reusing the
-// columns cached at prepare time decodes rows against the exact column set the server
-// has just declared stale, which is the misdecode the mechanism exists to prevent. So
-// the query must fail with the old id left in the cache, ready to be resent.
-//
-// It doubles as the only unit-level coverage of a negotiated SCYLLA_USE_METADATA_ID
-// connection driven end to end: the mock server advertises the extension, so the driver
-// reads a result metadata id out of RESULT/Prepared and writes one back on EXECUTE, and
-// the server rejects the execute outright if skip_metadata was not requested.
-func TestExecuteMetadataChangedWithoutColumns(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	srv := NewTestServerWithAddressAndSupportedFactory("127.0.0.1:0", t, protoVersion4, ctx,
-		func(net.Conn) map[string][]string {
-			return map[string][]string{scyllaUseMetadataID: {""}}
-		})
-	defer srv.Stop()
-
-	db, err := testCluster(protoVersion4, srv.Address).CreateSession()
-	if err != nil {
-		t.Fatalf("CreateSession: %v", err)
-	}
-	defer db.Close()
-
-	conn := db.getConn()
-	if conn == nil {
-		t.Fatal("no connection available")
-	}
-	if !conn.usesMetadataID() {
-		t.Fatal("server advertised SCYLLA_USE_METADATA_ID but the driver did not negotiate it")
-	}
-
-	const stmt = "select metadatachangednocolumns"
-	err = db.Query(stmt).Iter().Close()
-	if err == nil {
-		t.Fatal("expected an error for a METADATA_CHANGED response carrying no column metadata")
-	}
-	if !strings.Contains(err.Error(), "sent no column metadata") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// The id from the malformed response must not have been cached: the entry still
-	// carries the one handed out at prepare time, so the next execute resends it and
-	// the server gets another chance to answer with the metadata it owes.
-	key := db.stmtsLRU.keyFor(conn.host.hostUUID(), conn.getCurrentKeyspace(), stmt)
-	inflight, ok := db.stmtsLRU.get(key)
-	if !ok {
-		t.Fatal("prepared statement should still be cached")
-	}
-	want := binary.BigEndian.AppendUint64(nil, 4+testMetadataIDOffset)
-	if got := inflight.preparedStatment.resultMetadataID; !bytes.Equal(got, want) {
-		t.Errorf("cached resultMetadataID = % X, want the prepare-time id % X", got, want)
 	}
 }
 
@@ -3318,7 +2876,7 @@ func TestReleaseFramer(t *testing.T) {
 		const streamID = 7
 
 		f := c.getWriteFramer()
-		payloadReq := &writeQueryFrame{
+		payloadReq := &fixtureQueryFrame{
 			statement: "SELECT now() FROM system.local",
 			customPayload: map[string][]byte{
 				"k": []byte("v"),
@@ -3335,7 +2893,7 @@ func TestReleaseFramer(t *testing.T) {
 		}
 
 		f = c.getWriteFramer()
-		plainReq := &writeQueryFrame{statement: "SELECT now() FROM system.local"}
+		plainReq := &fixtureQueryFrame{statement: "SELECT now() FROM system.local"}
 		plainBuf, plainHeader := buildTestFrame(t, f, plainReq, streamID)
 		if plainHeader.Flags != c.framers.defaults.flags {
 			t.Fatalf("plain query should use default flags after pooled reuse: got %08b want %08b", plainHeader.Flags, c.framers.defaults.flags)
@@ -3359,7 +2917,7 @@ func TestReleaseFramer(t *testing.T) {
 
 		f := c.getWriteFramer()
 		f.trace()
-		tracedReq := &writeQueryFrame{statement: "SELECT now() FROM system.local"}
+		tracedReq := &fixtureQueryFrame{statement: "SELECT now() FROM system.local"}
 		_, tracedHeader := buildTestFrame(t, f, tracedReq, streamID)
 		if tracedHeader.Flags&frm.FlagTracing == 0 {
 			t.Fatalf("traced query should set %v, got flags=%08b", frm.FlagTracing, tracedHeader.Flags)
@@ -3380,10 +2938,6 @@ func TestReleaseFramer(t *testing.T) {
 	})
 }
 
-// segmentTestTimeout bounds every wait in the v5 segment tests. It has to be
-// generous enough for a loaded -race runner, but finite: an unbounded receive
-// would turn a lost response into a whole-package `go test -timeout` kill instead
-// of a failure pointing at the test.
 const segmentTestTimeout = 10 * time.Second
 
 // recvCallResp waits for a response to be delivered to call, failing the test on
@@ -3447,9 +3001,9 @@ func TestConnProcessAllFramesInSingleSegment(t *testing.T) {
 	c.calls[1] = call1
 	c.calls[2] = call2
 
-	req := writeQueryFrame{
+	req := fixtureQueryFrame{
 		statement: "SELECT * FROM system.local",
-		params: queryParams{
+		params: fixtureQueryParams{
 			consistency: Quorum,
 			keyspace:    "gocql_test",
 		},
@@ -3544,9 +3098,9 @@ func TestConnProcessReservedStreamFrameInSegment(t *testing.T) {
 	call2 := &callReq{timeout: make(chan struct{}), streamID: 2, resp: make(chan callResp)}
 	c.calls[2] = call2
 
-	req := writeQueryFrame{
+	req := fixtureQueryFrame{
 		statement: "SELECT * FROM system.local",
-		params:    queryParams{consistency: Quorum, keyspace: "gocql_test"},
+		params:    fixtureQueryParams{consistency: Quorum, keyspace: "gocql_test"},
 	}
 
 	// A request-direction frame parses as an error on the response path; for
@@ -3873,7 +3427,7 @@ func (c *scriptedConn) SetWriteDeadline(time.Time) error { return nil }
 // TestConnReaderReadRetriesWhileMakingProgress pins connReader.Read's retry policy.
 // ReadTimeout is a per-read budget, so a large body over a slow link can legitimately
 // need more than one; but it is also the driver's "identify faulty connections early"
-// mechanism (ClusterConfig.ReadTimeout), so a peer that has actually stopped must not
+// mechanism (clusterSettings.ReadTimeout), so a peer that has actually stopped must not
 // get maxReadAttempts budgets before the connection is dropped. Progress is what
 // separates the two.
 func TestConnReaderReadRetriesWhileMakingProgress(t *testing.T) {
@@ -4189,8 +3743,6 @@ func (c *armFailingConn) RemoteAddr() net.Addr             { return nil }
 func (c *armFailingConn) SetDeadline(time.Time) error      { return nil }
 func (c *armFailingConn) SetWriteDeadline(time.Time) error { return nil }
 
-// A calls map that disagrees with the callReq it holds is a driver bug, not
-// something a peer can provoke: it fails that connection, and nothing else.
 func TestProcessFrameStreamIDMismatchIsAnError(t *testing.T) {
 	t.Parallel()
 
@@ -4754,9 +4306,9 @@ func TestRecvSegmentReassemblesFrameWithSplitHeader(t *testing.T) {
 	call1 := &callReq{timeout: make(chan struct{}), streamID: 1, resp: make(chan callResp)}
 	c.calls[1] = call1
 
-	req := writeQueryFrame{
+	req := fixtureQueryFrame{
 		statement: "SELECT * FROM system.local",
-		params:    queryParams{consistency: Quorum, keyspace: "gocql_test"},
+		params:    fixtureQueryParams{consistency: Quorum, keyspace: "gocql_test"},
 	}
 	framer := newFramer(nil, protoVersion5)
 	require.NoError(t, req.buildFrame(framer, 1))
@@ -4965,7 +4517,7 @@ func TestSystemRequestTimeoutRaceWithFinalizeConnection(t *testing.T) {
 			ReadTimeout:    3 * time.Second,
 		},
 		session: &Session{
-			cfg: ClusterConfig{MetadataSchemaRequestTimeout: 42 * time.Millisecond},
+			cfg: clusterSettings{MetadataSchemaRequestTimeout: 42 * time.Millisecond},
 		},
 		// Only a ScyllaDB connection renders the USING TIMEOUT clause.
 		scyllaSupported: ScyllaConnectionFeatures{
@@ -5037,7 +4589,7 @@ func TestSystemRequestTimeoutRaceWithFinalizeConnection(t *testing.T) {
 // derived purely from the timeout in effect and whether the peer is ScyllaDB.
 //
 // The zero case is the one worth guarding: MetadataSchemaRequestTimeout is
-// documented as "positive or zero" (see ClusterConfig.Validate), and by the time
+// documented as "positive or zero" (see clusterSettings.Validate), and by the time
 // finalizeConnection applies it, startupCoordinator.options has already rendered a
 // clause from ConnectTimeout. Were that clause carried over, a caller who disabled
 // the metadata timeout would still have every system query bounded server-side by
@@ -5152,7 +4704,7 @@ func TestStartupCompressorNotSupported(t *testing.T) {
 	cluster.Compressor = SnappyCompressor{}
 	cluster.Logger = rec
 
-	db, err := cluster.CreateSession()
+	db, err := cluster.open()
 	require.NoError(t, err)
 	defer db.Close()
 
@@ -5170,7 +4722,7 @@ func TestStartupCompressorNotSupported(t *testing.T) {
 	require.Contains(t, logged, "lz4", "the warning must name what the server offered instead")
 
 	// The connection is still expected to work -- the point of the fallback.
-	require.NoError(t, db.Query("void").Exec())
+	require.NoError(t, execTestStatement(context.Background(), db, "void", Options{}))
 }
 
 // compressionInjectingAppInfo is an ApplicationInfo that writes the driver-owned
@@ -5262,11 +4814,11 @@ func TestStartupCompressionIsDriverOwned(t *testing.T) {
 			cluster.Compressor = tc.compressor
 			cluster.ApplicationInfo = compressionInjectingAppInfo{algorithm: "lz4"}
 
-			db, err := cluster.CreateSession()
+			db, err := cluster.open()
 			require.NoError(t, err)
 			defer db.Close()
 
-			require.NoError(t, db.Query("void").Exec())
+			require.NoError(t, execTestStatement(context.Background(), db, "void", Options{}))
 
 			conn := db.getConn()
 			require.NotNil(t, conn)

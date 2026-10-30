@@ -159,7 +159,7 @@ func TestStep05TableRefreshCannotCrossDropAndFailure(t *testing.T) {
 	s, mock := refreshAllSchemaSession(t)
 	entered, release := make(chan struct{}), make(chan struct{})
 	var gate atomic.Bool
-	mock.iterFor = func(stmt string) *Iter {
+	mock.iterFor = func(stmt string) *nativeResultFixture {
 		if strings.Contains(stmt, "FROM system_schema.tables") && gate.CompareAndSwap(false, true) {
 			close(entered)
 			<-release

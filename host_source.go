@@ -68,11 +68,7 @@ func (c *cassVersion) Set(v string) error {
 		return nil
 	}
 
-	return c.UnmarshalCQL(nil, []byte(v))
-}
-
-func (c *cassVersion) UnmarshalCQL(info TypeInfo, data []byte) error {
-	return c.unmarshal(data)
+	return c.unmarshal([]byte(v))
 }
 
 func (c *cassVersion) unmarshal(data []byte) error {
@@ -803,27 +799,6 @@ func hostInfoFromMap(row map[string]any, defaultPort int) (*HostInfo, error) {
 	return &host, nil
 }
 
-func hostInfoFromIter(iter *Iter, defaultPort int) (*HostInfo, error) {
-	defer iter.Close()
-
-	rows, err := iter.SliceMap()
-	if err != nil {
-		// TODO(zariel): make typed error
-		return nil, err
-	}
-
-	if len(rows) == 0 {
-		return nil, errors.New("query returned 0 rows")
-	}
-
-	host, err := hostInfoFromMap(rows[0], defaultPort)
-	if err != nil {
-		return nil, err
-	}
-	return host, nil
-}
-
-// debounceRingRefresh submits a ring refresh request to the ring refresh debouncer.
 func (s *Session) debounceRingRefresh() {
 	s.ringRefresher.Debounce()
 }

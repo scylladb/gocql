@@ -1,0 +1,106 @@
+{
+  "accepted_predecessor": "f542da9507d9a6bd05a9e3278ff71bd3f7201a3a",
+  "agent": "/root/step10_remove_legacy",
+  "artifacts": {
+    "step10-api-audit.json": {
+      "path": "feature-specs/evidence/step10-api-audit.json",
+      "sha256": "78fa4fff8f785a29175bdfe4ececa76c8640d67970da8819f6ab349cd6cf2a9c"
+    },
+    "step10-assertion-source.json": {
+      "path": "feature-specs/evidence/step10-assertion-source.json",
+      "sha256": "23826de6f3c36a693a57eee75c9efcd0497bbde63373b36c474ee8e11860527e"
+    },
+    "step10-baseline-preservation.json": {
+      "path": "feature-specs/evidence/step10-baseline-preservation.json",
+      "sha256": "1547d47c65add4b965a1c4d11855025a6a47a3c21eafb16b415bb61f7d72266e"
+    },
+    "step10-checks.json": {
+      "path": "feature-specs/evidence/step10-checks.json",
+      "sha256": "feec477aa149c260de8e5d50dfab7d93cbe05837f6f8bd9f5262b26f6f23c2b3"
+    },
+    "step10-final-source.json": {
+      "path": "feature-specs/evidence/step10-final-source.json",
+      "sha256": "c9f09480622f2a3313ce91192de153fb3c985f83d47e5c67dbd73a1b6b692ab4"
+    },
+    "step10-header-equivalence.json": {
+      "path": "feature-specs/evidence/step10-header-equivalence.json",
+      "sha256": "0fd6d2a2ad3e8d5de42c5dec4c4d9ebbb45d59a34dc0359515b9a69b58f21f7c"
+    },
+    "step10-native-cassandra.json": {
+      "path": "feature-specs/evidence/step10-native-cassandra.json",
+      "sha256": "d787d821490ed3204903f4bba1c5a6e54e0934e60e2b5ead05692682fc794a2a"
+    },
+    "step10-native-config.json": {
+      "path": "feature-specs/evidence/step10-native-config.json",
+      "sha256": "66388f0e8c427db1d5e42c72ac8202770e38a9d98aa2b45f8679d9860993763e"
+    },
+    "step10-native-outcomes.json": {
+      "path": "feature-specs/evidence/step10-native-outcomes.json",
+      "sha256": "031b7329e52b156118e85a5210dbda4f209a4e6d07fff97ec8d2783ff22b52da"
+    },
+    "step10-native-source.json": {
+      "path": "feature-specs/evidence/step10-native-source.json",
+      "sha256": "516e69033811d98bdd7c396a62df14a06cad792728410dfd95689fbc105b77e0"
+    },
+    "step10-native-stable.json": {
+      "path": "feature-specs/evidence/step10-native-stable.json",
+      "sha256": "1a48ade40f885e68082fcb3b04fb1d13c6ee923c06613860a43dec44202a94ae"
+    },
+    "step10-original-files.json": {
+      "path": "feature-specs/evidence/step10-original-files.json",
+      "sha256": "dfe6a64d94bf91bf85ccbec3785404d5f93b818a5cfaab533470d79cf5d377af"
+    },
+    "step10-streaming-boundary-audit.json": {
+      "path": "feature-specs/evidence/step10-streaming-boundary-audit.json",
+      "sha256": "d5d10dca8aa501fa1472ef3bc6f7640f599f2c6c4cd7d408479d57292a924d8f"
+    },
+    "step10-test-disposition.json": {
+      "path": "feature-specs/evidence/step10-test-disposition.json",
+      "sha256": "0897eb38a55774f0b83c113e5d0b5c6e0294052b91b434173f0ec87fe0f7cc63"
+    },
+    "step10-test-mapping.json": {
+      "path": "feature-specs/evidence/step10-test-mapping.json",
+      "sha256": "40bbe26576a2ca4c4eb4f4945d901396f08e45d6c08d8a03f6882fdea854be34"
+    }
+  },
+  "baseline": {
+    "current_selected_native_behavior_passes": 158,
+    "identities": 174,
+    "not_rerun_current": "16 development SELECT-without-FROM identities remain preserved and token-identical; their actual successful runtime evidence is historical step09. The complete current/final174 matrix remains14/17.",
+    "original_bodies_verified": 174,
+    "original_files_verified": 29,
+    "translated_change": "Only TestSessionMetadataAPIs changes tokens: existing v2TabletsSupported reads its own typed session instead of the removed global legacy probe; every existing assertion remains.",
+    "translated_token_identical_to_step09": 173
+  },
+  "branch": "v2-10-remove-legacy",
+  "build_and_static_gate": "All root/supporting packages, default/unit/integration/CCM/all/debug tags and nested lz4/benchmark modules compile. Fullamd64 race and full386 unit runs pass. arm64 cross compilation passes without a runtime claim. Vet and diff--check pass. AST export/callsite/streaming-boundary audit has0 findings.",
+  "final_source_count": 412,
+  "final_source_sha256": "c9f09480622f2a3313ce91192de153fb3c985f83d47e5c67dbd73a1b6b692ab4",
+  "gate": "complete",
+  "limitations": [
+    "Historical single-host replay captures mismatch typed control traffic; the exact failed command/panic is retained and is not passing evidence. Step13 must regenerate typed-control captures and restore equivalent operational benchmark select/insert assertions while consolidating modules.",
+    "Final facade/package extraction, complete documentation, full architecture/server matrix and comprehensive performance/release proof remain11\u201317 as planned.",
+    "Native runs cover selected affected lanes rather than replaying all12 step09 packages. Individual skips remain visible and do not count as passes."
+  ],
+  "native": {
+    "ccm_packages": 1,
+    "modes": [
+      "Scylla2026.3.4 rawv4 focused/full",
+      "Scylla2026.3.4 mutualTLSv4 full",
+      "Cassandra5.0.9 rawv4 focused stream",
+      "Cassandra5.0.9 LZ4v5 full",
+      "Scylla exact-node CCM stop/join/restart"
+    ],
+    "owned_cleanup": "Both runners exited0; both namespaced cleanup sequences and all6 owned node joins/endpoints-refused checks passed. The development lane and unrelated workloads were untouched.",
+    "packages_passed": 6,
+    "root_packages": 5
+  },
+  "native_source_count": 412,
+  "native_source_sha256": "516e69033811d98bdd7c396a62df14a06cad792728410dfd95689fbc105b77e0",
+  "provenance_delta": "After both runners stopped/joined,24 header-only deltas were added/restored (21 in runtime source snapshot,3 audit tools). Complete token streams excluding comments match; build constraints are byte-identical; final combined-tag/386/benchmark builds pass. Runtime/native evidence belongs to the original412-file snapshot and is connected to the committed source by this explicit proof.",
+  "removed_test_disposition": "290 removed test/example/benchmark declarations and177 deleted source files have accepted-source hashes and explicit supported-behavior/obsolete-contract dispositions. Underlying96 binary fixtures and typed scalar/container/runtime assertions remain; arbitrary reflection coercions, v1 mutable object layouts and manual metrics are deliberately removed, not claimed equivalent by assertion counts.",
+  "root_owned_files_excluded": [
+    "feature-specs/execution/STATUS.md",
+    "feature-specs/execution/RESUME.md"
+  ]
+}

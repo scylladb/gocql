@@ -52,9 +52,12 @@ type ReplayDialer struct {
 	net.Dialer
 }
 
-func (d *ReplayDialer) DialContext(ctx context.Context, network, addr string) (conn net.Conn, err error) {
-	sourcePort := gocql.ScyllaGetSourcePort(ctx)
-	return NewConnectionReplayer(path.Join(d.dir, fmt.Sprintf("%s-%d", addr, sourcePort)), d.comp)
+func (d *ReplayDialer) DialContext(ctx context.Context, target gocql.DialTarget) (conn net.Conn, err error) {
+	sourcePort := target.LocalAddress.Port()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return NewConnectionReplayer(path.Join(d.dir, fmt.Sprintf("%s-%d", target.Address, sourcePort)), d.comp)
 }
 
 // NewConnectionReplayer answers requests from the recording at fname.
@@ -600,3 +603,5 @@ type FrameRecorded struct {
 	Response []byte
 	Hash     int64
 }
+
+var _ gocql.Dialer = (*ReplayDialer)(nil)

@@ -56,15 +56,14 @@ func (p PoolConfig) buildPool(session *Session) *policyConnPool {
 	return newPolicyConnPool(session)
 }
 
-// ClusterConfig is a struct to configure the default cluster implementation
+// clusterSettings is a struct to configure the default cluster implementation
 // of gocql. It has a variety of attributes that can be used to modify the
 // behavior to fit the most common use cases. Applications that require a
 // different setup must implement their own cluster.
-type ClusterConfig struct {
+type clusterSettings struct {
 	disableClientRouteEvents bool
 	// BatchObserver will set the provided batch observer on all queries created from this session.
 	// Use it to collect metrics / stats from batch queries by providing an implementation of BatchObserver.
-	BatchObserver BatchObserver
 	// Dialer will be used to establish all connections created for this Cluster.
 	// If not provided, a default dialer configured with ConnectTimeout will be used.
 	// Dialer is ignored if HostDialer is provided.
@@ -73,7 +72,7 @@ type ClusterConfig struct {
 	ApplicationInfo ApplicationInfo
 	// DNSResolver Resolves DNS names to IP addresses
 	DNSResolver DNSResolver
-	// Logger for this ClusterConfig.
+	// Logger for this clusterSettings.
 	// If not specified, defaults to the gocql.defaultLogger.
 	Logger StdLogger
 	// HostDialer will be used to establish all connections for this Cluster.
@@ -92,7 +91,6 @@ type ClusterConfig struct {
 	ConnectObserver ConnectObserver
 	// QueryObserver will set the provided query observer on all queries created from this session.
 	// Use it to collect metrics / stats from queries by providing an implementation of QueryObserver.
-	QueryObserver QueryObserver
 	// AddressTranslator will translate addresses found on peer discovery and/or
 	// node change events.
 	AddressTranslator AddressTranslator
@@ -111,7 +109,7 @@ type ClusterConfig struct {
 	PoolConfig PoolConfig
 	// Default retry policy to use for queries.
 	// Default: SimpleRetryPolicy{NumRetries: 3}.
-	oldRetryPolicy oldRetryPolicy
+	defaultProfile Profile
 	// ConvictionPolicy decides whether to mark host as down based on the error and host info.
 	// Default: SimpleConvictionPolicy
 	ConvictionPolicy ConvictionPolicy
@@ -119,7 +117,6 @@ type ClusterConfig struct {
 	ReconnectionPolicy ReconnectionPolicy
 	// A reconnection policy to use for reconnecting when connecting to the cluster first time.
 	InitialReconnectionPolicy ReconnectionPolicy
-	WarningsHandlerBuilder    WarningHandlerBuilder
 	// SslOpts configures TLS use when HostDialer is not set.
 	// SslOpts is ignored if HostDialer is set.
 	SslOpts *SslOptions
@@ -433,7 +430,7 @@ type legacyDialer interface {
 	DialContext(ctx context.Context, network, addr string) (net.Conn, error)
 }
 
-// NewCluster generates a new config for the default cluster implementation.
+// newClusterSettings generates a new config for the default cluster implementation.
 //
 // The supplied hosts are used to initially connect to the cluster then the rest of
 // the ring will be automatically discovered. It is recommended to use the value set in
@@ -442,9 +439,9 @@ type legacyDialer interface {
 // address, which is used to index connected hosts. If the domain name specified
 // resolves to more than 1 IP address then the driver may connect multiple times to
 // the same host, and will not mark the node being down or up from events.
-func NewCluster(hosts ...string) *ClusterConfig {
+func newClusterSettings(hosts ...string) *clusterSettings {
 	logger := &defaultLogger{}
-	cfg := &ClusterConfig{
+	cfg := &clusterSettings{
 		Hosts:                         hosts,
 		CQLVersion:                    "3.0.0",
 		Timeout:                       11 * time.Second,
@@ -469,7 +466,6 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		WriteCoalesceWaitTime:         200 * time.Microsecond,
 		MetadataSchemaRequestTimeout:  60 * time.Second,
 		DisableSkipMetadata:           true,
-		WarningsHandlerBuilder:        DefaultWarningHandlerBuilder,
 		Logger:                        logger,
 		DNSResolver:                   defaultDnsResolver,
 		EventBusConfig: eventbus.EventBusConfig{
@@ -480,28 +476,28 @@ func NewCluster(hosts ...string) *ClusterConfig {
 	return cfg
 }
 
-func (cfg *ClusterConfig) logger() StdLogger {
+func (cfg *clusterSettings) logger() StdLogger {
 	if cfg.Logger == nil {
 		return &defaultLogger{}
 	}
 	return cfg.Logger
 }
 
-// CreateSession initializes the cluster based on this config and returns a
+// open initializes the cluster based on this config and returns a
 // session object that can be used to interact with the database.
-func (cfg *ClusterConfig) CreateSession() (*Session, error) {
-	return NewSession(*cfg)
+func (cfg *clusterSettings) open() (*Session, error) {
+	return connectSettings(*cfg)
 }
 
-func (cfg *ClusterConfig) CreateSessionNonBlocking() (*Session, error) {
-	return NewSessionNonBlocking(*cfg)
+func (cfg *clusterSettings) openAsync() (*Session, error) {
+	return connectSettingsAsync(*cfg)
 }
 
-func (cfg *ClusterConfig) filterHost(host *HostInfo) bool {
+func (cfg *clusterSettings) filterHost(host *HostInfo) bool {
 	return !(cfg.HostFilter == nil || cfg.HostFilter.Accept(host))
 }
 
-func (cfg *ClusterConfig) ValidateAndInitSSL() error {
+func (cfg *clusterSettings) ValidateAndInitSSL() error {
 	cfg.actualSslOpts = nil
 	if cfg.SslOpts == nil {
 		return nil
@@ -516,7 +512,7 @@ func (cfg *ClusterConfig) ValidateAndInitSSL() error {
 	return nil
 }
 
-func (cfg *ClusterConfig) getActualTLSConfig() *tls.Config {
+func (cfg *clusterSettings) getActualTLSConfig() *tls.Config {
 	if cfg.actualSslOpts == nil {
 		return nil
 	}
@@ -527,9 +523,9 @@ func (cfg *ClusterConfig) getActualTLSConfig() *tls.Config {
 	return val.Clone()
 }
 
-type ClusterOption func(*ClusterConfig)
+type ClusterOption func(*clusterSettings)
 
-func (cfg *ClusterConfig) WithOptions(opts ...ClusterOption) *ClusterConfig {
+func (cfg *clusterSettings) WithOptions(opts ...ClusterOption) *clusterSettings {
 	for _, opt := range opts {
 		opt(cfg)
 	}
@@ -566,7 +562,7 @@ func WithTable(tableName string) func(*ClientRoutesConfig) {
 //
 // Enable it only when the client-route endpoint forwards to Scylla's Proxy
 // Protocol v2 shard-aware CQL listener and the proxy supplies the original client
-// source port. ClusterConfig.DisableShardAwarePort takes precedence.
+// source port. clusterSettings.DisableShardAwarePort takes precedence.
 func WithShardAwareness(enabled bool) func(*ClientRoutesConfig) {
 	return func(cfg *ClientRoutesConfig) {
 		cfg.EnableShardAwareness = enabled
@@ -584,14 +580,14 @@ func WithShardAwareness(enabled bool) func(*ClientRoutesConfig) {
 // private endpoints commonly use NAT. Use WithShardAwareness to opt in only when
 // the endpoint targets Scylla's Proxy Protocol v2 shard-aware CQL listener and
 // preserves the original client source port. Basic shard awareness remains enabled.
-func WithClientRoutes(opts ...ClientRoutesOption) func(*ClusterConfig) {
+func WithClientRoutes(opts ...ClientRoutesOption) func(*clusterSettings) {
 	pmCfg := ClientRoutesConfig{
 		TableName: "system.client_routes",
 	}
 	for _, opt := range opts {
 		opt(&pmCfg)
 	}
-	return func(cfg *ClusterConfig) {
+	return func(cfg *clusterSettings) {
 		cfg.ClientRoutesConfig = &pmCfg
 		if len(cfg.Hosts) == 0 {
 			for _, ep := range pmCfg.Endpoints {
@@ -604,13 +600,13 @@ func WithClientRoutes(opts ...ClientRoutesOption) func(*ClusterConfig) {
 	}
 }
 
-func (cfg *ClusterConfig) applyClientRoutesConfig() {
+func (cfg *clusterSettings) applyClientRoutesConfig() {
 	if cfg.ClientRoutesConfig != nil && !cfg.ClientRoutesConfig.EnableShardAwareness {
 		cfg.DisableShardAwarePort = true
 	}
 }
 
-func (cfg *ClusterConfig) Validate() error {
+func (cfg *clusterSettings) Validate() error {
 	if len(cfg.Hosts) == 0 {
 		return ErrNoHosts
 	}

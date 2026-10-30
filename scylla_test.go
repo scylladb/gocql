@@ -33,7 +33,7 @@ func TestScyllaConnPickerPickNilToken(t *testing.T) {
 		s.conns = []*Conn{{
 			streams: streams.New(),
 		}}
-		if s.Pick(Token(nil), nil) != s.conns[0] {
+		if s.Pick(Token(nil)) != s.conns[0] {
 			t.Fatal("expected connection")
 		}
 	})
@@ -42,7 +42,7 @@ func TestScyllaConnPickerPickNilToken(t *testing.T) {
 		s.conns = []*Conn{{
 			streams: streams.New(),
 		}}
-		if s.Pick(Token(nil), nil) != s.conns[0] {
+		if s.Pick(Token(nil)) != s.conns[0] {
 			t.Fatal("expected connection")
 		}
 	})
@@ -51,20 +51,20 @@ func TestScyllaConnPickerPickNilToken(t *testing.T) {
 		s.conns = []*Conn{nil, {
 			streams: streams.New(),
 		}}
-		if s.Pick(Token(nil), nil) != s.conns[1] {
+		if s.Pick(Token(nil)) != s.conns[1] {
 			t.Fatal("expected connection")
 		}
-		if s.Pick(Token(nil), nil) != s.conns[1] {
+		if s.Pick(Token(nil)) != s.conns[1] {
 			t.Fatal("expected connection")
 		}
 	})
 
 	t.Run("multiple shards no conns", func(t *testing.T) {
 		s.conns = []*Conn{nil, nil}
-		if s.Pick(Token(nil), nil) != nil {
+		if s.Pick(Token(nil)) != nil {
 			t.Fatal("expected nil")
 		}
-		if s.Pick(Token(nil), nil) != nil {
+		if s.Pick(Token(nil)) != nil {
 			t.Fatal("expected nil")
 		}
 	})
@@ -93,8 +93,8 @@ func TestScyllaConnPickerPickInt64MatchesPick(t *testing.T) {
 
 			for _, tok := range tc.tokens {
 				tt := int64Token(tok)
-				want := s.Pick(tt, nil)
-				got := s.PickInt64(tok, nil)
+				want := s.Pick(tt)
+				got := s.PickInt64(tok)
 				if got != want {
 					t.Fatalf("token %d: PickInt64=%p, want %p (Pick)", tok, got, want)
 				}
@@ -126,7 +126,7 @@ func TestHostConnPoolPickConnRoutesInt64TokenToShardAwarePicker(t *testing.T) {
 	pool := &hostConnPool{connPicker: &picker}
 	host := int64SelectedHost{info: &HostInfo{}, tokenCasted: tok}
 
-	got := pool.PickConn(host, nil)
+	got := pool.PickConn(host)
 	if got != want {
 		t.Fatalf("PickConn returned %p (least-busy fallback?); want shard-aware conn %p for shard %d",
 			got, want, shard)
@@ -136,7 +136,7 @@ func TestHostConnPoolPickConnRoutesInt64TokenToShardAwarePicker(t *testing.T) {
 func hammerConnPicker(t *testing.T, wg *sync.WaitGroup, s *scyllaConnPicker, loops int) {
 	t.Helper()
 	for i := 0; i < loops; i++ {
-		if c := s.Pick(nil, nil); c == nil {
+		if c := s.Pick(nil); c == nil {
 			t.Error("unexpected nil")
 		}
 	}
@@ -222,7 +222,7 @@ func TestScyllaRandomConnPicker(t *testing.T) {
 			conns:     []*Conn{nil, mockConn(1)},
 		}
 
-		if s.Pick(Token(nil), nil) == nil {
+		if s.Pick(Token(nil)) == nil {
 			t.Fatal("expected connection")
 		}
 	})
@@ -246,7 +246,7 @@ func TestScyllaRandomConnPicker(t *testing.T) {
 				defer wg.Done()
 				for i := 0; i < 3; i++ {
 					select {
-					case connCh <- s.Pick(Token(nil), nil):
+					case connCh <- s.Pick(Token(nil)):
 					case <-ctx.Done():
 					}
 				}
@@ -349,7 +349,7 @@ func TestScyllaUseMetadataIDExtParsing(t *testing.T) {
 
 	// The extension backports the v5 result metadata id to v4, and opting in changes
 	// what EXECUTE and RESULT/Prepared carry. A server advertising it says nothing
-	// about the version this connection speaks: ClusterConfig.ProtoVersion is pinned
+	// about the version this connection speaks: clusterSettings.ProtoVersion is pinned
 	// without going through discoverProtocol, and newFramer accepts v3 through v5.
 	t.Run("newScyllaUseMetadataIDExt opts in on v4 only", func(t *testing.T) {
 		advertised := map[string][]string{scyllaUseMetadataID: {}}

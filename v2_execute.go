@@ -1090,10 +1090,10 @@ func (s *Session) pickTypedPool(pool *hostConnPool, target Target, routing Routi
 	if !ok {
 		if routing.Token.Set && !target.ShardID.Set && !routing.ShardID.Set {
 			if p, ok := pool.connPicker.(int64ConnPicker); ok {
-				return p.PickInt64(routing.Token.Value, nil)
+				return p.PickInt64(routing.Token.Value)
 			}
 		}
-		conn := pool.connPicker.Pick(nil, nil)
+		conn := pool.connPicker.Pick(nil)
 		shard := target.ShardID
 		if routing.ShardID.Set {
 			shard = routing.ShardID

@@ -110,7 +110,7 @@ func startServerWithShardAwarePort(t testing.TB, useTLS bool) (makeCluster makeC
 		srvRegular.Address, srvShardAware.Address)
 
 	makeCluster = func() shardAwareTestCluster {
-		var cluster *ClusterConfig
+		var cluster *clusterSettings
 		if useTLS {
 			cluster = createTestSslCluster(srvRegular.Address, defaultProto, false)
 
@@ -127,7 +127,7 @@ func startServerWithShardAwarePort(t testing.TB, useTLS bool) (makeCluster makeC
 				cluster.PoolConfig.HostSelectionPolicy = TokenAwareHostPolicy(RoundRobinHostPolicy())
 				cluster.Dialer = dialer
 				cluster.DisableShardAwarePort = disableShardAwarePort
-				return cluster.CreateSession()
+				return cluster.open()
 			},
 		}
 	}

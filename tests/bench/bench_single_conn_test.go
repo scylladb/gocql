@@ -1,157 +1,161 @@
+/*
+ * Copyright (C) 2026 ScyllaDB
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package bench_test
 
 import (
+	"context"
 	"flag"
 	"fmt"
-	"os"
-	"strconv"
-	"testing"
-
 	"github.com/scylladb/gocql/v2"
 	"github.com/scylladb/gocql/v2/dialer/recorder"
 	"github.com/scylladb/gocql/v2/dialer/replayer"
+	"os"
+	"strconv"
+	"strings"
+	"testing"
 )
 
+func benchConfig(d gocql.Dialer) gocql.Config {
+	c := gocql.DefaultConfig("192.168.100.11")
+	c.Pool.ConnectionsPerHost = 1
+	c.Metadata.InitialDiscovery = false
+	c.Dialer = d
+	return c
+}
+func benchExec(s *gocql.Session, cql string) error {
+	b, e := gocql.BindUnpreparedOwned(gocql.Statement[gocql.Unit, gocql.Unit]{CQL: cql, Params: gocql.NoParams, Rows: gocql.NoRows}, gocql.NewColumns(), gocql.Unit{})
+	if e != nil {
+		return e
+	}
+	defer b.Close()
+	_, e = gocql.Exec(context.Background(), s, b, gocql.Options{})
+	return e
+}
 func InitializeCluster() error {
-	cluster := gocql.NewCluster("192.168.100.11")
-	cluster.Consistency = gocql.Quorum
-
-	fallback := gocql.RoundRobinHostPolicy()
-	cluster.PoolConfig.HostSelectionPolicy = gocql.TokenAwareHostPolicy(fallback)
-
-	executor, err := gocql.NewSingleHostQueryExecutor(cluster)
-	if err != nil {
-		return fmt.Errorf("failed to create executor: %v", err)
+	s, e := gocql.Connect(context.Background(), benchConfig(nil))
+	if e != nil {
+		return e
 	}
-	defer executor.Close()
-
-	keyspace := "single_conn_bench"
-
-	err = executor.Exec(`DROP KEYSPACE IF EXISTS ` + keyspace)
-	if err != nil {
-		return fmt.Errorf("unable to drop keyspace: %v", err)
-	}
-
-	err = executor.Exec(fmt.Sprintf(`CREATE KEYSPACE %s WITH replication = {'class' : 'NetworkTopologyStrategy','replication_factor' : 1}`, keyspace))
-
-	if err != nil {
-		return fmt.Errorf("unable to create keyspace: %v", err)
-	}
-
-	if err = executor.Exec(fmt.Sprintf(`CREATE TABLE %s.%s (pk int, ck int, v text, PRIMARY KEY (pk));
-	`, keyspace, "table1")); err != nil {
-		return fmt.Errorf("unable to create table: %v", err)
+	defer s.Close()
+	for _, cql := range []string{"DROP KEYSPACE IF EXISTS single_conn_bench", "CREATE KEYSPACE single_conn_bench WITH replication = {'class':'NetworkTopologyStrategy','replication_factor':1}", "CREATE TABLE single_conn_bench.table1(pk int PRIMARY KEY,ck int,v text)"} {
+		if e := benchExec(s, cql); e != nil {
+			return e
+		}
 	}
 	return nil
 }
+func benchRead(s *gocql.Session, id int32) error {
+	p, e := gocql.Prepare(context.Background(), s, gocql.Statement[int32, gocql.Text]{CQL: "SELECT v FROM single_conn_bench.table1 WHERE pk = ?;", Params: gocql.OneParam(gocql.Int32), Rows: gocql.OneColumn(gocql.TextCodec)}, gocql.PrepareOptions{})
+	if e != nil {
+		return e
+	}
+	b, e := gocql.BindOwned(p, id)
+	if e != nil {
+		return e
+	}
+	defer b.Close()
+	rows, e := gocql.Run(context.Background(), s, b, gocql.Options{})
+	if e != nil {
+		return e
+	}
+	defer rows.Close()
+	for rows.Next() {
+		if !strings.HasPrefix(rows.Row().String(), "Name") {
+			return fmt.Errorf("wrong recorded name")
+		}
+	}
+	return rows.Err()
+}
 
+type benchInsert struct {
+	PK, CK int32
+	Value  string
+}
+
+func benchWrite(s *gocql.Session, id int32) error {
+	p, e := gocql.Prepare(context.Background(), s, gocql.Statement[benchInsert, gocql.Unit]{CQL: "INSERT INTO single_conn_bench.table1 (pk, ck, v) VALUES (?, ?, ?);", Params: gocql.Params(gocql.Param("pk", gocql.Int32, func(v benchInsert) int32 { return v.PK }), gocql.Param("ck", gocql.Int32, func(v benchInsert) int32 { return v.CK }), gocql.Param("v", gocql.StringEncoder, func(v benchInsert) string { return v.Value })), Rows: gocql.NoRows}, gocql.PrepareOptions{})
+	if e != nil {
+		return e
+	}
+	b, e := gocql.BindOwned(p, benchInsert{id, id % 5, fmt.Sprintf("Name_%d", id)})
+	if e != nil {
+		return e
+	}
+	defer b.Close()
+	_, e = gocql.Exec(context.Background(), s, b, gocql.Options{})
+	return e
+}
 func RecordSelectTraffic(size int, dir string) error {
-	cluster := gocql.NewCluster("192.168.100.11")
-	cluster.Consistency = gocql.Quorum
-
-	cluster.Dialer = recorder.NewRecordDialer(dir)
-
-	fallback := gocql.RoundRobinHostPolicy()
-	cluster.PoolConfig.HostSelectionPolicy = gocql.TokenAwareHostPolicy(fallback)
-
-	executor, err := gocql.NewSingleHostQueryExecutor(cluster)
-	if err != nil {
-		return fmt.Errorf("failed to create executor: %v", err)
+	s, e := gocql.Connect(context.Background(), benchConfig(recorder.NewRecordDialer(dir)))
+	if e != nil {
+		return e
 	}
-	defer executor.Close()
-
+	defer s.Close()
 	for i := 0; i < size; i++ {
-		iter := executor.Iter(`SELECT v FROM single_conn_bench.table1 WHERE pk = ?;`, i)
-		var name string
-		for iter.Scan(&name) {
-			if name[:4] != "Name" {
-				return fmt.Errorf("got wrong value for name: %s", name)
-			}
-		}
-		if err := iter.Close(); err != nil {
-			return fmt.Errorf("failed to close iterator: %v", err)
+		if e := benchRead(s, int32(i)); e != nil {
+			return e
 		}
 	}
 	return nil
 }
-
 func RecordInsertTraffic(size int, dir string) error {
-	cluster := gocql.NewCluster("192.168.100.11")
-	cluster.Consistency = gocql.Quorum
-
-	cluster.Dialer = recorder.NewRecordDialer(dir)
-
-	fallback := gocql.RoundRobinHostPolicy()
-	cluster.PoolConfig.HostSelectionPolicy = gocql.TokenAwareHostPolicy(fallback)
-
-	executor, err := gocql.NewSingleHostQueryExecutor(cluster)
-	if err != nil {
-		return fmt.Errorf("failed to create executor: %v", err)
+	s, e := gocql.Connect(context.Background(), benchConfig(recorder.NewRecordDialer(dir)))
+	if e != nil {
+		return e
 	}
-	defer executor.Close()
-
+	defer s.Close()
 	for i := 0; i < size; i++ {
-		err = executor.Exec(`INSERT INTO single_conn_bench.table1 (pk, ck, v) VALUES (?, ?, ?);`, i, i%5, fmt.Sprintf("Name_%d", i))
-		if err != nil {
-			return fmt.Errorf("failed to insert: %v", err)
+		if e := benchWrite(s, int32(i)); e != nil {
+			return e
 		}
 	}
 	return nil
 }
-
 func BenchmarkSingleConnectionSelect(b *testing.B) {
-	cluster := gocql.NewCluster("192.168.100.11")
-	cluster.Consistency = gocql.Quorum
-
-	cluster.Dialer = replayer.NewReplayDialer("rec_select")
-
-	fallback := gocql.RoundRobinHostPolicy()
-	cluster.PoolConfig.HostSelectionPolicy = gocql.TokenAwareHostPolicy(fallback)
-
-	executor, err := gocql.NewSingleHostQueryExecutor(cluster)
-	if err != nil {
-		b.Fatalf("failed to create executor: %v", err)
+	s, e := gocql.Connect(context.Background(), benchConfig(replayer.NewReplayDialer("rec_select")))
+	if e != nil {
+		b.Fatal(e)
 	}
-	defer executor.Close()
-
-	b.Run("Select", func(b *testing.B) {
-		for i := 0; i < 10; i++ {
-			b.Run("Case"+strconv.Itoa(i), func(b *testing.B) {
-				for j := 0; j < b.N; j++ {
-					_ = executor.Iter(`SELECT v FROM single_conn_bench.table1 WHERE pk = ?;`, i)
+	defer s.Close()
+	for i := 0; i < 10; i++ {
+		b.Run("Case"+strconv.Itoa(i), func(b *testing.B) {
+			for n := 0; n < b.N; n++ {
+				if e := benchRead(s, int32(i)); e != nil {
+					b.Fatal(e)
 				}
-			})
-		}
-	})
+			}
+		})
+	}
 }
-
 func BenchmarkSingleConnectionInsert(b *testing.B) {
-	cluster := gocql.NewCluster("192.168.100.11")
-	cluster.Consistency = gocql.Quorum
-
-	cluster.Dialer = replayer.NewReplayDialer("rec_insert")
-
-	fallback := gocql.RoundRobinHostPolicy()
-	cluster.PoolConfig.HostSelectionPolicy = gocql.TokenAwareHostPolicy(fallback)
-
-	executor, err := gocql.NewSingleHostQueryExecutor(cluster)
-	if err != nil {
-		b.Fatalf("failed to create executor: %v", err)
+	s, e := gocql.Connect(context.Background(), benchConfig(replayer.NewReplayDialer("rec_insert")))
+	if e != nil {
+		b.Fatal(e)
 	}
-	defer executor.Close()
-
-	b.Run("Insert", func(b *testing.B) {
-		for i := 0; i < 10; i++ {
-			b.Run("Case"+strconv.Itoa(i), func(b *testing.B) {
-				for j := 0; j < b.N; j++ {
-					err = executor.Exec(`INSERT INTO single_conn_bench.table1 (pk, ck, v) VALUES (?, ?, ?);`, i, i%5, fmt.Sprintf("Name_%d", i))
-					if err != nil {
-						b.Fatalf("failed to insert: %v", err)
-					}
+	defer s.Close()
+	for i := 0; i < 10; i++ {
+		b.Run("Case"+strconv.Itoa(i), func(b *testing.B) {
+			for n := 0; n < b.N; n++ {
+				if e := benchWrite(s, int32(i)); e != nil {
+					b.Fatal(e)
 				}
-			})
-		}
-	})
+			}
+		})
+	}
 }
 
 // TestMain records the golden files the benchmarks above replay, under

@@ -17,9 +17,6 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6/kind"
 )
 
-// driverConfigSchemaPath is the normative schema the report is written
-// against. It is shared with the other drivers, so it is validated as shipped:
-// nothing here may edit it to accommodate this driver.
 const driverConfigSchemaPath = "docs/driver-config-schema.json"
 
 // loadDriverConfigSchema compiles the schema exactly as shipped. Nothing here
@@ -95,13 +92,13 @@ func TestSchemaPermitsAnAbsentOrphanBound(t *testing.T) {
 // the schema constrains but nothing in the driver rejects.
 func driverConfigCases() []struct {
 	name         string
-	cfg          func(*ClusterConfig)
+	cfg          func(*clusterSettings)
 	policy       HostSelectionPolicy
 	isScyllaConn bool
 } {
 	return []struct {
 		name         string
-		cfg          func(*ClusterConfig)
+		cfg          func(*clusterSettings)
 		policy       HostSelectionPolicy
 		isScyllaConn bool
 	}{
@@ -109,7 +106,7 @@ func driverConfigCases() []struct {
 		{name: "defaults against scylla", isScyllaConn: true},
 		{
 			name: "every optional duration disabled",
-			cfg: func(c *ClusterConfig) {
+			cfg: func(c *clusterSettings) {
 				c.ConnectTimeout = 0
 				c.ReadTimeout = 0
 				c.WriteTimeout = 0
@@ -121,7 +118,7 @@ func driverConfigCases() []struct {
 		},
 		{
 			name: "sub-millisecond durations",
-			cfg: func(c *ClusterConfig) {
+			cfg: func(c *clusterSettings) {
 				c.ConnectTimeout = 500 * time.Microsecond
 				c.ReadTimeout = 500 * time.Microsecond
 				c.WriteTimeout = 500 * time.Microsecond
@@ -132,53 +129,53 @@ func driverConfigCases() []struct {
 		},
 		{
 			name: "in-flight limit above the stream-id range",
-			cfg:  func(c *ClusterConfig) { c.MaxRequestsPerConn = 40000 },
+			cfg:  func(c *clusterSettings) { c.MaxRequestsPerConn = 40000 },
 		},
 		{
 			name: "in-flight limit not a multiple of 64",
-			cfg:  func(c *ClusterConfig) { c.MaxRequestsPerConn = 100 },
+			cfg:  func(c *clusterSettings) { c.MaxRequestsPerConn = 100 },
 		},
 		{
 			name: "serial default consistency",
-			cfg:  func(c *ClusterConfig) { c.Consistency = LocalSerial },
+			cfg:  func(c *clusterSettings) { c.Consistency = LocalSerial },
 		},
 		{
 			name: "serial consistency set",
-			cfg:  func(c *ClusterConfig) { c.SerialConsistency = LocalSerial },
+			cfg:  func(c *clusterSettings) { c.SerialConsistency = LocalSerial },
 		},
 		{
 			name: "no reconnection policy",
-			cfg:  func(c *ClusterConfig) { c.ReconnectionPolicy = &NoReconnectionPolicy{} },
+			cfg:  func(c *clusterSettings) { c.ReconnectionPolicy = &NoReconnectionPolicy{} },
 		},
 		{
 			name: "constant reconnection with no attempts",
-			cfg: func(c *ClusterConfig) {
+			cfg: func(c *clusterSettings) {
 				c.ReconnectionPolicy = &ConstantReconnectionPolicy{MaxRetries: 0, Interval: time.Second}
 			},
 		},
 		{
 			name: "constant reconnection with a negative attempt limit",
-			cfg: func(c *ClusterConfig) {
+			cfg: func(c *clusterSettings) {
 				c.ReconnectionPolicy = &ConstantReconnectionPolicy{MaxRetries: -1, Interval: time.Second}
 			},
 		},
 		{
 			name: "nil reconnection policy",
-			cfg:  func(c *ClusterConfig) { c.ReconnectionPolicy = nil },
+			cfg:  func(c *clusterSettings) { c.ReconnectionPolicy = nil },
 		},
 		{
 			name: "typed-nil reconnection policy",
-			cfg:  func(c *ClusterConfig) { c.ReconnectionPolicy = (*ConstantReconnectionPolicy)(nil) },
+			cfg:  func(c *clusterSettings) { c.ReconnectionPolicy = (*ConstantReconnectionPolicy)(nil) },
 		},
 		{
 			name: "constant reconnection with a negative interval",
-			cfg: func(c *ClusterConfig) {
+			cfg: func(c *clusterSettings) {
 				c.ReconnectionPolicy = &ConstantReconnectionPolicy{MaxRetries: 3, Interval: -5 * time.Second}
 			},
 		},
 		{
-			name: "typed-nil retry policy",
-			cfg:  func(c *ClusterConfig) { c.oldRetryPolicy = (*SimpleRetryPolicy)(nil) },
+			name: "typed-nil custom retry policy",
+			cfg:  func(c *clusterSettings) { c.defaultProfile.Retry = (*step10CustomRetry)(nil) },
 		},
 		{
 			name:   "typed-nil load balancing fallback",
@@ -186,73 +183,73 @@ func driverConfigCases() []struct {
 		},
 		{
 			name: "exponential reconnection with unset intervals",
-			cfg:  func(c *ClusterConfig) { c.ReconnectionPolicy = &ExponentialReconnectionPolicy{MaxRetries: 3} },
+			cfg:  func(c *clusterSettings) { c.ReconnectionPolicy = &ExponentialReconnectionPolicy{MaxRetries: 3} },
 		},
 		{
 			name: "exponential reconnection with max below base",
-			cfg: func(c *ClusterConfig) {
+			cfg: func(c *clusterSettings) {
 				c.ReconnectionPolicy = &ExponentialReconnectionPolicy{MaxRetries: 3, InitialInterval: 5 * time.Second, MaxInterval: time.Second}
 			},
 		},
 		{
 			name: "custom reconnection policy",
-			cfg: func(c *ClusterConfig) {
+			cfg: func(c *clusterSettings) {
 				c.ReconnectionPolicy = &fakeReconnectionPolicy{ReconnectionPolicy: &NoReconnectionPolicy{}}
 			},
 		},
 		{
-			name: "downgrading consistency retry policy",
-			cfg: func(c *ClusterConfig) {
-				c.oldRetryPolicy = &DowngradingConsistencyRetryPolicy{ConsistencyLevelsToTry: []Consistency{One, Any}}
+			name: "safe retry three attempts",
+			cfg: func(c *clusterSettings) {
+				c.defaultProfile.Retry = SafeRetryPolicy{MaxAttempts: 3}
 			},
 		},
 		{
-			name: "exponential backoff retry policy with max below min",
-			cfg: func(c *ClusterConfig) {
-				c.oldRetryPolicy = &ExponentialBackoffRetryPolicy{NumRetries: 3, Min: 5 * time.Second, Max: time.Second}
+			name: "safe retry one attempt",
+			cfg: func(c *clusterSettings) {
+				c.defaultProfile.Retry = SafeRetryPolicy{MaxAttempts: 1}
 			},
 		},
 		{
-			name: "exponential backoff retry policy with sub-millisecond bounds",
-			cfg: func(c *ClusterConfig) {
-				c.oldRetryPolicy = &ExponentialBackoffRetryPolicy{NumRetries: 3, Min: time.Microsecond, Max: 2 * time.Microsecond}
+			name: "safe retry default limit",
+			cfg: func(c *clusterSettings) {
+				c.defaultProfile.Retry = SafeRetryPolicy{MaxAttempts: 0}
 			},
 		},
 		{
 			name: "custom retry policy",
-			cfg:  func(c *ClusterConfig) { c.oldRetryPolicy = &fakeRetryPolicy{oldRetryPolicy: &SimpleRetryPolicy{}} },
+			cfg:  func(c *clusterSettings) { c.defaultProfile.Retry = &step10CustomRetry{} },
 		},
 		{
-			name: "simple retry policy with a negative retry limit",
-			cfg:  func(c *ClusterConfig) { c.oldRetryPolicy = &SimpleRetryPolicy{NumRetries: -1} },
+			name: "safe retry negative limit",
+			cfg:  func(c *clusterSettings) { c.defaultProfile.Retry = SafeRetryPolicy{MaxAttempts: -1} },
 		},
 		{
-			name: "exponential backoff retry policy with a negative retry limit",
-			cfg:  func(c *ClusterConfig) { c.oldRetryPolicy = &ExponentialBackoffRetryPolicy{NumRetries: -2} },
+			name: "safe retry zero limit",
+			cfg:  func(c *clusterSettings) { c.defaultProfile.Retry = SafeRetryPolicy{MaxAttempts: 0} },
 		},
 		{
 			name: "tls without hostname verification",
-			cfg:  func(c *ClusterConfig) { c.SslOpts = &SslOptions{} },
+			cfg:  func(c *clusterSettings) { c.SslOpts = &SslOptions{} },
 		},
 		{
 			name: "tls with a caller-supplied config",
-			cfg:  func(c *ClusterConfig) { c.SslOpts = &SslOptions{Config: &tls.Config{InsecureSkipVerify: true}} },
+			cfg:  func(c *clusterSettings) { c.SslOpts = &SslOptions{Config: &tls.Config{InsecureSkipVerify: true}} },
 		},
 		{
 			name: "datacenter host filter",
-			cfg:  func(c *ClusterConfig) { c.HostFilter = DataCenterHostFilter("dc1") },
+			cfg:  func(c *clusterSettings) { c.HostFilter = DataCenterHostFilter("dc1") },
 		},
 		{
 			name: "whitelist host filter",
-			cfg:  func(c *ClusterConfig) { c.HostFilter = WhiteListHostFilter("127.0.0.1") },
+			cfg:  func(c *clusterSettings) { c.HostFilter = WhiteListHostFilter("127.0.0.1") },
 		},
 		{
 			name: "host dialer that cannot target a shard",
-			cfg:  func(c *ClusterConfig) { c.HostDialer = fakeHostDialer{} },
+			cfg:  func(c *clusterSettings) { c.HostDialer = fakeHostDialer{} },
 		},
 		{
 			name: "host dialer that can target a shard",
-			cfg:  func(c *ClusterConfig) { c.HostDialer = fakeShardDialer{} },
+			cfg:  func(c *clusterSettings) { c.HostDialer = fakeShardDialer{} },
 		},
 		{name: "dc-aware policy", policy: TokenAwareHostPolicy(DCAwareRoundRobinPolicy("dc1"))},
 		{
@@ -282,10 +279,10 @@ func driverConfigCases() []struct {
 
 // buildCaseReport produces the report a case describes, decoded for
 // validation.
-func buildCaseReport(t *testing.T, cfgFn func(*ClusterConfig), policy HostSelectionPolicy, isScyllaConn bool) any {
+func buildCaseReport(t *testing.T, cfgFn func(*clusterSettings), policy HostSelectionPolicy, isScyllaConn bool) any {
 	t.Helper()
 
-	cfg := *NewCluster("127.0.0.1")
+	cfg := *newClusterSettings("127.0.0.1")
 	if cfgFn != nil {
 		cfgFn(&cfg)
 	}
@@ -340,7 +337,7 @@ func TestDriverConfigReportConformsToSchema(t *testing.T) {
 // consistencyName).
 //
 // Nothing rejects such a configuration today, which is what makes it
-// reachable. Adding that rejection to ClusterConfig.Validate is a behaviour
+// reachable. Adding that rejection to clusterSettings.Validate is a behaviour
 // change beyond this report and is left to a follow-up; this test pins the
 // residual gap in the meantime, and should be deleted when the follow-up makes
 // it unreachable.
@@ -354,7 +351,7 @@ func TestDriverConfigReportUnrepresentableConsistency(t *testing.T) {
 		{"unrecognized default consistency", Consistency(0x42)},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			report := buildCaseReport(t, func(c *ClusterConfig) { c.Consistency = tt.cons }, nil, false)
+			report := buildCaseReport(t, func(c *clusterSettings) { c.Consistency = tt.cons }, nil, false)
 
 			err := schema.Validate(report)
 			if err == nil {

@@ -51,20 +51,22 @@ type RecordDialer struct {
 	net.Dialer
 }
 
-func (d *RecordDialer) DialContext(ctx context.Context, network, addr string) (conn net.Conn, err error) {
-	sourcePort := gocql.ScyllaGetSourcePort(ctx)
+func (d *RecordDialer) DialContext(ctx context.Context, target gocql.DialTarget) (conn net.Conn, err error) {
+	sourcePort := target.LocalAddress.Port()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	dialerWithLocalAddr := d.Dialer
-	dialerWithLocalAddr.LocalAddr, err = net.ResolveTCPAddr(network, fmt.Sprintf(":%d", sourcePort))
+	if target.LocalAddress.IsValid() {
+		dialerWithLocalAddr.LocalAddr = net.TCPAddrFromAddrPort(target.LocalAddress)
+	}
+
+	conn, err = dialerWithLocalAddr.DialContext(ctx, target.Network, target.Address)
 	if err != nil {
 		return nil, err
 	}
 
-	conn, err = dialerWithLocalAddr.DialContext(ctx, network, addr)
-	if err != nil {
-		return nil, err
-	}
-
-	rec, err := NewConnectionRecorder(path.Join(d.dir, fmt.Sprintf("%s-%d", addr, sourcePort)), conn, d.comp)
+	rec, err := NewConnectionRecorder(path.Join(d.dir, fmt.Sprintf("%s-%d", target.Address, sourcePort)), conn, d.comp)
 	if err != nil {
 		// Nothing else will close conn: the recorder never took ownership of it, and
 		// the caller is handed a nil net.Conn alongside the error. Left open it strands
@@ -500,3 +502,5 @@ func (c *ConnectionRecorder) SetReadDeadline(t time.Time) error {
 func (c *ConnectionRecorder) SetWriteDeadline(t time.Time) error {
 	return c.orig.SetWriteDeadline(t)
 }
+
+var _ gocql.Dialer = (*RecordDialer)(nil)

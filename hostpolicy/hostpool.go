@@ -1,157 +1,122 @@
+/*
+ * Copyright (C) 2026 ScyllaDB
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+// Package hostpolicy provides an optional health-weighted routing policy.
 package hostpolicy
 
 import (
-	"sync"
-
+	"fmt"
 	"github.com/hailocab/go-hostpool"
-
 	"github.com/scylladb/gocql/v2"
+	"sync"
 )
 
-// HostPool is a host policy which uses the bitly/go-hostpool library
-// to distribute queries between hosts and prevent sending queries to
-// unresponsive hosts. When creating the host pool that is passed to the policy
-// use an empty slice of hosts as the hostpool will be populated later by gocql.
-// See below for examples of usage:
-//
-//	// Create host selection policy using a simple host pool
-//	cluster.PoolConfig.HostSelectionPolicy = HostPool(hostpool.New(nil))
-//
-//	// Create host selection policy using an epsilon greedy pool
-//	cluster.PoolConfig.HostSelectionPolicy = HostPool(
-//	    hostpool.NewEpsilonGreedy(nil, 0, &hostpool.LinearEpsilonValueCalculator{}),
-//	)
-
-func HostPool(hp hostpool.HostPool) gocql.HostSelectionPolicy {
-	return &hostPoolHostPolicy{hostMap: map[string]*gocql.HostInfo{}, hp: hp}
+// HostPool adapts go-hostpool to the typed routing and attempt-observation API.
+// Each instance belongs to one session. Metadata generations update membership;
+// attempts report their outcome through RoutingPolicy.Observe.
+func HostPool(hp hostpool.HostPool) gocql.RoutingPolicy {
+	return &hostPoolHostPolicy{hp: hp}
 }
 
 type hostPoolHostPolicy struct {
-	hp      hostpool.HostPool
-	hostMap map[string]*gocql.HostInfo
-	mu      sync.RWMutex
+	mu          sync.Mutex
+	hp          hostpool.HostPool
+	generation  uint64
+	initialized bool
+	hosts       []gocql.HostSnapshot
+	byAddress   map[string]gocql.HostSnapshot
+	responses   map[gocql.UUID]hostpool.HostPoolResponse
 }
 
-func (r *hostPoolHostPolicy) Init(*gocql.Session)                       {}
-func (r *hostPoolHostPolicy) Reset()                                    {}
-func (r *hostPoolHostPolicy) IsOperational(*gocql.Session) error        { return nil }
-func (r *hostPoolHostPolicy) KeyspaceChanged(gocql.KeyspaceUpdateEvent) {}
-func (r *hostPoolHostPolicy) SetPartitioner(string)                     {}
-func (r *hostPoolHostPolicy) IsLocal(*gocql.HostInfo) bool              { return true }
-
-func (r *hostPoolHostPolicy) SetHosts(hosts []*gocql.HostInfo) {
-	peers := make([]string, len(hosts))
-	hostMap := make(map[string]*gocql.HostInfo, len(hosts))
-
-	for i, host := range hosts {
-		ip := host.ConnectAddress().String()
-		peers[i] = ip
-		hostMap[ip] = host
+func (p *hostPoolHostPolicy) Validate(_ *gocql.MetadataSnapshot) error {
+	if p.hp == nil {
+		return &gocql.ValidationError{Field: "hostpool", Err: fmt.Errorf("nil host pool")}
 	}
-
-	r.mu.Lock()
-	r.hp.SetHosts(peers)
-	r.hostMap = hostMap
-	r.mu.Unlock()
-}
-
-func (r *hostPoolHostPolicy) AddHost(host *gocql.HostInfo) {
-	ip := host.ConnectAddress().String()
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	// If the host addr is present and isn't nil return
-	if h, ok := r.hostMap[ip]; ok && h != nil {
-		return
-	}
-	// otherwise, add the host to the map
-	r.hostMap[ip] = host
-	// and construct a new peer list to give to the HostPool
-	hosts := make([]string, 0, len(r.hostMap))
-	for addr := range r.hostMap {
-		hosts = append(hosts, addr)
-	}
-
-	r.hp.SetHosts(hosts)
-}
-
-func (r *hostPoolHostPolicy) RemoveHost(host *gocql.HostInfo) {
-	ip := host.ConnectAddress().String()
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if _, ok := r.hostMap[ip]; !ok {
-		return
-	}
-
-	delete(r.hostMap, ip)
-	hosts := make([]string, 0, len(r.hostMap))
-	for _, host := range r.hostMap {
-		hosts = append(hosts, host.ConnectAddress().String())
-	}
-
-	r.hp.SetHosts(hosts)
-}
-
-func (r *hostPoolHostPolicy) HostUp(host *gocql.HostInfo) {
-	r.AddHost(host)
-}
-
-func (r *hostPoolHostPolicy) HostDown(host *gocql.HostInfo) {
-	r.RemoveHost(host)
-}
-
-func (r *hostPoolHostPolicy) Pick(qry gocql.ExecutableQuery) gocql.NextHost {
-	return func() gocql.SelectedHost {
-		r.mu.RLock()
-		defer r.mu.RUnlock()
-
-		if len(r.hostMap) == 0 {
-			return nil
-		}
-
-		hostR := r.hp.Get()
-		host, ok := r.hostMap[hostR.Host()]
-		if !ok {
-			return nil
-		}
-
-		return selectedHostPoolHost{
-			policy: r,
-			info:   host,
-			hostR:  hostR,
-		}
-	}
-}
-
-// selectedHostPoolHost is a host returned by the hostPoolHostPolicy and
-// implements the SelectedHost interface
-type selectedHostPoolHost struct {
-	policy *hostPoolHostPolicy
-	info   *gocql.HostInfo
-	hostR  hostpool.HostPoolResponse
-}
-
-func (host selectedHostPoolHost) Info() *gocql.HostInfo {
-	return host.info
-}
-
-func (host selectedHostPoolHost) Token() gocql.Token {
 	return nil
 }
-
-func (host selectedHostPoolHost) Mark(err error) {
-	ip := host.info.ConnectAddress().String()
-
-	host.policy.mu.RLock()
-	defer host.policy.mu.RUnlock()
-
-	if _, ok := host.policy.hostMap[ip]; !ok {
-		// host was removed between pick and mark
-		return
+func (p *hostPoolHostPolicy) setHosts(hosts []gocql.HostSnapshot) {
+	addresses := make([]string, 0, len(hosts))
+	p.hosts = nil
+	p.byAddress = make(map[string]gocql.HostSnapshot, len(hosts))
+	p.responses = make(map[gocql.UUID]hostpool.HostPoolResponse, len(hosts))
+	for _, h := range hosts {
+		if h.Enabled && h.Up {
+			address := h.Address.String()
+			addresses = append(addresses, address)
+			p.byAddress[address] = h
+			p.hosts = append(p.hosts, h)
+		}
 	}
+	p.hp.SetHosts(addresses)
+}
+func (p *hostPoolHostPolicy) Plan(info gocql.RoutingInfo, m *gocql.MetadataSnapshot) gocql.QueryPlan {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if m != nil && (!p.initialized || p.generation != m.Generation()) {
+		p.setHosts(m.Hosts())
+		p.generation = m.Generation()
+		p.initialized = true
+	}
+	return &hostPoolPlan{policy: p, hosts: p.hosts, byAddress: p.byAddress, info: info, seen: make(map[gocql.UUID]bool)}
+}
+func (p *hostPoolHostPolicy) Observe(event gocql.AttemptEvent) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if r := p.responses[event.Target.HostID]; r != nil && !event.Cancelled {
+		r.Mark(event.Err)
+	}
+}
 
-	host.hostR.Mark(err)
+type hostPoolPlan struct {
+	policy    *hostPoolHostPolicy
+	hosts     []gocql.HostSnapshot
+	byAddress map[string]gocql.HostSnapshot
+	info      gocql.RoutingInfo
+	seen      map[gocql.UUID]bool
+	fallback  int
+}
+
+func (p *hostPoolPlan) Next() (gocql.Target, bool) {
+	policy := p.policy
+	policy.mu.Lock()
+	defer policy.mu.Unlock()
+	emit := func(h gocql.HostSnapshot) (gocql.Target, bool) {
+		if p.seen[h.ID] || p.info.HostID.Set && p.info.HostID.Value != h.ID {
+			return gocql.Target{}, false
+		}
+		p.seen[h.ID] = true
+		return gocql.Target{HostID: h.ID, ShardID: p.info.ShardID, StrictShard: p.info.ShardID.Set}, true
+	}
+	for n := 0; n < 2*len(p.hosts); n++ {
+		r := policy.hp.Get()
+		h, ok := p.byAddress[r.Host()]
+		if !ok {
+			continue
+		}
+		if t, ok := emit(h); ok {
+			policy.responses[h.ID] = r
+			return t, true
+		}
+	}
+	for p.fallback < len(p.hosts) {
+		h := p.hosts[p.fallback]
+		p.fallback++
+		if t, ok := emit(h); ok {
+			return t, true
+		}
+	}
+	return gocql.Target{}, false
 }

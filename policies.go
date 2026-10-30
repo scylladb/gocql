@@ -27,8 +27,6 @@ package gocql
 // This file will be the future home for more policies
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"math"
 	"math/rand"
@@ -208,114 +206,6 @@ func (c *cowHostList) remove(host *HostInfo) bool {
 	return true
 }
 
-// RetryableQuery is an interface that represents a query or batch statement that
-// exposes the correct functions for the retry policy logic to evaluate correctly.
-type RetryableQuery interface {
-	Attempts() int
-	SetConsistency(c Consistency)
-	GetConsistency() Consistency
-	IsLWT() bool
-	Context() context.Context
-}
-
-type RetryType uint16
-
-const (
-	Retry         RetryType = 0x00 // retry on same connection
-	RetryNextHost RetryType = 0x01 // retry on another connection
-	Ignore        RetryType = 0x02 // same as Rethrow
-	Rethrow       RetryType = 0x03 // raise error and stop retrying
-)
-
-// ErrUnknownRetryType is returned if the retry policy returns a retry type
-// unknown to the query executor.
-var ErrUnknownRetryType = errors.New("unknown retry type returned by retry policy")
-
-// oldRetryPolicy interface is used by gocql to determine if a query can be attempted
-// again after a retryable error has been received. The interface allows gocql
-// users to implement their own logic to determine if a query can be attempted
-// again.
-//
-// See SimpleRetryPolicy as an example of implementing and using a oldRetryPolicy
-// interface.
-type oldRetryPolicy interface {
-	Attempt(RetryableQuery) bool
-	GetRetryType(error) RetryType
-}
-
-// LWTRetryPolicy is a similar interface to oldRetryPolicy
-// If a query is recognized as an LWT query and its oldRetryPolicy satisfies this
-// interface, then this interface will be used instead of oldRetryPolicy.
-type LWTRetryPolicy interface {
-	AttemptLWT(RetryableQuery) bool
-	GetRetryTypeLWT(error) RetryType
-}
-
-// SimpleRetryPolicy has simple logic for attempting a query a fixed number of times.
-//
-// See below for examples of usage:
-//
-//	//Assign to the cluster
-//	cluster.oldRetryPolicy = &gocql.SimpleRetryPolicy{NumRetries: 3}
-//
-//	//Assign to a query
-//	query.oldRetryPolicy(&gocql.SimpleRetryPolicy{NumRetries: 1})
-type SimpleRetryPolicy struct {
-	NumRetries int // Number of times to retry a query
-}
-
-// defaultRetryPolicy is the shared fallback when no oldRetryPolicy is configured.
-var defaultRetryPolicy oldRetryPolicy = &SimpleRetryPolicy{NumRetries: 3}
-
-// Attempt tells gocql to attempt the query again based on query.Attempts being less
-// than the NumRetries defined in the policy.
-func (s *SimpleRetryPolicy) Attempt(q RetryableQuery) bool {
-	return q.Attempts() <= s.NumRetries
-}
-
-func (s *SimpleRetryPolicy) AttemptLWT(q RetryableQuery) bool {
-	return s.Attempt(q)
-}
-
-func (s *SimpleRetryPolicy) GetRetryType(err error) RetryType {
-	var executedErr *QueryError
-	if errors.As(err, &executedErr) && executedErr.PotentiallyExecuted() && !executedErr.IsIdempotent() {
-		return Rethrow
-	}
-	return RetryNextHost
-}
-
-// Retrying on a different host is fine for normal (non-LWT) queries,
-// but in case of LWTs it will cause Paxos contention and possibly
-// even timeouts if other clients send statements touching the same
-// partition to the original node at the same time.
-func (s *SimpleRetryPolicy) GetRetryTypeLWT(err error) RetryType {
-	var executedErr *QueryError
-	if errors.As(err, &executedErr) && executedErr.PotentiallyExecuted() && !executedErr.IsIdempotent() {
-		return Rethrow
-	}
-	return Retry
-}
-
-// ExponentialBackoffRetryPolicy sleeps between attempts
-type ExponentialBackoffRetryPolicy struct {
-	NumRetries int
-	Min, Max   time.Duration
-}
-
-func (e *ExponentialBackoffRetryPolicy) Attempt(q RetryableQuery) bool {
-	if q.Attempts() > e.NumRetries {
-		return false
-	}
-	time.Sleep(e.napTime(q.Attempts()))
-	return true
-}
-
-func (e *ExponentialBackoffRetryPolicy) AttemptLWT(q RetryableQuery) bool {
-	return e.Attempt(q)
-}
-
-// used to calculate exponentially growing time
 func getExponentialTime(min time.Duration, max time.Duration, attempts int) time.Duration {
 	if min <= 0 {
 		min = 100 * time.Millisecond
@@ -331,98 +221,6 @@ func getExponentialTime(min time.Duration, max time.Duration, attempts int) time
 		return time.Duration(max)
 	}
 	return time.Duration(napDuration)
-}
-
-func (e *ExponentialBackoffRetryPolicy) GetRetryType(err error) RetryType {
-	var executedErr *QueryError
-	if errors.As(err, &executedErr) && executedErr.PotentiallyExecuted() && !executedErr.IsIdempotent() {
-		return Rethrow
-	}
-	return RetryNextHost
-}
-
-// Retrying on a different host is fine for normal (non-LWT) queries,
-// but in case of LWTs it will cause Paxos contention and possibly
-// even timeouts if other clients send statements touching the same
-// partition to the original node at the same time.
-func (e *ExponentialBackoffRetryPolicy) GetRetryTypeLWT(err error) RetryType {
-	var executedErr *QueryError
-	if errors.As(err, &executedErr) && executedErr.PotentiallyExecuted() && !executedErr.IsIdempotent() {
-		return Rethrow
-	}
-	return Retry
-}
-
-// DowngradingConsistencyRetryPolicy: Next retry will be with the next consistency level
-// provided in the slice
-//
-// On a read timeout: the operation is retried with the next provided consistency
-// level.
-//
-// On a write timeout: if the operation is an :attr:`~.UNLOGGED_BATCH`
-// and at least one replica acknowledged the write, the operation is
-// retried with the next consistency level.  Furthermore, for other
-// write types, if at least one replica acknowledged the write, the
-// timeout is ignored.
-//
-// On an unavailable exception: if at least one replica is alive, the
-// operation is retried with the next provided consistency level.
-
-type DowngradingConsistencyRetryPolicy struct {
-	ConsistencyLevelsToTry []Consistency
-}
-
-func (d *DowngradingConsistencyRetryPolicy) Attempt(q RetryableQuery) bool {
-	currentAttempt := q.Attempts()
-
-	if currentAttempt > len(d.ConsistencyLevelsToTry) {
-		return false
-	} else if currentAttempt > 0 {
-		// Never downgrade LWT queries (including serial consistency reads),
-		// as that would break Paxos/serial read guarantees.
-		if q.IsLWT() {
-			return false
-		}
-		q.SetConsistency(d.ConsistencyLevelsToTry[currentAttempt-1])
-	}
-	return true
-}
-
-func (d *DowngradingConsistencyRetryPolicy) GetRetryType(err error) RetryType {
-	var executedErr *QueryError
-	if errors.As(err, &executedErr) {
-		err = executedErr.err
-		if executedErr.PotentiallyExecuted() && !executedErr.IsIdempotent() {
-			return Rethrow
-		}
-	}
-
-	switch t := err.(type) {
-	case *RequestErrUnavailable:
-		if t.Alive > 0 {
-			return Retry
-		}
-		return Rethrow
-	case *RequestErrWriteTimeout:
-		if t.WriteType == "SIMPLE" || t.WriteType == "BATCH" || t.WriteType == "COUNTER" {
-			if t.Received > 0 {
-				return Ignore
-			}
-			return Rethrow
-		}
-		if t.WriteType == "UNLOGGED_BATCH" {
-			return Retry
-		}
-		return Rethrow
-	case *RequestErrReadTimeout:
-		return Retry
-	default:
-		return RetryNextHost
-	}
-}
-
-func (e *ExponentialBackoffRetryPolicy) napTime(attempts int) time.Duration {
-	return getExponentialTime(e.Min, e.Max, attempts)
 }
 
 type HostStateNotifier interface {
@@ -467,8 +265,7 @@ type HostSelectionPolicy interface {
 	// Multiple attempts of a single query execution won't call the returned NextHost function concurrently,
 	// so it's safe to have internal state without additional synchronization as long as every call to Pick returns
 	// a different instance of NextHost.
-	Pick(ExecutableQuery) NextHost
-	// IsOperational checks if host policy can properly work with given Session/Cluster/ClusterConfig
+	// IsOperational checks if host policy can properly work with given Session/Cluster/clusterSettings
 	IsOperational(*Session) error
 }
 
@@ -576,11 +373,6 @@ func (r *roundRobinHostPolicy) SetPartitioner(partitioner string)   {}
 func (r *roundRobinHostPolicy) Init(*Session)                       {}
 func (r *roundRobinHostPolicy) Reset()                              {}
 func (r *roundRobinHostPolicy) IsOperational(*Session) error        { return nil }
-
-func (r *roundRobinHostPolicy) Pick(qry ExecutableQuery) NextHost {
-	nextStartOffset := atomic.AddUint64(&r.lastUsedHostIdx, 1)
-	return roundRobbin(int(nextStartOffset), r.hosts.get().allHosts())
-}
 
 func (r *roundRobinHostPolicy) AddHost(host *HostInfo) {
 	r.hosts.add(host)
@@ -947,184 +739,22 @@ func partitionHealthy(replicas []*HostInfo, s *Session) {
 	}
 }
 
-func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
-	if qry == nil {
-		return t.fallback.Pick(qry)
-	}
+// Fast path: use the raw int64 hash when available, avoiding a Token-boxing
+// allocation. Falls back to Hash() otherwise (see int64Hasher in token.go).
 
-	routingKey, err := qry.GetRoutingKey()
-	if err != nil {
-		return t.fallback.Pick(qry)
-	} else if routingKey == nil {
-		return t.fallback.Pick(qry)
-	}
+// Presized to the known upper bound.
 
-	meta := t.getMetadataReadOnly()
-	if meta == nil || meta.tokenRing == nil {
-		return t.fallback.Pick(qry)
-	}
+// Zero-copy: replicas must not be mutated below unless needsMutation is true.
 
-	partitioner := qry.GetCustomPartitioner()
-	if partitioner == nil {
-		partitioner = meta.tokenRing.partitioner
-	}
+// Rare fallback (no tablet/replica-map match): GetHostForToken needs a
+// boxed Token, so box only here instead of on every query.
 
-	// Fast path: use the raw int64 hash when available, avoiding a Token-boxing
-	// allocation. Falls back to Hash() otherwise (see int64Hasher in token.go).
-	var token Token
-	var tokenCasted int64Token
-	var isInt64Token bool
-	if h64, ok := partitioner.(int64Hasher); ok {
-		tokenCasted = int64Token(h64.hashInt64(routingKey))
-		isInt64Token = true
-	} else {
-		token = partitioner.Hash(routingKey)
-		tokenCasted, isInt64Token = token.(int64Token)
-	}
+// Cache IsLWT() once: it is read on both the shuffle and avoid-slow-replicas
+// paths below, and computing it can take a lock on the query routing info.
 
-	var replicas []*HostInfo
+// fallback
 
-	if session := qry.GetSession(); session != nil && session.tabletsRoutingV1 && isInt64Token {
-		tabletReplicas := session.findTabletReplicasUnsafeForToken(qry.Keyspace(), qry.Table(), int64(tokenCasted))
-		if len(tabletReplicas) != 0 {
-			// Presized to the known upper bound.
-			replicas = make([]*HostInfo, 0, len(tabletReplicas))
-			hosts := t.hosts.get()
-			for _, replica := range tabletReplicas {
-				if host := hosts.hostByID(UUID(replica.HostUUIDValue())); host != nil {
-					replicas = append(replicas, host)
-				}
-			}
-		}
-	}
-
-	if len(replicas) == 0 {
-		var ht *hostTokens
-		if isInt64Token {
-			ht = meta.replicas[qry.Keyspace()].replicasForInt64(tokenCasted)
-		} else {
-			ht = meta.replicas[qry.Keyspace()].replicasFor(token)
-		}
-		if ht != nil {
-			needsMutation := t.shuffleReplicas || t.avoidSlowReplicas
-			if needsMutation {
-				replicas = make([]*HostInfo, len(ht.hosts))
-				copy(replicas, ht.hosts)
-			} else {
-				// Zero-copy: replicas must not be mutated below unless needsMutation is true.
-				replicas = ht.hosts
-			}
-		}
-	}
-
-	if len(replicas) == 0 {
-		// Rare fallback (no tablet/replica-map match): GetHostForToken needs a
-		// boxed Token, so box only here instead of on every query.
-		if token == nil {
-			token = tokenCasted
-		}
-		host, _ := meta.tokenRing.GetHostForToken(token)
-		replicas = []*HostInfo{host}
-	}
-
-	// Cache IsLWT() once: it is read on both the shuffle and avoid-slow-replicas
-	// paths below, and computing it can take a lock on the query routing info.
-	isLWT := qry.IsLWT()
-
-	if t.shuffleReplicas && !isLWT && len(replicas) > 1 {
-		shuffleHostsInPlace(replicas)
-	}
-
-	if s := qry.GetSession(); s != nil && !isLWT && t.avoidSlowReplicas {
-		partitionHealthy(replicas, s)
-	}
-
-	var (
-		fallbackIter NextHost
-		i, j, k      int
-		remote       [][]*HostInfo
-		tierer       HostTierer
-		tiererOk     bool
-		maxTier      uint
-	)
-
-	if tierer, tiererOk = t.fallback.(HostTierer); tiererOk {
-		maxTier = tierer.MaxHostTier()
-	} else {
-		maxTier = 1
-	}
-
-	if t.nonLocalReplicasFallback {
-		remote = make([][]*HostInfo, maxTier)
-	}
-
-	var used hostSet
-	return func() SelectedHost {
-		for i < len(replicas) {
-			h := replicas[i]
-			i++
-
-			var tier uint
-			if tiererOk {
-				tier = tierer.HostTier(h)
-			} else if t.fallback.IsLocal(h) {
-				tier = 0
-			} else {
-				tier = 1
-			}
-
-			if tier != 0 {
-				if t.nonLocalReplicasFallback {
-					remote[tier-1] = append(remote[tier-1], h)
-				}
-				continue
-			}
-
-			if h.IsUp() {
-				used.add(h)
-				if token == nil {
-					return int64SelectedHost{info: h, tokenCasted: tokenCasted}
-				}
-				return selectedHost{info: h, token: token}
-			}
-		}
-
-		if t.nonLocalReplicasFallback {
-			for j < len(remote) && k < len(remote[j]) {
-				h := remote[j][k]
-				k++
-
-				if k >= len(remote[j]) {
-					j++
-					k = 0
-				}
-
-				if h.IsUp() {
-					used.add(h)
-					if token == nil {
-						return int64SelectedHost{info: h, tokenCasted: tokenCasted}
-					}
-					return selectedHost{info: h, token: token}
-				}
-			}
-		}
-
-		if fallbackIter == nil {
-			// fallback
-			fallbackIter = t.fallback.Pick(qry)
-		}
-
-		// filter the token aware selected hosts from the fallback hosts
-		for fallbackHost := fallbackIter(); fallbackHost != nil; fallbackHost = fallbackIter() {
-			if !used.contains(fallbackHost.Info()) {
-				used.add(fallbackHost.Info())
-				return fallbackHost
-			}
-		}
-
-		return nil
-	}
-}
+// filter the token aware selected hosts from the fallback hosts
 
 type dcAwareRR struct {
 	local             string
@@ -1259,14 +889,6 @@ func roundRobbin(shift int, hosts ...[]*HostInfo) NextHost {
 	}
 }
 
-func (d *dcAwareRR) Pick(q ExecutableQuery) NextHost {
-	nextStartOffset := atomic.AddUint64(&d.lastUsedHostIdx, 1)
-	if d.disableDCFailover {
-		return roundRobbin(int(nextStartOffset), d.localHosts.get().allHosts())
-	}
-	return roundRobbin(int(nextStartOffset), d.localHosts.get().allHosts(), d.remoteHosts.get().allHosts())
-}
-
 // RackAwareRoundRobinPolicy is a host selection policies which will prioritize and
 // return hosts which are in the local rack, before hosts in the local datacenter but
 // a different rack, before hosts in all other datacenters
@@ -1366,14 +988,6 @@ func (d *rackAwareRR) RemoveHost(host *HostInfo) {
 
 func (d *rackAwareRR) HostUp(host *HostInfo)   { d.AddHost(host) }
 func (d *rackAwareRR) HostDown(host *HostInfo) { d.RemoveHost(host) }
-
-func (d *rackAwareRR) Pick(q ExecutableQuery) NextHost {
-	nextStartOffset := atomic.AddUint64(&d.lastUsedHostIdx, 1)
-	if d.disableDCFailover {
-		return roundRobbin(int(nextStartOffset), d.hosts[0].get().allHosts(), d.hosts[1].get().allHosts())
-	}
-	return roundRobbin(int(nextStartOffset), d.hosts[0].get().allHosts(), d.hosts[1].get().allHosts(), d.hosts[2].get().allHosts())
-}
 
 // ReadyPolicy defines a policy for when a HostSelectionPolicy can be used. After
 // each host connects during session initialization, the Ready method will be
@@ -1499,25 +1113,3 @@ func (e *ExponentialReconnectionPolicy) GetInterval(currentRetry int) time.Durat
 func (e *ExponentialReconnectionPolicy) GetMaxRetries() int {
 	return e.MaxRetries
 }
-
-type SpeculativeExecutionPolicy interface {
-	Attempts() int
-	Delay() time.Duration
-}
-
-type NonSpeculativeExecution struct{}
-
-// defaultNonSpecExec is a package-level singleton that avoids allocating a new
-// NonSpeculativeExecution every time a Query or Batch is initialised.
-var defaultNonSpecExec SpeculativeExecutionPolicy = &NonSpeculativeExecution{}
-
-func (sp NonSpeculativeExecution) Attempts() int        { return 0 } // No additional attempts
-func (sp NonSpeculativeExecution) Delay() time.Duration { return 1 } // The delay. Must be positive to be used in a ticker.
-
-type SimpleSpeculativeExecution struct {
-	NumAttempts  int
-	TimeoutDelay time.Duration
-}
-
-func (sp *SimpleSpeculativeExecution) Attempts() int        { return sp.NumAttempts }
-func (sp *SimpleSpeculativeExecution) Delay() time.Duration { return sp.TimeoutDelay }

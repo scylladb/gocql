@@ -71,7 +71,7 @@ func (d DefaultDialer) DialContext(ctx context.Context, target DialTarget) (net.
 
 type v2TLSHostDialer struct {
 	unixHostID func() UUID
-	legacy     *ClusterConfig
+	legacy     *clusterSettings
 	config     Config
 }
 

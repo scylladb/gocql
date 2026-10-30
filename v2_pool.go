@@ -258,13 +258,13 @@ func (p *typedConnPicker) takeRetired() []*Conn {
 	return v
 }
 
-func (p *typedConnPicker) Pick(t Token, q ExecutableQuery) *Conn {
+func (p *typedConnPicker) Pick(t Token) *Conn {
 	if raw, ok := t.(int64Token); ok {
-		return p.PickInt64(int64(raw), q)
+		return p.PickInt64(int64(raw))
 	}
 	return p.pickTarget(Target{}, RoutingInfo{})
 }
-func (p *typedConnPicker) PickInt64(t int64, q ExecutableQuery) *Conn {
+func (p *typedConnPicker) PickInt64(t int64) *Conn {
 	return p.pickTarget(Target{}, RoutingInfo{Token: Option[int64]{Value: t, Set: true}})
 }
 func (p *typedConnPicker) pickTarget(target Target, routing RoutingInfo) *Conn {

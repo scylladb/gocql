@@ -29,12 +29,14 @@ type scalarCodec[T any] struct {
 	clone       func(T) T
 }
 
-func (c scalarCodec[T]) CheckType(t DataType) error {
-	if t.Kind() != c.kind && (c.alternative == 0 || t.Kind() != c.alternative) {
-		return fmt.Errorf("gocql: codec for %s cannot use %s", c.kind, t.Kind())
+func checkScalarType(t DataType, kind, alternative Type) error {
+	if t.Kind() != kind && (alternative == 0 || t.Kind() != alternative) {
+		return fmt.Errorf("gocql: codec for %s cannot use %s", kind, t.Kind())
 	}
 	return nil
 }
+func (c scalarCodec[T]) CheckType(t DataType) error { return checkScalarType(t, c.kind, c.alternative) }
+
 func (c scalarCodec[T]) Encode(w *ValueWriter, v T) error {
 	if err := c.CheckType(w.Type()); err != nil {
 		return err

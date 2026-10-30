@@ -158,7 +158,7 @@ func TestHostConnPoolCloseDeadlock(t *testing.T) {
 
 	host := &HostInfo{connectAddress: net.ParseIP("127.0.0.1"), port: 9042}
 	session := &Session{
-		cfg: ClusterConfig{
+		cfg: clusterSettings{
 			NumConns:         2,
 			ConvictionPolicy: &SimpleConvictionPolicy{},
 		},
@@ -212,7 +212,7 @@ func TestHostConnPoolConnectClosedPoolDoesNotDeadlock(t *testing.T) {
 
 	host := &HostInfo{connectAddress: net.ParseIP("127.0.0.1"), port: 9042}
 	session := &Session{
-		cfg: ClusterConfig{
+		cfg: clusterSettings{
 			NumConns:         1,
 			ConvictionPolicy: &SimpleConvictionPolicy{},
 		},
@@ -563,7 +563,7 @@ func TestHostConnPoolConnectNoAttempts(t *testing.T) {
 	for _, retries := range []int{0, -1} {
 		t.Run(strconv.Itoa(retries), func(t *testing.T) {
 			session := &Session{
-				cfg:    ClusterConfig{ReconnectionPolicy: &ConstantReconnectionPolicy{MaxRetries: retries}},
+				cfg:    clusterSettings{ReconnectionPolicy: &ConstantReconnectionPolicy{MaxRetries: retries}},
 				logger: nopLogger{},
 			}
 			pool := newUndialedHostPool(t, session, "127.0.0.1")

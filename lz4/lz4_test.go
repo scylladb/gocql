@@ -34,7 +34,6 @@ import (
 	"testing"
 
 	"github.com/pierrec/lz4/v4"
-
 	"github.com/stretchr/testify/require"
 )
 
