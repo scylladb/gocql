@@ -17,7 +17,7 @@ import subprocess
 BASE = "cdba62aaf867b8e1877aa18dc56b555665bc17d6"
 E = Path("feature-specs/evidence")
 TASK = Path("/extra/scylladb/gocql-api-test-cluster/step13")
-CHECKS = TASK / "verified/checks"
+CHECKS = TASK / "combined/checks"
 AUDIT = Path("/tmp/gocql-step13-audit")
 
 
@@ -51,7 +51,7 @@ def log_events(path):
 
 native = {}
 for lane in ("stable", "cassandra"):
-    path = TASK / "verified" / (lane + ".json")
+    path = TASK / "combined" / (lane + ".json")
     receipt = read(path)
     assert receipt["status"] == "passed"
     assert all(all(row["joined"].values()) and row["endpoints_refused"] for row in receipt["lanes"])
@@ -186,8 +186,12 @@ for row in runtime["mapping"]:
 runtime["accepted_predecessor"] = BASE
 runtime["source_sha256"] = source
 runtime["actual_internal_source_deltas"] = read(AUDIT / "runtime-equivalence.json")
-assert len(runtime["actual_internal_source_deltas"]) == 14
-assert all(row["same_normalized_source"] for row in runtime["actual_internal_source_deltas"])
+assert len(runtime["actual_internal_source_deltas"]) == 18
+adapted={"internal/cluster/control.go::InternalControlConn.attemptReconnectToAnyOfHosts","internal/pool/connectionpool.go::InternalHostConnPool.fillingStopped","internal/settings/policies.go::SimpleConvictionPolicy.AddFailure","internal/settings/policies.go::SimpleConvictionPolicy.Reset"}
+assert {row["current_identity"] for row in runtime["actual_internal_source_deltas"] if not row["same_normalized_source"]}==adapted
+for row in runtime["actual_internal_source_deltas"]:
+    if row["current_identity"] in adapted:
+        row["disposition"]="Required public conviction contract repair: detached HostSnapshot replaces unnameable mutable HostInfo; existing failure/decision/reset behavior retained and covered by pool/native/external tests."
 runtime["normalization_scope"] = "Session method-to-function relocation and equivalent call form, LZ4 owner import rename, and comments removed by Go parsing. Payload statements and bodies otherwise identical."
 write("runtime-preservation", runtime)
 
@@ -228,7 +232,7 @@ for path in sorted(Path("tests/bench").glob("rec_*/*")):
 replay_events = list(log_events(CHECKS / "replay-operations.log"))
 case_passes = [e for e in replay_events if e.get("Action") == "pass" and re.fullmatch(r"TestSingleConnectionReplay/(select|insert)/Case[0-9]", e.get("Test", ""))]
 assert len(case_passes) == 60
-write("replay", {"source_sha256": source, "capture_generation_receipt": "step13-native-stable.json",
+write("replay", {"source_sha256": source, "capture_generation_receipt": "step13-native-stable.json", "corpus_config":read("tests/bench/corpus.json"), "corpus_config_sha256":sha("tests/bench/corpus.json"),
     "capture_generation_command": next(c for c in native["stable"]["commands"] if c["name"].endswith("record-and-v4raw")),
     "server": native["stable"]["configuration"]["lanes"][0], "corpus": corpus,
     "operational_command": ["go", "test", "-json", "-race", "-count=3", "-run", "^TestSingleConnectionReplay$", "./tests/bench"],
@@ -241,28 +245,38 @@ write("replay", {"source_sha256": source, "capture_generation_receipt": "step13-
     "unmatched_request_behavior": "Existing unmatched-request panic retained; no CQL/hash rewrite or fallback.",
     "historical_failure": "step13-replay-history.json; step10/12 mismatch remains failed evidence, not a performance pass."})
 
-# Use corrected final compile commands; initial all-only CCM probe was incomplete.
-checks = {r["name"]: r for r in read(CHECKS / "checks.json")}
-checks.update({r["name"]: r for r in read(CHECKS / "checks-complete.json")})
-for row in checks.values():
+# Current focused checks cover the changed workload/fixture inputs. Earlier full
+# runtime checks retain their original source boundary; no result is rebound.
+checks = read(CHECKS / "checks.json")
+for row in checks:
     assert row["exit_code"] == 0 and sha(row["log"]) == row["sha256"]
-for name, command in (
-    ("unit-race", ["go", "test", "-race", "-tags", "unit", "-timeout=5m", "./..."]),
-    ("docs-version-tests", ["python3", "-m", "unittest", "discover", "-s", "docs", "-p", "test_*.py"]),
-    ("spec-verifier", ["python3", "feature-specs/verify.py"]),
-    ("docs-build", ["uv", "run", "--project", "docs", "--frozen", "sphinx-build", "-b", "html", "docs/source", "/tmp/gocql-step13-docs"]),
-    ("codec-copy-cost", ["go", "test", "-tags", "unit bench", "-run", "^$", "-bench", "Benchmark(V2StreamFinalStorage|V2StreamingNestedElements|V2ContainerSegmentedIteration|V2ScalarInt64Decode|V2ScalarBlobDecode|V2ScalarTextDecode)$", "-benchtime=5x", "-benchmem", "./internal/codec"]),
-):
-    path = CHECKS / (name + ".log")
-    checks[name] = {"name": name, "command": command, "exit_code": 0, "log": str(path), "sha256": sha(path)}
-assert "build succeeded." in (CHECKS / "docs-build.log").read_text()
-assert "WARNING" not in (CHECKS / "docs-build.log").read_text()
-assert "OK" in (CHECKS / "docs-version-tests.log").read_text()
-assert "FAIL" not in (CHECKS / "unit-race.log").read_text()
-write("checks", {"source_sha256": source, "checks": list(checks.values()),
-    "compile_only": ["all-tags", "arm64-compile"], "actual_386_execution": True,
-    "build_tag_note": "CCM tests require ccm in addition to all; final all-tag and arm64 checks explicitly use all ccm bench.",
-    "cost_scope": "Five-iteration bounded identity/allocation/cost smokes, not universal throughput or native peak-memory claims. Comprehensive performance remains15."})
+write("checks", {"source_sha256": source, "checks": checks,
+    "compile_only": ["all-tags"],
+    "prior_runtime_validation": {"evidence":"step13-prior-checks.json", "source_sha256":read(E/"step13-prior-checks.json")["source_sha256"], "scope":"Current conviction/root/pool/cluster race, compiler and native checks cover the changed callback contract. Earlier remaining full unit/race/386/arm64/cost/docs checks retain their original source hashes."},
+    "cost_scope": "Current twenty-case replay benchmark smoke; comprehensive performance remains15."})
+
+prior_source=read(E/"step13-prior-source.json")
+new_source=read(E/"step13-source.json")
+deltas=[{"path":path,"prior_sha256":prior_source.get(path),"current_sha256":digest} for path,digest in new_source.items() if prior_source.get(path)!=digest]
+assert {row["path"] for row in deltas}=={"tests/bench/bench_single_conn_test.go","examples/streaming/main.go","v2_public_examples_integration_test.go","internal/connectivity/settings.go","internal/settings/policies.go","internal/pool/connectionpool.go","internal/cluster/control.go","internal/pool/conviction_test.go"}
+write("ownership-delta",{"source_sha256":source,"prior_source_sha256":sha(E/"step13-prior-source.json"),"changed_inputs":deltas,"other_native_inputs_unchanged":len(new_source)-len(deltas),"removed_inputs":sorted(set(prior_source)-set(new_source))})
+corpus_config=read("tests/bench/corpus.json")
+assert corpus_config["namespace"].startswith(native["stable"]["run_id"]+"_bench_")
+expected={"TestStep13Ownership/"+kind+"/"+mode for kind in ("example","benchmark") for mode in ("error","cancel","pause")}
+observed={name for tests in outcomes.values() for name,status in tests.items() if status=="pass" and name in expected}
+assert observed==expected
+raw_log=next(c for c in native["stable"]["commands"] if c["name"].endswith("record-and-v4raw"))
+text=Path(raw_log["log"]).read_text()
+assert text.count("KILLED CHILD PREFIX CLEANUP VERIFIED")==2
+write("ownership-cleanup",{"source_sha256":source,"successful_example_modes":6,"generation_namespace":corpus_config["namespace"],"corpus_config_sha256":sha("tests/bench/corpus.json"),"generation_namespace_absence_checked":True,"ordinary_error_and_canceled_context_passes":sorted(n for n in observed if not n.endswith("/pause")),"actual_compiled_children_killed_and_joined":sorted(n for n in observed if n.endswith("/pause")),"prefix_cleanup_started_after_join":True,"killed_namespaces_checked_absent_after_prefix_cleanup":2,"raw_command":raw_log,"cleanup_context":"Independent context.Background with 30s deadline; cleanup/Close errors joined before TestMain os.Exit or example return.","namespace_ownership":"Fresh runner-prefix plus random suffix. CREATE collision relinquishes ownership; no pre-existing fixed namespace is dropped.","no_request_or_hash_rewrite":True})
+
+api=read(E/"step13-public-api.json")
+assert not api["unnameable_required_interface_types"]
+assert api["external_implementation_consumer"]["exit_code"]==0
+assert len(api["required_interface_signatures"])==31
+assert any(r.get("interface")=="ConvictionPolicy" and r.get("unnameable_type")=="github.com/scylladb/gocql/v2/internal/endpoint.HostInfo" for r in read(E/"step13-required-interface-negative.json")["unnameable_required_interface_types"])
+assert "PUBLIC CONVICTION CALLBACK false" in text and "PUBLIC CONVICTION CALLBACK true" in text
+write("public-extension",{"source_sha256":source,"externally_implemented_interfaces":sorted(api["required_interface_signatures"]),"consumer":api["external_implementation_consumer"],"negative_control":{"candidate":"583b274dcbfe3461b2096d1df89665de5cf053b4","evidence":"step13-required-interface-negative.json","sha256":sha(E/"step13-required-interface-negative.json"),"expected_audit_exit_code":1},"native_custom_conviction_verdicts":[False,True],"native_host_context_equals_data_dial_snapshot":True,"pool_callback_test":"TestConvictionSnapshotFailureDecision","pool_checks":["original error and host identity/address/DC/rack/tokens/state/shards preserved","snapshot tokens detached from mutable host","callback outside pool lock","false keeps host; true reports down","no callback without empty failed pool","reset remains externally callable with same host identity"],"runtime_behavior":"Default SimpleConvictionPolicy still always convicts and Reset remains a no-op. No new driver Reset calls were introduced.","projection_boundary":"Pool uses lower endpoint.SnapshotHost without parent-pool lookups; control uses existing upper snapshot projection. No lower settings/routing/metadata dependency was added."})
 
 artifacts = sorted(p for p in E.glob("step13-*.json") if p.name != "step13-verification.json")
 write("verification", {"step": 13, "branch": "v2-13-public-module-docs", "accepted_predecessor": BASE,
@@ -271,8 +285,8 @@ write("verification", {"step": 13, "branch": "v2-13-public-module-docs", "accept
     "missing_required_typed_exports": [], "compatibility_exports_remaining": [], "Internal_API_escapes": [],
     "transitive_dependency_findings": [], "module_count": 1, "original_identities_preserved": 174,
     "original_helpers_preserved": 135, "original_supporting_methods_preserved": 94,
-    "test_helper_declarations_preserved": count, "replay_actual_case_passes": len(case_passes),
+    "test_helper_declarations_preserved": count, "ownership_refinement":"step13-ownership-cleanup.json", "public_extension_refinement":"step13-public-extension.json", "replay_actual_case_passes": len(case_passes),
     "native_modes": [r["name"] for receipt in native.values() for r in receipt["commands"] if r["name"] in outcomes and not r["name"].endswith("cleanup")],
     "artifacts": [{"path": str(p), "sha256": sha(p)} for p in artifacts],
-    "limitations": ["Full final-tree all174 and streaming acceptance matrices remain14/17.", "Comprehensive end-to-end/native performance remains15; independent review remains16.", "Initial new-example/recording setup failures and prior successful intermediate source receipts are retained under step13/ and step13/final with separate source hashes.", "No remote publication, deployment or release dispatch occurred."]})
+    "prior_unaccepted_candidate":"583b274dcbfe3461b2096d1df89665de5cf053b4", "limitations": ["Full final-tree all174 and streaming acceptance matrices remain14/17.", "Comprehensive end-to-end/native performance remains15; independent review remains16.", "Initial new-example/recording setup failures and prior successful intermediate source receipts are retained under step13/ and step13/final with separate source hashes.", "No remote publication, deployment or release dispatch occurred."]})
 print(json.dumps({"source_sha256": source, "artifacts": len(artifacts), "preserved_tests": len(preservation["tests"]), "replay_case_passes": len(case_passes)}))

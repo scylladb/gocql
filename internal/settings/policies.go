@@ -26,7 +26,6 @@ package settings
 
 import (
 	connectivity "github.com/scylladb/gocql/v2/internal/connectivity"
-	implEndpoint "github.com/scylladb/gocql/v2/internal/endpoint"
 )
 
 // ConvictionPolicy interface is used by gocql to determine if a host should be
@@ -37,8 +36,8 @@ type ConvictionPolicy = connectivity.ConvictionPolicy
 // regardless of error
 type SimpleConvictionPolicy struct{}
 
-func (e *SimpleConvictionPolicy) AddFailure(error error, host *implEndpoint.HostInfo) bool {
+func (e *SimpleConvictionPolicy) AddFailure(error error, host HostSnapshot) bool {
 	return true
 }
 
-func (e *SimpleConvictionPolicy) Reset(host *implEndpoint.HostInfo) {}
+func (e *SimpleConvictionPolicy) Reset(host HostSnapshot) {}

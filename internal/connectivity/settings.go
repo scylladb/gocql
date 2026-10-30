@@ -65,11 +65,13 @@ type AuthExchange interface {
 	Close()
 }
 
+// ConvictionPolicy receives detached, read-only host metadata. Implementations
+// may retain the snapshot and must support concurrent callbacks.
 type ConvictionPolicy interface {
 	// Implementations should return `true` if the host should be convicted, `false` otherwise.
-	AddFailure(error error, host *implEndpoint.HostInfo) bool
+	AddFailure(err error, host HostSnapshot) bool
 	// Implementations should clear out any convictions or state regarding the host.
-	Reset(host *implEndpoint.HostInfo)
+	Reset(host HostSnapshot)
 }
 type Config struct {
 	ContactPoints                                                                    []string

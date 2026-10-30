@@ -4466,7 +4466,7 @@
       }
     }
   },
-  "revision": "step13 source manifest fc38c0172edc87124a8291303e1bd9208ef70fd7230b487228c6b7f60d646305",
+  "revision": "step13 source manifest cdec5deb5a1c6c4c49cbef60e88e56aca8b3dab439c3319f09ab2de1b6e5d06d",
   "supporting_methods": {
     "original": {
       "cassandra_test.go::ClusteredKeyValue.Bind": {

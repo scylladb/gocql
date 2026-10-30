@@ -531,7 +531,11 @@ func (pool *InternalHostConnPool) fillingStopped(err error) {
 		pool.InternalLogger.Printf("gocql: conns of pool after stopped %q: %v\n", host.ConnectAddress(), count)
 	}
 	if err != nil && count == 0 {
-		if pool.InternalServices.Conviction.AddFailure(err, host) {
+		// An empty failed pool supplies its detached physical host context. Avoid
+		// looking the pool up through its parent while initial SetHosts may be
+		// waiting for this fill to finish under the parent's membership lock.
+		snapshot, _ := implEndpoint.SnapshotHost(host)
+		if pool.InternalServices.Conviction.AddFailure(err, snapshot) {
 			pool.InternalServices.Down(host.ConnectAddress(), port)
 		}
 	}

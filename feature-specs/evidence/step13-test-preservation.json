@@ -176,49 +176,70 @@
     {
       "accepted_sha256": "86a773d74e444c1130f9cf9751977f8b357e0bef62a266e03d70163819e9d39a",
       "current_identity": "tests/bench/bench_single_conn_test.go::benchConfig",
-      "current_sha256": "6bf07756b23f7eac336c43991059f3fe9fb398a33828be1d8ce9629ff20b2d11",
+      "current_sha256": "c458702767d3eb67741746b85b8dd6f06e9eec077f1848b4f96e9efc163e7f53",
       "disposition": "Functioning typed-control captures, checked Close, same ten SELECT/INSERT cases; SELECT requires exact name and one row.",
       "identity": "tests/bench/bench_single_conn_test.go::.benchConfig"
     },
     {
+      "accepted_sha256": "e0912d3324192a49f164c95b4d4e207818d67774e69d822aeb4750735456c65d",
+      "current_identity": "tests/bench/bench_single_conn_test.go::benchExec",
+      "current_sha256": "2835939193ded03ab2c1d87da3f235d11ae0c6307dc46fad77b54fad18011575",
+      "disposition": "Functioning typed-control captures, checked Close, same ten SELECT/INSERT cases; SELECT requires exact name and one row.",
+      "identity": "tests/bench/bench_single_conn_test.go::.benchExec"
+    },
+    {
+      "accepted_sha256": "4ed0d834a8046e9743b2ec6b0f60072b8ee491387ebb7588eaa6cca2fee342dd",
+      "current_identity": "tests/bench/bench_single_conn_test.go::InitializeCluster",
+      "current_sha256": "c98d19ab6337ba2b8dda860e2eb8deb02c34dc54746858127de9f61020ccbabc",
+      "disposition": "Functioning typed-control captures, checked Close, same ten SELECT/INSERT cases; SELECT requires exact name and one row.",
+      "identity": "tests/bench/bench_single_conn_test.go::.InitializeCluster"
+    },
+    {
       "accepted_sha256": "5a0a97887fd012c89e98b63b3e403a8e7d7f158f09c8d2db6515bcd09b1aaea9",
       "current_identity": "tests/bench/bench_single_conn_test.go::benchRead",
-      "current_sha256": "59ceea1a80dd6e764400797eb58460c6792c59b310375ec5df03eb1fc591ecfb",
+      "current_sha256": "093abf33228b63d50859879a4a07f90ce106505607f8af56508c94eb8ef82f96",
       "disposition": "Functioning typed-control captures, checked Close, same ten SELECT/INSERT cases; SELECT requires exact name and one row.",
       "identity": "tests/bench/bench_single_conn_test.go::.benchRead"
     },
     {
+      "accepted_sha256": "231439543953d472b7694f29435ed6720311b69a351f318829c236c401a6391b",
+      "current_identity": "tests/bench/bench_single_conn_test.go::benchWrite",
+      "current_sha256": "093fd499607db9623ef559d25493f91387309542af61707b8e4d40f1762d7d2c",
+      "disposition": "Functioning typed-control captures, checked Close, same ten SELECT/INSERT cases; SELECT requires exact name and one row.",
+      "identity": "tests/bench/bench_single_conn_test.go::.benchWrite"
+    },
+    {
       "accepted_sha256": "cde21147e2e309c9428d8e7386bed1dbf1e548815058ab558e0ee4786ba84d6a",
       "current_identity": "tests/bench/bench_single_conn_test.go::RecordSelectTraffic",
-      "current_sha256": "2e4bf328b4da30eda067974430bc9b5803fc574c15231a38aebdc13f827f86c4",
+      "current_sha256": "d614a3b32bf5b78a272fffab1096339ea81ef28bb398d18c7a3a822bf56ea2ba",
       "disposition": "Functioning typed-control captures, checked Close, same ten SELECT/INSERT cases; SELECT requires exact name and one row.",
       "identity": "tests/bench/bench_single_conn_test.go::.RecordSelectTraffic"
     },
     {
       "accepted_sha256": "7c909831c9b6fc10044b58f84be1a0ecc37b2012c394b1d8e5fcafe82ee46381",
       "current_identity": "tests/bench/bench_single_conn_test.go::RecordInsertTraffic",
-      "current_sha256": "e21e755c36eb79a35d17d9489d38c5b21ef2df235954b6dda317d8b0ef85cd8e",
+      "current_sha256": "9faa54adae71680f18fe7118e98f5197b5e769698bb9e1c1d36abf4ee30eefe6",
       "disposition": "Functioning typed-control captures, checked Close, same ten SELECT/INSERT cases; SELECT requires exact name and one row.",
       "identity": "tests/bench/bench_single_conn_test.go::.RecordInsertTraffic"
     },
     {
       "accepted_sha256": "2961d4760183fefc23e1715db4cf05590cf4f84ef1c3fd4b686101757a43551e",
       "current_identity": "tests/bench/bench_single_conn_test.go::BenchmarkSingleConnectionSelect",
-      "current_sha256": "c6d487221f959b7d826bf11ca455731cd1e77920f0f031116e8bde559a5114d0",
+      "current_sha256": "c243e61219d56a5d40d49f9d62c534a924ceb79938347b857f853dc7e549a707",
       "disposition": "Functioning typed-control captures, checked Close, same ten SELECT/INSERT cases; SELECT requires exact name and one row.",
       "identity": "tests/bench/bench_single_conn_test.go::.BenchmarkSingleConnectionSelect"
     },
     {
       "accepted_sha256": "76473988c824d77c66699432345fd148c6ca489ce35dfb4cb267d1e336a5abfb",
       "current_identity": "tests/bench/bench_single_conn_test.go::BenchmarkSingleConnectionInsert",
-      "current_sha256": "d936c25d051a6549658b75ce102c7d4d7042402794758604e3bec83c45784044",
+      "current_sha256": "6d0cc6b700c2f013dbdfcac9a4aff27299f64d664d210923dd64c4f416ed2e60",
       "disposition": "Functioning typed-control captures, checked Close, same ten SELECT/INSERT cases; SELECT requires exact name and one row.",
       "identity": "tests/bench/bench_single_conn_test.go::.BenchmarkSingleConnectionInsert"
     },
     {
       "accepted_sha256": "0b8378a81fc58af10bd22b880e1576f8c939db212aa76defa9b5c897ba3e2d3e",
       "current_identity": "tests/bench/bench_single_conn_test.go::TestMain",
-      "current_sha256": "05eb561a678cb2846c0cad36d1d471dd5bdbf044ff4d2b8447d330c0a93c412a",
+      "current_sha256": "ac8a9412c14595a8cedf35685b9abb2f1e30625ecfaf0c25de445c09cb78e065",
       "disposition": "Functioning typed-control captures, checked Close, same ten SELECT/INSERT cases; SELECT requires exact name and one row.",
       "identity": "tests/bench/bench_single_conn_test.go::.TestMain"
     }
@@ -903,7 +924,7 @@
   "missing_declarations": [],
   "moved_lz4_tests": "step13-compressor-preservation.json",
   "original_test_and_helper_declarations": 2382,
-  "source_sha256": "fc38c0172edc87124a8291303e1bd9208ef70fd7230b487228c6b7f60d646305",
+  "source_sha256": "cdec5deb5a1c6c4c49cbef60e88e56aca8b3dab439c3319f09ab2de1b6e5d06d",
   "supporting_methods": [
     {
       "identity": "cassandra_v2_helpers_test.go::cassandraObserver.ObserveAttempt",

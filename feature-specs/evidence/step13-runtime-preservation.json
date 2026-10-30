@@ -2,6 +2,14 @@
   "accepted_predecessor": "cdba62aaf867b8e1877aa18dc56b555665bc17d6",
   "actual_internal_source_deltas": [
     {
+      "accepted_identity": "internal/cluster/control.go::InternalControlConn.attemptReconnectToAnyOfHosts",
+      "accepted_sha256": "f9c1d3bed04ec20f5b59549f70803b2c681fdbb2bdb11373e67cd089bc65e7dc",
+      "current_identity": "internal/cluster/control.go::InternalControlConn.attemptReconnectToAnyOfHosts",
+      "current_sha256": "aff6472a3ffdbb80855c5a52352969becd4d70d610c9ab61da8c3efe04ffa2fb",
+      "disposition": "Required public conviction contract repair: detached HostSnapshot replaces unnameable mutable HostInfo; existing failure/decision/reset behavior retained and covered by pool/native/external tests.",
+      "same_normalized_source": false
+    },
+    {
       "accepted_identity": "internal/cluster/scylla_cdc.go::.InternalScyllaIsCdcTable",
       "accepted_sha256": "561ad47ae2f46d22c10f9028455fa6c01e320258599839787be880bec15847a0",
       "current_identity": "internal/cluster/scylla_cdc.go::.InternalScyllaIsCdcTable",
@@ -91,6 +99,30 @@
       "current_identity": "internal/cluster/v2_config.go::.InternalConnectCluster",
       "current_sha256": "63dfc57ecd21d0919294697bec462119b1beabd41a711917bf950bfea0975b02",
       "same_normalized_source": true
+    },
+    {
+      "accepted_identity": "internal/pool/connectionpool.go::InternalHostConnPool.fillingStopped",
+      "accepted_sha256": "5da8bc2ac85a6bd80b4bd1a28062b546fc324efcb4acaf99a990b26aef203a64",
+      "current_identity": "internal/pool/connectionpool.go::InternalHostConnPool.fillingStopped",
+      "current_sha256": "96b405a6b773fc0cfba66d78f09ee08271c53fd14f25889ab8ded6174955fbc6",
+      "disposition": "Required public conviction contract repair: detached HostSnapshot replaces unnameable mutable HostInfo; existing failure/decision/reset behavior retained and covered by pool/native/external tests.",
+      "same_normalized_source": false
+    },
+    {
+      "accepted_identity": "internal/settings/policies.go::SimpleConvictionPolicy.AddFailure",
+      "accepted_sha256": "6f1b3223595852af56336986a3c5955154e76e1bae5c5f2b4703cad07eae3db3",
+      "current_identity": "internal/settings/policies.go::SimpleConvictionPolicy.AddFailure",
+      "current_sha256": "ea7fca7a31e4765c1255b1d4e7386a78f499e1d3d7a60afd06a2244c61b19bc2",
+      "disposition": "Required public conviction contract repair: detached HostSnapshot replaces unnameable mutable HostInfo; existing failure/decision/reset behavior retained and covered by pool/native/external tests.",
+      "same_normalized_source": false
+    },
+    {
+      "accepted_identity": "internal/settings/policies.go::SimpleConvictionPolicy.Reset",
+      "accepted_sha256": "6f0aa77f54540c8a421ee7b30485fb47734b7ce46214392fbce16892cd13b7ff",
+      "current_identity": "internal/settings/policies.go::SimpleConvictionPolicy.Reset",
+      "current_sha256": "ce5f56bcc6d96c6f7a202c5db55308d6c097eec451bcdb181724173c286766fb",
+      "disposition": "Required public conviction contract repair: detached HostSnapshot replaces unnameable mutable HostInfo; existing failure/decision/reset behavior retained and covered by pool/native/external tests.",
+      "same_normalized_source": false
     },
     {
       "accepted_identity": "internal/wirecompress/snappy_frame.go::SnappyCompressor.Decode",
@@ -4752,7 +4784,7 @@
           "file": "internal/pool/connectionpool.go",
           "name": "fillingStopped",
           "receiver": "InternalHostConnPool",
-          "sha256": "5da8bc2ac85a6bd80b4bd1a28062b546fc324efcb4acaf99a990b26aef203a64",
+          "sha256": "96b405a6b773fc0cfba66d78f09ee08271c53fd14f25889ab8ded6174955fbc6",
           "step12_sha256": "5da8bc2ac85a6bd80b4bd1a28062b546fc324efcb4acaf99a990b26aef203a64"
         }
       ],
@@ -5806,7 +5838,7 @@
           "file": "internal/cluster/control.go",
           "name": "attemptReconnectToAnyOfHosts",
           "receiver": "InternalControlConn",
-          "sha256": "f9c1d3bed04ec20f5b59549f70803b2c681fdbb2bdb11373e67cd089bc65e7dc",
+          "sha256": "aff6472a3ffdbb80855c5a52352969becd4d70d610c9ab61da8c3efe04ffa2fb",
           "step12_sha256": "f9c1d3bed04ec20f5b59549f70803b2c681fdbb2bdb11373e67cd089bc65e7dc"
         }
       ],
@@ -13448,7 +13480,7 @@
           "file": "internal/connectivity/settings.go",
           "name": "ConvictionPolicy",
           "receiver": "",
-          "sha256": "18a98ca1de1dfcdaf0b158f2ec2fff653ff427c17436801f4d1b1d2f7b0abfa1",
+          "sha256": "fa40c47159b6e2a4bbacf128569a58e116368875bbfed82f483618ae0feab454",
           "step12_sha256": "18a98ca1de1dfcdaf0b158f2ec2fff653ff427c17436801f4d1b1d2f7b0abfa1"
         }
       ],
@@ -13482,7 +13514,7 @@
           "file": "internal/settings/policies.go",
           "name": "AddFailure",
           "receiver": "SimpleConvictionPolicy",
-          "sha256": "6f1b3223595852af56336986a3c5955154e76e1bae5c5f2b4703cad07eae3db3",
+          "sha256": "ea7fca7a31e4765c1255b1d4e7386a78f499e1d3d7a60afd06a2244c61b19bc2",
           "step12_sha256": "6f1b3223595852af56336986a3c5955154e76e1bae5c5f2b4703cad07eae3db3"
         }
       ],
@@ -13499,7 +13531,7 @@
           "file": "internal/settings/policies.go",
           "name": "Reset",
           "receiver": "SimpleConvictionPolicy",
-          "sha256": "6f0aa77f54540c8a421ee7b30485fb47734b7ce46214392fbce16892cd13b7ff",
+          "sha256": "ce5f56bcc6d96c6f7a202c5db55308d6c097eec451bcdb181724173c286766fb",
           "step12_sha256": "6f0aa77f54540c8a421ee7b30485fb47734b7ce46214392fbce16892cd13b7ff"
         }
       ],
@@ -30137,5 +30169,5 @@
   ],
   "missing": [],
   "normalization_scope": "Session method-to-function relocation and equivalent call form, LZ4 owner import rename, and comments removed by Go parsing. Payload statements and bodies otherwise identical.",
-  "source_sha256": "fc38c0172edc87124a8291303e1bd9208ef70fd7230b487228c6b7f60d646305"
+  "source_sha256": "cdec5deb5a1c6c4c49cbef60e88e56aca8b3dab439c3319f09ab2de1b6e5d06d"
 }

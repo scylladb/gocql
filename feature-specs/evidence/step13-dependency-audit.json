@@ -315,6 +315,7 @@
         "log",
         "net",
         "os",
+        "regexp",
         "strconv",
         "strings",
         "time"

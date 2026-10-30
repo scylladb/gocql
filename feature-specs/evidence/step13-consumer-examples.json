@@ -7,7 +7,7 @@
     "./..."
   ],
   "exit_code": 0,
-  "log": "/extra/scylladb/gocql-api-test-cluster/step13/verified/checks/consumer-examples.log",
+  "log": "/extra/scylladb/gocql-api-test-cluster/step13/combined/checks/consumer-examples.log",
   "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "example_files": [
     {
@@ -47,5 +47,6 @@
       "sha256": "16321f73120e47e21a1996c35562a80e967a5f5003095b5ae8aa24bcf1830d99"
     }
   ],
-  "root_test_aliases_available": false
+  "root_test_aliases_available": false,
+  "source_sha256": "cdec5deb5a1c6c4c49cbef60e88e56aca8b3dab439c3319f09ab2de1b6e5d06d"
 }

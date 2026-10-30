@@ -1,0 +1,48 @@
+{
+  "changed_inputs": [
+    {
+      "current_sha256": "c17ae00b42b4fd8bfcac2d609358fb5377806c0b4fb5ebd27afc76b17de7c3e8",
+      "path": "examples/streaming/main.go",
+      "prior_sha256": "078b01cc0e02a6a4b53bb9c8beddaa7384b288d0da18bd032198c7153a63bacd"
+    },
+    {
+      "current_sha256": "d5a2e2dc7f61cf87655bcc1615c96b124abfde42682bf5650dbc9077a060652e",
+      "path": "internal/cluster/control.go",
+      "prior_sha256": "6ba465fe426677a8aefb241fd442fd2a0335c4bd47d1b7d88de14b581cd97524"
+    },
+    {
+      "current_sha256": "6af3cee87636052d074670369a4b41a031a3bb206dad2a4e8d4e1e641d36ca2d",
+      "path": "internal/connectivity/settings.go",
+      "prior_sha256": "f1ad20e14c27b9ef7f21d7389a7ad4d53afb4e1c63f3a5b9bc4b1d507244dfd9"
+    },
+    {
+      "current_sha256": "25dd7defa50fa40a4d5f67ed0da94ff99da922ff2487f2806af9d146ded707c2",
+      "path": "internal/pool/connectionpool.go",
+      "prior_sha256": "142e61ad4c17e2eaab6a9fa717fc821990183c3d34de033a9700c3e39ad14f8d"
+    },
+    {
+      "current_sha256": "19d8a8f2c9682375f34cc6da150d48f280630a2d36a849cd4d7f96cdffabceb1",
+      "path": "internal/pool/conviction_test.go",
+      "prior_sha256": null
+    },
+    {
+      "current_sha256": "fc5b7c03654d440e5e4031c9932dfc63baf58aa9883716dbc805ae2c9af240d4",
+      "path": "internal/settings/policies.go",
+      "prior_sha256": "8bf48e8172419b24d3f375d01a10a743d37c30df61449af774c029f1dfef7c94"
+    },
+    {
+      "current_sha256": "e75260b4ed0e954bc4eb70955d4cc8027fd6f821001060db13a1c1493e71d3bc",
+      "path": "tests/bench/bench_single_conn_test.go",
+      "prior_sha256": "4797acab1af734fe607e477f60b4470ed93b88c875f8bd411aa58c16c487c5df"
+    },
+    {
+      "current_sha256": "af986e1cb2330c138e0d8e65a98e9c9cdc1a32cee999ca2d8d7ab90d34d66c36",
+      "path": "v2_public_examples_integration_test.go",
+      "prior_sha256": "a8ba28c6ab47ce040b411cd1ad007f55f92fa9716f81b1e7ac1de2c3385e2b34"
+    }
+  ],
+  "other_native_inputs_unchanged": 614,
+  "prior_source_sha256": "fc38c0172edc87124a8291303e1bd9208ef70fd7230b487228c6b7f60d646305",
+  "removed_inputs": [],
+  "source_sha256": "cdec5deb5a1c6c4c49cbef60e88e56aca8b3dab439c3319f09ab2de1b6e5d06d"
+}

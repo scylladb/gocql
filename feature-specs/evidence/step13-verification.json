@@ -4,23 +4,23 @@
   "artifacts": [
     {
       "path": "feature-specs/evidence/step13-api-opacity.json",
-      "sha256": "cf61f460bc9783bfa02c65e6c056dd4a31159467b1b7d0b5a28970f583a72ce3"
+      "sha256": "cd3182179476793ac96dc32e75858751a2c4481d2086d004037ce1540fffc5df"
     },
     {
       "path": "feature-specs/evidence/step13-assertion-source.json",
-      "sha256": "7e6bf79dd528c523b81047b25d0dc2d47cf79621d4f31c5b00708505fca20149"
+      "sha256": "620d72ed1ad9bdfda71894fd45fda23a2fbe549fe8a787bad81fe8f3d43c471b"
     },
     {
       "path": "feature-specs/evidence/step13-checks.json",
-      "sha256": "919ccf49d20c584bdea1f8c0c31b2f32d40578007a3daf1f939ecf7b6d35bd0a"
+      "sha256": "4016a59d71d08f62b789de920b42aed07ad6001b31d1a46dadf00ca4b724eaf1"
     },
     {
       "path": "feature-specs/evidence/step13-cleanup.json",
-      "sha256": "5c27c24c25a989277c0471b46dd7f0e0b3bf0cfeb2e8eafdf1e11cc1c011a56b"
+      "sha256": "ccad10479e501d62dd5fc9be35d37adc3ce521ee3dd511446c4aaf27bf79546b"
     },
     {
       "path": "feature-specs/evidence/step13-collision-preservation.json",
-      "sha256": "f0687568012875d76ed52a611fb6762ae5198394b37419e0a0bfed263eb51f68"
+      "sha256": "cb0a5fa72ae3fdec96da61e079d7bdace0f8a92d3c9a3ac5a62c555e944404a8"
     },
     {
       "path": "feature-specs/evidence/step13-compressor-preservation.json",
@@ -28,27 +28,51 @@
     },
     {
       "path": "feature-specs/evidence/step13-consumer-examples.json",
-      "sha256": "0e3a0440b14fa044c1c94978e07bbf2004c6a11184f52a6d43045acb4dfd23d5"
+      "sha256": "c15db434fd04b1e1111516c55452f3f665648653f02e78c7d854047da8926f79"
     },
     {
       "path": "feature-specs/evidence/step13-dependency-audit.json",
-      "sha256": "4cad4b1d15dd0ba97c33122a44dacd5aab6a63fe5e24ad5e716c787e049f8afb"
+      "sha256": "063698ddcfccf7a492afa2766d23d87324fa6c59463439f5af695eba6a42e62e"
     },
     {
       "path": "feature-specs/evidence/step13-module-audit.json",
-      "sha256": "b3238d1605b6862859c792ea7d88cd0c6a835fbffe49e06a7bbadc895781958e"
+      "sha256": "4ddb590ccca838fa37b8f5b14cbf3f9c9d276e781af1f325bd67743c466a9322"
     },
     {
       "path": "feature-specs/evidence/step13-native-cassandra.json",
-      "sha256": "ec611074d72873ea262ba9cbf4b6fed7d2df1090bd7d586b678a5d2c1aa09128"
+      "sha256": "5fcc9de2b64f50ff6dd92dd5bf3f724e63b4bb86e9f8cb830c9bcfa1e97d7689"
     },
     {
       "path": "feature-specs/evidence/step13-native-stable.json",
-      "sha256": "0539b8b83173de40fc59af0568b4d4841005f71a3aafbea8e198cc919060148b"
+      "sha256": "7625121fd8b7a6431c6ba0a0032f028662f5de62836fdf1349986c6148856756"
+    },
+    {
+      "path": "feature-specs/evidence/step13-ownership-cleanup.json",
+      "sha256": "c0991a1e9bf6dee58a607e39a2385d90e625f2f23ecc0a787480ad305d4ce0df"
+    },
+    {
+      "path": "feature-specs/evidence/step13-ownership-delta.json",
+      "sha256": "fbab571074fd415c7a3a9260cd611d942dc67929cfee90b21db2bf952d22e21c"
+    },
+    {
+      "path": "feature-specs/evidence/step13-prior-checks.json",
+      "sha256": "919ccf49d20c584bdea1f8c0c31b2f32d40578007a3daf1f939ecf7b6d35bd0a"
+    },
+    {
+      "path": "feature-specs/evidence/step13-prior-source.json",
+      "sha256": "fc38c0172edc87124a8291303e1bd9208ef70fd7230b487228c6b7f60d646305"
+    },
+    {
+      "path": "feature-specs/evidence/step13-prior-test-mapping.json",
+      "sha256": "3cf90910cae3123dde5e3217f150284b88bae89e8c30df7b09f3a4e6f1e9d627"
     },
     {
       "path": "feature-specs/evidence/step13-public-api.json",
-      "sha256": "5e01f4b426f78087bb58371504934e7844a66dbde65b049b1fbb9281b7b7bf7d"
+      "sha256": "7fceb9577b748dd660e0a184596d604520deeef03df1d7b21bb687dc7f550b0c"
+    },
+    {
+      "path": "feature-specs/evidence/step13-public-extension.json",
+      "sha256": "e581d6334ea6c8223b9990fb0601faeed5ae7a4fce07481bbf7a3c2506569bfc"
     },
     {
       "path": "feature-specs/evidence/step13-replay-history.json",
@@ -56,23 +80,27 @@
     },
     {
       "path": "feature-specs/evidence/step13-replay.json",
-      "sha256": "3ee1e21e7104ebbd4653f4266e7ac715beb07a84f2524a0d96e226625bb150da"
+      "sha256": "03acd28a1abd5cfb315a854eb1ef0b2b57bffddafe7edcb142724b3abdc02b32"
+    },
+    {
+      "path": "feature-specs/evidence/step13-required-interface-negative.json",
+      "sha256": "32aa25e7ce6106350e56a941e15e82b8bbe97ec9b5cb9914b86b78a44e9d854f"
     },
     {
       "path": "feature-specs/evidence/step13-runtime-preservation.json",
-      "sha256": "2f4ed7cef25777f211985632e54043d28abacddb68d507332ba83ef285a09c7f"
+      "sha256": "6edf9e648a773189aa3d3a26f86ecfeebbdc27a1df138389c202a1fd77d77f2d"
     },
     {
       "path": "feature-specs/evidence/step13-source.json",
-      "sha256": "fc38c0172edc87124a8291303e1bd9208ef70fd7230b487228c6b7f60d646305"
+      "sha256": "cdec5deb5a1c6c4c49cbef60e88e56aca8b3dab439c3319f09ab2de1b6e5d06d"
     },
     {
       "path": "feature-specs/evidence/step13-test-mapping.json",
-      "sha256": "3cf90910cae3123dde5e3217f150284b88bae89e8c30df7b09f3a4e6f1e9d627"
+      "sha256": "cd6d527d77677bf75c27d573bbe27cc8f4c4f3748aaade456db1d6dfe43cd02a"
     },
     {
       "path": "feature-specs/evidence/step13-test-preservation.json",
-      "sha256": "fc061f9c4c28eb46c2dcdad9b4b22f3af1be2f29b9643bb48da3943095c68940"
+      "sha256": "365814bd2ec7987600a1f1abca23e38647b9afddea44e931f912f5b868b706b6"
     }
   ],
   "branch": "v2-13-public-module-docs",
@@ -97,10 +125,13 @@
   "original_helpers_preserved": 135,
   "original_identities_preserved": 174,
   "original_supporting_methods_preserved": 94,
+  "ownership_refinement": "step13-ownership-cleanup.json",
+  "prior_unaccepted_candidate": "583b274dcbfe3461b2096d1df89665de5cf053b4",
   "public_exports": 507,
+  "public_extension_refinement": "step13-public-extension.json",
   "replay_actual_case_passes": 60,
-  "source_inputs": 621,
-  "source_sha256": "fc38c0172edc87124a8291303e1bd9208ef70fd7230b487228c6b7f60d646305",
+  "source_inputs": 622,
+  "source_sha256": "cdec5deb5a1c6c4c49cbef60e88e56aca8b3dab439c3319f09ab2de1b6e5d06d",
   "step": 13,
   "test_helper_declarations_preserved": 2382,
   "transitive_dependency_findings": []

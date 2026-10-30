@@ -30,3 +30,9 @@ authentication
 compression
 tls
 ```
+
+`ConvictionPolicy.AddFailure(error, HostSnapshot)` returns whether a failed host
+should be marked down; `Reset(HostSnapshot)` clears application policy state.
+The host snapshot is detached read-only metadata that can be retained. Custom
+policies must support concurrent callbacks. The default SimpleConvictionPolicy
+always convicts and its Reset is a no-op.

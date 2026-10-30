@@ -18,6 +18,7 @@ package bench_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -27,17 +28,48 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 )
 
+type corpusConfig struct {
+	Namespace string `json:"namespace"`
+	Address   string `json:"address"`
+	Protocol  int    `json:"protocol"`
+}
+
+var corpus corpusConfig
+var corpusRoot = "."
+var identifier = regexp.MustCompile(`^[a-z][a-z0-9_]{0,47}$`)
+
+func freshNamespace() (string, error) {
+	prefix := os.Getenv("GOCQL_TEST_RUN")
+	if prefix == "" {
+		prefix = "gocql"
+	}
+	id, err := gocql.RandomUUID()
+	if err != nil {
+		return "", err
+	}
+	name := prefix + "_bench_" + strings.ReplaceAll(id.String(), "-", "")[:16]
+	if !identifier.MatchString(name) {
+		return "", fmt.Errorf("invalid owned benchmark namespace %q", name)
+	}
+	return name, nil
+}
+func corpusPath(name string) string { return filepath.Join(corpusRoot, name) }
 func benchConfig(d gocql.Dialer) gocql.Config {
 	address := os.Getenv("GOCQL_BENCH_ADDRESS")
 	if address == "" {
-		address = "127.0.20.1:9042"
+		address = corpus.Address
+		if address == "" {
+			address = "127.0.20.1:9042"
+		}
 	}
 	c := gocql.DefaultConfig(address)
 	c.Protocol = 4
@@ -51,30 +83,124 @@ func benchConfig(d gocql.Dialer) gocql.Config {
 	c.Dialer = d
 	return c
 }
-func benchExec(s *gocql.Session, cql string) error {
+func benchExec(ctx context.Context, s *gocql.Session, cql string) error {
 	b, e := gocql.BindUnpreparedOwned(gocql.Statement[gocql.Unit, gocql.Unit]{CQL: cql, Params: gocql.NoParams, Rows: gocql.NoRows}, gocql.NewColumns(), gocql.Unit{})
 	if e != nil {
 		return e
 	}
 	defer b.Close()
-	_, e = gocql.Exec(context.Background(), s, b, gocql.Options{})
+	_, e = gocql.Exec(ctx, s, b, gocql.Options{})
 	return e
 }
-func InitializeCluster() error {
-	s, e := gocql.Connect(context.Background(), benchConfig(nil))
-	if e != nil {
-		return e
-	}
-	defer s.Close()
-	for _, cql := range []string{"DROP KEYSPACE IF EXISTS single_conn_bench", "CREATE KEYSPACE single_conn_bench WITH replication = {'class':'NetworkTopologyStrategy','replication_factor':1}", "CREATE TABLE single_conn_bench.table1(pk int PRIMARY KEY,ck int,v text)"} {
-		if e := benchExec(s, cql); e != nil {
-			return e
+func InitializeCluster(ctx context.Context, s *gocql.Session) error {
+	for _, cql := range []string{"CREATE TABLE " + corpus.Namespace + ".table1(pk int PRIMARY KEY,ck int,v text)"} {
+		if err := benchExec(ctx, s, cql); err != nil {
+			return err
 		}
 	}
 	return nil
 }
+func cleanupNamespace(s *gocql.Session) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := benchExec(ctx, s, "DROP KEYSPACE IF EXISTS "+corpus.Namespace); err != nil {
+		return err
+	}
+	p, err := gocql.Prepare(ctx, s, gocql.Statement[string, gocql.Text]{CQL: "SELECT keyspace_name FROM system_schema.keyspaces WHERE keyspace_name = ?", Params: gocql.OneParam(gocql.StringEncoder), Rows: gocql.OneColumn(gocql.TextCodec)}, gocql.PrepareOptions{})
+	if err != nil {
+		return err
+	}
+	b, err := gocql.BindOwned(p, corpus.Namespace)
+	if err != nil {
+		return err
+	}
+	defer b.Close()
+	rows, err := gocql.Run(ctx, s, b, gocql.Options{})
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	if rows.Next() {
+		return fmt.Errorf("owned benchmark namespace survived cleanup: %s", corpus.Namespace)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	fmt.Println("CLEANED", corpus.Namespace)
+	return nil
+}
+func generateCaptures(ctx context.Context) (err error) {
+	operation, cancel := context.WithCancel(ctx)
+	defer cancel()
+	ctx = operation
+	namespace, err := freshNamespace()
+	if err != nil {
+		return err
+	}
+	corpus = corpusConfig{Namespace: namespace, Address: os.Getenv("GOCQL_BENCH_ADDRESS"), Protocol: 4}
+	if corpus.Address == "" {
+		return fmt.Errorf("capture generation requires explicit GOCQL_BENCH_ADDRESS")
+	}
+	s, err := gocql.Connect(ctx, benchConfig(nil))
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, s.Close()) }()
+	owned := true
+	defer func() {
+		if owned {
+			err = errors.Join(err, cleanupNamespace(s))
+		}
+	}()
+	// A namespace is fresh and exclusively generated here. An AlreadyExists
+	// response relinquishes ownership instead of deleting a pre-existing name.
+	if err = benchExec(ctx, s, "CREATE KEYSPACE "+corpus.Namespace+" WITH replication = {'class':'NetworkTopologyStrategy','replication_factor':1}"); err != nil {
+		var exists *gocql.RequestErrAlreadyExists
+		if errors.As(err, &exists) {
+			owned = false
+		}
+		return err
+	}
+	if err = InitializeCluster(ctx, s); err != nil {
+		return err
+	}
+	fmt.Println("READY", corpus.Namespace)
+	switch os.Getenv("GOCQL_BENCH_FAILURE") {
+	case "error":
+		return errors.New("injected benchmark failure after create")
+	case "cancel":
+		cancel()
+		return ctx.Err()
+	case "pause":
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	for _, name := range []string{"rec_insert", "rec_select"} {
+		dir := corpusPath(name)
+		if err = os.RemoveAll(dir); err != nil {
+			return err
+		}
+		if err = os.MkdirAll(dir, 0700); err != nil {
+			return err
+		}
+	}
+	if err = RecordInsertTraffic(ctx, 10, corpusPath("rec_insert")); err != nil {
+		return err
+	}
+	if err = RecordSelectTraffic(ctx, 10, corpusPath("rec_select")); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(corpus, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(corpusPath("corpus.json"), append(data, '\n'), 0600)
+}
 func benchRead(s *gocql.Session, id int32) error {
-	p, e := gocql.Prepare(context.Background(), s, gocql.Statement[int32, gocql.Text]{CQL: "SELECT v FROM single_conn_bench.table1 WHERE pk = ?;", Params: gocql.OneParam(gocql.Int32), Rows: gocql.OneColumn(gocql.TextCodec)}, gocql.PrepareOptions{})
+	return benchReadContext(context.Background(), s, id)
+}
+func benchReadContext(ctx context.Context, s *gocql.Session, id int32) error {
+	p, e := gocql.Prepare(ctx, s, gocql.Statement[int32, gocql.Text]{CQL: "SELECT v FROM " + corpus.Namespace + ".table1 WHERE pk = ?;", Params: gocql.OneParam(gocql.Int32), Rows: gocql.OneColumn(gocql.TextCodec)}, gocql.PrepareOptions{})
 	if e != nil {
 		return e
 	}
@@ -83,7 +209,7 @@ func benchRead(s *gocql.Session, id int32) error {
 		return e
 	}
 	defer b.Close()
-	rows, e := gocql.Run(context.Background(), s, b, gocql.Options{})
+	rows, e := gocql.Run(ctx, s, b, gocql.Options{})
 	if e != nil {
 		return e
 	}
@@ -110,7 +236,10 @@ type benchInsert struct {
 }
 
 func benchWrite(s *gocql.Session, id int32) error {
-	p, e := gocql.Prepare(context.Background(), s, gocql.Statement[benchInsert, gocql.Unit]{CQL: "INSERT INTO single_conn_bench.table1 (pk, ck, v) VALUES (?, ?, ?);", Params: gocql.Params(gocql.Param("pk", gocql.Int32, func(v benchInsert) int32 { return v.PK }), gocql.Param("ck", gocql.Int32, func(v benchInsert) int32 { return v.CK }), gocql.Param("v", gocql.StringEncoder, func(v benchInsert) string { return v.Value })), Rows: gocql.NoRows}, gocql.PrepareOptions{})
+	return benchWriteContext(context.Background(), s, id)
+}
+func benchWriteContext(ctx context.Context, s *gocql.Session, id int32) error {
+	p, e := gocql.Prepare(ctx, s, gocql.Statement[benchInsert, gocql.Unit]{CQL: "INSERT INTO " + corpus.Namespace + ".table1 (pk, ck, v) VALUES (?, ?, ?);", Params: gocql.Params(gocql.Param("pk", gocql.Int32, func(v benchInsert) int32 { return v.PK }), gocql.Param("ck", gocql.Int32, func(v benchInsert) int32 { return v.CK }), gocql.Param("v", gocql.StringEncoder, func(v benchInsert) string { return v.Value })), Rows: gocql.NoRows}, gocql.PrepareOptions{})
 	if e != nil {
 		return e
 	}
@@ -119,39 +248,39 @@ func benchWrite(s *gocql.Session, id int32) error {
 		return e
 	}
 	defer b.Close()
-	_, e = gocql.Exec(context.Background(), s, b, gocql.Options{})
+	_, e = gocql.Exec(ctx, s, b, gocql.Options{})
 	return e
 }
-func RecordSelectTraffic(size int, dir string) error {
+func RecordSelectTraffic(ctx context.Context, size int, dir string) error {
 	d := newCaptureDialer(dir, false)
-	s, e := gocql.Connect(context.Background(), benchConfig(d))
+	s, e := gocql.Connect(ctx, benchConfig(d))
 	if e != nil {
 		return e
 	}
 	defer s.Close()
 	for i := 0; i < size; i++ {
-		if e := benchRead(s, int32(i)); e != nil {
+		if e := benchReadContext(ctx, s, int32(i)); e != nil {
 			return e
 		}
 	}
 	return finishCapture(s, d)
 }
-func RecordInsertTraffic(size int, dir string) error {
+func RecordInsertTraffic(ctx context.Context, size int, dir string) error {
 	d := newCaptureDialer(dir, false)
-	s, e := gocql.Connect(context.Background(), benchConfig(d))
+	s, e := gocql.Connect(ctx, benchConfig(d))
 	if e != nil {
 		return e
 	}
 	defer s.Close()
 	for i := 0; i < size; i++ {
-		if e := benchWrite(s, int32(i)); e != nil {
+		if e := benchWriteContext(ctx, s, int32(i)); e != nil {
 			return e
 		}
 	}
 	return finishCapture(s, d)
 }
 func BenchmarkSingleConnectionSelect(b *testing.B) {
-	d := newCaptureDialer("rec_select", true)
+	d := newCaptureDialer(corpusPath("rec_select"), true)
 	s, e := gocql.Connect(context.Background(), benchConfig(d))
 	if e != nil {
 		b.Fatal(e)
@@ -172,7 +301,7 @@ func BenchmarkSingleConnectionSelect(b *testing.B) {
 	}
 }
 func BenchmarkSingleConnectionInsert(b *testing.B) {
-	d := newCaptureDialer("rec_insert", true)
+	d := newCaptureDialer(corpusPath("rec_insert"), true)
 	s, e := gocql.Connect(context.Background(), benchConfig(d))
 	if e != nil {
 		b.Fatal(e)
@@ -198,28 +327,24 @@ func BenchmarkSingleConnectionInsert(b *testing.B) {
 func TestMain(m *testing.M) {
 	update := flag.Bool("update-golden", false, "Update golden files")
 	flag.Parse()
+	if root := os.Getenv("GOCQL_BENCH_CORPUS_DIR"); root != "" {
+		corpusRoot = root
+	}
 	if *update {
-		for _, dir := range []string{"rec_insert", "rec_select"} {
-			if err := os.RemoveAll(dir); err != nil {
-				panic(err)
-			}
-			if err := os.Mkdir(dir, 0700); err != nil {
-				panic(err)
-			}
-		}
-		err := InitializeCluster()
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		err := generateCaptures(ctx)
+		cancel()
 		if err != nil {
-			fmt.Printf("failed to initialize cluster: %v\n", err)
+			fmt.Printf("capture generation: %v\n", err)
 			os.Exit(1)
 		}
-		err = RecordInsertTraffic(10, "rec_insert")
-		if err != nil {
-			fmt.Printf("failed to record insert traffic: %v\n", err)
-			os.Exit(1)
+	} else {
+		data, err := os.ReadFile(corpusPath("corpus.json"))
+		if err == nil {
+			err = json.Unmarshal(data, &corpus)
 		}
-		err = RecordSelectTraffic(10, "rec_select")
-		if err != nil {
-			fmt.Printf("failed to record select traffic: %v\n", err)
+		if err != nil || !identifier.MatchString(corpus.Namespace) || corpus.Protocol != 4 {
+			fmt.Printf("invalid replay corpus configuration: %v\n", err)
 			os.Exit(1)
 		}
 	}
@@ -280,7 +405,7 @@ func TestSingleConnectionReplay(t *testing.T) {
 		{"select", "rec_select", benchRead}, {"insert", "rec_insert", benchWrite},
 	} {
 		t.Run(workload.name, func(t *testing.T) {
-			d := newCaptureDialer(workload.dir, true)
+			d := newCaptureDialer(corpusPath(workload.dir), true)
 			s, err := gocql.Connect(context.Background(), benchConfig(d))
 			if err != nil {
 				t.Fatal(err)

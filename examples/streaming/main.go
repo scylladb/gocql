@@ -15,6 +15,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -34,7 +35,7 @@ func main() {
 		log.Fatal(err)
 	}
 }
-func run() error {
+func run() (resultErr error) {
 	hosts := flag.String("hosts", "127.0.0.1:9042", "comma-separated native endpoints")
 	protocol := flag.Int("protocol", 4, "native protocol version")
 	compression := flag.String("compression", "none", "none, lz4 or snappy")
@@ -120,28 +121,59 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	defer s.Close()
-	namespace := "gocql_stream_example_" + fmt.Sprintf("%x", time.Now().UnixNano())
-	if run := os.Getenv("GOCQL_TEST_RUN"); run != "" {
-		namespace = "gocql_v2_" + run + "_stream_example"
+	defer func() { resultErr = errors.Join(resultErr, s.Close()) }()
+	prefix := os.Getenv("GOCQL_TEST_RUN")
+	if prefix == "" {
+		prefix = "gocql"
 	}
-	exec := func(cql string) error {
+	id, err := gocql.RandomUUID()
+	if err != nil {
+		return err
+	}
+	namespace := prefix + "_stream_" + strings.ReplaceAll(id.String(), "-", "")[:16]
+	if !regexp.MustCompile(`^[a-z][a-z0-9_]{0,47}$`).MatchString(namespace) {
+		return fmt.Errorf("invalid owned namespace %q", namespace)
+	}
+	execContext := func(operation context.Context, cql string) error {
 		b, err := gocql.BindUnpreparedOwned(gocql.Statement[gocql.Unit, gocql.Unit]{CQL: cql, Params: gocql.NoParams, Rows: gocql.NoRows}, gocql.NewColumns(), gocql.Unit{})
 		if err != nil {
 			return err
 		}
 		defer b.Close()
-		_, err = gocql.Exec(ctx, s, b, gocql.Options{})
+		_, err = gocql.Exec(operation, s, b, gocql.Options{})
 		return err
 	}
-	if err := exec("CREATE KEYSPACE " + namespace + " WITH replication = {'class':'NetworkTopologyStrategy','replication_factor':1}"); err != nil {
-		return err
-	}
+	exec := func(cql string) error { return execContext(ctx, cql) }
+	owned := true
 	defer func() {
-		if err := exec("DROP KEYSPACE " + namespace); err != nil {
-			log.Print(err)
+		if owned {
+			cleanup, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			err := execContext(cleanup, "DROP KEYSPACE IF EXISTS "+namespace)
+			resultErr = errors.Join(resultErr, err)
+			if err == nil {
+				fmt.Println("CLEANED", namespace)
+			}
 		}
 	}()
+	if err := exec("CREATE KEYSPACE " + namespace + " WITH replication = {'class':'NetworkTopologyStrategy','replication_factor':1}"); err != nil {
+		var exists *gocql.RequestErrAlreadyExists
+		if errors.As(err, &exists) {
+			owned = false
+		}
+		return err
+	}
+	fmt.Println("READY", namespace)
+	switch os.Getenv("GOCQL_EXAMPLE_FAILURE") {
+	case "error":
+		return errors.New("injected example failure after create")
+	case "cancel":
+		cancel()
+		return ctx.Err()
+	case "pause":
+		<-ctx.Done()
+		return ctx.Err()
+	}
 	table := namespace + ".records"
 	if err := exec("CREATE TABLE " + table + " (id int PRIMARY KEY,payload blob,pieces list<blob>)"); err != nil {
 		return err

@@ -1,106 +1,41 @@
 {
-  "actual_386_execution": true,
-  "build_tag_note": "CCM tests require ccm in addition to all; final all-tag and arm64 checks explicitly use all ccm bench.",
   "checks": [
     {
       "command": [
         "go",
-        "mod",
-        "tidy",
-        "-diff"
+        "test",
+        "-json",
+        "-race",
+        "-count=3",
+        "-run",
+        "^TestSingleConnectionReplay$",
+        "./tests/bench"
       ],
-      "environment": {},
       "exit_code": 0,
-      "log": "/extra/scylladb/gocql-api-test-cluster/step13/verified/checks/module-tidy.log",
-      "name": "module-tidy",
-      "seconds": 0.023,
-      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-    },
-    {
-      "command": [
-        "go",
-        "mod",
-        "verify"
-      ],
-      "environment": {},
-      "exit_code": 0,
-      "log": "/extra/scylladb/gocql-api-test-cluster/step13/verified/checks/module-verify.log",
-      "name": "module-verify",
-      "seconds": 0.506,
-      "sha256": "b4537ed75f533f993f371954de47e42a793b8e5b0587577de7e27fb3e50696bd"
-    },
-    {
-      "command": [
-        "go",
-        "vet",
-        "-tags",
-        "unit integration gocql_debug bench",
-        "./..."
-      ],
-      "environment": {},
-      "exit_code": 0,
-      "log": "/extra/scylladb/gocql-api-test-cluster/step13/verified/checks/vet.log",
-      "name": "vet",
-      "seconds": 9.741,
-      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      "log": "/extra/scylladb/gocql-api-test-cluster/step13/combined/checks/replay-operations.log",
+      "name": "replay-operations",
+      "seconds": 1.292,
+      "sha256": "474821e6966d44e5a08177d3d2bd8aa36999f88e5358eacde7f9b6ece1f34e69"
     },
     {
       "command": [
         "go",
         "test",
-        "-count=1",
+        "-race",
         "-tags",
         "unit",
-        "-timeout=5m",
-        "./..."
-      ],
-      "environment": {
-        "GOARCH": "386"
-      },
-      "exit_code": 0,
-      "log": "/extra/scylladb/gocql-api-test-cluster/step13/verified/checks/386.log",
-      "name": "386",
-      "seconds": 25.342,
-      "sha256": "594b86252c8ea1a5f0458958a1663ddec268d61656b2331ad910244fc09e796d"
-    },
-    {
-      "command": [
-        "go",
-        "test",
-        "-exec",
-        "/bin/true",
-        "-tags",
-        "all ccm bench",
+        "-count=1",
         "-run",
-        "^$",
-        "./..."
+        "Test(BenchCurrentControlCapture|CheckedInRecordings|LoadRepeatedRequestsRequireIdenticalFrames|ConvictionSnapshotFailureDecision)$",
+        ".",
+        "./dialer/replayer",
+        "./internal/pool"
       ],
-      "environment": {
-        "GOARCH": "arm64",
-        "GOOS": "linux"
-      },
       "exit_code": 0,
-      "log": "/extra/scylladb/gocql-api-test-cluster/step13/verified/checks/arm64-compile.log",
-      "name": "arm64-compile",
-      "seconds": 0.79,
-      "sha256": "a90c904f2392c8fe298d85f2ea3d569176f8ccd89236464c5ac540f3f5221d08"
-    },
-    {
-      "command": [
-        "go",
-        "test",
-        "-tags",
-        "all ccm bench",
-        "-run",
-        "^$",
-        "./..."
-      ],
-      "environment": {},
-      "exit_code": 0,
-      "log": "/extra/scylladb/gocql-api-test-cluster/step13/verified/checks/all-tags.log",
-      "name": "all-tags",
-      "seconds": 0.806,
-      "sha256": "900a83862c600818f1fc2e845dd06d86a0594e274a391abc6918734f7d345f26"
+      "log": "/extra/scylladb/gocql-api-test-cluster/step13/combined/checks/fixture-unit.log",
+      "name": "fixture-unit",
+      "seconds": 5.147,
+      "sha256": "79992e371972cc630201637bceac8a47e9aca5305bd3489e03835d88edca9b65"
     },
     {
       "command": [
@@ -117,54 +52,41 @@
         "-benchmem",
         "./tests/bench"
       ],
-      "environment": {},
       "exit_code": 0,
-      "log": "/extra/scylladb/gocql-api-test-cluster/step13/verified/checks/replay-benchmark.log",
+      "log": "/extra/scylladb/gocql-api-test-cluster/step13/combined/checks/replay-benchmark.log",
       "name": "replay-benchmark",
-      "seconds": 0.256,
-      "sha256": "22b6b9f2a1a3dec4c811dbf79555e061667424e9b571025f1a8f5cf4766d2997"
+      "seconds": 0.207,
+      "sha256": "1fa307c2d87583f7f0986ffc34acbda143c0507b2545ef988b568b76d8f974b3"
+    },
+    {
+      "command": [
+        "go",
+        "vet",
+        "-tags",
+        "unit integration gocql_debug",
+        "./..."
+      ],
+      "exit_code": 0,
+      "log": "/extra/scylladb/gocql-api-test-cluster/step13/combined/checks/vet.log",
+      "name": "vet",
+      "seconds": 8.746,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
       "command": [
         "go",
         "test",
         "-tags",
-        "unit bench",
+        "all ccm bench",
         "-run",
         "^$",
-        "-bench",
-        "Benchmark(Step08IndependentStreamOracle|V2ExclusiveTransport|V2WarmPreparedSelection|V2PagingHistoryLookup)$",
-        "-benchtime=5x",
-        "-benchmem",
-        "."
+        "./..."
       ],
-      "environment": {},
       "exit_code": 0,
-      "log": "/extra/scylladb/gocql-api-test-cluster/step13/verified/checks/stream-cost.log",
-      "name": "stream-cost",
-      "seconds": 0.631,
-      "sha256": "5641a6713e14ba5f369a411be6d25cec7bcf43bd0f02f8f88cf59414ca185eeb"
-    },
-    {
-      "command": [
-        "go",
-        "test",
-        "-tags",
-        "unit bench",
-        "-run",
-        "^$",
-        "-bench",
-        "BenchmarkLZ4Compressor$",
-        "-benchtime=5x",
-        "-benchmem",
-        "./internal/wirecompress"
-      ],
-      "environment": {},
-      "exit_code": 0,
-      "log": "/extra/scylladb/gocql-api-test-cluster/step13/verified/checks/lz4-benchmark.log",
-      "name": "lz4-benchmark",
-      "seconds": 0.191,
-      "sha256": "1355a0fc477fc43a93a0c02bdb188dba0cc01a6bef0705b4acf30aa293f7a4cf"
+      "log": "/extra/scylladb/gocql-api-test-cluster/step13/combined/checks/all-tags.log",
+      "name": "all-tags",
+      "seconds": 1.933,
+      "sha256": "41b078af223bca175d87595350aec52d4fa2dedb52f93b787a58b148234a8251"
     },
     {
       "command": [
@@ -173,39 +95,19 @@
         "-race",
         "-tags",
         "unit",
+        "-count=1",
         "-timeout=5m",
-        "./..."
+        ".",
+        "./internal/pool",
+        "./internal/cluster",
+        "./internal/settings",
+        "./internal/connectivity"
       ],
       "exit_code": 0,
-      "log": "/extra/scylladb/gocql-api-test-cluster/step13/verified/checks/unit-race.log",
-      "name": "unit-race",
-      "sha256": "4ee8abb17da0130d786dad8aff0b0d84ccca2852b5935da131dabcebaeeee0fb"
-    },
-    {
-      "command": [
-        "python3",
-        "-m",
-        "unittest",
-        "discover",
-        "-s",
-        "docs",
-        "-p",
-        "test_*.py"
-      ],
-      "exit_code": 0,
-      "log": "/extra/scylladb/gocql-api-test-cluster/step13/verified/checks/docs-version-tests.log",
-      "name": "docs-version-tests",
-      "sha256": "dcd2147edfda2291b456dfb6d9f3021f0fed07760d5a1c8869fc5446f30e28fe"
-    },
-    {
-      "command": [
-        "python3",
-        "feature-specs/verify.py"
-      ],
-      "exit_code": 0,
-      "log": "/extra/scylladb/gocql-api-test-cluster/step13/verified/checks/spec-verifier.log",
-      "name": "spec-verifier",
-      "sha256": "d917fd30d32ac1dcf5211b8f90122e2892ee48305e5b2f53184e255a32b9f1b4"
+      "log": "/extra/scylladb/gocql-api-test-cluster/step13/combined/checks/conviction-race.log",
+      "name": "conviction-race",
+      "seconds": 23.16,
+      "sha256": "234bd8b26ff53cf107467718d54b16bd1c68e4135b9ed7518c354ab22700c9b2"
     },
     {
       "command": [
@@ -220,35 +122,36 @@
         "docs/source",
         "/tmp/gocql-step13-docs"
       ],
+      "cwd": null,
       "exit_code": 0,
-      "log": "/extra/scylladb/gocql-api-test-cluster/step13/verified/checks/docs-build.log",
+      "log": "/extra/scylladb/gocql-api-test-cluster/step13/combined/checks/docs-build.log",
       "name": "docs-build",
-      "sha256": "f8c8b2f8bc1bd6c7bb9e3584ac700cd6bf174a82f1b981c58e92462b4fc5dfe7"
+      "seconds": 1.125,
+      "sha256": "fa87ddea478309d6b653ffc16f607a0292bb37141ce9f26fa2dd8689db0edbd9"
     },
     {
       "command": [
         "go",
-        "test",
-        "-tags",
-        "unit bench",
-        "-run",
-        "^$",
-        "-bench",
-        "Benchmark(V2StreamFinalStorage|V2StreamingNestedElements|V2ContainerSegmentedIteration|V2ScalarInt64Decode|V2ScalarBlobDecode|V2ScalarTextDecode)$",
-        "-benchtime=5x",
-        "-benchmem",
-        "./internal/codec"
+        "build",
+        "-mod=mod",
+        "./..."
       ],
+      "cwd": "/tmp/gocql-step13-examples-rimz5jzo",
       "exit_code": 0,
-      "log": "/extra/scylladb/gocql-api-test-cluster/step13/verified/checks/codec-copy-cost.log",
-      "name": "codec-copy-cost",
-      "sha256": "e72cd483912924fd030a27f475ca0431b8a2c643700032338d196598bbcf42e7"
+      "log": "/extra/scylladb/gocql-api-test-cluster/step13/combined/checks/consumer-examples.log",
+      "name": "consumer-examples",
+      "seconds": 0.384,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     }
   ],
   "compile_only": [
-    "all-tags",
-    "arm64-compile"
+    "all-tags"
   ],
-  "cost_scope": "Five-iteration bounded identity/allocation/cost smokes, not universal throughput or native peak-memory claims. Comprehensive performance remains15.",
-  "source_sha256": "fc38c0172edc87124a8291303e1bd9208ef70fd7230b487228c6b7f60d646305"
+  "cost_scope": "Current twenty-case replay benchmark smoke; comprehensive performance remains15.",
+  "prior_runtime_validation": {
+    "evidence": "step13-prior-checks.json",
+    "scope": "Current conviction/root/pool/cluster race, compiler and native checks cover the changed callback contract. Earlier remaining full unit/race/386/arm64/cost/docs checks retain their original source hashes.",
+    "source_sha256": "fc38c0172edc87124a8291303e1bd9208ef70fd7230b487228c6b7f60d646305"
+  },
+  "source_sha256": "cdec5deb5a1c6c4c49cbef60e88e56aca8b3dab439c3319f09ab2de1b6e5d06d"
 }

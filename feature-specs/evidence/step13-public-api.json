@@ -11,6 +11,54 @@
     "Subscribe": "func (*github.com/scylladb/gocql/v2/internal/cluster.Session).Subscribe(filter github.com/scylladb/gocql/v2/internal/cluster.EventFilter) (*github.com/scylladb/gocql/v2/internal/cluster.Subscription, error)",
     "Trace": "func (*github.com/scylladb/gocql/v2/internal/cluster.Session).Trace(ctx context.Context, id github.com/scylladb/gocql/v2/internal/cluster.UUID) (github.com/scylladb/gocql/v2/internal/cluster.TraceInfo, error)"
   },
+  "external_implementation_consumer": {
+    "behavior_test_source": "package contracts\n\nimport (\n\t\"errors\"\n\t\"github.com/scylladb/gocql/v2\"\n\t\"net/netip\"\n\t\"testing\"\n)\n\ntype statefulConviction struct{ failures map[gocql.UUID]int }\n\nfunc (p *statefulConviction) AddFailure(_ error, host gocql.HostSnapshot) bool {\n\tp.failures[host.ID]++\n\treturn p.failures[host.ID] \u003e= 2\n}\nfunc (p *statefulConviction) Reset(host gocql.HostSnapshot) { delete(p.failures, host.ID) }\nfunc TestExternalConvictionImplementation(t *testing.T) {\n\tpolicy := \u0026statefulConviction{failures: map[gocql.UUID]int{}}\n\tconfig := gocql.DefaultConfig(\"127.0.0.1\")\n\tconfig.Conviction = policy\n\thost := gocql.HostSnapshot{ID: gocql.ParseUUIDMust(\"ed8ea335-19d6-4652-9d9a-4519c3b6eff0\"), Address: netip.MustParseAddrPort(\"127.0.0.1:9042\"), Datacenter: \"dc1\", Rack: \"r1\", Tokens: []int64{-1, 1}, Enabled: true, Up: true}\n\tfailure := errors.New(\"external failure\")\n\tif config.Conviction.AddFailure(failure, host) || !config.Conviction.AddFailure(failure, host) {\n\t\tt.Fatal(\"stateful conviction decision\")\n\t}\n\tconfig.Conviction.Reset(host)\n\tif config.Conviction.AddFailure(failure, host) {\n\t\tt.Fatal(\"reset did not clear the selected host\")\n\t}\n\tvar simple gocql.ConvictionPolicy = \u0026gocql.SimpleConvictionPolicy{}\n\tif !simple.AddFailure(failure, host) {\n\t\tt.Fatal(\"simple conviction behavior changed\")\n\t}\n\tsimple.Reset(host)\n\tif !simple.AddFailure(failure, host) {\n\t\tt.Fatal(\"simple reset behavior changed\")\n\t}\n}\n",
+    "command": [
+      "go",
+      "test",
+      "-count=1",
+      "-mod=mod",
+      "./..."
+    ],
+    "directory": "/tmp/gocql-step13-audit/external-contracts",
+    "exit_code": 0,
+    "interfaces": [
+      "AuthProvider",
+      "AuthExchange",
+      "ConvictionPolicy",
+      "ReconnectPolicy",
+      "Dialer",
+      "DNSResolver",
+      "AddressTranslator",
+      "AddressTranslatorV2",
+      "AddressTranslatorHostInfo",
+      "Observer",
+      "LifecycleObserver",
+      "RoutingPolicy",
+      "QueryPlan",
+      "TokenPartitioner",
+      "RetryPolicy",
+      "SpeculationPolicy",
+      "Encoder",
+      "Decoder",
+      "Codec",
+      "ParamEncoder",
+      "ParamPlan",
+      "RowDecoder",
+      "RowPlan",
+      "StreamDecoder",
+      "StreamRowDecoder",
+      "StreamValuePlan",
+      "StreamRowPlan",
+      "StreamResetter",
+      "RequestError",
+      "StdLogger",
+      "TypeInfo"
+    ],
+    "normal_root_build_without_test_aliases": true,
+    "output": "ok  \texample.com/gocql-external-contracts\t0.002s\n",
+    "source": "package contracts\n\nimport (\n\tcontext \"context\"\n\tgocql \"github.com/scylladb/gocql/v2\"\n\tnet \"net\"\n\ttime \"time\"\n)\n\ntype implementationAuthProvider struct{}\n\nfunc (implementationAuthProvider) Start(context.Context, gocql.HostSnapshot, string) (gocql.AuthExchange, gocql.Nullable[[]byte], error) {\n\tpanic(\"compile-only implementation\")\n}\n\nvar _ gocql.AuthProvider = implementationAuthProvider{}\n\ntype implementationAuthExchange struct{}\n\nfunc (implementationAuthExchange) Challenge(context.Context, gocql.Nullable[gocql.Bytes]) (gocql.Nullable[[]byte], error) {\n\tpanic(\"compile-only implementation\")\n}\nfunc (implementationAuthExchange) Close() { panic(\"compile-only implementation\") }\nfunc (implementationAuthExchange) Success(context.Context, gocql.Nullable[gocql.Bytes]) error {\n\tpanic(\"compile-only implementation\")\n}\n\nvar _ gocql.AuthExchange = implementationAuthExchange{}\n\ntype implementationConvictionPolicy struct{}\n\nfunc (implementationConvictionPolicy) AddFailure(err error, host gocql.HostSnapshot) bool {\n\tpanic(\"compile-only implementation\")\n}\nfunc (implementationConvictionPolicy) Reset(host gocql.HostSnapshot) {\n\tpanic(\"compile-only implementation\")\n}\n\nvar _ gocql.ConvictionPolicy = implementationConvictionPolicy{}\n\ntype implementationReconnectPolicy struct{}\n\nfunc (implementationReconnectPolicy) Delay(attempt int) (time.Duration, bool) {\n\tpanic(\"compile-only implementation\")\n}\n\nvar _ gocql.ReconnectPolicy = implementationReconnectPolicy{}\n\ntype implementationDialer struct{}\n\nfunc (implementationDialer) DialContext(context.Context, gocql.DialTarget) (net.Conn, error) {\n\tpanic(\"compile-only implementation\")\n}\n\nvar _ gocql.Dialer = implementationDialer{}\n\ntype implementationDNSResolver struct{}\n\nfunc (implementationDNSResolver) LookupIP(host string) ([]net.IP, error) {\n\tpanic(\"compile-only implementation\")\n}\n\nvar _ gocql.DNSResolver = implementationDNSResolver{}\n\ntype implementationAddressTranslator struct{}\n\nfunc (implementationAddressTranslator) Translate(addr net.IP, port int) (net.IP, int) {\n\tpanic(\"compile-only implementation\")\n}\n\nvar _ gocql.AddressTranslator = implementationAddressTranslator{}\n\ntype implementationAddressTranslatorV2 struct{}\n\nfunc (implementationAddressTranslatorV2) Translate(addr net.IP, port int) (net.IP, int) {\n\tpanic(\"compile-only implementation\")\n}\nfunc (implementationAddressTranslatorV2) TranslateHost(host gocql.AddressTranslatorHostInfo, addr gocql.AddressPort) (gocql.AddressPort, error) {\n\tpanic(\"compile-only implementation\")\n}\n\nvar _ gocql.AddressTranslatorV2 = implementationAddressTranslatorV2{}\n\ntype implementationAddressTranslatorHostInfo struct{}\n\nfunc (implementationAddressTranslatorHostInfo) BroadcastAddress() net.IP {\n\tpanic(\"compile-only implementation\")\n}\nfunc (implementationAddressTranslatorHostInfo) ClusterName() string {\n\tpanic(\"compile-only implementation\")\n}\nfunc (implementationAddressTranslatorHostInfo) DataCenter() string {\n\tpanic(\"compile-only implementation\")\n}\nfunc (implementationAddressTranslatorHostInfo) HostID() string { panic(\"compile-only implementation\") }\nfunc (implementationAddressTranslatorHostInfo) ListenAddress() net.IP {\n\tpanic(\"compile-only implementation\")\n}\nfunc (implementationAddressTranslatorHostInfo) Partitioner() string {\n\tpanic(\"compile-only implementation\")\n}\nfunc (implementationAddressTranslatorHostInfo) Peer() net.IP { panic(\"compile-only implementation\") }\nfunc (implementationAddressTranslatorHostInfo) Port() int    { panic(\"compile-only implementation\") }\nfunc (implementationAddressTranslatorHostInfo) PreferredIP() net.IP {\n\tpanic(\"compile-only implementation\")\n}\nfunc (implementationAddressTranslatorHostInfo) RPCAddress() net.IP {\n\tpanic(\"compile-only implementation\")\n}\nfunc (implementationAddressTranslatorHostInfo) Rack() string { panic(\"compile-only implementation\") }\nfunc (implementationAddressTranslatorHostInfo) ScyllaShardAwarePort() uint16 {\n\tpanic(\"compile-only implementation\")\n}\nfunc (implementationAddressTranslatorHostInfo) ScyllaShardAwarePortTLS() uint16 {\n\tpanic(\"compile-only implementation\")\n}\nfunc (implementationAddressTranslatorHostInfo) ScyllaShardCount() int {\n\tpanic(\"compile-only implementation\")\n}\nfunc (implementationAddressTranslatorHostInfo) UntranslatedConnectAddress() net.IP {\n\tpanic(\"compile-only implementation\")\n}\n\nvar _ gocql.AddressTranslatorHostInfo = implementationAddressTranslatorHostInfo{}\n\ntype implementationObserver struct{}\n\nfunc (implementationObserver) ObserveAttempt(gocql.AttemptEvent) {\n\tpanic(\"compile-only implementation\")\n}\nfunc (implementationObserver) ObserveRequest(gocql.RequestEvent) {\n\tpanic(\"compile-only implementation\")\n}\n\nvar _ gocql.Observer = implementationObserver{}\n\ntype implementationLifecycleObserver struct{}\n\nfunc (implementationLifecycleObserver) ObserveLifecycle(gocql.LifecycleEvent) {\n\tpanic(\"compile-only implementation\")\n}\n\nvar _ gocql.LifecycleObserver = implementationLifecycleObserver{}\n\ntype implementationRoutingPolicy struct{}\n\nfunc (implementationRoutingPolicy) Observe(gocql.AttemptEvent) { panic(\"compile-only implementation\") }\nfunc (implementationRoutingPolicy) Plan(gocql.RoutingInfo, *gocql.MetadataSnapshot) gocql.QueryPlan {\n\tpanic(\"compile-only implementation\")\n}\nfunc (implementationRoutingPolicy) Validate(*gocql.MetadataSnapshot) error {\n\tpanic(\"compile-only implementation\")\n}\n\nvar _ gocql.RoutingPolicy = implementationRoutingPolicy{}\n\ntype implementationQueryPlan struct{}\n\nfunc (implementationQueryPlan) Next() (gocql.Target, bool) { panic(\"compile-only implementation\") }\n\nvar _ gocql.QueryPlan = implementationQueryPlan{}\n\ntype implementationTokenPartitioner struct{}\n\nfunc (implementationTokenPartitioner) Token(gocql.PartitionKey) (int64, error) {\n\tpanic(\"compile-only implementation\")\n}\n\nvar _ gocql.TokenPartitioner = implementationTokenPartitioner{}\n\ntype implementationRetryPolicy struct{}\n\nfunc (implementationRetryPolicy) Decide(gocql.AttemptError) gocql.RetryDecision {\n\tpanic(\"compile-only implementation\")\n}\n\nvar _ gocql.RetryPolicy = implementationRetryPolicy{}\n\ntype implementationSpeculationPolicy struct{}\n\nfunc (implementationSpeculationPolicy) Delay(attempt int, metrics gocql.MetricsSnapshot) (time.Duration, bool) {\n\tpanic(\"compile-only implementation\")\n}\n\nvar _ gocql.SpeculationPolicy = implementationSpeculationPolicy{}\n\ntype implementationEncoder[T any] struct{}\n\nfunc (implementationEncoder[T]) CheckType(gocql.DataType) error { panic(\"compile-only implementation\") }\nfunc (implementationEncoder[T]) Encode(*gocql.ValueWriter, T) error {\n\tpanic(\"compile-only implementation\")\n}\n\nvar _ gocql.Encoder[any] = implementationEncoder[any]{}\n\ntype implementationDecoder[T any] struct{}\n\nfunc (implementationDecoder[T]) CheckType(gocql.DataType) error { panic(\"compile-only implementation\") }\nfunc (implementationDecoder[T]) Clone(T) T                      { panic(\"compile-only implementation\") }\nfunc (implementationDecoder[T]) Decode(gocql.ValueReader) (T, error) {\n\tpanic(\"compile-only implementation\")\n}\n\nvar _ gocql.Decoder[any] = implementationDecoder[any]{}\n\ntype implementationCodec[T any] struct{}\n\nfunc (implementationCodec[T]) CheckType(gocql.DataType) error { panic(\"compile-only implementation\") }\nfunc (implementationCodec[T]) Clone(T) T                      { panic(\"compile-only implementation\") }\nfunc (implementationCodec[T]) Decode(gocql.ValueReader) (T, error) {\n\tpanic(\"compile-only implementation\")\n}\nfunc (implementationCodec[T]) Encode(*gocql.ValueWriter, T) error {\n\tpanic(\"compile-only implementation\")\n}\n\nvar _ gocql.Codec[any] = implementationCodec[any]{}\n\ntype implementationParamEncoder[P any] struct{}\n\nfunc (implementationParamEncoder[P]) Compile(gocql.Columns) (gocql.ParamPlan[P], error) {\n\tpanic(\"compile-only implementation\")\n}\n\nvar _ gocql.ParamEncoder[any] = implementationParamEncoder[any]{}\n\ntype implementationParamPlan[P any] struct{}\n\nfunc (implementationParamPlan[P]) Encode(*gocql.ParamWriter, P) error {\n\tpanic(\"compile-only implementation\")\n}\n\nvar _ gocql.ParamPlan[any] = implementationParamPlan[any]{}\n\ntype implementationRowDecoder[R any] struct{}\n\nfunc (implementationRowDecoder[R]) Clone(R) R { panic(\"compile-only implementation\") }\nfunc (implementationRowDecoder[R]) Compile(gocql.Columns) (gocql.RowPlan[R], error) {\n\tpanic(\"compile-only implementation\")\n}\n\nvar _ gocql.RowDecoder[any] = implementationRowDecoder[any]{}\n\ntype implementationRowPlan[R any] struct{}\n\nfunc (implementationRowPlan[R]) Clone(R) R { panic(\"compile-only implementation\") }\nfunc (implementationRowPlan[R]) Decode(*gocql.RowReader) (R, error) {\n\tpanic(\"compile-only implementation\")\n}\nfunc (implementationRowPlan[R]) DecodeInto(*gocql.RowReader, *R) error {\n\tpanic(\"compile-only implementation\")\n}\n\nvar _ gocql.RowPlan[any] = implementationRowPlan[any]{}\n\ntype implementationStreamDecoder[T any] struct{}\n\nfunc (implementationStreamDecoder[T]) Compile(gocql.DataType) (gocql.StreamValuePlan[T], error) {\n\tpanic(\"compile-only implementation\")\n}\n\nvar _ gocql.StreamDecoder[any] = implementationStreamDecoder[any]{}\n\ntype implementationStreamRowDecoder[R any] struct{}\n\nfunc (implementationStreamRowDecoder[R]) Compile(gocql.Columns) (gocql.StreamRowPlan[R], error) {\n\tpanic(\"compile-only implementation\")\n}\n\nvar _ gocql.StreamRowDecoder[any] = implementationStreamRowDecoder[any]{}\n\ntype implementationStreamValuePlan[T any] struct{}\n\nfunc (implementationStreamValuePlan[T]) DecodeInto(*gocql.StreamValueReader, *T) error {\n\tpanic(\"compile-only implementation\")\n}\nfunc (implementationStreamValuePlan[T]) Reset(*T) { panic(\"compile-only implementation\") }\n\nvar _ gocql.StreamValuePlan[any] = implementationStreamValuePlan[any]{}\n\ntype implementationStreamRowPlan[R any] struct{}\n\nfunc (implementationStreamRowPlan[R]) DecodeInto(*gocql.StreamRowReader, *R) error {\n\tpanic(\"compile-only implementation\")\n}\nfunc (implementationStreamRowPlan[R]) Reset(*R) { panic(\"compile-only implementation\") }\n\nvar _ gocql.StreamRowPlan[any] = implementationStreamRowPlan[any]{}\n\ntype implementationStreamResetter[T any] struct{}\n\nfunc (implementationStreamResetter[T]) Reset(*T) { panic(\"compile-only implementation\") }\n\nvar _ gocql.StreamResetter[any] = implementationStreamResetter[any]{}\n\ntype implementationRequestError struct{}\n\nfunc (implementationRequestError) Error() string      { panic(\"compile-only implementation\") }\nfunc (implementationRequestError) GetCode() int       { panic(\"compile-only implementation\") }\nfunc (implementationRequestError) GetMessage() string { panic(\"compile-only implementation\") }\n\nvar _ gocql.RequestError = implementationRequestError{}\n\ntype implementationStdLogger struct{}\n\nfunc (implementationStdLogger) Print(v ...any)                 { panic(\"compile-only implementation\") }\nfunc (implementationStdLogger) Printf(format string, v ...any) { panic(\"compile-only implementation\") }\nfunc (implementationStdLogger) Println(v ...any)               { panic(\"compile-only implementation\") }\n\nvar _ gocql.StdLogger = implementationStdLogger{}\n\ntype implementationTypeInfo struct{}\n\nfunc (implementationTypeInfo) Custom() string   { panic(\"compile-only implementation\") }\nfunc (implementationTypeInfo) Type() gocql.Type { panic(\"compile-only implementation\") }\nfunc (implementationTypeInfo) Version() byte    { panic(\"compile-only implementation\") }\n\nvar _ gocql.TypeInfo = implementationTypeInfo{}\n"
+  },
   "issues": null,
   "missing_required_exports": [],
   "public_exports": {
@@ -522,6 +570,569 @@
     "ViewMetadata": "type github.com/scylladb/gocql/v2.ViewMetadata = github.com/scylladb/gocql/v2/internal/metadata.ViewMetadata",
     "WriteParam": "func github.com/scylladb/gocql/v2.WriteParam[T any](a0 *github.com/scylladb/gocql/v2.ParamWriter, a1 github.com/scylladb/gocql/v2.Encoder[T], a2 T) error"
   },
+  "public_type_aliases": {
+    "github.com/scylladb/gocql/v2.Conn": [
+      "Conn"
+    ],
+    "github.com/scylladb/gocql/v2/internal/binding.Statement": [
+      "Statement"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cluster.Error": [
+      "Error"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cluster.Event": [
+      "Event"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cluster.EventFilter": [
+      "EventFilter"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cluster.EventKind": [
+      "EventKind"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cluster.Session": [
+      "Session"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cluster.Subscription": [
+      "Subscription"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cluster.TraceEntry": [
+      "TraceEntry"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cluster.TraceEvent": [
+      "TraceEvent"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cluster.TraceInfo": [
+      "TraceInfo"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.CASResult": [
+      "CASResult"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.Codec": [
+      "Codec"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.Decoder": [
+      "Decoder"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.DynamicRow": [
+      "DynamicRow"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.EncodedValue": [
+      "EncodedValue"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.Encoder": [
+      "Encoder"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.Entry": [
+      "Entry"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.InputField": [
+      "InputField"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.Mapping": [
+      "Mapping"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.OutputField": [
+      "OutputField"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.Pair": [
+      "Pair"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.ParamEncoder": [
+      "ParamEncoder"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.ParamPlan": [
+      "ParamPlan"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.ParamWriter": [
+      "ParamWriter"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.RowDecoder": [
+      "RowDecoder"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.RowPlan": [
+      "RowPlan"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.RowReader": [
+      "RowReader"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.Sequence": [
+      "Sequence"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.StreamCapabilityError": [
+      "StreamCapabilityError"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.StreamCapacityError": [
+      "StreamCapacityError"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.StreamDecimalValue": [
+      "StreamDecimalValue"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.StreamDecoder": [
+      "StreamDecoder"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.StreamEncodedValue": [
+      "StreamEncodedValue"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.StreamMapEntry": [
+      "StreamMapEntry"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.StreamOutputField": [
+      "StreamOutputField"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.StreamResetter": [
+      "StreamResetter"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.StreamRowDecoder": [
+      "StreamRowDecoder"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.StreamRowPlan": [
+      "StreamRowPlan"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.StreamRowReader": [
+      "StreamRowReader"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.StreamValuePlan": [
+      "StreamValuePlan"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.StreamValueReader": [
+      "StreamValueReader"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.UDTOptions": [
+      "UDTOptions"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.Unit": [
+      "Unit"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.Value": [
+      "Value"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.ValueCursor": [
+      "ValueCursor"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.ValueEntry": [
+      "ValueEntry"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.ValueField": [
+      "ValueField"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.ValueIterator": [
+      "ValueIterator"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.ValueReader": [
+      "ValueReader"
+    ],
+    "github.com/scylladb/gocql/v2/internal/codec.ValueWriter": [
+      "ValueWriter"
+    ],
+    "github.com/scylladb/gocql/v2/internal/connectivity.AuthExchange": [
+      "AuthExchange"
+    ],
+    "github.com/scylladb/gocql/v2/internal/connectivity.AuthProvider": [
+      "AuthProvider"
+    ],
+    "github.com/scylladb/gocql/v2/internal/connectivity.ClientRoutesOptions": [
+      "ClientRoutesOptions"
+    ],
+    "github.com/scylladb/gocql/v2/internal/connectivity.ConvictionPolicy": [
+      "ConvictionPolicy"
+    ],
+    "github.com/scylladb/gocql/v2/internal/connectivity.PoolOptions": [
+      "PoolOptions"
+    ],
+    "github.com/scylladb/gocql/v2/internal/connectivity.ProtocolLimits": [
+      "ProtocolLimits"
+    ],
+    "github.com/scylladb/gocql/v2/internal/connectivity.ReconnectPolicy": [
+      "ReconnectPolicy"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cqltype.BatchKind": [
+      "BatchKind"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cqltype.BindValue": [
+      "BindValue"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cqltype.Bytes": [
+      "Bytes"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cqltype.CellState": [
+      "CellState"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cqltype.CodecError": [
+      "CodecError"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cqltype.CollectionType": [
+      "CollectionType"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cqltype.ColumnInfo": [
+      "ColumnInfo"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cqltype.ColumnSpec": [
+      "ColumnSpec"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cqltype.Columns": [
+      "Columns"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cqltype.Compression": [
+      "Compression"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cqltype.Consistency": [
+      "Consistency"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cqltype.Counter": [
+      "Counter"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cqltype.DataType": [
+      "DataType"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cqltype.Date": [
+      "Date"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cqltype.Decimal": [
+      "Decimal"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cqltype.Duration": [
+      "Duration"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cqltype.EmptyValueOf": [
+      "EmptyValueOf"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cqltype.NativeType": [
+      "NativeType"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cqltype.Nullable": [
+      "Nullable"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cqltype.Option": [
+      "Option"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cqltype.ProtocolError": [
+      "ProtocolError"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cqltype.StatementKind": [
+      "StatementKind"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cqltype.Text": [
+      "Text"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cqltype.TimeOfDay": [
+      "TimeOfDay"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cqltype.TimeUUID": [
+      "TimeUUID"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cqltype.Timestamp": [
+      "Timestamp"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cqltype.TupleTypeInfo": [
+      "TupleTypeInfo"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cqltype.Type": [
+      "Type"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cqltype.TypeInfo": [
+      "TypeInfo"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cqltype.UDTField": [
+      "UDTField"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cqltype.UDTTypeInfo": [
+      "UDTTypeInfo"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cqltype.UUID": [
+      "UUID"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cqltype.ValidationError": [
+      "ValidationError"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cqltype.Varint": [
+      "Varint"
+    ],
+    "github.com/scylladb/gocql/v2/internal/cqltype.VectorType": [
+      "VectorType"
+    ],
+    "github.com/scylladb/gocql/v2/internal/endpoint.AddressPort": [
+      "AddressPort"
+    ],
+    "github.com/scylladb/gocql/v2/internal/endpoint.AddressTranslator": [
+      "AddressTranslator"
+    ],
+    "github.com/scylladb/gocql/v2/internal/endpoint.AddressTranslatorFunc": [
+      "AddressTranslatorFunc"
+    ],
+    "github.com/scylladb/gocql/v2/internal/endpoint.AddressTranslatorFuncV2": [
+      "AddressTranslatorFuncV2"
+    ],
+    "github.com/scylladb/gocql/v2/internal/endpoint.AddressTranslatorHostInfo": [
+      "AddressTranslatorHostInfo"
+    ],
+    "github.com/scylladb/gocql/v2/internal/endpoint.AddressTranslatorV2": [
+      "AddressTranslatorV2"
+    ],
+    "github.com/scylladb/gocql/v2/internal/endpoint.DNSResolver": [
+      "DNSResolver"
+    ],
+    "github.com/scylladb/gocql/v2/internal/endpoint.DefaultDialer": [
+      "DefaultDialer"
+    ],
+    "github.com/scylladb/gocql/v2/internal/endpoint.DialTarget": [
+      "DialTarget"
+    ],
+    "github.com/scylladb/gocql/v2/internal/endpoint.Dialer": [
+      "Dialer"
+    ],
+    "github.com/scylladb/gocql/v2/internal/endpoint.DialerFunc": [
+      "DialerFunc"
+    ],
+    "github.com/scylladb/gocql/v2/internal/endpoint.SimpleDNSResolver": [
+      "SimpleDNSResolver"
+    ],
+    "github.com/scylladb/gocql/v2/internal/execution.BatchItem": [
+      "BatchItem"
+    ],
+    "github.com/scylladb/gocql/v2/internal/execution.Bound": [
+      "Bound"
+    ],
+    "github.com/scylladb/gocql/v2/internal/execution.ExecutionError": [
+      "ExecutionError"
+    ],
+    "github.com/scylladb/gocql/v2/internal/execution.Options": [
+      "Options"
+    ],
+    "github.com/scylladb/gocql/v2/internal/execution.Page": [
+      "Page"
+    ],
+    "github.com/scylladb/gocql/v2/internal/execution.PageLease": [
+      "PageLease"
+    ],
+    "github.com/scylladb/gocql/v2/internal/execution.PrepareOptions": [
+      "PrepareOptions"
+    ],
+    "github.com/scylladb/gocql/v2/internal/execution.Prepared": [
+      "Prepared"
+    ],
+    "github.com/scylladb/gocql/v2/internal/execution.PreparedInfo": [
+      "PreparedInfo"
+    ],
+    "github.com/scylladb/gocql/v2/internal/execution.RowStream": [
+      "RowStream"
+    ],
+    "github.com/scylladb/gocql/v2/internal/execution.Rows": [
+      "Rows"
+    ],
+    "github.com/scylladb/gocql/v2/internal/execution.StreamInfo": [
+      "StreamInfo"
+    ],
+    "github.com/scylladb/gocql/v2/internal/execution.StreamOptions": [
+      "StreamOptions"
+    ],
+    "github.com/scylladb/gocql/v2/internal/logging.StdLogger": [
+      "StdLogger"
+    ],
+    "github.com/scylladb/gocql/v2/internal/metadata.AggregateMetadata": [
+      "AggregateMetadata"
+    ],
+    "github.com/scylladb/gocql/v2/internal/metadata.ColumnIndexMetadata": [
+      "ColumnIndexMetadata"
+    ],
+    "github.com/scylladb/gocql/v2/internal/metadata.ColumnKind": [
+      "ColumnKind"
+    ],
+    "github.com/scylladb/gocql/v2/internal/metadata.ColumnMetadata": [
+      "ColumnMetadata"
+    ],
+    "github.com/scylladb/gocql/v2/internal/metadata.ColumnOrder": [
+      "ColumnOrder"
+    ],
+    "github.com/scylladb/gocql/v2/internal/metadata.FunctionMetadata": [
+      "FunctionMetadata"
+    ],
+    "github.com/scylladb/gocql/v2/internal/metadata.IndexMetadata": [
+      "IndexMetadata"
+    ],
+    "github.com/scylladb/gocql/v2/internal/metadata.KeyspaceMetadata": [
+      "KeyspaceMetadata"
+    ],
+    "github.com/scylladb/gocql/v2/internal/metadata.NoHostsError": [
+      "NoHostsError"
+    ],
+    "github.com/scylladb/gocql/v2/internal/metadata.PartialRefreshError": [
+      "PartialRefreshError"
+    ],
+    "github.com/scylladb/gocql/v2/internal/metadata.TableMetadata": [
+      "TableMetadata"
+    ],
+    "github.com/scylladb/gocql/v2/internal/metadata.TableMetadataOptions": [
+      "TableMetadataOptions"
+    ],
+    "github.com/scylladb/gocql/v2/internal/metadata.TypeMetadata": [
+      "TypeMetadata"
+    ],
+    "github.com/scylladb/gocql/v2/internal/metadata.ViewMetadata": [
+      "ViewMetadata"
+    ],
+    "github.com/scylladb/gocql/v2/internal/model.HostSnapshot": [
+      "HostSnapshot"
+    ],
+    "github.com/scylladb/gocql/v2/internal/model.PageState": [
+      "PageState"
+    ],
+    "github.com/scylladb/gocql/v2/internal/model.PayloadEntry": [
+      "PayloadEntry"
+    ],
+    "github.com/scylladb/gocql/v2/internal/model.Result": [
+      "Result"
+    ],
+    "github.com/scylladb/gocql/v2/internal/model.RoutingInfo": [
+      "RoutingInfo"
+    ],
+    "github.com/scylladb/gocql/v2/internal/model.Target": [
+      "Target"
+    ],
+    "github.com/scylladb/gocql/v2/internal/protocol.ErrProtocol": [
+      "ErrProtocol"
+    ],
+    "github.com/scylladb/gocql/v2/internal/protocol.ErrorMap": [
+      "ErrorMap"
+    ],
+    "github.com/scylladb/gocql/v2/internal/protocol.OpType": [
+      "OpType"
+    ],
+    "github.com/scylladb/gocql/v2/internal/protocol.RequestErrAlreadyExists": [
+      "RequestErrAlreadyExists"
+    ],
+    "github.com/scylladb/gocql/v2/internal/protocol.RequestErrCASWriteUnknown": [
+      "RequestErrCASWriteUnknown"
+    ],
+    "github.com/scylladb/gocql/v2/internal/protocol.RequestErrCDCWriteFailure": [
+      "RequestErrCDCWriteFailure"
+    ],
+    "github.com/scylladb/gocql/v2/internal/protocol.RequestErrFunctionFailure": [
+      "RequestErrFunctionFailure"
+    ],
+    "github.com/scylladb/gocql/v2/internal/protocol.RequestErrRateLimitReached": [
+      "RequestErrRateLimitReached"
+    ],
+    "github.com/scylladb/gocql/v2/internal/protocol.RequestErrReadFailure": [
+      "RequestErrReadFailure"
+    ],
+    "github.com/scylladb/gocql/v2/internal/protocol.RequestErrReadTimeout": [
+      "RequestErrReadTimeout"
+    ],
+    "github.com/scylladb/gocql/v2/internal/protocol.RequestErrUnavailable": [
+      "RequestErrUnavailable"
+    ],
+    "github.com/scylladb/gocql/v2/internal/protocol.RequestErrUnprepared": [
+      "RequestErrUnprepared"
+    ],
+    "github.com/scylladb/gocql/v2/internal/protocol.RequestErrWriteFailure": [
+      "RequestErrWriteFailure"
+    ],
+    "github.com/scylladb/gocql/v2/internal/protocol.RequestErrWriteTimeout": [
+      "RequestErrWriteTimeout"
+    ],
+    "github.com/scylladb/gocql/v2/internal/protocol.RequestError": [
+      "RequestError"
+    ],
+    "github.com/scylladb/gocql/v2/internal/protocol.UnknownServerError": [
+      "UnknownServerError"
+    ],
+    "github.com/scylladb/gocql/v2/internal/routing.AttemptError": [
+      "AttemptError"
+    ],
+    "github.com/scylladb/gocql/v2/internal/routing.AttemptEvent": [
+      "AttemptEvent"
+    ],
+    "github.com/scylladb/gocql/v2/internal/routing.LatencyOptions": [
+      "LatencyOptions"
+    ],
+    "github.com/scylladb/gocql/v2/internal/routing.MetadataSnapshot": [
+      "MetadataSnapshot"
+    ],
+    "github.com/scylladb/gocql/v2/internal/routing.MetricsSnapshot": [
+      "MetricsSnapshot"
+    ],
+    "github.com/scylladb/gocql/v2/internal/routing.PartitionKey": [
+      "PartitionKey"
+    ],
+    "github.com/scylladb/gocql/v2/internal/routing.QueryPlan": [
+      "QueryPlan"
+    ],
+    "github.com/scylladb/gocql/v2/internal/routing.RetryAction": [
+      "RetryAction"
+    ],
+    "github.com/scylladb/gocql/v2/internal/routing.RetryDecision": [
+      "RetryDecision"
+    ],
+    "github.com/scylladb/gocql/v2/internal/routing.RoutingOptions": [
+      "RoutingOptions"
+    ],
+    "github.com/scylladb/gocql/v2/internal/routing.RoutingPolicy": [
+      "RoutingPolicy"
+    ],
+    "github.com/scylladb/gocql/v2/internal/routing.SafeRetryPolicy": [
+      "SafeRetryPolicy"
+    ],
+    "github.com/scylladb/gocql/v2/internal/routing.TokenPartitioner": [
+      "TokenPartitioner"
+    ],
+    "github.com/scylladb/gocql/v2/internal/routing.TokenRange": [
+      "TokenRange"
+    ],
+    "github.com/scylladb/gocql/v2/internal/runtimeerrors.QueryError": [
+      "QueryError"
+    ],
+    "github.com/scylladb/gocql/v2/internal/runtimeerrors.SchemaChangedError": [
+      "SchemaChangedError"
+    ],
+    "github.com/scylladb/gocql/v2/internal/runtimeerrors.UnsupportedSettingError": [
+      "UnsupportedSettingError"
+    ],
+    "github.com/scylladb/gocql/v2/internal/settings.Config": [
+      "Config"
+    ],
+    "github.com/scylladb/gocql/v2/internal/settings.IdentityOptions": [
+      "IdentityOptions"
+    ],
+    "github.com/scylladb/gocql/v2/internal/settings.LifecycleEvent": [
+      "LifecycleEvent"
+    ],
+    "github.com/scylladb/gocql/v2/internal/settings.LifecycleObserver": [
+      "LifecycleObserver"
+    ],
+    "github.com/scylladb/gocql/v2/internal/settings.MetadataMode": [
+      "MetadataMode"
+    ],
+    "github.com/scylladb/gocql/v2/internal/settings.MetadataOptions": [
+      "MetadataOptions"
+    ],
+    "github.com/scylladb/gocql/v2/internal/settings.Observer": [
+      "Observer"
+    ],
+    "github.com/scylladb/gocql/v2/internal/settings.Profile": [
+      "Profile"
+    ],
+    "github.com/scylladb/gocql/v2/internal/settings.ProfileHandle": [
+      "ProfileHandle"
+    ],
+    "github.com/scylladb/gocql/v2/internal/settings.RequestEvent": [
+      "RequestEvent"
+    ],
+    "github.com/scylladb/gocql/v2/internal/settings.RetryPolicy": [
+      "RetryPolicy"
+    ],
+    "github.com/scylladb/gocql/v2/internal/settings.SimpleConvictionPolicy": [
+      "SimpleConvictionPolicy"
+    ],
+    "github.com/scylladb/gocql/v2/internal/settings.SpeculationPolicy": [
+      "SpeculationPolicy"
+    ],
+    "github.com/scylladb/gocql/v2/internal/transport.ErrSchemaMismatch": [
+      "ErrSchemaMismatch"
+    ],
+    "github.com/scylladb/gocql/v2/internal/transport.StreamLimits": [
+      "StreamLimits"
+    ]
+  },
   "reachable_internal_types": {
     "github.com/scylladb/gocql/v2/internal/binding.Statement": true,
     "github.com/scylladb/gocql/v2/internal/cluster.Error": true,
@@ -626,10 +1237,6 @@
     "github.com/scylladb/gocql/v2/internal/endpoint.DialTarget": true,
     "github.com/scylladb/gocql/v2/internal/endpoint.Dialer": true,
     "github.com/scylladb/gocql/v2/internal/endpoint.DialerFunc": true,
-    "github.com/scylladb/gocql/v2/internal/endpoint.HostInfo": true,
-    "github.com/scylladb/gocql/v2/internal/endpoint.InternalCassVersion": true,
-    "github.com/scylladb/gocql/v2/internal/endpoint.InternalNodeState": true,
-    "github.com/scylladb/gocql/v2/internal/endpoint.ScyllaHostFeatures": true,
     "github.com/scylladb/gocql/v2/internal/endpoint.SimpleDNSResolver": true,
     "github.com/scylladb/gocql/v2/internal/execution.BatchItem": true,
     "github.com/scylladb/gocql/v2/internal/execution.Bound": true,
@@ -867,6 +1474,139 @@
     "WithTable",
     "WrapTLS"
   ],
+  "required_interface_signatures": {
+    "AddressTranslator": [
+      "func (github.com/scylladb/gocql/v2/internal/endpoint.AddressTranslator).Translate(addr net.IP, port int) (net.IP, int)"
+    ],
+    "AddressTranslatorHostInfo": [
+      "func (github.com/scylladb/gocql/v2/internal/endpoint.AddressTranslatorHostInfo).BroadcastAddress() net.IP",
+      "func (github.com/scylladb/gocql/v2/internal/endpoint.AddressTranslatorHostInfo).ClusterName() string",
+      "func (github.com/scylladb/gocql/v2/internal/endpoint.AddressTranslatorHostInfo).DataCenter() string",
+      "func (github.com/scylladb/gocql/v2/internal/endpoint.AddressTranslatorHostInfo).HostID() string",
+      "func (github.com/scylladb/gocql/v2/internal/endpoint.AddressTranslatorHostInfo).ListenAddress() net.IP",
+      "func (github.com/scylladb/gocql/v2/internal/endpoint.AddressTranslatorHostInfo).Partitioner() string",
+      "func (github.com/scylladb/gocql/v2/internal/endpoint.AddressTranslatorHostInfo).Peer() net.IP",
+      "func (github.com/scylladb/gocql/v2/internal/endpoint.AddressTranslatorHostInfo).Port() int",
+      "func (github.com/scylladb/gocql/v2/internal/endpoint.AddressTranslatorHostInfo).PreferredIP() net.IP",
+      "func (github.com/scylladb/gocql/v2/internal/endpoint.AddressTranslatorHostInfo).RPCAddress() net.IP",
+      "func (github.com/scylladb/gocql/v2/internal/endpoint.AddressTranslatorHostInfo).Rack() string",
+      "func (github.com/scylladb/gocql/v2/internal/endpoint.AddressTranslatorHostInfo).ScyllaShardAwarePort() uint16",
+      "func (github.com/scylladb/gocql/v2/internal/endpoint.AddressTranslatorHostInfo).ScyllaShardAwarePortTLS() uint16",
+      "func (github.com/scylladb/gocql/v2/internal/endpoint.AddressTranslatorHostInfo).ScyllaShardCount() int",
+      "func (github.com/scylladb/gocql/v2/internal/endpoint.AddressTranslatorHostInfo).UntranslatedConnectAddress() net.IP"
+    ],
+    "AddressTranslatorV2": [
+      "func (github.com/scylladb/gocql/v2/internal/endpoint.AddressTranslator).Translate(addr net.IP, port int) (net.IP, int)",
+      "func (github.com/scylladb/gocql/v2/internal/endpoint.AddressTranslatorV2).TranslateHost(host github.com/scylladb/gocql/v2/internal/endpoint.AddressTranslatorHostInfo, addr github.com/scylladb/gocql/v2/internal/endpoint.AddressPort) (github.com/scylladb/gocql/v2/internal/endpoint.AddressPort, error)"
+    ],
+    "AuthExchange": [
+      "func (github.com/scylladb/gocql/v2/internal/connectivity.AuthExchange).Challenge(context.Context, github.com/scylladb/gocql/v2/internal/connectivity.Nullable[github.com/scylladb/gocql/v2/internal/connectivity.Bytes]) (github.com/scylladb/gocql/v2/internal/connectivity.Nullable[[]byte], error)",
+      "func (github.com/scylladb/gocql/v2/internal/connectivity.AuthExchange).Close()",
+      "func (github.com/scylladb/gocql/v2/internal/connectivity.AuthExchange).Success(context.Context, github.com/scylladb/gocql/v2/internal/connectivity.Nullable[github.com/scylladb/gocql/v2/internal/connectivity.Bytes]) error"
+    ],
+    "AuthProvider": [
+      "func (github.com/scylladb/gocql/v2/internal/connectivity.AuthProvider).Start(context.Context, github.com/scylladb/gocql/v2/internal/connectivity.HostSnapshot, string) (github.com/scylladb/gocql/v2/internal/connectivity.AuthExchange, github.com/scylladb/gocql/v2/internal/connectivity.Nullable[[]byte], error)"
+    ],
+    "Codec": [
+      "func (github.com/scylladb/gocql/v2/internal/codec.Encoder[T]).CheckType(github.com/scylladb/gocql/v2/internal/cqltype.DataType) error",
+      "func (github.com/scylladb/gocql/v2/internal/codec.Decoder[T]).Clone(T) T",
+      "func (github.com/scylladb/gocql/v2/internal/codec.Decoder[T]).Decode(github.com/scylladb/gocql/v2/internal/codec.ValueReader) (T, error)",
+      "func (github.com/scylladb/gocql/v2/internal/codec.Encoder[T]).Encode(*github.com/scylladb/gocql/v2/internal/codec.ValueWriter, T) error"
+    ],
+    "ConvictionPolicy": [
+      "func (github.com/scylladb/gocql/v2/internal/connectivity.ConvictionPolicy).AddFailure(err error, host github.com/scylladb/gocql/v2/internal/connectivity.HostSnapshot) bool",
+      "func (github.com/scylladb/gocql/v2/internal/connectivity.ConvictionPolicy).Reset(host github.com/scylladb/gocql/v2/internal/connectivity.HostSnapshot)"
+    ],
+    "DNSResolver": [
+      "func (github.com/scylladb/gocql/v2/internal/endpoint.DNSResolver).LookupIP(host string) ([]net.IP, error)"
+    ],
+    "Decoder": [
+      "func (github.com/scylladb/gocql/v2/internal/codec.Decoder[T]).CheckType(github.com/scylladb/gocql/v2/internal/cqltype.DataType) error",
+      "func (github.com/scylladb/gocql/v2/internal/codec.Decoder[T]).Clone(T) T",
+      "func (github.com/scylladb/gocql/v2/internal/codec.Decoder[T]).Decode(github.com/scylladb/gocql/v2/internal/codec.ValueReader) (T, error)"
+    ],
+    "Dialer": [
+      "func (github.com/scylladb/gocql/v2/internal/endpoint.Dialer).DialContext(context.Context, github.com/scylladb/gocql/v2/internal/endpoint.DialTarget) (net.Conn, error)"
+    ],
+    "Encoder": [
+      "func (github.com/scylladb/gocql/v2/internal/codec.Encoder[T]).CheckType(github.com/scylladb/gocql/v2/internal/cqltype.DataType) error",
+      "func (github.com/scylladb/gocql/v2/internal/codec.Encoder[T]).Encode(*github.com/scylladb/gocql/v2/internal/codec.ValueWriter, T) error"
+    ],
+    "LifecycleObserver": [
+      "func (github.com/scylladb/gocql/v2/internal/settings.LifecycleObserver).ObserveLifecycle(github.com/scylladb/gocql/v2/internal/settings.LifecycleEvent)"
+    ],
+    "Observer": [
+      "func (github.com/scylladb/gocql/v2/internal/settings.Observer).ObserveAttempt(github.com/scylladb/gocql/v2/internal/settings.AttemptEvent)",
+      "func (github.com/scylladb/gocql/v2/internal/settings.Observer).ObserveRequest(github.com/scylladb/gocql/v2/internal/settings.RequestEvent)"
+    ],
+    "ParamEncoder": [
+      "func (github.com/scylladb/gocql/v2/internal/codec.ParamEncoder[P]).Compile(github.com/scylladb/gocql/v2/internal/cqltype.Columns) (github.com/scylladb/gocql/v2/internal/codec.ParamPlan[P], error)"
+    ],
+    "ParamPlan": [
+      "func (github.com/scylladb/gocql/v2/internal/codec.ParamPlan[P]).Encode(*github.com/scylladb/gocql/v2/internal/codec.ParamWriter, P) error"
+    ],
+    "QueryPlan": [
+      "func (github.com/scylladb/gocql/v2/internal/routing.QueryPlan).Next() (github.com/scylladb/gocql/v2/internal/routing.Target, bool)"
+    ],
+    "ReconnectPolicy": [
+      "func (github.com/scylladb/gocql/v2/internal/connectivity.ReconnectPolicy).Delay(attempt int) (time.Duration, bool)"
+    ],
+    "RequestError": [
+      "func (github.com/scylladb/gocql/v2/internal/protocol.RequestError).Error() string",
+      "func (github.com/scylladb/gocql/v2/internal/protocol.RequestError).GetCode() int",
+      "func (github.com/scylladb/gocql/v2/internal/protocol.RequestError).GetMessage() string"
+    ],
+    "RetryPolicy": [
+      "func (github.com/scylladb/gocql/v2/internal/settings.RetryPolicy).Decide(github.com/scylladb/gocql/v2/internal/settings.AttemptError) github.com/scylladb/gocql/v2/internal/settings.RetryDecision"
+    ],
+    "RoutingPolicy": [
+      "func (github.com/scylladb/gocql/v2/internal/routing.RoutingPolicy).Observe(github.com/scylladb/gocql/v2/internal/routing.AttemptEvent)",
+      "func (github.com/scylladb/gocql/v2/internal/routing.RoutingPolicy).Plan(github.com/scylladb/gocql/v2/internal/routing.RoutingInfo, *github.com/scylladb/gocql/v2/internal/routing.MetadataSnapshot) github.com/scylladb/gocql/v2/internal/routing.QueryPlan",
+      "func (github.com/scylladb/gocql/v2/internal/routing.RoutingPolicy).Validate(*github.com/scylladb/gocql/v2/internal/routing.MetadataSnapshot) error"
+    ],
+    "RowDecoder": [
+      "func (github.com/scylladb/gocql/v2/internal/codec.RowDecoder[R]).Clone(R) R",
+      "func (github.com/scylladb/gocql/v2/internal/codec.RowDecoder[R]).Compile(github.com/scylladb/gocql/v2/internal/cqltype.Columns) (github.com/scylladb/gocql/v2/internal/codec.RowPlan[R], error)"
+    ],
+    "RowPlan": [
+      "func (github.com/scylladb/gocql/v2/internal/codec.RowPlan[R]).Clone(R) R",
+      "func (github.com/scylladb/gocql/v2/internal/codec.RowPlan[R]).Decode(*github.com/scylladb/gocql/v2/internal/codec.RowReader) (R, error)",
+      "func (github.com/scylladb/gocql/v2/internal/codec.RowPlan[R]).DecodeInto(*github.com/scylladb/gocql/v2/internal/codec.RowReader, *R) error"
+    ],
+    "SpeculationPolicy": [
+      "func (github.com/scylladb/gocql/v2/internal/settings.SpeculationPolicy).Delay(attempt int, metrics github.com/scylladb/gocql/v2/internal/settings.MetricsSnapshot) (time.Duration, bool)"
+    ],
+    "StdLogger": [
+      "func (github.com/scylladb/gocql/v2/internal/logging.StdLogger).Print(v ...any)",
+      "func (github.com/scylladb/gocql/v2/internal/logging.StdLogger).Printf(format string, v ...any)",
+      "func (github.com/scylladb/gocql/v2/internal/logging.StdLogger).Println(v ...any)"
+    ],
+    "StreamDecoder": [
+      "func (github.com/scylladb/gocql/v2/internal/codec.StreamDecoder[T]).Compile(github.com/scylladb/gocql/v2/internal/cqltype.DataType) (github.com/scylladb/gocql/v2/internal/codec.StreamValuePlan[T], error)"
+    ],
+    "StreamResetter": [
+      "func (github.com/scylladb/gocql/v2/internal/codec.StreamResetter[T]).Reset(*T)"
+    ],
+    "StreamRowDecoder": [
+      "func (github.com/scylladb/gocql/v2/internal/codec.StreamRowDecoder[R]).Compile(github.com/scylladb/gocql/v2/internal/cqltype.Columns) (github.com/scylladb/gocql/v2/internal/codec.StreamRowPlan[R], error)"
+    ],
+    "StreamRowPlan": [
+      "func (github.com/scylladb/gocql/v2/internal/codec.StreamRowPlan[R]).DecodeInto(*github.com/scylladb/gocql/v2/internal/codec.StreamRowReader, *R) error",
+      "func (github.com/scylladb/gocql/v2/internal/codec.StreamRowPlan[R]).Reset(*R)"
+    ],
+    "StreamValuePlan": [
+      "func (github.com/scylladb/gocql/v2/internal/codec.StreamValuePlan[T]).DecodeInto(*github.com/scylladb/gocql/v2/internal/codec.StreamValueReader, *T) error",
+      "func (github.com/scylladb/gocql/v2/internal/codec.StreamValuePlan[T]).Reset(*T)"
+    ],
+    "TokenPartitioner": [
+      "func (github.com/scylladb/gocql/v2/internal/routing.TokenPartitioner).Token(github.com/scylladb/gocql/v2/internal/routing.PartitionKey) (int64, error)"
+    ],
+    "TypeInfo": [
+      "func (github.com/scylladb/gocql/v2/internal/cqltype.TypeInfo).Custom() string",
+      "func (github.com/scylladb/gocql/v2/internal/cqltype.TypeInfo).Type() github.com/scylladb/gocql/v2/internal/cqltype.Type",
+      "func (github.com/scylladb/gocql/v2/internal/cqltype.TypeInfo).Version() byte"
+    ]
+  },
   "required_typed_extension_and_execution_exports": [
     "Config",
     "DefaultConfig",
@@ -938,6 +1678,19 @@
     "StreamCapabilityError"
   ],
   "retained_value_metadata": "Existing value-only metadata/error descriptors and UUID/domain utilities remain available as permitted by the API contract; they execute no reflection serializer.",
+  "sealed_public_interfaces": {
+    "InputField": [
+      "compile",
+      "encode",
+      "location"
+    ],
+    "OutputField": [
+      "clone",
+      "compile",
+      "decode",
+      "location"
+    ]
+  },
   "thin_facade_functions": {
     "ASCIIValue": "codec",
     "BatchEntry": "implExecution",
@@ -1069,5 +1822,6 @@
     "VectorEncoder": "codec",
     "VectorValue": "codec",
     "WriteParam": "codec"
-  }
+  },
+  "unnameable_required_interface_types": null
 }

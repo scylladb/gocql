@@ -31,12 +31,22 @@ GOCQL_BENCH_ADDRESS=127.0.20.1:9042 \
   -args -update-golden
 ```
 
-The update command clears only these two recording directories, creates
-`single_conn_bench.table1`, records the original ten inserts and matching ten
-reads, closes both sessions, and immediately runs the operational replay test.
-Run it only on the dedicated fixture: it intentionally recreates that fixed
-benchmark keyspace. The native runner then runs its namespace cleanup and joins
-all owned nodes. No container reset or unrelated workload is involved.
+The update command creates a fresh `<GOCQL_TEST_RUN>_bench_<random>` keyspace
+(or a random `gocql_bench_*` name outside the fixture runner). It never drops a
+pre-existing fixed name. `corpus.json` retains the actual namespace, address and
+protocol; replay constructs SELECT/INSERT CQL from that metadata at the source
+call sites. No driver request or hash rewrite is involved.
+
+Generation records the original ten inserts and matching ten reads, closes both
+capture sessions, and drops its owned keyspace using an independent 30-second
+cleanup context. It verifies namespace absence and accounts for cleanup/Close
+errors before TestMain can call os.Exit, including ordinary failure and operation
+cancellation. Only then does the operational replay test run. Failed/canceled
+processes that cannot execute defers retain the runner prefix, so the native
+runner's cleanup removes them after the exact child binary is killed and joined.
+TestStep13Ownership exercises both paths. `GOCQL_BENCH_CORPUS_DIR` isolates
+fault-test captures from the checked-in corpus. No container reset or unrelated
+workload is involved.
 
 Captures retain original wire bytes, stamps and stream IDs. Typed startup
 currently reads `system.local` twice. The loader collapses a repeated request

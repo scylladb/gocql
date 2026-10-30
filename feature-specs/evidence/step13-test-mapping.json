@@ -1,8 +1,8 @@
 {
-  "current_effective_passes": 1,
+  "current_effective_passes": 0,
   "identities": 174,
   "scope": "Affected facade/compression/streaming lanes only. Prior 158 step12 and all174 step09 passes retain their own source bindings. Full same-tree174 and streaming acceptance matrices remain steps14/17; skips never count as passes.",
-  "source_sha256": "fc38c0172edc87124a8291303e1bd9208ef70fd7230b487228c6b7f60d646305",
+  "source_sha256": "cdec5deb5a1c6c4c49cbef60e88e56aca8b3dab439c3319f09ab2de1b6e5d06d",
   "tests": [
     {
       "accepted_predecessor_mapping": "step12-test-mapping.json#batch_test.go::TestBatch_Errors",
@@ -816,17 +816,8 @@
     },
     {
       "accepted_predecessor_mapping": "step12-test-mapping.json#cloud_cluster_test.go::TestCloudConnection",
-      "current_effective_passes": [
-        "stable20-v4tls"
-      ],
-      "current_selected_outcomes": {
-        "cassandra21-v5lz4": "skip",
-        "cassandra21-v5raw": "skip",
-        "cassandra21-v5tlsslz4": "skip",
-        "stable20-record-and-v4raw": "skip",
-        "stable20-v4lz4": "skip",
-        "stable20-v4tls": "pass"
-      },
+      "current_effective_passes": [],
+      "current_selected_outcomes": {},
       "historical_all174_mapping": "step09-test-mapping.json#cloud_cluster_test.go::TestCloudConnection",
       "identity": "cloud_cluster_test.go::TestCloudConnection",
       "original_sha256": "42aba5574962373072f1c50a89af035f2da9ad2e1a01ed62e379b1e469c06e71",

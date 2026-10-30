@@ -1,0 +1,56 @@
+{
+  "actual_compiled_children_killed_and_joined": [
+    "TestStep13Ownership/benchmark/pause",
+    "TestStep13Ownership/example/pause"
+  ],
+  "cleanup_context": "Independent context.Background with 30s deadline; cleanup/Close errors joined before TestMain os.Exit or example return.",
+  "corpus_config_sha256": "9bf76420e6962b03d17e2ed47094d352e765acc0d5befb2619ec48a493f3e827",
+  "generation_namespace": "gc6ec5fa9d8db4066_bench_877266c1e6ec4ec9",
+  "generation_namespace_absence_checked": true,
+  "killed_namespaces_checked_absent_after_prefix_cleanup": 2,
+  "namespace_ownership": "Fresh runner-prefix plus random suffix. CREATE collision relinquishes ownership; no pre-existing fixed namespace is dropped.",
+  "no_request_or_hash_rewrite": true,
+  "ordinary_error_and_canceled_context_passes": [
+    "TestStep13Ownership/benchmark/cancel",
+    "TestStep13Ownership/benchmark/error",
+    "TestStep13Ownership/example/cancel",
+    "TestStep13Ownership/example/error"
+  ],
+  "prefix_cleanup_started_after_join": true,
+  "raw_command": {
+    "cancelled": false,
+    "command": [
+      "go",
+      "test",
+      "-json",
+      "-race",
+      "-tags",
+      "integration gocql_debug",
+      "-count=1",
+      "-timeout=8m",
+      "-parallel=1",
+      "-run",
+      "^(TestStep13Ownership|TestStep13RegenerateReplay|TestStep13PublicExample|TestStep13ConvictionLive|TestStep07RunStreamLive)$",
+      ".",
+      "-args",
+      "-gocql.timeout=60s",
+      "-rf=3",
+      "-clusterSize=3",
+      "-autowait=2s",
+      "-cluster=127.0.20.1,127.0.20.2,127.0.20.3",
+      "-distribution=scylla",
+      "-gocql.cversion=2026.3.4",
+      "-runauth",
+      "-cluster-socket=/extra/scylladb/gocql-api-test-cluster/step08/gc6ec5fa9d8db4066/stable20/node1/cql.m",
+      "-proto=4"
+    ],
+    "exit_code": 0,
+    "log": "/extra/scylladb/gocql-api-test-cluster/step13/combined/stable-stable20-record-and-v4raw.log",
+    "name": "stable20-record-and-v4raw",
+    "pid": 1024278,
+    "seconds": 31.916,
+    "sha256": "4a1c6ccc22464d26077aae13f57c977c09c2011454b6ecf1f7ac7055ccc1a7a4"
+  },
+  "source_sha256": "cdec5deb5a1c6c4c49cbef60e88e56aca8b3dab439c3319f09ab2de1b6e5d06d",
+  "successful_example_modes": 6
+}

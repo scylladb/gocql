@@ -472,7 +472,8 @@ func (c *InternalControlConn) attemptReconnectToAnyOfHosts(hosts []*HostInfo) er
 	for _, host := range hosts {
 		conn, err := InternalSessionDial(c.InternalSession, c.InternalSession.privateStorage.InternalCtx, host, cfg, c)
 		if err != nil {
-			if c.InternalSession.privateStorage.InternalCfg.ConvictionPolicy.AddFailure(err, host) {
+			snapshot, _ := InternalSnapshotV2Host(c.InternalSession, host)
+			if c.InternalSession.privateStorage.InternalCfg.ConvictionPolicy.AddFailure(err, snapshot) {
 				InternalSessionHandleNodeDown(c.InternalSession, host.ConnectAddress(), host.Port())
 			}
 			c.InternalSession.privateStorage.InternalLogger.Printf("gocql: unable to dial control conn %v:%v: %v\n", host.ConnectAddress(), host.Port(), err)

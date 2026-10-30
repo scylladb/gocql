@@ -4,8 +4,8 @@ Branch: `v2-13-public-module-docs`.
 Accepted predecessor: `cdba62aaf867b8e1877aa18dc56b555665bc17d6`.
 Gate: passed, pending parent review. Steps 14–17 remain required.
 
-The final native source freeze has 621 inputs, SHA-256
-`fc38c0172edc87124a8291303e1bd9208ef70fd7230b487228c6b7f60d646305`.
+The final native source freeze has 622 inputs, SHA-256
+`cdec5deb5a1c6c4c49cbef60e88e56aca8b3dab439c3319f09ab2de1b6e5d06d`.
 Headers and Go formatting preceded this freeze. No runtime/source delta follows
 it. Runtime input hashes are in [step13-source.json](../evidence/step13-source.json);
 [step13-verification.json](../evidence/step13-verification.json) binds the artifact
@@ -74,8 +74,11 @@ harness, without root test aliases. All nine existing example files also compile
 as ordinary .go files in a separate consumer module; the
 [consumer receipt](../evidence/step13-consumer-examples.json) records exact inputs.
 
-Fresh same-source native lanes run the program, runtime database smoke and
-existing comprehensive RunStreamLive lifecycle/interruption assertions:
+The final combined source reruns the standalone program in all six native modes,
+the ownership/failure/cancellation/actual-child-kill cases on stable raw, and
+custom conviction false/true callbacks against real discovered host metadata.
+Existing RunStreamLive interruption/recovery runs on stable raw and Cassandra
+v5 TLS/LZ4. Earlier runtime/mode receipts retain their separate source hashes:
 
 | Server | Modes | Result |
 | --- | --- | --- |
@@ -134,7 +137,9 @@ Initial new-workload attempts exposed missing recorder TCP-control forwarding
 and an example schema-agreement setup error. They were repaired; failed
 receipts/logs remain under `/extra/scylladb/gocql-api-test-cluster/step13/` with
 their original source hash. Intermediate successful receipts remain under
-`step13/final/`; final frozen-source receipts are under `step13/verified/`.
+`step13/final/`; initial frozen-source receipts are under `step13/verified/`; namespace-only
+refinement receipts/corpus are under `step13/ownership/`, and final combined
+receipts are under `step13/combined/`.
 A fixture-guard timeout assumption was corrected to the actual independently
 negotiated 30s metadata server clause; repeated operational replay remains the
 complete startup compatibility guard.
@@ -151,7 +156,10 @@ All 49 collision bodies remain byte-identical. All 1,767 actual runtime-owner
 mappings remain present, with internal method-to-function relocation updated;
 [runtime preservation](../evidence/step13-runtime-preservation.json) proves the
 14 internal source deltas normalize only those calls, the compressor owner name
-and comments. No payload operation changed in those bodies.
+and comments. Four additional declarations adapt conviction parameters/calls to
+detached HostSnapshot; their original failure conditions, default conviction
+and reset behavior are covered by new pool, native and external-consumer tests.
+No request/result payload operation changed in these declarations.
 
 The [174 mapping](../evidence/step13-test-mapping.json) retains prior 158 step12
 and all174 step09 results with their source boundaries. Only the affected native
@@ -160,11 +168,13 @@ other original identities are not claimed as newly run. Skips are explicit.
 Full final-tree 174 and streaming acceptance matrices remain steps 14/17.
 
 The [check manifest](../evidence/step13-checks.json) retains exact successful
-commands and log hashes for unit race, vet, module tidy/verify, actual 386
-execution, all-tag compilation, arm64 compilation, replay/codec/stream/LZ4
-benchmark smokes and a warning-free Sphinx build. All-tag/arm64 compile commands
-include `ccm`, required by that fixture package's build constraints. Six docs
-release-selection tests pass. The nine consumer examples compile separately.
+commands and log hashes for current conviction/root/pool/cluster race checks,
+fixture/replay race tests, vet, all-tag compilation, replay benchmark smoke, a
+warning-free Sphinx build and nine normal consumer examples. The earlier full
+unit race, module tidy/verify, actual 386, arm64, codec/stream/LZ4 smokes and docs
+release-selection results remain separately bound in step13-prior-checks.json;
+they are not rebound to changed source. Combined-tag compilation explicitly
+includes `ccm`, required by that fixture package's build constraints.
 
 Representative scalar borrowed decoders retain zero per-operation allocations;
 stream final-storage/nested-element smokes retain bounded allocation counts as
@@ -175,3 +185,51 @@ claims. Comprehensive performance (15), independent review (16), and full final
 acceptance/release verification (14/17) remain required.
 
 Root-owned STATUS.md and RESUME.md are preserved and excluded from the commit.
+
+
+## Combined parent-review gate fixes
+
+Candidate `583b274` was not accepted because fixture namespace cleanup and the
+public conviction signature still violated the contracts. Both are repaired
+on the final source above; previous results remain historical evidence.
+
+The generator and sample allocate fresh `<GOCQL_TEST_RUN>_bench_<random>` and
+`<GOCQL_TEST_RUN>_stream_<random>` namespaces, matching the existing runner's
+prefix cleanup. There is no fixed-name DROP. An AlreadyExists CREATE result
+relinquishes ownership. Benchmark corpus.json records the actual namespace,
+address and protocol, and source SELECT/INSERT call sites construct that exact
+CQL. Cleanup uses a fresh bounded 30-second context, propagates errors, and
+completes before TestMain os.Exit or example return. Generation also queries
+namespace absence before success; native tests independently check both
+workloads after success, injected ordinary failure and a genuinely canceled
+operation context.
+
+The kill tests execute compiled example/benchmark binaries directly, confirm
+the namespace exists, kill and join those exact children, then invoke the same
+TestStep08Cleanup routine used by the runner. Both surviving child namespaces
+are queried absent afterward. [Ownership evidence](../evidence/step13-ownership-cleanup.json)
+binds these cases. Intermediate namespace-only captures and receipts remain
+under the task-owned step13/ownership directory. All twenty exact replay cases,
+sixty repeated race case passes and twenty benchmark cases pass again with the
+new recorded namespace.
+
+ConvictionPolicy now exposes `AddFailure(error, HostSnapshot) bool` and
+`Reset(HostSnapshot)`. Legacy mutable HostInfo remains hidden. Pool failure
+completion takes the existing lower detached endpoint snapshot after releasing
+the pool lock; it performs no parent-pool lookup. Control reconnection uses the
+existing upper snapshot projection. SimpleConvictionPolicy still always
+convicts and Reset is still a no-op; no new driver Reset calls were introduced.
+The pool test verifies original error/full host context, detached tokens,
+callback lock release, both down decisions, and unchanged invocation conditions.
+The native test verifies snapshots equal the actual data-dial context for both
+verdicts. The lower transitive dependency audit remains clean.
+
+The required-interface audit now checks internally named parameter/result types
+for public names and automatically compiles implementations of all 31 exported,
+externally implementable interfaces in a separate consumer module. A stateful
+external conviction/reset test also runs. Sealed InputField/OutputField builder
+interfaces are identified explicitly. The actual prior HostInfo signature is
+retained as a failing negative audit. [Public-extension evidence](../evidence/step13-public-extension.json)
+retains the generated consumer source, signatures, compiler outcome and behavior
+checks. The [combined delta](../evidence/step13-ownership-delta.json) records the
+exact eight changed/new native inputs; all other native inputs are unchanged.
