@@ -27,7 +27,10 @@ type TypedEnvelope struct {
 }
 
 func NewTypedEnvelope() *TypedEnvelope {
-	return &TypedEnvelope{b: wire.NewBuilder(1024)}
+	// Most requests need only short scalar framing; strings and payloads are
+	// borrowed spans. Additional slabs handle larger envelopes without moving
+	// bytes already published to the builder.
+	return &TypedEnvelope{b: wire.NewBuilder(256)}
 }
 func (e *TypedEnvelope) check(err error) {
 	if e.err == nil {
