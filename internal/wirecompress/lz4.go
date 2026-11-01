@@ -148,8 +148,14 @@ func (s LZ4Compressor) AppendDecompressed(dst, src []byte, uncompressedLength ui
 	if uncompressedLength > maxDecompressedSize {
 		return nil, fmt.Errorf("cassandra lz4 uncompressed length %d exceeds maximum of %d", uncompressedLength, maxDecompressedSize)
 	}
+	return appendLZ4Decompressed(dst, src, int(uncompressedLength))
+}
+
+// The caller checked the configured/default bound and int conversion before
+// entering this common block transform. Native v5 retains its 17-bit ceiling.
+func appendLZ4Decompressed(dst, src []byte, uncompressedLength int) ([]byte, error) {
 	oldDstLen := len(dst)
-	dst = grow(dst, int(uncompressedLength))
+	dst = grow(dst, uncompressedLength)
 	n, err := lz4.UncompressBlock(src, dst[oldDstLen:])
 	return dst[:oldDstLen+n], err
 }

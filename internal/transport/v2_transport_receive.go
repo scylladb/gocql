@@ -10,6 +10,7 @@ import (
 	frm "github.com/scylladb/gocql/v2/internal/frame"
 	"github.com/scylladb/gocql/v2/internal/segment"
 	"github.com/scylladb/gocql/v2/internal/wire"
+	"github.com/scylladb/gocql/v2/internal/wirecompress"
 	"io"
 	"time"
 )
@@ -42,10 +43,7 @@ func (c *Conn) receiveTypedCall(ctx context.Context, call *InternalCallReq, src 
 		}
 		// An unextended custom decoder may alias its input. Leave that original
 		// ownership unpooled; built-ins support checked final-arena decoding.
-		decoder, pooledDecode := c.InternalCompressor.(interface {
-			DecodedLen([]byte) (int, error)
-			DecodeTo([]byte, []byte) ([]byte, error)
-		})
+		decoder, pooledDecode := wirecompress.FrameDecoderWithLimit(c.InternalCompressor, limits.MaxDecompressedBytes)
 		if head.Flags&frm.FlagCompress != 0 && !pooledDecode {
 			cache = nil
 		}
@@ -244,7 +242,7 @@ func (c *Conn) InternalRecvLeasedSegment(ctx context.Context) error {
 	if int64(head.Length) > min(limits.MaxFrameBytes, limits.MaxDecompressedBytes) {
 		return fmt.Errorf("gocql: invalid frame body length in segmented frame: %d", head.Length)
 	}
-	expected := int64(head.Length + headSize)
+	expected := int64(head.Length) + headSize
 	for total < expected {
 		if err := readNext(); err != nil {
 			return err

@@ -39,8 +39,8 @@ const (
 	protoVersion5      = 0x05
 )
 
-// MaxFrameSize is the largest CQL frame body the driver will accept or produce, and
-// the bound every reader checks a peer-declared body length against.
+// MaxFrameSize is the default CQL frame-body budget. Validated connection limits
+// may lower or raise it within the native signed-int32 length range.
 //
 // It is here, rather than in the packages that use it, because both the driver and
 // the record/replay dialers de-frame a byte stream and neither can import the other.

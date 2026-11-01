@@ -234,10 +234,16 @@ func (fp *InternalFramerPool) init(defaults InternalFramerConfig, release func(*
 }
 
 func (fp *InternalFramerPool) get(c *Conn) *framer {
+	var f *framer
 	if !fp.enabled.Load() {
-		return newFramer(c.InternalCompressor, c.InternalVersion)
+		f = newFramer(c.InternalCompressor, c.InternalVersion)
+	} else {
+		f = fp.pool.Get().(*framer)
 	}
-	return fp.pool.Get().(*framer)
+	limits := c.typedProtocolLimits()
+	f.MaxFrameBytes = limits.MaxFrameBytes
+	f.MaxDecompressedBytes = limits.MaxDecompressedBytes
+	return f
 }
 
 func (fp *InternalFramerPool) put(f *framer) {

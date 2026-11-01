@@ -2257,6 +2257,9 @@ type InternalWriteRequest struct {
 type InternalWriteResult struct {
 	InternalErr error
 	InternalN   int
+	// A span request can be MaxInt32 body bytes plus its header on 32-bit.
+	// Keep its completion independent of the io.Writer-sized legacy result.
+	InternalWritten int64
 }
 
 // writeResultChanPool pools buffered channels used for write coalescer results.
@@ -2389,7 +2392,7 @@ func (w *InternalWriteCoalescer) InternalFlushSizes(resultChans []chan<- Interna
 		if completed == size {
 			resultErr = nil
 		}
-		resultChans[i] <- InternalWriteResult{InternalN: int(completed), InternalErr: resultErr}
+		resultChans[i] <- InternalWriteResult{InternalN: int(min(completed, int64(^uint(0)>>1))), InternalWritten: completed, InternalErr: resultErr}
 		n -= completed
 	}
 }

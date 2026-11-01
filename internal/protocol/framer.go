@@ -27,6 +27,7 @@ package protocol
 import (
 	. "github.com/scylladb/gocql/v2/internal/cqltype"
 	cqltype "github.com/scylladb/gocql/v2/internal/cqltype"
+	"github.com/scylladb/gocql/v2/internal/wirecompress"
 
 	"encoding/binary"
 	"errors"
@@ -110,6 +111,8 @@ type Framer struct {
 	// framer reused for consecutive v5 requests keeps both the raw-frame buffer
 	// and the wire buffer alive instead of allocating a new one per request.
 	WireBuf               []byte
+	MaxFrameBytes         int64
+	MaxDecompressedBytes  int64
 	FlagLWT               int
 	RateLimitingErrorCode int
 	Flags                 byte
@@ -218,7 +221,7 @@ func (f *Framer) ReadFrame(r io.Reader, head *frm.FrameHeader) error {
 	// callers that synthesise a header.
 	if head.Length < 0 {
 		return fmt.Errorf("frame body length can not be less than 0: %d", head.Length)
-	} else if head.Length > frm.MaxFrameSize {
+	} else if int64(head.Length) > f.frameLimit() || head.Flags&frm.FlagCompress == 0 && int64(head.Length) > f.decompressedLimit() {
 		// need to free up the connection to be used again
 		_, err := io.CopyN(io.Discard, r, int64(head.Length))
 		if err != nil {
@@ -253,10 +256,19 @@ func (f *Framer) ReadFrame(r io.Reader, head *frm.FrameHeader) error {
 			return NewErrProtocol("no compressor available with compressed frame body")
 		}
 
-		f.Buf, err = f.Compressor.Decode(f.Buf)
+		if decoder, ok := wirecompress.FrameDecoderWithLimit(f.Compressor, f.decompressedLimit()); ok {
+			if _, err = decoder.DecodedLen(f.Buf); err == nil {
+				f.Buf, err = decoder.DecodeTo(nil, f.Buf)
+			}
+		} else {
+			f.Buf, err = f.Compressor.Decode(f.Buf)
+		}
 		if err != nil {
 			return err
 		}
+	}
+	if int64(len(f.Buf)) > f.decompressedLimit() {
+		return ErrFrameTooBig
 	}
 
 	f.Header = head
@@ -275,6 +287,9 @@ func (f *Framer) ReadFrame(r io.Reader, head *frm.FrameHeader) error {
 // readFrame there is no frame-header compression flag to honour (it only exists
 // below v5).
 func (f *Framer) AdoptFrameBody(body []byte, head *frm.FrameHeader) error {
+	if int64(len(body)) > min(f.frameLimit(), f.decompressedLimit()) {
+		return ErrFrameTooBig
+	}
 	if head.Length != len(body) {
 		return fmt.Errorf("gocql: frame body length %d does not match the %d bytes reassembled", head.Length, len(body))
 	}
@@ -517,7 +532,7 @@ func (f *Framer) setLength(length int) {
 
 func (f *Framer) Finish() error {
 	bufLen := len(f.Buf)
-	if bufLen > frm.MaxFrameSize {
+	if int64(bufLen-HeadSize) > f.frameLimit() {
 		// huge app frame, lets remove it so it doesn't bloat the heap.
 		//
 		// readBuffer is reset with it. On a write framer it is never read -- only
@@ -553,7 +568,7 @@ func (f *Framer) Finish() error {
 		// Checked before the append so an oversized result is never copied into the
 		// frame, and f.buf is dropped -- with readBuffer, for the reasons the
 		// pre-check gives -- because at this size it would otherwise sit in the pool.
-		if len(compressed) > frm.MaxFrameSize {
+		if int64(len(compressed)) > f.frameLimit() {
 			f.Buf = make([]byte, DefaultBufSize)
 			f.ReadBuffer = f.Buf
 			return ErrFrameTooBig
@@ -566,6 +581,20 @@ func (f *Framer) Finish() error {
 	f.setLength(length)
 
 	return nil
+}
+
+func (f *Framer) frameLimit() int64 {
+	if f.MaxFrameBytes > 0 {
+		return f.MaxFrameBytes
+	}
+	return frm.MaxFrameSize
+}
+
+func (f *Framer) decompressedLimit() int64 {
+	if f.MaxDecompressedBytes > 0 {
+		return f.MaxDecompressedBytes
+	}
+	return frm.MaxFrameSize
 }
 
 func (f *Framer) WriteFrameTo(w io.Writer) error {

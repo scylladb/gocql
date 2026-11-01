@@ -92,5 +92,5 @@ func (w *InternalWriteCoalescer) InternalWriteSpans(ctx context.Context, chain w
 	// Cancellation after admission must join the writer before releasing input.
 	result := <-resultChan
 	InternalWriteResultChanPool.Put(resultChan)
-	return int64(result.InternalN), result.InternalErr
+	return result.InternalWritten, result.InternalErr
 }

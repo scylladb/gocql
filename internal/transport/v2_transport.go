@@ -174,10 +174,10 @@ func (c *Conn) typedProtocolLimits() ProtocolLimits {
 	if c.InternalCfg != nil {
 		configured := c.InternalCfg.TypedLimits
 		if configured.MaxFrameBytes > 0 {
-			limits.MaxFrameBytes = min(configured.MaxFrameBytes, int64(frm.MaxFrameSize))
+			limits.MaxFrameBytes = configured.MaxFrameBytes
 		}
 		if configured.MaxDecompressedBytes > 0 {
-			limits.MaxDecompressedBytes = min(configured.MaxDecompressedBytes, int64(frm.MaxFrameSize))
+			limits.MaxDecompressedBytes = configured.MaxDecompressedBytes
 		}
 		if configured.MaxMetadataDepth > 0 {
 			limits.MaxMetadataDepth = min(configured.MaxMetadataDepth, 128)

@@ -172,6 +172,7 @@ type LatencyOptions struct {
 }
 type InternalRoutingLatency struct {
 	mu              sync.Mutex
+	nextProbe       atomic.Int64
 	InternalValue   float64
 	InternalSamples int
 	InternalUpdated time.Time
@@ -379,7 +380,34 @@ func (p *InternalLazyRoutingPlan) InternalPenalty(t Target) bool {
 		return false
 	}
 	until, ok := p.InternalSlow.InternalSlow[t.HostID]
-	return ok && p.InternalNow.Before(until)
+	if !ok {
+		return false
+	}
+	if p.InternalNow.Before(until) {
+		return true
+	}
+	if p.policy == nil {
+		return false
+	}
+	value, ok := p.policy.InternalLatencies.Load(t.HostID)
+	if !ok {
+		return false
+	}
+	// Expiration permits a new measurement before the next periodic decision
+	// publication. Reserve one probe across concurrent plans; other requests
+	// still keep this host behind healthy candidates. Penalized fallback is
+	// retained when the ordinary plan has no usable alternative.
+	sample := value.(*InternalRoutingLatency)
+	now := p.InternalNow.UnixNano()
+	for {
+		next := sample.nextProbe.Load()
+		if next > now {
+			return true
+		}
+		if sample.nextProbe.CompareAndSwap(next, p.InternalNow.Add(p.policy.InternalOptions.Latency.RetryPeriod).UnixNano()) {
+			return false
+		}
+	}
 }
 func targetsDuplicate(a, b Target) bool {
 	return a.HostID == b.HostID && (!a.ShardID.Set || !b.ShardID.Set || a.ShardID.Value == b.ShardID.Value)
@@ -517,6 +545,7 @@ func (p *InternalRoutingPolicy) Observe(e AttemptEvent) {
 	v.InternalValue += weight * (float64(e.Latency) - v.InternalValue)
 	v.InternalSamples++
 	v.InternalUpdated = now
+	v.nextProbe.Store(now.Add(p.InternalOptions.Latency.RetryPeriod).UnixNano())
 	value, samples := v.InternalValue, v.InternalSamples
 	v.mu.Unlock()
 	if samples >= p.InternalOptions.Latency.MinimumSamples {
