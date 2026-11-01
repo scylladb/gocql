@@ -62,7 +62,17 @@ func (w *InternalDeadlineContextWriter) InternalWriteSpans(ctx context.Context, 
 		return 0, err
 	}
 
-	var spans net.Buffers
+	spans := w.spanScratch[:0]
+	defer func() {
+		clear(spans)
+		// Bound idle descriptor storage independently of request fragmentation.
+		// The write semaphore remains held until all payload references are gone.
+		if cap(spans) <= 16 {
+			w.spanScratch = spans[:0]
+		} else {
+			w.spanScratch = nil
+		}
+	}()
 	_ = chain.Each(func(s wire.Span) error { spans = append(spans, s.Bytes()); return nil })
 	n, err := InternalWriteSpanBuffers(w.InternalW, spans)
 	if err == nil && n != chain.Len() {

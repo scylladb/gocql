@@ -2192,6 +2192,9 @@ type InternalDeadlineContextWriter struct {
 	// quit closed once the connection is closed.
 	InternalQuit    chan struct{}
 	InternalTimeout atomic.Int64
+	// spanScratch is protected by InternalSemaphore. Only cleared descriptors
+	// are retained between writes, never request payloads.
+	spanScratch net.Buffers
 }
 
 func (c *InternalDeadlineContextWriter) InternalSetWriteTimeout(timeout time.Duration) {
