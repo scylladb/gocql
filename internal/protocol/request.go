@@ -21,8 +21,9 @@ import (
 
 // typedEnvelope owns only newly encoded Protocol fields. Borrowed values never
 // enter the slab, and Freeze cannot relocate any published bytes.
+// A TypedEnvelope must not be copied after its first use.
 type TypedEnvelope struct {
-	b   *wire.Builder
+	b   wire.Builder
 	err error
 }
 
@@ -30,7 +31,9 @@ func NewTypedEnvelope() *TypedEnvelope {
 	// Most requests need only short scalar framing; strings and payloads are
 	// borrowed spans. Additional slabs handle larger envelopes without moving
 	// bytes already published to the builder.
-	return &TypedEnvelope{b: wire.NewBuilder(256)}
+	e := new(TypedEnvelope)
+	e.b.SetSlabSize(256)
+	return e
 }
 func (e *TypedEnvelope) check(err error) {
 	if e.err == nil {

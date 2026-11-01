@@ -33,6 +33,43 @@ func check(t testing.TB, err error) {
 	}
 }
 
+func TestBuilderSlabSizePreservesPublishedStorageAndMarks(t *testing.T) {
+	var b Builder
+	b.SetSlabSize(8)
+	mark := b.Mark()
+	check(t, b.Uint32(0))
+	check(t, b.Uint32(0x11223344))
+	firstSlab := b.slab
+	b.SetSlabSize(3)
+	check(t, b.Uint32(0x55667788))
+	if cap(b.slab) != 4 {
+		t.Fatalf("oversized scalar slab capacity = %d", cap(b.slab))
+	}
+	check(t, b.PatchUint32(mark, 0x99aabbcc))
+	if !bytes.Equal(firstSlab, []byte{0x99, 0xaa, 0xbb, 0xcc, 0x11, 0x22, 0x33, 0x44}) {
+		t.Fatalf("published slab moved or mark changed: %x", firstSlab)
+	}
+	first, err := b.Freeze()
+	check(t, err)
+	want := []byte{0x99, 0xaa, 0xbb, 0xcc, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88}
+	for _, size := range []int{0, -1, 64} {
+		b.SetSlabSize(size)
+		check(t, b.Uint8(42))
+		expected := size
+		if expected <= 0 {
+			expected = defaultSlabSize
+		}
+		if cap(b.slab) != expected {
+			t.Fatalf("size %d: slab capacity = %d", size, cap(b.slab))
+		}
+		_, err = b.Freeze()
+		check(t, err)
+		if !bytes.Equal(payload(t, first), want) {
+			t.Fatal("subsequent configuration/reuse changed frozen bytes")
+		}
+	}
+}
+
 func TestBuilderScalarsAcrossSlabsAndBorrow(t *testing.T) {
 	for _, size := range []int{-1, 0, 1, 3, 4, 7, 64} {
 		b := NewBuilder(size)

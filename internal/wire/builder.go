@@ -66,6 +66,10 @@ func NewBuilder(slabSize int) *Builder {
 	return &Builder{slabSize: slabSize, currentPart: -1}
 }
 
+// SetSlabSize sets the minimum size of future scalar slabs without moving
+// already encoded bytes. Nonpositive sizes select the default.
+func (b *Builder) SetSlabSize(slabSize int) { b.slabSize = slabSize }
+
 func (b *Builder) Len() int64 { return b.len }
 
 // Borrow appends a read-only span, retaining its backing storage without copy.
