@@ -10,15 +10,37 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The runner always invokes cleanup after its test subprocess, even on failure.
 // A random run prefix is required; default/manual suites cannot trigger it.
 func TestStep08Cleanup(t *testing.T) {
+	if os.Getenv("GOCQL_FIXTURE_CLEANUP") != "1" {
+		t.Skip("cleanup runs only in the native runner's explicit post-package subprocess")
+	}
+	step08CleanupNamespaces(t, nil)
+}
+
+// A nil allowlist cleans the whole owned run after its test process joins. A
+// non-nil allowlist is used mid-package only for exact killed/joined children.
+func step08CleanupNamespaces(t *testing.T, allowed []string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 	prefix := os.Getenv("GOCQL_TEST_RUN")
 	if prefix == "" {
 		t.Skip("requires an owned fixture run")
 	}
+	owns := func(name string) bool { return name == prefix || strings.HasPrefix(name, prefix+"_") }
+	selected := make(map[string]bool, len(allowed))
+	for _, name := range allowed {
+		if !owns(name) {
+			t.Fatalf("cleanup namespace outside owned run: %q", name)
+		}
+		selected[name] = true
+	}
+	matches := func(name string) bool { return owns(name) && (allowed == nil || selected[name]) }
 	config := createV2Cluster(func(c *Config) {
 		c.Metadata.SchemaEvents = false
 		c.Metadata.TopologyEvents = false
@@ -26,12 +48,12 @@ func TestStep08Cleanup(t *testing.T) {
 		c.Metadata.AutomaticAgreement = false
 		c.Metadata.RefreshAfterAgreement = false
 	})
-	s, err := Connect(context.Background(), config)
+	s, err := Connect(ctx, config)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	rows, err := v2Query(context.Background(), s, "SELECT keyspace_name FROM system_schema.keyspaces")
+	rows, err := v2Query(ctx, s, "SELECT keyspace_name FROM system_schema.keyspaces")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +67,7 @@ func TestStep08Cleanup(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.HasPrefix(name.String(), prefix) {
+		if matches(name.String()) {
 			names = append(names, name.String())
 		}
 	}
@@ -53,15 +75,15 @@ func TestStep08Cleanup(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, name := range names {
-		if _, err := v2Exec(context.Background(), s, "DROP KEYSPACE "+name); err != nil {
+		if _, err := v2Exec(ctx, s, "DROP KEYSPACE "+(`"`+strings.ReplaceAll(name, `"`, `""`)+`"`)); err != nil {
 			t.Fatal(err)
 		}
 		t.Log("DROPPED", name)
 	}
-	if err := s.AwaitSchemaAgreement(context.Background()); err != nil {
+	if err := s.AwaitSchemaAgreement(ctx); err != nil {
 		t.Fatal(err)
 	}
-	remaining, err := v2Query(context.Background(), s, "SELECT keyspace_name FROM system_schema.keyspaces")
+	remaining, err := v2Query(ctx, s, "SELECT keyspace_name FROM system_schema.keyspaces")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +97,7 @@ func TestStep08Cleanup(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.HasPrefix(name.String(), prefix) {
+		if matches(name.String()) {
 			t.Errorf("owned namespace survived cleanup: %s", name.String())
 		}
 	}

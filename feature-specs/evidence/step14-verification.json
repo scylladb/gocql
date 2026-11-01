@@ -1,0 +1,180 @@
+{
+  "acceptance_gates": [
+    {
+      "assertions": "507 exports, 130 thin facade functions, nine Session methods; external interfaces/examples, all-tag/arm64 builds, module verification/drift, zero transitive architecture violations.",
+      "evidence": [
+        "step14-public-api.json",
+        "step14-dependency-audit.json",
+        "step14-checks.json"
+      ],
+      "gate": 1,
+      "name": "API/build"
+    },
+    {
+      "assertions": "Golden/type/capacity/null/empty/unset/mixed iteration, bounded framing/text/metadata fuzz and terminal-state assertions pass in successful whole packages.",
+      "evidence": [
+        "step14-streaming-acceptance.json",
+        "step14-fuzz.json",
+        "step14-checks.json"
+      ],
+      "gate": 2,
+      "name": "Codec/protocol"
+    },
+    {
+      "assertions": "Full unit race plus live race packages; leases, admission, final writes, paging, retries and Close joins; explicit cancellation lifetime campaigns and repeated-signal cleanup.",
+      "evidence": [
+        "step14-checks.json",
+        "step14-streaming-acceptance.json",
+        "step14-cleanup.json"
+      ],
+      "gate": 3,
+      "name": "Ownership/race"
+    },
+    {
+      "assertions": "Raw v3/v4/v5 and TLS, v5 integrity units, compression, >500KB, direct final ranges and separated unit copy/byte-capacity measurements.",
+      "evidence": [
+        "step14-lanes.json",
+        "step14-streaming-acceptance.json"
+      ],
+      "gate": 4,
+      "name": "Transport"
+    },
+    {
+      "assertions": "Actual tablet-v2/global leader, stable tablets/shards/LWT, metadata/events, profiles/retries/observers/config tests; idle/exhausted reservations still permit live schema event dispatch.",
+      "evidence": [
+        "step14-lanes.json",
+        "step14-streaming-acceptance.json",
+        "step14-checks.json"
+      ],
+      "gate": 5,
+      "name": "Runtime features"
+    },
+    {
+      "assertions": "All174 exact original identities and translated expected nested subcases have real passes in successful same-source packages; all17 native modes plus actual CCM pass; explicit version/fixture skip text retained.",
+      "evidence": [
+        "step14-test-mapping.json",
+        "step14-lanes.json",
+        "step14-cleanup.json"
+      ],
+      "gate": 6,
+      "name": "Integration"
+    },
+    {
+      "assertions": "All16 criterion groups, eight deterministic modes,40 measured byte-storage shapes,24 final-write lifecycle combinations and all eight live supported mode combinations pass; focused equivalent-result/copy checks included, complete independent performance remains15.",
+      "evidence": [
+        "step14-streaming-acceptance.json",
+        "step14-fuzz.json",
+        "step14-checks.json"
+      ],
+      "gate": 7,
+      "name": "Streaming receive"
+    }
+  ],
+  "accepted_predecessor": "75f015a390167da694f99b5d326dbc41fce39111",
+  "artifacts": {
+    "feature-specs/evidence/step14-checks.json": "8f53ace6142afeb282173eb0d71f9eeac146897342639608d77c6e52e5c9a952",
+    "feature-specs/evidence/step14-cleanup.json": "a763d7d60487019754e3952d63d21cc28f6efe3c8c8ed9c51d06dcaee4fe056e",
+    "feature-specs/evidence/step14-dependency-audit.json": "957ae8d9132b96eee7750e3bb9a71b31ed7501308ec6d2083d6378acf3e4c1bc",
+    "feature-specs/evidence/step14-fuzz.json": "0999f1cd364b77b440442d3c02bdff3f4147872191f740cdba4e2e97828c6c87",
+    "feature-specs/evidence/step14-lanes.json": "1eec8d93166dcb5c5d54432f4d0138db0b94844fc70296fee5e8426cc6051e67",
+    "feature-specs/evidence/step14-public-api.json": "54f4683fd48496fd425e48ce769d897135cca5d1f016e542f58aa01aa69d1302",
+    "feature-specs/evidence/step14-source.json": "69e72007e67fa3c52d8ca760ba6765c0ad0cfe11618f4782095a28886e697350",
+    "feature-specs/evidence/step14-streaming-acceptance.json": "11963000e0ee99b24f48716bd7aa6db18008010b84ca56b8e2f9a6e000b01a74",
+    "feature-specs/evidence/step14-test-mapping.json": "94a4dda0c975513465271d5899753ac85cefc77edd210e73b0e33c8a7d4ff45b"
+  },
+  "baseline_identities": 174,
+  "branch": "v2-14-full-matrix",
+  "command_scope": "Existing complete current-source receipts only; finalization performs no new database or mandatory-matrix runs.",
+  "diagnostics": [
+    {
+      "credited": false,
+      "error": "RuntimeError('test lane failed: cassandra21/v4-no-compression')",
+      "path": "/extra/scylladb/gocql-api-test-cluster/step14/cassandra.json",
+      "sha256": "aabe40ea62bf3c8930a7e035dc1ca1cca7dab3cd33c8e0e731b06df4d7a0ae30",
+      "source_sha256": "5440f452ce5207a364f90601f5dcc513274413603d25b989f003e191dbfab3f0"
+    },
+    {
+      "credited": false,
+      "error": "RuntimeError('test lane failed: development22/v4-development')",
+      "path": "/extra/scylladb/gocql-api-test-cluster/step14/development.json",
+      "sha256": "df7284ba1e12046fb5c1ec3bf52dd87aa8c2f490992e6abf33ed70187ee4df85",
+      "source_sha256": "5440f452ce5207a364f90601f5dcc513274413603d25b989f003e191dbfab3f0"
+    },
+    {
+      "credited": false,
+      "error": "RuntimeError('test lane failed: stable20/v4-no-compression')",
+      "path": "/extra/scylladb/gocql-api-test-cluster/step14/stable.json",
+      "sha256": "6af165bb1b40b198aa92eb9035bc293dd210089777c1d003ebb213dfd4402a18",
+      "source_sha256": "5440f452ce5207a364f90601f5dcc513274413603d25b989f003e191dbfab3f0"
+    },
+    {
+      "credited": false,
+      "error": "KeyboardInterrupt('cancelled by signal 15')",
+      "path": "/extra/scylladb/gocql-api-test-cluster/step14/final/cassandra.json",
+      "sha256": "a7aac5b71ed695a8c33c89e8acb1b36fb61683c24fb36283b7390d28761af448",
+      "source_sha256": "b99574a2fc13e575fbad710a57fe94405e4df7692f3309a3d3e72711c8f43be7"
+    },
+    {
+      "credited": false,
+      "error": "KeyboardInterrupt('cancelled by signal 15')",
+      "path": "/extra/scylladb/gocql-api-test-cluster/step14/final/stable.json",
+      "sha256": "fad29475005489b5b6fa8b2dadb154b7d35751d4b9b3caece7941e7374d3e04d",
+      "source_sha256": "b99574a2fc13e575fbad710a57fe94405e4df7692f3309a3d3e72711c8f43be7"
+    },
+    {
+      "credited": false,
+      "error": "RuntimeError('cassandra21-v4-lz4-tls-cleanup failed')",
+      "path": "/extra/scylladb/gocql-api-test-cluster/step14/verified/cassandra.json",
+      "sha256": "5eeda7e74ed29ce1253eacf1ae4b558fd683af91764f924921562eccbdb6ecb5",
+      "source_sha256": "69e72007e67fa3c52d8ca760ba6765c0ad0cfe11618f4782095a28886e697350"
+    }
+  ],
+  "documentation": {
+    "disposition": "Documentation-only fixture lifecycle/isolation instructions added after freeze; matches observed runner behavior and does not alter native inputs.",
+    "outside_native_source_manifest": true,
+    "path": "tests/fixtures/README.md",
+    "sha256": "ed0c6f1d4b0658f8e6174794f5a0569469676204785a7805f4b2ba98e76ee75a",
+    "verification": {
+      "command": [
+        "python3",
+        "feature-specs/verify.py"
+      ],
+      "exit_code": 0,
+      "log": "/extra/scylladb/gocql-api-test-cluster/step14/verified/final-docs-verifier.log",
+      "sha256": "d917fd30d32ac1dcf5211b8f90122e2892ee48305e5b2f53184e255a32b9f1b4"
+    }
+  },
+  "effective_native_passes": 174,
+  "fuzz_campaigns": 12,
+  "gate": "passed",
+  "handoff_sha256": "796376c8258fe4b4fbb0a90ad6b0a2edebcdb02771fc91a7b01f0a783a362c8c",
+  "limitations": [
+    "Storage values are actual retained driver byte capacities plus conservative descriptor charges, not total heap. TLS record buffers, fixed schema plans, generated source and caller output are separate.",
+    "Saved fuzz mutations are the persisted interesting corpus, not every in-memory execution.",
+    "Focused equivalent-result allocation/copy checks are included; comprehensive independent performance, review and final release audit remain steps15\u201317."
+  ],
+  "mandatory_native_modes": 17,
+  "measured_storage_shapes": 40,
+  "missing_expected_subcase_passes": [],
+  "negative_verifier_controls": [
+    "failed whole-package event despite zero subprocess exit",
+    "nonzero subprocess exit",
+    "hollow parent whose terminal descendants all skip"
+  ],
+  "ownership": "Only the exact namespaced locked fixtures were provisioned/stopped; root STATUS.md and RESUME.md are excluded; no push or publication.",
+  "source_inputs": 623,
+  "source_sha256": "69e72007e67fa3c52d8ca760ba6765c0ad0cfe11618f4782095a28886e697350",
+  "source_snapshot": "feature-specs/evidence/step14-source.json",
+  "source_unchanged": true,
+  "streaming_criterion_groups": 16,
+  "successful_native_receipts": 11,
+  "verifier_tools": {
+    "feature-specs/tools/step14_acceptance.py": "46f93f308ded35e358fa748b9ee46173dc8c7d53d364b4d1766ed427af2f454f",
+    "feature-specs/tools/step14_cancel_probe.py": "f38336d224bdca8a7550cf5eace018903c34df5b59b97edfed34ec98b57ccefc",
+    "feature-specs/tools/step14_cassandra.py": "f35e010435aa5ebe22f01c62ee03c65a8649d207d853523132da155de166a96c",
+    "feature-specs/tools/step14_checks.py": "848bf76f7d8577005ca6edf5f889f83632a990774a53521313c42fadc2dce771",
+    "feature-specs/tools/step14_finalize.py": "502313865903714923e4569e5d25ba4aa10c8bb24e9214f3c9c92748175bff7b",
+    "feature-specs/tools/step14_fuzz.py": "e0ce08f50ecf90afeda53195a7a9c0f597b91689b1b4db82907403f09617cfe4",
+    "feature-specs/tools/step14_matrix.py": "0b8e7681c04b78e1704e212eee0e87df9afa375ad986d185f4ee8b370eacf87e"
+  }
+}

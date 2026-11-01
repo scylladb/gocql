@@ -394,6 +394,17 @@ type StreamRowReader struct {
 	capture      *streamCapture
 }
 
+// InternalStreamReaderWorkingStorageBytes reports the actual retained byte
+// scratch plus conservative scope descriptor capacities. Validation plans/maps
+// depend on schema and are accounted separately from payload working storage.
+// Captures alias final application storage and must not be counted again.
+func InternalStreamReaderWorkingStorageBytes(r *StreamRowReader) int64 {
+	if r == nil || r.shared == nil {
+		return 0
+	}
+	return int64(cap(r.shared.discard)) + 32 + int64(cap(r.shared.values))*192 + int64(cap(r.shared.rows))*128
+}
+
 func NewStreamRowReader(columns cqltype.Columns, scope *wire.Stream) (*StreamRowReader, error) {
 	if scope == nil {
 		return nil, cqltype.TypeValidation("stream reader", "nil envelope")

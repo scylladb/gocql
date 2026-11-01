@@ -1,0 +1,979 @@
+{
+  "cancellation_probe": {
+    "all_nodes_joined": true,
+    "command": [
+      "/extra/scylladb/scylladb/.venv/bin/python",
+      "tests/fixtures/native.py",
+      "--config",
+      "/extra/scylladb/gocql-api-test-cluster/step14/verified/cancel-probe/config.json",
+      "--state",
+      "/extra/scylladb/gocql-api-test-cluster/step08",
+      "--output",
+      "/extra/scylladb/gocql-api-test-cluster/step14/verified/cancel-probe/native.json"
+    ],
+    "endpoints_refused": true,
+    "expected_cancelled_receipt": true,
+    "log": "/extra/scylladb/gocql-api-test-cluster/step14/verified/cancel-probe/runner.log",
+    "log_sha256": "749ad6130c9de31b02d9d89eb2b2e5f910b16c442c90016d7708cc4c8f6c0237",
+    "owned_namespace": "g8d4ab1b3997b4e30",
+    "phases": {
+      "count": 5,
+      "observed": [
+        {
+          "phase": "testing",
+          "signal": 15
+        },
+        {
+          "phase": "cleanup",
+          "signal": 15
+        },
+        {
+          "phase": "cleanup",
+          "signal": 2
+        },
+        {
+          "phase": "stop-join",
+          "signal": 15
+        },
+        {
+          "phase": "stop-join",
+          "signal": 2
+        }
+      ]
+    },
+    "receipt": "/extra/scylladb/gocql-api-test-cluster/step14/verified/cancel-probe/native.json",
+    "receipt_sha256": "094f2190916d27bf8f636e1d60086f708a190f0d95f3dce923c3173aaac855a1",
+    "runner_exit": -2,
+    "runner_pid": 1528748,
+    "signals_sent": [
+      {
+        "phase": "testing",
+        "signal": 15,
+        "time": 29.89823814301053
+      },
+      {
+        "phase": "cleanup",
+        "signal": 15,
+        "time": 30.211896634020377
+      },
+      {
+        "phase": "cleanup",
+        "signal": 2,
+        "time": 30.231968759006122
+      },
+      {
+        "phase": "stop-join",
+        "signal": 15,
+        "time": 32.20651380502386
+      },
+      {
+        "phase": "stop-join",
+        "signal": 2,
+        "time": 32.22657157300273
+      }
+    ],
+    "source_sha256": "69e72007e67fa3c52d8ca760ba6765c0ad0cfe11618f4782095a28886e697350",
+    "test_and_cleanup_children_gone": true
+  },
+  "endpoints": [
+    {
+      "address": "127.0.20.1",
+      "port": 9042,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.1",
+      "port": 9142,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.1",
+      "port": 19042,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.1",
+      "port": 19142,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.1",
+      "port": 7000,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.1",
+      "port": 7001,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.1",
+      "port": 10000,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.2",
+      "port": 9042,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.2",
+      "port": 9142,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.2",
+      "port": 19042,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.2",
+      "port": 19142,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.2",
+      "port": 7000,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.2",
+      "port": 7001,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.2",
+      "port": 10000,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.3",
+      "port": 9042,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.3",
+      "port": 9142,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.3",
+      "port": 19042,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.3",
+      "port": 19142,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.3",
+      "port": 7000,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.3",
+      "port": 7001,
+      "refused": true
+    },
+    {
+      "address": "127.0.20.3",
+      "port": 10000,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.1",
+      "port": 9042,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.1",
+      "port": 9142,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.1",
+      "port": 19042,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.1",
+      "port": 19142,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.1",
+      "port": 7000,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.1",
+      "port": 7001,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.1",
+      "port": 10000,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.2",
+      "port": 9042,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.2",
+      "port": 9142,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.2",
+      "port": 19042,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.2",
+      "port": 19142,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.2",
+      "port": 7000,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.2",
+      "port": 7001,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.2",
+      "port": 10000,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.3",
+      "port": 9042,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.3",
+      "port": 9142,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.3",
+      "port": 19042,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.3",
+      "port": 19142,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.3",
+      "port": 7000,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.3",
+      "port": 7001,
+      "refused": true
+    },
+    {
+      "address": "127.0.21.3",
+      "port": 10000,
+      "refused": true
+    },
+    {
+      "address": "127.0.22.1",
+      "port": 9042,
+      "refused": true
+    },
+    {
+      "address": "127.0.22.1",
+      "port": 9142,
+      "refused": true
+    },
+    {
+      "address": "127.0.22.1",
+      "port": 19042,
+      "refused": true
+    },
+    {
+      "address": "127.0.22.1",
+      "port": 19142,
+      "refused": true
+    },
+    {
+      "address": "127.0.22.1",
+      "port": 7000,
+      "refused": true
+    },
+    {
+      "address": "127.0.22.1",
+      "port": 7001,
+      "refused": true
+    },
+    {
+      "address": "127.0.22.1",
+      "port": 10000,
+      "refused": true
+    },
+    {
+      "address": "127.0.22.2",
+      "port": 9042,
+      "refused": true
+    },
+    {
+      "address": "127.0.22.2",
+      "port": 9142,
+      "refused": true
+    },
+    {
+      "address": "127.0.22.2",
+      "port": 19042,
+      "refused": true
+    },
+    {
+      "address": "127.0.22.2",
+      "port": 19142,
+      "refused": true
+    },
+    {
+      "address": "127.0.22.2",
+      "port": 7000,
+      "refused": true
+    },
+    {
+      "address": "127.0.22.2",
+      "port": 7001,
+      "refused": true
+    },
+    {
+      "address": "127.0.22.2",
+      "port": 10000,
+      "refused": true
+    },
+    {
+      "address": "127.0.22.3",
+      "port": 9042,
+      "refused": true
+    },
+    {
+      "address": "127.0.22.3",
+      "port": 9142,
+      "refused": true
+    },
+    {
+      "address": "127.0.22.3",
+      "port": 19042,
+      "refused": true
+    },
+    {
+      "address": "127.0.22.3",
+      "port": 19142,
+      "refused": true
+    },
+    {
+      "address": "127.0.22.3",
+      "port": 7000,
+      "refused": true
+    },
+    {
+      "address": "127.0.22.3",
+      "port": 7001,
+      "refused": true
+    },
+    {
+      "address": "127.0.22.3",
+      "port": 10000,
+      "refused": true
+    }
+  ],
+  "runners_and_children": [
+    {
+      "gone": true,
+      "kind": "native-runner",
+      "lane": "stable",
+      "pid": 1545270
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "stable",
+      "pid": 1545359
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "stable",
+      "pid": 1545891
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "stable",
+      "pid": 1551768
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "stable",
+      "pid": 1552080
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "stable",
+      "pid": 1559664
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "stable",
+      "pid": 1560721
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "stable",
+      "pid": 1566038
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "stable",
+      "pid": 1566248
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "stable",
+      "pid": 1571433
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "stable",
+      "pid": 1571674
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "stable",
+      "pid": 1578920
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "stable",
+      "pid": 1579171
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "stable",
+      "pid": 1584022
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "stable",
+      "pid": 1584302
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "stable",
+      "pid": 1585196
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "stable",
+      "pid": 1585430
+    },
+    {
+      "gone": true,
+      "kind": "controlled-node",
+      "lane": "stable",
+      "pid": 1545360
+    },
+    {
+      "gone": true,
+      "kind": "controlled-node",
+      "lane": "stable",
+      "pid": 1547278
+    },
+    {
+      "gone": true,
+      "kind": "controlled-node",
+      "lane": "stable",
+      "pid": 1547278
+    },
+    {
+      "gone": true,
+      "kind": "controlled-node",
+      "lane": "stable",
+      "pid": 1553983
+    },
+    {
+      "gone": true,
+      "kind": "controlled-node",
+      "lane": "stable",
+      "pid": 1553983
+    },
+    {
+      "gone": true,
+      "kind": "controlled-node",
+      "lane": "stable",
+      "pid": 1584823
+    },
+    {
+      "gone": true,
+      "kind": "controlled-node",
+      "lane": "stable",
+      "pid": 1584823
+    },
+    {
+      "gone": true,
+      "kind": "controlled-node",
+      "lane": "stable",
+      "pid": 1585747
+    },
+    {
+      "gone": true,
+      "kind": "native-runner",
+      "lane": "development",
+      "pid": 1529178
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "development",
+      "pid": 1529271
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "development",
+      "pid": 1531999
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "development",
+      "pid": 1543893
+    },
+    {
+      "gone": true,
+      "kind": "controlled-node",
+      "lane": "development",
+      "pid": 1529293
+    },
+    {
+      "gone": true,
+      "kind": "controlled-node",
+      "lane": "development",
+      "pid": 1536610
+    },
+    {
+      "gone": true,
+      "kind": "native-runner",
+      "lane": "stable-v3tls",
+      "pid": 1586981
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "stable-v3tls",
+      "pid": 1586983
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "stable-v3tls",
+      "pid": 1587656
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "stable-v3tls",
+      "pid": 1588369
+    },
+    {
+      "gone": true,
+      "kind": "controlled-node",
+      "lane": "stable-v3tls",
+      "pid": 1586984
+    },
+    {
+      "gone": true,
+      "kind": "controlled-node",
+      "lane": "stable-v3tls",
+      "pid": 1588238
+    },
+    {
+      "gone": true,
+      "kind": "native-runner",
+      "lane": "cassandra-v5-no-compression",
+      "pid": 1593439
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v5-no-compression",
+      "pid": 1593442
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v5-no-compression",
+      "pid": 1593479
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v5-no-compression",
+      "pid": 1593501
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v5-no-compression",
+      "pid": 1597929
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v5-no-compression",
+      "pid": 1607393
+    },
+    {
+      "gone": true,
+      "kind": "controlled-node",
+      "lane": "cassandra-v5-no-compression",
+      "pid": 1593950
+    },
+    {
+      "gone": true,
+      "kind": "controlled-node",
+      "lane": "cassandra-v5-no-compression",
+      "pid": 1599779
+    },
+    {
+      "gone": true,
+      "kind": "native-runner",
+      "lane": "cassandra-v5-lz4",
+      "pid": 1609425
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v5-lz4",
+      "pid": 1609427
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v5-lz4",
+      "pid": 1609483
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v5-lz4",
+      "pid": 1609572
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v5-lz4",
+      "pid": 1613455
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v5-lz4",
+      "pid": 1623743
+    },
+    {
+      "gone": true,
+      "kind": "controlled-node",
+      "lane": "cassandra-v5-lz4",
+      "pid": 1610227
+    },
+    {
+      "gone": true,
+      "kind": "controlled-node",
+      "lane": "cassandra-v5-lz4",
+      "pid": 1617142
+    },
+    {
+      "gone": true,
+      "kind": "native-runner",
+      "lane": "cassandra-v5-no-compression-tls",
+      "pid": 1628029
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v5-no-compression-tls",
+      "pid": 1628056
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v5-no-compression-tls",
+      "pid": 1628094
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v5-no-compression-tls",
+      "pid": 1628114
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v5-no-compression-tls",
+      "pid": 1630387
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v5-no-compression-tls",
+      "pid": 1640961
+    },
+    {
+      "gone": true,
+      "kind": "controlled-node",
+      "lane": "cassandra-v5-no-compression-tls",
+      "pid": 1628564
+    },
+    {
+      "gone": true,
+      "kind": "controlled-node",
+      "lane": "cassandra-v5-no-compression-tls",
+      "pid": 1633180
+    },
+    {
+      "gone": true,
+      "kind": "native-runner",
+      "lane": "cassandra-v5-lz4-tls",
+      "pid": 1642692
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v5-lz4-tls",
+      "pid": 1642694
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v5-lz4-tls",
+      "pid": 1642731
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v5-lz4-tls",
+      "pid": 1642751
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v5-lz4-tls",
+      "pid": 1644904
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v5-lz4-tls",
+      "pid": 1655916
+    },
+    {
+      "gone": true,
+      "kind": "controlled-node",
+      "lane": "cassandra-v5-lz4-tls",
+      "pid": 1643199
+    },
+    {
+      "gone": true,
+      "kind": "controlled-node",
+      "lane": "cassandra-v5-lz4-tls",
+      "pid": 1648993
+    },
+    {
+      "gone": true,
+      "kind": "native-runner",
+      "lane": "cassandra-v4-no-compression",
+      "pid": 1657261
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v4-no-compression",
+      "pid": 1657263
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v4-no-compression",
+      "pid": 1657327
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v4-no-compression",
+      "pid": 1657347
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v4-no-compression",
+      "pid": 1659508
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v4-no-compression",
+      "pid": 1666064
+    },
+    {
+      "gone": true,
+      "kind": "controlled-node",
+      "lane": "cassandra-v4-no-compression",
+      "pid": 1657818
+    },
+    {
+      "gone": true,
+      "kind": "controlled-node",
+      "lane": "cassandra-v4-no-compression",
+      "pid": 1662055
+    },
+    {
+      "gone": true,
+      "kind": "native-runner",
+      "lane": "cassandra-v4-no-compression-tls",
+      "pid": 1669410
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v4-no-compression-tls",
+      "pid": 1669412
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v4-no-compression-tls",
+      "pid": 1669514
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v4-no-compression-tls",
+      "pid": 1669564
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v4-no-compression-tls",
+      "pid": 1671639
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v4-no-compression-tls",
+      "pid": 1678036
+    },
+    {
+      "gone": true,
+      "kind": "controlled-node",
+      "lane": "cassandra-v4-no-compression-tls",
+      "pid": 1670011
+    },
+    {
+      "gone": true,
+      "kind": "controlled-node",
+      "lane": "cassandra-v4-no-compression-tls",
+      "pid": 1672696
+    },
+    {
+      "gone": true,
+      "kind": "native-runner",
+      "lane": "cassandra-v4-lz4",
+      "pid": 1679204
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v4-lz4",
+      "pid": 1679225
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v4-lz4",
+      "pid": 1679262
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v4-lz4",
+      "pid": 1679282
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v4-lz4",
+      "pid": 1681464
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v4-lz4",
+      "pid": 1688203
+    },
+    {
+      "gone": true,
+      "kind": "native-runner",
+      "lane": "cassandra-v4-lz4-tls",
+      "pid": 1690106
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v4-lz4-tls",
+      "pid": 1690108
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v4-lz4-tls",
+      "pid": 1690145
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v4-lz4-tls",
+      "pid": 1690166
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v4-lz4-tls",
+      "pid": 1692296
+    },
+    {
+      "gone": true,
+      "kind": "command",
+      "lane": "cassandra-v4-lz4-tls",
+      "pid": 1696274
+    }
+  ]
+}

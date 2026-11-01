@@ -126,3 +126,25 @@ go test -tags unit -run '^$' -bench '^BenchmarkStep08' -benchtime=20x .
 unless `GOCQL_FIXTURE_ACTION=fail|cancel` is configured. It creates a real owned
 keyspace and writes `GOCQL_FIXTURE_MARKER`, then fails or waits for cancellation.
 These are deliberate failed receipts, retained separately from passing DB gates.
+
+Cleanup runs only in the runner's dedicated post-package subprocess, which sets
+`GOCQL_FIXTURE_CLEANUP=1` and selects exactly `TestStep08Cleanup`. Leave that flag
+unset in ordinary suites: cleanup must never delete a namespace while parallel
+tests still own it. The killed-child tests use the same cleanup implementation
+with an exact owned-name allowlist after joining those children. Cleanup validates
+the run prefix, quotes identifiers, uses a fresh bounded context and verifies
+absence. Cross-node child namespace checks await schema agreement before their
+exact presence/absence query.
+
+The runner records execution/cleanup/stop phases and cancellation. The first
+normal-execution signal terminates and joins the test process; repeated signals
+during cleanup and final stop do not interrupt teardown. Cleanup subprocesses
+have a two-minute whole-process ceiling, with their database work bounded by the
+cleanup context. An expected cancellation remains a failed/canceled receipt even
+when cleanup and every final join succeed.
+
+For complete Cassandra suites, use fresh fixture data for each protocol,
+compression and TLS mode. Reusing one three-node fixture for many complete schema
+suites can make a later batch DROP/agreement exceed the cleanup budget. Keep the
+same install pins and address locks; run these fixtures sequentially, verifying
+each complete package, cleanup and final join before starting the next one.

@@ -155,8 +155,8 @@ func TestStep13Ownership(t *testing.T) {
 		}
 	}
 	// Both actual binaries have exited and been joined above. Exercise the same
-	// prefix cleanup the live native runner invokes after a failed/canceled mode.
-	TestStep08Cleanup(t)
+	// cleanup implementation as the native runner, scoped to these exact children.
+	step08CleanupNamespaces(t, killed)
 	for _, namespace := range killed {
 		step13Namespace(t, cfg, namespace, false)
 		t.Log("KILLED CHILD PREFIX CLEANUP VERIFIED", namespace)
@@ -172,6 +172,9 @@ func step13Namespace(t *testing.T, cfg Config, namespace string, wantPresent boo
 		t.Fatal(err)
 	}
 	defer s.Close()
+	if err := s.AwaitSchemaAgreement(ctx); err != nil {
+		t.Fatal("namespace observation schema agreement", err)
+	}
 	value, err := TextValue(namespace)
 	if err != nil {
 		t.Fatal(err)

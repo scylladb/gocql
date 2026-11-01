@@ -101,6 +101,17 @@ func NewStream(ctx context.Context, source io.Reader, size int64, limits StreamL
 	return &Stream{state: &streamState{ctx: ctx, source: source, limits: l}, remaining: size, active: true}, nil
 }
 
+// WorkingStorageBytes reports simultaneously retained payload scratch and scoped
+// child descriptors. Caller output and the underlying source are excluded.
+func (s *Stream) WorkingStorageBytes() int64 {
+	if s == nil || s.state == nil {
+		return 0
+	}
+	// Each scope holds five machine words and two flags; 64 bytes is a
+	// conservative ceiling on both supported 32-bit and 64-bit platforms.
+	return int64(cap(s.state.discard)) + int64(cap(s.state.children))*72 + 8
+}
+
 func (s *Stream) Remaining() int64 { return s.remaining }
 func (s *Stream) Err() error {
 	if s == nil || s.state == nil {

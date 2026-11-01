@@ -219,6 +219,23 @@ func TestStep07RunStreamLive(t *testing.T) {
 		t.Fatal("original metadata shape", changed.Columns().Len())
 	}
 	changedSeen := map[int32]bool{dst.ID: true}
+	// Keep this cursor idle while exhausting its exact host reservation. A
+	// separate native control connection must still dispatch real schema events.
+	sub, err := s.Subscribe(EventFilter{Kinds: []EventKind{SchemaEvent}, Keyspace: keyspace, Capacity: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sub.Close()
+	blockedCtx, blockedCancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	second, blockedErr := RunStream(blockedCtx, s, bound, decoder, StreamOptions{Options: Options{HostID: Option[UUID]{Set: true, Value: changed.Info().Result.HostID}}})
+	blockedCancel()
+	if second != nil {
+		second.Close()
+		t.Fatal("reserved host opened extra streaming capacity")
+	}
+	if !errors.Is(blockedErr, context.DeadlineExceeded) {
+		t.Fatal("pool exhaustion was not bounded", blockedErr)
+	}
 	// Use another real client: this stream deliberately owns its one configured
 	// connection slot across pages, including during caller think time.
 	ddlSession, err := Connect(ctx, config)
@@ -230,6 +247,15 @@ func TestStep07RunStreamLive(t *testing.T) {
 	if alterErr != nil {
 		t.Fatal(alterErr)
 	}
+	select {
+	case event, ok := <-sub.Events():
+		if !ok || event.Kind != SchemaEvent {
+			t.Fatal("control event lost while stream idle", event, ok)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("control dispatch blocked behind idle/exhausted stream reservation")
+	}
+	t.Log("actual schema event dispatched while cursor idle and its host reservation exhausted; subscriber capacity=2")
 	for changed.NextInto(&dst) {
 		if changedSeen[dst.ID] || !bytes.Equal(dst.Value, payload) || string(dst.Text) != textPayload || len(dst.Pieces) != 2 || string(dst.Pieces[0]) != "nested" || string(dst.Pieces[1]) != "storage" {
 			t.Fatal("metadata changed output", dst.ID)

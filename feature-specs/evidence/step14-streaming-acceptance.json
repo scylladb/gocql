@@ -1,0 +1,2200 @@
+{
+  "cost_scope": "cost-comparison supplies equivalent row/cell result-shape allocation timings for Run/Row, NextInto and RunStream; static benchmark payload metrics are not live-memory measurements. All-mode live byte capacities, direct identities and validated-unit copy counts are separate assertions. Comprehensive independent CPU/throughput/peak-heap comparison remains step15.",
+  "criteria": [
+    {
+      "criterion": "split-framing-arithmetic-text",
+      "requirement": "Every split/truncated header/cell/text/nested framing; configured total work/overflow/depth/count limits.",
+      "tests": [
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatalf(\"split %d rows %q error %v\", split, rows, err)",
+            "t.Fatalf(\"accepted truncated prefix %d/%d\", split, len(sample))",
+            "t.Fatalf(\"split %d: %v\", split, err)"
+          ],
+          "complete_source_sha256": "df5447104d988f93a561f9b0331211d2e7e1a777b539f3570210935cc029e94d",
+          "file": "v2_fixture_stream_test.go",
+          "line": 90,
+          "test": "TestStep08StreamIndependentEverySplitAndTruncation"
+        },
+        {
+          "actual_effective_passes": [
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(\"invalid boolean accepted\")",
+            "t.Fatal(\"invalid time accepted\")",
+            "t.Fatal(\"non-v1 UUID accepted\")",
+            "t.Fatal(\"mixed duration signs accepted\")"
+          ],
+          "complete_source_sha256": "634e421d0c7b5593ff7888238413fc03c727ff6fb13c1e1fbabd50627001deed",
+          "file": "internal/codec/stream_codec_test.go",
+          "line": 118,
+          "test": "TestV2StreamingScalarDomains"
+        },
+        {
+          "actual_effective_passes": [
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(err)",
+            "t.Fatal(\"text changed storage/content\")",
+            "t.Fatalf(\"capacity consumed body: %v read %d\", err, source.offset)",
+            "t.Fatalf(\"invalid text %x\", bad)",
+            "t.Fatal(\"invalid ASCII accepted\")",
+            "t.Fatalf(\"nullable reset: %+v %v\", nullable, err)",
+            "t.Fatal(\"present empty lost null distinction\", err)",
+            "t.Fatal(\"unset result accepted\")",
+            "t.Fatal(\"logical Empty\", err)",
+            "t.Fatal(\"text Empty accepted\")"
+          ],
+          "complete_source_sha256": "de36b473a059fae1e88eaa92c117ebf2f618ff81594e092b48d2a842a085f2ef",
+          "file": "internal/codec/stream_codec_test.go",
+          "line": 154,
+          "test": "TestV2StreamingBytesCapacityNullAndText"
+        },
+        {
+          "actual_effective_passes": [
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(\"nested storage\", out, err)",
+            "t.Fatal(\"reused nested storage\", err)",
+            "t.Fatalf(\"outer count capacity %v offset %d\", err, source.offset)",
+            "t.Fatal(\"child capacity grew\")",
+            "t.Fatal(\"map\", mapped, err)",
+            "t.Fatal(\"set\", err)",
+            "t.Fatal(\"nested mismatch accepted\")"
+          ],
+          "complete_source_sha256": "2c14d0b8785e9f06c052e410b73ae7531873b4f34a7ce2f2b0373f5888ca798e",
+          "file": "internal/codec/stream_codec_test.go",
+          "line": 261,
+          "test": "TestV2StreamingNestedCollectionCapacityAndBacking"
+        }
+      ]
+    },
+    {
+      "criterion": "first-row-before-remainder",
+      "requirement": "All eight modes deliver row1 behind independent source gate; v5 gate starts only after required complete CRC-validated unit.",
+      "tests": [
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(err)",
+            "t.Fatal(\"first row waited beyond gate\", cursor.Err())",
+            "t.Fatal(cursor.Err())",
+            "t.Fatal(cursor.Err())"
+          ],
+          "complete_source_sha256": "dc673a28f78123e14e3c2f9bf2c1abdb61db9e4ce5547119e469c30c212440bf",
+          "file": "v2_fixture_stream_test.go",
+          "line": 151,
+          "test": "TestStep08StreamIndependentFirstRowGate"
+        },
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Error(err)",
+            "t.Fatal(err)",
+            "t.Fatal(cursor.Err())",
+            "t.Fatal(\"truncated row succeeded\")",
+            "t.Fatal(cursor.Err(), cursor.Info())",
+            "t.Fatal(\"first error replaced\")"
+          ],
+          "complete_source_sha256": "257267c7b0623b8cf8115e282470d8ac53c64a53a96afd5fcf15cde1663351ba",
+          "file": "v2_row_stream_test.go",
+          "line": 157,
+          "test": "TestStep07StreamFirstRowBeforePageAndNoReplay"
+        }
+      ]
+    },
+    {
+      "criterion": "integrity-publication",
+      "requirement": "Bad checksums/trailers/truncation cannot return a successful invalid row; multi-row and cross-unit cells remain incremental.",
+      "tests": [
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(\"corrupt unit delivered caller output\")",
+            "t.Fatal(\"corrupt checksum accepted\")"
+          ],
+          "complete_source_sha256": "0de9188b957f6f56acc32d57c01fd37e21177d71ec48dd1dd6c559343c2a3c5a",
+          "file": "v2_fixture_stream_test.go",
+          "line": 203,
+          "test": "TestStep08StreamIndependentCorruptChecksums"
+        },
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(\"invalid checksum exposed cursor\", cursor, err)"
+          ],
+          "complete_source_sha256": "3265bfd300dfccfbf45a5ecb585a6d80b70f6eb54a9d343f1af992320a9aec04",
+          "file": "v2_row_stream_test.go",
+          "line": 547,
+          "test": "TestStep07StreamBadV5IntegrityCannotDeliver"
+        },
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(err)",
+            "t.Fatal(err)",
+            "t.Fatal(ok, err)",
+            "t.Fatal(\"raw payload did not target final ranges\", source.directBytes, source.otherBulk)",
+            "t.Fatal(\"working memory grew with response bytes\", storage, now)",
+            "t.Fatal(\"metadata allocations grew with cell\", response.InternalBudget.Used)"
+          ],
+          "complete_source_sha256": "4c9c763860627238bddc5491f71782d4bd57754855adc74bb5482a6ad2e9aa68",
+          "file": "v2_stream_transport_bench_test.go",
+          "line": 118,
+          "test": "TestV2StreamingTransportReadTargetsAndWorkingMemory"
+        }
+      ]
+    },
+    {
+      "criterion": "seeded-capacity-types-reset",
+      "requirement": "Exact/insufficient capacity, null/empty/unset/UTF8; nested/vector/tuple/UDT/encoded final backing and missing/reset capabilities.",
+      "tests": [
+        {
+          "actual_effective_passes": [
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(err)",
+            "t.Fatal(\"text changed storage/content\")",
+            "t.Fatalf(\"capacity consumed body: %v read %d\", err, source.offset)",
+            "t.Fatalf(\"invalid text %x\", bad)",
+            "t.Fatal(\"invalid ASCII accepted\")",
+            "t.Fatalf(\"nullable reset: %+v %v\", nullable, err)",
+            "t.Fatal(\"present empty lost null distinction\", err)",
+            "t.Fatal(\"unset result accepted\")",
+            "t.Fatal(\"logical Empty\", err)",
+            "t.Fatal(\"text Empty accepted\")"
+          ],
+          "complete_source_sha256": "de36b473a059fae1e88eaa92c117ebf2f618ff81594e092b48d2a842a085f2ef",
+          "file": "internal/codec/stream_codec_test.go",
+          "line": 154,
+          "test": "TestV2StreamingBytesCapacityNullAndText"
+        },
+        {
+          "actual_effective_passes": [
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(\"signed varint bytes\", err)",
+            "t.Fatal(\"empty varint accepted\")",
+            "t.Fatal(\"decimal\", out, err)",
+            "t.Fatalf(\"decimal capacity preflight: %v offset %d\", err, source.offset)"
+          ],
+          "complete_source_sha256": "3a6502c8ea036816f4c598de945be675f11ff1c9449f08a3f88169a318303d5b",
+          "file": "internal/codec/stream_codec_test.go",
+          "line": 234,
+          "test": "TestV2StreamingNumericPayloadStorage"
+        },
+        {
+          "actual_effective_passes": [
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(\"nested storage\", out, err)",
+            "t.Fatal(\"reused nested storage\", err)",
+            "t.Fatalf(\"outer count capacity %v offset %d\", err, source.offset)",
+            "t.Fatal(\"child capacity grew\")",
+            "t.Fatal(\"map\", mapped, err)",
+            "t.Fatal(\"set\", err)",
+            "t.Fatal(\"nested mismatch accepted\")"
+          ],
+          "complete_source_sha256": "2c14d0b8785e9f06c052e410b73ae7531873b4f34a7ce2f2b0373f5888ca798e",
+          "file": "internal/codec/stream_codec_test.go",
+          "line": 261,
+          "test": "TestV2StreamingNestedCollectionCapacityAndBacking"
+        },
+        {
+          "actual_effective_passes": [
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(\"fixed vector\", out, err)",
+            "t.Fatal(\"short vector accepted\")",
+            "t.Fatal(\"variable vector\", vout, err)",
+            "t.Fatal(\"nested vector\", nestedOut, err)"
+          ],
+          "complete_source_sha256": "c1a8bd438a422ee2906298c8ac35562f670541c2a52316db7497278d4dd25f03",
+          "file": "internal/codec/stream_codec_test.go",
+          "line": 304,
+          "test": "TestV2StreamingVectors"
+        },
+        {
+          "actual_effective_passes": [
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(\"tuple\", out, err)",
+            "t.Fatal(\"omitted suffix\", out, err)",
+            "t.Fatal(\"UDT\", err)",
+            "t.Fatal(\"missing identity accepted\")",
+            "t.Fatal(\"wrong identity accepted\")",
+            "t.Fatal(\"extra UDT field accepted without policy\")",
+            "t.Fatal(\"checked UDT skip\", err)",
+            "t.Fatalf(\"encoded %s: %x %v\", typ, encoded.Bytes, err)",
+            "t.Fatal(\"encoded output skipped text validation\")",
+            "t.Fatal(\"zero tuple\", err)",
+            "t.Fatal(\"zero tuple Empty\", err)"
+          ],
+          "complete_source_sha256": "1a91a0432adb35371408f2bad94da9ad3c78fe9730c4d5305fe5aaebfabba1a0",
+          "file": "internal/codec/stream_codec_test.go",
+          "line": 329,
+          "test": "TestV2StreamingRecordsAndEncodedOutput"
+        },
+        {
+          "actual_effective_passes": [
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(\"duplicate positional names\", dst, err)",
+            "t.Fatal(\"ambiguous result alias accepted\")",
+            "t.Fatal(\"missing application field reset\", out, err)",
+            "t.Fatal(\"single-column UDT policy\", single, err)"
+          ],
+          "complete_source_sha256": "7b62a02aa31b511cafb0d147b25e8a1b384129e4dcef7236f76d5432a944f65e",
+          "file": "internal/codec/stream_codec_test.go",
+          "line": 488,
+          "test": "TestV2StreamingRowsDuplicateNamesAndMissingUDTFields"
+        },
+        {
+          "actual_effective_passes": [
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(\"missing payload reset\", out, err)",
+            "t.Fatal(\"reset lost seeded storage\")",
+            "t.Fatal(\"custom absent mapping silently reset without declaration capability\")",
+            "t.Fatal(\"wrapper advertised unsupported custom reset\")"
+          ],
+          "complete_source_sha256": "e77607cd5a4c4486a6df177a45efe8b247c4c2f65c6891bd17797cce3d25f946",
+          "file": "internal/codec/stream_custom_test.go",
+          "line": 187,
+          "test": "TestV2StreamingMissingPayloadResetPreservesSeeds"
+        },
+        {
+          "actual_effective_passes": [
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(\"absent list masked custom declaration reset capability\")"
+          ],
+          "complete_source_sha256": "23952e49b57414d39d4ac58a9fade44a4784173ce1742aee63661d0e2c874761",
+          "file": "internal/codec/stream_custom_test.go",
+          "line": 222,
+          "test": "TestV2StreamingAbsentCustomDescendantResetCapability"
+        },
+        {
+          "actual_effective_passes": [
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(\"custom declaration reset\", value, err)"
+          ],
+          "complete_source_sha256": "dca29fe20c9adf247b189cd1d467684ad7e76c29300460ee33fe0866148f50ea",
+          "file": "internal/codec/stream_custom_test.go",
+          "line": 235,
+          "test": "TestV2StreamingAbsentCustomResetterSucceeds"
+        }
+      ]
+    },
+    {
+      "criterion": "direct-final-ranges",
+      "requirement": "Independent peer bytes land in final caller ranges at raw socket or authenticated TLS plaintext boundary; v5 unit copies counted separately.",
+      "tests": [
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(err)",
+            "t.Fatal(\"lost final storage\", cursor.Err())",
+            "t.Fatal(\"unexpected raw payload staging\", direct, otherBulk)"
+          ],
+          "complete_source_sha256": "d30aa40cfa44c783afa5d8451c52e6780eef0f2ef862d55f3ee414496c929131",
+          "file": "v2_fixture_stream_test.go",
+          "line": 408,
+          "test": "TestStep08IndependentRawDirectRead"
+        },
+        {
+          "actual_effective_passes": [
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(\"payload source was read into driver storage\")",
+            "t.Fatal(err)",
+            "t.Fatal(\"direct ranges\", err)"
+          ],
+          "complete_source_sha256": "27c72536cb52e34485228f1da0c795b4562f9cde61c3bbfc7c3123e7d1071b41",
+          "file": "internal/codec/stream_codec_test.go",
+          "line": 206,
+          "test": "TestV2StreamingDirectReadTargets"
+        },
+        {
+          "actual_effective_passes": [
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(\"encoded payload staged in driver scratch\")",
+            "t.Fatal(\"encoded final storage\", err)",
+            "t.Fatal(\"encoded output allocated discard storage\")"
+          ],
+          "complete_source_sha256": "350544346df23266715630026789c64d4de032d12cd89a613454319be3c884b7",
+          "file": "internal/codec/stream_codec_test.go",
+          "line": 456,
+          "test": "TestV2StreamingEncodedNestedFinalReadIdentity"
+        },
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(err)",
+            "t.Fatal(cursor.Err())",
+            "t.Fatal(\"body did not read directly into caller backing\")"
+          ],
+          "complete_source_sha256": "d4ce9cadbe1e3f3076727226216a51ee222ed8b9d6be9c8fefa7df3eebd802a3",
+          "file": "v2_row_stream_test.go",
+          "line": 450,
+          "test": "TestStep07StreamRawReadCallerBacking"
+        }
+      ]
+    },
+    {
+      "criterion": "simultaneous-byte-storage",
+      "requirement": "Generated source avoids full response fixture; independently grow cell256KB\u21928MB, page1\u2192128rows, skip8MB, slow consumer and unit count; sample actual live byte capacities inside reads and between calls across all8 modes. Excludes source, final output, fixed schema plans and stdlibTLS records explicitly.",
+      "tests": [
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(err)",
+            "t.Fatal(err)",
+            "t.Fatal(err)",
+            "t.Fatal(err)",
+            "t.Fatalf(\"unbounded driver byte storage: %d\", n)",
+            "t.Fatal(ok, err)",
+            "t.Fatal(ok, err)",
+            "t.Fatal(ok, err)",
+            "t.Fatal(\"incorrect final output/backing\")",
+            "t.Fatal(ok, err)",
+            "t.Fatal(err)"
+          ],
+          "complete_source_sha256": "27c095b6a3bf406d1815fe7a55c36aca731854d3fcf76396a0f3e5e1bfa9ce6c",
+          "file": "step14_stream_acceptance_test.go",
+          "line": 80,
+          "test": "TestStep14StreamingStorageMatrix"
+        },
+        {
+          "actual_effective_passes": [
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(\"malformed ignored value accepted\")",
+            "t.Fatal(err)",
+            "t.Fatal(err)",
+            "t.Fatal(\"discard storage/read bound\", len(r.shared.discard), source.reads)"
+          ],
+          "complete_source_sha256": "d58fe7f58527a251c4b6723f0ffdb1ba7af4c50df12d071f43b59651494f78f4",
+          "file": "internal/codec/stream_codec_test.go",
+          "line": 396,
+          "test": "TestV2StreamingSkippedValuesAreBoundedAndChecked"
+        },
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(err)",
+            "t.Fatal(\"metadata budget ignored old latest-attempt storage\")",
+            "t.Fatal(cursor.Err())",
+            "t.Fatal(\"metadata owner leaked\", budget)"
+          ],
+          "complete_source_sha256": "94d81cf77817705bb2dee247cb110c21559e3ca3a6c7d3bba65e06d18b5367e3",
+          "file": "v2_row_stream_test.go",
+          "line": 831,
+          "test": "TestStep07LatestAttemptMetadataRemainsBudgetedDuringRetry"
+        }
+      ]
+    },
+    {
+      "criterion": "mixed-buffered-iteration-lease",
+      "requirement": "Buffered Page/Rows mixed Next/NextInto use correct Current/reset/retained leases and preserve old matching metadata plans.",
+      "tests": [
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(p.Err())",
+            "t.Fatal(\"current destination not observed\")",
+            "t.Fatal(\"mixed Next modified old destination\")",
+            "t.Fatal(p.Err())",
+            "t.Fatal(\"exhaustion\", p.Err())",
+            "t.Fatal(\"terminal nil replaced exhaustion\", p.Err())",
+            "t.Fatal(\"retention lost\")",
+            "t.Fatal(\"close lost retained page\")",
+            "t.Fatal(err)"
+          ],
+          "complete_source_sha256": "73bced7d7288ac282cd8a49896ff7f14979d926ad9b7ff5c9ed9ab493035ffdf",
+          "file": "v2_prepared_paging_test.go",
+          "line": 61,
+          "test": "TestV2PageNextIntoMixedCurrentAndRetention"
+        },
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(\"nil accepted\")",
+            "t.Fatal(p.Err())",
+            "t.Fatal(\"false did not clear destination\")",
+            "t.Fatal(\"terminal error changed\", p.Err())"
+          ],
+          "complete_source_sha256": "c4225a8131af4801ced07f7ec977744666736fc92788a0e71ca1baa068ac9308",
+          "file": "v2_prepared_paging_test.go",
+          "line": 99,
+          "test": "TestV2PageNextIntoTerminalClearing"
+        },
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(\"partial row published\", dst, p.Err())"
+          ],
+          "complete_source_sha256": "b4a63edaec5c6742add9091b767a8b71c788a05b4a804a55ca4f1039d8ef5e73",
+          "file": "v2_prepared_paging_test.go",
+          "line": 137,
+          "test": "TestV2PageNextIntoPartialErrorClears"
+        },
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Error(err)",
+            "t.Fatal(rows.Err())",
+            "t.Fatal(\"cancelled NextInto succeeded\")",
+            "t.Fatal(\"close did not interrupt next page\")",
+            "t.Fatal(err)",
+            "t.Fatal(\"retained view lost\")",
+            "t.Fatal(\"terminal error changed\")"
+          ],
+          "complete_source_sha256": "abbdb40edd8b0e640ec6c6c8b593ddfae5f793714c68aec934520548243d5bb9",
+          "file": "v2_prepared_paging_test.go",
+          "line": 155,
+          "test": "TestV2RowsNextIntoPagingAndCloseInterrupt"
+        },
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(err)",
+            "t.Fatal(err)",
+            "t.Fatal(\"old matching page lost\", p.Err())"
+          ],
+          "complete_source_sha256": "9662b6f055185d34af1b365deefc75d6e64710523a7bb1d07564245f56a3ecee",
+          "file": "v2_prepared_paging_test.go",
+          "line": 1001,
+          "test": "TestV2PreparedOldPageKeepsMatchingPlan"
+        },
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(p.Err())",
+            "t.Fatal(\"shutdown recycled delivered page\")",
+            "t.Fatal(\"closed page advance\", p.Err())",
+            "t.Fatal(r.Err())",
+            "t.Fatal(\"shutdown recycled delivered rows\")",
+            "t.Fatal(\"closed rows advance\", r.Err())"
+          ],
+          "complete_source_sha256": "fa35b92674a25d9268c04a45cb8734b69fb6ac1aa1b605db890a7454995465ea",
+          "file": "v2_prepared_paging_test.go",
+          "line": 1106,
+          "test": "TestV2DeliveredPageSurvivesSessionCloseUntilAdvance"
+        }
+      ]
+    },
+    {
+      "criterion": "metadata-fences-continuation",
+      "requirement": "Metadata/NO_METADATA shape/schema fences, separate buffered/streaming plans and retry/reprepare use exact canonical input plus continuation; no repair after output.",
+      "tests": [
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(cursor, err)",
+            "t.Fatal(err)",
+            "t.Fatal(cursor.Err())",
+            "t.Fatal(\"unchanged metadata recompiled\", decoder.compiles.Load())",
+            "t.Fatal(err)"
+          ],
+          "complete_source_sha256": "9915926f7e50c81724aa61045430afe7c4c0a23fc047c885b6ace3fdb062e360",
+          "file": "v2_row_stream_test.go",
+          "line": 492,
+          "test": "TestStep07StreamPreparedMetadataFencesAndPlanIsolation"
+        },
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(err)",
+            "t.Fatal(cursor.Err())",
+            "t.Fatal(\"unprepared replay after output\")",
+            "t.Fatal(cursor.Err())",
+            "t.Fatal(count, cursor.Info())",
+            "t.Fatal(\"terminal attempt metadata missing\", info)",
+            "t.Fatal(err)",
+            "t.Fatal(err)"
+          ],
+          "complete_source_sha256": "067b69eb46f3daf3986a1fd161a1db72397c612d200ca2ef95a9bbd523fd0abf",
+          "file": "v2_row_stream_test.go",
+          "line": 618,
+          "test": "TestStep07StreamReprepareCanonicalInputAndNoRepairAfterOutput"
+        },
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(err)",
+            "t.Fatal(\"invented row\")",
+            "t.Fatal(cursor.Err(), cursor.Info())"
+          ],
+          "complete_source_sha256": "ed66ea266c2b69682677ea02829cbcf88db4bd34ac0a669acf162cb4e8da1638",
+          "file": "v2_row_stream_test.go",
+          "line": 370,
+          "test": "TestStep07StreamPagingCycleAndLimits"
+        }
+      ]
+    },
+    {
+      "criterion": "custom-decoder-error",
+      "requirement": "Explicit custom decoder errors after destination write are terminal, invalid rows never published, exact error retained, attempts=1 and no later destination access.",
+      "tests": [
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(err)",
+            "t.Fatal(\"custom decoder error published row\", cursor.Err())",
+            "t.Fatal(\"custom decoder replay/progress\", dst, cursor.Info())",
+            "t.Fatal(\"terminal custom failure changed destination/error\")",
+            "t.Fatal(err)"
+          ],
+          "complete_source_sha256": "f961bd379396639957e89763896999bfd20dcb3ede57d8e50526cead05002fda",
+          "file": "step14_stream_acceptance_test.go",
+          "line": 328,
+          "test": "TestStep14CustomDecoderErrorAfterWrite"
+        },
+        {
+          "actual_effective_passes": [
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(\"custom stream\", err)",
+            "t.Fatal(\"custom plan recompiled\", checks)"
+          ],
+          "complete_source_sha256": "1a46c8055e887f295a1fb5ffea83c2bf5ba6175d6ce1d065c0fa669596520c38",
+          "file": "internal/codec/stream_custom_test.go",
+          "line": 66,
+          "test": "TestV2StreamingCustomPlansReuseCompiledChildren"
+        }
+      ]
+    },
+    {
+      "criterion": "reservation-lifecycle",
+      "requirement": "One configured pool slot reserved; shared orphan/writer/read owners acknowledged; idle/exhausted capacity and admissions joined before teardown.",
+      "tests": [
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(err)",
+            "t.Fatal(\"orphan acquisition\", err)",
+            "t.Fatal(\"canceled acquisition retained admission gate\")",
+            "t.Fatal(\"late orphan not released\")",
+            "t.Fatal(err)"
+          ],
+          "complete_source_sha256": "5df88a8f1e2837bf60d16e76a6eeba9d34430c317a6344891dda8d1ebf5bb16e",
+          "file": "v2_transport_pool_test.go",
+          "line": 185,
+          "test": "TestV2ExclusiveWaitsForOrphanAndAcquisitionCancellation"
+        },
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(\"reservation bypassed accepted writer\", err)",
+            "t.Fatal(\"input released while accepted writer still reads it\")",
+            "t.Fatal(err)",
+            "t.Fatal(\"writer admission did not drain input\")"
+          ],
+          "complete_source_sha256": "417802188f78ad8096adef826e316d19c7583f5f9fea182d22f226ccedae54af",
+          "file": "v2_transport_pool_test.go",
+          "line": 648,
+          "test": "TestV2ExclusiveAcquisitionDrainsAcceptedWriterOwnership"
+        },
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(\"handoff occurred with unread validated segment frames\")",
+            "t.Fatal(err)",
+            "t.Fatal(err)",
+            "t.Fatal(ctx.Err())"
+          ],
+          "complete_source_sha256": "08bab3fcdb142d54bd154951a3bd9ec06ab5e48e17eee57d1da668dc5645d4d1",
+          "file": "v2_transport_pool_test.go",
+          "line": 557,
+          "test": "TestV2ExclusiveHandoffWaitsForWholeV5Segment"
+        },
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(\"handoff occurred mid-header\")",
+            "t.Fatal(err)",
+            "t.Fatal(err)",
+            "t.Fatal(ctx.Err())"
+          ],
+          "complete_source_sha256": "2990c3152671caa1d88df2fd2f18b066a50d6f6b4b259f408d75a3d8f3e57617",
+          "file": "v2_transport_pool_test.go",
+          "line": 598,
+          "test": "TestV2ExclusiveHandoffFinishesPartialHeader"
+        },
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(err)",
+            "t.Fatal(second, err)",
+            "t.Fatal(err)",
+            "t.Fatal(cursor.Err())",
+            "t.Fatal(\"idle operation leaked\")"
+          ],
+          "complete_source_sha256": "f04c69dd3c63f983dd5417e32c93579e806333dd30eeb664f9dd97b9de1d5bbe",
+          "file": "v2_row_stream_test.go",
+          "line": 340,
+          "test": "TestStep07StreamIdleSessionDrainAndPoolExhaustion"
+        },
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(\"strict reserved target created side capacity\")",
+            "t.Fatal(err)",
+            "t.Fatal(\"reservation changed configured capacity\")",
+            "t.Fatal(err)",
+            "t.Fatal(\"strict reservation switched connection slot\")",
+            "t.Fatal(err)",
+            "t.Fatal(ctx.Err())"
+          ],
+          "complete_source_sha256": "9d3630e967d52b08198e97b84e198aa8d1058a9ed079e53e7aacdaa33b85dd0f",
+          "file": "v2_routing_step06_test.go",
+          "line": 568,
+          "test": "TestStep06StrictStreamingReservationUsesExistingCapacity"
+        }
+      ]
+    },
+    {
+      "criterion": "last-write-cancel-close",
+      "requirement": "Close/cancel/session Close block until final destination access joins in all8 modes; no writes after return; generation cancellation cannot reach later page/shared use.",
+      "tests": [
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(err)",
+            "t.Fatal(\"close returned during final storage access\")",
+            "t.Fatal(\"missing joined final write\", dst)",
+            "t.Fatal(\"late write\")"
+          ],
+          "complete_source_sha256": "dec64d23e20d31b513c294e24216da0b5bd1cd75c4abfc7b91b866b3a76f0046",
+          "file": "v2_fixture_stream_test.go",
+          "line": 281,
+          "test": "TestStep08StreamCloseDuringFinalCallerAccess"
+        },
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(err)",
+            "t.Error(\"rejected call touched storage\")",
+            "t.Fatal(\"close returned during Reset\")",
+            "t.Fatal(\"close failed to join\")",
+            "t.Fatal(\"unexpected reset\", decoder.resets.Load())",
+            "t.Fatal(\"late destination write\")",
+            "t.Fatal(err)"
+          ],
+          "complete_source_sha256": "04795a5f346154276bbac8308fc502e0a28743b2ffb1f301d3ddd53459bde4c8",
+          "file": "v2_row_stream_test.go",
+          "line": 272,
+          "test": "TestStep07StreamCloseJoinsDestinationAndConcurrentRejection"
+        },
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(err)",
+            "t.Fatal(err)",
+            "t.Fatal(ok, err)",
+            "t.Fatal(\"old page context canceled new page\", err)",
+            "t.Fatal(\"delayed old page cancellation reached new page\")",
+            "t.Fatal(err)",
+            "t.Fatal(ok, err)",
+            "t.Fatal(err)",
+            "t.Fatal(\"delayed callback reached shared reuse\", err)"
+          ],
+          "complete_source_sha256": "5f5588ce5d14488c84610e0cd042be929d0edd5b303f958635fbc878130d1e41",
+          "file": "v2_transport_pool_test.go",
+          "line": 757,
+          "test": "TestV2PageCancellationGenerationDoesNotReachLaterPageOrSharedUse"
+        },
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(err)",
+            "t.Fatal(err)",
+            "t.Fatal(\"winning cancellation erased\", err)",
+            "t.Fatal(\"page cancellation failed to interrupt read\")",
+            "t.Fatal(err)",
+            "t.Fatal(\"canceled page returned to shared pool\")"
+          ],
+          "complete_source_sha256": "3155e9cfef79901dd93758a063e91591d87c2f9eca09194c4b57dc368c211276",
+          "file": "v2_transport_pool_test.go",
+          "line": 812,
+          "test": "TestV2PageContextCancellationWinsAndJoinsRead"
+        },
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(err)",
+            "t.Fatal(\"close did not begin\")",
+            "t.Fatal(\"duplicate close did not join\", err)",
+            "t.Fatal(\"explicit close acquired cancellation error\", err)",
+            "t.Fatal(\"late cancellation replaced close\", err)",
+            "t.Fatal(err)",
+            "t.Fatal(cursor.Err())"
+          ],
+          "complete_source_sha256": "89afe48a8e3886e9839725e37accc2e52224222c2f5a5b62df84a0524211a28a",
+          "file": "v2_row_stream_test.go",
+          "line": 760,
+          "test": "TestStep07CloseGenerationRejectsLateCancellation"
+        }
+      ]
+    },
+    {
+      "criterion": "no-output-replay",
+      "requirement": "Failures before/after first write and after delivered rows retain terminal error/progress; no transparent replay after output.",
+      "tests": [
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Error(err)",
+            "t.Fatal(err)",
+            "t.Fatal(cursor.Err())",
+            "t.Fatal(\"truncated row succeeded\")",
+            "t.Fatal(cursor.Err(), cursor.Info())",
+            "t.Fatal(\"first error replaced\")"
+          ],
+          "complete_source_sha256": "257267c7b0623b8cf8115e282470d8ac53c64a53a96afd5fcf15cde1663351ba",
+          "file": "v2_row_stream_test.go",
+          "line": 157,
+          "test": "TestStep07StreamFirstRowBeforePageAndNoReplay"
+        },
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(err)",
+            "t.Fatal(\"partial row succeeded\")",
+            "t.Fatal(info)",
+            "t.Fatal(\"fixture did not write partial caller storage\", dst)"
+          ],
+          "complete_source_sha256": "19123681ed3e435e6f38362d3a8801732ad141b0d2c8bad57b4552c608cfdf4f",
+          "file": "v2_row_stream_test.go",
+          "line": 586,
+          "test": "TestStep07StreamPartialFirstRowNeverReplays"
+        },
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(err)",
+            "t.Fatal(cursor.Err())",
+            "t.Fatal(\"unprepared replay after output\")",
+            "t.Fatal(cursor.Err())",
+            "t.Fatal(count, cursor.Info())",
+            "t.Fatal(\"terminal attempt metadata missing\", info)",
+            "t.Fatal(err)",
+            "t.Fatal(err)"
+          ],
+          "complete_source_sha256": "067b69eb46f3daf3986a1fd161a1db72397c612d200ca2ef95a9bbd523fd0abf",
+          "file": "v2_row_stream_test.go",
+          "line": 618,
+          "test": "TestStep07StreamReprepareCanonicalInputAndNoRepairAfterOutput"
+        },
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(err)",
+            "t.Fatal(\"custom decoder error published row\", cursor.Err())",
+            "t.Fatal(\"custom decoder replay/progress\", dst, cursor.Info())",
+            "t.Fatal(\"terminal custom failure changed destination/error\")",
+            "t.Fatal(err)"
+          ],
+          "complete_source_sha256": "f961bd379396639957e89763896999bfd20dcb3ede57d8e50526cead05002fda",
+          "file": "step14_stream_acceptance_test.go",
+          "line": 328,
+          "test": "TestStep14CustomDecoderErrorAfterWrite"
+        }
+      ]
+    },
+    {
+      "criterion": "bounded-control-dispatch",
+      "requirement": "Actual control envelopes overflow/retire without blocking locked consumer; every charge released. Live schema event dispatch succeeds while cursor idle and its host pool exhausted.",
+      "tests": [
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(err)",
+            "t.Fatal(\"control overflow remained reusable\", err)",
+            "t.Fatal(\"overflow leaked retained control charges\", r.InternalMetadataBudget.Bytes())"
+          ],
+          "complete_source_sha256": "8ad21cab962eb9e9fbcef3860234a5e08c2f3cf2846cdabeff25281895df81f1",
+          "file": "v2_transport_pool_test.go",
+          "line": 470,
+          "test": "TestV2ExclusiveControlOverflowPoisonsAndReleases"
+        },
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(err)",
+            "t.Fatal(err)",
+            "t.Fatal(ok, err)",
+            "t.Fatal(\"bad trailing control reused connection\", err)",
+            "t.Fatal(\"valid trailing control prevented reuse\", err)"
+          ],
+          "complete_source_sha256": "dc9b23cbeeee24957e5d1d504bd17d7328a3033725194c3249c1ec7a8666a537",
+          "file": "v2_transport_pool_test.go",
+          "line": 424,
+          "test": "TestV2ExclusiveV5TrailingControlReuse"
+        },
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Error(err)",
+            "t.Fatal(\"terminal queue retained charges\", iteration, n)"
+          ],
+          "complete_source_sha256": "4ad04a7b8a09074f0987352432d3b75325e5e4d9a799c6a8a6f0513d11e70fd7",
+          "file": "v2_transport_pool_test.go",
+          "line": 516,
+          "test": "TestV2EventEnqueueCloseRaceReleasesEveryCharge"
+        },
+        {
+          "actual_effective_passes": [
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(marker, ok)",
+            "t.Fatal(\"overflow marker was not terminal\")",
+            "t.Fatal(\"one slow subscriber affected another\", e)",
+            "t.Fatal(\"terminal subscriber leaked in registry\")"
+          ],
+          "complete_source_sha256": "8af176c3a4e3c0653a68e225d2286f3c2df537e9533189b624ff539766c76aef",
+          "file": "v2_metadata_control_test.go",
+          "line": 246,
+          "test": "TestStep05OverflowHighestGenerationAndIsolation"
+        },
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "stable/stable20-v3-maintenance-stream",
+            "development/development22-v4-development",
+            "stable-v3tls/stable20-v3-tls-stream",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls"
+          ],
+          "assertions": [
+            "t.Fatal(err)",
+            "t.Fatal(err)",
+            "t.Error(\"unique keyspace cleanup\", err)",
+            "t.Fatal(err)",
+            "t.Fatal(err)",
+            "t.Fatal(\"frame compression pre-submit capability\", err)",
+            "t.Fatal(err)",
+            "t.Fatal(\"streamed live output\", dst.ID, len(dst.Value), dst.Pieces)",
+            "t.Fatal(\"caller capacity replaced\")",
+            "t.Fatal(err)",
+            "t.Fatal(err)",
+            "t.Fatal(\"incomplete live stream\", len(seen), info)",
+            "t.Fatal(\"output lost after close\")",
+            "t.Fatal(err)",
+            "t.Fatal(early.Err())",
+            "t.Fatal(err)",
+            "t.Fatal(\"bounded pool repair failed\")",
+            "t.Fatal(err)",
+            "t.Fatal(\"shared execution after stream repair\", count, err)",
+            "t.Fatal(err)",
+            "t.Fatal(\"empty result\", empty.Err(), empty.Info())",
+            "t.Fatal(err)",
+            "t.Fatal(\"first metadata page\", changed.Err())",
+            "t.Fatal(\"original metadata shape\", changed.Columns().Len())",
+            "t.Fatal(err)",
+            "t.Fatal(\"reserved host opened extra streaming capacity\")",
+            "t.Fatal(\"pool exhaustion was not bounded\", blockedErr)",
+            "t.Fatal(err)",
+            "t.Fatal(alterErr)",
+            "t.Fatal(\"control event lost while stream idle\", event, ok)",
+            "t.Fatal(\"control dispatch blocked behind idle/exhausted stream reservation\")",
+            "t.Fatal(\"metadata changed output\", dst.ID)",
+            "t.Fatal(\"metadata change replaced caller storage\")",
+            "t.Fatal(\"metadata changed stream\", err)",
+            "t.Fatal(\"changed metadata not observed\", len(changedSeen), changed.Columns().Len())",
+            "t.Fatal(\"owned node control required for live interruption coverage\")",
+            "t.Fatal(\"owned interruption coordinator missing\")",
+            "t.Fatal(err)",
+            "t.Fatal(\"interruption first row\", interrupted.Err())",
+            "t.Fatal(\"server interruption was not terminal\", interrupted.Err())",
+            "t.Fatal(\"interruption replayed output\", interrupted.Info())",
+            "t.Fatal(\"terminal interruption changed\")",
+            "t.Fatal(\"close lost interruption\", err)",
+            "t.Fatal(\"coordinator pool did not recover\", probeErr)",
+            "t.Fatal(err)"
+          ],
+          "complete_source_sha256": "97dd374e69c61ae44e6b76d1f047ec65b376c366789644d58612181802504250",
+          "file": "v2_row_stream_integration_test.go",
+          "line": 38,
+          "test": "TestStep07RunStreamLive"
+        }
+      ]
+    },
+    {
+      "criterion": "live-server-modes",
+      "requirement": "Actual native large blob/text/nested values, empty/multipage/metadata change, early Close/pool recovery and coordinator stop/join after row1; restart/shared execution recovery.",
+      "tests": [
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "stable/stable20-v3-maintenance-stream",
+            "development/development22-v4-development",
+            "stable-v3tls/stable20-v3-tls-stream",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls"
+          ],
+          "assertions": [
+            "t.Fatal(err)",
+            "t.Fatal(err)",
+            "t.Error(\"unique keyspace cleanup\", err)",
+            "t.Fatal(err)",
+            "t.Fatal(err)",
+            "t.Fatal(\"frame compression pre-submit capability\", err)",
+            "t.Fatal(err)",
+            "t.Fatal(\"streamed live output\", dst.ID, len(dst.Value), dst.Pieces)",
+            "t.Fatal(\"caller capacity replaced\")",
+            "t.Fatal(err)",
+            "t.Fatal(err)",
+            "t.Fatal(\"incomplete live stream\", len(seen), info)",
+            "t.Fatal(\"output lost after close\")",
+            "t.Fatal(err)",
+            "t.Fatal(early.Err())",
+            "t.Fatal(err)",
+            "t.Fatal(\"bounded pool repair failed\")",
+            "t.Fatal(err)",
+            "t.Fatal(\"shared execution after stream repair\", count, err)",
+            "t.Fatal(err)",
+            "t.Fatal(\"empty result\", empty.Err(), empty.Info())",
+            "t.Fatal(err)",
+            "t.Fatal(\"first metadata page\", changed.Err())",
+            "t.Fatal(\"original metadata shape\", changed.Columns().Len())",
+            "t.Fatal(err)",
+            "t.Fatal(\"reserved host opened extra streaming capacity\")",
+            "t.Fatal(\"pool exhaustion was not bounded\", blockedErr)",
+            "t.Fatal(err)",
+            "t.Fatal(alterErr)",
+            "t.Fatal(\"control event lost while stream idle\", event, ok)",
+            "t.Fatal(\"control dispatch blocked behind idle/exhausted stream reservation\")",
+            "t.Fatal(\"metadata changed output\", dst.ID)",
+            "t.Fatal(\"metadata change replaced caller storage\")",
+            "t.Fatal(\"metadata changed stream\", err)",
+            "t.Fatal(\"changed metadata not observed\", len(changedSeen), changed.Columns().Len())",
+            "t.Fatal(\"owned node control required for live interruption coverage\")",
+            "t.Fatal(\"owned interruption coordinator missing\")",
+            "t.Fatal(err)",
+            "t.Fatal(\"interruption first row\", interrupted.Err())",
+            "t.Fatal(\"server interruption was not terminal\", interrupted.Err())",
+            "t.Fatal(\"interruption replayed output\", interrupted.Info())",
+            "t.Fatal(\"terminal interruption changed\")",
+            "t.Fatal(\"close lost interruption\", err)",
+            "t.Fatal(\"coordinator pool did not recover\", probeErr)",
+            "t.Fatal(err)"
+          ],
+          "complete_source_sha256": "97dd374e69c61ae44e6b76d1f047ec65b376c366789644d58612181802504250",
+          "file": "v2_row_stream_integration_test.go",
+          "line": 38,
+          "test": "TestStep07RunStreamLive"
+        },
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls"
+          ],
+          "assertions": [
+            "t.Fatal(err)",
+            "t.Fatal(err)",
+            "t.Errorf(\"cleanup unique stream table: %v\", err)",
+            "t.Fatal(err)",
+            "t.Fatal(\"pool missing\")",
+            "t.Fatal(err)",
+            "t.Fatal(err)",
+            "t.Fatal(err)",
+            "t.Fatal(err)",
+            "t.Fatal(\"invalid streamed live row\", dst.First, len(dst.Second))",
+            "t.Fatal(\"live paging incomplete\", len(seen), pages)",
+            "t.Fatal(\"unit budget exceeded\")",
+            "t.Fatal(err)",
+            "t.Fatal(err)",
+            "t.Fatal(err)",
+            "t.Fatal(err)",
+            "t.Fatal(\"pool did not recover reserved slot\")",
+            "t.Fatal(\"shared execution after repair\", rows.Err())"
+          ],
+          "complete_source_sha256": "3446b5e7228c88aaa28b8c0d96897a9220f197af1f16840349be2bceb013a861",
+          "file": "v2_transport_pool_integration_test.go",
+          "line": 127,
+          "test": "TestV2ExclusiveTransportLive"
+        },
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls"
+          ],
+          "assertions": [
+            "t.Fatal(err)",
+            "t.Fatal(\"example did not confirm cleanup\")",
+            "t.Fatalf(\"example did not report verified behavior: %s\", output)"
+          ],
+          "complete_source_sha256": "bcfe6d8b9aabfbc4d0122b906752c11ad6a28b19aee019be4adfe2b0c12ea071",
+          "file": "v2_public_examples_integration_test.go",
+          "line": 29,
+          "test": "TestStep13PublicExample"
+        }
+      ]
+    },
+    {
+      "criterion": "unsupported-frame-compression",
+      "requirement": "v3/v4 frame compression rejected before request submission; buffered compressed lanes remain real successful packages.",
+      "tests": [
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(err)",
+            "t.Fatal(\"capability leaked stream\")",
+            "t.Fatal(err)"
+          ],
+          "complete_source_sha256": "e2ae41555fa07b20d68aa1fe6994fe1f437b5c6ac3410122ea18f17f0899d2b3",
+          "file": "v2_row_stream_test.go",
+          "line": 416,
+          "test": "TestStep07StreamCapabilityBeforeQuery"
+        },
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "development/development22-v4-development",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls",
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(\"requested compression silently downgraded\", err)",
+            "t.Fatal(err)",
+            "t.Fatal(\"known protocol/compressor incompatibility not explicit\", err)"
+          ],
+          "complete_source_sha256": "4bdb537156b848a15fba6873478e9a5300dff4db67c644eb92c99470d8142374",
+          "file": "v2_transport_pool_test.go",
+          "line": 960,
+          "test": "TestV2UnsupportedCompressionRejectedBeforeStartupOrQuery"
+        },
+        {
+          "actual_effective_passes": [
+            "stable/stable20-v4-no-compression",
+            "stable/stable20-v4-no-compression-tls",
+            "stable/stable20-v4-snappy",
+            "stable/stable20-v4-snappy-tls",
+            "stable/stable20-v4-lz4",
+            "stable/stable20-v4-lz4-tls",
+            "stable/stable20-v3-maintenance-stream",
+            "development/development22-v4-development",
+            "stable-v3tls/stable20-v3-tls-stream",
+            "cassandra-v5-no-compression/cassandra21-v5-no-compression",
+            "cassandra-v5-lz4/cassandra21-v5-lz4",
+            "cassandra-v5-no-compression-tls/cassandra21-v5-no-compression-tls",
+            "cassandra-v5-lz4-tls/cassandra21-v5-lz4-tls",
+            "cassandra-v4-no-compression/cassandra21-v4-no-compression",
+            "cassandra-v4-no-compression-tls/cassandra21-v4-no-compression-tls",
+            "cassandra-v4-lz4/cassandra21-v4-lz4",
+            "cassandra-v4-lz4-tls/cassandra21-v4-lz4-tls"
+          ],
+          "assertions": [
+            "t.Fatal(err)",
+            "t.Fatal(err)",
+            "t.Error(\"unique keyspace cleanup\", err)",
+            "t.Fatal(err)",
+            "t.Fatal(err)",
+            "t.Fatal(\"frame compression pre-submit capability\", err)",
+            "t.Fatal(err)",
+            "t.Fatal(\"streamed live output\", dst.ID, len(dst.Value), dst.Pieces)",
+            "t.Fatal(\"caller capacity replaced\")",
+            "t.Fatal(err)",
+            "t.Fatal(err)",
+            "t.Fatal(\"incomplete live stream\", len(seen), info)",
+            "t.Fatal(\"output lost after close\")",
+            "t.Fatal(err)",
+            "t.Fatal(early.Err())",
+            "t.Fatal(err)",
+            "t.Fatal(\"bounded pool repair failed\")",
+            "t.Fatal(err)",
+            "t.Fatal(\"shared execution after stream repair\", count, err)",
+            "t.Fatal(err)",
+            "t.Fatal(\"empty result\", empty.Err(), empty.Info())",
+            "t.Fatal(err)",
+            "t.Fatal(\"first metadata page\", changed.Err())",
+            "t.Fatal(\"original metadata shape\", changed.Columns().Len())",
+            "t.Fatal(err)",
+            "t.Fatal(\"reserved host opened extra streaming capacity\")",
+            "t.Fatal(\"pool exhaustion was not bounded\", blockedErr)",
+            "t.Fatal(err)",
+            "t.Fatal(alterErr)",
+            "t.Fatal(\"control event lost while stream idle\", event, ok)",
+            "t.Fatal(\"control dispatch blocked behind idle/exhausted stream reservation\")",
+            "t.Fatal(\"metadata changed output\", dst.ID)",
+            "t.Fatal(\"metadata change replaced caller storage\")",
+            "t.Fatal(\"metadata changed stream\", err)",
+            "t.Fatal(\"changed metadata not observed\", len(changedSeen), changed.Columns().Len())",
+            "t.Fatal(\"owned node control required for live interruption coverage\")",
+            "t.Fatal(\"owned interruption coordinator missing\")",
+            "t.Fatal(err)",
+            "t.Fatal(\"interruption first row\", interrupted.Err())",
+            "t.Fatal(\"server interruption was not terminal\", interrupted.Err())",
+            "t.Fatal(\"interruption replayed output\", interrupted.Info())",
+            "t.Fatal(\"terminal interruption changed\")",
+            "t.Fatal(\"close lost interruption\", err)",
+            "t.Fatal(\"coordinator pool did not recover\", probeErr)",
+            "t.Fatal(err)"
+          ],
+          "complete_source_sha256": "97dd374e69c61ae44e6b76d1f047ec65b376c366789644d58612181802504250",
+          "file": "v2_row_stream_integration_test.go",
+          "line": 38,
+          "test": "TestStep07RunStreamLive"
+        }
+      ]
+    },
+    {
+      "criterion": "bounded-fuzz",
+      "requirement": "12 actual campaigns: framing/cells/CRC/UTF8/capacity/metadata/paging/tablets/compression plus cancellation lifetime oracle. Configured payload, capacity, byte/history/depth limits; terminal stability/no panic.",
+      "tests": [
+        {
+          "actual_effective_passes": [
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(e)",
+            "t.Fatal(\"successful parse left bytes\")"
+          ],
+          "complete_source_sha256": "0cb52f249ca1e13648e6549a161bb8b61c1e00a39779c4f2208f67e0871d3137",
+          "file": "internal/wire/stream_test.go",
+          "line": 334,
+          "test": "FuzzStreamCells"
+        },
+        {
+          "actual_effective_passes": [
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [],
+          "complete_source_sha256": "a2bf470794a6bd62d1d677887c7c8afe2cbac574ca2b31bfa65d2f880fd146df",
+          "file": "internal/frame/stream_test.go",
+          "line": 140,
+          "test": "FuzzStreamEnvelope"
+        },
+        {
+          "actual_effective_passes": [
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatalf(\"round trip: %v\", e)",
+            "t.Fatal(\"corrupt payload published\")"
+          ],
+          "complete_source_sha256": "069a7e451fa33f03bbd90b98512424d2312a046072c2cc73bb47098772d55046",
+          "file": "internal/segment/units_test.go",
+          "line": 187,
+          "test": "FuzzValidatedUnits"
+        },
+        {
+          "actual_effective_passes": [
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [],
+          "complete_source_sha256": "7689e4ff10ff89b09f0756ab8f40a21a809357b333c58a3158536b70c12c1a41",
+          "file": "internal/codec/stream_fuzz_test.go",
+          "line": 24,
+          "test": "FuzzV2StreamingValues"
+        },
+        {
+          "actual_effective_passes": [
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatalf(\"UTF-8 validation disagreed at split %d: %x\", split, data)",
+            "t.Fatal(\"valid text bytes changed\")"
+          ],
+          "complete_source_sha256": "e2b68826b67615946f0fdc02d36c1a7f26b00d953de38e9184bb675bc2c2a48a",
+          "file": "internal/codec/scalar_test.go",
+          "line": 234,
+          "test": "FuzzV2ScalarUTF8"
+        },
+        {
+          "actual_effective_passes": [
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [],
+          "complete_source_sha256": "4c12be62356cdcc491a9b58d0f50bba8e8b01a86436c2d27f30be4851ca30d07",
+          "file": "v2_stream_transport_bench_test.go",
+          "line": 227,
+          "test": "FuzzV2ExclusiveIncrementalFraming"
+        },
+        {
+          "actual_effective_passes": [
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(err)",
+            "t.Fatal(\"closed cursor touched destination\")",
+            "t.Fatal(err)",
+            "t.Fatal(\"unbounded delivery\")"
+          ],
+          "complete_source_sha256": "e732df2f54e3bd435d0cf390252c5b3171f7cd7ad1fd7308b465f1657e3967a3",
+          "file": "v2_execution_step07_fuzz_test.go",
+          "line": 30,
+          "test": "FuzzStep07StreamExecutionBoundary"
+        },
+        {
+          "actual_effective_passes": [
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(\"duplicate\", err)",
+            "t.Fatal(\"budget\", err)",
+            "t.Fatal(err)",
+            "t.Fatal(\"history accounting\")"
+          ],
+          "complete_source_sha256": "2f8ea482248d576b25dcfdea81087c2d2f5ccd408e9ca2d92e067f34d8a2a50a",
+          "file": "v2_prepared_paging_fuzz_test.go",
+          "line": 54,
+          "test": "FuzzV2PagingHistoryBudgets"
+        },
+        {
+          "actual_effective_passes": [
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(\"failed destination not cleared\")",
+            "t.Fatal(\"terminal iterator changed\")"
+          ],
+          "complete_source_sha256": "2a976b49d8bd9bc95d1635ce94dc655d40df6fc557af02ca8b145879ad43b186",
+          "file": "v2_prepared_paging_fuzz_test.go",
+          "line": 27,
+          "test": "FuzzV2PageDestinationFraming"
+        },
+        {
+          "actual_effective_passes": [
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(\"invalid range\")",
+            "t.Fatal(\"invalid shard\")"
+          ],
+          "complete_source_sha256": "9a861d5cb7796abd22ab4b697a70ad443d02933f74b5c15937eb77c907ad8f33",
+          "file": "v2_routing_step06_test.go",
+          "line": 419,
+          "test": "FuzzStep06TabletPayload"
+        },
+        {
+          "actual_effective_passes": [
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [],
+          "complete_source_sha256": "013025e306ba2e13a87485ebea0130e827406796fd9770c9345b23038a7fea76",
+          "file": "internal/wirecompress/compress_test.go",
+          "line": 432,
+          "test": "FuzzSpanCompression"
+        },
+        {
+          "actual_effective_passes": [
+            "checks/unit-race",
+            "checks/386"
+          ],
+          "assertions": [
+            "t.Fatal(err)",
+            "t.Fatal(\"Close returned during final destination write\")",
+            "t.Fatal(\"final write not joined\")",
+            "t.Fatal(\"late destination access\")",
+            "t.Fatal(fmt.Errorf(\"admission not retired: %w\", err))"
+          ],
+          "complete_source_sha256": "cac5648293c3161974dcacf4c5a3b08ed1a67ff51039118720a0d2b013c319ef",
+          "file": "step14_stream_acceptance_test.go",
+          "line": 235,
+          "test": "FuzzStep14StreamingCancellationLifetime"
+        }
+      ]
+    }
+  ],
+  "gate": "passed",
+  "live_modes": [
+    {
+      "complete_interruption_metadata_event_recovery": true,
+      "lane": "stable",
+      "mode": "v4-no-compression"
+    },
+    {
+      "complete_interruption_metadata_event_recovery": true,
+      "lane": "stable",
+      "mode": "v4-no-compression-tls"
+    },
+    {
+      "complete_interruption_metadata_event_recovery": true,
+      "lane": "stable",
+      "mode": "v3-maintenance-stream"
+    },
+    {
+      "complete_interruption_metadata_event_recovery": true,
+      "lane": "stable-v3tls",
+      "mode": "v3-tls-stream"
+    },
+    {
+      "complete_interruption_metadata_event_recovery": true,
+      "lane": "cassandra-v5-no-compression",
+      "mode": "v5-no-compression"
+    },
+    {
+      "complete_interruption_metadata_event_recovery": true,
+      "lane": "cassandra-v5-lz4",
+      "mode": "v5-lz4"
+    },
+    {
+      "complete_interruption_metadata_event_recovery": true,
+      "lane": "cassandra-v5-no-compression-tls",
+      "mode": "v5-no-compression-tls"
+    },
+    {
+      "complete_interruption_metadata_event_recovery": true,
+      "lane": "cassandra-v5-lz4-tls",
+      "mode": "v5-lz4-tls"
+    }
+  ],
+  "problems": [],
+  "source_sha256": "69e72007e67fa3c52d8ca760ba6765c0ad0cfe11618f4782095a28886e697350",
+  "storage_measurements": [
+    "step14_stream_acceptance_test.go:190: mode=v3 rows=1 cell=262144 skipped=false slow=false peak_driver_byte_storage=592 validated_unit_to_parser_bytes=0 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=262144",
+    "step14_stream_acceptance_test.go:190: mode=v3 rows=1 cell=8388608 skipped=false slow=false peak_driver_byte_storage=592 validated_unit_to_parser_bytes=0 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=8388608",
+    "step14_stream_acceptance_test.go:190: mode=v3 rows=128 cell=65536 skipped=false slow=false peak_driver_byte_storage=592 validated_unit_to_parser_bytes=0 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=65536",
+    "step14_stream_acceptance_test.go:190: mode=v3 rows=1 cell=8388608 skipped=true slow=false peak_driver_byte_storage=33360 validated_unit_to_parser_bytes=0 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=0",
+    "step14_stream_acceptance_test.go:190: mode=v3 rows=128 cell=65536 skipped=false slow=true peak_driver_byte_storage=592 validated_unit_to_parser_bytes=0 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=65536",
+    "step14_stream_acceptance_test.go:190: mode=v4 rows=1 cell=262144 skipped=false slow=false peak_driver_byte_storage=592 validated_unit_to_parser_bytes=0 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=262144",
+    "step14_stream_acceptance_test.go:190: mode=v4 rows=1 cell=8388608 skipped=false slow=false peak_driver_byte_storage=592 validated_unit_to_parser_bytes=0 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=8388608",
+    "step14_stream_acceptance_test.go:190: mode=v4 rows=128 cell=65536 skipped=false slow=false peak_driver_byte_storage=592 validated_unit_to_parser_bytes=0 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=65536",
+    "step14_stream_acceptance_test.go:190: mode=v4 rows=1 cell=8388608 skipped=true slow=false peak_driver_byte_storage=33360 validated_unit_to_parser_bytes=0 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=0",
+    "step14_stream_acceptance_test.go:190: mode=v4 rows=128 cell=65536 skipped=false slow=true peak_driver_byte_storage=592 validated_unit_to_parser_bytes=0 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=65536",
+    "step14_stream_acceptance_test.go:190: mode=v4tls rows=1 cell=262144 skipped=false slow=false peak_driver_byte_storage=592 validated_unit_to_parser_bytes=0 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=262144",
+    "step14_stream_acceptance_test.go:190: mode=v4tls rows=1 cell=8388608 skipped=false slow=false peak_driver_byte_storage=592 validated_unit_to_parser_bytes=0 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=8388608",
+    "step14_stream_acceptance_test.go:190: mode=v4tls rows=128 cell=65536 skipped=false slow=false peak_driver_byte_storage=592 validated_unit_to_parser_bytes=0 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=65536",
+    "step14_stream_acceptance_test.go:190: mode=v4tls rows=1 cell=8388608 skipped=true slow=false peak_driver_byte_storage=33360 validated_unit_to_parser_bytes=0 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=0",
+    "step14_stream_acceptance_test.go:190: mode=v4tls rows=128 cell=65536 skipped=false slow=true peak_driver_byte_storage=592 validated_unit_to_parser_bytes=0 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=65536",
+    "step14_stream_acceptance_test.go:190: mode=v5raw rows=1 cell=262144 skipped=false slow=false peak_driver_byte_storage=131679 validated_unit_to_parser_bytes=262197 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=262144",
+    "step14_stream_acceptance_test.go:190: mode=v5raw rows=1 cell=8388608 skipped=false slow=false peak_driver_byte_storage=131679 validated_unit_to_parser_bytes=8388661 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=8388608",
+    "step14_stream_acceptance_test.go:190: mode=v5raw rows=128 cell=65536 skipped=false slow=false peak_driver_byte_storage=131679 validated_unit_to_parser_bytes=8389169 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=65536",
+    "step14_stream_acceptance_test.go:190: mode=v5raw rows=1 cell=8388608 skipped=true slow=false peak_driver_byte_storage=164447 validated_unit_to_parser_bytes=8388661 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=0",
+    "step14_stream_acceptance_test.go:190: mode=v5raw rows=128 cell=65536 skipped=false slow=true peak_driver_byte_storage=131679 validated_unit_to_parser_bytes=8389169 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=65536",
+    "step14_stream_acceptance_test.go:190: mode=v5lz4 rows=1 cell=262144 skipped=false slow=false peak_driver_byte_storage=262750 validated_unit_to_parser_bytes=262197 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=262144",
+    "step14_stream_acceptance_test.go:190: mode=v5lz4 rows=1 cell=8388608 skipped=false slow=false peak_driver_byte_storage=262750 validated_unit_to_parser_bytes=8388661 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=8388608",
+    "step14_stream_acceptance_test.go:190: mode=v5lz4 rows=128 cell=65536 skipped=false slow=false peak_driver_byte_storage=262750 validated_unit_to_parser_bytes=8389169 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=65536",
+    "step14_stream_acceptance_test.go:190: mode=v5lz4 rows=1 cell=8388608 skipped=true slow=false peak_driver_byte_storage=295518 validated_unit_to_parser_bytes=8388661 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=0",
+    "step14_stream_acceptance_test.go:190: mode=v5lz4 rows=128 cell=65536 skipped=false slow=true peak_driver_byte_storage=262750 validated_unit_to_parser_bytes=8389169 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=65536",
+    "step14_stream_acceptance_test.go:190: mode=v3tls rows=1 cell=262144 skipped=false slow=false peak_driver_byte_storage=592 validated_unit_to_parser_bytes=0 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=262144",
+    "step14_stream_acceptance_test.go:190: mode=v3tls rows=1 cell=8388608 skipped=false slow=false peak_driver_byte_storage=592 validated_unit_to_parser_bytes=0 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=8388608",
+    "step14_stream_acceptance_test.go:190: mode=v3tls rows=128 cell=65536 skipped=false slow=false peak_driver_byte_storage=592 validated_unit_to_parser_bytes=0 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=65536",
+    "step14_stream_acceptance_test.go:190: mode=v3tls rows=1 cell=8388608 skipped=true slow=false peak_driver_byte_storage=33360 validated_unit_to_parser_bytes=0 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=0",
+    "step14_stream_acceptance_test.go:190: mode=v3tls rows=128 cell=65536 skipped=false slow=true peak_driver_byte_storage=592 validated_unit_to_parser_bytes=0 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=65536",
+    "step14_stream_acceptance_test.go:190: mode=v5rawtls rows=1 cell=262144 skipped=false slow=false peak_driver_byte_storage=131679 validated_unit_to_parser_bytes=262197 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=262144",
+    "step14_stream_acceptance_test.go:190: mode=v5rawtls rows=1 cell=8388608 skipped=false slow=false peak_driver_byte_storage=131679 validated_unit_to_parser_bytes=8388661 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=8388608",
+    "step14_stream_acceptance_test.go:190: mode=v5rawtls rows=128 cell=65536 skipped=false slow=false peak_driver_byte_storage=131679 validated_unit_to_parser_bytes=8389169 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=65536",
+    "step14_stream_acceptance_test.go:190: mode=v5rawtls rows=1 cell=8388608 skipped=true slow=false peak_driver_byte_storage=164447 validated_unit_to_parser_bytes=8388661 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=0",
+    "step14_stream_acceptance_test.go:190: mode=v5rawtls rows=128 cell=65536 skipped=false slow=true peak_driver_byte_storage=131679 validated_unit_to_parser_bytes=8389169 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=65536",
+    "step14_stream_acceptance_test.go:190: mode=v5lz4tls rows=1 cell=262144 skipped=false slow=false peak_driver_byte_storage=262750 validated_unit_to_parser_bytes=262197 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=262144",
+    "step14_stream_acceptance_test.go:190: mode=v5lz4tls rows=1 cell=8388608 skipped=false slow=false peak_driver_byte_storage=262750 validated_unit_to_parser_bytes=8388661 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=8388608",
+    "step14_stream_acceptance_test.go:190: mode=v5lz4tls rows=128 cell=65536 skipped=false slow=false peak_driver_byte_storage=262750 validated_unit_to_parser_bytes=8389169 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=65536",
+    "step14_stream_acceptance_test.go:190: mode=v5lz4tls rows=1 cell=8388608 skipped=true slow=false peak_driver_byte_storage=295518 validated_unit_to_parser_bytes=8388661 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=0",
+    "step14_stream_acceptance_test.go:190: mode=v5lz4tls rows=128 cell=65536 skipped=false slow=true peak_driver_byte_storage=262750 validated_unit_to_parser_bytes=8389169 source_unit_payload<=130000 source_unit_encoded<=131071 final_output=65536"
+  ]
+}

@@ -31,7 +31,7 @@ type step08Mode struct {
 	tls         bool
 }
 
-var step08Modes = []step08Mode{{"v3", 3, nil, false}, {"v4", 4, nil, false}, {"v4tls", 4, nil, true}, {"v5raw", 5, nil, false}, {"v5lz4", 5, lz4.LZ4Compressor{}, false}}
+var step08Modes = []step08Mode{{"v3", 3, nil, false}, {"v4", 4, nil, false}, {"v4tls", 4, nil, true}, {"v5raw", 5, nil, false}, {"v5lz4", 5, lz4.LZ4Compressor{}, false}, {"v3tls", 3, nil, true}, {"v5rawtls", 5, nil, true}, {"v5lz4tls", 5, lz4.LZ4Compressor{}, true}}
 
 func step08StreamSession(t testing.TB, mode step08Mode, spy ...bool) (*Session, *driverConn, net.Conn) {
 	t.Helper()
@@ -201,7 +201,10 @@ func TestStep08StreamIndependentFirstRowGate(t *testing.T) {
 }
 
 func TestStep08StreamIndependentCorruptChecksums(t *testing.T) {
-	for _, mode := range step08Modes[3:] {
+	for _, mode := range step08Modes {
+		if mode.version != 5 {
+			continue
+		}
 		t.Run(mode.name, func(t *testing.T) {
 			// Corrupt every byte of each header and payload checksum, independently.
 			headerSize := 6
@@ -403,7 +406,10 @@ func TestStep08StreamInterruptedRequestWrite(t *testing.T) {
 }
 
 func TestStep08IndependentRawDirectRead(t *testing.T) {
-	for _, mode := range step08Modes[:3] {
+	for _, mode := range step08Modes {
+		if mode.version == 5 {
+			continue
+		}
 		t.Run(mode.name, func(t *testing.T) {
 			s, c, peer := step08StreamSession(t, mode, true)
 			payload := bytes.Repeat([]byte{0x71}, 400<<10)

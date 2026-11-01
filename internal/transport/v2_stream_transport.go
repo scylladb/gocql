@@ -131,6 +131,28 @@ type InternalStreamResponse struct {
 	InternalTerminal                bool
 }
 
+// InternalWorkingStorageBytes accounts live driver byte storage, excluding
+// caller output, source fixtures and standard-library TLS record storage.
+// Metadata uses its conservative simultaneous allocation charge; unit aliases
+// are counted once and raw production ConnReader has no read-ahead allocation.
+func (r *InternalStreamResponse) InternalWorkingStorageBytes() int64 {
+	if r == nil {
+		return 0
+	}
+	n := r.InternalBody.WorkingStorageBytes()
+	if r.reservation.InternalMetadataBudget != nil {
+		n += r.reservation.InternalMetadataBudget.Bytes()
+	}
+	n += codec.InternalStreamReaderWorkingStorageBytes(r.InternalReader)
+	if r.reservation.InternalUnits != nil {
+		n += r.reservation.InternalUnits.InternalUnits.StorageBytes()
+	}
+	if reader, ok := r.reservation.InternalConn.InternalR.(*InternalConnReader); ok && reader.InternalR != nil {
+		n += int64(reader.InternalR.Size())
+	}
+	return n
+}
+
 func (r *InternalStreamResponse) InternalReleaseMetadata() {
 	if r == nil {
 		return

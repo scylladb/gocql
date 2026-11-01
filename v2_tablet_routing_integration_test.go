@@ -35,7 +35,7 @@ func TestStep06TabletRoutingLive(t *testing.T) {
 	if !supported {
 		t.Skip("server does not provide tablets")
 	}
-	keyspace := fmt.Sprintf("step06_%x", time.Now().UnixNano())
+	keyspace := testKeyspaceName(t, fmt.Sprintf("step06_%x", time.Now().UnixNano()))
 	if err := v2CreateTable(ctx, s, "CREATE KEYSPACE "+keyspace+" WITH replication={'class':'NetworkTopologyStrategy','replication_factor':2} AND tablets={'enabled':true}"); err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +225,7 @@ func TestStep06LeaderRoutingLive(t *testing.T) {
 	if !implCluster.InternalSessionGetConn(s).InternalFramers.InternalDefaults.InternalTabletsRoutingV2 {
 		t.Skip("server did not advertise TABLETS_ROUTING_V2_EXPERIMENTAL; source-accurate wire fixtures cover V2 separately")
 	}
-	ks := fmt.Sprintf("step06_leader_%x", time.Now().UnixNano())
+	ks := testKeyspaceName(t, fmt.Sprintf("step06_leader_%x", time.Now().UnixNano()))
 	if err := v2CreateTable(ctx, s, "CREATE KEYSPACE "+ks+" WITH replication={'class':'NetworkTopologyStrategy','replication_factor':3} AND tablets={'enabled':true} AND consistency='global'"); err != nil {
 		t.Fatal(err)
 	}

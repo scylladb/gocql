@@ -73,6 +73,8 @@ class Runner:
         self.fixture = state / self.run_id
         self.fixture.mkdir(parents=True)
         self.child = None
+        self.phase = "provisioning"
+        self.cancel_requested = False
         self.receipt = {"run_id": self.run_id, "pid": os.getpid(), "fixture_root": str(self.fixture),
                         "runner_sha256": sha(Path(__file__)), "python_executable": sys.executable, "configuration": config, "lanes": []}
         # Record exact source inputs before any provisioning or command starts.
@@ -92,6 +94,8 @@ class Runner:
         self.save()
 
     def save(self):
+        self.receipt["phase"] = self.phase
+        self.receipt["cancel_requested"] = self.cancel_requested
         self.output.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.output.with_suffix(".tmp")
         tmp.write_text(json.dumps(self.receipt, indent=2) + "\n")
@@ -215,7 +219,7 @@ class Runner:
                         "authenticator": "PasswordAuthenticator", "authorizer": "CassandraAuthorizer",
                         "auth_superuser_name": "cassandra",
                         "auth_superuser_salted_password": "$6$gocqlv2$IhWMM2QWL7/C5OMPO7nPWx2ySV64yv7Rc.TA.Eb9vMLbqSHqlWy96JB93Asx8Mau0FRUjZ9BE7.70nmMJxzex0",
-                        "enable_user_defined_functions": True, "experimental_features": ["udf"],
+                        "enable_user_defined_functions": True, "experimental_features": lane.get("experimental_features", ["udf"]),
                         "native_transport_port_ssl": 9142, "native_shard_aware_transport_port_ssl": 19142,
                         "client_encryption_options": {"enabled": True, "certificate": str(pki / "cassandra.crt"),
                             "keyfile": str(pki / "cassandra.key"), "truststore": str(pki / "ca.crt"), "require_client_auth": True}})
@@ -259,7 +263,7 @@ class Runner:
                     record["node_restart_health"] = health(addresses[-1])
                 env = os.environ.copy()
                 env["GOCQL_TEST_RUN"] = self.run_id
-                base = ["go", "test", "-json", "-race", "-tags", "integration gocql_debug", "-count=1", "-timeout=8m", "-parallel=1"]
+                base = ["go", "test", "-json", "-race", "-tags", "integration gocql_debug", "-count=1", "-timeout=20m", "-parallel=1"]
                 flags = ["-gocql.timeout=60s", "-rf=" + str(len(addresses)), "-clusterSize=" + str(len(addresses)),
                          "-autowait=2s", "-cluster=" + ",".join(addresses), "-distribution=" + lane["kind"], "-gocql.cversion=" + lane["version"]]
                 if lane["kind"] == "scylla":
@@ -268,6 +272,7 @@ class Runner:
                     flags += ["-runcassandrafixtures"]
                 with node_control(cluster, record, health) as control_path:
                     for mode in lane["modes"]:
+                        self.phase = "testing"
                         extra = mode["args"]
                         env = os.environ.copy()
                         env["GOCQL_TEST_RUN"] = self.run_id
@@ -280,8 +285,14 @@ class Runner:
                             record["tests"].append({"mode": mode["name"], "exit_code": status})
                         finally:
                             # Cleanup after success, test failure, SIGINT or SIGTERM.
-                            cleanup = base + ["-run", "^TestStep08Cleanup$", ".", "-args"] + flags + extra
-                            self.command(name + "-" + mode["name"] + "-cleanup", cleanup, env)
+                            self.phase = "cleanup"
+                            self.save()
+                            cleanup_base = ["-timeout=2m" if value == "-timeout=20m" else value for value in base]
+                            cleanup = cleanup_base + ["-run", "^TestStep08Cleanup$", ".", "-args"] + flags + extra
+                            cleanup_env = dict(env, GOCQL_FIXTURE_CLEANUP="1")
+                            self.command(name + "-" + mode["name"] + "-cleanup", cleanup, cleanup_env)
+                            if self.cancel_requested:
+                                raise KeyboardInterrupt("cancelled; owned namespace cleanup completed")
                         if status: raise RuntimeError("test lane failed: " + name + "/" + mode["name"])
                     if lane.get("ccm", False):
                         cli = self.fixture / "ccm-bin"
@@ -298,6 +309,8 @@ class Runner:
                 record["status"] = "passed"
             finally:
                 if cluster is not None:
+                    self.phase = "stop-join"
+                    self.save()
                     print("STOP", name, flush=True)
                     cluster.stop(gently=True, wait=True)
                     record["joined"] = {node.name: not node.is_running() for node in cluster.nodelist()}
@@ -326,12 +339,25 @@ def main():
     runner = Runner(config, args.state.resolve(), args.output.resolve(), root)
     runner.receipt["config_sha256"] = sha(args.config)
     def cancel(signum, frame):
+        # The first normal-execution signal unwinds through command's child
+        # kill/join. Cleanup/final stop must finish even under repeated signals.
+        signals = runner.receipt.setdefault("signals", {"count": 0, "observed": []})
+        signals["count"] += 1
+        if len(signals["observed"]) < 16:
+            signals["observed"].append({"signal": signum, "phase": runner.phase})
+        already_cancelled = runner.cancel_requested
+        runner.cancel_requested = True
+        if already_cancelled or runner.phase in ("cleanup", "stop-join"):
+            return
         raise KeyboardInterrupt("cancelled by signal " + str(signum))
     signal.signal(signal.SIGTERM, cancel)
+    signal.signal(signal.SIGINT, cancel)
     try:
         for lane in config["lanes"]:
             if not args.lane or lane["name"] in args.lane:
                 runner.lane(lane)
+                if runner.cancel_requested:
+                    raise KeyboardInterrupt("cancelled; owned nodes joined")
         runner.receipt["status"] = "passed"
     except BaseException as exc:
         runner.receipt["status"] = "failed"

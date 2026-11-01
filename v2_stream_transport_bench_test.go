@@ -75,7 +75,7 @@ func (c *step04MemoryConn) RemoteAddr() net.Addr {
 func (c *step04MemoryConn) SetDeadline(time.Time) error      { return nil }
 func (c *step04MemoryConn) SetReadDeadline(time.Time) error  { return nil }
 func (c *step04MemoryConn) SetWriteDeadline(time.Time) error { return nil }
-func step04MemoryReservation(version byte, compressor Compressor, source *step04MemoryConn) *exclusiveConn {
+func step04MemoryReservation(version byte, compressor Compressor, source net.Conn) *exclusiveConn {
 	ctx, cancel := context.WithCancel(context.Background())
 	c := &driverConn{InternalVersion: version, InternalCtx: ctx, InternalCancel: cancel, InternalR: &connReader{InternalConn: source}, InternalStreams: streams.New(), InternalLogger: nopLogger{}, InternalErrorHandler: connErrorHandlerFn(func(*driverConn, error, bool) {}), InternalCompressor: compressor}
 	c.InternalW = &deadlineContextWriter{InternalW: source, InternalSemaphore: make(chan struct{}, 1), InternalQuit: make(chan struct{})}
