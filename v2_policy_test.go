@@ -158,6 +158,48 @@ func TestV2RoutingTabletMissAndStrictShard(t *testing.T) {
 		t.Fatal("hint fallback failed", target, ok)
 	}
 }
+
+func TestV2RoutingPinnedTargetsRemainIndependent(t *testing.T) {
+	m := v2TestMetadata()
+	// A host pin overrides locality and availability selection, but never admits
+	// an unknown or administratively disabled host and never falls back.
+	routing.SnapshotData(m).InternalHosts[1].Enabled = false
+	routing.SnapshotData(m).InternalHosts[2].Up = false
+	routing.SnapshotData(m).InternalHosts[2].Connected = false
+	policy := codecTestMust(NewRoutingPolicy(RoutingOptions{TokenAware: true, LeaderAware: true, Datacenter: "a"}))
+	tests := []struct {
+		host  byte
+		shard Option[uint32]
+		valid bool
+	}{
+		{1, Option[uint32]{}, true},
+		{3, Option[uint32]{Value: 0, Set: true}, true},
+		{1, Option[uint32]{Value: 3, Set: true}, true},
+		{2, Option[uint32]{}, false},
+		{99, Option[uint32]{Value: 1, Set: true}, false},
+	}
+	plans := make([]QueryPlan, len(tests))
+	info := RoutingInfo{Keyspace: "ks", Table: "table", Token: Option[int64]{Set: true, Value: 1}, Consistency: LocalQuorum}
+	for i, test := range tests {
+		info.HostID = Option[UUID]{Value: UUID{15: test.host}, Set: true}
+		info.ShardID = test.shard
+		plans[i] = policy.Plan(info, m)
+	}
+	// Consume in reverse after all plans have been created, including different
+	// shards on the same host. Each plan must retain its own exact destination.
+	for i := len(plans) - 1; i >= 0; i-- {
+		test := tests[i]
+		target, ok := plans[i].Next()
+		want := Target{HostID: UUID{15: test.host}, ShardID: test.shard, StrictShard: test.shard.Set}
+		if ok != test.valid || ok && target != want {
+			t.Fatalf("host %d shard %+v: got %+v,%t; want %+v,%t", test.host, test.shard, target, ok, want, test.valid)
+		}
+		if target, ok := plans[i].Next(); ok {
+			t.Fatalf("pinned host %d fell back to %+v", test.host, target)
+		}
+	}
+}
+
 func TestV2LatencyRoutingDeprioritizesAndRetries(t *testing.T) {
 	policy, _ := NewRoutingPolicy(RoutingOptions{Latency: LatencyOptions{Enabled: true, MinimumSamples: 1, RetryPeriod: time.Hour}})
 	p := policy.(*routingPolicy)

@@ -285,7 +285,6 @@ type InternalLazyRoutingPlan struct {
 	policy                     *InternalRoutingPolicy
 	metadata                   *MetadataSnapshot
 	index                      *InternalRoutingHostIndex
-	info                       RoutingInfo
 	replicas                   []Target
 	leader                     Option[Target]
 	permutation                []int
@@ -305,10 +304,13 @@ func (p *InternalRoutingPolicy) Plan(info RoutingInfo, m *MetadataSnapshot) Quer
 	if m == nil {
 		return &InternalTargetPlan{}
 	}
-	plan := &InternalLazyRoutingPlan{policy: p, metadata: m, index: m.routingIndex(), info: info, InternalNow: time.Now(), InternalSlow: p.InternalDecisions.Load()}
+	plan := &InternalLazyRoutingPlan{policy: p, metadata: m, index: m.routingIndex(), InternalNow: time.Now(), InternalSlow: p.InternalDecisions.Load()}
 	plan.emitted = plan.smallEmitted[:0]
 	if info.HostID.Set {
 		plan.pinned = true
+		// Pinned plans never traverse replica leaders. Keep only the captured
+		// destination in that slot instead of retaining all routing inputs.
+		plan.leader = Option[Target]{Value: Target{HostID: info.HostID.Value, ShardID: info.ShardID, StrictShard: info.ShardID.Set}, Set: true}
 		return plan
 	}
 	o := p.InternalOptions
@@ -439,7 +441,7 @@ func (p *InternalLazyRoutingPlan) Next() (Target, bool) {
 			return Target{}, false
 		}
 		p.stage++
-		t := Target{HostID: p.info.HostID.Value, ShardID: p.info.ShardID, StrictShard: p.info.ShardID.Set}
+		t := p.leader.Value
 		if h, ok := p.host(t); ok && h.Enabled {
 			return t, true
 		}
