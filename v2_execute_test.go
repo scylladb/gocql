@@ -255,3 +255,109 @@ func TestV2RuntimeBufferedPageDeadlinePreservesCaller(t *testing.T) {
 		t.Fatalf("accepted attempt did not drain: %v", err)
 	}
 }
+
+type runtimeDelayedRetry struct {
+	delay     time.Duration
+	scheduled chan<- struct{}
+}
+
+func (p runtimeDelayedRetry) Decide(e AttemptError) RetryDecision {
+	if e.Attempt >= 3 {
+		return RetryDecision{}
+	}
+	if p.scheduled != nil {
+		p.scheduled <- struct{}{}
+	}
+	action := RetrySame
+	if e.Attempt == 2 {
+		action = RetryNext
+	}
+	return RetryDecision{Action: action, Delay: p.delay}
+}
+
+func TestV2RuntimeDelayedRetries(t *testing.T) {
+	s, conns, peers := runtimeTestSession(t, 1)
+	profile := defaultProfile()
+	profile.Retry = runtimeDelayedRetry{delay: time.Millisecond}
+	handle := codecTestMust(NewProfile(profile))
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for attempt := 0; attempt < 3; attempt++ {
+			stream := typedTestReadRequest(t, conns[0], peers[0])
+			response := step03ErrorResponse(t, stream, ErrCodeOverloaded, nil)
+			if attempt == 2 {
+				response = typedTestResponse(t, 4, stream, runtimeRowsBody(nil, "retried"))
+			}
+			if _, err := peers[0].Write(response); err != nil {
+				t.Error(err)
+				return
+			}
+		}
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	bound := runtimeQuery(t)
+	page, err := RunPage(ctx, s, bound, StartPage(), Options{Profile: handle})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !page.Next() || string(page.Row().OwnedBytes()) != "retried" {
+		t.Fatal("delayed retry result", page.Err())
+	}
+	page.Close()
+	bound.Close()
+	if err := bound.Wait(ctx); err != nil {
+		t.Fatal("delayed retries did not drain", err)
+	}
+	<-done
+	if got := s.Metrics(); got.Attempts != 3 || got.Retries != 2 {
+		t.Fatalf("delayed retry accounting: %+v", got)
+	}
+}
+
+func TestV2RuntimeDelayedRetryCancellationDrains(t *testing.T) {
+	s, conns, peers := runtimeTestSession(t, 1)
+	scheduled := make(chan struct{}, 1)
+	profile := defaultProfile()
+	profile.Retry = runtimeDelayedRetry{delay: time.Hour, scheduled: scheduled}
+	handle := codecTestMust(NewProfile(profile))
+	go func() {
+		stream := typedTestReadRequest(t, conns[0], peers[0])
+		_, _ = peers[0].Write(step03ErrorResponse(t, stream, ErrCodeOverloaded, nil))
+	}()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	bound := runtimeQuery(t)
+	finished := make(chan error, 1)
+	go func() {
+		page, err := RunPage(ctx, s, bound, StartPage(), Options{Profile: handle})
+		if page != nil {
+			page.Close()
+		}
+		finished <- err
+	}()
+	deadline, stop := context.WithTimeout(context.Background(), time.Second)
+	defer stop()
+	select {
+	case <-scheduled:
+	case <-deadline.Done():
+		t.Fatal("retry was not scheduled")
+	}
+	cancel()
+	select {
+	case err := <-finished:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("cancelled retry: %v", err)
+		}
+	case <-deadline.Done():
+		t.Fatal("cancelled delayed retry did not return")
+	}
+	bound.Close()
+	if err := bound.Wait(deadline); err != nil {
+		t.Fatal("cancelled delayed retry retained input", err)
+	}
+	if got := s.Metrics(); got.Attempts != 1 || got.Retries != 0 {
+		t.Fatalf("cancelled delay launched an attempt: %+v", got)
+	}
+}

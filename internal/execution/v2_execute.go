@@ -709,7 +709,9 @@ func (s *InternalSessionRuntime) executePage(ctx context.Context, request *Inter
 		conn        *Conn
 		consistency Consistency
 	}
-	delayed := make(chan delayedAttempt)
+	// A nil channel disables the receive case until a retry actually needs a
+	// delay. Most pages complete without scheduling any delayed attempt.
+	var delayed chan delayedAttempt
 	scheduled := 0
 	aggregate := Result{AchievedConsistency: request.InternalOptions.InternalProfile.Consistency}
 	startedCount, active := 0, 0
@@ -894,9 +896,12 @@ func (s *InternalSessionRuntime) executePage(ctx context.Context, request *Inter
 				conn = nil
 			}
 			if decision.Delay > 0 {
+				if delayed == nil {
+					delayed = make(chan delayedAttempt)
+				}
 				scheduled++
 				request.InternalOwner.InternalRetain()
-				go func(wait time.Duration, next delayedAttempt) {
+				go func(wait time.Duration, next delayedAttempt, ready chan<- delayedAttempt) {
 					defer request.InternalOwner.InternalRelease()
 					perfAdd(5, 1)
 					timer := time.NewTimer(wait)
@@ -907,10 +912,10 @@ func (s *InternalSessionRuntime) executePage(ctx context.Context, request *Inter
 					case <-timer.C:
 					}
 					select {
-					case delayed <- next:
+					case ready <- next:
 					case <-ctx.Done():
 					}
-				}(decision.Delay, delayedAttempt{conn: conn, consistency: consistency})
+				}(decision.Delay, delayedAttempt{conn: conn, consistency: consistency}, delayed)
 				continue
 			}
 
