@@ -345,7 +345,7 @@ func checkedTypeHeight(t cqltype.DataType, depth int, heights map[*cqltype.DataT
 			_, err = vectorFixedWidth(t)
 		}
 	default:
-		_, err = cqltype.ScalarType(d.Kind)
+		err = cqltype.ValidateScalarKind(d.Kind)
 	}
 	if err != nil {
 		return 0, err

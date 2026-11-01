@@ -39,6 +39,26 @@ type streamChunkSource struct {
 	record              func([]byte, int)
 }
 
+func TestStreamValidationRejectsUnsupportedScalarKinds(t *testing.T) {
+	for _, kind := range []cqltype.Type{-1, cqltype.TypeDuration + 1, 65535} {
+		typ := FoundationScalar(t, cqltype.TypeInt)
+		cqltype.DescriptorOf(typ).Kind = kind
+		checks := []func() error{
+			func() error { _, err := compileStreamValidation(typ, 0); return err },
+			func() error {
+				_, err := checkedTypeHeight(typ, 0, make(map[*cqltype.DataTypeDescriptor]int), make(map[*cqltype.DataTypeDescriptor]bool))
+				return err
+			},
+		}
+		for _, check := range checks {
+			var validation *cqltype.ValidationError
+			if err := check(); !errors.As(err, &validation) || validation.Field != "kind" {
+				t.Fatalf("unsupported scalar %v must retain kind ValidationError: %v", kind, err)
+			}
+		}
+	}
+}
+
 func (s *streamChunkSource) Read(p []byte) (int, error) {
 	if s.offset == len(s.data) {
 		return 0, io.EOF

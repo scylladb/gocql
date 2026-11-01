@@ -91,7 +91,7 @@ func compileStreamValidationMemo(t cqltype.DataType, depth int, memo map[*cqltyp
 			}
 		}
 	default:
-		_, err = cqltype.ScalarType(t.Kind())
+		err = cqltype.ValidateScalarKind(t.Kind())
 		if err == nil {
 			p.scalar, err = compileStreamScalarValidation(t)
 		}

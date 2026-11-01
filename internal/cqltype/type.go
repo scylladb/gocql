@@ -33,10 +33,18 @@ type Columns struct{ columns []ColumnSpec }
 
 // ScalarType constructs a supported scalar descriptor.
 func ScalarType(kind Type) (DataType, error) {
-	if kind < TypeAscii || kind > TypeDuration {
-		return DataType{}, TypeValidation("kind", "unsupported scalar kind %v", kind)
+	if err := ValidateScalarKind(kind); err != nil {
+		return DataType{}, err
 	}
 	return DataType{descriptor: &DataTypeDescriptor{Kind: kind}}, nil
+}
+
+// ValidateScalarKind checks scalar support without constructing a descriptor.
+func ValidateScalarKind(kind Type) error {
+	if kind < TypeAscii || kind > TypeDuration {
+		return TypeValidation("kind", "unsupported scalar kind %v", kind)
+	}
+	return nil
 }
 func ListType(element DataType) (DataType, error) { return collectionDataType(TypeList, element) }
 func SetType(element DataType) (DataType, error)  { return collectionDataType(TypeSet, element) }

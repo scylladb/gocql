@@ -93,6 +93,31 @@ func TestV2FoundationDescriptorValidation(t *testing.T) {
 		t.Fatal("zero descriptor became valid")
 	}
 }
+
+func TestV2ScalarKindValidation(t *testing.T) {
+	for kind := TypeAscii; kind <= TypeDuration; kind++ {
+		if err := ValidateScalarKind(kind); err != nil {
+			t.Fatalf("valid scalar %v: %v", kind, err)
+		}
+		if allocations := testing.AllocsPerRun(100, func() {
+			if err := ValidateScalarKind(kind); err != nil {
+				panic(err)
+			}
+		}); allocations != 0 {
+			t.Fatalf("scalar %v validation allocated: %g", kind, allocations)
+		}
+	}
+	for _, kind := range []Type{-1, TypeCustom, TypeDuration + 1, TypeList, TypeMap, TypeSet, TypeTuple, TypeUDT, 65535} {
+		err := ValidateScalarKind(kind)
+		var validation *ValidationError
+		if !errors.As(err, &validation) || validation.Field != "kind" {
+			t.Fatalf("unsupported scalar %v: expected kind ValidationError, got %v", kind, err)
+		}
+		if _, constructorErr := ScalarType(kind); constructorErr == nil || constructorErr.Error() != err.Error() {
+			t.Fatalf("constructor and validation disagree for %v: %v / %v", kind, constructorErr, err)
+		}
+	}
+}
 func TestV2FoundationProtocolTypeConversion(t *testing.T) {
 	native := NewNativeType(4, TypeInt)
 	input := NewUDTType(4, "record", "ks", UDTField{Name: "x", Type: NewCollectionType(NewNativeType(4, TypeList), nil, native)})
