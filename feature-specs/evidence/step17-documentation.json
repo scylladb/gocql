@@ -1,0 +1,116 @@
+{
+  "executed_checks": [
+    {
+      "command": [
+        "python3",
+        "feature-specs/verify.py"
+      ],
+      "environment": {
+        "GOMAXPROCS": "4"
+      },
+      "exit_code": 0,
+      "log": "/extra/scylladb/gocql-api-test-cluster/step17/release/checks/spec-verifier.log",
+      "name": "spec-verifier",
+      "seconds": 0.0651904660044238,
+      "sha256": "d917fd30d32ac1dcf5211b8f90122e2892ee48305e5b2f53184e255a32b9f1b4",
+      "source_sha256": "74a54ef2ae1485fb2f7065efee1ffb10218efed431f331b0e579f70ba4285180"
+    },
+    {
+      "command": [
+        "python3",
+        "feature-specs/tools/step15_public.py"
+      ],
+      "environment": {
+        "GOCQL_STEP15_CHECKS": "/extra/scylladb/gocql-api-test-cluster/step17/release/checks",
+        "GOMAXPROCS": "4"
+      },
+      "exit_code": 0,
+      "log": "/extra/scylladb/gocql-api-test-cluster/step17/release/checks/public-contracts.log",
+      "name": "public-contracts",
+      "seconds": 0.4639906380325556,
+      "sha256": "23d4c716e46d83eeec265f97638db39a9ce4f63226000bedf1d9cd75f2f06db3",
+      "source_sha256": "74a54ef2ae1485fb2f7065efee1ffb10218efed431f331b0e579f70ba4285180"
+    },
+    {
+      "command": [
+        "python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "docs",
+        "-p",
+        "test_*.py"
+      ],
+      "environment": {
+        "GOMAXPROCS": "4"
+      },
+      "exit_code": 0,
+      "log": "/extra/scylladb/gocql-api-test-cluster/step17/release/checks/docs-version-tests.log",
+      "name": "docs-version-tests",
+      "seconds": 0.02586826402693987,
+      "sha256": "dcd2147edfda2291b456dfb6d9f3021f0fed07760d5a1c8869fc5446f30e28fe",
+      "source_sha256": "74a54ef2ae1485fb2f7065efee1ffb10218efed431f331b0e579f70ba4285180"
+    },
+    {
+      "command": [
+        "uv",
+        "run",
+        "--project",
+        "docs",
+        "--frozen",
+        "sphinx-build",
+        "-W",
+        "-b",
+        "html",
+        "docs/source",
+        "/extra/scylladb/gocql-api-test-cluster/step17/release/checks/docs-html"
+      ],
+      "environment": {
+        "GOMAXPROCS": "4"
+      },
+      "exit_code": 0,
+      "log": "/extra/scylladb/gocql-api-test-cluster/step17/release/checks/docs-build.log",
+      "name": "docs-build",
+      "seconds": 0.758368894981686,
+      "sha256": "85d3c747082af46f5c5d1102f0e216171144c9ee649c4d0137170114ac8842e8",
+      "source_sha256": "74a54ef2ae1485fb2f7065efee1ffb10218efed431f331b0e579f70ba4285180"
+    }
+  ],
+  "inputs": {
+    "CONTRIBUTING.md": "d12bc59656c7a4fb94eb7596a417c4adbbe9142a58c782ac5ac0ab3e006db3ec",
+    "Makefile": "645bafc26a3cf0d84451befc85b222df4d4dfd5af3113237d0f17f28e9faa7c7",
+    "README.md": "289de58f0573e18065bc67805bba2987f098d9dca0946b59668ff2e2137bbdd4",
+    "RELEASING.md": "435ba9b3d82c84102f639c84c9b6d3a8efd8341e8b14d5129a324738b5bdd2e3",
+    "docs/Makefile": "520b315e303e09afd306d1eaff0abf2b9f5ff131d0b9761f577404a433077004",
+    "docs/README.md": "3c5d7776b18d1ac88f3d1534facbd1ee38c072819c3463b368b77bad5048f716",
+    "docs/_utils/redirects.yaml": "b281e6472fc9cccde1815dca4aa6a246bf39e66370c4c6c0e79220a0005ce521",
+    "docs/driver-config-schema.json": "f2c36a06060fa6e21b6f54fa522247a719073a957f66495d0bb52056b6fbc374",
+    "docs/pyproject.toml": "4b47525a26685f98dac064d3ed0a28c7512a9cffdc81628bb0e7d640abbe3492",
+    "docs/released_versions.py": "b362b3a22ba6a26cf3faa536ccf2b953bb47ffad8bffeb7998e829c94de4ad6f",
+    "docs/source/client-routes.md": "55aa605f4cb0acfd83bbef052759c2acb2da7415455094040d78d0325087b90b",
+    "docs/source/conf.py": "a3b1761d42cec7dfa4253630cb4131e61998321a9bcd041b567b97bc632db11a",
+    "docs/source/connecting/authentication.md": "db337a29cd2c9ec3d7fa7c8d3da062dbb3f5cbb3295a8c892b242ec05a7505d9",
+    "docs/source/connecting/compression.md": "a0594e05fee50f769525c5998530246f55163fd28143865686a1bf08e3b743ad",
+    "docs/source/connecting/index.md": "42b71914b7ecb97a3dbff250f614fdeba8bf243a8cb9a8404bc5d7195c90c0e5",
+    "docs/source/connecting/tls.md": "fbd79bdbf9e9b09b38118435a24bc7c8d7768286c95f1dced65658dc40a95cd6",
+    "docs/source/data-types.md": "07d01607864bbc0016c6b08ea9a16880636e7da53b0e5c5545f3070f878427b5",
+    "docs/source/index.md": "b6e07928a2afaaf645b49c0ca783b8bc52b0cea43aa98db3c0281ac439ea8267",
+    "docs/source/load-balancing.md": "805afd8498e65b6dfc48a5a926b720574682adf341604daf820cca41ae7c7979",
+    "docs/source/quick-start.md": "738b0340018ff0f8052226319490d2ffc7b9e2f60976a9c31576222c48279ea7",
+    "docs/source/retry-policy.md": "0fecae8b9e30ec75f064f144f3348557df141cf76b221faedd7c74c3137072e3",
+    "docs/source/speculative-execution.md": "cc44b89fe8d77221ddb49596f333f3f79c9bb2c5071cdb37493958e70e56c27a",
+    "docs/source/statements/batches.md": "6eba0b8055a321afc8ddda302d75f458b984d3655b604dbf7b2463810fcf075e",
+    "docs/source/statements/index.md": "f5da5dddd4682f9e6c6abe1987beb8079b319838ad6c4aa69afdb3c6ef7f1030",
+    "docs/source/statements/lightweight-transactions.md": "20ad93e4a1a91829149b6a0b60b9a49c101d51fbe1ec09cb24ae1f312b74e221",
+    "docs/source/statements/paging.md": "99ed2bd7e3a8a416389e81de9d5e7422b3d7f3cb227afdad0bd39d641d5a493c",
+    "docs/source/statements/request-timeouts.md": "e77279356005c6e4ad7a93361df8bd3d52d3453b85c40d37f193d9e4ef1a1783",
+    "docs/source/statements/streaming.md": "5fdf99255ce863157ff6a399fb242b6294c0f47f457cf29892075d1f99ecc81f",
+    "docs/test_released_versions.py": "67c5b8601b586b7e31ab9a87eb5ed43b475a52a9d2f58414329da631d04c773a",
+    "docs/uv.lock": "875b9207c6e8588b6a56b244c017417e38d42b4c49121c22d9e9f742089eb694",
+    "plan.md": "076254a720b638f0e36e5d700280c9a336e46a56d5752018c5e098e58c1c15f2",
+    "tests/fixtures/README.md": "ed0c6f1d4b0658f8e6174794f5a0569469676204785a7805f4b2ba98e76ee75a"
+  },
+  "runtime_source_sha256": "74a54ef2ae1485fb2f7065efee1ffb10218efed431f331b0e579f70ba4285180",
+  "scope": "All nine cookbook examples compile as normal public consumers; four output-bearing examples execute in normal Go suites. The standalone seeded nested streaming CLI executes against every applicable native mode, with explicit unsupported-compression behavior and cleanup."
+}

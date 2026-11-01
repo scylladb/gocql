@@ -101,6 +101,7 @@ func TestStep06TabletRoutingLive(t *testing.T) {
 	if err := serverRows.Err(); err != nil {
 		t.Fatal(err)
 	}
+	t.Logf("initial authoritative tablet read-node=%s", serverRows.Info().HostID)
 	serverRows.Close()
 	if len(authoritative) == 0 {
 		t.Fatal("no authoritative tablet records")
@@ -130,8 +131,13 @@ func TestStep06TabletRoutingLive(t *testing.T) {
 		if len(expected) != 2 {
 			t.Fatal("server replica count", expected)
 		}
-		learned := false
-		for attempt := 0; attempt < 96; attempt++ {
+		// Tablet placement may move after the initial independent read. Require
+		// one exact, non-transitioning authority on every node before and after
+		// each query; the initial map is diagnostic, not permanent authority.
+		verified := 0
+		var latest step17TabletObservation
+		for attempt := 0; attempt < 96 && verified < 8; attempt++ {
+			before := step17TabletAuthority(t, ctx, s, id, token.Value)
 			opts := Options{}
 			if attempt < 3 {
 				opts.HostID = Option[UUID]{Value: routing.SnapshotData(s.Metadata()).InternalHosts[attempt%len(routing.SnapshotData(s.Metadata()).InternalHosts)].ID, Set: true}
@@ -150,6 +156,11 @@ func TestStep06TabletRoutingLive(t *testing.T) {
 			for _, entry := range result.CustomPayload {
 				if entry.Key == "tablets-routing-v1" || entry.Key == "tablets-routing-v2" {
 					feedback++
+					hint, parseErr := parseTypedTabletPayload(entry.Value.Value, keyspace, "records", entry.Key == "tablets-routing-v2")
+					if parseErr != nil {
+						t.Fatal("actual tablet feedback", parseErr)
+					}
+					t.Logf("key=%d token=%d attempt=%d actual feedback replicas=%s", key, token.Value, attempt, hint.Replicas())
 				}
 			}
 			if rows.Next() {
@@ -158,51 +169,36 @@ func TestStep06TabletRoutingLive(t *testing.T) {
 			if err := rows.Close(); err != nil {
 				t.Fatal(err)
 			}
+			after := step17TabletAuthority(t, ctx, s, id, token.Value)
+			latest = after
 			replicas, err := s.Metadata().Replicas(keyspace, "records", token.Value)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(replicas) == len(expected) {
-				matches := true
-				for _, r := range replicas {
-					if !slices.Contains(expected, r) {
-						matches = false
-					}
-				}
-				if matches {
-					learned = true
-					break
-				}
+			stable := before.stable && after.stable && before.last == after.last && step17SameReplicaSet(before.replicas, after.replicas)
+			cacheMatches := len(after.replicas) == 2 && step17SameReplicaSet(replicas, after.replicas)
+			coordinatorMatches := false
+			for _, replica := range after.replicas {
+				coordinatorMatches = coordinatorMatches || replica.HostID == result.HostID
 			}
-			select {
-			case <-ctx.Done():
-				t.Fatal(ctx.Err())
-			case <-time.After(5 * time.Millisecond):
+			// Preserve all three cold host pins, including the nonreplica, before
+			// requiring eight consecutive unpinned exact-coordinator assertions.
+			if attempt >= 3 && stable && cacheMatches && coordinatorMatches {
+				verified++
+			} else {
+				verified = 0
+				t.Logf("tablet observation key=%d token=%d attempt=%d initial=%+v before=%+v after=%+v driver=%+v coordinator=%s generation=%d", key, token.Value, attempt, expected, before, after, replicas, result.HostID, s.Metadata().Generation())
+			}
+			if verified < 8 {
+				select {
+				case <-ctx.Done():
+					t.Fatal(ctx.Err())
+				case <-time.After(5 * time.Millisecond):
+				}
 			}
 		}
-		if !learned {
-			t.Fatalf("key %d never learned authoritative replicas", key)
-		}
-		for i := 0; i < 8; i++ {
-			rows, err := Run(ctx, s, b, Options{})
-			if err != nil {
-				t.Fatal(err)
-			}
-			result := rows.Info()
-			found := false
-			for _, r := range expected {
-				if r.HostID == result.HostID {
-					found = true
-				}
-			}
-			if !found {
-				t.Fatal("coordinator not in authoritative replica set", result.HostID, expected)
-			}
-			for rows.Next() {
-			}
-			if err := rows.Close(); err != nil {
-				t.Fatal(err)
-			}
+		if verified != 8 {
+			t.Fatalf("key %d did not converge on stable authoritative replicas and eight routed coordinators within 96 total attempts: latest=%+v", key, latest)
 		}
 		b.Close()
 	}
@@ -301,4 +297,87 @@ func TestStep06LeaderRoutingLive(t *testing.T) {
 		t.Fatal("V2 leader did not converge", feedback, stable)
 	}
 	t.Logf("independently decoded leader=%s, feedback=%d, stable LOCAL_QUORUM reads=%d", leader, feedback, stable)
+}
+
+// step17TabletAuthority brackets routed queries with independent server reads.
+// During a transition or disagreement it supplies no correctness credit.
+type step17TabletObservation struct {
+	last      int64
+	replicas  []Target
+	readNodes []UUID
+	stable    bool
+}
+
+func step17TabletAuthority(t *testing.T, ctx context.Context, s *Session, table UUID, token int64) step17TabletObservation {
+	t.Helper()
+	type parameters struct {
+		Table UUID
+		Token int64
+	}
+	statement := Statement[parameters, DynamicRow]{
+		CQL:    "SELECT last_token,replicas,new_replicas,stage FROM system.tablets WHERE table_id=? AND last_token>=? LIMIT 1",
+		Params: Params(Param("id", UUIDCodec, func(p parameters) UUID { return p.Table }), Param("token", Int64, func(p parameters) int64 { return p.Token })),
+		Rows:   DynamicRows,
+	}
+	columns := NewColumns(ColumnSpec{Name: "id", Type: codecTestMust(ScalarType(TypeUUID))}, ColumnSpec{Name: "token", Type: codecTestMust(ScalarType(TypeBigInt))})
+	bound := codecTestMust(BindUnpreparedOwned(statement, columns, parameters{table, token}))
+	defer bound.Close()
+	observation := step17TabletObservation{stable: true}
+	for index, host := range s.Metadata().Hosts() {
+		page := codecTestMust(RunUnpaged(ctx, s, bound, Options{HostID: Option[UUID]{Set: true, Value: host.ID}}))
+		if page.Info().HostID != host.ID {
+			t.Fatal("authoritative read lost exact host pin", page.Info().HostID, host.ID)
+		}
+		observation.readNodes = append(observation.readNodes, page.Info().HostID)
+		if !page.Next() {
+			t.Fatal("authoritative tablet absent", page.Err())
+		}
+		row := page.Row()
+		last := codecTestMust(codecTestMust(row.Get("last_token")).Signed())
+		iterator := codecTestMust(codecTestMust(row.Get("replicas")).Elements())
+		var replicas []Target
+		for iterator.Next() {
+			tuple := codecTestMust(iterator.Value().Elements())
+			if !tuple.Next() {
+				t.Fatal("authoritative replica missing host", tuple.Err())
+			}
+			id := codecTestMust(tuple.Value().UUID())
+			if !tuple.Next() {
+				t.Fatal("authoritative replica missing shard", tuple.Err())
+			}
+			shard := codecTestMust(tuple.Value().Signed())
+			if shard < 0 || shard > math.MaxUint32 {
+				t.Fatal("invalid authoritative shard", shard)
+			}
+			if tuple.Next() || tuple.Err() != nil {
+				t.Fatal("authoritative replica extra member", tuple.Err())
+			}
+			replicas = append(replicas, Target{HostID: id, ShardID: Option[uint32]{Set: true, Value: uint32(shard)}})
+		}
+		if iterator.Err() != nil {
+			t.Fatal(iterator.Err())
+		}
+		if codecTestMust(row.Get("new_replicas")).State() != Null || codecTestMust(row.Get("stage")).State() != Null {
+			observation.stable = false
+		}
+		if page.Next() || page.Err() != nil {
+			t.Fatal("authoritative query count", page.Err())
+		}
+		if err := page.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if index == 0 {
+			observation.last, observation.replicas = last, replicas
+		} else if last != observation.last || !step17SameReplicaSet(replicas, observation.replicas) {
+			observation.stable = false
+		}
+	}
+	if len(observation.readNodes) == 0 {
+		t.Fatal("no authoritative read nodes")
+	}
+	bound.Close()
+	if err := bound.Wait(ctx); err != nil {
+		t.Fatal(err)
+	}
+	return observation
 }

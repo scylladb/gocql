@@ -1,7 +1,8 @@
 # Streaming receive decoding into caller storage
 
 Status: normative Go v2 implementation design, reconciled during execution
-preparation on 2026-10-29. Not implemented or verified. The user authorized
+preparation on 2026-10-29. Implementation is present; final verification is
+tracked separately in execution step 17. The user authorized
 sequential implementation in [plan.md](../plan.md). This new design addition was
 not part of the historical ten design review cycles and makes no claim about
 the pinned Rust reference driver. Exact public construction, codec/builder and
@@ -354,4 +355,5 @@ shared-reader resumption; failure/early close discards the connection.
 
 An unmet streaming gate blocks its owning agent's handoff. Unsupported mandatory
 modes/types cannot be counted complete by rejecting them. Feature implementation,
-independent review and all acceptance evidence remain pending.
+independent review and acceptance evidence are recorded in the execution ledger;
+the final release gate requires current evidence for every criterion above.

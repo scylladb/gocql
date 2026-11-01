@@ -2,10 +2,10 @@
 
 Status: implementation contract, distinct from the six reviewed Rust reference
 specifications. Module: `github.com/scylladb/gocql/v2`; package: `gocql`. The
-current checkpoint keeps implementation scaffolding in the root package. The
-final layout and dependency boundaries in plan.md section 5 are normative:
-extract internals after behavior stabilizes, and migrate integration tests
-toward public behavior with focused testkit hooks. This does not retain the v1
+implementation uses the internal packages and public facade required by
+plan.md section 5. Final release evidence is tracked in execution step 17;
+the contract below does not substitute for that evidence. Integration tests
+exercise typed behavior with focused testkit hooks. This does not retain the v1
 public API. `Query`, `Iter`, mutable reflection-based `Batch`, `Marshal`,
 `Unmarshal`, `Scan`, `MapScan`, `SliceMap`, `RowData`, `NamedValue`, and
 `...any` binding are removed as public execution/serialization interfaces.
@@ -812,8 +812,9 @@ is absent only if no previous columns were returned.
 
 ## Streaming receive into final caller storage
 
-Status: normative implementation design, settled during execution preparation on
-2026-10-29. Implementation and acceptance evidence remain pending. This addition
+Status: normative implementation contract, settled during execution preparation on
+2026-10-29. The implementation is present; final acceptance is tracked separately
+in execution step 17. This addition
 was not part of the preceding ten design review cycles. The detailed framing,
 ownership and acceptance rules are in
 [gocql-v2-streaming-receive.md](gocql-v2-streaming-receive.md).

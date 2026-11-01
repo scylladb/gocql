@@ -1,0 +1,1486 @@
+{
+  "gate": "passed",
+  "interpretation": [
+    "Normal unprofiled timings and profiled diagnostics are separate. Profile percentages are attribution of those diagnostic workloads, not universal driver CPU shares.",
+    "Probe reservation uses an existing per-host sample mutex, not a policy-wide lock. Forced-expiry concurrent workload exposes its bounded additional contention cost; ordinary/latency-off/nonexpired decisions and 3/30/300 scaling remain separately measured.",
+    "Probe checks and warm publication claims allocate0. Each due publication candidate allocates24bytes, including CAS losers. Integer allocs/op can round a nonzero fractional rate to0; fixed-operation alloc_objects profile and total-claims metric expose candidate/loser work.",
+    "The deadline allocation profile includes benchmark setup and calibration. It is not a count of every logical request, and no per-completion zero-allocation claim is made for due-boundary workloads."
+  ],
+  "latency_equivalent_comparisons": [
+    {
+      "before": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 220.4
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 205.6
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 233.9
+        }
+      ],
+      "before_median_ns": 220.4,
+      "benchmark": "BenchmarkStep17ProbeSelection/hosts3/expired-probe",
+      "current": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 221.4
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 219.9
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 233.4
+        }
+      ],
+      "current_median_ns": 221.4,
+      "ratio": 1.0045372050816697
+    },
+    {
+      "before": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 258.3
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 263.2
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 259.8
+        }
+      ],
+      "before_median_ns": 259.8,
+      "benchmark": "BenchmarkStep17ProbeSelection/hosts3/healthy-fallback",
+      "current": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 286.6
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 276.7
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 290.0
+        }
+      ],
+      "current_median_ns": 286.6,
+      "ratio": 1.103156274056967
+    },
+    {
+      "before": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 165.8
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 134.3
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 141.3
+        }
+      ],
+      "before_median_ns": 141.3,
+      "benchmark": "BenchmarkStep17ProbeSelection/hosts3/strict-pin",
+      "current": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 127.5
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 125.7
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 127.6
+        }
+      ],
+      "current_median_ns": 127.5,
+      "ratio": 0.9023354564755838
+    },
+    {
+      "before": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 377.3
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 377.9
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 395.6
+        }
+      ],
+      "before_median_ns": 377.9,
+      "benchmark": "BenchmarkStep17ProbeSelection/hosts3/last-resort",
+      "current": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 408.3
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 418.7
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 416.4
+        }
+      ],
+      "current_median_ns": 416.4,
+      "ratio": 1.10187880391638
+    },
+    {
+      "before": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 223.0
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 205.3
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 210.1
+        }
+      ],
+      "before_median_ns": 210.1,
+      "benchmark": "BenchmarkStep17ProbeSelection/hosts30/expired-probe",
+      "current": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 213.6
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 212.7
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 215.3
+        }
+      ],
+      "current_median_ns": 213.6,
+      "ratio": 1.0166587339362207
+    },
+    {
+      "before": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 280.0
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 266.2
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 288.0
+        }
+      ],
+      "before_median_ns": 280.0,
+      "benchmark": "BenchmarkStep17ProbeSelection/hosts30/healthy-fallback",
+      "current": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 261.2
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 283.4
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 275.7
+        }
+      ],
+      "current_median_ns": 275.7,
+      "ratio": 0.9846428571428572
+    },
+    {
+      "before": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 163.0
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 133.7
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 160.0
+        }
+      ],
+      "before_median_ns": 160.0,
+      "benchmark": "BenchmarkStep17ProbeSelection/hosts30/strict-pin",
+      "current": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 142.0
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 126.2
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 143.1
+        }
+      ],
+      "current_median_ns": 142.0,
+      "ratio": 0.8875
+    },
+    {
+      "before": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 647.6
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 641.5
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 678.7
+        }
+      ],
+      "before_median_ns": 647.6,
+      "benchmark": "BenchmarkStep17ProbeSelection/hosts30/last-resort",
+      "current": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 692.3
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 713.5
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 681.2
+        }
+      ],
+      "current_median_ns": 692.3,
+      "ratio": 1.0690240889437923
+    },
+    {
+      "before": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 243.2
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 220.9
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 220.7
+        }
+      ],
+      "before_median_ns": 220.9,
+      "benchmark": "BenchmarkStep17ProbeSelection/hosts300/expired-probe",
+      "current": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 213.3
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 234.0
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 219.5
+        }
+      ],
+      "current_median_ns": 219.5,
+      "ratio": 0.9936622906292439
+    },
+    {
+      "before": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 245.9
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 276.6
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 283.2
+        }
+      ],
+      "before_median_ns": 276.6,
+      "benchmark": "BenchmarkStep17ProbeSelection/hosts300/healthy-fallback",
+      "current": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 261.1
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 259.9
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 257.1
+        }
+      ],
+      "current_median_ns": 259.9,
+      "ratio": 0.9396240057845262
+    },
+    {
+      "before": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 174.5
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 161.5
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 130.7
+        }
+      ],
+      "before_median_ns": 161.5,
+      "benchmark": "BenchmarkStep17ProbeSelection/hosts300/strict-pin",
+      "current": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 125.9
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 169.3
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 141.9
+        }
+      ],
+      "current_median_ns": 141.9,
+      "ratio": 0.8786377708978329
+    },
+    {
+      "before": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 2717.0
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 2717.0
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 2764.0
+        }
+      ],
+      "before_median_ns": 2717.0,
+      "benchmark": "BenchmarkStep17ProbeSelection/hosts300/last-resort",
+      "current": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 2731.0
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 2681.0
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 2724.0
+        }
+      ],
+      "current_median_ns": 2724.0,
+      "ratio": 1.0025763709974236
+    },
+    {
+      "before": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 126.3
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 166.1
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 134.1
+        }
+      ],
+      "before_median_ns": 134.1,
+      "benchmark": "BenchmarkStep17ProbeSelectionConcurrent/hosts3",
+      "current": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 166.0
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 156.7
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 168.1
+        }
+      ],
+      "current_median_ns": 166.0,
+      "ratio": 1.237882177479493
+    },
+    {
+      "before": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 129.6
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 143.9
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 213.3
+        }
+      ],
+      "before_median_ns": 143.9,
+      "benchmark": "BenchmarkStep17ProbeSelectionConcurrent/hosts30",
+      "current": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 142.3
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 162.7
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 165.8
+        }
+      ],
+      "current_median_ns": 162.7,
+      "ratio": 1.130646282140375
+    },
+    {
+      "before": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 138.5
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 138.2
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 132.2
+        }
+      ],
+      "before_median_ns": 138.2,
+      "benchmark": "BenchmarkStep17ProbeSelectionConcurrent/hosts300",
+      "current": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 228.9
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 238.1
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 243.0
+        }
+      ],
+      "current_median_ns": 238.1,
+      "ratio": 1.722865412445731
+    },
+    {
+      "before": [
+        {
+          "allocs": 0,
+          "bytes": 0,
+          "ns": 118.4
+        },
+        {
+          "allocs": 0,
+          "bytes": 0,
+          "ns": 118.7
+        },
+        {
+          "allocs": 0,
+          "bytes": 0,
+          "ns": 117.7
+        }
+      ],
+      "before_median_ns": 118.4,
+      "benchmark": "BenchmarkStep17ObserveWarm/hosts3",
+      "current": [
+        {
+          "allocs": 0,
+          "bytes": 0,
+          "ns": 116.6
+        },
+        {
+          "allocs": 0,
+          "bytes": 0,
+          "ns": 114.3
+        },
+        {
+          "allocs": 0,
+          "bytes": 0,
+          "ns": 114.6
+        }
+      ],
+      "current_median_ns": 114.6,
+      "ratio": 0.9679054054054053
+    },
+    {
+      "before": [
+        {
+          "allocs": 0,
+          "bytes": 0,
+          "ns": 117.3
+        },
+        {
+          "allocs": 0,
+          "bytes": 0,
+          "ns": 117.3
+        },
+        {
+          "allocs": 0,
+          "bytes": 0,
+          "ns": 117.0
+        }
+      ],
+      "before_median_ns": 117.3,
+      "benchmark": "BenchmarkStep17ObserveWarm/hosts30",
+      "current": [
+        {
+          "allocs": 0,
+          "bytes": 0,
+          "ns": 115.6
+        },
+        {
+          "allocs": 0,
+          "bytes": 0,
+          "ns": 118.8
+        },
+        {
+          "allocs": 0,
+          "bytes": 0,
+          "ns": 115.8
+        }
+      ],
+      "current_median_ns": 115.8,
+      "ratio": 0.9872122762148338
+    },
+    {
+      "before": [
+        {
+          "allocs": 0,
+          "bytes": 0,
+          "ns": 118.1
+        },
+        {
+          "allocs": 0,
+          "bytes": 0,
+          "ns": 119.8
+        },
+        {
+          "allocs": 0,
+          "bytes": 0,
+          "ns": 118.0
+        }
+      ],
+      "before_median_ns": 118.1,
+      "benchmark": "BenchmarkStep17ObserveWarm/hosts300",
+      "current": [
+        {
+          "allocs": 0,
+          "bytes": 0,
+          "ns": 114.9
+        },
+        {
+          "allocs": 0,
+          "bytes": 0,
+          "ns": 116.1
+        },
+        {
+          "allocs": 0,
+          "bytes": 0,
+          "ns": 114.9
+        }
+      ],
+      "current_median_ns": 114.9,
+      "ratio": 0.9729043183742592
+    },
+    {
+      "before": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 191.4
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 177.8
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 178.8
+        }
+      ],
+      "before_median_ns": 178.8,
+      "benchmark": "BenchmarkStep06FirstTarget/hosts3/ordinary",
+      "current": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 177.9
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 177.2
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 200.9
+        }
+      ],
+      "current_median_ns": 177.9,
+      "ratio": 0.9949664429530201
+    },
+    {
+      "before": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 177.5
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 175.8
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 185.7
+        }
+      ],
+      "before_median_ns": 177.5,
+      "benchmark": "BenchmarkStep06FirstTarget/hosts3/lwt",
+      "current": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 185.9
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 200.2
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 212.5
+        }
+      ],
+      "current_median_ns": 200.2,
+      "ratio": 1.127887323943662
+    },
+    {
+      "before": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 188.6
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 202.4
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 189.5
+        }
+      ],
+      "before_median_ns": 189.5,
+      "benchmark": "BenchmarkStep06FirstTarget/hosts3/leader",
+      "current": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 230.3
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 224.1
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 197.4
+        }
+      ],
+      "current_median_ns": 224.1,
+      "ratio": 1.1825857519788918
+    },
+    {
+      "before": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 179.0
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 184.0
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 184.7
+        }
+      ],
+      "before_median_ns": 184.0,
+      "benchmark": "BenchmarkStep06FirstTarget/hosts3/latency",
+      "current": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 186.7
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 191.8
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 205.1
+        }
+      ],
+      "current_median_ns": 191.8,
+      "ratio": 1.0423913043478261
+    },
+    {
+      "before": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 134.8
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 134.6
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 137.2
+        }
+      ],
+      "before_median_ns": 134.8,
+      "benchmark": "BenchmarkStep06FirstTarget/hosts3/pinned",
+      "current": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 135.9
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 137.9
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 141.9
+        }
+      ],
+      "current_median_ns": 137.9,
+      "ratio": 1.0229970326409494
+    },
+    {
+      "before": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 177.6
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 180.9
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 176.5
+        }
+      ],
+      "before_median_ns": 177.6,
+      "benchmark": "BenchmarkStep06FirstTarget/hosts30/ordinary",
+      "current": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 179.7
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 178.6
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 179.3
+        }
+      ],
+      "current_median_ns": 179.3,
+      "ratio": 1.0095720720720722
+    },
+    {
+      "before": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 176.3
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 177.9
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 173.5
+        }
+      ],
+      "before_median_ns": 176.3,
+      "benchmark": "BenchmarkStep06FirstTarget/hosts30/lwt",
+      "current": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 187.7
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 192.5
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 175.8
+        }
+      ],
+      "current_median_ns": 187.7,
+      "ratio": 1.064662507090187
+    },
+    {
+      "before": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 189.9
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 193.2
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 204.5
+        }
+      ],
+      "before_median_ns": 193.2,
+      "benchmark": "BenchmarkStep06FirstTarget/hosts30/leader",
+      "current": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 193.7
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 189.9
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 189.5
+        }
+      ],
+      "current_median_ns": 189.9,
+      "ratio": 0.9829192546583851
+    },
+    {
+      "before": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 183.8
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 182.8
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 194.6
+        }
+      ],
+      "before_median_ns": 183.8,
+      "benchmark": "BenchmarkStep06FirstTarget/hosts30/latency",
+      "current": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 179.0
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 180.9
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 183.3
+        }
+      ],
+      "current_median_ns": 180.9,
+      "ratio": 0.9842219804134928
+    },
+    {
+      "before": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 153.5
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 141.7
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 149.6
+        }
+      ],
+      "before_median_ns": 149.6,
+      "benchmark": "BenchmarkStep06FirstTarget/hosts30/pinned",
+      "current": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 136.5
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 138.0
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 169.4
+        }
+      ],
+      "current_median_ns": 138.0,
+      "ratio": 0.9224598930481284
+    },
+    {
+      "before": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 179.5
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 178.8
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 199.0
+        }
+      ],
+      "before_median_ns": 179.5,
+      "benchmark": "BenchmarkStep06FirstTarget/hosts300/ordinary",
+      "current": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 187.6
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 176.5
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 181.0
+        }
+      ],
+      "current_median_ns": 181.0,
+      "ratio": 1.0083565459610029
+    },
+    {
+      "before": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 181.9
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 187.8
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 182.4
+        }
+      ],
+      "before_median_ns": 182.4,
+      "benchmark": "BenchmarkStep06FirstTarget/hosts300/lwt",
+      "current": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 185.2
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 193.6
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 219.6
+        }
+      ],
+      "current_median_ns": 193.6,
+      "ratio": 1.0614035087719298
+    },
+    {
+      "before": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 210.8
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 190.1
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 192.5
+        }
+      ],
+      "before_median_ns": 192.5,
+      "benchmark": "BenchmarkStep06FirstTarget/hosts300/leader",
+      "current": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 228.7
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 191.3
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 188.9
+        }
+      ],
+      "current_median_ns": 191.3,
+      "ratio": 0.9937662337662339
+    },
+    {
+      "before": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 187.4
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 183.8
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 188.4
+        }
+      ],
+      "before_median_ns": 187.4,
+      "benchmark": "BenchmarkStep06FirstTarget/hosts300/latency",
+      "current": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 183.4
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 184.4
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 182.9
+        }
+      ],
+      "current_median_ns": 183.4,
+      "ratio": 0.9786552828175027
+    },
+    {
+      "before": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 140.7
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 142.6
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 142.4
+        }
+      ],
+      "before_median_ns": 142.4,
+      "benchmark": "BenchmarkStep06FirstTarget/hosts300/pinned",
+      "current": [
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 138.0
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 184.2
+        },
+        {
+          "allocs": 1,
+          "bytes": 768,
+          "ns": 158.6
+        }
+      ],
+      "current_median_ns": 158.6,
+      "ratio": 1.1137640449438202
+    }
+  ],
+  "runtime_source_sha256": "74a54ef2ae1485fb2f7065efee1ffb10218efed431f331b0e579f70ba4285180",
+  "summaries": [
+    {
+      "command": [
+        "go",
+        "tool",
+        "pprof",
+        "-top",
+        "-nodecount=15",
+        "-sample_index=alloc_objects",
+        "/extra/scylladb/gocql-api-test-cluster/step17/release/performance/codec-allocs.pprof"
+      ],
+      "exit_code": 0,
+      "log": "/extra/scylladb/gocql-api-test-cluster/step17/release/profile-summaries/performance-codec-allocs.pprof.txt",
+      "profile": "/extra/scylladb/gocql-api-test-cluster/step17/release/performance/codec-allocs.pprof",
+      "profile_sha256": "dca66c09e6873b53d94e4d039f6ed6033e7ce79c05d9ab8938f7df844af9bbb3",
+      "sha256": "1cd577b6329b8b1b46034b35538cb0621fe91de316c2fe01f5eb75011408af21"
+    },
+    {
+      "command": [
+        "go",
+        "tool",
+        "pprof",
+        "-top",
+        "-nodecount=15",
+        "/extra/scylladb/gocql-api-test-cluster/step17/release/performance/codec-cpu.pprof"
+      ],
+      "exit_code": 0,
+      "log": "/extra/scylladb/gocql-api-test-cluster/step17/release/profile-summaries/performance-codec-cpu.pprof.txt",
+      "profile": "/extra/scylladb/gocql-api-test-cluster/step17/release/performance/codec-cpu.pprof",
+      "profile_sha256": "042c746eba1cc1b431111a692d4820e79880acc9f34763f890696c8907f518fb",
+      "sha256": "408f106e7c48c4b9de7a09e06506289ee532a6030a99a2a69052eca71c74afc1"
+    },
+    {
+      "command": [
+        "go",
+        "tool",
+        "pprof",
+        "-top",
+        "-nodecount=15",
+        "/extra/scylladb/gocql-api-test-cluster/step17/release/performance/concurrency-block.pprof"
+      ],
+      "exit_code": 0,
+      "log": "/extra/scylladb/gocql-api-test-cluster/step17/release/profile-summaries/performance-concurrency-block.pprof.txt",
+      "profile": "/extra/scylladb/gocql-api-test-cluster/step17/release/performance/concurrency-block.pprof",
+      "profile_sha256": "7d7f120d7ee9d8cf4150b646b5be9300130ac6ff2af171ca7faca65585cdc0ca",
+      "sha256": "1f9d2135622daabd926cf08d28c4e46aa6d536a2a48a567f4e91d32fef80c526"
+    },
+    {
+      "command": [
+        "go",
+        "tool",
+        "pprof",
+        "-top",
+        "-nodecount=15",
+        "/extra/scylladb/gocql-api-test-cluster/step17/release/performance/concurrency-cpu.pprof"
+      ],
+      "exit_code": 0,
+      "log": "/extra/scylladb/gocql-api-test-cluster/step17/release/profile-summaries/performance-concurrency-cpu.pprof.txt",
+      "profile": "/extra/scylladb/gocql-api-test-cluster/step17/release/performance/concurrency-cpu.pprof",
+      "profile_sha256": "ca1cee6fa966618260b12bec72207890026c487c93e88579404d826c8d96f674",
+      "sha256": "dd1865ad660b625a9c623f9f0757a3ae51462dc17b680be697a5f3bdf70b3338"
+    },
+    {
+      "command": [
+        "go",
+        "tool",
+        "pprof",
+        "-top",
+        "-nodecount=15",
+        "/extra/scylladb/gocql-api-test-cluster/step17/release/performance/concurrency-mutex.pprof"
+      ],
+      "exit_code": 0,
+      "log": "/extra/scylladb/gocql-api-test-cluster/step17/release/profile-summaries/performance-concurrency-mutex.pprof.txt",
+      "profile": "/extra/scylladb/gocql-api-test-cluster/step17/release/performance/concurrency-mutex.pprof",
+      "profile_sha256": "1ec75ae7f49f4eb89fd1d727e21c0ad6392fa2b4b4da8e37037ca0c34104894c",
+      "sha256": "5f3400bc7339d166f85f394750fa03b4d4cd6e185065867220be78351e813701"
+    },
+    {
+      "command": [
+        "go",
+        "tool",
+        "pprof",
+        "-top",
+        "-nodecount=15",
+        "/extra/scylladb/gocql-api-test-cluster/step17/release/performance/transport-cpu.pprof"
+      ],
+      "exit_code": 0,
+      "log": "/extra/scylladb/gocql-api-test-cluster/step17/release/profile-summaries/performance-transport-cpu.pprof.txt",
+      "profile": "/extra/scylladb/gocql-api-test-cluster/step17/release/performance/transport-cpu.pprof",
+      "profile_sha256": "57c39fb3f351003237c232141b7fa87c606c9f3e076a51f48b234b9e7f132624",
+      "sha256": "09f0419054efde8128072bbfdd58a4ac5d7d6f31454c22ec407e71e759c9ca6f"
+    },
+    {
+      "command": [
+        "go",
+        "tool",
+        "pprof",
+        "-top",
+        "-nodecount=15",
+        "/extra/scylladb/gocql-api-test-cluster/step17/release/latency-costs/probe-block.pprof"
+      ],
+      "exit_code": 0,
+      "log": "/extra/scylladb/gocql-api-test-cluster/step17/release/profile-summaries/latency-costs-probe-block.pprof.txt",
+      "profile": "/extra/scylladb/gocql-api-test-cluster/step17/release/latency-costs/probe-block.pprof",
+      "profile_sha256": "4ce3b325c363bf143b376275d173e342cffd3060267f13a1339ffebedb3adaaf",
+      "sha256": "d3dbe3a2e96864ab410a6552f03c06631b7a181c8648924cc087b06ec0efaee0"
+    },
+    {
+      "command": [
+        "go",
+        "tool",
+        "pprof",
+        "-top",
+        "-nodecount=15",
+        "/extra/scylladb/gocql-api-test-cluster/step17/release/latency-costs/probe-cpu.pprof"
+      ],
+      "exit_code": 0,
+      "log": "/extra/scylladb/gocql-api-test-cluster/step17/release/profile-summaries/latency-costs-probe-cpu.pprof.txt",
+      "profile": "/extra/scylladb/gocql-api-test-cluster/step17/release/latency-costs/probe-cpu.pprof",
+      "profile_sha256": "326819eebab4196d1cc3d507a36682a59ed84d3e8ad6ea76cfdcbabdc3daa50c",
+      "sha256": "ca4003a4c6689f69dbe9546b3b8d9f85a112097fa3d93134da1b1f9ef4ba53ef"
+    },
+    {
+      "command": [
+        "go",
+        "tool",
+        "pprof",
+        "-top",
+        "-nodecount=15",
+        "/extra/scylladb/gocql-api-test-cluster/step17/release/latency-costs/probe-mutex.pprof"
+      ],
+      "exit_code": 0,
+      "log": "/extra/scylladb/gocql-api-test-cluster/step17/release/profile-summaries/latency-costs-probe-mutex.pprof.txt",
+      "profile": "/extra/scylladb/gocql-api-test-cluster/step17/release/latency-costs/probe-mutex.pprof",
+      "profile_sha256": "36aa7155cda0f5085da181399a302b2314c63fa7662b215d3f5033e0d31d4e49",
+      "sha256": "38c3725ea4afad784d28cc0261ef01eda372c841893f7a80b4897cd71b63ca68"
+    },
+    {
+      "command": [
+        "go",
+        "tool",
+        "pprof",
+        "-top",
+        "-nodecount=15",
+        "-sample_index=alloc_objects",
+        "/extra/scylladb/gocql-api-test-cluster/step17/release/latency-costs/publication-allocs.pprof"
+      ],
+      "exit_code": 0,
+      "log": "/extra/scylladb/gocql-api-test-cluster/step17/release/profile-summaries/latency-costs-publication-allocs.pprof.txt",
+      "profile": "/extra/scylladb/gocql-api-test-cluster/step17/release/latency-costs/publication-allocs.pprof",
+      "profile_sha256": "a96fe9f45920e14d96270a4da373a748bcc9196d1426271b47994678e26bfc80",
+      "sha256": "a3b4ae14159a3c3d1934e22328d9eaccbc392e290a6effefd3d85b313f3d900e"
+    }
+  ]
+}

@@ -1,0 +1,88 @@
+{
+  "all_rejected": true,
+  "probes": [
+    {
+      "error": "runtime source drift internal/routing/v2_policy.go",
+      "name": "runtime-drift",
+      "rejected": true
+    },
+    {
+      "error": "repository artifact drift feature-specs/evidence/step17-fuzz.json",
+      "name": "artifact-hash-drift",
+      "rejected": true
+    },
+    {
+      "error": "",
+      "name": "missing-original-test",
+      "rejected": true
+    },
+    {
+      "error": "",
+      "name": "missing-translated-nested-pass",
+      "rejected": true
+    },
+    {
+      "error": "",
+      "name": "missing-native-mode",
+      "rejected": true
+    },
+    {
+      "error": "",
+      "name": "missing-complete-tag-link",
+      "rejected": true
+    },
+    {
+      "error": "",
+      "name": "missing-streaming-mode",
+      "rejected": true
+    },
+    {
+      "error": "",
+      "name": "missing-config-field",
+      "rejected": true
+    },
+    {
+      "error": "",
+      "name": "open-requirement",
+      "rejected": true
+    },
+    {
+      "error": "",
+      "name": "missing-performance-table-row",
+      "rejected": true
+    },
+    {
+      "error": "",
+      "name": "missing-performance-result-shape",
+      "rejected": true
+    },
+    {
+      "error": "",
+      "name": "actual-negotiated-capacity-mismatch",
+      "rejected": true
+    },
+    {
+      "error": "",
+      "name": "missing-fuzz-campaign",
+      "rejected": true
+    },
+    {
+      "error": "",
+      "name": "missing-process-join",
+      "rejected": true
+    },
+    {
+      "name": "hollow-parent-all-terminal-children-skip",
+      "rejected": true
+    },
+    {
+      "name": "failed-whole-package-despite-zero-command-exit",
+      "rejected": true
+    },
+    {
+      "name": "nonzero-command-exit",
+      "rejected": true
+    }
+  ],
+  "source_logs_receipts_unchanged": true
+}

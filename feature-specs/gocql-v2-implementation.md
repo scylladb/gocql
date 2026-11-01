@@ -202,7 +202,7 @@ mutable first-plan cache, successful prior Compile/Decode, or server metadata
 remembered by the decoder. A compiled plan may delegate Clone to its immutable
 RowDecoder.
 
-### Direct decoding into caller storage (pending)
+### Direct decoding into caller storage
 
 This seam consumes retained page bytes. Incremental socket-to-destination
 decoding without full response/page accumulation is a separate
@@ -211,7 +211,8 @@ codec, exclusive transport, integrity and memory-budget requirements.
 
 Add required RowPlan.DecodeInto(*RowReader, *R) error and
 Rows/Page.NextInto(dst *R) bool as specified in the public API contract. This is
-planned work, not a completed capability of the current implementation.
+required behavior; its current implementation and final evidence are tracked
+separately in the execution ledger.
 The composition task owns DecodeInto for every built-in row plan and its child
 compositions; the prepared/paging task owns iterator integration and lifetime
 behavior. Custom plans must implement the same interface explicitly.
@@ -658,7 +659,7 @@ account for that copy. Driver gathers, assembly copies, v5 reassembly copies and
 accidental cell clones are still prohibited on every protocol/TLS/compression
 lane.
 
-## Incremental streaming receive (pending implementation)
+## Incremental streaming receive
 
 The public RunStream, StreamRowDecoder/StreamDecoder, capacity/error and
 StreamLimits signatures in [the API contract](gocql-v2-api.md) are normative.

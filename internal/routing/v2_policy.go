@@ -172,7 +172,7 @@ type LatencyOptions struct {
 }
 type InternalRoutingLatency struct {
 	mu              sync.Mutex
-	nextProbe       atomic.Int64
+	nextProbe       time.Time // protected by mu, including selection reservations
 	InternalValue   float64
 	InternalSamples int
 	InternalUpdated time.Time
@@ -184,7 +184,7 @@ type InternalRoutingPolicy struct {
 	round             atomic.Uint64
 	InternalLatencies sync.Map
 	InternalDecisions atomic.Pointer[InternalRoutingDecisions]
-	updateAfter       atomic.Int64
+	updateAfter       atomic.Pointer[time.Time]
 	minimumBits       atomic.Uint64
 }
 
@@ -398,16 +398,16 @@ func (p *InternalLazyRoutingPlan) InternalPenalty(t Target) bool {
 	// still keep this host behind healthy candidates. Penalized fallback is
 	// retained when the ordinary plan has no usable alternative.
 	sample := value.(*InternalRoutingLatency)
-	now := p.InternalNow.UnixNano()
-	for {
-		next := sample.nextProbe.Load()
-		if next > now {
-			return true
-		}
-		if sample.nextProbe.CompareAndSwap(next, p.InternalNow.Add(p.policy.InternalOptions.Latency.RetryPeriod).UnixNano()) {
-			return false
-		}
+	// time.Time retains the full configured duration and monotonic clock. An
+	// absolute UnixNano deadline can wrap even for a valid positive duration.
+	// Observe already uses this per-host lock; no policy-wide lock is involved.
+	sample.mu.Lock()
+	defer sample.mu.Unlock()
+	if p.InternalNow.Before(sample.nextProbe) {
+		return true
 	}
+	sample.nextProbe = p.InternalNow.Add(p.policy.InternalOptions.Latency.RetryPeriod)
+	return false
 }
 func targetsDuplicate(a, b Target) bool {
 	return a.HostID == b.HostID && (!a.ShardID.Set || !b.ShardID.Set || a.ShardID.Value == b.ShardID.Value)
@@ -545,7 +545,7 @@ func (p *InternalRoutingPolicy) Observe(e AttemptEvent) {
 	v.InternalValue += weight * (float64(e.Latency) - v.InternalValue)
 	v.InternalSamples++
 	v.InternalUpdated = now
-	v.nextProbe.Store(now.Add(p.InternalOptions.Latency.RetryPeriod).UnixNano())
+	v.nextProbe = now.Add(p.InternalOptions.Latency.RetryPeriod)
 	value, samples := v.InternalValue, v.InternalSamples
 	v.mu.Unlock()
 	if samples >= p.InternalOptions.Latency.MinimumSamples {
@@ -555,14 +555,13 @@ func (p *InternalRoutingPolicy) Observe(e AttemptEvent) {
 				break
 			}
 			if p.minimumBits.CompareAndSwap(bits, math.Float64bits(value)) {
-				p.updateAfter.Store(0)
+				p.updateAfter.Store(nil)
 				break
 			}
 		}
 	}
-	due := p.updateAfter.Load()
 	clock := time.Now()
-	if clock.UnixNano() < due || !p.updateAfter.CompareAndSwap(due, clock.Add(p.InternalOptions.Latency.UpdateInterval).UnixNano()) {
+	if !p.claimLatencyUpdate(clock) {
 		return
 	}
 	minimum := math.Inf(1)
@@ -586,6 +585,18 @@ func (p *InternalRoutingPolicy) Observe(e AttemptEvent) {
 		return true
 	})
 	p.InternalDecisions.Store(decisions)
+}
+
+// A publication claim allocates its immutable deadline only at a due boundary.
+// Contending claimants may allocate losing candidates there; ordinary enabled
+// observations before the deadline and disabled latency paths allocate nothing.
+func (p *InternalRoutingPolicy) claimLatencyUpdate(clock time.Time) bool {
+	due := p.updateAfter.Load()
+	if due != nil && clock.Before(*due) {
+		return false
+	}
+	next := clock.Add(p.InternalOptions.Latency.UpdateInterval)
+	return p.updateAfter.CompareAndSwap(due, &next)
 }
 
 type singleTargetRouting struct {
