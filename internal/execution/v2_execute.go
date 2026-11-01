@@ -689,12 +689,10 @@ type InternalTypedAttemptOutcome struct {
 func (s *InternalSessionRuntime) executePage(ctx context.Context, request *InternalExecutionRequest, state PageState) (*responsePage, error) {
 	pageRequest := *request
 	request = &pageRequest // outstanding branches retain this page's immutable routing capture.
-	if request.InternalOptions.InternalProfile.PageTimeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, request.InternalOptions.InternalProfile.PageTimeout)
-		defer cancel()
-	}
-	ctx, cancel := context.WithCancel(ctx)
+	// A deadline context already supplies cancellation for this page's attempts.
+	// With no page deadline, retain an independent cancellation scope so a winner
+	// still stops speculative siblings without cancelling the logical execution.
+	ctx, cancel := InternalExecutionContext(ctx, request.InternalOptions.InternalProfile.PageTimeout)
 	defer cancel()
 	metadata := s.Session.Metadata()
 	request.tabletFeedback = implCluster.InternalSessionCaptureTabletFeedback(s.Session, request.InternalRouting, metadata)

@@ -176,11 +176,20 @@ func (runtimeSpeculation) Delay(attempt int, _ MetricsSnapshot) (time.Duration, 
 	return time.Millisecond, attempt == 1
 }
 func TestV2RuntimeSpeculativeLoserWriterKeepsInput(t *testing.T) {
+	for _, pageTimeout := range []time.Duration{0, time.Second} {
+		t.Run(pageTimeout.String(), func(t *testing.T) {
+			runtimeSpeculativeLoserWriterKeepsInput(t, pageTimeout)
+		})
+	}
+}
+
+func runtimeSpeculativeLoserWriterKeepsInput(t *testing.T, pageTimeout time.Duration) {
 	s, conns, peers := runtimeTestSession(t, 2)
 	policy := &runtimePolicy{targets: []Target{{HostID: implEndpoint.InternalHostInfoHostUUID(conns[0].InternalHost)}, {HostID: implEndpoint.InternalHostInfoHostUUID(conns[1].InternalHost)}}}
 	profile := defaultProfile()
 	profile.Routing = policy
 	profile.Speculation = runtimeSpeculation{}
+	profile.PageTimeout = pageTimeout
 	handle, _ := NewProfile(profile)
 	go func() {
 		stream := typedTestReadRequest(t, conns[1], peers[1])
@@ -210,5 +219,39 @@ func TestV2RuntimeSpeculativeLoserWriterKeepsInput(t *testing.T) {
 	}
 	if policy.events.Load() != 2 {
 		t.Fatalf("attempt events %d", policy.events.Load())
+	}
+}
+
+// A page deadline cancels accepted attempts and drains their input without
+// cancelling the caller's context or releasing an orphan's stream too early.
+func TestV2RuntimeBufferedPageDeadlinePreservesCaller(t *testing.T) {
+	s, conns, peers := runtimeTestSession(t, 1)
+	requestRead := make(chan int, 1)
+	go func() {
+		requestRead <- typedTestReadRequest(t, conns[0], peers[0])
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	bound := runtimeQuery(t)
+	page, err := RunPage(ctx, s, bound, StartPage(), Options{
+		PageTimeout: Option[time.Duration]{Set: true, Value: 20 * time.Millisecond},
+	})
+	if page != nil {
+		page.Close()
+		t.Fatal("page returned without a response")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("page deadline: %v", err)
+	}
+	if ctx.Err() != nil {
+		t.Fatalf("page deadline cancelled caller: %v", ctx.Err())
+	}
+	stream := <-requestRead
+	bound.Close()
+	go func() {
+		_, _ = peers[0].Write(typedTestResponse(t, 4, stream, runtimeRowsBody(nil, "late")))
+	}()
+	if err := bound.Wait(ctx); err != nil {
+		t.Fatalf("accepted attempt did not drain: %v", err)
 	}
 }
