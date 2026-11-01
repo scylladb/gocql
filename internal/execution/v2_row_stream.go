@@ -560,7 +560,11 @@ func InternalRowStreamLoadPage[R any](s *RowStream[R]) error {
 					}
 				}
 				if err == nil {
-					err = response.InternalInstallColumns(page.columns)
+					if s.privateStorage.response == nil {
+						err = response.InternalInstallColumns(page.columns)
+					} else {
+						err = response.InternalInstallColumnsReusing(page.columns, s.privateStorage.response)
+					}
 				}
 			}
 			if err == nil {

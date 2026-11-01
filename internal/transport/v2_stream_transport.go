@@ -407,6 +407,25 @@ func (r *InternalStreamResponse) InternalInstallColumns(columns Columns) error {
 	r.InternalReader = reader
 	return nil
 }
+
+// Continuation pages may share internal immutable validation plans. The codec
+// requires exact metadata ownership identity and allocates fresh page state.
+func (r *InternalStreamResponse) InternalInstallColumnsReusing(columns Columns, prior *InternalStreamResponse) error {
+	if columns.Len() != r.InternalColumnCount {
+		return typeValidation("stream columns", "metadata count differs")
+	}
+	var previous *StreamRowReader
+	if prior != nil {
+		previous = prior.InternalReader
+	}
+	reader, err := codec.NewStreamRowReaderReusingValidation(columns, r.InternalBody, previous)
+	if err != nil {
+		return err
+	}
+	r.InternalColumns = columns
+	r.InternalReader = reader
+	return nil
+}
 func InternalDecodeStreamRow[R any](response *InternalStreamResponse, plan StreamRowPlan[R], dst *R) (ok bool, err error) {
 	if response == nil {
 		return false, typeValidation("stream response", "nil response")

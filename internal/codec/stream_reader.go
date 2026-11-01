@@ -421,6 +421,26 @@ func NewStreamRowReader(columns cqltype.Columns, scope *wire.Stream) (*StreamRow
 	}
 	return r, nil
 }
+
+// NewStreamRowReaderReusingValidation shares only immutable validation plans
+// with a preceding page whose columns have the same immutable backing storage.
+// Structural equality is insufficient: plans must not keep replaced metadata
+// alive after its owner releases its budget. All mutable decode state is fresh.
+// Compilation always uses depth zero and the fixed descriptor nesting bound;
+// per-envelope byte, depth and count limits remain enforced by the new scope.
+func NewStreamRowReaderReusingValidation(columns cqltype.Columns, scope *wire.Stream, prior *StreamRowReader) (*StreamRowReader, error) {
+	if prior != nil && len(prior.validations) == columns.Len() && prior.columns.Len() == columns.Len() {
+		current, previous := cqltype.ColumnSlice(columns), cqltype.ColumnSlice(prior.columns)
+		if len(current) == 0 || &current[0] == &previous[0] {
+			if scope == nil {
+				return nil, cqltype.TypeValidation("stream reader", "nil envelope")
+			}
+			state := &streamDecodeState{discardBytes: scope.Limits().DiscardBytes}
+			return &StreamRowReader{columns: columns, scope: scope, shared: state, validations: prior.validations, active: true}, nil
+		}
+	}
+	return NewStreamRowReader(columns, scope)
+}
 func (r *StreamRowReader) Context() context.Context {
 	if r == nil || r.scope == nil {
 		return context.Background()
